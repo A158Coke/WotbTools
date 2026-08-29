@@ -149,10 +149,18 @@ grep -q '\${' "$WORK/docker-compose.yml" && fail "formal compose still contains 
 # ---- deploy B (health fails) -> must roll back to A ----
 export TAG=sha-B
 set +e
-bash "$WORK/deploy/deploy.sh"
+deploy_b_output="$(bash "$WORK/deploy/deploy.sh" 2>&1)"
 rc=$?
 set -e
 [[ $rc -ne 0 ]] || fail "deploy B must fail (health check)"
+grep -q "== NEW DEPLOY HEALTH CHECK FAILED ==" <<<"$deploy_b_output" \
+  || fail "new deployment diagnostics marker missing before rollback"
+grep -q "== container inspect ==" <<<"$deploy_b_output" \
+  || fail "container inspect diagnostics missing"
+new_diag_line="$(grep -n "== NEW DEPLOY HEALTH CHECK FAILED ==" <<<"$deploy_b_output" | head -1 | cut -d: -f1)"
+rollback_line="$(grep -n "== DEPLOY FAILED: rolling back to previous deployment ==" <<<"$deploy_b_output" | head -1 | cut -d: -f1)"
+[[ "$new_diag_line" -lt "$rollback_line" ]] \
+  || fail "new deployment diagnostics must precede rollback"
 grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" || fail "after rollback compose must reference sha-A"
 grep -q 'wotbtools-backend:sha-B' "$WORK/docker-compose.yml" && fail "after rollback compose still references sha-B"
 [[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "DEPLOYED_SHA not restored to sha-A"

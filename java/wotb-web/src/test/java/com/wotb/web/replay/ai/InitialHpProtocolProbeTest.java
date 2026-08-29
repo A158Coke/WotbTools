@@ -3,19 +3,17 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
+import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.core.replay.decoder.EntityMethodDecoder;
+import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.processing.TeamEntityMapper;
 import com.wotb.core.replay.processing.TeamEntityMapping;
-import com.wotb.core.ref.ReplayDisplayNames;
-import com.wotb.core.replay.event.DamageEvent;
-import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.event.HealthChangedEvent;
-import com.wotb.core.replay.event.ReplayEvent;
-import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.decoder.EntityMethodDecoder;
-import com.wotb.core.replay.decoder.ProtobufDecoder;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import com.wotb.core.replay.stream.ReplayPacketStreamReader;
@@ -25,7 +23,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -411,12 +408,12 @@ class InitialHpProtocolProbeTest {
         return sb.toString();
     }
 
-    /** 每账号 derived observed received（§12/§13 权威 HP loss 口径，任务 C）。 */
+    /** 每账号 derived observed received（权威 HP loss 口径，任务 C）。 */
     private static int observedReceivedOf(final ReplayReconstruction recon,
                                           final TeamEntityMapping mapping, final long accountId) {
         int total = 0;
         final Float start = recon.battleStartRawClockSec();
-        final double duration = recon.replayDurationSec() > 0 ? recon.replayDurationSec() : 0.0;
+        final double duration = recon.battleDurationSec() > 0 ? recon.battleDurationSec() : 0.0;
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
                         recon.events(), mapping,

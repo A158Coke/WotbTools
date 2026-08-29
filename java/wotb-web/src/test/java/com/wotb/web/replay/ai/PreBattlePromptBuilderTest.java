@@ -1,12 +1,8 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.EntryHpSource;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
 import com.wotb.core.replay.map.MapTacticalSemantics;
@@ -17,6 +13,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PreBattlePromptBuilderTest {
 

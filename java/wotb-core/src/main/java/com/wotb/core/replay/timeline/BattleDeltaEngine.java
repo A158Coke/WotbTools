@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 帧间确定性变化引擎：Frame(t-1) → Frame(t) 的重要变化（docs/current-plan.md §15）。
+ * 帧间确定性变化引擎：Frame(t-1) → Frame(t) 的重要变化（docs/architecture/battle-timeline.md §15）。
  * <p>只产生有战术意义的 delta，不把每个微小 Position packet 变成 AI delta；
  * 所有 delta 结构化、可测试，供 AI Context Compiler 渲染。</p>
  */
@@ -187,7 +187,7 @@ final class BattleDeltaEngine {
                     Map.of("side", "enemy")));
         }
 
-        // 帧内交火活动（§11–§17：只使用权威 HP loss——Type-8 rawProtocolValue 语义未证明，
+        // 帧内交火活动（只使用权威 HP loss——Type-8 rawProtocolValue 语义未证明，
         // 不得作为交火活动强度；由 BattleTimelineBuilder 预计算本帧可信掉血传入）
         if (trustedDamageInWindow > 0) {
             out.add(new BattleDelta(DeltaKind.ENGAGEMENT_ACTIVITY, second, t, null,

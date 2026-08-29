@@ -1,11 +1,11 @@
 package com.wotb.core.replay.evidence;
 
+import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator.FactConflict;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.AliveTransition;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.EvidenceFact;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.GroundingFacts;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.RegionSnapshot;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.Side;
-import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator.FactConflict;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Natural Coach 轮：Team Review 事实一致性 Validator（G1–G5 golden cases + V1–V6 检查项）。
- * <p>核心原则（docs/current-plan.md §11–§15）：Validator 只检查「LLM 有没有改写 Backend 事实」，
+ * <p>核心原则：Validator 只检查「LLM 有没有改写 Backend 事实」，
  * 绝不判断战术观点——G3/G5 与「应该先回收/保持分兵/换血」等 coaching judgment 必须 PASS。</p>
  */
 class TeamFactualConsistencyValidatorTest {
@@ -280,7 +280,7 @@ class TeamFactualConsistencyValidatorTest {
 
     @Test
     void tacticalOpinionsAreNeverJudged() {
-        // §12：Validator 不得判断战术观点；下面这些即使 Backend 无法数学证明也必须 PASS
+        // Validator 不得判断战术观点；下面这些即使 Backend 无法数学证明也必须 PASS
         final TeamReviewEnvelope env = envelope(
                 "我认为这局主要问题是第一次正面交换。应该先回收、保持分兵、换血，"
                         + "让血量更健康的车顶上去。这局的交换节奏比站位更重要。");
@@ -321,7 +321,7 @@ class TeamFactualConsistencyValidatorTest {
                 "证据编号不得进入用户正文: " + conflicts);
     }
 
-    // ===== Review B1-2：机器结构化校验（语言无关，三语通用） =====
+    // ===== ：机器结构化校验（语言无关，三语通用） =====
 
     private static TeamReviewEnvelope.Claim machineClaim(final String text, final String claimType,
                                                          final Double timeSec, final Integer region,
@@ -332,7 +332,7 @@ class TeamFactualConsistencyValidatorTest {
                 null, null, null, null);
     }
 
-    /** 完整机器字段 helper（Review Blocker B1）：side / countSemantics / knowledge。 */
+    /** 完整机器字段 helper：side / countSemantics / knowledge。 */
     private static TeamReviewEnvelope.Claim machineClaimFull(
             final String text, final String claimType,
             final Double timeSec, final Integer region, final Integer count,
@@ -343,7 +343,7 @@ class TeamFactualConsistencyValidatorTest {
                 side, countSemantics, knowledge, null);
     }
 
-    /** 完整机器字段 + 稳定身份 helper（Review Blocker B1）：subjectAccountId。 */
+    /** 完整机器字段 + 稳定身份 helper：subjectAccountId。 */
     private static TeamReviewEnvelope.Claim machineClaimFullAcc(
             final String text, final String claimType,
             final Double timeSec, final Integer region, final Integer count,
@@ -397,7 +397,7 @@ class TeamFactualConsistencyValidatorTest {
                 "machine value 7v7 -> 4v6 必须 PASS");
     }
 
-    // ---- B2-2：V4 精确语义（exact == actual；at-least/subset ≤ actual） ----
+    // ---- V4 精确语义（exact == actual；at-least/subset ≤ actual） ----
 
     @Test
     void v4ExactOverCountFails() {
@@ -410,7 +410,7 @@ class TeamFactualConsistencyValidatorTest {
 
     @Test
     void v4ExactUnderCountFails() {
-        // B2-2：EXACT 语义下少报（3 != 5）同样是事实不一致
+        // EXACT 语义下少报（3 != 5）同样是事实不一致
         final TeamReviewEnvelope env = envWith(machineClaimFull(
                 "3 vehicles in region 6", "POSITION_REGION", 112.0, 6, 3, null, null,
                 "FRIENDLY", "EXACT", null, "E106"));
@@ -518,7 +518,7 @@ class TeamFactualConsistencyValidatorTest {
     }
 
 
-    // ===== Review Blocker B1：Evidence Binding（claim 必须与其 evidenceIds 真正绑定） =====
+    // ===== ：Evidence Binding（claim 必须与其 evidenceIds 真正绑定） =====
 
     @Test
     void b1DeathValidBindingPasses() {
@@ -739,7 +739,7 @@ class TeamFactualConsistencyValidatorTest {
         assertTrue(hasCheck(zhConflicts, "BINDING"), "三语共用同一 machine claim 必须 FAIL（BINDING）");
     }
 
-    // ===== Review B1-2：EN / RU 正文回归（三语 factual guard） =====
+    // ===== ：EN / RU 正文回归（三语 factual guard） =====
 
     @Test
     void enWrongDeathTimeFails() {
@@ -841,7 +841,7 @@ class TeamFactualConsistencyValidatorTest {
                 "RU 合法战术观点/建议必须 PASS");
     }
 
-    // ===== Review Blocker B1 §7：claims coverage 最低契约 =====
+    // ===== claims coverage 最低契约 =====
 
     @Test
     void emptyClaimsWithDiagnosisEvidenceFails() {
@@ -879,11 +879,11 @@ class TeamFactualConsistencyValidatorTest {
         final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
         assertTrue(hasCheck(conflicts, "OUTPUT"), "空正文必须 FAIL: " + conflicts);
     }
-    // ===== docs/current-plan.md §47：conflict reasonCode 机器分类 =====
+    // ===== conflict reasonCode 机器分类 =====
 
     @Test
     void unknownEvidenceConflictCarriesReasonCode() {
-        // DEATH claim 引用不存在的证据 E999 → BINDING/UNKNOWN_EVIDENCE（§47 首要排障信号）
+        // DEATH claim 引用不存在的证据 E999 → BINDING/UNKNOWN_EVIDENCE（首要排障信号）
         final TeamReviewEnvelope env = envelope(
                 new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()),
                 "## 团队复盘\n\nWildCat 在1分52秒阵亡。",

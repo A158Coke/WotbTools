@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 路线 Skill（文档 §19）：只描述开局路线、区域变化、与主要友军集群的空间分离、
+ * 路线 Skill：只描述开局路线、区域变化、与主要友军集群的空间分离、
  * 进入局部区域时观察到的双方数量。
  * <p>只输出事实与确定性测量，不做"盲目抢山 / 错误走重坦线 / 脱节 / 敌方人数优势"等
  * 战术裁决——那是 Call #2（LLM）的职责（Backend Evidence Boundary）。</p>

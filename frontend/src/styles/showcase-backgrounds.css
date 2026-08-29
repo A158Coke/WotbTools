@@ -24,7 +24,6 @@
 .hofadmin-page,
 .admin-hof-page,
 .hof-admin,
-.recon-page,
 .rating-page,
 .rating-section,
 .rating-workspace,
@@ -125,31 +124,6 @@
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--accent) 5%, transparent), color-mix(in srgb, var(--bg-upload) 92%, transparent) 48%),
     url('../assets/showcase/reconstruction/reconstruction-bg-v2.svg') center / cover no-repeat !important;
-}
-
-/* ---------- Reconstruction / AI Review: tactical command map ---------- */
-.recon-page::after {
-  content: '';
-  position: fixed;
-  z-index: -2;
-  top: 60px;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  pointer-events: none;
-  background: url('../assets/showcase/reconstruction/reconstruction-bg-v2.svg') center center / cover no-repeat;
-  opacity: .72;
-}
-.recon-page::before {
-  content: '';
-  position: fixed;
-  z-index: -1;
-  top: 60px;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  pointer-events: none;
-  background: linear-gradient(180deg, rgba(5,12,13,.25), rgba(5,12,13,.54));
 }
 
 /* ---------- Hall of Fame: ceremonial gold hall ---------- */
@@ -255,8 +229,7 @@
   .rating-page::after,
   .rating-section::after,
   .rating-workspace::after,
-  .homepage-showcase::before,
-  .recon-page::after {
+  .homepage-showcase::before {
     top: 56px;
     background-position: 68% center;
   }
@@ -278,8 +251,7 @@
   .hof-admin::before,
   .rating-page::before,
   .rating-section::before,
-  .rating-workspace::before,
-  .recon-page::before {
+  .rating-workspace::before {
     top: 56px;
   }
   .homepage-showcase .showcase-hero {

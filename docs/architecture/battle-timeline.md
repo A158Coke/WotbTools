@@ -2,7 +2,7 @@
 
 > 本文档描述 V2 引入的唯一权威时间线模型：com.wotb.core.replay.timeline。
 > Battle Playback / Personal AI Review / Team AI Review 共享同一套战场事实，禁止各模块
-> 自行重新解释 raw events 形成互相不同的事实模型（docs/current-plan.md §1/§43）。
+> 自行重新解释 raw events 形成互相不同的事实模型（见本文件 §1/§43）。
 
 ## 数据流
 
@@ -25,7 +25,7 @@
    events = (N-1, N] 内的精确事件（原始时间精度不丢失，§2.1/§2.2）。
 2. **battle-relative 时钟硬门禁**（§2.4）：时钟解析优先级
    recon.battleStartRawClockSec（IDENTIFIED）→ 事件自带 battleClockSec（IDENTIFIED）
-   → BattleEndedEvent.raw − battle.durationS（ESTIMATED，当前生产唯一路径）。
+   → RoundFinishedEvent.raw − battle.durationS（ESTIMATED，estimation fallback；canonical battle duration 由 settlement root5 决定）。
    无法解析 → TIMELINE_CLOCK_UNRESOLVED → Timeline = INVALID → 拒绝 AI Review。
 3. **Anti-future-leak**（§10/§47）：任意 frame 的状态只使用 battle-relative time ≤ t 的事件；
    battle_results 最终状态绝不反写进历史 Frame；重亮后仅允许 bounded retrospective
@@ -79,7 +79,7 @@
 - **Personal AI hard gate（§3）**：TacticalReviewHarness / analyzePlayerOrFallback 在 Call #1 之前
   构建并验证 canonical timeline（无重建 / 录像者未解析 / timeline 不可用 → AI_TIMELINE_UNUSABLE，
   AI Gateway requests = 0）。
-- **Team AI hard gate（§3，PR #102 review B1）**：TeamReplayAnalysisService.analyzeTeamGroups（Team AI
+- **Team AI hard gate（§3，PR #102 ）**：TeamReplayAnalysisService.analyzeTeamGroups（Team AI
   唯一 production 编排入口）在 Call #1 / Call #2 / Team Autopsy 之前为每个 context 构建并验证 canonical
   timeline（一次 build、一次 validation）：reconstruction 缺失 / timeline 不可用 → AI_TIMELINE_UNUSABLE，
   AI Gateway requests = 0；验证通过后同一 validated timeline 下传 TeamAiPromptBuilder 渲染 TACTICAL

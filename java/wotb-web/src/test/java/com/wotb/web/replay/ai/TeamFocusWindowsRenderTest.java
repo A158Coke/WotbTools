@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityCreatedEvent;
@@ -16,7 +17,6 @@ import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.replay.stream.ReplayStreamHeader;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Team Review FOCUS WINDOWS 渲染（docs/current-plan.md §5/§13）：每个窗口必须输出
+ * Team Review FOCUS WINDOWS 渲染：每个窗口必须输出
  * BEFORE / EVENTS / AFTER / OBSERVED FACTS / EVIDENCE LIMITATIONS；不 future leak；
  * 稀疏证据不编造战术原因。
  */
@@ -92,9 +92,8 @@ class TeamFocusWindowsRenderTest {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "middleburg", "1", "1", 2, "rec1", "", durationSec, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(true, 8, 8, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, START_RAW, true);
+        final ReplayCoverage coverage = new ReplayCoverage(8, 8, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         final BattleStateCheckpoint cp = new BattleStateCheckpoint(START_RAW, 0, BattleStateSnapshot.empty());
         return new ReplayReconstruction(meta, header, (float) durationSec, START_RAW, List.of(),
                 events, List.of(cp), BattleStateSnapshot.empty(), coverage, diag);

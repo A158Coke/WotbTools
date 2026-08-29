@@ -1,15 +1,17 @@
 package com.wotb.core.replay.processing;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 /**
- * PR #103 review BLOCKER A：internal identity 与 user-facing display label 分离。
+ * internal identity 与 user-facing display label 分离。
  * <p>{@code resolveDisplayLabel} 只返回唯一 dominant 且严格多数（&gt; 一半）的 clan tag
  * （最常见 casing），否则空串；绝不返回 {@code 队伍-XXXX}。{@code resolveStableKey} 是
  * internal-only 身份键（可含 {@code 队伍-}），不得进入 user-facing 路径。</p>

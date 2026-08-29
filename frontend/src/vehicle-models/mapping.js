@@ -1,5 +1,5 @@
 /**
- * Tier X 专属车型 — 集中静态 Tank ID → baseModelKey 映射（计划 §8）。
+ * Tier X 专属车型 — 集中静态 Tank ID → baseModelKey 映射。
  *
  * 权威来源：common/tankopedia-tier10.json（84 辆 → 81 个 baseModelKey）。
  * 覆盖契约：Tier X 必须 100% 有 mapping；未来新增 Tier X 缺失 mapping → CI FAIL

@@ -1,12 +1,12 @@
 package com.wotb.core.replay.feature;
 
-import com.wotb.core.replay.processing.TeamEntityIdentity;
-import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
+import com.wotb.core.replay.processing.TeamEntityIdentity;
+import com.wotb.core.replay.processing.TeamEntityMapping;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -14,12 +14,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PlaybackCombatReconstruction 单测（docs/current-plan.md §12/§13/§15/§42）：
+ * PlaybackCombatReconstruction 单测：
  * 权威 HP loss 推导 + 攻击者 attribution 边界 + 击毁/击杀推导。
  */
 class PlaybackCombatReconstructionTest {

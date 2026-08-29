@@ -1,7 +1,14 @@
 package com.wotb.web.replay.ai.gateway;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import com.sun.net.httpserver.HttpServer;
+import com.wotb.web.config.AiModelProperties;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -10,19 +17,11 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
-import com.sun.net.httpserver.HttpServer;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
-
-import com.wotb.web.config.AiModelProperties;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * docs/current-plan.md §57/§61 敏感数据回归：AI Review 全链路事件日志（ai_upstream_call_* /
+ * 敏感数据回归：AI Review 全链路事件日志（ai_upstream_call_* /
  * AI usage / AI provider failure）必须不含 API key、Authorization、prompt、completion、
  * 回放内容等敏感文本；只记录低基数 metadata。
  */
@@ -83,7 +82,7 @@ class SpringAiChatGatewaySensitiveLogTest {
         assertTrue(all.contains("event=ai_upstream_call_completed"),
                 "必须记录 ai_upstream_call_completed 事件");
         assertTrue(all.contains("responseFormat=JSON_OBJECT"),
-                "事件日志必须携带 responseFormat（§17）");
+                "事件日志必须携带 responseFormat");
         assertSensitiveAbsent(all);
     }
 
@@ -104,7 +103,7 @@ class SpringAiChatGatewaySensitiveLogTest {
 
         final String all = formattedLogs();
         assertTrue(all.contains("event=ai_upstream_call_failed"),
-                "必须记录 ai_upstream_call_failed 事件（§42）");
+                "必须记录 ai_upstream_call_failed 事件");
         assertSensitiveAbsent(all);
         assertFalse(all.contains("unauthorized"),
                 "provider 错误体必须整体脱敏（[PROVIDER_BODY_REDACTED]），不得泄露原始内容");

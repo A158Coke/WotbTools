@@ -1,13 +1,13 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.web.replay.controller.ReconstructionController;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * AI Review 超时链配置契约：后端常量、application.yml、前端安全超时、nginx、
@@ -39,7 +39,7 @@ class AiTimeoutChainContractTest {
         assertFileContains("application.yml",
                 repoPath("java", "wotb-web", "src", "main", "resources", "application.yml"),
                 "overall-deadline-sec: ${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:1100}");
-        // AI Review SSE 分析流已随单页 Workspace 改造从 ReconstructionPage 抽到 AiReviewPanel（PR #128）
+        // AI Review SSE 分析流已随单页 Workspace 改造抽到 AiReviewPanel（PR #128）
         assertFileContains("AiReviewPanel.vue",
                 repoPath("frontend", "src", "components", "AiReviewPanel.vue"),
                 "const AI_ANALYZE_TIMEOUT_MS = 1_100_000");

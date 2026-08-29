@@ -2,6 +2,7 @@ package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.util.PlayerResultFormat;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -19,11 +20,13 @@ import java.util.Set;
  * 缺失与零值同等对待，绝不把「字段缺失」误判为损坏。统计字段只校验<b>数值关系矛盾</b>
  * （负值 / 非有限 / 命中&gt;射击 / 击穿&gt;命中）。</p>
  *
- * <p><b>死亡时间 UNKNOWN ≠ 数据非法</b>：阵亡玩家 {@code survivalTimeSec == 0} 表示
- * 精确死亡时刻无法从回放可靠证明（{@link com.wotb.core.replay.processing.DeathTimeReconciler}
- * 的 fail-closed 结果），这是合法状态——整场仍允许评分，该玩家仅在依赖死亡时刻的
- * Survival/Trade 维度保守得 0 分。{@code survivalTimeSec < 0} / NaN / Infinity /
- * 明显超过战斗时长仍为 {@code INVALID_STAT_FACTS}，整场拒绝评分。</p>
+ * <p><b>死亡时间 UNKNOWN ≠ 数据非法</b>：阵亡玩家的 canonical {@link PlayerResultFormat#deathSec}
+ * 为 0（{@code deathTimeSource} 为 UNKNOWN/null，无权威死亡证据）表示精确死亡时刻无法从回放可靠证明
+ * （{@link com.wotb.core.replay.processing.DeathTimeReconciler} 的 fail-closed 结果），这是合法状态——
+ * 整场仍允许评分，该玩家仅在依赖死亡时刻的 Survival/Trade 维度保守得 0 分。UNKNOWN source 的 residual
+ * {@code survivalTimeSec}/{@code deathTimeMillis} 不得作为 authoritative death fact；
+ * {@code survivalTimeSec < 0} / NaN / Infinity / canonical death 明显超过战斗时长仍为
+ * {@code INVALID_STAT_FACTS}，整场拒绝评分。</p>
  *
  * <p>返回<b>全部</b>发现的失败（按严重度排序，调用方取第一条作为该场错误码）。</p>
  */
@@ -123,10 +126,16 @@ public final class LeagueRatingValidator {
         boolean contradictoryTime = false;
         final Double duration = battle.durationS;
         for (final PlayerResult p : players) {
-            if (!p.survived && Double.isFinite(p.survivalTimeSec)
-                    && duration != null && Double.isFinite(duration)
-                    && p.survivalTimeSec > duration + DEATH_TIME_TOLERANCE_SEC) {
-                contradictoryTime = true;
+            // 「死亡时间是否明显超过 duration」的业务语义基于 canonical source-aware evidence：
+            // UNKNOWN 的 residual survivalTimeSec/deathTimeMillis 不得成为 authoritative death fact。
+            if (!p.survived && duration != null && Double.isFinite(duration)
+                    && Double.isFinite(p.survivalTimeSec)) {
+                // 仅对 structurally-valid（finite survivalTimeSec）的玩家做「超过 duration」判定；
+                // infinite/NaN 由 hasInvalidStatFacts 统一 fail-closed，避免重复报错。
+                final double deathSec = PlayerResultFormat.deathSec(p);
+                if (deathSec > 0 && deathSec > duration + DEATH_TIME_TOLERANCE_SEC) {
+                    contradictoryTime = true;
+                }
             }
         }
         if (contradictoryTime) {

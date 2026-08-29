@@ -1,17 +1,8 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.BatchAnalyzer;
-import com.wotb.core.replay.processing.ReplayIdentity;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
+import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
@@ -20,20 +11,29 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.processing.BatchAnalyzer;
+import com.wotb.core.replay.processing.ReplayIdentity;
+import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
+import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.replay.stream.ReplayStreamHeader;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 /**
- * PR #103 review §8：Team display label 生产路径集成测试——
+ * Team display label 生产路径集成测试——
  * Battle roster → {@link TeamRosterResolver}（display labels）→ {@link TeamAiPromptBuilder}
  * （system/user prompt 的 teamDisplayLabel / opponentDisplayLabel）→ {@link PreBattleSectionRenderer}。
  * <p>无 clan：不得出现 {@code 队伍-\d+} / 「对方主要军团」，PreBattle 只显示「我方画像/对方画像」；
@@ -171,9 +171,8 @@ class TeamDisplayLabelProductionIntegrationTest {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 120.0, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(true, 10, 10, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, START_RAW, true);
+        final ReplayCoverage coverage = new ReplayCoverage(10, 10, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(mapping(0, 1, 1001L));
         events.add(mapping(1, 2, 1002L));

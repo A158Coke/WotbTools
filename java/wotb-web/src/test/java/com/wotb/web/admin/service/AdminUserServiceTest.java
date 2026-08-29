@@ -1,10 +1,10 @@
 package com.wotb.web.admin.service;
 
-import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.boost.service.BoosterService;
+import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.Test;

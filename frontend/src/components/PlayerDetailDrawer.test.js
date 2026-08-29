@@ -233,7 +233,7 @@ describe('PlayerDetailDrawer header / scope（V4.1 vs V5）', () => {
 })
 
 describe('PlayerDetailDrawer Radar（仅 League 七维 + 参考平均）', () => {
-  it('default: 7 League dimension axes，顺序 = 计划 §10（Damage/Shooting/Kill/RC/Blocked/Exchange/Assist）', () => {
+  it('default: 7 League dimension axes，顺序 =（Damage/Shooting/Kill/RC/Blocked/Exchange/Assist）', () => {
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
     const labels = wrapper.find('.radar-stub').text().split(',')
     expect(labels).toHaveLength(7)
@@ -641,7 +641,7 @@ describe('Rating Profile PNG 导出不可变快照', () => {
   })
 })
 
-describe('PlayerDetailDrawer Side Panel resize（仅桌面，计划 §4-14）', () => {
+describe('PlayerDetailDrawer Side Panel resize（仅桌面）', () => {
   const DEFAULT_W = 380
   function widthNum(wrapper) {
     const st = wrapper.find('.player-drawer').attributes('style') || ''
@@ -723,7 +723,7 @@ describe('PlayerDetailDrawer Side Panel resize（仅桌面，计划 §4-14）', 
     expect(wrapper.emitted('prev')).toBeFalsy()
   })
 
-  it('reflow（计划 §7）：桌面开启时暴露 --pd-drawer-offset 供 workspace 预留；拖宽后同步；mobile 恒 0px；unmount 清除', async () => {
+  it('reflow：桌面开启时暴露 --pd-drawer-offset 供 workspace 预留；拖宽后同步；mobile 恒 0px；unmount 清除', async () => {
     window.innerWidth = 1400
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
     await flushPromises()

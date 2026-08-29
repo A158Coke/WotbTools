@@ -218,7 +218,7 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
   })
 })
 
-// ── Replay Processing Job create：XHR 真实上传进度（plan §27/§28）──
+// ── Replay Processing Job create：XHR 真实上传进度──
 
 /** 可控的 XHR 替身：手动触发 progress / load / abort。 */
 class FakeXhr {

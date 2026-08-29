@@ -1,20 +1,16 @@
 package com.wotb.web.replay.ai;
 
-import java.util.List;
-import java.util.Map;
-
 import com.wotb.core.ai.EvidenceDensity;
 import com.wotb.core.model.Battle;
-import com.wotb.core.replay.processing.AiNotConfiguredException;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
-
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
@@ -22,6 +18,9 @@ import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * 单玩家/多场趋势 AI 复盘编排。
@@ -73,11 +72,11 @@ public class PlayerReplayAnalysisService {
 
     /**
      * 基于完整 battle + reconstruction + feature set 生成单场个人复盘。
-     * <p><b>非 production AI Review entrypoint（PR #102 review 顺手检查）</b>：本组
+     * <p><b>非 production AI Review entrypoint（PR #102 顺手检查）</b>：本组
      * {@code analyzePlayerContext(ctx[, recon], ...)} 重载只被历史测试/兼容 API 使用；
      * production 个人复盘必须走 {@link #analyzePlayerOrFallback}（其中无重建 / 录像者未解析 /
      * canonical timeline 不可用 → {@code AiTimelineUnusableException} hard reject，见
-     * docs/current-plan.md §3）。若未来出现 production caller，必须先执行 canonical
+     * canonical timeline 不可用即硬拒绝）。若未来出现 production caller，必须先执行 canonical
      * Timeline hard gate，否则构成 hard-gate bypass。</p>
      */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx) {
@@ -147,7 +146,7 @@ public class PlayerReplayAnalysisService {
                                                  final AllowedLanguage language,
                                                  final AiReviewStreamListener listener) {
         if (result.battle() == null) throw new IllegalArgumentException("NO_BATTLE_DATA");
-        // docs/current-plan.md §3：无法构建 canonical BattleTimeline → 拒绝 AI Review，
+        // 无法构建 canonical BattleTimeline → 拒绝 AI Review，
         // 禁止 settlement-only fallback 仍然调用 AI。
         if (result.reconstruction() == null) {
             throw new AiTimelineUnusableException("NO_RECONSTRUCTION");

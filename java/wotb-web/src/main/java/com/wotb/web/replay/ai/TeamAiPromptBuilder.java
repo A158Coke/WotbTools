@@ -19,7 +19,7 @@ import java.util.Set;
  * <p>
  * 使用 AiTokenEstimator 进行 token 预算管理，不再使用固定字符限制或固定数量截断。
  * </p>
- * <p><b>Canonical Timeline 契约（PR #102 review）</b>：本类<b>不</b>构建
+ * <p><b>Canonical Timeline 契约（PR #102）</b>：本类<b>不</b>构建
  * {@link BattleTimeline}——build+validation 的唯一入口在
  * {@link TeamReplayAnalysisService} orchestration 层（任何 LLM 调用之前，一次 build
  * 一次 validation）；本类只做确定性渲染。production Team Call #2 通过带
@@ -62,7 +62,7 @@ public final class TeamAiPromptBuilder {
 
     /**
      * production Team Call #2 入口：接收 orchestration 层已 build+validate 的 canonical
-     * {@link BattleTimeline}（PR #102 review B1）——一次 build、一次 validation 后下传，
+     * {@link BattleTimeline}（PR #102 ）——一次 build、一次 validation 后下传，
      * 本方法只渲染（绝不再次 build / 绝不 catch 后降级）；validated timeline 渲染为空是
      * 编程错误 → fail loud。timeline 为 null 只允许出现在兼容/测试入口（本方法不接收 null
      * 语义：production 必然非 null，若调用方传入 null 等价于无 timeline 段）。
@@ -123,7 +123,7 @@ public final class TeamAiPromptBuilder {
         headerBuf.append("battleIdentity=").append(TeamEvidenceFormatter.quoteData(context.battleId())).append("\n");
         headerBuf.append("category=").append(context.battleCategory()).append("\n");
         if (context.battle() != null) {
-            // PR #103 review BLOCKER A：user-facing 名称只使用 backend display labels；
+            // user-facing 名称只使用 backend display labels；
             // 无可靠 clan（无 clan / 平票 / 非多数）时为空串，prompt 规则要求 fallback「我方/对方」。
             final String teamLabel = TeamEvidenceFormatter.resolveDisplayLabel(
                     context.battle().players, context.perspectiveTeam());
@@ -237,7 +237,7 @@ public final class TeamAiPromptBuilder {
     /**
      * 渲染已验证 canonical timeline 的 TACTICAL TIMELINE 段（确定性；只渲染，不 build、
      * 不 catch、不静默降级）。
-     * <p>PR #102 review B1：timeline 由 orchestration 层在 LLM 调用之前构建并验证后传入，
+     * <p>PR #102 ：timeline 由 orchestration 层在 LLM 调用之前构建并验证后传入，
      * 此处只消费；{@code timeline == null}（兼容/测试入口未提供 validated timeline）时不
      * 渲染任何段；非 null 却渲染为空是编程错误 → fail loud，不得降级为「无 timeline 的
      * AI Review」。</p>

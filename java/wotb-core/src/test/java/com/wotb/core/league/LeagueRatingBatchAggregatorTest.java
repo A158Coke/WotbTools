@@ -6,10 +6,10 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 批次选手/战队中位数汇总（plan §17）。 */
+/** 批次选手/战队中位数汇总。 */
 class LeagueRatingBatchAggregatorTest {
 
     private static LeagueRatingResult rated(final int winner, final int offset) {
@@ -204,7 +204,7 @@ class LeagueRatingBatchAggregatorTest {
                 "ineligible 场不进入 mean 分母（2 场都是 110 → mean 仍 110，不是 73.33）");
     }
 
-    // ---- League Rating V5 Batch Evidence Adjustment（计划 §7/§12/§13/§33–§36）----
+    // ---- League Rating V5 Batch Evidence Adjustment----
 
     @Test
     void v5AdjustsMainRatingAndPreservesRawMedian() {

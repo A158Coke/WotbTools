@@ -36,7 +36,7 @@ function sr(accountId, means, { rated = true } = {}) {
   return { cells: { account_id: accountId }, league: { dimensionMeans: keys.map(k => means[k] ?? null) } }
 }
 
-describe('battleAverage（计划 §13/§57）', () => {
+describe('battleAverage', () => {
   it('selected 玩家包含在内；不硬编码 14 人', () => {
     // 3 名 rated 玩家：damage 300/200/100 → meanRaw 200, normalized 0.5
     const players = [bp(1, { [D]: 300 }), bp(2, { [D]: 200 }), bp(3, { [D]: 100 })]
@@ -95,7 +95,7 @@ describe('battleAverage（计划 §13/§57）', () => {
   })
 })
 
-describe('globalAverage（计划 §14/§58）', () => {
+describe('globalAverage', () => {
   it('rotation 场景：12/12/3 场次等权（每人 weight=1，不按出场数加权）', () => {
     const rows = [
       sr(1, { [D]: 300, [A]: 60 }),

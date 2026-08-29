@@ -1,8 +1,8 @@
-// CSS source contract guard for Classic Profile (docs/current-plan.md D1/D2).
+// CSS source contract guard for Classic Profile (frontend/AGENTS.md D1/D2).
 //
 // Classic = 仅「从简」视觉精简(结构性不变,D1)。本文件用 [data-ui-profile="classic"]
 // namespace 关闭 Showcase 的全屏 AI/装饰性背景、readability veil、装饰性 hero surface。
-// 契约(对应计划 §43 A/B/D):
+// 契约(对应
 //   A) 每条规则都必须带 [data-ui-profile="classic"] 前缀,严禁无 namespace 的全局规则泄漏进 Showcase;
 //   B) 不得用 display:none 隐藏任何业务元素(HoF Admin tabs / Replay actions / AI Review / League Rating 等);
 //   D) 必须在 main.js 中于所有 showcase*.css 之后导入。

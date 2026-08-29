@@ -158,7 +158,7 @@ describe('FileUploader 文件列表与回放工作台', () => {
     expect(wrapper.emitted('workspace-action')).toBeUndefined()
   })
 
-  // ---- BLOCKER 4：共享 upload preflight（选择文件/文件夹/add/drop 同一 contract）----
+  // ---- 共享 upload preflight（选择文件/文件夹/add/drop 同一 contract）----
 
   it('file chip 显示 filename · size（1.8 MB）', async () => {
     const files = [

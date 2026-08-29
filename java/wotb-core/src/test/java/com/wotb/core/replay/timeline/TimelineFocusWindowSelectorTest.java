@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * TimelineFocusWindowSelector（docs/current-plan.md §4/§5/§13-B/C/D）：
+ * TimelineFocusWindowSelector（docs/architecture/battle-timeline.md §4/§5/§13-B/C/D）：
  * 连续减员窗口必须成为 Top Focus Window；正常交火/点数 swing 也能选出有意义窗口；
  * 稀疏证据不编造；不重复 delta、不 future leak。
  */
@@ -70,7 +70,7 @@ class TimelineFocusWindowSelectorTest {
 
     private static PositionChangedEvent position(final int eid, final double battleSec, final float x, final float z) {
         return new PositionChangedEvent(seq++, ts(battleSec), 10, DecodeConfidence.EXACT,
-                eid, 0, 0, x, 0f, z, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0);
+                eid, 0, 0, x, 0f, z, 0f, 0f, 0f, 0f, 0f, 0f, 0);
     }
 
     private static HealthChangedEvent health(final int eid, final double battleSec,
@@ -291,7 +291,7 @@ class TimelineFocusWindowSelectorTest {
         final List<ReplayEvent> events = new ArrayList<>(opening());
         // 单边 collapse：本方 60/65/70 连续 3 死，对方 0 死（swing=3, total=3）
         events.add(damage(1, 8, 60, 400));
-        events.add(health(8, 60, 1600, true)); // 掉血 400@60 → ENGAGEMENT_ACTIVITY 对齐 collapse core（§11–§17 权威 HP loss）
+        events.add(health(8, 60, 1600, true)); // 掉血 400@60 → ENGAGEMENT_ACTIVITY 对齐 collapse core（权威 HP loss）
         events.add(health(1, 60, 0, false));
         events.add(health(2, 65, 0, false));
         events.add(health(3, 70, 0, false));

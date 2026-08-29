@@ -7,9 +7,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import static com.wotb.core.league.LeagueTestBattles.defaultSevenVsSeven;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static com.wotb.core.league.LeagueTestBattles.defaultSevenVsSeven;
 
 /** League Rating 七维度公式 / 存活 / 最终分 / MVP。 */
 class LeagueRatingCalculatorTest {
@@ -274,11 +274,11 @@ class LeagueRatingCalculatorTest {
                 "小样本仍应保持保守：lowShotSoft=" + lowSoft + " highShotSoft=" + highSoft);
     }
 
-    // ---- Adversarial 哲学回归（plan §62：只锁排序关系，不锁具体分数）----
+    // ---- Adversarial 哲学回归（只锁排序关系，不锁具体分数）----
 
     @Test
     void highDamageZeroKillLoserCanOutscoreOrdinaryWinnerAndBeTeamTop() {
-        // §62.1/62.2：败方高伤 0 kill 的 carry 玩家应高于普通胜方玩家，并成为本队最佳。
+        // 败方高伤 0 kill 的 carry 玩家应高于普通胜方玩家，并成为本队最佳。
         final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
         for (int i = 0; i < 7; i++) {
             specs.get(i).damage = 600; // 胜方本队平均输出（普通档位）
@@ -301,7 +301,7 @@ class LeagueRatingCalculatorTest {
 
     @Test
     void lowDamageTradeDoesNotPushPlayerIntoTopThree() {
-        // §62.6：RC=50 不能把明显低贡献玩家推成本队 Top3。
+        // RC=50 不能把明显低贡献玩家推成本队 Top3。
         final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
         specs.get(0).damage = 5;
         specs.get(0).assist = 0;

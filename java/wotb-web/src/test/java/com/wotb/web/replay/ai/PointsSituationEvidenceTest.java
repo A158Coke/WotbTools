@@ -1,8 +1,8 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.TeamEntityMapper;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
@@ -11,6 +11,7 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.evidence.PointsSituationSkill;
+import com.wotb.core.replay.processing.TeamEntityMapper;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.Test;
 
@@ -66,6 +67,7 @@ class PointsSituationEvidenceTest {
         battle.mapName = MAP;
         final PlayerResult ally = player(1001L, 1, "Ally", false);
         ally.deathTimeMillis = 60_000L; // 60s 阵亡
+        ally.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
         battle.players = List.of(ally, player(2001L, 2, "EnemyA", true));
         return battle;
     }
@@ -219,7 +221,7 @@ class PointsSituationEvidenceTest {
 
     @Test
     void tollUsesHpLossNotRawProtocolValue() {
-        // raw=767、HP loss=377（§12 实测结论）：输出只能使用 377，不得用 raw 补齐
+        // raw=767、HP loss=377（实测结论）：输出只能使用 377，不得用 raw 补齐
         final Battle battle = battle();
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,

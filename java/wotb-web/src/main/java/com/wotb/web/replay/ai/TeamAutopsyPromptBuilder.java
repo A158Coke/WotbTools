@@ -1,11 +1,11 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
-import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.util.PromptDataQuoter;
 
 import java.util.List;
@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
  * 死亡时间线仅包含本方 TEAM_A 玩家；渲染时按 playerKey 回查后端 roster，
  * 不信任 LLM 返回的名称。settlement-only：LLM 判断的 confidence 仅 PARTIAL/UNKNOWN——
  * confidence/PARTIAL/UNKNOWN/settlement-only/规则候选/provenance、playerKey 与逐人贡献分类
- * 都是 internal structured contract（PR #103 review BLOCKER D + 最终收尾 BLOCKER A），
+ * 都是 internal structured contract，
  * {@link #renderSection} 用户可见渲染一律不暴露——无 standout 时整段为空，绝不输出 P1~P7。</p>
  */
 public final class TeamAutopsyPromptBuilder {
@@ -137,12 +137,12 @@ public final class TeamAutopsyPromptBuilder {
 
     /**
      * 把结构化结果渲染为追加到复盘尾部的中文段落（仅在有 standout 时）。
-     * <p>PR #103 最终收尾 BLOCKER A：{@code mvps} 与 {@code biggestLiabilities} 均为空时返回空串
+     * <p>{@code mvps} 与 {@code biggestLiabilities} 均为空时返回空串
      * （没有 standout 是合法结果，UI/主复盘已知胜负，不重复）；有 standout 时只输出
      * {@code ## 重点复查} / {@code ## 高贡献者} 两小块，每行 {@code nickname / tank：reason}。
      * playerKey（P1..P7）仅作内部 lookup，绝不进入用户正文；confidence/PARTIAL/UNKNOWN、
      * settlement-only/规则候选/provenance、逐人贡献分类都是 internal structured contract，
-     * 用户可见渲染一律不暴露（PR #103 review BLOCKER D）。</p>
+     * 用户可见渲染一律不暴露。</p>
      */
     static String renderSection(final TeamAutopsyResult result,
                                 final List<TeamAutopsyStats> roster) {

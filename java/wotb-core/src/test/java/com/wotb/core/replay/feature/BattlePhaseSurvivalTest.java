@@ -1,15 +1,16 @@
 package com.wotb.core.replay.feature;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 阶段时间线特征（阶段边界 + 双方存活人数）测试。
@@ -53,6 +54,10 @@ class BattlePhaseSurvivalTest {
         p.tankName = "Kranvagn";
         p.survived = survived;
         p.deathTimeMillis = survived ? 0L : (long) (deathSec * 1000);
+        if (!survived) {
+            p.deathTimeSource = deathSec > 0
+                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+        }
         return p;
     }
 
@@ -81,9 +86,10 @@ class BattlePhaseSurvivalTest {
         assertEquals(7, opening.friendlyAlive());
         assertEquals(7, opening.enemyAlive());
 
-        // 首次接敌 [50,60]：我方 60s 阵亡 1 → 6；敌方尚无阵亡 → 7
+        // 首次接敌 [50,60]：我方 60s 阵亡——SETTLEMENT_SECOND 区间 [59.5,60.5] 跨 60s 边界，
+        // 证据不足 → friendlyAlive 未知（不得强制「60s 已死=6」）；敌方尚无阵亡 → 7
         final BattlePhaseSummary firstContact = phase(phases, BattlePhaseType.FIRST_CONTACT);
-        assertEquals(6, firstContact.friendlyAlive());
+        assertNull(firstContact.friendlyAlive());
         assertEquals(7, firstContact.enemyAlive());
 
         // 残局（battleEnd 零长标记）→ 与结算一致：5 打 4
@@ -93,30 +99,30 @@ class BattlePhaseSurvivalTest {
     }
 
     @Test
-    void deathSourceLabelDistinguishesAuthoritativeEstimatedAndUnknown() {
-        final Battle authoritative = new Battle();
-        authoritative.players = List.of(
-                player(1L, 1, false, 62.0),
-                player(2L, 2, true, 0.0));
-        assertEquals("权威结算", BattlePhaseSummary.deathSourceLabel(authoritative));
+    void deathSourceLabelDistinguishesLiveExactSettlementUnknownAndNoDeaths() {
+        final PlayerResult liveExact = player(1L, 1, false, 62.0);
+        liveExact.deathTimeSource = DeathTimeSource.LIVE_EXACT;
+        liveExact.survivalTimeSec = 62.345;
+        final Battle liveExactBattle = new Battle();
+        liveExactBattle.players = List.of(liveExact);
+        assertEquals("回放精确", BattlePhaseSummary.deathSourceLabel(liveExactBattle));
 
-        final PlayerResult estimated = player(1L, 1, false, 83.0);
-        estimated.deathTimeMillis = 0L;   // 结算缺失死亡时刻
-        estimated.survivalTimeSec = 83.0; // 事件流 fallback 估出
-        final Battle estimatedBattle = new Battle();
-        estimatedBattle.players = List.of(estimated);
-        assertEquals("事件流估算", BattlePhaseSummary.deathSourceLabel(estimatedBattle));
+        final PlayerResult settlement = player(1L, 1, false, 62.0);
+        settlement.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+        final Battle settlementBattle = new Battle();
+        settlementBattle.players = List.of(settlement);
+        assertEquals("权威结算", BattlePhaseSummary.deathSourceLabel(settlementBattle));
 
-        final PlayerResult unknown = player(1L, 1, false, 0.0);
-        unknown.deathTimeMillis = 0L;     // 结算缺失 + 事件流未估出
-        unknown.survivalTimeSec = 0.0;
+        final PlayerResult legacyEstimateOnly = player(1L, 1, false, 83.0);
+        legacyEstimateOnly.deathTimeMillis = 0L;
+        legacyEstimateOnly.survivalTimeSec = 83.0;
         final Battle unknownBattle = new Battle();
-        unknownBattle.players = List.of(unknown);
+        unknownBattle.players = List.of(legacyEstimateOnly);
         assertEquals("未知", BattlePhaseSummary.deathSourceLabel(unknownBattle));
 
         final Battle noDead = new Battle();
         noDead.players = List.of(player(1L, 1, true, 0.0));
-        assertEquals("权威结算", BattlePhaseSummary.deathSourceLabel(noDead));
+        assertEquals("无阵亡", BattlePhaseSummary.deathSourceLabel(noDead));
     }
 
     @Test
@@ -168,7 +174,12 @@ class BattlePhaseSurvivalTest {
         final List<BattlePhaseSummary> phases = phasesWithSurvival(b);
         for (final BattlePhaseSummary p : phases) {
             assertNull(p.enemyAlive(), "存在未知死亡时刻 → 敌方人数不可算：" + p);
-            assertTrue(p.friendlyAlive() != null, "我方时间线完整 → 人数可算：" + p);
+            if (p.type() == BattlePhaseType.FIRST_CONTACT) {
+                // 我方 60s 阵亡区间 [59.5,60.5] 跨 60s 边界 → 证据不足 → 未知
+                assertNull(p.friendlyAlive(), "settlement 区间跨边界 → 我方人数不可算：" + p);
+            } else {
+                assertTrue(p.friendlyAlive() != null, "我方时间线完整且无跨边界 → 人数可算：" + p);
+            }
         }
     }
 
@@ -265,6 +276,13 @@ class BattlePhaseSurvivalTest {
         assertEquals(1, timeline.friendlyRosterSize());
         assertEquals(1, timeline.enemyRosterSize());
         assertEquals(0, timeline.enemyUnknownDeaths());
-        assertEquals(List.of(60.0f), timeline.enemyDeathTimes());
+        // precision-aware: a SETTLEMENT_SECOND death is an interval [rep-0.5, rep+0.5], not a point.
+        assertEquals(1, timeline.enemyDeathTimes().size());
+        final com.wotb.core.util.PlayerResultFormat.DeathTimeEvidence ev =
+                timeline.enemyDeathTimes().get(0);
+        assertEquals(DeathTimeSource.SETTLEMENT_SECOND, ev.source());
+        assertEquals(60.0, ev.representativeSec(), 1e-9);
+        assertEquals(59.5, ev.lowerBoundSec(), 1e-9);
+        assertEquals(60.5, ev.upperBoundSec(), 1e-9);
     }
 }

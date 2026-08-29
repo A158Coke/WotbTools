@@ -1,8 +1,8 @@
 package com.wotb.core.replay.facts;
 
-import com.wotb.core.replay.event.ReplayEvent;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.wotb.core.replay.event.ReplayEvent;
 import tools.jackson.databind.DeserializationContext;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.MapperFeature;
@@ -15,14 +15,12 @@ import tools.jackson.databind.ser.std.StdSerializer;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.RecordComponent;
-import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
- * {@link AiReplayFacts} 的确定性 JSON 编解码（plan §21/§68：Jackson JSON，不做
+ * {@link AiReplayFacts} 的确定性 JSON 编解码（Jackson JSON，不做
  * 额外压缩）。ReplayEvent 是 sealed interface，用显式 type 标记做多态序列化；
  * 其余对象（record / Bean / public-field POJO / 枚举）由 Jackson 原生处理。
  */

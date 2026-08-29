@@ -4,9 +4,9 @@ import com.wotb.core.model.Source;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
+import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
-import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-/** Phase 5：AiReplayFacts 真实 fixture 全量往返 parity（plan §19–§20/§86）。 */
+/** Phase 5：AiReplayFacts 真实 fixture 全量往返 parity。 */
 class ReplayFactsCodecTest {
 
     @Test
@@ -66,7 +66,7 @@ class ReplayFactsCodecTest {
         assertEquals(result.reconstruction().coverage(), round.reconstruction().coverage());
         assertEquals(result.reconstruction().diagnostics(), round.reconstruction().diagnostics());
         assertEquals(result.reconstruction().checkpoints().size(), round.reconstruction().checkpoints().size());
-        assertEquals(result.reconstruction().replayDurationSec(), round.reconstruction().replayDurationSec());
+        assertEquals(result.reconstruction().battleDurationSec(), round.reconstruction().battleDurationSec());
         assertEquals(result.reconstruction().battleStartRawClockSec(), round.reconstruction().battleStartRawClockSec());
         assertEquals(result.reconstruction().metadata(), round.reconstruction().metadata());
         assertEquals(result.reconstruction().streamHeader().clientVersion(),

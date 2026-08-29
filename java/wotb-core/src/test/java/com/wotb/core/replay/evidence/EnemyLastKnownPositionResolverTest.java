@@ -1,23 +1,23 @@
 package com.wotb.core.replay.evidence;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.replay.reconstruction.VehicleState;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EnemyLastKnownPositionResolverTest {
 
@@ -229,7 +229,7 @@ class EnemyLastKnownPositionResolverTest {
                         observedVehicle(3, 2001, 2, 250f, 0f, START_RAW + 95f))));
         // 伪造 battleStartRawClockSec 缺失：构造无 battleStart 的重建
         final ReplayReconstruction noStart = new ReplayReconstruction(
-                recon.metadata(), recon.streamHeader(), recon.replayDurationSec(),
+                recon.metadata(), recon.streamHeader(), recon.battleDurationSec(),
                 null, recon.participants(), recon.events(), recon.checkpoints(),
                 recon.finalState(), recon.coverage(), recon.diagnostics());
 

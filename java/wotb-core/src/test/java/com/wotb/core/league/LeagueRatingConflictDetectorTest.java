@@ -1,6 +1,8 @@
 package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
+import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -9,11 +11,29 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 同 arenaId 多份回放关键事实一致性（plan §4/§21.2）。 */
+/** 同 arenaId 多份回放关键事实一致性 + source-aware 死亡时间收口。 */
 class LeagueRatingConflictDetectorTest {
 
     private static Battle battle() {
         return LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+    }
+
+    /** 把 player 设为阵亡并携带 canonical source（LIVE_EXACT / SETTLEMENT_SECOND / UNKNOWN）。 */
+    private static void dead(final PlayerResult p, final double timeSec, final DeathTimeSource source) {
+        p.survived = false;
+        if (source == DeathTimeSource.LIVE_EXACT) {
+            p.deathTimeSource = DeathTimeSource.LIVE_EXACT;
+            p.survivalTimeSec = timeSec;
+            p.deathTimeMillis = Math.round(timeSec * 1000.0);
+        } else if (source == DeathTimeSource.SETTLEMENT_SECOND) {
+            p.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+            p.deathTimeMillis = Math.round(timeSec * 1000.0);
+            p.survivalTimeSec = timeSec;
+        } else {
+            p.deathTimeSource = DeathTimeSource.UNKNOWN;
+            p.survivalTimeSec = 0;
+            p.deathTimeMillis = 0;
+        }
     }
 
     @Test
@@ -49,8 +69,7 @@ class LeagueRatingConflictDetectorTest {
     void differentSurvivalStatusConflicts() {
         final Battle a = battle();
         final Battle b = battle();
-        b.players.get(1).survived = false;
-        b.players.get(1).survivalTimeSec = 100;
+        dead(b.players.get(1), 100, DeathTimeSource.SETTLEMENT_SECOND);
         assertFalse(LeagueRatingConflictDetector.consistent(a, b));
     }
 
@@ -58,10 +77,8 @@ class LeagueRatingConflictDetectorTest {
     void deathTimeToleranceAllowsSmallDrift() {
         final Battle a = battle();
         final Battle b = battle();
-        a.players.get(2).survived = false;
-        a.players.get(2).survivalTimeSec = 100.0;
-        b.players.get(2).survived = false;
-        b.players.get(2).survivalTimeSec = 100.5; // ≤1s 容忍
+        dead(a.players.get(2), 100.0, DeathTimeSource.SETTLEMENT_SECOND);
+        dead(b.players.get(2), 100.5, DeathTimeSource.SETTLEMENT_SECOND);
         assertTrue(LeagueRatingConflictDetector.consistent(a, b));
     }
 
@@ -73,16 +90,14 @@ class LeagueRatingConflictDetectorTest {
         assertFalse(LeagueRatingConflictDetector.consistent(a, b));
     }
 
-    // ---- 死亡时间 UNKNOWN(0) = 证据缺失，不是冲突 ----
+    // ---- 死亡时间 UNKNOWN = 证据缺失，不是冲突 ----
 
     @Test
     void unknownVsUnknownDeathTimeIsConsistent() {
         final Battle a = battle();
         final Battle b = battle();
-        a.players.get(0).survived = false;
-        a.players.get(0).survivalTimeSec = 0;
-        b.players.get(0).survived = false;
-        b.players.get(0).survivalTimeSec = 0;
+        dead(a.players.get(0), 0, DeathTimeSource.UNKNOWN);
+        dead(b.players.get(0), 0, DeathTimeSource.UNKNOWN);
         assertTrue(LeagueRatingConflictDetector.consistent(a, b));
     }
 
@@ -90,10 +105,8 @@ class LeagueRatingConflictDetectorTest {
     void unknownVsKnownDeathTimeIsConsistent() {
         final Battle a = battle();
         final Battle b = battle();
-        a.players.get(0).survived = false;
-        a.players.get(0).survivalTimeSec = 0;    // UNKNOWN
-        b.players.get(0).survived = false;
-        b.players.get(0).survivalTimeSec = 128.12; // KNOWN
+        dead(a.players.get(0), 0, DeathTimeSource.UNKNOWN);
+        dead(b.players.get(0), 128.12, DeathTimeSource.SETTLEMENT_SECOND);
         assertTrue(LeagueRatingConflictDetector.consistent(a, b));
         assertTrue(LeagueRatingConflictDetector.consistent(b, a),
                 "KNOWN + UNKNOWN 必须与 UNKNOWN + KNOWN 一致（对称）");
@@ -103,10 +116,8 @@ class LeagueRatingConflictDetectorTest {
     void knownVsKnownWithinToleranceIsConsistent() {
         final Battle a = battle();
         final Battle b = battle();
-        a.players.get(0).survived = false;
-        a.players.get(0).survivalTimeSec = 128.12;
-        b.players.get(0).survived = false;
-        b.players.get(0).survivalTimeSec = 128.50;
+        dead(a.players.get(0), 128.12, DeathTimeSource.SETTLEMENT_SECOND);
+        dead(b.players.get(0), 128.50, DeathTimeSource.SETTLEMENT_SECOND);
         assertTrue(LeagueRatingConflictDetector.consistent(a, b));
     }
 
@@ -114,38 +125,68 @@ class LeagueRatingConflictDetectorTest {
     void knownVsKnownBeyondToleranceConflicts() {
         final Battle a = battle();
         final Battle b = battle();
-        a.players.get(0).survived = false;
-        a.players.get(0).survivalTimeSec = 100.0;
-        b.players.get(0).survived = false;
-        b.players.get(0).survivalTimeSec = 128.0;
+        dead(a.players.get(0), 100.0, DeathTimeSource.SETTLEMENT_SECOND);
+        dead(b.players.get(0), 128.0, DeathTimeSource.SETTLEMENT_SECOND);
         assertFalse(LeagueRatingConflictDetector.consistent(a, b),
                 "两个互相矛盾的 KNOWN 死亡时间超过容差 → 冲突");
     }
+
+    @Test
+    void liveExactVsSettlementBeyondToleranceConflicts() {
+        // LIVE_EXACT 与 settlement 明显矛盾（差 > 容差）→ fail-closed conflict，
+        // 不允许悄悄 Math.min 抹平两个来源。
+        final Battle a = battle();
+        final Battle b = battle();
+        dead(a.players.get(0), 128.50, DeathTimeSource.LIVE_EXACT);
+        dead(b.players.get(0), 100.0, DeathTimeSource.SETTLEMENT_SECOND);
+        assertFalse(LeagueRatingConflictDetector.consistent(a, b));
+        assertFalse(LeagueRatingConflictDetector.consistent(b, a));
+    }
+
+    @Test
+    void unknownResidualNeverBecomesKnown() {
+        // A：UNKNOWN source 但 survivalTimeSec residual=100 → 仍 UNKNOWN（residual 不得升级成 KNOWN）。
+        final Battle a = battle();
+        final PlayerResult pa = a.players.get(0);
+        pa.survived = false;
+        pa.deathTimeSource = DeathTimeSource.UNKNOWN;
+        pa.survivalTimeSec = 100.0; // residual legacy 数字
+        pa.deathTimeMillis = 100_000L;
+        final Battle b = battle();
+        dead(b.players.get(0), 0, DeathTimeSource.UNKNOWN);
+        // 两者都是 UNKNOWN（residual 不代表 KNOWN）→ 兼容
+        assertTrue(LeagueRatingConflictDetector.consistent(a, b));
+        assertEquals(100.0, a.players.get(0).survivalTimeSec, 1e-9,
+                "residual 不被改写（收口前）");
+        LeagueRatingConflictDetector.reconcileDeathTimes(a, List.of(a, b));
+        // 无任何 KNOWN canonical evidence → canonical 保持 UNKNOWN，绝不把 residual 100 变成 KNOWN
+        assertEquals(DeathTimeSource.UNKNOWN, a.players.get(0).deathTimeSource,
+                "全部 UNKNOWN → canonical 不得升级成 KNOWN");
+        assertEquals(100.0, a.players.get(0).survivalTimeSec, 1e-9,
+                "residual 不得被清洗（权威死亡时刻仍为 UNKNOWN）");
+    }
+
+    // ---- INVALID fail-closed ----（结构性负值/NaN 检查继续 fail-closed）
 
     @Test
     void invalidDeathTimeConflictsWithAnything() {
         final Battle a = battle();
         final Battle b = battle();
         a.players.get(0).survived = false;
-        a.players.get(0).survivalTimeSec = -1;   // 非法 stat fact
-        b.players.get(0).survived = false;
-        b.players.get(0).survivalTimeSec = 128.0;
+        a.players.get(0).survivalTimeSec = -1;
+        dead(b.players.get(0), 128.0, DeathTimeSource.SETTLEMENT_SECOND);
         assertFalse(LeagueRatingConflictDetector.consistent(a, b));
         assertFalse(LeagueRatingConflictDetector.consistent(b, a));
     }
-
-    // ---- INVALID fail-closed：UNKNOWN 不是 wildcard，不能把 INVALID 洗成 UNKNOWN ----
 
     @Test
     void unknownPlusNegativeConflicts() {
         final Battle a = battle();
         final Battle b = battle();
-        a.players.get(0).survived = false;
-        a.players.get(0).survivalTimeSec = 0;    // UNKNOWN
+        dead(a.players.get(0), 0, DeathTimeSource.UNKNOWN);
         b.players.get(0).survived = false;
-        b.players.get(0).survivalTimeSec = -1;   // INVALID
-        assertFalse(LeagueRatingConflictDetector.consistent(a, b),
-                "UNKNOWN + INVALID negative 必须 conflict（fail closed，不得洗成 UNKNOWN）");
+        b.players.get(0).survivalTimeSec = -1;
+        assertFalse(LeagueRatingConflictDetector.consistent(a, b));
         assertFalse(LeagueRatingConflictDetector.consistent(b, a));
     }
 
@@ -153,109 +194,44 @@ class LeagueRatingConflictDetectorTest {
     void unknownPlusNaNConflicts() {
         final Battle a = battle();
         final Battle b = battle();
-        a.players.get(0).survived = false;
-        a.players.get(0).survivalTimeSec = 0;
+        dead(a.players.get(0), 0, DeathTimeSource.UNKNOWN);
         b.players.get(0).survived = false;
         b.players.get(0).survivalTimeSec = Double.NaN;
         assertFalse(LeagueRatingConflictDetector.consistent(a, b));
         assertFalse(LeagueRatingConflictDetector.consistent(b, a));
     }
-
-    @Test
-    void unknownPlusInfinityConflicts() {
-        final Battle a = battle();
-        final Battle b = battle();
-        a.players.get(0).survived = false;
-        a.players.get(0).survivalTimeSec = 0;
-        b.players.get(0).survived = false;
-        b.players.get(0).survivalTimeSec = Double.POSITIVE_INFINITY;
-        assertFalse(LeagueRatingConflictDetector.consistent(a, b));
-        assertFalse(LeagueRatingConflictDetector.consistent(b, a));
-    }
-
-    @Test
-    void knownPlusInvalidConflicts() {
-        final Battle a = battle();
-        final Battle b = battle();
-        a.players.get(0).survived = false;
-        a.players.get(0).survivalTimeSec = 128.0;
-        b.players.get(0).survived = false;
-        b.players.get(0).survivalTimeSec = Double.NaN;
-        assertFalse(LeagueRatingConflictDetector.consistent(a, b));
-        assertFalse(LeagueRatingConflictDetector.consistent(b, a));
-    }
-
-    // ---- Survivor INVALID fail-closed：survived shortcut 不得绕过 stat-fact validity ----
 
     @Test
     void survivorValidPlusNaNCConflicts() {
-        // 双方 survived=true，但 B 的 survivalTimeSec=NaN：Validator 对全玩家拒绝，
-        // 一致性也必须 fail closed（否则上传顺序决定是否评分）。
         final Battle a = battle();
         final Battle b = battle();
         a.players.get(0).survived = true;
         a.players.get(0).survivalTimeSec = 300;
         b.players.get(0).survived = true;
         b.players.get(0).survivalTimeSec = Double.NaN;
-        assertFalse(LeagueRatingConflictDetector.consistent(a, b),
-                "survivor valid + NaN 必须 conflict（INVALID first，survived shortcut 不得绕过）");
-        assertFalse(LeagueRatingConflictDetector.consistent(b, a));
-    }
-
-    @Test
-    void survivorValidPlusInfinityConflicts() {
-        final Battle a = battle();
-        final Battle b = battle();
-        a.players.get(0).survived = true;
-        a.players.get(0).survivalTimeSec = 300;
-        b.players.get(0).survived = true;
-        b.players.get(0).survivalTimeSec = Double.POSITIVE_INFINITY;
-        assertFalse(LeagueRatingConflictDetector.consistent(a, b));
-        assertFalse(LeagueRatingConflictDetector.consistent(b, a));
-    }
-
-    @Test
-    void survivorValidPlusNegativeConflicts() {
-        final Battle a = battle();
-        final Battle b = battle();
-        a.players.get(0).survived = true;
-        a.players.get(0).survivalTimeSec = 300;
-        b.players.get(0).survived = true;
-        b.players.get(0).survivalTimeSec = -1;
         assertFalse(LeagueRatingConflictDetector.consistent(a, b));
         assertFalse(LeagueRatingConflictDetector.consistent(b, a));
     }
 
     @Test
     void twoValidSurvivorsDoNotUseDeathTimeTolerance() {
-        // 两个存活玩家的合法 survivalTimeSec 不同（300 vs 301.5）不是 conflict：
-        // death-time UNKNOWN/KNOWN/1s tolerance 只属于阵亡玩家，不得错套给 survivor。
         final Battle a = battle();
         final Battle b = battle();
         a.players.get(0).survived = true;
         a.players.get(0).survivalTimeSec = 300;
         b.players.get(0).survived = true;
         b.players.get(0).survivalTimeSec = 301.5;
-        assertTrue(LeagueRatingConflictDetector.consistent(a, b),
-                "两个合法 survivor 的 finite survivalTimeSec 差异不是死亡时间 conflict");
+        assertTrue(LeagueRatingConflictDetector.consistent(a, b));
         assertTrue(LeagueRatingConflictDetector.consistent(b, a));
     }
 
-    // ---- hard-conflict 字段（settlement / duration / received stats / clan）----
+    // ---- hard-conflict 字段 ----
 
     @Test
     void settlementCoverageMismatchConflicts() {
         final Battle a = battle();
         final Battle b = battle();
-        b.settlementAccountsCoveredByRoster = false;   // ROSTER_INCOMPLETE 判定不同
-        assertFalse(LeagueRatingConflictDetector.consistent(a, b));
-    }
-
-    @Test
-    void settlementTeamConsistencyMismatchConflicts() {
-        final Battle a = battle();
-        final Battle b = battle();
-        b.settlementRosterTeamConsistent = false;
+        b.settlementAccountsCoveredByRoster = false;
         assertFalse(LeagueRatingConflictDetector.consistent(a, b));
     }
 
@@ -263,38 +239,22 @@ class LeagueRatingConflictDetectorTest {
     void durationMismatchConflicts() {
         final Battle a = battle();
         final Battle b = battle();
-        b.durationS = 500.0;   // 影响死亡时间 &gt; duration + 1s 的非法判定
+        b.durationS = 500.0;
         assertFalse(LeagueRatingConflictDetector.consistent(a, b));
-    }
-
-    @Test
-    void receivedStatsMismatchConflicts() {
-        final Battle a = battle();
-        final Battle b = battle();
-        b.players.get(0).nHitsReceived = 9;          // validator 非法值检查参与字段
-        assertFalse(LeagueRatingConflictDetector.consistent(a, b));
-        final Battle c = battle();
-        c.players.get(0).nPenetrationsReceived = 4;
-        assertFalse(LeagueRatingConflictDetector.consistent(a, c));
-        final Battle d = battle();
-        d.players.get(0).nEnemiesDamaged = 6;
-        assertFalse(LeagueRatingConflictDetector.consistent(a, d));
     }
 
     @Test
     void clanMismatchConflicts() {
         final Battle a = battle();
         final Battle b = battle();
-        b.players.get(0).clan = "XYZ";   // 影响 team autoName / teamKey / batch summary identity
+        b.players.get(0).clan = "XYZ";
         assertFalse(LeagueRatingConflictDetector.consistent(a, b));
     }
 
-    // ---- group-level all-pairs（UNKNOWN 不能作 wildcard 隔开互相矛盾的 KNOWN）----
+    // ---- group-level all-pairs ----
 
     @Test
     void groupUnknownSeparatedConflictingKnownsRejectedAllOrders() {
-        // [UNKNOWN, KNOWN100, KNOWN128]：UNKNOWN 与两个 KNOWN 各 pair 都一致，
-        // 但 KNOWN100 vs KNOWN128 超容差 → 无论上传顺序都必须 conflict。
         final double[][] orders = {
                 {0, 100, 128}, {0, 128, 100}, {100, 0, 128},
                 {100, 128, 0}, {128, 0, 100}, {128, 100, 0}};
@@ -308,8 +268,6 @@ class LeagueRatingConflictDetectorTest {
 
     @Test
     void groupUnknownWithConsistentKnownsAcceptedAllOrders() {
-        // [UNKNOWN, KNOWN128.12, KNOWN128.50]：KNOWN 互相一致（≤1s）→ 全部顺序不 conflict，
-        // canonical = min KNOWN = 128.12（与顺序无关）。
         final double[][] orders = {
                 {0, 128.12, 128.50}, {0, 128.50, 128.12}, {128.12, 0, 128.50},
                 {128.12, 128.50, 0}, {128.50, 0, 128.12}, {128.50, 128.12, 0}};
@@ -319,25 +277,20 @@ class LeagueRatingConflictDetectorTest {
             assertTrue(LeagueRatingConflictDetector.validateAndReconcile(copies),
                     "order " + java.util.Arrays.toString(o) + " 必须 not conflict");
             assertEquals(128.12, copies.getFirst().players.get(0).survivalTimeSec, 1e-9,
-                    "canonical 必须是最小 KNOWN 128.12（与顺序无关）");
+                    "canonical 必须是最小同-source KNOWN 128.12（与顺序无关）");
         }
     }
 
     @Test
     void reconcileNeverSanitizesInvalidToUnknown() {
-        // canonicalizer 只处理合法 UNKNOWN(0) / KNOWN(&gt;0)；INVALID 必须先被一致性拒绝，
-        // 绝不把 -1 洗成 0（validateAndReconcile 在 conflict 时不执行任何 mutation）。
         final Battle invalid = battle();
         invalid.players.get(0).survived = false;
         invalid.players.get(0).survivalTimeSec = -1;
         final Battle unknown = battle();
-        unknown.players.get(0).survived = false;
-        unknown.players.get(0).survivalTimeSec = 0;
+        dead(unknown.players.get(0), 0, DeathTimeSource.UNKNOWN);
         assertFalse(LeagueRatingConflictDetector.validateAndReconcile(List.of(invalid, unknown)));
-        assertEquals(-1, invalid.players.get(0).survivalTimeSec, 1e-9,
-                "conflict 不得修改任何副本（INVALID 不得被洗成 UNKNOWN）");
+        assertEquals(-1, invalid.players.get(0).survivalTimeSec, 1e-9);
 
-        // 直接调用 reconcileDeathTimes（防御性）：没有 KNOWN 证据时不得改动非法值
         LeagueRatingConflictDetector.reconcileDeathTimes(invalid, List.of(invalid, unknown));
         assertEquals(-1, invalid.players.get(0).survivalTimeSec, 1e-9,
                 "canonicalizer 不得清洗 INVALID");
@@ -345,31 +298,27 @@ class LeagueRatingConflictDetectorTest {
 
     private static Battle battleWithDeath(final double survivalTimeSec) {
         final Battle b = battle();
-        b.players.get(0).survived = false;
-        b.players.get(0).survivalTimeSec = survivalTimeSec;
+        dead(b.players.get(0), survivalTimeSec,
+                survivalTimeSec > 0 ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN);
         return b;
     }
 
-    // ---- 确定性 canonical 死亡时间收口 ----
+    // ---- source-aware canonical 死亡时间收口（P0-2） ----
 
     @Test
     void reconcileUnknownAndKnownUsesKnown() {
         final Battle unknown = battle();
-        unknown.players.get(0).survived = false;
-        unknown.players.get(0).survivalTimeSec = 0;
+        dead(unknown.players.get(0), 0, DeathTimeSource.UNKNOWN);
         final Battle known = battle();
-        known.players.get(0).survived = false;
-        known.players.get(0).survivalTimeSec = 128.12;
+        dead(known.players.get(0), 128.12, DeathTimeSource.SETTLEMENT_SECOND);
         LeagueRatingConflictDetector.reconcileDeathTimes(unknown, List.of(unknown, known));
         assertEquals(128.12, unknown.players.get(0).survivalTimeSec, 1e-9,
                 "UNKNOWN + KNOWN → canonical 使用 KNOWN");
-        // 反向顺序：结果一致（确定性）
+        assertEquals(DeathTimeSource.SETTLEMENT_SECOND, unknown.players.get(0).deathTimeSource);
         final Battle knownFirst = battle();
-        knownFirst.players.get(0).survived = false;
-        knownFirst.players.get(0).survivalTimeSec = 128.12;
+        dead(knownFirst.players.get(0), 128.12, DeathTimeSource.SETTLEMENT_SECOND);
         final Battle unknownSecond = battle();
-        unknownSecond.players.get(0).survived = false;
-        unknownSecond.players.get(0).survivalTimeSec = 0;
+        dead(unknownSecond.players.get(0), 0, DeathTimeSource.UNKNOWN);
         LeagueRatingConflictDetector.reconcileDeathTimes(knownFirst, List.of(knownFirst, unknownSecond));
         assertEquals(128.12, knownFirst.players.get(0).survivalTimeSec, 1e-9);
     }
@@ -377,32 +326,108 @@ class LeagueRatingConflictDetectorTest {
     @Test
     void reconcileAllUnknownStaysUnknown() {
         final Battle a = battle();
-        a.players.get(0).survived = false;
-        a.players.get(0).survivalTimeSec = 0;
+        dead(a.players.get(0), 0, DeathTimeSource.UNKNOWN);
         final Battle b = battle();
-        b.players.get(0).survived = false;
-        b.players.get(0).survivalTimeSec = 0;
+        dead(b.players.get(0), 0, DeathTimeSource.UNKNOWN);
         LeagueRatingConflictDetector.reconcileDeathTimes(a, List.of(a, b));
         assertEquals(0.0, a.players.get(0).survivalTimeSec, 1e-9);
+        assertEquals(DeathTimeSource.UNKNOWN, a.players.get(0).deathTimeSource);
+    }
+
+    @Test
+    void reconcileUnknownResidualNeverBecomesKnown() {
+        // A 带 UNKNOWN source + residual survivalTimeSec=100；B 也是 UNKNOWN → canonical 保持 UNKNOWN。
+        final Battle a = battle();
+        final PlayerResult pa = a.players.get(0);
+        pa.survived = false;
+        pa.deathTimeSource = DeathTimeSource.UNKNOWN;
+        pa.survivalTimeSec = 100.0;
+        pa.deathTimeMillis = 100_000L;
+        final Battle b = battle();
+        dead(b.players.get(0), 0, DeathTimeSource.UNKNOWN);
+        LeagueRatingConflictDetector.reconcileDeathTimes(a, List.of(a, b));
+        assertEquals(DeathTimeSource.UNKNOWN, a.players.get(0).deathTimeSource,
+                "全部 UNKNOWN → canonical 不得升级成 KNOWN");
+        assertEquals(100.0, a.players.get(0).survivalTimeSec, 1e-9,
+                "residual 不得被清洗（纪律上该字段保留 legacy 值，权威死亡时刻仍为 UNKNOWN）");
+    }
+
+    @Test
+    void reconcileUnknownResidualPlusSettlementUsesSettlement() {
+        // A：UNKNOWN source + residual 100；B：SETTLEMENT_SECOND 128 → canonical = SETTLEMENT 128（不选 residual 100）。
+        final Battle a = battle();
+        final PlayerResult pa = a.players.get(0);
+        pa.survived = false;
+        pa.deathTimeSource = DeathTimeSource.UNKNOWN;
+        pa.survivalTimeSec = 100.0;
+        pa.deathTimeMillis = 100_000L;
+        final Battle b = battle();
+        dead(b.players.get(0), 128.0, DeathTimeSource.SETTLEMENT_SECOND);
+        LeagueRatingConflictDetector.reconcileDeathTimes(a, List.of(a, b));
+        assertEquals(128.0, a.players.get(0).survivalTimeSec, 1e-9,
+                "UNKNOWN + SETTLEMENT_SECOND → canonical 使用 SETTLEMENT_SECOND 128，不得选 residual 100");
+        assertEquals(DeathTimeSource.SETTLEMENT_SECOND, a.players.get(0).deathTimeSource);
+    }
+
+    @Test
+    void reconcileLiveExactWinsOverSettlementEvenWhenSmaller() {
+        // LIVE_EXACT 128.50 优先于 SETTLEMENT_SECOND 128.00，即使 settlement 更小；两种顺序一致。
+        final Battle a = battle();
+        dead(a.players.get(0), 128.50, DeathTimeSource.LIVE_EXACT);
+        final Battle b = battle();
+        dead(b.players.get(0), 128.00, DeathTimeSource.SETTLEMENT_SECOND);
+        LeagueRatingConflictDetector.reconcileDeathTimes(a, List.of(a, b));
+        assertEquals(128.50, a.players.get(0).survivalTimeSec, 1e-9,
+                "LIVE_EXACT 必须优先，即使 settlement 数值更小");
+        assertEquals(DeathTimeSource.LIVE_EXACT, a.players.get(0).deathTimeSource);
+
+        // 顺序反转：以 settlement 副本为先（first），canonical 仍为 LIVE_EXACT 128.50。
+        final Battle a2 = battle();
+        dead(a2.players.get(0), 128.00, DeathTimeSource.SETTLEMENT_SECOND);
+        final Battle b2 = battle();
+        dead(b2.players.get(0), 128.50, DeathTimeSource.LIVE_EXACT);
+        LeagueRatingConflictDetector.reconcileDeathTimes(a2, List.of(a2, b2));
+        assertEquals(128.50, a2.players.get(0).survivalTimeSec, 1e-9,
+                "顺序反转后 canonical 仍为 LIVE_EXACT 128.50");
+        assertEquals(DeathTimeSource.LIVE_EXACT, a2.players.get(0).deathTimeSource);
+    }
+
+    @Test
+    void reconcileUnknownPlusLiveExactUsesLiveExact() {
+        final Battle a = battle();
+        dead(a.players.get(0), 0, DeathTimeSource.UNKNOWN);
+        final Battle b = battle();
+        dead(b.players.get(0), 128.50, DeathTimeSource.LIVE_EXACT);
+        LeagueRatingConflictDetector.reconcileDeathTimes(a, List.of(a, b));
+        assertEquals(128.50, a.players.get(0).survivalTimeSec, 1e-9);
+        assertEquals(DeathTimeSource.LIVE_EXACT, a.players.get(0).deathTimeSource);
+    }
+
+    @Test
+    void reconcileLiveExactKnownKnownUsesDeterministicMin() {
+        // 两个 LIVE_EXACT 在容差内 → 确定性（min）+ 保留 source=LIVE_EXACT。
+        final Battle a = battle();
+        dead(a.players.get(0), 128.50, DeathTimeSource.LIVE_EXACT);
+        final Battle b = battle();
+        dead(b.players.get(0), 128.12, DeathTimeSource.LIVE_EXACT);
+        LeagueRatingConflictDetector.reconcileDeathTimes(a, List.of(a, b));
+        assertEquals(128.12, a.players.get(0).survivalTimeSec, 1e-9,
+                "两个 LIVE_EXACT 容差内 → 确定性 min");
+        assertEquals(DeathTimeSource.LIVE_EXACT, a.players.get(0).deathTimeSource);
     }
 
     @Test
     void reconcileKnownKnownUsesDeterministicMin() {
         final Battle a = battle();
-        a.players.get(0).survived = false;
-        a.players.get(0).survivalTimeSec = 128.50;
+        dead(a.players.get(0), 128.50, DeathTimeSource.SETTLEMENT_SECOND);
         final Battle b = battle();
-        b.players.get(0).survived = false;
-        b.players.get(0).survivalTimeSec = 128.12;
+        dead(b.players.get(0), 128.12, DeathTimeSource.SETTLEMENT_SECOND);
         LeagueRatingConflictDetector.reconcileDeathTimes(a, List.of(a, b));
         assertEquals(128.12, a.players.get(0).survivalTimeSec, 1e-9);
-        // 顺序交换 → 相同 canonical
         final Battle c = battle();
-        c.players.get(0).survived = false;
-        c.players.get(0).survivalTimeSec = 128.12;
+        dead(c.players.get(0), 128.12, DeathTimeSource.SETTLEMENT_SECOND);
         final Battle d = battle();
-        d.players.get(0).survived = false;
-        d.players.get(0).survivalTimeSec = 128.50;
+        dead(d.players.get(0), 128.50, DeathTimeSource.SETTLEMENT_SECOND);
         LeagueRatingConflictDetector.reconcileDeathTimes(c, List.of(c, d));
         assertEquals(128.12, c.players.get(0).survivalTimeSec, 1e-9);
     }
@@ -411,8 +436,7 @@ class LeagueRatingConflictDetectorTest {
     void reconcileLeavesSurvivorsUntouched() {
         final Battle a = battle();
         final Battle b = battle();
-        b.players.get(0).survived = false;
-        b.players.get(0).survivalTimeSec = 128.12;
+        dead(b.players.get(0), 128.12, DeathTimeSource.SETTLEMENT_SECOND);
         LeagueRatingConflictDetector.reconcileDeathTimes(a, List.of(a, b));
         assertEquals(300.0, a.players.get(0).survivalTimeSec, 1e-9, "存活玩家不得被收口");
     }

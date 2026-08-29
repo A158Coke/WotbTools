@@ -1,9 +1,10 @@
 package com.wotb.core;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
+import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
-import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import org.junit.jupiter.api.Test;
 
@@ -195,7 +196,7 @@ class PerformanceMetricsCalculatorTest {
 
     @Test
     void battleMetricsMatchesAggregateForSingleBattle() {
-        // 单场 battleMetrics 必须与 compute(List.of(battle)) 同一公式、同一值（计划 §19 单一事实源）
+        // 单场 battleMetrics 必须与 compute(List.of(battle)) 同一公式、同一值
         final Battle battle = new Battle();
         battle.winnerTeam = 1;
         battle.players = List.of(
@@ -312,6 +313,13 @@ class PerformanceMetricsCalculatorTest {
         player.survived = survived;
         player.survivalTimeSec = survivalTimeSec;
         player.damageReceived = damageReceived;
+        // 已知死亡（survivalTimeSec>0）携带 canonical SETTLEMENT_SECOND 证据；dead=0=UNKNOWN。
+        if (!survived && survivalTimeSec > 0) {
+            player.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+            player.deathTimeMillis = Math.round(survivalTimeSec * 1000.0);
+        } else if (!survived) {
+            player.deathTimeSource = DeathTimeSource.UNKNOWN;
+        }
         return player;
     }
 }

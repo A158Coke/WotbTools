@@ -4,7 +4,6 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.timeline.BattleFrame;
 import com.wotb.core.replay.timeline.BattleTimeline;
-import com.wotb.core.replay.timeline.FramePosition;
 import com.wotb.core.replay.timeline.FrameVehicle;
 import com.wotb.core.replay.timeline.PositionKnowledge;
 import com.wotb.core.replay.timeline.TimelineFocusWindowSelector;
@@ -21,8 +20,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Team Review Grounding Facts（确定性，Backend 唯一事实源投影，docs/current-plan.md
- * Natural Coach 轮 §9/§10/§11）。
+ * Team Review Grounding Facts（确定性，Backend 唯一事实源投影，docs/features/team-ai-review.md
+ * Natural Coach 轮）。
  * <p>从权威结算 + 已验证 canonical {@link BattleTimeline} 提取<b>带稳定证据编号</b>的
  * 事实清单，供：① 输入 prompt（渲染 GROUNDING FACTS 段，LLM 在 structured claims 中引用
  * 证据编号）；② {@link TeamFactualConsistencyValidator} 做事实一致性校验。</p>
@@ -30,8 +29,8 @@ import java.util.Set;
  * FOCUS_WINDOW（关注窗口）/ POSITION_REGION（位置区域快照）/
  * ENEMY_POSITION_KNOWN（敌方位置知识 CURRENT / LAST_KNOWN）。</p>
  * <p>边界：只输出确定性事实与确定性派生测量，不做战术裁决；timeline 为 null（兼容入口）
- * 时只输出结算可推导事实（阵亡/存活变化），位置/窗口类事实缺失（对应 validator 检查自动
- * no-op）。</p>
+ * 时只输出 canonical death/result 可推导事实（阵亡/存活变化），位置/窗口类事实缺失
+ * （对应 validator 检查自动 no-op）。</p>
  */
 public final class TeamGroundingFacts {
 
@@ -46,11 +45,8 @@ public final class TeamGroundingFacts {
     private TeamGroundingFacts() {
     }
 
-    // ===== records =====
-
     public enum Side { FRIENDLY, ENEMY }
 
-    /** 一条带稳定证据编号的确定性事实（attrs 为机器可读附加字段）。 */
     public record EvidenceFact(
             String id,
             String type,
@@ -62,7 +58,6 @@ public final class TeamGroundingFacts {
             String tankName,
             Map<String, String> attrs
     ) {
-        /** 事件代表时刻（deathSec / 变化时刻 / 窗口结束）；无事件时刻返回 startSec。 */
         public double timeSec() {
             return endSec >= 0 ? endSec : startSec;
         }
@@ -72,7 +67,6 @@ public final class TeamGroundingFacts {
         }
     }
 
-    /** 存活数变化（before → after，sec 为变化时刻，battle-relative）。 */
     public record AliveTransition(
             double sec,
             int beforeFriendly,
@@ -82,7 +76,6 @@ public final class TeamGroundingFacts {
     ) {
     }
 
-    /** 位置区域快照：某秒双方存活车辆按九宫格 region 的车辆数（friendly 为 CURRENT 位置）。 */
     public record RegionSnapshot(
             double sec,
             Map<String, Integer> friendlyCounts,
@@ -90,7 +83,6 @@ public final class TeamGroundingFacts {
     ) {
     }
 
-    /** 敌方位置知识样本：某秒某敌方车辆的 resolved 位置（CURRENT / LAST_KNOWN）。 */
     public record EnemyPositionSample(
             double sec,
             Long accountId,
@@ -103,7 +95,6 @@ public final class TeamGroundingFacts {
     ) {
     }
 
-    /** Grounding 事实全集（facts 为按 id 升序的稳定清单；byId 为检索索引）。 */
     public record GroundingFacts(
             List<EvidenceFact> facts,
             Map<String, EvidenceFact> byId,
@@ -124,57 +115,35 @@ public final class TeamGroundingFacts {
         }
     }
 
-    // ===== build =====
-
     /**
-     * 构建 Grounding Facts（production 路径：timeline 提供 battle start raw clock）。
-     *
-     * @param battle          权威结算（必选；阵亡/存活变化来源）
-     * @param timeline        已验证 canonical timeline（可为 null：兼容入口只给结算级事实）
-     * @param perspectiveTeam 视角队伍（TEAM_A/1 或 TEAM_B/2）
+     * Production 入口。{@link PlayerResultFormat#deathSec(PlayerResult)} 已经是 canonical
+     * battle-relative 秒，不得再减 battleStartRawClockSec。
      */
     public static GroundingFacts build(final Battle battle,
                                        final BattleTimeline timeline,
                                        final int perspectiveTeam) {
-        return buildInternal(battle, timeline,
-                timeline == null ? null : timeline.battleStartRawClockSec(),
-                perspectiveTeam);
+        return buildInternal(battle, timeline, perspectiveTeam);
     }
 
     /**
-     * 构建 Grounding Facts（compat 入口：无已验证 timeline）。
-     * <p><b>死亡时刻时钟契约（Review B2-1）</b>：{@code PlayerResultFormat.deathSec()} 的
-     * 数值域不统一——{@code deathTimeMillis}（结算权威）与 legacy 估算都是<b>原始时钟域</b>，
-     * 而 {@code DeathTimeReconciler} 校准的 {@code survivalTimeSec} 是 <b>battle-relative</b>。
-     * 本方法统一按 {@code raw > startRaw → raw − startRaw} 转 battle-relative（与
-     * {@code TeamReviewRealReplayProbeTest} 同口径）：compat 入口必须传入
-     * {@code reconstruction.battleStartRawClockSec()}（可为 null：原始时钟缺失时按
-     * battle-relative 原样使用），否则结算死亡时刻会以原始时钟值进入 Grounding Facts，
-     * V2 校验与 claim 的 battle-relative timeSec 对不上。</p>
-     *
-     * @param battle                  权威结算（必选；阵亡/存活变化来源）
-     * @param battleStartRawClockSec  battle start 原始时钟（可为 null：按 battle-relative 原样）
-     * @param perspectiveTeam         视角队伍（TEAM_A/1 或 TEAM_B/2）
+     * Compat 入口。保留 {@code battleStartRawClockSec} 参数仅为调用兼容；PR147 production contract
+     * 已统一 deathSec 为 battle-relative，因此此参数不得再次用于死亡时钟换算。
      */
     public static GroundingFacts build(final Battle battle,
                                        final Double battleStartRawClockSec,
                                        final int perspectiveTeam) {
-        return buildInternal(battle, null, battleStartRawClockSec, perspectiveTeam);
+        return buildInternal(battle, null, perspectiveTeam);
     }
 
-    /** 内部构建（shared）：production（timeline 非 null）与 compat（timeline null + 显式 startRaw）。 */
     private static GroundingFacts buildInternal(final Battle battle,
                                                 final BattleTimeline timeline,
-                                                final Double battleStartRawClockSec,
                                                 final int perspectiveTeam) {
         final List<EvidenceFact> facts = new ArrayList<>();
         final List<AliveTransition> transitions = new ArrayList<>();
         final List<RegionSnapshot> snapshots = new ArrayList<>();
         final List<EnemyPositionSample> enemyPositions = new ArrayList<>();
-        final double startRaw = battleStartRawClockSec == null
-                ? Double.NaN : battleStartRawClockSec;
 
-        // 1) 阵亡（PLAYER_DESTROYED）：权威结算死亡时刻 → battle-relative
+        // 1) 阵亡：canonical deathSec 已是 battle-relative。LIVE_EXACT > SETTLEMENT_SECOND > UNKNOWN。
         final List<PlayerResult> players = battle == null || battle.players == null
                 ? List.of() : battle.players;
         final List<PlayerResult> dead = players.stream()
@@ -182,14 +151,14 @@ public final class TeamGroundingFacts {
                 .sorted(Comparator.comparingDouble(PlayerResultFormat::deathSec))
                 .toList();
         for (final PlayerResult p : dead) {
-            final double rel = battleRelative(p, startRaw);
+            final double rel = PlayerResultFormat.deathSec(p);
             facts.add(new EvidenceFact(
                     null, TYPE_PLAYER_DESTROYED,
                     p.team == perspectiveTeam ? Side.FRIENDLY : Side.ENEMY,
                     rel, rel, p.accountId, p.nickname, p.tankName, Map.of()));
         }
 
-        // 2) 存活变化（ALIVE_COUNT_TRANSITION）：timeline 帧 WorldSummary 优先，否则由阵亡推导
+        // 2) 存活变化：timeline 帧 WorldSummary 优先，否则由 canonical 已知阵亡推导。
         if (timeline != null && timeline.frames() != null && !timeline.frames().isEmpty()) {
             WorldSummary prev = null;
             for (final BattleFrame frame : timeline.frames()) {
@@ -211,7 +180,7 @@ public final class TeamGroundingFacts {
             int fAlive = friendlyTotal;
             int eAlive = enemyTotal;
             for (final PlayerResult p : dead) {
-                final double rel = battleRelative(p, startRaw);
+                final double rel = PlayerResultFormat.deathSec(p);
                 final int beforeF = fAlive;
                 final int beforeE = eAlive;
                 if (p.team == perspectiveTeam) {
@@ -223,7 +192,6 @@ public final class TeamGroundingFacts {
             }
         }
 
-        // 3) 关注窗口（FOCUS_WINDOW）：确定性 selector，timeline 必需
         if (timeline != null) {
             final List<TimelineFocusWindowSelector.FocusWindow> windows =
                     TimelineFocusWindowSelector.select(timeline);
@@ -240,7 +208,6 @@ public final class TeamGroundingFacts {
             }
         }
 
-        // 4) 位置区域快照 + 敌方位置知识样本（timeline 必需；锚点秒数确定性计算）
         if (timeline != null) {
             final List<Double> anchors = anchors(timeline);
             for (final double anchorSec : anchors) {
@@ -270,7 +237,6 @@ public final class TeamGroundingFacts {
                 attrs.put("enemyCurrent", regionCountsText(enemyCurrentCopy));
                 facts.add(new EvidenceFact(null, TYPE_POSITION_REGION, Side.FRIENDLY,
                         anchorSec, anchorSec, null, null, null, attrs));
-                // 敌方位置知识样本（resolved 位置才输出：CURRENT / LAST_KNOWN，UNKNOWN 静默）
                 for (final FrameVehicle v : frame.vehicles()) {
                     if (v.friendly() || v.mapState() == null || v.mapState().gridRegion() == null
                             || v.position() == null) {
@@ -293,10 +259,8 @@ public final class TeamGroundingFacts {
             }
         }
 
-        // 5) 稳定证据编号：确定性顺序（阵亡→存活变化→窗口→快照→敌方位置）
         int counter = 101;
         final List<EvidenceFact> ordered = new ArrayList<>();
-        // 阵亡（按时间）
         final List<EvidenceFact> deaths = facts.stream()
                 .filter(EvidenceFact::isDeath)
                 .sorted(Comparator.comparingDouble(EvidenceFact::timeSec)
@@ -305,7 +269,6 @@ public final class TeamGroundingFacts {
         for (final EvidenceFact f : deaths) {
             ordered.add(withId(f, counter++));
         }
-        // 存活变化（按时间）
         transitions.sort(Comparator.comparingDouble(AliveTransition::sec));
         for (final AliveTransition t : transitions) {
             final Map<String, String> attrs = new LinkedHashMap<>();
@@ -314,7 +277,6 @@ public final class TeamGroundingFacts {
             ordered.add(new EvidenceFact("E" + counter++, TYPE_ALIVE_TRANSITION, Side.FRIENDLY,
                     t.sec(), t.sec(), null, null, null, attrs));
         }
-        // 关注窗口（按开始时间）
         final List<EvidenceFact> windows = facts.stream()
                 .filter(f -> TYPE_FOCUS_WINDOW.equals(f.type()))
                 .sorted(Comparator.comparingDouble(EvidenceFact::startSec))
@@ -322,7 +284,6 @@ public final class TeamGroundingFacts {
         for (final EvidenceFact f : windows) {
             ordered.add(withId(f, counter++));
         }
-        // 位置快照（按时间）
         snapshots.sort(Comparator.comparingDouble(RegionSnapshot::sec));
         for (final RegionSnapshot s : snapshots) {
             final EvidenceFact f = facts.stream()
@@ -333,7 +294,6 @@ public final class TeamGroundingFacts {
                 ordered.add(withId(f, counter++));
             }
         }
-        // 敌方位置知识（按时间，再按昵称）
         enemyPositions.sort(Comparator.comparingDouble(EnemyPositionSample::sec)
                 .thenComparing(s -> s.nickname() == null ? "" : s.nickname()));
         for (final EnemyPositionSample s : enemyPositions) {
@@ -349,9 +309,6 @@ public final class TeamGroundingFacts {
         return new GroundingFacts(ordered, Map.of(), transitions, snapshots, enemyPositions);
     }
 
-    // ===== render（prompt 段）=====
-
-    /** 渲染 GROUNDING FACTS 段（确定性；无事实时返回空串）。 */
     public static String renderGroundingSection(final GroundingFacts facts) {
         if (facts == null || facts.facts().isEmpty()) {
             return "";
@@ -391,8 +348,6 @@ public final class TeamGroundingFacts {
         };
     }
 
-    // ===== helpers =====
-
     private static EvidenceFact withId(final EvidenceFact f, final int id) {
         return new EvidenceFact("E" + id, f.type(), f.side(), f.startSec(), f.endSec(),
                 f.accountId(), f.nickname(), f.tankName(), f.attrs());
@@ -406,22 +361,10 @@ public final class TeamGroundingFacts {
         return f.tankName() == null || f.tankName().isBlank() ? "未知坦克" : f.tankName();
     }
 
-    /** 结算死亡时刻 → battle-relative（与 TeamReviewRealReplayProbeTest 同口径）。 */
-    private static double battleRelative(final PlayerResult p, final double startRaw) {
-        final double raw = PlayerResultFormat.deathSec(p);
-        if (Double.isFinite(startRaw) && raw > startRaw) {
-            return raw - startRaw;
-        }
-        return raw;
-    }
-
-    /** 位置区域锚点秒数（确定性）：开局 + 关注窗口边界 + 中段 + 结尾，去重、钳制、限量。 */
     private static List<Double> anchors(final BattleTimeline timeline) {
         final Set<Double> set = new LinkedHashSet<>();
         final double maxSec = Math.max(0.0, timeline.durationSec() - 1.0);
-        // 开局锚点（约 30s，短局用半程）
         set.add(Math.min(30.0, maxSec));
-        // 关注窗口边界（最多取前 2 个窗口）
         final List<TimelineFocusWindowSelector.FocusWindow> windows =
                 TimelineFocusWindowSelector.select(timeline);
         final List<TimelineFocusWindowSelector.FocusWindow> top = windows.stream()
@@ -431,11 +374,9 @@ public final class TeamGroundingFacts {
             set.add(clamp((w.startSec() + w.endSec()) / 2.0, 0.0, maxSec));
             set.add(clamp(w.endSec() + 1.0, 0.0, maxSec));
         }
-        // 结尾锚点
         set.add(maxSec);
         final List<Double> anchors = new ArrayList<>(set);
         anchors.sort(Double::compareTo);
-        // 限量：保留开局/结尾 + 最高分窗口附近，最多 6 个
         if (anchors.size() <= 6) {
             return List.copyOf(anchors);
         }
@@ -472,7 +413,6 @@ public final class TeamGroundingFacts {
         return String.join(" ", parts);
     }
 
-    /** 秒 → "X分XX秒"（battle-relative，LLM 时间格式要求）。 */
     public static String formatClock(final double sec) {
         if (!Double.isFinite(sec) || sec < 0) {
             return "未知";

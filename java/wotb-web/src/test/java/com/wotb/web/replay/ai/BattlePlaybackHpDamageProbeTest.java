@@ -2,15 +2,14 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.processing.TeamEntityMapper;
 import com.wotb.core.replay.processing.TeamEntityMapping;
-import com.wotb.core.replay.event.DamageEvent;
-import com.wotb.core.replay.event.HealthChangedEvent;
-import com.wotb.core.replay.event.ReplayEvent;
-import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
@@ -29,7 +28,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * 非 CI 手动探针：真实回放的 HP / DAMAGE 数据链路调查（docs/current-plan.md §37/§38）。
+ * 非 CI 手动探针：真实回放的 HP / DAMAGE 数据链路调查。
  *
  * <p>输出（stdout / surefire report）：</p>
  * <ul>
@@ -146,7 +145,7 @@ class BattlePlaybackHpDamageProbeTest {
             }
         }
 
-        // ---- HP change 交叉分析（§38：derived HP delta vs nearby Type-8 raw）----
+        // ---- HP change 交叉分析（derived HP delta vs nearby Type-8 raw）----
         System.out.println("--- HP change cross-analysis ---");
         if (playback != null) {
             for (final MapOverview.PlaybackVehicle v : playback.vehicles()) {

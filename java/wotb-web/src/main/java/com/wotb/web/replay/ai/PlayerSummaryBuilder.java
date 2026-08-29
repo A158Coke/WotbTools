@@ -6,14 +6,14 @@ import com.wotb.core.ai.PlannedPrompt;
 import com.wotb.core.ai.SingleReplayPromptPlanner;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.FriendlyEnemyResult;
-import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
-import com.wotb.core.replay.processing.PlayerSideResolver;
-import com.wotb.core.replay.processing.PlayerSideResolver.Side;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
+import com.wotb.core.replay.processing.FriendlyEnemyResult;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.replay.processing.PlayerSideResolver;
+import com.wotb.core.replay.processing.PlayerSideResolver.Side;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
@@ -65,7 +65,7 @@ final class PlayerSummaryBuilder {
                 : PointsSituationEvidence.renderSection(
                         battle, recon, recorderTeam, true, "你的队伍", "敌方");
         // Canonical Timeline 段：fallback 不再是 settlement-only——时间线化主叙事注入
-        // （docs/current-plan.md §3/§33；recon 或 recorder 缺失时自动省略）
+        // （recon 或 recorder 缺失时自动省略）
         final String timelineSection = timelineSection(battle, recon);
         final String summary = buildSummary(battle, recon, keyEvents)
                 + (phaseSection.isEmpty() ? "" : "\n" + phaseSection)
@@ -253,7 +253,7 @@ final class PlayerSummaryBuilder {
         final StringBuilder sb = new StringBuilder(4096);
         final var battle = ctx.battle();
         final var features = ctx.features();
-        // 基础 summary 构建期就统一读取 partial 门禁：killVictims 等事件流观测伤害段一并抑制
+        // 基础 summary 构建期就统一读取 partial 门禁：事件流观测伤害段一并抑制
         final boolean observedDamagePartial = hasObservedDamagePartial(ctx);
 
         int authoritativeDealt = 0;

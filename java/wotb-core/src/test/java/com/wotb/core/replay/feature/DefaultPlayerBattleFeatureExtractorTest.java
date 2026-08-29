@@ -1,14 +1,7 @@
 package com.wotb.core.replay.feature;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import com.wotb.core.replay.reconstruction.Vector3;
-
-import com.wotb.core.replay.processing.RecorderEntityMapping;
-import com.wotb.core.replay.event.BattleEndedEvent;
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
@@ -16,14 +9,20 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.RoundFinishedEvent;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
-import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.reconstruction.Vector3;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DefaultPlayerBattleFeatureExtractorTest {
 
@@ -43,7 +42,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
         return new DamageEvent(seq, ts(time), 8, DecodeConfidence.EXACT, att, vic, null, null, dmg, false);
     }
 
-    /** Type-7 propId=3 当前血量（EXACT；§12 掉血推导的数据源）。 */
+    /** Type-7 propId=3 当前血量（EXACT；掉血推导的数据源）。 */
     private static HealthChangedEvent health(final int seq, final float time, final int eid, final int hp) {
         return new HealthChangedEvent(seq, ts(time), 7, DecodeConfidence.EXACT, eid, hp, null, true);
     }
@@ -52,8 +51,8 @@ class DefaultPlayerBattleFeatureExtractorTest {
         return new HealthChangedEvent(seq, ts(raw, battle), 7, DecodeConfidence.EXACT, eid, hp, null, true);
     }
 
-    private static BattleEndedEvent battleEnd(final int seq, final float time) {
-        return new BattleEndedEvent(seq, ts(time), 14, DecodeConfidence.EXACT, 1);
+    private static RoundFinishedEvent battleEnd(final int seq, final float time) {
+        return new RoundFinishedEvent(seq, ts(time), 14, DecodeConfidence.EXACT, 1, 1, RoundFinishedEvent.FinishCause.ELIMINATION);
     }
 
     private static ParticipantMappingEvent mapping(final int seq, final int eid, final long aid) {
@@ -61,7 +60,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
     }
 
     private static ReplayReconstruction recon(final Float battleStartRaw, final List<ReplayEvent> events) {
-        final ReplayCoverage coverage = new ReplayCoverage(true, events.size(), events.size(), 0, 0, 0, 1.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(events.size(), events.size(), 0, 0, 0, 1.0, Map.of());
         return new ReplayReconstruction(null, null, 120f, battleStartRaw,
                 List.of(
                         new com.wotb.core.replay.reconstruction.BattleParticipant(1001L, "Recorder", 1, 1, "T-34", true),

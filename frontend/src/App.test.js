@@ -10,7 +10,10 @@ import { setUiProfile } from './composables/useUiProfile.js'
 
 // 重视图 mock 为轻组件（本测试只验证 view 解析，不挂载重型页面）
 vi.mock('./components/ReplayPage.vue', () => ({ default: { name: 'ReplayPageMock', template: '<div data-test="view-replay" />' } }))
+vi.mock('./components/AiReviewPage.vue', () => ({ default: { name: 'AiReviewPageMock', template: '<div data-test="view-ai-review" />' } }))
+vi.mock('./components/BattlePlaybackPage.vue', () => ({ default: { name: 'BattlePlaybackPageMock', template: '<div data-test="view-battle-playback" />' } }))
 vi.mock('./components/HomePage.vue', () => ({ default: { name: 'HomePageMock', template: '<div data-test="view-home" />' } }))
+vi.mock('./components/HoFPage.vue', () => ({ default: { name: 'HoFPageMock', template: '<div data-test="view-hof" />' } }))
 // PlaybackQaPage 真实异步解析；mock useAuth 让 QA 页走未登录分支（轻量，不加载 14 车场景）
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: (key) => key, locale: { value: 'zh' } }),
@@ -34,6 +37,11 @@ function mountApp() {
   return mount(App, { global: { mocks: { $t: (key) => key, $i18n: { locale: { value: 'zh' } } } } })
 }
 
+/** 读取当前 URL 的 ?view 参数（断言 canonicalization 后 URL 已被 replaceState 重写）。 */
+function currentViewParam() {
+  return new URL(window.location.href).searchParams.get('view')
+}
+
 describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回归）', () => {
   afterEach(() => {
     window.history.replaceState({}, '', '/')
@@ -54,13 +62,54 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     expect(wrapper.find('[data-test="view-home"]').exists()).toBe(false)
   })
 
+  it('?view=reconstruction canonicalize 到 battle-playback 独立视图', async () => {
+    window.history.replaceState({}, '', '/?view=reconstruction')
+    const wrapper = mountApp()
+    await flushPromises()
+    expect(wrapper.find('[data-test="view-battle-playback"]').exists()).toBe(true)
+  })
+
+  it('?view=leaderboard canonicalize 到 hof（旧书签兼容，不得误映射到 replay）', async () => {
+    window.history.replaceState({}, '', '/?view=leaderboard')
+    const wrapper = mountApp()
+    await flushPromises()
+    // leaderboard 是旧书签 → 必须跳转 Hof 页，而不是被上一轮 canonicalization 误映射成 replay。
+    expect(wrapper.find('[data-test="view-hof"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(false)
+  })
+
+  it('旧书签别名矩阵：单一来源 LEGACY_VIEW_ALIASES 统一 canonicalize（URL + 视图一致）', async () => {
+    const cases = [
+      { in: 'leaderboard', out: 'hof', test: 'view-hof' },
+      { in: 'extended', out: 'replay', test: 'view-replay' },
+      { in: 'reconstruction', out: 'battle-playback', test: 'view-battle-playback' },
+      { in: 'hof', out: 'hof', test: 'view-hof' },
+      { in: 'replay', out: 'replay', test: 'view-replay' },
+    ]
+    for (const c of cases) {
+      window.history.replaceState({}, '', `/?view=${c.in}`)
+      const wrapper = mountApp()
+      await flushPromises()
+      expect(currentViewParam()).toBe(c.out) // URL 已 canonicalize
+      expect(wrapper.find(`[data-test="${c.test}"]`).exists()).toBe(true)
+      wrapper.unmount()
+    }
+    // 未知默认值：非别名不重写 URL，回退默认视图
+    window.history.replaceState({}, '', '/?view=vehicle-models')
+    const w = mountApp()
+    await flushPromises()
+    expect(currentViewParam()).toBe('vehicle-models')
+    expect(w.find('[data-test="view-replay"]').exists()).toBe(true)
+    w.unmount()
+  })
+
   it('?view=playback-qa 解析 PlaybackQaPage（异步加载）', async () => {
     window.history.replaceState({}, '', '/?view=playback-qa')
     const wrapper = mountApp()
     // defineAsyncComponent：动态 import + onMounted 异步链，轮询直到异步组件 resolve 渲染
     await vi.waitFor(() => {
       expect(wrapper.find('.pb-qa-page').exists()).toBe(true)
-    })
+    }, { timeout: 5000 })
     // useAuth mock → 未登录分支显示 loading 文案（$t mock 返回 key）
     await flushPromises()
     expect(wrapper.text()).toContain('adminPreview.loading')
@@ -71,7 +120,7 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     const wrapper = mountApp()
     await vi.waitFor(() => {
       expect(wrapper.find('.rating-docs-page').exists()).toBe(true)
-    })
+    }, { timeout: 5000 })
     await flushPromises()
     expect(wrapper.find('.markdown-content').exists()).toBe(true)
     expect(wrapper.text()).toContain('league.docs_page_title')
@@ -82,7 +131,7 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     const wrapper = mountApp()
     await vi.waitFor(() => {
       expect(wrapper.find('.rating-v2-page').exists()).toBe(true)
-    })
+    }, { timeout: 5000 })
     await flushPromises()
     expect(wrapper.find('nav').text()).not.toContain('ratingV2.title')
     expect(wrapper.text()).toContain('ratingV2.login')

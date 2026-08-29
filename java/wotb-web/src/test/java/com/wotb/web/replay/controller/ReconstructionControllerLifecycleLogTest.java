@@ -1,15 +1,5 @@
 package com.wotb.web.replay.controller;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
-
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -22,19 +12,30 @@ import com.wotb.web.replay.ai.AllowedLanguage;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 
 /**
- * PR #106 review（blocker 2）：AI Review worker 生命周期<b>终态 exactly once</b>——
+ * （blocker 2）：AI Review worker 生命周期<b>终态 exactly once</b>——
  * 每个真正开始执行的 worker 请求恰好产生一次 {@code event=ai_review_finished}，
  * result ∈ {SUCCESS, FAILED, CANCELLED}（FAILED 带稳定 errorCode，CANCELLED 带稳定 source）。
  * <p>用 logback {@link ListAppender} 捕获 {@code ReconstructionController} 日志并<b>计数</b>
@@ -60,7 +61,7 @@ class ReconstructionControllerLifecycleLogTest {
     @BeforeEach
     void setUp() {
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = spy(new AiReplayReviewService(aiService));
+        reviewService = spy(new AiReplayReviewService(aiService, null, null, null));
         cancellationRegistry = spy(new AiCancellationRegistry());
         workerExecutor = new AiReviewWorkerExecutor();
         controller = new ReconstructionController(reviewService, cancellationRegistry,

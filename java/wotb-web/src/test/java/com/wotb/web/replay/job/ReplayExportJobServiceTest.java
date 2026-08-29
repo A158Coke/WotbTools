@@ -7,16 +7,10 @@ import com.wotb.core.league.LeagueRatingCalculator;
 import com.wotb.core.league.LeagueRatingResult;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.replay.processing.ReplayProcessingOptions;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
-import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -24,18 +18,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
@@ -47,12 +36,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 /** Export Job 编排回归：lifecycle / progress / artifact / 失败 / 取消。 */
 class ReplayExportJobServiceTest {
@@ -60,7 +43,8 @@ class ReplayExportJobServiceTest {
     private Path tmpDir;
     private ExportJobStore store;
     private ReplayExportJobService service;
-    private DefaultReplayProcessingFacade facade;
+    private ReplayProcessingJobStore processingStore;
+    private Path processingStoreDir;
     private ReplayExportWorkerExecutor executor;
     private SimpleMeterRegistry meterRegistry;
 
@@ -68,16 +52,21 @@ class ReplayExportJobServiceTest {
     void setUp() throws Exception {
         tmpDir = Files.createTempDirectory("wotb-export-job-test");
         store = new ExportJobStore(tmpDir.toString(), 60);
-        facade = mock(DefaultReplayProcessingFacade.class);
         executor = new ReplayExportWorkerExecutor(2, 4);
         meterRegistry = new SimpleMeterRegistry();
-        service = new ReplayExportJobService(store, executor, null, meterRegistry);
+        // mandatory ReplayProcessingJobStore：不构造 null SUT（与 production invariants 一致）。
+        processingStoreDir = Files.createTempDirectory("wotb-export-setup-store");
+        processingStore = new ReplayProcessingJobStore(processingStoreDir, 60);
+        service = new ReplayExportJobService(store, executor, processingStore, meterRegistry);
     }
 
     @AfterEach
     void tearDown() {
         executor.close();
         deleteDir(tmpDir);
+        if (processingStoreDir != null) {
+            deleteDir(processingStoreDir);
+        }
     }
 
 
@@ -111,7 +100,7 @@ class ReplayExportJobServiceTest {
             // Export acquire 引用（引用计数阻止 TTL 清理）
             processingStore.acquireForExport(pJobId);
 
-            final String jobId = service.createJob(null, "aggregate", pJobId);
+            final String jobId = service.createJob("aggregate", pJobId);
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status());
             assertEquals(3, snap.total(), "total 与 Processing 输入总数一致");
@@ -119,8 +108,6 @@ class ReplayExportJobServiceTest {
             assertEquals(1, snap.duplicates());
             assertEquals(1, snap.failures());
 
-            // 关键验收：facade.processFull 必须零次调用（Export 不再 processFull）
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
 
             // artifact 可打开、filename 正确
             final Path artifact = store.get(jobId).artifactPath();
@@ -155,11 +142,10 @@ class ReplayExportJobServiceTest {
             processingStore.register(pJob);
             processingStore.acquireForExport(pJobId);
 
-            final String jobId = service.createJob(null, "each", pJobId);
+            final String jobId = service.createJob("each", pJobId);
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status());
             assertEquals("application/zip", snap.contentType());
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             assertEquals(List.of("one.xlsx", "two.xlsx"), zipEntryNames(jobId));
             processingStore.release(pJobId);
         } finally {
@@ -175,7 +161,7 @@ class ReplayExportJobServiceTest {
             service = new ReplayExportJobService(store, executor,
                     processingStore, meterRegistry);
             final ResponseStatusException error = assertThrows(ResponseStatusException.class,
-                    () -> service.createJob(null, "aggregate", "no-such-job"));
+                    () -> service.createJob("aggregate", "no-such-job"));
             assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode(), "引用不存在的 Processing Job 必须 404");
         } finally {
             deleteDir(processingStore.jobDir("x").getParent());
@@ -193,7 +179,7 @@ class ReplayExportJobServiceTest {
             pJob.startProcessing();  // PROCESSING，未 READY
             processingStore.register(pJob);
             final ResponseStatusException error = assertThrows(ResponseStatusException.class,
-                    () -> service.createJob(null, "aggregate", "proc-3"));
+                    () -> service.createJob("aggregate", "proc-3"));
             assertEquals(HttpStatus.CONFLICT, error.getStatusCode(), "引用未 READY 的 Processing Job 必须 409");
         } finally {
             deleteDir(processingStore.jobDir("proc-3").getParent());
@@ -214,14 +200,13 @@ class ReplayExportJobServiceTest {
                     List.<String[]>of(),
                     List.<String[]>of(new String[]{"bad.wotbreplay", "REPLAY_PROCESSING_FAILED"}));
 
-            final String jobId = service.createJob(null, "each", pJobId);
+            final String jobId = service.createJob("each", pJobId);
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status(),
                     "1 valid + 1 failure 必须 READY（validCount > 0 即允许生成 ZIP）");
             assertEquals(2, snap.processed(), "processed 最终 = valid + failures = 2（不得减 failures）");
             assertEquals(1, snap.failures(), "failures 只用于终态统计，不影响 valid 判断");
             assertEquals(List.of("one.xlsx"), zipEntryNames(jobId), "ZIP 只含 1 个有效场 entry");
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-1v1f").getParent());
@@ -241,13 +226,12 @@ class ReplayExportJobServiceTest {
                     List.<String[]>of(new String[]{"b1.wotbreplay", "REPLAY_PROCESSING_FAILED"},
                             new String[]{"b2.wotbreplay", "REPLAY_PROCESSING_FAILED"}));
 
-            final String jobId = service.createJob(null, "each", pJobId);
+            final String jobId = service.createJob("each", pJobId);
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status());
             assertEquals(3, snap.processed());
             assertEquals(2, snap.failures());
             assertEquals(List.of("one.xlsx"), zipEntryNames(jobId));
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-1v2f").getParent());
@@ -269,13 +253,12 @@ class ReplayExportJobServiceTest {
                             new String[]{"f3.wotbreplay", "E3"}, new String[]{"f4.wotbreplay", "E4"},
                             new String[]{"f5.wotbreplay", "E5"}));
 
-            final String jobId = service.createJob(null, "each", pJobId);
+            final String jobId = service.createJob("each", pJobId);
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status());
             assertEquals(7, snap.processed(), "processed 最终 = 2 valid + 5 failures = 7");
             assertEquals(5, snap.failures());
             assertEquals(List.of("one.xlsx", "two.xlsx"), zipEntryNames(jobId), "ZIP 含全部有效场");
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-2v5f").getParent());
@@ -294,11 +277,10 @@ class ReplayExportJobServiceTest {
                     List.<String[]>of(),
                     List.<String[]>of(new String[]{"bad.wotbreplay", "REPLAY_PROCESSING_FAILED"}));
 
-            final String jobId = service.createJob(null, "each", pJobId);
+            final String jobId = service.createJob("each", pJobId);
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.FAILED, snap.status(), "validCount == 0 必须 NO_VALID_REPLAYS");
             assertEquals("NO_VALID_REPLAYS", snap.errorCode());
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-0v").getParent());
@@ -317,11 +299,10 @@ class ReplayExportJobServiceTest {
                     List.<String[]>of(),
                     List.<String[]>of(new String[]{"bad.wotbreplay", "REPLAY_PROCESSING_FAILED"}));
 
-            final String jobId = service.createJob(null, "aggregate", pJobId);
+            final String jobId = service.createJob("aggregate", pJobId);
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.FAILED, snap.status());
             assertEquals("NO_VALID_REPLAYS", snap.errorCode());
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-0v-agg").getParent());
@@ -346,10 +327,10 @@ class ReplayExportJobServiceTest {
                     List.<String[]>of(), List.<String[]>of());
 
             // aggregate 复用导出 → READY
-            final String aggJob = service.createJob(null, "aggregate", pJobId);
+            final String aggJob = service.createJob("aggregate", pJobId);
             assertEquals(ExportJob.Status.READY, awaitTerminal(aggJob, 10_000).status());
             // each 复用导出 → READY
-            final String eachJob = service.createJob(null, "each", pJobId);
+            final String eachJob = service.createJob("each", pJobId);
             assertEquals(ExportJob.Status.READY, awaitTerminal(eachJob, 10_000).status());
 
             // 关键：共享 Battle 未被 populateBattle 修改（from-result 只读消费，
@@ -357,7 +338,6 @@ class ReplayExportJobServiceTest {
             assertEquals(null, b.players.getFirst().contribution,
                     "populateBattle 不得在 from-result 路径再次执行（HP 已知场会回填 contribution）");
             assertEquals(null, b.players.getFirst().kast);
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-nomutate").getParent());
@@ -384,16 +364,15 @@ class ReplayExportJobServiceTest {
                     battles, List.of("one.wotbreplay"),
                     List.<String[]>of(), List.<String[]>of());
 
-            final String aggJob = service.createJob(null, "aggregate", pJobId);
+            final String aggJob = service.createJob("aggregate", pJobId);
             assertEquals(ExportJob.Status.READY, awaitTerminal(aggJob, 10_000).status());
             assertEquals(5000, b.players.getFirst().damageDealt,
                     "from-result 导出不得改动已 enrich 的权威 metrics（Preview/Export parity）");
             assertNotNull(b.players.getFirst().contribution);
-            final String eachJob = service.createJob(null, "each", pJobId);
+            final String eachJob = service.createJob("each", pJobId);
             assertEquals(ExportJob.Status.READY, awaitTerminal(eachJob, 10_000).status());
             assertEquals(5000, b.players.getFirst().damageDealt);
             assertNotNull(b.players.getFirst().contribution);
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-parity").getParent());
@@ -423,7 +402,7 @@ class ReplayExportJobServiceTest {
 
             // acquire 成功（refcount +1）→ Export job 目录创建失败 → 必须 throw
             final IllegalStateException error = assertThrows(IllegalStateException.class,
-                    () -> service.createJob(null, "aggregate", pJobId));
+                    () -> service.createJob("aggregate", pJobId));
             assertEquals("EXPORT_JOB_STORAGE_UNAVAILABLE", error.getMessage());
 
             // refcount 已释放：aged + TTL sweep 后 Processing Job 可被清理（不永久 pin 在 heap）
@@ -447,13 +426,14 @@ class ReplayExportJobServiceTest {
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(), List.<String[]>of());
 
-            final String jobId = service.createJob(null, "aggregate", pJobId);
+            final String jobId = service.createJob("aggregate", pJobId);
             assertEquals(ExportJob.Status.READY, awaitTerminal(jobId, 10_000).status());
 
-            // worker 终态 finally release → TTL 可清理
-            ageProcessingJob(processingStore.get(pJobId));
-            processingStore.sweepExpired();
-            assertNull(processingStore.get(pJobId), "worker 终态后引用必须 release，TTL 可清理");
+            // worker 终态（markReady → finishTerminal → finally lease 递减）与 READY 状态可见性
+            // 存在微小时序差：READY 在 finally lease 递减之前置位，故轮询等待 lease 释放（而非假设
+            // 与 READY 同步）。若 lease 泄漏则永远不会变为 null，超时后断言失败（不掩盖真实泄漏）。
+            assertTrue(awaitSwept(processingStore, pJobId, 5_000),
+                    "worker 终态后引用必须 release，TTL 可清理");
         } finally {
             deleteDir(processingStore.jobDir("proc-success").getParent());
         }
@@ -486,7 +466,7 @@ class ReplayExportJobServiceTest {
             assertTrue(started.await(5, TimeUnit.SECONDS), "blocker 应占用唯一 worker");
 
             // jobB：from-result → QUEUED（acquire +1，等 worker）
-            final String jobB = service.createJob(null, "aggregate", pJobId);
+            final String jobB = service.createJob("aggregate", pJobId);
             // QUEUED 取消 → removeQueued → 请求线程 release（引用计数语义保留）
             assertTrue(service.cancel(jobB));
             assertEquals(ExportJob.Status.CANCELLED, service.status(jobB).status());
@@ -536,7 +516,7 @@ class ReplayExportJobServiceTest {
 
             // jobC：from-result → acquire +1 → submit rejection → finally 必须 release
             assertThrows(ExportQueueFullException.class,
-                    () -> service.createJob(null, "aggregate", pJobId));
+                    () -> service.createJob("aggregate", pJobId));
 
             ageProcessingJob(processingStore.get(pJobId));
             processingStore.sweepExpired();
@@ -548,15 +528,12 @@ class ReplayExportJobServiceTest {
         }
     }
 
-    // ---- BLOCKER 2：Export 不再接受裸 replay 上传（legacy multipart 已废弃）----
+    // ---- Export 不再接受裸 replay 上传（legacy multipart 已废弃）----
 
     @Test
     void exportJobWithoutProcessingJobIdIsRejectedAsGone() {
         final ResponseStatusException e = assertThrows(ResponseStatusException.class,
-                () -> service.createJob(
-                        new MockMultipartFile[]{new MockMultipartFile(
-                                "files", "a.wotbreplay", "application/octet-stream", new byte[]{1})},
-                        "aggregate", null, (String) null));
+                () -> service.createJob("aggregate", null));
         assertEquals(HttpStatus.GONE, e.getStatusCode());
         assertEquals(com.wotb.web.replay.ReplayLegacyEndpoints.DEPRECATED_ERROR, e.getReason());
     }
@@ -625,12 +602,11 @@ class ReplayExportJobServiceTest {
             final String pJobId = readyLeagueProcessingJob(processingStore, "proc-l1", "arena-1");
 
             // 复用 processingJobId + 单场 battle override（名称必须进入 Excel）
-            final String jobId = service.createJob(null, "aggregate", pJobId,
+            final String jobId = service.createJob("aggregate", pJobId,
                     "{\"battle\":{\"arena-1:1\":\"CHRD Test\"}}");
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status());
             // Test 2：复用路径不重新 process replay
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             try (Workbook wb = new XSSFWorkbook(Files.newInputStream(store.get(jobId).artifactPath()))) {
                 final String text = workbookText(wb);
                 assertTrue(text.contains("CHRD Test"),
@@ -653,11 +629,10 @@ class ReplayExportJobServiceTest {
             final String pJobId = readyLeagueProcessingJob(processingStore, "proc-l2", "arena-1", "arena-2");
 
             // Test 5：批次 teamKey override 进入 aggregate Excel 战队汇总
-            final String jobId = service.createJob(null, "aggregate", pJobId,
+            final String jobId = service.createJob("aggregate", pJobId,
                     "{\"summary\":{\"clan:AAA\":\"CHRD A队\"}}");
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status());
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             try (Workbook wb = new XSSFWorkbook(Files.newInputStream(store.get(jobId).artifactPath()))) {
                 final Sheet sheet = wb.getSheet("战队汇总");
                 assertNotNull(sheet, "aggregate League 必须含战队汇总表");
@@ -700,7 +675,7 @@ class ReplayExportJobServiceTest {
             processingStore.register(pJob);
             processingStore.acquireForExport("proc-partial");
 
-            final String jobId = service.createJob(null, "aggregate", "proc-partial");
+            final String jobId = service.createJob("aggregate", "proc-partial");
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status(),
                     "partial-rated League aggregate 必须 READY（不得 INTERNAL_ERROR / NPE / IOOBE）");
@@ -749,7 +724,7 @@ class ReplayExportJobServiceTest {
             processingStore.register(pJob);
             processingStore.acquireForExport("proc-unknown");
 
-            final String jobId = service.createJob(null, "aggregate", "proc-unknown");
+            final String jobId = service.createJob("aggregate", "proc-unknown");
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status());
             assertNull(snap.errorCode());
@@ -793,7 +768,7 @@ class ReplayExportJobServiceTest {
             processingStore.register(pJob);
             processingStore.acquireForExport("proc-zero");
 
-            final String jobId = service.createJob(null, "aggregate", "proc-zero");
+            final String jobId = service.createJob("aggregate", "proc-zero");
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status(),
                     "0 场可评分的 League dataset 仍应成功导出");
@@ -818,7 +793,7 @@ class ReplayExportJobServiceTest {
             final String pJobId = readyLeagueProcessingJob(processingStore, "proc-l3", "arena-1", "arena-2");
 
             // Test 6：each ZIP 中每场使用各自 battle override，不得串队名
-            final String jobId = service.createJob(null, "each", pJobId,
+            final String jobId = service.createJob("each", pJobId,
                     "{\"battle\":{\"arena-1:1\":\"CHRD A\",\"arena-2:1\":\"CHRD B\"}}");
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status());
@@ -857,10 +832,9 @@ class ReplayExportJobServiceTest {
             // 1 场 rated + 1 场 Rating-ineligible（batch.resultFor=null）
             final String pJobId = readyLeagueProcessingJobWithIneligible(
                     processingStore, "proc-re1", "arena-1", "arena-2");
-            final String jobId = service.createJob(null, "each", pJobId);
+            final String jobId = service.createJob("each", pJobId);
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status());
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             // ZIP 必须含 2 个 XLSX（1 League + 1 Standard）
             assertEquals(List.of("arena-1.xlsx", "arena-2.xlsx"), zipEntryNames(jobId));
             final List<String> texts = new ArrayList<>();
@@ -1028,6 +1002,25 @@ class ReplayExportJobServiceTest {
             }
         }
         return names;
+    }
+
+    /** 轮询 age + sweep 直到 Processing Job 可被 TTL 清理（lease 已释放 + 已过期）；超时返回 false。 */
+    private static boolean awaitSwept(final ReplayProcessingJobStore store, final String jobId, final long timeoutMs)
+            throws Exception {
+        final long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            final ReplayProcessingJob job = store.get(jobId);
+            if (job == null) {
+                return true;
+            }
+            ageProcessingJob(job);
+            store.sweepExpired();
+            if (store.get(jobId) == null) {
+                return true;
+            }
+            Thread.sleep(20);
+        }
+        return false;
     }
 
     private ExportJob.Snapshot awaitTerminal(final String jobId, final long timeoutMs) throws InterruptedException {

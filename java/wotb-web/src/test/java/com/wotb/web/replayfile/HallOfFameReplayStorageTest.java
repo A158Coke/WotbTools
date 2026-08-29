@@ -1,6 +1,5 @@
 package com.wotb.web.replayfile;
 
-import com.wotb.web.replayfile.HallOfFameStorageException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

@@ -31,10 +31,12 @@ V2 消费 Processing Job 已完成 full processing 的 `Battle` / `PlayerResult`
 - `damageDealt`、`damageAssisted`、`kills`、`survived`、`survivalTimeSec`；
 - `team`、`winnerTeam`、`startTime`、昵称和战队；
 - `entryHpSource` / `entryHp` 与 Tankopedia 的 `maxHp`；
-- `killVictims` 与 Tankopedia 的 `alphaDamage`。
+- Tankopedia 的 `alphaDamage`（补增已随 `killVictims` 移除而停用，见下）。
 
-`killVictims` 是击杀前直接伤害明细；它并非所有回放都完整，因此潜在伤害是历史评分的局部推导，
-不是当前事实链的公开字段。
+> **`PlayerResult.killVictims` 与 potential_damage 补增已从生产移除（PR147/PR162）**：killVictims 是击杀前
+> 直接伤害明细，由 damage-threshold 启发式产生且并非所有回放都完整，无法证明 lethal boundary / killer
+> identity；该字段无 authoritative producer。**potential_damage 不再作为当前事实链字段**，V2 只消费
+> settlement 权威 damage/kills。
 
 ### 2.2 管理员 API 输出
 

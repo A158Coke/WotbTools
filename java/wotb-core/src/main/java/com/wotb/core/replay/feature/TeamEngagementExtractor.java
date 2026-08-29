@@ -196,7 +196,7 @@ final class TeamEngagementExtractor {
         int dealt = 0;
         int received = 0;
         DecodeConfidence confidence = DecodeConfidence.EXACT;
-        // allies/enemies/confidence 来自事件级结构（时间/方向/身份）；dealt/received 用 loss 级聚合（§13）
+        // allies/enemies/confidence 来自事件级结构（时间/方向/身份）；dealt/received 用 loss 级聚合
         for (final DefaultTeamBattleFeatureExtractor.TimedTeamDamage td : timedEvents) {
             final DefaultTeamBattleFeatureExtractor.AttributedDamage damage = td.event();
             if (damage.attacker().team() == perspectiveTeam) {

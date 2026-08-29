@@ -1,16 +1,21 @@
 # 地图鸟瞰与战局回放（Battle Playback）
 
-> 用户可见契约：AI 复盘页面（ReconstructionPage）的独立「地图鸟瞰」区块
+> 用户可见契约：`ReplayPage` Workspace 的「战局回放」面板（`BattlePlaybackPanel.vue`）
 > （热力 + 路线 + 战局回放三视图），**不依赖 AI 复盘**——不跑 AI 也能看图。
 > 数据来源与素材权威见 `docs/reference/maps.md`（内部 code ↔ 展示名 ↔ 语义 mapId ↔ 素材）。
+> 生产状态：回放 timeline 事实按 canonical 语义（AFFIRMED）；AoI hidden=UNKNOWN、禁止跨 AoI gap 插值、死亡 clamp 到权威死亡时刻。
 
-## 地图鸟瞰（Map Overview）
+## 地图鸟瞰（Map Overview，Dataset-only）
 
-AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载地图」按钮 → `POST /api/replay/map-overview`
-（只解析回放、不调 AI，同步返回 `MapOverview` JSON；地图不可构建返回 204）→ 前端
-`MapOverview.vue` 纯 SVG 渲染（热力 + 路线 + 战局回放三视图）。AI 复盘 SSE `done` 载荷仍携带
-`mapOverview` 字段（后端兼容保留），但前端不再从复盘结果渲染地图——两处同源（同一
-`MapOverviewBuilder`），无数据漂移。
+战局回放面板读取同一 Processing Dataset 的 `map-overview.json` derived artifact：
+`POST /api/replay/map-overview`（`Content-Type: application/json`，body `{ processingJobId, sourceId }`）
+→ `MapOverviewQueryService.buildOverviewFromDataset` → `ReplayArtifactWriter.readMapOverview` →
+前端 `MapOverview.vue` 纯 SVG 渲染（热力 + 路线 + 战局回放三视图）。
+- **不重新上传 replay、不单独 full-process**：AI Review / Battle Playback / Export 共用同一 Processing Dataset。
+- 地图不可构建（未知地图/无语义网格/无名册/无观测/视角未解析）→ `mapOverview = null` → 204。
+- `JOB_NOT_FOUND`（Processing Job / Dataset identity 已被 TTL 清理）→ 触发前端 Dataset recovery（exactly-once + generation-owned + authoritative invalidation）。
+- map-overview artifact 缺失 = capability unavailable → 204（不是 `JOB_NOT_FOUND`，不触发 recovery）；artifact 读/解码/存储故障 → `DATASET_UNAVAILABLE`（503，不可恢复，不重新 full-process）。`SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` → 稳定错误码，经 i18n 本地化，不裸展示。
+- 旧的 multipart `POST /api/replay/map-overview`（`MultipartFile[]`）已废弃为 legacy 410 compatibility shim（`ReplayLegacyEndpoints`），不是业务入口。
 
 ### 数据链路
 
@@ -63,7 +68,7 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
     位置流中断期间不继续旋转炮塔、不跨 gap 取对侧 hull yaw，re-entry 后新段继续；
     每个可信方向段最后一个样本恒保留（冻结准确）。
     **时长契约**：playback `durationSec` 三优先级 = `battle.durationS`（finite>0）→
-    `BattleEndedEvent`（合法 battle-relative）→ 位置流最后时刻；全部 event/interval/
+    `RoundFinishedEvent`（合法 battle-relative）→ 位置流最后时刻；全部 event/interval/
     directionSample/deathSec 强制 `[0, durationSec]`。
   - **双层坦克标记**：前端 `BattlePlayback.vue` 用 PR #72 四张运行时 PNG
     （`frontend/src/assets/tank-icons/tank-marker-{friendly,enemy}-{hull,turret}.png`，512×512
@@ -75,7 +80,7 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
     **134% = 0.881/0.656 使 generic 车体长边视觉与 dedicated 对齐**（36px 容器下均 ≈31.7px；
     generic 车体宽 ≈19.8px、dedicated 按真实长宽比 ≈11–16px，宽体 icon 为素材固有比例）；
     放大地图不再显小；hull 层按 `hullYawDeg` 旋转、turret 层按
-    `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；**阵营视觉（PR3 §19–§21）**：整车 team outline+glow
+    `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；**阵营视觉**：整车 team outline+glow
     由 `VehicleMarker .pb-graphics` 双层 drop-shadow 表达（CSS vars `--pb-team-*/`--pb-enemy-*`，
     friendly 按地图显式 tone green|blue、enemy 固定 red，见 `data/mapTeamColors.js`；generic 素材
     自身阵营色保留，叠加同一 team 光晕）；Selected 红色倒三角（label 上方、浮动、screen-space 恒定——
@@ -88,7 +93,7 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
     标记**上方**常显固定字号坦克型号名小标签
     （`PlaybackVehicle.tankName`，后端 `ReplayDisplayNames.tankName(tankId, tankName)` 权威解析自
     tankopedia，如 29985 → "SPHT"，不再是空串/纯数字；标签自身按 `1/view.scale` 反缩放 → 字号不随地图缩放、任意缩放下可见）。
-   - **玩家/坦克名标签与碰撞（PR4 §26–§37）**：控制栏「显示玩家名 / 显示坦克名」checkbox
+   - **玩家/坦克名标签与碰撞**：控制栏「显示玩家名 / 显示坦克名」checkbox
     （默认 玩家名关 / 坦克名开，`localStorage` 持久化 `wotb.pb.label-prefs`）；PlayerName + TankName
     共用一个半透明深色背景块（自适应宽度、team 文字色 `--pb-team-text`/`--pb-enemy-text`、
     destroyed/last-known 只弱化文字）；PlayerName 按实际像素截断（max-width+ellipsis），截断才有
@@ -161,13 +166,13 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
      位置（临时输入框 Enter/blur 提交、Esc 取消，committed 幂等防重复）。三语文案
      `recon.map.playback.annot.*`；纯函数与交互回归见 `utils/annotation.test.js` 与
      `BattlePlayback.annot.test.js`。
-   - **阵亡状态（pb-destroyed，PR3 §24）**：destroyed 是显式独立状态，不并入 `pb-last-known`；
+   - **阵亡状态（pb-destroyed）**：destroyed 是显式独立状态，不并入 `pb-last-known`；
      敌我阵亡车结构一致（hull+turret 双层 + 同款 ✕）：方向冻结在最后可信样本
      （`interpolateDirection` 末样本冻结语义），无方向样本以素材默认 0° 渲染（不代表朝向）；
      **中度变暗**（`.pb-destroyed .pb-graphics { opacity:.55 }`，不再极端透明）+ grayscale +
      team outline 弱化保留（drop-shadow 在 grayscale 后绘制不灰化）+ 一次性 transition 0.45s
      （prefers-reduced-motion 直达终态）；红色 ✕ / Selected 三角 / Recorder 菱形在 `.pb-graphics`
-     容器外，保持完整强度。**Last-known（PR3 §25）**：`.pb-graphics` 淡化 0.35 + 仅弱 outline
+     容器外，保持完整强度。**Last-known**：`.pb-graphics` 淡化 0.35 + 仅弱 outline
      （无 glow）；label 仅文字弱化（background 正常）；Selected/Recorder 正常强度。
    - **真实 i18n 回归**：三语 `recon.map.playback.last_known` 文案不得含裸 `@`（Vue I18n 11
      linked-message 语法），选中 last-known/已击毁车辆首次渲染该文案时编译报错会导致组件整体卸载；
@@ -223,7 +228,7 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   -300..300，即完整世界坐标截图；新图以各自语义 JSON 为准，逐图校准）。渲染统一用
   `coordinateBounds`，不得用 `playableBounds` 铺满图片（会越靠近边缘偏移越大）。无
   `coordinateBounds` 的旧配置按兼容策略回退 `playableBounds`。
-### 单车血量 HUD / 战斗反馈 / 车辆详情面板（PR5，docs/current-plan.md §4–§16）
+### 单车血量 HUD / 战斗反馈 / 车辆详情面板（PR5）
 
 - **HP 数据优先级与 provenance 状态（确定性重建，PR #107 扩展 + Blocker 3 收口）**：`hpDisplay`
   （`utils/battlePlayback.js`）按状态机输出（`state` 字段，替代单一黑条/UNKNOWN 语义）：
@@ -285,24 +290,24 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   （-N，受击方阵营色，约 1s 可读时长，同车连续受击纵向 stack）+ HP 数字立即切换 +
   bar 150–300ms 缩短（CSS transition，seek 单帧禁用）+ hit flash + lost-HP ghost
   （同阵营色浅版，约 600ms 消退）；DESTROYED → 克制 2D burst；KILL → kill feed
-  （只显示「受害者被击毁」，victim-only，最多 3 条队列、约 5s 生命周期，§15.2）。
-  失察期间受击（事件时刻无位置流覆盖）不跳伤害、不更新 HP、不显示 attacker（§7.2）；
+  （只显示「受害者被击毁」，victim-only，最多 3 条队列、约 5s 生命周期）。
+  失察期间受击（事件时刻无位置流覆盖）不跳伤害、不更新 HP、不显示 attacker；
   prefers-reduced-motion 取消 ghost/flash/burst/feed 动画（事实保留）。
-- **Detail Sidebar（§8，2026-08 收敛为 current-state only）**：点击 marker 打开/切换（不 toggle-off）、
+- **Detail Sidebar（2026-08 收敛为 current-state only）**：点击 marker 打开/切换（不 toggle-off）、
   点击空白不关闭、× 显式关闭、destroyed 车可选、seek 保持同一 selected vehicle；宽屏右侧固定、
   窄屏（≤768px）置于地图下方。Tier X 车辆按 tankId 懒加载随站点发布的 BlitzKit 车型图；
   非 Tier X、缺图或单图加载失败时静默省略图片，production 不访问第三方 CDN。面板只含
   **当前 playback 时间点**状态：阵营/车辆类型（replay →
-  tankopedia fallback，全部 metadata 缺失才 —，§8）/状态（已发现/最后已知/已击毁）/当前或最后已知
+  tankopedia fallback，全部 metadata 缺失才 —）/状态（已发现/最后已知/已击毁）/当前或最后已知
   HP（按 provenance 显示，PR #107 Blocker 1：已阵亡 → 0；己方开局相对满血
   （RULE_DERIVED_FULL_AT_SPAWN）→ **「100%」**（相对 UI 状态，不是具体 HP、也不证明 actual max）；
   己方开局有真实 current 采样（OPENING_RELATIVE_FULL）→ 真实 current 数字（bar 仍 100% 实心、无斜纹）；
   有真实 sample → 精确 current 数字；敌方无依据 → —。tankopedia base HP 是静态 metadata 不是本局
-  最大 HP，不再展示「最大 HP / HP %」（除已证明 OBSERVED_EXACT 的 pct），§6/§41）/
-  当前播放时间/已记录伤害（Σ 可 attribution 的权威掉血，§17）/承受伤害（Σ 该车全部
-  掉血）/击杀数 + 最近伤害记录（权威掉血，攻击者不可证明或未点亮显示「来源未知」，§12/§13）。
-  「最终战绩」分区与协助伤害行已**删除**（整场结算不混入当前时间点面板，§18/§20）。
-- **KILL 广播 provenance（§15 验证结论 + PR #107 Blocker 5 扩展）**：KILL 事件派生自 lethal
+  最大 HP，不再展示「最大 HP / HP %」（除已证明 OBSERVED_EXACT 的 pct））/
+  当前播放时间/已记录伤害（Σ 可 attribution 的权威掉血）/承受伤害（Σ 该车全部
+  掉血）/击杀数 + 最近伤害记录（权威掉血，攻击者不可证明或未点亮显示「来源未知」）。
+  「最终战绩」分区与协助伤害行已**删除**（整场结算不混入当前时间点面板）。
+- **KILL 广播 provenance（验证结论 + PR #107 Blocker 5 扩展）**：KILL 事件派生自 lethal
   DamageEvent（type-8 直接伤害通知），只能证明录像者客户端收到该伤害通知、不能证明客户端当时可见
   全局击杀广播中的击杀者身份 → kill feed 不显示攻击者（victim-only）。killer attribution 由
   `PlaybackCombatReconstruction` fail-closed 推导：致死窗口优先 = 权威致死 HP-loss 窗口

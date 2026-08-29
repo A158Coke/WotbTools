@@ -1,20 +1,19 @@
 package com.wotb.web.replay.ai;
 
-import java.util.List;
-
+import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.Battle;
+import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
+import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
-import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-
-import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
 
 /**
  * 兼容 facade：保持 Controller / Review Service / 现有测试的公共入口不变，

@@ -108,7 +108,7 @@ describe('ReplayTaskCard (export kind)', () => {
   })
 })
 
-describe('ReplayTaskCard (processing kind, plan §13/§64)', () => {
+describe('ReplayTaskCard (processing kind)', () => {
   it('PROCESSING shows real 18/34 + current file + valid/dup/fail counts', () => {
     const wrapper = mountCard(makeJob({ currentFile: '20260725_1600__CHRD-A158.wotbreplay' }), '', 'processing')
     expect(wrapper.text()).toContain('replay.processing_job.title')
@@ -131,7 +131,7 @@ describe('ReplayTaskCard (processing kind, plan §13/§64)', () => {
     const buttons = wrapper.findAll('button')
     await buttons[0].trigger('click')
     expect(wrapper.emitted('dismiss')).toBeTruthy()
-    // processing READY 不显示 download（结果已在页面自动展示，plan §20）
+    // processing READY 不显示 download（结果已在页面自动展示）
     expect(wrapper.emitted('download')).toBeFalsy()
   })
 

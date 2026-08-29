@@ -1,6 +1,8 @@
 package com.wotb.core.replay.timeline;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.Test;
@@ -14,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Anti-future-leak invariant（docs/current-plan.md §10/§52.2）：
+ * Anti-future-leak invariant（docs/architecture/battle-timeline.md §10/§52.2）：
  * 敌方 HP 1500 于 t=100 观测 → 失联 → t=140 重亮 HP=600。
  * contextAt(120) 绝不能出现 600；contextAt(145) 才可出现重亮与 bounded retrospective delta。
  */
@@ -28,6 +30,10 @@ class BattleTimelineAntiFutureLeakTest {
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
         // 敌方位置流持续到 100s（此后失联）
         events.add(TimelineTestFixtures.position(ENEMY, 100, -12f, -12f, 0f));
+        // P0-1：enemy 在 t=100 后失联（Type4 leave）→ observed segment 关闭 → 120/130 = UNKNOWN_AOI gap → LAST_KNOWN；
+        // 140 重亮（position）重开段（canonical AoI gap 需要 leave 才成立，不再按 5s 失联）。
+        events.add(new EntityRemovedEvent(TimelineTestFixtures.seq++, TimelineTestFixtures.ts(100),
+                4, DecodeConfidence.EXACT, ENEMY));
         // HP：100s 观测 1500；140s 重亮 600
         events.add(TimelineTestFixtures.health(ENEMY, 100, 1500, true));
         events.add(TimelineTestFixtures.position(ENEMY, 140, -15f, -15f, 0f));
@@ -58,6 +64,8 @@ class BattleTimelineAntiFutureLeakTest {
         final Battle battle = TimelineTestFixtures.battle(200.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
         events.add(TimelineTestFixtures.position(ENEMY, 100, -12f, -12f, 0f));
+        events.add(new EntityRemovedEvent(TimelineTestFixtures.seq++, TimelineTestFixtures.ts(100),
+                4, DecodeConfidence.EXACT, ENEMY));
         events.add(TimelineTestFixtures.health(ENEMY, 100, 1500, true));
         events.add(TimelineTestFixtures.position(ENEMY, 140, -15f, -15f, 0f));
         events.add(TimelineTestFixtures.health(ENEMY, 140, 600, true));

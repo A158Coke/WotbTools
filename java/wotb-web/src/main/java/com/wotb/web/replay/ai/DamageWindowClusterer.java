@@ -1,20 +1,20 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.TeamEntityMapping;
-import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.model.EntryHpSource;
+import com.wotb.core.model.PlayerResult;
+import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 /**
- * 把受击者视角的权威 HP loss（Type-7 推导，§12）按时间间隙聚类成「掉血窗口」，供 Player/Team 证据复用。
+ * 把受击者视角的权威 HP loss（Type-7 推导）按时间间隙聚类成「掉血窗口」，供 Player/Team 证据复用。
  *
  * <p>真实 {@link com.wotb.core.replay.decoder.EntityMethodDecoder} 生成的 {@link DamageEvent} 中
  * {@code attackerAccountId/victimAccountId} 恒为 null，必须沿
@@ -94,13 +94,13 @@ final class DamageWindowClusterer {
         if (recon == null || recon.events() == null || accountId <= 0) {
             return List.of();
         }
-        // §11–§17：掉血窗口只消费权威 HP loss（Type-7 推导，含无法归属攻击者的掉血——
+        // 掉血窗口只消费权威 HP loss（Type-7 推导，含无法归属攻击者的掉血——
         // 掉血真实发生在 victim 身上；攻击者仅在同攻击者可证明时计入 uniqueAttackerCount）。
         // Type-8 rawProtocolValue 语义未证明，不得作为窗口掉血量。
         final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
         final Float battleStart = recon.battleStartRawClockSec();
-        final double duration = recon.replayDurationSec() > 0
-                ? recon.replayDurationSec()
+        final double duration = recon.battleDurationSec() > 0
+                ? recon.battleDurationSec()
                 : (battle != null && battle.durationS != null && battle.durationS > 0
                         ? battle.durationS : 0.0);
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =

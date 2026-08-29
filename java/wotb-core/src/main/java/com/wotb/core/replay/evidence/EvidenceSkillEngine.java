@@ -5,7 +5,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Backend Evidence Skills 编排器（文档 §25 的 Backend Evidence Skills 模块）。
+ * Backend Evidence Skills 编排器（Backend Evidence Skills 模块）。
  * <p>顺序：HP 动量 → 阵亡连锁 → 换血 → 局部支援 → 路线 → 空间分离 → 关键窗口聚合。
  * 各 Skill 独立、确定性、可单测；输出只含事实与确定性派生测量，不包含任何战术裁决。</p>
  * <p><b>Backend Evidence Boundary（PR #103 架构收口）</b>：本编排器输出的所有 AiEvidence

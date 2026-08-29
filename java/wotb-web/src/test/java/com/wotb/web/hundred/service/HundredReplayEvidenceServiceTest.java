@@ -1,14 +1,14 @@
 package com.wotb.web.hundred.service;
 
-import com.wotb.web.replayfile.ReplayDownload;
-import com.wotb.web.replayfile.HallOfFameStorageException;
-import com.wotb.web.replayfile.HofReplayReferenceCounter;
-import com.wotb.web.replayfile.ReplayHashLock;
-import com.wotb.web.replayfile.HallOfFameReplayStorage;
 import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
 import com.wotb.web.hundred.entity.HundredBattleReplayEvidence;
 import com.wotb.web.hundred.repository.HundredBattleReplayEvidenceRepository;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
+import com.wotb.web.replayfile.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.HallOfFameStorageException;
+import com.wotb.web.replayfile.HofReplayReferenceCounter;
+import com.wotb.web.replayfile.ReplayDownload;
+import com.wotb.web.replayfile.ReplayHashLock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,16 +31,15 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * 百场回放审核证据编排契约测试（Mockito，无 DB/FS 依赖；下载字节用 @TempDir 真实文件）。
- * 覆盖 docs/current-plan.md（百场 evidence）：storeAll 幂等/失败清理、attach 原子 5 行、
+ * 覆盖 docs/features/hall-of-fame.md（百场 evidence）：storeAll 幂等/失败清理、attach 原子 5 行、
  * admin list/download ownership、审批前完整性校验与跨表引用计数。
  */
 @ExtendWith(MockitoExtension.class)

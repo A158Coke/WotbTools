@@ -10,6 +10,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
+import com.wotb.core.replay.timeline.TimelineError;
 import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.web.replay.dto.MapOverview;
 import org.junit.jupiter.api.Test;
@@ -22,15 +23,16 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Playback parity（docs/current-plan.md §54）：同一真实夹具，canonical timeline 派生的
+ * Playback parity：同一真实夹具，canonical timeline 派生的
  * BattlePlaybackAdapter 与既有 MapOverviewBuilder 的用户契约必须一致。
  * <p>时钟口径：legacy playback 历史上把 raw clock 当 battle-relative（隐含 start=0，含开战前偏移）；
  * canonical timeline 的 ESTIMATED start = BattleEnded.raw − duration（真实 battle-relative，
- * docs/current-plan.md §2.4）。parity 断言把 legacy 时间减去该偏移后对比——语义等价，
+ * docs/features/battle-playback.md）。parity 断言把 legacy 时间减去该偏移后对比——语义等价，
  * 数值（HP/maxHp/deathSec/事件计数/点数）必须严格一致。</p>
  */
 class BattlePlaybackAdapterParityTest {
@@ -55,6 +57,12 @@ class BattlePlaybackAdapterParityTest {
         final BattleTimelineResult tl = BattleTimelineBuilder.build(
                 battle, recon, TimelinePerspective.personal(
                         recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
+        // PR162/P0-3：随机战夹具无 ArenaPeriod BATTLE / RoundFinished 权威 → battle-start fail-closed。
+        if (recon.battleStartRawClockSec() == null) {
+            assertFalse(tl.usable(), "无 battle-start 权威时必须 fail-closed: " + tl.validation().errors());
+            assertTrue(tl.validation().errors().contains(TimelineError.TIMELINE_CLOCK_UNRESOLVED));
+            return;
+        }
         assertTrue(tl.usable(), "真实回放必须构建 timeline: " + tl.validation().errors());
         final BattleTimeline timeline = tl.timeline();
         final TeamEntityMapping mapping = TeamEntityMapper.resolve(battle, recon);
@@ -147,7 +155,7 @@ class BattlePlaybackAdapterParityTest {
                     adapted.pointsSamples().get(i).timeSec(), timeline, "点数时间必须一致");
         }
 
-        // ---- 真实回放 QA（docs/current-plan.md §24）：新字段在真实 fixture 上可用 ----
+        // ---- 真实回放 QA：新字段在真实 fixture 上可用 ----
         for (final MapOverview.PlaybackVehicle v : adapted.vehicles()) {
             assertNotNull(v.finalStats(), "finalStats 不得为 null: " + v.accountId());
             final PlayerResult player = playerOf(battle, v.accountId());
@@ -167,13 +175,16 @@ class BattlePlaybackAdapterParityTest {
             } else {
                 assertEquals(null, v.entryHp(), "非 OBSERVED_EXACT 不得冒充进场满血: " + v.accountId());
             }
-            // 阵亡车辆必须有 0 血量采样（击毁 = 权威 0，前端不得靠猜测）
+            // PR147：HP timeline 与 terminal/death lifecycle 是两条独立权威事实——阵亡由 deathSec
+            // 表达，绝不因阵亡事实向 HP timeline 注入 0（受控溺水=保留正 HP 阵亡，HP<=0 不是死亡谓词）。
+            // 真实 HP 0 采样仍可存在（受击毁损），但不允许依赖「阵亡 → 必有 0」。此处约束：阵亡车辆
+            // 的 HP 采样（若存在）必须仍然是纯观测结果——observedCapacityHp = hpSamples 纯观测最大值。
             if (v.deathSec() != null) {
-                assertTrue(v.hpSamples().stream().anyMatch(s -> s.hp() == 0),
-                        "阵亡车辆必须有 0 采样: " + v.accountId());
+                assertEquals(MapOverview.observedCapacityHpOf(v.hpSamples()), v.observedCapacityHp(),
+                        "阵亡车辆 observedCapacityHp 仍必须是纯观测最大值: " + v.accountId());
             }
         }
-        // KILL 广播 provenance（docs/current-plan.md §15）：KILL 的 attacker/victim 必须来自
+        // KILL 广播 provenance：KILL 的 attacker/victim 必须来自
         // 同一时刻（同炮窗口）的 DAMAGE 事件——击杀者身份只由客户端伤害通知证明，
         // 前端 kill feed 不得超出该证据范围（未证明全局广播 → 只显示受害者被击毁）。
         for (final MapOverview.PlaybackEvent kill : adapted.events()) {
@@ -201,16 +212,18 @@ class BattlePlaybackAdapterParityTest {
     /**
      * legacy raw 时间 − battle start ≈ adapter battle-relative 时间。
      * 区间边界容差 2.0s：adapter 以 1 秒 frame 粒度评估知识状态（运行段结束可能早 ~1s），
-     * 属「等价语义」（docs/current-plan.md §54），事件/HP/点数用严格断言。
+     * 属「等价语义」，事件/HP/点数用严格断言。
      */
     private static void assertCloseToShifted(
             final double legacyTime, final double adaptedTime,
             final BattleTimeline timeline, final String message) {
-        final double shifted = legacyTime - timeline.battleStartRawClockSec();
-        final double clamped = Math.max(0, shifted);
+        // PR147 battle-clock convergence: both the legacy MapOverviewBuilder (uses recon resolved start)
+        // and the canonical BattlePlaybackAdapter (uses the timeline start) now share the SAME resolved
+        // battle-start, so both already produce battle-relative times — no additional shift (that would
+        // be a double shift). This holds once recon.battleStartRawClockSec == timeline.battleStartRawClockSec.
+        final double clamped = Math.max(0, legacyTime);
         assertTrue(Math.abs(clamped - adaptedTime) < 2.0,
-                message + " legacy=" + legacyTime + " start=" + timeline.battleStartRawClockSec()
-                        + " adapted=" + adaptedTime);
+                message + " legacy=" + legacyTime + " adapted=" + adaptedTime);
     }
 
     private static long countType(final List<MapOverview.PlaybackEvent> events, final String type) {

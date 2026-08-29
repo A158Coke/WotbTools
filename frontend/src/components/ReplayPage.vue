@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { mapLabel, displayName, fileKey } from '../utils/helpers.js'
+import { mapLabel, displayName } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { replayAggregatePlayerCount } from '../utils/replayView.js'
 import { useReplay } from '../composables/useReplay.js'
@@ -24,15 +24,12 @@ import { mergeCwPlayerRows, mergeCwPlayerColumns, CW_DIM_KEYS } from '../utils/p
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
-import AiReviewPanel from './AiReviewPanel.vue'
-import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 
 const { locale, t, te } = useI18n()
 const replay = useReplay()
 const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles, selectionRevision,
-  processingJob, processingError, processingActive,
+  processingJob, processingError, processingActive, processingJobId,
   uploadState, cancelProcessing,
-  requestDirectAction,
   exportJob, exportError, exportActive,
   startProcessingJob, dismissProcessingJob,
   startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
@@ -82,7 +79,7 @@ const unifiedShownCols = computed(() => {
 // ---- Player Detail Drawer（只存 identity，不存 mutable row；刷新后按 accountId 重新 resolve） ----
 const selectedPlayerContext = ref(null)
 
-// ---- Player Detail Drawer 导航：跟随当前可见表格顺序（§29），scope 不跨界（§30）----
+// ---- Player Detail Drawer 导航：跟随当前可见表格顺序，scope 不跨界 ----
 const navOrder = ref([])
 const navIndex = ref(-1)
 
@@ -99,7 +96,7 @@ function closeDrawer() {
   navIndex.value = -1
 }
 
-/** 前后导航可用性（§31）：首位 prev 禁用、末位 next 禁用，不循环。 */
+/** 前后导航可用性：首位 prev 禁用、末位 next 禁用，不循环。 */
 const hasPrevPlayer = computed(() => navOrder.value.length > 0 && navIndex.value > 0)
 const hasNextPlayer = computed(() => navOrder.value.length > 0 && navIndex.value >= 0 && navIndex.value < navOrder.value.length - 1)
 
@@ -480,12 +477,16 @@ function openRatingDocs() {
   navigate && navigate('rating-docs')
 }
 
-function currentBattleFile() {
+function currentBattleRef() {
   if (activeTab.value === 'aggregate') return null
   const idx = parseInt(activeTab.value.replace('b', ''), 10)
   const battle = resp.value?.battles?.[idx]
   if (!battle) return null
-  return files.value.find(f => displayName(f) === battle.sourceName) || null
+  if (!processingJobId.value || !battle.sourceId) {
+    datasetError.value = t('workspace.dataset_prepare_failed')
+    return null
+  }
+  return { processingJobId: processingJobId.value, sourceId: battle.sourceId }
 }
 
 /**
@@ -500,153 +501,36 @@ function requireLoginForBattleAction() {
   return false
 }
 
-// ---- Workspace（解析结果 / AI 复盘 / 战局回放 原地切换；v-show 保持各面板状态）----
-const workspaceTab = ref('results')
-const workspaceFile = ref(null)
-const playbackSeek = ref(null)
-/** 当前 workspace 文件对应的 Dataset 引用（{processingJobId, sourceId}；换文件即失效）。 */
-const datasetRef = ref(null)
-/**
- * Workspace Dataset 请求 generation（BLOCKER 1）：每次目标变化（workspaceFile 或新的
- * ensureDatasetFor 调用）自增；requestDirectAction 是异步的，返回后必须校验 revision +
- * target file identity 仍属于当前 generation，否则直接丢弃——绝不让 A 的迟到响应把
- * datasetRef 绑到已切走的 B 上（data correctness，不是 UI cosmetic）。
- */
-let workspaceDatasetRevision = 0
-
-/**
- * 目标文件变化 → 旧 dataset 引用立即失效（清空，UI 不残留旧引用）。revision 的递增
- * 只由 ensureDatasetFor 负责（每次请求前 ++）；这里不能 ++——Vue 的 pre-flush watcher
- * 会在「请求发起后、await 续体前」运行，把当前请求自己误判成 stale（BLOCKER 1 竞态测试
- * 暴露：workspaceFile 变化 → flush → revision 被顶掉 → 新 dataset 被丢弃）。清空旧值
- * 只是即时 UI 失效；真正的 ownership 由 ensureDatasetFor 的 revision + fileKey 校验保证。
- */
-watch(workspaceFile, () => {
-  datasetRef.value = null
-})
-
-/**
- * 确保目标 source READY 后返回 Dataset 引用（自动创建/复用 Processing Job，plan §40）。
- * 写入 datasetRef 前必须确认：请求发起时的 revision 仍是最新、当前 workspaceFile 的
- * fileKey 仍等于目标文件。任何 stale 结果（成功或失败）一律 discard——不写 datasetRef、
- * 不写 processingError、不修改当前 workspace 状态。
- */
-async function ensureDatasetFor(file) {
-  if (!file) return null
-  const revision = ++workspaceDatasetRevision
-  const targetKey = fileKey(file)
-  try {
-    const ref = await requestDirectAction(file, workspaceTab.value)
-    const current = workspaceFile.value
-    if (revision !== workspaceDatasetRevision || !current || fileKey(current) !== targetKey) {
-      // stale response：不属于当前 workspace generation，直接丢弃。
-      return null
-    }
-    datasetRef.value = ref
-    return ref
-  } catch (e) {
-    const current = workspaceFile.value
-    if (revision === workspaceDatasetRevision && current && fileKey(current) === targetKey) {
-      // 仅当前 generation 的失败才允许写错误；stale 错误不得污染新 selection。
-      datasetRef.value = null
-      if (e && e.name !== 'AbortError' && e?.message !== 'SOURCE_POLL_CANCELLED') {
-        // 用户取消上传（UPLOADING/REGISTERING cancel）与 source poll 本地取消
-        // （selection / workspace target / teardown）：不显示错误。
-        processingError.value = e?.message || String(e)
-      }
-    }
-    return null
-  }
-}
-
-async function openWorkspacePlayback(file) {
-  workspaceTab.value = 'playback'
-  workspaceFile.value = file
-  playbackSeek.value = null
-  await ensureDatasetFor(file)
-}
-
-async function openWorkspaceAi(file) {
-  workspaceTab.value = 'ai'
-  workspaceFile.value = file
-  await ensureDatasetFor(file)
-}
-
-/**
- * Workspace 一级 tab 切换统一入口（results / ai / playback）。
- * 目标解析规则（唯一事实源）：
- * - 已显式选择 workspaceFile → 直接沿用（单纯切 tab 不清空，AI 进度/地图状态由 v-show 保持）；
- * - 未选择且 files 恰有 1 个 → 自动以该唯一文件为目标：复用 selection 内原始 File reference
- *   （不重新上传、不重新解析、不复制对象）；与 FileUploader / battle toolbar 快捷入口统一走
- *   登录门禁（未登录 confirm + login，不切换、不设置 target、不自动发 API 请求）；
- * - 未选择且 files 多个 → 保持 null（空态），禁止静默 fallback 到 files[0]（多文件必须显式选目标）。
- */
-async function selectWorkspaceTab(tab) {
-  if (tab === 'ai' || tab === 'playback') {
-    if (!workspaceFile.value && files.value.length === 1) {
-      if (!requireLoginForBattleAction()) return
-      workspaceFile.value = files.value[0]
-      await ensureDatasetFor(files.value[0])
-    }
-  }
-  workspaceTab.value = tab
-}
-
-/** FileUploader 直接入口（单文件 / 显式选择）上抛：原地切到对应面板。 */
-async function onWorkspaceAction({ file, mode }) {
-  if (!requireLoginForBattleAction()) return
-  if (mode === 'playback') openWorkspacePlayback(file)
-  else openWorkspaceAi(file)
-}
-
+const datasetError = ref('')
 async function openBattlePlayback() {
-  const f = currentBattleFile()
-  if (!f) return
   if (!requireLoginForBattleAction()) return
-  openWorkspacePlayback(f)
+  const ref = currentBattleRef()
+  if (ref && navigate) navigate('battle-playback', ref)
 }
 
 async function openAiReview() {
-  const f = currentBattleFile()
-  if (!f) return
   if (!requireLoginForBattleAction()) return
-  openWorkspaceAi(f)
-}
-
-/** AI 报告时间链接：切到战局回放面板并 seek（BattlePlaybackPanel 自动加载/展开地图）。
- * 先置 null 再 nextTick 写回：连续点击同一时间戳也能重新触发子组件 watch。 */
-async function onAiSeek(sec) {
-  workspaceTab.value = 'playback'
-  playbackSeek.value = null
-  await nextTick()
-  playbackSeek.value = sec
+  const ref = currentBattleRef()
+  if (ref && navigate) navigate('ai-review', ref)
 }
 
 async function preview() {
-  workspaceTab.value = 'results'
   await startProcessingJob(cols.initFromResponse)
 }
 
 function onFileRemoveRequest(f) { askRemoveFile(f) }
-
-// 文件集合变化后目标文件可能已被移除/清空：失效 workspaceFile（面板回到空态），不静默沿用旧文件。
-watch(files, (next) => {
-  if (workspaceFile.value && !next.includes(workspaceFile.value)) {
-    workspaceFile.value = null
-  }
-})
 </script>
 
 <template>
   <div class="layout-data-workspace">
     <FileUploader :files="files" :loading="loading" :confirm-remove="!!resp"
       @update:files="updateFiles" @preview="preview" @remove-request="onFileRemoveRequest"
-      @workspace-action="onWorkspaceAction" />
+      :show-workspace-actions="false" />
 
     <p v-if="error" class="error">{{ error }}</p>
 
-    <!-- 主操作区 inline 进度面板（plan §32/§35）：不依赖 files/resp 渲染条件，
-         与 Export 任务卡各自独立，不再互斥隐藏（BLOCKER H）。 -->
+    <!-- 主操作区 inline 进度面板：不依赖 files/resp 渲染条件，
+         与 Export 任务卡各自独立，不再互斥隐藏。 -->
     <ReplayProcessingPanel
       v-if="uploadState || processingJob"
       :upload-state="uploadState"
@@ -655,16 +539,10 @@ watch(files, (next) => {
       @cancel="cancelProcessing"
       @dismiss="dismissProcessingJob" />
 
-    <!-- Workspace：有文件（解析前也能直接进 AI/回放）或已有解析结果时可见；
-         resp 依赖 files 才存在，故 files.length || resp 与真实状态机一致。 -->
+    <!-- 解析结果区：有文件或已有解析结果时可见；resp 依赖 files 才存在，
+         故 files.length || resp 与真实状态机一致。 -->
     <template v-if="files.length || resp">
-      <div class="workspace-tabs" role="tablist" aria-label="Workspace">
-        <button data-testid="workspace-results-tab" :class="{ active: workspaceTab === 'results' }" @click="selectWorkspaceTab('results')">{{ $t('workspace.tab_results') }}</button>
-        <button data-testid="workspace-ai-tab" :class="{ active: workspaceTab === 'ai' }" @click="selectWorkspaceTab('ai')">{{ $t('action.ai_review') }}</button>
-        <button data-testid="workspace-playback-tab" :class="{ active: workspaceTab === 'playback' }" @click="selectWorkspaceTab('playback')">{{ $t('action.battle_playback') }}</button>
-      </div>
-
-      <div v-show="workspaceTab === 'results'">
+      <div>
         <p v-if="!resp" class="replay-empty-note">{{ $t('workspace.results_hint') }}</p>
         <template v-if="resp">
         <div v-if="resp.duplicates.length" class="warn">
@@ -724,7 +602,7 @@ watch(files, (next) => {
             </button>
             <template v-if="activeTab !== 'aggregate'">
               <button class="battle-action" data-testid="battle-playback-btn" @click="openBattlePlayback">
-                <svg class="ic" viewBox="0 0 24 24"><path d="M3 5l6 3-6 3zM15 5l6 3-6 3zM9 8h6M9 8v8M9 16l6-3M9 13l6-3" /></svg>{{ $t('action.battle_playback') }}
+                <svg class="ic" viewBox="0 0 24 24"><path d="M3 5l6 3-6 3zM15 5l6 3-6 3zM9 8h6M9 8v8M9 16l6-3M9 13l6-3" /></svg>{{ $t('home.battlePlayback') }}
               </button>
               <button class="battle-action primary" data-testid="battle-ai-btn" @click="openAiReview">
                 <svg class="ic" viewBox="0 0 24 24"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8z" /></svg>{{ $t('action.ai_review') }}
@@ -797,16 +675,6 @@ watch(files, (next) => {
         </template>
       </div>
 
-      <div v-show="workspaceTab === 'ai'" data-test="workspace-ai-panel">
-        <AiReviewPanel :file="workspaceFile" :processing-job-id="datasetRef?.processingJobId ?? null"
-          :source-id="datasetRef?.sourceId ?? null" login-view="replay" @seek="onAiSeek" />
-      </div>
-      <div v-show="workspaceTab === 'playback'" data-test="workspace-playback-panel">
-        <!-- active=进入战局回放 capability 时面板才自动加载地图；AI 复盘期间保持挂载但不发请求 -->
-        <BattlePlaybackPanel :file="workspaceFile" :processing-job-id="datasetRef?.processingJobId ?? null"
-          :source-id="datasetRef?.sourceId ?? null" :active="workspaceTab === 'playback'"
-          :seek-to="playbackSeek" login-view="replay" />
-      </div>
     </template>
 
     <ReplayTaskCard v-if="exportJob" :job="exportJob" :error="exportError"
@@ -822,9 +690,7 @@ watch(files, (next) => {
 </template>
 
 <style>
-/* Workspace 一级能力切换（解析结果 / AI 复盘 / 战局回放）：紧凑单行一级导航。
-   视觉样式在 showcase-workspaces.css（.layout-data-workspace .workspace-tabs），
-   不复用 restoolbar 的 battle 分栏 .tabs。 */
+/* Replay results and export controls. Capability navigation lives in App.vue. */
 /* 汇总 Tab 双区块：基础 Replay Aggregate 与 League Rating 汇总并列，
    各自独立标题，League Rating 是附加分析不是替代品。 */
 .replay-section-title {

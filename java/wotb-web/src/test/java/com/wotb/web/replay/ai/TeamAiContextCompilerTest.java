@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
@@ -15,7 +16,6 @@ import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.replay.stream.ReplayStreamHeader;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
@@ -57,9 +57,8 @@ class TeamAiContextCompilerTest {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "middleburg", "1", "1", 2, "rec1", "", 90.0, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(true, 6, 6, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, 1000f, true);
+        final ReplayCoverage coverage = new ReplayCoverage(6, 6, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(0, new ReplayTimestamp(1000f, 0f), 8,
                 DecodeConfidence.EXACT, 1, 1001));
@@ -115,7 +114,7 @@ class TeamAiContextCompilerTest {
 
     @Test
     void renderTimelineBlockInjectsValidatedTimelineSection() {
-        // PR #102 review B1：PromptBuilder 不再内部 build —— 由 orchestration 层验证后
+        // PR #102 ：PromptBuilder 不再内部 build —— 由 orchestration 层验证后
         // 传入 timeline，renderTimelineBlock 只做确定性渲染。
         final BattleTimeline timeline = BattleTimelineBuilder.build(
                 battle(), recon(), TimelinePerspective.team(1)).timeline();

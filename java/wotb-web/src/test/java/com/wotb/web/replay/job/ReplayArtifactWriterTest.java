@@ -2,11 +2,11 @@ package com.wotb.web.replay.job;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.replay.facts.AiReplayFacts;
 import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
 import com.wotb.core.replay.processing.ReplayProcessingDiagnostics;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.processing.ReplayProcessingStatus;
-import com.wotb.core.replay.facts.AiReplayFacts;
 import com.wotb.web.replay.dto.MapOverview;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Phase 5：derived artifact 原子写 + 读取往返 + MapOverview unavailable 语义（plan §21/§23/§107）。 */
+/** Phase 5：derived artifact 原子写 + 读取往返 + MapOverview unavailable 语义。 */
 class ReplayArtifactWriterTest {
 
     @Test
@@ -59,7 +59,7 @@ class ReplayArtifactWriterTest {
             assertEquals("malinovka", read.mapCode());
             assertEquals(1, read.friendlyTeam());
 
-            // MapOverview unavailable（null）→ 不写伪 artifact（plan §23）
+            // MapOverview unavailable（null）→ 不写伪 artifact
             ReplayArtifactWriter.writeMapOverview(jobDir, 2, null);
             assertFalse(Files.exists(ReplayArtifactWriter.mapOverviewPath(jobDir, 2)));
             assertNull(ReplayArtifactWriter.readMapOverview(jobDir, 2));

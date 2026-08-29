@@ -1,17 +1,16 @@
 package com.wotb.web.replay.ai.gateway;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.wotb.web.config.AiModelProperties;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.ClassPathResource;
 
 import java.util.List;
 
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.env.YamlPropertySourceLoader;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.core.env.PropertySource;
-
-import com.wotb.web.config.AiModelProperties;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Timeout and retry configuration: single source (wotb.ai.* env mapping),

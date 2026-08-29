@@ -47,6 +47,7 @@ public final class LeagueReplays {
             LeagueRatingMode mode,
             List<Battle> battles,
             List<String> battleSourceNames,
+            List<String> battleSourceIds,
             List<String[]> duplicates,
             List<String[]> failures,
             List<LeagueFailure> leagueFailures,
@@ -55,6 +56,7 @@ public final class LeagueReplays {
         public LeagueCollectResult {
             battles = battles == null ? List.of() : List.copyOf(battles);
             battleSourceNames = battleSourceNames == null ? List.of() : List.copyOf(battleSourceNames);
+            battleSourceIds = battleSourceIds == null ? List.of() : List.copyOf(battleSourceIds);
             duplicates = duplicates == null ? List.of() : List.copyOf(duplicates);
             failures = failures == null ? List.of() : List.copyOf(failures);
             leagueFailures = leagueFailures == null ? List.of() : List.copyOf(leagueFailures);
@@ -95,12 +97,12 @@ public final class LeagueReplays {
             // 普通回放语义成功返回（标准 arenaId 去重，progress 真实 outcome），League
             // Analysis unavailable 由调用方以 leagueUnavailableCode 提示，不再整体拒绝。
             final com.wotb.core.model.Collected c = Replays.dedupe(entries, log, progress);
-            return new LeagueCollectResult(mode, c.battles, c.battleSourceNames, c.duplicates,
+            return new LeagueCollectResult(mode, c.battles, c.battleSourceNames, c.battleSourceIds, c.duplicates,
                     c.failures, List.of(), null);
         }
         if (mode == LeagueRatingMode.STANDARD_REPLAY) {
             final com.wotb.core.model.Collected c = Replays.dedupe(entries, log, progress);
-            return new LeagueCollectResult(mode, c.battles, c.battleSourceNames, c.duplicates,
+            return new LeagueCollectResult(mode, c.battles, c.battleSourceNames, c.battleSourceIds, c.duplicates,
                     c.failures, List.of(), null);
         }
         return collectLeague(entries, progress);
@@ -126,6 +128,7 @@ public final class LeagueReplays {
 
         final List<Battle> battles = new ArrayList<>();
         final List<String> battleSourceNames = new ArrayList<>();
+        final List<String> battleSourceIds = new ArrayList<>();
         final List<String[]> duplicates = new ArrayList<>();
         final List<LeagueFailure> leagueFailures = new ArrayList<>();
         final List<String> conflictedArenas = new ArrayList<>();
@@ -155,6 +158,7 @@ public final class LeagueReplays {
             }
             battles.add(kept.battle());
             battleSourceNames.add(kept.sourceName());
+            battleSourceIds.add("r" + kept.sourceIndex());
         }
 
         // 校验 + 评分（每场独立；不合格该场不评分但 Battle 仍保留在 battles，
@@ -205,7 +209,7 @@ public final class LeagueReplays {
         }
 
         return new LeagueCollectResult(LeagueRatingMode.LEAGUE_RATING,
-                battles, battleSourceNames, duplicates,
+                battles, battleSourceNames, battleSourceIds, duplicates,
                 failuresFrom(entries), leagueFailures, batch);
     }
 

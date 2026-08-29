@@ -3,13 +3,13 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.replay.evidence.TeamReviewEnvelope;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.util.List;
 
 /**
  * Natural Coach 轮：Team Call #2 structured JSON envelope 解析契约。
@@ -81,7 +81,7 @@ class TeamReviewEnvelopeParserTest {
 
     @Test
     void parsesMachineClaimFields() {
-        // Review B1-2：机器可校验字段（timeSec/region/count/subject/value/claimType）三语通用
+        // 机器可校验字段（timeSec/region/count/subject/value/claimType）三语通用
         final String json = "{"
                 + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
                 + "\"reviewMarkdown\":\"## 团队复盘\\n\\n内容\","
@@ -103,7 +103,7 @@ class TeamReviewEnvelopeParserTest {
 
     @Test
     void tacticalClaimWithoutMachineFieldsPasses() {
-        // Review Blocker B1：TACTICAL（纯战术观点）不需要 factual machine 字段 → PASS
+        // TACTICAL（纯战术观点）不需要 factual machine 字段 → PASS
         final String json = "{"
                 + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
                 + "\"reviewMarkdown\":\"## 团队复盘\\n\\n内容\","
@@ -125,7 +125,7 @@ class TeamReviewEnvelopeParserTest {
         assertNull(TeamReviewEnvelopeParser.parse("   "));
     }
 
-    // ===== Review Blocker B1：structured factual contract fail-close =====
+    // ===== ：structured factual contract fail-close =====
 
     private static String claimJson(final String claimBody) {
         return "{"
@@ -243,7 +243,7 @@ class TeamReviewEnvelopeParserTest {
 
     @Test
     void parsesSubjectAccountIdStableIdentity() {
-        // Review Blocker B1：subjectAccountId（可选稳定身份，JSON number）
+        // subjectAccountId（可选稳定身份，JSON number）
         final String json = claimJson(
                 "\"claimType\":\"ENEMY_POSITION\",\"subject\":\"SPHT\",\"timeSec\":112.0,"
                         + "\"region\":6,\"knowledge\":\"LAST_KNOWN\",\"subjectAccountId\":2001,"
@@ -255,7 +255,7 @@ class TeamReviewEnvelopeParserTest {
 
     @Test
     void failCloseSubjectAccountIdAsString() {
-        // Review Blocker B1：subjectAccountId 为字符串 → reject/rewrite（fail-close）
+        // subjectAccountId 为字符串 → reject/rewrite（fail-close）
         final String json = claimJson(
                 "\"claimType\":\"ENEMY_POSITION\",\"subject\":\"SPHT\",\"timeSec\":112.0,"
                         + "\"region\":6,\"knowledge\":\"LAST_KNOWN\",\"subjectAccountId\":\"2001\","
@@ -263,7 +263,7 @@ class TeamReviewEnvelopeParserTest {
         assertNull(TeamReviewEnvelopeParser.parse(json),
                 "subjectAccountId 为字符串必须 reject（JSON number）");
     }
-    // ===== docs/current-plan.md §44/§45：可诊断 ParseResult + 稳定失败分类 =====
+    // ===== 可诊断 ParseResult + 稳定失败分类 =====
 
     @Test
     void parseDetailedReturnsOkWithEnvelope() {
@@ -361,7 +361,7 @@ class TeamReviewEnvelopeParserTest {
         assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.TOO_MANY_EVIDENCE_IDS, result.failureReason());
     }
 
-    /** docs/current-plan.md §26：合法 JSON 但业务 schema 违反 → parser 仍 FAIL（JSON syntax ≠ business schema）。 */
+    /** 合法 JSON 但业务 schema 违反 → parser 仍 FAIL（JSON syntax ≠ business schema）。 */
     @Test
     void jsonModeTypicalResponseWithWrongClaimsTypeFails() {
         final String wrong = "{\"primaryDiagnosis\": {\"title\": \"t\", \"reasoning\": \"r\"},"
@@ -371,7 +371,7 @@ class TeamReviewEnvelopeParserTest {
         assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.INVALID_CLAIMS, result.failureReason());
     }
 
-    /** docs/current-plan.md §26：官方 JSON mode 典型响应正常解析 PASS。 */
+    /** 官方 JSON mode 典型响应正常解析 PASS。 */
     @Test
     void jsonModeTypicalResponseParsesPass() {
         final String typical = "{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
@@ -381,7 +381,7 @@ class TeamReviewEnvelopeParserTest {
         assertNotNull(result.envelope());
     }
 
-    // ===== PR #106 review：字符串数组字段三态（MISSING / INVALID / VALID-empty）=====
+    // ===== 字符串数组字段三态（MISSING / INVALID / VALID-empty）=====
 
     private static String diagnosisJson(final String diagnosisBody) {
         return "{\"primaryDiagnosis\":{" + diagnosisBody + "},"

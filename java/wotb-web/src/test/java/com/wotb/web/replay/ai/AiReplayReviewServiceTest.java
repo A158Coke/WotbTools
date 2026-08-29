@@ -1,17 +1,13 @@
 package com.wotb.web.replay.ai;
 
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.replay.facts.AiReplayFacts;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.processing.ReplayIdentity;
 import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.processing.ReplayProcessingStatus;
-import com.wotb.core.replay.facts.AiReplayFacts;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.dto.AnalyzeResponse;
@@ -19,6 +15,8 @@ import com.wotb.web.replay.job.ProcessedDataset;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,31 +26,29 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * AI 复盘共享链（V2 Dataset 路径，BLOCKER 2）：multipart 上传入口已废弃，
+ * AI 复盘共享链（V2 Dataset 路径）：multipart 上传入口已废弃，
  * {@code analyzeFacts(AiReplayFacts, ...)} 是唯一 AI 复盘入口（读 Processing Job
  * derived facts，不重新 full process）。本测试覆盖 AI 链：preBattleSection 渲染、
  * tank-name correction package 传播、team/player 分支、listener 事件转发与 Dataset
- * artifact 读取（processingFacade 零调用）。
+ * artifact 读取（只读 ReplayProcessingJobStore / ReplayArtifactWriter，不依赖 full-processing facade）。
  */
 @ExtendWith(MockitoExtension.class)
 class AiReplayReviewServiceTest {
-
-    @Mock
-    private DefaultReplayProcessingFacade processingFacade;
 
     @Mock
     private AiReplayAnalysisService aiAnalysisService;
@@ -61,7 +57,7 @@ class AiReplayReviewServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiReplayReviewService(aiAnalysisService);
+        service = new AiReplayReviewService(aiAnalysisService, null, null, null);
     }
 
     @Test
@@ -192,7 +188,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), PRIOR));
-        service = new AiReplayReviewService(aiAnalysisService, harness, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
 
         final AnalyzeResponse response = analyzeResult(randomResult());
 
@@ -209,10 +205,10 @@ class AiReplayReviewServiceTest {
         assertFalse(section.contains("TEAM_A"), "internal team tokens must be replaced");
     }
 
-    // ---- plan §36–§38/§87：Dataset 路径只读 ai-facts，不得调用 processingFacade ----
+    // ---- Dataset 路径只读 ai-facts（ReplayProcessingJobStore / ReplayArtifactWriter） ----
 
     @Test
-    void analyzeFactsFromDatasetReadsArtifactWithoutProcessingFacade() throws Exception {
+    void analyzeFactsFromDatasetReadsAiFactsArtifactFromStore() throws Exception {
         final Path dir = Files.createTempDirectory("wotb-ai-dataset-test");
         final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60);
         try {
@@ -235,7 +231,44 @@ class AiReplayReviewServiceTest {
 
             assertNotNull(response);
             assertTrue(response.analysis().contains("dataset-analysis"));
-            verify(processingFacade, never()).process(any(), any());
+        } finally {
+            store.close();
+            try (var walk = Files.walk(dir)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (final Exception ignored) {
+                        // best-effort test cleanup
+                    }
+                });
+            }
+        }
+    }
+
+    @Test
+    void corruptAiFactsArtifactReturnsDatasetUnavailableNotJobNotFound() throws Exception {
+        final Path dir = Files.createTempDirectory("wotb-ai-corrupt");
+        final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60);
+        try {
+            final ReplayProcessingResult result = randomResult();
+            final ReplayProcessingJob job = new ReplayProcessingJob("j1", List.of("a.wotbreplay"));
+            job.startProcessing();
+            job.markSourceProcessing(0, "a.wotbreplay");
+            ReplayArtifactWriter.writeAiFacts(store.jobDir("j1"), 0, result);
+            // 覆盖为 corrupt ai-facts.json（ReplayFactsCodec 反序列化失败 → IOException）
+            Files.writeString(ReplayArtifactWriter.aiFactsPath(store.jobDir("j1"), 0), "{not-valid-json");
+            job.markSourceReady(0);
+            job.updateProgress(1, 0, 0);
+            job.markReady(new ProcessedDataset(List.of(result.battle()), List.of("a.wotbreplay"),
+                    List.of(), List.of(), null, null));
+            store.register(job);
+            service = new AiReplayReviewService(aiAnalysisService, null, null, store);
+
+            final ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                    () -> service.analyzeFacts("j1", 0, AllowedLanguage.ZH, AiReviewStreamListener.NOOP));
+            // artifact 解码/存储故障 ≠ 「job 不存在」——必须是不可恢复的 503 DATASET_UNAVAILABLE
+            assertEquals(HttpStatus.SERVICE_UNAVAILABLE, e.getStatusCode());
+            assertEquals("DATASET_UNAVAILABLE", e.getReason());
         } finally {
             store.close();
             try (var walk = Files.walk(dir)) {
@@ -256,7 +289,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), null));
-        service = new AiReplayReviewService(aiAnalysisService, harness, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
 
         final AnalyzeResponse response = analyzeResult(randomResult());
 
@@ -272,7 +305,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.EN), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("fallback-text"), null));
-        service = new AiReplayReviewService(aiAnalysisService, harness, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
 
         final AnalyzeResponse response = analyzeResult(randomResult(), AllowedLanguage.EN);
 
@@ -319,7 +352,7 @@ class AiReplayReviewServiceTest {
                     return new TacticalReviewHarness.HarnessOutcome(
                             new AnalyzeResult("harness-text"), PRIOR);
                 });
-        service = new AiReplayReviewService(aiAnalysisService, harness, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
 
         final StringBuilder events = new StringBuilder();
         final AnalyzeResponse response = analyzeResult(randomResult(), AllowedLanguage.ZH,
@@ -348,7 +381,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), PRIOR));
-        service = new AiReplayReviewService(aiAnalysisService, harness, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
 
         final AnalyzeResponse response = analyzeResult(randomResultWithReconstruction());
 

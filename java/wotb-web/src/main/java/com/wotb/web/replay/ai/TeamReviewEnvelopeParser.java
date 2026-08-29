@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * （reviewMarkdown 为空 / primaryDiagnosis 缺 title 或 reasoning / claims 非数组 /
  * evidenceIds 非字符串数组）时 {@link #parse(String)} 返回 {@code null}，由编排器把
  * 「输出必须是合法 JSON envelope」反馈给 LLM 重写（targeted rewrite → full rewrite → fail-safe）。</p>
- * <p>Observability（docs/current-plan.md §44/§45）：{@link #parseDetailed(String)} 返回
+ * <p>Observability：{@link #parseDetailed(String)} 返回
  * 可诊断的 {@link ParseResult}，携带稳定低基数 {@link ParseFailureReason}——启用 DeepSeek
  * JSON Output 后剩余的 parser failure 类型必须可机器分类，不能只看到笼统的 null。
  * 字符串数组字段（evidenceIds / supportingEvidenceIds）区分 MISSING（缺失）/ INVALID（存在但
@@ -61,7 +61,7 @@ public final class TeamReviewEnvelopeParser {
             if (title.isBlank() || reasoning.isBlank()) {
                 return ParseResult.fail(ParseFailureReason.MISSING_PRIMARY_DIAGNOSIS);
             }
-            // PR #106 review：supportingEvidenceIds 存在但不是合法字符串数组 → schema/type failure，
+            // supportingEvidenceIds 存在但不是合法字符串数组 → schema/type failure，
             // 不允许静默退化为空数组并 PASS（missing 仍合法——该字段可选）。
             final StringListField supportingIds = stringListField(diagnosis.get("supportingEvidenceIds"));
             if (supportingIds.invalid()) {
@@ -91,7 +91,7 @@ public final class TeamReviewEnvelopeParser {
                     if (claimText.isBlank()) {
                         return ParseResult.fail(ParseFailureReason.INVALID_CLAIMS);
                     }
-                    // PR #106 review：evidenceIds 必须区分缺失 / 类型非法 / 合法（含空数组）。
+                    // evidenceIds 必须区分缺失 / 类型非法 / 合法（含空数组）。
                     // malformed（字符串整体 / [{}] / [null] / number/boolean 元素）→ schema/type
                     // failure（INVALID_MACHINE_FIELD_TYPE），绝不静默视为「空」或误报
                     // MISSING_REQUIRED_MACHINE_FIELD；合法 [] 仍按空引用列表处理。
@@ -103,7 +103,7 @@ public final class TeamReviewEnvelopeParser {
                     if (ids.size() > MAX_IDS_PER_CLAIM) {
                         return ParseResult.fail(ParseFailureReason.TOO_MANY_EVIDENCE_IDS);
                     }
-                    // Review Blocker B1：structured factual contract（fail-close，P0-4 容错）——
+                    // structured factual contract（fail-close，P0-4 容错）——
                     // claimType 必填且必须属于 schema；缺失/未知时按机器字段确定性推断（能
                     // deterministic 修复的 schema 缺失不浪费 LLM retry）；显式禁止类型（LOS 等）
                     // 一律拒绝；每种 factual claimType 的 required machine 字段必须齐全；机器
@@ -112,7 +112,7 @@ public final class TeamReviewEnvelopeParser {
                     final NumField regionF = intField(item.get("region"), 1, 9);
                     final NumField countF = intField(item.get("count"), 0, 99);
                     final String subject = text(item.get("subject"));
-                    // Review Blocker B1：稳定身份 subjectAccountId（可选；JSON number 正整数，类型错误 fail-close）
+                    // 稳定身份 subjectAccountId（可选；JSON number 正整数，类型错误 fail-close）
                     final NumField accF = longField(item.get("subjectAccountId"));
                     final String value = text(item.get("value"));
                     final String side = text(item.get("side")).toUpperCase(java.util.Locale.ROOT);
@@ -220,7 +220,7 @@ public final class TeamReviewEnvelopeParser {
         return node == null || node.isNull() ? "" : node.asText("");
     }
 
-    /** Review Blocker B1：结构化 factual contract 的 machine 枚举值。 */
+    /** ：结构化 factual contract 的 machine 枚举值。 */
     static final Set<String> CLAIM_TYPES = Set.of(
             "DEATH", "ALIVE_TRANSITION", "POSITION_REGION", "ENEMY_POSITION", "TACTICAL");
 
@@ -269,7 +269,7 @@ public final class TeamReviewEnvelopeParser {
     }
 
     /**
-     * 数值字段（Review Blocker B1：fail-close）：
+     * 数值字段（fail-close）：
      * 字段缺失 → {@code MISSING}；字段存在但类型/取值非法（如 {@code "112"} 字符串、
      * {@code "three"}、非正数）→ {@code INVALID}（整个 envelope 拒绝，不静默 null）。
      */
@@ -348,7 +348,7 @@ public final class TeamReviewEnvelopeParser {
     }
 
     /**
-     * 字符串数组字段（evidenceIds / supportingEvidenceIds）解析（PR #106 review）：
+     * 字符串数组字段（evidenceIds / supportingEvidenceIds）解析：
      * <ul>
      *   <li>字段缺失 / JSON null → {@link StringListField#MISSING}（与 {@link NumField} 的 null 语义一致）；</li>
      *   <li>字段存在但不是 array，或 array 元素不是 JSON string（object/null/number/boolean）→
@@ -376,7 +376,7 @@ public final class TeamReviewEnvelopeParser {
     }
 
     /**
-     * 字符串数组字段解析状态（PR #106 review）：MISSING（缺失）/ INVALID（存在但类型或元素非法）/
+     * 字符串数组字段解析状态：MISSING（缺失）/ INVALID（存在但类型或元素非法）/
      * VALID（合法，可为空数组）。与 {@link NumField} 同构，保证 missing 与 malformed 可区分。
      */
     private static final class StringListField {
@@ -410,7 +410,7 @@ public final class TeamReviewEnvelopeParser {
     }
 
     /**
-     * 可诊断解析结果（§45）：成功时 {@code envelope} 非 null、{@code failureReason} 为 null；
+     * 可诊断解析结果：成功时 {@code envelope} 非 null、{@code failureReason} 为 null；
      * 失败时相反。不要靠 catch 后统一「parse failed」——JSON Output 启用后剩余失败类型必须可分类。
      */
     public record ParseResult(TeamReviewEnvelope envelope, ParseFailureReason failureReason) {
@@ -428,7 +428,7 @@ public final class TeamReviewEnvelopeParser {
         }
     }
 
-    /** 稳定低基数 parser 失败分类（§44；日志/指标使用，不记录 rawJson）。 */
+    /** 稳定低基数 parser 失败分类（日志/指标使用，不记录 rawJson）。 */
     public enum ParseFailureReason {
         EMPTY_OUTPUT,
         INVALID_JSON,

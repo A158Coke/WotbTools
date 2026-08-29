@@ -13,7 +13,7 @@ derived performance metrics**，不再属于任何 Rating 综合评分体系。
 ```text
 .wotbreplay
     ↓
-ReplayParser（结算战绩 + killVictims）
+ReplayParser（结算战绩）
     ↓
 DefaultReplayProcessingFacade（完整重建 + ObservedMaxHp.populate + DeathTimeReconciler）
     ↓
@@ -21,6 +21,10 @@ Battle / PlayerResult（唯一 authoritative facts 载体）
     ↓
 PerformanceMetricsCalculator（纯派生计算，只读）
 ```
+
+> `PlayerResult.killVictims`（damage-threshold 击杀前伤害明细）与 `DeathTimeEstimator` 已在 PR147/PR162 从生产
+> 移除（damageReceived 不是本局最大 HP，无法证明 lethal boundary / killer identity）；killer authority 为
+> settlement `field25`/result-id 映射。
 
 Battle Playback / AI Review / Performance Metrics 全部消费同一 `Battle` / `PlayerResult`
 事实；`ReplayProcessingJobService` 在 worker 中完成 full processing，并在 READY 前只调用一次
@@ -175,10 +179,9 @@ killer 级 trade 语义应在事实层扩展，不在 metrics 层重推。
   OBSERVED_EXACT 进场满血 ÷ 14、HP 未知 fail-closed（多伤率不猜测），以及 `battleMetrics`
   单场值 == `compute(List.of(battle))` 聚合值（单一事实源回归）、HP UNKNOWN → contribution/kast null、
   accountId 映射不受排序影响。
-- `ReplayServiceTest` 覆盖 `preview` 走完整回放处理并把指标映射进单场 cells / 汇总；
-  `ReplayMapperTest` 覆盖 cells 含 contribution/kast/impact 与汇总合并、HP unknown → null；
-  `WebApiTest` 覆盖 `POST /api/preview` 的单场 cells 含三列且 impact 为数值（不含 `rating`，
-  无 `performance` 字段）。
+- `ReplayMapperTest` 覆盖 cells 含 contribution/kast/impact 与汇总合并、HP unknown → null；
+  `WebApiTest` 覆盖同步 `POST /api/preview` 一律 410 `REPLAY_LEGACY_DEPRECATED`（metrics
+  契约已随 `GET /api/replay/processing-jobs/{jobId}/result` 迁移，见 Processing Job result）。
 - 单一事实源回归必须保证：Playback 伤害 == Performance Metrics 输入伤害
   （同一 `PlayerResult.damageDealt`）。
 - 历史 V2 的算法和回归维护基线见 [Rating V2 算法规范](rating-v2.md)；不要把其

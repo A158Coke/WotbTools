@@ -16,7 +16,6 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
@@ -38,7 +37,7 @@ import java.util.zip.ZipOutputStream;
  * Replay Export Job 编排（异步长任务：bounded worker + 有界队列 + 真实进度 + 终态 exactly once）。
  *
  * <p>Create（request 线程）：复用 Replay Processing Job 的已解析
- * {@link ProcessedDataset}（BLOCKER 2：Export 不再接受裸 replay 上传——无
+ * {@link ProcessedDataset}（Export 不再接受裸 replay 上传——无
  * {@code processingJobId} 一律 410 {@code REPLAY_LEGACY_DEPRECATED}，绝不绕过
  * {@link ReplayParseScheduler} 创建第二套 full processing）→ 注册 job →
  * 提交有界 worker 池 → 202。Worker：直接生成 XLSX/ZIP 流式 artifact（不
@@ -74,10 +73,24 @@ public class ReplayExportJobService {
 
     // ---- create / status / cancel / download ----
 
-    /** 创建 Export Job（带战队名称覆盖 JSON：{battle:{arenaId:team:名}, summary:{teamKey:名}}，仅本次调用内使用）。 */
-    public String createJob(final MultipartFile[] files, final String mode,
-                            final String processingJobId, final String teamNamesJson) {
-        return createJob(files, mode, processingJobId, parseTeamNames(teamNamesJson));
+    /**
+     * 创建 Export Job。
+     *
+     * <p>V2 唯一路径：{@code processingJobId} <b>必填</b>——Export
+     * 只复用 Replay Processing Job result，不重新上传 replay、不 processFull，
+     * worker 直接从已解析的 {@link ProcessedDataset} 生成 XLSX/ZIP；Export 创建时对
+     * Processing result acquire 引用（引用计数阻止其被 TTL 清理）。缺少
+     * {@code processingJobId} 的裸 multipart 上传路径已废弃 → 410
+     * {@code REPLAY_LEGACY_DEPRECATED}。</p>
+     *
+     * @param mode aggregate（默认）或 each
+     * @param processingJobId 必填的已 READY Processing Job id
+     * @param teamNamesJson League 战队名称覆盖 JSON（可选，仅本次调用内使用）
+     * @throws ResponseStatusException 404 PROCESSING_JOB_NOT_FOUND / 409 PROCESSING_JOB_NOT_READY
+     *         （复用路径引用不存在的 / 未 READY 的 Processing Job）
+     */
+    public String createJob(final String mode, final String processingJobId, final String teamNamesJson) {
+        return createJob(mode, processingJobId, parseTeamNames(teamNamesJson));
     }
 
     /**
@@ -128,33 +141,18 @@ public class ReplayExportJobService {
         }
     }
 
-    /**
-     * 创建 Export Job。
-     *
-     * <p>V2 唯一路径（BLOCKER 2）：{@code processingJobId} <b>必填</b>——Export
-     * 只复用 Replay Processing Job result，不重新上传 replay、不 processFull，
-     * worker 直接从已解析的 {@link ProcessedDataset} 生成 XLSX/ZIP；Export 创建时对
-     * Processing result acquire 引用（引用计数阻止其被 TTL 清理）。缺少
-     * {@code processingJobId} 的裸 multipart 上传路径已废弃 → 410
-     * {@code REPLAY_LEGACY_DEPRECATED}。</p>
-     *
-     * @throws ResponseStatusException 404 PROCESSING_JOB_NOT_FOUND / 409 PROCESSING_JOB_NOT_READY
-     *         （复用路径引用不存在的 / 未 READY 的 Processing Job）
-     */
-    public String createJob(final MultipartFile[] files, final String mode, final String processingJobId) {
-        return createJob(files, mode, processingJobId, (TeamNameOverrides) null);
+    /** 创建 Export Job（无战队名称覆盖）。 */
+    public String createJob(final String mode, final String processingJobId) {
+        return createJob(mode, processingJobId, (TeamNameOverrides) null);
     }
 
-    private String createJob(final MultipartFile[] files, final String mode, final String processingJobId,
+    private String createJob(final String mode, final String processingJobId,
                              final TeamNameOverrides teamNames) {
         final boolean each = "each".equalsIgnoreCase(mode);
         if (!StringUtils.hasText(processingJobId)) {
             // 传统「上传 replay → 导出」路径废弃：Export 只消费 Processing Job dataset，
             // 绝不在此创建 scheduler 之外的 full processing。
             throw ReplayLegacyEndpoints.gone();
-        }
-        if (processingStore == null) {
-            throw new IllegalStateException("PROCESSING_STORE_UNAVAILABLE");
         }
         final ReplayProcessingJob acquiredJob = processingStore.acquireForExport(processingJobId);
         if (acquiredJob == null) {
@@ -227,7 +225,7 @@ public class ReplayExportJobService {
                 // QUEUED 任务已被从 executor queue 移除、Runnable 永不执行 → worker 不会调用
                 // finishTerminal；在请求线程直接记录终态 observability（exactly once），
                 // 并释放对 Processing result 的引用（worker 不会运行来 release）。
-                if (job.processingJobId() != null && processingStore != null) {
+                if (job.processingJobId() != null) {
                     processingStore.release(job.processingJobId());
                 }
                 finishTerminalQueuedCancel(job);
@@ -320,9 +318,7 @@ public class ReplayExportJobService {
             finishTerminal(job, startNanos);
         } finally {
             // Export 终态（含取消/失败）后释放引用，允许 Processing result 被 TTL 清理。
-            if (processingStore != null) {
-                processingStore.release(processingJob.jobId());
-            }
+            processingStore.release(processingJob.jobId());
         }
     }
 

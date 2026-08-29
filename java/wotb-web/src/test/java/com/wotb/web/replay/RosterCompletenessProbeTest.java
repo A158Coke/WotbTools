@@ -1,24 +1,24 @@
 package com.wotb.web.replay;
 
 import com.wotb.core.league.LeagueFailure;
-import com.wotb.core.league.LeagueRatingBatchAggregator;
-import com.wotb.core.league.LeagueRatingCalculator;
-import com.wotb.core.league.LeagueRatingMode;
 import com.wotb.core.league.LeagueRatingValidator;
 import com.wotb.core.league.LeagueReplays;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
-import com.wotb.core.parse.EventStreamReader;
+import com.wotb.core.parse.PickleDecoder;
 import com.wotb.core.parse.PickleReader;
 import com.wotb.core.parse.Protobuf;
 import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.parse.ReplayParser;
+import com.wotb.core.replay.stream.RawReplayPacket;
+import com.wotb.core.replay.stream.ReplayPacketStreamReader;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -94,15 +94,35 @@ class RosterCompletenessProbeTest {
             resultAccounts.add(Protobuf.firstLong(info, 101, 0));
             teams.add((int) Protobuf.firstLong(info, 102, 0));
         }
-        // Type0 basePlayerCreate arena info
+        // Type0 basePlayerCreate arena info (canonical framing reader + inline pickle decode;
+        // PR147: the old EventStreamReader parallel raw semantic parser is research/probe tooling only).
         final Set<Long> type0Accounts = new TreeSet<>();
         final byte[] eventData = entries.get("data.wotreplay");
         if (eventData != null) {
             try {
-                final EventStreamReader.ArenaInfo info =
-                        EventStreamReader.extractArenaInfo(EventStreamReader.read(eventData).packets);
-                if (info != null && info.accountDatabaseIds() != null) {
-                    type0Accounts.addAll(info.accountDatabaseIds());
+                for (final RawReplayPacket pkt : ReplayPacketStreamReader.read(eventData).packets()) {
+                    if (pkt.type() != 0) {
+                        continue;
+                    }
+                    final byte[] payload = pkt.payload();
+                    int idx = -1;
+                    for (int i = 0; i + 1 < payload.length; i++) {
+                        if ((payload[i] & 0xFF) == 0x80 && (payload[i + 1] & 0xFF) == 0x02) {
+                            idx = i;
+                            break;
+                        }
+                    }
+                    if (idx < 0) {
+                        continue;
+                    }
+                    final Object decoded = PickleDecoder.decode(Arrays.copyOfRange(payload, idx, payload.length));
+                    if (decoded instanceof Map<?, ?> map && map.get("accountDatabaseIds") instanceof List<?> ids) {
+                        for (final Object id : ids) {
+                            if (id instanceof Number n) {
+                                type0Accounts.add(n.longValue());
+                            }
+                        }
+                    }
                 }
             } catch (final Exception ignored) {
             }

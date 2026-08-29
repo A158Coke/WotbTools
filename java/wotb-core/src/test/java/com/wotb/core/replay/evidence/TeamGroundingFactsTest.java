@@ -1,11 +1,12 @@
 package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.AliveTransition;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.EvidenceFact;
-import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.GroundingFacts;
+import com.wotb.core.replay.timeline.BattleTimeline;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -15,10 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Grounding Facts 构建（确定性证据编号 + 渲染段）契约测试。
- * <p>不依赖 timeline（结算级事实）；真实回放回归见 TeamReviewRealReplayProbeTest。</p>
- */
 class TeamGroundingFactsTest {
 
     private static Battle battle(final int perspectiveTeam) {
@@ -26,7 +23,6 @@ class TeamGroundingFactsTest {
         battle.winnerTeam = 1;
         battle.players = new ArrayList<>();
         final long[][] deaths = {
-                // {accountId, team, deathMillis}
                 {101L, 1, 112400L},
                 {102L, 1, 121300L},
                 {103L, 1, 131800L},
@@ -57,8 +53,8 @@ class TeamGroundingFactsTest {
                     .filter(x -> x.accountId == d[0]).findFirst().orElseThrow();
             p.survived = false;
             p.deathTimeMillis = d[2];
+            p.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
         }
-        // 命名对齐真实样本（WildCat/Azusa/FFFNuit/Fe1ix）
         battle.players.stream().filter(p -> p.accountId == 101L).forEach(p -> p.nickname = "__WildCat_");
         battle.players.stream().filter(p -> p.accountId == 102L).forEach(p -> p.nickname = "Azusa");
         battle.players.stream().filter(p -> p.accountId == 103L).forEach(p -> p.nickname = "FFFNuit");
@@ -69,22 +65,18 @@ class TeamGroundingFactsTest {
     @Test
     void deathsGetStableEvidenceIdsAndTimes() {
         final GroundingFacts facts = TeamGroundingFacts.build(battle(1), (BattleTimeline) null, 1);
-        final List<EvidenceFact> deaths = facts.facts().stream()
-                .filter(EvidenceFact::isDeath)
-                .toList();
-        assertEquals(4, deaths.size(), "必须提取 4 条阵亡事实");
+        final List<EvidenceFact> deaths = facts.facts().stream().filter(EvidenceFact::isDeath).toList();
+        assertEquals(4, deaths.size());
         assertEquals("E101", deaths.get(0).id());
         assertEquals(112.4, deaths.get(0).timeSec(), 0.001);
         assertEquals("__WildCat_", deaths.get(0).nickname());
         assertEquals("E102", deaths.get(1).id());
         assertEquals(121.3, deaths.get(1).timeSec(), 0.001);
-        // 按时间排序：Fe1ix（128.1s 对方）排在 FFFNuit（131.8s 本方）之前
         assertEquals("E103", deaths.get(2).id());
         assertEquals(128.1, deaths.get(2).timeSec(), 0.001);
         assertEquals(TeamGroundingFacts.Side.ENEMY, deaths.get(2).side());
         assertEquals("E104", deaths.get(3).id());
         assertEquals(131.8, deaths.get(3).timeSec(), 0.001);
-        // byId 索引
         assertEquals("Fe1ix", facts.byId().get("E103").nickname());
         assertEquals("FFFNuit", facts.byId().get("E104").nickname());
     }
@@ -104,17 +96,15 @@ class TeamGroundingFactsTest {
     void renderGroundingSectionIsDeterministicAndTimeFormatted() {
         final GroundingFacts facts = TeamGroundingFacts.build(battle(1), (BattleTimeline) null, 1);
         final String section = TeamGroundingFacts.renderGroundingSection(facts);
-        assertTrue(section.startsWith("=== GROUNDING FACTS（确定性事实·每条含证据编号，供结构化输出引用；正文不得出现这些编号） ==="),
-                "段头必须存在: " + section);
+        assertTrue(section.startsWith("=== GROUNDING FACTS（确定性事实·每条含证据编号，供结构化输出引用；正文不得出现这些编号） ==="));
         assertTrue(section.contains("E101 [本方阵亡] 1分52秒 __WildCat_（SPHT）"), section);
         assertTrue(section.contains("E103 [对方阵亡] 2分08秒 Fe1ix（FV215b）"), section);
         assertTrue(section.contains("E104 [本方阵亡] 2分12秒 FFFNuit（SPHT）"), section);
         assertTrue(section.contains("E105 [存活变化] 7v7 → 6v7"), section);
-        assertTrue(!section.contains("E1xx"), "渲染段不得出现编号占位符");
-        // 渲染一致性：两次构建渲染结果相同
+        assertTrue(!section.contains("E1xx"));
         final String again = TeamGroundingFacts.renderGroundingSection(
                 TeamGroundingFacts.build(battle(1), (BattleTimeline) null, 1));
-        assertEquals(section, again, "渲染必须确定性");
+        assertEquals(section, again);
     }
 
     @Test
@@ -126,51 +116,25 @@ class TeamGroundingFactsTest {
         assertEquals("未知", TeamGroundingFacts.formatClock(Double.NaN));
     }
 
-    /**
-     * Review B2-1 死亡时刻时钟契约：{@code PlayerResultFormat.deathSec()} 数值域不统一——
-     * deathTimeMillis（结算权威）与 legacy 估算为<b>原始时钟域</b>；显式传入 battle start raw
-     * clock 时必须按 {@code raw > startRaw → raw − startRaw} 转 battle-relative。
-     */
     @Test
-    void deathClockIsConvertedToBattleRelativeWhenStartRawProvided() {
-        final Battle rawBattle = rawClockBattle();
-        final GroundingFacts facts = TeamGroundingFacts.build(rawBattle, 1000.0, 1);
-        final List<EvidenceFact> deaths = facts.facts().stream()
-                .filter(EvidenceFact::isDeath)
-                .toList();
-        // raw 1112.4s/1121.3s/1131.8s/1128.1s − startRaw 1000s → battle-relative 112.4/121.3/131.8/128.1
-        assertEquals(4, deaths.size());
-        assertEquals(112.4, deaths.get(0).timeSec(), 0.001);
-        assertEquals("__WildCat_", deaths.get(0).nickname());
-        assertEquals(121.3, deaths.get(1).timeSec(), 0.001);
-        assertEquals(128.1, deaths.get(2).timeSec(), 0.001);
-        assertEquals(131.8, deaths.get(3).timeSec(), 0.001);
-    }
-
-    /** 原始时钟域 fixture：deathTimeMillis 携带 battle start（1000s）之后的原始时钟。 */
-    private static Battle rawClockBattle() {
+    void canonicalLiveExactDeathIsAlreadyBattleRelativeAndNeverSubtractsStartRaw() {
         final Battle b = battle(1);
-        final long[][] raw = {
-                {101L, 1_112_400L},
-                {102L, 1_121_300L},
-                {103L, 1_131_800L},
-                {204L, 1_128_100L},
-        };
-        for (final long[] d : raw) {
-            final PlayerResult p = b.players.stream()
-                    .filter(x -> x.accountId == d[0]).findFirst().orElseThrow();
-            p.deathTimeMillis = d[1];
-        }
-        return b;
+        final PlayerResult p = b.players.stream().filter(x -> x.accountId == 101L).findFirst().orElseThrow();
+        p.deathTimeSource = DeathTimeSource.LIVE_EXACT;
+        p.survivalTimeSec = 111.25;
+        // Settlement can coexist but must not override LIVE_EXACT or be treated as raw packet clock.
+        p.deathTimeMillis = 112_400L;
+
+        final GroundingFacts facts = TeamGroundingFacts.build(b, 1000.0, 1);
+        final EvidenceFact first = facts.facts().stream().filter(EvidenceFact::isDeath).findFirst().orElseThrow();
+        assertEquals(111.25, first.timeSec(), 0.001);
+        assertEquals("__WildCat_", first.nickname());
     }
 
-    /** 无 startRaw（reconstruction 无时钟）：按 battle-relative 原样使用（契约，不猜测时钟域）。 */
     @Test
-    void withoutStartRawDeathsStayAsProvided() {
-        final GroundingFacts facts = TeamGroundingFacts.build(battle(1), (BattleTimeline) null, 1);
-        final List<EvidenceFact> deaths = facts.facts().stream()
-                .filter(EvidenceFact::isDeath)
-                .toList();
+    void settlementDeathRemainsBattleRelativeEvenWhenCompatStartRawIsProvided() {
+        final GroundingFacts facts = TeamGroundingFacts.build(battle(1), 1000.0, 1);
+        final List<EvidenceFact> deaths = facts.facts().stream().filter(EvidenceFact::isDeath).toList();
         assertEquals(112.4, deaths.get(0).timeSec(), 0.001);
         assertEquals(121.3, deaths.get(1).timeSec(), 0.001);
         assertEquals(128.1, deaths.get(2).timeSec(), 0.001);

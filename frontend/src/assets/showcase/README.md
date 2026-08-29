@@ -24,7 +24,6 @@
 | Home — Coaching 卡片 | `home/card-coaching-v1.png` | feature card media area（3:2 裁切） | 同上（训练场主题） |
 | Home — Support 卡片 | `home/card-support-v1.png` | feature card media area（3:2 裁切） | 同上（工坊/支持主题） |
 | Replay Parser | `replay/replay-hero-battlefield-v1.png` | 全屏背景 + upload 战术表面 | 16:9；暗部为主；不得出现 UI/dashboard 元素 |
-| AI Review / Reconstruction | `reconstruction/reconstruction-hero-tactical-v1.png` | 全屏背景 | 16:9；真实 replay map 才是权威 UI，背景只作 workspace 外围氛围 |
 | Hall of Fame | `hof/hof-hero-hall-v1.png` | 全屏背景 | 16:9；金色荣誉大厅主题 |
 | Rating | `rating/rating-hero-analysis-v1.png` | 全屏背景 | 16:9；图片内即使有生成式 dashboard 元素也只能是低权重氛围，真实 Rating 数据必须覆盖在独立 readable surface 上 |
 | Profile | `profile/profile-hero-camp-v1.png` | 全屏背景 + profile-hero 表面 | 16:9；不引入 avatar 依赖 |

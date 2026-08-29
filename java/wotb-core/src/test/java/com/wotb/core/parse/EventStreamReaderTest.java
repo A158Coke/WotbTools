@@ -1,19 +1,22 @@
 package com.wotb.core.parse;
 
 
+import com.wotb.core.parse.probe.EventStreamReader;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EventStreamReaderTest {
 
     @Test
-    void extractsKillVictimsFromDirectDamageThreshold() {
+    void extractsDirectDamageEvents() {
+        // legacy damage-threshold death/killer attribution removed from production. Only the plain
+        // raw direct-damage extraction is preserved (non-authoritative damage number, not a death truth).
         final Map<Integer, Long> entityToAccount = Map.of(10, 1L, 20, 2L, 30, 3L);
         final List<EventStreamReader.ParsedPacket> packets = List.of(
                 directDamagePacket(1.0f, 10, 20, 300),
@@ -26,21 +29,6 @@ class EventStreamReaderTest {
         assertEquals(1L, damageEvents.get(0).attackerAccountId());
         assertEquals(2L, damageEvents.get(0).victimAccountId());
         assertEquals(300, damageEvents.get(0).damage());
-
-        final Map<Long, Double> deathTimes = EventStreamReader.estimateDeathTimesByDamage(
-                packets, entityToAccount, Map.of(2L, 600), 420.0);
-        assertEquals(3.0, deathTimes.get(2L));
-
-        final Map<Long, List<EventStreamReader.KillVictimDamage>> victims =
-                EventStreamReader.extractKillVictims(packets, entityToAccount, Map.of(2L, 600));
-        final List<EventStreamReader.KillVictimDamage> kills = victims.get(1L);
-        assertNotNull(kills);
-        assertEquals(1, kills.size());
-        final EventStreamReader.KillVictimDamage kill = kills.get(0);
-        assertEquals(2L, kill.victimAccountId());
-        assertEquals(500, kill.damage());
-        assertEquals(2, kill.penetrations());
-
     }
 
     @Test
@@ -63,15 +51,59 @@ class EventStreamReaderTest {
     }
 
     @Test
-    void rejectsExcessiveResynchronization() {
+    void acceptsZeroLengthPayload() {
+        // PR147：payloadLen == 0 合法（Type 17）
         final byte[] header = eventStreamHeader();
-        final byte[] data = new byte[header.length + EventStreamReader.MAX_SCAN_STEPS + 12];
-        System.arraycopy(header, 0, data, 0, header.length);
+        final byte[] data = concat(header, packetBytes(0, 17, 5.0f));
+        final EventStreamReader.EventStream stream = EventStreamReader.read(data);
+        assertEquals(1, stream.packets.size());
+        assertEquals(17, stream.packets.get(0).type);
+        assertEquals(0, stream.packets.get(0).payload.length);
+    }
+
+    @Test
+    void stopsAtTerminator() {
+        final byte[] header = eventStreamHeader();
+        final byte[] data = concat(header,
+                packetBytes(4, 4, 5.0f),
+                packetBytes(16, 0xFFFFFFFF, 0.0f));
+        final EventStreamReader.EventStream stream = EventStreamReader.read(data);
+        assertEquals(2, stream.packets.size());
+        assertEquals(0xFFFFFFFF, stream.packets.get(1).type);
+        assertEquals(16, stream.packets.get(1).payload.length);
+    }
+
+    @Test
+    void rejectsTrailingDataAfterTerminator() {
+        final byte[] header = eventStreamHeader();
+        final byte[] data = concat(header,
+                packetBytes(16, 0xFFFFFFFF, 0.0f),
+                new byte[]{1, 2, 3, 4});
+        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> EventStreamReader.read(data));
+        assertTrue(error.getMessage().contains("Trailing data"));
+    }
+
+    @Test
+    void rejectsTruncatedPacket() {
+        final byte[] header = eventStreamHeader();
+        final byte[] full = packetBytes(10, 4, 5.0f);
+        final byte[] truncated = new byte[full.length - 5];
+        System.arraycopy(full, 0, truncated, 0, truncated.length);
+        final byte[] data = concat(header, truncated);
 
         final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> EventStreamReader.read(data));
+        assertTrue(error.getMessage().contains("extends beyond stream end"));
+    }
 
-        assertEquals("Event stream scan budget exceeded", error.getMessage());
+    @Test
+    void rejectsOversizedPayload() {
+        final byte[] header = eventStreamHeader();
+        final byte[] data = concat(header, packetBytes(200_001, 4, 5.0f));
+        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> EventStreamReader.read(data));
+        assertTrue(error.getMessage().contains("Invalid payloadLen"));
     }
 
     private static EventStreamReader.ParsedPacket directDamagePacket(
@@ -95,6 +127,26 @@ class EventStreamReaderTest {
         data[offset + 1] = (byte) ((value >>> 8) & 0xFF);
         data[offset + 2] = (byte) ((value >>> 16) & 0xFF);
         data[offset + 3] = (byte) ((value >>> 24) & 0xFF);
+    }
+
+    private static byte[] packetBytes(int payloadLen, int type, float clockSec) {
+        final byte[] pkt = new byte[12 + payloadLen];
+        writeI32LE(pkt, 0, payloadLen);
+        writeI32LE(pkt, 4, type);
+        writeI32LE(pkt, 8, Float.floatToIntBits(clockSec));
+        return pkt;
+    }
+
+    private static byte[] concat(byte[]... arrays) {
+        int total = 0;
+        for (final byte[] a : arrays) total += a.length;
+        final byte[] result = new byte[total];
+        int off = 0;
+        for (final byte[] a : arrays) {
+            System.arraycopy(a, 0, result, off, a.length);
+            off += a.length;
+        }
+        return result;
     }
 
     private static byte[] eventStreamHeader() {

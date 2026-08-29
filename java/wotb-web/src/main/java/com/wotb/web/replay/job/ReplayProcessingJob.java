@@ -6,16 +6,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
- * Replay Processing Job 运行态（内存态，单实例部署；plan §4/§8/§11）。
+ * Replay Processing Job 运行态（内存态，单实例部署）。
  *
- * <p>状态机（与 Export Job 完全一致，共用 {@link ReplayJobState}，plan §3）：
+ * <p>状态机（与 Export Job 完全一致，共用 {@link ReplayJobState}）：
  * QUEUED → PROCESSING → READY，PROCESSING → FAILED | CANCELLED，QUEUED → CANCELLED；
  * 终态 exactly once。Phase 仅 {@code PROCESSING_REPLAYS}（该阶段有真实
- * processed/total 进度；不为没有可观察价值的阶段造假 phase，plan §9）。</p>
+ * processed/total 进度；不为没有可观察价值的阶段造假 phase）。</p>
  *
  * <p>READY 后持有 {@link ProcessedDataset}（Preview / Export / Aggregate 复用，
- * plan §21/§22）；currentFile 供前端显示当前处理文件（截断显示，不作为 metric
- * tag，plan §12/§47）。</p>
+ * ）；currentFile 供前端显示当前处理文件（截断显示，不作为 metric
+ * tag）。</p>
  */
 public final class ReplayProcessingJob {
 
@@ -34,7 +34,7 @@ public final class ReplayProcessingJob {
         CANCELLED
     }
 
-    /** 单 source 状态（plan §42）：PENDING → PROCESSING → READY | FAILED。 */
+    /** 单 source 状态：PENDING → PROCESSING → READY | FAILED。 */
     public enum SourceStatus {
         PENDING,
         PROCESSING,
@@ -42,7 +42,7 @@ public final class ReplayProcessingJob {
         FAILED
     }
 
-    /** 轻量 source identity + 状态（不含 Battle / byte[] / Reconstruction，plan §8/§16）。 */
+    /** 轻量 source identity + 状态（不含 Battle / byte[] / Reconstruction）。 */
     public record SourceState(String sourceId, int sourceIndex, String sourceName,
                               SourceStatus status, String failureMessage) {
     }
@@ -70,7 +70,7 @@ public final class ReplayProcessingJob {
     private volatile String currentFile;
     /**
      * 真实 parse 进度（单 replay full process 完成即推进，与 dedupe/finalize 解耦）。
-     * BLOCKER 2：三个计数只在 {@link #recordParseSuccess()} / {@link #recordParseFailure()}
+     * 三个计数只在 {@link #recordParseSuccess()} / {@link #recordParseFailure()}
      * 的同一 synchronized transition 内变更；{@link #snapshot()} 同监视器读取，
      * 保证对外永远看到一致三元组（parseCompleted == parseSucceeded + parseFailed），
      * 且三个计数单调不减。
@@ -84,7 +84,7 @@ public final class ReplayProcessingJob {
         this(jobId, placeholderNames(total));
     }
 
-    /** 以上传顺序文件名构造 per-source 状态（sourceId = r{sourceIndex}，plan §9）。 */
+    /** 以上传顺序文件名构造 per-source 状态（sourceId = r{sourceIndex}）。 */
     public ReplayProcessingJob(final String jobId, final List<String> sourceNames) {
         this.state = new ReplayJobState(jobId, sourceNames.size(), PHASE_WAITING_FOR_WORKER);
         this.sources = new AtomicReferenceArray<>(sourceNames.size());
@@ -155,7 +155,7 @@ public final class ReplayProcessingJob {
         }
     }
 
-    /** source 完成 full processing（READY 不代表 batch 级 valid，plan §29）。 */
+    /** source 完成 full processing（READY 不代表 batch 级 valid）。 */
     public void markSourceReady(final int sourceIndex) {
         final SourceState s = sources.get(sourceIndex);
         if (s != null) {
@@ -164,7 +164,7 @@ public final class ReplayProcessingJob {
         }
     }
 
-    /** source full processing 失败（记录稳定错误码，不中断 batch，plan §106）。 */
+    /** source full processing 失败（记录稳定错误码，不中断 batch）。 */
     public void markSourceFailed(final int sourceIndex, final String failureMessage) {
         final SourceState s = sources.get(sourceIndex);
         if (s != null) {

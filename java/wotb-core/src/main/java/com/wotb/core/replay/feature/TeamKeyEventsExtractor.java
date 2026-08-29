@@ -2,13 +2,12 @@ package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.FriendlyEnemyResult;
-import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
-import com.wotb.core.replay.processing.PlayerSideResolver;
-import com.wotb.core.replay.processing.TeamEntityMapping;
-import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
+import com.wotb.core.replay.processing.FriendlyEnemyResult;
+import com.wotb.core.replay.processing.PlayerSideResolver;
+import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
@@ -172,7 +171,7 @@ final class TeamKeyEventsExtractor {
                 .map(td -> new KeyBattleEvent(
                         td.battleRelativeSec(),
                         "TEAM_FIRST_CONTACT",
-                        // §13：伤害数字只用可证明的掉血（单通知归属）；不可归属 → unknown
+                        // 伤害数字只用可证明的掉血（单通知归属）；不可归属 → unknown
                         "damage=" + (td.trustedHpLoss() == null ? "unknown" : td.trustedHpLoss()),
                         lowestConfidence(td.event()),
                         "REPLAY_EVENT",
@@ -235,8 +234,8 @@ final class TeamKeyEventsExtractor {
             final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent
     ) {
         return events.stream()
-                .filter(BattleEndedEvent.class::isInstance)
-                .map(BattleEndedEvent.class::cast)
+                .filter(RoundFinishedEvent.class::isInstance)
+                .map(RoundFinishedEvent.class::cast)
                 .filter(event -> {
                     final TacticalTimeResolution res = resolutionByEvent.get(event);
                     return res != null && res.isUsable();
@@ -252,8 +251,8 @@ final class TeamKeyEventsExtractor {
             final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent
     ) {
         return events.stream()
-                .filter(BattleEndedEvent.class::isInstance)
-                .map(BattleEndedEvent.class::cast)
+                .filter(RoundFinishedEvent.class::isInstance)
+                .map(RoundFinishedEvent.class::cast)
                 .filter(event -> {
                     final TacticalTimeResolution res = resolutionByEvent.get(event);
                     return res != null && res.isUsable();

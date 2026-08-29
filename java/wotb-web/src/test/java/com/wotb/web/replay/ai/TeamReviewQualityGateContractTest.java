@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * AI Review V2.1 Team Review Quality Gate — Prompt Contract（docs/current-plan.md §13-A）。
+ * AI Review V2.1 Team Review Quality Gate — Prompt Contract。
  * <p>新 Team Prompt 必须：不再强制 10 个固定章节；不再规定「开局散开就是图控/拿视野」；
  * 明确 FACT / SUPPORTED INFERENCE / UNKNOWN 契约；明确禁止 unsupported terrain/LOS/visibility
  * 推断与 magic-number coaching；不再强制「做得好的行为」；训练建议必须对应可确认问题；
@@ -69,7 +69,7 @@ class TeamReviewQualityGateContractTest {
 
     @Test
     void openingSpreadStrategicInterpretationContractInThreeLanguages() {
-        // 追加修正 §13-B：三语都必须携带「信息覆盖 ↔ 局部兵力集中度」trade-off 语义
+        // 追加修正：三语都必须携带「信息覆盖 ↔ 局部兵力集中度」trade-off 语义
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
             final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
             assertFalse(localized.contains("OPENING_MAP_CONTROL"),
@@ -179,7 +179,7 @@ class TeamReviewQualityGateContractTest {
         assertFalse(ru.contains("是图控/拿视野，不是脱节"), "RU 不得携带旧规则");
     }
 
-    // ---- PR #103 review BLOCKER E：Opening Spread 的 battle-specific inference 必须有证据 ----
+    // ---- Opening Spread 的 battle-specific inference 必须有证据 ----
 
     @Test
     void regroupingIsBattleSpecificConclusionNeedingEvidence() {
@@ -227,7 +227,7 @@ class TeamReviewQualityGateContractTest {
         assertTrue(ru.contains("ПРАВИЛО ВЫВОДА О ПЕРЕГРУППИРОВКЕ"), "RU 必须携带重新集中规则");
     }
 
-    // ---- PR #103 最终收尾：对方关键威胁 optional contract 统一 ----
+    // ---- 对方关键威胁 optional contract 统一 ----
 
     @Test
     void opposingThreatIsOptionalOnlyWhenMaterial() {

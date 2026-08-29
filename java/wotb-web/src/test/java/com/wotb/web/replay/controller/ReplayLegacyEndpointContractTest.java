@@ -6,12 +6,14 @@ import com.wotb.web.replay.ReplayLegacyEndpoints;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
+import com.wotb.web.replay.job.ExportJobStore;
 import com.wotb.web.replay.job.ReplayExportJobService;
+import com.wotb.web.replay.job.ReplayExportWorkerExecutor;
 import com.wotb.web.replay.job.ReplayParseScheduler;
+import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import com.wotb.web.replay.service.ReplayService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -33,7 +35,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
- * BLOCKER 2 架构/契约测试：ReplayParseScheduler 是唯一 full-processing CPU budget
+ * 架构/契约测试：ReplayParseScheduler 是唯一 full-processing CPU budget
  * authority——public/anonymous 与 authenticated 的 legacy 同步端点一律稳定 410
  * {@code REPLAY_LEGACY_DEPRECATED}，绝不创建 scheduler 之外的 full processing；
  * 控制器/服务不再持有 processingFacade，不存在第二套 ReplayCapacityLimiter 并行
@@ -94,9 +96,12 @@ class ReplayLegacyEndpointContractTest {
 
     @Test
     void exportJobWithoutProcessingJobIdReturnsStableGone() {
-        final ReplayExportJobService service = new ReplayExportJobService(null, null, null, null);
+        // 410 契约测试：createJob 在触碰 store/executor 之前即 410→gone，但 SUT 不构造 null store。
+        final ReplayExportJobService service = new ReplayExportJobService(
+                mock(ExportJobStore.class), mock(ReplayExportWorkerExecutor.class),
+                mock(ReplayProcessingJobStore.class), null);
         final ResponseStatusException e = assertThrows(ResponseStatusException.class,
-                () -> service.createJob(new MultipartFile[]{file()}, "aggregate", null, (String) null));
+                () -> service.createJob("aggregate", null));
         assertEquals(HttpStatus.GONE, e.getStatusCode());
         assertEquals(GONE, e.getReason());
     }
@@ -126,7 +131,9 @@ class ReplayLegacyEndpointContractTest {
                 mock(AiCancellationRegistry.class),
                 mock(AiReviewWorkerExecutor.class),
                 mock(MapOverviewQueryService.class));
-        final ReplayExportJobService exportService = new ReplayExportJobService(null, null, null, null);
+        final ReplayExportJobService exportService = new ReplayExportJobService(
+                mock(ExportJobStore.class), mock(ReplayExportWorkerExecutor.class),
+                mock(ReplayProcessingJobStore.class), null);
         final ReplayParseScheduler scheduler = new ReplayParseScheduler(2, 200);
         try {
             final int calls = 200;
@@ -165,7 +172,7 @@ class ReplayLegacyEndpointContractTest {
                         if (isGone(e)) gone.incrementAndGet();
                     }
                     try {
-                        exportService.createJob(files, "aggregate", null, (String) null);
+                        exportService.createJob("aggregate", null);
                     } catch (final ResponseStatusException e) {
                         if (isGone(e)) gone.incrementAndGet();
                     }
@@ -197,7 +204,4 @@ class ReplayLegacyEndpointContractTest {
                 type.getSimpleName() + "." + name + "() 已随 legacy 端点删除");
     }
 
-    private static MultipartFile file() {
-        return new MockMultipartFile("files", "a.wotbreplay", "application/octet-stream", new byte[]{1});
-    }
 }

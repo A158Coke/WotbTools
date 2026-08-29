@@ -1,19 +1,9 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.BatchAnalyzer;
-import com.wotb.core.replay.processing.ReplayIdentity;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
+import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
@@ -22,19 +12,24 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.processing.BatchAnalyzer;
+import com.wotb.core.replay.processing.ReplayIdentity;
+import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
+import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.replay.stream.ReplayStreamHeader;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
-import com.wotb.web.replay.ai.gateway.AiResponseFormat;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
-import com.wotb.web.replay.ai.gateway.StreamConsumer;
+import com.wotb.web.replay.ai.gateway.AiResponseFormat;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
+import com.wotb.web.replay.ai.gateway.StreamConsumer;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -42,9 +37,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 /**
  * Natural Coach 轮：Team Call #2 事实一致性校验 + LLM 自修循环编排契约。
- * <p>流程（docs/current-plan.md §13/§14）：Draft → validate；FAIL → targeted rewrite；
+ * <p>流程：Draft → validate；FAIL → targeted rewrite；
  * FAIL → full rewrite；仍 FAIL → fail-safe（AI_REVIEW_GROUNDING_FAILED）。Backend 绝不代改句子。</p>
  */
 class TeamReviewRetryContractTest {
@@ -116,7 +116,7 @@ class TeamReviewRetryContractTest {
         assertEquals(2, gateway.teamCall2Requests());
     }
 
-    // ===== Review B1-1：callRaw authoritative response source = completionText() =====
+    // ===== ：callRaw authoritative response source = completionText() =====
 
     @Test
     void completionTextIsAuthoritativeOverPartialCallbackChunks() {
@@ -238,9 +238,8 @@ class TeamReviewRetryContractTest {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 120.0, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(true, 10, 10, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, START_RAW, true);
+        final ReplayCoverage coverage = new ReplayCoverage(10, 10, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(mapping(0, 1, 1001L));
         events.add(mapping(1, 2, 1002L));
@@ -278,7 +277,7 @@ class TeamReviewRetryContractTest {
     }
 
     /**
-     * Review B1-1 流式替身：{@code stream()} 按调用顺序返回预设 completionText，
+     *  流式替身：{@code stream()} 按调用顺序返回预设 completionText，
      * 并先向 callback 发出预设 chunk（可为零散 JSON / 垃圾）——验证 callRaw 只用
      * completionText()（authoritative），callback 仅为 progress。
      */
@@ -444,7 +443,7 @@ class TeamReviewRetryContractTest {
                 "HARD 冲突仍恰好 3 次尝试后 fail-safe");
     }
 
-    // ===== docs/current-plan.md §7/§25：只有 Team Call #2 使用 JSON_OBJECT =====
+    // ===== 只有 Team Call #2 使用 JSON_OBJECT =====
 
     @Test
     void teamCall2ExplicitlyUsesJsonObjectWhilePreBattleStaysText() {
@@ -456,13 +455,13 @@ class TeamReviewRetryContractTest {
                 .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
                 .findFirst().orElseThrow();
         assertEquals(AiResponseFormat.JSON_OBJECT, teamCall2.responseFormat(),
-                "Team Call #2 必须显式请求 JSON_OBJECT（§7）");
+                "Team Call #2 必须显式请求 JSON_OBJECT");
 
-        // Call #1（Pre-Battle Strategic Prior）保持 TEXT，不得因本任务进入 JSON mode（§6/§25）。
+        // Call #1（Pre-Battle Strategic Prior）保持 TEXT，不得因本任务进入 JSON mode。
         final AiChatRequest preBattle = gateway.requests().stream()
                 .filter(r -> "PRE_BATTLE_STRATEGIC_PRIOR".equals(r.analysisMode()))
                 .findFirst().orElseThrow();
         assertEquals(AiResponseFormat.TEXT, preBattle.responseFormat(),
-                "PRE_BATTLE_STRATEGIC_PRIOR 必须保持 TEXT（§25）");
+                "PRE_BATTLE_STRATEGIC_PRIOR 必须保持 TEXT");
     }
 }

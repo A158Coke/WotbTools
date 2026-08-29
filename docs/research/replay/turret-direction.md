@@ -10,7 +10,7 @@
 ## 任务定义
 
 - 目标：为「战局回放」双层坦克标记（车体/炮塔独立旋转）找到**按实体分发**的炮塔相对方向数据源。
-- 权威约定（docs/current-plan.md 第五节）：hullYaw 直接用 type-10 yaw（禁止移动向量推导）；turretRelativeYaw 必须经真实样本证明；
+- 权威约定（见本文件「第五节」）：hullYaw 直接用 type-10 yaw（禁止移动向量推导）；turretRelativeYaw 必须经真实样本证明；
   turretWorldYaw = normalize(hullYaw + turretRelativeYaw)。
 - 候选：type-7 propId=2（平滑变化值，已知与 type-10 yaw/pitch 不一致，误差 80°/148°，疑炮塔朝向未定案）。
 

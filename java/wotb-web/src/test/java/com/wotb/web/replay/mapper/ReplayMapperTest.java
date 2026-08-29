@@ -1,9 +1,9 @@
 package com.wotb.web.replay.mapper;
 
 import com.wotb.core.league.PlayerVehicleUsage;
+import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.model.Agg;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.web.replay.dto.AggRow;
@@ -21,6 +21,17 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ReplayMapperTest {
+
+    @Test
+    void battleDtoCarriesAuthoritativeSourceIdSeparatelyFromDisplayName() {
+        final Battle battle = new Battle();
+        battle.players = List.of();
+        final BattleDto dto = Mapper.toBattle(battle, "r10", "folder_display.wotbreplay",
+                Tankopedia.load(), null, false);
+
+        assertEquals("r10", dto.sourceId());
+        assertEquals("folder_display.wotbreplay", dto.sourceName());
+    }
 
     @Test
     void exposesLanguageNeutralSurvivalValues() {
