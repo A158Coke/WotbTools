@@ -10,7 +10,7 @@ import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 /**
- * AI Review 需要的 deterministic replay facts（plan §19–§20）。
+ * AI Review 需要的 deterministic replay facts。
  *
  * <p>经真实消费者（TacticalReviewHarness / PlayerReplayAnalysisService /
  * TeamReplayAnalysisService / Evidence skills / prompt builders）反向推导：AI 管道

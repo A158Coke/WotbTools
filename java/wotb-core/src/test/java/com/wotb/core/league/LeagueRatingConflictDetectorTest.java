@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 同 arenaId 多份回放关键事实一致性 + source-aware 死亡时间收口（plan §4/§21.2，P0-2）。 */
+/** 同 arenaId 多份回放关键事实一致性 + source-aware 死亡时间收口。 */
 class LeagueRatingConflictDetectorTest {
 
     private static Battle battle() {

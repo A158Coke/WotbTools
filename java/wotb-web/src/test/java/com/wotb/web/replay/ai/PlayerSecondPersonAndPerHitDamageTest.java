@@ -28,7 +28,7 @@ class PlayerSecondPersonAndPerHitDamageTest {
     private static final long MATE = 3L;
 
 
-    /** §12/§13 权威掉血 fixture：recorder(YOU) 对 ENEMY 掉 780（Type-7 推导 + 单通知归属）。 */
+    /** 权威掉血 fixture：recorder(YOU) 对 ENEMY 掉 780（Type-7 推导 + 单通知归属）。 */
     private static ReplayReconstruction dealtRecon(final int victimEid, final long victimAccount, final int amount) {
         return new ReplayReconstruction(null, null, 120f, 0f, List.of(),
                 List.of(

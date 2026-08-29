@@ -1473,14 +1473,23 @@
             "REPLAY_FILE_COUNT_EXCEEDED": "一次最多上传 {max} 个回放文件。",
             "TOTAL_REQUEST_TOO_LARGE": "上传文件总大小超过限制。",
             "UNKNOWN_LOCALE": "无效的语言设置，请刷新页面后重试。",
-            "AI_REVIEW_BUSY": "AI 复盘服务当前繁忙，请稍后重试。"
+            "AI_REVIEW_BUSY": "AI 复盘服务当前繁忙，请稍后重试。",
+            "DATASET_UNAVAILABLE": "回放数据不可用。",
+            "DATASET_REFERENCE_REQUIRED": "缺少回放数据引用，请重新选择回放。",
+            "JOB_NOT_FOUND": "回放数据已过期，请重新解析。",
+            "SOURCE_NOT_FOUND": "未找到对应的回放来源。",
+            "SOURCE_NOT_READY": "回放数据仍在准备中，请稍候。",
+            "SOURCE_PROCESSING_FAILED": "回放解析失败，请重新解析。"
         }
     },
     "workspace": {
         "tab_results": "解析结果",
         "results_hint": "点击「解析预览」后，解析结果将显示在这里",
         "ai_empty": "选择一场回放后开始 AI 复盘",
-        "playback_empty": "选择一场回放后查看战局回放"
+        "playback_empty": "选择一场回放后查看战局回放",
+        "dataset_preparing": "正在准备回放数据…",
+        "dataset_expired": "回放数据已过期，正在重新准备…",
+        "dataset_prepare_failed": "无法准备回放数据，请重试。"
     },
     "league": {
         "title": "League Rating",

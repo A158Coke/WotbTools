@@ -57,7 +57,7 @@ public record TeamFeatureCoverage(
 
     /**
      * AI-visible 渲染：排除 internal-only 的 {@code nonCombatantPositionEventCount}。
-     * PR #103 §6：non-#301 实体（观战/镜头/场景对象）位置对战术无影响，不得进入 LLM prompt；
+     * non-#301 实体（观战/镜头/场景对象）位置对战术无影响，不得进入 LLM prompt；
      * 该计数保留在字段供后端 metrics / probe / debug。
      */
     @Override

@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 统一的战术证据载体（文档 §28 AiEvidence 的 V1 落地）。
+ * 统一的战术证据载体。
  * <p>数值与文本指标分开存储（均为原始类型 map），保证确定性渲染与测试；
  * 渲染成 Prompt 时由调用方按 {@code labels}/{@code numbers} 字段逐项输出。</p>
  * <p><b>Backend Evidence Boundary（PR #103 架构收口）</b>：Backend Evidence MUST represent

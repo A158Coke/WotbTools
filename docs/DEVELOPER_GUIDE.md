@@ -61,7 +61,7 @@ Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 
 - **单一数据源**：车辆库为 `common/tankopedia-tier{7,8,9,10}.json`，地图名为 `common/map_names.json`；禁止模块内复制一份。
 - 不引入 Lombok；record 用于不可变模型；Controller 只处理 HTTP，业务逻辑进入 service/core。
 - 跨层联动必须执行 `wotb-sync`。
-- **UI Profile（展示风格，非主题）**：`showcase`（沉浸，默认）/ `classic`（简约）是 Presentation Profile，共用同一套业务组件/状态/API；Classic 只通过 `frontend/src/styles/classic-profile.css`（`[data-ui-profile="classic"]`）去掉全屏 AI/装饰背景与视觉噪音，不改结构/密度/布局。业务组件不得按 Profile fork，禁止 `:key="uiProfile"` 触发组件重建。详见 `frontend/AGENTS.md` 与 `docs/current-plan.md` D1/D2。
+- **UI Profile（展示风格，非主题）**：`showcase`（沉浸，默认）/ `classic`（简约）是 Presentation Profile，共用同一套业务组件/状态/API；Classic 只通过 `frontend/src/styles/classic-profile.css`（`[data-ui-profile="classic"]`）去掉全屏 AI/装饰背景与视觉噪音，不改结构/密度/布局。业务组件不得按 Profile fork，禁止 `:key="uiProfile"` 触发组件重建。详见 `frontend/AGENTS.md` 的 UI Profile 约定。
 
 ---
 
@@ -145,7 +145,7 @@ Lease（读取期间 TTL 不清）。
 
 ### League Rating
 
-训练房 `arenaBonusType=2` 与联赛/锦标赛 `=4` 才启用 0–1000 League Rating。普通回放不显示 Rating；混合普通 + League 批次 League Rating 不聚合（`league=null` + `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通回放语义成功返回，plan §21）。评分、完整性校验、批次中位数和 Excel 必须复用 core 单一公式。
+训练房 `arenaBonusType=2` 与联赛/锦标赛 `=4` 才启用 0–1000 League Rating。普通回放不显示 Rating；混合普通 + League 批次 League Rating 不聚合（`league=null` + `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通回放语义成功返回）。评分、完整性校验、批次中位数和 Excel 必须复用 core 单一公式。
 
 选手 Drawer 的「最常使用坦克」是纯展示（不参与 Rating / 七维 / MVP / Team Rating）：Core
 `LeagueRatingBatchAggregator` 在 rated-only 循环里按 accountId 关联 `PlayerResult.tankId` 累计为
@@ -247,7 +247,6 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
 - `?view=boost`：陪练。
 - `?view=profile`：个人中心。
 - `?view=admin-users`：用户管理。
-- `?view=reconstruction`：AI 复盘 / 地图 / 战局回放 workspace。
 - `?view=version`：版本历史。
 - `?view=contact`：联系页。
 - `?view=rating-docs`：League Rating V5 算法说明页（构建期以 `?raw` 读取
@@ -256,11 +255,11 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
 - `?view=playback-qa`：隐藏 QA 页（admin）。
 - `?view=rating-v2`：隐藏历史 Rating V2 灰度页（仅 `wotbtools-admin`，只读 READY Processing Job）。
 
-旧 `?view=leaderboard` canonicalize 到 `hof`，旧 `?view=extended` canonicalize 到 `replay`。
+旧 `?view=leaderboard` canonicalize 到 `hof`；旧 `?view=extended` / `?view=reconstruction` canonicalize 到 `replay`。
 
 ### AI Review / Battle Playback
 
-主入口在 `?view=replay` 的 Battle Workspace：`ReplayPage` 下半部分原地切换「解析结果 / AI 复盘 / 战局回放」三个面板（`v-show` 保持状态，不跨视图跳转）。`AiReviewPanel`（SSE 分析流 + 结果）与 `BattlePlaybackPanel`（`/api/replay/map-overview` + MapOverview）是单一事实源实现；独立深链 `?view=reconstruction` 由 `ReconstructionPage` 登录门控后组合同一对面板。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
+主入口在 `?view=replay` 的 Battle Workspace：`ReplayPage` 下半部分原地切换「解析结果 / AI 复盘 / 战局回放」三个面板（`v-show` 保持状态，不跨视图跳转）。`AiReviewPanel`（SSE 分析流 + 结果）与 `BattlePlaybackPanel`（`/api/replay/map-overview` + MapOverview）是单一事实源实现，二者复用同一 Processing Dataset（processingJobId + sourceId）、绝不 multipart 重传/重解析；旧 `?view=reconstruction` 已合并到 `?view=replay`。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
 地图鸟瞰/战局回放契约见 `docs/features/battle-playback.md`；AI 双 Call、Team Review、Evidence/Validator 契约见 `docs/architecture/ai-review.md` 与 `docs/features/team-ai-review.md`。
 

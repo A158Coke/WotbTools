@@ -3,6 +3,11 @@ defineProps({
   analyzing: {
     type: Boolean,
     required: true
+  },
+  /** 数据集未就绪（processingJobId/sourceId 缺失）时禁用，防止点击裸抛错误码。 */
+  disabled: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -11,7 +16,7 @@ defineEmits(['analyze', 'cancel'])
 
 <template>
   <div class="ai-action">
-    <button class="lg" :disabled="analyzing" @click="$emit('analyze')">
+    <button class="lg" :disabled="analyzing || disabled" @click="$emit('analyze')">
       {{ analyzing ? $t('action.processing') : $t('recon.analyze_btn') }}
     </button>
     <button v-if="analyzing" class="cancel" type="button" @click="$emit('cancel')">

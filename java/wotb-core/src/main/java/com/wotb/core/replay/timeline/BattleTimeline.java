@@ -8,7 +8,7 @@ import java.util.List;
 /**
  * Canonical BattleTimeline：battle-relative 时间统一、1 秒 BattleFrame、精确事件保留。
  * <p>时间轴事实的唯一入口：Battle Playback / Personal AI / Team AI 都消费此模型，
- * 禁止各模块自行重新解释 raw events 形成互相不同的事实模型（docs/current-plan.md §1）。</p>
+ * 禁止各模块自行重新解释 raw events 形成互相不同的事实模型（docs/architecture/battle-timeline.md §1）。</p>
  *
  * @param mapCode               地图内部 code（meta.json mapName，全小写）
  * @param durationSec           battle-relative 总时长（秒）
@@ -16,7 +16,7 @@ import java.util.List;
  * @param clockResolution       时钟解析来源（IDENTIFIED / ESTIMATED）
  * @param frames                second=0..maxSecond 的 BattleFrame 列表（frameAt 按 second 索引）
  * @param events                全部事件（battle-relative 时间升序，精确时间不丢失）
- * @param aoiSegments           实体观测（AoI）段（计划 §B8：Type4 收段 / Type33+Type5 重入；
+ * @param aoiSegments           实体观测（AoI）段（Type4 收段 / Type33+Type5 重入；
  *                              段间 gap = UNKNOWN_AOI，禁止跨 gap 插值）
  * @param validation            构建期校验（有效时 valid=true）
  * @param limitations           数据限制（如 CLOCK_ESTIMATED / POSITION_GAPS 等）
@@ -34,7 +34,7 @@ public record BattleTimeline(
 ) {
     /**
      * 按 battle-relative 秒查询 frame；越界时返回最近 frame；空 timeline 返回 null。
-     * 结果 deterministic 且可测试（docs/current-plan.md §45）。
+     * 结果 deterministic 且可测试（docs/architecture/battle-timeline.md §45）。
      */
     public BattleFrame frameAt(final double battleClockSec) {
         if (frames == null || frames.isEmpty()) {

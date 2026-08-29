@@ -34,7 +34,7 @@ const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateF
   uploadState, cancelProcessing,
   requestDirectAction,
   exportJob, exportError, exportActive,
-  startProcessingJob, dismissProcessingJob,
+  startProcessingJob, dismissProcessingJob, invalidateExpiredProcessingDataset,
   startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
   askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
 /**
@@ -82,7 +82,7 @@ const unifiedShownCols = computed(() => {
 // ---- Player Detail Drawer（只存 identity，不存 mutable row；刷新后按 accountId 重新 resolve） ----
 const selectedPlayerContext = ref(null)
 
-// ---- Player Detail Drawer 导航：跟随当前可见表格顺序（§29），scope 不跨界（§30）----
+// ---- Player Detail Drawer 导航：跟随当前可见表格顺序，scope 不跨界 ----
 const navOrder = ref([])
 const navIndex = ref(-1)
 
@@ -99,7 +99,7 @@ function closeDrawer() {
   navIndex.value = -1
 }
 
-/** 前后导航可用性（§31）：首位 prev 禁用、末位 next 禁用，不循环。 */
+/** 前后导航可用性：首位 prev 禁用、末位 next 禁用，不循环。 */
 const hasPrevPlayer = computed(() => navOrder.value.length > 0 && navIndex.value > 0)
 const hasNextPlayer = computed(() => navOrder.value.length > 0 && navIndex.value >= 0 && navIndex.value < navOrder.value.length - 1)
 
@@ -288,6 +288,9 @@ function teamNamesPayload() {
 watch(selectionRevision, () => {
   battleTeamNames.value = {}
   summaryTeamNames.value = {}
+  // 新 selection：重置 exactly-once recovery budget。
+  datasetRecoveryAttempted = false
+  datasetRecoveryInFlightToken = null
 })
 const exportingPng = ref(false)
 const aggregateRef = ref(null)
@@ -506,8 +509,16 @@ const workspaceFile = ref(null)
 const playbackSeek = ref(null)
 /** 当前 workspace 文件对应的 Dataset 引用（{processingJobId, sourceId}；换文件即失效）。 */
 const datasetRef = ref(null)
+/** Dataset 准备失败（prepare failure）时的已本地化错误；空 = 无。 */
+const datasetError = ref('')
+/** exactly-once recovery：每个 selection / dataset generation 最多自动恢复一次。
+ * recovery context 是 generation-owned（token + 当前 in-flight token）；stale recovery 的 finally
+ * 只有在自己仍是当前 owner 时才清 inFlight，绝不清新 generation 的 recovery 状态。 */
+let datasetRecoveryAttempted = false
+let datasetRecoveryToken = 0
+let datasetRecoveryInFlightToken = null
 /**
- * Workspace Dataset 请求 generation（BLOCKER 1）：每次目标变化（workspaceFile 或新的
+ * Workspace Dataset 请求 generation：每次目标变化（workspaceFile 或新的
  * ensureDatasetFor 调用）自增；requestDirectAction 是异步的，返回后必须校验 revision +
  * target file identity 仍属于当前 generation，否则直接丢弃——绝不让 A 的迟到响应把
  * datasetRef 绑到已切走的 B 上（data correctness，不是 UI cosmetic）。
@@ -517,16 +528,20 @@ let workspaceDatasetRevision = 0
 /**
  * 目标文件变化 → 旧 dataset 引用立即失效（清空，UI 不残留旧引用）。revision 的递增
  * 只由 ensureDatasetFor 负责（每次请求前 ++）；这里不能 ++——Vue 的 pre-flush watcher
- * 会在「请求发起后、await 续体前」运行，把当前请求自己误判成 stale（BLOCKER 1 竞态测试
+ * 会在「请求发起后、await 续体前」运行，把当前请求自己误判成 stale（竞态测试
  * 暴露：workspaceFile 变化 → flush → revision 被顶掉 → 新 dataset 被丢弃）。清空旧值
  * 只是即时 UI 失效；真正的 ownership 由 ensureDatasetFor 的 revision + fileKey 校验保证。
  */
 watch(workspaceFile, () => {
   datasetRef.value = null
+  datasetError.value = ''
+  // 换 target / 新 selection：重置 exactly-once recovery budget。
+  datasetRecoveryAttempted = false
+  datasetRecoveryInFlightToken = null
 })
 
 /**
- * 确保目标 source READY 后返回 Dataset 引用（自动创建/复用 Processing Job，plan §40）。
+ * 确保目标 source READY 后返回 Dataset 引用（自动创建/复用 Processing Job）。
  * 写入 datasetRef 前必须确认：请求发起时的 revision 仍是最新、当前 workspaceFile 的
  * fileKey 仍等于目标文件。任何 stale 结果（成功或失败）一律 discard——不写 datasetRef、
  * 不写 processingError、不修改当前 workspace 状态。
@@ -536,13 +551,14 @@ async function ensureDatasetFor(file) {
   const revision = ++workspaceDatasetRevision
   const targetKey = fileKey(file)
   try {
-    const ref = await requestDirectAction(file, workspaceTab.value)
+    const ref = await requestDirectAction(file)
     const current = workspaceFile.value
     if (revision !== workspaceDatasetRevision || !current || fileKey(current) !== targetKey) {
       // stale response：不属于当前 workspace generation，直接丢弃。
       return null
     }
     datasetRef.value = ref
+    datasetError.value = ''
     return ref
   } catch (e) {
     const current = workspaceFile.value
@@ -552,10 +568,43 @@ async function ensureDatasetFor(file) {
       if (e && e.name !== 'AbortError' && e?.message !== 'SOURCE_POLL_CANCELLED') {
         // 用户取消上传（UPLOADING/REGISTERING cancel）与 source poll 本地取消
         // （selection / workspace target / teardown）：不显示错误。
-        processingError.value = e?.message || String(e)
+        // Dataset 准备失败属于数据集生命周期，不是 AI 模型错误：本地化提示，绝不裸抛内部错误码。
+        datasetError.value = t('workspace.dataset_prepare_failed')
       }
     }
     return null
+  }
+}
+
+/** Dataset 可恢复错误（job/dataset 引用过期）：清空失效引用并重建 Dataset，exactly-once。
+ * 每个 selection / dataset generation 最多自动恢复一次：recovery in-flight 时重复事件合并/忽略；
+ * 第二次 JOB_NOT_FOUND 不再 create 新 Processing Job；authoritative 失效 Dataset identity 后结束为
+ * 本地化 FAILURE。recovery context 由 token 持有 generation ownership，stale finally 不清新 owner。 */
+async function onDatasetRecover() {
+  const f = workspaceFile.value
+  if (!f) return
+  if (datasetRecoveryInFlightToken != null) return // 同一 recovery in-flight：合并/忽略
+  if (datasetRecoveryAttempted) {
+    // 第二次 JOB_NOT_FOUND：authoritative 证明 job 不存在——失效 useReplay 的 processingJobId /
+    // processingJob snapshot（不清空 resp），仅清 workspace 引用，结束为本地化 FAILURE。
+    const expiredJobId = datasetRef.value?.processingJobId || null
+    datasetRef.value = null
+    if (expiredJobId) invalidateExpiredProcessingDataset(expiredJobId)
+    datasetError.value = t('workspace.dataset_prepare_failed')
+    return
+  }
+  datasetRecoveryAttempted = true
+  const token = ++datasetRecoveryToken
+  datasetRecoveryInFlightToken = token
+  datasetRef.value = null
+  datasetError.value = ''
+  try {
+    await ensureDatasetFor(f)
+  } finally {
+    // 只有自己仍是当前 recovery owner 时才清 inFlight；stale recovery 的 finally 不得清新 generation。
+    if (datasetRecoveryInFlightToken === token) {
+      datasetRecoveryInFlightToken = null
+    }
   }
 }
 
@@ -585,11 +634,14 @@ async function selectWorkspaceTab(tab) {
   if (tab === 'ai' || tab === 'playback') {
     if (!workspaceFile.value && files.value.length === 1) {
       if (!requireLoginForBattleAction()) return
-      workspaceFile.value = files.value[0]
-      await ensureDatasetFor(files.value[0])
     }
   }
+  // workspace 立即切换（panel 进入 PREPARING，直到 Dataset source READY），不阻塞页面。
   workspaceTab.value = tab
+  if ((tab === 'ai' || tab === 'playback') && !workspaceFile.value && files.value.length === 1) {
+    workspaceFile.value = files.value[0]
+    ensureDatasetFor(files.value[0]) // fire-and-forget：面板显示 PREPARING，READY 后绑定引用
+  }
 }
 
 /** FileUploader 直接入口（单文件 / 显式选择）上抛：原地切到对应面板。 */
@@ -645,8 +697,8 @@ watch(files, (next) => {
 
     <p v-if="error" class="error">{{ error }}</p>
 
-    <!-- 主操作区 inline 进度面板（plan §32/§35）：不依赖 files/resp 渲染条件，
-         与 Export 任务卡各自独立，不再互斥隐藏（BLOCKER H）。 -->
+    <!-- 主操作区 inline 进度面板：不依赖 files/resp 渲染条件，
+         与 Export 任务卡各自独立，不再互斥隐藏。 -->
     <ReplayProcessingPanel
       v-if="uploadState || processingJob"
       :upload-state="uploadState"
@@ -799,13 +851,14 @@ watch(files, (next) => {
 
       <div v-show="workspaceTab === 'ai'" data-test="workspace-ai-panel">
         <AiReviewPanel :file="workspaceFile" :processing-job-id="datasetRef?.processingJobId ?? null"
-          :source-id="datasetRef?.sourceId ?? null" login-view="replay" @seek="onAiSeek" />
+          :source-id="datasetRef?.sourceId ?? null" :dataset-error="datasetError"
+          @seek="onAiSeek" @dataset-recover="onDatasetRecover" />
       </div>
       <div v-show="workspaceTab === 'playback'" data-test="workspace-playback-panel">
         <!-- active=进入战局回放 capability 时面板才自动加载地图；AI 复盘期间保持挂载但不发请求 -->
         <BattlePlaybackPanel :file="workspaceFile" :processing-job-id="datasetRef?.processingJobId ?? null"
-          :source-id="datasetRef?.sourceId ?? null" :active="workspaceTab === 'playback'"
-          :seek-to="playbackSeek" login-view="replay" />
+          :source-id="datasetRef?.sourceId ?? null" :dataset-error="datasetError" :active="workspaceTab === 'playback'"
+          :seek-to="playbackSeek" @dataset-recover="onDatasetRecover" />
       </div>
     </template>
 

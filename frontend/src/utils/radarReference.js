@@ -1,6 +1,6 @@
 /**
  * Radar 参考多边形（Battle Average / Global Average）纯函数计算。
- * 契约（计划 §13-14, §25, §57-61）：
+ * 契约：
  * - 先确定"谁属于 valid rated reference population"（membership），再校验
  *   cohort 完整性——禁止用"所选维度是否完整"来定义 membership（否则会静默缩小 cohort）。
  * - Battle Average = 当前 battle scope 里被评分的 valid rated 玩家（selected 包含在内），
@@ -74,7 +74,7 @@ function aggregate(members, { dimKeys, maxByKey, idOf, getRaw }) {
 }
 
 /**
- * Battle Average（计划 §13/§57）：当前 battle 的 valid rated 玩家（selected 包含）。
+ * Battle Average：当前 battle 的 valid rated 玩家（selected 包含）。
  * membership = 本场被评分的玩家（cells.league_rating 有值 = V4.1 finalRating）。
  * @param {Array<{cells:Object}>} players
  * @param {{dimKeys:string[], maxByKey:Object}} opts
@@ -90,7 +90,7 @@ export function battleAverage(players, { dimKeys, maxByKey }) {
 }
 
 /**
- * Global Average（计划 §14/§58）：summary scope 里"有 League PlayerSummary"的 rated unique 玩家，
+ * Global Average：summary scope 里"有 League PlayerSummary"的 rated unique 玩家，
  * 按 accountId 去重，每人用其 league.dimensionMeans profile，等权（weight=1）。
  * membership = row.league != null（有 League PlayerSummary = 被评分；aggregate-only/league==null 行排除）。
  * @param {Array<{cells:Object, league:Object|null}>} rows

@@ -13,9 +13,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 领域边界回归守卫（plan §24）：防止未来对 {@code league/**} 的改动再次让
+ * 领域边界回归守卫：防止未来对 {@code league/**} 的改动再次让
  * LeagueFailure 改变 ReplayParseStatus / ProcessingJob.failed / valid /
- * NO_VALID_REPLAYS（§27 业务不变量）。
+ * NO_VALID_REPLAYS（业务不变量）。
  *
  * <p>守卫断言的都是<b>数据不变量</b>而非实现细节：League validation failure 与
  * parser failure 分离、Battle ↔ Rating 按 identity 绑定、混合批次不污染 Parser。</p>
@@ -37,7 +37,7 @@ class LeagueDomainBoundaryGuardTest {
         return b;
     }
 
-    /** §27 #3/#4/#7：LeagueFailure 不是 ReplayFailure——校验失败场 Battle 保留、不进 parser failures。 */
+    /** LeagueFailure 不是 ReplayFailure——校验失败场 Battle 保留、不进 parser failures。 */
     @Test
     void leagueValidationFailureKeepsBattleOutOfParserFailures() {
         final Battle bad = training("222");
@@ -52,7 +52,7 @@ class LeagueDomainBoundaryGuardTest {
         assertEquals(0, r.leagueBatch().battleResults().size());
     }
 
-    /** §27 #9：Battle ↔ Rating 用稳定 identity，禁止数组位置绑定（ineligible 在前时结果仍指向 eligible）。 */
+    /** Battle ↔ Rating 用稳定 identity，禁止数组位置绑定（ineligible 在前时结果仍指向 eligible）。 */
     @Test
     void battleRatingBindsByArenaIdentityNotPosition() {
         final Battle bad = training("222");
@@ -69,7 +69,7 @@ class LeagueDomainBoundaryGuardTest {
         assertNotNull(r.leagueBatch().resultFor("111"));
     }
 
-    /** §21/Case I：混合批次不污染 Parser——battles 保留、无 parser failures、无 League 聚合。 */
+    /** 混合批次不污染 Parser——battles 保留、无 parser failures、无 League 聚合。 */
     @Test
     void mixedBatchLeavesParserUnpolluted() {
         final Battle t = training("111");

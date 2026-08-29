@@ -37,14 +37,14 @@ import java.util.concurrent.TimeUnit;
 /**
  * Replay Processing Job 编排（lifecycle / 进度 / 取消 / 复用 / TTL）。
  *
- * <p><b>V2 执行模型（plan §17/§47）</b>：create 快速返回 202 + jobId（上传输入持久化
+ * <p><b>V2 执行模型</b>：create 快速返回 202 + jobId（上传输入持久化
  * 到 job 临时目录，绝不在异步 worker 持有 {@code MultipartFile}）；真正 full processing
  * 统一交给 {@link ReplayParseScheduler}（全局并发=2、job-aware 公平、queued cancellation），
  * 每个 source 独立一个任务；全部 source 完成后由最后一个完成的 worker 单线程执行
  * deterministic FINALIZING_BATCH（去重 / League / Rating / 汇总）→ READY +
  * 内存态 ProcessedDataset（TTL 与 Job 一致）。</p>
  *
- * <p>进度语义（plan §2/§29）：PROCESSING_REPLAYS 阶段逐 replay 推进
+ * <p>进度语义：PROCESSING_REPLAYS 阶段逐 replay 推进
  * {@code parseCompleted/parseSucceeded/parseFailed}（真实解析完成数，与 dedupe 解耦）；
  * valid/duplicates/failures 只在 FINALIZING_BATCH 后确定。</p>
  */
@@ -55,7 +55,7 @@ public class ReplayProcessingJobService {
 
     private final DefaultReplayProcessingFacade processingFacade;
     private final ReplayProcessingJobStore store;
-    /** Replay Full Processing 唯一 CPU 预算权威（plan §48 最终态；全局并发=2 + 公平）。 */
+    /** Replay Full Processing 唯一 CPU 预算权威（全局并发=2 + 公平）。 */
     private final ReplayParseScheduler parseScheduler;
     private final MeterRegistry meterRegistry;
     private final Tankopedia tankopedia = Tankopedia.load();
@@ -82,7 +82,7 @@ public class ReplayProcessingJobService {
     }
 
     /**
-     * 创建 Replay Processing Job（plan §41）：{@code prioritySourceIndex} 指定用户
+     * 创建 Replay Processing Job：{@code prioritySourceIndex} 指定用户
      * 直接点击 AI/Playback 的目标 source——Scheduler 内该 source 排到本 job 队首
      * （不突破全局并发=2），实现「目标 replay 优先解析、batch 其余继续后台解析」。
      */
@@ -137,7 +137,7 @@ public class ReplayProcessingJobService {
         return jobId;
     }
 
-    /** 调度顺序：priority source 先于其余（其余保持上传顺序，plan §41/§43）。 */
+    /** 调度顺序：priority source 先于其余（其余保持上传顺序）。 */
     private static List<Integer> sourceOrder(final Integer prioritySourceIndex, final int total) {
         final List<Integer> order = new ArrayList<>(total);
         if (prioritySourceIndex != null) {
@@ -157,7 +157,7 @@ public class ReplayProcessingJobService {
 
     /**
      * 取消：QUEUED 立即终态并释放 Scheduler pending 容量（{@code cancelQueued}）；
-     * PROCESSING 置协作取消标志（已派发 source 完成安全 unit 后终态，plan §53）。
+     * PROCESSING 置协作取消标志（已派发 source 完成安全 unit 后终态）。
      */
     public boolean cancel(final String jobId) {
         final ReplayProcessingJob job = requireJob(jobId);
@@ -165,7 +165,7 @@ public class ReplayProcessingJobService {
         if (changed) {
             final ReplayParseScheduler.CancellationResult result = parseScheduler.cancelQueued(jobId);
             if (result == ReplayParseScheduler.CancellationResult.NO_COMPLETION_PENDING) {
-                // scheduler 明确不再触发 onComplete（BLOCKER 1）：无论 QUEUED（requestCancel
+                // scheduler 明确不再触发 onComplete：无论 QUEUED（requestCancel
                 // 已置 CANCELLED）还是 PROCESSING（requestCancel 只置 cancelRequested），
                 // 都必须先把 job 推进 CANCELLED 终态，再记录 terminal observability——
                 // 否则 PROCESSING 取消竞态会永久卡在 PROCESSING。markCancelled 对已
@@ -223,17 +223,17 @@ public class ReplayProcessingJobService {
     }
 
     /**
-     * 单 source full processing（并发执行，plan §15）：真实 parse 进度随完成推进，
+     * 单 source full processing（并发执行）：真实 parse 进度随完成推进，
      * per-source 状态 PROCESSING → READY|FAILED；raw byte[] 只在本次调用内存活。
      *
-     * <p>BLOCKER 3：任何已注册 source 处理失败都必须写入 authoritative failed
+     * <p>任何已注册 source 处理失败都必须写入 authoritative failed
      * {@link Replays.ParsedEntry}——source 状态 / parse 计数 / ParsedEntry / final
      * failures 描述同一个 outcome；不允许用 null 表示业务失败。</p>
      */
     private void processSource(final ReplayProcessingJob job, final Path input, final int index,
                                final Replays.ParsedEntry[] entries) {
         if (job.isCancelled()) {
-            return; // PROCESSING cancel：不再开始新的 full processing（plan §53）
+            return; // PROCESSING cancel：不再开始新的 full processing
         }
         final String name = ReplayJobFiles.inputName(input);
         job.markSourceProcessing(index, name);
@@ -260,7 +260,7 @@ public class ReplayProcessingJobService {
             return;
         }
         final Battle battle = result.battle();
-        // Derived artifacts（plan §22/§19）：MapOverview 不可用 ≠ parse failure（§107）；
+        // Derived artifacts：MapOverview 不可用 ≠ parse failure；
         // artifact 写失败属于存储不可用 → source FAILED（消费者依赖 artifact）。
         try {
             ReplayArtifactWriter.writeMapOverview(store.jobDir(job.jobId()), index,
@@ -280,7 +280,7 @@ public class ReplayProcessingJobService {
     }
 
     /**
-     * 全部 source 结束后单线程 deterministic 收尾（plan §17）：FINALIZING_BATCH →
+     * 全部 source 结束后单线程 deterministic 收尾：FINALIZING_BATCH →
      * 去重 / League / Rating / 汇总 → enrich → READY。取消在阶段间检查。
      */
     private void finalizeJob(final ReplayProcessingJob job, final Replays.ParsedEntry[] entries,
@@ -371,7 +371,7 @@ public class ReplayProcessingJobService {
     private ReplayProcessingResult processFullResult(final Source source) {
         final ReplayProcessingResult result = processingFacade.process(source, ReplayProcessingOptions.full());
         if (meterRegistry != null) {
-            // plan §75：full processing 计数器（验证 1 replay → Preview/AI/Playback/Export = +1）
+            // full processing 计数器（验证 1 replay → Preview/AI/Playback/Export = +1）
             meterRegistry.counter("wotb_replay_full_processing_total").increment();
         }
         if (result.battle() == null) {

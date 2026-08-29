@@ -5,11 +5,11 @@ package com.wotb.web.replay.job;
  *
  * <p>从 PR #118 {@code ExportJob} 抽取的可复用状态组件：job 生命周期、终态
  * exactly-once、真实进度、协作取消、时间戳，全部集中于此，避免两套几乎相同的
- * job infrastructure（plan §3）。两个具体 job（ExportJob / ReplayProcessingJob）
+ * job infrastructure。两个具体 job（ExportJob / ReplayProcessingJob）
  * 各自组合本组件并持有自己的业务字段（artifact / processed result），不引入
  * abstract inheritance framework。</p>
  *
- * <p>状态机（plan §8，终态 exactly once）：
+ * <p>状态机（终态 exactly once）：
  * <pre>
  * QUEUED → PROCESSING → READY
  * QUEUED → CANCELLED
@@ -20,7 +20,7 @@ package com.wotb.web.replay.job;
  *
  * <p>phase 为自由字符串（null 表示无）：Export 用 {@code PROCESSING_REPLAYS /
  * BUILDING_EXCEL / BUILDING_ARCHIVE}，Processing 用 {@code PROCESSING_REPLAYS}
- * （不为没有可观察价值的阶段造假 phase，plan §9）。</p>
+ * （不为没有可观察价值的阶段造假 phase）。</p>
  */
 public final class ReplayJobState {
 

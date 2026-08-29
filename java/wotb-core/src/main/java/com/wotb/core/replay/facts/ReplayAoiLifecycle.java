@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 实体观测（AoI）生命周期构建器（计划 §B8/B9）。
+ * 实体观测（AoI）生命周期构建器。
  *
  * <p>状态机（research entity-presence-aoi-lifecycle.md）：
  * <pre>

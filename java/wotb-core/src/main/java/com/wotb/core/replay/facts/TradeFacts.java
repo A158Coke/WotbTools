@@ -14,7 +14,7 @@ import java.util.List;
  * 消费 canonical authority（LIVE_EXACT > SETTLEMENT_SECOND > UNKNOWN）；玩家存活或死亡时刻未知时
  * fail-closed 返回 0，绝不直接读取/解释 {@link PlayerResult#survivalTimeSec}。</p>
  *
- * <p><b>PR147 §C precision-aware</b>：SETTLEMENT_SECOND 死亡时刻有 ±0.5s 量化，不得当作 exact point
+ * <p><b>precision-aware</b>：SETTLEMENT_SECOND 死亡时刻有 ±0.5s 量化，不得当作 exact point
  * 用于「谁先死 / 5s 窗口」。这里用 interval reasoning（fail-closed）：只有 <b>所有</b> 允许的真实死亡时刻
  * 组合都满足 trade 窗口（0 ≤ 敌方死亡 − 玩家死亡 ≤ 5）才计为 traded；「有可能」但无法证明一律不计入。</p>
  *
@@ -57,7 +57,7 @@ public final class TradeFacts {
             if (otherEv == null || !otherEv.known()) {
                 continue;
             }
-            // PR147 §C interval reasoning (fail-closed): trade window = [player death,
+            // interval reasoning (fail-closed): trade window = [player death,
             // player death + TRADE_AFTER_DEATH_WINDOW_SEC], enemy death not before player's.
             // "Definitely traded" requires EVERY real death-time pair (within the quantization
             // intervals) to satisfy 0 <= enemyDeath - playerDeath <= window. "Could be" (ambiguous)

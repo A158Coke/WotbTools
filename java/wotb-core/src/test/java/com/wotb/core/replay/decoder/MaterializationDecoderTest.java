@@ -75,7 +75,7 @@ class MaterializationDecoderTest {
 
     @Test
     void materializationPresenceExactEvenWhenHpSentinel() {
-        // §P0-1: HP sentinel means HP unknown, but materialization presence is still PROVEN (EXACT),
+        // HP sentinel means HP unknown, but materialization presence is still PROVEN (EXACT),
         // so the AoI observed segment must still open.
         final byte[] payload = vehicleType5(123, 2, 0xFFFD); // death sentinel family: not a real HP
         final ReplayDecodeResult r = decoder.decode(ctx, packet(5, payload));

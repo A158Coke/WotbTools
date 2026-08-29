@@ -23,7 +23,7 @@ import java.util.Map;
  * {@code STATIC_BASELINE_TANK_HP}. It is NEVER the replay's observed entry HP
  * ({@code PlayerResult.entryHpSource == EntryHpSource.OBSERVED_EXACT} / {@code PlayerResult.entryHp}) and must
  * never be presented as an observed HP fact. The single static-baseline formula must not switch denominator
- * semantics based on evidence coverage. §P0-6: the old alpha-damage potential-damage supplement driven by
+ * semantics based on evidence coverage. the old alpha-damage potential-damage supplement driven by
  * {@code PlayerResult.killVictims} is removed because that field has no authoritative producer.</p>
  */
 public final class RatingV2Calculator {
@@ -186,7 +186,7 @@ public final class RatingV2Calculator {
         if (player.damageDealt < 0) {
             throw new IllegalArgumentException("actualDamage must be >= 0");
         }
-        // §P0-6: the former alpha-damage supplement was driven by PlayerResult.killVictims, produced by a
+        // the former alpha-damage supplement was driven by PlayerResult.killVictims, produced by a
         // damage-threshold heuristic with no authoritative producer (the parser no longer emits it). Remove
         // that stale input; potential damage is the observed damage only (no fabricated supplement).
         return new PotentialDamage(player.damageDealt, 0);
@@ -237,7 +237,7 @@ public final class RatingV2Calculator {
         if (pEv == null || !pEv.known()) {
             return false;
         }
-        // PR147 §C precision-aware（V2 双向 ±5s 窗口）：SETTLEMENT_SECOND ±0.5s，不得用 midpoint。
+        // precision-aware（V2 双向 ±5s 窗口）：SETTLEMENT_SECOND ±0.5s，不得用 midpoint。
         // 只有 <b>所有</b> 真实死亡时刻组合的差都在 ±5s 内（max(eMax-pMin, pMax-eMin) ≤ 5）才判定
         // traded；「有可能」但无法证明（ambiguous）→ fail-closed false。
         for (final PlayerResult other : players) {

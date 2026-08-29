@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Type10 物理坐标契约（计划 §A4；证据 type10-movement-transform-closure.md）。
+ * Type10 物理坐标契约（证据 type10-movement-transform-closure.md）。
  */
 class Type10MovementMathTest {
 

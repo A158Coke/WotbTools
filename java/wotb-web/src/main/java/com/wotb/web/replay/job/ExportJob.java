@@ -3,15 +3,15 @@ package com.wotb.web.replay.job;
 import java.nio.file.Path;
 
 /**
- * Replay Export Job 运行态（内存态，单实例部署；见 docs/current-plan.md §38）。
+ * Replay Export Job 运行态（内存态，单实例部署；见 docs/architecture/replay-pipeline.md）。
  *
- * <p>状态机（终态 exactly once，见 §9）：
+ * <p>状态机（终态 exactly once）：
  * <pre>
  * QUEUED → PROCESSING → READY
  * QUEUED → CANCELLED
  * PROCESSING → FAILED | CANCELLED
  * </pre>
- * 状态迁移与进度/取消全部委托给共享的 {@link ReplayJobState}（plan §3：不复制两套
+ * 状态迁移与进度/取消全部委托给共享的 {@link ReplayJobState}（不复制两套
  * job infrastructure；Export 与 Processing 共用同一状态机组件）；本类只持有导出
  * 专属字段（mode / artifact / filename / contentType / processingJobId）。所有对外
  * 方法签名保持不变。</p>
@@ -41,9 +41,9 @@ public final class ExportJob {
 
     private final ReplayJobState state;
     private final String mode;
-    /** 来源 Processing Job（null = 传统 multipart 上传路径；非 null = 复用已解析 result，plan §28）。 */
+    /** 来源 Processing Job（null = 传统 multipart 上传路径；非 null = 复用已解析 result）。 */
     private final String processingJobId;
-    /** 战队名称覆盖快照（单场 {arenaId}:{team} + 批次 teamKey；创建时复制，仅本次导出调用内使用；plan §12 / PR #123）。 */
+    /** 战队名称覆盖快照（单场 {arenaId}:{team} + 批次 teamKey；创建时复制，仅本次导出调用内使用）。 */
     private final TeamNameOverrides teamNames;
     private String filename;
     private String contentType;

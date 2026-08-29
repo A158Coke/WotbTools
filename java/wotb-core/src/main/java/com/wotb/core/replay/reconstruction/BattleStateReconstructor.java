@@ -22,7 +22,7 @@ import java.util.List;
 /**
  * 按领域事件重建战场状态；只消费 canonical world-position / HP / terminal semantics。
  *
- * <p>§21 (PR162): this is NOT a second terminal/death authority. Destroyed/death life state is derived
+ * <p>This is NOT a second terminal/death authority. Destroyed/death life state is derived
  * only from the canonical terminal surfaces {@code ReplayTerminalLifecycle} consumes — the
  * version-scoped {@code rawState.terminal()} ({@code HealthChangedEvent}/{@code VehicleHealthStateEvent}),
  * an explicit drowning cause, and {@code alive==false} legacy exact — never from the derived
@@ -112,7 +112,7 @@ public class BattleStateReconstructor {
         try {
             vs.setRotation(new Rotation(e.yaw(), e.pitch(), e.roll()));
         } catch (IllegalArgumentException ignored) { }
-        // §P1 (reconstructor convergence): PARTIAL/UNKNOWN PositionChangedEvent must not upgrade an
+        // PARTIAL/UNKNOWN PositionChangedEvent must not upgrade an
         // entity to OBSERVED — only a trustworthy (EXACT/INFERRED) position marks it observed.
         if (!DecodeConfidenceHelper.isLowConfidence(e.confidence())
                 && (vs.observationState() == ObservationState.UNKNOWN
@@ -122,14 +122,14 @@ public class BattleStateReconstructor {
     }
 
     private void applyDamage(final BattleState state, final DamageEvent e) {
-        // §P1 (reconstructor convergence): raw DamageEvent.damage() is an observed (partial) value,
+        // raw DamageEvent.damage() is an observed (partial) value,
         // NOT a canonical damage fact. This playback state does NOT accumulate a second
         // damageDealt/damageReceived authority (those fields were removed from VehicleState).
         // Only last-observed is updated for both sides.
         applyEngagement(state, e.attackerEid(), e.victimEid(), e.timestamp().rawClockSec());
     }
 
-    /** PR147 §33: method8 is a hit/result-feedback family (VehicleHitEvent) — a proven hit still
+    /** method8 is a hit/result-feedback family (VehicleHitEvent) — a proven hit still
      *  updates last-observed for attacker/victim (engagement evidence); no damage magnitude is used. */
     private void applyHit(final BattleState state, final VehicleHitEvent e) {
         applyEngagement(state, e.attackerEntityId(), e.victimEntityId(), e.timestamp().rawClockSec());
@@ -192,7 +192,7 @@ public class BattleStateReconstructor {
     }
 
     private void applyEntityCreated(final BattleState state, final EntityCreatedEvent e) {
-        // §P1-3: unproven/guessed entityId must not create a phantom vehicle.
+        // unproven/guessed entityId must not create a phantom vehicle.
         if (e.entityId() <= 0) {
             return;
         }
@@ -228,7 +228,7 @@ public class BattleStateReconstructor {
         if (e.confidence() != DecodeConfidence.EXACT) {
             return;
         }
-        // §P0-1: consume the decoder-classified rawState propagated with the event; never
+        // consume the decoder-classified rawState propagated with the event; never
         // re-classify the raw u16 here (0xFFFE version-scoped by decoder boundary).
         final HpRawState rawState = e.rawState() == null ? HpRawState.UNKNOWN_OTHER : e.rawState();
         if (rawState == HpRawState.CURRENT_HP) {

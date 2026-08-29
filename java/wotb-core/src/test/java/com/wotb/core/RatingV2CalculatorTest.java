@@ -145,7 +145,7 @@ class RatingV2CalculatorTest {
 
     @Test
     void calculatesPotentialDamageLocallyWithoutMutatingTheSharedBattle() {
-        // §P0-6: no killVictims supplement anymore — potential damage is observed damage only.
+        // no killVictims supplement anymore — potential damage is observed damage only.
         final PlayerResult player = player(1, 1, 100, 0, 0, true, 0, 4481);
         player.contribution = 11.0;
         player.kast = 22.0;

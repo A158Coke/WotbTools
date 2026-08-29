@@ -53,7 +53,7 @@ watch(() => props.files, () => {
 
 /**
  * 统一的候选入口（选择文件 / 选择文件夹 / add files / drag-drop 全部走这里）：
- * BLOCKER 3：批量/folder 交互<b>先过滤 .wotbreplay</b>，非回放文件不参与 100 上限 /
+ * 批量/folder 交互<b>先过滤 .wotbreplay</b>，非回放文件不参与 100 上限 /
  * 200 MiB 总量、不得让合法 replay 整批失败；再对「现有 selection + 过滤后的新候选」
  * 合并集合做 preflight。任一违规 → 不更新 active files、不触发 Processing Job，
  * 保留之前合法 selection，一次展示所有 offending。

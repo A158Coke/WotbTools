@@ -212,8 +212,9 @@ class MapOverviewBuilderTest {
     }
 
     /**
-     * Wire 契约：SSE done 载荷中的 mapOverview JSON 字段名与前端组件消费一致
-     * （camelCase；null 降级时字段输出 JSON null）。
+     * Wire 契约：canonical map-overview.json artifact 的 JSON 字段名与战局回放面板消费
+     * 一致（camelCase；null 降级时字段输出 JSON null）。注意：这是 Processing Job 的
+     * derived artifact，不是 AI SSE done 载荷（AI done 已无 mapOverview）。
      */
     @Test
     @SuppressWarnings("unchecked")
@@ -269,8 +270,7 @@ class MapOverviewBuilderTest {
         assertTrue(point.containsKey("timeSec"));
         assertTrue(point.containsKey("x"));
         assertTrue(point.containsKey("y"));
-        final String json = mapper.writeValueAsString(new com.wotb.web.replay.dto.AnalyzeResponse("a", null, null));
-        assertTrue(json.contains("\"mapOverview\":null"), "降级时 mapOverview 输出 JSON null");
+        // AI done 载荷已无 mapOverview：地图由 canonical map-overview.json artifact 承载。
     }
 
     private static PlayerResult player(final long account, final String nick,

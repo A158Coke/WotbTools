@@ -10,7 +10,6 @@ import HoFAdminPage from './components/HoFAdminPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import BoostPage from './components/BoostPage.vue'
 import AdminUsersPage from './components/AdminUsersPage.vue'
-import ReconstructionPage from './components/ReconstructionPage.vue'
 import VersionPage from './components/VersionPage.vue'
 import ContactPage from './components/ContactPage.vue'
 // 隐藏 QA 页（?view=playback-qa，仅 wotbtools-admin）：PR4 固定 14 车标签碰撞场景，
@@ -36,25 +35,20 @@ const params = new URLSearchParams(window.location.search)
 const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
 const defaultView = isHomeHost ? 'home' : 'replay'
 const rawViewParam = params.get('view')
-// 旧书签兼容：?view=leaderboard → canonicalize 为 ?view=hof（一次轻量重定向，不建双轨）
-if (rawViewParam === 'leaderboard') {
+// 旧书签兼容：单一来源别名映射（leaderboard → hof；extended / reconstruction → replay），
+// 一次轻量 replaceState 重定向为 canonical view，不建第二套 Dataset pipeline。
+const LEGACY_VIEW_ALIASES = Object.freeze({ leaderboard: 'hof', extended: 'replay', reconstruction: 'replay' })
+const canonicalView = LEGACY_VIEW_ALIASES[rawViewParam] ?? rawViewParam
+if (canonicalView !== rawViewParam) {
   const url = new URL(window.location.href)
-  url.searchParams.set('view', 'hof')
+  url.searchParams.set('view', canonicalView)
   window.history.replaceState({}, '', url.toString())
 }
-// 旧书签兼容：?view=extended → ?view=replay（战斗表现已并入回放解析，不再有独立页面/第二套 pipeline）
-if (rawViewParam === 'extended') {
-  const url = new URL(window.location.href)
-  url.searchParams.set('view', 'replay')
-  window.history.replaceState({}, '', url.toString())
-}
-const viewParam = rawViewParam === 'leaderboard' ? 'hof'
-  : (rawViewParam === 'extended' ? 'replay' : rawViewParam)
-// AI 复盘入口随时可见：视图列表不再依赖鉴权，未登录也能进入（含深链），
-// 由 ReconstructionPage 自行检查登录状态并跳转登录页。
+const viewParam = canonicalView
+// AI 复盘 / 战局回放已并入 ReplayPage Workspace（?view=replay），不再有独立的 reconstruction 深链。
 const ALLOWED_VIEWS = [
   'home', 'replay', 'hof', 'hof-admin',
-  'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
+  'profile', 'boost', 'admin-users', 'version', 'contact',
   'playback-qa', 'rating-docs', 'rating-v2',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
@@ -69,7 +63,6 @@ const VIEW_COMPONENTS = {
   profile: ProfilePage,
   boost: BoostPage,
   'admin-users': AdminUsersPage,
-  reconstruction: ReconstructionPage,
   version: VersionPage,
   contact: ContactPage,
   'playback-qa': PlaybackQaPage,
@@ -199,7 +192,7 @@ onBeforeUnmount(() => {
 
   <div class="tb-content">
     <!-- ReplayPage 保持存活：打开文档/其他页面后返回不丢已解析结果与当前 tab -->
-    <KeepAlive :include="['ReconstructionPage', 'ReplayPage']">
+    <KeepAlive :include="['ReplayPage']">
       <component :is="currentView" />
     </KeepAlive>
   </div>

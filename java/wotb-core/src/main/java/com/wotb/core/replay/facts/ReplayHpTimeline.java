@@ -113,7 +113,7 @@ public final class ReplayHpTimeline {
         if (v.confidence() != DecodeConfidence.EXACT) {
             return;
         }
-        // §P0-1: consume the decoder-classified rawState propagated with the event; never re-classify
+        // consume the decoder-classified rawState propagated with the event; never re-classify
         // the raw u16 here (0xFFFE version-scoped by decoder boundary already).
         final HpRawState state = v.rawState() == null ? HpRawState.UNKNOWN_OTHER : v.rawState();
         final long account = accountOf(mapping, v.entityId());

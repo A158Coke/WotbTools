@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Structural regression（docs/current-plan.md §52.1）：真实夹具上的 Timeline 结构不变量——
+ * Structural regression（docs/architecture/battle-timeline.md §52.1）：真实夹具上的 Timeline 结构不变量——
  * deterministic、事件无丢失/无重复、Episode 覆盖完整。
  */
 class BattleTimelineStructuralEvalTest {

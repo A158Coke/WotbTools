@@ -114,7 +114,7 @@ class TeamAiContextCompilerTest {
 
     @Test
     void renderTimelineBlockInjectsValidatedTimelineSection() {
-        // PR #102 review B1：PromptBuilder 不再内部 build —— 由 orchestration 层验证后
+        // PR #102 ：PromptBuilder 不再内部 build —— 由 orchestration 层验证后
         // 传入 timeline，renderTimelineBlock 只做确定性渲染。
         final BattleTimeline timeline = BattleTimelineBuilder.build(
                 battle(), recon(), TimelinePerspective.team(1)).timeline();

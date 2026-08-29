@@ -26,7 +26,7 @@ import java.util.Set;
  * 点数局势证据采集与渲染（Team / Player 两条复盘线共用）：
  * 从重建事件流采集双方车辆位置轨迹（服务器位置流，battle-relative 秒），
  * 调用 {@link PointsSituationSkill} 产出击杀夺分时间线 / 占领点区域位置存在 /
- * 控制点区域进入窗口；进入窗口内承受伤害按权威 HP loss（§12）计算——掉血时刻严格限制在窗口内，
+ * 控制点区域进入窗口；进入窗口内承受伤害按权威 HP loss 计算——掉血时刻严格限制在窗口内，
  * 仅攻击者身份可证明（attackerReliable）且属于对面队伍（队伍可信）的掉血计入，
  * 不可归属掉血/自伤/未解析攻击者一律排除并输出 limitation（Type-8 raw 不得作为窗口承受伤害）。
  * <p>口径约束（与 team/single、player 三 prompt 的点数局势规则一致）：
@@ -204,7 +204,7 @@ final class PointsSituationEvidence {
                     sb.append("    进入窗口车辆承受伤害不可用（OBSERVED_DAMAGE_IS_PARTIAL）\n");
                 } else {
                     final Toll toll = tollDuring(entry, battle, recon);
-                    sb.append("    进入窗口车辆承受伤害（权威掉血口径，§12/§13）：")
+                    sb.append("    进入窗口车辆承受伤害（权威掉血口径）：")
                             .append(" 总实际掉血 ").append(toll.totalDamage())
                             .append(" / 可归属敌方 ").append(toll.enemyDamage())
                             .append(" / 来源未知 ").append(toll.unknownDamage())
@@ -219,7 +219,7 @@ final class PointsSituationEvidence {
     }
 
     /**
-     * 进入控制点区域窗口内车辆承受的伤害（§12/§13 权威掉血观测；掉血时刻严格在窗口范围内）。
+     * 进入控制点区域窗口内车辆承受的伤害（权威掉血观测；掉血时刻严格在窗口范围内）。
      *
      * <p>PR #107 Blocker 3 语义（HP loss 是否真实与攻击者是否可归属是两条独立维度）：
      * <ul>

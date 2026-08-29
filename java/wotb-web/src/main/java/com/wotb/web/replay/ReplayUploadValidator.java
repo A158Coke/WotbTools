@@ -8,9 +8,10 @@ import org.springframework.web.multipart.MultipartFile;
 /**
  * 共享回放上传校验器：文件类型 / 单文件 20MiB / 总大小 200MiB / 空文件。
  *
- * <p>通用校验不限制文件数量（reconstruct-batch / process 允许多文件）；AI 单文件策略
- * （{@link AiReplayBatchPolicy#MAX_FILES}=1）由 {@link #validateAiReview} 单独应用
- * （analyze / AiReplayReviewService）。百场 submission 完全复用本校验器（含 size/type contract）。</p>
+ * <p>通用校验不限制文件数量（live `POST /api/replay/processing-jobs` 支持多文件）；AI 单文件
+ * 策略（{@link AiReplayBatchPolicy#MAX_FILES}=1）由 {@link #validateAiReview} 单独应用。多文件
+ * 批量端点（`/process`、`/reconstruct-batch`、multipart analyze）已 410，不再走本校验器落地。
+ * 百场 submission 完全复用本校验器（含 size/type contract）。</p>
  *
  * <p>错误码与既有端点保持一致：{@code NO_REPLAY_FILES} / {@code NO_REPLAY_FILE} /
  * {@code INVALID_REPLAY_FILE_TYPE} / {@code FILE_TOO_LARGE} /

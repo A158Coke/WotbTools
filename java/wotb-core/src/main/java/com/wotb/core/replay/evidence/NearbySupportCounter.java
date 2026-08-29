@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 局部支援计数（文档 §14 LOCAL_SUPPORT 的确定性基础）。
+ * 局部支援计数（LOCAL_SUPPORT 的确定性基础）。
  * <p>只统计 {@code observationState == OBSERVED} 且位置已知的实体；
  * STALE / UNKNOWN / REMOVED 一律不计入。敌军数量表达为"至少观察到 N 个附近敌军"，
  * 只有该侧全部实体都被观察到时才可表达为完整数量；两侧都完整覆盖时才允许 EXACT。</p>

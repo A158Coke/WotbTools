@@ -16,7 +16,7 @@ import java.util.stream.Stream;
 
 /**
  * Replay Job 通用临时目录生命周期管理（Export Job 与 Replay Processing Job 共用，
- * composition；plan §3 避免两套相同 infrastructure）。
+ * composition）。
  *
  * <p>职责：job 目录布局（{@code <root>/<jobId>/input/*} + 各 job 自己的 artifact /
  * result 文件）、启动孤儿目录清理（上次进程崩溃残留）、周期 TTL sweeper（终态过期

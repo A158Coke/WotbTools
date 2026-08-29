@@ -24,7 +24,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * {@code /api/replay/map-overview} Dataset 路径契约（BLOCKER 2）：JSON 引用读取
+ * {@code /api/replay/map-overview} Dataset 路径契约：JSON 引用读取
  * cached map-overview.json → 200；不可构建 → 204；multipart 上传路径已废弃 → 410
  * {@code REPLAY_LEGACY_DEPRECATED}（不再有 scheduler 之外的 full processing）。
  */

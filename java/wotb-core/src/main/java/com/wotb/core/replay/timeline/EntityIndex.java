@@ -19,7 +19,7 @@ import java.util.Map;
 /**
  * 按实体聚合的 battle-relative 事件采样索引（构建 Timeline 的确定性事实源）。
  * <p>所有采样按 battle-relative 时间升序排序；查询 lastAtOrBefore 只返回 time ≤ t 的采样——
- * 天然满足 anti-future-leak invariant（docs/current-plan.md §10）。</p>
+ * 天然满足 anti-future-leak invariant（docs/architecture/battle-timeline.md §10）。</p>
  */
 final class EntityIndex {
 
@@ -121,7 +121,7 @@ final class EntityIndex {
                             .add(new TurretSample(t, td.turretRelativeYawDeg()));
                 }
                 case DamageEvent d -> {
-                    // §P0-3: DamageEvent raw value is NOT authoritative HP delta; never feed it into
+                    // DamageEvent raw value is NOT authoritative HP delta; never feed it into
                     // canonical FrameVehicle damage totals. Only register entity observation.
                     firstObserved.merge(d.attackerEid(), t, Math::min);
                     firstObserved.merge(d.victimEid(), t, Math::min);
@@ -133,7 +133,7 @@ final class EntityIndex {
                     }
                 }
                 case EntityCreatedEvent ec -> {
-                    // §P1-3: unproven/guessed entityId must not enter canonical firstObserved.
+                    // unproven/guessed entityId must not enter canonical firstObserved.
                     if (ec.entityId() > 0) {
                         firstObserved.merge(ec.entityId(), t, Math::min);
                     }

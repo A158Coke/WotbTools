@@ -5,7 +5,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * 团队复盘 Focus Window 选择器（确定性、小型，docs/current-plan.md §4/§5）。
+ * 团队复盘 Focus Window 选择器（确定性、小型，docs/architecture/battle-timeline.md §4/§5）。
  * <p>从 canonical {@link BattleTimeline} 的 delta 流中选出 1–3 个<b>信息密度最高</b>的
  * 决策窗口（Team Review Focus Window），供团队复盘 Prompt 注入 BEFORE/EVENTS/AFTER。
  * 与 {@link EpisodeDetector} 的差异：Episode 覆盖整场、连续、无重叠；Focus Window 是

@@ -3,7 +3,7 @@
 > **Authoritative production replay contract.**
 > Primary evidence: **PR147 11.19 corpus**（`11.19.0_china` + `11.19.0_china_apple`）。
 > 历史 11.18 观察（`docs/research/replay/`）<b>不自动等于生产语义</b>；每个 capability 均需独立证据（fixture / research / known invariant）。
-> 生产状态：文件结构/字段按 PR147 已证明事实（AFFIRMED）；未证明语义标 UNKNOWN（见 `docs/reference/replay-parsed-fields.md`）。
+> 生产状态：文件结构/字段按已证明事实（AFFIRMED）；未证明语义标 UNKNOWN（见 `docs/reference/replay-parsed-fields.md`）。
 > 前向兼容按三层能力模型（见 `ReplayProtocolProfile`）：容器/framing（A）与稳定结构布局（B）可前向；闭式数字语义（C）仅 VERIFIED family。
 
 ## 文件结构
@@ -53,7 +53,7 @@ clock:       f32 LE   // replay/session raw packet clock（非 battle-relative �
 payload:     [u8; payload_len]  // 负载
 ```
 
-**时钟语义（PR147/PR162）：** `rawClockSec` 是 replay/session <b>原始包时钟</b>，<b>不是</b>「从 0 起始的战斗计时」。
+**时钟语义：** `rawClockSec` 是 replay/session <b>原始包时钟</b>，<b>不是</b>「从 0 起始的战斗计时」。
 只有 battle-start 有权威时，battle-relative 时间 = `rawClock - resolvedBattleStartRawClock`；battle-start UNKNOWN
 时不得把 raw clock 当 battle-relative 时间（消费者必须 fail closed）。
 
@@ -105,7 +105,7 @@ payload 截断、或尾部剩余不足一个完整包时直接失败（fail clos
 
 负载 = entity_id (i32 LE)。
 
-**语义（PR147/PR162 canonical）：** EntityLeave = AoI（视野/兴趣区域）离开，<b>不是死亡</b>。实体可能多次
+**语义（canonical）：** EntityLeave = AoI（视野/兴趣区域）离开，<b>不是死亡</b>。实体可能多次
 离开/重回战场（反复出现 EntityLeave）。死亡 authority 独立（见「死亡时间 authority」）；EntityLeave 只用于
 关闭 AoI 观测段（`ReplayAoiLifecycle`），段间为 `UNKNOWN_AOI`。不得把 EntityLeave 当作死亡、也不得据此
 推断死亡时刻。
@@ -121,7 +121,7 @@ value_len: u32 LE   // 值字节数，观察到 ∈ {1, 2, 4}（对应包总长 
 value:     [u8; value_len]
 ```
 
-该结构在 11.18 样本上 100% 干净解析。`prop_id → 语义` 的<b>逐属性 mapping 已按 PR147 收敛</b>：普通正数 HP 由
+该结构在 11.18 样本上 100% 干净解析。`prop_id → 语义` 的<b>逐属性 mapping 已收敛</b>：普通正数 HP 由
 回放结构包（Type5 物化当前 HP / Avatar method5 / Vehicle prop3 / Vehicle method1）产生，终结哨兵（FFFD/FFFE）
 与 HP 版本作用域在 `ReplayVersionGate` / `ReplayProtocolProfile` 中以 capability 表达。EntityProperty
 解码器保留结构（`prop_id`/`value_len`）+ 已证明的 HP/property 语义；<b>未证明</b>的 prop_id 语义仍标
@@ -140,7 +140,7 @@ value:     [u8; value_len]
 
 格式：`entity_id(u32) + methodId(u32) + argLen(u32) + args`（envelope 结构前向兼容）。
 
-**PR147/PR162：methodId 是 entity-class scoped** —— 同一 methodId 在不同实体类上是不同语义（如
+**methodId 是 entity-class scoped** —— 同一 methodId 在不同实体类上是不同语义（如
 Avatar method4 2B=RoundFinished，Vehicle method4 16B=vehicle-to-vehicle collision）。安全 key 为
 `(capability, entityClass, methodId, exact argShape)`；entityClass 只能由独立生命周期/身份证据建立
 （Type5 materialization `entityTypeId`；method48 参与映射中的 recorder 账号身份），**method decoder 不得
@@ -204,7 +204,7 @@ args (25B body):
   flag:        u8          // 末尾标志 (01=正常, 03=致命一击?)
 ```
 
-方法调用在 victim 实体上（methodEid == victimEid）。**PR147/PR162：** 这是 Vehicle method8 的结构观测帧
+方法调用在 victim 实体上（methodEid == victimEid）。**这是 Vehicle method8** 的结构观测帧
 （hit/result feedback）。damage 事件只是<b>观测</b>子集
 （`DamageEvent`），覆盖未达 100% 时标记 `OBSERVED_DAMAGE_IS_PARTIAL`；它<b>不是</b>死亡 authority，不再累计
 到 `damageReceived` 阈值推断阵亡，也不再填充 `PlayerResult.killVictims`（该字段与 `DeathTimeEstimator`
@@ -234,7 +234,7 @@ trailingByte:  u8     // 1 字节; PR147 controlled evidence: semantic UNKNOWN�
 合计: 49 字节
 ```
 
-PR147/PR162 canonical：Type10 为精确 49-byte transform 布局；`payload[4..12)` 的第三个 int 为
+canonical：Type10 为精确 49-byte transform 布局；`payload[4..12)` 的第三个 int 为
 attachment parent entity id；最后 1 字节 trailing byte 的 semantic **UNKNOWN**（已被受控空中回放驳回
 `onGround` 猜想，见 docs/research/replay/type10-movement-transform-closure.md）。实测 `position_x` 和
 `position_z` 对应游戏世界 XZ 坐标（范围约 ±1000），`position_y` 对应高度。
@@ -257,7 +257,7 @@ EventStream → Type 8 sub_type 48 (updateArena2)
   → Map<Integer, Long> entityToAccount
 ```
 
-## 死亡时间 authority（PR147/PR162 canonical）
+## 死亡时间 authority
 
 ```
 死亡权威链（PlayerResultFormat.deathSec() / deathEvidence()）:
@@ -280,7 +280,7 @@ PR147 authoritative settlement facts：
 > **已删除的旧 death 启发式（不再作为权威）：** 早期实现曾用「Type 8 subtype 8 累计 direct HP 伤害 ≥
 > `damageReceived` 阈值 → 推断阵亡 + killer」以及「EntityLeave + Position 停止 / 最后位置 / 离开时间」
 > 估算死亡时刻。这些启发式（damage-threshold / EntityLeave / last-position / last-attacker）在
-> PR147/PR162 后<b>不再写入 `PlayerResult`</b>；`PlayerResult.killVictims` 与 `DeathTimeEstimator` 已从生产
+> <b>不再写入 `PlayerResult`</b>；`PlayerResult.killVictims` 与 `DeathTimeEstimator` 已从生产
 > 移除。死亡时刻只允许由 canonical 死亡 authority（`LIVE_EXACT → SETTLEMENT_SECOND → UNKNOWN`）给出。
 
 ---
@@ -403,7 +403,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | **#120** | —                    | varint  | —  | `2` / `3`                | 未知 — 部分存活玩家有                | 否                     |
 | **#122** | —                    | sub_msg | —  | `{#5:5}`                 | 未知 — 单字段子消息                 | 否                     |
 
-> **⚠️ PR147/PR162 权威：** 结算中没有 field #104 deathTimeMillis。死亡时刻由 **field24（lifeTime 秒）** 派生
+> **⚠️ 权威：** 结算中没有 field #104 deathTimeMillis。死亡时刻由 **field24（lifeTime 秒）** 派生
 > （dead=settlement death second；survivor=battle duration），`PlayerResult.deathTimeMillis` 是派生兼容值。
 > `field25` 是 killer result/entity ID（非 accountId）；`field105` 是 deathReason（survivor sentinel `-1`）。
 
@@ -580,7 +580,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 
 ## 已知问题
 
-### 1. 死亡时间 authority（PR147/PR162 canonical）
+### 1. 死亡时间 authority
 
 无 field #104 deathTimeMillis。死亡权威链为：
 
@@ -595,7 +595,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 
 > **旧启发式已移除：** 早期用「Type 8 subtype 8 累计 direct HP 伤害 ≥ `damageReceived` 阈值」的 damageDeathTimes，
 > 以及「EntityLeave + Position 停止 / 最后位置 / 离开时间」的 EntityLeave/Position 兜底估算死亡时刻。这些
-> 启发式（damage-threshold / EntityLeave / last-position / last-attacker）在 PR147/PR162 后<b>不再是死亡
+> 启发式（damage-threshold / EntityLeave / last-position / last-attacker）此后<b>不再是死亡
 > authority</b>——它们是假阳性来源（临时离场、spectator 实体坐标继续更新），且无法证明 lethal boundary /
 > killer identity。生产死亡时刻只来自 canonical 死亡 authority；EntityLeave 仅用于 AoI 观测段收口。
 

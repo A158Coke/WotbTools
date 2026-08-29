@@ -239,7 +239,7 @@ class TacticalReviewHarnessTest {
 
     @Test
     void noReconstructionRejectsWithTimelineUnusable() {
-        // docs/current-plan.md §3：无 canonical timeline → 拒绝 AI Review（不走 settlement-only fallback）
+        // 无 canonical timeline → 拒绝 AI Review（不走 settlement-only fallback）
         final com.wotb.web.replay.exception.AiTimelineUnusableException e = assertThrows(
                 com.wotb.web.replay.exception.AiTimelineUnusableException.class,
                 () -> harness(gateway(PRIOR_JSON)).analyze(result(null), AllowedLanguage.ZH));
@@ -346,7 +346,7 @@ class TacticalReviewHarnessTest {
 
     @Test
     void playerCall2IsNotLimitedByTeamReviewCap() {
-        // PR #103 review BLOCKER C：Team cap（teamReviewMaxOutputTokens）只作用于 Team Call #2；
+        // Team cap（teamReviewMaxOutputTokens）只作用于 Team Call #2；
         // Player Call #2（TacticalReviewHarness）必须保持 global cap，不被 Team cap 无意限制。
         final int globalMaxOutput = 32_768;
         final int teamCap = 4_096;

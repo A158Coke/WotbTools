@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 
 export const UI_PROFILE_STORAGE_KEY = 'wotb-ui-profile'
-export const UI_PROFILE_ATTR = 'data-ui-profile'
+const UI_PROFILE_ATTR = 'data-ui-profile'
 export const UI_THEME_ATTR = 'data-theme'
 export const UI_PROFILES = ['classic', 'showcase']
 export const DEFAULT_UI_PROFILE = 'showcase'
@@ -16,7 +16,7 @@ export function isUiProfile(value) {
 }
 
 /** 读取并规范化 localStorage 中的 profile;非法值一律回退默认 showcase。 */
-export function readStoredUiProfile() {
+function readStoredUiProfile() {
   try {
     const raw = window.localStorage.getItem(UI_PROFILE_STORAGE_KEY)
     return isUiProfile(raw) ? raw : DEFAULT_UI_PROFILE
@@ -80,4 +80,4 @@ export function useUiProfile() {
   }
 }
 
-export default useUiProfile
+

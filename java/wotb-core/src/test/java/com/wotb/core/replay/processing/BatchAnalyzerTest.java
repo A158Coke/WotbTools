@@ -8,12 +8,12 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * BatchAnalyzer 测试：视角分组、代表选择、模式判定。
@@ -119,7 +119,8 @@ class BatchAnalyzerTest {
     void singleFile() {
         final var result = makeResult("a.wotbreplay", "arena1", 1, true, true, ReplayProcessingStatus.SUCCESS);
         final var plan = analyzer.analyze(List.of(result));
-        assertEquals(1, plan.effectiveUnitCount());
+        assertEquals(1, plan.groups().size());
+        assertEquals(ReplayAnalysisMode.SINGLE_PLAYER_BATTLE, plan.mode());
         assertNotNull(plan.dominantScope());
     }
 
@@ -132,11 +133,10 @@ class BatchAnalyzerTest {
     }
 
     @Test
-    void multipleSameArenaDifferentTeams() {
+    void multipleDifferentTeamsFailLoud() {
         final var r1 = makeResult("t1.wotbreplay", "arena1", 1, true, true, ReplayProcessingStatus.SUCCESS);
         final var r2 = makeResult("t2.wotbreplay", "arena1", 2, true, true, ReplayProcessingStatus.SUCCESS);
-        final var plan = analyzer.analyze(List.of(r1, r2));
-        assertEquals(2, plan.groups().size());
+        assertThrows(IllegalStateException.class, () -> analyzer.analyze(List.of(r1, r2)));
     }
 
     @Test
@@ -166,10 +166,10 @@ class BatchAnalyzerTest {
     // ======== 18.2: 录像者映射测试 ========
 
     @Test
-    void sameRecorderMultiBattleNoException() {
+    void multipleBattlesSameRecorderFailLoud() {
         final var r1 = makeResult("a.wotbreplay", "arena1", 1, true, true, ReplayProcessingStatus.SUCCESS);
         final var r2 = makeResult("b.wotbreplay", "arena2", 1, true, true, ReplayProcessingStatus.SUCCESS);
-        assertDoesNotThrow(() -> analyzer.analyze(List.of(r1, r2)));
+        assertThrows(IllegalStateException.class, () -> analyzer.analyze(List.of(r1, r2)));
     }
 
     @Test
@@ -221,7 +221,7 @@ class BatchAnalyzerTest {
     }
 
     @Test
-    void sameRecorderNoReconstructionNoException() {
+    void multipleBattlesNoReconstructionFailLoud() {
         final Battle b1 = new Battle();
         b1.arenaId = "arena1"; b1.mapName = "map1"; b1.arenaBonusType = 1;
         final PlayerResult p1 = new PlayerResult(); p1.accountId = 1000L; p1.nickname = "PlayerA"; p1.team = 1;
@@ -236,7 +236,7 @@ class BatchAnalyzerTest {
         final var caps2 = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
         final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS, null, b2, null, null, caps2, null, null);
 
-        assertDoesNotThrow(() -> analyzer.analyze(List.of(r1, r2)));
+        assertThrows(IllegalStateException.class, () -> analyzer.analyze(List.of(r1, r2)));
     }
 
     // ======== P2: 精确重复去重测试 ========
@@ -255,9 +255,10 @@ class BatchAnalyzerTest {
 
         final var plan = analyzer.analyze(List.of(r1, r2));
         assertEquals(1, plan.groups().size(), "Same content should produce 1 perspective group");
-        assertEquals(1, plan.exactDuplicateCount(), "Second identical file is exact duplicate");
-        assertEquals(1, plan.exactDuplicates().size());
-        assertEquals("b.wotbreplay", plan.exactDuplicates().getFirst().duplicate().fileName());
+        // 精确重复由 ExactReplayDuplicateDetector 负责（见其单测）；BatchAnalyzer 只暴露分组/模式
+        final var partition = ExactReplayDuplicateDetector.partition(List.of(r1, r2));
+        assertEquals(1, partition.count());
+        assertEquals("b.wotbreplay", partition.duplicates().getFirst().duplicate().fileName());
     }
 
     @Test
@@ -275,8 +276,8 @@ class BatchAnalyzerTest {
 
         final var plan = analyzer.analyze(List.of(r1, r2));
         assertEquals(1, plan.groups().size(), "Same battle+team → 1 group");
-        assertEquals(1, plan.sameTeamDuplicatePerspectiveCount(), "Second is same-team duplicate perspective");
-        assertEquals(0, plan.exactDuplicateCount(), "Different content → not exact duplicate");
+        assertEquals(0, ExactReplayDuplicateDetector.partition(List.of(r1, r2)).count(),
+                "Different content → not exact duplicate");
     }
 
     @Test
@@ -294,8 +295,8 @@ class BatchAnalyzerTest {
 
         final var plan = analyzer.analyze(List.of(r1, r2, r3));
         assertEquals(1, plan.groups().size());
-        assertEquals(2, plan.exactDuplicateCount(), "2 exact duplicates from 3 identical files");
-        assertEquals(0, plan.sameTeamDuplicatePerspectiveCount());
+        assertEquals(2, ExactReplayDuplicateDetector.partition(List.of(r1, r2, r3)).count(),
+                "2 exact duplicates from 3 identical files");
     }
 
     // ======== UNKNOWN battle category 测试 ========
@@ -351,7 +352,8 @@ class BatchAnalyzerTest {
         final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.SUCCESS, identity, b, null, null, caps, null, null);
 
         final var plan = analyzer.analyze(List.of(r1, r2));
-        assertEquals(1, plan.exactDuplicateCount(), "Exact duplicate detected regardless of UNKNOWN category");
+        assertEquals(1, ExactReplayDuplicateDetector.partition(List.of(r1, r2)).count(),
+                "Exact duplicate detected regardless of UNKNOWN category");
         assertEquals(0, plan.groups().size(), "UNKNOWN → no groups");
     }
 
@@ -372,8 +374,8 @@ class BatchAnalyzerTest {
 
         final var plan = analyzer.analyze(List.of(valid, failed));
         assertEquals(1, plan.groups().size(), "Failed file excluded from groups");
-        assertEquals(0, plan.exactDuplicateCount(), "Failed file not counted as duplicate");
-        assertEquals(0, plan.sameTeamDuplicatePerspectiveCount(), "Failed file not counted as team duplicate");
+        assertEquals(0, ExactReplayDuplicateDetector.partition(List.of(valid, failed)).count(),
+                "Failed file not counted as duplicate");
     }
 
     // ======== Canonical battle key 测试 ========
@@ -392,7 +394,7 @@ class BatchAnalyzerTest {
     }
 
     @Test
-    void differentArenaIdDifferentBattles() {
+    void multipleBattlesDifferentArenaFailLoud() {
         final var id1 = new ReplayIdentity("h1", "arena-1", null, null, 1000L, null);
         final var id2 = new ReplayIdentity("h2", "arena-2", null, null, 1000L, null);
         final Battle b1 = new Battle(); b1.arenaId = "arena-1"; b1.mapName = "m1"; b1.arenaBonusType = 1;
@@ -402,7 +404,7 @@ class BatchAnalyzerTest {
         final var caps = new ReplayProcessingCapabilities(true, true, true, true, true, false, true, false);
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, id1, b1, null, null, caps, null, null);
         final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.SUCCESS, id2, b2, null, null, caps, null, null);
-        assertEquals(2, analyzer.analyze(List.of(r1, r2)).groups().size());
+        assertThrows(IllegalStateException.class, () -> analyzer.analyze(List.of(r1, r2)));
     }
 
     @Test
@@ -421,7 +423,7 @@ class BatchAnalyzerTest {
     }
 
     @Test
-    void nullArenaIdDifferentTimeDifferentBattles() {
+    void multipleBattlesDifferentTimeFailLoud() {
         final var id1 = new ReplayIdentity("h1", null, "11.18", "lagoon", 1000L, java.time.Instant.ofEpochSecond(1000));
         final var id2 = new ReplayIdentity("h2", null, "11.18", "lagoon", 1000L, java.time.Instant.ofEpochSecond(2000));
         final Battle b1 = new Battle(); b1.arenaId = ""; b1.mapName = "lagoon"; b1.arenaBonusType = 1;
@@ -431,11 +433,11 @@ class BatchAnalyzerTest {
         final var caps = new ReplayProcessingCapabilities(true, true, true, true, true, false, true, false);
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, id1, b1, null, null, caps, null, null);
         final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.SUCCESS, id2, b2, null, null, caps, null, null);
-        assertEquals(2, analyzer.analyze(List.of(r1, r2)).groups().size());
+        assertThrows(IllegalStateException.class, () -> analyzer.analyze(List.of(r1, r2)));
     }
 
     @Test
-    void missingMetadataDifferentHashesRemainDifferentBattles() {
+    void multipleBattlesMissingMetadataFailLoud() {
         final var id1 = new ReplayIdentity("hash-a", null, null, null, 1000L, null);
         final var id2 = new ReplayIdentity("hash-b", null, null, null, 1000L, null);
         final Battle b1 = new Battle(); b1.arenaId = ""; b1.mapName = ""; b1.arenaBonusType = 1;
@@ -445,7 +447,7 @@ class BatchAnalyzerTest {
         final var caps = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, id1, b1, null, null, caps, null, null);
         final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.SUCCESS, id2, b2, null, null, caps, null, null);
-        assertEquals(2, analyzer.analyze(List.of(r1, r2)).groups().size());
+        assertThrows(IllegalStateException.class, () -> analyzer.analyze(List.of(r1, r2)));
     }
 
     @Test
@@ -459,8 +461,7 @@ class BatchAnalyzerTest {
         var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.SUCCESS, id, b, null, null, caps, null, null);
         var partition = ExactReplayDuplicateDetector.partition(List.of(r1, r2));
         var plan = new BatchAnalyzer().analyzePartition(partition);
-        assertSame(partition.duplicates(), plan.exactDuplicates());
-        assertEquals(partition.count(), plan.exactDuplicateCount());
+        assertEquals(1, plan.groups().size());
     }
 
     // ======== Team perspective modes ========
@@ -474,7 +475,7 @@ class BatchAnalyzerTest {
 
         assertEquals(ReplayAnalysisScope.TEAM_PERSPECTIVE, plan.dominantScope());
         assertEquals(ReplayAnalysisMode.SINGLE_TEAM_BATTLE, plan.mode());
-        assertEquals(1, plan.analyzableUnitCount());
+        assertEquals(1, plan.groups().size());
         assertEquals(1, plan.groups().getFirst().key().perspectiveTeam());
     }
 
@@ -510,25 +511,23 @@ class BatchAnalyzerTest {
         final var plan = analyzer.analyze(List.of(first, second));
 
         assertEquals(1, plan.groups().size());
-        assertEquals(1, plan.sameTeamDuplicatePerspectiveCount());
         assertEquals(ReplayAnalysisMode.SINGLE_TEAM_BATTLE, plan.mode());
     }
 
     @Test
-    void opposingTeamsRemainIndependentPerspectives() {
+    void multipleIndependentPerspectivesFailLoud() {
+        // 对立视角各自成为独立 group = 2 个可分析单元 → 违反 AI 单文件
+        // single-analyzable-unit 不变量；必须 fail loud，绝不静默伪装成 SINGLE。
+        //（多结果批量属旧 multipart multi 架构，已删除。）
         final var allied = makeTeamResult(
                 "allied.wotbreplay", "shared-arena", 2, 1001L, 1, true);
         final var enemy = makeTeamResult(
                 "enemy.wotbreplay", "shared-arena", 2, 2001L, 2, true);
 
-        final var plan = analyzer.analyze(List.of(allied, enemy));
-
-        assertEquals(2, plan.groups().size());
-        assertEquals(List.of(1, 2), plan.groups().stream()
-                .map(group -> group.key().perspectiveTeam())
-                .sorted()
-                .toList());
-        assertEquals(ReplayAnalysisMode.MULTI_TEAM_BATTLE, plan.mode());
+        final IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> analyzer.analyze(List.of(allied, enemy)));
+        assertTrue(ex.getMessage().contains("single-analyzable-unit"),
+                "fail-loud message: " + ex.getMessage());
     }
 
     @Test
@@ -539,7 +538,7 @@ class BatchAnalyzerTest {
         final var plan = analyzer.analyze(List.of(result));
 
         assertEquals(ReplayAnalysisMode.SINGLE_TEAM_BATTLE, plan.mode());
-        assertEquals(1, plan.analyzableUnitCount());
+        assertEquals(1, plan.groups().size());
     }
 
     @Test
@@ -567,7 +566,6 @@ class BatchAnalyzerTest {
         final var plan = analyzer.analyze(List.of(result));
 
         assertEquals(0, plan.groups().getFirst().key().perspectiveTeam());
-        assertEquals(0, plan.analyzableUnitCount());
         assertEquals(ReplayAnalysisMode.NONE, plan.mode());
     }
 }

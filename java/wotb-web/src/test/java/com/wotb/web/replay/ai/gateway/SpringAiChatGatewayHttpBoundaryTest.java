@@ -265,7 +265,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
 
     private record CapturedRequest(String path, String authorization, String body) {
     }
-    // ===== docs/current-plan.md §24：response_format 请求体边界契约 =====
+    // ===== response_format 请求体边界契约 =====
 
     @Test
     void jsonObjectResponseFormatSendsResponseFormatInRequestBody() throws Exception {
@@ -299,7 +299,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
 
     @Test
     void defaultResponseFormatIsText() {
-        // 兼容构造器（无 responseFormat 参数）必须保持 TEXT：存量请求不进入 JSON mode（§6/§23）。
+        // 兼容构造器（无 responseFormat 参数）必须保持 TEXT：存量请求不进入 JSON mode。
         final AiChatRequest legacy = new AiChatRequest(
                 "system-instructions", "player-evidence", "deepseek-v4-flash",
                 null, 4096, true, "max", "corr-legacy", "SINGLE_PLAYER_BATTLE");

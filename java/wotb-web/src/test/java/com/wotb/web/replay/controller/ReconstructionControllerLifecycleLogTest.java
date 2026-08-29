@@ -35,7 +35,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 
 /**
- * PR #106 review（blocker 2）：AI Review worker 生命周期<b>终态 exactly once</b>——
+ * （blocker 2）：AI Review worker 生命周期<b>终态 exactly once</b>——
  * 每个真正开始执行的 worker 请求恰好产生一次 {@code event=ai_review_finished}，
  * result ∈ {SUCCESS, FAILED, CANCELLED}（FAILED 带稳定 errorCode，CANCELLED 带稳定 source）。
  * <p>用 logback {@link ListAppender} 捕获 {@code ReconstructionController} 日志并<b>计数</b>
@@ -61,7 +61,7 @@ class ReconstructionControllerLifecycleLogTest {
     @BeforeEach
     void setUp() {
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = spy(new AiReplayReviewService(aiService));
+        reviewService = spy(new AiReplayReviewService(aiService, null, null, null));
         cancellationRegistry = spy(new AiCancellationRegistry());
         workerExecutor = new AiReviewWorkerExecutor();
         controller = new ReconstructionController(reviewService, cancellationRegistry,
