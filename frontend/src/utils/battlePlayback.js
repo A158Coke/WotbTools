@@ -735,7 +735,7 @@ export function eventsCrossed(events, fromSec, toSec) {
     Number.isFinite(ev && ev.timeSec) && ev.timeSec > fromSec + 1e-9 && ev.timeSec <= toSec + 1e-9)
 }
 
-/** 伤害反馈是否允许（§7.2/§10.1）：受害者在事件时刻位置流覆盖（当前可见/可展示）；
+/** 伤害反馈是否允许（当前可见/可展示）：受害者在事件时刻位置流覆盖；
  * 失察期间受击 → 不跳伤害、不更新 HP、不显示 attacker（HP 冻结为最后可信值）。 */
 export function victimFeedbackAllowed(vehicle, eventTimeSec) {
   if (!vehicle || !Number.isFinite(eventTimeSec)) return false
@@ -753,7 +753,7 @@ export const FLASH_MS = 280
 export const BURST_MS = 700
 /** kill feed 生命周期（真实 ms约 4–6s）。 */
 export const KILL_FEED_MS = 5000
-/** kill feed 同时最多条数（§16.2：最多 3 条，队列，新进挤最旧）。 */
+/** kill feed 最多保留 3 条；新条目加入时淘汰最旧条目。 */
 const KILL_FEED_MAX = 3
 
 /**
@@ -767,14 +767,14 @@ export function transientsActive(items, nowRealMs) {
       && nowRealMs - i.bornRealMs < i.durationMs)
 }
 
-/** kill feed 入队：尾部追加，超限从最旧挤出（不合并多条 KILL，§16.2）。 */
+/** kill feed 入队：尾部追加，超限从最旧挤出（不合并多条 KILL）。 */
 export function pushFeed(items, entry, max = KILL_FEED_MAX) {
   const limit = Number.isFinite(max) && max > 0 ? Math.floor(max) : 0
   if (limit <= 0) return []
   return [...items, entry].slice(-limit)
 }
 
-/** 事件时刻受害者的 ghost 参数：{ prevPct, nextPct }（均 null 时无 ghost，§11）。 */
+/** 事件时刻受害者的 ghost 参数：{ prevPct, nextPct }（均 null 时无 ghost）。 */
 export function ghostAround(vehicle, t, { friendly = false } = {}) {
   const prev = hpDisplay(vehicle, t - 0.001, { friendly })
   const next = hpDisplay(vehicle, t, { friendly })

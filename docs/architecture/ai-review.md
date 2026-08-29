@@ -10,7 +10,7 @@
 1. **Call #1（Pre-Battle Strategic Prior）**：`PreBattleStrategicService` 只输入地图名 + 双方阵容（坦克名/车种/等级/国家/单车血量）+ 双方总血量（tankopedia base 求和；仅当进场满血被回放证明时改用实测含加成值）+ `common/tank_tactical_profiles.json` 战术 Profile，严格剥离战绩字段（伤害/击杀/存活/胜负/阵亡顺序）；`preferredPlans` 契约要求分阶段（开局/中期/残局）输出；结构化 JSON 输出由 `PreBattleStrategicParser` 解析，失败返回 null 降级。
 2. **Backend Evidence Skills**（`com.wotb.core.replay.evidence`）：`HpMomentumSkill` / `EngagementTradeSkill` / `LocalSupportSkill` / `DeathCascadeSkill` / `RouteSkill` / `TeamSeparationEvidenceSkill` / `PlayerSeparationEvidenceSkill` / `CriticalWindowSkill`，输出确定性 `AiEvidence`（含 confidence / provenance / priority），只描述「发生了什么」与确定性派生测量，不做战术裁决。
 3. **Call #2（Tactical Review）**：`TacticalReviewPromptBuilder` 按 Priority Bookends 组织 Prompt（BATTLE SNAPSHOT（含结算、死亡时间线、**走位/区域时间线与压缩移动段**）→ STRATEGIC PRIOR → **TACTICAL TIMELINE（Canonical BattleTimeline 的 Episode 化主叙事，见 `docs/architecture/battle-timeline.md`；`PersonalAiContextCompiler` 渲染 BEFORE/EVENTS/AFTER/TACTICAL_CHANGE + 你 hp/pos + 敌方已知/未知分布）** → TOP PIVOTAL WINDOWS（≤8）→ PHASE → **对炮明细（ENGAGEMENTS·逐次交火）** → EVIDENCE → CRITICAL DECISION WINDOWS（≤8 完整证据）→ TASK），预算不足时按相关性裁剪（timeline 段在 evidence/phases/points 之后、窗口细节之前裁剪），书签段永不裁剪。
-   - **Canonical Timeline 门禁（§3，V2 核心）**：随机战 harness 在录像者解析后立即构建 `BattleTimeline`（battle-relative 时钟：IDENTIFIED / ESTIMATED（`BattleEnded.raw − duration`）/ UNRESOLVED→拒绝）；无法构建 → `AI_TIMELINE_UNUSABLE` 业务错误，**不再 settlement-only fallback 调用 AI**；`PlayerReplayAnalysisService.analyzePlayerOrFallback` 无重建/录像者未解析同样拒绝。团队 prompt 经 `TeamAiContextCompiler` 注入双方对称 timeline 段（recon 可用时；结算级 Team Autopsy 不变）。
+   - **Canonical Timeline hard gate**：随机战 harness 在录像者解析后立即构建 `BattleTimeline`（battle-relative 时钟：IDENTIFIED / ESTIMATED（`BattleEnded.raw − duration`）/ UNRESOLVED→拒绝）；无法构建 → `AI_TIMELINE_UNUSABLE` 业务错误，**不再 settlement-only fallback 调用 AI**；`PlayerReplayAnalysisService.analyzePlayerOrFallback` 无重建/录像者未解析同样拒绝。团队 prompt 经 `TeamAiContextCompiler` 注入双方对称 timeline 段（recon 可用时；结算级 Team Autopsy 不变）。
 
 
 ## Backend Evidence Boundary（PR #103 架构收口）
@@ -96,7 +96,7 @@ AI 提示词正文维护在 `java/wotb-web/src/main/resources/prompts/` 下的 `
 
 - UTF-8、LF 换行（加载器会把 CRLF 归一化为 LF；文件末尾换行保留——`confidence-legend` 以换行结尾，勿删）。
 - 文件是 ZH 完整 prompt；EN/RU 由 `PlayerPromptRules.localizePlayerSystemPrompt` / `TeamPromptLocalizer.localizeTeamSystemPrompt` 对 ZH 规则片段做字符串替换生成。**展开后 md 内中文规则片段必须与 Java 常量（`COMMON_*_RULE` / `TEAM_*_RULE` 等）逐字一致**，否则 EN/RU 替换失效（`PromptRuleContractTest` 强制）。
-- 多文件 AI 复盘已移除（2026-08-12）：`player/multi` / `team/multi` 提示词、`analyzeMulti`、`MULTI_*_BATTLE` AI 分支与团队多视角分区合并全部删除；AI 复盘仅单文件（`AiReplayBatchPolicy.MAX_FILES=1`）。`BatchAnalyzer` / `ReplayAnalysisMode` 保留 MULTI 模式，因为非 AI 端点（`/api/replay/process`、`/api/replay/reconstruct-batch`）不受单文件限制。
+- 多文件 AI 复盘已移除（2026-08-12）：`player/multi` / `team/multi` 提示词、`analyzeMulti`、`MULTI_*_BATTLE` AI 分支与团队多视角分区合并全部删除；AI 复盘仅单文件（`AiReplayBatchPolicy.MAX_FILES=1`），由 `AiReplayReviewService.analyzeResults` 经 `BatchAnalyzer`（单结果分组 + `isAiAnalyzable` + `plan.mode()` 只取 NONE/SINGLE_*）决定分析单元。对应旧多文件批量分析的 `ReplayAnalysisMode.MULTI_*`、`DefaultReplayProcessingFacade.processBatch`/`buildBatchResult` 与 `ReplayBatchProcessingResult`/`ReplayBatchSummary` 已删除（无 current production consumer；legacy `/api/replay/process`、`/api/replay/reconstruct-batch`、multipart analyze 一律 410，已不存在多文件批量端点）。
 
 ### AI 复盘评估 harness（golden cases + lessons）
 
@@ -211,7 +211,7 @@ Replay → Parser → Canonical BattleTimeline → 确定性 Grounding Facts（�
 > 不是 correctness boundary。claims coverage 最低契约：Grounding Facts 非空且主判断引用
 > 证据编号或正文出现可验证事实锚点时，claims 不允许无条件为空（CONTRACT 冲突）。
 
-### 校验失败 → LLM 自修循环（§13/§14，P0 修复后：severity 分级）
+### 校验失败 → LLM 自修循环（P0 修复后：severity 分级）
 
 ```
 Draft → validate → PASS → 流式输出
@@ -340,8 +340,8 @@ AI 复盘区分两种 scope，互不混用：
 
 - **目的**：消灭「非法 JSON / JSON 外多余文本 / JSON 格式漂移 → parser fail → 昂贵完整 LLM retry」这一类
   syntax 层失败（docs/architecture/ai-review.md 方案 1）。**不是** Strict Function Calling / JSON Schema constrained generation
-  （§32 明确不宣传为 strict schema output）。
-- **职责三层（§33，不混用）**：
+  （明确不宣传为 strict schema output）。
+- **职责三层（不混用）**：
   - Provider JSON mode（`response_format=json_object`）= **syntax guarantee**（合法 JSON）；
   - `TeamReviewEnvelopeParser` = **WotBTools business schema guarantee**（合法 JSON 但 `claims` 类型错误等仍 FAIL）；
   - `TeamFactualConsistencyValidator` = **truth guarantee**（事实一致性，JSON mode 只解决 syntax 不解决 truth）。
@@ -349,16 +349,16 @@ AI 复盘区分两种 scope，互不混用：
   只有 Team Call #2（`SINGLE_TEAM_BATTLE` Natural Coach Call #2，`TeamReplayAnalysisService.callRaw`）显式传
   `JSON_OBJECT`（输出格式属于 request contract，不由 analysisMode 隐式推断）；Player / Pre-battle / Harness /
   Autopsy 全部保持 `TEXT`，不进入 JSON mode。
-- **mapping（§8/§10）**：Spring AI 2.0.0 `OpenAiChatOptions` 原生支持 `responseFormat`（javap 实证），
+- **mapping**：Spring AI 2.0.0 `OpenAiChatOptions` 原生支持 `responseFormat`（javap 实证），
   `SpringAiChatGateway.buildPrompt` 在 **per-request options** 上设置
   `OpenAiChatModel.ResponseFormat.builder().type(Type.JSON_OBJECT).build()`；`TEXT` 不发送 response_format。
-  绝不写进连接级/全局 model options（§9），否则所有调用都会变 JSON。
-- **streaming（§21/§22）**：Team Call #2 继续走 `gateway.stream(request, IGNORED_STREAM)`（draft 不推给用户，
+  绝不写进连接级/全局 model options，否则所有调用都会变 JSON。
+- **streaming**：Team Call #2 继续走 `gateway.stream(request, IGNORED_STREAM)`（draft 不推给用户，
   校验 PASS 后由 `forwardTokens` 模拟 SSE 增量）；JSON Output 与 stream 的兼容性在生产 smoke 实测确认；
-  若实测不可靠，按 §22 允许改 `chat()`（用户不可见契约不变）。
-- **thinking（§20）**：`call2ThinkingEnabled` 默认 false；启用时需在生产实测 JSON Output + thinking 兼容性，
+  若实测不可靠，允许改 `chat()`（用户不可见契约不变）。
+- **thinking**：`call2ThinkingEnabled` 默认 false；启用时需在生产实测 JSON Output + thinking 兼容性，
   不静默关闭 thinking（官方明确不兼容 + 测试 + 文档三者齐备才处理）。
-- **observability（§15-§17）**：每次 Team Call #2 attempt 记录 `event=team_review_parse_result`（result/
+- **observability**：每次 Team Call #2 attempt 记录 `event=team_review_parse_result`（result/
   reason=低基数枚举）、`event=team_review_validation`（conflictCount/checks）、`event=team_review_validation_conflict`
   （DEBUG，check/reasonCode）、`event=ai_validation_retry`、`event=team_review_validation_attempt_completed`
   （token 累计）、`event=ai_prompt_budget`（发送前预算）；指标 `wotb_ai_team_review_validation_attempt_total`

@@ -168,7 +168,7 @@ class BackendEvidenceBoundaryTest {
 
     // R8 — Golden 3:1 由 TeamReviewRealReplayProbeTest（wotb-core）负责硬断言：
     // 109–128s / 3:1 / 7v7→4v6 / collapse core；样本存在时断言，样本缺失时自动跳过。
-    // 此处不保留 fake test（assertTrue(true) 已于 PR #103 第三轮删除）。
+    // 此处不保留 fake test（原 assertTrue(true) 已删除）。
 
     // R9 — RelativeDepthHp production 不再输出吸血/避战/利用队友等战术 verdict，且不输出战术角色标签
     @Test

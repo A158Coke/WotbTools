@@ -265,8 +265,9 @@ public class AiReplayReviewService {
                         withDisclaimerFooter(corrected.get(0), language),
                         corrected.get(1));
             }
+            // 单文件 AI 复盘：模式只可能是 NONE / SINGLE_PLAYER_BATTLE / SINGLE_TEAM_BATTLE
+            // （MULTI_* 已随 legacy 批量端点删除），switch 全枚举覆盖，无 default。
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
-            default -> throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
         };
     }
 
