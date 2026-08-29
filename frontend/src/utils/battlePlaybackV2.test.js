@@ -3,7 +3,9 @@ import {
   healthAt,
   lifeAt,
   positionCoveredAtV2,
+  positionAtV2,
   orientationKnownAt,
+  orientationAtV2,
   inspectVehicleAt,
   consumableRuntimeAt,
   moduleCrewAt,
@@ -39,6 +41,31 @@ describe('positionCoveredAtV2', () => {
     expect(positionCoveredAtV2(segs, 50)).toBe(true)
     expect(positionCoveredAtV2(segs, 120)).toBe(false) // hidden interval
     expect(positionCoveredAtV2(segs, 160)).toBe(true)
+  })
+})
+
+describe('positionAtV2', () => {
+  it('interpolates within OBSERVED segment, freezes outside (no cross-gap)', () => {
+    const segs = [
+      { knowledge: 'OBSERVED', startSec: 0, endSec: 100, samples: [
+        { timeSec: 0, x: 0, y: 0 }, { timeSec: 100, x: 100, y: 50 },
+      ] },
+    ]
+    const mid = positionAtV2(segs, 50)
+    expect(mid.x).toBeCloseTo(50, 5)
+    expect(mid.y).toBeCloseTo(25, 5)
+    // 段外（hidden）：返回最后已知
+    expect(positionAtV2(segs, 120).timeSec).toBe(100)
+  })
+})
+
+describe('orientationAtV2', () => {
+  it('returns frozen last sample for LAST_KNOWN segment', () => {
+    const segs = [{ knowledge: 'LAST_KNOWN', startSec: 100, endSec: 100,
+      samples: [{ timeSec: 100, hullYawDeg: 30, turretRelativeYawDeg: 10 }] }]
+    const o = orientationAtV2(segs, 120)
+    expect(o.hullYawDeg).toBe(30)
+    expect(o.turretRelativeYawDeg).toBe(10)
   })
 })
 
