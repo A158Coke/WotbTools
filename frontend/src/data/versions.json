@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.49",
+    "date": "2026-08-29",
+    "tag": "add",
+    "zh": "新增 WotBTools Android 在线客户端：安装后直接进入现有 WotBTools，自动随站点获得业务更新；可从游戏「分享」或文件管理器「打开方式」直接导入回放；Web 新增「下载 Android 版」入口与下载页（含最新版本与 SHA-256）。",
+    "en": "New WotBTools Android online client: after installing you go straight into the existing WotBTools and get business updates automatically with the site; you can import a replay directly via Share or Open-with from the file manager; the Web now has a Download Android entry and page (with latest version and SHA-256).",
+    "ru": "Новый онлайн-клиент WotBTools Android: после установки вы сразу попадаете в существующий WotBTools и автоматически получаете обновления вместе с сайтом; реплей можно импортировать напрямую через «Поделиться» или «Открыть с помощью» из файлового менеджера; на сайте появился раздел «Скачать Android» и страница загрузки (с последней версией и SHA-256)."
+  },
+  {
     "v": "2.12.48",
     "date": "2026-08-30",
     "tag": "chg",

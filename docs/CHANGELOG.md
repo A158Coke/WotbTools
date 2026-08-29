@@ -5,6 +5,8 @@
 ## [Unreleased]
 
 ### Added
+- **Android 在线纯客户端（Thin Client）初版**：新增 `android/` 最小 Kotlin 壳（Remote Web Architecture，WebView 加载 `https://wotbtools.com`）、网络/版本门禁（fail-closed）、APK 强制/可选更新、Replay 意图入口（ACTION_SEND/ACTION_VIEW → content URI → 现有 Web upload transport）、极薄 Native Bridge（能力探测 + pending replay 交接）、FileProvider 与未知来源授权。发布走 `.github/workflows/android-release.yml`（tag `android-v*`），APK + `version.json` 静态托管于 `/download/android/`（nginx location + compose bind-mount `/opt/wotb/android-release`）。前端新增 `?view=android` 下载页与「下载 Android 版」入口。Web 端只做 Web 之外的系统能力；回放业务展示（AI Review / 战局重建 / capability 状态）沿用现有 Vue，不在 Native 重写（待 V2 contract 定稿后共用同一套 capability/domain API）。验证：frontend `npm test` + `npm run build` 通过；Android 编译/签名/真机验证在 CI tag 与真机侧进行。
+
 - **Battle Playback V2 — Canonical Replay Truth Convergence（后端 decoder → canonical facts → BattleTimeline → V2 稀疏投影）**：把战局重建从「decoder events → Playback/AI 各自重新解释 → frontend 再推理」收敛为「版本门禁解码 → canonical facts/lifecycles → BattleTimeline → thin projection」。本轮在已有 PR162 canonical Timeline 基础上新增：
   - **P0-1 Type5 combat loadout**：`VehicleBattleLoadout`（3 consumable + 3 provision + 9 equipment，byte=ID 编码），挂到 `MaterializationEvent.loadout`；unknown provision wireCode 保持 `logicalItemId=null`+raw，非 9-equipment family fail-closed；version/class 门禁（仅 `entityTypeId==2` + lifecycle-affirmed 版本）。
   - **P0-2 Type32 通用 auxiliary-blob envelope**：`EntityAuxiliaryBlobDecoder`（`entityId+flag+bodyLength+body`，校验 `bodyLength==payload.length-9`，malformed fail-closed + 诊断）＋ `ConsumableLifecycleEvent`（仅 `TYPE32_CONSUMABLE_LIFECYCLE VERIFIED` + VEHICLE + flag0 + 16B 组合才解码）；新增 `TYPE32_CONSUMABLE_LIFECYCLE` version capability（11.19 证明，11.18/future fail-closed）。
