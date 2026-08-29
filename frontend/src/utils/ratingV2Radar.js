@@ -4,6 +4,8 @@
  * The server owns V2's scoring-index normalization. This module only orders the six V2 axes, translates labels,
  * formats raw values, and computes the batch-average reference from the server-provided projection.
  */
+import { scaleRadarSeries } from './radarScale.js'
+
 const RATING_V2_RADAR_KEYS = Object.freeze([
   'potential_damage_avg',
   'kast',
@@ -90,6 +92,14 @@ export function ratingV2RadarBatchAverage(rows, t, locale) {
       available: true,
     }
   })
+}
+
+/** Builds the selected player and its real batch average on the shared relative-performance scale. */
+export function ratingV2RadarSeries(row, rows, t, locale) {
+  return scaleRadarSeries(
+    ratingV2RadarMetrics(row, t, locale),
+    ratingV2RadarBatchAverage(rows, t, locale),
+  )
 }
 
 export function ratingV2RadarComplete(metrics) {

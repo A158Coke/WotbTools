@@ -3,9 +3,8 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PlayerRatingRadar from './PlayerRatingRadar.vue'
 import {
-  ratingV2RadarBatchAverage,
   ratingV2RadarComplete,
-  ratingV2RadarMetrics,
+  ratingV2RadarSeries,
 } from '../utils/ratingV2Radar.js'
 
 const props = defineProps({
@@ -17,8 +16,9 @@ defineEmits(['close'])
 
 const { t, locale } = useI18n()
 
-const metrics = computed(() => ratingV2RadarMetrics(props.row, t, locale.value))
-const reference = computed(() => ratingV2RadarBatchAverage(props.rows, t, locale.value))
+const series = computed(() => ratingV2RadarSeries(props.row, props.rows, t, locale.value))
+const metrics = computed(() => series.value.metrics)
+const reference = computed(() => series.value.reference)
 const playerComplete = computed(() => ratingV2RadarComplete(metrics.value))
 </script>
 

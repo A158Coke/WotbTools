@@ -90,6 +90,12 @@
     "result": {
       "base_summary_title": "基础战斗汇总"
     },
+    "radarScale": {
+      "average": "{label} = 75",
+      "strong": "强势线 100",
+      "overflow": "超过 100 = 显著高于当前比较组",
+      "ariaDescription": "{label}固定在 75，强势线为 100；玩家轮廓可以超过 100。"
+    },
     "ratingV2": {
       "kicker": "管理员 · 灰度",
       "title": "Rating V2 灰度核验",
@@ -213,6 +219,12 @@
     "result": {
       "base_summary_title": "Base Battle Summary"
     },
+    "radarScale": {
+      "average": "{label} = 75",
+      "strong": "Strong line 100",
+      "overflow": "Above 100 = significantly above the current comparison group",
+      "ariaDescription": "{label} is fixed at 75 and the strong line is 100; the player profile may extend above 100."
+    },
     "ratingV2": {
       "kicker": "ADMIN · GRAY",
       "title": "Rating V2 Gray Validation",
@@ -335,6 +347,12 @@
     },
     "result": {
       "base_summary_title": "Сводка по боям"
+    },
+    "radarScale": {
+      "average": "{label} = 75",
+      "strong": "Сильный уровень 100",
+      "overflow": "Выше 100 = значительно выше текущей группы сравнения",
+      "ariaDescription": "{label} зафиксировано на 75, сильный уровень равен 100; профиль игрока может выходить выше 100."
     },
     "ratingV2": {
       "kicker": "АДМИН · СЕРАЯ ПРОВЕРКА",

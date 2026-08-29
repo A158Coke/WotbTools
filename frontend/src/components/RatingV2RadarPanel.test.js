@@ -47,7 +47,7 @@ describe('RatingV2RadarPanel', () => {
     expect(radar.props('referenceLabel')).toBe('ratingV2.radar.batchAverage')
     expect(radar.props('metrics').map(metric => metric.key)).toEqual(KEYS)
     expect(radar.props('reference')[0].rawValue).toBe(3000)
-    expect(radar.props('reference')[0].normalized).toBeCloseTo(0.6, 10)
+    expect(radar.props('reference').every(axis => axis.normalized === 0.5)).toBe(true)
   })
 
   it('does not mount a fake radar when the selected player has a missing V2 axis', () => {
