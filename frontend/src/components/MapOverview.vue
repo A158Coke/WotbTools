@@ -48,7 +48,7 @@ watch(view, (next) => {
 })
 // AI 报告时间跳转：自动切到「战局回放」视图
 watch(() => props.seekTo, (sec) => {
-  if (Number.isFinite(sec) && props.overview.playback) {
+  if (Number.isFinite(sec) && props.playbackV2) {
     view.value = 'playback'
   }
 }, { immediate: true })
@@ -235,7 +235,7 @@ const gridRegions = computed(() => {
           @click="view = 'routes'"
         >{{ $t('recon.map.view_routes') }}</button>
         <button
-          v-if="overview.playback"
+          v-if="props.playbackV2"
           type="button"
           class="map-tab"
           :class="{ active: view === 'playback' }"
@@ -376,7 +376,7 @@ const gridRegions = computed(() => {
     </svg>
 
     <BattlePlayback
-      v-if="view === 'playback' && overview.playback"
+      v-if="view === 'playback' && props.playbackV2"
       :overview="overview"
       :seek-to="seekTo"
       :playback-v2="playbackV2"

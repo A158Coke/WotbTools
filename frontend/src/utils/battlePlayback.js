@@ -675,8 +675,13 @@ export function hpDisplay(vehicle, t, { friendly = false } = {}) {
     if (Array.isArray(vehicle.healthTransitions)) {
       const lt = lastAtOrBefore(vehicle.healthTransitions, knownT, 'timeSec')
       const knowledge = lt ? (lt.knowledge || 'UNKNOWN') : 'UNKNOWN'
+      // canonical displayCapacityHp = presentation-only HP bar 量程（anti-future-leak）；
+      // 有值 → 精确百分比 current/displayCapacityHp；无值（首次观测前）→ pct=null（UNKNOWN，不伪造）。
+      const capacity = lt ? (lt.displayCapacityHp ?? null) : null
+      const pct = Number.isFinite(capacity) && capacity > 0 && Number.isFinite(current)
+        ? Math.max(0, Math.min(100, (current / capacity) * 100)) : null
       return {
-        current, maxHp: null, pct: null, destroyed: false,
+        current, maxHp: capacity ?? null, pct, destroyed: false,
         state: knowledge === 'CURRENT' ? 'CURRENT' : 'LAST_KNOWN',
         fullState: false,
       }

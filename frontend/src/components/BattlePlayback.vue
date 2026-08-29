@@ -1155,6 +1155,7 @@ function vehicleState(vehicle) {
     pos: last,
     covered,
     destroyed,
+    destroyedKnownAtSec: life && life.lifeState === 'DESTROYED' ? life.destroyedKnownAtSec : null,
     recorder,
     friendly,
     direction,
@@ -1477,7 +1478,11 @@ function vehicleTypeLabel(vehicle) {
 const selHp = computed(() => {
   const st = selectedState.value
   if (!st) return null
-  return hpDisplay(st.vehicle, currentTime.value, { friendly: st.vehicle.team === friendlyTeam.value })
+  const v2 = v2TrackByAccount.value?.get(st.vehicle.accountId)
+  const veh = v2
+    ? { ...st.vehicle, healthTransitions: v2.healthTransitions || [], lifeTransitions: v2.lifeTransitions || [] }
+    : st.vehicle
+  return hpDisplay(veh, currentTime.value, { friendly: st.vehicle.team === friendlyTeam.value })
 })
 // §6/§41 + PR #107 Blocker 1：Details Panel 当前 HP 按 provenance 显示：
 // - DESTROYED → 0（权威阵亡）；
@@ -1493,7 +1498,6 @@ const selHpText = computed(() => {
   const d = selHp.value
   if (!d) return '—'
   if (d.destroyed) return '0'
-  if (d.state === 'RULE_DERIVED_FULL_AT_SPAWN') return '100%'
   if (d.current != null) return String(d.current)
   return '—'
 })
@@ -1501,7 +1505,8 @@ const selHpLabel = computed(() => {
   const st = selectedState.value
   if (!st) return ''
   if (st.destroyed) return 'recon.map.playback.current_hp'
-  if (st.lastKnown) return 'recon.map.playback.last_known_hp'
+  const d = selHp.value
+  if (d && d.state === 'LAST_KNOWN') return 'recon.map.playback.last_known_hp'
   return 'recon.map.playback.current_hp'
 })
 const selStateLabel = computed(() => {
@@ -1524,7 +1529,7 @@ const selCurStats = computed(() => {
     authoritativeEvents.value,
     st.vehicle.accountId,
     currentTime.value,
-    playback.value ? playback.value.vehicles : []
+    Array.from(vehiclesByAccount.value.values())
   )
 })
 /** §12/§13/§19 最近伤害记录：全部车辆的权威 HP loss（Type-7 推导），attacker 不可证明时
@@ -1534,7 +1539,7 @@ const selDamageLog = computed(() => {
   const st = selectedState.value
   if (!st) return []
   const rows = damageLogAt(
-    playback.value ? playback.value.vehicles : [],
+    Array.from(vehiclesByAccount.value.values()),
     st.vehicle.accountId,
     currentTime.value,
     8
@@ -2094,9 +2099,9 @@ const mapStyle = computed(() => ({
         </template>
         <dt>{{ $t(selHpLabel) }}</dt>
         <dd data-test="pb-sb-hp">{{ selHpText }}</dd>
-        <template v-if="selectedState.destroyed && selectedState.vehicle.deathSec != null">
+        <template v-if="selectedState.destroyed && selectedState.destroyedKnownAtSec != null">
           <dt>{{ $t('recon.map.playback.destroyed_at') }}</dt>
-          <dd>{{ formatClock(selectedState.vehicle.deathSec) }}</dd>
+          <dd>{{ formatClock(selectedState.destroyedKnownAtSec) }}</dd>
         </template>
         <dt>{{ $t('recon.map.playback.playback_time') }}</dt>
         <dd>{{ formatClock(currentTime) }}</dd>
