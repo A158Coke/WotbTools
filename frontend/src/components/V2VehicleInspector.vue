@@ -21,8 +21,19 @@ const props = defineProps({
 
 const { t } = useI18n()
 
-const health = computed(() => healthAt(props.track, props.timeSec))
 const life = computed(() => lifeAt(props.track, props.timeSec))
+const health = computed(() => {
+  // 与 marker/HUD 一致：阵亡为权威事实，current=0（绝不显示阵亡前最后一次健康值）。
+  if (life.value?.lifeState === 'DESTROYED') {
+    return {
+      currentHp: 0,
+      knowledge: 'CURRENT',
+      displayCapacityHp: healthAt(props.track, props.timeSec)?.displayCapacityHp ?? null,
+      source: 'DESTROYED',
+    }
+  }
+  return healthAt(props.track, props.timeSec)
+})
 const covered = computed(() => positionCoveredAtV2(props.track.positionSegments, props.timeSec))
 const orientation = computed(() => orientationKnownAt(props.track, props.timeSec))
 const loadout = computed(() => props.track.loadout || null)

@@ -138,19 +138,37 @@ export function teamHp(vehicles, team, t, assumeFullWhenUnobserved = false) {
   if (teamVehicles.length > 0 && teamVehicles.every(v => Array.isArray(v.healthTransitions))) {
     let knownRemaining = 0
     let totalCapacity = 0
-    let anyCapacity = false
+    let knownCurrentCount = 0
+    let allExact = true
     for (const v of teamVehicles) {
+      // 阵亡为权威事实：current=0（绝不把阵亡前的最后一次健康值算作该车剩余）。
+      const destroyed = Array.isArray(v.lifeTransitions)
+        && (lastAtOrBefore(v.lifeTransitions, t, 'timeSec')?.lifeState === 'DESTROYED')
       const lt = lastAtOrBefore(v.healthTransitions, t, 'timeSec')
-      if (lt && Number.isFinite(lt.currentHp)) knownRemaining += lt.currentHp
-      const cap = lastAtOrBefore(v.healthTransitions, t, 'timeSec')?.displayCapacityHp ?? null
-      if (Number.isFinite(cap) && cap > 0) {
+      const cur = destroyed ? 0 : (lt && Number.isFinite(lt.currentHp) ? lt.currentHp : null)
+      const cap = lt && Number.isFinite(lt.displayCapacityHp) ? lt.displayCapacityHp : null
+      if (cur != null) {
+        knownRemaining += cur
+        knownCurrentCount++
+      }
+      if (cap != null && cap > 0) {
         totalCapacity += cap
-        anyCapacity = true
+      }
+      // EXACT 门槛：全队每辆车都须「current 为权威确切值（CURRENT 或阵亡 0）+ capacity 已知」。
+      // 任一车辆 UNKNOWN / LAST_KNOWN（冻结值可能过期）或 capacity 未知 → 不得 EXACT，
+      // 绝不以 partial capacity 冒充全队总 HP。
+      const exact = cur != null && cap != null && cap > 0
+        && (destroyed || (lt && lt.knowledge === 'CURRENT'))
+      if (!exact) {
+        allExact = false
       }
     }
-    const state = knownRemaining > 0 || anyCapacity ? 'EXACT' : 'UNKNOWN'
+    const state = (allExact && knownCurrentCount === teamVehicles.length) ? 'EXACT'
+      : (knownCurrentCount > 0 ? 'PARTIAL' : 'UNKNOWN')
     return {
-      totalMax: anyCapacity ? totalCapacity : 0,
+      // 仅 EXACT（全队 denominator/current 皆可证）才给出真实总分母；PARTIAL 归零，
+      // 避免 partial capacity 冒充全队已证明总 HP（UI 只显示真实已知剩余数字，不给分数）。
+      totalMax: state === 'EXACT' ? totalCapacity : 0,
       knownRemaining,
       unknownMax: 0,
       spawnFullCount: 0,

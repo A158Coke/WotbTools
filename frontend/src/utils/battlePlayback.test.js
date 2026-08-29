@@ -313,6 +313,69 @@ describe('vehicleHpAt / teamHp', () => {
   })
 })
 
+describe('V2 teamHp canonical (healthTransitions)', () => {
+  const T = (hp, cap, knowledge = 'CURRENT') => ({ timeSec: 0, currentHp: hp, knowledge, displayCapacityHp: cap, source: 'EXACT_BATTLE_EVENT' })
+
+  it('全队 CURRENT + capacity 已知 → EXACT（真实分母/current 可证）', () => {
+    const hp = teamHp([
+      { team: 1, healthTransitions: [T(1000, 1500)] },
+      { team: 1, healthTransitions: [T(800, 1200)] },
+    ], 1, 5)
+    expect(hp).toEqual({ totalMax: 2700, knownRemaining: 1800, unknownMax: 0, spawnFullCount: 0, openingFullCount: 0, state: 'EXACT' })
+  })
+
+  it('存在未知车辆 → PARTIAL，totalMax 归零，禁止 partial capacity 冒充全队总 HP', () => {
+    const hp = teamHp([
+      { team: 1, healthTransitions: [T(1000, 1500)] },
+      { team: 1, healthTransitions: [] }, // 未知车辆（无任何 canonical 数据）
+    ], 1, 5)
+    expect(hp.state).toBe('PARTIAL')
+    expect(hp.totalMax).toBe(0)
+    expect(hp.knownRemaining).toBe(1000)
+  })
+
+  it('LAST_KNOWN 冻结车辆 → 不得 EXACT（冻结值可能过期），totalMax=0', () => {
+    const hp = teamHp([
+      { team: 1, healthTransitions: [T(1000, 1500)] },
+      { team: 1, healthTransitions: [{ timeSec: 5, currentHp: 800, knowledge: 'LAST_KNOWN', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' }] },
+    ], 1, 10)
+    expect(hp.state).toBe('PARTIAL')
+    expect(hp.totalMax).toBe(0)
+  })
+
+  it('全队无数据 → UNKNOWN', () => {
+    const hp = teamHp([
+      { team: 1, healthTransitions: [] },
+      { team: 1, healthTransitions: [] },
+    ], 1, 5)
+    expect(hp.state).toBe('UNKNOWN')
+    expect(hp.totalMax).toBe(0)
+    expect(hp.knownRemaining).toBe(0)
+  })
+
+  it('全队含阵亡（current 0 + capacity）仍可证明 → EXACT', () => {
+    const hp = teamHp([
+      { team: 1, healthTransitions: [
+        { timeSec: 0, currentHp: 1000, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT' },
+        { timeSec: 10, currentHp: 0, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT' },
+      ] },
+    ], 1, 12)
+    expect(hp.state).toBe('EXACT')
+    expect(hp.knownRemaining).toBe(0)
+    expect(hp.totalMax).toBe(1000)
+  })
+
+  it('lifeTransition 阵亡车辆：current 计入 0，不把阵亡前 HP 当剩余', () => {
+    const hp = teamHp([
+      { team: 1, healthTransitions: [T(1200, 1200)], lifeTransitions: [{ timeSec: 25, lifeState: 'DESTROYED', destroyedKnownAtSec: 25 }] },
+      { team: 1, healthTransitions: [T(1000, 1200)] },
+    ], 1, 30)
+    expect(hp.state).toBe('EXACT')
+    expect(hp.knownRemaining).toBe(1000)
+    expect(hp.totalMax).toBe(2400)
+  })
+})
+
 describe('parseAiTime', () => {
   it('parses explicit time formats only', () => {
     expect(parseAiTime('03:20')).toBe(200)
