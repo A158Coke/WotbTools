@@ -232,7 +232,6 @@ watch(() => workspace.replay.selectionRevision.value, () => {
       :loading="loading"
       :confirm-remove="!!resp"
       :compact="!!resp"
-      :show-workspace-actions="false"
       @update:files="updateFiles"
       @preview="onPreview"
       @remove-request="onFileRemoveRequest"

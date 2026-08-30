@@ -550,7 +550,7 @@ onMounted(() => {
     <!-- 独立使用（旧路由/测试）时保留上传器；嵌入 Workspace 时由 Workspace 提供单一上传器。 -->
     <FileUploader v-if="!props.embedded" :files="files" :loading="loading" :confirm-remove="!!resp"
       @update:files="updateFiles" @preview="preview" @remove-request="onFileRemoveRequest"
-      :show-workspace-actions="false" />
+      />
 
     <p v-if="error" class="error">{{ error }}</p>
 
