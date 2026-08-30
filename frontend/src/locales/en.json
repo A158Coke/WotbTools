@@ -1490,7 +1490,14 @@
                 "orientation_last_known": "Last known heading",
                 "loadout_unknown_consumable": "Unknown consumable ({id})",
                 "loadout_unknown_provision": "Unknown provision ({id})",
-                "loadout_unknown_equipment": "Unknown equipment ({id})"
+                "loadout_unknown_equipment": "Unknown equipment ({id})",
+                "consumable_state": {
+                    "INITIALIZED": "Ready",
+                    "ACTIVATED": "Active",
+                    "ACTIVE_ENDED_OR_COOLDOWN": "Ended or on cooldown",
+                    "TEARDOWN": "Removed",
+                    "UNKNOWN": "Unknown"
+                }
             }
         },
         "stages": {
