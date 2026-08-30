@@ -15,6 +15,8 @@ export const darkMapPalette = {
   heatFriendly: '#22c55e',
   heatEnemy: '#ef4444',
   gridStroke: 'rgba(255,255,255,.16)',
+  /** Battle Playback 6x6 网格：需要「每一列可见地隔开」，弱化网格仅用于热力/路线地图鸟瞰。 */
+  gridStrokeStrong: 'rgba(255,255,255,.55)',
   regionStroke: 'rgba(255,255,255,.55)',
   spawnFriendly: '#4ade80',
   spawnEnemy: '#ef4444',
@@ -29,6 +31,8 @@ export const lightMapPalette = {
   heatFriendly: '#15803d',
   heatEnemy: '#b91c1c',
   gridStroke: 'rgba(0,0,0,.22)',
+  /** 亮图下 Battle Playback 网格：深色清晰分隔线。 */
+  gridStrokeStrong: 'rgba(0,0,0,.55)',
   regionStroke: 'rgba(0,0,0,.55)',
   spawnFriendly: '#15803d',
   spawnEnemy: '#b91c1c',

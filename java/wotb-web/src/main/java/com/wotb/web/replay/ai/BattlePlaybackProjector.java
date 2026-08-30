@@ -118,7 +118,9 @@ public final class BattlePlaybackProjector {
                 events(timeline, mapping, tracks, effectiveRecorder, duration),
                 shots(timeline, mapping),
                 pointsSamples(timeline),
-                timeline.limitations());
+                timeline.limitations(),
+                null,
+                battle.arenaBonusType);
     }
 
     private static VehiclePlaybackTrack projectVehicle(
