@@ -193,7 +193,7 @@ onBeforeUnmount(() => {
     </select>
     <!-- 下载 Android 版：feature flag，仅 wotbtools-admin 可见，主页右上角。
          Android App 内隐藏（计划 §20）：Native WebView 中不展示「下载 Android 版」。 -->
-    <button v-if="isAdmin && !isAndroidApp() && activeTool === 'home'" class="auth-btn ghost android-download-btn" @click="go('android')" :title="$t('android.nav')">{{ $t('android.nav') }}</button>
+    <button v-if="!isAndroidApp() && activeTool === 'home'" class="auth-btn ghost android-download-btn" @click="go('android')" :title="$t('android.nav')">{{ $t('android.nav') }}</button>
     <div class="dropdown user-menu">
       <button ref="userMenuTrigger" class="auth-btn ghost user-menu-trigger" @click="toggleUserMenu" :aria-expanded="userMenuOpen" :aria-haspopup="true">
         {{ isAuthenticated() ? userName() : $t('app.login') }}
@@ -216,7 +216,7 @@ onBeforeUnmount(() => {
             <button v-if="isAdmin" class="user-menu-item" role="menuitem" @click="go('admin-users')">{{ $t('admin.title') }}</button>
             <button v-if="isHofAdmin" class="user-menu-item" role="menuitem" @click="go('hof-admin')">{{ $t('hofAdmin.cardTitle') }}</button>
             <button class="user-menu-item" role="menuitem" @click="go('version')">{{ $t('version.btn') }}</button>
-            <button v-if="isAdmin && !isAndroidApp()" class="user-menu-item" role="menuitem" @click="go('android')">{{ $t('android.nav') }}</button>
+            <button v-if="!isAndroidApp()" class="user-menu-item" role="menuitem" @click="go('android')">{{ $t('android.nav') }}</button>
             <button class="user-menu-item" role="menuitem" @click="go('contact')">{{ $t('contact.nav') }}</button>
             <a class="user-menu-item" role="menuitem" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
             <button class="user-menu-item danger" role="menuitem" @click="handleLogout">{{ $t('profile.logout') }}</button>
