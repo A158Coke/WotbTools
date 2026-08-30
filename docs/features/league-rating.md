@@ -272,10 +272,10 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
 - **选手 Drawer 雷达**：只允许七维 League Rating，用户可自定义维度与顺序（min 3 / max 7），
   偏好独立 localStorage（`wotb-radar-metric-order`），Summary 与 Battle 共用；Contribution/KAST/Impact
   继续保留在表现指标区，不进入 Radar。每个玩家顶点常驻标注 0–150 视觉分；明细默认显示玩家/平均视觉分，
-  可切换为 raw `score/max` 与真实平均值，切换不改变几何。维度 raw score 与 `score/max` 解释仍来自后端 metadata，最终几何
-  则按当前 Battle/Global Average 使用共用相对表现标尺（平均=75、2×平均=100、隐藏150上限）；max
-  metadata 缺失时 raw 模式降级显示 raw score，但不影响 raw/reference 完整轴的相对几何。Rating Profile PNG
-  与页面复用同一顶点分数定位并默认导出分数明细。
+  可切换为 raw `score/max` 与真实平均值，切换不改变几何。维度 raw score 与权威 `max` 均来自后端 metadata；
+  V5 最终几何把 `0..当前 Battle/Global Average` 线性映射到 `0..75`，把 `average..max` 线性映射到
+  `75..150`。max 缺失/非法或 average 不在 `(0,max)` 时整轴 fail-closed，不回退旧相对公式。Rating Profile
+  PNG 与页面复用同一 bounded series、顶点分数定位并默认导出分数明细。
 - 所有可见列（单场 / 普通汇总 / CW 统一玩家表 / 战队汇总）均支持 ASC/DESC 排序：
   数值 numeric、字符串自然序（Intl.Collator numeric）、缺失（null/''/NaN/--）恒排最后、
   排序基于 raw 值（格式化单元格按原始数值排）。
@@ -389,12 +389,13 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
 - **missing / invalid ≠ 真实 0**：`dimensionScores` 非 7 维、null、NaN、Infinity 是
   invariant violation（`LeagueRatingBatchAggregator.chunkMeans/chunkMedians`
   对残缺 stride fail fast）；Radar 轴缺失显示 `--`，不冒充 0/0%。
-- **几何标尺**：League 维度满分仍来自后端 `resp.league.columns`（key/max）供明细解释，frontend 不硬编码
-  domain max；max 缺失只让明细退化为 raw score，不改变 geometry availability。最终半径按 player raw
-  score / 当前 Battle/Global Average 映射为平均75、2×平均100、
-  4×平均125、>=8×平均150。150 只作不可见坐标上限，不绘制外边界或刻度。
+- **几何标尺**：League 维度满分来自后端 `resp.league.columns`（key/max），frontend 不硬编码 domain max。
+  设玩家维度分 `p`、当前 Battle/Global Average `a`、权威满分 `m`：`p<=a` 时
+  `visual=75*p/a`；`p>a` 时 `visual=75+75*(p-a)/(m-a)`。因此 `0→0`、`a→75`、`m→150`，
+  100 对应 `a+(m-a)/3`。缺 player/reference/max、非有限值、`a<=0`、`a>=m` 或 `p>m` 时整轴
+  fail-closed。150 只作不可见坐标上限，不绘制外边界或刻度。
 - **分数标注 / 明细模式**：每个玩家顶点显示与最终半径同源、四舍五入后的 0–150 视觉分。明细默认显示
-  玩家视觉分与固定 75 的平均分，可切换回原始玩家 `score/max`（max 不可用则 raw score）和真实参考值；
+  玩家视觉分与固定 75 的平均分，可切换回原始玩家 `score/max` 和真实参考值；
   模式切换不改变雷达几何、顶点标注或 Rating Profile PNG。页面雷达支持 50%–150% 缩放（默认 100%、
   10% 步进），只改变 SVG 显示尺寸；窄屏放大时在雷达区域内滚动。PNG 固定输出默认分数模式与固定尺寸，
   确保静态图可直接比较。

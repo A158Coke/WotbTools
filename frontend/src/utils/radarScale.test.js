@@ -5,8 +5,10 @@ import {
   RADAR_STRONG_VALUE,
   formatRadarVisualScore,
   radarAxisVisualScore,
+  radarBoundedVisualValue,
   radarRadiusRatio,
   radarVisualValue,
+  scaleBoundedRadarSeries,
   scaleRadarSeries,
 } from './radarScale.js'
 
@@ -19,6 +21,37 @@ describe('radarScale', () => {
     expect(radarVisualValue(80, 20)).toBe(125)
     expect(radarVisualValue(160, 20)).toBe(RADAR_DISPLAY_CAP)
     expect(radarVisualValue(1000, 20)).toBe(RADAR_DISPLAY_CAP)
+  })
+
+  it('maps V5 zero / cohort average / strong threshold / dimension max to 0 / 75 / 100 / 150', () => {
+    const average = 40
+    const max = 100
+    expect(radarBoundedVisualValue(0, average, max)).toBe(0)
+    expect(radarBoundedVisualValue(20, average, max)).toBe(37.5)
+    expect(radarBoundedVisualValue(average, average, max)).toBe(RADAR_AVERAGE_VALUE)
+    expect(radarBoundedVisualValue(average + (max - average) / 3, average, max)).toBe(RADAR_STRONG_VALUE)
+    expect(radarBoundedVisualValue(max, average, max)).toBe(RADAR_DISPLAY_CAP)
+  })
+
+  it('maps the approved V5 screenshot sample with average75/max150 semantics', () => {
+    const player = [290, 90, 53, 75, 26, 148, 11]
+    const average = [183, 69, 37, 35, 22, 89, 34]
+    const max = [365, 110, 110, 75, 50, 180, 110]
+    const expected = [119.1, 113.4, 91.4, 150, 85.7, 123.6, 24.3]
+    player.forEach((value, index) => {
+      expect(radarBoundedVisualValue(value, average[index], max[index])).toBeCloseTo(expected[index], 1)
+    })
+  })
+
+  it('fails closed when bounded V5 anchors are missing, invalid, or contradictory', () => {
+    for (const [player, reference, max] of [
+      [null, 20, 100], ['', 20, 100], [Number.NaN, 20, 100],
+      [10, null, 100], [10, 0, 100], [10, Number.POSITIVE_INFINITY, 100],
+      [10, 20, null], [10, 20, 0], [10, 20, Number.NaN],
+      [-1, 20, 100], [101, 20, 100], [10, 100, 100], [10, 101, 100],
+    ]) {
+      expect(radarBoundedVisualValue(player, reference, max)).toBeNull()
+    }
   })
 
   it('converts visual values into the invisible-150 geometry radius', () => {
@@ -77,6 +110,35 @@ describe('radarScale', () => {
       const scaled = scaleRadarSeries([metric], reference)
       expect(scaled.metrics[0]).toMatchObject({ key: 'assist', available: false, normalized: null })
       expect(scaled.reference[0]).toMatchObject({ available: false, normalized: null })
+    }
+  })
+
+  it('scales V5 by authoritative per-axis max while preserving a regular 75 reference ring', () => {
+    const metrics = [
+      { key: 'damage', rawValue: 80, displayValue: '80 / 100', available: true },
+      { key: 'assist', rawValue: 20, displayValue: '20 / 120', available: true },
+    ]
+    const reference = [
+      { key: 'assist', rawValue: 40, displayValue: '40 / 120', available: true },
+      { key: 'damage', rawValue: 50, displayValue: '50 / 100', available: true },
+    ]
+
+    const scaled = scaleBoundedRadarSeries(metrics, reference, { damage: 100, assist: 120 })
+    expect(scaled.metrics.map(axis => axis.key)).toEqual(['damage', 'assist'])
+    expect(scaled.metrics[0].visualValue).toBe(120)
+    expect(scaled.metrics[1].visualValue).toBe(37.5)
+    expect(scaled.reference.map(axis => axis.key)).toEqual(['damage', 'assist'])
+    expect(scaled.reference.map(axis => axis.visualValue)).toEqual([75, 75])
+    expect(scaled.reference.map(axis => axis.normalized)).toEqual([0.5, 0.5])
+  })
+
+  it('marks V5 player/reference unavailable when authoritative max metadata is absent', () => {
+    const metric = { key: 'assist', rawValue: 60, displayValue: '60', available: true }
+    const reference = { key: 'assist', rawValue: 40, displayValue: '40', available: true }
+    for (const maxByKey of [{}, { assist: null }, { assist: 0 }, { assist: 40 }]) {
+      const scaled = scaleBoundedRadarSeries([metric], [reference], maxByKey)
+      expect(scaled.metrics[0]).toMatchObject({ key: 'assist', available: false, normalized: null })
+      expect(scaled.reference[0]).toMatchObject({ key: 'assist', available: false, normalized: null })
     }
   })
 })
