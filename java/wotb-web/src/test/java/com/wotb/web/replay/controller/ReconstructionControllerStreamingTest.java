@@ -336,8 +336,11 @@ class ReconstructionControllerStreamingTest {
                 "worker must start and block before cancel");
         // 进行中：cancel 端点命中。
         assertEquals(204, controller.cancelAnalyze("00000000-0000-0000-0000-000000000007").getStatusCode().value());
-        // 未注册的 id：404。
-        assertEquals(404, controller.cancelAnalyze("00000000-0000-0000-0000-000000000008").getStatusCode().value());
+        // 未注册的 id：抛给 GlobalExceptionHandler 生成 canonical 404。
+        final ResponseStatusException missing = assertThrows(ResponseStatusException.class,
+                () -> controller.cancelAnalyze("00000000-0000-0000-0000-000000000008"));
+        assertEquals(HttpStatus.NOT_FOUND, missing.getStatusCode());
+        assertEquals("RESOURCE_NOT_FOUND", missing.getReason());
         release.countDown();
         final String doneEvent = emitter.awaitEventContaining("event:done", 5, TimeUnit.SECONDS);
         assertNotNull(doneEvent, "cancelled-but-finished worker still completes the emitter");
@@ -375,7 +378,10 @@ class ReconstructionControllerStreamingTest {
 
     @Test
     void cancelEndpointOnUnregisteredRequestReturnsNotFound() {
-        assertEquals(404, controller.cancelAnalyze("00000000-0000-0000-0000-000000000009").getStatusCode().value());
+        final ResponseStatusException missing = assertThrows(ResponseStatusException.class,
+                () -> controller.cancelAnalyze("00000000-0000-0000-0000-000000000009"));
+        assertEquals(HttpStatus.NOT_FOUND, missing.getStatusCode());
+        assertEquals("RESOURCE_NOT_FOUND", missing.getReason());
     }
 
     @Test
