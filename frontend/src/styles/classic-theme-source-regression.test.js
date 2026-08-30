@@ -20,7 +20,7 @@ const profile = read('../components/ProfilePage.vue')
 const md = read('../components/MarkdownContent.vue')
 const ratingDocs = read('../components/RatingDocsPage.vue')
 const drawer = read('../components/PlayerDetailDrawer.vue')
-const rws = read('../components/ReplayWorkspace.vue')
+const capabilityTabs = read('../components/ReplayCapabilityTabs.vue')
 const bpPanel = read('../components/BattlePlaybackPanel.vue')
 
 // 提取第一条「selector{…}」规则的声明体（selector 允许跨行，但要求紧跟 { 前无逗号，
@@ -87,8 +87,8 @@ describe('Classic 主题 residual-dark 回归（语义 token 契约）', () => {
     expect(ruleBody(drawer, '\\.rp-card')).not.toContain('#14161a')
   })
 
-  it('ReplayWorkspace / BattlePlaybackPanel 面板 不得再写死深色面', () => {
-    expect(ruleBody(rws, '\\.workspace-tabs')).toContain('background: var(--bg-card)')
+  it('ReplayCapabilityTabs / BattlePlaybackPanel 面板 不得再写死深色面', () => {
+    expect(ruleBody(capabilityTabs, '\\.workspace-tabs')).toContain('background: var(--bg-card)')
     expect(ruleBody(bpPanel, '\\.panel ')).toContain('background: var(--bg-card)')
     expect(ruleBody(bpPanel, '\\.panel ')).toContain('color: var(--text)')
     expect(ruleBody(bpPanel, '\\.panel ')).not.toContain('#303a40')

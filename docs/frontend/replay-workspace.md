@@ -5,6 +5,7 @@
 ## 当前实现
 
 - `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`ai`、`playback` 三种能力的统一工作台。
+- Workspace 页面本身是 orchestration layer：`ReplayWorkspaceHeader.vue` 负责标题与清空命令，`ReplayCapabilityTabs.vue` 负责能力 tab 展示与选择事件，`ReplaySourcePanel.vue` 负责批次/当前回放 selector 展示。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
 - `frontend/src/composables/useReplaySession.js` 是唯一 session state owner，持有 selection、当前 battle、Processing/Result identity、Export state 与 Workspace view state。
 - `frontend/src/composables/useProcessingJob.js` 持有 Processing Job 的上传、single-flight、轮询、source-ready、取消与 Dataset recovery lifecycle；它只消费 session refs。
 - `frontend/src/composables/useReplay.js` 是 compatibility facade/orchestrator，组合 session、Processing 与 Export，不再持有 Processing lifecycle 闭包。
@@ -16,6 +17,7 @@
 ## 稳定边界
 
 - 多文件选择、当前 battle 选择和 capability 切换都由 Workspace facade 协调；session 以 `selectionRevision`、`sourceId` 与 Processing 状态作为唯一 identity。
+- Source panel 的 selector 只负责展示 `battleOptions` 和发出 `select-battle`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。
 - AI 与 Playback 共享 replay/source/processing dataset identity，但各自错误域和 dataset ref 独立；切换 capability 不应重传或重建基础 Processing Job。
 - Replay Workspace 的登录门禁、Dataset-only 交接和 AI/Playback 详细接口以以下文档为准，不在本索引重复维护：
   - [`docs/architecture/ai-review.md`](../architecture/ai-review.md)

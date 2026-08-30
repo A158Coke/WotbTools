@@ -1,6 +1,5 @@
 <script setup>
-import { computed, inject, nextTick, onMounted, provide, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { computed, inject, nextTick, onMounted, provide, watch } from 'vue'
 import { displayName } from '../utils/helpers.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
@@ -12,6 +11,9 @@ import FileUploader from './FileUploader.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
+import ReplayWorkspaceHeader from './ReplayWorkspaceHeader.vue'
+import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
+import ReplaySourcePanel from './ReplaySourcePanel.vue'
 
 defineOptions({ name: 'ReplayWorkspace' })
 
@@ -20,7 +22,6 @@ const props = defineProps({
   initialCapability: { type: String, default: 'data' },
 })
 
-const { t } = useI18n()
 const isAuthenticated = inject('isAuthenticated', () => false)
 const login = inject('login', null)
 const authInit = inject('authInit', Promise.resolve())
@@ -66,7 +67,6 @@ const capabilityOptions = [
 ]
 
 const activeCapability = workspace.activeWorkspaceTab
-const batchOpen = ref(false)
 let loginAttempted = false
 
 /** 当前选中单场显示名（header「当前回放：xxx #N」。Blocker #4）。 */
@@ -79,9 +79,8 @@ const currentBattleName = computed(() => {
 const currentBattleId = workspace.currentBattleId
 const currentBattleIndex = workspace.currentBattleIndex
 const parsedBattles = workspace.parsedBattles
-function selectBattle(sourceId) {
+function onBattleSelect(sourceId) {
   workspace.selectBattle(sourceId)
-  batchOpen.value = false
 }
 
 /**
@@ -202,53 +201,16 @@ watch(() => props.initialCapability, (val) => {
 
 <template>
   <div class="layout-data-workspace replay-workspace">
-    <header class="workspace-header">
-      <div class="ws-title">
-        <span class="upload-kicker">WOTBTOOLS · REPLAY WORKSPACE</span>
-        <h1>{{ $t('workspace.title') }}</h1>
-      </div>
-      <div class="ws-actions">
-        <button v-if="files.length" class="ghost sm" @click="clearSelection">{{ $t('workspace.clear') }}</button>
-      </div>
-    </header>
-
-    <nav class="workspace-tabs" role="tablist" aria-label="Replay capabilities">
-      <button
-        v-for="c in capabilityOptions"
-        :key="c.key"
-        role="tab"
-        type="button"
-        :class="{ active: activeCapability === c.key }"
-        :aria-selected="activeCapability === c.key"
-        data-testid="ws-tab"
-        :data-cap="c.key"
-        @click="setCapability(c.key)"
-      >
-        {{ $t(c.labelKey) }}
-      </button>
-    </nav>
-
-    <!-- Replay source / upload section：批次状态 + 当前回放 selector + uploader（header 不再放） -->
-    <div v-if="files.length" class="replay-source" data-test="replay-source">
-      <div class="rs-batch-row">
-        <span class="ws-batch-count">{{ $t('workspace.batch_count', { count: files.length }) }}</span>
-        <button v-if="currentBattleIndex >= 0" class="ghost sm ws-selector" data-testid="ws-batch-selector" @click="batchOpen = !batchOpen">
-          {{ $t('workspace.current_battle', { name: currentBattleName, idx: currentBattleIndex + 1 }) }} ▾
-        </button>
-        <div v-if="batchOpen && battleOptions.length" class="ws-batch-sheet" data-testid="ws-batch-sheet">
-          <button
-            v-for="opt in battleOptions"
-            :key="opt.sourceId"
-            type="button"
-            class="ws-batch-item"
-            :class="{ active: currentBattleId === opt.sourceId }"
-            @click="selectBattle(opt.sourceId)"
-          >
-            {{ opt.label }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <ReplayWorkspaceHeader :has-files="!!files.length" @clear="clearSelection" />
+    <ReplayCapabilityTabs :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
+    <ReplaySourcePanel
+      :files="files"
+      :current-battle-index="currentBattleIndex"
+      :current-battle-name="currentBattleName"
+      :current-battle-id="currentBattleId"
+      :battle-options="battleOptions"
+      @select-battle="onBattleSelect"
+    />
 
     <!-- 单一上传器 + Processing 面板（Workspace 级，任何能力共享同一 selection / job）。 -->
     <FileUploader
@@ -308,81 +270,5 @@ watch(() => props.initialCapability, (val) => {
 
 <style scoped>
 .replay-workspace { padding-right: var(--pd-drawer-offset, 0px); }
-.workspace-header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-.ws-title h1 { margin: 2px 0 0; font-size: 1.5rem; }
-.ws-selector { min-height: 30px; }
-.ws-batch-sheet {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 60;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px;
-  box-shadow: var(--hard-shadow);
-  min-width: 240px;
-  max-height: 300px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.ws-batch-item { text-align: left; padding: 8px 10px; border-radius: 6px; border: none; background: transparent; color: var(--text-label); font-size: .82rem; cursor: pointer; font-family: inherit; }
-.ws-batch-item:hover { background: var(--bg-list-hover); }
-.ws-batch-item.active { background: var(--bg-blue); color: var(--accent-dark); font-weight: 700; }
-.ws-actions { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
-.replay-source { margin: 0 0 10px; }
-.rs-batch-row { display: inline-flex; align-items: center; gap: 10px; position: relative; }
-.workspace-tabs {
-  display: flex;
-  gap: 4px;
-  margin: 10px 0 14px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  padding: 3px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.workspace-tabs::-webkit-scrollbar { display: none; }
-.workspace-tabs button {
-  flex: 0 0 auto;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  color: #b5b2aa;
-  cursor: pointer;
-  font-size: .88rem;
-  font-family: inherit;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.workspace-tabs button.active { background: rgba(217,143,24,.16); color: #f0aa30; font-weight: 700; }
-.workspace-tabs button:hover:not(.active) { color: #e0ddd4; }
 .capability-pane { margin-top: 4px; }
-@media (max-width: 768px) {
-  .workspace-header { gap: 8px; }
-  .ws-actions { margin-left: 0; width: 100%; justify-content: space-between; }
-  /* 手机端 batch selector 以 bottom-sheet 呈现：贴底、全宽、从上滑入（计划 §16.2）。 */
-  .ws-selector { width: 100%; justify-content: space-between; }
-  .ws-batch-sheet {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    top: auto;
-    max-height: 55vh;
-    border-radius: 14px 14px 0 0;
-    padding: 12px;
-    box-shadow: 0 -10px 30px rgba(0,0,0,.35);
-  }
-}
 </style>
