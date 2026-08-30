@@ -332,8 +332,16 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 // Vehicle method4（16-byte）= vehicle-to-vehicle collision/contact。必须由 registry 类证据分派，
                 // 绝不因 argLen 猜测 class。其余（shape/class 不符）→ UnknownReplayEvent。
                 final EntityClass entityClass = entityClassFor(context, subType, entityId);
-                if (entityClass == EntityClass.AVATAR
-                        && envelopeValid && argLen == ROUND_FINISHED_ARGS_LEN) {
+                // PR162/P0-2 收口（真实 11.19.0_china_apple CW 回放 evidence）：2-byte RoundFinished
+                // shape 是 version-verified 且<b>形状唯一</b>的（Avatar method4 2B；Vehicle method4
+                // 仅 16B collision 与其共享 method 索引，无 2B Vehicle round-finished 变体）。生产回放中
+                // round-finished 由<b>非录像者实体</b>（entity≠recorder avatar）发送，entityClass 并非
+                // AVATAR；若坚持 class==AVATAR 会把合法 battle-start 锚点 discard 成 METHOD4_CLASS_OR_SHAPE，
+                // 导致 TIMELINE_CLOCK_UNRESOLVED、AI Review/Playback 全挂。修正：当 VERIFIED 关闭语义 +
+                // envelope 有效 + argLen==2B（唯一 round-finished shape）即按权威 shape 解码；16B 仅
+                // VEHICLE 且 shape==16B 才解码为 collision（仍双重验证，绝不因 16B 猜 class）。
+                if (argLen == ROUND_FINISHED_ARGS_LEN && envelopeValid
+                        && ReplayVersionGate.methodSemanticsAllowed(context.clientVersion())) {
                     final int winnerTeam = payload[12] & 0xFF;
                     final int finishReasonRaw = payload[13] & 0xFF;
                     events.add(new RoundFinishedEvent(
