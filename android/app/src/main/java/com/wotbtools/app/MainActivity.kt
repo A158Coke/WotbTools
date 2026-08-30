@@ -14,6 +14,7 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -200,6 +201,36 @@ class MainActivity : Activity() {
                     // 无可用 browser 时忽略，留在原页。
                 }
                 return true
+            }
+
+            /**
+             * Android 外部 replay handoff：Web 侧 readPendingFile 用 fetch(pending.uri) 读取字节。
+             * 该 content:// URI 指向 app private cache（FileProvider），这里拦截并返回文件流，
+             * 让字节「app-owned 安全路径」进入现有上传管线。绝不 Base64 / file:// / 放宽 WebView 边界。
+             */
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest
+            ): WebResourceResponse? {
+                val pending = pendingReplay ?: return null
+                if (pending.uri.toString() != request.url.toString()) return null
+                val file = pending.file
+                return try {
+                    if (!file.exists()) {
+                        WebResourceResponse("application/octet-stream", "utf-8", 404, "Not Found", null, null)
+                    } else {
+                        WebResourceResponse(
+                            "application/octet-stream",
+                            "utf-8",
+                            200,
+                            "OK",
+                            mapOf("Access-Control-Allow-Origin" to "*"),
+                            file.inputStream()
+                        )
+                    }
+                } catch (_: Exception) {
+                    null
+                }
             }
 
             override fun onReceivedError(

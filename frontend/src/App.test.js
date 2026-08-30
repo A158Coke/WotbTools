@@ -124,6 +124,31 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     expect(wrapper.text()).toContain('adminPreview.loading')
   })
 
+  it('Replay 能力 tab 切换用 pushState + popstate 形成可 Back/Forward 的 history，不丢 workspace', async () => {
+    window.history.replaceState({}, '', '/?view=replay')
+    const wrapper = mountApp()
+    await flushPromises()
+    // 初始 replay（workspace data）
+    let ws = wrapper.find('[data-test="view-replay"]')
+    expect(ws.attributes('data-cap')).toBe('data')
+
+    // Replay → AI（pushState，生成历史条目）
+    const aiButton = wrapper.find('nav').findAll('button').find(b => b.text() === 'home.aiReview')
+    expect(aiButton).toBeTruthy()
+    await aiButton.trigger('click')
+    await flushPromises()
+    ws = wrapper.find('[data-test="view-replay"]')
+    expect(ws.attributes('data-cap')).toBe('ai')
+
+    // Back → 回 Replay（data）。happy-dom 的 history.back() 不保证触发 popstate，
+    // 这里等价地推送原 URL 并派发 popstate，验证 onPopState 恢复 activeTool。
+    window.history.pushState({}, '', '/?view=replay')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    await nextTick()
+    ws = wrapper.find('[data-test="view-replay"]')
+    expect(ws.attributes('data-cap')).toBe('data')
+  })
+
   it('?view=rating-docs 解析 RatingDocsPage（异步加载 canonical 文档）', async () => {
     window.history.replaceState({}, '', '/?view=rating-docs')
     const wrapper = mountApp()

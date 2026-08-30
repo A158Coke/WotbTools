@@ -85,11 +85,28 @@ const replayInitialCapability = computed(() => {
 })
 
 function navigate(view) {
+  // 相同 view 不重复 push，避免 Back/Forward 出现重复历史条目。
+  if (view === activeTool.value) return
   activeTool.value = view
   const url = new URL(window.location.href)
   if (view === 'home') url.searchParams.delete('view')
   else url.searchParams.set('view', view)
-  window.history.replaceState({}, '', url.toString())
+  // pushState 让 Replay → AI → Playback 的可切换 tab 形成可 Back/Forward 的 history；
+  // popstate 回来时仅同步 activeTool（currentView/initial-capability 随之更新），
+  // ReplayWorkspace 经 KeepAlive 保持 selection / Processing Job 不丢。
+  window.history.pushState({ view }, '', url.toString())
+}
+
+/** 从当前 URL 解析 view（处理 popstate 恢复）。 */
+function viewFromLocation() {
+  const params = new URLSearchParams(window.location.search)
+  const raw = params.get('view') ?? (window.location.pathname === '/download/android' ? 'android' : null)
+  const canonical = LEGACY_VIEW_ALIASES[raw] ?? raw
+  return ALLOWED_VIEWS.includes(canonical) ? canonical : defaultView
+}
+
+function onPopState() {
+  activeTool.value = viewFromLocation()
 }
 // 注入登录态与 login：AI 复盘 / 战局重建能力页需登录。
 provide('isAuthenticated', isAuthenticated)
@@ -145,10 +162,12 @@ onMounted(() => {
   initPromise.catch(() => {})
   document.addEventListener('click', onDocClick)
   document.addEventListener('keydown', onDocKeydown)
+  window.addEventListener('popstate', onPopState)
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick)
   document.removeEventListener('keydown', onDocKeydown)
+  window.removeEventListener('popstate', onPopState)
 })
 </script>
 

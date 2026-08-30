@@ -30,13 +30,17 @@ const navigate = inject('navigate', null)
  */
 const replay = useReplay()
 provide('replay', replay)
-const { consumePendingWhenReady } = useNativeReplayImport()
 
 const {
   files, loading, error, resp, updateFiles,
   processingJob, processingError, uploadState,
   startProcessingJob, cancelProcessing, dismissProcessingJob,
 } = replay
+
+const { consumePendingWhenReady } = useNativeReplayImport({
+  isAuthenticated,
+  onPendingFile: (file) => updateFiles([file]),
+})
 
 const capabilityOptions = [
   { key: 'data', labelKey: 'workspace.tab_data' },
@@ -62,7 +66,6 @@ watch(() => processingJob.value, (job) => {
 
 const activeCapability = ref(props.initialCapability || 'data')
 const batchOpen = ref(false)
-const seekTo = ref(null)
 
 /** active replay：单文件 = r0；多文件 = 当前数据 tab 显示的 battle（activeTab==='b<i>'）。 */
 const activeSourceId = computed(() => {
@@ -95,17 +98,22 @@ watch([activeCapability, targetActiveFile], ([cap, file]) => {
   if (file) helper.prepareForFile(file)
 })
 
+/**
+ * Replay Workspace 全部要求登录：三个 capability（data / ai / playback）都走 auth gate。
+ * 未登录进入任意 replay URL → 自动 Keycloak/OIDC，登录成功后按 redirectUri 回原 capability。
+ */
+const VIEW_BY_CAPABILITY = Object.freeze({ data: 'replay', ai: 'ai-review', playback: 'battle-playback' })
+
 function setCapability(key) {
   if (key === activeCapability.value) return
+  if (!gateAuth(key)) return
   activeCapability.value = key
-  if (key === 'ai' || key === 'playback') gateAuth(key)
-  const viewMap = { data: 'replay', ai: 'ai-review', playback: 'battle-playback' }
-  if (navigate) navigate(viewMap[key] || 'replay', null)
+  if (navigate) navigate(VIEW_BY_CAPABILITY[key] || 'replay', null)
 }
 
 function gateAuth(cap) {
   if (isAuthenticated()) return true
-  if (login) login(cap === 'ai' ? 'ai-review' : 'battle-playback')
+  if (login) login(VIEW_BY_CAPABILITY[cap] || 'replay')
   return false
 }
 
@@ -131,29 +139,19 @@ function clearSelection() {
   updateFiles([])
   aiReplay.reset()
   playbackReplay.reset()
-  seekTo.value = null
-}
-
-function onAiSeek(sec) {
-  seekTo.value = Number.isFinite(sec) ? sec : null
-  setCapability('playback')
 }
 
 onMounted(() => {
-  // 进入需要登录的能力时自动跳 Keycloak，登录后回原能力。
-  if (activeCapability.value !== 'data') gateAuth(activeCapability.value)
-  // Android 外部 replay：登录态就绪 + 文件输入已挂载后恰好导入一次（exactly-once 由 Native 保证）。
-  nextTick(() => consumePendingWhenReady({ authenticated: isAuthenticated() }))
+  // 任意 replay capability：未登录自动跳 Keycloak，登录后回原 capability。
+  gateAuth(activeCapability.value)
+  // Android 外部 replay：登录态就绪后恰好导入一次（不再依赖 synthetic click）。
+  nextTick(() => consumePendingWhenReady())
 })
 
 // 外部导航（URL 直访 / battle action）同步能力 tab。
 watch(() => props.initialCapability, (val) => {
   if (val) activeCapability.value = val
 }, { immediate: true })
-
-watch(activeCapability, (cap) => {
-  if (cap !== 'playback') seekTo.value = null
-})
 
 // selection 变化（上传/替换/清空/删 battle）→ 两个 capability 的 Dataset 引用失效，防止旧 source 被复用。
 watch(() => replay.selectionRevision.value, () => {
@@ -252,7 +250,6 @@ watch(() => replay.selectionRevision.value, () => {
           :source-id="aiReplay.datasetRef.value?.sourceId ?? null"
           :dataset-error="aiReplay.datasetError.value || ''"
           @dataset-recover="aiReplay.recover"
-          @seek="onAiSeek"
         />
       </div>
       <div v-show="activeCapability === 'playback'" class="capability-pane" data-testid="ws-playback">
@@ -261,7 +258,6 @@ watch(() => replay.selectionRevision.value, () => {
           :processing-job-id="playbackReplay.datasetRef.value?.processingJobId ?? null"
           :source-id="playbackReplay.datasetRef.value?.sourceId ?? null"
           :active="activeCapability === 'playback'"
-          :seek-to="seekTo"
           :dataset-error="playbackReplay.datasetError.value || ''"
           @dataset-recover="playbackReplay.recover"
         />

@@ -272,7 +272,12 @@ selection / Processing Job（并 `provide('replay')`），data / AI / Playback �
 `processingJobId + sourceId` Dataset 引用，绝不 multipart 重传/重解析。三个 capability tab 始终可见
 （不因能力不可用而消失）；AI 与 Playback 各持独立 `useCapabilityReplay`，Dataset 状态互不污染。
 `ReplayPage` 作为 data 结果 tab 嵌入（`embedded` prop），在 Workspace 内只渲染结果 / 列系统 / Export /
-Drawer。核心实现仍由 `AiReviewPanel`（SSE 分析流 + 结果）与 `BattlePlaybackPanel`
+Drawer。**登录门禁**：整个 Replay Workspace 全部要求登录——未登录进入任意 replay capability
+（data / ai / playback）自动跳 Keycloak/OIDC 并按 redirectUri 回原 capability，不再有「data 匿名解析」。
+**能力解耦**：AI 与 Playback 仅共享 replay/source/processing dataset，不做 `AI@seek → Playback`
+时间点联动 / 跨 capability 状态 handoff。tab 切换经 pushState + popstate 形成可 Back/Forward 的 history，
+返回时 selection / Processing Job 不丢，只恢复 activeCapability。核心实现仍由 `AiReviewPanel`（SSE 分析流 + 结果）
+与 `BattlePlaybackPanel`
 （cached map-overview + MapOverview）提供。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，
 由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
