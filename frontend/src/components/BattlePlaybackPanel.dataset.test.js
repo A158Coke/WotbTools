@@ -6,7 +6,7 @@ import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: (key, params) => key === 'errors.diagnostic_id' ? `诊断 ID：${params.traceId}` : key,
+    t: (key, params) => key === 'errors.diagnostic_id' ? `诊断 ID：${params.id}` : key,
     te: key => key.startsWith('errors.'),
     locale: { value: 'zh' }
   })
@@ -175,8 +175,8 @@ describe('BattlePlaybackPanel dataset request', () => {
 
   it('V2 canonical 403 → 权限错误且不显示 retry', async () => {
     const canonical = JSON.stringify({
-      code: 'AUTH_FORBIDDEN', status: 403, messageKey: 'errors.auth_forbidden',
-      traceId: 'trace-403', retryable: false, details: {}, timestamp: '2026-08-30T15:30:00Z'
+      errorCode: 'AUTH_FORBIDDEN', status: 403, id: 'err-403',
+      retryable: false, details: {}, timestamp: '2026-08-30T15:30:00Z'
     })
     vi.stubGlobal('fetch', vi.fn((url) => String(url).endsWith('battle-playback-v2')
       ? Promise.resolve({ ok: false, status: 403, text: async () => canonical })
@@ -185,15 +185,15 @@ describe('BattlePlaybackPanel dataset request', () => {
     await new Promise(r => setTimeout(r, 30))
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-test="pb-error"]').text()).toContain('errors.auth_forbidden')
-    expect(wrapper.find('[data-test="pb-error"]').text()).toContain('trace-403')
+    expect(wrapper.find('[data-test="pb-error"]').text()).toContain('err-403')
     expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(false)
     vi.unstubAllGlobals()
   })
 
   it('V2 canonical 401 → session error, not generic playback failure', async () => {
     const canonical = JSON.stringify({
-      code: 'AUTH_UNAUTHENTICATED', status: 401, messageKey: 'errors.auth_unauthenticated',
-      traceId: 'trace-401', retryable: false, details: {}, timestamp: '2026-08-30T15:30:00Z'
+      errorCode: 'AUTH_UNAUTHENTICATED', status: 401, id: 'err-401',
+      retryable: false, details: {}, timestamp: '2026-08-30T15:30:00Z'
     })
     vi.stubGlobal('fetch', vi.fn((url) => String(url).endsWith('battle-playback-v2')
       ? Promise.resolve({ ok: false, status: 401, text: async () => canonical })
@@ -202,7 +202,7 @@ describe('BattlePlaybackPanel dataset request', () => {
     await new Promise(r => setTimeout(r, 30))
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-test="pb-error"]').text()).toContain('errors.auth_unauthenticated')
-    expect(wrapper.find('[data-test="pb-error"]').text()).toContain('trace-401')
+    expect(wrapper.find('[data-test="pb-error"]').text()).toContain('err-401')
     expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(false)
     vi.unstubAllGlobals()
   })

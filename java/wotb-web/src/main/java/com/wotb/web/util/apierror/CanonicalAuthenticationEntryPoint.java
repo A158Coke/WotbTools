@@ -25,6 +25,6 @@ public class CanonicalAuthenticationEntryPoint implements AuthenticationEntryPoi
     public void commence(final HttpServletRequest request, final HttpServletResponse response,
                          final AuthenticationException authException) throws IOException, ServletException {
         delegate.commence(request, response, authException);
-        writer.write(response, factory.create(ApiErrorCode.AUTH_UNAUTHENTICATED, request));
+        writer.write(response, factory.create(ApiErrorCode.AUTH_UNAUTHENTICATED, request), request);
     }
 }

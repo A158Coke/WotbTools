@@ -86,13 +86,14 @@ class GlobalExceptionHandlerContractTest {
         result.andExpect(status().is(expectedStatus))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(header().string(RequestIdFilter.HEADER, TRACE_ID))
-                .andExpect(jsonPath("$.code").value(expectedCode))
+                .andExpect(jsonPath("$.errorCode").value(expectedCode))
                 .andExpect(jsonPath("$.status").value(expectedStatus))
-                .andExpect(jsonPath("$.messageKey").value("errors." + expectedCode.toLowerCase()))
-                .andExpect(jsonPath("$.traceId").value(TRACE_ID))
+                .andExpect(jsonPath("$.id").value(TRACE_ID))
                 .andExpect(jsonPath("$.retryable").value(expectedRetryable))
                 .andExpect(jsonPath("$.details").isMap())
                 .andExpect(jsonPath("$.timestamp").isNotEmpty())
+                .andExpect(jsonPath("$.messageKey").doesNotExist())
+                .andExpect(jsonPath("$.traceId").doesNotExist())
                 .andExpect(jsonPath("$.stackTrace").doesNotExist())
                 .andExpect(jsonPath("$.message").doesNotExist());
     }

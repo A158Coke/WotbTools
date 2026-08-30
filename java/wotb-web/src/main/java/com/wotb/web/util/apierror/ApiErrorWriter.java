@@ -1,5 +1,6 @@
 package com.wotb.web.util.apierror;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -17,11 +18,12 @@ public class ApiErrorWriter {
         this.objectMapper = objectMapper;
     }
 
-    public void write(final HttpServletResponse response, final ApiErrorResponse error) throws IOException {
+    public void write(final HttpServletResponse response, final ApiErrorResponse error,
+                      final HttpServletRequest request) throws IOException {
         response.setStatus(error.status());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
-        response.setHeader(RequestTrace.HEADER, error.traceId());
+        response.setHeader(RequestTrace.HEADER, RequestTrace.resolve(request));
         objectMapper.writeValue(response.getOutputStream(), error);
     }
 }

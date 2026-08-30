@@ -8,7 +8,7 @@ import AiReviewPanel from './AiReviewPanel.vue'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: (key, params) => key === 'errors.diagnostic_id' ? `diagnostic:${params.traceId}` : key,
+    t: (key, params) => key === 'errors.diagnostic_id' ? `diagnostic:${params.id}` : key,
     te: key => key.startsWith('errors.'),
     locale: { value: 'zh' }
   })
@@ -153,7 +153,7 @@ describe('AiReviewPanel dataset request', () => {
       ok: false,
       status,
       text: async () => JSON.stringify({
-        code, status, messageKey, traceId: `trace-${status}`,
+        errorCode: code, status, id: `err-${status}`,
         retryable: status === 429 || status >= 500, details: {}, timestamp: '2026-08-30T15:30:00Z'
       })
     }))
@@ -161,7 +161,7 @@ describe('AiReviewPanel dataset request', () => {
     await wrapper.find('.dataset-analyze').trigger('click')
     await flushPromises()
     expect(wrapper.vm.error).toContain(messageKey)
-    expect(wrapper.vm.error).toContain(`trace-${status}`)
+    expect(wrapper.vm.error).toContain(`err-${status}`)
     vi.unstubAllGlobals()
   })
 

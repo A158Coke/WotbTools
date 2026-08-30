@@ -119,10 +119,9 @@ class ApiContractTest {
                 new IllegalArgumentException("中文异常不应进入 API")
         );
 
-        assertThat(response.getBody().code()).isEqualTo("INVALID_ARGUMENT");
+        assertThat(response.getBody().errorCode()).isEqualTo("INVALID_ARGUMENT");
         assertThat(response.getBody().status()).isEqualTo(400);
-        assertThat(response.getBody().messageKey()).isEqualTo("errors.invalid_argument");
-        assertThat(response.getBody().traceId()).isNotBlank();
+        assertThat(response.getBody().id()).isNotBlank();
         assertThat(response.getBody().details()).isEmpty();
         assertThat(response.getBody().timestamp()).isNotNull();
     }
@@ -146,7 +145,7 @@ class ApiContractTest {
         );
 
         assertThat(response.getStatusCode().value()).isEqualTo(409);
-        assertThat(response.getBody().code()).isEqualTo("AVERAGE_GOD_ALREADY_EXISTS");
+        assertThat(response.getBody().errorCode()).isEqualTo("AVERAGE_GOD_ALREADY_EXISTS");
     }
 
     @Test
@@ -157,7 +156,7 @@ class ApiContractTest {
         );
 
         assertThat(response.getStatusCode().value()).isEqualTo(503);
-        assertThat(response.getBody().code()).isEqualTo("REPLAY_BUSY");
+        assertThat(response.getBody().errorCode()).isEqualTo("REPLAY_BUSY");
         assertThat(response.getBody().retryable()).isTrue();
         assertThat(response.getBody().timestamp()).isNotNull();
     }

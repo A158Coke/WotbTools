@@ -130,10 +130,9 @@ class GlobalExceptionHandlerTest {
                 handler.handleGeneral(new IllegalStateException("boom"));
 
         assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
-        assertEquals("INTERNAL_ERROR", response.getBody().code());
+        assertEquals("INTERNAL_ERROR", response.getBody().errorCode());
         assertEquals(500, response.getBody().status());
-        assertEquals("errors.internal_error", response.getBody().messageKey());
-        assertFalse(response.getBody().traceId().isBlank());
+        assertFalse(response.getBody().id().isBlank());
         assertTrue(response.getBody().retryable());
         assertTrue(response.getBody().details().isEmpty());
         assertNotNull(response.getBody().timestamp());
@@ -141,17 +140,17 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void typedInternalErrorLogUsesTheSameTraceIdAsTheResponse() {
+    void typedInternalErrorResponseIdIsLoggedAndSearchable() {
         final MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/replay/probe");
         request.setAttribute(RequestTrace.REQUEST_ATTRIBUTE, "trace-log-500");
         final ApiException exception = new ApiException(ApiErrorCode.INTERNAL_ERROR, "safe diagnostic", java.util.Map.of());
 
         final ResponseEntity<ApiErrorResponse> response = handler.handleApiException(exception, request);
 
-        assertEquals("trace-log-500", response.getBody().traceId());
+        assertEquals(exception.id(), response.getBody().id());
         assertTrue(errorEvents().stream().anyMatch(event ->
                 event.getFormattedMessage().contains("traceId=trace-log-500")
-                        && event.getFormattedMessage().contains("exceptionId=" + exception.id())
+                        && event.getFormattedMessage().contains("id=" + exception.id())
                         && event.getFormattedMessage().contains("errorMsg=safe diagnostic")));
     }
 
@@ -195,7 +194,7 @@ class GlobalExceptionHandlerTest {
                 handler.handleIOException(new IOException("disk full"));
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("IO_ERROR", response.getBody().code());
+        assertEquals("IO_ERROR", response.getBody().errorCode());
         assertEquals(0, errorEvents().size(), "IO_ERROR is a handled warning, not Unhandled exception");
     }
 
@@ -209,7 +208,7 @@ class GlobalExceptionHandlerTest {
         final ResponseEntity<ApiErrorResponse> response = handler.handleMaxUploadSize(ex);
 
         assertEquals(HttpStatus.CONTENT_TOO_LARGE, response.getStatusCode());
-        assertEquals("FILE_TOO_LARGE", response.getBody().code());
+        assertEquals("FILE_TOO_LARGE", response.getBody().errorCode());
     }
 
     @Test
@@ -220,7 +219,7 @@ class GlobalExceptionHandlerTest {
         final ResponseEntity<ApiErrorResponse> response = handler.handleMaxUploadSize(ex);
 
         assertEquals(HttpStatus.CONTENT_TOO_LARGE, response.getStatusCode());
-        assertEquals("TOTAL_REQUEST_TOO_LARGE", response.getBody().code());
+        assertEquals("TOTAL_REQUEST_TOO_LARGE", response.getBody().errorCode());
     }
 
     @Test
@@ -234,7 +233,7 @@ class GlobalExceptionHandlerTest {
         final ResponseEntity<ApiErrorResponse> response = handler.handleMaxUploadSize(ex);
 
         assertEquals(HttpStatus.CONTENT_TOO_LARGE, response.getStatusCode());
-        assertEquals("FILE_TOO_LARGE", response.getBody().code());
+        assertEquals("FILE_TOO_LARGE", response.getBody().errorCode());
     }
 
     @Test
@@ -243,13 +242,13 @@ class GlobalExceptionHandlerTest {
         final MaxUploadSizeExceededException plain = new MaxUploadSizeExceededException(-1);
         final ResponseEntity<ApiErrorResponse> plainResponse = handler.handleMaxUploadSize(plain);
         assertEquals(HttpStatus.CONTENT_TOO_LARGE, plainResponse.getStatusCode());
-        assertEquals("UPLOAD_TOO_LARGE", plainResponse.getBody().code());
+        assertEquals("UPLOAD_TOO_LARGE", plainResponse.getBody().errorCode());
 
         // message 含 "size exceeded" 但 cause 不是结构化 size 异常 → 仍不得按 message 猜测。
         final MaxUploadSizeExceededException msgCause = new MaxUploadSizeExceededException(-1,
                 new IOException("Maximum upload size of 20971520 bytes exceeded"));
         final ResponseEntity<ApiErrorResponse> msgResponse = handler.handleMaxUploadSize(msgCause);
         assertEquals(HttpStatus.CONTENT_TOO_LARGE, msgResponse.getStatusCode());
-        assertEquals("UPLOAD_TOO_LARGE", msgResponse.getBody().code());
+        assertEquals("UPLOAD_TOO_LARGE", msgResponse.getBody().errorCode());
     }
 }

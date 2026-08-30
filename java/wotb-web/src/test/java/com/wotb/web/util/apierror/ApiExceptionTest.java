@@ -26,7 +26,7 @@ class ApiExceptionTest {
     }
 
     @Test
-    void externalEnvelopeDoesNotExposeInternalIdOrDiagnosticMessage() {
+    void externalEnvelopeExposesSingleErrorIdAndSafeDiagnosticMessage() {
         final ApiException exception = new ApiException(
                 ApiErrorCode.INTERNAL_ERROR, "database host is private", Map.of());
         final MockHttpServletRequest request = new MockHttpServletRequest();
@@ -34,11 +34,11 @@ class ApiExceptionTest {
 
         final ApiErrorResponse response = new ApiErrorFactory().create(exception, request);
 
-        assertEquals("INTERNAL_ERROR", response.code());
+        assertEquals("INTERNAL_ERROR", response.errorCode());
         assertEquals(500, response.status());
-        assertEquals("trace-safe-500", response.traceId());
-        assertFalse(response.toString().contains(exception.id()));
-        assertFalse(response.toString().contains("database host is private"));
+        assertEquals(exception.id(), response.id());
+        assertEquals("database host is private", response.errorMsg());
+        assertFalse(response.toString().contains("trace-safe-500"));
     }
 
     @Test

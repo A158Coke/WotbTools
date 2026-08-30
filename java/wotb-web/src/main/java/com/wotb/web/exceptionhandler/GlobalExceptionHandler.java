@@ -19,6 +19,7 @@ import com.wotb.web.replayfile.HallOfFameStorageException;
 import com.wotb.web.util.apierror.ApiErrorFactory;
 import com.wotb.web.util.apierror.ApiErrorResponse;
 import com.wotb.web.util.apierror.ApiException;
+import com.wotb.web.util.apierror.RequestTrace;
 import jakarta.servlet.http.HttpServletRequest;
 import org.apache.catalina.connector.ClientAbortException;
 import org.apache.tomcat.util.http.fileupload.impl.FileSizeLimitExceededException;
@@ -316,17 +317,16 @@ public class GlobalExceptionHandler {
             final HttpServletRequest request) {
         final String method = request == null ? "UNKNOWN" : request.getMethod();
         final String path = request == null ? "UNKNOWN" : request.getRequestURI();
-        final String exceptionId = exception instanceof ApiException apiException
-                ? apiException.id() : "n/a";
-        final String diagnosticMessage = exception instanceof ApiException apiException
-                ? apiException.diagnosticMessage() : "n/a";
+        final String traceId = RequestTrace.resolve(request);
+        final String responseId = error.id();
+        final String responseErrorMsg = error.errorMsg();
         if (error.status() >= 500) {
-            log.error("api_request_failed traceId={} exceptionId={} code={} status={} method={} path={} errorMsg={}",
-                    error.traceId(), exceptionId, error.code(), error.status(), method, path,
-                    diagnosticMessage, exception);
+            log.error("api_request_failed traceId={} id={} errorCode={} status={} method={} path={} errorMsg={}",
+                    traceId, responseId, error.errorCode(), error.status(), method, path,
+                    responseErrorMsg, exception);
         } else {
-            log.info("api_request_rejected traceId={} exceptionId={} code={} status={} method={} path={} errorMsg={}",
-                    error.traceId(), exceptionId, error.code(), error.status(), method, path, diagnosticMessage);
+            log.info("api_request_rejected traceId={} id={} errorCode={} status={} method={} path={} errorMsg={}",
+                    traceId, responseId, error.errorCode(), error.status(), method, path, responseErrorMsg);
         }
         return ResponseEntity.status(error.status()).body(error);
     }

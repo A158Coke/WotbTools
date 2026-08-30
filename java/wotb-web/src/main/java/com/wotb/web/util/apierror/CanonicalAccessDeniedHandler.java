@@ -25,6 +25,6 @@ public class CanonicalAccessDeniedHandler implements AccessDeniedHandler {
     public void handle(final HttpServletRequest request, final HttpServletResponse response,
                        final AccessDeniedException accessDeniedException) throws IOException, ServletException {
         delegate.handle(request, response, accessDeniedException);
-        writer.write(response, factory.create(ApiErrorCode.AUTH_FORBIDDEN, request));
+        writer.write(response, factory.create(ApiErrorCode.AUTH_FORBIDDEN, request), request);
     }
 }

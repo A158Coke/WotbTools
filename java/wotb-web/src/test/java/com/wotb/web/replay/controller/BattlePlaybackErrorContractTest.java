@@ -48,9 +48,9 @@ class BattlePlaybackErrorContractTest {
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(header().string(RequestIdFilter.HEADER, traceId))
-                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
+                .andExpect(jsonPath("$.errorCode").value("RESOURCE_NOT_FOUND"))
                 .andExpect(jsonPath("$.status").value(404))
-                .andExpect(jsonPath("$.traceId").value(traceId));
+                .andExpect(jsonPath("$.id").value(traceId));
     }
 
     @Test
@@ -84,9 +84,9 @@ class BattlePlaybackErrorContractTest {
                     .andExpect(status().isInternalServerError())
                     .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                     .andExpect(header().string(RequestIdFilter.HEADER, traceId))
-                    .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
+                    .andExpect(jsonPath("$.errorCode").value("INTERNAL_ERROR"))
                     .andExpect(jsonPath("$.status").value(500))
-                    .andExpect(jsonPath("$.traceId").value(traceId))
+                    .andExpect(jsonPath("$.id").value(traceId))
                     .andExpect(jsonPath("$.retryable").value(true))
                     .andExpect(jsonPath("$.details").isMap())
                     .andExpect(jsonPath("$.message").doesNotExist())
