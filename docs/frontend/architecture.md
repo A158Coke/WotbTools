@@ -28,7 +28,7 @@ app → features → shared
 
 The current source tree uses flat `components/`, `composables/`, and `utils/` directories; the dependency rule still applies conceptually without claiming feature folders that do not exist. New work should not create cross-feature private imports or place feature endpoint knowledge in shared code.
 
-Each business state has one authoritative owner. Derive values with `computed`; use `watch()` for real side effects or lifecycle bridges only, never to synchronize duplicate copies of the same state.
+Each business state has one authoritative owner. Replay state is owned by `frontend/src/composables/useReplaySession.js`; `useReplay.js`, `useExportJob.js`, and capability panels consume its refs and commands. Derive values with `computed`; use `watch()` for real side effects or lifecycle bridges only, never to synchronize duplicate copies of the same state.
 
 The UI profile remains presentation-only: `wotb-ui-profile` is the single persistence key, and its derived `data-theme` does not create a separate theme state. Showcase and Classic must use the same components, APIs, and business state.
 
