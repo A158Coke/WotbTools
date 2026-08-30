@@ -2,6 +2,7 @@ import { ref, computed, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { displayName, mapLabel, fileKey } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
+import { normalizeApiError, normalizeJobError } from '../utils/http.js'
 import * as api from '../utils/api.js'
 
 const JOB_TERMINAL = new Set(['READY', 'FAILED', 'CANCELLED'])
@@ -251,11 +252,7 @@ export function useReplay() {
         stopProcessingPolling()
         loading.value = false
         if (data.status === 'FAILED') {
-          processingError.value = data.errorCode === 'NO_VALID_REPLAYS'
-            ? t('replay.processing_job.no_valid_replays')
-            : data.errorCode === 'MIXED_LEAGUE_AND_STANDARD_REPLAYS'
-              ? t('replay.processing_job.mixed_league_standard')
-              : t('replay.processing_job.failed')
+          processingError.value = apiErrorLabel(t, te, normalizeJobError(data))
         }
       }
     } catch (e) {
@@ -416,7 +413,7 @@ export function useReplay() {
       const result = await ensureProcessingCreate(prioritySourceIndex, onColumnsInit)
       if (!result || result.stale) return
     } catch (e) {
-      if (e && e.name === 'AbortError') {
+      if (normalizeApiError(e).code === 'REQUEST_ABORTED') {
         // 用户取消上传 / selection 变化：不显示错误（状态由 cancelProcessing/updateFiles 处理）。
         return
       }

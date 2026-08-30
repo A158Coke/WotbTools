@@ -5,6 +5,10 @@ const values = {
   'boost.level.ELITE': 'Elite',
   'api_errors.NETWORK_ERROR': 'Network failed',
   'api_errors.PROFILE_NOT_FOUND': 'Profile missing',
+  'errors.auth_forbidden': 'Permission denied',
+  'errors.internal_error': 'Server failed',
+  'errors.unknown_error': 'Something went wrong',
+  'errors.diagnostic_id': 'Diagnostic ID: {traceId}',
   'api_codes.BOOST_REQUEST_SUBMITTED': 'Submitted',
   'replay_values.HEAVY_TANK': 'Heavy tank'
 }
@@ -27,6 +31,22 @@ describe('display helpers', () => {
     expect(apiErrorLabel(t, te, { code: 'PROFILE_NOT_FOUND' })).toBe('Profile missing')
     expect(apiErrorLabel(t, te, new TypeError('Failed to fetch'))).toBe('Network failed')
     expect(apiCodeLabel(t, te, 'BOOST_REQUEST_SUBMITTED', 'fallback')).toBe('Submitted')
+  })
+
+  it('prefers canonical messageKey and exposes a diagnostic ID', () => {
+    const translated = (key, params) => key === 'errors.diagnostic_id'
+      ? `Diagnostic ID: ${params.traceId}`
+      : t(key)
+    expect(apiErrorLabel(translated, te, {
+      code: 'AUTH_FORBIDDEN', messageKey: 'errors.auth_forbidden', traceId: 'trace-403'
+    })).toBe('Permission denied · Diagnostic ID: trace-403')
+  })
+
+  it('falls back to status category and never exposes an unknown raw code', () => {
+    expect(apiErrorLabel(t, te, { code: 'FUTURE_SERVER_FAILURE', status: 500 }))
+      .toBe('Server failed')
+    expect(apiErrorLabel(t, te, { code: 'FUTURE_UNKNOWN_FAILURE' }))
+      .toBe('Something went wrong')
   })
 
   it('formats local date-time to minutes and rejects invalid or pre-boundary values', () => {

@@ -1,5 +1,6 @@
 package com.wotb.web.config;
 
+import com.wotb.web.util.apierror.RequestTrace;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,8 +32,10 @@ import java.util.UUID;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class RequestIdFilter extends OncePerRequestFilter {
 
-    public static final String HEADER = "X-Request-ID";
-    public static final String MDC_KEY = "requestId";
+    public static final String HEADER = RequestTrace.HEADER;
+    public static final String MDC_KEY = RequestTrace.REQUEST_ID_MDC_KEY;
+    public static final String TRACE_MDC_KEY = RequestTrace.TRACE_ID_MDC_KEY;
+    public static final String REQUEST_ATTRIBUTE = RequestTrace.REQUEST_ATTRIBUTE;
 
     @Override
     protected void doFilterInternal(
@@ -40,20 +43,21 @@ public class RequestIdFilter extends OncePerRequestFilter {
             final HttpServletResponse response,
             final FilterChain filterChain) throws ServletException, IOException {
 
-        String requestId = request.getHeader(HEADER);
-        if (requestId == null || requestId.isBlank()) {
-            requestId = UUID.randomUUID().toString();
-        } else {
-            // 限制长度并去掉不可见字符，避免日志/响应头注入
-            requestId = requestId.trim().substring(0, Math.min(requestId.trim().length(), 128));
-        }
+        final String header = request.getHeader(HEADER);
+        final String requestId = header == null || header.isBlank()
+                ? UUID.randomUUID().toString()
+                : RequestTrace.sanitize(header);
 
         MDC.put(MDC_KEY, requestId);
+        MDC.put(TRACE_MDC_KEY, requestId);
+        request.setAttribute(REQUEST_ATTRIBUTE, requestId);
         response.setHeader(HEADER, requestId);
         try {
             filterChain.doFilter(request, response);
         } finally {
             MDC.remove(MDC_KEY);
+            MDC.remove(TRACE_MDC_KEY);
         }
     }
+
 }

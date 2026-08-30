@@ -5,7 +5,11 @@ import { flushPromises, mount } from '@vue/test-utils'
 import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: key => key, locale: { value: 'zh' } })
+  useI18n: () => ({
+    t: (key, params) => key === 'errors.diagnostic_id' ? `诊断 ID：${params.traceId}` : key,
+    te: key => key.startsWith('errors.'),
+    locale: { value: 'zh' }
+  })
 }))
 
 vi.mock('../composables/useAuth.js', () => ({
@@ -128,6 +132,28 @@ describe('BattlePlaybackPanel dataset request', () => {
     vi.unstubAllGlobals()
   })
 
+  it('V2 200 capability=UNAVAILABLE → 数据不足/功能不可用且不显示 retry', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => String(url).endsWith('battle-playback-v2')
+      ? Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            capability: 'UNAVAILABLE',
+            limitations: ['TIMELINE_UNAVAILABLE'],
+            vehicles: []
+          })
+        })
+      : Promise.resolve({ ok: true, status: 204 })))
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-unavailable"]').text())
+      .toContain('recon.playback.unavailable')
+    expect(wrapper.find('[data-test="pb-stub"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(false)
+    vi.unstubAllGlobals()
+  })
+
   it('V2 500 → 显式 ERROR + retry（确定性原因，不吞掉）', async () => {
     const fetchMock = vi.fn((url) => {
       if (String(url) === '/api/replay/map-overview') {
@@ -143,6 +169,52 @@ describe('BattlePlaybackPanel dataset request', () => {
     await new Promise(r => setTimeout(r, 30))
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-test="pb-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(true)
+    vi.unstubAllGlobals()
+  })
+
+  it('V2 canonical 403 → 权限错误且不显示 retry', async () => {
+    const canonical = JSON.stringify({
+      code: 'AUTH_FORBIDDEN', status: 403, messageKey: 'errors.auth_forbidden',
+      traceId: 'trace-403', retryable: false, details: {}, timestamp: '2026-08-30T15:30:00Z'
+    })
+    vi.stubGlobal('fetch', vi.fn((url) => String(url).endsWith('battle-playback-v2')
+      ? Promise.resolve({ ok: false, status: 403, text: async () => canonical })
+      : Promise.resolve({ ok: true, status: 204 })))
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-error"]').text()).toContain('errors.auth_forbidden')
+    expect(wrapper.find('[data-test="pb-error"]').text()).toContain('trace-403')
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(false)
+    vi.unstubAllGlobals()
+  })
+
+  it('V2 canonical 401 → session error, not generic playback failure', async () => {
+    const canonical = JSON.stringify({
+      code: 'AUTH_UNAUTHENTICATED', status: 401, messageKey: 'errors.auth_unauthenticated',
+      traceId: 'trace-401', retryable: false, details: {}, timestamp: '2026-08-30T15:30:00Z'
+    })
+    vi.stubGlobal('fetch', vi.fn((url) => String(url).endsWith('battle-playback-v2')
+      ? Promise.resolve({ ok: false, status: 401, text: async () => canonical })
+      : Promise.resolve({ ok: true, status: 204 })))
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-error"]').text()).toContain('errors.auth_unauthenticated')
+    expect(wrapper.find('[data-test="pb-error"]').text()).toContain('trace-401')
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(false)
+    vi.unstubAllGlobals()
+  })
+
+  it('V2 network failure → network error + retry', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => String(url).endsWith('battle-playback-v2')
+      ? Promise.reject(new TypeError('Failed to fetch'))
+      : Promise.resolve({ ok: true, status: 204 })))
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-error"]').text()).toContain('errors.network_error')
     expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(true)
     vi.unstubAllGlobals()
   })

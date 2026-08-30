@@ -11,7 +11,9 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
-import { localizeAiError, isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
+import { isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
+import { apiErrorLabel } from '../utils/display.js'
+import { ApiError, apiErrorFromResponse, apiFetch, normalizeApiError } from '../utils/http.js'
 import MapOverview from './MapOverview.vue'
 import BattlePlayback from './BattlePlayback.vue'
 
@@ -33,8 +35,8 @@ const props = defineProps({
 
 const emit = defineEmits(['dataset-recover'])
 
-const { t } = useI18n()
-const { token, ensureToken, login } = useAuth()
+const { t, te } = useI18n()
+const { token, ensureToken } = useAuth()
 
 /** Dataset 就绪守卫：战局回放只有拿到 authoritative processingJobId+sourceId 才读 cached artifact。 */
 const datasetReady = computed(() => !!props.processingJobId && !!props.sourceId)
@@ -44,20 +46,17 @@ const datasetReady = computed(() => !!props.processingJobId && !!props.sourceId)
 async function authedFetch(url, body, { signal } = {}) {
   const valid = await ensureToken(30)
   if (!valid) {
-    login('replay')
-    throw new Error(t('recon.auth_required'))
+    throw new ApiError({ code: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false })
   }
   const accessToken = token()
   const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
   if (typeof body === 'string') headers['Content-Type'] = 'application/json'
-  const r = await fetch(url, { method: 'POST', headers, body, signal })
+  const r = await apiFetch(url, { method: 'POST', headers, body, signal })
   if (r.status === 401) {
-    login('replay')
-    throw new Error(t('recon.auth_required'))
+    const error = await apiErrorFromResponse(r)
+    throw error
   }
-  if (r.status === 403) {
-    throw new Error(t('recon.forbidden'))
-  }
+  if (!r.ok && r.status !== 204) throw await apiErrorFromResponse(r)
   return r
 }
 
@@ -70,6 +69,7 @@ const mapPlaybackV2 = ref(null)
  */
 const playbackV2State = ref('LOADING')
 const playbackV2Error = ref('')
+const playbackV2Retryable = ref(false)
 const playbackV2UnavailableReason = ref('')
 /**
  * PRIMARY Battle Playback 的 overview 输入：MapOverview 存在时用其完整 overlay（heatmap/routes 之外的
@@ -126,23 +126,6 @@ async function loadMapOverview() {
     if (requestSeq !== mapRequestSeq) return // 换文件/卸载：旧响应丢弃
     if (r.status === 204) {
       mapOverview.value = null
-    } else if (!r.ok) {
-      const rawBody = await r.text().catch(() => '')
-      let errorData = { code: rawBody.trim() }
-      if (rawBody.trim().startsWith('{')) {
-        try {
-          errorData = JSON.parse(rawBody.trim())
-        } catch {
-          // 保持纯文本错误码
-        }
-      }
-      // 数据集引用过期（JOB_NOT_FOUND 等）：交给父组件重建，不显示裸错误码。
-      if (isRecoverableDatasetCode(errorData.code)) {
-        emit('dataset-recover', errorData.code)
-        mapLoaded.value = false
-        return
-      }
-      throw new Error(localizeAiError(errorData, r.status, t))
     } else {
       mapOverview.value = await r.json()
     }
@@ -150,8 +133,14 @@ async function loadMapOverview() {
     mapLoaded.value = true
   } catch (e) {
     if (requestSeq !== mapRequestSeq) return // 旧请求的失败/取消不得写入错误
-    if (e && e.name === 'AbortError') return // 主动取消：不是错误
-    mapError.value = e.message || String(e)
+    const apiError = normalizeApiError(e)
+    if (apiError.code === 'REQUEST_ABORTED') return // 主动取消：不是错误
+    if (isRecoverableDatasetCode(apiError.code)) {
+      emit('dataset-recover', apiError.code)
+      mapLoaded.value = false
+      return
+    }
+    mapError.value = apiErrorLabel(t, te, apiError)
     mapLoaded.value = true
   } finally {
     // 仅当前 generation 可结束 loading；旧请求 finally 不得提前解除新请求的 loading
@@ -164,7 +153,8 @@ async function loadMapOverview() {
 
 /**
  * 拉取 V2 canonical battle-playback dataset（独立竞态序号）。显式状态机，绝不在 204/error 时静默
- * 置 null 导致 Playback 整块消失。204 → UNAVAILABLE（确定性原因）；非 200 → ERROR（本地化 + retry）；
+ * 置 null 导致 Playback 整块消失。204 → UNAVAILABLE（确定性原因）；非 200 → ERROR（本地化，
+ * 是否显示 retry 由 canonical retryable 决定）；
  * 200 → FULL/PARTIAL。日志记录 processingJobId / sourceId / V2 status / capability / limitations /
  * failure code；绝不记录 token。
  */
@@ -173,6 +163,7 @@ async function loadPlaybackV2(signal) {
   const seq = ++playbackV2Seq
   playbackV2State.value = 'LOADING'
   playbackV2Error.value = ''
+  playbackV2Retryable.value = false
   playbackV2UnavailableReason.value = ''
   const logBase = { processingJobId: props.processingJobId, sourceId: props.sourceId }
   try {
@@ -188,18 +179,19 @@ async function loadPlaybackV2(signal) {
       console.warn('[playback-v2] unavailable (204 / no artifact / timeline not usable)', logBase)
       return
     }
-    if (!r.ok) {
-      const raw = await r.text().catch(() => '')
-      const code = raw.trim()
-      mapPlaybackV2.value = null
-      playbackV2State.value = 'ERROR'
-      playbackV2Error.value = localizeAiError({ code }, r.status, t)
-      // eslint-disable-next-line no-console
-      console.warn('[playback-v2] error', { ...logBase, status: r.status, failureCode: code })
-      return
-    }
     const ds = await r.json()
     if (seq !== playbackV2Seq) return
+    if (ds?.capability === 'UNAVAILABLE') {
+      mapPlaybackV2.value = null
+      playbackV2State.value = 'UNAVAILABLE'
+      playbackV2UnavailableReason.value = t('recon.playback.unavailable')
+      // eslint-disable-next-line no-console
+      console.warn('[playback-v2] unavailable (capability)', {
+        ...logBase,
+        limitations: ds?.limitations || []
+      })
+      return
+    }
     mapPlaybackV2.value = ds
     playbackV2State.value = ds?.capability === 'PARTIAL' ? 'PARTIAL' : 'FULL'
     // eslint-disable-next-line no-console
@@ -211,17 +203,23 @@ async function loadPlaybackV2(signal) {
     })
   } catch (e) {
     if (seq !== playbackV2Seq) return
-    if (e && e.name === 'AbortError') {
+    const apiError = normalizeApiError(e)
+    if (apiError.code === 'REQUEST_ABORTED') {
       playbackV2State.value = 'LOADING'
+      return
+    }
+    if (isRecoverableDatasetCode(apiError.code)) {
+      emit('dataset-recover', apiError.code)
       return
     }
     mapPlaybackV2.value = null
     playbackV2State.value = 'ERROR'
-    playbackV2Error.value = t('recon.playback.error')
+    playbackV2Error.value = apiErrorLabel(t, te, apiError)
+    playbackV2Retryable.value = apiError.retryable
     // eslint-disable-next-line no-console
     console.warn('[playback-v2] exception', {
       ...logBase,
-      failureCode: e && e.name ? e.name : 'UNKNOWN'
+      failureCode: apiError.code
     })
   }
 }
@@ -244,6 +242,7 @@ function resetMap() {
   mapPlaybackV2.value = null
   playbackV2State.value = 'LOADING'
   playbackV2Error.value = ''
+  playbackV2Retryable.value = false
   playbackV2UnavailableReason.value = ''
   panelView.value = 'playback'
   mapLoading.value = false
@@ -360,7 +359,7 @@ onBeforeUnmount(() => {
           </div>
           <div v-else-if="playbackV2State === 'ERROR'" class="pb-status pb-error" data-test="pb-error">
             <span>{{ playbackV2Error }}</span>
-            <button type="button" class="ghost sm" data-test="pb-retry" @click="retryPlaybackV2">{{ $t('recon.playback.retry') }}</button>
+            <button v-if="playbackV2Retryable" type="button" class="ghost sm" data-test="pb-retry" @click="retryPlaybackV2">{{ $t('recon.playback.retry') }}</button>
           </div>
           <div v-else-if="playbackV2State === 'LOADING'" class="pb-status" data-test="pb-loading">
             <span class="map-status-spinner" aria-hidden="true"></span>{{ $t('recon.playback.loading') }}

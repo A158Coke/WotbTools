@@ -1,6 +1,8 @@
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { apiErrorLabel } from '../utils/display.js'
+import { normalizeJobError } from '../utils/http.js'
 
 /**
  * 统一 Replay Task Card（Processing 与 Export 共用同一视觉体系）。
@@ -14,7 +16,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['cancel', 'download', 'dismiss'])
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const isProcessing = computed(() => props.kind === 'processing')
 
 const percent = computed(() => {
@@ -39,9 +41,7 @@ const validCount = computed(() => {
   return Math.max(0, (j.processed || 0) - (j.duplicates || 0) - (j.failures || 0))
 })
 
-const failedKey = computed(() => props.job?.errorCode === 'NO_VALID_REPLAYS'
-  ? (isProcessing.value ? 'replay.processing_job.no_valid_replays' : 'replay.export_job.failed_no_valid')
-  : (isProcessing.value ? 'replay.processing_job.failed' : 'replay.export_job.failed_generic'))
+const failedLabel = computed(() => apiErrorLabel(t, te, normalizeJobError(props.job)))
 
 const hasCounts = computed(() => (props.job?.duplicates || 0) + (props.job?.failures || 0) > 0
   || (isProcessing.value && validCount.value > 0))
@@ -98,7 +98,7 @@ const hasCounts = computed(() => (props.job?.duplicates || 0) + (props.job?.fail
 
     <template v-else-if="job.status === 'FAILED'">
       <div class="etc-title etc-err">✕ {{ isProcessing ? $t('replay.processing_job.failed') : $t('replay.export_job.failed') }}</div>
-      <div class="etc-sub">{{ $t(failedKey) }}</div>
+      <div class="etc-sub">{{ failedLabel }}</div>
       <button class="etc-btn" @click="$emit('dismiss')">{{ $t('replay.export_job.dismiss') }}</button>
     </template>
 

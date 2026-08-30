@@ -1,10 +1,5 @@
-import { ApiError, apiErrorFromResponse } from './http.js'
+import { ApiError, apiErrorFromResponse, apiErrorFromXhr, apiFetch, requireOk } from './http.js'
 import { useAuth } from '../composables/useAuth.js'
-
-async function requireOk(response) {
-  if (!response.ok) throw await apiErrorFromResponse(response)
-  return response
-}
 
 function withQuery(path, params = {}) {
   const query = new URLSearchParams()
@@ -47,19 +42,19 @@ export async function createExportJob(mode, processingJobId, teamNamesJson) {
     payload = new FormData()
     payload.append('teamNames', teamNamesJson)
   }
-  const r = await requireOk(await fetch(`/api/replay/export-jobs?${query}`, { method: 'POST', body: payload }))
+  const r = await requireOk(await apiFetch(`/api/replay/export-jobs?${query}`, { method: 'POST', body: payload }))
   return r.json()
 }
 
 /** 查询任务状态/进度：{jobId, status, phase, total, processed, duplicates, failures, errorCode, filename, contentType}。 */
 export async function getExportJob(jobId) {
-  const r = await requireOk(await fetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}`))
+  const r = await requireOk(await apiFetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}`))
   return r.json()
 }
 
 /** 取消任务（QUEUED 立即生效；PROCESSING 协作取消）。 */
 export async function cancelExportJob(jobId) {
-  await requireOk(await fetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
+  await requireOk(await apiFetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
 }
 
 // ── Replay Processing Job（/api/replay/processing-jobs，匿名公开；解析预览改为异步 Job）──
@@ -92,7 +87,7 @@ export function createProcessingJob(body, { onProgress, signal } = {}) {
         try {
           resolve(JSON.parse(xhr.responseText || '{}'))
         } catch {
-          reject(new ApiError('INVALID_RESPONSE', xhr.status))
+          reject(new ApiError({ code: 'MALFORMED_ERROR_RESPONSE', status: xhr.status }))
         }
         return
       }
@@ -100,45 +95,30 @@ export function createProcessingJob(body, { onProgress, signal } = {}) {
     }
     xhr.onerror = () => {
       signal?.removeEventListener('abort', abort)
-      reject(new ApiError('NETWORK_ERROR', 0))
+      reject(new ApiError({ code: 'NETWORK_ERROR', status: null, retryable: true }))
     }
     xhr.onabort = () => {
       signal?.removeEventListener('abort', abort)
-      const err = new Error('UPLOAD_ABORTED')
-      err.name = 'AbortError'
-      reject(err)
+      reject(new ApiError({ code: 'REQUEST_ABORTED', status: null, retryable: false }))
     }
     xhr.send(body)
   })
 }
 
-/** XHR 非 2xx 响应 → 稳定 ApiError（body 优先取 error/code，退化 HTTP_<status>）。 */
-function apiErrorFromXhr(xhr) {
-  let code = `HTTP_${xhr.status}`
-  try {
-    const body = JSON.parse(xhr.responseText || '{}')
-    const candidate = body?.error || body?.code
-    if (typeof candidate === 'string' && candidate) code = candidate
-  } catch {
-    // 非 JSON 错误响应使用稳定 HTTP_<status> 兜底
-  }
-  return new ApiError(code, xhr.status)
-}
-
 /** 查询解析任务状态/进度：{jobId, status, phase, total, processed, valid, duplicates, failures, errorCode, currentFile}。 */
 export async function getProcessingJob(jobId) {
-  const r = await requireOk(await fetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}`))
+  const r = await requireOk(await apiFetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}`))
   return r.json()
 }
 
 /** 取消解析任务（QUEUED 立即生效；PROCESSING 协作取消）。 */
 export async function cancelProcessingJob(jobId) {
-  await requireOk(await fetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
+  await requireOk(await apiFetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
 }
 
 /** READY 后获取 Preview 数据（不重新解析回放）。 */
 export async function getProcessingJobResult(jobId) {
-  const r = await requireOk(await fetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}/result`))
+  const r = await requireOk(await apiFetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}/result`))
   return r.json()
 }
 
@@ -149,13 +129,13 @@ export async function getProcessingJobResult(jobId) {
 export async function ratingV2Admin(jobId) {
   const { token, ensureToken, login } = useAuth()
   await ensureToken(30)
-  const r = await fetch(`/api/admin/rating-v2/processing-jobs/${encodeURIComponent(jobId)}`, {
+  const r = await apiFetch(`/api/admin/rating-v2/processing-jobs/${encodeURIComponent(jobId)}`, {
     method: 'POST',
     headers: token() ? { Authorization: `Bearer ${token()}` } : {},
   })
   if (r.status === 401) {
     login('rating-v2')
-    throw new ApiError('AUTH_REQUIRED', 401)
+    throw await apiErrorFromResponse(r)
   }
   await requireOk(r)
   return r.json()
@@ -163,17 +143,17 @@ export async function ratingV2Admin(jobId) {
 
 /** READY 后下载 artifact（后端 FileSystemResource server-side streaming；前端 blob 缓冲后触发下载）。 */
 export async function downloadExportJob(jobId, fallbackName) {
-  const r = await requireOk(await fetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}/download`))
+  const r = await requireOk(await apiFetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}/download`))
   await downloadResponse(r, fallbackName)
 }
 export async function hofList(params = {}) {
-  const r = await requireOk(await fetch(withQuery('/api/hof', params)))
+  const r = await requireOk(await apiFetch(withQuery('/api/hof', params)))
   return r.json()
 }
 
 /** 公开单场车辆选项：当前名人堂实际存在的车辆及稳定分类码。 */
 export async function hofVehicleOptions() {
-  const r = await requireOk(await fetch('/api/hof/vehicle-options'))
+  const r = await requireOk(await apiFetch('/api/hof/vehicle-options'))
   return r.json()
 }
 
@@ -185,14 +165,14 @@ export async function hofUpload(file) {
   await ensureToken(30)
   const fd = new FormData()
   fd.append('file', file)
-  const r = await fetch('/api/hof/upload', {
+  const r = await apiFetch('/api/hof/upload', {
     method: 'POST',
     headers: token() ? { Authorization: `Bearer ${token()}` } : {},
     body: fd,
   })
   if (r.status === 401) {
     login('hof')
-    throw new ApiError('AUTH_REQUIRED', 401)
+    throw await apiErrorFromResponse(r)
   }
   // requireOk 是 async 函数（返回 Promise）：必须先 await 再读 body，否则 Promise.json 抛 TypeError
   await requireOk(r)
@@ -206,12 +186,12 @@ export async function hofUpload(file) {
 export async function hofDownload(id) {
   const { token, ensureToken, login } = useAuth()
   await ensureToken(30)
-  const r = await fetch(`/api/hof/${encodeURIComponent(id)}/replay`, {
+  const r = await apiFetch(`/api/hof/${encodeURIComponent(id)}/replay`, {
     headers: token() ? { Authorization: `Bearer ${token()}` } : {},
   })
   if (r.status === 401) {
     login('hof')
-    throw new ApiError('AUTH_REQUIRED', 401)
+    throw await apiErrorFromResponse(r)
   }
   if (!r.ok) throw await apiErrorFromResponse(r)
   await downloadResponse(r, `replay-${id}.wotbreplay`)
@@ -224,10 +204,10 @@ async function hofAdminRequest(url, options = {}) {
   await ensureToken(30)
   const headers = { ...(options.headers || {}) }
   if (token()) headers.Authorization = `Bearer ${token()}`
-  const r = await fetch(url, { ...options, headers })
+  const r = await apiFetch(url, { ...options, headers })
   if (r.status === 401) {
     login('hof-admin')
-    throw new ApiError('AUTH_REQUIRED', 401)
+    throw await apiErrorFromResponse(r)
   }
   await requireOk(r)
   return r
@@ -284,10 +264,10 @@ async function hofAuthRequest(url, options = {}) {
   await ensureToken(30)
   const headers = { ...(options.headers || {}) }
   if (token()) headers.Authorization = `Bearer ${token()}`
-  const r = await fetch(url, { ...options, headers })
+  const r = await apiFetch(url, { ...options, headers })
   if (r.status === 401) {
     login('hof')
-    throw new ApiError('AUTH_REQUIRED', 401)
+    throw await apiErrorFromResponse(r)
   }
   await requireOk(r)
   return r
@@ -295,7 +275,7 @@ async function hofAuthRequest(url, options = {}) {
 
 /** 百场公开排行榜（匿名）：nation / vehicleType / vehicleId 可选并取交集。 */
 export async function hofHundredList(params = {}) {
-  const r = await requireOk(await fetch(withQuery('/api/hof/hundred', params)))
+  const r = await requireOk(await apiFetch(withQuery('/api/hof/hundred', params)))
   return r.json()
 }
 
@@ -306,14 +286,14 @@ export async function hofHundredList(params = {}) {
 export async function hofHundredSubmit(formData) {
   const { token, ensureToken, login } = useAuth()
   await ensureToken(30)
-  const r = await fetch('/api/hof/hundred/submissions', {
+  const r = await apiFetch('/api/hof/hundred/submissions', {
     method: 'POST',
     headers: token() ? { Authorization: `Bearer ${token()}` } : {},
     body: formData,
   })
   if (r.status === 401) {
     login('hof')
-    throw new ApiError('AUTH_REQUIRED', 401)
+    throw await apiErrorFromResponse(r)
   }
   await requireOk(r)
   return r.json()
@@ -403,7 +383,7 @@ export async function hofAdminHundredDelete(id, body) {
 
 /** 三环公开排行榜（匿名）：nation / vehicleType / vehicleId 可选并取交集。 */
 export async function hofMark3List(params = {}) {
-  const r = await requireOk(await fetch(withQuery('/api/hof/mark3', params)))
+  const r = await requireOk(await apiFetch(withQuery('/api/hof/mark3', params)))
   return r.json()
 }
 

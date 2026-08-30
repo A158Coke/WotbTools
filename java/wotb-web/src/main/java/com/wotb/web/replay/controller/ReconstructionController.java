@@ -27,11 +27,9 @@ import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -41,7 +39,6 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.RejectedExecutionException;
@@ -395,7 +392,7 @@ public class ReconstructionController {
             throw new IllegalArgumentException("INVALID_CORRELATION_ID");
         }
         if (!cancellationRegistry.cancel(correlationId)) {
-            return ResponseEntity.notFound().build();
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND");
         }
         return ResponseEntity.noContent().build();
     }
@@ -467,109 +464,5 @@ public class ReconstructionController {
         }
         return ResponseEntity.ok(dataset);
     }
-
-    // ---- 异常映射（仅本控制器；返回稳定错误码文本，供前端本地化） ----
-
-    /**
-     * 请求/数据错误（文件校验失败、NO_BATTLE_DATA 等）→ 400。
-     */
-    @ExceptionHandler(AiPromptBudgetExceededException.class)
-    public ResponseEntity<Map<String, Object>> handlePromptBudgetExceeded(final AiPromptBudgetExceededException e) {
-        final Map<String, Object> body = new LinkedHashMap<>();
-        body.put("code", "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE");
-        return ResponseEntity.badRequest().body(body);
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<String> handleBadRequest(final IllegalArgumentException e) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .contentType(MediaType.TEXT_PLAIN)
-                .body(e.getMessage());
-    }
-
-    @ExceptionHandler(ReplayFileCountExceededException.class)
-    public ResponseEntity<Map<String, Object>> handleFileCountExceeded(
-            final ReplayFileCountExceededException e
-    ) {
-        final Map<String, Object> body = new LinkedHashMap<>();
-        body.put("code", "REPLAY_FILE_COUNT_EXCEEDED");
-        body.put("maxFiles", e.getMaxFiles());
-        body.put("actualFiles", e.getActualFiles());
-        return ResponseEntity.badRequest().body(body);
-    }
-
-    /**
-     * AI Review worker 池满（workers + queue 全占用）→ 503 AI_REVIEW_BUSY。
-     */
-    @ExceptionHandler(AiReviewBusyException.class)
-    public ResponseEntity<Map<String, Object>> handleAiReviewBusy(final AiReviewBusyException e) {
-        final Map<String, Object> body = new LinkedHashMap<>();
-        body.put("code", "AI_REVIEW_BUSY");
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
-    }
-
-    /**
-     * AI 未配置密钥 → 503 AI_NOT_CONFIGURED。
-     */
-    @ExceptionHandler(AiNotConfiguredException.class)
-    public ResponseEntity<String> handleAiNotConfigured(final AiNotConfiguredException e) {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .contentType(MediaType.TEXT_PLAIN)
-                .body("AI_NOT_CONFIGURED");
-    }
-
-    /**
-     * 上游 AI 调用失败 → 502。
-     */
-    @ExceptionHandler(AiUpstreamException.class)
-    public ResponseEntity<String> handleUpstream(final AiUpstreamException e) {
-        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                .contentType(MediaType.TEXT_PLAIN)
-                .body(e.code());
-    }
-
-    /**
-     * 不支持的 AI 分析模式 → 422。
-     */
-    @ExceptionHandler(UnsupportedReplayAnalysisModeException.class)
-    public ResponseEntity<String> handleUnsupportedMode(final UnsupportedReplayAnalysisModeException e) {
-        return ResponseEntity.unprocessableContent()
-                .contentType(MediaType.TEXT_PLAIN)
-                .body(e.getMessage());
-    }
-
-    /**
-     * 无法可靠确定训练房/联赛的 perspectiveTeam → 422。
-     */
-    @ExceptionHandler(PerspectiveTeamNotResolvedException.class)
-    public ResponseEntity<String> handlePerspectiveTeam(
-            final PerspectiveTeamNotResolvedException e
-    ) {
-        return ResponseEntity.unprocessableContent()
-                .contentType(MediaType.TEXT_PLAIN)
-                .body(e.getMessage());
-    }
-
-    /**
-     * 随机战斗与训练房/联赛混合 → 400。
-     */
-    @ExceptionHandler(MixedAnalysisScopesException.class)
-    public ResponseEntity<String> handleMixedScopes(final MixedAnalysisScopesException e) {
-        return ResponseEntity.badRequest()
-                .contentType(MediaType.TEXT_PLAIN)
-                .body("MIXED_ANALYSIS_SCOPES");
-    }
-
-    /**
-     * 不同录像者混入（多场随机战斗）→ 400。
-     */
-    @ExceptionHandler(MixedRandomBattleRecordersException.class)
-    public ResponseEntity<String> handleMixedRecorders(final MixedRandomBattleRecordersException e) {
-        return ResponseEntity.badRequest()
-                .contentType(MediaType.TEXT_PLAIN)
-                .body("MIXED_RANDOM_BATTLE_RECORDERS");
-    }
-
-    // ---- 辅助 ----
 
 }

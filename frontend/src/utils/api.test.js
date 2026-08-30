@@ -78,18 +78,18 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
     expect(err.code).not.toBe('HTTP_400')
   })
 
-  it('keeps 401 → login("hof") + AUTH_REQUIRED without regressing', async () => {
+  it('keeps 401 → login("hof") + canonical auth error without regressing', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(401, { error: 'unauthorized' }))
 
     const err = await hofUpload(file).catch(e => e)
 
     expect(auth.login).toHaveBeenCalledWith('hof')
     expect(err).toBeInstanceOf(ApiError)
-    expect(err.code).toBe('AUTH_REQUIRED')
+    expect(err.code).toBe('AUTH_UNAUTHENTICATED')
     expect(err.status).toBe(401)
   })
 
-  it('hofDownload 401 → login("hof") + AUTH_REQUIRED, no download side effects', async () => {
+  it('hofDownload 401 → login("hof") + canonical auth error, no download side effects', async () => {
     const objectUrlSpy = vi.fn(() => 'blob:fake')
     URL.createObjectURL = objectUrlSpy
     vi.mocked(fetch).mockResolvedValue(jsonResponse(401, { error: 'unauthorized' }))
@@ -98,7 +98,7 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
 
     expect(auth.login).toHaveBeenCalledWith('hof')
     expect(err).toBeInstanceOf(ApiError)
-    expect(err.code).toBe('AUTH_REQUIRED')
+    expect(err.code).toBe('AUTH_UNAUTHENTICATED')
     expect(err.status).toBe(401)
     expect(vi.mocked(fetch)).toHaveBeenCalledWith(
       '/api/hof/42/replay',
@@ -214,7 +214,7 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
 
     expect(auth.login).toHaveBeenCalledWith('rating-v2')
     expect(err).toBeInstanceOf(ApiError)
-    expect(err).toMatchObject({ code: 'AUTH_REQUIRED', status: 401 })
+    expect(err).toMatchObject({ code: 'AUTH_UNAUTHENTICATED', status: 401 })
   })
 })
 
@@ -301,11 +301,13 @@ describe('createProcessingJob XHR upload progress', () => {
     await expect(promise).rejects.toMatchObject({ code: 'PROCESSING_QUEUE_FULL', status: 503 })
   })
 
-  it('aborts the XHR when signal fires and rejects with AbortError', async () => {
+  it('aborts the XHR when signal fires and rejects with canonical ApiError', async () => {
     const controller = new AbortController()
     const promise = createProcessingJob(new FormData(), { signal: controller.signal })
     controller.abort()
     expect(xhr.aborted).toBe(true)
-    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(promise).rejects.toMatchObject({
+      name: 'ApiError', code: 'REQUEST_ABORTED', status: null, retryable: false
+    })
   })
 })

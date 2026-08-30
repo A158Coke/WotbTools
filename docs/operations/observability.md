@@ -302,7 +302,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 
 ## 7. 日志查询与 requestId 排查
 
-Backend 日志为**结构化 JSON**（`logging.structured.format.console: logstash`）。MDC 的 `requestId` 输出为**顶层 JSON 字段**（不是 `mdc.requestId` 子对象；由 Spring Boot 4 `LogstashStructuredLogFormatter` 的 `ContextPairs.flat` 保证，已由 `LogstashMdcTopLevelTest` 实证）。
+Backend 日志为**结构化 JSON**（`logging.structured.format.console: logstash`）。MDC 的 `requestId` 与同值别名 `traceId` 输出为顶层 JSON 字段（不是 `mdc.*` 子对象；由 Spring Boot 4 `LogstashStructuredLogFormatter` 的 `ContextPairs.flat` 保证）。所有 canonical error response 的 `body.traceId` 与响应头 `X-Request-ID` 相同。
 
 ### 查询 Backend ERROR
 
@@ -320,7 +320,7 @@ Grafana → Explore → 选 Loki：
 
 ### 按 requestId 排查单个请求
 
-1. 请求响应头 `X-Request-ID` 会带回一个 UUID（或沿用请求头传入值）。
+1. 请求响应头 `X-Request-ID` 会带回一个 UUID（或沿用并清洗请求头传入值）；错误 JSON 的 `traceId` 与其一致。用户界面的“诊断 ID”即该值。
 2. Loki 查询：
 
 ```logql

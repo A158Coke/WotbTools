@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.55",
+    "date": "2026-08-30",
+    "tag": "fix",
+    "zh": "修复已登录用户或管理员访问战局回放时可能被错误拒绝的问题，并统一错误提示：现在会明确区分需要登录、权限不足、网络连接、服务端错误和数据不足；服务端错误会显示诊断 ID，只有可重试问题才显示重试入口。",
+    "en": "Fixed battle playback being incorrectly denied for signed-in users or administrators and unified error feedback: login required, insufficient permission, network connectivity, server errors, and unavailable data are now distinct; server errors show a diagnostic ID, and Retry appears only for retryable failures.",
+    "ru": "Исправлен ошибочный отказ в доступе к воспроизведению боя для вошедших пользователей и администраторов, а сообщения об ошибках унифицированы: теперь различаются необходимость входа, нехватка прав, сеть, ошибка сервера и недоступность данных; для серверных ошибок показан диагностический ID, а повтор доступен только для повторяемых сбоев."
+  },
+  {
     "v": "2.12.54",
     "date": "2026-08-30",
     "tag": "fix",

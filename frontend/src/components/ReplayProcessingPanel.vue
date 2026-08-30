@@ -1,6 +1,8 @@
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { apiErrorLabel } from '../utils/display.js'
+import { normalizeJobError } from '../utils/http.js'
 
 /**
  * Replay Processing 主操作区进度面板：真实分阶段
@@ -17,7 +19,7 @@ const props = defineProps({
 
 const emit = defineEmits(['cancel', 'dismiss'])
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 const uiState = computed(() => {
   if (props.uploadState) return props.uploadState.phase
@@ -43,9 +45,7 @@ const canCancel = computed(() =>
 
 const canDismiss = computed(() => ['READY', 'FAILED', 'CANCELLED'].includes(uiState.value))
 
-const failedKey = computed(() => props.job?.errorCode === 'NO_VALID_REPLAYS'
-  ? 'replay.processing_job.no_valid_replays'
-  : 'replay.processing_job.failed')
+const failedLabel = computed(() => apiErrorLabel(t, te, normalizeJobError(props.job)))
 
 function formatBytes(bytes) {
   if (!bytes && bytes !== 0) return ''
@@ -125,7 +125,7 @@ function formatBytes(bytes) {
     </template>
     <template v-else-if="uiState === 'FAILED'">
       <div class="rpp-title rpp-err">✕ {{ $t('replay.processing_job.failed') }}</div>
-      <div class="rpp-sub">{{ $t(failedKey) }}</div>
+      <div class="rpp-sub">{{ failedLabel }}</div>
     </template>
     <template v-else-if="uiState === 'CANCELLED'">
       <div class="rpp-title">{{ $t('replay.processing_job.cancelled') }}</div>

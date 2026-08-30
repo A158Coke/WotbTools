@@ -5,11 +5,12 @@ import { mount } from '@vue/test-utils'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 
 const i18n = vi.hoisted(() => ({
-  t: vi.fn((key) => key)
+  t: vi.fn((key) => key),
+  te: vi.fn(key => key.startsWith('api_errors.'))
 }))
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: i18n.t, locale: { value: 'en' } })
+  useI18n: () => ({ t: i18n.t, te: i18n.te, locale: { value: 'en' } })
 }))
 
 function mountPanel({ uploadState = null, job = null, error = '' } = {}) {
@@ -98,7 +99,7 @@ describe('ReplayProcessingPanel', () => {
     const wrapper = mountPanel({
       job: pJob({ status: 'FAILED', phase: null, errorCode: 'NO_VALID_REPLAYS' })
     })
-    expect(wrapper.text()).toContain('replay.processing_job.no_valid_replays')
+    expect(wrapper.text()).toContain('api_errors.NO_VALID_REPLAYS')
   })
 
   it('CANCELLED shows cancelled state', () => {

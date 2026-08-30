@@ -7,7 +7,11 @@ import { nextTick } from 'vue'
 import AiReviewPanel from './AiReviewPanel.vue'
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: key => key, locale: { value: 'zh' } })
+  useI18n: () => ({
+    t: (key, params) => key === 'errors.diagnostic_id' ? `diagnostic:${params.traceId}` : key,
+    te: key => key.startsWith('errors.'),
+    locale: { value: 'zh' }
+  })
 }))
 
 vi.mock('../composables/useAuth.js', () => ({
@@ -135,6 +139,55 @@ describe('AiReviewPanel dataset request', () => {
     expect(body.lang).toBe('zh')
     expect(typeof body.correlationId).toBe('string')
     vi.unstubAllGlobals()
+  })
+
+  it.each([
+    [401, 'AUTH_UNAUTHENTICATED', 'errors.auth_unauthenticated'],
+    [403, 'AUTH_FORBIDDEN', 'errors.auth_forbidden'],
+    [429, 'RATE_LIMITED', 'errors.rate_limited'],
+    [503, 'SERVICE_UNAVAILABLE', 'errors.service_unavailable'],
+    [504, 'UPSTREAM_TIMEOUT', 'errors.upstream_timeout'],
+    [500, 'INTERNAL_ERROR', 'errors.internal_error'],
+  ])('HTTP %s renders the canonical AI error category', async (status, code, messageKey) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status,
+      text: async () => JSON.stringify({
+        code, status, messageKey, traceId: `trace-${status}`,
+        retryable: status === 429 || status >= 500, details: {}, timestamp: '2026-08-30T15:30:00Z'
+      })
+    }))
+    const wrapper = mountDatasetPanel()
+    await wrapper.find('.dataset-analyze').trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.error).toContain(messageKey)
+    expect(wrapper.vm.error).toContain(`trace-${status}`)
+    vi.unstubAllGlobals()
+  })
+
+  it('pre-response deadline abort renders AI_TIMEOUT instead of generic cancellation', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (String(url).includes('/cancel')) return Promise.resolve({ ok: true, status: 200 })
+      return new Promise((resolve, reject) => {
+        options.signal.addEventListener('abort', () => {
+          const aborted = new Error('aborted before headers')
+          aborted.name = 'AbortError'
+          reject(aborted)
+        }, { once: true })
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountDatasetPanel()
+
+    await wrapper.find('.dataset-analyze').trigger('click')
+    await vi.advanceTimersByTimeAsync(1_100_000)
+    await flushPromises()
+
+    expect(wrapper.vm.error).toBe('recon.errors.AI_TIMEOUT')
+    expect(wrapper.vm.analyzing).toBe(false)
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   it('无 dataset 引用时拒绝发起请求并显示准备态（不裸抛 DATASET_UNAVAILABLE）', async () => {
