@@ -7,6 +7,15 @@ import com.wotb.core.replay.processing.TeamEntityMapper;
 import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
+import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
+import com.wotb.core.replay.decoder.ReplayVersionGate;
+import com.wotb.core.replay.stream.ReplayPacketStreamReader;
+import com.wotb.core.replay.stream.RawReplayPacket;
+import com.wotb.core.parse.ParsedReplay;
+import com.wotb.core.replay.decoder.ProtobufDecoder;
+import java.util.Map;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelineError;
@@ -33,7 +42,7 @@ class V2UsabilityProbe {
 
     @Test
     void probe34ChampionshipReplaysV2Usability() throws Exception {
-        final Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "common", "data", "34冠军赛回放")
+        final Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "common", "data", "34冠军赛回放-无重复")
                 .normalize();
         final List<Path> files;
         try (Stream<Path> s = Files.walk(dir)) {
@@ -82,6 +91,13 @@ class V2UsabilityProbe {
             final BattleTimelineResult tl = BattleTimelineBuilder.build(
                     battle, recon, TimelinePerspective.personal(
                             recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
+            row.arenaPeriods = arenaPeriodSummary(recon.events());
+            row.roundFinishedCount = countRoundFinished(recon.events());
+            row.clientVersion = recon.streamHeader() != null
+                    ? reconcileVersion(recon.streamHeader().clientVersion())
+                    : (recon.metadata() == null ? "?" : reconcileVersion(recon.metadata().clientVersion()));
+            row.methodSemanticsAllowed = ReplayVersionGate.methodSemanticsAllowed(row.clientVersion);
+            row.method4Signature = method4Signature(bytes);
             row.tlUsable = tl.usable();
             row.durationSec = tl.timeline() == null ? null : (double) tl.timeline().durationSec();
             row.limitations = tl.timeline() == null ? List.of() : tl.timeline().limitations();
@@ -108,6 +124,128 @@ class V2UsabilityProbe {
         }
     }
 
+    private static String arenaPeriodSummary(final List<ReplayEvent> events) {
+        if (events == null) return "none";
+        final StringBuilder sb = new StringBuilder();
+        for (final ReplayEvent e : events) {
+            if (e instanceof ArenaPeriodChangedEvent ap) {
+                if (sb.length() > 0) sb.append('|');
+                sb.append(ap.period()).append('@').append(String.format("%.2f", ap.timestamp().rawClockSec()));
+                sb.append("(raw=").append(ap.periodRaw()).append(')');
+            }
+        }
+        return sb.length() == 0 ? "NO_ARENA_PERIOD" : sb.toString();
+    }
+
+    private static int countRoundFinished(final List<ReplayEvent> events) {
+        if (events == null) return 0;
+        int n = 0;
+        for (final ReplayEvent e : events) {
+            if (e instanceof RoundFinishedEvent rf) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    private static String reconcileVersion(final String v) {
+        // 不同 meta 字段可能叫 gameVersion / clientVersion；此处归一化便于肉眼对比。
+        return v == null ? "?" : v;
+    }
+
+    /** 原始 method4/subtype48 包签名：type8 subtype4 (round-finished) 的 argLen/envelope/entityId 序列 + subtype48 wrapper3。 */
+    private static String method4Signature(final byte[] bytes) {
+        final StringBuilder sb = new StringBuilder();
+        try {
+            final byte[] streamBytes = ParsedReplay.read(bytes).dataWotreplay();
+            if (streamBytes == null) return "NO_DATA_WOTREPLAY";
+            final ReplayPacketStreamReader.ReplayStreamResult stream = ReplayPacketStreamReader.read(streamBytes);
+            int roundSubtype4 = 0;
+            for (final RawReplayPacket p : stream.packets()) {
+                if (p.type() != 8) continue;
+                final byte[] payload = p.payload();
+                if (payload.length < 12) continue;
+                final int subType = readU32LE(payload, 4);
+                final int argLen = readU32LE(payload, 8);
+                final int entityId = (int) readU32LE(payload, 0);
+                final boolean envelopeValid = payload.length == 12 + argLen;
+                if (subType == 4) {
+                    roundSubtype4++;
+                    if (sb.length() > 0) sb.append('|');
+                    sb.append("rf4(eid=").append(entityId).append(",argLen=").append(argLen)
+                            .append(",env=").append(envelopeValid)
+                            .append(",plen=").append(payload.length).append(')');
+                }
+                if (subType == 48) {
+                    final long wrapper = com.wotb.core.replay.decoder.EntityMethodDecoder.readWrapperFieldNumber(payload);
+                    if (wrapper == 3L) {
+                        if (sb.length() > 0) sb.append('|');
+                        sb.append("arena48(seq=").append(p.sequence()).append(",clock=")
+                                .append(String.format("%.2f", p.rawClockSec())).append(",w3,root=")
+                                .append(arenaPeriodRoot(payload)).append(')');
+                    }
+                }
+            }
+            if (sb.length() == 0) sb.append("NO_ANCHOR_PACKET");
+            return sb.toString();
+        } catch (final Exception e) {
+            return "ERR:" + e.getMessage();
+        }
+    }
+
+    private static int readU32LE(final byte[] b, final int off) {
+        return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
+    }
+
+    private static String arenaPeriodRoot(final byte[] payload) {
+        try {
+            final byte[] body = new byte[payload.length - 8];
+            System.arraycopy(payload, 8, body, 0, body.length);
+            int off = 4;
+            if (off >= body.length) return "trunc";
+            final long[] v = readVarint(body, off);
+            off = (int) v[1];
+            if (off >= body.length) return "trunc2";
+            final int first = body[off] & 0xFF;
+            int msgLen;
+            if (first == 0xFF) {
+                if (off + 2 > body.length) return "trunc3";
+                msgLen = (body[off + 1] & 0xFF) | ((body[off + 2] & 0xFF) << 8);
+                off += 4;
+            } else {
+                msgLen = first; off += 1;
+            }
+            if (off + msgLen > body.length) return "trunc4";
+            final byte[] proto = new byte[msgLen];
+            System.arraycopy(body, off, proto, 0, msgLen);
+            final Map<Integer, List<Object>> root = ProtobufDecoder.decode(proto);
+            final List<Object> f3 = root.get(3);
+            if (f3 == null || f3.isEmpty()) {
+                return "f3=none|allowed=" + root.keySet();
+            }
+            final Object val = f3.getFirst();
+            if (val instanceof byte[] inner) {
+                final Map<Integer, List<Object>> innerRoot = ProtobufDecoder.decode(inner);
+                return "f3=nested(" + innerRoot + ")";
+            }
+            return "f3=" + val + "(class=" + val.getClass().getSimpleName() + ")";
+        } catch (final Exception e) {
+            return "ERR:" + e.getMessage();
+        }
+    }
+
+    private static long[] readVarint(final byte[] b, final int off) {
+        long result = 0; int shift = 0; int i = off;
+        while (i < b.length) {
+            final int x = b[i++] & 0xFF;
+            result |= (long) (x & 0x7F) << shift;
+            if ((x & 0x80) == 0) return new long[]{ result, i };
+            shift += 7;
+            if (shift > 63) break;
+        }
+        return new long[]{ result, i };
+    }
+
     /** 定位异常的 projector 内部帧（便于锁定 NPE 行）。 */
     private static String firstProjectorFrame(final Throwable e) {
         for (final StackTraceElement st : e.getStackTrace()) {
@@ -127,6 +265,11 @@ class V2UsabilityProbe {
         boolean recorderNull;
         boolean usable;
         boolean tlUsable;
+        String arenaPeriods = "";
+        int roundFinishedCount;
+        String clientVersion = "";
+        boolean methodSemanticsAllowed;
+        String method4Signature = "";
         Double durationSec;
         List<String> limitations = new ArrayList<>();
         List<TimelineError> errors = new ArrayList<>();
@@ -141,15 +284,12 @@ class V2UsabilityProbe {
         }
 
         String render() {
-            return String.format("%-4s  usable=%-5s  startClock=%-8s  dur=%s  recorderNull=%-5s  tracks=%s  cap=%s  lim=%s  v2Null=%-5s  %s",
-                    sourceId, tlUsable,
+            return String.format("%-4s  ver=%-22s  usable=%-5s  startClock=%-8s  rf=%d  arena=%s  m4=%s  tracks=%s  cap=%s  v2Null=%-5s  %s",
+                    sourceId, clientVersion, tlUsable,
                     battleStartRawClockSec == null ? "null" : battleStartRawClockSec,
-                    durationSec == null ? "-" : String.format("%.1f", durationSec),
-                    recorderNull,
+                    roundFinishedCount, arenaPeriods, method4Signature,
                     tracks == null ? "-" : String.valueOf(tracks),
-                    capability == null ? "-" : capability,
-                    limitations.isEmpty() ? "-" : limitations,
-                    v2Null, reason);
+                    capability == null ? "-" : capability, v2Null, reason);
         }
     }
 }
