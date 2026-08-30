@@ -5,22 +5,37 @@ import { useNativeReplayImport } from './useNativeReplayImport.js'
 
 function stubNative(pending, consumeResult = true) {
   const listeners = []
-  const results = {
-    getPendingReplay: pending ?? null,
-    consumePendingReplay: consumeResult,
-  }
+  let current = pending ?? null
+  let cleared = false
   window.WotbNative = {
     postMessage: vi.fn((json) => {
       const msg = JSON.parse(json)
-      listeners.forEach(cb =>
-        cb({ data: JSON.stringify({ id: msg.id, result: results[msg.method] ?? null }) })
-      )
+      listeners.forEach(cb => {
+        let result
+        if (msg.method === 'getPendingReplay') {
+          result = cleared ? null : current
+        } else if (msg.method === 'consumePendingReplay') {
+          if (current != null && !cleared) {
+            cleared = true
+            current = null
+            result = consumeResult
+          } else {
+            result = false
+          }
+        } else {
+          result = null
+        }
+        cb({ data: JSON.stringify({ id: msg.id, result }) })
+      })
     }),
     addEventListener: vi.fn((type, cb) => listeners.push(cb)),
     removeEventListener: vi.fn((type, cb) => {
       const i = listeners.indexOf(cb)
       if (i >= 0) listeners.splice(i, 1)
     }),
+  }
+  return {
+    setPending(p) { current = p; cleared = false },
   }
 }
 
@@ -98,7 +113,7 @@ describe('useNativeReplayImport', () => {
   })
 
   it('window.wotbtoolsOnReplay 走实际登录态，不默认 authenticated=true', async () => {
-    stubNative({ name: 'a.wotbreplay', uri: 'content://pending-replay', size: 5 })
+    const native = stubNative({ name: 'a.wotbreplay', uri: 'content://pending-replay', size: 5 })
     stubFetchBlob()
     const onPendingFile = vi.fn()
     const authed = vi.fn(() => false)
@@ -108,6 +123,32 @@ describe('useNativeReplayImport', () => {
     expect(onPendingFile).not.toHaveBeenCalled()
     // 登录后由 Workspace 再次触发
     authed.mockReturnValue(true)
+    await window.wotbtoolsOnReplay()
+    expect(onPendingFile).toHaveBeenCalledTimes(1)
+    native.setPending(null)
+  })
+
+  it('warm resume：首次无 pending 不清零 lifetime，稍后 Native 新增 pending 仍可消费 exactly once', async () => {
+    const native = stubNative(null)
+    stubFetchBlob()
+    const onPendingFile = vi.fn()
+    const { consumePendingWhenReady, registerGlobalHandler } = useNativeReplayImport({
+      isAuthenticated: () => true,
+      onPendingFile,
+    })
+    registerGlobalHandler()
+
+    // 第一次：无 pending → 不清零 eligible
+    await consumePendingWhenReady()
+    expect(onPendingFile).not.toHaveBeenCalled()
+
+    // Native 后来（warm resume）产生新 pending
+    native.setPending({ name: 'b.wotbreplay', uri: 'content://pending-replay', size: 5 })
+    await window.wotbtoolsOnReplay()
+    expect(onPendingFile).toHaveBeenCalledTimes(1)
+    expect(onPendingFile.mock.calls[0][0].name).toBe('b.wotbreplay')
+
+    // 同一份 pending 不重复消费（exactly once）
     await window.wotbtoolsOnReplay()
     expect(onPendingFile).toHaveBeenCalledTimes(1)
   })

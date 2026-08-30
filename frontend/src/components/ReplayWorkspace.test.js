@@ -62,16 +62,25 @@ vi.mock('./FileUploader.vue', () => ({
 vi.mock('./ReplayProcessingPanel.vue', () => ({ default: { template: '<div data-test="processing" />' } }))
 vi.mock('./ReplayTaskCard.vue', () => ({ default: { template: '<div data-test="task" />' } }))
 vi.mock('./RemoveConfirmModal.vue', () => ({ default: { template: '<div data-test="modal" />' } }))
+const nativeImportState = vi.hoisted(() => ({ onPendingFile: null }))
 vi.mock('../composables/useNativeReplayImport.js', () => ({
-  useNativeReplayImport: () => ({ consumePendingWhenReady: vi.fn(() => Promise.resolve(false)) }),
+  useNativeReplayImport: (opts) => {
+    nativeImportState.onPendingFile = opts?.onPendingFile ?? null
+    return { consumePendingWhenReady: vi.fn(() => Promise.resolve(false)) }
+  },
 }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k, te: () => true }) }))
 
-function mountWorkspace(capability = 'data', { authenticated = true, login = vi.fn() } = {}) {
+function mountWorkspace(capability = 'data', { authenticated = true, login = vi.fn(), authInit } = {}) {
   return mount(ReplayWorkspace, {
     props: { initialCapability: capability },
     global: {
-      provide: { isAuthenticated: () => authenticated, login, navigate: vi.fn() },
+      provide: {
+        isAuthenticated: () => authenticated,
+        login,
+        navigate: vi.fn(),
+        ...(authInit ? { authInit } : {}),
+      },
       mocks: { $t: (k) => k },
     },
   })
@@ -132,7 +141,7 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
   })
 
-  it('未登录进入任意 replay capability（data/ai/playback）都自动跳 Keycloak 并回原 capability', () => {
+  it('未登录进入任意 replay capability（data/ai/playback）都自动跳 Keycloak 并回原 capability', async () => {
     const cases = [
       { cap: 'data', view: 'replay' },
       { cap: 'ai', view: 'ai-review' },
@@ -141,6 +150,7 @@ describe('ReplayWorkspace', () => {
     for (const c of cases) {
       const login = vi.fn()
       mountWorkspace(c.cap, { authenticated: false, login })
+      await flushPromises()
       expect(login).toHaveBeenCalledWith(c.view)
     }
   })
@@ -158,5 +168,50 @@ describe('ReplayWorkspace', () => {
     await flushPromises()
     expect(wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').classes()).toContain('active')
     expect(wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').classes()).not.toContain('active')
+  })
+
+  it('auth init 完成后 authenticated=true 时 login 不被调用（SSO/session 用户不被打断）', async () => {
+    let resolveInit
+    const authInit = new Promise((r) => { resolveInit = r })
+    const login = vi.fn()
+    const wrapper = mountWorkspace('ai', { authenticated: true, login, authInit })
+    // init 尚未完成：不应误判为未登录而 login
+    await flushPromises()
+    expect(login).not.toHaveBeenCalled()
+    // init 完成且 authenticated=true：仍不 login
+    resolveInit()
+    await flushPromises()
+    expect(login).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('auth init 完成后 authenticated=false 时仅调用一次 login', async () => {
+    let resolveInit
+    const authInit = new Promise((r) => { resolveInit = r })
+    const login = vi.fn()
+    const wrapper = mountWorkspace('ai', { authenticated: false, login, authInit })
+    await flushPromises()
+    expect(login).not.toHaveBeenCalled()
+    resolveInit()
+    await flushPromises()
+    expect(login).toHaveBeenCalledTimes(1)
+    expect(login).toHaveBeenCalledWith('ai-review')
+    wrapper.unmount()
+  })
+
+  it('Android pending File 导入后自动 startProcessingJob exactly once（不重复建 Job）', async () => {
+    nativeImportState.onPendingFile = null
+    mountWorkspace('data', { authenticated: true })
+    await flushPromises()
+    const onPendingFile = nativeImportState.onPendingFile
+    expect(onPendingFile).toBeTypeOf('function')
+    const file = new File(['x'], 'a.wotbreplay')
+    // 本次导入前 startProcessingJob 未调用
+    expect(replayState.startProcessingJob).not.toHaveBeenCalled()
+    await onPendingFile(file)
+    await flushPromises()
+    // updateFiles 替换 selection + 自动 startProcessingJob 各一次
+    expect(replayState.updateFiles).toHaveBeenCalledWith([file])
+    expect(replayState.startProcessingJob).toHaveBeenCalledTimes(1)
   })
 })
