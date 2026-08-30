@@ -1487,7 +1487,17 @@
                 "orientation": "朝向",
                 "recorder_visible": "录像者可见",
                 "orientation_current": "当前朝向",
-                "orientation_last_known": "最后已知朝向"
+                "orientation_last_known": "最后已知朝向",
+                "loadout_unknown_consumable": "未知消耗品（{id}）",
+                "loadout_unknown_provision": "未知补给（{id}）",
+                "loadout_unknown_equipment": "未知装备（{id}）",
+                "consumable_state": {
+                    "INITIALIZED": "已就绪",
+                    "ACTIVATED": "已激活",
+                    "ACTIVE_ENDED_OR_COOLDOWN": "已结束或冷却中",
+                    "TEARDOWN": "已移除",
+                    "UNKNOWN": "未知"
+                }
             }
         },
         "stages": {

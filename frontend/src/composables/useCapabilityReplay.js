@@ -30,14 +30,23 @@ export function useCapabilityReplay(replay) {
     datasetError.value = ''
   }
 
-  /** 为指定文件准备 Dataset 引用。同一文件重复调用是 no-op（requestDirectAction 内部已单飞）。 */
-  function prepareForFile(file) {
-    datasetRef.value = null
-    datasetError.value = ''
+  /**
+   * 为指定文件准备 Dataset 引用。同一文件重复调用是 no-op（requestDirectAction 内部已单飞）。
+   * @param {object} file 目标文件
+   * @param {{force?: boolean}} opts force=true 强制重新准备（dataset 过期/缺失时恢复用，跳过幂等守卫）。
+   */
+  function prepareForFile(file, { force = false } = {}) {
     if (!file) {
       targetFile.value = null
+      datasetRef.value = null
+      datasetError.value = ''
       return
     }
+    // 幂等（plan §9.1）：同一目标文件（按 fileKey 稳定比较，Vue ref 对对象赋值为 reactive Proxy，
+    // 不能用 ===）、已有 dataset 引用 → 不复位、不重复请求、不闪断。
+    if (!force && targetFile.value && datasetRef.value && fileKey(targetFile.value) === fileKey(file)) return
+    datasetRef.value = null
+    datasetError.value = ''
     targetFile.value = file
     const revision = ++prepareRevision
     requestDirectAction(file).then((refValue) => {
@@ -60,7 +69,7 @@ export function useCapabilityReplay(replay) {
       datasetError.value = t('workspace.dataset_prepare_failed')
       return
     }
-    prepareForFile(file)
+    prepareForFile(file, { force: true })
   }
 
   /** 多文件未显式选择时的本地化提示（由 Workspace 判断后调用）。 */

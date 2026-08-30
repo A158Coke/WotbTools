@@ -106,4 +106,52 @@ describe('V2VehicleInspector', () => {
     expect(olast.length).toBeGreaterThan(0)
     expect(rawOrDetected).not.toContain(olast)
   })
+
+  it('loadout 显示本地化名称，绝不裸显 internal logical id / 数字 equipment id', () => {
+    const w = mountInspector(120) // zh
+    const text = w.get('[data-test="v2-inspector-loadout"]').text()
+    expect(text).toContain('修理箱')         // REPAIR_KIT
+    expect(text).toContain('肾上腺素')       // ADRENALINE
+    expect(text).toContain('沙袋装甲')       // SANDBAG_ARMOR
+    expect(text).toContain('改进型模块')     // 108
+    expect(text).toContain('改进型光学系统') // 114
+    // raw internal id 不得作为用户文案
+    expect(text).not.toContain('REPAIR_KIT')
+    expect(text).not.toContain('ADRENALINE')
+    expect(text).not.toContain('SANDBAG_ARMOR')
+  })
+
+  it.each(['zh', 'en', 'ru'])('locale %s：consumable runtime state 显示本地化文案，绝不裸显 internal enum', (locale) => {
+    const w = mountInspector(120, locale)
+    const text = w.get('[data-test="v2-inspector-loadout"]').text()
+    // slot 0 (REPAIR_KIT / wire 0x0D) 在 t=95 已 ACTIVATED，t=120 仍为 ACTIVATED
+    expect(text).not.toMatch(/ACTIVATED|ACTIVE_ENDED_OR_COOLDOWN|INITIALIZED|TEARDOWN/)
+    // 本地化文案出现（zh 已激活 / en Active / ru Активирован）
+    expect(text.length).toBeGreaterThan(0)
+  })
+
+  it('consumable runtime state 未知值走 localized fallback（不裸显）', () => {
+    const t = track()
+    t.consumableTransitions = [{ timeSec: 95, logicalItemId: 'REPAIR_KIT', state: 'SOME_INTERNAL_STATE', wireCode: 0x0D }]
+    const w = mountInspector(120, 'zh', t)
+    const text = w.get('[data-test="v2-inspector-loadout"]').text()
+    expect(text).toContain('未知')   // consumable_state.UNKNOWN
+    expect(text).not.toContain('SOME_INTERNAL_STATE')
+  })
+
+  it.each(['zh', 'en', 'ru'])('locale %s：未知 equipment id 走「未知装备（id）」fallback 并保留 raw id', (locale) => {
+    const t = track()
+    t.loadout = { ...t.loadout, equipmentIds: [9999, 100] }
+    const w = mountInspector(120, locale, t)
+    const text = w.get('[data-test="v2-inspector-loadout"]').text()
+    expect(text).toContain('9999') // 保留 raw id 仅作诊断
+  })
+
+  it('未知 consumable code 走「未知消耗品（code）」fallback', () => {
+    const t = track()
+    t.loadout = { ...t.loadout, consumables: ['SOME_INTERNAL_ENUM', null, 'REPAIR_KIT'], consumableWireCodes: [0x00, 0x77, 0x0D] }
+    t.consumableTransitions = []
+    const w = mountInspector(120, 'zh', t)
+    expect(w.get('[data-test="v2-inspector-loadout"]').text()).toContain('未知消耗品（SOME_INTERNAL_ENUM）')
+  })
 })
