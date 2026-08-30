@@ -65,7 +65,7 @@ repository-level full validation 由 PR CI 统一执行（唯一 authoritative f
   - data-workspace：约 1760px，Replay/大型数据表/Admin；
   - full-workspace：100%，战局重建/地图/战术画布。
 - Replay Parser 是最高频工具：Desktop 必须尽可能使用可用宽度，Table 保持高 information density；不要把玩家行改成大型 Card。允许 sticky header / sticky 关键列 / 横向滚动，横滚是字段过多的 fallback，而不是窄 container 的副作用。
-- **Replay Workspace 语义**：`ReplayWorkspace` 是单一工作台——data / AI / Playback 三个能力通过三个始终可见的 tab 切换，共用同一份 selection 与 Processing Job；单文件可直接进入 AI/Playback，多文件必须显式选择目标 replay（禁止 fallback 第一场）。解析后的 Aggregate/Summary 本身不代表具体 battle，因此结果 toolbar 的 Battle-level action 仍只在具体 battle tab 出现。
+- **Replay Workspace 语义**：`ReplayWorkspace` 是单一工作台——data / AI / Playback 三个能力通过三个始终可见的 tab 切换，共用同一份 selection 与 Processing Job；**整个 Workspace 全部要求登录**（未登录进入任意 replay capability 自动跳 Keycloak/OIDC 并在登录后回原 capability，无「data 匿名解析」）。单文件可直接进入 AI/Playback，多文件必须显式选择目标 replay（禁止 fallback 第一场）。解析后的 Aggregate/Summary 本身不代表具体 battle，因此结果 toolbar 的 Battle-level action 仍只在具体 battle tab 出现。**AI 与 Playback 只共享 replay/source/processing dataset，不做跨 capability 业务状态 handoff（如 `AI@seek → Playback`）**；tab 切换经 pushState + popstate 形成可 Back/Forward 的 history，返回只恢复 activeCapability，不重传 / 不重建 Processing Job。
 - Reconstruction/Map/Strategy 类型页面按 workspace 设计：地图/画布吃最大空间，Inspector/Timeline/Toolbar 围绕画布布局；禁止再套 1100–1200px 居中页面。
 - Admin 使用同一 Design System，但视觉定位是 Operations Console；高风险删除动作不能与“查看”同权重长期红色高亮。
 - **响应式必须同时覆盖三档**，不能先做 Desktop 后用 scale 缩小：

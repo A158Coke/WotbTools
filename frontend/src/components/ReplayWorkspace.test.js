@@ -40,12 +40,14 @@ vi.mock('./ReplayPage.vue', () => ({
 }))
 vi.mock('./AiReviewPanel.vue', () => ({
   default: {
+    name: 'AiReviewPanelMock',
     props: ['file', 'processingJobId', 'sourceId', 'datasetError'],
     template: '<div data-test="ai-pane">{{ processingJobId }}|{{ sourceId }}|{{ datasetError }}</div>',
   },
 }))
 vi.mock('./BattlePlaybackPanel.vue', () => ({
   default: {
+    name: 'BattlePlaybackPanelMock',
     props: ['file', 'processingJobId', 'sourceId', 'active', 'seekTo', 'datasetError'],
     template: '<div data-test="playback-pane">{{ processingJobId }}|{{ sourceId }}|{{ datasetError }}</div>',
   },
@@ -60,6 +62,9 @@ vi.mock('./FileUploader.vue', () => ({
 vi.mock('./ReplayProcessingPanel.vue', () => ({ default: { template: '<div data-test="processing" />' } }))
 vi.mock('./ReplayTaskCard.vue', () => ({ default: { template: '<div data-test="task" />' } }))
 vi.mock('./RemoveConfirmModal.vue', () => ({ default: { template: '<div data-test="modal" />' } }))
+vi.mock('../composables/useNativeReplayImport.js', () => ({
+  useNativeReplayImport: () => ({ consumePendingWhenReady: vi.fn(() => Promise.resolve(false)) }),
+}))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k, te: () => true }) }))
 
 function mountWorkspace(capability = 'data', { authenticated = true, login = vi.fn() } = {}) {
@@ -127,15 +132,31 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
   })
 
-  it('未登录进入 ai/playback 会自动跳 Keycloak 并回原 capability', () => {
-    const login = vi.fn()
-    mountWorkspace('ai', { authenticated: false, login })
-    expect(login).toHaveBeenCalledWith('ai-review')
+  it('未登录进入任意 replay capability（data/ai/playback）都自动跳 Keycloak 并回原 capability', () => {
+    const cases = [
+      { cap: 'data', view: 'replay' },
+      { cap: 'ai', view: 'ai-review' },
+      { cap: 'playback', view: 'battle-playback' },
+    ]
+    for (const c of cases) {
+      const login = vi.fn()
+      mountWorkspace(c.cap, { authenticated: false, login })
+      expect(login).toHaveBeenCalledWith(c.view)
+    }
   })
 
-  it('未登录进入 data 不触发登录（数据解析允许匿名）', () => {
-    const login = vi.fn()
-    mountWorkspace('data', { authenticated: false, login })
-    expect(login).not.toHaveBeenCalled()
+  it('AI 与 Playback 无业务耦合：AI seek 事件不影响 capability（不切到 Playback）', async () => {
+    replayState.files.value = [new File(['x'], 'a.wotbreplay')]
+    replayState.processingJobId.value = 'job-1'
+    const wrapper = mountWorkspace('data')
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
+    await flushPromises()
+    const aiPanelVm = wrapper.findComponent({ name: 'AiReviewPanelMock' })
+    expect(aiPanelVm.exists()).toBe(true)
+    // AI 报告 seek 到时间点：Workspace 不监听 @seek，capability 不切到 Playback（业务解耦）
+    aiPanelVm.vm.$emit('seek', 123)
+    await flushPromises()
+    expect(wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').classes()).toContain('active')
+    expect(wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').classes()).not.toContain('active')
   })
 })
