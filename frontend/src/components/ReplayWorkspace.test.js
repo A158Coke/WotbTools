@@ -2,35 +2,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { ref } from 'vue'
 import ReplayWorkspace from './ReplayWorkspace.vue'
 
-const replayState = vi.hoisted(() => ({
-  files: { __v_isRef: true, value: [] },
-  selectionRevision: { __v_isRef: true, value: 0 },
-  activeTab: { __v_isRef: true, value: 'aggregate' },
-  resp: { __v_isRef: true, value: null },
-  processingJob: { __v_isRef: true, value: null },
-  processingError: { __v_isRef: true, value: '' },
-  uploadState: { __v_isRef: true, value: null },
-  processingJobId: { __v_isRef: true, value: null },
-  exportJob: { __v_isRef: true, value: null },
-  exportError: { __v_isRef: true, value: '' },
-  pendingRemove: { __v_isRef: true, value: null },
-  updateFiles: vi.fn(() => { replayState.files.value = [] }),
-  startProcessingJob: vi.fn(),
-  cancelProcessing: vi.fn(),
-  dismissProcessingJob: vi.fn(),
-  requestDirectAction: vi.fn(() => Promise.resolve({ processingJobId: 'job-1', sourceId: 'r0' })),
-  askRemoveFile: vi.fn(),
-  cancelRemove: vi.fn(),
-  confirmRemove: vi.fn(),
-  cancelExportJob: vi.fn(),
-  downloadExportResult: vi.fn(),
-  dismissExportJob: vi.fn(),
-}))
+// useReplay mock 返回的可变 state 占位：每次 beforeEach 用 buildState() 以真实 Vue ref 重建。
+const hold = vi.hoisted(() => ({ state: null }))
 
 vi.mock('../composables/useReplay.js', () => ({
-  useReplay: () => replayState,
+  useReplay: () => hold.state,
   chooseInitialResultTab: () => 'aggregate',
 }))
 vi.mock('./ReplayPage.vue', () => ({
@@ -75,6 +54,43 @@ vi.mock('../composables/useNativeReplayImport.js', () => ({
 }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k, te: () => true }) }))
 
+/** 以真实 Vue ref/函数构造 useReplay 返回物（保证 files/resp/processingJobId/selectionRevision 响应式）。 */
+function buildState() {
+  return {
+    files: ref([]),
+    selectionRevision: ref(0),
+    activeTab: ref('aggregate'),
+    resp: ref(null),
+    processingJob: ref(null),
+    processingError: ref(''),
+    uploadState: ref(null),
+    processingJobId: ref(null),
+    exportJob: ref(null),
+    exportError: ref(''),
+    pendingRemove: ref(null),
+    updateFiles: vi.fn((next) => {
+      hold.state.files.value = next
+      hold.state.selectionRevision.value++
+      hold.state.activeTab.value = 'aggregate'
+      hold.state.processingJobId.value = null
+      hold.state.resp.value = null
+      hold.state.processingJob.value = null
+    }),
+    startProcessingJob: vi.fn(),
+    cancelProcessing: vi.fn(),
+    dismissProcessingJob: vi.fn(),
+    requestDirectAction: vi.fn(() => Promise.resolve({ processingJobId: 'job-1', sourceId: 'r0' })),
+    askRemoveFile: vi.fn(),
+    cancelRemove: vi.fn(),
+    confirmRemove: vi.fn(),
+    cancelExportJob: vi.fn(),
+    downloadExportResult: vi.fn(),
+    dismissExportJob: vi.fn(),
+  }
+}
+
+let replayState = null
+
 function mountWorkspace(capability = 'data', { authenticated = true, login = vi.fn(), authInit } = {}) {
   return mount(ReplayWorkspace, {
     props: { initialCapability: capability },
@@ -92,12 +108,8 @@ function mountWorkspace(capability = 'data', { authenticated = true, login = vi.
 
 describe('ReplayWorkspace', () => {
   beforeEach(() => {
-    replayState.files.value = []
-    replayState.activeTab.value = 'aggregate'
-    replayState.resp.value = null
-    replayState.processingJob.value = null
-    replayState.processingJobId.value = null
-    replayState.requestDirectAction.mockClear()
+    replayState = buildState()
+    hold.state = replayState
     vi.clearAllMocks()
   })
 
@@ -366,5 +378,91 @@ describe('ReplayWorkspace', () => {
     uploader.vm.$emit('update:files', [single])
     await flushPromises()
     expect(replayState.updateFiles).toHaveBeenCalledWith([single])
+  })
+
+  it('Case1（生产）：playback tab 上传单 replay → READY 后自动 prepare + 显示，无需切 tab', async () => {
+    // 复现「在途 prepare 被 selectionRevision reset 丢弃」的时序：requestDirectAction 在 READY 前挂起。
+    let resolveRA
+    replayState.requestDirectAction.mockImplementation(() => new Promise((res) => { resolveRA = res }))
+    const file = new File(['x'], 'a.wotbreplay')
+    replayState.files.value = []
+    replayState.resp.value = null
+    replayState.processingJobId.value = null
+    const wrapper = mountWorkspace('playback')
+    await flushPromises()
+
+    // 上传（更新 selection；reconcile 会 prepare，requestDirectAction 挂起）
+    replayState.updateFiles([file])
+    await flushPromises()
+    expect(replayState.requestDirectAction).toHaveBeenCalledTimes(1)
+
+    // READY：processingJobId + resp 出现（同一 selectionRevision，不切 tab）
+    replayState.processingJobId.value = 'job-1'
+    replayState.resp.value = { leagueMode: false, aggregate: [], battles: [{ sourceId: 'r0', mapName: 'Lagoon', players: [] }] }
+    await flushPromises()
+
+    // 模拟 source READY 后 resolve 在途 requestDirectAction
+    resolveRA({ processingJobId: 'job-1', sourceId: 'r0' })
+    await flushPromises()
+
+    const pb = wrapper.findComponent({ name: 'BattlePlaybackPanelMock' })
+    expect(pb.props('processingJobId')).toBe('job-1')
+    expect(pb.props('sourceId')).toBe('r0')
+    // 同一 identity 不重复请求（幂等 + 在途不重发）
+    expect(replayState.requestDirectAction).toHaveBeenCalledTimes(1)
+  })
+
+  it('Case2（生产）：data READY → playback → data，resp/files/processingJobId 保留、无空状态', async () => {
+    const file = new File(['x'], 'a.wotbreplay')
+    replayState.files.value = [file]
+    replayState.processingJobId.value = 'job-1'
+    replayState.resp.value = {
+      leagueMode: false,
+      aggregate: [{ a: 1 }],
+      battles: [{ sourceId: 'r0', mapName: 'Lagoon', players: [] }],
+    }
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+    expect(replayState.resp.value).toBeTruthy()
+
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
+    await flushPromises()
+    expect(replayState.resp.value).toBeTruthy()
+    expect(replayState.files.value.length).toBe(1)
+
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="data"]').trigger('click')
+    await flushPromises()
+    expect(replayState.resp.value).toBeTruthy()
+    expect(replayState.files.value.length).toBe(1)
+    expect(replayState.processingJobId.value).toBe('job-1')
+    expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
+  })
+
+  it('currentBattleId 跨 capability 保持（data → playback → data 不丢选中单场）', async () => {
+    const files = [new File(['x'], 'f0.wotbreplay'), new File(['x'], 'f1.wotbreplay'), new File(['x'], 'f2.wotbreplay')]
+    replayState.files.value = files
+    replayState.processingJobId.value = 'job-1'
+    replayState.resp.value = {
+      leagueMode: false,
+      aggregate: [{ a: 1 }],
+      battles: [
+        { sourceId: 'r0', mapName: 'A', players: [] },
+        { sourceId: 'r2', mapName: 'B', players: [] },
+      ],
+    }
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+    // 选第二场 r2
+    await wrapper.find('[data-testid="ws-batch-selector"]').trigger('click')
+    await wrapper.findAll('.ws-batch-item')[1].trigger('click')
+    await flushPromises()
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
+    await flushPromises()
+    const pb = wrapper.findComponent({ name: 'BattlePlaybackPanelMock' })
+    expect(pb.props('file')?.name).toBe('f2.wotbreplay')
+    // 切回 data：currentBattleId 仍指向 r2（selected battle 不丢）
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="data"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="ws-batch-selector"]').exists()).toBe(true)
   })
 })

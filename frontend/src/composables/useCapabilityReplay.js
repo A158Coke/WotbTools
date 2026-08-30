@@ -11,8 +11,10 @@ import { fileKey } from '../utils/helpers.js'
  * （processingJobId + sourceId）就绪——绝不重传 / 重 parse。
  *
  * 每个 capability（ai / playback）各持有一份，保证 AI 失败不污染 Playback、反之亦然。
- * 目标文件由 Workspace 的「active replay」显式传入（单文件 = 该文件；多文件 = 显式选择），
- * 不做隐式 files watcher——避免两个 capability 在数据 tab 也被自动 prepare。
+ * 目标文件与 identity 由 Workspace 的单一 reconcile 驱动（见 ReplayWorkspace.vue），
+ * 本 composable 不做隐式 files watcher。identity = `${fileKey(file)}|${selectionRevision}`，
+ * 同一 identity + 已 resolve 的 datasetRef → 幂等 no-op；identity 变化 / 未 resolve → (re)prepare；
+ * 任何一次 `reset()`（仅 capability 自身）会作废在途 prepare（token guard），但不会清除 replay 核心状态。
  */
 export function useCapabilityReplay(replay) {
   const { t, te } = useI18n()
@@ -21,43 +23,78 @@ export function useCapabilityReplay(replay) {
   const targetFile = ref(null)
   const datasetRef = ref(null)
   const datasetError = ref('')
-  let prepareRevision = 0
+  /** 在途 prepare 的认领 token：每次 (re)prepare / reset 自增，旧请求 resolve/reject 前校验，纯丢弃。 */
+  let prepareToken = 0
+  /** 已绑定的 identity：`${fileKey(file)}|${selectionRevision}`；null = 未绑定。 */
+  let boundIdentity = null
+  /** 当前 boundIdentity 是否有在途 requestDirectAction（防止同一 identity 重复 prepare / READY 后再触发）。 */
+  let inFlight = false
 
   function reset() {
-    prepareRevision++
+    prepareToken++
+    inFlight = false
+    boundIdentity = null
     targetFile.value = null
     datasetRef.value = null
     datasetError.value = ''
   }
 
   /**
-   * 为指定文件准备 Dataset 引用。同一文件重复调用是 no-op（requestDirectAction 内部已单飞）。
-   * @param {object} file 目标文件
-   * @param {{force?: boolean}} opts force=true 强制重新准备（dataset 过期/缺失时恢复用，跳过幂等守卫）。
+   * 真正准备：绑定 file、清空旧结果、用 token 认领一次 requestDirectAction。
+   * stale/abort/迟到 response 一律 pure discard（token + fileKey 双守卫）。
    */
-  function prepareForFile(file, { force = false } = {}) {
-    if (!file) {
-      targetFile.value = null
-      datasetRef.value = null
-      datasetError.value = ''
-      return
-    }
-    // 幂等（plan §9.1）：同一目标文件（按 fileKey 稳定比较，Vue ref 对对象赋值为 reactive Proxy，
-    // 不能用 ===）、已有 dataset 引用 → 不复位、不重复请求、不闪断。
-    if (!force && targetFile.value && datasetRef.value && fileKey(targetFile.value) === fileKey(file)) return
+  function prepare(file) {
+    const fileKeyNow = fileKey(file)
+    targetFile.value = file
     datasetRef.value = null
     datasetError.value = ''
-    targetFile.value = file
-    const revision = ++prepareRevision
+    const token = ++prepareToken
+    inFlight = true
     requestDirectAction(file).then((refValue) => {
-      if (revision !== prepareRevision || !targetFile.value || fileKey(targetFile.value) !== fileKey(file)) return
+      inFlight = false
+      if (token !== prepareToken || !targetFile.value || fileKey(targetFile.value) !== fileKeyNow) return
       datasetRef.value = refValue
       datasetError.value = ''
     }).catch((e) => {
-      if (revision !== prepareRevision || !targetFile.value || fileKey(targetFile.value) !== fileKey(file)) return
+      inFlight = false
+      if (token !== prepareToken || !targetFile.value || fileKey(targetFile.value) !== fileKeyNow) return
       datasetError.value = apiErrorLabel(t, te, e)
       datasetRef.value = null
     })
+  }
+
+  /**
+   * Workspace 单一 reconcile 入口（幂等 + token-guarded）。
+   * @param {{file: object|null, selectionRevision: number, active?: boolean}} spec
+   *   active=false（非演出中的 capability）→ 保持不动（交由各自 capability 切换时再 reconcile）。
+   */
+  function reconcile({ file, selectionRevision, active = true }) {
+    // 非活跃 capability：不主动 prepare，也不清除（切换时再 reconcile）。
+    if (!active) return
+    if (!file) {
+      reset()
+      return
+    }
+    const identity = `${fileKey(file)}|${selectionRevision}`
+    if (boundIdentity === identity) {
+      // 幂等：已 resolve → no-op；在途 → 让它完成（不重复请求）；失败（datasetError）→ 保持，交由 recover 重试。
+      if (datasetRef.value || inFlight) return
+      return
+    }
+    boundIdentity = identity
+    prepare(file)
+  }
+
+  /** 为指定文件准备 Dataset 引用（back-compat；用于无 selectionRevision 上下文的直接调用）。 */
+  function prepareForFile(file, { force = false } = {}) {
+    if (!file) {
+      reset()
+      return
+    }
+    const identity = `${fileKey(file)}|0`
+    if (!force && boundIdentity === identity && datasetRef.value) return
+    boundIdentity = identity
+    prepare(file)
   }
 
   /**
@@ -69,11 +106,15 @@ export function useCapabilityReplay(replay) {
       datasetError.value = t('workspace.dataset_prepare_failed')
       return
     }
-    prepareForFile(file, { force: true })
+    // 强制重建：即使 datasetRef 已 resolve（过期）也重新请求；保留当前 identity 以便 stale-guard。
+    prepare(file)
   }
 
   /** 多文件未显式选择时的本地化提示（由 Workspace 判断后调用）。 */
   function setLimitError() {
+    prepareToken++ // 作废任何在途 prepare，阻止迟到响应写回
+    inFlight = false
+    boundIdentity = null
     datasetError.value = t('workspace.single_replay_required')
     targetFile.value = null
     datasetRef.value = null
@@ -84,6 +125,7 @@ export function useCapabilityReplay(replay) {
     datasetRef,
     datasetError,
     prepareForFile,
+    reconcile,
     recover,
     reset,
     setLimitError,

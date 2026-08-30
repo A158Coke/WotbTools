@@ -101,17 +101,36 @@ const battleOptions = computed(() => {
 const aiReplay = useCapabilityReplay(workspace.replay)
 const playbackReplay = useCapabilityReplay(workspace.replay)
 
-/** 切到 ai / playback 且目标文件确定时准备 Dataset（绝不重传 / 重 parse）。 */
-watch([activeCapability, workspace.currentTargetFile], ([cap, file]) => {
-  if (cap !== 'ai' && cap !== 'playback') return
-  if (files.value.length > 1 && !file) {
+/**
+ * 单一 reconcile：由 authoritative Workspace 源（活跃 capability + currentBattleId/sourceId +
+ * processingJobId + files + selectionRevision）驱动，只准备「当前活跃」capability 的 dataset。
+ * capability 切换 / 上传 / READY / 选场任一变化都会重新推导目标文件并按 identity 幂等 prepare；
+ * 绝不 reset 基础 replay state（files/resp/currentBattleId/processingJob）——data/ai/playback
+ * 只是消费同一 Workspace state 的 capability（生产 Bug：Playback READY 后不自动显示 / 切换丢结果）。
+ */
+watch(
+  [
+    activeCapability,
+    workspace.currentBattleId,
+    workspace.currentProcessingJobId,
+    workspace.currentTargetFile,
+    workspace.replay.selectionRevision,
+    workspace.replay.files,
+  ],
+  () => {
+    const cap = activeCapability.value
+    // data 是基础能力，不需要 capability dataset。
+    if (cap !== 'ai' && cap !== 'playback') return
     const helper = cap === 'ai' ? aiReplay : playbackReplay
-    helper.setLimitError()
-    return
-  }
-  const helper = cap === 'ai' ? aiReplay : playbackReplay
-  if (file) helper.prepareForFile(file)
-})
+    const file = workspace.currentTargetFile.value
+    if (workspace.replay.files.value.length > 1 && !file) {
+      helper.setLimitError()
+      return
+    }
+    helper.reconcile({ file, selectionRevision: workspace.replay.selectionRevision.value })
+  },
+  { immediate: true },
+)
 
 /**
  * Replay Workspace 全部要求登录：三个 capability（data / ai / playback）都走 auth gate。
@@ -179,11 +198,6 @@ watch(() => props.initialCapability, (val) => {
   if (val) workspace.setWorkspaceTab(val)
 }, { immediate: true })
 
-// selection 变化（上传/替换/清空/删 battle）→ 两个 capability 的 Dataset 引用失效，防止旧 source 被复用。
-watch(() => workspace.replay.selectionRevision.value, () => {
-  aiReplay.reset()
-  playbackReplay.reset()
-})
 </script>
 
 <template>
