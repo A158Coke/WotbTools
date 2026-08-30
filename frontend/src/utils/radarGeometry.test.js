@@ -102,4 +102,28 @@ describe('radarGeometry visual scale', () => {
     expect(overlaps).toBe(false)
     expect(counterOverlap).toBe(false)
   })
+
+  it('keeps the V5 bounded 150 RC badge clear of its seven-axis label', () => {
+    const scores = [119, 113, 91, 150, 86, 124, 24]
+    const positions = radarScoreLabelLayout(
+      scores.map(score => score / RADAR.DISPLAY_CAP), scores.map(String))
+    const rc = positions[3]
+    const [labelX, labelY] = axisPoint(3, 7, RADAR.LABEL_RADIUS)
+    const badgeRect = {
+      left: rc.x - rc.width / 2,
+      right: rc.x + rc.width / 2,
+      top: rc.y - RADAR.SCORE_BADGE_HEIGHT / 2,
+      bottom: rc.y + RADAR.SCORE_BADGE_HEIGHT / 2,
+    }
+    const labelRect = {
+      left: labelX - 9,
+      right: labelX + 9,
+      top: labelY - 6,
+      bottom: labelY + 6,
+    }
+    const overlaps = badgeRect.left < labelRect.right && badgeRect.right > labelRect.left
+      && badgeRect.top < labelRect.bottom && badgeRect.bottom > labelRect.top
+    expect(rc.ratio).toBeLessThan(1)
+    expect(overlaps).toBe(false)
+  })
 })
