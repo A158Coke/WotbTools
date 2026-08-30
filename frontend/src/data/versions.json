@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.53",
+    "date": "2026-08-30",
+    "tag": "fix",
+    "zh": "修复战局回放可能在数据缺失时静默消失的问题；战局回放提升为默认主视图，地图鸟瞰转为辅助视图。回放工作台布局调整：当前回放选择与解析文件摘要移至上传区域，顶部只保留标题与能力切换。",
+    "en": "Fixed battle playback silently disappearing when data was missing; playback is now the default primary view with map overview as a secondary view. Replay Workspace layout: the current-replay selector and batch summary move to the upload area, leaving only the title and capability switch at the top.",
+    "ru": "Исправлено молчаливое исчезновение воспроизведения боя при отсутствии данных; теперь это основной вид по умолчанию, а карта — вспомогательный. Раскладка: выбор текущего боя и сводка перенесены в область загрузки; вверху остаются только заголовок и переключатель возможностей."
+  },
+  {
     "v": "2.12.52",
     "date": "2026-08-30",
     "tag": "chg",

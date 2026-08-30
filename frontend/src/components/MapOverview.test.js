@@ -103,9 +103,9 @@ function makeOverview(overrides = {}) {
   }
 }
 
-function mountOverview(overview, playbackV2 = null) {
+function mountOverview(overview) {
   return mount(MapOverview, {
-    props: { overview, playbackV2 },
+    props: { overview },
     global: { mocks: { $t: i18n.t } }
   })
 }
@@ -332,42 +332,20 @@ describe('MapOverview', () => {
     expect(Number(spawn.attributes('cy'))).toBeCloseTo(expected.y, 1)
   })
 
-  it('shows the playback tab and view only when playback data exists', async () => {
-    const withPlayback = makeOverview({
-      recorderAccountId: 1,
-      playbackV2: { durationSec: 60, vehicles: [], events: [], shots: [], pointsSamples: [] }
-    })
-    const wrapper = mountOverview(withPlayback, withPlayback.playbackV2)
-    expect(wrapper.find('[data-test="map-tab-playback"]').exists()).toBe(true)
-    await wrapper.findAll('.map-tab')[2].trigger('click')
-    expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(true)
-  })
-
-  it('hides the playback tab when playback data is absent', () => {
+  it('是纯地图鸟瞰 secondary：无「战局回放」tab，只有 热力/路线', () => {
     const wrapper = mountOverview(makeOverview())
     expect(wrapper.find('[data-test="map-tab-playback"]').exists()).toBe(false)
+    const tabs = wrapper.findAll('.map-tab')
+    expect(tabs).toHaveLength(2)
+    expect(tabs.map(t => t.text()).join(',')).toContain('recon.map.view_heatmap')
+    expect(tabs.map(t => t.text()).join(',')).toContain('recon.map.view_routes')
+    // 默认热力视图渲染地图 SVG
+    expect(wrapper.find('.map-svg').exists()).toBe(true)
   })
 
-  it('switches to playback view when seekTo is provided', async () => {
-    const withPlayback = makeOverview({
-      recorderAccountId: 1,
-      playbackV2: { durationSec: 60, vehicles: [], events: [], shots: [], pointsSamples: [] }
-    })
-    const wrapper = mount(MapOverview, {
-      props: { overview: withPlayback, seekTo: 30, playbackV2: withPlayback.playbackV2 },
-      global: { mocks: { $t: i18n.t } }
-    })
-    await flushPromises()
-    expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(true)
-  })
-
-  it('keeps the current view when seekTo is provided but playback data is absent', async () => {
-    const wrapper = mount(MapOverview, {
-      props: { overview: makeOverview(), seekTo: 30 },
-      global: { mocks: { $t: i18n.t } }
-    })
-    await flushPromises()
-    expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(false)
-    expect(wrapper.find('svg').exists()).toBe(true)
+  it('route view > svg 仍存在（无 playback 分支）', async () => {
+    const wrapper = mountOverview(makeOverview())
+    await wrapper.findAll('.map-tab')[1].trigger('click')
+    expect(wrapper.find('.map-svg').exists()).toBe(true)
   })
 })

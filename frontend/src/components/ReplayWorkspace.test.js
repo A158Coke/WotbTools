@@ -282,4 +282,33 @@ describe('ReplayWorkspace', () => {
     const aiVm = wrapper.findComponent({ name: 'AiReviewPanelMock' })
     expect(aiVm.props('file')?.name).toBe('f2.wotbreplay')
   })
+
+  it('布局：header 无 batch-selector / top capability status flags；source section 承载批次 + 当前回放 selector', async () => {
+    const files = [
+      new File(['x'], 'f0.wotbreplay'),
+      new File(['x'], 'f1.wotbreplay'),
+    ]
+    replayState.files.value = files
+    replayState.resp.value = {
+      leagueMode: false,
+      aggregate: [{ a: 1 }],
+      battles: [
+        { sourceId: 'r0', mapName: 'Lagoon', players: [] },
+        { sourceId: 'r1', mapName: 'Desert', players: [] },
+      ],
+    }
+    replayState.processingJobId.value = 'job-1'
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+
+    // header：不再有 当前回放 selector / 第二套 status 按钮。
+    expect(wrapper.find('.workspace-header [data-testid="ws-batch-selector"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="cap-base"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="cap-ai"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="cap-playback"]').exists()).toBe(false)
+    // Replay source section：批次 + 当前回放 selector。
+    expect(wrapper.find('.replay-source').exists()).toBe(true)
+    expect(wrapper.find('.replay-source [data-testid="ws-batch-selector"]').exists()).toBe(true)
+    expect(wrapper.find('.replay-source').text()).toContain('workspace.batch_count')
+  })
 })
