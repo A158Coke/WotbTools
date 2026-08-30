@@ -301,12 +301,13 @@ describe('FileUploader 文件列表与回放工作台', () => {
     expect(emitted[0][0].map(f => f.name)).toEqual(['b.wotbreplay'])
   })
 
-  it('single-file 模式：已有文件时隐藏 Add/folder；新选文件 replace，绝不合成 [A,B]', async () => {
+  it('single-file 模式：Add 单文件入口存在（multiple=false），folder 不出现；新选文件 replace，绝不合成 [A,B]', async () => {
     const a = makeFiles(1)[0]
     const b = makeFiles(1)[0]
     const { wrapper } = mountUploader([a], false, { allowFolder: false })
-    // filebar 展示时不应出现 Add / folder 入口（无法通过 UI 追加第二个）
-    expect(wrapper.find('[data-testid="add-files-input"]').exists()).toBe(false)
+    // AI / Playback 单文件模式：允许重新选择（replace）→ Add 单文件入口存在，folder 入口隐藏。
+    expect(wrapper.find('[data-testid="add-files-input"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="add-files-input"]').attributes('multiple')).toBeUndefined()
     expect(wrapper.find('[data-testid="add-folder-input"]').exists()).toBe(false)
     // drag/drop 新文件 → replace 当前文件（emit [b]，仅 1 个，绝不先得到 [a,b] 再报 single_replay_required）
     await wrapper.find('.uploadwrap').trigger('drop', { dataTransfer: { files: [b] } })
