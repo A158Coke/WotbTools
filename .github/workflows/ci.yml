@@ -138,6 +138,21 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
+  android-release-helpers:
+    name: Android release helpers (pure logic, no secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Shell syntax check
+        run: |
+          set -euo pipefail
+          bash -n scripts/android-release/resolve-version.sh
+          bash -n scripts/android-release/check-release-guards.sh
+          bash -n scripts/android-release/test-release.sh
+      - name: Release helper unit tests
+        run: bash scripts/android-release/test-release.sh
+
   observability-config:
     name: Observability config validation
     runs-on: ubuntu-latest

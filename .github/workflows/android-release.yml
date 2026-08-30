@@ -1,12 +1,24 @@
 name: Android Release
-# 仅 `android-vX.Y.Z` 标签触发；普通 Web deploy 不构建 APK（规格 §58）。
+# 一键发布（推荐）: Actions -> Android Release -> Run workflow -> 输入 X.Y.Z。
+# 兼容入口: `android-v*` tag push（自动发布，逻辑与 workflow_dispatch 完全一致）。
+# 两条入口统一走同一套 Resolve release metadata / fail-fast guards / 发布协议。
+# 发布全程 fail-closed + 幂等：APK/tag/version.json 任一步失败后重跑同一版本都安全，
+# 不会双写、不会覆盖 immutable APK、不会 repoint tag。
 on:
   push:
     tags:
       - "android-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Android version, e.g. 1.0.2"
+        required: true
+        type: string
 
 permissions:
-  contents: read
+  # 需要 contents: write 以便 workflow_dispatch 自动创建 release tag (GITHUB_TOKEN)。
+  # 不增加无关权限（不创建 GitHub Release）。
+  contents: write
 
 concurrency:
   group: android-release
@@ -14,6 +26,7 @@ concurrency:
 
 env:
   ANDROID_MIN_SUPPORTED_VERSION_CODE: ${{ vars.ANDROID_MIN_SUPPORTED_VERSION_CODE || '1000000' }}
+  ANDROID_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 || '' }}
   ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
   ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
   ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -24,30 +37,136 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout release source
+        uses: actions/checkout@v5
+        with:
+          # 手工发布固定 main；tag push 固定在触发 tag 对应 commit。
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          fetch-depth: 0
 
-      - name: Parse version from tag
+      - name: Resolve release metadata
         id: version
         shell: bash
+        env:
+          WOTB_TRIGGER: ${{ github.event_name }}
+          WOTB_INPUT_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#android-v}"
-          MAJOR="${TAG_VERSION%%.*}"
-          REST="${TAG_VERSION#*.}"
-          MINOR="${REST%%.*}"
-          PATCH="${REST#*.}"
-          if [[ "$PATCH" == "$REST" ]]; then PATCH="0"; fi
-          VERSION_CODE=$(( MAJOR * 1000000 + MINOR * 1000 + PATCH ))
-          echo "versionName=$TAG_VERSION" >> "$GITHUB_OUTPUT"
-          echo "versionCode=$VERSION_CODE" >> "$GITHUB_OUTPUT"
-          echo "apkName=wotbtools-android-v${TAG_VERSION}.apk" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          export WOTB_COMMIT="$(git rev-parse HEAD)"
+          scripts/android-release/resolve-version.sh >> "$GITHUB_OUTPUT"
+
+      - name: Validate source is main (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_SHA="${{ steps.version.outputs.commit }}"
+          echo "Release source:"
+          echo "branch=main"
+          echo "commit=$BUILD_SHA"
+          echo "version=${{ steps.version.outputs.versionName }}"
+          echo "versionCode=${{ steps.version.outputs.versionCode }}"
+          echo "tag=${{ steps.version.outputs.tagName }}"
+          echo "apk=${{ steps.version.outputs.apkName }}"
+          git fetch origin main
+          ORIGIN_MAIN="$(git rev-parse origin/main)"
+          if [ "$BUILD_SHA" != "$ORIGIN_MAIN" ]; then
+            echo "::error::Release must run from origin/main HEAD (checked out $BUILD_SHA != origin/main $ORIGIN_MAIN)." >&2
+            exit 1
+          fi
+
+      - name: Preflight classify production state (safe + idempotent)
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_CODE="${{ steps.version.outputs.versionCode }}"
+          VERSION_NAME="${{ steps.version.outputs.versionName }}"
+          APK_NAME="${{ steps.version.outputs.apkName }}"
+          PROD_JSON="$RUNNER_TEMP/prod-version.json"
+          URL="https://wotbtools.com/download/android/version.json"
+          CODE="$(curl -s -o "$PROD_JSON" -w '%{http_code}' "$URL")"
+          . scripts/android-release/check-release-guards.sh
+          case "$CODE" in
+            404)
+              echo "First Android release: production version.json HTTP 404."
+              PROD_STATE="prod_absent"
+              ;;
+            200)
+              classify_prod "$PROD_JSON" "$VERSION_CODE" "$VERSION_NAME" "$APK_NAME" "$ANDROID_MIN_SUPPORTED_VERSION_CODE"
+              ;;
+            *)
+              echo "::error::Unexpected HTTP $CODE fetching production version.json" >&2
+              exit 1
+              ;;
+          esac
+          guard_min_supported "$ANDROID_MIN_SUPPORTED_VERSION_CODE" "$VERSION_CODE"
+          echo "Production state: $PROD_STATE"
+          case "$PROD_STATE" in
+            prod_absent|prod_older)
+              echo "No conflicting production version; proceeding to release."
+              echo "releaseAction=publish" >> "$GITHUB_OUTPUT"
+              ;;
+            prod_equal_ok)
+              # Same version & metadata coherent is NOT auto-success: verify the
+              # already-published artifacts are still valid before no-op success.
+              echo "Same version & metadata coherent; verifying existing release."
+              PUBLISHED_SHA="$PROD_PUBLISHED_SHA"
+              APK_URL="https://wotbtools.com/download/android/$APK_NAME"
+              TMP_EXISTING="$RUNNER_TEMP/existing-release.apk"
+              if ! curl -fsSL -o "$TMP_EXISTING" "$APK_URL" 2>/dev/null; then
+                echo "::error::Existing release APK not reachable at apkUrl; refusing already-published." >&2
+                exit 1
+              fi
+              test -s "$TMP_EXISTING" || { echo "::error::Existing release APK is empty; refusing already-published." >&2; exit 1; }
+              ACTUAL_SHA="$(sha256sum "$TMP_EXISTING" | awk '{print $1}')"
+              classify_prod_apk "$ACTUAL_SHA" "$PUBLISHED_SHA"
+              case "$APK_STATE" in
+                apk_equal)
+                  echo "Existing release APK SHA-256 matches published version.json."
+                  ;;
+                apk_absent)
+                  echo "::error::Existing release APK missing; refusing already-published." >&2
+                  exit 1
+                  ;;
+                apk_conflict)
+                  echo "::error::Existing release APK SHA-256 differs from published version.json; refusing already-published." >&2
+                  exit 1
+                  ;;
+              esac
+              if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                TAG="${{ steps.version.outputs.tagName }}"
+                COMMIT_SHA="${{ steps.version.outputs.commit }}"
+                REFS="$(git ls-remote --tags origin "refs/tags/$TAG")"
+                classify_tag "$REFS" "$TAG" "$COMMIT_SHA"
+                if [ "$TAG_STATE" != "tag_equal" ]; then
+                  echo "::error::Existing release tag must exist and point to expected commit (got $TAG_STATE); refusing already-published." >&2
+                  exit 1
+                fi
+                echo "Existing release tag verified (points to expected commit)."
+              fi
+              echo "Existing release fully verified; safe success (no-op)."
+              echo "releaseAction=already-published" >> "$GITHUB_OUTPUT"
+              ;;
+            prod_equal_conflict)
+              echo "::error::Production version.json for the same versionCode does not match release metadata." >&2
+              exit 1
+              ;;
+            prod_newer)
+              echo "::error::Android release rollback rejected: production latestVersionCode is newer than this version." >&2
+              exit 1
+              ;;
+          esac
 
       - uses: actions/setup-node@v4
+        if: steps.preflight.outputs.releaseAction == 'publish'
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Frontend tests + build validation
+        if: steps.preflight.outputs.releaseAction == 'publish'
         working-directory: frontend
         run: |
           npm ci --no-audit --no-fund
@@ -55,19 +174,23 @@ jobs:
           npm run build
 
       - uses: actions/setup-java@v4
+        if: steps.preflight.outputs.releaseAction == 'publish'
         with:
           distribution: temurin
           java-version: "21"
 
       - uses: gradle/actions/setup-gradle@v4
+        if: steps.preflight.outputs.releaseAction == 'publish'
         with:
           gradle-version: "8.7"
 
       - name: Prepare staging directory (workspace-relative, 服务器路径严格)
+        if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: mkdir -p release-staging
 
       - name: Validate signing config and restore keystore (fail-fast; secrets 不出现在日志)
+        if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
           set -euo pipefail
@@ -100,6 +223,7 @@ jobs:
           echo "Signing config validated (alias present)."
 
       - name: Build signed release APK
+        if: steps.preflight.outputs.releaseAction == 'publish'
         working-directory: android
         shell: bash
         env:
@@ -114,15 +238,43 @@ jobs:
             -PwotbKeyAlias="$ANDROID_KEY_ALIAS" \
             -PwotbKeyPass="$ANDROID_KEY_PASSWORD"
 
-      - name: Verify APK signature
+      - name: Verify APK signature and signing certificate fingerprint
+        if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
+          set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
-          test -f "$APK"
-          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
-          "$APKSIGNER" verify --verbose "$APK"
+          test -f "$APK" || { echo "::error::APK not found" >&2; exit 1; }
+          test -s "$APK" || { echo "::error::APK is empty" >&2; exit 1; }
+
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+
+          # 提取 signer 证书 SHA-256（归一化为大写、去冒号）。指纹属公开证书信息，可输出。
+          CERT_FP="$( "$APKSIGNER" verify --print-certs "$APK" 2>/dev/null \
+            | grep -i 'SHA-256 digest' \
+            | head -n1 \
+            | grep -oiE '[0-9a-fA-F]{64}' \
+            | head -n1 \
+            | tr 'a-f' 'A-F' )"
+          EXPECTED_FP="$(printf '%s' "$ANDROID_SIGNING_CERT_SHA256" | tr -d ':' | tr 'a-f' 'A-F')"
+
+          if [ -z "$EXPECTED_FP" ]; then
+            echo "::error::ANDROID_SIGNING_CERT_SHA256 is not configured. Extract the fingerprint from the known production signing certificate and configure it as a GitHub Actions Variable." >&2
+            exit 1
+          fi
+          if [ -z "$CERT_FP" ]; then
+            echo "::error::Could not extract signing certificate SHA-256 fingerprint from APK." >&2
+            exit 1
+          fi
+          if [ "$CERT_FP" != "$EXPECTED_FP" ]; then
+            echo "::error::Android signing certificate mismatch: expected $ANDROID_SIGNING_CERT_SHA256, got $CERT_FP" >&2
+            exit 1
+          fi
+          echo "Signing certificate SHA-256 verified (public fingerprint)."
 
       - name: Compute SHA-256 and stage APK
+        if: steps.preflight.outputs.releaseAction == 'publish'
         id: artifact
         shell: bash
         run: |
@@ -133,7 +285,35 @@ jobs:
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "apkName=$APK_NAME" >> "$GITHUB_OUTPUT"
 
+      - name: Classify production APK (idempotent upload)
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        id: apkcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          . scripts/android-release/check-release-guards.sh
+          APK_NAME="${{ steps.artifact.outputs.apkName }}"
+          BUILD_SHA="${{ steps.artifact.outputs.sha256 }}"
+          URL="https://wotbtools.com/download/android/$APK_NAME"
+          TMP_PROD="$RUNNER_TEMP/prod-apk-check.apk"
+          PROD_SHA=""
+          if curl -fsSL -o "$TMP_PROD" "$URL" 2>/dev/null; then
+            test -s "$TMP_PROD" || { echo "::error::Production APK exists but is empty" >&2; exit 1; }
+            PROD_SHA="$(sha256sum "$TMP_PROD" | awk '{print $1}')"
+          fi
+          classify_prod_apk "$PROD_SHA" "$BUILD_SHA"
+          case "$APK_STATE" in
+            apk_absent) echo "Production APK absent; will upload." ;;
+            apk_equal) echo "Production APK already matches build SHA-256; resuming (no upload)." ;;
+            apk_conflict)
+              echo "::error::Production APK already exists with a different SHA-256; immutable release conflict." >&2
+              exit 1
+              ;;
+          esac
+          echo "apkState=$APK_STATE" >> "$GITHUB_OUTPUT"
+
       - name: Upload APK to VPS (bind-mount 目录)
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.apkState == 'apk_absent'
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -145,6 +325,7 @@ jobs:
           strip_components: 1
 
       - name: Ensure APK readable by nginx
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.apkState == 'apk_absent'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -153,15 +334,54 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: chmod 644 /opt/wotb/android-release/${{ steps.artifact.outputs.apkName }}
 
-      - name: Verify APK accessible before version.json
+      - name: Verify production APK (HTTP 200 + non-empty + SHA matches)
+        if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
-          URL="https://wotbtools.com/download/android/${{ steps.artifact.outputs.apkName }}"
-          STATUS="$(curl -s -o /dev/null -w '%{http_code}' "$URL")"
-          echo "APK HTTP $STATUS $URL"
-          test "$STATUS" = "200"
+          set -euo pipefail
+          APK_NAME="${{ steps.artifact.outputs.apkName }}"
+          EXPECTED_SHA="${{ steps.artifact.outputs.sha256 }}"
+          URL="https://wotbtools.com/download/android/$APK_NAME"
+          TMP_APK="$RUNNER_TEMP/prod.apk"
+          SIZE="$(curl -fsSL -o "$TMP_APK" -w '%{size_download}' "$URL")"
+          test -s "$TMP_APK" || { echo "::error::Downloaded APK is empty" >&2; exit 1; }
+          [ "$SIZE" -gt 0 ] || { echo "::error::APK Content-Length is not > 0" >&2; exit 1; }
+          PROD_SHA="$(sha256sum "$TMP_APK" | awk '{print $1}')"
+          if [ "$PROD_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::Production APK SHA-256 mismatch: expected $EXPECTED_SHA, got $PROD_SHA" >&2
+            exit 1
+          fi
+          echo "Production APK verified: HTTP 200, $SIZE bytes, SHA-256 $PROD_SHA"
 
-      - name: Write version.json (APK 可访问后才发布，规格 §60)
+      - name: Ensure release tag (workflow_dispatch, idempotent)
+        if: github.event_name == 'workflow_dispatch' && steps.preflight.outputs.releaseAction == 'publish'
+        shell: bash
+        run: |
+          set -euo pipefail
+          . scripts/android-release/check-release-guards.sh
+          TAG="${{ steps.version.outputs.tagName }}"
+          COMMIT_SHA="${{ steps.version.outputs.commit }}"
+          REFS="$(git ls-remote --tags origin "refs/tags/$TAG")"
+          classify_tag "$REFS" "$TAG" "$COMMIT_SHA"
+          case "$TAG_STATE" in
+            tag_absent)
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git tag "$TAG" "$COMMIT_SHA"
+              git push origin "$TAG"
+              echo "Created and pushed release tag: $TAG -> $COMMIT_SHA"
+              ;;
+            tag_equal)
+              echo "Release tag already points to this commit; resuming: $TAG -> $COMMIT_SHA"
+              ;;
+            tag_conflict)
+              echo "::error::Release tag $TAG points to a different commit; refusing to repoint." >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Write version.json (APK 可访问后才发布, LAST)
+        if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
           VERSION_SHA="${{ steps.artifact.outputs.sha256 }}"
@@ -175,6 +395,7 @@ jobs:
           cat "release-staging/version.json"
 
       - name: Upload version.json to VPS (LAST)
+        if: steps.preflight.outputs.releaseAction == 'publish'
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -185,10 +406,38 @@ jobs:
           target: /opt/wotb/android-release
           strip_components: 1
 
-      - name: Verify version.json accessible
+      - name: Verify production version.json matches release metadata
+        if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
+          set -euo pipefail
           URL="https://wotbtools.com/download/android/version.json"
-          STATUS="$(curl -s -o /dev/null -w '%{http_code}' "$URL")"
-          echo "version.json HTTP $STATUS $URL"
-          test "$STATUS" = "200"
+          TMP_JSON="$RUNNER_TEMP/prod-version-verify.json"
+          curl -fsSL -o "$TMP_JSON" "$URL"
+          jq -e --argjson code "${{ steps.version.outputs.versionCode }}" \
+                --arg name "${{ steps.version.outputs.versionName }}" \
+                --argjson min "$ANDROID_MIN_SUPPORTED_VERSION_CODE" \
+                --arg url "https://wotbtools.com/download/android/${{ steps.artifact.outputs.apkName }}" \
+                --arg sha "${{ steps.artifact.outputs.sha256 }}" \
+            '.schemaVersion == 1 and .latestVersionCode == $code and .latestVersionName == $name and .minSupportedVersionCode == $min and .apkUrl == $url and .sha256 == $sha' "$TMP_JSON" \
+            || { echo "::error::Production version.json content does not match release metadata" >&2; exit 1; }
+          echo "Production version.json verified (schema/latest/minSupported/apkUrl/sha256)."
+
+      - name: Write release summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "# Android Release ${{ steps.version.outputs.versionName }}"
+            echo ""
+            echo "Status: ${{ job.status }}"
+            echo "Release Action: ${{ steps.preflight.outputs.releaseAction || 'n/a' }}"
+            echo ""
+            echo "Version Name: ${{ steps.version.outputs.versionName }}"
+            echo "Version Code: ${{ steps.version.outputs.versionCode }}"
+            echo "Tag: ${{ steps.version.outputs.tagName }}"
+            echo "Commit: ${{ steps.version.outputs.commit }}"
+            echo "APK: ${{ steps.artifact.outputs.apkName }}"
+            echo "SHA-256: ${{ steps.artifact.outputs.sha256 }}"
+            echo "Signing Certificate SHA-256: ${{ env.ANDROID_SIGNING_CERT_SHA256 }}"
+          } >> "$GITHUB_STEP_SUMMARY"

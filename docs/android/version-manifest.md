@@ -39,6 +39,10 @@
 `android-release.yml` 在 APK 上传且可访问后再生成/发布（原子发布，规格 §60）。手工/回滚调整也只改
 `latestVersionCode` / `minSupportedVersionCode` / `apkUrl`，不得引入 `forceUpdate`。
 
+发布前 `minSupportedVersionCode` 会经过 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 校验
+（`min_supported <= new_versionCode`，否则拒绝发布），确保新版本不会被客户端判为
+「低于最低支持」而直接触发强制更新。
+
 ## nginx 托管
 
 `deploy/nginx/nginx.conf`：
