@@ -65,22 +65,6 @@ const capabilityOptions = [
   { key: 'playback', labelKey: 'workspace.tab_playback' },
 ]
 
-/**
- * Capability 状态拆分（读后端 dataset 契约）。三种能力各自独立：
- * - base：基础解析（processingJob READY -> ready；failed -> failed）
- * - ai / playback：由面板消费 source 的可用性；AI 失败不污染 Playback，反之亦然。
- */
-const capabilityStates = ref({ base: 'idle', ai: 'idle', playback: 'idle' })
-watch(() => processingJob.value, (job) => {
-  if (!job) {
-    capabilityStates.value = { base: 'idle', ai: 'idle', playback: 'idle' }
-    return
-  }
-  if (job.status === 'READY') capabilityStates.value.base = 'ready'
-  else if (job.status === 'FAILED' || job.status === 'CANCELLED') capabilityStates.value.base = 'failed'
-  else capabilityStates.value.base = 'idle'
-})
-
 const activeCapability = workspace.activeWorkspaceTab
 const batchOpen = ref(false)
 let loginAttempted = false
@@ -209,30 +193,7 @@ watch(() => workspace.replay.selectionRevision.value, () => {
         <span class="upload-kicker">WOTBTOOLS · REPLAY WORKSPACE</span>
         <h1>{{ $t('workspace.title') }}</h1>
       </div>
-      <div class="ws-replay-info" v-if="files.length">
-        <span class="ws-batch-count">{{ $t('workspace.batch_count', { count: files.length }) }}</span>
-        <button v-if="currentBattleIndex >= 0" class="ghost sm ws-selector" data-testid="ws-batch-selector" @click="batchOpen = !batchOpen">
-          {{ $t('workspace.current_battle', { name: currentBattleName, idx: currentBattleIndex + 1 }) }} ▾
-        </button>
-        <div v-if="batchOpen && battleOptions.length" class="ws-batch-sheet" data-testid="ws-batch-sheet">
-          <button
-            v-for="opt in battleOptions"
-            :key="opt.sourceId"
-            type="button"
-            class="ws-batch-item"
-            :class="{ active: currentBattleId === opt.sourceId }"
-            @click="selectBattle(opt.sourceId)"
-          >
-            {{ opt.label }}
-          </button>
-        </div>
-      </div>
       <div class="ws-actions">
-        <span v-if="files.length" class="ws-capability-flags">
-          <span class="cap-flag" :class="capabilityStates.base" data-testid="cap-base">{{ $t('workspace.cap_data') }}</span>
-          <span class="cap-flag" :class="capabilityStates.ai" data-testid="cap-ai">{{ $t('workspace.cap_ai') }}</span>
-          <span class="cap-flag" :class="capabilityStates.playback" data-testid="cap-playback">{{ $t('workspace.cap_playback') }}</span>
-        </span>
         <button v-if="files.length" class="ghost sm" @click="clearSelection">{{ $t('workspace.clear') }}</button>
       </div>
     </header>
@@ -252,6 +213,28 @@ watch(() => workspace.replay.selectionRevision.value, () => {
         {{ $t(c.labelKey) }}
       </button>
     </nav>
+
+    <!-- Replay source / upload section：批次状态 + 当前回放 selector + uploader（header 不再放） -->
+    <div v-if="files.length" class="replay-source" data-test="replay-source">
+      <div class="rs-batch-row">
+        <span class="ws-batch-count">{{ $t('workspace.batch_count', { count: files.length }) }}</span>
+        <button v-if="currentBattleIndex >= 0" class="ghost sm ws-selector" data-testid="ws-batch-selector" @click="batchOpen = !batchOpen">
+          {{ $t('workspace.current_battle', { name: currentBattleName, idx: currentBattleIndex + 1 }) }} ▾
+        </button>
+        <div v-if="batchOpen && battleOptions.length" class="ws-batch-sheet" data-testid="ws-batch-sheet">
+          <button
+            v-for="opt in battleOptions"
+            :key="opt.sourceId"
+            type="button"
+            class="ws-batch-item"
+            :class="{ active: currentBattleId === opt.sourceId }"
+            @click="selectBattle(opt.sourceId)"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- 单一上传器 + Processing 面板（Workspace 级，任何能力共享同一 selection / job）。 -->
     <FileUploader
@@ -318,7 +301,6 @@ watch(() => workspace.replay.selectionRevision.value, () => {
   margin-bottom: 10px;
 }
 .ws-title h1 { margin: 2px 0 0; font-size: 1.5rem; }
-.ws-replay-info { display: inline-flex; align-items: center; gap: 8px; min-width: 0; position: relative; }
 .ws-selector { min-height: 30px; }
 .ws-batch-sheet {
   position: absolute;
@@ -341,10 +323,8 @@ watch(() => workspace.replay.selectionRevision.value, () => {
 .ws-batch-item:hover { background: var(--bg-list-hover); }
 .ws-batch-item.active { background: var(--bg-blue); color: var(--accent-dark); font-weight: 700; }
 .ws-actions { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
-.ws-capability-flags { display: inline-flex; gap: 6px; }
-.cap-flag { padding: 3px 8px; border-radius: 6px; font-size: .72rem; font-weight: 700; border: 1px solid var(--border); color: var(--text-sub); }
-.cap-flag.ready { color: var(--status-ok-fg); border-color: color-mix(in srgb, var(--status-ok-fg) 40%, var(--border)); }
-.cap-flag.failed { color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, var(--border)); }
+.replay-source { margin: 0 0 10px; }
+.rs-batch-row { display: inline-flex; align-items: center; gap: 10px; position: relative; }
 .workspace-tabs {
   display: flex;
   gap: 4px;
@@ -377,7 +357,6 @@ watch(() => workspace.replay.selectionRevision.value, () => {
   .workspace-header { gap: 8px; }
   .ws-actions { margin-left: 0; width: 100%; justify-content: space-between; }
   /* 手机端 batch selector 以 bottom-sheet 呈现：贴底、全宽、从上滑入（计划 §16.2）。 */
-  .ws-replay-info { width: 100%; }
   .ws-selector { width: 100%; justify-content: space-between; }
   .ws-batch-sheet {
     position: fixed;

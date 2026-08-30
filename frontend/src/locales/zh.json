@@ -1334,6 +1334,17 @@
         "cancel_btn": "取消分析",
         "analysis_title_player": "AI 复盘",
         "capability_limited": "AI 复盘基于受限时间轴（部分时间信息缺失），已降级到较粗的证据层级，不猜测未观测事实",
+        "playback": {
+            "title": "战局回放",
+            "view_playback": "战斗回放",
+            "view_map": "地图鸟瞰",
+            "loading": "战局回放加载中…",
+            "partial": "部分观测缺失：仅基于可信观测/最后已知状态播放，不猜测未观测事实",
+            "unavailable": "该回放的战局回放不可用（后端未生成 timeline / 数据缺失）",
+            "error": "战局回放加载失败",
+            "retry": "重试",
+            "map_unavailable": "地图底图不可用（缺少可渲染的坐标/素材）"
+        },
         "copy": "复制",
         "copied": "已复制",
         "copy_footer": "由 WotBTools 生成 · https://wotbtools.com",

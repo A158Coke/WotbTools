@@ -13,6 +13,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { localizeAiError, isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
 import MapOverview from './MapOverview.vue'
+import BattlePlayback from './BattlePlayback.vue'
 
 const props = defineProps({
   /** 目标回放文件（null = 尚未选择，显示空态提示）。 */
@@ -64,24 +65,19 @@ const mapOverview = ref(null)
 /** V2 canonical battle-playback dataset（可选；迁移期守卫，加载失败不阻断 legacy map）。 */
 const mapPlaybackV2 = ref(null)
 /**
- * 战局回放完整度（BattlePlaybackDataset.capability：FULL / PARTIAL / UNAVAILABLE）。
- * 后端已诚实标注 limitations；前端仅据此展示降级态，不做任何未观测事实推断。
+ * V2 battle-playback 显式状态机（禁止静默吞掉 204/error）：LOADING | FULL | PARTIAL | UNAVAILABLE | ERROR。
+ * 后端已按 limitations 诚实标注 capability；前端据此展示确定性降级态，不做任何未观测事实推断。
  */
-const playbackCapability = computed(() => mapPlaybackV2.value?.capability || null)
-const playbackCapabilityLabel = computed(() => {
-  switch (playbackCapability.value) {
-    case 'FULL': return t('recon.map.capability_full')
-    case 'PARTIAL': return t('recon.map.capability_partial')
-    case 'UNAVAILABLE': return t('recon.map.capability_unavailable')
-    default: return ''
-  }
-})
+const playbackV2State = ref('LOADING')
+const playbackV2Error = ref('')
+const playbackV2UnavailableReason = ref('')
+const playbackV2Capability = ref(null)
+/** 面板内视图：默认 BattlePlayback 为主；地图鸟瞰为 secondary。 */
+const panelView = ref('playback')
 const mapLoading = ref(false)
 const mapLoaded = ref(false)
 const mapError = ref('')
 const mapSeek = ref(null)
-// 地图区块折叠状态（默认展开）；折叠用 v-show 不销毁 MapOverview，保留视图/播放器状态。
-const mapOpen = ref(true)
 // 换文件竞态防护：每次请求独占一个 generation（递增序号 + AbortController）；
 // 文件变化（resetMap）或组件真正卸载时递增序号并 abort 旧请求，
 // 旧请求在成功/失败/finally 写状态前必须校验序号，绝不覆盖新文件的 mapOverview/mapError/mapLoaded/mapLoading。
@@ -129,9 +125,6 @@ async function loadMapOverview() {
       throw new Error(localizeAiError(errorData, r.status, t))
     } else {
       mapOverview.value = await r.json()
-      // V2 守卫：并排拉取 canonical dataset（fire-and-forget，不扰动 legacy map 的确定性请求
-      // 时序；成功 200 则后端 timeline 可用，失败/204 保持 null 走 legacy）。
-      loadPlaybackV2(controller.signal)
     }
     if (requestSeq !== mapRequestSeq) return
     mapLoaded.value = true
@@ -149,19 +142,75 @@ async function loadMapOverview() {
   }
 }
 
-/** 拉取 V2 canonical battle-playback dataset（fire-and-forget；独立竞态序号，失败静默回退 legacy）。 */
+/**
+ * 拉取 V2 canonical battle-playback dataset（独立竞态序号）。显式状态机，绝不在 204/error 时静默
+ * 置 null 导致 Playback 整块消失。204 → UNAVAILABLE（确定性原因）；非 200 → ERROR（本地化 + retry）；
+ * 200 → FULL/PARTIAL。日志记录 processingJobId / sourceId / V2 status / capability / limitations /
+ * failure code；绝不记录 token。
+ */
 let playbackV2Seq = 0
 async function loadPlaybackV2(signal) {
   const seq = ++playbackV2Seq
+  playbackV2State.value = 'LOADING'
+  playbackV2Error.value = ''
+  playbackV2UnavailableReason.value = ''
+  const logBase = { processingJobId: props.processingJobId, sourceId: props.sourceId }
   try {
     const r = await authedFetch('/api/replay/battle-playback-v2',
       JSON.stringify({ processingJobId: props.processingJobId, sourceId: props.sourceId }),
       { signal })
     if (seq !== playbackV2Seq) return
-    mapPlaybackV2.value = r.status === 200 ? await r.json() : null
-  } catch {
-    if (seq === playbackV2Seq) mapPlaybackV2.value = null
+    if (r.status === 204) {
+      mapPlaybackV2.value = null
+      playbackV2State.value = 'UNAVAILABLE'
+      playbackV2UnavailableReason.value = t('recon.playback.unavailable')
+      // eslint-disable-next-line no-console
+      console.warn('[playback-v2] unavailable (204 / no artifact / timeline not usable)', logBase)
+      return
+    }
+    if (!r.ok) {
+      const raw = await r.text().catch(() => '')
+      const code = raw.trim()
+      mapPlaybackV2.value = null
+      playbackV2State.value = 'ERROR'
+      playbackV2Error.value = localizeAiError({ code }, r.status, t)
+      // eslint-disable-next-line no-console
+      console.warn('[playback-v2] error', { ...logBase, status: r.status, failureCode: code })
+      return
+    }
+    const ds = await r.json()
+    if (seq !== playbackV2Seq) return
+    mapPlaybackV2.value = ds
+    playbackV2Capability.value = ds?.capability || null
+    playbackV2State.value = ds?.capability === 'PARTIAL' ? 'PARTIAL' : 'FULL'
+    // eslint-disable-next-line no-console
+    console.info('[playback-v2] ok', {
+      ...logBase,
+      status: r.status,
+      capability: ds?.capability || null,
+      limitations: ds?.limitations || []
+    })
+  } catch (e) {
+    if (seq !== playbackV2Seq) return
+    if (e && e.name === 'AbortError') {
+      playbackV2State.value = 'LOADING'
+      return
+    }
+    mapPlaybackV2.value = null
+    playbackV2State.value = 'ERROR'
+    playbackV2Error.value = t('recon.playback.error')
+    // eslint-disable-next-line no-console
+    console.warn('[playback-v2] exception', {
+      ...logBase,
+      failureCode: e && e.name ? e.name : 'UNKNOWN'
+    })
   }
+}
+
+/** ERROR 态手动重试：重新拉取 V2（不重 parse / 不重传）。 */
+function retryPlaybackV2() {
+  if (!datasetReady.value) return
+  loadPlaybackV2()
 }
 
 /** 文件变化（新增/移除/清空）或 Dataset identity 变化时使旧请求失效并取消，重置地图区块。 */
@@ -173,16 +222,15 @@ function resetMap() {
   }
   mapOverview.value = null
   mapPlaybackV2.value = null
+  playbackV2State.value = 'LOADING'
+  playbackV2Error.value = ''
+  playbackV2UnavailableReason.value = ''
+  playbackV2Capability.value = null
+  panelView.value = 'playback'
   mapLoading.value = false
   mapLoaded.value = false
   mapError.value = ''
   mapSeek.value = null
-  mapOpen.value = true
-}
-
-/** 地图区块折叠/展开（默认展开）。 */
-function toggleMap() {
-  mapOpen.value = !mapOpen.value
 }
 
 /**
@@ -212,6 +260,8 @@ watch(() => props.active, () => {
 function maybeAutoLoadMap() {
   if (props.active && props.processingJobId && props.sourceId && !mapLoaded.value && !mapLoading.value) {
     loadMapOverview()
+    // V2 dataset 独立于 map-overview 拉取：即使 map-overview 204，V2 也可能可用（/ 或反而 204 需显式 unavailable）。
+    if (playbackV2State.value === 'LOADING') loadPlaybackV2()
   }
 }
 
@@ -225,8 +275,6 @@ watch(() => props.seekTo, async (sec) => {
   if (!mapOverview.value && !mapLoading.value) {
     await loadMapOverview()
   }
-  // 地图可能被折叠：先展开（v-show 不销毁 MapOverview，内部视图/播放器状态保留）再传 seek
-  mapOpen.value = true
   mapSeek.value = null
   await nextTick()
   mapSeek.value = sec
@@ -251,8 +299,24 @@ onBeforeUnmount(() => {
         <span :class="{ 'map-dataset-error': !!datasetError }">{{ datasetError || $t('workspace.dataset_preparing') }}</span>
       </div>
       <template v-else>
-        <div class="map-panel-head">
-          <h2>{{ $t('recon.map.title') }}</h2>
+        <div class="pb-panel-head">
+          <h2>{{ $t('recon.playback.title') }}</h2>
+          <div class="pb-view-toggle" role="tablist" aria-label="Replay playback views">
+            <button
+              type="button"
+              class="pb-view-tab"
+              :class="{ active: panelView === 'playback' }"
+              data-test="pb-view-playback"
+              @click="panelView = 'playback'"
+            >{{ $t('recon.playback.view_playback') }}</button>
+            <button
+              type="button"
+              class="pb-view-tab"
+              :class="{ active: panelView === 'map' }"
+              data-test="pb-view-map"
+              @click="panelView = 'map'"
+            >{{ $t('recon.playback.view_map') }}</button>
+          </div>
           <button
             v-if="!mapOverview"
             type="button"
@@ -261,27 +325,36 @@ onBeforeUnmount(() => {
             :disabled="mapLoading"
             @click="loadMapOverview"
           >{{ $t(mapLoading ? 'recon.map.loading' : 'recon.map.load') }}</button>
-          <button
-            v-else
-            type="button"
-            class="map-load-btn"
-            data-test="toggle-map"
-            :aria-expanded="mapOpen"
-            @click="toggleMap"
-          >{{ $t(mapOpen ? 'recon.collapse' : 'recon.expand') }}</button>
         </div>
-        <p v-if="playbackCapabilityLabel" class="map-capability-note" data-test="playback-capability">
-          {{ playbackCapabilityLabel }}
-        </p>
         <p v-if="mapError" class="error map-error" data-test="map-error">{{ mapError }}</p>
-        <!-- 折叠用 v-show 而非 v-if：MapOverview 是否挂载只由 mapOverview 决定，折叠不销毁组件、保留视图/播放器状态 -->
-        <div v-show="mapOpen" data-test="map-body">
-          <MapOverview
-            v-if="mapOverview"
-            :overview="mapOverview"
-            :seek-to="mapSeek"
-            :playback-v2="mapPlaybackV2"
-          />
+
+        <!-- PRIMARY：Battle Playback（第一屏直接展示 playback 控件，不再被 MapOverview 吞掉） -->
+        <div v-show="panelView === 'playback'" data-test="pb-primary">
+          <template v-if="mapOverview && (playbackV2State === 'FULL' || playbackV2State === 'PARTIAL')">
+            <p v-if="playbackV2State === 'PARTIAL'" class="pb-capability-note" data-test="pb-capability-partial">
+              {{ $t('recon.playback.partial') }}
+            </p>
+            <BattlePlayback :overview="mapOverview" :playback-v2="mapPlaybackV2" :seek-to="mapSeek" />
+          </template>
+          <div v-else-if="playbackV2State === 'UNAVAILABLE'" class="pb-status pb-unavailable" data-test="pb-unavailable">
+            {{ playbackV2UnavailableReason }}
+          </div>
+          <div v-else-if="playbackV2State === 'ERROR'" class="pb-status pb-error" data-test="pb-error">
+            <span>{{ playbackV2Error }}</span>
+            <button type="button" class="ghost sm" data-test="pb-retry" @click="retryPlaybackV2">{{ $t('recon.playback.retry') }}</button>
+          </div>
+          <div v-else-if="playbackV2State === 'LOADING'" class="pb-status" data-test="pb-loading">
+            <span class="map-status-spinner" aria-hidden="true"></span>{{ $t('recon.playback.loading') }}
+          </div>
+          <div v-else-if="!mapOverview" class="pb-status pb-unavailable" data-test="pb-no-map">
+            <span>{{ $t('recon.playback.map_unavailable') }}</span>
+            <button type="button" class="ghost sm" @click="loadMapOverview">{{ $t('recon.map.load') }}</button>
+          </div>
+        </div>
+
+        <!-- SECONDARY：地图鸟瞰（heatmap / routes） -->
+        <div v-show="panelView === 'map'" data-test="pb-map-secondary">
+          <MapOverview v-if="mapOverview" :overview="mapOverview" />
           <p v-else-if="mapLoaded && !mapLoading" class="map-unavailable" data-test="map-unavailable">
             {{ $t('recon.map.unavailable') }}
           </p>
@@ -293,15 +366,6 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .ws-note { margin: 18px 4px; color: var(--text-muted); font-size: .85rem; }
-.map-capability-note {
-  margin: 4px 0 10px;
-  padding: 6px 10px;
-  border: 1px solid color-mix(in srgb, var(--warn-text) 40%, var(--border));
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--warn-text) 10%, var(--bg-card));
-  color: var(--warn-text);
-  font-size: .82rem;
-}
 
 /* Dataset 准备中/失败状态：非地图加载错误，显示 loading 文案（不设裸错误码） */
 .map-dataset-status {
@@ -360,4 +424,52 @@ onBeforeUnmount(() => {
 .map-load-btn:disabled { opacity: .6; cursor: default; }
 .map-error { margin: 0 0 8px; }
 .map-unavailable { color: var(--text-secondary); font-size: .85rem; margin: 0; }
+
+/* 战局回放 PRIMARY：面板头（title + [战斗回放][地图鸟瞰] 切换）+ 显式状态 */
+.pb-panel-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.pb-panel-head h2 { margin: 0; }
+.pb-view-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border-ghost);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+.pb-view-tab {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-sub);
+  cursor: pointer;
+  font-size: .85rem;
+  font-family: inherit;
+  font-weight: 700;
+}
+.pb-view-tab.active { background: color-mix(in srgb, var(--accent) 14%, var(--bg-card)); color: var(--accent-dark); }
+.pb-view-tab:hover:not(.active) { color: var(--text-heading); }
+.pb-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-label);
+  font-size: .9rem;
+}
+.pb-status.pb-error { border-color: color-mix(in srgb, var(--error) 40%, var(--border)); color: var(--error); }
+.pb-status.pb-unavailable { color: var(--text-secondary); }
+.pb-capability-note {
+  margin: 4px 2px 10px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn-text) 40%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warn-text) 10%, var(--bg-card));
+  color: var(--warn-text);
+  font-size: .82rem;
+}
 </style>

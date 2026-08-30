@@ -3,26 +3,16 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapImages } from '../data/mapImages'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
-import BattlePlayback from './BattlePlayback.vue'
 
 /**
  * 地图鸟瞰：底图（按图片 coordinateBounds 渲染）+ 6x6 分析网格（playableBounds 系）+ 九宫格分区框 + 出生点；
- * 热力视图（阵营 × 类型）与路线视图（阵营 × 阶段）双 Tab。
- * 数据来自后端 SSE done 的 mapOverview；本组件仅在 mapImages 有该地图素材时被渲染。
+ * 热力视图（阵营 × 类型）与路线视图（阵营 × 阶段）双 Tab。战局回放由宿主
+ * BattlePlaybackPanel 作为 PRIMARY 渲染，本组件只做 secondary 地图鸟瞰（heatmap/routes）。
  */
 const props = defineProps({
   overview: {
     type: Object,
     required: true
-  },
-  seekTo: {
-    type: Number,
-    default: null
-  },
-  /** V2 canonical battle-playback-dataset（可选；迁移期守卫）。 */
-  playbackV2: {
-    type: Object,
-    default: null
   }
 })
 
@@ -46,12 +36,6 @@ const phaseTab = ref('all')     // all|opening|mid|late
 watch(view, (next) => {
   teamTab.value = next === 'routes' ? 'all' : 'friendly'
 })
-// AI 报告时间跳转：自动切到「战局回放」视图
-watch(() => props.seekTo, (sec) => {
-  if (Number.isFinite(sec) && props.playbackV2) {
-    view.value = 'playback'
-  }
-}, { immediate: true })
 
 const W = computed(() => image.value ? image.value.width : 800)
 const H = computed(() => image.value ? image.value.height : 800)
@@ -234,18 +218,10 @@ const gridRegions = computed(() => {
           :class="{ active: view === 'routes' }"
           @click="view = 'routes'"
         >{{ $t('recon.map.view_routes') }}</button>
-        <button
-          v-if="props.playbackV2"
-          type="button"
-          class="map-tab"
-          :class="{ active: view === 'playback' }"
-          @click="view = 'playback'"
-          data-test="map-tab-playback"
-        >{{ $t('recon.map.view_playback') }}</button>
       </div>
     </div>
 
-    <div v-if="view !== 'playback'" class="map-filters">
+    <div class="map-filters">
       <div class="filter-group">
         <button
           v-for="key in teamKeys"
@@ -279,7 +255,6 @@ const gridRegions = computed(() => {
     </div>
 
     <svg
-      v-if="view !== 'playback'"
       class="map-svg"
       :viewBox="`0 0 ${W} ${H}`"
       role="img"
@@ -375,14 +350,7 @@ const gridRegions = computed(() => {
       </g>
     </svg>
 
-    <BattlePlayback
-      v-if="view === 'playback' && props.playbackV2"
-      :overview="overview"
-      :seek-to="seekTo"
-      :playback-v2="playbackV2"
-    />
-
-    <div v-if="view !== 'playback'" class="map-legend">
+    <div class="map-legend">
       <template v-if="view === 'heatmap'">
         <span class="legend-chip" :style="{ background: heatColor }"></span>
         <span>{{ $t('recon.map.legend_heat') }}: 0 … {{ heatMax.toFixed(0) }}</span>
