@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.58",
+    "date": "2026-08-30",
+    "tag": "fix",
+    "zh": "修复切换能力后结果丢失、战局回放不自动显示的问题：在“战局回放”上传一场回放解析完成后会自动显示战局回放，不再需要手动切换一次；在数据分析和战局回放之间来回切换，已解析的赛果和当前选中的回放会保留。",
+    "en": "Fixed results being lost after switching capabilities and battle playback not showing automatically: uploading a single replay in Battle Playback now shows the playback once parsing finishes, without needing a manual tab switch; switching between Data Analysis and Battle Playback keeps the parsed results and current replay.",
+    "ru": "Исправлена потеря результатов при переключении возможностей и отсутствие автопоказа воспроизведения боя: загрузка одного реплея в \"Воспроизведении боя\" теперь показывает воспроизведение после завершения разбора, без ручного переключения; переключение между анализом данных и воспроизведением боя сохраняет разобранные результаты и текущий бой."
+  },
+  {
     "v": "2.12.57",
     "date": "2026-08-30",
     "tag": "fix",
