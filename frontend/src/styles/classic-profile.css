@@ -127,7 +127,6 @@ html[data-ui-profile="classic"] {
 [data-ui-profile="classic"] .layout-wide :is(input, select, textarea),
 [data-ui-profile="classic"] .layout-data-workspace :is(input, select, textarea),
 [data-ui-profile="classic"] .admin-page :is(input, select, textarea) {border-color: #c8cec5 !important; background: #ffffff !important; color: #2a2f28 !important}
-[data-ui-profile="classic"] .battle-action {border-color: #ccd2c8 !important; background: #fbfbfa !important}
 [data-ui-profile="classic"] .layout-data-workspace table thead th,
 [data-ui-profile="classic"] .layout-wide table thead th {background: color-mix(in srgb, var(--bg-card2) 94%, #e3e6e1) !important}
 [data-ui-profile="classic"] .admin-table th {background: var(--bg-card2) !important; color: var(--text-heading) !important}
@@ -169,10 +168,14 @@ html[data-ui-profile="classic"] .layout-wide,
 html[data-ui-profile="classic"] .layout-data-workspace,
 html[data-ui-profile="classic"] .layout-full-workspace {color: var(--text) !important}
 
-html[data-ui-profile="classic"] .tabs {background: var(--bg-card) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] .tabs button {color: var(--text-sub) !important; background: var(--bg-card) !important; border-color: var(--border-light) !important}
-html[data-ui-profile="classic"] .tabs button:hover:not(.active) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] .tabs button.active {background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)) !important; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important; color: var(--accent-dark) !important; border-bottom-color: var(--accent) !important}
+html[data-ui-profile="classic"] .tabs,
+html[data-ui-profile="classic"] .dataview-toggle {background: var(--bg-card) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .tabs button,
+html[data-ui-profile="classic"] .dataview-toggle button {color: var(--text-sub) !important; background: var(--bg-card) !important; border-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .tabs button:hover:not(.active),
+html[data-ui-profile="classic"] .dataview-toggle button:hover:not(.active) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .tabs button.active,
+html[data-ui-profile="classic"] .dataview-toggle button.active {background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)) !important; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important; color: var(--accent-dark) !important; border-bottom-color: var(--accent) !important}
 
 html[data-ui-profile="classic"] :is(.card, .panel, .section-card, .profile-card, .account-card, .modal, .dropdown, .popover, .tooltip) {border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
 html[data-ui-profile="classic"] .modal {background: var(--bg-card) !important; color: var(--text) !important}

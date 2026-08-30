@@ -60,6 +60,7 @@
     },
     "result": {
         "aggregate_tab": "Aggregate ({count} players)",
+        "single_tab": "Single battle",
         "scroll_hint": "← Scroll horizontally for more data →",
         "duplicates": "Skipped {count} duplicate upload(s):",
         "failures": "{count} file(s) failed to parse:"

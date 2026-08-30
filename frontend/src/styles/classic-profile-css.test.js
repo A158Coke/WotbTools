@@ -155,6 +155,7 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('.filebar', ['background: var(--bg-upload) !important'])
     has('.filebtn.ghost', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
     has('.tabs button', ['color: var(--text-sub) !important'])
+    has('.dataview-toggle button', ['color: var(--text-sub) !important'])
     has('.upload-points span', ['background:', 'border-color:', 'color: var(--text-sub) !important'])
   })
 

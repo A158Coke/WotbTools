@@ -2,21 +2,25 @@ import { computed, ref, watch } from 'vue'
 import { useReplay, chooseInitialResultTab } from './useReplay.js'
 
 /**
- * ReplayWorkspace 公共状态（单一 owner）。
+ * Replay Workspace 公共状态（单一 owner）。
  *
- * 权威字段（plan: 目标状态模型）：
+ * 权威字段（plan: 目标状态模型，Blocker #1）：
  * - replayBatch        = useReplay.files
  * - parsedBattles[]    = useReplay.resp.battles
- * - currentBattleId    = 'r<i>' | null（null = summary view；对应原 activeTab==='aggregate'）
+ * - currentBattleId    = 'r<i>' | null；恒代表「当前单场」，仅在无可用 battle 时为 null，
+ *                        不能用 null 表示 summary 视图。
+ * - dataViewMode       = 'SUMMARY' | 'SINGLE'；数据页视图轴（汇总视图 / 单场视图），
+ *                        与选中单场解耦：SUMMARY 视图下 selected battle 依然持久。
  * - activeWorkspaceTab = 'data' | 'ai' | 'playback'
  *
  * 派生（不新增状态字段）：
  * - currentBattle / currentBattleIndex
- * - currentTargetBattleId：显式 currentBattleId，否则单文件 -> 'r0'，否则 null
- * - currentTargetFile / currentSourceId：喂 AiReviewPanel / BattlePlaybackPanel
+ * - currentTargetBattleId / currentTargetFile / currentSourceId：喂 AiReviewPanel / BattlePlaybackPanel。
+ *   「选 #8 → 汇总 → AI/Playback」始终消费 #8：currentTargetBattleId 显式 currentBattleId 优先，
+ *   有 battle 时恒非 null（不随视图切换丢失）；单文件尚未解析出 battle 时回退 'r0'。
  *
- * 数据子视图：currentBattleId ↔ replay.activeTab 双向同步（guard 防环）。跨能力（AI/Playback）
- * 目标一律读 currentBattleId / currentTargetBattleId（sourceId，不用数组下标，避免删场漂移）。
+ * replay.activeTab 仅作为旧渲染兼容层，由 dataViewMode + currentBattleId 单向派生：
+ *   SUMMARY -> 'aggregate'，SINGLE -> 'b<index>'。不再双向写回，避免把「选中单场」用 null 挤掉。
  */
 export function useReplayWorkspace(initialCapability = 'data') {
   const replay = useReplay()
@@ -24,8 +28,10 @@ export function useReplayWorkspace(initialCapability = 'data') {
   const activeWorkspaceTab = ref(initialCapability === 'playback' || initialCapability === 'ai'
     ? initialCapability
     : 'data')
-  /** 'r<i>' | null；null = summary view。 */
+  /** 'r<i>' | null；null = 无可用 battle。恒代表当前单场。 */
   const currentBattleId = ref(null)
+  /** 'SUMMARY' | 'SINGLE'；数据页视图轴。 */
+  const dataViewMode = ref('SUMMARY')
 
   const replayBatch = computed(() => replay.files.value)
   const parsedBattles = computed(() => replay.resp.value?.battles || [])
@@ -41,7 +47,11 @@ export function useReplayWorkspace(initialCapability = 'data') {
     const idx = currentBattleIndex.value
     return idx >= 0 ? (parsedBattles.value[idx] ?? null) : null
   })
-  /** 跨能力目标 battle id：显式选中优先；单文件回退 'r0'；多文件未选 -> null。 */
+  /**
+   * 跨能力目标 battle id：显式选中（currentBattleId）优先；单文件尚未解析出 battle 时回退 'r0'
+   * （唯一文件天然可分析，不阻塞 AI/Playback）；否则 null（多文件必须显式选择）。
+   * 注意：这只用于「喂哪个文件给 AI/Playback」，不写回 currentBattleId，不表示视图。
+   */
   const currentTargetBattleId = computed(() => {
     if (currentBattleId.value) return currentBattleId.value
     return singleReplay.value ? 'r0' : null
@@ -61,51 +71,67 @@ export function useReplayWorkspace(initialCapability = 'data') {
     activeWorkspaceTab.value = tab
   }
 
+  /** 单场选择：显式选中某场 → 切到单场视图（summary 视图下不会清空选中单场）。 */
   function selectBattle(sourceId) {
     const m = /^r(\d+)$/.exec(sourceId == null ? '' : String(sourceId))
-    if (!m) {
-      selectSummary()
+    if (!m) return
+    currentBattleId.value = `r${parseInt(m[1], 10)}`
+    dataViewMode.value = 'SINGLE'
+  }
+
+  /** 切到汇总视图：只改视图轴，保留当前选中单场（供 AI/Playback 消费）。 */
+  function selectSummary() {
+    dataViewMode.value = 'SUMMARY'
+  }
+
+  /** 数据页视图切换：SUMMARY 只改视图；SINGLE 若未选中单场则回退第一场（有 battle 时）。 */
+  function setDataViewMode(mode) {
+    if (mode === 'SINGLE') {
+      const battles = parsedBattles.value
+      if (!battles.length && !currentBattleId.value) {
+        dataViewMode.value = 'SUMMARY'
+        return
+      }
+      if (!currentBattleId.value && battles.length) currentBattleId.value = 'r0'
+      dataViewMode.value = 'SINGLE'
       return
     }
-    currentBattleId.value = `r${parseInt(m[1], 10)}`
+    dataViewMode.value = 'SUMMARY'
   }
 
-  function selectSummary() {
-    currentBattleId.value = null
-  }
-
-  // READY 后用 chooseInitialResultTab 初始化 currentBattleId：aggregate -> null（summary），
-  // 'b<i>' -> 'r<i>'。仅在 resp 变化（同一 selectionRevision 内）初始化；用户操作优先。
+  // READY 后用 chooseInitialResultTab 初始化数据子视图：aggregate -> SUMMARY + 第一场，
+  // 'b<i>' -> SINGLE + 'r<i>'。仅当 resp 存在时设置 currentBattleId（有 battle 恒非 null）。
   watch(() => replay.resp.value, (resp) => {
     if (!resp) {
       currentBattleId.value = null
+      dataViewMode.value = 'SUMMARY'
       return
     }
     const tab = chooseInitialResultTab(resp)
-    currentBattleId.value = tab === 'aggregate' ? null : `r${tab.replace('b', '')}`
+    const hasBattles = Array.isArray(resp.battles) && resp.battles.length > 0
+    currentBattleId.value = hasBattles ? 'r0' : null
+    dataViewMode.value = tab === 'aggregate' ? 'SUMMARY' : 'SINGLE'
   }, { immediate: true })
 
   // selection 变化（updateFiles / 删场 / 清空）→ 重算当前 battle（重新解析后 sourceId 重新分配）。
   watch(() => replay.selectionRevision.value, () => {
     currentBattleId.value = null
+    dataViewMode.value = 'SUMMARY'
   })
 
-  // currentBattleId（canonical）↔ replay.activeTab（数据子视图渲染）双向同步，guard 防环。
-  watch(currentBattleId, (id) => {
+  // dataViewMode + currentBattleId（canonical）→ replay.activeTab（旧渲染兼容层）单向派生。
+  watch([dataViewMode, currentBattleId], () => {
     const idx = currentBattleIndex.value
-    replay.activeTab.value = id ? `b${idx}` : 'aggregate'
-  })
-  watch(() => replay.activeTab.value, (tab) => {
-    const isAgg = tab === 'aggregate'
-    const newId = isAgg ? null : `r${String(tab).replace('b', '')}`
-    if (newId !== currentBattleId.value) currentBattleId.value = newId
-  })
+    const tab = dataViewMode.value === 'SINGLE' && idx >= 0 ? `b${idx}` : 'aggregate'
+    if (replay.activeTab.value !== tab) replay.activeTab.value = tab
+  }, { immediate: true })
 
   return {
     replay,
     replayBatch,
     parsedBattles,
     currentBattleId,
+    dataViewMode,
     activeWorkspaceTab,
     currentBattle,
     currentBattleIndex,
@@ -115,6 +141,7 @@ export function useReplayWorkspace(initialCapability = 'data') {
     currentTargetFile,
     singleReplay,
     setWorkspaceTab,
+    setDataViewMode,
     selectBattle,
     selectSummary,
   }

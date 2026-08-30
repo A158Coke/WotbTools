@@ -107,8 +107,8 @@
   gap: 10px 12px;
   margin: 14px 0 !important;
 }
-/* restoolbar（解析结果二级 tab 行）专属：battle 分栏随内容伸展 + 横滚。 */
-.layout-data-workspace .restoolbar .tabs {
+/* restoolbar 数据视图切换（汇总视图 / 单场视图）专属。 */
+.layout-data-workspace .restoolbar .dataview-toggle {
   display: flex;
   flex: 1 1 460px;
   gap: 5px;
@@ -116,7 +116,7 @@
   overflow-x: auto;
   scrollbar-width: thin;
 }
-.layout-data-workspace .restoolbar .tabs button {
+.layout-data-workspace .restoolbar .dataview-toggle button {
   flex: 0 0 auto;
   min-height: 34px;
   border-radius: 6px;
@@ -131,14 +131,6 @@
   justify-content: flex-end;
   min-width: 0;
 }
-.layout-data-workspace .battle-action {
-  min-height: 35px;
-  padding-inline: 13px !important;
-}
-.layout-data-workspace .battle-action.primary {
-  box-shadow: 0 9px 24px var(--accent-shadow);
-}
-
 /* .tablewrap 必须成为明确 scroll container：
    超宽 table 只在 .tablewrap 内横向滚动，不撑破 body / 不覆盖 sibling。 */
 .layout-data-workspace .tablewrap {
@@ -205,7 +197,7 @@
   .layout-data-workspace .fb-chips { width: 100%; max-height: 96px; }
   .layout-data-workspace .actionrow { align-items: flex-start !important; }
   .layout-data-workspace .actionrow .lg { width: 100%; justify-content: center; }
-  .layout-data-workspace .restoolbar .tabs { width: 100%; }
+  .layout-data-workspace .restoolbar .dataview-toggle { width: 100%; }
   .layout-data-workspace .resactions { width: 100%; }
   .layout-data-workspace table th:first-child,
   .layout-data-workspace table td:first-child { min-width: 126px; }
