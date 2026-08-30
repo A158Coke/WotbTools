@@ -38,13 +38,17 @@ grep -q 'location = /download/android/version.json {' "$CFG" \
 grep -q 'location /download/android/ {' "$CFG" \
   || { echo "FAIL: APK static prefix location must exist" >&2; exit 1; }
 
-# Build a payload matching production layout: index.html at root, version.json + apk under /download/android.
+# Build a deterministic payload matching production layout: a stub index.html at root (SPA marker),
+# version.json + apk under /download/android. 路由验证只关心「页面路由落到 index.html」，不校验
+# 真实 bundle 内容（真实 bundle 的完整性由 frontend build / Dist 契约测试负责）。
 mkdir -p "$HTML_ROOT/download/android"
-cp "$ROOT/frontend/dist/index.html" "$HTML_ROOT/index.html" 2>/dev/null \
-  || printf '<!doctype html><html><body>SPA-index</body></html>' > "$HTML_ROOT/index.html"
+printf '<!doctype html><html><body>SPA-index</body></html>' > "$HTML_ROOT/index.html"
 printf '{"latestVersionName":"1.0.0","apkUrl":"/download/android/wotbtools-android-v1.0.0.apk"}\n' \
   > "$HTML_ROOT/download/android/version.json"
 head -c 2048 /dev/urandom > "$HTML_ROOT/download/android/wotbtools-android-v1.0.0.apk"
+# mktemp -d 创建的目录为 0700（所有者才能 traversal），而容器内 nginx 以 uid 101 (nginx)
+# 运行，无法读取 → SPA/静态全变 403/404。授予 world read+traverse 后 nginx 才能镜像真实产物。
+chmod -R a+rX "$HTML_ROOT"
 
 docker run -d --name "$CONTAINER" \
   --add-host grafana:127.0.0.1 --add-host keycloak:127.0.0.1 --add-host wotb-backend:127.0.0.1 \
