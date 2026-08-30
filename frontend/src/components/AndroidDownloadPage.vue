@@ -2,14 +2,19 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
+import { useAuth } from '../composables/useAuth.js'
 
 const { t } = useI18n()
+const { isAuthenticated, login, initPromise } = useAuth()
 
 /** 与本地 nginx 静态托管 / Android 壳使用的同一份 release metadata（规格 §91）。 */
 const MANIFEST_URL = '/download/android/version.json'
 
 const manifest = ref(null)
 const loadFailed = ref(false)
+/** 登录门禁状态：checking（鉴权检查中）| ready（已登录）| required（需登录）。 */
+const authState = ref('checking')
+let loginAttempted = false
 
 async function loadManifest() {
   try {
@@ -21,7 +26,24 @@ async function loadManifest() {
   }
 }
 
-onMounted(loadManifest)
+onMounted(async () => {
+  // 公开入口，登录门禁：未登录访问 /download/android 自动跳 Keycloak（登录后回本页）。
+  try {
+    await initPromise
+  } catch {
+    // Keycloak init 失败视作未登录。
+  }
+  if (isAuthenticated()) {
+    authState.value = 'ready'
+    await loadManifest()
+    return
+  }
+  authState.value = 'required'
+  if (!loginAttempted) {
+    loginAttempted = true
+    login('android').catch(() => {})
+  }
+})
 </script>
 
 <template>
@@ -34,6 +56,17 @@ onMounted(loadManifest)
 
     <section v-if="isAndroidApp()" class="installed-banner" data-testid="android-installed">
       <p>{{ t('android.installed') }}</p>
+    </section>
+
+    <section v-else-if="authState === 'required'" class="login-gate" data-testid="android-login-required">
+      <p>{{ t('android.login_required') }}</p>
+      <button class="btn primary" data-testid="android-login-btn" @click="login('android')">
+        {{ t('app.login') }}
+      </button>
+    </section>
+
+    <section v-else-if="authState === 'checking'" class="unavailable" data-testid="android-auth-checking">
+      <p>{{ t('android.loading') }}</p>
     </section>
 
     <section v-else-if="manifest" class="download-card" data-testid="android-download-card">
@@ -73,6 +106,12 @@ onMounted(loadManifest)
   margin-top: 18px; padding: 20px 22px; border: 1px solid var(--border);
   border-radius: 9px; background: var(--bg-card);
 }
+.login-gate {
+  margin-top: 18px; padding: 20px 22px; border: 1px solid var(--border);
+  border-radius: 9px; background: var(--bg-card);
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.login-gate p { margin: 0; }
 .latest { font-size: 1.1rem; }
 .download-actions { margin: 16px 0; }
 .sha { margin-top: 12px; word-break: break-all; color: var(--text-sub); font-size: .85rem; }
