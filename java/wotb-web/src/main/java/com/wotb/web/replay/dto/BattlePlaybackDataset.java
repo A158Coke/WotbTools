@@ -134,13 +134,21 @@ public record BattlePlaybackDataset(
             DecodeConfidence confidence
     ) {
         public VehicleBattleLoadoutDto {
-            consumables = consumables == null ? List.of() : List.copyOf(consumables);
-            consumableWireCodes = consumableWireCodes == null ? List.of() : List.copyOf(consumableWireCodes);
-            provisions = provisions == null ? List.of() : List.copyOf(provisions);
-            provisionWireCodes = provisionWireCodes == null ? List.of() : List.copyOf(provisionWireCodes);
-            equipmentIds = equipmentIds == null ? List.of() : List.copyOf(equipmentIds);
+            // 契约：logicalItemId / wireCode / equipmentId 可为 null（unknown raw-preserve）。
+            // List.copyOf 拒绝 null 元素 → 一旦 loadout 事实携带 null 直接 NPE → V2 整个 204。
+            // 这里改用 null-tolerant 不可变拷贝，保留 null 语义（前端按 unknown 处理）。
+            consumables = immutableNullable(consumables);
+            consumableWireCodes = immutableNullable(consumableWireCodes);
+            provisions = immutableNullable(provisions);
+            provisionWireCodes = immutableNullable(provisionWireCodes);
+            equipmentIds = immutableNullable(equipmentIds);
             confidence = confidence == null ? DecodeConfidence.UNKNOWN : confidence;
         }
+    }
+
+    /** null-tolerant 不可变列表拷贝：允许元素为 null，但返回真正的不可变列表。 */
+    private static <T> List<T> immutableNullable(final List<T> list) {
+        return list == null ? List.of() : java.util.Collections.unmodifiableList(new java.util.ArrayList<>(list));
     }
 
     /** 位置观察段（AoI boundary authority）：段内可插值，段间 UNKNOWN_AOI 禁止。 */
