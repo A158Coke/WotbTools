@@ -5,17 +5,17 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ReplayWorkspace from './ReplayWorkspace.vue'
 
 const replayState = vi.hoisted(() => ({
-  files: { value: [] },
-  selectionRevision: { value: 0 },
-  activeTab: { value: 'aggregate' },
-  resp: { value: null },
-  processingJob: { value: null },
-  processingError: { value: '' },
-  uploadState: { value: null },
-  processingJobId: { value: null },
-  exportJob: { value: null },
-  exportError: { value: '' },
-  pendingRemove: { value: null },
+  files: { __v_isRef: true, value: [] },
+  selectionRevision: { __v_isRef: true, value: 0 },
+  activeTab: { __v_isRef: true, value: 'aggregate' },
+  resp: { __v_isRef: true, value: null },
+  processingJob: { __v_isRef: true, value: null },
+  processingError: { __v_isRef: true, value: '' },
+  uploadState: { __v_isRef: true, value: null },
+  processingJobId: { __v_isRef: true, value: null },
+  exportJob: { __v_isRef: true, value: null },
+  exportError: { __v_isRef: true, value: '' },
+  pendingRemove: { __v_isRef: true, value: null },
   updateFiles: vi.fn(() => { replayState.files.value = [] }),
   startProcessingJob: vi.fn(),
   cancelProcessing: vi.fn(),
@@ -29,7 +29,10 @@ const replayState = vi.hoisted(() => ({
   dismissExportJob: vi.fn(),
 }))
 
-vi.mock('../composables/useReplay.js', () => ({ useReplay: () => replayState }))
+vi.mock('../composables/useReplay.js', () => ({
+  useReplay: () => replayState,
+  chooseInitialResultTab: () => 'aggregate',
+}))
 vi.mock('./ReplayPage.vue', () => ({
   default: {
     name: 'ReplayPageMock',
@@ -213,5 +216,70 @@ describe('ReplayWorkspace', () => {
     // updateFiles 替换 selection + 自动 startProcessingJob 各一次
     expect(replayState.updateFiles).toHaveBeenCalledWith([file])
     expect(replayState.startProcessingJob).toHaveBeenCalledTimes(1)
+  })
+
+  it('回归：选 #8（header selector）→ 切 AI / Playback 均消费 #8（选中单场持久，不随视图切换丢失）', async () => {
+    const files = Array.from({ length: 9 }, (_, i) => new File(['x'], `f${i}.wotbreplay`))
+    replayState.files.value = files
+    replayState.resp.value = {
+      leagueMode: false,
+      aggregate: [{ a: 1 }],
+      battles: Array.from({ length: 9 }, (_, i) => ({ sourceId: `r${i}`, mapName: 'Lagoon', players: [] })),
+    }
+    replayState.processingJobId.value = 'job-1'
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+
+    // 打开 header current-battle selector，选中 #8（index 7）。
+    await wrapper.find('[data-testid="ws-batch-selector"]').trigger('click')
+    const items = wrapper.findAll('.ws-batch-item')
+    expect(items).toHaveLength(9)
+    await items[7].trigger('click')
+    await flushPromises()
+
+    // 切到 AI 能力 → AI pane 消费 #8。
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
+    await flushPromises()
+    const aiVm = wrapper.findComponent({ name: 'AiReviewPanelMock' })
+    expect(aiVm.exists()).toBe(true)
+    expect(aiVm.props('file')?.name).toBe('f7.wotbreplay')
+
+    // 切到 Playback 能力 → Playback pane 消费 #8。
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
+    await flushPromises()
+    const pbVm = wrapper.findComponent({ name: 'BattlePlaybackPanelMock' })
+    expect(pbVm.exists()).toBe(true)
+    expect(pbVm.props('file')?.name).toBe('f7.wotbreplay')
+  })
+
+  it('selector 只列有效 parsed battles（failed/duplicate 不列出）；选第二个有效 battle 得 sourceId r2 / files[2]', async () => {
+    const files = [new File(['x'], 'f0.wotbreplay'), new File(['x'], 'f1.wotbreplay'), new File(['x'], 'f2.wotbreplay')]
+    replayState.files.value = files
+    // r0 有效、r1 duplicate 被移除、r2 有效 → parsedBattles 只有 [r0, r2]。
+    replayState.resp.value = {
+      leagueMode: false,
+      aggregate: [{ a: 1 }],
+      battles: [
+        { sourceId: 'r0', mapName: 'Lagoon', players: [] },
+        { sourceId: 'r2', mapName: 'Desert', players: [] },
+      ],
+    }
+    replayState.processingJobId.value = 'job-1'
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+
+    // 打开 selector：只列出 2 个有效 battle，绝不列出 failed/duplicate 的 raw file（f1）。
+    await wrapper.find('[data-testid="ws-batch-selector"]').trigger('click')
+    let items = wrapper.findAll('.ws-batch-item')
+    expect(items).toHaveLength(2)
+    expect(items.map(i => i.text()).join(',')).not.toContain('f1.wotbreplay')
+
+    // 选第二个有效 battle → sourceId r2，消费 files[2]。
+    await items[1].trigger('click')
+    await flushPromises()
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
+    await flushPromises()
+    const aiVm = wrapper.findComponent({ name: 'AiReviewPanelMock' })
+    expect(aiVm.props('file')?.name).toBe('f2.wotbreplay')
   })
 })

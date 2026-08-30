@@ -114,14 +114,14 @@
   --font-lg: 16px;
   --font-xl: 20px;
 
-  /* Tactical 阵营色：Friendly=warm amber，Enemy=cool cyan。
+  /* Tactical 阵营色（唯一规则）：Friendly=green，Enemy=red。
    * 与普通 UI Success/Error 语义色分离，仅用于战术地图领域。 */
-  --friendly: #c98d20;
-  --friendly-strong: #d99a25;
-  --friendly-fg: #17130b;
-  --enemy: #3f8fb8;
-  --enemy-strong: #4aa8c4;
-  --enemy-fg: #f0f6fa;
+  --friendly: #22c55e;
+  --friendly-strong: #4ade80;
+  --friendly-fg: #0b1f10;
+  --enemy: #ef4444;
+  --enemy-strong: #f87171;
+  --enemy-fg: #1a0606;
 }
 
 /* ── V2 Layout Primitives ────────────────────────────────────

@@ -397,6 +397,27 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
+    void capabilitiesPropagateToAnalyzeResponse() {
+        final TacticalReviewHarness harness = mock(TacticalReviewHarness.class);
+        when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
+                new TacticalReviewHarness.HarnessOutcome(
+                        new AnalyzeResult("harness-text"), null));
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
+
+        // battleStartRawClockSec == null（recon 存在）→ AVAILABLE_WITH_LIMITED_TIMELINE。
+        assertEquals(AnalyzeResponse.Capability.AVAILABLE_WITH_LIMITED_TIMELINE,
+                analyzeResult(randomResultWithReconstruction()).capability());
+
+        // recon == null（randomBattleResult）→ UNAVAILABLE。
+        final var player = new com.wotb.core.model.PlayerResult();
+        player.accountId = 1001L;
+        player.nickname = "P1";
+        player.team = 1;
+        assertEquals(AnalyzeResponse.Capability.UNAVAILABLE,
+                analyzeResult(randomBattleResult("random-arena", 1, List.of(player))).capability());
+    }
+
+    @Test
     void fallbackPathCorrectsHallucinatedTankName() {
         when(aiAnalysisService.analyzePlayerOrFallback(any(), eq(AllowedLanguage.ZH), any()))
                 .thenReturn(new AnalyzeResult("1分07秒：CHRD的埃米尔1951（Awesomeman954）!紧接着阵亡"));

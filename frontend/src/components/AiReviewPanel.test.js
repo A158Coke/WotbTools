@@ -69,6 +69,15 @@ describe('AiReviewPanel workspace layout ownership', () => {
     expect(wrapper.find('.ws-note').exists()).toBe(true)
     expect(wrapper.find('.ai-action-row').exists()).toBe(false)
   })
+
+  it('capability=AVAILABLE_WITH_LIMITED_TIMELINE → 展示受限时间轴降级提示（不猜测未观测事实）', async () => {
+    const wrapper = mountPanel({ name: 'a.wotbreplay' })
+    wrapper.vm.analysisResult = { analysis: '复盘正文', capability: 'AVAILABLE_WITH_LIMITED_TIMELINE' }
+    await nextTick()
+    const note = wrapper.find('[data-test="ai-capability-limited"]')
+    expect(note.exists()).toBe(true)
+    expect(note.text()).toContain('recon.capability_limited')
+  })
 })
 
 // ---- Dataset 路径发送 processingJobId+sourceId JSON（不再上传 replay）----

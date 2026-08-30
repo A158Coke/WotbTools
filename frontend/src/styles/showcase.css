@@ -183,12 +183,6 @@ body {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important;
   background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)) !important;
 }
-.battle-action { border-color: #495158 !important; background: #151c20 !important; }
-.battle-action.primary {
-  border-color: var(--accent) !important;
-  background: linear-gradient(180deg, var(--accent-light), var(--accent)) !important;
-  color: var(--accent-text) !important;
-}
 .tablewrap, .layout-data-workspace table { scrollbar-color: var(--accent) var(--bg-card2); }
 .layout-data-workspace table thead th { background: color-mix(in srgb, var(--bg-card2) 94%, #050607) !important; }
 

@@ -86,8 +86,8 @@ describe('Classic Profile — 真浅色主题契约（Theme 计划：Classic=Lig
     expect(tokenBlock).toContain('--border: #d9dde3')
     expect(tokenBlock).toContain('--accent: #c9762e')
     // 阵营战术色保持 hue(不反色、不变蓝),提高对比
-    expect(tokenBlock).toContain('--friendly: #a9661a')
-    expect(tokenBlock).toContain('--enemy: #2e7ea8')
+    expect(tokenBlock).toContain('--friendly: #22c55e')
+    expect(tokenBlock).toContain('--enemy: #ef4444')
   })
 
   it('同步 --showcase-tactical* 浅色 token(Reconstruction/地图外围面板)', () => {
@@ -155,6 +155,7 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('.filebar', ['background: var(--bg-upload) !important'])
     has('.filebtn.ghost', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
     has('.tabs button', ['color: var(--text-sub) !important'])
+    has('.dataview-toggle button', ['color: var(--text-sub) !important'])
     has('.upload-points span', ['background:', 'border-color:', 'color: var(--text-sub) !important'])
   })
 

@@ -23,7 +23,6 @@ function mountUploader(files = [], loading = false, options = {}) {
         loading,
         confirmRemove: false,
         ...(options.allowFolder === undefined ? {} : { allowFolder: options.allowFolder }),
-        ...(options.showWorkspaceActions === undefined ? {} : { showWorkspaceActions: options.showWorkspaceActions }),
         ...(options.showPreview === undefined ? {} : { showPreview: options.showPreview })
       },
       global: {
@@ -35,11 +34,6 @@ function mountUploader(files = [], loading = false, options = {}) {
       }
     })
   }
-}
-
-function lastWorkspaceAction(wrapper) {
-  const events = wrapper.emitted('workspace-action')
-  return events ? events[events.length - 1][0] : null
 }
 
 function pickFiles(wrapper, files, testId = 'select-files-input') {
@@ -104,70 +98,14 @@ describe('FileUploader 文件列表与回放工作台', () => {
   })
 
   it('allows the hidden Rating V2 page to reuse validation without exposing any action buttons', () => {
-    const { wrapper } = mountUploader(makeFiles(1), false, { showWorkspaceActions: false, showPreview: false })
+    const { wrapper } = mountUploader(makeFiles(1), false, { showPreview: false })
     expect(wrapper.find('.replay-primary-actions').exists()).toBe(false)
-    expect(wrapper.find('.replay-workspace-actions').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="direct-ai-btn"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="direct-playback-btn"]').exists()).toBe(false)
   })
 
-  it('ReplayPage 场景（showWorkspaceActions=false）仍保留「解析预览」，但不渲染 workspace shortcut', () => {
-    const { wrapper } = mountUploader(makeFiles(1), false, { showWorkspaceActions: false })
+  it('ReplayPage 场景（showPreview 默认）仍保留「解析预览」', () => {
+    const { wrapper } = mountUploader(makeFiles(1), false)
     const previewBtn = wrapper.findAll('button').find(b => b.text().includes('action.preview'))
     expect(previewBtn).toBeDefined()
-    expect(wrapper.find('.replay-workspace-actions').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="direct-ai-btn"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="direct-playback-btn"]').exists()).toBe(false)
-  })
-
-  it('单文件无需先解析即可直接进入 AI 复盘（emit workspace-action 原地切换）', async () => {
-    const files = makeFiles(1)
-    const { wrapper } = mountUploader(files)
-    await wrapper.find('[data-testid="direct-ai-btn"]').trigger('click')
-    expect(lastWorkspaceAction(wrapper)).toEqual({ file: files[0], mode: 'ai' })
-  })
-
-  it('单文件无需先解析即可直接进入战局回放（emit workspace-action 原地切换）', async () => {
-    const files = makeFiles(1)
-    const { wrapper } = mountUploader(files)
-    await wrapper.find('[data-testid="direct-playback-btn"]').trigger('click')
-    expect(lastWorkspaceAction(wrapper)).toEqual({ file: files[0], mode: 'playback' })
-  })
-
-  it('多文件未明确选择时 AI/回放均不可执行', async () => {
-    const files = makeFiles(3)
-    const { wrapper } = mountUploader(files)
-    const ai = wrapper.find('[data-testid="direct-ai-btn"]')
-    const playback = wrapper.find('[data-testid="direct-playback-btn"]')
-    expect(wrapper.find('.replay-action-file').element.value).toBe('')
-    expect(ai.attributes('disabled')).toBeDefined()
-    expect(playback.attributes('disabled')).toBeDefined()
-    await ai.trigger('click')
-    await playback.trigger('click')
-    expect(wrapper.emitted('workspace-action')).toBeUndefined()
-  })
-
-  it('多文件必须通过选择器明确指定 AI/回放目标文件', async () => {
-    const files = makeFiles(3)
-    const { wrapper } = mountUploader(files)
-    const select = wrapper.find('.replay-action-file')
-    await select.setValue(`${files[2].name}:${files[2].size}:${files[2].lastModified}`)
-    await wrapper.find('[data-testid="direct-ai-btn"]').trigger('click')
-    expect(lastWorkspaceAction(wrapper)).toEqual({ file: files[2], mode: 'ai' })
-  })
-
-  it('已选择的多文件目标被移除后失效且不得 fallback 到第一场', async () => {
-    const files = makeFiles(3)
-    const { wrapper } = mountUploader(files)
-    const select = wrapper.find('.replay-action-file')
-    await select.setValue(`${files[2].name}:${files[2].size}:${files[2].lastModified}`)
-    expect(wrapper.find('[data-testid="direct-ai-btn"]').attributes('disabled')).toBeUndefined()
-
-    await wrapper.setProps({ files: files.slice(0, 2) })
-    expect(wrapper.find('.replay-action-file').element.value).toBe('')
-    expect(wrapper.find('[data-testid="direct-ai-btn"]').attributes('disabled')).toBeDefined()
-    await wrapper.find('[data-testid="direct-ai-btn"]').trigger('click')
-    expect(wrapper.emitted('workspace-action')).toBeUndefined()
   })
 
   // ---- 共享 upload preflight（选择文件/文件夹/add/drop 同一 contract）----
