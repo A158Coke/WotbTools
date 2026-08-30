@@ -272,7 +272,7 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
 ### AI Review / Battle Playback
 
 `ReplayWorkspace` 是回放数据 / AI / 战局回放三个能力的统一载体：通过唯一 `useReplay`
-消费 `useReplaySession` 持有的 selection / Processing / Result identity（并 `provide('replay')`），data / AI / Playback 共享同一
+组合并消费 `useReplaySession` 持有的 selection / Processing / Result identity（并 `provide('replay')`），Processing lifecycle 由 `useProcessingJob` 持有，data / AI / Playback 共享同一
 `processingJobId + sourceId` Dataset 引用，绝不 multipart 重传/重解析。三个 capability tab 始终可见
 （不因能力不可用而消失）；AI 与 Playback 各持独立 `useCapabilityReplay`，Dataset 状态互不污染。
 `ReplayPage` 作为 data 结果 tab 嵌入（`embedded` prop），在 Workspace 内只渲染结果 / 列系统 / Export /

@@ -6,7 +6,8 @@
 
 - `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`ai`、`playback` 三种能力的统一工作台。
 - `frontend/src/composables/useReplaySession.js` 是唯一 session state owner，持有 selection、当前 battle、Processing/Result identity、Export state 与 Workspace view state。
-- `frontend/src/composables/useReplay.js` 驱动 Processing Job 的上传、single-flight、轮询与 Dataset recovery；它只消费 session refs，不再声明第二份 selection/result/export state。
+- `frontend/src/composables/useProcessingJob.js` 持有 Processing Job 的上传、single-flight、轮询、source-ready、取消与 Dataset recovery lifecycle；它只消费 session refs。
+- `frontend/src/composables/useReplay.js` 是 compatibility facade/orchestrator，组合 session、Processing 与 Export，不再持有 Processing lifecycle 闭包。
 - `frontend/src/composables/useExportJob.js` 持有 Export Job 的创建、轮询、取消和下载 lifecycle；它只消费 session 的 READY `processingJobId`。
 - `frontend/src/composables/useCapabilityReplay.js` 为 AI 与 Playback 各自持有 capability dataset 状态；它们消费 Workspace 的 authoritative dataset，不复制基础 selection，也不互相 handoff 业务状态。
 - `frontend/src/app/viewRegistry.js` 将 `replay`、`ai-review`、`battle-playback` URL 映射到同一个 `ReplayWorkspace`，由 `initialCapability` 决定初始 tab；`ViewHost.vue` 用 `KeepAlive` 保留工作台实例。

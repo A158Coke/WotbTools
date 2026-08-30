@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { useReplaySession } from '../composables/useReplaySession.js'
 import ReplayWorkspace from './ReplayWorkspace.vue'
 
 // useReplay mock 返回的可变 state 占位：每次 beforeEach 用 buildState() 以真实 Vue ref 重建。
@@ -56,25 +56,12 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k, te: () => true }) })
 
 /** 以真实 Vue ref/函数构造 useReplay 返回物（保证 files/resp/processingJobId/selectionRevision 响应式）。 */
 function buildState() {
+  const session = useReplaySession()
   return {
-    files: ref([]),
-    selectionRevision: ref(0),
-    activeTab: ref('aggregate'),
-    resp: ref(null),
-    processingJob: ref(null),
-    processingError: ref(''),
-    uploadState: ref(null),
-    processingJobId: ref(null),
-    exportJob: ref(null),
-    exportError: ref(''),
-    pendingRemove: ref(null),
+    ...session,
+    session,
     updateFiles: vi.fn((next) => {
-      hold.state.files.value = next
-      hold.state.selectionRevision.value++
-      hold.state.activeTab.value = 'aggregate'
-      hold.state.processingJobId.value = null
-      hold.state.resp.value = null
-      hold.state.processingJob.value = null
+      session.replaceSelection(next)
     }),
     startProcessingJob: vi.fn(),
     cancelProcessing: vi.fn(),
