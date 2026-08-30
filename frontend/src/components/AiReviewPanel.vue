@@ -52,6 +52,12 @@ const datasetMessage = computed(() => {
 const error = ref('')
 const analyzing = ref(false)
 const analysisResult = ref(null)
+/** AI 复盘 capability（AnalyzeResponse.capability：AVAILABLE / AVAILABLE_WITH_LIMITED_TIMELINE / UNAVAILABLE）。 */
+const analysisCapability = computed(() => analysisResult.value?.capability || null)
+const limitedTimelineNote = computed(() =>
+  analysisCapability.value === 'AVAILABLE_WITH_LIMITED_TIMELINE'
+    ? t('recon.capability_limited')
+    : '')
 
 // 流式状态：当前阶段（call1 赛前预测 / evidence 证据分析 / call2 生成中 / autopsy 团队剖析）
 // 与主复盘已到达文本（token 滚动）。
@@ -321,7 +327,8 @@ async function readAnalyzeStream(r, run) {
         if (typeof data.analysis === 'string' && data.analysis.trim()) {
           analysisResult.value = {
             analysis: data.analysis,
-            preBattleSection: data.preBattleSection
+            preBattleSection: data.preBattleSection,
+            capability: data.capability
           }
           progressStage.value = 'done'
           receivedDone = true
@@ -433,6 +440,9 @@ onBeforeUnmount(() => {
       </div>
 
       <AnalysisResultPanel v-if="analysisResult" :result="analysisResult" @seek="(sec) => emit('seek', sec)" />
+      <p v-if="limitedTimelineNote" class="ai-capability-note" data-test="ai-capability-limited">
+        {{ limitedTimelineNote }}
+      </p>
     </template>
   </div>
 </template>
@@ -443,6 +453,15 @@ onBeforeUnmount(() => {
 .ai-review-panel {
   width: min(1100px, 100%);
   margin-inline: auto;
+}
+.ai-capability-note {
+  margin: 10px 0;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--warn-text) 40%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--warn-text) 10%, var(--bg-card));
+  color: var(--warn-text);
+  font-size: .84rem;
 }
 .ai-action-row {
   display: flex;
