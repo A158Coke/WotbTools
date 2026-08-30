@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.54",
+    "date": "2026-08-30",
+    "tag": "fix",
+    "zh": "修复回放工作台中 AI 复盘与战局回放视图错误显示“支持多选和选择文件夹”的问题：这两个视图现在只接受一个回放文件，重新选择会替换当前选择，不再合并到原批次。",
+    "en": "Fixed AI review and battle playback views wrongly offering multi-file and folder selection: they now accept a single replay file, and re-selecting replaces the current selection instead of merging into the existing batch.",
+    "ru": "Исправлено ошибочное предложение множественного выбора и выбора папки в видах AI-разбора и воспроизведения боя: теперь принимается только один файл реплея, а повторный выбор заменяет текущий вместо объединения с уже выбранным набором."
+  },
+  {
     "v": "2.12.53",
     "date": "2026-08-30",
     "tag": "fix",

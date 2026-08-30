@@ -170,7 +170,7 @@ function onDrop(e) {
       </div>
 
       <div class="fb-actions">
-        <label v-if="allowFolder" class="filebtn ghost sm" :title="$t('upload.add_files_title')">
+        <label class="filebtn ghost sm" :title="$t('upload.add_files_title')">
           <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>{{ $t('upload.add') }}
           <input type="file" :multiple="allowFolder" accept=".wotbreplay" data-testid="add-files-input" @change="onPick" />
         </label>
@@ -193,7 +193,7 @@ function onDrop(e) {
           <span class="fb-count">{{ $t('upload.files_size', { count: files.length, size: formatReplaySize(totalBytes) }) }}</span>
         </div>
       </div>
-      <label v-if="allowFolder" class="filebtn ghost sm" :title="$t('upload.add_files_title')">
+      <label class="filebtn ghost sm" :title="$t('upload.add_files_title')">
         <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>{{ $t('upload.add') }}
         <input type="file" :multiple="allowFolder" accept=".wotbreplay" data-testid="compact-add-files-input" @change="onPick" />
       </label>

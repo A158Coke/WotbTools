@@ -57,9 +57,10 @@ vi.mock('./BattlePlaybackPanel.vue', () => ({
 }))
 vi.mock('./FileUploader.vue', () => ({
   default: {
-    props: ['files'],
+    name: 'FileUploaderMock',
+    props: ['files', 'allowFolder'],
     emits: ['update:files'],
-    template: '<button data-test="uploader">upload</button>',
+    template: '<button data-test="uploader" :data-allow-folder="String(allowFolder)">upload</button>',
   },
 }))
 vi.mock('./ReplayProcessingPanel.vue', () => ({ default: { template: '<div data-test="processing" />' } }))
@@ -310,5 +311,60 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.find('.replay-source').exists()).toBe(true)
     expect(wrapper.find('.replay-source [data-testid="ws-batch-selector"]').exists()).toBe(true)
     expect(wrapper.find('.replay-source').text()).toContain('workspace.batch_count')
+  })
+
+  it('Data → FileUploader allowFolder=true；AI / Playback → allowFolder=false', async () => {
+    const files = [new File(['x'], 'a.wotbreplay')]
+    replayState.files.value = files
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+    const uploader = wrapper.findComponent({ name: 'FileUploaderMock' })
+    expect(uploader.props('allowFolder')).toBe(true)
+
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
+    await flushPromises()
+    expect(uploader.props('allowFolder')).toBe(false)
+
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
+    await flushPromises()
+    expect(uploader.props('allowFolder')).toBe(false)
+  })
+
+  it('已有 34-file batch → 切 AI：files.length 仍 34、currentBattleId 不变、AI 消费当前 battle', async () => {
+    const files = Array.from({ length: 34 }, (_, i) => new File(['x'], `f${i}.wotbreplay`))
+    replayState.files.value = files
+    replayState.resp.value = {
+      leagueMode: false,
+      aggregate: [{ a: 1 }],
+      battles: Array.from({ length: 34 }, (_, i) => ({ sourceId: `r${i}`, mapName: 'Lagoon', players: [] })),
+    }
+    replayState.processingJobId.value = 'job-1'
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+
+    // 进入单场视图并选中 #8（sourceId r7），再切 AI。
+    await wrapper.find('[data-testid="ws-batch-selector"]').trigger('click')
+    await wrapper.findAll('.ws-batch-item')[7].trigger('click')
+    await flushPromises()
+    expect(replayState.files.value.length).toBe(34)
+
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
+    await flushPromises()
+    // 切 AI 不（自动）清空 batch：files.length 仍 34。
+    expect(replayState.files.value.length).toBe(34)
+    // AI 消费当前 battle（sourceId r7），currentBattleId 不变。
+    const aiVm = wrapper.findComponent({ name: 'AiReviewPanelMock' })
+    expect(aiVm.props('file')?.name).toBe('f7.wotbreplay')
+  })
+
+  it('AI / Playback 主动选择新 single replay → updateFiles 收到仅该 replay（replace，不 merge 原 batch）', async () => {
+    replayState.files.value = Array.from({ length: 34 }, (_, i) => new File(['x'], `f${i}.wotbreplay`))
+    const wrapper = mountWorkspace('ai')
+    await flushPromises()
+    const single = new File(['x'], 'single.wotbreplay')
+    const uploader = wrapper.findComponent({ name: 'FileUploaderMock' })
+    uploader.vm.$emit('update:files', [single])
+    await flushPromises()
+    expect(replayState.updateFiles).toHaveBeenCalledWith([single])
   })
 })
