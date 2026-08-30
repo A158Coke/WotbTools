@@ -16,21 +16,27 @@ App.vue
 
 `router.js` owns browser history, deep-link handling, redirects, and Back/Forward. Product URLs deliberately retain the compatible query contract: `?view=replay`, `?view=ai-review`, and `?view=battle-playback` all resolve to the same kept-alive Replay Workspace with a different initial capability. Legacy aliases (`leaderboard`, `extended`, `reconstruction`) redirect once to their canonical query values. `/download/android` and `/download/android/` resolve to the Android page.
 
-`ViewHost.vue` is a temporary page host during the incremental migration: `viewRegistry.js` maps the existing flat page components to a route-derived product view. Later PRs move feature pages without changing the URL contract. Do not add manual `history.pushState`, `replaceState`, or `popstate` listeners to a component; use the injected `navigate(view)` command, which delegates to Vue Router.
+`ViewHost.vue` maps the existing flat page components to a route-derived product view. The flat layout is the current implementation; do not treat another directory layout as already present. Do not add manual `history.pushState`, `replaceState`, or `popstate` listeners to a component; use the injected `navigate(view)` command, which delegates to Vue Router.
 
 ## Dependency and state rules
 
-The intended dependency direction is:
+The required dependency direction is:
 
 ```text
 app → features → shared
 ```
 
-The flat `components/`, `composables/`, and `utils/` directories remain transitional until their owning feature PRs. New work should not create cross-feature private imports or place feature endpoint knowledge in shared code.
+The current source tree uses flat `components/`, `composables/`, and `utils/` directories; the dependency rule still applies conceptually without claiming feature folders that do not exist. New work should not create cross-feature private imports or place feature endpoint knowledge in shared code.
 
 Each business state has one authoritative owner. Derive values with `computed`; use `watch()` for real side effects or lifecycle bridges only, never to synchronize duplicate copies of the same state.
 
 The UI profile remains presentation-only: `wotb-ui-profile` is the single persistence key, and its derived `data-theme` does not create a separate theme state. Showcase and Classic must use the same components, APIs, and business state.
+
+## Canonical feature references
+
+- Replay Workspace ownership and capability boundaries: [`replay-workspace.md`](replay-workspace.md)
+- UI Profile, tokens and responsive constraints: [`ui-system.md`](ui-system.md)
+- Replay/AI/Playback product and API contracts: [`../architecture/ai-review.md`](../architecture/ai-review.md), [`../features/team-ai-review.md`](../features/team-ai-review.md), [`../features/battle-playback.md`](../features/battle-playback.md)
 
 ## Verification expectations
 
