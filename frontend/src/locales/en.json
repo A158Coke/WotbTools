@@ -1342,8 +1342,7 @@
             "partial": "Some observations are missing: playing only trusted/last-known data, not guessing unobserved facts",
             "unavailable": "Battle playback unavailable for this replay (backend did not produce a timeline / data missing)",
             "error": "Failed to load battle playback",
-            "retry": "Retry",
-            "map_unavailable": "Map base unavailable (no renderable coordinates/assets)"
+            "retry": "Retry"
         },
         "copy": "Copy",
         "copied": "Copied",

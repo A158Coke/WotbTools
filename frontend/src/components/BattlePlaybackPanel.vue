@@ -71,6 +71,27 @@ const mapPlaybackV2 = ref(null)
 const playbackV2State = ref('LOADING')
 const playbackV2Error = ref('')
 const playbackV2UnavailableReason = ref('')
+/**
+ * PRIMARY Battle Playback 的 overview 输入：MapOverview 存在时用其完整 overlay（heatmap/routes 之外的
+ * gridCells/spawnPoints/playableBounds 为可选项）；MapOverview 不可用/缺失时由 V2 dataset 合成最小
+ * authoritative overview（mapCode/friendlyTeam/recorderAccountId/arenaBonusType），保证 PRIMARY 不依赖
+ * map-overview artifact 是否存在才能渲染（Blocker 2：Battle Playback PRIMARY 不被 MapOverview capability 锁死）。
+ */
+const pbOverview = computed(() => {
+  if (mapOverview.value) return mapOverview.value
+  const v2 = mapPlaybackV2.value
+  if (!v2) return null
+  return {
+    mapCode: v2.mapCode || null,
+    friendlyTeam: v2.friendlyTeam,
+    recorderAccountId: v2.recorderAccountId ?? null,
+    arenaBonusType: v2.arenaBonusType ?? null,
+    playableBounds: null,
+    gridCells: [],
+    spawnPoints: [],
+    routes: [],
+  }
+})
 /** 面板内视图：默认 BattlePlayback 为主；地图鸟瞰为 secondary。 */
 const panelView = ref('playback')
 const mapLoading = ref(false)
@@ -328,11 +349,11 @@ onBeforeUnmount(() => {
 
         <!-- PRIMARY：Battle Playback（第一屏直接展示 playback 控件，不再被 MapOverview 吞掉） -->
         <div v-show="panelView === 'playback'" data-test="pb-primary">
-          <template v-if="mapOverview && (playbackV2State === 'FULL' || playbackV2State === 'PARTIAL')">
+          <template v-if="playbackV2State === 'FULL' || playbackV2State === 'PARTIAL'">
             <p v-if="playbackV2State === 'PARTIAL'" class="pb-capability-note" data-test="pb-capability-partial">
               {{ $t('recon.playback.partial') }}
             </p>
-            <BattlePlayback :overview="mapOverview" :playback-v2="mapPlaybackV2" :seek-to="mapSeek" />
+            <BattlePlayback v-if="pbOverview" :overview="pbOverview" :playback-v2="mapPlaybackV2" :seek-to="mapSeek" />
           </template>
           <div v-else-if="playbackV2State === 'UNAVAILABLE'" class="pb-status pb-unavailable" data-test="pb-unavailable">
             {{ playbackV2UnavailableReason }}
@@ -343,10 +364,6 @@ onBeforeUnmount(() => {
           </div>
           <div v-else-if="playbackV2State === 'LOADING'" class="pb-status" data-test="pb-loading">
             <span class="map-status-spinner" aria-hidden="true"></span>{{ $t('recon.playback.loading') }}
-          </div>
-          <div v-else-if="!mapOverview" class="pb-status pb-unavailable" data-test="pb-no-map">
-            <span>{{ $t('recon.playback.map_unavailable') }}</span>
-            <button type="button" class="ghost sm" @click="loadMapOverview">{{ $t('recon.map.load') }}</button>
           </div>
         </div>
 

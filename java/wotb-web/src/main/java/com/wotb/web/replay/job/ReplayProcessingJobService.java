@@ -265,10 +265,22 @@ public class ReplayProcessingJobService {
         try {
             ReplayArtifactWriter.writeMapOverview(store.jobDir(job.jobId()), index,
                     MapOverviewBuilder.build(battle, result.reconstruction()));
-            // V2 battle playback dataset：仅当 canonical timeline 可用时写出（不可用 → 跳过，
-            // 容量能力不可用 → 204，绝不判 parse failure）。
-            ReplayArtifactWriter.writeBattlePlaybackV2(store.jobDir(job.jobId()), index,
-                    buildBattlePlaybackV2(battle, result));
+            // V2 battle playback dataset：explicit outcome（AVAILABLE / UNAVAILABLE / ERROR）。
+            // V2 是能力增强：timeline 不可用或 projector 运行时错误都绝不判 source FAILED
+            // （fail-closed），但禁止 silent null —— 必须在调用层记录确定性 reason + stacktrace，
+            // 区分 timeline/recorder 缺失与 projector 运行时故障（prod 204 时才可诊断根因）。
+            final V2BuildOutcome v2 = buildBattlePlaybackV2(battle, result);
+            if (v2.dataset() != null) {
+                ReplayArtifactWriter.writeBattlePlaybackV2(store.jobDir(job.jobId()), index, v2.dataset());
+                LOGGER.info(logLine("processing_job_v2_available", job.jobId(),
+                        "sourceIndex", index, "sourceName", name));
+            } else if (v2.failure() != null) {
+                LOGGER.error(logLine("processing_job_v2_error", job.jobId(),
+                        "sourceIndex", index, "sourceName", name, "reason", v2.reason()), v2.failure());
+            } else {
+                LOGGER.info(logLine("processing_job_v2_unavailable", job.jobId(),
+                        "sourceIndex", index, "sourceName", name, "reason", v2.reason()));
+            }
             ReplayArtifactWriter.writeAiFacts(store.jobDir(job.jobId()), index, result);
         } catch (final IOException e) {
             LOGGER.warn(logLine("processing_job_artifact_write_failed", job.jobId(),
@@ -283,34 +295,65 @@ public class ReplayProcessingJobService {
         entries[index] = new Replays.ParsedEntry(index, name, battle, null);
     }
 
-    /** V2 dataset 构建：canonical timeline 可用才产出；否则 null（调用方跳过，不判失败）。 */
-    private static com.wotb.web.replay.dto.BattlePlaybackDataset buildBattlePlaybackV2(
-            final Battle battle, final ReplayProcessingResult result) {
+    /**
+     * V2 dataset 构建——显式 outcome（不再把 null 混成一个结果）：
+     * <ul>
+     *   <li>{@code AVAILABLE}：canonical timeline 可用且投影成功，返回 dataset；</li>
+     *   <li>{@code UNAVAILABLE}：timeline 不可用 / recorder 缺失 / 投影空（合法不可用，记录 reason）；</li>
+     *   <li>{@code ERROR}：timeline 构建或 projector 运行时故障（记录 exception + stacktrace）。</li>
+     * </ul>
+     * fail-closed：无论 AVAILABLE/UNAVAILABLE/ERROR 都<b>不</b>判 source FAILED（V2 是能力增强）。
+     * package-private 以便针对 reason/exception 做确定性测试（禁止 silent null 回归）。
+     */
+    static V2BuildOutcome buildBattlePlaybackV2(final Battle battle, final ReplayProcessingResult result) {
         if (battle == null || result == null || result.reconstruction() == null) {
-            return null;
+            return V2BuildOutcome.unavailable("NO_RECONSTRUCTION");
+        }
+        final var recorder = battle.recorderResult();
+        if (recorder == null) {
+            return V2BuildOutcome.unavailable("RECORDER_MISSING");
+        }
+        final com.wotb.core.replay.timeline.BattleTimelineResult tl;
+        try {
+            tl = com.wotb.core.replay.timeline.BattleTimelineBuilder.build(
+                    battle, result.reconstruction(),
+                    com.wotb.core.replay.timeline.TimelinePerspective.personal(
+                            recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
+        } catch (final RuntimeException ex) {
+            return V2BuildOutcome.error("TIMELINE_BUILD_ERROR", ex);
+        }
+        if (tl == null || !tl.usable()) {
+            return V2BuildOutcome.unavailable("TIMELINE_NOT_USABLE");
         }
         try {
-            final var recorder = battle.recorderResult();
-            if (recorder == null) {
-                return null;
-            }
-            final com.wotb.core.replay.timeline.BattleTimelineResult tl =
-                    com.wotb.core.replay.timeline.BattleTimelineBuilder.build(
-                            battle, result.reconstruction(),
-                            com.wotb.core.replay.timeline.TimelinePerspective.personal(
-                                    recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
-            if (!tl.usable()) {
-                return null;
-            }
             final var mapping = com.wotb.core.replay.processing.TeamEntityMapper.resolve(
                     battle, result.reconstruction());
-            return com.wotb.web.replay.ai.BattlePlaybackProjector.project(
-                    battle, tl.timeline(), mapping,
-                    recorder.accountId > 0 ? recorder.accountId : null);
+            final com.wotb.web.replay.dto.BattlePlaybackDataset ds =
+                    com.wotb.web.replay.ai.BattlePlaybackProjector.project(
+                            battle, tl.timeline(), mapping,
+                            recorder.accountId > 0 ? recorder.accountId : null);
+            return ds == null
+                    ? V2BuildOutcome.unavailable("PROJECTION_EMPTY")
+                    : V2BuildOutcome.available(ds);
         } catch (final RuntimeException ex) {
-            // canonical timeline 构建/投影任何运行时异常 ≠ parse failure：
-            // V2 dataset 是能力增强，不可用即跳过（不判 source FAILED、不覆盖 MapOverview）。
-            return null;
+            return V2BuildOutcome.error("PROJECTOR_ERROR", ex);
+        }
+    }
+
+    /** V2 artifact 生成显式结果：dataset（AVAILABLE）或 reason（UNAVAILABLE/ERROR）。 */
+    record V2BuildOutcome(com.wotb.web.replay.dto.BattlePlaybackDataset dataset,
+                          String reason,
+                          RuntimeException failure) {
+        static V2BuildOutcome available(final com.wotb.web.replay.dto.BattlePlaybackDataset ds) {
+            return new V2BuildOutcome(ds, null, null);
+        }
+
+        static V2BuildOutcome unavailable(final String reasonCode) {
+            return new V2BuildOutcome(null, reasonCode, null);
+        }
+
+        static V2BuildOutcome error(final String reasonCode, final RuntimeException failure) {
+            return new V2BuildOutcome(null, reasonCode, failure);
         }
     }
 
