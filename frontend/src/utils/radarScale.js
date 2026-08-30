@@ -1,13 +1,14 @@
 /**
- * Shared presentation-only Radar scale.
+ * Presentation-only Radar scales.
  *
- * The business score/raw value stays untouched. Geometry is relative to the
- * current reference cohort: average=75, 2x average=100, 4x=125, >=8x=150.
+ * Business score/raw values stay untouched. V2 keeps the relative log scale;
+ * V5 uses the bounded average=75 / authoritative max=150 scale.
  */
 export const RADAR_AVERAGE_VALUE = 75
 export const RADAR_STRONG_VALUE = 100
 export const RADAR_DISPLAY_CAP = 150
 const RADAR_ABOVE_AVERAGE_STEP = RADAR_STRONG_VALUE - RADAR_AVERAGE_VALUE
+const RADAR_BOUNDED_UPPER_RANGE = RADAR_DISPLAY_CAP - RADAR_AVERAGE_VALUE
 
 const isFiniteRaw = value => typeof value === 'number' && Number.isFinite(value)
 
@@ -21,6 +22,22 @@ export function radarVisualValue(playerRaw, referenceRaw) {
     ? RADAR_AVERAGE_VALUE * relative
     : RADAR_AVERAGE_VALUE + RADAR_ABOVE_AVERAGE_STEP * Math.log2(relative)
   return Math.min(RADAR_DISPLAY_CAP, Math.max(0, visual))
+}
+
+/**
+ * V5-only bounded presentation scale. The current comparison-group average is
+ * the regular 75 ring and the authoritative League dimension max is 150.
+ * Rating formulas/raw values stay untouched.
+ */
+export function radarBoundedVisualValue(playerRaw, referenceRaw, maxRaw) {
+  if (!isFiniteRaw(playerRaw) || !isFiniteRaw(referenceRaw) || !isFiniteRaw(maxRaw)) return null
+  const player = playerRaw
+  const reference = referenceRaw
+  const max = maxRaw
+  if (player < 0 || player > max || reference <= 0 || reference >= max) return null
+  if (player <= reference) return RADAR_AVERAGE_VALUE * player / reference
+  return RADAR_AVERAGE_VALUE
+    + RADAR_BOUNDED_UPPER_RANGE * (player - reference) / (max - reference)
 }
 
 export function radarRadiusRatio(visualValue) {
@@ -49,11 +66,7 @@ function unavailable(axis) {
   return { ...axis, visualValue: null, normalized: null, available: false }
 }
 
-/**
- * Scales player/reference axes together while preserving raw/display values.
- * Returned reference axes follow player order and form a regular 75 ring.
- */
-export function scaleRadarSeries(metrics = [], reference = []) {
+function scaleSeries(metrics, reference, resolveVisualValue) {
   const referenceByKey = new Map((reference || []).map(axis => [axis?.key, axis]))
   const scaledMetrics = []
   const scaledReference = []
@@ -61,7 +74,7 @@ export function scaleRadarSeries(metrics = [], reference = []) {
   for (const metric of metrics || []) {
     const ref = referenceByKey.get(metric?.key)
     const usable = metric?.available === true && ref?.available === true
-    const visualValue = usable ? radarVisualValue(metric.rawValue, ref.rawValue) : null
+    const visualValue = usable ? resolveVisualValue(metric, ref) : null
     if (visualValue == null) {
       scaledMetrics.push(unavailable(metric || {}))
       scaledReference.push(unavailable(ref || { key: metric?.key }))
@@ -82,4 +95,23 @@ export function scaleRadarSeries(metrics = [], reference = []) {
   }
 
   return { metrics: scaledMetrics, reference: scaledReference }
+}
+
+/**
+ * Scales player/reference axes together while preserving raw/display values.
+ * Returned reference axes follow player order and form a regular 75 ring.
+ */
+export function scaleRadarSeries(metrics = [], reference = []) {
+  return scaleSeries(metrics, reference,
+    (metric, ref) => radarVisualValue(metric.rawValue, ref.rawValue))
+}
+
+/**
+ * V5-only series scaler. Unlike scaleRadarSeries (V2 relative scale), this
+ * consumes authoritative League column maxima so every dimension max maps to
+ * the invisible 150 boundary.
+ */
+export function scaleBoundedRadarSeries(metrics = [], reference = [], maxByKey = {}) {
+  return scaleSeries(metrics, reference, (metric, ref) =>
+    radarBoundedVisualValue(metric.rawValue, ref.rawValue, Number(maxByKey?.[metric?.key])))
 }

@@ -55,13 +55,16 @@ export function radarScaleTicks(count, g = RADAR) {
 export function radarScoreLabelPosition(index, count, ratio, g = RADAR) {
   const numeric = Number(ratio)
   const safeRatio = Number.isFinite(numeric) ? Math.min(1, Math.max(0, numeric)) : 0
+  const isTop = index === 0
   const vertical = Math.abs(Math.sin(axisAngle(index, count))) >= 0.8
   const offset = 12 / g.RADIUS
+  // The top badge can use the viewBox headroom. Other near-vertical badges stop
+  // just inside the data cap so their axis names retain a readable gap.
+  const verticalCap = isTop ? 1.06 : 0.98
   let labelRatio = vertical
-    ? Math.min(1.06, safeRatio + offset)
+    ? Math.min(verticalCap, safeRatio + offset)
     : safeRatio - offset
   labelRatio = Math.max(g.SCORE_BADGE_MIN_RATIO, labelRatio)
-  const isTop = index === 0
   if (isTop && safeRatio < g.SCORE_BADGE_MIN_RATIO) {
     labelRatio = Math.max(labelRatio, g.SCORE_BADGE_LOW_TOP_RATIO)
   }

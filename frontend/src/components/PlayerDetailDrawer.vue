@@ -9,7 +9,7 @@ import {
   RADAR_METRIC_DEFS, RADAR_AVAILABLE_KEYS, RADAR_MIN_AXES, RADAR_MAX_AXES,
   loadRadarPreference, saveRadarPreference, resolveRadarMetric,
 } from '../utils/radarMetrics.js'
-import { formatRadarVisualScore, scaleRadarSeries } from '../utils/radarScale.js'
+import { formatRadarVisualScore, scaleBoundedRadarSeries } from '../utils/radarScale.js'
 import {
   RADAR, axisPoint, axisRay, polygonPoints, radarGridPolygons, radarScaleTicks,
   radarScoreLabelLayout,
@@ -26,8 +26,10 @@ import { sanitizeFilename, downloadBlob } from '../utils/exportReplayPng.js'
  *   本场七维 dimensionScores → Battle Average；禁止使用 dimensionMeans/Medians）。
  * - Radar：默认七维（仅 League 维度，§8），用户可自定义 3–7 个指标/顺序（presentation-only，
  *   独立于 Table ColumnPicker，独立 localStorage）；axis 缺失 → 整图 unavailable（§24）。
- *   League 几何只使用 raw/reference 相对标尺；resp.league.columns max 仅解释 raw 明细，不参与半径。
- * - 参考多边形（Battle/Global Average）由 utils/radarReference.js 纯函数计算；V5 不影响几何。
+ *   League bounded 几何使用 player raw / reference raw / resp.league.columns max；max 同时解释 raw 明细，
+ *   缺失/非法时整轴 fail-closed。
+ * - 参考多边形（Battle/Global Average）由 utils/radarReference.js 纯函数计算；V5 Evidence Adjustment
+ *   不修改七维 raw 或 Radar 几何。
  */
 const props = defineProps({
   /** 当前选中上下文；null = 关闭。 */
@@ -208,7 +210,7 @@ const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
 
 /** player 雷达原始轴（顺序 = 用户偏好；league 维度按 scope 取数：
  *  summary → dimensionMeans[i]（rated-battle 算术平均），battle → dimensionScores[i]
- *  （本场七维）；score/max 仅保留解释值，最终几何由 radarScale 相对 reference 生成。禁止 battle 复用跨场聚合字段、
+ *  （本场七维）；V5 几何由当前 reference=75、权威维度 max=150 的 bounded scale 生成。禁止 battle 复用跨场聚合字段、
  *  禁止 summary 用 median 冒充 mean。 */
 const rawRadarMetrics = computed(() => {
   const p = props.player
@@ -238,7 +240,7 @@ const rawReferenceSeries = computed(() => {
 })
 
 const scaledRadarSeries = computed(() =>
-  scaleRadarSeries(rawRadarMetrics.value, rawReferenceSeries.value))
+  scaleBoundedRadarSeries(rawRadarMetrics.value, rawReferenceSeries.value, maxByKey.value))
 
 const radarMetrics = computed(() => scaledRadarSeries.value.metrics)
 const referenceSeries = computed(() => scaledRadarSeries.value.reference)
