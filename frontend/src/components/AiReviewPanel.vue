@@ -9,6 +9,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { localizeAiError, isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
+import { apiErrorLabel } from '../utils/display.js'
+import { ApiError, apiErrorFromResponse, apiFetch, normalizeApiError } from '../utils/http.js'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 import ReplayAnalysisAction from './ReplayAnalysisAction.vue'
 
@@ -24,8 +26,8 @@ const props = defineProps({
 
 const emit = defineEmits(['seek', 'dataset-recover'])
 
-const { t, locale } = useI18n()
-const { tokenParsed, token, ensureToken, login } = useAuth()
+const { t, te, locale } = useI18n()
+const { tokenParsed, token, ensureToken } = useAuth()
 
 // AI Review 权限：已登录 + wotbtools-user 或 wotbtools-admin
 const canUseAiReview = computed(() => {
@@ -101,20 +103,17 @@ watch(() => [props.file, props.processingJobId, props.sourceId], () => {
 async function authedFetch(url, body, { signal } = {}) {
   const valid = await ensureToken(30)
   if (!valid) {
-    login('replay')
-    throw new Error(t('recon.auth_required'))
+    throw new ApiError({ code: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false })
   }
   const accessToken = token()
   const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
   if (typeof body === 'string') headers['Content-Type'] = 'application/json'
-  const r = await fetch(url, { method: 'POST', headers, body, signal })
+  const r = await apiFetch(url, { method: 'POST', headers, body, signal })
   if (r.status === 401) {
-    login('replay')
-    throw new Error(t('recon.auth_required'))
+    const apiError = await apiErrorFromResponse(r)
+    throw apiError
   }
-  if (r.status === 403) {
-    throw new Error(t('recon.forbidden'))
-  }
+  if (!r.ok) throw await apiErrorFromResponse(r)
   return r
 }
 
@@ -123,7 +122,7 @@ function fireCancel(correlationId) {
   if (!correlationId) return
   const accessToken = token()
   const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
-  fetch(`/api/replay/analyze/cancel?correlationId=${encodeURIComponent(correlationId)}`, {
+  apiFetch(`/api/replay/analyze/cancel?correlationId=${encodeURIComponent(correlationId)}`, {
     method: 'POST',
     headers,
     keepalive: true
@@ -188,24 +187,6 @@ async function runAnalyze() {
     const r = await authedFetch('/api/replay/analyze', analyzeBody(run.correlationId),
       { signal: run.controller.signal })
     if (activeRun !== run) return // stale response：不读流、不写任何状态
-    if (!r.ok) {
-      const rawBody = await r.text().catch(() => '')
-      const trimmed = rawBody.trim()
-      let errorData = { code: trimmed, maxFiles: 1 }
-      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-        try {
-          const json = JSON.parse(trimmed)
-          errorData = { code: json.code || '', maxFiles: json.maxFiles || 1 }
-        } catch {
-        }
-      }
-      // 数据集引用过期/缺失（JOB_NOT_FOUND 等）：触发父组件重建，而非把错误码展示给用户。
-      if (isRecoverableDatasetCode(errorData.code)) {
-        handleDatasetRecover(errorData.code)
-        return
-      }
-      throw new Error(localizeAiError(errorData, r.status, t))
-    }
     // SSE 流式解析：阶段事件 + call2_token 主复盘增量 + done 收尾。
     const receivedDone = await readAnalyzeStream(r, run)
     if (!receivedDone && !run.cancelRequested) {
@@ -220,13 +201,20 @@ async function runAnalyze() {
       handleDatasetRecover(e.message)
       return
     }
-    if (e && e.name === 'AbortError') {
+    if (e instanceof ApiError && isRecoverableDatasetCode(e.code)) {
+      handleDatasetRecover(e.code)
+      return
+    }
+    const normalized = normalizeApiError(e)
+    if (normalized.code === 'REQUEST_ABORTED') {
       error.value = run.timedOut ? t('recon.errors.AI_TIMEOUT') : t('recon.cancelled')
     } else if (run.cancelRequested) {
       // 用户主动取消：保持「已取消」语义，忽略后端 error 事件。
       error.value = t('recon.cancelled')
     } else {
-      error.value = e.message || String(e)
+      error.value = e instanceof ApiError || e instanceof TypeError
+        ? apiErrorLabel(t, te, normalized)
+        : (e.message || String(e))
     }
   } finally {
     // 只清理自己的 timer；非当前 run 的 finally 不得触碰共享 UI 状态。

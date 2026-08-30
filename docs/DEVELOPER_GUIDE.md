@@ -59,7 +59,7 @@ Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 
 ## 硬性约定
 
 - **改动即更新文档**：影响界面、导出、数据、构建或用法的改动，同一次提交更新相关文档。
-- **API 纯英文**：DTO 返回 raw enum、稳定 `code/error` 和数据，不返回本地化 `*Label/message`。
+- **API 纯英文**：成功 DTO 返回 raw enum 与数据；失败返回 canonical `ApiErrorResponse`（稳定 `code`、status、messageKey、traceId、retryable、details、timestamp），不返回本地化 `*Label/message` 或 exception message。完整契约见 `docs/api/error-contract.md`。
 - **显示名分两类出口**：前端三语 locale + Excel 导出中文标签；改列必须同步两边。
 - **单一数据源**：车辆库为 `common/tankopedia-tier{7,8,9,10}.json`，地图名为 `common/map_names.json`；禁止模块内复制一份。
 - 不引入 Lombok；record 用于不可变模型；Controller 只处理 HTTP，业务逻辑进入 service/core。
@@ -117,6 +117,8 @@ Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 
 ```
 
 核心原则：Preview、Export、League、AI/重建消费同一套权威 replay facts，禁止为了某个 UI/导出再造第二套解析/评分公式。
+
+API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/access-denied handler 汇合到同一 envelope。新后端异常使用 `ApiException(id, ApiErrorCode enum, errorMsg)`；内部 ID/诊断信息只写安全日志，对外仅暴露请求级 `traceId`。前端 transport 统一经 `ApiError` parser，feature panel 本地展示错误，Retry 由 `retryable` 决定。新增码必须同步 `docs/api/error-contract.md`、后端测试与 zh/en/ru locale。
 
 主要业务域：
 

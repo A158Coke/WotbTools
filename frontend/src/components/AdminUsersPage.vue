@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { useError } from '../composables/useError.js'
 import { apiErrorLabel } from '../utils/display.js'
+import { ApiError } from '../utils/http.js'
 import * as api from '../utils/api-boost.js'
 
 const { t, te } = useI18n()
@@ -32,7 +33,7 @@ async function ensureToken() {
     await keycloak.updateToken(5)
   } catch {
     keycloak.login()
-    throw new Error('AUTH_REQUIRED')
+    throw new ApiError({ code: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false })
   }
 }
 
