@@ -88,4 +88,56 @@ describe('useCapabilityReplay', () => {
     expect(cap.datasetRef.value).toBeNull()
     expect(cap.datasetError.value).toBe('')
   })
+
+  it('reconcile 幂等：同 identity + 已 resolve → 不重复请求；active=false 的 capability 不动', async () => {
+    const replay = makeReplay()
+    const cap = useCapabilityReplay(replay)
+    const f = makeFile('a.wotbreplay')
+    cap.reconcile({ file: f, selectionRevision: 1 })
+    await nextTick()
+    expect(replay.requestDirectAction).toHaveBeenCalledTimes(1)
+    expect(cap.datasetRef.value).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
+    // 同 identity 已 resolve → no-op
+    cap.reconcile({ file: f, selectionRevision: 1 })
+    await nextTick()
+    expect(replay.requestDirectAction).toHaveBeenCalledTimes(1)
+    // active=false → 保持不动（不 prepare 也不清空）
+    cap.reconcile({ file: makeFile('b.wotbreplay'), selectionRevision: 2, active: false })
+    expect(replay.requestDirectAction).toHaveBeenCalledTimes(1)
+    expect(cap.datasetRef.value).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
+  })
+
+  it('reconcile 同 identity + 在途 → 不重复请求，等 resolve 落 datasetRef', async () => {
+    let resolveRA
+    const replay = { requestDirectAction: vi.fn(() => new Promise((res) => { resolveRA = res })) }
+    const cap = useCapabilityReplay(replay)
+    const f = makeFile('a.wotbreplay')
+    cap.reconcile({ file: f, selectionRevision: 1 })   // 在途
+    expect(replay.requestDirectAction).toHaveBeenCalledTimes(1)
+    // READY / 其它触发再次 reconcile：同 identity 在途 → 不重发
+    cap.reconcile({ file: f, selectionRevision: 1 })
+    expect(replay.requestDirectAction).toHaveBeenCalledTimes(1)
+    resolveRA({ processingJobId: 'p1', sourceId: 'r0' })
+    await nextTick()
+    expect(cap.datasetRef.value).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
+  })
+
+  it('reconcile 身份切换（新 selectionRevision / 新文件）→ 重新 prepare（旧在途 token 失效）', async () => {
+    let resolveOld
+    const replay = {
+      requestDirectAction: vi.fn()
+        .mockImplementationOnce(() => new Promise((res) => { resolveOld = res }))
+        .mockResolvedValueOnce({ processingJobId: 'p2', sourceId: 'r1' }),
+    }
+    const cap = useCapabilityReplay(replay)
+    const fa = makeFile('a.wotbreplay')
+    const fb = makeFile('b.wotbreplay')
+    cap.reconcile({ file: fa, selectionRevision: 1 })  // 在途 (old)
+    cap.reconcile({ file: fb, selectionRevision: 2 })  // 身份变化 → 重新 prepare
+    resolveOld({ processingJobId: 'pStale', sourceId: 'r0' })  // 旧响应迟到
+    await nextTick()
+    await nextTick()
+    expect(cap.datasetRef.value).toEqual({ processingJobId: 'p2', sourceId: 'r1' })
+    expect(cap.datasetRef.value.processingJobId).not.toBe('pStale')
+  })
 })
