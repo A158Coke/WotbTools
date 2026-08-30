@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest'
 
 const read = (name) => readFileSync(fileURLToPath(new URL(name, import.meta.url)), 'utf8')
 
-const app = read('../App.vue')
+const app = read('./app-shell.css')
 const admin = read('../components/AdminUsersPage.vue')
 const boost = read('../components/BoostPage.vue')
 const profile = read('../components/ProfilePage.vue')
@@ -33,7 +33,7 @@ function ruleBody(src, selector) {
 }
 
 describe('Classic 主题 residual-dark 回归（语义 token 契约）', () => {
-  it('App.vue 列面板/列面板头/列列表 不得再写死深色面', () => {
+  it('应用壳列面板/列面板头/列列表 不得再写死深色面', () => {
     expect(ruleBody(app, '\\.colpanel ')).toContain('background: var(--bg-card)')
     expect(ruleBody(app, '\\.colpanel-head')).toContain('background: var(--bg-card2)')
     expect(ruleBody(app, '\\.cph-title')).toContain('color: var(--text-heading)')
