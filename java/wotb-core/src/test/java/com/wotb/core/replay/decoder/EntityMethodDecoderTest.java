@@ -505,25 +505,27 @@ class EntityMethodDecoderTest {
     }
 
     @Test
-    void unknownClassMethod4TwoByteRawPreserves() {
-        // UnknownEntity（无类证据）method4+2B → UnknownReplayEvent，不得因 shape 猜 class
+    void verifiedRoundFinishedTwoByteDecodesRegardlessOfClass() {
+        // 真实 11.19.0_china_apple 证据：2B round-finished 由非录像者实体发送（entity≠recorder avatar），
+        // entityClass 未必 AVATAR；2B shape 唯一（Vehicle method4 仅 16B collision）+ VERIFIED 关闭语义 =>
+        // 按权威 shape 解码为 RoundFinishedEvent，不再因缺 AVATAR 类证据丢 disc 成 UnknownReplayEvent。
         final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
         final ReplayDecodeResult r = decoder.decode(ctx,
                 methodPacketOn(1, 902, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED, new byte[]{2, 1}));
-        assertInstanceOf(UnknownReplayEvent.class, r.events().getFirst());
-        assertTrue(r.events().stream().noneMatch(RoundFinishedEvent.class::isInstance));
+        assertInstanceOf(RoundFinishedEvent.class, r.events().getFirst());
         assertTrue(r.events().stream().noneMatch(VehicleVehicleCollisionEvent.class::isInstance));
     }
 
     @Test
-    void vehicleClassMethod4TwoByteRawPreserves() {
-        // Vehicle 类 method4+2B（shape 不符，Vehicle collision 需 16B）→ UnknownReplayEvent
+    void verifiedRoundFinishedTwoByteDecodesEvenWhenVehicleClass() {
+        // Vehicle 类 + 2B round-finished：同属 2B 唯一 shape + VERIFIED 语义 => 仍应按 round-finished 解码
+        // （该方法索引被 Vehicle 借用法与 16B collision 区分；2B 无 Vehicle 变体）。
         final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
         ctx.entityClassRegistry().markVehicle(903);
         final ReplayDecodeResult r = decoder.decode(ctx,
                 methodPacketOn(1, 903, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED, new byte[]{2, 1}));
-        assertInstanceOf(UnknownReplayEvent.class, r.events().getFirst());
-        assertTrue(r.events().stream().noneMatch(RoundFinishedEvent.class::isInstance));
+        assertInstanceOf(RoundFinishedEvent.class, r.events().getFirst());
+        assertTrue(r.events().stream().noneMatch(VehicleVehicleCollisionEvent.class::isInstance));
     }
 
     @Test
