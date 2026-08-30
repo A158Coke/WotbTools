@@ -11,10 +11,27 @@ package com.wotb.web.replay.dto;
  *
  * @param analysis          AI 生成的战术复盘文本
  * @param preBattleSection  赛前预测区块（用户可见中文 Markdown；不可用时为 null）
+ * @param capability        AVAILABLE / AVAILABLE_WITH_LIMITED_TIMELINE / UNAVAILABLE
+ *                          （派生：recon.battleStartRawClockSec 非 finite → LIMITED；UNAVAILABLE 由
+ *                          AI_TIMELINE_UNUSABLE 错误路径表达，response 内不出现）。
  */
-public record AnalyzeResponse(String analysis, String preBattleSection) {
+public record AnalyzeResponse(
+        String analysis,
+        String preBattleSection,
+        Capability capability
+) {
+    /** AI Review capability（与 prompt planner battleStart 判定一致；前端本地化）。 */
+    public enum Capability {
+        AVAILABLE,
+        AVAILABLE_WITH_LIMITED_TIMELINE,
+        UNAVAILABLE
+    }
 
     public AnalyzeResponse(final String analysis) {
-        this(analysis, null);
+        this(analysis, null, Capability.AVAILABLE);
+    }
+
+    public AnalyzeResponse(final String analysis, final String preBattleSection) {
+        this(analysis, preBattleSection, Capability.AVAILABLE);
     }
 }

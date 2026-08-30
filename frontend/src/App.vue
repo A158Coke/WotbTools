@@ -181,9 +181,9 @@ onBeforeUnmount(() => {
     </a>
     <nav>
       <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="navigate('home')">{{ $t('profile.home') }}</button>
-      <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('home.replayParse') }}</button>
-      <button :class="{ active: activeTool === 'ai-review' }" @click="navigate('ai-review')">{{ $t('home.aiReview') }}</button>
-      <button :class="{ active: activeTool === 'battle-playback' }" @click="navigate('battle-playback')">{{ $t('home.battlePlayback') }}</button>
+      <!-- Replay Workspace 单入口：data/AI/回放三能力由 Workspace 内部 tab 切换（删重复导航）。
+           ?view=ai-review|battle-playback 深链仍由 initialCapability 落地到对应能力 tab。 -->
+      <button :class="{ active: ['replay', 'ai-review', 'battle-playback'].includes(activeTool) }" @click="navigate('replay')">{{ $t('home.replayParse') }}</button>
       <button :class="{ active: activeTool === 'hof' }" @click="navigate('hof')">{{ $t('hof.btn') }}</button>
       <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
     </nav>

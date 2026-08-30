@@ -61,6 +61,30 @@ describe('BattlePlaybackPanel dataset request', () => {
     vi.unstubAllGlobals()
   })
 
+  it('V2 dataset capability=PARTIAL → 展示降级提示（诚实标注，不猜测未观测事实）', async () => {
+    const fetchMock = vi.fn((url) => {
+      if (String(url) === '/api/replay/map-overview') {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ mapCode: 'holland' }) })
+      }
+      if (String(url) === '/api/replay/battle-playback-v2') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [] })
+        })
+      }
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    const note = wrapper.find('[data-test="playback-capability"]')
+    expect(note.exists()).toBe(true)
+    expect(note.text()).toContain('recon.map.capability_partial')
+    vi.unstubAllGlobals()
+  })
+
   it('无 dataset 引用时拒绝发起请求并显示准备态（不裸抛 DATASET_UNAVAILABLE）', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 })
     vi.stubGlobal('fetch', fetchMock)
