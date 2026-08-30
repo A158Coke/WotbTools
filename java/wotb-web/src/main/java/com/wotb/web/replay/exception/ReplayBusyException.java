@@ -1,9 +1,12 @@
 package com.wotb.web.replay.exception;
 
+import com.wotb.web.util.apierror.ApiErrorCode;
+import com.wotb.web.util.apierror.ApiException;
+
 /** 回放处理并发容量已满。 */
-public class ReplayBusyException extends RuntimeException {
+public class ReplayBusyException extends ApiException {
 
     public ReplayBusyException() {
-        super("REPLAY_BUSY");
+        super(ApiErrorCode.REPLAY_BUSY);
     }
 }

@@ -58,16 +58,24 @@ class RequestIdFilterTest {
         final MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/health");
         final MockHttpServletResponse response = new MockHttpServletResponse();
         final AtomicReference<String> mdcInside = new AtomicReference<>();
+        final AtomicReference<String> traceMdcInside = new AtomicReference<>();
+        final AtomicReference<Object> requestAttributeInside = new AtomicReference<>();
 
-        final jakarta.servlet.FilterChain chain = (req, res) ->
-                mdcInside.set(MDC.get(RequestIdFilter.MDC_KEY));
+        final jakarta.servlet.FilterChain chain = (req, res) -> {
+            mdcInside.set(MDC.get(RequestIdFilter.MDC_KEY));
+            traceMdcInside.set(MDC.get(RequestIdFilter.TRACE_MDC_KEY));
+            requestAttributeInside.set(req.getAttribute(RequestIdFilter.REQUEST_ATTRIBUTE));
+        };
         new RequestIdFilter().doFilter(request, response, chain);
 
         final String requestId = response.getHeader(RequestIdFilter.HEADER);
         assertNotNull(requestId, "X-Request-ID must be set on response");
         assertTrue(isUuid(requestId), "generated requestId must be a UUID: " + requestId);
         assertEquals(requestId, mdcInside.get(), "MDC must carry same requestId inside the chain");
+        assertEquals(requestId, traceMdcInside.get(), "traceId MDC alias must match requestId");
+        assertEquals(requestId, requestAttributeInside.get(), "error writers must see the same request attribute");
         assertNull(MDC.get(RequestIdFilter.MDC_KEY), "MDC must be cleared after the request");
+        assertNull(MDC.get(RequestIdFilter.TRACE_MDC_KEY), "traceId MDC alias must be cleared after the request");
     }
 
     @Test
@@ -93,6 +101,17 @@ class RequestIdFilterTest {
 
         assertEquals(128, response.getHeader(RequestIdFilter.HEADER).length(),
                 "requestId must be truncated to 128 chars");
+    }
+
+    @Test
+    void unsafeRequestIdCharactersAreRemovedBeforeHeadersAndLogs() throws Exception {
+        final MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/health");
+        request.addHeader(RequestIdFilter.HEADER, "trace-42<script>\r\n");
+        final MockHttpServletResponse response = new MockHttpServletResponse();
+
+        new RequestIdFilter().doFilter(request, response, new MockFilterChain());
+
+        assertEquals("trace-42script", response.getHeader(RequestIdFilter.HEADER));
     }
 
     @Test
@@ -167,7 +186,7 @@ class RequestIdFilterTest {
 
     @Configuration
     @EnableWebMvc
-    @Import(SecurityConfig.class)
+    @Import({SecurityConfig.class, ApiErrorTestConfig.class})
     static class TestConfig {
 
         @Bean

@@ -36,7 +36,13 @@ const languageOptions = [
 const params = new URLSearchParams(window.location.search)
 const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
 const defaultView = isHomeHost ? 'home' : 'replay'
-const rawViewParam = params.get('view') ?? (window.location.pathname === '/download/android' ? 'android' : null)
+// 兼容 /download/android 与 /download/android/：nginx 会把两者都送进 SPA index.html，
+// 路由层必须把带尾斜杠的路径也识别为 Android 下载页，否则尾斜杠会落入默认（home/replay）。
+const ANDROID_PATH = '/download/android'
+function isAndroidPath(path = window.location.pathname) {
+  return path === ANDROID_PATH || path === ANDROID_PATH + '/'
+}
+const rawViewParam = params.get('view') ?? (isAndroidPath() ? 'android' : null)
 // 旧书签兼容：单一来源别名映射（leaderboard → hof；extended → replay；
 // reconstruction → battle-playback），
 // 一次轻量 replaceState 重定向为 canonical view，不建第二套 Dataset pipeline。
@@ -100,7 +106,7 @@ function navigate(view) {
 /** 从当前 URL 解析 view（处理 popstate 恢复）。 */
 function viewFromLocation() {
   const params = new URLSearchParams(window.location.search)
-  const raw = params.get('view') ?? (window.location.pathname === '/download/android' ? 'android' : null)
+  const raw = params.get('view') ?? (isAndroidPath() ? 'android' : null)
   const canonical = LEGACY_VIEW_ALIASES[raw] ?? raw
   return ALLOWED_VIEWS.includes(canonical) ? canonical : defaultView
 }
@@ -449,9 +455,9 @@ tr:hover td { background: var(--bg-list-hover); }
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #39444a;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(15, 21, 25, .98);
+  background: var(--bg-card);
   box-shadow: var(--hard-shadow);
 }
 .colpanel-head {
@@ -460,15 +466,15 @@ tr:hover td { background: var(--bg-list-hover); }
   gap: 8px;
   align-items: center;
   padding: 12px;
-  border-bottom: 1px solid #263136;
-  background: #171e22;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-card2);
 }
-.cph-title { min-width: 0; color: #f2ede3; font-size: 13px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cph-title { min-width: 0; color: var(--text-heading); font-size: 13px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .linkbtn { border: 1px solid #39444a; border-radius: 6px; background: #151d21; color: #d7d3ca; padding: 5px 9px; cursor: pointer; font: inherit; font-size: 12px; }
 .linkbtn:hover { border-color: var(--accent); color: #f0a42b; }
 .collist { list-style: none; margin: 0; padding: 8px; overflow-y: auto; max-height: calc(100vh - 166px); }
-.collist li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; color: #c9c5bb; }
-.collist li:hover { background: #1c262b; }
+.collist li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; color: var(--text); }
+.collist li:hover { background: var(--bg-list-hover); }
 .collist li.dragging { opacity: .5; }
 .grip { color: var(--text-sub); cursor: grab; font-size: 13px; }
 .colitem { min-width: 0; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

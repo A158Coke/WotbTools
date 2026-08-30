@@ -8,11 +8,13 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.mock.web.MockServletContext;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
@@ -25,6 +27,10 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class SecurityConfigTest {
@@ -76,6 +82,21 @@ class SecurityConfigTest {
     }
 
     @Test
+    void invalidBearerTokenReturnsCanonicalUnauthorizedBody() throws Exception {
+        final JwtDecoder decoder = context.getBean(JwtDecoder.class);
+        when(decoder.decode("invalid-token")).thenThrow(new BadJwtException("invalid token"));
+
+        mvc.perform(get("/api/users/probe")
+                        .header("Authorization", "Bearer invalid-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith("application/json"))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_UNAUTHENTICATED"))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
+    }
+
+    @Test
     void adminShouldAccessAllAdminApis() throws Exception {
         final SimpleGrantedAuthority role = new SimpleGrantedAuthority("ROLE_wotbtools-admin");
 
@@ -93,7 +114,12 @@ class SecurityConfigTest {
     void replayAnalysisShouldAcceptUserAndAdmin() throws Exception {
         // anonymous → 401
         mvc.perform(get("/api/replay/analyze"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith("application/json"))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_UNAUTHENTICATED"))
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(header().string("X-Request-ID",
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.emptyOrNullString())));
 
         // wotbtools-user → 200 (new permission)
         mvc.perform(get("/api/replay/analyze").with(jwt().authorities(
@@ -107,7 +133,10 @@ class SecurityConfigTest {
 
         // authenticated but no allowed role → 403
         mvc.perform(get("/api/replay/analyze").with(jwt()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith("application/json"))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_FORBIDDEN"))
+                .andExpect(jsonPath("$.id").isNotEmpty());
 
         // cancel uses the same role gate as analyze
         mvc.perform(get("/api/replay/analyze/cancel").with(jwt().authorities(
@@ -120,6 +149,40 @@ class SecurityConfigTest {
         mvc.perform(get("/api/replay/analyze").with(jwt().authorities(
                         new SimpleGrantedAuthority("ROLE_boost-manager"))))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void battlePlaybackV2UsesReplayRoleGateAndCanonicalErrors() throws Exception {
+        final String path = "/api/replay/battle-playback-v2";
+
+        mvc.perform(post(path))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith("application/json"))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_UNAUTHENTICATED"))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.retryable").value(false))
+                .andExpect(jsonPath("$.details").isMap())
+                .andExpect(jsonPath("$.timestamp").isNotEmpty());
+        mvc.perform(post(path).header("X-Request-ID", "trace-playback-401"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("X-Request-ID", "trace-playback-401"))
+                .andExpect(jsonPath("$.id").value("trace-playback-401"));
+        mvc.perform(post(path).with(jwt()).header("X-Request-ID", "trace-playback-403"))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith("application/json"))
+                .andExpect(header().string("X-Request-ID", "trace-playback-403"))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_FORBIDDEN"))
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.id").value("trace-playback-403"))
+                .andExpect(jsonPath("$.retryable").value(false))
+                .andExpect(jsonPath("$.details").isMap())
+                .andExpect(jsonPath("$.timestamp").isNotEmpty());
+        mvc.perform(post(path).with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
+                .andExpect(status().isOk());
+        mvc.perform(post(path).with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -230,7 +293,7 @@ class SecurityConfigTest {
 
     @Configuration
     @EnableWebMvc
-    @Import(SecurityConfig.class)
+    @Import({SecurityConfig.class, ApiErrorTestConfig.class})
     static class TestConfig {
 
         @Bean
@@ -267,6 +330,11 @@ class SecurityConfigTest {
                 "/static-probe"
         })
         String probe() {
+            return "ok";
+        }
+
+        @PostMapping("/api/replay/battle-playback-v2")
+        String battlePlaybackV2() {
             return "ok";
         }
     }

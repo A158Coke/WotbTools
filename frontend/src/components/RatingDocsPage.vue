@@ -57,9 +57,9 @@ function goBack() {
 .rating-docs-back { flex: 0 0 auto; white-space: nowrap; }
 .rating-docs-card {
   padding: 22px 26px 30px;
-  border: 1px solid #39444a;
+  border: 1px solid var(--border);
   border-radius: 10px;
-  background: linear-gradient(160deg, rgba(24, 30, 34, .985), rgba(13, 18, 21, .99));
+  background: var(--bg-card);
   box-shadow: var(--surface-shadow);
   overflow-x: auto;
 }

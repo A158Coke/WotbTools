@@ -59,7 +59,7 @@ class Mark3SecurityContractTest {
 
     @Configuration
     @EnableWebMvc
-    @Import(SecurityConfig.class)
+    @Import({SecurityConfig.class, com.wotb.web.config.ApiErrorTestConfig.class})
     static class TestConfig {
 
         @Bean

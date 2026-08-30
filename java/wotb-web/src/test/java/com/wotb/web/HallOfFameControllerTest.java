@@ -157,7 +157,7 @@ class HallOfFameControllerTest {
 
     /**
      * 不支持战斗模式（训练房/联赛等）错误语义契约：upload 抛 UNSUPPORTED_BATTLE_TYPE →
-     * GlobalExceptionHandler 统一错误格式 HTTP 400 {error: UNSUPPORTED_BATTLE_TYPE}，绝不返回 200 skipped。
+     * GlobalExceptionHandler 统一 canonical error HTTP 400 {errorCode: UNSUPPORTED_BATTLE_TYPE}，绝不返回 200 skipped。
      */
     @Test
     void uploadUnsupportedBattleTypeRejectsWith400() throws Exception {
@@ -172,7 +172,7 @@ class HallOfFameControllerTest {
                 .andExpect(status().isBadRequest())
                 .andReturn().getResponse().getContentAsString();
 
-        Assertions.assertThat(json).contains("\"error\":\"UNSUPPORTED_BATTLE_TYPE\"");
+        Assertions.assertThat(json).contains("\"errorCode\":\"UNSUPPORTED_BATTLE_TYPE\"");
         verify(uploadService).upload(any());
     }
 }
