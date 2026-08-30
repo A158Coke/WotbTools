@@ -273,11 +273,18 @@ selection / Processing Job（并 `provide('replay')`），data / AI / Playback �
 （不因能力不可用而消失）；AI 与 Playback 各持独立 `useCapabilityReplay`，Dataset 状态互不污染。
 `ReplayPage` 作为 data 结果 tab 嵌入（`embedded` prop），在 Workspace 内只渲染结果 / 列系统 / Export /
 Drawer。**登录门禁**：整个 Replay Workspace 全部要求登录——未登录进入任意 replay capability
-（data / ai / playback）自动跳 Keycloak/OIDC 并按 redirectUri 回原 capability，不再有「data 匿名解析」。
+（data / ai / playback）自动跳 Keycloak/OIDC 并按 redirectUri 回原 capability，不再有「data 匿名解析」；
+判断前先等 Keycloak init 完成（auth init race safe），已有 SSO/session 用户不被无谓 `kc.login()` 打断，
+确认未登录时仅 login 一次。
 **能力解耦**：AI 与 Playback 仅共享 replay/source/processing dataset，不做 `AI@seek → Playback`
 时间点联动 / 跨 capability 状态 handoff。tab 切换经 pushState + popstate 形成可 Back/Forward 的 history，
-返回时 selection / Processing Job 不丢，只恢复 activeCapability。核心实现仍由 `AiReviewPanel`（SSE 分析流 + 结果）
-与 `BattlePlaybackPanel`
+返回时 selection / Processing Job 不丢，只恢复 activeCapability。
+**Android 外部 replay 完整自动解析**：仅 Android external intent 触发——Native `shouldInterceptRequest` 以
+app-owned content:// 安全 URI serve 缓存文件字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection →
+自动 `startProcessingJob` exactly once（READY 后 data tab 展示结果，绝不自动启动 AI，失败走现有
+Processing error/retry，不无限重试）；普通 Web/FileUploader 手动选文件不经过此路径，保持现有 UX。
+`getPendingReplay()==null` 不清零 eligible（warm resume 后 Native 新增 pending 仍可消费）。核心实现仍由
+`AiReviewPanel`（SSE 分析流 + 结果）与 `BattlePlaybackPanel`
 （cached map-overview + MapOverview）提供。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，
 由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 

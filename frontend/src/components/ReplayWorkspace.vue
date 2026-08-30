@@ -22,6 +22,7 @@ const props = defineProps({
 const { t } = useI18n()
 const isAuthenticated = inject('isAuthenticated', () => false)
 const login = inject('login', null)
+const authInit = inject('authInit', Promise.resolve())
 const navigate = inject('navigate', null)
 
 /**
@@ -37,9 +38,23 @@ const {
   startProcessingJob, cancelProcessing, dismissProcessingJob,
 } = replay
 
+/**
+ * Android 外部 replay 完整自动解析契约：
+ * pending File 导入 → 替换当前 selection → 自动创建一次 Processing Job → READY 后 data tab 展示结果。
+ * 仅在 Android external intent 触发（isAndroidApp()); 普通 Web/FileUploader 手动选文件不经过此回调，
+ * 保持现有手动 UX。绝不自动启动 AI Review。
+ */
+async function importPendingFile(file) {
+  // 强制默认 data/replay capability，绝不误入 AI。
+  activeCapability.value = 'data'
+  updateFiles([file])
+  // 自动解析一次：startProcessingJob 内部 single-flight + 现有 Processing error/retry，不无限自动重试。
+  await startProcessingJob(replayColsInit || undefined)
+}
+
 const { consumePendingWhenReady } = useNativeReplayImport({
   isAuthenticated,
-  onPendingFile: (file) => updateFiles([file]),
+  onPendingFile: importPendingFile,
 })
 
 const capabilityOptions = [
@@ -66,6 +81,7 @@ watch(() => processingJob.value, (job) => {
 
 const activeCapability = ref(props.initialCapability || 'data')
 const batchOpen = ref(false)
+let loginAttempted = false
 
 /** active replay：单文件 = r0；多文件 = 当前数据 tab 显示的 battle（activeTab==='b<i>'）。 */
 const activeSourceId = computed(() => {
@@ -104,16 +120,25 @@ watch([activeCapability, targetActiveFile], ([cap, file]) => {
  */
 const VIEW_BY_CAPABILITY = Object.freeze({ data: 'replay', ai: 'ai-review', playback: 'battle-playback' })
 
-function setCapability(key) {
+async function setCapability(key) {
   if (key === activeCapability.value) return
-  if (!gateAuth(key)) return
+  const ok = await awaitAuthGate(key)
+  if (!ok) return
   activeCapability.value = key
   if (navigate) navigate(VIEW_BY_CAPABILITY[key] || 'replay', null)
 }
 
-function gateAuth(cap) {
+/**
+ * 登录门禁（auth race safe）：先等 Keycloak init 完成，再据「已确认的 authenticated」判断。
+ * 只有在确认未登录时才 login 一次；已有 SSO/session 的用户进入 Workspace 不触发无谓 kc.login()。
+ */
+async function awaitAuthGate(cap) {
+  try { await authInit } catch { /* init 失败视作未登录 */ }
   if (isAuthenticated()) return true
-  if (login) login(VIEW_BY_CAPABILITY[cap] || 'replay')
+  if (!loginAttempted) {
+    loginAttempted = true
+    if (login) login(VIEW_BY_CAPABILITY[cap] || 'replay')
+  }
   return false
 }
 
@@ -143,9 +168,11 @@ function clearSelection() {
 
 onMounted(() => {
   // 任意 replay capability：未登录自动跳 Keycloak，登录后回原 capability。
-  gateAuth(activeCapability.value)
-  // Android 外部 replay：登录态就绪后恰好导入一次（不再依赖 synthetic click）。
-  nextTick(() => consumePendingWhenReady())
+  // awaitAuthGate 内部先等 Keycloak init 完成再判断 authenticated（auth race safe）。
+  awaitAuthGate(activeCapability.value).then((ok) => {
+    // Android 外部 replay：仅确认已登录后才尝试导入（跨 auth 保留 pending）。
+    if (ok) nextTick(() => consumePendingWhenReady())
+  }).catch(() => {})
 })
 
 // 外部导航（URL 直访 / battle action）同步能力 tab。

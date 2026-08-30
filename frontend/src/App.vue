@@ -111,6 +111,9 @@ function onPopState() {
 // 注入登录态与 login：AI 复盘 / 战局重建能力页需登录。
 provide('isAuthenticated', isAuthenticated)
 provide('login', login)
+// 供 ReplayWorkspace 判断"Keycloak 是否已初始化"：在 init 完成前不得把未初始化误判为未登录，
+// 否则已有 SSO/session 的用户会在 Workspace 挂载时被无条件 kc.login() 打断。
+provide('authInit', initPromise)
 // 跨视图导航注入：ReplayPage 的「算法说明」入口跳转 rating-docs 页使用。
 provide('navigate', navigate)
 
