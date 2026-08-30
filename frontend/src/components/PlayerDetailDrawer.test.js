@@ -71,7 +71,7 @@ const BATTLE_PLAYER = {
 
 const RADAR_STUB = {
   props: ['metrics', 'reference', 'referenceLabel'],
-  template: '<div class="radar-stub" :data-metrics="JSON.stringify(metrics.map(m=>({key:m.key,rawValue:m.rawValue,normalized:m.normalized,displayValue:m.displayValue,available:m.available})))" :data-reference="JSON.stringify((reference||[]).map(m=>({key:m.key,rawValue:m.rawValue,normalized:m.normalized,displayValue:m.displayValue,available:m.available})))" :data-reference-label="referenceLabel">{{ metrics.map(m => m.label).join(",") }}</div>',
+  template: '<div class="radar-stub" :data-metrics="JSON.stringify(metrics.map(m=>({key:m.key,rawValue:m.rawValue,visualValue:m.visualValue,normalized:m.normalized,displayValue:m.displayValue,available:m.available})))" :data-reference="JSON.stringify((reference||[]).map(m=>({key:m.key,rawValue:m.rawValue,visualValue:m.visualValue,normalized:m.normalized,displayValue:m.displayValue,available:m.available})))" :data-reference-label="referenceLabel">{{ metrics.map(m => m.label).join(",") }}</div>',
 }
 
 function radarValues(wrapper) {
@@ -83,13 +83,13 @@ function radarReference(wrapper) {
 
 const LEAGUE_COLUMNS = [
   { key: 'league_rating', max: 1000, fixed: true },
-  { key: 'league_damage_score', max: 400 },
-  { key: 'league_assist_score', max: 100 },
-  { key: 'league_kill_score', max: 100 },
-  { key: 'league_exchange_score', max: 150 },
+  { key: 'league_damage_score', max: 365 },
+  { key: 'league_assist_score', max: 110 },
+  { key: 'league_kill_score', max: 110 },
+  { key: 'league_exchange_score', max: 180 },
   { key: 'league_blocked_score', max: 50 },
-  { key: 'league_survival_score', max: 100 },
-  { key: 'league_shooting_score', max: 100 },
+  { key: 'league_survival_score', max: 75 },
+  { key: 'league_shooting_score', max: 110 },
 ]
 
 function mountDrawer(context, player, extraProps = {}, mountOptions = {}) {
@@ -349,7 +349,7 @@ describe('PlayerDetailDrawer reference average', () => {
     expect(wrapper.find('.radar-stub').attributes('data-reference-label')).toBe('league.drawer.battle_average')
   })
 
-  it('battle relative scale puts exceptional dimensions outside 100 while ordinary RC stays inside', () => {
+  it('battle bounded scale uses the full 75..150 range up to each authoritative dimension max', () => {
     const keys = ['league_damage_score', 'league_assist_score', 'league_kill_score', 'league_exchange_score',
       'league_blocked_score', 'league_survival_score', 'league_shooting_score']
     const selected = Object.fromEntries(keys.map((key, index) => [key, BATTLE_PLAYER.dimensionScores[index]]))
@@ -365,8 +365,21 @@ describe('PlayerDetailDrawer reference average', () => {
     const values = radarValues(wrapper)
     expect(values.league_damage_score.normalized).toBeGreaterThan(2 / 3)
     expect(values.league_kill_score.normalized).toBeGreaterThan(2 / 3)
-    expect(values.league_survival_score.normalized).toBeLessThan(2 / 3)
+    expect(values.league_survival_score.visualValue).toBe(150)
+    expect(values.league_survival_score.normalized).toBe(1)
     expect(radarReference(wrapper).every(axis => axis.normalized === 0.5)).toBe(true)
+  })
+
+  it('summary maps every authoritative V5 dimension max to 150 and the current cohort average to 75', () => {
+    const maxes = [365, 110, 110, 180, 50, 75, 110]
+    const player = { ...SUMMARY_PLAYER, dimensionMeans: maxes }
+    const scopePlayers = scopes(maxes, maxes.map(max => max / 2))
+    const wrapper = mountDrawer(
+      { scope: 'summary', accountId: 1001 }, player, { scopePlayers })
+
+    expect(Object.values(radarValues(wrapper)).map(axis => axis.visualValue)).toEqual(Array(7).fill(150))
+    expect(Object.values(radarValues(wrapper)).map(axis => axis.normalized)).toEqual(Array(7).fill(1))
+    expect(radarReference(wrapper).every(axis => axis.visualValue === 75 && axis.normalized === 0.5)).toBe(true)
   })
 })
 
@@ -445,14 +458,14 @@ describe('Radar scope-aware data source contract', () => {
     expect(values.league_assist_score.rawValue).not.toBe(60)
     expect(values.league_damage_score.normalized).toBe(0.5)
     expect(values.league_assist_score.normalized).toBe(0.5)
-    expect(values.league_assist_score.displayValue).toBe('40 / 100')
+    expect(values.league_assist_score.displayValue).toBe('40 / 110')
     expect(values.league_assist_score.displayValue).not.toContain('%')
   })
 
   it('Battle：League 七维取本场 dimensionScores，绝不使用跨场 means/medians', () => {
     const battle = {
       ...BATTLE_PLAYER,
-      dimensionScores: [320, 55, 70, 110, 40, 75, 82],
+      dimensionScores: [320, 55, 70, 110, 40, 70, 82],
       dimensionMeans: [1, 2, 3, 4, 5, 6, 7],
       dimensionMedians: [8, 9, 10, 11, 12, 13, 14],
     }
@@ -464,20 +477,12 @@ describe('Radar scope-aware data source contract', () => {
     expect(values.league_kill_score.rawValue).not.toBe(10)
   })
 
-  it('column.max 缺失只降级 detail formatting，不影响 raw/reference relative geometry', () => {
+  it('column.max 缺失时 V5 bounded geometry fail-closed，不回退旧 relative scale', () => {
     const columnsWithoutMax = LEAGUE_COLUMNS.map(column => ({ key: column.key, fixed: column.fixed }))
     const wrapper = mountDrawer(
       { scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER, { leagueColumns: columnsWithoutMax })
-    const values = radarValues(wrapper)
-    const reference = radarReference(wrapper)
-    expect(wrapper.find('.radar-stub').exists()).toBe(true)
-    expect(values.league_assist_score).toMatchObject({
-      rawValue: 40,
-      normalized: 0.5,
-      displayValue: '40',
-      available: true,
-    })
-    expect(reference.every(axis => axis.normalized === 0.5 && axis.available)).toBe(true)
+    expect(wrapper.find('[data-testid="radar-unavailable"]').exists()).toBe(true)
+    expect(wrapper.find('.radar-stub').exists()).toBe(false)
   })
 })
 
