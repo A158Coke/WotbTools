@@ -15,16 +15,17 @@ export function apiErrorLabel(t, te, error) {
     502: 'upstream_unavailable', 503: 'service_unavailable', 504: 'upstream_timeout',
   }[apiError.status]
   const keys = [
-    apiError.messageKey,
-    `errors.${apiError.code.toLowerCase()}`,
-    `api_errors.${apiError.code}`,
+    `errors.${apiError.errorCode.toLowerCase()}`,
+    `api_errors.${apiError.errorCode}`,
     statusFallback && `errors.${statusFallback}`,
     'errors.unknown_error',
   ].filter(Boolean)
   const key = keys.find(candidate => te(candidate))
-  const label = key ? t(key) : String(apiError.code)
-  return apiError.traceId
-    ? `${label} · ${t('errors.diagnostic_id', { traceId: apiError.traceId })}`
+  const label = key ? t(key) : String(apiError.errorCode)
+  // 用户看到的诊断 ID = 后端返回的单错误 id（ApiException 实例 id 或请求关联 id）。
+  const diagnosticId = apiError.id || apiError.traceId
+  return diagnosticId
+    ? `${label} · ${t('errors.diagnostic_id', { id: diagnosticId })}`
     : label
 }
 

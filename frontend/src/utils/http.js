@@ -46,16 +46,22 @@ export class ApiError extends Error {
     const normalized = typeof options === 'string'
       ? { code: options, status: legacyStatus }
       : (options || {})
-    const code = normalized.code || fallbackCode(normalized.status)
-    super(code, normalized.cause ? { cause: normalized.cause } : undefined)
+    const errorCode = contractCode(normalized.errorCode)
+      || contractCode(normalized.code)
+      || fallbackCode(normalized.status)
+    super(errorCode, normalized.cause ? { cause: normalized.cause } : undefined)
     this.name = 'ApiError'
-    this.code = code
+    // errorCode is the canonical single error code; `code` remains a backward-compatible alias.
+    this.errorCode = errorCode
+    this.code = errorCode
     this.status = Number.isFinite(normalized.status) ? normalized.status : null
-    this.messageKey = typeof normalized.messageKey === 'string' ? normalized.messageKey : null
+    this.errorMsg = typeof normalized.errorMsg === 'string' && normalized.errorMsg ? normalized.errorMsg : null
+    this.id = typeof normalized.id === 'string' && normalized.id ? normalized.id : null
+    // legacy request-header correlation, kept only as observability fallback (not the primary diagnostic)
     this.traceId = typeof normalized.traceId === 'string' && normalized.traceId ? normalized.traceId : null
     this.retryable = typeof normalized.retryable === 'boolean'
       ? normalized.retryable
-      : fallbackRetryable(code, this.status)
+      : fallbackRetryable(errorCode, this.status)
     this.details = safeDetails(normalized.details)
   }
 }
@@ -93,11 +99,13 @@ export async function apiErrorFromResponse(response) {
   const { body, malformed } = await responseBody(response)
   const candidate = malformed
     ? 'MALFORMED_ERROR_RESPONSE'
-    : contractCode(body?.code) || contractCode(body?.error) || fallbackCode(status)
+    : contractCode(body?.errorCode) || contractCode(body?.code)
+      || contractCode(body?.error) || fallbackCode(status)
   return new ApiError({
-    code: candidate,
+    errorCode: candidate,
     status,
-    messageKey: body?.messageKey,
+    errorMsg: body?.errorMsg,
+    id: body?.id,
     traceId: body?.traceId || header(response, 'X-Request-ID'),
     retryable: body?.retryable,
     details: body?.details,
@@ -113,13 +121,13 @@ export function normalizeApiError(error) {
   if (error instanceof TypeError) {
     return new ApiError({ code: 'NETWORK_ERROR', status: null, retryable: true, cause: error })
   }
-  const stableCode = typeof error?.code === 'string'
-    ? error.code
-    : (/^[A-Z][A-Z0-9_]*$/.test(error?.message || '') ? error.message : 'UNKNOWN_ERROR')
+  const stableCode = contractCode(error?.errorCode) || contractCode(error?.code)
+    || (/^[A-Z][A-Z0-9_]*$/.test(error?.message || '') ? error.message : 'UNKNOWN_ERROR')
   return new ApiError({
-    code: stableCode,
+    errorCode: stableCode,
     status: error?.status,
-    messageKey: error?.messageKey,
+    errorMsg: error?.errorMsg,
+    id: error?.id,
     traceId: error?.traceId,
     retryable: error?.retryable,
     details: error?.details,
@@ -130,11 +138,13 @@ export function normalizeApiError(error) {
 /** Phase-1 adapter for existing Processing/Export Job FAILED payloads. */
 export function normalizeJobError(job) {
   const nested = job?.error && typeof job.error === 'object' ? job.error : null
-  const code = contractCode(nested?.code) || contractCode(job?.errorCode) || 'JOB_FAILED'
+  const code = contractCode(nested?.errorCode) || contractCode(nested?.code)
+    || contractCode(job?.errorCode) || 'JOB_FAILED'
   return new ApiError({
-    code,
+    errorCode: code,
     status: null,
-    messageKey: nested?.messageKey,
+    errorMsg: nested?.errorMsg,
+    id: nested?.id,
     traceId: nested?.traceId,
     retryable: nested?.retryable ?? false,
     details: nested?.details,
@@ -166,13 +176,13 @@ export function apiErrorFromXhr(xhr) {
     if (/^[A-Z][A-Z0-9_]*$/.test(raw)) body = { code: raw }
     else malformed = !!raw && /(?:^|[+/])json(?:;|$)/i.test(xhr.getResponseHeader?.('Content-Type') || '')
   }
-  const code = malformed ? 'MALFORMED_ERROR_RESPONSE' : contractCode(body?.code)
-    || contractCode(body?.error)
-    || fallbackCode(xhr.status)
+  const code = malformed ? 'MALFORMED_ERROR_RESPONSE' : contractCode(body?.errorCode)
+    || contractCode(body?.code) || contractCode(body?.error) || fallbackCode(xhr.status)
   return new ApiError({
-    code,
+    errorCode: code,
     status: xhr.status || null,
-    messageKey: body?.messageKey,
+    errorMsg: body?.errorMsg,
+    id: body?.id,
     traceId: body?.traceId || xhr.getResponseHeader?.('X-Request-ID'),
     retryable: body?.retryable,
     details: body?.details,

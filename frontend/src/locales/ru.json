@@ -35,7 +35,7 @@
         "malformed_error_response": "Сервер вернул нераспознанный ответ.",
         "unknown_error": "Произошла неизвестная ошибка. Повторите попытку.",
         "job_failed": "Не удалось выполнить задачу.",
-        "diagnostic_id": "ID диагностики: {traceId}"
+        "diagnostic_id": "ID диагностики: {id}"
     },
     "upload": {
         "drop_hint": "Перетащите .wotbreplay файлы сюда",

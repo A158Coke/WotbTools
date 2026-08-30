@@ -90,9 +90,9 @@ class SecurityConfigTest {
                         .header("Authorization", "Bearer invalid-token"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith("application/json"))
-                .andExpect(jsonPath("$.code").value("AUTH_UNAUTHENTICATED"))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_UNAUTHENTICATED"))
                 .andExpect(jsonPath("$.status").value(401))
-                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
                 .andExpect(jsonPath("$.details").isMap());
     }
 
@@ -116,8 +116,8 @@ class SecurityConfigTest {
         mvc.perform(get("/api/replay/analyze"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith("application/json"))
-                .andExpect(jsonPath("$.code").value("AUTH_UNAUTHENTICATED"))
-                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.errorCode").value("AUTH_UNAUTHENTICATED"))
+                .andExpect(jsonPath("$.id").isNotEmpty())
                 .andExpect(header().string("X-Request-ID",
                         org.hamcrest.Matchers.not(org.hamcrest.Matchers.emptyOrNullString())));
 
@@ -135,8 +135,8 @@ class SecurityConfigTest {
         mvc.perform(get("/api/replay/analyze").with(jwt()))
                 .andExpect(status().isForbidden())
                 .andExpect(content().contentTypeCompatibleWith("application/json"))
-                .andExpect(jsonPath("$.code").value("AUTH_FORBIDDEN"))
-                .andExpect(jsonPath("$.traceId").isNotEmpty());
+                .andExpect(jsonPath("$.errorCode").value("AUTH_FORBIDDEN"))
+                .andExpect(jsonPath("$.id").isNotEmpty());
 
         // cancel uses the same role gate as analyze
         mvc.perform(get("/api/replay/analyze/cancel").with(jwt().authorities(
@@ -158,24 +158,22 @@ class SecurityConfigTest {
         mvc.perform(post(path))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith("application/json"))
-                .andExpect(jsonPath("$.code").value("AUTH_UNAUTHENTICATED"))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_UNAUTHENTICATED"))
                 .andExpect(jsonPath("$.status").value(401))
-                .andExpect(jsonPath("$.messageKey").value("errors.auth_unauthenticated"))
                 .andExpect(jsonPath("$.retryable").value(false))
                 .andExpect(jsonPath("$.details").isMap())
                 .andExpect(jsonPath("$.timestamp").isNotEmpty());
         mvc.perform(post(path).header("X-Request-ID", "trace-playback-401"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("X-Request-ID", "trace-playback-401"))
-                .andExpect(jsonPath("$.traceId").value("trace-playback-401"));
+                .andExpect(jsonPath("$.id").value("trace-playback-401"));
         mvc.perform(post(path).with(jwt()).header("X-Request-ID", "trace-playback-403"))
                 .andExpect(status().isForbidden())
                 .andExpect(content().contentTypeCompatibleWith("application/json"))
                 .andExpect(header().string("X-Request-ID", "trace-playback-403"))
-                .andExpect(jsonPath("$.code").value("AUTH_FORBIDDEN"))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_FORBIDDEN"))
                 .andExpect(jsonPath("$.status").value(403))
-                .andExpect(jsonPath("$.messageKey").value("errors.auth_forbidden"))
-                .andExpect(jsonPath("$.traceId").value("trace-playback-403"))
+                .andExpect(jsonPath("$.id").value("trace-playback-403"))
                 .andExpect(jsonPath("$.retryable").value(false))
                 .andExpect(jsonPath("$.details").isMap())
                 .andExpect(jsonPath("$.timestamp").isNotEmpty());

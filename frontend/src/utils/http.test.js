@@ -23,16 +23,15 @@ describe('apiErrorFromResponse', () => {
     [500, 'INTERNAL_ERROR'],
   ])('parses canonical %s responses', async (status, code) => {
     const error = await apiErrorFromResponse(response(status, JSON.stringify({
-      code,
+      errorCode: code,
       status,
-      messageKey: `errors.${code.toLowerCase()}`,
-      traceId: 'trace-1',
+      id: 'err-1',
       retryable: status >= 500,
       details: {},
       timestamp: '2026-08-30T15:30:00Z',
     })))
     expect(error).toBeInstanceOf(ApiError)
-    expect(error).toMatchObject({ code, status, traceId: 'trace-1', retryable: status >= 500 })
+    expect(error).toMatchObject({ errorCode: code, code, status, id: 'err-1', retryable: status >= 500 })
   })
 
   it('keeps legacy {error} compatibility', async () => {
@@ -54,7 +53,7 @@ describe('apiErrorFromResponse', () => {
 
   it('maps an empty 403 to authorization instead of a generic playback failure', async () => {
     const error = await apiErrorFromResponse(response(403, '', { 'X-Request-ID': 'proxy-trace' }))
-    expect(error).toMatchObject({ code: 'AUTH_FORBIDDEN', traceId: 'proxy-trace', retryable: false })
+    expect(error).toMatchObject({ errorCode: 'AUTH_FORBIDDEN', traceId: 'proxy-trace', retryable: false })
   })
 
   it.each([
@@ -106,10 +105,10 @@ describe('XHR and job compatibility', () => {
   it('parses canonical XHR errors', () => {
     const error = apiErrorFromXhr({
       status: 413,
-      responseText: '{"code":"FILE_TOO_LARGE","traceId":"upload-trace","retryable":false}',
+      responseText: '{"errorCode":"FILE_TOO_LARGE","id":"upload-id","retryable":false}',
       getResponseHeader: () => null,
     })
-    expect(error).toMatchObject({ code: 'FILE_TOO_LARGE', traceId: 'upload-trace', retryable: false })
+    expect(error).toMatchObject({ errorCode: 'FILE_TOO_LARGE', code: 'FILE_TOO_LARGE', id: 'upload-id', retryable: false })
   })
 
   it('maps malformed JSON XHR responses to the protocol error code', () => {
@@ -124,8 +123,8 @@ describe('XHR and job compatibility', () => {
   it('normalizes legacy and structured failed jobs', () => {
     expect(normalizeJobError({ errorCode: 'NO_VALID_REPLAYS' }).code).toBe('NO_VALID_REPLAYS')
     expect(normalizeJobError({ error: {
-      code: 'PROCESSING_QUEUE_FULL', messageKey: 'errors.processing_queue_full',
-      retryable: true, traceId: 'job-trace',
-    }})).toMatchObject({ code: 'PROCESSING_QUEUE_FULL', retryable: true, traceId: 'job-trace' })
+      errorCode: 'PROCESSING_QUEUE_FULL', id: 'job-id',
+      retryable: true,
+    }})).toMatchObject({ errorCode: 'PROCESSING_QUEUE_FULL', code: 'PROCESSING_QUEUE_FULL', retryable: true, id: 'job-id' })
   })
 })

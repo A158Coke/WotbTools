@@ -35,7 +35,7 @@
         "malformed_error_response": "The server returned an unrecognized response.",
         "unknown_error": "Something went wrong. Please try again.",
         "job_failed": "The task failed.",
-        "diagnostic_id": "Diagnostic ID: {traceId}"
+        "diagnostic_id": "Diagnostic ID: {id}"
     },
     "upload": {
         "drop_hint": "Drop .wotbreplay files here",

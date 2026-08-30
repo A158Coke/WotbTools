@@ -36,7 +36,13 @@ const languageOptions = [
 const params = new URLSearchParams(window.location.search)
 const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
 const defaultView = isHomeHost ? 'home' : 'replay'
-const rawViewParam = params.get('view') ?? (window.location.pathname === '/download/android' ? 'android' : null)
+// 兼容 /download/android 与 /download/android/：nginx 会把两者都送进 SPA index.html，
+// 路由层必须把带尾斜杠的路径也识别为 Android 下载页，否则尾斜杠会落入默认（home/replay）。
+const ANDROID_PATH = '/download/android'
+function isAndroidPath(path = window.location.pathname) {
+  return path === ANDROID_PATH || path === ANDROID_PATH + '/'
+}
+const rawViewParam = params.get('view') ?? (isAndroidPath() ? 'android' : null)
 // 旧书签兼容：单一来源别名映射（leaderboard → hof；extended → replay；
 // reconstruction → battle-playback），
 // 一次轻量 replaceState 重定向为 canonical view，不建第二套 Dataset pipeline。
@@ -100,7 +106,7 @@ function navigate(view) {
 /** 从当前 URL 解析 view（处理 popstate 恢复）。 */
 function viewFromLocation() {
   const params = new URLSearchParams(window.location.search)
-  const raw = params.get('view') ?? (window.location.pathname === '/download/android' ? 'android' : null)
+  const raw = params.get('view') ?? (isAndroidPath() ? 'android' : null)
   const canonical = LEGACY_VIEW_ALIASES[raw] ?? raw
   return ALLOWED_VIEWS.includes(canonical) ? canonical : defaultView
 }

@@ -37,7 +37,7 @@ vi.mock('./composables/useAuth.js', () => ({
     initPromise: Promise.resolve(authState.authenticated),
     tokenParsed: { value: null },
     authenticated: { value: false },
-    login: vi.fn(),
+    login: vi.fn(() => Promise.resolve()),
     logout: vi.fn(),
     isAuthenticated: () => authState.authenticated,
     userName: () => authState.username,
@@ -177,6 +177,26 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     await flushPromises()
     expect(wrapper.find('nav').text()).not.toContain('ratingV2.title')
     expect(wrapper.text()).toContain('ratingV2.login')
+  })
+
+  it('/download/android 解析 AndroidDownloadPage（公开下载入口）', async () => {
+    window.history.replaceState({}, '', '/download/android')
+    const wrapper = mountApp()
+    await flushPromises()
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-testid="android-login-required"]').exists()).toBe(true)
+    }, { timeout: 5000 })
+  })
+
+  it('/download/android/（尾斜杠）同样解析 AndroidDownloadPage，不得落入默认视图', async () => {
+    window.history.replaceState({}, '', '/download/android/')
+    const wrapper = mountApp()
+    await flushPromises()
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-testid="android-login-required"]').exists()).toBe(true)
+    }, { timeout: 5000 })
+    expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="view-home"]').exists()).toBe(false)
   })
 
   it('§39 切换 UI Profile 不得 navigate / remount / 改变当前视图', async () => {

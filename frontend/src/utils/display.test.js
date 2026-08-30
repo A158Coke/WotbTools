@@ -8,7 +8,7 @@ const values = {
   'errors.auth_forbidden': 'Permission denied',
   'errors.internal_error': 'Server failed',
   'errors.unknown_error': 'Something went wrong',
-  'errors.diagnostic_id': 'Diagnostic ID: {traceId}',
+  'errors.diagnostic_id': 'Diagnostic ID: {id}',
   'api_codes.BOOST_REQUEST_SUBMITTED': 'Submitted',
   'replay_values.HEAVY_TANK': 'Heavy tank'
 }
@@ -33,13 +33,13 @@ describe('display helpers', () => {
     expect(apiCodeLabel(t, te, 'BOOST_REQUEST_SUBMITTED', 'fallback')).toBe('Submitted')
   })
 
-  it('prefers canonical messageKey and exposes a diagnostic ID', () => {
+  it('maps errorCode to i18n and exposes the single diagnostic ID', () => {
     const translated = (key, params) => key === 'errors.diagnostic_id'
-      ? `Diagnostic ID: ${params.traceId}`
+      ? `Diagnostic ID: ${params.id}`
       : t(key)
     expect(apiErrorLabel(translated, te, {
-      code: 'AUTH_FORBIDDEN', messageKey: 'errors.auth_forbidden', traceId: 'trace-403'
-    })).toBe('Permission denied · Diagnostic ID: trace-403')
+      errorCode: 'AUTH_FORBIDDEN', id: 'err-403'
+    })).toBe('Permission denied · Diagnostic ID: err-403')
   })
 
   it('falls back to status category and never exposes an unknown raw code', () => {
