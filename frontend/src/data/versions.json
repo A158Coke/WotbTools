@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.55",
+    "date": "2026-08-30",
+    "tag": "fix",
+    "zh": "Android 安装包下载对全部用户开放但需登录：原先仅管理员可见入口，现在所有用户都能看到并进入下载页；未登录访问会自动跳转登录，登录后可下载 APK。",
+    "en": "Android package download is now open to all users but requires sign-in: the entry was admin-only and is now visible to everyone leading to the download page; unauthenticated visitors are redirected to sign in before downloading the APK.",
+    "ru": "Загрузка Android-пакета теперь доступна всем пользователям, но требует входа: ранее вход был виден только администраторам; теперь он есть у всех и ведёт на страницу загрузки, а неавторизованные посетители перенаправляются на вход перед скачиванием APK."
+  },
+  {
     "v": "2.12.54",
     "date": "2026-08-30",
     "tag": "fix",

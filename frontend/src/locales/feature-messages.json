@@ -21,7 +21,8 @@
       "installed": "你已安装 WotBTools Android",
       "unavailable": "Android 版本信息暂未配置",
       "apk_unavailable": "APK 暂不可用",
-      "loading": "正在加载…"
+      "loading": "正在加载…",
+      "login_required": "请先登录 WotBTools 账号后再下载 Android 安装包"
     },
 
     "home": {
@@ -168,7 +169,8 @@
       "installed": "WotBTools Android is already installed",
       "unavailable": "Android version info is not configured yet",
       "apk_unavailable": "APK not available yet",
-      "loading": "Loading…"
+      "loading": "Loading…",
+      "login_required": "Please sign in to your WotBTools account before downloading the Android package"
     },
 
     "home": {
@@ -315,7 +317,8 @@
       "installed": "WotBTools Android уже установлен",
       "unavailable": "Данные о версии Android ещё не настроены",
       "apk_unavailable": "APK пока недоступен",
-      "loading": "Загрузка…"
+      "loading": "Загрузка…",
+      "login_required": "Войдите в аккаунт WotBTools перед загрузкой Android-пакета"
     },
 
     "home": {
