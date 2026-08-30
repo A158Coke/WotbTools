@@ -14,6 +14,9 @@
 
 | 文档 | 何时读 |
 |---|---|
+| `frontend/architecture.md` | 改 Vue 应用壳、路由、依赖方向或状态 ownership 时 |
+| `frontend/replay-workspace.md` | 改 Replay Workspace capability、selection 或 dataset 边界时 |
+| `frontend/ui-system.md` | 改 UI Profile、token、layout primitive 或响应式规则时 |
 | `architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt / 双 Call / Team Autopsy 时 |
 | `architecture/replay-pipeline.md` | 改回放重建 / decoder / 事件流时 |
 | `api/error-contract.md` | 新增/修改 API error code、Security 401/403、前端错误展示或 traceId 时 |
