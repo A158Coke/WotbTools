@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Changed
+- **PR2 Replay Session state owner**：新增 `useReplaySession` 统一持有 selection、Processing/Result identity、Export state 与 Workspace view；Processing lifecycle 下沉至 `useProcessingJob`，Export lifecycle 下沉至 `useExportJob`，`useReplayWorkspace` 仅作 session facade。保持现有 API、sourceId、single-flight、stale-response 与 Android replay 行为不变。
 - **Frontend instruction/docs cleanup（PR1）**：`frontend/AGENTS.md` 仅保留 toolchain、架构边界、状态 ownership、UI Profile、响应式、测试与禁止项；Replay Workspace、UI system 及回放/AI/Playback/资产事实分别引用对应 canonical 文档，避免目录指令与当前实现漂移。
 - **Frontend application-shell routing foundation（PR1）**：引入 Vue Router 作为 SPA history/deep-link owner，保留 `?view=` 公开 URL、旧别名（leaderboard / extended / reconstruction）与 `/download/android[/]` 兼容；`App.vue` 收敛为最小路由根，应用壳、顶栏、用户菜单、全局错误弹窗与页面注册迁入 `src/app/`。新增前端架构约定、可复用 `frontend-architecture` skill 与架构文档，为后续 Replay 状态/Workspace/Playback 分步迁移建立边界；未改变后端契约或产品流程。
 

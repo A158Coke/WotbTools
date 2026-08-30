@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ref, nextTick } from 'vue'
+import { nextTick } from 'vue'
 import { useReplayWorkspace } from './useReplayWorkspace.js'
+import { useReplaySession } from './useReplaySession.js'
 
 const holder = vi.hoisted(() => ({ state: null }))
 
@@ -15,16 +16,10 @@ vi.mock('./useReplay.js', () => ({
 }))
 
 function newReplay() {
+  const session = useReplaySession()
   return {
-    files: ref([]),
-    resp: ref(null),
-    activeTab: ref('aggregate'),
-    selectionRevision: ref(0),
-    processingJobId: ref(null),
-    playerCols: ref([]),
-    aggCols: ref([]),
-    loading: ref(false),
-    error: ref(''),
+    ...session,
+    session,
     updateFiles: vi.fn(),
     startProcessingJob: vi.fn(),
   }
@@ -184,7 +179,7 @@ describe('useReplayWorkspace', () => {
     expect(ws.currentTargetFile.value).toBe(holder.state.files.value[0])
   })
 
-  it('selectionRevision 变化后重算 currentBattleId=null 并回 SUMMARY', async () => {
+  it('selection replacement 后重算 currentBattleId=null 并回 SUMMARY', async () => {
     holder.state.files.value = makeFiles(1)
     holder.state.resp.value = { leagueMode: false, aggregate: [{ a: 1 }], battles: [battle('r0')] }
     const ws = useReplayWorkspace('data')
@@ -192,7 +187,7 @@ describe('useReplayWorkspace', () => {
     ws.selectBattle('r0')
     await nextTick()
     expect(ws.currentBattleId.value).toBe('r0')
-    holder.state.selectionRevision.value++
+    holder.state.session.replaceSelection(holder.state.files.value)
     await nextTick()
     expect(ws.currentBattleId.value).toBe(null)
     expect(ws.dataViewMode.value).toBe('SUMMARY')

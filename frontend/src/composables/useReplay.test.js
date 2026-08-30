@@ -36,6 +36,13 @@ function job(overrides = {}) {
 describe('useReplay export job flow', () => {
   let replay
 
+  function deferred() {
+    let resolve
+    let reject
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+    return { promise, resolve, reject }
+  }
+
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
@@ -127,6 +134,82 @@ describe('useReplay export job flow', () => {
     await vi.advanceTimersByTimeAsync(1500)
     expect(replay.exportJob.value).toBeNull()
     expect(replay.exportError.value.length).toBeGreaterThan(0)
+  })
+
+  it('does not create duplicate Export Jobs while the first create request is pending', async () => {
+    replay.processingJobId.value = 'p1'
+    const pendingCreate = deferred()
+    api.createExportJob.mockReturnValue(pendingCreate.promise)
+    api.getExportJob.mockReturnValue(new Promise(() => {}))
+
+    const first = replay.startExportJob('aggregate')
+    const duplicate = replay.startExportJob('each')
+    expect(api.createExportJob).toHaveBeenCalledTimes(1)
+
+    pendingCreate.resolve({ jobId: 'j1', status: 'QUEUED', total: 1 })
+    await first
+    await duplicate
+    expect(replay.exportJob.value?.jobId).toBe('j1')
+  })
+
+  it('dismiss invalidates a pending create and cancels the orphan if it later resolves', async () => {
+    replay.processingJobId.value = 'p1'
+    const pendingCreate = deferred()
+    api.createExportJob.mockReturnValue(pendingCreate.promise)
+
+    const start = replay.startExportJob('aggregate')
+    replay.dismissExportJob()
+    pendingCreate.resolve({ jobId: 'j1', status: 'QUEUED', total: 1 })
+    await start
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(replay.exportJob.value).toBeNull()
+    expect(api.cancelExportJob).toHaveBeenCalledWith('j1')
+    expect(api.getExportJob).not.toHaveBeenCalled()
+  })
+
+  it('a stale create cannot release the single-flight lock for a newer pending create', async () => {
+    replay.processingJobId.value = 'p1'
+    const pendingA = deferred()
+    const pendingB = deferred()
+    api.createExportJob
+      .mockReturnValueOnce(pendingA.promise)
+      .mockReturnValueOnce(pendingB.promise)
+    api.getExportJob.mockReturnValue(new Promise(() => {}))
+
+    const startA = replay.startExportJob('aggregate')
+    replay.dismissExportJob()
+    const startB = replay.startExportJob('aggregate')
+    pendingA.resolve({ jobId: 'j1', status: 'QUEUED', total: 1 })
+    await startA
+    const startC = replay.startExportJob('each')
+    expect(api.createExportJob).toHaveBeenCalledTimes(2)
+
+    pendingB.resolve({ jobId: 'j2', status: 'QUEUED', total: 1 })
+    await startB
+    await startC
+  })
+
+  it('stale poll rejection after dismiss/new Export Job cannot clear the new job', async () => {
+    replay.processingJobId.value = 'p1'
+    const pendingPollA = deferred()
+    api.createExportJob
+      .mockResolvedValueOnce({ jobId: 'j1', status: 'QUEUED', total: 1 })
+      .mockResolvedValueOnce({ jobId: 'j2', status: 'QUEUED', total: 1 })
+    api.getExportJob
+      .mockReturnValueOnce(pendingPollA.promise)
+      .mockResolvedValueOnce(job({ jobId: 'j2', status: 'PROCESSING', processed: 1 }))
+
+    await replay.startExportJob('aggregate')
+    await vi.advanceTimersByTimeAsync(0)
+    replay.dismissExportJob()
+    await replay.startExportJob('aggregate')
+    await vi.advanceTimersByTimeAsync(0)
+
+    pendingPollA.reject(new Error('stale poll failure'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(replay.exportJob.value?.jobId).toBe('j2')
+    expect(replay.exportError.value).toBe('')
   })
 })
 
