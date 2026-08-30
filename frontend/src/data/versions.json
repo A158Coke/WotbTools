@@ -1,11 +1,19 @@
 [
   {
-    "v": "2.12.52",
+    "v": "2.12.53",
     "date": "2026-08-30",
     "tag": "fix",
     "zh": "修复战局回放可能在数据缺失时静默消失的问题；战局回放提升为默认主视图，地图鸟瞰转为辅助视图。回放工作台布局调整：当前回放选择与解析文件摘要移至上传区域，顶部只保留标题与能力切换。",
     "en": "Fixed battle playback silently disappearing when data was missing; playback is now the default primary view with map overview as a secondary view. Replay Workspace layout: the current-replay selector and batch summary move to the upload area, leaving only the title and capability switch at the top.",
     "ru": "Исправлено молчаливое исчезновение воспроизведения боя при отсутствии данных; теперь это основной вид по умолчанию, а карта — вспомогательный. Раскладка: выбор текущего боя и сводка перенесены в область загрузки; вверху остаются только заголовок и переключатель возможностей."
+  },
+  {
+    "v": "2.12.52",
+    "date": "2026-08-30",
+    "tag": "chg",
+    "zh": "League Rating V5 雷达改用分段线性展示：每轴原始分 0 映射为 0、当前 Battle/Global Average 映射为规则 75 环、后端权威维度满分映射为 150；100 表示从平均走向满分的三分之一。V2 雷达保持原相对算法，V4.1/V5 Rating、权重、排序、API 原始值与 Excel 均不改变。",
+    "en": "The League Rating V5 radar now uses a piecewise-linear display scale: raw zero maps to 0, the current Battle/Global Average forms the regular 75 ring, and each authoritative backend dimension maximum maps to 150. A score of 100 is one third of the way from average to maximum. The V2 radar keeps its relative scale; V4.1/V5 ratings, weights, ranking, raw API values and Excel remain unchanged.",
+    "ru": "Радар League Rating V5 теперь использует кусочно-линейную шкалу: исходный ноль отображается как 0, текущее среднее Battle/Global образует ровный контур 75, а официальный максимум измерения из backend отображается как 150. Отметка 100 соответствует трети пути от среднего до максимума. Радар V2 сохраняет прежнюю относительную шкалу; рейтинг V4.1/V5, веса, сортировка, исходные значения API и Excel не меняются."
   },
   {
     "v": "2.12.51",
