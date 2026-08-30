@@ -751,22 +751,32 @@ V5 evidence adjustment 只作用于最终 Batch Player Rating，不重新缩放�
 
 ### Radar
 
-V5 Evidence Adjustment 不修改七维 raw score；Radar 的 presentation geometry 由 V2/V5 共用相对表现标尺负责。
+V5 Evidence Adjustment 不修改七维 raw score；Radar 使用 V5 专用的平均75/满分150 bounded presentation scale，
+不再复用 V2 的对数相对标尺。
 
 Radar 仍然展示：
 
 - 单场：V4.1 `dimensionScores`
 - 批次：`dimensionMeans`（rated battle arithmetic mean）
 
-每轴与当前 Battle/Global Average 比较：平均映射为规则 75 环，2 倍平均为 100 强势线，4 倍为 125，
-8 倍及以上在不可见 150 上限截断。可见 SVG 不生成 150 边界/刻度/标签；玩家顶点标注与半径同源的
-0–150 视觉分。明细默认显示玩家/平均视觉分，并可切换为原始 `score/max` 与真实平均；切换不改变图形。
+设玩家维度分 `p`、当前 Battle/Global Average `a`、后端权威满分 `m`：
+
+```text
+p <= a: visual = 75 * p / a
+p >  a: visual = 75 + 75 * (p-a) / (m-a)
+radius = visual / 150
+```
+
+因此 `0→0`、当前平均 `a→75`、维度满分 `m→150`，100 强势线对应原始分
+`a+(m-a)/3`。可见 SVG 不生成 150 边界/刻度/标签；玩家顶点标注与半径同源的 0–150 视觉分。
+明细默认显示玩家/平均视觉分，并可切换为原始 `score/max` 与真实平均；切换不改变图形。
 页面雷达支持 50%–150% 缩放（默认 100%、10% 步进），仅改变交互 SVG 的显示尺寸；窄屏可在雷达区域
 横向滚动。Rating Profile PNG 复用同一顶点标注位置并固定输出默认分数明细与固定尺寸，不消费页面缩放状态。
-该相对图形只回答“相对当前比较组的轮廓”，不承诺跨上传批次绝对可比。
+该 bounded 图形同时回答“相对当前比较组的位置”与“距离维度满分的进度”；平均值随比较组变化，
+因此仍不承诺跨上传批次绝对可比。
 
-`resp.league.columns[].max` 只用于原始数值模式的 `score / max` 解释，不参与 reference membership 或 geometry availability；
-max 缺失/非法时原始模式降级为 raw score，只要 player/reference raw 完整，相对多边形仍必须可绘制。
+`resp.league.columns[].max` 同时用于原始数值模式的 `score / max` 解释与 bounded geometry，禁止前端复制七维满分。
+缺 player/reference/max、非有限值、`a<=0`、`a>=m` 或 `p>m` 时该轴 fail-closed；整图不混用旧相对公式。
 
 Evidence Adjustment 不作用于单个维度。
 
