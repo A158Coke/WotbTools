@@ -31,7 +31,8 @@ describe('BattlePlaybackPanel dataset request', () => {
       global: {
         mocks: { $t: key => key },
         stubs: {
-          MapOverview: { template: '<div class="map-stub" />' }
+          MapOverview: { template: '<div class="map-stub" />' },
+          BattlePlayback: { template: '<div data-test="pb-stub" />' }
         }
       }
     })
@@ -61,7 +62,7 @@ describe('BattlePlaybackPanel dataset request', () => {
     vi.unstubAllGlobals()
   })
 
-  it('V2 dataset capability=PARTIAL → 展示降级提示（诚实标注，不猜测未观测事实）', async () => {
+  it('V2 dataset capability=PARTIAL → 展示确定性降级提示（诚实标注，不猜测未观测事实）', async () => {
     const fetchMock = vi.fn((url) => {
       if (String(url) === '/api/replay/map-overview') {
         return Promise.resolve({ ok: true, status: 200, json: async () => ({ mapCode: 'holland' }) })
@@ -79,9 +80,48 @@ describe('BattlePlaybackPanel dataset request', () => {
     const wrapper = mountDatasetPanel()
     await new Promise(r => setTimeout(r, 30))
     await wrapper.vm.$nextTick()
-    const note = wrapper.find('[data-test="playback-capability"]')
+    const note = wrapper.find('[data-test="pb-capability-partial"]')
     expect(note.exists()).toBe(true)
-    expect(note.text()).toContain('recon.map.capability_partial')
+    expect(note.text()).toContain('recon.playback.partial')
+    vi.unstubAllGlobals()
+  })
+
+  it('V2 204 → 显式 UNAVAILABLE（不静默隐藏 Playback），无 retry', async () => {
+    const fetchMock = vi.fn((url) => {
+      if (String(url) === '/api/replay/map-overview') {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ mapCode: 'holland' }) })
+      }
+      if (String(url) === '/api/replay/battle-playback-v2') {
+        return Promise.resolve({ ok: false, status: 204 })
+      }
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-unavailable"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-unavailable"]').text()).toContain('recon.playback.unavailable')
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(false)
+    vi.unstubAllGlobals()
+  })
+
+  it('V2 500 → 显式 ERROR + retry（确定性原因，不吞掉）', async () => {
+    const fetchMock = vi.fn((url) => {
+      if (String(url) === '/api/replay/map-overview') {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ mapCode: 'holland' }) })
+      }
+      if (String(url) === '/api/replay/battle-playback-v2') {
+        return Promise.resolve({ ok: false, status: 500, text: async () => 'DATASET_UNAVAILABLE' })
+      }
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(true)
     vi.unstubAllGlobals()
   })
 
@@ -92,7 +132,10 @@ describe('BattlePlaybackPanel dataset request', () => {
       props: { file: { name: 'a.wotbreplay' }, processingJobId: null, sourceId: null, active: true },
       global: {
         mocks: { $t: key => key },
-        stubs: { MapOverview: { template: '<div class="map-stub" />' } }
+        stubs: {
+          MapOverview: { template: '<div class="map-stub" />' },
+          BattlePlayback: { template: '<div data-test="pb-stub" />' }
+        }
       }
     })
 
@@ -116,7 +159,10 @@ describe('BattlePlaybackPanel dataset request', () => {
       },
       global: {
         mocks: { $t: key => key },
-        stubs: { MapOverview: { template: '<div class="map-stub" />' } }
+        stubs: {
+          MapOverview: { template: '<div class="map-stub" />' },
+          BattlePlayback: { template: '<div data-test="pb-stub" />' }
+        }
       }
     })
 

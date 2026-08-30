@@ -7,7 +7,6 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
-import com.wotb.core.replay.timeline.TimelineError;
 import com.wotb.core.replay.timeline.TimelinePerspective;
 import org.junit.jupiter.api.Test;
 
@@ -18,9 +17,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -48,13 +45,12 @@ class PersonalAiContextCompilerTest {
         final BattleTimelineResult result = BattleTimelineBuilder.build(
                 battle, recon, TimelinePerspective.personal(
                         recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
-        // PR162/P0-3：该真实随机战夹具无 ArenaPeriod BATTLE / RoundFinished 权威（probe 证实），battle-start
-        // 必须 fail-closed 为 UNKNOWN；旧断言依赖以「max clock - settlement duration」伪造 battle-start，
-        // 已被移除。渲染用合成/带权威 fixture 的 case 由 nullTimelineReturnsEmpty 及他人覆盖。
-        assertNull(recon.battleStartRawClockSec(),
-                "无权威 battle-start 时必须 fail-closed（不得伪造）");
-        assertFalse(result.usable(), "无 battle-start 权威时必须 fail-closed: " + result.validation().errors());
-        assertTrue(result.validation().errors().contains(TimelineError.TIMELINE_CLOCK_UNRESOLVED));
+        // PR162/P0-2+：该真实随机战夹具实际存在 subtype48 wrapper=3 ARENA_PERIOD 的 BATTLE 锚点
+        // （field3 为嵌套消息，其 field1=period=3）。旧 decoder 只认 Number → 误判「无 battle-start 权威」
+        // → fail-closed；修正后权威锚点可解码 → battleStart 非 null（绝非 max clock - duration 伪造）
+        // → timeline 可构建。
+        assertNotNull(recon.battleStartRawClockSec(), "明确 BATTLE 锚点必须被解码，而非 fail-closed 成 null");
+        assertTrue(result.usable(), "有权威 BATTLE 锚点时 timeline 必须可构建: " + result.validation().errors());
     }
 
     @Test

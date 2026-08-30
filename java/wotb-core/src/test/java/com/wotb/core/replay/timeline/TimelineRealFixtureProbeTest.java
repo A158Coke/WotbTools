@@ -11,9 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -32,24 +30,20 @@ class TimelineRealFixtureProbeTest {
     }
 
     @Test
-    void realRandomBattleWithoutBattleStartAuthorityFailsClosed() throws Exception {
+    void realRandomBattleArenaPeriodBattleAnchorIsDecodedAndTimelineUsable() throws Exception {
         final byte[] bytes = Files.readAllBytes(fixture());
         final Battle battle = ReplayParser.parse(bytes);
         final ReplayReconstruction recon = new ReplayReconstructionService().reconstruct(bytes);
         final PlayerResult recorder = battle.recorderResult();
         assertNotNull(recorder, "真实夹具必须能解析录像者");
-        // PR162/P0-3：随机战夹具无 ArenaPeriod BATTLE / RoundFinished 权威（probe 证实 arenaPeriod=0,
-        // roundFinished=0），battle-start 必须 fail-closed 为 null，绝不退化为「max clock - settlement
-        // duration」伪造。
-        assertNull(recon.battleStartRawClockSec(),
-                "无权威 battle-start 时必须 fail-closed（不得用 max clock - duration 伪造）");
+        // PR162/P0-2+：subtype48 wrapper=3 ARENA_PERIOD 的 root field3 实为<b>嵌套消息</b>，其 field1 = period raw。
+        // 旧 decoder 只认 Number → 误判「无 battle-start 权威」→ fail-closed；修正后该夹具真实夹具的
+        // BATTLE 锚点被解码 → battleStart 非 null（是权威锚点，绝非 max clock - duration 伪造）。
+        assertNotNull(recon.battleStartRawClockSec(), "明确 BATTLE 锚点必须被解码，而非 fail-closed 成 null");
 
         final BattleTimelineResult result = BattleTimelineBuilder.build(
                 battle, recon, TimelinePerspective.personal(
                         recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
-        assertFalse(result.usable(),
-                "无 battle-start 权威时必须 fail-closed（不伪造 clock）: " + result.validation().errors());
-        assertTrue(result.validation().errors().contains(TimelineError.TIMELINE_CLOCK_UNRESOLVED),
-                "失败原因必须是 TIMELINE_CLOCK_UNRESOLVED: " + result.validation().errors());
+        assertTrue(result.usable(), "有权威 BATTLE 锚点时 timeline 必须可构建: " + result.validation().errors());
     }
 }

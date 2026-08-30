@@ -843,17 +843,37 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         if (periodVals == null || periodVals.isEmpty()) {
             return List.of();
         }
-        final Object first = periodVals.getFirst();
-        if (!(first instanceof Number n)) {
-            return List.of();
-        }
-        final int periodRaw = n.intValue();
+        final int periodRaw = arenaPeriodSerialValue(periodVals.getFirst());
         if (periodRaw < 0 || periodRaw > 4) {
             return List.of();
         }
         return List.of(new ArenaPeriodChangedEvent(
                 packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
                 periodRaw, ArenaPeriodChangedEvent.periodOf(periodRaw)));
+    }
+
+    /**
+     * wrapper3 ARENA_PERIOD 的 period 值。真实 11.19 china/china_apple 数据：root field3 不再是单个数字，
+     * 而是<b>嵌套 arena-period 消息</b>（其 field1 = periodRaw，field2 = timestamp bits，field3 = period length）。
+     * 修正：field3 为 {@code byte[]} 时解码其 field1 作为 period；仍保留 Number 直接值（前向/单数形状兼容）。
+     * 结构/值非法 → -1（fail-closed，< 0 或 > 4 不产出事件）。
+     */
+    static int arenaPeriodSerialValue(final Object first) {
+        if (first instanceof Number n) {
+            return n.intValue();
+        }
+        if (first instanceof byte[] inner) {
+            try {
+                final Map<Integer, List<Object>> innerRoot = ProtobufDecoder.decode(inner);
+                final List<Object> p = innerRoot.get(1);
+                if (p != null && !p.isEmpty() && p.getFirst() instanceof Number n2) {
+                    return n2.intValue();
+                }
+            } catch (final RuntimeException ignored) {
+                // fall through -> -1
+            }
+        }
+        return -1;
     }
 
     /** 供探针/诊断读取 subtype48 的 wrapper field_number（复用生产提取；-1=结构不完整）。 */
