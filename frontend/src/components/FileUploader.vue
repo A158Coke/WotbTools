@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, inject, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fileKey, displayName } from '../utils/helpers.js'
 import {
@@ -10,12 +10,11 @@ import {
   validateReplaySelection
 } from '../utils/replayUpload.js'
 
-const emit = defineEmits(['update:files', 'preview', 'remove-request', 'workspace-action'])
+const emit = defineEmits(['update:files', 'preview', 'remove-request'])
 const props = defineProps({
   files: Array,
   loading: Boolean,
   confirmRemove: Boolean,
-  showWorkspaceActions: { type: Boolean, default: true },
   showPreview: { type: Boolean, default: true },
   /** 解析完成后压缩上传区域：隐藏大卡/预览主按钮，只保留细条批次摘要 + 添加/清空。 */
   compact: { type: Boolean, default: false },
@@ -24,31 +23,13 @@ const props = defineProps({
 })
 const dragging = ref(false)
 const listOpen = ref(false)
-const actionFileKey = ref('')
 /** preflight 拒绝结果（{offending, tooMany, totalTooLarge}；非空时 selection 保持不变）。 */
 const validation = ref(null)
-const isAuthenticated = inject('isAuthenticated', () => false)
-const login = inject('login', null)
 const { t } = useI18n()
 const maxReplayFiles = MAX_REPLAY_FILES
 const maxReplayTotal = formatReplaySize(MAX_REPLAY_TOTAL_BYTES)
 
 const totalBytes = computed(() => props.files.reduce((sum, f) => sum + (f.size || 0), 0))
-const actionFile = computed(() => {
-  if (props.files.length === 1) return props.files[0]
-  if (!actionFileKey.value) return null
-  return props.files.find(f => fileKey(f) === actionFileKey.value) || null
-})
-const directActionDisabled = computed(() => props.loading || !actionFile.value)
-
-watch(() => props.files.map(fileKey), (keys) => {
-  // Multi-file AI/playback must always target an explicitly selected file.
-  // If the chosen replay was removed/replaced, invalidate the selection instead
-  // of silently falling back to another replay.
-  if (props.files.length !== 1 && (!actionFileKey.value || !keys.includes(actionFileKey.value))) {
-    actionFileKey.value = ''
-  }
-}, { deep: true })
 
 // 父级已更新 files（remove/clear/替换）→ 清除过期的 preflight 拒绝信息（被拒的 add
 // 不会触发 update:files，因此错误会保留直到下一次成功 add 或 files 变化）。
@@ -119,23 +100,6 @@ function onDrop(e) {
   addFiles(e.dataTransfer.files)
 }
 
-function requireLoginForReplayAction() {
-  if (isAuthenticated()) return true
-  const ok = window.confirm(t('replay.login_required_for_battle'))
-  if (ok && login) login('replay')
-  return false
-}
-
-/**
- * 直接进入 AI 复盘 / 战局回放（单页 Workspace）：不跨视图跳转、不重新上传——
- * 目标文件已在 ReplayPage 内存中，上抛给页面切到对应 Workspace 面板。
- * 多文件必须经选择器显式指定目标（actionFile），禁止 fallback 第一场。
- */
-function openReplayAction(mode) {
-  const f = actionFile.value
-  if (!f || !requireLoginForReplayAction()) return
-  emit('workspace-action', { file: f, mode })
-}
 </script>
 
 <template>
@@ -236,25 +200,13 @@ function openReplayAction(mode) {
       <button class="ghost sm" :disabled="loading" @click="clearFiles">{{ $t('upload.clear') }}</button>
     </div>
 
-    <!-- 解析预览：ReplayPage 基础操作，独立于 workspace shortcut 开关（showPreview）。
-         showWorkspaceActions 只控制 AI 复盘 / 战局回放快捷入口，不得连带隐藏解析。 -->
+    <!-- 解析预览：ReplayPage 基础操作（独立于 workspace shortcut 开关 showPreview）。 -->
     <div v-if="files.length && showPreview && !compact" class="replay-primary-actions">
       <div class="actionrow">
         <button class="lg" :disabled="loading" @click="$emit('preview')">
           {{ $t('action.preview') }}<svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
         </button>
         <span v-if="loading" class="muted">{{ $t('action.processing') }}</span>
-      </div>
-    </div>
-
-    <div v-if="files.length && showWorkspaceActions" class="replay-workspace-actions">
-      <select v-if="files.length > 1" v-model="actionFileKey" class="replay-action-file" :aria-label="$t('upload.action_replay_selector')">
-        <option value="" disabled>{{ $t('upload.action_replay_placeholder') }}</option>
-        <option v-for="f in files" :key="fileKey(f)" :value="fileKey(f)">{{ displayName(f) }}</option>
-      </select>
-      <div class="actionrow">
-        <button class="battle-action" :disabled="directActionDisabled" data-testid="direct-playback-btn" @click="openReplayAction('playback')">{{ $t('action.battle_playback') }}</button>
-        <button class="battle-action primary" :disabled="directActionDisabled" data-testid="direct-ai-btn" @click="openReplayAction('ai')">{{ $t('action.ai_review') }}</button>
       </div>
     </div>
   </section>
@@ -271,10 +223,6 @@ function openReplayAction(mode) {
 .upload-errors-title { font-weight:700; margin:0 0 6px; }
 .upload-errors-list { margin:0 0 4px; padding-left:18px; display:flex; flex-direction:column; gap:2px; }
 .upload-errors-hint { margin:2px 0 0; opacity:.9; }
-.replay-primary-actions, .replay-workspace-actions { margin-top:14px; padding-top:14px; border-top:1px solid var(--border-ghost); }
-.replay-action-file { width:min(100%,560px); margin-bottom:10px; min-height:36px; padding:6px 10px; border:1px solid var(--border-ghost); border-radius:7px; background:var(--bg-card); color:var(--text); }
+.replay-primary-actions { margin-top:14px; padding-top:14px; border-top:1px solid var(--border-ghost); }
 .actionrow { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-.battle-action { display:inline-flex; align-items:center; min-height:40px; padding:8px 16px; border:1px solid var(--border-ghost); border-radius:7px; background:var(--bg-card); color:var(--text-label); cursor:pointer; font:inherit; font-weight:700; }
-.battle-action.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-text); }
-.battle-action:disabled { opacity:.48; cursor:not-allowed; }
 </style>
