@@ -131,8 +131,6 @@ const isHofAdmin = computed(() => {
   const roles = tokenParsed.value?.realm_access?.roles || []
   return roles.includes('HoF-admin') || roles.includes('wotbtools-admin')
 })
-// 下载 Android 版 feature flag：仅 wotbtools-admin 可见（HomePage 经 inject 读取）。
-provide('isAdmin', isAdmin)
 // 菜单面板经 Teleport 挂到 body，用 fixed 定位对齐触发按钮下方：
 // 不受 .topbar overflow-x:auto 裁切，也不撑高顶栏（移动端横向滚动保留）。
 function toggleUserMenu() {
@@ -191,9 +189,9 @@ onBeforeUnmount(() => {
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
       <option v-for="l in languageOptions" :key="l.key" :value="l.key">{{ l.label }}</option>
     </select>
-    <!-- 下载 Android 版：feature flag，仅 wotbtools-admin 可见，主页右上角。
-         Android App 内隐藏（计划 §20）：Native WebView 中不展示「下载 Android 版」。 -->
-    <button v-if="isAdmin && !isAndroidApp() && activeTool === 'home'" class="auth-btn ghost android-download-btn" @click="go('android')" :title="$t('android.nav')">{{ $t('android.nav') }}</button>
+    <!-- 下载 Android 版：公开入口（已去除 admin 灰度）。Android App 内隐藏：
+         Native WebView 中不展示「下载 Android 版」。 -->
+    <button v-if="!isAndroidApp() && activeTool === 'home'" class="auth-btn ghost android-download-btn" @click="go('android')" :title="$t('android.nav')">{{ $t('android.nav') }}</button>
     <div class="dropdown user-menu">
       <button ref="userMenuTrigger" class="auth-btn ghost user-menu-trigger" @click="toggleUserMenu" :aria-expanded="userMenuOpen" :aria-haspopup="true">
         {{ isAuthenticated() ? userName() : $t('app.login') }}
@@ -216,7 +214,7 @@ onBeforeUnmount(() => {
             <button v-if="isAdmin" class="user-menu-item" role="menuitem" @click="go('admin-users')">{{ $t('admin.title') }}</button>
             <button v-if="isHofAdmin" class="user-menu-item" role="menuitem" @click="go('hof-admin')">{{ $t('hofAdmin.cardTitle') }}</button>
             <button class="user-menu-item" role="menuitem" @click="go('version')">{{ $t('version.btn') }}</button>
-            <button v-if="isAdmin && !isAndroidApp()" class="user-menu-item" role="menuitem" @click="go('android')">{{ $t('android.nav') }}</button>
+            <button v-if="!isAndroidApp()" class="user-menu-item" role="menuitem" @click="go('android')">{{ $t('android.nav') }}</button>
             <button class="user-menu-item" role="menuitem" @click="go('contact')">{{ $t('contact.nav') }}</button>
             <a class="user-menu-item" role="menuitem" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
             <button class="user-menu-item danger" role="menuitem" @click="handleLogout">{{ $t('profile.logout') }}</button>
