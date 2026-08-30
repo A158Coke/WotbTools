@@ -265,3 +265,5 @@ jobs:
         run: bash deploy/test-deploy-rollback.sh
       - name: nginx rate-limit real-IP smoke
         run: bash deploy/test-nginx-ratelimit.sh
+      - name: nginx Android download route smoke (SPA/version.json/APK/404)
+        run: bash deploy/test-nginx-android-route.sh
