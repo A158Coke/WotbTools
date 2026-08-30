@@ -27,6 +27,28 @@
   （anti-future-leak），非 canonical max HP；loadout 离开 AoI 仍 KNOWN；consumable runtime
   在 hidden interval = UNKNOWN。
 
+### 反未来信息泄漏（anti-future-leak，硬性 invariant）
+
+> 在 UI 时间 `t`，任何展示出来的事实只能来自 `timeSec <= t` 的证据。这是 Battle Playback V2
+> 的硬性不变式（canonical 解码器 / battle-start / BattleTimeline / BattlePlaybackProjector 不改，
+> 只修 query-at-time 与 presentation 层）。
+
+- `positionAtV2` / `orientationAtV2` 增加守卫：整个 segment `startSec > t` 对当前查询完全不可见；
+  任何候选样本进入 `lastSeen` 前必须满足 `sample.timeSec <= t`；单样本段在 `t == 首样本时刻` 正确返回。
+- 因此：`t` 之前从未观测的敌方 **不** 显示 marker / 位置；仅过去观测过则冻结 `last-known`（≤ t）；
+  未来重新出现不得使用未来位置（Case A/B/C）。Inspector 的 `last_spotted` 时间恒 ≤ 当前回放时间。
+- 后端 sparse artifact 允许包含整场时间序列（这是正常的）；前端 query-at-time 不允许跨 `t` 读取
+  未来 transition（否则即为 future information leak）。
+
+### 战斗装载本地化（loadout i18n）
+
+- 后端 DTO 只返回稳定协议标识：`consumables`（logicalItemId，可 null）、`provisions`（可 null）、
+  `equipmentIds`（numeric equipmentId）。前端 `src/data/loadoutItems.js` 把 logicalItemId /
+  equipmentId 映射为三语名称（zh/en 取 `common/wotb-item-catalog-json/` authoritative 名称，ru 用官方
+  游戏术语）；`V2VehicleInspector` 渲染本地化名称，**绝不**把 `MULTI_PURPOSE_RESTORATION_PACK` /
+  `REPAIR_KIT` / `103` 当用户文案。
+- 未知 / 未映射条目走三语「未知消耗品/补给/装备（id）」fallback，并保留 raw id 仅作诊断。
+
 ## 地图鸟瞰（Map Overview，Dataset-only）
 
 战局回放面板读取同一 Processing Dataset 的 `map-overview.json` derived artifact：

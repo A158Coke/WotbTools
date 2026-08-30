@@ -65,7 +65,7 @@ describe('useReplayWorkspace', () => {
     expect(ws.currentTargetFile.value).toBe(null)
   })
 
-  it('selectBattle 设 currentBattleId + dataViewMode=SINGLE；selectSummary 保留选中单场只切视图', async () => {
+  it('selectBattle 设 currentBattleId + dataViewMode=SINGLE；setDataViewMode(SUMMARY) 归一到第一场（plan §5）', async () => {
     holder.state.files.value = makeFiles(2)
     holder.state.resp.value = { leagueMode: false, aggregate: [{ a: 1 }], battles: [battle('r0'), battle('r1')] }
     const ws = useReplayWorkspace('data')
@@ -77,12 +77,12 @@ describe('useReplayWorkspace', () => {
     expect(ws.currentBattleIndex.value).toBe(1)
     expect(ws.dataViewMode.value).toBe('SINGLE')
 
-    ws.selectSummary()
+    ws.setDataViewMode('SUMMARY')
     await nextTick()
-    expect(ws.currentBattleId.value).toBe('r1')
+    // plan §5：SUMMARY 把 Workspace 当前回放归一第一场有效 battle。
+    expect(ws.currentBattleId.value).toBe('r0')
     expect(ws.dataViewMode.value).toBe('SUMMARY')
-    // SUMMARY 视图保留选中单场：AI/Playback target 仍为 r1。
-    expect(ws.currentTargetBattleId.value).toBe('r1')
+    expect(ws.currentTargetBattleId.value).toBe('r0')
   })
 
   it('READY 初始化用 resp.battles[0].sourceId（禁止硬编码 r0）', async () => {
@@ -94,6 +94,31 @@ describe('useReplayWorkspace', () => {
     expect(ws.currentBattleIndex.value).toBe(0)
     expect(ws.currentBattle.value?.sourceId).toBe('r3')
     expect(ws.dataViewMode.value).toBe('SINGLE')
+  })
+
+  it('plan §7：单 replay（即使 aggregate 有数据）默认 dataViewMode=SINGLE，直接单场结果', async () => {
+    holder.state.files.value = makeFiles(1)
+    // 单独上传一场：后端仍产出 aggregate（14 名选手），但默认必须是单场视图。
+    holder.state.resp.value = { leagueMode: false, aggregate: [{ a: 1 }], battles: [battle('r0')] }
+    const ws = useReplayWorkspace('data')
+    await nextTick()
+    expect(ws.currentBattleId.value).toBe('r0')
+    expect(ws.dataViewMode.value).toBe('SINGLE')
+    expect(ws.currentBattleIndex.value).toBe(0)
+  })
+
+  it('plan §7：多场默认 SUMMARY + 第一场；无有效 battle 回 SUMMARY + null', async () => {
+    holder.state.files.value = makeFiles(3)
+    holder.state.resp.value = { leagueMode: false, aggregate: [{ a: 1 }], battles: [battle('r0'), battle('r1'), battle('r2')] }
+    const ws = useReplayWorkspace('data')
+    await nextTick()
+    expect(ws.currentBattleId.value).toBe('r0')
+    expect(ws.dataViewMode.value).toBe('SUMMARY')
+
+    holder.state.resp.value = { leagueMode: false, aggregate: [], battles: [] }
+    await nextTick()
+    expect(ws.currentBattleId.value).toBe(null)
+    expect(ws.dataViewMode.value).toBe('SUMMARY')
   })
 
   it('边界：r0 failed、r1/r2 valid → 初始必须选 r1（sourceId 是唯一 identity）', async () => {
@@ -134,7 +159,7 @@ describe('useReplayWorkspace', () => {
     expect(ws.currentTargetFile.value).toBe(holder.state.files.value[2])
   })
 
-  it('回归：选 #8 → SUMMARY → AI/Playback 仍消费 #8（选中单场不随视图切换丢失）', async () => {
+  it('回归：选 #8 → SUMMARY → Workspace 归一到 #1，AI/Playback 消费 #1（plan §5）', async () => {
     holder.state.files.value = makeFiles(9)
     holder.state.resp.value = {
       leagueMode: false,
@@ -149,12 +174,14 @@ describe('useReplayWorkspace', () => {
     await nextTick()
     expect(ws.currentBattleId.value).toBe('r7')
     expect(ws.currentBattleIndex.value).toBe(7)
-    ws.selectSummary()
+    ws.setDataViewMode('SUMMARY')
     await nextTick()
     expect(ws.dataViewMode.value).toBe('SUMMARY')
-    expect(ws.currentTargetBattleId.value).toBe('r7')
-    expect(ws.currentSourceId.value).toBe('r7')
-    expect(ws.currentTargetFile.value).toBe(holder.state.files.value[7])
+    // plan §5：SUMMARY 归一 first valid battle（r0）。
+    expect(ws.currentBattleId.value).toBe('r0')
+    expect(ws.currentTargetBattleId.value).toBe('r0')
+    expect(ws.currentSourceId.value).toBe('r0')
+    expect(ws.currentTargetFile.value).toBe(holder.state.files.value[0])
   })
 
   it('selectionRevision 变化后重算 currentBattleId=null 并回 SUMMARY', async () => {
@@ -171,7 +198,7 @@ describe('useReplayWorkspace', () => {
     expect(ws.dataViewMode.value).toBe('SUMMARY')
   })
 
-  it('setDataViewMode(SUMMARY) 保留选中单场；setDataViewMode(SINGLE) 无选中时回退第一场 sourceId', async () => {
+  it('setDataViewMode(SUMMARY) 归一到第一场；setDataViewMode(SINGLE) 无选中时回退第一场 sourceId', async () => {
     holder.state.files.value = makeFiles(3)
     holder.state.resp.value = {
       leagueMode: false,
@@ -182,7 +209,8 @@ describe('useReplayWorkspace', () => {
     await nextTick()
     ws.selectBattle('r2')
     ws.setDataViewMode('SUMMARY')
-    expect(ws.currentBattleId.value).toBe('r2')
+    // plan §5：SUMMARY 归一 first valid battle（r0）。
+    expect(ws.currentBattleId.value).toBe('r0')
     // 无选中时 SINGLE 回退第一场有效 battle 的 sourceId（r0）。
     ws.currentBattleId.value = null
     ws.setDataViewMode('SINGLE')
