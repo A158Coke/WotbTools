@@ -1,7 +1,7 @@
 <script setup>
-import { computed, inject, nextTick, onMounted, provide, ref, watch } from 'vue'
+import { inject, nextTick, onMounted, provide, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useReplay } from '../composables/useReplay.js'
+import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
 import ReplayPage from './ReplayPage.vue'
@@ -29,14 +29,15 @@ const navigate = inject('navigate', null)
  * Workspace 持有唯一一份 replay selection / Processing Job，并向下 provide。
  * data / ai / playback 三个能力共享这份状态——选择一次、只建一次 Job。
  */
-const replay = useReplay()
-provide('replay', replay)
+const workspace = useReplayWorkspace(props.initialCapability || 'data')
+provide('replay', workspace.replay)
+provide('replayWorkspace', workspace)
 
 const {
   files, loading, error, resp, updateFiles,
   processingJob, processingError, uploadState,
   startProcessingJob, cancelProcessing, dismissProcessingJob,
-} = replay
+} = workspace.replay
 
 /**
  * Android 外部 replay 完整自动解析契约：
@@ -46,7 +47,7 @@ const {
  */
 async function importPendingFile(file) {
   // 强制默认 data/replay capability，绝不误入 AI。
-  activeCapability.value = 'data'
+  workspace.setWorkspaceTab('data')
   updateFiles([file])
   // 自动解析一次：startProcessingJob 内部 single-flight + 现有 Processing error/retry，不无限自动重试。
   await startProcessingJob(replayColsInit || undefined)
@@ -79,31 +80,16 @@ watch(() => processingJob.value, (job) => {
   else capabilityStates.value.base = 'idle'
 })
 
-const activeCapability = ref(props.initialCapability || 'data')
+const activeCapability = workspace.activeWorkspaceTab
 const batchOpen = ref(false)
 let loginAttempted = false
 
-/** active replay：单文件 = r0；多文件 = 当前数据 tab 显示的 battle（activeTab==='b<i>'）。 */
-const activeSourceId = computed(() => {
-  if (files.value.length === 1) return 'r0'
-  const tab = replay.activeTab?.value
-  if (typeof tab === 'string' && /^b\d+$/.test(tab)) return `r${parseInt(tab.replace('b', ''), 10)}`
-  return null
-})
-
-const targetActiveFile = computed(() => {
-  if (files.value.length === 1) return files.value[0] ?? null
-  const idx = activeSourceId.value ? parseInt(activeSourceId.value.replace('r', ''), 10) : -1
-  if (idx >= 0 && idx < files.value.length) return files.value[idx] ?? null
-  return null
-})
-
 // AI 与 Playback 各自持有独立 Dataset 状态，互不污染（计划 §12 错误域拆分）。
-const aiReplay = useCapabilityReplay(replay)
-const playbackReplay = useCapabilityReplay(replay)
+const aiReplay = useCapabilityReplay(workspace.replay)
+const playbackReplay = useCapabilityReplay(workspace.replay)
 
 /** 切到 ai / playback 且目标文件确定时准备 Dataset（绝不重传 / 重 parse）。 */
-watch([activeCapability, targetActiveFile], ([cap, file]) => {
+watch([activeCapability, workspace.currentTargetFile], ([cap, file]) => {
   if (cap !== 'ai' && cap !== 'playback') return
   if (files.value.length > 1 && !file) {
     const helper = cap === 'ai' ? aiReplay : playbackReplay
@@ -124,7 +110,7 @@ async function setCapability(key) {
   if (key === activeCapability.value) return
   const ok = await awaitAuthGate(key)
   if (!ok) return
-  activeCapability.value = key
+  workspace.setWorkspaceTab(key)
   if (navigate) navigate(VIEW_BY_CAPABILITY[key] || 'replay', null)
 }
 
@@ -153,11 +139,11 @@ async function onPreview() {
 }
 
 function onFileRemoveRequest(f) {
-  replay.askRemoveFile(f)
+  workspace.replay.askRemoveFile(f)
 }
 
 function confirmRemove() {
-  replay.confirmRemove(replayColsInit || undefined)
+  workspace.replay.confirmRemove(replayColsInit || undefined)
 }
 
 function clearSelection() {
@@ -177,11 +163,11 @@ onMounted(() => {
 
 // 外部导航（URL 直访 / battle action）同步能力 tab。
 watch(() => props.initialCapability, (val) => {
-  if (val) activeCapability.value = val
+  if (val) workspace.setWorkspaceTab(val)
 }, { immediate: true })
 
 // selection 变化（上传/替换/清空/删 battle）→ 两个 capability 的 Dataset 引用失效，防止旧 source 被复用。
-watch(() => replay.selectionRevision.value, () => {
+watch(() => workspace.replay.selectionRevision.value, () => {
   aiReplay.reset()
   playbackReplay.reset()
 })
@@ -206,8 +192,8 @@ watch(() => replay.selectionRevision.value, () => {
               :key="i"
               type="button"
               class="ws-batch-item"
-              :class="{ active: activeSourceId === 'r' + i }"
-              @click="replay.activeTab = 'b' + i; batchOpen = false"
+              :class="{ active: workspace.currentBattleId === 'r' + i }"
+              @click="workspace.selectBattle('r' + i); batchOpen = false"
             >
               {{ f.name }}
             </button>
@@ -291,9 +277,9 @@ watch(() => replay.selectionRevision.value, () => {
       </div>
     </div>
 
-    <ReplayTaskCard v-if="replay.exportJob.value" :job="replay.exportJob.value" :error="replay.exportError.value"
-      kind="export" @cancel="replay.cancelExportJob" @download="replay.downloadExportResult" @dismiss="replay.dismissExportJob" />
-    <RemoveConfirmModal :pending="replay.pendingRemove.value" @confirm="confirmRemove" @cancel="replay.cancelRemove" />
+    <ReplayTaskCard v-if="workspace.replay.exportJob.value" :job="workspace.replay.exportJob.value" :error="workspace.replay.exportError.value"
+      kind="export" @cancel="workspace.replay.cancelExportJob" @download="workspace.replay.downloadExportResult" @dismiss="workspace.replay.dismissExportJob" />
+    <RemoveConfirmModal :pending="workspace.replay.pendingRemove.value" @confirm="confirmRemove" @cancel="workspace.replay.cancelRemove" />
   </div>
 </template>
 
