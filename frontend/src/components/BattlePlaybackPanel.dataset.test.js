@@ -106,6 +106,28 @@ describe('BattlePlaybackPanel dataset request', () => {
     vi.unstubAllGlobals()
   })
 
+  it('Blocker 2：MapOverview 可用 + V2 204 → PRIMARY 显示 unavailable，secondary 地图仍可用', async () => {
+    const fetchMock = vi.fn((url) => {
+      if (String(url) === '/api/replay/map-overview') {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ mapCode: 'holland' }) })
+      }
+      if (String(url) === '/api/replay/battle-playback-v2') {
+        return Promise.resolve({ ok: false, status: 204 })
+      }
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-unavailable"]').exists()).toBe(true)
+    // 切到 secondary 地图鸟瞰：map-overview artifact 存在 → 必须仍可用
+    await wrapper.find('[data-test="pb-view-map"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.map-stub').exists()).toBe(true, 'secondary 地图鸟瞰必须仍可用')
+    vi.unstubAllGlobals()
+  })
+
   it('V2 500 → 显式 ERROR + retry（确定性原因，不吞掉）', async () => {
     const fetchMock = vi.fn((url) => {
       if (String(url) === '/api/replay/map-overview') {
@@ -122,6 +144,58 @@ describe('BattlePlaybackPanel dataset request', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-test="pb-error"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(true)
+    vi.unstubAllGlobals()
+  })
+
+  it('Blocker 2：V2 FULL + MapOverview 204 → PRIMARY Battle Playback 仍渲染（不依赖 map-overview artifact）', async () => {
+    const fetchMock = vi.fn((url) => {
+      if (String(url) === '/api/replay/map-overview') {
+        return Promise.resolve({ ok: false, status: 204 })
+      }
+      if (String(url) === '/api/replay/battle-playback-v2') {
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: async () => ({
+            capability: 'FULL', limitations: [], vehicles: [],
+            mapCode: 'holland', friendlyTeam: 1, recorderAccountId: 1001, arenaBonusType: 1
+          })
+        })
+      }
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    // PRIMARY playback 必须渲染（V2 为权威），尽管 map-overview 204
+    expect(wrapper.find('[data-test="pb-stub"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-capability-partial"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-unavailable"]').exists()).toBe(false)
+    vi.unstubAllGlobals()
+  })
+
+  it('Blocker 2：V2 PARTIAL + MapOverview 204 → PARTIAL 降级提示 + Battle Playback 仍渲染', async () => {
+    const fetchMock = vi.fn((url) => {
+      if (String(url) === '/api/replay/map-overview') {
+        return Promise.resolve({ ok: false, status: 204 })
+      }
+      if (String(url) === '/api/replay/battle-playback-v2') {
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: async () => ({
+            capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [],
+            mapCode: 'holland', friendlyTeam: 1, recorderAccountId: 1001, arenaBonusType: 1
+          })
+        })
+      }
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-capability-partial"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-stub"]').exists()).toBe(true)
     vi.unstubAllGlobals()
   })
 

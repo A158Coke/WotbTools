@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import org.mockito.MockedStatic;
 
 import java.lang.reflect.Field;
 import java.nio.file.Files;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -36,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -751,11 +754,84 @@ class ReplayProcessingJobServiceTest {
                 "READY 前必须先写 ai-facts.json（先写 artifact 后置 READY）");
         assertFalse(Files.exists(ReplayArtifactWriter.mapOverviewPath(jobDir, 0)),
                 "MapOverview unavailable 时不得写伪 artifact，也不得判 parse failure");
+        assertFalse(Files.exists(ReplayArtifactWriter.battlePlaybackV2Path(jobDir, 0)),
+                "canonical timeline 不可用（reconstruction=null）时不得写 V2 伪 artifact，也不得判 parse failure");
 
         final com.wotb.core.replay.facts.AiReplayFacts facts =
                 ReplayArtifactWriter.readAiFacts(jobDir, 0);
         assertEquals("a.wotbreplay", facts.fileName());
         assertEquals("arena-a.wotbreplay", facts.battle().arenaId);
+    }
+
+    // ---- Blocker 1：V2 artifact 生成显式化（禁止 silent null），fail-closed 不判 parse failure ----
+
+    @Test
+    void realFixtureProducesV2ArtifactWithArenaBonusType() throws Exception {
+        // 真实 fixture → canonical timeline 可用 → 必须产出 V2 artifact，且携带权威 arenaBonusType。
+        final Path fixture = randomBattleFixture();
+        final byte[] bytes = Files.readAllBytes(fixture);
+        service = new ReplayProcessingJobService(new DefaultReplayProcessingFacade(), store,
+                parseScheduler, meterRegistry);
+        final String jobId = service.createJob(new MultipartFile[]{
+                new MockMultipartFile("files", fixture.getFileName().toString(),
+                        "application/octet-stream", bytes)});
+        final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 30_000);
+        assertEquals(ReplayProcessingJob.Status.READY, snap.status());
+
+        final Path jobDir = store.jobDir(jobId);
+        assertTrue(Files.exists(ReplayArtifactWriter.battlePlaybackV2Path(jobDir, 0)),
+                "canonical timeline 可用时必须写出 V2 artifact（禁止因为 MapOverview 或投影次序漏写）");
+        final com.wotb.web.replay.dto.BattlePlaybackDataset ds =
+                ReplayArtifactWriter.readBattlePlaybackV2(jobDir, 0);
+        assertNotNull(ds, "V2 dataset 必须可反序列化");
+        assertEquals(Integer.valueOf(1), ds.arenaBonusType(), "rift 随机战 fixture arenaBonusType=1 必须写入 V2");
+    }
+
+    @Test
+    void v2ProjectorRuntimeExceptionIsExplicitErrorNotSilentNull() throws Exception {
+        // Blocker 1：projector 运行时异常必须被捕获为显式 ERROR（记录 reason+exception），
+        // 而不是 silent null——否则 prod 只见 204「Playback unavailable」却无法诊断根因。
+        final Path fixture = randomBattleFixture();
+        final byte[] bytes = Files.readAllBytes(fixture);
+        final ReplayProcessingResult result = new DefaultReplayProcessingFacade()
+                .process(new Source(fixture.getFileName().toString(), bytes),
+                        ReplayProcessingOptions.full());
+        assertNotNull(result.reconstruction(), "fixture 应能完成事件流重建");
+
+        try (MockedStatic<com.wotb.web.replay.ai.BattlePlaybackProjector> ps =
+                     mockStatic(com.wotb.web.replay.ai.BattlePlaybackProjector.class)) {
+            ps.when(() -> com.wotb.web.replay.ai.BattlePlaybackProjector.project(
+                            any(), any(), any(), any()))
+                    .thenThrow(new RuntimeException("projector boom"));
+            final ReplayProcessingJobService.V2BuildOutcome outcome =
+                    service.buildBattlePlaybackV2(result.battle(), result);
+            assertEquals("PROJECTOR_ERROR", outcome.reason());
+            assertNull(outcome.dataset(), "projector 异常不得产出 dataset");
+            assertNotNull(outcome.failure(), "必须携带 exception 供调用层记录 stacktrace，禁止 silent null");
+            assertEquals("projector boom", outcome.failure().getMessage());
+        }
+    }
+
+    @Test
+    void v2MissingReconstructionIsExplicitUnavailable() throws Exception {
+        // reconstruction 缺失属于合法不可用（canonical event 流不可构建），不是运行时故障：
+        // reason=NO_RECONSTRUCTION，failure=null（UNAVAILABLE 不再与 null 混为一个结果）。
+        final ReplayProcessingJobService.V2BuildOutcome outcome = service.buildBattlePlaybackV2(
+                new Battle(), new ReplayProcessingResult("x.wotbreplay",
+                        ReplayProcessingStatus.SUCCESS, null, new Battle(), null,
+                        null, ReplayProcessingCapabilities.summaryOnly(false), null, null));
+        assertEquals("NO_RECONSTRUCTION", outcome.reason());
+        assertNull(outcome.dataset());
+        assertNull(outcome.failure());
+    }
+
+    private static Path randomBattleFixture() throws Exception {
+        final Path dir = Path.of(System.getProperty("user.dir"), "..", "..",
+                "common", "fixtures", "replays").normalize();
+        try (Stream<Path> s = Files.list(dir)) {
+            return s.filter(p -> p.getFileName().toString().contains("random-battle-example"))
+                    .findFirst().orElseThrow();
+        }
     }
 
     // ---- prioritySourceIndex 目标 source 优先调度（不突破并发=2）----
