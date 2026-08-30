@@ -94,10 +94,24 @@ const currentBattleName = computed(() => {
 /** 模板直接消费的 workspace 权威 ref（顶层绑定，模板自动解包 ref）。 */
 const currentBattleId = workspace.currentBattleId
 const currentBattleIndex = workspace.currentBattleIndex
+const parsedBattles = workspace.parsedBattles
 function selectBattle(sourceId) {
   workspace.selectBattle(sourceId)
   batchOpen.value = false
 }
+
+/**
+ * 有效 battle 选项（selector 只列 parsed battles——failed / duplicate 的 source 不入列；
+ * label 由 sourceId 'r<N>' -> files[N] 映射，与 source identity 严格对齐）。
+ */
+const battleOptions = computed(() => {
+  const fileArr = workspace.replay.files.value
+  return parsedBattles.value.map(b => {
+    const m = /^r(\d+)$/.exec(b?.sourceId || '')
+    const f = m ? fileArr[parseInt(m[1], 10)] : null
+    return { sourceId: b?.sourceId ?? '', label: f ? displayName(f) : (b?.sourceId || '') }
+  })
+})
 
 // AI 与 Playback 各自持有独立 Dataset 状态，互不污染（计划 §12 错误域拆分）。
 const aiReplay = useCapabilityReplay(workspace.replay)
@@ -200,16 +214,16 @@ watch(() => workspace.replay.selectionRevision.value, () => {
         <button v-if="currentBattleIndex >= 0" class="ghost sm ws-selector" data-testid="ws-batch-selector" @click="batchOpen = !batchOpen">
           {{ $t('workspace.current_battle', { name: currentBattleName, idx: currentBattleIndex + 1 }) }} ▾
         </button>
-        <div v-if="batchOpen && currentBattleIndex >= 0" class="ws-batch-sheet" data-testid="ws-batch-sheet">
+        <div v-if="batchOpen && battleOptions.length" class="ws-batch-sheet" data-testid="ws-batch-sheet">
           <button
-            v-for="(f, i) in files"
-            :key="i"
+            v-for="opt in battleOptions"
+            :key="opt.sourceId"
             type="button"
             class="ws-batch-item"
-            :class="{ active: currentBattleId === 'r' + i }"
-            @click="selectBattle('r' + i)"
+            :class="{ active: currentBattleId === opt.sourceId }"
+            @click="selectBattle(opt.sourceId)"
           >
-            {{ f.name }}
+            {{ opt.label }}
           </button>
         </div>
       </div>

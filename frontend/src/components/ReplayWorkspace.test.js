@@ -224,7 +224,7 @@ describe('ReplayWorkspace', () => {
     replayState.resp.value = {
       leagueMode: false,
       aggregate: [{ a: 1 }],
-      battles: Array.from({ length: 9 }, () => ({ mapName: 'Lagoon', players: [] })),
+      battles: Array.from({ length: 9 }, (_, i) => ({ sourceId: `r${i}`, mapName: 'Lagoon', players: [] })),
     }
     replayState.processingJobId.value = 'job-1'
     const wrapper = mountWorkspace('data')
@@ -250,5 +250,36 @@ describe('ReplayWorkspace', () => {
     const pbVm = wrapper.findComponent({ name: 'BattlePlaybackPanelMock' })
     expect(pbVm.exists()).toBe(true)
     expect(pbVm.props('file')?.name).toBe('f7.wotbreplay')
+  })
+
+  it('selector 只列有效 parsed battles（failed/duplicate 不列出）；选第二个有效 battle 得 sourceId r2 / files[2]', async () => {
+    const files = [new File(['x'], 'f0.wotbreplay'), new File(['x'], 'f1.wotbreplay'), new File(['x'], 'f2.wotbreplay')]
+    replayState.files.value = files
+    // r0 有效、r1 duplicate 被移除、r2 有效 → parsedBattles 只有 [r0, r2]。
+    replayState.resp.value = {
+      leagueMode: false,
+      aggregate: [{ a: 1 }],
+      battles: [
+        { sourceId: 'r0', mapName: 'Lagoon', players: [] },
+        { sourceId: 'r2', mapName: 'Desert', players: [] },
+      ],
+    }
+    replayState.processingJobId.value = 'job-1'
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+
+    // 打开 selector：只列出 2 个有效 battle，绝不列出 failed/duplicate 的 raw file（f1）。
+    await wrapper.find('[data-testid="ws-batch-selector"]').trigger('click')
+    let items = wrapper.findAll('.ws-batch-item')
+    expect(items).toHaveLength(2)
+    expect(items.map(i => i.text()).join(',')).not.toContain('f1.wotbreplay')
+
+    // 选第二个有效 battle → sourceId r2，消费 files[2]。
+    await items[1].trigger('click')
+    await flushPromises()
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
+    await flushPromises()
+    const aiVm = wrapper.findComponent({ name: 'AiReviewPanelMock' })
+    expect(aiVm.props('file')?.name).toBe('f2.wotbreplay')
   })
 })
