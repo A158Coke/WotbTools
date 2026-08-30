@@ -1,6 +1,7 @@
 <script setup>
-import { inject, nextTick, onMounted, provide, ref, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, provide, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { displayName } from '../utils/helpers.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
@@ -83,6 +84,12 @@ watch(() => processingJob.value, (job) => {
 const activeCapability = workspace.activeWorkspaceTab
 const batchOpen = ref(false)
 let loginAttempted = false
+
+/** 当前选中单场显示名（header「当前回放：xxx #N」。Blocker #4）。 */
+const currentBattleName = computed(() => {
+  const f = workspace.currentTargetFile.value
+  return f ? displayName(f) : ''
+})
 
 // AI 与 Playback 各自持有独立 Dataset 状态，互不污染（计划 §12 错误域拆分）。
 const aiReplay = useCapabilityReplay(workspace.replay)
@@ -183,8 +190,9 @@ watch(() => workspace.replay.selectionRevision.value, () => {
       <div class="ws-replay-info" v-if="files.length">
         <span v-if="files.length === 1" class="ws-replay-name">{{ files[0].name }}</span>
         <template v-else>
+          <span class="ws-batch-count">{{ $t('workspace.batch_count', { count: files.length }) }}</span>
           <button class="ghost sm ws-selector" data-testid="ws-batch-selector" @click="batchOpen = !batchOpen">
-            {{ $t('workspace.batch_count', { count: files.length }) }} ▾
+            {{ $t('workspace.current_battle', { name: currentBattleName, idx: workspace.currentBattleIndex + 1 }) }} ▾
           </button>
           <div v-if="batchOpen" class="ws-batch-sheet" data-testid="ws-batch-sheet">
             <button
