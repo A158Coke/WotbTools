@@ -187,7 +187,7 @@ public class WebApiTest {
         // 不在 scheduler 之外做任何 full processing。
         mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isGone())
-                .andExpect(jsonPath("$.code").value("REPLAY_LEGACY_DEPRECATED"));
+                .andExpect(jsonPath("$.errorCode").value("REPLAY_LEGACY_DEPRECATED"));
     }
 
     @Test
@@ -197,7 +197,7 @@ public class WebApiTest {
         final var req = multipart("/api/preview").file(file(replays().getFirst()));
         mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isGone())
-                .andExpect(jsonPath("$.code").value("REPLAY_LEGACY_DEPRECATED"));
+                .andExpect(jsonPath("$.errorCode").value("REPLAY_LEGACY_DEPRECATED"));
     }
 
     @Test
@@ -205,7 +205,7 @@ public class WebApiTest {
         final var req = multipart("/api/export").file(file(replays().getFirst()));
         mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isGone())
-                .andExpect(jsonPath("$.code").value("REPLAY_LEGACY_DEPRECATED"));
+                .andExpect(jsonPath("$.errorCode").value("REPLAY_LEGACY_DEPRECATED"));
     }
 
     @Test
@@ -215,7 +215,7 @@ public class WebApiTest {
         final var req = multipart("/api/export").param("mode", "each").file(file(replays().getFirst()));
         mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isGone())
-                .andExpect(jsonPath("$.code").value("REPLAY_LEGACY_DEPRECATED"));
+                .andExpect(jsonPath("$.errorCode").value("REPLAY_LEGACY_DEPRECATED"));
     }
 
     @Test
@@ -354,7 +354,7 @@ public class WebApiTest {
                 .andExpect(status().isBadRequest())
                 .andReturn().getResponse().getContentAsString();
         final JsonNode n = om.readTree(json);
-        assertEquals("UNSUPPORTED_BATTLE_TYPE", n.get("code").asText(), "errorCode 必须为 UNSUPPORTED_BATTLE_TYPE");
+        assertEquals("UNSUPPORTED_BATTLE_TYPE", n.get("errorCode").asText(), "errorCode 必须为 UNSUPPORTED_BATTLE_TYPE");
 
         assertEquals(rowsBefore, hallOfFameRecordRepository.count(), "训练房不得新增 hall_of_fame 记录");
         final long filesAfter = Files.isDirectory(REPLAY_DIR)
