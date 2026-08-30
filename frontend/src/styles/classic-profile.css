@@ -93,11 +93,11 @@ html[data-ui-profile="classic"] {
   --danger-solid-fg: #ffffff;
   --focus-ring: rgba(201, 118, 46, .38);
   /* Tactical 阵营色(地图领域):浅色下保持可读(不变 hue,加深提高对比,不反色) */
-  --friendly: #a9661a;
-  --friendly-strong: #c9762e;
+  --friendly: #22c55e;
+  --friendly-strong: #4ade80;
   --friendly-fg: #ffffff;
-  --enemy: #2e7ea8;
-  --enemy-strong: #3b93c0;
+  --enemy: #ef4444;
+  --enemy-strong: #f87171;
   --enemy-fg: #ffffff;
 }
 
