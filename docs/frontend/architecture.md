@@ -30,6 +30,8 @@ The current source tree uses flat `components/`, `composables/`, and `utils/` di
 
 Each business state has one authoritative owner. Replay state is owned by `frontend/src/composables/useReplaySession.js`; `useProcessingJob.js`, `useReplay.js`, `useExportJob.js`, and capability panels consume its refs and commands. Derive values with `computed`; use `watch()` for real side effects or lifecycle bridges only, never to synchronize duplicate copies of the same state.
 
+Replay Workspace presentation is split into focused children (`ReplayWorkspaceHeader.vue`, `ReplayCapabilityTabs.vue`, and `ReplaySourcePanel.vue`). They receive derived state and emit commands; selection, capability, authentication, upload, and Processing ownership remains in the Workspace/session orchestration layer.
+
 The UI profile remains presentation-only: `wotb-ui-profile` is the single persistence key, and its derived `data-theme` does not create a separate theme state. Showcase and Classic must use the same components, APIs, and business state.
 
 ## Canonical feature references
