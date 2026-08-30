@@ -839,35 +839,35 @@ body.pd-resizing .pd-resizer-line,
 
 /* 导出卡（offscreen，实色 token） */
 .rp-export { position: absolute; left: -9999px; top: 0; }
-.rp-card { width: 720px; padding: 24px 28px; background: #14161a; color: #e8e8e8; font-family: inherit; }
+.rp-card { width: 720px; padding: 24px 28px; background: var(--bg-card); color: var(--text); font-family: inherit; }
 .rp-brand { font-size: .78rem; font-weight: 800; color: #d4a017; letter-spacing: .06em; }
-.rp-player { font-size: 1.5rem; font-weight: 800; color: #fff; margin: 6px 0 2px; }
+.rp-player { font-size: 1.5rem; font-weight: 800; color: var(--text-heading); margin: 6px 0 2px; }
 .rp-scope { font-size: .8rem; font-weight: 600; color: #9aa0a6; margin-left: 8px; }
 .rp-rating { display: flex; align-items: baseline; gap: 8px; }
-.rp-rating-label { font-size: .72rem; font-weight: 800; color: #9aa0a6; text-transform: uppercase; letter-spacing: .04em; }
+.rp-rating-label { font-size: .72rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
 .rp-rating-value { font-size: 2rem; font-weight: 800; color: #d4a017; font-variant-numeric: tabular-nums; }
 .rp-headline-extra { display: flex; gap: 16px; margin-top: 2px; }
-.rp-extra { font-size: .8rem; color: #9aa0a6; }
-.rp-extra b { color: #e8e8e8; font-variant-numeric: tabular-nums; }
-.rp-vehicle { margin: 10px 0 4px; padding: 10px 12px; border: 1px solid #3a3f45; border-radius: 8px; background: #17191d; }
-.rp-vehicle-label { font-size: .72rem; font-weight: 800; color: #9aa0a6; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+.rp-extra { font-size: .8rem; color: var(--text-muted); }
+.rp-extra b { color: var(--text); font-variant-numeric: tabular-nums; }
+.rp-vehicle { margin: 10px 0 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated); }
+.rp-vehicle-label { font-size: .72rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
 .rp-vehicle-body { display: flex; align-items: center; gap: 12px; }
 .rp-vehicle-img { width: 140px; height: auto; border-radius: 6px; flex: none; }
 .rp-vehicle-meta { min-width: 0; }
-.rp-vehicle-name { font-size: 1.05rem; font-weight: 800; color: #fff; }
-.rp-vehicle-stats { display: flex; gap: 12px; margin-top: 3px; font-size: .82rem; color: #9aa0a6; font-variant-numeric: tabular-nums; }
+.rp-vehicle-name { font-size: 1.05rem; font-weight: 800; color: var(--text-heading); }
+.rp-vehicle-stats { display: flex; gap: 12px; margin-top: 3px; font-size: .82rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .rp-radar { margin: 10px auto 4px; width: 340px; }
 .rp-radar-svg { width: 340px; height: 340px; }
-.rp-scale-legend { display: flex; justify-content: center; gap: 16px; color: #9aa0a6; font-size: .7rem; }
-.rp-scale-note { margin-top: 3px; color: #9aa0a6; font-size: .66rem; text-align: center; }
-.rp-grid { fill: none; stroke: #3a3f45; stroke-width: 1; }
-.rp-grid-strong { stroke: #4a4f55; stroke-width: 1.2; }
-.rp-axis { stroke: #3a3f45; stroke-width: 1; }
-.rp-scale { fill: #9aa0a6; font-size: 9px; font-weight: 600; }
+.rp-scale-legend { display: flex; justify-content: center; gap: 16px; color: var(--text-muted); font-size: .7rem; }
+.rp-scale-note { margin-top: 3px; color: var(--text-muted); font-size: .66rem; text-align: center; }
+.rp-grid { fill: none; stroke: var(--border); stroke-width: 1; }
+.rp-grid-strong { stroke: var(--border-light-strong); stroke-width: 1.2; }
+.rp-axis { stroke: var(--border); stroke-width: 1; }
+.rp-scale { fill: var(--text-muted); font-size: 9px; font-weight: 600; }
 .rp-data { fill: rgba(212, 160, 23, .22); stroke: #d4a017; stroke-width: 2; }
-.rp-ref { fill: none; stroke: #9aa0a6; stroke-width: 1.3; stroke-dasharray: 4 3; }
+.rp-ref { fill: none; stroke: var(--text-muted); stroke-width: 1.3; stroke-dasharray: 4 3; }
 .rp-dot { fill: #d4a017; }
-.rp-score-bg { fill: #17191d; stroke: #d4a017; stroke-width: .8; }
+.rp-score-bg { fill: var(--bg-elevated); stroke: #d4a017; stroke-width: .8; }
 .rp-score { fill: #d4a017; font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .rp-label { fill: #cfd2d6; font-size: 12px; font-weight: 700; }
 .rp-detail { width: 100%; border-collapse: collapse; font-size: .82rem; margin-top: 8px; }
