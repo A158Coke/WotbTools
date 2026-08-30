@@ -57,6 +57,37 @@ describe('positionAtV2', () => {
     // 段外（hidden）：返回最后已知
     expect(positionAtV2(segs, 120).timeSec).toBe(100)
   })
+
+  it('anti-future-leak: future-only OBSERVED segment is invisible (never leaks 186s)', () => {
+    // plan §26: currentTime=23, 敌方第一次观测=186 → 绝不能提前显示
+    const segs = [
+      { knowledge: 'OBSERVED', startSec: 186, endSec: 190, samples: [{ timeSec: 186, x: 999, y: 888 }] },
+    ]
+    expect(positionAtV2(segs, 23)).toBeNull()
+    expect(positionAtV2(segs, 186).x).toBe(999)
+  })
+
+  it('anti-future-leak: past + future OBSERVED returns only last <= t (never 186)', () => {
+    const segs = [
+      { knowledge: 'OBSERVED', startSec: 10, endSec: 15, samples: [{ timeSec: 10, x: 10, y: 20 }, { timeSec: 15, x: 11, y: 21 }] },
+      { knowledge: 'OBSERVED', startSec: 186, endSec: 190, samples: [{ timeSec: 186, x: 999, y: 888 }] },
+    ]
+    const pos = positionAtV2(segs, 23)
+    expect(pos.timeSec).toBe(15)
+    expect(pos.x).toBe(11)
+    expect(pos.x).not.toBe(999)
+  })
+
+  it('anti-future-leak: future LAST_KNOWN segment must not freeze into lastSeen', () => {
+    // plan §17：不得因为段标记为 LAST_KNOWN 就取它的最后样本
+    const segs = [
+      { knowledge: 'OBSERVED', startSec: 10, endSec: 15, samples: [{ timeSec: 10, x: 10, y: 20 }, { timeSec: 15, x: 11, y: 21 }] },
+      { knowledge: 'LAST_KNOWN', startSec: 186, endSec: 190, samples: [{ timeSec: 186, x: 500, y: 500 }, { timeSec: 190, x: 600, y: 600 }] },
+    ]
+    const pos = positionAtV2(segs, 23)
+    expect(pos.timeSec).toBe(15)
+    expect(pos.x).toBe(11)
+  })
 })
 
 describe('orientationAtV2', () => {
@@ -66,6 +97,22 @@ describe('orientationAtV2', () => {
     const o = orientationAtV2(segs, 120)
     expect(o.hullYawDeg).toBe(30)
     expect(o.turretRelativeYawDeg).toBe(10)
+  })
+
+  it('anti-future-leak: all samples > t => null; past+future => last <= t only', () => {
+    const future = [{ knowledge: 'CURRENT', startSec: 186, endSec: 190,
+      samples: [{ timeSec: 186, hullYawDeg: 90, turretRelativeYawDeg: 5 }] }]
+    expect(orientationAtV2(future, 23)).toBeNull()
+
+    const mixed = [
+      { knowledge: 'CURRENT', startSec: 10, endSec: 100, samples: [
+        { timeSec: 10, hullYawDeg: 30, turretRelativeYawDeg: 0 }, { timeSec: 100, hullYawDeg: 40, turretRelativeYawDeg: 5 },
+      ] },
+      { knowledge: 'CURRENT', startSec: 186, endSec: 190, samples: [{ timeSec: 186, hullYawDeg: 99, turretRelativeYawDeg: 9 }] },
+    ]
+    const o = orientationAtV2(mixed, 120)
+    expect(o.hullYawDeg).toBe(40)
+    expect(o.hullYawDeg).not.toBe(99)
   })
 })
 

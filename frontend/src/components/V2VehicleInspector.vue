@@ -9,6 +9,7 @@ import {
   consumableRuntimeAt,
   moduleCrewAt,
 } from '../utils/battlePlaybackV2.js'
+import { loadoutItemLabel } from '../data/loadoutItems.js'
 
 /**
  * V2 车辆检查器（plan §24）：选中任意 materialized vehicle 后，展示「在 t 时刻我们到底知道什么」。
@@ -19,7 +20,7 @@ const props = defineProps({
   timeSec: { type: Number, required: true }
 })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const life = computed(() => lifeAt(props.track, props.timeSec))
 const health = computed(() => {
@@ -38,6 +39,20 @@ const covered = computed(() => positionCoveredAtV2(props.track.positionSegments,
 const orientation = computed(() => orientationKnownAt(props.track, props.timeSec))
 const loadout = computed(() => props.track.loadout || null)
 
+/**
+ * loadout 条目显示名：优先本地化名称；未知/未映射走 i18n fallback 并保留 raw id 仅作诊断
+ * （plan §22/§23 —— 绝不裸露 `MULTI_PURPOSE_RESTORATION_PACK` / `103` 之类 internal id 当产品文案）。
+ */
+function itemLabel(scope, id) {
+  const name = loadoutItemLabel(scope, id, locale.value)
+  if (name) return name
+  if (id == null || id === '') return t('recon.map.playback.unknown')
+  const key = scope === 'consumable' ? 'recon.map.playback.loadout_unknown_consumable'
+    : scope === 'provision' ? 'recon.map.playback.loadout_unknown_provision'
+      : 'recon.map.playback.loadout_unknown_equipment'
+  return t(key, { id })
+}
+
 // consumable runtime：hidden interval → UNKNOWN，绝不显示 READY
 const consumables = computed(() => {
   if (!loadout.value) return []
@@ -52,8 +67,25 @@ const consumables = computed(() => {
       logicalItemId: slotMatch ? (rt.logicalItemId || id) : id,
       wireCode: slotWire,
       runtimeState: slotMatch ? rt.state : 'UNKNOWN',
+      label: itemLabel('consumable', slotMatch ? (rt.logicalItemId || id) : id),
     }
   })
+})
+
+const provisionLabels = computed(() => {
+  if (!loadout.value) return []
+  return (loadout.value.provisions || []).map((p, i) => ({
+    slot: i,
+    label: itemLabel('provision', p),
+  }))
+})
+
+const equipmentLabels = computed(() => {
+  if (!loadout.value) return []
+  return (loadout.value.equipmentIds || []).map((e, i) => ({
+    slot: i,
+    label: itemLabel('equipment', e),
+  }))
 })
 
 const modules = computed(() => moduleCrewAt(props.track.moduleCrewTransitions, props.timeSec))
@@ -125,24 +157,24 @@ const tankClassLabel = computed(() => {
       <div class="v2-inspector-grid" data-test="v2-inspector-loadout">
         <div v-for="c in consumables" :key="'c' + c.slot" class="v2-inspector-chip">
           <span class="v2-chip-type">{{ $t('recon.map.playback.consumable') }}</span>
-          <span>{{ c.logicalItemId || $t('recon.map.playback.unknown') }}</span>
+          <span>{{ c.label }}</span>
           <span v-if="c.runtimeState !== 'UNKNOWN'" class="v2-chip-state">{{ c.runtimeState }}</span>
         </div>
         <div
-          v-for="(p, i) in loadout.provisions || []"
-          :key="'p' + i"
+          v-for="p in provisionLabels"
+          :key="'p' + p.slot"
           class="v2-inspector-chip"
         >
           <span class="v2-chip-type">{{ $t('recon.map.playback.provision') }}</span>
-          <span>{{ p || $t('recon.map.playback.unknown') }}</span>
+          <span>{{ p.label }}</span>
         </div>
         <div
-          v-for="(e, i) in loadout.equipmentIds || []"
-          :key="'e' + i"
+          v-for="e in equipmentLabels"
+          :key="'e' + e.slot"
           class="v2-inspector-chip"
         >
-          <span class="v2-chip-type">{{ $t('recon.map.playback.equipment') }} #{{ i + 1 }}</span>
-          <span>{{ e }}</span>
+          <span class="v2-chip-type">{{ $t('recon.map.playback.equipment') }} #{{ e.slot + 1 }}</span>
+          <span>{{ e.label }}</span>
         </div>
       </div>
     </template>

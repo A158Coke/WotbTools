@@ -1487,7 +1487,10 @@
                 "orientation": "Направление",
                 "recorder_visible": "Видно записывающему",
                 "orientation_current": "Текущее направление",
-                "orientation_last_known": "Последнее известное направление"
+                "orientation_last_known": "Последнее известное направление",
+                "loadout_unknown_consumable": "Неизвестный расходник ({id})",
+                "loadout_unknown_provision": "Неизвестная провизия ({id})",
+                "loadout_unknown_equipment": "Неизвестное оборудование ({id})"
             }
         },
         "stages": {

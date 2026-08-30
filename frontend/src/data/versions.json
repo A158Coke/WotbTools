@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.57",
+    "date": "2026-08-30",
+    "tag": "fix",
+    "zh": "修复战局回放会提前显示敌方未来位置/最后已知时间的问题（只展示不晚于当前时刻的观察）；单独上传一场回放现在直接进入单场结果而不是先停在汇总，汇总视图会把当前回放归一第一场；战斗装载中的消耗品与装备改为显示中文名称，不再直接显示 MULIT_PURPOSE_RESTORATION_PACK 或数字编号。",
+    "en": "Fixed battle playback leaking a vehicle's future position / last-known time (only observations at or before the current time are shown); uploading a single replay now opens its battle result directly instead of stopping at the summary, and the summary view resets the current battle to the first one; consumables and equipment in the battle loadout now show localized names instead of raw ids like MULTI_PURPOSE_RESTORATION_PACK or numeric codes.",
+    "ru": "Исправлена утечка будущей позиции/времени последнего обнаружения в воспроизведении боя (показываются только наблюдения не позже текущего момента); загрузка одного реплея теперь сразу открывает результат боя, а не останавливается на сводке, а сводка возвращает текущий бой к первому; расходники и оборудование в боевой загрузке теперь показываются локализованными именами вместо сырых кодов вроде MULTI_PURPOSE_RESTORATION_PACK или числовых идентификаторов."
+  },
+  {
     "v": "2.12.56",
     "date": "2026-08-30",
     "tag": "fix",

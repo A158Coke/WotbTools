@@ -66,6 +66,8 @@ export function positionAtV2(positionSegments, t) {
   if (!Array.isArray(positionSegments) || positionSegments.length === 0 || !Number.isFinite(t)) return null
   let lastSeen = null
   for (const seg of positionSegments) {
+    // anti-future-leak：整个 segment 在 t 之后 → 对当前查询完全不可见（不得取该段任何样本）。
+    if (seg.startSec > t + 1e-6) continue
     const samples = seg.samples || []
     if (samples.length === 0) continue
     if (seg.knowledge === 'OBSERVED') {
@@ -73,6 +75,8 @@ export function positionAtV2(positionSegments, t) {
       const lo = samples[0]
       const hi = samples[samples.length - 1]
       if (t >= lo.timeSec - 1e-6 && t <= hi.timeSec + 1e-6) {
+        // 命中首个样本点 / 单样本段（插值循环只处理 i>=1，需显式返回 lo）。
+        if (lo.timeSec >= t - 1e-6) return { x: lo.x, y: lo.y, timeSec: lo.timeSec }
         let p = samples[0]
         for (let i = 1; i < samples.length; i++) {
           const n = samples[i]
@@ -90,14 +94,19 @@ export function positionAtV2(positionSegments, t) {
           p = n
         }
       }
-      // 记录本段最后样本，供段外 last-known 兜底（按时间序）
-      if (t > hi.timeSec + 1e-6 && (lastSeen == null || hi.timeSec > lastSeen.timeSec)) {
+      // 记录本段最后样本，供段外 last-known 兜底（按时间序；只接受 <= t 的样本，防未来泄漏）
+      if (t > hi.timeSec + 1e-6 && hi.timeSec <= t + 1e-6
+          && (lastSeen == null || hi.timeSec > lastSeen.timeSec)) {
         lastSeen = hi
       }
     } else {
-      // LAST_KNOWN 段：整段即最后已知范围，取最后一个样本
-      const last = samples[samples.length - 1]
-      if (lastSeen == null || last.timeSec > lastSeen.timeSec) lastSeen = last
+      // LAST_KNOWN 段：整段即最后已知范围，冻结在「最后一个 <= t」的样本。
+      // 绝不能因为段标记为 LAST_KNOWN 就取未来样本（future leak，plan §17）。
+      let cand = null
+      for (const s of samples) {
+        if (s.timeSec <= t + 1e-6 && (cand == null || s.timeSec > cand.timeSec)) cand = s
+      }
+      if (cand && (lastSeen == null || cand.timeSec > lastSeen.timeSec)) lastSeen = cand
     }
   }
   return lastSeen ? { x: lastSeen.x, y: lastSeen.y, timeSec: lastSeen.timeSec } : null
@@ -130,14 +139,26 @@ export function orientationAtV2(orientationSegments, t) {
   if (!Array.isArray(orientationSegments) || orientationSegments.length === 0 || !Number.isFinite(t)) return null
   let lastSeen = null
   for (const seg of orientationSegments) {
+    // anti-future-leak：整个 segment 在 t 之后 → 对当前查询完全不可见。
+    if (seg.startSec > t + 1e-6) continue
     const samples = seg.samples || []
     if (samples.length === 0) continue
     const lo = samples[0]
     const hi = samples[samples.length - 1]
     if (t >= lo.timeSec - 1e-6 && t <= hi.timeSec + 1e-6) {
       if (seg.knowledge !== 'CURRENT') {
-        // LAST_KNOWN 段：冻结在最后样本
-        return { hullYawDeg: hi.hullYawDeg, turretRelativeYawDeg: hi.turretRelativeYawDeg, timeSec: hi.timeSec }
+        // LAST_KNOWN 段：冻结在「最后一个 <= t」的样本（绝不返回未来方向，plan §18）。
+        let cand = null
+        for (const s of samples) {
+          if (s.timeSec <= t + 1e-6 && (cand == null || s.timeSec > cand.timeSec)) cand = s
+        }
+        if (cand) {
+          return { hullYawDeg: cand.hullYawDeg, turretRelativeYawDeg: cand.turretRelativeYawDeg, timeSec: cand.timeSec }
+        }
+      }
+      // 命中首个样本点 / 单样本段
+      if (lo.timeSec >= t - 1e-6) {
+        return { hullYawDeg: lo.hullYawDeg, turretRelativeYawDeg: lo.turretRelativeYawDeg, timeSec: lo.timeSec }
       }
       let p = samples[0]
       for (let i = 1; i < samples.length; i++) {
@@ -160,7 +181,8 @@ export function orientationAtV2(orientationSegments, t) {
         p = n
       }
     }
-    if (t > hi.timeSec && (lastSeen == null || hi.timeSec > lastSeen.timeSec)) lastSeen = hi
+    if (t > hi.timeSec && hi.timeSec <= t + 1e-6
+        && (lastSeen == null || hi.timeSec > lastSeen.timeSec)) lastSeen = hi
   }
   return lastSeen
     ? { hullYawDeg: lastSeen.hullYawDeg, turretRelativeYawDeg: lastSeen.turretRelativeYawDeg, timeSec: lastSeen.timeSec }
