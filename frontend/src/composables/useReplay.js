@@ -1,9 +1,13 @@
-import { ref, computed, onUnmounted } from 'vue'
+import { onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { displayName, mapLabel, fileKey } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { normalizeApiError, normalizeJobError } from '../utils/http.js'
 import * as api from '../utils/api.js'
+import { useReplaySession, chooseInitialResultTab } from './useReplaySession.js'
+import { useExportJob } from './useExportJob.js'
+
+export { chooseInitialResultTab }
 
 const JOB_TERMINAL = new Set(['READY', 'FAILED', 'CANCELLED'])
 const JOB_ACTIVE = new Set(['QUEUED', 'PROCESSING'])
@@ -20,66 +24,26 @@ function assertSourceAvailable(sourceId, source) {
   throw new Error('SOURCE_NOT_READY')
 }
 
-/** 处理中 UI 状态（单一事实源；UPLOADING/REGISTERING 为前端本地态）。 */
-const PROCESSING_UI_STATES = Object.freeze({
-  EMPTY: 'EMPTY',
-  FILES_SELECTED: 'FILES_SELECTED',
-  UPLOADING: 'UPLOADING',
-  REGISTERING: 'REGISTERING',
-  QUEUED: 'QUEUED',
-  PROCESSING: 'PROCESSING',
-  FINALIZING: 'FINALIZING',
-  READY: 'READY',
-  FAILED: 'FAILED',
-  CANCELLED: 'CANCELLED'
-})
-
-/**
- * 初始结果 tab 决策（activeTab 必须始终指向真实存在、可渲染的结果 panel）。
- * 不能再按 battle 数量猜测 aggregate——aggregate tab/panel 的真实存在条件是
- * `resp.aggregate.length > 0 || resp.leagueMode === true`，而 battle panel 是 `battles[i]`。
- *
- * 语义（与 ReplayPage.vue 的 tab/panel 渲染条件一一对应）：
- * - CW（League）模式（resp.leagueMode=true）→ aggregate（渲染 CW 统一玩家表）
- * - 普通 aggregate 有数据 → aggregate（渲染 AggregateTable）
- * - 无任何汇总但至少有 battle → b0（第一场 BattleTable）
- * - 什么都没有 → aggregate（页面显示空态提示，不产生 JS error / 空白）
- */
-export function chooseInitialResultTab(result) {
-  const isLeagueMode = result?.leagueMode === true
-  const hasAggregate = Array.isArray(result?.aggregate) && result.aggregate.length > 0
-  const hasBattles = Array.isArray(result?.battles) && result.battles.length > 0
-  if (isLeagueMode || hasAggregate) return 'aggregate'
-  if (hasBattles) return 'b0'
-  return 'aggregate'
-}
-
 /**
  * Replay 页状态（明确状态模型，避免互相冲突的散落 boolean）：
  * EMPTY（无文件）→ FILES_SELECTED（有文件未解析）→ PROCESSING（解析 Job 进行中）→
  * READY（结果已展示；processingJobId 供 Export 复用）；异常 → FAILED / CANCELLED。
  * 页面状态由 processingJob / resp 派生，不引入 isLoading/isPreviewing 等互斥 flag。
  */
-export function useReplay() {
+export function useReplay(initialCapability = 'data') {
   const { locale, t, te } = useI18n()
-  const files = ref([])
-  /**
-   * 文件选择版本号：任何 files 集合变化（add / folder-add / remove /
-   * clear / replace）都会经 updateFiles 自增并失效旧 processingJobId / resp，防止旧 dataset
-   * 被当前 selection 复用；迟到的 READY 轮询响应经 processingPollJobId token 丢弃。
-   */
-  const selectionRevision = ref(0)
-  const loading = ref(false)
-  const error = ref('')
-  const resp = ref(null)
-  const activeTab = ref('aggregate')
-  const pendingRemove = ref(null)
+  const session = useReplaySession(initialCapability)
+  const {
+    files, selectionRevision, loading, error, resp, activeTab, pendingRemove,
+    processingJob, processingError, uploadState, processingJobId,
+    exportJob, exportError,
+    playerCols, aggCols, aggStats, processingActive, exportActive,
+    processingUiState, resultMatchesSelection,
+    replaceSelection, commitReadyResult,
+  } = session
+  const exportController = useExportJob(session)
 
   // ---- Replay Processing Job（异步 Job：真实进度 + 可取消 + result 复用）----
-  const processingJob = ref(null)
-  const processingError = ref('')
-  /** 上传阶段本地状态（{phase:'UPLOADING'|'REGISTERING', loaded, total, percent}）。 */
-  const uploadState = ref(null)
   /**
    * 当前 selection 的 in-flight Processing create（single-flight）：
    * {revision, promise, controller, prioritySourceIndex, onColumnsInit,
@@ -96,52 +60,10 @@ export function useReplay() {
   /** source-ready poll 生命周期注册表（selection change / cancel / teardown 后全部终止）。 */
   const sourcePolls = new Set()
   /** 已完成解析的 Processing Job id（供 Export 复用 result，不重新上传/processFull）。 */
-  const processingJobId = ref(null)
   let processingPollTimer = null
   let processingPollJobId = null
 
   // ---- Export Job（长任务 UX：创建即返回 jobId，轮询真实进度，页面不阻塞）----
-  const exportJob = ref(null)
-  const exportError = ref('')
-  let exportPollTimer = null
-  let exportPollJobId = null
-
-  const playerCols = computed(() => resp.value?.playerColumns || [])
-  const aggCols = computed(() => resp.value?.aggregateColumns || [])
-
-  const aggStats = computed(() => {
-    if (!resp.value) return null
-    const battles = resp.value.battles || []
-    const agg = resp.value.aggregate || []
-    let maxDmg = 0
-    battles.forEach(b => (b.players || []).forEach(p => { maxDmg = Math.max(maxDmg, Number(p.cells.damage_dealt) || 0) }))
-    return { battles: battles.length, players: agg.length, maxDmg }
-  })
-
-  const processingActive = computed(() => processingJob.value && JOB_ACTIVE.has(processingJob.value.status))
-  const exportActive = computed(() => exportJob.value && JOB_ACTIVE.has(exportJob.value.status))
-  /** 处理 UX 派生状态：upload 本地态 → job 状态 + phase（FINALIZING_BATCH → FINALIZING）。 */
-  const processingUiState = computed(() => {
-    if (uploadState.value) return uploadState.value.phase
-    const job = processingJob.value
-    if (!job) return files.value.length ? PROCESSING_UI_STATES.FILES_SELECTED : PROCESSING_UI_STATES.EMPTY
-    switch (job.status) {
-      case 'QUEUED': return PROCESSING_UI_STATES.QUEUED
-      case 'PROCESSING':
-        return job.phase === 'FINALIZING_BATCH' ? PROCESSING_UI_STATES.FINALIZING : PROCESSING_UI_STATES.PROCESSING
-      case 'READY': return PROCESSING_UI_STATES.READY
-      case 'FAILED': return PROCESSING_UI_STATES.FAILED
-      case 'CANCELLED': return PROCESSING_UI_STATES.CANCELLED
-      default: return PROCESSING_UI_STATES.FILES_SELECTED
-    }
-  })
-  /**
-   * 当前展示的 result 是否与当前 files selection 一致（export eligibility）：
-   * processingJobId 与 resp 只会在「READY 自动加载」时成对设置、在 updateFiles 时成对清除，
-   * 因此非 null 即代表「当前结果 = 当前文件选择」，可安全复用该 dataset 导出；
-   * 否则（processingJobId 为空）Export 拒绝（require_processing），无 multipart 回退。
-   */
-  const resultMatchesSelection = computed(() => !!processingJobId.value && !!resp.value)
 
   function buildFormData(prioritySourceIndex) {
     const fd = new FormData()
@@ -161,18 +83,12 @@ export function useReplay() {
    * 的 READY/FAILED 响应被丢弃，不覆盖当前 selection）并后台请求协作取消（释放 queue slot / 容量）。</p>
    *
    * <p>Export Job 不受影响：它是对用户已确认选择的一次导出快照，继续完成。</p>
-   */
+  */
   function updateFiles(next) {
-    files.value = next
-    selectionRevision.value++
-    processingJobId.value = null
-    resp.value = null
-    activeTab.value = 'aggregate'
-    processingError.value = ''
+    const job = processingJob.value
+    replaceSelection(next)
     stopProcessingPolling()
     stopAllSourcePolls()
-    const job = processingJob.value
-    processingJob.value = null
     if (processingStart) {
       if (processingStart.phase === 'REGISTERING') {
         // multipart 已上传完，后端可能已注册 job——禁止 abort 丢 jobId，
@@ -188,7 +104,6 @@ export function useReplay() {
       // 无 in-flight create（已绑定 job / 空闲）：selection 变化后无 loading。
       loading.value = false
     }
-    uploadState.value = null
     if (job && JOB_ACTIVE.has(job.status)) {
       api.cancelProcessingJob(job.jobId).catch(() => {})
     }
@@ -239,13 +154,9 @@ export function useReplay() {
         // stale READY result：selection 已变或当前 job 已被替换 → pure discard（零写入）。
         if (selectionRevision.value !== revisionAtReady || processingPollJobId != null) return
         // result 与 files 是同一批次（READY 后不再变化）；直接替换 resp。
-        resp.value = result
-        processingJobId.value = readyJobId
-        // 默认 tab 只依赖 response 本身：resp.leagueMode / resp.aggregate / resp.battles
-        // （resp.league 不是页面级 CW mode source；页面级唯一事实源是 resp.leagueMode）。
-        // 在 columns 初始化之前决定——保证 READY 提交周期内 resp、League 模式、
-        // aggregate 可见性与 activeTab 一致，结果 panel 第一帧即渲染，无需二次 poll/点击。
-        activeTab.value = chooseInitialResultTab(result)
+        // Session 原子提交 result、dataset identity 与初始结果 tab；Workspace 的
+        // selected battle/data view 由同一 session 的 resp watcher 派生。
+        commitReadyResult(result, readyJobId)
         if (onColumnsInit) onColumnsInit(result)
         loading.value = false
       } else if (data.status === 'FAILED' || data.status === 'CANCELLED') {
@@ -636,100 +547,10 @@ export function useReplay() {
     invalidateProcessingDatasetJob(jobId)
   }
 
-  // ---- Export Job 流程 ----
-
-  function stopExportPolling() {
-    if (exportPollTimer) { clearInterval(exportPollTimer); exportPollTimer = null }
-    exportPollJobId = null
-  }
-
-  async function pollExportJob() {
-    if (!exportPollJobId) return
-    try {
-      const data = await api.getExportJob(exportPollJobId)
-      exportJob.value = data
-      if (JOB_TERMINAL.has(data.status)) stopExportPolling()
-    } catch (e) {
-      // job 已过期/网络错误：停止轮询，提示重新生成（不阻塞页面）
-      stopExportPolling()
-      exportJob.value = null
-      exportError.value = apiErrorLabel(t, te, e)
-    }
-  }
-
-  /**
-   * 创建导出任务并开始轮询真实进度。Processing READY 后（processingJobId 存在）直接复用
-   * 已解析 result，不再重新上传 replay / 重新解析。防重复：已有活跃 job 时忽略。
-   *
-   * @param {object|null} teamNamesOverrides League 战队名称覆盖
-   *        {battle:{arenaId:team:名}, summary:{teamKey:名}}（必须完整传给 Export Job）；
-   *        创建时快照进 Export Job，后续编辑不影响已创建的异步任务。
-   */
-  async function startExportJob(mode, teamNamesOverrides = null) {
-    if (!files.value.length) { error.value = t('replay.no_files'); return }
-    if (exportActive.value) return
-    if (!processingJobId.value) {
-      exportError.value = t('replay.export_job.require_processing')
-      return
-    }
-    error.value = ''
-    exportError.value = ''
-    try {
-      const teamNamesJson = teamNamesOverrides ? JSON.stringify(teamNamesOverrides) : null
-      const created = await api.createExportJob(mode, processingJobId.value, teamNamesJson)
-      exportJob.value = {
-        jobId: created.jobId,
-        status: created.status || 'QUEUED',
-        phase: null,
-        total: created.total || 0,
-        processed: 0,
-        duplicates: 0,
-        failures: 0,
-        errorCode: null,
-        filename: null,
-        contentType: null
-      }
-      exportPollJobId = created.jobId
-      exportPollTimer = setInterval(pollExportJob, JOB_POLL_MS)
-      pollExportJob()
-    } catch (e) {
-      exportError.value = `${t('replay.export_failed')}: ${apiErrorLabel(t, te, e)}`
-    }
-  }
-
-  async function cancelExportJob() {
-    const job = exportJob.value
-    if (!job || !JOB_ACTIVE.has(job.status)) return
-    try {
-      await api.cancelExportJob(job.jobId)
-      stopExportPolling()
-      exportJob.value = { ...job, status: 'CANCELLED' }
-    } catch (e) {
-      exportError.value = apiErrorLabel(t, te, e)
-    }
-  }
-
-  async function downloadExportResult() {
-    const job = exportJob.value
-    if (!job || job.status !== 'READY') return
-    try {
-      const fallback = job.contentType && job.contentType.includes('zip') ? 'each-export.zip' : 'export.xlsx'
-      await api.downloadExportJob(job.jobId, job.filename || fallback)
-    } catch (e) {
-      exportError.value = apiErrorLabel(t, te, e)
-    }
-  }
-
-  function dismissExportJob() {
-    stopExportPolling()
-    exportJob.value = null
-    exportError.value = ''
-  }
-
   onUnmounted(() => {
     stopProcessingPolling()
     stopAllSourcePolls()
-    stopExportPolling()
+    exportController.stopPolling()
     // owned 非终态 active Job（QUEUED/PROCESSING）必须 best-effort cancel；
     // READY 不 cancel（已不消耗 parse CPU，由 TTL lifecycle 管理）。
     const job = processingJob.value
@@ -775,6 +596,7 @@ export function useReplay() {
   }
 
   return {
+    session,
     files, loading, error, resp, playerCols, aggCols, activeTab, aggStats, pendingRemove,
     /** 文件集合版本号：任何 selection 变化（updateFiles）都会自增；team overrides 等 selection-bound 状态以此失效。 */
     selectionRevision,
@@ -782,10 +604,28 @@ export function useReplay() {
     processingJob, processingError, processingActive, processingJobId,
     uploadState, processingUiState,
     exportJob, exportError, exportActive,
+    replayBatch: session.replayBatch,
+    parsedBattles: session.parsedBattles,
+    singleReplay: session.singleReplay,
+    activeWorkspaceTab: session.activeWorkspaceTab,
+    currentBattleId: session.currentBattleId,
+    dataViewMode: session.dataViewMode,
+    currentBattle: session.currentBattle,
+    currentBattleIndex: session.currentBattleIndex,
+    currentTargetBattleId: session.currentTargetBattleId,
+    currentSourceId: session.currentSourceId,
+    currentProcessingJobId: session.currentProcessingJobId,
+    currentTargetFile: session.currentTargetFile,
+    setWorkspaceTab: session.setWorkspaceTab,
+    selectBattle: session.selectBattle,
+    setDataViewMode: session.setDataViewMode,
     startProcessingJob, cancelProcessingJob, cancelProcessing, dismissProcessingJob,
     invalidateExpiredProcessingDataset,
     requestDirectAction,
-    startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
+    startExportJob: exportController.start,
+    cancelExportJob: exportController.cancel,
+    downloadExportResult: exportController.download,
+    dismissExportJob: exportController.dismiss,
     askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove, confirmRemoveBattle,
   }
 }
