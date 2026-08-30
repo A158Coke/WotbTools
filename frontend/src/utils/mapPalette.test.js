@@ -27,4 +27,9 @@ describe('mapPalette', () => {
     expect(lightMapPalette.regionStroke).toContain('0,0,0')
     expect(darkMapPalette.regionStroke).toContain('255,255,255')
   })
+
+  it('exposes a clearly visible Battle Playback grid stroke (each column separated)', () => {
+    expect(darkMapPalette.gridStrokeStrong).toContain('255,255,255')
+    expect(lightMapPalette.gridStrokeStrong).toContain('0,0,0')
+  })
 })

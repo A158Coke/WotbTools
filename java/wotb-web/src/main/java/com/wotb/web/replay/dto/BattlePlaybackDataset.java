@@ -27,6 +27,8 @@ import java.util.Map;
  * @param shots             射击轨道
  * @param pointsSamples     争霸赛实时点数广播（battle-relative 秒升序）
  * @param limitations       content limitations（如 BATTLE_RELATIVE_TIME_UNAVAILABLE）；空 = 无限制
+ * @param arenaBonusType    战斗模式（meta.json#arenaBonusType 原值；null = 未知）。
+ *                          仅携带该权威类别事实（前端用于标准/争霸事件过滤），<b>不</b>复制 MapOverview。
  * @param capability        FULL / PARTIAL / UNAVAILABLE（派生：limitations 空 = FULL，非空 = PARTIAL；
  *                          UNAVAILABLE 由 dataset == null 即 204 语义，不在 DTO 内）；与 limitations 一致，
  *                          前端据此显示「完整 / 部分 / 不可用」降级，不得猜测未观测事实。
@@ -41,7 +43,8 @@ public record BattlePlaybackDataset(
         List<ShotTrack> shots,
         List<PointsSample> pointsSamples,
         List<String> limitations,
-        Capability capability
+        Capability capability,
+        Integer arenaBonusType
 ) {
     /** 战局回放完整度 capability（与 limitations 严格一致，前端本地化）。 */
     public enum Capability {
@@ -61,7 +64,7 @@ public record BattlePlaybackDataset(
                 : (limitations.isEmpty() ? Capability.FULL : Capability.PARTIAL);
     }
 
-    /** 9-arg convenience constructor（既有 caller 投影）：capability 由 limitations 派生。 */
+    /** 9-arg convenience constructor（既有 caller 投影）：capability 由 limitations 派生；arenaBonusType 未知。 */
     public BattlePlaybackDataset(
             double durationSec,
             String mapCode,
@@ -73,7 +76,23 @@ public record BattlePlaybackDataset(
             List<PointsSample> pointsSamples,
             List<String> limitations) {
         this(durationSec, mapCode, friendlyTeam, recorderAccountId, vehicles, events, shots,
-                pointsSamples, limitations, null);
+                pointsSamples, limitations, null, null);
+    }
+
+    /** 10-arg convenience constructor（携带能力），arenaBonusType 未知。 */
+    public BattlePlaybackDataset(
+            double durationSec,
+            String mapCode,
+            Integer friendlyTeam,
+            Long recorderAccountId,
+            List<VehiclePlaybackTrack> vehicles,
+            List<BattleEvent> events,
+            List<ShotTrack> shots,
+            List<PointsSample> pointsSamples,
+            List<String> limitations,
+            Capability capability) {
+        this(durationSec, mapCode, friendlyTeam, recorderAccountId, vehicles, events, shots,
+                pointsSamples, limitations, capability, null);
     }
 
     /**
