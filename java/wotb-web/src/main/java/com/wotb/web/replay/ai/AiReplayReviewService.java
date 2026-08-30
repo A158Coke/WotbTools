@@ -127,8 +127,32 @@ public class AiReplayReviewService {
     public AnalyzeResponse analyzeFacts(final AiReplayFacts facts,
                                         final AllowedLanguage language,
                                         final AiReviewStreamListener listener) {
-        return analyzeTracked(language, listener,
+        final AnalyzeResponse base = analyzeTracked(language, listener,
                 () -> analyzeResults(List.of(facts.toResult()), language, listener));
+        // capability 是 additive 元数据：与 prompt planner 的 battleStart 判定一致，
+        // 不改变 AI 生成逻辑，仅向客户端表达「完整 / 受限时间轴」降级态。
+        return base == null
+                ? new AnalyzeResponse(null, null, capabilityOf(facts))
+                : new AnalyzeResponse(base.analysis(), base.preBattleSection(), capabilityOf(facts));
+    }
+
+    /**
+     * AI Review capability 派生（与 {@link com.wotb.core.ai.SingleReplayPromptPlanner}
+     * 的 battleStartRawClockSec 可用性判定保持一致）；UNAVAILABLE 由 ai-facts/recon 缺失表达。
+     */
+    private static AnalyzeResponse.Capability capabilityOf(final AiReplayFacts facts) {
+        if (facts == null) {
+            return AnalyzeResponse.Capability.UNAVAILABLE;
+        }
+        final com.wotb.core.replay.reconstruction.ReplayReconstruction recon = facts.reconstruction();
+        if (recon == null) {
+            return AnalyzeResponse.Capability.UNAVAILABLE;
+        }
+        final Float start = recon.battleStartRawClockSec();
+        final boolean available = start != null && Float.isFinite(start) && start > 0f;
+        return available
+                ? AnalyzeResponse.Capability.AVAILABLE
+                : AnalyzeResponse.Capability.AVAILABLE_WITH_LIMITED_TIMELINE;
     }
 
     /**
