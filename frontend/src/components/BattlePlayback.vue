@@ -1593,7 +1593,8 @@ const gridRegions = computed(() => {
 })
 
 const mapStyle = computed(() => ({
-  '--map-grid-stroke': palette.value.gridStroke,
+  // Battle Playback 6x6 网格：用显式强对比线，保证每一列可见地隔开（热力图鸟瞰用弱 gridStroke）。
+  '--map-grid-stroke': palette.value.gridStrokeStrong,
   '--map-region-stroke': palette.value.regionStroke,
   '--map-spawn-friendly': palette.value.spawnFriendly,
   '--map-spawn-enemy': palette.value.spawnEnemy,
@@ -2178,7 +2179,7 @@ const mapStyle = computed(() => ({
    PR3 —— last-known/destroyed 弱化由 VehicleMarker .pb-graphics 容器承担（root 不再
    opacity，否则 ✕/label 也会被淡掉）；Selected 红色倒三角、Recorder 空心菱形、
    team outline/glow（friendly green|blue / enemy red，CSS vars 由根元素提供）。 */
-.pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; fill: none; }
+.pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.55)); stroke-width: 1; fill: none; }
 /* 激光炮线：外层光晕/内芯线宽逐元素绑定（6/view.scale、1.75/view.scale），不随缩放变粗 */
 .pb-tracer, .pb-tracer-core { stroke-linecap: round; }
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
