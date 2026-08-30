@@ -1,0 +1,142 @@
+import { computed, ref, watch } from 'vue'
+import { useReplay, chooseInitialResultTab } from './useReplay.js'
+
+/**
+ * Replay Workspace 公共状态（单一 owner）。
+ *
+ * 权威字段（plan: 目标状态模型，Blocker #1）：
+ * - replayBatch        = useReplay.files
+ * - parsedBattles[]    = useReplay.resp.battles
+ * - currentBattleId    = BattleDto.sourceId（'r<sourceIndex>'）| null；恒代表「当前单场」，
+ *                       仅在无可用 battle 时为 null，
+ *                        不能用 null 表示 summary 视图。
+ * - dataViewMode       = 'SUMMARY' | 'SINGLE'；数据页视图轴（汇总视图 / 单场视图），
+ *                        与选中单场解耦：SUMMARY 视图下 selected battle 依然持久。
+ * - activeWorkspaceTab = 'data' | 'ai' | 'playback'
+ *
+ * 派生（不新增状态字段）：
+ * - currentBattle / currentBattleIndex：按 battle.sourceId === currentBattleId find/findIndex。
+ *   sourceId 是唯一权威 identity（failure/duplicate 从 resp.battles 移除），
+ *   rN 的 N 是文件 sourceIndex，与 parsedBattles 数组下标不等价，禁止直接当数组下标用。
+ * - currentTargetBattleId / currentTargetFile / currentSourceId：喂 AiReviewPanel / BattlePlaybackPanel。
+ *   「选 #8 → 汇总 → AI/Playback」始终消费 #8：currentTargetBattleId 显式 currentBattleId 优先，
+ *   有 battle 时恒非 null（不随视图切换丢失）；单文件尚未解析出 battle 时回退 'r0'。
+ */
+export function useReplayWorkspace(initialCapability = 'data') {
+  const replay = useReplay()
+
+  const activeWorkspaceTab = ref(initialCapability === 'playback' || initialCapability === 'ai'
+    ? initialCapability
+    : 'data')
+  /** 'r<i>' | null；null = 无可用 battle。恒代表当前单场。 */
+  const currentBattleId = ref(null)
+  /** 'SUMMARY' | 'SINGLE'；数据页视图轴。 */
+  const dataViewMode = ref('SUMMARY')
+
+  const replayBatch = computed(() => replay.files.value)
+  const parsedBattles = computed(() => replay.resp.value?.battles || [])
+  const singleReplay = computed(() => replay.files.value.length === 1)
+
+  const currentBattleIndex = computed(() => {
+    const id = currentBattleId.value
+    if (!id) return -1
+    return parsedBattles.value.findIndex(b => b?.sourceId === id)
+  })
+  const currentBattle = computed(() => {
+    const id = currentBattleId.value
+    if (!id) return null
+    return parsedBattles.value.find(b => b?.sourceId === id) ?? null
+  })
+  /**
+   * 跨能力目标 battle id：显式选中（currentBattleId）优先；单文件尚未解析出 battle 时回退 'r0'
+   * （唯一文件天然可分析，不阻塞 AI/Playback）；否则 null（多文件必须显式选择）。
+   * 注意：这只用于「喂哪个文件给 AI/Playback」，不写回 currentBattleId，不表示视图。
+   */
+  const currentTargetBattleId = computed(() => {
+    if (currentBattleId.value) return currentBattleId.value
+    return singleReplay.value ? 'r0' : null
+  })
+  const currentSourceId = computed(() => currentTargetBattleId.value)
+  const currentProcessingJobId = computed(() => replay.processingJobId.value)
+  const currentTargetFile = computed(() => {
+    const id = currentTargetBattleId.value
+    if (!id) return null
+    const m = /^r(\d+)$/.exec(id)
+    if (!m) return null
+    const idx = parseInt(m[1], 10)
+    return replay.files.value[idx] ?? null
+  })
+
+  function setWorkspaceTab(tab) {
+    activeWorkspaceTab.value = tab
+  }
+
+  /** 单场选择：显式选中某场 → 切到单场视图（summary 视图下不会清空选中单场）。 */
+  function selectBattle(sourceId) {
+    const m = /^r(\d+)$/.exec(sourceId == null ? '' : String(sourceId))
+    if (!m) return
+    currentBattleId.value = `r${parseInt(m[1], 10)}`
+    dataViewMode.value = 'SINGLE'
+  }
+
+  /** 切到汇总视图：只改视图轴，保留当前选中单场（供 AI/Playback 消费）。 */
+  function selectSummary() {
+    dataViewMode.value = 'SUMMARY'
+  }
+
+  /** 数据页视图切换：SUMMARY 只改视图；SINGLE 若未选中单场则回退第一场（有 battle 时）。 */
+  function setDataViewMode(mode) {
+    if (mode === 'SINGLE') {
+      const battles = parsedBattles.value
+      if (!battles.length && !currentBattleId.value) {
+        dataViewMode.value = 'SUMMARY'
+        return
+      }
+      if (!currentBattleId.value && battles.length) currentBattleId.value = battles[0]?.sourceId
+      dataViewMode.value = 'SINGLE'
+      return
+    }
+    dataViewMode.value = 'SUMMARY'
+  }
+
+  // READY 后用 chooseInitialResultTab 初始化数据子视图：aggregate -> SUMMARY + 第一场，
+  // 'b<i>' -> SINGLE + 'r<i>'。仅当 resp 存在时设置 currentBattleId（有 battle 恒非 null）。
+  watch(() => replay.resp.value, (resp) => {
+    if (!resp) {
+      currentBattleId.value = null
+      dataViewMode.value = 'SUMMARY'
+      return
+    }
+    const tab = chooseInitialResultTab(resp)
+    const firstBattle = Array.isArray(resp.battles) ? resp.battles[0] : null
+    // sourceId 是唯一权威 identity：初始化取第一场有效 battle 的 sourceId，禁止硬编码 r0。
+    currentBattleId.value = firstBattle?.sourceId ?? null
+    dataViewMode.value = tab === 'aggregate' ? 'SUMMARY' : 'SINGLE'
+  }, { immediate: true })
+
+  // selection 变化（updateFiles / 删场 / 清空）→ 重算当前 battle（重新解析后 sourceId 重新分配）。
+  watch(() => replay.selectionRevision.value, () => {
+    currentBattleId.value = null
+    dataViewMode.value = 'SUMMARY'
+  })
+
+  return {
+    replay,
+    replayBatch,
+    parsedBattles,
+    currentBattleId,
+    dataViewMode,
+    activeWorkspaceTab,
+    currentBattle,
+    currentBattleIndex,
+    currentTargetBattleId,
+    currentSourceId,
+    currentProcessingJobId,
+    currentTargetFile,
+    singleReplay,
+    setWorkspaceTab,
+    setDataViewMode,
+    selectBattle,
+    selectSummary,
+  }
+}

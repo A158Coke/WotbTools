@@ -623,7 +623,7 @@ describe('ReplayPage PNG export', () => {
 
   describe('reactive state control (real refs)', () => {
     function activeTabButton(wrapper) {
-      return wrapper.findAll('.restoolbar .tabs button').find(b => b.classes().includes('active'))
+      return wrapper.findAll('.restoolbar .dataview-toggle button').find(b => b.classes().includes('active'))
     }
 
     it('setActiveTab changes activeTab ref before mount', () => {
@@ -631,7 +631,7 @@ describe('ReplayPage PNG export', () => {
       state.init.activeTab = 'b0'
       wrapper = mountPage()
       const btn = activeTabButton(wrapper)
-      expect(btn.text()).toContain('Lagoon')
+      expect(btn.text()).toContain('result.single_tab')
     })
 
     it('setActiveTab changes activeTab ref after mount', async () => {
@@ -640,7 +640,7 @@ describe('ReplayPage PNG export', () => {
       expect(activeTabButton(wrapper).text()).toContain('result.aggregate_tab')
       state.setActiveTab('b0')
       await flushPromises()
-      expect(activeTabButton(wrapper).text()).toContain('Lagoon')
+      expect(activeTabButton(wrapper).text()).toContain('result.single_tab')
       expect(activeTabButton(wrapper).text()).not.toContain('result.aggregate_tab')
     })
 
@@ -656,7 +656,7 @@ describe('ReplayPage PNG export', () => {
 
   describe('async export context immutability (real ref changes)', () => {
     function activeTabButton(wrapper) {
-      return wrapper.findAll('.restoolbar .tabs button').find(b => b.classes().includes('active'))
+      return wrapper.findAll('.restoolbar .dataview-toggle button').find(b => b.classes().includes('active'))
     }
 
     function captureAnchors() {
@@ -697,7 +697,7 @@ describe('ReplayPage PNG export', () => {
       expect(anchors[0].outerHTML).toMatch(/Lagoon/)
     })
 
-    it('tab switch b0->b1: filename still Lagoon', async () => {
+    it('bataille switch b0->b1: filename still Lagoon (view follows currentSingleIndex, export target pinned)', async () => {
       state.init.resp = makeResp()
       state.init.activeTab = 'b0'
       wrapper = mountPage()
@@ -706,16 +706,14 @@ describe('ReplayPage PNG export', () => {
       await startExportAndWaitForH2c()
       expect(h2c.getCalls()[0][0].textContent).toContain('Lagoon')
 
-      // Verify we're on b0
-      expect(activeTabButton(wrapper).text()).toContain('Lagoon')
+      // Verify we're in single view (b0)
+      expect(activeTabButton(wrapper).text()).toContain('result.single_tab')
+      expect(activeTabButton(wrapper).text()).not.toContain('result.aggregate_tab')
 
-      // Switch to b1 via REAL ref
+      // Switch to b1 via REAL ref: view still single (toggle unchanged), target row follows currentSingleIndex
       state.setActiveTab('b1')
       await flushPromises()
-
-      // Verify the page really shows b1 as active
-      expect(activeTabButton(wrapper).text()).toContain('Frozen')
-      expect(activeTabButton(wrapper).text()).not.toContain('Lagoon')
+      expect(activeTabButton(wrapper).text()).toContain('result.single_tab')
 
       await completeExport()
 
@@ -730,7 +728,7 @@ describe('ReplayPage PNG export', () => {
       expect(pngButton(wrapper).attributes('disabled')).toBeUndefined()
     })
 
-    it('tab switch b1->aggregate: filename still Frozen', async () => {
+    it('bataille switch b1->aggregate: filename still Frozen (export target pinned)', async () => {
       state.init.resp = makeResp()
       state.init.activeTab = 'b1'
       wrapper = mountPage()
@@ -738,12 +736,12 @@ describe('ReplayPage PNG export', () => {
 
       await startExportAndWaitForH2c()
       expect(h2c.getCalls()[0][0].textContent).toContain('Frozen')
-      expect(activeTabButton(wrapper).text()).toContain('Frozen')
+      expect(activeTabButton(wrapper).text()).toContain('result.single_tab')
 
       state.setActiveTab('aggregate')
       await flushPromises()
       expect(activeTabButton(wrapper).text()).toContain('result.aggregate_tab')
-      expect(activeTabButton(wrapper).text()).not.toContain('Frozen')
+      expect(activeTabButton(wrapper).text()).not.toContain('result.single_tab')
 
       await completeExport()
 
@@ -1896,7 +1894,7 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
     state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files: [] }
   })
 
-  it('多场 + aggregate 空 + 无 league：battle tabs 存在且 BattleTable panel 可见（不再空白）', async () => {
+  it('多场 + aggregate 空 + 无 league：单场视图默认展示且 BattleTable panel 可见（不再空白）', async () => {
     state.init.resp = makeResp({
       aggregate: [],
       battles: [
@@ -1907,10 +1905,11 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
     state.init.activeTab = 'b0'
     const wrapper = mountPage()
     await flushPromises()
-    // 两个 battle tabs 都存在
-    const tabs = wrapper.findAll('button')
-    expect(tabs.some(b => b.text().includes('Lagoon #1'))).toBe(true)
-    expect(tabs.some(b => b.text().includes('Frozen #2'))).toBe(true)
+    // 无 aggregate 且非 league → 汇总视图不渲染（无可展示内容），只保留单场视图。
+    expect(wrapper.find('[data-testid="data-view-summary"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="data-view-single"]').exists()).toBe(true)
+    expect(wrapper.findAll('button').some(b => b.text().includes('Lagoon #1'))).toBe(false)
+    expect(wrapper.findAll('button').some(b => b.text().includes('Frozen #2'))).toBe(false)
     // 至少一个 BattleTable panel 可见（结果区不为空）
     const battlePanels = wrapper.findAll('.battle-table-stub')
     expect(battlePanels.length).toBeGreaterThan(0)
@@ -2512,7 +2511,7 @@ describe('ReplayPage League failure UX separation', () => {
     wrapper.unmount()
   })
 
-  it('Test 5/6: League-ineligible Battle 的 AI 复盘 / 战局回放 action 正常可用', async () => {
+  it('Test 5/6: 单场视图正常渲染；toolbar 不含重复 AI 复盘 / 战局回放入口（Workspace tabs 唯一导航）', async () => {
     state.init.resp = makeResp({
       battles: manyBattles(1, true),
       leagueMode: true,
@@ -2521,12 +2520,11 @@ describe('ReplayPage League failure UX separation', () => {
     state.init.activeTab = 'b0'
     const wrapper = mountPage()
     await flushPromises()
-    const aiBtn = wrapper.find('[data-testid="battle-ai-btn"]')
-    const pbBtn = wrapper.find('[data-testid="battle-playback-btn"]')
-    expect(aiBtn.exists()).toBe(true)
-    expect(pbBtn.exists()).toBe(true)
-    expect(aiBtn.attributes('disabled')).toBeUndefined()
-    expect(pbBtn.attributes('disabled')).toBeUndefined()
+    // 单场视图可渲染 battle table（League-ineligible battle 仍完整展示）。
+    expect(wrapper.findAll('.battle-table-stub').length).toBeGreaterThan(0)
+    // 重复的 AI / 回放 toolbar 入口已被删除。
+    expect(wrapper.find('[data-testid="battle-ai-btn"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="battle-playback-btn"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

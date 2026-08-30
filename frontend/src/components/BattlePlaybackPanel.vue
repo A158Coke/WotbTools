@@ -63,6 +63,19 @@ async function authedFetch(url, body, { signal } = {}) {
 const mapOverview = ref(null)
 /** V2 canonical battle-playback dataset（可选；迁移期守卫，加载失败不阻断 legacy map）。 */
 const mapPlaybackV2 = ref(null)
+/**
+ * 战局回放完整度（BattlePlaybackDataset.capability：FULL / PARTIAL / UNAVAILABLE）。
+ * 后端已诚实标注 limitations；前端仅据此展示降级态，不做任何未观测事实推断。
+ */
+const playbackCapability = computed(() => mapPlaybackV2.value?.capability || null)
+const playbackCapabilityLabel = computed(() => {
+  switch (playbackCapability.value) {
+    case 'FULL': return t('recon.map.capability_full')
+    case 'PARTIAL': return t('recon.map.capability_partial')
+    case 'UNAVAILABLE': return t('recon.map.capability_unavailable')
+    default: return ''
+  }
+})
 const mapLoading = ref(false)
 const mapLoaded = ref(false)
 const mapError = ref('')
@@ -257,6 +270,9 @@ onBeforeUnmount(() => {
             @click="toggleMap"
           >{{ $t(mapOpen ? 'recon.collapse' : 'recon.expand') }}</button>
         </div>
+        <p v-if="playbackCapabilityLabel" class="map-capability-note" data-test="playback-capability">
+          {{ playbackCapabilityLabel }}
+        </p>
         <p v-if="mapError" class="error map-error" data-test="map-error">{{ mapError }}</p>
         <!-- 折叠用 v-show 而非 v-if：MapOverview 是否挂载只由 mapOverview 决定，折叠不销毁组件、保留视图/播放器状态 -->
         <div v-show="mapOpen" data-test="map-body">
@@ -277,6 +293,15 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .ws-note { margin: 18px 4px; color: var(--text-muted); font-size: .85rem; }
+.map-capability-note {
+  margin: 4px 0 10px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn-text) 40%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warn-text) 10%, var(--bg-card));
+  color: var(--warn-text);
+  font-size: .82rem;
+}
 
 /* Dataset 准备中/失败状态：非地图加载错误，显示 loading 文案（不设裸错误码） */
 .map-dataset-status {

@@ -26,6 +26,10 @@ import java.util.Map;
  * @param vehicles          参战车辆转录（稀疏 transition tracks）
  * @param shots             射击轨道
  * @param pointsSamples     争霸赛实时点数广播（battle-relative 秒升序）
+ * @param limitations       content limitations（如 BATTLE_RELATIVE_TIME_UNAVAILABLE）；空 = 无限制
+ * @param capability        FULL / PARTIAL / UNAVAILABLE（派生：limitations 空 = FULL，非空 = PARTIAL；
+ *                          UNAVAILABLE 由 dataset == null 即 204 语义，不在 DTO 内）；与 limitations 一致，
+ *                          前端据此显示「完整 / 部分 / 不可用」降级，不得猜测未观测事实。
  */
 public record BattlePlaybackDataset(
         double durationSec,
@@ -36,14 +40,40 @@ public record BattlePlaybackDataset(
         List<BattleEvent> events,
         List<ShotTrack> shots,
         List<PointsSample> pointsSamples,
-        List<String> limitations
+        List<String> limitations,
+        Capability capability
 ) {
+    /** 战局回放完整度 capability（与 limitations 严格一致，前端本地化）。 */
+    public enum Capability {
+        FULL,
+        PARTIAL,
+        UNAVAILABLE
+    }
+
     public BattlePlaybackDataset {
         vehicles = vehicles == null ? List.of() : List.copyOf(vehicles);
         events = events == null ? List.of() : List.copyOf(events);
         shots = shots == null ? List.of() : List.copyOf(shots);
         pointsSamples = pointsSamples == null ? List.of() : List.copyOf(pointsSamples);
         limitations = limitations == null ? List.of() : List.copyOf(limitations);
+        // 兼容旧缓存 JSON（无 capability 字段）：null -> 由 limitations 派生。
+        capability = capability != null ? capability
+                : (limitations.isEmpty() ? Capability.FULL : Capability.PARTIAL);
+    }
+
+    /** 9-arg convenience constructor（既有 caller 投影）：capability 由 limitations 派生。 */
+    public BattlePlaybackDataset(
+            double durationSec,
+            String mapCode,
+            Integer friendlyTeam,
+            Long recorderAccountId,
+            List<VehiclePlaybackTrack> vehicles,
+            List<BattleEvent> events,
+            List<ShotTrack> shots,
+            List<PointsSample> pointsSamples,
+            List<String> limitations) {
+        this(durationSec, mapCode, friendlyTeam, recorderAccountId, vehicles, events, shots,
+                pointsSamples, limitations, null);
     }
 
     /**

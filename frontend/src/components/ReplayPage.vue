@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, inject, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { mapLabel, displayName } from '../utils/helpers.js'
+import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { replayAggregatePlayerCount } from '../utils/replayView.js'
 import { useReplay } from '../composables/useReplay.js'
@@ -31,18 +31,20 @@ const props = defineProps({
   /** 嵌入 Replay Workspace 时的结果 tab：不重复渲染上传器 / Processing 面板，使用 provide 的共享 selection。 */
   embedded: { type: Boolean, default: false },
 })
-const emit = defineEmits(['register-cols-init', 'open-ai', 'open-playback'])
+const emit = defineEmits(['register-cols-init'])
 
 const { locale, t, te } = useI18n()
 // Workspace 提供共享 selection / job；独立使用（旧路由）时回退到本地 useReplay。
 const replay = inject('replay', null) || useReplay()
+/** Blocker #1/#2：嵌入 Workspace 时消费公共 dataViewMode / currentBattleIndex（单一事实源）。 */
+const replayWorkspace = inject('replayWorkspace', null)
 const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles, selectionRevision,
-  processingJob, processingError, processingActive, processingJobId,
+  processingJob, processingError,
   uploadState, cancelProcessing,
   exportJob, exportError, exportActive,
   startProcessingJob, dismissProcessingJob,
   startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
-  askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
+  askRemoveFile, cancelRemove, confirmRemove } = replay
 /**
  * 页面级 CW（League）模式：唯一事实源 resp.leagueMode（后端显式标记，普通/混合批次为 false）。
  * Batch contract：leagueMode=true ⟺ 纯 CW 批次，resp.league envelope 始终存在
@@ -54,10 +56,39 @@ const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateF
  */
 const leagueMode = computed(() => resp.value?.leagueMode === true)
 
-const cols = useColumns(replay.playerCols, replay.aggCols, replay.activeTab, leagueMode)
+/** 数据子视图轴（Blocker #1/#2）：SUMMARY=汇总视图 / SINGLE=单场视图。 */
+const isSummaryView = computed(() =>
+  replayWorkspace
+    ? replayWorkspace.dataViewMode.value === 'SUMMARY'
+    : activeTab.value === 'aggregate')
+/** 当前单场 index；SUMMARY 或未选中时为 -1。 */
+const currentSingleIndex = computed(() => {
+  if (isSummaryView.value) return -1
+  if (replayWorkspace) return replayWorkspace.currentBattleIndex.value
+  const m = /^b(\d+)$/.exec(activeTab.value)
+  return m ? parseInt(m[1], 10) : -1
+})
+/** 供 useColumns 的 colScope 判定（SUMMARY -> agg/cw，SINGLE -> player）。 */
+const dataViewModeRef = computed(() => isSummaryView.value ? 'SUMMARY' : 'SINGLE')
+
+const cols = useColumns(replay.playerCols, replay.aggCols, dataViewModeRef, leagueMode)
 const { visibleKeys, aggVisibleKeys, cwVisibleKeys, cwOrder, showColPicker, pickerScope,
   currentOrder, shownCols, shownAggCols,
   toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
+
+/** 数据页视图切换：汇总视图 / 单场视图（单场选择由 Workspace current-battle selector 控制）。 */
+function setDataView(mode) {
+  if (replayWorkspace) {
+    replayWorkspace.setDataViewMode(mode)
+    return
+  }
+  if (mode === 'SUMMARY') {
+    if (activeTab.value !== 'aggregate') activeTab.value = 'aggregate'
+    return
+  }
+  const idx = currentSingleIndex.value >= 0 ? currentSingleIndex.value : 0
+  activeTab.value = `b${idx}`
+}
 
 /** League Rating 模式元数据（resp.league；普通模式 null）。 */
 const leagueData = computed(() => resp.value?.league || null)
@@ -190,8 +221,8 @@ watch(selectionRevision, () => {
   navIndex.value = -1
 })
 
-/** Tab 切换（汇总 ↔ Battle 或 Battle ↔ Battle）→ 关闭 Drawer 避免上下文混淆。 */
-watch(activeTab, () => {
+/** 数据视图切换（汇总视图 ↔ 单场视图 / 单场切换）→ 关闭 Drawer 避免上下文混淆。 */
+watch([isSummaryView, currentSingleIndex], () => {
   selectedPlayerContext.value = null
   navOrder.value = []
   navIndex.value = -1
@@ -423,12 +454,13 @@ function cleanupExportClone(container) {
 async function downloadResultPng() {
   if (exportingPng.value || loading.value) return
 
-  // Save immutable export context before any async operation
-  const exportTab = activeTab.value
+  // Save immutable export context before any async operation (dataViewMode-driven export scope).
+  const exportSummary = isSummaryView.value
+  const exportBattleIdx = exportSummary ? NaN : currentSingleIndex.value
+  const exportTab = exportSummary ? 'aggregate' : `b${exportBattleIdx}`
   const exportTheme = readTheme()
   const exportLocale = locale.value
-  const exportBattleIdx = exportTab === 'aggregate' ? NaN : parseInt(exportTab.replace('b', ''), 10)
-  const exportMapName = !isNaN(exportBattleIdx) && resp.value?.battles?.[exportBattleIdx]?.mapName
+  const exportMapName = !exportSummary && resp.value?.battles?.[exportBattleIdx]?.mapName
     ? mapLabel(resp.value.battles[exportBattleIdx].mapName, exportLocale)
     : undefined
 
@@ -474,61 +506,11 @@ async function downloadResultPng() {
 }
 
 
-/** Battle context actions：具体 battle 才出现「战局回放 / AI 复盘」。
- * Summary context 不渲染这些入口。单页 Workspace：点击后原地切到对应面板，目标文件
- * 直接复用当前 selection 内文件——不跨视图跳转、不重新上传、不重复解析。 */
-const isAuthenticated = inject('isAuthenticated', () => false)
-const login = inject('login', null)
+/** League Rating 算法说明入口：跳转独立文档页（App.vue 注册的 rating-docs 视图）。 */
 const navigate = inject('navigate', null)
 
-/** League Rating 算法说明入口：跳转独立文档页（App.vue 注册的 rating-docs 视图）。 */
 function openRatingDocs() {
   navigate && navigate('rating-docs')
-}
-
-function currentBattleRef() {
-  if (activeTab.value === 'aggregate') return null
-  const idx = parseInt(activeTab.value.replace('b', ''), 10)
-  const battle = resp.value?.battles?.[idx]
-  if (!battle) return null
-  if (!processingJobId.value || !battle.sourceId) {
-    datasetError.value = t('workspace.dataset_prepare_failed')
-    return null
-  }
-  return { processingJobId: processingJobId.value, sourceId: battle.sourceId }
-}
-
-/**
- * Battle context actions 需登录（/api/replay/analyze 与 /api/replay/map-overview 均走
- * authedFetch）。未登录点击不静默跳转：文件只存在内存，Keycloak 整页跳转会清空——
- * 先在当前页明确告知（登录后需重新选择回放），确认后再去登录。
- */
-function requireLoginForBattleAction() {
-  if (isAuthenticated()) return true
-  const ok = window.confirm(t('replay.login_required_for_battle'))
-  if (ok && login) login('replay')
-  return false
-}
-
-const datasetError = ref('')
-async function openBattlePlayback() {
-  if (props.embedded) {
-    emit('open-playback')
-    return
-  }
-  if (!requireLoginForBattleAction()) return
-  const ref = currentBattleRef()
-  if (ref && navigate) navigate('battle-playback', ref)
-}
-
-async function openAiReview() {
-  if (props.embedded) {
-    emit('open-ai')
-    return
-  }
-  if (!requireLoginForBattleAction()) return
-  const ref = currentBattleRef()
-  if (ref && navigate) navigate('ai-review', ref)
 }
 
 async function preview() {
@@ -550,7 +532,7 @@ onMounted(() => {
     <!-- 独立使用（旧路由/测试）时保留上传器；嵌入 Workspace 时由 Workspace 提供单一上传器。 -->
     <FileUploader v-if="!props.embedded" :files="files" :loading="loading" :confirm-remove="!!resp"
       @update:files="updateFiles" @preview="preview" @remove-request="onFileRemoveRequest"
-      :show-workspace-actions="false" />
+      />
 
     <p v-if="error" class="error">{{ error }}</p>
 
@@ -610,29 +592,21 @@ onMounted(() => {
         </div>
 
         <div class="restoolbar">
-          <div class="tabs" :class="{ locked: showColPicker }"
+          <div class="dataview-toggle" :class="{ locked: showColPicker }"
                :title="showColPicker ? $t('action.picker_locked') : ''">
             <button v-if="resp.aggregate.length || leagueMode" :disabled="showColPicker"
-                    :class="{ active: activeTab === 'aggregate' }"
-                    @click="activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: aggregatePlayerCount }) }}</button>
-            <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
-                    :class="{ active: activeTab === 'b' + i }"
-                    @click="activeTab = 'b' + i">{{ mapLabel(b.mapName, locale) }} #{{ i + 1 }}
-              <span class="tabx" :title="$t('modal.remove_title')" @click.stop="askRemoveBattle(b, i)">&times;</span>
-            </button>
+                    :class="{ active: isSummaryView }"
+                    data-testid="data-view-summary"
+                    @click="setDataView('SUMMARY')">{{ $t('result.aggregate_tab', { count: aggregatePlayerCount }) }}</button>
+            <button v-if="resp.battles.length" :disabled="showColPicker"
+                    :class="{ active: !isSummaryView }"
+                    data-testid="data-view-single"
+                    @click="setDataView('SINGLE')">{{ $t('result.single_tab') }}</button>
           </div>
           <div class="resactions">
             <button v-if="leagueMode" class="ghost sm" data-testid="league-docs-btn" @click="openRatingDocs">
               <svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM4 19.5A2.5 2.5 0 0 0 6.5 22H20" /></svg>{{ $t('league.docs_button') }}
             </button>
-            <template v-if="activeTab !== 'aggregate'">
-              <button class="battle-action" data-testid="battle-playback-btn" @click="openBattlePlayback">
-                <svg class="ic" viewBox="0 0 24 24"><path d="M3 5l6 3-6 3zM15 5l6 3-6 3zM9 8h6M9 8v8M9 16l6-3M9 13l6-3" /></svg>{{ $t('home.battlePlayback') }}
-              </button>
-              <button class="battle-action primary" data-testid="battle-ai-btn" @click="openAiReview">
-                <svg class="ic" viewBox="0 0 24 24"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8z" /></svg>{{ $t('action.ai_review') }}
-              </button>
-            </template>
             <span class="dropdown">
               <button class="ghost sm" @click="toggleColPicker">
                 <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} v
@@ -662,7 +636,7 @@ onMounted(() => {
 
         <p v-if="!resp.battles.length && !resp.aggregate.length && !leagueData" class="replay-empty-note">{{ $t('replay.no_results') }}</p>
 
-        <div v-show="activeTab === 'aggregate' && (resp.aggregate.length || leagueMode)" ref="aggregateRef">
+        <div v-show="isSummaryView && (resp.aggregate.length || leagueMode)" ref="aggregateRef">
           <!-- 普通模式：基础 Replay Aggregate（Standard Replay 保持原语义）。 -->
           <template v-if="!leagueMode && resp.aggregate.length">
             <h2 class="replay-section-title" data-testid="base-aggregate-title">{{ $t('result.base_summary_title') }}</h2>
@@ -675,7 +649,7 @@ onMounted(() => {
             <CwPlayerSummaryTable :title="$t('league.summary.title_player')"
               :rows="unifiedRows" :columns="unifiedShownCols"
               :league-columns="leagueData?.columns || []" :league-mode="true"
-              :active="activeTab === 'aggregate'"
+              :active="isSummaryView"
               :selected-account-id="selectedPlayer?.accountId ?? null"
               @select-player="selectPlayer" />
             <template v-if="(leagueData?.teamSummaries?.length || 0) > 0">
@@ -687,10 +661,10 @@ onMounted(() => {
           </template>
         </div>
 
-        <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i"
+        <div v-for="(b, i) in resp.battles" :key="i" v-show="!isSummaryView && currentSingleIndex === i"
              :ref="(el) => setBattleRef(el, i)">
           <BattleTable :battle="b" :shown-cols="shownCols"
-            :active="activeTab === 'b' + i"
+            :active="!isSummaryView && currentSingleIndex === i"
             :league-mode="leagueMode" :league="b.league" :league-columns="leagueData?.columns || []"
             :team-names="battleTeamNames" @update-team-name="updateBattleTeamName"
             :selected-account-id="selectedPlayer?.accountId ?? null"
@@ -735,30 +709,33 @@ onMounted(() => {
   font-size: .85rem;
   background: color-mix(in srgb, var(--bg-card) 82%, transparent);
 }
-.battle-action {
+.replay-empty-note { padding: 18px 4px; color: var(--text-muted); font-size: .85rem; }
+/* 数据视图切换（汇总视图 / 单场视图）：与旧 .tabs 同款外观，避免视觉回归。 */
+.dataview-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 32px;
+  gap: 5px;
+  min-width: 0;
+}
+.dataview-toggle button {
+  min-height: 34px;
   padding: 6px 14px;
   border: 1px solid var(--border-ghost);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--bg-card);
   color: var(--text-label);
   cursor: pointer;
-  font-size: .82rem;
+  font-size: .85rem;
   font-family: inherit;
   font-weight: 700;
   white-space: nowrap;
 }
-.battle-action:hover { border-color: var(--accent); color: var(--accent-dark); background: var(--bg-blue-light); }
-.battle-action.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
+.dataview-toggle button:hover:not(.active) { border-color: var(--border); color: var(--text-heading); background: var(--bg-list-hover); }
+.dataview-toggle button.active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent-dark);
 }
-.battle-action.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-text); }
-.replay-empty-note { padding: 18px 4px; color: var(--text-muted); font-size: .85rem; }
 /* League Rating 校验失败汇总：warning 语义，可展开，不铺满超长文件名 */
 .league-failure-summary { margin-top: 10px; padding: 10px 14px; }
 .league-failure-head {

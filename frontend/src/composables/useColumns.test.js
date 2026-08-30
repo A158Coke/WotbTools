@@ -41,9 +41,9 @@ const AGG_COLS = [
 function mountCols(storage) {
   const playerCols = ref(PLAYER_COLS)
   const aggCols = ref(AGG_COLS)
-  const activeTab = ref('b0')
+  const dataViewMode = ref('SINGLE')
   const leagueMode = ref(false)
-  const c = useColumns(playerCols, aggCols, activeTab, leagueMode)
+  const c = useColumns(playerCols, aggCols, dataViewMode, leagueMode)
   c.initFromResponse({ playerColumns: PLAYER_COLS, aggregateColumns: AGG_COLS, leagueMode: false })
   return c
 }
@@ -114,9 +114,9 @@ const LEAGUE_PLAYER_COLS = [
 function mountLeagueCols(storage) {
   const playerCols = ref(LEAGUE_PLAYER_COLS)
   const aggCols = ref(AGG_COLS)
-  const activeTab = ref('b0')
+  const dataViewMode = ref('SINGLE')
   const leagueMode = ref(true)
-  const c = useColumns(playerCols, aggCols, activeTab, leagueMode)
+  const c = useColumns(playerCols, aggCols, dataViewMode, leagueMode)
   c.initFromResponse({ playerColumns: LEAGUE_PLAYER_COLS, aggregateColumns: AGG_COLS, leagueMode: true })
   return c
 }
@@ -132,7 +132,7 @@ describe('useColumns League Rating scope', () => {
 
   it('leagueMode 唯一事实源：playerColumns 含 league_rating 但 leagueMode=false → 普通模式', async () => {
     const store = freshStorage()
-    const c = useColumns(ref(LEAGUE_PLAYER_COLS), ref(AGG_COLS), ref('b0'), ref(false))
+    const c = useColumns(ref(LEAGUE_PLAYER_COLS), ref(AGG_COLS), ref('SINGLE'), ref(false))
     c.initFromResponse({ playerColumns: LEAGUE_PLAYER_COLS, aggregateColumns: AGG_COLS, leagueMode: false })
     expect(c.leagueMode.value).toBe(false)
     // 普通可见列默认（DEFAULT_VISIBLE）：league_rating 不默认显示、contribution 默认显示
@@ -146,11 +146,11 @@ describe('useColumns League Rating scope', () => {
   })
 
   it('leagueMode=true 即使 playerColumns 不含 league_rating 也是 CW 列契约', () => {
-    const c = useColumns(ref(PLAYER_COLS), ref(AGG_COLS), ref('b0'), ref(true))
+    const c = useColumns(ref(PLAYER_COLS), ref(AGG_COLS), ref('SINGLE'), ref(true))
     c.initFromResponse({ playerColumns: PLAYER_COLS, aggregateColumns: AGG_COLS, leagueMode: true })
     expect(c.leagueMode.value).toBe(true)
     // league_rating 不在列 universe，固定对不强制出现；但 cw scope（汇总 tab）仍可用
-    const agg = useColumns(ref(PLAYER_COLS), ref(CW_AGG_COLS), ref('aggregate'), ref(true))
+    const agg = useColumns(ref(PLAYER_COLS), ref(CW_AGG_COLS), ref('SUMMARY'), ref(true))
     agg.initFromResponse({
       playerColumns: PLAYER_COLS, aggregateColumns: CW_AGG_COLS, leagueMode: true,
       league: { playerSummaryColumns: LEAGUE_SUMMARY_COLS },
@@ -252,9 +252,9 @@ const CW_AGG_COLS = [
 function mountCwCols(storage) {
   const playerCols = ref(LEAGUE_PLAYER_COLS)
   const aggCols = ref(CW_AGG_COLS)
-  const activeTab = ref('aggregate')
+  const dataViewMode = ref('SUMMARY')
   const leagueMode = ref(true)
-  const c = useColumns(playerCols, aggCols, activeTab, leagueMode)
+  const c = useColumns(playerCols, aggCols, dataViewMode, leagueMode)
   c.initFromResponse({
     playerColumns: LEAGUE_PLAYER_COLS,
     aggregateColumns: CW_AGG_COLS,
@@ -339,8 +339,8 @@ describe('useColumns CW unified summary scope', () => {
   })
 
   it('colScope: league summary tab → cw; league battle tab → player', () => {
-    const activeTab = ref('aggregate')
-    const c = useColumns(ref(LEAGUE_PLAYER_COLS), ref(CW_AGG_COLS), activeTab, ref(true))
+    const dataViewMode = ref('SUMMARY')
+    const c = useColumns(ref(LEAGUE_PLAYER_COLS), ref(CW_AGG_COLS), dataViewMode, ref(true))
     c.initFromResponse({
       playerColumns: LEAGUE_PLAYER_COLS,
       aggregateColumns: CW_AGG_COLS,
@@ -348,7 +348,7 @@ describe('useColumns CW unified summary scope', () => {
       league: { playerSummaryColumns: LEAGUE_SUMMARY_COLS },
     })
     expect(c.colScope.value).toBe('cw')
-    activeTab.value = 'b0'
+    dataViewMode.value = 'SINGLE'
     expect(c.colScope.value).toBe('player')
   })
 

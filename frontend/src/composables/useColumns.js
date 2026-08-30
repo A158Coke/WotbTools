@@ -94,7 +94,7 @@ function forceLeagueVisible(visible) {
   return uniqueKeys([...visible, ...LEAGUE_FIXED_KEYS])
 }
 
-export function useColumns(playerCols, aggCols, activeTab, leagueModeRef = ref(false)) {
+export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef = ref(false)) {
   const visibleKeys = ref([])
   const aggVisibleKeys = ref([])
   const playerOrder = ref([])
@@ -110,11 +110,12 @@ export function useColumns(playerCols, aggCols, activeTab, leagueModeRef = ref(f
   const leagueMode = computed(() => leagueModeRef.value)
 
   /**
-   * ColumnPicker 作用域：普通模式 汇总tab → agg；League 模式汇总tab → cw（统一玩家表）；
-   * battle tab → player（单场玩家表，League 与普通共用同一 player 偏好）。
+   * ColumnPicker 作用域（Blocker #2）：由 dataViewMode 驱动。
+   * SUMMARY（汇总视图）→ 普通模式 agg / League 模式 cw（统一玩家表）；
+   * SINGLE（单场视图）→ player（单场玩家表，League 与普通共用同一偏好）。
    */
   const colScope = computed(() => {
-    if (activeTab.value === 'aggregate') return leagueMode.value ? 'cw' : 'agg'
+    if (dataViewModeRef.value === 'SUMMARY') return leagueMode.value ? 'cw' : 'agg'
     return 'player'
   })
   const currentOrder = computed(() =>
