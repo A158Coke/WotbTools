@@ -1490,7 +1490,14 @@
                 "orientation_last_known": "Последнее известное направление",
                 "loadout_unknown_consumable": "Неизвестный расходник ({id})",
                 "loadout_unknown_provision": "Неизвестная провизия ({id})",
-                "loadout_unknown_equipment": "Неизвестное оборудование ({id})"
+                "loadout_unknown_equipment": "Неизвестное оборудование ({id})",
+                "consumable_state": {
+                    "INITIALIZED": "Готов",
+                    "ACTIVATED": "Активирован",
+                    "ACTIVE_ENDED_OR_COOLDOWN": "Завершено или перезарядка",
+                    "TEARDOWN": "Снят",
+                    "UNKNOWN": "Неизвестно"
+                }
             }
         },
         "stages": {

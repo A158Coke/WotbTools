@@ -20,7 +20,7 @@ const props = defineProps({
   timeSec: { type: Number, required: true }
 })
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
 
 const life = computed(() => lifeAt(props.track, props.timeSec))
 const health = computed(() => {
@@ -51,6 +51,16 @@ function itemLabel(scope, id) {
     : scope === 'provision' ? 'recon.map.playback.loadout_unknown_provision'
       : 'recon.map.playback.loadout_unknown_equipment'
   return t(key, { id })
+}
+
+/**
+ * consumable runtime state 本地化（plan Major）：不裸显 internal enum。
+ * UNKNOWN 保持现有隐藏/未知语义；未知/未映射 state 走 localized fallback。
+ */
+function consumableStateLabel(state) {
+  if (!state || state === 'UNKNOWN') return ''
+  const key = `recon.map.playback.consumable_state.${state}`
+  return te(key) ? t(key) : t('recon.map.playback.consumable_state.UNKNOWN')
 }
 
 // consumable runtime：hidden interval → UNKNOWN，绝不显示 READY
@@ -158,7 +168,7 @@ const tankClassLabel = computed(() => {
         <div v-for="c in consumables" :key="'c' + c.slot" class="v2-inspector-chip">
           <span class="v2-chip-type">{{ $t('recon.map.playback.consumable') }}</span>
           <span>{{ c.label }}</span>
-          <span v-if="c.runtimeState !== 'UNKNOWN'" class="v2-chip-state">{{ c.runtimeState }}</span>
+          <span v-if="c.runtimeState !== 'UNKNOWN'" class="v2-chip-state">{{ consumableStateLabel(c.runtimeState) }}</span>
         </div>
         <div
           v-for="p in provisionLabels"
