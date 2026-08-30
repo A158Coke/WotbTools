@@ -131,8 +131,6 @@ const isHofAdmin = computed(() => {
   const roles = tokenParsed.value?.realm_access?.roles || []
   return roles.includes('HoF-admin') || roles.includes('wotbtools-admin')
 })
-// 下载 Android 版 feature flag：仅 wotbtools-admin 可见（HomePage 经 inject 读取）。
-provide('isAdmin', isAdmin)
 // 菜单面板经 Teleport 挂到 body，用 fixed 定位对齐触发按钮下方：
 // 不受 .topbar overflow-x:auto 裁切，也不撑高顶栏（移动端横向滚动保留）。
 function toggleUserMenu() {

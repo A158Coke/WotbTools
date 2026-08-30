@@ -79,7 +79,12 @@ import {
  * RAF 推进播放时间，仅在同一可信连续点（gap ≤ 5s）之间插值。
  */
 const props = defineProps({
-  overview: { type: Object, required: true },
+  /**
+   * MapOverview（heatmap/routes/secondary 鸟瞰）overlay 数据。仅提供可选 overlay 事实
+   * （gridCells/spawnPoints/routes/playableBounds）；必选战局回放元数据以 {@code playbackV2} 为权威。
+   * 可空：Battle Playback PRIMARY 以 V2 dataset 为核心输入，不再被 map-overview artifact 锁死。
+   */
+  overview: { type: Object, default: null },
   seekTo: { type: Number, default: null },
   /** QA 场景循环播放（PR4 §49：时间线到末尾自动回到 0 继续） */
   loop: { type: Boolean, default: false },
@@ -89,8 +94,26 @@ const props = defineProps({
 
 const { t } = useI18n()
 
-const image = computed(() => mapImages[props.overview.mapCode] || null)
-const mapView = computed(() => createMapView(image.value, props.overview))
+/**
+ * 呈现元数据（Battle Playback PRIMARY 核心输入）：V2 canonical dataset 为权威源
+ * （mapCode / friendlyTeam / recorderAccountId / arenaBonusType），MapOverview 仅提供可选 overlay
+ * 事实（gridCells / spawnPoints / routes / playableBounds）。V2 缺失字段回退 overview；两者兼缺 → null-safe。
+ * 副要求：Battle Playback 不依赖 MapOverview artifact 存在才能渲染。
+ */
+const pbOverview = computed(() => {
+  const v2 = props.playbackV2 || {}
+  const ov = props.overview || {}
+  return {
+    ...ov,
+    mapCode: (v2.mapCode ?? ov.mapCode) || null,
+    friendlyTeam: v2.friendlyTeam ?? ov.friendlyTeam,
+    recorderAccountId: v2.recorderAccountId ?? ov.recorderAccountId ?? null,
+    arenaBonusType: v2.arenaBonusType ?? ov.arenaBonusType ?? null,
+  }
+})
+
+const image = computed(() => mapImages[pbOverview.value.mapCode] || null)
+const mapView = computed(() => createMapView(image.value, pbOverview.value))
 
 // 自适应配色（与热力/路线视图同一色板）
 const palette = ref(darkMapPalette)
@@ -108,7 +131,7 @@ const v2TrackByAccount = computed(() => {
   return m
 })
 const duration = computed(() => (playback.value ? Math.max(0, playback.value.durationSec) : 0))
-const friendlyTeam = computed(() => props.overview.friendlyTeam)
+const friendlyTeam = computed(() => pbOverview.value.friendlyTeam)
 
 // ---- PR2：Tier X dedicated model preload----
 // runtime.js 含全部车型资产引用（import.meta.glob），必须动态 import 保持主 bundle 分离
@@ -1075,7 +1098,7 @@ onBeforeUnmount(() => {
 // ---- 数据 ----
 const routesByAccount = computed(() => {
   const map = new Map()
-  for (const route of props.overview.routes || []) map.set(route.accountId, route)
+  for (const route of pbOverview.value.routes || []) map.set(route.accountId, route)
   return map
 })
 
@@ -1135,7 +1158,7 @@ function vehicleStateV2(vehicle, track) {
   const last = positionAtV2(track.positionSegments, time)
   if (!last) return null
   const covered = positionCoveredAtV2(track.positionSegments, time)
-  const recorder = vehicle.accountId === props.overview.recorderAccountId
+  const recorder = vehicle.accountId === pbOverview.value.recorderAccountId
   const direction = orientationAtV2(track.orientationSegments, time)
   const friendly = vehicle.team === friendlyTeam.value
   const hullDeg = direction ? screenRotation(direction.hullYawDeg) : null
@@ -1192,11 +1215,11 @@ const filteredEvents = computed(() => {
   const events = (playback.value ? playback.value.events : [])
     .filter(event => typeFilter.value.has(event.type))
   if (showAll.value) return events
-  const recorderId = props.overview.recorderAccountId
-  if (props.overview.arenaBonusType === 1 && recorderId != null) {
+  const recorderId = pbOverview.value.recorderAccountId
+  if (pbOverview.value.arenaBonusType === 1 && recorderId != null) {
     return events.filter(event => recorderRelated(event, recorderId))
   }
-  if (props.overview.arenaBonusType !== 1) {
+  if (pbOverview.value.arenaBonusType !== 1) {
     return events.filter(event => teamRelated(event, friendlyTeam.value, vehiclesByAccount.value))
   }
   return events
@@ -1555,7 +1578,7 @@ function markerLabel(accountId) {
 
 const gridRegions = computed(() => {
   const regions = new Map()
-  for (const cell of props.overview.gridCells || []) {
+  for (const cell of pbOverview.value.gridCells || []) {
     const key = cell.nineGridRegion
     if (!regions.has(key)) {
       regions.set(key, { xMin: Infinity, yMin: Infinity, xMax: -Infinity, yMax: -Infinity })
@@ -1570,14 +1593,15 @@ const gridRegions = computed(() => {
 })
 
 const mapStyle = computed(() => ({
-  '--map-grid-stroke': palette.value.gridStroke,
+  // Battle Playback 6x6 网格：用显式强对比线，保证每一列可见地隔开（热力图鸟瞰用弱 gridStroke）。
+  '--map-grid-stroke': palette.value.gridStrokeStrong,
   '--map-region-stroke': palette.value.regionStroke,
   '--map-spawn-friendly': palette.value.spawnFriendly,
   '--map-spawn-enemy': palette.value.spawnEnemy,
   '--map-route-outline': palette.value.routeOutline,
   '--map-death-mark': palette.value.deathMark,
   // PR3 §19/§20：marker team tokens（friendly 按地图显式 tone，enemy 固定 red）
-  ...teamCssVars(props.overview.mapCode)
+  ...teamCssVars(pbOverview.value.mapCode)
 }))
 </script>
 
@@ -1595,7 +1619,7 @@ const mapStyle = computed(() => ({
       <button type="button" class="pb-btn" data-test="pb-speed" @click="toggleSpeed">{{ speed }}×</button>
       <button type="button" class="pb-btn" data-test="pb-reset" @click="resetView">{{ $t('recon.map.playback.reset_view') }}</button>
       <span class="pb-time">{{ formatClock(currentTime) }} / {{ formatClock(duration) }}</span>
-      <span v-if="overview.recorderAccountId != null" class="pb-filter">
+      <span v-if="pbOverview.recorderAccountId != null" class="pb-filter">
         <label class="pb-check">
           <input type="checkbox" v-model="showAll" data-test="pb-all-events" />
           {{ $t('recon.map.playback.all_events') }}
@@ -1739,7 +1763,7 @@ const mapStyle = computed(() => ({
       <image :href="image.src" :width="mapView.W" :height="mapView.H" preserveAspectRatio="none" />
       <g class="pb-grid">
         <rect
-          v-for="(cell, index) in overview.gridCells"
+          v-for="(cell, index) in pbOverview.gridCells"
           :key="cell.id"
           :x="mapView.toX(cell.bounds.xMin)"
           :y="mapView.toY(cell.bounds.yMax)"
@@ -1761,7 +1785,7 @@ const mapStyle = computed(() => ({
       </g>
       <g class="pb-spawns">
         <circle
-          v-for="(spawn, i) in overview.spawnPoints"
+          v-for="(spawn, i) in pbOverview.spawnPoints"
           :key="`${spawn.name}-${i}`"
           :cx="mapView.toX(spawn.x)"
           :cy="mapView.toY(spawn.y)"
@@ -2155,7 +2179,7 @@ const mapStyle = computed(() => ({
    PR3 —— last-known/destroyed 弱化由 VehicleMarker .pb-graphics 容器承担（root 不再
    opacity，否则 ✕/label 也会被淡掉）；Selected 红色倒三角、Recorder 空心菱形、
    team outline/glow（friendly green|blue / enemy red，CSS vars 由根元素提供）。 */
-.pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; fill: none; }
+.pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.55)); stroke-width: 1; fill: none; }
 /* 激光炮线：外层光晕/内芯线宽逐元素绑定（6/view.scale、1.75/view.scale），不随缩放变粗 */
 .pb-tracer, .pb-tracer-core { stroke-linecap: round; }
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }

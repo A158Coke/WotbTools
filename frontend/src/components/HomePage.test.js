@@ -10,11 +10,10 @@ const api = vi.hoisted(() => ({
 
 vi.mock('../utils/api.js', () => api)
 
-function mountPage(opts = {}) {
+function mountPage() {
   return mount(HomePage, {
     global: {
-      mocks: { $t: key => key },
-      provide: { isAdmin: opts.isAdmin ?? false }
+      mocks: { $t: key => key }
     }
   })
 }
@@ -108,28 +107,19 @@ describe('HomePage information architecture — single replay entry point', () =
     wrapper.unmount()
   })
 
-  it('quick links panel is preserved (non-admin hides the Android download link)', () => {
+  it('quick links panel shows the Android download link for all users (gray removed)', () => {
     const wrapper = mountPage()
     const quick = wrapper.find('.quick-panel')
     expect(quick.exists()).toBe(true)
-    expect(quick.findAll('a')).toHaveLength(4)
-    expect(quick.findAll('a').some(a => a.attributes('href') === '/download/android')).toBe(false)
+    expect(quick.findAll('a').some(a => a.attributes('href') === '/download/android')).toBe(true)
     wrapper.unmount()
   })
 
-  it('Android download entries are admin-only (feature flag)', () => {
-    const admin = mountPage({ isAdmin: true })
-    expect(admin.find('.hero-btn[href="/download/android"]').exists()).toBe(true)
-    const quickAdmin = admin.find('.quick-panel')
-    expect(quickAdmin.findAll('a')).toHaveLength(5)
-    expect(quickAdmin.findAll('a').some(a => a.attributes('href') === '/download/android')).toBe(true)
-    admin.unmount()
-
-    const guest = mountPage({ isAdmin: false })
-    expect(guest.find('.hero-btn[href="/download/android"]').exists()).toBe(false)
-    const quickGuest = guest.find('.quick-panel')
-    expect(quickGuest.findAll('a')).toHaveLength(4)
-    expect(quickGuest.findAll('a').some(a => a.attributes('href') === '/download/android')).toBe(false)
-    guest.unmount()
+  it('Android download entries are public (no admin-only grayscale)', () => {
+    const wrapper = mountPage()
+    expect(wrapper.find('.hero-btn[href="/download/android"]').exists()).toBe(true)
+    const quick = wrapper.find('.quick-panel')
+    expect(quick.findAll('a').some(a => a.attributes('href') === '/download/android')).toBe(true)
+    wrapper.unmount()
   })
 })

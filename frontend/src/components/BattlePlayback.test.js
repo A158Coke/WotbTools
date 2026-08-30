@@ -252,6 +252,28 @@ describe('BattlePlayback', () => {
     expect(wrapper.findAll('.pb-vehicle')).toHaveLength(2)
   })
 
+  it('Blocker 2：V2 dataset 为核心输入——overview 为 null 时 PRIMARY 仍渲染', async () => {
+    stubRaf()
+    // V2 权威元数据（mapCode/friendlyTeam/recorderAccountId/arenaBonusType）都在 dataset 内，
+    // MapOverview 缺失时 Battle Playback PRIMARY 必须可渲染（不被 map-overview artifact 锁死）。
+    const v2Only = {
+      ...makePlaybackV2(),
+      mapCode: 'holland',
+      friendlyTeam: 1,
+      recorderAccountId: 1001,
+      arenaBonusType: 1,
+    }
+    const wrapper = mount(BattlePlayback, {
+      props: { overview: null, seekTo: null, playbackV2: v2Only },
+      global: { mocks: { $t: i18n.t } },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
+    // recorder 存在时显示「全部事件」过滤器（来自 V2 recorderAccountId）
+    expect(wrapper.find('[data-test="pb-all-events"]').exists()).toBe(true)
+  })
+
   it('seeks on seekTo and pauses', async () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 30)
