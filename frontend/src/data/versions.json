@@ -1,11 +1,19 @@
 [
   {
-    "v": "2.12.55",
+    "v": "2.12.56",
     "date": "2026-08-30",
     "tag": "fix",
     "zh": "修复已登录用户或管理员访问战局回放时可能被错误拒绝的问题，并统一错误提示：现在会明确区分需要登录、权限不足、网络连接、服务端错误和数据不足；服务端错误会显示诊断 ID，只有可重试问题才显示重试入口。",
     "en": "Fixed battle playback being incorrectly denied for signed-in users or administrators and unified error feedback: login required, insufficient permission, network connectivity, server errors, and unavailable data are now distinct; server errors show a diagnostic ID, and Retry appears only for retryable failures.",
     "ru": "Исправлен ошибочный отказ в доступе к воспроизведению боя для вошедших пользователей и администраторов, а сообщения об ошибках унифицированы: теперь различаются необходимость входа, нехватка прав, сеть, ошибка сервера и недоступность данных; для серверных ошибок показан диагностический ID, а повтор доступен только для повторяемых сбоев."
+  },
+  {
+    "v": "2.12.55",
+    "date": "2026-08-30",
+    "tag": "fix",
+    "zh": "Android 安装包下载对全部用户开放但需登录：原先仅管理员可见入口，现在所有用户都能看到并进入下载页；未登录访问会自动跳转登录，登录后可下载 APK。",
+    "en": "Android package download is now open to all users but requires sign-in: the entry was admin-only and is now visible to everyone leading to the download page; unauthenticated visitors are redirected to sign in before downloading the APK.",
+    "ru": "Загрузка Android-пакета теперь доступна всем пользователям, но требует входа: ранее вход был виден только администраторам; теперь он есть у всех и ведёт на страницу загрузки, а неавторизованные посетители перенаправляются на вход перед скачиванием APK."
   },
   {
     "v": "2.12.54",
