@@ -9,8 +9,10 @@ import './styles/showcase-backgrounds.css'
 import './styles/showcase-backgrounds-v3.css'
 import './styles/showcase-cohesion.css'
 import './styles/showcase-regressions.css'
+import './app/app-shell.css'
 import './styles/classic-profile.css'
 import { messages } from './locales/messages.js'
+import router from './app/router.js'
 
 // Build identity（vite define 注入）：生产环境可立即确认实际运行的 bundle 版本，
 // 避免"我刚部署了"式猜测（对应 /version.json 与 /?view=version 可查）。
@@ -19,8 +21,7 @@ console.info('[build] commit=' + __BUILD_COMMIT__ + ' time=' + __BUILD_TIME__)
 const previewHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
 
 async function bootstrap() {
-  // App.vue reads location during module evaluation. Therefore local UI preview routing
-  // must be canonicalized BEFORE App.vue is imported, otherwise localhost defaults to replay.
+  // Local preview intentionally starts on Home while production defaults to Replay.
   const previewParams = new URLSearchParams(window.location.search)
   if (previewHost && !previewParams.has('view')) {
     const previewUrl = new URL(window.location.href)
@@ -35,7 +36,7 @@ async function bootstrap() {
     messages,
   })
 
-  createApp(App).use(i18n).mount('#app')
+  createApp(App).use(i18n).use(router).mount('#app')
 
   // Production intentionally links the brand to wotbtools.com. During localhost UI review,
   // keep the brand in the local SPA and make it a reliable Home button.

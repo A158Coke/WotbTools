@@ -32,6 +32,8 @@ repository-level full validation 由 PR CI 统一执行（唯一 authoritative f
 
 ## 结构与约定
 
+- **前端架构工作必读**：涉及路由、页面/组件归属、composable 状态、API 边界或跨 feature import 时，先加载 `.agents/skills/frontend-architecture/SKILL.md`，并以 `docs/frontend/architecture.md` 为当前架构事实；遵循 `app → features → shared`，每个业务状态只允许一个权威 owner。禁止在组件中恢复手写 `history.pushState` / `replaceState` / `popstate` 路由；使用 Vue Router。新 feature 不得依赖另一 feature 的私有实现，`shared/` 不得 import `features/`。
+
 - 入口 `index.html`（Vue SPA）；`homepage/` 只保留独立赞助页及其运行时配置，不再维护旧静态主页/个人中心副本。
 - `src/composables/`（useReplay/useColumns/useAuth 等）、`src/utils/`、`src/components/`、`src/styles/`、`src/data/`。
 - **主题策略（由 UI Profile 派生）**：`data-theme` 不是独立主题偏好，而是由 UI Profile 唯一派生——`showcase`→`dark`、`classic`→`light`（`useUiProfile.themeForProfile`）。`index.html` 首屏内联脚本按 `wotb-ui-profile` 同时设置 `data-ui-profile` 与派生的 `data-theme`。禁止恢复独立 `useTheme`、`utils/theme.js` 或 `wotbtools-theme` cookie/localStorage；禁止第二个主题持久化 key。
