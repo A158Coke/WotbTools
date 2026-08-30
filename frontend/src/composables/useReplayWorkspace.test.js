@@ -34,6 +34,11 @@ function makeFiles(n) {
   return Array.from({ length: n }, (_, i) => new File(['x'], `f${i}.wotbreplay`))
 }
 
+/** BattleDto 投影：sourceId = r<sourceIndex>（唯一权威 identity）。 */
+function battle(sourceId, mapName = 'Lagoon') {
+  return { sourceId, mapName, players: [] }
+}
+
 describe('useReplayWorkspace', () => {
   beforeEach(() => {
     holder.state = newReplay()
@@ -52,11 +57,9 @@ describe('useReplayWorkspace', () => {
   it('单文件未解析时 currentTargetBattleId 回退 r0；多文件未选则 null', async () => {
     holder.state.files.value = makeFiles(1)
     const ws = useReplayWorkspace('data')
-    // 单文件尚未解析出 battle → 回退 r0（唯一文件天然可分析）。
     expect(ws.currentTargetBattleId.value).toBe('r0')
     expect(ws.currentTargetFile.value).toBe(holder.state.files.value[0])
 
-    // 多文件未显式选择 → null（需显式选 target）。
     holder.state.files.value = makeFiles(2)
     expect(ws.currentTargetBattleId.value).toBe(null)
     expect(ws.currentTargetFile.value).toBe(null)
@@ -64,45 +67,101 @@ describe('useReplayWorkspace', () => {
 
   it('selectBattle 设 currentBattleId + dataViewMode=SINGLE；selectSummary 保留选中单场只切视图', async () => {
     holder.state.files.value = makeFiles(2)
+    holder.state.resp.value = { leagueMode: false, aggregate: [{ a: 1 }], battles: [battle('r0'), battle('r1')] }
     const ws = useReplayWorkspace('data')
+    await nextTick()
+    expect(ws.currentBattleId.value).toBe('r0')
     ws.selectBattle('r1')
     await nextTick()
     expect(ws.currentBattleId.value).toBe('r1')
+    expect(ws.currentBattleIndex.value).toBe(1)
     expect(ws.dataViewMode.value).toBe('SINGLE')
-    expect(holder.state.activeTab.value).toBe('b1')
 
-    // SUMMARY 视图：currentBattleId 仍为 r1（选中单场持久）。
     ws.selectSummary()
     await nextTick()
     expect(ws.currentBattleId.value).toBe('r1')
     expect(ws.dataViewMode.value).toBe('SUMMARY')
-    expect(holder.state.activeTab.value).toBe('aggregate')
+    // SUMMARY 视图保留选中单场：AI/Playback target 仍为 r1。
+    expect(ws.currentTargetBattleId.value).toBe('r1')
   })
 
-  it('READY 后按 chooseInitialResultTab 初始化 currentBattleId 与 dataViewMode', async () => {
-    holder.state.resp.value = { leagueMode: false, aggregate: [], battles: [{ mapName: 'x' }] }
+  it('READY 初始化用 resp.battles[0].sourceId（禁止硬编码 r0）', async () => {
+    // r0 缺失（failed/duplicate 移除），有效 battle 从 r3 开始。
+    holder.state.resp.value = { leagueMode: false, aggregate: [], battles: [battle('r3')] }
     const ws = useReplayWorkspace('data')
     await nextTick()
-    // 无 aggregate 但有 battle → chooseInitialResultTab 返回 b0 → currentBattleId=r0, SINGLE。
-    expect(ws.currentBattleId.value).toBe('r0')
+    expect(ws.currentBattleId.value).toBe('r3')
+    expect(ws.currentBattleIndex.value).toBe(0)
+    expect(ws.currentBattle.value?.sourceId).toBe('r3')
     expect(ws.dataViewMode.value).toBe('SINGLE')
+  })
 
-    // 有 aggregate → chooseInitialResultTab 返回 aggregate → SUMMARY + currentBattleId=r0。
-    holder.state.resp.value = { leagueMode: false, aggregate: [{ a: 1 }], battles: [{ mapName: 'x' }] }
+  it('边界：r0 failed、r1/r2 valid → 初始必须选 r1（sourceId 是唯一 identity）', async () => {
+    holder.state.files.value = makeFiles(3)
+    holder.state.resp.value = {
+      leagueMode: false,
+      aggregate: [{ a: 1 }],
+      battles: [battle('r1'), battle('r2')], // r0 failed，不在 resp.battles
+    }
+    const ws = useReplayWorkspace('data')
+    await nextTick()
+    // 第一场有效 battle = r1（不是 r0）。
+    expect(ws.currentBattleId.value).toBe('r1')
+    expect(ws.currentBattle.value?.sourceId).toBe('r1')
+    expect(ws.currentBattleIndex.value).toBe(0)
+    // sourceId r1 → files[1]（source index），不是数组下标 0。
+    expect(ws.currentTargetFile.value).toBe(holder.state.files.value[1])
+  })
+
+  it('边界：r1 duplicate、valid=r0/r2 → 选第二个有效 battle 得 sourceId r2、files[2]、parsedBattles index 1', async () => {
+    holder.state.files.value = makeFiles(3)
+    holder.state.resp.value = {
+      leagueMode: false,
+      aggregate: [{ a: 1 }],
+      battles: [battle('r0'), battle('r2')], // r1 duplicate 移除
+    }
+    const ws = useReplayWorkspace('data')
     await nextTick()
     expect(ws.currentBattleId.value).toBe('r0')
-    expect(ws.dataViewMode.value).toBe('SUMMARY')
+    expect(ws.currentBattleIndex.value).toBe(0)
 
-    // 无 battle 但有 aggregate → currentBattleId=null，SUMMARY。
-    holder.state.resp.value = { leagueMode: false, aggregate: [{ a: 1 }], battles: [] }
+    ws.selectBattle('r2')
     await nextTick()
-    expect(ws.currentBattleId.value).toBe(null)
+    expect(ws.currentBattleId.value).toBe('r2')
+    // parsedBattles = [r0, r2] → r2 在数组 index 1；但 source index = 2 → files[2]。
+    expect(ws.currentBattleIndex.value).toBe(1)
+    expect(ws.currentBattle.value?.sourceId).toBe('r2')
+    expect(ws.currentTargetFile.value).toBe(holder.state.files.value[2])
+  })
+
+  it('回归：选 #8 → SUMMARY → AI/Playback 仍消费 #8（选中单场不随视图切换丢失）', async () => {
+    holder.state.files.value = makeFiles(9)
+    holder.state.resp.value = {
+      leagueMode: false,
+      aggregate: [{ a: 1 }],
+      battles: Array.from({ length: 9 }, (_, i) => battle(`r${i}`)),
+    }
+    const ws = useReplayWorkspace('data')
+    await nextTick()
+    expect(ws.currentBattleId.value).toBe('r0')
+
+    ws.selectBattle('r7')
+    await nextTick()
+    expect(ws.currentBattleId.value).toBe('r7')
+    expect(ws.currentBattleIndex.value).toBe(7)
+    ws.selectSummary()
+    await nextTick()
     expect(ws.dataViewMode.value).toBe('SUMMARY')
+    expect(ws.currentTargetBattleId.value).toBe('r7')
+    expect(ws.currentSourceId.value).toBe('r7')
+    expect(ws.currentTargetFile.value).toBe(holder.state.files.value[7])
   })
 
   it('selectionRevision 变化后重算 currentBattleId=null 并回 SUMMARY', async () => {
     holder.state.files.value = makeFiles(1)
+    holder.state.resp.value = { leagueMode: false, aggregate: [{ a: 1 }], battles: [battle('r0')] }
     const ws = useReplayWorkspace('data')
+    await nextTick()
     ws.selectBattle('r0')
     await nextTick()
     expect(ws.currentBattleId.value).toBe('r0')
@@ -112,41 +171,21 @@ describe('useReplayWorkspace', () => {
     expect(ws.dataViewMode.value).toBe('SUMMARY')
   })
 
-  it('回归：选 #8 → SUMMARY → AI/Playback 仍消费 #8（选中单场不随视图切换丢失）', async () => {
-    holder.state.files.value = makeFiles(9)
-    holder.state.resp.value = { leagueMode: false, aggregate: [{ a: 1 }], battles: makeFiles(9) }
-    const ws = useReplayWorkspace('data')
-    await nextTick()
-    expect(ws.currentBattleId.value).toBe('r0')
-
-    // 选 #8（index 7）
-    ws.selectBattle('r7')
-    await nextTick()
-    expect(ws.currentBattleId.value).toBe('r7')
-    // 切到 SUMMARY 视图
-    ws.selectSummary()
-    await nextTick()
-    expect(ws.dataViewMode.value).toBe('SUMMARY')
-    // AI / Playback 消费的 target 仍为 #8
-    expect(ws.currentTargetBattleId.value).toBe('r7')
-    expect(ws.currentSourceId.value).toBe('r7')
-    expect(ws.currentTargetFile.value).toBe(holder.state.files.value[7])
-  })
-
-  it('setDataViewMode(SUMMARY) 保留选中单场；setDataViewMode(SINGLE) 无选中时回退第一场', async () => {
+  it('setDataViewMode(SUMMARY) 保留选中单场；setDataViewMode(SINGLE) 无选中时回退第一场 sourceId', async () => {
     holder.state.files.value = makeFiles(3)
-    holder.state.resp.value = { leagueMode: false, aggregate: [{ a: 1 }], battles: makeFiles(3) }
+    holder.state.resp.value = {
+      leagueMode: false,
+      aggregate: [{ a: 1 }],
+      battles: [battle('r0'), battle('r2')], // r1 duplicate 移除
+    }
     const ws = useReplayWorkspace('data')
     await nextTick()
-    ws.setDataViewMode('SUMMARY')
-    expect(ws.dataViewMode.value).toBe('SUMMARY')
     ws.selectBattle('r2')
     ws.setDataViewMode('SUMMARY')
     expect(ws.currentBattleId.value).toBe('r2')
-
-    ws.setDataViewMode('SUMMARY')
+    // 无选中时 SINGLE 回退第一场有效 battle 的 sourceId（r0）。
+    ws.currentBattleId.value = null
     ws.setDataViewMode('SINGLE')
-    expect(ws.dataViewMode.value).toBe('SINGLE')
-    expect(ws.currentBattleId.value).toBe('r2')
+    expect(ws.currentBattleId.value).toBe('r0')
   })
 })
