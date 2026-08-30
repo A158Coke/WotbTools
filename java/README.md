@@ -77,7 +77,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 返回服务状态与已加载车辆数量。
 
-所有 JSON API 只返回英文 key、raw enum 与稳定 `code`/`error`；不返回本地化 `*Label` 或 `message`。前端通过三语 locale 显示状态、成功和错误文案。
+所有 JSON API 只返回英文 key 与 raw enum；失败统一返回 canonical `ApiErrorResponse`（`code/status/messageKey/traceId/retryable/details/timestamp`），不返回本地化 `*Label`、exception message 或 stack trace。Phase 1 仍兼容既有稳定 `error` code。前端通过三语 locale 显示状态、成功和错误文案；完整契约见 `../docs/api/error-contract.md`。
 未显式声明的 `/api/**` 默认拒绝；`boost-manager` 仅能访问 `/api/admin/boost/**`。
 
 

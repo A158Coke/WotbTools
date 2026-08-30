@@ -1,5 +1,9 @@
 package com.wotb.web.config;
 
+import com.wotb.web.util.apierror.ApiErrorFactory;
+import com.wotb.web.util.apierror.ApiErrorWriter;
+import com.wotb.web.util.apierror.CanonicalAccessDeniedHandler;
+import com.wotb.web.util.apierror.CanonicalAuthenticationEntryPoint;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -42,6 +46,7 @@ import static com.wotb.web.config.ApiPaths.HOF_UPLOAD;
 import static com.wotb.web.config.ApiPaths.PREVIEW;
 import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE;
 import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE_CANCEL;
+import static com.wotb.web.config.ApiPaths.REPLAY_BATTLE_PLAYBACK_V2;
 import static com.wotb.web.config.ApiPaths.REPLAY_EXPORT_JOBS_PATTERN;
 import static com.wotb.web.config.ApiPaths.REPLAY_MAP_OVERVIEW;
 import static com.wotb.web.config.ApiPaths.REPLAY_PROCESS;
@@ -63,13 +68,23 @@ import static com.wotb.web.config.ApiPaths.USERS_PATTERN;
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain filterChain(final HttpSecurity http) {
+    public SecurityFilterChain filterChain(final HttpSecurity http,
+                                           final ApiErrorFactory errorFactory,
+                                           final ApiErrorWriter errorWriter) {
+        final CanonicalAuthenticationEntryPoint authenticationEntryPoint =
+                new CanonicalAuthenticationEntryPoint(errorFactory, errorWriter);
+        final CanonicalAccessDeniedHandler accessDeniedHandler =
+                new CanonicalAccessDeniedHandler(errorFactory, errorWriter);
         http
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .oauth2ResourceServer(rs -> rs.jwt(jwt -> jwt
                 .jwtAuthenticationConverter(jwtAuthenticationConverter())
-            ))
+            ).authenticationEntryPoint(authenticationEntryPoint)
+              .accessDeniedHandler(accessDeniedHandler))
+            .exceptionHandling(errors -> errors
+                .authenticationEntryPoint(authenticationEntryPoint)
+                .accessDeniedHandler(accessDeniedHandler))
             .authorizeHttpRequests(auth -> auth
                 // --- 公开接口 ---
                 .requestMatchers(BOOST_OPTIONS).permitAll()
@@ -94,7 +109,8 @@ public class SecurityConfig {
                         REPLAY_PROCESS,
                         REPLAY_ANALYZE,
                         REPLAY_ANALYZE_CANCEL,
-                        REPLAY_MAP_OVERVIEW)
+                        REPLAY_MAP_OVERVIEW,
+                        REPLAY_BATTLE_PLAYBACK_V2)
                     .hasAnyRole("wotbtools-user", "wotbtools-admin")
 
                 // --- 管理员用户管理 (仅 wotbtools-admin) ---

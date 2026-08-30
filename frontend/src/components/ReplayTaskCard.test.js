@@ -5,11 +5,12 @@ import { mount } from '@vue/test-utils'
 import ReplayTaskCard from './ReplayTaskCard.vue'
 
 const i18n = vi.hoisted(() => ({
-  t: vi.fn((key) => key)
+  t: vi.fn((key) => key),
+  te: vi.fn(key => key.startsWith('api_errors.'))
 }))
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: i18n.t, locale: { value: 'en' } })
+  useI18n: () => ({ t: i18n.t, te: i18n.te, locale: { value: 'en' } })
 }))
 
 function makeJob(overrides = {}) {
@@ -83,12 +84,12 @@ describe('ReplayTaskCard (export kind)', () => {
   it('FAILED NO_VALID_REPLAYS shows clear message', () => {
     const wrapper = mountCard(makeJob({ status: 'FAILED', phase: null, errorCode: 'NO_VALID_REPLAYS' }))
     expect(wrapper.text()).toContain('replay.export_job.failed')
-    expect(wrapper.text()).toContain('replay.export_job.failed_no_valid')
+    expect(wrapper.text()).toContain('api_errors.NO_VALID_REPLAYS')
   })
 
   it('FAILED generic shows generic message', () => {
     const wrapper = mountCard(makeJob({ status: 'FAILED', phase: null, errorCode: 'EXPORT_JOB_FAILED' }))
-    expect(wrapper.text()).toContain('replay.export_job.failed_generic')
+    expect(wrapper.text()).toContain('api_errors.EXPORT_JOB_FAILED')
   })
 
   it('CANCELLED shows cancelled state', () => {
@@ -138,7 +139,7 @@ describe('ReplayTaskCard (processing kind)', () => {
   it('FAILED NO_VALID_REPLAYS shows processing-specific message', () => {
     const wrapper = mountCard(makeJob({ status: 'FAILED', phase: null, errorCode: 'NO_VALID_REPLAYS' }), '', 'processing')
     expect(wrapper.text()).toContain('replay.processing_job.failed')
-    expect(wrapper.text()).toContain('replay.processing_job.no_valid_replays')
+    expect(wrapper.text()).toContain('api_errors.NO_VALID_REPLAYS')
   })
 
   it('CANCELLED shows processing cancelled', () => {

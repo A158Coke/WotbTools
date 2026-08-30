@@ -12,6 +12,7 @@ import com.wotb.web.boost.enums.BoosterLevel;
 import com.wotb.web.boost.service.BoostOptionsMapper;
 import com.wotb.web.boost.service.BoostOptionsService;
 import com.wotb.web.exceptionhandler.GlobalExceptionHandler;
+import com.wotb.web.util.apierror.ApiErrorResponse;
 import com.wotb.web.replay.exception.ReplayBusyException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
@@ -112,16 +113,17 @@ class ApiContractTest {
     }
 
     @Test
-    void errorsShouldExposeOnlyStableCodeAndTimestamp() {
+    void errorsShouldExposeCanonicalSafeContract() {
         final GlobalExceptionHandler handler = new GlobalExceptionHandler();
-        final ResponseEntity<Map<String, Object>> response = handler.handleIllegalArgument(
+        final ResponseEntity<ApiErrorResponse> response = handler.handleIllegalArgument(
                 new IllegalArgumentException("中文异常不应进入 API")
         );
 
-        assertThat(response.getBody())
-                .containsEntry("error", "INVALID_ARGUMENT")
-                .containsKey("timestamp")
-                .doesNotContainKey("message");
+        assertThat(response.getBody().errorCode()).isEqualTo("INVALID_ARGUMENT");
+        assertThat(response.getBody().status()).isEqualTo(400);
+        assertThat(response.getBody().id()).isNotBlank();
+        assertThat(response.getBody().details()).isEmpty();
+        assertThat(response.getBody().timestamp()).isNotNull();
     }
 
     @Test
@@ -138,26 +140,25 @@ class ApiContractTest {
     @Test
     void averageGodUniquenessShouldReturnConflict() {
         final GlobalExceptionHandler handler = new GlobalExceptionHandler();
-        final ResponseEntity<Map<String, Object>> response = handler.handleIllegalArgument(
+        final ResponseEntity<ApiErrorResponse> response = handler.handleIllegalArgument(
                 new IllegalArgumentException("AVERAGE_GOD_ALREADY_EXISTS")
         );
 
         assertThat(response.getStatusCode().value()).isEqualTo(409);
-        assertThat(response.getBody()).containsEntry("error", "AVERAGE_GOD_ALREADY_EXISTS");
+        assertThat(response.getBody().errorCode()).isEqualTo("AVERAGE_GOD_ALREADY_EXISTS");
     }
 
     @Test
     void replayCapacityErrorShouldReturnServiceUnavailable() {
         final GlobalExceptionHandler handler = new GlobalExceptionHandler();
-        final ResponseEntity<Map<String, Object>> response = handler.handleReplayBusy(
+        final ResponseEntity<ApiErrorResponse> response = handler.handleReplayBusy(
                 new ReplayBusyException()
         );
 
         assertThat(response.getStatusCode().value()).isEqualTo(503);
-        assertThat(response.getBody())
-                .containsEntry("error", "REPLAY_BUSY")
-                .containsKey("timestamp")
-                .doesNotContainKey("message");
+        assertThat(response.getBody().errorCode()).isEqualTo("REPLAY_BUSY");
+        assertThat(response.getBody().retryable()).isTrue();
+        assertThat(response.getBody().timestamp()).isNotNull();
     }
 
     @Test

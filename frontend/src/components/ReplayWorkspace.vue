@@ -330,8 +330,8 @@ watch(() => workspace.replay.selectionRevision.value, () => {
   display: flex;
   gap: 4px;
   margin: 10px 0 14px;
-  background: rgba(13,18,22,.92);
-  border: 1px solid rgba(58,69,76,.5);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 9px;
   padding: 3px;
   overflow-x: auto;

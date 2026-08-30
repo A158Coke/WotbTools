@@ -16,6 +16,7 @@
 |---|---|
 | `architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt / 双 Call / Team Autopsy 时 |
 | `architecture/replay-pipeline.md` | 改回放重建 / decoder / 事件流时 |
+| `api/error-contract.md` | 新增/修改 API error code、Security 401/403、前端错误展示或 traceId 时 |
 
 ## Features（功能契约）
 

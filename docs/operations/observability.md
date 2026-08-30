@@ -302,7 +302,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 
 ## 7. 日志查询与 requestId 排查
 
-Backend 日志为**结构化 JSON**（`logging.structured.format.console: logstash`）。MDC 的 `requestId` 输出为**顶层 JSON 字段**（不是 `mdc.requestId` 子对象；由 Spring Boot 4 `LogstashStructuredLogFormatter` 的 `ContextPairs.flat` 保证，已由 `LogstashMdcTopLevelTest` 实证）。
+Backend 日志为**结构化 JSON**（`logging.structured.format.console: logstash`）。MDC 的 `requestId` 与同值别名 `traceId` 输出为顶层 JSON 字段（不是 `mdc.*` 子对象；由 Spring Boot 4 `LogstashStructuredLogFormatter` 的 `ContextPairs.flat` 保证）。canonical error response 的 `body.id` 是唯一错误 id（typed `ApiException` 返回异常实例 id，非 typed/security/legacy 返回请求关联 id，等于响应头 `X-Request-ID`）；5xx 日志同时携带 `traceId=<requestId>` 与 `id=<body.id>`。
 
 ### 查询 Backend ERROR
 
@@ -320,7 +320,7 @@ Grafana → Explore → 选 Loki：
 
 ### 按 requestId 排查单个请求
 
-1. 请求响应头 `X-Request-ID` 会带回一个 UUID（或沿用请求头传入值）。
+1. 请求响应头 `X-Request-ID` 会带回一个 UUID（或沿用并清洗请求头传入值）；错误 JSON 的 `id`（非 typed/security/legacy 错误）与其一致。用户界面的“诊断 ID”即该值；对 typed `ApiException`，`id` 为异常实例 id，后端日志 `id=<value>` 可检索到同一异常。
 2. Loki 查询：
 
 ```logql

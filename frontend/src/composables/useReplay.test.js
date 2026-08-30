@@ -7,7 +7,7 @@ import { useReplay, chooseInitialResultTab } from './useReplay.js'
 
 const i18n = vi.hoisted(() => ({
   t: vi.fn((key) => key),
-  te: vi.fn(() => true),
+  te: vi.fn(key => key.startsWith('api_errors.') || key.startsWith('api_codes.')),
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -1120,7 +1120,7 @@ describe('useReplay processing job flow', () => {
     await replay.startProcessingJob()
     await vi.advanceTimersByTimeAsync(0)
     expect(replay.processingJob.value.status).toBe('FAILED')
-    expect(replay.processingError.value).toContain('replay.processing_job.no_valid_replays')
+    expect(replay.processingError.value).toContain('api_errors.NO_VALID_REPLAYS')
     expect(replay.loading.value).toBe(false)
   })
 
@@ -1133,7 +1133,7 @@ describe('useReplay processing job flow', () => {
     await replay.startProcessingJob()
     await vi.advanceTimersByTimeAsync(0)
     expect(replay.processingJob.value.status).toBe('FAILED')
-    expect(replay.processingError.value).toContain('replay.processing_job.mixed_league_standard')
+    expect(replay.processingError.value).toContain('api_errors.MIXED_LEAGUE_AND_STANDARD_REPLAYS')
     expect(replay.loading.value).toBe(false)
   })
 
