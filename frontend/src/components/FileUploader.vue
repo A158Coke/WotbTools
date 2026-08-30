@@ -17,6 +17,8 @@ const props = defineProps({
   confirmRemove: Boolean,
   showWorkspaceActions: { type: Boolean, default: true },
   showPreview: { type: Boolean, default: true },
+  /** 解析完成后压缩上传区域：隐藏大卡/预览主按钮，只保留细条批次摘要 + 添加/清空。 */
+  compact: { type: Boolean, default: false },
   /** AI 复盘 / 战局重建 单文件语义时禁 folder（默认 true 兼容批处理）。 */
   allowFolder: { type: Boolean, default: true }
 })
@@ -183,7 +185,7 @@ function openReplayAction(mode) {
           </div>
     </div>
 
-    <div v-else class="filebar" :class="{ dragging }">
+    <div v-else-if="!compact" class="filebar" :class="{ dragging }">
       <div class="fb-summary">
         <svg class="ic fb-ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
         <div>
@@ -218,9 +220,25 @@ function openReplayAction(mode) {
       </div>
     </div>
 
+    <!-- 解析完成后压缩态（compact）：只保留细条批次摘要 + 添加/清空，不占首屏大卡。 -->
+    <div v-else class="compactbar" data-testid="file-uploader-compact">
+      <div class="fb-summary">
+        <svg class="ic fb-ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
+        <div>
+          <strong>{{ $t('upload.selected_title') }}</strong>
+          <span class="fb-count">{{ $t('upload.files_size', { count: files.length, size: formatReplaySize(totalBytes) }) }}</span>
+        </div>
+      </div>
+      <label v-if="allowFolder" class="filebtn ghost sm" :title="$t('upload.add_files_title')">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>{{ $t('upload.add') }}
+        <input type="file" :multiple="allowFolder" accept=".wotbreplay" data-testid="compact-add-files-input" @change="onPick" />
+      </label>
+      <button class="ghost sm" :disabled="loading" @click="clearFiles">{{ $t('upload.clear') }}</button>
+    </div>
+
     <!-- 解析预览：ReplayPage 基础操作，独立于 workspace shortcut 开关（showPreview）。
          showWorkspaceActions 只控制 AI 复盘 / 战局回放快捷入口，不得连带隐藏解析。 -->
-    <div v-if="files.length && showPreview" class="replay-primary-actions">
+    <div v-if="files.length && showPreview && !compact" class="replay-primary-actions">
       <div class="actionrow">
         <button class="lg" :disabled="loading" @click="$emit('preview')">
           {{ $t('action.preview') }}<svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
