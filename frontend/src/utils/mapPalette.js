@@ -10,28 +10,28 @@ export const LUMINANCE_THRESHOLD = 0.45
 
 /** 暗图默认色板（现状配色：亮色系 + 白系网格）。 */
 export const darkMapPalette = {
-  friendlyColors: ['#ff7a1a', '#ffb01a', '#e85d2a', '#ff8f4d', '#d96b0f', '#ffc266', '#b74e1e'],
-  enemyColors: ['#2f7dff', '#4aa3ff', '#1f5fd6', '#7ab8ff', '#144ba8', '#9ecbff', '#0e3a7d'],
-  heatFriendly: '#ff7a1a',
-  heatEnemy: '#2f7dff',
+  friendlyColors: ['#22c55e', '#4ade80', '#16a34a', '#86efac', '#15803d', '#6ee7b7', '#10b981'],
+  enemyColors: ['#ef4444', '#f87171', '#dc2626', '#fca5a5', '#b91c1c', '#fb7185', '#f43f5e'],
+  heatFriendly: '#22c55e',
+  heatEnemy: '#ef4444',
   gridStroke: 'rgba(255,255,255,.16)',
   regionStroke: 'rgba(255,255,255,.55)',
-  spawnFriendly: '#ffd166',
-  spawnEnemy: '#4aa3ff',
+  spawnFriendly: '#4ade80',
+  spawnEnemy: '#ef4444',
   routeOutline: 'rgba(0,0,0,.45)',
   deathMark: '#ff3b30'
 }
 
 /** 亮图色板：深饱和色系 + 深色网格，保证浅色底图上的可区分度。 */
 export const lightMapPalette = {
-  friendlyColors: ['#c2410c', '#b45309', '#9a3412', '#d97706', '#7c2d12', '#ea580c', '#92400e'],
-  enemyColors: ['#1d4ed8', '#1e40af', '#2563eb', '#3730a3', '#1e3a8a', '#3b82f6', '#172554'],
-  heatFriendly: '#c2410c',
-  heatEnemy: '#1d4ed8',
+  friendlyColors: ['#166534', '#15803d', '#14532d', '#16a34a', '#22c55e', '#15803d', '#052e16'],
+  enemyColors: ['#b91c1c', '#991b1b', '#dc2626', '#7f1d1d', '#ef4444', '#c81e1e', '#450a0a'],
+  heatFriendly: '#15803d',
+  heatEnemy: '#b91c1c',
   gridStroke: 'rgba(0,0,0,.22)',
   regionStroke: 'rgba(0,0,0,.55)',
-  spawnFriendly: '#b45309',
-  spawnEnemy: '#1e40af',
+  spawnFriendly: '#15803d',
+  spawnEnemy: '#b91c1c',
   routeOutline: 'rgba(255,255,255,.6)',
   deathMark: '#dc2626'
 }

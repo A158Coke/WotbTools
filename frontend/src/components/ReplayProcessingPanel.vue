@@ -58,7 +58,8 @@ function formatBytes(bytes) {
 </script>
 
 <template>
-  <div v-if="uiState" class="replay-processing-panel" role="status" data-testid="replay-processing-panel">
+  <div v-if="uiState" class="replay-processing-panel" role="status" data-testid="replay-processing-panel"
+       :class="{ 'rpp-compact': uiState === 'READY' }">
     <!-- 上传：真实 bytes / percent -->
     <template v-if="uiState === 'UPLOADING'">
       <div class="rpp-title">{{ $t('replay.processing_job.uploading') }}</div>
@@ -113,11 +114,13 @@ function formatBytes(bytes) {
 
     <!-- 终态 -->
     <template v-else-if="uiState === 'READY'">
-      <div class="rpp-title rpp-ok">✓ {{ $t('replay.processing_job.ready') }}</div>
-      <div class="rpp-sub">
-        {{ $t('replay.processing_job.valid_summary', {
-          v: job?.valid || 0, d: job?.duplicates || 0, f: job?.failures || 0
-        }) }}
+      <div class="rpp-ready-inline rpp-ok" data-testid="processing-ready">
+        ✓ {{ $t('replay.processing_job.ready') }}
+        <span class="rpp-ready-detail">
+          {{ $t('replay.processing_job.valid_summary', {
+            v: job?.valid || 0, d: job?.duplicates || 0, f: job?.failures || 0
+          }) }}
+        </span>
       </div>
     </template>
     <template v-else-if="uiState === 'FAILED'">
@@ -157,6 +160,17 @@ function formatBytes(bytes) {
 .rpp-ok { color: #7fd48a; }
 .rpp-err { color: #ff8f86; }
 .rpp-sub { color: #a3a6a0; font-size: .85rem; word-break: break-word; }
+/* READY 后 compact（Blocker #5）：不再长期显示巨大成功卡，改成 inline 状态。 */
+.rpp-compact {
+  margin: 8px 0;
+  padding: 6px 10px;
+  border-radius: 7px;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.rpp-ready-inline { display: inline-flex; align-items: baseline; gap: 8px; font-weight: 700; font-size: .88rem; }
+.rpp-ready-detail { color: #a3a6a0; font-weight: 400; font-size: .82rem; }
 .rpp-counts { color: #f0a42b; font-size: .85rem; }
 .rpp-sources { margin: 4px 0 0; padding-left: 18px; }
 .rpp-sources li { font-size: .82rem; }

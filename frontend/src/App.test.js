@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { nextTick, inject } from 'vue'
 import { setUiProfile } from './composables/useUiProfile.js'
 
 // 重视图 mock 为轻组件（本测试只验证 view 解析，不挂载重型页面）。
@@ -14,7 +14,15 @@ vi.mock('./components/ReplayWorkspace.vue', () => ({
   default: {
     name: 'ReplayWorkspaceMock',
     props: ['initialCapability'],
-    template: '<div :data-cap="initialCapability" data-test="view-replay" />',
+    setup() {
+      const navigate = inject('navigate')
+      return { navigate }
+    },
+    template: `<div :data-cap="initialCapability" data-test="view-replay">
+      <button data-testid="ws-tab" data-cap="data" @click="navigate && navigate('replay')">data</button>
+      <button data-testid="ws-tab" data-cap="ai" @click="navigate && navigate('ai-review')">ai</button>
+      <button data-testid="ws-tab" data-cap="playback" @click="navigate && navigate('battle-playback')">playback</button>
+    </div>`,
   },
 }))
 vi.mock('./components/HomePage.vue', () => ({ default: { name: 'HomePageMock', template: '<div data-test="view-home" />' } }))
@@ -132,10 +140,10 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     let ws = wrapper.find('[data-test="view-replay"]')
     expect(ws.attributes('data-cap')).toBe('data')
 
-    // Replay → AI（pushState，生成历史条目）
-    const aiButton = wrapper.find('nav').findAll('button').find(b => b.text() === 'home.aiReview')
-    expect(aiButton).toBeTruthy()
-    await aiButton.trigger('click')
+    // Replay → AI（经 Workspace 内部能力 tab 切换，pushState 生成历史条目；顶栏为单一入口）
+    const aiTab = wrapper.find('[data-testid="ws-tab"][data-cap="ai"]')
+    expect(aiTab).toBeTruthy()
+    await aiTab.trigger('click')
     await flushPromises()
     ws = wrapper.find('[data-test="view-replay"]')
     expect(ws.attributes('data-cap')).toBe('ai')

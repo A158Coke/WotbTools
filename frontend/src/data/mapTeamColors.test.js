@@ -1,39 +1,18 @@
-// PR3 §19 —— friendly tone 显式配置契约（新增地图未配置 → CI FAIL）。
-// 禁止默认颜色 silent fallback：mapImages 每个 key 必须在 MAP_FRIENDLY_TONE 中有
-// green|blue 显式配置；tone 值域合法；team token 集完整（green/blue/red × text/outline/glow）。
+// 地图阵营语义色：唯一规则 ALLY=GREEN / ENEMY=RED；旧 friendly per-map green|blue、amber/cyan 一律 obsolete。
 import { describe, expect, it } from 'vitest'
-import { mapImages } from './mapImages'
-import { MAP_FRIENDLY_TONE, TEAM_TOKENS, friendlyToneForMap } from './mapTeamColors'
+import { TEAM_TOKENS, ReplayMapFactionStyle, teamCssVars } from './mapTeamColors'
 
-describe('PR3 §19 map friendly tone config（每图显式配置，无默认回退）', () => {
-  it('mapImages 每个地图 key 都有显式 friendly tone 配置（新增地图无配置 → FAIL）', () => {
-    const mapKeys = Object.keys(mapImages)
-    expect(mapKeys.length).toBeGreaterThanOrEqual(20)
-    for (const key of mapKeys) {
-      expect(MAP_FRIENDLY_TONE[key], '地图 ' + key + ' 缺少 friendly tone 配置').toBeDefined()
-    }
+describe('地图阵营语义色（ALLY=GREEN，ENEMY=RED）', () => {
+  it('ReplayMapFactionStyle：ALLY=green 系、ENEMY=red 系', () => {
+    const allyRgb = hexToRgb(ReplayMapFactionStyle.ALLY.text)
+    const enemyRgb = hexToRgb(ReplayMapFactionStyle.ENEMY.text)
+    expect(allyRgb.g).toBeGreaterThan(allyRgb.r)
+    expect(enemyRgb.r).toBeGreaterThan(enemyRgb.g)
   })
 
-  it('tone 值域只允许 green | blue', () => {
-    for (const [key, tone] of Object.entries(MAP_FRIENDLY_TONE)) {
-      expect(['green', 'blue'], key + ' tone=' + tone).toContain(tone)
-    }
-  })
-
-  it('配置表没有多余 key（与 mapImages 严格一致）', () => {
-    expect(Object.keys(MAP_FRIENDLY_TONE).sort()).toEqual(Object.keys(mapImages).sort())
-  })
-
-  it('friendlyToneForMap 恒有返回值（green|blue）', () => {
-    for (const key of Object.keys(mapImages)) {
-      expect(['green', 'blue']).toContain(friendlyToneForMap(key))
-    }
-  })
-})
-
-describe('PR3 §20 team tokens（semantic token 完整）', () => {
-  it('green/blue/red 三组 × text/outline/glow 齐全', () => {
-    for (const tone of ['green', 'blue', 'red']) {
+  it('TEAM_TOKENS 只保留 green/red（blue 已删除）', () => {
+    expect(Object.keys(TEAM_TOKENS).sort()).toEqual(['green', 'red'])
+    for (const tone of ['green', 'red']) {
       const t = TEAM_TOKENS[tone]
       expect(t, tone).toBeDefined()
       expect(typeof t.text).toBe('string')
@@ -42,4 +21,21 @@ describe('PR3 §20 team tokens（semantic token 完整）', () => {
       expect(t.glow).toContain('rgba(')
     }
   })
+
+  it('teamCssVars 恒定 friendly=green / enemy=red（不随地图变化）', () => {
+    const v = teamCssVars('skit')
+    expect(v['--pb-team-text']).toBe(TEAM_TOKENS.green.text)
+    expect(v['--pb-team-outline']).toBe(TEAM_TOKENS.green.outline)
+    expect(v['--pb-enemy-text']).toBe(TEAM_TOKENS.red.text)
+    expect(v['--pb-enemy-outline']).toBe(TEAM_TOKENS.red.outline)
+  })
 })
+
+function hexToRgb(hex) {
+  const h = hex.replace('#', '')
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  }
+}

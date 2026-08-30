@@ -1,7 +1,8 @@
 <script setup>
 import { computed, inject, nextTick, onMounted, provide, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useReplay } from '../composables/useReplay.js'
+import { displayName } from '../utils/helpers.js'
+import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
 import ReplayPage from './ReplayPage.vue'
@@ -29,14 +30,15 @@ const navigate = inject('navigate', null)
  * Workspace 持有唯一一份 replay selection / Processing Job，并向下 provide。
  * data / ai / playback 三个能力共享这份状态——选择一次、只建一次 Job。
  */
-const replay = useReplay()
-provide('replay', replay)
+const workspace = useReplayWorkspace(props.initialCapability || 'data')
+provide('replay', workspace.replay)
+provide('replayWorkspace', workspace)
 
 const {
   files, loading, error, resp, updateFiles,
   processingJob, processingError, uploadState,
   startProcessingJob, cancelProcessing, dismissProcessingJob,
-} = replay
+} = workspace.replay
 
 /**
  * Android 外部 replay 完整自动解析契约：
@@ -46,7 +48,7 @@ const {
  */
 async function importPendingFile(file) {
   // 强制默认 data/replay capability，绝不误入 AI。
-  activeCapability.value = 'data'
+  workspace.setWorkspaceTab('data')
   updateFiles([file])
   // 自动解析一次：startProcessingJob 内部 single-flight + 现有 Processing error/retry，不无限自动重试。
   await startProcessingJob(replayColsInit || undefined)
@@ -79,31 +81,44 @@ watch(() => processingJob.value, (job) => {
   else capabilityStates.value.base = 'idle'
 })
 
-const activeCapability = ref(props.initialCapability || 'data')
+const activeCapability = workspace.activeWorkspaceTab
 const batchOpen = ref(false)
 let loginAttempted = false
 
-/** active replay：单文件 = r0；多文件 = 当前数据 tab 显示的 battle（activeTab==='b<i>'）。 */
-const activeSourceId = computed(() => {
-  if (files.value.length === 1) return 'r0'
-  const tab = replay.activeTab?.value
-  if (typeof tab === 'string' && /^b\d+$/.test(tab)) return `r${parseInt(tab.replace('b', ''), 10)}`
-  return null
+/** 当前选中单场显示名（header「当前回放：xxx #N」。Blocker #4）。 */
+const currentBattleName = computed(() => {
+  const f = workspace.currentTargetFile.value
+  return f ? displayName(f) : ''
 })
 
-const targetActiveFile = computed(() => {
-  if (files.value.length === 1) return files.value[0] ?? null
-  const idx = activeSourceId.value ? parseInt(activeSourceId.value.replace('r', ''), 10) : -1
-  if (idx >= 0 && idx < files.value.length) return files.value[idx] ?? null
-  return null
+/** 模板直接消费的 workspace 权威 ref（顶层绑定，模板自动解包 ref）。 */
+const currentBattleId = workspace.currentBattleId
+const currentBattleIndex = workspace.currentBattleIndex
+const parsedBattles = workspace.parsedBattles
+function selectBattle(sourceId) {
+  workspace.selectBattle(sourceId)
+  batchOpen.value = false
+}
+
+/**
+ * 有效 battle 选项（selector 只列 parsed battles——failed / duplicate 的 source 不入列；
+ * label 由 sourceId 'r<N>' -> files[N] 映射，与 source identity 严格对齐）。
+ */
+const battleOptions = computed(() => {
+  const fileArr = workspace.replay.files.value
+  return parsedBattles.value.map(b => {
+    const m = /^r(\d+)$/.exec(b?.sourceId || '')
+    const f = m ? fileArr[parseInt(m[1], 10)] : null
+    return { sourceId: b?.sourceId ?? '', label: f ? displayName(f) : (b?.sourceId || '') }
+  })
 })
 
 // AI 与 Playback 各自持有独立 Dataset 状态，互不污染（计划 §12 错误域拆分）。
-const aiReplay = useCapabilityReplay(replay)
-const playbackReplay = useCapabilityReplay(replay)
+const aiReplay = useCapabilityReplay(workspace.replay)
+const playbackReplay = useCapabilityReplay(workspace.replay)
 
 /** 切到 ai / playback 且目标文件确定时准备 Dataset（绝不重传 / 重 parse）。 */
-watch([activeCapability, targetActiveFile], ([cap, file]) => {
+watch([activeCapability, workspace.currentTargetFile], ([cap, file]) => {
   if (cap !== 'ai' && cap !== 'playback') return
   if (files.value.length > 1 && !file) {
     const helper = cap === 'ai' ? aiReplay : playbackReplay
@@ -124,7 +139,7 @@ async function setCapability(key) {
   if (key === activeCapability.value) return
   const ok = await awaitAuthGate(key)
   if (!ok) return
-  activeCapability.value = key
+  workspace.setWorkspaceTab(key)
   if (navigate) navigate(VIEW_BY_CAPABILITY[key] || 'replay', null)
 }
 
@@ -153,11 +168,11 @@ async function onPreview() {
 }
 
 function onFileRemoveRequest(f) {
-  replay.askRemoveFile(f)
+  workspace.replay.askRemoveFile(f)
 }
 
 function confirmRemove() {
-  replay.confirmRemove(replayColsInit || undefined)
+  workspace.replay.confirmRemove(replayColsInit || undefined)
 }
 
 function clearSelection() {
@@ -177,11 +192,11 @@ onMounted(() => {
 
 // 外部导航（URL 直访 / battle action）同步能力 tab。
 watch(() => props.initialCapability, (val) => {
-  if (val) activeCapability.value = val
+  if (val) workspace.setWorkspaceTab(val)
 }, { immediate: true })
 
 // selection 变化（上传/替换/清空/删 battle）→ 两个 capability 的 Dataset 引用失效，防止旧 source 被复用。
-watch(() => replay.selectionRevision.value, () => {
+watch(() => workspace.replay.selectionRevision.value, () => {
   aiReplay.reset()
   playbackReplay.reset()
 })
@@ -195,24 +210,22 @@ watch(() => replay.selectionRevision.value, () => {
         <h1>{{ $t('workspace.title') }}</h1>
       </div>
       <div class="ws-replay-info" v-if="files.length">
-        <span v-if="files.length === 1" class="ws-replay-name">{{ files[0].name }}</span>
-        <template v-else>
-          <button class="ghost sm ws-selector" data-testid="ws-batch-selector" @click="batchOpen = !batchOpen">
-            {{ $t('workspace.batch_count', { count: files.length }) }} ▾
+        <span class="ws-batch-count">{{ $t('workspace.batch_count', { count: files.length }) }}</span>
+        <button v-if="currentBattleIndex >= 0" class="ghost sm ws-selector" data-testid="ws-batch-selector" @click="batchOpen = !batchOpen">
+          {{ $t('workspace.current_battle', { name: currentBattleName, idx: currentBattleIndex + 1 }) }} ▾
+        </button>
+        <div v-if="batchOpen && battleOptions.length" class="ws-batch-sheet" data-testid="ws-batch-sheet">
+          <button
+            v-for="opt in battleOptions"
+            :key="opt.sourceId"
+            type="button"
+            class="ws-batch-item"
+            :class="{ active: currentBattleId === opt.sourceId }"
+            @click="selectBattle(opt.sourceId)"
+          >
+            {{ opt.label }}
           </button>
-          <div v-if="batchOpen" class="ws-batch-sheet" data-testid="ws-batch-sheet">
-            <button
-              v-for="(f, i) in files"
-              :key="i"
-              type="button"
-              class="ws-batch-item"
-              :class="{ active: activeSourceId === 'r' + i }"
-              @click="replay.activeTab = 'b' + i; batchOpen = false"
-            >
-              {{ f.name }}
-            </button>
-          </div>
-        </template>
+        </div>
       </div>
       <div class="ws-actions">
         <span v-if="files.length" class="ws-capability-flags">
@@ -245,7 +258,7 @@ watch(() => replay.selectionRevision.value, () => {
       :files="files"
       :loading="loading"
       :confirm-remove="!!resp"
-      :show-workspace-actions="false"
+      :compact="!!resp"
       @update:files="updateFiles"
       @preview="onPreview"
       @remove-request="onFileRemoveRequest"
@@ -267,8 +280,6 @@ watch(() => replay.selectionRevision.value, () => {
         data-testid="ws-data"
         :embedded="true"
         @register-cols-init="registerReplayColsInit"
-        @open-ai="setCapability('ai')"
-        @open-playback="setCapability('playback')"
       />
       <div v-show="activeCapability === 'ai'" class="capability-pane" data-testid="ws-ai">
         <AiReviewPanel
@@ -291,9 +302,9 @@ watch(() => replay.selectionRevision.value, () => {
       </div>
     </div>
 
-    <ReplayTaskCard v-if="replay.exportJob.value" :job="replay.exportJob.value" :error="replay.exportError.value"
-      kind="export" @cancel="replay.cancelExportJob" @download="replay.downloadExportResult" @dismiss="replay.dismissExportJob" />
-    <RemoveConfirmModal :pending="replay.pendingRemove.value" @confirm="confirmRemove" @cancel="replay.cancelRemove" />
+    <ReplayTaskCard v-if="workspace.replay.exportJob.value" :job="workspace.replay.exportJob.value" :error="workspace.replay.exportError.value"
+      kind="export" @cancel="workspace.replay.cancelExportJob" @download="workspace.replay.downloadExportResult" @dismiss="workspace.replay.dismissExportJob" />
+    <RemoveConfirmModal :pending="workspace.replay.pendingRemove.value" @confirm="confirmRemove" @cancel="workspace.replay.cancelRemove" />
   </div>
 </template>
 
@@ -308,7 +319,6 @@ watch(() => replay.selectionRevision.value, () => {
 }
 .ws-title h1 { margin: 2px 0 0; font-size: 1.5rem; }
 .ws-replay-info { display: inline-flex; align-items: center; gap: 8px; min-width: 0; position: relative; }
-.ws-replay-name { color: var(--text-label); font-size: .85rem; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-selector { min-height: 30px; }
 .ws-batch-sheet {
   position: absolute;
@@ -366,7 +376,6 @@ watch(() => replay.selectionRevision.value, () => {
 @media (max-width: 768px) {
   .workspace-header { gap: 8px; }
   .ws-actions { margin-left: 0; width: 100%; justify-content: space-between; }
-  .ws-replay-name { max-width: 180px; }
   /* 手机端 batch selector 以 bottom-sheet 呈现：贴底、全宽、从上滑入（计划 §16.2）。 */
   .ws-replay-info { width: 100%; }
   .ws-selector { width: 100%; justify-content: space-between; }
