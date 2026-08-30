@@ -66,7 +66,7 @@
 
 ## 技能库（.agents/skills/，按需显式加载）
 
-开发前：grill-me · plan-designer · plan-executer · column-sync · wotb-sync
+开发前：grill-me · plan-designer · plan-executer · frontend-architecture · column-sync · wotb-sync
 修复：prompt-repair-executor（基于现成 repair prompt 增量修复，Delta Discovery）
 开发后：review-fix · review-with-docs · code-smell · fallow
 收尾：finish-task；Keycloak 版本升级：keycloak-upgrade
