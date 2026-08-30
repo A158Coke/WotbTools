@@ -91,6 +91,14 @@ const currentBattleName = computed(() => {
   return f ? displayName(f) : ''
 })
 
+/** 模板直接消费的 workspace 权威 ref（顶层绑定，模板自动解包 ref）。 */
+const currentBattleId = workspace.currentBattleId
+const currentBattleIndex = workspace.currentBattleIndex
+function selectBattle(sourceId) {
+  workspace.selectBattle(sourceId)
+  batchOpen.value = false
+}
+
 // AI 与 Playback 各自持有独立 Dataset 状态，互不污染（计划 §12 错误域拆分）。
 const aiReplay = useCapabilityReplay(workspace.replay)
 const playbackReplay = useCapabilityReplay(workspace.replay)
@@ -188,25 +196,22 @@ watch(() => workspace.replay.selectionRevision.value, () => {
         <h1>{{ $t('workspace.title') }}</h1>
       </div>
       <div class="ws-replay-info" v-if="files.length">
-        <span v-if="files.length === 1" class="ws-replay-name">{{ files[0].name }}</span>
-        <template v-else>
-          <span class="ws-batch-count">{{ $t('workspace.batch_count', { count: files.length }) }}</span>
-          <button class="ghost sm ws-selector" data-testid="ws-batch-selector" @click="batchOpen = !batchOpen">
-            {{ $t('workspace.current_battle', { name: currentBattleName, idx: workspace.currentBattleIndex + 1 }) }} ▾
+        <span class="ws-batch-count">{{ $t('workspace.batch_count', { count: files.length }) }}</span>
+        <button v-if="currentBattleIndex >= 0" class="ghost sm ws-selector" data-testid="ws-batch-selector" @click="batchOpen = !batchOpen">
+          {{ $t('workspace.current_battle', { name: currentBattleName, idx: currentBattleIndex + 1 }) }} ▾
+        </button>
+        <div v-if="batchOpen && currentBattleIndex >= 0" class="ws-batch-sheet" data-testid="ws-batch-sheet">
+          <button
+            v-for="(f, i) in files"
+            :key="i"
+            type="button"
+            class="ws-batch-item"
+            :class="{ active: currentBattleId === 'r' + i }"
+            @click="selectBattle('r' + i)"
+          >
+            {{ f.name }}
           </button>
-          <div v-if="batchOpen" class="ws-batch-sheet" data-testid="ws-batch-sheet">
-            <button
-              v-for="(f, i) in files"
-              :key="i"
-              type="button"
-              class="ws-batch-item"
-              :class="{ active: workspace.currentBattleId === 'r' + i }"
-              @click="workspace.selectBattle('r' + i); batchOpen = false"
-            >
-              {{ f.name }}
-            </button>
-          </div>
-        </template>
+        </div>
       </div>
       <div class="ws-actions">
         <span v-if="files.length" class="ws-capability-flags">
@@ -261,8 +266,6 @@ watch(() => workspace.replay.selectionRevision.value, () => {
         data-testid="ws-data"
         :embedded="true"
         @register-cols-init="registerReplayColsInit"
-        @open-ai="setCapability('ai')"
-        @open-playback="setCapability('playback')"
       />
       <div v-show="activeCapability === 'ai'" class="capability-pane" data-testid="ws-ai">
         <AiReviewPanel
@@ -302,7 +305,6 @@ watch(() => workspace.replay.selectionRevision.value, () => {
 }
 .ws-title h1 { margin: 2px 0 0; font-size: 1.5rem; }
 .ws-replay-info { display: inline-flex; align-items: center; gap: 8px; min-width: 0; position: relative; }
-.ws-replay-name { color: var(--text-label); font-size: .85rem; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-selector { min-height: 30px; }
 .ws-batch-sheet {
   position: absolute;
@@ -360,7 +362,6 @@ watch(() => workspace.replay.selectionRevision.value, () => {
 @media (max-width: 768px) {
   .workspace-header { gap: 8px; }
   .ws-actions { margin-left: 0; width: 100%; justify-content: space-between; }
-  .ws-replay-name { max-width: 180px; }
   /* 手机端 batch selector 以 bottom-sheet 呈现：贴底、全宽、从上滑入（计划 §16.2）。 */
   .ws-replay-info { width: 100%; }
   .ws-selector { width: 100%; justify-content: space-between; }
