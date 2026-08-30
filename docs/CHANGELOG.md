@@ -8,6 +8,29 @@
 - **Replay Workspace 统一重构（前端）**：把「回放解析 / AI 复盘 / 战局回放」三个彼此隔离的能力页收敛为单一 `ReplayWorkspace`——三个 URL（`?view=replay` / `ai-review` / `battle-playback`）共用同一个组件，仅通过 `initialCapability`（data / ai / playback）区分默认能力 tab，并由 pushState + popstate 形成可 Back/Forward 的 history（返回时 selection / Processing Job 不丢，只恢复 activeCapability）。三个 capability tab 始终可见（不因能力不可用而消失）；选择一次 replay、只创建一个 Processing Job，data / AI / Playback 共享同一 selection 与 `processingJobId + sourceId` Dataset 引用（绝不重传 / 重 parse）。Workspace 持有唯一 `useReplay` 并 `provide('replay')`，其内单一 FileUploader + Processing 面板；`ReplayPage` 作为 data 结果 tab 嵌入（`embedded` prop，隐藏自己的上传器/Processing），并向 Workspace 注册列初始化回调。AI 与 Playback 各持独立 `useCapabilityReplay`（Dataset 状态互不污染），Batch 汇总是 `activeReplay` 显式选择（手机端 batch selector 以 bottom-sheet 呈现）。登录门禁：**整个 Replay Workspace 全部要求登录**——未登录进入任意 replay capability（data / ai / playback）自动跳 Keycloak/OIDC，登录成功后按 redirectUri 回原 capability，不再有「data 匿名解析」；`awaitAuthGate` 先等 Keycloak init 完成再判断 authenticated（auth init race safe，SSO/session 用户不被无谓 `kc.login()` 打断），确认未登录时仅 login 一次。AI 与 Playback 完全业务解耦（仅共享 replay/source/processing dataset，不做 `AI@seek → Playback` 的时间点联动 / 跨 capability 状态 handoff）。Android 外部 replay 改为**完整自动解析**：Native `shouldInterceptRequest` 以 app-owned content:// 安全 URI serve 缓存文件字节 + Web `fetch(pending.uri)` 构造 `File` → 替换 selection → 自动 `startProcessingJob` exactly once（READY 后 data tab 展示结果，绝不自动启动 AI，失败走现有 Processing error/retry）；不再依赖 synthetic input.click()；`consumePendingWhenReady` 只在登录态就绪后消费，`getPendingReplay()==null` 不清零 eligible（warm resume 后 Native 新增 pending 仍可消费，exactly-once 针对单个 pending，不是 composable lifetime），Native `pendingReplayEligible` 保证 Native 端 exactly-once，`window.wotbtoolsOnReplay` 读实际登录态、不以 authenticated=true 默认绕过。删除旧 `ReplayCapabilityPage / AiReviewPage / BattlePlaybackPage` 路由组件及 `replayHandoff` 内存交接（原三套独立页面 / 各自上传器一并下线）。验证：frontend `npm test`（1289 green）+ `npm run build` 通过。
 
 - **Android Launcher 正式品牌图标（前端资产）**：`ic_launcher_foreground` 由「下载箭头 placeholder」替换为 WotBTools 品牌 mark（tank + 柱状图），生成 adaptive-icon foreground（透明背景、content 落在 66% safe zone）与 legacy `ic_launcher` / `ic_launcher_round` 全密度 PNG（品牌深色背景 `#0D1117`，圆角裁切），不再出现白底方块。App 内（WebView）隐藏「下载 Android 版」CTA（App.vue 顶栏 / 用户菜单、HomePage hero / quick-panel，复用 `isAndroidApp()`）。
+- **Android Release 一键发布入口（CI/CD）**：`android-release.yml` 新增
+  `workflow_dispatch`（输入 `X.Y.Z`，推荐入口），保留 `android-v*` tag push（兼容入口），
+  两条入口合并为同一套 `Resolve release metadata / fail-fast guards / 发布协议`。新增
+  fail-closed + 幂等 guard：版本格式（每段 `0` 或非零开头整数，拒绝 `1.0.02`/`01.0.2`；
+  `minor`/`patch` 0..999 且 versionCode 在 `1..2_100_000_000`）、发布源固定 `main` HEAD、
+  preflight 幂等分类（生产最新 > 本次 → 回滚拒绝；== 且 metadata 一致 → 进入既有发布核验
+  —— apkUrl 可达、APK 非空、实际 SHA == version.json.sha256、dispatch 下 tag 指向
+  expected commit，全部一致才 already-published no-op 成功，缺失/不匹配/冲突一律 fail-closed；
+  == 但不一致 → 拒绝；< 本次 → 发布）、`minSupportedVersionCode` 校验、
+  `git ls-remote` 真实 ref 的 release tag 幂等（不存在 → 创建；指向本次 commit → 复用；
+  指向其它 commit → 拒绝 repoint）、生产同版本 APK 幂等（不存在 → 上传；SHA 相同 → 复用；
+  SHA 不同 → immutable 冲突拒绝）、`apksigner --print-certs` 签名证书 SHA-256 与
+  `ANDROID_SIGNING_CERT_SHA256` Variable 固定比对、生产 APK HTTP 200 + 非空 + SHA 比对、
+  生产 `version.json` jq 内容比对、`$GITHUB_STEP_SUMMARY` 汇总。
+  权限 `contents: read` → `contents: write`（最小必要）。
+  新增 `scripts/android-release/`（`resolve-version.sh` / `check-release-guards.sh` /
+  `test-release.sh`，纯逻辑无 secret），并在 `ci.yml` 加 `android-release-helpers` job
+  （`bash -n` + 版本/守卫单测，不跑真实 release、不用 production signing secret）。
+  `version.json` schema、nginx 路由、compose bind-mount、Gradle 签名契约、发布目录
+  `/opt/wotb/android-release`、`version.json` LAST 发布顺序均不变。验证：workflow YAML
+  解析、helper 单测（合法/非法版本、versionCode 公式、monotonic/minSupported/tag/APK 守卫、
+  bash -n）全部通过；真实 production signing/publish 由 merge 后首次 release 权威验证。
+
 - **Android 在线纯客户端（Thin Client）初版**：新增 `android/` 最小 Kotlin 壳（Remote Web Architecture，WebView 加载 `https://wotbtools.com`）、网络/版本门禁（fail-closed）、APK 强制/可选更新、Replay 意图入口（ACTION_SEND/ACTION_VIEW → content URI → 现有 Web upload transport）、极薄 Native Bridge（能力探测 + pending replay 交接）、FileProvider 与未知来源授权。发布走 `.github/workflows/android-release.yml`（tag `android-v*`），APK + `version.json` 静态托管于 `/download/android/`（nginx location + compose bind-mount `/opt/wotb/android-release`）。前端新增 `?view=android` 下载页与「下载 Android 版」入口。Web 端只做 Web 之外的系统能力；回放业务展示（AI Review / 战局重建 / capability 状态）沿用现有 Vue，不在 Native 重写（待 V2 contract 定稿后共用同一套 capability/domain API）。验证：frontend `npm test` + `npm run build` 通过；Android 编译/签名/真机验证在 CI tag 与真机侧进行。
 
 - **Battle Playback V2 — Canonical Replay Truth Convergence（后端 decoder → canonical facts → BattleTimeline → V2 稀疏投影）**：把战局重建从「decoder events → Playback/AI 各自重新解释 → frontend 再推理」收敛为「版本门禁解码 → canonical facts/lifecycles → BattleTimeline → thin projection」。本轮在已有 PR162 canonical Timeline 基础上新增：
