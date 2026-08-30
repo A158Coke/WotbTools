@@ -405,11 +405,11 @@ onBeforeUnmount(() => {
 }
 
 .panel {
-  background: rgba(13, 18, 22, .94);
-  border: 1px solid #303a40;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 16px 20px;
-  color: #d8d5cd;
+  color: var(--text);
 }
 .panel h2 { margin: 0 0 12px; font-size: 1rem; }
 

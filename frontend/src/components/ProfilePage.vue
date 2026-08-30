@@ -710,7 +710,7 @@ function notificationMessage(notification) {
 .edit-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .edit-form .edit-row { margin-bottom: 10px; }
 .edit-form label { display: block; font-size: .8rem; color: #a3a6a0; margin-bottom: 3px; }
-.edit-input { padding: 6px 10px; border: 1px solid #39444a; border-radius: 6px; background: #0f1518; color: #e4e1d9; font-size: .88rem; width: 200px; font-family: inherit; }
+.edit-input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); font-size: .88rem; width: 200px; font-family: inherit; }
 .error { color: #ff8f86; font-size: .82rem; }
 .text-muted { font-size: .8rem; color: #9aa09c; line-height: 1.5; }
 .security-info { display: flex; flex-direction: column; gap: 8px; }
@@ -733,9 +733,9 @@ function notificationMessage(notification) {
 .btn-ghost:disabled { cursor: wait; opacity: .65; background: #1c262b; }
 .records-table-wrap { overflow-x: auto; }
 .records-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-.records-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid #2b3439; color: #aaa79f; font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
-.records-table td { padding: 10px 12px; border-bottom: 1px solid #263136; color: var(--showcase-tactical-text); }
-.records-table tbody tr:hover { background: #172025; }
+.records-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); color: var(--text-sub); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
+.records-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-light); color: var(--text); }
+.records-table tbody tr:hover { background: var(--bg-list-hover); }
 .rec-dmg { text-align: right !important; font-variant-numeric: tabular-nums; font-weight: 600; width: 90px; }
 .rec-tank { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rec-map { color: #9aa09c; }
