@@ -71,7 +71,6 @@ const mapPlaybackV2 = ref(null)
 const playbackV2State = ref('LOADING')
 const playbackV2Error = ref('')
 const playbackV2UnavailableReason = ref('')
-const playbackV2Capability = ref(null)
 /** 面板内视图：默认 BattlePlayback 为主；地图鸟瞰为 secondary。 */
 const panelView = ref('playback')
 const mapLoading = ref(false)
@@ -181,7 +180,6 @@ async function loadPlaybackV2(signal) {
     const ds = await r.json()
     if (seq !== playbackV2Seq) return
     mapPlaybackV2.value = ds
-    playbackV2Capability.value = ds?.capability || null
     playbackV2State.value = ds?.capability === 'PARTIAL' ? 'PARTIAL' : 'FULL'
     // eslint-disable-next-line no-console
     console.info('[playback-v2] ok', {
@@ -216,6 +214,7 @@ function retryPlaybackV2() {
 /** 文件变化（新增/移除/清空）或 Dataset identity 变化时使旧请求失效并取消，重置地图区块。 */
 function resetMap() {
   mapRequestSeq++
+  playbackV2Seq++ // 使在途 V2 请求失效（换文件/清空/卸载时旧响应不得写回状态）。
   if (mapAbortController) {
     mapAbortController.abort()
     mapAbortController = null
@@ -225,7 +224,6 @@ function resetMap() {
   playbackV2State.value = 'LOADING'
   playbackV2Error.value = ''
   playbackV2UnavailableReason.value = ''
-  playbackV2Capability.value = null
   panelView.value = 'playback'
   mapLoading.value = false
   mapLoaded.value = false
