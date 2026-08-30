@@ -8,9 +8,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.mock.web.MockServletContext;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -84,7 +84,7 @@ class SecurityConfigTest {
     @Test
     void invalidBearerTokenReturnsCanonicalUnauthorizedBody() throws Exception {
         final JwtDecoder decoder = context.getBean(JwtDecoder.class);
-        when(decoder.decode("invalid-token")).thenThrow(new JwtException("invalid token"));
+        when(decoder.decode("invalid-token")).thenThrow(new BadJwtException("invalid token"));
 
         mvc.perform(get("/api/users/probe")
                         .header("Authorization", "Bearer invalid-token"))
