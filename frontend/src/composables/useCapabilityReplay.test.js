@@ -140,4 +140,53 @@ describe('useCapabilityReplay', () => {
     expect(cap.datasetRef.value).toEqual({ processingJobId: 'p2', sourceId: 'r1' })
     expect(cap.datasetRef.value.processingJobId).not.toBe('pStale')
   })
+
+  it('async ownership：A stale resolve/reject 不得改写 B 的在途状态、不得重发 B；B resolve 后 datasetRef 正确', async () => {
+    let resolveA
+    let rejectA
+    let resolveB
+    const replay = {
+      requestDirectAction: vi.fn()
+        .mockImplementationOnce(() => new Promise((res, rej) => { resolveA = res; rejectA = rej }))
+        .mockImplementationOnce(() => new Promise((res) => { resolveB = res })),
+    }
+    const cap = useCapabilityReplay(replay)
+    const a = makeFile('a.wotbreplay')
+    const b = makeFile('b.wotbreplay')
+    cap.reconcile({ file: a, selectionRevision: 1 })   // A 挂起
+    cap.reconcile({ file: b, selectionRevision: 2 })   // identity 切 B，B 挂起
+    expect(replay.requestDirectAction).toHaveBeenCalledTimes(2)
+
+    // A stale resolve（属于旧 generation）
+    resolveA({ processingJobId: 'pA', sourceId: 'r0' })
+    await nextTick()
+    // 再 reconcile B：不得再次发 B request（in-flight 状态须保持 B 在途）
+    cap.reconcile({ file: b, selectionRevision: 2 })
+    await nextTick()
+    expect(replay.requestDirectAction).toHaveBeenCalledTimes(2)
+
+    // B 最终 resolve 后 datasetRef 正确
+    resolveB({ processingJobId: 'pB', sourceId: 'r1' })
+    await nextTick()
+    expect(cap.datasetRef.value).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
+
+    // 再来一条：A stale reject 同样不改写、不重发
+    const replay2 = {
+      requestDirectAction: vi.fn()
+        .mockImplementationOnce(() => new Promise((res, rej) => { resolveA = res; rejectA = rej }))
+        .mockImplementationOnce(() => new Promise((res) => { resolveB = res })),
+    }
+    const cap2 = useCapabilityReplay(replay2)
+    cap2.reconcile({ file: a, selectionRevision: 1 })
+    cap2.reconcile({ file: b, selectionRevision: 2 })
+    expect(replay2.requestDirectAction).toHaveBeenCalledTimes(2)
+    rejectA(new Error('stale'))
+    await nextTick()
+    cap2.reconcile({ file: b, selectionRevision: 2 })
+    await nextTick()
+    expect(replay2.requestDirectAction).toHaveBeenCalledTimes(2)
+    resolveB({ processingJobId: 'pB2', sourceId: 'r2' })
+    await nextTick()
+    expect(cap2.datasetRef.value).toEqual({ processingJobId: 'pB2', sourceId: 'r2' })
+  })
 })

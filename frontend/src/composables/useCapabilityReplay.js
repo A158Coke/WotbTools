@@ -27,12 +27,16 @@ export function useCapabilityReplay(replay) {
   let prepareToken = 0
   /** 已绑定的 identity：`${fileKey(file)}|${selectionRevision}`；null = 未绑定。 */
   let boundIdentity = null
-  /** 当前 boundIdentity 是否有在途 requestDirectAction（防止同一 identity 重复 prepare / READY 后再触发）。 */
-  let inFlight = false
+  /**
+   * 当前 generation（token === prepareToken）在途 prepare 的 token；null = 当前无在途。
+   * 绑定的意义：stale 请求（token !== prepareToken）的 resolve/reject **绝不能**改写当前在途状态——
+   * 否则「A stale → 把 B 的在途标记清掉」会造成 async ownership 不一致。
+   */
+  let inFlightToken = null
 
   function reset() {
     prepareToken++
-    inFlight = false
+    inFlightToken = null
     boundIdentity = null
     targetFile.value = null
     datasetRef.value = null
@@ -49,14 +53,15 @@ export function useCapabilityReplay(replay) {
     datasetRef.value = null
     datasetError.value = ''
     const token = ++prepareToken
-    inFlight = true
+    inFlightToken = token
     requestDirectAction(file).then((refValue) => {
-      inFlight = false
+      // 仅当前 generation 的 settle 才释放 in-flight；stale 绝不改写（pure discard，见下）。
+      if (token === prepareToken && inFlightToken === token) inFlightToken = null
       if (token !== prepareToken || !targetFile.value || fileKey(targetFile.value) !== fileKeyNow) return
       datasetRef.value = refValue
       datasetError.value = ''
     }).catch((e) => {
-      inFlight = false
+      if (token === prepareToken && inFlightToken === token) inFlightToken = null
       if (token !== prepareToken || !targetFile.value || fileKey(targetFile.value) !== fileKeyNow) return
       datasetError.value = apiErrorLabel(t, te, e)
       datasetRef.value = null
@@ -77,8 +82,7 @@ export function useCapabilityReplay(replay) {
     }
     const identity = `${fileKey(file)}|${selectionRevision}`
     if (boundIdentity === identity) {
-      // 幂等：已 resolve → no-op；在途 → 让它完成（不重复请求）；失败（datasetError）→ 保持，交由 recover 重试。
-      if (datasetRef.value || inFlight) return
+      // 幂等：已 resolve → no-op；当前在途 → 让它完成（不重复请求）；未 resolve 且无在途（失败）→ 保持，交由 recover 重试。
       return
     }
     boundIdentity = identity
@@ -113,7 +117,7 @@ export function useCapabilityReplay(replay) {
   /** 多文件未显式选择时的本地化提示（由 Workspace 判断后调用）。 */
   function setLimitError() {
     prepareToken++ // 作废任何在途 prepare，阻止迟到响应写回
-    inFlight = false
+    inFlightToken = null
     boundIdentity = null
     datasetError.value = t('workspace.single_replay_required')
     targetFile.value = null
