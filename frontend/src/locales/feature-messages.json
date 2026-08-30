@@ -63,7 +63,16 @@
       "back_to_replay": "返回回放解析",
       "change_replay": "更换回放",
       "capability_upload_hint": "请选择一份 .wotbreplay 回放开始。",
-      "single_replay_required": "此功能一次只支持一份回放。"
+      "single_replay_required": "此功能一次只支持一份回放。",
+      "title": "回放工作台",
+      "tab_data": "数据解析",
+      "tab_ai": "AI 复盘",
+      "tab_playback": "战局回放",
+      "batch_count": "共 {count} 场",
+      "clear": "清空",
+      "cap_data": "解析",
+      "cap_ai": "AI",
+      "cap_playback": "回放"
     },
     "league": {
       "rated_count": "可评分 {rated} / {total}",
@@ -200,7 +209,16 @@
       "back_to_replay": "Back to Replay Analysis",
       "change_replay": "Change replay",
       "capability_upload_hint": "Choose one .wotbreplay file to begin.",
-      "single_replay_required": "This capability supports one replay at a time."
+      "single_replay_required": "This capability supports one replay at a time.",
+      "title": "Replay Workspace",
+      "tab_data": "Data",
+      "tab_ai": "AI Review",
+      "tab_playback": "Battle Playback",
+      "batch_count": "{count} battles",
+      "clear": "Clear",
+      "cap_data": "Parse",
+      "cap_ai": "AI",
+      "cap_playback": "Playback"
     },
     "league": {
       "rated_count": "Rateable {rated} / {total}",
@@ -337,7 +355,16 @@
       "back_to_replay": "Назад к анализу реплея",
       "change_replay": "Сменить реплей",
       "capability_upload_hint": "Выберите один файл .wotbreplay.",
-      "single_replay_required": "Эта функция поддерживает только один реплей за раз."
+      "single_replay_required": "Эта функция поддерживает только один реплей за раз.",
+      "title": "Рабочее пространство реплеев",
+      "tab_data": "Разбор данных",
+      "tab_ai": "AI-разбор",
+      "tab_playback": "Повтор боя",
+      "batch_count": "{count} боёв",
+      "clear": "Очистить",
+      "cap_data": "Разбор",
+      "cap_ai": "AI",
+      "cap_playback": "Повтор"
     },
     "league": {
       "rated_count": "Оценено {rated} / {total}",

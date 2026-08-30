@@ -3,10 +3,9 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, re
 import { useAuth } from './composables/useAuth.js'
 import { useError } from './composables/useError.js'
 import { useUiProfile } from './composables/useUiProfile.js'
+import { isAndroidApp } from './composables/usePlatformBridge.js'
 import HomePage from './components/HomePage.vue'
-import ReplayPage from './components/ReplayPage.vue'
-import AiReviewPage from './components/AiReviewPage.vue'
-import BattlePlaybackPage from './components/BattlePlaybackPage.vue'
+import ReplayWorkspace from './components/ReplayWorkspace.vue'
 import HoFPage from './components/HoFPage.vue'
 import HoFAdminPage from './components/HoFAdminPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
@@ -60,9 +59,10 @@ const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultVi
 // 视图映射 + KeepAlive：解析页保留结果状态；AI/战局能力页按需独立挂载。
 const VIEW_COMPONENTS = {
   home: HomePage,
-  replay: ReplayPage,
-  'ai-review': AiReviewPage,
-  'battle-playback': BattlePlaybackPage,
+  // 三个 Replay 能力 URL 映射到同一个 Workspace；仅 activeCapability 不同。
+  replay: ReplayWorkspace,
+  'ai-review': ReplayWorkspace,
+  'battle-playback': ReplayWorkspace,
   hof: HoFPage,
   'hof-admin': HoFAdminPage,
   profile: ProfilePage,
@@ -75,27 +75,47 @@ const VIEW_COMPONENTS = {
   'rating-docs': RatingDocsPage,
   'rating-v2': RatingV2AdminPage,
 }
-const currentView = computed(() => VIEW_COMPONENTS[activeTool.value] || ReplayPage)
+const currentView = computed(() => VIEW_COMPONENTS[activeTool.value] || ReplayWorkspace)
 
-// Dataset capability handoff is intentionally memory-only: it never enters URL/history.
-const replayHandoff = ref(null)
+/** ReplayWorkspace 初始能力（由 view 派生，不做三套页面对应）。 */
+const replayInitialCapability = computed(() => {
+  if (activeTool.value === 'ai-review') return 'ai'
+  if (activeTool.value === 'battle-playback') return 'playback'
+  return 'data'
+})
 
-function navigate(view, payload = null) {
-  if (view === 'ai-review' || view === 'battle-playback') {
-    replayHandoff.value = payload
-  }
+function navigate(view) {
+  // 相同 view 不重复 push，避免 Back/Forward 出现重复历史条目。
+  if (view === activeTool.value) return
   activeTool.value = view
   const url = new URL(window.location.href)
   if (view === 'home') url.searchParams.delete('view')
   else url.searchParams.set('view', view)
-  window.history.replaceState({}, '', url.toString())
+  // pushState 让 Replay → AI → Playback 的可切换 tab 形成可 Back/Forward 的 history；
+  // popstate 回来时仅同步 activeTool（currentView/initial-capability 随之更新），
+  // ReplayWorkspace 经 KeepAlive 保持 selection / Processing Job 不丢。
+  window.history.pushState({ view }, '', url.toString())
+}
+
+/** 从当前 URL 解析 view（处理 popstate 恢复）。 */
+function viewFromLocation() {
+  const params = new URLSearchParams(window.location.search)
+  const raw = params.get('view') ?? (window.location.pathname === '/download/android' ? 'android' : null)
+  const canonical = LEGACY_VIEW_ALIASES[raw] ?? raw
+  return ALLOWED_VIEWS.includes(canonical) ? canonical : defaultView
+}
+
+function onPopState() {
+  activeTool.value = viewFromLocation()
 }
 // 注入登录态与 login：AI 复盘 / 战局重建能力页需登录。
 provide('isAuthenticated', isAuthenticated)
 provide('login', login)
+// 供 ReplayWorkspace 判断"Keycloak 是否已初始化"：在 init 完成前不得把未初始化误判为未登录，
+// 否则已有 SSO/session 的用户会在 Workspace 挂载时被无条件 kc.login() 打断。
+provide('authInit', initPromise)
 // 跨视图导航注入：ReplayPage 的「算法说明」入口跳转 rating-docs 页使用。
 provide('navigate', navigate)
-provide('replayHandoff', replayHandoff)
 
 function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
 
@@ -145,10 +165,12 @@ onMounted(() => {
   initPromise.catch(() => {})
   document.addEventListener('click', onDocClick)
   document.addEventListener('keydown', onDocKeydown)
+  window.addEventListener('popstate', onPopState)
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick)
   document.removeEventListener('keydown', onDocKeydown)
+  window.removeEventListener('popstate', onPopState)
 })
 </script>
 
@@ -169,8 +191,9 @@ onBeforeUnmount(() => {
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
       <option v-for="l in languageOptions" :key="l.key" :value="l.key">{{ l.label }}</option>
     </select>
-    <!-- 下载 Android 版：feature flag，仅 wotbtools-admin 可见，主页右上角。 -->
-    <button v-if="isAdmin && activeTool === 'home'" class="auth-btn ghost android-download-btn" @click="go('android')" :title="$t('android.nav')">{{ $t('android.nav') }}</button>
+    <!-- 下载 Android 版：feature flag，仅 wotbtools-admin 可见，主页右上角。
+         Android App 内隐藏（计划 §20）：Native WebView 中不展示「下载 Android 版」。 -->
+    <button v-if="isAdmin && !isAndroidApp() && activeTool === 'home'" class="auth-btn ghost android-download-btn" @click="go('android')" :title="$t('android.nav')">{{ $t('android.nav') }}</button>
     <div class="dropdown user-menu">
       <button ref="userMenuTrigger" class="auth-btn ghost user-menu-trigger" @click="toggleUserMenu" :aria-expanded="userMenuOpen" :aria-haspopup="true">
         {{ isAuthenticated() ? userName() : $t('app.login') }}
@@ -193,7 +216,7 @@ onBeforeUnmount(() => {
             <button v-if="isAdmin" class="user-menu-item" role="menuitem" @click="go('admin-users')">{{ $t('admin.title') }}</button>
             <button v-if="isHofAdmin" class="user-menu-item" role="menuitem" @click="go('hof-admin')">{{ $t('hofAdmin.cardTitle') }}</button>
             <button class="user-menu-item" role="menuitem" @click="go('version')">{{ $t('version.btn') }}</button>
-            <button v-if="isAdmin" class="user-menu-item" role="menuitem" @click="go('android')">{{ $t('android.nav') }}</button>
+            <button v-if="isAdmin && !isAndroidApp()" class="user-menu-item" role="menuitem" @click="go('android')">{{ $t('android.nav') }}</button>
             <button class="user-menu-item" role="menuitem" @click="go('contact')">{{ $t('contact.nav') }}</button>
             <a class="user-menu-item" role="menuitem" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
             <button class="user-menu-item danger" role="menuitem" @click="handleLogout">{{ $t('profile.logout') }}</button>
@@ -210,9 +233,9 @@ onBeforeUnmount(() => {
   </div>
 
   <div class="tb-content">
-    <!-- ReplayPage 保持存活：打开文档/其他页面后返回不丢已解析结果与当前 tab -->
-    <KeepAlive :include="['ReplayPage']">
-      <component :is="currentView" />
+    <!-- ReplayWorkspace 保持存活：打开文档/其他页面后返回不丢已解析结果、selection 与 active capability。 -->
+    <KeepAlive :include="['ReplayWorkspace']">
+      <component :is="currentView" :initial-capability="replayInitialCapability" />
     </KeepAlive>
   </div>
 
