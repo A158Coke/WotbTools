@@ -53,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           export WOTB_COMMIT="$(git rev-parse HEAD)"
-          scripts/android-release/resolve-version.sh >> "$GITHUB_OUTPUT"
+          bash scripts/android-release/resolve-version.sh >> "$GITHUB_OUTPUT"
 
       - name: Validate source is main (workflow_dispatch)
         if: github.event_name == 'workflow_dispatch'
