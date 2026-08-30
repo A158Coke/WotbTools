@@ -260,14 +260,33 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
   原始值；共享图形支持 50%–150% 缩放（只影响页面 SVG，窄屏由雷达 viewport 横向滚动），V2 桌面抽屉
   宽 560px，V5 继续使用可拖拽持久化侧栏。V5 Rating Profile PNG 同步分数标注但保持固定导出尺寸。移动端
   模态抽屉锁定 Tab 焦点，桌面非模态不锁；后端 raw score/评分公式与 API 不变。
-- `?view=ai-review`：AI 复盘独立能力页（登录后使用）。
-- `?view=battle-playback`：战局重建独立能力页（登录后使用）。
+- `?view=ai-review` / `?view=battle-playback`：与 `?view=replay` 共用同一个 `ReplayWorkspace`，
+  仅默认 `activeCapability` 不同（ai / playback）。三者不是三个隔离业务页。
 
 旧 `?view=leaderboard` canonicalize 到 `hof`；旧 `?view=extended` canonicalize 到 `replay`；旧 `?view=reconstruction` canonicalize 到 `battle-playback`。
 
 ### AI Review / Battle Playback
 
-`AiReviewPage` 与 `BattlePlaybackPage` 仅负责能力页生命周期、登录门控和 Dataset handoff，核心实现仍由 `AiReviewPanel`（SSE 分析流 + 结果）与 `BattlePlaybackPanel`（cached map-overview + MapOverview）提供。二者复用同一 Processing Dataset（processingJobId + sourceId）、绝不 multipart 重传/重解析。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
+`ReplayWorkspace` 是回放数据 / AI / 战局回放三个能力的统一载体：持有唯一一份 `useReplay`
+selection / Processing Job（并 `provide('replay')`），data / AI / Playback 共享同一
+`processingJobId + sourceId` Dataset 引用，绝不 multipart 重传/重解析。三个 capability tab 始终可见
+（不因能力不可用而消失）；AI 与 Playback 各持独立 `useCapabilityReplay`，Dataset 状态互不污染。
+`ReplayPage` 作为 data 结果 tab 嵌入（`embedded` prop），在 Workspace 内只渲染结果 / 列系统 / Export /
+Drawer。**登录门禁**：整个 Replay Workspace 全部要求登录——未登录进入任意 replay capability
+（data / ai / playback）自动跳 Keycloak/OIDC 并按 redirectUri 回原 capability，不再有「data 匿名解析」；
+判断前先等 Keycloak init 完成（auth init race safe），已有 SSO/session 用户不被无谓 `kc.login()` 打断，
+确认未登录时仅 login 一次。
+**能力解耦**：AI 与 Playback 仅共享 replay/source/processing dataset，不做 `AI@seek → Playback`
+时间点联动 / 跨 capability 状态 handoff。tab 切换经 pushState + popstate 形成可 Back/Forward 的 history，
+返回时 selection / Processing Job 不丢，只恢复 activeCapability。
+**Android 外部 replay 完整自动解析**：仅 Android external intent 触发——Native `shouldInterceptRequest` 以
+app-owned content:// 安全 URI serve 缓存文件字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection →
+自动 `startProcessingJob` exactly once（READY 后 data tab 展示结果，绝不自动启动 AI，失败走现有
+Processing error/retry，不无限重试）；普通 Web/FileUploader 手动选文件不经过此路径，保持现有 UX。
+`getPendingReplay()==null` 不清零 eligible（warm resume 后 Native 新增 pending 仍可消费）。核心实现仍由
+`AiReviewPanel`（SSE 分析流 + 结果）与 `BattlePlaybackPanel`
+（cached map-overview + MapOverview）提供。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，
+由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
 地图鸟瞰/战局回放契约见 `docs/features/battle-playback.md`；AI 双 Call、Team Review、Evidence/Validator 契约见 `docs/architecture/ai-review.md` 与 `docs/features/team-ai-review.md`。
 

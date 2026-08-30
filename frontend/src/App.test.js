@@ -8,10 +8,15 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { setUiProfile } from './composables/useUiProfile.js'
 
-// 重视图 mock 为轻组件（本测试只验证 view 解析，不挂载重型页面）
-vi.mock('./components/ReplayPage.vue', () => ({ default: { name: 'ReplayPageMock', template: '<div data-test="view-replay" />' } }))
-vi.mock('./components/AiReviewPage.vue', () => ({ default: { name: 'AiReviewPageMock', template: '<div data-test="view-ai-review" />' } }))
-vi.mock('./components/BattlePlaybackPage.vue', () => ({ default: { name: 'BattlePlaybackPageMock', template: '<div data-test="view-battle-playback" />' } }))
+// 重视图 mock 为轻组件（本测试只验证 view 解析，不挂载重型页面）。
+// PR: Replay 三 URL 共用同一 ReplayWorkspace，仅 initialCapability 不同。
+vi.mock('./components/ReplayWorkspace.vue', () => ({
+  default: {
+    name: 'ReplayWorkspaceMock',
+    props: ['initialCapability'],
+    template: '<div :data-cap="initialCapability" data-test="view-replay" />',
+  },
+}))
 vi.mock('./components/HomePage.vue', () => ({ default: { name: 'HomePageMock', template: '<div data-test="view-home" />' } }))
 vi.mock('./components/HoFPage.vue', () => ({ default: { name: 'HoFPageMock', template: '<div data-test="view-hof" />' } }))
 // PlaybackQaPage 真实异步解析；mock useAuth 让 QA 页走未登录分支（轻量，不加载 14 车场景）
@@ -66,7 +71,9 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     window.history.replaceState({}, '', '/?view=reconstruction')
     const wrapper = mountApp()
     await flushPromises()
-    expect(wrapper.find('[data-test="view-battle-playback"]').exists()).toBe(true)
+    const ws = wrapper.find('[data-test="view-replay"]')
+    expect(ws.exists()).toBe(true)
+    expect(ws.attributes('data-cap')).toBe('playback')
   })
 
   it('?view=leaderboard canonicalize 到 hof（旧书签兼容，不得误映射到 replay）', async () => {
@@ -81,17 +88,19 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
   it('旧书签别名矩阵：单一来源 LEGACY_VIEW_ALIASES 统一 canonicalize（URL + 视图一致）', async () => {
     const cases = [
       { in: 'leaderboard', out: 'hof', test: 'view-hof' },
-      { in: 'extended', out: 'replay', test: 'view-replay' },
-      { in: 'reconstruction', out: 'battle-playback', test: 'view-battle-playback' },
+      { in: 'extended', out: 'replay', test: 'view-replay', cap: 'data' },
+      { in: 'reconstruction', out: 'battle-playback', test: 'view-replay', cap: 'playback' },
       { in: 'hof', out: 'hof', test: 'view-hof' },
-      { in: 'replay', out: 'replay', test: 'view-replay' },
+      { in: 'replay', out: 'replay', test: 'view-replay', cap: 'data' },
     ]
     for (const c of cases) {
       window.history.replaceState({}, '', `/?view=${c.in}`)
       const wrapper = mountApp()
       await flushPromises()
       expect(currentViewParam()).toBe(c.out) // URL 已 canonicalize
-      expect(wrapper.find(`[data-test="${c.test}"]`).exists()).toBe(true)
+      const ws = wrapper.find(`[data-test="${c.test}"]`)
+      expect(ws.exists()).toBe(true)
+      if (c.cap) expect(ws.attributes('data-cap')).toBe(c.cap)
       wrapper.unmount()
     }
     // 未知默认值：非别名不重写 URL，回退默认视图
@@ -113,6 +122,31 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     // useAuth mock → 未登录分支显示 loading 文案（$t mock 返回 key）
     await flushPromises()
     expect(wrapper.text()).toContain('adminPreview.loading')
+  })
+
+  it('Replay 能力 tab 切换用 pushState + popstate 形成可 Back/Forward 的 history，不丢 workspace', async () => {
+    window.history.replaceState({}, '', '/?view=replay')
+    const wrapper = mountApp()
+    await flushPromises()
+    // 初始 replay（workspace data）
+    let ws = wrapper.find('[data-test="view-replay"]')
+    expect(ws.attributes('data-cap')).toBe('data')
+
+    // Replay → AI（pushState，生成历史条目）
+    const aiButton = wrapper.find('nav').findAll('button').find(b => b.text() === 'home.aiReview')
+    expect(aiButton).toBeTruthy()
+    await aiButton.trigger('click')
+    await flushPromises()
+    ws = wrapper.find('[data-test="view-replay"]')
+    expect(ws.attributes('data-cap')).toBe('ai')
+
+    // Back → 回 Replay（data）。happy-dom 的 history.back() 不保证触发 popstate，
+    // 这里等价地推送原 URL 并派发 popstate，验证 onPopState 恢复 activeTool。
+    window.history.pushState({}, '', '/?view=replay')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    await nextTick()
+    ws = wrapper.find('[data-test="view-replay"]')
+    expect(ws.attributes('data-cap')).toBe('data')
   })
 
   it('?view=rating-docs 解析 RatingDocsPage（异步加载 canonical 文档）', async () => {
