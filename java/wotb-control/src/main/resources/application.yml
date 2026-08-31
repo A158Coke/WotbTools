@@ -1,0 +1,33 @@
+server:
+  port: ${CONTROL_SERVER_PORT:8090}
+
+spring:
+  threads:
+    # Spring Boot 4.1 supports this property on Java 21+; keep it overrideable for environment comparison.
+    virtual:
+      enabled: ${CONTROL_VIRTUAL_THREADS_ENABLED:true}
+  datasource:
+    url: jdbc:postgresql://${CONTROL_POSTGRES_HOST:localhost}:5432/${CONTROL_POSTGRES_DB:wotb}
+    username: ${CONTROL_POSTGRES_USER:wotb}
+    password: ${CONTROL_POSTGRES_PASSWORD:}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${CONTROL_KEYCLOAK_ISSUER_URI:https://auth.wotbtools.com/realms/wotbtools}
+
+management:
+  server:
+    port: ${CONTROL_MANAGEMENT_PORT:8091}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  structured:
+    format:
+      console: logstash
