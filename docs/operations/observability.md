@@ -263,7 +263,7 @@ Processing Job 终态口径：`READY` 表示 Processing Job 已正常完成 fina
 **统计口径说明（WotBTools 使用统计 / Replay Parser）**
 
 - Prometheus Counter 会在 Backend 重启或重新部署后归零，Dashboard 中的"次数"均为 **Grafana 所选时间范围内的估算增量**（`increase()` + `round()`），不是历史累计。
-- **Replay jobs / files**：当前 V2 使用 `wotb_replay_processing_job_total`、`wotb_replay_processing_job_files_total` 与 `wotb_replay_full_processing_total`；它们描述 Processing Job 和实际 full processing，不再把 legacy operation 请求误当作当前处理入口。
+- **Replay jobs / files**：当前 V2 使用 `wotb_replay_processing_job_total`、`wotb_replay_processing_job_files_total` 与 `wotb_replay_full_processing_total`；其中 `processing_job_files_total` 表示提交到 Job 的输入文件数（Replay files submitted），`full_processing_total` 表示实际执行 full processing 的文件数（Replay files processed），不再把 legacy operation 请求误当作当前处理入口。
 - **AI Review 请求次数**：统计所有请求尝试，包括成功、失败、超时和被拒绝，不等同于成功次数。
 - **AI Review 成功次数**：仅统计 `wotb_ai_review_results_total{result="success"}`；**未成功次数**保留 `failure` 与 `rejected` 独立标签，不混为同一结果。
 - **AI 平均每次调用 Token**：`wotb_ai_upstream_tokens_total{token_type="total"}` 增量 ÷ `wotb_ai_upstream_requests_total` 增量（分母含失败调用，失败计 0 token），即「平均每次发起的 AI 上游调用消耗的 token」；按模式面板可区分单机复盘（`PRE_BATTLE_STRATEGIC_PRIOR` + `TACTICAL_REVIEW_HARNESS`）与团队复盘（`SINGLE_TEAM_BATTLE` + `TEAM_AUTOPSY`）各阶段消耗。
@@ -273,7 +273,7 @@ Processing Job 终态口径：`READY` 表示 Processing Job 已正常完成 fina
 
 1. Backend Up
 2. Processing Job started（`wotb_replay_processing_job_total`，所选区间）
-3. Files processed（`wotb_replay_full_processing_total`，所选区间）
+3. Replay files processed（`wotb_replay_full_processing_total`，所选区间）
 4. Jobs READY / FAILED（`wotb_replay_processing_job_result_total`，Job 终态）
 5. 当前 parse active / queue depth / jobs active / queued
 6. 解析耗时 P50/P95/P99（`wotb_replay_processing_file_duration_seconds_*`）
@@ -508,10 +508,10 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_upstream_tokens_total{mode,token_type=input|output|total|reasoning|cache_hit|cache_miss}` — token 用量（usage 缺失时不记录）
 - **Replay 解析**（自定义）：
   - `wotb_replay_processing_job_total` — 线上 Prometheus 暴露的 Processing Job 创建数（Java 逻辑名为 `wotb_replay_processing_job_created_total`，Micrometer 运行时规范化为该名称）
-  - `wotb_replay_processing_job_files_total` — Processing Job 输入文件数（低基数，无 jobId/文件名 tag）
+  - `wotb_replay_processing_job_files_total` — Processing Job 输入文件数（Replay files submitted；低基数，无 jobId/文件名 tag）
   - `wotb_replay_processing_job_queue_wait_seconds` / `wotb_replay_processing_job_duration_seconds` — 排队等待与总耗时（Timer）
   - `wotb_replay_processing_job_result_total{result=ready|failed|cancelled}` — Processing Job 终态计数（exactly once）；`ready` 表示正常完成 finalization，可能包含 source-level replay failures，不是 per-source replay parse success 数；`failed` 也不是 replay 文件解析失败数
-  - `wotb_replay_full_processing_total` — 当前 V2 full processing 文件数
+  - `wotb_replay_full_processing_total` — 当前 V2 full processing 文件数（Replay files processed）
   - `wotb_replay_processing_file_duration_seconds` — 当前 V2 单个 replay full processing 耗时（Timer，histogram）
   - `wotb_replay_parse_active` / `wotb_replay_parse_queue_depth` — 当前并行处理数与排队 source 数
   - `wotb_replay_in_flight` — legacy 解析入口当前处理数（Gauge）
