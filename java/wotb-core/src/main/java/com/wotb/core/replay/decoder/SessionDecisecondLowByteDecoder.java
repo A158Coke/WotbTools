@@ -33,7 +33,7 @@ public class SessionDecisecondLowByteDecoder implements ReplayPacketDecoder {
         final byte[] payload = packet.payload();
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
         // only current canonical family carries this proven semantic.
-        if (!ReplayVersionGate.sessionDecisecondAllowed(context.clientVersion())) {
+        if (!ReplayProtocolProfile.sessionDecisecondAllowed(context.clientVersion())) {
             return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
                     List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(),
                             packet.payloadLength(), "VERSION_UNSUPPORTED_TYPE35",

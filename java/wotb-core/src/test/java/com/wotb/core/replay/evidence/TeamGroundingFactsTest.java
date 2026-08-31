@@ -124,6 +124,9 @@ class TeamGroundingFactsTest {
         p.survivalTimeSec = 111.25;
         // Settlement can coexist but must not override LIVE_EXACT or be treated as raw packet clock.
         p.deathTimeMillis = 112_400L;
+        b.liveDeathObservations = java.util.Map.of(
+                p.accountId,
+                new com.wotb.core.model.DeathTimeObservation(DeathTimeSource.LIVE_EXACT, 111.25));
 
         final GroundingFacts facts = TeamGroundingFacts.build(b, 1000.0, 1);
         final EvidenceFact first = facts.facts().stream().filter(EvidenceFact::isDeath).findFirst().orElseThrow();

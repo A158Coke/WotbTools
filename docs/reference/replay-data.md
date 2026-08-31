@@ -123,14 +123,15 @@ value:     [u8; value_len]
 
 该结构在 11.18 样本上 100% 干净解析。`prop_id → 语义` 的<b>逐属性 mapping 已收敛</b>：普通正数 HP 由
 回放结构包（Type5 物化当前 HP / Avatar method5 / Vehicle prop3 / Vehicle method1）产生，终结哨兵（FFFD/FFFE）
-与 HP 版本作用域在 `ReplayVersionGate` / `ReplayProtocolProfile` 中以 capability 表达。EntityProperty
+与 HP 版本作用域在 decoder-local 的 `ReplayProtocolProfile` capability evidence 中表达。EntityProperty
 解码器保留结构（`prop_id`/`value_len`）+ 已证明的 HP/property 语义；<b>未证明</b>的 prop_id 语义仍标
 `UNKNOWN`，绝不臆断血量/存活。
 
-> **可靠的血量/伤害/助攻/格挡/击杀/存活/死亡时刻请以 `battle_results.dat`（`Battle`/`PlayerResult`）为准**——
+> **可靠的血量/伤害/助攻/格挡/击杀/存活请以 `battle_results.dat`（`Battle`/`PlayerResult`）为准；死亡时刻在
+> full processing 中还需消费 `Battle.liveDeathObservations`**——
 > 见 `docs/architecture/ai-review.md`。逐帧 HP 时间线由 canonical HP facts（`ReplayHpTimeline`）提供。
 
-> **死亡时刻口径（AI 复盘）**：死亡权威链为 `LIVE_EXACT`（回放 live EXACT，sub-second）→ `SETTLEMENT_SECOND`（结算 `deathTimeMillis`——由 field24 lifeTime 派生，11.19 corpus 无 #104，±0.5s）→ `UNKNOWN`（`survivalTimeSec=0`，绝不伪造）；`PlayerResultFormat.deathSec` 按 `deathTimeSource` 消费。EntityLeave / 最后位置 / damage threshold 不再是死亡 authority（legacy 启发式仅存于 diagnostics）。
+> **死亡时刻口径（AI 复盘）**：full processing 的 `Battle.liveDeathObservations` 提供 `LIVE_EXACT`（回放 live EXACT，sub-second）→ `SETTLEMENT_SECOND`（结算 `deathTimeMillis`——由 field24 lifeTime 派生，11.19 corpus 无 #104，±0.5s）→ `UNKNOWN`；`PlayerResult` 上的 `deathTimeMillis`/`survivalTimeSec` 只是兼容投影，`PlayerResultFormat.deathSec(Battle, PlayerResult)` 按显式 observation 消费。EntityLeave / 最后位置 / damage threshold 不再是死亡 authority（legacy 启发式仅存于 diagnostics）。
 > 不得把估算数据当作权威；阶段存活人数明确为「至阶段末」，并注入双方逐车阵亡时间线。
 
 > **观测伤害抑制（AI 复盘）**：事件流伤害仅为观测子集（`DamageEvent`），覆盖未达 100% 时后端标记
@@ -148,7 +149,7 @@ Avatar method4 2B=RoundFinished，Vehicle method4 16B=vehicle-to-vehicle collisi
 
 **语义仅 VERIFIED family 认可为 EXACT**：future（STRUCTURALLY_COMPATIBLE）版本只前向读取 envelope 结构，
 numeric method 语义（含 method0/1/5/17/20/27/29）未认证 → raw/Unknown，绝不承接当前版本 EXACT semantic
-（见 `ReplayVersionGate.methodLayoutAffirmed`）。stable 结构（如 Type10 49B、普通正 HP 结构值）仍可前向。
+（见 `ReplayProtocolProfile.methodLayoutAllowed`）。stable 结构（如 Type10 49B、普通正 HP 结构值）仍可前向。
 
 | 实体类 | methodId | 语义 / 证据状态 | exact args shape | 产出 |
 |---:|---:|---|---|---|
@@ -517,7 +518,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `impact`                     | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.impact`        | %  | 单场 Impact（派生，不依赖 HP，恒有值）                                                     |
 | `damage_received`             | 整数  | `PlayerResult.damageReceived`            | HP    | #11                                                                             |
 | `damage_blocked`              | 整数  | `PlayerResult.damageBlocked`             | HP    | #117                                                                            |
-| `survival_time`               | 浮点数 | `PlayerResult.survivalTimeSec`           | 秒     | 存活者=durationS；阵亡者=representative deathSec（deathTimeSource：LIVE_EXACT → SETTLEMENT_SECOND(field24 lifeTime 派生) → UNKNOWN），见 replay-parsed-fields.md |
+| `survival_time`               | 浮点数 | `PlayerResult.survivalTimeSec`           | 秒     | 当前兼容投影；full processing 的 live-aware 展示通过 `Battle.liveDeathObservations` 与 `deathSec(Battle, PlayerResult)`，见 replay-parsed-fields.md |
 | `n_shots`                     | 整数  | `PlayerResult.nShots`                    | 次数    | #4                                                                              |
 | `n_hits_dealt`                | 整数  | `PlayerResult.nHitsDealt`                | 次数    | #5                                                                              |
 | `n_penetrations_dealt`        | 整数  | `PlayerResult.nPenetrationsDealt`        | 次数    | #7                                                                              |

@@ -68,15 +68,17 @@ public record BattlePhaseSummary(
                 continue;
             }
             anyDead = true;
-            if (PlayerResultFormat.deathSec(p) <= 0) {
+            if (PlayerResultFormat.deathSec(battle, p) <= 0) {
                 return "未知";
             }
-            if (p.deathTimeSource == DeathTimeSource.LIVE_EXACT) {
+            final var observation = battle.liveDeathObservations == null
+                    ? null : battle.liveDeathObservations.get(p.accountId);
+            if (observation != null && observation.source() == DeathTimeSource.LIVE_EXACT) {
                 anyLiveExact = true;
-            } else if (p.deathTimeSource == DeathTimeSource.SETTLEMENT_SECOND) {
+            } else if (PlayerResultFormat.deathSec(p) > 0) {
                 anySettlement = true;
             } else {
-                // UNKNOWN（无 source）：residual deathTimeMillis 绝不算 KNOWN（P0-2 provenance）。
+                // settlement lifetime 缺失且无 live observation → UNKNOWN。
                 return "未知";
             }
         }
@@ -281,7 +283,7 @@ public record BattlePhaseSummary(
                 if (p.survived) {
                     continue;
                 }
-                final PlayerResultFormat.DeathTimeEvidence evidence = PlayerResultFormat.deathEvidence(p);
+                final PlayerResultFormat.DeathTimeEvidence evidence = PlayerResultFormat.deathEvidence(battle, p);
                 if (evidence != null) {
                     (friendly ? friendlyTimes : enemyTimes).add(evidence);
                 } else if (friendly) {

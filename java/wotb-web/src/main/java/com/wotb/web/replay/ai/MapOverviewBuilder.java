@@ -201,7 +201,7 @@ public final class MapOverviewBuilder {
             if (points.isEmpty() || points.get(points.size() - 1).timeSec() < last.timeSec - 1e-6) {
                 points.add(new MapOverview.Point(last.x, last.z, last.timeSec));
             }
-            final Double deathSec = resolveDeathSec(player);
+            final Double deathSec = resolveDeathSec(battle, player);
             routes.add(new MapOverview.Route(
                     player.accountId,
                     player.nickname,
@@ -279,7 +279,7 @@ public final class MapOverviewBuilder {
 
         final Map<Long, Double> deathSecByAccount = new HashMap<>();
         for (final PlayerResult player : battle.players) {
-            final Double deathSec = resolveDeathSec(player);
+            final Double deathSec = resolveDeathSec(battle, player);
             if (deathSec != null) {
                 deathSecByAccount.put(player.accountId, deathSec);
             }
@@ -418,11 +418,11 @@ public final class MapOverviewBuilder {
 
 
     /** 阵亡时刻（battle-relative 秒）：仅未存活玩家；优先结算，回退事件流估算；未知为 null。 */
-    private static Double resolveDeathSec(final PlayerResult player) {
+    private static Double resolveDeathSec(final Battle battle, final PlayerResult player) {
         if (player.survived) {
             return null;
         }
-        final double deathSec = PlayerResultFormat.deathSec(player);
+        final double deathSec = PlayerResultFormat.deathSec(battle, player);
         return deathSec > 0 ? deathSec : null;
     }
 

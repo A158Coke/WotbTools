@@ -14,7 +14,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 批量回放分析器：分组、去重、代表选择、模式判定。
+ * 当前 AI request 的 result-set 分析器：分组、去重、代表选择、模式判定。
+ * <p>它保留现有多-source request 的确定性收尾契约；不表示 future worker queue、job
+ * status 或 batch manager，也不增加异步基础设施。</p>
  * <p>
  * 处理流程：
  * <ol>

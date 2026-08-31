@@ -18,7 +18,7 @@ import java.util.List;
  * + class-specific init}。</p>
  *
  * <p><b>版本门禁</b>：仅当前 canonical + 显式证明的 11.18 legacy
- * （{@link ReplayVersionGate#entityLifecycleLayoutAllowed}）允许把 type=5 解为物化；未知/未来版本
+ * （{@link ReplayProtocolProfile#entityLifecycleLayoutAllowed}）允许把 type=5 解为物化；未知/未来版本
  * raw-preserve（UNKNOWN + 诊断），绝不静默进入 canonical AoI。</p>
  *
  * <p><b>置信度</b>：{@code MaterializationEvent.confidence} 只表示「物化 presence 已证明」
@@ -26,7 +26,7 @@ import java.util.List;
  * 不降级 presence 置信度。</p>
  *
  * <p><b>HP 快照（版本/类作用域）</b>：仅当 {@code entityTypeId == 2}（combat vehicle）
- * 且 {@link ReplayVersionGate#closedSemanticsAllowed} 时，{@code payload[51..53)} 才按
+ * 且 {@link ReplayProtocolProfile#closedSemanticsAllowed} 时，{@code payload[51..53)} 才按
  * u16 LE 解为当前 HP（PROVEN current corpus）；其它情况 currentHp=null，raw 保留。</p>
  *
  * <p><b>transform 前缀</b>：{@code payload[6..14)} == 随后首个 Type10 {@code [4..12)}
@@ -80,7 +80,7 @@ public class MaterializationDecoder implements ReplayPacketDecoder {
         }
         // Type5 materialization semantics are version-scoped. Unknown/future versions must
         // raw-preserve (UNKNOWN + diagnostic), never unconditionally decode into a semantic event.
-        if (!ReplayVersionGate.entityLifecycleLayoutAllowed(context.clientVersion())) {
+        if (!ReplayProtocolProfile.entityLifecycleLayoutAllowed(context.clientVersion())) {
             final ReplayTimestamp tsUnsupported = new ReplayTimestamp(packet.rawClockSec(), null);
             return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
                     List.of(new UnknownReplayEvent(packet.sequence(), tsUnsupported, packet.type(),
@@ -110,7 +110,7 @@ public class MaterializationDecoder implements ReplayPacketDecoder {
         Integer currentHp = null;
         final List<ReplayDecodeWarning> warnings = new java.util.ArrayList<>();
         if (entityTypeId == ENTITY_TYPE_COMBAT_VEHICLE
-                && ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
+                && ReplayProtocolProfile.closedSemanticsAllowed(context.clientVersion())) {
             if (payload.length < HP_OFFSET + 2) {
                 warnings.add(new ReplayDecodeWarning("MATERIALIZATION_HP_TRUNCATED",
                         "Type5 vehicle payload shorter than HP offset " + HP_OFFSET
@@ -150,7 +150,7 @@ public class MaterializationDecoder implements ReplayPacketDecoder {
         // falls back to guessing names. Unknown provision codes keep logicalItemId=null + raw.
         final VehicleBattleLoadout loadout =
                 entityTypeId == ENTITY_TYPE_COMBAT_VEHICLE
-                        && ReplayVersionGate.entityLifecycleLayoutAllowed(context.clientVersion())
+                        && ReplayProtocolProfile.entityLifecycleLayoutAllowed(context.clientVersion())
                         ? VehicleBattleLoadout.parse(entityId, context.clientVersion(), initRaw)
                         : null;
         final MaterializationEvent event = new MaterializationEvent(

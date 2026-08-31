@@ -81,7 +81,7 @@ public final class EntityAuxiliaryBlobDecoder implements ReplayPacketDecoder {
         // Semantic routing：只在真实生命周期证明的 VEHICLE 上启用 consumable 语义。
         final EntityClass entityClass = context.entityClassRegistry().resolve(entityId);
         final boolean consumableSemanticAllowed =
-                ReplayVersionGate.type32ConsumableLifecycleAllowed(context.clientVersion());
+                ReplayProtocolProfile.type32ConsumableLifecycleAllowed(context.clientVersion());
         if (consumableSemanticAllowed
                 && entityClass == EntityClass.VEHICLE
                 && flag == CONSUMABLE_FLAG

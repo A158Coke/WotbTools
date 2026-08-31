@@ -251,11 +251,6 @@ const expandedLeagueGroups = ref({})
 const ratedBattleCount = computed(() =>
   (resp.value?.battles || []).filter(b => !!b.league).length)
 
-/** 死亡时间 UNKNOWN 的阵亡玩家数（backend authoritative ratingQuality；
- *  非阻断 quality limitation——这些玩家照常评分，仅存活/互换维度按 0 分保守计算）。 */
-const unknownDeathTimeCount = computed(() =>
-  leagueData.value?.ratingQuality?.unknownDeathTimePlayers || 0)
-
 /** League 校验失败按稳定 code 分组（保持首次出现顺序；code 文案走 api_errors 三语）。 */
 const leagueFailureGroups = computed(() => {
   const groups = {}
@@ -562,7 +557,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
         <div v-if="leagueUnavailableMessage" class="warn league-unavailable" data-testid="league-unavailable">
           {{ leagueUnavailableMessage }}
         </div>
-        <div v-if="leagueData && (leagueData.failures?.length || unknownDeathTimeCount > 0)" class="warn league-failure-summary" data-testid="league-failure-summary">
+        <div v-if="leagueData && leagueData.failures?.length" class="warn league-failure-summary" data-testid="league-failure-summary">
           <div class="league-failure-head">
             <span class="lf-title">{{ $t('league.title') }}</span>
             <span class="lf-rated">{{ $t('league.rated_count', { rated: ratedBattleCount, total: resp.battles.length }) }}</span>
@@ -571,9 +566,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
                     @click="toggleLeagueFailures">
               {{ showLeagueFailures ? $t('league.failure_hide') : $t('league.failure_view') }}
             </button>
-          </div>
-          <div v-if="unknownDeathTimeCount > 0" class="league-quality-warning" data-testid="league-quality-warning">
-            {{ $t('league.death_time_unknown_warning', { count: unknownDeathTimeCount }) }}
           </div>
           <div v-if="showLeagueFailures && leagueData.failures?.length" class="league-failure-detail" data-testid="league-failure-detail">
             <div v-for="(group, code) in leagueFailureGroups" :key="code" class="league-failure-group">
@@ -747,8 +739,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 .lf-title { font-weight: 700; color: var(--warn-text); }
 .lf-rated, .lf-unrated { font-variant-numeric: tabular-nums; }
 .lf-unrated { color: var(--warn-text); }
-/* 死亡时间 UNKNOWN 质量提示（非阻断 warning；不是 failure） */
-.league-quality-warning { margin-top: 8px; font-size: .85rem; color: var(--warn-text); }
 .lf-toggle {
   margin-left: auto;
   padding: 3px 10px;

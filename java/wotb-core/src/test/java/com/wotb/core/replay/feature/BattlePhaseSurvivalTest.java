@@ -105,6 +105,9 @@ class BattlePhaseSurvivalTest {
         liveExact.survivalTimeSec = 62.345;
         final Battle liveExactBattle = new Battle();
         liveExactBattle.players = List.of(liveExact);
+        liveExactBattle.liveDeathObservations = java.util.Map.of(
+                liveExact.accountId,
+                new com.wotb.core.model.DeathTimeObservation(DeathTimeSource.LIVE_EXACT, 62.345));
         assertEquals("回放精确", BattlePhaseSummary.deathSourceLabel(liveExactBattle));
 
         final PlayerResult settlement = player(1L, 1, false, 62.0);

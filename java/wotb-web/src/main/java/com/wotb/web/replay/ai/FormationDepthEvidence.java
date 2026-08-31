@@ -78,7 +78,8 @@ final class FormationDepthEvidence {
             return "";
         }
         final Float battleStart = recon.battleStartRawClockSec();
-        // 权威死亡边界（PlayerResult 结算）：knownDeathSec > 0 的车辆，t 超过该时刻的位置样本不进入阵型/控制权
+        // 权威死亡边界（Battle live observation / settlement fallback）：knownDeathSec > 0 的车辆，
+        // t 超过该时刻的位置样本不进入阵型/控制权
         final Map<Long, PlayerResult> playersByAccount = new LinkedHashMap<>();
         if (battle.players != null) {
             for (final PlayerResult p : battle.players) {
@@ -112,7 +113,7 @@ final class FormationDepthEvidence {
                 continue;
             }
             final PlayerResult player = playersByAccount.get(identity.accountId());
-            final Double deathSec = player == null ? null : knownDeathSec(player);
+            final Double deathSec = player == null ? null : knownDeathSec(battle, player);
             if (deathSec != null && t > deathSec + 1e-6) {
                 continue; // 阵亡后的服务器位置流残留不得进入阵型/控制权
             }
@@ -150,13 +151,15 @@ final class FormationDepthEvidence {
 
         final StringBuilder sb = new StringBuilder();
         for (final PhaseRange phase : phases) {
-            sb.append(renderPhase(phase, tracks, teamByAccount, perspectiveTeam, mapCode, playersByAccount, accountProfiles, mapping, aoiByEntity));
+            sb.append(renderPhase(battle, phase, tracks, teamByAccount, perspectiveTeam, mapCode,
+                    playersByAccount, accountProfiles, mapping, aoiByEntity));
         }
         return sb.isEmpty() ? "" : "\n=== FORMATION_DEPTH（阵型深度·确定性） ===\n" + sb;
     }
 
     /** 单阶段：前后排（深度三分位）+ 控制区域（九宫格计数优势）。 */
     private static String renderPhase(
+            final Battle battle,
             final PhaseRange phase,
             final Map<Long, List<PositionSample>> tracks,
             final Map<Long, Integer> teamByAccount,
@@ -175,7 +178,7 @@ final class FormationDepthEvidence {
         for (final Map.Entry<Long, List<PositionSample>> entry : tracks.entrySet()) {
             final int team = teamByAccount.getOrDefault(entry.getKey(), 0);
             final PhasePositionReference ref = resolvePhasePosition(
-                    entry.getKey(), team, entry.getValue(),
+                    battle, entry.getKey(), team, entry.getValue(),
                     phase.start(), phase.end(), playersByAccount,
                     mapping, aoiByEntity, perspectiveTeam);
             if (ref != null) {
@@ -229,7 +232,7 @@ final class FormationDepthEvidence {
             if (pl == null || (pl.team != ownTeam && pl.team != enemyTeam)) {
                 continue;
             }
-            if (!isAliveAt(playersByAccount, entry.getKey(), phase.end())) {
+            if (!isAliveAt(battle, playersByAccount, entry.getKey(), phase.end())) {
                 continue; // 本阶段已阵亡：不要求位置参考，也不计入 alive
             }
             final boolean hasCurrent = pl.team == ownTeam
@@ -384,8 +387,23 @@ final class FormationDepthEvidence {
             final TeamEntityMapping mapping,
             final Map<Integer, List<AoiObservationSegment>> aoiByEntity,
             final int perspectiveTeam) {
+        return resolvePhasePosition(null, accountId, team, samples, phaseStart, phaseEnd,
+                playersByAccount, mapping, aoiByEntity, perspectiveTeam);
+    }
+
+    static PhasePositionReference resolvePhasePosition(
+            final Battle battle,
+            final long accountId,
+            final int team,
+            final List<PositionSample> samples,
+            final double phaseStart,
+            final double phaseEnd,
+            final Map<Long, PlayerResult> playersByAccount,
+            final TeamEntityMapping mapping,
+            final Map<Integer, List<AoiObservationSegment>> aoiByEntity,
+            final int perspectiveTeam) {
         // 存活门禁：phase 末已阵亡 → 位置 state 终止 → null（不参与当前几何）
-        if (!isAliveAt(playersByAccount, accountId, phaseEnd)) {
+        if (!isAliveAt(battle, playersByAccount, accountId, phaseEnd)) {
             return null;
         }
         // Canonical AoI authority：先定位 phaseEnd 所属 observed segment——该 segment 的实体即「目标实体」。
@@ -566,21 +584,22 @@ final class FormationDepthEvidence {
     }
 
     /** 权威死亡边界（秒）：结算存活或死亡时刻未知 → null（不猜）。复用 PlayerResultFormat 口径。 */
-    static Double knownDeathSec(final PlayerResult p) {
+    static Double knownDeathSec(final Battle battle, final PlayerResult p) {
         if (p == null || p.survived) {
             return null;
         }
-        final double sec = PlayerResultFormat.deathSec(p);
+        final double sec = PlayerResultFormat.deathSec(battle, p);
         return sec > 0 ? sec : null;
     }
 
     /** 该账号在 t 时刻是否存活：死亡边界未知时视为存活（不猜）；已知且 t 超过边界 → 已阵亡。 */
-    static boolean isAliveAt(final Map<Long, PlayerResult> playersByAccount, final long accountId, final double t) {
+    static boolean isAliveAt(final Battle battle, final Map<Long, PlayerResult> playersByAccount,
+                             final long accountId, final double t) {
         final PlayerResult p = playersByAccount == null ? null : playersByAccount.get(accountId);
         if (p == null) {
             return true;
         }
-        final Double deathSec = knownDeathSec(p);
+        final Double deathSec = knownDeathSec(battle, p);
         return deathSec == null || t <= deathSec + 1e-6;
     }
 

@@ -1,5 +1,6 @@
 package com.wotb.core.replay.facts;
 
+import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.util.PlayerResultFormat;
 
@@ -10,9 +11,10 @@ import java.util.List;
  *
  * <p>业务语义（V4.1 冻结）：玩家死亡后 {@code [0, +TRADE_AFTER_DEATH_WINDOW_SEC]} 秒内
  * （边界包含，directional）存在敌方死亡 → 视为 traded。死亡时刻统一通过
- * {@link PlayerResultFormat#deathSec(PlayerResult)} / {@link PlayerResultFormat#deathEvidence(PlayerResult)}
- * 消费 canonical authority（LIVE_EXACT > SETTLEMENT_SECOND > UNKNOWN）；玩家存活或死亡时刻未知时
- * fail-closed 返回 0，绝不直接读取/解释 {@link PlayerResult#survivalTimeSec}。</p>
+ * full-processing caller 使用 {@link PlayerResultFormat#deathSec(Battle, PlayerResult)} /
+ * {@link PlayerResultFormat#deathEvidence(Battle, PlayerResult)} 消费 Battle 上的显式 observation；
+ * settlement-only compatibility caller 使用单参数 overload。玩家存活或死亡时刻未知时 fail-closed
+ * 返回 0，绝不直接读取/解释 {@link PlayerResult#survivalTimeSec}。</p>
  *
  * <p><b>precision-aware</b>：SETTLEMENT_SECOND 死亡时刻有 ±0.5s 量化，不得当作 exact point
  * 用于「谁先死 / 5s 窗口」。这里用 interval reasoning（fail-closed）：只有 <b>所有</b> 允许的真实死亡时刻
@@ -39,10 +41,16 @@ public final class TradeFacts {
      * @return 窗口内<a>确定性</a>满足的敌方死亡数；存活 / canonical 死亡时刻 UNKNOWN → 0
      */
     public static int tradedDeaths(final PlayerResult player, final List<PlayerResult> players) {
+        return tradedDeaths(null, player, players);
+    }
+
+    /** Full-processing overload that reads live observations from the Battle boundary. */
+    public static int tradedDeaths(final Battle battle, final PlayerResult player,
+                                   final List<PlayerResult> players) {
         if (player == null || player.survived || players == null || players.isEmpty()) {
             return 0;
         }
-        final PlayerResultFormat.DeathTimeEvidence playerEv = PlayerResultFormat.deathEvidence(player);
+        final PlayerResultFormat.DeathTimeEvidence playerEv = PlayerResultFormat.deathEvidence(battle, player);
         if (playerEv == null || !playerEv.known()) {
             return 0;
         }
@@ -53,7 +61,7 @@ public final class TradeFacts {
             if (other == null || other.team == player.team || other.survived) {
                 continue;
             }
-            final PlayerResultFormat.DeathTimeEvidence otherEv = PlayerResultFormat.deathEvidence(other);
+            final PlayerResultFormat.DeathTimeEvidence otherEv = PlayerResultFormat.deathEvidence(battle, other);
             if (otherEv == null || !otherEv.known()) {
                 continue;
             }

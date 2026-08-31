@@ -4,6 +4,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayParser;
+import com.wotb.core.parse.ParsedReplay;
 import com.wotb.core.replay.processing.DeathTimeReconciler;
 import org.junit.jupiter.api.Test;
 
@@ -80,6 +81,30 @@ class SettlementCanonicalModelTest {
     }
 
     @Test
+    void settlementFactsRemainAuthoritativeForFutureClientVersion() throws Exception {
+        final ParsedReplay parsed = ParsedReplay.read(Files.readAllBytes(fixture()));
+        final ParsedReplay futureVersion = new ParsedReplay(
+                parsed.entries(), "11.20.0_china", parsed.settlementFacts(), parsed.settlementError(),
+                parsed.streamHeader(), parsed.meta());
+
+        final Battle current = ReplayParser.parse(parsed);
+        final Battle future = ReplayParser.parse(futureVersion);
+
+        assertEquals(current.players.size(), future.players.size());
+        assertEquals(current.players.stream().filter(p -> p.survived).count(),
+                future.players.stream().filter(p -> p.survived).count(),
+                "settlement survivor semantics must not depend on client version");
+        for (int i = 0; i < current.players.size(); i++) {
+            final PlayerResult expected = current.players.get(i);
+            final PlayerResult actual = future.players.get(i);
+            assertEquals(expected.survived, actual.survived);
+            assertEquals(expected.settlementLifeTimeSec, actual.settlementLifeTimeSec);
+            assertEquals(expected.settlementDeathReasonRaw, actual.settlementDeathReasonRaw);
+            assertEquals(expected.killerAccountId, actual.killerAccountId);
+        }
+    }
+
+    @Test
     void battleTopLevelSettlementFacts() throws Exception {
         final Battle b = ReplayParser.parse(Files.readAllBytes(fixture()));
         assertTrue(b.settlementStartTime != null && b.settlementStartTime > 1_400_000_000L,
@@ -92,9 +117,10 @@ class SettlementCanonicalModelTest {
     }
 
     @Test
-    void reconcilerSetsSettlementSecondFromCanonicalDeathMillis() {
-        // PR147: deathTimeMillis 由 ReplayParser 从 field24 lifeTime 派生（#104 不存在）；reconciler 以
-        // deathTimeMillis 作 SETTLEMENT_SECOND 兜底（live EXACT 覆盖）。这里直接跑 reconciler 契约。
+    void reconcilerStoresSettlementFallbackAsSeparateObservation() {
+        // PR147: deathTimeMillis 由 ReplayParser 从 field24 lifeTime 派生（#104 不存在）。
+        // Reconciliation must expose the settlement fallback through Battle without mutating
+        // the settlement compatibility projection on PlayerResult.
         final PlayerResult dead = new PlayerResult();
         dead.accountId = 1001L;
         dead.survived = false;
@@ -108,8 +134,12 @@ class SettlementCanonicalModelTest {
         battle.durationS = 300.0;
         battle.players = List.of(dead, alive);
         DeathTimeReconciler.reconcile(battle, List.of(), null, null);
-        assertEquals(DeathTimeSource.SETTLEMENT_SECOND, dead.deathTimeSource);
-        assertEquals(128.0, dead.survivalTimeSec, 0.001);
+        assertEquals(DeathTimeSource.SETTLEMENT_SECOND,
+                battle.liveDeathObservations.get(dead.accountId).source());
+        assertEquals(128.0, battle.liveDeathObservations.get(dead.accountId).timeSec(), 0.001);
+        assertNull(dead.deathTimeSource, "reconciler 不得回写 PlayerResult provenance");
+        assertEquals(0.0, dead.survivalTimeSec, 0.001,
+                "reconciler 不得回写 PlayerResult live projection");
         assertNull(alive.deathTimeSource, "幸存者无死亡证据");
     }
 

@@ -1,5 +1,7 @@
 package com.wotb.core.replay.event;
 
+import com.wotb.core.replay.decoder.ReplayProtocolProfile;
+
 /**
  * 车辆 HP/状态方法事件（Vehicle-targeted method1，7-byte args）。
  *
@@ -14,7 +16,7 @@ package com.wotb.core.replay.event;
  * {@code clientVersion} 下<em>一次</em>执行 {@link HpRawState#classify} 完成并随本事件传播；
  * 消费方（ReplayHpTimeline / ReplayTerminalLifecycle / BattleStateReconstructor）一律直接消费
  * {@link #rawState()}，禁止再以 {@code HpRawState.classify(raw, true)} 重新解释 —— 0xFFFE 只有在
- * {@code ReplayVersionGate.verifiedFffeTerminalAllowed} 时才成为 {@code VERIFIED_TERMINAL_FFFE}，
+ * {@code ReplayProtocolProfile.verifiedFffeTerminalAllowed} 时才成为 {@code VERIFIED_TERMINAL_FFFE}，
  * 不能由消费方无条件升级。{@link #cause()} 同理：cause 语义只在 current version family
  * （closed semantics）证明，11.18 只证明 layout —— 保留 raw {@link #causeFlag()}、语义为
  * {@link Cause#UNKNOWN}。</p>
@@ -58,7 +60,7 @@ public record VehicleHealthStateEvent(
 
     /**
      * causeFlag → 语义化原因；未观测 flag → UNKNOWN（保留 raw，不按序号臆测）。
-     * 仅在 {@code ReplayVersionGate.closedSemanticsAllowed}（current version family）证明 cause
+     * 仅在 {@code ReplayProtocolProfile.closedSemanticsAllowed}（current version family）证明 cause
      * 语义时使用；11.18 只证明 layout，调用方应保留 raw causeFlag、语义传 {@link Cause#UNKNOWN}。
      */
     public static Cause causeOf(final int flag) {

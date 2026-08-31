@@ -134,7 +134,7 @@ public final class PerformanceMetricsCalculator {
             final double teamC = ctx.teamContribution[team];
             final Integer winner = battle.winnerTeam;
             final boolean win = winner != null && winner != 0 && player.team == winner;
-            final int traded = TradeFacts.tradedDeaths(player, battle.players);
+            final int traded = TradeFacts.tradedDeaths(battle, player, battle.players);
             contribution = teamC == 0 ? 0 : 100.0 * roundContribution(player, avg.value()) / teamC;
             kast = 100.0 * singleBattleKast(player, win, traded, avg.value());
         }
@@ -194,7 +194,7 @@ public final class PerformanceMetricsCalculator {
         final Integer winner = battle.winnerTeam;
         final boolean win = winner != null && winner != 0 && player.team == winner;
         final BattleAverageHp avg = ctx.averageHp();
-        final int traded = TradeFacts.tradedDeaths(player, battle.players);
+        final int traded = TradeFacts.tradedDeaths(battle, player, battle.players);
         final double impactValue = singleBattleImpact(player, ctx);
 
         // 原始权威数据（不依赖 HP）：始终累计

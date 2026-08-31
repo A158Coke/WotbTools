@@ -114,7 +114,7 @@ public final class PointsSituationSkill {
             if (!PlayerSideResolver.isValidRawTeam(player.team)) {
                 continue;
             }
-            final double deathSec = PlayerResultFormat.deathSec(player);
+            final double deathSec = PlayerResultFormat.deathSec(battle, player);
             if (!Double.isFinite(deathSec) || deathSec <= 0) {
                 continue;
             }

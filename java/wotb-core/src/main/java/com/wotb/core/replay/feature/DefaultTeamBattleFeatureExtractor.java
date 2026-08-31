@@ -59,7 +59,7 @@ public class DefaultTeamBattleFeatureExtractor {
         final Map<Long, TeamMemberFeatureSet.DeathProximity> deathProxByAcc = new HashMap<>();
         for (final PlayerResult p : authoritativeMembers) {
             deathProxByAcc.put(p.accountId,
-                    resolveDeathProximity(reconstruction, entityMapping, mapCode, perspectiveTeam, p));
+                    resolveDeathProximity(battle, reconstruction, entityMapping, mapCode, perspectiveTeam, p));
         }
         final TeamAggregateResult authoritativeAggregate = TeamAggregateExtractor.buildAuthoritativeAggregate(
                 battle, authoritativeMembers, perspectiveTeam);
@@ -175,7 +175,7 @@ public class DefaultTeamBattleFeatureExtractor {
 
         final List<TeamMemberFeatureSet> members = authoritativeMembers.stream()
                 .map(player -> buildMember(
-                        player, entityMapping, timedPositionsByEntity, leaveTimesByEntity,
+                        player, battle, entityMapping, timedPositionsByEntity, leaveTimesByEntity,
                         timedDamages, teamLosses,
                         authoritativeMembers, mapCode,
                         deathProxByAcc.getOrDefault(player.accountId, null)))
@@ -434,6 +434,7 @@ public class DefaultTeamBattleFeatureExtractor {
 
     private static TeamMemberFeatureSet buildMember(
             final PlayerResult player,
+            final Battle battle,
             final TeamEntityMapping mapping,
             final Map<Integer, List<TimedTeamPosition>> timedPositionsByEntity,
             final Map<Integer, List<Double>> leaveTimesByEntity,
@@ -476,8 +477,8 @@ public class DefaultTeamBattleFeatureExtractor {
         } else if (movements.isEmpty()) {
             limitations.add("TEAM_MEMBER_POSITION_UNAVAILABLE");
         }
-        final Double deathTime = player.survived || PlayerResultFormat.deathSec(player) <= 0
-                ? null : PlayerResultFormat.deathSec(player);
+        final Double deathTime = player.survived || PlayerResultFormat.deathSec(battle, player) <= 0
+                ? null : PlayerResultFormat.deathSec(battle, player);
         final List<KeyBattleEvent> keyEvents = deathTime == null
                 ? List.of()
                 : List.of(new KeyBattleEvent(
@@ -511,12 +512,22 @@ public class DefaultTeamBattleFeatureExtractor {
 
     /** 包内 forwarder：新逻辑在 TeamKeyEventsExtractor，此入口供 DeathProximityTest 直接调用。 */
     static TeamMemberFeatureSet.DeathProximity resolveDeathProximity(
+            final Battle battle,
             final ReplayReconstruction recon,
             final TeamEntityMapping mapping,
             final String mapCode,
             final int perspectiveTeam,
             final PlayerResult player) {
-        return TeamKeyEventsExtractor.resolveDeathProximity(recon, mapping, mapCode, perspectiveTeam, player);
+        return TeamKeyEventsExtractor.resolveDeathProximity(battle, recon, mapping, mapCode, perspectiveTeam, player);
+    }
+
+    static TeamMemberFeatureSet.DeathProximity resolveDeathProximity(
+            final ReplayReconstruction recon,
+            final TeamEntityMapping mapping,
+            final String mapCode,
+            final int perspectiveTeam,
+            final PlayerResult player) {
+        return resolveDeathProximity(null, recon, mapping, mapCode, perspectiveTeam, player);
     }
 
     static String identityKey(final TeamEntityIdentity identity) {

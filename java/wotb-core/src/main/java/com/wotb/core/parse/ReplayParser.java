@@ -82,11 +82,7 @@ public final class ReplayParser {
         final Map<String, byte[]> entries = parsed.entries();
         // PR162/P1-4：meta.json 已由 ParsedReplay 一次解析，这里直接消费，不再各自 readTree。
         final JsonNode meta = parsed.meta();
-        // PR147 settlement version gate (P0-3): the 11.19/11.18 numeric semantics of #24/#25/#105 and
-        // root2/4/5 are version-scoped. clientVersion 与 settlement facts 都来自共享 parse context
-        // （ParsedReplay，解码一次）。
         final String clientVersion = parsed.clientVersion();
-        final boolean settlementSchemaAffirmed = SettlementFacts.isAffirmedFamily(clientVersion);
         final SettlementFacts facts = parsed.settlementFacts();
         if (facts == null) {
             if (parsed.battleResultsDat() == null) {
@@ -189,35 +185,24 @@ public final class ReplayParser {
             final Object deathReasonRaw = Protobuf.first(info, F_DEATH_REASON);
             pr.settlementDeathReasonRaw = deathReasonRaw instanceof Number
                     ? ((Number) deathReasonRaw).intValue() : null;
-            // survived is derived from deathReason (== -1 survivor sentinel); NOT a survived field.
-            if (settlementSchemaAffirmed) {
-                // Affirmed 11.19/11.18 settlement schema: derive the concrete survivor/dead + death-time
-                // conclusion from the proven numeric semantics (#105 deathReason / #24 lifeTime).
-                pr.survived = pr.settlementDeathReasonRaw != null
-                        && pr.settlementDeathReasonRaw == -1;
-                // deathTimeMillis = canonical settlement death ms (derived from field24 lifeTime; #104
-                // does not exist in 11.19). Survived = 0.
-                final long lifeMs = pr.settlementLifeTimeSec > 0
-                        ? Math.round(pr.settlementLifeTimeSec * 1000.0) : 0L;
-                pr.deathTimeMillis = pr.survived ? 0L : lifeMs;
-            } else {
-                // Unknown/future version: settlement numeric semantics NOT affirmed (P0-3). Raw-preserve
-                // the #24/#25/#105 fields above but fail-closed on the derived conclusion — never turn a
-                // missing/unsupported deathReason into an affirmed "dead" or a fabricated death time.
-                pr.survived = false;
-                pr.deathTimeMillis = 0L;
-            }
+            // survived is derived from the proven settlement sentinel (== -1); NOT a survived field.
+            // Settlement field semantics are structural facts and are not gated by the replay client
+            // version. Missing/ordinary death reasons remain dead, while a missing lifetime remains
+            // unknown time rather than a fabricated timestamp.
+            pr.survived = pr.settlementDeathReasonRaw != null
+                    && pr.settlementDeathReasonRaw == -1;
+            final long lifeMs = pr.settlementLifeTimeSec > 0
+                    ? Math.round(pr.settlementLifeTimeSec * 1000.0) : 0L;
+            pr.deathTimeMillis = pr.survived ? 0L : lifeMs;
             pr.raw = info;
             players.add(pr);
         }
-        // Map killer result/entity-id -> killer accountId (PR147 namespace). Only under an affirmed
-        // settlement schema; an unknown/future version's #25 is raw-preserved and never mis-attributed.
-        if (settlementSchemaAffirmed) {
-            for (final PlayerResult pr : players) {
-                if (pr.settlementKillerResultEntityId != null) {
-                    final Long ka = resultToAccount.get(pr.settlementKillerResultEntityId);
-                    pr.killerAccountId = ka != null && ka > 0 ? ka : null;
-                }
+        // Map killer result/entity-id -> killer accountId (PR147 namespace). The mapping is a
+        // structural settlement fact; an unknown client version does not disable it.
+        for (final PlayerResult pr : players) {
+            if (pr.settlementKillerResultEntityId != null) {
+                final Long ka = resultToAccount.get(pr.settlementKillerResultEntityId);
+                pr.killerAccountId = ka != null && ka > 0 ? ka : null;
             }
         }
 
@@ -278,28 +263,22 @@ public final class ReplayParser {
         // 产生；无法证明则 UNKNOWN。
         battle.clientVersion = clientVersion == null ? "" : clientVersion;
 
-
-        // 存活时间: 存活=战斗时长；阵亡=senttlement field24 lifeTime 或 UNKNOWN=0。
-        // legacy 启发式（damage-threshold / EntityLeave / Position 停止）不得写入 PlayerResult。
-        // 死亡 authority 链由 DefaultReplayProcessingFacade 的 DeathTimeReconciler 继续收口：
-        // LIVE_EXACT → SETTLEMENT_SECOND → UNKNOWN；settlement 只提供 SETTLEMENT_SECOND (±0.5s) 证据。
+        // Compatibility projection for existing export/diagnostic consumers. Full reconstruction
+        // additionally records live observations in Battle; it must not change settlement fields.
         final double bd = battle.durationS != null ? battle.durationS : 0;
         for (final PlayerResult pr : players) {
             if (pr.survived) {
                 pr.survivalTimeSec = bd;
             } else {
-                // Death authority fail-closed: only an affirmed settlement schema produces
-                // SETTLEMENT_SECOND (lifeTime is the proven settlement death second). An unknown/future
-                // version is never given a fabricated death time — consumers must honor UNKNOWN.
-                final boolean settlementDeathAffirmed = settlementSchemaAffirmed
-                        && pr.settlementLifeTimeSec > 0;
-                final double st = settlementDeathAffirmed ? pr.settlementLifeTimeSec : 0;
+                final boolean settlementDeathAffirmed = pr.settlementLifeTimeSec > 0;
+                pr.survivalTimeSec = settlementDeathAffirmed
+                        ? Math.min(pr.settlementLifeTimeSec, bd) : 0;
                 pr.deathTimeSource = settlementDeathAffirmed
                         ? com.wotb.core.model.DeathTimeSource.SETTLEMENT_SECOND
                         : com.wotb.core.model.DeathTimeSource.UNKNOWN;
-                pr.survivalTimeSec = st > 0 ? Math.min(st, bd) : 0;
             }
         }
+
 
         return battle;
     }

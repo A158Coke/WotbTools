@@ -68,11 +68,10 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 文件名 + arenaId + 稳定错误码（如 `LEAGUE_NOT_SEVEN_VS_SEVEN` / `LEAGUE_ROSTER_INCOMPLETE`），
 批量中其他合法同类型回放继续。不允许管理员强制绕过。
 
-**评分质量限制（非阻断）**：评分可以生成、但某些子事实无法证明（如死亡时间 UNKNOWN）时，
-<b>不进入 failure 列表</b>，而是由响应 `league.ratingQuality.unknownDeathTimePlayers` 返回
-该批已评分场次中「死亡时间 UNKNOWN 的阵亡玩家」实例数；这些玩家照常进入单场 Rating、
-选手/战队汇总、中位数、MVP、Excel/PNG 导出，仅「存活 / 互换」维度按 0 分保守计算。
-前端以非阻断 warning 提示，不允许把 UNKNOWN 伪装成「所有数据完全可靠」。
+**死亡时间 provenance 不属于 League 状态**：UNKNOWN 只在 replay reconstruction/evidence
+层表示无法证明 live exact 时刻；League 仅消费 settled combatants 与 rating eligibility，
+不计算或展示 UNKNOWN death quality warning。当前响应仍保留 `ratingQuality` 零值兼容槽，
+避免改变已有 Web/Android JSON shape；该字段不再驱动评分、汇总、导出或前端提示。
 
 ## 批次去重与冲突（仅当前批次）
 
@@ -80,30 +79,14 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   其余进 duplicates；关键事实不一致（阵容/winnerTeam/玩家结算/生存状态等）→ 该场全部副本
   拒绝评分（`CONFLICTING_REPLAYS_FOR_ARENA`）。不自动选「字段更多」的副本；
   不建立持久化记录，重新上传同一 arenaId 会重新计算。
-- **死亡时间三层语义（先判 INVALID，再判 UNKNOWN/KNOWN）**：
-  - **INVALID**（`survivalTimeSec < 0` / NaN / Infinity）：非法 stat facts，与**任何**其它值
-    （含 UNKNOWN 0）都是冲突——UNKNOWN 不是 wildcard，不能把 INVALID 或两个互相矛盾的 KNOWN
-    洗成合法；整场拒绝评分（`CONFLICTING_REPLAYS_FOR_ARENA`）。
-  - **UNKNOWN**（`== 0`）：当前 replay 无法可靠证明精确死亡时刻（evidence absence），
-    不是「已证明死亡时间为 0 秒」；与任意合法 KNOWN / 其它 UNKNOWN 兼容。
-  - **KNOWN**（`> 0`）：两个 KNOWN 差 ≤ 1s 容差一致，超过容差冲突；生死状态（survived）
-    不同也是冲突。
-- **Group-level all-pairs 判定（上传顺序无关）**：对同 arenaId 全部副本做**全对**一致性检查
-  （`LeagueRatingConflictDetector.validateAndReconcile`），不再以 first copy 作 anchor——
-  `[UNKNOWN, KNOWN100, KNOWN128]` 因 KNOWN100 vs KNOWN128 超 1s 容差必须 conflict，
-  UNKNOWN 不能隔开两个互相矛盾的 KNOWN；上传顺序不改变是否评分。
-- **确定性 canonical 死亡时间收口**：全部一致时只保留一份（第一份 source identity），
-  其余进 duplicates；死亡时间按与上传顺序无关的规则收口——UNKNOWN+KNOWN → 采用 KNOWN；
-  KNOWN+KNOWN → 采用全部 KNOWN 的最小值；全部 UNKNOWN → 保持 UNKNOWN(0)。
-  canonicalizer **只处理合法值**（UNKNOWN=0 / KNOWN=finite>0），INVALID 在一致性阶段已
-  fail-closed 拒绝，绝不修改、替换、清洗非法值（禁止 INVALID→UNKNOWN）。
-  最终进入 Validator / Calculator / 批次汇总 / `ratingQuality` 的是这份 canonical battle，
-  上传顺序不改变 Rating 结果（`ratingQuality` 只统计 canonical battle 中的 UNKNOWN 玩家实例）。
+- **死亡时间不是 League identity/provenance 状态**：duplicate 判定只比较 settled combatant
+  facts（包括 `settlementLifeTimeSec` 与生死状态）；live observation、`DeathTimeSource` 和
+  compatibility projection 不参与 identity，也不会回写 retained Battle。
+- **Group-level all-pairs 判定（上传顺序无关）**：对同 arenaId 全部副本做关键 settlement
+  facts 的一致性检查；不以 first copy 作 wildcard anchor。上传顺序不改变是否评分或 Rating 结果。
 - **hard-conflict 字段**（任一不一致 → 冲突）：settlementAccountsCoveredByRoster /
-  settlementRosterTeamConsistent（决定 ROSTER_INCOMPLETE）、durationS（影响死亡时间
-  beyond-duration 判定）、nHitsReceived / nPenetrationsReceived / nEnemiesDamaged
-  （validator 非法值检查参与）、clan（影响 team autoName / teamKey / batch summary identity）；
-  **仅死亡时间 UNKNOWN 允许 evidence reconciliation**，不存在「字段更多 replay 优先」。
+  settlementRosterTeamConsistent（决定 ROSTER_INCOMPLETE）、durationS、settled combatant
+  identity/stat facts、clan（影响 team autoName / teamKey / batch summary identity）。
 
 ## 七维度公式（合计 1000）
 

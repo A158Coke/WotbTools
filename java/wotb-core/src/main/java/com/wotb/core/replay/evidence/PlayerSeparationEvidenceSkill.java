@@ -31,7 +31,7 @@ import java.util.Set;
  * LLM 基于这些事实做出的 supported tactical inference，不是 Backend label。</p>
  * <p>时间口径：接火/承伤/阵亡/距离增长只使用与当前窗口重叠的证据；整场承伤/最终存活不作为
  * 早期窗口依据。未知不等于结论：移动覆盖不足 ≠ MOVING，region/语义缺失 ≠ 远离目标点；
- * 阵亡时间只消费 canonical {@link PlayerResultFormat#deathSec(PlayerResult)}，UNKNOWN 不得伪装为 0 秒。</p>
+ * 阵亡时间只消费 Battle 上的显式 live/settlement observation，UNKNOWN 不得伪装为 0 秒。</p>
  * <p>开局分散（中性 signal）：OPENING 窗口（缺失时回退 45s 安全上限）内未接火/未阵亡；
  * 只证明位置/队形分离，不证明拿视野/点亮/侦察；后续掉血/阵亡不抑制已成立的早期分散。</p>
  */
@@ -69,7 +69,7 @@ public final class PlayerSeparationEvidenceSkill {
             final Float distanceGrowth = distanceGrowthMeters(ctx, window.startSec(), window.endSec());
             final Integer region = recorderRegion(
                     features, window.startSec(), window.endSec(), ctx.battle().mapName);
-            final String kind = kindOf(window, stationaryRatio, inWindowDamage,
+            final String kind = kindOf(ctx.battle(), window, stationaryRatio, inWindowDamage,
                     inWindowDealt, openingEnd, recorder,
                     hasPartialOverlapEngagement(features, window.startSec(), window.endSec()),
                     observedDamageIsPartial(features));
@@ -86,7 +86,7 @@ public final class PlayerSeparationEvidenceSkill {
                     "objectiveProximity", (double) objectiveProximity,
                     "damageDealtDuringSpan", (double) inWindowDealt,
                     "damageReceivedDuringSpan", (double) inWindowDamage,
-                    "deathDuringSpan", memberDeadIn(recorder, window) ? 1.0 : 0.0);
+                    "deathDuringSpan", memberDeadIn(ctx.battle(), recorder, window) ? 1.0 : 0.0);
             result.add(new AiEvidence(
                     String.format("SS_%02d", ++index),
                     EvidenceType.SPATIAL_SEPARATION,
@@ -109,6 +109,7 @@ public final class PlayerSeparationEvidenceSkill {
     }
 
     private static String kindOf(
+            final com.wotb.core.model.Battle battle,
             final AiEvidence window,
             final Double stationaryRatio,
             final float inWindowDamage,
@@ -120,7 +121,8 @@ public final class PlayerSeparationEvidenceSkill {
     ) {
         final boolean opening = window.startSec() >= 0f && window.endSec() <= openingEnd;
         final boolean contactObserved = inWindowDealt > 0f || inWindowDamage > 0f;
-        final boolean untouchedInWindow = !contactObserved && !memberDeadIn(recorder, window);
+        final boolean untouchedInWindow = !contactObserved
+                && !memberDeadIn(battle, recorder, window);
         if (opening && untouchedInWindow && !partialOverlap && !damageCoveragePartial) {
             return "OPENING_SPREAD";
         }
@@ -133,11 +135,12 @@ public final class PlayerSeparationEvidenceSkill {
         return "SEPARATION_WINDOW";
     }
 
-    private static boolean memberDeadIn(final PlayerResult recorder, final AiEvidence window) {
+    private static boolean memberDeadIn(final com.wotb.core.model.Battle battle,
+                                        final PlayerResult recorder, final AiEvidence window) {
         if (recorder == null || recorder.survived) {
             return false;
         }
-        final double deathSec = PlayerResultFormat.deathSec(recorder);
+        final double deathSec = PlayerResultFormat.deathSec(battle, recorder);
         return deathSec > 0 && Double.isFinite(deathSec)
                 && deathSec >= window.startSec() && deathSec <= window.endSec();
     }

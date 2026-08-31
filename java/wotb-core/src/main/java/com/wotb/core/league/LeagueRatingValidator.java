@@ -2,7 +2,6 @@ package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.util.PlayerResultFormat;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -32,7 +31,7 @@ import java.util.Set;
  */
 public final class LeagueRatingValidator {
 
-    /** 战斗时长与死亡时间的可容忍偏差（秒）。 */
+    /** Settlement lifetime may round at most one second beyond the recorded battle duration. */
     private static final double DEATH_TIME_TOLERANCE_SEC = 1.0;
 
     private LeagueRatingValidator() {
@@ -118,35 +117,26 @@ public final class LeagueRatingValidator {
             failures.add(new LeagueFailure("", arena, LeagueFailure.Code.NO_DECISIVE_WINNER));
         }
 
-        // 7. 阵亡玩家死亡时间语义（死亡时间 UNKNOWN ≠ 数据非法）：
-        //    survivalTimeSec == 0 = UNKNOWN（合法，允许整场评分——该玩家仅在依赖死亡时刻的
-        //    Survival/Trade 维度 fail-closed 得 0 分，见 TradeFacts）；负数 / NaN / Infinity
-        //    由下方 hasInvalidStatFacts 统一拒绝（INVALID_STAT_FACTS）；此处只保留
-        //    「死亡时间明显超过战斗时长」的矛盾检查（明显矛盾仍为非法 stat facts）。
-        boolean contradictoryTime = false;
-        final Double duration = battle.durationS;
-        for (final PlayerResult p : players) {
-            // 「死亡时间是否明显超过 duration」的业务语义基于 canonical source-aware evidence：
-            // UNKNOWN 的 residual survivalTimeSec/deathTimeMillis 不得成为 authoritative death fact。
-            if (!p.survived && duration != null && Double.isFinite(duration)
-                    && Double.isFinite(p.survivalTimeSec)) {
-                // 仅对 structurally-valid（finite survivalTimeSec）的玩家做「超过 duration」判定；
-                // infinite/NaN 由 hasInvalidStatFacts 统一 fail-closed，避免重复报错。
-                final double deathSec = PlayerResultFormat.deathSec(p);
-                if (deathSec > 0 && deathSec > duration + DEATH_TIME_TOLERANCE_SEC) {
-                    contradictoryTime = true;
-                }
-            }
-        }
-        if (contradictoryTime) {
-            failures.add(new LeagueFailure("", arena, LeagueFailure.Code.INVALID_STAT_FACTS));
-        }
-
-        // 8. 数值约束：负值 / 非有限 / 明显违反真实字段关系
-        if (hasInvalidStatFacts(players)) {
+        // 7. 数值约束：负值 / 非有限 / 明显违反真实字段关系
+        if (hasContradictorySettlementTime(battle, players) || hasInvalidStatFacts(players)) {
             failures.add(new LeagueFailure("", arena, LeagueFailure.Code.INVALID_STAT_FACTS));
         }
         return failures;
+    }
+
+    /** Settlement lifetime is a real field fact; live observation precision is intentionally ignored. */
+    private static boolean hasContradictorySettlementTime(final Battle battle,
+                                                           final List<PlayerResult> players) {
+        if (battle.durationS == null || !Double.isFinite(battle.durationS)) {
+            return false;
+        }
+        for (final PlayerResult p : players) {
+            if (!p.survived && Double.isFinite(p.settlementLifeTimeSec)
+                    && p.settlementLifeTimeSec > battle.durationS + DEATH_TIME_TOLERANCE_SEC) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 统计字段数值关系矛盾检查（统计字段零值合法，不做存在性要求）。 */
@@ -160,6 +150,9 @@ public final class LeagueRatingValidator {
                 return true;
             }
             if (!Double.isFinite(p.survivalTimeSec) || p.survivalTimeSec < 0) {
+                return true;
+            }
+            if (!Double.isFinite(p.settlementLifeTimeSec) || p.settlementLifeTimeSec < 0) {
                 return true;
             }
             if (p.nShots > 0 && p.nHitsDealt > p.nShots) {

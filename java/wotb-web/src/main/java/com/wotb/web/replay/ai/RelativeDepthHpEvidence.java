@@ -154,7 +154,7 @@ final class RelativeDepthHpEvidence {
                 if (!Double.isFinite(t) || t < 0) {
                     continue;
                 }
-                final Double deathSec = FormationDepthEvidence.knownDeathSec(
+                final Double deathSec = FormationDepthEvidence.knownDeathSec(battle,
                         playersByAccount.get(identity.accountId()));
                 if (deathSec != null && t > deathSec + 1e-6) {
                     continue; // 阵亡后的服务器位置流残留不得进入位置证据
@@ -187,7 +187,7 @@ final class RelativeDepthHpEvidence {
                 if (!Double.isFinite(t) || t < 0) {
                     continue;
                 }
-                final Double deathSec = FormationDepthEvidence.knownDeathSec(
+                final Double deathSec = FormationDepthEvidence.knownDeathSec(battle,
                         playersByAccount.get(identity.accountId()));
                 if (deathSec != null && t > deathSec + 1e-6) {
                     continue; // 阵亡后的攻击事件不进入 observed attack evidence
@@ -231,7 +231,7 @@ final class RelativeDepthHpEvidence {
         final List<PhaseHit> hits = new ArrayList<>();
         final StringBuilder sb = new StringBuilder();
         for (final FormationDepthEvidence.PhaseRange phase : phases) {
-            final PhaseResult result = renderPhase(phase, tracks, hpSamples, attacks, teamByAccount,
+            final PhaseResult result = renderPhase(battle, phase, tracks, hpSamples, attacks, teamByAccount,
                     playersByAccount, profiles, targets, selfAccountId != null, observedDamagePartial,
                     mapping, aoiByEntity);
             if (result.text() != null) {
@@ -261,6 +261,7 @@ final class RelativeDepthHpEvidence {
     }
 
     private static PhaseResult renderPhase(
+            final Battle battle,
             final FormationDepthEvidence.PhaseRange phase,
             final Map<Long, List<FormationDepthEvidence.PositionSample>> tracks,
             final Map<Long, List<double[]>> hpSamples,
@@ -290,7 +291,7 @@ final class RelativeDepthHpEvidence {
             final int team = teamByAccount.getOrDefault(entry.getKey(), 0);
             final FormationDepthEvidence.PhasePositionReference ref =
                     FormationDepthEvidence.resolvePhasePosition(
-                            entry.getKey(), team, entry.getValue(),
+                            battle, entry.getKey(), team, entry.getValue(),
                             phase.start(), phase.end(), playersByAccount,
                             mapping, aoiByEntity, ownTeam);
             if (ref != null) {
@@ -344,7 +345,7 @@ final class RelativeDepthHpEvidence {
             if (pl == null || pl.team != enemyTeam) {
                 continue;
             }
-            if (!FormationDepthEvidence.isAliveAt(playersByAccount, entry.getKey(), phase.end())) {
+            if (!FormationDepthEvidence.isAliveAt(battle, playersByAccount, entry.getKey(), phase.end())) {
                 continue;
             }
             enemyAliveCount++;
@@ -361,7 +362,7 @@ final class RelativeDepthHpEvidence {
 
         final StringBuilder sb = new StringBuilder();
         for (final long accountId : targets) {
-            if (!FormationDepthEvidence.isAliveAt(playersByAccount, accountId, phase.end())) {
+            if (!FormationDepthEvidence.isAliveAt(battle, playersByAccount, accountId, phase.end())) {
                 continue; // 本阶段已阵亡：不作为测量目标
             }
             final Double distX = distToEnemy.get(accountId);
@@ -379,7 +380,7 @@ final class RelativeDepthHpEvidence {
                 if (teamByAccount.getOrDefault(entry.getKey(), 0) != ownTeam) {
                     continue;
                 }
-                if (!FormationDepthEvidence.isAliveAt(playersByAccount, entry.getKey(), phase.end())) {
+                if (!FormationDepthEvidence.isAliveAt(battle, playersByAccount, entry.getKey(), phase.end())) {
                     continue; // 已阵亡车辆不得成为 reference
                 }
                 if (entry.getValue() < referenceDist - 1e-9) {

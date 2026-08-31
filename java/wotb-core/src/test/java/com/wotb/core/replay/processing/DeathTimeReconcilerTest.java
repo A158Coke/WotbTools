@@ -1,6 +1,7 @@
 package com.wotb.core.replay.processing;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeObservation;
 import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -181,8 +182,10 @@ class DeathTimeReconcilerTest {
 
         reconcile(battle, events, mapping);
 
-        assertEquals(100.0, p.survivalTimeSec, 1e-9,
-                "死亡校准应复用 canonical nickname fallback 的解析结果，而不是因原始 accountId=0 跳过");
+        assertEquals(100.0, PlayerResultFormat.deathSec(battle, p), 1e-9,
+                "死亡 observation 应复用 canonical nickname fallback 的解析结果");
+        assertEquals(20.0, p.survivalTimeSec, 1e-9,
+                "live observation 不得回写 settlement PlayerResult");
     }
 
     // ================= Blocker 2：EXACT alive=true 否决更早的 legacy death =================
@@ -202,11 +205,9 @@ class DeathTimeReconcilerTest {
 
         reconcile(battle, events, resolveMapping(battle, events));
 
-        assertEquals(0.0, p.survivalTimeSec, 1e-9,
-                "无最终 EXACT 死亡证据 → UNKNOWN=0（legacy 启发式不再兜底）");
-        assertEquals(DeathTimeSource.UNKNOWN, p.deathTimeSource);
-        assertEquals(0.0, PlayerResultFormat.deathSec(p), 1e-9);
-        assertTrue(PlayerResultFormat.deathSec(p) <= 0,
+        assertEquals(0.0, PlayerResultFormat.deathSec(battle, p), 1e-9);
+        assertNull(p.deathTimeSource, "未知 live observation 不得回写 PlayerResult provenance");
+        assertTrue(PlayerResultFormat.deathSec(battle, p) <= 0,
                 "不得伪造死亡时刻（121.23 alive 不是死亡）");
     }
 
@@ -222,9 +223,9 @@ class DeathTimeReconcilerTest {
 
         reconcile(battle, events, resolveMapping(battle, events));
 
-        assertEquals(0.0, p.survivalTimeSec, 1e-9,
-                "仅有 alive 证据不是死亡 → UNKNOWN=0（legacy 启发式不参与）");
-        assertEquals(DeathTimeSource.UNKNOWN, p.deathTimeSource);
+        assertEquals(0.0, PlayerResultFormat.deathSec(battle, p), 1e-9,
+                "仅有 alive 证据不是死亡 → UNKNOWN（legacy 不参与）");
+        assertNull(p.deathTimeSource);
     }
 
     // ================= 最后权威 lifecycle state：旧 death 不能压过更晚的 alive =================
@@ -242,7 +243,7 @@ class DeathTimeReconcilerTest {
 
         reconcile(battle, events, resolveMapping(battle, events));
 
-        assertEquals(0.0, PlayerResultFormat.deathSec(p), 1e-9,
+        assertEquals(0.0, PlayerResultFormat.deathSec(battle, p), 1e-9,
                 "60s 的旧死亡已被 70s 复生否决，不得作为最终 deathSec");
     }
 
@@ -259,7 +260,7 @@ class DeathTimeReconcilerTest {
 
         reconcile(battle, events, resolveMapping(battle, events));
 
-        assertEquals(0.0, PlayerResultFormat.deathSec(p), 1e-9,
+        assertEquals(0.0, PlayerResultFormat.deathSec(battle, p), 1e-9,
                 "同秒 sequence 更晚的 alive 是最后权威状态，60s dead 不得成为最终死亡证据");
     }
 
@@ -276,7 +277,7 @@ class DeathTimeReconcilerTest {
 
         reconcile(battle, events, resolveMapping(battle, events));
 
-        assertEquals(60.0, PlayerResultFormat.deathSec(p), 1e-9,
+        assertEquals(60.0, PlayerResultFormat.deathSec(battle, p), 1e-9,
                 "同秒 sequence 更晚的 dead 是最后权威状态 → 最终死亡时刻 60s");
     }
 
@@ -309,10 +310,10 @@ class DeathTimeReconcilerTest {
         reconcile(battle, events, resolveMapping(battle, events));
 
         // rawClockSec 为 float，128.12f → double 128.119995...；容差 0.01 即可区分 96.9
-        assertEquals(128.12, PlayerResultFormat.deathSec(p), 0.01,
+        assertEquals(128.12, PlayerResultFormat.deathSec(battle, p), 0.01,
                 "IS-4 真实死亡时刻应为 128.12s（HP=0），不是 legacy 估算的 96.9s");
-        assertEquals(DeathTimeSource.LIVE_EXACT, p.deathTimeSource);
-        assertTrue(PlayerResultFormat.deathSec(p) > 111.0,
+        assertEquals(DeathTimeSource.LIVE_EXACT, battle.liveDeathObservations.get(p.accountId).source());
+        assertTrue(PlayerResultFormat.deathSec(battle, p) > 111.0,
                 "01:51（111s）时 IS-4 不得显示为阵亡");
     }
 
@@ -332,11 +333,11 @@ class DeathTimeReconcilerTest {
 
         reconcile(battle, events, resolveMapping(battle, events));
 
-        assertEquals(0.0, PlayerResultFormat.deathSec(a), 1e-9,
+        assertEquals(0.0, PlayerResultFormat.deathSec(battle, a), 1e-9,
                 "A 的 ambiguous sentinel 不得变成死亡，也不得借用 B 的证据（UNKNOWN=0）");
-        assertEquals(DeathTimeSource.UNKNOWN, a.deathTimeSource);
-        assertEquals(100.0, PlayerResultFormat.deathSec(b), 1e-9);
-        assertEquals(DeathTimeSource.LIVE_EXACT, b.deathTimeSource);
+        assertNull(a.deathTimeSource);
+        assertEquals(100.0, PlayerResultFormat.deathSec(battle, b), 1e-9);
+        assertEquals(DeathTimeSource.LIVE_EXACT, battle.liveDeathObservations.get(b.accountId).source());
     }
 
     @Test
@@ -360,7 +361,7 @@ class DeathTimeReconcilerTest {
                 hp(2, 60f, 101, null, null, DecodeConfidence.PARTIAL), // 0xFFFF 语义
                 hp(3, 90f, 101, null, null, DecodeConfidence.PARTIAL));
         reconcile(battle, events, resolveMapping(battle, events));
-        assertEquals(0.0, PlayerResultFormat.deathSec(p), 1e-9,
+        assertEquals(0.0, PlayerResultFormat.deathSec(battle, p), 1e-9,
                 "unknown HP 不得无依据变成死亡（UNKNOWN=0）");
         assertEquals(DeathTimeSource.UNKNOWN, p.deathTimeSource);
     }
@@ -375,7 +376,7 @@ class DeathTimeReconcilerTest {
         events.add(exactAlive(3, 70f, 101, 2000)); // 复生
         events.add(exactDeath(4, 120f, 101)); // 最终阵亡
         reconcile(battle, events, resolveMapping(battle, events));
-        assertEquals(120.0, PlayerResultFormat.deathSec(p), 1e-9,
+        assertEquals(120.0, PlayerResultFormat.deathSec(battle, p), 1e-9,
                 "死亡时刻 = 最终阵亡（最后一条 alive=false），而非早期死亡");
     }
 
@@ -387,7 +388,7 @@ class DeathTimeReconcilerTest {
                 mappingEvent(1, 101, 1001L),
                 exactDeath(2, 250f, 101));
         reconcile(battle, events, resolveMapping(battle, events));
-        assertEquals(218.4, PlayerResultFormat.deathSec(p), 1e-9);
+        assertEquals(218.4, PlayerResultFormat.deathSec(battle, p), 1e-9);
     }
 
     @Test
@@ -398,9 +399,28 @@ class DeathTimeReconcilerTest {
                 mappingEvent(1, 101, 1001L),
                 exactDeath(2, 128.12f, 101));
         reconcile(battle, events, resolveMapping(battle, events));
-        assertEquals(128.12, PlayerResultFormat.deathSec(p), 0.01,
+        assertEquals(128.12, PlayerResultFormat.deathSec(battle, p), 0.01,
                 "LIVE_EXACT > SETTLEMENT_SECOND：live EXACT 精确阵亡时刻覆盖结算秒级时间");
-        assertEquals(DeathTimeSource.LIVE_EXACT, p.deathTimeSource);
+        assertEquals(DeathTimeSource.LIVE_EXACT, battle.liveDeathObservations.get(p.accountId).source());
+    }
+
+    @Test
+    void storesLiveObservationSeparatelyFromSettlementEvidence() {
+        final PlayerResult p = deadPlayer(1001L, "A", 1, 0.0);
+        p.deathTimeMillis = 111_000L;
+        p.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+        final Battle battle = battle(300.0, p);
+        final List<ReplayEvent> events = List.of(
+                mappingEvent(1, 10, 1001L),
+                exactDeath(2, 128.12f, 10));
+
+        reconcile(battle, events, resolveMapping(battle, events));
+
+        final DeathTimeObservation observation = battle.liveDeathObservations.get(1001L);
+        assertEquals(DeathTimeSource.LIVE_EXACT, observation.source());
+        assertEquals(128.12, observation.timeSec(), 0.01);
+        assertEquals(111_000L, p.deathTimeMillis,
+                "live observation must not overwrite the settlement death field");
     }
 
     @Test
@@ -411,9 +431,9 @@ class DeathTimeReconcilerTest {
                 mappingEvent(1, 101, 1001L),
                 exactAlive(2, 50f, 101, 2000)); // 仅有 alive，无最终 live 死亡证据
         reconcile(battle, events, resolveMapping(battle, events));
-        assertEquals(111.0, PlayerResultFormat.deathSec(p), 1e-9,
+        assertEquals(111.0, PlayerResultFormat.deathSec(battle, p), 1e-9,
                 "无有效 live EXACT + 结算 deathTimeMillis>0 → SETTLEMENT_SECOND（±0.5s 量化）");
-        assertEquals(DeathTimeSource.SETTLEMENT_SECOND, p.deathTimeSource);
+        assertEquals(DeathTimeSource.SETTLEMENT_SECOND, battle.liveDeathObservations.get(p.accountId).source());
     }
 
     @Test
@@ -425,9 +445,9 @@ class DeathTimeReconcilerTest {
         events.add(exactDeath(2, 60f, 101));      // 早期死亡
         events.add(exactAlive(3, 70f, 101, 2000)); // 复生，之后无新的 alive=false
         reconcile(battle, events, resolveMapping(battle, events));
-        assertEquals(111.0, PlayerResultFormat.deathSec(p), 1e-9,
+        assertEquals(111.0, PlayerResultFormat.deathSec(battle, p), 1e-9,
                 "60s 早期死亡已被 70s 复生否决；无最终 live EXACT → 回退结算 SETTLEMENT_SECOND");
-        assertEquals(DeathTimeSource.SETTLEMENT_SECOND, p.deathTimeSource);
+        assertEquals(DeathTimeSource.SETTLEMENT_SECOND, battle.liveDeathObservations.get(p.accountId).source());
     }
 
     // ---- 空输入 / 无映射幂等 ----

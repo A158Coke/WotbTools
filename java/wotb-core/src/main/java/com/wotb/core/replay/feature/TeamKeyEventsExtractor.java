@@ -48,6 +48,7 @@ final class TeamKeyEventsExtractor {
      * 目标位置取阵亡时刻前后最近的 OBSERVED 记录；无 OBSERVED 位置时返回 null（禁止硬算）。
      */
     static TeamMemberFeatureSet.DeathProximity resolveDeathProximity(
+            final Battle battle,
             final ReplayReconstruction recon,
             final TeamEntityMapping mapping,
             final String mapCode,
@@ -57,7 +58,7 @@ final class TeamKeyEventsExtractor {
                 || recon.checkpoints().isEmpty()) {
             return null;
         }
-        final double deathSec = PlayerResultFormat.deathSec(player);
+        final double deathSec = PlayerResultFormat.deathSec(battle, player);
         if (deathSec <= 0) {
             return null;
         }
@@ -117,6 +118,15 @@ final class TeamKeyEventsExtractor {
         return new TeamMemberFeatureSet.DeathProximity((double) distance, deltaSec, confidence);
     }
 
+    static TeamMemberFeatureSet.DeathProximity resolveDeathProximity(
+            final ReplayReconstruction recon,
+            final TeamEntityMapping mapping,
+            final String mapCode,
+            final int perspectiveTeam,
+            final PlayerResult player) {
+        return resolveDeathProximity(null, recon, mapping, mapCode, perspectiveTeam, player);
+    }
+
     /** 某时刻本队其它 OBSERVED 车辆的原始坐标质心。 */
     static float[] friendlyCentroidAt(
             final BattleStateCheckpoint cp,
@@ -154,10 +164,10 @@ final class TeamKeyEventsExtractor {
     ) {
         final Stream<KeyBattleEvent> deathEvents = members.stream()
                 .filter(member -> !member.survived)
-                .filter(member -> PlayerResultFormat.deathSec(member) > 0)
-                .sorted(Comparator.comparingDouble(PlayerResultFormat::deathSec))
+                .filter(member -> PlayerResultFormat.deathSec(battle, member) > 0)
+                .sorted(Comparator.comparingDouble(member -> PlayerResultFormat.deathSec(battle, member)))
                 .map(member -> new KeyBattleEvent(
-                        (float) PlayerResultFormat.deathSec(member),
+                        (float) PlayerResultFormat.deathSec(battle, member),
                         "TEAM_MEMBER_DESTROYED",
                         "accountId=" + member.accountId + ";nickname=" + member.nickname,
                         DecodeConfidence.EXACT,
