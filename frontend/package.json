@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "test": "vitest run",
-    "typecheck": "vue-tsc --noEmit",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
     "build": "vite build",
     "preview": "vite preview"
   },

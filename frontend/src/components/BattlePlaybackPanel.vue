@@ -45,13 +45,13 @@ const datasetReady = computed(() => !!props.processingJobId && !!props.sourceId)
 
 // 统一的受保护请求：确保带上有效的 Keycloak Bearer Token（/api/replay/* 需要角色），
 // 并统一处理 token 刷新失败 / 401 / 403。
-async function authedFetch(url, body, { signal } = {}) {
+async function authedFetch(url: string, body: BodyInit | null, { signal }: { signal?: AbortSignal } = {}): Promise<Response> {
   const valid = await ensureToken(30)
   if (!valid) {
     throw new ApiError({ code: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false })
   }
   const accessToken = token()
-  const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+  const headers: Record<string, string> = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
   if (typeof body === 'string') headers['Content-Type'] = 'application/json'
   const r = await apiFetch(url, { method: 'POST', headers, body, signal })
   if (r.status === 401) {
@@ -99,12 +99,12 @@ const panelView = ref('playback')
 const mapLoading = ref(false)
 const mapLoaded = ref(false)
 const mapError = ref('')
-const mapSeek = ref(null)
+const mapSeek = ref<number | null>(null)
 // 换文件竞态防护：每次请求独占一个 generation（递增序号 + AbortController）；
 // 文件变化（resetMap）或组件真正卸载时递增序号并 abort 旧请求，
 // 旧请求在成功/失败/finally 写状态前必须校验序号，绝不覆盖新文件的 mapOverview/mapError/mapLoaded/mapLoading。
 let mapRequestSeq = 0
-let mapAbortController = null
+let mapAbortController: AbortController | null = null
 
 /**
  * 手动加载地图鸟瞰：成功 200 → MapOverview；204 → 无数据（显示不可用提示）；失败 → 稳定错误码本地化。
@@ -373,7 +373,7 @@ onBeforeUnmount(() => {
             <p v-if="playbackV2State === 'PARTIAL'" class="pb-capability-note" data-test="pb-capability-partial">
               {{ $t('recon.playback.partial') }}
             </p>
-            <BattlePlayback v-if="pbOverview" :overview="pbOverview" :playback-v2="mapPlaybackV2" :seek-to="mapSeek" />
+            <BattlePlayback v-if="pbOverview" :overview="pbOverview || undefined" :playback-v2="mapPlaybackV2 || undefined" :seek-to="mapSeek ?? undefined" />
           </template>
           <div v-else-if="playbackV2State === 'UNAVAILABLE'" class="pb-status pb-unavailable" data-test="pb-unavailable">
             {{ playbackV2UnavailableReason }}
