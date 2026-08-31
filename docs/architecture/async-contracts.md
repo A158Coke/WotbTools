@@ -1,6 +1,6 @@
 # Async contracts boundary
 
-`java/wotb-contracts` is the future async-domain boundary for the Dual-Cloud plan. It is a JDK-only Maven artifact and currently has no caller in `wotb-web`; adding it does not switch the existing replay processing path.
+`java/wotb-contracts` is the future async-domain boundary for the Dual-Cloud plan. It is a JDK-only Maven artifact consumed only as a type dependency by the Web-side migration adapter; adding it does not switch the existing replay processing path.
 
 ## Contract rules
 
