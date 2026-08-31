@@ -378,8 +378,7 @@ class TeamAiPromptBuilderTest {
         battle.winnerTeam = 1;
         battle.players = players;
         battle.recorder = players.getFirst().nickname;
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         final var result = new ReplayProcessingResult(
                 "budget.wotbreplay",
                 ReplayProcessingStatus.PARTIAL_SUCCESS,

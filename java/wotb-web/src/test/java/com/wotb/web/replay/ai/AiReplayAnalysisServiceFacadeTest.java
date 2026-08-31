@@ -98,7 +98,7 @@ class AiReplayAnalysisServiceFacadeTest {
         final var enemy = player(2001L, "Enemy", 2, 900);
         battle.players = List.of(ally, enemy);
         final var capabilities = new com.wotb.core.replay.processing.ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+                true, true, false, true, false);
         return new ReplayProcessingResult(
                 "stub.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new com.wotb.core.replay.processing.ReplayIdentity(

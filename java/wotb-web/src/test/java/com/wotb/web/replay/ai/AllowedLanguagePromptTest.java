@@ -238,8 +238,7 @@ class AllowedLanguagePromptTest {
         final PlayerResult ally = player(1001L, "Ally", 1, 1500);
         final PlayerResult enemy = player(2001L, "Enemy", 2, 900);
         battle.players = List.of(ally, enemy);
-        final ReplayProcessingCapabilities capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final ReplayProcessingCapabilities capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         final ReplayProcessingResult result = new ReplayProcessingResult(
                 "stub.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new com.wotb.core.replay.processing.ReplayIdentity(

@@ -294,8 +294,7 @@ class TankNameProperNounTest {
         battle.players = List.of(player);
         battle.recorder = player.nickname;
 
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         final var result = new ReplayProcessingResult(
                 "tank-name.wotbreplay",
                 ReplayProcessingStatus.PARTIAL_SUCCESS,
