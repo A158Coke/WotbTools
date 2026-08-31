@@ -13,6 +13,7 @@
     <modules>
         <module>wotb-contracts</module>
         <module>wotb-core</module>
+        <module>wotb-control</module>
         <module>wotb-web</module>
     </modules>
 
