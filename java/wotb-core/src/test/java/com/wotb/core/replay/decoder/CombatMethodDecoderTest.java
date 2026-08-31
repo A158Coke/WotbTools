@@ -7,7 +7,9 @@ import com.wotb.core.replay.event.ProjectileLaunchedEvent;
 import com.wotb.core.replay.event.ProjectileTerminalEvent;
 import com.wotb.core.replay.event.ShotResultEvent;
 import com.wotb.core.replay.event.TargetingInfoSnapshotEvent;
+import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.event.VehicleFiredEvent;
+import com.wotb.core.replay.event.VehicleHealthStateEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
@@ -56,6 +58,29 @@ class CombatMethodDecoderTest {
         final VehicleFiredEvent e = (VehicleFiredEvent) r.events().get(0);
         assertEquals(DecodeConfidence.EXACT, e.confidence());
         assertEquals(1, e.argRaw());
+    }
+
+    @Test
+    void method0RequiresExactVehicleShapeAndSentinel() {
+        ctx.entityClassRegistry().markVehicle(7);
+        for (final byte[] args : new byte[][]{new byte[0], new byte[]{0}, new byte[]{1, 2}}) {
+            final ReplayDecodeResult r = decoder.decode(ctx, method(0, args));
+            assertTrue(r.events().getFirst() instanceof UnknownReplayEvent,
+                    "method0 非 1-byte args=01 必须 raw-preserve");
+            assertTrue(r.warnings().stream().anyMatch(w -> "ENTITY_METHOD_UNDECODED".equals(w.code())));
+        }
+    }
+
+    @Test
+    void method1KeepsRawCauseWithoutSemanticPromotion() {
+        ctx.entityClassRegistry().markVehicle(7);
+        final byte[] args = concat(new byte[]{(byte) 0xFD, (byte) 0xFF}, le32(99), new byte[]{5});
+        final ReplayDecodeResult r = decoder.decode(ctx, method(1, args));
+        final VehicleHealthStateEvent e = (VehicleHealthStateEvent) r.events().getFirst();
+        assertEquals(0xFFFD, e.currentHpRaw());
+        assertEquals(99, e.sourceEntity());
+        assertEquals(5, e.causeFlag());
+        assertNull(e.cause(), "method1 raw cause 不能仅凭数字升级语义");
     }
 
     @Test

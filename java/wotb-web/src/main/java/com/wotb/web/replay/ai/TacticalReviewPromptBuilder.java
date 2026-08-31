@@ -268,9 +268,6 @@ public final class TacticalReviewPromptBuilder {
         if (includePhases && features != null && features.phases() != null && !features.phases().isEmpty()) {
             sb.append("\n======================== BATTLE PHASE SUMMARY（阶段时间线·双方存活人数） ========================\n");
             sb.append(BattlePhaseTimelineSection.PHASE_SEMANTICS_NOTE);
-            if (battle != null) {
-                sb.append("DEATH_SOURCE=").append(BattlePhaseSummary.deathSourceLabel(battle)).append('\n');
-            }
             sb.append(BattlePhaseTimelineSection.renderPlayerRows(features.phases()));
         }
         if (includePointsSituation && !pointsSituationSection.isEmpty()) {

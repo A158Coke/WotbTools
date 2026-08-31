@@ -147,7 +147,7 @@ public final class NearbySupportCounter {
         int enemy = 0;
         if (battle.players != null) {
             for (final PlayerResult p : battle.players) {
-                if (!aliveAt(p, battleRelSec)) {
+                if (!aliveAt(battle, p, battleRelSec)) {
                     continue;
                 }
                 if (p.team == recorderTeam) {
@@ -162,7 +162,7 @@ public final class NearbySupportCounter {
     }
 
     /** 权威存活判定：survived，或阵亡时间晚于当前 battle-relative 时刻。 */
-    private static boolean aliveAt(final PlayerResult p, final float battleRelSec) {
+    private static boolean aliveAt(final Battle battle, final PlayerResult p, final float battleRelSec) {
         if (p.survived) {
             return true;
         }

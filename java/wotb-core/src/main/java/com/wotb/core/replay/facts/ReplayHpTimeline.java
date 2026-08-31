@@ -84,8 +84,6 @@ public final class ReplayHpTimeline {
                     HpObservationKind.TERMINAL_ZERO, ReplayFactSource.OBSERVED_EXACT));
             case DEATH_TERMINAL_FFFD -> out.add(new HpObservation(h.entityId(), account, t, null,
                     HpObservationKind.TERMINAL_FFFD, ReplayFactSource.OBSERVED_EXACT));
-            case VERIFIED_TERMINAL_FFFE -> out.add(new HpObservation(h.entityId(), account, t, null,
-                    HpObservationKind.TERMINAL_FFFE, ReplayFactSource.OBSERVED_EXACT));
             case UNKNOWN_FFFF, UNKNOWN_OTHER -> {
                 if (h.rawCurrentHealth() != null) {
                     out.add(new HpObservation(h.entityId(), account, t, null,
@@ -114,7 +112,7 @@ public final class ReplayHpTimeline {
             return;
         }
         // consume the decoder-classified rawState propagated with the event; never re-classify
-        // the raw u16 here (0xFFFE version-scoped by decoder boundary already).
+        // the raw u16 here.
         final HpRawState state = v.rawState() == null ? HpRawState.UNKNOWN_OTHER : v.rawState();
         final long account = accountOf(mapping, v.entityId());
         switch (state) {
@@ -125,8 +123,6 @@ public final class ReplayHpTimeline {
                     HpObservationKind.TERMINAL_ZERO, ReplayFactSource.OBSERVED_EXACT));
             case DEATH_TERMINAL_FFFD -> out.add(new HpObservation(v.entityId(), account, t, null,
                     HpObservationKind.TERMINAL_FFFD, ReplayFactSource.OBSERVED_EXACT));
-            case VERIFIED_TERMINAL_FFFE -> out.add(new HpObservation(v.entityId(), account, t, null,
-                    HpObservationKind.TERMINAL_FFFE, ReplayFactSource.OBSERVED_EXACT));
             case UNKNOWN_FFFF, UNKNOWN_OTHER -> out.add(new HpObservation(v.entityId(), account, t, null,
                     HpObservationKind.UNKNOWN_SENTINEL, ReplayFactSource.UNKNOWN));
         }

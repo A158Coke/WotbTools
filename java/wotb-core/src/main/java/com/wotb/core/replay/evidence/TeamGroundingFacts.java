@@ -143,7 +143,7 @@ public final class TeamGroundingFacts {
         final List<RegionSnapshot> snapshots = new ArrayList<>();
         final List<EnemyPositionSample> enemyPositions = new ArrayList<>();
 
-        // 1) 阵亡：canonical deathSec 已是 battle-relative。LIVE_EXACT > SETTLEMENT_SECOND > UNKNOWN。
+        // 1) 阵亡：Battle-aware canonical deathSec 已是 battle-relative。
         final List<PlayerResult> players = battle == null || battle.players == null
                 ? List.of() : battle.players;
         final List<PlayerResult> dead = players.stream()

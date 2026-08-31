@@ -60,8 +60,7 @@ class RepresentativeComparatorTest {
             final double ratio,
             final int failed,
             final int unknown) {
-        var caps = new ReplayProcessingCapabilities(
-                true, true, recon, false, false, false, false, false);
+        var caps = new ReplayProcessingCapabilities(true, true, recon, false, false);
         var coverage = new ReplayCoverage(
                 100, (int) (ratio * 100), 0, unknown, failed, ratio, Map.of());
         var diag = new ReplayStreamDiagnostics(

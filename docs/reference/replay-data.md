@@ -4,7 +4,7 @@
 > Primary evidence: **PR147 11.19 corpus**（`11.19.0_china` + `11.19.0_china_apple`）。
 > 历史 11.18 观察（`docs/research/replay/`）<b>不自动等于生产语义</b>；每个 capability 均需独立证据（fixture / research / known invariant）。
 > 生产状态：文件结构/字段按已证明事实（AFFIRMED）；未证明语义标 UNKNOWN（见 `docs/reference/replay-parsed-fields.md`）。
-> 前向兼容按三层能力模型（见 `ReplayProtocolProfile`）：容器/framing（A）与稳定结构布局（B）可前向；闭式数字语义（C）仅 VERIFIED family。
+> 前向兼容由严格 framing、packet/envelope/length/shape 与局部 structural invariants 决定；无法证明的具体 numeric semantic 保留 raw/UNKNOWN，不由 clientVersion allowlist 决定。
 
 ## 文件结构
 
@@ -123,14 +123,15 @@ value:     [u8; value_len]
 
 该结构在 11.18 样本上 100% 干净解析。`prop_id → 语义` 的<b>逐属性 mapping 已收敛</b>：普通正数 HP 由
 回放结构包（Type5 物化当前 HP / Avatar method5 / Vehicle prop3 / Vehicle method1）产生，终结哨兵（FFFD/FFFE）
-与 HP 版本作用域在 `ReplayVersionGate` / `ReplayProtocolProfile` 中以 capability 表达。EntityProperty
+与 HP numeric evidence 在 decoder-local 的 raw classification 中表达。EntityProperty
 解码器保留结构（`prop_id`/`value_len`）+ 已证明的 HP/property 语义；<b>未证明</b>的 prop_id 语义仍标
 `UNKNOWN`，绝不臆断血量/存活。
 
-> **可靠的血量/伤害/助攻/格挡/击杀/存活/死亡时刻请以 `battle_results.dat`（`Battle`/`PlayerResult`）为准**——
-> 见 `docs/architecture/ai-review.md`。逐帧 HP 时间线由 canonical HP facts（`ReplayHpTimeline`）提供。
+> **可靠的血量/伤害/助攻/格挡/击杀/存活及业务死亡秒值请以 `battle_results.dat`（`Battle`/`PlayerResult`）为准**；
+> `field24 lifeTime` 是唯一死亡秒值 authority。逐帧 HP 时间线由 canonical HP facts（`ReplayHpTimeline`）提供，
+> live reconstruction 仅用于 Playback/HP/动画/诊断。
 
-> **死亡时刻口径（AI 复盘）**：死亡权威链为 `LIVE_EXACT`（回放 live EXACT，sub-second）→ `SETTLEMENT_SECOND`（结算 `deathTimeMillis`——由 field24 lifeTime 派生，11.19 corpus 无 #104，±0.5s）→ `UNKNOWN`（`survivalTimeSec=0`，绝不伪造）；`PlayerResultFormat.deathSec` 按 `deathTimeSource` 消费。EntityLeave / 最后位置 / damage threshold 不再是死亡 authority（legacy 启发式仅存于 diagnostics）。
+> **死亡时刻口径（AI 复盘）**：只消费 settlement `field24 lifeTime`；`PlayerResult` 上的 `deathTimeMillis`/`survivalTimeSec` 只是兼容投影。EntityLeave / 最后位置 / damage threshold 不是死亡 authority；结算秒值无效时相关推理必须 fail-closed。
 > 不得把估算数据当作权威；阶段存活人数明确为「至阶段末」，并注入双方逐车阵亡时间线。
 
 > **观测伤害抑制（AI 复盘）**：事件流伤害仅为观测子集（`DamageEvent`），覆盖未达 100% 时后端标记
@@ -142,18 +143,18 @@ value:     [u8; value_len]
 
 **methodId 是 entity-class scoped** —— 同一 methodId 在不同实体类上是不同语义（如
 Avatar method4 2B=RoundFinished，Vehicle method4 16B=vehicle-to-vehicle collision）。安全 key 为
-`(capability, entityClass, methodId, exact argShape)`；entityClass 只能由独立生命周期/身份证据建立
+`(entityClass, methodId, exact argShape)`；entityClass 只能由独立生命周期/身份证据建立
 （Type5 materialization `entityTypeId`；method48 参与映射中的 recorder 账号身份），**method decoder 不得
 由 methodId 自证 class**。class UNKNOWN → raw-preserve（`UnknownReplayEvent`）。
 
-**语义仅 VERIFIED family 认可为 EXACT**：future（STRUCTURALLY_COMPATIBLE）版本只前向读取 envelope 结构，
-numeric method 语义（含 method0/1/5/17/20/27/29）未认证 → raw/Unknown，绝不承接当前版本 EXACT semantic
-（见 `ReplayVersionGate.methodLayoutAffirmed`）。stable 结构（如 Type10 49B、普通正 HP 结构值）仍可前向。
+**语义按结构与实体证据认可为 EXACT**：future version 只要 envelope、length、shape 与实体类证据成立，
+即可解码相同的 proven semantic；无法证明的具体 numeric semantic 仍 raw/Unknown。stable 结构（如 Type10
+49B、普通正 HP 结构值）不因版本字符串被拒绝。
 
 | 实体类 | methodId | 语义 / 证据状态 | exact args shape | 产出 |
 |---:|---:|---|---|---|
 | Vehicle | 0 | AFFIRMED（观测开火） | 1B | `VehicleFiredEvent` |
-| Vehicle | 1 | AFFIRMED（HP/state family；cause 语义仅 11.19 闭合，11.18 UNKNOWN） | 7B | `VehicleHealthStateEvent` |
+| Vehicle | 1 | AFFIRMED（HP/state family；未证明的 cause 数值保留 raw） | 7B | `VehicleHealthStateEvent` |
 | Vehicle | 4 | AFFIRMED（vehicle-to-vehicle collision） | 16B | `VehicleVehicleCollisionEvent` |
 | Vehicle | 8 | AFFIRMED 结构观测（hit/result feedback；非权威伤害数字） | — | `VehicleHitEvent`/`UnsupportedDamageEvent` |
 | Avatar | 4 | AFFIRMED（round-finished，winner + finishReason） | 2B | `RoundFinishedEvent` |
@@ -260,15 +261,11 @@ EventStream → Type 8 sub_type 48 (updateArena2)
 ## 死亡时间 authority
 
 ```
-死亡权威链（PlayerResultFormat.deathSec() / deathEvidence()）:
-  LIVE_EXACT         回放 live EXACT（sub-second）
-      >
-  SETTLEMENT_SECOND 结算 field24 lifeTime（秒，dead=阵亡秒；survivor=battle duration；±0.5s 精度）
-      >
-  UNKNOWN
+死亡权威（PlayerResultFormat.deathSec()）：
+  settlement field24 lifeTime（dead=阵亡秒；survivor=battle duration）
 
-死亡时间 = PlayerResultFormat.deathSec()（canonical），绝不重读 raw field24 / #104 / EntityLeave /
-damage threshold / last HP update 自行计算。
+死亡时间只由 settlement 事实提供；Playback/live 事件、#104、EntityLeave、damage threshold、
+last HP update 均不得覆盖或重新计算业务死亡秒值。
 ```
 
 PR147 authoritative settlement facts：
@@ -281,7 +278,7 @@ PR147 authoritative settlement facts：
 > `damageReceived` 阈值 → 推断阵亡 + killer」以及「EntityLeave + Position 停止 / 最后位置 / 离开时间」
 > 估算死亡时刻。这些启发式（damage-threshold / EntityLeave / last-position / last-attacker）在
 > <b>不再写入 `PlayerResult`</b>；`PlayerResult.killVictims` 与 `DeathTimeEstimator` 已从生产
-> 移除。死亡时刻只允许由 canonical 死亡 authority（`LIVE_EXACT → SETTLEMENT_SECOND → UNKNOWN`）给出。
+> 移除。业务死亡时刻只允许由 settlement `field24 lifeTime` 给出。
 
 ---
 
@@ -517,7 +514,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `impact`                     | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.impact`        | %  | 单场 Impact（派生，不依赖 HP，恒有值）                                                     |
 | `damage_received`             | 整数  | `PlayerResult.damageReceived`            | HP    | #11                                                                             |
 | `damage_blocked`              | 整数  | `PlayerResult.damageBlocked`             | HP    | #117                                                                            |
-| `survival_time`               | 浮点数 | `PlayerResult.survivalTimeSec`           | 秒     | 存活者=durationS；阵亡者=representative deathSec（deathTimeSource：LIVE_EXACT → SETTLEMENT_SECOND(field24 lifeTime 派生) → UNKNOWN），见 replay-parsed-fields.md |
+| `survival_time`               | 浮点数 | `PlayerResult.survivalTimeSec`           | 秒     | settlement lifeTime 的兼容投影；live reconstruction 不覆盖业务值 |
 | `n_shots`                     | 整数  | `PlayerResult.nShots`                    | 次数    | #4                                                                              |
 | `n_hits_dealt`                | 整数  | `PlayerResult.nHitsDealt`                | 次数    | #5                                                                              |
 | `n_penetrations_dealt`        | 整数  | `PlayerResult.nPenetrationsDealt`        | 次数    | #7                                                                              |
@@ -568,7 +565,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | 含义    | 单位         | 说明                                                    |
 |-------|------------|-------------------------------------------------------|
 | 伤害值   | **HP**     | 游戏内生命值点数                                              |
-| 存活时间  | **秒**      | representative deathSec（deathTimeSource 链：LIVE_EXACT → SETTLEMENT_SECOND(field24 lifeTime 派生) → UNKNOWN） |
+| 存活时间  | **秒**      | settlement `field24 lifeTime`（死亡玩家为死亡秒值，幸存者为战斗时长） |
 | 战斗时长  | **秒**      | `meta.json#battleDuration`（浮点）                        |
 | 时间戳   | **Unix 秒** | 自 1970-01-01 起的秒数                                     |
 | 次数/计数 | **次**      | 射击/命中/击杀/人数                                           |
@@ -586,12 +583,10 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 
 | 层级 | 来源                                  | 精度               |
 |----|-------------------------------------|------------------|
-| LIVE_EXACT       | 回放 live EXACT 死亡证据                 | sub-second       |
-| SETTLEMENT_SECOND | 结算 field24 lifeTime（dead=死亡秒；survivor=battle duration） | ±0.5s（保留 second-level uncertainty） |
-| UNKNOWN          | 无可信证据                             | —                |
+| SETTLEMENT       | 结算 field24 lifeTime（dead=死亡秒；survivor=battle duration） | 整数秒 authority |
 
-死亡时间统一经 `PlayerResultFormat.deathSec()` / `deathEvidence()`（canonical），
-消费方绝不重读 raw field24 / #104 / EntityLeave / damage threshold 自行计算。
+死亡时间统一经 `PlayerResultFormat.deathSec()`（canonical），消费方绝不重读 raw field24 / #104 /
+EntityLeave / damage threshold 自行计算。
 
 > **旧启发式已移除：** 早期用「Type 8 subtype 8 累计 direct HP 伤害 ≥ `damageReceived` 阈值」的 damageDeathTimes，
 > 以及「EntityLeave + Position 停止 / 最后位置 / 离开时间」的 EntityLeave/Position 兜底估算死亡时刻。这些

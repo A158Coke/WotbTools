@@ -29,11 +29,11 @@
 | `victoryPointsEarned` | int | 战绩 `#32` | 占点得分 | supremacy 争霸赛逐人 |
 | `victoryPointsSeized` | int | 战绩 `#33` | 占点占领分 | supremacy 争霸赛逐人 |
 | `survived` | boolean | 派生 | 是否存活（= `settlementDeathReasonRaw == -1` 幸存 sentinel） | 由 field105 deathReason 派生，不是独立 survived 字段 |
-| `deathTimeMillis` | long | 派生 | canonical 结算死亡时刻（毫秒，由 settlement field24 lifeTime 派生；11.19 corpus <b>无 #104</b>） | 权威链 LIVE EXACT → SETTLEMENT（±0.5s）→ UNKNOWN；由 DeathTimeReconciler 用 live EXACT 覆盖 |
+| `deathTimeMillis` | long | 派生 | 结算 field24 lifeTime 的毫秒兼容投影（11.19 corpus <b>无 #104</b>） | 只表示 settlement；live observation 不回写此字段 |
 | `settlementLifeTimeSec` | double | 战绩 `#24` | settlement lifeTime（秒；阵亡=结算死亡秒；幸存=整场时长） | raw settlement 证据，保留 |
 | `settlementKillerResultEntityId` | long? | 战绩 `#25` | 击杀者 result/entity-id（<b>非 accountId</b>，namespace == #301 outer field1） | 经 result/entity-id → accountId 映射得 `killerAccountId` |
 | `settlementDeathReasonRaw` | int? | 战绩 `#105` | deathReason 原始值（-1=幸存 sentinel；未证明值 raw 保留） | 已证明：5=drowning；其它 UNKNOWN |
-| `survivalTimeSec` | double | 派生 | 存活时间（秒） | 权威链 LIVE_EXACT（回放精确 sub-second）> SETTLEMENT_SECOND（结算，±0.5s）> UNKNOWN=0（由 DeathTimeReconciler 校准；legacy 启发式不作为权威） |
+| `survivalTimeSec` | double | 派生 | settlement lifeTime 的兼容投影（秒） | 仅兼容展示；业务死亡秒值读取 settlement `field24 lifeTime`，live reconstruction 不覆盖 |
 | `xp` / `credits` | int | 战绩 | 经验/银币 | 展示用 |
 | `tankName` / `tankTier` / `tankType` / `tankNation` / `alphaDamage` | String | tankopedia 映射 | 展示派生字段 | 非回放原始值 |
 
@@ -44,9 +44,7 @@
 | `arenaId` | String | 地图/竞技场 ID（来源：`battle_results.dat`） |
 | `winnerTeam` | Integer | 获胜队伍原始编号；null=平局/未知（来源：`battle_results.dat`） |
 | `players` | List\<PlayerResult\> | 全部玩家战绩（来源：`battle_results.dat`） |
-| `rosterComplete` | Boolean | 结算阵容完整性证据（<b>严格 fail-closed 全局契约</b>）：名册(#201)与战绩(#301)账号集合完全一致且名册队伍(#201→#2→#3)（存在时）与结算队伍一致时为 true；null=未知/不完整（来源：`ReplayParser`）。<b>不因 League Rating 弱化</b>：它是全歼 / SURVIVOR_SETTLEMENT / POINTS_INFERENCE / pointsEndReason 等「完整逐人结算」推断的 fail-closed 前提；#201 存在无法证明为 spectator 的 extra（如 #201=4/#301=3）时不得视为完整。League Rating 对 non-combatant extra 的宽容走 League 专属证据（见下两字段） |
-| `settlementAccountsCoveredByRoster` | Boolean | League 专属结算覆盖证据（`ReplayParser` 设置）：战绩 #301 每个结算账号都出现在名册 #201 中（无幽灵结算）；null=无名册证据（非回放解析路径）。#201 可含 non-combatant extra（标准 7v7 且 #301 完整 14 人时 extra 不属于 14 名 settled combatants），extra 不影响本字段 |
-| `settlementRosterTeamConsistent` | Boolean | League 专属队伍一致性证据（`ReplayParser` 设置）：名册 #201→#2→#3 提供的队伍字段（存在时）与结算队伍一致；null=无队伍证据 |
+| `rosterComplete` | Boolean | 结算阵容完整性证据（<b>严格 fail-closed 全局契约</b>）：名册(#201)与战绩(#301)账号集合完全一致且名册队伍(#201→#2→#3)（存在时）与结算队伍一致时为 true；null=未知/不完整（来源：`ReplayParser`）。<b>不参与 League Rating eligibility</b>：League Rating 以 #301 的 14 settled combatants 为 authority，#201 仅用于 metadata enrichment（缺失/extra 不阻塞评分）；`rosterComplete` 保留给全歼 / SURVIVOR_SETTLEMENT / pointsEndReason 等「完整逐人结算」推断的 fail-closed 前提；#201 存在无法证明为 spectator 的 extra（如 #201=4/#301=3）时不得视为完整 |
 | `version` | String | 游戏版本（来源：`meta.json`） |
 | `mapName` | String | 内部地图 code（如 `desert_train`；来源：`meta.json`） |
 | `durationS` | Double | 战斗时长（秒，来源：`meta.json#battleDuration`，上限 420） |
@@ -97,7 +95,7 @@
 ## 5. 口径约定（易错点）
 
 - **录像者昵称**：`meta.json#playerName` 在部分版本中是「军团-昵称」拼接（如 `CHRD-A158布丁`），roster 的 nickname 是纯昵称。解析层 `ReplayParser.resolveRecorderNickname` 会先精确匹配 roster 昵称，再尝试「clan+分隔符+nickname」常见形式并唯一匹配时归一化为纯昵称；随机战斗复盘只使用玩家 nickname，不得把军团名当作玩家名。
-- **死亡时刻**：权威链 `LIVE EXACT`（live exact 死亡证据）→ `SETTLEMENT_SECOND`（<b>settlement field24 lifeTime</b>，±0.5s 量化）→ `UNKNOWN`（survivalTimeSec=0，绝不伪造）；11.19 corpus <b>无 #104</b>。禁止用 EntityLeave/最后位置/伤害阈值等 legacy 启发式当死亡权威。<b>precision</b>：SETTLEMENT_SECOND 不是 exact point——trade / 谁先死 / 5s 窗口 / phase boundary 必须用 `PlayerResultFormat.deathEvidence(PlayerResult)`（±0.5s interval，ambiguity fail-closed），不得用 midpoint 强判；简单展示用 `PlayerResultFormat.deathSec`（representative）。`PlayerResultFormat.deathSec` + `deathTimeSource` 标注。
+- **死亡时刻**：业务死亡秒值只来自 settlement `field24 lifeTime`；`deathTimeMillis`/`survivalTimeSec` 是兼容投影。Playback/live reconstruction 不覆盖 settlement，EntityLeave/最后位置/伤害阈值等 legacy 启发式不是死亡权威；无有效结算秒值时 trade、先后顺序和 phase boundary 必须 fail-closed。
 - **坐标**：优先使用每张地图 `map-semantics/*.semantic.json` 的 `playableBoundsMeters` 推导 `centerX/centerZ/halfExtent`，再映射到 500×500 canonical；只有语义缺失或边界无效时才回退中心原点、`halfExtent=250`。三态 `VALID/CLAMPED/INVALID`；九宫格 region 只描述方位，禁止用 region 差推断距离。
 - **时间**：派生证据优先使用可靠的 battle-relative 时间（`battleClockSec`）；战斗开始无法解析时 `tryRelative()` 返回 `UNRESOLVED_RAW_ONLY`，事件以 `UNRESOLVED_RAW_ONLY_EVENTS_IGNORED` 标记并从派生计算中排除（`rawClockSec` 仍保留，但不作为可用时间）；准备阶段事件排除。
 - **权威 vs 观测**：`battle_results` 是唯一可信口径；事件流数字只是观测子集。

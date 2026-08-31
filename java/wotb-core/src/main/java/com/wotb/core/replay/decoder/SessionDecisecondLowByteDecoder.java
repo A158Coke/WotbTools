@@ -14,8 +14,7 @@ import java.util.List;
  * <p>PR147 corpus (docs/research/replay): payload = 1 byte, value = rolling low 8 bits of the
  * client/session monotonic decisecond counter (see {@link SessionDecisecondLowByteEvent}).</p>
  *
- * <p><b>Version gate</b>: only the current canonical 11.19 family may decode this as a
- * session decisecond counter low byte; unknown/future versions raw-preserve (UNKNOWN + diagnostic).
+ * <p>The one-byte layout is decoded by shape; version metadata does not gate this raw counter.
  * It must NOT be interpreted as battle time / Unix time.</p>
  */
 public class SessionDecisecondLowByteDecoder implements ReplayPacketDecoder {
@@ -32,15 +31,6 @@ public class SessionDecisecondLowByteDecoder implements ReplayPacketDecoder {
     public ReplayDecodeResult decode(ReplayDecodeContext context, RawReplayPacket packet) {
         final byte[] payload = packet.payload();
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
-        // only current canonical family carries this proven semantic.
-        if (!ReplayVersionGate.sessionDecisecondAllowed(context.clientVersion())) {
-            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
-                    List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(),
-                            packet.payloadLength(), "VERSION_UNSUPPORTED_TYPE35",
-                            DecodeConfidence.UNKNOWN)),
-                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "Type35 session decisecond low-byte not affirmed: " + context.clientVersion())));
-        }
         if (payload.length != PAYLOAD_LEN) {
             return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
                     List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(),

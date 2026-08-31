@@ -24,9 +24,9 @@ import java.util.List;
  *
  * <p>This is NOT a second terminal/death authority. Destroyed/death life state is derived
  * only from the canonical terminal surfaces {@code ReplayTerminalLifecycle} consumes — the
- * version-scoped {@code rawState.terminal()} ({@code HealthChangedEvent}/{@code VehicleHealthStateEvent}),
- * an explicit drowning cause, and {@code alive==false} legacy exact — never from the derived
- * {@code VehicleDestroyedEvent} or a raw HP&lt;=0 re-derivation.</p>
+ * {@code rawState.terminal()} ({@code HealthChangedEvent}/{@code VehicleHealthStateEvent}), an
+ * explicit (packet-local validated) drowning cause, and {@code alive==false} legacy exact — never
+ * from the derived {@code VehicleDestroyedEvent} or a raw HP&lt;=0 re-derivation.</p>
  */
 public class BattleStateReconstructor {
 
@@ -229,14 +229,18 @@ public class BattleStateReconstructor {
             return;
         }
         // consume the decoder-classified rawState propagated with the event; never
-        // re-classify the raw u16 here (0xFFFE version-scoped by decoder boundary).
+        // re-classify the raw u16 here. The raw cause is NOT a semantic (the decoder preserves
+        // causeFlag and leaves cause=null) — the validated semantic is consumed here via the
+        // packet-local field-specific derivation.
         final HpRawState rawState = e.rawState() == null ? HpRawState.UNKNOWN_OTHER : e.rawState();
         if (rawState == HpRawState.CURRENT_HP) {
             vs.setCurrentHealth((int) (short) (e.currentHpRaw() & 0xFFFF));
         } else if (rawState == HpRawState.HP_ZERO_TERMINAL) {
             vs.setCurrentHealth(0);
         }
-        if (rawState.terminal() || e.cause() == VehicleHealthStateEvent.Cause.DROWNING) {
+        if (rawState.terminal()
+                || VehicleHealthStateEvent.deriveSemanticCause(e)
+                        == VehicleHealthStateEvent.Cause.DROWNING) {
             markDestroyed(vs);
         }
     }

@@ -2,7 +2,6 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -239,8 +238,7 @@ class AllowedLanguagePromptTest {
         final PlayerResult ally = player(1001L, "Ally", 1, 1500);
         final PlayerResult enemy = player(2001L, "Enemy", 2, 900);
         battle.players = List.of(ally, enemy);
-        final ReplayProcessingCapabilities capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final ReplayProcessingCapabilities capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         final ReplayProcessingResult result = new ReplayProcessingResult(
                 "stub.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new com.wotb.core.replay.processing.ReplayIdentity(
@@ -282,8 +280,7 @@ class AllowedLanguagePromptTest {
         p.damageDealt = dmg;
         p.survived = team == 1;
         p.deathTimeMillis = team == 1 ? 0 : 180_000;
-        p.deathTimeSource = p.deathTimeMillis > 0
-                ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+        p.settlementLifeTimeSec = p.deathTimeMillis / 1000.0;
         return p;
     }
 }

@@ -2,7 +2,6 @@ package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -109,29 +108,7 @@ public final class LeagueRatingBatchAggregator {
         playerSummaries.sort(Comparator.comparingLong(PlayerLeagueSummary::accountId));
         teamSummaries.sort(Comparator.comparing(TeamLeagueSummary::teamKey));
         return new LeagueRatingBatch(results, playerSummaries, teamSummaries,
-                failures == null ? List.of() : List.copyOf(failures),
-                ratingQuality(battles));
-    }
-
-    /**
-     * 统计已评分场次中 canonical death time 为 UNKNOWN 的阵亡玩家实例数。
-     * UNKNOWN 是合法的评分质量 limitation，不是 failure；相关 Survival/Trade 维度继续 fail-closed。
-     */
-    private static LeagueRatingQuality ratingQuality(final List<Battle> battles) {
-        int unknown = 0;
-        if (battles != null) {
-            for (final Battle battle : battles) {
-                if (battle == null || battle.players == null) {
-                    continue;
-                }
-                for (final PlayerResult p : battle.players) {
-                    if (!p.survived && PlayerResultFormat.deathSec(p) <= 0) {
-                        unknown++;
-                    }
-                }
-            }
-        }
-        return new LeagueRatingQuality(unknown);
+                failures == null ? List.of() : List.copyOf(failures));
     }
 
     /** 批次 team key：多数军团标签优先，否则 arenaId:team（禁止跨场合并所有 Team 1）。 */

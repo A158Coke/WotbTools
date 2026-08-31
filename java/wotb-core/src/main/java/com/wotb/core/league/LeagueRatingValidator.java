@@ -2,7 +2,6 @@ package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.util.PlayerResultFormat;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -20,19 +19,14 @@ import java.util.Set;
  * 缺失与零值同等对待，绝不把「字段缺失」误判为损坏。统计字段只校验<b>数值关系矛盾</b>
  * （负值 / 非有限 / 命中&gt;射击 / 击穿&gt;命中）。</p>
  *
- * <p><b>死亡时间 UNKNOWN ≠ 数据非法</b>：阵亡玩家的 canonical {@link PlayerResultFormat#deathSec}
- * 为 0（{@code deathTimeSource} 为 UNKNOWN/null，无权威死亡证据）表示精确死亡时刻无法从回放可靠证明
- * （{@link com.wotb.core.replay.processing.DeathTimeReconciler} 的 fail-closed 结果），这是合法状态——
- * 整场仍允许评分，该玩家仅在依赖死亡时刻的 Survival/Trade 维度保守得 0 分。UNKNOWN source 的 residual
- * {@code survivalTimeSec}/{@code deathTimeMillis} 不得作为 authoritative death fact；
- * {@code survivalTimeSec < 0} / NaN / Infinity / canonical death 明显超过战斗时长仍为
- * {@code INVALID_STAT_FACTS}，整场拒绝评分。</p>
+ * <p>阵亡玩家必须具有合法 settlement lifeTime。缺失、非有限、非正数或明显超过战斗时长的
+ * settlement death fact 都以 {@code INVALID_STAT_FACTS} fail closed；League 不消费 live reconstruction。</p>
  *
  * <p>返回<b>全部</b>发现的失败（按严重度排序，调用方取第一条作为该场错误码）。</p>
  */
 public final class LeagueRatingValidator {
 
-    /** 战斗时长与死亡时间的可容忍偏差（秒）。 */
+    /** Settlement lifetime may round at most one second beyond the recorded battle duration. */
     private static final double DEATH_TIME_TOLERANCE_SEC = 1.0;
 
     private LeagueRatingValidator() {
@@ -101,52 +95,43 @@ public final class LeagueRatingValidator {
             failures.add(new LeagueFailure("", arena, LeagueFailure.Code.MISSING_TANK));
         }
 
-        // 5. League 专属结算覆盖：结算账号全部来自名册（#301 ⊆ #201，无幽灵结算）且名册队伍与
-        //    结算队伍无冲突（存在时）。名册 #201 可含 non-combatant extra（标准 7v7 且 #301 完整
-        //    14 人时 extra 不属于 14 名 settled combatants，见 protocol.md）——extra 不导致不完整。
-        //    注意：不引用全局 Battle.rosterComplete（保持 #201 全集合 == #301 全集合的严格
-        //    fail-closed 语义，供 SURVIVOR_SETTLEMENT / annihilation 等推断使用）；League Rating
-        //    的宽容由 League 专属证据 settlementAccountsCoveredByRoster /
-        //    settlementRosterTeamConsistent 表达。
-        if (!Boolean.TRUE.equals(battle.settlementAccountsCoveredByRoster)
-                || !Boolean.TRUE.equals(battle.settlementRosterTeamConsistent)) {
-            failures.add(new LeagueFailure("", arena, LeagueFailure.Code.ROSTER_INCOMPLETE));
-        }
+        // 5. League 以 #301 的 settled combatants 为 Rating authority；#201 只用于
+        //    nickname/clan/rank/prebattle metadata enrichment，缺失/extra 不得阻塞 Rating。
+        //    Battle.rosterComplete（严格 #201 全集合 == #301 全集合）保留给
+        //    SURVIVOR_SETTLEMENT / annihilation 等 AI/reconstruction 推断，不参与 League Rating。
 
         // 6. winnerTeam 必须明确为 1 或 2（平局/未知不产生 Rating）
         if (battle.winnerTeam == null || (battle.winnerTeam != 1 && battle.winnerTeam != 2)) {
             failures.add(new LeagueFailure("", arena, LeagueFailure.Code.NO_DECISIVE_WINNER));
         }
 
-        // 7. 阵亡玩家死亡时间语义（死亡时间 UNKNOWN ≠ 数据非法）：
-        //    survivalTimeSec == 0 = UNKNOWN（合法，允许整场评分——该玩家仅在依赖死亡时刻的
-        //    Survival/Trade 维度 fail-closed 得 0 分，见 TradeFacts）；负数 / NaN / Infinity
-        //    由下方 hasInvalidStatFacts 统一拒绝（INVALID_STAT_FACTS）；此处只保留
-        //    「死亡时间明显超过战斗时长」的矛盾检查（明显矛盾仍为非法 stat facts）。
-        boolean contradictoryTime = false;
-        final Double duration = battle.durationS;
-        for (final PlayerResult p : players) {
-            // 「死亡时间是否明显超过 duration」的业务语义基于 canonical source-aware evidence：
-            // UNKNOWN 的 residual survivalTimeSec/deathTimeMillis 不得成为 authoritative death fact。
-            if (!p.survived && duration != null && Double.isFinite(duration)
-                    && Double.isFinite(p.survivalTimeSec)) {
-                // 仅对 structurally-valid（finite survivalTimeSec）的玩家做「超过 duration」判定；
-                // infinite/NaN 由 hasInvalidStatFacts 统一 fail-closed，避免重复报错。
-                final double deathSec = PlayerResultFormat.deathSec(p);
-                if (deathSec > 0 && deathSec > duration + DEATH_TIME_TOLERANCE_SEC) {
-                    contradictoryTime = true;
-                }
-            }
-        }
-        if (contradictoryTime) {
-            failures.add(new LeagueFailure("", arena, LeagueFailure.Code.INVALID_STAT_FACTS));
-        }
-
-        // 8. 数值约束：负值 / 非有限 / 明显违反真实字段关系
-        if (hasInvalidStatFacts(players)) {
+        // 7. 数值约束：负值 / 非有限 / 明显违反真实字段关系
+        if (hasInvalidSettlementDeathTime(battle, players) || hasInvalidStatFacts(players)) {
             failures.add(new LeagueFailure("", arena, LeagueFailure.Code.INVALID_STAT_FACTS));
         }
         return failures;
+    }
+
+    /** Settlement lifetime is a real field fact; live observation precision is intentionally ignored. */
+    private static boolean hasInvalidSettlementDeathTime(final Battle battle,
+                                                          final List<PlayerResult> players) {
+        final Double duration = battle.settlementDurationSec != null
+                && Double.isFinite(battle.settlementDurationSec)
+                && battle.settlementDurationSec > 0
+                ? battle.settlementDurationSec : battle.durationS;
+        for (final PlayerResult p : players) {
+            if (p.survived) {
+                continue;
+            }
+            if (!Double.isFinite(p.settlementLifeTimeSec) || p.settlementLifeTimeSec <= 0) {
+                return true;
+            }
+            if (duration != null && Double.isFinite(duration) && duration > 0
+                    && p.settlementLifeTimeSec > duration + DEATH_TIME_TOLERANCE_SEC) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 统计字段数值关系矛盾检查（统计字段零值合法，不做存在性要求）。 */
@@ -159,7 +144,9 @@ public final class LeagueRatingValidator {
                     || p.nHitsReceived < 0 || p.nPenetrationsReceived < 0 || p.nEnemiesDamaged < 0) {
                 return true;
             }
-            if (!Double.isFinite(p.survivalTimeSec) || p.survivalTimeSec < 0) {
+            // Settlement is the only authority for League death facts; the compatibility
+            // survivalTimeSec projection is deliberately NOT an eligibility gate.
+            if (!Double.isFinite(p.settlementLifeTimeSec) || p.settlementLifeTimeSec < 0) {
                 return true;
             }
             if (p.nShots > 0 && p.nHitsDealt > p.nShots) {

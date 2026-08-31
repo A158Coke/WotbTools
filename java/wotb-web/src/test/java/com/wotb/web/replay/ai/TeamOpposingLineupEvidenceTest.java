@@ -160,8 +160,7 @@ class TeamOpposingLineupEvidenceTest {
         battle.players = players;
         battle.recorder = ownAce.nickname;
 
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         final var result = new ReplayProcessingResult(
                 "team-enemy.wotbreplay",
                 ReplayProcessingStatus.PARTIAL_SUCCESS,

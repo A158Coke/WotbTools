@@ -164,8 +164,7 @@ class ExactReplayDuplicateDetectorTest {
         pr.team = 1;
         b.players = List.of(pr);
         b.recorder = "P";
-        final var caps = new ReplayProcessingCapabilities(
-                true, true, false, false, false, false, false, false);
+        final var caps = new ReplayProcessingCapabilities(true, true, false, false, false);
         final var r1 = new ReplayProcessingResult(
                 "a", ReplayProcessingStatus.SUCCESS, id, b, null, null, caps, null, null);
         final var r2 = new ReplayProcessingResult(
