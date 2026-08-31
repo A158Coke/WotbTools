@@ -23,6 +23,7 @@ import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
+import com.wotb.core.replay.processing.AiAnalysisEligibility;
 import com.wotb.core.replay.processing.BatchAnalyzer;
 import com.wotb.core.replay.processing.BattleCategory;
 import com.wotb.core.replay.processing.PlayerSideResolver;

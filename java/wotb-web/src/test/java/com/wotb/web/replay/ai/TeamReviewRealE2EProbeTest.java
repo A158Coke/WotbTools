@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Source;
+import com.wotb.core.replay.processing.AiAnalysisEligibility;
 import com.wotb.core.replay.processing.BatchAnalyzer;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.processing.ReplayPerspectiveGroup;

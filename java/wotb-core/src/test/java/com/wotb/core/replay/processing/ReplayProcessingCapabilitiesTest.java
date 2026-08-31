@@ -35,55 +35,55 @@ class ReplayProcessingCapabilitiesTest {
     @Test
     void playerFocusedSummaryNoRecorderNotAnalyzable() {
         final var caps = new ReplayProcessingCapabilities(true, false, false, false, false);
-        assertFalse(BatchAnalyzer.isAiAnalyzable(caps, ReplayAnalysisScope.PLAYER_FOCUSED));
+        assertFalse(AiAnalysisEligibility.isAiAnalyzable(caps, ReplayAnalysisScope.PLAYER_FOCUSED));
     }
 
     @Test
     void playerFocusedSummaryWithRecorderAnalyzable() {
         final var caps = new ReplayProcessingCapabilities(true, true, false, false, false);
-        assertTrue(BatchAnalyzer.isAiAnalyzable(caps, ReplayAnalysisScope.PLAYER_FOCUSED));
+        assertTrue(AiAnalysisEligibility.isAiAnalyzable(caps, ReplayAnalysisScope.PLAYER_FOCUSED));
     }
 
     @Test
     void playerFocusedNoSummaryNotAnalyzable() {
         final var caps = new ReplayProcessingCapabilities(false, false, false, false, false);
-        assertFalse(BatchAnalyzer.isAiAnalyzable(caps, ReplayAnalysisScope.PLAYER_FOCUSED));
+        assertFalse(AiAnalysisEligibility.isAiAnalyzable(caps, ReplayAnalysisScope.PLAYER_FOCUSED));
     }
 
     @Test
     void teamPerspectiveWithReconAndTeamResolvedIsAnalyzable() {
         final var caps = new ReplayProcessingCapabilities(true, false, true, true, true);
-        assertTrue(BatchAnalyzer.isAiAnalyzable(caps, ReplayAnalysisScope.TEAM_PERSPECTIVE));
+        assertTrue(AiAnalysisEligibility.isAiAnalyzable(caps, ReplayAnalysisScope.TEAM_PERSPECTIVE));
     }
 
     @Test
     void teamPerspectiveWithoutReconUsesAuthoritativeSummaryFallback() {
         final var caps = new ReplayProcessingCapabilities(true, true, false, true, false);
-        assertTrue(BatchAnalyzer.isAiAnalyzable(caps, ReplayAnalysisScope.TEAM_PERSPECTIVE));
+        assertTrue(AiAnalysisEligibility.isAiAnalyzable(caps, ReplayAnalysisScope.TEAM_PERSPECTIVE));
     }
 
     @Test
     void teamPerspectiveWithoutSummaryOrReconstructedFeaturesIsNotAnalyzable() {
         final var caps = new ReplayProcessingCapabilities(true, false, true, true, false);
-        assertFalse(BatchAnalyzer.isAiAnalyzable(
+        assertFalse(AiAnalysisEligibility.isAiAnalyzable(
                 caps, ReplayAnalysisScope.TEAM_PERSPECTIVE));
     }
 
     @Test
     void teamPerspectiveWithoutResolvedTeamIsNotAnalyzable() {
         final var caps = new ReplayProcessingCapabilities(true, false, true, false, false);
-        assertFalse(BatchAnalyzer.isAiAnalyzable(caps, ReplayAnalysisScope.TEAM_PERSPECTIVE));
+        assertFalse(AiAnalysisEligibility.isAiAnalyzable(caps, ReplayAnalysisScope.TEAM_PERSPECTIVE));
     }
 
     @Test
     void nullScopeReturnsFalse() {
         final var caps = new ReplayProcessingCapabilities(true, true, true, false, false);
-        assertFalse(BatchAnalyzer.isAiAnalyzable(caps, (ReplayAnalysisScope) null));
+        assertFalse(AiAnalysisEligibility.isAiAnalyzable(caps, (ReplayAnalysisScope) null));
     }
 
     @Test
     void nullCapabilitiesReturnsFalse() {
-        assertFalse(BatchAnalyzer.isAiAnalyzable((ReplayProcessingCapabilities) null, ReplayAnalysisScope.PLAYER_FOCUSED));
+        assertFalse(AiAnalysisEligibility.isAiAnalyzable((ReplayProcessingCapabilities) null, ReplayAnalysisScope.PLAYER_FOCUSED));
     }
 
 }
