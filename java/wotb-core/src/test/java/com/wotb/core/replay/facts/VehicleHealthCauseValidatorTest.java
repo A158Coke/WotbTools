@@ -95,14 +95,46 @@ class VehicleHealthCauseValidatorTest {
     void packetLocalSemanticMatchesDerivation() {
         // The packet-local derivation (consumed by reconstruction) is the same semantic the identity
         // gate wraps; it is not decoder promotion (cause field stays null on the raw event).
+        assertEquals(VehicleHealthStateEvent.Cause.DIRECT,
+                VehicleHealthStateEvent.deriveSemanticCause(event(0, 99)));
         assertEquals(VehicleHealthStateEvent.Cause.FIRE,
                 VehicleHealthStateEvent.deriveSemanticCause(event(1, 99)));
         assertEquals(VehicleHealthStateEvent.Cause.RAMMING,
                 VehicleHealthStateEvent.deriveSemanticCause(event(2, 99)));
         assertEquals(VehicleHealthStateEvent.Cause.WORLD_OR_ENVIRONMENT,
-                VehicleHealthStateEvent.deriveSemanticCause(event(3, 99)));
+                VehicleHealthStateEvent.deriveSemanticCause(event(3, EID)));
         assertNull(VehicleHealthStateEvent.deriveSemanticCause(event(5, 99)));
         assertEquals(VehicleHealthStateEvent.Cause.DROWNING,
                 VehicleHealthStateEvent.deriveSemanticCause(event(5, EID)));
+        assertNull(VehicleHealthStateEvent.deriveSemanticCause(event(9, 99)));
+    }
+
+    @Test
+    void sourceRelationshipIsThePacketLocalInvariant() {
+        // flag1/flag2 require an external source; flag3/flag5 require the self/environment source.
+        // An unmet relation withholds the semantic (absent), never guesses a cause.
+        assertNull(VehicleHealthStateEvent.deriveSemanticCause(event(1, EID)), "flag1 self -> absent");
+        assertNull(VehicleHealthStateEvent.deriveSemanticCause(event(2, EID)), "flag2 self -> absent");
+        assertNull(VehicleHealthStateEvent.deriveSemanticCause(event(3, 99)), "flag3 external -> absent");
+        assertNull(VehicleHealthStateEvent.deriveSemanticCause(event(5, 99)), "flag5 external -> absent");
+        assertEquals(VehicleHealthStateEvent.Cause.FIRE,
+                VehicleHealthStateEvent.deriveSemanticCause(event(1, 99)));
+        assertEquals(VehicleHealthStateEvent.Cause.RAMMING,
+                VehicleHealthStateEvent.deriveSemanticCause(event(2, 99)));
+        assertEquals(VehicleHealthStateEvent.Cause.WORLD_OR_ENVIRONMENT,
+                VehicleHealthStateEvent.deriveSemanticCause(event(3, EID)));
+        assertEquals(VehicleHealthStateEvent.Cause.DROWNING,
+                VehicleHealthStateEvent.deriveSemanticCause(event(5, EID)));
+    }
+
+    @Test
+    void rawCauseAlwaysRetainedWhenSemanticAbsent() {
+        // When the invariant is unmet the raw fields (causeFlag/sourceEntity) are retained and the
+        // decoder keeps the semantic cause=null (raw is never overwritten by a guessed semantic).
+        final VehicleHealthStateEvent e = event(5, 99); // flag5 + external source -> semantic absent
+        assertNull(e.cause());
+        assertEquals(5, e.causeFlag());
+        assertEquals(99, e.sourceEntity());
+        assertNull(VehicleHealthCauseValidator.validate(e, null, mapping()));
     }
 }

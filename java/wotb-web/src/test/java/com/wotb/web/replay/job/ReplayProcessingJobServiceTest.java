@@ -186,8 +186,9 @@ class ReplayProcessingJobServiceTest {
             final Battle b = leagueBattle(s.name());
             switch (s.name()) {
                 case "m-death.wotbreplay" -> {
+                    // 阵亡玩家缺失 settlement lifeTime（0）→ fail-closed INVALID_STAT_FACTS（不评分）。
                     b.players.getFirst().survived = false;
-                    b.players.getFirst().survivalTimeSec = 0; // 死亡时间 UNKNOWN（合法，照常评分）
+                    b.players.getFirst().survivalTimeSec = 0;
                 }
                 case "m-roster.wotbreplay" -> b.settlementAccountsCoveredByRoster = false; // ROSTER_INCOMPLETE
                 case "m-winner.wotbreplay" -> b.winnerTeam = null; // NO_DECISIVE_WINNER
@@ -206,12 +207,15 @@ class ReplayProcessingJobServiceTest {
 
         final ProcessedDataset ds = store.get(jobId).result();
         assertEquals(3, ds.battles().size(), "全部 Battle 必须保留在 dataset");
-        assertEquals(1, ds.league().battleResults().size(), "死亡时间 UNKNOWN 场照常评分");
-        assertEquals(2, ds.league().failures().size());
+        assertEquals(0, ds.league().battleResults().size(),
+                "阵亡玩家缺失 settlement 死亡时间必须 fail-closed 拒绝评分");
+        assertEquals(3, ds.league().failures().size());
         assertEquals(1, ds.league().failures().stream()
                 .filter(f -> f.code().equals(com.wotb.core.league.LeagueFailure.Code.ROSTER_INCOMPLETE)).count());
         assertEquals(1, ds.league().failures().stream()
                 .filter(f -> f.code().equals(com.wotb.core.league.LeagueFailure.Code.NO_DECISIVE_WINNER)).count());
+        assertEquals(1, ds.league().failures().stream()
+                .filter(f -> f.code().equals(com.wotb.core.league.LeagueFailure.Code.INVALID_STAT_FACTS)).count());
     }
 
     @Test

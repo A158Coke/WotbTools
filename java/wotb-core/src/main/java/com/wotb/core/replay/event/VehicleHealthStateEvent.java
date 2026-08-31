@@ -61,26 +61,38 @@ public record VehicleHealthStateEvent(
      * treating it as authority. Returns {@code null} when the packet-local invariant is not met (the
      * raw cause is then retained rather than guessed), so no UNKNOWN/PARTIAL state explosion.</p>
      *
+     * <p><b>Packet-local invariant (PR147 proven)</b>, using only the preserved {@code causeFlag}
+     * and the {@code sourceEntity} relationship — this is <b>never</b> a simple raw→semantic promotion:</p>
      * <ul>
      *   <li>{@code causeFlag==0} → {@link Cause#DIRECT};</li>
-     *   <li>{@code causeFlag==1} → {@link Cause#FIRE};</li>
-     *   <li>{@code causeFlag==2} → {@link Cause#RAMMING};</li>
-     *   <li>{@code causeFlag==3} → {@link Cause#WORLD_OR_ENVIRONMENT};</li>
+     *   <li>{@code causeFlag==1} → {@link Cause#FIRE} only when {@code sourceEntity != entityId}
+     *       (external fire source); otherwise {@code null}.</li>
+     *   <li>{@code causeFlag==2} → {@link Cause#RAMMING} only when {@code sourceEntity != entityId}
+     *       (external rammer); otherwise {@code null}.</li>
+     *   <li>{@code causeFlag==3} → {@link Cause#WORLD_OR_ENVIRONMENT} only when
+     *       {@code sourceEntity == entityId} (self/environment source); otherwise {@code null}.</li>
      *   <li>{@code causeFlag==5} → {@link Cause#DROWNING} only when {@code sourceEntity == entityId}
      *       (proven self/environment source); otherwise {@code null}.</li>
+     *   <li>unknown flag → {@code null}.</li>
      * </ul>
+     *
+     * <p>method8 / settlement / wrapper6 are never a required cross-evidence gate; they may only
+     * corroborate. When the invariant is unmet the semantic is absent ({@code null}) and the raw
+     * {@code causeFlag}/{@code sourceEntity} are retained.</p>
      */
     public static Cause deriveSemanticCause(final VehicleHealthStateEvent event) {
         if (event == null) {
             return null;
         }
         final int raw = event.causeFlag();
+        final boolean externalSource = event.sourceEntity() != event.entityId();
+        final boolean selfSource = event.sourceEntity() == event.entityId();
         return switch (raw) {
             case 0 -> Cause.DIRECT;
-            case 1 -> Cause.FIRE;
-            case 2 -> Cause.RAMMING;
-            case 3 -> Cause.WORLD_OR_ENVIRONMENT;
-            case 5 -> event.sourceEntity() == event.entityId() ? Cause.DROWNING : null;
+            case 1 -> externalSource ? Cause.FIRE : null;
+            case 2 -> externalSource ? Cause.RAMMING : null;
+            case 3 -> selfSource ? Cause.WORLD_OR_ENVIRONMENT : null;
+            case 5 -> selfSource ? Cause.DROWNING : null;
             default -> null;
         };
     }
