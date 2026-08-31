@@ -22,6 +22,10 @@
 `utils/playbackClock.js` 提供播放时间/倍速纯函数。拆分不新增数据源、不改变 V2 query-at-time、
 anti-future-leak 或现有 tank-marker 资产契约。
 
+测试也按同一责任边界组织：地图、控制、时间线和详情面板分别由对应组件测试覆盖，
+`BattlePlayback.test.js` 只保留编排集成回归；完整历史回归保留在
+`BattlePlayback.integration.test.js`，避免把 domain/presentation 断言重新堆回编排器测试。
+
 - **数据源**：processing 阶段当 canonical `BattleTimeline` 可用时写出
   `battle-playback-v2.json`（`BattlePlaybackProjector.project` 纯投影）；timeline 不可用
   → 不写 artifact → 204（capability unavailable，非 parse failure）。

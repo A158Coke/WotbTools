@@ -299,6 +299,8 @@ Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标�
 当前车辆详情由 `VehicleDetailsPanel.vue` 渲染。
 车辆状态投影与时钟推进分别由 `utils/playbackVehicleState.js`、`utils/playbackClock.js` 提供纯函数，
 组件只负责把 canonical V2 数据转换为展示 props/commands。
+对应测试按 ownership 分层：四个展示组件各有 focused test，`BattlePlayback.test.js` 只验证编排协作，
+历史集成回归位于 `BattlePlayback.integration.test.js`。
 
 地图鸟瞰/战局回放契约见 `docs/features/battle-playback.md`；AI 双 Call、Team Review、Evidence/Validator 契约见 `docs/architecture/ai-review.md` 与 `docs/features/team-ai-review.md`。
 
