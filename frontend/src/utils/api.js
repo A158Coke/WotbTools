@@ -1,5 +1,16 @@
-import { ApiError, apiErrorFromResponse, apiErrorFromXhr, apiFetch, requireOk } from './http.js'
+import { apiErrorFromResponse, apiFetch, requireOk } from './http.js'
 import { useAuth } from '../composables/useAuth.js'
+// Replay Processing/Export implementations live in the typed API boundary.
+export {
+  createProcessingJob,
+  getProcessingJob,
+  cancelProcessingJob,
+  getProcessingJobResult,
+  createExportJob,
+  getExportJob,
+  cancelExportJob,
+  downloadExportJob,
+} from '../api/replay.js'
 
 function withQuery(path, params = {}) {
   const query = new URLSearchParams()
@@ -25,103 +36,6 @@ async function downloadResponse(response, fallbackName) {
 
 /** 名人堂统一公开查询：nation / vehicleType / tier / tankId 可独立使用并取交集。 */
 
-// ── Replay Export Job（/api/replay/export-jobs，匿名公开；创建立即返回 jobId，轮询真实进度）──
-
-/**
- * 创建导出任务（Dataset-only）：只消费已 READY 的 Processing Job result，
- * 不接收 replay files / 手工 body（无上传输入）。
- * mode 经 query 传递；teamNamesJson（League 战队名称覆盖）经 multipart form-field 传递
- * （不拼 URL query，避免超长 URL）。processingJobId 必填（缺失 → 后端稳定 410/400）。
- */
-export async function createExportJob(mode, processingJobId, teamNamesJson) {
-  const query = new URLSearchParams()
-  query.set('mode', mode)
-  if (processingJobId) query.set('processingJobId', processingJobId)
-  let payload = undefined
-  if (teamNamesJson) {
-    payload = new FormData()
-    payload.append('teamNames', teamNamesJson)
-  }
-  const r = await requireOk(await apiFetch(`/api/replay/export-jobs?${query}`, { method: 'POST', body: payload }))
-  return r.json()
-}
-
-/** 查询任务状态/进度：{jobId, status, phase, total, processed, duplicates, failures, errorCode, filename, contentType}。 */
-export async function getExportJob(jobId) {
-  const r = await requireOk(await apiFetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}`))
-  return r.json()
-}
-
-/** 取消任务（QUEUED 立即生效；PROCESSING 协作取消）。 */
-export async function cancelExportJob(jobId) {
-  await requireOk(await apiFetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
-}
-
-// ── Replay Processing Job（/api/replay/processing-jobs，匿名公开；解析预览改为异步 Job）──
-
-/**
- * 创建解析任务：XHR 上传 multipart（真实 upload progress），202 返回
- * {jobId, status, total}（HTTP request 不等待解析）。
- * @param {FormData} body multipart files
- * @param {{onProgress?: (p:{loaded:number,total:number,percent:number})=>void,
- *          signal?: AbortSignal}} options
- */
-export function createProcessingJob(body, { onProgress, signal } = {}) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', '/api/replay/processing-jobs')
-    const abort = () => xhr.abort()
-    signal?.addEventListener('abort', abort, { once: true })
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) {
-        onProgress({
-          loaded: e.loaded,
-          total: e.total,
-          percent: Math.min(100, Math.round((e.loaded / e.total) * 100)),
-        })
-      }
-    }
-    xhr.onload = () => {
-      signal?.removeEventListener('abort', abort)
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(JSON.parse(xhr.responseText || '{}'))
-        } catch {
-          reject(new ApiError({ code: 'MALFORMED_ERROR_RESPONSE', status: xhr.status }))
-        }
-        return
-      }
-      reject(apiErrorFromXhr(xhr))
-    }
-    xhr.onerror = () => {
-      signal?.removeEventListener('abort', abort)
-      reject(new ApiError({ code: 'NETWORK_ERROR', status: null, retryable: true }))
-    }
-    xhr.onabort = () => {
-      signal?.removeEventListener('abort', abort)
-      reject(new ApiError({ code: 'REQUEST_ABORTED', status: null, retryable: false }))
-    }
-    xhr.send(body)
-  })
-}
-
-/** 查询解析任务状态/进度：{jobId, status, phase, total, processed, valid, duplicates, failures, errorCode, currentFile}。 */
-export async function getProcessingJob(jobId) {
-  const r = await requireOk(await apiFetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}`))
-  return r.json()
-}
-
-/** 取消解析任务（QUEUED 立即生效；PROCESSING 协作取消）。 */
-export async function cancelProcessingJob(jobId) {
-  await requireOk(await apiFetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
-}
-
-/** READY 后获取 Preview 数据（不重新解析回放）。 */
-export async function getProcessingJobResult(jobId) {
-  const r = await requireOk(await apiFetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}/result`))
-  return r.json()
-}
-
 /**
  * Historical Rating V2 gray analysis for an existing READY processing dataset.
  * The endpoint is admin-only; 401 returns the user to the hidden deep link.
@@ -141,11 +55,6 @@ export async function ratingV2Admin(jobId) {
   return r.json()
 }
 
-/** READY 后下载 artifact（后端 FileSystemResource server-side streaming；前端 blob 缓冲后触发下载）。 */
-export async function downloadExportJob(jobId, fallbackName) {
-  const r = await requireOk(await apiFetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}/download`))
-  await downloadResponse(r, fallbackName)
-}
 export async function hofList(params = {}) {
   const r = await requireOk(await apiFetch(withQuery('/api/hof', params)))
   return r.json()

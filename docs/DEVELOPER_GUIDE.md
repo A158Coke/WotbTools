@@ -28,7 +28,8 @@
 ## 环境与工具链
 
 - **JDK 21** 必需。Maven 必须带 `-s java/settings.xml`；容器构建使用 `java/settings-docker.xml`。
-- **Node 24**：`frontend/.nvmrc` 固定版本；安装依赖用 `npm ci`。
+- **Node 24**：`frontend/.nvmrc` 固定版本；安装依赖用 `npm ci`。前端使用 TypeScript 与
+  `vue-tsc` 做独立类型检查；JavaScript 与 TypeScript 可共存，迁移期间不要求一次性改写旧代码。
 - **Python 3**：`common/python/update_tankopedia.py` 使用标准库从 BlitzKit 客户端定义同步车辆数据。
 - 不要使用任何公司 token、凭据或基础设施。
 
@@ -42,6 +43,7 @@
 
 # 前端分层测试
 # Targeted：cd frontend && npx vitest run <related-test-files>
+# Type check：cd frontend && npm run typecheck
 # Build（仅当改动涉及 build 范围）：cd frontend && npm run build
 
 # 本地完整开发环境
