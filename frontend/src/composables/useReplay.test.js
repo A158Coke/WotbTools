@@ -266,7 +266,7 @@ describe('useReplay Processing Dataset lifecycle', () => {
     })
     api.getProcessingJob.mockReturnValue(new Promise(() => {})) // 主 poll 挂起
 
-    const pStart = replay.startProcessingJob(null)
+    const pStart = replay.startProcessingJob()
     expect(replay.uploadState.value?.phase).toBe('REGISTERING')
     replay.cancelProcessing()
     expect(capturedOpts.signal.aborted).toBe(false, 'REGISTERING cancel 不得 abort HTTP request（会丢 jobId）')
@@ -291,9 +291,9 @@ describe('useReplay Processing Dataset lifecycle', () => {
     })
     api.getProcessingJob.mockReturnValue(new Promise(() => {}))
 
-    const pOld = replay.startProcessingJob(null) // p1 REGISTERING
+    const pOld = replay.startProcessingJob() // p1 REGISTERING
     replay.cancelProcessing() // REGISTERING cancel
-    const pRetry = replay.startProcessingJob(null) // 立即重试
+    const pRetry = replay.startProcessingJob() // 立即重试
     expect(api.createProcessingJob).toHaveBeenCalledTimes(1, 'p1 settle 前不得 create p2（single-flight）')
 
     dP1.resolve({ jobId: 'p1', status: 'QUEUED', total: 1 })
@@ -311,7 +311,7 @@ describe('useReplay Processing Dataset lifecycle', () => {
     api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 1 })
     api.getProcessingJob.mockReturnValue(new Promise(() => {}))
 
-    await mountedReplay.startProcessingJob(null)
+    await mountedReplay.startProcessingJob()
     expect(mountedReplay.processingJob.value?.jobId).toBe('p1')
     wrapper.unmount()
     expect(api.cancelProcessingJob).toHaveBeenCalledWith('p1')
@@ -329,7 +329,7 @@ describe('useReplay Processing Dataset lifecycle', () => {
     })
     api.getProcessingJob.mockReturnValue(new Promise(() => {}))
 
-    const pStart = mountedReplay.startProcessingJob(null)
+    const pStart = mountedReplay.startProcessingJob()
     wrapper.unmount() // REGISTERING unmount：不得 abort
     expect(capturedOpts.signal.aborted).toBe(false)
 
@@ -342,14 +342,14 @@ describe('useReplay Processing Dataset lifecycle', () => {
     const dPollA = deferred()
     api.createProcessingJob.mockResolvedValueOnce({ jobId: 'pA', status: 'QUEUED', total: 1 })
     api.getProcessingJob.mockReturnValueOnce(dPollA.promise) // A 主 poll 挂起
-    const pA = replay.startProcessingJob(null)
+    const pA = replay.startProcessingJob()
     await vi.advanceTimersByTimeAsync(0)
     expect(replay.processingJob.value?.jobId).toBe('pA')
 
     replay.updateFiles([new File(['b'], 'b.wotbreplay')]) // selection → B
     const dB = deferred()
     api.createProcessingJob.mockReturnValueOnce(dB.promise)
-    const pB = replay.startProcessingJob(null) // B loading=true
+    const pB = replay.startProcessingJob() // B loading=true
     expect(replay.loading.value).toBe(true)
 
     dPollA.resolve({ jobId: 'pA', status: 'READY', total: 1, sources: [] }) // A 迟到 resolve
@@ -367,13 +367,13 @@ describe('useReplay Processing Dataset lifecycle', () => {
     const dPollA = deferred()
     api.createProcessingJob.mockResolvedValueOnce({ jobId: 'pA', status: 'QUEUED', total: 1 })
     api.getProcessingJob.mockReturnValueOnce(dPollA.promise)
-    const pA = replay.startProcessingJob(null)
+    const pA = replay.startProcessingJob()
     await vi.advanceTimersByTimeAsync(0)
 
     replay.updateFiles([new File(['b'], 'b.wotbreplay')])
     const dB = deferred()
     api.createProcessingJob.mockReturnValueOnce(dB.promise)
-    const pB = replay.startProcessingJob(null)
+    const pB = replay.startProcessingJob()
 
     dPollA.reject(apiError('HTTP_500', 500)) // A 迟到 reject
     await vi.advanceTimersByTimeAsync(0)
@@ -392,13 +392,13 @@ describe('useReplay Processing Dataset lifecycle', () => {
       sources: [{ sourceId: 'r0', status: 'READY' }]
     })
     api.getProcessingJobResult.mockReturnValueOnce(dResultA.promise)
-    const pA = replay.startProcessingJob(null)
+    const pA = replay.startProcessingJob()
     await vi.advanceTimersByTimeAsync(0) // 主 poll 立即 tick → READY → result fetch 挂起
 
     replay.updateFiles([new File(['b'], 'b.wotbreplay')]) // A result 期间 selection → B
     const dB = deferred()
     api.createProcessingJob.mockReturnValueOnce(dB.promise)
-    const pB = replay.startProcessingJob(null)
+    const pB = replay.startProcessingJob()
     expect(replay.loading.value).toBe(true)
 
     dResultA.resolve({ battles: [{ mapName: 'A' }] }) // A 迟到 result
@@ -420,19 +420,16 @@ describe('useReplay Processing Dataset lifecycle', () => {
       sources: [{ sourceId: 'r0', status: 'READY' }]
     })
     api.getProcessingJobResult.mockResolvedValue(result)
-    const onColumnsInit = vi.fn()
-
-    await replay.startProcessingJob(onColumnsInit) // 首次 parse → READY
+    await replay.startProcessingJob() // 首次 parse → READY
     await vi.advanceTimersByTimeAsync(1500)
     expect(replay.processingJobId.value).toBe('p1')
     expect(replay.resp.value).toEqual(result)
 
     const callsBefore = api.createProcessingJob.mock.calls.length
-    await replay.startProcessingJob(onColumnsInit) // 再次 Preview
+    await replay.startProcessingJob() // 再次 Preview
     expect(api.createProcessingJob.mock.calls.length).toBe(callsBefore, 'READY 后不得重新 create')
     expect(replay.processingJobId.value).toBe('p1')
     expect(replay.resp.value).toEqual(result)
-    expect(onColumnsInit).toHaveBeenCalledWith(result)
   })
 
   it('READY direct action 复用现有 dataset：不 create', async () => {
@@ -442,7 +439,7 @@ describe('useReplay Processing Dataset lifecycle', () => {
       sources: [{ sourceId: 'r0', status: 'READY' }]
     })
     api.getProcessingJobResult.mockResolvedValue({ battles: [] })
-    await replay.startProcessingJob(null)
+    await replay.startProcessingJob()
     await vi.advanceTimersByTimeAsync(1500)
     expect(replay.processingJobId.value).toBe('p1')
 
@@ -591,8 +588,7 @@ describe('useReplay Processing Dataset lifecycle', () => {
       sources: [{ sourceId: 'r0', status: 'READY' }]
     })
     api.getProcessingJobResult.mockResolvedValue({ battles: [{ mapName: 'A' }] })
-    const onColumnsInit = vi.fn()
-    await replay.startProcessingJob(onColumnsInit)
+    await replay.startProcessingJob()
     await vi.advanceTimersByTimeAsync(1500)
     expect(api.createProcessingJob).toHaveBeenCalledTimes(1, '失效后 preview 重建只 create 一次')
     expect(replay.processingJobId.value).toBe('p3')
@@ -1016,7 +1012,7 @@ describe('useReplay Processing create single-flight', () => {
     api.createProcessingJob.mockReturnValueOnce(dCreate.promise)
     api.getProcessingJob.mockResolvedValue(readyJobPoll('p1', 1))
 
-    const pManual = replay.startProcessingJob(null)
+    const pManual = replay.startProcessingJob()
     const pDirect = replay.requestDirectAction(file)
     expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
 
@@ -1035,7 +1031,7 @@ describe('useReplay Processing create single-flight', () => {
     api.createProcessingJob.mockReturnValueOnce(dCreate.promise)
     api.getProcessingJob.mockResolvedValue(readyJobPoll('pA', 1))
 
-    const pStart = replay.startProcessingJob(null)
+    const pStart = replay.startProcessingJob()
     replay.updateFiles([new File(['b'], 'b.wotbreplay')]) // selection 变化 → abort in-flight create
 
     dCreate.resolve({ jobId: 'pA', status: 'QUEUED', total: 1 }) // server 已接受 → stale 返回
@@ -1052,12 +1048,12 @@ describe('useReplay Processing create single-flight', () => {
     api.createProcessingJob.mockReturnValueOnce(dA.promise)
     api.getProcessingJob.mockReturnValue(new Promise(() => {})) // 主 poll 挂起，避免覆盖绑定断言
     replay.files.value = [new File(['a'], 'a.wotbreplay')]
-    const pOld = replay.startProcessingJob(null)
+    const pOld = replay.startProcessingJob()
 
     replay.updateFiles([new File(['b'], 'b.wotbreplay')]) // A 失效
     const dB = deferred()
     api.createProcessingJob.mockReturnValueOnce(dB.promise)
-    const pNew = replay.startProcessingJob(null) // B 成为 current creation
+    const pNew = replay.startProcessingJob() // B 成为 current creation
     expect(replay.uploadState.value?.phase).toBe('UPLOADING')
     expect(replay.loading.value).toBe(true)
 
@@ -1078,12 +1074,12 @@ describe('useReplay Processing create single-flight', () => {
     api.createProcessingJob.mockReturnValueOnce(dA.promise)
     api.getProcessingJob.mockReturnValue(new Promise(() => {})) // 主 poll 挂起，避免覆盖绑定断言
     replay.files.value = [new File(['a'], 'a.wotbreplay')]
-    const pOld = replay.startProcessingJob(null)
+    const pOld = replay.startProcessingJob()
 
     replay.updateFiles([new File(['b'], 'b.wotbreplay')]) // A 失效
     const dB = deferred()
     api.createProcessingJob.mockReturnValueOnce(dB.promise)
-    const pNew = replay.startProcessingJob(null)
+    const pNew = replay.startProcessingJob()
     expect(replay.uploadState.value?.phase).toBe('UPLOADING')
     expect(replay.loading.value).toBe(true)
 
@@ -1165,7 +1161,6 @@ describe('useReplay processing job flow', () => {
   })
 
   it('startProcessingJob creates job, polls real progress, auto-loads result on READY', async () => {
-    const onColumnsInit = vi.fn()
     const result = { battles: [{ mapName: 'Lagoon', sourceName: 'a.wotbreplay' }], aggregate: [], duplicates: [], failures: [], playerColumns: [], aggregateColumns: [] }
     api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 34 })
     api.getProcessingJob
@@ -1173,7 +1168,7 @@ describe('useReplay processing job flow', () => {
       .mockResolvedValueOnce(pJob({ status: 'READY', phase: null, processed: 34, valid: 31, duplicates: 2, failures: 1 }))
     api.getProcessingJobResult.mockResolvedValue(result)
 
-    await replay.startProcessingJob(onColumnsInit)
+    await replay.startProcessingJob()
     expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(0)
     // 第一次轮询：真实 18/34 + 计数（processing 真实显示）
@@ -1188,7 +1183,6 @@ describe('useReplay processing job flow', () => {
     expect(replay.processingJob.value.status).toBe('READY')
     expect(replay.resp.value).toEqual(result)
     expect(replay.processingJobId.value).toBe('p1')
-    expect(onColumnsInit).toHaveBeenCalledWith(result)
     expect(replay.loading.value).toBe(false)
     // 终端后停止轮询
     const calls = api.getProcessingJob.mock.calls.length

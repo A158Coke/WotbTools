@@ -36,7 +36,7 @@ export function useReplay(initialCapability = 'data') {
     pendingRemove.value = null
   }
 
-  function confirmRemove(onColumnsInit) {
+  function confirmRemove() {
     const pending = pendingRemove.value
     pendingRemove.value = null
     if (!pending) return
@@ -44,11 +44,11 @@ export function useReplay(initialCapability = 'data') {
       ? files.value.filter(f => displayName(f) !== pending.battle.sourceName)
       : files.value.filter(f => fileKey(f) !== fileKey(pending.file))
     processingController.updateFiles(next)
-    if (next.length) processingController.startProcessingJob(onColumnsInit)
+    if (next.length) processingController.startProcessingJob()
   }
 
-  function confirmRemoveBattle(onColumnsInit) {
-    if (pendingRemove.value?.type === 'battle') confirmRemove(onColumnsInit)
+  function confirmRemoveBattle() {
+    if (pendingRemove.value?.type === 'battle') confirmRemove()
     else pendingRemove.value = null
   }
 

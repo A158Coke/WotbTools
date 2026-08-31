@@ -52,7 +52,7 @@ async function importPendingFile(file) {
   workspace.setWorkspaceTab('data')
   updateFiles([file])
   // 自动解析一次：startProcessingJob 内部 single-flight + 现有 Processing error/retry，不无限自动重试。
-  await startProcessingJob(replayColsInit || undefined)
+  await startProcessingJob()
 }
 
 const { consumePendingWhenReady } = useNativeReplayImport({
@@ -159,14 +159,8 @@ async function awaitAuthGate(cap) {
   return false
 }
 
-// 数据 tab 的列初始化具名（ReplayPage 通过事件注册；只注册一次）。
-let replayColsInit = null
-function registerReplayColsInit(fn) {
-  replayColsInit = fn
-}
-
 async function onPreview() {
-  await startProcessingJob(replayColsInit || undefined)
+  await startProcessingJob()
 }
 
 function onFileRemoveRequest(f) {
@@ -174,7 +168,7 @@ function onFileRemoveRequest(f) {
 }
 
 function confirmRemove() {
-  workspace.replay.confirmRemove(replayColsInit || undefined)
+  workspace.replay.confirmRemove()
 }
 
 function clearSelection() {
@@ -239,7 +233,6 @@ watch(() => props.initialCapability, (val) => {
         v-show="activeCapability === 'data'"
         data-testid="ws-data"
         :embedded="true"
-        @register-cols-init="registerReplayColsInit"
       />
       <div v-show="activeCapability === 'ai'" class="capability-pane" data-testid="ws-ai">
         <AiReviewPanel

@@ -63,7 +63,7 @@ export function useProcessingJob(session, { t, te }) {
     }
   }
 
-  async function pollProcessingJob(onColumnsInit) {
+  async function pollProcessingJob() {
     const pollJobId = processingPollJobId
     const pollRevision = selectionRevision.value
     if (!pollJobId) return
@@ -78,7 +78,6 @@ export function useProcessingJob(session, { t, te }) {
         const result = await api.getProcessingJobResult(readyJobId)
         if (selectionRevision.value !== revisionAtReady || processingPollJobId != null) return
         commitReadyResult(result, readyJobId)
-        if (onColumnsInit) onColumnsInit(result)
         loading.value = false
       } else if (data.status === 'FAILED' || data.status === 'CANCELLED') {
         stopProcessingPolling()
@@ -100,21 +99,19 @@ export function useProcessingJob(session, { t, te }) {
     return processingStart === start
   }
 
-  async function ensureProcessingCreate(prioritySourceIndex, onColumnsInit) {
+  async function ensureProcessingCreate(prioritySourceIndex) {
     const job = processingJob.value
     if (job && JOB_ACTIVE.has(job.status)) return { jobId: job.jobId, stale: false }
     if (processingStart && processingStart.cancelRequested) {
       try { await processingStart.promise } catch { /* cancellation/rejection is terminal */ }
-      return ensureProcessingCreate(prioritySourceIndex, onColumnsInit)
+      return ensureProcessingCreate(prioritySourceIndex)
     }
     if (processingStart && processingStart.revision === selectionRevision.value) {
-      if (onColumnsInit) processingStart.onColumnsInit = onColumnsInit
       return processingStart.promise
     }
     const start = {
       revision: selectionRevision.value,
       prioritySourceIndex,
-      onColumnsInit,
       controller: new AbortController(),
       phase: 'UPLOADING',
       cancelRequested: false,
@@ -173,8 +170,8 @@ export function useProcessingJob(session, { t, te }) {
         currentFile: null,
       }
       processingPollJobId = created.jobId
-      processingPollTimer = setInterval(() => pollProcessingJob(start.onColumnsInit), JOB_POLL_MS)
-      pollProcessingJob(start.onColumnsInit)
+      processingPollTimer = setInterval(() => pollProcessingJob(), JOB_POLL_MS)
+      pollProcessingJob()
       processingStart = null
       uploadState.value = null
       return { jobId: created.jobId, stale: false }
@@ -207,16 +204,15 @@ export function useProcessingJob(session, { t, te }) {
     if (job && JOB_ACTIVE.has(job.status)) api.cancelProcessingJob(job.jobId).catch(() => {})
   }
 
-  async function startProcessingJob(onColumnsInit, { prioritySourceIndex } = {}) {
+  async function startProcessingJob({ prioritySourceIndex } = {}) {
     if (!files.value.length) { error.value = t('replay.no_files'); return }
     if (processingActive.value) return
     if (processingJobId.value && resp.value) {
-      if (onColumnsInit) onColumnsInit(resp.value)
       return
     }
     const revisionAtStart = selectionRevision.value
     try {
-      const result = await ensureProcessingCreate(prioritySourceIndex, onColumnsInit)
+      const result = await ensureProcessingCreate(prioritySourceIndex)
       if (!result || result.stale) return
     } catch (e) {
       if (normalizeApiError(e).code === 'REQUEST_ABORTED') return

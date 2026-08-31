@@ -82,8 +82,14 @@ function mountPage() {
       stubs: {
         FileUploader: FileUploaderStub,
         ColumnPicker: { template: '<div class="col-picker-stub" />' },
-        AggregateTable: { template: '<div class="agg-table-stub" />' },
-        BattleTable: { template: '<div class="battle-table-stub" />' },
+        AggregateTable: {
+          props: ['shownCols'],
+          template: '<div class="agg-table-stub"><span v-for="col in shownCols" :key="col.key" :data-testid="`agg-col-${col.key}`">{{ col.key }}</span></div>',
+        },
+        BattleTable: {
+          props: ['shownCols'],
+          template: '<div class="battle-table-stub"><span v-for="col in shownCols" :key="col.key" :data-testid="`battle-col-${col.key}`">{{ col.key }}</span></div>',
+        },
         LeagueSummaryTable: { template: '<div class="league-summary-stub" />' },
         CwPlayerSummaryTable: { template: '<div class="cw-player-summary-stub" />' },
         RemoveConfirmModal: { template: '<div class="remove-modal-stub" />' },
@@ -128,6 +134,33 @@ describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即�
     // aggregate 空 → AggregateTable 不渲染（v-if 由 resp.aggregate 驱动）
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
     expect(wrapper.find('.league-summary-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('Playback 首次 READY 后第一次进入 Data 即完成 columns/result hydration，且只创建一个 Processing Job', async () => {
+    const wrapper = await runReadyFlow(baseResp({
+      battles: [twoBattles[0]],
+      aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
+      playerColumns: [
+        { key: 'nickname', label: '昵称' },
+        { key: 'damage_dealt', label: '伤害' },
+      ],
+      aggregateColumns: [
+        { key: 'nickname', label: '昵称' },
+        { key: 'damage_dealt', label: '伤害' },
+      ],
+    }))
+
+    // READY response is already authoritative before the first Data sub-view click.
+    expect(wrapper.find('[data-testid="agg-col-damage_dealt"]').exists()).toBe(true)
+    await wrapper.find('[data-testid="data-view-single"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="battle-col-damage_dealt"]').exists()).toBe(true)
+    expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
+
+    // No parse/tab refresh is required to keep the hydrated presentation.
+    await flushPromises()
+    expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 

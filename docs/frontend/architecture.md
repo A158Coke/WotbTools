@@ -32,6 +32,10 @@ Each business state has one authoritative owner. Replay state is owned by `front
 
 Replay Workspace presentation is split into focused children (`ReplayWorkspaceHeader.vue`, `ReplayCapabilityTabs.vue`, and `ReplaySourcePanel.vue`). They receive derived state and emit commands; selection, capability, authentication, upload, and Processing ownership remains in the Workspace/session orchestration layer.
 
+Battle Playback follows the same presentation boundary: `BattlePlayback.vue` remains the orchestration root, while `BattleMap.vue`, `PlaybackControls.vue`, `PlaybackTimeline.vue`, and `VehicleDetailsPanel.vue` own map, controls, timeline, and selected-vehicle presentation respectively. Pure playback projection and clock helpers live in `utils/playbackVehicleState.js` and `utils/playbackClock.js`; canonical V2 query semantics and tank-marker assets remain unchanged.
+
+Playback tests follow those ownership boundaries: map/marker/gesture contracts live in `BattleMap.test.js`, control contracts in `PlaybackControls.test.js`, timeline contracts in `PlaybackTimeline.test.js`, detail-panel contracts in `VehicleDetailsPanel.test.js`, and pure projection/clock contracts in `utils/playbackVehicleState.test.js` / `utils/playbackClock.test.js`. Shared playback fixtures live in the testing-only `playbackTestHarness.js`. `BattlePlayback.test.js` and the remaining `BattlePlayback.integration.test.js` cases are reserved for cross-component/domain regressions; presentation cases are not duplicated there.
+
 The UI profile remains presentation-only: `wotb-ui-profile` is the single persistence key, and its derived `data-theme` does not create a separate theme state. Showcase and Classic must use the same components, APIs, and business state.
 
 ## Canonical feature references
