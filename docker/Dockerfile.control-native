@@ -1,0 +1,26 @@
+FROM maven:3.9.11-eclipse-temurin-25 AS maven
+
+FROM ghcr.io/graalvm/native-image-community:25.0.2-ol8-20260120 AS build
+COPY --from=maven /usr/share/maven /usr/share/maven
+ENV MAVEN_HOME=/usr/share/maven
+ENV PATH=/usr/share/maven/bin:${PATH}
+
+WORKDIR /build
+COPY java/pom.xml java/settings-docker.xml java/
+COPY java/wotb-contracts/pom.xml java/wotb-contracts/pom.xml
+COPY java/wotb-core/pom.xml java/wotb-core/pom.xml
+COPY java/wotb-control/pom.xml java/wotb-control/pom.xml
+COPY java/wotb-web/pom.xml java/wotb-web/pom.xml
+COPY java/wotb-contracts/src java/wotb-contracts/src
+COPY java/wotb-control/src java/wotb-control/src
+
+WORKDIR /build/java
+RUN mvn -s settings-docker.xml -pl wotb-control -am -Pnative -DskipTests package -q
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates libstdc++6 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /build/java/wotb-control/target/wotb-control /app/wotb-control
+EXPOSE 8090 8091
+ENTRYPOINT ["/app/wotb-control"]
