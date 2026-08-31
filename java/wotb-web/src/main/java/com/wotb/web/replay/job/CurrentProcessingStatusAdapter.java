@@ -1,18 +1,19 @@
-package com.wotb.contracts;
+package com.wotb.web.replay.job;
+
+import com.wotb.contracts.JobStatus;
 
 /**
- * Explicit, contract-specific migration mappings to the future JobStatus vocabulary.
+ * Migration boundary between the real current replay-job/source enums and future JobStatus.
  *
- * <p>Current job and source statuses intentionally have separate entry points. In particular,
- * current job {@code QUEUED} and source {@code PENDING} are not interchangeable public values.
- * A future status that cannot be represented by a current contract is rejected rather than
- * silently collapsed.</p>
+ * <p>The adapter lives at the Web boundary because the pure contracts artifact must not depend
+ * on current Web implementation types. Job {@code QUEUED} and source {@code PENDING} therefore
+ * have separate methods and never share a lossy current enum.</p>
  */
 public final class CurrentProcessingStatusAdapter {
     private CurrentProcessingStatusAdapter() {
     }
 
-    public static JobStatus jobToFuture(final CurrentJobStatus current) {
+    public static JobStatus jobToFuture(final ReplayProcessingJob.Status current) {
         if (current == null) {
             throw new IllegalArgumentException("current job status must not be null");
         }
@@ -25,20 +26,20 @@ public final class CurrentProcessingStatusAdapter {
         };
     }
 
-    public static CurrentJobStatus futureToJob(final JobStatus future) {
+    public static ReplayProcessingJob.Status futureToJob(final JobStatus future) {
         if (future == null) {
             throw new IllegalArgumentException("future job status must not be null");
         }
         return switch (future) {
-            case QUEUED -> CurrentJobStatus.QUEUED;
-            case PROCESSING -> CurrentJobStatus.PROCESSING;
-            case SUCCEEDED -> CurrentJobStatus.READY;
-            case FAILED -> CurrentJobStatus.FAILED;
-            case CANCELLED -> CurrentJobStatus.CANCELLED;
+            case QUEUED -> ReplayProcessingJob.Status.QUEUED;
+            case PROCESSING -> ReplayProcessingJob.Status.PROCESSING;
+            case SUCCEEDED -> ReplayProcessingJob.Status.READY;
+            case FAILED -> ReplayProcessingJob.Status.FAILED;
+            case CANCELLED -> ReplayProcessingJob.Status.CANCELLED;
         };
     }
 
-    public static JobStatus sourceToFuture(final CurrentSourceStatus current) {
+    public static JobStatus sourceToFuture(final ReplayProcessingJob.SourceStatus current) {
         if (current == null) {
             throw new IllegalArgumentException("current source status must not be null");
         }
@@ -50,15 +51,15 @@ public final class CurrentProcessingStatusAdapter {
         };
     }
 
-    public static CurrentSourceStatus futureToSource(final JobStatus future) {
+    public static ReplayProcessingJob.SourceStatus futureToSource(final JobStatus future) {
         if (future == null) {
             throw new IllegalArgumentException("future job status must not be null");
         }
         return switch (future) {
-            case QUEUED -> CurrentSourceStatus.PENDING;
-            case PROCESSING -> CurrentSourceStatus.PROCESSING;
-            case SUCCEEDED -> CurrentSourceStatus.READY;
-            case FAILED -> CurrentSourceStatus.FAILED;
+            case QUEUED -> ReplayProcessingJob.SourceStatus.PENDING;
+            case PROCESSING -> ReplayProcessingJob.SourceStatus.PROCESSING;
+            case SUCCEEDED -> ReplayProcessingJob.SourceStatus.READY;
+            case FAILED -> ReplayProcessingJob.SourceStatus.FAILED;
             case CANCELLED -> throw new IllegalArgumentException(
                     "future CANCELLED has no current source status representation");
         };
