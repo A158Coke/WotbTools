@@ -11,7 +11,9 @@
     <name>WotBTools</name>
 
     <modules>
+        <module>wotb-contracts</module>
         <module>wotb-core</module>
+        <module>wotb-control</module>
         <module>wotb-web</module>
     </modules>
 
@@ -27,6 +29,11 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>com.wotb</groupId>
+                <artifactId>wotb-contracts</artifactId>
+                <version>1.0.0</version>
+            </dependency>
             <dependency>
                 <groupId>com.wotb</groupId>
                 <artifactId>wotb-core</artifactId>
