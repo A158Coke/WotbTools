@@ -5,6 +5,8 @@
 ## [Unreleased]
 
 ### Changed
+- **PR194 blocker closure**：Processing READY 只提交 authoritative `resp`，由 `ReplayPage` 对 `resp` 做 immediate/idempotent `cols.initFromResponse` hydration；移除 Data presentation callback bridge，Processing 不再知道列展示。Battle Playback 测试按地图、控制、时间线、详情面板与编排责任拆分，保留完整集成回归；协议、HP truth、visibility、orientation 与事件顺序不变。
+- **PR4 Battle Playback presentation decomposition**：将 `BattlePlayback.vue` 的地图、播放控制/时间线与车辆详情展示拆分为 `BattleMap.vue`、`PlaybackControls.vue`、`VehicleDetailsPanel.vue`；车辆状态投影及时钟推进提取为可测试纯函数。`BattlePlayback.vue` 继续作为编排层，canonical V2 数据、标记资产、交互与后端 API 行为不变。
 - **PR3 Replay Workspace UI decomposition**：将 Workspace 标题/清空、能力 tabs、批次与当前回放 selector 拆为 `ReplayWorkspaceHeader`、`ReplayCapabilityTabs`、`ReplaySourcePanel` 展示单元；`ReplayWorkspace` 保留 session/Processing/auth/upload 编排，权威 selected battle 与 capability state 不变。无产品流程或 API 行为变化。
 - **PR2 Replay Session state owner**：新增 `useReplaySession` 统一持有 selection、Processing/Result identity、Export state 与 Workspace view；Processing lifecycle 下沉至 `useProcessingJob`，Export lifecycle 下沉至 `useExportJob`，`useReplayWorkspace` 仅作 session facade。保持现有 API、sourceId、single-flight、stale-response 与 Android replay 行为不变。
 - **Frontend instruction/docs cleanup（PR1）**：`frontend/AGENTS.md` 仅保留 toolchain、架构边界、状态 ownership、UI Profile、响应式、测试与禁止项；Replay Workspace、UI system 及回放/AI/Playback/资产事实分别引用对应 canonical 文档，避免目录指令与当前实现漂移。

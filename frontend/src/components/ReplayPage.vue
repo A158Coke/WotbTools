@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, nextTick, inject, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
@@ -31,8 +31,6 @@ const props = defineProps({
   /** 嵌入 Replay Workspace 时的结果 tab：不重复渲染上传器 / Processing 面板，使用 provide 的共享 selection。 */
   embedded: { type: Boolean, default: false },
 })
-const emit = defineEmits(['register-cols-init'])
-
 const { locale, t, te } = useI18n()
 // Workspace 提供共享 selection / job；独立使用（旧路由）时回退到本地 useReplay。
 const replay = inject('replay', null) || useReplay()
@@ -75,6 +73,13 @@ const cols = useColumns(replay.playerCols, replay.aggCols, dataViewModeRef, leag
 const { visibleKeys, aggVisibleKeys, cwVisibleKeys, cwOrder, showColPicker, pickerScope,
   currentOrder, shownCols, shownAggCols,
   toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
+
+// Data presentation owns its hydration: authoritative Processing response is sufficient
+// regardless of which capability created the Dataset. Immediate execution also covers
+// mounting the Data tab after a READY response already exists.
+watch(resp, (result) => {
+  if (result) cols.initFromResponse(result)
+}, { immediate: true })
 
 /** 数据页视图切换：汇总视图 / 单场视图（单场选择由 Workspace current-battle selector 控制）。 */
 function setDataView(mode) {
@@ -514,17 +519,11 @@ function openRatingDocs() {
 }
 
 async function preview() {
-  await startProcessingJob(cols.initFromResponse)
+  await startProcessingJob()
 }
 
 function onFileRemoveRequest(f) { askRemoveFile(f) }
 
-// 嵌入 Workspace 时上报列初始化回调（Workspace 的单一上传器复用），并保留结果区域。
-onMounted(() => {
-  if (props.embedded && typeof cols.initFromResponse === 'function') {
-    emit('register-cols-init', cols.initFromResponse)
-  }
-})
 </script>
 
 <template>

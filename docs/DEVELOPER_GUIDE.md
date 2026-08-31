@@ -294,6 +294,15 @@ Processing error/retry，不无限重试）；普通 Web/FileUploader 手动选�
 （cached map-overview + MapOverview）提供。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，
 由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
+Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标记/瞬时反馈由 `BattleMap.vue` 渲染，
+播放控制与标注工具由 `PlaybackControls.vue` 渲染，进度条与事件标记由 `PlaybackTimeline.vue` 渲染，
+当前车辆详情由 `VehicleDetailsPanel.vue` 渲染。
+车辆状态投影与时钟推进分别由 `utils/playbackVehicleState.js`、`utils/playbackClock.js` 提供纯函数，
+组件只负责把 canonical V2 数据转换为展示 props/commands。
+对应测试按 ownership 分层：地图/标记/手势、控制、时间线、详情面板及时钟/车辆投影各有 focused
+suite，共享 fixture 位于 testing-only `playbackTestHarness.js`；`BattlePlayback.test.js` 与
+`BattlePlayback.integration.test.js` 只验证无法由单组件证明的跨组件协作与历史回归。
+
 地图鸟瞰/战局回放契约见 `docs/features/battle-playback.md`；AI 双 Call、Team Review、Evidence/Validator 契约见 `docs/architecture/ai-review.md` 与 `docs/features/team-ai-review.md`。
 
 ---
