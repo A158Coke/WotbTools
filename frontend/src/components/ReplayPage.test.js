@@ -126,6 +126,11 @@ const jobState = vi.hoisted(() => {
   }
 })
 
+const columnsState = vi.hoisted(() => ({
+  calls: [],
+  reset() { this.calls.length = 0 },
+}))
+
 const pJobState = vi.hoisted(() => {
   let _processingJob
   let _processingActive
@@ -268,7 +273,7 @@ vi.mock('../composables/useColumns.js', async () => {
         leagueMode: computed(() => !!window.__testLeagueMode),
         toggleColPicker: vi.fn(), toggleCol: vi.fn(),
         selectAllCols: vi.fn(), resetCols: vi.fn(),
-        handleReorder: vi.fn(), initFromResponse: vi.fn(),
+        handleReorder: vi.fn(), initFromResponse: vi.fn((result) => columnsState.calls.push(result)),
       }
     }
   }
@@ -379,6 +384,8 @@ function stripOffscreen() {
   for (const el of document.querySelectorAll('[style*="left: -9999px"]')) el.parentNode?.removeChild(el)
 }
 
+afterEach(() => columnsState.reset())
+
 describe('ReplayPage processing job flow', () => {
   beforeEach(() => {
     state.clear()
@@ -419,6 +426,30 @@ describe('ReplayPage processing job flow', () => {
     await previewBtn.trigger('click')
     await flushPromises()
     expect(state.replay.startProcessingJob).toHaveBeenCalled()
+  })
+
+  it('hydrates Data columns immediately when a READY response already exists', async () => {
+    const result = makeResp()
+    state.init.resp = result
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(columnsState.calls.at(-1)).toEqual(result)
+    wrapper.unmount()
+  })
+
+  it('hydrates Data columns when AI/Playback-owned Processing commits resp, including League columns', async () => {
+    const result = makeResp({
+      leagueMode: true,
+      league: { playerSummaryColumns: [{ key: 'league_rating', label: 'Rating' }], playerSummaries: [] },
+    })
+    const wrapper = mountPage()
+    expect(columnsState.calls).toHaveLength(0)
+    state.replay.startProcessingJob()
+    expect(state.replay.startProcessingJob).toHaveBeenCalledTimes(1)
+    state.setResp(result)
+    await flushPromises()
+    expect(columnsState.calls.at(-1)).toEqual(result)
+    wrapper.unmount()
   })
 })
 

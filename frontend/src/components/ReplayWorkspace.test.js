@@ -16,7 +16,7 @@ vi.mock('./ReplayPage.vue', () => ({
   default: {
     name: 'ReplayPageMock',
     props: ['embedded'],
-    emits: ['register-cols-init', 'open-ai', 'open-playback'],
+    emits: ['open-ai', 'open-playback'],
     template: '<div data-test="data-pane" />',
   },
 }))
