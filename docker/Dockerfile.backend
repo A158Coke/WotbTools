@@ -10,6 +10,7 @@ COPY common/map-semantics common/map-semantics
 COPY java/pom.xml java/settings-docker.xml java/
 COPY java/wotb-contracts/pom.xml java/wotb-contracts/pom.xml
 COPY java/wotb-core/pom.xml java/wotb-core/pom.xml
+COPY java/wotb-control/pom.xml java/wotb-control/pom.xml
 COPY java/wotb-web/pom.xml java/wotb-web/pom.xml
 WORKDIR /build/java
 RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests dependency:go-offline -q || true
