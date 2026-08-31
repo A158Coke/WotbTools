@@ -43,10 +43,14 @@ class ControlApiSecurityIntegrationTest {
     @LocalManagementPort
     private int managementPort;
 
-    @Autowired
-    private DatabaseProbeService databaseProbeService;
+    private final DatabaseProbeService databaseProbeService;
 
     private final RestTemplate restTemplate = new RestTemplate();
+
+    @Autowired
+    ControlApiSecurityIntegrationTest(final DatabaseProbeService databaseProbeService) {
+        this.databaseProbeService = databaseProbeService;
+    }
 
     @DynamicPropertySource
     static void databaseProperties(final DynamicPropertyRegistry registry) {
