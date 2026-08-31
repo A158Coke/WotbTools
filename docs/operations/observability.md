@@ -255,6 +255,8 @@ Production Overview 中的资源面板因此展示 Backend process/system CPU �
 
 Error Explorer 的 `service` 变量映射 Loki 的 `container_name` 标签；`id` 是 canonical error 的主诊断 ID，其余变量作为日志内容中的 regex token 搜索，用于关联结构化日志里的 `errorCode`、`traceId` 与 `jobId`。当前没有 authoritative deployment/build version 字段，因此不提供 `version` filter。
 
+Spring Security 的 401/403（`AUTH_UNAUTHENTICATED` / `AUTH_FORBIDDEN`）也会以 INFO 级 `api_request_rejected` 写入同一组 `traceId`、`id`、`errorCode`、`status`、`method`、`path` 字段，因此可直接用 response body 的 `id` 在 Error Explorer 定位。
+
 Production Overview 的 Replay 曲线使用 `wotb_replay_processing_job_created_total`（Processing Job create rate）；不使用 legacy `wotb_replay_requests_total` 作为当前 V2 Processing Job 的请求信号。
 
 **统计口径说明（WotBTools 使用统计 / Replay Parser）**
