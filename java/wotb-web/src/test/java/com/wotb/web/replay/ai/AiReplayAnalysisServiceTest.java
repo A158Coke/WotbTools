@@ -946,8 +946,7 @@ class AiReplayAnalysisServiceTest {
                 recorderTeam == 2 ? recorderAccountId : 2001L,
                 recorderTeam == 2 ? recorderNickname : "Enemy", 2, 900);
         battle.players = List.of(ally, enemy);
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         return new ReplayProcessingResult(
                 fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
@@ -1022,8 +1021,7 @@ class AiReplayAnalysisServiceTest {
         }
         players.add(player(2001L, "Enemy", recorderTeam == 1 ? 2 : 1, 900));
         battle.players = players;
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         return new ReplayProcessingResult(
                 fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
@@ -1047,8 +1045,7 @@ class AiReplayAnalysisServiceTest {
         final PlayerResult p2 = player(recorderTeam == 1 ? recorderAccountId : 2001L,
                 "DuplicateId", recorderTeam, 800);
         battle.players = List.of(p1, p2);
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         return new ReplayProcessingResult(
                 fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
@@ -1079,8 +1076,7 @@ class AiReplayAnalysisServiceTest {
         }
         final PlayerResult enemy = clanPlayer(9999L, "Enemy", 2, 500, "ENEMY_CLAN");
         battle.players = List.of(p1, p2, p3, p4, enemy);
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         return new ReplayProcessingResult(
                 fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
@@ -1121,8 +1117,7 @@ class AiReplayAnalysisServiceTest {
         final PlayerResult recorder = player(1001L, "Player", 1, 1_000);
         battle.players = List.of(recorder);
         battle.recorder = recorder.nickname;
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, false, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, false, false);
         return new ReplayProcessingResult(
                 "random.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("random-hash", "random-arena", null, "random_map",
@@ -1142,8 +1137,7 @@ class AiReplayAnalysisServiceTest {
                         10_000L + index, "Member" + index, 1, 500 + index))
                 .toList();
         battle.recorder = battle.players.getFirst().nickname;
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         return new ReplayProcessingResult(
                 "large-team.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("large-team-hash", battle.arenaId, "11.0",
@@ -1166,8 +1160,7 @@ class AiReplayAnalysisServiceTest {
                         500 + index, clan))
                 .toList();
         battle.players.get(0).damageDealt = 500;
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         return new ReplayProcessingResult(
                 fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("hash-" + fileName, arenaId, "11.0",
@@ -1191,8 +1184,7 @@ class AiReplayAnalysisServiceTest {
         }
         players.add(clanPlayer(9999L, "Enemy", 2, 500, "ENEMY_CLAN"));
         battle.players = players;
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         return new ReplayProcessingResult(
                 fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",

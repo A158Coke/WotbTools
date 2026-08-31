@@ -47,11 +47,11 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 ## 严格完整性门槛（7v7）
 
 每场必须：14 个结算记录、14 个唯一非零 accountId、队伍只能为 1/2、两队各 7 人、
-`settlementAccountsCoveredByRoster=true`（结算账号全部来自名册 #201，无幽灵结算）且
-`settlementRosterTeamConsistent=true`（名册队伍无冲突；名册可含 non-combatant extra，如观战者，
-不要求名册全集合 == 结算全集合）、14 名玩家非零 tankId、
-`winnerTeam` 明确为 1/2（平局/未知不评分）、统计字段无负值/非有限/违反真实字段关系
-（命中≤射击、击穿≤命中）。
+14 名玩家非零 tankId、`winnerTeam` 明确为 1/2（平局/未知不评分）、统计字段无负值/非有限/
+违反真实字段关系（命中≤射击、击穿≤命中）。
+League Rating 以 **#301 的 14 settled combatants 为 authority**；#201 仅用于
+nickname/clan/rank/prebattle metadata enrichment，缺失/extra 不得阻塞评分（`Battle.rosterComplete`
+保留给 SURVIVOR_SETTLEMENT / annihilation 等 AI/reconstruction 推断，不参与 League Rating）。
 
 **结算死亡时间门槛**：阵亡玩家必须有有效的 settlement `field24 lifeTime`（有限、正数且不超过战斗时长）；
 缺失、非正、非有限或超时一律 `LEAGUE_INVALID_STAT_FACTS`，不再降级为普通 UNKNOWN。Trade 只消费
@@ -64,7 +64,7 @@ settlement 秒值，使用 `[0, +5s]` directional 窗口，无法建立窗口即
 伤害/助攻/阻挡/击杀/占点等统计字段**合法为 0**——proto 未编码字段解码为 0 与真实 0 不可区分
 （`PlayerResult.raw` 保留字段存在性但不作统计字段的完整性要求），缺失与零值同等对待，
 绝不把「字段缺失」误判为损坏。某一场不满足门槛 → 该场不评分，在失败列表返回
-文件名 + arenaId + 稳定错误码（如 `LEAGUE_NOT_SEVEN_VS_SEVEN` / `LEAGUE_ROSTER_INCOMPLETE`），
+文件名 + arenaId + 稳定错误码（如 `LEAGUE_NOT_SEVEN_VS_SEVEN` / `LEAGUE_NO_DECISIVE_WINNER`），
 批量中其他合法同类型回放继续。不允许管理员强制绕过。
 
 **死亡时间 provenance 不属于 League 状态**：UNKNOWN 只在 replay reconstruction/evidence
@@ -81,11 +81,13 @@ settlement 秒值，使用 `[0, +5s]` directional 窗口，无法建立窗口即
 - **死亡时间不是 League identity/provenance 状态**：duplicate 判定只比较 settled combatant
   facts（包括 `settlementLifeTimeSec` 与生死状态）；Playback/live 事件和兼容 projection 不参与
   identity，也不会回写 retained Battle。
-- **Group-level all-pairs 判定（上传顺序无关）**：对同 arenaId 全部副本做关键 settlement
-  facts 的一致性检查；不以 first copy 作 wildcard anchor。上传顺序不改变是否评分或 Rating 结果。
-- **hard-conflict 字段**（任一不一致 → 冲突）：settlementAccountsCoveredByRoster /
-  settlementRosterTeamConsistent（决定 ROSTER_INCOMPLETE）、durationS、settled combatant
-  identity/stat facts、clan（影响 team autoName / teamKey / batch summary identity）。
+- **settlement/rating 指纹判定（第一份为 canonical，O(n) 非 all-pairs）**：对同 arenaId 全部副本，
+  以第一份为 canonical，逐份计算确定性 settlement/Rating 指纹并比较——一致 → duplicates，
+  不一致 → `CONFLICTING_REPLAYS_FOR_ARENA`。上传顺序不改变是否评分或 Rating 结果。
+- **指纹字段**：winnerTeam / arenaBonusType / durationS + 每账号 team / tankId / survived /
+  settlementLifeTimeSec / settlementDeathReasonRaw / settled stat facts。非 Rating identity
+  （rosterComplete、#201 evidence、clan、killer/resultEntity、live provenance）不参与指纹，
+  不会改变 League 身份。
 
 ## 七维度公式（合计 1000）
 
