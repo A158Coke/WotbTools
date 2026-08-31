@@ -64,4 +64,30 @@ public final class CurrentProcessingStatusAdapter {
                     "future CANCELLED has no current source status representation");
         };
     }
+
+    public static JobStatus exportToFuture(final ExportJob.Status current) {
+        if (current == null) {
+            throw new IllegalArgumentException("current export status must not be null");
+        }
+        return switch (current) {
+            case QUEUED -> JobStatus.QUEUED;
+            case PROCESSING -> JobStatus.PROCESSING;
+            case READY -> JobStatus.SUCCEEDED;
+            case FAILED -> JobStatus.FAILED;
+            case CANCELLED -> JobStatus.CANCELLED;
+        };
+    }
+
+    public static ExportJob.Status futureToExport(final JobStatus future) {
+        if (future == null) {
+            throw new IllegalArgumentException("future job status must not be null");
+        }
+        return switch (future) {
+            case QUEUED -> ExportJob.Status.QUEUED;
+            case PROCESSING -> ExportJob.Status.PROCESSING;
+            case SUCCEEDED -> ExportJob.Status.READY;
+            case FAILED -> ExportJob.Status.FAILED;
+            case CANCELLED -> ExportJob.Status.CANCELLED;
+        };
+    }
 }

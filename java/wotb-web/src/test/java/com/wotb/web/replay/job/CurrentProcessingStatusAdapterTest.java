@@ -33,4 +33,11 @@ class CurrentProcessingStatusAdapterTest {
         assertEquals(ReplayProcessingJob.SourceStatus.PENDING,
                 CurrentProcessingStatusAdapter.futureToSource(JobStatus.QUEUED));
     }
+
+    @Test
+    void mapsEveryRealExportStatusAndRoundTrips() {
+        Arrays.stream(ExportJob.Status.values()).forEach(status -> assertEquals(status,
+                CurrentProcessingStatusAdapter.futureToExport(
+                        CurrentProcessingStatusAdapter.exportToFuture(status))));
+    }
 }
