@@ -1,14 +1,37 @@
 import { onUnmounted } from 'vue'
+import type { Composer } from 'vue-i18n'
 import { apiErrorLabel } from '../utils/display.js'
 import { displayName, fileKey } from '../utils/helpers.js'
 import { normalizeApiError, normalizeJobError } from '../utils/http.js'
+import type { ProcessingJob, UploadPhase, UploadProgressEvent } from '../types/jobs.js'
+import type { ProcessingJobId, SourceId } from '../types/replay.js'
+import type { useReplaySession } from './useReplaySession.js'
 import * as api from '../utils/api.js'
+
+type I18nContext = Pick<Composer, 't' | 'te'>
+type ReplaySession = ReturnType<typeof useReplaySession>
+type ProcessingCreateResult = { jobId: ProcessingJobId; stale: boolean }
+type ProcessingStart = {
+  revision: number
+  prioritySourceIndex?: number
+  controller: AbortController
+  phase: UploadPhase
+  cancelRequested: boolean
+  promise: Promise<ProcessingCreateResult> | null
+}
+type SourcePoll = {
+  jobId: ProcessingJobId
+  sourceId: SourceId
+  controller: AbortController
+  timer: ReturnType<typeof setTimeout> | null
+  settled: boolean
+}
 
 const JOB_TERMINAL = new Set(['READY', 'FAILED', 'CANCELLED'])
 const JOB_ACTIVE = new Set(['QUEUED', 'PROCESSING'])
 const JOB_POLL_MS = 1500
 
-function assertSourceAvailable(sourceId, source) {
+function assertSourceAvailable(source: ProcessingJob['sources'][number] | undefined): never {
   if (source && source.status === 'FAILED') throw new Error('SOURCE_PROCESSING_FAILED')
   if (!source) throw new Error('SOURCE_NOT_FOUND')
   throw new Error('SOURCE_NOT_READY')
@@ -19,19 +42,19 @@ function assertSourceAvailable(sourceId, source) {
  * The session supplies all shared refs; this composable owns upload/create,
  * polling, source readiness, single-flight and cancellation side effects.
  */
-export function useProcessingJob(session, { t, te }) {
+export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext) {
   const {
     files, selectionRevision, loading, error, resp,
     processingJob, processingError, uploadState, processingJobId,
     processingActive, replaceSelection, commitReadyResult,
   } = session
 
-  let processingStart = null
-  const sourcePolls = new Set()
-  let processingPollTimer = null
-  let processingPollJobId = null
+  let processingStart: ProcessingStart | null = null
+  const sourcePolls = new Set<SourcePoll>()
+  let processingPollTimer: ReturnType<typeof setInterval> | null = null
+  let processingPollJobId: ProcessingJobId | null = null
 
-  function buildFormData(prioritySourceIndex) {
+  function buildFormData(prioritySourceIndex?: number) {
     const fd = new FormData()
     files.value.forEach(f => fd.append('files', f, displayName(f)))
     if (prioritySourceIndex !== undefined && prioritySourceIndex !== null) {
@@ -63,7 +86,7 @@ export function useProcessingJob(session, { t, te }) {
     }
   }
 
-  async function pollProcessingJob() {
+  async function pollProcessingJob(): Promise<void> {
     const pollJobId = processingPollJobId
     const pollRevision = selectionRevision.value
     if (!pollJobId) return
@@ -95,33 +118,36 @@ export function useProcessingJob(session, { t, te }) {
     }
   }
 
-  function isCurrentCreate(start) {
+  function isCurrentCreate(start: ProcessingStart): boolean {
     return processingStart === start
   }
 
-  async function ensureProcessingCreate(prioritySourceIndex) {
+  async function ensureProcessingCreate(prioritySourceIndex?: number): Promise<ProcessingCreateResult> {
     const job = processingJob.value
     if (job && JOB_ACTIVE.has(job.status)) return { jobId: job.jobId, stale: false }
     if (processingStart && processingStart.cancelRequested) {
-      try { await processingStart.promise } catch { /* cancellation/rejection is terminal */ }
+      if (processingStart.promise) {
+        try { await processingStart.promise } catch { /* cancellation/rejection is terminal */ }
+      }
       return ensureProcessingCreate(prioritySourceIndex)
     }
-    if (processingStart && processingStart.revision === selectionRevision.value) {
+    if (processingStart && processingStart.revision === selectionRevision.value && processingStart.promise) {
       return processingStart.promise
     }
-    const start = {
+    const start: ProcessingStart = {
       revision: selectionRevision.value,
       prioritySourceIndex,
       controller: new AbortController(),
       phase: 'UPLOADING',
       cancelRequested: false,
+      promise: null,
     }
     processingStart = start
     start.promise = doCreate(start)
     return start.promise
   }
 
-  async function doCreate(start) {
+  async function doCreate(start: ProcessingStart): Promise<ProcessingCreateResult> {
     const revision = start.revision
     const controller = start.controller
     loading.value = true
@@ -130,7 +156,7 @@ export function useProcessingJob(session, { t, te }) {
     uploadState.value = { phase: 'UPLOADING', loaded: 0, total: 0, percent: 0 }
     try {
       const created = await api.createProcessingJob(buildFormData(start.prioritySourceIndex), {
-        onProgress: ({ loaded, total, percent }) => {
+        onProgress: ({ loaded, total, percent }: UploadProgressEvent) => {
           if (!isCurrentCreate(start)) return
           start.phase = percent >= 100 ? 'REGISTERING' : 'UPLOADING'
           uploadState.value = { phase: start.phase, loaded, total, percent }
@@ -168,6 +194,11 @@ export function useProcessingJob(session, { t, te }) {
         failures: 0,
         errorCode: null,
         currentFile: null,
+        parseCompleted: 0,
+        parseSucceeded: 0,
+        parseFailed: 0,
+        sources: [],
+        activeSources: [],
       }
       processingPollJobId = created.jobId
       processingPollTimer = setInterval(() => pollProcessingJob(), JOB_POLL_MS)
@@ -185,7 +216,7 @@ export function useProcessingJob(session, { t, te }) {
     }
   }
 
-  function updateFiles(next) {
+  function updateFiles(next: File[]): void {
     const job = processingJob.value
     replaceSelection(next)
     stopProcessingPolling()
@@ -204,7 +235,7 @@ export function useProcessingJob(session, { t, te }) {
     if (job && JOB_ACTIVE.has(job.status)) api.cancelProcessingJob(job.jobId).catch(() => {})
   }
 
-  async function startProcessingJob({ prioritySourceIndex } = {}) {
+  async function startProcessingJob({ prioritySourceIndex }: { prioritySourceIndex?: number } = {}): Promise<void> {
     if (!files.value.length) { error.value = t('replay.no_files'); return }
     if (processingActive.value) return
     if (processingJobId.value && resp.value) {
@@ -222,11 +253,11 @@ export function useProcessingJob(session, { t, te }) {
     }
   }
 
-  function pollSourceReady(jobId, sourceId) {
-    const entry = { jobId, sourceId, controller: new AbortController(), timer: null, settled: false }
+  function pollSourceReady(jobId: ProcessingJobId, sourceId: SourceId): Promise<{ processingJobId: ProcessingJobId; sourceId: SourceId }> {
+    const entry: SourcePoll = { jobId, sourceId, controller: new AbortController(), timer: null, settled: false }
     sourcePolls.add(entry)
-    let resolve
-    let reject
+    let resolve: (value: { processingJobId: ProcessingJobId; sourceId: SourceId }) => void
+    let reject: (reason?: unknown) => void
     const cleanup = () => {
       sourcePolls.delete(entry)
       if (entry.timer) entry.timer = null
@@ -250,15 +281,15 @@ export function useProcessingJob(session, { t, te }) {
       }
       rejectOnce(new Error('SOURCE_POLL_CANCELLED'))
     }, { once: true })
-    return new Promise((res, rej) => {
+    return new Promise<{ processingJobId: ProcessingJobId; sourceId: SourceId }>((res, rej) => {
       resolve = res
       reject = rej
-      const poll = async () => {
+      const poll = async (): Promise<void> => {
         if (entry.controller.signal.aborted) {
           rejectOnce(new Error('SOURCE_POLL_CANCELLED'))
           return
         }
-        let data
+        let data: ProcessingJob
         try {
           data = await api.getProcessingJob(jobId)
         } catch (e) {
@@ -289,10 +320,10 @@ export function useProcessingJob(session, { t, te }) {
     })
   }
 
-  async function requestDirectAction(file) {
+  async function requestDirectAction(file: File): Promise<{ processingJobId: ProcessingJobId; sourceId: SourceId }> {
     const idx = files.value.findIndex(f => fileKey(f) === fileKey(file))
     if (idx < 0) throw new Error('NO_REPLAY_FILE')
-    const sourceId = `r${idx}`
+    const sourceId = `r${idx}` as SourceId
     const datasetJobId = processingJobId.value
     if (datasetJobId) {
       try {
@@ -303,7 +334,7 @@ export function useProcessingJob(session, { t, te }) {
         } else if (data.status === 'QUEUED' || data.status === 'PROCESSING') {
           return pollSourceReady(datasetJobId, sourceId)
         } else {
-          assertSourceAvailable(sourceId, source)
+          assertSourceAvailable(source)
         }
       } catch (e) {
         const expired = e && (e.status === 404 || e.code === 'JOB_NOT_FOUND')
@@ -316,14 +347,14 @@ export function useProcessingJob(session, { t, te }) {
       const source = (job.sources || []).find(x => x.sourceId === sourceId)
       if (source && source.status === 'READY') return { processingJobId: job.jobId, sourceId }
       if (JOB_ACTIVE.has(job.status)) return pollSourceReady(job.jobId, sourceId)
-      assertSourceAvailable(sourceId, source)
+      assertSourceAvailable(source)
     }
     const created = await ensureProcessingCreate(idx)
     if (!created || created.stale) throw new Error('PROCESSING_START_FAILED')
     return pollSourceReady(created.jobId, sourceId)
   }
 
-  function cancelProcessing() {
+  function cancelProcessing(): void | Promise<void> {
     if (uploadState.value && processingStart) {
       if (processingStart.phase === 'REGISTERING') {
         processingStart.cancelRequested = true
@@ -338,7 +369,7 @@ export function useProcessingJob(session, { t, te }) {
     return cancelProcessingJob()
   }
 
-  async function cancelProcessingJob() {
+  async function cancelProcessingJob(): Promise<void> {
     const job = processingJob.value
     if (!job || !JOB_ACTIVE.has(job.status)) return
     try {
@@ -352,14 +383,14 @@ export function useProcessingJob(session, { t, te }) {
     }
   }
 
-  function dismissProcessingJob() {
+  function dismissProcessingJob(): void {
     stopProcessingPolling()
     stopAllSourcePolls()
     processingJob.value = null
     processingError.value = ''
   }
 
-  function invalidateProcessingDatasetJob(jobId) {
+  function invalidateProcessingDatasetJob(jobId: ProcessingJobId): void {
     if (!jobId) return
     const wasCurrentDataset = processingJobId.value === jobId
     const hadSnapshot = processingJob.value?.jobId === jobId
@@ -369,7 +400,7 @@ export function useProcessingJob(session, { t, te }) {
     stopSourcePollsForJob(jobId)
   }
 
-  function invalidateExpiredProcessingDataset(jobId) {
+  function invalidateExpiredProcessingDataset(jobId: ProcessingJobId): void {
     invalidateProcessingDatasetJob(jobId)
   }
 

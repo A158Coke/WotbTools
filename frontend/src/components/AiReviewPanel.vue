@@ -4,15 +4,21 @@
   ensureToken + 401/403 处理。目标文件由父组件以 prop 传入（文件始终在 ReplayPage 内存中，
   由 capability page 传入（可来自解析页的内存 handoff）。
 -->
-<script setup>
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { localizeAiError, isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { ApiError, apiErrorFromResponse, apiFetch, normalizeApiError } from '../utils/http.js'
+import type { AiReviewCapability, AiReviewResult, AiReviewRunState } from '../types/ai-review.js'
+import type { AiReviewEvent } from '../types/ai-review.js'
+import { createAiReviewSseParser } from '../utils/aiReviewSse.js'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 import ReplayAnalysisAction from './ReplayAnalysisAction.vue'
+
+type AuthTokenParsed = { realm_access?: { roles?: unknown } } | null
+type AiRuntimeError = Error & { recoverableDatasource?: boolean; isLocalized?: boolean }
 
 const props = defineProps({
   /** 目标回放文件（null = 尚未选择，显示空态提示）。 */
@@ -27,7 +33,11 @@ const props = defineProps({
 const emit = defineEmits(['seek', 'dataset-recover'])
 
 const { t, te, locale } = useI18n()
-const { tokenParsed, token, ensureToken } = useAuth()
+const { tokenParsed, token, ensureToken } = useAuth() as {
+  tokenParsed: { value: AuthTokenParsed }
+  token: () => string
+  ensureToken: (minValidity?: number) => Promise<boolean>
+}
 
 // AI Review 权限：已登录 + wotbtools-user 或 wotbtools-admin
 const canUseAiReview = computed(() => {
@@ -53,9 +63,9 @@ const datasetMessage = computed(() => {
 
 const error = ref('')
 const analyzing = ref(false)
-const analysisResult = ref(null)
+const analysisResult = ref<AiReviewResult | null>(null)
 /** AI 复盘 capability（AnalyzeResponse.capability：AVAILABLE / AVAILABLE_WITH_LIMITED_TIMELINE / UNAVAILABLE）。 */
-const analysisCapability = computed(() => analysisResult.value?.capability || null)
+const analysisCapability = computed<AiReviewCapability | null>(() => analysisResult.value?.capability || null)
 const limitedTimelineNote = computed(() =>
   analysisCapability.value === 'AVAILABLE_WITH_LIMITED_TIMELINE'
     ? t('recon.capability_limited')
@@ -76,7 +86,7 @@ const AI_ANALYZE_TIMEOUT_MS = 1_100_000
  * 的 timer / correlationId / controller），再解除 active ownership 并重置共享 UI 状态；
  * stale run 通过 activeRun === run 判定作废，绝不修改新 generation 的状态。
  */
-let activeRun = null
+let activeRun: AiReviewRunState | null = null
 
 function resetResults() {
   analysisResult.value = null
@@ -100,13 +110,13 @@ watch(() => [props.file, props.processingJobId, props.sourceId], () => {
 
 // 统一的受保护请求：确保带上有效的 Keycloak Bearer Token（/api/replay/* 需要角色），
 // 并统一处理 token 刷新失败 / 401 / 403。
-async function authedFetch(url, body, { signal } = {}) {
+async function authedFetch(url: string, body: BodyInit | null, { signal }: { signal?: AbortSignal } = {}): Promise<Response> {
   const valid = await ensureToken(30)
   if (!valid) {
     throw new ApiError({ code: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false })
   }
   const accessToken = token()
-  const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+  const headers: Record<string, string> = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
   if (typeof body === 'string') headers['Content-Type'] = 'application/json'
   const r = await apiFetch(url, { method: 'POST', headers, body, signal })
   if (r.status === 401) {
@@ -118,10 +128,10 @@ async function authedFetch(url, body, { signal } = {}) {
 }
 
 /** 尽力而为地通知后端取消 in-flight 请求（按钮取消 / 面板卸载 / 前端超时）。 */
-function fireCancel(correlationId) {
+function fireCancel(correlationId: string) {
   if (!correlationId) return
   const accessToken = token()
-  const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+  const headers: Record<string, string> = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
   apiFetch(`/api/replay/analyze/cancel?correlationId=${encodeURIComponent(correlationId)}`, {
     method: 'POST',
     headers,
@@ -130,7 +140,7 @@ function fireCancel(correlationId) {
 }
 
 /** 只取消指定 run（closure-capture：只操作 run 自己的 timer / correlationId / controller）。 */
-function cancelRun(run) {
+function cancelRun(run: AiReviewRunState | null) {
   if (!run) return
   run.cancelRequested = true
   if (run.timeoutTimer) {
@@ -163,7 +173,7 @@ async function runAnalyze() {
   if (analyzing.value) return
   // Dataset 尚未就绪属于状态机问题（PREPARING_DATASET），不是用户错误：不发请求、不显示裸错误码。
   if (!datasetReady.value) return
-  const run = {
+  const run: AiReviewRunState = {
     controller: new AbortController(),
     correlationId: newCorrelationId(),
     startedAt: Date.now(),
@@ -197,8 +207,9 @@ async function runAnalyze() {
     // file / Dataset identity 已切换：本次分析作废，不写任何状态。
     if (activeRun !== run) return
     // 数据集引用过期（后端稳定码 / SSE error 事件）：交回父组件重建，不显示裸错误码。
-    if (e && e.recoverableDatasource) {
-      handleDatasetRecover(e.message)
+    const runtimeError = e as AiRuntimeError
+    if (runtimeError.recoverableDatasource) {
+      handleDatasetRecover(runtimeError.message)
       return
     }
     if (e instanceof ApiError && isRecoverableDatasetCode(e.code)) {
@@ -214,11 +225,11 @@ async function runAnalyze() {
     } else {
       error.value = e instanceof ApiError || e instanceof TypeError
         ? apiErrorLabel(t, te, normalized)
-        : (e.message || String(e))
+        : (runtimeError.message || String(runtimeError))
     }
   } finally {
     // 只清理自己的 timer；非当前 run 的 finally 不得触碰共享 UI 状态。
-    clearTimeout(run.timeoutTimer)
+    if (run.timeoutTimer) clearTimeout(run.timeoutTimer)
     run.timeoutTimer = null
     if (activeRun === run) {
       activeRun = null
@@ -256,34 +267,16 @@ function analyzeBody(correlationId) {
  */
 async function readAnalyzeStream(r, run) {
   const reader = r.body.getReader()
-  const decoder = new TextDecoder('utf-8')
-  let buffer = ''
-  let currentEvent = ''
-  let currentData = ''
+  const parser = createAiReviewSseParser()
   let receivedDone = false
   const deadlineMs = run.startedAt + AI_ANALYZE_TIMEOUT_MS
 
-  const dispatch = () => {
-    if (!currentEvent) return
-    let data = {}
-    if (currentData) {
-      try {
-        data = JSON.parse(currentData)
-      } catch {
-        data = {}
-      }
-    }
-    handleStreamEvent(currentEvent, data)
-    currentEvent = ''
-    currentData = ''
-  }
-
-  const handleStreamEvent = (event, data) => {
+  const handleStreamEvent = (event: AiReviewEvent) => {
     if (activeRun !== run) {
       // Dataset identity 已在途变化：本流属于旧 generation，任何阶段/结果都不得写回。
       return
     }
-    switch (event) {
+    switch (event.type) {
       case 'call1_start':
         progressStage.value = 'call1'
         break
@@ -301,9 +294,7 @@ async function readAnalyzeStream(r, run) {
         if (progressStage.value !== 'call2') {
           progressStage.value = 'call2'
         }
-        if (typeof data.delta === 'string') {
-          partialAnalysis.value += data.delta
-        }
+        partialAnalysis.value += event.delta
         break
       case 'autopsy_start':
         progressStage.value = 'autopsy'
@@ -312,29 +303,28 @@ async function readAnalyzeStream(r, run) {
         progressStage.value = 'call2'
         break
       case 'done':
-        if (typeof data.analysis === 'string' && data.analysis.trim()) {
-          analysisResult.value = {
-            analysis: data.analysis,
-            preBattleSection: data.preBattleSection,
-            capability: data.capability
-          }
-          progressStage.value = 'done'
-          receivedDone = true
-        }
+        analysisResult.value = event.result
+        progressStage.value = 'done'
+        receivedDone = true
         break
       case 'error':
         // 流中途失败：以稳定错误码本地化后终止流。
         // 数据集引用过期（JOB_NOT_FOUND 等）不是 AI 错误：作为可恢复信号向上传播。
-        if (isRecoverableDatasetCode(data.code)) {
-          const recoverable = new Error(data.code || 'JOB_NOT_FOUND')
+        if (isRecoverableDatasetCode(event.code)) {
+          const recoverable = new Error(event.code || 'JOB_NOT_FOUND') as AiRuntimeError
           recoverable.recoverableDatasource = true
           throw recoverable
         }
-        const localized = new Error(localizeAiError({ code: data.code || '' }, 502, t))
+        const localized = new Error(localizeAiError({ code: event.code || '' }, 502, t)) as AiRuntimeError
         localized.isLocalized = true
         throw localized
-      default:
-        break
+    }
+  }
+
+  const consumeEvents = (events: AiReviewEvent[]) => {
+    for (const event of events) {
+      handleStreamEvent(event)
+      if (receivedDone) break
     }
   }
 
@@ -350,20 +340,11 @@ async function readAnalyzeStream(r, run) {
         throw err
       }
       const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      let newlineIndex
-      while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, newlineIndex).replace(/\r$/, '')
-        buffer = buffer.slice(newlineIndex + 1)
-        if (line === '') {
-          dispatch()
-        } else if (line.startsWith('event:')) {
-          currentEvent = line.slice(6).trim()
-        } else if (line.startsWith('data:')) {
-          currentData = line.slice(5).trim()
-        }
+      if (done) {
+        consumeEvents(parser.finish())
+        break
       }
+      consumeEvents(parser.push(value))
       if (receivedDone) break
     }
   } catch (e) {
@@ -371,11 +352,12 @@ async function readAnalyzeStream(r, run) {
       // 用户取消/超时：保持取消语义，不当作流异常。
       throw e
     }
-    if (e && e.isLocalized) {
+    const runtimeError = e as AiRuntimeError
+    if (runtimeError.isLocalized) {
       // error 事件已生成本地化消息：原样传播。
       throw e
     }
-    if (e && e.recoverableDatasource) {
+    if (runtimeError.recoverableDatasource) {
       // 数据集引用过期：交给 runAnalyze 的 recover 分支。
       throw e
     }

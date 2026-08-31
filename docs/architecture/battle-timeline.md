@@ -36,7 +36,7 @@
 `consumableTransitions` / `moduleCrewTransitions` / `loadout`，加 battle 级
 `shots` / `pointsSamples`。每条 track 自带 `knowledge / provenance / observation boundary`。
 
-前端（`battlePlaybackV2.js` 查询 + `V2VehicleInspector`）**只消费**这些已标注事实，
+前端（`battlePlaybackV2.ts` 查询 + `V2VehicleInspector`）**只消费**这些已标注事实，
 不再做 HP/AoI/death/loadout 推理，也**不**再以 5 秒 packet-gap 作为 observation authority。
 
 ## 数据流

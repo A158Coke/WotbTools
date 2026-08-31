@@ -1,21 +1,25 @@
 import { useI18n } from 'vue-i18n'
 import * as api from '../utils/api.js'
 import { apiErrorLabel } from '../utils/display.js'
+import type { ExportMode } from '../api/replay.js'
+import type { ExportJobId, JsonObject } from '../types/replay.js'
+import type { useReplaySession } from './useReplaySession.js'
 
 const JOB_ACTIVE = new Set(['QUEUED', 'PROCESSING'])
 const JOB_TERMINAL = new Set(['READY', 'FAILED', 'CANCELLED'])
 const JOB_POLL_MS = 1500
+type Session = ReturnType<typeof useReplaySession>
 
 /**
  * Export Job 的唯一 lifecycle owner。
  * Processing Dataset identity 由 ReplaySession 提供；Export 只消费 READY 的
  * processingJobId，不参与 selection/result 的写入，也不重新上传 replay。
  */
-export function useExportJob(session) {
+export function useExportJob(session: Session) {
   const { t, te } = useI18n()
   const { files, error, processingJobId, exportJob, exportError, exportActive } = session
-  let pollTimer = null
-  let pollJobId = null
+  let pollTimer: ReturnType<typeof setInterval> | null = null
+  let pollJobId: ExportJobId | null = null
   let lifecycleToken = 0
   let pollRequestToken = 0
   let createInFlight = false
@@ -29,7 +33,7 @@ export function useExportJob(session) {
     pollRequestToken++
   }
 
-  async function poll(ownerToken, currentJobId) {
+  async function poll(ownerToken: number, currentJobId: ExportJobId): Promise<void> {
     if (!currentJobId) return
     const requestToken = ++pollRequestToken
     try {
@@ -45,7 +49,7 @@ export function useExportJob(session) {
     }
   }
 
-  async function start(mode, teamNamesOverrides = null) {
+  async function start(mode: ExportMode, teamNamesOverrides: JsonObject | null = null): Promise<void> {
     if (!files.value.length) {
       error.value = t('replay.no_files')
       return
@@ -89,7 +93,7 @@ export function useExportJob(session) {
     }
   }
 
-  async function cancel() {
+  async function cancel(): Promise<void> {
     const job = exportJob.value
     if (!job || !JOB_ACTIVE.has(job.status)) return
     const ownerToken = lifecycleToken
@@ -105,7 +109,7 @@ export function useExportJob(session) {
     }
   }
 
-  async function download() {
+  async function download(): Promise<void> {
     const job = exportJob.value
     if (!job || job.status !== 'READY') return
     const ownerToken = lifecycleToken
@@ -119,7 +123,7 @@ export function useExportJob(session) {
     }
   }
 
-  function dismiss() {
+  function dismiss(): void {
     lifecycleToken++
     createInFlight = false
     stopPolling()
