@@ -7,8 +7,10 @@ export type AiReviewCapability =
 
 export interface AiReviewResult {
   analysis: string
-  preBattleSection: string | null
-  capability: AiReviewCapability
+  /** Older SSE payloads omit this field when the pre-battle call is unavailable. */
+  preBattleSection?: string | null
+  /** The current SSE writer may omit capability; the AnalyzeResponse still owns its contract. */
+  capability?: AiReviewCapability
 }
 
 export interface AiReviewRunState {

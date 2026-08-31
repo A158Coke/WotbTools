@@ -3,7 +3,7 @@ import type {
   ExportJobCreateResponse,
   ProcessingJob,
   ProcessingJobCreateResponse,
-  UploadProgress,
+  UploadProgressEvent,
 } from '../types/jobs.js'
 import type { ReplayResult } from '../types/replay.js'
 import {
@@ -53,7 +53,7 @@ async function downloadResponse(response: Response, fallbackName: string): Promi
 /** Create an asynchronous processing job from replay files. */
 export function createProcessingJob(
   body: FormData,
-  options: { onProgress?: (progress: UploadProgress) => void; signal?: AbortSignal } = {},
+  options: { onProgress?: (progress: UploadProgressEvent) => void; signal?: AbortSignal } = {},
 ): Promise<ProcessingJobCreateResponse> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()

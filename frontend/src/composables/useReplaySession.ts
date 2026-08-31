@@ -1,7 +1,12 @@
 import { computed, ref, watch } from 'vue'
 import type { ExportJob, ProcessingJob, UploadProgress } from '../types/jobs.js'
+import { sourceId as makeSourceId } from '../types/replay.js'
 import type { Battle, ColumnDef, ProcessingJobId, ReplayResult, SourceId } from '../types/replay.js'
 import type { DataViewMode, ReplayCapability } from '../types/workspace.js'
+
+export type PendingRemove =
+  | { type: 'battle'; battle: Battle; label: string }
+  | { type: 'file'; file: File; label: string }
 
 const JOB_ACTIVE = new Set(['QUEUED', 'PROCESSING'])
 
@@ -32,7 +37,7 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
   const error = ref('')
   const resp = ref<ReplayResult | null>(null)
   const activeTab = ref('aggregate')
-  const pendingRemove = ref<unknown | null>(null)
+  const pendingRemove = ref<PendingRemove | null>(null)
 
   const processingJob = ref<ProcessingJob | null>(null)
   const processingError = ref('')
@@ -131,7 +136,7 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
   function selectBattle(sourceId: SourceId | string | null) {
     const match = /^r(\d+)$/.exec(sourceId == null ? '' : String(sourceId))
     if (!match) return
-    const id = `r${Number.parseInt(match[1], 10)}`
+    const id = makeSourceId(`r${Number.parseInt(match[1], 10)}`)
     if (!parsedBattles.value.some(b => b?.sourceId === id)) return
     currentBattleId.value = id
     dataViewMode.value = 'SINGLE'

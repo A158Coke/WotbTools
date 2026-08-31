@@ -75,7 +75,7 @@ describe('BattlePlaybackPanel dataset request', () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: async () => ({ capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [] })
+          json: async () => ({ durationSec: 0, capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [], events: [], shots: [], pointsSamples: [] })
         })
       }
       return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
@@ -140,7 +140,7 @@ describe('BattlePlaybackPanel dataset request', () => {
           json: async () => ({
             capability: 'UNAVAILABLE',
             limitations: ['TIMELINE_UNAVAILABLE'],
-            vehicles: []
+            vehicles: [], events: [], shots: [], pointsSamples: [], durationSec: 0
           })
         })
       : Promise.resolve({ ok: true, status: 204 })))
@@ -228,7 +228,7 @@ describe('BattlePlaybackPanel dataset request', () => {
         return Promise.resolve({
           ok: true, status: 200,
           json: async () => ({
-            capability: 'FULL', limitations: [], vehicles: [],
+            capability: 'FULL', limitations: [], vehicles: [], events: [], shots: [], pointsSamples: [], durationSec: 0,
             mapCode: 'holland', friendlyTeam: 1, recorderAccountId: 1001, arenaBonusType: 1
           })
         })
@@ -255,7 +255,7 @@ describe('BattlePlaybackPanel dataset request', () => {
         return Promise.resolve({
           ok: true, status: 200,
           json: async () => ({
-            capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [],
+            capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [], events: [], shots: [], pointsSamples: [], durationSec: 0,
             mapCode: 'holland', friendlyTeam: 1, recorderAccountId: 1001, arenaBonusType: 1
           })
         })

@@ -12,6 +12,8 @@ import { localizeAiError, isRecoverableDatasetCode } from '../utils/reconstructi
 import { apiErrorLabel } from '../utils/display.js'
 import { ApiError, apiErrorFromResponse, apiFetch, normalizeApiError } from '../utils/http.js'
 import type { AiReviewCapability, AiReviewResult, AiReviewRunState } from '../types/ai-review.js'
+import type { AiReviewEvent } from '../types/ai-review.js'
+import { createAiReviewSseParser } from '../utils/aiReviewSse.js'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 import ReplayAnalysisAction from './ReplayAnalysisAction.vue'
 
@@ -257,34 +259,16 @@ function analyzeBody(correlationId) {
  */
 async function readAnalyzeStream(r, run) {
   const reader = r.body.getReader()
-  const decoder = new TextDecoder('utf-8')
-  let buffer = ''
-  let currentEvent = ''
-  let currentData = ''
+  const parser = createAiReviewSseParser()
   let receivedDone = false
   const deadlineMs = run.startedAt + AI_ANALYZE_TIMEOUT_MS
 
-  const dispatch = () => {
-    if (!currentEvent) return
-    let data = {}
-    if (currentData) {
-      try {
-        data = JSON.parse(currentData)
-      } catch {
-        data = {}
-      }
-    }
-    handleStreamEvent(currentEvent, data)
-    currentEvent = ''
-    currentData = ''
-  }
-
-  const handleStreamEvent = (event, data) => {
+  const handleStreamEvent = (event: AiReviewEvent) => {
     if (activeRun !== run) {
       // Dataset identity 已在途变化：本流属于旧 generation，任何阶段/结果都不得写回。
       return
     }
-    switch (event) {
+    switch (event.type) {
       case 'call1_start':
         progressStage.value = 'call1'
         break
@@ -302,9 +286,7 @@ async function readAnalyzeStream(r, run) {
         if (progressStage.value !== 'call2') {
           progressStage.value = 'call2'
         }
-        if (typeof data.delta === 'string') {
-          partialAnalysis.value += data.delta
-        }
+        partialAnalysis.value += event.delta
         break
       case 'autopsy_start':
         progressStage.value = 'autopsy'
@@ -313,29 +295,28 @@ async function readAnalyzeStream(r, run) {
         progressStage.value = 'call2'
         break
       case 'done':
-        if (typeof data.analysis === 'string' && data.analysis.trim()) {
-          analysisResult.value = {
-            analysis: data.analysis,
-            preBattleSection: data.preBattleSection,
-            capability: data.capability
-          }
-          progressStage.value = 'done'
-          receivedDone = true
-        }
+        analysisResult.value = event.result
+        progressStage.value = 'done'
+        receivedDone = true
         break
       case 'error':
         // 流中途失败：以稳定错误码本地化后终止流。
         // 数据集引用过期（JOB_NOT_FOUND 等）不是 AI 错误：作为可恢复信号向上传播。
-        if (isRecoverableDatasetCode(data.code)) {
-          const recoverable = new Error(data.code || 'JOB_NOT_FOUND')
+        if (isRecoverableDatasetCode(event.code)) {
+          const recoverable = new Error(event.code || 'JOB_NOT_FOUND')
           recoverable.recoverableDatasource = true
           throw recoverable
         }
-        const localized = new Error(localizeAiError({ code: data.code || '' }, 502, t))
+        const localized = new Error(localizeAiError({ code: event.code || '' }, 502, t))
         localized.isLocalized = true
         throw localized
-      default:
-        break
+    }
+  }
+
+  const consumeEvents = (events: AiReviewEvent[]) => {
+    for (const event of events) {
+      handleStreamEvent(event)
+      if (receivedDone) break
     }
   }
 
@@ -351,20 +332,11 @@ async function readAnalyzeStream(r, run) {
         throw err
       }
       const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      let newlineIndex
-      while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, newlineIndex).replace(/\r$/, '')
-        buffer = buffer.slice(newlineIndex + 1)
-        if (line === '') {
-          dispatch()
-        } else if (line.startsWith('event:')) {
-          currentEvent = line.slice(6).trim()
-        } else if (line.startsWith('data:')) {
-          currentData = line.slice(5).trim()
-        }
+      if (done) {
+        consumeEvents(parser.finish())
+        break
       }
+      consumeEvents(parser.push(value))
       if (receivedDone) break
     }
   } catch (e) {

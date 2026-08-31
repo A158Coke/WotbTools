@@ -1,7 +1,6 @@
 import type { ApiErrorPayload, ErrorCode, JsonObject, KnownErrorCode } from './api.js'
 import type {
   ActiveSource,
-  ColumnDef,
   ExportJob,
   ExportJobCreateResponse,
   ProcessingJob,
@@ -9,7 +8,7 @@ import type {
   ProcessingSource,
   SourceStatus,
 } from './jobs.js'
-import type { AggregateRow, Battle, ReplayResult } from './replay.js'
+import type { AggregateRow, Battle, ColumnDef, ReplayResult } from './replay.js'
 
 export function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
