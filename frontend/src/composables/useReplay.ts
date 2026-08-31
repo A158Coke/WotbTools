@@ -4,6 +4,8 @@ import { displayName, mapLabel, fileKey } from '../utils/helpers.js'
 import { useReplaySession, chooseInitialResultTab } from './useReplaySession.js'
 import { useProcessingJob } from './useProcessingJob.js'
 import { useExportJob } from './useExportJob.js'
+import type { ReplayCapability } from '../types/workspace.js'
+import type { Battle } from '../types/replay.js'
 
 export { chooseInitialResultTab }
 
@@ -13,7 +15,7 @@ export { chooseInitialResultTab }
  * are delegated to their respective composables while this facade preserves
  * the public composable contract used by existing pages and capability panels.
  */
-export function useReplay(initialCapability = 'data') {
+export function useReplay(initialCapability: ReplayCapability = 'data') {
   const { locale, t, te } = useI18n()
   const session = useReplaySession(initialCapability)
   const processingController = useProcessingJob(session, { t, te })
@@ -24,19 +26,19 @@ export function useReplay(initialCapability = 'data') {
     uploadState, processingUiState, exportJob, exportError, exportActive,
   } = session
 
-  function askRemoveBattle(battle, idx) {
+  function askRemoveBattle(battle: Battle, idx: number): void {
     pendingRemove.value = { type: 'battle', battle, label: `${mapLabel(battle.mapName, locale.value)} #${idx + 1}` }
   }
 
-  function askRemoveFile(file) {
+  function askRemoveFile(file: File): void {
     pendingRemove.value = { type: 'file', file, label: displayName(file) }
   }
 
-  function cancelRemove() {
+  function cancelRemove(): void {
     pendingRemove.value = null
   }
 
-  function confirmRemove() {
+  function confirmRemove(): void {
     const pending = pendingRemove.value
     pendingRemove.value = null
     if (!pending) return
@@ -47,7 +49,7 @@ export function useReplay(initialCapability = 'data') {
     if (next.length) processingController.startProcessingJob()
   }
 
-  function confirmRemoveBattle() {
+  function confirmRemoveBattle(): void {
     if (pendingRemove.value?.type === 'battle') confirmRemove()
     else pendingRemove.value = null
   }

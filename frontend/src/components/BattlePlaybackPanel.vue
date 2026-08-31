@@ -7,13 +7,15 @@
   active=true 且该文件尚未尝试加载时才自动请求 cached map-overview；手动按钮仅用于重试。
   seekTo 支持 AI 报告时间链接（未加载先拉取、自动展开折叠，MapOverview 收到 seek 后切回放视图）。
 -->
-<script setup>
+<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { ApiError, apiErrorFromResponse, apiFetch, normalizeApiError } from '../utils/http.js'
+import type { BattlePlaybackDataset } from '../types/playback-v2.js'
+import { parseBattlePlaybackDataset } from '../types/playback-v2.js'
 import MapOverview from './MapOverview.vue'
 import BattlePlayback from './BattlePlayback.vue'
 
@@ -62,7 +64,7 @@ async function authedFetch(url, body, { signal } = {}) {
 
 const mapOverview = ref(null)
 /** V2 canonical battle-playback dataset（可选；迁移期守卫，加载失败不阻断 legacy map）。 */
-const mapPlaybackV2 = ref(null)
+const mapPlaybackV2 = ref<BattlePlaybackDataset | null>(null)
 /**
  * V2 battle-playback 显式状态机（禁止静默吞掉 204/error）：LOADING | FULL | PARTIAL | UNAVAILABLE | ERROR。
  * 后端已按 limitations 诚实标注 capability；前端据此展示确定性降级态，不做任何未观测事实推断。
@@ -159,7 +161,11 @@ async function loadMapOverview() {
  * failure code；绝不记录 token。
  */
 let playbackV2Seq = 0
-async function loadPlaybackV2(signal) {
+let playbackV2AbortController: AbortController | null = null
+async function loadPlaybackV2() {
+  if (playbackV2AbortController) playbackV2AbortController.abort()
+  const controller = new AbortController()
+  playbackV2AbortController = controller
   const seq = ++playbackV2Seq
   playbackV2State.value = 'LOADING'
   playbackV2Error.value = ''
@@ -169,7 +175,7 @@ async function loadPlaybackV2(signal) {
   try {
     const r = await authedFetch('/api/replay/battle-playback-v2',
       JSON.stringify({ processingJobId: props.processingJobId, sourceId: props.sourceId }),
-      { signal })
+      { signal: controller.signal })
     if (seq !== playbackV2Seq) return
     if (r.status === 204) {
       mapPlaybackV2.value = null
@@ -181,25 +187,29 @@ async function loadPlaybackV2(signal) {
     }
     const ds = await r.json()
     if (seq !== playbackV2Seq) return
-    if (ds?.capability === 'UNAVAILABLE') {
+    const dataset = parseBattlePlaybackDataset(ds)
+    if (!dataset) {
+      throw new ApiError({ code: 'INVALID_RESPONSE', status: r.status, retryable: false })
+    }
+    if (dataset.capability === 'UNAVAILABLE') {
       mapPlaybackV2.value = null
       playbackV2State.value = 'UNAVAILABLE'
       playbackV2UnavailableReason.value = t('recon.playback.unavailable')
       // eslint-disable-next-line no-console
       console.warn('[playback-v2] unavailable (capability)', {
         ...logBase,
-        limitations: ds?.limitations || []
+        limitations: dataset.limitations
       })
       return
     }
-    mapPlaybackV2.value = ds
-    playbackV2State.value = ds?.capability === 'PARTIAL' ? 'PARTIAL' : 'FULL'
+    mapPlaybackV2.value = dataset
+    playbackV2State.value = dataset.capability === 'PARTIAL' ? 'PARTIAL' : 'FULL'
     // eslint-disable-next-line no-console
     console.info('[playback-v2] ok', {
       ...logBase,
       status: r.status,
-      capability: ds?.capability || null,
-      limitations: ds?.limitations || []
+      capability: dataset.capability,
+      limitations: dataset.limitations
     })
   } catch (e) {
     if (seq !== playbackV2Seq) return
@@ -221,6 +231,8 @@ async function loadPlaybackV2(signal) {
       ...logBase,
       failureCode: apiError.code
     })
+  } finally {
+    if (playbackV2AbortController === controller) playbackV2AbortController = null
   }
 }
 
@@ -234,6 +246,10 @@ function retryPlaybackV2() {
 function resetMap() {
   mapRequestSeq++
   playbackV2Seq++ // 使在途 V2 请求失效（换文件/清空/卸载时旧响应不得写回状态）。
+  if (playbackV2AbortController) {
+    playbackV2AbortController.abort()
+    playbackV2AbortController = null
+  }
   if (mapAbortController) {
     mapAbortController.abort()
     mapAbortController = null
@@ -300,6 +316,11 @@ watch(() => props.seekTo, async (sec) => {
 
 onBeforeUnmount(() => {
   mapRequestSeq++
+  playbackV2Seq++
+  if (playbackV2AbortController) {
+    playbackV2AbortController.abort()
+    playbackV2AbortController = null
+  }
   if (mapAbortController) {
     mapAbortController.abort()
     mapAbortController = null

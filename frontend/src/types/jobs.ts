@@ -77,7 +77,16 @@ export interface ExportJobCreateResponse {
   total: number
 }
 
+export type UploadPhase = 'UPLOADING' | 'REGISTERING'
+
 export interface UploadProgress {
+  phase: UploadPhase
+  loaded: number
+  total: number
+  percent: number
+}
+
+export interface UploadProgressEvent {
   loaded: number
   total: number
   percent: number

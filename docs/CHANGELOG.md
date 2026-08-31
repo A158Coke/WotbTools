@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 ### Changed
-- **Frontend TypeScript foundation and Replay API contracts**：引入 `vue-tsc` 独立类型检查与 CI step，建立 API 错误、Replay Job/Result、Workspace、AI capability 的共享类型和 runtime guards；Replay Processing/Export API 迁移到 typed boundary，保留 JS/TS 共存与现有运行时协议不变。
+- **Frontend TypeScript foundation and Replay API contracts**：引入 `vue-tsc` 独立类型检查与 CI step，建立 API 错误、Replay Job/Result、Workspace、AI capability、Playback 的共享类型和 runtime guards；Replay Processing/Export API、Replay/AI/Playback 核心纯函数迁移到 typed boundary，保留 JS/TS 共存与现有运行时协议不变。
 - **PR194 blocker closure**：Processing READY 只提交 authoritative `resp`，由 `ReplayPage` 对 `resp` 做 immediate/idempotent `cols.initFromResponse` hydration；移除 Data presentation callback bridge，Processing 不再知道列展示。Battle Playback 测试按地图、控制、时间线、详情面板与编排责任拆分，保留完整集成回归；协议、HP truth、visibility、orientation 与事件顺序不变。
 - **PR4 Battle Playback presentation decomposition**：将 `BattlePlayback.vue` 的地图、播放控制/时间线与车辆详情展示拆分为 `BattleMap.vue`、`PlaybackControls.vue`、`VehicleDetailsPanel.vue`；车辆状态投影及时钟推进提取为可测试纯函数。`BattlePlayback.vue` 继续作为编排层，canonical V2 数据、标记资产、交互与后端 API 行为不变。
 - **PR3 Replay Workspace UI decomposition**：将 Workspace 标题/清空、能力 tabs、批次与当前回放 selector 拆为 `ReplayWorkspaceHeader`、`ReplayCapabilityTabs`、`ReplaySourcePanel` 展示单元；`ReplayWorkspace` 保留 session/Processing/auth/upload 编排，权威 selected battle 与 capability state 不变。无产品流程或 API 行为变化。

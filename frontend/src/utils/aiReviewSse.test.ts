@@ -1,0 +1,120 @@
+import { describe, expect, it } from 'vitest'
+import {
+  createAiReviewSseParser,
+  isAiReviewDoneEvent,
+  isAiReviewErrorEvent,
+  isAiReviewEvent,
+  isAiReviewResult,
+  isAiReviewStageEvent,
+  isAiReviewTokenEvent,
+  parseAiReviewEvent,
+  parseAiReviewEventData,
+} from './aiReviewSse.js'
+
+function frame(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+}
+
+describe('aiReviewSse runtime guards', () => {
+  it('accepts the real stage event names and ignores unknown stages', () => {
+    for (const type of ['call1_start', 'call1_done', 'evidence_done', 'autopsy_start', 'autopsy_done']) {
+      const event = parseAiReviewEvent(type, {})
+      expect(event).toEqual({ type })
+      expect(isAiReviewStageEvent(event)).toBe(true)
+    }
+
+    expect(parseAiReviewEvent('call1_start', null)).toBeNull()
+    expect(parseAiReviewEvent('future_stage', {})).toBeNull()
+  })
+
+  it('guards token payloads without coercing arbitrary values', () => {
+    const event = parseAiReviewEvent('call2_token', { delta: '逐段输出' })
+    expect(event).toEqual({ type: 'call2_token', delta: '逐段输出' })
+    expect(isAiReviewTokenEvent(event)).toBe(true)
+
+    expect(parseAiReviewEvent('call2_token', { delta: 42 })).toBeNull()
+    expect(parseAiReviewEvent('call2_token', {})).toBeNull()
+  })
+
+  it('requires a non-empty done analysis and validates additive fields', () => {
+    const event = parseAiReviewEvent('done', {
+      analysis: '完整复盘',
+      preBattleSection: null,
+      capability: 'AVAILABLE_WITH_LIMITED_TIMELINE',
+    })
+    expect(event).toEqual({
+      type: 'done',
+      result: {
+        analysis: '完整复盘',
+        preBattleSection: null,
+        capability: 'AVAILABLE_WITH_LIMITED_TIMELINE',
+      },
+    })
+    expect(isAiReviewDoneEvent(event)).toBe(true)
+    if (!event || event.type !== 'done') throw new Error('expected done event')
+    expect(isAiReviewResult(event.result)).toBe(true)
+    expect(isAiReviewEvent(event)).toBe(true)
+
+    // Current ReplaySseWriter omits capability and old responses may omit both optional fields.
+    expect(parseAiReviewEvent('done', { analysis: '兼容结果' })).toEqual({
+      type: 'done',
+      result: { analysis: '兼容结果', preBattleSection: undefined },
+    })
+    expect(parseAiReviewEvent('done', { analysis: 'x', capability: 'NOT_A_CAPABILITY' })).toBeNull()
+    expect(isAiReviewResult({ analysis: 'x', capability: 'NOT_A_CAPABILITY' })).toBe(false)
+    expect(parseAiReviewEvent('done', { analysis: '   ' })).toBeNull()
+    expect(parseAiReviewEvent('done', { analysis: 123 })).toBeNull()
+  })
+
+  it('accepts stable uppercase future error codes and rejects malformed ones', () => {
+    const event = parseAiReviewEventData('error', '{"code":"AI_REVIEW_GROUNDING_FAILED"}')
+    expect(event).toEqual({ type: 'error', code: 'AI_REVIEW_GROUNDING_FAILED' })
+    expect(isAiReviewErrorEvent(event)).toBe(true)
+    expect(isAiReviewEvent(event)).toBe(true)
+    expect(parseAiReviewEvent('error', { code: 'lowercase' })).toBeNull()
+    expect(parseAiReviewEvent('error', { code: 503 })).toBeNull()
+  })
+
+  it('ignores invalid JSON and unknown event names', () => {
+    expect(parseAiReviewEventData('call2_token', '{bad json')).toBeNull()
+    expect(parseAiReviewEventData('unknown', '{}')).toBeNull()
+    expect(isAiReviewEvent({ type: 'call2_token', delta: 1 })).toBe(false)
+  })
+})
+
+describe('createAiReviewSseParser', () => {
+  it('keeps event framing across string chunks and preserves event order', () => {
+    const parser = createAiReviewSseParser()
+    expect(parser.push('event: call1_start\ndata: {}\n')).toEqual([])
+    expect(parser.push('\nevent: call2_token\ndata: {"delta":"A')).toEqual([{ type: 'call1_start' }])
+    expect(parser.push('"}\n\n')).toEqual([{ type: 'call2_token', delta: 'A' }])
+    expect(parser.push(frame('evidence_done', {}))).toEqual([{ type: 'evidence_done' }])
+    expect(parser.finish()).toEqual([])
+  })
+
+  it('handles UTF-8 byte boundaries, CRLF, comments, and a final unterminated frame', () => {
+    const encoded = new TextEncoder().encode(frame('call2_token', { delta: '中文' }))
+    const split = encoded.findIndex(byte => byte >= 0x80)
+    const parser = createAiReviewSseParser()
+    expect(parser.push(encoded.slice(0, split + 1))).toEqual([])
+    expect(parser.push(encoded.slice(split + 1))).toEqual([{ type: 'call2_token', delta: '中文' }])
+
+    const second = createAiReviewSseParser()
+    expect(second.push(': keep-alive\r\nevent: call1_done\r\ndata: {}\r\n\r\n')).toEqual([
+      { type: 'call1_done' },
+    ])
+    expect(second.push('event: call2_token\ndata: {"delta":"tail"}')).toEqual([])
+    expect(second.finish()).toEqual([{ type: 'call2_token', delta: 'tail' }])
+    expect(second.finish()).toEqual([])
+  })
+
+  it('drops malformed known events while continuing to parse later events', () => {
+    const parser = createAiReviewSseParser()
+    const events = parser.push([
+      frame('call2_token', { delta: 1 }),
+      frame('not-yet-supported', {}),
+      frame('done', { analysis: 'final' }),
+    ].join(''))
+    expect(events).toEqual([{ type: 'done', result: { analysis: 'final', preBattleSection: undefined } }])
+  })
+})
