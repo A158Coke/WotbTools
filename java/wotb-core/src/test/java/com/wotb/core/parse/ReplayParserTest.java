@@ -16,6 +16,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -61,6 +62,9 @@ class ReplayParserTest {
         writeField(info, 33, 120);
         writeField(info, 101, 42);
         writeField(info, 102, 1);
+        // P1 canonical contract: a settled dead combatant must carry a positive field24 lifeTime.
+        writeField(info, 105, 0);
+        writeField(info, 24, 100);
         // playerResults entry: #2 = info
         final ByteArrayOutputStream entry = new ByteArrayOutputStream();
         writeBytesField(entry, 2, info.toByteArray());
@@ -298,6 +302,44 @@ class ReplayParserTest {
         assertEquals(Boolean.TRUE, battle.rosterComplete);
     }
 
+    // ---- P1 canonical settlement death-lifetime fail-closed ----
+
+    @Test
+    void deadCombatantMissingSettlementLifetimeRejected() throws IOException {
+        // settled dead combatant (field105 != -1) with field24 lifeTime absent → invalid/malformed.
+        final byte[] root = deathLifeTimeRoot(5, 0, false);
+        assertThrows(IOException.class,
+                () -> ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root)))),
+                "阵亡玩家缺失 field24 lifeTime 必须以稳定 parse error 拒绝");
+    }
+
+    @Test
+    void deadCombatantZeroSettlementLifetimeRejected() throws IOException {
+        // settled dead combatant with field24 lifeTime == 0 → invalid/malformed.
+        final byte[] root = deathLifeTimeRoot(5, 0, true);
+        assertThrows(IOException.class,
+                () -> ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root)))),
+                "阵亡玩家 field24 lifeTime == 0 必须以稳定 parse error 拒绝");
+    }
+
+    @Test
+    void deadCombatantValidSettlementLifetimeAccepted() throws IOException {
+        // settled dead combatant with field24 lifeTime > 0 → normal canonical Battle.
+        final byte[] root = deathLifeTimeRoot(5, 100, true);
+        final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
+        assertFalse(battle.players.getFirst().survived);
+        assertEquals(100.0, battle.players.getFirst().settlementLifeTimeSec, 1e-9);
+    }
+
+    @Test
+    void survivorValidSettlementLifetimeAccepted() throws IOException {
+        // survivor (field105 == -1) with a valid field24 lifeTime → accepted as survivor.
+        final byte[] root = deathLifeTimeRoot(-1, 300, true);
+        final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
+        assertTrue(battle.players.getFirst().survived);
+        assertEquals(300.0, battle.players.getFirst().settlementLifeTimeSec, 1e-9);
+    }
+
     private static Long invokeParseLong(final Method parseLong, final String value)
             throws InvocationTargetException, IllegalAccessException {
         return (Long) parseLong.invoke(null, value);
@@ -330,6 +372,32 @@ class ReplayParserTest {
             writeBytesField(resultEntry, 2, info.toByteArray());
             writeBytesField(root, 301, resultEntry.toByteArray());
         }
+        return root.toByteArray();
+    }
+
+    /** P1 fixture：单玩家结算 root，field105=deathReason（-1=幸存 sentinel），可选写 field24 lifeTime。 */
+    private static byte[] deathLifeTimeRoot(final int deathReason, final long lifeTimeSec,
+                                            final boolean writeLifeTime) throws IOException {
+        final ByteArrayOutputStream root = new ByteArrayOutputStream();
+        writeField(root, 3, 1);
+        final ByteArrayOutputStream rosterInfo = new ByteArrayOutputStream();
+        writeStringField(rosterInfo, 1, "P1001");
+        writeField(rosterInfo, 3, 1);
+        final ByteArrayOutputStream rosterEntry = new ByteArrayOutputStream();
+        writeField(rosterEntry, 1, 1001);
+        writeBytesField(rosterEntry, 2, rosterInfo.toByteArray());
+        writeBytesField(root, 201, rosterEntry.toByteArray());
+        final ByteArrayOutputStream info = new ByteArrayOutputStream();
+        writeField(info, 101, 1001);
+        writeField(info, 102, 1);
+        writeField(info, 103, 4481);
+        writeField(info, 105, deathReason);
+        if (writeLifeTime) {
+            writeField(info, 24, (int) lifeTimeSec);
+        }
+        final ByteArrayOutputStream resultEntry = new ByteArrayOutputStream();
+        writeBytesField(resultEntry, 2, info.toByteArray());
+        writeBytesField(root, 301, resultEntry.toByteArray());
         return root.toByteArray();
     }
 

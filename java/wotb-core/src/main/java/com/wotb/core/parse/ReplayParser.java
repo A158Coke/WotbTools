@@ -191,6 +191,15 @@ public final class ReplayParser {
             // unknown time rather than a fabricated timestamp.
             pr.survived = pr.settlementDeathReasonRaw != null
                     && pr.settlementDeathReasonRaw == -1;
+            // P1 canonical fail-closed: a settled dead combatant must carry a positive settlement
+            // field24 lifeTime. Missing/non-positive lifetime is an invalid/malformed settlement — reject
+            // at the canonical parsing boundary so a normal parsed canonical Battle never enters the
+            // "dead + unknown death second" business state (defensive formatter fallback is kept but
+            // unreachable for normal ReplayParser output).
+            if (!pr.survived && pr.settlementLifeTimeSec <= 0) {
+                throw new IllegalArgumentException(
+                        "Dead combatant missing settlement lifeTime: accountId=" + pr.accountId);
+            }
             final long lifeMs = pr.settlementLifeTimeSec > 0
                     ? Math.round(pr.settlementLifeTimeSec * 1000.0) : 0L;
             pr.deathTimeMillis = pr.survived ? 0L : lifeMs;

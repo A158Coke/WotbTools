@@ -5,6 +5,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.processing.AiAnalysisEligibility;
 import com.wotb.core.replay.processing.BatchAnalyzer;
 import com.wotb.core.replay.processing.ReplayIdentity;
 import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
