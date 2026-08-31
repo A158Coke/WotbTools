@@ -1,4 +1,12 @@
 import { computed, ref, watch } from 'vue'
+import type { ExportJob, ProcessingJob, UploadProgress } from '../types/jobs.js'
+import { sourceId as makeSourceId } from '../types/replay.js'
+import type { Battle, ColumnDef, ProcessingJobId, ReplayResult, SourceId } from '../types/replay.js'
+import type { DataViewMode, ReplayCapability } from '../types/workspace.js'
+
+export type PendingRemove =
+  | { type: 'battle'; battle: Battle; label: string }
+  | { type: 'file'; file: File; label: string }
 
 const JOB_ACTIVE = new Set(['QUEUED', 'PROCESSING'])
 
@@ -22,31 +30,31 @@ const PROCESSING_UI_STATES = Object.freeze({
  * processing/result/export identity 以及 Workspace view state，避免同一状态在
  * useReplay 与 useReplayWorkspace 各有一份可写副本。
  */
-export function useReplaySession(initialCapability = 'data') {
-  const files = ref([])
+export function useReplaySession(initialCapability: ReplayCapability = 'data') {
+  const files = ref<File[]>([])
   const selectionRevision = ref(0)
   const loading = ref(false)
   const error = ref('')
-  const resp = ref(null)
+  const resp = ref<ReplayResult | null>(null)
   const activeTab = ref('aggregate')
-  const pendingRemove = ref(null)
+  const pendingRemove = ref<PendingRemove | null>(null)
 
-  const processingJob = ref(null)
+  const processingJob = ref<ProcessingJob | null>(null)
   const processingError = ref('')
-  const uploadState = ref(null)
-  const processingJobId = ref(null)
+  const uploadState = ref<UploadProgress | null>(null)
+  const processingJobId = ref<ProcessingJobId | null>(null)
 
-  const exportJob = ref(null)
+  const exportJob = ref<ExportJob | null>(null)
   const exportError = ref('')
 
   const activeWorkspaceTab = ref(initialCapability === 'playback' || initialCapability === 'ai'
     ? initialCapability
     : 'data')
-  const currentBattleId = ref(null)
-  const dataViewMode = ref('SUMMARY')
+  const currentBattleId = ref<SourceId | null>(null)
+  const dataViewMode = ref<DataViewMode>('SUMMARY')
 
-  const playerCols = computed(() => resp.value?.playerColumns || [])
-  const aggCols = computed(() => resp.value?.aggregateColumns || [])
+  const playerCols = computed<ColumnDef[]>(() => resp.value?.playerColumns || [])
+  const aggCols = computed<ColumnDef[]>(() => resp.value?.aggregateColumns || [])
   const aggStats = computed(() => {
     if (!resp.value) return null
     const battles = Array.isArray(resp.value.battles) ? resp.value.battles : []
@@ -75,7 +83,7 @@ export function useReplaySession(initialCapability = 'data') {
   })
   const resultMatchesSelection = computed(() => !!processingJobId.value && !!resp.value)
 
-  const parsedBattles = computed(() => Array.isArray(resp.value?.battles) ? resp.value.battles : [])
+  const parsedBattles = computed<Battle[]>(() => Array.isArray(resp.value?.battles) ? resp.value.battles : [])
   const replayBatch = computed(() => files.value)
   const singleReplay = computed(() => files.value.length === 1)
   const currentBattleIndex = computed(() => {
@@ -101,7 +109,7 @@ export function useReplaySession(initialCapability = 'data') {
   })
 
   /** 选择变化的原子提交：先由 useReplay 停止副作用，再调用本方法。 */
-  function replaceSelection(next) {
+  function replaceSelection(next: File[]) {
     files.value = next
     selectionRevision.value++
     processingJobId.value = null
@@ -115,26 +123,26 @@ export function useReplaySession(initialCapability = 'data') {
     dataViewMode.value = 'SUMMARY'
   }
 
-  function commitReadyResult(result, jobId) {
+  function commitReadyResult(result: ReplayResult, jobId: ProcessingJobId) {
     resp.value = result
     processingJobId.value = jobId
     activeTab.value = chooseInitialResultTab(result)
   }
 
-  function setWorkspaceTab(tab) {
+  function setWorkspaceTab(tab: ReplayCapability) {
     activeWorkspaceTab.value = tab
   }
 
-  function selectBattle(sourceId) {
+  function selectBattle(sourceId: SourceId | string | null) {
     const match = /^r(\d+)$/.exec(sourceId == null ? '' : String(sourceId))
     if (!match) return
-    const id = `r${Number.parseInt(match[1], 10)}`
+    const id = makeSourceId(`r${Number.parseInt(match[1], 10)}`)
     if (!parsedBattles.value.some(b => b?.sourceId === id)) return
     currentBattleId.value = id
     dataViewMode.value = 'SINGLE'
   }
 
-  function setDataViewMode(mode) {
+  function setDataViewMode(mode: DataViewMode) {
     if (mode === 'SINGLE') {
       const battles = parsedBattles.value
       if (!battles.length && !currentBattleId.value) {

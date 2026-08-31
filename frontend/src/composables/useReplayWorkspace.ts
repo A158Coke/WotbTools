@@ -1,11 +1,12 @@
 import { useReplay } from './useReplay.js'
+import type { ReplayCapability } from '../types/workspace.js'
 
 /**
  * Replay Workspace facade. The ReplaySession returned by useReplay is the
  * only owner of selection, result identity, selected battle, and workspace
  * view state; this module exposes that contract to the orchestration SFC.
  */
-export function useReplayWorkspace(initialCapability = 'data') {
+export function useReplayWorkspace(initialCapability: ReplayCapability = 'data') {
   const replay = useReplay(initialCapability)
   const { session } = replay
 

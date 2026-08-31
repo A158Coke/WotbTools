@@ -8,7 +8,7 @@ import {
   orientationKnownAt,
   consumableRuntimeAt,
   moduleCrewAt,
-} from '../utils/battlePlaybackV2.js'
+} from '../utils/battlePlaybackV2.ts'
 import { loadoutItemLabel } from '../data/loadoutItems.js'
 
 /**

@@ -88,7 +88,11 @@ describe('replay export job api', () => {
   })
 
   it('getExportJob returns progress payload', async () => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { jobId: 'j1', status: 'PROCESSING', processed: 5, total: 10 }))
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, {
+      jobId: 'j1', status: 'PROCESSING', phase: 'BUILDING_EXCEL', total: 10,
+      processed: 5, duplicates: 0, failures: 0, errorCode: null,
+      filename: null, contentType: null,
+    }))
     const result = await getExportJob('j1')
     expect(result.processed).toBe(5)
     expect(vi.mocked(fetch)).toHaveBeenCalledWith('/api/replay/export-jobs/j1')

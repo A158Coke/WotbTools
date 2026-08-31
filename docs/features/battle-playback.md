@@ -18,8 +18,8 @@
 `BattleMap.vue`（SVG、坦克标记、炮线、标注及瞬时反馈）、`PlaybackControls.vue`
 （播放控制、筛选与标注工具）、`PlaybackTimeline.vue`（进度条与事件标记）和
 `VehicleDetailsPanel.vue`（当前车辆详情）。
-`utils/playbackVehicleState.js` 负责将 canonical V2 track 投影为 marker state，
-`utils/playbackClock.js` 提供播放时间/倍速纯函数。拆分不新增数据源、不改变 V2 query-at-time、
+`utils/playbackVehicleState.ts` 负责将 canonical V2 track 投影为 marker state，
+`utils/playbackClock.ts` 提供播放时间/倍速纯函数。拆分不新增数据源、不改变 V2 query-at-time、
 anti-future-leak 或现有 tank-marker 资产契约。
 
 测试也按同一责任边界组织：地图/标记/手势、控制、时间线和详情面板分别由对应 focused

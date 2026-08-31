@@ -28,7 +28,8 @@
 ## 环境与工具链
 
 - **JDK 21** 必需。Maven 必须带 `-s java/settings.xml`；容器构建使用 `java/settings-docker.xml`。
-- **Node 24**：`frontend/.nvmrc` 固定版本；安装依赖用 `npm ci`。
+- **Node 24**：`frontend/.nvmrc` 固定版本；安装依赖用 `npm ci`。前端使用 TypeScript 与
+  `vue-tsc` 做独立类型检查；JavaScript 与 TypeScript 可共存，迁移期间不要求一次性改写旧代码。
 - **Python 3**：`common/python/update_tankopedia.py` 使用标准库从 BlitzKit 客户端定义同步车辆数据。
 - 不要使用任何公司 token、凭据或基础设施。
 
@@ -42,6 +43,7 @@
 
 # 前端分层测试
 # Targeted：cd frontend && npx vitest run <related-test-files>
+# Type check：cd frontend && npm run typecheck
 # Build（仅当改动涉及 build 范围）：cd frontend && npm run build
 
 # 本地完整开发环境
@@ -297,7 +299,7 @@ Processing error/retry，不无限重试）；普通 Web/FileUploader 手动选�
 Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标记/瞬时反馈由 `BattleMap.vue` 渲染，
 播放控制与标注工具由 `PlaybackControls.vue` 渲染，进度条与事件标记由 `PlaybackTimeline.vue` 渲染，
 当前车辆详情由 `VehicleDetailsPanel.vue` 渲染。
-车辆状态投影与时钟推进分别由 `utils/playbackVehicleState.js`、`utils/playbackClock.js` 提供纯函数，
+车辆状态投影与时钟推进分别由 `utils/playbackVehicleState.ts`、`utils/playbackClock.ts` 提供纯函数，
 组件只负责把 canonical V2 数据转换为展示 props/commands。
 对应测试按 ownership 分层：地图/标记/手势、控制、时间线、详情面板及时钟/车辆投影各有 focused
 suite，共享 fixture 位于 testing-only `playbackTestHarness.js`；`BattlePlayback.test.js` 与
