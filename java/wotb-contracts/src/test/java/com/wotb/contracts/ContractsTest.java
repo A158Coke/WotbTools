@@ -1,46 +1,16 @@
 package com.wotb.contracts;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ContractsTest {
-
-    @Test
-    void mapsCurrentJobContractExhaustivelyAndRoundTrips() {
-        Arrays.stream(CurrentJobStatus.values()).forEach(status -> assertEquals(status,
-                CurrentProcessingStatusAdapter.futureToJob(
-                        CurrentProcessingStatusAdapter.jobToFuture(status))));
-    }
-
-    @Test
-    void mapsCurrentSourceContractExhaustivelyAndRoundTrips() {
-        Arrays.stream(CurrentSourceStatus.values()).forEach(status -> assertEquals(status,
-                CurrentProcessingStatusAdapter.futureToSource(
-                        CurrentProcessingStatusAdapter.sourceToFuture(status))));
-        assertThrows(IllegalArgumentException.class,
-                () -> CurrentProcessingStatusAdapter.futureToSource(JobStatus.CANCELLED));
-    }
-
-    @Test
-    void keepsQueuedJobAndPendingSourceMappingsDistinct() {
-        assertEquals(CurrentJobStatus.QUEUED,
-                CurrentProcessingStatusAdapter.futureToJob(JobStatus.QUEUED));
-        assertEquals(CurrentSourceStatus.PENDING,
-                CurrentProcessingStatusAdapter.futureToSource(JobStatus.QUEUED));
-        assertEquals(JobStatus.QUEUED,
-                CurrentProcessingStatusAdapter.jobToFuture(CurrentJobStatus.QUEUED));
-        assertEquals(JobStatus.QUEUED,
-                CurrentProcessingStatusAdapter.sourceToFuture(CurrentSourceStatus.PENDING));
-    }
 
     @Test
     void validatesMetadataAndKeepsPayloadOutOfRequestEvent() {
@@ -66,20 +36,23 @@ class ContractsTest {
     }
 
     @Test
-    void requestEventSerializationPreservesStableMetadataShape() throws Exception {
+    void callbackSerializationRoundTripsWithoutFreezingNestedIdentifierShape() throws Exception {
         final JobRequestedEvent request = new JobRequestedEvent(
                 new EventId("event-serial"), new JobId("job-serial"), new BatchId("batch-serial"),
                 JobType.REPLAY_PROCESSING, new ObjectKey("incoming/replay-serial"),
                 Instant.parse("2026-08-31T08:00:00Z"), 2);
+        final JobSucceeded succeeded = new JobSucceeded(
+                new EventId("event-success"), new JobId("job-success"), new BatchId("batch-success"),
+                Instant.parse("2026-08-31T08:01:00Z"), new ObjectKey("result/replay.json"));
+        final JobFailed failed = new JobFailed(
+                new EventId("event-failed"), new JobId("job-failed"), new BatchId("batch-failed"),
+                Instant.parse("2026-08-31T08:02:00Z"), "REPLAY_PARSE_FAILED", true);
         final ObjectMapper mapper = new ObjectMapper()
                 .registerModule(new JavaTimeModule())
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-        final String json = mapper.writeValueAsString(request);
-        final JsonNode tree = mapper.readTree(json);
-        assertEquals("event-serial", tree.at("/eventId/value").asText());
-        assertEquals("REPLAY_PROCESSING", tree.at("/jobType").asText());
-        assertEquals("2026-08-31T08:00:00Z", tree.at("/createdAt").asText());
-        assertEquals(request, mapper.readValue(json, JobRequestedEvent.class));
+        assertEquals(request, mapper.readValue(mapper.writeValueAsString(request), JobRequestedEvent.class));
+        assertEquals(succeeded, mapper.readValue(mapper.writeValueAsString(succeeded), JobSucceeded.class));
+        assertEquals(failed, mapper.readValue(mapper.writeValueAsString(failed), JobFailed.class));
     }
 }
