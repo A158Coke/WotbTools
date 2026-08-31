@@ -2,6 +2,7 @@ package com.wotb.control;
 
 import com.wotb.control.db.DatabaseProbeService;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalManagementPort;
@@ -11,7 +12,6 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -19,7 +19,9 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.ResponseErrorHandler;
 
 import java.util.List;
 import java.util.Map;
@@ -45,11 +47,13 @@ class ControlApiSecurityIntegrationTest {
 
     private final DatabaseProbeService databaseProbeService;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
 
     @Autowired
-    ControlApiSecurityIntegrationTest(final DatabaseProbeService databaseProbeService) {
+    ControlApiSecurityIntegrationTest(final DatabaseProbeService databaseProbeService,
+                                      final RestTemplate restTemplate) {
         this.databaseProbeService = databaseProbeService;
+        this.restTemplate = restTemplate;
     }
 
     @DynamicPropertySource
@@ -97,6 +101,18 @@ class ControlApiSecurityIntegrationTest {
 
     @TestConfiguration(proxyBeanMethods = false)
     static class TestJwtDecoderConfiguration {
+        @Bean
+        RestTemplate restTemplate() {
+            final RestTemplate restTemplate = new RestTemplate();
+            restTemplate.setErrorHandler(new ResponseErrorHandler() {
+                @Override
+                public boolean hasError(final ClientHttpResponse response) {
+                    return false;
+                }
+            });
+            return restTemplate;
+        }
+
         @Bean
         JwtDecoder jwtDecoder() {
             return token -> Jwt.withTokenValue(token)
