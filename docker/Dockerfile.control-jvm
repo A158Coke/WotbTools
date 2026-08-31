@@ -1,0 +1,18 @@
+FROM maven:3.9.11-eclipse-temurin-25 AS build
+WORKDIR /build
+
+COPY java/pom.xml java/settings-docker.xml java/
+COPY java/wotb-contracts/pom.xml java/wotb-contracts/pom.xml
+COPY java/wotb-core/pom.xml java/wotb-core/pom.xml
+COPY java/wotb-control/pom.xml java/wotb-control/pom.xml
+COPY java/wotb-web/pom.xml java/wotb-web/pom.xml
+COPY java/wotb-contracts/src java/wotb-contracts/src
+COPY java/wotb-control/src java/wotb-control/src
+
+WORKDIR /build/java
+RUN mvn -s settings-docker.xml -pl wotb-control -am -DskipTests package -q
+
+FROM eclipse-temurin:25-jre
+COPY --from=build /build/java/wotb-control/target/wotb-control.jar /app/app.jar
+EXPOSE 8090 8091
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
