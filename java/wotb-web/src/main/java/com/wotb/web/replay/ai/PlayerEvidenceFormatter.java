@@ -63,7 +63,7 @@ final class PlayerEvidenceFormatter {
                 : (battle != null && battle.durationS != null && battle.durationS > 0
                         ? battle.durationS : 0.0);
         return com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
-                recon.events(), mapping, start == null ? 0.0 : start.doubleValue(), duration);
+                recon.events(), mapping, start == null ? 0.0 : start.doubleValue(), duration, battle);
     }
 
     private static int dealtTo(
@@ -450,10 +450,20 @@ final class PlayerEvidenceFormatter {
     }
 
     static void appendPlayerLine(final StringBuilder sb, final PlayerResult p, final boolean isFriendly) {
-        appendPlayerLine(sb, p, isFriendly, false);
+        appendPlayerLine(sb, null, p, isFriendly, false);
     }
 
     static void appendPlayerLine(final StringBuilder sb, final PlayerResult p,
+                                 final boolean isFriendly, final boolean isYou) {
+        appendPlayerLine(sb, null, p, isFriendly, isYou);
+    }
+
+    static void appendPlayerLine(final StringBuilder sb, final Battle battle, final PlayerResult p,
+                                 final boolean isFriendly) {
+        appendPlayerLine(sb, battle, p, isFriendly, false);
+    }
+
+    static void appendPlayerLine(final StringBuilder sb, final Battle battle, final PlayerResult p,
                                  final boolean isFriendly, final boolean isYou) {
         final String tankDisplay = ReplayDisplayNames.tankName(p.tankId, p.tankName);
         final double deathSec = PlayerResultFormat.deathSec(p);
@@ -519,17 +529,25 @@ final class PlayerEvidenceFormatter {
                                           final List<PlayerResult> friendlies,
                                           final List<PlayerResult> enemies,
                                           final List<PlayerResult> unknowns) {
+        appendAggregates(sb, null, friendlies, enemies, unknowns);
+    }
+
+    static void appendAggregates(final StringBuilder sb, final Battle battle,
+                                 final List<PlayerResult> friendlies,
+                                 final List<PlayerResult> enemies,
+                                 final List<PlayerResult> unknowns) {
         sb.append("\n=== FRIENDLY_AUTHORITATIVE_RESULT（本队合计·权威结算，含你） ===\n");
-        appendTeamAggregate(sb, friendlies);
+        appendTeamAggregate(sb, battle, friendlies);
         sb.append("=== ENEMY_AUTHORITATIVE_RESULT（敌方合计·权威结算） ===\n");
-        appendTeamAggregate(sb, enemies);
+        appendTeamAggregate(sb, battle, enemies);
         if (!unknowns.isEmpty()) {
             sb.append("=== UNKNOWN_AUTHORITATIVE_RESULT（未确定阵营合计·权威结算） ===\n");
-            appendTeamAggregate(sb, unknowns);
+            appendTeamAggregate(sb, battle, unknowns);
         }
     }
 
-    private static void appendTeamAggregate(final StringBuilder sb, final List<PlayerResult> players) {
+    private static void appendTeamAggregate(final StringBuilder sb, final Battle battle,
+                                            final List<PlayerResult> players) {
         final int totalDmg = players.stream().mapToInt(p -> p.damageDealt).sum();
         final int totalRecv = players.stream().mapToInt(p -> p.damageReceived).sum();
         final int totalAssist = players.stream().mapToInt(p -> p.damageAssisted).sum();
@@ -734,9 +752,7 @@ final class PlayerEvidenceFormatter {
             }
         }
 
-        final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(
-                features.phases(),
-                battle == null ? null : BattlePhaseSummary.deathSourceLabel(battle));
+        final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(features.phases());
         if (!phaseSection.isEmpty()) {
             sb.append("\n").append(phaseSection);
         }

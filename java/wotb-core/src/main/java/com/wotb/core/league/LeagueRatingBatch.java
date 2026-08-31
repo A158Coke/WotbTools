@@ -15,16 +15,13 @@ public record LeagueRatingBatch(
         List<LeagueRatingResult> battleResults,
         List<PlayerLeagueSummary> playerSummaries,
         List<TeamLeagueSummary> teamSummaries,
-        List<LeagueFailure> failures,
-        // 评分质量元数据（非阻断性 limitation；死亡时间 UNKNOWN 玩家数等）
-        LeagueRatingQuality ratingQuality) {
+        List<LeagueFailure> failures) {
 
     public LeagueRatingBatch {
         battleResults = battleResults == null ? List.of() : List.copyOf(battleResults);
         playerSummaries = playerSummaries == null ? List.of() : List.copyOf(playerSummaries);
         teamSummaries = teamSummaries == null ? List.of() : List.copyOf(teamSummaries);
         failures = failures == null ? List.of() : List.copyOf(failures);
-        ratingQuality = ratingQuality == null ? LeagueRatingQuality.NONE : ratingQuality;
     }
 
     /** 按 arenaId 查找该场的评分结果（该场未评分/不在批次返回 null；identity 绑定，不依赖 index）。 */

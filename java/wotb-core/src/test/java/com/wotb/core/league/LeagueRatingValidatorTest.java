@@ -86,19 +86,14 @@ class LeagueRatingValidatorTest {
     }
 
     @Test
-    void rejectsIncompleteRoster() {
+    void rosterEvidenceDoesNotGateRating() {
+        // League Rating is #301-only: #201 roster evidence (missing/extra/) is metadata enrichment and
+        // must never block Rating. The strict global rosterComplete contract is unchanged (kept for
+        // SURVIVOR_SETTLEMENT / annihilation) but is not a Rating eligibility gate.
         final Battle battle = LeagueTestBattles.battle(1, defaultSevenVsSeven());
-        battle.settlementAccountsCoveredByRoster = false;
-        assertEquals(List.of(LeagueFailure.Code.ROSTER_INCOMPLETE),
-                codes(battle));
-    }
-
-    @Test
-    void rejectsNullRosterComplete() {
-        final Battle battle = LeagueTestBattles.battle(1, defaultSevenVsSeven());
-        battle.settlementAccountsCoveredByRoster = null;
-        assertEquals(List.of(LeagueFailure.Code.ROSTER_INCOMPLETE),
-                codes(battle));
+        battle.rosterComplete = false;
+        assertTrue(LeagueRatingValidator.validate(battle).isEmpty(),
+                "#201 roster evidence 不得阻塞 #301-only Rating");
     }
 
     @Test
@@ -116,11 +111,12 @@ class LeagueRatingValidatorTest {
     }
 
     @Test
-    void acceptsDeadPlayerWithUnknownDeathTime() {
-        // survivalTimeSec == 0 = 死亡时间 UNKNOWN（合法）：不产生 failure，整场允许评分
+    void rejectsDeadPlayerWithMissingSettlementDeathTime() {
+        // 阵亡玩家缺失 settlement lifeTime 必须 fail-closed，不再当作普通 UNKNOWN 放行。
         final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
         specs.get(0).dead(0);
-        assertTrue(LeagueRatingValidator.validate(LeagueTestBattles.battle(1, specs)).isEmpty());
+        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS),
+                codes(LeagueTestBattles.battle(1, specs)));
     }
 
     @Test
@@ -133,20 +129,19 @@ class LeagueRatingValidatorTest {
 
     @Test
     void rejectsNaNDeathTime() {
-        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
-        specs.get(0).survived = false;
-        specs.get(0).survivalTimeSec = Double.NaN;
-        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS),
-                codes(LeagueTestBattles.battle(1, specs)));
+        // NaN settlement lifeTime (the only League death authority) must fail closed.
+        final Battle battle = LeagueTestBattles.battle(1, defaultSevenVsSeven());
+        battle.players.get(0).survived = false;
+        battle.players.get(0).settlementLifeTimeSec = Double.NaN;
+        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS), codes(battle));
     }
 
     @Test
     void rejectsInfiniteDeathTime() {
-        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
-        specs.get(0).survived = false;
-        specs.get(0).survivalTimeSec = Double.POSITIVE_INFINITY;
-        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS),
-                codes(LeagueTestBattles.battle(1, specs)));
+        final Battle battle = LeagueTestBattles.battle(1, defaultSevenVsSeven());
+        battle.players.get(0).survived = false;
+        battle.players.get(0).settlementLifeTimeSec = Double.POSITIVE_INFINITY;
+        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS), codes(battle));
     }
 
     @Test
@@ -177,11 +172,10 @@ class LeagueRatingValidatorTest {
 
     @Test
     void rejectsDeadTimeBeyondDuration() {
-        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
-        specs.get(0).survived = false;
-        specs.get(0).survivalTimeSec = 400;
-        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS),
-                codes(LeagueTestBattles.battle(1, specs)));
+        final Battle battle = LeagueTestBattles.battle(1, defaultSevenVsSeven());
+        battle.players.get(0).survived = false;
+        battle.players.get(0).settlementLifeTimeSec = 400;
+        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS), codes(battle));
     }
 
     @Test

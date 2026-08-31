@@ -1,7 +1,6 @@
 package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 
 import java.io.ByteArrayOutputStream;
@@ -90,9 +89,6 @@ public final class LeagueTestBattles {
         battle.mapName = "italy";
         battle.durationS = 300.0;
         battle.rosterComplete = true;
-        // League 专属结算证据（synthetic 构造：结算由同一 players 列表驱动，视为覆盖且队伍一致）
-        battle.settlementAccountsCoveredByRoster = true;
-        battle.settlementRosterTeamConsistent = true;
         battle.players = new ArrayList<>();
         for (final PlayerSpec s : specs) {
             final PlayerResult p = new PlayerResult();
@@ -111,15 +107,9 @@ public final class LeagueTestBattles {
             p.victoryPointsSeized = s.seized;
             p.survived = s.survived;
             p.survivalTimeSec = s.survivalTimeSec;
-            // 已知死亡必须携带 canonical death 证据（严格 deathSec 只按 deathTimeSource 消费：
-            // 不得靠裸 survivalTimeSec 偷渡 UNKNOWN→KNOWN）。dead(t>0)=SETTLEMENT_SECOND；
-            // dead(0)=UNKNOWN（无可靠死亡时刻）。
-            if (!s.survived && s.survivalTimeSec > 0) {
-                p.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
-                p.deathTimeMillis = Math.round(s.survivalTimeSec * 1000.0);
-            } else if (!s.survived) {
-                p.deathTimeSource = DeathTimeSource.UNKNOWN;
-            }
+            p.settlementLifeTimeSec = s.survivalTimeSec;
+            p.deathTimeMillis = !s.survived && s.survivalTimeSec > 0
+                    ? Math.round(s.survivalTimeSec * 1000.0) : 0L;
             p.nickname = s.nickname;
             p.clan = s.clan;
             p.raw = new LinkedHashMap<>();
@@ -207,9 +197,15 @@ public final class LeagueTestBattles {
             writeField(info, 117, p.damageBlocked);
             writeField(info, 32, p.victoryPointsEarned);
             writeField(info, 33, p.victoryPointsSeized);
+            // PR147 production contract: #105 = deathReason (-1 = survivor sentinel); #24 = lifeTime
+            // (seconds; dead = settlement death seconds, survivor = whole battle duration). Never write
+            // the legacy #104 deathTimeMillis. #25 killerID (result/entity-id namespace) only when known.
             writeField(info, 105, p.survived ? -1 : 0);
-            if (!p.survived) {
-                writeField(info, 104, (long) (p.survivalTimeSec * 1000));
+            if (p.settlementLifeTimeSec > 0) {
+                writeField(info, 24, (long) Math.round(p.settlementLifeTimeSec));
+            }
+            if (!p.survived && p.settlementKillerResultEntityId != null) {
+                writeField(info, 25, p.settlementKillerResultEntityId);
             }
             final ByteArrayOutputStream resultEntry = new ByteArrayOutputStream();
             writeBytesField(resultEntry, 2, info.toByteArray());

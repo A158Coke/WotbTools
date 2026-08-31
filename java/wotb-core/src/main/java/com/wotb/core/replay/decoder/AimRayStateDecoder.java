@@ -22,13 +22,6 @@ public final class AimRayStateDecoder implements ReplayPacketDecoder {
     @Override
     public ReplayDecodeResult decode(final ReplayDecodeContext context, final RawReplayPacket packet) {
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
-        if (!ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
-            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
-                    List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(),
-                            packet.payloadLength(), "VERSION_UNSUPPORTED_TYPE39", DecodeConfidence.UNKNOWN)),
-                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "Type39 semantics not affirmed for client version: " + context.clientVersion())));
-        }
         final byte[] payload = packet.payload();
         if (payload.length != PAYLOAD_LEN) {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED,

@@ -59,7 +59,7 @@ public class DefaultTeamBattleFeatureExtractor {
         final Map<Long, TeamMemberFeatureSet.DeathProximity> deathProxByAcc = new HashMap<>();
         for (final PlayerResult p : authoritativeMembers) {
             deathProxByAcc.put(p.accountId,
-                    resolveDeathProximity(reconstruction, entityMapping, mapCode, perspectiveTeam, p));
+                    resolveDeathProximity(battle, reconstruction, entityMapping, mapCode, perspectiveTeam, p));
         }
         final TeamAggregateResult authoritativeAggregate = TeamAggregateExtractor.buildAuthoritativeAggregate(
                 battle, authoritativeMembers, perspectiveTeam);
@@ -96,7 +96,7 @@ public class DefaultTeamBattleFeatureExtractor {
                         ? battle.durationS : 0.0);
         final PlaybackCombatReconstruction.Result combat = PlaybackCombatReconstruction.derive(
                 events, entityMapping,
-                battleStartRaw == null ? 0.0 : battleStartRaw.doubleValue(), duration);
+                battleStartRaw == null ? 0.0 : battleStartRaw.doubleValue(), duration, battle);
         // 涉及本队视角的掉血记录（victim 属本队，或 reliable attacker 属本队）；
         // attacker 可能为 null = 不可归属（掉血真实发生但不得计入任何攻击者）
         final List<AttributedHpLoss> teamLosses = new ArrayList<>();
@@ -175,7 +175,7 @@ public class DefaultTeamBattleFeatureExtractor {
 
         final List<TeamMemberFeatureSet> members = authoritativeMembers.stream()
                 .map(player -> buildMember(
-                        player, entityMapping, timedPositionsByEntity, leaveTimesByEntity,
+                        player, battle, entityMapping, timedPositionsByEntity, leaveTimesByEntity,
                         timedDamages, teamLosses,
                         authoritativeMembers, mapCode,
                         deathProxByAcc.getOrDefault(player.accountId, null)))
@@ -434,6 +434,7 @@ public class DefaultTeamBattleFeatureExtractor {
 
     private static TeamMemberFeatureSet buildMember(
             final PlayerResult player,
+            final Battle battle,
             final TeamEntityMapping mapping,
             final Map<Integer, List<TimedTeamPosition>> timedPositionsByEntity,
             final Map<Integer, List<Double>> leaveTimesByEntity,
@@ -511,12 +512,22 @@ public class DefaultTeamBattleFeatureExtractor {
 
     /** 包内 forwarder：新逻辑在 TeamKeyEventsExtractor，此入口供 DeathProximityTest 直接调用。 */
     static TeamMemberFeatureSet.DeathProximity resolveDeathProximity(
+            final Battle battle,
             final ReplayReconstruction recon,
             final TeamEntityMapping mapping,
             final String mapCode,
             final int perspectiveTeam,
             final PlayerResult player) {
-        return TeamKeyEventsExtractor.resolveDeathProximity(recon, mapping, mapCode, perspectiveTeam, player);
+        return TeamKeyEventsExtractor.resolveDeathProximity(battle, recon, mapping, mapCode, perspectiveTeam, player);
+    }
+
+    static TeamMemberFeatureSet.DeathProximity resolveDeathProximity(
+            final ReplayReconstruction recon,
+            final TeamEntityMapping mapping,
+            final String mapCode,
+            final int perspectiveTeam,
+            final PlayerResult player) {
+        return resolveDeathProximity(null, recon, mapping, mapCode, perspectiveTeam, player);
     }
 
     static String identityKey(final TeamEntityIdentity identity) {

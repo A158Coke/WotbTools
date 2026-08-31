@@ -58,11 +58,8 @@ public class PlayerResult {
     public String tankNation = "";
     public Object alphaDamage = "";
 
-    /**
-     * 死亡时刻(ms)。PR147 后该字段为 <b>canonical 结算死亡时间</b>（由 settlement field24 lifeTime 派生，
-     * 存活=0）；不再是 proto #104（11.19 corpus 中 #104 不存在）。原始 settlement 证据见
-     * {@link #settlementLifeTimeSec} / {@link #settlementDeathReasonRaw}。
-     */
+    /** @deprecated compatibility projection of settlementLifeTimeSec; not an authority. */
+    @Deprecated(forRemoval = false)
     public long deathTimeMillis;
 
     // ---- PR147 settlement 原始证据（battle_results.dat #301；均未 reconciliation，只保留 raw）----
@@ -77,11 +74,9 @@ public class PlayerResult {
     /** 由 field25 killer result id 经 result/entity-id → accountId 映射得到的击杀者账号（=0/null 表示无法证明/环境击杀）。 */
     public Long killerAccountId;
 
-    // 存活时间(秒, 由 ReplayParser 计算；0 = UNKNOWN，绝不伪造)
+    /** @deprecated compatibility projection of settlementLifeTimeSec/duration; not an authority. */
+    @Deprecated(forRemoval = false)
     public double survivalTimeSec;
-
-    /** 死亡时刻 provenance（null = 未回填，按 UNKNOWN 处理）。 */
-    public DeathTimeSource deathTimeSource;
 
     // 完整原始字段 (字段号 -> 值列表), 供"原始字段"表/排查
     public Map<Integer, List<Object>> raw;

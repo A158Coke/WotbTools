@@ -3,7 +3,6 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
@@ -75,8 +74,7 @@ class BattlePhaseTimelineEvidenceTest {
         p.survived = survived;
         p.deathTimeMillis = survived ? 0L : (long) (deathSec * 1000);
         if (!survived) {
-            p.deathTimeSource = deathSec > 0
-                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+            p.settlementLifeTimeSec = deathSec;
         }
         p.damageDealt = 1000;
         return p;
@@ -152,7 +150,6 @@ class BattlePhaseTimelineEvidenceTest {
         assertTrue(section.contains("阶段末friendlyAlive=7"), section);
         assertTrue(section.contains("阶段末enemyAlive=7"), section);
         // 权威口径
-        assertTrue(section.contains("DEATH_SOURCE=权威结算"), section);
         assertTrue(section.contains("不得猜测"), section);
     }
 
@@ -211,7 +208,6 @@ class BattlePhaseTimelineEvidenceTest {
         assertTrue(section.contains("[0分00秒-0分45秒] 开局"), section);
         assertTrue(section.contains("至阶段末 我方存活 7"), section);
         assertTrue(section.contains("我方存活 7 敌方存活 7"), section);
-        assertTrue(section.contains("DEATH_SOURCE=权威结算"), section);
         assertFalse(section.contains("录像者"), "不得以「录像者」指代自己：" + section);
         assertFalse(section.contains("team="), "raw team 不得进入 prompt 段：" + section);
         assertFalse(section.matches("(?s).*\\d+\\.\\d+.*"), "裸秒数不得出现：" + section);
@@ -245,7 +241,6 @@ class BattlePhaseTimelineEvidenceTest {
         assertTrue(section.contains("[0分00秒-0分45秒] 开局"), section);
         assertTrue(section.contains("至阶段末 我方存活 7"), section);
         assertTrue(section.contains("我方存活 7 敌方存活 7"), section);
-        assertTrue(section.contains("DEATH_SOURCE=权威结算"), section);
         assertFalse(section.contains("录像者"), "不得以「录像者」指代自己：" + section);
         assertFalse(section.contains("team="), section);
         assertFalse(section.matches("(?s).*\\d+\\.\\d+.*"), "裸秒数不得出现：" + section);
@@ -305,7 +300,6 @@ class BattlePhaseTimelineEvidenceTest {
         assertTrue(section.contains("至阶段末 我方存活 5"), section);
         assertTrue(section.contains("我方存活 5 敌方存活 4"), section);
         assertTrue(section.contains("（密集击杀）"), section);
-        assertTrue(section.contains("DEATH_SOURCE=权威结算"), section);
         assertFalse(section.contains("录像者"), section);
         assertFalse(section.contains("team="), section);
         assertFalse(section.matches("(?s).*\\d+\\.\\d+.*"), "裸秒数不得出现：" + section);

@@ -802,9 +802,6 @@ final class TeamEvidenceFormatter {
         writer.append("\n=== BATTLE_PHASES ===\n");
         if (phases != null && !phases.isEmpty()) {
             writer.append(BattlePhaseTimelineSection.PHASE_SEMANTICS_NOTE);
-            if (battle != null) {
-                writer.append("DEATH_SOURCE=" + BattlePhaseSummary.deathSourceLabel(battle) + "\n");
-            }
             writer.append(BattlePhaseTimelineSection.renderTeamRows(phases));
             appendDeathTimeline(writer, battle, perspectiveTeam);
         }

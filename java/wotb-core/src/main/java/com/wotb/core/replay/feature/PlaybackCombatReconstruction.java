@@ -1,5 +1,6 @@
 package com.wotb.core.replay.feature;
 
+import com.wotb.core.model.Battle;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
@@ -61,6 +62,15 @@ public final class PlaybackCombatReconstruction {
             final TeamEntityMapping mapping,
             final double battleStartRawClockSec,
             final double duration) {
+        return derive(events, mapping, battleStartRawClockSec, duration, null);
+    }
+
+    public static Result derive(
+            final List<ReplayEvent> events,
+            final TeamEntityMapping mapping,
+            final double battleStartRawClockSec,
+            final double duration,
+            final Battle battle) {
         final Map<Long, List<Loss>> losses = new HashMap<>();
         if (events == null || mapping == null) {
             return new Result(losses, List.of());
@@ -164,7 +174,8 @@ public final class PlaybackCombatReconstruction {
         // Final live terminal state per account is the only destroyed authority. Same-clock terminal beats
         // positive HP; a strictly later alive/rematerialization state negates an earlier terminal.
         final Map<Long, ReplayTerminalLifecycle.Evidence> finalLifecycle =
-                ReplayTerminalLifecycle.finalStateByAccount(events, mapping, battleStartRawClockSec);
+                ReplayTerminalLifecycle.finalStateByAccount(
+                        events, mapping, battleStartRawClockSec, battle);
         final List<Destroyed> destroyed = new ArrayList<>();
         for (final ReplayTerminalLifecycle.Evidence terminal : finalLifecycle.values()) {
             if (!terminal.terminal() || !inBattle(terminal.timeSec(), duration)) {

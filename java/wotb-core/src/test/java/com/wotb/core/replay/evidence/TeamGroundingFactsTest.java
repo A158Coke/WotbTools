@@ -1,7 +1,6 @@
 package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.AliveTransition;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.EvidenceFact;
@@ -53,7 +52,7 @@ class TeamGroundingFactsTest {
                     .filter(x -> x.accountId == d[0]).findFirst().orElseThrow();
             p.survived = false;
             p.deathTimeMillis = d[2];
-            p.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+            p.settlementLifeTimeSec = d[2] / 1000.0;
         }
         battle.players.stream().filter(p -> p.accountId == 101L).forEach(p -> p.nickname = "__WildCat_");
         battle.players.stream().filter(p -> p.accountId == 102L).forEach(p -> p.nickname = "Azusa");
@@ -120,9 +119,7 @@ class TeamGroundingFactsTest {
     void canonicalLiveExactDeathIsAlreadyBattleRelativeAndNeverSubtractsStartRaw() {
         final Battle b = battle(1);
         final PlayerResult p = b.players.stream().filter(x -> x.accountId == 101L).findFirst().orElseThrow();
-        p.deathTimeSource = DeathTimeSource.LIVE_EXACT;
-        p.survivalTimeSec = 111.25;
-        // Settlement can coexist but must not override LIVE_EXACT or be treated as raw packet clock.
+        p.settlementLifeTimeSec = 111.25;
         p.deathTimeMillis = 112_400L;
 
         final GroundingFacts facts = TeamGroundingFacts.build(b, 1000.0, 1);

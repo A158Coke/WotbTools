@@ -1,7 +1,6 @@
 package com.wotb.core.replay.timeline;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DamageEvent;
@@ -56,9 +55,8 @@ final class TimelineTestFixtures {
         p.survived = survived;
         p.deathTimeMillis = survived ? 0 : 30_000L;
         p.survivalTimeSec = survived ? 60.0 : 30.0;
-        // canonical death provenance：已知死亡（30s）→ SETTLEMENT_SECOND。
         if (!survived) {
-            p.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+            p.settlementLifeTimeSec = 30.0;
         }
         return p;
     }

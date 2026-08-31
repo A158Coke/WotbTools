@@ -7,14 +7,18 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.facts.AiReplayFacts;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
-import com.wotb.core.replay.processing.BatchAnalyzer;
+import com.wotb.core.replay.processing.BattleCategoryUtils;
+import com.wotb.core.replay.processing.BattleGroupingKey;
 import com.wotb.core.replay.processing.PerspectiveTeamNotResolvedException;
 import com.wotb.core.replay.processing.PlayerSideResolver;
 import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.processing.ReplayAnalysisScope;
 import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
+import com.wotb.core.replay.processing.ReplayPerspectiveGroupKey;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.TeamPerspectiveResolution;
 import com.wotb.core.replay.processing.TeamPerspectiveResolver;
+import com.wotb.core.replay.processing.UnsupportedBattleCategoryException;
 import com.wotb.core.replay.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
@@ -128,7 +132,7 @@ public class AiReplayReviewService {
                                         final AllowedLanguage language,
                                         final AiReviewStreamListener listener) {
         final AnalyzeResponse base = analyzeTracked(language, listener,
-                () -> analyzeResults(List.of(facts.toResult()), language, listener));
+                () -> analyzeResults(facts.toResult(), language, listener));
         // capability 是 additive 元数据：与 prompt planner 的 battleStart 判定一致，
         // 不改变 AI 生成逻辑，仅向客户端表达「完整 / 受限时间轴」降级态。
         return base == null
@@ -223,76 +227,80 @@ public class AiReplayReviewService {
      * Dataset-derived {@link ReplayProcessingResult}（单文件 {@code facts.toResult()}）的 AI 编排：
      * coverage 日志 → 模式判定 → 可分析分组 → 单场/团队分支。
      */
-    private AnalyzeResponse analyzeResults(final List<ReplayProcessingResult> allResults,
+    private AnalyzeResponse analyzeResults(final ReplayProcessingResult result,
                                            final AllowedLanguage language,
                                            final AiReviewStreamListener listener) {
-        for (final ReplayProcessingResult r : allResults) {
-            if (r.reconstruction() != null && r.reconstruction().coverage() != null) {
-                final ReplayCoverage cov = r.reconstruction().coverage();
-                LOGGER.info("Replay event-stream parsed: file={} map={} packets={} decoded={} "
-                                + "partial={} unknown={} failed={} decodedRatio={}",
-                        r.fileName(),
-                        r.battle() != null ? r.battle().mapName : null,
-                        cov.totalPackets(),
-                        cov.decodedPackets(),
-                        cov.partiallyDecodedPackets(),
-                        cov.unknownPackets(),
-                        cov.failedPackets(),
-                        String.format(Locale.ROOT, "%.3f", cov.decodedPacketRatio()));
-            }
+        if (result.reconstruction() != null && result.reconstruction().coverage() != null) {
+            final ReplayCoverage cov = result.reconstruction().coverage();
+            LOGGER.info("Replay event-stream parsed: file={} map={} packets={} decoded={} "
+                            + "partial={} unknown={} failed={} decodedRatio={}",
+                    result.fileName(),
+                    result.battle() != null ? result.battle().mapName : null,
+                    cov.totalPackets(),
+                    cov.decodedPackets(),
+                    cov.partiallyDecodedPackets(),
+                    cov.unknownPackets(),
+                    cov.failedPackets(),
+                    String.format(Locale.ROOT, "%.3f", cov.decodedPacketRatio()));
         }
-        final BatchAnalyzer.AnalysisPlan plan = new BatchAnalyzer().analyze(allResults);
-        final boolean hasParsedBattle = allResults.stream().anyMatch(r -> r.battle() != null);
-        if (!hasParsedBattle) throw new IllegalArgumentException("NO_BATTLE_DATA");
-        if (plan.dominantScope() == null) throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
-        final var analyzableGroups = plan.groups().stream()
-                .filter(g -> g.representative().capabilities() != null
-                        && BatchAnalyzer.isAiAnalyzable(g.representative(), plan.dominantScope()))
-                .toList();
-        if (analyzableGroups.isEmpty()) {
-            if (plan.dominantScope() == ReplayAnalysisScope.TEAM_PERSPECTIVE) {
-                final boolean teamResolved = plan.groups().stream()
-                        .map(ReplayPerspectiveGroup::representative)
-                        .map(ReplayProcessingResult::capabilities)
-                        .anyMatch(capabilities -> capabilities != null
-                                && capabilities.perspectiveTeamResolved());
-                if (teamResolved) {
+        if (result.battle() == null) throw new IllegalArgumentException("NO_BATTLE_DATA");
+        final ReplayAnalysisScope scope;
+        try {
+            scope = BattleCategoryUtils.resolveScope(
+                    BattleCategoryUtils.fromArenaBonusType(result.battle().arenaBonusType));
+        } catch (UnsupportedBattleCategoryException e) {
+            throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
+        }
+
+        // AI review is single-source / single-analyzable-unit: build the one perspective group and
+        // dispatch directly instead of routing List.of(result) through BatchAnalyzer grouping.
+        final TeamPerspectiveResolution teamResolution = TeamPerspectiveResolver.resolve(
+                result.battle(), result.reconstruction());
+        final int perspectiveTeam = teamResolution.resolved() ? teamResolution.perspectiveTeam() : 0;
+        final ReplayPerspectiveGroup group = singleGroup(result, perspectiveTeam);
+
+        if (!(result.capabilities() != null && result.capabilities().aiAnalyzable(scope))) {
+            if (scope == ReplayAnalysisScope.TEAM_PERSPECTIVE) {
+                if (result.capabilities() != null && result.capabilities().perspectiveTeamResolved()) {
                     throw new IllegalArgumentException("TEAM_FEATURES_UNAVAILABLE");
                 }
-                throw new PerspectiveTeamNotResolvedException(unresolvedTeamCode(plan.groups()));
+                throw new PerspectiveTeamNotResolvedException(unresolvedTeamCode(List.of(group)));
             }
             throw new IllegalArgumentException("NO_BATTLE_DATA");
         }
-        return switch (plan.mode()) {
-            case SINGLE_PLAYER_BATTLE -> {
-                final ReplayProcessingResult representative =
-                        analyzableGroups.getFirst().representative();
+        return switch (scope) {
+            case PLAYER_FOCUSED -> {
                 final TacticalReviewHarness.HarnessOutcome outcome = harnessOrFallback(
-                        representative, language, listener);
-                final Battle battle = representative.battle();
+                        result, language, listener);
+                final Battle battle = result.battle();
                 final List<String> corrected = sanitizeClusterTerms(correctTankNames(packageSections(
                         outcome.result().analysis(),
-                        renderRandomBattleSection(representative, outcome.preBattlePrior(), language)),
+                        renderRandomBattleSection(result, outcome.preBattlePrior(), language)),
                         battle), battle);
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(corrected.get(0), language),
                         corrected.get(1));
             }
-            case SINGLE_TEAM_BATTLE -> {
+            case TEAM_PERSPECTIVE -> {
                 final TeamAnalyzeResult teamResult = aiAnalysisService
-                        .analyzeTeamGroups(analyzableGroups, language, listener);
-                final ReplayProcessingResult first = analyzableGroups.getFirst().representative();
-                final Battle battle = first.battle();
+                        .analyzeTeamGroups(List.of(group), language, listener);
+                final Battle battle = result.battle();
                 final List<String> corrected = sanitizeClusterTerms(correctTankNames(packageSections(
                         teamResult.analysis().analysis(), teamResult.preBattleSection()), battle), battle);
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(corrected.get(0), language),
                         corrected.get(1));
             }
-            // 单文件 AI 复盘：模式只可能是 NONE / SINGLE_PLAYER_BATTLE / SINGLE_TEAM_BATTLE
-            // （MULTI_* 已随 legacy 批量端点删除），switch 全枚举覆盖，无 default。
-            case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
         };
+    }
+
+    /** 单文件视角分组（AI 单源单可分析单元）：resolved=true 时 perspectiveTeam 为录像者队伍。 */
+    private static ReplayPerspectiveGroup singleGroup(final ReplayProcessingResult result,
+                                                      final int perspectiveTeam) {
+        final ReplayPerspectiveGroupKey key = new ReplayPerspectiveGroupKey(
+                BattleGroupingKey.from(result.identity(), result.battle(), result.fileName()),
+                perspectiveTeam);
+        return new ReplayPerspectiveGroup(key, key.battleKey().toBattleIdentity(), result, List.of());
     }
 
     /**

@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Changed
+- **League #301-only + settled fingerprint + PR-E single-source AI dispatch**：League Rating 以 #301 的 14 settled combatants 为唯一 authority——删除 `settlementAccountsCoveredByRoster`/`settlementRosterTeamConsistent` eligibility 依赖及字段（#201 仅用于 nickname/clan/rank/prebattle metadata enrichment，缺失/extra 不阻塞评分；`Battle.rosterComplete` 保留给 SURVIVOR_SETTLEMENT/annihilation 推断）。`LeagueRatingConflictDetector` 改为确定性 settlement/Rating 指纹（第一份 canonical，O(n) 非 all-pairs），删除 roster/#201/clan/killer/resultEntity 等非 Rating identity 字段。AI 复盘改为单文件 `ReplayProcessingResult` 直接 scope/eligibility/consumer dispatch（不再 `List.of(result) -> BatchAnalyzer -> grouping -> representative`）；`ReplayProcessingCapabilities` 收敛为 5 个不可重算事实（删除 recorderParticipantResolved / recorderEntityMapped / playerFeatureExtractionPossible 三个可推导状态）。无 Web/Android contract、Flyway 或生产处理入口变化。
+- **PR203 AI eligibility 单一 SSOT**：AI eligibility 判定收敛为单一来源——`ReplayProcessingCapabilities.aiAnalyzable(scope)` 按当前 result 的实际 capability facts 即时判定（PLAYER_FOCUSED 需 summary+recorder；TEAM_PERSPECTIVE 需 summary+perspectiveTeamResolved+recorder/feature），删除独立 `AiAnalysisEligibility` utility（Reuse/Extend：职责最匹配的现有类型是 capabilities value）与 `BatchAnalyzer` 内重复 `isAiAnalyzable` switch；`BatchAnalyzer.analyzePartition()` 与 web 单文件 consumer 复用同一 SSOT；`ReplayProcessingResult.analyzable()` 死代码删除（零调用方）。无 Web/Android contract、Flyway 或生产处理入口变化。
+- **Replay/League authority cleanup**：settlement `#301 field24 lifeTime` 成为唯一业务死亡秒值；Playback/live reconstruction 仅服务播放、HP/动画与诊断，不覆盖 `PlayerResult`。Trade 与 League 校验改为 settlement-only/fail-closed；decoder 按 packet/envelope/shape/invariant 处理，无法证明的 numeric semantic raw-preserve。保留兼容 projection、Web/Android contract、Flyway 与生产处理入口不变。
 - **PR G 首批可观测性看板**：新增 Production Overview、AI Review、Error Explorer 三张 Grafana 看板，覆盖 Backend health、HTTP error/P95、Replay active/queued、AI lifecycle/validation、CPU/JVM 与 Loki 错误关联检索。复用现有 Prometheus/Loki 采集链路，不引入新的 exporter，不改变生产业务、Web/Android contract、Flyway、RabbitMQ 或 COS。
 - **Independent Control API acceptance slice**：从 async contracts 基线单独提供 `wotb-control` artifact；使用真实 PostgreSQL Testcontainers + `JdbcClient SELECT 1`，并以独立 management port 的真实 Spring Boot/Actuator security smoke 验证 health、metrics、admin probe 与 401/403 边界。无 Flyway、RabbitMQ、COS 或 Web/Android public contract 变更；Native POC 已完成并记录 JVM/Native 对比结果，生产部署仍延期。
 - **Pre-Dual-Cloud contract foundation**：新增无 Spring/provider SDK 依赖的 `wotb-contracts` artifact，建立 metadata-only async ports 与分别面向 current processing-job/source contract 的显式 status adapters；RabbitMQ/COS/AI/Replay extension 保持延期，当前 Web/Android contract 不变。
@@ -452,7 +455,7 @@
   - `LeagueFailure.Code.MISSING_DEATH_TIME` 全链路删除（core 常量 / Excel 失败标签 /
     前端三语 i18n / 测试 / 文档）。
   - 新增非阻断 `ratingQuality.unknownDeathTimePlayers`（core `LeagueRatingBatch` →
-    `LeagueRatingDto` → preview 响应）；前端在存在 UNKNOWN 玩家时显示 quality warning
+    `LeagueRatingDto` → preview 响应）；该兼容槽不驱动前端 quality warning
     （可评分 X/X 不变、不计入「未生成 Rating」）。
   - 回归保护：`TradeFacts` 对 `survivalTimeSec <= 0` fail-closed 语义不变（新增
     `unknownDeathTimeDoesNotInferTrade` 等单测）；`DeathTimeReconciler` correctness

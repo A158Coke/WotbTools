@@ -153,7 +153,7 @@ public final class BattleTimelineBuilder {
         // 交火活动强度只使用权威 HP loss（Type-8 raw 语义未证明）
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
-                        orderedEvents, mapping, clock.startRawClockSec(), duration);
+                        orderedEvents, mapping, clock.startRawClockSec(), duration, battle);
 
         for (int second = 0; second <= maxSecond; second++) {
             final double t = second;

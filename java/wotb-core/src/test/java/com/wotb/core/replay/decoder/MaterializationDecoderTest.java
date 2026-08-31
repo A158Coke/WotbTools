@@ -61,16 +61,12 @@ class MaterializationDecoderTest {
     }
 
     @Test
-    void futureVersionType5MaterializationFailsClosed() {
-        // PR162/P1-5：当前无独立 version-invariant 的 Type5 structural predicate 可证明未来版本仍属
-        // 同一 materialization structure（Type5 形状随 class/version 变化，并非固定 53B）→ future 必须
-        // raw-preserve（UNSUPPORTED/Unknown），绝不产出 EXACT MaterializationEvent。
+    void futureVersionType5WithValidShapeDecodes() {
+        // A valid Type5 envelope and payload shape are sufficient; version metadata is not a gate.
         final ReplayDecodeContext unknown = new ReplayDecodeContext("11.20.0_china");
         final ReplayDecodeResult r = decoder.decode(unknown, packet(5, vehicleType5(123, 2, 3570)));
-        assertEquals(DecodeStatus.UNSUPPORTED, r.status(),
-                "future Type5 must fail closed, not structurally decode to EXACT");
-        assertTrue(r.events().get(0) instanceof com.wotb.core.replay.event.UnknownReplayEvent,
-                "future Type5 raw-preserve（UnknownReplayEvent），非 EXACT MaterializationEvent");
+        assertEquals(DecodeStatus.SUCCESS, r.status());
+        assertTrue(r.events().get(0) instanceof MaterializationEvent);
     }
 
     @Test
@@ -86,21 +82,20 @@ class MaterializationDecoderTest {
     }
 
     @Test
-    void futureVersionType4AndType33LifecycleFailsClosed() {
-        // PR162/P1-5：entity-lifecycle（Type4/Type33）同属 version-scoped 语义；future 版本当前无独立
-        // invariant 可证明仍属同一结构 → fail closed（UNSUPPORTED/raw），不产出 EXACT AoI 边界事件。
+    void futureVersionType4AndType33ValidShapesDecode() {
+        // Exact framing and shape, rather than the version string, establish these events.
         final ReplayDecodeContext unknown = new ReplayDecodeContext("12.0.0_eu");
         final byte[] four = new byte[4];
         four[0] = 9;
         final ReplayDecodeResult r4 = leaveDecoder.decode(unknown, packet(4, four));
-        assertEquals(DecodeStatus.UNSUPPORTED, r4.status(), "future Type4 must fail closed");
-        assertTrue(r4.events().get(0) instanceof com.wotb.core.replay.event.UnknownReplayEvent);
+        assertEquals(DecodeStatus.SUCCESS, r4.status());
+        assertTrue(r4.events().get(0) instanceof EntityRemovedEvent);
 
         final byte[] thirtyThree = new byte[12];
         thirtyThree[0] = 42;
         final ReplayDecodeResult r33 = announcedDecoder.decode(unknown, packet(33, thirtyThree));
-        assertEquals(DecodeStatus.UNSUPPORTED, r33.status(), "future Type33 must fail closed");
-        assertTrue(r33.events().get(0) instanceof com.wotb.core.replay.event.UnknownReplayEvent);
+        assertEquals(DecodeStatus.SUCCESS, r33.status());
+        assertTrue(r33.events().get(0) instanceof MaterializationAnnouncedEvent);
     }
 
     @Test

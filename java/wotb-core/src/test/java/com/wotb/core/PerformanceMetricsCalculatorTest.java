@@ -1,7 +1,6 @@
 package com.wotb.core;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
@@ -313,12 +312,10 @@ class PerformanceMetricsCalculatorTest {
         player.survived = survived;
         player.survivalTimeSec = survivalTimeSec;
         player.damageReceived = damageReceived;
-        // 已知死亡（survivalTimeSec>0）携带 canonical SETTLEMENT_SECOND 证据；dead=0=UNKNOWN。
+        // Death time is the settlement lifeTime fact.
         if (!survived && survivalTimeSec > 0) {
-            player.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+            player.settlementLifeTimeSec = survivalTimeSec;
             player.deathTimeMillis = Math.round(survivalTimeSec * 1000.0);
-        } else if (!survived) {
-            player.deathTimeSource = DeathTimeSource.UNKNOWN;
         }
         return player;
     }

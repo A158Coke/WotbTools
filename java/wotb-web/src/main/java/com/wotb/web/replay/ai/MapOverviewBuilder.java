@@ -90,7 +90,7 @@ public final class MapOverviewBuilder {
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
                         events, mapping,
-                        battleStart == null ? 0.0 : battleStart.doubleValue(), duration);
+                        battleStart == null ? 0.0 : battleStart.doubleValue(), duration, battle);
         final MapOverview.Heatmaps heatmaps = buildHeatmaps(
                 battle, mapping, positions, damages, friendlyTeam, profile, battleStart, combat);
         final List<MapOverview.Phase> phases = buildPhases(
@@ -201,7 +201,7 @@ public final class MapOverviewBuilder {
             if (points.isEmpty() || points.get(points.size() - 1).timeSec() < last.timeSec - 1e-6) {
                 points.add(new MapOverview.Point(last.x, last.z, last.timeSec));
             }
-            final Double deathSec = resolveDeathSec(player);
+            final Double deathSec = resolveDeathSec(battle, player);
             routes.add(new MapOverview.Route(
                     player.accountId,
                     player.nickname,
@@ -279,7 +279,7 @@ public final class MapOverviewBuilder {
 
         final Map<Long, Double> deathSecByAccount = new HashMap<>();
         for (final PlayerResult player : battle.players) {
-            final Double deathSec = resolveDeathSec(player);
+            final Double deathSec = resolveDeathSec(battle, player);
             if (deathSec != null) {
                 deathSecByAccount.put(player.accountId, deathSec);
             }
@@ -418,7 +418,7 @@ public final class MapOverviewBuilder {
 
 
     /** 阵亡时刻（battle-relative 秒）：仅未存活玩家；优先结算，回退事件流估算；未知为 null。 */
-    private static Double resolveDeathSec(final PlayerResult player) {
+    private static Double resolveDeathSec(final Battle battle, final PlayerResult player) {
         if (player.survived) {
             return null;
         }
