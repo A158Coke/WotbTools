@@ -5,8 +5,9 @@ import { mapImages } from '../data/mapImages'
 import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
-import VehicleMarker from './VehicleMarker.vue'
-import V2VehicleInspector from './V2VehicleInspector.vue'
+import BattleMap from './BattleMap.vue'
+import PlaybackControls from './PlaybackControls.vue'
+import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
 import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
 import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
@@ -27,24 +28,19 @@ import {
   hpDisplay,
   pushFeed,
   recorderRelated,
-  screenRotation,
   teamHp,
   teamPointsAt,
   teamRelated,
   tracerLines,
   transientsActive,
-  turretWorldYawDeg,
   victimFeedbackAllowed,
   zoomViewAt
 } from '../utils/battlePlayback'
 import {
-  positionCoveredAtV2,
-  positionAtV2,
-  orientationAtV2,
-  healthAt,
-  lifeAt,
   v2VehicleView,
 } from '../utils/battlePlaybackV2'
+import { projectVehicleState } from '../utils/playbackVehicleState'
+import { advancePlaybackTime, clampPlaybackTime, nextPlaybackSpeed } from '../utils/playbackClock'
 import {
   MARKER_CORE_PX,
   PLAYER_FADE_MS,
@@ -481,7 +477,8 @@ const fadeUntil = new Map()
 let hystRafId = null
 
 // ---- 地图视图缩放/平移：单一 transform 层保证地图/网格/炮线/标记严格对齐 ----
-const mapEl = ref(null)
+const mapComponent = ref(null)
+const mapEl = computed(() => mapComponent.value?.mapEl || null)
 // ---- 地图容器真实渲染尺寸（reactive）：fullscreen enter/exit / 窗口缩放等任何尺寸变化
 // 由 ResizeObserver 更新 → 依赖容器尺寸的 screen-space 布局（markerScreen/labelLayout/
 // hitbox/textInput）在新尺寸下重新计算；无 RO 环境（测试/旧浏览器）回退 clientWidth 读取。
@@ -728,7 +725,7 @@ const historyIndex = ref(0)
 const annotations = computed(() => history.value[historyIndex.value] || [])
 const draft = ref(null) // 进行中的标注（未提交）
 const textSession = ref(null) // reactive({ point, text })，文字输入会话
-const textInputRef = ref(null)
+const textInputRef = computed(() => mapComponent.value?.textInputRef || null)
 const ANNOT_THIN_PX = 2 // 笔迹抽稀阈值（屏幕 CSS px，与坐标体系无关）
 let drawStart = null // 绘制起点（语义坐标）
 let drawPoints = [] // pen/eraser 已采点（语义坐标）
@@ -958,7 +955,7 @@ function frame(ts) {
   const delta = lastFrameTs == null ? 0 : (ts - lastFrameTs)
   lastFrameTs = ts
   const prev = currentTime.value
-  const next = Math.min(duration.value, prev + (delta / 1000) * speed.value)
+  const next = advancePlaybackTime(prev, duration.value, delta, speed.value)
   currentTime.value = next
   nowMs.value = realNowMs()
   // §1.3/§20.3/Blocker 2：先消费 (prev, next]（next 可 == duration——到达末尾前最后一段事件
@@ -1010,7 +1007,7 @@ function pause() {
 watch(() => props.seekTo, (sec) => {
   if (Number.isFinite(sec)) {
     pause() // 点击 AI 时间 → seek + 自动暂停（含取消 RAF）
-    currentTime.value = Math.min(duration.value, Math.max(0, sec))
+    currentTime.value = clampPlaybackTime(sec, duration.value)
     eventPopupSec.value = Math.round(sec)
     resetTransients(currentTime.value)
     suppressHpTransition()
@@ -1018,7 +1015,7 @@ watch(() => props.seekTo, (sec) => {
 }, { immediate: true })
 
 function seek(sec) {
-  currentTime.value = Math.min(duration.value, Math.max(0, sec))
+  currentTime.value = clampPlaybackTime(sec, duration.value)
   eventPopupSec.value = Math.round(sec)
   nowMs.value = realNowMs()
   resetTransients(currentTime.value)
@@ -1054,14 +1051,13 @@ function jumpTo(sec) {
 }
 
 function step(delta) {
-  currentTime.value = Math.min(duration.value, Math.max(0, currentTime.value + delta))
+  currentTime.value = clampPlaybackTime(currentTime.value + delta, duration.value)
   resetTransients(currentTime.value)
   suppressHpTransition()
 }
 
 function toggleSpeed() {
-  // PR4 §49：QA 场景需要 0.5×——倍速循环 0.5 → 1 → 2 → 4 → 0.5
-  speed.value = speed.value === 0.5 ? 1 : (speed.value === 1 ? 2 : (speed.value === 2 ? 4 : 0.5))
+  speed.value = nextPlaybackSpeed(speed.value)
 }
 
 function toggleType(type) {
@@ -1143,53 +1139,6 @@ function vehicleModel(vehicle) {
   return p.resolved.get(modelKey) || null
 }
 
-/** PR4 §36 hull hitbox 比例（相对 marker 盒，随 marker 缩放；视觉车体 + 小 padding）。 */
-const HULL_HITBOX = Object.freeze({
-  dedicated: Object.freeze({ w: 0.9, h: 0.9 }),
-  generic: Object.freeze({ w: 0.58, h: 0.9 }),
-})
-
-/** V2 车辆状态：只消费 canonical V2 track（positionSegments/orientationSegments/healthTransitions/
- * lifeTransitions），前端不再做 HP/AoI/death 推理。 */
-function vehicleStateV2(vehicle, track) {
-  const time = currentTime.value
-  const life = lifeAt(track, time)
-  const destroyed = life != null && life.lifeState === 'DESTROYED'
-  const last = positionAtV2(track.positionSegments, time)
-  if (!last) return null
-  const covered = positionCoveredAtV2(track.positionSegments, time)
-  const recorder = vehicle.accountId === pbOverview.value.recorderAccountId
-  const direction = orientationAtV2(track.orientationSegments, time)
-  const friendly = vehicle.team === friendlyTeam.value
-  const hullDeg = direction ? screenRotation(direction.hullYawDeg) : null
-  const turretDeg = direction
-    ? screenRotation(turretWorldYawDeg(direction.hullYawDeg, direction.turretRelativeYawDeg))
-    : null
-  return {
-    vehicle,
-    pos: last,
-    covered,
-    destroyed,
-    destroyedKnownAtSec: life && life.lifeState === 'DESTROYED' ? life.destroyedKnownAtSec : null,
-    recorder,
-    friendly,
-    direction,
-    model: vehicleModel(vehicle),
-    hullImage: friendly ? friendlyHull : enemyHull,
-    turretImage: friendly ? friendlyTurret : enemyTurret,
-    hullScreenDeg: destroyed ? (hullDeg == null ? 0 : hullDeg) : hullDeg,
-    turretScreenDeg: destroyed ? (turretDeg == null ? 0 : turretDeg) : turretDeg,
-    markerStyle: { left: markerLeft(last.x), top: markerTop(last.y), transform: markerTransform.value },
-    overlayInverseScale: overlayInverseScale.value,
-    overlayInverse: overlayInverse.value,
-    playerName: vehicle.playerName || '',
-    tankName: vehicle.tankName || String(vehicle.tankId),
-    hitbox: vehicleModel(vehicle) ? HULL_HITBOX.dedicated : HULL_HITBOX.generic,
-    ariaLabel: `${vehicle.playerName}: ${t(destroyed ? 'recon.map.playback.state_destroyed' : (covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`,
-    lastKnown: !covered,
-  }
-}
-
 /** 标记水平位置（%）：地图用户坐标 → 容器百分比。 */
 function markerLeft(x) {
   return `${((mapView.value.toX(x)) / mapView.value.W) * 100}%`
@@ -1207,7 +1156,25 @@ const vehicleStates = computed(() => {
   const tracks = props.playbackV2?.vehicles || []
   if (tracks.length === 0) return []
   return tracks
-    .map(track => vehicleStateV2(v2VehicleView(track), track))
+    .map(track => {
+      const vehicle = v2VehicleView(track)
+      return projectVehicleState({
+      vehicle,
+      track,
+      time: currentTime.value,
+      recorderAccountId: pbOverview.value.recorderAccountId,
+      friendlyTeam: friendlyTeam.value,
+      model: vehicleModel(vehicle),
+      hullImage: track.team === friendlyTeam.value ? friendlyHull : enemyHull,
+      turretImage: track.team === friendlyTeam.value ? friendlyTurret : enemyTurret,
+      markerLeft: markerLeft,
+      markerTop: markerTop,
+      markerTransform: markerTransform.value,
+      overlayInverseScale: overlayInverseScale.value,
+      overlayInverse: overlayInverse.value,
+      translate: t,
+      })
+    })
     .filter(Boolean)
 })
 
@@ -1607,414 +1574,111 @@ const mapStyle = computed(() => ({
 
 <template>
   <div v-if="image && playback" ref="pbRoot" class="battle-playback" :style="mapStyle" data-test="battle-playback">
-    <!-- 播放控制 -->
-    <div class="pb-controls">
-      <button type="button" class="pb-btn" data-test="pb-play" @click="togglePlay">
-        {{ $t(playing ? 'recon.map.playback.pause' : 'recon.map.playback.play') }}
-      </button>
-      <button type="button" class="pb-btn" data-test="pb-back5" @click="step(-5)">-5s</button>
-      <button type="button" class="pb-btn" data-test="pb-fwd5" @click="step(5)">+5s</button>
-      <button type="button" class="pb-btn" data-test="pb-prev" @click="nearestEvent('prev')">◀</button>
-      <button type="button" class="pb-btn" data-test="pb-next" @click="nearestEvent('next')">▶</button>
-      <button type="button" class="pb-btn" data-test="pb-speed" @click="toggleSpeed">{{ speed }}×</button>
-      <button type="button" class="pb-btn" data-test="pb-reset" @click="resetView">{{ $t('recon.map.playback.reset_view') }}</button>
-      <span class="pb-time">{{ formatClock(currentTime) }} / {{ formatClock(duration) }}</span>
-      <span v-if="pbOverview.recorderAccountId != null" class="pb-filter">
-        <label class="pb-check">
-          <input type="checkbox" v-model="showAll" data-test="pb-all-events" />
-          {{ $t('recon.map.playback.all_events') }}
-        </label>
-      </span>
-      <!-- PR4 §26：玩家/坦克名显示开关（默认 玩家名关 / 坦克名开，localStorage 持久化） -->
-      <span class="pb-filter">
-        <label class="pb-check">
-          <input type="checkbox" v-model="labelPrefs.showPlayerName" data-test="pb-show-player" />
-          {{ $t('recon.map.playback.show_player_name') }}
-        </label>
-        <label class="pb-check">
-          <input type="checkbox" v-model="labelPrefs.showTankName" data-test="pb-show-tank" />
-          {{ $t('recon.map.playback.show_tank_name') }}
-        </label>
-        <!-- PR5 §4.3：单车 HP HUD 开关（默认开启，localStorage 持久化；关闭隐藏地图 HP 数字/bar/ghost） -->
-        <label class="pb-check">
-          <input type="checkbox" v-model="hpPrefs.showHp" data-test="pb-show-hp" />
-          {{ $t('recon.map.playback.show_hp') }}
-        </label>
-      </span>
-      <!-- 全屏（原生 Fullscreen API；不支持时按钮隐藏，不抛错） -->
-      <button
-        v-if="fullscreenSupported"
-        type="button"
-        class="pb-btn"
-        data-test="pb-fullscreen"
-        @click="toggleFullscreen"
-      >{{ isFullscreen ? $t('recon.map.playback.exit_fullscreen') : $t('recon.map.playback.enter_fullscreen') }}</button>
-    </div>
-
-    <!-- 事件类型过滤 -->
-    <div class="pb-filters">
-      <button
-        v-for="type in ['DAMAGE', 'DESTROYED', 'KILL', 'POSITION_REPORTED', 'POSITION_STALE']"
-        :key="type"
-        type="button"
-        class="pb-chip"
-        :class="{ active: typeFilter.has(type) }"
-        @click="toggleType(type)"
-      >{{ $t(`recon.map.playback.event_${type}`) }}</button>
-    </div>
-
-    <!-- 地图标注工具栏：显式切工具才绘制，未选工具时保持原浏览交互 -->
-    <div class="pb-annot-toolbar" data-test="pb-annot-toolbar">
-      <button
-        v-for="tool in ['pen', 'eraser', 'arrow', 'line', 'rect', 'circle', 'text']"
-        :key="tool"
-        type="button"
-        class="pb-annot-btn"
-        :class="{ active: activeTool === tool }"
-        :data-test="`pb-annot-${tool}`"
-        @click="toggleTool(tool)"
-      >{{ $t(`recon.map.playback.annot.${tool}`) }}</button>
-      <span class="pb-annot-sep" aria-hidden="true"></span>
-      <button
-        v-for="c in ANNOT_COLORS"
-        :key="c"
-        type="button"
-        class="pb-annot-color"
-        :class="{ active: annotColor === c }"
-        :style="{ background: c }"
-        :aria-label="$t('recon.map.playback.annot.color')"
-        @click="annotColor = c"
-      ></button>
-      <span class="pb-annot-sep" aria-hidden="true"></span>
-      <label class="pb-annot-width">
-        {{ $t('recon.map.playback.annot.width') }}
-        <input type="range" :min="ANNOT_WIDTH_MIN" :max="ANNOT_WIDTH_MAX" step="1" v-model.number="annotWidthSlider" />
-        <span class="pb-annot-width-val">{{ annotWidthSlider }}</span>
-      </label>
-      <span class="pb-annot-sep" aria-hidden="true"></span>
-      <button
-        type="button"
-        class="pb-annot-btn"
-        :disabled="!canUndo(historyIndex)"
-        data-test="pb-annot-undo"
-        @click="undoAnnot"
-      >{{ $t('recon.map.playback.annot.undo') }}</button>
-      <button
-        type="button"
-        class="pb-annot-btn"
-        :disabled="!canRedo(history, historyIndex)"
-        data-test="pb-annot-redo"
-        @click="redoAnnot"
-      >{{ $t('recon.map.playback.annot.redo') }}</button>
-      <button
-        type="button"
-        class="pb-annot-btn"
-        data-test="pb-annot-clear"
-        @click="clearAll"
-      >{{ $t('recon.map.playback.annot.clear') }}</button>
-      <button
-        type="button"
-        class="pb-annot-btn"
-        data-test="pb-annot-toggle"
-        @click="annotVisible = !annotVisible"
-      >{{ $t(annotVisible ? 'recon.map.playback.annot.hide' : 'recon.map.playback.annot.show') }}</button>
-    </div>
-
-    <!-- 进度条 + 事件标记 -->
-    <div class="pb-progress" data-test="pb-progress">
-      <input
-        class="pb-range"
-        type="range"
-        min="0"
-        :max="duration || 1"
-        step="0.1"
-        :value="currentTime"
-        @pointerdown="dragStart"
-        @mousedown="dragStart"
-        @touchstart="dragStart"
-        @input="seek(Number($event.target.value))"
-        :aria-label="$t('recon.map.playback.progress')"
-      />
-      <span
-        v-for="marker in eventMarkers"
-        :key="marker.sec"
-        class="pb-marker"
-        :style="{ left: `${duration > 0 ? (marker.sec / duration) * 100 : 0}%` }"
-        :title="`${formatClock(marker.sec)} ×${marker.count}`"
-        @click="jumpTo(marker.sec)"
-      ></span>
-    </div>
+    <PlaybackControls
+      :playing="playing"
+      :speed="speed"
+      :current-time="currentTime"
+      :duration="duration"
+      :recorder-account-id="pbOverview.recorderAccountId"
+      :show-all="showAll"
+      :label-prefs="labelPrefs"
+      :hp-prefs="hpPrefs"
+      :fullscreen-supported="fullscreenSupported"
+      :is-fullscreen="isFullscreen"
+      :type-filter="typeFilter"
+      :active-tool="activeTool"
+      :annot-colors="ANNOT_COLORS"
+      :annot-color="annotColor"
+      :annot-visible="annotVisible"
+      :annot-width-slider="annotWidthSlider"
+      :annot-width-min="ANNOT_WIDTH_MIN"
+      :annot-width-max="ANNOT_WIDTH_MAX"
+      :history-index="historyIndex"
+      :history="history"
+      :can-undo="canUndo"
+      :can-redo="canRedo"
+      :event-markers="eventMarkers"
+      :format-clock="formatClock"
+      @toggle-play="togglePlay"
+      @step="step"
+      @previous-event="nearestEvent('prev')"
+      @next-event="nearestEvent('next')"
+      @toggle-speed="toggleSpeed"
+      @reset-view="resetView"
+      @toggle-fullscreen="toggleFullscreen"
+      @update:show-all="showAll = $event"
+      @update-label-pref="(key, value) => { labelPrefs[key] = value }"
+      @update-hp-pref="(key, value) => { hpPrefs[key] = value }"
+      @toggle-type="toggleType"
+      @toggle-tool="toggleTool"
+      @set-annot-color="annotColor = $event"
+      @update:annot-width="annotWidthSlider = $event"
+      @undo="undoAnnot"
+      @redo="redoAnnot"
+      @clear-annotations="clearAll"
+      @toggle-annotations="annotVisible = !annotVisible"
+      @drag-start="dragStart"
+      @seek="seek"
+      @jump="jumpTo"
+    />
 
     <!-- 地图 + detail sidebar 主区（宽屏并排，窄屏上下堆叠；§8.2） -->
     <div class="pb-main" data-test="pb-main">
-    <!-- 地图 + 当前车辆状态（标记为 HTML overlay，固定像素尺寸，双层 hull/turret 独立旋转） -->
-    <div class="pb-map" data-test="pb-map" ref="mapEl" @wheel.prevent="onWheel">
-    <div
-      class="pb-viewport"
-      data-test="pb-viewport"
-      :style="viewportStyle"
-      @pointerdown="onPointerDown"
-      @pointermove="onPointerMove"
-      @pointerup="onPointerUp"
-      @pointercancel="onPointerUp"
-      @click.capture="onViewportClick"
-    >
-    <svg class="pb-svg" :viewBox="`0 0 ${mapView.W} ${mapView.H}`" role="img">
-      <image :href="image.src" :width="mapView.W" :height="mapView.H" preserveAspectRatio="none" />
-      <g class="pb-grid">
-        <rect
-          v-for="(cell, index) in pbOverview.gridCells"
-          :key="cell.id"
-          :x="mapView.toX(cell.bounds.xMin)"
-          :y="mapView.toY(cell.bounds.yMax)"
-          :width="mapView.toX(cell.bounds.xMax) - mapView.toX(cell.bounds.xMin)"
-          :height="mapView.toY(cell.bounds.yMin) - mapView.toY(cell.bounds.yMax)"
-          class="pb-cell"
-        />
-      </g>
-      <g class="pb-regions">
-        <g v-for="[region, r] in gridRegions" :key="region">
-          <rect
-            :x="mapView.toX(r.xMin)"
-            :y="mapView.toY(r.yMax)"
-            :width="mapView.toX(r.xMax) - mapView.toX(r.xMin)"
-            :height="mapView.toY(r.yMin) - mapView.toY(r.yMax)"
-            class="pb-region-line"
-          />
-        </g>
-      </g>
-      <g class="pb-spawns">
-        <circle
-          v-for="(spawn, i) in pbOverview.spawnPoints"
-          :key="`${spawn.name}-${i}`"
-          :cx="mapView.toX(spawn.x)"
-          :cy="mapView.toY(spawn.y)"
-          r="4"
-          :class="spawn.team === friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy'"
-        />
-      </g>
-      <g class="pb-tracers" aria-hidden="true">
-        <template v-for="(l, i) in visibleTracers" :key="`tracer-${l.timeSec}-${i}`">
-          <!-- 外层光晕：阵营色宽线半透明（激光辉光） -->
-          <line
-            class="pb-tracer"
-            :x1="mapView.toX(l.x1)"
-            :y1="mapView.toY(l.y1)"
-            :x2="mapView.toX(l.x2)"
-            :y2="mapView.toY(l.y2)"
-            :stroke="tracerColor(l.attackerAccountId)"
-            :stroke-width="6 / view.scale"
-            :opacity="l.opacity * 0.35"
-          />
-          <!-- 内芯：亮白细线（激光束主体） -->
-          <line
-            class="pb-tracer-core"
-            :x1="mapView.toX(l.x1)"
-            :y1="mapView.toY(l.y1)"
-            :x2="mapView.toX(l.x2)"
-            :y2="mapView.toY(l.y2)"
-            stroke="#fff"
-            :stroke-width="1.75 / view.scale"
-            :opacity="l.opacity"
-          />
-          <!-- 命中闪光：短促冲击闪光——扩散 + 峰值→淡出（flashOpacity 峰值曲线）；
-               flashProgress=1 后不再渲染（不残留孤立端点/waypoint 感） -->
-          <circle
-            v-if="l.flashProgress < 1"
-            class="pb-tracer-flash"
-            :cx="mapView.toX(l.x2)"
-            :cy="mapView.toY(l.y2)"
-            :r="(3 + 9 * l.flashProgress) / view.scale"
-            :fill="tracerColor(l.attackerAccountId)"
-            :opacity="l.flashOpacity"
-          />
-        </template>
-      </g>
-      <!-- 地图标注层：语义坐标锚定，随地图缩放/平移；静态叠加不随播放时间变化 -->
-      <g v-if="annotVisible" class="pb-annotations" data-test="pb-annotations">
-        <template v-for="(ann, i) in renderedAnnotations" :key="i">
-          <polyline
-            v-if="ann.type === 'pen'"
-            :points="ann.svgPoints"
-            fill="none"
-            :stroke="ann.color"
-            :stroke-width="ann.widthSvg"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-          <line
-            v-else-if="ann.type === 'line'"
-            :x1="ann.x1"
-            :y1="ann.y1"
-            :x2="ann.x2"
-            :y2="ann.y2"
-            :stroke="ann.color"
-            :stroke-width="ann.widthSvg"
-            stroke-linecap="round"
-          />
-          <g v-else-if="ann.type === 'arrow'">
-            <line
-              :x1="ann.x1"
-              :y1="ann.y1"
-              :x2="ann.x2"
-              :y2="ann.y2"
-              :stroke="ann.color"
-              :stroke-width="ann.widthSvg"
-              stroke-linecap="round"
-            />
-            <polygon :points="ann.head" :fill="ann.color" />
-          </g>
-          <rect
-            v-else-if="ann.type === 'rect'"
-            :x="ann.x"
-            :y="ann.y"
-            :width="ann.w"
-            :height="ann.h"
-            :stroke="ann.color"
-            :stroke-width="ann.widthSvg"
-            fill="none"
-          />
-          <circle
-            v-else-if="ann.type === 'circle'"
-            :cx="ann.cx"
-            :cy="ann.cy"
-            :r="ann.r"
-            :stroke="ann.color"
-            :stroke-width="ann.widthSvg"
-            fill="none"
-          />
-          <text
-            v-else-if="ann.type === 'text'"
-            :x="ann.x"
-            :y="ann.y"
-            :fill="ann.color"
-            :font-size="ANNOT_FONT_SIZE"
-            text-anchor="middle"
-            dominant-baseline="middle"
-            class="pb-annot-text"
-          >{{ ann.text }}</text>
-        </template>
-      </g>
-    </svg>
-    <div class="pb-markers" :class="{ 'pb-drawing': !!activeTool }" data-test="pb-markers" aria-hidden="false">
-      <VehicleMarker
-        v-for="st in vehicleStates"
-        :key="st.vehicle.accountId"
-        :marker="st"
-        :selected="selectedAccountId === st.vehicle.accountId"
-        :label="markerLabel(st.vehicle.accountId)"
-        :hp="hpFor(st.vehicle)"
-        :hp-visible="hpPrefs.showHp"
-        :t="t"
-        :hp-ghost="ghostFor(st.vehicle.accountId)"
-        :hp-flash="flashFor(st.vehicle.accountId)"
+      <BattleMap
+        ref="mapComponent"
+        :image="image"
+        :map-view="mapView"
+        :pb-overview="pbOverview"
+        :friendly-team="friendlyTeam"
+        :grid-regions="gridRegions"
+        :visible-tracers="visibleTracers"
+        :tracer-color="tracerColor"
+        :view-scale="view.scale"
+        :viewport-style="viewportStyle"
+        :annot-visible="annotVisible"
+        :rendered-annotations="renderedAnnotations"
+        :annot-font-size="ANNOT_FONT_SIZE"
+        :active-tool="activeTool"
+        :vehicle-states="vehicleStates"
+        :selected-account-id="selectedAccountId"
+        :marker-label="markerLabel"
+        :hp-for="hpFor"
+        :hp-prefs="hpPrefs"
+        :translate="t"
+        :ghost-for="ghostFor"
+        :flash-for="flashFor"
         :hp-no-transition="hpNoTransition"
-        @select="onMarkerSelect(st.vehicle, $event)"
+        :text-session="textSession"
+        :text-input-style="textInputStyle"
+        :visible-floats="visibleFloats"
+        :visible-bursts="visibleBursts"
+        :visible-feed="visibleFeed"
+        :float-team-class="floatTeamClass"
+        @wheel="onWheel"
+        @pointer-down="onPointerDown"
+        @pointer-move="onPointerMove"
+        @pointer-up="onPointerUp"
+        @viewport-click="onViewportClick"
+        @marker-select="onMarkerSelect"
+        @update-text="textSession.text = $event"
+        @commit-text="commitSession"
+        @cancel-text="cancelSession"
       />
-    </div>
-    </div>
-
-    <input
-      v-if="textSession"
-      ref="textInputRef"
-      v-model="textSession.text"
-      class="pb-text-input"
-      :style="textInputStyle"
-      :placeholder="$t('recon.map.playback.annot.text_placeholder')"
-      data-test="pb-text-input"
-      @keydown.enter.prevent="commitSession(textSession)"
-      @keydown.esc.prevent="cancelSession(textSession)"
-      @blur="commitSession(textSession)"
-    />
-
-    <!-- PR5 §10/§12/§16：transient feedback 层（floating damage / destruction burst / kill feed）。
-         wall-clock 生命周期（任意倍速可读时长一致）；seek 清空、pause 自然完成 -->
-    <div class="pb-feedback-layer" data-test="pb-feedback-layer" aria-hidden="true">
-      <span
-        v-for="f in visibleFloats"
-        :key="'dmg-' + f.id"
-        class="pb-float-dmg"
-        data-test="pb-float-dmg"
-        :class="floatTeamClass(f.team)"
-        :style="{ left: f.x + 'px', top: f.y + 'px' }"
-      >-{{ f.hpLoss }}</span>
-      <span
-        v-for="b in visibleBursts"
-        :key="'burst-' + b.id"
-        class="pb-burst"
-        data-test="pb-burst"
-        :class="floatTeamClass(b.team)"
-        :style="{ left: b.x + 'px', top: b.y + 'px' }"
-      ></span>
-    </div>
-    <div v-if="visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
-      <div
-        v-for="f in visibleFeed"
-        :key="'feed-' + f.id"
-        class="pb-feed-item"
-        :class="f.victimTeam === friendlyTeam ? 'pb-feed-friendly' : 'pb-feed-enemy'"
-      >
-        <span class="pb-feed-skull" aria-hidden="true">☠</span>
-        <span class="pb-feed-victim">{{ f.victimName }}</span>
-        <span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span>
-      </div>
-    </div>
-    </div>
 
     <!-- PR5 §8：detail sidebar（宽屏右侧固定，窄屏置于地图下方；点击 marker 打开/切换，
          点击空白不关闭，必须 × 显式关闭；destroyed 车可选；seek 保持同一 selected vehicle） -->
-    <aside v-if="selectedState" class="pb-sidebar" data-test="pb-info" :aria-label="$t('recon.map.playback.detail')">
-      <div class="pb-sb-head">
-        <div class="pb-sb-title">
-          <strong data-test="pb-sb-tank">{{ selectedState.vehicle.tankName || selectedState.vehicle.tankId }}</strong>
-          <span class="pb-sb-player" data-test="pb-sb-player">{{ selectedState.vehicle.playerName }}</span>
-        </div>
-        <button type="button" class="pb-close pb-sb-close" data-test="pb-sb-close" :aria-label="$t('recon.map.playback.close')" @click="closeSidebar">&times;</button>
-      </div>
-      <div v-if="selectedPortraitUrl" class="pb-sb-portrait" data-test="pb-sb-portrait">
-        <img
-          :src="selectedPortraitUrl"
-          :alt="selectedState.vehicle.tankName || String(selectedState.vehicle.tankId)"
-        />
-      </div>
-      <dl class="pb-sb-grid">
-        <dt>{{ $t('recon.map.playback.team') }}</dt>
-        <dd>{{ $t(selectedState.vehicle.team === friendlyTeam ? 'recon.map.playback.team_friendly' : 'recon.map.playback.team_enemy') }}</dd>
-        <template v-if="selLastKnownSec != null">
-          <dt>{{ $t('recon.map.playback.last_spotted') }}</dt>
-          <dd>{{ formatClock(selLastKnownSec) }}</dd>
-        </template>
-        <template v-if="selectedState.destroyed && selectedState.destroyedKnownAtSec != null">
-          <dt>{{ $t('recon.map.playback.destroyed_at') }}</dt>
-          <dd>{{ formatClock(selectedState.destroyedKnownAtSec) }}</dd>
-        </template>
-        <dt>{{ $t('recon.map.playback.playback_time') }}</dt>
-        <dd>{{ formatClock(currentTime) }}</dd>
-        <dt>{{ $t('recon.map.playback.damage_recorded') }}</dt>
-        <dd data-test="pb-sb-dealt">{{ selCurStats.dealt }}</dd>
-        <dt>{{ $t('recon.map.playback.damage_received') }}</dt>
-        <dd>{{ selCurStats.received }}</dd>
-        <dt>{{ $t('recon.map.playback.kills') }}</dt>
-        <dd>{{ selCurStats.kills }}</dd>
-      </dl>
-      <!-- V2 守卫：canonical dataset present 时，选中车辆的 V2 事实面板（AC-4/5/6/7）。 -->
-      <V2VehicleInspector
-        v-if="selectedV2Track"
-        data-test="pb-sb-v2-inspector"
-        :track="selectedV2Track"
-        :time-sec="currentTime"
-      />
-      <template v-if="selDamageLog.length">
-        <div class="pb-sb-section">{{ $t('recon.map.playback.damage_log') }}</div>
-        <ul class="pb-sb-log">
-          <li v-for="(d, i) in selDamageLog" :key="i">
-            <span class="pb-sb-log-time">{{ formatClock(d.timeSec) }}</span>
-            <span v-if="d.dir === 'in'" class="pb-sb-log-in">−{{ d.hpLoss }} <em>{{ d.label }}</em></span>
-            <span v-else class="pb-sb-log-out">+{{ d.hpLoss }} → {{ d.label }}</span>
-          </li>
-        </ul>
-      </template>
-    </aside>
+    <VehicleDetailsPanel
+      :selected-state="selectedState"
+      :friendly-team="friendlyTeam"
+      :selected-portrait-url="selectedPortraitUrl"
+      :sel-last-known-sec="selLastKnownSec"
+      :sel-cur-stats="selCurStats"
+      :selected-v2-track="selectedV2Track"
+      :current-time="currentTime"
+      :sel-damage-log="selDamageLog"
+      :format-clock="formatClock"
+      @close="closeSidebar"
+    />
     </div>
 
     <!-- 双方总血量条 + 争霸赛实时点数（PR #107 Blocker 2 aggregate state）：
@@ -2095,40 +1759,6 @@ const mapStyle = computed(() => ({
 }
 .battle-playback:fullscreen .pb-main { align-items: center; }
 .battle-playback:fullscreen .pb-main .pb-map { flex: 0 1 auto; }
-.pb-controls, .pb-filters {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.pb-btn, .pb-chip {
-  border: 1px solid #39444a;
-  background: rgba(15, 21, 25, .92);
-  color: #c9c5bb;
-  border-radius: 4px;
-  padding: 2px 8px;
-  font-size: .78rem;
-  cursor: pointer;
-}
-.pb-chip.active {
-  background: var(--accent, #2f7dff);
-  border-color: var(--accent, #2f7dff);
-  color: #fff;
-}
-.pb-time { font-size: .8rem; color: var(--text-label); font-variant-numeric: tabular-nums; }
-.pb-filter { display: inline-flex; align-items: center; gap: 4px; font-size: .78rem; }
-.pb-check { display: inline-flex; align-items: center; gap: 4px; }
-.pb-progress { position: relative; margin: 2px 0; }
-.pb-range { width: 100%; display: block; }
-.pb-marker {
-  position: absolute;
-  top: 2px;
-  width: 3px;
-  height: 10px;
-  background: var(--accent, #2f7dff);
-  cursor: pointer;
-  transform: translateX(-50%);
-}
 .pb-main { display: flex; align-items: flex-start; gap: 8px; }
 /* 地图自适应剩余宽度（§8.2 宽屏：右侧固定 sidebar，地图占剩余） */
 .pb-main .pb-map { width: auto; margin: 0; flex: 1 1 auto; min-width: 0; }
@@ -2151,7 +1781,6 @@ const mapStyle = computed(() => ({
   /* §8.2 窄屏：sidebar 置于地图/播放器下方，不强行压缩成窄右侧栏 */
   .pb-main { flex-direction: column; }
   .pb-main .pb-map { width: 100%; }
-  .pb-sidebar { width: 100%; max-height: none; }
 }
 .pb-markers {
   position: absolute;
@@ -2204,59 +1833,6 @@ const mapStyle = computed(() => ({
 .pb-hp-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pb-hp-unknown-text { color: var(--text-muted, #999); white-space: nowrap; }
 .pb-hp-points { white-space: nowrap; }
-
-/* PR5 §8 detail sidebar：当前 playback 时间点的车辆战斗状态面板（非整场最终战绩面板）。
-   宽屏右侧固定；窄屏（≤768px）整行置于地图下方；× 显式关闭。 */
-.pb-sidebar {
-  width: 260px;
-  flex-shrink: 0;
-  align-self: stretch;
-  font-size: .8rem;
-  color: #c9c5bb;
-  background: rgba(13, 18, 22, .94);
-  border: 1px solid #303a40;
-  border-radius: 4px;
-  padding: 6px 8px;
-  overflow-y: auto;
-  max-height: 72vh;
-}
-.pb-sb-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
-.pb-sb-title { display: flex; flex-direction: column; min-width: 0; }
-.pb-sb-title strong { color: #f2ede3; font-size: .85rem; line-height: 1.3; }
-.pb-sb-player { color: var(--text-muted); font-size: .75rem; word-break: break-all; }
-.pb-sb-close { font-size: 1.05rem; line-height: 1; padding: 0 3px; }
-.pb-sb-portrait {
-  display: grid;
-  place-items: center;
-  min-height: 92px;
-  margin: 2px 0 6px;
-  border-radius: 4px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-chip, rgba(128, 128, 128, .2)) 68%, transparent), transparent);
-  overflow: hidden;
-}
-.pb-sb-portrait img {
-  display: block;
-  width: min(100%, 190px);
-  height: 96px;
-  object-fit: contain;
-  filter: drop-shadow(0 5px 7px rgba(0, 0, 0, .28));
-}
-.pb-sb-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
-.pb-sb-grid dt { color: var(--text-muted); white-space: nowrap; }
-.pb-sb-grid dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
-.pb-sb-section {
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border);
-  font-weight: 700;
-  color: var(--text-heading);
-}
-.pb-sb-log { margin: 4px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 1px; max-height: 120px; overflow-y: auto; }
-.pb-sb-log li { display: flex; gap: 6px; font-variant-numeric: tabular-nums; align-items: baseline; }
-.pb-sb-log-time { color: var(--text-muted); flex-shrink: 0; }
-.pb-sb-log-in { color: var(--pb-enemy-text, #f87171); }
-.pb-sb-log-out { color: var(--pb-team-text, #4ade80); }
-.pb-sb-log em { font-style: normal; opacity: .75; }
 
 /* PR5 §10/§12/§16 transient feedback 层（floating damage / destruction burst / kill feed）：
    wall-clock 生命周期、任意倍速可读时长一致；seek 清空、pause 自然完成。 */
@@ -2339,47 +1915,7 @@ const mapStyle = computed(() => ({
 .pb-event-type { color: var(--accent); margin-right: 4px; }
 .pb-close { border: none; background: none; cursor: pointer; color: var(--text-muted); }
 
-/* 地图标注：工具栏 + 标注层 + 文字输入 */
-.pb-annot-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-.pb-annot-btn {
-  border: 1px solid #39444a;
-  background: rgba(15, 21, 25, .92);
-  color: #c9c5bb;
-  border-radius: 4px;
-  padding: 2px 8px;
-  font-size: .78rem;
-  cursor: pointer;
-}
-.pb-annot-btn.active {
-  background: var(--accent, #2f7dff);
-  border-color: var(--accent, #2f7dff);
-  color: #fff;
-}
-.pb-annot-btn:disabled { opacity: .45; cursor: default; }
-.pb-annot-color {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-  padding: 0;
-}
-.pb-annot-color.active { border-color: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.7); }
-.pb-annot-width {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: .78rem;
-  color: var(--text-label);
-}
-.pb-annot-width input { width: 80px; }
-.pb-annot-width-val { font-variant-numeric: tabular-nums; min-width: 2ch; }
-.pb-annot-sep { width: 1px; height: 16px; background: var(--border); }
+/* 地图标注层 + 文字输入 */
 .pb-annotations { pointer-events: none; }
 /* 文字描边保证暗图上可读（paint-order 先描边后填充，不遮字） */
 .pb-annot-text {
