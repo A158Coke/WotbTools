@@ -8,11 +8,13 @@ COPY common/map_names.json common/map_names.json
 COPY common/tank_tactical_profiles.json common/tank_tactical_profiles.json
 COPY common/map-semantics common/map-semantics
 COPY java/pom.xml java/settings-docker.xml java/
+COPY java/wotb-contracts/pom.xml java/wotb-contracts/pom.xml
 COPY java/wotb-core/pom.xml java/wotb-core/pom.xml
 COPY java/wotb-web/pom.xml java/wotb-web/pom.xml
 WORKDIR /build/java
 RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests dependency:go-offline -q || true
 WORKDIR /build
+COPY java/wotb-contracts/src java/wotb-contracts/src
 COPY java/wotb-core/src java/wotb-core/src
 COPY java/wotb-web/src java/wotb-web/src
 WORKDIR /build/java
