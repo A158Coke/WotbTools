@@ -12,6 +12,16 @@
 > `MapOverviewQueryService.buildBattlePlaybackFromDataset` → `ReplayArtifactWriter.readBattlePlaybackV2`
 > → 前端 `BattlePlayback.vue` 的 V2 检查器（`V2VehicleInspector`）。
 
+### 前端职责边界
+
+`BattlePlayback.vue` 是单一编排入口，负责时间、视图、选择与事件命令；展示层拆为
+`BattleMap.vue`（SVG、坦克标记、炮线、标注及瞬时反馈）、`PlaybackControls.vue`
+（播放控制、筛选与标注工具）、`PlaybackTimeline.vue`（进度条与事件标记）和
+`VehicleDetailsPanel.vue`（当前车辆详情）。
+`utils/playbackVehicleState.js` 负责将 canonical V2 track 投影为 marker state，
+`utils/playbackClock.js` 提供播放时间/倍速纯函数。拆分不新增数据源、不改变 V2 query-at-time、
+anti-future-leak 或现有 tank-marker 资产契约。
+
 - **数据源**：processing 阶段当 canonical `BattleTimeline` 可用时写出
   `battle-playback-v2.json`（`BattlePlaybackProjector.project` 纯投影）；timeline 不可用
   → 不写 artifact → 204（capability unavailable，非 parse failure）。
