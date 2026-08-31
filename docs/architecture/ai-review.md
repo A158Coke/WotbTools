@@ -97,7 +97,7 @@ AI 提示词正文维护在 `java/wotb-web/src/main/resources/prompts/` 下的 `
 
 - UTF-8、LF 换行（加载器会把 CRLF 归一化为 LF；文件末尾换行保留——`confidence-legend` 以换行结尾，勿删）。
 - 文件是 ZH 完整 prompt；EN/RU 由 `PlayerPromptRules.localizePlayerSystemPrompt` / `TeamPromptLocalizer.localizeTeamSystemPrompt` 对 ZH 规则片段做字符串替换生成。**展开后 md 内中文规则片段必须与 Java 常量（`COMMON_*_RULE` / `TEAM_*_RULE` 等）逐字一致**，否则 EN/RU 替换失效（`PromptRuleContractTest` 强制）。
-- 多文件 AI 复盘已移除（2026-08-12）：`player/multi` / `team/multi` 提示词、`analyzeMulti`、`MULTI_*_BATTLE` AI 分支与团队多视角分区合并全部删除；AI 复盘仅单文件（`AiReplayBatchPolicy.MAX_FILES=1`），由 `AiReplayReviewService.analyzeResults` 经 `BatchAnalyzer`（单结果分组 + `isAiAnalyzable` + `plan.mode()` 只取 NONE/SINGLE_*）决定分析单元。对应旧多文件批量分析的 `ReplayAnalysisMode.MULTI_*`、`DefaultReplayProcessingFacade.processBatch`/`buildBatchResult` 与 `ReplayBatchProcessingResult`/`ReplayBatchSummary` 已删除（无 current production consumer；legacy `/api/replay/process`、`/api/replay/reconstruct-batch`、multipart analyze 一律 410，已不存在多文件批量端点）。
+- 多文件 AI 复盘已移除（2026-08-12）：`player/multi` / `team/multi` 提示词、`analyzeMulti`、`MULTI_*_BATTLE` AI 分支与团队多视角分区合并全部删除；AI 复盘仅单文件（`AiReplayBatchPolicy.MAX_FILES=1`），由 `AiReplayReviewService.analyzeResults` 直接按 `ReplayProcessingCapabilities.aiAnalyzable(scope)` 判定 eligibility（单一 SSOT；`BatchAnalyzer` 的 group/representative machinery 仅作为测试设置复用）。对应旧多文件批量分析的 `ReplayAnalysisMode.MULTI_*`、`DefaultReplayProcessingFacade.processBatch`/`buildBatchResult` 与 `ReplayBatchProcessingResult`/`ReplayBatchSummary` 已删除（无 current production consumer；legacy `/api/replay/process`、`/api/replay/reconstruct-batch`、multipart analyze 一律 410，已不存在多文件批量端点）。
 
 ### AI 复盘评估 harness（golden cases + lessons）
 

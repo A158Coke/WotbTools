@@ -6,7 +6,6 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.facts.AiReplayFacts;
-import com.wotb.core.replay.processing.AiAnalysisEligibility;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.core.replay.processing.BattleCategoryUtils;
 import com.wotb.core.replay.processing.BattleGroupingKey;
@@ -260,7 +259,7 @@ public class AiReplayReviewService {
         final int perspectiveTeam = teamResolution.resolved() ? teamResolution.perspectiveTeam() : 0;
         final ReplayPerspectiveGroup group = singleGroup(result, perspectiveTeam);
 
-        if (!AiAnalysisEligibility.isAiAnalyzable(result, scope)) {
+        if (!(result.capabilities() != null && result.capabilities().aiAnalyzable(scope))) {
             if (scope == ReplayAnalysisScope.TEAM_PERSPECTIVE) {
                 if (result.capabilities() != null && result.capabilities().perspectiveTeamResolved()) {
                     throw new IllegalArgumentException("TEAM_FEATURES_UNAVAILABLE");
