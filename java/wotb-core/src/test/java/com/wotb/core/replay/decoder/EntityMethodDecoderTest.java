@@ -90,6 +90,7 @@ class EntityMethodDecoderTest {
         final byte[] root = prependLengthDelimited(wrapper);
         final byte[] payload = new byte[8 + 4 + 1 + 1 + root.length];
         payload[4] = EntityMethodDecoder.SUBTYPE_UPDATE_ARENA2;
+        putU32(payload, 8, payload.length - 12);
         payload[12] = 0x01;
         payload[13] = (byte) root.length;
         System.arraycopy(root, 0, payload, 14, root.length);
@@ -326,6 +327,32 @@ class EntityMethodDecoderTest {
         }
     }
 
+    @Test
+    void unknownInnerWrapperIsRawPreserved() {
+        final ReplayDecodeResult result = decoder.decode(context,
+                rawPacket48(99L, new byte[]{0x08, 0x01}));
+
+        final UnknownReplayEvent unknown = assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst());
+        assertTrue(unknown.reasonCode().contains("METHOD48_INNER_SHAPE_UNKNOWN"));
+        assertEquals("ENTITY_METHOD_UNDECODED", result.warnings().getFirst().code());
+    }
+
+    @Test
+    void innerLengthTrailingBytesAreRawPreserved() {
+        final RawReplayPacket valid = rawPacket48(EntityMethodDecoder.WRAPPER_ARENA_PERIOD,
+                new byte[]{0x18, 0x03});
+        final byte[] payload = new byte[valid.payload().length + 1];
+        System.arraycopy(valid.payload(), 0, payload, 0, valid.payload().length);
+        payload[payload.length - 1] = 0x7F;
+        putU32(payload, 8, payload.length - 12);
+
+        final ReplayDecodeResult result = decoder.decode(context, new RawReplayPacket(
+                valid.sequence(), valid.sourceOffset(), payload.length, valid.type(), valid.rawClockSec(), payload, 0));
+        final UnknownReplayEvent unknown = assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst());
+        assertTrue(unknown.reasonCode().contains("METHOD48_INNER_SHAPE_UNKNOWN"));
+        assertEquals("ENTITY_METHOD_UNDECODED", result.warnings().getFirst().code());
+    }
+
     private static byte[] teamPointsMessage(final int team, final int points) {
         final byte[] teamVar = varint(team);
         final byte[] pointsVar = varint(points);
@@ -379,7 +406,7 @@ class EntityMethodDecoderTest {
                         fieldDelimited(12, teamPointsMessage(team2, p2))));
     }
 
-    /** 通用 EntityMethod 包：entityId + subtype + argLen + args（P0-3 版本门禁测试）。 */
+    /** 通用 EntityMethod 包：entityId + subtype + argLen + args。 */
     private static RawReplayPacket methodPacket(final int seq, final int subtype, final byte[] args) {
         final byte[] payload = new byte[12 + args.length];
         putU32(payload, 0, 12345);
@@ -397,22 +424,18 @@ class EntityMethodDecoderTest {
         buf[i + 3] = (byte) (v >>> 24);
     }
 
-    /** PR162/P0-2：future version 只有 Type8 envelope 结构可前向读取；method0 的 numeric semantic
-     *  （VehicleFired）未认证 → 必须 raw/Unknown，绝不继承当前版本 EXACT semantic。 */
+    /** A valid method0 envelope and vehicle class evidence decode independently of version metadata. */
     @Test
     void futureVersionLayoutMethodStructurallyDecodes() {
         final ReplayDecodeContext future = new ReplayDecodeContext("11.20.0_china");
         future.entityClassRegistry().markVehicle(12345);
         final ReplayDecodeResult result = decoder.decode(future,
                 methodPacket(1, EntityMethodDecoder.SUBTYPE_VEHICLE_FIRED, new byte[]{0x01}));
-        assertEquals(DecodeStatus.PARTIAL, result.status(),
-                "future method0 semantic 未认证 → raw-preserve，不得 EXACT");
-        assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst());
-        assertTrue(result.events().stream().noneMatch(VehicleFiredEvent.class::isInstance),
-                "future method0 不得产出 VehicleFiredEvent(EXACT)");
+        assertEquals(DecodeStatus.SUCCESS, result.status());
+        assertInstanceOf(VehicleFiredEvent.class, result.events().getFirst());
     }
 
-    /** PR162/P0-2：future method29（ProjectileLaunched）semantic 未认证 → raw/Unknown，不得 EXACT。 */
+    /** A valid method29 envelope and avatar class evidence decode independently of version metadata. */
     @Test
     void futureVersionProjectileLaunchStructurallyDecodes() {
         final ReplayDecodeContext future = new ReplayDecodeContext("12.0.0_eu");
@@ -420,11 +443,8 @@ class EntityMethodDecoderTest {
         final byte[] args = new byte[37]; // PROJECTILE_LAUNCH_ARGS_LEN
         final ReplayDecodeResult result = decoder.decode(future,
                 methodPacket(1, EntityMethodDecoder.SUBTYPE_PROJECTILE_LAUNCH, args));
-        assertEquals(DecodeStatus.PARTIAL, result.status(),
-                "future method29 semantic 未认证 → raw-preserve，不得 EXACT");
-        assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst());
-        assertTrue(result.events().stream().noneMatch(ProjectileLaunchedEvent.class::isInstance),
-                "future method29 不得产出 ProjectileLaunchedEvent(EXACT)");
+        assertEquals(DecodeStatus.SUCCESS, result.status());
+        assertInstanceOf(ProjectileLaunchedEvent.class, result.events().getFirst());
     }
 
     /** P0-3：当前 canonical 11.19 仍解码 method29 为 EXACT（不因 gate 回归）。 */
@@ -581,6 +601,7 @@ class EntityMethodDecoderTest {
         final byte[] payload = new byte[8 + 4 + 1 + 1 + root.length];
         putU32(payload, 0, entityId);
         payload[4] = EntityMethodDecoder.SUBTYPE_UPDATE_ARENA2;
+        putU32(payload, 8, payload.length - 12);
         payload[12] = (byte) wrapperFieldNumber;
         payload[13] = (byte) root.length;
         System.arraycopy(root, 0, payload, 14, root.length);
@@ -592,6 +613,7 @@ class EntityMethodDecoderTest {
     private static RawReplayPacket rawPacket48(final long wrapperFieldNumber, final byte[] root) {
         final byte[] payload = new byte[8 + 4 + 1 + 1 + root.length];
         payload[4] = EntityMethodDecoder.SUBTYPE_UPDATE_ARENA2;
+        putU32(payload, 8, payload.length - 12);
         payload[12] = (byte) wrapperFieldNumber;
         payload[13] = (byte) root.length;
         System.arraycopy(root, 0, payload, 14, root.length);

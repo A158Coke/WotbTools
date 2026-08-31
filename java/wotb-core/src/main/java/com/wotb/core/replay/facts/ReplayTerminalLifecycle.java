@@ -36,7 +36,6 @@ public final class ReplayTerminalLifecycle {
     public enum TerminalKind {
         HP_ZERO,
         DEATH_SENTINEL_FFFD,
-        VERIFIED_TERMINAL_FFFE,
         DROWNING,
         LEGACY_EXACT_ALIVE_FALSE
     }
@@ -187,15 +186,13 @@ public final class ReplayTerminalLifecycle {
 
     private static boolean isExplicitTerminalIndependentOfHp(final Evidence evidence) {
         return evidence.terminalKind() == TerminalKind.DROWNING
-                || evidence.terminalKind() == TerminalKind.DEATH_SENTINEL_FFFD
-                || evidence.terminalKind() == TerminalKind.VERIFIED_TERMINAL_FFFE;
+                || evidence.terminalKind() == TerminalKind.DEATH_SENTINEL_FFFD;
     }
 
     private static TerminalKind terminalKind(final HpRawState state) {
         return switch (state) {
             case HP_ZERO_TERMINAL -> TerminalKind.HP_ZERO;
             case DEATH_TERMINAL_FFFD -> TerminalKind.DEATH_SENTINEL_FFFD;
-            case VERIFIED_TERMINAL_FFFE -> TerminalKind.VERIFIED_TERMINAL_FFFE;
             default -> TerminalKind.LEGACY_EXACT_ALIVE_FALSE;
         };
     }

@@ -1,10 +1,13 @@
 package com.wotb.core.replay.facts;
 
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeObservation;
 import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -115,6 +118,19 @@ class TradeFactsTest {
             assertEquals(0, TradeFacts.tradedDeaths(a, List.of(a, b)),
                     "T=100, enemy=" + enemyDeath + " 为 ambiguous（±0.5s 量化）→ fail-closed 0");
         }
+    }
+
+    @Test
+    void fullProcessingSettlementObservationKeepsIntervalAndAmbiguityFailsClosed() {
+        final PlayerResult a = player(1001L, 1, false, 100);
+        final PlayerResult b = player(2001L, 2, false, 100.001);
+        final Battle battle = new Battle();
+        battle.liveDeathObservations = Map.of(
+                a.accountId, new DeathTimeObservation(DeathTimeSource.SETTLEMENT_SECOND, 100.0),
+                b.accountId, new DeathTimeObservation(DeathTimeSource.SETTLEMENT_SECOND, 100.001));
+
+        assertEquals(0, TradeFacts.tradedDeaths(battle, a, List.of(a, b)),
+                "settlement-second windows overlap the trade boundary; ambiguity must fail closed");
     }
 
     @Test

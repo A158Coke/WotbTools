@@ -31,13 +31,6 @@ public class PositionDecoder implements ReplayPacketDecoder {
     public ReplayDecodeResult decode(final ReplayDecodeContext context, final RawReplayPacket packet) {
         final byte[] payload = packet.payload();
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
-        if (!ReplayProtocolProfile.type10LayoutAllowed(context.clientVersion())) {
-            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
-                    List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(), payload.length,
-                            "VERSION_UNSUPPORTED_TYPE10", DecodeConfidence.UNKNOWN)),
-                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "Type10 layout not affirmed for client version: " + context.clientVersion())));
-        }
         if (payload.length != PAYLOAD_LEN) {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED,
                     List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(), payload.length,

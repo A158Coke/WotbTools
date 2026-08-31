@@ -15,7 +15,7 @@ Replay archive reader (ReplayReconstructionService)
 ReplayPacketStreamReader  (stream 包)
     │  ├── ReplayStreamHeader 解析
     │  ├── 从头到尾扫描所有合法包
-    │  ├── 头部版本读出（作为 decoder-local evidence context）
+    │  ├── 头部版本读出（仅作为 metadata，不参与 decoder/business gate）
     │  └── ReplayStreamDiagnostics 输出
     │
     ▼

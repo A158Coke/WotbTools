@@ -11,7 +11,7 @@ import com.wotb.core.replay.stream.RawReplayPacket;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Vehicle Type7 EntityProperty decoder with explicit version capability boundaries. */
+/** Vehicle Type7 EntityProperty decoder with strict envelope and raw semantic preservation. */
 public class EntityPropertyDecoder implements ReplayPacketDecoder {
 
     static final int TYPE_ENTITY_PROPERTY = 7;
@@ -29,14 +29,6 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
     public ReplayDecodeResult decode(final ReplayDecodeContext context, final RawReplayPacket packet) {
         final byte[] payload = packet.payload();
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
-        if (!ReplayProtocolProfile.basicVehiclePropertiesAllowed(context.clientVersion())) {
-            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
-                    List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(), payload.length,
-                            "VERSION_UNSUPPORTED_ENTITY_PROPERTY", DecodeConfidence.UNKNOWN)),
-                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "EntityProperty numeric semantics not affirmed for client version: "
-                                    + context.clientVersion())));
-        }
         if (payload.length < 12) {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED, List.of(),
                     List.of(new ReplayDecodeWarning("TRUNCATED_PAYLOAD",
@@ -57,11 +49,7 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
 
         if (propId == PROP_CURRENT_HP && valueLen == 2) {
             final int raw = readU16LE(payload, 12);
-            final HpRawState rawState = HpRawState.classify(raw,
-                    ReplayProtocolProfile.levelOf(context.clientVersion(),
-                            ReplayProtocolProfile.Capability.TERMINAL_FFFD)
-                            == ReplayProtocolProfile.Level.VERIFIED,
-                    ReplayProtocolProfile.verifiedFffeTerminalAllowed(context.clientVersion()));
+            final HpRawState rawState = HpRawState.classify(raw);
             final List<ReplayDecodeWarning> warnings = new ArrayList<>();
             final HealthChangedEvent event;
             switch (rawState) {
@@ -73,7 +61,7 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
                 case HP_ZERO_TERMINAL ->
                         event = new HealthChangedEvent(packet.sequence(), ts, packet.type(),
                                 DecodeConfidence.EXACT, entityId, 0, null, false, raw, rawState);
-                case DEATH_TERMINAL_FFFD, VERIFIED_TERMINAL_FFFE ->
+                case DEATH_TERMINAL_FFFD ->
                         // terminal != HP-zero: preserve terminal truth without inventing current HP=0.
                         event = new HealthChangedEvent(packet.sequence(), ts, packet.type(),
                                 DecodeConfidence.EXACT, entityId, null, null, false, raw, rawState);
@@ -91,10 +79,7 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
                     List.of(event), warnings);
         }
 
-        // PR162/P0-2：prop2 turret-relative yaw 语义必须由 PROP_TURRET_YAW capability 授权（不是 generic
-        // ENTITY_PROPERTY_ENVELOPE）。future 版本 prop2 只 raw-preserve，绝不自动产出 TurretDirectionChangedEvent。
-        if (propId == PROP_TURRET_RELATIVE_YAW && valueLen == 2
-                && ReplayProtocolProfile.turretYawAllowed(context.clientVersion())) {
+        if (propId == PROP_TURRET_RELATIVE_YAW && valueLen == 2) {
             final int raw = readU16LE(payload, 12);
             final double deg = raw * TURRET_YAW_SCALE_DEG + TURRET_YAW_OFFSET_DEG;
             return ReplayDecodeResult.of(new TurretDirectionChangedEvent(

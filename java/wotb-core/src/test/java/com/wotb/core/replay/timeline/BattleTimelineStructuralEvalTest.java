@@ -82,12 +82,14 @@ class BattleTimelineStructuralEvalTest {
 
         // 帧内事件分区必须互斥（无重复）；battle-relative 落在 [0, duration] 的事件必须恰好出现一次（无丢失）。
         // 开战前（负时间）与战斗结束后的尾部事件不属于任何帧窗口，不计入 lossless。
-        final Set<Integer> seen = new HashSet<>();
+        // One raw packet may intentionally produce a generic structural event plus one
+        // semantically routed event.  Identity is therefore (sequence, event class), not sequence alone.
+        final Set<String> seen = new HashSet<>();
         int total = 0;
         int inRange = 0;
         for (final BattleFrame frame : timeline.frames()) {
             for (final com.wotb.core.replay.event.ReplayEvent e : frame.events()) {
-                assertTrue(seen.add(e.sequence()),
+                assertTrue(seen.add(e.sequence() + ":" + e.getClass().getName()),
                         "事件重复: seq=" + e.sequence() + " frame=" + frame.second());
                 total++;
             }

@@ -283,7 +283,9 @@ public record BattlePhaseSummary(
                 if (p.survived) {
                     continue;
                 }
-                final PlayerResultFormat.DeathTimeEvidence evidence = PlayerResultFormat.deathEvidence(battle, p);
+                // Phase survival is a settlement fact; live reconstruction evidence belongs to
+                // playback/full-processing consumers and must not make settlement summaries disappear.
+                final PlayerResultFormat.DeathTimeEvidence evidence = PlayerResultFormat.deathEvidence(p);
                 if (evidence != null) {
                     (friendly ? friendlyTimes : enemyTimes).add(evidence);
                 } else if (friendly) {

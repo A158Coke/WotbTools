@@ -4,7 +4,7 @@
 > Primary evidence: **PR147 11.19 corpus**（`11.19.0_china` + `11.19.0_china_apple`）。
 > 历史 11.18 观察（`docs/research/replay/`）<b>不自动等于生产语义</b>；每个 capability 均需独立证据（fixture / research / known invariant）。
 > 生产状态：文件结构/字段按已证明事实（AFFIRMED）；未证明语义标 UNKNOWN（见 `docs/reference/replay-parsed-fields.md`）。
-> 前向兼容按三层能力模型（见 `ReplayProtocolProfile`）：容器/framing（A）与稳定结构布局（B）可前向；闭式数字语义（C）仅 VERIFIED family。
+> 前向兼容由严格 framing、packet/envelope/length/shape 与局部 structural invariants 决定；无法证明的具体 numeric semantic 保留 raw/UNKNOWN，不由 clientVersion allowlist 决定。
 
 ## 文件结构
 
@@ -123,7 +123,7 @@ value:     [u8; value_len]
 
 该结构在 11.18 样本上 100% 干净解析。`prop_id → 语义` 的<b>逐属性 mapping 已收敛</b>：普通正数 HP 由
 回放结构包（Type5 物化当前 HP / Avatar method5 / Vehicle prop3 / Vehicle method1）产生，终结哨兵（FFFD/FFFE）
-与 HP 版本作用域在 decoder-local 的 `ReplayProtocolProfile` capability evidence 中表达。EntityProperty
+与 HP numeric evidence 在 decoder-local 的 raw classification 中表达。EntityProperty
 解码器保留结构（`prop_id`/`value_len`）+ 已证明的 HP/property 语义；<b>未证明</b>的 prop_id 语义仍标
 `UNKNOWN`，绝不臆断血量/存活。
 
@@ -143,18 +143,18 @@ value:     [u8; value_len]
 
 **methodId 是 entity-class scoped** —— 同一 methodId 在不同实体类上是不同语义（如
 Avatar method4 2B=RoundFinished，Vehicle method4 16B=vehicle-to-vehicle collision）。安全 key 为
-`(capability, entityClass, methodId, exact argShape)`；entityClass 只能由独立生命周期/身份证据建立
+`(entityClass, methodId, exact argShape)`；entityClass 只能由独立生命周期/身份证据建立
 （Type5 materialization `entityTypeId`；method48 参与映射中的 recorder 账号身份），**method decoder 不得
 由 methodId 自证 class**。class UNKNOWN → raw-preserve（`UnknownReplayEvent`）。
 
-**语义仅 VERIFIED family 认可为 EXACT**：future（STRUCTURALLY_COMPATIBLE）版本只前向读取 envelope 结构，
-numeric method 语义（含 method0/1/5/17/20/27/29）未认证 → raw/Unknown，绝不承接当前版本 EXACT semantic
-（见 `ReplayProtocolProfile.methodLayoutAllowed`）。stable 结构（如 Type10 49B、普通正 HP 结构值）仍可前向。
+**语义按结构与实体证据认可为 EXACT**：future version 只要 envelope、length、shape 与实体类证据成立，
+即可解码相同的 proven semantic；无法证明的具体 numeric semantic 仍 raw/Unknown。stable 结构（如 Type10
+49B、普通正 HP 结构值）不因版本字符串被拒绝。
 
 | 实体类 | methodId | 语义 / 证据状态 | exact args shape | 产出 |
 |---:|---:|---|---|---|
 | Vehicle | 0 | AFFIRMED（观测开火） | 1B | `VehicleFiredEvent` |
-| Vehicle | 1 | AFFIRMED（HP/state family；cause 语义仅 11.19 闭合，11.18 UNKNOWN） | 7B | `VehicleHealthStateEvent` |
+| Vehicle | 1 | AFFIRMED（HP/state family；未证明的 cause 数值保留 raw） | 7B | `VehicleHealthStateEvent` |
 | Vehicle | 4 | AFFIRMED（vehicle-to-vehicle collision） | 16B | `VehicleVehicleCollisionEvent` |
 | Vehicle | 8 | AFFIRMED 结构观测（hit/result feedback；非权威伤害数字） | — | `VehicleHitEvent`/`UnsupportedDamageEvent` |
 | Avatar | 4 | AFFIRMED（round-finished，winner + finishReason） | 2B | `RoundFinishedEvent` |

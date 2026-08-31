@@ -3,14 +3,12 @@ package com.wotb.core.replay.decoder;
 import com.wotb.core.replay.event.ConsumableLifecycleEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityAuxiliaryBlobEvent;
-import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -92,12 +90,13 @@ class EntityAuxiliaryBlobDecoderTest {
     }
 
     @Test
-    void unknownVersionFailsClosedToGenericEnvelope() {
+    void futureVersionKeepsStructurallyProvenSemanticEnvelope() {
         final byte[] body = consumableBody(0x0D, 2, 0, 0f);
         final byte[] payload = envelope(7, 0, body);
         final ReplayDecodeResult r = decoder.decode(context("11.20.0_china", true), packet(payload));
-        assertEquals(1, r.events().size());
+        assertEquals(2, r.events().size());
         assertTrue(r.events().get(0) instanceof EntityAuxiliaryBlobEvent);
+        assertTrue(r.events().get(1) instanceof ConsumableLifecycleEvent);
     }
 
     @Test

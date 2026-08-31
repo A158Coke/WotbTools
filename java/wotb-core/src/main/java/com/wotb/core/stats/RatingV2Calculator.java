@@ -275,7 +275,7 @@ public final class RatingV2Calculator {
         if (player == null || player.survived) {
             return false;
         }
-        final PlayerResultFormat.DeathTimeEvidence pEv = PlayerResultFormat.deathEvidence(battle, player);
+        final PlayerResultFormat.DeathTimeEvidence pEv = fullProcessingEvidence(battle, player);
         if (pEv == null || !pEv.known()) {
             return false;
         }
@@ -286,7 +286,7 @@ public final class RatingV2Calculator {
             if (other == null || other.team == player.team || other.survived) {
                 continue;
             }
-            final PlayerResultFormat.DeathTimeEvidence oEv = PlayerResultFormat.deathEvidence(battle, other);
+            final PlayerResultFormat.DeathTimeEvidence oEv = fullProcessingEvidence(battle, other);
             if (oEv == null || !oEv.known()) {
                 continue;
             }
@@ -297,6 +297,15 @@ public final class RatingV2Calculator {
             }
         }
         return false;
+    }
+
+    private static PlayerResultFormat.DeathTimeEvidence fullProcessingEvidence(
+            final Battle battle, final PlayerResult player) {
+        if (battle == null || battle.liveDeathObservations == null
+                || !battle.liveDeathObservations.containsKey(player.accountId)) {
+            return PlayerResultFormat.deathEvidence(player);
+        }
+        return PlayerResultFormat.deathEvidence(battle, player);
     }
 
     /**
