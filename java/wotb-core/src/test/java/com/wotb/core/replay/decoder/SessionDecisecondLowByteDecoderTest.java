@@ -29,11 +29,11 @@ class SessionDecisecondLowByteDecoderTest {
     }
 
     @Test
-    void unknownVersionRawPreservesType35() {
+    void futureVersionStillDecodesValidType35Shape() {
         final ReplayDecodeContext unknown = new ReplayDecodeContext("12.0.0_eu");
         final ReplayDecodeResult r = decoder.decode(unknown, packet(new byte[]{0x2A}));
-        assertEquals(DecodeStatus.UNSUPPORTED, r.status());
-        assertEquals("VERSION_UNSUPPORTED_TYPE35", ((UnknownReplayEvent) r.events().get(0)).reasonCode());
+        assertEquals(DecodeStatus.SUCCESS, r.status());
+        assertEquals(42, ((SessionDecisecondLowByteEvent) r.events().get(0)).low8());
     }
 
     @Test

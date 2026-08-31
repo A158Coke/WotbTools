@@ -115,11 +115,8 @@ public final class LeagueTestReplays {
         final String meta = "{\"version\":\"1.0\",\"mapName\":\"italy\",\"battleDuration\":300,"
                 + "\"battleStartTime\":1683152279,\"arenaBonusType\":" + arenaBonusType + "}";
         entries.put("meta.json", meta.getBytes(StandardCharsets.UTF_8));
-        // PR147 settlement version gate: the #24/#25/#105 numeric semantics are version-scoped, and the
-        // authoritative clientVersion comes from the data.wotreplay header. This synthetic League fixture
-        // represents an 11.19 training/CW replay, so it must carry an affirmed header — otherwise the
-        // parser fails-closed (survived=false for everyone) and the roster/end-reason contract would be
-        // misrepresented. data.wotreplay content beyond the version header is not consumed by ReplayParser.
+        // Keep a valid stream header for the synthetic archive. The settlement parser consumes its
+        // business facts from battle_results.dat; the header version remains metadata only.
         entries.put("data.wotreplay", dataWotreplayHeader("11.19.0_china"));
         entries.put("battle_results.dat", pickle(battle.arenaId,
                 rootProtobuf(battle, extraRosterAccounts)));

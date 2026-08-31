@@ -156,7 +156,7 @@ public final class LeagueRatingCalculator {
             if (win && p.survived) {
                 survival = PlayerLeagueRating.MAX_SURVIVAL_TRADE; // 75
                 state = STATE_WIN_SURVIVED;
-            } else if (!p.survived && TradeFacts.tradedDeaths(battle, p, players) > 0) {
+            } else if (!p.survived && TradeFacts.tradedDeaths(p, players) > 0) {
                 survival = RC_TRADE; // 50
                 state = STATE_TRADE;
             } else {

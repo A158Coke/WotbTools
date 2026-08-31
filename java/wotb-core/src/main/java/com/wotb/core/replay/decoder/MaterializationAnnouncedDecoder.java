@@ -17,10 +17,7 @@ import java.util.List;
  * 长度不符 / zeroTail 非零 → {@link UnknownReplayEvent}（UNKNOWN）+ raw-preserve，
  * 绝不把未证明的变体升级为 EXACT semantic announcement。</p>
  *
- * <p><b>版本门禁</b>：虽然结构属 container 级，但把它解为「物化预告」并驱动 canonical AoI
- * 仍需当前 canonical + 显式证明的 11.18 legacy
- * （{@link ReplayProtocolProfile#entityLifecycleLayoutAllowed}）；未知/未来版本 raw-preserve
- * （UNKNOWN + 诊断），不无条件产出 EXACT announcement。</p>
+ * <p>该结构按精确长度和 zero-tail invariant 判定；其它 payload raw-preserve。</p>
  */
 public class MaterializationAnnouncedDecoder implements ReplayPacketDecoder {
 
@@ -42,17 +39,6 @@ public class MaterializationAnnouncedDecoder implements ReplayPacketDecoder {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED, List.of(),
                     List.of(new ReplayDecodeWarning("TRUNCATED_PAYLOAD",
                             "Type33 packet too short: " + payload.length)));
-        }
-        // Type33 announcement is version-scoped despite being container-level. Unknown/future
-        // versions must raw-preserve; never unconditionally decode into an EXACT announcement.
-        if (!ReplayProtocolProfile.entityLifecycleLayoutAllowed(context.clientVersion())) {
-            final ReplayTimestamp tsUnsupported = new ReplayTimestamp(packet.rawClockSec(), null);
-            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
-                    List.of(new UnknownReplayEvent(packet.sequence(), tsUnsupported, packet.type(),
-                            packet.payloadLength(), "VERSION_UNSUPPORTED_TYPE33",
-                            DecodeConfidence.UNKNOWN)),
-                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "Type33 announcement layout not affirmed: " + context.clientVersion())));
         }
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
         // only the exact proven shape produces an EXACT announcement.

@@ -15,9 +15,7 @@ import java.util.List;
  * EntityLeave 不一定代表阵亡，只能表示实体离开或停止存在。
  * </p>
  *
- * <p><b>版本门禁</b>：仅当前 canonical + 显式证明的 11.18 legacy
- * （{@link ReplayProtocolProfile#entityLifecycleLayoutAllowed}）把 type=4 解为 leave；未知/未来版本
- * raw-preserve（UNKNOWN + 诊断），不向 canonical AoI 输出 EXACT leave。</p>
+ * <p>只有精确的 4-byte entity-id shape 才解为 leave；其它 payload raw-preserve。</p>
  */
 public class EntityLeaveDecoder implements ReplayPacketDecoder {
 
@@ -37,16 +35,6 @@ public class EntityLeaveDecoder implements ReplayPacketDecoder {
                             "EntityLeave packet too short: " + payload.length)));
         }
 
-        // Type4 leave semantics are version-scoped. Unknown/future versions must raw-preserve.
-        if (!ReplayProtocolProfile.entityLifecycleLayoutAllowed(context.clientVersion())) {
-            final ReplayTimestamp tsUnsupported = new ReplayTimestamp(packet.rawClockSec(), null);
-            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
-                    List.of(new UnknownReplayEvent(packet.sequence(), tsUnsupported, packet.type(),
-                            packet.payloadLength(), "VERSION_UNSUPPORTED_TYPE4",
-                            DecodeConfidence.UNKNOWN)),
-                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "Type4 leave layout not affirmed: " + context.clientVersion())));
-        }
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
         // only the exact proven Type4 shape (entityId i32 LE = 4 bytes) produces an EXACT leave;
         // any other length is raw-preserved, never upgraded to an EXACT semantic event.

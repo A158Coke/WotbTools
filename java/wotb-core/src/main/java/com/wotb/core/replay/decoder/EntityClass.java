@@ -5,7 +5,7 @@ package com.wotb.core.replay.decoder;
  *
  * <p>Type 8（EntityMethod）与 Type 7（EntityProperty）的 method/property 编号不是全局语义；
  * 同一 methodId 在不同实体类上有不兼容的语义（见 docs/research/replay/entity-routing.md）。
- * 因此语义分派必须用 {@code (clientVersion, entityClass, methodId, argShape)}，而 {@code entityClass}
+ * 因此语义分派必须用 {@code (entityClass, methodId, argShape)}，而 {@code entityClass}
  * 只能来自<b>真实的生命周期证据</b>（MaterializationEvent.entityTypeId、Avatar 化的证明方法），
  * 不得由 methodId+argLen 反推。</p>
  *

@@ -4,8 +4,8 @@ package com.wotb.core.replay.event;
  * Type32 mobile {@code flag=0} 16-byte body 的 consumable lifecycle semantic event
  * （docs/research/replay/consumable-lifecycle.md，P0-2/P0-5）。
  *
- * <p><b>仅</b>对 proven 组合解码：{@code supported replay version（TYPE32_CONSUMABLE_LIFECYCLE VERIFIED）}
- * + {@code entityClass == VEHICLE} + {@code flag == 0} + {@code bodyLength == 16}。其它 flag/长度/
+ * <p><b>仅</b>对 proven 组合解码：{@code entityClass == VEHICLE} + {@code flag == 0}
+ * + {@code bodyLength == 16}。其它 flag/长度/
  * 实体类组合保持 raw-preserve（见 {@link EntityAuxiliaryBlobEvent}），<b>绝不</b>把 flag=1 短族、
  * static 实体或 15 字节 body 当 consumable。</p>
  *

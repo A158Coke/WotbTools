@@ -51,7 +51,10 @@ public final class PlayerResultFormat {
      */
     public static double deathSec(final Battle battle, final PlayerResult p) {
         final DeathTimeObservation observation = observationOf(battle, p);
-        return observation != null ? observation.timeSec() : deathSec(p);
+        if (observation == null) {
+            return deathSec(p);
+        }
+        return observation.source() == DeathTimeSource.UNKNOWN ? 0 : observation.timeSec();
     }
 
     /**
@@ -92,9 +95,20 @@ public final class PlayerResultFormat {
         final DeathTimeObservation observation = observationOf(battle, p);
         if (observation != null) {
             final double sec = observation.timeSec();
-            return new DeathTimeEvidence(observation.source(), sec, sec, sec);
+            return evidence(observation.source(), sec);
         }
-        return deathEvidence(p);
+        return null;
+    }
+
+    private static DeathTimeEvidence evidence(final DeathTimeSource source, final double representativeSec) {
+        return switch (source) {
+            case LIVE_EXACT -> new DeathTimeEvidence(source, representativeSec,
+                    representativeSec, representativeSec);
+            case SETTLEMENT_SECOND -> new DeathTimeEvidence(source, representativeSec,
+                    representativeSec - SETTLEMENT_SECOND_QUANTIZATION_HALF,
+                    representativeSec + SETTLEMENT_SECOND_QUANTIZATION_HALF);
+            case UNKNOWN -> null;
+        };
     }
 
     private static DeathTimeObservation observationOf(final Battle battle, final PlayerResult p) {

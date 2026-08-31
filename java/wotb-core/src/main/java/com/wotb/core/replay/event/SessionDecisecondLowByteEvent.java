@@ -12,13 +12,12 @@ package com.wotb.core.replay.event;
  * It only carries the raw low-bit counter for relative-clock observation / monotonicity checks; no
  * absolute-time interpretation.</p>
  *
- * <p><b>Version gate</b>: only the current canonical 11.19 family may decode this semantic;
- * unknown/future versions raw-preserve (UNKNOWN + diagnostic), never generalized.</p>
+ * <p>The one-byte layout is decoded by shape; version metadata does not gate this raw counter.</p>
  *
  * @param sequence    event sequence number
  * @param timestamp   timestamp (carries packet rawClock)
  * @param packetType  source raw packet type (=35)
- * @param confidence  decode confidence (struct EXACT; version not allowed / layout mismatch = UNKNOWN)
+ * @param confidence  decode confidence (struct EXACT; layout mismatch = UNKNOWN)
  * @param low8        low 8 bits of the current session decisecond counter (0..255)
  */
 public record SessionDecisecondLowByteEvent(

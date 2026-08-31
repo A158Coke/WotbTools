@@ -8,7 +8,7 @@ import com.wotb.core.replay.stream.RawReplayPacket;
 
 import java.util.List;
 
-/** Type31 recorder arcade gun-marker size (PR147, 11.19 current profile only). */
+/** Type31 recorder arcade gun-marker size; valid four-byte framing is decoded independently of version text. */
 public final class GunMarkerSizeDecoder implements ReplayPacketDecoder {
 
     static final int TYPE_GUN_MARKER_SIZE = 31;
@@ -21,13 +21,6 @@ public final class GunMarkerSizeDecoder implements ReplayPacketDecoder {
     @Override
     public ReplayDecodeResult decode(final ReplayDecodeContext context, final RawReplayPacket packet) {
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
-        if (!ReplayProtocolProfile.gunMarkerAllowed(context.clientVersion())) {
-            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
-                    List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(),
-                            packet.payloadLength(), "VERSION_UNSUPPORTED_TYPE31", DecodeConfidence.UNKNOWN)),
-                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "Type31 semantics not affirmed for client version: " + context.clientVersion())));
-        }
         final byte[] payload = packet.payload();
         if (payload.length != Float.BYTES) {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED,

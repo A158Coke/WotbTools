@@ -84,8 +84,6 @@ public final class ReplayHpTimeline {
                     HpObservationKind.TERMINAL_ZERO, ReplayFactSource.OBSERVED_EXACT));
             case DEATH_TERMINAL_FFFD -> out.add(new HpObservation(h.entityId(), account, t, null,
                     HpObservationKind.TERMINAL_FFFD, ReplayFactSource.OBSERVED_EXACT));
-            case VERIFIED_TERMINAL_FFFE -> out.add(new HpObservation(h.entityId(), account, t, null,
-                    HpObservationKind.TERMINAL_FFFE, ReplayFactSource.OBSERVED_EXACT));
             case UNKNOWN_FFFF, UNKNOWN_OTHER -> {
                 if (h.rawCurrentHealth() != null) {
                     out.add(new HpObservation(h.entityId(), account, t, null,
@@ -125,8 +123,6 @@ public final class ReplayHpTimeline {
                     HpObservationKind.TERMINAL_ZERO, ReplayFactSource.OBSERVED_EXACT));
             case DEATH_TERMINAL_FFFD -> out.add(new HpObservation(v.entityId(), account, t, null,
                     HpObservationKind.TERMINAL_FFFD, ReplayFactSource.OBSERVED_EXACT));
-            case VERIFIED_TERMINAL_FFFE -> out.add(new HpObservation(v.entityId(), account, t, null,
-                    HpObservationKind.TERMINAL_FFFE, ReplayFactSource.OBSERVED_EXACT));
             case UNKNOWN_FFFF, UNKNOWN_OTHER -> out.add(new HpObservation(v.entityId(), account, t, null,
                     HpObservationKind.UNKNOWN_SENTINEL, ReplayFactSource.UNKNOWN));
         }

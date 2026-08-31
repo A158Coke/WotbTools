@@ -50,7 +50,7 @@ public final class TradeFacts {
         if (player == null || player.survived || players == null || players.isEmpty()) {
             return 0;
         }
-        final PlayerResultFormat.DeathTimeEvidence playerEv = PlayerResultFormat.deathEvidence(battle, player);
+        final PlayerResultFormat.DeathTimeEvidence playerEv = evidenceFor(battle, player);
         if (playerEv == null || !playerEv.known()) {
             return 0;
         }
@@ -61,7 +61,7 @@ public final class TradeFacts {
             if (other == null || other.team == player.team || other.survived) {
                 continue;
             }
-            final PlayerResultFormat.DeathTimeEvidence otherEv = PlayerResultFormat.deathEvidence(battle, other);
+            final PlayerResultFormat.DeathTimeEvidence otherEv = evidenceFor(battle, other);
             if (otherEv == null || !otherEv.known()) {
                 continue;
             }
@@ -80,5 +80,19 @@ public final class TradeFacts {
             }
         }
         return Math.max(0, enemyDeaths);
+    }
+
+    /**
+     * Full processing prefers an explicitly supplied live observation.  A battle without an
+     * observation still has its settlement death fact; retain that quantized interval as the
+     * compatibility fallback.  An explicit UNKNOWN observation remains fail-closed.
+     */
+    private static PlayerResultFormat.DeathTimeEvidence evidenceFor(
+            final Battle battle, final PlayerResult player) {
+        if (battle == null || battle.liveDeathObservations == null
+                || !battle.liveDeathObservations.containsKey(player.accountId)) {
+            return PlayerResultFormat.deathEvidence(player);
+        }
+        return PlayerResultFormat.deathEvidence(battle, player);
     }
 }

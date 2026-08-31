@@ -10,7 +10,6 @@ import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.RoundFinishedEvent;
-import com.wotb.core.replay.decoder.ReplayProtocolProfile;
 import com.wotb.core.replay.stream.ReplayPacketStreamReader;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import com.wotb.core.parse.ParsedReplay;
@@ -96,7 +95,6 @@ class V2UsabilityProbe {
             row.clientVersion = recon.streamHeader() != null
                     ? reconcileVersion(recon.streamHeader().clientVersion())
                     : (recon.metadata() == null ? "?" : reconcileVersion(recon.metadata().clientVersion()));
-            row.methodSemanticsAllowed = ReplayProtocolProfile.methodSemanticsAllowed(row.clientVersion);
             row.method4Signature = method4Signature(bytes);
             row.tlUsable = tl.usable();
             row.durationSec = tl.timeline() == null ? null : (double) tl.timeline().durationSec();
@@ -268,7 +266,6 @@ class V2UsabilityProbe {
         String arenaPeriods = "";
         int roundFinishedCount;
         String clientVersion = "";
-        boolean methodSemanticsAllowed;
         String method4Signature = "";
         Double durationSec;
         List<String> limitations = new ArrayList<>();
