@@ -3,8 +3,8 @@
   "editable": false,
   "graphTooltip": 1,
   "panels": [
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 }, "id": 1, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(http_server_requests_seconds_count{status=~\"4..|5..\"}[$__range]))) or vector(0)", "refId": "A" }], "title": "HTTP 4xx / 5xx · selected range", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 }, "id": 2, "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "single", "sort": "desc" } }, "targets": [{ "expr": "sum by (type) (increase(wotb_ai_review_errors_total[$__range]))", "legendFormat": "{{type}}", "refId": "A" }], "title": "AI error classes · selected range", "type": "timeseries" },
+    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 }, "id": 1, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(http_server_requests_seconds_count{status=~\"4..|5..\"}[$__range]))) or vector(0)", "instant": true, "refId": "A" }], "title": "HTTP 4xx / 5xx · selected range", "type": "stat" },
+    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 }, "id": 2, "options": { "footer": { "countRows": false, "fields": "", "reducer": ["lastNotNull"] }, "showHeader": true }, "targets": [{ "expr": "round(sum by (type) (increase(wotb_ai_review_errors_total[$__range])))", "format": "table", "instant": true, "legendFormat": "{{type}}", "refId": "A" }], "title": "AI error classes · selected range", "type": "table" },
     { "fieldConfig": { "defaults": {}, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 }, "id": 3, "options": { "mode": "markdown", "content": "## Error Explorer\n\nUse the filters above the logs to locate one canonical diagnostic `id`, `errorCode`, `traceId`, or `jobId`. The HTTP count uses the selected Grafana time range." }, "title": "Correlation filter guide", "type": "text" },
     { "datasource": { "type": "loki", "uid": "loki" }, "fieldConfig": { "defaults": {}, "overrides": [] }, "gridPos": { "h": 10, "w": 24, "x": 0, "y": 12 }, "id": 4, "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true }, "targets": [{ "expr": "{container_name=~\"${service:raw}\"} | json |~ \"api_request_failed|api_request_rejected|ERROR|WARN\" |~ \"${id:raw}\" |~ \"${errorCode:raw}\" |~ \"${traceId:raw}\" |~ \"${jobId:raw}\"", "queryType": "range", "refId": "A" }], "title": "Filtered error explorer", "type": "logs" }
   ],
@@ -22,6 +22,6 @@
   "timezone": "browser",
   "title": "WotBTools Error Explorer",
   "uid": "wotbtools-error-explorer",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
