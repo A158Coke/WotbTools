@@ -1,7 +1,7 @@
 # WotBTools 观测系统（Observability）运维文档
 
 > 可观测系统：**Backend 结构化日志 + requestId、HTTP/AI/Replay 指标、Prometheus + Loki + Grafana + Alloy**。
-> 本文件已随 `enhance-monitor` 分支（PR #43/#44）更新至当前实现：六个 Dashboard（Backend Overview / Replay Parser / 使用统计 / Production Overview / AI Review / Error Explorer）、AI 指标在服务边界统计、日志安全与保留策略。
+> 当前实现包含七个 Dashboard（Production Overview / JVM-Infrastructure / HTTP-Errors / Replay Parser / 使用统计 / AI Review / Error Explorer）、AI 指标在服务边界统计、日志安全与保留策略。
 
 ---
 
@@ -121,7 +121,6 @@
 3. **GitHub Secrets**（生产部署 CI 使用）：在仓库 Settings → Secrets and variables → Actions 配置：
    - `GRAFANA_ADMIN_USER`：Grafana 管理员用户名（如 `admin`）
    - `GRAFANA_ADMIN_PASSWORD`：强密码
-   - `GRAFANA_MCP_TOKEN`：已随 Grafana MCP 下线不再使用（2026-08-11）；见上方「Grafana MCP 下线记录」人工清理步骤
    - 生成密码示例：`openssl rand -base64 24`
    - 部署时 CI 将凭据写入生产服务器 `/opt/wotb/.env`（`chmod 600`），compose 使用 `required` 语法引用，**Grafana 密码不落入 compose 文件本身**；密码为空时部署脚本中断（见 `deploy.yml`）。
 
@@ -243,26 +242,28 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 3. 首次启动后，provisioning 自动创建：
    - Datasource：`Prometheus`（uid `prometheus`，`http://prometheus:9090`）、`Loki`（uid `loki`，`http://loki:3100`）
    - Dashboard：
-     - **WotBTools Backend Overview**（uid `wotbtools-backend-overview`）— 后端整体概览（HTTP/JVM/AI Review）
+     - **WotBTools JVM / Infrastructure**（uid `wotbtools-backend-overview`）— process/system CPU、heap、memory pool、GC、线程、Hikari、磁盘与诊断日志；保留原 UID 兼容已有链接
+     - **WotBTools HTTP / Errors**（uid `wotbtools-http-errors`）— 请求/状态码次数、URI Top 10、过滤低样本慢 URI 的 P95、P50/P95/P99 趋势与 Loki errorCode 分布
      - **WotBTools Replay Parser**（uid `wotbtools-replay-parser`）— 回放解析功能使用情况
-     - **WotBTools 使用统计**（uid `wotbtools-usage`）— 前端使用情况：回放预览次数、AI Review 请求/成功/未成功次数、AI 平均每次调用 Token 与按模式平均 Token（均按 Grafana 所选时间范围估算增量，非永久累计）
-     - **WotBTools Production Overview**（uid `wotbtools-production-overview`）— Backend health、HTTP error/P95、Replay active/queued、AI result、CPU/JVM 与近期日志
+     - **WotBTools 使用统计**（uid `wotbtools-usage`）— Replay Processing Job/files/success/failure 与 AI Review started/success/failure/rejected（均按 Grafana 所选时间范围估算增量，非永久累计）
+     - **WotBTools Production Overview**（uid `wotbtools-production-overview`）— 首屏按当前 Grafana 时间范围展示请求/4xx/5xx、HTTP P50/P95/P99、Replay/AI 次数与当前并发；下方保留精简趋势、资源摘要和 Deferred Metrics Gaps
      - **WotBTools AI Review**（uid `wotbtools-ai-review`）— AI started/completed/failed/rejected、duration P50/P95/P99、queue/upstream P95、validation/error 与 SSE lifecycle 日志
      - **WotBTools Error Explorer**（uid `wotbtools-error-explorer`）— 按 service、diagnostic id、errorCode、traceId、jobId 检索 Loki 错误日志；同时覆盖 canonical `api_request_failed` ERROR 与 `api_request_rejected` INFO
 
-PR G 的三个看板只使用现有 Prometheus/Loki 数据源和 Backend 已导出的指标，不新增 node exporter、cAdvisor 或其他采集基础设施。
-Production Overview 中的资源面板因此展示 Backend process/system CPU 与 JVM heap（RAM proxy），不是宿主机级 CPU/RAM；宿主机资源采集保留给后续基础设施阶段。
+所有看板只使用现有 Prometheus/Loki 数据源和 Backend 已导出的指标，不新增 node exporter、cAdvisor 或其他采集基础设施。Production Overview 只保留 Backend process/system CPU、JVM heap、GC 摘要；其余实现细节迁移到 JVM / Infrastructure。RabbitMQ/worker queue、oldest queued age、worker health 与 host-level 指标暂为 Deferred Metrics Gaps。
 
 Error Explorer 的 `service` 变量映射 Loki 的 `container_name` 标签；`id` 是 canonical error 的主诊断 ID，其余变量作为日志内容中的 regex token 搜索，用于关联结构化日志里的 `errorCode`、`traceId` 与 `jobId`。当前没有 authoritative deployment/build version 字段，因此不提供 `version` filter。
 
 Spring Security 的 401/403（`AUTH_UNAUTHENTICATED` / `AUTH_FORBIDDEN`）也会以 INFO 级 `api_request_rejected` 写入同一组 `traceId`、`id`、`errorCode`、`status`、`method`、`path` 字段，因此可直接用 response body 的 `id` 在 Error Explorer 定位。
 
-Production Overview 的 Replay 曲线使用 `wotb_replay_processing_job_created_total`（Processing Job create rate）；不使用 legacy `wotb_replay_requests_total` 作为当前 V2 Processing Job 的请求信号。
+Production Overview 的 Replay 统计使用线上实际暴露的 `wotb_replay_processing_job_total`、`wotb_replay_full_processing_total`、`wotb_replay_processing_job_result_total` 与 `wotb_replay_processing_file_duration_seconds_*`；不使用当前线上无样本的 legacy `wotb_replay_requests_total` / `wotb_replay_parse_duration_seconds_*` 作为 V2 Processing Job 信号。
+
+Processing Job 终态口径：`READY` 表示 Processing Job 已正常完成 finalization；一个 `READY` Job 仍可能包含 source-level replay failures，因此 `READY` 不等于所有 replay 解析成功。`FAILED` 表示 Job 未完成正常 finalization，也不等于 replay 文件解析失败数。当前没有 authoritative 的 per-source success/failure Prometheus metric，Dashboard 与告警不得把 Job `READY` / `FAILED` 描述成 replay parse success / failure。
 
 **统计口径说明（WotBTools 使用统计 / Replay Parser）**
 
 - Prometheus Counter 会在 Backend 重启或重新部署后归零，Dashboard 中的"次数"均为 **Grafana 所选时间范围内的估算增量**（`increase()` + `round()`），不是历史累计。
-- **回放预览次数**：仅统计 `operation="preview"` 的请求，不代表 export/rating/process/reconstruct 等其他解析操作。
+- **Replay jobs / files**：当前 V2 使用 `wotb_replay_processing_job_total`、`wotb_replay_processing_job_files_total` 与 `wotb_replay_full_processing_total`；其中 `processing_job_files_total` 表示提交到 Job 的输入文件数（Replay files submitted），`full_processing_total` 表示实际执行 full processing 的文件数（Replay files processed），不再把 legacy operation 请求误当作当前处理入口。
 - **AI Review 请求次数**：统计所有请求尝试，包括成功、失败、超时和被拒绝，不等同于成功次数。
 - **AI Review 成功次数**：仅统计 `wotb_ai_review_results_total{result="success"}`；**未成功次数**保留 `failure` 与 `rejected` 独立标签，不混为同一结果。
 - **AI 平均每次调用 Token**：`wotb_ai_upstream_tokens_total{token_type="total"}` 增量 ÷ `wotb_ai_upstream_requests_total` 增量（分母含失败调用，失败计 0 token），即「平均每次发起的 AI 上游调用消耗的 token」；按模式面板可区分单机复盘（`PRE_BATTLE_STRATEGIC_PRIOR` + `TACTICAL_REVIEW_HARNESS`）与团队复盘（`SINGLE_TEAM_BATTLE` + `TEAM_AUTOPSY`）各阶段消耗。
@@ -271,41 +272,25 @@ Production Overview 的 Replay 曲线使用 `wotb_replay_processing_job_created_
 **WotBTools Replay Parser 面板清单**（uid `wotbtools-replay-parser`）
 
 1. Backend Up
-2. 每分钟回放解析请求量（`sum(rate(wotb_replay_requests_total[1m]))*60`）
-3. 按操作请求量（preview/export/performance/process/reconstruct/ai_review）
-4. 解析文件数（按操作，`wotb_replay_files_total`）
-5. 解析耗时 P50/P95/P99（`wotb_replay_parse_duration_seconds`）
-6. 当前处理中的解析请求数（`wotb_replay_in_flight`）
-7. 最近 Backend ERROR 日志（Loki）
-8. 变量：`requestId`（日志排查）
+2. Processing Job started（`wotb_replay_processing_job_total`，所选区间）
+3. Replay files processed（`wotb_replay_full_processing_total`，所选区间）
+4. Jobs READY / FAILED（`wotb_replay_processing_job_result_total`，Job 终态）
+5. 当前 parse active / queue depth / jobs active / queued
+6. 解析耗时 P50/P95/P99（`wotb_replay_processing_file_duration_seconds_*`）
+7. Processing Job outcome trend 与最近 Replay 错误日志
 
-> 不提供"解析失败率 / 成功失败"面板：解析失败以 `ReplayProcessingResult.status=FAILED` 返回而非抛异常，
-> 异常判定不可靠，故不统计 `wotb_replay_results_total`（见指标清单）。
+> Processing Job 的成功/失败使用 `wotb_replay_processing_job_result_total` 终态计数；不再统计 legacy `wotb_replay_results_total`，
+> 因为它无法可靠区分解析失败与异常路径（见指标清单）。
 
-**Dashboard 面板清单**
+**旧 Backend Overview 已迁移为 JVM / Infrastructure；生产首页面板清单**
 
-1. Backend Up（`up{job="wotb-backend"}`）
-2. 每分钟请求量（`sum(rate(http_server_requests_seconds_count[1m]))*60`）
-3. 4xx / 5xx 比例
-4. 请求量趋势
-5. 状态码分布（2xx/3xx/4xx/5xx）
-6. HTTP P50 / P95 / P99（`histogram_quantile`）
-7. 最常访问接口 Top10（按规范化 URI）
-8. 最慢接口（P95 响应时间表）
-9. JVM 内存 Heap/Non-Heap
-10. CPU 使用率（process/system）
-11. GC 暂停时间
-12. JVM 线程
-13. HikariCP 连接池
-14. AI Review 请求趋势
-15. AI Review 成功/失败/拒绝
-16. AI Review 耗时与并发（P95 + in-flight）
-17. Replay 解析耗时 P95（按操作）
-18. 最近 Backend ERROR 日志（Loki，结构化 `level="ERROR"` + `requestId` 过滤）
-19. HTTP Method 分布（`sum by (method)`）
-20. 2xx / 4xx / 5xx 分布
-21. AI Review 成功率 / 失败率 / 拒绝率
-22. AI Review 完整耗时 P50 / P95 / P99
+1. Backend Up、请求数、4xx、5xx、HTTP P50/P95/P99（首屏）
+2. Replay jobs/files、READY/FAILED Job 终态与 parse active/queued
+3. AI started/success/failure/rejected 与 active
+4. HTTP、Replay、AI 的 P50/P95/P99 趋势与 outcome trend
+5. 精简 CPU、heap、GC 摘要
+6. Recent backend errors / warnings（Loki）
+7. Deferred Metrics Gaps（不生成不存在指标的假面板）
 
 > Dashboard JSON 提交在 `deploy/observability/grafana/dashboards/`，volume 丢失后随 provisioning 自动重建。
 > 面板查询基于上述指标名编写；**每个面板是否有真实数据支撑，需在生产实际产生流量后确认**（CI 仅校验 JSON 结构与指标名存在，无法验证面板有数据）。
@@ -339,7 +324,7 @@ Grafana → Explore → 选 Loki：
 {container_name="wotb-backend"} | json | requestId="<requestId>"
 ```
 
-3. 也可用 Dashboard 顶部 `requestId` 变量 + Loki 面板联动：变量默认 `.*`（查看全部 ERROR），输入具体 `requestId` 后只显示该请求日志（查询 `requestId=~"${requestId:raw}"`，raw 确保 textbox 值不被正则转义）。
+3. 也可用 Error Explorer 顶部的 `service`、`id`、`errorCode`、`traceId`、`jobId` 变量 + Loki 面板联动；默认 service 为 `wotb-backend`，其它过滤器默认 `.*`。
 
 ### 查询 AI Review 错误
 
@@ -521,18 +506,19 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_upstream_retries_total{mode}` — retry 重试次数
   - `wotb_ai_upstream_retry_outcome_total{mode,outcome=no_retry|success_after_retry|failure_after_retry}` — 重试结果
   - `wotb_ai_upstream_tokens_total{mode,token_type=input|output|total|reasoning|cache_hit|cache_miss}` — token 用量（usage 缺失时不记录）
-- **Replay 解析**（自定义，`ReplayUsageMetrics`，operation=`preview|export|process|reconstruct|ai_review`）：
-  - `wotb_replay_requests_total{operation}` — 请求量
-  - `wotb_replay_processing_job_created_total` / `wotb_replay_processing_job_files_total` — Processing Job 创建数与输入文件数（低基数，无 jobId/文件名 tag）
+- **Replay 解析**（自定义）：
+  - `wotb_replay_processing_job_total` — 线上 Prometheus 暴露的 Processing Job 创建数（Java 逻辑名为 `wotb_replay_processing_job_created_total`，Micrometer 运行时规范化为该名称）
+  - `wotb_replay_processing_job_files_total` — Processing Job 输入文件数（Replay files submitted；低基数，无 jobId/文件名 tag）
   - `wotb_replay_processing_job_queue_wait_seconds` / `wotb_replay_processing_job_duration_seconds` — 排队等待与总耗时（Timer）
-  - `wotb_replay_processing_job_result_total{result=ready|failed|cancelled}` — 终态计数（exactly once）
-  - `wotb_replay_processing_file_duration_seconds` — 单个 replay full processing 耗时（p50/p95 用于评估并行化收益，无 filename tag）
-  - `wotb_replay_files_total{operation}` — 解析文件数
-  - `wotb_replay_parse_duration_seconds{operation}` — 解析耗时（Timer，histogram，成功与异常都结束；`ai_review` 覆盖 `/api/replay/analyze` 的 Replay processing，不重复统计）
-  - `wotb_replay_in_flight` — 当前处理中的解析请求数（Gauge）
+  - `wotb_replay_processing_job_result_total{result=ready|failed|cancelled}` — Processing Job 终态计数（exactly once）；`ready` 表示正常完成 finalization，可能包含 source-level replay failures，不是 per-source replay parse success 数；`failed` 也不是 replay 文件解析失败数
+  - `wotb_replay_full_processing_total` — 当前 V2 full processing 文件数（Replay files processed）
+  - `wotb_replay_processing_file_duration_seconds` — 当前 V2 单个 replay full processing 耗时（Timer，histogram）
+  - `wotb_replay_parse_active` / `wotb_replay_parse_queue_depth` — 当前并行处理数与排队 source 数
+  - `wotb_replay_in_flight` — legacy 解析入口当前处理数（Gauge）
+  - `wotb_replay_requests_total{operation}` / `wotb_replay_files_total{operation}` / `wotb_replay_parse_duration_seconds{operation}` — legacy operation 指标，保留用于兼容入口，不被当前 V2 dashboard 作为主信号
 
-> **不统计 `wotb_replay_results_total`**：解析失败以 `ReplayProcessingResult.status=FAILED` 返回而非抛异常，
-> 异常判定无法可靠区分 success/failure，故删除该指标（AI Review 自己的 `results_total` 不受影响）。
+> 当前没有 authoritative 的 per-source replay success/failure Prometheus metric；不要用 Processing Job 的 `READY` / `FAILED` 终态替代 source-level 解析结果。
+> legacy `wotb_replay_results_total` 不统计，避免把异常路径或 Job 终态误解为逐文件解析 success/failure。
 
 **Label 约束**：不使用用户 ID、Replay ID、文件名、IP、correlation ID、Prompt、Completion、异常正文作为 label；URI 一律为 Spring MVC 模板（如 `/api/preview`）。Token Usage 仅以低基数 `mode`/`token_type` 统计。
 
