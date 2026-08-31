@@ -92,6 +92,11 @@ public final class LeagueTestReplays {
             p.victoryPointsSeized = s.seized;
             p.survived = s.survived;
             p.survivalTimeSec = s.survivalTimeSec;
+            // PR147: settlement lifeTime is the only authority (field24); the compatibility
+            // survivalTimeSec projection is never the parsed value.
+            p.settlementLifeTimeSec = s.survivalTimeSec;
+            p.deathTimeMillis = !s.survived && s.survivalTimeSec > 0
+                    ? Math.round(s.survivalTimeSec * 1000.0) : 0L;
             p.nickname = s.nickname;
             p.clan = s.clan;
             battle.players.add(p);
@@ -198,9 +203,14 @@ public final class LeagueTestReplays {
             writeField(info, 117, p.damageBlocked);
             writeField(info, 32, p.victoryPointsEarned);
             writeField(info, 33, p.victoryPointsSeized);
+            // PR147 production contract: #105 deathReason + #24 lifeTime (seconds), never #104
+            // deathTimeMillis; #25 killerID (result/entity-id namespace) only when known.
             writeField(info, 105, p.survived ? -1 : 0);
-            if (!p.survived) {
-                writeField(info, 104, (long) (p.survivalTimeSec * 1000));
+            if (p.settlementLifeTimeSec > 0) {
+                writeField(info, 24, (long) Math.round(p.settlementLifeTimeSec));
+            }
+            if (!p.survived && p.settlementKillerResultEntityId != null) {
+                writeField(info, 25, p.settlementKillerResultEntityId);
             }
             final ByteArrayOutputStream resultEntry = new ByteArrayOutputStream();
             writeBytesField(resultEntry, 2, info.toByteArray());

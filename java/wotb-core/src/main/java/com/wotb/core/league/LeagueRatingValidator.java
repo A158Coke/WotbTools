@@ -151,9 +151,8 @@ public final class LeagueRatingValidator {
                     || p.nHitsReceived < 0 || p.nPenetrationsReceived < 0 || p.nEnemiesDamaged < 0) {
                 return true;
             }
-            if (!Double.isFinite(p.survivalTimeSec) || p.survivalTimeSec < 0) {
-                return true;
-            }
+            // Settlement is the only authority for League death facts; the compatibility
+            // survivalTimeSec projection is deliberately NOT an eligibility gate.
             if (!Double.isFinite(p.settlementLifeTimeSec) || p.settlementLifeTimeSec < 0) {
                 return true;
             }

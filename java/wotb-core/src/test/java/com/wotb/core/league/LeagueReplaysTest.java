@@ -1,8 +1,10 @@
 package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayParser;
+import com.wotb.core.util.PlayerResultFormat;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -321,5 +323,21 @@ class LeagueReplaysTest {
         assertEquals(LeagueRatingMode.STANDARD_REPLAY, r.mode());
         assertEquals(1, r.failures().size());
         assertEquals("broken.wotbreplay", r.failures().getFirst()[0]);
+    }
+
+    @Test
+    void settlementLifeTimeAndDeathSecSurviveParse() throws Exception {
+        // PR147 production contract on the synthetic fixture: #24 lifeTime (seconds) is parsed into
+        // settlementLifeTimeSec and PlayerResultFormat.deathSec() (settlement authority), and must not
+        // be read from the legacy #104 deathTimeMillis.
+        final List<LeagueTestBattles.PlayerSpec> specs = LeagueTestBattles.defaultSevenVsSeven();
+        specs.getFirst().dead(100); // player 1001 dies at 100s
+        final Battle battle = LeagueTestBattles.battle(1, specs);
+        battle.arenaId = "111";
+        final Battle parsed = ReplayParser.parse(LeagueTestBattles.replayBytes(battle, 2));
+        final PlayerResult dead = parsed.players.getFirst();
+        assertFalse(dead.survived);
+        assertEquals(100.0, dead.settlementLifeTimeSec, 1e-9);
+        assertEquals(100, PlayerResultFormat.deathSec(dead), 1e-9);
     }
 }
