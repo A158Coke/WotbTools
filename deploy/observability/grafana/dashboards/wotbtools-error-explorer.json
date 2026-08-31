@@ -3,62 +3,25 @@
   "editable": false,
   "graphTooltip": 1,
   "panels": [
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] },
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
-      "id": 1,
-      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "targets": [{ "expr": "sum(rate(http_server_requests_seconds_count{status=~\"4..|5..\"}[5m]))", "refId": "A" }],
-      "title": "HTTP 4xx / 5xx rate",
-      "type": "stat"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] },
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
-      "id": 2,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "targets": [{ "expr": "sum by (type) (rate(wotb_ai_review_errors_total[5m]))", "legendFormat": "AI {{type}}", "refId": "A" }],
-      "title": "AI error classes",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "loki", "uid": "loki" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 6 },
-      "id": 3,
-      "options": { "content": "Use the filters below as regex tokens. `service` maps to the Loki `container_name` label. `id` is the primary diagnostic ID; `errorCode`, `traceId`, and `jobId` are searched in structured log content. The query includes canonical `api_request_failed` ERROR and `api_request_rejected` INFO events; leave filters as `.*` to avoid narrowing the search.", "mode": "markdown" },
-      "targets": [],
-      "title": "Correlation filter guide",
-      "type": "text"
-    },
-    {
-      "datasource": { "type": "loki", "uid": "loki" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 18, "w": 24, "x": 0, "y": 10 },
-      "id": 4,
-      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
-      "targets": [{ "expr": "{container_name=~\"${service:raw}\"} | json |~ \"api_request_failed|api_request_rejected|ERROR|WARN\" |~ \"${id:raw}\" |~ \"${errorCode:raw}\" |~ \"${traceId:raw}\" |~ \"${jobId:raw}\"", "queryType": "range", "refId": "A" }],
-      "title": "Filtered error explorer",
-      "type": "logs"
-    }
+    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 }, "id": 1, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(http_server_requests_seconds_count{status=~\"4..|5..\"}[$__range]))) or vector(0)", "refId": "A" }], "title": "HTTP 4xx / 5xx · selected range", "type": "stat" },
+    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 }, "id": 2, "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "single", "sort": "desc" } }, "targets": [{ "expr": "sum by (type) (increase(wotb_ai_review_errors_total[$__range]))", "legendFormat": "{{type}}", "refId": "A" }], "title": "AI error classes · selected range", "type": "timeseries" },
+    { "fieldConfig": { "defaults": {}, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 }, "id": 3, "options": { "mode": "markdown", "content": "## Error Explorer\n\nUse the filters above the logs to locate one canonical diagnostic `id`, `errorCode`, `traceId`, or `jobId`. The HTTP count uses the selected Grafana time range." }, "title": "Correlation filter guide", "type": "text" },
+    { "datasource": { "type": "loki", "uid": "loki" }, "fieldConfig": { "defaults": {}, "overrides": [] }, "gridPos": { "h": 10, "w": 24, "x": 0, "y": 12 }, "id": 4, "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true }, "targets": [{ "expr": "{container_name=~\"${service:raw}\"} | json |~ \"api_request_failed|api_request_rejected|ERROR|WARN\" |~ \"${id:raw}\" |~ \"${errorCode:raw}\" |~ \"${traceId:raw}\" |~ \"${jobId:raw}\"", "queryType": "range", "refId": "A" }], "title": "Filtered error explorer", "type": "logs" }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "style": "dark",
-  "tags": ["wotbtools", "errors", "correlation"],
-  "templating": {
-    "list": [
-      { "name": "service", "type": "textbox", "label": "service / container", "query": "wotb-backend", "current": { "text": "wotb-backend", "value": "wotb-backend", "selected": true }, "hide": 0, "skipUrlSync": false },
-      { "name": "id", "type": "textbox", "label": "diagnostic id regex", "query": ".*", "current": { "text": ".*", "value": ".*", "selected": true }, "hide": 0, "skipUrlSync": false },
-      { "name": "errorCode", "type": "textbox", "label": "errorCode regex", "query": ".*", "current": { "text": ".*", "value": ".*", "selected": true }, "hide": 0, "skipUrlSync": false },
-      { "name": "traceId", "type": "textbox", "label": "traceId regex", "query": ".*", "current": { "text": ".*", "value": ".*", "selected": true }, "hide": 0, "skipUrlSync": false },
-      { "name": "jobId", "type": "textbox", "label": "jobId regex", "query": ".*", "current": { "text": ".*", "value": ".*", "selected": true }, "hide": 0, "skipUrlSync": false }
-    ]
-  },
-  "time": { "from": "now-6h", "to": "now" },
+  "tags": ["wotbtools", "errors", "loki"],
+  "templating": { "list": [
+    { "current": { "selected": true, "text": "wotb-backend", "value": "wotb-backend" }, "hide": 0, "label": "service (default backend)", "name": "service", "options": [{ "selected": true, "text": "wotb-backend", "value": "wotb-backend" }], "query": "", "skipUrlSync": false, "type": "textbox" },
+    { "current": { "selected": true, "text": ".*", "value": ".*" }, "hide": 0, "label": "diagnostic id", "name": "id", "options": [{ "selected": true, "text": ".*", "value": ".*" }], "query": "", "skipUrlSync": false, "type": "textbox" },
+    { "current": { "selected": true, "text": ".*", "value": ".*" }, "hide": 0, "label": "errorCode", "name": "errorCode", "options": [{ "selected": true, "text": ".*", "value": ".*" }], "query": "", "skipUrlSync": false, "type": "textbox" },
+    { "current": { "selected": true, "text": ".*", "value": ".*" }, "hide": 0, "label": "traceId", "name": "traceId", "options": [{ "selected": true, "text": ".*", "value": ".*" }], "query": "", "skipUrlSync": false, "type": "textbox" },
+    { "current": { "selected": true, "text": ".*", "value": ".*" }, "hide": 0, "label": "jobId", "name": "jobId", "options": [{ "selected": true, "text": ".*", "value": ".*" }], "query": "", "skipUrlSync": false, "type": "textbox" }
+  ] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
   "title": "WotBTools Error Explorer",
   "uid": "wotbtools-error-explorer",
-  "version": 1
+  "version": 2,
+  "weekStart": ""
 }
