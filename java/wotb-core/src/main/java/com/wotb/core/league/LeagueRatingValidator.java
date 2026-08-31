@@ -95,17 +95,10 @@ public final class LeagueRatingValidator {
             failures.add(new LeagueFailure("", arena, LeagueFailure.Code.MISSING_TANK));
         }
 
-        // 5. League 专属结算覆盖：结算账号全部来自名册（#301 ⊆ #201，无幽灵结算）且名册队伍与
-        //    结算队伍无冲突（存在时）。名册 #201 可含 non-combatant extra（标准 7v7 且 #301 完整
-        //    14 人时 extra 不属于 14 名 settled combatants，见 protocol.md）——extra 不导致不完整。
-        //    注意：不引用全局 Battle.rosterComplete（保持 #201 全集合 == #301 全集合的严格
-        //    fail-closed 语义，供 SURVIVOR_SETTLEMENT / annihilation 等推断使用）；League Rating
-        //    的宽容由 League 专属证据 settlementAccountsCoveredByRoster /
-        //    settlementRosterTeamConsistent 表达。
-        if (!Boolean.TRUE.equals(battle.settlementAccountsCoveredByRoster)
-                || !Boolean.TRUE.equals(battle.settlementRosterTeamConsistent)) {
-            failures.add(new LeagueFailure("", arena, LeagueFailure.Code.ROSTER_INCOMPLETE));
-        }
+        // 5. League 以 #301 的 settled combatants 为 Rating authority；#201 只用于
+        //    nickname/clan/rank/prebattle metadata enrichment，缺失/extra 不得阻塞 Rating。
+        //    Battle.rosterComplete（严格 #201 全集合 == #301 全集合）保留给
+        //    SURVIVOR_SETTLEMENT / annihilation 等 AI/reconstruction 推断，不参与 League Rating。
 
         // 6. winnerTeam 必须明确为 1 或 2（平局/未知不产生 Rating）
         if (battle.winnerTeam == null || (battle.winnerTeam != 1 && battle.winnerTeam != 2)) {

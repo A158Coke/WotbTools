@@ -220,7 +220,7 @@ class LeagueReplaysTest {
         good.arenaId = "111";
         final Battle bad = LeagueTestBattles.battle(2, LeagueTestBattles.defaultSevenVsSeven());
         bad.arenaId = "222";
-        bad.settlementAccountsCoveredByRoster = false; // ROSTER_INCOMPLETE
+        bad.players.remove(0); // 13 人
         final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(good, bad));
         assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
         assertEquals(2, r.battles().size(), "Rating 不合格的 Battle 必须保留在解析结果");
@@ -229,16 +229,16 @@ class LeagueReplaysTest {
                 "bad 场必须仍存在于 battles");
         assertEquals(1, r.leagueBatch().battleResults().size(), "Rating 只对 eligible 场次计算");
         assertEquals(1, r.leagueFailures().size());
-        assertEquals(LeagueFailure.Code.ROSTER_INCOMPLETE, r.leagueFailures().getFirst().code());
+        assertEquals(LeagueFailure.Code.NOT_SEVEN_VS_SEVEN, r.leagueFailures().getFirst().code());
         assertEquals("r1.wotbreplay", r.leagueFailures().getFirst().fileName());
     }
 
     @Test
     void caseC_allRatingIneligibleAllBattlesStillParsed() throws Exception {
-        // ROSTER_INCOMPLETE + NO_DECISIVE_WINNER：全部 Rating 不合格时所有 Battle 仍必须保留
+        // NOT_SEVEN_VS_SEVEN + NO_DECISIVE_WINNER：全部 Rating 不合格时所有 Battle 仍必须保留
         final Battle roster = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         roster.arenaId = "222";
-        roster.settlementAccountsCoveredByRoster = false;
+        roster.players.remove(0); // 13 人
         final Battle winner = LeagueTestBattles.battle(null, LeagueTestBattles.defaultSevenVsSeven());
         winner.arenaId = "333";
         final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(roster, winner));
@@ -246,7 +246,7 @@ class LeagueReplaysTest {
         assertEquals(2, r.battles().size(), "全部 Rating 不合格时所有 Battle 仍必须保留（禁止 NO_VALID_REPLAYS）");
         assertEquals(0, r.leagueBatch().battleResults().size());
         assertEquals(2, r.leagueFailures().size());
-        assertTrue(r.leagueFailures().stream().anyMatch(f -> f.code().equals(LeagueFailure.Code.ROSTER_INCOMPLETE)));
+        assertTrue(r.leagueFailures().stream().anyMatch(f -> f.code().equals(LeagueFailure.Code.NOT_SEVEN_VS_SEVEN)));
         assertTrue(r.leagueFailures().stream().anyMatch(f -> f.code().equals(LeagueFailure.Code.NO_DECISIVE_WINNER)));
     }
 
@@ -305,7 +305,7 @@ class LeagueReplaysTest {
     void ratingValidationFailureReportsSuccessProgressNotFailure() {
         final Battle bad = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         bad.arenaId = "111";
-        bad.settlementAccountsCoveredByRoster = false;
+        bad.players.remove(0); // 13 人
         final List<String> outcomes = new ArrayList<>();
         final LeagueReplays.LeagueCollectResult r = LeagueReplays.collect(
                 List.of(new Source("bad.wotbreplay", new byte[]{1})),

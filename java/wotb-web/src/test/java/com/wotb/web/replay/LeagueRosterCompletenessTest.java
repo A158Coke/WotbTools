@@ -55,9 +55,7 @@ class LeagueRosterCompletenessTest {
         // 全局 rosterComplete 保持严格 fail-closed（#201 extra → false，AI 不放松）
         assertEquals(Boolean.FALSE, parsed.rosterComplete,
                 "全局 rosterComplete 不得因 League 修复被扩大为 true");
-        // League 专属证据完整 → Validator PASS
-        assertEquals(Boolean.TRUE, parsed.settlementAccountsCoveredByRoster);
-        assertEquals(Boolean.TRUE, parsed.settlementRosterTeamConsistent);
+        // #301 settled combatants 是 Rating authority；#201 extra 不阻塞 Rating
         assertTrue(LeagueRatingValidator.validate(parsed).isEmpty(),
                 "合法 7v7 训练房必须通过 LeagueRatingValidator");
 
@@ -105,8 +103,7 @@ class LeagueRosterCompletenessTest {
         // 全局 rosterComplete 保持严格 fail-closed（extra 存在 → false），League 专属证据完整 → PASS
         assertEquals(Boolean.FALSE, parsed.rosterComplete,
                 "真实 15/14 CW 的全局 rosterComplete 必须保持严格（不扩大为 true）");
-        assertEquals(Boolean.TRUE, parsed.settlementAccountsCoveredByRoster);
-        assertEquals(Boolean.TRUE, parsed.settlementRosterTeamConsistent);
+        // #301 settled combatants 是 Rating authority；#201 extra 不阻塞 Rating
         assertTrue(LeagueRatingValidator.validate(parsed).isEmpty(),
                 "真实 CW 15/14 必须通过 LeagueRatingValidator");
 

@@ -151,8 +151,6 @@ class ReplayProcessingJobServiceTest {
             b.arenaBonusType = 2;
             b.winnerTeam = 1;
             b.rosterComplete = true;
-            b.settlementAccountsCoveredByRoster = true;
-            b.settlementRosterTeamConsistent = true;
             b.players = new ArrayList<>();
             for (int i = 0; i < 14; i++) {
                 final PlayerResult p = new PlayerResult();
@@ -190,7 +188,7 @@ class ReplayProcessingJobServiceTest {
                     b.players.getFirst().survived = false;
                     b.players.getFirst().survivalTimeSec = 0;
                 }
-                case "m-roster.wotbreplay" -> b.settlementAccountsCoveredByRoster = false; // ROSTER_INCOMPLETE
+                case "m-roster.wotbreplay" -> b.players.remove(0); // 13 人 → NOT_SEVEN_VS_SEVEN
                 case "m-winner.wotbreplay" -> b.winnerTeam = null; // NO_DECISIVE_WINNER
                 default -> { }
             }
@@ -211,7 +209,7 @@ class ReplayProcessingJobServiceTest {
                 "阵亡玩家缺失 settlement 死亡时间必须 fail-closed 拒绝评分");
         assertEquals(3, ds.league().failures().size());
         assertEquals(1, ds.league().failures().stream()
-                .filter(f -> f.code().equals(com.wotb.core.league.LeagueFailure.Code.ROSTER_INCOMPLETE)).count());
+                .filter(f -> f.code().equals(com.wotb.core.league.LeagueFailure.Code.NOT_SEVEN_VS_SEVEN)).count());
         assertEquals(1, ds.league().failures().stream()
                 .filter(f -> f.code().equals(com.wotb.core.league.LeagueFailure.Code.NO_DECISIVE_WINNER)).count());
         assertEquals(1, ds.league().failures().stream()
@@ -224,7 +222,7 @@ class ReplayProcessingJobServiceTest {
             final Source s = inv.getArgument(0);
             final Battle b = leagueBattle(s.name());
             if (s.name().equals("p-bad.wotbreplay")) {
-                b.settlementAccountsCoveredByRoster = false;
+                b.players.remove(0); // 13 人
             }
             return leagueProcessingResult(b, s.name());
         });
@@ -996,8 +994,6 @@ class ReplayProcessingJobServiceTest {
         b.arenaBonusType = 2;
         b.winnerTeam = 1;
         b.rosterComplete = true;
-        b.settlementAccountsCoveredByRoster = true;
-        b.settlementRosterTeamConsistent = true;
         b.players = new ArrayList<>();
         for (int i = 0; i < 14; i++) {
             final PlayerResult p = new PlayerResult();

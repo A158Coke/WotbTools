@@ -242,17 +242,12 @@ public final class ReplayParser {
         battle.recorderVehicle = text(meta, "playerVehicleName");
         battle.arenaBonusType = meta.hasNonNull("arenaBonusType") ? meta.get("arenaBonusType").asInt() : null;
         battle.players = players;
-        // ---- 结算阵容完整性证据（严格全局契约 + League 专属证据分离）----
+        // ---- 结算阵容完整性证据（严格全局契约）----
         // Battle.rosterComplete 保持严格 fail-closed 语义（#201 全集合 == #301 全集合 + 队伍一致），
         // 供 SURVIVOR_SETTLEMENT / annihilationSuffix / pointsEndReason 等「完整逐人结算」推断
         // 使用——#201 存在无法证明为 spectator 的 extra（如 #201=4/#301=3）时不得视为完整。
-        // League Rating 对 non-combatant extra 的宽容（标准 7v7 且 #301 完整 14 人时 extra 不属于
-        // 14 名 settled combatants，见 protocol.md）由 League 专属证据表达，LeagueRatingValidator
-        // 判断，不扩大全局 rosterComplete 语义。
-        battle.settlementAccountsCoveredByRoster =
-                resolveSettlementCoveredByRoster(roster.keySet(), players);
-        battle.settlementRosterTeamConsistent =
-                resolveSettlementRosterTeamConsistent(rosterTeamByAcc, players);
+        // League Rating 只以 #301 的 14 settled combatants 为 authority，#201 仅用于 metadata
+        // enrichment，缺失/extra 不得阻塞 Rating。
         battle.rosterComplete = resolveRosterComplete(roster.keySet(), rosterTeamByAcc, players);
 
         // ---- data.wotreplay 事件流 ----
@@ -284,9 +279,8 @@ public final class ReplayParser {
      * 结算阵容完整性（<b>严格 fail-closed 全局契约</b>）：名册 #201 与战绩 #301 的账号集合
      * 完全一致（所有参战成员都有结算记录），且名册提供的队伍字段(#201→#2→#3)与结算队伍一致
      * （字段缺失时不做硬性要求）。#201 存在无法证明为 spectator 的 extra（如 #201=4/#301=3）
-     * 时返回 false——League Rating 的 non-combatant extra 宽容不在此处实现，走
-     * {@link #resolveSettlementCoveredByRoster} / {@link #resolveSettlementRosterTeamConsistent}
-     * + LeagueRatingValidator。
+     * 时返回 false——League Rating 的 non-combatant extra 宽容不在此处实现；League Rating
+     * 以 #301 的 settled combatants 为 authority，不依赖本字段做 eligibility。
      */
     private static boolean resolveRosterComplete(final Set<Long> rosterAccounts,
                                                  final Map<Long, Integer> rosterTeamByAcc,
@@ -298,43 +292,6 @@ public final class ReplayParser {
                 .map(p -> p.accountId)
                 .collect(Collectors.toSet());
         if (!resultAccounts.equals(rosterAccounts)) {
-            return false;
-        }
-        for (final PlayerResult p : players) {
-            final Integer rosterTeam = rosterTeamByAcc.get(p.accountId);
-            if (rosterTeam != null && rosterTeam.intValue() != p.team) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * League 专属结算覆盖证据：战绩 #301 的每个结算账号都出现在名册 #201 中（无幽灵结算）。
-     * #201 可含 non-combatant extra（标准 7v7 且 #301 完整 14 人时 extra 不属于 14 名
-     * settled combatants），extra 不影响本结果；名册为空或结算为空时 fail-closed。
-     */
-    private static boolean resolveSettlementCoveredByRoster(final Set<Long> rosterAccounts,
-                                                            final List<PlayerResult> players) {
-        if (rosterAccounts.isEmpty() || players == null || players.isEmpty()) {
-            return false;
-        }
-        for (final PlayerResult p : players) {
-            if (!rosterAccounts.contains(p.accountId)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * League 专属队伍一致性证据：名册 #201→#2→#3 提供的队伍字段（存在时）与结算队伍一致。
-     * 队伍字段缺失时不做硬性要求。
-     */
-    private static boolean resolveSettlementRosterTeamConsistent(
-            final Map<Long, Integer> rosterTeamByAcc,
-            final List<PlayerResult> players) {
-        if (players == null || players.isEmpty()) {
             return false;
         }
         for (final PlayerResult p : players) {

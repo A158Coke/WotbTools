@@ -251,13 +251,12 @@ class ReplayParserTest {
     }
 
     @Test
-    void rosterExtraKeepsGlobalRosterCompleteStrictButLeagueEvidenceComplete() throws IOException {
+    void rosterExtraKeepsGlobalRosterCompleteStrict() throws IOException {
         // 真实训练赛名册 #201 可含 non-combatant extra（probe：20260725_1535 训练房
         // #201=15/#301=14，extra 账号 3117047709 观战者；标准 7v7 且 #301 完整 14 人时 extra
         // 不属于 14 名 settled combatants）。
         // 全局 Battle.rosterComplete 保持严格 fail-closed（#201 全集合 == #301 全集合）——
-        // extra 存在时不扩大为 true；League 专属证据（#301 ⊆ #201 + 队伍一致）为 true，
-        // LeagueRatingValidator 据此允许 non-combatant extra。
+        // extra 存在时不扩大为 true。
         final byte[] root = rosterResultsRoot(
                 List.of(new int[]{1001, 1}, new int[]{1002, 1}, new int[]{1003, 2}),
                 List.of(new int[]{1001, 1}, new int[]{1002, 1}),
@@ -265,10 +264,6 @@ class ReplayParserTest {
         final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
         assertEquals(Boolean.FALSE, battle.rosterComplete,
                 "全局 rosterComplete 保持严格契约（extra 不扩大为 true，AI fail-closed 不放松）");
-        assertEquals(Boolean.TRUE, battle.settlementAccountsCoveredByRoster,
-                "League 专属证据：#301 全部来自名册（无幽灵结算）");
-        assertEquals(Boolean.TRUE, battle.settlementRosterTeamConsistent,
-                "League 专属证据：名册队伍与结算队伍一致");
     }
 
     @Test
@@ -280,7 +275,6 @@ class ReplayParserTest {
                 1);
         final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
         assertEquals(Boolean.FALSE, battle.rosterComplete);
-        assertEquals(Boolean.FALSE, battle.settlementAccountsCoveredByRoster);
     }
 
     @Test
@@ -292,7 +286,6 @@ class ReplayParserTest {
                 1);
         final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
         assertEquals(Boolean.FALSE, battle.rosterComplete);
-        assertEquals(Boolean.FALSE, battle.settlementRosterTeamConsistent);
     }
 
     @Test
@@ -303,8 +296,6 @@ class ReplayParserTest {
                 1);
         final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
         assertEquals(Boolean.TRUE, battle.rosterComplete);
-        assertEquals(Boolean.TRUE, battle.settlementAccountsCoveredByRoster);
-        assertEquals(Boolean.TRUE, battle.settlementRosterTeamConsistent);
     }
 
     private static Long invokeParseLong(final Method parseLong, final String value)
