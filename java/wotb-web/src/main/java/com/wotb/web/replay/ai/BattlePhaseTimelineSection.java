@@ -9,9 +9,7 @@ import java.util.List;
  * <p>团队复盘（single）与随机战（harness / fallback / 完整特征）共用同一渲染逻辑，
  * 只区分行风格：随机战行以「我方存活/敌方存活」中文标签（第二人称语境，不出现
  * 「录像者」），团队行沿用 OPPOSING_TEAM_LINEUP 的 friendly/enemy 机器键风格。
- * 人数来自 {@code SurvivalTimeline} 的 canonical death authority：
- * LIVE_EXACT &gt; SETTLEMENT_SECOND &gt; UNKNOWN（来源见 DEATH_SOURCE 行）。
- * 无法证明死亡时刻时保持 UNKNOWN，禁止恢复 PR147 之前的事件流估算；某侧人数不可算时
+ * 人数来自 {@code SurvivalTimeline} 的 settlement death second。结算死亡事实不完整时，某侧人数不可算并
  * 写「未知」/ UNKNOWN。时间一律 X分XX秒，不出现裸秒数；不输出 raw team。</p>
  */
 final class BattlePhaseTimelineSection {
@@ -20,21 +18,19 @@ final class BattlePhaseTimelineSection {
     static final String PHASE_SEMANTICS_NOTE =
             "注意: 每阶段双方存活人数是「阶段结束时」的存活数，不是阶段开始或之前某时刻的人数；"
                     + "不得据此断言某个时刻前某方已全灭。某侧人数不可算时写「未知」/ UNKNOWN，"
-                    + "不得猜测或编造；死亡时刻来源见 DEATH_SOURCE 行，观测子集不得冒充全知。\n";
+                    + "不得猜测或编造；死亡时刻只使用结算秒级事实，观测子集不得冒充全知。\n";
 
     private BattlePhaseTimelineSection() {
     }
 
     /** 随机战完整段（段头 + 权威口径说明 + 行）。无阶段时返回空串。 */
-    static String renderPlayerSection(final List<BattlePhaseSummary> phases, final String deathSource) {
+    static String renderPlayerSection(final List<BattlePhaseSummary> phases) {
         final String rows = renderPlayerRows(phases);
         if (rows.isEmpty()) {
             return "";
         }
         return "=== 阶段时间线（双方存活人数） ===\n"
-                + PHASE_SEMANTICS_NOTE
-                + "DEATH_SOURCE=" + (deathSource == null || deathSource.isBlank() ? "未知" : deathSource) + "\n"
-                + rows;
+                + PHASE_SEMANTICS_NOTE + rows;
     }
 
     /** 随机战行：X分XX秒 阶段名 | 我方存活 N 敌方存活 M（密集击杀）。 */

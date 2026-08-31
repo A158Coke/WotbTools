@@ -1,7 +1,6 @@
 package com.wotb.core;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
@@ -44,12 +43,11 @@ class RatingV2CalculatorTest {
 
     @Test
     void unknownDeathResidualNeverElevatesTrade() {
-        // P0-2：A 阵亡但 deathTimeSource=UNKNOWN（residual survivalTimeSec=100）→ canonical deathSec=0。
-        // 即使存在 KNOWN 敌方死亡@102（旧版会落入 ±5s 窗口），A 也不得被当作 traded 偷渡成 KNOWN。
+        // Missing settlement lifeTime must not elevate a trade.
         final Battle battle = new Battle();
         battle.winnerTeam = 1;
         final PlayerResult a = player(2, 1, 100, 0, 0, false, 100.0, 4481);
-        a.deathTimeSource = DeathTimeSource.UNKNOWN; // residual 100 非 KNOWN
+        a.settlementLifeTimeSec = 0; // residual 100 is not authoritative
         a.deathTimeMillis = 0L;
         battle.players = List.of(
                 player(1, 1, 100, 0, 0, true, 0, 4481),
@@ -246,11 +244,8 @@ class RatingV2CalculatorTest {
         player.kills = kills;
         player.survived = survived;
         player.survivalTimeSec = survivalTimeSec;
-        // canonical death provenance（P0-2）：已知死亡（survivalTimeSec>0）携带 SETTLEMENT_SECOND；
-        // 否则 UNKNOWN（residual 不得成为 authoritative death fact）。
         if (!survived) {
-            player.deathTimeSource = survivalTimeSec > 0
-                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+            player.settlementLifeTimeSec = survivalTimeSec;
             player.deathTimeMillis = survivalTimeSec > 0
                     ? Math.round(survivalTimeSec * 1000.0) : 0L;
         }

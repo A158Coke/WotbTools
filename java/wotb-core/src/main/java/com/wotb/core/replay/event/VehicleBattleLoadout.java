@@ -2,7 +2,6 @@ package com.wotb.core.replay.event;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
 
 /**
  * 一次 combat-vehicle {@code Type5} materialization 携带的 battle loadout
@@ -21,12 +20,12 @@ import java.util.Objects;
  * <p>item[0..2] = consumable slots；item[3..5] = provision slots。
  * {@code equipmentId = unsignedByte(rawEquipmentBytes[slot])}（byte=ID 编码，PROVEN）。</p>
  *
- * <p><b>版门禁</b>：仅 {@code supported replay version} + {@code entityTypeId == combat vehicle}
- * + {@code full combat loadout framing validates} 时 decode semantic loadout。unknown provision
+ * <p><b>结构边界</b>：仅 {@code entityTypeId == combat vehicle} +
+ * {@code full combat loadout framing validates} 时 decode semantic loadout。unknown provision
  * wire code / 未装填 slot 保持 {@code logicalItemId = null} + raw 保留，绝不按国家/坦克/数值猜名。</p>
  *
  * @param entityId      车辆 entity id
- * @param replayVersion 客户端版本（decode 上下文版本；用于 catalog 解析）
+ * @param replayVersion 兼容元数据字段（不参与语义门禁）
  * @param consumables   三个 consumable slot（{@link LoadoutItemSlot}，位置序）
  * @param provisions    三个 provision slot（{@link LoadoutItemSlot}，位置序）
  * @param equipment     九个 equipment selection（{@link EquipmentSelection}，位置序）

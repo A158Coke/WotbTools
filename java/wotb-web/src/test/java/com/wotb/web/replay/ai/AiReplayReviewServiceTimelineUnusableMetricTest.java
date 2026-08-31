@@ -98,8 +98,7 @@ class AiReplayReviewServiceTimelineUnusableMetricTest {
         p.tankId = 4481L;
         p.survived = true;
         battle.players = List.of(p);
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, false, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, false, false);
         return AiReplayFacts.fromResult(new ReplayProcessingResult(
                 "random.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("h", "random-arena", "11.0", "random_map", 1001L, null),

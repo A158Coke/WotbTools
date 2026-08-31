@@ -1,7 +1,6 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityRemovedEvent;
@@ -387,7 +386,7 @@ class FormationDepthEvidenceTest {
             if (pl.accountId == 1001L) {
                 pl.survived = false;
                 pl.deathTimeMillis = 50_000L; // deathSec = 50
-                pl.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+                pl.settlementLifeTimeSec = 50;
             }
         }
         final List<ReplayEvent> events = new ArrayList<>();
@@ -430,7 +429,7 @@ class FormationDepthEvidenceTest {
             if (pl.accountId == 1001L) {
                 pl.survived = false;
                 pl.deathTimeMillis = 10_000L; // deathSec = 10
-                pl.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+                pl.settlementLifeTimeSec = 10;
             }
         }
         final List<ReplayEvent> events = new ArrayList<>();

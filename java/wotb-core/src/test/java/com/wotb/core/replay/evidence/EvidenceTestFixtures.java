@@ -1,7 +1,6 @@
 package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -46,11 +45,7 @@ final class EvidenceTestFixtures {
         p.survived = survived;
         p.deathTimeMillis = survived ? 0 : (long) (deathSec * 1000);
         p.survivalTimeSec = survived ? 300.0 : deathSec;
-        // canonical death provenance：已知死亡（deathSec>0）→ SETTLEMENT_SECOND；否则 UNKNOWN。
-        if (!survived) {
-            p.deathTimeSource = deathSec > 0
-                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
-        }
+        p.settlementLifeTimeSec = survived ? 0 : deathSec;
         p.damageDealt = 100;
         p.damageReceived = 100;
         return p;

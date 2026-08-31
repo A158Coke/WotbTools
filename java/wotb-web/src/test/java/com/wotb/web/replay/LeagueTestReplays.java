@@ -71,9 +71,6 @@ public final class LeagueTestReplays {
         battle.mapName = "italy";
         battle.durationS = 300.0;
         battle.rosterComplete = true;
-        // League 专属结算证据（synthetic 构造：结算由同一 players 列表驱动，视为覆盖且队伍一致）
-        battle.settlementAccountsCoveredByRoster = true;
-        battle.settlementRosterTeamConsistent = true;
         battle.players = new ArrayList<>();
         for (final PlayerSpec s : specs) {
             final PlayerResult p = new PlayerResult();
@@ -92,6 +89,11 @@ public final class LeagueTestReplays {
             p.victoryPointsSeized = s.seized;
             p.survived = s.survived;
             p.survivalTimeSec = s.survivalTimeSec;
+            // PR147: settlement lifeTime is the only authority (field24); the compatibility
+            // survivalTimeSec projection is never the parsed value.
+            p.settlementLifeTimeSec = s.survivalTimeSec;
+            p.deathTimeMillis = !s.survived && s.survivalTimeSec > 0
+                    ? Math.round(s.survivalTimeSec * 1000.0) : 0L;
             p.nickname = s.nickname;
             p.clan = s.clan;
             battle.players.add(p);
@@ -115,11 +117,8 @@ public final class LeagueTestReplays {
         final String meta = "{\"version\":\"1.0\",\"mapName\":\"italy\",\"battleDuration\":300,"
                 + "\"battleStartTime\":1683152279,\"arenaBonusType\":" + arenaBonusType + "}";
         entries.put("meta.json", meta.getBytes(StandardCharsets.UTF_8));
-        // PR147 settlement version gate: the #24/#25/#105 numeric semantics are version-scoped, and the
-        // authoritative clientVersion comes from the data.wotreplay header. This synthetic League fixture
-        // represents an 11.19 training/CW replay, so it must carry an affirmed header — otherwise the
-        // parser fails-closed (survived=false for everyone) and the roster/end-reason contract would be
-        // misrepresented. data.wotreplay content beyond the version header is not consumed by ReplayParser.
+        // Keep a valid stream header for the synthetic archive. The settlement parser consumes its
+        // business facts from battle_results.dat; the header version remains metadata only.
         entries.put("data.wotreplay", dataWotreplayHeader("11.19.0_china"));
         entries.put("battle_results.dat", pickle(battle.arenaId,
                 rootProtobuf(battle, extraRosterAccounts)));
@@ -201,9 +200,14 @@ public final class LeagueTestReplays {
             writeField(info, 117, p.damageBlocked);
             writeField(info, 32, p.victoryPointsEarned);
             writeField(info, 33, p.victoryPointsSeized);
+            // PR147 production contract: #105 deathReason + #24 lifeTime (seconds), never #104
+            // deathTimeMillis; #25 killerID (result/entity-id namespace) only when known.
             writeField(info, 105, p.survived ? -1 : 0);
-            if (!p.survived) {
-                writeField(info, 104, (long) (p.survivalTimeSec * 1000));
+            if (p.settlementLifeTimeSec > 0) {
+                writeField(info, 24, (long) Math.round(p.settlementLifeTimeSec));
+            }
+            if (!p.survived && p.settlementKillerResultEntityId != null) {
+                writeField(info, 25, p.settlementKillerResultEntityId);
             }
             final ByteArrayOutputStream resultEntry = new ByteArrayOutputStream();
             writeBytesField(resultEntry, 2, info.toByteArray());

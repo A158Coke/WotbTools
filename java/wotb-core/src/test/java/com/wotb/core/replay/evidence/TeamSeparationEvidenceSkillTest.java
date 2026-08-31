@@ -1,7 +1,6 @@
 package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
@@ -526,8 +525,7 @@ class TeamSeparationEvidenceSkillTest {
             player.survived = deathSecs[index] <= 0;
             player.deathTimeMillis = deathSecs[index] > 0
                     ? (long) (deathSecs[index] * 1000) : 0L;
-            player.deathTimeSource = deathSecs[index] > 0
-                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+            player.settlementLifeTimeSec = deathSecs[index];
             player.victoryPointsEarned = (int) earned[index];
             battle.players.add(player);
         }

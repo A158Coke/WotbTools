@@ -33,15 +33,6 @@ public record SettlementFacts(
 ) {
 
     /**
-     * PR162/P1-6：settlement schema 是否已验证的唯一权威 —— 委托给 <b>单一</b> boundary-safe 匹配器
-     * {@link ReplayVersionFamily#isAffirmedFamily}。避免裸 {@code startsWith} 误接受
-     * {@code 11.19.0_chinaX} 等畸形/未来 family。
-     */
-    public static boolean isAffirmedFamily(final String clientVersion) {
-        return ReplayVersionFamily.isAffirmedFamily(clientVersion);
-    }
-
-    /**
      * 从 battle_results.dat 字节数组解码结算事实。<b>这是该协议层的唯一 production 解码入口。</b>
      * tuple 结构非法 → {@link IllegalArgumentException}；protobuf 非法由 {@link Protobuf#decode}
      * 在其内部抛出（同样为 {@link IllegalArgumentException}）。

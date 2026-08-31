@@ -25,6 +25,16 @@ class CoreArchitectureTest {
                     "org.springframework.boot..",
                     "com.wotb.web..");
 
+    /** Research/probe helpers are test evidence only and must not become production domain dependencies. */
+    @ArchTest
+    static final ArchRule CORE_PRODUCTION_MUST_NOT_DEPEND_ON_RESEARCH_PROBES = noClasses()
+            .that().resideInAPackage("com.wotb.core..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "com.wotb.core.parse.probe..",
+                    "com.wotb.core.research..",
+                    "com.wotb.core.benchmark..",
+                    "com.wotb.core.poc..");
+
     @ArchTest
     static final ArchRule CORE_LAYERS_ARE_FREE_OF_CYCLES = slices()
             .matching("com.wotb.core.(*)..")

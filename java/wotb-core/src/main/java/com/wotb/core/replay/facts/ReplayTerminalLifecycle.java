@@ -1,5 +1,6 @@
 package com.wotb.core.replay.facts;
 
+import com.wotb.core.model.Battle;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.HpRawState;
@@ -36,7 +37,6 @@ public final class ReplayTerminalLifecycle {
     public enum TerminalKind {
         HP_ZERO,
         DEATH_SENTINEL_FFFD,
-        VERIFIED_TERMINAL_FFFE,
         DROWNING,
         LEGACY_EXACT_ALIVE_FALSE
     }
@@ -66,6 +66,14 @@ public final class ReplayTerminalLifecycle {
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
             final Double startRawClockSec) {
+        return build(events, mapping, startRawClockSec, null);
+    }
+
+    public static List<Evidence> build(
+            final List<ReplayEvent> events,
+            final TeamEntityMapping mapping,
+            final Double startRawClockSec,
+            final Battle battle) {
         if (events == null || mapping == null) {
             return List.of();
         }
@@ -95,12 +103,14 @@ public final class ReplayTerminalLifecycle {
                 }
             } else if (event instanceof VehicleHealthStateEvent v) {
                 entityId = v.entityId();
-                if (v.cause() == VehicleHealthStateEvent.Cause.DROWNING) {
+                final VehicleHealthStateEvent.Cause validatedCause = v.cause() != null
+                        ? v.cause() : VehicleHealthCauseValidator.validate(v, battle, mapping);
+                if (validatedCause == VehicleHealthStateEvent.Cause.DROWNING) {
                     state = State.TERMINAL;
                     kind = TerminalKind.DROWNING;
                 } else {
                     // consume the decoder-classified rawState propagated with the event; never
-                    // re-classify the raw u16 here (0xFFFE version-scoped by decoder boundary).
+                    // re-classify the raw u16 here.
                     final HpRawState rawState = v.rawState() == null ? HpRawState.UNKNOWN_OTHER : v.rawState();
                     if (!rawState.terminal()) {
                         continue;
@@ -147,15 +157,23 @@ public final class ReplayTerminalLifecycle {
      *
      * <p>A later ALIVE sample can prove respawn/re-entry. Repeated TERMINAL mirrors within the same
      * terminal run preserve the first terminal timestamp. At an identical clock, ordinary HP-zero/alive
-     * mirrors follow packet sequence; explicit non-HP terminal evidence (drowning/FFFD/verified FFFE)
+     * mirrors follow packet sequence; explicit non-HP terminal evidence (drowning/FFFD)
      * outranks a positive-HP mirror because PR147 proves terminal state is independent from HP amount.</p>
      */
     public static Map<Long, Evidence> finalStateByAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
             final Double startRawClockSec) {
+        return finalStateByAccount(events, mapping, startRawClockSec, null);
+    }
+
+    public static Map<Long, Evidence> finalStateByAccount(
+            final List<ReplayEvent> events,
+            final TeamEntityMapping mapping,
+            final Double startRawClockSec,
+            final Battle battle) {
         final Map<Long, Evidence> finalState = new HashMap<>();
-        for (final Evidence evidence : build(events, mapping, startRawClockSec)) {
+        for (final Evidence evidence : build(events, mapping, startRawClockSec, battle)) {
             finalState.merge(evidence.accountId(), evidence, ReplayTerminalLifecycle::later);
         }
         return Map.copyOf(finalState);
@@ -187,15 +205,13 @@ public final class ReplayTerminalLifecycle {
 
     private static boolean isExplicitTerminalIndependentOfHp(final Evidence evidence) {
         return evidence.terminalKind() == TerminalKind.DROWNING
-                || evidence.terminalKind() == TerminalKind.DEATH_SENTINEL_FFFD
-                || evidence.terminalKind() == TerminalKind.VERIFIED_TERMINAL_FFFE;
+                || evidence.terminalKind() == TerminalKind.DEATH_SENTINEL_FFFD;
     }
 
     private static TerminalKind terminalKind(final HpRawState state) {
         return switch (state) {
             case HP_ZERO_TERMINAL -> TerminalKind.HP_ZERO;
             case DEATH_TERMINAL_FFFD -> TerminalKind.DEATH_SENTINEL_FFFD;
-            case VERIFIED_TERMINAL_FFFE -> TerminalKind.VERIFIED_TERMINAL_FFFE;
             default -> TerminalKind.LEGACY_EXACT_ALIVE_FALSE;
         };
     }
