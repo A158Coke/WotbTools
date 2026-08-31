@@ -110,7 +110,7 @@ public final class ReplayTerminalLifecycle {
                     kind = TerminalKind.DROWNING;
                 } else {
                     // consume the decoder-classified rawState propagated with the event; never
-                    // re-classify the raw u16 here (0xFFFE version-scoped by decoder boundary).
+                    // re-classify the raw u16 here.
                     final HpRawState rawState = v.rawState() == null ? HpRawState.UNKNOWN_OTHER : v.rawState();
                     if (!rawState.terminal()) {
                         continue;
@@ -157,7 +157,7 @@ public final class ReplayTerminalLifecycle {
      *
      * <p>A later ALIVE sample can prove respawn/re-entry. Repeated TERMINAL mirrors within the same
      * terminal run preserve the first terminal timestamp. At an identical clock, ordinary HP-zero/alive
-     * mirrors follow packet sequence; explicit non-HP terminal evidence (drowning/FFFD/verified FFFE)
+     * mirrors follow packet sequence; explicit non-HP terminal evidence (drowning/FFFD)
      * outranks a positive-HP mirror because PR147 proves terminal state is independent from HP amount.</p>
      */
     public static Map<Long, Evidence> finalStateByAccount(

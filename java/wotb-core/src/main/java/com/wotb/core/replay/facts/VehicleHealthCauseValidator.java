@@ -1,54 +1,54 @@
 package com.wotb.core.replay.facts;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.VehicleHealthStateEvent;
 import com.wotb.core.replay.processing.TeamEntityIdentity;
 import com.wotb.core.replay.processing.TeamEntityMapping;
 
-/** Field-specific method1 raw-cause validator. */
+/**
+ * Field-specific method1 raw-cause validator.
+ *
+ * <p><b>Packet-local semantic core.</b> The semantic cause is derived from the PR147-proven
+ * packet-local invariant — the preserved {@code causeFlag} plus the {@code sourceEntity} relationship
+ * ({@link VehicleHealthStateEvent#deriveSemanticCause}). Cross-event / settlement evidence is <b>not</b>
+ * a required gate for the semantic: intermediate FIRE / RAMMING / DIRECT events must validate from the
+ * packet-local invariant regardless of the player's final settlement deathReason.</p>
+ *
+ * <p><b>Identity gate.</b> When a {@link TeamEntityMapping} is supplied the target entity must resolve
+ * to a usable settled combatant, otherwise the semantic is absent (the event retains every raw field;
+ * no UNKNOWN/PARTIAL state explosion). Settlement deathReason, when available, is only ever optional
+ * corroboration for terminal death and never gates intermediate-event semantics.</p>
+ */
 public final class VehicleHealthCauseValidator {
 
     private VehicleHealthCauseValidator() {
     }
 
     /**
-     * Promotes a raw method1 flag only when the target resolves to a settled combatant and the
-     * settlement deathReason agrees. Drowning additionally requires the proven self-source relation.
-     * A missing/contradictory fact returns null while the event retains every raw field.
+     * Validates a method1 raw cause for a settled combatant. The packet-local semantic is derived by
+     * {@link VehicleHealthStateEvent#deriveSemanticCause}; this method only adds the identity gate. The semantic comes from the packet-local
+     * invariant; the identity gate only confirms the target resolves to a usable settled combatant.
+     * Cross-event/settlement evidence is never a required gate for intermediate-event semantics.
+     *
+     * @param event   the method1 event
+     * @param battle  optional settlement context (corroboration only; unused as a gate)
+     * @param mapping optional entity→account mapping (identity gate)
+     * @return the validated semantic cause, or {@code null} when the target is not a settled combatant
+     *         or the packet-local invariant is unmet
      */
     public static VehicleHealthStateEvent.Cause validate(
             final VehicleHealthStateEvent event,
             final Battle battle,
             final TeamEntityMapping mapping) {
-        if (event == null || battle == null || battle.players == null || mapping == null) {
+        if (event == null) {
             return null;
         }
-        final TeamEntityIdentity identity = mapping.identity(event.entityId());
-        if (identity == null || !identity.usable() || identity.accountId() <= 0) {
-            return null;
+        if (mapping != null) {
+            final TeamEntityIdentity identity = mapping.identity(event.entityId());
+            if (identity == null || !identity.usable() || identity.accountId() <= 0) {
+                return null;
+            }
         }
-        final PlayerResult player = battle.players.stream()
-                .filter(p -> p != null && p.accountId == identity.accountId())
-                .findFirst().orElse(null);
-        if (player == null || player.survived) {
-            return null;
-        }
-        final Integer settlementReason = player.settlementDeathReasonRaw;
-        final int raw = event.causeFlag();
-        if (raw == 0 && Integer.valueOf(0).equals(settlementReason)) {
-            return VehicleHealthStateEvent.Cause.DIRECT;
-        }
-        if (settlementReason == null || settlementReason != raw) {
-            return null;
-        }
-        return switch (raw) {
-            case 1 -> VehicleHealthStateEvent.Cause.FIRE;
-            case 2 -> VehicleHealthStateEvent.Cause.RAMMING;
-            case 3 -> VehicleHealthStateEvent.Cause.WORLD_OR_ENVIRONMENT;
-            case 5 -> event.sourceEntity() == event.entityId()
-                    ? VehicleHealthStateEvent.Cause.DROWNING : null;
-            default -> null;
-        };
+        return VehicleHealthStateEvent.deriveSemanticCause(event);
     }
 }

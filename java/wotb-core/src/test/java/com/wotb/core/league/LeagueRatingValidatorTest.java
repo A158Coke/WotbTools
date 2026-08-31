@@ -134,20 +134,19 @@ class LeagueRatingValidatorTest {
 
     @Test
     void rejectsNaNDeathTime() {
-        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
-        specs.get(0).survived = false;
-        specs.get(0).survivalTimeSec = Double.NaN;
-        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS),
-                codes(LeagueTestBattles.battle(1, specs)));
+        // NaN settlement lifeTime (the only League death authority) must fail closed.
+        final Battle battle = LeagueTestBattles.battle(1, defaultSevenVsSeven());
+        battle.players.get(0).survived = false;
+        battle.players.get(0).settlementLifeTimeSec = Double.NaN;
+        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS), codes(battle));
     }
 
     @Test
     void rejectsInfiniteDeathTime() {
-        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
-        specs.get(0).survived = false;
-        specs.get(0).survivalTimeSec = Double.POSITIVE_INFINITY;
-        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS),
-                codes(LeagueTestBattles.battle(1, specs)));
+        final Battle battle = LeagueTestBattles.battle(1, defaultSevenVsSeven());
+        battle.players.get(0).survived = false;
+        battle.players.get(0).settlementLifeTimeSec = Double.POSITIVE_INFINITY;
+        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS), codes(battle));
     }
 
     @Test
@@ -178,11 +177,10 @@ class LeagueRatingValidatorTest {
 
     @Test
     void rejectsDeadTimeBeyondDuration() {
-        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
-        specs.get(0).survived = false;
-        specs.get(0).survivalTimeSec = 400;
-        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS),
-                codes(LeagueTestBattles.battle(1, specs)));
+        final Battle battle = LeagueTestBattles.battle(1, defaultSevenVsSeven());
+        battle.players.get(0).survived = false;
+        battle.players.get(0).settlementLifeTimeSec = 400;
+        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS), codes(battle));
     }
 
     @Test

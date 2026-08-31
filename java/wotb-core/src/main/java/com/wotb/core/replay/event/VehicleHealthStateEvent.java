@@ -50,4 +50,38 @@ public record VehicleHealthStateEvent(
     public VehicleHealthStateEvent {
         rawState = rawState == null ? HpRawState.UNKNOWN_OTHER : rawState;
     }
+
+    /**
+     * Packet-local semantic derivation (PR147): maps the preserved {@code causeFlag} + the proven
+     * {@code sourceEntity} relationship into a semantic {@link Cause}.
+     *
+     * <p>This is <b>not</b> decoder raw→semantic promotion: the decoder always retains
+     * {@code causeFlag} raw and leaves {@link #cause()} as {@code null}. Consumers must obtain the
+     * validated cause through field-specific validation ({@code VehicleHealthCauseValidator}) before
+     * treating it as authority. Returns {@code null} when the packet-local invariant is not met (the
+     * raw cause is then retained rather than guessed), so no UNKNOWN/PARTIAL state explosion.</p>
+     *
+     * <ul>
+     *   <li>{@code causeFlag==0} → {@link Cause#DIRECT};</li>
+     *   <li>{@code causeFlag==1} → {@link Cause#FIRE};</li>
+     *   <li>{@code causeFlag==2} → {@link Cause#RAMMING};</li>
+     *   <li>{@code causeFlag==3} → {@link Cause#WORLD_OR_ENVIRONMENT};</li>
+     *   <li>{@code causeFlag==5} → {@link Cause#DROWNING} only when {@code sourceEntity == entityId}
+     *       (proven self/environment source); otherwise {@code null}.</li>
+     * </ul>
+     */
+    public static Cause deriveSemanticCause(final VehicleHealthStateEvent event) {
+        if (event == null) {
+            return null;
+        }
+        final int raw = event.causeFlag();
+        return switch (raw) {
+            case 0 -> Cause.DIRECT;
+            case 1 -> Cause.FIRE;
+            case 2 -> Cause.RAMMING;
+            case 3 -> Cause.WORLD_OR_ENVIRONMENT;
+            case 5 -> event.sourceEntity() == event.entityId() ? Cause.DROWNING : null;
+            default -> null;
+        };
+    }
 }

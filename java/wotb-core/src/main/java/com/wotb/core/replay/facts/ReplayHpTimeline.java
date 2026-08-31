@@ -112,7 +112,7 @@ public final class ReplayHpTimeline {
             return;
         }
         // consume the decoder-classified rawState propagated with the event; never re-classify
-        // the raw u16 here (0xFFFE version-scoped by decoder boundary already).
+        // the raw u16 here.
         final HpRawState state = v.rawState() == null ? HpRawState.UNKNOWN_OTHER : v.rawState();
         final long account = accountOf(mapping, v.entityId());
         switch (state) {

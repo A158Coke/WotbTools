@@ -200,9 +200,15 @@ public final class LeagueTestBattles {
             writeField(info, 117, p.damageBlocked);
             writeField(info, 32, p.victoryPointsEarned);
             writeField(info, 33, p.victoryPointsSeized);
+            // PR147 production contract: #105 = deathReason (-1 = survivor sentinel); #24 = lifeTime
+            // (seconds; dead = settlement death seconds, survivor = whole battle duration). Never write
+            // the legacy #104 deathTimeMillis. #25 killerID (result/entity-id namespace) only when known.
             writeField(info, 105, p.survived ? -1 : 0);
-            if (!p.survived) {
-                writeField(info, 104, (long) (p.survivalTimeSec * 1000));
+            if (p.settlementLifeTimeSec > 0) {
+                writeField(info, 24, (long) Math.round(p.settlementLifeTimeSec));
+            }
+            if (!p.survived && p.settlementKillerResultEntityId != null) {
+                writeField(info, 25, p.settlementKillerResultEntityId);
             }
             final ByteArrayOutputStream resultEntry = new ByteArrayOutputStream();
             writeBytesField(resultEntry, 2, info.toByteArray());
