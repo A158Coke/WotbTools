@@ -10,7 +10,9 @@
 
 | 模块/目录       | 说明                                                           |
 |-------------|--------------------------------------------------------------|
+| `wotb-contracts` | 纯 Java 异步基础 contract：Batch/Job/Event/Worker/Storage 边界；不依赖 Spring、RabbitMQ 或 COS SDK |
 | `wotb-core` | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
+| `wotb-control` | 独立 Control API artifact：受保护的管理面与 JdbcClient PostgreSQL 探针，默认监听 `8090`（管理端口 `8091`） |
 | `wotb-web`  | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087`（管理端口 `8088`，Actuator/Prometheus） |
 | `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
 | `keycloak-wargaming-provider` | Keycloak 26 自定义 Identity Provider：Wargaming.net 登录 SPI（Provider ID `wargaming`，region 配置 ASIA/EU/NA → 官方 host 白名单：认证 `api.worldoftanks.*/wot/auth/`、账号 `api.wotblitz.*/wotb/account/`；ASIA/EU/NA 三个实例） |
