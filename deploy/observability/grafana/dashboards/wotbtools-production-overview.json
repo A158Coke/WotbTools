@@ -52,8 +52,8 @@
       "gridPos": { "h": 7, "w": 8, "x": 0, "y": 4 },
       "id": 5,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "targets": [{ "expr": "sum by (operation) (rate(wotb_replay_requests_total[5m]))", "legendFormat": "{{operation}}", "refId": "A" }],
-      "title": "Replay parse request rate",
+      "targets": [{ "expr": "sum(rate(wotb_replay_processing_job_created_total[5m]))", "legendFormat": "processing job creates", "refId": "A" }],
+      "title": "Replay processing job create rate",
       "type": "timeseries"
     },
     {

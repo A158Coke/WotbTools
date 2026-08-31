@@ -1,8 +1,12 @@
 package com.wotb.web.replay.metrics;
 
+import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import io.micrometer.prometheusmetrics.PrometheusConfig;
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import org.junit.jupiter.api.Test;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -80,5 +84,36 @@ class CustomTimerPrometheusTest {
                 "AI upstream timer must publish histogram buckets");
         assertEquals(1.0, registry.get("wotb_ai_review_duration_seconds").timer().count(),
                 "AI review timer count must be 1");
+    }
+
+    @Test
+    void aiReviewQueueWaitTimerProducesHistogramSeries() throws Exception {
+        final PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        final CountDownLatch firstTaskStarted = new CountDownLatch(1);
+        final CountDownLatch releaseFirstTask = new CountDownLatch(1);
+        final CountDownLatch queuedTaskFinished = new CountDownLatch(1);
+
+        try (AiReviewWorkerExecutor executor = new AiReviewWorkerExecutor(1, 1, 10, registry)) {
+            executor.execute(() -> {
+                firstTaskStarted.countDown();
+                try {
+                    releaseFirstTask.await(2, TimeUnit.SECONDS);
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            assertTrue(firstTaskStarted.await(2, TimeUnit.SECONDS), "first worker task did not start");
+
+            executor.execute(queuedTaskFinished::countDown);
+            Thread.sleep(25);
+            releaseFirstTask.countDown();
+            assertTrue(queuedTaskFinished.await(2, TimeUnit.SECONDS), "queued worker task did not finish");
+        }
+
+        final String scrape = registry.scrape();
+        assertTrue(scrape.contains("wotb_ai_review_queue_wait_seconds_bucket"),
+                "AI queue wait timer must publish histogram buckets");
+        assertTrue(scrape.contains("wotb_ai_review_queue_wait_seconds_count"),
+                "AI queue wait timer must publish a count series");
     }
 }

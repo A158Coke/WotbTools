@@ -68,7 +68,7 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
         { "expr": "sum by (type) (rate(wotb_ai_review_errors_total[5m]))", "legendFormat": "{{type}}", "refId": "A" },
-        { "expr": "sum(rate(wotb_ai_team_review_validation_attempt_total{result=\"FAIL\"}[5m]))", "legendFormat": "validation failed / rework", "refId": "B" }
+        { "expr": "sum(rate(wotb_ai_team_review_validation_attempt_total{result=~\"parser_invalid|validation_failed\"}[5m]))", "legendFormat": "validation failed / rework", "refId": "B" }
       ],
       "title": "AI errors and validation rework",
       "type": "timeseries"
