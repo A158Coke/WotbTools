@@ -66,6 +66,8 @@ jobs:
       - name: Maven test
         working-directory: java
         run: mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo test
+      - name: Production backend Docker build
+        run: docker build -f docker/Dockerfile.backend -t wotbtools-backend:pr .
 
   keycloak-providers:
     name: Keycloak provider tests
