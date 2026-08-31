@@ -10,6 +10,7 @@
 
 | 模块/目录       | 说明                                                           |
 |-------------|--------------------------------------------------------------|
+| `wotb-contracts` | 纯 Java 异步基础 contract：Batch/Job/Event/Worker/Storage 边界；不依赖 Spring、RabbitMQ 或 COS SDK |
 | `wotb-core` | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
 | `wotb-web`  | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087`（管理端口 `8088`，Actuator/Prometheus） |
 | `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
