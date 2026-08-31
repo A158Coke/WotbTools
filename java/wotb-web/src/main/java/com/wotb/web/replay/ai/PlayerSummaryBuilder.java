@@ -297,13 +297,13 @@ final class PlayerSummaryBuilder {
         // 玩家本人单独成段，绝不再以「友方/队友」身份出现在队友阵容里
         if (rec != null) {
             sb.append("\n=== YOU_AUTHORITATIVE（你的战绩·权威结算） ===\n");
-            PlayerEvidenceFormatter.appendPlayerLine(sb, rec, true, true);
+            PlayerEvidenceFormatter.appendPlayerLine(sb, battle, rec, true, true);
         }
         sb.append("\n=== TEAMMATE_LINEUP_AUTHORITATIVE（你的队友阵容·权威结算，不含你本人） ===\n");
         boolean anyTeammate = false;
         for (final PlayerResult p : friendlies) {
             if (PlayerAnalysisPromptFormatter.isSamePlayer(p, rec)) continue;
-            PlayerEvidenceFormatter.appendPlayerLine(sb, p, true);
+            PlayerEvidenceFormatter.appendPlayerLine(sb, battle, p, true);
             anyTeammate = true;
         }
         if (!anyTeammate) {
@@ -311,7 +311,7 @@ final class PlayerSummaryBuilder {
         }
         sb.append("=== ENEMY_LINEUP_AUTHORITATIVE（敌方阵容·权威结算） ===\n");
         for (final PlayerResult p : enemies) {
-            PlayerEvidenceFormatter.appendPlayerLine(sb, p, false);
+            PlayerEvidenceFormatter.appendPlayerLine(sb, battle, p, false);
         }
         if (!unknowns.isEmpty()) {
             sb.append("=== UNKNOWN_LINEUP_AUTHORITATIVE（未确定阵营·权威结算） ===\n");
@@ -329,7 +329,7 @@ final class PlayerSummaryBuilder {
         PlayerEvidenceFormatter.appendClassSummary(sb, friendlies, enemies, unknowns, battle);
 
         // ====== 6. Backend-computed aggregates ======
-        PlayerEvidenceFormatter.appendAggregates(sb, friendlies, enemies, unknowns);
+        PlayerEvidenceFormatter.appendAggregates(sb, battle, friendlies, enemies, unknowns);
 
         // ====== 7. Recorder ranking ======
         if (rec != null && !friendlies.isEmpty()) {
@@ -363,13 +363,13 @@ final class PlayerSummaryBuilder {
             final var dead = battle.players.stream()
                     .filter(p -> !p.survived)
                     .sorted(Comparator
-                            .comparingDouble((PlayerResult p) -> PlayerResultFormat.deathSec(p) > 0
-                                    ? PlayerResultFormat.deathSec(p) : Double.MAX_VALUE)
+                            .comparingDouble((PlayerResult p) -> PlayerResultFormat.deathSec(battle, p) > 0
+                                    ? PlayerResultFormat.deathSec(battle, p) : Double.MAX_VALUE)
                             .thenComparingLong(p -> p.accountId))
                     .toList();
             final PlayerResult recorder = battle.recorderResult();
             for (final PlayerResult p : dead) {
-                final float deathSec = (float) PlayerResultFormat.deathSec(p);
+                final float deathSec = (float) PlayerResultFormat.deathSec(battle, p);
                 // 玩家本人写「你」，同队写「队友」，对方写「敌方」；本人绝不出现为「友方」
                 final String who = PlayerAnalysisPromptFormatter.isSamePlayer(p, recorder)
                         ? "你"

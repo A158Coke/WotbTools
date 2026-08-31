@@ -29,7 +29,7 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
     public ReplayDecodeResult decode(final ReplayDecodeContext context, final RawReplayPacket packet) {
         final byte[] payload = packet.payload();
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
-        if (!ReplayVersionGate.basicVehiclePropertiesAllowed(context.clientVersion())) {
+        if (!ReplayProtocolProfile.basicVehiclePropertiesAllowed(context.clientVersion())) {
             return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
                     List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(), payload.length,
                             "VERSION_UNSUPPORTED_ENTITY_PROPERTY", DecodeConfidence.UNKNOWN)),
@@ -61,7 +61,7 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
                     ReplayProtocolProfile.levelOf(context.clientVersion(),
                             ReplayProtocolProfile.Capability.TERMINAL_FFFD)
                             == ReplayProtocolProfile.Level.VERIFIED,
-                    ReplayVersionGate.verifiedFffeTerminalAllowed(context.clientVersion()));
+                    ReplayProtocolProfile.verifiedFffeTerminalAllowed(context.clientVersion()));
             final List<ReplayDecodeWarning> warnings = new ArrayList<>();
             final HealthChangedEvent event;
             switch (rawState) {
@@ -94,7 +94,7 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
         // PR162/P0-2：prop2 turret-relative yaw 语义必须由 PROP_TURRET_YAW capability 授权（不是 generic
         // ENTITY_PROPERTY_ENVELOPE）。future 版本 prop2 只 raw-preserve，绝不自动产出 TurretDirectionChangedEvent。
         if (propId == PROP_TURRET_RELATIVE_YAW && valueLen == 2
-                && ReplayVersionGate.turretYawAllowed(context.clientVersion())) {
+                && ReplayProtocolProfile.turretYawAllowed(context.clientVersion())) {
             final int raw = readU16LE(payload, 12);
             final double deg = raw * TURRET_YAW_SCALE_DEG + TURRET_YAW_OFFSET_DEG;
             return ReplayDecodeResult.of(new TurretDirectionChangedEvent(

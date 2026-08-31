@@ -198,7 +198,7 @@ public final class RatingV2Calculator {
         final double averageHp = context.averageHp();
         final double contributionValue = roundContribution(player, averageHp);
         final double teamContribution = context.teamContribution[team];
-        final boolean traded = tradedDeath(player, battle.players);
+        final boolean traded = tradedDeath(battle, player, battle.players);
         final double kastBattle = singleBattleKast(player, win, traded, averageHp);
         final double impactValue = singleBattleImpact(player, context);
         final PotentialDamage potential = potentialDamage(player);
@@ -266,15 +266,16 @@ public final class RatingV2Calculator {
     }
 
     /**
-     * 互换击杀判定：使用 canonical {@link PlayerResultFormat#deathSec}（source-aware,
-     * LIVE_EXACT &gt; SETTLEMENT_SECOND &gt; UNKNOWN）。UNKNOWN 的 residual survivalTimeSec 不得
+     * 互换击杀判定：使用 battle-aware canonical {@link PlayerResultFormat#deathEvidence(Battle, PlayerResult)}
+     *（LIVE_EXACT &gt; SETTLEMENT_SECOND &gt; UNKNOWN）。UNKNOWN 的 residual survivalTimeSec 不得
      * 被当成 KNOWN 死亡时刻（P0-2 provenance）。窗口保持 V2 定义：双方死亡时刻差 ±5s。
      */
-    private static boolean tradedDeath(final PlayerResult player, final List<PlayerResult> players) {
+    private static boolean tradedDeath(final Battle battle, final PlayerResult player,
+                                       final List<PlayerResult> players) {
         if (player == null || player.survived) {
             return false;
         }
-        final PlayerResultFormat.DeathTimeEvidence pEv = PlayerResultFormat.deathEvidence(player);
+        final PlayerResultFormat.DeathTimeEvidence pEv = PlayerResultFormat.deathEvidence(battle, player);
         if (pEv == null || !pEv.known()) {
             return false;
         }
@@ -285,7 +286,7 @@ public final class RatingV2Calculator {
             if (other == null || other.team == player.team || other.survived) {
                 continue;
             }
-            final PlayerResultFormat.DeathTimeEvidence oEv = PlayerResultFormat.deathEvidence(other);
+            final PlayerResultFormat.DeathTimeEvidence oEv = PlayerResultFormat.deathEvidence(battle, other);
             if (oEv == null || !oEv.known()) {
                 continue;
             }

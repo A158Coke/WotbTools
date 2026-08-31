@@ -12,7 +12,6 @@ import com.wotb.core.replay.decoder.ReplayDecodeContext;
 import com.wotb.core.replay.decoder.ReplayDecodeResult;
 import com.wotb.core.replay.decoder.ReplayPacketDecoderRegistry;
 import com.wotb.core.replay.decoder.ReplayProtocolProfile;
-import com.wotb.core.replay.decoder.ReplayVersionGate;
 import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -413,7 +412,7 @@ public class ReplayReconstructionService {
                 }
             } else if (type == 8 && payload.length >= 12 && recorderAccountId != null
                     && readU32LE(payload, 4) == 48
-                    && ReplayVersionGate.participantMappingLayoutAllowed(clientVersion)) {
+                    && ReplayProtocolProfile.participantMappingLayoutAllowed(clientVersion)) {
                 //PR162/P1-4：method48 参与映射仅当 capability VERIFIED 才可作为 recorder Avatar 身份证据；
                 // future/unknown version（STRUCTURALLY_COMPATIBLE）method48 numeric identity 未认证 → raw，不得 markAvatar。
                 for (final ParticipantMappingEvent e : EntityMethodDecoder.participantMappingEvents(payload, p)) {

@@ -19,7 +19,7 @@ import java.util.List;
  *
  * <p><b>版本门禁</b>：虽然结构属 container 级，但把它解为「物化预告」并驱动 canonical AoI
  * 仍需当前 canonical + 显式证明的 11.18 legacy
- * （{@link ReplayVersionGate#entityLifecycleLayoutAllowed}）；未知/未来版本 raw-preserve
+ * （{@link ReplayProtocolProfile#entityLifecycleLayoutAllowed}）；未知/未来版本 raw-preserve
  * （UNKNOWN + 诊断），不无条件产出 EXACT announcement。</p>
  */
 public class MaterializationAnnouncedDecoder implements ReplayPacketDecoder {
@@ -45,7 +45,7 @@ public class MaterializationAnnouncedDecoder implements ReplayPacketDecoder {
         }
         // Type33 announcement is version-scoped despite being container-level. Unknown/future
         // versions must raw-preserve; never unconditionally decode into an EXACT announcement.
-        if (!ReplayVersionGate.entityLifecycleLayoutAllowed(context.clientVersion())) {
+        if (!ReplayProtocolProfile.entityLifecycleLayoutAllowed(context.clientVersion())) {
             final ReplayTimestamp tsUnsupported = new ReplayTimestamp(packet.rawClockSec(), null);
             return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
                     List.of(new UnknownReplayEvent(packet.sequence(), tsUnsupported, packet.type(),

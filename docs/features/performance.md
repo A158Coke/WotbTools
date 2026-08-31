@@ -17,7 +17,7 @@ ReplayParser（结算战绩）
     ↓
 DefaultReplayProcessingFacade（完整重建 + ObservedMaxHp.populate + DeathTimeReconciler）
     ↓
-Battle / PlayerResult（唯一 authoritative facts 载体）
+Battle settlement facts + explicit live observations（分层 authoritative facts）
     ↓
 PerformanceMetricsCalculator（纯派生计算，只读）
 ```
@@ -150,7 +150,7 @@ contribution = player(roundContribution) / team(roundContribution) * 100
 `com.wotb.core.replay.facts.TradeFacts.tradedDeaths(player, players)`：死亡时刻
 `[0, +5s]` directional 窗口（玩家死亡 ≤ 敌方死亡 ≤ 玩家死亡+5s）内的敌方死亡数；
 存活或死亡时刻未知 → 0（fail-closed，不猜测）。消费
-`DeathTimeReconciler` 校准后的权威 `survivalTimeSec`。注意这是**死亡时刻窗口启发式**，
+`Battle.liveDeathObservations` 中的显式 live/settlement death observation。注意这是**死亡时刻窗口启发式**，
 不是 killer attribution；回放 reconstruction 的 killer 证据并非所有对局可靠，后续如需
 killer 级 trade 语义应在事实层扩展，不在 metrics 层重推。
 

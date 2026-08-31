@@ -1,6 +1,7 @@
 package com.wotb.core.util;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeObservation;
 import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 
@@ -25,30 +26,32 @@ public final class PlayerResultFormat {
     }
 
     /**
-     * 死亡时刻（秒），按 deathTimeSource 严格权威链（<b>禁止 UNKNOWN 偷渡成 KNOWN</b>）：
+     * settlement/compatibility 死亡时刻（秒）。live reconstruction observation 只能通过 Battle overload 消费：
      * <ul>
-     *   <li>{@link DeathTimeSource#LIVE_EXACT} → {@code survivalTimeSec}（回放精确 sub-second）；</li>
-     *   <li>{@link DeathTimeSource#SETTLEMENT_SECOND} → {@code deathTimeMillis / 1000}（±0.5s 量化）；</li>
-     *   <li>存活 / UNKNOWN / 无 source（null）→ 0：绝不回读裸 {@code survivalTimeSec} /
-     *       {@code deathTimeMillis} 把 UNKNOWN 偷渡成 KNOWN（<b>compatibility fallback 已经移除</b>）。</li>
+     *   <li>兼容 projection 的 SETTLEMENT_SECOND → deathTimeMillis / 1000；</li>
+     *   <li>存活 / UNKNOWN / 无 source → 0。</li>
      * </ul>
      *
-     * <p>这是所有 Trade/KAST/League/AI 死亡时刻消费方的唯一入口（eligibility 集中在此）。
-     * 已知死亡时刻必须由 {@code deathTimeSource} 显式声明：生产上 ReplayParser 为阵亡玩家写
-     * {@code SETTLEMENT_SECOND}+{@code deathTimeMillis}，DeathTimeReconciler 用 LIVE_EXACT 覆盖；
-     * 测试/手工 DTO 构造已知死亡时也应携带对应 source（见各 fixture）。</p>
+     * <p>这是 settlement-only consumers 的唯一入口；full reconstruction consumers must use
+     * {@link #deathSec(Battle, PlayerResult)}.</p>
      */
     public static double deathSec(final PlayerResult p) {
         if (p == null || p.survived || p.deathTimeSource == null) {
             return 0;
         }
-        if (p.deathTimeSource == DeathTimeSource.LIVE_EXACT) {
-            return p.survivalTimeSec > 0 ? p.survivalTimeSec : 0;
-        }
         if (p.deathTimeSource == DeathTimeSource.SETTLEMENT_SECOND) {
             return p.deathTimeMillis > 0 ? p.deathTimeMillis / 1000.0 : 0;
         }
         return 0;
+    }
+
+    /**
+     * Death time for a full-processing view. Live reconstruction evidence is preferred, while the
+     * one-argument overload remains settlement-only for summary/League consumers.
+     */
+    public static double deathSec(final Battle battle, final PlayerResult p) {
+        final DeathTimeObservation observation = observationOf(battle, p);
+        return observation != null ? observation.timeSec() : deathSec(p);
     }
 
     /**
@@ -76,16 +79,29 @@ public final class PlayerResultFormat {
         if (p == null || p.survived || p.deathTimeSource == null) {
             return null;
         }
-        if (p.deathTimeSource == DeathTimeSource.LIVE_EXACT && p.survivalTimeSec > 0) {
-            final double rep = p.survivalTimeSec;
-            return new DeathTimeEvidence(DeathTimeSource.LIVE_EXACT, rep, rep, rep);
-        }
         if (p.deathTimeSource == DeathTimeSource.SETTLEMENT_SECOND && p.deathTimeMillis > 0) {
             final double rep = p.deathTimeMillis / 1000.0;
             return new DeathTimeEvidence(DeathTimeSource.SETTLEMENT_SECOND,
                     rep, rep - SETTLEMENT_SECOND_QUANTIZATION_HALF, rep + SETTLEMENT_SECOND_QUANTIZATION_HALF);
         }
         return null;
+    }
+
+    /** Death evidence for a full-processing view; live exact is a point, settlement remains interval-valued. */
+    public static DeathTimeEvidence deathEvidence(final Battle battle, final PlayerResult p) {
+        final DeathTimeObservation observation = observationOf(battle, p);
+        if (observation != null) {
+            final double sec = observation.timeSec();
+            return new DeathTimeEvidence(observation.source(), sec, sec, sec);
+        }
+        return deathEvidence(p);
+    }
+
+    private static DeathTimeObservation observationOf(final Battle battle, final PlayerResult p) {
+        if (battle == null || p == null || p.survived || battle.liveDeathObservations == null) {
+            return null;
+        }
+        return battle.liveDeathObservations.get(p.accountId);
     }
 
     /** 存活/阵亡文本（含秒数）；死亡时刻未知（deathSec<=0）时如实标注，绝不伪造 0.0s。 */

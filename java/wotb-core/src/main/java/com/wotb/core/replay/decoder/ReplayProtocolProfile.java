@@ -153,4 +153,82 @@ public final class ReplayProtocolProfile {
                     TYPE32_CONSUMABLE_LIFECYCLE, AMMO_SELECTION -> false;
         };
     }
+
+    // Decoder-local evidence queries. These are intentionally kept next to the capability evidence
+    // matrix; callers must choose the capability that matches their packet shape or closed semantic.
+    public static boolean closedSemanticsAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.METHOD_SEMANTICS) == Level.VERIFIED;
+    }
+
+    public static boolean type10LayoutAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.TYPE10_LAYOUT) != Level.UNKNOWN;
+    }
+
+    public static boolean basicVehiclePropertiesAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.ENTITY_PROPERTY_ENVELOPE) != Level.UNKNOWN;
+    }
+
+    public static boolean turretYawAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.PROP_TURRET_YAW) == Level.VERIFIED;
+    }
+
+    public static boolean methodLayoutAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.ENTITY_METHOD_ENVELOPE) != Level.UNKNOWN;
+    }
+
+    public static boolean methodSemanticAllowed(final String clientVersion, final int methodId) {
+        return methodSemanticLevel(clientVersion, methodId) == Level.VERIFIED;
+    }
+
+    public static boolean methodSemanticsAllowed(final String clientVersion) {
+        return closedSemanticsAllowed(clientVersion);
+    }
+
+    public static boolean participantMappingLayoutAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.PARTICIPANT_MAPPING) == Level.VERIFIED;
+    }
+
+    public static boolean damageLayoutAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.ENTITY_METHOD_ENVELOPE) == Level.VERIFIED;
+    }
+
+    public static boolean entityLifecycleLayoutAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.ENTITY_LIFECYCLE_LAYOUT) == Level.VERIFIED;
+    }
+
+    public static boolean positiveHpValueAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.HP_POSITIVE_VALUE) != Level.UNKNOWN;
+    }
+
+    public static boolean verifiedFffeTerminalAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.TERMINAL_FFFE) == Level.VERIFIED;
+    }
+
+    public static boolean method36Allowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.METHOD36_AIM_RAY) == Level.VERIFIED;
+    }
+
+    public static boolean method38Allowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.METHOD38_SHOT_RESULT) == Level.VERIFIED;
+    }
+
+    public static boolean gunMarkerAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.TYPE31_GUN_MARKER) == Level.VERIFIED;
+    }
+
+    public static boolean sessionDecisecondAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.TYPE35_SESSION_DECISECOND) == Level.VERIFIED;
+    }
+
+    public static boolean ammoSelectionAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.AMMO_SELECTION) == Level.VERIFIED;
+    }
+
+    public static boolean type32ConsumableLifecycleAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.TYPE32_CONSUMABLE_LIFECYCLE) == Level.VERIFIED;
+    }
+
+    public static boolean type14StreamCloseAllowed(final String clientVersion) {
+        return levelOf(clientVersion, Capability.TYPE14_STREAM_CLOSE) != Level.UNKNOWN;
+    }
 }

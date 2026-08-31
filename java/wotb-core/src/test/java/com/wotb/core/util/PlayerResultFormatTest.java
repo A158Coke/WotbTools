@@ -1,5 +1,6 @@
 package com.wotb.core.util;
 
+import com.wotb.core.model.Battle;
 import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
@@ -7,8 +8,8 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * {@link PlayerResultFormat#deathSec} 严格权威链回归（P0-2）：
- * LIVE_EXACT → survivalTimeSec；SETTLEMENT_SECOND → deathTimeMillis；UNKNOWN/null source → 0。
+ * {@link PlayerResultFormat#deathSec} 严格 settlement 入口回归（P0-2）：
+ * SETTLEMENT_SECOND → deathTimeMillis；UNKNOWN/null source 或 live-only projection → 0。
  * <b>禁止</b>裸 survivalTimeSec / deathTimeMillis 把 UNKNOWN 偷渡成 KNOWN。
  */
 class PlayerResultFormatTest {
@@ -24,9 +25,16 @@ class PlayerResultFormatTest {
     }
 
     @Test
-    void liveExactUsesSurvivalSec() {
-        assertEquals(42.5, PlayerResultFormat.deathSec(
-                dead(DeathTimeSource.LIVE_EXACT, 42.5, 0)), 1e-9);
+    void liveExactRequiresBattleObservation() {
+        final PlayerResult p = dead(DeathTimeSource.LIVE_EXACT, 42.5, 0);
+        final Battle battle = new Battle();
+        battle.players = java.util.List.of(p);
+        battle.liveDeathObservations = java.util.Map.of(
+                p.accountId,
+                new com.wotb.core.model.DeathTimeObservation(DeathTimeSource.LIVE_EXACT, 42.5));
+        assertEquals(42.5, PlayerResultFormat.deathSec(battle, p), 1e-9);
+        assertEquals(0.0, PlayerResultFormat.deathSec(p), 1e-9,
+                "单参数 settlement 入口不得读取 live projection");
     }
 
     @Test

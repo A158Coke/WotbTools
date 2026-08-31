@@ -80,7 +80,7 @@ AI：
 
 ### 5.3 死亡时刻口径与阶段语义
 
-- 死亡权威链为 `LIVE_EXACT`（回放 live EXACT，sub-second）→ `SETTLEMENT_SECOND`（结算 `deathTimeMillis`）→ `UNKNOWN`（`survivalTimeSec=0`，绝不伪造）；`BattlePhaseSummary.deathSourceLabel()` 输出 `DEATH_SOURCE=LIVE_EXACT | SETTLEMENT_SECOND | UNKNOWN`；EntityLeave / 最后位置 / damage threshold 不再是死亡 authority（仅 legacy 诊断）。
+- full processing 的死亡 observation 由 `Battle.liveDeathObservations` 显式提供：`LIVE_EXACT`（sub-second）→ `SETTLEMENT_SECOND`（结算 `deathTimeMillis`）→ `UNKNOWN`；`DeathTimeReconciler` 不回写 settlement `PlayerResult`。`BattlePhaseSummary.deathSourceLabel()` 输出 `DEATH_SOURCE=LIVE_EXACT | SETTLEMENT_SECOND | UNKNOWN`；EntityLeave / 最后位置 / damage threshold 不再是死亡 authority（仅 legacy 诊断）。
 - 阶段时间线行明确「至阶段末」存活人数（`阶段末friendlyAlive` / `至阶段末 我方存活`），system prompt 禁止把阶段末人数解读为「某时刻前已全灭」；prompt 注入双方逐车阵亡时间线（`DEATH_TIMELINE`，本队/对方 + 昵称 + 坦克 + X分XX秒）。
 
 ### 5.4 观测伤害抑制

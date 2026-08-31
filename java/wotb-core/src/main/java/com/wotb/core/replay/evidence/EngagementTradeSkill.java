@@ -142,7 +142,7 @@ public final class EngagementTradeSkill {
         }
         return (int) ctx.battle().players.stream()
                 .filter(p -> p.team == team)
-                .filter(p -> p.survived || PlayerResultFormat.deathSec(p) > sec)
+                .filter(p -> p.survived || PlayerResultFormat.deathSec(ctx.battle(), p) > sec)
                 .count();
     }
 

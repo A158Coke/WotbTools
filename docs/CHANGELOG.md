@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Changed
+- **Replay/League foundation boundary cleanup**：settlement facts 与 full-processing live death observations 分层，`DeathTimeReconciler` 不再回写 `PlayerResult`；League 移除 death-provenance quality vertical slice；decoder 删除 `ReplayVersionGate` facade 并按 `ReplayProtocolProfile` capability evidence 处理。保留现有兼容 projection、Web/Android contract、Flyway 与生产处理入口不变。
 - **PR G 首批可观测性看板**：新增 Production Overview、AI Review、Error Explorer 三张 Grafana 看板，覆盖 Backend health、HTTP error/P95、Replay active/queued、AI lifecycle/validation、CPU/JVM 与 Loki 错误关联检索。复用现有 Prometheus/Loki 采集链路，不引入新的 exporter，不改变生产业务、Web/Android contract、Flyway、RabbitMQ 或 COS。
 - **Independent Control API acceptance slice**：从 async contracts 基线单独提供 `wotb-control` artifact；使用真实 PostgreSQL Testcontainers + `JdbcClient SELECT 1`，并以独立 management port 的真实 Spring Boot/Actuator security smoke 验证 health、metrics、admin probe 与 401/403 边界。无 Flyway、RabbitMQ、COS 或 Web/Android public contract 变更；Native POC 已完成并记录 JVM/Native 对比结果，生产部署仍延期。
 - **Pre-Dual-Cloud contract foundation**：新增无 Spring/provider SDK 依赖的 `wotb-contracts` artifact，建立 metadata-only async ports 与分别面向 current processing-job/source contract 的显式 status adapters；RabbitMQ/COS/AI/Replay extension 保持延期，当前 Web/Android contract 不变。

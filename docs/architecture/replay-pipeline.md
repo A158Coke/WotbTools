@@ -15,7 +15,7 @@ Replay archive reader (ReplayReconstructionService)
 ReplayPacketStreamReader  (stream 包)
     │  ├── ReplayStreamHeader 解析
     │  ├── 从头到尾扫描所有合法包
-    │  ├── 头部版本读出（供版本门禁；见 ReplayVersionGate）
+    │  ├── 头部版本读出（作为 decoder-local evidence context）
     │  └── ReplayStreamDiagnostics 输出
     │
     ▼
@@ -141,7 +141,7 @@ ReplayReconstruction 输出
 |------|--------------------|---------|-------------------|
 | 7    | EntityProperty     | EXACT   | propId=3 当前 HP / propId=2 炮塔方向（已证明） |
 | 5    | Materialization    | EXACT/PARTIAL | Type 5 实体物化（payload 长度门禁，非 Spotting） |
-| 31   | GunMarkerSize      | EXACT   | 炮口大小（closed semantics 版本门禁） |
+| 31   | GunMarkerSize      | EXACT   | 炮口大小（closed semantics 需局部 evidence） |
 | 35   | SessionDecisecond  | EXACT   | 秒级 decisecond 低字节（已证明） |
 | 39   | AimRayState        | EXACT   | 瞄准射线状态（method36 protobuf） |
 

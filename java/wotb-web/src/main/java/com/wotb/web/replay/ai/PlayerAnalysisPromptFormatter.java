@@ -36,6 +36,10 @@ public final class PlayerAnalysisPromptFormatter {
     }
 
     public static String formatPlayerLine(final PlayerResult p, final Side side) {
+        return formatPlayerLine(null, p, side);
+    }
+
+    public static String formatPlayerLine(final Battle battle, final PlayerResult p, final Side side) {
         return "- " + sideLabel(side)
                 + " " + PlayerResultFormat.quoteForPrompt(p.nickname)
                 + " (" + PlayerResultFormat.quoteForPrompt(resolveTank(p)) + ")"
@@ -44,7 +48,7 @@ public final class PlayerAnalysisPromptFormatter {
                 + " 助攻" + p.damageAssisted
                 + " 格挡" + p.damageBlocked
                 + " 击杀" + p.kills
-                + " " + PlayerAnalysisTerms.survivalDisplay(p.survived, PlayerResultFormat.deathSec(p));
+                + " " + PlayerAnalysisTerms.survivalDisplay(p.survived, PlayerResultFormat.deathSec(battle, p));
     }
 
     /**
@@ -53,9 +57,13 @@ public final class PlayerAnalysisPromptFormatter {
      * {@code side} 仅用于保持调用方签名，不进入输出。
      */
     public static String formatRecorderLine(final PlayerResult rec, final Side side) {
+        return formatRecorderLine(null, rec, side);
+    }
+
+    public static String formatRecorderLine(final Battle battle, final PlayerResult rec, final Side side) {
         return "你: " + PlayerResultFormat.quoteForPrompt(rec.nickname)
                 + " (" + PlayerResultFormat.quoteForPrompt(resolveTank(rec)) + ")"
-                + " | " + PlayerAnalysisTerms.survivalDisplay(rec.survived, PlayerResultFormat.deathSec(rec))
+                + " | " + PlayerAnalysisTerms.survivalDisplay(rec.survived, PlayerResultFormat.deathSec(battle, rec))
                 + " | 输出" + rec.damageDealt
                 + " | 损失血量" + rec.damageReceived
                 + " | 助攻" + rec.damageAssisted
@@ -90,17 +98,17 @@ public final class PlayerAnalysisPromptFormatter {
 
         if (recorder != null) {
             sb.append("=== 你 ===\n")
-                    .append(formatRecorderLine(recorder, sides.getOrDefault(recorder, Side.UNKNOWN)))
+                    .append(formatRecorderLine(battle, recorder, sides.getOrDefault(recorder, Side.UNKNOWN)))
                     .append('\n');
         }
-        appendGroup(sb, "队友", sides, Side.FRIENDLY, recorder);
-        appendGroup(sb, "敌方", sides, Side.ENEMY, recorder);
-        appendGroup(sb, "未知", sides, Side.UNKNOWN, recorder);
+        appendGroup(sb, battle, "队友", sides, Side.FRIENDLY, recorder);
+        appendGroup(sb, battle, "敌方", sides, Side.ENEMY, recorder);
+        appendGroup(sb, battle, "未知", sides, Side.UNKNOWN, recorder);
 
         return sb.toString();
     }
 
-    private static void appendGroup(final StringBuilder sb, final String heading,
+    private static void appendGroup(final StringBuilder sb, final Battle battle, final String heading,
                                     final Map<PlayerResult, Side> sides, final Side side,
                                     final PlayerResult recorder) {
         final List<PlayerResult> filtered = sides.entrySet().stream()
@@ -111,7 +119,7 @@ public final class PlayerAnalysisPromptFormatter {
                 .toList();
         if (filtered.isEmpty()) return;
         sb.append("=== ").append(heading).append(" ===\n");
-        filtered.forEach(p -> sb.append(formatPlayerLine(p, side)).append('\n'));
+        filtered.forEach(p -> sb.append(formatPlayerLine(battle, p, side)).append('\n'));
     }
 
     public static String formatWinner(final Battle battle) {

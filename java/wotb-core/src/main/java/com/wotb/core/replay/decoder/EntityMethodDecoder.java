@@ -132,7 +132,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         // argLen/rawArgs），numeric method identity 与 args semantic 是 closed/version-scoped ——
         // 未认证即 raw-preserve，绝不无条件承接当前版本 EXACT semantic event。
         if (isLayoutMethod(subType)
-                && !ReplayVersionGate.methodSemanticAllowed(context.clientVersion(), subType)) {
+                && !ReplayProtocolProfile.methodSemanticAllowed(context.clientVersion(), subType)) {
             events.add(new UnknownReplayEvent(
                     packet.sequence(), ts, packet.type(), payload.length,
                     "FUTURE_METHOD_SEMANTIC_UNVERIFIED_METHOD" + subType, DecodeConfidence.UNKNOWN));
@@ -147,7 +147,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         // 用 damageLayoutAllowed 单独门禁 —— 这里不把它用 broad METHOD_SEMANTICS 拦死（否则 11.18 连
         // structural damage observation 都消失）。
         if (subType == SUBTYPE_ROUND_FINISHED
-                && !ReplayVersionGate.methodSemanticsAllowed(context.clientVersion())) {
+                && !ReplayProtocolProfile.methodSemanticsAllowed(context.clientVersion())) {
             events.add(new UnknownReplayEvent(
                     packet.sequence(), ts, packet.type(), payload.length,
                     "VERSION_UNSUPPORTED_METHOD" + subType, DecodeConfidence.UNKNOWN));
@@ -251,7 +251,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             case SUBTYPE_TARGETING_SNAPSHOT -> {
                 // method36 field semantics 是仅 11.19 controlled 证明的 closed semantics；
                 // 非 11.19 → raw-preserve（UnknownReplayEvent）+ diagnostics，不伪造 numeric semantic。
-                if (!ReplayVersionGate.method36Allowed(context.clientVersion())) {
+                if (!ReplayProtocolProfile.method36Allowed(context.clientVersion())) {
                     versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD36");
                 } else if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {
                     rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
@@ -267,7 +267,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             }
             case SUBTYPE_SHOT_RESULT -> {
                 // method38 low16/modifier/component namespace 是仅 11.19 controlled 证明的 closed semantics。
-                if (!ReplayVersionGate.method38Allowed(context.clientVersion())) {
+                if (!ReplayProtocolProfile.method38Allowed(context.clientVersion())) {
                     versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD38");
                 } else if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {
                     rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
@@ -298,12 +298,12 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                             ReplayProtocolProfile.levelOf(context.clientVersion(),
                                     ReplayProtocolProfile.Capability.TERMINAL_FFFD)
                                     == ReplayProtocolProfile.Level.VERIFIED,
-                            ReplayVersionGate.verifiedFffeTerminalAllowed(context.clientVersion()));
+                            ReplayProtocolProfile.verifiedFffeTerminalAllowed(context.clientVersion()));
                     // method1 cause semantics are closed semantics proven only on the
                     // current version family. 11.18 proves only the layout -> keep raw causeFlag,
                     // semantic UNKNOWN (no independent cause-semantics proof for 11.18).
                     final VehicleHealthStateEvent.Cause cause =
-                            ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())
+                            ReplayProtocolProfile.closedSemanticsAllowed(context.clientVersion())
                                     ? VehicleHealthStateEvent.causeOf(causeFlag)
                                     : VehicleHealthStateEvent.Cause.UNKNOWN;
                     events.add(new VehicleHealthStateEvent(
@@ -341,7 +341,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 // envelope 有效 + argLen==2B（唯一 round-finished shape）即按权威 shape 解码；16B 仅
                 // VEHICLE 且 shape==16B 才解码为 collision（仍双重验证，绝不因 16B 猜 class）。
                 if (argLen == ROUND_FINISHED_ARGS_LEN && envelopeValid
-                        && ReplayVersionGate.methodSemanticsAllowed(context.clientVersion())) {
+                        && ReplayProtocolProfile.methodSemanticsAllowed(context.clientVersion())) {
                     final int winnerTeam = payload[12] & 0xFF;
                     final int finishReasonRaw = payload[13] & 0xFF;
                     events.add(new RoundFinishedEvent(
@@ -371,7 +371,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 // is non-authoritative; authoritative HP loss = Type7 prop3 deltas). Unverified future
                 // versions raw-preserve (never a version if/else). method8 是 class-colliding index（92.7% Vehicle /
                 // 7.3% Avatar）——必须由 registry 类证据（Vehicle=物化 entityTypeId==2）决定，不靠 argLen 反推。
-                if (!ReplayVersionGate.damageLayoutAllowed(context.clientVersion())) {
+                if (!ReplayProtocolProfile.damageLayoutAllowed(context.clientVersion())) {
                     versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD8");
                 } else if (entityClassFor(context, subType, entityId) != EntityClass.VEHICLE) {
                     rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
@@ -408,7 +408,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 // these is essential for 11.18 fixtures (entity→account mapping + battle-start clock anchor) and
                 // is gated by the capability VERIFIED == verified family, NEVER a version if/else. The
                 // closed-semantic supremacy-points value (wrapper=13) stays 11.19-only.
-                if (!ReplayVersionGate.participantMappingLayoutAllowed(context.clientVersion())) {
+                if (!ReplayProtocolProfile.participantMappingLayoutAllowed(context.clientVersion())) {
                     versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD48");
                 } else {
                     // PR162/P0-1：method48 参与映射是结构/身份消息（entity→account），其 outer entity 本身
@@ -419,7 +419,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                         events.addAll(mapping.mappingEvents());
                     }
                     // 争霸赛实时点数（root field 12，保守结构校验；闭合语义 → 11.19 家族才解）
-                    if (ReplayVersionGate.methodSemanticsAllowed(context.clientVersion())) {
+                    if (ReplayProtocolProfile.methodSemanticsAllowed(context.clientVersion())) {
                         events.addAll(parseSupremacyPoints(payload, packet, ts));
                     }
                     // PR147 wrapper=3 ARENA_PERIOD（root field3 = period）；period=3 BATTLE = battle-start anchor。
@@ -912,7 +912,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
 
     /** 是否 current-version scoped 闭语义 method（版本门禁：4 ——
      *  roundFinished winnerTeam/finishReason）。这些 closed numeric 语义未知/未来版本必须 raw-preserve。
-     *  method8 damage-frame 是结构层（见 ReplayVersionGate.damageLayoutAllowed，11.18/11.19 解码）；
+     *  method8 damage-frame 是结构层（见 ReplayProtocolProfile.damageLayoutAllowed，11.18/11.19 解码）；
      *  method48 participant-mapping / ARENA_PERIOD 是结构层（participantMappingLayoutAllowed）；
      *  method47 updateArena 不产出事件。 */
     private static boolean isSemanticMethod(final int subType) {

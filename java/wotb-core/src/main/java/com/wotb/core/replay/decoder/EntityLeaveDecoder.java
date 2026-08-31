@@ -16,7 +16,7 @@ import java.util.List;
  * </p>
  *
  * <p><b>版本门禁</b>：仅当前 canonical + 显式证明的 11.18 legacy
- * （{@link ReplayVersionGate#entityLifecycleLayoutAllowed}）把 type=4 解为 leave；未知/未来版本
+ * （{@link ReplayProtocolProfile#entityLifecycleLayoutAllowed}）把 type=4 解为 leave；未知/未来版本
  * raw-preserve（UNKNOWN + 诊断），不向 canonical AoI 输出 EXACT leave。</p>
  */
 public class EntityLeaveDecoder implements ReplayPacketDecoder {
@@ -38,7 +38,7 @@ public class EntityLeaveDecoder implements ReplayPacketDecoder {
         }
 
         // Type4 leave semantics are version-scoped. Unknown/future versions must raw-preserve.
-        if (!ReplayVersionGate.entityLifecycleLayoutAllowed(context.clientVersion())) {
+        if (!ReplayProtocolProfile.entityLifecycleLayoutAllowed(context.clientVersion())) {
             final ReplayTimestamp tsUnsupported = new ReplayTimestamp(packet.rawClockSec(), null);
             return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
                     List.of(new UnknownReplayEvent(packet.sequence(), tsUnsupported, packet.type(),

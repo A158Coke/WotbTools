@@ -111,6 +111,7 @@ public final class LeagueTestBattles {
             p.victoryPointsSeized = s.seized;
             p.survived = s.survived;
             p.survivalTimeSec = s.survivalTimeSec;
+            p.settlementLifeTimeSec = s.survivalTimeSec;
             // 已知死亡必须携带 canonical death 证据（严格 deathSec 只按 deathTimeSource 消费：
             // 不得靠裸 survivalTimeSec 偷渡 UNKNOWN→KNOWN）。dead(t>0)=SETTLEMENT_SECOND；
             // dead(0)=UNKNOWN（无可靠死亡时刻）。
