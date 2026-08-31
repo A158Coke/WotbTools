@@ -1,7 +1,6 @@
 package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
 
@@ -60,10 +59,10 @@ class DeathCascadeSkillTest {
         final PlayerResult b = EvidenceTestFixtures.player(1002, 1, 4481, "Kranvagn", false, 108);
         a.deathTimeMillis = 0;
         a.survivalTimeSec = 0;
-        a.deathTimeSource = DeathTimeSource.UNKNOWN;
+        a.settlementLifeTimeSec = 0;
         b.deathTimeMillis = 0;
         b.survivalTimeSec = 0;
-        b.deathTimeSource = DeathTimeSource.UNKNOWN;
+        b.settlementLifeTimeSec = 0;
         final Battle battle = EvidenceTestFixtures.battle(List.of(a, b));
 
         assertEquals(List.of(), new DeathCascadeSkill().detect(battle, 1));

@@ -161,8 +161,7 @@ class AiReplayReviewServiceTest {
         recorder.team = 1;
         recorder.damageDealt = 1_000;
         battle.players = List.of(recorder);
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, false, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, false, false);
         return new ReplayProcessingResult(
                 "random.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("h", "random-arena", "11.0", "random_map", 1001L, null),
@@ -570,8 +569,7 @@ class AiReplayReviewServiceTest {
         battle.winnerTeam = 1;
         battle.recorder = players.getFirst().nickname;
         battle.players = players;
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         return new ReplayProcessingResult(
                 arenaId + ".wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("h", arenaId, "11.0", "team_map", players.getFirst().accountId, null),
@@ -597,8 +595,7 @@ class AiReplayReviewServiceTest {
                 null, null, 300f, null,
                 List.of(new BattleParticipant(1001L, "Player123", 1, 1, "tank", true)),
                 List.of(), List.of(), null, null, null);
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, false, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, false, false);
         return new ReplayProcessingResult(
                 "random.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("h", "random-arena", "11.0", "random_map", 1001L, null),

@@ -1,7 +1,6 @@
 package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DamageEvent;
@@ -266,8 +265,7 @@ class PlayerSeparationEvidenceSkillTest {
         player.damageReceived = damageReceived;
         player.survived = survived;
         player.deathTimeMillis = deathSec > 0 ? (long) (deathSec * 1000) : 0L;
-        player.deathTimeSource = deathSec > 0
-                ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+        player.settlementLifeTimeSec = deathSec;
         return player;
     }
 

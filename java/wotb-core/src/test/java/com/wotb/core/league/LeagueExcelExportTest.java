@@ -169,11 +169,11 @@ class LeagueExcelExportTest {
         b1.arenaId = "arena-1";
         final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         b2.arenaId = "arena-2";
-        b2.settlementAccountsCoveredByRoster = false;
+        // Rating-ineligible via deterministic settlement failure (declared in batch); b2 keeps 14 players.
         final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(b1);
         final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
                 List.of(b1), List.of(r1),
-                List.of(new LeagueFailure("two.wotbreplay", "arena-2", LeagueFailure.Code.ROSTER_INCOMPLETE)));
+                List.of(new LeagueFailure("two.wotbreplay", "arena-2", LeagueFailure.Code.NOT_SEVEN_VS_SEVEN)));
 
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
         ExcelExporter.writeAggregateLeague(List.of(b1, b2), List.of("one.wotbreplay", "two.wotbreplay"),
@@ -203,7 +203,7 @@ class LeagueExcelExportTest {
             // 战斗列表（League）仍列出 ineligible 场状态
             final String list = sheetTextAll(wb.getSheet("战斗列表"));
             assertTrue(list.contains("arena-2"), "战斗列表必须列出全部解析 battle（含 ineligible）");
-            assertTrue(list.contains("名册不完整"), "ineligible 场状态必须显示真实 failure 文案");
+            assertTrue(list.contains("非标准 7v7"), "ineligible 场状态必须显示真实 failure 文案");
         }
     }
 
@@ -678,11 +678,11 @@ class LeagueExcelExportTest {
         b1.arenaId = "arena-1";
         final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         b2.arenaId = "arena-2";
-        b2.settlementAccountsCoveredByRoster = false;
+        // Rating-ineligible via deterministic settlement failure (declared in batch); b2 keeps 14 players.
         final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(b1);
         final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
                 List.of(b1), List.of(r1),
-                List.of(new LeagueFailure("two.wotbreplay", "arena-2", LeagueFailure.Code.ROSTER_INCOMPLETE)));
+                List.of(new LeagueFailure("two.wotbreplay", "arena-2", LeagueFailure.Code.NOT_SEVEN_VS_SEVEN)));
 
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
         ExcelExporter.writeAggregateLeague(List.of(b1, b2), List.of("one.wotbreplay", "two.wotbreplay"),
@@ -694,9 +694,9 @@ class LeagueExcelExportTest {
             assertTrue(!detail.contains("arena-2"), "每场明细不得含 Rating-ineligible 场（无 Rating 明细）");
             final String list = sheetTextAll(wb.getSheet("战斗列表"));
             assertTrue(list.contains("arena-2"), "战斗列表必须列出全部解析 battle（含 ineligible）");
-            assertTrue(list.contains("名册不完整"), "ineligible 场状态必须显示真实 failure 文案，实际：" + list);
+            assertTrue(list.contains("非标准 7v7"), "ineligible 场状态必须显示真实 failure 文案，实际：" + list);
             assertEquals(1, countOccurrences(list, "已评分"), "只有 eligible 场标记已评分，实际：" + list);
-            assertEquals(1, countOccurrences(list, "名册不完整"), "ineligible 场不得因 battle 行 + failure 行重复，实际：" + list);
+            assertEquals(1, countOccurrences(list, "非标准 7v7"), "ineligible 场不得因 battle 行 + failure 行重复，实际：" + list);
         }
     }
 

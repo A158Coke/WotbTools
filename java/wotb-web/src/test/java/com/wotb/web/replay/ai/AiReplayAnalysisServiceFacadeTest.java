@@ -2,7 +2,6 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
@@ -99,7 +98,7 @@ class AiReplayAnalysisServiceFacadeTest {
         final var enemy = player(2001L, "Enemy", 2, 900);
         battle.players = List.of(ally, enemy);
         final var capabilities = new com.wotb.core.replay.processing.ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+                true, true, false, true, false);
         return new ReplayProcessingResult(
                 "stub.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new com.wotb.core.replay.processing.ReplayIdentity(
@@ -116,8 +115,7 @@ class AiReplayAnalysisServiceFacadeTest {
         p.damageDealt = dmg;
         p.survived = team == 1;
         p.deathTimeMillis = team == 1 ? 0 : 180_000;
-        p.deathTimeSource = p.deathTimeMillis > 0
-                ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+        p.settlementLifeTimeSec = p.deathTimeMillis / 1000.0;
         return p;
     }
 

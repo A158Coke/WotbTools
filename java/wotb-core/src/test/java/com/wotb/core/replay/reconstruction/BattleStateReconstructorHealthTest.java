@@ -2,7 +2,9 @@ package com.wotb.core.replay.reconstruction;
 
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.HpRawState;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.VehicleHealthStateEvent;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -122,5 +124,18 @@ class BattleStateReconstructorHealthTest {
         assertNotEquals(LifeState.DESTROYED, state.getVehicle(101).lifeState(),
                 "unknown HP sentinel 不得判死实体 A");
         assertEquals(LifeState.DESTROYED, state.getVehicle(202).lifeState());
+    }
+
+    /** 真实 flag5 + self-source + positive HP 必须经过 field-specific validation 判死（regression）。 */
+    @Test
+    void drowningFlag5SelfSourcePositiveHpMarksDestroyed() {
+        // decoder-like production shape: raw causeFlag=5 preserved, semantic cause=null, self-source,
+        // positive HP. reconstruction must consume the field-specific validated cause (DROWNING) and
+        // mark the vehicle destroyed even though HP > 0.
+        var d = new VehicleHealthStateEvent(1, ts(80f), 8, DecodeConfidence.EXACT, 101,
+                1500, 101, 5, null, HpRawState.CURRENT_HP);
+        var state = reconstructor.reconstruct(List.of(d)).finalState();
+        assertEquals(LifeState.DESTROYED, state.getVehicle(101).lifeState(),
+                "flag5 + self-source + positive HP 必须判死");
     }
 }

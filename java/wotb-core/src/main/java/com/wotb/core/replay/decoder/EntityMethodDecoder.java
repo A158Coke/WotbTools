@@ -36,7 +36,7 @@ import java.util.Map;
  *
  * <p><b>PR162 entity-class scoped</b>：method ID 是 entity-class scoped，不是全局 methodId namespace。
  * 反例：Avatar method4 2B = RoundFinished；Vehicle method4 16B = vehicle-to-vehicle collision/contact。
- * 安全 semantic key = version/capability + entityClass + methodId + exact arg layout。不能只靠
+ * 安全 semantic key = entityClass + methodId + exact arg layout。不能只靠
  * methodId+argLen 猜 entityClass。因此每个语义 method 先经 {@link EntityClassRegistry} 解析
  * entityClass（来自真实 lifecycle 证据，不靠 method-shape 反推）；UNKNOWN class → raw-preserve
  * （UnknownReplayEvent），再按 {@code (entityClass, methodId, argShape)} 分派。</p>
@@ -100,9 +100,6 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     @Override
     public ReplayDecodeResult decode(ReplayDecodeContext context, RawReplayPacket packet) {
         final byte[] payload = packet.payload();
-        // method0/1/5/17/20/27/29 是 legacy-compatible 观测布局 —— 仅当前 canonical
-        // 版本族（11.19）+ 明确 legacy 证明的 11.18 允许解码为 EXACT（methodLayoutAllowed）；
-        // 未知/未来版本 raw-preserve，绝不无条件沿用 EXACT 语义。
         // Type8 envelope 至少 12B（entityId u32 + subtype u32 + argLen u32）；在读取
         // entityId(offset0)/subtype(offset4)/argLen(offset8) 前必须保证 12B，否则数组越界。
         if (payload.length < 12) {
@@ -127,40 +124,13 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         final List<ReplayEvent> events = new ArrayList<>();
         final List<ReplayDecodeWarning> warnings = new ArrayList<>();
 
-        // PR162/P0-2：method0/1/5/17/20/27/29 的 <b>语义</b>仅在 canonical/legacy VERIFIED family 上认可。
-        // future（STRUCTURALLY_COMPATIBLE）版本只有 Type8 envelope 结构可前向读取（entityId/methodId/
-        // argLen/rawArgs），numeric method identity 与 args semantic 是 closed/version-scoped ——
-        // 未认证即 raw-preserve，绝不无条件承接当前版本 EXACT semantic event。
-        if (isLayoutMethod(subType)
-                && !ReplayVersionGate.methodSemanticAllowed(context.clientVersion(), subType)) {
-            events.add(new UnknownReplayEvent(
-                    packet.sequence(), ts, packet.type(), payload.length,
-                    "FUTURE_METHOD_SEMANTIC_UNVERIFIED_METHOD" + subType, DecodeConfidence.UNKNOWN));
-            warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                    "EntityMethod subtype " + subType + " semantic not affirmed: " + context.clientVersion()));
-            return new ReplayDecodeResult(DecodeStatus.PARTIAL, events, warnings);
-        }
-
-        // method4 (round-finished winner/finishReason) 是 <b>closed numeric semantic</b>，只有
-        // 11.19 current 证明 → 由 METHOD_SEMANTICS 门禁；<b>method8 (damage)</b> 是结构观测帧
-        // （attacker/victim/timing/raw value，11.18+11.19 证明 structural layout），在 subtype8 branch 内部
-        // 用 damageLayoutAllowed 单独门禁 —— 这里不把它用 broad METHOD_SEMANTICS 拦死（否则 11.18 连
-        // structural damage observation 都消失）。
-        if (subType == SUBTYPE_ROUND_FINISHED
-                && !ReplayVersionGate.methodSemanticsAllowed(context.clientVersion())) {
-            events.add(new UnknownReplayEvent(
-                    packet.sequence(), ts, packet.type(), payload.length,
-                    "VERSION_UNSUPPORTED_METHOD" + subType, DecodeConfidence.UNKNOWN));
-            warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                    "EntityMethod subtype " + subType + " layout not affirmed: " + context.clientVersion()));
-            return new ReplayDecodeResult(DecodeStatus.PARTIAL, events, warnings);
-        }
 
         switch (subType) {
             case SUBTYPE_VEHICLE_FIRED -> {
                 // Vehicle method0：observed firing（args=01 4,154/4,154）。
                 if (entityClassFor(context, subType, entityId) != EntityClass.VEHICLE
-                        || !envelopeValid || argLen != VEHICLE_METHOD0_ARGS_LEN) {
+                        || !envelopeValid || argLen != VEHICLE_METHOD0_ARGS_LEN
+                        || (payload[12] & 0xFF) != 0x01) {
                     rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
                             "METHOD0_CLASS_OR_SHAPE");
                 } else {
@@ -249,11 +219,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 }
             }
             case SUBTYPE_TARGETING_SNAPSHOT -> {
-                // method36 field semantics 是仅 11.19 controlled 证明的 closed semantics；
-                // 非 11.19 → raw-preserve（UnknownReplayEvent）+ diagnostics，不伪造 numeric semantic。
-                if (!ReplayVersionGate.method36Allowed(context.clientVersion())) {
-                    versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD36");
-                } else if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {
+                if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {
                     rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
                             "METHOD36_CLASS_MISMATCH");
                 } else {
@@ -266,10 +232,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 }
             }
             case SUBTYPE_SHOT_RESULT -> {
-                // method38 low16/modifier/component namespace 是仅 11.19 controlled 证明的 closed semantics。
-                if (!ReplayVersionGate.method38Allowed(context.clientVersion())) {
-                    versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD38");
-                } else if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {
+                if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {
                     rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
                             "METHOD38_CLASS_MISMATCH");
                 } else {
@@ -291,24 +254,12 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     final int currentHpRaw = readU16LE(payload, 12);
                     final int sourceEntity = readI32LE(payload, 14);
                     final int causeFlag = payload[18] & 0xFF;
-                    // version-scoped HP raw classification done exactly once at the decoder
-                    // boundary (knows clientVersion); consumers consume the propagated rawState and
-                    // never re-classify (0xFFFE gated by verifiedFffeTerminalAllowed only).
-                    final HpRawState hpRawState = HpRawState.classify(currentHpRaw,
-                            ReplayProtocolProfile.levelOf(context.clientVersion(),
-                                    ReplayProtocolProfile.Capability.TERMINAL_FFFD)
-                                    == ReplayProtocolProfile.Level.VERIFIED,
-                            ReplayVersionGate.verifiedFffeTerminalAllowed(context.clientVersion()));
-                    // method1 cause semantics are closed semantics proven only on the
-                    // current version family. 11.18 proves only the layout -> keep raw causeFlag,
-                    // semantic UNKNOWN (no independent cause-semantics proof for 11.18).
-                    final VehicleHealthStateEvent.Cause cause =
-                            ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())
-                                    ? VehicleHealthStateEvent.causeOf(causeFlag)
-                                    : VehicleHealthStateEvent.Cause.UNKNOWN;
+                    // FFFD is the proven death terminal; FFFE has no proven numeric meaning here and
+                    // therefore remains raw/UNKNOWN. Unknown cause flags are likewise preserved raw.
+                    final HpRawState hpRawState = HpRawState.classify(currentHpRaw);
                     events.add(new VehicleHealthStateEvent(
                             packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
-                            entityId, currentHpRaw, sourceEntity, causeFlag, cause, hpRawState));
+                            entityId, currentHpRaw, sourceEntity, causeFlag, null, hpRawState));
                 }
             }
             case SUBTYPE_RECORDER_OWN_HEALTH -> {
@@ -332,16 +283,13 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 // Vehicle method4（16-byte）= vehicle-to-vehicle collision/contact。必须由 registry 类证据分派，
                 // 绝不因 argLen 猜测 class。其余（shape/class 不符）→ UnknownReplayEvent。
                 final EntityClass entityClass = entityClassFor(context, subType, entityId);
-                // PR162/P0-2 收口（真实 11.19.0_china_apple CW 回放 evidence）：2-byte RoundFinished
-                // shape 是 version-verified 且<b>形状唯一</b>的（Avatar method4 2B；Vehicle method4
+                // 2-byte RoundFinished shape is unique (Vehicle method4 uses 16B collision); Vehicle method4
                 // 仅 16B collision 与其共享 method 索引，无 2B Vehicle round-finished 变体）。生产回放中
                 // round-finished 由<b>非录像者实体</b>（entity≠recorder avatar）发送，entityClass 并非
                 // AVATAR；若坚持 class==AVATAR 会把合法 battle-start 锚点 discard 成 METHOD4_CLASS_OR_SHAPE，
-                // 导致 TIMELINE_CLOCK_UNRESOLVED、AI Review/Playback 全挂。修正：当 VERIFIED 关闭语义 +
-                // envelope 有效 + argLen==2B（唯一 round-finished shape）即按权威 shape 解码；16B 仅
+                // envelope 有效 + argLen==2B（唯一 round-finished shape）即按该 shape 解码；16B 仅
                 // VEHICLE 且 shape==16B 才解码为 collision（仍双重验证，绝不因 16B 猜 class）。
-                if (argLen == ROUND_FINISHED_ARGS_LEN && envelopeValid
-                        && ReplayVersionGate.methodSemanticsAllowed(context.clientVersion())) {
+                if (argLen == ROUND_FINISHED_ARGS_LEN && envelopeValid) {
                     final int winnerTeam = payload[12] & 0xFF;
                     final int finishReasonRaw = payload[13] & 0xFF;
                     events.add(new RoundFinishedEvent(
@@ -366,14 +314,10 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 }
             }
             case SUBTYPE_ENTITY_METHOD_DAMAGE -> {
-                // PR147: method8 damage-frame layout (attacker/victim/raw damage value/timing) is proven for
-                // the verified families (11.18 + 11.19) — decoded as a structural observation frame (raw value
-                // is non-authoritative; authoritative HP loss = Type7 prop3 deltas). Unverified future
-                // versions raw-preserve (never a version if/else). method8 是 class-colliding index（92.7% Vehicle /
+                // method8 damage-frame is a structural observation frame (raw value is non-authoritative;
+                // authoritative HP loss = Type7 prop3 deltas). method8 是 class-colliding index（92.7% Vehicle /
                 // 7.3% Avatar）——必须由 registry 类证据（Vehicle=物化 entityTypeId==2）决定，不靠 argLen 反推。
-                if (!ReplayVersionGate.damageLayoutAllowed(context.clientVersion())) {
-                    versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD8");
-                } else if (entityClassFor(context, subType, entityId) != EntityClass.VEHICLE) {
+                if (entityClassFor(context, subType, entityId) != EntityClass.VEHICLE) {
                     rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
                             "METHOD8_CLASS_MISMATCH");
                 } else {
@@ -403,27 +347,32 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 }
             }
             case SUBTYPE_UPDATE_ARENA2 -> {
-                // PR147: method48 updateArena2 carries structural roster (participant mapping, wrapper=1) +
-                // ARENA_PERIOD anchor (wrapper=3), proven for the verified families (11.18 + 11.19). Decoding
-                // these is essential for 11.18 fixtures (entity→account mapping + battle-start clock anchor) and
-                // is gated by the capability VERIFIED == verified family, NEVER a version if/else. The
-                // closed-semantic supremacy-points value (wrapper=13) stays 11.19-only.
-                if (!ReplayVersionGate.participantMappingLayoutAllowed(context.clientVersion())) {
-                    versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD48");
-                } else {
+                // method48 carries structural participant mapping and ARENA_PERIOD data. Each nested
+                // field is decoded only when its own shape is valid; unknown numeric values stay raw.
+                {
+                    if (!envelopeValid) {
+                        rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                                "METHOD48_ENVELOPE_MISMATCH");
+                        break;
+                    }
                     // PR162/P0-1：method48 参与映射是结构/身份消息（entity→account），其 outer entity 本身
                     // 无需先被分类；解码其内容用于建立 recorder Avatar 身份（prepass），不在此由 method 自证 class。
                     // entity/account mapping
+                    final int before = events.size();
                     final ParticipantMappingResult mapping = parseUpdateArena2(payload, entityId, packet, ts);
                     if (mapping != null) {
                         events.addAll(mapping.mappingEvents());
                     }
-                    // 争霸赛实时点数（root field 12，保守结构校验；闭合语义 → 11.19 家族才解）
-                    if (ReplayVersionGate.methodSemanticsAllowed(context.clientVersion())) {
-                        events.addAll(parseSupremacyPoints(payload, packet, ts));
-                    }
+                    // 争霸赛实时点数仅在 nested shape 校验通过时解码。
+                    events.addAll(parseSupremacyPoints(payload, packet, ts));
                     // PR147 wrapper=3 ARENA_PERIOD（root field3 = period）；period=3 BATTLE = battle-start anchor。
                     events.addAll(parseArenaPeriod(payload, packet, ts));
+                    if (events.size() == before) {
+                        // A valid outer envelope is not enough to prove an inner wrapper/schema. Preserve
+                        // the packet when no known nested structure was established.
+                        rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                                "METHOD48_INNER_SHAPE_UNKNOWN");
+                    }
                 }
             }
             case SUBTYPE_UPDATE_ARENA -> {
@@ -460,19 +409,6 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     private static EntityClass entityClassFor(final ReplayDecodeContext context,
                                               final int subType, final int entityId) {
         return context.entityClassRegistry().resolve(entityId);
-    }
-
-    /** 版本门禁 raw-preserve（原始 reasonCode "VERSION_UNSUPPORTED_METHODn"，保持既有契约）。 */
-    private static void versionRawPreserve(final List<ReplayEvent> events,
-                                           final List<ReplayDecodeWarning> warnings,
-                                           final RawReplayPacket packet,
-                                           final ReplayTimestamp ts,
-                                           final int subType,
-                                           final String reason) {
-        events.add(new UnknownReplayEvent(
-                packet.sequence(), ts, packet.type(), packet.payloadLength(), reason, DecodeConfidence.UNKNOWN));
-        warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                "EntityMethod subtype " + subType + " layout not affirmed"));
     }
 
     /** 未知/未实现/class 或 shape 不符 EntityMethod → raw-preserve（UnknownReplayEvent，带足够 debug）。 */
@@ -807,7 +743,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             final int msgLen;
             final int first = body[off] & 0xFF;
             if (first == 0xFF) {
-                if (off + 2 > body.length) {
+                if (off + 4 > body.length) {
                     return null;
                 }
                 msgLen = readU16LE(body, off + 1);
@@ -816,7 +752,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 msgLen = first;
                 off += 1;
             }
-            if (off + msgLen > body.length) {
+            if (msgLen < 0 || off + msgLen != body.length) {
                 return null;
             }
             final byte[] protoData = new byte[msgLen];
@@ -908,26 +844,6 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     }
 
     private record ParticipantMappingResult(List<ParticipantMappingEvent> mappingEvents) {
-    }
-
-    /** 是否 current-version scoped 闭语义 method（版本门禁：4 ——
-     *  roundFinished winnerTeam/finishReason）。这些 closed numeric 语义未知/未来版本必须 raw-preserve。
-     *  method8 damage-frame 是结构层（见 ReplayVersionGate.damageLayoutAllowed，11.18/11.19 解码）；
-     *  method48 participant-mapping / ARENA_PERIOD 是结构层（participantMappingLayoutAllowed）；
-     *  method47 updateArena 不产出事件。 */
-    private static boolean isSemanticMethod(final int subType) {
-        return subType == SUBTYPE_ROUND_FINISHED;
-    }
-
-    /** 是否 legacy-compatible 观测布局 method（P0-3 版本门禁范围）。 */
-    private static boolean isLayoutMethod(final int subType) {
-        return subType == SUBTYPE_VEHICLE_FIRED
-                || subType == SUBTYPE_VEHICLE_HEALTH_STATE
-                || subType == SUBTYPE_RECORDER_OWN_HEALTH
-                || subType == SUBTYPE_AMMUNITION_STATE
-                || subType == SUBTYPE_PROJECTILE_TERMINAL
-                || subType == SUBTYPE_PROJECTILE_RESOLUTION
-                || subType == SUBTYPE_PROJECTILE_LAUNCH;
     }
 
     static int readU32LE(byte[] buf, int i) {

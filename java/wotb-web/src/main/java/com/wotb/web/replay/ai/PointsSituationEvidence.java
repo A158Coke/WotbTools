@@ -251,7 +251,7 @@ final class PointsSituationEvidence {
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
                         recon.events(), mapping,
-                        battleStart == null ? 0.0 : battleStart.doubleValue(), duration);
+                        battleStart == null ? 0.0 : battleStart.doubleValue(), duration, battle);
         final Set<Long> pusherIds = new HashSet<>(entry.accountIds());
         for (final java.util.Map.Entry<Long,
                 List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> e
