@@ -140,7 +140,7 @@ public final class PlayerSeparationEvidenceSkill {
         if (recorder == null || recorder.survived) {
             return false;
         }
-        final double deathSec = PlayerResultFormat.deathSec(battle, recorder);
+        final double deathSec = PlayerResultFormat.deathSec(recorder);
         return deathSec > 0 && Double.isFinite(deathSec)
                 && deathSec >= window.startSec() && deathSec <= window.endSec();
     }

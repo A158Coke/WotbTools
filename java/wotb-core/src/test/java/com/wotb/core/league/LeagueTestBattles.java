@@ -1,7 +1,6 @@
 package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 
 import java.io.ByteArrayOutputStream;
@@ -112,15 +111,8 @@ public final class LeagueTestBattles {
             p.survived = s.survived;
             p.survivalTimeSec = s.survivalTimeSec;
             p.settlementLifeTimeSec = s.survivalTimeSec;
-            // 已知死亡必须携带 canonical death 证据（严格 deathSec 只按 deathTimeSource 消费：
-            // 不得靠裸 survivalTimeSec 偷渡 UNKNOWN→KNOWN）。dead(t>0)=SETTLEMENT_SECOND；
-            // dead(0)=UNKNOWN（无可靠死亡时刻）。
-            if (!s.survived && s.survivalTimeSec > 0) {
-                p.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
-                p.deathTimeMillis = Math.round(s.survivalTimeSec * 1000.0);
-            } else if (!s.survived) {
-                p.deathTimeSource = DeathTimeSource.UNKNOWN;
-            }
+            p.deathTimeMillis = !s.survived && s.survivalTimeSec > 0
+                    ? Math.round(s.survivalTimeSec * 1000.0) : 0L;
             p.nickname = s.nickname;
             p.clan = s.clan;
             p.raw = new LinkedHashMap<>();

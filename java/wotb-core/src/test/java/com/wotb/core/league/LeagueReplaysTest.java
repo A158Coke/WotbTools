@@ -249,9 +249,8 @@ class LeagueReplaysTest {
     }
 
     @Test
-    void unknownDeathTimeBattleIsRatedWithoutLeagueQualityState() throws Exception {
-        // 死亡时间 UNKNOWN（survivalTimeSec == 0）不再是 battle-level failure：
-        // 该场照常评分；死亡 observation 不是 League 业务状态。
+    void missingSettlementDeathTimeIsRejected() throws Exception {
+        // 阵亡玩家缺失 settlement lifeTime 必须在 League validator fail-closed。
         final List<LeagueTestBattles.PlayerSpec> deathSpecs = LeagueTestBattles.defaultSevenVsSeven();
         deathSpecs.getFirst().dead(0);
         final Battle death = LeagueTestBattles.battle(1, deathSpecs);
@@ -259,8 +258,8 @@ class LeagueReplaysTest {
         final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(death));
         assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
         assertEquals(1, r.battles().size());
-        assertEquals(1, r.leagueBatch().battleResults().size(), "UNKNOWN 死亡场照常评分");
-        assertTrue(r.leagueFailures().isEmpty(), "UNKNOWN 不是 failure");
+        assertEquals(0, r.leagueBatch().battleResults().size(), "缺失结算死亡秒值不得评分");
+        assertTrue(r.leagueFailures().stream().anyMatch(f -> f.code().equals(LeagueFailure.Code.INVALID_STAT_FACTS)));
     }
 
     // ---- Survivor INVALID 上传顺序无关（P0）：valid+NaN / valid+Infinity / valid+negative ----

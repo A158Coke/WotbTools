@@ -115,7 +115,7 @@ public final class BattlePlaybackProjector {
                 friendlyTeam,
                 effectiveRecorder,
                 tracks,
-                events(timeline, mapping, tracks, effectiveRecorder, duration),
+                events(timeline, mapping, tracks, effectiveRecorder, duration, battle),
                 shots(timeline, mapping),
                 pointsSamples(timeline),
                 timeline.limitations(),
@@ -386,7 +386,8 @@ public final class BattlePlaybackProjector {
                                             final TeamEntityMapping mapping,
                                             final List<BattlePlaybackDataset.VehiclePlaybackTrack> tracks,
                                             final Long recorderAccount,
-                                            final double duration) {
+                                            final double duration,
+                                            final Battle battle) {
         if (timeline.events() == null || mapping == null) {
             return List.of();
         }
@@ -395,7 +396,7 @@ public final class BattlePlaybackProjector {
                         timeline.events(), mapping,
                         Double.isFinite(timeline.battleStartRawClockSec())
                                 ? timeline.battleStartRawClockSec() : 0.0,
-                        duration);
+                        duration, battle);
         final java.util.Set<Long> destroyedVictims = new java.util.HashSet<>();
         final List<BattleEvent> out = new ArrayList<>();
         for (final ReplayEvent event : timeline.events()) {

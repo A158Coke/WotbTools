@@ -29,9 +29,7 @@ public final class LeagueRatingConflictDetector {
                         b.settlementAccountsCoveredByRoster)
                 || !java.util.Objects.equals(a.settlementRosterTeamConsistent,
                         b.settlementRosterTeamConsistent)
-                || !java.util.Objects.equals(a.durationS, b.durationS)
-                || invalidCompatibilityProjection(a)
-                || invalidCompatibilityProjection(b)) {
+                || !java.util.Objects.equals(a.durationS, b.durationS)) {
             return false;
         }
         final Map<Long, PlayerResult> left = byAccount(a.players);
@@ -68,15 +66,6 @@ public final class LeagueRatingConflictDetector {
             }
         }
         return true;
-    }
-
-    /** Invalid compatibility stats remain fail-closed without making valid death times identity fields. */
-    private static boolean invalidCompatibilityProjection(final Battle battle) {
-        if (battle.players == null) {
-            return false;
-        }
-        return battle.players.stream().anyMatch(player ->
-                !Double.isFinite(player.survivalTimeSec) || player.survivalTimeSec < 0);
     }
 
     /** Group-level all-pairs settlement identity check; never mutates a retained Battle. */

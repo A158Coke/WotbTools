@@ -1,8 +1,6 @@
 package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeObservation;
-import com.wotb.core.model.DeathTimeSource;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -348,10 +346,6 @@ class LeagueRatingCalculatorTest {
         specs.get(7).dead(101.0);
         final Battle settlementOnly = LeagueTestBattles.battle(1, specs);
         final Battle withDifferentLiveEvidence = LeagueTestBattles.battle(1, specs);
-        withDifferentLiveEvidence.liveDeathObservations = Map.of(
-                1001L, new DeathTimeObservation(DeathTimeSource.LIVE_EXACT, 200.0),
-                2001L, new DeathTimeObservation(DeathTimeSource.LIVE_EXACT, 90.0));
-
         assertEquals(LeagueRatingCalculator.calculate(settlementOnly),
                 LeagueRatingCalculator.calculate(withDifferentLiveEvidence),
                 "League Rating must be invariant to live reconstruction evidence");

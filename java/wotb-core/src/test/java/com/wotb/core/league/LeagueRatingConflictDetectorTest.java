@@ -33,8 +33,6 @@ class LeagueRatingConflictDetectorTest {
     void liveObservationDoesNotChangeLeagueIdentity() {
         final Battle left = battle();
         final Battle right = battle();
-        left.liveDeathObservations = java.util.Map.of();
-        right.liveDeathObservations = java.util.Map.of();
         assertTrue(LeagueRatingConflictDetector.validateCopies(List.of(left, right)));
     }
 

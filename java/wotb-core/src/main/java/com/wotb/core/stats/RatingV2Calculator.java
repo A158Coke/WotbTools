@@ -3,6 +3,7 @@ package com.wotb.core.stats;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.replay.facts.TradeFacts;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
@@ -198,7 +199,7 @@ public final class RatingV2Calculator {
         final double averageHp = context.averageHp();
         final double contributionValue = roundContribution(player, averageHp);
         final double teamContribution = context.teamContribution[team];
-        final boolean traded = tradedDeath(battle, player, battle.players);
+        final boolean traded = tradedDeath(player, battle.players);
         final double kastBattle = singleBattleKast(player, win, traded, averageHp);
         final double impactValue = singleBattleImpact(player, context);
         final PotentialDamage potential = potentialDamage(player);
@@ -265,47 +266,29 @@ public final class RatingV2Calculator {
         return player.damageDealt + player.damageAssisted + player.kills * averageHp / 7.0;
     }
 
-    /**
-     * 互换击杀判定：使用 battle-aware canonical {@link PlayerResultFormat#deathEvidence(Battle, PlayerResult)}
-     *（LIVE_EXACT &gt; SETTLEMENT_SECOND &gt; UNKNOWN）。UNKNOWN 的 residual survivalTimeSec 不得
-     * 被当成 KNOWN 死亡时刻（P0-2 provenance）。窗口保持 V2 定义：双方死亡时刻差 ±5s。
-     */
-    private static boolean tradedDeath(final Battle battle, final PlayerResult player,
-                                       final List<PlayerResult> players) {
+    /** 互换击杀判定：使用 settlement death second 的 directional [0,+5s] 窗口。 */
+    private static boolean tradedDeath(final PlayerResult player, final List<PlayerResult> players) {
         if (player == null || player.survived) {
             return false;
         }
-        final PlayerResultFormat.DeathTimeEvidence pEv = fullProcessingEvidence(battle, player);
-        if (pEv == null || !pEv.known()) {
+        final double playerDeathSec = PlayerResultFormat.deathSec(player);
+        if (playerDeathSec <= 0) {
             return false;
         }
-        // precision-aware（V2 双向 ±5s 窗口）：SETTLEMENT_SECOND ±0.5s，不得用 midpoint。
-        // 只有 <b>所有</b> 真实死亡时刻组合的差都在 ±5s 内（max(eMax-pMin, pMax-eMin) ≤ 5）才判定
-        // traded；「有可能」但无法证明（ambiguous）→ fail-closed false。
         for (final PlayerResult other : players) {
             if (other == null || other.team == player.team || other.survived) {
                 continue;
             }
-            final PlayerResultFormat.DeathTimeEvidence oEv = fullProcessingEvidence(battle, other);
-            if (oEv == null || !oEv.known()) {
+            final double otherDeathSec = PlayerResultFormat.deathSec(other);
+            if (otherDeathSec <= 0) {
                 continue;
             }
-            final double worstGap = Math.max(oEv.upperBoundSec() - pEv.lowerBoundSec(),
-                    pEv.upperBoundSec() - oEv.lowerBoundSec());
-            if (worstGap <= 5.0 + 1e-9) {
+            final double delta = otherDeathSec - playerDeathSec;
+            if (delta >= 0 && delta <= TradeFacts.TRADE_AFTER_DEATH_WINDOW_SEC) {
                 return true;
             }
         }
         return false;
-    }
-
-    private static PlayerResultFormat.DeathTimeEvidence fullProcessingEvidence(
-            final Battle battle, final PlayerResult player) {
-        if (battle == null || battle.liveDeathObservations == null
-                || !battle.liveDeathObservations.containsKey(player.accountId)) {
-            return PlayerResultFormat.deathEvidence(player);
-        }
-        return PlayerResultFormat.deathEvidence(battle, player);
     }
 
     /**

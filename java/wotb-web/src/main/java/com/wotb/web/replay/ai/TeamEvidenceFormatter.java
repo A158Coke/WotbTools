@@ -190,7 +190,7 @@ final class TeamEvidenceFormatter {
                     + " penetrations=" + p.nPenetrationsDealt
                     + " enemiesDamaged=" + p.nEnemiesDamaged
                     + " death=" + PlayerAnalysisTerms.survivalDisplay(
-                            p.survived, PlayerResultFormat.deathSec(battle, p))
+                            p.survived, PlayerResultFormat.deathSec(p))
                     + "\n");
             damage += p.damageDealt;
             received += p.damageReceived;
@@ -802,9 +802,6 @@ final class TeamEvidenceFormatter {
         writer.append("\n=== BATTLE_PHASES ===\n");
         if (phases != null && !phases.isEmpty()) {
             writer.append(BattlePhaseTimelineSection.PHASE_SEMANTICS_NOTE);
-            if (battle != null) {
-                writer.append("DEATH_SOURCE=" + BattlePhaseSummary.deathSourceLabel(battle) + "\n");
-            }
             writer.append(BattlePhaseTimelineSection.renderTeamRows(phases));
             appendDeathTimeline(writer, battle, perspectiveTeam);
         }
@@ -822,8 +819,8 @@ final class TeamEvidenceFormatter {
                 .filter(p -> PlayerSideResolver.isValidRawTeam(p.team) && !p.survived)
                 // 未知死亡时间（deathSec<=0）排到已知时间之后，绝不因 0 被排到整场最前
                 .sorted(java.util.Comparator
-                        .comparingDouble((PlayerResult p) -> PlayerResultFormat.deathSec(battle, p) > 0
-                                ? PlayerResultFormat.deathSec(battle, p) : Double.MAX_VALUE)
+                        .comparingDouble((PlayerResult p) -> PlayerResultFormat.deathSec(p) > 0
+                                ? PlayerResultFormat.deathSec(p) : Double.MAX_VALUE)
                         .thenComparingLong(p -> p.accountId))
                 .toList();
         if (dead.isEmpty()) {
@@ -832,7 +829,7 @@ final class TeamEvidenceFormatter {
         writer.append("\n=== DEATH_TIMELINE（双方逐车阵亡时刻） ===\n");
         for (final PlayerResult p : dead) {
             final String side = p.team == perspectiveTeam ? "本队" : "对方";
-            final double deathSec = PlayerResultFormat.deathSec(battle, p);
+            final double deathSec = PlayerResultFormat.deathSec(p);
             final String clock = deathSec > 0
                     ? PlayerAnalysisTerms.battleClock((float) deathSec) : "未知";
             final String suffix = deathSec > 0 ? "阵亡" : "阵亡（时刻未知）";

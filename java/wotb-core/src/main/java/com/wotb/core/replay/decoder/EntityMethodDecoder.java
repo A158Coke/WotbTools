@@ -129,7 +129,8 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             case SUBTYPE_VEHICLE_FIRED -> {
                 // Vehicle method0：observed firing（args=01 4,154/4,154）。
                 if (entityClassFor(context, subType, entityId) != EntityClass.VEHICLE
-                        || !envelopeValid || argLen != VEHICLE_METHOD0_ARGS_LEN) {
+                        || !envelopeValid || argLen != VEHICLE_METHOD0_ARGS_LEN
+                        || (payload[12] & 0xFF) != 0x01) {
                     rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
                             "METHOD0_CLASS_OR_SHAPE");
                 } else {
@@ -256,10 +257,9 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     // FFFD is the proven death terminal; FFFE has no proven numeric meaning here and
                     // therefore remains raw/UNKNOWN. Unknown cause flags are likewise preserved raw.
                     final HpRawState hpRawState = HpRawState.classify(currentHpRaw);
-                    final VehicleHealthStateEvent.Cause cause = VehicleHealthStateEvent.causeOf(causeFlag);
                     events.add(new VehicleHealthStateEvent(
                             packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
-                            entityId, currentHpRaw, sourceEntity, causeFlag, cause, hpRawState));
+                            entityId, currentHpRaw, sourceEntity, causeFlag, null, hpRawState));
                 }
             }
             case SUBTYPE_RECORDER_OWN_HEALTH -> {

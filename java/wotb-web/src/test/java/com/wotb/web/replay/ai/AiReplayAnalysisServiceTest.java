@@ -2,7 +2,6 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -1103,8 +1102,7 @@ class AiReplayAnalysisServiceTest {
         p.kills = team == 1 ? 2 : 1;
         p.survived = team == 1;
         p.deathTimeMillis = team == 1 ? 0 : 180_000;
-        p.deathTimeSource = p.deathTimeMillis > 0
-                ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+        p.settlementLifeTimeSec = p.deathTimeMillis / 1000.0;
         return p;
     }
 

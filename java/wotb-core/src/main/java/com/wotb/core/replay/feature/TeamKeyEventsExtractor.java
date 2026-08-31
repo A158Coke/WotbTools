@@ -58,7 +58,7 @@ final class TeamKeyEventsExtractor {
                 || recon.checkpoints().isEmpty()) {
             return null;
         }
-        final double deathSec = PlayerResultFormat.deathSec(battle, player);
+        final double deathSec = PlayerResultFormat.deathSec(player);
         if (deathSec <= 0) {
             return null;
         }
@@ -164,10 +164,10 @@ final class TeamKeyEventsExtractor {
     ) {
         final Stream<KeyBattleEvent> deathEvents = members.stream()
                 .filter(member -> !member.survived)
-                .filter(member -> PlayerResultFormat.deathSec(battle, member) > 0)
-                .sorted(Comparator.comparingDouble(member -> PlayerResultFormat.deathSec(battle, member)))
+                .filter(member -> PlayerResultFormat.deathSec(member) > 0)
+                .sorted(Comparator.comparingDouble(PlayerResultFormat::deathSec))
                 .map(member -> new KeyBattleEvent(
-                        (float) PlayerResultFormat.deathSec(battle, member),
+                        (float) PlayerResultFormat.deathSec(member),
                         "TEAM_MEMBER_DESTROYED",
                         "accountId=" + member.accountId + ";nickname=" + member.nickname,
                         DecodeConfidence.EXACT,

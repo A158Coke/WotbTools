@@ -33,7 +33,7 @@
 | `settlementLifeTimeSec` | double | 战绩 `#24` | settlement lifeTime（秒；阵亡=结算死亡秒；幸存=整场时长） | raw settlement 证据，保留 |
 | `settlementKillerResultEntityId` | long? | 战绩 `#25` | 击杀者 result/entity-id（<b>非 accountId</b>，namespace == #301 outer field1） | 经 result/entity-id → accountId 映射得 `killerAccountId` |
 | `settlementDeathReasonRaw` | int? | 战绩 `#105` | deathReason 原始值（-1=幸存 sentinel；未证明值 raw 保留） | 已证明：5=drowning；其它 UNKNOWN |
-| `survivalTimeSec` | double | 派生 | settlement lifeTime 的兼容投影（秒） | live reconstruction 只通过 `Battle.liveDeathObservations` 消费；此字段不会被 reconciliation 改写 |
+| `survivalTimeSec` | double | 派生 | settlement lifeTime 的兼容投影（秒） | 仅兼容展示；业务死亡秒值读取 settlement `field24 lifeTime`，live reconstruction 不覆盖 |
 | `xp` / `credits` | int | 战绩 | 经验/银币 | 展示用 |
 | `tankName` / `tankTier` / `tankType` / `tankNation` / `alphaDamage` | String | tankopedia 映射 | 展示派生字段 | 非回放原始值 |
 
@@ -97,7 +97,7 @@
 ## 5. 口径约定（易错点）
 
 - **录像者昵称**：`meta.json#playerName` 在部分版本中是「军团-昵称」拼接（如 `CHRD-A158布丁`），roster 的 nickname 是纯昵称。解析层 `ReplayParser.resolveRecorderNickname` 会先精确匹配 roster 昵称，再尝试「clan+分隔符+nickname」常见形式并唯一匹配时归一化为纯昵称；随机战斗复盘只使用玩家 nickname，不得把军团名当作玩家名。
-- **死亡时刻**：settlement `field24 lifeTime` 进入 `PlayerResult` 的兼容投影；full processing 的 live exact / settlement fallback / unknown 进入 `Battle.liveDeathObservations`，由 `PlayerResultFormat.deathSec(Battle, PlayerResult)` 与 `deathEvidence(Battle, PlayerResult)` 显式消费。`DeathTimeReconciler` 不回写 `PlayerResult`，因此 reconstruction 不会改变 settlement/League truth。禁止用 EntityLeave/最后位置/伤害阈值等 legacy 启发式当死亡权威；SETTLEMENT_SECOND 仍是 ±0.5s interval，trade / 谁先死 / phase boundary 必须 fail-closed。
+- **死亡时刻**：业务死亡秒值只来自 settlement `field24 lifeTime`；`deathTimeMillis`/`survivalTimeSec` 是兼容投影。Playback/live reconstruction 不覆盖 settlement，EntityLeave/最后位置/伤害阈值等 legacy 启发式不是死亡权威；无有效结算秒值时 trade、先后顺序和 phase boundary 必须 fail-closed。
 - **坐标**：优先使用每张地图 `map-semantics/*.semantic.json` 的 `playableBoundsMeters` 推导 `centerX/centerZ/halfExtent`，再映射到 500×500 canonical；只有语义缺失或边界无效时才回退中心原点、`halfExtent=250`。三态 `VALID/CLAMPED/INVALID`；九宫格 region 只描述方位，禁止用 region 差推断距离。
 - **时间**：派生证据优先使用可靠的 battle-relative 时间（`battleClockSec`）；战斗开始无法解析时 `tryRelative()` 返回 `UNRESOLVED_RAW_ONLY`，事件以 `UNRESOLVED_RAW_ONLY_EVENTS_IGNORED` 标记并从派生计算中排除（`rawClockSec` 仍保留，但不作为可用时间）；准备阶段事件排除。
 - **权威 vs 观测**：`battle_results` 是唯一可信口径；事件流数字只是观测子集。

@@ -55,9 +55,7 @@ final class PlayerSummaryBuilder {
                                                    final AllowedLanguage language) {
         final List<KeyBattleEvent> keyEvents = buildDeathTimeline(battle);
         final String enemySection = EnemyLastKnownPositionsSection.renderPlayerSection(battle, recon);
-        final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(
-                buildFallbackPhases(battle),
-                BattlePhaseSummary.deathSourceLabel(battle));
+        final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(buildFallbackPhases(battle));
         // 点数局势：fallback 无覆盖口径信号，伤害数字抑制（定性）；recon 缺失时仅击杀夺分时间线
         final Integer recorderTeam = battle == null
                 ? null : PlayerSideResolver.resolveRecorderTeam(battle);
@@ -361,15 +359,15 @@ final class PlayerSummaryBuilder {
         final List<KeyBattleEvent> events = new ArrayList<>();
         if (battle.players != null) {
             final var dead = battle.players.stream()
-                    .filter(p -> !p.survived)
+                    .filter(p -> !p.survived && PlayerResultFormat.deathSec(p) > 0)
                     .sorted(Comparator
-                            .comparingDouble((PlayerResult p) -> PlayerResultFormat.deathSec(battle, p) > 0
-                                    ? PlayerResultFormat.deathSec(battle, p) : Double.MAX_VALUE)
+                            .comparingDouble((PlayerResult p) -> PlayerResultFormat.deathSec(p) > 0
+                                    ? PlayerResultFormat.deathSec(p) : Double.MAX_VALUE)
                             .thenComparingLong(p -> p.accountId))
                     .toList();
             final PlayerResult recorder = battle.recorderResult();
             for (final PlayerResult p : dead) {
-                final float deathSec = (float) PlayerResultFormat.deathSec(battle, p);
+                final float deathSec = (float) PlayerResultFormat.deathSec(p);
                 // 玩家本人写「你」，同队写「队友」，对方写「敌方」；本人绝不出现为「友方」
                 final String who = PlayerAnalysisPromptFormatter.isSamePlayer(p, recorder)
                         ? "你"
@@ -382,7 +380,7 @@ final class PlayerSummaryBuilder {
                         PlayerAnalysisTerms.knownDeathClock(deathSec) + " " + who
                                 + "（" + PlayerResultFormat.quoteForPrompt(
                                         ReplayDisplayNames.tankName(p.tankId, p.tankName)) + "）"
-                                + (deathSec > 0 ? "阵亡" : "阵亡（时刻未知）")));
+                                + "阵亡"));
             }
         }
         final float endSec = battle.durationS != null ? battle.durationS.floatValue() : 0f;

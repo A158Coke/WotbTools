@@ -116,11 +116,12 @@ class LeagueRatingValidatorTest {
     }
 
     @Test
-    void acceptsDeadPlayerWithUnknownDeathTime() {
-        // survivalTimeSec == 0 = 死亡时间 UNKNOWN（合法）：不产生 failure，整场允许评分
+    void rejectsDeadPlayerWithMissingSettlementDeathTime() {
+        // 阵亡玩家缺失 settlement lifeTime 必须 fail-closed，不再当作普通 UNKNOWN 放行。
         final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
         specs.get(0).dead(0);
-        assertTrue(LeagueRatingValidator.validate(LeagueTestBattles.battle(1, specs)).isEmpty());
+        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS),
+                codes(LeagueTestBattles.battle(1, specs)));
     }
 
     @Test

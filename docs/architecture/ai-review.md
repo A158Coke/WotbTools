@@ -238,9 +238,8 @@ Draft → validate → PASS → 流式输出
 
 ### Grounding Facts（TeamGroundingFacts，wotb-core）
 
-- **死亡时刻时钟契约**：`PlayerResultFormat.deathSec()` 数值域不统一
-  （`deathTimeMillis`/兼容 settlement 投影为结算事实，live observation 由 `Battle.liveDeathObservations`
-  显式提供 battle-relative 值）；`TeamGroundingFacts.build` 统一按 `raw > startRaw → raw − startRaw`
+- **死亡时刻时钟契约**：`PlayerResultFormat.deathSec()` 只读取 settlement `field24 lifeTime`（业务秒值）；
+  live reconstruction 事件仅用于 Playback/HP/动画/诊断，不得覆盖 settlement。`TeamGroundingFacts.build` 统一按 `raw > startRaw → raw − startRaw`
   转 battle-relative——compat 入口（无 timeline）必须传 `reconstruction.battleStartRawClockSec()`。
 - 从权威结算 + 已验证 canonical BattleTimeline 提取带稳定证据编号（E1xx，确定性顺序：
   阵亡→存活变化→关注窗口→位置快照→敌方位置知识）的事实清单；timeline 为 null（兼容入口）
@@ -396,6 +395,6 @@ POST /api/replay/analyze（Dataset JSON `{processingJobId, sourceId, lang, corre
 - `RANDOM` 仍是录像者个人复盘；`TRAINING` / `TOURNAMENT` 是录像者所在整队复盘。
 - 录像者不获得特殊个人分析权重，只用于解析 `perspectiveTeam`。
 - 同场同队回放是 `SAME_TEAM_DUPLICATE_PERSPECTIVE`，只选质量最高的代表；禁止拼接原始事件流。
-- **死亡时刻口径**：full processing 的 `Battle.liveDeathObservations` 显式提供 `LIVE_EXACT` / `SETTLEMENT_SECOND` / `UNKNOWN`；settlement `PlayerResult` 只保留兼容投影，reconstruction 不回写它。prompt 用 `DEATH_SOURCE` 标注来源（`BattlePhaseSummary.deathSourceLabel`），`PlayerResultFormat.deathSec(Battle, PlayerResult)` 消费显式边界，legacy 启发式不作为权威。阶段存活人数为「至阶段末」语义（`BattlePhaseTimelineSection`），prompt 注入双方逐车阵亡时间线（`DEATH_TIMELINE`）。
+- **死亡时刻口径**：业务死亡秒值只来自 settlement `#301 field24 lifeTime`；settlement 无效时依赖死亡时刻的证据 fail-closed。Playback/live reconstruction 不覆盖 `PlayerResult`，也不产生额外死亡 provenance 层；legacy 启发式不作为权威。阶段存活人数为「至阶段末」语义（`BattlePhaseTimelineSection`），prompt 注入双方逐车阵亡时间线（`DEATH_TIMELINE`）。
 - **观测伤害抑制**：事件流覆盖未达 100% 时 `DefaultTeam/PlayerBattleFeatureExtractor` 条件标记 `OBSERVED_DAMAGE_IS_PARTIAL`，prompt 层抑制观测数字（`TeamAiPromptBuilder.appendObserved` / 随机战交火段），以权威结算为唯一口径；覆盖补齐后自动恢复。
 - **赛前预测渲染**：`PreBattleSectionRenderer` 覆盖 TEAM 变体（A队/B队/A 队/队伍1 等）、AREA ID → 中文名 + 九宫格（复用 `MapTacticalSemanticsRegistry`）、composition 键值三语翻译。

@@ -53,10 +53,9 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 `winnerTeam` 明确为 1/2（平局/未知不评分）、统计字段无负值/非有限/违反真实字段关系
 （命中≤射击、击穿≤命中）。
 
-**死亡时间 UNKNOWN ≠ 数据非法**：阵亡玩家 `survivalTimeSec == 0` 表示精确死亡时刻无法从
-回放可靠证明（`DeathTimeReconciler` 的 fail-closed 结果），这是**合法状态**——整场仍允许评分；
-该玩家仅在依赖死亡时刻的 Survival/Trade 维度按 0 分保守计算（`TradeFacts` 无法建立
-`[0, +5s]` directional 死亡窗口即 fail-closed 返回 0，绝不猜测），其它六维按真实 Replay facts 正常评分，
+**结算死亡时间门槛**：阵亡玩家必须有有效的 settlement `field24 lifeTime`（有限、正数且不超过战斗时长）；
+缺失、非正、非有限或超时一律 `LEAGUE_INVALID_STAT_FACTS`，不再降级为普通 UNKNOWN。Trade 只消费
+settlement 秒值，使用 `[0, +5s]` directional 窗口，无法建立窗口即 fail-closed 返回 0，绝不猜测；其它六维按真实 Replay facts 正常评分，
 总分保持 0–1000 不重新归一化。`survivalTimeSec < 0` / NaN / Infinity /
 明显超过战斗时长（`> duration + 1s`）仍为非法 stat facts（`LEAGUE_INVALID_STAT_FACTS`），
 整场拒绝评分。
@@ -80,8 +79,8 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   拒绝评分（`CONFLICTING_REPLAYS_FOR_ARENA`）。不自动选「字段更多」的副本；
   不建立持久化记录，重新上传同一 arenaId 会重新计算。
 - **死亡时间不是 League identity/provenance 状态**：duplicate 判定只比较 settled combatant
-  facts（包括 `settlementLifeTimeSec` 与生死状态）；live observation、`DeathTimeSource` 和
-  compatibility projection 不参与 identity，也不会回写 retained Battle。
+  facts（包括 `settlementLifeTimeSec` 与生死状态）；Playback/live 事件和兼容 projection 不参与
+  identity，也不会回写 retained Battle。
 - **Group-level all-pairs 判定（上传顺序无关）**：对同 arenaId 全部副本做关键 settlement
   facts 的一致性检查；不以 first copy 作 wildcard anchor。上传顺序不改变是否评分或 Rating 结果。
 - **hard-conflict 字段**（任一不一致 → 冲突）：settlementAccountsCoveredByRoster /
