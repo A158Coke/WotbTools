@@ -116,7 +116,7 @@ public final class TeamGroundingFacts {
     }
 
     /**
-     * Production 入口。{@link PlayerResultFormat#deathSec(Battle, PlayerResult)} 已经是 canonical
+     * Production 入口。{@link PlayerResultFormat#deathSec(PlayerResult)} 已经是 canonical
      * battle-relative 秒，不得再减 battleStartRawClockSec。
      */
     public static GroundingFacts build(final Battle battle,
@@ -147,11 +147,11 @@ public final class TeamGroundingFacts {
         final List<PlayerResult> players = battle == null || battle.players == null
                 ? List.of() : battle.players;
         final List<PlayerResult> dead = players.stream()
-                .filter(p -> p != null && !p.survived && PlayerResultFormat.deathSec(battle, p) > 0)
-                .sorted(Comparator.comparingDouble(p -> PlayerResultFormat.deathSec(battle, p)))
+                .filter(p -> p != null && !p.survived && PlayerResultFormat.deathSec(p) > 0)
+                .sorted(Comparator.comparingDouble(PlayerResultFormat::deathSec))
                 .toList();
         for (final PlayerResult p : dead) {
-            final double rel = PlayerResultFormat.deathSec(battle, p);
+            final double rel = PlayerResultFormat.deathSec(p);
             facts.add(new EvidenceFact(
                     null, TYPE_PLAYER_DESTROYED,
                     p.team == perspectiveTeam ? Side.FRIENDLY : Side.ENEMY,
@@ -180,7 +180,7 @@ public final class TeamGroundingFacts {
             int fAlive = friendlyTotal;
             int eAlive = enemyTotal;
             for (final PlayerResult p : dead) {
-                final double rel = PlayerResultFormat.deathSec(battle, p);
+                final double rel = PlayerResultFormat.deathSec(p);
                 final int beforeF = fAlive;
                 final int beforeE = eAlive;
                 if (p.team == perspectiveTeam) {

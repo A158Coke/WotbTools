@@ -15,7 +15,7 @@ import java.util.Map;
 
 /**
  * 阵亡连锁 Skill：同一方在短时间窗口内连续阵亡产生证据。
- * <p>时间统一消费 {@link PlayerResultFormat#deathSec(Battle, PlayerResult)} 的 canonical death authority；
+ * <p>时间统一消费 {@link PlayerResultFormat#deathSec(PlayerResult)} 的 settlement death authority；
  * UNKNOWN（deathSec<=0）不得进入聚类，避免伪造“0 秒阵亡”。Skill 只描述发生了什么，
  * 不判断是否犯错。</p>
  */
@@ -35,7 +35,7 @@ public final class DeathCascadeSkill {
         final List<Death> deaths = battle.players.stream()
                 .filter(p -> !p.survived)
                 .map(p -> new Death(
-                        (float) PlayerResultFormat.deathSec(battle, p),
+                        (float) PlayerResultFormat.deathSec(p),
                         p.team,
                         p.accountId,
                         p.tankId,

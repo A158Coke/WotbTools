@@ -106,7 +106,7 @@ final class DamageWindowClusterer {
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
                         recon.events(), mapping,
-                        battleStart == null ? 0.0 : battleStart.doubleValue(), duration);
+                        battleStart == null ? 0.0 : battleStart.doubleValue(), duration, battle);
         final List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss> losses =
                 combat.lossesOf(accountId);
         if (losses.isEmpty()) {

@@ -57,7 +57,7 @@ public final class TeamAutopsyStatsBuilder {
         for (final PlayerResult p : teamPlayers) {
             index++;
             final String playerKey = "P" + index;
-            final double deathSec = PlayerResultFormat.deathSec(battle, p);
+            final double deathSec = PlayerResultFormat.deathSec(p);
             // deathSec<=0 = 死亡时刻未知（结算缺失 + 事件流被 alive 证据否决/无证据）：不得当作 0s 阵亡或早期阵亡
             final boolean hasDeathData = !p.survived && duration > 0 && deathSec > 0;
             final boolean earlyDeath = hasDeathData

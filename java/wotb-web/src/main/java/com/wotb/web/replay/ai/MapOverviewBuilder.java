@@ -90,7 +90,7 @@ public final class MapOverviewBuilder {
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
                         events, mapping,
-                        battleStart == null ? 0.0 : battleStart.doubleValue(), duration);
+                        battleStart == null ? 0.0 : battleStart.doubleValue(), duration, battle);
         final MapOverview.Heatmaps heatmaps = buildHeatmaps(
                 battle, mapping, positions, damages, friendlyTeam, profile, battleStart, combat);
         final List<MapOverview.Phase> phases = buildPhases(
@@ -422,7 +422,7 @@ public final class MapOverviewBuilder {
         if (player.survived) {
             return null;
         }
-        final double deathSec = PlayerResultFormat.deathSec(battle, player);
+        final double deathSec = PlayerResultFormat.deathSec(player);
         return deathSec > 0 ? deathSec : null;
     }
 

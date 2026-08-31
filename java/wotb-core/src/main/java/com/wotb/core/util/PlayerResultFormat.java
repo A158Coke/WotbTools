@@ -1,8 +1,6 @@
 package com.wotb.core.util;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeObservation;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 
 /**
@@ -26,96 +24,15 @@ public final class PlayerResultFormat {
     }
 
     /**
-     * settlement/compatibility 死亡时刻（秒）。live reconstruction observation 只能通过 Battle overload 消费：
-     * <ul>
-     *   <li>兼容 projection 的 SETTLEMENT_SECOND → deathTimeMillis / 1000；</li>
-     *   <li>存活 / UNKNOWN / 无 source → 0。</li>
-     * </ul>
-     *
-     * <p>这是 settlement-only consumers 的唯一入口；full reconstruction consumers must use
-     * {@link #deathSec(Battle, PlayerResult)}.</p>
+     * 业务死亡时刻（秒）。settlement #301 field24 是唯一 authority；live event time 只属于
+     * Playback / reconstruction，不得覆盖这里的秒级事实。
      */
     public static double deathSec(final PlayerResult p) {
-        if (p == null || p.survived || p.deathTimeSource == null) {
+        if (p == null || p.survived) {
             return 0;
         }
-        if (p.deathTimeSource == DeathTimeSource.SETTLEMENT_SECOND) {
-            return p.deathTimeMillis > 0 ? p.deathTimeMillis / 1000.0 : 0;
-        }
-        return 0;
-    }
-
-    /**
-     * Death time for a full-processing view. Live reconstruction evidence is preferred, while the
-     * one-argument overload remains settlement-only for summary/League consumers.
-     */
-    public static double deathSec(final Battle battle, final PlayerResult p) {
-        final DeathTimeObservation observation = observationOf(battle, p);
-        if (observation == null) {
-            return deathSec(p);
-        }
-        return observation.source() == DeathTimeSource.UNKNOWN ? 0 : observation.timeSec();
-    }
-
-    /**
-     * 死亡时刻 precision interval（SETTLEMENT_SECOND 量化）：SETTLEMENT_SECOND 有 ±0.5s 量化，consumer 不得当作
-     * exact point 用于 trade / 谁先死 / 5s 窗口 / phase boundary。保存代表值 + 上下界。
-     */
-    public record DeathTimeEvidence(
-            DeathTimeSource source,
-            double representativeSec,
-            double lowerBoundSec,
-            double upperBoundSec) {
-        public boolean known() {
-            return Double.isFinite(lowerBoundSec) && Double.isFinite(upperBoundSec);
-        }
-    }
-
-    /** SETTLEMENT_SECOND ±0.5s 量化。 */
-    public static final double SETTLEMENT_SECOND_QUANTIZATION_HALF = 0.5;
-
-    /**
-     * 死亡时刻 evidence（含代表值与 precision interval）：LIVE_EXACT 为点（lower==upper==rep）；
-     * SETTLEMENT_SECOND 为 [rep-0.5, rep+0.5]；存活 / UNKNOWN / 无 source → null（调用方 fail-closed）。
-     */
-    public static DeathTimeEvidence deathEvidence(final PlayerResult p) {
-        if (p == null || p.survived || p.deathTimeSource == null) {
-            return null;
-        }
-        if (p.deathTimeSource == DeathTimeSource.SETTLEMENT_SECOND && p.deathTimeMillis > 0) {
-            final double rep = p.deathTimeMillis / 1000.0;
-            return new DeathTimeEvidence(DeathTimeSource.SETTLEMENT_SECOND,
-                    rep, rep - SETTLEMENT_SECOND_QUANTIZATION_HALF, rep + SETTLEMENT_SECOND_QUANTIZATION_HALF);
-        }
-        return null;
-    }
-
-    /** Death evidence for a full-processing view; live exact is a point, settlement remains interval-valued. */
-    public static DeathTimeEvidence deathEvidence(final Battle battle, final PlayerResult p) {
-        final DeathTimeObservation observation = observationOf(battle, p);
-        if (observation != null) {
-            final double sec = observation.timeSec();
-            return evidence(observation.source(), sec);
-        }
-        return null;
-    }
-
-    private static DeathTimeEvidence evidence(final DeathTimeSource source, final double representativeSec) {
-        return switch (source) {
-            case LIVE_EXACT -> new DeathTimeEvidence(source, representativeSec,
-                    representativeSec, representativeSec);
-            case SETTLEMENT_SECOND -> new DeathTimeEvidence(source, representativeSec,
-                    representativeSec - SETTLEMENT_SECOND_QUANTIZATION_HALF,
-                    representativeSec + SETTLEMENT_SECOND_QUANTIZATION_HALF);
-            case UNKNOWN -> null;
-        };
-    }
-
-    private static DeathTimeObservation observationOf(final Battle battle, final PlayerResult p) {
-        if (battle == null || p == null || p.survived || battle.liveDeathObservations == null) {
-            return null;
-        }
-        return battle.liveDeathObservations.get(p.accountId);
+        return Double.isFinite(p.settlementLifeTimeSec) && p.settlementLifeTimeSec > 0
+                ? p.settlementLifeTimeSec : 0;
     }
 
     /** 存活/阵亡文本（含秒数）；死亡时刻未知（deathSec<=0）时如实标注，绝不伪造 0.0s。 */
@@ -124,7 +41,7 @@ public final class PlayerResultFormat {
             return "存活";
         }
         final double ds = deathSec(p);
-        return ds > 0 ? "阵亡@" + String.format("%.1f", ds) + "s" : "阵亡（时刻未知）";
+        return ds > 0 ? "阵亡@" + String.format("%.0f", ds) + "s" : "阵亡（时刻未知）";
     }
 
     /** 录像者战绩行（输出/损失血量/助攻/格挡/击杀/存活）。 */

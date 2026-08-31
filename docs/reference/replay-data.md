@@ -127,11 +127,11 @@ value:     [u8; value_len]
 解码器保留结构（`prop_id`/`value_len`）+ 已证明的 HP/property 语义；<b>未证明</b>的 prop_id 语义仍标
 `UNKNOWN`，绝不臆断血量/存活。
 
-> **可靠的血量/伤害/助攻/格挡/击杀/存活请以 `battle_results.dat`（`Battle`/`PlayerResult`）为准；死亡时刻在
-> full processing 中还需消费 `Battle.liveDeathObservations`**——
-> 见 `docs/architecture/ai-review.md`。逐帧 HP 时间线由 canonical HP facts（`ReplayHpTimeline`）提供。
+> **可靠的血量/伤害/助攻/格挡/击杀/存活及业务死亡秒值请以 `battle_results.dat`（`Battle`/`PlayerResult`）为准**；
+> `field24 lifeTime` 是唯一死亡秒值 authority。逐帧 HP 时间线由 canonical HP facts（`ReplayHpTimeline`）提供，
+> live reconstruction 仅用于 Playback/HP/动画/诊断。
 
-> **死亡时刻口径（AI 复盘）**：full processing 的 `Battle.liveDeathObservations` 提供 `LIVE_EXACT`（回放 live EXACT，sub-second）→ `SETTLEMENT_SECOND`（结算 `deathTimeMillis`——由 field24 lifeTime 派生，11.19 corpus 无 #104，±0.5s）→ `UNKNOWN`；`PlayerResult` 上的 `deathTimeMillis`/`survivalTimeSec` 只是兼容投影，`PlayerResultFormat.deathSec(Battle, PlayerResult)` 按显式 observation 消费。EntityLeave / 最后位置 / damage threshold 不再是死亡 authority（legacy 启发式仅存于 diagnostics）。
+> **死亡时刻口径（AI 复盘）**：只消费 settlement `field24 lifeTime`；`PlayerResult` 上的 `deathTimeMillis`/`survivalTimeSec` 只是兼容投影。EntityLeave / 最后位置 / damage threshold 不是死亡 authority；结算秒值无效时相关推理必须 fail-closed。
 > 不得把估算数据当作权威；阶段存活人数明确为「至阶段末」，并注入双方逐车阵亡时间线。
 
 > **观测伤害抑制（AI 复盘）**：事件流伤害仅为观测子集（`DamageEvent`），覆盖未达 100% 时后端标记
@@ -261,15 +261,11 @@ EventStream → Type 8 sub_type 48 (updateArena2)
 ## 死亡时间 authority
 
 ```
-死亡权威链（PlayerResultFormat.deathSec() / deathEvidence()）:
-  LIVE_EXACT         回放 live EXACT（sub-second）
-      >
-  SETTLEMENT_SECOND 结算 field24 lifeTime（秒，dead=阵亡秒；survivor=battle duration；±0.5s 精度）
-      >
-  UNKNOWN
+死亡权威（PlayerResultFormat.deathSec()）：
+  settlement field24 lifeTime（dead=阵亡秒；survivor=battle duration）
 
-死亡时间 = PlayerResultFormat.deathSec()（canonical），绝不重读 raw field24 / #104 / EntityLeave /
-damage threshold / last HP update 自行计算。
+死亡时间只由 settlement 事实提供；Playback/live 事件、#104、EntityLeave、damage threshold、
+last HP update 均不得覆盖或重新计算业务死亡秒值。
 ```
 
 PR147 authoritative settlement facts：
@@ -282,7 +278,7 @@ PR147 authoritative settlement facts：
 > `damageReceived` 阈值 → 推断阵亡 + killer」以及「EntityLeave + Position 停止 / 最后位置 / 离开时间」
 > 估算死亡时刻。这些启发式（damage-threshold / EntityLeave / last-position / last-attacker）在
 > <b>不再写入 `PlayerResult`</b>；`PlayerResult.killVictims` 与 `DeathTimeEstimator` 已从生产
-> 移除。死亡时刻只允许由 canonical 死亡 authority（`LIVE_EXACT → SETTLEMENT_SECOND → UNKNOWN`）给出。
+> 移除。业务死亡时刻只允许由 settlement `field24 lifeTime` 给出。
 
 ---
 
@@ -518,7 +514,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `impact`                     | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.impact`        | %  | 单场 Impact（派生，不依赖 HP，恒有值）                                                     |
 | `damage_received`             | 整数  | `PlayerResult.damageReceived`            | HP    | #11                                                                             |
 | `damage_blocked`              | 整数  | `PlayerResult.damageBlocked`             | HP    | #117                                                                            |
-| `survival_time`               | 浮点数 | `PlayerResult.survivalTimeSec`           | 秒     | 当前兼容投影；full processing 的 live-aware 展示通过 `Battle.liveDeathObservations` 与 `deathSec(Battle, PlayerResult)`，见 replay-parsed-fields.md |
+| `survival_time`               | 浮点数 | `PlayerResult.survivalTimeSec`           | 秒     | settlement lifeTime 的兼容投影；live reconstruction 不覆盖业务值 |
 | `n_shots`                     | 整数  | `PlayerResult.nShots`                    | 次数    | #4                                                                              |
 | `n_hits_dealt`                | 整数  | `PlayerResult.nHitsDealt`                | 次数    | #5                                                                              |
 | `n_penetrations_dealt`        | 整数  | `PlayerResult.nPenetrationsDealt`        | 次数    | #7                                                                              |
@@ -569,7 +565,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | 含义    | 单位         | 说明                                                    |
 |-------|------------|-------------------------------------------------------|
 | 伤害值   | **HP**     | 游戏内生命值点数                                              |
-| 存活时间  | **秒**      | representative deathSec（deathTimeSource 链：LIVE_EXACT → SETTLEMENT_SECOND(field24 lifeTime 派生) → UNKNOWN） |
+| 存活时间  | **秒**      | settlement `field24 lifeTime`（死亡玩家为死亡秒值，幸存者为战斗时长） |
 | 战斗时长  | **秒**      | `meta.json#battleDuration`（浮点）                        |
 | 时间戳   | **Unix 秒** | 自 1970-01-01 起的秒数                                     |
 | 次数/计数 | **次**      | 射击/命中/击杀/人数                                           |
@@ -587,12 +583,10 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 
 | 层级 | 来源                                  | 精度               |
 |----|-------------------------------------|------------------|
-| LIVE_EXACT       | 回放 live EXACT 死亡证据                 | sub-second       |
-| SETTLEMENT_SECOND | 结算 field24 lifeTime（dead=死亡秒；survivor=battle duration） | ±0.5s（保留 second-level uncertainty） |
-| UNKNOWN          | 无可信证据                             | —                |
+| SETTLEMENT       | 结算 field24 lifeTime（dead=死亡秒；survivor=battle duration） | 整数秒 authority |
 
-死亡时间统一经 `PlayerResultFormat.deathSec()` / `deathEvidence()`（canonical），
-消费方绝不重读 raw field24 / #104 / EntityLeave / damage threshold 自行计算。
+死亡时间统一经 `PlayerResultFormat.deathSec()`（canonical），消费方绝不重读 raw field24 / #104 /
+EntityLeave / damage threshold 自行计算。
 
 > **旧启发式已移除：** 早期用「Type 8 subtype 8 累计 direct HP 伤害 ≥ `damageReceived` 阈值」的 damageDeathTimes，
 > 以及「EntityLeave + Position 停止 / 最后位置 / 离开时间」的 EntityLeave/Position 兜底估算死亡时刻。这些

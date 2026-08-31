@@ -1,5 +1,6 @@
 package com.wotb.core.replay.facts;
 
+import com.wotb.core.model.Battle;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.HpRawState;
@@ -65,6 +66,14 @@ public final class ReplayTerminalLifecycle {
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
             final Double startRawClockSec) {
+        return build(events, mapping, startRawClockSec, null);
+    }
+
+    public static List<Evidence> build(
+            final List<ReplayEvent> events,
+            final TeamEntityMapping mapping,
+            final Double startRawClockSec,
+            final Battle battle) {
         if (events == null || mapping == null) {
             return List.of();
         }
@@ -94,7 +103,9 @@ public final class ReplayTerminalLifecycle {
                 }
             } else if (event instanceof VehicleHealthStateEvent v) {
                 entityId = v.entityId();
-                if (v.cause() == VehicleHealthStateEvent.Cause.DROWNING) {
+                final VehicleHealthStateEvent.Cause validatedCause = v.cause() != null
+                        ? v.cause() : VehicleHealthCauseValidator.validate(v, battle, mapping);
+                if (validatedCause == VehicleHealthStateEvent.Cause.DROWNING) {
                     state = State.TERMINAL;
                     kind = TerminalKind.DROWNING;
                 } else {
@@ -153,8 +164,16 @@ public final class ReplayTerminalLifecycle {
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
             final Double startRawClockSec) {
+        return finalStateByAccount(events, mapping, startRawClockSec, null);
+    }
+
+    public static Map<Long, Evidence> finalStateByAccount(
+            final List<ReplayEvent> events,
+            final TeamEntityMapping mapping,
+            final Double startRawClockSec,
+            final Battle battle) {
         final Map<Long, Evidence> finalState = new HashMap<>();
-        for (final Evidence evidence : build(events, mapping, startRawClockSec)) {
+        for (final Evidence evidence : build(events, mapping, startRawClockSec, battle)) {
             finalState.merge(evidence.accountId(), evidence, ReplayTerminalLifecycle::later);
         }
         return Map.copyOf(finalState);

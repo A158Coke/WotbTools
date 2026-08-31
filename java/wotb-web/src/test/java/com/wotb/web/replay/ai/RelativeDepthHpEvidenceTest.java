@@ -1,7 +1,6 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DamageEvent;
@@ -456,7 +455,7 @@ class RelativeDepthHpEvidenceTest {
             if (pl.accountId == 1002L) {
                 pl.survived = false;
                 pl.deathTimeMillis = 10_000L;
-        pl.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+        pl.settlementLifeTimeSec = 10;
             }
         }
         final String section = RelativeDepthHpEvidence.renderTeamSection(

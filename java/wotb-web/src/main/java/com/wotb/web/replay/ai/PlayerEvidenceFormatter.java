@@ -63,7 +63,7 @@ final class PlayerEvidenceFormatter {
                 : (battle != null && battle.durationS != null && battle.durationS > 0
                         ? battle.durationS : 0.0);
         return com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
-                recon.events(), mapping, start == null ? 0.0 : start.doubleValue(), duration);
+                recon.events(), mapping, start == null ? 0.0 : start.doubleValue(), duration, battle);
     }
 
     private static int dealtTo(
@@ -466,7 +466,7 @@ final class PlayerEvidenceFormatter {
     static void appendPlayerLine(final StringBuilder sb, final Battle battle, final PlayerResult p,
                                  final boolean isFriendly, final boolean isYou) {
         final String tankDisplay = ReplayDisplayNames.tankName(p.tankId, p.tankName);
-        final double deathSec = PlayerResultFormat.deathSec(battle, p);
+        final double deathSec = PlayerResultFormat.deathSec(p);
         final String deathStr = p.survived ? "存活"
                 : deathSec > 0
                         ? "阵亡@" + PlayerAnalysisTerms.knownDeathClock(deathSec)
@@ -556,12 +556,12 @@ final class PlayerEvidenceFormatter {
         final long survivors = players.stream().filter(p -> p.survived).count();
         final long deaths = players.stream().filter(p -> !p.survived).count();
         final List<PlayerResult> knownDeaths = players.stream()
-                .filter(p -> !p.survived && PlayerResultFormat.deathSec(battle, p) > 0)
+                .filter(p -> !p.survived && PlayerResultFormat.deathSec(p) > 0)
                 .toList();
         final double firstDeath = knownDeaths.stream()
-                .mapToDouble(p -> PlayerResultFormat.deathSec(battle, p)).min().orElse(-1);
+                .mapToDouble(PlayerResultFormat::deathSec).min().orElse(-1);
         final double lastDeath = knownDeaths.stream()
-                .mapToDouble(p -> PlayerResultFormat.deathSec(battle, p)).max().orElse(-1);
+                .mapToDouble(PlayerResultFormat::deathSec).max().orElse(-1);
         sb.append("总伤害: ").append(totalDmg)
                 .append(" 总损失血量: ").append(totalRecv)
                 .append(" 总助攻: ").append(totalAssist)
@@ -597,11 +597,11 @@ final class PlayerEvidenceFormatter {
                 .append(" 击杀排名: ").append(killRank).append("/").append(totalFriendly)
                 .append(" 占本队总伤害: ").append(String.format("%.0f%%", dmgShare));
 
-        final double deathSec = PlayerResultFormat.deathSec(battle, rec);
+        final double deathSec = PlayerResultFormat.deathSec(rec);
         if (!rec.survived && deathSec > 0) {
             final boolean friendlyDeathsComplete = friendlies.stream()
                     .filter(p -> !p.survived)
-                    .allMatch(p -> PlayerResultFormat.deathSec(battle, p) > 0);
+                    .allMatch(p -> PlayerResultFormat.deathSec(p) > 0);
             final List<PlayerResult> allPlayers = battle.players != null ? battle.players : List.of();
             final Map<PlayerResult, Side> sides = PlayerSideResolver.resolveAll(battle);
             final List<PlayerResult> enemies = allPlayers.stream()
@@ -609,18 +609,18 @@ final class PlayerEvidenceFormatter {
                     .toList();
             final boolean enemyDeathsComplete = enemies.stream()
                     .filter(p -> !p.survived)
-                    .allMatch(p -> PlayerResultFormat.deathSec(battle, p) > 0);
+                    .allMatch(p -> PlayerResultFormat.deathSec(p) > 0);
 
             sb.append(" 死亡时间: ").append(PlayerAnalysisTerms.knownDeathClock(deathSec));
             if (friendlyDeathsComplete) {
                 final int deathOrder = (int) friendlies.stream()
                         .filter(p -> !p.survived)
-                        .mapToDouble(p -> PlayerResultFormat.deathSec(battle, p))
+                        .mapToDouble(PlayerResultFormat::deathSec)
                         .filter(ds -> ds > 0 && ds < deathSec)
                         .count() + 1;
                 sb.append(" 你在本队的阵亡序位: ").append(deathOrder).append("/").append(totalFriendly);
                 final long friendlyAlive = friendlies.stream()
-                        .filter(p -> p.survived || PlayerResultFormat.deathSec(battle, p) > deathSec).count();
+                        .filter(p -> p.survived || PlayerResultFormat.deathSec(p) > deathSec).count();
                 sb.append(" 你阵亡时本队存活: ").append(friendlyAlive);
             } else {
                 sb.append(" 你在本队的阵亡序位: UNKNOWN")
@@ -636,7 +636,7 @@ final class PlayerEvidenceFormatter {
 
             if (enemyDeathsComplete) {
                 final long enemyAlive = enemies.stream()
-                        .filter(p -> p.survived || PlayerResultFormat.deathSec(battle, p) > deathSec).count();
+                        .filter(p -> p.survived || PlayerResultFormat.deathSec(p) > deathSec).count();
                 sb.append(" 阵亡时敌方存活: ").append(enemyAlive);
             } else {
                 sb.append(" 阵亡时敌方存活: UNKNOWN");
@@ -651,8 +651,8 @@ final class PlayerEvidenceFormatter {
         final List<PlayerResult> dead = battle.players != null ? battle.players.stream()
                 .filter(p -> !p.survived)
                 .sorted(java.util.Comparator
-                        .comparingDouble((PlayerResult p) -> PlayerResultFormat.deathSec(battle, p) > 0
-                                ? PlayerResultFormat.deathSec(battle, p) : Double.MAX_VALUE)
+                        .comparingDouble((PlayerResult p) -> PlayerResultFormat.deathSec(p) > 0
+                                ? PlayerResultFormat.deathSec(p) : Double.MAX_VALUE)
                         .thenComparingLong(p -> p.accountId))
                 .toList() : List.of();
         if (dead.isEmpty()) {
@@ -661,7 +661,7 @@ final class PlayerEvidenceFormatter {
         }
         final PlayerResult recorder = battle.recorderResult();
         for (final PlayerResult p : dead) {
-            final double deathSec = PlayerResultFormat.deathSec(battle, p);
+            final double deathSec = PlayerResultFormat.deathSec(p);
             final String who = PlayerAnalysisPromptFormatter.isSamePlayer(p, recorder)
                     ? "你"
                     : PlayerAnalysisPromptFormatter.sideLabel(PlayerSideResolver.resolve(battle, p))
@@ -752,9 +752,7 @@ final class PlayerEvidenceFormatter {
             }
         }
 
-        final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(
-                features.phases(),
-                battle == null ? null : BattlePhaseSummary.deathSourceLabel(battle));
+        final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(features.phases());
         if (!phaseSection.isEmpty()) {
             sb.append("\n").append(phaseSection);
         }

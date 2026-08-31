@@ -3,7 +3,6 @@ package com.wotb.core.model;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
-import java.util.Map;
 
 /** 一场战斗的基本信息 + 全部玩家战绩。 */
 public class Battle {
@@ -27,13 +26,6 @@ public class Battle {
     public String recorderVehicle = "";
     public String clientVersion = "";
     public List<PlayerResult> players;
-
-    /**
-     * Reconstruction-only live death observations keyed by account id. This field is populated only
-     * by full processing; settlement parsing never writes it and it must not be used as settlement
-     * truth by League or export consumers.
-     */
-    public Map<Long, DeathTimeObservation> liveDeathObservations;
 
     /**
      * 结算阵容完整性证据（ReplayParser 设置，<b>严格 fail-closed 全局契约</b>）：

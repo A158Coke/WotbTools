@@ -1,7 +1,6 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.processing.PlayerSideResolver;
@@ -51,49 +50,6 @@ public record BattlePhaseSummary(
     public static final float DENSE_KILL_WINDOW_SEC = 15f;
     public static final int MIN_DENSE_KILLS = 3;
 
-    /**
-     * Canonical death-time provenance label. PR147 authority is
-     * LIVE_EXACT > SETTLEMENT_SECOND > UNKNOWN; settlement may coexist with a more precise live time
-     * and must not cause LIVE_EXACT to be mislabeled as settlement.
-     */
-    public static String deathSourceLabel(final Battle battle) {
-        if (battle == null || battle.players == null) {
-            return "未知";
-        }
-        boolean anyDead = false;
-        boolean anyLiveExact = false;
-        boolean anySettlement = false;
-        for (final PlayerResult p : battle.players) {
-            if (!PlayerSideResolver.isValidRawTeam(p.team) || p.survived) {
-                continue;
-            }
-            anyDead = true;
-            if (PlayerResultFormat.deathSec(battle, p) <= 0) {
-                return "未知";
-            }
-            final var observation = battle.liveDeathObservations == null
-                    ? null : battle.liveDeathObservations.get(p.accountId);
-            if (observation != null && observation.source() == DeathTimeSource.LIVE_EXACT) {
-                anyLiveExact = true;
-            } else if (PlayerResultFormat.deathSec(p) > 0) {
-                anySettlement = true;
-            } else {
-                // settlement lifetime 缺失且无 live observation → UNKNOWN。
-                return "未知";
-            }
-        }
-        if (!anyDead) {
-            return "无阵亡";
-        }
-        if (anyLiveExact && anySettlement) {
-            return "回放精确+结算回退";
-        }
-        if (anyLiveExact) {
-            return "回放精确";
-        }
-        return anySettlement ? "权威结算" : "未知";
-    }
-
     public static List<BattlePhaseSummary> buildRelativePhases(
             final float firstContactRelative,
             final float battleEndRelative
@@ -115,12 +71,9 @@ public record BattlePhaseSummary(
         if (phases.isEmpty() || survival == null) {
             return phases;
         }
-        // precision-aware: a SETTLEMENT_SECOND death is an interval [rep-0.5, rep+0.5], not a
-        // point. When such an interval straddles a phase boundary the exact alive count is UNKNOWN
-        // (fail-closed) rather than forced to a naked-float verdict.
-        final List<PlayerResultFormat.DeathTimeEvidence> friendlySorted =
+        final List<Double> friendlySorted =
                 sortedCopy(survival.friendlyDeathTimes());
-        final List<PlayerResultFormat.DeathTimeEvidence> enemySorted =
+        final List<Double> enemySorted =
                 sortedCopy(survival.enemyDeathTimes());
         final boolean friendlyAliveKnown = survival.friendlyRosterSize() > 0
                 && survival.friendlyUnknownDeaths() == 0;
@@ -173,46 +126,36 @@ public record BattlePhaseSummary(
         return phases;
     }
 
-    /**
-     * precision-aware alive count at a phase boundary. A death counts as dead only when the whole
-     * evidence interval is {@code <= endTime}; alive only when the whole interval is {@code > endTime}.
-     * If any interval straddles the boundary the exact count is unavailable → {@code null} (fail-closed,
-     * consumers must not force a "already dead/alive at the boundary" verdict from insufficient evidence).
-     */
     private static Integer aliveCount(
-            final List<PlayerResultFormat.DeathTimeEvidence> sortedDeaths,
+            final List<Double> sortedDeaths,
             final int rosterSize,
             final float endTime
     ) {
         int deaths = 0;
-        for (final PlayerResultFormat.DeathTimeEvidence ev : sortedDeaths) {
-            if (ev.upperBoundSec() <= endTime) {
+        for (final double deathSec : sortedDeaths) {
+            if (deathSec <= endTime) {
                 deaths++;
-            } else if (ev.lowerBoundSec() > endTime) {
-                break;
             } else {
-                return null;   // interval straddles the boundary → exact count unknown
+                break;
             }
         }
         return rosterSize - deaths;
     }
 
     /**
-     * Dense-kill window over death intervals. A kill is eligible when its interval intersects the phase
-     * {@code [start, end]} (precision-aware — never a naked-float boundary cut).
+     * Dense-kill window over settlement death seconds.
      */
     private static boolean isDenseKillWindow(
             final BattlePhaseSummary phase,
             final SurvivalTimeline survival
     ) {
-        final List<PlayerResultFormat.DeathTimeEvidence> times = new ArrayList<>(survival.friendlyDeathTimes());
+        final List<Double> times = new ArrayList<>(survival.friendlyDeathTimes());
         times.addAll(survival.enemyDeathTimes());
         if (times.size() < MIN_DENSE_KILLS) {
             return false;
         }
         final List<Double> starts = times.stream()
-                .filter(ev -> ev.upperBoundSec() >= phase.startTime() && ev.lowerBoundSec() <= phase.endTime())
-                .map(PlayerResultFormat.DeathTimeEvidence::lowerBoundSec)
+                .filter(sec -> sec >= phase.startTime() && sec <= phase.endTime())
                 .sorted()
                 .toList();
         for (int i = 0; i < starts.size(); i++) {
@@ -228,20 +171,17 @@ public record BattlePhaseSummary(
         return false;
     }
 
-    private static List<PlayerResultFormat.DeathTimeEvidence> sortedCopy(
-            final List<PlayerResultFormat.DeathTimeEvidence> times) {
-        return times.stream().sorted(java.util.Comparator.comparingDouble(
-                PlayerResultFormat.DeathTimeEvidence::lowerBoundSec)).toList();
+    private static List<Double> sortedCopy(final List<Double> times) {
+        return times.stream().sorted().toList();
     }
 
     /**
-     * Survival timeline over canonical battle-relative death times. Known death times are selected by
-     * LIVE_EXACT > SETTLEMENT_SECOND; dead players whose time remains UNKNOWN are counted separately and
-     * make exact per-phase alive counts unavailable for that side.
+     * Survival timeline over settlement battle-relative death seconds. Invalid/missing settlement
+     * death facts make exact per-phase alive counts unavailable for that side.
      */
     public record SurvivalTimeline(
-            List<PlayerResultFormat.DeathTimeEvidence> friendlyDeathTimes,
-            List<PlayerResultFormat.DeathTimeEvidence> enemyDeathTimes,
+            List<Double> friendlyDeathTimes,
+            List<Double> enemyDeathTimes,
             int friendlyRosterSize,
             int enemyRosterSize,
             int friendlyUnknownDeaths,
@@ -264,8 +204,8 @@ public record BattlePhaseSummary(
                     || perspectiveTeam == null || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
                 return new SurvivalTimeline(List.of(), List.of(), 0, 0, 0, 0);
             }
-            final List<PlayerResultFormat.DeathTimeEvidence> friendlyTimes = new ArrayList<>();
-            final List<PlayerResultFormat.DeathTimeEvidence> enemyTimes = new ArrayList<>();
+            final List<Double> friendlyTimes = new ArrayList<>();
+            final List<Double> enemyTimes = new ArrayList<>();
             int friendlyRoster = 0;
             int enemyRoster = 0;
             int friendlyUnknown = 0;
@@ -283,11 +223,9 @@ public record BattlePhaseSummary(
                 if (p.survived) {
                     continue;
                 }
-                // Phase survival is a settlement fact; live reconstruction evidence belongs to
-                // playback/full-processing consumers and must not make settlement summaries disappear.
-                final PlayerResultFormat.DeathTimeEvidence evidence = PlayerResultFormat.deathEvidence(p);
-                if (evidence != null) {
-                    (friendly ? friendlyTimes : enemyTimes).add(evidence);
+                final double deathSec = PlayerResultFormat.deathSec(p);
+                if (deathSec > 0) {
+                    (friendly ? friendlyTimes : enemyTimes).add(deathSec);
                 } else if (friendly) {
                     friendlyUnknown++;
                 } else {

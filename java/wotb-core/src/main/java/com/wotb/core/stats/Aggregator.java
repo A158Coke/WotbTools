@@ -74,6 +74,6 @@ public final class Aggregator {
                     ? battle.durationS
                     : 0;
         }
-        return PlayerResultFormat.deathSec(battle, player);
+        return PlayerResultFormat.deathSec(player);
     }
 }

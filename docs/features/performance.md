@@ -1,8 +1,7 @@
 # 战斗表现（Performance Metrics）
 
 WotBTools 的 replay-derived battle facts 只有一个 authoritative source：回放解析与重建管线
-（`ReplayParser` → `DefaultReplayProcessingFacade` → `ObservedMaxHp` / `DeathTimeReconciler`
-等 evidence 层）。Contribution / KAST / Impact 等指标是**基于统一 battle facts 计算的
+（`ReplayParser` → `DefaultReplayProcessingFacade` → `ObservedMaxHp` 等 evidence 层）。Contribution / KAST / Impact 等指标是**基于统一 battle facts 计算的
 derived performance metrics**，不再属于任何 Rating 综合评分体系。
 
 > 本文件取代原「评分系统 (Rating)」文档。Rating V2 综合评分与旧 `Rating.compute`（WN8 式）
@@ -15,9 +14,9 @@ derived performance metrics**，不再属于任何 Rating 综合评分体系。
     ↓
 ReplayParser（结算战绩）
     ↓
-DefaultReplayProcessingFacade（完整重建 + ObservedMaxHp.populate + DeathTimeReconciler）
+DefaultReplayProcessingFacade（完整重建 + ObservedMaxHp.populate）
     ↓
-Battle settlement facts + explicit live observations（分层 authoritative facts）
+Battle settlement facts（业务 authority）+ playback/live reconstruction（仅播放与诊断）
     ↓
 PerformanceMetricsCalculator（纯派生计算，只读）
 ```
@@ -35,8 +34,7 @@ Battle Playback / AI Review / Performance Metrics 全部消费同一 `Battle` / 
 
 战斗表现不再有独立页面/独立端点，也没有独立 tab：**指标直接成为回放解析结果的一部分**。
 用户创建一个 Processing Job 后，每个 replay 只在 worker 中做一次完整处理
-（`DefaultReplayProcessingFacade` full：parse + reconstruction + `ObservedMaxHp` +
-`DeathTimeReconciler`）；finalize 阶段统一回填表现指标并保存 READY `ProcessedDataset`，随后映射到：
+（`DefaultReplayProcessingFacade` full：parse + reconstruction + `ObservedMaxHp`）；finalize 阶段统一回填表现指标并保存 READY `ProcessedDataset`，随后映射到：
 
 - `battles[].players[].cells`：单场玩家表直接包含 `contribution` / `kast` / `impact`
   （`PerformanceMetricsCalculator.battleMetrics` → `populateBattle` 写入 PlayerResult，
@@ -149,8 +147,8 @@ contribution = player(roundContribution) / team(roundContribution) * 100
 
 `com.wotb.core.replay.facts.TradeFacts.tradedDeaths(player, players)`：死亡时刻
 `[0, +5s]` directional 窗口（玩家死亡 ≤ 敌方死亡 ≤ 玩家死亡+5s）内的敌方死亡数；
-存活或死亡时刻未知 → 0（fail-closed，不猜测）。消费
-`Battle.liveDeathObservations` 中的显式 live/settlement death observation。注意这是**死亡时刻窗口启发式**，
+存活或 settlement 死亡秒值无效 → 0（fail-closed，不猜测）。只消费 `PlayerResult.settlementLifeTimeSec`；
+注意这是**死亡时刻窗口启发式**，
 不是 killer attribution；回放 reconstruction 的 killer 证据并非所有对局可靠，后续如需
 killer 级 trade 语义应在事实层扩展，不在 metrics 层重推。
 

@@ -19,13 +19,8 @@ import java.util.Set;
  * 缺失与零值同等对待，绝不把「字段缺失」误判为损坏。统计字段只校验<b>数值关系矛盾</b>
  * （负值 / 非有限 / 命中&gt;射击 / 击穿&gt;命中）。</p>
  *
- * <p><b>死亡时间 UNKNOWN ≠ 数据非法</b>：阵亡玩家的 canonical {@link PlayerResultFormat#deathSec}
- * 为 0（{@code deathTimeSource} 为 UNKNOWN/null，无权威死亡证据）表示精确死亡时刻无法从回放可靠证明
- * （{@link com.wotb.core.replay.processing.DeathTimeReconciler} 的 fail-closed 结果），这是合法状态——
- * 整场仍允许评分，该玩家仅在依赖死亡时刻的 Survival/Trade 维度保守得 0 分。UNKNOWN source 的 residual
- * {@code survivalTimeSec}/{@code deathTimeMillis} 不得作为 authoritative death fact；
- * {@code survivalTimeSec < 0} / NaN / Infinity / canonical death 明显超过战斗时长仍为
- * {@code INVALID_STAT_FACTS}，整场拒绝评分。</p>
+ * <p>阵亡玩家必须具有合法 settlement lifeTime。缺失、非有限、非正数或明显超过战斗时长的
+ * settlement death fact 都以 {@code INVALID_STAT_FACTS} fail closed；League 不消费 live reconstruction。</p>
  *
  * <p>返回<b>全部</b>发现的失败（按严重度排序，调用方取第一条作为该场错误码）。</p>
  */
@@ -118,21 +113,28 @@ public final class LeagueRatingValidator {
         }
 
         // 7. 数值约束：负值 / 非有限 / 明显违反真实字段关系
-        if (hasContradictorySettlementTime(battle, players) || hasInvalidStatFacts(players)) {
+        if (hasInvalidSettlementDeathTime(battle, players) || hasInvalidStatFacts(players)) {
             failures.add(new LeagueFailure("", arena, LeagueFailure.Code.INVALID_STAT_FACTS));
         }
         return failures;
     }
 
     /** Settlement lifetime is a real field fact; live observation precision is intentionally ignored. */
-    private static boolean hasContradictorySettlementTime(final Battle battle,
-                                                           final List<PlayerResult> players) {
-        if (battle.durationS == null || !Double.isFinite(battle.durationS)) {
-            return false;
-        }
+    private static boolean hasInvalidSettlementDeathTime(final Battle battle,
+                                                          final List<PlayerResult> players) {
+        final Double duration = battle.settlementDurationSec != null
+                && Double.isFinite(battle.settlementDurationSec)
+                && battle.settlementDurationSec > 0
+                ? battle.settlementDurationSec : battle.durationS;
         for (final PlayerResult p : players) {
-            if (!p.survived && Double.isFinite(p.settlementLifeTimeSec)
-                    && p.settlementLifeTimeSec > battle.durationS + DEATH_TIME_TOLERANCE_SEC) {
+            if (p.survived) {
+                continue;
+            }
+            if (!Double.isFinite(p.settlementLifeTimeSec) || p.settlementLifeTimeSec <= 0) {
+                return true;
+            }
+            if (duration != null && Double.isFinite(duration) && duration > 0
+                    && p.settlementLifeTimeSec > duration + DEATH_TIME_TOLERANCE_SEC) {
                 return true;
             }
         }

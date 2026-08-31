@@ -263,19 +263,16 @@ public final class ReplayParser {
         // 产生；无法证明则 UNKNOWN。
         battle.clientVersion = clientVersion == null ? "" : clientVersion;
 
-        // Compatibility projection for existing export/diagnostic consumers. Full reconstruction
-        // additionally records live observations in Battle; it must not change settlement fields.
+        // Compatibility projection for existing export/diagnostic consumers. Settlement remains authority.
         final double bd = battle.durationS != null ? battle.durationS : 0;
         for (final PlayerResult pr : players) {
             if (pr.survived) {
                 pr.survivalTimeSec = bd;
             } else {
-                final boolean settlementDeathAffirmed = pr.settlementLifeTimeSec > 0;
+                final boolean settlementDeathAffirmed = Double.isFinite(pr.settlementLifeTimeSec)
+                        && pr.settlementLifeTimeSec > 0;
                 pr.survivalTimeSec = settlementDeathAffirmed
                         ? Math.min(pr.settlementLifeTimeSec, bd) : 0;
-                pr.deathTimeSource = settlementDeathAffirmed
-                        ? com.wotb.core.model.DeathTimeSource.SETTLEMENT_SECOND
-                        : com.wotb.core.model.DeathTimeSource.UNKNOWN;
             }
         }
 

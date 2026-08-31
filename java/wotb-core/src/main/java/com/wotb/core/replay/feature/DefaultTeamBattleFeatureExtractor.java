@@ -96,7 +96,7 @@ public class DefaultTeamBattleFeatureExtractor {
                         ? battle.durationS : 0.0);
         final PlaybackCombatReconstruction.Result combat = PlaybackCombatReconstruction.derive(
                 events, entityMapping,
-                battleStartRaw == null ? 0.0 : battleStartRaw.doubleValue(), duration);
+                battleStartRaw == null ? 0.0 : battleStartRaw.doubleValue(), duration, battle);
         // 涉及本队视角的掉血记录（victim 属本队，或 reliable attacker 属本队）；
         // attacker 可能为 null = 不可归属（掉血真实发生但不得计入任何攻击者）
         final List<AttributedHpLoss> teamLosses = new ArrayList<>();
@@ -477,8 +477,8 @@ public class DefaultTeamBattleFeatureExtractor {
         } else if (movements.isEmpty()) {
             limitations.add("TEAM_MEMBER_POSITION_UNAVAILABLE");
         }
-        final Double deathTime = player.survived || PlayerResultFormat.deathSec(battle, player) <= 0
-                ? null : PlayerResultFormat.deathSec(battle, player);
+        final Double deathTime = player.survived || PlayerResultFormat.deathSec(player) <= 0
+                ? null : PlayerResultFormat.deathSec(player);
         final List<KeyBattleEvent> keyEvents = deathTime == null
                 ? List.of()
                 : List.of(new KeyBattleEvent(

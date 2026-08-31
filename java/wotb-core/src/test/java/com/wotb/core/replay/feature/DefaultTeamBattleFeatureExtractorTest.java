@@ -1,7 +1,6 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -1123,8 +1122,7 @@ class DefaultTeamBattleFeatureExtractorTest {
         player.survived = survived;
         player.deathTimeMillis = deathTimeMillis;
         if (!survived) {
-            player.deathTimeSource = deathTimeMillis > 0
-                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+            player.settlementLifeTimeSec = deathTimeMillis / 1000.0;
         }
         player.tankId = accountId + 1;
         player.tankName = "tank-" + accountId;

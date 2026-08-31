@@ -58,7 +58,7 @@ public class DefaultPlayerBattleFeatureExtractor {
                         ? battle.durationS : 0.0);
         final PlaybackCombatReconstruction.Result combat = PlaybackCombatReconstruction.derive(
                 events, mapping,
-                battleStartRaw == null ? 0.0 : battleStartRaw.doubleValue(), duration);
+                battleStartRaw == null ? 0.0 : battleStartRaw.doubleValue(), duration, battle);
         final Long recorderAccount = recorder.accountId();
         if (recorderAccount != null && recorderAccount > 0) {
             for (final java.util.Map.Entry<Long, List<PlaybackCombatReconstruction.Loss>> entry

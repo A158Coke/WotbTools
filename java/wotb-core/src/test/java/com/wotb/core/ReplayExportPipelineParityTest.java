@@ -71,10 +71,7 @@ class ReplayExportPipelineParityTest {
             }
         }
         assertTrue(!settlementDiffers, "full processing 不得修改 settlement projection");
-        assertTrue(raw.liveDeathObservations == null || raw.liveDeathObservations.isEmpty(),
-                "raw parse 不应产生 live observation");
-        assertTrue(full.liveDeathObservations != null && !full.liveDeathObservations.isEmpty(),
-                "full processing 必须把可用 live/settlement observation 放在 Battle 层");
+        assertEquals(raw.players.size(), full.players.size(), "full processing preserves settlement players");
     }
 
     @Test
@@ -91,8 +88,6 @@ class ReplayExportPipelineParityTest {
                     second.players.get(i).settlementLifeTimeSec, 1e-6,
                     "同一 replay 两次 full processing 的 settlement projection 必须确定");
         }
-        assertEquals(first.liveDeathObservations, second.liveDeathObservations,
-                "同一 replay 两次 full processing 的 live observation 必须确定");
     }
 
     @Test

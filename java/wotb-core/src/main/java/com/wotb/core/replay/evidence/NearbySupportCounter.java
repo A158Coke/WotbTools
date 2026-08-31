@@ -166,7 +166,7 @@ public final class NearbySupportCounter {
         if (p.survived) {
             return true;
         }
-        return PlayerResultFormat.deathSec(battle, p) > battleRelSec;
+        return PlayerResultFormat.deathSec(p) > battleRelSec;
     }
 
     private static boolean inRadius(final VehicleState recorder, final VehicleState other,

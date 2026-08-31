@@ -588,7 +588,7 @@ final class FormationDepthEvidence {
         if (p == null || p.survived) {
             return null;
         }
-        final double sec = PlayerResultFormat.deathSec(battle, p);
+        final double sec = PlayerResultFormat.deathSec(p);
         return sec > 0 ? sec : null;
     }
 

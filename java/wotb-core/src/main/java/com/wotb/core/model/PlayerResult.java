@@ -58,7 +58,7 @@ public class PlayerResult {
     public String tankNation = "";
     public Object alphaDamage = "";
 
-    /** @deprecated compatibility projection; reconstruction consumers must use Battle observations. */
+    /** @deprecated compatibility projection of settlementLifeTimeSec; not an authority. */
     @Deprecated(forRemoval = false)
     public long deathTimeMillis;
 
@@ -74,13 +74,9 @@ public class PlayerResult {
     /** 由 field25 killer result id 经 result/entity-id → accountId 映射得到的击杀者账号（=0/null 表示无法证明/环境击杀）。 */
     public Long killerAccountId;
 
-    /** @deprecated compatibility projection; reconstruction consumers must use Battle observations. */
+    /** @deprecated compatibility projection of settlementLifeTimeSec/duration; not an authority. */
     @Deprecated(forRemoval = false)
     public double survivalTimeSec;
-
-    /** @deprecated compatibility projection; reconstruction consumers must use Battle observations. */
-    @Deprecated(forRemoval = false)
-    public DeathTimeSource deathTimeSource;
 
     // 完整原始字段 (字段号 -> 值列表), 供"原始字段"表/排查
     public Map<Integer, List<Object>> raw;
