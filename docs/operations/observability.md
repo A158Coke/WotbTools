@@ -1,7 +1,7 @@
 # WotBTools 观测系统（Observability）运维文档
 
 > 可观测系统：**Backend 结构化日志 + requestId、HTTP/AI/Replay 指标、Prometheus + Loki + Grafana + Alloy**。
-> 本文件已随 `enhance-monitor` 分支（PR #43/#44）更新至当前实现：三个 Dashboard（Backend Overview / Replay Parser / 使用统计）、AI 指标在服务边界统计、日志安全与保留策略。
+> 本文件已随 `enhance-monitor` 分支（PR #43/#44）更新至当前实现：六个 Dashboard（Backend Overview / Replay Parser / 使用统计 / Production Overview / AI Review / Error Explorer）、AI 指标在服务边界统计、日志安全与保留策略。
 
 ---
 
@@ -246,6 +246,18 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
      - **WotBTools Backend Overview**（uid `wotbtools-backend-overview`）— 后端整体概览（HTTP/JVM/AI Review）
      - **WotBTools Replay Parser**（uid `wotbtools-replay-parser`）— 回放解析功能使用情况
      - **WotBTools 使用统计**（uid `wotbtools-usage`）— 前端使用情况：回放预览次数、AI Review 请求/成功/未成功次数、AI 平均每次调用 Token 与按模式平均 Token（均按 Grafana 所选时间范围估算增量，非永久累计）
+     - **WotBTools Production Overview**（uid `wotbtools-production-overview`）— Backend health、HTTP error/P95、Replay active/queued、AI result、CPU/JVM 与近期日志
+     - **WotBTools AI Review**（uid `wotbtools-ai-review`）— AI started/completed/failed/rejected、duration P50/P95/P99、queue/upstream P95、validation/error 与 SSE lifecycle 日志
+     - **WotBTools Error Explorer**（uid `wotbtools-error-explorer`）— 按 service、diagnostic id、errorCode、traceId、jobId 检索 Loki 错误日志；同时覆盖 canonical `api_request_failed` ERROR 与 `api_request_rejected` INFO
+
+PR G 的三个看板只使用现有 Prometheus/Loki 数据源和 Backend 已导出的指标，不新增 node exporter、cAdvisor 或其他采集基础设施。
+Production Overview 中的资源面板因此展示 Backend process/system CPU 与 JVM heap（RAM proxy），不是宿主机级 CPU/RAM；宿主机资源采集保留给后续基础设施阶段。
+
+Error Explorer 的 `service` 变量映射 Loki 的 `container_name` 标签；`id` 是 canonical error 的主诊断 ID，其余变量作为日志内容中的 regex token 搜索，用于关联结构化日志里的 `errorCode`、`traceId` 与 `jobId`。当前没有 authoritative deployment/build version 字段，因此不提供 `version` filter。
+
+Spring Security 的 401/403（`AUTH_UNAUTHENTICATED` / `AUTH_FORBIDDEN`）也会以 INFO 级 `api_request_rejected` 写入同一组 `traceId`、`id`、`errorCode`、`status`、`method`、`path` 字段，因此可直接用 response body 的 `id` 在 Error Explorer 定位。
+
+Production Overview 的 Replay 曲线使用 `wotb_replay_processing_job_created_total`（Processing Job create rate）；不使用 legacy `wotb_replay_requests_total` 作为当前 V2 Processing Job 的请求信号。
 
 **统计口径说明（WotBTools 使用统计 / Replay Parser）**
 
@@ -499,6 +511,8 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_review_errors_total{type=<固定枚举>}` — 错误分类（仅流内失败，与 `failure` 一致；HTTP 4xx 预校验失败不在此处计数）
   - `wotb_ai_review_duration_seconds` — Review 完整总耗时（Timer，histogram，成功与异常都结束，覆盖文件验证→解析→分析→AI 调用→响应处理）
   - `wotb_ai_review_in_flight` — 当前处理中的 Review 数（Gauge，即"已进入 worker、尚未完成"的请求数；不含队列中等待的请求，也不含被 `AI_REVIEW_BUSY` 回绝的请求）
+  - `wotb_ai_review_queue_wait_seconds` — worker 排队等待时长（Timer，histogram；由 `wotb_ai_review_queue_wait_seconds_bucket` 支撑 P95）
+  - `wotb_ai_team_review_validation_attempt_total{result=pass|parser_invalid|validation_failed|metadata_only_pass}` — Team Call #2 validation attempt 分类；`parser_invalid` 与 `validation_failed` 表示 rework/失败尝试
 - **AI upstream**（自定义，`SpringAiChatGateway.chat`，每次上游调用）：
   - `wotb_ai_upstream_requests_total{mode}` — 上游请求量（每个 attempt +1，含 retry 重试；token budget 拒绝不进入 gateway，不计）
   - `wotb_ai_upstream_success_total{mode}` — 成功调用数（一次逻辑调用 +1）

@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -117,7 +118,9 @@ private final ThreadPoolExecutor executor;
                 LOGGER.debug("AI review worker queue wait {} ms (overall deadline {} s)",
                         queueWaitMillis, TimeUnit.NANOSECONDS.toSeconds(overallDeadlineNanos));
                 if (meterRegistry != null) {
-                    meterRegistry.timer("wotb_ai_review_queue_wait")
+                    Timer.builder("wotb_ai_review_queue_wait")
+                            .publishPercentileHistogram()
+                            .register(meterRegistry)
                             .record(startNanos - submittedNanos, TimeUnit.NANOSECONDS);
                 }
             }
