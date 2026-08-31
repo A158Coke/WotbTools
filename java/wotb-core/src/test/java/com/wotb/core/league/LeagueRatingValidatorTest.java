@@ -86,19 +86,14 @@ class LeagueRatingValidatorTest {
     }
 
     @Test
-    void rejectsIncompleteRoster() {
+    void rosterEvidenceDoesNotGateRating() {
+        // League Rating is #301-only: #201 roster evidence (missing/extra/) is metadata enrichment and
+        // must never block Rating. The strict global rosterComplete contract is unchanged (kept for
+        // SURVIVOR_SETTLEMENT / annihilation) but is not a Rating eligibility gate.
         final Battle battle = LeagueTestBattles.battle(1, defaultSevenVsSeven());
-        battle.settlementAccountsCoveredByRoster = false;
-        assertEquals(List.of(LeagueFailure.Code.ROSTER_INCOMPLETE),
-                codes(battle));
-    }
-
-    @Test
-    void rejectsNullRosterComplete() {
-        final Battle battle = LeagueTestBattles.battle(1, defaultSevenVsSeven());
-        battle.settlementAccountsCoveredByRoster = null;
-        assertEquals(List.of(LeagueFailure.Code.ROSTER_INCOMPLETE),
-                codes(battle));
+        battle.rosterComplete = false;
+        assertTrue(LeagueRatingValidator.validate(battle).isEmpty(),
+                "#201 roster evidence 不得阻塞 #301-only Rating");
     }
 
     @Test

@@ -3,93 +3,89 @@ package com.wotb.core.league;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
- * Compares duplicate replays using stable settlement facts only.
+ * Compares duplicate replays using a deterministic settlement/Rating fingerprint only.
  *
- * <p>Live reconstruction observations and their provenance are deliberately excluded from
- * League identity/conflict decisions. A replay with better live evidence must not mutate the
- * settlement model or change the rating identity.</p>
+ * <p>League duplicate identity is <b>#301 settlement-only</b>: it compares the deterministic
+ * settlement facts Rating actually consumes (winnerTeam / arenaBonusType / duration + per-account
+ * team / tankId / survived / settlementLifeTimeSec / settlementDeathReasonRaw + the settled stat
+ * fields). Non-Rating identity — {@code rosterComplete}, #201 roster evidence, {@code clan},
+ * killer/result-entity ids, live reconstruction/provenance — is deliberately excluded so a replay
+ * with better live evidence never mutates the rating identity.</p>
+ *
+ * <p>Comparison is <b>not</b> all-pairs: the first copy is canonical and every later copy is compared
+ * against that canonical fingerprint in O(n).</p>
  */
 public final class LeagueRatingConflictDetector {
 
     private LeagueRatingConflictDetector() {
     }
 
-    /** Two copies are consistent only when all rating-relevant settlement facts match. */
-    public static boolean consistent(final Battle a, final Battle b) {
-        if (a == null || b == null
-                || !java.util.Objects.equals(a.winnerTeam, b.winnerTeam)
-                || !java.util.Objects.equals(a.arenaBonusType, b.arenaBonusType)
-                || !java.util.Objects.equals(a.rosterComplete, b.rosterComplete)
-                || !java.util.Objects.equals(a.settlementAccountsCoveredByRoster,
-                        b.settlementAccountsCoveredByRoster)
-                || !java.util.Objects.equals(a.settlementRosterTeamConsistent,
-                        b.settlementRosterTeamConsistent)
-                || !java.util.Objects.equals(a.durationS, b.durationS)) {
-            return false;
+    /**
+     * Stable deterministic settlement/Rating fingerprint. The first copy becomes the canonical
+     * {@link #validateCopies} fingerprint; equal fingerprints ⇒ duplicate copies, different ⇒ conflict.
+     */
+    static String fingerprint(final Battle battle) {
+        if (battle == null) {
+            return "null";
         }
-        final Map<Long, PlayerResult> left = byAccount(a.players);
-        final Map<Long, PlayerResult> right = byAccount(b.players);
-        if (left.size() != right.size()) {
-            return false;
-        }
-        for (final Map.Entry<Long, PlayerResult> entry : left.entrySet()) {
-            final PlayerResult p = entry.getValue();
-            final PlayerResult q = right.get(entry.getKey());
-            if (q == null || p.team != q.team || p.tankId != q.tankId
-                    || p.survived != q.survived
-                    || p.settlementResultEntityId != q.settlementResultEntityId
-                    || Double.compare(p.settlementLifeTimeSec, q.settlementLifeTimeSec) != 0
-                    || !java.util.Objects.equals(p.settlementDeathReasonRaw, q.settlementDeathReasonRaw)
-                    || !java.util.Objects.equals(p.settlementKillerResultEntityId,
-                            q.settlementKillerResultEntityId)
-                    || !java.util.Objects.equals(p.killerAccountId, q.killerAccountId)
-                    || p.damageDealt != q.damageDealt
-                    || p.damageAssisted != q.damageAssisted
-                    || p.damageReceived != q.damageReceived
-                    || p.damageBlocked != q.damageBlocked
-                    || p.kills != q.kills
-                    || p.nShots != q.nShots
-                    || p.nHitsDealt != q.nHitsDealt
-                    || p.nPenetrationsDealt != q.nPenetrationsDealt
-                    || p.victoryPointsEarned != q.victoryPointsEarned
-                    || p.victoryPointsSeized != q.victoryPointsSeized
-                    || p.nHitsReceived != q.nHitsReceived
-                    || p.nPenetrationsReceived != q.nPenetrationsReceived
-                    || p.nEnemiesDamaged != q.nEnemiesDamaged
-                    || !java.util.Objects.equals(p.clan, q.clan)) {
-                return false;
+        final StringBuilder sb = new StringBuilder();
+        sb.append("w=").append(battle.winnerTeam)
+                .append(";t=").append(battle.arenaBonusType)
+                .append(";d=").append(battle.durationS);
+        if (battle.players != null) {
+            final Map<Long, PlayerResult> byAccount = new TreeMap<>();
+            for (final PlayerResult p : battle.players) {
+                byAccount.put(p.accountId, p);
+            }
+            for (final PlayerResult p : byAccount.values()) {
+                sb.append(";p=").append(p.accountId)
+                        .append(':').append(p.team)
+                        .append(':').append(p.tankId)
+                        .append(':').append(p.survived)
+                        .append(':').append(p.settlementLifeTimeSec)
+                        .append(':').append(p.settlementDeathReasonRaw)
+                        .append(':').append(p.damageDealt)
+                        .append(':').append(p.damageAssisted)
+                        .append(':').append(p.damageReceived)
+                        .append(':').append(p.damageBlocked)
+                        .append(':').append(p.kills)
+                        .append(':').append(p.nShots)
+                        .append(':').append(p.nHitsDealt)
+                        .append(':').append(p.nPenetrationsDealt)
+                        .append(':').append(p.victoryPointsEarned)
+                        .append(':').append(p.victoryPointsSeized)
+                        .append(':').append(p.nHitsReceived)
+                        .append(':').append(p.nPenetrationsReceived)
+                        .append(':').append(p.nEnemiesDamaged);
             }
         }
-        return true;
+        return sb.toString();
     }
 
-    /** Group-level all-pairs settlement identity check; never mutates a retained Battle. */
+    /** Two copies are consistent (duplicates) only when their settlement/Rating fingerprints match. */
+    public static boolean consistent(final Battle a, final Battle b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        return fingerprint(a).equals(fingerprint(b));
+    }
+
+    /** Group-level settlement identity check against the first (canonical) copy; never mutates a Battle. */
     public static boolean validateCopies(final List<Battle> copies) {
         if (copies == null || copies.isEmpty() || copies.getFirst() == null) {
             return false;
         }
-        for (int i = 0; i < copies.size(); i++) {
-            for (int j = i + 1; j < copies.size(); j++) {
-                if (!consistent(copies.get(i), copies.get(j))) {
-                    return false;
-                }
+        final String canonical = fingerprint(copies.getFirst());
+        for (int i = 1; i < copies.size(); i++) {
+            if (!fingerprint(copies.get(i)).equals(canonical)) {
+                return false;
             }
         }
         return true;
-    }
-
-    private static Map<Long, PlayerResult> byAccount(final List<PlayerResult> players) {
-        final Map<Long, PlayerResult> result = new HashMap<>();
-        if (players != null) {
-            for (final PlayerResult player : players) {
-                result.put(player.accountId, player);
-            }
-        }
-        return result;
     }
 }
