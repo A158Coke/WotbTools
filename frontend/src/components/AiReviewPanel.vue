@@ -4,13 +4,14 @@
   ensureToken + 401/403 处理。目标文件由父组件以 prop 传入（文件始终在 ReplayPage 内存中，
   由 capability page 传入（可来自解析页的内存 handoff）。
 -->
-<script setup>
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { localizeAiError, isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { ApiError, apiErrorFromResponse, apiFetch, normalizeApiError } from '../utils/http.js'
+import type { AiReviewCapability, AiReviewResult, AiReviewRunState } from '../types/ai-review.js'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 import ReplayAnalysisAction from './ReplayAnalysisAction.vue'
 
@@ -53,9 +54,9 @@ const datasetMessage = computed(() => {
 
 const error = ref('')
 const analyzing = ref(false)
-const analysisResult = ref(null)
+const analysisResult = ref<AiReviewResult | null>(null)
 /** AI 复盘 capability（AnalyzeResponse.capability：AVAILABLE / AVAILABLE_WITH_LIMITED_TIMELINE / UNAVAILABLE）。 */
-const analysisCapability = computed(() => analysisResult.value?.capability || null)
+const analysisCapability = computed<AiReviewCapability | null>(() => analysisResult.value?.capability || null)
 const limitedTimelineNote = computed(() =>
   analysisCapability.value === 'AVAILABLE_WITH_LIMITED_TIMELINE'
     ? t('recon.capability_limited')
@@ -76,7 +77,7 @@ const AI_ANALYZE_TIMEOUT_MS = 1_100_000
  * 的 timer / correlationId / controller），再解除 active ownership 并重置共享 UI 状态；
  * stale run 通过 activeRun === run 判定作废，绝不修改新 generation 的状态。
  */
-let activeRun = null
+let activeRun: AiReviewRunState | null = null
 
 function resetResults() {
   analysisResult.value = null
