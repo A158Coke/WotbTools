@@ -37,6 +37,7 @@ description: >
    只执行当前计划内任务。
 5. **逐项执行（每步）**：
    - 读该步文件清单与影响面，定位相关代码（用 `rg` / `rg --files`）；
+   - **Reuse Audit（新增 production type/file 前）**：先 `rg` / repo-wide 搜索候选现有实现，优先 reuse / extend；如仍需新增，在实现 reasoning 中明确为什么现有 abstraction 无法合理承载（按 `.agents/AGENTS.md` 的 Reuse / Extend First contract，只引用不复制、无需长 ADR）；
    - 实现，遵循项目约定（`.agents/AGENTS.md`、`wotb-sync` 跨层检查单）；
    - 运行该步对应测试/构建验证；失败先修复再前进；
    - 更新计划状态表（进行中 → 完成），并在 commentary 简短汇报。
