@@ -258,6 +258,8 @@ Spring Security 的 401/403（`AUTH_UNAUTHENTICATED` / `AUTH_FORBIDDEN`）也会
 
 Production Overview 的 Replay 统计使用线上实际暴露的 `wotb_replay_processing_job_total`、`wotb_replay_full_processing_total`、`wotb_replay_processing_job_result_total` 与 `wotb_replay_processing_file_duration_seconds_*`；不使用当前线上无样本的 legacy `wotb_replay_requests_total` / `wotb_replay_parse_duration_seconds_*` 作为 V2 Processing Job 信号。
 
+Processing Job 终态口径：`READY` 表示 Processing Job 已正常完成 finalization；一个 `READY` Job 仍可能包含 source-level replay failures，因此 `READY` 不等于所有 replay 解析成功。`FAILED` 表示 Job 未完成正常 finalization，也不等于 replay 文件解析失败数。当前没有 authoritative 的 per-source success/failure Prometheus metric，Dashboard 与告警不得把 Job `READY` / `FAILED` 描述成 replay parse success / failure。
+
 **统计口径说明（WotBTools 使用统计 / Replay Parser）**
 
 - Prometheus Counter 会在 Backend 重启或重新部署后归零，Dashboard 中的"次数"均为 **Grafana 所选时间范围内的估算增量**（`increase()` + `round()`），不是历史累计。
@@ -272,7 +274,7 @@ Production Overview 的 Replay 统计使用线上实际暴露的 `wotb_replay_pr
 1. Backend Up
 2. Processing Job started（`wotb_replay_processing_job_total`，所选区间）
 3. Files processed（`wotb_replay_full_processing_total`，所选区间）
-4. Succeeded / Failed Processing Jobs（`wotb_replay_processing_job_result_total`）
+4. Jobs READY / FAILED（`wotb_replay_processing_job_result_total`，Job 终态）
 5. 当前 parse active / queue depth / jobs active / queued
 6. 解析耗时 P50/P95/P99（`wotb_replay_processing_file_duration_seconds_*`）
 7. Processing Job outcome trend 与最近 Replay 错误日志
@@ -283,7 +285,7 @@ Production Overview 的 Replay 统计使用线上实际暴露的 `wotb_replay_pr
 **旧 Backend Overview 已迁移为 JVM / Infrastructure；生产首页面板清单**
 
 1. Backend Up、请求数、4xx、5xx、HTTP P50/P95/P99（首屏）
-2. Replay jobs/files/success/failure 与 parse active/queued
+2. Replay jobs/files、READY/FAILED Job 终态与 parse active/queued
 3. AI started/success/failure/rejected 与 active
 4. HTTP、Replay、AI 的 P50/P95/P99 趋势与 outcome trend
 5. 精简 CPU、heap、GC 摘要
@@ -508,16 +510,15 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_replay_processing_job_total` — 线上 Prometheus 暴露的 Processing Job 创建数（Java 逻辑名为 `wotb_replay_processing_job_created_total`，Micrometer 运行时规范化为该名称）
   - `wotb_replay_processing_job_files_total` — Processing Job 输入文件数（低基数，无 jobId/文件名 tag）
   - `wotb_replay_processing_job_queue_wait_seconds` / `wotb_replay_processing_job_duration_seconds` — 排队等待与总耗时（Timer）
-  - `wotb_replay_processing_job_result_total{result=ready|failed|cancelled}` — 终态计数（exactly once）
-  - `wotb_replay_processing_file_duration_seconds` — 单个 replay full processing 耗时（p50/p95 用于评估并行化收益，无 filename tag）
+  - `wotb_replay_processing_job_result_total{result=ready|failed|cancelled}` — Processing Job 终态计数（exactly once）；`ready` 表示正常完成 finalization，可能包含 source-level replay failures，不是 per-source replay parse success 数；`failed` 也不是 replay 文件解析失败数
   - `wotb_replay_full_processing_total` — 当前 V2 full processing 文件数
   - `wotb_replay_processing_file_duration_seconds` — 当前 V2 单个 replay full processing 耗时（Timer，histogram）
   - `wotb_replay_parse_active` / `wotb_replay_parse_queue_depth` — 当前并行处理数与排队 source 数
   - `wotb_replay_in_flight` — legacy 解析入口当前处理数（Gauge）
   - `wotb_replay_requests_total{operation}` / `wotb_replay_files_total{operation}` / `wotb_replay_parse_duration_seconds{operation}` — legacy operation 指标，保留用于兼容入口，不被当前 V2 dashboard 作为主信号
 
-> **不统计 `wotb_replay_results_total`**：解析失败以 `ReplayProcessingResult.status=FAILED` 返回而非抛异常，
-> 异常判定无法可靠区分 success/failure，故删除该指标（AI Review 自己的 `results_total` 不受影响）。
+> 当前没有 authoritative 的 per-source replay success/failure Prometheus metric；不要用 Processing Job 的 `READY` / `FAILED` 终态替代 source-level 解析结果。
+> legacy `wotb_replay_results_total` 不统计，避免把异常路径或 Job 终态误解为逐文件解析 success/failure。
 
 **Label 约束**：不使用用户 ID、Replay ID、文件名、IP、correlation ID、Prompt、Completion、异常正文作为 label；URI 一律为 Spring MVC 模板（如 `/api/preview`）。Token Usage 仅以低基数 `mode`/`token_type` 统计。
 
