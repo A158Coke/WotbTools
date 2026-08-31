@@ -246,6 +246,14 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
      - **WotBTools Backend Overview**（uid `wotbtools-backend-overview`）— 后端整体概览（HTTP/JVM/AI Review）
      - **WotBTools Replay Parser**（uid `wotbtools-replay-parser`）— 回放解析功能使用情况
      - **WotBTools 使用统计**（uid `wotbtools-usage`）— 前端使用情况：回放预览次数、AI Review 请求/成功/未成功次数、AI 平均每次调用 Token 与按模式平均 Token（均按 Grafana 所选时间范围估算增量，非永久累计）
+     - **WotBTools Production Overview**（uid `wotbtools-production-overview`）— Backend health、HTTP error/P95、Replay active/queued、AI result、CPU/JVM 与近期日志
+     - **WotBTools AI Review**（uid `wotbtools-ai-review`）— AI started/completed/failed/rejected、duration P50/P95/P99、queue/upstream P95、validation/error 与 SSE lifecycle 日志
+     - **WotBTools Error Explorer**（uid `wotbtools-error-explorer`）— 按 service、errorCode、traceId、jobId、version 检索 Loki 错误日志
+
+PR G 的三个看板只使用现有 Prometheus/Loki 数据源和 Backend 已导出的指标，不新增 node exporter、cAdvisor 或其他采集基础设施。
+Production Overview 中的资源面板因此展示 Backend process/system CPU 与 JVM heap（RAM proxy），不是宿主机级 CPU/RAM；宿主机资源采集保留给后续基础设施阶段。
+
+Error Explorer 的 `service` 变量映射 Loki 的 `container_name` 标签；其余变量作为日志内容中的 regex token 搜索，用于关联结构化日志里的 `errorCode`、`traceId`、`jobId` 与 `version`。
 
 **统计口径说明（WotBTools 使用统计 / Replay Parser）**
 
