@@ -8,8 +8,8 @@
 - `JobSucceeded` carries a result artifact key; `JobFailed` carries a stable error code and retryability. Neither callback embeds replay bytes, parsed JSON, prompt data or provider responses.
 - `JobDispatcher` and `ObjectStorage` are ports. RabbitMQ/COS implementations belong to later adapter modules in the approved Dual-Cloud plan.
 - `JobStatus` is future-domain vocabulary only: `QUEUED`, `PROCESSING`, `SUCCEEDED`, `FAILED`, `CANCELLED`.
-- Current Web/Android DTOs keep their existing status vocabulary, including `READY`. `CurrentProcessingStatusAdapter` is the only mapping boundary (`READY → SUCCEEDED`, `PENDING → QUEUED`). No current public DTO imports `JobStatus`.
+- Current Web/Android DTOs keep their existing status vocabularies: processing jobs use `QUEUED/PROCESSING/READY/FAILED/CANCELLED`, while replay sources use `PENDING/PROCESSING/READY/FAILED`. `CurrentProcessingStatusAdapter` exposes separate explicit mappings for those two contracts; it never merges job `QUEUED` with source `PENDING`, and rejects future `CANCELLED` when the target source contract cannot represent it. No current public DTO imports `JobStatus`.
 
 ## Verification
 
-The module's dependency tree contains only JUnit in test scope; production classes use JDK types only. Contract tests cover identifier validation, metadata-only events and the explicit current/future status mapping.
+The module's production dependency tree is JDK-only; Jackson is test-scoped solely for the serialization contract test. Contract tests cover identifier validation, metadata-only events, stable event serialization, and exhaustive current/future status mappings.
