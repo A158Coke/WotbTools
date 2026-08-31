@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 ### Changed
-- **Independent Control API acceptance slice**：从 async contracts 基线单独提供 `wotb-control` artifact；使用真实 PostgreSQL Testcontainers + `JdbcClient SELECT 1`，并以独立 management port 的真实 Spring Boot/Actuator security smoke 验证 health、metrics、admin probe 与 401/403 边界。无 Flyway、RabbitMQ、COS 或 Web/Android public contract 变更；Native POC 仍 `DEFERRED`。
+- **Independent Control API acceptance slice**：从 async contracts 基线单独提供 `wotb-control` artifact；使用真实 PostgreSQL Testcontainers + `JdbcClient SELECT 1`，并以独立 management port 的真实 Spring Boot/Actuator security smoke 验证 health、metrics、admin probe 与 401/403 边界。无 Flyway、RabbitMQ、COS 或 Web/Android public contract 变更；Native POC 已完成并记录 JVM/Native 对比结果，生产部署仍延期。
 - **Pre-Dual-Cloud contract foundation**：新增无 Spring/provider SDK 依赖的 `wotb-contracts` artifact，建立 metadata-only async ports 与分别面向 current processing-job/source contract 的显式 status adapters；RabbitMQ/COS/AI/Replay extension 保持延期，当前 Web/Android contract 不变。
 - **Frontend TypeScript foundation and Replay API contracts**：引入 `vue-tsc` 独立类型检查与 CI step，建立 API 错误、Replay Job/Result、Workspace、AI capability、Playback 的共享类型和 runtime guards；Replay Processing/Export API、Replay/AI/Playback 核心纯函数迁移到 typed boundary，保留 JS/TS 共存与现有运行时协议不变。
 - **PR194 blocker closure**：Processing READY 只提交 authoritative `resp`，由 `ReplayPage` 对 `resp` 做 immediate/idempotent `cols.initFromResponse` hydration；移除 Data presentation callback bridge，Processing 不再知道列展示。Battle Playback 测试按地图、控制、时间线、详情面板与编排责任拆分，保留完整集成回归；协议、HP truth、visibility、orientation 与事件顺序不变。

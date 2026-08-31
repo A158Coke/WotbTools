@@ -14,4 +14,4 @@ The acceptance test starts the real Spring Boot application against a PostgreSQL
 
 ## Dependency and deployment boundary
 
-The runtime artifact contains the contracts jar, Spring Web/Security resource-server, JDBC/PostgreSQL, Actuator, Micrometer and structured logging. It has no replay parser, AI, JPA or export dependency. A future container and deployment entry are intentionally deferred until the Native/JVM POC establishes the runtime decision.
+The runtime artifact contains the contracts jar, Spring Web/Security resource-server, JDBC/PostgreSQL, Actuator, Micrometer and structured logging. It has no replay parser, AI, JPA or export dependency. The Native/JVM POC comparison and disposition are recorded in `control-api-native-benchmark.md`; production container wiring and deployment remain intentionally deferred outside the POC.
