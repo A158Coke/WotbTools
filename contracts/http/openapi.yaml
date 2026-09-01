@@ -96,13 +96,13 @@ components:
       enum: [OBSERVED, LAST_KNOWN]
     OrientationKnowledge:
       type: string
-      enum: [CURRENT, LAST_KNOWN, UNKNOWN]
+      enum: [CURRENT, LAST_KNOWN]
     HealthKnowledge:
       type: string
-      enum: [CURRENT, LAST_KNOWN, UNKNOWN]
+      enum: [CURRENT, LAST_KNOWN]
     PlaybackLifeState:
       type: string
-      enum: [ALIVE, DESTROYED, UNKNOWN]
+      enum: [ALIVE, DESTROYED]
     BattlePlaybackDataset:
       type: object
       additionalProperties: false

@@ -89,11 +89,16 @@ const hullImageStyle = computed(() => {
   return { transform: hullDeg.value != null ? `rotate(${hullDeg.value}deg)` : 'none' }
 })
 // generic 模式 hull/turret：现有 translate(-50%,-50%) rotate() 组合
+// destroyed 且无方向时仅保留既有未旋转素材可见性；projected state 仍保持 null。
 const genericHullStyle = computed(() =>
-  hullDeg.value != null ? { transform: `translate(-50%, -50%) rotate(${hullDeg.value}deg)` } : null,
+  hullDeg.value != null
+    ? { transform: `translate(-50%, -50%) rotate(${hullDeg.value}deg)` }
+    : st.value.destroyed ? { transform: 'translate(-50%, -50%) rotate(0deg)' } : null,
 )
 const genericTurretStyle = computed(() =>
-  turretDeg.value != null ? { transform: `translate(-50%, -50%) rotate(${turretDeg.value}deg)` } : null,
+  turretDeg.value != null
+    ? { transform: `translate(-50%, -50%) rotate(${turretDeg.value}deg)` }
+    : st.value.destroyed ? { transform: 'translate(-50%, -50%) rotate(0deg)' } : null,
 )
 
 // —— overlay 屏幕间距恒定（B2）：selected/recorder 的 layout offset（bottom/top calc）处于
@@ -291,7 +296,7 @@ const hpClasses = computed(() => ({
       <!-- generic：现有双层 PNG（共同 pivot 居中旋转，行为不变） -->
       <template v-else>
         <img
-          v-if="hullDeg != null"
+          v-if="hullDeg != null || st.destroyed"
           class="pb-hull"
           :src="st.hullImage"
           alt=""
@@ -299,7 +304,7 @@ const hpClasses = computed(() => ({
           :style="genericHullStyle"
         />
         <img
-          v-if="turretDeg != null"
+          v-if="turretDeg != null || st.destroyed"
           class="pb-turret"
           :src="st.turretImage"
           alt=""

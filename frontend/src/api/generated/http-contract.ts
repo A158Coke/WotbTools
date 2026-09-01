@@ -36,11 +36,11 @@ export interface components {
         /** @enum {string} */
         PositionKnowledge: "OBSERVED" | "LAST_KNOWN";
         /** @enum {string} */
-        OrientationKnowledge: "CURRENT" | "LAST_KNOWN" | "UNKNOWN";
+        OrientationKnowledge: "CURRENT" | "LAST_KNOWN";
         /** @enum {string} */
-        HealthKnowledge: "CURRENT" | "LAST_KNOWN" | "UNKNOWN";
+        HealthKnowledge: "CURRENT" | "LAST_KNOWN";
         /** @enum {string} */
-        PlaybackLifeState: "ALIVE" | "DESTROYED" | "UNKNOWN";
+        PlaybackLifeState: "ALIVE" | "DESTROYED";
         BattlePlaybackDataset: {
             durationSec: number;
             mapCode: string | null;

@@ -94,9 +94,13 @@ class ReplayArtifactWriterTest {
                           "interpolationAllowed": true, "samples": [{"timeSec": 0, "x": 1, "y": 2,
                           "knowledge": "OBSERVED"}]}], "orientationSegments": [{"startSec": 0,
                           "endSec": 1, "knowledge": "CURRENT", "samples": [{"timeSec": 0,
-                          "hullYawDeg": 0, "turretRelativeYawDeg": 0, "knowledge": "CURRENT"}]}],
-                        "healthTransitions": [],
-                        "lifeTransitions": [], "consumableTransitions": [{"timeSec": 1,
+                          "hullYawDeg": 0, "turretRelativeYawDeg": 0, "knowledge": "CURRENT"}]}, {"startSec": 2,
+                          "endSec": 3, "knowledge": "UNKNOWN", "samples": []}],
+                        "healthTransitions": [{"timeSec": 1, "currentHp": null,
+                          "knowledge": "UNKNOWN", "source": "UNKNOWN", "displayCapacityHp": null,
+                          "confidence": "UNKNOWN"}],
+                        "lifeTransitions": [{"timeSec": 1, "lifeState": "UNKNOWN", "destroyedKnownAtSec": null}],
+                        "consumableTransitions": [{"timeSec": 1,
                           "consumableSlot": null, "logicalItemId": "REPAIR_KIT", "wireCode": 13,
                           "state": "ACTIVATED", "confidence": "HIGH"}], "moduleCrewTransitions": []
                       }], "events": [], "shots": [], "pointsSamples": [], "limitations": [],
@@ -114,6 +118,12 @@ class ReplayArtifactWriterTest {
                     "duplicate wire code must stay unresolved at the artifact read boundary");
             assertTrue(read.vehicles().get(0).damageLosses().isEmpty());
             assertEquals(1, read.vehicles().get(0).positionSegments().getFirst().samples().getFirst().x());
+            assertEquals(1, read.vehicles().get(0).orientationSegments().size(),
+                    "legacy UNKNOWN orientation is a gap and must be removed at read boundary");
+            assertTrue(read.vehicles().get(0).healthTransitions().isEmpty(),
+                    "legacy UNKNOWN health is a no-fact transition and must be removed at read boundary");
+            assertTrue(read.vehicles().get(0).lifeTransitions().isEmpty(),
+                    "legacy UNKNOWN life is a no-fact transition and must be removed at read boundary");
         } finally {
             deleteRecursively(jobDir);
         }

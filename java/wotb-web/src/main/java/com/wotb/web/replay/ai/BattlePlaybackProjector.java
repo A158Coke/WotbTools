@@ -239,13 +239,20 @@ public final class BattlePlaybackProjector {
             String knowledge = null;
             for (final BattleFrame frame : timeline.frames()) {
                 final FrameVehicle v = vehicleIn(frame, entityId);
-                if (v == null || v.orientation() == null || v.orientation().hullYawDeg() == null) {
+                if (v == null || v.orientation() == null || v.orientation().hullYawDeg() == null
+                        || !Double.isFinite(v.orientation().hullYawDeg().doubleValue())) {
                     flushOrientationSegment(out, current, knowledge);
                     current.clear();
                     knowledge = null;
                     continue;
                 }
                 final String nextKnowledge = orientationKnowledgeName(v.orientation().knowledge());
+                if (nextKnowledge == null) {
+                    flushOrientationSegment(out, current, knowledge);
+                    current.clear();
+                    knowledge = null;
+                    continue;
+                }
                 if (knowledge != null && !knowledge.equals(nextKnowledge)) {
                     flushOrientationSegment(out, current, knowledge);
                     current.clear();
@@ -253,8 +260,9 @@ public final class BattlePlaybackProjector {
                 knowledge = nextKnowledge;
                 current.add(new OrientationSample(frame.stateAtSec(),
                         v.orientation().hullYawDeg().doubleValue(),
-                        v.orientation().turretRelativeYawDeg() == null ? null
-                                : v.orientation().turretRelativeYawDeg().doubleValue()));
+                        v.orientation().turretRelativeYawDeg() == null
+                                || !Double.isFinite(v.orientation().turretRelativeYawDeg().doubleValue())
+                                ? null : v.orientation().turretRelativeYawDeg().doubleValue()));
             }
             flushOrientationSegment(out, current, knowledge);
         }
@@ -273,7 +281,7 @@ public final class BattlePlaybackProjector {
     }
 
     private static String orientationKnowledgeName(final FrameOrientation.OrientationKnowledge k) {
-        return k == null ? "UNKNOWN" : k.name();
+        return k == null || k == FrameOrientation.OrientationKnowledge.UNKNOWN ? null : k.name();
     }
 
     private static List<HealthTransition> healthTransitions(final BattleTimeline timeline,
@@ -283,13 +291,13 @@ public final class BattlePlaybackProjector {
         for (final BattleFrame frame : timeline.frames()) {
             final FrameVehicle v = vehicleInAny(frame, entityIds);
             final FrameHealth h = v == null ? null : v.health();
-            final HealthTransition next = h == null || h.currentHp() == null
-                    ? new HealthTransition(frame.stateAtSec(), null, "UNKNOWN", "UNKNOWN", null,
-                            ConfidenceDto.UNKNOWN)
-                    : new HealthTransition(frame.stateAtSec(), h.currentHp(),
-                            h.knowledge() == null ? "UNKNOWN" : h.knowledge().name(),
-                            h.source() == null ? "UNKNOWN" : h.source().name(),
-                            h.displayCapacityHp(), toConfidence(h.confidence()));
+            if (h == null || h.currentHp() == null || h.knowledge() == null
+                    || h.knowledge() == FrameHealth.HealthKnowledge.UNKNOWN) {
+                continue;
+            }
+            final HealthTransition next = new HealthTransition(frame.stateAtSec(), h.currentHp(),
+                    h.knowledge().name(), h.source() == null ? "UNKNOWN" : h.source().name(),
+                    h.displayCapacityHp(), toConfidence(h.confidence()));
             if (!sameHealth(previous, next)) {
                 out.add(next);
                 previous = next;
@@ -313,9 +321,11 @@ public final class BattlePlaybackProjector {
         LifeTransition previous = null;
         for (final BattleFrame frame : timeline.frames()) {
             final FrameVehicle v = vehicleInAny(frame, entityIds);
-            final LifeTransition next = new LifeTransition(frame.stateAtSec(),
-                    v == null || v.lifeState() == null ? "UNKNOWN" : v.lifeState().name(),
-                    v == null ? null : v.destroyedKnownAtSec());
+            if (v == null || v.lifeState() == null || v.lifeState() == LifeState.UNKNOWN) {
+                continue;
+            }
+            final LifeTransition next = new LifeTransition(frame.stateAtSec(), v.lifeState().name(),
+                    v.destroyedKnownAtSec());
             if (previous == null || !java.util.Objects.equals(previous.lifeState(), next.lifeState())
                     || !java.util.Objects.equals(previous.destroyedKnownAtSec(), next.destroyedKnownAtSec())) {
                 out.add(next);

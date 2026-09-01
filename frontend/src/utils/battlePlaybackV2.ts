@@ -57,11 +57,12 @@ export function healthAt(
   t: number,
 ): HealthAtResult | null {
   const tr = lastAtOrBefore(track?.healthTransitions, t)
-  if (!tr) return null
+  if (!tr || typeof tr.currentHp !== 'number' || !Number.isFinite(tr.currentHp)
+    || (tr.knowledge !== 'CURRENT' && tr.knowledge !== 'LAST_KNOWN')) return null
   return {
-    currentHp: tr.currentHp ?? null,
-    knowledge: tr.knowledge ?? 'UNKNOWN',
-    source: tr.source ?? 'UNKNOWN',
+    currentHp: tr.currentHp,
+    knowledge: tr.knowledge,
+    source: tr.source,
     displayCapacityHp: tr.displayCapacityHp ?? null,
     confidence: tr.confidence ?? 'UNKNOWN',
   }
@@ -73,9 +74,9 @@ export function lifeAt(
   t: number,
 ): LifeAtResult | null {
   const tr = lastAtOrBefore(track?.lifeTransitions, t)
-  if (!tr) return null
+  if (!tr || (tr.lifeState !== 'ALIVE' && tr.lifeState !== 'DESTROYED')) return null
   return {
-    lifeState: tr.lifeState ?? 'UNKNOWN',
+    lifeState: tr.lifeState,
     destroyedKnownAtSec: tr.destroyedKnownAtSec ?? null,
   }
 }
@@ -139,8 +140,8 @@ export function healthDisplayAt(
     currentHp: null,
     displayCapacityHp: null,
     pct: null,
-    knowledge: health?.knowledge ?? 'UNKNOWN',
-    source: health?.source ?? 'UNKNOWN',
+    knowledge: null,
+    source: null,
     confidence: health?.confidence ?? 'UNKNOWN',
     destroyed: false,
     relativeFull,
@@ -440,7 +441,7 @@ export function positionAtV2(
 export function orientationKnownAt(
   track: Pick<VehiclePlaybackTrack, 'orientationSegments'> | null | undefined,
   t: number,
-): OrientationKnowledge {
+): OrientationKnowledge | 'UNKNOWN' {
   if (!Array.isArray(track?.orientationSegments) || track.orientationSegments.length === 0) {
     return 'UNKNOWN'
   }
@@ -448,7 +449,8 @@ export function orientationKnownAt(
   let lastSeen: OrientationSegment | null = null
   for (const seg of track.orientationSegments) {
     if (t >= seg.startSec - 1e-6 && t <= seg.endSec + 1e-6) {
-      return seg.knowledge ?? 'UNKNOWN'
+      return seg.knowledge === 'CURRENT' || seg.knowledge === 'LAST_KNOWN'
+        ? seg.knowledge : 'UNKNOWN'
     }
     if (seg.startSec <= t) {
       lastSeen = seg
@@ -473,7 +475,8 @@ export function orientationAtV2(
     const lo = samples[0]
     const hi = samples[samples.length - 1]
     if (t >= lo.timeSec - 1e-6 && t <= hi.timeSec + 1e-6) {
-      if (seg.knowledge !== 'CURRENT') {
+      if (seg.knowledge !== 'CURRENT' && seg.knowledge !== 'LAST_KNOWN') continue
+      if (seg.knowledge === 'LAST_KNOWN') {
         // LAST_KNOWN 段：冻结在「最后一个 <= t」的样本（绝不返回未来方向，plan §18）。
         let cand: OrientationSample | null = null
         for (const s of samples) {

@@ -215,7 +215,7 @@ public record BattlePlaybackDataset(
     public record HealthTransition(
             double timeSec,
             Integer currentHp,
-            String knowledge,          // CURRENT / LAST_KNOWN / UNKNOWN
+            String knowledge,          // CURRENT / LAST_KNOWN
             String source,             // EXACT_BATTLE_EVENT / ...
             Integer displayCapacityHp, // presentation-only
             ConfidenceDto confidence
@@ -224,7 +224,7 @@ public record BattlePlaybackDataset(
 
     public record LifeTransition(
             double timeSec,
-            String lifeState,          // ALIVE / DESTROYED / UNKNOWN
+            String lifeState,          // ALIVE / DESTROYED
             Double destroyedKnownAtSec
     ) {
     }

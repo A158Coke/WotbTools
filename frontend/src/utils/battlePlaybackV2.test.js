@@ -28,9 +28,21 @@ describe('healthAt', () => {
     expect(healthAt(track, 120).currentHp).toBe(1500)
     expect(healthAt(track, 50)).toBeNull()
   })
+
+  it('treats a nullable or invalid health transition as no canonical fact', () => {
+    const track = { healthTransitions: [{ timeSec: 0, currentHp: null, knowledge: null, source: null, displayCapacityHp: null, confidence: 'UNKNOWN' }] }
+    expect(healthAt(track, 1)).toBeNull()
+    expect(healthDisplayAt({ ...track, friendly: false, lifeTransitions: [] }, 1)).toMatchObject({
+      state: 'UNKNOWN', currentHp: null,
+    })
+  })
 })
 
 describe('lifeAt', () => {
+  it('returns null when no canonical life transition exists', () => {
+    expect(lifeAt({ lifeTransitions: [] }, 10)).toBeNull()
+  })
+
   it('positive-HP drowning yields DESTROYED with currentHp preserved', () => {
     const track = { lifeTransitions: [{ timeSec: 150, lifeState: 'DESTROYED', destroyedKnownAtSec: 150 }] }
     const life = lifeAt(track, 160)
@@ -384,6 +396,8 @@ describe('slot and component runtime selectors', () => {
       { fromSec: 0, toSec: 20, hpLoss: 500 })).toBeNull()
     expect(ghostAroundV2({ healthTransitions: [lh(0, 2000, 'CURRENT', null), lh(10, 1500, 'CURRENT', null)] },
       { fromSec: 0, toSec: 10, hpLoss: 500 })).toBeNull()
+    expect(ghostAroundV2({ healthTransitions: [lh(0, 2000, 'CURRENT', 2000), lh(8, 1500, 'CURRENT', 2000)] },
+      { fromSec: 0, toSec: 10, hpLoss: 500 })).toEqual({ prevPct: 100, nextPct: 75 })
   })
 
   it('allows DamageLoss transient feedback only inside one continuous observed AoI segment', () => {

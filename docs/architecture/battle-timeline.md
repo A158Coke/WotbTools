@@ -28,10 +28,12 @@
 
 - **FrameHealth**：统一 `currentHp` 权威，去掉 `baseHp/effectiveMaxHp` 业务语义；
   `baseHp` 属 `VehicleReferenceMetadata`（tankopedia 参考展示）。新增
-  `HealthKnowledge(CURRENT/LAST_KNOWN/UNKNOWN)` 与 presentation-only `displayCapacityHp`
+  `HealthKnowledge(CURRENT/LAST_KNOWN)`；无 HP fact 由空 transition track 表达；
+  presentation-only `displayCapacityHp`
   （= 截至 t 的真实可信 currentHp 最大值，**anti-future-leak**，绝非 canonical max HP）。
 - **FrameOrientation**：新增 `OrientationKnowledge` + `ageSec`；敌方离开 AoI 后方向
-  `CURRENT → LAST_KNOWN`，不得继续表现为实时炮塔方向。
+  `CURRENT → LAST_KNOWN`，不得继续表现为实时炮塔方向。无 orientation fact 不生成 HTTP
+  segment；HTTP wire 只保留 `CURRENT/LAST_KNOWN`，domain 的 `UNKNOWN` 仅表示内部无事实。
 
 ### V2 投影契约（`BattlePlaybackDataset`)
 

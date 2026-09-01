@@ -55,10 +55,8 @@ export function projectVehicleState({
     model,
     hullImage,
     turretImage,
-    // Destroyed markers remain renderable even when no direction sample exists;
-    // this fallback is presentation-only and never feeds canonical state.
-    hullScreenDeg: hullDeg ?? (destroyed ? 0 : null),
-    turretScreenDeg: turretDeg ?? (destroyed ? 0 : null),
+    hullScreenDeg: hullDeg,
+    turretScreenDeg: turretDeg,
     markerStyle: { left: markerLeft(pos.x), top: markerTop(pos.y), transform: markerTransform },
     overlayInverseScale,
     overlayInverse,

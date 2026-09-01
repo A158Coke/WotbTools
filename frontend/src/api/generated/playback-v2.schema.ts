@@ -48,24 +48,21 @@ export default {
       "type": "string",
       "enum": [
         "CURRENT",
-        "LAST_KNOWN",
-        "UNKNOWN"
+        "LAST_KNOWN"
       ]
     },
     "HealthKnowledge": {
       "type": "string",
       "enum": [
         "CURRENT",
-        "LAST_KNOWN",
-        "UNKNOWN"
+        "LAST_KNOWN"
       ]
     },
     "PlaybackLifeState": {
       "type": "string",
       "enum": [
         "ALIVE",
-        "DESTROYED",
-        "UNKNOWN"
+        "DESTROYED"
       ]
     },
     "BattlePlaybackDataset": {
