@@ -315,9 +315,19 @@ public final class BattlePlaybackProjector {
             final BattleTimeline timeline,
             final List<Integer> entityIds) {
         final List<ConsumableTransition> out = new ArrayList<>();
+        final Map<Long, ConsumableLifecycle.ConsumableObservation> preBattleSeeds = new HashMap<>();
         // 真实观测 transition（KNOWN runtime 事实；state 未证明 → UNKNOWN）。
         if (observations != null) {
             for (final ConsumableLifecycle.ConsumableObservation o : observations) {
+                if (o != null && o.timeSec() < 0d
+                        && o.state() == ConsumableLifecycleEvent.ConsumableLifecycleState.INITIALIZED) {
+                    final long key = ((long) o.entityId() << 32) ^ (o.wireCode() & 0xffffffffL);
+                    final ConsumableLifecycle.ConsumableObservation previous = preBattleSeeds.get(key);
+                    if (previous == null || o.timeSec() >= previous.timeSec()) {
+                        preBattleSeeds.put(key, o);
+                    }
+                    continue;
+                }
                 final Double timeSec = activeConsumableTime(o);
                 if (timeSec == null) {
                     continue;
@@ -327,6 +337,14 @@ public final class BattlePlaybackProjector {
                                 ? "UNKNOWN" : o.state().name(),
                         toConfidence(o.confidence())));
             }
+        }
+        // Multiple negative INITIALIZED records can describe the same pre-battle
+        // materialization. Keep the latest valid evidence per entity+wireCode and
+        // project exactly one active seed; the canonical timeline still retains all
+        // raw events for provenance and diagnostics.
+        for (final ConsumableLifecycle.ConsumableObservation o : preBattleSeeds.values()) {
+            out.add(new ConsumableTransition(0d, null, o.logicalItemId(), o.wireCode(),
+                    "INITIALIZED", toConfidence(o.confidence())));
         }
         // AoI hidden 边界：canonical contract —— known runtime 在 AoI 关闭（Type4 absent）后必须
         // 显式插入 UNKNOWN transition，直到下一次重入（observedFrom）由后续观测接管。
@@ -347,7 +365,8 @@ public final class BattlePlaybackProjector {
                 }
             }
         }
-        out.sort(Comparator.comparingDouble(ConsumableTransition::timeSec));
+        out.sort(Comparator.comparingDouble(ConsumableTransition::timeSec)
+                .thenComparingInt(t -> t.wireCode() == null ? -1 : t.wireCode()));
         return out;
     }
 

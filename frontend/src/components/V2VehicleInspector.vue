@@ -256,8 +256,7 @@ const tankClassLabel = computed(() => {
 .v2-loadout-group { display: flex; flex-direction: column; gap: 4px; }
 .v2-loadout-group-title { color: var(--pb-dim, #9aa); font-size: 10px; }
 .v2-loadout-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.v2-equipment-row { display: grid; grid-template-columns: minmax(72px, 0.5fr) minmax(0, 3fr); align-items: center; gap: 6px; }
-.v2-equipment-row .v2-loadout-grid { min-width: 0; }
+.v2-equipment-row { display: block; }
 .v2-inspector-chip {
   display: flex; flex-direction: column; gap: 2px; padding: 4px 6px;
   border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 11px;
@@ -265,7 +264,7 @@ const tankClassLabel = computed(() => {
 .v2-chip-state { color: var(--pb-dim, #9aa); font-size: 9px; }
 @media (max-width: 520px) {
   .v2-loadout-grid { grid-template-columns: repeat(3, minmax(92px, 1fr)); overflow-x: auto; }
-  .v2-equipment-row { grid-template-columns: 1fr; gap: 3px; }
+  .v2-equipment-row { display: block; }
 }
 .v2-chip-type { color: var(--pb-dim, #9aa); font-size: 9px; text-transform: uppercase; }
 </style>

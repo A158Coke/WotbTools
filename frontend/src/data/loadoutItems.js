@@ -236,6 +236,11 @@ export const EQUIPMENT_NAMES = {
     "en": "Consumable Delivery System",
     "ru": "Система подачи расходников"
   },
+  "120": {
+    "zh": "改进型模块+",
+    "en": "Improved Modules +",
+    "ru": "Доработанные модули +"
+  },
   "122": {
     "zh": "改进型垂直稳定器",
     "en": "Improved Vertical Stabilizer",

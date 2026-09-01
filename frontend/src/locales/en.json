@@ -33,6 +33,7 @@
         "rate_limited": "Too many requests. Please try again later.",
         "request_aborted": "The request was cancelled.",
         "malformed_error_response": "The server returned an unrecognized response.",
+        "invalid_response": "The battle replay data is invalid and cannot be loaded safely.",
         "unknown_error": "Something went wrong. Please try again.",
         "job_failed": "The task failed.",
         "diagnostic_id": "Diagnostic ID: {id}"

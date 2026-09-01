@@ -310,6 +310,53 @@
       ]
     },
     {
+      "id": 120,
+      "code": "IMPROVED_MODULES_PLUS",
+      "nameZh": "改进型模块+",
+      "nameEn": "Improved Modules +",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "grid": {
+        "group": "VITALITY",
+        "slot": 1,
+        "side": "LEFT"
+      },
+      "effects": [
+        {
+          "stat": "trackDurability",
+          "operation": "MULTIPLY",
+          "value": 1.2
+        },
+        {
+          "stat": "fuelTankDurability",
+          "operation": "MULTIPLY",
+          "value": 1.2
+        },
+        {
+          "stat": "ammoRackDurability",
+          "operation": "MULTIPLY",
+          "value": 1.2
+        },
+        {
+          "stat": "rammingDamageReceived",
+          "operation": "MULTIPLY",
+          "value": 0.6
+        },
+        {
+          "stat": "damageReceived",
+          "operation": "MULTIPLY",
+          "value": 0.9,
+          "conditions": {
+            "shellTypes": ["HE"],
+            "shellCaliberGreaterThan": 130
+          }
+        }
+      ],
+      "notes": [
+        "BlitzKit equipment.pb：HEprotectionPreset 的 VITALITY slot 1 LEFT；仅用于车辆专属替换。"
+      ]
+    },
+    {
       "id": 110,
       "code": "ENHANCED_ARMOR",
       "nameZh": "强化装甲",
