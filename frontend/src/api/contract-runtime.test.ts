@@ -73,6 +73,19 @@ describe('HTTP contract runtime validator', () => {
     expect(result.diagnostics).toEqual([])
   })
 
+  it('rejects a lowercase ApiError machine code', () => {
+    const result = validateApiError({
+      id: 'error-1',
+      errorCode: 'invalid_request',
+      errorMsg: null,
+      status: 400,
+      retryable: false,
+      details: {},
+      timestamp: null,
+    })
+    expect(result.data).toBeNull()
+  })
+
   it('keeps client-local failures out of the generated server registry', () => {
     expect(API_ERROR_CODES).toContain('DATASET_REFERENCE_REQUIRED')
     expect(API_ERROR_CODES).not.toEqual(expect.arrayContaining([
