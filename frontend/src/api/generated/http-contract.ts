@@ -229,7 +229,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Processing job or source was not found */
+            /** @description Processing job was not found */
             404: {
                 headers: {
                     [name: string]: unknown;
