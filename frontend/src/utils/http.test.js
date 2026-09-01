@@ -24,6 +24,7 @@ describe('apiErrorFromResponse', () => {
   ])('parses canonical %s responses', async (status, code) => {
     const error = await apiErrorFromResponse(response(status, JSON.stringify({
       errorCode: code,
+      errorMsg: null,
       status,
       id: 'err-1',
       retryable: status >= 500,

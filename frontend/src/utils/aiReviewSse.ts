@@ -7,7 +7,7 @@ import type {
   AiReviewStageEvent,
   AiReviewTokenEvent,
 } from '../types/ai-review.js'
-import type { ErrorCode } from '../types/api.js'
+import type { ServerErrorCode } from '../types/api.js'
 import { isAiReviewCapability } from '../types/ai-review.js'
 import { isContractCode, isRecord } from '../types/guards.js'
 
@@ -108,7 +108,7 @@ export function parseAiReviewEvent(eventName: unknown, payload: unknown): AiRevi
   }
 
   return isRecord(payload) && isContractCode(payload.code)
-    ? { type: 'error', code: payload.code as ErrorCode }
+    ? { type: 'error', code: payload.code as ServerErrorCode }
     : null
 }
 

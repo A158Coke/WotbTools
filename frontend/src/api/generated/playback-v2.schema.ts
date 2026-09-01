@@ -727,6 +727,7 @@ export default {
         "INVALID_ARGUMENT",
         "MISSING_PARAM",
         "INVALID_REQUEST",
+        "DATASET_REFERENCE_REQUIRED",
         "UNSUPPORTED_MEDIA_TYPE",
         "METHOD_NOT_ALLOWED",
         "RESOURCE_NOT_FOUND",
@@ -755,14 +756,10 @@ export default {
         "SOURCE_PROCESSING_FAILED",
         "DATASET_UNAVAILABLE",
         "INTERNAL_ERROR",
-        "NETWORK_ERROR",
-        "REQUEST_ABORTED",
-        "MALFORMED_ERROR_RESPONSE",
         "SERVICE_UNAVAILABLE",
         "UPSTREAM_UNAVAILABLE",
         "UPSTREAM_TIMEOUT",
-        "RATE_LIMITED",
-        "UNKNOWN_ERROR"
+        "RATE_LIMITED"
       ]
     }
   }

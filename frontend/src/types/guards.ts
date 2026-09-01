@@ -1,4 +1,4 @@
-import type { ApiErrorPayload, ErrorCode, JsonObject, KnownErrorCode } from './api.js'
+import type { ApiErrorWirePayload, ApplicationErrorCode, JsonObject, KnownServerErrorCode } from './api.js'
 import type {
   ActiveSource,
   ExportJob,
@@ -10,6 +10,7 @@ import type {
 } from './jobs.js'
 import type { AggregateRow, Battle, ColumnDef, ReplayResult } from './replay.js'
 import { API_ERROR_CODES } from '../api/generated/api-error-codes'
+import { validateApiError } from '../api/contract-runtime.js'
 
 export function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -45,11 +46,11 @@ export function isContractCode(value: unknown): value is string {
   return isString(value) && /^[A-Z][A-Z0-9_]*$/.test(value)
 }
 
-export function toErrorCode(value: unknown): ErrorCode | null {
-  return isContractCode(value) ? value as ErrorCode : null
+export function toErrorCode(value: unknown): ApplicationErrorCode | null {
+  return isContractCode(value) ? value as ApplicationErrorCode : null
 }
 
-export function isKnownErrorCode(value: unknown): value is KnownErrorCode {
+export function isKnownErrorCode(value: unknown): value is KnownServerErrorCode {
   return isString(value) && KNOWN_ERROR_CODES.has(value)
 }
 
@@ -113,12 +114,12 @@ export function isExportJobCreateResponse(value: unknown): value is ExportJobCre
     && isInteger(value.total)
 }
 
-export function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
-  return isRecord(value) && (value.id === null || isString(value.id))
-    && isContractCode(value.errorCode) && isNullableString(value.errorMsg)
-    && (value.status === null || isInteger(value.status)) && typeof value.retryable === 'boolean'
-    && isRecord(value.details) && (value.timestamp === null || isString(value.timestamp))
+export function isApiErrorWirePayload(value: unknown): value is ApiErrorWirePayload {
+  return validateApiError(value).data !== null
 }
+
+/** Backward-compatible name; validation now targets the generated HTTP wire schema. */
+export const isApiErrorPayload = isApiErrorWirePayload
 
 function isPlayerRow(value: unknown): boolean {
   return isRecord(value) && isRecord(value.cells) && isInteger(value.team)
