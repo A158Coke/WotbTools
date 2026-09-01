@@ -1363,15 +1363,15 @@ const selLastKnownSec = computed(() => {
 const selCurStats = computed(() => {
   const st = selectedState.value
   if (!st) return { dealt: 0, received: 0, kills: 0 }
-  return cumulativeStatsAtV2(authoritativeEvents.value, st.vehicle.accountId, currentTime.value)
+  return cumulativeStatsAtV2(authoritativeEvents.value, st.vehicle, currentTime.value)
 })
-/** §12/§13/§19 最近伤害记录：全部车辆的 canonical observedHpLoss，attacker 不可证明时
+/** §12/§13/§19 最近伤害记录：incoming 使用 canonical HP decrease，outgoing 使用 observedHpLoss；attacker 不可证明时
  *  显示「来源未知」；raw Type-8 协议值不参与。Blocker 2：只消费 toSec <= currentTime 的记录
  *  （forward/backward seek 与任意 timestamp 重建天然正确，未来事件绝不泄漏）；取最近 8 条。 */
 const selDamageLog = computed(() => {
   const st = selectedState.value
   if (!st) return []
-  const rows = damageLogAtV2(authoritativeEvents.value, st.vehicle.accountId, currentTime.value, 8)
+  const rows = damageLogAtV2(authoritativeEvents.value, st.vehicle, currentTime.value, 8)
   return rows.map((d) => {
     if (d.dir === 'in') {
       if (d.attackerReliable && d.attackerAccountId != null) {

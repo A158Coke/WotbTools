@@ -301,8 +301,10 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   LAST_KNOWN 显示最近可信 current 与 anti-future-leak 的 `displayCapacityHp`；己方存活且
   尚无掉血/阵亡证据时返回 `relativeFull`，只渲染 100% presentation；敌方没有 health
   evidence 时保持 UNKNOWN。relative-full 不代表具体 HP 或 actual max。
-  队伍聚合只在每辆车都有可证 current/capacity 时返回 `EXACT`；混合证据返回 `PARTIAL`，
-  无证据返回 `UNKNOWN`，不读取 tankopedia base 或旧 sample 推导本局分母。
+  队伍聚合只在每辆车都有可证 current/capacity 时返回 `EXACT`；己方 opening 时，
+  `relativeFull=true` 或「CURRENT 且 currentHp=displayCapacityHp、无掉血/阵亡证据」均算
+  opening-full member，混合 exact-full/relative-full 仍返回 `FULL_RELATIVE`；已知掉血/阵亡返回
+  `PARTIAL`，无证据返回 `UNKNOWN`，不读取 tankopedia base 或旧 sample 推导本局分母。
 - **HP HUD**：每辆可显示车辆常驻「HP 数字 + 定宽 bar」（screen-space 恒定，friendly=地图 tone、
   enemy=red 与整车 team token 同源）；last-known 冻结最后可信值并弱化、destroyed 归零；
   开关「显示血量」（默认开，`wotb.pb.hp-prefs` localStorage 持久化）隐藏数字/bar/ghost，
