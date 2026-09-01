@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { projectVehicleState } from './playbackVehicleState'
 
-const project = (time) => projectVehicleState({
+const project = (time, orientationSegments = [{ startSec: 0, endSec: 10, knowledge: 'OBSERVED', samples: [
+  { timeSec: 0, hullYawDeg: 10, turretRelativeYawDeg: 20 },
+] }]) => projectVehicleState({
   vehicle: { accountId: 7, team: 1, playerName: 'Player', tankId: 123, tankName: 'Tank' },
   track: {
     friendly: true,
     positionSegments: [{ startSec: 0, endSec: 10, knowledge: 'OBSERVED', samples: [
       { timeSec: 0, x: 0, y: 0 }, { timeSec: 10, x: 100, y: 50 },
     ] }],
-    orientationSegments: [{ startSec: 0, endSec: 10, knowledge: 'OBSERVED', samples: [
-      { timeSec: 0, hullYawDeg: 10, turretRelativeYawDeg: 20 },
-    ] }],
+    orientationSegments,
     lifeTransitions: [],
   },
   time,
@@ -40,6 +40,22 @@ describe('projectVehicleState', () => {
 
   it('returns null before the first observed canonical position', () => {
     expect(project(-1)).toBeNull()
+  })
+
+  it('keeps nullable turret direction unknown instead of turning it into hull direction', () => {
+    const state = project(5, [{ startSec: 0, endSec: 10, knowledge: 'OBSERVED', samples: [
+      { timeSec: 0, hullYawDeg: 45, turretRelativeYawDeg: null },
+    ] }])
+    expect(state.hullScreenDeg).toBe(45)
+    expect(state.turretScreenDeg).toBeNull()
+  })
+
+  it('keeps unknown hull direction null', () => {
+    const state = project(5, [{ startSec: 0, endSec: 10, knowledge: 'OBSERVED', samples: [
+      { timeSec: 0, hullYawDeg: null, turretRelativeYawDeg: 20 },
+    ] }])
+    expect(state.hullScreenDeg).toBeNull()
+    expect(state.turretScreenDeg).toBeNull()
   })
 
   it('uses canonical track.friendly even when team differs from the perspective team', () => {

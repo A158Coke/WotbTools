@@ -3,6 +3,7 @@ import type {
   ConsumableRuntimeResult,
   ConsumableTransition,
   BattleEvent,
+  DamageLoss,
   HealthAtResult,
   HealthTransition,
   LifeAtResult,
@@ -309,21 +310,24 @@ export function victimFeedbackAllowedV2(
 /** Lost-HP ghost derived from adjacent canonical health transitions. */
 export function ghostAroundV2(
   track: Pick<VehiclePlaybackTrack, 'healthTransitions'> | null | undefined,
-  t: number,
+  loss: Pick<DamageLoss, 'fromSec' | 'toSec'> | null | undefined,
 ) {
-  if (!track || !Number.isFinite(t) || !Array.isArray(track.healthTransitions)) return null
+  if (!track || !loss || !Number.isFinite(loss.fromSec) || !Number.isFinite(loss.toSec)
+    || loss.toSec < loss.fromSec || !Array.isArray(track.healthTransitions)) return null
   let previous: HealthTransition | null = null
   for (const transition of track.healthTransitions) {
-    if (transition.timeSec > t + 1e-6) break
-    const capacity = previous?.displayCapacityHp
-    if (Math.abs(transition.timeSec - t) <= 1e-6
-      && previous && previous.currentHp != null && transition.currentHp != null
-      && transition.currentHp < previous.currentHp
-      && typeof capacity === 'number' && Number.isFinite(capacity)
-      && capacity > 0) {
+    if (transition.timeSec > loss.toSec + 1e-6) break
+    const capacity = previous?.displayCapacityHp ?? transition.displayCapacityHp
+    const previousHp = previous?.currentHp
+    const transitionHp = transition.currentHp
+    if (transition.timeSec >= loss.fromSec - 1e-6
+      && previous && typeof previousHp === 'number' && Number.isFinite(previousHp)
+      && typeof transitionHp === 'number' && Number.isFinite(transitionHp)
+      && transitionHp < previousHp
+      && typeof capacity === 'number' && Number.isFinite(capacity) && capacity > 0) {
       return {
-        prevPct: (previous.currentHp / capacity) * 100,
-        nextPct: (transition.currentHp / capacity) * 100,
+        prevPct: (previousHp / capacity) * 100,
+        nextPct: (transitionHp / capacity) * 100,
       }
     }
     previous = transition
@@ -518,6 +522,10 @@ export function moduleCrewStatesAt(
   for (const tr of transitions) {
     if (!tr || !Number.isFinite(tr.timeSec) || tr.timeSec > t + 1e-6) continue
     if (tr.recorderVisible !== true || !tr.component) continue
+    if (tr.state === 'FULL_REPAIRED_CLEAR' || tr.state === 'CREW_HEALED') {
+      byComponent.delete(tr.component)
+      continue
+    }
     byComponent.set(tr.component, {
       component: tr.component,
       state: tr.state ?? 'UNKNOWN',

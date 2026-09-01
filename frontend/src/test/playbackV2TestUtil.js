@@ -1,4 +1,4 @@
-/** Build a current-shape Battle Playback V2 dataset for component tests. */
+/** Build the single current-shape Battle Playback V2 fixture used by component tests. */
 export function makeBattlePlaybackDataset({ vehicles = defaultVehicles(), events = defaultEvents() } = {}) {
   return {
     durationSec: 60,
@@ -10,40 +10,54 @@ export function makeBattlePlaybackDataset({ vehicles = defaultVehicles(), events
     pointsSamples: [],
     limitations: [],
     capability: 'FULL',
-    arenaBonusType: 1,
+    arenaBonusType: null,
   }
 }
 
 function defaultVehicles() {
   return [
-    track(1001, 'You', 1, true, 0, 60, 0, 90, 0, 30),
-    track(2001, 'EnemyGap', 2, false, -50, 14, 10, 30, 5, 20),
-    track(2002, 'EnemyDead', 2, false, 100, 30, null, null, null, null, 30),
+    {
+      accountId: 1001, playerName: 'You', tankId: 1, tankName: 'Maus', tankClass: '', tankTier: null, team: 1, friendly: true,
+      loadout: null,
+      positionSegments: [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 0, endSec: 60,
+        samples: [{ timeSec: 0, x: 0, y: 0 }, { timeSec: 60, x: 60, y: 60 }] }],
+      orientationSegments: [{ knowledge: 'CURRENT', startSec: 0, endSec: 60,
+        samples: [{ timeSec: 0, hullYawDeg: 0, turretRelativeYawDeg: 0 }, { timeSec: 60, hullYawDeg: 90, turretRelativeYawDeg: 30 }] }],
+      healthTransitions: [{ timeSec: 0, currentHp: 1500, knowledge: 'CURRENT', displayCapacityHp: 1500, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' }],
+      lifeTransitions: [],
+      damageLosses: [],
+      consumableTransitions: [],
+      moduleCrewTransitions: [],
+    },
+    {
+      accountId: 2001, playerName: 'EnemyA', tankId: 2, tankName: 'T49', tankClass: '', tankTier: null, team: 2, friendly: false,
+      loadout: null,
+      positionSegments: [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 10, endSec: 20,
+        samples: [{ timeSec: 10, x: -50, y: -50 }, { timeSec: 20, x: -60, y: -60 }] }],
+      orientationSegments: [{ knowledge: 'CURRENT', startSec: 10, endSec: 20,
+        samples: [{ timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5 }, { timeSec: 20, hullYawDeg: 30, turretRelativeYawDeg: 20 }] }],
+      healthTransitions: [
+        { timeSec: 0, currentHp: 1200, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' },
+        { timeSec: 12, currentHp: 800, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' },
+      ],
+      lifeTransitions: [{ timeSec: 25, lifeState: 'DESTROYED', destroyedKnownAtSec: 25 }],
+      damageLosses: [{ fromSec: 0, toSec: 12, hpLoss: 400, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }],
+      consumableTransitions: [],
+      moduleCrewTransitions: [],
+    },
+    {
+      accountId: 2002, playerName: 'NeverSeen', tankId: 3, tankName: 'NeverSeen', tankClass: '', tankTier: null, team: 2, friendly: false,
+      loadout: null,
+      positionSegments: [], orientationSegments: [], healthTransitions: [], lifeTransitions: [], damageLosses: [],
+      consumableTransitions: [], moduleCrewTransitions: [],
+    },
   ]
 }
 
 function defaultEvents() {
   return [
     { type: 'POSITION_REPORTED', timeSec: 10, accountId: 2001, targetAccountId: null, observedHpLoss: null },
-    { type: 'POSITION_STALE', timeSec: 14, accountId: 2001, targetAccountId: null, observedHpLoss: null },
-    { type: 'DESTROYED', timeSec: 30, accountId: 2002, targetAccountId: null, observedHpLoss: null },
+    { type: 'DAMAGE', timeSec: 12, accountId: 1001, targetAccountId: 2001, observedHpLoss: 400 },
+    { type: 'POSITION_STALE', timeSec: 20, accountId: 2001, targetAccountId: null, observedHpLoss: null },
   ]
-}
-
-function track(accountId, playerName, team, friendly, x, endSec, hullStart, hullEnd, turretStart, turretEnd, destroyedAtSec = null) {
-  const samples = [{ timeSec: x === 0 ? 0 : 10, x, y: x }]
-  if (endSec > samples[0].timeSec) samples.push({ timeSec: endSec, x: x - 50, y: x - 50 })
-  const orientationSamples = hullStart === null || hullStart === undefined ? [] : [
-    { timeSec: samples[0].timeSec, hullYawDeg: hullStart, turretRelativeYawDeg: turretStart },
-    { timeSec: endSec, hullYawDeg: hullEnd, turretRelativeYawDeg: turretEnd },
-  ]
-  return {
-    accountId, playerName, tankId: accountId, tankName: playerName, tankClass: '', tankTier: null, team,
-    friendly, loadout: null,
-    positionSegments: [{ startSec: samples[0].timeSec, endSec, knowledge: 'OBSERVED', interpolationAllowed: true, samples }],
-    orientationSegments: orientationSamples.length === 0 ? [] : [{ startSec: orientationSamples[0].timeSec, endSec, knowledge: 'CURRENT', samples: orientationSamples }],
-    healthTransitions: [],
-    lifeTransitions: destroyedAtSec === null || destroyedAtSec === undefined ? [] : [{ timeSec: destroyedAtSec, lifeState: 'DESTROYED', destroyedKnownAtSec: destroyedAtSec }],
-    damageLosses: [], consumableTransitions: [], moduleCrewTransitions: [],
-  }
 }

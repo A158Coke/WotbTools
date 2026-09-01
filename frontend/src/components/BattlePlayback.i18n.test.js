@@ -71,12 +71,26 @@ const locales = { zh, en, ru }
 const lastSpottedLabel = { zh: '最后已知', en: 'Last known', ru: 'Последнее известное' }
 const destroyedLabel = { zh: '已击毁', en: 'Destroyed', ru: 'Уничтожен' }
 
+function makeI18nDataset() {
+  const dataset = makeBattlePlaybackDataset()
+  const lastKnown = dataset.vehicles.find(vehicle => vehicle.accountId === 2001)
+  lastKnown.positionSegments = [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 10, endSec: 14,
+    samples: [{ timeSec: 10, x: -50, y: -50 }, { timeSec: 14, x: -60, y: -60 }] }]
+  lastKnown.orientationSegments = [{ knowledge: 'CURRENT', startSec: 10, endSec: 14,
+    samples: [{ timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5 }, { timeSec: 14, hullYawDeg: 30, turretRelativeYawDeg: 20 }] }]
+  const destroyed = dataset.vehicles.find(vehicle => vehicle.accountId === 2002)
+  destroyed.positionSegments = [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 10, endSec: 30,
+    samples: [{ timeSec: 10, x: 100, y: 100 }, { timeSec: 30, x: 120, y: 120 }] }]
+  destroyed.lifeTransitions = [{ timeSec: 30, lifeState: 'DESTROYED', destroyedKnownAtSec: 30 }]
+  return dataset
+}
+
 describe('BattlePlayback with real vue-i18n (zh/en/ru)', () => {
   for (const lang of ['zh', 'en', 'ru']) {
     it(lang + ': selecting a last-known vehicle does not throw and keeps the map visible', async () => {
       const i18n = createI18n({ locale: lang, fallbackLocale: 'en', messages: locales })
       const wrapper = mount(BattlePlayback, {
-        props: { overview: makeOverview(), seekTo: 20, playbackV2: makeBattlePlaybackDataset() },
+        props: { overview: makeOverview(), seekTo: 20, playbackV2: makeI18nDataset() },
         global: { plugins: [i18n] }
       })
       await flushPromises()
@@ -97,7 +111,7 @@ describe('BattlePlayback with real vue-i18n (zh/en/ru)', () => {
     it(lang + ': selecting a destroyed vehicle does not collapse the component', async () => {
       const i18n = createI18n({ locale: lang, fallbackLocale: 'en', messages: locales })
       const wrapper = mount(BattlePlayback, {
-        props: { overview: makeOverview(), seekTo: 35, playbackV2: makeBattlePlaybackDataset() },
+        props: { overview: makeOverview(), seekTo: 35, playbackV2: makeI18nDataset() },
         global: { plugins: [i18n] }
       })
       await flushPromises()

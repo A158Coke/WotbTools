@@ -27,12 +27,17 @@ import com.wotb.core.replay.timeline.PositionKnowledge;
 import com.wotb.core.replay.timeline.PositionSource;
 import com.wotb.core.replay.timeline.VehicleKnowledgeState;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.VehicleBattleLoadout;
+import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.facts.AoiObservationSegment;
 import com.wotb.core.replay.timeline.TimelineError;
 import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.web.replay.dto.BattlePlaybackDataset;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.ConfidenceDto;
+import com.wotb.web.replay.dto.BattlePlaybackDataset.VehicleBattleLoadoutDto;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -45,6 +50,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -62,7 +68,10 @@ class BattlePlaybackProjectorTest {
                 DecodeConfidence.UNKNOWN, ConfidenceDto.UNKNOWN);
         for (final Map.Entry<DecodeConfidence, ConfidenceDto> entry : expected.entrySet()) {
             final VehicleBattleLoadout loadout = new VehicleBattleLoadout(
-                    7, "11.19", List.of(), List.of(), List.of(), entry.getKey());
+                    7, "11.19", List.of(item(0, 13, "REPAIR_KIT"), item(1, 0, null), item(2, 0, null)),
+                    List.of(item(3, 0, null), item(4, 0, null), item(5, 0, null)),
+                    List.of(equipment(0), equipment(1), equipment(2), equipment(3), equipment(4),
+                            equipment(5), equipment(6), equipment(7), equipment(8)), entry.getKey());
             assertEquals(entry.getValue(), BattlePlaybackProjector.toLoadoutDto(loadout).confidence(),
                     entry.getKey().name());
         }
@@ -403,6 +412,109 @@ class BattlePlaybackProjectorTest {
         assertEquals(80, dataset.pointsSamples().stream()
                 .filter(s -> s.team() == 2 && s.timeSec() == 0d)
                 .findFirst().orElseThrow().points());
+    }
+
+    @Test
+    void multiEntityReentryUsesActiveEntityTruthWithoutUnknownOverwrite() {
+        final long account = 2001L;
+        final Battle battle = syntheticBattle(account, 2);
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(
+                        7, new TeamEntityIdentity(7, account, "Enemy", 456L, "Enemy", 2, DecodeConfidence.EXACT),
+                        8, new TeamEntityIdentity(8, account, "Enemy", 456L, "Enemy", 2, DecodeConfidence.EXACT)),
+                Map.of(account, List.of(7, 8)), Map.of(), 0, List.of());
+        final List<BattleFrame> frames = List.of(
+                new BattleFrame(0, 0, null,
+                        List.of(frameVehicle(8, account, 1000, LifeState.ALIVE, 0, null)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(1, 1, null,
+                        List.of(frameVehicle(7, account, 700, LifeState.DESTROYED, 1, 1.0)),
+                        List.of(), List.of(), Map.of(), List.of()));
+        final BattleTimeline timeline = syntheticTimeline(30, frames, List.of());
+
+        final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(battle, timeline, mapping, account);
+        final BattlePlaybackDataset.VehiclePlaybackTrack track = dataset.vehicles().getFirst();
+        assertEquals(List.of(1000, 700), track.healthTransitions().stream()
+                .map(BattlePlaybackDataset.HealthTransition::currentHp).toList());
+        assertEquals(List.of("ALIVE", "DESTROYED"), track.lifeTransitions().stream()
+                .map(BattlePlaybackDataset.LifeTransition::lifeState).toList());
+    }
+
+    @Test
+    void invalidTimeExplicitDestroyedDoesNotSuppressCanonicalDestroyed() {
+        final long account = 2001L;
+        final int entityId = 7;
+        final Battle battle = syntheticBattle(account, 1);
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(entityId, new TeamEntityIdentity(entityId, account, "Enemy", 456L, "Enemy", 1,
+                        DecodeConfidence.EXACT)),
+                Map.of(account, List.of(entityId)), Map.of(), 0, List.of());
+        final ReplayEvent invalidExplicit = new VehicleDestroyedEvent(
+                1, new ReplayTimestamp(-1f, -1f), 8, DecodeConfidence.EXACT, entityId, null, false);
+        final ReplayEvent canonicalHealth = new HealthChangedEvent(
+                2, new ReplayTimestamp(31f, 31f), 7, DecodeConfidence.EXACT, entityId, 0, null, false);
+        final BattleTimeline timeline = syntheticTimeline(40,
+                List.of(new BattleFrame(0, 0, null,
+                        List.of(frameVehicle(entityId, account, 1000, LifeState.ALIVE, 0, null)),
+                        List.of(), List.of(), Map.of(), List.of())),
+                List.of(invalidExplicit, canonicalHealth));
+
+        final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(battle, timeline, mapping, account);
+        final List<BattlePlaybackDataset.BattleEvent> destroyed = dataset.events().stream()
+                .filter(event -> "DESTROYED".equals(event.type())).toList();
+        assertEquals(1, destroyed.size());
+        assertEquals(31.0, destroyed.getFirst().timeSec(), 1e-9);
+    }
+
+    @Test
+    void duplicateConsumableWireCannotResolveToAPlaybackSlot() {
+        final VehicleBattleLoadoutDto loadout = new VehicleBattleLoadoutDto(
+                "11.19", List.of("REPAIR_KIT", "REPAIR_KIT", "ADRENALINE"), List.of(13, 13, 9),
+                List.of("FOOD", "FOOD", "FOOD"), List.of(20, 21, 22),
+                List.of(1, 2, 3, 4, 5, 6, 7, 8, 9), ConfidenceDto.HIGH);
+        assertNull(BattlePlaybackProjector.consumableSlot(loadout, 13));
+        assertEquals(2, BattlePlaybackProjector.consumableSlot(loadout, 9));
+    }
+
+    private static Battle syntheticBattle(final long account, final int team) {
+        final Battle battle = new Battle();
+        battle.mapName = "middleburg";
+        battle.durationS = 40.0;
+        final PlayerResult player = new PlayerResult();
+        player.accountId = account;
+        player.team = team;
+        player.tankId = 456L;
+        player.nickname = "Enemy";
+        battle.players = new ArrayList<>(List.of(player));
+        return battle;
+    }
+
+    private static BattleTimeline syntheticTimeline(final double duration,
+                                                    final List<BattleFrame> frames,
+                                                    final List<ReplayEvent> events) {
+        return new BattleTimeline("middleburg", duration, 0.0, BattleTimelineClock.IDENTIFIED,
+                frames, events, List.of(), BattleTimelineValidationResult.ok(), List.of());
+    }
+
+    private static FrameVehicle frameVehicle(final int entityId, final long account, final int hp,
+                                             final LifeState lifeState, final int second,
+                                             final Double destroyedKnownAtSec) {
+        return new FrameVehicle(entityId, account, "Enemy", 456, "Enemy", "Medium tank", 10, 2, false,
+                lifeState,
+                new FrameHealth(hp, (double) second, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                        FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH),
+                null, null, FrameMapState.UNKNOWN, VehicleKnowledgeState.POSITION_STREAM_ACTIVE,
+                destroyedKnownAtSec, List.of());
+    }
+
+    private static VehicleBattleLoadout.LoadoutItemSlot item(final int slot, final int wireCode,
+                                                             final String logicalItemId) {
+        return new VehicleBattleLoadout.LoadoutItemSlot(slot, wireCode, 0, new byte[0], logicalItemId,
+                logicalItemId == null ? DecodeConfidence.PARTIAL : DecodeConfidence.EXACT);
+    }
+
+    private static VehicleBattleLoadout.EquipmentSelection equipment(final int slot) {
+        return new VehicleBattleLoadout.EquipmentSelection(slot, slot + 1, (byte) (slot + 1));
     }
 
     /** 与前端 lastAtOrBefore 同构：返回 timeSec <= t 的最近一个 transition 的 state。 */

@@ -8,7 +8,6 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.VehicleBattleLoadout;
-import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.feature.PlaybackCombatReconstruction;
 import com.wotb.core.replay.facts.ConsumableLifecycle;
@@ -280,25 +279,22 @@ public final class BattlePlaybackProjector {
     private static List<HealthTransition> healthTransitions(final BattleTimeline timeline,
                                                             final List<Integer> entityIds) {
         final List<HealthTransition> out = new ArrayList<>();
-        for (final int entityId : entityIds) {
-            HealthTransition previous = null;
-            for (final BattleFrame frame : timeline.frames()) {
-                final FrameVehicle v = vehicleIn(frame, entityId);
-                final FrameHealth h = v == null ? null : v.health();
-                final HealthTransition next = h == null || h.currentHp() == null
-                        ? new HealthTransition(frame.stateAtSec(), null, "UNKNOWN", "UNKNOWN", null,
-                                ConfidenceDto.UNKNOWN)
-                        : new HealthTransition(frame.stateAtSec(), h.currentHp(),
-                                h.knowledge() == null ? "UNKNOWN" : h.knowledge().name(),
-                                h.source() == null ? "UNKNOWN" : h.source().name(),
-                                h.displayCapacityHp(), toConfidence(h.confidence()));
-                if (!sameHealth(previous, next)) {
-                    out.add(next);
-                    previous = next;
-                }
+        HealthTransition previous = null;
+        for (final BattleFrame frame : timeline.frames()) {
+            final FrameVehicle v = vehicleInAny(frame, entityIds);
+            final FrameHealth h = v == null ? null : v.health();
+            final HealthTransition next = h == null || h.currentHp() == null
+                    ? new HealthTransition(frame.stateAtSec(), null, "UNKNOWN", "UNKNOWN", null,
+                            ConfidenceDto.UNKNOWN)
+                    : new HealthTransition(frame.stateAtSec(), h.currentHp(),
+                            h.knowledge() == null ? "UNKNOWN" : h.knowledge().name(),
+                            h.source() == null ? "UNKNOWN" : h.source().name(),
+                            h.displayCapacityHp(), toConfidence(h.confidence()));
+            if (!sameHealth(previous, next)) {
+                out.add(next);
+                previous = next;
             }
         }
-        out.sort(Comparator.comparingDouble(HealthTransition::timeSec));
         return out;
     }
 
@@ -314,21 +310,18 @@ public final class BattlePlaybackProjector {
     private static List<LifeTransition> lifeTransitions(final BattleTimeline timeline,
                                                         final List<Integer> entityIds) {
         final List<LifeTransition> out = new ArrayList<>();
-        for (final int entityId : entityIds) {
-            LifeTransition previous = null;
-            for (final BattleFrame frame : timeline.frames()) {
-                final FrameVehicle v = vehicleIn(frame, entityId);
-                final LifeTransition next = new LifeTransition(frame.stateAtSec(),
-                        v == null || v.lifeState() == null ? "UNKNOWN" : v.lifeState().name(),
-                        v == null ? null : v.destroyedKnownAtSec());
-                if (previous == null || !java.util.Objects.equals(previous.lifeState(), next.lifeState())
-                        || !java.util.Objects.equals(previous.destroyedKnownAtSec(), next.destroyedKnownAtSec())) {
-                    out.add(next);
-                    previous = next;
-                }
+        LifeTransition previous = null;
+        for (final BattleFrame frame : timeline.frames()) {
+            final FrameVehicle v = vehicleInAny(frame, entityIds);
+            final LifeTransition next = new LifeTransition(frame.stateAtSec(),
+                    v == null || v.lifeState() == null ? "UNKNOWN" : v.lifeState().name(),
+                    v == null ? null : v.destroyedKnownAtSec());
+            if (previous == null || !java.util.Objects.equals(previous.lifeState(), next.lifeState())
+                    || !java.util.Objects.equals(previous.destroyedKnownAtSec(), next.destroyedKnownAtSec())) {
+                out.add(next);
+                previous = next;
             }
         }
-        out.sort(Comparator.comparingDouble(LifeTransition::timeSec));
         return out;
     }
 
@@ -393,12 +386,16 @@ public final class BattlePlaybackProjector {
         return out;
     }
 
-    private static Integer consumableSlot(final VehicleBattleLoadoutDto loadout, final Integer wireCode) {
+    static Integer consumableSlot(final VehicleBattleLoadoutDto loadout, final Integer wireCode) {
         if (loadout == null || wireCode == null || loadout.consumableWireCodes() == null) return null;
+        Integer match = null;
         for (int i = 0; i < loadout.consumableWireCodes().size(); i++) {
-            if (wireCode.equals(loadout.consumableWireCodes().get(i))) return i;
+            if (wireCode.equals(loadout.consumableWireCodes().get(i))) {
+                if (match != null) return null;
+                match = i;
+            }
         }
-        return null;
+        return match;
     }
 
     /**
@@ -467,7 +464,6 @@ public final class BattlePlaybackProjector {
         if (timeline.events() == null || mapping == null) {
             return List.of();
         }
-        final java.util.Set<Long> destroyedVictims = new java.util.HashSet<>();
         final List<BattleEvent> out = new ArrayList<>();
         for (final ReplayEvent event : timeline.events()) {
             if (event instanceof DamageEvent damage) {
@@ -494,31 +490,12 @@ public final class BattlePlaybackProjector {
                 }
                 out.add(new BattleEvent("DAMAGE", t, attacker > 0 ? attacker : null, victim,
                         PlaybackCombatReconstruction.observedHpLossAt(combat, victim, t)));
-            } else if (event instanceof VehicleDestroyedEvent destroyed) {
-                final long victim = accountOf(mapping, destroyed.entityId());
-                if (victim <= 0) {
-                    continue;
-                }
-                destroyedVictims.add(victim);
-                final double t = battleClockOf(event, timeline);
-                if (!isActiveTime(t)) {
-                    continue;
-                }
-                out.add(new BattleEvent("DESTROYED", t, victim, null, null));
-                final Integer killerEid = destroyed.killerEid();
-                final long killer = killerEid != null ? accountOf(mapping, killerEid) : 0L;
-                if (killer > 0 && killer != victim) {
-                    out.add(new BattleEvent("KILL", t, killer, victim, null));
-                }
             }
         }
-        // 权威击毁推导（type-7 alive=false/HP=0）：不被显式 VehicleDestroyedEvent 覆盖的受害者
+        // 权威击毁推导：只消费 PlaybackCombatReconstruction 的 canonical destroyed facts。
         for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Destroyed d
                 : combat.destroyed()) {
             if (!isActiveTime(d.timeSec())) {
-                continue;
-            }
-            if (destroyedVictims.contains(d.victimAccountId())) {
                 continue;
             }
             out.add(new BattleEvent("DESTROYED", d.timeSec(), d.victimAccountId(), null, null));
@@ -738,6 +715,20 @@ public final class BattlePlaybackProjector {
         for (final FrameVehicle v : frame.vehicles()) {
             if (v != null && v.entityId() == entityId) {
                 return v;
+            }
+        }
+        return null;
+    }
+
+    /** Return the active identity for an account at one frame; absent re-entry entities are not UNKNOWN facts. */
+    private static FrameVehicle vehicleInAny(final BattleFrame frame, final List<Integer> entityIds) {
+        if (frame == null || entityIds == null) {
+            return null;
+        }
+        for (final int entityId : entityIds) {
+            final FrameVehicle vehicle = vehicleIn(frame, entityId);
+            if (vehicle != null) {
+                return vehicle;
             }
         }
         return null;

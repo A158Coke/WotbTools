@@ -18,6 +18,7 @@ import java.util.stream.StreamSupport;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** BattlePlaybackDataset capability 派生契约（与 limitations 严格一致，前端据此显示降级）。 */
@@ -55,7 +56,7 @@ class BattlePlaybackDatasetTest {
                 Arrays.asList(1, null, 3),
                 Arrays.asList(null, "provision-b", null),
                 Arrays.asList(1, null, 3),
-                Arrays.asList(100, null, 300),
+                Arrays.asList(100, null, 300, null, null, null, null, null, null),
                 ConfidenceDto.HIGH);
         // list 保留 null（不可变、允许 null 元素），不再抛 NPE。
         assertEquals(3, dto.consumables().size());
@@ -64,27 +65,30 @@ class BattlePlaybackDatasetTest {
     }
 
     @Test
-    void loadoutNullListsBecomeFixedUnknownSlots() {
-        final VehicleBattleLoadoutDto dto = new VehicleBattleLoadoutDto(
-                "11.19", null, null, null, null, null, null);
-        assertEquals(3, dto.consumables().size());
-        assertEquals(3, dto.provisionWireCodes().size());
-        assertEquals(9, dto.equipmentIds().size());
-        assertNull(dto.consumables().get(0));
-        assertNull(dto.provisionWireCodes().get(0));
+    void currentLoadoutRejectsMissingOrWrongSlotCounts() {
+        assertThrows(IllegalArgumentException.class, () -> new VehicleBattleLoadoutDto(
+                "11.19", null, null, null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> new VehicleBattleLoadoutDto(
+                "11.19", List.of("only-one"), List.of(1, 2, 3),
+                Arrays.asList(null, null, null), Arrays.asList(null, null, null),
+                Arrays.asList(null, null, null, null, null, null, null, null, null), ConfidenceDto.UNKNOWN));
     }
 
     @Test
     void loadoutConfidenceUsesPlaybackWireVocabulary() {
         final VehicleBattleLoadoutDto dto = new VehicleBattleLoadoutDto(
-                "11.19", null, null, null, null, null, ConfidenceDto.HIGH);
+                "11.19", Arrays.asList(null, null, null), Arrays.asList(null, null, null),
+                Arrays.asList(null, null, null), Arrays.asList(null, null, null),
+                Arrays.asList(null, null, null, null, null, null, null, null, null), ConfidenceDto.HIGH);
         assertEquals(ConfidenceDto.HIGH, dto.confidence());
     }
 
     @Test
     void serializedLoadoutUsesPlaybackConfidenceValue() throws Exception {
         final VehicleBattleLoadoutDto dto = new VehicleBattleLoadoutDto(
-                "11.19", null, null, null, null, null, ConfidenceDto.HIGH);
+                "11.19", Arrays.asList(null, null, null), Arrays.asList(null, null, null),
+                Arrays.asList(null, null, null), Arrays.asList(null, null, null),
+                Arrays.asList(null, null, null, null, null, null, null, null, null), ConfidenceDto.HIGH);
         final String json = JsonMapper.builder().build().writeValueAsString(dto);
         assertEquals("HIGH", JsonMapper.builder().build().readTree(json).get("confidence").asString());
     }
@@ -98,7 +102,7 @@ class BattlePlaybackDatasetTest {
                 Arrays.asList(1, null, 3),
                 Arrays.asList(null, "provision-b", null),
                 Arrays.asList(1, null, 3),
-                Arrays.asList(100, null, 300),
+                Arrays.asList(100, null, 300, null, null, null, null, null, null),
                 ConfidenceDto.UNKNOWN);
         final VehiclePlaybackTrack vehicle = new VehiclePlaybackTrack(
                 42L, "Player", 1001L, "Tank", "medium", 8, 1, true, loadout,

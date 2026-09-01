@@ -10,6 +10,7 @@ import {
   friendlyHealthAt,
   consumableRuntimeSlotsAt,
   moduleCrewStatesAt,
+  ghostAroundV2,
   cumulativeStatsAtV2,
   damageLogAtV2,
 } from './battlePlaybackV2'
@@ -350,6 +351,34 @@ describe('slot and component runtime selectors', () => {
     expect(states).toEqual([{
       component: 'ENGINE', state: 'CRITICAL_DISABLED', recorderVisible: true, confidence: 'HIGH',
     }])
+  })
+
+  it('clears repaired modules and healed crew, while auto-repair keeps damaged state', () => {
+    const transitions = [
+      { timeSec: 10, component: 'ENGINE', state: 'DAMAGED', recorderVisible: true, confidence: 'HIGH' },
+      { timeSec: 20, component: 'ENGINE', state: 'FULL_REPAIRED_CLEAR', recorderVisible: true, confidence: 'HIGH' },
+      { timeSec: 30, component: 'GUN', state: 'DAMAGED', recorderVisible: true, confidence: 'HIGH' },
+      { timeSec: 40, component: 'GUN', state: 'AUTO_REPAIRED_TO_DAMAGED', recorderVisible: true, confidence: 'HIGH' },
+      { timeSec: 50, component: 'CREW', state: 'INJURED', recorderVisible: true, confidence: 'HIGH' },
+      { timeSec: 60, component: 'CREW', state: 'CREW_HEALED', recorderVisible: true, confidence: 'HIGH' },
+    ]
+    expect(moduleCrewStatesAt(transitions, 25)).toEqual([])
+    expect(moduleCrewStatesAt(transitions, 45)).toEqual([
+      { component: 'GUN', state: 'AUTO_REPAIRED_TO_DAMAGED', recorderVisible: true, confidence: 'HIGH' },
+    ])
+    expect(moduleCrewStatesAt(transitions, 70)).toEqual([
+      { component: 'GUN', state: 'AUTO_REPAIRED_TO_DAMAGED', recorderVisible: true, confidence: 'HIGH' },
+    ])
+  })
+
+  it('matches ghost damage to its canonical loss window, not exact transition time', () => {
+    const track = { healthTransitions: [
+      lh(0, 2000, 'CURRENT', 2000),
+      lh(9.9, 1500, 'CURRENT', 2000),
+    ] }
+    expect(ghostAroundV2(track, { fromSec: 0, toSec: 10 })).toEqual({ prevPct: 100, nextPct: 75 })
+    expect(ghostAroundV2({ healthTransitions: [lh(0, 2000, 'CURRENT', null), lh(10, 1500, 'CURRENT', null)] },
+      { fromSec: 0, toSec: 10 })).toBeNull()
   })
 
   it('keeps three consumable slots independent and clears them on global UNKNOWN', () => {

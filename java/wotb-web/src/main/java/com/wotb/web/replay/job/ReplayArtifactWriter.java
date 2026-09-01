@@ -7,6 +7,7 @@ import com.wotb.web.replay.dto.BattlePlaybackDataset;
 import com.wotb.web.replay.dto.MapOverview;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -122,6 +123,7 @@ public final class ReplayArtifactWriter {
             if (!vehicleObject.has("damageLosses")) vehicleObject.putArray("damageLosses");
             removeSampleKnowledge(vehicleObject, "positionSegments");
             removeSampleKnowledge(vehicleObject, "orientationSegments");
+            normalizeLegacyLoadout(vehicleObject);
             normalizeConsumableSlots(vehicleObject);
             if (!(vehicleObject.get("loadout") instanceof ObjectNode loadout)) {
                 continue;
@@ -164,13 +166,38 @@ public final class ReplayArtifactWriter {
                     && !transitionObject.get("consumableSlot").isNull())) continue;
             final JsonNode wireCode = transitionObject.get("wireCode");
             if (wireCode == null || !wireCode.isNumber() || wires == null || !wires.isArray()) continue;
+            int match = -1;
             for (int i = 0; i < wires.size(); i++) {
                 if (wires.get(i).isNumber() && wires.get(i).intValue() == wireCode.intValue()) {
-                    transitionObject.put("consumableSlot", i);
-                    break;
+                    if (match >= 0) {
+                        match = -2;
+                        break;
+                    }
+                    match = i;
                 }
             }
+            if (match >= 0) transitionObject.put("consumableSlot", match);
         }
+    }
+
+    /** Normalize only legacy persisted loadouts before constructing the strict current DTO. */
+    private static void normalizeLegacyLoadout(final ObjectNode vehicle) {
+        if (!(vehicle.get("loadout") instanceof ObjectNode loadout)) return;
+        normalizeLegacyArray(loadout, "consumables", 3);
+        normalizeLegacyArray(loadout, "consumableWireCodes", 3);
+        normalizeLegacyArray(loadout, "provisions", 3);
+        normalizeLegacyArray(loadout, "provisionWireCodes", 3);
+        normalizeLegacyArray(loadout, "equipmentIds", 9);
+    }
+
+    private static void normalizeLegacyArray(final ObjectNode object, final String field, final int size) {
+        final JsonNode source = object.get(field);
+        if (source != null && !source.isArray()) return;
+        final ArrayNode normalized = object.putArray(field);
+        if (source != null) {
+            for (int i = 0; i < Math.min(source.size(), size); i++) normalized.add(source.get(i));
+        }
+        while (normalized.size() < size) normalized.addNull();
     }
 
     private static Path derivedDir(final Path jobDir, final int sourceIndex) {
