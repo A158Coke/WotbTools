@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { validateBattlePlaybackDataset } from './contract-runtime.js'
+import { validateApiError, validateBattlePlaybackDataset } from './contract-runtime.js'
+import { API_ERROR_CODES } from './generated/api-error-codes.js'
 
 function dataset(confidence = 'HIGH') {
   return {
@@ -56,5 +57,50 @@ describe('HTTP contract runtime validator', () => {
       schema: 'BattlePlaybackDataset',
       path: '/vehicles/0/loadout/confidence',
     })
+  })
+
+  it('accepts the generated server ApiError wire shape', () => {
+    const result = validateApiError({
+      id: 'error-1',
+      errorCode: 'DATASET_REFERENCE_REQUIRED',
+      errorMsg: null,
+      status: 400,
+      retryable: false,
+      details: {},
+      timestamp: null,
+    })
+    expect(result.data?.errorCode).toBe('DATASET_REFERENCE_REQUIRED')
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it('rejects a lowercase ApiError machine code', () => {
+    const result = validateApiError({
+      id: 'error-1',
+      errorCode: 'invalid_request',
+      errorMsg: null,
+      status: 400,
+      retryable: false,
+      details: {},
+      timestamp: null,
+    })
+    expect(result.data).toBeNull()
+  })
+
+  it('keeps client-local failures out of the generated server registry', () => {
+    expect(API_ERROR_CODES).toContain('DATASET_REFERENCE_REQUIRED')
+    expect(API_ERROR_CODES).not.toEqual(expect.arrayContaining([
+      'NETWORK_ERROR', 'REQUEST_ABORTED', 'MALFORMED_ERROR_RESPONSE', 'UNKNOWN_ERROR',
+    ]))
+  })
+
+  it('rejects an incomplete ApiError envelope instead of widening the wire contract', () => {
+    const result = validateApiError({
+      id: 'error-1', errorCode: 'INTERNAL_ERROR', status: null,
+      retryable: true, details: {}, timestamp: null,
+    })
+    expect(result.data).toBeNull()
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ schema: 'ApiError', path: '$' }),
+    ]))
   })
 })

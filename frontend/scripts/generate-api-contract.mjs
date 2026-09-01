@@ -3,6 +3,7 @@ import { parse } from 'yaml'
 
 const input = new URL('../../contracts/http/openapi.yaml', import.meta.url)
 const output = new URL('../src/api/generated/playback-v2.schema.ts', import.meta.url)
+const errorCodesOutput = new URL('../src/api/generated/api-error-codes.ts', import.meta.url)
 const document = parse(await readFile(input, 'utf8'))
 const components = document.components?.schemas || {}
 
@@ -25,3 +26,7 @@ const schema = {
 }
 const source = `// GENERATED FILE - DO NOT EDIT MANUALLY. Source: contracts/http/openapi.yaml\nexport default ${JSON.stringify(schema, null, 2)} as const\n`
 await writeFile(output, source, 'utf8')
+const errorCodes = components.ApiErrorCode?.enum || []
+await writeFile(errorCodesOutput,
+  `// GENERATED FILE - DO NOT EDIT MANUALLY. Source: contracts/http/openapi.yaml\nexport const API_ERROR_CODES = ${JSON.stringify(errorCodes)} as const\n`,
+  'utf8')

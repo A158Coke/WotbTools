@@ -195,7 +195,7 @@ describe('BattlePlaybackPanel dataset request', () => {
 
   it('V2 canonical 403 → 权限错误且不显示 retry', async () => {
     const canonical = JSON.stringify({
-      errorCode: 'AUTH_FORBIDDEN', status: 403, id: 'err-403',
+      errorCode: 'AUTH_FORBIDDEN', errorMsg: null, status: 403, id: 'err-403',
       retryable: false, details: {}, timestamp: '2026-08-30T15:30:00Z'
     })
     vi.stubGlobal('fetch', vi.fn((url) => String(url).endsWith('battle-playback-v2')
@@ -212,7 +212,7 @@ describe('BattlePlaybackPanel dataset request', () => {
 
   it('V2 canonical 401 → session error, not generic playback failure', async () => {
     const canonical = JSON.stringify({
-      errorCode: 'AUTH_UNAUTHENTICATED', status: 401, id: 'err-401',
+      errorCode: 'AUTH_UNAUTHENTICATED', errorMsg: null, status: 401, id: 'err-401',
       retryable: false, details: {}, timestamp: '2026-08-30T15:30:00Z'
     })
     vi.stubGlobal('fetch', vi.fn((url) => String(url).endsWith('battle-playback-v2')

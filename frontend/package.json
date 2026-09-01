@@ -13,7 +13,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "api:generate": "openapi-typescript ../contracts/http/openapi.yaml -o src/api/generated/http-contract.ts && node scripts/generate-api-contract.mjs",
-    "api:check": "npm run api:generate && git diff --exit-code -- src/api/generated/http-contract.ts src/api/generated/playback-v2.schema.ts",
+    "api:check": "npm run api:generate && git diff --exit-code -- src/api/generated/http-contract.ts src/api/generated/playback-v2.schema.ts src/api/generated/api-error-codes.ts",
     "api:lint": "node scripts/validate-openapi.mjs",
     "api:fixture": "node scripts/validate-playback-fixture.mjs"
   },

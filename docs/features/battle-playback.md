@@ -7,6 +7,10 @@
 
 ## Battle Playback V2（canonical 稀疏投影）
 
+HTTP wire shape 的唯一事实源是 `contracts/http/openapi.yaml`；前端 transport types 与 runtime
+schema 从该文件生成。Java domain facts 通过显式 mapper 投影为 wire enum，旧 playback artifact
+只在读取边界做兼容 normalization；新写入与 live response 不接受 legacy `DecodeConfidence` 值。
+
 > 增加 V2 契约 `BattlePlaybackDataset`：`POST /api/replay/battle-playback-v2`
 > （`Content-Type: application/json`，body `{ processingJobId, sourceId }`）→
 > `MapOverviewQueryService.buildBattlePlaybackFromDataset` → `ReplayArtifactWriter.readBattlePlaybackV2`

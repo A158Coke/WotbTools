@@ -6,6 +6,10 @@
 
 ## Battle Playback V2（Canonical Replay Truth Convergence）
 
+`contracts/http/openapi.yaml` 只定义序列化后的 HTTP wire shape；canonical domain truth 仍由
+`com.wotb.core.replay.timeline` 持有。Playback 的 domain→transport mapping 与旧 artifact
+兼容边界必须显式实现，避免把 `DecodeConfidence` 或未来的 view model 泄漏到 API。
+
 > 自 2026-08 起，Battle Playback 增加 V2 稀疏投影 `BattlePlaybackDataset`，由
 > `BattlePlaybackProjector.project` 从 canonical `BattleTimeline` + canonical facts 直接投影。
 > 目标原则：**Replay truth is decoded once, canonicalized once, and projected many times**。

@@ -689,7 +689,9 @@ export default {
           ]
         },
         "errorCode": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "description": "Stable infrastructure code or a legacy uppercase domain code during the migration boundary."
         },
         "errorMsg": {
           "type": [
@@ -717,6 +719,49 @@ export default {
           "format": "date-time"
         }
       }
+    },
+    "ApiErrorCode": {
+      "type": "string",
+      "enum": [
+        "AUTH_UNAUTHENTICATED",
+        "AUTH_FORBIDDEN",
+        "INVALID_ARGUMENT",
+        "MISSING_PARAM",
+        "INVALID_REQUEST",
+        "DATASET_REFERENCE_REQUIRED",
+        "UNSUPPORTED_MEDIA_TYPE",
+        "METHOD_NOT_ALLOWED",
+        "RESOURCE_NOT_FOUND",
+        "REPLAY_BUSY",
+        "PROCESSING_QUEUE_FULL",
+        "EXPORT_QUEUE_FULL",
+        "AI_REVIEW_BUSY",
+        "AI_QUEUE_FULL",
+        "AI_RATE_LIMITED",
+        "AI_UPSTREAM_TIMEOUT",
+        "AI_UPSTREAM_UNAVAILABLE",
+        "AI_TIMEOUT",
+        "AI_CANCELLED",
+        "AI_NOT_CONFIGURED",
+        "AI_INVALID_REQUEST",
+        "AI_AUTHENTICATION_ERROR",
+        "AI_CONTEXT_TOO_LARGE",
+        "AI_EMPTY_RESPONSE",
+        "AI_RESPONSE_INVALID",
+        "AI_REVIEW_GROUNDING_FAILED",
+        "AI_TIMELINE_UNUSABLE",
+        "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE",
+        "JOB_NOT_FOUND",
+        "SOURCE_NOT_FOUND",
+        "SOURCE_NOT_READY",
+        "SOURCE_PROCESSING_FAILED",
+        "DATASET_UNAVAILABLE",
+        "INTERNAL_ERROR",
+        "SERVICE_UNAVAILABLE",
+        "UPSTREAM_UNAVAILABLE",
+        "UPSTREAM_TIMEOUT",
+        "RATE_LIMITED"
+      ]
     }
   }
 } as const

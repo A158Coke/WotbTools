@@ -116,6 +116,13 @@ description: >
 4. 新表（user/binding）：Flyway migration，`ddl-auto: validate` 验证。
 5. 验证 + 文档（WG 登录见 `docs/auth/wargaming-asia-login.md` 与 `keycloak-wargaming-provider/AGENTS.md`）。
 
+## 配方 L：FE ↔ BE HTTP contract
+
+1. 先编辑 `contracts/http/openapi.yaml`，明确 endpoint、status、required/nullable、enum 与 `$ref`；不要把 domain model 或 internal exception 名称直接当 wire authority。
+2. 在 `frontend/` 运行 `npm run api:lint`、`npm run api:generate`、`npm run api:check`、`npm run api:fixture`；`src/api/generated/` 产物不手改。
+3. 后端用实际 Jackson serialization/MockMvc 测试锁定 wire shape；domain enum 到 wire enum 只通过显式 mapper。旧 persisted artifact 的兼容逻辑只能位于读取边界。
+4. 运行受影响的前端 runtime/parser/UI tests 与后端 targeted tests；确认 `204 capability unavailable` 不被当成 `200 schema violation`。
+
 ## 验证（改完必跑）
 
 ```bash

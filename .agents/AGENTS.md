@@ -2,7 +2,7 @@
 
 **默认 caveman mode**：回复极简、砍废话、无寒暄。用户说"退出 caveman"才恢复正常。
 
-> 按作用域继承：进入具体目录时同时读取该目录的 `AGENTS.md`（java/frontend/common/deploy/.github/
+> 按作用域继承：进入具体目录时同时读取该目录的 `AGENTS.md`（contracts/java/frontend/common/deploy/.github/
 > keycloak 两个 provider/map-semanticizer）。构建/运行命令见 `docs/DEVELOPER_GUIDE.md`，不在本文件重复。
 
 项目：WoT Blitz `.wotbreplay` 回放工具集（解析/Excel/排行榜/评分/AI 复盘/Keycloak）。入口 wotbtools.com。
@@ -14,6 +14,7 @@
 3. **改动即更新文档** — 影响界面/导出/数据/构建的改动，同提交更新 CHANGELOG、CHANGELOG-PRODUCT、DEVELOPER_GUIDE、相关 README、`docs/current-plan.md`（任务状态）。
 4. **跨层一致** — 列 key（snake_case）API/前端/导出三方一致；显示名前端三语 locale + 导出两处一致。跨层改动走 `.agents/skills/wotb-sync/SKILL.md`（单一事实源）；增删列再走 `column-sync`。
 5. **API 纯英文** — 只回 key+数据；中文归前端/导出。
+5a. **HTTP Contract First** — FE ↔ BE 序列化契约唯一事实源是 `contracts/http/openapi.yaml`；generated FE transport 不手改，domain enum 必须显式映射，旧 artifact 兼容只放读取边界。`java/wotb-contracts` 仍是独立 Control ↔ Worker contract。
 6. **测试策略 — Fast Feedback First** — 开发过程中禁止无理由重复运行 repository-level full test。
    默认分层验证：
    1. **Targeted**：修改后运行与改动直接相关的最小测试集（单个测试类 / 单个组件测试）；
