@@ -39,7 +39,7 @@ class BattlePlaybackDatasetTest {
     void explicitCapabilityWinsAndCompatibilityWithOldJsonNullCapability() {
         // 旧缓存 JSON 反序列化时 capability=null（限流），由 limitations 派生。
         final BattlePlaybackDataset ds = new BattlePlaybackDataset(
-                100, "lagoon", 1, 42L, List.of(), List.of(), List.of(), List.of(),
+                100, "lagoon", 1, 42L, List.of(), List.of(), List.of(),
                 List.of("SOME_LIMITATION"), null);
         assertEquals(Capability.PARTIAL, ds.capability());
         assertNotNull(ds.limitations());
@@ -64,11 +64,14 @@ class BattlePlaybackDatasetTest {
     }
 
     @Test
-    void loadoutNullListsBecomeEmptyImmutableLists() {
+    void loadoutNullListsBecomeFixedUnknownSlots() {
         final VehicleBattleLoadoutDto dto = new VehicleBattleLoadoutDto(
                 "11.19", null, null, null, null, null, null);
-        assertEquals(List.of(), dto.consumables());
-        assertEquals(List.of(), dto.provisionWireCodes());
+        assertEquals(3, dto.consumables().size());
+        assertEquals(3, dto.provisionWireCodes().size());
+        assertEquals(9, dto.equipmentIds().size());
+        assertNull(dto.consumables().get(0));
+        assertNull(dto.provisionWireCodes().get(0));
     }
 
     @Test
@@ -108,21 +111,21 @@ class BattlePlaybackDatasetTest {
                                 2, 80, "CURRENT", "EXACT_BATTLE_EVENT", 100, ConfidenceDto.LOW),
                         new BattlePlaybackDataset.HealthTransition(
                                 3, 70, "UNKNOWN", "UNKNOWN", null, ConfidenceDto.UNKNOWN)),
-                List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of());
         final BattlePlaybackDataset dataset = new BattlePlaybackDataset(
-                100, "lagoon", 1, 42L, List.of(vehicle), List.of(), List.of(), List.of(),
+                100, "lagoon", 1, 42L, List.of(vehicle), List.of(), List.of(),
                 List.of(), Capability.FULL, 0);
 
         final JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(dataset));
         assertFieldNames(json, Set.of("durationSec", "mapCode", "friendlyTeam", "recorderAccountId",
-                "vehicles", "events", "shots", "pointsSamples", "limitations", "capability", "arenaBonusType"));
+                "vehicles", "events", "pointsSamples", "limitations", "capability", "arenaBonusType"));
         final JsonNode vehicles = requiredField(json, "vehicles");
         assertTrue(vehicles.isArray());
         final JsonNode serializedVehicle = vehicles.get(0);
         assertNotNull(serializedVehicle);
         assertFieldNames(serializedVehicle, Set.of("accountId", "playerName", "tankId", "tankName",
                 "tankClass", "tankTier", "team", "friendly", "loadout", "positionSegments",
-                "orientationSegments", "healthTransitions", "lifeTransitions", "consumableTransitions",
+                "orientationSegments", "healthTransitions", "lifeTransitions", "damageLosses", "consumableTransitions",
                 "moduleCrewTransitions"));
         final JsonNode serializedLoadout = requiredField(serializedVehicle, "loadout");
         assertFieldNames(serializedLoadout, Set.of("replayVersion", "consumables", "consumableWireCodes",
@@ -169,7 +172,6 @@ class BattlePlaybackDatasetTest {
 
     private static BattlePlaybackDataset dataset(final List<String> limitations) {
         // 9-arg convenience constructor：capability 由 limitations 派生。
-        return new BattlePlaybackDataset(100, "lagoon", 1, 42L, List.of(), List.of(), List.of(),
-                List.of(), limitations);
+        return new BattlePlaybackDataset(100, "lagoon", 1, 42L, List.of(), List.of(), List.of(), limitations);
     }
 }

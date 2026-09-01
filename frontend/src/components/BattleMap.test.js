@@ -116,8 +116,9 @@ describe('tracer shots', () => {
   it('dedupes a same-shot DAMAGE+KILL pair into one tracer', async () => {
     stubRaf()
     const overview = makeOverview()
-    overview.playback.events.push({ type: 'KILL', timeSec: 12.1, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null })
-    const wrapper = mountPlayback(overview, 12.05)
+    const dataset = makePlaybackV2()
+    dataset.events.push({ type: 'KILL', timeSec: 12.1, accountId: 1001, targetAccountId: 2001, observedHpLoss: null })
+    const wrapper = mountPlayback(overview, 12.05, dataset)
     await flushPromises()
     expect(wrapper.findAll('.pb-tracer')).toHaveLength(1)
   })
@@ -331,8 +332,8 @@ describe('vehicle marker presentation', () => {
     expect(friendly.findAll('img')).toHaveLength(2)
     expect(friendly.findAll('img')[0].attributes('src')).toContain('tank-marker-friendly-hull')
     expect(friendly.findAll('img')[1].attributes('src')).toContain('tank-marker-friendly-turret')
-    expect(friendly.findAll('img')[0].attributes('style')).toContain('rotate(45deg)')
-    expect(friendly.findAll('img')[1].attributes('style')).toContain('rotate(60deg)')
+    expect(friendly.findAll('img')[0].attributes('style')).toContain('rotate(18deg)')
+    expect(friendly.findAll('img')[1].attributes('style')).toContain('rotate(24deg)')
     const enemy = wrapper.find('[data-test="pb-marker-2001"]')
     expect(enemy.findAll('img')).toHaveLength(2)
     expect(enemy.findAll('img')[0].attributes('src')).toContain('tank-marker-enemy-hull')
@@ -480,8 +481,9 @@ describe('fixed-size vehicle markers', () => {
   it('marker map-coordinate anchor and child rotation/overlays survive zooming', async () => {
     stubRaf()
     const overview = makeOverview()
-    overview.playback.vehicles[0].deathSec = 30 // destroyed 结构：hull/turret + ✕
-    const wrapper = mountPlayback(overview, 40)
+    const dataset = makePlaybackV2()
+    dataset.vehicles[0].lifeTransitions = [{ timeSec: 30, lifeState: 'DESTROYED', destroyedKnownAtSec: 30 }]
+    const wrapper = mountPlayback(overview, 40, dataset)
     await flushPromises()
     const marker = wrapper.find('[data-test="pb-marker-1001"]')
     const leftTopBefore = marker.attributes('style').match(/left: ([^;]+); top: ([^;]+);/).slice(1, 3)

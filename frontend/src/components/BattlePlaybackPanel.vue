@@ -63,7 +63,7 @@ async function authedFetch(url: string, body: BodyInit | null, { signal }: { sig
 }
 
 const mapOverview = ref(null)
-/** V2 canonical battle-playback dataset（可选；迁移期守卫，加载失败不阻断 legacy map）。 */
+/** V2 canonical battle-playback dataset；未加载或 204 时为空。 */
 const mapPlaybackV2 = ref<BattlePlaybackDataset | null>(null)
 /**
  * V2 battle-playback 显式状态机（禁止静默吞掉 204/error）：LOADING | FULL | PARTIAL | UNAVAILABLE | ERROR。
@@ -80,18 +80,15 @@ const playbackV2UnavailableReason = ref('')
  * map-overview artifact 是否存在才能渲染（Blocker 2：Battle Playback PRIMARY 不被 MapOverview capability 锁死）。
  */
 const pbOverview = computed(() => {
-  if (mapOverview.value) return mapOverview.value
   const v2 = mapPlaybackV2.value
   if (!v2) return null
+  const overlay = mapOverview.value || {}
   return {
-    mapCode: v2.mapCode || null,
-    friendlyTeam: v2.friendlyTeam,
+    ...overlay,
+    mapCode: v2.mapCode ?? null,
+    friendlyTeam: v2.friendlyTeam ?? null,
     recorderAccountId: v2.recorderAccountId ?? null,
     arenaBonusType: v2.arenaBonusType ?? null,
-    playableBounds: null,
-    gridCells: [],
-    spawnPoints: [],
-    routes: [],
   }
 })
 /** 面板内视图：默认 BattlePlayback 为主；地图鸟瞰为 secondary。 */
@@ -197,17 +194,6 @@ async function loadPlaybackV2() {
       throw new ApiError({ code: 'INVALID_RESPONSE', status: r.status, retryable: false })
     }
     const dataset = validation.data
-    if (dataset.capability === 'UNAVAILABLE') {
-      mapPlaybackV2.value = null
-      playbackV2State.value = 'UNAVAILABLE'
-      playbackV2UnavailableReason.value = t('recon.playback.unavailable')
-      // eslint-disable-next-line no-console
-      console.warn('[playback-v2] unavailable (capability)', {
-        ...logBase,
-        limitations: dataset.limitations
-      })
-      return
-    }
     mapPlaybackV2.value = dataset
     playbackV2State.value = dataset.capability === 'PARTIAL' ? 'PARTIAL' : 'FULL'
     // eslint-disable-next-line no-console

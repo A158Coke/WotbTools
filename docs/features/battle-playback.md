@@ -36,14 +36,15 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   → 不写 artifact → 204（capability unavailable，非 parse failure）。
 - **前端 V2-only**：`BattlePlaybackPanel` 拉取 V2 dataset 并注入 `playbackV2`；
   `BattlePlayback.vue` 的 marker / HP HUD / Details Panel / team HP / 事件 feed 全部直接消费
-  canonical tracks（`healthDisplayAt` / `teamHealthAt` / `healthAt` / `lifeAt` /
+  canonical tracks（`healthDisplayAt` / `friendlyHealthAt` / `healthAt` / `lifeAt` /
   `positionAtV2` / `orientationAtV2`），不再经过 compatibility view 或回退
   `MapOverview.Playback`。
 - **契约**：稀疏 transition tracks（`positionSegments` / `orientationSegments` /
   `healthTransitions` / `lifeTransitions` / `consumableTransitions` /
-  `moduleCrewTransitions` / `loadout` + battle-level `events`(DAMAGE/KILL/DESTROYED/
-  POSITION_REPORTED/POSITION_STALE) / `shots` / `pointsSamples`），每条带
-  `knowledge / provenance / observation boundary`。`displayCapacityHp` 是 presentation-only
+  `moduleCrewTransitions` / `loadout` / `damageLosses` + battle-level `events`(DAMAGE/KILL/DESTROYED/
+  POSITION_REPORTED/POSITION_STALE) / `pointsSamples`），每条带
+  `knowledge / provenance / observation boundary`。`damageLosses` 是伤害数值唯一来源；
+  `BattleEvent.observedHpLoss` 仅用于单条 notification。`displayCapacityHp` 是 presentation-only
   （anti-future-leak），非 canonical max HP；loadout 离开 AoI 仍 KNOWN；consumable runtime
   在 hidden interval = UNKNOWN。
 
@@ -74,7 +75,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 战局回放面板读取同一 Processing Dataset 的 `map-overview.json` derived artifact：
 `POST /api/replay/map-overview`（`Content-Type: application/json`，body `{ processingJobId, sourceId }`）
 → `MapOverviewQueryService.buildOverviewFromDataset` → `ReplayArtifactWriter.readMapOverview` →
-前端 `MapOverview.vue` 纯 SVG 渲染（热力 + 路线 + 战局回放三视图）。
+前端 `MapOverview.vue` 纯 SVG 渲染（热力 + 路线辅助视图）。
 - **不重新上传 replay、不单独 full-process**：AI Review / Battle Playback / Export 共用同一 Processing Dataset。
 - 地图不可构建（未知地图/无语义网格/无名册/无观测/视角未解析）→ `mapOverview = null` → 204。
 - `JOB_NOT_FOUND`（Processing Job / Dataset identity 已被 TTL 清理）→ 触发前端 Dataset recovery（exactly-once + generation-owned + authoritative invalidation）。
@@ -243,7 +244,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
      linked-message 语法），选中 last-known/已击毁车辆首次渲染该文案时编译报错会导致组件整体卸载；
      `BattlePlayback.i18n.test.js` 用真实 `createI18n`（不 mock `$t`）覆盖 zh/en/ru 选车路径。
   - **双方总血量条 + 争霸赛实时点数**：地图下方两条 bar（本方/敌方阵营色）——
-    `teamHealthAt` 只聚合 canonical `healthTransitions`、`lifeTransitions`、`friendly` 与 team；
+    `friendlyHealthAt` 只聚合 canonical `healthTransitions`、`lifeTransitions` 与 `friendly`；
     `EXACT` 才显示已证明的 current/displayCapacityHp 分数，己方 opening 无证据时显示
     `FULL_RELATIVE` 100% presentation，敌方无 evidence 为 UNKNOWN。不得使用静态参考容量或
     旧 artifact 字段推导本局总 HP。
@@ -295,13 +296,13 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   `coordinateBounds` 的旧配置按兼容策略回退 `playableBounds`。
 ### 单车血量 HUD / 战斗反馈 / 车辆详情面板（PR5）
 
-- **HP presentation selectors**：`healthDisplayAt(track, t)` 和 `teamHealthAt(tracks, team, t)`
+- **HP presentation selectors**：`healthDisplayAt(track, t)` 和 `friendlyHealthAt(tracks, friendly, t)`
   是 Battle Playback 的单一展示查询入口。它们只消费 `friendly`、`healthTransitions`、
   `lifeTransitions`、team 与不晚于 t 的 transition：`DESTROYED` 显示权威 0；CURRENT/
   LAST_KNOWN 显示最近可信 current 与 anti-future-leak 的 `displayCapacityHp`；己方存活且
   尚无掉血/阵亡证据时返回 `relativeFull`，只渲染 100% presentation；敌方没有 health
   evidence 时保持 UNKNOWN。relative-full 不代表具体 HP 或 actual max。
-  队伍聚合只在每辆车都有可证 current/capacity 时返回 `EXACT`；己方 opening 时，
+  perspective 聚合只在每辆车都有可证 current/capacity 时返回 `EXACT`；己方 opening 时，
   `relativeFull=true` 或「CURRENT 且 currentHp=displayCapacityHp、无掉血/阵亡证据」均算
   opening-full member，混合 exact-full/relative-full 仍返回 `FULL_RELATIVE`；已知掉血/阵亡返回
   `PARTIAL`，无证据返回 `UNKNOWN`，不读取 tankopedia base 或旧 sample 推导本局分母。

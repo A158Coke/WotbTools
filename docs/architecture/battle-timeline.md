@@ -37,8 +37,9 @@
 
 稀疏 transition tracks（非 450s × 10Hz × 14 车全量 snapshot）：每辆车的
 `positionSegments` / `orientationSegments` / `healthTransitions` / `lifeTransitions` /
-`consumableTransitions` / `moduleCrewTransitions` / `loadout`，加 battle 级
-`shots` / `pointsSamples`。每条 track 自带 `knowledge / provenance / observation boundary`。
+`consumableTransitions` / `moduleCrewTransitions` / `loadout` / `damageLosses`，加 battle 级
+`events` / `pointsSamples`。每条 track 自带 `knowledge / provenance / observation boundary`；
+`damageLosses` 是 Playback 数值伤害的唯一来源，事件中的 `observedHpLoss` 只服务通知展示。
 
 前端（`battlePlaybackV2.ts` 查询 + `V2VehicleInspector`）**只消费**这些已标注事实，
 不再做 HP/AoI/death/loadout 推理，也**不**再以 5 秒 packet-gap 作为 observation authority。
@@ -94,7 +95,7 @@
 | BattleDeltaEngine | 帧间确定性 delta（§15）：POSITION_CHANGE / FIRST_KNOWN / ENEMY_LOST / ENEMY_REACQUIRED / HP_CHANGE / HP_GAP_DELTA / DESTROYED / ALIVE_COUNT_CHANGE / LOCAL_FORCE_CHANGE / POINTS_CHANGE / ENGAGEMENT_ACTIVITY |
 | EpisodeDetector | 确定性章节切分（§23）：强信号（首次接敌/阵亡/存活变化/点数变化/HP 空窗）优先，首选 15–45s、硬最小 8s、硬最大 60s，覆盖整场、连续、无重叠；禁止固定 30 秒切块。**state/event boundary contract（PR #102）**：segment 半开秒区间 [start, end)，second=start 的 delta 属于本段；BEFORE = frameWorld(max(0, start−1))（frame(start) 已消费该秒事件，不能用作 BEFORE），首段 start=0 钳制到 0（t=0 前无状态取初始帧），AFTER = 最后包含秒 —— 保证 BEFORE → EVENTS → AFTER 因果顺序 |
 | BattlePlaybackProjector | 从 canonical timeline/facts 直接投影 `BattlePlaybackDataset`（tracks、segments、transitions、events）；不生成前端 compatibility view |
-| BattlePlaybackAdapter | 仅作为旧 `MapOverview.Playback` artifact 的读取边界兼容层；非 current Battle Playback 数据源 |
+| ReplayArtifactWriter normalization | 仅作为旧 persisted playback artifact 的读取边界兼容层；非 current Battle Playback 数据源 |
 
 ## Validation 错误码（§4）
 

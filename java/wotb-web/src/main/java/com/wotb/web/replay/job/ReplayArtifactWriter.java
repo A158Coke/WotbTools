@@ -93,7 +93,7 @@ public final class ReplayArtifactWriter {
             return null;
         }
         final JsonNode root = MAPPER.readTree(Files.readAllBytes(path));
-        normalizeLegacyPlaybackConfidence(root);
+        normalizeLegacyPlayback(root);
         return MAPPER.treeToValue(root, BattlePlaybackDataset.class);
     }
 
@@ -101,9 +101,15 @@ public final class ReplayArtifactWriter {
      * Legacy persisted V2 artifacts used the domain enum names. Normalize only while reading
      * the persisted artifact; new HTTP responses remain strictly transport-contract shaped.
      */
-    private static void normalizeLegacyPlaybackConfidence(final JsonNode root) {
+    private static void normalizeLegacyPlayback(final JsonNode root) {
         if (!(root instanceof ObjectNode object)) {
             return;
+        }
+        object.remove("shots");
+        final JsonNode capability = object.get("capability");
+        if (capability != null && "UNAVAILABLE".equals(capability.asText())) {
+            object.put("capability", object.path("limitations").isArray()
+                    && object.path("limitations").size() > 0 ? "PARTIAL" : "FULL");
         }
         final JsonNode vehicles = object.get("vehicles");
         if (vehicles == null || !vehicles.isArray()) {
@@ -113,6 +119,10 @@ public final class ReplayArtifactWriter {
             if (!(vehicle instanceof ObjectNode vehicleObject)) {
                 continue;
             }
+            if (!vehicleObject.has("damageLosses")) vehicleObject.putArray("damageLosses");
+            removeSampleKnowledge(vehicleObject, "positionSegments");
+            removeSampleKnowledge(vehicleObject, "orientationSegments");
+            normalizeConsumableSlots(vehicleObject);
             if (!(vehicleObject.get("loadout") instanceof ObjectNode loadout)) {
                 continue;
             }
@@ -126,6 +136,39 @@ public final class ReplayArtifactWriter {
                     default -> confidence.asString();
                 };
                 loadout.put("confidence", normalized);
+            }
+        }
+    }
+
+    private static void removeSampleKnowledge(final ObjectNode vehicle, final String segmentsField) {
+        final JsonNode segments = vehicle.get(segmentsField);
+        if (segments == null || !segments.isArray()) return;
+        for (final JsonNode segment : segments) {
+            if (!(segment instanceof ObjectNode segmentObject)) continue;
+            final JsonNode samples = segmentObject.get("samples");
+            if (samples == null || !samples.isArray()) continue;
+            for (final JsonNode sample : samples) {
+                if (sample instanceof ObjectNode sampleObject) sampleObject.remove("knowledge");
+            }
+        }
+    }
+
+    private static void normalizeConsumableSlots(final ObjectNode vehicle) {
+        final JsonNode loadout = vehicle.get("loadout");
+        final JsonNode transitions = vehicle.get("consumableTransitions");
+        if (!(loadout instanceof ObjectNode loadoutObject) || transitions == null || !transitions.isArray()) return;
+        final JsonNode wires = loadoutObject.get("consumableWireCodes");
+        for (final JsonNode transition : transitions) {
+            if (!(transition instanceof ObjectNode transitionObject)
+                    || (transitionObject.has("consumableSlot")
+                    && !transitionObject.get("consumableSlot").isNull())) continue;
+            final JsonNode wireCode = transitionObject.get("wireCode");
+            if (wireCode == null || !wireCode.isNumber() || wires == null || !wires.isArray()) continue;
+            for (int i = 0; i < wires.size(); i++) {
+                if (wires.get(i).isNumber() && wires.get(i).intValue() == wireCode.intValue()) {
+                    transitionObject.put("consumableSlot", i);
+                    break;
+                }
             }
         }
     }

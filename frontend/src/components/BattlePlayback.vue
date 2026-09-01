@@ -33,9 +33,9 @@ import {
 import {
   cumulativeStatsAtV2,
   damageLogAtV2,
+  friendlyHealthAt,
   ghostAroundV2,
   healthDisplayAt,
-  teamHealthAt,
   victimFeedbackAllowedV2,
 } from '../utils/battlePlaybackV2'
 import { projectVehicleState } from '../utils/playbackVehicleState'
@@ -83,7 +83,7 @@ const props = defineProps({
   seekTo: { type: Number, default: null },
   /** QA 场景循环播放（PR4 §49：时间线到末尾自动回到 0 继续） */
   loop: { type: Boolean, default: false },
-  /** V2 canonical battle-playback-dataset（可选；迁移期守卫：present 时用 V2 检查器）。 */
+  /** V2 canonical battle-playback-dataset；未加载时为空。 */
   playbackV2: { type: Object, default: null }
 })
 
@@ -92,18 +92,19 @@ const { t } = useI18n()
 /**
  * 呈现元数据（Battle Playback PRIMARY 核心输入）：V2 canonical dataset 为权威源
  * （mapCode / friendlyTeam / recorderAccountId / arenaBonusType），MapOverview 仅提供可选 overlay
- * 事实（gridCells / spawnPoints / routes / playableBounds）。V2 缺失字段回退 overview；两者兼缺 → null-safe。
+ * 事实（gridCells / spawnPoints / routes / playableBounds）。V2 metadata 缺失保持 null；不从 overview 推导。
  * 副要求：Battle Playback 不依赖 MapOverview artifact 存在才能渲染。
  */
 const pbOverview = computed(() => {
-  const v2 = props.playbackV2 || {}
+  const v2 = props.playbackV2
   const ov = props.overview || {}
+  if (!v2) return ov
   return {
     ...ov,
-    mapCode: (v2.mapCode ?? ov.mapCode) || null,
-    friendlyTeam: v2.friendlyTeam ?? ov.friendlyTeam,
-    recorderAccountId: v2.recorderAccountId ?? ov.recorderAccountId ?? null,
-    arenaBonusType: v2.arenaBonusType ?? ov.arenaBonusType ?? null,
+    mapCode: v2.mapCode ?? null,
+    friendlyTeam: v2.friendlyTeam ?? null,
+    recorderAccountId: v2.recorderAccountId ?? null,
+    arenaBonusType: v2.arenaBonusType ?? null,
   }
 })
 
@@ -158,17 +159,26 @@ watch(
 // FULL_RELATIVE 100% 阵营色实心条（即使部分车辆已有 current sample、但全队 entry/max 尚未
 // 全部证明，开局也不显示斜纹；不伪造具体数字）；敌方：无可信采样恒 UNKNOWN 灰段
 // （不把 tankopedia base 当已知血量）
-// V2 canonical：teamHealthAt 只聚合 track.team、healthTransitions 与已证明的
+// V2 canonical：friendlyHealthAt 只聚合 track.friendly、healthTransitions 与已证明的
 // displayCapacityHp，不使用静态坦克元数据或旧版 HP 状态机推理。
 const hpVehicles = computed(() => playback.value?.vehicles || [])
-const friendlyHp = computed(() => teamHealthAt(hpVehicles.value, friendlyTeam.value, currentTime.value))
-const enemyHp = computed(() => teamHealthAt(hpVehicles.value, friendlyTeam.value === 1 ? 2 : 1, currentTime.value))
+const friendlyHp = computed(() => friendlyHealthAt(hpVehicles.value, true, currentTime.value))
+const enemyHp = computed(() => friendlyHealthAt(hpVehicles.value, false, currentTime.value))
 // 争霸赛实时点数：来自回放广播 pointsSamples（随 currentTime 变化）；非争霸赛/无广播 → null 不显示
 const friendlyPoints = computed(() =>
   teamPointsAt(playback.value?.pointsSamples, friendlyTeam.value, currentTime.value))
+const enemyTeam = computed(() => {
+  const teams = [...new Set(hpVehicles.value
+    .filter(vehicle => vehicle.friendly === false && Number.isFinite(vehicle.team))
+    .map(vehicle => vehicle.team))]
+  return teams.length === 1 ? teams[0] : null
+})
 const enemyPoints = computed(() =>
-  teamPointsAt(playback.value?.pointsSamples, friendlyTeam.value === 1 ? 2 : 1, currentTime.value))
-const showPoints = computed(() => friendlyPoints.value != null || enemyPoints.value != null)
+  enemyTeam.value == null
+    ? null
+    : teamPointsAt(playback.value?.pointsSamples, enemyTeam.value, currentTime.value))
+const showPoints = computed(() => (friendlyPoints.value !== null && friendlyPoints.value !== undefined)
+  || (enemyPoints.value !== null && enemyPoints.value !== undefined))
 /**
  * HP bar 填充宽度（PR #107 Blocker 2 aggregate state）：
  * - FULL_RELATIVE（本方开局相对满血：全部存活车辆无权威掉血/阵亡证据，即使有 current sample
@@ -276,7 +286,7 @@ let transientSeq = 0
 const eventCursor = ref(0)
 const floatItems = ref([]) // [{ id, victimAccountId, damage, bornRealMs, durationMs }]
 const burstItems = ref([]) // [{ id, victimAccountId, bornRealMs, durationMs }]
-const feedItems = ref([]) // [{ id, victimAccountId, victimName, victimTeam, bornRealMs, durationMs }]
+const feedItems = ref([]) // [{ id, victimAccountId, victimName, victimFriendly, bornRealMs, durationMs }]
 const ghostByAccount = reactive(new Map()) // accountId -> { prevPct, nextPct, untilRealMs }
 const flashByAccount = reactive(new Map()) // accountId -> untilRealMs
 // seek/状态恢复帧：禁用 HP bar 过渡动画（§20.1 seek 只恢复状态不补动画）
@@ -302,37 +312,40 @@ function consumeEvents(fromSec, toSec) {
   // 「战斗事实有没有发生」不取决于 DAMAGE/KILL checkbox 是否显示）。
   // 左界 = max(fromSec, eventCursor)（严格左开 cursor：seek/回绕把 cursor 重置到新时间点后，
   // prev 滞后不会把旧时间点事件重复消费——Blocker 2 loop 下一轮不重复上一轮末尾事件）。
-  const crossed = eventsCrossed(authoritativeEvents.value, Math.max(fromSec, eventCursor.value), toSec)
-  if (crossed.length === 0) {
+  const damageLeft = Math.max(fromSec, eventCursor.value)
+  const crossed = eventsCrossed(authoritativeEvents.value, damageLeft, toSec)
+  const damageCrossed = hpVehicles.value.some(track =>
+    (track.damageLosses || []).some(loss => loss && loss.toSec > damageLeft + 1e-6 && loss.toSec <= toSec + 1e-6))
+  if (crossed.length === 0 && !damageCrossed) {
     eventCursor.value = Math.max(eventCursor.value, toSec)
     return
   }
   const now = realNowMs()
   const states = vehicleStates.value
   const stateByAccount = new Map(states.map(s => [s.vehicle.accountId, s]))
-  for (const ev of crossed) {
-    if (ev.type === 'DAMAGE') {
-      const victim = vehiclesByAccount.value.get(ev.targetAccountId)
-      // §7.2/§10.1：只有事件时刻位置流覆盖（当前可见/可展示）才跳伤害——
-      // 失察期间受击不跳伤害、不更新 HP、不显示 attacker、不画炮线（HP 冻结为最后可信值）
-      if (!victim || !victimFeedbackAllowedV2(victim, ev.timeSec)) continue
-      if (!stateByAccount.has(ev.targetAccountId)) continue // 无 marker 锚点不显示
-      // §11/§12：浮伤害只显示可证明的权威掉血（canonical observedHpLoss）；
-      // raw Type-8 协议值语义未证明，不得作为精确伤害飘字
-      if (ev.observedHpLoss == null) continue
-      // ref 数组必须整体替换才能触发 reactivity（in-place push 不触发）
+  // DamageLoss is the sole numeric damage authority. Notification events below
+  // remain responsible for lifecycle feedback only.
+  for (const track of hpVehicles.value) {
+    for (const loss of track.damageLosses || []) {
+      if (!loss || loss.toSec <= Math.max(fromSec, eventCursor.value) + 1e-6 || loss.toSec > toSec + 1e-6) continue
+      const victim = vehiclesByAccount.value.get(track.accountId)
+      if (!victim || !victimFeedbackAllowedV2(victim, loss.toSec)) continue
+      if (!stateByAccount.has(track.accountId)) continue
       floatItems.value = [...floatItems.value, {
         id: ++transientSeq,
-        victimAccountId: ev.targetAccountId,
-        hpLoss: ev.observedHpLoss,
+        victimAccountId: track.accountId,
+        hpLoss: loss.hpLoss,
         bornRealMs: now,
         durationMs: FLOAT_DMG_MS,
       }]
-      // §10.3/§11：HP 数字立即切换（确定性），bar 快速缩短（CSS transition），
-      // hit flash + lost-HP ghost（同阵营色浅版，§11 连续受击重置消退计时）
-      const g = ghostAroundV2(victim, ev.timeSec)
-      if (g) ghostByAccount.set(ev.targetAccountId, { prevPct: g.prevPct, nextPct: g.nextPct, untilRealMs: now + GHOST_MS })
-      flashByAccount.set(ev.targetAccountId, now + FLASH_MS)
+      const g = ghostAroundV2(victim, loss.toSec)
+      if (g) ghostByAccount.set(track.accountId, { prevPct: g.prevPct, nextPct: g.nextPct, untilRealMs: now + GHOST_MS })
+      flashByAccount.set(track.accountId, now + FLASH_MS)
+    }
+  }
+  for (const ev of crossed) {
+    if (ev.type === 'DAMAGE') {
+      continue
     } else if (ev.type === 'DESTROYED') {
       // §12：击毁 burst（轻量 2D，克制；仅受击方位置流覆盖时锚定）
       const victim = vehiclesByAccount.value.get(ev.accountId)
@@ -353,7 +366,7 @@ function consumeEvents(fromSec, toSec) {
         id: ++transientSeq,
         victimAccountId: ev.targetAccountId,
         victimName: victim.tankName || String(victim.tankId),
-        victimTeam: victim.team,
+        victimFriendly: victim.friendly,
         bornRealMs: now,
         durationMs: KILL_FEED_MS,
       })
@@ -424,7 +437,7 @@ const visibleFloats = computed(() => {
     if (!p) continue
     // §10.1：连续快速受击纵向 stack/stagger，每条独立生命周期
     list.forEach((item, idx) => {
-      out.push({ ...item, x: p.x, y: p.y - 34 - idx * 16, team: st.vehicle.team })
+      out.push({ ...item, x: p.x, y: p.y - 34 - idx * 16, friendly: st.vehicle.friendly })
     })
   }
   return out
@@ -438,7 +451,7 @@ const visibleBursts = computed(() => {
     if (!st) return null
     const p = markerScreen(st)
     if (!p) return null
-    return { ...item, x: p.x, y: p.y, team: st.vehicle.team }
+    return { ...item, x: p.x, y: p.y, friendly: st.vehicle.friendly }
   }).filter(Boolean)
 })
 const visibleFeed = computed(() => transientsActive(feedItems.value, nowMs.value))
@@ -1146,8 +1159,10 @@ const vehicleStates = computed(() => {
       time: currentTime.value,
       recorderAccountId: pbOverview.value.recorderAccountId,
       model: vehicleModel(track),
-      hullImage: track.friendly ? friendlyHull : enemyHull,
-      turretImage: track.friendly ? friendlyTurret : enemyTurret,
+      // Unknown perspective keeps neutral CSS state; enemy assets are only a
+      // visual fallback because the asset pack has no neutral hull/turret.
+      hullImage: track.friendly === true ? friendlyHull : enemyHull,
+      turretImage: track.friendly === true ? friendlyTurret : enemyTurret,
       markerLeft: markerLeft,
       markerTop: markerTop,
       markerTransform: markerTransform.value,
@@ -1164,10 +1179,12 @@ const filteredEvents = computed(() => {
     .filter(event => typeFilter.value.has(event.type))
   if (showAll.value) return events
   const recorderId = pbOverview.value.recorderAccountId
-  if (pbOverview.value.arenaBonusType === 1 && recorderId != null) {
+  if (pbOverview.value.arenaBonusType === 1
+      && recorderId !== null && recorderId !== undefined) {
     return events.filter(event => recorderRelated(event, recorderId))
   }
-  if (pbOverview.value.arenaBonusType !== 1) {
+  if (pbOverview.value.arenaBonusType !== null && pbOverview.value.arenaBonusType !== undefined
+      && friendlyTeam.value !== null && friendlyTeam.value !== undefined) {
     return events.filter(event => teamRelated(event, friendlyTeam.value, vehiclesByAccount.value))
   }
   return events
@@ -1322,8 +1339,8 @@ const selectedState = computed(() => {
   return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
 })
 
-// V2 守卫：当 playbackV2 dataset 存在时，定位选中车辆的 V2 track（按 accountId）。
-const selectedV2Track = computed(() => {
+// Selected vehicle details consume the canonical track directly by accountId.
+const selectedTrack = computed(() => {
   if (!props.playbackV2 || !selectedState.value) return null
   const accountId = selectedState.value.vehicle.accountId
   const tracks = props.playbackV2.vehicles || []
@@ -1363,7 +1380,7 @@ const selLastKnownSec = computed(() => {
 const selCurStats = computed(() => {
   const st = selectedState.value
   if (!st) return { dealt: 0, received: 0, kills: 0 }
-  return cumulativeStatsAtV2(authoritativeEvents.value, st.vehicle, currentTime.value)
+  return cumulativeStatsAtV2(authoritativeEvents.value, st.vehicle, currentTime.value, hpVehicles.value)
 })
 /** §12/§13/§19 最近伤害记录：incoming 使用 canonical HP decrease，outgoing 使用 observedHpLoss；attacker 不可证明时
  *  显示「来源未知」；raw Type-8 协议值不参与。Blocker 2：只消费 toSec <= currentTime 的记录
@@ -1371,7 +1388,7 @@ const selCurStats = computed(() => {
 const selDamageLog = computed(() => {
   const st = selectedState.value
   if (!st) return []
-  const rows = damageLogAtV2(authoritativeEvents.value, st.vehicle, currentTime.value, 8)
+  const rows = damageLogAtV2(authoritativeEvents.value, st.vehicle, currentTime.value, 8, hpVehicles.value)
   return rows.map((d) => {
     if (d.dir === 'in') {
       if (d.attackerReliable && d.attackerAccountId != null) {
@@ -1388,8 +1405,10 @@ const selDamageLog = computed(() => {
     return { ...d, label: victim ? (victim.tankName || '#' + victim.accountId) : '#' + d.victimAccountId }
   })
 })
-function floatTeamClass(team) {
-  return team === friendlyTeam.value ? 'pb-float-friendly' : 'pb-float-enemy'
+function floatTeamClass(friendly) {
+  if (friendly === true) return 'pb-float-friendly'
+  if (friendly === false) return 'pb-float-enemy'
+  return 'pb-float-neutral'
 }
 
 // ---- PR4 §32–§35：标签碰撞布局（纯函数；screen px）+ PlayerName hysteresis ----
@@ -1643,7 +1662,7 @@ const mapStyle = computed(() => ({
       :selected-portrait-url="selectedPortraitUrl"
       :sel-last-known-sec="selLastKnownSec"
       :sel-cur-stats="selCurStats"
-      :selected-v2-track="selectedV2Track"
+      :selected-track="selectedTrack"
       :current-time="currentTime"
       :sel-damage-log="selDamageLog"
       :format-clock="formatClock"

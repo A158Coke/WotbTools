@@ -19,12 +19,12 @@ vi.mock('../data/mapImages', () => ({
   },
 }))
 
-const track = (accountId, team, x0, x1) => ({
+const track = (accountId, team, friendly, x0, x1) => ({
   accountId,
   playerName: accountId === 1 ? 'Player' : 'Enemy',
   tankId: accountId,
   tankName: accountId === 1 ? 'Maus' : 'T49',
-  tankClass: '', team, friendly: team === 1,
+  tankClass: '', team, friendly,
   positionSegments: [{ knowledge: 'OBSERVED', startSec: 0, endSec: 10, samples: [
     { timeSec: 0, x: x0, y: 0, knowledge: 'OBSERVED' },
     { timeSec: 10, x: x1, y: 0, knowledge: 'OBSERVED' },
@@ -33,14 +33,14 @@ const track = (accountId, team, x0, x1) => ({
     { timeSec: 0, hullYawDeg: 0, turretRelativeYawDeg: 0 },
   ] }],
   healthTransitions: [{ timeSec: 0, currentHp: 1000, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT' }],
-  lifeTransitions: [], hpLosses: [], consumableTransitions: [], moduleCrewTransitions: [],
+  lifeTransitions: [], damageLosses: [], consumableTransitions: [], moduleCrewTransitions: [],
 })
 
 const dataset = {
   mapCode: 'holland', friendlyTeam: 1, recorderAccountId: 1, durationSec: 10,
-  vehicles: [track(1, 1, 0, 50), track(2, 2, -20, -40)],
+  vehicles: [track(1, 1, true, 0, 50), track(2, 2, false, -20, -40)],
   events: [{ type: 'POSITION_REPORTED', timeSec: 2, accountId: 2, targetAccountId: null, observedHpLoss: null }],
-  shots: [], pointsSamples: [], limitations: [],
+  pointsSamples: [], limitations: [],
 }
 
 describe('BattlePlayback orchestrator integration', () => {

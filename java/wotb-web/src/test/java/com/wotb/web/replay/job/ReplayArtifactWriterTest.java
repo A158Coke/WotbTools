@@ -90,7 +90,12 @@ class ReplayArtifactWriterTest {
                         "loadout": {"replayVersion": null, "consumables": [],
                           "consumableWireCodes": [], "provisions": [], "provisionWireCodes": [],
                           "equipmentIds": [], "confidence": "EXACT"},
-                        "positionSegments": [], "orientationSegments": [], "healthTransitions": [],
+                        "positionSegments": [{"startSec": 0, "endSec": 1, "knowledge": "OBSERVED",
+                          "interpolationAllowed": true, "samples": [{"timeSec": 0, "x": 1, "y": 2,
+                          "knowledge": "OBSERVED"}]}], "orientationSegments": [{"startSec": 0,
+                          "endSec": 1, "knowledge": "CURRENT", "samples": [{"timeSec": 0,
+                          "hullYawDeg": 0, "turretRelativeYawDeg": 0, "knowledge": "CURRENT"}]}],
+                        "healthTransitions": [],
                         "lifeTransitions": [], "consumableTransitions": [], "moduleCrewTransitions": []
                       }], "events": [], "shots": [], "pointsSamples": [], "limitations": [],
                       "capability": "FULL", "arenaBonusType": null
@@ -100,6 +105,10 @@ class ReplayArtifactWriterTest {
             final BattlePlaybackDataset read = ReplayArtifactWriter.readBattlePlaybackV2(jobDir, 0);
             assertEquals(BattlePlaybackDataset.ConfidenceDto.HIGH,
                     read.vehicles().get(0).loadout().confidence());
+            assertEquals(3, read.vehicles().get(0).loadout().consumables().size());
+            assertEquals(9, read.vehicles().get(0).loadout().equipmentIds().size());
+            assertTrue(read.vehicles().get(0).damageLosses().isEmpty());
+            assertEquals(1, read.vehicles().get(0).positionSegments().getFirst().samples().getFirst().x());
         } finally {
             deleteRecursively(jobDir);
         }
@@ -146,9 +155,9 @@ class ReplayArtifactWriterTest {
                     "11.19", List.of(), List.of(), List.of(), List.of(), List.of(), ConfidenceDto.HIGH);
             final VehiclePlaybackTrack vehicle = new VehiclePlaybackTrack(
                     7L, "p", 1L, "t", "medium", 10, 1, true, loadout,
-                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             final BattlePlaybackDataset dataset = new BattlePlaybackDataset(
-                    60, null, 1, 7L, List.of(vehicle), List.of(), List.of(), List.of(), List.of(),
+                    60, null, 1, 7L, List.of(vehicle), List.of(), List.of(), List.of(),
                     BattlePlaybackDataset.Capability.FULL, null);
 
             ReplayArtifactWriter.writeBattlePlaybackV2(jobDir, 0, dataset);

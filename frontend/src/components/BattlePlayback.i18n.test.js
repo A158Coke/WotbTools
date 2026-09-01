@@ -9,7 +9,7 @@ import zh from '../locales/zh.json'
 import en from '../locales/en.json'
 import ru from '../locales/ru.json'
 import BattlePlayback from './BattlePlayback.vue'
-import { legacyPlaybackToV2Dataset } from '../test/playbackV2TestUtil'
+import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil'
 
 vi.mock('../data/mapImages', () => ({
   mapImages: {
@@ -63,36 +63,6 @@ function makeOverview() {
         firstObservedSec: 10, lastObservedSec: 30, deathSec: 30
       }
     ],
-    playback: {
-      durationSec: 60,
-      vehicles: [
-        {
-          accountId: 1001, playerName: 'You', tankId: 1, team: 1,
-          positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null,
-          directionSamples: [
-            { timeSec: 10, hullYawDeg: 0, turretRelativeYawDeg: 0 },
-            { timeSec: 14, hullYawDeg: 90, turretRelativeYawDeg: 30 }
-          ]
-        },
-        {
-          accountId: 2001, playerName: 'EnemyGap', tankId: 2, team: 2,
-          positionIntervals: [{ startSec: 10, endSec: 14 }], deathSec: null,
-          directionSamples: [
-            { timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5 },
-            { timeSec: 14, hullYawDeg: 30, turretRelativeYawDeg: 20 }
-          ]
-        },
-        {
-          accountId: 2002, playerName: 'EnemyDead', tankId: 3, team: 2,
-          positionIntervals: [{ startSec: 10, endSec: 30 }], deathSec: 30, directionSamples: []
-        }
-      ],
-      events: [
-        { type: 'POSITION_REPORTED', timeSec: 10, accountId: 2001, targetAccountId: null, damage: null },
-        { type: 'POSITION_STALE', timeSec: 14, accountId: 2001, targetAccountId: null, damage: null },
-        { type: 'DESTROYED', timeSec: 30, accountId: 2002, targetAccountId: null, damage: null }
-      ]
-    }
   }
 }
 
@@ -106,7 +76,7 @@ describe('BattlePlayback with real vue-i18n (zh/en/ru)', () => {
     it(lang + ': selecting a last-known vehicle does not throw and keeps the map visible', async () => {
       const i18n = createI18n({ locale: lang, fallbackLocale: 'en', messages: locales })
       const wrapper = mount(BattlePlayback, {
-        props: { overview: makeOverview(), seekTo: 20, playbackV2: legacyPlaybackToV2Dataset(makeOverview()) },
+        props: { overview: makeOverview(), seekTo: 20, playbackV2: makeBattlePlaybackDataset() },
         global: { plugins: [i18n] }
       })
       await flushPromises()
@@ -127,7 +97,7 @@ describe('BattlePlayback with real vue-i18n (zh/en/ru)', () => {
     it(lang + ': selecting a destroyed vehicle does not collapse the component', async () => {
       const i18n = createI18n({ locale: lang, fallbackLocale: 'en', messages: locales })
       const wrapper = mount(BattlePlayback, {
-        props: { overview: makeOverview(), seekTo: 35, playbackV2: legacyPlaybackToV2Dataset(makeOverview()) },
+        props: { overview: makeOverview(), seekTo: 35, playbackV2: makeBattlePlaybackDataset() },
         global: { plugins: [i18n] }
       })
       await flushPromises()

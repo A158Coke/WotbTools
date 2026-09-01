@@ -30,7 +30,7 @@ export interface components {
             sourceId: string;
         };
         /** @enum {string} */
-        PlaybackCapability: "FULL" | "PARTIAL" | "UNAVAILABLE";
+        PlaybackCapability: "FULL" | "PARTIAL";
         /** @enum {string} */
         PlaybackConfidence: "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
         /** @enum {string} */
@@ -49,7 +49,6 @@ export interface components {
             recorderAccountId: number | null;
             vehicles: components["schemas"]["VehiclePlaybackTrack"][];
             events: components["schemas"]["BattleEvent"][];
-            shots: components["schemas"]["ShotTrack"][];
             pointsSamples: components["schemas"]["PointsSample"][];
             limitations: string[];
             capability: components["schemas"]["PlaybackCapability"];
@@ -63,12 +62,13 @@ export interface components {
             tankClass: string;
             tankTier: number | null;
             team: number;
-            friendly: boolean;
+            friendly: boolean | null;
             loadout: components["schemas"]["VehicleBattleLoadout"] | null;
             positionSegments: components["schemas"]["PositionSegment"][];
             orientationSegments: components["schemas"]["OrientationSegment"][];
             healthTransitions: components["schemas"]["HealthTransition"][];
             lifeTransitions: components["schemas"]["LifeTransition"][];
+            damageLosses: components["schemas"]["DamageLoss"][];
             consumableTransitions: components["schemas"]["ConsumableTransition"][];
             moduleCrewTransitions: components["schemas"]["ModuleCrewTransition"][];
         };
@@ -92,7 +92,6 @@ export interface components {
             timeSec: number;
             x: number;
             y: number;
-            knowledge: components["schemas"]["PositionKnowledge"];
         };
         OrientationSegment: {
             startSec: number;
@@ -104,7 +103,6 @@ export interface components {
             timeSec: number;
             hullYawDeg: number | null;
             turretRelativeYawDeg: number | null;
-            knowledge: components["schemas"]["OrientationKnowledge"];
         };
         HealthTransition: {
             timeSec: number;
@@ -134,18 +132,20 @@ export interface components {
             recorderVisible: boolean;
             confidence: components["schemas"]["PlaybackConfidence"];
         };
+        DamageLoss: {
+            fromSec: number;
+            toSec: number;
+            hpLoss: number;
+            attackerAccountId: number | null;
+            attackerReliable: boolean;
+            damageEventCount: number;
+        };
         BattleEvent: {
             type: string;
             timeSec: number;
             accountId: number | null;
             targetAccountId: number | null;
             observedHpLoss: number | null;
-        };
-        ShotTrack: {
-            shooterAccountId: number;
-            launchTimeSec: number;
-            terminalTimeSec: number | null;
-            resolution: string | null;
         };
         PointsSample: {
             timeSec: number;

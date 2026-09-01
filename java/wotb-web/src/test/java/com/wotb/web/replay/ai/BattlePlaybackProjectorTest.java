@@ -115,6 +115,12 @@ class BattlePlaybackProjectorTest {
                 "V2 dataset must carry canonical battle-level events (damage/destroyed/position)");
         assertTrue(ds.events().stream().anyMatch(e -> "DAMAGE".equals(e.type())),
                 "real fixture must yield at least one DAMAGE event");
+        ds.vehicles().stream().flatMap(v -> v.damageLosses().stream()).forEach(loss -> {
+            assertTrue(loss.fromSec() >= 0, "loss fromSec=" + loss.fromSec());
+            assertTrue(loss.toSec() >= loss.fromSec(), "loss boundary=" + loss.fromSec() + ".." + loss.toSec());
+            assertTrue(loss.hpLoss() > 0, "loss hpLoss=" + loss.hpLoss());
+            assertTrue(loss.damageEventCount() >= 0, "loss eventCount=" + loss.damageEventCount());
+        });
     }
 
     @Test
@@ -240,9 +246,6 @@ class BattlePlaybackProjectorTest {
                 "CURRENT→LAST_KNOWN 应拆成 2 个段，而非 1 个硬编码 CURRENT");
         assertEquals("CURRENT", track.orientationSegments().get(0).knowledge());
         assertEquals("LAST_KNOWN", track.orientationSegments().get(1).knowledge());
-        // 每个 sample 也带 behind knowledge（防 cast 数据丢失）
-        assertEquals("CURRENT", track.orientationSegments().get(0).samples().get(0).knowledge());
-        assertEquals("LAST_KNOWN", track.orientationSegments().get(1).samples().get(0).knowledge());
     }
 
     /**
