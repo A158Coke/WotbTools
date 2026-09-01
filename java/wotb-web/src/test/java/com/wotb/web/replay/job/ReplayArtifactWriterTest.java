@@ -8,17 +8,23 @@ import com.wotb.core.replay.processing.ReplayProcessingDiagnostics;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.web.replay.dto.MapOverview;
+import com.wotb.web.replay.dto.BattlePlaybackDataset.ConfidenceDto;
+import com.wotb.web.replay.dto.BattlePlaybackDataset.VehicleBattleLoadoutDto;
+import com.wotb.web.replay.dto.BattlePlaybackDataset.VehiclePlaybackTrack;
 import com.wotb.web.replay.dto.BattlePlaybackDataset;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import tools.jackson.databind.exc.InvalidFormatException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Phase 5：derived artifact 原子写 + 读取往返 + MapOverview unavailable 语义。 */
@@ -94,6 +100,63 @@ class ReplayArtifactWriterTest {
             final BattlePlaybackDataset read = ReplayArtifactWriter.readBattlePlaybackV2(jobDir, 0);
             assertEquals(BattlePlaybackDataset.ConfidenceDto.HIGH,
                     read.vehicles().get(0).loadout().confidence());
+        } finally {
+            deleteRecursively(jobDir);
+        }
+    }
+
+    @Test
+    void unrelatedConfidenceIsNotNormalizedAtReadBoundary() throws Exception {
+        final Path jobDir = Files.createTempDirectory("wotb-artifact-test");
+        try {
+            final Path path = ReplayArtifactWriter.battlePlaybackV2Path(jobDir, 0);
+            Files.createDirectories(path.getParent());
+            Files.writeString(path, """
+                    {
+                      "durationSec": 60, "mapCode": null, "friendlyTeam": 1,
+                      "recorderAccountId": 7, "vehicles": [{
+                        "accountId": 7, "playerName": "p", "tankId": 1, "tankName": "t",
+                        "tankClass": "medium", "tankTier": 10, "team": 1, "friendly": true,
+                        "loadout": {"replayVersion": null, "consumables": [],
+                          "consumableWireCodes": [], "provisions": [], "provisionWireCodes": [],
+                          "equipmentIds": [], "confidence": "HIGH"},
+                        "positionSegments": [], "orientationSegments": [],
+                        "healthTransitions": [{"timeSec": 1, "currentHp": 100,
+                          "knowledge": "CURRENT", "source": "EXACT_BATTLE_EVENT",
+                          "displayCapacityHp": 100, "confidence": "EXACT"}],
+                        "lifeTransitions": [], "consumableTransitions": [], "moduleCrewTransitions": []
+                      }], "events": [], "shots": [], "pointsSamples": [], "limitations": [],
+                      "capability": "FULL", "arenaBonusType": null
+                    }
+                    """);
+
+            assertThrows(InvalidFormatException.class,
+                    () -> ReplayArtifactWriter.readBattlePlaybackV2(jobDir, 0),
+                    "unrelated health confidence must not be blanket-normalized");
+        } finally {
+            deleteRecursively(jobDir);
+        }
+    }
+
+    @Test
+    void newPlaybackArtifactRoundTripsWithTransportConfidence() throws Exception {
+        final Path jobDir = Files.createTempDirectory("wotb-artifact-test");
+        try {
+            final VehicleBattleLoadoutDto loadout = new VehicleBattleLoadoutDto(
+                    "11.19", List.of(), List.of(), List.of(), List.of(), List.of(), ConfidenceDto.HIGH);
+            final VehiclePlaybackTrack vehicle = new VehiclePlaybackTrack(
+                    7L, "p", 1L, "t", "medium", 10, 1, true, loadout,
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            final BattlePlaybackDataset dataset = new BattlePlaybackDataset(
+                    60, null, 1, 7L, List.of(vehicle), List.of(), List.of(), List.of(), List.of(),
+                    BattlePlaybackDataset.Capability.FULL, null);
+
+            ReplayArtifactWriter.writeBattlePlaybackV2(jobDir, 0, dataset);
+            final String json = Files.readString(ReplayArtifactWriter.battlePlaybackV2Path(jobDir, 0));
+            final BattlePlaybackDataset read = ReplayArtifactWriter.readBattlePlaybackV2(jobDir, 0);
+
+            assertTrue(json.contains("\"confidence\":\"HIGH\""));
+            assertEquals(ConfidenceDto.HIGH, read.vehicles().get(0).loadout().confidence());
         } finally {
             deleteRecursively(jobDir);
         }
