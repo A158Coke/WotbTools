@@ -43,6 +43,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Processing job was not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
         '409':
           description: Source is not ready
           content:
@@ -51,6 +57,12 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '503':
           description: Dataset storage is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Unexpected server failure
           content:
             application/json:
               schema:

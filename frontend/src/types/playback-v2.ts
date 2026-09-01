@@ -25,33 +25,13 @@ export type BattleEvent = components['schemas']['BattleEvent']
 export type ShotTrack = components['schemas']['ShotTrack']
 export type PointsSample = components['schemas']['PointsSample']
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-export function normalizeBattlePlaybackDataset(value: unknown): Record<string, unknown> | null {
-  if (!isRecord(value)) return null
-  const requiredEnvelope = ['durationSec', 'vehicles', 'events', 'shots', 'pointsSamples', 'capability']
-  if (requiredEnvelope.some(key => !(key in value))) return null
-  return {
-    ...value,
-    mapCode: value.mapCode ?? null,
-    friendlyTeam: value.friendlyTeam ?? null,
-    recorderAccountId: value.recorderAccountId ?? null,
-    limitations: value.limitations ?? [],
-    arenaBonusType: value.arenaBonusType ?? null,
-  }
-}
-
 export function isBattlePlaybackDataset(value: unknown): value is BattlePlaybackDataset {
   return validateBattlePlaybackDataset(value).data !== null
 }
 
 /** Validate the generated wire contract; application models are built only after this boundary. */
 export function parseBattlePlaybackDataset(value: unknown): BattlePlaybackDataset | null {
-  const normalized = normalizeBattlePlaybackDataset(value)
-  if (!normalized) return null
-  return validateBattlePlaybackDataset(normalized).data
+  return validateBattlePlaybackDataset(value).data
 }
 
 export interface HealthAtResult {

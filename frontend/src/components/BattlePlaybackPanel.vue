@@ -15,7 +15,6 @@ import { isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { ApiError, apiErrorFromResponse, apiFetch, normalizeApiError } from '../utils/http.js'
 import type { BattlePlaybackDataset } from '../types/playback-v2.js'
-import { normalizeBattlePlaybackDataset } from '../types/playback-v2.js'
 import { validateBattlePlaybackDataset } from '../api/contract-runtime.js'
 import MapOverview from './MapOverview.vue'
 import BattlePlayback from './BattlePlayback.vue'
@@ -188,7 +187,7 @@ async function loadPlaybackV2() {
     }
     const ds = await r.json()
     if (seq !== playbackV2Seq) return
-    const validation = validateBattlePlaybackDataset(normalizeBattlePlaybackDataset(ds))
+    const validation = validateBattlePlaybackDataset(ds)
     if (!validation.data) {
       // Diagnostic metadata is safe; never log response payload, token, or replay content.
       console.warn('[playback-v2] contract validation failed', {
