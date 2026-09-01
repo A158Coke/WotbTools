@@ -65,3 +65,11 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
 - 超时链：worker 整体 1100s（`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 单次 AI call 315s；SSE `SseEmitter` 1120s 对齐 nginx；改任何一层都要同步 `AiTimeoutChainContractTest` 与 deploy 校验。
 - 回放证据语义：位置流（type-10）≠ 点亮（`POSITION_REPORTED/POSITION_STALE` 只是位置覆盖）；炮塔方向 `type-7 propId=2 = u16*360/65536-180` 已证明，勿改编码常量；证据与解码结论见 `docs/research/replay/protocol.md` 与 `docs/research/replay/turret-direction.md`。
 - 探针测试（`*ProbeTest`）可重复运行、无样本自动跳过；本地特殊样本放 `common/data/` 子目录（不进 ParityTest）。
+
+### Live external-service tests
+
+- 普通 test 不得调用 DeepSeek 或其他付费外部 AI provider。
+- 所有真实 AI provider test 必须使用 `@Tag("ai-live")`，并由 `wotb-web` Maven Surefire 默认排除；`AI_API_KEY` 的存在不能作为唯一隔离机制。
+- Agent 执行 targeted/module/full test 时不得主动解除 `ai-live` exclusion；只有用户明确要求运行 real AI probe 时，才可同时显式选择测试、清空 `-Dai.probe.excludedGroups=` 并通过环境变量提供 key。
+- 不得把真实 API key 写入 repo、test resource、命令记录或日志；普通 CI 不注入 DeepSeek secret，也不新增 paid/live AI job。
+- `AiEvalHarnessTest`、prompt contract/eval 和 fake/mock/loopback gateway tests 是 deterministic 测试，不属于 `ai-live`，继续随普通 CI 执行。

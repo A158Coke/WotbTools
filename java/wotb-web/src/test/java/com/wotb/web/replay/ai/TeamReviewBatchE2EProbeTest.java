@@ -11,6 +11,7 @@ import com.wotb.web.config.AiModelProperties;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.SpringAiChatGateway;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -22,6 +23,7 @@ import java.util.List;
  * 真实 DeepSeek 批量 E2E 验收探针（>= 5 真实 team replay，usable success >= 80%，
  * HARD_FACT_CONFLICT 输出 = 0）。手动运行，不进 CI；需 AI_API_KEY 环境变量。
  */
+@Tag("ai-live")
 class TeamReviewBatchE2EProbeTest {
 
     private static final List<String> SAMPLES = List.of(

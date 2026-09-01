@@ -21,6 +21,7 @@ import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.AiResponseFormat;
 import com.wotb.web.replay.ai.gateway.SpringAiChatGateway;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -33,6 +34,7 @@ import java.util.List;
  * subject / evidenceIds），用于 DISCOVER 报告（HARD vs metadata 分类）。
  * <p>必须设置环境变量 AI_API_KEY（临时 key，不在仓库出现）。</p>
  */
+@Tag("ai-live")
 class TeamReviewDetailedReproProbeTest {
 
     @Test
