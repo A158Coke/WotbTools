@@ -168,5 +168,15 @@ describe('V2VehicleInspector', () => {
     expect(w.get('[data-equipment-slot="0"] .v2-chip-type').text()).toBe('F1')
     expect(w.get('[data-equipment-slot="1"] .v2-chip-type').text()).toBe('V1')
     expect(w.get('[data-equipment-slot="2"] .v2-chip-type').text()).toBe('S1')
+
+    const equipment = w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')
+    expect(equipment.map(cell => cell.get('.v2-chip-type').text())).toEqual([
+      'F1', 'V1', 'S1', 'F2', 'V2', 'S2', 'F3', 'V3', 'S3',
+    ])
+    expect(equipment.map(cell => cell.text())).toEqual([
+      'F1火炮输弹机', 'V1改进型模块+', 'S1改进型光学系统',
+      'F2改进型炮控系统', 'V2改进型组装', 'S2发动机加速器',
+      'F3精密火炮', 'V3工具箱', 'S3高级消耗品',
+    ])
   })
 })
