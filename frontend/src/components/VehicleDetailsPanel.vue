@@ -5,7 +5,6 @@ defineOptions({ name: 'VehicleDetailsPanel' })
 
 const props = defineProps({
   selectedState: { type: Object, default: null },
-  friendlyTeam: { type: [Number, String], default: null },
   selectedPortraitUrl: { type: String, default: null },
   selLastKnownSec: { type: Number, default: null },
   selCurStats: { type: Object, default: () => ({ dealt: 0, received: 0, kills: 0 }) },
@@ -32,7 +31,7 @@ const emit = defineEmits(['close'])
     </div>
     <dl class="pb-sb-grid">
       <dt>{{ $t('recon.map.playback.team') }}</dt>
-      <dd>{{ $t(props.selectedState.vehicle.team === props.friendlyTeam ? 'recon.map.playback.team_friendly' : 'recon.map.playback.team_enemy') }}</dd>
+      <dd>{{ $t(props.selectedState.vehicle.friendly === true ? 'recon.map.playback.team_friendly' : 'recon.map.playback.team_enemy') }}</dd>
       <template v-if="props.selLastKnownSec != null">
         <dt>{{ $t('recon.map.playback.last_spotted') }}</dt>
         <dd>{{ props.formatClock(props.selLastKnownSec) }}</dd>

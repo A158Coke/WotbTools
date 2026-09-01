@@ -570,6 +570,19 @@ describe('tracerLines', () => {
     expect(tracerLines([damage], routes, 12, 1)).toHaveLength(1)
   })
 
+  it('uses canonical position segment permission instead of the legacy 5s gap heuristic', () => {
+    const canonical = new Map([
+      [1, { positionSegments: [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 0, endSec: 20,
+        samples: [{ timeSec: 0, x: 0, y: 0 }, { timeSec: 20, x: 200, y: 0 }] }] }],
+      [2, { positionSegments: [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 0, endSec: 20,
+        samples: [{ timeSec: 0, x: 0, y: 100 }, { timeSec: 20, x: 200, y: 100 }] }] }],
+    ])
+    expect(tracerLines([{ ...damage, timeSec: 10 }], canonical, 10, 1)).toHaveLength(1)
+
+    canonical.get(2).positionSegments[0].interpolationAllowed = false
+    expect(tracerLines([{ ...damage, timeSec: 10 }], canonical, 10, 1)).toEqual([])
+  })
+
   it('impact flash: short peak curve (invisible→0.9 at 0.1s→0) and vanishes at window end', () => {
     // flashProgress 0→1 over 0.35s real at any speed
     expect(tracerLines([damage], routes, 12, 1)[0].flashProgress).toBeCloseTo(0)

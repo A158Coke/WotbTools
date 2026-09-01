@@ -42,7 +42,7 @@ const props = defineProps({
       playerHidden: false, playerFading: false,
     }),
   },
-  /** HP HUD 显示数据（hpDisplay 结果：{current,maxHp,pct,destroyed}|null；null=不渲染） */
+  /** HP HUD presentation（current/pct/fullState/destroyed）；null=不渲染 */
   hp: { type: Object, default: null },
   /** HP HUD 开关（关闭后隐藏数字/bar/ghost，不影响其余 combat feedback） */
   hpVisible: { type: Boolean, default: true },
@@ -189,7 +189,7 @@ const hpHudStyle = computed(() => ({
 }))
 // 填充（PR #107 HP provenance）：
 // - pct 已知 → 精确百分比；
-// - RULE_DERIVED_FULL_AT_SPAWN / OPENING_RELATIVE_FULL（fullState=true，仅本方开局）→
+// - relative-full presentation（fullState=true，仅本方开局）→
 //   100% 阵营色实心条（相对满血；开局即使有 current sample、全队 entry/max 未全部证明也无斜纹）；
 // - CURRENT_HP_EXACT_MAX_UNKNOWN / INCONSISTENT（current 有值、max 未证明/矛盾）→
 //   100% 宽 + 阵营色 indeterminate 斜纹（INCONSISTENT：比例不可信，保留真实 current）；
@@ -202,7 +202,7 @@ const hpFillWidth = computed(() => {
   return d.current != null ? '100%' : '0%'
 })
 // indeterminate = 有当前 HP 但最大值未知（不允许按 tankopedia base 算百分比）；
-// fullState（RULE_DERIVED_FULL_AT_SPAWN / OPENING_RELATIVE_FULL，己方开局相对满血）除外——
+// fullState（己方开局相对满血）除外——
 // 开局即使有 current sample、全队 entry/max 尚未全部证明，也渲染 100% 阵营色实心条（无斜纹）
 const hpFillUnknown = computed(() => !!props.hp && props.hp.current != null && props.hp.pct == null && props.hp.fullState !== true)
 const hpGhostWidth = computed(() => {
