@@ -246,9 +246,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
      `BattlePlayback.i18n.test.js` 用真实 `createI18n`（不 mock `$t`）覆盖 zh/en/ru 选车路径。
   - **双方总血量条 + 争霸赛实时点数**：地图下方两条 bar（本方/敌方阵营色）——
     `friendlyHealthAt` 只聚合 canonical `healthTransitions`、`lifeTransitions` 与 `friendly`；
-    `EXACT` 才显示已证明的 current/displayCapacityHp 分数，己方 opening 无证据时显示
-    `FULL_RELATIVE` 100% presentation，敌方无 evidence 为 UNKNOWN。不得使用静态参考容量或
-    旧 artifact 字段推导本局总 HP。
+    `EXACT` 才显示已证明的 current/displayCapacityHp 分数；己方的 `FULL_RELATIVE` 只消费
+    backend 在 HealthTransition 上直接投影的 `relativeFull` fact，敌方无 evidence 为 UNKNOWN。
+    不得使用静态参考容量或旧 artifact 字段推导本局总 HP。
      争霸赛实时点数来自回放广播 `pointsSamples`（type-8 subtype48 root field12，PROVEN；纯函数
      `teamPointsAt` 取最近一次 ≤currentTime 的广播值，随进度条变化；非争霸赛/无广播不显示，
      结算值不得冒充实时比分）。
@@ -301,22 +301,25 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   是 Battle Playback 的单一展示查询入口。它们只消费 `friendly`、`healthTransitions`、
   `lifeTransitions`、team 与不晚于 t 的 transition：`DESTROYED` 显示权威 0；CURRENT/
   LAST_KNOWN 显示最近可信 current 与 anti-future-leak 的 `displayCapacityHp`；己方存活且
-  尚无掉血/阵亡证据时返回 `relativeFull`，只渲染 100% presentation；敌方没有 health
+  backend 已证明相对满血时返回 `relativeFull`，只渲染 100% presentation；敌方没有 health
   evidence 时保持 UNKNOWN。relative-full 不代表具体 HP 或 actual max。
-  perspective 聚合只在每辆车都有可证 current/capacity 时返回 `EXACT`；己方 opening 时，
-  `relativeFull=true` 或「CURRENT 且 currentHp=displayCapacityHp、无掉血/阵亡证据」均算
-  opening-full member，混合 exact-full/relative-full 仍返回 `FULL_RELATIVE`；已知掉血/阵亡返回
+  perspective 聚合只在每辆车都有可证 current/capacity 时返回 `EXACT`；己方 opening 时只消费
+  backend 提供的 `relativeFull=true`，混合 exact-full/relative-full 仍返回 `FULL_RELATIVE`；已知掉血/阵亡返回
   `PARTIAL`，无证据返回 `UNKNOWN`，不读取 tankopedia base 或旧 sample 推导本局分母。
 - **HP HUD**：每辆可显示车辆常驻「HP 数字 + 定宽 bar」（screen-space 恒定，friendly=地图 tone、
   enemy=red 与整车 team token 同源）；last-known 冻结最后可信值并弱化、destroyed 归零；
   开关「显示血量」（默认开，`wotb.pb.hp-prefs` localStorage 持久化）隐藏数字/bar/ghost，
   不影响 floating damage / destroyed ✕ / sidebar HP / combat state / kill feed / timeline 正确性；
   重新开启立即按当前 timestamp 显示正确 HP（纯派生，不重头累计）。
+  module/crew transition 的 `state=null` 表示该 component 当前无 active fault；consumable
+  runtime 的全局失效由 `invalidation=true` 明确表达，前端只按 transition 应用状态。
 - **战斗反馈（wall-clock transient，seek 清空 / pause 自然完成 / resume 不重复）**：
   播放时钟跨过事件由 `eventsCrossed`（严格左开 cursor）消费——DAMAGE → 伤害飘字
   （-N，受击方阵营色，约 1s 可读时长，同车连续受击纵向 stack）+ HP 数字立即切换 +
   bar 150–300ms 缩短（CSS transition，seek 单帧禁用）+ hit flash + lost-HP ghost
-  （同阵营色浅版，约 600ms 消退）；DESTROYED → 克制 2D burst；KILL → kill feed
+  （同阵营色浅版，约 600ms 消退）。`DamageLoss.transientAllowed`、`fromHp`、`toHp` 与
+  `displayCapacityHp` 均由 backend 直接投影；无法证明时前端不显示 transient/ghost。
+  DESTROYED → 克制 2D burst；KILL → kill feed
   （只显示「受害者被击毁」，victim-only，最多 3 条队列、约 5s 生命周期）。
   失察期间受击（事件时刻无位置流覆盖）不跳伤害、不更新 HP、不显示 attacker；
   prefers-reduced-motion 取消 ghost/flash/burst/feed 动画（事实保留）。

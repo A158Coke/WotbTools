@@ -1483,7 +1483,7 @@
                 "module_state": "Module / crew state",
                 "tank_tier": "Tier",
                 "module_component": { "ENGINE": "Engine", "AMMO_RACK": "Ammo rack", "FUEL_TANK": "Fuel tank", "RIGHT_TRACK": "Right track", "LEFT_TRACK": "Left track", "GUN": "Gun", "TURRET_ROTATOR": "Turret traverse", "OBSERVATION_DEVICE": "Observation device", "COMMANDER": "Commander", "DRIVER": "Driver", "GUNNER": "Gunner", "LOADER": "Loader", "UNKNOWN": "Unknown component" },
-                "module_value": { "DAMAGED_DEGRADED": "Damaged", "CRITICAL_DISABLED": "Disabled", "AUTO_REPAIRED_TO_DAMAGED": "Auto-repaired (damaged)", "FULL_REPAIRED_CLEAR": "Repaired", "CREW_SHELL_SHOCKED": "Shell-shocked", "CREW_HEALED": "Healed", "UNKNOWN": "Unknown" },
+                "module_value": { "DAMAGED_DEGRADED": "Damaged", "CRITICAL_DISABLED": "Disabled", "CREW_SHELL_SHOCKED": "Shell-shocked", "UNKNOWN": "Unknown" },
                 "consumable": "Consumable",
                 "provision": "Provision",
                 "equipment": "Equipment",

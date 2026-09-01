@@ -117,9 +117,9 @@ function buildScenario(byId) {
         .map(point => point),
     }))
     const healthTransitions = [
-      { timeSec: 0, currentHp: 2000, knowledge: 'CURRENT', source: 'QA_FIXTURE', displayCapacityHp: 2000, confidence: 'HIGH' },
+      { timeSec: 0, currentHp: 2000, knowledge: 'CURRENT', source: 'QA_FIXTURE', displayCapacityHp: 2000, relativeFull: true, confidence: 'HIGH' },
       ...(deathSec === null
-        ? [{ timeSec: 30, currentHp: 1200, knowledge: 'CURRENT', source: 'QA_FIXTURE', displayCapacityHp: 2000, confidence: 'HIGH' }]
+        ? [{ timeSec: 30, currentHp: 1200, knowledge: 'CURRENT', source: 'QA_FIXTURE', displayCapacityHp: 2000, relativeFull: false, confidence: 'HIGH' }]
         : []),
     ]
     const lifeTransitions = deathSec === null

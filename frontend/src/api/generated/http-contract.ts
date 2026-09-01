@@ -110,6 +110,7 @@ export interface components {
             knowledge: components["schemas"]["HealthKnowledge"];
             source: string;
             displayCapacityHp: number | null;
+            relativeFull: boolean;
             confidence: components["schemas"]["PlaybackConfidence"];
         };
         LifeTransition: {
@@ -123,12 +124,13 @@ export interface components {
             logicalItemId: string | null;
             wireCode: number | null;
             state: string;
+            invalidation: boolean;
             confidence: components["schemas"]["PlaybackConfidence"];
         };
         ModuleCrewTransition: {
             timeSec: number;
             component: string;
-            state: string;
+            state: string | null;
             recorderVisible: boolean;
             confidence: components["schemas"]["PlaybackConfidence"];
         };
@@ -139,6 +141,10 @@ export interface components {
             attackerAccountId: number | null;
             attackerReliable: boolean;
             damageEventCount: number;
+            fromHp: number | null;
+            toHp: number | null;
+            displayCapacityHp: number | null;
+            transientAllowed: boolean;
         };
         BattleEvent: {
             type: string;

@@ -447,6 +447,7 @@ export default {
         "knowledge",
         "source",
         "displayCapacityHp",
+        "relativeFull",
         "confidence"
       ],
       "properties": {
@@ -473,6 +474,9 @@ export default {
             "null"
           ],
           "minimum": 0
+        },
+        "relativeFull": {
+          "type": "boolean"
         },
         "confidence": {
           "$ref": "#/$defs/PlaybackConfidence"
@@ -513,6 +517,7 @@ export default {
         "logicalItemId",
         "wireCode",
         "state",
+        "invalidation",
         "confidence"
       ],
       "properties": {
@@ -543,6 +548,9 @@ export default {
         "state": {
           "type": "string"
         },
+        "invalidation": {
+          "type": "boolean"
+        },
         "confidence": {
           "$ref": "#/$defs/PlaybackConfidence"
         }
@@ -567,7 +575,10 @@ export default {
           "type": "string"
         },
         "state": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "recorderVisible": {
           "type": "boolean"
@@ -586,7 +597,11 @@ export default {
         "hpLoss",
         "attackerAccountId",
         "attackerReliable",
-        "damageEventCount"
+        "damageEventCount",
+        "fromHp",
+        "toHp",
+        "displayCapacityHp",
+        "transientAllowed"
       ],
       "properties": {
         "fromSec": {
@@ -613,6 +628,30 @@ export default {
         "damageEventCount": {
           "type": "integer",
           "minimum": 0
+        },
+        "fromHp": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "toHp": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "displayCapacityHp": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "transientAllowed": {
+          "type": "boolean"
         }
       }
     },

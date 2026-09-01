@@ -5,7 +5,6 @@ import type {
   BattleEvent,
   DamageLoss,
   HealthAtResult,
-  HealthTransition,
   LifeAtResult,
   LifeTransition,
   ModuleCrewResult,
@@ -51,19 +50,21 @@ function lastAtOrBefore<T extends { timeSec: number }>(
   return ans
 }
 
-/** 最近一次 <= t 的 health transition（含 knowledge / displayCapacityHp）。 */
+/** 最近一次 <= t 的 backend health fact。 */
 export function healthAt(
   track: Pick<VehiclePlaybackTrack, 'healthTransitions'> | null | undefined,
   t: number,
 ): HealthAtResult | null {
   const tr = lastAtOrBefore(track?.healthTransitions, t)
-  if (!tr || typeof tr.currentHp !== 'number' || !Number.isFinite(tr.currentHp)
-    || (tr.knowledge !== 'CURRENT' && tr.knowledge !== 'LAST_KNOWN')) return null
+  if (!tr || (tr.knowledge !== 'CURRENT' && tr.knowledge !== 'LAST_KNOWN')) return null
+  if (tr.currentHp != null && (typeof tr.currentHp !== 'number' || !Number.isFinite(tr.currentHp))) return null
+  if (tr.currentHp == null && tr.relativeFull !== true) return null
   return {
     currentHp: tr.currentHp,
     knowledge: tr.knowledge,
     source: tr.source,
     displayCapacityHp: tr.displayCapacityHp ?? null,
+    relativeFull: tr.relativeFull === true,
     confidence: tr.confidence ?? 'UNKNOWN',
   }
 }
@@ -84,12 +85,11 @@ export function lifeAt(
 /**
  * Canonical HP presentation for one track at t.
  *
- * `relativeFull` is deliberately a presentation flag: it never invents an
- * actual current/max HP pair. A concrete number is returned only when the
- * track has a <=t health fact; a missing enemy fact remains UNKNOWN.
+ * `relativeFull` is a backend-projected presentation-safe fact: it never
+ * invents an actual current/max HP pair. A missing enemy fact remains UNKNOWN.
  */
 export function healthDisplayAt(
-  track: Pick<VehiclePlaybackTrack, 'friendly' | 'healthTransitions' | 'lifeTransitions'> | null | undefined,
+  track: Pick<VehiclePlaybackTrack, 'healthTransitions' | 'lifeTransitions'> | null | undefined,
   t: number,
 ) {
   if (!track || !Number.isFinite(t)) return null
@@ -117,9 +117,7 @@ export function healthDisplayAt(
       ? rawCapacity
       : null
     const pct = capacity == null ? null : Math.max(0, Math.min(100, (health.currentHp / capacity) * 100))
-    const relativeFull = capacity == null && track.friendly === true
-      && health.knowledge !== 'LAST_KNOWN'
-      && openingHealthEvidence(track, t)
+    const relativeFull = health.relativeFull === true
     return {
       currentHp: health.currentHp,
       displayCapacityHp: capacity,
@@ -129,13 +127,11 @@ export function healthDisplayAt(
       confidence: health.confidence,
       destroyed: false,
       relativeFull,
-      state: relativeFull ? 'RELATIVE_FULL' : health.knowledge,
+      state: relativeFull && capacity == null ? 'RELATIVE_FULL' : health.knowledge,
     }
   }
 
-  const relativeFull = track.friendly === true
-    && health?.knowledge !== 'LAST_KNOWN'
-    && openingHealthEvidence(track, t)
+  const relativeFull = health?.relativeFull === true
   return {
     currentHp: null,
     displayCapacityHp: null,
@@ -147,43 +143,6 @@ export function healthDisplayAt(
     relativeFull,
     state: relativeFull ? 'RELATIVE_FULL' : 'UNKNOWN',
   }
-}
-
-/** No <=t canonical health decrease/zero/death evidence: opening relative-full. */
-function openingHealthEvidence(track, t) {
-  const life = lifeAt(track, t)
-  if (life?.lifeState === 'DESTROYED') return false
-  let previousHp: number | null = null
-  let sawCurrent = false
-  for (const transition of track.healthTransitions || []) {
-    if (transition.timeSec > t + 1e-6) break
-    if (transition.knowledge !== 'CURRENT') {
-      if (sawCurrent) return false
-      previousHp = null
-      continue
-    }
-    const currentHp = transition.currentHp
-    if (currentHp === null || currentHp === undefined || !Number.isFinite(currentHp)) {
-      if (sawCurrent) return false
-      previousHp = null
-      continue
-    }
-    sawCurrent = true
-    if (currentHp <= 0 || (previousHp != null && currentHp < previousHp)) return false
-    previousHp = currentHp
-  }
-  return true
-}
-
-/** Canonical opening-full member: exact full HP is compatible with relative-full presentation. */
-function openingFullMember(track, display, t) {
-  if (!track || track.friendly !== true || !display || display.destroyed) return false
-  if (display.relativeFull === true) return true
-  return display.currentHp != null
-    && display.displayCapacityHp != null
-    && display.currentHp === display.displayCapacityHp
-    && display.knowledge === 'CURRENT'
-    && openingHealthEvidence(track, t)
 }
 
 /** Aggregate canonical health by the backend-resolved friendly perspective. */
@@ -207,8 +166,8 @@ function aggregateHealth(teamTracks, t) {
     && display.displayCapacityHp != null
     && display.displayCapacityHp > 0
     && (display.knowledge === 'CURRENT' || display.destroyed))
-  const allOpeningFull = teamTracks.every((track, index) =>
-    openingFullMember(track, displays[index], t))
+  const allRelativeFull = displays.every(display => display
+    && display.relativeFull === true && display.destroyed !== true)
   const knownRemaining = displays.reduce((sum, display) =>
     sum + (display?.currentHp != null && Number.isFinite(display.currentHp) ? display.currentHp : 0), 0)
   const totalMax = exact
@@ -219,7 +178,7 @@ function aggregateHealth(teamTracks, t) {
   let state = 'UNKNOWN'
   if (exact) {
     state = 'EXACT'
-  } else if (allOpeningFull) {
+  } else if (allRelativeFull) {
     state = 'FULL_RELATIVE'
   } else if (hasKnownEvidence) {
     state = 'PARTIAL'
@@ -308,61 +267,17 @@ export function victimFeedbackAllowedV2(
   return Number.isFinite(eventTimeSec) && positionCoveredAtV2(track?.positionSegments, eventTimeSec)
 }
 
-/**
- * DamageLoss transient feedback is allowed only when its complete attribution
- * window is provably inside one continuous observed AoI segment. A single
- * timestamp is insufficient: the loss may have happened while the victim was
- * hidden and only become known when it was reacquired.
- */
-export function damageFeedbackAllowedV2(
-  track: Pick<VehiclePlaybackTrack, 'positionSegments'> | null | undefined,
-  loss: Pick<DamageLoss, 'fromSec' | 'toSec'> | null | undefined,
-) {
-  if (!track || !loss || !Number.isFinite(loss.fromSec) || !Number.isFinite(loss.toSec)
-    || loss.toSec < loss.fromSec || !Array.isArray(track.positionSegments)) return false
-  const coveringSegments = track.positionSegments.filter(segment =>
-    segment?.knowledge === 'OBSERVED'
-      && Number.isFinite(segment.startSec)
-      && Number.isFinite(segment.endSec)
-      && segment.startSec <= segment.endSec
-      && loss.fromSec >= segment.startSec - 1e-6
-      && loss.toSec <= segment.endSec + 1e-6)
-  return coveringSegments.length === 1
-}
-
-/** Lost-HP ghost derived from adjacent canonical health transitions. */
+/** Lost-HP ghost percentages from backend-projected canonical facts. */
 export function ghostAroundV2(
-  track: Pick<VehiclePlaybackTrack, 'healthTransitions'> | null | undefined,
-  loss: Pick<DamageLoss, 'fromSec' | 'toSec' | 'hpLoss'> | null | undefined,
+  loss: Pick<DamageLoss, 'fromHp' | 'toHp' | 'displayCapacityHp'> | null | undefined,
 ) {
-  if (!track || !loss || !Number.isFinite(loss.fromSec) || !Number.isFinite(loss.toSec)
-    || !Number.isFinite(loss.hpLoss) || loss.hpLoss < 0 || loss.toSec < loss.fromSec
-    || !Array.isArray(track.healthTransitions)) return null
-  let previous: HealthTransition | null = null
-  const candidates: Array<{ previous: HealthTransition, transition: HealthTransition }> = []
-  for (const transition of track.healthTransitions) {
-    if (!transition || !Number.isFinite(transition.timeSec)) return null
-    if (transition.timeSec > loss.toSec + 1e-6) break
-    const previousHp = previous?.currentHp
-    const transitionHp = transition.currentHp
-    if (transition.timeSec > loss.fromSec + 1e-6
-      && previous && typeof previousHp === 'number' && Number.isFinite(previousHp)
-      && typeof transitionHp === 'number' && Number.isFinite(transitionHp)
-      && transitionHp < previousHp
-      && previousHp - transitionHp === loss.hpLoss) {
-      candidates.push({ previous, transition })
-    }
-    previous = transition
-  }
-  if (candidates.length !== 1) return null
-  const [{ previous: candidatePrevious, transition: candidateTransition }] = candidates
-  if (typeof candidatePrevious.currentHp !== 'number' || !Number.isFinite(candidatePrevious.currentHp)
-    || typeof candidateTransition.currentHp !== 'number' || !Number.isFinite(candidateTransition.currentHp)) return null
-  const capacity = candidatePrevious.displayCapacityHp ?? candidateTransition.displayCapacityHp
-  if (typeof capacity !== 'number' || !Number.isFinite(capacity) || capacity <= 0) return null
+  if (!loss || typeof loss.fromHp !== 'number' || !Number.isFinite(loss.fromHp)
+    || typeof loss.toHp !== 'number' || !Number.isFinite(loss.toHp)
+    || typeof loss.displayCapacityHp !== 'number' || !Number.isFinite(loss.displayCapacityHp)
+    || loss.displayCapacityHp <= 0 || loss.fromHp < loss.toHp) return null
   return {
-    prevPct: (candidatePrevious.currentHp / capacity) * 100,
-    nextPct: (candidateTransition.currentHp / capacity) * 100,
+    prevPct: (loss.fromHp / loss.displayCapacityHp) * 100,
+    nextPct: (loss.toHp / loss.displayCapacityHp) * 100,
   }
 }
 
@@ -532,12 +447,14 @@ export function consumableRuntimeSlotsAt(
   const states = new Map<number, ConsumableRuntimeResult>()
   for (const tr of transitions || []) {
     if (!tr || !Number.isFinite(tr.timeSec) || tr.timeSec > t + 1e-6) continue
-    if (tr.consumableSlot === null || tr.consumableSlot === undefined) {
-      if (tr.state === 'UNKNOWN') states.clear()
+    if (tr.invalidation === true) {
+      states.clear()
       continue
     }
+    if (tr.consumableSlot === null || tr.consumableSlot === undefined
+      || typeof tr.state !== 'string') continue
     states.set(tr.consumableSlot, {
-      state: tr.state ?? 'UNKNOWN',
+      state: tr.state,
       logicalItemId: tr.logicalItemId ?? null,
       wireCode: tr.wireCode ?? null,
     })
@@ -554,15 +471,15 @@ export function moduleCrewStatesAt(
   const byComponent = new Map<string, ModuleCrewResult>()
   for (const tr of transitions) {
     if (!tr || !Number.isFinite(tr.timeSec) || tr.timeSec > t + 1e-6) continue
-    if (tr.recorderVisible !== true || !tr.component) continue
-    if (tr.state === 'FULL_REPAIRED_CLEAR' || tr.state === 'CREW_HEALED') {
+    if (!tr.component) continue
+    if (tr.state == null) {
       byComponent.delete(tr.component)
       continue
     }
     byComponent.set(tr.component, {
       component: tr.component,
-      state: tr.state ?? 'UNKNOWN',
-      recorderVisible: true,
+      state: tr.state,
+      recorderVisible: tr.recorderVisible,
       confidence: tr.confidence ?? 'UNKNOWN',
     })
   }

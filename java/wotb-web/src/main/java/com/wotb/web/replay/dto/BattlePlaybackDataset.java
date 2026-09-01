@@ -111,7 +111,11 @@ public record BattlePlaybackDataset(
             int hpLoss,
             Long attackerAccountId,
             boolean attackerReliable,
-            int damageEventCount
+            int damageEventCount,
+            Integer fromHp,
+            Integer toHp,
+            Integer displayCapacityHp,
+            boolean transientAllowed
     ) {
     }
 
@@ -218,6 +222,7 @@ public record BattlePlaybackDataset(
             String knowledge,          // CURRENT / LAST_KNOWN
             String source,             // EXACT_BATTLE_EVENT / ...
             Integer displayCapacityHp, // presentation-only
+            boolean relativeFull,      // canonical friendly opening relative-full fact
             ConfidenceDto confidence
     ) {
     }
@@ -236,6 +241,7 @@ public record BattlePlaybackDataset(
             String logicalItemId,       // null = unknown wire
             Integer wireCode,
             String state,               // INITIALIZED / ACTIVATED / ACTIVE_ENDED_OR_COOLDOWN / TEARDOWN
+            boolean invalidation,       // true = canonical global runtime invalidation
             ConfidenceDto confidence
     ) {
     }

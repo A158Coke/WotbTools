@@ -28,8 +28,9 @@
 
 - **FrameHealth**：统一 `currentHp` 权威，去掉 `baseHp/effectiveMaxHp` 业务语义；
   `baseHp` 属 `VehicleReferenceMetadata`（tankopedia 参考展示）。新增
-  `HealthKnowledge(CURRENT/LAST_KNOWN)`；无 HP fact 由空 transition track 表达；
-  presentation-only `displayCapacityHp`
+  `HealthKnowledge(CURRENT/LAST_KNOWN)`；无 HP fact 由空 transition track 表达，
+  己方相对满血证明由独立的 `relativeFull` sparse fact 表达；
+  presentation-only `displayCapacityHp` 与 backend 投影的 `relativeFull`
   （= 截至 t 的真实可信 currentHp 最大值，**anti-future-leak**，绝非 canonical max HP）。
 - **FrameOrientation**：新增 `OrientationKnowledge` + `ageSec`；敌方离开 AoI 后方向
   `CURRENT → LAST_KNOWN`，不得继续表现为实时炮塔方向。无 orientation fact 不生成 HTTP
@@ -41,7 +42,10 @@
 `positionSegments` / `orientationSegments` / `healthTransitions` / `lifeTransitions` /
 `consumableTransitions` / `moduleCrewTransitions` / `loadout` / `damageLosses`，加 battle 级
 `events` / `pointsSamples`。每条 track 自带 `knowledge / provenance / observation boundary`；
-`damageLosses` 是 Playback 数值伤害的唯一来源，事件中的 `observedHpLoss` 只服务通知展示。
+`damageLosses` 是 Playback 数值伤害的唯一来源，并携带 backend 已证明的
+`fromHp/toHp/displayCapacityHp/transientAllowed`；事件中的 `observedHpLoss` 只服务通知展示。
+module/crew transition 的 `state=null` 表示 backend 已证明该 component 当前无 active fault；
+consumable 的 `invalidation=true` 是 runtime 全局失效边界，前端不解释 protocol UNKNOWN。
 
 前端（`battlePlaybackV2.ts` 查询 + `V2VehicleInspector`）**只消费**这些已标注事实，
 不再做 HP/AoI/death/loadout 推理，也**不**再以 5 秒 packet-gap 作为 observation authority。

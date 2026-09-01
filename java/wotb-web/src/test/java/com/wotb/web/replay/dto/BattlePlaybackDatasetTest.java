@@ -108,13 +108,13 @@ class BattlePlaybackDatasetTest {
                 42L, "Player", 1001L, "Tank", "medium", 8, 1, true, loadout,
                 List.of(), List.of(), List.of(
                         new BattlePlaybackDataset.HealthTransition(
-                                0, 100, "CURRENT", "EXACT_BATTLE_EVENT", 100, ConfidenceDto.HIGH),
+                                0, 100, "CURRENT", "EXACT_BATTLE_EVENT", 100, true, ConfidenceDto.HIGH),
                         new BattlePlaybackDataset.HealthTransition(
-                                1, 90, "CURRENT", "EXACT_BATTLE_EVENT", 100, ConfidenceDto.MEDIUM),
+                                1, 90, "CURRENT", "EXACT_BATTLE_EVENT", 100, false, ConfidenceDto.MEDIUM),
                         new BattlePlaybackDataset.HealthTransition(
-                                2, 80, "CURRENT", "EXACT_BATTLE_EVENT", 100, ConfidenceDto.LOW),
+                                2, 80, "CURRENT", "EXACT_BATTLE_EVENT", 100, false, ConfidenceDto.LOW),
                         new BattlePlaybackDataset.HealthTransition(
-                                3, 70, "LAST_KNOWN", "INFERRED", null, ConfidenceDto.UNKNOWN)),
+                                3, 70, "LAST_KNOWN", "INFERRED", null, false, ConfidenceDto.UNKNOWN)),
                 List.of(), List.of(), List.of(), List.of());
         final BattlePlaybackDataset dataset = new BattlePlaybackDataset(
                 100, "lagoon", 1, 42L, List.of(vehicle), List.of(), List.of(),
@@ -136,7 +136,7 @@ class BattlePlaybackDatasetTest {
                 "provisions", "provisionWireCodes", "equipmentIds", "confidence"));
         final JsonNode healthTransitions = requiredField(serializedVehicle, "healthTransitions");
         assertFieldNames(healthTransitions.get(0),
-                Set.of("timeSec", "currentHp", "knowledge", "source", "displayCapacityHp", "confidence"));
+                Set.of("timeSec", "currentHp", "knowledge", "source", "displayCapacityHp", "relativeFull", "confidence"));
 
         assertEquals("UNKNOWN", requiredField(serializedLoadout, "confidence").asText());
         assertNullSlot(serializedLoadout, "consumables", 0);

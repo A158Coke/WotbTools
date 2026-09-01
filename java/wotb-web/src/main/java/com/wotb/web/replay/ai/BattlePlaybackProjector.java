@@ -144,11 +144,13 @@ public final class BattlePlaybackProjector {
         // 稀疏 transition tracks：跨 vehicles 的所有 frame，去重 sequence（timeSec + entityId 天然序）。
         final List<PositionSegment> positionSegments = positionSegments(timeline, entityIds);
         final List<OrientationSegment> orientationSegments = orientationSegments(timeline, entityIds);
-        final List<HealthTransition> health = healthTransitions(timeline, entityIds);
+        final List<HealthTransition> health = healthTransitions(timeline, entityIds, Boolean.TRUE.equals(friendly));
         final List<LifeTransition> life = lifeTransitions(timeline, entityIds);
         final List<DamageLoss> losses = damageLosses.stream()
                 .map(loss -> new DamageLoss(loss.fromSec(), loss.toSec(), loss.hpLoss(),
-                        loss.attackerAccountId(), loss.attackerReliable(), loss.damageEventCount()))
+                        loss.attackerAccountId(), loss.attackerReliable(), loss.damageEventCount(),
+                        loss.fromHp(), loss.toHp(), displayCapacityForLoss(timeline, entityIds, loss),
+                        transientAllowed(positionSegments, loss)))
                 .toList();
         final VehicleBattleLoadoutDto loadout = toLoadoutDto(
                 VehicleLoadoutFacts.loadoutAtOrBefore(loadoutByAccount,
@@ -285,23 +287,38 @@ public final class BattlePlaybackProjector {
     }
 
     private static List<HealthTransition> healthTransitions(final BattleTimeline timeline,
-                                                            final List<Integer> entityIds) {
+                                                            final List<Integer> entityIds,
+                                                            final boolean friendly) {
         final List<HealthTransition> out = new ArrayList<>();
         HealthTransition previous = null;
+        Integer previousHp = null;
+        boolean openingFull = friendly;
         for (final BattleFrame frame : timeline.frames()) {
             final FrameVehicle v = vehicleInAny(frame, entityIds);
             final FrameHealth h = v == null ? null : v.health();
             if (h == null || h.currentHp() == null || h.knowledge() == null
                     || h.knowledge() == FrameHealth.HealthKnowledge.UNKNOWN) {
+                if (friendly && previous == null && v != null && v.lifeState() != LifeState.DESTROYED) {
+                    out.add(new HealthTransition(frame.stateAtSec(), null, "CURRENT", "RELATIVE_FULL",
+                            null, true, ConfidenceDto.UNKNOWN));
+                    previous = out.getLast();
+                }
                 continue;
+            }
+            final boolean relativeFull = friendly && openingFull
+                    && h.knowledge() == FrameHealth.HealthKnowledge.CURRENT
+                    && h.currentHp() > 0;
+            if ((previousHp != null && h.currentHp() < previousHp) || h.currentHp() <= 0) {
+                openingFull = false;
             }
             final HealthTransition next = new HealthTransition(frame.stateAtSec(), h.currentHp(),
                     h.knowledge().name(), h.source() == null ? "UNKNOWN" : h.source().name(),
-                    h.displayCapacityHp(), toConfidence(h.confidence()));
+                    h.displayCapacityHp(), relativeFull, toConfidence(h.confidence()));
             if (!sameHealth(previous, next)) {
                 out.add(next);
                 previous = next;
             }
+            previousHp = h.currentHp();
         }
         return out;
     }
@@ -312,7 +329,35 @@ public final class BattlePlaybackProjector {
                 && java.util.Objects.equals(left.knowledge(), right.knowledge())
                 && java.util.Objects.equals(left.source(), right.source())
                 && java.util.Objects.equals(left.displayCapacityHp(), right.displayCapacityHp())
+                && left.relativeFull() == right.relativeFull()
                 && left.confidence() == right.confidence();
+    }
+
+    private static Integer displayCapacityForLoss(final BattleTimeline timeline,
+                                                  final List<Integer> entityIds,
+                                                  final PlaybackCombatReconstruction.Loss loss) {
+        for (final BattleFrame frame : timeline.frames()) {
+            final FrameVehicle vehicle = vehicleInAny(frame, entityIds);
+            final FrameHealth health = vehicle == null ? null : vehicle.health();
+            if (health != null && health.currentHp() != null
+                    && health.currentHp() == loss.toHp()
+                    && health.observedAtSec() != null
+                    && Math.abs(health.observedAtSec() - loss.toSec()) <= 1e-6) {
+                return health.displayCapacityHp();
+            }
+        }
+        return null;
+    }
+
+    private static boolean transientAllowed(final List<PositionSegment> segments,
+                                            final PlaybackCombatReconstruction.Loss loss) {
+        if (segments == null) {
+            return false;
+        }
+        return segments.stream().filter(segment -> "OBSERVED".equals(segment.knowledge())
+                        && segment.startSec() <= loss.fromSec() + 1e-6
+                        && segment.endSec() >= loss.toSec() - 1e-6)
+                .count() == 1;
     }
 
     private static List<LifeTransition> lifeTransitions(final BattleTimeline timeline,
@@ -358,9 +403,13 @@ public final class BattlePlaybackProjector {
                 if (timeSec == null) {
                     continue;
                 }
-                out.add(new ConsumableTransition(timeSec, consumableSlot(loadout, o.wireCode()), o.logicalItemId(), o.wireCode(),
-                        o.state() == null || o.state() == ConsumableLifecycleEvent.ConsumableLifecycleState.UNKNOWN
-                                ? "UNKNOWN" : o.state().name(),
+                final boolean invalidation = o.state() == null
+                        || o.state() == ConsumableLifecycleEvent.ConsumableLifecycleState.UNKNOWN;
+                out.add(new ConsumableTransition(timeSec,
+                        invalidation ? null : consumableSlot(loadout, o.wireCode()),
+                        invalidation ? null : o.logicalItemId(),
+                        invalidation ? null : o.wireCode(),
+                        invalidation ? "UNKNOWN" : o.state().name(), invalidation,
                         toConfidence(o.confidence())));
             }
         }
@@ -370,7 +419,7 @@ public final class BattlePlaybackProjector {
         // raw events for provenance and diagnostics.
         for (final ConsumableLifecycle.ConsumableObservation o : preBattleSeeds.values()) {
             out.add(new ConsumableTransition(0d, consumableSlot(loadout, o.wireCode()), o.logicalItemId(), o.wireCode(),
-                    "INITIALIZED", toConfidence(o.confidence())));
+                    "INITIALIZED", false, toConfidence(o.confidence())));
         }
         // AoI hidden 边界：canonical contract —— known runtime 在 AoI 关闭（Type4 absent）后必须
         // 显式插入 UNKNOWN transition，直到下一次重入（observedFrom）由后续观测接管。
@@ -386,7 +435,7 @@ public final class BattlePlaybackProjector {
                     // 之后（如后续 TEARDOWN）由 lastAtOrBefore 自然覆盖，绝不读取未来 observation 决定当前状态。
                     if (hadKnownBefore && Double.isFinite(absent) && absent >= 0d) {
                         out.add(new ConsumableTransition(absent, null, null, null,
-                                "UNKNOWN", com.wotb.web.replay.dto.BattlePlaybackDataset.ConfidenceDto.UNKNOWN));
+                                "UNKNOWN", true, com.wotb.web.replay.dto.BattlePlaybackDataset.ConfidenceDto.UNKNOWN));
                     }
                 }
             }
@@ -447,13 +496,21 @@ public final class BattlePlaybackProjector {
         }
         final List<ModuleCrewTransition> out = new ArrayList<>();
         for (final ModuleCrewObservation o : observations) {
-            if (o == null || !isActiveTime(o.timeSec())) {
+            if (o == null || !isActiveTime(o.timeSec()) || !o.recorderVisible()
+                    || o.component() == null
+                    || o.component() == com.wotb.core.replay.event.VehicleModuleCrewStateEvent.Component.UNKNOWN
+                    || o.state() == null
+                    || o.state() == com.wotb.core.replay.event.VehicleModuleCrewStateEvent.State.UNKNOWN) {
                 continue;
             }
+            final String currentState = switch (o.state()) {
+                case FULL_REPAIRED_CLEAR, CREW_HEALED -> null;
+                case AUTO_REPAIRED_TO_DAMAGED -> "DAMAGED_DEGRADED";
+                case DAMAGED_DEGRADED, CRITICAL_DISABLED, CREW_SHELL_SHOCKED -> o.state().name();
+                case UNKNOWN -> null;
+            };
             out.add(new ModuleCrewTransition(o.timeSec(),
-                    o.component() == null ? "UNKNOWN" : o.component().name(),
-                    o.state() == null ? "UNKNOWN" : o.state().name(),
-                    o.recorderVisible(), toConfidence(o.confidence())));
+                    o.component().name(), currentState, true, toConfidence(o.confidence())));
         }
         out.sort(Comparator.comparingDouble(ModuleCrewTransition::timeSec));
         return out;
