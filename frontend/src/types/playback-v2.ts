@@ -60,23 +60,4 @@ export interface ModuleCrewResult {
   confidence: PlaybackConfidence
 }
 
-/** Compatibility view produced by v2VehicleView for existing legacy projections. */
-export interface V2VehicleView {
-  accountId: number
-  playerName: string
-  tankId: number
-  tankName: string
-  team: number
-  tankType: string
-  healthTransitions: HealthTransition[]
-  lifeTransitions: LifeTransition[]
-  deathSec: number | null
-  hpLosses: PlaybackHpLoss[]
-  positionIntervals: Array<Pick<PositionSegment, 'startSec' | 'endSec'>>
-  directionSamples: Array<Pick<OrientationSample, 'timeSec' | 'hullYawDeg' | 'turretRelativeYawDeg'>>
-  positionSegments: PositionSegment[]
-  orientationSegments: OrientationSegment[]
-  loadout: VehicleBattleLoadout | null
-}
-
 export type { PlaybackDirection, PlaybackHpLoss, PlaybackPosition }

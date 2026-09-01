@@ -170,6 +170,19 @@ describe('marker 根元素（按钮）', () => {
     expect(d.find('button').classes()).not.toContain('pb-last-known')
     expect(d.find('button').classes()).toContain('pb-destroyed')
   })
+
+  it('relative-full HP 仍渲染 HUD 和满条；unknown 也不隐藏 HUD', async () => {
+    const full = mountMarker({ ...genericMarker, friendly: true }, false)
+    await full.setProps({ hp: { current: null, pct: null, fullState: true, destroyed: false, state: 'RELATIVE_FULL' } })
+    expect(full.find('[data-test="pb-hp-hud"]').exists()).toBe(true)
+    expect(full.find('[data-test="pb-hp-num"]').text()).toBe('—')
+    expect(full.find('.pb-hp-fill').attributes('style')).toContain('width: 100%')
+
+    const unknown = mountMarker({ ...genericMarker, friendly: false }, false)
+    await unknown.setProps({ hp: { current: null, pct: null, fullState: false, destroyed: false, state: 'UNKNOWN' } })
+    expect(unknown.find('[data-test="pb-hp-hud"]').exists()).toBe(true)
+    expect(unknown.find('.pb-hp-fill').attributes('style')).toContain('width: 0%')
+  })
 })
 
 describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {

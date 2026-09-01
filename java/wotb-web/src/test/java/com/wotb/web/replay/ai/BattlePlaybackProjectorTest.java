@@ -142,6 +142,48 @@ class BattlePlaybackProjectorTest {
                 .findFirst().orElseThrow().friendly());
     }
 
+    @Test
+    void canonicalOpeningHealthIsProjectedWithItsDisplayCapacity() {
+        final long account = 2001L;
+        final int entityId = 7;
+        final Battle battle = new Battle();
+        battle.mapName = "middleburg";
+        battle.durationS = 30.0;
+        final PlayerResult friendly = new PlayerResult();
+        friendly.accountId = account;
+        friendly.team = 1;
+        friendly.tankId = 456L;
+        friendly.nickname = "Recorder";
+        battle.players = new ArrayList<>(List.of(friendly));
+
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(entityId, new TeamEntityIdentity(entityId, account, "Recorder", 456L, "Recorder", 1,
+                        DecodeConfidence.EXACT)),
+                Map.of(account, List.of(entityId)), Map.of(), 0, List.of());
+        final FrameVehicle vehicle = new FrameVehicle(
+                entityId, account, "Recorder", 456, "Recorder", "Medium tank", 10, 1, true,
+                LifeState.ALIVE,
+                new FrameHealth(2400, 0.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                        FrameHealth.HealthKnowledge.CURRENT, 2400, Confidence.HIGH),
+                new FramePosition(new Vector3(0, 0, 0), 0.0, 0.0,
+                        PositionKnowledge.CURRENT, PositionSource.OBSERVED_EVENT, Confidence.HIGH),
+                new FrameOrientation(0f, 0f, 0f, 0.0, 0.0,
+                        FrameOrientation.OrientationKnowledge.CURRENT, Confidence.HIGH),
+                FrameMapState.UNKNOWN, VehicleKnowledgeState.POSITION_STREAM_ACTIVE, null, List.of());
+        final BattleTimeline timeline = new BattleTimeline(
+                "middleburg", 30.0, 0.0, BattleTimelineClock.IDENTIFIED,
+                List.of(new BattleFrame(0, 0, null, List.of(vehicle), List.of(), List.of(),
+                        Map.of(), List.of())), List.of(), List.of(),
+                BattleTimelineValidationResult.ok(), List.of());
+
+        final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(battle, timeline, mapping, account);
+        final BattlePlaybackDataset.VehiclePlaybackTrack track = dataset.vehicles().getFirst();
+        assertEquals(1, track.healthTransitions().size());
+        assertEquals(2400, track.healthTransitions().getFirst().currentHp());
+        assertEquals(2400, track.healthTransitions().getFirst().displayCapacityHp());
+        assertEquals("CURRENT", track.healthTransitions().getFirst().knowledge());
+    }
+
     /**
      * P0 orientation knowledge fix：orientationSegments 必须按每次 frame 的
      * {@code FrameOrientation.knowledge} 分段，绝不得把整条时间轴焊成一个硬编码 "CURRENT" 段。

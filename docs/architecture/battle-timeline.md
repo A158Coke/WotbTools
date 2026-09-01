@@ -54,7 +54,7 @@
     BattleTimelineBuilder
           ↓
     Canonical BattleTimeline（battle-relative · 1 秒 BattleFrame · 精确事件保留）
-          ├── BattlePlaybackAdapter → MapOverview.Playback
+          ├── BattlePlaybackProjector → BattlePlaybackDataset (HTTP)
           ├── PersonalAiContextCompiler → Call #2 TACTICAL TIMELINE
           └── TeamAiContextCompiler → 团队 Episode 上下文
 
@@ -93,7 +93,8 @@
 | BattleTimelineValidationResult | 错误码见下；valid=false → 拒绝 AI Review |
 | BattleDeltaEngine | 帧间确定性 delta（§15）：POSITION_CHANGE / FIRST_KNOWN / ENEMY_LOST / ENEMY_REACQUIRED / HP_CHANGE / HP_GAP_DELTA / DESTROYED / ALIVE_COUNT_CHANGE / LOCAL_FORCE_CHANGE / POINTS_CHANGE / ENGAGEMENT_ACTIVITY |
 | EpisodeDetector | 确定性章节切分（§23）：强信号（首次接敌/阵亡/存活变化/点数变化/HP 空窗）优先，首选 15–45s、硬最小 8s、硬最大 60s，覆盖整场、连续、无重叠；禁止固定 30 秒切块。**state/event boundary contract（PR #102）**：segment 半开秒区间 [start, end)，second=start 的 delta 属于本段；BEFORE = frameWorld(max(0, start−1))（frame(start) 已消费该秒事件，不能用作 BEFORE），首段 start=0 钳制到 0（t=0 前无状态取初始帧），AFTER = 最后包含秒 —— 保证 BEFORE → EVENTS → AFTER 因果顺序 |
-| BattlePlaybackAdapter | 从 timeline 派生 MapOverview.Playback（duration/positionIntervals/hpSamples/directionSamples/deathSec/events/points），parity 测试保证与 MapOverviewBuilder 同一事实 |
+| BattlePlaybackProjector | 从 canonical timeline/facts 直接投影 `BattlePlaybackDataset`（tracks、segments、transitions、events）；不生成前端 compatibility view |
+| BattlePlaybackAdapter | 仅作为旧 `MapOverview.Playback` artifact 的读取边界兼容层；非 current Battle Playback 数据源 |
 
 ## Validation 错误码（§4）
 

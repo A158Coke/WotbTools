@@ -1,7 +1,12 @@
 /**
- * 战局回放（Battle Playback）确定性工具：位置插值、可见性、时间解析与事件聚合。
- * 全部为纯函数，供 BattlePlayback.vue 与单测使用。
+ * Battle Playback 通用纯函数：位置/方向数学、可见性、时间解析、事件聚合与视图工具。
+ *
+ * V2 production consumption must use battlePlaybackV2.js for canonical vehicle facts.
+ * The legacy HP/domain exports in this module are retained only for legacy utility tests
+ * and non-V2 callers; they must not be imported by the V2 BattlePlayback path.
  */
+
+import { positionAtV2, positionCoveredAtV2 } from './battlePlaybackV2.js'
 
 /** 相邻可信位置的最大间隔（秒）；超过则断线，禁止穿线插值。 */
 const OBSERVED_GAP_SEC = 5
@@ -80,6 +85,7 @@ export function positionCoveredAt(intervals, t) {
  * @param assumeFullWhenUnobserved 兼容参数（保留签名；一律忽略——旧「满血回退 maxHp」已移除，
  *                                  防止把 tankopedia base 冒充本局当前 HP）。
  */
+/** @legacy-only Legacy hpSamples/entryHp reader. Use healthAt/healthDisplayAt for V2. */
 export function vehicleHpAt(vehicle, t, assumeFullWhenUnobserved = false) {
   if (!vehicle || !Number.isFinite(t)) return null
   // V2 source-aware：carries canonical healthTransitions → 从 V2 读取（knowledge/provenance
@@ -131,6 +137,7 @@ export function vehicleHpAt(vehicle, t, assumeFullWhenUnobserved = false) {
  * 进入开局相对满血（spawnFullCount / openingFullCount），knownRemaining 不增加（不伪造数字）。
  * 混合 provenance 一律不得冒充精确队伍总血量（EXACT 门槛 = 全队 entryHp 证明 + 证据一致）。</p>
  */
+/** @legacy-only Legacy team HP state machine. Use teamHealthAt for V2. */
 export function teamHp(vehicles, team, t, assumeFullWhenUnobserved = false) {
   const teamVehicles = (vehicles || []).filter(v => v && v.team === team)
   // V2 source-aware：team 车辆携带 canonical healthTransitions → 从 V2 聚合，
@@ -409,6 +416,17 @@ export function trustedPositionAt(points, t) {
   return p
 }
 
+/** Canonical V2 route position at a shot time; point routes remain legacy-test compatible. */
+function trustedRoutePosition(route, t) {
+  if (Array.isArray(route?.positionSegments)) {
+    if (!positionCoveredAtV2(route.positionSegments, t)) return null
+    const p = positionAtV2(route.positionSegments, t)
+    return p && Number.isFinite(p.x) && Number.isFinite(p.y)
+      && Math.abs(p.timeSec - t) <= 1e-6 ? p : null
+  }
+  return trustedPositionAt(route?.points, t)
+}
+
 /** 炮线可见窗口基础时长（真实秒）：实际窗口 = TRACER_BASE_SEC × 播放倍速——1×/2×/4× 各约 0.4s 真实时间
  * （游戏时间窗口 = 0.4 × speed）。短 shot effect：命中后 ≈400ms 完全消失，不再挂在地图上整秒。 */
 const TRACER_BASE_SEC = 0.4
@@ -429,7 +447,7 @@ const SAME_SHOT_WINDOW_SEC = 0.25
 /**
  * 已知射击事件 → 当前可见炮线（纯函数：只依赖 now/speed，seek 与倍速天然正确，无一次性定时器）。
  * 候选 = DAMAGE 与 KILL（攻击者/目标均已解析）；同刻同 attacker/target 去重为一条（优先保留 DAMAGE）；
- * 两端都必须在事件时刻有可信位置（trustedPositionAt）且不是同一辆车/同一坐标才输出。
+ * 两端都必须在事件时刻有可信位置（V2 使用 canonical positionSegments）且不是同一辆车/同一坐标才输出。
  * nowSec ∈ [timeSec, timeSec + TRACER_BASE_SEC × speed) 时可见。
  * 激光视觉派生：opacity 为「先亮后淡」（前 TRACER_HOLD_REAL_SEC × speed 秒全亮，
  * 之后线性淡出到窗口结束）；flashProgress 0→1 描述命中端闪光进度（窗口
@@ -438,7 +456,7 @@ const SAME_SHOT_WINDOW_SEC = 0.25
  * flashProgress=1 时 opacity=0，组件不再渲染圆点，不残留孤立端点）。
  *
  * @param events         过滤后的 playback 事件（DAMAGE/KILL）
- * @param routesByAccount Map<accountId, { points: [{x,y,timeSec}] }>
+ * @param routesByAccount Map<accountId, VehiclePlaybackTrack | { points: [{x,y,timeSec}] }>
  * @param nowSec         当前播放时间（battle-relative 秒）
  * @param speed          播放倍速（1/2/4）
  * @returns [{ x1, y1, x2, y2, opacity, flashProgress, flashOpacity, timeSec, attackerAccountId, targetAccountId }]
@@ -483,8 +501,8 @@ export function tracerLines(events, routesByAccount, nowSec, speed) {
     if (nowSec < t - 1e-6 || nowSec >= t + windowSec - 1e-9) continue
     const from = routesByAccount.get(ev.accountId)
     const to = routesByAccount.get(ev.targetAccountId)
-    const a = from ? trustedPositionAt(from.points, t) : null
-    const b = to ? trustedPositionAt(to.points, t) : null
+    const a = from ? trustedRoutePosition(from, t) : null
+    const b = to ? trustedRoutePosition(to, t) : null
     if (!a || !b) continue
     if (Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.y - b.y) < 1e-9) continue
     const elapsed = nowSec - t
@@ -672,6 +690,7 @@ function hpEvidenceConsistent(vehicle, t) {
  * @returns {{ current:number|null, maxHp:number|null, pct:number|null, destroyed:boolean,
  *             state:string, fullState:boolean }|null}
  */
+/** @legacy-only Legacy HP presentation state machine. Use healthDisplayAt for V2. */
 export function hpDisplay(vehicle, t, { friendly = false } = {}) {
   if (!vehicle || !Number.isFinite(t)) return null
   // V2：毁伤由图腾生命 transition 表达（lifeState=DESTROYED），不是 HP<=0 派生。
@@ -766,6 +785,7 @@ export function hpDisplay(vehicle, t, { friendly = false } = {}) {
  * @param vehicles 全部 playback 车辆（dealt 需要其它车辆的 hpLosses attribution，
  *                 received 用本车 hpLosses；两者都只消费 toSec ≤ t 的记录）
  */
+/** @legacy-only Legacy hpLosses-based statistics. Use cumulativeStatsAtV2 for V2. */
 export function cumulativeStatsAt(events, accountId, t, vehicles = []) {
   let dealt = 0
   let received = 0
@@ -791,6 +811,7 @@ export function cumulativeStatsAt(events, accountId, t, vehicles = []) {
  * - out：该车为攻击者（仅 attackerReliable 可归属时产生）。
  * 按时间升序返回最近 maxRows 条。
  */
+/** @legacy-only Legacy hpLosses-based damage log. Use damageLogAtV2 for V2. */
 export function damageLogAt(vehicles, selectedAccountId, t, maxRows = 8) {
   const rows = []
   for (const v of vehicles || []) {
@@ -827,6 +848,7 @@ export function eventsCrossed(events, fromSec, toSec) {
 
 /** 伤害反馈是否允许（当前可见/可展示）：受害者在事件时刻位置流覆盖；
  * 失察期间受击 → 不跳伤害、不更新 HP、不显示 attacker（HP 冻结为最后可信值）。 */
+/** @legacy-only Legacy positionIntervals coverage check. Use victimFeedbackAllowedV2 for V2. */
 export function victimFeedbackAllowed(vehicle, eventTimeSec) {
   if (!vehicle || !Number.isFinite(eventTimeSec)) return false
   return positionCoveredAt(vehicle.positionIntervals, eventTimeSec)
@@ -865,6 +887,7 @@ export function pushFeed(items, entry, max = KILL_FEED_MAX) {
 }
 
 /** 事件时刻受害者的 ghost 参数：{ prevPct, nextPct }（均 null 时无 ghost）。 */
+/** @legacy-only Legacy HP ghost derivation. Use ghostAroundV2 for V2. */
 export function ghostAround(vehicle, t, { friendly = false } = {}) {
   const prev = hpDisplay(vehicle, t - 0.001, { friendly })
   const next = hpDisplay(vehicle, t, { friendly })
