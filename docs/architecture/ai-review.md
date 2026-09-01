@@ -115,6 +115,25 @@ AI 提示词正文维护在 `java/wotb-web/src/main/resources/prompts/` 下的 `
 
 当前 `wotb-web` 真实 DeepSeek probes 为 `TeamReviewRealE2EProbeTest`、`TeamReviewBatchE2EProbeTest` 和 `TeamReviewDetailedReproProbeTest`。`LiveAiTestIsolationTest` 对已知 probe 的 tag、测试源码中的 production external-provider 组合信号以及 `ai.probe.excludedGroups` POM contract 做 deterministic guard；loopback、Mockito、配置断言和 deterministic eval 不因引用 gateway 类型而被标为 live。
 
+PowerShell 人工运行示例（从 `java` 目录执行；将占位符替换为通过带外方式取得的 key/回放路径）：
+
+```powershell
+$env:AI_API_KEY = "<provided-out-of-band>"
+mvn -pl wotb-web -am test `
+  "-Dtest=TeamReviewRealE2EProbeTest" `
+  "-Dai.probe.excludedGroups=" `
+  "-Dprobe.replay=<file>"
+
+mvn -pl wotb-web -am test `
+  "-Dtest=TeamReviewBatchE2EProbeTest" `
+  "-Dai.probe.excludedGroups="
+
+mvn -pl wotb-web -am test `
+  "-Dtest=TeamReviewDetailedReproProbeTest" `
+  "-Dai.probe.excludedGroups=" `
+  "-Dprobe.replay=<file>"
+```
+
 - **空间分离证据（Backend Evidence Boundary）**：`TeamSeparationEvidenceSkill` / `PlayerSeparationEvidenceSkill`（wotb-core）从阵型簇/移动段/交火推导中性 `SPATIAL_SEPARATION` 证据（`kind=OPENING_SPREAD` / `SEPARATION_WINDOW` + 距离/距离增长/静止占比/局部敌情/承伤/输出/阵亡/主力簇位移等确定性测量），`TeamEvidenceFormatter` 渲染 `SPATIAL_SEPARATION_EVIDENCE` 段（P3 optional）。不再输出 `SOLO_DELAY` / `SOLO_DETACHED` / `teammateBenefit` 等战术 verdict——是否拖延/脱节由 LLM 综合判断。
 - **player 路径同规则**：`PlayerSeparationEvidenceSkill`（wotb-core）复用 `RouteSkill` 空间分离窗口推导同口径中性证据（个人复盘同样不输出拖延/脱节 verdict），已在 `EvidenceSkillEngine` 注册；player prompt（fallback/single/tactical）追加三语 `SEPARATION_EVIDENCE_RULE`。
 - **争霸赛占点与点数胜负结束方式**：`FriendlyEnemyResult.resolveTeamBattle` 新增派生 `pointsEndReason`（`REACHED_1000`=双方均有存活 + 标准业务规则 + 时长<420s：某一方达到 1000 分上限导致提前结束，与胜方解耦，不使用任何点数字段；`TIME_EXPIRED`=标准规则 + 时长≥420s：时间耗尽，双方终局比分未解码；`UNKNOWN`=类别未知 / rosterComplete=false / 时长缺失；全歼=NOT_APPLICABLE），`TeamEvidenceFormatter` 在 `CAPTURE_AND_POINTS` 段输出 `pointsEndReason`（逐人/双方占点分、`pointsDecided`、占领点区域）；`TeamAiPromptBuilder` mandatory header 同时输出 `result` 与 `resultSource`（BATTLE_RESULTS 权威 / SURVIVOR_SETTLEMENT 结算存活推导 / UNKNOWN；POINTS_INFERENCE 已停用——枚举保留但不再产出，fail closed）；**所有依赖完整逐人结算的存活/点数推断共享"结算阵容完整"前提**（`Battle.rosterComplete`：ReplayParser 校验名册 #201 与战绩 #301 账号集合一致且每个账号队伍一致才为 true；不写死每队 7 人，完整名册的非 7v7 训练房同样生效）：SURVIVOR_SETTLEMENT 推导与 `annihilationSuffix` 在阵容不完整时一律 fail-closed；winnerTeam 缺失 + 双方均有存活 → 胜方 UNKNOWN（结束方式仍按标准时限证据判定，用于结果行后缀，禁止比较占点字段推断）；winnerTeam 存在时胜方为 BATTLE_RESULTS，`pointsEndReason` 正常判定（rosterComplete=false 时 UNKNOWN，result 只写通用「点数判定」）；`CAPTURE_AND_POINTS` 在阵容不完整时输出 `SETTLEMENT_ROSTER_INCOMPLETE=true` / `pointsTotalsUnavailable=true` 并抑制占点分总量；提示词 `CAPTURE_RULE`（ZH/EN/RU，含 2d 条阵容不完整口径）写明结束条件三分法——全歼胜（双向：全歼敌方获胜 / 被敌方全歼落败）/ 1000 分提前结束（某一方达到 1000 分上限，具体胜方由 winnerTeam 决定；缺失时只写「某一方达到 1000 分导致提前结束，具体胜方未知」，双方终局比分一律 UNKNOWN，不把 1000 分配给任何队伍）/ 时间耗尽点数决胜（仅双方均有存活且标准规则可证），`TIME_EXPIRED` 叙述必须写「时间耗尽」，禁止用 <1000 的中间比分作为获胜理由，禁止把失败方被全歼写成「全歼敌方获胜」；团队剖析胜负标签按结束方式输出「（时间耗尽点数判定）/（达到 1000 分提前获胜）/（某一方达到 1000 分提前结束，具体胜方未知）/（时间耗尽点数判定，具体胜方未知）/（点数判定）/（全歼敌方）/（被敌方全歼）」。`TeamPromptLocalizer` 三语 `SOLO_INTENT_RULE` / `CAPTURE_RULE`。
