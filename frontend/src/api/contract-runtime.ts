@@ -1,4 +1,5 @@
 import Ajv2020 from 'ajv/dist/2020.js'
+import addFormats from 'ajv-formats'
 import type { components } from './generated/http-contract.js'
 import schema from './generated/playback-v2.schema.js'
 
@@ -12,7 +13,9 @@ export interface ContractDiagnostic {
   receivedType: string
 }
 
-const validator = new Ajv2020({ allErrors: true, strict: false }).compile(schema)
+const ajv = new Ajv2020({ allErrors: true, strict: false })
+addFormats(ajv)
+const validator = ajv.compile(schema)
 
 function receivedType(value: unknown): string {
   if (value === null) return 'null'

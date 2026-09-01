@@ -27,6 +27,10 @@ description: >
 7. **出具报告**（见下方模板）→ 零问题闭环时允许直接提交并开 PR；
    存在未闭环问题时等待用户审批后提交
 
+## HTTP contract check
+
+涉及 HTTP contract 时，先确认 OpenAPI/生成产物为 authority；不得通过让 FE 同时接受 producer 违规的两套 enum 来“修复”兼容性。
+
 ## 检查单
 
 ### 1. grep 残留

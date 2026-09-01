@@ -62,6 +62,7 @@ Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 
 
 - **改动即更新文档**：影响界面、导出、数据、构建或用法的改动，同一次提交更新相关文档。
 - **API 纯英文**：成功 DTO 返回 raw enum 与数据；失败返回 canonical `ApiErrorResponse`（唯一错误 `id`、稳定 `errorCode`、可选 `errorMsg`、status、retryable、details、timestamp），不返回本地化 `*Label/message` 或 exception message。完整契约见 `docs/api/error-contract.md`。
+- **HTTP Contract First**：FE ↔ BE 的序列化契约以 `contracts/http/openapi.yaml` 为唯一事实源；前端 generated transport、Ajv runtime schema 与 fixture 由它生成/校验。修改 HTTP shape 时按 `docs/architecture/http-contracts.md` 的顺序执行，不让 Java domain enum 或 Vue view model 直接泄漏到 wire。
 - **显示名分两类出口**：前端三语 locale + Excel 导出中文标签；改列必须同步两边。
 - **单一数据源**：车辆库为 `common/tankopedia-tier{7,8,9,10}.json`，地图名为 `common/map_names.json`；禁止模块内复制一份。
 - 不引入 Lombok；record 用于不可变模型；Controller 只处理 HTTP，业务逻辑进入 service/core。
@@ -75,6 +76,7 @@ Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 
 ```text
 .
 ├── common/                     # 共享车辆/地图/资产/回放 fixture
+├── contracts/                  # FE ↔ BE HTTP OpenAPI wire contract
 ├── java/                       # Java Maven 根：wotb-contracts + wotb-core + wotb-control + wotb-web
 ├── frontend/                   # Vue 3 SPA + 独立 Sponsor 页
 │   ├── index.html
@@ -97,6 +99,10 @@ Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 
 ```
 
 旧 `frontend/homepage/index.html` / `profile.html` 已删除；公共主页与个人中心统一由 Vue SPA 提供。
+
+### HTTP Contract workflow
+
+HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/serialization → runtime validation → contract tests → affected tests → PR CI`。在 `frontend/` 使用 `npm run api:lint`、`npm run api:generate`、`npm run api:check`、`npm run api:fixture`；生成文件位于 `frontend/src/api/generated/`，不可手改。Playback 旧 artifact 的兼容处理只能放在读取边界；`204` capability unavailable 与 `200` schema violation 必须保持不同语义。完整边界与兼容规则见 [`docs/architecture/http-contracts.md`](architecture/http-contracts.md)。
 
 ---
 

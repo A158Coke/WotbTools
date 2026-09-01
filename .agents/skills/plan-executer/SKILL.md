@@ -62,6 +62,10 @@ description: >
    任务分支与提交保留；review-with-docs 零 blocker 时按步骤 7 直接开 PR。
    PR 合并后由 `finish-task` 清理分支与计划文件。
 
+## HTTP Contract Audit
+
+涉及 API/跨层 shape 时，核对 `contracts/http/openapi.yaml` 是否为唯一 wire authority；确认 generated FE artifacts 已重生成且无 drift、required/nullable/enum 与实际序列化一致、domain→transport mapping 显式、旧 artifact 兼容仅在读取边界、ApiError 与 204 语义未被混淆。
+
 ## 规则
 
 - 执行前必须基于最新 main 创建符合任务主题的分支，所有变更只落在该分支上；不在 main 直接执行。
