@@ -33,6 +33,9 @@ import java.util.List;
  * parse 结果 + validator conflict 明细（checkId / reasonCode / message / claimType /
  * subject / evidenceIds），用于 DISCOVER 报告（HARD vs metadata 分类）。
  * <p>必须设置环境变量 AI_API_KEY（临时 key，不在仓库出现）。</p>
+ * Run from the {@code java} directory in PowerShell after supplying an out-of-band key:
+ * {@code $env:AI_API_KEY = "<provided-out-of-band>"; mvn -pl wotb-web -am test
+ * "-Dtest=TeamReviewDetailedReproProbeTest" "-Dai.probe.excludedGroups=" "-Dprobe.replay=<file>"}
  */
 @Tag("ai-live")
 class TeamReviewDetailedReproProbeTest {

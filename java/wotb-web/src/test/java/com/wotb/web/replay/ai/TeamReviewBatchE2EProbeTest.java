@@ -22,6 +22,9 @@ import java.util.List;
 /**
  * 真实 DeepSeek 批量 E2E 验收探针（>= 5 真实 team replay，usable success >= 80%，
  * HARD_FACT_CONFLICT 输出 = 0）。手动运行，不进 CI；需 AI_API_KEY 环境变量。
+ * Run from the {@code java} directory in PowerShell after supplying an out-of-band key:
+ * {@code $env:AI_API_KEY = "<provided-out-of-band>"; mvn -pl wotb-web -am test
+ * "-Dtest=TeamReviewBatchE2EProbeTest" "-Dai.probe.excludedGroups="}
  */
 @Tag("ai-live")
 class TeamReviewBatchE2EProbeTest {
