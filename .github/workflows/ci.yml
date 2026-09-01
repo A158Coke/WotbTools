@@ -141,6 +141,16 @@ jobs:
       - name: Runtime contract tests
         working-directory: frontend
         run: npx vitest run src/api/contract-runtime.test.ts
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Backend Playback serialization contract tests
+        working-directory: java
+        run: |
+          set -euo pipefail
+          mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo -pl wotb-web -am -DskipTests install
+          mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo -pl wotb-web -Dtest=BattlePlaybackDatasetTest -Dsurefire.failIfNoSpecifiedTests=true test
 
   android:
     name: Android debug build (PR gate)
