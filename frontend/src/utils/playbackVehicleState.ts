@@ -34,7 +34,7 @@ export function projectVehicleState({
   const direction = orientationAtV2(track.orientationSegments, time)
   // friendly is a canonical track fact. The perspective team is presentation
   // context only and must not re-derive vehicle identity from team numbers.
-  const friendly = track.friendly === true
+  const friendly = track.friendly === true ? true : track.friendly === false ? false : null
   const hullDeg = direction ? screenRotation(direction.hullYawDeg) : null
   const turretDeg = direction
     ? screenRotation(turretWorldYawDeg(direction.hullYawDeg, direction.turretRelativeYawDeg))

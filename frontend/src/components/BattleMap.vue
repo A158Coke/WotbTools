@@ -67,7 +67,7 @@ defineExpose({ mapEl, textInputRef })
           </g>
         </g>
         <g class="pb-spawns">
-          <circle v-for="(spawn, index) in props.pbOverview.spawnPoints" :key="`${spawn.name}-${index}`" :cx="props.mapView.toX(spawn.x)" :cy="props.mapView.toY(spawn.y)" r="4" :class="spawn.team === props.friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy'" />
+          <circle v-for="(spawn, index) in props.pbOverview.spawnPoints" :key="`${spawn.name}-${index}`" :cx="props.mapView.toX(spawn.x)" :cy="props.mapView.toY(spawn.y)" r="4" :class="props.friendlyTeam === null || props.friendlyTeam === undefined ? 'pb-spawn-neutral' : (spawn.team === props.friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy')" />
         </g>
         <g class="pb-tracers" aria-hidden="true">
           <template v-for="(line, index) in props.visibleTracers" :key="`tracer-${line.timeSec}-${index}`">
@@ -107,11 +107,11 @@ defineExpose({ mapEl, textInputRef })
 
     <input v-if="props.textSession" ref="textInputRef" :value="props.textSession.text" class="pb-text-input" :style="props.textInputStyle" :placeholder="$t('recon.map.playback.annot.text_placeholder')" data-test="pb-text-input" @input="emit('update-text', $event.target.value)" @keydown.enter.prevent="emit('commit-text', props.textSession)" @keydown.esc.prevent="emit('cancel-text', props.textSession)" @blur="emit('commit-text', props.textSession)" />
     <div class="pb-feedback-layer" data-test="pb-feedback-layer" aria-hidden="true">
-      <span v-for="float in props.visibleFloats" :key="'dmg-' + float.id" class="pb-float-dmg" data-test="pb-float-dmg" :class="props.floatTeamClass(float.team)" :style="{ left: float.x + 'px', top: float.y + 'px' }">-{{ float.hpLoss }}</span>
-      <span v-for="burst in props.visibleBursts" :key="'burst-' + burst.id" class="pb-burst" data-test="pb-burst" :class="props.floatTeamClass(burst.team)" :style="{ left: burst.x + 'px', top: burst.y + 'px' }"></span>
+      <span v-for="float in props.visibleFloats" :key="'dmg-' + float.id" class="pb-float-dmg" data-test="pb-float-dmg" :class="props.floatTeamClass(float.friendly)" :style="{ left: float.x + 'px', top: float.y + 'px' }">-{{ float.hpLoss }}</span>
+      <span v-for="burst in props.visibleBursts" :key="'burst-' + burst.id" class="pb-burst" data-test="pb-burst" :class="props.floatTeamClass(burst.friendly)" :style="{ left: burst.x + 'px', top: burst.y + 'px' }"></span>
     </div>
     <div v-if="props.visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
-      <div v-for="feed in props.visibleFeed" :key="'feed-' + feed.id" class="pb-feed-item" :class="feed.victimTeam === props.friendlyTeam ? 'pb-feed-friendly' : 'pb-feed-enemy'"><span class="pb-feed-skull" aria-hidden="true">☠</span><span class="pb-feed-victim">{{ feed.victimName }}</span><span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span></div>
+      <div v-for="feed in props.visibleFeed" :key="'feed-' + feed.id" class="pb-feed-item" :class="feed.victimFriendly === true ? 'pb-feed-friendly' : (feed.victimFriendly === false ? 'pb-feed-enemy' : 'pb-feed-neutral')"><span class="pb-feed-skull" aria-hidden="true">☠</span><span class="pb-feed-victim">{{ feed.victimName }}</span><span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span></div>
     </div>
   </div>
 </template>
@@ -127,20 +127,24 @@ defineExpose({ mapEl, textInputRef })
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
+.pb-spawn-neutral { fill: var(--text-muted, #999); }
 .pb-feedback-layer { position: absolute; inset: 0; pointer-events: none; z-index: 9; overflow: hidden; }
 .pb-float-dmg { position: absolute; transform: translate(-50%, -50%); font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; text-shadow: 0 0 3px color-mix(in srgb, var(--bg) 90%, transparent), 0 1px 2px color-mix(in srgb, var(--bg) 80%, transparent); animation: pb-float-rise 1s ease-out forwards; white-space: nowrap; }
 .pb-float-friendly { color: var(--pb-team-text, #4ade80); }
 .pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
+.pb-float-neutral { color: var(--text-muted, #999); }
 @keyframes pb-float-rise { 0% { opacity: 1; margin-top: 0; } 70% { opacity: 1; } 100% { opacity: 0; margin-top: -10px; } }
 .pb-burst { position: absolute; width: 26px; height: 26px; border-radius: 50%; border: 2px solid currentColor; animation: pb-burst-ring .7s ease-out forwards; pointer-events: none; }
 .pb-burst.pb-float-friendly { color: var(--pb-team-text, #4ade80); }
 .pb-burst.pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
+.pb-burst.pb-float-neutral { color: var(--text-muted, #999); }
 @keyframes pb-burst-ring { 0% { opacity: .9; transform: translate(-50%, -50%) scale(.3); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); } }
 .pb-kill-feed { position: absolute; top: 6px; right: 6px; display: flex; flex-direction: column; gap: 3px; z-index: 10; pointer-events: none; max-width: 62%; }
 .pb-feed-item { display: flex; align-items: center; gap: 4px; font-size: .75rem; background: color-mix(in srgb, var(--bg) 60%, transparent); border: 1px solid color-mix(in srgb, var(--text) 14%, transparent); border-radius: 3px; padding: 2px 6px; animation: pb-feed-in .25s ease-out; }
 .pb-feed-skull { color: var(--text); }
 .pb-feed-friendly .pb-feed-victim { color: var(--pb-team-text, #4ade80); }
 .pb-feed-enemy .pb-feed-victim { color: var(--pb-enemy-text, #f87171); }
+.pb-feed-neutral .pb-feed-victim { color: var(--text-muted, #999); }
 .pb-feed-destroyed { color: var(--text-muted, #999); }
 @keyframes pb-feed-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
 .pb-annotations { pointer-events: none; }

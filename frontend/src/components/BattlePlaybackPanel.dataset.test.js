@@ -75,7 +75,7 @@ describe('BattlePlaybackPanel dataset request', () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: async () => ({ durationSec: 0, mapCode: null, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null, capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [], events: [], shots: [], pointsSamples: [] })
+          json: async () => ({ durationSec: 0, mapCode: null, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null, capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [], events: [], pointsSamples: [] })
         })
       }
       return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
@@ -97,7 +97,7 @@ describe('BattlePlaybackPanel dataset request', () => {
           status: 200,
           json: async () => ({
             durationSec: 0, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null,
-            capability: 'PARTIAL', limitations: [], vehicles: [], events: [], shots: [], pointsSamples: []
+            capability: 'PARTIAL', limitations: [], vehicles: [], events: [], pointsSamples: []
           })
         })
       : Promise.resolve({ ok: true, status: 204 })))
@@ -154,15 +154,15 @@ describe('BattlePlaybackPanel dataset request', () => {
     vi.unstubAllGlobals()
   })
 
-  it('V2 200 capability=UNAVAILABLE → 数据不足/功能不可用且不显示 retry', async () => {
+  it('V2 200 capability=PARTIAL → 按 current contract 接受响应', async () => {
     vi.stubGlobal('fetch', vi.fn((url) => String(url).endsWith('battle-playback-v2')
       ? Promise.resolve({
           ok: true,
           status: 200,
           json: async () => ({
-            capability: 'UNAVAILABLE',
+            capability: 'PARTIAL',
             limitations: ['TIMELINE_UNAVAILABLE'],
-            vehicles: [], events: [], shots: [], pointsSamples: [], durationSec: 0,
+            vehicles: [], events: [], pointsSamples: [], durationSec: 0,
             mapCode: null, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null
           })
         })
@@ -170,9 +170,8 @@ describe('BattlePlaybackPanel dataset request', () => {
     const wrapper = mountDatasetPanel()
     await new Promise(r => setTimeout(r, 30))
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('[data-test="pb-unavailable"]').text())
-      .toContain('recon.playback.unavailable')
-    expect(wrapper.find('[data-test="pb-stub"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-capability-partial"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-stub"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(false)
     vi.unstubAllGlobals()
   })
@@ -251,7 +250,7 @@ describe('BattlePlaybackPanel dataset request', () => {
         return Promise.resolve({
           ok: true, status: 200,
           json: async () => ({
-            capability: 'FULL', limitations: [], vehicles: [], events: [], shots: [], pointsSamples: [], durationSec: 0,
+            capability: 'FULL', limitations: [], vehicles: [], events: [], pointsSamples: [], durationSec: 0,
             mapCode: 'holland', friendlyTeam: 1, recorderAccountId: 1001, arenaBonusType: 1
           })
         })
@@ -278,7 +277,7 @@ describe('BattlePlaybackPanel dataset request', () => {
         return Promise.resolve({
           ok: true, status: 200,
           json: async () => ({
-            capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [], events: [], shots: [], pointsSamples: [], durationSec: 0,
+            capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [], events: [], pointsSamples: [], durationSec: 0,
             mapCode: 'holland', friendlyTeam: 1, recorderAccountId: 1001, arenaBonusType: 1
           })
         })

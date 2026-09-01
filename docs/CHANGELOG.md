@@ -5,6 +5,12 @@
 ## [Unreleased]
 
 ### Changed
+- **Battle Playback V2 canonical truth closure**：V2 HTTP playback now removes the dead
+  `shots`/`ShotTrack` surface, transports canonical `damageLosses`, and keeps capability
+  limited to `FULL`/`PARTIAL`; old persisted artifacts are normalized only while being read.
+  Position/orientation sample knowledge is no longer duplicated, perspective remains neutral
+  when unresolved, consumable slots and 3/3/9 loadout shapes are explicit, and marker/HP/
+  Inspector/damage-log consumers read the current V2 dataset directly.
 - **Battle Playback V2 canonical consumption cleanup**：Battle Playback now consumes
   `VehiclePlaybackTrack` directly. V2-native health/team-health selectors unify marker,
   team bar, Details and Inspector presentation; `track.friendly`, position interpolation

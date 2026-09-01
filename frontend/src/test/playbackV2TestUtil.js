@@ -1,49 +1,49 @@
-// legacy overview.playback → V2 BattlePlaybackDataset 转换（测试辅助；让 legacy 数据语义仍能驱动 V2-only 组件）。
-export function coveredAt(intervals, t) {
-  return (intervals || []).some(iv => t >= iv.startSec - 1e-6 && t <= iv.endSec + 1e-6)
+/** Build a current-shape Battle Playback V2 dataset for component tests. */
+export function makeBattlePlaybackDataset({ vehicles = defaultVehicles(), events = defaultEvents() } = {}) {
+  return {
+    durationSec: 60,
+    mapCode: 'holland',
+    friendlyTeam: 1,
+    recorderAccountId: 1001,
+    vehicles,
+    events,
+    pointsSamples: [],
+    limitations: [],
+    capability: 'FULL',
+    arenaBonusType: 1,
+  }
 }
 
-export function legacyPlaybackToV2Dataset(overview) {
-  const playback = overview && overview.playback
-  if (!playback) return { durationSec: 0, vehicles: [], events: [], shots: [], pointsSamples: [], limitations: [] }
-  const pointsByAccount = new Map((overview.routes || []).map(r => [r.accountId, r.points || []]))
-  const vehicles = (playback.vehicles || []).map(v => {
-    const hpSamples = v.hpSamples || []
-    const maxCap = hpSamples.reduce((m, s) => (s.hp > m ? s.hp : m), 0)
-    const healthTransitions = hpSamples.map(s => ({
-      timeSec: s.timeSec, currentHp: s.hp,
-      knowledge: coveredAt(v.positionIntervals, s.timeSec) ? 'CURRENT' : 'LAST_KNOWN',
-      displayCapacityHp: maxCap > 0 ? maxCap : null, source: 'EXACT_BATTLE_EVENT',
-    }))
-    const lifeTransitions = []
-    if (v.deathSec != null) {
-      lifeTransitions.push({ timeSec: v.deathSec, lifeState: 'DESTROYED', destroyedKnownAtSec: v.deathSec })
-    }
-    const pts = pointsByAccount.get(v.accountId) || []
-    const posSegs = (v.positionIntervals || []).map(iv => {
-      const inRange = pts.filter(p => p.timeSec >= iv.startSec - 1e-6 && p.timeSec <= iv.endSec + 1e-6)
-      const samples = inRange.length > 0
-        ? inRange.map(p => ({ timeSec: p.timeSec, x: p.x, y: p.y, knowledge: 'OBSERVED' }))
-        : [{ timeSec: iv.startSec, x: 0, y: 0, knowledge: 'OBSERVED' }]
-      return { knowledge: 'OBSERVED', startSec: iv.startSec, endSec: iv.endSec, samples }
-    })
-    const orientSegs = (v.directionSamples || []).length > 0 ? [{
-      knowledge: 'CURRENT', startSec: (v.directionSamples[0] || {}).timeSec ?? 0,
-      endSec: (v.directionSamples[v.directionSamples.length - 1] || {}).timeSec ?? 0,
-      samples: v.directionSamples.map(s => ({ timeSec: s.timeSec, hullYawDeg: s.hullYawDeg, turretRelativeYawDeg: s.turretRelativeYawDeg })),
-    }] : []
-    return {
-      accountId: v.accountId, playerName: v.playerName, tankId: v.tankId,
-      tankName: v.tankName, tankClass: '', team: v.team, friendly: v.team === 1,
-      loadout: null, positionSegments: posSegs, orientationSegments: orientSegs,
-      healthTransitions, lifeTransitions, hpLosses: v.hpLosses || [],
-      consumableTransitions: [], moduleCrewTransitions: [],
-    }
-  })
-  const events = (playback.events || []).map(e => ({
-    type: e.type, timeSec: e.timeSec, accountId: e.accountId ?? null,
-    targetAccountId: e.targetAccountId ?? null, observedHpLoss: e.observedHpLoss ?? null,
-  })).sort((a, b) => a.timeSec - b.timeSec)
-  return { durationSec: playback.durationSec, vehicles, events,
-    shots: [], pointsSamples: playback.pointsSamples || [], limitations: [] }
+function defaultVehicles() {
+  return [
+    track(1001, 'You', 1, true, 0, 60, 0, 90, 0, 30),
+    track(2001, 'EnemyGap', 2, false, -50, 14, 10, 30, 5, 20),
+    track(2002, 'EnemyDead', 2, false, 100, 30, null, null, null, null, 30),
+  ]
+}
+
+function defaultEvents() {
+  return [
+    { type: 'POSITION_REPORTED', timeSec: 10, accountId: 2001, targetAccountId: null, observedHpLoss: null },
+    { type: 'POSITION_STALE', timeSec: 14, accountId: 2001, targetAccountId: null, observedHpLoss: null },
+    { type: 'DESTROYED', timeSec: 30, accountId: 2002, targetAccountId: null, observedHpLoss: null },
+  ]
+}
+
+function track(accountId, playerName, team, friendly, x, endSec, hullStart, hullEnd, turretStart, turretEnd, destroyedAtSec = null) {
+  const samples = [{ timeSec: x === 0 ? 0 : 10, x, y: x }]
+  if (endSec > samples[0].timeSec) samples.push({ timeSec: endSec, x: x - 50, y: x - 50 })
+  const orientationSamples = hullStart === null || hullStart === undefined ? [] : [
+    { timeSec: samples[0].timeSec, hullYawDeg: hullStart, turretRelativeYawDeg: turretStart },
+    { timeSec: endSec, hullYawDeg: hullEnd, turretRelativeYawDeg: turretEnd },
+  ]
+  return {
+    accountId, playerName, tankId: accountId, tankName: playerName, tankClass: '', tankTier: null, team,
+    friendly, loadout: null,
+    positionSegments: [{ startSec: samples[0].timeSec, endSec, knowledge: 'OBSERVED', interpolationAllowed: true, samples }],
+    orientationSegments: orientationSamples.length === 0 ? [] : [{ startSec: orientationSamples[0].timeSec, endSec, knowledge: 'CURRENT', samples: orientationSamples }],
+    healthTransitions: [],
+    lifeTransitions: destroyedAtSec === null || destroyedAtSec === undefined ? [] : [{ timeSec: destroyedAtSec, lifeState: 'DESTROYED', destroyedKnownAtSec: destroyedAtSec }],
+    damageLosses: [], consumableTransitions: [], moduleCrewTransitions: [],
+  }
 }

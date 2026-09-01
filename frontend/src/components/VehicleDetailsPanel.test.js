@@ -27,7 +27,7 @@ describe('VehicleDetailsPanel', () => {
         selectedPortraitUrl: '/tank.webp',
         selLastKnownSec: 35,
         selCurStats: { dealt: 900, received: 300, kills: 1 },
-        selectedV2Track: { accountId: 7 },
+        selectedTrack: { accountId: 7 },
         currentTime: 45,
         selDamageLog: [
           { timeSec: 12, dir: 'out', hpLoss: 400, label: 'Enemy' },

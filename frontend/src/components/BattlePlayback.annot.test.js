@@ -9,7 +9,7 @@ import zh from '../locales/zh.json'
 import en from '../locales/en.json'
 import ru from '../locales/ru.json'
 import BattlePlayback from './BattlePlayback.vue'
-import { legacyPlaybackToV2Dataset } from '../test/playbackV2TestUtil'
+import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil'
 
 vi.mock('../data/mapImages', () => ({
   mapImages: {
@@ -47,18 +47,13 @@ function makeOverview() {
     gridCells: [],
     spawnPoints: [],
     routes: [],
-    playback: {
-      durationSec: 60,
-      vehicles: [],
-      events: []
-    }
   }
 }
 
 function mountAnnot(lang = 'zh') {
   const i18n = createI18n({ locale: lang, fallbackLocale: 'en', messages: { zh, en, ru } })
   return mount(BattlePlayback, {
-    props: { overview: makeOverview(), seekTo: null, playbackV2: legacyPlaybackToV2Dataset(makeOverview()) },
+    props: { overview: makeOverview(), seekTo: null, playbackV2: makeBattlePlaybackDataset({ vehicles: [], events: [] }) },
     global: { plugins: [i18n] }
   })
 }
@@ -295,7 +290,7 @@ describe('BattlePlayback annotations', () => {
     await flushPromises()
     await drawStroke(wrapper, [[300, 300], [400, 300]])
     expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(true)
-    await wrapper.setProps({ overview: makeOverview(), playbackV2: legacyPlaybackToV2Dataset(makeOverview()) })
+    await wrapper.setProps({ overview: makeOverview(), playbackV2: makeBattlePlaybackDataset({ vehicles: [], events: [] }) })
     await flushPromises()
     expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(false)
   })

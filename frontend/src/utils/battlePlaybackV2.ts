@@ -17,25 +17,6 @@ import type {
   VehiclePlaybackTrack,
 } from '../types/playback-v2.js'
 
-interface VehicleInspection {
-  identity: {
-    accountId: number
-    playerName: string
-    tankId: number
-    tankName: string
-    tankClass: string
-    team: number
-    friendly: boolean
-  }
-  health: HealthAtResult | null
-  lifeState: LifeTransition['lifeState']
-  destroyedKnownAtSec: number | null
-  positionCovered: boolean
-  orientationKnowledge: OrientationKnowledge
-  loadout: VehiclePlaybackTrack['loadout']
-  loadoutKnown: boolean
-}
-
 /**
  * Battle Playback V2（canonical sparse transition tracks）纯查询工具。
  *
@@ -150,7 +131,9 @@ export function healthDisplayAt(
     }
   }
 
-  const relativeFull = track.friendly === true && openingHealthEvidence(track, t)
+  const relativeFull = track.friendly === true
+    && health?.knowledge !== 'LAST_KNOWN'
+    && openingHealthEvidence(track, t)
   return {
     currentHp: null,
     displayCapacityHp: null,
@@ -169,10 +152,21 @@ function openingHealthEvidence(track, t) {
   const life = lifeAt(track, t)
   if (life?.lifeState === 'DESTROYED') return false
   let previousHp: number | null = null
+  let sawCurrent = false
   for (const transition of track.healthTransitions || []) {
     if (transition.timeSec > t + 1e-6) break
+    if (transition.knowledge !== 'CURRENT') {
+      if (sawCurrent) return false
+      previousHp = null
+      continue
+    }
     const currentHp = transition.currentHp
-    if (currentHp == null || !Number.isFinite(currentHp)) continue
+    if (currentHp === null || currentHp === undefined || !Number.isFinite(currentHp)) {
+      if (sawCurrent) return false
+      previousHp = null
+      continue
+    }
+    sawCurrent = true
     if (currentHp <= 0 || (previousHp != null && currentHp < previousHp)) return false
     previousHp = currentHp
   }
@@ -190,13 +184,17 @@ function openingFullMember(track, display, t) {
     && openingHealthEvidence(track, t)
 }
 
-/** Aggregate only canonical V2 health/life/friendly/team facts. */
-export function teamHealthAt(
+/** Aggregate canonical health by the backend-resolved friendly perspective. */
+export function friendlyHealthAt(
   tracks: readonly VehiclePlaybackTrack[] | null | undefined,
-  team: number | null | undefined,
+  friendly: boolean,
   t: number,
 ) {
-  const teamTracks = (tracks || []).filter(track => track && track.team === team)
+  const perspectiveTracks = (tracks || []).filter(track => track && track.friendly === friendly)
+  return aggregateHealth(perspectiveTracks, t)
+}
+
+function aggregateHealth(teamTracks, t) {
   if (teamTracks.length === 0) {
     return { totalMax: 0, knownRemaining: 0, unknownMax: 0, spawnFullCount: 0, openingFullCount: 0, state: 'UNKNOWN' }
   }
@@ -235,66 +233,38 @@ export function teamHealthAt(
   }
 }
 
-/** Return decreases between canonical CURRENT samples at or before t. */
-function healthDecreasesAt(track, t) {
-  const losses: Array<{ fromSec: number; toSec: number; hpLoss: number }> = []
-  let previousHp: number | null = null
-  let previousSec: number | null = null
-  for (const transition of track?.healthTransitions || []) {
-    if (transition.timeSec > t + 1e-6) break
-    // LAST_KNOWN repeats the last observed value across a hidden interval; it
-    // is not a new current sample and must not invent a loss timestamp.
-    if (transition.knowledge !== 'CURRENT') {
-      if (transition.knowledge !== 'LAST_KNOWN') {
-        previousHp = null
-        previousSec = null
-      }
-      continue
-    }
-    const currentHp = transition.currentHp
-    const trusted = currentHp != null && Number.isFinite(currentHp)
-    if (!trusted) {
-      previousHp = null
-      previousSec = null
-      continue
-    }
-    if (previousHp != null && previousSec != null && currentHp < previousHp) {
-      losses.push({ fromSec: previousSec, toSec: transition.timeSec, hpLoss: previousHp - currentHp })
-    }
-    previousHp = currentHp
-    previousSec = transition.timeSec
-  }
-  return losses
-}
-
-/** Canonical event-derived combat statistics; raw protocol damage is ignored. */
+/** Canonical combat statistics; all damage numbers come from backend DamageLoss facts. */
 export function cumulativeStatsAtV2(
   events: readonly BattleEvent[] | null | undefined,
-  selectedTrack: Pick<VehiclePlaybackTrack, 'accountId' | 'healthTransitions'> | null | undefined,
+  selectedTrack: Pick<VehiclePlaybackTrack, 'accountId' | 'damageLosses'> | null | undefined,
   t: number,
+  tracks: readonly Pick<VehiclePlaybackTrack, 'accountId' | 'damageLosses'>[] | null | undefined = [],
 ) {
   if (!selectedTrack || !Number.isFinite(t)) return { dealt: 0, received: 0, kills: 0 }
   const accountId = selectedTrack.accountId
-  let dealt = 0
+  const received = (selectedTrack.damageLosses || [])
+    .filter(loss => loss && loss.toSec <= t + 1e-6)
+    .reduce((sum, loss) => sum + (Number.isFinite(loss.hpLoss) ? loss.hpLoss : 0), 0)
+  const dealt = (tracks || [])
+    .flatMap(track => track?.damageLosses || [])
+    .filter(loss => loss && loss.toSec <= t + 1e-6
+      && loss.attackerReliable === true && loss.attackerAccountId === accountId)
+    .reduce((sum, loss) => sum + (Number.isFinite(loss.hpLoss) ? loss.hpLoss : 0), 0)
   let kills = 0
   for (const event of events || []) {
     if (!event || !Number.isFinite(event.timeSec) || event.timeSec > t + 1e-6) continue
     if (event.type === 'KILL' && event.accountId === accountId) kills += 1
-    const observedHpLoss = event.observedHpLoss
-    if (event.type !== 'DAMAGE' || observedHpLoss == null || !Number.isFinite(observedHpLoss)) continue
-    if (event.accountId === accountId) dealt += observedHpLoss
   }
-  const received = healthDecreasesAt(selectedTrack, t)
-    .reduce((sum, loss) => sum + loss.hpLoss, 0)
   return { dealt, received, kills }
 }
 
-/** Canonical damage log: incoming rows come from health decreases; outgoing rows need observed attribution. */
+/** Canonical damage log: incoming/outgoing rows are direct projections of DamageLoss facts. */
 export function damageLogAtV2(
   events: readonly BattleEvent[] | null | undefined,
-  selectedTrack: Pick<VehiclePlaybackTrack, 'accountId' | 'healthTransitions'> | null | undefined,
+  selectedTrack: Pick<VehiclePlaybackTrack, 'accountId' | 'damageLosses'> | null | undefined,
   t: number,
   maxRows = 8,
+  tracks: readonly Pick<VehiclePlaybackTrack, 'accountId' | 'damageLosses'>[] | null | undefined = [],
 ) {
   if (!selectedTrack || !Number.isFinite(t)) return []
   const selectedAccountId = selectedTrack.accountId
@@ -306,60 +276,21 @@ export function damageLogAtV2(
     attackerReliable?: boolean
     victimAccountId?: number
   }> = []
-  const observedEvents = (events || []).filter(event => {
-    const observedHpLoss = event?.observedHpLoss
-    return event && event.type === 'DAMAGE' && Number.isFinite(event.timeSec)
-      && event.timeSec <= t + 1e-6 && observedHpLoss != null && Number.isFinite(observedHpLoss)
-  })
-  const usedAttribution = new Set<number>()
-  for (const loss of healthDecreasesAt(selectedTrack, t)) {
-    const candidateIndexes = observedEvents.reduce<number[]>((indexes, event, index) => {
-      if (!usedAttribution.has(index)
-        && event.targetAccountId === selectedAccountId
-        && event.accountId != null
-        && event.timeSec > loss.fromSec + 1e-6
-        && event.timeSec <= loss.toSec + 1e-6) {
-        indexes.push(index)
-      }
-      return indexes
-    }, [])
-    const candidateAccounts = new Set<number>()
-    for (const index of candidateIndexes) {
-      const accountId = observedEvents[index].accountId
-      if (accountId != null) candidateAccounts.add(accountId)
-    }
-    const attributedTotal = candidateIndexes.reduce((sum, index) => {
-      const observedHpLoss = observedEvents[index].observedHpLoss
-      return observedHpLoss == null ? sum : sum + observedHpLoss
-    }, 0)
-    const uniquelyAttributed = candidateAccounts.size === 1
-      && Math.abs(attributedTotal - loss.hpLoss) <= 1e-6
-    const matchIndex = uniquelyAttributed ? candidateIndexes[0] : -1
-    const match = matchIndex >= 0 ? observedEvents[matchIndex] : null
-    if (uniquelyAttributed) {
-      for (const index of candidateIndexes) usedAttribution.add(index)
-    }
+  for (const loss of selectedTrack.damageLosses || []) {
+    if (!loss || loss.toSec > t + 1e-6) continue
     rows.push({
-      // A single attributed event has the best timestamp; an aggregate or
-      // unknown loss stays at the canonical observation boundary.
-      timeSec: candidateIndexes.length === 1 && uniquelyAttributed && match
-        ? match.timeSec : loss.toSec,
+      timeSec: loss.toSec,
       dir: 'in',
       hpLoss: loss.hpLoss,
-      attackerAccountId: match?.accountId ?? null,
-      attackerReliable: match?.accountId != null,
+      attackerAccountId: loss.attackerAccountId ?? null,
+      attackerReliable: loss.attackerReliable === true,
     })
   }
-  for (const event of observedEvents) {
-    if (event.accountId === selectedAccountId && event.targetAccountId != null) {
-      const hpLoss = event.observedHpLoss
-      if (hpLoss == null) continue
-      rows.push({
-        timeSec: event.timeSec,
-        dir: 'out',
-        hpLoss,
-        victimAccountId: event.targetAccountId,
-      })
+  for (const track of tracks || []) {
+    for (const loss of track?.damageLosses || []) {
+      if (!loss || loss.toSec > t + 1e-6 || loss.attackerReliable !== true
+          || loss.attackerAccountId !== selectedAccountId || track.accountId === selectedAccountId) continue
+      rows.push({ timeSec: loss.toSec, dir: 'out', hpLoss: loss.hpLoss, victimAccountId: track.accountId })
     }
   }
   rows.sort((a, b) => a.timeSec - b.timeSec)
@@ -532,17 +463,16 @@ export function orientationAtV2(
           const gap = n.timeSec - p.timeSec
           if (gap <= 0) return { hullYawDeg: p.hullYawDeg, turretRelativeYawDeg: p.turretRelativeYawDeg, timeSec: p.timeSec }
           const ratio = Math.min(1, Math.max(0, (t - p.timeSec) / gap))
-          // DTO permits null yaw values. Number(null) intentionally preserves the
-          // legacy JS coercion (null behaves as zero) while keeping arithmetic typed.
           const norm = (a: number) => ((a + 180) % 360 + 360) % 360 - 180
           const shortest = (a: number, b: number) => norm(a - b)
-          const previousHull = Number(p.hullYawDeg)
-          const nextHull = Number(n.hullYawDeg)
-          const previousTurret = Number(p.turretRelativeYawDeg)
-          const nextTurret = Number(n.turretRelativeYawDeg)
+          const interpolate = (previous: number | null, next: number | null) => {
+            if (typeof previous !== 'number' || !Number.isFinite(previous)
+              || typeof next !== 'number' || !Number.isFinite(next)) return null
+            return norm(previous + shortest(next, previous) * ratio)
+          }
           return {
-            hullYawDeg: norm(previousHull + shortest(nextHull, previousHull) * ratio),
-            turretRelativeYawDeg: norm(previousTurret + shortest(nextTurret, previousTurret) * ratio),
+            hullYawDeg: interpolate(p.hullYawDeg, n.hullYawDeg),
+            turretRelativeYawDeg: interpolate(p.turretRelativeYawDeg, n.turretRelativeYawDeg),
             timeSec: t,
           }
         }
@@ -557,94 +487,43 @@ export function orientationAtV2(
     : null
 }
 
-/**
- * “在 t 时刻我们到底知道什么” —— Vehicle Inspector 的单一确定性视图
- * （plan §24 / §40）。返回纯事实 + knowledge/provenance，不猜测。
- */
-export function inspectVehicleAt(
-  track: VehiclePlaybackTrack | null | undefined,
-  t: number,
-): VehicleInspection | null {
-  if (!track) return null
-  const health = healthAt(track, t)
-  const life = lifeAt(track, t)
-  const loadoutKnown = Boolean(track.loadout) && track.loadout !== null
-  return {
-    identity: {
-      accountId: track.accountId,
-      playerName: track.playerName,
-      tankId: track.tankId,
-      tankName: track.tankName,
-      tankClass: track.tankClass,
-      team: track.team,
-      friendly: track.friendly,
-    },
-    health,
-    lifeState: life?.lifeState ?? 'UNKNOWN',
-    destroyedKnownAtSec: life?.destroyedKnownAtSec ?? null,
-    positionCovered: positionCoveredAtV2(track.positionSegments, t),
-    orientationKnowledge: orientationKnownAt(track, t),
-    // loadout 是持久配置：一旦 materialized combat vehicle 被观察，离开 AoI 仍 KNOWN。
-    loadout: loadoutKnown ? track.loadout : null,
-    loadoutKnown,
-  }
-}
-
-/**
- * t 时刻 consumable runtime 状态。hidden interval（AoI 未观测）= UNKNOWN，
- * 绝不因“没看到 activation”显示 READY。返回 { logicalItemId, state, wireCode }。
- */
-export function consumableRuntimeAt(
-  transitions: readonly ConsumableTransition[] | null | undefined,
-  t: number,
-): ConsumableRuntimeResult {
-  const tr = lastAtOrBefore(transitions, t)
-  if (!tr) return { state: 'UNKNOWN', logicalItemId: null, wireCode: null }
-  return {
-    state: tr.state ?? 'UNKNOWN',
-    logicalItemId: tr.logicalItemId ?? null,
-    wireCode: tr.wireCode ?? null,
-  }
-}
-
-/**
- * Return independent runtime state for every observed consumable wire code at t.
- * A null-wire UNKNOWN transition is an AoI invalidation and clears all known
- * per-consumable states; a wire-specific transition only updates that code.
- */
-export function consumableRuntimeStatesAt(
+/** Current runtime state keyed by canonical consumable slot, not array position or wire code. */
+export function consumableRuntimeSlotsAt(
   transitions: readonly ConsumableTransition[] | null | undefined,
   t: number,
 ): Map<number, ConsumableRuntimeResult> {
   const states = new Map<number, ConsumableRuntimeResult>()
-  if (!Array.isArray(transitions)) return states
-  for (const tr of transitions) {
-    if (!tr || !Number.isFinite(tr.timeSec) || tr.timeSec > t) continue
-    const state: ConsumableRuntimeResult = {
+  for (const tr of transitions || []) {
+    if (!tr || !Number.isFinite(tr.timeSec) || tr.timeSec > t + 1e-6) continue
+    if (tr.consumableSlot === null || tr.consumableSlot === undefined) {
+      if (tr.state === 'UNKNOWN') states.clear()
+      continue
+    }
+    states.set(tr.consumableSlot, {
       state: tr.state ?? 'UNKNOWN',
       logicalItemId: tr.logicalItemId ?? null,
       wireCode: tr.wireCode ?? null,
-    }
-    if (state.wireCode === null && state.state === 'UNKNOWN') {
-      states.clear()
-    } else if (state.wireCode !== null) {
-      states.set(state.wireCode, state)
-    }
+    })
   }
   return states
 }
 
-/** t 时刻 module/crew 状态（recorder-visible provenance）。 */
-export function moduleCrewAt(
+/** Current recorder-visible state per module/crew component. */
+export function moduleCrewStatesAt(
   transitions: readonly ModuleCrewTransition[] | null | undefined,
   t: number,
-): ModuleCrewResult | null {
-  const tr = lastAtOrBefore(transitions, t)
-  if (!tr) return null
-  return {
-    component: tr.component,
-    state: tr.state,
-    recorderVisible: tr.recorderVisible,
-    confidence: tr.confidence,
+): ModuleCrewResult[] {
+  if (!Array.isArray(transitions)) return []
+  const byComponent = new Map<string, ModuleCrewResult>()
+  for (const tr of transitions) {
+    if (!tr || !Number.isFinite(tr.timeSec) || tr.timeSec > t + 1e-6) continue
+    if (tr.recorderVisible !== true || !tr.component) continue
+    byComponent.set(tr.component, {
+      component: tr.component,
+      state: tr.state ?? 'UNKNOWN',
+      recorderVisible: true,
+      confidence: tr.confidence ?? 'UNKNOWN',
+    })
   }
+  return [...byComponent.values()].sort((a, b) => a.component.localeCompare(b.component))
 }

@@ -89,6 +89,7 @@ function buildScenario(byId) {
   for (let i = 0; i < 14; i++) {
     const accountId = i < 7 ? 1001 + i : 2001 + (i - 7)
     const team = i < 7 ? 1 : 2
+    const friendly = i < 7
     const tankId = TANK_IDS[i]
     const tankName = byId.get(tankId)?.name || String(tankId)
     const path = PATHS[i]
@@ -99,21 +100,21 @@ function buildScenario(byId) {
     }
     // 状态：1005/2005 阵亡（t=30/60 冻结）；1004 失察 gap（25–40 last-known）
     const deathSec = accountId === 1005 ? 30 : (accountId === 2005 ? 60 : null)
-    const positionIntervals = accountId === 1004
+    const observedIntervals = accountId === 1004
       ? [{ startSec: 0, endSec: 25 }, { startSec: 40, endSec: 90 }]
       : [{ startSec: 0, endSec: DURATION }]
     const orientationSamples = [
-      { timeSec: 0, hullYawDeg: (i * 37) % 360, turretRelativeYawDeg: (i * 23) % 360, knowledge: 'CURRENT' },
-      { timeSec: DURATION, hullYawDeg: (i * 37) % 360, turretRelativeYawDeg: (i * 23) % 360, knowledge: 'CURRENT' },
+      { timeSec: 0, hullYawDeg: (i * 37) % 360, turretRelativeYawDeg: (i * 23) % 360 },
+      { timeSec: DURATION, hullYawDeg: (i * 37) % 360, turretRelativeYawDeg: (i * 23) % 360 },
     ]
-    const positionSegments = positionIntervals.map((interval) => ({
+    const positionSegments = observedIntervals.map((interval) => ({
       startSec: interval.startSec,
       endSec: interval.endSec,
       knowledge: 'OBSERVED',
       interpolationAllowed: true,
       samples: points
         .filter(point => point.timeSec >= interval.startSec && point.timeSec <= interval.endSec)
-        .map(point => ({ ...point, knowledge: 'OBSERVED' })),
+        .map(point => point),
     }))
     const healthTransitions = [
       { timeSec: 0, currentHp: 2000, knowledge: 'CURRENT', source: 'QA_FIXTURE', displayCapacityHp: 2000, confidence: 'HIGH' },
@@ -126,9 +127,9 @@ function buildScenario(byId) {
       : [{ timeSec: deathSec, lifeState: 'DESTROYED', destroyedKnownAtSec: deathSec }]
     vehicles.push({
       accountId, playerName: PLAYER_NAMES[i], tankId, tankName, tankClass: '', tankTier: 10, team,
-      friendly: team === 1, loadout: null, positionSegments,
+      friendly, loadout: null, positionSegments,
       orientationSegments: [{ startSec: 0, endSec: DURATION, knowledge: 'CURRENT', samples: orientationSamples }],
-      healthTransitions, lifeTransitions, consumableTransitions: [], moduleCrewTransitions: [],
+      healthTransitions, lifeTransitions, damageLosses: [], consumableTransitions: [], moduleCrewTransitions: [],
     })
     routes.push({
       accountId, playerName: PLAYER_NAMES[i], tankId, team,
@@ -157,7 +158,6 @@ function buildScenario(byId) {
       arenaBonusType: 1,
       vehicles,
       events: [],
-      shots: [],
       pointsSamples: [],
       limitations: [],
       capability: 'FULL',
