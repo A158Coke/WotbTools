@@ -325,6 +325,7 @@ components:
         id: { type: [string, 'null'] }
         errorCode:
           type: string
+          pattern: '^[A-Z][A-Z0-9_]*$'
           description: Stable infrastructure code or a legacy uppercase domain code during the migration boundary.
         errorMsg: { type: [string, 'null'] }
         status: { type: integer, minimum: 400, maximum: 599 }

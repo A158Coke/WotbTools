@@ -690,6 +690,7 @@ export default {
         },
         "errorCode": {
           "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
           "description": "Stable infrastructure code or a legacy uppercase domain code during the migration boundary."
         },
         "errorMsg": {

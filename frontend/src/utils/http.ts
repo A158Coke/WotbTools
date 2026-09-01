@@ -1,6 +1,7 @@
 import type {
   ApiErrorApplicationModel,
   ApiErrorInit,
+  ApiErrorWirePayload,
   ApplicationErrorCode,
   JsonObject,
 } from '../types/api.js'
@@ -90,6 +91,19 @@ interface ResponseBody {
   malformed: boolean
 }
 
+interface CanonicalApiErrorBody {
+  wire: ApiErrorWirePayload | null
+  malformed: boolean
+}
+
+function parseCanonicalApiErrorBody(body: unknown, httpStatus: number | null): CanonicalApiErrorBody {
+  if (!isRecord(body) || !('errorCode' in body)) return { wire: null, malformed: false }
+  const wire = validateApiError(body).data
+  return wire && wire.status === httpStatus
+    ? { wire, malformed: false }
+    : { wire: null, malformed: true }
+}
+
 function header(response: Pick<Response, 'headers'>, name: string): string | null {
   return typeof response.headers?.get === 'function' ? response.headers.get(name) : null
 }
@@ -121,14 +135,14 @@ async function responseBody(response: Pick<Response, 'headers'> & Partial<Pick<R
 export async function apiErrorFromResponse(response: Response): Promise<ApiError> {
   const status = Number.isFinite(response.status) ? response.status : null
   const { body, malformed } = await responseBody(response)
-  const wire = !malformed ? validateApiError(body).data : null
-  const legacy = !malformed && isRecord(body)
+  const canonical = !malformed ? parseCanonicalApiErrorBody(body, status) : { wire: null, malformed: false }
+  const legacy = !malformed && !canonical.malformed && isRecord(body)
     && (isContractCode(body.code) || isContractCode(body.error))
   let candidate: string
-  if (malformed || (isRecord(body) && 'errorCode' in body && !wire)) {
+  if (malformed || canonical.malformed) {
     candidate = 'MALFORMED_ERROR_RESPONSE'
-  } else if (wire) {
-    candidate = wire.errorCode
+  } else if (canonical.wire) {
+    candidate = canonical.wire.errorCode
   } else if (legacy) {
     candidate = (body.code || body.error) as string
   } else {
@@ -223,12 +237,23 @@ export function apiErrorFromXhr(xhr: XhrErrorResponse): ApiError {
     else malformed = !!raw && /(?:^|[+/])json(?:;|$)/i.test(xhr.getResponseHeader?.('Content-Type') || '')
   }
   const record = isRecord(body) ? body : {}
-  const code = malformed ? 'MALFORMED_ERROR_RESPONSE' : isContractCode(record.errorCode)
-    ? record.errorCode : isContractCode(record.code) ? record.code
-      : isContractCode(record.error) ? record.error : fallbackCode(xhr.status || null)
+  const status = xhr.status || null
+  const canonical = !malformed ? parseCanonicalApiErrorBody(body, status) : { wire: null, malformed: false }
+  let code: string
+  if (malformed || canonical.malformed) {
+    code = 'MALFORMED_ERROR_RESPONSE'
+  } else if (canonical.wire) {
+    code = canonical.wire.errorCode
+  } else if (isContractCode(record.code)) {
+    code = record.code
+  } else if (isContractCode(record.error)) {
+    code = record.error
+  } else {
+    code = fallbackCode(status)
+  }
   return new ApiError({
     errorCode: code,
-    status: xhr.status || null,
+    status,
     errorMsg: record.errorMsg,
     id: record.id,
     traceId: record.traceId || xhr.getResponseHeader?.('X-Request-ID'),
