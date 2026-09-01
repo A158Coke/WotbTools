@@ -55,9 +55,17 @@ class BattlePlaybackProjectorTest {
 
     @Test
     void loadoutConfidenceMapsDomainEnumToPlaybackWireEnum() {
-        final VehicleBattleLoadout loadout = new VehicleBattleLoadout(
-                7, "11.19", List.of(), List.of(), List.of(), DecodeConfidence.EXACT);
-        assertEquals(ConfidenceDto.HIGH, BattlePlaybackProjector.toLoadoutDto(loadout).confidence());
+        final Map<DecodeConfidence, ConfidenceDto> expected = Map.of(
+                DecodeConfidence.EXACT, ConfidenceDto.HIGH,
+                DecodeConfidence.INFERRED, ConfidenceDto.MEDIUM,
+                DecodeConfidence.PARTIAL, ConfidenceDto.LOW,
+                DecodeConfidence.UNKNOWN, ConfidenceDto.UNKNOWN);
+        for (final Map.Entry<DecodeConfidence, ConfidenceDto> entry : expected.entrySet()) {
+            final VehicleBattleLoadout loadout = new VehicleBattleLoadout(
+                    7, "11.19", List.of(), List.of(), List.of(), entry.getKey());
+            assertEquals(entry.getValue(), BattlePlaybackProjector.toLoadoutDto(loadout).confidence(),
+                    entry.getKey().name());
+        }
     }
 
     private static Path fixture() throws Exception {

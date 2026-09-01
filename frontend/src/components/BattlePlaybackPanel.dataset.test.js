@@ -75,7 +75,7 @@ describe('BattlePlaybackPanel dataset request', () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: async () => ({ durationSec: 0, capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [], events: [], shots: [], pointsSamples: [] })
+          json: async () => ({ durationSec: 0, mapCode: null, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null, capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [], events: [], shots: [], pointsSamples: [] })
         })
       }
       return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
@@ -87,6 +87,25 @@ describe('BattlePlaybackPanel dataset request', () => {
     const note = wrapper.find('[data-test="pb-capability-partial"]')
     expect(note.exists()).toBe(true)
     expect(note.text()).toContain('recon.playback.partial')
+    vi.unstubAllGlobals()
+  })
+
+  it('V2 invalid response missing required metadata → 显式 INVALID_RESPONSE error', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => String(url) === '/api/replay/battle-playback-v2'
+      ? Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            durationSec: 0, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null,
+            capability: 'PARTIAL', limitations: [], vehicles: [], events: [], shots: [], pointsSamples: []
+          })
+        })
+      : Promise.resolve({ ok: true, status: 204 })))
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(false)
     vi.unstubAllGlobals()
   })
 
@@ -140,7 +159,8 @@ describe('BattlePlaybackPanel dataset request', () => {
           json: async () => ({
             capability: 'UNAVAILABLE',
             limitations: ['TIMELINE_UNAVAILABLE'],
-            vehicles: [], events: [], shots: [], pointsSamples: [], durationSec: 0
+            vehicles: [], events: [], shots: [], pointsSamples: [], durationSec: 0,
+            mapCode: null, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null
           })
         })
       : Promise.resolve({ ok: true, status: 204 })))

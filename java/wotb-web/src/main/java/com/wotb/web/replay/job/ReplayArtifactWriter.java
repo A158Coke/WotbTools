@@ -101,31 +101,31 @@ public final class ReplayArtifactWriter {
      * Legacy persisted V2 artifacts used the domain enum names. Normalize only while reading
      * the persisted artifact; new HTTP responses remain strictly transport-contract shaped.
      */
-    private static void normalizeLegacyPlaybackConfidence(final JsonNode node) {
-        if (node == null) {
+    private static void normalizeLegacyPlaybackConfidence(final JsonNode root) {
+        if (!(root instanceof ObjectNode object)) {
             return;
         }
-        if (node.isArray()) {
-            for (final JsonNode child : node) {
-                normalizeLegacyPlaybackConfidence(child);
+        final JsonNode vehicles = object.get("vehicles");
+        if (vehicles == null || !vehicles.isArray()) {
+            return;
+        }
+        for (final JsonNode vehicle : vehicles) {
+            if (!(vehicle instanceof ObjectNode vehicleObject)) {
+                continue;
             }
-            return;
-        }
-        if (!(node instanceof ObjectNode object)) {
-            return;
-        }
-        for (final var entry : object.properties()) {
-            final JsonNode child = entry.getValue();
-            if ("confidence".equals(entry.getKey()) && child != null && child.isTextual()) {
-                final String normalized = switch (child.asString()) {
+            if (!(vehicleObject.get("loadout") instanceof ObjectNode loadout)) {
+                continue;
+            }
+            final JsonNode confidence = loadout.get("confidence");
+            if (confidence != null && confidence.isTextual()) {
+                final String normalized = switch (confidence.asString()) {
                     case "EXACT" -> "HIGH";
                     case "INFERRED" -> "MEDIUM";
                     case "PARTIAL" -> "LOW";
-                    default -> child.asString();
+                    case "UNKNOWN" -> "UNKNOWN";
+                    default -> confidence.asString();
                 };
-                object.put(entry.getKey(), normalized);
-            } else {
-                normalizeLegacyPlaybackConfidence(child);
+                loadout.put("confidence", normalized);
             }
         }
     }
