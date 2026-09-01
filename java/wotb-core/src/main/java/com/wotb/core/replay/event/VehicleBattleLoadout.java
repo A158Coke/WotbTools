@@ -134,27 +134,23 @@ public record VehicleBattleLoadout(
     private static final int EQUIPMENT_COUNT = 9;
 
     /**
-     * consumable wire code → logicalItemId（PR147 current corpus 已闭合，consumable-lifecycle.md）。
-     * provision 仅映射 PROVEN 项；其余返回 null（wire/raw 保留，不猜名）。
+     * Resolve the version-scoped Type5 item namespace without losing the raw wire value.
+     * Consumables reuse the Type32 lifecycle mapping as the single semantic source.
      */
     private static String resolveLogicalItemId(final int wireCode, final boolean consumableSlot) {
         if (consumableSlot) {
-            return switch (wireCode) {
-                case 0x09 -> "ADRENALINE";
-                case 0x0A -> "ENGINE_POWER_BOOST";
-                case 0x0B -> "MULTI_PURPOSE_RESTORATION_PACK";
-                case 0x0C -> "FIRST_AID_KIT";
-                case 0x0D -> "REPAIR_KIT";
-                case 0x3D -> "IMPROVED_ENGINE_POWER_BOOST";
-                case 0x3E -> "RETICLE_CALIBRATION";
-                case 0x42 -> "REACTIVE_ARMOR";
-                case 0x69 -> "TUNGSTEN_SHELLS";
-                default -> null;
-            };
+            return ConsumableLifecycleEvent.logicalItemIdOf(wireCode);
         }
         return switch (wireCode) {
+            case 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x46, 0x49 -> "LARGE_FOOD";
+            case 0x16, 0x17, 0x18, 0x19, 0x47, 0x48 -> "SMALL_FOOD";
+            case 0x1C -> "STANDARD_FUEL";
+            case 0x1D -> "IMPROVED_FUEL";
+            case 0x1E -> "PROTECTIVE_KIT";
             case 0x44 -> "SANDBAG_ARMOR";
             case 0x45 -> "ENHANCED_SANDBAG_ARMOR";
+            case 0x6A -> "GEAR_OIL";
+            case 0x6B -> "IMPROVED_GEAR_OIL";
             case 0x6C -> "IMPROVED_GUNPOWDER";
             default -> null;
         };

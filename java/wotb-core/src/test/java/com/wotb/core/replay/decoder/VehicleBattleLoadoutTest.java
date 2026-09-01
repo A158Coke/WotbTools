@@ -1,11 +1,11 @@
 package com.wotb.core.replay.decoder;
 
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.ConsumableLifecycleEvent;
 import com.wotb.core.replay.event.VehicleBattleLoadout;
 import org.junit.jupiter.api.Test;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -90,14 +90,75 @@ class VehicleBattleLoadoutTest {
 
     @Test
     void unknownProvisionKeepsNullableLogicalIdAndRawPreserve() {
-        final int[] wires = {0x09, 0x0A, 0x0D, 0x10, 0x11, 0x12}; // 0x10/0x11/0x12 PARTIAL provision
+        final int[] wires = {0x09, 0x0A, 0x0D, 0x13, 0x1A, 0x4A}; // unmapped provision codes
         final byte[] equip = new byte[]{103, 109, 114, 104, 111, 117, 106, 113, 101};
         final VehicleBattleLoadout l = VehicleBattleLoadout.parse(7, "11.19.0_china",
                 initPayload(prefix(5), wires, true, equip));
         assertNotNull(l);
         assertNull(l.provisions().get(0).logicalItemId(), "unknown provision must not be guessed");
-        assertEquals(0x10, l.provisions().get(0).wireCode(), "raw wireCode preserved");
+        assertEquals(0x13, l.provisions().get(0).wireCode(), "raw wireCode preserved");
         assertEquals(DecodeConfidence.PARTIAL, l.confidence());
+    }
+
+    @Test
+    void mapsCurrentConsumableAndProvisionFamiliesWhilePreservingWireCodes() {
+        final int[] wires = {0x08, 0xBD, 0x69, 0x0E, 0x16, 0x6B};
+        final VehicleBattleLoadout l = VehicleBattleLoadout.parse(8, "11.19.0_china",
+                initPayload(prefix(3), wires, true,
+                        new byte[]{100, 109, 114, 104, 111, 117, 106, 113, 101}));
+
+        assertNotNull(l);
+        assertEquals("AUTOMATIC_FIRE_EXTINGUISHER", l.consumables().get(0).logicalItemId());
+        assertEquals("REDUCED_ENGINE_POWER_BOOST", l.consumables().get(1).logicalItemId());
+        assertEquals("TUNGSTEN_SHELLS", l.consumables().get(2).logicalItemId());
+        assertEquals("LARGE_FOOD", l.provisions().get(0).logicalItemId());
+        assertEquals("SMALL_FOOD", l.provisions().get(1).logicalItemId());
+        assertEquals("IMPROVED_GEAR_OIL", l.provisions().get(2).logicalItemId());
+        assertEquals(0x08, l.consumables().get(0).wireCode());
+        assertEquals(0x6B, l.provisions().get(2).wireCode());
+        assertEquals(DecodeConfidence.EXACT, l.confidence());
+    }
+
+    @Test
+    void coversEveryReviewedWireMapping() {
+        final Map<Integer, String> consumables = Map.ofEntries(
+                Map.entry(0x08, "AUTOMATIC_FIRE_EXTINGUISHER"),
+                Map.entry(0x09, "ADRENALINE"),
+                Map.entry(0x0A, "ENGINE_POWER_BOOST"),
+                Map.entry(0x0B, "MULTI_PURPOSE_RESTORATION_PACK"),
+                Map.entry(0x0C, "FIRST_AID_KIT"),
+                Map.entry(0x0D, "REPAIR_KIT"),
+                Map.entry(0x3D, "IMPROVED_ENGINE_POWER_BOOST"),
+                Map.entry(0x3E, "RETICLE_CALIBRATION"),
+                Map.entry(0x42, "REACTIVE_ARMOR"),
+                Map.entry(0x69, "TUNGSTEN_SHELLS"),
+                Map.entry(0xBD, "REDUCED_ENGINE_POWER_BOOST"));
+        for (final Map.Entry<Integer, String> entry : consumables.entrySet()) {
+            assertEquals(entry.getValue(),
+                    ConsumableLifecycleEvent.logicalItemIdOf(entry.getKey()),
+                    "consumable wire " + Integer.toHexString(entry.getKey()));
+        }
+
+        final Map<Integer, String> provisions = Map.ofEntries(
+                Map.entry(0x0E, "LARGE_FOOD"), Map.entry(0x0F, "LARGE_FOOD"),
+                Map.entry(0x10, "LARGE_FOOD"), Map.entry(0x11, "LARGE_FOOD"),
+                Map.entry(0x12, "LARGE_FOOD"), Map.entry(0x16, "SMALL_FOOD"),
+                Map.entry(0x17, "SMALL_FOOD"), Map.entry(0x18, "SMALL_FOOD"),
+                Map.entry(0x19, "SMALL_FOOD"), Map.entry(0x1C, "STANDARD_FUEL"),
+                Map.entry(0x1D, "IMPROVED_FUEL"), Map.entry(0x1E, "PROTECTIVE_KIT"),
+                Map.entry(0x44, "SANDBAG_ARMOR"), Map.entry(0x45, "ENHANCED_SANDBAG_ARMOR"),
+                Map.entry(0x46, "LARGE_FOOD"), Map.entry(0x47, "SMALL_FOOD"),
+                Map.entry(0x48, "SMALL_FOOD"), Map.entry(0x49, "LARGE_FOOD"),
+                Map.entry(0x6A, "GEAR_OIL"), Map.entry(0x6B, "IMPROVED_GEAR_OIL"),
+                Map.entry(0x6C, "IMPROVED_GUNPOWDER"));
+        for (final Map.Entry<Integer, String> entry : provisions.entrySet()) {
+            final VehicleBattleLoadout l = VehicleBattleLoadout.parse(10, "11.19.0_china",
+                    initPayload(prefix(2), new int[]{0x09, 0x0A, 0x0D, entry.getKey(), 0, 0}, true,
+                            new byte[]{100, 109, 114, 104, 111, 117, 106, 113, 101}));
+            assertNotNull(l);
+            assertEquals(entry.getValue(), l.provisions().get(0).logicalItemId(),
+                    "provision wire " + Integer.toHexString(entry.getKey()));
+        }
     }
 
     @Test

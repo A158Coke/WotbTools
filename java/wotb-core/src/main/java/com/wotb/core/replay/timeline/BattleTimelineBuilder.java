@@ -386,6 +386,12 @@ public final class BattleTimelineBuilder {
             if (t > endInclusive) {
                 break;
             }
+            // Pre-battle events remain available in the canonical event stream for
+            // provenance, but they are not active-battle frame events. In particular,
+            // frame 0 must not absorb an INITIALIZED event from t < 0.
+            if (t < 0d) {
+                continue;
+            }
             if (t > startExclusive) {
                 out.add(e);
             }

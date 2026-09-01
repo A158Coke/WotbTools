@@ -74,7 +74,7 @@ export const CONSUMABLE_NAMES = {
     "ru": "Система динамической брони"
   },
   "REDUCED_ENGINE_POWER_BOOST": {
-    "zh": "低功率发动机增压",
+    "zh": "次级强化引擎",
     "en": "Reduced Engine Power Boost",
     "ru": "Сниженное форсирование двигателя"
   }
@@ -235,6 +235,11 @@ export const EQUIPMENT_NAMES = {
     "zh": "消耗品输送系统",
     "en": "Consumable Delivery System",
     "ru": "Система подачи расходников"
+  },
+  "120": {
+    "zh": "改进型模块+",
+    "en": "Improved Modules +",
+    "ru": "Доработанные модули +"
   },
   "122": {
     "zh": "改进型垂直稳定器",
