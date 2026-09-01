@@ -24,6 +24,7 @@ const authPhase = ref(authenticated.value ? 'ready' : 'init')
 const ready = ref(false)
 const denied = ref(false)
 const overview = ref(null)
+const playbackV2 = ref(null)
 
 onMounted(async () => {
   let loggedIn = false
@@ -45,7 +46,9 @@ onMounted(async () => {
   // 车型名动态加载（tankopedia 权威）；scenario 本身固定。
   const tp = (await import('../../../common/tankopedia-tier10.json')).default
   const byId = new Map(tp.vehicles.map((v) => [v.id, v]))
-  overview.value = buildScenario(byId)
+  const scenario = buildScenario(byId)
+  overview.value = scenario.overview
+  playbackV2.value = scenario.playbackV2
   ready.value = true
 })
 
@@ -99,21 +102,40 @@ function buildScenario(byId) {
     const positionIntervals = accountId === 1004
       ? [{ startSec: 0, endSec: 25 }, { startSec: 40, endSec: 90 }]
       : [{ startSec: 0, endSec: DURATION }]
-    const directionSamples = [
-      { timeSec: 0, hullYawDeg: (i * 37) % 360, turretRelativeYawDeg: (i * 23) % 360 },
-      { timeSec: DURATION, hullYawDeg: (i * 37) % 360, turretRelativeYawDeg: (i * 23) % 360 },
+    const orientationSamples = [
+      { timeSec: 0, hullYawDeg: (i * 37) % 360, turretRelativeYawDeg: (i * 23) % 360, knowledge: 'CURRENT' },
+      { timeSec: DURATION, hullYawDeg: (i * 37) % 360, turretRelativeYawDeg: (i * 23) % 360, knowledge: 'CURRENT' },
     ]
+    const positionSegments = positionIntervals.map((interval) => ({
+      startSec: interval.startSec,
+      endSec: interval.endSec,
+      knowledge: 'OBSERVED',
+      interpolationAllowed: true,
+      samples: points
+        .filter(point => point.timeSec >= interval.startSec && point.timeSec <= interval.endSec)
+        .map(point => ({ ...point, knowledge: 'OBSERVED' })),
+    }))
+    const healthTransitions = [
+      { timeSec: 0, currentHp: 2000, knowledge: 'CURRENT', source: 'QA_FIXTURE', displayCapacityHp: 2000, confidence: 'HIGH' },
+      ...(deathSec === null
+        ? [{ timeSec: 30, currentHp: 1200, knowledge: 'CURRENT', source: 'QA_FIXTURE', displayCapacityHp: 2000, confidence: 'HIGH' }]
+        : []),
+    ]
+    const lifeTransitions = deathSec === null
+      ? []
+      : [{ timeSec: deathSec, lifeState: 'DESTROYED', destroyedKnownAtSec: deathSec }]
     vehicles.push({
-      accountId, playerName: PLAYER_NAMES[i], tankId, tankName, team,
-      positionIntervals, deathSec, directionSamples,
-      maxHp: 2000, hpSamples: [{ timeSec: 0, hp: 2000 }, { timeSec: 30, hp: deathSec ? 0 : 1200 }],
+      accountId, playerName: PLAYER_NAMES[i], tankId, tankName, tankClass: '', tankTier: 10, team,
+      friendly: team === 1, loadout: null, positionSegments,
+      orientationSegments: [{ startSec: 0, endSec: DURATION, knowledge: 'CURRENT', samples: orientationSamples }],
+      healthTransitions, lifeTransitions, consumableTransitions: [], moduleCrewTransitions: [],
     })
     routes.push({
       accountId, playerName: PLAYER_NAMES[i], tankId, team,
       points, firstObservedSec: 0, lastObservedSec: DURATION, deathSec,
     })
   }
-  return {
+  const overviewData = {
     mapCode: 'holland',
     displayName: 'Holland QA',
     displayNames: { zh: '荷兰（QA 场景）', en: 'Holland (QA)', ru: 'Холланд (QA)' },
@@ -124,7 +146,22 @@ function buildScenario(byId) {
     gridCells: [],
     spawnPoints: [],
     routes,
-    playback: { durationSec: DURATION, vehicles, events: [] },
+  }
+  return {
+    overview: overviewData,
+    playbackV2: {
+      durationSec: DURATION,
+      mapCode: 'holland',
+      friendlyTeam: 1,
+      recorderAccountId: 1001,
+      arenaBonusType: 1,
+      vehicles,
+      events: [],
+      shots: [],
+      pointsSamples: [],
+      limitations: [],
+      capability: 'FULL',
+    },
   }
 }
 </script>
@@ -133,7 +170,7 @@ function buildScenario(byId) {
   <div class="pb-qa-page">
     <h2>{{ t('adminPreview.qaPlaybackTitle') }}</h2>
     <p class="pb-qa-hint">{{ t('adminPreview.qaPlaybackHint') }}</p>
-    <BattlePlayback v-if="ready && overview" :overview="overview" :loop="true" />
+    <BattlePlayback v-if="ready && overview && playbackV2" :overview="overview" :playback-v2="playbackV2" :loop="true" />
     <p v-if="authPhase === 'login'" class="pb-qa-note">{{ t('adminPreview.loading') }}</p>
     <p v-if="denied" class="pb-qa-note">{{ t('adminPreview.denied') }}</p>
   </div>

@@ -27,7 +27,7 @@ AI Review「战局回放」的俯视坦克标记素材契约。最终方案为**
 ## 接入契约（未来播放器变更）
 
 - `hullYaw` / `turretRelativeYaw` / `turretWorldYaw` 已接入播放器：DTO 提供
-  `directionSamples`，`VehicleMarker.vue`（PR2 起）在 generic 路径用四张运行时素材渲染双层标记
+  `orientationSegments` 及其 samples，`VehicleMarker.vue`（PR2 起）在 generic 路径用四张运行时素材渲染双层标记
   （hull 按 `hullYawDeg`、turret 按 `turretWorldYawDeg` 独立旋转，共同 pivot 256,256）。
 - 阵亡（`pb-destroyed`）：敌我一致——双层素材冻结在最后可信方向（无方向样本时以素材默认 0° 渲染，
   不代表真实朝向），整体 opacity .35 + grayscale(1) 去饱和，叠加**红色大号 ✕**（PR #92 Review A：

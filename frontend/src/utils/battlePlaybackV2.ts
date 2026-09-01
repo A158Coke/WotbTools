@@ -1,7 +1,8 @@
-import type { PlaybackDirection, PlaybackHpLoss, PlaybackPosition } from '../types/playback.js'
+import type { PlaybackDirection, PlaybackPosition } from '../types/playback.js'
 import type {
   ConsumableRuntimeResult,
   ConsumableTransition,
+  BattleEvent,
   HealthAtResult,
   HealthTransition,
   LifeAtResult,
@@ -14,13 +15,7 @@ import type {
   PositionSample,
   PositionSegment,
   VehiclePlaybackTrack,
-  V2VehicleView,
 } from '../types/playback-v2.js'
-
-type TrackWithLegacyHpLosses = VehiclePlaybackTrack & {
-  /** Legacy test/adapter data may carry precomputed losses; V2 DTOs do not. */
-  hpLosses?: PlaybackHpLoss[]
-}
 
 interface VehicleInspection {
   identity: {
@@ -103,6 +98,225 @@ export function lifeAt(
   }
 }
 
+/**
+ * Canonical HP presentation for one track at t.
+ *
+ * `relativeFull` is deliberately a presentation flag: it never invents an
+ * actual current/max HP pair. A concrete number is returned only when the
+ * track has a <=t health fact; a missing enemy fact remains UNKNOWN.
+ */
+export function healthDisplayAt(
+  track: Pick<VehiclePlaybackTrack, 'friendly' | 'healthTransitions' | 'lifeTransitions'> | null | undefined,
+  t: number,
+) {
+  if (!track || !Number.isFinite(t)) return null
+  const life = lifeAt(track, t)
+  const health = healthAt(track, t)
+  const destroyed = life?.lifeState === 'DESTROYED'
+  if (destroyed) {
+    const capacity = health?.displayCapacityHp ?? null
+    return {
+      currentHp: 0,
+      displayCapacityHp: capacity,
+      pct: capacity && capacity > 0 ? 0 : null,
+      knowledge: 'CURRENT',
+      source: 'DESTROYED',
+      confidence: health?.confidence ?? 'UNKNOWN',
+      destroyed: true,
+      relativeFull: false,
+      state: 'DESTROYED',
+    }
+  }
+
+  if (health?.currentHp != null && Number.isFinite(health.currentHp)) {
+    const rawCapacity = health.displayCapacityHp
+    const capacity = typeof rawCapacity === 'number' && Number.isFinite(rawCapacity) && rawCapacity > 0
+      ? rawCapacity
+      : null
+    const pct = capacity == null ? null : Math.max(0, Math.min(100, (health.currentHp / capacity) * 100))
+    const relativeFull = capacity == null && track.friendly === true
+      && health.knowledge !== 'LAST_KNOWN'
+      && openingHealthEvidence(track, t)
+    return {
+      currentHp: health.currentHp,
+      displayCapacityHp: capacity,
+      pct,
+      knowledge: health.knowledge,
+      source: health.source,
+      confidence: health.confidence,
+      destroyed: false,
+      relativeFull,
+      state: relativeFull ? 'RELATIVE_FULL' : health.knowledge,
+    }
+  }
+
+  const relativeFull = track.friendly === true && openingHealthEvidence(track, t)
+  return {
+    currentHp: null,
+    displayCapacityHp: null,
+    pct: null,
+    knowledge: health?.knowledge ?? 'UNKNOWN',
+    source: health?.source ?? 'UNKNOWN',
+    confidence: health?.confidence ?? 'UNKNOWN',
+    destroyed: false,
+    relativeFull,
+    state: relativeFull ? 'RELATIVE_FULL' : 'UNKNOWN',
+  }
+}
+
+/** No <=t canonical health decrease/zero/death evidence: opening relative-full. */
+function openingHealthEvidence(track, t) {
+  const life = lifeAt(track, t)
+  if (life?.lifeState === 'DESTROYED') return false
+  let previousHp: number | null = null
+  for (const transition of track.healthTransitions || []) {
+    if (transition.timeSec > t + 1e-6) break
+    const currentHp = transition.currentHp
+    if (currentHp == null || !Number.isFinite(currentHp)) continue
+    if (currentHp <= 0 || (previousHp != null && currentHp < previousHp)) return false
+    previousHp = currentHp
+  }
+  return true
+}
+
+/** Aggregate only canonical V2 health/life/friendly/team facts. */
+export function teamHealthAt(
+  tracks: readonly VehiclePlaybackTrack[] | null | undefined,
+  team: number | null | undefined,
+  t: number,
+) {
+  const teamTracks = (tracks || []).filter(track => track && track.team === team)
+  if (teamTracks.length === 0) {
+    return { totalMax: 0, knownRemaining: 0, unknownMax: 0, spawnFullCount: 0, openingFullCount: 0, state: 'UNKNOWN' }
+  }
+
+  const displays = teamTracks.map(track => healthDisplayAt(track, t))
+  const exact = displays.every(display => display
+    && display.currentHp != null
+    && display.displayCapacityHp != null
+    && display.displayCapacityHp > 0
+    && (display.knowledge === 'CURRENT' || display.destroyed))
+  const allRelativeFull = displays.every(display => display?.relativeFull === true)
+  const knownRemaining = displays.reduce((sum, display) =>
+    sum + (display?.currentHp != null && Number.isFinite(display.currentHp) ? display.currentHp : 0), 0)
+  const totalMax = exact
+    ? displays.reduce((sum, display) => sum + (display?.displayCapacityHp || 0), 0)
+    : 0
+  const hasKnownEvidence = displays.some(display => display && (
+    display.currentHp != null || display.destroyed || display.knowledge === 'LAST_KNOWN'))
+  let state = 'UNKNOWN'
+  if (exact) {
+    state = 'EXACT'
+  } else if (allRelativeFull) {
+    state = 'FULL_RELATIVE'
+  } else if (hasKnownEvidence) {
+    state = 'PARTIAL'
+  }
+  const relativeCount = displays.filter(display => display?.relativeFull === true).length
+  return {
+    totalMax,
+    knownRemaining,
+    unknownMax: 0,
+    spawnFullCount: relativeCount,
+    openingFullCount: relativeCount,
+    state,
+  }
+}
+
+/** Canonical event-derived combat statistics; raw protocol damage is ignored. */
+export function cumulativeStatsAtV2(
+  events: readonly BattleEvent[] | null | undefined,
+  accountId: number,
+  t: number,
+) {
+  let dealt = 0
+  let received = 0
+  let kills = 0
+  for (const event of events || []) {
+    if (!event || !Number.isFinite(event.timeSec) || event.timeSec > t + 1e-6) continue
+    if (event.type === 'KILL' && event.accountId === accountId) kills += 1
+    const observedHpLoss = event.observedHpLoss
+    if (event.type !== 'DAMAGE' || observedHpLoss == null || !Number.isFinite(observedHpLoss)) continue
+    if (event.accountId === accountId) dealt += observedHpLoss
+    if (event.targetAccountId === accountId) received += observedHpLoss
+  }
+  return { dealt, received, kills }
+}
+
+/** Canonical event-derived damage log; missing attacker attribution stays unknown. */
+export function damageLogAtV2(
+  events: readonly BattleEvent[] | null | undefined,
+  selectedAccountId: number,
+  t: number,
+  maxRows = 8,
+) {
+  const rows: Array<{
+    timeSec: number
+    dir: 'in' | 'out'
+    hpLoss: number
+    attackerAccountId?: number | null
+    attackerReliable?: boolean
+    victimAccountId?: number
+  }> = []
+  for (const event of events || []) {
+    const observedHpLoss = event?.observedHpLoss
+    if (!event || event.type !== 'DAMAGE' || !Number.isFinite(event.timeSec)
+      || event.timeSec > t + 1e-6 || observedHpLoss == null || !Number.isFinite(observedHpLoss)) continue
+    if (event.targetAccountId === selectedAccountId) {
+      rows.push({
+        timeSec: event.timeSec,
+        dir: 'in',
+        hpLoss: observedHpLoss,
+        attackerAccountId: event.accountId,
+        attackerReliable: event.accountId != null,
+      })
+    } else if (event.accountId === selectedAccountId && event.targetAccountId != null) {
+      rows.push({
+        timeSec: event.timeSec,
+        dir: 'out',
+        hpLoss: observedHpLoss,
+        victimAccountId: event.targetAccountId,
+      })
+    }
+  }
+  rows.sort((a, b) => a.timeSec - b.timeSec)
+  const limit = Number.isFinite(maxRows) && maxRows > 0 ? Math.floor(maxRows) : 8
+  return rows.slice(-limit)
+}
+
+/** V2 feedback anchor check: the canonical position segment must cover event time. */
+export function victimFeedbackAllowedV2(
+  track: Pick<VehiclePlaybackTrack, 'positionSegments'> | null | undefined,
+  eventTimeSec: number,
+) {
+  return Number.isFinite(eventTimeSec) && positionCoveredAtV2(track?.positionSegments, eventTimeSec)
+}
+
+/** Lost-HP ghost derived from adjacent canonical health transitions. */
+export function ghostAroundV2(
+  track: Pick<VehiclePlaybackTrack, 'healthTransitions'> | null | undefined,
+  t: number,
+) {
+  if (!track || !Number.isFinite(t) || !Array.isArray(track.healthTransitions)) return null
+  let previous: HealthTransition | null = null
+  for (const transition of track.healthTransitions) {
+    if (transition.timeSec > t + 1e-6) break
+    const capacity = previous?.displayCapacityHp
+    if (Math.abs(transition.timeSec - t) <= 1e-6
+      && previous && previous.currentHp != null && transition.currentHp != null
+      && transition.currentHp < previous.currentHp
+      && typeof capacity === 'number' && Number.isFinite(capacity)
+      && capacity > 0) {
+      return {
+        prevPct: (previous.currentHp / capacity) * 100,
+        nextPct: (transition.currentHp / capacity) * 100,
+      }
+    }
+    previous = transition
+  }
+  return null
+}
+
 /** t 是否落在任一 OBSERVED position segment 内（AoI boundary，非 5s 规则）。 */
 export function positionCoveredAtV2(
   segments: readonly PositionSegment[] | null | undefined,
@@ -129,7 +343,7 @@ export function positionAtV2(
     if (seg.startSec > t + 1e-6) continue
     const samples = seg.samples || []
     if (samples.length === 0) continue
-    if (seg.knowledge === 'OBSERVED') {
+    if (seg.knowledge === 'OBSERVED' && seg.interpolationAllowed !== false) {
       // 段内插值
       const lo = samples[0]
       const hi = samples[samples.length - 1]
@@ -349,69 +563,5 @@ export function moduleCrewAt(
     state: tr.state,
     recorderVisible: tr.recorderVisible,
     confidence: tr.confidence,
-  }
-}
-
-/**
- * 从 canonical healthTransitions 推导每辆车到 t 的 HP losses（相邻 transition 的 currentHp 下降）。
- * 用于累积统计 / 伤害日志（legacy vehicle.hpLosses 的 V2 等价），只消费 <= t 的 transition。
- * @returns [{ fromSec, toSec, hpLoss }]
- */
-export function deriveHpLosses(
-  healthTransitions: readonly HealthTransition[] | null | undefined,
-  t: number,
-): PlaybackHpLoss[] {
-  if (!Array.isArray(healthTransitions) || healthTransitions.length === 0) return []
-  const out: PlaybackHpLoss[] = []
-  let prev: HealthTransition | null = null
-  for (const tr of healthTransitions) {
-    if (tr.timeSec > t + 1e-6) break
-    const previousHp = prev?.currentHp
-    const currentHp = tr.currentHp
-    if (prev != null && previousHp != null && currentHp != null
-        && Number.isFinite(previousHp) && Number.isFinite(currentHp)
-        && currentHp < previousHp) {
-      out.push({ fromSec: prev.timeSec, toSec: tr.timeSec, hpLoss: previousHp - currentHp })
-    }
-    prev = tr
-  }
-  return out
-}
-
-/**
- * V2 canonical vehicle view：把 VehiclePlaybackTrack 规范化为与既有
- * vehicleHpAt/teamHp/cumulativeStatsAt/damageLogAt/hpDisplay 兼容的对象
- * （携带 healthTransitions/lifeTransitions/team/accountId/deathSec/hpLosses）。
- */
-export function v2VehicleView(
-  track: TrackWithLegacyHpLosses | null | undefined,
-): V2VehicleView | null {
-  if (!track) return null
-  const lt = track.lifeTransitions || []
-  const lastLife: LifeTransition | null = lt[lt.length - 1] || null
-  // legacy 兼容视图字段（供 positionCoveredAt / interpolateDirection / victimFeedbackAllowed 复用）
-  const positionIntervals = (track.positionSegments || [])
-    .filter(s => s.knowledge === 'OBSERVED')
-    .map(s => ({ startSec: s.startSec, endSec: s.endSec }))
-  const directionSamples = (track.orientationSegments || [])
-    .flatMap(s => (s.samples || []).map(x => ({ timeSec: x.timeSec, hullYawDeg: x.hullYawDeg, turretRelativeYawDeg: x.turretRelativeYawDeg })))
-  return {
-    accountId: track.accountId,
-    playerName: track.playerName || '',
-    tankId: track.tankId,
-    tankName: track.tankName || '',
-    team: track.team,
-    tankType: track.tankClass || '',
-    healthTransitions: track.healthTransitions || [],
-    lifeTransitions: lt,
-    deathSec: lastLife && lastLife.lifeState === 'DESTROYED' ? lastLife.destroyedKnownAtSec : null,
-    hpLosses: Array.isArray(track.hpLosses) && track.hpLosses.length > 0
-      ? track.hpLosses
-      : deriveHpLosses(track.healthTransitions, Number.POSITIVE_INFINITY),
-    positionIntervals,
-    directionSamples,
-    positionSegments: track.positionSegments || [],
-    orientationSegments: track.orientationSegments || [],
-    loadout: track.loadout || null,
   }
 }

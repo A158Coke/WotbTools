@@ -90,7 +90,7 @@ function legacyPlaybackToV2Dataset(overview) {
       accountId: v.accountId, playerName: v.playerName, tankId: v.tankId,
       tankName: v.tankName, tankClass: '', team: v.team, friendly: v.team === 1,
       loadout: null, positionSegments: posSegs, orientationSegments: orientSegs,
-      healthTransitions, lifeTransitions, hpLosses: v.hpLosses || [],
+      healthTransitions, lifeTransitions,
       consumableTransitions: [], moduleCrewTransitions: [],
     }
   })
@@ -98,6 +98,29 @@ function legacyPlaybackToV2Dataset(overview) {
     type: e.type, timeSec: e.timeSec, accountId: e.accountId ?? null,
     targetAccountId: e.targetAccountId ?? null, observedHpLoss: e.observedHpLoss ?? null,
   })).sort((a, b) => a.timeSec - b.timeSec)
+  // Test-only legacy fixture bridge: turn explicitly supplied hpLoss evidence
+  // into canonical DAMAGE events. Production BattlePlayback never reads this
+  // legacy field; the fixture remains useful while the broad matrix migrates.
+  for (const vehicle of playback.vehicles || []) {
+    for (const loss of vehicle.hpLosses || []) {
+      if (!Number.isFinite(loss?.toSec) || !Number.isFinite(loss?.hpLoss)) continue
+      const existing = events.find(event => event.type === 'DAMAGE'
+        && event.timeSec === loss.toSec && event.targetAccountId === vehicle.accountId
+        && event.accountId === (loss.attackerAccountId ?? null))
+      if (existing) {
+        existing.observedHpLoss = loss.hpLoss
+      } else {
+        events.push({
+          type: 'DAMAGE',
+          timeSec: loss.toSec,
+          accountId: loss.attackerAccountId ?? null,
+          targetAccountId: vehicle.accountId,
+          observedHpLoss: loss.hpLoss,
+        })
+      }
+    }
+  }
+  events.sort((a, b) => a.timeSec - b.timeSec)
   return { durationSec: playback.durationSec, vehicles, events,
     shots: [], pointsSamples: playback.pointsSamples || [], limitations: [] }
 }
@@ -127,12 +150,12 @@ function makePlaybackV2() {
         accountId: 1001, playerName: 'You', tankId: 1, tankName: 'Maus', tankClass: '', team: 1, friendly: true,
         loadout: null,
         positionSegments: [
-          { knowledge: 'OBSERVED', startSec: 0, endSec: 60,
+          { knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 0, endSec: 60,
             samples: [{ timeSec: 0, x: 0, y: 0, knowledge: 'OBSERVED' }, { timeSec: 60, x: 60, y: 60, knowledge: 'OBSERVED' }] },
         ],
         orientationSegments: [
           { knowledge: 'CURRENT', startSec: 0, endSec: 60,
-            samples: [{ timeSec: 0, hullYawDeg: 0, turretRelativeYawDeg: 0 }, { timeSec: 60, hullYawDeg: 90, turretRelativeYawDeg: 30 }] },
+            samples: [{ timeSec: 0, hullYawDeg: 0, turretRelativeYawDeg: 0, knowledge: 'CURRENT' }, { timeSec: 60, hullYawDeg: 90, turretRelativeYawDeg: 30, knowledge: 'CURRENT' }] },
         ],
         healthTransitions: [{ timeSec: 0, currentHp: 1500, knowledge: 'CURRENT', displayCapacityHp: 1500, source: 'EXACT_BATTLE_EVENT' }],
         lifeTransitions: [],
@@ -143,12 +166,12 @@ function makePlaybackV2() {
         accountId: 2001, playerName: 'EnemyA', tankId: 2, tankName: 'T49', tankClass: '', team: 2, friendly: false,
         loadout: null,
         positionSegments: [
-          { knowledge: 'OBSERVED', startSec: 10, endSec: 20,
+          { knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 10, endSec: 20,
             samples: [{ timeSec: 10, x: -50, y: -50, knowledge: 'OBSERVED' }, { timeSec: 20, x: -60, y: -60, knowledge: 'OBSERVED' }] },
         ],
         orientationSegments: [
           { knowledge: 'CURRENT', startSec: 10, endSec: 20,
-            samples: [{ timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5 }, { timeSec: 20, hullYawDeg: 30, turretRelativeYawDeg: 20 }] },
+            samples: [{ timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5, knowledge: 'CURRENT' }, { timeSec: 20, hullYawDeg: 30, turretRelativeYawDeg: 20, knowledge: 'CURRENT' }] },
         ],
         healthTransitions: [
           { timeSec: 0, currentHp: 1200, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },
@@ -1758,12 +1781,12 @@ describe('V2 HP regression (restored critical coverage)', () => {
     expect(w.find('[data-test="pb-hp-value-enemy"]').text()).not.toContain('/')
   })
 
-  it('UNKNOWN team：全队无 canonical 数据 → HUD 显示 —', async () => {
+  it('无 health evidence 的己方队伍保持 relative-full presentation；敌方仍 UNKNOWN', async () => {
     const ds = makePlaybackV2()
     ds.vehicles.forEach((v) => { v.healthTransitions = [] })
     const w = mountV2(15, ds)
     await flushPromises()
-    expect(w.find('[data-test="pb-hp-value-friendly"]').text()).toBe('—')
+    expect(w.find('[data-test="pb-hp-value-friendly"]').text()).toBe('100%')
     expect(w.find('[data-test="pb-hp-value-enemy"]').text()).toBe('—')
   })
 

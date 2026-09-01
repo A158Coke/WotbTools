@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  healthAt,
+  healthDisplayAt,
   lifeAt,
   positionCoveredAtV2,
   orientationKnownAt,
@@ -23,18 +23,7 @@ const props = defineProps({
 const { t, te, locale } = useI18n()
 
 const life = computed(() => lifeAt(props.track, props.timeSec))
-const health = computed(() => {
-  // 与 marker/HUD 一致：阵亡为权威事实，current=0（绝不显示阵亡前最后一次健康值）。
-  if (life.value?.lifeState === 'DESTROYED') {
-    return {
-      currentHp: 0,
-      knowledge: 'CURRENT',
-      displayCapacityHp: healthAt(props.track, props.timeSec)?.displayCapacityHp ?? null,
-      source: 'DESTROYED',
-    }
-  }
-  return healthAt(props.track, props.timeSec)
-})
+const health = computed(() => healthDisplayAt(props.track, props.timeSec))
 const covered = computed(() => positionCoveredAtV2(props.track.positionSegments, props.timeSec))
 const orientation = computed(() => orientationKnownAt(props.track, props.timeSec))
 const loadout = computed(() => props.track.loadout || null)
@@ -145,11 +134,14 @@ const tankClassLabel = computed(() => {
     <div class="v2-inspector-row" data-test="v2-inspector-hp">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.current_hp') }}</span>
       <span class="v2-inspector-val">
-        {{ health?.currentHp ?? '—' }}
+        {{ health?.relativeFull ? '100%' : (health?.currentHp ?? '—') }}
         <span v-if="health?.knowledge === 'LAST_KNOWN'" class="v2-inspector-badge">
           {{ $t('recon.map.playback.last_known_hp') }}
         </span>
-        <span v-if="health?.displayCapacityHp" class="v2-inspector-cap">
+        <span v-if="health?.relativeFull" class="v2-inspector-badge">
+          {{ $t('recon.map.playback.hp_full_spawn') }}
+        </span>
+        <span v-if="!health?.relativeFull && health?.displayCapacityHp" class="v2-inspector-cap">
           / {{ health.displayCapacityHp }}
         </span>
       </span>

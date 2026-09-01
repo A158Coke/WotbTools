@@ -15,7 +15,6 @@ export function projectVehicleState({
   track,
   time,
   recorderAccountId,
-  friendlyTeam,
   model,
   hullImage,
   turretImage,
@@ -33,7 +32,9 @@ export function projectVehicleState({
   const covered = positionCoveredAtV2(track.positionSegments, time)
   const recorder = vehicle.accountId === recorderAccountId
   const direction = orientationAtV2(track.orientationSegments, time)
-  const friendly = vehicle.team === friendlyTeam
+  // friendly is a canonical track fact. The perspective team is presentation
+  // context only and must not re-derive vehicle identity from team numbers.
+  const friendly = track.friendly === true
   const hullDeg = direction ? screenRotation(direction.hullYawDeg) : null
   const turretDeg = direction
     ? screenRotation(turretWorldYawDeg(direction.hullYawDeg, direction.turretRelativeYawDeg))
