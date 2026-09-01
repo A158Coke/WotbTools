@@ -8,6 +8,7 @@ import com.wotb.core.replay.processing.ReplayProcessingDiagnostics;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.web.replay.dto.MapOverview;
+import com.wotb.web.replay.dto.BattlePlaybackDataset;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -63,6 +64,36 @@ class ReplayArtifactWriterTest {
             ReplayArtifactWriter.writeMapOverview(jobDir, 2, null);
             assertFalse(Files.exists(ReplayArtifactWriter.mapOverviewPath(jobDir, 2)));
             assertNull(ReplayArtifactWriter.readMapOverview(jobDir, 2));
+        } finally {
+            deleteRecursively(jobDir);
+        }
+    }
+
+    @Test
+    void legacyPlaybackArtifactConfidenceIsNormalizedOnlyAtReadBoundary() throws Exception {
+        final Path jobDir = Files.createTempDirectory("wotb-artifact-test");
+        try {
+            final Path path = ReplayArtifactWriter.battlePlaybackV2Path(jobDir, 0);
+            Files.createDirectories(path.getParent());
+            Files.writeString(path, """
+                    {
+                      "durationSec": 60, "mapCode": null, "friendlyTeam": 1,
+                      "recorderAccountId": 7, "vehicles": [{
+                        "accountId": 7, "playerName": "p", "tankId": 1, "tankName": "t",
+                        "tankClass": "medium", "tankTier": 10, "team": 1, "friendly": true,
+                        "loadout": {"replayVersion": null, "consumables": [],
+                          "consumableWireCodes": [], "provisions": [], "provisionWireCodes": [],
+                          "equipmentIds": [], "confidence": "EXACT"},
+                        "positionSegments": [], "orientationSegments": [], "healthTransitions": [],
+                        "lifeTransitions": [], "consumableTransitions": [], "moduleCrewTransitions": []
+                      }], "events": [], "shots": [], "pointsSamples": [], "limitations": [],
+                      "capability": "FULL", "arenaBonusType": null
+                    }
+                    """);
+
+            final BattlePlaybackDataset read = ReplayArtifactWriter.readBattlePlaybackV2(jobDir, 0);
+            assertEquals(BattlePlaybackDataset.ConfidenceDto.HIGH,
+                    read.vehicles().get(0).loadout().confidence());
         } finally {
             deleteRecursively(jobDir);
         }

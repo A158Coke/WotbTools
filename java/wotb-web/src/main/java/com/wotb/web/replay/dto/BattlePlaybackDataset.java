@@ -1,7 +1,5 @@
 package com.wotb.web.replay.dto;
 
-import com.wotb.core.replay.event.DecodeConfidence;
-
 import java.util.List;
 import java.util.Map;
 
@@ -150,7 +148,7 @@ public record BattlePlaybackDataset(
             List<String> provisions,    // 3；nullable
             List<Integer> provisionWireCodes,
             List<Integer> equipmentIds, // 9
-            DecodeConfidence confidence
+            ConfidenceDto confidence
     ) {
         public VehicleBattleLoadoutDto {
             // 契约：logicalItemId / wireCode / equipmentId 可为 null（unknown raw-preserve）。
@@ -161,7 +159,7 @@ public record BattlePlaybackDataset(
             provisions = immutableNullable(provisions);
             provisionWireCodes = immutableNullable(provisionWireCodes);
             equipmentIds = immutableNullable(equipmentIds);
-            confidence = confidence == null ? DecodeConfidence.UNKNOWN : confidence;
+            confidence = confidence == null ? ConfidenceDto.UNKNOWN : confidence;
         }
     }
 
@@ -255,7 +253,7 @@ public record BattlePlaybackDataset(
     public record PointsSample(double timeSec, int team, int points) {
     }
 
-    /** 置信度枚举（DTO 层稳定英文码，前端本地化）；映射自 {@link DecodeConfidence}。 */
+    /** 置信度枚举（DTO 层稳定英文码，前端本地化）；由 projector 从 domain confidence 映射。 */
     public enum ConfidenceDto {
         HIGH,
         MEDIUM,
