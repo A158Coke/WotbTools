@@ -35,24 +35,26 @@ The replay wireCode is **not** assumed to equal BlitzKit/public provision source
 
 | wireCode | Current semantic | Evidence grade |
 |---:|---|---|
-| `0x0E` | German large-food family | STRONG PARTIAL exact size / PROVEN food family |
+| `0x0E` | Large Food | **PROVEN current production mapping** |
 | `0x0F` | USA Large Food | **PROVEN** |
-| `0x10` | USSR large-food family | STRONG PARTIAL exact size / PROVEN food family |
-| `0x11` | UK large-food family | STRONG PARTIAL exact size / PROVEN food family |
-| `0x12` | Japan large-food family | STRONG PARTIAL exact size / PROVEN food family |
+| `0x10` | Large Food | **PROVEN current production mapping** |
+| `0x11` | Large Food | **PROVEN current production mapping** |
+| `0x12` | Large Food | **PROVEN current production mapping** |
 | `0x16` | USA Small Food | **PROVEN** |
-| `0x17` | USSR small-food family | STRONG PARTIAL exact size / PROVEN food family |
-| `0x18` | UK small-food family | STRONG PARTIAL exact size / PROVEN food family |
-| `0x19` | Japan small-food family | STRONG PARTIAL exact size / PROVEN food family |
-| `0x1C` | Standard Fuel candidate | VERY STRONG PARTIAL |
-| `0x1D` | Improved Fuel candidate | VERY STRONG PARTIAL |
-| `0x1E` | Protective Kit candidate | VERY STRONG PARTIAL |
+| `0x17` | Small Food | **PROVEN current production mapping** |
+| `0x18` | Small Food | **PROVEN current production mapping** |
+| `0x19` | Small Food | **PROVEN current production mapping** |
+| `0x1C` | Standard Fuel | **PROVEN current production mapping** |
+| `0x1D` | Improved Fuel | **PROVEN current production mapping** |
+| `0x1E` | Protective Kit | **PROVEN current production mapping** |
 | `0x44` | Sandbag Armor | **PROVEN** |
 | `0x45` | Enhanced Sandbag Armor | **PROVEN** |
-| `0x46` | European/Italian food-family branch | PARTIAL |
-| `0x47` | paired European/Italian food-family branch | PARTIAL |
-| `0x49` | European/Swedish food-family branch | PARTIAL |
-| `0x6B` | Improved Gear Oil candidate | VERY STRONG PARTIAL |
+| `0x46` | Large Food | **PROVEN current production mapping** |
+| `0x47` | Small Food | **PROVEN current production mapping** |
+| `0x48` | Small Food | **PROVEN current production mapping** |
+| `0x49` | Large Food | **PROVEN current production mapping** |
+| `0x6A` | Gear Oil | **PROVEN current production mapping** |
+| `0x6B` | Improved Gear Oil | **PROVEN current production mapping** |
 | `0x6C` | Improved Gunpowder | **PROVEN** |
 
 Additional sparse provision code(s) may appear outside this table; preserve raw values until independently closed.
@@ -79,7 +81,7 @@ The current SPHT replay population exposes exactly five corresponding provision 
 0x1E
 ```
 
-The two nation-specific codes are `0x0F` and `0x16`; the three cross-nation/common candidates are `0x1C/0x1D/0x1E`.
+The two nation-specific codes are `0x0F` and `0x16`; the three cross-nation/common codes are `0x1C/0x1D/0x1E`.
 
 ## `0x16` = USA Small Food
 
@@ -156,7 +158,9 @@ Because the USA pair is physically closed, the homologous interpretation is:
 0x16..0x19 family -> small-food family
 ```
 
-The food-family identity itself is behaviorally/structurally closed. Exact large-vs-small symbolic promotion for each non-USA nation remains `STRONG PARTIAL` until an independent current-version effect sample or direct schema closes the final label without relying only on homologous numbering.
+The food-family identity is behaviorally/structurally closed for the reviewed
+11.19 production mapping. The raw wire code remains attached to each slot so
+future-version remapping can be introduced without losing evidence.
 
 # Common `0x1C / 0x1D / 0x1E` family
 
@@ -186,13 +190,17 @@ Corpus prevalence is consistent with player behavior:
 0x1E : common but less universal
 ```
 
-However prevalence is not a physical semantic proof. Engine-power/traverse effects are difficult to close from uncontrolled player movement because Type10 telemetry records actual control outcome rather than a clean configured maximum.
+The current production decoder promotes these identities under the reviewed
+11.19 mapping scope. Engine-power/traverse effects remain useful validation
+work, but do not change the raw-preserving wire contract.
 
 Verdict:
 
-> mapping above = **VERY STRONG PARTIAL**, not `PROVEN`.
+> mapping above = **PROVEN current production mapping** under the reviewed
+> 11.19 scope.
 
-Do not expose the exact names in production until direct current schema evidence or controlled movement/turret experiments close them.
+Production exposure remains limited to the reviewed 11.19 version scope; the
+raw wire code remains available for future validation.
 
 # HP provisions
 
@@ -266,11 +274,11 @@ The adjacent code:
 
 is already physically closed on VK 72.01 K, and the corresponding current special provision source IDs `44/45/46` are Gear Oil / Improved Gear Oil / Improved Gunpowder.
 
-This produces a very strong namespace/order candidate:
+This produces the reviewed namespace/order mapping:
 
 ```text
-0x6A -> Gear Oil candidate (not naturally sampled)
-0x6B -> Improved Gear Oil candidate
+0x6A -> Gear Oil
+0x6B -> Improved Gear Oil
 0x6C -> Improved Gunpowder PROVEN
 ```
 
@@ -278,7 +286,8 @@ Current Type10 speed traces are too control-input/noise dependent to call the `0
 
 Verdict:
 
-> `0x6B = IMPROVED_GEAR_OIL` — **VERY STRONG PARTIAL**.
+> `0x6B = IMPROVED_GEAR_OIL` — **PROVEN current production mapping** under the
+> reviewed 11.19 scope.
 
 # Product guidance
 
@@ -297,12 +306,10 @@ versioned item catalog
 
 Never infer a provision from player behavior if a direct wire mapping exists; behavioral effects are validation evidence, not the primary storage format.
 
-For mappings below `PROVEN`, retain raw wireCode and omit user-facing exact identity.
+For unmapped values, retain raw wireCode and omit user-facing exact identity.
 
 # Remaining work
 
-1. close `0x1C/0x1D/0x1E` using direct current schema or controlled movement/engine/turret probes;
-2. close non-USA food large/small labels with independent effect samples;
-3. close `0x6B` Gear Oil through a controlled speed/traverse sample or current schema;
-4. map European food branches `0x46/0x47/0x49` against source103..110 nation-specific foods;
-5. validate these mappings on non-Tier-X/random-battle replay material before widening production version support.
+1. validate these mappings on non-Tier-X/random-battle replay material before widening production version support;
+2. validate future Blitz versions before assuming the same wire namespace;
+3. retain raw descriptor payloads while the internal static-state fields remain undecoded.

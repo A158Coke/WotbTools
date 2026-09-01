@@ -8,6 +8,7 @@ import {
   orientationAtV2,
   inspectVehicleAt,
   consumableRuntimeAt,
+  consumableRuntimeStatesAt,
   moduleCrewAt,
 } from './battlePlaybackV2'
 
@@ -162,5 +163,18 @@ describe('consumableRuntimeAt / moduleCrewAt', () => {
     const t = moduleCrewAt([{ timeSec: 120, component: 'ENGINE', state: 'CRITICAL_DISABLED', recorderVisible: true, confidence: 'HIGH' }], 130)
     expect(t.recorderVisible).toBe(true)
     expect(t.component).toBe('ENGINE')
+  })
+
+  it('keeps three consumable runtimes independent and clears them on global UNKNOWN', () => {
+    const transitions = [
+      { timeSec: 90, logicalItemId: 'REPAIR_KIT', state: 'ACTIVATED', wireCode: 0x0D },
+      { timeSec: 95, logicalItemId: 'ADRENALINE', state: 'INITIALIZED', wireCode: 0x09 },
+      { timeSec: 110, logicalItemId: null, state: 'UNKNOWN', wireCode: null },
+    ]
+    expect(consumableRuntimeStatesAt(transitions, 100)).toEqual(new Map([
+      [0x0D, { state: 'ACTIVATED', logicalItemId: 'REPAIR_KIT', wireCode: 0x0D }],
+      [0x09, { state: 'INITIALIZED', logicalItemId: 'ADRENALINE', wireCode: 0x09 }],
+    ]))
+    expect(consumableRuntimeStatesAt(transitions, 120).size).toBe(0)
   })
 })

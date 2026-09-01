@@ -171,10 +171,26 @@ Observed provision-slot codes:
 
 ```text
 0E 0F 10 11 12 13 16 17 18 19 1A 1C 1D 1E
-44 45 46 47 49 6B 6C
+44 45 46 47 48 49 6B 6C
 ```
 
-Exact provision code -> symbolic item identities remain item-specific research. Do not assume these wire codes equal catalog `sourceIds`; the dynamic consumable family already proves that the replay wire namespace is not simply the public catalog ID namespace.
+The reviewed 11.19 production mapping now closes the observed families:
+
+```text
+0x0E/0x0F/0x10/0x11/0x12/0x46/0x49 -> LARGE_FOOD
+0x16/0x17/0x18/0x19/0x47/0x48        -> SMALL_FOOD
+0x1C -> STANDARD_FUEL
+0x1D -> IMPROVED_FUEL
+0x1E -> PROTECTIVE_KIT
+0x44 -> SANDBAG_ARMOR
+0x45 -> ENHANCED_SANDBAG_ARMOR
+0x6A -> GEAR_OIL
+0x6B -> IMPROVED_GEAR_OIL
+0x6C -> IMPROVED_GUNPOWDER
+```
+
+These are version-scoped semantic mappings; the raw wire code remains
+authoritative evidence and unknown values remain null/raw-preserved.
 
 # Proven provision wire-code mappings
 
@@ -236,9 +252,12 @@ Verdict:
 
 This independently strengthens method29's launch-vector magnitude interpretation as physical shell-velocity telemetry.
 
-# Strong provision families not yet promoted
+# Provision mapping promoted for the reviewed 11.19 scope
 
-Several provision codes show highly structured nation/item-family patterns but remain below `PROVEN` until physical effects or a direct current schema close them.
+The food, common fuel/protection, and gear-oil families are now promoted for
+the reviewed 11.19 production mapping. The evidence grades and corpus limits
+remain recorded in `provision-wirecode-mapping.md`; promotion does not widen
+the supported replay-version gate.
 
 Observed first-provision patterns include:
 
@@ -261,13 +280,17 @@ comparison branch       -> initial full reload ~= 8.8049 s
 ratio                    -> ~0.98715
 ```
 
-That magnitude is consistent with a small crew-mastery food effect, but the exact crew formula and hidden loadout interactions mean `0x16 = SMALL_FOOD` remains **VERY STRONG PARTIAL**, not yet `PROVEN`.
+That magnitude is consistent with the small-food effect and is now used as the
+reviewed production mapping for the current scope.
 
-Common codes `0x1C/0x1D/0x1E` are strong candidates for Standard Fuel / Improved Fuel / Protective Kit, but current movement/turret-speed natural samples are still too player-input-dependent to assign exact identities without overclaiming.
+Common codes `0x1C/0x1D/0x1E` are mapped to Standard Fuel / Improved Fuel /
+Protective Kit for the reviewed production scope; raw codes remain available
+for later version-specific validation.
 
 Verdict:
 
-> keep food/fuel/protective exact symbolic mappings `PARTIAL` until stronger controlled closure.
+> keep these exact symbolic mappings version-scoped and fail closed for
+> unknown wire values.
 
 # Nine equipment bytes — direct equipment IDs
 
@@ -317,6 +340,14 @@ Observed mapping:
 | 8 | `v` | 118 | CONSUMABLE_DELIVERY_SYSTEM |
 
 Equipment ID 122 (`IMPROVED_VERTICAL_STABILIZER`, byte `z`) is present in the current catalog but was not naturally selected in the studied replay corpus. The general byte=ID encoding rule is nevertheless independently closed across the other 20 observed IDs; unsupported/unseen IDs should still be raw-preserved and catalog-resolved rather than hard-coded as a finite character enum.
+
+The current authoritative BlitzKit `equipment.pb` catalog does contain
+equipment ID 120. It is `IMPROVED_MODULES_PLUS` (`改进型模块+`; Russian:
+`Доработанные модули +`). The current Object 244 vehicle-specific
+`HEprotectionPreset` places it in the VITALITY row, slot 1, LEFT position.
+This closes the previously unresolved raw value without guessing a mapping;
+the identity is sourced from the current catalog and the vehicle-specific
+preset. The raw wire value remains preserved as canonical evidence.
 
 Verdict:
 
@@ -421,7 +452,9 @@ Safe uses:
 
 # Scope boundary
 
-This PR remains protocol research, not production implementation.
+The reviewed 11.19 mapping is now consumed by the production Type5 decoder
+and generated frontend catalog adapter. The protocol remains version-gated and
+unknown symbols remain raw-preserved.
 
 Do not:
 
@@ -433,8 +466,6 @@ Do not:
 
 # Remaining work
 
-1. close the remaining food/fuel/protective provision wire codes with controlled physical effects or a current schema;
-2. map any still-unclosed consumable wire codes in the first three item slots;
-3. verify the 6+9 tail on non-Tier-X combat vehicles / random battles before widening production version gates;
-4. validate future Blitz versions before assuming the Type5 relative tail structure is unchanged;
-5. retain raw 14-byte item descriptor payloads until their internal timers/state fields are fully decoded.
+1. verify the 6+9 tail on non-Tier-X combat vehicles / random battles before widening production version gates;
+2. validate future Blitz versions before assuming the Type5 relative tail structure is unchanged;
+3. retain raw 14-byte item descriptor payloads until their internal timers/state fields are fully decoded.

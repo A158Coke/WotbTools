@@ -310,6 +310,33 @@ export function consumableRuntimeAt(
   }
 }
 
+/**
+ * Return independent runtime state for every observed consumable wire code at t.
+ * A null-wire UNKNOWN transition is an AoI invalidation and clears all known
+ * per-consumable states; a wire-specific transition only updates that code.
+ */
+export function consumableRuntimeStatesAt(
+  transitions: readonly ConsumableTransition[] | null | undefined,
+  t: number,
+): Map<number, ConsumableRuntimeResult> {
+  const states = new Map<number, ConsumableRuntimeResult>()
+  if (!Array.isArray(transitions)) return states
+  for (const tr of transitions) {
+    if (!tr || !Number.isFinite(tr.timeSec) || tr.timeSec > t) continue
+    const state: ConsumableRuntimeResult = {
+      state: tr.state ?? 'UNKNOWN',
+      logicalItemId: tr.logicalItemId ?? null,
+      wireCode: tr.wireCode ?? null,
+    }
+    if (state.wireCode === null && state.state === 'UNKNOWN') {
+      states.clear()
+    } else if (state.wireCode !== null) {
+      states.set(state.wireCode, state)
+    }
+  }
+  return states
+}
+
 /** t 时刻 module/crew 状态（recorder-visible provenance）。 */
 export function moduleCrewAt(
   transitions: readonly ModuleCrewTransition[] | null | undefined,
