@@ -338,7 +338,7 @@ function consumeEvents(fromSec, toSec) {
         bornRealMs: now,
         durationMs: FLOAT_DMG_MS,
       }]
-      const g = ghostAroundV2(victim, loss.toSec)
+      const g = ghostAroundV2(victim, loss)
       if (g) ghostByAccount.set(track.accountId, { prevPct: g.prevPct, nextPct: g.nextPct, untilRealMs: now + GHOST_MS })
       flashByAccount.set(track.accountId, now + FLASH_MS)
     }
@@ -399,9 +399,9 @@ function hpFor(vehicle) {
     current: display.currentHp,
     maxHp: display.displayCapacityHp,
     pct: display.pct,
+    knowledge: display.knowledge,
     destroyed: display.destroyed,
     state: display.state,
-    fullState: display.relativeFull,
   }
 }
 /** marker HP HUD 数字区实际渲染文本（VehicleMarker .pb-hp-num 同款：current 有值→数字，否则 —）。

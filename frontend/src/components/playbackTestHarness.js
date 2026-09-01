@@ -11,6 +11,9 @@
 import { vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import BattlePlayback from './BattlePlayback.vue'
+import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil.js'
+
+export const makePlaybackV2 = makeBattlePlaybackDataset
 
 const i18n = vi.hoisted(() => ({
   t: vi.fn(key => key)
@@ -83,61 +86,6 @@ export function mountPlayback(overview = makeOverview(), seekTo = null, dataset 
     props: { overview, seekTo, playbackV2: finalDataset },
     global: { mocks: { $t: i18n.t } }
   })
-}
-
-export function makePlaybackV2() {
-  return {
-    durationSec: 60,
-    mapCode: 'holland', friendlyTeam: 1, recorderAccountId: 1001, capability: 'FULL', arenaBonusType: null,
-    events: [
-      { type: 'POSITION_REPORTED', timeSec: 10, accountId: 2001, targetAccountId: null, observedHpLoss: null },
-      { type: 'DAMAGE', timeSec: 12, accountId: 1001, targetAccountId: 2001, observedHpLoss: 400 },
-      { type: 'POSITION_STALE', timeSec: 20, accountId: 2001, targetAccountId: null, observedHpLoss: null },
-    ],
-    vehicles: [
-      {
-        accountId: 1001, playerName: 'You', tankId: 1, tankName: 'Maus', tankClass: '', team: 1, friendly: true,
-        loadout: null,
-        positionSegments: [
-          { knowledge: 'OBSERVED', startSec: 0, endSec: 60,
-            samples: [{ timeSec: 0, x: 0, y: 0, knowledge: 'OBSERVED' }, { timeSec: 60, x: 60, y: 60, knowledge: 'OBSERVED' }] },
-        ],
-        orientationSegments: [
-          { knowledge: 'CURRENT', startSec: 0, endSec: 60,
-            samples: [{ timeSec: 0, hullYawDeg: 0, turretRelativeYawDeg: 0 }, { timeSec: 60, hullYawDeg: 90, turretRelativeYawDeg: 30 }] },
-        ],
-        healthTransitions: [{ timeSec: 0, currentHp: 1500, knowledge: 'CURRENT', displayCapacityHp: 1500, source: 'EXACT_BATTLE_EVENT' }],
-        lifeTransitions: [],
-        damageLosses: [],
-        consumableTransitions: [],
-        moduleCrewTransitions: [],
-      },
-      {
-        accountId: 2001, playerName: 'EnemyA', tankId: 2, tankName: 'T49', tankClass: '', team: 2, friendly: false,
-        loadout: null,
-        positionSegments: [
-          { knowledge: 'OBSERVED', startSec: 10, endSec: 20,
-            samples: [{ timeSec: 10, x: -50, y: -50, knowledge: 'OBSERVED' }, { timeSec: 20, x: -60, y: -60, knowledge: 'OBSERVED' }] },
-        ],
-        orientationSegments: [
-          { knowledge: 'CURRENT', startSec: 10, endSec: 20,
-            samples: [{ timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5 }, { timeSec: 20, hullYawDeg: 30, turretRelativeYawDeg: 20 }] },
-        ],
-        healthTransitions: [
-          { timeSec: 0, currentHp: 1200, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },
-          { timeSec: 12, currentHp: 800, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },
-        ],
-        lifeTransitions: [{ timeSec: 25, lifeState: 'DESTROYED', destroyedKnownAtSec: 25 }],
-        damageLosses: [{ fromSec: 0, toSec: 12, hpLoss: 400, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }],
-        consumableTransitions: [],
-        moduleCrewTransitions: [],
-      },
-      { accountId: 2002, playerName: 'NeverSeen', tankId: 3, team: 2, friendly: false,
-        loadout: null, positionSegments: [], orientationSegments: [], healthTransitions: [], lifeTransitions: [], damageLosses: [],
-        consumableTransitions: [], moduleCrewTransitions: [] },
-    ],
-    pointsSamples: [],
-  }
 }
 
 let rafCb

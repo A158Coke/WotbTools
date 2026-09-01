@@ -106,8 +106,8 @@ describe('computeLabelLayout（§21–§28：真实 visual footprint 碰撞）',
     expect(off.hpBox).toBeNull()
   })
 
-  it('PR #107 Blocker 4: fullState（current=null）与 UNKNOWN（—）仍渲染 HUD → 必须有 hpBox；文本影响盒宽', () => {
-    // RULE_DERIVED_FULL_AT_SPAWN：current=null、fullState=true，但 DOM 渲染 HUD（100% 血条 + —）→ footprint 非 null
+  it('PR #107 Blocker 4: RELATIVE_FULL（current=null）与 UNKNOWN（—）仍渲染 HUD → 必须有 hpBox；文本影响盒宽', () => {
+    // RELATIVE_FULL：current=null，但 DOM 渲染 HUD（100% 血条 + —）→ footprint 非 null
     const fullState = computeLabelLayout(
       [item(1, 100, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '—' })],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh }).get(1)
@@ -354,7 +354,7 @@ describe('computeLabelLayout（§21–§28：真实 visual footprint 碰撞）',
   })
 
   it('PR #107 Blocker 4: 1x/2x/4x zoom 下 opening full-state HUD（current=null）有 screen-constant hpBox 且参与碰撞', () => {
-    // fullState（RULE_DERIVED_FULL_AT_SPAWN，current=null）DOM 仍渲染 HUD → hpRendered=true；
+    // RELATIVE_FULL（current=null）DOM 仍渲染 HUD → hpRendered=true；
     // coreSize 随 zoom（36/72/144）由调用方传入，HUD 盒屏幕恒定并参与 §25 优先级碰撞
     const mk = (coreSize) => computeLabelLayout(
       [item(1, 200, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '—' }),

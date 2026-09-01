@@ -94,10 +94,9 @@ describe('dedicated turreted（嵌套 transform）', () => {
     expect(turret.attributes('style')).toContain('rotate(30deg)') // T - H = 60 - 30
   })
 
-  it('destroyed 无方向样本 → 0° 渲染（最后可信姿态冻结语义）', () => {
-    const w = mountMarker({ ...dedicatedMarker, hullScreenDeg: 0, turretScreenDeg: 0, destroyed: true })
-    expect(w.find('.pb-hull-dedicated').attributes('style')).toContain('rotate(0deg)')
-    expect(w.find('.pb-turret-dedicated').attributes('style')).toContain('rotate(0deg)')
+  it('marker 收到 null 方向 → 不自行伪造朝向（projector 负责 destroyed presentation fallback）', () => {
+    const w = mountMarker({ ...dedicatedMarker, hullScreenDeg: null, turretScreenDeg: null, destroyed: true })
+    expect(w.findAll('img')).toHaveLength(0)
     expect(w.find('.pb-death').exists()).toBe(true)
   })
 
@@ -173,15 +172,29 @@ describe('marker 根元素（按钮）', () => {
 
   it('relative-full HP 仍渲染 HUD 和满条；unknown 也不隐藏 HUD', async () => {
     const full = mountMarker({ ...genericMarker, friendly: true }, false)
-    await full.setProps({ hp: { current: null, pct: null, fullState: true, destroyed: false, state: 'RELATIVE_FULL' } })
+    await full.setProps({ hp: { current: null, pct: null, destroyed: false, state: 'RELATIVE_FULL' } })
     expect(full.find('[data-test="pb-hp-hud"]').exists()).toBe(true)
     expect(full.find('[data-test="pb-hp-num"]').text()).toBe('—')
     expect(full.find('.pb-hp-fill').attributes('style')).toContain('width: 100%')
 
     const unknown = mountMarker({ ...genericMarker, friendly: false }, false)
-    await unknown.setProps({ hp: { current: null, pct: null, fullState: false, destroyed: false, state: 'UNKNOWN' } })
+    await unknown.setProps({ hp: { current: null, pct: null, destroyed: false, state: 'UNKNOWN' } })
     expect(unknown.find('[data-test="pb-hp-hud"]').exists()).toBe(true)
     expect(unknown.find('.pb-hp-fill').attributes('style')).toContain('width: 0%')
+  })
+
+  it('HP last-known styling follows health state, not stale position state', async () => {
+    const positionStaleHealthCurrent = mountMarker({ ...genericMarker, lastKnown: true })
+    await positionStaleHealthCurrent.setProps({
+      hp: { current: 800, pct: 80, destroyed: false, state: 'CURRENT', knowledge: 'CURRENT' },
+    })
+    expect(positionStaleHealthCurrent.find('[data-test="pb-hp-hud"]').classes()).not.toContain('pb-hp-lastknown')
+
+    const positionCurrentHealthLastKnown = mountMarker({ ...genericMarker, lastKnown: false })
+    await positionCurrentHealthLastKnown.setProps({
+      hp: { current: 800, pct: 80, destroyed: false, state: 'LAST_KNOWN', knowledge: 'LAST_KNOWN' },
+    })
+    expect(positionCurrentHealthLastKnown.find('[data-test="pb-hp-hud"]').classes()).toContain('pb-hp-lastknown')
   })
 })
 

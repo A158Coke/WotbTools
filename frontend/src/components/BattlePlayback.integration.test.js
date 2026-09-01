@@ -196,9 +196,9 @@ describe('BattlePlayback', () => {
     ds.vehicles[1].positionSegments = [
       { knowledge: 'OBSERVED', startSec: 10, endSec: 20,
         samples: [
-          { timeSec: 10, x: -50, y: -50, knowledge: 'OBSERVED' },
-          { timeSec: 14, x: -90, y: -90, knowledge: 'OBSERVED' },
-          { timeSec: 20, x: -100, y: -100, knowledge: 'OBSERVED' },
+          { timeSec: 10, x: -50, y: -50 },
+          { timeSec: 14, x: -90, y: -90 },
+          { timeSec: 20, x: -100, y: -100 },
         ] },
     ]
     return { overview, ds }
@@ -1708,9 +1708,9 @@ describe('V2 HP regression (restored critical coverage)', () => {
     const enemy = ds.vehicles[1]
     enemy.positionSegments = [
       { knowledge: 'OBSERVED', startSec: 0, endSec: 20,
-        samples: [{ timeSec: 0, x: -50, y: -50, knowledge: 'OBSERVED' }, { timeSec: 20, x: -60, y: -60, knowledge: 'OBSERVED' }] },
+        samples: [{ timeSec: 0, x: -50, y: -50 }, { timeSec: 20, x: -60, y: -60 }] },
       { knowledge: 'OBSERVED', startSec: 30, endSec: 60,
-        samples: [{ timeSec: 30, x: -60, y: -60, knowledge: 'OBSERVED' }, { timeSec: 60, x: -60, y: -60, knowledge: 'OBSERVED' }] },
+        samples: [{ timeSec: 30, x: -60, y: -60 }, { timeSec: 60, x: -60, y: -60 }] },
     ]
     enemy.orientationSegments = []
     enemy.healthTransitions = [
@@ -1745,7 +1745,7 @@ describe('V2 HP regression (restored critical coverage)', () => {
     const ds = makePlaybackV2()
     const enemy = ds.vehicles[1]
     enemy.positionSegments = [{ knowledge: 'OBSERVED', startSec: 0, endSec: 60,
-      samples: [{ timeSec: 0, x: -50, y: -50, knowledge: 'OBSERVED' }, { timeSec: 60, x: -60, y: -60, knowledge: 'OBSERVED' }] }]
+      samples: [{ timeSec: 0, x: -50, y: -50 }, { timeSec: 60, x: -60, y: -60 }] }]
     enemy.orientationSegments = []
     enemy.healthTransitions = [
       { timeSec: 0, currentHp: 1200, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },

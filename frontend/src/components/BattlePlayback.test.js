@@ -24,10 +24,10 @@ const track = (accountId, team, friendly, x0, x1) => ({
   playerName: accountId === 1 ? 'Player' : 'Enemy',
   tankId: accountId,
   tankName: accountId === 1 ? 'Maus' : 'T49',
-  tankClass: '', team, friendly,
+  tankClass: '', tankTier: null, team, friendly,
   positionSegments: [{ knowledge: 'OBSERVED', startSec: 0, endSec: 10, samples: [
-    { timeSec: 0, x: x0, y: 0, knowledge: 'OBSERVED' },
-    { timeSec: 10, x: x1, y: 0, knowledge: 'OBSERVED' },
+    { timeSec: 0, x: x0, y: 0 },
+    { timeSec: 10, x: x1, y: 0 },
   ] }],
   orientationSegments: [{ knowledge: 'CURRENT', startSec: 0, endSec: 10, samples: [
     { timeSec: 0, hullYawDeg: 0, turretRelativeYawDeg: 0 },
@@ -40,7 +40,7 @@ const dataset = {
   mapCode: 'holland', friendlyTeam: 1, recorderAccountId: 1, durationSec: 10,
   vehicles: [track(1, 1, true, 0, 50), track(2, 2, false, -20, -40)],
   events: [{ type: 'POSITION_REPORTED', timeSec: 2, accountId: 2, targetAccountId: null, observedHpLoss: null }],
-  pointsSamples: [], limitations: [],
+  pointsSamples: [], limitations: [], capability: 'FULL', arenaBonusType: null,
 }
 
 describe('BattlePlayback orchestrator integration', () => {
@@ -81,7 +81,7 @@ describe('BattlePlayback orchestrator integration', () => {
     const futureOnly = {
       ...track(9, 2, 20, 30),
       positionSegments: [{ knowledge: 'OBSERVED', startSec: 8, endSec: 10, samples: [
-        { timeSec: 8, x: 20, y: 0, knowledge: 'OBSERVED' },
+        { timeSec: 8, x: 20, y: 0 },
       ] }],
     }
     const wrapper = mount(BattlePlayback, {

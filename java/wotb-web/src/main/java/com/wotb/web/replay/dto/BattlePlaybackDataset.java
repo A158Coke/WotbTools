@@ -159,23 +159,22 @@ public record BattlePlaybackDataset(
             ConfidenceDto confidence
     ) {
         public VehicleBattleLoadoutDto {
-            // 契约：logicalItemId / wireCode / equipmentId 可为 null（unknown raw-preserve）。
-            // List.copyOf 拒绝 null 元素 → 一旦 loadout 事实携带 null 直接 NPE → V2 整个 204。
-            // 这里改用 null-tolerant 不可变拷贝，保留 null 语义（前端按 unknown 处理）。
-            consumables = fixedNullable(consumables, 3);
-            consumableWireCodes = fixedNullable(consumableWireCodes, 3);
-            provisions = fixedNullable(provisions, 3);
-            provisionWireCodes = fixedNullable(provisionWireCodes, 3);
-            equipmentIds = fixedNullable(equipmentIds, 9);
+            // Current producer shape is strict: legacy padding/truncation belongs only to
+            // ReplayArtifactWriter's read-only compatibility boundary.
+            consumables = exactNullable(consumables, 3, "consumables");
+            consumableWireCodes = exactNullable(consumableWireCodes, 3, "consumableWireCodes");
+            provisions = exactNullable(provisions, 3, "provisions");
+            provisionWireCodes = exactNullable(provisionWireCodes, 3, "provisionWireCodes");
+            equipmentIds = exactNullable(equipmentIds, 9, "equipmentIds");
             confidence = confidence == null ? ConfidenceDto.UNKNOWN : confidence;
         }
     }
 
-    private static <T> List<T> fixedNullable(final List<T> list, final int size) {
-        final List<T> fixed = new java.util.ArrayList<>(size);
-        if (list != null) fixed.addAll(list.subList(0, Math.min(list.size(), size)));
-        while (fixed.size() < size) fixed.add(null);
-        return java.util.Collections.unmodifiableList(fixed);
+    private static <T> List<T> exactNullable(final List<T> list, final int size, final String field) {
+        if (list == null || list.size() != size) {
+            throw new IllegalArgumentException(field + " must contain exactly " + size + " slots");
+        }
+        return java.util.Collections.unmodifiableList(new java.util.ArrayList<>(list));
     }
 
     /** 位置观察段（AoI boundary authority）：段内可插值，段间 UNKNOWN_AOI 禁止。 */

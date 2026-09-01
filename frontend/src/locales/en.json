@@ -1432,7 +1432,6 @@
                 "points": "Points",
                 "hp_unknown": "unknown",
                 "hp_full_spawn": "Full HP at spawn; exact HP not yet confirmed from replay",
-                "hp_current_max_unknown": "Current HP observed; spawn max HP unknown",
                 "reset_view": "Reset view",
                 "unknown": "Unknown",
                 "event_DAMAGE": "Damage",

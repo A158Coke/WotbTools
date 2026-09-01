@@ -88,7 +88,7 @@ class ReplayArtifactWriterTest {
                         "accountId": 7, "playerName": "p", "tankId": 1, "tankName": "t",
                         "tankClass": "medium", "tankTier": 10, "team": 1, "friendly": true,
                         "loadout": {"replayVersion": null, "consumables": [],
-                          "consumableWireCodes": [], "provisions": [], "provisionWireCodes": [],
+                          "consumableWireCodes": [13, 13], "provisions": [], "provisionWireCodes": [],
                           "equipmentIds": [], "confidence": "EXACT"},
                         "positionSegments": [{"startSec": 0, "endSec": 1, "knowledge": "OBSERVED",
                           "interpolationAllowed": true, "samples": [{"timeSec": 0, "x": 1, "y": 2,
@@ -96,7 +96,9 @@ class ReplayArtifactWriterTest {
                           "endSec": 1, "knowledge": "CURRENT", "samples": [{"timeSec": 0,
                           "hullYawDeg": 0, "turretRelativeYawDeg": 0, "knowledge": "CURRENT"}]}],
                         "healthTransitions": [],
-                        "lifeTransitions": [], "consumableTransitions": [], "moduleCrewTransitions": []
+                        "lifeTransitions": [], "consumableTransitions": [{"timeSec": 1,
+                          "consumableSlot": null, "logicalItemId": "REPAIR_KIT", "wireCode": 13,
+                          "state": "ACTIVATED", "confidence": "HIGH"}], "moduleCrewTransitions": []
                       }], "events": [], "shots": [], "pointsSamples": [], "limitations": [],
                       "capability": "FULL", "arenaBonusType": null
                     }
@@ -107,6 +109,9 @@ class ReplayArtifactWriterTest {
                     read.vehicles().get(0).loadout().confidence());
             assertEquals(3, read.vehicles().get(0).loadout().consumables().size());
             assertEquals(9, read.vehicles().get(0).loadout().equipmentIds().size());
+            assertEquals(java.util.Arrays.asList(13, 13, null), read.vehicles().get(0).loadout().consumableWireCodes());
+            assertNull(read.vehicles().get(0).consumableTransitions().getFirst().consumableSlot(),
+                    "duplicate wire code must stay unresolved at the artifact read boundary");
             assertTrue(read.vehicles().get(0).damageLosses().isEmpty());
             assertEquals(1, read.vehicles().get(0).positionSegments().getFirst().samples().getFirst().x());
         } finally {
@@ -152,7 +157,9 @@ class ReplayArtifactWriterTest {
         final Path jobDir = Files.createTempDirectory("wotb-artifact-test");
         try {
             final VehicleBattleLoadoutDto loadout = new VehicleBattleLoadoutDto(
-                    "11.19", List.of(), List.of(), List.of(), List.of(), List.of(), ConfidenceDto.HIGH);
+                    "11.19", java.util.Collections.nCopies(3, null), java.util.Collections.nCopies(3, null),
+                    java.util.Collections.nCopies(3, null), java.util.Collections.nCopies(3, null),
+                    java.util.Collections.nCopies(9, null), ConfidenceDto.HIGH);
             final VehiclePlaybackTrack vehicle = new VehiclePlaybackTrack(
                     7L, "p", 1L, "t", "medium", 10, 1, true, loadout,
                     List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
