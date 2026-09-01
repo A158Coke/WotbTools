@@ -1,0 +1,319 @@
+openapi: 3.1.0
+info:
+  title: WotBTools HTTP Contract
+  version: 1.0.0
+  description: FE ↔ BE wire contract. Domain models and Control/Worker contracts are separate authorities.
+paths:
+  /api/replay/battle-playback-v2:
+    post:
+      operationId: getBattlePlaybackV2
+      summary: Read the cached Battle Playback V2 dataset for a ready processing source
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetReference'
+      responses:
+        '200':
+          description: Canonical sparse playback projection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BattlePlaybackDataset'
+        '204':
+          description: Playback capability unavailable for this source
+        '400':
+          description: Invalid dataset reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Source is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Dataset storage is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    DatasetReference:
+      type: object
+      additionalProperties: false
+      required: [processingJobId, sourceId]
+      properties:
+        processingJobId:
+          type: string
+          minLength: 1
+        sourceId:
+          type: string
+          pattern: '^r[0-9]+$'
+    PlaybackCapability:
+      type: string
+      enum: [FULL, PARTIAL, UNAVAILABLE]
+    PlaybackConfidence:
+      type: string
+      enum: [HIGH, MEDIUM, LOW, UNKNOWN]
+    PositionKnowledge:
+      type: string
+      enum: [OBSERVED, LAST_KNOWN]
+    OrientationKnowledge:
+      type: string
+      enum: [CURRENT, LAST_KNOWN, UNKNOWN]
+    HealthKnowledge:
+      type: string
+      enum: [CURRENT, LAST_KNOWN, UNKNOWN]
+    PlaybackLifeState:
+      type: string
+      enum: [ALIVE, DESTROYED, UNKNOWN]
+    BattlePlaybackDataset:
+      type: object
+      additionalProperties: false
+      required:
+        - durationSec
+        - mapCode
+        - friendlyTeam
+        - recorderAccountId
+        - vehicles
+        - events
+        - shots
+        - pointsSamples
+        - limitations
+        - capability
+        - arenaBonusType
+      properties:
+        durationSec:
+          type: number
+          minimum: 0
+        mapCode:
+          type: [string, 'null']
+        friendlyTeam:
+          type: [integer, 'null']
+          enum: [1, 2, null]
+        recorderAccountId:
+          type: [integer, 'null']
+        vehicles:
+          type: array
+          items:
+            $ref: '#/components/schemas/VehiclePlaybackTrack'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/BattleEvent'
+        shots:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShotTrack'
+        pointsSamples:
+          type: array
+          items:
+            $ref: '#/components/schemas/PointsSample'
+        limitations:
+          type: array
+          items: { type: string }
+        capability:
+          $ref: '#/components/schemas/PlaybackCapability'
+        arenaBonusType:
+          type: [integer, 'null']
+    VehiclePlaybackTrack:
+      type: object
+      additionalProperties: false
+      required: [accountId, playerName, tankId, tankName, tankClass, tankTier, team, friendly, loadout, positionSegments, orientationSegments, healthTransitions, lifeTransitions, consumableTransitions, moduleCrewTransitions]
+      properties:
+        accountId: { type: integer }
+        playerName: { type: string }
+        tankId: { type: integer }
+        tankName: { type: string }
+        tankClass: { type: string }
+        tankTier: { type: [integer, 'null'] }
+        team: { type: integer }
+        friendly: { type: boolean }
+        loadout:
+          anyOf:
+            - $ref: '#/components/schemas/VehicleBattleLoadout'
+            - type: 'null'
+        positionSegments:
+          type: array
+          items: { $ref: '#/components/schemas/PositionSegment' }
+        orientationSegments:
+          type: array
+          items: { $ref: '#/components/schemas/OrientationSegment' }
+        healthTransitions:
+          type: array
+          items: { $ref: '#/components/schemas/HealthTransition' }
+        lifeTransitions:
+          type: array
+          items: { $ref: '#/components/schemas/LifeTransition' }
+        consumableTransitions:
+          type: array
+          items: { $ref: '#/components/schemas/ConsumableTransition' }
+        moduleCrewTransitions:
+          type: array
+          items: { $ref: '#/components/schemas/ModuleCrewTransition' }
+    VehicleBattleLoadout:
+      type: object
+      additionalProperties: false
+      required: [replayVersion, consumables, consumableWireCodes, provisions, provisionWireCodes, equipmentIds, confidence]
+      properties:
+        replayVersion: { type: [string, 'null'] }
+        consumables:
+          type: array
+          items: { type: [string, 'null'] }
+        consumableWireCodes:
+          type: array
+          items: { type: [integer, 'null'] }
+        provisions:
+          type: array
+          items: { type: [string, 'null'] }
+        provisionWireCodes:
+          type: array
+          items: { type: [integer, 'null'] }
+        equipmentIds:
+          type: array
+          items: { type: [integer, 'null'] }
+        confidence: { $ref: '#/components/schemas/PlaybackConfidence' }
+    PositionSegment:
+      type: object
+      additionalProperties: false
+      required: [startSec, endSec, knowledge, interpolationAllowed, samples]
+      properties:
+        startSec: { type: number, minimum: 0 }
+        endSec: { type: number, minimum: 0 }
+        knowledge: { $ref: '#/components/schemas/PositionKnowledge' }
+        interpolationAllowed: { type: boolean }
+        samples:
+          type: array
+          items: { $ref: '#/components/schemas/PositionSample' }
+    PositionSample:
+      type: object
+      additionalProperties: false
+      required: [timeSec, x, y, knowledge]
+      properties:
+        timeSec: { type: number, minimum: 0 }
+        x: { type: number }
+        y: { type: number }
+        knowledge: { $ref: '#/components/schemas/PositionKnowledge' }
+    OrientationSegment:
+      type: object
+      additionalProperties: false
+      required: [startSec, endSec, knowledge, samples]
+      properties:
+        startSec: { type: number, minimum: 0 }
+        endSec: { type: number, minimum: 0 }
+        knowledge: { $ref: '#/components/schemas/OrientationKnowledge' }
+        samples:
+          type: array
+          items: { $ref: '#/components/schemas/OrientationSample' }
+    OrientationSample:
+      type: object
+      additionalProperties: false
+      required: [timeSec, hullYawDeg, turretRelativeYawDeg, knowledge]
+      properties:
+        timeSec: { type: number, minimum: 0 }
+        hullYawDeg: { type: [number, 'null'] }
+        turretRelativeYawDeg: { type: [number, 'null'] }
+        knowledge: { $ref: '#/components/schemas/OrientationKnowledge' }
+    HealthTransition:
+      type: object
+      additionalProperties: false
+      required: [timeSec, currentHp, knowledge, source, displayCapacityHp, confidence]
+      properties:
+        timeSec: { type: number, minimum: 0 }
+        currentHp: { type: [integer, 'null'], minimum: 0 }
+        knowledge: { $ref: '#/components/schemas/HealthKnowledge' }
+        source: { type: string }
+        displayCapacityHp: { type: [integer, 'null'], minimum: 0 }
+        confidence: { $ref: '#/components/schemas/PlaybackConfidence' }
+    LifeTransition:
+      type: object
+      additionalProperties: false
+      required: [timeSec, lifeState, destroyedKnownAtSec]
+      properties:
+        timeSec: { type: number, minimum: 0 }
+        lifeState: { $ref: '#/components/schemas/PlaybackLifeState' }
+        destroyedKnownAtSec: { type: [number, 'null'], minimum: 0 }
+    ConsumableTransition:
+      type: object
+      additionalProperties: false
+      required: [timeSec, consumableSlot, logicalItemId, wireCode, state, confidence]
+      properties:
+        timeSec: { type: number, minimum: 0 }
+        consumableSlot: { type: [integer, 'null'], minimum: 0, maximum: 2 }
+        logicalItemId: { type: [string, 'null'] }
+        wireCode: { type: [integer, 'null'] }
+        state: { type: string }
+        confidence: { $ref: '#/components/schemas/PlaybackConfidence' }
+    ModuleCrewTransition:
+      type: object
+      additionalProperties: false
+      required: [timeSec, component, state, recorderVisible, confidence]
+      properties:
+        timeSec: { type: number, minimum: 0 }
+        component: { type: string }
+        state: { type: string }
+        recorderVisible: { type: boolean }
+        confidence: { $ref: '#/components/schemas/PlaybackConfidence' }
+    BattleEvent:
+      type: object
+      additionalProperties: false
+      required: [type, timeSec, accountId, targetAccountId, observedHpLoss]
+      properties:
+        type: { type: string }
+        timeSec: { type: number, minimum: 0 }
+        accountId: { type: [integer, 'null'] }
+        targetAccountId: { type: [integer, 'null'] }
+        observedHpLoss: { type: [integer, 'null'], minimum: 0 }
+    ShotTrack:
+      type: object
+      additionalProperties: false
+      required: [shooterAccountId, launchTimeSec, terminalTimeSec, resolution]
+      properties:
+        shooterAccountId: { type: integer }
+        launchTimeSec: { type: number, minimum: 0 }
+        terminalTimeSec: { type: [number, 'null'], minimum: 0 }
+        resolution: { type: [string, 'null'] }
+    PointsSample:
+      type: object
+      additionalProperties: false
+      required: [timeSec, team, points]
+      properties:
+        timeSec: { type: number, minimum: 0 }
+        team: { type: integer }
+        points: { type: integer, minimum: 0 }
+    ApiError:
+      type: object
+      additionalProperties: false
+      required: [id, errorCode, errorMsg, status, retryable, details, timestamp]
+      properties:
+        id: { type: [string, 'null'] }
+        errorCode: { type: string }
+        errorMsg: { type: [string, 'null'] }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        retryable: { type: boolean }
+        details: { type: object, additionalProperties: true }
+        timestamp: { type: [string, 'null'], format: date-time }
