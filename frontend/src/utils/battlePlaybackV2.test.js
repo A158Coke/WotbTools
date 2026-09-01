@@ -177,4 +177,27 @@ describe('consumableRuntimeAt / moduleCrewAt', () => {
     ]))
     expect(consumableRuntimeStatesAt(transitions, 120).size).toBe(0)
   })
+
+  it('updates only the observed consumable, invalidates globally, then recovers per slot without future leakage', () => {
+    const transitions = [
+      { timeSec: 90, logicalItemId: 'REPAIR_KIT', state: 'ACTIVATED', wireCode: 0x0D },
+      { timeSec: 95, logicalItemId: 'ADRENALINE', state: 'INITIALIZED', wireCode: 0x09 },
+      { timeSec: 100, logicalItemId: 'REPAIR_KIT', state: 'ACTIVE_ENDED_OR_COOLDOWN', wireCode: 0x0D },
+      { timeSec: 110, logicalItemId: null, state: 'UNKNOWN', wireCode: null },
+      { timeSec: 120, logicalItemId: 'REPAIR_KIT', state: 'READY', wireCode: 0x0D },
+      { timeSec: 130, logicalItemId: 'ADRENALINE', state: 'ACTIVATED', wireCode: 0x09 },
+    ]
+
+    const beforeUnknown = consumableRuntimeStatesAt(transitions, 105)
+    expect(beforeUnknown.get(0x0D).state).toBe('ACTIVE_ENDED_OR_COOLDOWN')
+    expect(beforeUnknown.get(0x09).state).toBe('INITIALIZED')
+
+    expect(consumableRuntimeStatesAt(transitions, 115)).toEqual(new Map())
+
+    const afterRecovery = consumableRuntimeStatesAt(transitions, 125)
+    expect(afterRecovery).toEqual(new Map([
+      [0x0D, { state: 'READY', logicalItemId: 'REPAIR_KIT', wireCode: 0x0D }],
+    ]))
+    expect(afterRecovery.has(0x09)).toBe(false)
+  })
 })
