@@ -14,7 +14,7 @@
 
     <properties>
         <!-- 默认排除人工探测类（占点时间线等）；运行探测时用 -Dai.probe.excludedGroups= 覆盖 -->
-        <ai.probe.excludedGroups>ai-capture-probe</ai.probe.excludedGroups>
+        <ai.probe.excludedGroups>ai-capture-probe,ai-live</ai.probe.excludedGroups>
     </properties>
 
     <dependencies>
