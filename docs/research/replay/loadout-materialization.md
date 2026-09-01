@@ -341,9 +341,13 @@ Observed mapping:
 
 Equipment ID 122 (`IMPROVED_VERTICAL_STABILIZER`, byte `z`) is present in the current catalog but was not naturally selected in the studied replay corpus. The general byte=ID encoding rule is nevertheless independently closed across the other 20 observed IDs; unsupported/unseen IDs should still be raw-preserved and catalog-resolved rather than hard-coded as a finite character enum.
 
-The current authoritative catalog does not contain equipment ID 120. It is
-therefore not assigned a guessed identity: a future replay byte 120 remains a
-raw numeric equipment ID until the catalog audit closes it.
+The current authoritative BlitzKit `equipment.pb` catalog does contain
+equipment ID 120. It is `IMPROVED_MODULES_PLUS` (`改进型模块+`; Russian:
+`Доработанные модули +`). The current Object 244 vehicle-specific
+`HEprotectionPreset` places it in the VITALITY row, slot 1, LEFT position.
+This closes the previously unresolved raw value without guessing a mapping;
+the identity is sourced from the current catalog and the vehicle-specific
+preset. The raw wire value remains preserved as canonical evidence.
 
 Verdict:
 
