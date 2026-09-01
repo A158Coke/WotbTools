@@ -6,6 +6,8 @@ import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.web.replay.dto.BattlePlaybackDataset;
 import com.wotb.web.replay.dto.MapOverview;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
@@ -90,7 +92,42 @@ public final class ReplayArtifactWriter {
         if (!Files.exists(path)) {
             return null;
         }
-        return MAPPER.readValue(Files.readAllBytes(path), BattlePlaybackDataset.class);
+        final JsonNode root = MAPPER.readTree(Files.readAllBytes(path));
+        normalizeLegacyPlaybackConfidence(root);
+        return MAPPER.treeToValue(root, BattlePlaybackDataset.class);
+    }
+
+    /**
+     * Legacy persisted V2 artifacts used the domain enum names. Normalize only while reading
+     * the persisted artifact; new HTTP responses remain strictly transport-contract shaped.
+     */
+    private static void normalizeLegacyPlaybackConfidence(final JsonNode node) {
+        if (node == null) {
+            return;
+        }
+        if (node.isArray()) {
+            for (final JsonNode child : node) {
+                normalizeLegacyPlaybackConfidence(child);
+            }
+            return;
+        }
+        if (!(node instanceof ObjectNode object)) {
+            return;
+        }
+        for (final var entry : object.properties()) {
+            final JsonNode child = entry.getValue();
+            if ("confidence".equals(entry.getKey()) && child != null && child.isTextual()) {
+                final String normalized = switch (child.asString()) {
+                    case "EXACT" -> "HIGH";
+                    case "INFERRED" -> "MEDIUM";
+                    case "PARTIAL" -> "LOW";
+                    default -> child.asString();
+                };
+                object.put(entry.getKey(), normalized);
+            } else {
+                normalizeLegacyPlaybackConfidence(child);
+            }
+        }
     }
 
     private static Path derivedDir(final Path jobDir, final int sourceIndex) {

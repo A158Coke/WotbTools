@@ -506,7 +506,7 @@ public final class BattlePlaybackProjector {
         return samples;
     }
 
-    private static VehicleBattleLoadoutDto toLoadoutDto(final VehicleBattleLoadout l) {
+    static VehicleBattleLoadoutDto toLoadoutDto(final VehicleBattleLoadout l) {
         if (l == null) {
             return null;
         }
@@ -527,7 +527,19 @@ public final class BattlePlaybackProjector {
             equipment.add(e.equipmentId());
         }
         return new VehicleBattleLoadoutDto(l.replayVersion(), consumables, codes, provisions, pCodes,
-                equipment, l.confidence());
+                equipment, toConfidence(l.confidence()));
+    }
+
+    private static ConfidenceDto toConfidence(final DecodeConfidence c) {
+        if (c == null) {
+            return ConfidenceDto.UNKNOWN;
+        }
+        return switch (c) {
+            case EXACT -> ConfidenceDto.HIGH;
+            case INFERRED -> ConfidenceDto.MEDIUM;
+            case PARTIAL -> ConfidenceDto.LOW;
+            case UNKNOWN -> ConfidenceDto.UNKNOWN;
+        };
     }
 
     private static ConfidenceDto toConfidence(final com.wotb.core.replay.timeline.Confidence c) {
@@ -538,17 +550,6 @@ public final class BattlePlaybackProjector {
             case HIGH -> ConfidenceDto.HIGH;
             case MEDIUM -> ConfidenceDto.MEDIUM;
             case LOW -> ConfidenceDto.LOW;
-            case UNKNOWN -> ConfidenceDto.UNKNOWN;
-        };
-    }
-
-    private static ConfidenceDto toConfidence(final DecodeConfidence c) {
-        if (c == null) {
-            return ConfidenceDto.UNKNOWN;
-        }
-        return switch (c) {
-            case EXACT -> ConfidenceDto.HIGH;
-            case INFERRED, PARTIAL -> ConfidenceDto.MEDIUM;
             case UNKNOWN -> ConfidenceDto.UNKNOWN;
         };
     }

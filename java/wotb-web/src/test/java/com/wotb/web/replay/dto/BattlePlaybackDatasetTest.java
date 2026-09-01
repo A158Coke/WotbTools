@@ -1,9 +1,10 @@
 package com.wotb.web.replay.dto;
 
 import com.wotb.web.replay.dto.BattlePlaybackDataset.Capability;
+import com.wotb.web.replay.dto.BattlePlaybackDataset.ConfidenceDto;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.VehicleBattleLoadoutDto;
-import com.wotb.core.replay.event.DecodeConfidence;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
 import java.util.Arrays;
@@ -48,7 +49,7 @@ class BattlePlaybackDatasetTest {
                 Arrays.asList(null, "provision-b", null),
                 Arrays.asList(1, null, 3),
                 Arrays.asList(100, null, 300),
-                DecodeConfidence.EXACT);
+                ConfidenceDto.HIGH);
         // list 保留 null（不可变、允许 null 元素），不再抛 NPE。
         assertEquals(3, dto.consumables().size());
         assertEquals(3, dto.provisionWireCodes().size());
@@ -61,6 +62,21 @@ class BattlePlaybackDatasetTest {
                 "11.19", null, null, null, null, null, null);
         assertEquals(List.of(), dto.consumables());
         assertEquals(List.of(), dto.provisionWireCodes());
+    }
+
+    @Test
+    void loadoutConfidenceUsesPlaybackWireVocabulary() {
+        final VehicleBattleLoadoutDto dto = new VehicleBattleLoadoutDto(
+                "11.19", null, null, null, null, null, ConfidenceDto.HIGH);
+        assertEquals(ConfidenceDto.HIGH, dto.confidence());
+    }
+
+    @Test
+    void serializedLoadoutUsesPlaybackConfidenceValue() throws Exception {
+        final VehicleBattleLoadoutDto dto = new VehicleBattleLoadoutDto(
+                "11.19", null, null, null, null, null, ConfidenceDto.HIGH);
+        final String json = JsonMapper.builder().build().writeValueAsString(dto);
+        assertEquals("HIGH", JsonMapper.builder().build().readTree(json).get("confidence").asString());
     }
 
     private static BattlePlaybackDataset dataset(final List<String> limitations) {
