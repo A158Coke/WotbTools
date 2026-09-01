@@ -289,7 +289,7 @@
     {
       "id": 80,
       "code": "REDUCED_ENGINE_POWER_BOOST",
-      "nameZh": "低功率发动机增压",
+      "nameZh": "次级强化引擎",
       "nameEn": "Reduced Engine Power Boost",
       "scope": "VEHICLE_SPECIFIC",
       "special": true,
