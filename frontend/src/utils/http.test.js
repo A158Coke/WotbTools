@@ -106,7 +106,7 @@ describe('XHR and job compatibility', () => {
   it('parses canonical XHR errors', () => {
     const error = apiErrorFromXhr({
       status: 413,
-      responseText: '{"errorCode":"FILE_TOO_LARGE","id":"upload-id","retryable":false}',
+      responseText: '{"errorCode":"FILE_TOO_LARGE","errorMsg":null,"status":413,"id":"upload-id","retryable":false,"details":{},"timestamp":null}',
       getResponseHeader: () => null,
     })
     expect(error).toMatchObject({ errorCode: 'FILE_TOO_LARGE', code: 'FILE_TOO_LARGE', id: 'upload-id', retryable: false })
