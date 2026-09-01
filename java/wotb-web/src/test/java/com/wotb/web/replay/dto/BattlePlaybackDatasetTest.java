@@ -4,7 +4,6 @@ import com.wotb.web.replay.dto.BattlePlaybackDataset.Capability;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.ConfidenceDto;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.VehicleBattleLoadoutDto;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.VehiclePlaybackTrack;
-import com.wotb.core.replay.event.DecodeConfidence;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -57,7 +56,7 @@ class BattlePlaybackDatasetTest {
                 Arrays.asList(null, "provision-b", null),
                 Arrays.asList(1, null, 3),
                 Arrays.asList(100, null, 300),
-                DecodeConfidence.EXACT);
+                ConfidenceDto.HIGH);
         // list 保留 null（不可变、允许 null 元素），不再抛 NPE。
         assertEquals(3, dto.consumables().size());
         assertEquals(3, dto.provisionWireCodes().size());
@@ -73,6 +72,21 @@ class BattlePlaybackDatasetTest {
     }
 
     @Test
+    void loadoutConfidenceUsesPlaybackWireVocabulary() {
+        final VehicleBattleLoadoutDto dto = new VehicleBattleLoadoutDto(
+                "11.19", null, null, null, null, null, ConfidenceDto.HIGH);
+        assertEquals(ConfidenceDto.HIGH, dto.confidence());
+    }
+
+    @Test
+    void serializedLoadoutUsesPlaybackConfidenceValue() throws Exception {
+        final VehicleBattleLoadoutDto dto = new VehicleBattleLoadoutDto(
+                "11.19", null, null, null, null, null, ConfidenceDto.HIGH);
+        final String json = JsonMapper.builder().build().writeValueAsString(dto);
+        assertEquals("HIGH", JsonMapper.builder().build().readTree(json).get("confidence").asString());
+    }
+
+    @Test
     void jacksonSerializationPreservesNullableLoadoutSlotsAndWireConfidenceVocabulary() throws Exception {
         final ObjectMapper objectMapper = JsonMapper.builder().build();
         final VehicleBattleLoadoutDto loadout = new VehicleBattleLoadoutDto(
@@ -82,7 +96,7 @@ class BattlePlaybackDatasetTest {
                 Arrays.asList(null, "provision-b", null),
                 Arrays.asList(1, null, 3),
                 Arrays.asList(100, null, 300),
-                DecodeConfidence.UNKNOWN);
+                ConfidenceDto.UNKNOWN);
         final VehiclePlaybackTrack vehicle = new VehiclePlaybackTrack(
                 42L, "Player", 1001L, "Tank", "medium", 8, 1, true, loadout,
                 List.of(), List.of(), List.of(

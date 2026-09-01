@@ -27,10 +27,12 @@ import com.wotb.core.replay.timeline.PositionKnowledge;
 import com.wotb.core.replay.timeline.PositionSource;
 import com.wotb.core.replay.timeline.VehicleKnowledgeState;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.VehicleBattleLoadout;
 import com.wotb.core.replay.facts.AoiObservationSegment;
 import com.wotb.core.replay.timeline.TimelineError;
 import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.web.replay.dto.BattlePlaybackDataset;
+import com.wotb.web.replay.dto.BattlePlaybackDataset.ConfidenceDto;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -50,6 +52,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@link BattlePlaybackDataset}。真实夹具验证 —— timeline 可用时必须产出可用 dataset。
  */
 class BattlePlaybackProjectorTest {
+
+    @Test
+    void loadoutConfidenceMapsDomainEnumToPlaybackWireEnum() {
+        final Map<DecodeConfidence, ConfidenceDto> expected = Map.of(
+                DecodeConfidence.EXACT, ConfidenceDto.HIGH,
+                DecodeConfidence.INFERRED, ConfidenceDto.MEDIUM,
+                DecodeConfidence.PARTIAL, ConfidenceDto.LOW,
+                DecodeConfidence.UNKNOWN, ConfidenceDto.UNKNOWN);
+        for (final Map.Entry<DecodeConfidence, ConfidenceDto> entry : expected.entrySet()) {
+            final VehicleBattleLoadout loadout = new VehicleBattleLoadout(
+                    7, "11.19", List.of(), List.of(), List.of(), entry.getKey());
+            assertEquals(entry.getValue(), BattlePlaybackProjector.toLoadoutDto(loadout).confidence(),
+                    entry.getKey().name());
+        }
+    }
 
     private static Path fixture() throws Exception {
         final Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "common", "fixtures", "replays")

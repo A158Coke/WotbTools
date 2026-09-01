@@ -150,7 +150,7 @@ jobs:
         run: |
           set -euo pipefail
           mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo -pl wotb-web -am -DskipTests install
-          mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo -pl wotb-web -Dtest=BattlePlaybackDatasetTest -Dsurefire.failIfNoSpecifiedTests=true test
+          mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo -pl wotb-web -Dtest=BattlePlaybackDatasetTest,BattlePlaybackProjectorTest,ReplayArtifactWriterTest -Dsurefire.failIfNoSpecifiedTests=true test
 
   android:
     name: Android debug build (PR gate)

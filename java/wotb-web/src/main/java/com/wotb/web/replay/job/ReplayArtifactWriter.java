@@ -6,6 +6,8 @@ import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.web.replay.dto.BattlePlaybackDataset;
 import com.wotb.web.replay.dto.MapOverview;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
@@ -90,7 +92,42 @@ public final class ReplayArtifactWriter {
         if (!Files.exists(path)) {
             return null;
         }
-        return MAPPER.readValue(Files.readAllBytes(path), BattlePlaybackDataset.class);
+        final JsonNode root = MAPPER.readTree(Files.readAllBytes(path));
+        normalizeLegacyPlaybackConfidence(root);
+        return MAPPER.treeToValue(root, BattlePlaybackDataset.class);
+    }
+
+    /**
+     * Legacy persisted V2 artifacts used the domain enum names. Normalize only while reading
+     * the persisted artifact; new HTTP responses remain strictly transport-contract shaped.
+     */
+    private static void normalizeLegacyPlaybackConfidence(final JsonNode root) {
+        if (!(root instanceof ObjectNode object)) {
+            return;
+        }
+        final JsonNode vehicles = object.get("vehicles");
+        if (vehicles == null || !vehicles.isArray()) {
+            return;
+        }
+        for (final JsonNode vehicle : vehicles) {
+            if (!(vehicle instanceof ObjectNode vehicleObject)) {
+                continue;
+            }
+            if (!(vehicleObject.get("loadout") instanceof ObjectNode loadout)) {
+                continue;
+            }
+            final JsonNode confidence = loadout.get("confidence");
+            if (confidence != null && confidence.isTextual()) {
+                final String normalized = switch (confidence.asString()) {
+                    case "EXACT" -> "HIGH";
+                    case "INFERRED" -> "MEDIUM";
+                    case "PARTIAL" -> "LOW";
+                    case "UNKNOWN" -> "UNKNOWN";
+                    default -> confidence.asString();
+                };
+                loadout.put("confidence", normalized);
+            }
+        }
     }
 
     private static Path derivedDir(final Path jobDir, final int sourceIndex) {
