@@ -305,6 +305,21 @@ class BattlePlaybackProjectorTest {
                 DecodeConfidence.EXACT, entityId, -5f, 0x0D, "REPAIR_KIT",
                 com.wotb.core.replay.event.ConsumableLifecycleEvent.ConsumableLifecycleState.INITIALIZED,
                 0, 0f));
+        events.add(new com.wotb.core.replay.event.ConsumableLifecycleEvent(
+                5, new com.wotb.core.replay.event.ReplayTimestamp(-9f, -9f), 32,
+                DecodeConfidence.EXACT, entityId, -9f, 0x0D, null,
+                com.wotb.core.replay.event.ConsumableLifecycleEvent.ConsumableLifecycleState.INITIALIZED,
+                0, 0f));
+        events.add(new com.wotb.core.replay.event.ConsumableLifecycleEvent(
+                6, new com.wotb.core.replay.event.ReplayTimestamp(-4f, -4f), 32,
+                DecodeConfidence.EXACT, entityId, -4f, 0x09, "ADRENALINE",
+                com.wotb.core.replay.event.ConsumableLifecycleEvent.ConsumableLifecycleState.INITIALIZED,
+                0, 0f));
+        events.add(new com.wotb.core.replay.event.ConsumableLifecycleEvent(
+                7, new com.wotb.core.replay.event.ReplayTimestamp(8f, 8f), 32,
+                DecodeConfidence.EXACT, entityId, 8f, 0x0D, "REPAIR_KIT",
+                com.wotb.core.replay.event.ConsumableLifecycleEvent.ConsumableLifecycleState.INITIALIZED,
+                0, 0f));
         events.add(new com.wotb.core.replay.event.SupremacyPointsChangedEvent(
                 2, new com.wotb.core.replay.event.ReplayTimestamp(-4f, -4f), 8,
                 DecodeConfidence.EXACT, 1, 120));
@@ -324,6 +339,17 @@ class BattlePlaybackProjectorTest {
         final BattlePlaybackDataset.VehiclePlaybackTrack track = dataset.vehicles().getFirst();
         assertEquals(0d, track.consumableTransitions().getFirst().timeSec(), 1e-9);
         assertEquals("INITIALIZED", track.consumableTransitions().getFirst().state());
+        assertEquals(2, track.consumableTransitions().stream()
+                .filter(t -> t.timeSec() == 0d).count(),
+                "same entity+wireCode duplicate pre-battle INITIALIZED records must yield one seed");
+        assertEquals(1, track.consumableTransitions().stream()
+                .filter(t -> t.timeSec() == 0d && t.wireCode() == 0x0D).count());
+        assertEquals(1, track.consumableTransitions().stream()
+                .filter(t -> t.timeSec() == 0d && t.wireCode() == 0x09).count());
+        assertEquals(1, track.consumableTransitions().stream()
+                .filter(t -> t.timeSec() == 8d && t.wireCode() == 0x0D).count(),
+                "post-start rematerialization remains a distinct transition");
+        assertEquals(7, timeline.events().size(), "canonical raw evidence remains intact");
         assertTrue(dataset.events().stream().allMatch(e -> e.timeSec() >= 0d));
         assertTrue(dataset.pointsSamples().stream().allMatch(s -> s.timeSec() >= 0d));
         assertEquals(120, dataset.pointsSamples().stream()

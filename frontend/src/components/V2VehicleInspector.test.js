@@ -25,7 +25,7 @@ function track() {
       consumableWireCodes: [0x0D, 0x77, 0x09],
       provisions: ['SANDBAG_ARMOR', null, null],
       provisionWireCodes: [0x44, 0x10, 0x11],
-      equipmentIds: [100, 108, 114, 104, 111, 117, 106, 113, 101],
+      equipmentIds: [100, 120, 114, 104, 111, 117, 106, 113, 101],
     },
     positionSegments: [{ startSec: 90, endSec: 100, knowledge: 'OBSERVED', samples: [] }],
     orientationSegments: [{ startSec: 90, endSec: 100, knowledge: 'CURRENT', samples: [] }],
@@ -113,7 +113,7 @@ describe('V2VehicleInspector', () => {
     expect(text).toContain('修理箱')         // REPAIR_KIT
     expect(text).toContain('肾上腺素')       // ADRENALINE
     expect(text).toContain('沙袋装甲')       // SANDBAG_ARMOR
-    expect(text).toContain('改进型模块')     // 108
+    expect(text).toContain('改进型模块+')   // 120: Object 244 vehicle-specific preset
     expect(text).toContain('改进型光学系统') // 114
     // raw internal id 不得作为用户文案
     expect(text).not.toContain('REPAIR_KIT')
