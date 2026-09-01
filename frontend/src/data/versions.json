@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.59",
+    "date": "2026-09-01",
+    "tag": "fix",
+    "zh": "修复战局回放 V2 在部分生产响应下显示“响应无效”的问题：内部置信度值现在转换为稳定协议值，旧缓存仍可兼容读取。",
+    "en": "Fixed Battle Playback V2 showing an invalid response for some production payloads: internal confidence values are now mapped to stable wire values, while old cached artifacts remain readable.",
+    "ru": "Исправлено отображение недействительного ответа в Battle Playback V2 для некоторых производственных данных: внутренние значения уверенности теперь преобразуются в стабильные значения протокола, а старые кэшированные артефакты остаются читаемыми."
+  },
+  {
     "v": "2.12.58",
     "date": "2026-08-30",
     "tag": "fix",
