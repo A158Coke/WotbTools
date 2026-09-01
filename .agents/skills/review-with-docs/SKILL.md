@@ -39,6 +39,10 @@ description: >
 
 ---
 
+## HTTP Contract Gate
+
+涉及 API、构建或跨层数据 shape 时，Layer A 必须补查：`contracts/http/openapi.yaml` 是否为唯一 wire authority；OpenAPI endpoint/status/schema 是否与实际 Jackson serialization 一致；generated FE types/schema/error registry 是否最新且未手改；是否存在重复手写 transport contract、domain enum 泄漏、required/nullable 漂移或把客户端 fallback code 当服务端 registry；Playback 旧 artifact 是否只在读取边界 normalization；ApiError envelope 与 `204 capability unavailable` 语义是否保持；fixture、Ajv runtime、后端 contract tests 与受影响 UI/parser tests 是否都覆盖。发现 producer violation 时修 producer/mapper，不放宽 FE schema 作为掩盖。
+
 ## OCR 就绪检查
 
 - 检查：`ocr --version`（应输出 `open-code-review v1.9.10` 或兼容版本）

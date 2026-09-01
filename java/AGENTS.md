@@ -45,6 +45,8 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
 
 ## 分层与风格（硬性）
 
+- **HTTP contract boundary**：涉及 Web JSON shape 时先核对 `contracts/http/openapi.yaml`；`wotb-core` domain enum/facts 不得直接泄漏到 `wotb-web` response。使用显式 domain→transport mapper，并用实际 Jackson serialization test 锁定 required/nullable/enum；不要生成 Java DTO。
+
 - Controller → Service → Repository：Controller 只调 Service；Service 只调自己域的 Repository 或其他域的 Service（禁止跨域调 Repository）。新 endpoint 逻辑写进 service。
 - **Mapper 替代 toXxx**：禁止 Service/Entity 手写 `toDto()/toEntity()`；独立 Mapper 类（泛型接口 `Mapper<E,D>`）集中转换。
 - Flyway migration immutability：`src/main/resources/db/migration/V*.sql` 中已经存在于
