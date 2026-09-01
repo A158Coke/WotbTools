@@ -179,6 +179,17 @@ function openingHealthEvidence(track, t) {
   return true
 }
 
+/** Canonical opening-full member: exact full HP is compatible with relative-full presentation. */
+function openingFullMember(track, display, t) {
+  if (!track || track.friendly !== true || !display || display.destroyed) return false
+  if (display.relativeFull === true) return true
+  return display.currentHp != null
+    && display.displayCapacityHp != null
+    && display.currentHp === display.displayCapacityHp
+    && display.knowledge === 'CURRENT'
+    && openingHealthEvidence(track, t)
+}
+
 /** Aggregate only canonical V2 health/life/friendly/team facts. */
 export function teamHealthAt(
   tracks: readonly VehiclePlaybackTrack[] | null | undefined,
@@ -196,7 +207,8 @@ export function teamHealthAt(
     && display.displayCapacityHp != null
     && display.displayCapacityHp > 0
     && (display.knowledge === 'CURRENT' || display.destroyed))
-  const allRelativeFull = displays.every(display => display?.relativeFull === true)
+  const allOpeningFull = teamTracks.every((track, index) =>
+    openingFullMember(track, displays[index], t))
   const knownRemaining = displays.reduce((sum, display) =>
     sum + (display?.currentHp != null && Number.isFinite(display.currentHp) ? display.currentHp : 0), 0)
   const totalMax = exact
@@ -207,7 +219,7 @@ export function teamHealthAt(
   let state = 'UNKNOWN'
   if (exact) {
     state = 'EXACT'
-  } else if (allRelativeFull) {
+  } else if (allOpeningFull) {
     state = 'FULL_RELATIVE'
   } else if (hasKnownEvidence) {
     state = 'PARTIAL'
@@ -223,14 +235,41 @@ export function teamHealthAt(
   }
 }
 
+/** Return decreases between canonical CURRENT samples at or before t. */
+function healthDecreasesAt(track, t) {
+  const losses: Array<{ timeSec: number; hpLoss: number }> = []
+  let previousHp: number | null = null
+  for (const transition of track?.healthTransitions || []) {
+    if (transition.timeSec > t + 1e-6) break
+    // LAST_KNOWN repeats the last observed value across a hidden interval; it
+    // is not a new current sample and must not invent a loss timestamp.
+    if (transition.knowledge !== 'CURRENT') {
+      if (transition.knowledge !== 'LAST_KNOWN') previousHp = null
+      continue
+    }
+    const currentHp = transition.currentHp
+    const trusted = currentHp != null && Number.isFinite(currentHp)
+    if (!trusted) {
+      previousHp = null
+      continue
+    }
+    if (previousHp != null && currentHp < previousHp) {
+      losses.push({ timeSec: transition.timeSec, hpLoss: previousHp - currentHp })
+    }
+    previousHp = currentHp
+  }
+  return losses
+}
+
 /** Canonical event-derived combat statistics; raw protocol damage is ignored. */
 export function cumulativeStatsAtV2(
   events: readonly BattleEvent[] | null | undefined,
-  accountId: number,
+  selectedTrack: Pick<VehiclePlaybackTrack, 'accountId' | 'healthTransitions'> | null | undefined,
   t: number,
 ) {
+  if (!selectedTrack || !Number.isFinite(t)) return { dealt: 0, received: 0, kills: 0 }
+  const accountId = selectedTrack.accountId
   let dealt = 0
-  let received = 0
   let kills = 0
   for (const event of events || []) {
     if (!event || !Number.isFinite(event.timeSec) || event.timeSec > t + 1e-6) continue
@@ -238,18 +277,21 @@ export function cumulativeStatsAtV2(
     const observedHpLoss = event.observedHpLoss
     if (event.type !== 'DAMAGE' || observedHpLoss == null || !Number.isFinite(observedHpLoss)) continue
     if (event.accountId === accountId) dealt += observedHpLoss
-    if (event.targetAccountId === accountId) received += observedHpLoss
   }
+  const received = healthDecreasesAt(selectedTrack, t)
+    .reduce((sum, loss) => sum + loss.hpLoss, 0)
   return { dealt, received, kills }
 }
 
-/** Canonical event-derived damage log; missing attacker attribution stays unknown. */
+/** Canonical damage log: incoming rows come from health decreases; outgoing rows need observed attribution. */
 export function damageLogAtV2(
   events: readonly BattleEvent[] | null | undefined,
-  selectedAccountId: number,
+  selectedTrack: Pick<VehiclePlaybackTrack, 'accountId' | 'healthTransitions'> | null | undefined,
   t: number,
   maxRows = 8,
 ) {
+  if (!selectedTrack || !Number.isFinite(t)) return []
+  const selectedAccountId = selectedTrack.accountId
   const rows: Array<{
     timeSec: number
     dir: 'in' | 'out'
@@ -258,23 +300,44 @@ export function damageLogAtV2(
     attackerReliable?: boolean
     victimAccountId?: number
   }> = []
-  for (const event of events || []) {
+  const observedEvents = (events || []).filter(event => {
     const observedHpLoss = event?.observedHpLoss
-    if (!event || event.type !== 'DAMAGE' || !Number.isFinite(event.timeSec)
-      || event.timeSec > t + 1e-6 || observedHpLoss == null || !Number.isFinite(observedHpLoss)) continue
-    if (event.targetAccountId === selectedAccountId) {
-      rows.push({
-        timeSec: event.timeSec,
-        dir: 'in',
-        hpLoss: observedHpLoss,
-        attackerAccountId: event.accountId,
-        attackerReliable: event.accountId != null,
-      })
-    } else if (event.accountId === selectedAccountId && event.targetAccountId != null) {
+    return event && event.type === 'DAMAGE' && Number.isFinite(event.timeSec)
+      && event.timeSec <= t + 1e-6 && observedHpLoss != null && Number.isFinite(observedHpLoss)
+  })
+  const usedAttribution = new Set<number>()
+  for (const loss of healthDecreasesAt(selectedTrack, t)) {
+    const candidateIndexes = observedEvents.reduce<number[]>((indexes, event, index) => {
+      if (!usedAttribution.has(index)
+        && event.targetAccountId === selectedAccountId
+        && event.accountId != null
+        && Math.abs(event.timeSec - loss.timeSec) <= 1e-6
+        && event.observedHpLoss === loss.hpLoss) {
+        indexes.push(index)
+      }
+      return indexes
+    }, [])
+    const candidateAccounts = new Set(candidateIndexes.map(index => observedEvents[index].accountId))
+    const matchIndex = candidateAccounts.size === 1 && candidateIndexes.length > 0
+      ? candidateIndexes[0] : -1
+    const match = matchIndex >= 0 ? observedEvents[matchIndex] : null
+    if (match) usedAttribution.add(matchIndex)
+    rows.push({
+      timeSec: loss.timeSec,
+      dir: 'in',
+      hpLoss: loss.hpLoss,
+      attackerAccountId: match?.accountId ?? null,
+      attackerReliable: match?.accountId != null,
+    })
+  }
+  for (const event of observedEvents) {
+    if (event.accountId === selectedAccountId && event.targetAccountId != null) {
+      const hpLoss = event.observedHpLoss
+      if (hpLoss == null) continue
       rows.push({
         timeSec: event.timeSec,
         dir: 'out',
-        hpLoss: observedHpLoss,
+        hpLoss,
         victimAccountId: event.targetAccountId,
       })
     }

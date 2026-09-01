@@ -64,11 +64,26 @@ function legacyPlaybackToV2Dataset(overview) {
   const vehicles = (playback.vehicles || []).map(v => {
     const hpSamples = v.hpSamples || []
     const maxCap = hpSamples.reduce((m, s) => (s.hp > m ? s.hp : m), 0)
-    const healthTransitions = hpSamples.map(s => ({
+    let healthTransitions = hpSamples.map(s => ({
       timeSec: s.timeSec, currentHp: s.hp,
       knowledge: coveredAt(v.positionIntervals, s.timeSec) ? 'CURRENT' : 'LAST_KNOWN',
       displayCapacityHp: maxCap > 0 ? maxCap : null, source: 'EXACT_BATTLE_EVENT',
     }))
+    // Test-only synthetic canonicalization for historical hpLoss-only fixtures.
+    // Production V2 never reconstructs health from hpLosses.
+    if (healthTransitions.length === 0 && Array.isArray(v.hpLosses) && v.hpLosses.length > 0) {
+      let currentHp = 1000
+      healthTransitions = [{
+        timeSec: 0, currentHp, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT',
+      }]
+      for (const loss of [...v.hpLosses].sort((a, b) => a.toSec - b.toSec)) {
+        if (!Number.isFinite(loss?.toSec) || !Number.isFinite(loss?.hpLoss)) continue
+        currentHp = Math.max(0, currentHp - loss.hpLoss)
+        healthTransitions.push({
+          timeSec: loss.toSec, currentHp, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT',
+        })
+      }
+    }
     const lifeTransitions = []
     if (v.deathSec != null) {
       lifeTransitions.push({ timeSec: v.deathSec, lifeState: 'DESTROYED', destroyedKnownAtSec: v.deathSec })
@@ -107,15 +122,17 @@ function legacyPlaybackToV2Dataset(overview) {
       const existing = events.find(event => event.type === 'DAMAGE'
         && event.timeSec === loss.toSec && event.targetAccountId === vehicle.accountId
         && event.accountId === (loss.attackerAccountId ?? null))
-      if (existing) {
-        existing.observedHpLoss = loss.hpLoss
+      const observedHpLoss = loss.attackerReliable === true && loss.attackerAccountId != null
+        ? loss.hpLoss : null
+      if (existing && observedHpLoss != null) {
+        existing.observedHpLoss = observedHpLoss
       } else {
         events.push({
           type: 'DAMAGE',
           timeSec: loss.toSec,
           accountId: loss.attackerAccountId ?? null,
           targetAccountId: vehicle.accountId,
-          observedHpLoss: loss.hpLoss,
+          observedHpLoss,
         })
       }
     }

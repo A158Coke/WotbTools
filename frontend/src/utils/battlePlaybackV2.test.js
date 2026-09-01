@@ -128,7 +128,33 @@ describe('healthDisplayAt / teamHealthAt', () => {
     const exact = { team: 1, friendly: true, healthTransitions: [lh(0, 1000, 'CURRENT', 1000)], lifeTransitions: [] }
     const unknown = { team: 1, friendly: true, healthTransitions: [], lifeTransitions: [] }
     expect(teamHealthAt([exact], 1, 0)).toMatchObject({ state: 'EXACT', totalMax: 1000, knownRemaining: 1000 })
-    expect(teamHealthAt([exact, unknown], 1, 0)).toMatchObject({ state: 'PARTIAL', totalMax: 0, knownRemaining: 1000, unknownMax: 0 })
+    expect(teamHealthAt([exact, unknown], 1, 0)).toMatchObject({ state: 'FULL_RELATIVE', totalMax: 0, knownRemaining: 1000, unknownMax: 0 })
+  })
+
+  it('combines exact full and relative-full members into FULL_RELATIVE', () => {
+    const exactFull = { team: 1, friendly: true, healthTransitions: [lh(0, 2400, 'CURRENT', 2400)], lifeTransitions: [] }
+    const relativeFull = { team: 1, friendly: true, healthTransitions: [], lifeTransitions: [] }
+    expect(teamHealthAt([exactFull, relativeFull], 1, 0).state).toBe('FULL_RELATIVE')
+  })
+
+  it('keeps all exact full members EXACT while preserving a full UI ratio', () => {
+    const tracks = [
+      { team: 1, friendly: true, healthTransitions: [lh(0, 2400, 'CURRENT', 2400)], lifeTransitions: [] },
+      { team: 1, friendly: true, healthTransitions: [lh(0, 1800, 'CURRENT', 1800)], lifeTransitions: [] },
+    ]
+    expect(teamHealthAt(tracks, 1, 0)).toMatchObject({
+      state: 'EXACT', totalMax: 4200, knownRemaining: 4200,
+    })
+  })
+
+  it('breaks opening FULL_RELATIVE on damage or destruction, and never grants it to enemy unknown', () => {
+    const relativeFull = { team: 1, friendly: true, healthTransitions: [], lifeTransitions: [] }
+    const damaged = { team: 1, friendly: true, healthTransitions: [lh(0, 1800, 'CURRENT', 2400)], lifeTransitions: [] }
+    const destroyed = { team: 1, friendly: true, healthTransitions: [], lifeTransitions: [{ timeSec: 0, lifeState: 'DESTROYED', destroyedKnownAtSec: 0 }] }
+    const enemyUnknown = { team: 2, friendly: false, healthTransitions: [], lifeTransitions: [] }
+    expect(teamHealthAt([damaged, relativeFull], 1, 0).state).toBe('PARTIAL')
+    expect(teamHealthAt([destroyed, relativeFull], 1, 0).state).toBe('PARTIAL')
+    expect(teamHealthAt([enemyUnknown], 2, 0).state).toBe('UNKNOWN')
   })
 
   it('does not render a full partial bar when the only known HP is destroyed=0', () => {
@@ -146,23 +172,57 @@ describe('healthDisplayAt / teamHealthAt', () => {
 })
 
 describe('canonical event statistics', () => {
+  const attacker = {
+    accountId: 1,
+    healthTransitions: [lh(0, 3000, 'CURRENT', 3000)],
+  }
+  const victim = {
+    accountId: 2,
+    healthTransitions: [
+      lh(0, 2000, 'CURRENT', 2000),
+      lh(10, 1500, 'CURRENT', 2000),
+      lh(20, 900, 'CURRENT', 2000),
+      lh(30, 800, 'CURRENT', 2000),
+    ],
+  }
   const events = [
-    { type: 'DAMAGE', timeSec: 10, accountId: 1, targetAccountId: 2, observedHpLoss: 400 },
-    { type: 'DAMAGE', timeSec: 12, accountId: null, targetAccountId: 1, observedHpLoss: 200 },
-    { type: 'DAMAGE', timeSec: 14, accountId: 2, targetAccountId: 1, observedHpLoss: null, rawProtocolValue: 999 },
-    { type: 'KILL', timeSec: 20, accountId: 1, targetAccountId: 2, observedHpLoss: null },
+    { type: 'DAMAGE', timeSec: 10, accountId: 1, targetAccountId: 2, observedHpLoss: 500 },
+    { type: 'DAMAGE', timeSec: 20, accountId: null, targetAccountId: 2, observedHpLoss: null, rawProtocolValue: 600 },
+    { type: 'DAMAGE', timeSec: 25, accountId: 1, targetAccountId: 2, observedHpLoss: null, rawProtocolValue: 999 },
+    { type: 'DAMAGE', timeSec: 30, accountId: 1, targetAccountId: 2, observedHpLoss: 300 },
+    { type: 'KILL', timeSec: 35, accountId: 1, targetAccountId: 2, observedHpLoss: null },
   ]
 
-  it('counts only observedHpLoss and never raw protocol damage', () => {
-    expect(cumulativeStatsAtV2(events, 1, 15)).toEqual({ dealt: 400, received: 200, kills: 0 })
-    expect(cumulativeStatsAtV2(events, 1, 25)).toEqual({ dealt: 400, received: 200, kills: 1 })
+  it('derives received from canonical HP decreases while dealt uses only observed attribution', () => {
+    expect(cumulativeStatsAtV2(events, victim, 25)).toEqual({ dealt: 0, received: 1100, kills: 0 })
+    expect(cumulativeStatsAtV2(events, attacker, 25)).toEqual({ dealt: 500, received: 0, kills: 0 })
+    expect(cumulativeStatsAtV2(events, attacker, 40)).toEqual({ dealt: 800, received: 0, kills: 1 })
   })
 
-  it('keeps missing attacker attribution unknown in the canonical damage log', () => {
-    expect(damageLogAtV2(events, 1, 15)).toEqual([
-      { timeSec: 10, dir: 'out', hpLoss: 400, victimAccountId: 2 },
-      { timeSec: 12, dir: 'in', hpLoss: 200, attackerAccountId: null, attackerReliable: false },
+  it('does not treat LAST_KNOWN as a new received-damage sample', () => {
+    const track = {
+      accountId: 2,
+      healthTransitions: [
+        lh(0, 2000, 'CURRENT', 2000),
+        lh(10, 1500, 'LAST_KNOWN', 2000),
+        lh(20, 900, 'CURRENT', 2000),
+      ],
+    }
+    expect(cumulativeStatsAtV2([], track, 20).received).toBe(1100)
+    expect(damageLogAtV2([], track, 20)).toEqual([
+      { timeSec: 20, dir: 'in', hpLoss: 1100, attackerAccountId: null, attackerReliable: false },
     ])
+  })
+
+  it('logs canonical incoming decreases with known or unknown attribution and blocks future/raw values', () => {
+    expect(damageLogAtV2(events, victim, 25)).toEqual([
+      { timeSec: 10, dir: 'in', hpLoss: 500, attackerAccountId: 1, attackerReliable: true },
+      { timeSec: 20, dir: 'in', hpLoss: 600, attackerAccountId: null, attackerReliable: false },
+    ])
+    expect(damageLogAtV2(events, attacker, 25)).toEqual([
+      { timeSec: 10, dir: 'out', hpLoss: 500, victimAccountId: 2 },
+    ])
+    expect(damageLogAtV2(events, victim, 35).map(row => row.timeSec)).toEqual([10, 20, 30])
   })
 })
 

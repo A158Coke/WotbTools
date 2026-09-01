@@ -8,7 +8,8 @@
 - **Battle Playback V2 canonical consumption cleanup**：Battle Playback now consumes
   `VehiclePlaybackTrack` directly. V2-native health/team-health selectors unify marker,
   team bar, Details and Inspector presentation; `track.friendly`, position interpolation
-  permission, canonical life transitions and event `observedHpLoss` are authoritative.
+  permission and canonical life/health transitions are authoritative; health decreases are the
+  received-damage truth, while event `observedHpLoss` is used only for reliable attacker attribution.
   Type5 combat-vehicle opening HP now seeds the canonical timeline. No OpenAPI shape change.
 - **Battle Playback temporal/loadout closure**：active-battle playback now excludes negative-time events while retaining canonical provenance, deduplicates pre-battle `INITIALIZED` seeds by entity+wireCode, and rejects negative temporal fields at the producer boundary. Type5 loadout decoding now shares the Type32 consumable mapping and covers the reviewed 11.19 food, fuel, protective-kit, and gear-oil wire-code families; current BlitzKit `equipment.pb` identity for vehicle-specific raw equipment `120` (`Improved Modules +`) is cataloged and generated into the three-language Inspector labels; unknown codes retain raw values. Contract-invalid playback responses have an explicit localized error instead of the generic unknown error, and the Inspector equipment rows remain a fixed 3×3 grid at narrow widths.
 - **真实 DeepSeek E2E 测试隔离**：三个真实 provider probe 统一标记为 `ai-live`，`wotb-web` 默认 Surefire 排除 live probe；普通测试即使存在 `AI_API_KEY` 也不会因此发起付费请求。新增 deterministic isolation guard，并明确 live probe 的人工显式运行约定；mock、loopback、prompt contract 与 AI eval 测试保持普通测试路径。
