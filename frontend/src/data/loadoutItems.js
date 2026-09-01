@@ -74,7 +74,7 @@ export const CONSUMABLE_NAMES = {
     "ru": "Система динамической брони"
   },
   "REDUCED_ENGINE_POWER_BOOST": {
-    "zh": "低功率发动机增压",
+    "zh": "次级强化引擎",
     "en": "Reduced Engine Power Boost",
     "ru": "Сниженное форсирование двигателя"
   }

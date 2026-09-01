@@ -139,19 +139,34 @@ describe('V2VehicleInspector', () => {
     expect(text).not.toContain('SOME_INTERNAL_STATE')
   })
 
-  it.each(['zh', 'en', 'ru'])('locale %s：未知 equipment id 走「未知装备（id）」fallback 并保留 raw id', (locale) => {
+  it.each(['zh', 'en', 'ru'])('locale %s：未知 equipment id 使用通用未知文案，不把 raw id 带入产品 UI', (locale) => {
     const t = track()
     t.loadout = { ...t.loadout, equipmentIds: [9999, 100] }
     const w = mountInspector(120, locale, t)
     const text = w.get('[data-test="v2-inspector-loadout"]').text()
-    expect(text).toContain('9999') // 保留 raw id 仅作诊断
+    expect(text).toMatch(/未知装备|Unknown equipment|Неизвестное оборудование/)
+    expect(text).not.toContain('9999')
   })
 
-  it('未知 consumable code 走「未知消耗品（code）」fallback', () => {
+  it('未知 consumable code 走通用「未知消耗品」fallback', () => {
     const t = track()
     t.loadout = { ...t.loadout, consumables: ['SOME_INTERNAL_ENUM', null, 'REPAIR_KIT'], consumableWireCodes: [0x00, 0x77, 0x0D] }
     t.consumableTransitions = []
     const w = mountInspector(120, 'zh', t)
-    expect(w.get('[data-test="v2-inspector-loadout"]').text()).toContain('未知消耗品（SOME_INTERNAL_ENUM）')
+    expect(w.get('[data-test="v2-inspector-loadout"]').text()).toContain('未知消耗品')
+    expect(w.get('[data-test="v2-inspector-loadout"]').text()).not.toContain('SOME_INTERNAL_ENUM')
+  })
+
+  it('loadout is rendered as fixed 3 + 3 + 3x3 semantic cells', () => {
+    const w = mountInspector(120)
+    expect(w.findAll('[data-test="v2-inspector-consumables"] .v2-inspector-chip')).toHaveLength(3)
+    expect(w.findAll('[data-test="v2-inspector-provisions"] .v2-inspector-chip')).toHaveLength(3)
+    expect(w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')).toHaveLength(9)
+    expect(w.findAll('[data-test="v2-inspector-equipment"] [data-equipment-group="row1"] .v2-inspector-chip')).toHaveLength(3)
+    expect(w.findAll('[data-test="v2-inspector-equipment"] [data-equipment-group="row2"] .v2-inspector-chip')).toHaveLength(3)
+    expect(w.findAll('[data-test="v2-inspector-equipment"] [data-equipment-group="row3"] .v2-inspector-chip')).toHaveLength(3)
+    expect(w.get('[data-equipment-slot="0"] .v2-chip-type').text()).toBe('F1')
+    expect(w.get('[data-equipment-slot="1"] .v2-chip-type').text()).toBe('V1')
+    expect(w.get('[data-equipment-slot="2"] .v2-chip-type').text()).toBe('S1')
   })
 })

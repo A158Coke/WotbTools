@@ -61,11 +61,12 @@ public record ConsumableLifecycleEvent(
     }
 
     /**
-     * proven consumable wireCode→logicalItemId（current 11.19 corpus，consumable-lifecycle.md）。
-     * 未知 → null（raw-preserve，不猜名）。
+     * Version-scoped consumable wireCode→logicalItemId mapping shared by Type32 and Type5.
+     * Unknown values remain null while the raw wireCode is preserved by the caller.
      */
     public static String logicalItemIdOf(final int wireCode) {
         return switch (wireCode) {
+            case 0x08 -> "AUTOMATIC_FIRE_EXTINGUISHER";
             case 0x09 -> "ADRENALINE";
             case 0x0A -> "ENGINE_POWER_BOOST";
             case 0x0B -> "MULTI_PURPOSE_RESTORATION_PACK";
@@ -75,6 +76,7 @@ public record ConsumableLifecycleEvent(
             case 0x3E -> "RETICLE_CALIBRATION";
             case 0x42 -> "REACTIVE_ARMOR";
             case 0x69 -> "TUNGSTEN_SHELLS";
+            case 0xBD -> "REDUCED_ENGINE_POWER_BOOST";
             default -> null;
         };
     }

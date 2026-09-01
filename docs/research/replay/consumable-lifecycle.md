@@ -24,6 +24,17 @@ state 3   -> active duration ended / cooldown-state transition
 state 255 -> entity/control teardown
 ```
 
+The current Type5 loadout and Type32 lifecycle mapping share the same
+version-scoped consumable namespace. The additional closed entries are:
+
+| wireCode | Proven identity |
+|---:|---|
+| `0x08` | Automatic Fire Extinguisher |
+| `0xBD` | Reduced Engine Power Boost (`次级强化引擎`) |
+
+Unknown wire values remain raw-preserved and do not receive a guessed product
+identity.
+
 `state=2` carries effective active duration for duration consumables and zero for instant consumables. `state=3` carries the effective cooldown configuration. Duration states close against real packet-clock intervals; instant states 2 and 3 occur at the same replay clock.
 
 ## Version-matched item-catalog closure

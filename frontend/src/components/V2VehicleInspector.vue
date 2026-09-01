@@ -6,7 +6,7 @@ import {
   lifeAt,
   positionCoveredAtV2,
   orientationKnownAt,
-  consumableRuntimeAt,
+  consumableRuntimeStatesAt,
   moduleCrewAt,
 } from '../utils/battlePlaybackV2.ts'
 import { loadoutItemLabel } from '../data/loadoutItems.js'
@@ -40,17 +40,16 @@ const orientation = computed(() => orientationKnownAt(props.track, props.timeSec
 const loadout = computed(() => props.track.loadout || null)
 
 /**
- * loadout 条目显示名：优先本地化名称；未知/未映射走 i18n fallback 并保留 raw id 仅作诊断
- * （plan §22/§23 —— 绝不裸露 `MULTI_PURPOSE_RESTORATION_PACK` / `103` 之类 internal id 当产品文案）。
+ * loadout 条目显示名：优先本地化名称；未知/未映射走通用 i18n fallback。
+ * raw wire/id 仍由后端保留，但不进入普通用户界面。
  */
 function itemLabel(scope, id) {
   const name = loadoutItemLabel(scope, id, locale.value)
   if (name) return name
-  if (id == null || id === '') return t('recon.map.playback.unknown')
-  const key = scope === 'consumable' ? 'recon.map.playback.loadout_unknown_consumable'
-    : scope === 'provision' ? 'recon.map.playback.loadout_unknown_provision'
-      : 'recon.map.playback.loadout_unknown_equipment'
-  return t(key, { id })
+  let key = 'recon.map.playback.loadout_unknown_equipment'
+  if (scope === 'consumable') key = 'recon.map.playback.loadout_unknown_consumable'
+  if (scope === 'provision') key = 'recon.map.playback.loadout_unknown_provision'
+  return t(key)
 }
 
 /**
@@ -68,35 +67,44 @@ const consumables = computed(() => {
   if (!loadout.value) return []
   const wireCodes = loadout.value.consumableWireCodes || []
   const ids = loadout.value.consumables || []
-  return ids.map((id, i) => {
+  const runtimes = consumableRuntimeStatesAt(props.track.consumableTransitions, props.timeSec)
+  return Array.from({ length: 3 }, (_, i) => {
+    const id = ids[i] ?? null
     const slotWire = wireCodes[i]
-    const rt = consumableRuntimeAt(props.track.consumableTransitions, props.timeSec)
-    const slotMatch = rt.wireCode == null || rt.wireCode === slotWire
+    const rt = slotWire === null || slotWire === undefined ? null : runtimes.get(slotWire)
     return {
       slot: i,
-      logicalItemId: slotMatch ? (rt.logicalItemId || id) : id,
+      logicalItemId: rt?.logicalItemId || id,
       wireCode: slotWire,
-      runtimeState: slotMatch ? rt.state : 'UNKNOWN',
-      label: itemLabel('consumable', slotMatch ? (rt.logicalItemId || id) : id),
+      runtimeState: rt?.state || 'UNKNOWN',
+      label: itemLabel('consumable', rt?.logicalItemId || id),
     }
   })
 })
 
 const provisionLabels = computed(() => {
   if (!loadout.value) return []
-  return (loadout.value.provisions || []).map((p, i) => ({
+  return Array.from({ length: 3 }, (_, i) => ({
     slot: i,
-    label: itemLabel('provision', p),
+    label: itemLabel('provision', loadout.value.provisions?.[i] ?? null),
   }))
 })
 
 const equipmentLabels = computed(() => {
   if (!loadout.value) return []
-  return (loadout.value.equipmentIds || []).map((e, i) => ({
+  const slotKeys = ['f1', 'v1', 's1', 'f2', 'v2', 's2', 'f3', 'v3', 's3']
+  return Array.from({ length: 9 }, (_, i) => ({
     slot: i,
-    label: itemLabel('equipment', e),
+    semanticKey: slotKeys[i],
+    label: itemLabel('equipment', loadout.value.equipmentIds?.[i] ?? null),
   }))
 })
+
+const equipmentRows = computed(() => [
+  { key: 'row1', slots: equipmentLabels.value.slice(0, 3) },
+  { key: 'row2', slots: equipmentLabels.value.slice(3, 6) },
+  { key: 'row3', slots: equipmentLabels.value.slice(6, 9) },
+])
 
 const modules = computed(() => moduleCrewAt(props.track.moduleCrewTransitions, props.timeSec))
 
@@ -164,27 +172,43 @@ const tankClassLabel = computed(() => {
 
     <template v-if="loadout">
       <div class="v2-inspector-section">{{ $t('recon.map.playback.loadout') }}</div>
-      <div class="v2-inspector-grid" data-test="v2-inspector-loadout">
+      <div class="v2-inspector-loadout" data-test="v2-inspector-loadout">
+        <div class="v2-loadout-group" data-test="v2-inspector-consumables">
+          <div class="v2-loadout-group-title">{{ $t('recon.map.playback.consumable') }}</div>
+          <div class="v2-loadout-grid">
         <div v-for="c in consumables" :key="'c' + c.slot" class="v2-inspector-chip">
-          <span class="v2-chip-type">{{ $t('recon.map.playback.consumable') }}</span>
           <span>{{ c.label }}</span>
           <span v-if="c.runtimeState !== 'UNKNOWN'" class="v2-chip-state">{{ consumableStateLabel(c.runtimeState) }}</span>
         </div>
+          </div>
+        </div>
+        <div class="v2-loadout-group" data-test="v2-inspector-provisions">
+          <div class="v2-loadout-group-title">{{ $t('recon.map.playback.provision') }}</div>
+          <div class="v2-loadout-grid">
         <div
           v-for="p in provisionLabels"
           :key="'p' + p.slot"
           class="v2-inspector-chip"
         >
-          <span class="v2-chip-type">{{ $t('recon.map.playback.provision') }}</span>
           <span>{{ p.label }}</span>
         </div>
+          </div>
+        </div>
+        <div class="v2-loadout-group" data-test="v2-inspector-equipment">
+          <div class="v2-loadout-group-title">{{ $t('recon.map.playback.equipment') }}</div>
+          <div v-for="row in equipmentRows" :key="row.key" class="v2-equipment-row" :data-equipment-group="row.key">
+            <div class="v2-loadout-grid">
         <div
-          v-for="e in equipmentLabels"
+          v-for="e in row.slots"
           :key="'e' + e.slot"
           class="v2-inspector-chip"
+          :data-equipment-slot="e.slot"
         >
-          <span class="v2-chip-type">{{ $t('recon.map.playback.equipment') }} #{{ e.slot + 1 }}</span>
+          <span class="v2-chip-type">{{ $t(`recon.map.playback.equipment_slot_${e.semanticKey}`) }}</span>
           <span>{{ e.label }}</span>
+        </div>
+            </div>
+          </div>
         </div>
       </div>
     </template>
@@ -228,11 +252,20 @@ const tankClassLabel = computed(() => {
   background: rgba(255,255,255,0.12); font-size: 10px;
 }
 .v2-inspector-cap { margin-left: 4px; color: var(--pb-dim, #9aa); }
-.v2-inspector-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.v2-inspector-loadout { display: flex; flex-direction: column; gap: 8px; }
+.v2-loadout-group { display: flex; flex-direction: column; gap: 4px; }
+.v2-loadout-group-title { color: var(--pb-dim, #9aa); font-size: 10px; }
+.v2-loadout-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.v2-equipment-row { display: grid; grid-template-columns: minmax(72px, 0.5fr) minmax(0, 3fr); align-items: center; gap: 6px; }
+.v2-equipment-row .v2-loadout-grid { min-width: 0; }
 .v2-inspector-chip {
   display: flex; flex-direction: column; gap: 2px; padding: 4px 6px;
   border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 11px;
 }
-.v2-chip-type { color: var(--pb-dim, #9aa); font-size: 9px; text-transform: uppercase; }
 .v2-chip-state { color: var(--pb-dim, #9aa); font-size: 9px; }
+@media (max-width: 520px) {
+  .v2-loadout-grid { grid-template-columns: repeat(3, minmax(92px, 1fr)); overflow-x: auto; }
+  .v2-equipment-row { grid-template-columns: 1fr; gap: 3px; }
+}
+.v2-chip-type { color: var(--pb-dim, #9aa); font-size: 9px; text-transform: uppercase; }
 </style>

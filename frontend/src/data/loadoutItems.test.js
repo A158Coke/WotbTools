@@ -50,9 +50,9 @@ describe('loadoutItems', () => {
   })
 
   it('每个后端可产出的 consumable/provision code 都能被解析（防裸显）', () => {
-    const codes = ['ADRENALINE', 'ENGINE_POWER_BOOST', 'MULTI_PURPOSE_RESTORATION_PACK', 'FIRST_AID_KIT', 'REPAIR_KIT', 'IMPROVED_ENGINE_POWER_BOOST', 'RETICLE_CALIBRATION', 'REACTIVE_ARMOR', 'TUNGSTEN_SHELLS']
+    const codes = ['AUTOMATIC_FIRE_EXTINGUISHER', 'ADRENALINE', 'ENGINE_POWER_BOOST', 'MULTI_PURPOSE_RESTORATION_PACK', 'FIRST_AID_KIT', 'REPAIR_KIT', 'IMPROVED_ENGINE_POWER_BOOST', 'RETICLE_CALIBRATION', 'REACTIVE_ARMOR', 'TUNGSTEN_SHELLS', 'REDUCED_ENGINE_POWER_BOOST']
     for (const c of codes) expect(loadoutItemLabel('consumable', c, 'zh')).toBeTruthy()
-    for (const p of ['SANDBAG_ARMOR', 'ENHANCED_SANDBAG_ARMOR', 'IMPROVED_GUNPOWDER']) {
+    for (const p of ['LARGE_FOOD', 'SMALL_FOOD', 'STANDARD_FUEL', 'IMPROVED_FUEL', 'PROTECTIVE_KIT', 'SANDBAG_ARMOR', 'ENHANCED_SANDBAG_ARMOR', 'GEAR_OIL', 'IMPROVED_GEAR_OIL', 'IMPROVED_GUNPOWDER']) {
       expect(loadoutItemLabel('provision', p, 'zh')).toBeTruthy()
     }
   })

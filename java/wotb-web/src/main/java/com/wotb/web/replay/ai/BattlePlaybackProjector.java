@@ -43,6 +43,7 @@ import com.wotb.web.replay.dto.BattlePlaybackDataset.VehiclePlaybackTrack;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -109,7 +110,7 @@ public final class BattlePlaybackProjector {
         }
         tracks.sort(Comparator.comparingLong(VehiclePlaybackTrack::accountId));
 
-        return new BattlePlaybackDataset(
+        final BattlePlaybackDataset dataset = new BattlePlaybackDataset(
                 duration,
                 timeline.mapCode() == null ? null : timeline.mapCode(),
                 friendlyTeam,
@@ -121,6 +122,8 @@ public final class BattlePlaybackProjector {
                 timeline.limitations(),
                 null,
                 battle.arenaBonusType);
+        validateTemporalInvariant(dataset);
+        return dataset;
     }
 
     private static VehiclePlaybackTrack projectVehicle(
@@ -315,7 +318,11 @@ public final class BattlePlaybackProjector {
         // 真实观测 transition（KNOWN runtime 事实；state 未证明 → UNKNOWN）。
         if (observations != null) {
             for (final ConsumableLifecycle.ConsumableObservation o : observations) {
-                out.add(new ConsumableTransition(o.timeSec(), null, o.logicalItemId(), o.wireCode(),
+                final Double timeSec = activeConsumableTime(o);
+                if (timeSec == null) {
+                    continue;
+                }
+                out.add(new ConsumableTransition(timeSec, null, o.logicalItemId(), o.wireCode(),
                         o.state() == null || o.state() == ConsumableLifecycleEvent.ConsumableLifecycleState.UNKNOWN
                                 ? "UNKNOWN" : o.state().name(),
                         toConfidence(o.confidence())));
@@ -333,7 +340,7 @@ public final class BattlePlaybackProjector {
                     // 仅在曾有过已知 runtime 观测的车辆上插入 UNKNOWN（未曾观测则保持 UNKNOWN 语义不变，
                     // 不制造多余 transition）。AoI close @absent 只能使用 <=absent 的事实（anti-future-leak）；
                     // 之后（如后续 TEARDOWN）由 lastAtOrBefore 自然覆盖，绝不读取未来 observation 决定当前状态。
-                    if (hadKnownBefore) {
+                    if (hadKnownBefore && Double.isFinite(absent) && absent >= 0d) {
                         out.add(new ConsumableTransition(absent, null, null, null,
                                 "UNKNOWN", com.wotb.web.replay.dto.BattlePlaybackDataset.ConfidenceDto.UNKNOWN));
                     }
@@ -342,6 +349,22 @@ public final class BattlePlaybackProjector {
         }
         out.sort(Comparator.comparingDouble(ConsumableTransition::timeSec));
         return out;
+    }
+
+    /**
+     * Active playback keeps pre-battle INITIALIZED as a t=0 seed, while other
+     * pre-battle runtime observations remain outside the active timeline.
+     */
+    private static Double activeConsumableTime(
+            final ConsumableLifecycle.ConsumableObservation observation) {
+        if (observation == null || !Double.isFinite(observation.timeSec())) {
+            return null;
+        }
+        if (observation.timeSec() >= 0d) {
+            return observation.timeSec();
+        }
+        return observation.state() == ConsumableLifecycleEvent.ConsumableLifecycleState.INITIALIZED
+                ? 0d : null;
     }
 
     /** 是否在 t 之前（含 close 时刻之前）存在真实 KNOWN 观测（logicalItemId 非 null 或 state 非 UNKNOWN）。 */
@@ -367,6 +390,9 @@ public final class BattlePlaybackProjector {
         }
         final List<ModuleCrewTransition> out = new ArrayList<>();
         for (final ModuleCrewObservation o : observations) {
+            if (o == null || !isActiveTime(o.timeSec())) {
+                continue;
+            }
             out.add(new ModuleCrewTransition(o.timeSec(),
                     o.component() == null ? "UNKNOWN" : o.component().name(),
                     o.state() == null ? "UNKNOWN" : o.state().name(),
@@ -407,6 +433,9 @@ public final class BattlePlaybackProjector {
                 }
                 final long attacker = accountOf(mapping, damage.attackerEid());
                 final double t = battleClockOf(event, timeline);
+                if (!isActiveTime(t)) {
+                    continue;
+                }
                 out.add(new BattleEvent("DAMAGE", t, attacker > 0 ? attacker : null, victim,
                         com.wotb.core.replay.feature.PlaybackCombatReconstruction
                                 .observedHpLossAt(combat, victim, t)));
@@ -417,6 +446,9 @@ public final class BattlePlaybackProjector {
                 }
                 final long attacker = accountOf(mapping, hit.attackerEntityId());
                 final double t = battleClockOf(event, timeline);
+                if (!isActiveTime(t)) {
+                    continue;
+                }
                 out.add(new BattleEvent("DAMAGE", t, attacker > 0 ? attacker : null, victim,
                         com.wotb.core.replay.feature.PlaybackCombatReconstruction
                                 .observedHpLossAt(combat, victim, t)));
@@ -426,17 +458,24 @@ public final class BattlePlaybackProjector {
                     continue;
                 }
                 destroyedVictims.add(victim);
-                out.add(new BattleEvent("DESTROYED", battleClockOf(event, timeline), victim, null, null));
+                final double t = battleClockOf(event, timeline);
+                if (!isActiveTime(t)) {
+                    continue;
+                }
+                out.add(new BattleEvent("DESTROYED", t, victim, null, null));
                 final Integer killerEid = destroyed.killerEid();
                 final long killer = killerEid != null ? accountOf(mapping, killerEid) : 0L;
                 if (killer > 0 && killer != victim) {
-                    out.add(new BattleEvent("KILL", battleClockOf(event, timeline), killer, victim, null));
+                    out.add(new BattleEvent("KILL", t, killer, victim, null));
                 }
             }
         }
         // 权威击毁推导（type-7 alive=false/HP=0）：不被显式 VehicleDestroyedEvent 覆盖的受害者
         for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Destroyed d
                 : combat.destroyed()) {
+            if (!isActiveTime(d.timeSec())) {
+                continue;
+            }
             if (destroyedVictims.contains(d.victimAccountId())) {
                 continue;
             }
@@ -463,9 +502,9 @@ public final class BattlePlaybackProjector {
             if (seg.knowledge() == null || !"OBSERVED".equals(seg.knowledge())) {
                 continue;
             }
-            final double start = Math.max(0, seg.startSec());
+            final double start = seg.startSec();
             final double end = Math.min(duration, seg.endSec());
-            if (end < start || end < 0) {
+            if (!isActiveTime(start) || !isActiveTime(end) || end < start) {
                 continue;
             }
             out.add(new BattleEvent("POSITION_REPORTED", start, track.accountId(), null, null));
@@ -484,6 +523,10 @@ public final class BattlePlaybackProjector {
         for (final com.wotb.core.replay.facts.ShotFact s
                 : com.wotb.core.replay.facts.ShotLifecycle.build(
                         timeline.events(), mapping, null, timeline.battleStartRawClockSec())) {
+            if (!isActiveTime(s.launchTimeSec())
+                    || (s.terminalTimeSec() != null && !isActiveTime(s.terminalTimeSec()))) {
+                continue;
+            }
             out.add(new ShotTrack(s.shooterAccountId(), s.launchTimeSec(), s.terminalTimeSec(), null));
         }
         out.sort(Comparator.comparingDouble(ShotTrack::launchTimeSec));
@@ -495,11 +538,32 @@ public final class BattlePlaybackProjector {
             return List.of();
         }
         final List<PointsSample> samples = new ArrayList<>();
+        final Map<Integer, PointsSample> latestPreBattle = new HashMap<>();
+        final java.util.Set<Integer> teamsWithZeroSample = new java.util.HashSet<>();
         for (final ReplayEvent e : timeline.events()) {
             if (e instanceof SupremacyPointsChangedEvent sp
                     && sp.confidence() == DecodeConfidence.EXACT
                     && (sp.team() == 1 || sp.team() == 2)) {
-                samples.add(new PointsSample(battleClockOf(e, timeline), sp.team(), sp.points()));
+                final double timeSec = battleClockOf(e, timeline);
+                if (!Double.isFinite(timeSec)) {
+                    continue;
+                }
+                if (timeSec < 0d) {
+                    final PointsSample previous = latestPreBattle.get(sp.team());
+                    if (previous == null || previous.timeSec() < timeSec) {
+                        latestPreBattle.put(sp.team(), new PointsSample(timeSec, sp.team(), sp.points()));
+                    }
+                } else {
+                    samples.add(new PointsSample(timeSec, sp.team(), sp.points()));
+                    if (timeSec <= 1e-9) {
+                        teamsWithZeroSample.add(sp.team());
+                    }
+                }
+            }
+        }
+        for (final PointsSample seed : latestPreBattle.values()) {
+            if (!teamsWithZeroSample.contains(seed.team())) {
+                samples.add(new PointsSample(0d, seed.team(), seed.points()));
             }
         }
         samples.sort(Comparator.comparingDouble(PointsSample::timeSec));
@@ -552,6 +616,65 @@ public final class BattlePlaybackProjector {
             case LOW -> ConfidenceDto.LOW;
             case UNKNOWN -> ConfidenceDto.UNKNOWN;
         };
+    }
+
+    private static boolean isActiveTime(final double timeSec) {
+        return Double.isFinite(timeSec) && timeSec >= 0d;
+    }
+
+    /** Producer-side guard: never persist a dataset that the HTTP contract rejects. */
+    private static void validateTemporalInvariant(final BattlePlaybackDataset dataset) {
+        requireActiveTime("durationSec", dataset.durationSec());
+        for (final VehiclePlaybackTrack vehicle : dataset.vehicles()) {
+            for (final PositionSegment segment : vehicle.positionSegments()) {
+                requireActiveTime("position.startSec", segment.startSec());
+                requireActiveTime("position.endSec", segment.endSec());
+                for (final PositionSample sample : segment.samples()) {
+                    requireActiveTime("position.sample.timeSec", sample.timeSec());
+                }
+            }
+            for (final OrientationSegment segment : vehicle.orientationSegments()) {
+                requireActiveTime("orientation.startSec", segment.startSec());
+                requireActiveTime("orientation.endSec", segment.endSec());
+                for (final OrientationSample sample : segment.samples()) {
+                    requireActiveTime("orientation.sample.timeSec", sample.timeSec());
+                }
+            }
+            for (final HealthTransition transition : vehicle.healthTransitions()) {
+                requireActiveTime("health.timeSec", transition.timeSec());
+            }
+            for (final LifeTransition transition : vehicle.lifeTransitions()) {
+                requireActiveTime("life.timeSec", transition.timeSec());
+                if (transition.destroyedKnownAtSec() != null) {
+                    requireActiveTime("life.destroyedKnownAtSec", transition.destroyedKnownAtSec());
+                }
+            }
+            for (final ConsumableTransition transition : vehicle.consumableTransitions()) {
+                requireActiveTime("consumable.timeSec", transition.timeSec());
+            }
+            for (final ModuleCrewTransition transition : vehicle.moduleCrewTransitions()) {
+                requireActiveTime("moduleCrew.timeSec", transition.timeSec());
+            }
+        }
+        for (final BattleEvent event : dataset.events()) {
+            requireActiveTime("event.timeSec", event.timeSec());
+        }
+        for (final ShotTrack shot : dataset.shots()) {
+            requireActiveTime("shot.launchTimeSec", shot.launchTimeSec());
+            if (shot.terminalTimeSec() != null) {
+                requireActiveTime("shot.terminalTimeSec", shot.terminalTimeSec());
+            }
+        }
+        for (final PointsSample sample : dataset.pointsSamples()) {
+            requireActiveTime("points.timeSec", sample.timeSec());
+        }
+    }
+
+    private static void requireActiveTime(final String field, final double timeSec) {
+        if (!isActiveTime(timeSec)) {
+            throw new IllegalStateException("active playback temporal invariant violated: "
+                    + field + "=" + timeSec);
+        }
     }
 
     private static FrameVehicle vehicleIn(final BattleFrame frame, final int entityId) {

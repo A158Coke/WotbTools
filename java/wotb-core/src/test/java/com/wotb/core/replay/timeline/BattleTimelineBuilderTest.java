@@ -250,6 +250,25 @@ class BattleTimelineBuilderTest {
     }
 
     @Test
+    void preBattleEventsRemainInCanonicalStreamButNotInActiveFrameZero() {
+        final Battle battle = TimelineTestFixtures.battle(60.0);
+        final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        events.add(new com.wotb.core.replay.event.DamageEvent(
+                999, TimelineTestFixtures.ts(-5), 8, DecodeConfidence.EXACT,
+                TimelineTestFixtures.RECORDER_EID, TimelineTestFixtures.ENEMY_EID,
+                null, null, 420, false));
+        final ReplayReconstruction recon = TimelineTestFixtures.recon(60.0, events);
+
+        final BattleTimeline timeline = BattleTimelineBuilder
+                .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
+
+        assertTrue(timeline.events().stream().anyMatch(e -> e.sequence() == 999),
+                "canonical stream must retain pre-battle evidence");
+        assertTrue(timeline.frameAt(0).events().stream().noneMatch(e -> e.sequence() == 999),
+                "pre-battle evidence must not become an active frame-0 event");
+    }
+
+    @Test
     void clockEstimatedFallbackWhenNoBattleStartIdentified() {
         final Battle battle = TimelineTestFixtures.battle(60.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
