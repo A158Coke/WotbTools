@@ -41,7 +41,7 @@ function defaultVehicles() {
         { timeSec: 12, currentHp: 800, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' },
       ],
       lifeTransitions: [{ timeSec: 25, lifeState: 'DESTROYED', destroyedKnownAtSec: 25 }],
-      damageLosses: [{ fromSec: 0, toSec: 12, hpLoss: 400, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }],
+      damageLosses: [{ fromSec: 10, toSec: 12, hpLoss: 400, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }],
       consumableTransitions: [],
       moduleCrewTransitions: [],
     },

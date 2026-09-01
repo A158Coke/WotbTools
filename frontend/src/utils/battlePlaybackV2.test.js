@@ -13,6 +13,7 @@ import {
   ghostAroundV2,
   cumulativeStatsAtV2,
   damageLogAtV2,
+  damageFeedbackAllowedV2,
 } from './battlePlaybackV2'
 
 const lh = (timeSec, currentHp, knowledge, displayCapacityHp) =>
@@ -374,11 +375,27 @@ describe('slot and component runtime selectors', () => {
   it('matches ghost damage to its canonical loss window, not exact transition time', () => {
     const track = { healthTransitions: [
       lh(0, 2000, 'CURRENT', 2000),
-      lh(9.9, 1500, 'CURRENT', 2000),
+      lh(10, 1500, 'CURRENT', 2000),
+      lh(20, 900, 'CURRENT', 2000),
     ] }
-    expect(ghostAroundV2(track, { fromSec: 0, toSec: 10 })).toEqual({ prevPct: 100, nextPct: 75 })
+    expect(ghostAroundV2(track, { fromSec: 0, toSec: 10, hpLoss: 500 })).toEqual({ prevPct: 100, nextPct: 75 })
+    expect(ghostAroundV2(track, { fromSec: 10, toSec: 20, hpLoss: 600 })).toEqual({ prevPct: 75, nextPct: 45 })
+    expect(ghostAroundV2({ healthTransitions: [lh(0, 2000, 'CURRENT', 2000), lh(10, 1500, 'CURRENT', 2000), lh(15, 1000, 'CURRENT', 2000)] },
+      { fromSec: 0, toSec: 20, hpLoss: 500 })).toBeNull()
     expect(ghostAroundV2({ healthTransitions: [lh(0, 2000, 'CURRENT', null), lh(10, 1500, 'CURRENT', null)] },
-      { fromSec: 0, toSec: 10 })).toBeNull()
+      { fromSec: 0, toSec: 10, hpLoss: 500 })).toBeNull()
+  })
+
+  it('allows DamageLoss transient feedback only inside one continuous observed AoI segment', () => {
+    const track = {
+      positionSegments: [
+        { knowledge: 'OBSERVED', startSec: 0, endSec: 20 },
+        { knowledge: 'OBSERVED', startSec: 40, endSec: 60 },
+      ],
+    }
+    expect(damageFeedbackAllowedV2(track, { fromSec: 10, toSec: 42 })).toBe(false)
+    expect(damageFeedbackAllowedV2({ positionSegments: [{ knowledge: 'OBSERVED', startSec: 0, endSec: 60 }] },
+      { fromSec: 10, toSec: 20 })).toBe(true)
   })
 
   it('keeps three consumable slots independent and clears them on global UNKNOWN', () => {

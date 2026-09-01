@@ -3,6 +3,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import BattlePlayback from './BattlePlayback.vue'
+import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil.js'
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key, te: () => false, locale: { value: 'en' } }) }))
 vi.mock('../vehicle-models/runtime.js', () => ({
@@ -19,29 +20,12 @@ vi.mock('../data/mapImages', () => ({
   },
 }))
 
-const track = (accountId, team, friendly, x0, x1) => ({
-  accountId,
-  playerName: accountId === 1 ? 'Player' : 'Enemy',
-  tankId: accountId,
-  tankName: accountId === 1 ? 'Maus' : 'T49',
-  tankClass: '', tankTier: null, team, friendly,
-  positionSegments: [{ knowledge: 'OBSERVED', startSec: 0, endSec: 10, samples: [
-    { timeSec: 0, x: x0, y: 0 },
-    { timeSec: 10, x: x1, y: 0 },
-  ] }],
-  orientationSegments: [{ knowledge: 'CURRENT', startSec: 0, endSec: 10, samples: [
-    { timeSec: 0, hullYawDeg: 0, turretRelativeYawDeg: 0 },
-  ] }],
-  healthTransitions: [{ timeSec: 0, currentHp: 1000, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT' }],
-  lifeTransitions: [], damageLosses: [], consumableTransitions: [], moduleCrewTransitions: [],
-})
-
-const dataset = {
-  mapCode: 'holland', friendlyTeam: 1, recorderAccountId: 1, durationSec: 10,
-  vehicles: [track(1, 1, true, 0, 50), track(2, 2, false, -20, -40)],
-  events: [{ type: 'POSITION_REPORTED', timeSec: 2, accountId: 2, targetAccountId: null, observedHpLoss: null }],
-  pointsSamples: [], limitations: [], capability: 'FULL', arenaBonusType: null,
-}
+const dataset = makeBattlePlaybackDataset()
+dataset.vehicles = dataset.vehicles.slice(0, 2)
+dataset.vehicles[0].positionSegments = [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 0, endSec: 10,
+  samples: [{ timeSec: 0, x: 0, y: 0 }, { timeSec: 10, x: 50, y: 0 }] }]
+dataset.vehicles[1].positionSegments = [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 0, endSec: 10,
+  samples: [{ timeSec: 0, x: -20, y: 0 }, { timeSec: 10, x: -40, y: 0 }] }]
 
 describe('BattlePlayback orchestrator integration', () => {
   it('wires canonical V2 data through one clock owner and all presentation boundaries', async () => {
@@ -55,8 +39,8 @@ describe('BattlePlayback orchestrator integration', () => {
     expect(wrapper.findComponent({ name: 'PlaybackControls' }).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'BattleMap' }).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'PlaybackTimeline' }).exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-marker-1"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-marker-2"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-marker-1001"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-marker-2001"]').exists()).toBe(true)
     expect(wrapper.findAll('.pb-range')).toHaveLength(1)
   })
 
@@ -67,25 +51,28 @@ describe('BattlePlayback orchestrator integration', () => {
     })
     await flushPromises()
 
-    await wrapper.find('[data-test="pb-marker-2"]').trigger('click')
+    await wrapper.find('[data-test="pb-marker-2001"]').trigger('click')
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
     await wrapper.find('input[type="range"]').setValue('7')
     await flushPromises()
 
-    expect(wrapper.find('[data-test="pb-marker-2"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-marker-2001"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-sb-tank"]').text()).toBe('T49')
   })
 
   it('does not leak a future-only position into the orchestrator view', async () => {
     const futureOnly = {
-      ...track(9, 2, 20, 30),
-      positionSegments: [{ knowledge: 'OBSERVED', startSec: 8, endSec: 10, samples: [
+      ...dataset.vehicles[1],
+      accountId: 9,
+      positionSegments: [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 8, endSec: 10, samples: [
         { timeSec: 8, x: 20, y: 0 },
       ] }],
     }
     const wrapper = mount(BattlePlayback, {
-      props: { playbackV2: { ...dataset, durationSec: 10, vehicles: [futureOnly] } },
+      props: { playbackV2: {
+        ...dataset, durationSec: 10, events: dataset.events.filter((event) => event.timeSec <= 10), vehicles: [futureOnly],
+      } },
       global: { mocks: { $t: key => key } },
     })
     await flushPromises()

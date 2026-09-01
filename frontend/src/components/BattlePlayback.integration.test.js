@@ -1189,6 +1189,47 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     expect(w2.find('[data-test="pb-float-dmg"]').exists()).toBe(false)
   })
 
+  it('hidden AoI DamageLoss keeps canonical stats/log but suppresses all transient feedback', async () => {
+    stubRaf()
+    const clock = fakeClock()
+    const overview = makeOverview()
+    const ds = makePlaybackV2()
+    ds.events = ds.events.filter((event) => event.type !== 'DAMAGE')
+    const enemy = trackOf(ds, 2001)
+    enemy.positionSegments = [
+      { knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 0, endSec: 20,
+        samples: [{ timeSec: 0, x: -50, y: -50 }, { timeSec: 20, x: -60, y: -60 }] },
+      { knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 40, endSec: 60,
+        samples: [{ timeSec: 40, x: -100, y: -100 }, { timeSec: 60, x: -120, y: -120 }] },
+    ]
+    enemy.healthTransitions = [
+      { timeSec: 0, currentHp: 2000, knowledge: 'CURRENT', displayCapacityHp: 2000, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' },
+      { timeSec: 42, currentHp: 1500, knowledge: 'CURRENT', displayCapacityHp: 2000, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' },
+    ]
+    enemy.damageLosses = [{
+      fromSec: 10, toSec: 42, hpLoss: 500,
+      attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1,
+    }]
+    const wrapper = mountPlayback(overview, 9, ds)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    clock.now = 100
+    rafCb(0)
+    clock.now = 34100
+    rafCb(34100) // t≈43：跨过完整 hidden-window loss，canonical facts remain visible
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="pb-float-dmg"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-marker-2001"] .pb-hp-ghost').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-marker-2001"] .pb-hp-flash').exists()).toBe(false)
+    const info = wrapper.find('[data-test="pb-info"]')
+    const dts = info.findAll('.pb-sb-grid dt')
+    const recordedIndex = dts.findIndex((dt) => dt.text() === 'recon.map.playback.damage_recorded')
+    expect(info.findAll('.pb-sb-grid dd')[recordedIndex].text()).toBe('500')
+    expect(info.findAll('.pb-sb-log-time').map((node) => node.text())).toEqual(['00:42'])
+  })
+
   it('§10.3/§11 HP transition：跨过 DAMAGE 产生 ghost（同阵营浅版）+ fill 立即到新值', async () => {
     stubRaf()
     fakeClock()
