@@ -229,8 +229,26 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Processing job was not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Source is not ready */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
