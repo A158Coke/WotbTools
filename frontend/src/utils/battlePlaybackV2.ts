@@ -237,26 +237,32 @@ export function teamHealthAt(
 
 /** Return decreases between canonical CURRENT samples at or before t. */
 function healthDecreasesAt(track, t) {
-  const losses: Array<{ timeSec: number; hpLoss: number }> = []
+  const losses: Array<{ fromSec: number; toSec: number; hpLoss: number }> = []
   let previousHp: number | null = null
+  let previousSec: number | null = null
   for (const transition of track?.healthTransitions || []) {
     if (transition.timeSec > t + 1e-6) break
     // LAST_KNOWN repeats the last observed value across a hidden interval; it
     // is not a new current sample and must not invent a loss timestamp.
     if (transition.knowledge !== 'CURRENT') {
-      if (transition.knowledge !== 'LAST_KNOWN') previousHp = null
+      if (transition.knowledge !== 'LAST_KNOWN') {
+        previousHp = null
+        previousSec = null
+      }
       continue
     }
     const currentHp = transition.currentHp
     const trusted = currentHp != null && Number.isFinite(currentHp)
     if (!trusted) {
       previousHp = null
+      previousSec = null
       continue
     }
-    if (previousHp != null && currentHp < previousHp) {
-      losses.push({ timeSec: transition.timeSec, hpLoss: previousHp - currentHp })
+    if (previousHp != null && previousSec != null && currentHp < previousHp) {
+      losses.push({ fromSec: previousSec, toSec: transition.timeSec, hpLoss: previousHp - currentHp })
     }
     previousHp = currentHp
+    previousSec = transition.timeSec
   }
   return losses
 }
@@ -311,19 +317,33 @@ export function damageLogAtV2(
       if (!usedAttribution.has(index)
         && event.targetAccountId === selectedAccountId
         && event.accountId != null
-        && Math.abs(event.timeSec - loss.timeSec) <= 1e-6
-        && event.observedHpLoss === loss.hpLoss) {
+        && event.timeSec > loss.fromSec + 1e-6
+        && event.timeSec <= loss.toSec + 1e-6) {
         indexes.push(index)
       }
       return indexes
     }, [])
-    const candidateAccounts = new Set(candidateIndexes.map(index => observedEvents[index].accountId))
-    const matchIndex = candidateAccounts.size === 1 && candidateIndexes.length > 0
-      ? candidateIndexes[0] : -1
+    const candidateAccounts = new Set<number>()
+    for (const index of candidateIndexes) {
+      const accountId = observedEvents[index].accountId
+      if (accountId != null) candidateAccounts.add(accountId)
+    }
+    const attributedTotal = candidateIndexes.reduce((sum, index) => {
+      const observedHpLoss = observedEvents[index].observedHpLoss
+      return observedHpLoss == null ? sum : sum + observedHpLoss
+    }, 0)
+    const uniquelyAttributed = candidateAccounts.size === 1
+      && Math.abs(attributedTotal - loss.hpLoss) <= 1e-6
+    const matchIndex = uniquelyAttributed ? candidateIndexes[0] : -1
     const match = matchIndex >= 0 ? observedEvents[matchIndex] : null
-    if (match) usedAttribution.add(matchIndex)
+    if (uniquelyAttributed) {
+      for (const index of candidateIndexes) usedAttribution.add(index)
+    }
     rows.push({
-      timeSec: loss.timeSec,
+      // A single attributed event has the best timestamp; an aggregate or
+      // unknown loss stays at the canonical observation boundary.
+      timeSec: candidateIndexes.length === 1 && uniquelyAttributed && match
+        ? match.timeSec : loss.toSec,
       dir: 'in',
       hpLoss: loss.hpLoss,
       attackerAccountId: match?.accountId ?? null,

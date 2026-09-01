@@ -224,6 +224,56 @@ describe('canonical event statistics', () => {
     ])
     expect(damageLogAtV2(events, victim, 35).map(row => row.timeSec)).toEqual([10, 20, 30])
   })
+
+  it('joins a uniquely attributable single event inside the observation window', () => {
+    const track = {
+      accountId: 2,
+      healthTransitions: [lh(0, 2000, 'CURRENT', 2000), lh(10, 1500, 'CURRENT', 2000)],
+    }
+    const rows = damageLogAtV2([
+      { type: 'DAMAGE', timeSec: 9.43, accountId: 1, targetAccountId: 2, observedHpLoss: 500 },
+    ], track, 10)
+    expect(rows).toEqual([
+      { timeSec: 9.43, dir: 'in', hpLoss: 500, attackerAccountId: 1, attackerReliable: true },
+    ])
+    expect(damageLogAtV2([
+      { type: 'DAMAGE', timeSec: 9.43, accountId: 1, targetAccountId: 2, observedHpLoss: 500 },
+    ], track, 9.42)).toEqual([])
+  })
+
+  it('aggregates same-attacker events in one observation window only when totals match', () => {
+    const track = {
+      accountId: 2,
+      healthTransitions: [lh(0, 2000, 'CURRENT', 2000), lh(10, 1500, 'CURRENT', 2000)],
+    }
+    const sameAttacker = damageLogAtV2([
+      { type: 'DAMAGE', timeSec: 9.1, accountId: 1, targetAccountId: 2, observedHpLoss: 200 },
+      { type: 'DAMAGE', timeSec: 9.7, accountId: 1, targetAccountId: 2, observedHpLoss: 300 },
+    ], track, 10)
+    expect(sameAttacker).toEqual([
+      { timeSec: 10, dir: 'in', hpLoss: 500, attackerAccountId: 1, attackerReliable: true },
+    ])
+
+    const multipleAttackers = damageLogAtV2([
+      { type: 'DAMAGE', timeSec: 9.1, accountId: 1, targetAccountId: 2, observedHpLoss: 200 },
+      { type: 'DAMAGE', timeSec: 9.7, accountId: 3, targetAccountId: 2, observedHpLoss: 300 },
+    ], track, 10)
+    expect(multipleAttackers).toEqual([
+      { timeSec: 10, dir: 'in', hpLoss: 500, attackerAccountId: null, attackerReliable: false },
+    ])
+  })
+
+  it('keeps attribution unknown when observed damage does not cover canonical loss', () => {
+    const track = {
+      accountId: 2,
+      healthTransitions: [lh(0, 2000, 'CURRENT', 2000), lh(10, 1400, 'CURRENT', 2000)],
+    }
+    expect(damageLogAtV2([
+      { type: 'DAMAGE', timeSec: 9.43, accountId: 1, targetAccountId: 2, observedHpLoss: 300 },
+    ], track, 10)).toEqual([
+      { timeSec: 10, dir: 'in', hpLoss: 600, attackerAccountId: null, attackerReliable: false },
+    ])
+  })
 })
 
 describe('orientationAtV2', () => {

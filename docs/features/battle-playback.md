@@ -330,7 +330,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   有真实 sample → 精确 current 数字；敌方无依据 → —。tankopedia base HP 是静态 metadata 不是本局
   最大 HP，不再展示「最大 HP / HP %」（除已证明 OBSERVED_EXACT 的 pct））/
   当前播放时间/已记录伤害（Σ 可 attribution 的权威掉血）/承受伤害（Σ 该车全部
-  掉血）/击杀数 + 最近伤害记录（权威掉血，攻击者不可证明或未点亮显示「来源未知」）。
+  掉血）/击杀数 + 最近伤害记录（权威掉血；incoming 在相邻可信 CURRENT HP 观测窗口内关联
+  `DAMAGE`，仅当唯一攻击者的全部可归因掉血恰好覆盖该窗口掉血时显示来源，否则显示「来源未知」）。
   「最终战绩」分区与协助伤害行已**删除**（整场结算不混入当前时间点面板）。
 - **KILL 广播 provenance（验证结论 + PR #107 Blocker 5 扩展）**：KILL 事件派生自 lethal
   DamageEvent（type-8 直接伤害通知），只能证明录像者客户端收到该伤害通知、不能证明客户端当时可见
