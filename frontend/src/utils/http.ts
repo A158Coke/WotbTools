@@ -1,5 +1,11 @@
-import type { ApiErrorInit, ApiErrorPayload, ErrorCode, JsonObject } from '../types/api.js'
+import type {
+  ApiErrorApplicationModel,
+  ApiErrorInit,
+  ApplicationErrorCode,
+  JsonObject,
+} from '../types/api.js'
 import { isContractCode, isRecord } from '../types/guards.js'
+import { validateApiError } from '../api/contract-runtime.js'
 
 const STATUS_FALLBACK: Readonly<Record<number, string>> = Object.freeze({
   400: 'INVALID_REQUEST', 401: 'AUTH_UNAUTHENTICATED', 403: 'AUTH_FORBIDDEN',
@@ -41,9 +47,9 @@ function statusOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-export class ApiError extends Error implements ApiErrorPayload {
+export class ApiError extends Error implements ApiErrorApplicationModel {
   readonly name = 'ApiError'
-  readonly errorCode: ErrorCode
+  readonly errorCode: ApplicationErrorCode
   /** Backward-compatible alias; new code should branch on errorCode. */
   readonly code: string
   readonly status: number | null
@@ -65,7 +71,7 @@ export class ApiError extends Error implements ApiErrorPayload {
         ? normalized.code
         : fallbackCode(statusOrNull(normalized.status))
     super(errorCode, normalized.cause instanceof Error ? { cause: normalized.cause } : undefined)
-    this.errorCode = errorCode as ErrorCode
+    this.errorCode = errorCode as ApplicationErrorCode
     this.code = errorCode
     this.status = statusOrNull(normalized.status)
     this.errorMsg = stringOrNull(normalized.errorMsg)
@@ -115,13 +121,20 @@ async function responseBody(response: Pick<Response, 'headers'> & Partial<Pick<R
 export async function apiErrorFromResponse(response: Response): Promise<ApiError> {
   const status = Number.isFinite(response.status) ? response.status : null
   const { body, malformed } = await responseBody(response)
-  const candidate = malformed
-    ? 'MALFORMED_ERROR_RESPONSE'
-    : isRecord(body) && (isContractCode(body.errorCode) || isContractCode(body.code)
-      || isContractCode(body.error))
-      ? (body.errorCode || body.code || body.error) as string
-      : fallbackCode(status)
-  const bodyRecord = isRecord(body) ? body : {}
+  const wire = !malformed ? validateApiError(body).data : null
+  const legacy = !malformed && isRecord(body)
+    && (isContractCode(body.code) || isContractCode(body.error))
+  let candidate: string
+  if (malformed || (isRecord(body) && 'errorCode' in body && !wire)) {
+    candidate = 'MALFORMED_ERROR_RESPONSE'
+  } else if (wire) {
+    candidate = wire.errorCode
+  } else if (legacy) {
+    candidate = (body.code || body.error) as string
+  } else {
+    candidate = fallbackCode(status)
+  }
+  const bodyRecord: JsonObject = isRecord(body) ? body : {}
   return new ApiError({
     errorCode: candidate,
     status,
