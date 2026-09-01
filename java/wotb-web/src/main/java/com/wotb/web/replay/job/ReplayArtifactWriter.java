@@ -123,6 +123,9 @@ public final class ReplayArtifactWriter {
             if (!vehicleObject.has("damageLosses")) vehicleObject.putArray("damageLosses");
             removeSampleKnowledge(vehicleObject, "positionSegments");
             removeSampleKnowledge(vehicleObject, "orientationSegments");
+            removeUnknownTransitions(vehicleObject, "orientationSegments", "knowledge");
+            removeUnknownTransitions(vehicleObject, "healthTransitions", "knowledge");
+            removeUnknownTransitions(vehicleObject, "lifeTransitions", "lifeState");
             normalizeLegacyLoadout(vehicleObject);
             normalizeConsumableSlots(vehicleObject);
             if (!(vehicleObject.get("loadout") instanceof ObjectNode loadout)) {
@@ -151,6 +154,20 @@ public final class ReplayArtifactWriter {
             if (samples == null || !samples.isArray()) continue;
             for (final JsonNode sample : samples) {
                 if (sample instanceof ObjectNode sampleObject) sampleObject.remove("knowledge");
+            }
+        }
+    }
+
+    private static void removeUnknownTransitions(final ObjectNode vehicle,
+                                                 final String field,
+                                                 final String stateField) {
+        final JsonNode transitions = vehicle.get(field);
+        if (!(transitions instanceof ArrayNode array)) return;
+        for (int i = array.size() - 1; i >= 0; i--) {
+            final JsonNode transition = array.get(i);
+            if (transition instanceof ObjectNode object
+                    && "UNKNOWN".equals(object.path(stateField).asText())) {
+                array.remove(i);
             }
         }
     }

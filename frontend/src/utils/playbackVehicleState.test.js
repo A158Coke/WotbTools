@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { projectVehicleState } from './playbackVehicleState'
 
-const project = (time, orientationSegments = [{ startSec: 0, endSec: 10, knowledge: 'OBSERVED', samples: [
+const project = (time, orientationSegments = [{ startSec: 0, endSec: 10, knowledge: 'CURRENT', samples: [
   { timeSec: 0, hullYawDeg: 10, turretRelativeYawDeg: 20 },
 ] }]) => projectVehicleState({
   vehicle: { accountId: 7, team: 1, playerName: 'Player', tankId: 123, tankName: 'Tank' },
@@ -54,6 +54,33 @@ describe('projectVehicleState', () => {
     const state = project(5, [{ startSec: 0, endSec: 10, knowledge: 'OBSERVED', samples: [
       { timeSec: 0, hullYawDeg: null, turretRelativeYawDeg: 20 },
     ] }])
+    expect(state.hullScreenDeg).toBeNull()
+    expect(state.turretScreenDeg).toBeNull()
+  })
+
+  it('does not synthesize a zero direction for a destroyed vehicle without orientation', () => {
+    const state = projectVehicleState({
+      vehicle: { accountId: 7, team: 1, playerName: 'Player', tankId: 123, tankName: 'Tank' },
+      track: {
+        friendly: true,
+        positionSegments: [{ startSec: 0, endSec: 10, knowledge: 'OBSERVED', samples: [
+          { timeSec: 0, x: 0, y: 0 }, { timeSec: 10, x: 100, y: 50 },
+        ] }],
+        orientationSegments: [],
+        lifeTransitions: [{ timeSec: 0, lifeState: 'DESTROYED', destroyedKnownAtSec: 0 }],
+      },
+      time: 5,
+      recorderAccountId: 7,
+      model: null,
+      hullImage: 'friendly-hull',
+      turretImage: 'friendly-turret',
+      markerLeft: (x) => `${x}%`,
+      markerTop: (y) => `${y}%`,
+      markerTransform: 'translate(-50%, -50%)',
+      overlayInverseScale: 'scale(1)',
+      overlayInverse: 1,
+      translate: (key) => key,
+    })
     expect(state.hullScreenDeg).toBeNull()
     expect(state.turretScreenDeg).toBeNull()
   })

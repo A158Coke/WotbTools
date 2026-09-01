@@ -114,7 +114,7 @@ class BattlePlaybackDatasetTest {
                         new BattlePlaybackDataset.HealthTransition(
                                 2, 80, "CURRENT", "EXACT_BATTLE_EVENT", 100, ConfidenceDto.LOW),
                         new BattlePlaybackDataset.HealthTransition(
-                                3, 70, "UNKNOWN", "UNKNOWN", null, ConfidenceDto.UNKNOWN)),
+                                3, 70, "LAST_KNOWN", "INFERRED", null, ConfidenceDto.UNKNOWN)),
                 List.of(), List.of(), List.of(), List.of());
         final BattlePlaybackDataset dataset = new BattlePlaybackDataset(
                 100, "lagoon", 1, 42L, List.of(vehicle), List.of(), List.of(),

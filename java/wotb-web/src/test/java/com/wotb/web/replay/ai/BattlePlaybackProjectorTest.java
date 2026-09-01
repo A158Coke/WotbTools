@@ -199,6 +199,56 @@ class BattlePlaybackProjectorTest {
         assertEquals("CURRENT", track.healthTransitions().getFirst().knowledge());
     }
 
+    @Test
+    void unavailableCanonicalFactsAreOmittedFromCurrentWireTracks() {
+        final long account = 2001L;
+        final int entityId = 7;
+        final Battle battle = new Battle();
+        battle.mapName = "middleburg";
+        battle.durationS = 30.0;
+        final PlayerResult player = new PlayerResult();
+        player.accountId = account;
+        player.team = 2;
+        player.tankId = 456L;
+        player.nickname = "Enemy";
+        battle.players = new ArrayList<>(List.of(player));
+
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(entityId, new TeamEntityIdentity(entityId, account, "Enemy", 456L, "Enemy", 2,
+                        DecodeConfidence.EXACT)),
+                Map.of(account, List.of(entityId)), Map.of(), 0, List.of());
+        final FrameVehicle unavailable = new FrameVehicle(
+                entityId, account, "Enemy", 456, "Enemy", "Medium tank", 10, 2, false,
+                LifeState.UNKNOWN, FrameHealth.unknown(), FramePosition.UNKNOWN, FrameOrientation.UNKNOWN,
+                FrameMapState.UNKNOWN, VehicleKnowledgeState.UNKNOWN, null, List.of());
+        final FrameVehicle available = new FrameVehicle(
+                entityId, account, "Enemy", 456, "Enemy", "Medium tank", 10, 2, false,
+                LifeState.ALIVE,
+                new FrameHealth(1000, 1.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                        FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH),
+                new FramePosition(new Vector3(1, 0, 1), 1.0, 0.0,
+                        PositionKnowledge.CURRENT, PositionSource.OBSERVED_EVENT, Confidence.HIGH),
+                new FrameOrientation(0f, 0f, 0f, 1.0, 0.0,
+                        FrameOrientation.OrientationKnowledge.CURRENT, Confidence.HIGH),
+                FrameMapState.UNKNOWN, VehicleKnowledgeState.POSITION_STREAM_ACTIVE, null, List.of());
+        final BattleTimeline timeline = new BattleTimeline(
+                "middleburg", 30.0, 0.0, BattleTimelineClock.IDENTIFIED,
+                List.of(
+                        new BattleFrame(0, 0, null, List.of(unavailable), List.of(), List.of(), Map.of(), List.of()),
+                        new BattleFrame(1, 1, null, List.of(available), List.of(), List.of(), Map.of(), List.of())),
+                List.of(), List.of(), BattleTimelineValidationResult.ok(), List.of());
+
+        final BattlePlaybackDataset.VehiclePlaybackTrack track =
+                BattlePlaybackProjector.project(battle, timeline, mapping, null).vehicles().getFirst();
+        assertEquals(1, track.healthTransitions().size());
+        assertEquals(1000, track.healthTransitions().getFirst().currentHp());
+        assertEquals("CURRENT", track.healthTransitions().getFirst().knowledge());
+        assertEquals(List.of("ALIVE"), track.lifeTransitions().stream()
+                .map(BattlePlaybackDataset.LifeTransition::lifeState).toList());
+        assertEquals(List.of("CURRENT"), track.orientationSegments().stream()
+                .map(BattlePlaybackDataset.OrientationSegment::knowledge).toList());
+    }
+
     /**
      * P0 orientation knowledge fix：orientationSegments 必须按每次 frame 的
      * {@code FrameOrientation.knowledge} 分段，绝不得把整条时间轴焊成一个硬编码 "CURRENT" 段。
