@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   healthAt,
+  healthDisplayAt,
   lifeAt,
   positionCoveredAtV2,
   positionAtV2,
@@ -10,6 +11,9 @@ import {
   consumableRuntimeAt,
   consumableRuntimeStatesAt,
   moduleCrewAt,
+  teamHealthAt,
+  cumulativeStatsAtV2,
+  damageLogAtV2,
 } from './battlePlaybackV2'
 
 const lh = (timeSec, currentHp, knowledge, displayCapacityHp) =>
@@ -88,6 +92,77 @@ describe('positionAtV2', () => {
     const pos = positionAtV2(segs, 23)
     expect(pos.timeSec).toBe(15)
     expect(pos.x).toBe(11)
+  })
+
+  it('does not interpolate an OBSERVED segment when the canonical flag disallows it', () => {
+    const segs = [{ knowledge: 'OBSERVED', interpolationAllowed: false, startSec: 0, endSec: 100,
+      samples: [{ timeSec: 0, x: 0, y: 0 }, { timeSec: 100, x: 100, y: 100 }] }]
+    expect(positionAtV2(segs, 50)).toEqual({ x: 0, y: 0, timeSec: 0 })
+  })
+})
+
+describe('healthDisplayAt / teamHealthAt', () => {
+  it('keeps friendly opening without evidence as relative-full and enemy without evidence UNKNOWN', () => {
+    const friendly = { team: 1, friendly: true, healthTransitions: [], lifeTransitions: [] }
+    const enemy = { team: 2, friendly: false, healthTransitions: [], lifeTransitions: [] }
+    expect(healthDisplayAt(friendly, 0)).toMatchObject({ state: 'RELATIVE_FULL', relativeFull: true, currentHp: null })
+    expect(healthDisplayAt(enemy, 0)).toMatchObject({ state: 'UNKNOWN', relativeFull: false, currentHp: null })
+    expect(teamHealthAt([friendly], 1, 0).state).toBe('FULL_RELATIVE')
+    expect(teamHealthAt([enemy], 2, 0).state).toBe('UNKNOWN')
+  })
+
+  it('uses only <=t canonical health facts and distinguishes exact, last-known and destroyed', () => {
+    const track = {
+      friendly: false,
+      healthTransitions: [lh(10, 1200, 'CURRENT', 1200), lh(20, 800, 'LAST_KNOWN', 1200), lh(30, 600, 'CURRENT', 1200)],
+      lifeTransitions: [{ timeSec: 40, lifeState: 'DESTROYED', destroyedKnownAtSec: 40 }],
+    }
+    expect(healthDisplayAt(track, 5).state).toBe('UNKNOWN')
+    expect(healthDisplayAt(track, 15)).toMatchObject({ state: 'CURRENT', currentHp: 1200, pct: 100 })
+    expect(healthDisplayAt(track, 25)).toMatchObject({ state: 'LAST_KNOWN', currentHp: 800, pct: 800 / 1200 * 100 })
+    expect(healthDisplayAt(track, 35).currentHp).toBe(600)
+    expect(healthDisplayAt(track, 50)).toMatchObject({ state: 'DESTROYED', currentHp: 0, destroyed: true })
+  })
+
+  it('aggregates exact and mixed tracks without legacy capacity inference', () => {
+    const exact = { team: 1, friendly: true, healthTransitions: [lh(0, 1000, 'CURRENT', 1000)], lifeTransitions: [] }
+    const unknown = { team: 1, friendly: true, healthTransitions: [], lifeTransitions: [] }
+    expect(teamHealthAt([exact], 1, 0)).toMatchObject({ state: 'EXACT', totalMax: 1000, knownRemaining: 1000 })
+    expect(teamHealthAt([exact, unknown], 1, 0)).toMatchObject({ state: 'PARTIAL', totalMax: 0, knownRemaining: 1000, unknownMax: 0 })
+  })
+
+  it('does not render a full partial bar when the only known HP is destroyed=0', () => {
+    const destroyed = {
+      team: 1,
+      friendly: true,
+      healthTransitions: [],
+      lifeTransitions: [{ timeSec: 10, lifeState: 'DESTROYED', destroyedKnownAtSec: 10 }],
+    }
+    const unknown = { team: 1, friendly: true, healthTransitions: [], lifeTransitions: [] }
+    expect(teamHealthAt([destroyed, unknown], 1, 20)).toMatchObject({
+      state: 'PARTIAL', totalMax: 0, knownRemaining: 0,
+    })
+  })
+})
+
+describe('canonical event statistics', () => {
+  const events = [
+    { type: 'DAMAGE', timeSec: 10, accountId: 1, targetAccountId: 2, observedHpLoss: 400 },
+    { type: 'DAMAGE', timeSec: 12, accountId: null, targetAccountId: 1, observedHpLoss: 200 },
+    { type: 'DAMAGE', timeSec: 14, accountId: 2, targetAccountId: 1, observedHpLoss: null, rawProtocolValue: 999 },
+    { type: 'KILL', timeSec: 20, accountId: 1, targetAccountId: 2, observedHpLoss: null },
+  ]
+
+  it('counts only observedHpLoss and never raw protocol damage', () => {
+    expect(cumulativeStatsAtV2(events, 1, 15)).toEqual({ dealt: 400, received: 200, kills: 0 })
+    expect(cumulativeStatsAtV2(events, 1, 25)).toEqual({ dealt: 400, received: 200, kills: 1 })
+  })
+
+  it('keeps missing attacker attribution unknown in the canonical damage log', () => {
+    expect(damageLogAtV2(events, 1, 15)).toEqual([
+      { timeSec: 10, dir: 'out', hpLoss: 400, victimAccountId: 2 },
+      { timeSec: 12, dir: 'in', hpLoss: 200, attackerAccountId: null, attackerReliable: false },
+    ])
   })
 })
 

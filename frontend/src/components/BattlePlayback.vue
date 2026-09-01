@@ -20,24 +20,23 @@ import {
   KILL_FEED_MS,
   aggregateEventsBySecond,
   clampViewPan,
-  cumulativeStatsAt,
-  damageLogAt,
   eventsCrossed,
   formatClock,
-  ghostAround,
-  hpDisplay,
   pushFeed,
   recorderRelated,
-  teamHp,
   teamPointsAt,
   teamRelated,
   tracerLines,
   transientsActive,
-  victimFeedbackAllowed,
   zoomViewAt
 } from '../utils/battlePlayback'
 import {
-  v2VehicleView,
+  cumulativeStatsAtV2,
+  damageLogAtV2,
+  ghostAroundV2,
+  healthDisplayAt,
+  teamHealthAt,
+  victimFeedbackAllowedV2,
 } from '../utils/battlePlaybackV2'
 import { projectVehicleState } from '../utils/playbackVehicleState'
 import { advancePlaybackTime, clampPlaybackTime, nextPlaybackSpeed } from '../utils/playbackClock'
@@ -72,7 +71,7 @@ import {
 /**
  * 战局回放（Battle Playback）：地图鸟瞰第三视图。
  * 复用 mapImages 素材、coordinateBounds 坐标映射、自适应色板与响应式布局；
- * RAF 推进播放时间，仅在同一可信连续点（gap ≤ 5s）之间插值。
+ * RAF 只推进 battle-relative 时间，坐标查询遵循 canonical positionSegments。
  */
 const props = defineProps({
   /**
@@ -119,13 +118,6 @@ watch(image, async (img) => {
 
 // V2 canonical dataset 是唯一 playback 事实源（cleanup：移除 legacy overview.playback）。
 const playback = computed(() => props.playbackV2 || null)
-/** V2 canonical tracks 按账号索引（迁移期守卫：present 时 marker/HUD 用 V2 事实源）。 */
-const v2TrackByAccount = computed(() => {
-  const tracks = props.playbackV2?.vehicles || []
-  const m = new Map()
-  for (const tr of tracks) m.set(tr.accountId, tr)
-  return m
-})
 const duration = computed(() => (playback.value ? Math.max(0, playback.value.durationSec) : 0))
 const friendlyTeam = computed(() => pbOverview.value.friendlyTeam)
 
@@ -166,20 +158,11 @@ watch(
 // FULL_RELATIVE 100% 阵营色实心条（即使部分车辆已有 current sample、但全队 entry/max 尚未
 // 全部证明，开局也不显示斜纹；不伪造具体数字）；敌方：无可信采样恒 UNKNOWN 灰段
 // （不把 tankopedia base 当已知血量）
-// V2 为主：playbackV2 present 时，teamHp 聚合 canonical healthTransitions + displayCapacityHp；
-// legacy 仅当无 V2 时才进入 HP 状态机推理。
-const hpVehicles = computed(() => {
-  if (props.playbackV2?.vehicles?.length) {
-    return props.playbackV2.vehicles.map(t => ({
-      team: t.team,
-      healthTransitions: t.healthTransitions || [],
-      lifeTransitions: t.lifeTransitions || [],
-    }))
-  }
-  return playback.value?.vehicles || []
-})
-const friendlyHp = computed(() => teamHp(hpVehicles.value, friendlyTeam.value, currentTime.value, true))
-const enemyHp = computed(() => teamHp(hpVehicles.value, friendlyTeam.value === 1 ? 2 : 1, currentTime.value, false))
+// V2 canonical：teamHealthAt 只聚合 track.team、healthTransitions 与已证明的
+// displayCapacityHp，不使用静态坦克元数据或旧版 HP 状态机推理。
+const hpVehicles = computed(() => playback.value?.vehicles || [])
+const friendlyHp = computed(() => teamHealthAt(hpVehicles.value, friendlyTeam.value, currentTime.value))
+const enemyHp = computed(() => teamHealthAt(hpVehicles.value, friendlyTeam.value === 1 ? 2 : 1, currentTime.value))
 // 争霸赛实时点数：来自回放广播 pointsSamples（随 currentTime 变化）；非争霸赛/无广播 → null 不显示
 const friendlyPoints = computed(() =>
   teamPointsAt(playback.value?.pointsSamples, friendlyTeam.value, currentTime.value))
@@ -190,7 +173,7 @@ const showPoints = computed(() => friendlyPoints.value != null || enemyPoints.va
  * HP bar 填充宽度（PR #107 Blocker 2 aggregate state）：
  * - FULL_RELATIVE（本方开局相对满血：全部存活车辆无权威掉血/阵亡证据，即使有 current sample
  *   也 100% 实心条）→ known 段固定 100% 阵营色实心条（相对状态，无具体数字、无斜纹）；
- * - EXACT（全队 entryHp 均已证明且证据一致）→ known = knownRemaining/totalMax、
+ * - EXACT（全队当前 HP 与 displayCapacityHp 均已证明且一致）→ known = knownRemaining/totalMax、
  *   unknown = unknownMax/totalMax（灰段参考）；
  * - PARTIAL/MIXED（部分证明/混合 provenance/证据矛盾：有真实已知剩余但无「全队已证明且一致的分母」）→
  *   known 段 100% + indeterminate 斜纹（无法算真实比例，绝不显示 known/partialTotalMax 分数）；
@@ -201,7 +184,7 @@ function hpBarFill(hp, kind) {
   if (hp.state === 'FULL_RELATIVE') return kind === 'known' ? '100%' : '0%'
   const total = hp.totalMax || 0
   if (total <= 0) {
-    if (kind === 'known') return hp.state === 'PARTIAL' ? '100%' : '0%'
+    if (kind === 'known') return hp.state === 'PARTIAL' && hp.knownRemaining > 0 ? '100%' : '0%'
     return '0%'
   }
   const val = kind === 'known' ? hp.knownRemaining : hp.unknownMax
@@ -212,9 +195,9 @@ function hpBarFill(hp, kind) {
  * HP 数值区显示文本（绝不显示虚假的 knownRemaining / totalMax 分数）：
  * - FULL_RELATIVE → 「100%」（开局相对满血状态，非具体 HP 数字）；
  * - UNKNOWN → —（无任何数据）；
- * - EXACT（全队 entryHp 均已证明且证据一致）→ 「knownRemaining / totalMax」（真实已证明总数）；
+ * - EXACT（全队当前 HP 与 displayCapacityHp 均已证明且一致）→ 「knownRemaining / totalMax」；
  * - PARTIAL/MIXED（部分证明/混合 provenance/证据矛盾）→ 只显示真实已知剩余数字（不伪造分母——
- *   totalMax 已被 teamHp 归零，绝不显示 knownRemaining / partialTotalMax）。
+ *   无已证明分母时绝不显示 knownRemaining / partialTotalMax）。
  */
 function hpValueText(hp) {
   if (hp.state === 'FULL_RELATIVE') return '100%'
@@ -332,9 +315,9 @@ function consumeEvents(fromSec, toSec) {
       const victim = vehiclesByAccount.value.get(ev.targetAccountId)
       // §7.2/§10.1：只有事件时刻位置流覆盖（当前可见/可展示）才跳伤害——
       // 失察期间受击不跳伤害、不更新 HP、不显示 attacker、不画炮线（HP 冻结为最后可信值）
-      if (!victim || !victimFeedbackAllowed(victim, ev.timeSec)) continue
+      if (!victim || !victimFeedbackAllowedV2(victim, ev.timeSec)) continue
       if (!stateByAccount.has(ev.targetAccountId)) continue // 无 marker 锚点不显示
-      // §11/§12：浮伤害只显示可证明的权威掉血（observedHpLoss，Type-7 推导）；
+      // §11/§12：浮伤害只显示可证明的权威掉血（canonical observedHpLoss）；
       // raw Type-8 协议值语义未证明，不得作为精确伤害飘字
       if (ev.observedHpLoss == null) continue
       // ref 数组必须整体替换才能触发 reactivity（in-place push 不触发）
@@ -347,14 +330,13 @@ function consumeEvents(fromSec, toSec) {
       }]
       // §10.3/§11：HP 数字立即切换（确定性），bar 快速缩短（CSS transition），
       // hit flash + lost-HP ghost（同阵营色浅版，§11 连续受击重置消退计时）
-      const friendly = victim.team === friendlyTeam.value
-      const g = ghostAround(victim, ev.timeSec, { friendly })
+      const g = ghostAroundV2(victim, ev.timeSec)
       if (g) ghostByAccount.set(ev.targetAccountId, { prevPct: g.prevPct, nextPct: g.nextPct, untilRealMs: now + GHOST_MS })
       flashByAccount.set(ev.targetAccountId, now + FLASH_MS)
     } else if (ev.type === 'DESTROYED') {
       // §12：击毁 burst（轻量 2D，克制；仅受击方位置流覆盖时锚定）
       const victim = vehiclesByAccount.value.get(ev.accountId)
-      if (!victim || !victimFeedbackAllowed(victim, ev.timeSec)) continue
+      if (!victim || !victimFeedbackAllowedV2(victim, ev.timeSec)) continue
       if (!stateByAccount.has(ev.accountId)) continue
       burstItems.value = [...burstItems.value, {
         id: ++transientSeq,
@@ -398,15 +380,16 @@ function pruneTransients(now) {
 
 // ---- 单车 HP HUD 数据（§4/§5/§6/§7）----
 function hpFor(vehicle) {
-  const v2 = v2TrackByAccount.value?.get(vehicle.accountId)
-  if (v2) {
-    return hpDisplay(
-      { ...vehicle, healthTransitions: v2.healthTransitions || [], lifeTransitions: v2.lifeTransitions || [] },
-      currentTime.value,
-      { friendly: vehicle.team === friendlyTeam.value },
-    )
+  const display = healthDisplayAt(vehicle, currentTime.value)
+  if (!display) return null
+  return {
+    current: display.currentHp,
+    maxHp: display.displayCapacityHp,
+    pct: display.pct,
+    destroyed: display.destroyed,
+    state: display.state,
+    fullState: display.relativeFull,
   }
-  return hpDisplay(vehicle, currentTime.value, { friendly: vehicle.team === friendlyTeam.value })
 }
 /** marker HP HUD 数字区实际渲染文本（VehicleMarker .pb-hp-num 同款：current 有值→数字，否则 —）。
  *  labelLayout 碰撞用：数字文本可能影响 HUD 盒宽（不同状态不同文本），必须按实际文本估算。 */
@@ -1094,15 +1077,14 @@ onBeforeUnmount(() => {
 // ---- 数据 ----
 const routesByAccount = computed(() => {
   const map = new Map()
-  for (const route of pbOverview.value.routes || []) map.set(route.accountId, route)
+  for (const track of playback.value?.vehicles || []) map.set(track.accountId, track)
   return map
 })
 
 const vehiclesByAccount = computed(() => {
   const map = new Map()
   for (const vehicle of (playback.value ? playback.value.vehicles : [])) {
-    // V2 canonical vehicle view（带 hpLosses/deathSec 供累计统计/伤害日志/teamRelated）
-    map.set(vehicle.accountId, v2VehicleView(vehicle))
+    map.set(vehicle.accountId, vehicle)
   }
   return map
 })
@@ -1115,7 +1097,7 @@ function vehicleColor(vehicle) {
     .map(st => st.vehicle)
     .filter(v => v.team === vehicle.team)
   const index = teamVehicles.indexOf(vehicle)
-  const list = vehicle.team === friendlyTeam.value ? friendlyColors.value : enemyColors.value
+  const list = vehicle.friendly === true ? friendlyColors.value : enemyColors.value
   return list[Math.max(0, index) % list.length]
 }
 
@@ -1157,16 +1139,15 @@ const vehicleStates = computed(() => {
   if (tracks.length === 0) return []
   return tracks
     .map(track => {
-      const vehicle = v2VehicleView(track)
+      const vehicle = track
       return projectVehicleState({
       vehicle,
       track,
       time: currentTime.value,
       recorderAccountId: pbOverview.value.recorderAccountId,
-      friendlyTeam: friendlyTeam.value,
-      model: vehicleModel(vehicle),
-      hullImage: track.team === friendlyTeam.value ? friendlyHull : enemyHull,
-      turretImage: track.team === friendlyTeam.value ? friendlyTurret : enemyTurret,
+      model: vehicleModel(track),
+      hullImage: track.friendly ? friendlyHull : enemyHull,
+      turretImage: track.friendly ? friendlyTurret : enemyTurret,
       markerLeft: markerLeft,
       markerTop: markerTop,
       markerTransform: markerTransform.value,
@@ -1382,31 +1363,21 @@ const selLastKnownSec = computed(() => {
 const selCurStats = computed(() => {
   const st = selectedState.value
   if (!st) return { dealt: 0, received: 0, kills: 0 }
-  return cumulativeStatsAt(
-    authoritativeEvents.value,
-    st.vehicle.accountId,
-    currentTime.value,
-    Array.from(vehiclesByAccount.value.values())
-  )
+  return cumulativeStatsAtV2(authoritativeEvents.value, st.vehicle.accountId, currentTime.value)
 })
-/** §12/§13/§19 最近伤害记录：全部车辆的权威 HP loss（Type-7 推导），attacker 不可证明时
+/** §12/§13/§19 最近伤害记录：全部车辆的 canonical observedHpLoss，attacker 不可证明时
  *  显示「来源未知」；raw Type-8 协议值不参与。Blocker 2：只消费 toSec <= currentTime 的记录
  *  （forward/backward seek 与任意 timestamp 重建天然正确，未来事件绝不泄漏）；取最近 8 条。 */
 const selDamageLog = computed(() => {
   const st = selectedState.value
   if (!st) return []
-  const rows = damageLogAt(
-    Array.from(vehiclesByAccount.value.values()),
-    st.vehicle.accountId,
-    currentTime.value,
-    8
-  )
+  const rows = damageLogAtV2(authoritativeEvents.value, st.vehicle.accountId, currentTime.value, 8)
   return rows.map((d) => {
     if (d.dir === 'in') {
       if (d.attackerReliable && d.attackerAccountId != null) {
         const attacker = vehiclesByAccount.value.get(d.attackerAccountId)
         // §13：事件时刻位置流未覆盖的攻击者不得泄露身份
-        const covered = attacker && victimFeedbackAllowed(attacker, d.timeSec)
+        const covered = attacker && victimFeedbackAllowedV2(attacker, d.timeSec)
         return { ...d, label: attacker && covered
           ? (attacker.playerName || '#' + attacker.accountId)
           : t('recon.map.playback.source_unknown') }
@@ -1446,7 +1417,7 @@ const labelLayout = computed(() => {
   const items = vehicleStates.value.map((st) => {
     const p = markerScreen(st)
     if (!p) return null
-    const hp = hpDisplay(st.vehicle, currentTime.value, { friendly: st.friendly })
+    const hp = hpFor(st.vehicle)
     return {
       accountId: st.vehicle.accountId,
       x: p.x,
@@ -1454,7 +1425,7 @@ const labelLayout = computed(() => {
       tankName: st.tankName,
       playerName: st.playerName,
       // PR #107 Blocker 4：HP footprint 是否存在 = DOM 是否实际渲染 HUD（showHp 开且
-      // hpDisplay 有结果），不是 current 是否为 null——RULE_DERIVED_FULL_AT_SPAWN（current=null）
+      // health selector 有结果），不是 current 是否为 null——relativeFull（current=null）
       // 与 UNKNOWN 都会渲染 HUD（数字 — + bar），碰撞系统必须为它们建模真实盒。
       hpRendered: hpPrefs.showHp && hp != null,
       // 实际渲染的数字文本（VehicleMarker .pb-hp-num 同款：current 有值→数字，否则 —）；
@@ -1669,7 +1640,6 @@ const mapStyle = computed(() => ({
          点击空白不关闭，必须 × 显式关闭；destroyed 车可选；seek 保持同一 selected vehicle） -->
     <VehicleDetailsPanel
       :selected-state="selectedState"
-      :friendly-team="friendlyTeam"
       :selected-portrait-url="selectedPortraitUrl"
       :sel-last-known-sec="selLastKnownSec"
       :sel-cur-stats="selCurStats"

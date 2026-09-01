@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Changed
+- **Battle Playback V2 canonical consumption cleanup**：Battle Playback now consumes
+  `VehiclePlaybackTrack` directly. V2-native health/team-health selectors unify marker,
+  team bar, Details and Inspector presentation; `track.friendly`, position interpolation
+  permission, canonical life transitions and event `observedHpLoss` are authoritative.
+  Type5 combat-vehicle opening HP now seeds the canonical timeline. No OpenAPI shape change.
 - **Battle Playback temporal/loadout closure**：active-battle playback now excludes negative-time events while retaining canonical provenance, deduplicates pre-battle `INITIALIZED` seeds by entity+wireCode, and rejects negative temporal fields at the producer boundary. Type5 loadout decoding now shares the Type32 consumable mapping and covers the reviewed 11.19 food, fuel, protective-kit, and gear-oil wire-code families; current BlitzKit `equipment.pb` identity for vehicle-specific raw equipment `120` (`Improved Modules +`) is cataloged and generated into the three-language Inspector labels; unknown codes retain raw values. Contract-invalid playback responses have an explicit localized error instead of the generic unknown error, and the Inspector equipment rows remain a fixed 3×3 grid at narrow widths.
 - **真实 DeepSeek E2E 测试隔离**：三个真实 provider probe 统一标记为 `ai-live`，`wotb-web` 默认 Surefire 排除 live probe；普通测试即使存在 `AI_API_KEY` 也不会因此发起付费请求。新增 deterministic isolation guard，并明确 live probe 的人工显式运行约定；mock、loopback、prompt contract 与 AI eval 测试保持普通测试路径。
 - **FE ↔ BE HTTP contract infrastructure**：新增 OpenAPI 3.1 wire contract 作为 HTTP 唯一事实源，生成前端 transport/schema/error-code registry，加入 OpenAPI/ref、generated drift、生产形状 fixture、Ajv runtime 与 Playback serialization 的独立 CI gate；补齐 domain/transport/artifact compatibility 与 ApiError 维护规则。Playback 旧 artifact 仅在读取边界兼容，live response 不放宽为 legacy enum；server error registry 与前端 network/abort/malformed 等 synthetic application error 分层。
@@ -97,7 +102,7 @@
 - **Rating V2 雷达改为右侧选手抽屉**：隐藏管理员灰度页不再把六轴雷达追加到长结果表底部；点击玩家昵称后通过 `Teleport` 打开固定右侧抽屉，桌面/平板保持非模态并可继续点击表格切换玩家，移动端使用遮罩面板。补齐 Esc 关闭、触发按钮焦点回收与 reduced-motion；V2 公式/API、共享雷达几何及 League V5 页面不变。
 - **Battle Playback V2 UI 收尾（前端全 V2-only + 删除 Playback 影子层）**：前端 `BattlePlayback.vue` 的
   marker / HP HUD / Details Panel / team HP / 事件 feed 全部消费 canonical V2 事实（`healthAt` /
-  `lifeAt` / `positionAtV2` / `orientationAtV2` / `v2VehicleView`），不再回退 legacy
+  `lifeAt` / `healthDisplayAt` / `teamHealthAt` / `positionAtV2` / `orientationAtV2`），不再回退 legacy
   `MapOverview.Playback`。backend 删除 Playback 影子层（`MapOverview.Playback/PlaybackVehicle/
   PlaybackEvent/HpSample/DirectionSample/PositionInterval/HpLoss/FinalStats` + `buildPlayback` +
   `BattlePlaybackAdapter` + `AoiPositionCoverage`）；`BattlePlaybackDataset` 增加 battle-level
