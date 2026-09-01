@@ -307,32 +307,62 @@ export function victimFeedbackAllowedV2(
   return Number.isFinite(eventTimeSec) && positionCoveredAtV2(track?.positionSegments, eventTimeSec)
 }
 
-/** Lost-HP ghost derived from adjacent canonical health transitions. */
-export function ghostAroundV2(
-  track: Pick<VehiclePlaybackTrack, 'healthTransitions'> | null | undefined,
+/**
+ * DamageLoss transient feedback is allowed only when its complete attribution
+ * window is provably inside one continuous observed AoI segment. A single
+ * timestamp is insufficient: the loss may have happened while the victim was
+ * hidden and only become known when it was reacquired.
+ */
+export function damageFeedbackAllowedV2(
+  track: Pick<VehiclePlaybackTrack, 'positionSegments'> | null | undefined,
   loss: Pick<DamageLoss, 'fromSec' | 'toSec'> | null | undefined,
 ) {
   if (!track || !loss || !Number.isFinite(loss.fromSec) || !Number.isFinite(loss.toSec)
-    || loss.toSec < loss.fromSec || !Array.isArray(track.healthTransitions)) return null
+    || loss.toSec < loss.fromSec || !Array.isArray(track.positionSegments)) return false
+  const coveringSegments = track.positionSegments.filter(segment =>
+    segment?.knowledge === 'OBSERVED'
+      && Number.isFinite(segment.startSec)
+      && Number.isFinite(segment.endSec)
+      && segment.startSec <= segment.endSec
+      && loss.fromSec >= segment.startSec - 1e-6
+      && loss.toSec <= segment.endSec + 1e-6)
+  return coveringSegments.length === 1
+}
+
+/** Lost-HP ghost derived from adjacent canonical health transitions. */
+export function ghostAroundV2(
+  track: Pick<VehiclePlaybackTrack, 'healthTransitions'> | null | undefined,
+  loss: Pick<DamageLoss, 'fromSec' | 'toSec' | 'hpLoss'> | null | undefined,
+) {
+  if (!track || !loss || !Number.isFinite(loss.fromSec) || !Number.isFinite(loss.toSec)
+    || !Number.isFinite(loss.hpLoss) || loss.hpLoss < 0 || loss.toSec < loss.fromSec
+    || !Array.isArray(track.healthTransitions)) return null
   let previous: HealthTransition | null = null
+  const candidates: Array<{ previous: HealthTransition, transition: HealthTransition }> = []
   for (const transition of track.healthTransitions) {
+    if (!transition || !Number.isFinite(transition.timeSec)) return null
     if (transition.timeSec > loss.toSec + 1e-6) break
-    const capacity = previous?.displayCapacityHp ?? transition.displayCapacityHp
     const previousHp = previous?.currentHp
     const transitionHp = transition.currentHp
-    if (transition.timeSec >= loss.fromSec - 1e-6
+    if (transition.timeSec > loss.fromSec + 1e-6
       && previous && typeof previousHp === 'number' && Number.isFinite(previousHp)
       && typeof transitionHp === 'number' && Number.isFinite(transitionHp)
       && transitionHp < previousHp
-      && typeof capacity === 'number' && Number.isFinite(capacity) && capacity > 0) {
-      return {
-        prevPct: (previousHp / capacity) * 100,
-        nextPct: (transitionHp / capacity) * 100,
-      }
+      && previousHp - transitionHp === loss.hpLoss) {
+      candidates.push({ previous, transition })
     }
     previous = transition
   }
-  return null
+  if (candidates.length !== 1) return null
+  const [{ previous: candidatePrevious, transition: candidateTransition }] = candidates
+  if (typeof candidatePrevious.currentHp !== 'number' || !Number.isFinite(candidatePrevious.currentHp)
+    || typeof candidateTransition.currentHp !== 'number' || !Number.isFinite(candidateTransition.currentHp)) return null
+  const capacity = candidatePrevious.displayCapacityHp ?? candidateTransition.displayCapacityHp
+  if (typeof capacity !== 'number' || !Number.isFinite(capacity) || capacity <= 0) return null
+  return {
+    prevPct: (candidatePrevious.currentHp / capacity) * 100,
+    nextPct: (candidateTransition.currentHp / capacity) * 100,
+  }
 }
 
 /** t 是否落在任一 OBSERVED position segment 内（AoI boundary，非 5s 规则）。 */

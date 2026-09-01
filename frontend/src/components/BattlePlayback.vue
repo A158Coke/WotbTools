@@ -32,6 +32,7 @@ import {
 } from '../utils/battlePlayback'
 import {
   cumulativeStatsAtV2,
+  damageFeedbackAllowedV2,
   damageLogAtV2,
   friendlyHealthAt,
   ghostAroundV2,
@@ -329,7 +330,7 @@ function consumeEvents(fromSec, toSec) {
     for (const loss of track.damageLosses || []) {
       if (!loss || loss.toSec <= Math.max(fromSec, eventCursor.value) + 1e-6 || loss.toSec > toSec + 1e-6) continue
       const victim = vehiclesByAccount.value.get(track.accountId)
-      if (!victim || !victimFeedbackAllowedV2(victim, loss.toSec)) continue
+      if (!victim || !damageFeedbackAllowedV2(victim, loss)) continue
       if (!stateByAccount.has(track.accountId)) continue
       floatItems.value = [...floatItems.value, {
         id: ++transientSeq,
