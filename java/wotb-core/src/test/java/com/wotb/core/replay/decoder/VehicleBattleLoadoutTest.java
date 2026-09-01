@@ -90,13 +90,17 @@ class VehicleBattleLoadoutTest {
 
     @Test
     void unknownProvisionKeepsNullableLogicalIdAndRawPreserve() {
-        final int[] wires = {0x09, 0x0A, 0x0D, 0x13, 0x1A, 0x4A}; // unmapped provision codes
+        final int[] wires = {0x09, 0x0A, 0x0D, 0x13, 0x1D, 0x4A}; // unmapped provision codes mixed with a known code
         final byte[] equip = new byte[]{103, 109, 114, 104, 111, 117, 106, 113, 101};
         final VehicleBattleLoadout l = VehicleBattleLoadout.parse(7, "11.19.0_china",
                 initPayload(prefix(5), wires, true, equip));
         assertNotNull(l);
         assertNull(l.provisions().get(0).logicalItemId(), "unknown provision must not be guessed");
         assertEquals(0x13, l.provisions().get(0).wireCode(), "raw wireCode preserved");
+        assertEquals(DecodeConfidence.PARTIAL, l.provisions().get(0).confidence());
+        assertEquals("IMPROVED_FUEL", l.provisions().get(1).logicalItemId());
+        assertEquals(DecodeConfidence.EXACT, l.provisions().get(1).confidence(),
+                "known slot identity must remain exact beside an unknown slot");
         assertEquals(DecodeConfidence.PARTIAL, l.confidence());
     }
 
@@ -159,6 +163,39 @@ class VehicleBattleLoadoutTest {
             assertEquals(entry.getValue(), l.provisions().get(0).logicalItemId(),
                     "provision wire " + Integer.toHexString(entry.getKey()));
         }
+    }
+
+    @Test
+    void controlledReplayEvidenceFixturesPreserveCanonicalSlotOrder() {
+        // Minimal descriptors extracted from controlled Type5 evidence; usernames and full replay payloads are intentionally omitted.
+        assertProvisionFixture("Object 244 sample A", new int[]{0x1C, 0x1D, 0x17},
+                new String[]{"STANDARD_FUEL", "IMPROVED_FUEL", "SMALL_FOOD"});
+        assertProvisionFixture("Object 244 sample B", new int[]{0x1E, 0x1D, 0x17},
+                new String[]{"PROTECTIVE_KIT", "IMPROVED_FUEL", "SMALL_FOOD"});
+        assertProvisionFixture("IS-5", new int[]{0x6A, 0x44, 0x6B},
+                new String[]{"GEAR_OIL", "SANDBAG_ARMOR", "IMPROVED_GEAR_OIL"});
+        assertProvisionFixture("Sweden", new int[]{0x49, 0x48, 0x1D},
+                new String[]{"LARGE_FOOD", "SMALL_FOOD", "IMPROVED_FUEL"});
+    }
+
+    private static void assertProvisionFixture(final String fixtureName,
+                                               final int[] provisionWires,
+                                               final String[] expectedIds) {
+        final int[] wires = {0x09, 0x0A, 0x0D,
+                provisionWires[0], provisionWires[1], provisionWires[2]};
+        final VehicleBattleLoadout l = VehicleBattleLoadout.parse(11, "11.19.0_china",
+                initPayload(prefix(4), wires, true,
+                        new byte[]{100, 109, 114, 104, 111, 117, 106, 113, 101}));
+        assertNotNull(l, fixtureName + " must parse as a complete combat loadout");
+        for (int i = 0; i < expectedIds.length; i++) {
+            assertEquals(expectedIds[i], l.provisions().get(i).logicalItemId(),
+                    fixtureName + " provision slot " + i);
+            assertEquals(provisionWires[i], l.provisions().get(i).wireCode(),
+                    fixtureName + " raw wire slot " + i);
+            assertEquals(DecodeConfidence.EXACT, l.provisions().get(i).confidence(),
+                    fixtureName + " confidence slot " + i);
+        }
+        assertEquals(DecodeConfidence.EXACT, l.confidence(), fixtureName + " aggregate confidence");
     }
 
     @Test
