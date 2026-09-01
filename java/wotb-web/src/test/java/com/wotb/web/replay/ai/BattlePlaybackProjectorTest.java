@@ -196,6 +196,7 @@ class BattlePlaybackProjectorTest {
         assertEquals(1, track.healthTransitions().size());
         assertEquals(2400, track.healthTransitions().getFirst().currentHp());
         assertEquals(2400, track.healthTransitions().getFirst().displayCapacityHp());
+        assertTrue(track.healthTransitions().getFirst().relativeFull());
         assertEquals("CURRENT", track.healthTransitions().getFirst().knowledge());
     }
 
@@ -243,6 +244,7 @@ class BattlePlaybackProjectorTest {
         assertEquals(1, track.healthTransitions().size());
         assertEquals(1000, track.healthTransitions().getFirst().currentHp());
         assertEquals("CURRENT", track.healthTransitions().getFirst().knowledge());
+        assertFalse(track.healthTransitions().getFirst().relativeFull());
         assertEquals(List.of("ALIVE"), track.lifeTransitions().stream()
                 .map(BattlePlaybackDataset.LifeTransition::lifeState).toList());
         assertEquals(List.of("CURRENT"), track.orientationSegments().stream()
@@ -381,6 +383,9 @@ class BattlePlaybackProjectorTest {
                 "close 前（<=20 事实）必须仍是 ACTIVATED");
         assertEquals("UNKNOWN", stateAt(track.consumableTransitions(), 22.0),
                 "AoI close @20 必须插入 explicit UNKNOWN，隐区间查询为 UNKNOWN，不得残留 ACTIVATED");
+        assertTrue(track.consumableTransitions().stream()
+                .filter(t -> t.timeSec() == 20d)
+                .findFirst().orElseThrow().invalidation());
         assertEquals("TEARDOWN", stateAt(track.consumableTransitions(), 26.0),
                 "后续 TEARDOWN @25 必须覆盖 UNKNOWN（25+ = TEARDOWN）");
     }

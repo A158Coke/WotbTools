@@ -32,7 +32,6 @@ import {
 } from '../utils/battlePlayback'
 import {
   cumulativeStatsAtV2,
-  damageFeedbackAllowedV2,
   damageLogAtV2,
   friendlyHealthAt,
   ghostAroundV2,
@@ -155,13 +154,9 @@ watch(
   { immediate: true },
 )
 
-// 双方总血量（实时剩余，随播放时间/进度条变化；争霸赛附终局点数）
-// 本方：开局相对满血展示判定（存活 + 当前时间之前无权威 hpLoss + 无 destroyed 证据）→
-// FULL_RELATIVE 100% 阵营色实心条（即使部分车辆已有 current sample、但全队 entry/max 尚未
-// 全部证明，开局也不显示斜纹；不伪造具体数字）；敌方：无可信采样恒 UNKNOWN 灰段
-// （不把 tankopedia base 当已知血量）
-// V2 canonical：friendlyHealthAt 只聚合 track.friendly、healthTransitions 与已证明的
-// displayCapacityHp，不使用静态坦克元数据或旧版 HP 状态机推理。
+// 双方总血量（实时剩余，随播放时间/进度条变化；争霸赛附终局点数）。
+// relativeFull 是后端投影的 presentation-safe fact；前端只按 t 查询 transition、做聚合与绘制，
+// 不扫描 HP/life history 重新判断开局状态，也不把 tankopedia base 当已知血量。
 const hpVehicles = computed(() => playback.value?.vehicles || [])
 const friendlyHp = computed(() => friendlyHealthAt(hpVehicles.value, true, currentTime.value))
 const enemyHp = computed(() => friendlyHealthAt(hpVehicles.value, false, currentTime.value))
@@ -330,7 +325,7 @@ function consumeEvents(fromSec, toSec) {
     for (const loss of track.damageLosses || []) {
       if (!loss || loss.toSec <= Math.max(fromSec, eventCursor.value) + 1e-6 || loss.toSec > toSec + 1e-6) continue
       const victim = vehiclesByAccount.value.get(track.accountId)
-      if (!victim || !damageFeedbackAllowedV2(victim, loss)) continue
+      if (!victim || loss.transientAllowed !== true) continue
       if (!stateByAccount.has(track.accountId)) continue
       floatItems.value = [...floatItems.value, {
         id: ++transientSeq,
@@ -339,7 +334,7 @@ function consumeEvents(fromSec, toSec) {
         bornRealMs: now,
         durationMs: FLOAT_DMG_MS,
       }]
-      const g = ghostAroundV2(victim, loss)
+      const g = ghostAroundV2(loss)
       if (g) ghostByAccount.set(track.accountId, { prevPct: g.prevPct, nextPct: g.nextPct, untilRealMs: now + GHOST_MS })
       flashByAccount.set(track.accountId, now + FLASH_MS)
     }

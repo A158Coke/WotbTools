@@ -116,6 +116,8 @@ class ReplayArtifactWriterTest {
             assertEquals(java.util.Arrays.asList(13, 13, null), read.vehicles().get(0).loadout().consumableWireCodes());
             assertNull(read.vehicles().get(0).consumableTransitions().getFirst().consumableSlot(),
                     "duplicate wire code must stay unresolved at the artifact read boundary");
+            assertFalse(read.vehicles().get(0).consumableTransitions().getFirst().invalidation(),
+                    "duplicate known wire code is unresolved, not a global runtime invalidation");
             assertTrue(read.vehicles().get(0).damageLosses().isEmpty());
             assertEquals(1, read.vehicles().get(0).positionSegments().getFirst().samples().getFirst().x());
             assertEquals(1, read.vehicles().get(0).orientationSegments().size(),

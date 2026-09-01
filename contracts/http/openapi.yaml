@@ -259,13 +259,14 @@ components:
     HealthTransition:
       type: object
       additionalProperties: false
-      required: [timeSec, currentHp, knowledge, source, displayCapacityHp, confidence]
+      required: [timeSec, currentHp, knowledge, source, displayCapacityHp, relativeFull, confidence]
       properties:
         timeSec: { type: number, minimum: 0 }
         currentHp: { type: [integer, 'null'], minimum: 0 }
         knowledge: { $ref: '#/components/schemas/HealthKnowledge' }
         source: { type: string }
         displayCapacityHp: { type: [integer, 'null'], minimum: 0 }
+        relativeFull: { type: boolean }
         confidence: { $ref: '#/components/schemas/PlaybackConfidence' }
     LifeTransition:
       type: object
@@ -278,13 +279,14 @@ components:
     ConsumableTransition:
       type: object
       additionalProperties: false
-      required: [timeSec, consumableSlot, logicalItemId, wireCode, state, confidence]
+      required: [timeSec, consumableSlot, logicalItemId, wireCode, state, invalidation, confidence]
       properties:
         timeSec: { type: number, minimum: 0 }
         consumableSlot: { type: [integer, 'null'], minimum: 0, maximum: 2 }
         logicalItemId: { type: [string, 'null'] }
         wireCode: { type: [integer, 'null'] }
         state: { type: string }
+        invalidation: { type: boolean }
         confidence: { $ref: '#/components/schemas/PlaybackConfidence' }
     ModuleCrewTransition:
       type: object
@@ -293,13 +295,13 @@ components:
       properties:
         timeSec: { type: number, minimum: 0 }
         component: { type: string }
-        state: { type: string }
+        state: { type: [string, 'null'] }
         recorderVisible: { type: boolean }
         confidence: { $ref: '#/components/schemas/PlaybackConfidence' }
     DamageLoss:
       type: object
       additionalProperties: false
-      required: [fromSec, toSec, hpLoss, attackerAccountId, attackerReliable, damageEventCount]
+      required: [fromSec, toSec, hpLoss, attackerAccountId, attackerReliable, damageEventCount, fromHp, toHp, displayCapacityHp, transientAllowed]
       properties:
         fromSec: { type: number, minimum: 0 }
         toSec: { type: number, minimum: 0 }
@@ -307,6 +309,10 @@ components:
         attackerAccountId: { type: [integer, 'null'] }
         attackerReliable: { type: boolean }
         damageEventCount: { type: integer, minimum: 0 }
+        fromHp: { type: [integer, 'null'], minimum: 0 }
+        toHp: { type: [integer, 'null'], minimum: 0 }
+        displayCapacityHp: { type: [integer, 'null'], minimum: 0 }
+        transientAllowed: { type: boolean }
     BattleEvent:
       type: object
       additionalProperties: false

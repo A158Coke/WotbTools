@@ -13,11 +13,11 @@ import {
   ghostAroundV2,
   cumulativeStatsAtV2,
   damageLogAtV2,
-  damageFeedbackAllowedV2,
 } from './battlePlaybackV2'
 
 const lh = (timeSec, currentHp, knowledge, displayCapacityHp) =>
-  ({ timeSec, currentHp, knowledge, source: 'EXACT_BATTLE_EVENT', displayCapacityHp, confidence: 'HIGH' })
+  ({ timeSec, currentHp, knowledge, source: 'EXACT_BATTLE_EVENT', displayCapacityHp,
+    relativeFull: currentHp != null && currentHp === displayCapacityHp, confidence: 'HIGH' })
 
 describe('healthAt', () => {
   it('returns last <= t health with knowledge + anti-future-leak capacity', () => {
@@ -115,7 +115,9 @@ describe('positionAtV2', () => {
 
 describe('healthDisplayAt / friendlyHealthAt', () => {
   it('keeps friendly opening without evidence as relative-full and enemy without evidence UNKNOWN', () => {
-    const friendly = { team: 1, friendly: true, healthTransitions: [], lifeTransitions: [] }
+    const friendly = { team: 1, friendly: true, healthTransitions: [
+      { timeSec: 0, currentHp: null, knowledge: 'CURRENT', source: 'RELATIVE_FULL', displayCapacityHp: null, relativeFull: true, confidence: 'UNKNOWN' },
+    ], lifeTransitions: [] }
     const enemy = { team: 2, friendly: false, healthTransitions: [], lifeTransitions: [] }
     expect(healthDisplayAt(friendly, 0)).toMatchObject({ state: 'RELATIVE_FULL', relativeFull: true, currentHp: null })
     expect(healthDisplayAt(enemy, 0)).toMatchObject({ state: 'UNKNOWN', relativeFull: false, currentHp: null })
@@ -138,14 +140,18 @@ describe('healthDisplayAt / friendlyHealthAt', () => {
 
   it('aggregates exact and mixed tracks without legacy capacity inference', () => {
     const exact = { team: 1, friendly: true, healthTransitions: [lh(0, 1000, 'CURRENT', 1000)], lifeTransitions: [] }
-    const unknown = { team: 1, friendly: true, healthTransitions: [], lifeTransitions: [] }
+    const unknown = { team: 1, friendly: true, healthTransitions: [
+      { timeSec: 0, currentHp: null, knowledge: 'CURRENT', source: 'RELATIVE_FULL', displayCapacityHp: null, relativeFull: true, confidence: 'UNKNOWN' },
+    ], lifeTransitions: [] }
     expect(friendlyHealthAt([exact], true, 0)).toMatchObject({ state: 'EXACT', totalMax: 1000, knownRemaining: 1000 })
     expect(friendlyHealthAt([exact, unknown], true, 0)).toMatchObject({ state: 'FULL_RELATIVE', totalMax: 0, knownRemaining: 1000, unknownMax: 0 })
   })
 
   it('combines exact full and relative-full members into FULL_RELATIVE', () => {
     const exactFull = { team: 1, friendly: true, healthTransitions: [lh(0, 2400, 'CURRENT', 2400)], lifeTransitions: [] }
-    const relativeFull = { team: 1, friendly: true, healthTransitions: [], lifeTransitions: [] }
+    const relativeFull = { team: 1, friendly: true, healthTransitions: [
+      { timeSec: 0, currentHp: null, knowledge: 'CURRENT', source: 'RELATIVE_FULL', displayCapacityHp: null, relativeFull: true, confidence: 'UNKNOWN' },
+    ], lifeTransitions: [] }
     expect(friendlyHealthAt([exactFull, relativeFull], true, 0).state).toBe('FULL_RELATIVE')
   })
 
@@ -359,7 +365,6 @@ describe('slot and component runtime selectors', () => {
   it('keeps recorder-visible component provenance', () => {
     const states = moduleCrewStatesAt([
       { timeSec: 120, component: 'ENGINE', state: 'CRITICAL_DISABLED', recorderVisible: true, confidence: 'HIGH' },
-      { timeSec: 120, component: 'GUN', state: 'DAMAGED', recorderVisible: false, confidence: 'HIGH' },
     ], 130)
     expect(states).toEqual([{
       component: 'ENGINE', state: 'CRITICAL_DISABLED', recorderVisible: true, confidence: 'HIGH',
@@ -368,55 +373,34 @@ describe('slot and component runtime selectors', () => {
 
   it('clears repaired modules and healed crew, while auto-repair keeps damaged state', () => {
     const transitions = [
-      { timeSec: 10, component: 'ENGINE', state: 'DAMAGED', recorderVisible: true, confidence: 'HIGH' },
-      { timeSec: 20, component: 'ENGINE', state: 'FULL_REPAIRED_CLEAR', recorderVisible: true, confidence: 'HIGH' },
-      { timeSec: 30, component: 'GUN', state: 'DAMAGED', recorderVisible: true, confidence: 'HIGH' },
-      { timeSec: 40, component: 'GUN', state: 'AUTO_REPAIRED_TO_DAMAGED', recorderVisible: true, confidence: 'HIGH' },
-      { timeSec: 50, component: 'CREW', state: 'INJURED', recorderVisible: true, confidence: 'HIGH' },
-      { timeSec: 60, component: 'CREW', state: 'CREW_HEALED', recorderVisible: true, confidence: 'HIGH' },
+      { timeSec: 10, component: 'ENGINE', state: 'DAMAGED_DEGRADED', recorderVisible: true, confidence: 'HIGH' },
+      { timeSec: 20, component: 'ENGINE', state: null, recorderVisible: true, confidence: 'HIGH' },
+      { timeSec: 30, component: 'GUN', state: 'DAMAGED_DEGRADED', recorderVisible: true, confidence: 'HIGH' },
+      { timeSec: 40, component: 'GUN', state: 'DAMAGED_DEGRADED', recorderVisible: true, confidence: 'HIGH' },
+      { timeSec: 50, component: 'CREW', state: 'CREW_SHELL_SHOCKED', recorderVisible: true, confidence: 'HIGH' },
+      { timeSec: 60, component: 'CREW', state: null, recorderVisible: true, confidence: 'HIGH' },
     ]
     expect(moduleCrewStatesAt(transitions, 25)).toEqual([])
     expect(moduleCrewStatesAt(transitions, 45)).toEqual([
-      { component: 'GUN', state: 'AUTO_REPAIRED_TO_DAMAGED', recorderVisible: true, confidence: 'HIGH' },
+      { component: 'GUN', state: 'DAMAGED_DEGRADED', recorderVisible: true, confidence: 'HIGH' },
     ])
     expect(moduleCrewStatesAt(transitions, 70)).toEqual([
-      { component: 'GUN', state: 'AUTO_REPAIRED_TO_DAMAGED', recorderVisible: true, confidence: 'HIGH' },
+      { component: 'GUN', state: 'DAMAGED_DEGRADED', recorderVisible: true, confidence: 'HIGH' },
     ])
   })
 
   it('matches ghost damage to its canonical loss window, not exact transition time', () => {
-    const track = { healthTransitions: [
-      lh(0, 2000, 'CURRENT', 2000),
-      lh(10, 1500, 'CURRENT', 2000),
-      lh(20, 900, 'CURRENT', 2000),
-    ] }
-    expect(ghostAroundV2(track, { fromSec: 0, toSec: 10, hpLoss: 500 })).toEqual({ prevPct: 100, nextPct: 75 })
-    expect(ghostAroundV2(track, { fromSec: 10, toSec: 20, hpLoss: 600 })).toEqual({ prevPct: 75, nextPct: 45 })
-    expect(ghostAroundV2({ healthTransitions: [lh(0, 2000, 'CURRENT', 2000), lh(10, 1500, 'CURRENT', 2000), lh(15, 1000, 'CURRENT', 2000)] },
-      { fromSec: 0, toSec: 20, hpLoss: 500 })).toBeNull()
-    expect(ghostAroundV2({ healthTransitions: [lh(0, 2000, 'CURRENT', null), lh(10, 1500, 'CURRENT', null)] },
-      { fromSec: 0, toSec: 10, hpLoss: 500 })).toBeNull()
-    expect(ghostAroundV2({ healthTransitions: [lh(0, 2000, 'CURRENT', 2000), lh(8, 1500, 'CURRENT', 2000)] },
-      { fromSec: 0, toSec: 10, hpLoss: 500 })).toEqual({ prevPct: 100, nextPct: 75 })
-  })
-
-  it('allows DamageLoss transient feedback only inside one continuous observed AoI segment', () => {
-    const track = {
-      positionSegments: [
-        { knowledge: 'OBSERVED', startSec: 0, endSec: 20 },
-        { knowledge: 'OBSERVED', startSec: 40, endSec: 60 },
-      ],
-    }
-    expect(damageFeedbackAllowedV2(track, { fromSec: 10, toSec: 42 })).toBe(false)
-    expect(damageFeedbackAllowedV2({ positionSegments: [{ knowledge: 'OBSERVED', startSec: 0, endSec: 60 }] },
-      { fromSec: 10, toSec: 20 })).toBe(true)
+    expect(ghostAroundV2({ fromHp: 2000, toHp: 1500, displayCapacityHp: 2000 })).toEqual({ prevPct: 100, nextPct: 75 })
+    expect(ghostAroundV2({ fromHp: 1500, toHp: 900, displayCapacityHp: 2000 })).toEqual({ prevPct: 75, nextPct: 45 })
+    expect(ghostAroundV2({ fromHp: 2000, toHp: 1500, displayCapacityHp: null })).toBeNull()
+    expect(ghostAroundV2({ fromHp: null, toHp: 1500, displayCapacityHp: 2000 })).toBeNull()
   })
 
   it('keeps three consumable slots independent and clears them on global UNKNOWN', () => {
     const transitions = [
       { timeSec: 90, consumableSlot: 0, logicalItemId: 'REPAIR_KIT', state: 'ACTIVATED', wireCode: 0x0D },
       { timeSec: 95, consumableSlot: 1, logicalItemId: 'ADRENALINE', state: 'INITIALIZED', wireCode: 0x09 },
-      { timeSec: 110, consumableSlot: null, logicalItemId: null, state: 'UNKNOWN', wireCode: null },
+      { timeSec: 110, consumableSlot: null, logicalItemId: null, state: 'UNKNOWN', invalidation: true, wireCode: null },
     ]
     expect(consumableRuntimeSlotsAt(transitions, 100)).toEqual(new Map([
       [0, { state: 'ACTIVATED', logicalItemId: 'REPAIR_KIT', wireCode: 0x0D }],
@@ -430,7 +414,7 @@ describe('slot and component runtime selectors', () => {
       { timeSec: 90, consumableSlot: 0, logicalItemId: 'REPAIR_KIT', state: 'ACTIVATED', wireCode: 0x0D },
       { timeSec: 95, consumableSlot: 1, logicalItemId: 'ADRENALINE', state: 'INITIALIZED', wireCode: 0x09 },
       { timeSec: 100, consumableSlot: 0, logicalItemId: 'REPAIR_KIT', state: 'ACTIVE_ENDED_OR_COOLDOWN', wireCode: 0x0D },
-      { timeSec: 110, consumableSlot: null, logicalItemId: null, state: 'UNKNOWN', wireCode: null },
+      { timeSec: 110, consumableSlot: null, logicalItemId: null, state: 'UNKNOWN', invalidation: true, wireCode: null },
       { timeSec: 120, consumableSlot: 0, logicalItemId: 'REPAIR_KIT', state: 'READY', wireCode: 0x0D },
       { timeSec: 130, consumableSlot: 1, logicalItemId: 'ADRENALINE', state: 'ACTIVATED', wireCode: 0x09 },
     ]

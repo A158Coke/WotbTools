@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Changed
+- **Battle Playback V2 backend-owned state facts**：将相对满血证明、DamageLoss 的 transient/ghost
+  事实、模块/乘员清除 transition 与 consumable 全局失效边界收敛到 canonical backend projection；
+  前端只按时间查询并负责百分比、格式化和展示，legacy artifact 兼容仍限于读取边界。
 - **Battle Playback V2 canonical truth closure**：V2 HTTP playback now removes the dead
   `shots`/`ShotTrack` surface, transports canonical `damageLosses`, and keeps capability
   limited to `FULL`/`PARTIAL`; old persisted artifacts are normalized only while being read.

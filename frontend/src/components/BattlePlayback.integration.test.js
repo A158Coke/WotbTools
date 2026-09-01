@@ -1176,7 +1176,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     const overview2 = makeOverview()
     const ds2 = makePlaybackV2()
     setPositionSamples(ds2, 2001, [{ x: -50, y: -50, timeSec: 10 }, { x: -60, y: -60, timeSec: 12 }], 10, 12)
-    ds2.vehicles[1].damageLosses = [{ fromSec: 13, toSec: 14, hpLoss: 500, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }]
+    ds2.vehicles[1].damageLosses = [{ fromSec: 13, toSec: 14, hpLoss: 500, fromHp: 1200, toHp: 700, displayCapacityHp: 1200, transientAllowed: false, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }]
     const w2 = mountPlayback(overview2, 13, ds2)
     await flushPromises()
     Object.defineProperty(w2.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
@@ -1208,6 +1208,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     ]
     enemy.damageLosses = [{
       fromSec: 10, toSec: 42, hpLoss: 500,
+      fromHp: 2000, toHp: 1500, displayCapacityHp: 2000, transientAllowed: false,
       attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1,
     }]
     const wrapper = mountPlayback(overview, 9, ds)
@@ -1239,7 +1240,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     // 本测试用已证明 entryHp=2600 验证真实百分比 ghost/填充
     ds.vehicles[1].healthTransitions = [
       { timeSec: 0, currentHp: 2600, knowledge: 'CURRENT', displayCapacityHp: 2600, source: 'EXACT_BATTLE_EVENT' },
-      { timeSec: 12, currentHp: 2200, knowledge: 'CURRENT', displayCapacityHp: 2600, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 12, currentHp: 2200, knowledge: 'CURRENT', displayCapacityHp: 2600, relativeFull: false, source: 'EXACT_BATTLE_EVENT' },
     ]
     const wrapper = mountPlayback(overview, 11, ds)
     await flushPromises()
@@ -1636,7 +1637,7 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
       { type: 'KILL', timeSec: 20, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null }
     )
     ds.vehicles[1].damageLosses.push(
-      { fromSec: 19, toSec: 19.8, hpLoss: 400, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }
+      { fromSec: 19, toSec: 19.8, hpLoss: 400, fromHp: 1200, toHp: 800, displayCapacityHp: 1200, transientAllowed: true, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }
     )
     const wrapper = mountPlayback(overview, 19, ds)
     await flushPromises()
@@ -1683,7 +1684,7 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
       { type: 'KILL', timeSec: 20, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null }
     )
     ds.vehicles[1].damageLosses.push(
-      { fromSec: 19, toSec: 19.8, hpLoss: 400, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }
+      { fromSec: 19, toSec: 19.8, hpLoss: 400, fromHp: 1200, toHp: 800, displayCapacityHp: 1200, transientAllowed: true, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }
     )
     // 回绕到 t=0 后受害车（2001）必须仍有锚点：t=0 有真实位置上报，OBSERVED 段从 0 起。
     ds.vehicles[1].positionSegments = [{ knowledge: 'OBSERVED', startSec: 0, endSec: 20,
@@ -1738,6 +1739,7 @@ describe('V2 HP regression (restored critical coverage)', () => {
   it('无 health evidence 的己方队伍保持 relative-full presentation；敌方仍 UNKNOWN', async () => {
     const ds = makePlaybackV2()
     ds.vehicles.forEach((v) => { v.healthTransitions = [] })
+    ds.vehicles[0].healthTransitions = [{ timeSec: 0, currentHp: null, knowledge: 'CURRENT', source: 'RELATIVE_FULL', displayCapacityHp: null, relativeFull: true, confidence: 'UNKNOWN' }]
     const w = mountV2(15, ds)
     await flushPromises()
     expect(w.find('[data-test="pb-hp-value-friendly"]').text()).toBe('100%')

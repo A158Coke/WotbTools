@@ -39,6 +39,7 @@ export interface HealthAtResult {
   knowledge: HealthKnowledge
   source: string
   displayCapacityHp: number | null
+  relativeFull: boolean
   confidence: PlaybackConfidence
 }
 

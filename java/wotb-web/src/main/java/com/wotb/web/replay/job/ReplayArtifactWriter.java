@@ -126,6 +126,9 @@ public final class ReplayArtifactWriter {
             removeUnknownTransitions(vehicleObject, "orientationSegments", "knowledge");
             removeUnknownTransitions(vehicleObject, "healthTransitions", "knowledge");
             removeUnknownTransitions(vehicleObject, "lifeTransitions", "lifeState");
+            normalizeLegacyHealthFacts(vehicleObject);
+            normalizeLegacyDamageFacts(vehicleObject);
+            normalizeLegacyModuleFacts(vehicleObject);
             normalizeLegacyLoadout(vehicleObject);
             normalizeConsumableSlots(vehicleObject);
             if (!(vehicleObject.get("loadout") instanceof ObjectNode loadout)) {
@@ -175,14 +178,30 @@ public final class ReplayArtifactWriter {
     private static void normalizeConsumableSlots(final ObjectNode vehicle) {
         final JsonNode loadout = vehicle.get("loadout");
         final JsonNode transitions = vehicle.get("consumableTransitions");
-        if (!(loadout instanceof ObjectNode loadoutObject) || transitions == null || !transitions.isArray()) return;
+        if (transitions == null || !transitions.isArray()) return;
+        if (!(loadout instanceof ObjectNode loadoutObject)) {
+            for (final JsonNode transition : transitions) {
+                if (transition instanceof ObjectNode object && !object.has("invalidation")) {
+                    object.put("invalidation", object.path("consumableSlot").isNull()
+                            && "UNKNOWN".equals(object.path("state").asText()));
+                }
+            }
+            return;
+        }
         final JsonNode wires = loadoutObject.get("consumableWireCodes");
         for (final JsonNode transition : transitions) {
-            if (!(transition instanceof ObjectNode transitionObject)
-                    || (transitionObject.has("consumableSlot")
-                    && !transitionObject.get("consumableSlot").isNull())) continue;
+            if (!(transition instanceof ObjectNode transitionObject)) continue;
+            if (transitionObject.has("invalidation")) continue;
             final JsonNode wireCode = transitionObject.get("wireCode");
-            if (wireCode == null || !wireCode.isNumber() || wires == null || !wires.isArray()) continue;
+            if (wireCode == null || !wireCode.isNumber() || wires == null || !wires.isArray()) {
+                transitionObject.put("invalidation", transitionObject.path("consumableSlot").isNull()
+                        && "UNKNOWN".equals(transitionObject.path("state").asText()));
+                continue;
+            }
+            if (transitionObject.has("consumableSlot") && !transitionObject.get("consumableSlot").isNull()) {
+                transitionObject.put("invalidation", false);
+                continue;
+            }
             int match = -1;
             for (int i = 0; i < wires.size(); i++) {
                 if (wires.get(i).isNumber() && wires.get(i).intValue() == wireCode.intValue()) {
@@ -194,6 +213,47 @@ public final class ReplayArtifactWriter {
                 }
             }
             if (match >= 0) transitionObject.put("consumableSlot", match);
+            transitionObject.put("invalidation", false);
+        }
+    }
+
+    private static void normalizeLegacyHealthFacts(final ObjectNode vehicle) {
+        final JsonNode transitions = vehicle.get("healthTransitions");
+        if (!(transitions instanceof ArrayNode array)) return;
+        for (final JsonNode transition : array) {
+            if (transition instanceof ObjectNode object && !object.has("relativeFull")) {
+                object.put("relativeFull", object.path("currentHp").isNull()
+                        && "CURRENT".equals(object.path("knowledge").asText()));
+            }
+        }
+    }
+
+    private static void normalizeLegacyDamageFacts(final ObjectNode vehicle) {
+        final JsonNode losses = vehicle.get("damageLosses");
+        if (!(losses instanceof ArrayNode array)) return;
+        for (final JsonNode loss : array) {
+            if (!(loss instanceof ObjectNode object)) continue;
+            if (!object.has("fromHp")) object.putNull("fromHp");
+            if (!object.has("toHp")) object.putNull("toHp");
+            if (!object.has("displayCapacityHp")) object.putNull("displayCapacityHp");
+            if (!object.has("transientAllowed")) object.put("transientAllowed", false);
+        }
+    }
+
+    private static void normalizeLegacyModuleFacts(final ObjectNode vehicle) {
+        final JsonNode transitions = vehicle.get("moduleCrewTransitions");
+        if (!(transitions instanceof ArrayNode array)) return;
+        for (int i = array.size() - 1; i >= 0; i--) {
+            final JsonNode transition = array.get(i);
+            if (!(transition instanceof ObjectNode object)) continue;
+            final String state = object.path("state").asText();
+            if ("FULL_REPAIRED_CLEAR".equals(state) || "CREW_HEALED".equals(state)) {
+                object.putNull("state");
+            } else if ("AUTO_REPAIRED_TO_DAMAGED".equals(state)) {
+                object.put("state", "DAMAGED_DEGRADED");
+            } else if ("UNKNOWN".equals(state)) {
+                array.remove(i);
+            }
         }
     }
 
