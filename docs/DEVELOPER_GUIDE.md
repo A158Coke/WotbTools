@@ -40,6 +40,7 @@
 # Targeted（改单个 class/function）：mvn -pl wotb-core -Dtest=<TestClass> test
 # Module（单模块/一个 feature）：mvn -pl wotb-core test 或 mvn -pl wotb-web -am test
 # Full（PR CI authoritative validation，Agent 默认不跑）：cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test
+# 注意：wotb-web 的真实外部 AI probe 标记为 ai-live，默认被 Surefire 排除；不要仅因环境存在 AI_API_KEY 就解除排除。
 
 # 前端分层测试
 # Targeted：cd frontend && npx vitest run <related-test-files>
@@ -391,6 +392,7 @@ Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb/config/sponsor-config.j
   不重复跑 repository-level full test；仓库级 full validation 由 PR CI 统一执行（authoritative gate）。
   仅当改动影响跨模块 / build / test infrastructure（`.agents/AGENTS.md` 的 Full-test 例外清单）时，
   Agent 才跑 `cd java && mvn -s settings.xml test` / `cd frontend && npm test && npm run build`。
+- `wotb-web` 的真实 DeepSeek/provider probe 使用 `@Tag("ai-live")`，普通 `mvn test` 默认不执行；仅在明确选择 probe、清空 `-Dai.probe.excludedGroups=` 且通过环境变量提供 key 时手动运行。gateway mock、loopback 和 deterministic AI eval 仍属于普通测试。
 - 涉及 Docker/部署时同时跑对应 Docker build 与 deployment smoke；Deploy 不重复运行测试套件。
 
 ---
