@@ -8,6 +8,7 @@
 - **Hundred WG statistics path**：移除百场 `WARGAMING_API` 官方统计、自动审核 endpoint、snapshot DTO/映射与前端分支；Wargaming ASIA/EU/NA 登录和 Profile 同步保留，百场统一走 MANUAL 截图 + 5 replay 审核。新增生产存量清理工具，默认 dry-run，并按共享引用保护 MANUAL 与单场名人堂回放。
 
 ### Changed
+- **Keycloak 与生产观测升级**：Keycloak 26.6.4 image build 启用 health/metrics，management `/metrics` 通过 Docker 内部端口 `9000` 纳入 Prometheus；Alloy/Loki 纳入 Keycloak 日志；新增固定版本 node-exporter、AI review queue depth Gauge 与 Keycloak/生产总览 Dashboard。保持公共 HTTP/Android contract、数据库 schema、业务处理入口与无用户级 metric label 不变。
 - **Battle Playback V2 backend-owned state facts**：将相对满血证明、DamageLoss 的 transient/ghost
   事实、模块/乘员清除 transition 与 consumable 全局失效边界收敛到 canonical backend projection；
   前端只按时间查询并负责百分比、格式化和展示，legacy artifact 兼容仍限于读取边界。

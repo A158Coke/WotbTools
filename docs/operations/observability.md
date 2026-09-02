@@ -1,7 +1,7 @@
 # WotBTools 观测系统（Observability）运维文档
 
 > 可观测系统：**Backend 结构化日志 + requestId、HTTP/AI/Replay 指标、Prometheus + Loki + Grafana + Alloy**。
-> 当前实现包含七个 Dashboard（Production Overview / JVM-Infrastructure / HTTP-Errors / Replay Parser / 使用统计 / AI Review / Error Explorer）、AI 指标在服务边界统计、日志安全与保留策略。
+> 当前实现包含八个 Dashboard（生产总览 / Keycloak / JVM 与基础设施 / HTTP 与错误 / 回放解析 / 使用统计 / AI 复盘 / 错误检索）、AI 指标在服务边界统计、日志安全与保留策略。
 
 ---
 
@@ -51,15 +51,16 @@
 | 组件 | 版本（固定） | 职责 |
 |---|---|---|
 | `wotb-backend` Actuator | Spring Boot 4.1.0 自带 | 独立管理端口 `8088`，暴露 `/actuator/prometheus`、`/actuator/health` |
-| Prometheus | `prom/prometheus:v2.55.1` | 每 15s 抓取 backend 指标，TSDB 保留 7 天 / 上限 2GiB |
-| Loki | `grafana/loki:3.3.2` | 接收 Alloy 推送的 backend 容器日志，保留 7 天 |
-| Alloy | `grafana/alloy:v1.4.2` | 通过 docker.sock 只采集 `wotb-backend` 容器 stdout/stderr → Loki |
+| Prometheus | `prom/prometheus:v2.55.1` | 每 15s 抓取 Backend、Keycloak management `/metrics` 与 node-exporter，TSDB 保留 7 天 / 上限 2GiB |
+| Loki | `grafana/loki:3.3.2` | 接收 Alloy 推送的 Backend / Keycloak 容器日志，保留 7 天 |
+| Alloy | `grafana/alloy:v1.4.2` | 通过 docker.sock 采集 `wotb-backend` 与 `keycloak` 容器 stdout/stderr → Loki，使用低基数标签 |
 | Grafana | `grafana/grafana:11.6.16` | 可视化，provisioning 自动配置 Datasource + Dashboard |
+| node-exporter | `prom/node-exporter:v1.12.1` | 仅 Docker 内部网络提供 CPU、RAM、Disk、Load 主机指标；不映射宿主机端口 |
 | Grafana MCP server（已下线） | 已移除 | 2026-08-11 因公网匿名访问风险（MCP 缺少调用者认证）且使用频率低，已从生产与本地 compose 移除；宿主 Caddy `/mcp*` 路由与 Grafana MCP Service Account 由人工清理 |
 
 **关键安全边界**
 
-- Grafana `3000`、Prometheus `9090`、Loki `3100`、Alloy `12345`、Backend 管理端口 `8088` **均不映射到宿主机端口**，只在 Docker 内部网络可达。
+- Grafana `3000`、Prometheus `9090`、Loki `3100`、Alloy `12345`、Backend 管理端口 `8088`、Keycloak management `9000`、node-exporter `9100` **均不映射到宿主机端口**，只在 Docker 内部网络可达。
 - 公网只能通过 `monitor.wotbtools.com`（host 层 TLS 反代 → frontend nginx → `grafana:3000`）访问 Grafana，且 Grafana 禁止匿名访问。
 - `/actuator/**` 不通过公网域名暴露（nginx 只代理 `/api/` 与 `monitor.*` 到 Grafana）。
 
@@ -158,7 +159,7 @@ docker compose up -d --build
 docker compose config --quiet
 
 # 单独查看观测栈状态
-docker compose ps prometheus loki alloy grafana
+docker compose ps prometheus loki alloy grafana node-exporter
 ```
 
 ### 生产（CI 自动）
@@ -171,13 +172,13 @@ docker compose ps prometheus loki alloy grafana
 
 ```bash
 cd /opt/wotb   # 或本地 docker/online
-docker compose stop prometheus loki alloy grafana
+docker compose stop prometheus loki alloy grafana node-exporter
 ```
 
 主业务（postgres/keycloak/wotb-backend/wotb-frontend）保持运行。重新启动：
 
 ```bash
-docker compose start prometheus loki alloy grafana
+docker compose start prometheus loki alloy grafana node-exporter
 ```
 
 > **禁止**使用 `docker compose down -v` 作为普通停止/回滚命令——它会删除所有 volume（含 PostgreSQL 数据）。
@@ -201,7 +202,7 @@ docker compose start prometheus loki alloy grafana
 | Loki 配置 | `loki --verify-config` | 配置语法 |
 | Alloy 配置 | `alloy fmt -t` | **仅格式/语法检查**，非完整组件运行验证 |
 | Grafana provisioning + Dashboard JSON | `python` 解析全部 YAML/JSON | 结构校验 |
-| 端口安全 | `docker compose config --format json` 校验 prometheus/loki/alloy/grafana/wotb-backend 无宿主端口映射 | frontend 8088:80 合法 |
+| 端口安全 | `docker compose config --format json` 校验 prometheus/loki/alloy/grafana/node-exporter/wotb-backend 无宿主端口映射，并校验 Keycloak management `9000` 不外露 | frontend 8088:80、Keycloak 8080:8080 合法 |
 | Backend 测试 | `mvn test`（含 `RequestIdFilterTest`、`CustomTimerPrometheusTest`、`LogstashMdcTopLevelTest`、`AiReplayAnalysisServiceUpstreamMetricsTest`） | 单元/集成测试 |
 
 ### 手动验证命令（生产部署后执行）
@@ -226,12 +227,12 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 
 ### 需生产环境手动验证（CI 无法覆盖）
 
-- 完整整栈启动（业务 + 观测 8 容器，含生产 `deploy.yml` heredoc 生成的 compose）
-- Alloy 实际采集 backend 日志并推送到 Loki、`requestId` 可过滤
-- `/actuator/prometheus` 实际输出（**指标名真实存在**，与 Dashboard 面板匹配——CI 只检查配置结构，无法验证指标）
+- 完整整栈启动（业务 + 观测 9 容器，含生产 `deploy.yml` heredoc 生成的 compose）
+- Alloy 实际采集 Backend / Keycloak 日志并推送到 Loki、`requestId` 与认证关键词可过滤
+- `/actuator/prometheus`、Keycloak `http://keycloak:9000/metrics` 与 node-exporter `:9100` 实际输出（**指标名真实存在**，与 Dashboard 面板匹配——CI 只检查配置结构，无法验证指标）
 - Volume 重启后数据持久化（7 天保留）
 - `docker stats` 实际资源占用（空闲约 1GB 目标）
-- 公网无法访问 8088/9090/3100/3000/12345
+- 公网无法访问 8088/9090/9100/3100/3000/9000/12345
 
 ---
 
@@ -242,15 +243,16 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 3. 首次启动后，provisioning 自动创建：
    - Datasource：`Prometheus`（uid `prometheus`，`http://prometheus:9090`）、`Loki`（uid `loki`，`http://loki:3100`）
    - Dashboard：
-     - **WotBTools JVM / Infrastructure**（uid `wotbtools-backend-overview`）— process/system CPU、heap、memory pool、GC、线程、Hikari、磁盘与诊断日志；保留原 UID 兼容已有链接
-     - **WotBTools HTTP / Errors**（uid `wotbtools-http-errors`）— 请求/状态码次数、URI Top 10、过滤低样本慢 URI 的 P95、P50/P95/P99 趋势与 Loki errorCode 分布
-     - **WotBTools Replay Parser**（uid `wotbtools-replay-parser`）— 回放解析功能使用情况
-     - **WotBTools 使用统计**（uid `wotbtools-usage`）— Replay Processing Job/files/success/failure 与 AI Review started/success/failure/rejected（均按 Grafana 所选时间范围估算增量，非永久累计）
-     - **WotBTools Production Overview**（uid `wotbtools-production-overview`）— 首屏按当前 Grafana 时间范围展示请求/4xx/5xx、HTTP P50/P95/P99、Replay/AI 次数与当前并发；下方保留精简趋势、资源摘要和 Deferred Metrics Gaps
-     - **WotBTools AI Review**（uid `wotbtools-ai-review`）— AI started/completed/failed/rejected、duration P50/P95/P99、queue/upstream P95、validation/error 与 SSE lifecycle 日志
-     - **WotBTools Error Explorer**（uid `wotbtools-error-explorer`）— 按 service、diagnostic id、errorCode、traceId、jobId 检索 Loki 错误日志；同时覆盖 canonical `api_request_failed` ERROR 与 `api_request_rejected` INFO
+      - **WotBTools · JVM 与基础设施**（uid `wotbtools-backend-overview`）— process/system CPU、heap、memory pool、GC、线程、Hikari、磁盘与诊断日志；保留原 UID 兼容已有链接
+      - **WotBTools · HTTP 与错误**（uid `wotbtools-http-errors`）— 请求/状态码次数、URI Top 10、过滤低样本慢 URI 的 P95、P50/P95/P99 趋势与 Loki errorCode 分布
+      - **WotBTools · 回放解析**（uid `wotbtools-replay-parser`）— 回放解析功能使用情况
+      - **WotBTools 使用统计**（uid `wotbtools-usage`）— Replay Processing Job/files/success/failure 与 AI Review started/success/failure/rejected（均按 Grafana 所选时间范围估算增量，非永久累计）
+      - **WotBTools · 生产总览**（uid `wotbtools-production-overview`）— 默认最近 15 分钟展示 Backend/Keycloak/Host 状态、HTTP P50/P95/P99、Replay/AI 队列、主机资源、JVM/GC 与最近异常；所有 Panel 标题中文化
+      - **WotBTools · Keycloak**（uid `wotbtools-keycloak`）— Keycloak management metrics、HTTP 5xx/P95、JVM/GC 与认证/Identity Broker 日志；保留 Loki 关键词兜底
+      - **WotBTools · AI 复盘**（uid `wotbtools-ai-review`）— AI 已启动/成功/失败/拒绝、duration P50/P95/P99、queue/upstream P95、validation/error 与 SSE lifecycle 日志
+      - **WotBTools · 错误检索**（uid `wotbtools-error-explorer`）— 按 service、diagnostic id、errorCode、traceId、jobId 检索 Loki 错误日志；同时覆盖 canonical `api_request_failed` ERROR 与 `api_request_rejected` INFO
 
-所有看板只使用现有 Prometheus/Loki 数据源和 Backend 已导出的指标，不新增 node exporter、cAdvisor 或其他采集基础设施。Production Overview 只保留 Backend process/system CPU、JVM heap、GC 摘要；其余实现细节迁移到 JVM / Infrastructure。RabbitMQ/worker queue、oldest queued age、worker health 与 host-level 指标暂为 Deferred Metrics Gaps。
+看板使用现有 Prometheus/Loki 数据源，并仅增加两项最小观测能力：Keycloak management `/metrics` 与低基数 node-exporter。Production Overview 聚合 Backend、Keycloak、Host、Replay、AI 和最近异常；JVM、HTTP、Replay、AI、错误检索仍保留为独立下钻看板。未引入 cAdvisor、Postgres exporter 或 Alertmanager。
 
 Error Explorer 的 `service` 变量映射 Loki 的 `container_name` 标签；`id` 是 canonical error 的主诊断 ID，其余变量作为日志内容中的 regex token 搜索，用于关联结构化日志里的 `errorCode`、`traceId` 与 `jobId`。当前没有 authoritative deployment/build version 字段，因此不提供 `version` filter。
 
@@ -284,13 +286,12 @@ Processing Job 终态口径：`READY` 表示 Processing Job 已正常完成 fina
 
 **旧 Backend Overview 已迁移为 JVM / Infrastructure；生产首页面板清单**
 
-1. Backend Up、请求数、4xx、5xx、HTTP P50/P95/P99（首屏）
+1. Backend / Keycloak / node-exporter 状态、请求数、5xx、HTTP P95（首屏）
 2. Replay jobs/files、READY/FAILED Job 终态与 parse active/queued
-3. AI started/success/failure/rejected 与 active
-4. HTTP、Replay、AI 的 P50/P95/P99 趋势与 outcome trend
-5. 精简 CPU、heap、GC 摘要
-6. Recent backend errors / warnings（Loki）
-7. Deferred Metrics Gaps（不生成不存在指标的假面板）
+3. AI active/queue 与 success/failure/rejected
+4. HTTP、Replay、AI、Keycloak 的趋势与 P50/P95/P99
+5. CPU、RAM、Disk、Load、Backend JVM/GC 摘要
+6. Recent Backend / Keycloak errors（Loki）
 
 > Dashboard JSON 提交在 `deploy/observability/grafana/dashboards/`，volume 丢失后随 provisioning 自动重建。
 > 面板查询基于上述指标名编写；**每个面板是否有真实数据支撑，需在生产实际产生流量后确认**（CI 仅校验 JSON 结构与指标名存在，无法验证面板有数据）。
@@ -440,6 +441,7 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 | Loki | 7 天（`retention_period: 168h` + compactor） | 无显式上限（受宿主磁盘） | 256m |
 | Grafana | 独立 volume `grafana_data` | 无 | 256m |
 | Alloy | —（仅转发） | — | 128m |
+| node-exporter | —（仅转发主机指标） | — | 64m |
 | Docker 原始日志 | json-file 轮转：单文件 20MB × 3 | — | — |
 
 **持久化**：全部使用独立命名 volume（`prometheus_data` / `loki_data` / `grafana_data`），与 `postgres_data` 分离；不写入 PostgreSQL。容器重启后 7 天数据仍在。
@@ -448,7 +450,7 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 
 ```bash
 # 观测栈内存
-docker stats prometheus loki alloy grafana
+docker stats prometheus loki alloy grafana node-exporter
 
 # 数据卷占用
 docker system df -v | grep -E "prometheus_data|loki_data|grafana_data"
@@ -465,6 +467,10 @@ docker exec loki du -sh /loki/chunks
 - Prometheus 保留：改 `docker-compose.yml` 中 `--storage.tsdb.retention.time`（compose 与 `deploy.yml` heredoc 两处）。
 - Loki 保留：改 `deploy/observability/loki/loki-config.yml` 的 `limits_config.retention_period`（如 `336h` = 14 天）后 `docker compose up -d loki`（Loki 需要 compactor 周期生效）。
 - 内存限制：改各服务 `mem_limit`。
+
+### 认证故障快速排查
+
+参见 [`docs/operations/observability-runbook.md`](observability-runbook.md)，其中包含 Keycloak management endpoint、Prometheus target、Loki 关键词和 QQ callback 复现后的证据采集顺序。
 
 ---
 
@@ -496,7 +502,8 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_review_errors_total{type=<固定枚举>}` — 错误分类（仅流内失败，与 `failure` 一致；HTTP 4xx 预校验失败不在此处计数）
   - `wotb_ai_review_duration_seconds` — Review 完整总耗时（Timer，histogram，成功与异常都结束，覆盖文件验证→解析→分析→AI 调用→响应处理）
   - `wotb_ai_review_in_flight` — 当前处理中的 Review 数（Gauge，即"已进入 worker、尚未完成"的请求数；不含队列中等待的请求，也不含被 `AI_REVIEW_BUSY` 回绝的请求）
-  - `wotb_ai_review_queue_wait_seconds` — worker 排队等待时长（Timer，histogram；由 `wotb_ai_review_queue_wait_seconds_bucket` 支撑 P95）
+   - `wotb_ai_review_queue_wait_seconds` — worker 排队等待时长（Timer，histogram；由 `wotb_ai_review_queue_wait_seconds_bucket` 支撑 P95）
+   - `wotb_ai_review_queue_depth` — 当前等待执行的 AI Review worker 数（Gauge；不含正在执行与已拒绝请求）
   - `wotb_ai_team_review_validation_attempt_total{result=pass|parser_invalid|validation_failed|metadata_only_pass}` — Team Call #2 validation attempt 分类；`parser_invalid` 与 `validation_failed` 表示 rework/失败尝试
 - **AI upstream**（自定义，`SpringAiChatGateway.chat`，每次上游调用）：
   - `wotb_ai_upstream_requests_total{mode}` — 上游请求量（每个 attempt +1，含 retry 重试；token budget 拒绝不进入 gateway，不计）
@@ -519,6 +526,11 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
 
 > 当前没有 authoritative 的 per-source replay success/failure Prometheus metric；不要用 Processing Job 的 `READY` / `FAILED` 终态替代 source-level 解析结果。
 > legacy `wotb_replay_results_total` 不统计，避免把异常路径或 Job 终态误解为逐文件解析 success/failure。
+
+**Keycloak / Host**：
+
+- Keycloak management interface：Prometheus job `keycloak` 抓取 `keycloak:9000/metrics`；Dashboard 使用 `up`、HTTP request histogram、JVM/GC 与 Loki 认证关键词，不假设不存在的 auth-event metric。
+- Host：Prometheus job `node-exporter` 抓取 `node-exporter:9100`；生产首页使用 `node_cpu_seconds_total`、`node_memory_*`、`node_filesystem_*` 与 `node_load1` 展示 CPU/RAM/Disk/Load。
 
 **Label 约束**：不使用用户 ID、Replay ID、文件名、IP、correlation ID、Prompt、Completion、异常正文作为 label；URI 一律为 Spring MVC 模板（如 `/api/preview`）。Token Usage 仅以低基数 `mode`/`token_type` 统计。
 

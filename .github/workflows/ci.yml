@@ -246,10 +246,15 @@ jobs:
           import json
           with open('/tmp/compose.json', encoding='utf-8') as f:
               svc = json.load(f)["services"]
-          no_host_ports = {"prometheus", "loki", "alloy", "grafana", "wotb-backend"}
+          no_host_ports = {"prometheus", "loki", "alloy", "grafana", "node-exporter", "wotb-backend"}
           for name, s in svc.items():
               if name in no_host_ports:
                   assert not s.get("ports"), f"service {name} must not expose host ports: {s.get('ports')}"
+          keycloak_ports = [str(p) for p in svc["keycloak"].get("ports", [])]
+          assert not any(":9000" in p or p.endswith("9000") for p in keycloak_ports), \
+              f"Keycloak management port must stay internal: {keycloak_ports}"
+          assert not svc["node-exporter"].get("ports"), \
+              f"node-exporter must stay internal: {svc['node-exporter'].get('ports')}"
           print("no host exposure of observability/backend-management ports")
           PY
 
@@ -298,6 +303,10 @@ jobs:
           with open('/tmp/compose.json', encoding='utf-8') as f:
               svc = json.load(f)["services"]
           assert "mcp-grafana" not in svc, "mcp-grafana must be removed from production compose"
+          assert not svc["node-exporter"].get("ports"), "node-exporter must stay internal"
+          keycloak_ports = [str(p) for p in svc["keycloak"].get("ports", [])]
+          assert not any(":9000" in p or p.endswith("9000") for p in keycloak_ports), \
+              f"Keycloak management port must stay internal: {keycloak_ports}"
           for name, s in svc.items():
               for p in s.get("ports", []):
                   assert "8000" not in str(p), f"service {name} must not publish port 8000: {p}"

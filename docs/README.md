@@ -46,7 +46,7 @@
 
 | 文档 | 何时读 |
 |---|---|
-| `operations/observability.md` | 动监控 / 日志 / Grafana / 保留策略 / 排障时 |
+| `operations/observability.md` | 监控 / 日志 / Grafana / 保留策略 / 排障时 |
 
 ## Reference（参考字典）
 
