@@ -1,6 +1,6 @@
 /** Playback application/view types backed by the generated HTTP contract. */
 
-import type { PlaybackDirection, PlaybackHpLoss, PlaybackPosition } from './playback.js'
+import type { PlaybackDirection, PlaybackPosition } from './playback.js'
 import type { components } from '../api/generated/http-contract.js'
 import { validateBattlePlaybackDataset } from '../api/contract-runtime.js'
 
@@ -19,10 +19,10 @@ export type OrientationSegment = components['schemas']['OrientationSegment']
 export type OrientationSample = components['schemas']['OrientationSample']
 export type HealthTransition = components['schemas']['HealthTransition']
 export type LifeTransition = components['schemas']['LifeTransition']
+export type DamageLoss = components['schemas']['DamageLoss']
 export type ConsumableTransition = components['schemas']['ConsumableTransition']
 export type ModuleCrewTransition = components['schemas']['ModuleCrewTransition']
 export type BattleEvent = components['schemas']['BattleEvent']
-export type ShotTrack = components['schemas']['ShotTrack']
 export type PointsSample = components['schemas']['PointsSample']
 
 export function isBattlePlaybackDataset(value: unknown): value is BattlePlaybackDataset {
@@ -39,6 +39,7 @@ export interface HealthAtResult {
   knowledge: HealthKnowledge
   source: string
   displayCapacityHp: number | null
+  relativeFull: boolean
   confidence: PlaybackConfidence
 }
 
@@ -60,4 +61,4 @@ export interface ModuleCrewResult {
   confidence: PlaybackConfidence
 }
 
-export type { PlaybackDirection, PlaybackHpLoss, PlaybackPosition }
+export type { PlaybackDirection, PlaybackPosition }

@@ -298,14 +298,10 @@ spectator 的 extra（如 #201=4 / #301=3）时不得视为完整。League Ratin
 **HP provenance 语义（前端，见 docs/features/battle-playback.md §4 扩展 + PR #107 Blocker 3 收口）**：
 - `OBSERVED_EXACT`：进场满血已证明（entryHpSource=OBSERVED_EXACT）→ 精确 current/entryHp/pct
   （pct = current/entryHp；只有实际进场 max 已被可靠证明时才允许计算真实 HP 百分比）；
-- `CURRENT_HP_EXACT_MAX_UNKNOWN`：有真实 Type-7 current 采样但进场 max 未证明 →
-  **current 精确、maxHp=null、pct=null**——绝不使用 tankopedia base 或观测容量计算百分比
-  （baseHp/observedCapacityHp 只是 metadata）；前端渲染阵营色 indeterminate 斜纹
-  （「当前 HP 已观测，进场最大 HP 未知」），不渲染黑条；
-- `RULE_DERIVED_FULL_AT_SPAWN`：仅本方存活 + 无采样 + 无战前掉血证据 → 开局相对满血
-  （marker 100% 阵营色完整血条无条纹，Details Panel 显示「100%」——100% 是相对 UI 状态、
-  不是具体 HP、也不证明 actual max HP；tankopedia base 永不冒充 max/current）；
-- `UNKNOWN`：敌方/无依据 → 灰段未知样式（Details Panel —），不因己方 fallback 泄漏。
+- `CURRENT`：有真实 Type-7 current 采样；current 精确，百分比只在 displayCapacityHp 已证明时计算；
+- `LAST_KNOWN`：最近一次可信 current 采样；失察期间冻结该值，不读取未来值；
+- `RELATIVE_FULL`：仅能证明相对满血；显示 100% 但不伪造具体 HP 或 actual max；
+- `UNKNOWN`：没有可用 HP 依据；显示未知样式，不因己方 fallback 泄漏。
 ## 下一步
 
 1. type 39 字段映射：收集第三个真实回放（最好录像者阵亡时间明确），验证冻结时刻与 f2/f3/f4 贴车规律；或游戏内录屏对照 FOV 档位/瞄准动作。

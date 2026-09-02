@@ -34,9 +34,13 @@ export function projectVehicleState({
   const direction = orientationAtV2(track.orientationSegments, time)
   // friendly is a canonical track fact. The perspective team is presentation
   // context only and must not re-derive vehicle identity from team numbers.
-  const friendly = track.friendly === true
-  const hullDeg = direction ? screenRotation(direction.hullYawDeg) : null
+  const friendly = track.friendly === true ? true : track.friendly === false ? false : null
+  const hullDeg = direction && Number.isFinite(direction.hullYawDeg)
+    ? screenRotation(direction.hullYawDeg)
+    : null
   const turretDeg = direction
+    && Number.isFinite(direction.hullYawDeg)
+    && Number.isFinite(direction.turretRelativeYawDeg)
     ? screenRotation(turretWorldYawDeg(direction.hullYawDeg, direction.turretRelativeYawDeg))
     : null
   return {
@@ -51,8 +55,8 @@ export function projectVehicleState({
     model,
     hullImage,
     turretImage,
-    hullScreenDeg: destroyed ? (hullDeg == null ? 0 : hullDeg) : hullDeg,
-    turretScreenDeg: destroyed ? (turretDeg == null ? 0 : turretDeg) : turretDeg,
+    hullScreenDeg: hullDeg,
+    turretScreenDeg: turretDeg,
     markerStyle: { left: markerLeft(pos.x), top: markerTop(pos.y), transform: markerTransform },
     overlayInverseScale,
     overlayInverse,

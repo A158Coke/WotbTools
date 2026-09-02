@@ -1,49 +1,63 @@
-// legacy overview.playback → V2 BattlePlaybackDataset 转换（测试辅助；让 legacy 数据语义仍能驱动 V2-only 组件）。
-export function coveredAt(intervals, t) {
-  return (intervals || []).some(iv => t >= iv.startSec - 1e-6 && t <= iv.endSec + 1e-6)
+/** Build the single current-shape Battle Playback V2 fixture used by component tests. */
+export function makeBattlePlaybackDataset({ vehicles = defaultVehicles(), events = defaultEvents() } = {}) {
+  return {
+    durationSec: 60,
+    mapCode: 'holland',
+    friendlyTeam: 1,
+    recorderAccountId: 1001,
+    vehicles,
+    events,
+    pointsSamples: [],
+    limitations: [],
+    capability: 'FULL',
+    arenaBonusType: null,
+  }
 }
 
-export function legacyPlaybackToV2Dataset(overview) {
-  const playback = overview && overview.playback
-  if (!playback) return { durationSec: 0, vehicles: [], events: [], shots: [], pointsSamples: [], limitations: [] }
-  const pointsByAccount = new Map((overview.routes || []).map(r => [r.accountId, r.points || []]))
-  const vehicles = (playback.vehicles || []).map(v => {
-    const hpSamples = v.hpSamples || []
-    const maxCap = hpSamples.reduce((m, s) => (s.hp > m ? s.hp : m), 0)
-    const healthTransitions = hpSamples.map(s => ({
-      timeSec: s.timeSec, currentHp: s.hp,
-      knowledge: coveredAt(v.positionIntervals, s.timeSec) ? 'CURRENT' : 'LAST_KNOWN',
-      displayCapacityHp: maxCap > 0 ? maxCap : null, source: 'EXACT_BATTLE_EVENT',
-    }))
-    const lifeTransitions = []
-    if (v.deathSec != null) {
-      lifeTransitions.push({ timeSec: v.deathSec, lifeState: 'DESTROYED', destroyedKnownAtSec: v.deathSec })
-    }
-    const pts = pointsByAccount.get(v.accountId) || []
-    const posSegs = (v.positionIntervals || []).map(iv => {
-      const inRange = pts.filter(p => p.timeSec >= iv.startSec - 1e-6 && p.timeSec <= iv.endSec + 1e-6)
-      const samples = inRange.length > 0
-        ? inRange.map(p => ({ timeSec: p.timeSec, x: p.x, y: p.y, knowledge: 'OBSERVED' }))
-        : [{ timeSec: iv.startSec, x: 0, y: 0, knowledge: 'OBSERVED' }]
-      return { knowledge: 'OBSERVED', startSec: iv.startSec, endSec: iv.endSec, samples }
-    })
-    const orientSegs = (v.directionSamples || []).length > 0 ? [{
-      knowledge: 'CURRENT', startSec: (v.directionSamples[0] || {}).timeSec ?? 0,
-      endSec: (v.directionSamples[v.directionSamples.length - 1] || {}).timeSec ?? 0,
-      samples: v.directionSamples.map(s => ({ timeSec: s.timeSec, hullYawDeg: s.hullYawDeg, turretRelativeYawDeg: s.turretRelativeYawDeg })),
-    }] : []
-    return {
-      accountId: v.accountId, playerName: v.playerName, tankId: v.tankId,
-      tankName: v.tankName, tankClass: '', team: v.team, friendly: v.team === 1,
-      loadout: null, positionSegments: posSegs, orientationSegments: orientSegs,
-      healthTransitions, lifeTransitions, hpLosses: v.hpLosses || [],
+function defaultVehicles() {
+  return [
+    {
+      accountId: 1001, playerName: 'You', tankId: 1, tankName: 'Maus', tankClass: '', tankTier: null, team: 1, friendly: true,
+      loadout: null,
+      positionSegments: [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 0, endSec: 60,
+        samples: [{ timeSec: 0, x: 0, y: 0 }, { timeSec: 60, x: 60, y: 60 }] }],
+      orientationSegments: [{ knowledge: 'CURRENT', startSec: 0, endSec: 60,
+        samples: [{ timeSec: 0, hullYawDeg: 0, turretRelativeYawDeg: 0 }, { timeSec: 60, hullYawDeg: 90, turretRelativeYawDeg: 30 }] }],
+      healthTransitions: [{ timeSec: 0, currentHp: 1500, knowledge: 'CURRENT', displayCapacityHp: 1500, relativeFull: true, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' }],
+      lifeTransitions: [],
+      damageLosses: [],
+      consumableTransitions: [],
+      moduleCrewTransitions: [],
+    },
+    {
+      accountId: 2001, playerName: 'EnemyA', tankId: 2, tankName: 'T49', tankClass: '', tankTier: null, team: 2, friendly: false,
+      loadout: null,
+      positionSegments: [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 10, endSec: 20,
+        samples: [{ timeSec: 10, x: -50, y: -50 }, { timeSec: 20, x: -60, y: -60 }] }],
+      orientationSegments: [{ knowledge: 'CURRENT', startSec: 10, endSec: 20,
+        samples: [{ timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5 }, { timeSec: 20, hullYawDeg: 30, turretRelativeYawDeg: 20 }] }],
+      healthTransitions: [
+        { timeSec: 0, currentHp: 1200, knowledge: 'CURRENT', displayCapacityHp: 1200, relativeFull: true, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' },
+        { timeSec: 12, currentHp: 800, knowledge: 'CURRENT', displayCapacityHp: 1200, relativeFull: false, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' },
+      ],
+      lifeTransitions: [{ timeSec: 25, lifeState: 'DESTROYED', destroyedKnownAtSec: 25 }],
+      damageLosses: [{ fromSec: 10, toSec: 12, hpLoss: 400, fromHp: 1200, toHp: 800, displayCapacityHp: 1200, transientAllowed: true, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }],
+      consumableTransitions: [],
+      moduleCrewTransitions: [],
+    },
+    {
+      accountId: 2002, playerName: 'NeverSeen', tankId: 3, tankName: 'NeverSeen', tankClass: '', tankTier: null, team: 2, friendly: false,
+      loadout: null,
+      positionSegments: [], orientationSegments: [], healthTransitions: [], lifeTransitions: [], damageLosses: [],
       consumableTransitions: [], moduleCrewTransitions: [],
-    }
-  })
-  const events = (playback.events || []).map(e => ({
-    type: e.type, timeSec: e.timeSec, accountId: e.accountId ?? null,
-    targetAccountId: e.targetAccountId ?? null, observedHpLoss: e.observedHpLoss ?? null,
-  })).sort((a, b) => a.timeSec - b.timeSec)
-  return { durationSec: playback.durationSec, vehicles, events,
-    shots: [], pointsSamples: playback.pointsSamples || [], limitations: [] }
+    },
+  ]
+}
+
+function defaultEvents() {
+  return [
+    { type: 'POSITION_REPORTED', timeSec: 10, accountId: 2001, targetAccountId: null, observedHpLoss: null },
+    { type: 'DAMAGE', timeSec: 12, accountId: 1001, targetAccountId: 2001, observedHpLoss: 400 },
+    { type: 'POSITION_STALE', timeSec: 20, accountId: 2001, targetAccountId: null, observedHpLoss: null },
+  ]
 }

@@ -19,19 +19,19 @@
         "consumableWireCodes": [null, 13, null],
         "provisions": [null, null, null],
         "provisionWireCodes": [null, null, null],
-        "equipmentIds": [null, 1, null],
+        "equipmentIds": [null, 1, null, null, null, null, null, null, null],
         "confidence": "HIGH"
       },
       "positionSegments": [],
       "orientationSegments": [],
       "healthTransitions": [],
       "lifeTransitions": [],
+      "damageLosses": [],
       "consumableTransitions": [],
       "moduleCrewTransitions": []
     }
   ],
   "events": [],
-  "shots": [],
   "pointsSamples": [],
   "limitations": [],
   "capability": "FULL",

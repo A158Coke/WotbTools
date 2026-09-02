@@ -6,8 +6,8 @@ import {
   lifeAt,
   positionCoveredAtV2,
   orientationKnownAt,
-  consumableRuntimeStatesAt,
-  moduleCrewAt,
+  consumableRuntimeSlotsAt,
+  moduleCrewStatesAt,
 } from '../utils/battlePlaybackV2.ts'
 import { loadoutItemLabel } from '../data/loadoutItems.js'
 
@@ -56,11 +56,11 @@ const consumables = computed(() => {
   if (!loadout.value) return []
   const wireCodes = loadout.value.consumableWireCodes || []
   const ids = loadout.value.consumables || []
-  const runtimes = consumableRuntimeStatesAt(props.track.consumableTransitions, props.timeSec)
+  const runtimes = consumableRuntimeSlotsAt(props.track.consumableTransitions, props.timeSec)
   return Array.from({ length: 3 }, (_, i) => {
     const id = ids[i] ?? null
     const slotWire = wireCodes[i]
-    const rt = slotWire === null || slotWire === undefined ? null : runtimes.get(slotWire)
+    const rt = runtimes.get(i)
     return {
       slot: i,
       logicalItemId: rt?.logicalItemId || id,
@@ -95,7 +95,7 @@ const equipmentRows = computed(() => [
   { key: 'row3', slots: equipmentLabels.value.slice(6, 9) },
 ])
 
-const modules = computed(() => moduleCrewAt(props.track.moduleCrewTransitions, props.timeSec))
+const modules = computed(() => moduleCrewStatesAt(props.track.moduleCrewTransitions, props.timeSec))
 
 const stateLabel = computed(() => {
   if (life.value?.lifeState === 'DESTROYED') return t('recon.map.playback.state_destroyed')
@@ -127,6 +127,16 @@ const tankClassLabel = computed(() => {
   const key = VEHICLE_CLASS_KEYS[cls]
   return key ? t(key) : cls
 })
+
+function moduleComponentLabel(component) {
+  const key = `recon.map.playback.module_component.${component}`
+  return te(key) ? t(key) : t('recon.map.playback.module_component.UNKNOWN')
+}
+
+function moduleStateLabel(state) {
+  const key = `recon.map.playback.module_value.${state}`
+  return te(key) ? t(key) : t('recon.map.playback.module_value.UNKNOWN')
+}
 </script>
 
 <template>
@@ -155,6 +165,11 @@ const tankClassLabel = computed(() => {
     <div class="v2-inspector-row" data-test="v2-inspector-knowledge">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.vehicle_type') }}</span>
       <span class="v2-inspector-val">{{ tankClassLabel }}</span>
+    </div>
+
+    <div class="v2-inspector-row" data-test="v2-inspector-tier">
+      <span class="v2-inspector-key">{{ $t('recon.map.playback.tank_tier') }}</span>
+      <span class="v2-inspector-val">{{ track.tankTier ?? '—' }}</span>
     </div>
 
     <div class="v2-inspector-row" data-test="v2-inspector-orientation">
@@ -209,13 +224,13 @@ const tankClassLabel = computed(() => {
       <span class="v2-inspector-val">{{ $t('recon.map.playback.unknown') }}</span>
     </div>
 
-    <template v-if="modules">
+    <template v-if="modules.length">
       <div class="v2-inspector-section">{{ $t('recon.map.playback.module_state') }}</div>
-      <div class="v2-inspector-row" data-test="v2-inspector-module">
-        <span class="v2-inspector-key">{{ modules.component }}</span>
+      <div v-for="module in modules" :key="module.component" class="v2-inspector-row" data-test="v2-inspector-module">
+        <span class="v2-inspector-key">{{ moduleComponentLabel(module.component) }}</span>
         <span class="v2-inspector-val">
-          {{ modules.state }}
-          <span v-if="modules.recorderVisible" class="v2-inspector-badge">{{ $t('recon.map.playback.recorder_visible') }}</span>
+          {{ moduleStateLabel(module.state) }}
+          <span v-if="module.recorderVisible" class="v2-inspector-badge">{{ $t('recon.map.playback.recorder_visible') }}</span>
         </span>
       </div>
     </template>

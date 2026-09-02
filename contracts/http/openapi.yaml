@@ -87,7 +87,7 @@ components:
           pattern: '^r[0-9]+$'
     PlaybackCapability:
       type: string
-      enum: [FULL, PARTIAL, UNAVAILABLE]
+      enum: [FULL, PARTIAL]
     PlaybackConfidence:
       type: string
       enum: [HIGH, MEDIUM, LOW, UNKNOWN]
@@ -96,13 +96,13 @@ components:
       enum: [OBSERVED, LAST_KNOWN]
     OrientationKnowledge:
       type: string
-      enum: [CURRENT, LAST_KNOWN, UNKNOWN]
+      enum: [CURRENT, LAST_KNOWN]
     HealthKnowledge:
       type: string
-      enum: [CURRENT, LAST_KNOWN, UNKNOWN]
+      enum: [CURRENT, LAST_KNOWN]
     PlaybackLifeState:
       type: string
-      enum: [ALIVE, DESTROYED, UNKNOWN]
+      enum: [ALIVE, DESTROYED]
     BattlePlaybackDataset:
       type: object
       additionalProperties: false
@@ -113,7 +113,6 @@ components:
         - recorderAccountId
         - vehicles
         - events
-        - shots
         - pointsSamples
         - limitations
         - capability
@@ -137,10 +136,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/BattleEvent'
-        shots:
-          type: array
-          items:
-            $ref: '#/components/schemas/ShotTrack'
         pointsSamples:
           type: array
           items:
@@ -155,7 +150,7 @@ components:
     VehiclePlaybackTrack:
       type: object
       additionalProperties: false
-      required: [accountId, playerName, tankId, tankName, tankClass, tankTier, team, friendly, loadout, positionSegments, orientationSegments, healthTransitions, lifeTransitions, consumableTransitions, moduleCrewTransitions]
+      required: [accountId, playerName, tankId, tankName, tankClass, tankTier, team, friendly, loadout, positionSegments, orientationSegments, healthTransitions, lifeTransitions, damageLosses, consumableTransitions, moduleCrewTransitions]
       properties:
         accountId: { type: integer }
         playerName: { type: string }
@@ -164,7 +159,7 @@ components:
         tankClass: { type: string }
         tankTier: { type: [integer, 'null'] }
         team: { type: integer }
-        friendly: { type: boolean }
+        friendly: { type: [boolean, 'null'] }
         loadout:
           anyOf:
             - $ref: '#/components/schemas/VehicleBattleLoadout'
@@ -181,6 +176,9 @@ components:
         lifeTransitions:
           type: array
           items: { $ref: '#/components/schemas/LifeTransition' }
+        damageLosses:
+          type: array
+          items: { $ref: '#/components/schemas/DamageLoss' }
         consumableTransitions:
           type: array
           items: { $ref: '#/components/schemas/ConsumableTransition' }
@@ -195,18 +193,28 @@ components:
         replayVersion: { type: [string, 'null'] }
         consumables:
           type: array
+          minItems: 3
+          maxItems: 3
           items: { type: [string, 'null'] }
         consumableWireCodes:
           type: array
+          minItems: 3
+          maxItems: 3
           items: { type: [integer, 'null'] }
         provisions:
           type: array
+          minItems: 3
+          maxItems: 3
           items: { type: [string, 'null'] }
         provisionWireCodes:
           type: array
+          minItems: 3
+          maxItems: 3
           items: { type: [integer, 'null'] }
         equipmentIds:
           type: array
+          minItems: 9
+          maxItems: 9
           items: { type: [integer, 'null'] }
         confidence: { $ref: '#/components/schemas/PlaybackConfidence' }
     PositionSegment:
@@ -224,12 +232,11 @@ components:
     PositionSample:
       type: object
       additionalProperties: false
-      required: [timeSec, x, y, knowledge]
+      required: [timeSec, x, y]
       properties:
         timeSec: { type: number, minimum: 0 }
         x: { type: number }
         y: { type: number }
-        knowledge: { $ref: '#/components/schemas/PositionKnowledge' }
     OrientationSegment:
       type: object
       additionalProperties: false
@@ -244,22 +251,22 @@ components:
     OrientationSample:
       type: object
       additionalProperties: false
-      required: [timeSec, hullYawDeg, turretRelativeYawDeg, knowledge]
+      required: [timeSec, hullYawDeg, turretRelativeYawDeg]
       properties:
         timeSec: { type: number, minimum: 0 }
         hullYawDeg: { type: [number, 'null'] }
         turretRelativeYawDeg: { type: [number, 'null'] }
-        knowledge: { $ref: '#/components/schemas/OrientationKnowledge' }
     HealthTransition:
       type: object
       additionalProperties: false
-      required: [timeSec, currentHp, knowledge, source, displayCapacityHp, confidence]
+      required: [timeSec, currentHp, knowledge, source, displayCapacityHp, relativeFull, confidence]
       properties:
         timeSec: { type: number, minimum: 0 }
         currentHp: { type: [integer, 'null'], minimum: 0 }
-        knowledge: { $ref: '#/components/schemas/HealthKnowledge' }
-        source: { type: string }
+        knowledge: { type: [string, 'null'], enum: [CURRENT, LAST_KNOWN, null] }
+        source: { type: [string, 'null'] }
         displayCapacityHp: { type: [integer, 'null'], minimum: 0 }
+        relativeFull: { type: boolean }
         confidence: { $ref: '#/components/schemas/PlaybackConfidence' }
     LifeTransition:
       type: object
@@ -272,13 +279,14 @@ components:
     ConsumableTransition:
       type: object
       additionalProperties: false
-      required: [timeSec, consumableSlot, logicalItemId, wireCode, state, confidence]
+      required: [timeSec, consumableSlot, logicalItemId, wireCode, state, invalidation, confidence]
       properties:
         timeSec: { type: number, minimum: 0 }
         consumableSlot: { type: [integer, 'null'], minimum: 0, maximum: 2 }
         logicalItemId: { type: [string, 'null'] }
         wireCode: { type: [integer, 'null'] }
         state: { type: string }
+        invalidation: { type: boolean }
         confidence: { $ref: '#/components/schemas/PlaybackConfidence' }
     ModuleCrewTransition:
       type: object
@@ -287,9 +295,24 @@ components:
       properties:
         timeSec: { type: number, minimum: 0 }
         component: { type: string }
-        state: { type: string }
+        state: { type: [string, 'null'] }
         recorderVisible: { type: boolean }
         confidence: { $ref: '#/components/schemas/PlaybackConfidence' }
+    DamageLoss:
+      type: object
+      additionalProperties: false
+      required: [fromSec, toSec, hpLoss, attackerAccountId, attackerReliable, damageEventCount, fromHp, toHp, displayCapacityHp, transientAllowed]
+      properties:
+        fromSec: { type: number, minimum: 0 }
+        toSec: { type: number, minimum: 0 }
+        hpLoss: { type: integer, minimum: 0 }
+        attackerAccountId: { type: [integer, 'null'] }
+        attackerReliable: { type: boolean }
+        damageEventCount: { type: integer, minimum: 0 }
+        fromHp: { type: [integer, 'null'], minimum: 0 }
+        toHp: { type: [integer, 'null'], minimum: 0 }
+        displayCapacityHp: { type: [integer, 'null'], minimum: 0 }
+        transientAllowed: { type: boolean }
     BattleEvent:
       type: object
       additionalProperties: false
@@ -300,15 +323,6 @@ components:
         accountId: { type: [integer, 'null'] }
         targetAccountId: { type: [integer, 'null'] }
         observedHpLoss: { type: [integer, 'null'], minimum: 0 }
-    ShotTrack:
-      type: object
-      additionalProperties: false
-      required: [shooterAccountId, launchTimeSec, terminalTimeSec, resolution]
-      properties:
-        shooterAccountId: { type: integer }
-        launchTimeSec: { type: number, minimum: 0 }
-        terminalTimeSec: { type: [number, 'null'], minimum: 0 }
-        resolution: { type: [string, 'null'] }
     PointsSample:
       type: object
       additionalProperties: false

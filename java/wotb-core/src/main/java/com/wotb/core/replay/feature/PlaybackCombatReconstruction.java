@@ -38,7 +38,9 @@ public final class PlaybackCombatReconstruction {
             int hpLoss,
             Long attackerAccountId,
             boolean attackerReliable,
-            int damageEventCount
+            int damageEventCount,
+            int fromHp,
+            int toHp
     ) {
     }
 
@@ -249,7 +251,9 @@ public final class PlaybackCombatReconstruction {
                         prevT, curT, hpLoss,
                         reliable ? soleAttacker : null,
                         reliable,
-                        inWindow));
+                        inWindow,
+                        prevHp,
+                        curHp));
             }
         }
     }

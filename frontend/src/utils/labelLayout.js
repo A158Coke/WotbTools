@@ -17,7 +17,7 @@
  * - Destroyed ✕ 盒（阵亡 30px 红叉，屏幕恒定，覆盖车体中心）；
  * - Recorder 菱形盒（7×7px，屏幕恒定，位于 marker 下方）；
  * - HP HUD 盒（数字 + 定宽 bar，屏幕恒定；PR #107 Blocker 4：hpRendered=false（关闭「显示血量」）
- *   时 footprint 缩小 §28；RULE_DERIVED_FULL_AT_SPAWN 的 current=null 与 UNKNOWN 的 — 仍渲染 HUD、
+ *   时 footprint 缩小 §28；RELATIVE_FULL 的 current=null 与 UNKNOWN 的 — 仍渲染 HUD、
  *   必须有盒——是否存在按 DOM 实际渲染判断，不是按 current 是否为 null）；
  * - TankName 盒（§31 永远完整，不截断；屏幕恒定）；
  * - PlayerName 盒（§30 截断 110px；屏幕恒定）。
@@ -99,7 +99,7 @@ export function estimateLabelWidth(text, fontSizePx, maxWidthPx = Infinity) {
  * @param items [{ accountId, x, y, tankName, playerName, hpRendered, hpDisplayText,
  *                selected, destroyed, recorder, hpBoxW, hpBoxH }]
  *   x/y = marker 中心（屏幕 px，viewport 变换后）；selected/destroyed/recorder 为状态标志；
- *   hpRendered = HP HUD 是否实际渲染（DOM 是否画 HUD——RULE_DERIVED_FULL_AT_SPAWN 的 current=null
+ *   hpRendered = HP HUD 是否实际渲染（DOM 是否画 HUD——RELATIVE_FULL 的 current=null
  *               与 UNKNOWN 的 — 都渲染 HUD，必须有 footprint，不能只看 current 是否为 null）；
  *   hpDisplayText = HUD 数字区实际渲染文本（数字或 —，用于按状态估算盒宽）；
  *   hpBoxW/hpBoxH = HP HUD 真实渲染宽高（screen px，调用方测量；缺省按 CSS 常量，
@@ -169,7 +169,7 @@ export function computeLabelLayout(items, opts = {}) {
       : null
     // HP HUD 位于 label 块之上（§22 + PR #107 Blocker 4：HP 参与碰撞；hpRendered=false 时无盒 →
     // footprint 缩小，§28）。HP footprint 是否存在 = DOM 是否实际渲染 HUD（调用方传 hpRendered +
-    // hpDisplayText），不是 current 是否为 null——RULE_DERIVED_FULL_AT_SPAWN（current=null，仍渲染
+    // hpDisplayText），不是 current 是否为 null——RELATIVE_FULL（current=null，仍渲染
     // 100% 血条）与 UNKNOWN（数字 —）都渲染 HUD，必须有盒。
     const hpRendered = it.hpRendered === true
     // 盒宽 = max(调用方实测宽（第一辆车基准）, 按实际渲染文本估算)——不同显示文本（数字 vs —）

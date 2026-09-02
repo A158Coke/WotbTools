@@ -88,10 +88,21 @@ class ReplayArtifactWriterTest {
                         "accountId": 7, "playerName": "p", "tankId": 1, "tankName": "t",
                         "tankClass": "medium", "tankTier": 10, "team": 1, "friendly": true,
                         "loadout": {"replayVersion": null, "consumables": [],
-                          "consumableWireCodes": [], "provisions": [], "provisionWireCodes": [],
+                          "consumableWireCodes": [13, 13], "provisions": [], "provisionWireCodes": [],
                           "equipmentIds": [], "confidence": "EXACT"},
-                        "positionSegments": [], "orientationSegments": [], "healthTransitions": [],
-                        "lifeTransitions": [], "consumableTransitions": [], "moduleCrewTransitions": []
+                        "positionSegments": [{"startSec": 0, "endSec": 1, "knowledge": "OBSERVED",
+                          "interpolationAllowed": true, "samples": [{"timeSec": 0, "x": 1, "y": 2,
+                          "knowledge": "OBSERVED"}]}], "orientationSegments": [{"startSec": 0,
+                          "endSec": 1, "knowledge": "CURRENT", "samples": [{"timeSec": 0,
+                          "hullYawDeg": 0, "turretRelativeYawDeg": 0, "knowledge": "CURRENT"}]}, {"startSec": 2,
+                          "endSec": 3, "knowledge": "UNKNOWN", "samples": []}],
+                        "healthTransitions": [{"timeSec": 1, "currentHp": null,
+                          "knowledge": "UNKNOWN", "source": "UNKNOWN", "displayCapacityHp": null,
+                          "confidence": "UNKNOWN"}],
+                        "lifeTransitions": [{"timeSec": 1, "lifeState": "UNKNOWN", "destroyedKnownAtSec": null}],
+                        "consumableTransitions": [{"timeSec": 1,
+                          "consumableSlot": null, "logicalItemId": "REPAIR_KIT", "wireCode": 13,
+                          "state": "ACTIVATED", "confidence": "HIGH"}], "moduleCrewTransitions": []
                       }], "events": [], "shots": [], "pointsSamples": [], "limitations": [],
                       "capability": "FULL", "arenaBonusType": null
                     }
@@ -100,6 +111,24 @@ class ReplayArtifactWriterTest {
             final BattlePlaybackDataset read = ReplayArtifactWriter.readBattlePlaybackV2(jobDir, 0);
             assertEquals(BattlePlaybackDataset.ConfidenceDto.HIGH,
                     read.vehicles().get(0).loadout().confidence());
+            assertEquals(3, read.vehicles().get(0).loadout().consumables().size());
+            assertEquals(9, read.vehicles().get(0).loadout().equipmentIds().size());
+            assertEquals(java.util.Arrays.asList(13, 13, null), read.vehicles().get(0).loadout().consumableWireCodes());
+            assertNull(read.vehicles().get(0).consumableTransitions().getFirst().consumableSlot(),
+                    "duplicate wire code must stay unresolved at the artifact read boundary");
+            assertFalse(read.vehicles().get(0).consumableTransitions().getFirst().invalidation(),
+                    "duplicate known wire code is unresolved, not a global runtime invalidation");
+            assertTrue(read.vehicles().get(0).damageLosses().isEmpty());
+            assertEquals(1, read.vehicles().get(0).positionSegments().getFirst().samples().getFirst().x());
+            assertEquals(1, read.vehicles().get(0).orientationSegments().size(),
+                    "legacy UNKNOWN orientation is a gap and must be removed at read boundary");
+            assertEquals(1, read.vehicles().get(0).healthTransitions().size(),
+                    "legacy UNKNOWN health preserves its explicit invalidation boundary");
+            assertNull(read.vehicles().get(0).healthTransitions().getFirst().currentHp());
+            assertNull(read.vehicles().get(0).healthTransitions().getFirst().knowledge());
+            assertFalse(read.vehicles().get(0).healthTransitions().getFirst().relativeFull());
+            assertTrue(read.vehicles().get(0).lifeTransitions().isEmpty(),
+                    "legacy UNKNOWN life is a no-fact transition and must be removed at read boundary");
         } finally {
             deleteRecursively(jobDir);
         }
@@ -143,12 +172,14 @@ class ReplayArtifactWriterTest {
         final Path jobDir = Files.createTempDirectory("wotb-artifact-test");
         try {
             final VehicleBattleLoadoutDto loadout = new VehicleBattleLoadoutDto(
-                    "11.19", List.of(), List.of(), List.of(), List.of(), List.of(), ConfidenceDto.HIGH);
+                    "11.19", java.util.Collections.nCopies(3, null), java.util.Collections.nCopies(3, null),
+                    java.util.Collections.nCopies(3, null), java.util.Collections.nCopies(3, null),
+                    java.util.Collections.nCopies(9, null), ConfidenceDto.HIGH);
             final VehiclePlaybackTrack vehicle = new VehiclePlaybackTrack(
                     7L, "p", 1L, "t", "medium", 10, 1, true, loadout,
-                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
             final BattlePlaybackDataset dataset = new BattlePlaybackDataset(
-                    60, null, 1, 7L, List.of(vehicle), List.of(), List.of(), List.of(), List.of(),
+                    60, null, 1, 7L, List.of(vehicle), List.of(), List.of(), List.of(),
                     BattlePlaybackDataset.Capability.FULL, null);
 
             ReplayArtifactWriter.writeBattlePlaybackV2(jobDir, 0, dataset);

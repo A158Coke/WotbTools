@@ -25,8 +25,7 @@ export default {
       "type": "string",
       "enum": [
         "FULL",
-        "PARTIAL",
-        "UNAVAILABLE"
+        "PARTIAL"
       ]
     },
     "PlaybackConfidence": {
@@ -49,24 +48,21 @@ export default {
       "type": "string",
       "enum": [
         "CURRENT",
-        "LAST_KNOWN",
-        "UNKNOWN"
+        "LAST_KNOWN"
       ]
     },
     "HealthKnowledge": {
       "type": "string",
       "enum": [
         "CURRENT",
-        "LAST_KNOWN",
-        "UNKNOWN"
+        "LAST_KNOWN"
       ]
     },
     "PlaybackLifeState": {
       "type": "string",
       "enum": [
         "ALIVE",
-        "DESTROYED",
-        "UNKNOWN"
+        "DESTROYED"
       ]
     },
     "BattlePlaybackDataset": {
@@ -79,7 +75,6 @@ export default {
         "recorderAccountId",
         "vehicles",
         "events",
-        "shots",
         "pointsSamples",
         "limitations",
         "capability",
@@ -125,12 +120,6 @@ export default {
             "$ref": "#/$defs/BattleEvent"
           }
         },
-        "shots": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ShotTrack"
-          }
-        },
         "pointsSamples": {
           "type": "array",
           "items": {
@@ -171,6 +160,7 @@ export default {
         "orientationSegments",
         "healthTransitions",
         "lifeTransitions",
+        "damageLosses",
         "consumableTransitions",
         "moduleCrewTransitions"
       ],
@@ -200,7 +190,10 @@ export default {
           "type": "integer"
         },
         "friendly": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "loadout": {
           "anyOf": [
@@ -234,6 +227,12 @@ export default {
           "type": "array",
           "items": {
             "$ref": "#/$defs/LifeTransition"
+          }
+        },
+        "damageLosses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DamageLoss"
           }
         },
         "consumableTransitions": {
@@ -271,6 +270,8 @@ export default {
         },
         "consumables": {
           "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
           "items": {
             "type": [
               "string",
@@ -280,6 +281,8 @@ export default {
         },
         "consumableWireCodes": {
           "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
           "items": {
             "type": [
               "integer",
@@ -289,6 +292,8 @@ export default {
         },
         "provisions": {
           "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
           "items": {
             "type": [
               "string",
@@ -298,6 +303,8 @@ export default {
         },
         "provisionWireCodes": {
           "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
           "items": {
             "type": [
               "integer",
@@ -307,6 +314,8 @@ export default {
         },
         "equipmentIds": {
           "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
           "items": {
             "type": [
               "integer",
@@ -358,8 +367,7 @@ export default {
       "required": [
         "timeSec",
         "x",
-        "y",
-        "knowledge"
+        "y"
       ],
       "properties": {
         "timeSec": {
@@ -371,9 +379,6 @@ export default {
         },
         "y": {
           "type": "number"
-        },
-        "knowledge": {
-          "$ref": "#/$defs/PositionKnowledge"
         }
       }
     },
@@ -412,8 +417,7 @@ export default {
       "required": [
         "timeSec",
         "hullYawDeg",
-        "turretRelativeYawDeg",
-        "knowledge"
+        "turretRelativeYawDeg"
       ],
       "properties": {
         "timeSec": {
@@ -431,9 +435,6 @@ export default {
             "number",
             "null"
           ]
-        },
-        "knowledge": {
-          "$ref": "#/$defs/OrientationKnowledge"
         }
       }
     },
@@ -446,6 +447,7 @@ export default {
         "knowledge",
         "source",
         "displayCapacityHp",
+        "relativeFull",
         "confidence"
       ],
       "properties": {
@@ -461,10 +463,21 @@ export default {
           "minimum": 0
         },
         "knowledge": {
-          "$ref": "#/$defs/HealthKnowledge"
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "CURRENT",
+            "LAST_KNOWN",
+            null
+          ]
         },
         "source": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "displayCapacityHp": {
           "type": [
@@ -472,6 +485,9 @@ export default {
             "null"
           ],
           "minimum": 0
+        },
+        "relativeFull": {
+          "type": "boolean"
         },
         "confidence": {
           "$ref": "#/$defs/PlaybackConfidence"
@@ -512,6 +528,7 @@ export default {
         "logicalItemId",
         "wireCode",
         "state",
+        "invalidation",
         "confidence"
       ],
       "properties": {
@@ -542,6 +559,9 @@ export default {
         "state": {
           "type": "string"
         },
+        "invalidation": {
+          "type": "boolean"
+        },
         "confidence": {
           "$ref": "#/$defs/PlaybackConfidence"
         }
@@ -566,13 +586,83 @@ export default {
           "type": "string"
         },
         "state": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "recorderVisible": {
           "type": "boolean"
         },
         "confidence": {
           "$ref": "#/$defs/PlaybackConfidence"
+        }
+      }
+    },
+    "DamageLoss": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fromSec",
+        "toSec",
+        "hpLoss",
+        "attackerAccountId",
+        "attackerReliable",
+        "damageEventCount",
+        "fromHp",
+        "toHp",
+        "displayCapacityHp",
+        "transientAllowed"
+      ],
+      "properties": {
+        "fromSec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "toSec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "hpLoss": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "attackerAccountId": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "attackerReliable": {
+          "type": "boolean"
+        },
+        "damageEventCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fromHp": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "toHp": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "displayCapacityHp": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "transientAllowed": {
+          "type": "boolean"
         }
       }
     },
@@ -612,38 +702,6 @@ export default {
             "null"
           ],
           "minimum": 0
-        }
-      }
-    },
-    "ShotTrack": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "shooterAccountId",
-        "launchTimeSec",
-        "terminalTimeSec",
-        "resolution"
-      ],
-      "properties": {
-        "shooterAccountId": {
-          "type": "integer"
-        },
-        "launchTimeSec": {
-          "type": "number",
-          "minimum": 0
-        },
-        "terminalTimeSec": {
-          "type": [
-            "number",
-            "null"
-          ],
-          "minimum": 0
-        },
-        "resolution": {
-          "type": [
-            "string",
-            "null"
-          ]
         }
       }
     },

@@ -11,7 +11,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import BattlePlayback from './BattlePlayback.vue'
-import { makeOverview } from './playbackTestHarness.js'
+import { makeOverview, makePlaybackV2 } from './playbackTestHarness.js'
 import { preloadBattleModels } from '../vehicle-models/runtime.js'
 import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'
 import { PLAYER_FADE_MS, PLAYER_HIDE_MS, PLAYER_SHOW_MS } from '../utils/labelLayout'
@@ -55,156 +55,28 @@ vi.mock('../vehicle-portraits/runtime.js', () => ({
   loadVehiclePortrait: vi.fn(async (tankId) => tankId === 2 ? '/portraits/2.webp' : null),
 }))
 
-// legacy overview.playback → V2 BattlePlaybackDataset 转换（让 legacy 数据语义仍能驱动 V2-only 组件）。
-function legacyPlaybackToV2Dataset(overview) {
-  const playback = overview && overview.playback
-  if (!playback) return makePlaybackV2()
-  // 坐标来自 overview.routes[].points（accountId 对账），positionIntervals 提供 OBSERVED 段包络
-  const pointsByAccount = new Map((overview.routes || []).map(r => [r.accountId, r.points || []]))
-  const vehicles = (playback.vehicles || []).map(v => {
-    const hpSamples = v.hpSamples || []
-    const maxCap = hpSamples.reduce((m, s) => (s.hp > m ? s.hp : m), 0)
-    let healthTransitions = hpSamples.map(s => ({
-      timeSec: s.timeSec, currentHp: s.hp,
-      knowledge: coveredAt(v.positionIntervals, s.timeSec) ? 'CURRENT' : 'LAST_KNOWN',
-      displayCapacityHp: maxCap > 0 ? maxCap : null, source: 'EXACT_BATTLE_EVENT',
-    }))
-    // Test-only synthetic canonicalization for historical hpLoss-only fixtures.
-    // Production V2 never reconstructs health from hpLosses.
-    if (healthTransitions.length === 0 && Array.isArray(v.hpLosses) && v.hpLosses.length > 0) {
-      let currentHp = 1000
-      healthTransitions = [{
-        timeSec: 0, currentHp, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT',
-      }]
-      for (const loss of [...v.hpLosses].sort((a, b) => a.toSec - b.toSec)) {
-        if (!Number.isFinite(loss?.toSec) || !Number.isFinite(loss?.hpLoss)) continue
-        currentHp = Math.max(0, currentHp - loss.hpLoss)
-        healthTransitions.push({
-          timeSec: loss.toSec, currentHp, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT',
-        })
-      }
-    }
-    const lifeTransitions = []
-    if (v.deathSec != null) {
-      lifeTransitions.push({ timeSec: v.deathSec, lifeState: 'DESTROYED', destroyedKnownAtSec: v.deathSec })
-    }
-    const pts = pointsByAccount.get(v.accountId) || []
-    const posSegs = (v.positionIntervals || []).map(iv => {
-      const inRange = pts.filter(p => p.timeSec >= iv.startSec - 1e-6 && p.timeSec <= iv.endSec + 1e-6)
-      const samples = inRange.length > 0
-        ? inRange.map(p => ({ timeSec: p.timeSec, x: p.x, y: p.y, knowledge: 'OBSERVED' }))
-        : [{ timeSec: iv.startSec, x: 0, y: 0, knowledge: 'OBSERVED' }]
-      return { knowledge: 'OBSERVED', startSec: iv.startSec, endSec: iv.endSec, samples }
-    })
-    const orientSegs = (v.directionSamples || []).length > 0 ? [{
-      knowledge: 'CURRENT', startSec: (v.directionSamples[0] || {}).timeSec ?? 0,
-      endSec: (v.directionSamples[v.directionSamples.length - 1] || {}).timeSec ?? 0,
-      samples: v.directionSamples.map(s => ({ timeSec: s.timeSec, hullYawDeg: s.hullYawDeg, turretRelativeYawDeg: s.turretRelativeYawDeg })),
-    }] : []
-    return {
-      accountId: v.accountId, playerName: v.playerName, tankId: v.tankId,
-      tankName: v.tankName, tankClass: '', team: v.team, friendly: v.team === 1,
-      loadout: null, positionSegments: posSegs, orientationSegments: orientSegs,
-      healthTransitions, lifeTransitions,
-      consumableTransitions: [], moduleCrewTransitions: [],
-    }
-  })
-  const events = (playback.events || []).map(e => ({
-    type: e.type, timeSec: e.timeSec, accountId: e.accountId ?? null,
-    targetAccountId: e.targetAccountId ?? null, observedHpLoss: e.observedHpLoss ?? null,
-  })).sort((a, b) => a.timeSec - b.timeSec)
-  // Test-only legacy fixture bridge: turn explicitly supplied hpLoss evidence
-  // into canonical DAMAGE events. Production BattlePlayback never reads this
-  // legacy field; the fixture remains useful while the broad matrix migrates.
-  for (const vehicle of playback.vehicles || []) {
-    for (const loss of vehicle.hpLosses || []) {
-      if (!Number.isFinite(loss?.toSec) || !Number.isFinite(loss?.hpLoss)) continue
-      const existing = events.find(event => event.type === 'DAMAGE'
-        && event.timeSec === loss.toSec && event.targetAccountId === vehicle.accountId
-        && event.accountId === (loss.attackerAccountId ?? null))
-      const observedHpLoss = loss.attackerReliable === true && loss.attackerAccountId != null
-        ? loss.hpLoss : null
-      if (existing && observedHpLoss != null) {
-        existing.observedHpLoss = observedHpLoss
-      } else {
-        events.push({
-          type: 'DAMAGE',
-          timeSec: loss.toSec,
-          accountId: loss.attackerAccountId ?? null,
-          targetAccountId: vehicle.accountId,
-          observedHpLoss,
-        })
-      }
-    }
-  }
-  events.sort((a, b) => a.timeSec - b.timeSec)
-  return { durationSec: playback.durationSec, vehicles, events,
-    shots: [], pointsSamples: playback.pointsSamples || [], limitations: [] }
-}
-
-function coveredAt(intervals, t) {
-  return (intervals || []).some(iv => t >= iv.startSec - 1e-6 && t <= iv.endSec + 1e-6)
-}
-
 function mountPlayback(overview = makeOverview(), seekTo = null, dataset = undefined) {
-  const finalDataset = dataset === undefined ? legacyPlaybackToV2Dataset(overview) : dataset
+  const finalDataset = dataset === undefined ? makePlaybackV2() : dataset
   return mount(BattlePlayback, {
     props: { overview, seekTo, playbackV2: finalDataset },
     global: { mocks: { $t: i18n.t } }
   })
 }
 
-function makePlaybackV2() {
-  return {
-    durationSec: 60,
-    events: [
-      { type: 'POSITION_REPORTED', timeSec: 10, accountId: 2001, targetAccountId: null, observedHpLoss: null },
-      { type: 'DAMAGE', timeSec: 12, accountId: 1001, targetAccountId: 2001, observedHpLoss: 400 },
-      { type: 'POSITION_STALE', timeSec: 20, accountId: 2001, targetAccountId: null, observedHpLoss: null },
-    ],
-    vehicles: [
-      {
-        accountId: 1001, playerName: 'You', tankId: 1, tankName: 'Maus', tankClass: '', team: 1, friendly: true,
-        loadout: null,
-        positionSegments: [
-          { knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 0, endSec: 60,
-            samples: [{ timeSec: 0, x: 0, y: 0, knowledge: 'OBSERVED' }, { timeSec: 60, x: 60, y: 60, knowledge: 'OBSERVED' }] },
-        ],
-        orientationSegments: [
-          { knowledge: 'CURRENT', startSec: 0, endSec: 60,
-            samples: [{ timeSec: 0, hullYawDeg: 0, turretRelativeYawDeg: 0, knowledge: 'CURRENT' }, { timeSec: 60, hullYawDeg: 90, turretRelativeYawDeg: 30, knowledge: 'CURRENT' }] },
-        ],
-        healthTransitions: [{ timeSec: 0, currentHp: 1500, knowledge: 'CURRENT', displayCapacityHp: 1500, source: 'EXACT_BATTLE_EVENT' }],
-        lifeTransitions: [],
-        consumableTransitions: [],
-        moduleCrewTransitions: [],
-      },
-      {
-        accountId: 2001, playerName: 'EnemyA', tankId: 2, tankName: 'T49', tankClass: '', team: 2, friendly: false,
-        loadout: null,
-        positionSegments: [
-          { knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 10, endSec: 20,
-            samples: [{ timeSec: 10, x: -50, y: -50, knowledge: 'OBSERVED' }, { timeSec: 20, x: -60, y: -60, knowledge: 'OBSERVED' }] },
-        ],
-        orientationSegments: [
-          { knowledge: 'CURRENT', startSec: 10, endSec: 20,
-            samples: [{ timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5, knowledge: 'CURRENT' }, { timeSec: 20, hullYawDeg: 30, turretRelativeYawDeg: 20, knowledge: 'CURRENT' }] },
-        ],
-        healthTransitions: [
-          { timeSec: 0, currentHp: 1200, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },
-          { timeSec: 12, currentHp: 800, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },
-        ],
-        lifeTransitions: [{ timeSec: 25, lifeState: 'DESTROYED', destroyedKnownAtSec: 25 }],
-        consumableTransitions: [],
-        moduleCrewTransitions: [],
-      },
-      { accountId: 2002, playerName: 'NeverSeen', tankId: 3, team: 2, friendly: false,
-        loadout: null, positionSegments: [], orientationSegments: [], healthTransitions: [], lifeTransitions: [],
-        consumableTransitions: [], moduleCrewTransitions: [] },
-    ],
-    shots: [],
-    pointsSamples: [],
-  }
+function trackOf(dataset, accountId) {
+  return dataset.vehicles.find((vehicle) => vehicle.accountId === accountId)
+}
+
+function setPositionSamples(dataset, accountId, samples, startSec = samples[0]?.timeSec ?? 0, endSec = samples.at(-1)?.timeSec ?? startSec) {
+  trackOf(dataset, accountId).positionSegments = [{
+    knowledge: 'OBSERVED', startSec, endSec, interpolationAllowed: true, samples,
+  }]
+}
+
+function setLife(dataset, accountId, timeSec) {
+  trackOf(dataset, accountId).lifeTransitions = [{
+    timeSec, lifeState: 'DESTROYED', destroyedKnownAtSec: timeSec,
+  }]
 }
 
 let rafCb
@@ -324,9 +196,9 @@ describe('BattlePlayback', () => {
     ds.vehicles[1].positionSegments = [
       { knowledge: 'OBSERVED', startSec: 10, endSec: 20,
         samples: [
-          { timeSec: 10, x: -50, y: -50, knowledge: 'OBSERVED' },
-          { timeSec: 14, x: -90, y: -90, knowledge: 'OBSERVED' },
-          { timeSec: 20, x: -100, y: -100, knowledge: 'OBSERVED' },
+          { timeSec: 10, x: -50, y: -50 },
+          { timeSec: 14, x: -90, y: -90 },
+          { timeSec: 20, x: -100, y: -100 },
         ] },
     ]
     return { overview, ds }
@@ -334,7 +206,7 @@ describe('BattlePlayback', () => {
 
   it('gap vehicles stay at the faded last-known position instead of disappearing', async () => {
     stubRaf()
-    // t=25 超出 positionIntervals [10,20]：位置流未覆盖 → 真实 gap，淡化停驻
+    // t=25 超出 observed position segment [10,20]：位置流未覆盖 → 真实 gap，淡化停驻
     const { overview, ds } = gapOverview()
     const wrapper = mountPlayback(overview, 25, ds)
     await flushPromises()
@@ -385,7 +257,7 @@ describe('BattlePlayback', () => {
 
   it('covered vehicles are not faded even when sampled route points have a >5s gap (position stream coverage)', async () => {
     stubRaf()
-    // t=20 落在 positionIntervals [10,20] 内（位置上报中）但 route 采样点 14→40 gap>5s：
+    // t=20 落在 observed position segment [10,20] 内（位置上报中）但 route 采样点 14→40 gap>5s：
     // 不得因 live=null 误判 lastKnown（修复「位置流覆盖却半透明」）
     const { overview, ds } = gapOverview()
     const wrapper = mountPlayback(overview, 20, ds)
@@ -398,18 +270,16 @@ describe('BattlePlayback', () => {
   it('re-reported enemies restore opacity in the second coverage interval (position coverage gap → resume)', async () => {
     stubRaf()
     const overview = makeOverview()
+    const ds = makePlaybackV2()
+    trackOf(ds, 2001).lifeTransitions = []
     // EnemyA：10–20 覆盖 → 位置流中断（gap）→ 40–60 再覆盖（两段区间）；t=50 在第二段区间内
-    overview.playback.vehicles[1].positionIntervals = [
-      { startSec: 10, endSec: 20 },
-      { startSec: 40, endSec: 60 }
+    trackOf(ds, 2001).positionSegments = [
+      { knowledge: 'OBSERVED', startSec: 10, endSec: 20, interpolationAllowed: true,
+        samples: [{ x: -50, y: -50, timeSec: 10 }, { x: -100, y: -100, timeSec: 14 }] },
+      { knowledge: 'OBSERVED', startSec: 40, endSec: 60, interpolationAllowed: true,
+        samples: [{ x: -200, y: -200, timeSec: 40 }, { x: -250, y: -250, timeSec: 50 }] },
     ]
-    overview.routes[1].points = [
-      { x: -50, y: -50, timeSec: 10 },
-      { x: -100, y: -100, timeSec: 14 },
-      { x: -200, y: -200, timeSec: 40 },
-      { x: -250, y: -250, timeSec: 50 }
-    ]
-    const wrapper = mountPlayback(overview, 50)
+    const wrapper = mountPlayback(overview, 50, ds)
     await flushPromises()
     const enemy = wrapper.find('[data-test="pb-marker-2001"]')
     expect(enemy.exists()).toBe(true)
@@ -427,18 +297,22 @@ describe('BattlePlayback', () => {
 describe('destroyed markers (symmetric contract)', () => {
   function destroyedOverview() {
     const overview = makeOverview()
-    overview.playback.vehicles[0].deathSec = 30
-    overview.playback.vehicles[1].deathSec = 30
-    overview.playback.vehicles[1].directionSamples = []
-    overview.playback.vehicles[1].positionIntervals = [{ startSec: 10, endSec: 40 }]
-    overview.routes[0].points.push({ x: 200, y: 200, timeSec: 40 })
-    overview.routes[1].points.push({ x: -300, y: -300, timeSec: 40 })
-    return overview
+    const ds = makePlaybackV2()
+    setLife(ds, 1001, 30)
+    setLife(ds, 2001, 30)
+    trackOf(ds, 2001).orientationSegments = []
+    trackOf(ds, 1001).orientationSegments = [{ knowledge: 'CURRENT', startSec: 10, endSec: 14,
+      samples: [{ timeSec: 10, hullYawDeg: 0, turretRelativeYawDeg: 0 },
+        { timeSec: 14, hullYawDeg: 90, turretRelativeYawDeg: 30 }] }]
+    setPositionSamples(ds, 2001, [{ x: -50, y: -50, timeSec: 10 }, { x: -300, y: -300, timeSec: 40 }], 10, 40)
+    setPositionSamples(ds, 1001, [{ x: 0, y: 0, timeSec: 0 }, { x: 200, y: 200, timeSec: 40 }], 0, 60)
+    return { overview, ds }
   }
 
   it('friendly and enemy destroyed markers share the same structure at the same timestamp', async () => {
     stubRaf()
-    const wrapper = mountPlayback(destroyedOverview(), 40)
+    const { overview, ds } = destroyedOverview()
+    const wrapper = mountPlayback(overview, 40, ds)
     await flushPromises()
     const friendly = wrapper.find('[data-test="pb-marker-1001"]')
     const enemy = wrapper.find('[data-test="pb-marker-2001"]')
@@ -458,7 +332,8 @@ describe('destroyed markers (symmetric contract)', () => {
 
   it('destroyed vehicles freeze at the last trusted pose and stay two-layer without direction samples', async () => {
     stubRaf()
-    const wrapper = mountPlayback(destroyedOverview(), 40)
+    const { overview, ds } = destroyedOverview()
+    const wrapper = mountPlayback(overview, 40, ds)
     await flushPromises()
     const friendly = wrapper.find('[data-test="pb-marker-1001"]')
     // 友方方向冻结在最后可信样本（hull 90°、turret world 120°），不随当前时间继续旋转
@@ -473,7 +348,8 @@ describe('destroyed markers (symmetric contract)', () => {
 
   it('destroyed + selected：selected 走克制变体（destroyed > selected，仍可辨认）；✕ 覆盖车体中心', async () => {
     stubRaf()
-    const wrapper = mountPlayback(destroyedOverview(), 40)
+    const { overview, ds } = destroyedOverview()
+    const wrapper = mountPlayback(overview, 40, ds)
     await flushPromises()
     const friendly = wrapper.find('[data-test="pb-marker-1001"]')
     await friendly.trigger('click')
@@ -497,19 +373,19 @@ describe('PR2 — Tier X dedicated models in Battle Playback', () => {
   }
   const hoRiModel = { kind: 'turretless', hullSrc: '/vm/ho-ri/hull.webp', turretSrc: null, turretPivot: null, turretRaster: null }
 
-  function overviewWithTank(tankId, tankName, team = 1) {
+  function overviewWithTank(tankId, tankName) {
     const overview = makeOverview()
-    overview.playback.vehicles = [
-      {
-        accountId: 1001, playerName: 'You', tankId, tankName, team,
-        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null,
-        directionSamples: [
-          { timeSec: 10, hullYawDeg: 0, turretRelativeYawDeg: 0 },
-          { timeSec: 14, hullYawDeg: 90, turretRelativeYawDeg: 30 },
-        ],
-      },
-    ]
-    return overview
+    const ds = makePlaybackV2()
+    ds.vehicles = [trackOf(ds, 1001)]
+    ds.vehicles[0] = {
+      ...ds.vehicles[0], accountId: 1001, playerName: 'You', tankId, tankName,
+      positionSegments: [{ knowledge: 'OBSERVED', startSec: 0, endSec: 60, interpolationAllowed: true,
+        samples: [{ timeSec: 10, x: 0, y: 0 }, { timeSec: 14, x: 50, y: 50 }] }],
+      orientationSegments: [{ knowledge: 'CURRENT', startSec: 10, endSec: 14,
+        samples: [{ timeSec: 10, hullYawDeg: 0, turretRelativeYawDeg: 0 },
+          { timeSec: 14, hullYawDeg: 90, turretRelativeYawDeg: 30 }] }],
+    }
+    return { overview, ds }
   }
 
   afterEach(() => {
@@ -519,13 +395,13 @@ describe('PR2 — Tier X dedicated models in Battle Playback', () => {
 
   it('Tier X turreted：渲染 dedicated hull + turret assembly（嵌套 transform），非 generic', async () => {
     stubRaf()
-    const overview = overviewWithTank(6929, 'Maus')
+    const { overview, ds } = overviewWithTank(6929, 'Maus')
     vi.mocked(preloadBattleModels).mockResolvedValue({
       resolved: new Map([['maus', mausModel]]),
       failed: new Set(),
       byTank: new Map([['6929', 'maus']]),
     })
-    const wrapper = mountPlayback(overview, 12)
+    const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     const marker = wrapper.find('[data-test="pb-marker-1001"]')
     expect(marker.exists()).toBe(true)
@@ -544,13 +420,13 @@ describe('PR2 — Tier X dedicated models in Battle Playback', () => {
 
   it('preload 失败 modelKey → 单车 generic fallback（不整场 fallback）', async () => {
     stubRaf()
-    const overview = overviewWithTank(6929, 'Maus')
+    const { overview, ds } = overviewWithTank(6929, 'Maus')
     vi.mocked(preloadBattleModels).mockResolvedValue({
       resolved: new Map(),
       failed: new Set(['maus']),
       byTank: new Map([['6929', 'maus']]),
     })
-    const wrapper = mountPlayback(overview, 12)
+    const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     const marker = wrapper.find('[data-test="pb-marker-1001"]')
     expect(marker.find('.pb-hull').exists()).toBe(true) // generic 双层
@@ -561,13 +437,13 @@ describe('PR2 — Tier X dedicated models in Battle Playback', () => {
 
   it('Tier X turretless：仅 dedicated hull，无 fake turret layer（§14）', async () => {
     stubRaf()
-    const overview = overviewWithTank(3937, 'Ho-Ri')
+    const { overview, ds } = overviewWithTank(3937, 'Ho-Ri')
     vi.mocked(preloadBattleModels).mockResolvedValue({
       resolved: new Map([['ho-ri', hoRiModel]]),
       failed: new Set(),
       byTank: new Map([['3937', 'ho-ri']]),
     })
-    const wrapper = mountPlayback(overview, 12)
+    const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     const marker = wrapper.find('[data-test="pb-marker-1001"]')
     expect(marker.find('.pb-hull-dedicated').exists()).toBe(true)
@@ -621,11 +497,13 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     let fakeNow = 0
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
     const overview = makeOverview()
+    const ds = makePlaybackV2()
+    trackOf(ds, 2001).lifeTransitions = []
     // 两车同位 → 标签必然冲突（player 名够长保证与对方 tank 盒重叠）
-    overview.routes[0].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
-    overview.routes[1].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
-    overview.playback.vehicles[1].playerName = 'VeryLongEnemyPlayerNameCollisionTest'
-    const wrapper = mountPlayback(overview, 12)
+    setPositionSamples(ds, 1001, [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }], 0, 60)
+    setPositionSamples(ds, 2001, [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }], 0, 60)
+    trackOf(ds, 2001).playerName = 'VeryLongEnemyPlayerNameCollisionTest'
+    const wrapper = mountPlayback(overview, 12, ds)
     Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
     await flushPromises()
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
@@ -650,12 +528,12 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
   it('§37 重叠 hitbox 选中：点击坐标靠近 B → 选中 B（即使点在 A 的按钮上）', async () => {
     stubRaf()
     const overview = makeOverview()
+    const ds = makePlaybackV2()
     // A 中心 content x=100（map -225），B 中心 content x=90（map -232.5），y 相同
     // A 按钮盒 x∈[82,118]，A hitbox x∈[83.8,116.2]，B hitbox x∈[73.8,106.2] → 点击 x=84 两盒都命中
-    overview.routes[0].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
-    overview.routes[1].points = [{ x: -232.5, y: -204.2, timeSec: 10 }, { x: -232.5, y: -204.2, timeSec: 14 }]
-    overview.playback.vehicles[1].positionIntervals = [{ startSec: 0, endSec: 60 }]
-    const wrapper = mountPlayback(overview, 12)
+    setPositionSamples(ds, 1001, [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }], 0, 60)
+    setPositionSamples(ds, 2001, [{ x: -232.5, y: -204.2, timeSec: 10 }, { x: -232.5, y: -204.2, timeSec: 14 }], 0, 60)
+    const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
     const aBtn = wrapper.find('[data-test="pb-marker-1001"]')
@@ -709,14 +587,15 @@ describe('PR4 §33 B3 — hysteresis 使用 UI wall clock（暂停不冻结；fa
   /** 两车同位（t=12 恒冲突）的 overview；2001 玩家名足够长。 */
   function overlapOverview() {
     const overview = makeOverview()
-    overview.routes[0].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
-    overview.routes[1].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
-    overview.playback.vehicles[1].playerName = 'VeryLongEnemyPlayerNameCollisionTest'
-    return overview
+    const ds = makePlaybackV2()
+    setPositionSamples(ds, 1001, [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }], 0, 60)
+    setPositionSamples(ds, 2001, [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }], 0, 60)
+    trackOf(ds, 2001).playerName = 'VeryLongEnemyPlayerNameCollisionTest'
+    return { overview, ds }
   }
 
-  function mountWithPlayer(overview, seekTo) {
-    const w = mountPlayback(overview, seekTo)
+  function mountWithPlayer({ overview, ds }, seekTo) {
+    const w = mountPlayback(overview, seekTo, ds)
     Object.defineProperty(w.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
     return w
   }
@@ -749,17 +628,17 @@ describe('PR4 §33 B3 — hysteresis 使用 UI wall clock（暂停不冻结；fa
     stubRaf()
     let fakeNow = 60_000
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
-    const overview = overlapOverview()
+    const { overview, ds } = overlapOverview()
     // t≤12 同位冲突；t=13.8 两车分离（线性插值）
-    overview.routes[0].points = [
+    setPositionSamples(ds, 1001, [
       { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
       { x: -300, y: -260, timeSec: 14 },
-    ]
-    overview.routes[1].points = [
+    ], 0, 60)
+    setPositionSamples(ds, 2001, [
       { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
       { x: 300, y: 260, timeSec: 14 },
-    ]
-    const wrapper = mountWithPlayer(overview, 11)
+    ], 0, 60)
+    const wrapper = mountWithPlayer({ overview, ds }, 11)
     await flushPromises()
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await flushPromises()
@@ -784,16 +663,16 @@ describe('PR4 §33 B3 — hysteresis 使用 UI wall clock（暂停不冻结；fa
     stubRaf()
     let fakeNow = 70_000
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
-    const overview = overlapOverview()
-    overview.routes[0].points = [
+    const { overview, ds } = overlapOverview()
+    setPositionSamples(ds, 1001, [
       { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
       { x: -300, y: -260, timeSec: 14 },
-    ]
-    overview.routes[1].points = [
+    ], 0, 60)
+    setPositionSamples(ds, 2001, [
       { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
       { x: 300, y: 260, timeSec: 14 },
-    ]
-    const wrapper = mountWithPlayer(overview, 11)
+    ], 0, 60)
+    const wrapper = mountWithPlayer({ overview, ds }, 11)
     await flushPromises()
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await flushPromises()
@@ -871,17 +750,17 @@ describe('PR4 §33 B3 — hysteresis 使用 UI wall clock（暂停不冻结；fa
     stubRaf()
     let fakeNow = 91_000
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
-    const overview = overlapOverview()
+    const { overview, ds } = overlapOverview()
     // 前段同位冲突，后段分离：seek 到分离段解除冲突
-    overview.routes[0].points = [
+    setPositionSamples(ds, 1001, [
       { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
       { x: -300, y: -260, timeSec: 14 },
-    ]
-    overview.routes[1].points = [
+    ], 0, 60)
+    setPositionSamples(ds, 2001, [
       { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
       { x: 300, y: 260, timeSec: 14 },
-    ]
-    const wrapper = mountWithPlayer(overview, 11)
+    ], 0, 60)
+    const wrapper = mountWithPlayer({ overview, ds }, 11)
     await flushPromises()
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await flushPromises()
@@ -911,17 +790,17 @@ describe('PR4 §33 B3 — hysteresis 使用 UI wall clock（暂停不冻结；fa
     stubRaf()
     let fakeNow = 92_000
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
-    const overview = overlapOverview()
+    const { overview, ds } = overlapOverview()
     // 前段同位冲突，后段分离：seek 到分离段解除冲突（保持 showPlayer on，player 元素恒存在）
-    overview.routes[0].points = [
+    setPositionSamples(ds, 1001, [
       { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
       { x: -300, y: -260, timeSec: 14 },
-    ]
-    overview.routes[1].points = [
+    ], 0, 60)
+    setPositionSamples(ds, 2001, [
       { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
       { x: 300, y: 260, timeSec: 14 },
-    ]
-    const wrapper = mountWithPlayer(overview, 11)
+    ], 0, 60)
+    const wrapper = mountWithPlayer({ overview, ds }, 11)
     await flushPromises()
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await flushPromises()
@@ -1105,11 +984,12 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubRaf()
     const roCb = stubResizeObserver()
     const overview = makeOverview()
+    const ds = makePlaybackV2()
     // markerScreen 返回容器比例坐标（×W/766）：两车 Δx=20 地图单位 → 800 宽屏幕距 ≈26.6px
     // < 标签盒 30.4px → 冲突；1600 宽屏幕距 ≈53.3px > 30.4 → 无冲突（标签屏幕恒定）
-    overview.routes[0].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
-    overview.routes[1].points = [{ x: -205, y: -196.7, timeSec: 10 }, { x: -205, y: -196.7, timeSec: 14 }]
-    const wrapper = mountPlayback(overview, 12)
+    setPositionSamples(ds, 1001, [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }], 0, 60)
+    setPositionSamples(ds, 2001, [{ x: -205, y: -196.7, timeSec: 10 }, { x: -205, y: -196.7, timeSec: 14 }], 0, 60)
+    const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     expect(roCb()).toBeTruthy() // RO 已挂载
     const mapEl = wrapper.find('[data-test="pb-map"]').element
@@ -1132,10 +1012,10 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubRaf()
     const roCb = stubResizeObserver()
     const overview = makeOverview()
-    overview.routes[0].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
-    overview.routes[1].points = [{ x: -232.5, y: -204.2, timeSec: 10 }, { x: -232.5, y: -204.2, timeSec: 14 }]
-    overview.playback.vehicles[1].positionIntervals = [{ startSec: 0, endSec: 60 }]
-    const wrapper = mountPlayback(overview, 12)
+    const ds = makePlaybackV2()
+    setPositionSamples(ds, 1001, [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }], 0, 60)
+    setPositionSamples(ds, 2001, [{ x: -232.5, y: -204.2, timeSec: 10 }, { x: -232.5, y: -204.2, timeSec: 14 }], 0, 60)
+    const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 1600, configurable: true })
     roCb()([{ contentRect: { width: 1600, height: 1600 } }])
@@ -1150,11 +1030,12 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubRaf()
     const roCb = stubResizeObserver()
     const overview = makeOverview()
+    const ds = makePlaybackV2()
     // 同位 → 任意尺寸/zoom 都冲突（screen 尺寸恒定）
-    overview.routes[0].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
-    overview.routes[1].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
-    overview.playback.vehicles[1].playerName = 'VeryLongEnemyPlayerNameCollisionTest'
-    const wrapper = mountPlayback(overview, 12)
+    setPositionSamples(ds, 1001, [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }], 0, 60)
+    setPositionSamples(ds, 2001, [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }], 0, 60)
+    trackOf(ds, 2001).playerName = 'VeryLongEnemyPlayerNameCollisionTest'
+    const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 1600, configurable: true })
     roCb()([{ contentRect: { width: 1600, height: 1600 } }])
@@ -1242,11 +1123,9 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
   it('§4.3 HP HUD 开关：默认开启、localStorage 持久化、关闭隐藏数字/bar/ghost', async () => {
     stubRaf()
     const overview = makeOverview()
-    overview.playback.vehicles[0].baseHp = 3000
-
-    overview.playback.vehicles[0].observedCapacityHp = 3000
-    overview.playback.vehicles[0].hpSamples = [{ timeSec: 0, hp: 3000 }]
-    const wrapper = mountPlayback(overview, 12)
+    const ds = makePlaybackV2()
+    ds.vehicles[0].healthTransitions = [{ timeSec: 0, currentHp: 3000, knowledge: 'CURRENT', displayCapacityHp: 3000, source: 'EXACT_BATTLE_EVENT' }]
+    const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     const toggle = wrapper.find('[data-test="pb-show-hp"]')
     expect(toggle.element.checked).toBe(true)
@@ -1258,7 +1137,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     expect(wrapper.findAll('.pb-vehicle')).toHaveLength(2)
     expect(JSON.parse(localStorage.getItem('wotb.pb.hp-prefs'))).toEqual({ showHp: false })
     // 重新挂载读取持久化
-    const w2 = mountPlayback(overview, 12)
+    const w2 = mountPlayback(overview, 12, ds)
     await flushPromises()
     expect(w2.find('[data-test="pb-show-hp"]').element.checked).toBe(false)
     expect(w2.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-hud"]').exists()).toBe(false)
@@ -1268,8 +1147,9 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     stubRaf()
     const clock = fakeClock()
     const overview = makeOverview()
+    const ds = makePlaybackV2()
     // EnemyA 位置流覆盖 [10,20]：事件时刻 12 覆盖 → 允许反馈
-    const wrapper = mountPlayback(overview, 11)
+    const wrapper = mountPlayback(overview, 11, ds)
     await flushPromises()
     // 无布局环境需提供地图宽度（floating 位置锚定 markerScreen）
     Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
@@ -1294,9 +1174,10 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     expect(wrapper.find('[data-test="pb-float-dmg"]').exists()).toBe(false)
     // 失察期间受击不跳伤害（事件时刻无位置流覆盖）
     const overview2 = makeOverview()
-    overview2.playback.vehicles[1].positionIntervals = [{ startSec: 10, endSec: 12 }]
-    overview2.playback.events.push({ type: 'DAMAGE', timeSec: 14, accountId: 1001, targetAccountId: 2001, rawProtocolValue: 500 })
-    const w2 = mountPlayback(overview2, 13)
+    const ds2 = makePlaybackV2()
+    setPositionSamples(ds2, 2001, [{ x: -50, y: -50, timeSec: 10 }, { x: -60, y: -60, timeSec: 12 }], 10, 12)
+    ds2.vehicles[1].damageLosses = [{ fromSec: 13, toSec: 14, hpLoss: 500, fromHp: 1200, toHp: 700, displayCapacityHp: 1200, transientAllowed: false, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }]
+    const w2 = mountPlayback(overview2, 13, ds2)
     await flushPromises()
     Object.defineProperty(w2.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
     await w2.find('[data-test="pb-play"]').trigger('click')
@@ -1308,19 +1189,60 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     expect(w2.find('[data-test="pb-float-dmg"]').exists()).toBe(false)
   })
 
+  it('hidden AoI DamageLoss keeps canonical stats/log but suppresses all transient feedback', async () => {
+    stubRaf()
+    const clock = fakeClock()
+    const overview = makeOverview()
+    const ds = makePlaybackV2()
+    ds.events = ds.events.filter((event) => event.type !== 'DAMAGE')
+    const enemy = trackOf(ds, 2001)
+    enemy.positionSegments = [
+      { knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 0, endSec: 20,
+        samples: [{ timeSec: 0, x: -50, y: -50 }, { timeSec: 20, x: -60, y: -60 }] },
+      { knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 40, endSec: 60,
+        samples: [{ timeSec: 40, x: -100, y: -100 }, { timeSec: 60, x: -120, y: -120 }] },
+    ]
+    enemy.healthTransitions = [
+      { timeSec: 0, currentHp: 2000, knowledge: 'CURRENT', displayCapacityHp: 2000, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' },
+      { timeSec: 42, currentHp: 1500, knowledge: 'CURRENT', displayCapacityHp: 2000, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' },
+    ]
+    enemy.damageLosses = [{
+      fromSec: 10, toSec: 42, hpLoss: 500,
+      fromHp: 2000, toHp: 1500, displayCapacityHp: 2000, transientAllowed: false,
+      attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1,
+    }]
+    const wrapper = mountPlayback(overview, 9, ds)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    clock.now = 100
+    rafCb(0)
+    clock.now = 34100
+    rafCb(34100) // t≈43：跨过完整 hidden-window loss，canonical facts remain visible
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="pb-float-dmg"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-marker-2001"] .pb-hp-ghost').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-marker-2001"] .pb-hp-flash').exists()).toBe(false)
+    const info = wrapper.find('[data-test="pb-info"]')
+    const dts = info.findAll('.pb-sb-grid dt')
+    const recordedIndex = dts.findIndex((dt) => dt.text() === 'recon.map.playback.damage_recorded')
+    expect(info.findAll('.pb-sb-grid dd')[recordedIndex].text()).toBe('500')
+    expect(info.findAll('.pb-sb-log-time').map((node) => node.text())).toEqual(['00:42'])
+  })
+
   it('§10.3/§11 HP transition：跨过 DAMAGE 产生 ghost（同阵营浅版）+ fill 立即到新值', async () => {
     stubRaf()
     fakeClock()
     const overview = makeOverview()
-    overview.playback.vehicles[1].baseHp = 2600
-
-    overview.playback.vehicles[1].observedCapacityHp = 2600
+    const ds = makePlaybackV2()
     // Blocker 3：ghost 需要 pct，而 pct 只在进场满血已证明（OBSERVED_EXACT）时存在——
     // 本测试用已证明 entryHp=2600 验证真实百分比 ghost/填充
-    overview.playback.vehicles[1].entryHpSource = 'OBSERVED_EXACT'
-    overview.playback.vehicles[1].entryHp = 2600
-    overview.playback.vehicles[1].hpSamples = [{ timeSec: 0, hp: 2600 }, { timeSec: 12, hp: 2200 }]
-    const wrapper = mountPlayback(overview, 11)
+    ds.vehicles[1].healthTransitions = [
+      { timeSec: 0, currentHp: 2600, knowledge: 'CURRENT', displayCapacityHp: 2600, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 12, currentHp: 2200, knowledge: 'CURRENT', displayCapacityHp: 2600, relativeFull: false, source: 'EXACT_BATTLE_EVENT' },
+    ]
+    const wrapper = mountPlayback(overview, 11, ds)
     await flushPromises()
     await wrapper.find('[data-test="pb-play"]').trigger('click')
     rafCb(0)
@@ -1335,10 +1257,11 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     stubRaf()
     fakeClock()
     const overview = makeOverview()
+    const ds = makePlaybackV2()
     for (let i = 0; i < 4; i++) {
-      overview.playback.events.push({ type: 'KILL', timeSec: 13 + i, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null })
+      ds.events.push({ type: 'KILL', timeSec: 13 + i, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null })
     }
-    const wrapper = mountPlayback(overview, 12)
+    const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     await wrapper.find('[data-test="pb-play"]').trigger('click')
     rafCb(0)
@@ -1358,14 +1281,14 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
   it('§8 detail sidebar：点击打开/切换、seek 保持选中、× 关闭、destroyed 可选', async () => {
     stubRaf()
     const overview = makeOverview()
-    const v = overview.playback.vehicles[1]
-    v.baseHp = 2600
-
-    v.observedCapacityHp = 2600
-    v.deathSec = 12
-    v.hpSamples = [{ timeSec: 0, hp: 2600 }, { timeSec: 12, hp: 0 }]
-    overview.playback.events.push({ type: 'DESTROYED', timeSec: 12, accountId: 2001, targetAccountId: null, rawProtocolValue: null })
-    const wrapper = mountPlayback(overview, 15)
+    const ds = makePlaybackV2()
+    ds.vehicles[1].healthTransitions = [
+      { timeSec: 0, currentHp: 2600, knowledge: 'CURRENT', displayCapacityHp: 2600, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 12, currentHp: 0, knowledge: 'CURRENT', displayCapacityHp: 2600, source: 'EXACT_BATTLE_EVENT' },
+    ]
+    setLife(ds, 2001, 12)
+    ds.events.push({ type: 'DESTROYED', timeSec: 12, accountId: 2001, targetAccountId: null, rawProtocolValue: null })
+    const wrapper = mountPlayback(overview, 15, ds)
     await flushPromises()
     // destroyed 车仍可选中
     await wrapper.find('[data-test="pb-marker-2001"]').trigger('click')
@@ -1409,16 +1332,12 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
   it('§8.4/§8.5/§9/§18/§20 sidebar：current-state only——无最终战绩分区、无协助伤害行、无最大HP/百分比', async () => {
     stubRaf()
     const overview = makeOverview()
-    overview.playback.vehicles[0].finalStats = {
-      damageDealt: 1000, damageReceived: 540, damageAssisted: 980, kills: 2,
-      nShots: 10, nHitsDealt: 7, nPenetrationsDealt: 5,
-      nHitsReceived: 3, nPenetrationsReceived: 2, damageBlocked: 300
-    }
-    overview.playback.vehicles[0].baseHp = 3000
-
-    overview.playback.vehicles[0].observedCapacityHp = 3000
-    overview.playback.vehicles[0].hpSamples = [{ timeSec: 0, hp: 3000 }, { timeSec: 12, hp: 2600 }]
-    const wrapper = mountPlayback(overview, 12)
+    const ds = makePlaybackV2()
+    ds.vehicles[0].healthTransitions = [
+      { timeSec: 0, currentHp: 3000, knowledge: 'CURRENT', displayCapacityHp: 3000, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 12, currentHp: 2600, knowledge: 'CURRENT', displayCapacityHp: 3000, source: 'EXACT_BATTLE_EVENT' },
+    ]
+    const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
     const info = wrapper.find('[data-test="pb-info"]')
@@ -1433,7 +1352,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     expect(info.text()).not.toContain('1000')
     expect(info.text()).not.toContain('980')
     expect(info.text()).not.toContain('70%')
-    // 当前统计（t=12：1001 造成的 400 已发生，来自 2001 的 hpLosses attribution）
+    // 当前统计（t=12：1001 造成的 400 已发生，来自 2001 的 damageLosses attribution）
     expect(info.text()).toContain('400')
   })
 
@@ -1441,10 +1360,11 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     stubRaf()
     const overview = makeOverview()
     // 2002 攻击 1001（hpLoss 540），但 2002 无位置流覆盖 → 来源未知
-    overview.playback.vehicles[0].hpLosses = [
-      { fromSec: 14, toSec: 15, hpLoss: 540, attackerAccountId: 2002, attackerReliable: true },
+    const ds = makePlaybackV2()
+    ds.vehicles[0].damageLosses = [
+      { fromSec: 14, toSec: 15, hpLoss: 540, attackerAccountId: 2002, attackerReliable: true, damageEventCount: 1 },
     ]
-    const wrapper = mountPlayback(overview, 16)
+    const wrapper = mountPlayback(overview, 16, ds)
     await flushPromises()
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
     const info = wrapper.find('[data-test="pb-info"]')
@@ -1452,10 +1372,11 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     expect(info.text()).toContain('540')
     // 可见攻击者（2001 覆盖）→ 显示玩家名
     const overview2 = makeOverview()
-    overview2.playback.vehicles[0].hpLosses = [
-      { fromSec: 14, toSec: 15, hpLoss: 200, attackerAccountId: 2001, attackerReliable: true },
+    const ds2 = makePlaybackV2()
+    ds2.vehicles[0].damageLosses = [
+      { fromSec: 14, toSec: 15, hpLoss: 200, attackerAccountId: 2001, attackerReliable: true, damageEventCount: 1 },
     ]
-    const w2 = mountPlayback(overview2, 16)
+    const w2 = mountPlayback(overview2, 16, ds2)
     await flushPromises()
     await w2.find('[data-test="pb-marker-1001"]').trigger('click')
     expect(w2.find('[data-test="pb-info"]').text()).toContain('EnemyA')
@@ -1500,15 +1421,16 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
   it('B1-1 typeFilter：关闭 DAMAGE/KILL checkbox 后 deterministic stats 完全不变', async () => {
     stubRaf()
     const overview = makeOverview()
-    overview.playback.events.push(
+    const ds = makePlaybackV2()
+    ds.events.push(
       { type: 'DAMAGE', timeSec: 14, accountId: 2001, targetAccountId: 1001, rawProtocolValue: 200, observedHpLoss: 200 },
       { type: 'KILL', timeSec: 16, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null, observedHpLoss: null }
     )
     // 1001 受击 hpLoss（received）；2001 的 400（fixture dealt）保持
-    overview.playback.vehicles[0].hpLosses = [
-      { fromSec: 12, toSec: 14, hpLoss: 200, attackerAccountId: 2001, attackerReliable: true },
+    ds.vehicles[0].damageLosses = [
+      { fromSec: 12, toSec: 14, hpLoss: 200, attackerAccountId: 2001, attackerReliable: true, damageEventCount: 1 },
     ]
-    const wrapper = mountPlayback(overview, 18)
+    const wrapper = mountPlayback(overview, 18, ds)
     await flushPromises()
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
     let info = wrapper.find('[data-test="pb-info"]')
@@ -1538,11 +1460,13 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     // recorder scope（arenaBonusType=1 + recorderAccountId=1001）：2001→2002 双方均非 recorder
     // → presentation 过滤；但选中 2001 的 dealt 必须计入（authoritative 全量事件）
     const overview = makeOverview()
-    overview.playback.events.push({ type: 'DAMAGE', timeSec: 15, accountId: 2001, targetAccountId: 2002, rawProtocolValue: 300 })
-    overview.playback.vehicles[2].hpLosses = [
-      { fromSec: 14, toSec: 15, hpLoss: 300, attackerAccountId: 2001, attackerReliable: true },
+    const ds = makePlaybackV2()
+    ds.arenaBonusType = 1
+    ds.events.push({ type: 'DAMAGE', timeSec: 15, accountId: 2001, targetAccountId: 2002, rawProtocolValue: 300 })
+    ds.vehicles[2].damageLosses = [
+      { fromSec: 14, toSec: 15, hpLoss: 300, attackerAccountId: 2001, attackerReliable: true, damageEventCount: 1 },
     ]
-    const wrapper = mountPlayback(overview, 16)
+    const wrapper = mountPlayback(overview, 16, ds)
     await flushPromises()
     await wrapper.find('[data-test="pb-marker-2001"]').trigger('click')
     let info = wrapper.find('[data-test="pb-info"]')
@@ -1552,12 +1476,13 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     expect(titles.some((s) => s.includes('00:15'))).toBe(false)
     // team scope（arenaBonusType=2）：2001→2002 双方均非 friendly team → presentation 过滤，stats 仍计入
     const overview2 = makeOverview()
-    overview2.arenaBonusType = 2
-    overview2.playback.events.push({ type: 'DAMAGE', timeSec: 15, accountId: 2001, targetAccountId: 2002, rawProtocolValue: 300 })
-    overview2.playback.vehicles[2].hpLosses = [
-      { fromSec: 14, toSec: 15, hpLoss: 300, attackerAccountId: 2001, attackerReliable: true },
+    const ds2 = makePlaybackV2()
+    ds2.arenaBonusType = 2
+    ds2.events.push({ type: 'DAMAGE', timeSec: 15, accountId: 2001, targetAccountId: 2002, rawProtocolValue: 300 })
+    ds2.vehicles[2].damageLosses = [
+      { fromSec: 14, toSec: 15, hpLoss: 300, attackerAccountId: 2001, attackerReliable: true, damageEventCount: 1 },
     ]
-    const w2 = mountPlayback(overview2, 16)
+    const w2 = mountPlayback(overview2, 16, ds2)
     await flushPromises()
     await w2.find('[data-test="pb-marker-2001"]').trigger('click')
     info = w2.find('[data-test="pb-info"]')
@@ -1570,8 +1495,9 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     stubRaf()
     const clock = fakeClock()
     const overview = makeOverview()
-    overview.playback.events.push({ type: 'KILL', timeSec: 16, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null })
-    const wrapper = mountPlayback(overview, 11)
+    const ds = makePlaybackV2()
+    ds.events.push({ type: 'KILL', timeSec: 16, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null })
+    const wrapper = mountPlayback(overview, 11, ds)
     await flushPromises()
     Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
     // 关闭 DAMAGE 与 KILL 的事件列表 checkbox
@@ -1593,19 +1519,22 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
   it('B1-2 damage log 无 future leak：只显示 <= currentTime 的事件，backward seek 后未来事件消失', async () => {
     stubRaf()
     const overview = makeOverview()
-    overview.playback.durationSec = 140
-    overview.playback.events = overview.playback.events.filter((e) => e.type !== 'DAMAGE')
-    overview.playback.vehicles[0].positionIntervals = [{ startSec: 0, endSec: 140 }]
-    overview.playback.vehicles[1].positionIntervals = [{ startSec: 0, endSec: 140 }]
-    overview.routes[1].points.push({ x: -100, y: -100, timeSec: 130 })
+    const ds = makePlaybackV2()
+    ds.durationSec = 140
+    ds.events = ds.events.filter((e) => e.type !== 'DAMAGE')
+    setPositionSamples(ds, 1001, [{ x: 0, y: 0, timeSec: 0 }, { x: 50, y: 50, timeSec: 140 }], 0, 140)
+    setPositionSamples(ds, 2001, [
+      { x: -50, y: -50, timeSec: 0 }, { x: -50, y: -50, timeSec: 10 },
+      { x: -60, y: -60, timeSec: 14 }, { x: -100, y: -100, timeSec: 130 },
+    ], 0, 140)
     for (const t of [20, 60, 120]) {
-      overview.playback.events.push({ type: 'DAMAGE', timeSec: t, accountId: 1001, targetAccountId: 2001, rawProtocolValue: 300, observedHpLoss: 300 })
+      ds.events.push({ type: 'DAMAGE', timeSec: t, accountId: 1001, targetAccountId: 2001, rawProtocolValue: 300, observedHpLoss: 300 })
     }
-    // 2001 的 hpLosses（1001 造成）：伤害记录与 dealt 统计的权威来源
-    overview.playback.vehicles[1].hpLosses = [20, 60, 120].map((t) => ({
-      fromSec: t - 1, toSec: t, hpLoss: 300, attackerAccountId: 1001, attackerReliable: true,
+    // 2001 的 damageLosses（1001 造成）：伤害记录与 dealt 统计的权威来源
+    ds.vehicles[1].damageLosses = [20, 60, 120].map((t) => ({
+      fromSec: t - 1, toSec: t, hpLoss: 300, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1,
     }))
-    const wrapper = mountPlayback(overview, 30)
+    const wrapper = mountPlayback(overview, 30, ds)
     await flushPromises()
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
     let info = wrapper.find('[data-test="pb-info"]')
@@ -1635,27 +1564,25 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
   it('B1-3 enemy last-known HP 冻结：HUD 与 sidebar 一致；恢复 coverage 跳到最新可信值；friendly 不受影响', async () => {
     stubRaf()
     const overview = makeOverview()
-    const enemy = overview.playback.vehicles[1]
-    enemy.baseHp = 3000
-
-    enemy.observedCapacityHp = 3000
-    enemy.positionIntervals = [{ startSec: 0, endSec: 20 }, { startSec: 40, endSec: 60 }]
-    enemy.hpSamples = [
-      { timeSec: 10, hp: 3000 },
-      { timeSec: 42, hp: 1700 }
+    const ds = makePlaybackV2()
+    trackOf(ds, 2001).lifeTransitions = []
+    setPositionSamples(ds, 2001, [{ x: -50, y: -50, timeSec: 0 }, { x: -60, y: -60, timeSec: 20 }], 0, 20)
+    trackOf(ds, 2001).positionSegments.push({ knowledge: 'OBSERVED', startSec: 40, endSec: 60, interpolationAllowed: true,
+      samples: [{ x: -100, y: -100, timeSec: 40 }, { x: -120, y: -120, timeSec: 60 }] })
+    trackOf(ds, 2001).healthTransitions = [
+      { timeSec: 10, currentHp: 3000, knowledge: 'CURRENT', displayCapacityHp: 3000, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 42, currentHp: 1700, knowledge: 'CURRENT', displayCapacityHp: 3000, source: 'EXACT_BATTLE_EVENT' },
     ]
     // friendly 同样处于 gap：证明 friendly 不被敌方冻结规则误伤（HP 正常更新）
-    const friendly = overview.playback.vehicles[0]
-    friendly.baseHp = 3000
-
-    friendly.observedCapacityHp = 3000
-    friendly.positionIntervals = [{ startSec: 0, endSec: 20 }, { startSec: 40, endSec: 60 }]
-    friendly.hpSamples = [
-      { timeSec: 0, hp: 3000 },
-      { timeSec: 30, hp: 2200 },
-      { timeSec: 42, hp: 1700 }
+    setPositionSamples(ds, 1001, [{ x: 0, y: 0, timeSec: 0 }, { x: 50, y: 50, timeSec: 20 }], 0, 20)
+    trackOf(ds, 1001).positionSegments.push({ knowledge: 'OBSERVED', startSec: 40, endSec: 60, interpolationAllowed: true,
+      samples: [{ x: 100, y: 100, timeSec: 40 }, { x: 120, y: 120, timeSec: 60 }] })
+    trackOf(ds, 1001).healthTransitions = [
+      { timeSec: 0, currentHp: 3000, knowledge: 'CURRENT', displayCapacityHp: 3000, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 30, currentHp: 2200, knowledge: 'CURRENT', displayCapacityHp: 3000, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 42, currentHp: 1700, knowledge: 'CURRENT', displayCapacityHp: 3000, source: 'EXACT_BATTLE_EVENT' },
     ]
-    const wrapper = mountPlayback(overview, 15)
+    const wrapper = mountPlayback(overview, 15, ds)
     await flushPromises()
     // t=15：覆盖期内正常
     expect(enemyHudNum(wrapper)).toBe('3000')
@@ -1699,14 +1626,20 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     stubRaf()
     const clock = fakeClock()
     const overview = makeOverview()
-    overview.playback.durationSec = 20
-    overview.routes[1].points.unshift({ x: -50, y: -50, timeSec: 0 })
-    overview.playback.events.push(
+    const ds = makePlaybackV2()
+    ds.durationSec = 20
+    setPositionSamples(ds, 2001, [
+      { x: -50, y: -50, timeSec: 0 }, { x: -50, y: -50, timeSec: 10 }, { x: -100, y: -100, timeSec: 14 },
+    ], 0, 20)
+    ds.events.push(
       { type: 'DAMAGE', timeSec: 19.8, accountId: 1001, targetAccountId: 2001, rawProtocolValue: 400, observedHpLoss: 400 },
       { type: 'DESTROYED', timeSec: 20, accountId: 2001, targetAccountId: null, rawProtocolValue: null },
       { type: 'KILL', timeSec: 20, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null }
     )
-    const wrapper = mountPlayback(overview, 19)
+    ds.vehicles[1].damageLosses.push(
+      { fromSec: 19, toSec: 19.8, hpLoss: 400, fromHp: 1200, toHp: 800, displayCapacityHp: 1200, transientAllowed: true, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }
+    )
+    const wrapper = mountPlayback(overview, 19, ds)
     await flushPromises()
     Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
     await wrapper.find('[data-test="pb-play"]').trigger('click')
@@ -1728,7 +1661,7 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     expect(wrapper.find('[data-test="pb-burst"]').exists()).toBe(false)
     expect(wrapper.findAll('.pb-feed-item')).toHaveLength(1) // feed 未重复，仍在自然存活
     // seek 直接到 20s：不补播（无 feedback）
-    const w2 = mountPlayback(overview, 20)
+    const w2 = mountPlayback(overview, 20, ds)
     await flushPromises()
     Object.defineProperty(w2.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
     expect(w2.find('[data-test="pb-float-dmg"]').exists()).toBe(false)
@@ -1740,20 +1673,25 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     stubRaf()
     const clock = fakeClock()
     const overview = makeOverview()
-    overview.playback.durationSec = 20
-    overview.routes[1].points.unshift({ x: -50, y: -50, timeSec: 0 })
-    overview.playback.events.push(
+    const ds = makePlaybackV2()
+    ds.durationSec = 20
+    setPositionSamples(ds, 2001, [
+      { x: -50, y: -50, timeSec: 0 }, { x: -50, y: -50, timeSec: 10 }, { x: -100, y: -100, timeSec: 14 },
+    ], 0, 20)
+    ds.events.push(
       { type: 'DAMAGE', timeSec: 19.8, accountId: 1001, targetAccountId: 2001, rawProtocolValue: 400, observedHpLoss: 400 },
       { type: 'DESTROYED', timeSec: 20, accountId: 2001, targetAccountId: null, rawProtocolValue: null },
       { type: 'KILL', timeSec: 20, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null }
     )
-    const ds = legacyPlaybackToV2Dataset(overview)
+    ds.vehicles[1].damageLosses.push(
+      { fromSec: 19, toSec: 19.8, hpLoss: 400, fromHp: 1200, toHp: 800, displayCapacityHp: 1200, transientAllowed: true, attackerAccountId: 1001, attackerReliable: true, damageEventCount: 1 }
+    )
     // 回绕到 t=0 后受害车（2001）必须仍有锚点：t=0 有真实位置上报，OBSERVED 段从 0 起。
     ds.vehicles[1].positionSegments = [{ knowledge: 'OBSERVED', startSec: 0, endSec: 20,
       samples: [
-        { timeSec: 0, x: -50, y: -50, knowledge: 'OBSERVED' },
-        { timeSec: 10, x: -50, y: -50, knowledge: 'OBSERVED' },
-        { timeSec: 14, x: -100, y: -100, knowledge: 'OBSERVED' },
+        { timeSec: 0, x: -50, y: -50 },
+        { timeSec: 10, x: -50, y: -50 },
+        { timeSec: 14, x: -100, y: -100 },
       ] }]
     const wrapper = mount(BattlePlayback, {
       props: { overview, seekTo: 19, loop: true, playbackV2: ds },
@@ -1801,6 +1739,7 @@ describe('V2 HP regression (restored critical coverage)', () => {
   it('无 health evidence 的己方队伍保持 relative-full presentation；敌方仍 UNKNOWN', async () => {
     const ds = makePlaybackV2()
     ds.vehicles.forEach((v) => { v.healthTransitions = [] })
+    ds.vehicles[0].healthTransitions = [{ timeSec: 0, currentHp: null, knowledge: 'CURRENT', source: 'RELATIVE_FULL', displayCapacityHp: null, relativeFull: true, confidence: 'UNKNOWN' }]
     const w = mountV2(15, ds)
     await flushPromises()
     expect(w.find('[data-test="pb-hp-value-friendly"]').text()).toBe('100%')
@@ -1812,9 +1751,9 @@ describe('V2 HP regression (restored critical coverage)', () => {
     const enemy = ds.vehicles[1]
     enemy.positionSegments = [
       { knowledge: 'OBSERVED', startSec: 0, endSec: 20,
-        samples: [{ timeSec: 0, x: -50, y: -50, knowledge: 'OBSERVED' }, { timeSec: 20, x: -60, y: -60, knowledge: 'OBSERVED' }] },
+        samples: [{ timeSec: 0, x: -50, y: -50 }, { timeSec: 20, x: -60, y: -60 }] },
       { knowledge: 'OBSERVED', startSec: 30, endSec: 60,
-        samples: [{ timeSec: 30, x: -60, y: -60, knowledge: 'OBSERVED' }, { timeSec: 60, x: -60, y: -60, knowledge: 'OBSERVED' }] },
+        samples: [{ timeSec: 30, x: -60, y: -60 }, { timeSec: 60, x: -60, y: -60 }] },
     ]
     enemy.orientationSegments = []
     enemy.healthTransitions = [
@@ -1849,7 +1788,7 @@ describe('V2 HP regression (restored critical coverage)', () => {
     const ds = makePlaybackV2()
     const enemy = ds.vehicles[1]
     enemy.positionSegments = [{ knowledge: 'OBSERVED', startSec: 0, endSec: 60,
-      samples: [{ timeSec: 0, x: -50, y: -50, knowledge: 'OBSERVED' }, { timeSec: 60, x: -60, y: -60, knowledge: 'OBSERVED' }] }]
+      samples: [{ timeSec: 0, x: -50, y: -50 }, { timeSec: 60, x: -60, y: -60 }] }]
     enemy.orientationSegments = []
     enemy.healthTransitions = [
       { timeSec: 0, currentHp: 1200, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },

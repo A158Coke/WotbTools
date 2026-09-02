@@ -18,6 +18,7 @@ import java.util.stream.StreamSupport;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** BattlePlaybackDataset capability 派生契约（与 limitations 严格一致，前端据此显示降级）。 */
@@ -39,7 +40,7 @@ class BattlePlaybackDatasetTest {
     void explicitCapabilityWinsAndCompatibilityWithOldJsonNullCapability() {
         // 旧缓存 JSON 反序列化时 capability=null（限流），由 limitations 派生。
         final BattlePlaybackDataset ds = new BattlePlaybackDataset(
-                100, "lagoon", 1, 42L, List.of(), List.of(), List.of(), List.of(),
+                100, "lagoon", 1, 42L, List.of(), List.of(), List.of(),
                 List.of("SOME_LIMITATION"), null);
         assertEquals(Capability.PARTIAL, ds.capability());
         assertNotNull(ds.limitations());
@@ -55,7 +56,7 @@ class BattlePlaybackDatasetTest {
                 Arrays.asList(1, null, 3),
                 Arrays.asList(null, "provision-b", null),
                 Arrays.asList(1, null, 3),
-                Arrays.asList(100, null, 300),
+                Arrays.asList(100, null, 300, null, null, null, null, null, null),
                 ConfidenceDto.HIGH);
         // list 保留 null（不可变、允许 null 元素），不再抛 NPE。
         assertEquals(3, dto.consumables().size());
@@ -64,24 +65,30 @@ class BattlePlaybackDatasetTest {
     }
 
     @Test
-    void loadoutNullListsBecomeEmptyImmutableLists() {
-        final VehicleBattleLoadoutDto dto = new VehicleBattleLoadoutDto(
-                "11.19", null, null, null, null, null, null);
-        assertEquals(List.of(), dto.consumables());
-        assertEquals(List.of(), dto.provisionWireCodes());
+    void currentLoadoutRejectsMissingOrWrongSlotCounts() {
+        assertThrows(IllegalArgumentException.class, () -> new VehicleBattleLoadoutDto(
+                "11.19", null, null, null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> new VehicleBattleLoadoutDto(
+                "11.19", List.of("only-one"), List.of(1, 2, 3),
+                Arrays.asList(null, null, null), Arrays.asList(null, null, null),
+                Arrays.asList(null, null, null, null, null, null, null, null, null), ConfidenceDto.UNKNOWN));
     }
 
     @Test
     void loadoutConfidenceUsesPlaybackWireVocabulary() {
         final VehicleBattleLoadoutDto dto = new VehicleBattleLoadoutDto(
-                "11.19", null, null, null, null, null, ConfidenceDto.HIGH);
+                "11.19", Arrays.asList(null, null, null), Arrays.asList(null, null, null),
+                Arrays.asList(null, null, null), Arrays.asList(null, null, null),
+                Arrays.asList(null, null, null, null, null, null, null, null, null), ConfidenceDto.HIGH);
         assertEquals(ConfidenceDto.HIGH, dto.confidence());
     }
 
     @Test
     void serializedLoadoutUsesPlaybackConfidenceValue() throws Exception {
         final VehicleBattleLoadoutDto dto = new VehicleBattleLoadoutDto(
-                "11.19", null, null, null, null, null, ConfidenceDto.HIGH);
+                "11.19", Arrays.asList(null, null, null), Arrays.asList(null, null, null),
+                Arrays.asList(null, null, null), Arrays.asList(null, null, null),
+                Arrays.asList(null, null, null, null, null, null, null, null, null), ConfidenceDto.HIGH);
         final String json = JsonMapper.builder().build().writeValueAsString(dto);
         assertEquals("HIGH", JsonMapper.builder().build().readTree(json).get("confidence").asString());
     }
@@ -95,41 +102,41 @@ class BattlePlaybackDatasetTest {
                 Arrays.asList(1, null, 3),
                 Arrays.asList(null, "provision-b", null),
                 Arrays.asList(1, null, 3),
-                Arrays.asList(100, null, 300),
+                Arrays.asList(100, null, 300, null, null, null, null, null, null),
                 ConfidenceDto.UNKNOWN);
         final VehiclePlaybackTrack vehicle = new VehiclePlaybackTrack(
                 42L, "Player", 1001L, "Tank", "medium", 8, 1, true, loadout,
                 List.of(), List.of(), List.of(
                         new BattlePlaybackDataset.HealthTransition(
-                                0, 100, "CURRENT", "EXACT_BATTLE_EVENT", 100, ConfidenceDto.HIGH),
+                                0, 100, "CURRENT", "EXACT_BATTLE_EVENT", 100, true, ConfidenceDto.HIGH),
                         new BattlePlaybackDataset.HealthTransition(
-                                1, 90, "CURRENT", "EXACT_BATTLE_EVENT", 100, ConfidenceDto.MEDIUM),
+                                1, 90, "CURRENT", "EXACT_BATTLE_EVENT", 100, false, ConfidenceDto.MEDIUM),
                         new BattlePlaybackDataset.HealthTransition(
-                                2, 80, "CURRENT", "EXACT_BATTLE_EVENT", 100, ConfidenceDto.LOW),
+                                2, 80, "CURRENT", "EXACT_BATTLE_EVENT", 100, false, ConfidenceDto.LOW),
                         new BattlePlaybackDataset.HealthTransition(
-                                3, 70, "UNKNOWN", "UNKNOWN", null, ConfidenceDto.UNKNOWN)),
-                List.of(), List.of(), List.of());
+                                3, 70, "LAST_KNOWN", "INFERRED", null, false, ConfidenceDto.UNKNOWN)),
+                List.of(), List.of(), List.of(), List.of());
         final BattlePlaybackDataset dataset = new BattlePlaybackDataset(
-                100, "lagoon", 1, 42L, List.of(vehicle), List.of(), List.of(), List.of(),
+                100, "lagoon", 1, 42L, List.of(vehicle), List.of(), List.of(),
                 List.of(), Capability.FULL, 0);
 
         final JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(dataset));
         assertFieldNames(json, Set.of("durationSec", "mapCode", "friendlyTeam", "recorderAccountId",
-                "vehicles", "events", "shots", "pointsSamples", "limitations", "capability", "arenaBonusType"));
+                "vehicles", "events", "pointsSamples", "limitations", "capability", "arenaBonusType"));
         final JsonNode vehicles = requiredField(json, "vehicles");
         assertTrue(vehicles.isArray());
         final JsonNode serializedVehicle = vehicles.get(0);
         assertNotNull(serializedVehicle);
         assertFieldNames(serializedVehicle, Set.of("accountId", "playerName", "tankId", "tankName",
                 "tankClass", "tankTier", "team", "friendly", "loadout", "positionSegments",
-                "orientationSegments", "healthTransitions", "lifeTransitions", "consumableTransitions",
+                "orientationSegments", "healthTransitions", "lifeTransitions", "damageLosses", "consumableTransitions",
                 "moduleCrewTransitions"));
         final JsonNode serializedLoadout = requiredField(serializedVehicle, "loadout");
         assertFieldNames(serializedLoadout, Set.of("replayVersion", "consumables", "consumableWireCodes",
                 "provisions", "provisionWireCodes", "equipmentIds", "confidence"));
         final JsonNode healthTransitions = requiredField(serializedVehicle, "healthTransitions");
         assertFieldNames(healthTransitions.get(0),
-                Set.of("timeSec", "currentHp", "knowledge", "source", "displayCapacityHp", "confidence"));
+                Set.of("timeSec", "currentHp", "knowledge", "source", "displayCapacityHp", "relativeFull", "confidence"));
 
         assertEquals("UNKNOWN", requiredField(serializedLoadout, "confidence").asText());
         assertNullSlot(serializedLoadout, "consumables", 0);
@@ -169,7 +176,6 @@ class BattlePlaybackDatasetTest {
 
     private static BattlePlaybackDataset dataset(final List<String> limitations) {
         // 9-arg convenience constructor：capability 由 limitations 派生。
-        return new BattlePlaybackDataset(100, "lagoon", 1, 42L, List.of(), List.of(), List.of(),
-                List.of(), limitations);
+        return new BattlePlaybackDataset(100, "lagoon", 1, 42L, List.of(), List.of(), List.of(), limitations);
     }
 }

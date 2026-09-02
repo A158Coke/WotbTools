@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.60",
+    "date": "2026-09-01",
+    "tag": "chg",
+    "zh": "战局回放 V2 完成事实源收敛：地图、阵营和战斗模式元数据只来自回放数据，未知视角保持中立；伤害记录、统计与飘字统一使用可证明的掉血窗口，车辆位置/朝向/血量的未知间隔不再被前端补猜；车辆详情补齐等级、消耗品槽位和多个模块/乘员状态。",
+    "en": "Battle Playback V2 now uses one canonical fact source: map, team and battle-mode metadata come from the playback dataset, and an unknown perspective stays neutral; damage logs, statistics and floating numbers share the same proven damage-loss windows, while unknown gaps in position, orientation and HP are no longer guessed by the frontend. Vehicle details now include tier, consumable slots, and multiple module/crew states.",
+    "ru": "Воспроизведение боя V2 теперь использует один канонический источник фактов: карта, команда и режим берутся из набора данных воспроизведения, а неизвестная перспектива остаётся нейтральной; журнал урона, статистика и всплывающие числа используют одни и те же подтверждённые интервалы потери HP, а неизвестные промежутки позиции, направления и HP больше не заполняются догадками frontend. В деталях техники добавлены уровень, слоты расходников и несколько состояний модулей/экипажа."
+  },
+  {
     "v": "2.12.59",
     "date": "2026-09-01",
     "tag": "fix",
