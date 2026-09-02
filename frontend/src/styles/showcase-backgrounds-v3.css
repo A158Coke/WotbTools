@@ -124,7 +124,7 @@
   opacity: .74 !important;
 }
 
-@media (max-width: 767px) {
+@media (width < 768px) {
   .homepage-showcase::before,
   .homepage-showcase .showcase-hero,
   .layout-data-workspace::after,

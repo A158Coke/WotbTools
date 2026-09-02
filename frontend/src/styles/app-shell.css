@@ -221,7 +221,7 @@ tr:hover td { background: var(--bg-list-hover); }
 .grip { color: var(--text-sub); cursor: grab; font-size: 13px; }
 .colitem { min-width: 0; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cat { color: #9aa09c; font-size: 11px; }
-@media (max-width: 768px) {
+@media (width < 768px) {
   .mcards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filebar { flex-wrap: wrap; }
   th, td { padding: 5px 8px; font-size: 12px; }
@@ -266,10 +266,10 @@ tr:hover td { background: var(--bg-list-hover); }
   .topbar nav { order: 3; width: 100%; gap: 2px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .topbar nav::-webkit-scrollbar { display: none; }
 }
-@media (max-width: 768px) {
+@media (width < 768px) {
   .scroll-hint { display: block; text-align: center; font-size: 11px; color: var(--text-sub); margin: 6px 0 0; padding-bottom: 4px; }
 }
-@media (max-width: 768px) {
+@media (width < 768px) {
   .topbar { position: sticky; height: auto; padding: 8px 10px; gap: 6px; flex-wrap: wrap; }
   .tb-content { padding-top: 0; }
   .tb-spacer { display: none; }

@@ -104,5 +104,5 @@ async function copyText(text) {
 }
 .copy-btn:hover { background: rgba(30, 38, 43, .9); border-color: var(--accent); color: #f0a42b; }
 .contact-hint { margin-top: 18px; font-size: .78rem; color: var(--showcase-tactical-muted); }
-@media (max-width: 560px) { .contact-page { padding: 14px 12px 44px; } }
+@media (width < 768px) { .contact-page { padding: 14px 12px 44px; } }
 </style>
