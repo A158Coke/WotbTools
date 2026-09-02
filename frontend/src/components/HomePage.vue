@@ -1,10 +1,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import * as api from '../utils/api.js'
-import cardReplayImg from '../assets/showcase/home/card-replay-analysis-v1.png'
+import cardReplayImg from '../assets/showcase/home/card-replay-parser-v1.png'
+import cardAiReviewImg from '../assets/showcase/home/card-ai-review-v1.png'
+import cardBattlePlaybackImg from '../assets/showcase/home/card-battle-playback-v1.png'
 import cardHofImg from '../assets/showcase/home/card-hall-of-fame-v1.png'
-import cardCoachingImg from '../assets/showcase/home/card-coaching-v1.png'
-import cardSupportImg from '../assets/showcase/home/card-support-v1.png'
+import cardBoostImg from '../assets/showcase/home/card-boost-training-v1.png'
+import cardSponsorImg from '../assets/showcase/home/card-sponsor-v1.png'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { useAuth } from '../composables/useAuth.js'
 
@@ -61,11 +63,11 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
         <div class="feature-copy"><h2>{{ $t('home.replayParse') }}</h2><p>{{ $t('home.replayParseDesc') }}</p><span class="feature-action">{{ $t('home.replayParse') }} →</span></div>
       </a>
       <a class="feature-card" href="/?view=ai-review">
-        <div class="feature-visual"><img :src="cardReplayImg" alt="" aria-hidden="true"><span class="feature-index">02</span></div>
+        <div class="feature-visual"><img :src="cardAiReviewImg" alt="" aria-hidden="true"><span class="feature-index">02</span></div>
         <div class="feature-copy"><h2>{{ $t('home.aiReview') }}</h2><p>{{ $t('home.aiReviewDesc') }}</p><span class="feature-action">{{ $t('home.aiReview') }} →</span></div>
       </a>
       <a class="feature-card" href="/?view=battle-playback">
-        <div class="feature-visual"><img :src="cardReplayImg" alt="" aria-hidden="true"><span class="feature-index">03</span></div>
+        <div class="feature-visual"><img :src="cardBattlePlaybackImg" alt="" aria-hidden="true"><span class="feature-index">03</span></div>
         <div class="feature-copy"><h2>{{ $t('home.battlePlayback') }}</h2><p>{{ $t('home.battlePlaybackDesc') }}</p><span class="feature-action">{{ $t('home.battlePlayback') }} →</span></div>
       </a>
       <a class="feature-card" href="/?view=hof">
@@ -73,11 +75,11 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
         <div class="feature-copy"><h2>{{ $t('hof.btn') }}</h2><p>{{ $t('home.hofDesc') }}</p><span class="feature-action">{{ $t('hof.btn') }} →</span></div>
       </a>
       <a v-if="showBoost" class="feature-card" href="/?view=boost">
-        <div class="feature-visual"><img :src="cardCoachingImg" alt="" aria-hidden="true"><span class="feature-index">05</span></div>
+        <div class="feature-visual"><img :src="cardBoostImg" alt="" aria-hidden="true"><span class="feature-index">05</span></div>
         <div class="feature-copy"><h2>{{ $t('app.boost_tab') }}</h2><p>{{ $t('home.boostDesc') }}</p><span class="feature-action">{{ $t('app.boost_tab') }} →</span></div>
       </a>
       <a class="feature-card" href="/sponsor.html">
-        <div class="feature-visual"><img :src="cardSupportImg" alt="" aria-hidden="true"><span class="feature-index">06</span></div>
+        <div class="feature-visual"><img :src="cardSponsorImg" alt="" aria-hidden="true"><span class="feature-index">06</span></div>
         <div class="feature-copy"><h2>{{ $t('home.sponsorTitle') }}</h2><p>{{ $t('home.sponsorDesc') }}</p><span class="feature-action">{{ $t('home.sponsorTag') }} →</span></div>
       </a>
     </section>
