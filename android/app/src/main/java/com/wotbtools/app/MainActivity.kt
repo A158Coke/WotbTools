@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
+import android.webkit.CookieManager
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -43,23 +44,6 @@ class MainActivity : Activity() {
         private const val REPLAY_URL = BASE_URL + "?view=replay"
         private const val FILE_CHOOSER_REQUEST = 1001
         private const val BRIDGE_NAME = "WotbNative"
-
-        /** 常规导航允许停留在 WebView 的 origin；其它外链走系统浏览器。 */
-        private val GENERAL_NAV_HOSTS = setOf(
-            "wotbtools.com",
-            "www.wotbtools.com",
-            "auth.wotbtools.com"
-        )
-
-        /**
-         * QQ OAuth 最小 allowlist：仅在认证流程期间允许留在 WebView（由 inAuthFlow 门控）。
-         * 仅保留 Juhe provider 真实返回的授权主机（graph.qq.com）。若真机 QQ 登录流程出现
-         * top-level 导航到 ssl.ptlogin2.qq.com / xui.ptlogin2.qq.com / ptlogin2.qq.com 等，
-         * 需按真实 navigation evidence 追加到本集合（不得预猜）。
-         */
-        private val QQ_AUTH_HOSTS = setOf(
-            "graph.qq.com"
-        )
 
         /** Native Bridge 唯一允许的调用 origin；绝不暴露给 Keycloak / IdP / 任意 frame。 */
         private val BRIDGE_ORIGINS = setOf(
@@ -134,6 +118,10 @@ class MainActivity : Activity() {
             return false
         }
         val settings = webView.settings
+        // Keycloak 与 provider 的跨站认证必须共享当前 WebView cookie jar；不读取或复制 Cookie。
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        cookieManager.setAcceptThirdPartyCookies(webView, true)
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
@@ -188,13 +176,19 @@ class MainActivity : Activity() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-                inAuthFlow = isAuthHost(url)
+                inAuthFlow = AuthNavigationPolicy.decide(
+                    host = url?.let { Uri.parse(it).host },
+                    inAuthFlow = inAuthFlow
+                ).inAuthFlow
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val host = request.url.host ?: return false
-                if (host in GENERAL_NAV_HOSTS) return false
-                if (host in QQ_AUTH_HOSTS && inAuthFlow) return false
+                if (!request.isForMainFrame) return false
+                val host = request.url.host
+                val decision = AuthNavigationPolicy.decide(host, inAuthFlow)
+                inAuthFlow = decision.inAuthFlow
+                if (host == null) return false
+                if (decision.action != AuthNavigationAction.OPEN_EXTERNAL) return false
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, request.url))
                 } catch (_: Exception) {
@@ -296,11 +290,6 @@ class MainActivity : Activity() {
         webErrorView.visibility = View.VISIBLE
         webErrorTitle.text = getString(R.string.webview_unsupported_title)
         webErrorRetryButton.visibility = View.GONE
-    }
-
-    private fun isAuthHost(url: String?): Boolean {
-        val host = url?.let { Uri.parse(it).host } ?: return false
-        return host == "auth.wotbtools.com" || host in QQ_AUTH_HOSTS
     }
 
     private fun showMandatoryUpdate(manifest: VersionManifest, installed: Int) {
