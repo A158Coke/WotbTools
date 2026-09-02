@@ -334,7 +334,7 @@ onBeforeUnmount(() => {
   .rating-v2-radar-backdrop { z-index: var(--z-modal); }
   .rating-v2-radar-drawer { top: 8px; }
 }
-@media (max-width: 767px) {
+@media (width < 768px) {
   .rating-v2-page { padding-bottom: 28px; }
   .rating-v2-actions { align-items: stretch; }
   .rating-v2-run { width: 100%; }

@@ -71,7 +71,7 @@ watch(() => props.files, () => {
 .ws-batch-item { text-align: left; padding: 8px 10px; border-radius: 6px; border: none; background: transparent; color: var(--text-label); font-size: .82rem; cursor: pointer; font-family: inherit; }
 .ws-batch-item:hover { background: var(--bg-list-hover); }
 .ws-batch-item.active { background: var(--bg-blue); color: var(--accent-dark); font-weight: 700; }
-@media (max-width: 768px) {
+@media (width < 768px) {
   .ws-selector { width: 100%; justify-content: space-between; }
   .ws-batch-sheet {
     position: fixed;

@@ -1516,7 +1516,7 @@ function switchTab(t) {
 .btn-ghost { padding: 8px 18px; border: 1px solid var(--border-ghost); border-radius: 7px; background: transparent; color: var(--text); font-size: .85rem; cursor: pointer; font-family: inherit; }
 .btn-ghost:hover { background: var(--bg-card-hover); }
 .btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 6px; }
-@media (max-width: 640px) {
+@media (width < 768px) {
   .boost-page { padding: 14px 12px 48px; }
   .boost-topbar { flex-direction: column; }
   .boost-tabs { display: flex; }

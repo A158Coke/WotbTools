@@ -326,10 +326,9 @@ body {
   .profile-page { padding-top: 18px !important; }
   .restoolbar { top: 64px; }
   .admin-table-wrap { max-height: none; }
-  .profile-page .profile-body { grid-template-columns: minmax(0,1fr) minmax(260px,.6fr) !important; }
 }
 
-@media (max-width: 767px) {
+@media (width < 768px) {
   :root { --showcase-gutter: 8px; }
   .topbar { min-height: 56px !important; height: 56px !important; }
   .tb-content { padding-top: 56px !important; }

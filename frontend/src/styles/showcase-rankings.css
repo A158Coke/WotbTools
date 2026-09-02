@@ -186,7 +186,7 @@
   .lb-wrap .lb-toolbar { position: static; }
 }
 
-@media(max-width:767px) {
+@media (width < 768px) {
   .lb-wrap,
   .hof-admin { width: calc(100vw - 16px) !important; padding: 10px 0 42px !important; }
   .lb-wrap > .tabs,

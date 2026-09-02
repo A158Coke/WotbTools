@@ -1720,7 +1720,7 @@ const mapStyle = computed(() => ({
   border-radius: 4px;
   background: #111;
 }
-@media (max-width: 768px) {
+@media (width < 768px) {
   .pb-map { width: 100%; }
   /* §8.2 窄屏：sidebar 置于地图/播放器下方，不强行压缩成窄右侧栏 */
   .pb-main { flex-direction: column; }
@@ -1745,7 +1745,7 @@ const mapStyle = computed(() => ({
   /* PR4 §36：按钮本身不拦截点击，只有 .pb-hitbox（hull 范围）可点 */
   pointer-events: none;
 }
-@media (max-width: 768px) {
+@media (width < 768px) {
   .pb-vehicle { width: 28px; height: 28px; }
 }
 /* marker 内部样式（hull/turret/death/name/状态视觉）全部随 VehicleMarker 组件迁移：
