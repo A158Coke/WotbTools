@@ -277,7 +277,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
   .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-bottom { grid-template-columns: 1fr; }
 }
-@media (max-width: 767px) {
+@media (width < 768px) {
   .homepage-showcase { width: calc(100vw - 16px); padding-top: 8px; }
   .showcase-hero { min-height: 540px; }
   .showcase-hero:before { background: linear-gradient(180deg, rgba(4, 8, 12, .9) 0%, rgba(4, 8, 12, .7) 54%, rgba(4, 8, 12, .97) 100%); }

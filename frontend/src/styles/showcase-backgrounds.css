@@ -209,7 +209,7 @@
   .homepage-showcase .showcase-hero { background-position: 62% center !important; }
 }
 
-@media (max-width: 767px) {
+@media (width < 768px) {
   .layout-content::after,
   .layout-wide::after,
   .layout-data-workspace::after,

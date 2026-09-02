@@ -303,7 +303,7 @@
   }
 }
 
-@media (max-width: 767px) {
+@media (width < 768px) {
   .layout-data-workspace .uploadwrap { padding: 16px !important; }
   .lb-wrap .lb-toolbar {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;

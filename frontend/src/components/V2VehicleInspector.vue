@@ -253,7 +253,7 @@ function moduleStateLabel(state) {
   border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 11px;
 }
 .v2-chip-state { color: var(--pb-dim, #9aa); font-size: 9px; }
-@media (max-width: 520px) {
+@media (width < 768px) {
   .v2-loadout-grid { grid-template-columns: repeat(3, minmax(92px, 1fr)); overflow-x: auto; }
   .v2-equipment-row { display: block; }
 }

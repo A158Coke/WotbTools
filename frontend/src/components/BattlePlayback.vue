@@ -1720,7 +1720,7 @@ const mapStyle = computed(() => ({
   border-radius: 4px;
   background: #111;
 }
-@media (max-width: 768px) {
+@media (width < 768px) {
   .pb-map { width: 100%; }
   /* §8.2 窄屏：sidebar 置于地图/播放器下方，不强行压缩成窄右侧栏 */
   .pb-main { flex-direction: column; }
@@ -1745,7 +1745,7 @@ const mapStyle = computed(() => ({
   /* PR4 §36：按钮本身不拦截点击，只有 .pb-hitbox（hull 范围）可点 */
   pointer-events: none;
 }
-@media (max-width: 768px) {
+@media (width < 768px) {
   .pb-vehicle { width: 28px; height: 28px; }
 }
 /* marker 内部样式（hull/turret/death/name/状态视觉）全部随 VehicleMarker 组件迁移：
@@ -1761,9 +1761,9 @@ const mapStyle = computed(() => ({
 
 /* 双方总血量条：阵营色填充（本方/敌方），随播放实时下降；争霸赛附点数 */
 .pb-hp-bars { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
-.pb-hp-row { display: flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--text-label); }
+.pb-hp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .78rem; color: var(--text-label); }
 .pb-hp-label { width: 3.5em; flex-shrink: 0; }
-.pb-hp-track { flex: 1; display: flex; height: 10px; border-radius: 5px; background: var(--bg-chip, rgba(128,128,128,.25)); overflow: hidden; }
+.pb-hp-track { flex: 1; min-width: 0; display: flex; height: 10px; border-radius: 5px; background: var(--bg-chip, rgba(128,128,128,.25)); overflow: hidden; }
 .pb-hp-fill { height: 100%; transition: width .15s linear; }
 .pb-hp-friendly { background: var(--map-spawn-friendly, #8ef7b0); }
 .pb-hp-enemy { background: var(--map-spawn-enemy, #ff8d8d); }

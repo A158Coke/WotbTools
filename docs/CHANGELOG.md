@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **手机端（<768px）UI 布局优化**：Mobile 断点统一为 `@media (width < 768px)` range 语法并消除 JS/CSS 1px 错配；补齐 classic 浅色主题在 AdminUsers/Contact/Boost/Profile 的对比度覆写；修复 HoF mark3 工具条挤压、分析面板表格裁剪、admin 表头移动端 sticky 偏移、modal 遮罩 showcase 语义反转、ColumnPicker 触屏不可重排序（新增上/下移按钮 + 三语 i18n）、批量选择 bottom-sheet 无遮罩等问题；移动端输入框字号 ≥16px、主要触控目标 ≥36px，并预留 viewport-fit/safe-area 兼容。无 API/路由/数据契约变化。
+
 ### Removed
 - **Hundred WG statistics path**：移除百场 `WARGAMING_API` 官方统计、自动审核 endpoint、snapshot DTO/映射与前端分支；Wargaming ASIA/EU/NA 登录和 Profile 同步保留，百场统一走 MANUAL 截图 + 5 replay 审核。新增生产存量清理工具，默认 dry-run，并按共享引用保护 MANUAL 与单场名人堂回放。
 

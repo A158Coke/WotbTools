@@ -98,7 +98,9 @@
         "select_all": "全选",
         "reset": "重置",
         "done": "完成",
-        "drag": "拖拽排序"
+        "drag": "拖拽排序",
+        "move_up": "上移",
+        "move_down": "下移"
     },
     "metric": {
         "battles": "战斗场次",

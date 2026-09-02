@@ -1641,7 +1641,7 @@ function fmtDate(s) {
 .h100-need-profile { color: var(--error); font-size: 13px; margin: 8px 0 0; line-height: 1.6; }
 .h100-need-profile a { color: var(--accent); font-weight: 600; }
 
-@media (max-width: 560px) {
+@media (width < 768px) {
   .lb-wrap { padding: 14px 12px 48px; }
   .lb-head h1 { font-size: 1.55rem; }
   .lb-upload-card { min-height: 230px; padding: 28px 16px; }
