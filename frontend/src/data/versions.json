@@ -1,4 +1,12 @@
 [{
+    "v": "2.12.64",
+    "date": "2026-09-03",
+    "tag": "chg",
+    "zh": "更新主页、各功能页和赞助页背景素材：改用用户提供的原创 WTC 视觉图片，页面布局和功能不变。",
+    "en": "Updated home, feature-page, and sponsor backgrounds with the user's original WTC artwork; page layout and functionality are unchanged.",
+    "ru": "Обновлены фоны главной, функциональных страниц и страницы поддержки с использованием оригинальных визуальных материалов WTC пользователя; структура и функции страниц не изменились."
+  },
+  {
     "v": "2.12.63",
     "date": "2026-09-02",
     "tag": "fix",
