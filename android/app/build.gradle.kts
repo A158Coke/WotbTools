@@ -67,4 +67,6 @@ dependencies {
     // origin-scoped Native Bridge：WebView WebMessageListener（带 origin allowlist），
     // 替代 addJavascriptInterface 的全 frame 暴露。
     implementation("androidx.webkit:webkit:1.11.0")
+    // AuthNavigationPolicy JVM tests；不引入 Activity/instrumentation 测试框架。
+    testImplementation("junit:junit:4.13.2")
 }
