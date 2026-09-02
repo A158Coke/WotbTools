@@ -128,8 +128,7 @@ public class HundredBattleSubmissionService {
                                                 final int claimedBattleCount,
                                                 final String proofScreenshot,
                                                 final List<MultipartFile> replays) {
-        final UserProfile profile = userProfileService.findEntityByKeycloakUserId(userId)
-                .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
+        final UserProfile profile = findProfileForSubmission(userId);
         final Long gameId = profile.getWotbAccountId();
         if (gameId == null || gameId <= 0) {
             throw new IllegalArgumentException("HUNDRED_PROFILE_GAME_ID_REQUIRED");
@@ -199,6 +198,20 @@ public class HundredBattleSubmissionService {
         return replayHashLock.runWithLocksResult(hashes, () -> createLocked(
                 userId, vehicleId, gameId, claimedAverageDamage, claimedBattleCount,
                 proofScreenshot, vehicle.name(), profile.getWotbNickname().trim(), pendingReplays, hashes));
+    }
+
+    /** WG 用户首次提交可能尚未访问 ProfilePage，先按可信登录身份创建 Profile。 */
+    private UserProfile findProfileForSubmission(final String userId) {
+        final UserProfile existing = userProfileService.findEntityByKeycloakUserId(userId).orElse(null);
+        if (existing != null) {
+            return existing;
+        }
+        if (!userProfileService.hasTrustedWargamingIdentity()) {
+            throw new IllegalArgumentException("PROFILE_NOT_FOUND");
+        }
+        userProfileService.syncFromLogin(userId);
+        return userProfileService.findEntityByKeycloakUserId(userId)
+                .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
     }
 
     /**

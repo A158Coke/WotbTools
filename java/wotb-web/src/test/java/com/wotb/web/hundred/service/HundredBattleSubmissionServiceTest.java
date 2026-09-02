@@ -220,6 +220,43 @@ class HundredBattleSubmissionServiceTest {
     }
 
     @Test
+    void trustedWgUserCanSubmitBeforeVisitingProfilePage() throws Exception {
+        when(userProfileService.findEntityByKeycloakUserId(USER))
+                .thenReturn(Optional.empty(), Optional.of(profile()));
+        when(userProfileService.hasTrustedWargamingIdentity()).thenReturn(true);
+
+        try (final var mocked = mockStatic(ReplayParser.class)) {
+            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv -> {
+                final byte[] bytes = inv.getArgument(0);
+                return battle(new String(bytes));
+            });
+
+            final var result = service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                    "data:image/png;base64,AAAA", fiveReplays());
+
+            assertThat(result.status()).isEqualTo("PENDING");
+        }
+
+        verify(userProfileService).syncFromLogin(USER);
+        verify(userProfileService, org.mockito.Mockito.times(2)).findEntityByKeycloakUserId(USER);
+        verify(repository).saveAndFlush(any());
+    }
+
+    @Test
+    void nonWgUserWithoutProfileStillGetsProfileNotFound() {
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.empty());
+        when(userProfileService.hasTrustedWargamingIdentity()).thenReturn(false);
+
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("PROFILE_NOT_FOUND");
+
+        verify(userProfileService, never()).syncFromLogin(anyString());
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void rejectsWhenProfileMissingGameId() {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profileWithoutGameId()));
 

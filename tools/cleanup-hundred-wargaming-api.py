@@ -10,9 +10,11 @@ the repository.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -22,6 +24,8 @@ SOURCE = "WARGAMING_API"
 MANUAL = "MANUAL"
 CONFIRMATION = "REMOVE-HUNDRED-WG-DATA"
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+MANIFEST_VERSION = 1
+MANIFEST_KEYS = frozenset({"version", "source", "replay_dir", "hashes"})
 
 
 @dataclass(frozen=True)
@@ -191,6 +195,50 @@ def remove_unreferenced_files(db: Database, replay_dir: Path, hashes: set[str]) 
     return len(preserved), len(deletable), deleted, missing
 
 
+def load_manifest(path: Path, replay_dir: Path) -> set[str]:
+    """Load the resumable replay deletion set without accepting user data fields."""
+    if not path.exists():
+        return set()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"invalid cleanup manifest: {path}") from exc
+    if not isinstance(payload, dict) or set(payload) != MANIFEST_KEYS:
+        raise RuntimeError("cleanup manifest contains unexpected fields")
+    if payload["version"] != MANIFEST_VERSION or payload["source"] != SOURCE:
+        raise RuntimeError("cleanup manifest version or source is invalid")
+    if payload["replay_dir"] != str(replay_dir.resolve()):
+        raise RuntimeError("cleanup manifest replay directory does not match --replay-dir")
+    hashes = payload["hashes"]
+    if not isinstance(hashes, list) or any(not isinstance(value, str) or not HASH_RE.fullmatch(value)
+                                           for value in hashes):
+        raise RuntimeError("cleanup manifest contains an invalid replay hash")
+    return set(hashes)
+
+
+def save_manifest(path: Path, replay_dir: Path, hashes: set[str]) -> None:
+    """Atomically persist only the replay hashes needed for a later retry."""
+    if any(not HASH_RE.fullmatch(value) for value in hashes):
+        raise RuntimeError("refusing to persist an invalid replay hash")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent,
+                                        prefix=f".{path.name}.", suffix=".tmp", delete=False) as handle:
+            temporary = Path(handle.name)
+            json.dump({
+                "hashes": sorted(hashes),
+                "replay_dir": str(replay_dir.resolve()),
+                "source": SOURCE,
+                "version": MANIFEST_VERSION,
+            }, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        temporary.replace(path)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+
 def verify(db: Database, baseline: Baseline) -> None:
     remaining_source = db.query(
         "SELECT COUNT(*) FROM hundred_battle_submission WHERE verification_source = %s",
@@ -227,6 +275,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                         help="PostgreSQL DSN (default: WOTB_DATABASE_URL or DATABASE_URL)")
     parser.add_argument("--replay-dir", type=Path,
                         default=Path(os.environ["HOF_REPLAY_DIR"]) if os.environ.get("HOF_REPLAY_DIR") else None)
+    parser.add_argument("--manifest", type=Path,
+                        help="resumable deletion manifest (default: <replay-dir>/.cleanup-hundred-wargaming-api.json)")
     parser.add_argument("--apply", action="store_true", help="perform deletion after confirmation")
     parser.add_argument("--confirm", help=f"must equal {CONFIRMATION}")
     return parser.parse_args(argv)
@@ -244,6 +294,9 @@ def main(argv: list[str] | None = None) -> int:
         print("Missing --replay-dir (or HOF_REPLAY_DIR); no changes made", file=sys.stderr)
         return 2
 
+    replay_dir = args.replay_dir.resolve() if args.apply else None
+    manifest_path = args.manifest.resolve() if args.manifest else (
+        replay_dir / ".cleanup-hundred-wargaming-api.json" if replay_dir else None)
     connection = None
     try:
         connection = load_connection(args.dsn)
@@ -252,13 +305,22 @@ def main(argv: list[str] | None = None) -> int:
         if not args.apply:
             print_report(report, True)
             return 0
+        pending_manifest_hashes = load_manifest(manifest_path, replay_dir)
+        candidate_hashes = hashes | pending_manifest_hashes
+        # Calculate the protected set before deleting DB evidence, then checkpoint
+        # only the hashes that may need filesystem removal before the transaction.
+        deletion_hashes = candidate_hashes - referenced_hashes(db, candidate_hashes)
+        save_manifest(manifest_path, replay_dir, deletion_hashes)
         delete_rows(db, ids)
-        connection.commit()
-        preserved, deletable, deleted, missing = remove_unreferenced_files(db, args.replay_dir, hashes)
+        if ids:
+            connection.commit()
+        preserved, deletable, deleted, missing = remove_unreferenced_files(
+            db, replay_dir, deletion_hashes)
         verify(db, baseline)
         result = Report(report.source_by_status, report.submission_count, report.evidence_count,
-                        report.candidate_hashes, preserved, deletable, deleted, missing)
+                        len(candidate_hashes), preserved, deletable, deleted, missing)
         print_report(result, False)
+        manifest_path.unlink()
         print("Cleanup verification: PASS")
         return 0
     except Exception as exc:  # operational tool: fail closed and non-zero
