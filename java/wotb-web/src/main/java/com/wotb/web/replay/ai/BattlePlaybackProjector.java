@@ -12,6 +12,7 @@ import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.feature.PlaybackCombatReconstruction;
 import com.wotb.core.replay.facts.ConsumableLifecycle;
 import com.wotb.core.replay.facts.AoiObservationSegment;
+import com.wotb.core.replay.facts.ReplayHpTimeline;
 import com.wotb.core.replay.facts.VehicleLoadoutFacts;
 import com.wotb.core.replay.facts.VehicleModuleCrewLifecycle;
 import com.wotb.core.replay.facts.VehicleModuleCrewLifecycle.ModuleCrewObservation;
@@ -144,7 +145,8 @@ public final class BattlePlaybackProjector {
         // 稀疏 transition tracks：跨 vehicles 的所有 frame，去重 sequence（timeSec + entityId 天然序）。
         final List<PositionSegment> positionSegments = positionSegments(timeline, entityIds);
         final List<OrientationSegment> orientationSegments = orientationSegments(timeline, entityIds);
-        final List<HealthTransition> health = healthTransitions(timeline, entityIds, Boolean.TRUE.equals(friendly));
+        final List<HealthTransition> health = healthTransitions(
+                timeline, entityIds, player, Boolean.TRUE.equals(friendly));
         final List<LifeTransition> life = lifeTransitions(timeline, entityIds);
         final List<DamageLoss> losses = damageLosses.stream()
                 .map(loss -> new DamageLoss(loss.fromSec(), loss.toSec(), loss.hpLoss(),
@@ -286,54 +288,86 @@ public final class BattlePlaybackProjector {
         return k == null || k == FrameOrientation.OrientationKnowledge.UNKNOWN ? null : k.name();
     }
 
+    /**
+     * HP authority projection:
+     * <ul>
+     *   <li>friendly: settlement-derived actual opening HP is authoritative at t=0;</li>
+     *   <li>enemy: tankopedia base HP is provisional only until the first trusted replay HP;</li>
+     *   <li>after the first trusted enemy replay HP, replay authority is permanent for this battle;</li>
+     *   <li>AoI/unknown gaps never switch an already observed enemy back to tankopedia.</li>
+     * </ul>
+     */
     private static List<HealthTransition> healthTransitions(final BattleTimeline timeline,
                                                             final List<Integer> entityIds,
+                                                            final PlayerResult player,
                                                             final boolean friendly) {
         final List<HealthTransition> out = new ArrayList<>();
         HealthTransition previous = null;
-        Integer previousHp = null;
-        boolean openingFull = friendly;
+
+        final Integer openingSeed = friendly
+                ? ReplayHpTimeline.settlementInitialHp(player)
+                : com.wotb.core.ref.ReplayDisplayNames.tankBaseHpValue(player.tankId);
+        if (openingSeed != null && openingSeed > 0) {
+            previous = new HealthTransition(
+                    0d,
+                    openingSeed,
+                    "CURRENT",
+                    friendly ? "SETTLEMENT_OPENING_HP_EXACT" : "TANKOPEDIA_BASE_PROVISIONAL",
+                    openingSeed,
+                    false,
+                    friendly ? ConfidenceDto.HIGH : ConfidenceDto.MEDIUM);
+            out.add(previous);
+        }
+
+        boolean trustedReplayHpSeen = false;
+        Integer replayDisplayCapacity = null;
         for (final BattleFrame frame : timeline.frames()) {
             final FrameVehicle v = vehicleInAny(frame, entityIds);
             final FrameHealth h = v == null ? null : v.health();
-            if (h == null) {
-                if (friendly && previous == null && v != null && v.lifeState() != LifeState.DESTROYED) {
-                    out.add(new HealthTransition(frame.stateAtSec(), null, "CURRENT", "RELATIVE_FULL",
-                            null, true, ConfidenceDto.UNKNOWN));
-                    previous = out.getLast();
-                }
-                continue;
-            }
-            if (h.currentHp() == null || h.knowledge() == null
+            if (h == null || h.currentHp() == null || h.knowledge() == null
                     || h.knowledge() == FrameHealth.HealthKnowledge.UNKNOWN) {
-                if (friendly && previous == null && v != null && v.lifeState() != LifeState.DESTROYED) {
-                    out.add(new HealthTransition(frame.stateAtSec(), null, "CURRENT", "RELATIVE_FULL",
-                            null, true, ConfidenceDto.UNKNOWN));
-                    previous = out.getLast();
-                } else if (previous != null && v != null && v.lifeState() != LifeState.UNKNOWN
-                        && v.knowledgeState() != com.wotb.core.replay.timeline.VehicleKnowledgeState.UNKNOWN) {
-                    out.add(new HealthTransition(frame.stateAtSec(), null, null, null,
-                            null, false, toConfidence(h.confidence())));
-                    previous = out.getLast();
-                    openingFull = false;
-                }
-                previousHp = null;
+                // Sparse contract: no trusted HP transition means keep the previous canonical state.
+                // In particular, an enemy hidden/AoI gap must never reactivate the tankopedia seed.
                 continue;
             }
-            if ((previousHp != null && h.currentHp() < previousHp) || h.currentHp() <= 0) {
-                openingFull = false;
+
+            trustedReplayHpSeen = true;
+            if (friendly) {
+                // Friendly opening capacity is the actual settlement-derived battle HP pool.
+                replayDisplayCapacity = openingSeed != null && openingSeed > 0
+                        ? openingSeed
+                        : (h.displayCapacityHp() != null ? h.displayCapacityHp() : h.currentHp());
+            } else {
+                // First trusted replay HP permanently supersedes tankopedia for this battle.
+                // From this point onward capacity is derived only from replay observations.
+                if (h.displayCapacityHp() != null && h.displayCapacityHp() > 0) {
+                    replayDisplayCapacity = h.displayCapacityHp();
+                } else if (replayDisplayCapacity == null && h.currentHp() > 0) {
+                    replayDisplayCapacity = h.currentHp();
+                }
             }
-            final boolean relativeFull = friendly && openingFull
-                    && h.knowledge() == FrameHealth.HealthKnowledge.CURRENT
-                    && h.currentHp() > 0;
-            final HealthTransition next = new HealthTransition(frame.stateAtSec(), h.currentHp(),
-                    h.knowledge().name(), h.source() == null ? "UNKNOWN" : h.source().name(),
-                    h.displayCapacityHp(), relativeFull, toConfidence(h.confidence()));
+
+            final HealthTransition next = new HealthTransition(
+                    frame.stateAtSec(),
+                    h.currentHp(),
+                    h.knowledge().name(),
+                    h.source() == null ? "UNKNOWN" : h.source().name(),
+                    replayDisplayCapacity,
+                    false,
+                    toConfidence(h.confidence()));
             if (!sameHealth(previous, next)) {
                 out.add(next);
                 previous = next;
             }
-            previousHp = h.currentHp();
+        }
+
+        // Keep the variable explicit as a code-level invariant: once set, no later path above can
+        // restore TANKOPEDIA_BASE_PROVISIONAL. This also makes future refactors fail review visibly.
+        if (trustedReplayHpSeen && !friendly && !out.isEmpty()) {
+            final HealthTransition last = out.getLast();
+            if ("TANKOPEDIA_BASE_PROVISIONAL".equals(last.source())) {
+                throw new IllegalStateException("enemy replay HP authority regressed to tankopedia after observation");
+            }
         }
         return out;
     }
