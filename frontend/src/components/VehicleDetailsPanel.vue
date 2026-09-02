@@ -87,5 +87,5 @@ const emit = defineEmits(['close'])
 .pb-sb-log-in { color: var(--pb-enemy-text, #f87171); }
 .pb-sb-log-out { color: var(--pb-team-text, #4ade80); }
 .pb-sb-log em { font-style: normal; opacity: .75; }
-@media (max-width: 768px) { .pb-sidebar { width: 100%; max-height: none; } }
+@media (width < 768px) { .pb-sidebar { width: 100%; max-height: none; } }
 </style>

@@ -1,10 +1,11 @@
-[{
+[
+  {
     "v": "2.12.64",
     "date": "2026-09-03",
     "tag": "chg",
-    "zh": "更新主页、各功能页和赞助页背景素材：改用用户提供的原创 WTC 视觉图片，页面布局和功能不变。",
-    "en": "Updated home, feature-page, and sponsor backgrounds with the user's original WTC artwork; page layout and functionality are unchanged.",
-    "ru": "Обновлены фоны главной, функциональных страниц и страницы поддержки с использованием оригинальных визуальных материалов WTC пользователя; структура и функции страниц не изменились."
+    "zh": "手机端界面全面优化，并更新主页、各功能页和赞助页背景素材：修复浅色主题下多页文字对比度、名人堂工具条、AI 分析表格和弹窗遮罩等手机显示问题；导出列支持按钮排序，输入框聚焦不再自动放大，播放控制与导航按钮触控尺寸加大；背景改用用户提供的原创 WTC 视觉图片，页面布局和功能不变。",
+    "en": "Mobile UI overhaul and updated home, feature-page, and sponsor backgrounds: fixed light-theme contrast, mobile HoF toolbar, AI analysis tables and modal overlays; export columns can now be reordered, inputs no longer trigger iOS auto-zoom, and playback/navigation controls have larger touch targets. Backgrounds now use the user's original WTC artwork; page layout and functionality are unchanged.",
+    "ru": "Комплексно улучшен мобильный интерфейс и обновлены фоны главной, функциональных страниц и страницы поддержки: исправлены контраст светлой темы, панель HoF, таблицы AI-анализа и затемнение модальных окон; столбцы экспорта можно переставлять кнопками, поля ввода больше не вызывают автомасштабирование iOS, а элементы управления воспроизведением и навигацией получили большие сенсорные области. Фоны используют оригинальные визуальные материалы WTC пользователя; структура и функции страниц не изменились."
   },
   {
     "v": "2.12.63",

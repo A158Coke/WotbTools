@@ -334,13 +334,13 @@ onBeforeUnmount(() => {
   .rating-v2-radar-backdrop { z-index: var(--z-modal); }
   .rating-v2-radar-drawer { top: 8px; }
 }
-@media (max-width: 767px) {
+@media (width < 768px) {
   .rating-v2-page { padding-bottom: 28px; }
   .rating-v2-actions { align-items: stretch; }
   .rating-v2-run { width: 100%; }
   .rating-v2-tablewrap td { padding: 7px 8px; font-size: .76rem; }
   .rating-v2-sort { padding: 7px 8px; font-size: .76rem; }
-  .rating-v2-radar-backdrop.rating-v2-radar-modal { pointer-events: auto; background: color-mix(in srgb, var(--text-heading) 35%, transparent); }
+  .rating-v2-radar-backdrop.rating-v2-radar-modal { pointer-events: auto; background: rgb(0 0 0 / .35); }
   .rating-v2-radar-drawer { left: 8px; width: auto; }
 }
 @media (prefers-reduced-motion: reduce) { .rating-v2-radar-drawer { animation: none; } }
