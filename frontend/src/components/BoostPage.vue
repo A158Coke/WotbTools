@@ -1459,7 +1459,7 @@ function switchTab(t) {
 .application-image-thumb { display: grid; gap: 6px; padding: 0; border: 0; background: transparent; color: var(--accent-dark); text-align: left; font: inherit; font-size: 12px; font-weight: 700; cursor: zoom-in; }
 .application-image-thumb img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
 .application-image-thumb:focus-visible img { outline: 2px solid var(--accent); outline-offset: 2px; }
-.application-image-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; background: color-mix(in srgb, var(--text-heading) 72%, transparent); }
+.application-image-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgb(0 0 0 / .72); }
 .application-image-viewer { display: flex; flex-direction: column; width: min(100%, 1440px); height: min(100%, 1000px); overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); box-shadow: var(--hard-shadow); }
 .application-image-viewer-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 14px; color: var(--text-heading); }
 .application-image-viewer-header button { width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card2); color: var(--text); cursor: pointer; font-size: 24px; line-height: 1; }
@@ -1478,7 +1478,7 @@ function switchTab(t) {
 .assign-box { margin-top: 10px; padding: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .assign-box select, .assign-box input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); font-size: 13px; }
 .mr { margin-right: 4px; }
-.booster-editor-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; background: color-mix(in srgb, var(--text-heading) 72%, transparent); }
+.booster-editor-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; background: rgb(0 0 0 / .72); }
 .booster-editor { display: flex; flex-direction: column; width: min(100%, 680px); max-height: calc(100vh - 48px); overflow: hidden; border: 1px solid var(--accent); border-radius: 12px; background: var(--bg-card); box-shadow: var(--hard-shadow); }
 .booster-editor-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
 .booster-editor-header h4 { margin: 0; color: var(--text-heading); }

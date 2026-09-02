@@ -14,14 +14,19 @@ const emit = defineEmits(['toggle', 'selectAll', 'reset', 'reorder'])
 const dragIdx = ref(-1)
 
 function onDragStart(i) { dragIdx.value = i }
+function move(idx, delta) {
+  const to = idx + delta
+  if (to < 0 || to >= props.order.length) return
+  const next = props.order.slice()
+  const [moved] = next.splice(idx, 1)
+  next.splice(to, 0, moved)
+  emit('reorder', next)
+}
 function onDrop(i) {
   const from = dragIdx.value
   dragIdx.value = -1
   if (from < 0 || from === i) return
-  const next = props.order.slice()
-  const [moved] = next.splice(from, 1)
-  next.splice(i, 0, moved)
-  emit('reorder', next)
+  move(from, i - from)
 }
 </script>
 
@@ -44,6 +49,18 @@ function onDrop(i) {
           {{ $t((scope === 'player' ? 'player_labels.' : 'agg_labels.') + key) }}
         </label>
         <span class="cat">{{ catOf(key, $t) }}</span>
+        <!-- 触屏/键盘替代拖拽的上下移按钮：fixedKeys 不渲染（占位 span 保持 grid 对齐），
+             到达上/下边界时禁用；桌面仍可用 HTML5 拖拽。 -->
+        <span class="colmove">
+          <template v-if="!fixedKeys.includes(key)">
+            <button type="button" class="colmove-btn" :disabled="idx === 0"
+                    :aria-label="$t('col_picker.move_up')" :title="$t('col_picker.move_up')"
+                    @click="move(idx, -1)">▲</button>
+            <button type="button" class="colmove-btn" :disabled="idx === order.length - 1"
+                    :aria-label="$t('col_picker.move_down')" :title="$t('col_picker.move_down')"
+                    @click="move(idx, 1)">▼</button>
+          </template>
+        </span>
       </li>
     </ul>
   </div>

@@ -98,7 +98,9 @@
         "select_all": "Select All",
         "reset": "Reset",
         "done": "Done",
-        "drag": "Drag to reorder"
+        "drag": "Drag to reorder",
+        "move_up": "Move up",
+        "move_down": "Move down"
     },
     "metric": {
         "battles": "Battles",

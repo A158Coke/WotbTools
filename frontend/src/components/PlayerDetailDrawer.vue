@@ -715,12 +715,14 @@ function ensureImageLoaded(url) {
 }
 .drawer-backdrop.pd-modal {
   pointer-events: auto;
-  background: color-mix(in srgb, var(--text-heading) 35%, transparent);
+  background: rgb(0 0 0 / .35);
 }
 .player-drawer {
   position: fixed; top: calc(var(--topbar-h) + 8px); right: 8px; bottom: 8px; width: min(380px, calc(100vw - 16px));
   background: var(--bg-card2); border: 1px solid var(--border); border-radius: 12px;
   box-shadow: var(--surface-shadow); overflow-y: auto; padding: 16px;
+  /* Android edge-to-edge 预备：env() 今日解析为 0，视觉零变化 */
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
   animation: pd-slide-in .22s ease-out;
   pointer-events: auto;
 }
