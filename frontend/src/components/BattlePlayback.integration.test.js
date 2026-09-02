@@ -14,7 +14,6 @@ import BattlePlayback from './BattlePlayback.vue'
 import { makeOverview, makePlaybackV2 } from './playbackTestHarness.js'
 import { preloadBattleModels } from '../vehicle-models/runtime.js'
 import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'
-import { PLAYER_FADE_MS, PLAYER_HIDE_MS, PLAYER_SHOW_MS } from '../utils/labelLayout'
 
 const i18n = vi.hoisted(() => ({
   t: vi.fn(key => key)
@@ -491,11 +490,8 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     expect(w2.findAll('.pb-label-player').length).toBe(2)
   })
 
-  it('§32/§33/§34 碰撞集成：两车贴近 → 上方 tank 标签上移，玩家名经 hysteresis 后隐藏', async () => {
+  it('§32/§33/§34 碰撞集成：两车贴近 → 标签与 HP 永不因碰撞隐藏', async () => {
     stubRaf()
-    // performance.now 全程受控（fakeNow），hysteresis 时间轴确定
-    let fakeNow = 0
-    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
     const overview = makeOverview()
     const ds = makePlaybackV2()
     trackOf(ds, 2001).lifeTransitions = []
@@ -509,20 +505,21 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await wrapper.find('.pb-range').setValue(12.5) // 触发 seek（值变化）→ 重算 labelLayout
     await flushPromises()
-    // 上方（friendly 1001，y 更小）tank 标签上移让位
     const a = wrapper.find('[data-test="pb-marker-1001"]')
     const b = wrapper.find('[data-test="pb-marker-2001"]')
-    const aDy = parseFloat((a.find('.pb-labels').attributes('style') || '').match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || '0')
-    expect(aDy).toBeLessThan(2) // 上方标签被上移（2 + dy < 2 基准）
-    // 玩家名：冲突持续超过 hideMs（250ms）才隐藏（fakeNow 受控推进）
-    await wrapper.find('.pb-range').setValue(12.1) // seek 刷新 nowMs（冲突开始计时，fakeNow=0）
-    await flushPromises()
-    expect(b.find('.pb-label-player').attributes('style')).toBeUndefined() // 未到阈值仍显示
-    fakeNow = 400 // 400ms > hideMs
-    await wrapper.find('.pb-range').setValue(12.2)
-    await flushPromises()
-    expect(b.find('.pb-label-player').attributes('style')).toContain('display: none') // 已隐藏
-    nowSpy.mockRestore()
+    const labelsStyle = (m) => (m.find('.pb-labels').attributes('style') || '')
+    // 标签位移为有限 screen px（稳定 lane），不产生 display:none
+    expect(Number.isFinite(parseFloat(labelsStyle(a).match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || 'NaN'))).toBe(true)
+    expect(Number.isFinite(parseFloat(labelsStyle(b).match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || 'NaN'))).toBe(true)
+    // 玩家名/坦克名/HP：碰撞永不隐藏
+    expect(a.find('.pb-label-player').attributes('style')).toBeUndefined()
+    expect(b.find('.pb-label-player').attributes('style')).toBeUndefined()
+    expect(a.find('.pb-label-player').isVisible()).toBe(true)
+    expect(b.find('.pb-label-player').isVisible()).toBe(true)
+    expect(a.find('.pb-label-tank').isVisible()).toBe(true)
+    expect(b.find('.pb-label-tank').isVisible()).toBe(true)
+    expect(a.find('[data-test="pb-hp-num"]').isVisible()).toBe(true)
+    expect(b.find('[data-test="pb-hp-num"]').isVisible()).toBe(true)
   })
 
   it('§37 重叠 hitbox 选中：点击坐标靠近 B → 选中 B（即使点在 A 的按钮上）', async () => {
@@ -577,10 +574,11 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
 })
 
 
-describe('PR4 §33 B3 — hysteresis 使用 UI wall clock（暂停不冻结；fade-in 完整生命周期）', () => {
+describe('PR4 §33 B3 — collision UX：标签与 HP 永不因碰撞隐藏', () => {
   afterEach(() => {
     localStorage.clear()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
     vi.useRealTimers()
   })
 
@@ -600,69 +598,63 @@ describe('PR4 §33 B3 — hysteresis 使用 UI wall clock（暂停不冻结；fa
     return w
   }
 
-  function playerElOf(wrapper) {
-    return wrapper.find('[data-test="pb-marker-2001"]').find('.pb-label-player')
+  function markerOf(wrapper, accountId) {
+    return wrapper.find('[data-test="pb-marker-' + accountId + '"]')
+  }
+  function playerVisible(wrapper, accountId) {
+    const el = markerOf(wrapper, accountId).find('.pb-label-player')
+    return el.exists() && el.isVisible()
+  }
+  function tankVisible(wrapper, accountId) {
+    const el = markerOf(wrapper, accountId).find('.pb-label-tank')
+    return el.exists() && el.isVisible()
+  }
+  function hpVisible(wrapper, accountId) {
+    const num = markerOf(wrapper, accountId).find('[data-test="pb-hp-num"]')
+    return num.exists() && num.isVisible()
   }
 
-  it('暂停 + zoom 产生 conflict → ~250ms 后正常 hide（不依赖播放）', async () => {
+  function buildDenseVehicles(count, accountBase) {
+    const vehicles = []
+    for (let i = 0; i < count; i++) {
+      const accountId = (accountBase || 3000) + i
+      const friendly = i % 2 === 0
+      vehicles.push({
+        accountId, playerName: 'Dense-' + i, tankId: 1, tankName: 'Tank-' + i, tankClass: '', tankTier: null,
+        team: friendly ? 1 : 2, friendly, loadout: null,
+        positionSegments: [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 10, endSec: 14,
+          samples: [{ timeSec: 10, x: 0, y: 0 }, { timeSec: 14, x: 0, y: 0 }] }],
+        orientationSegments: [{ knowledge: 'CURRENT', startSec: 10, endSec: 14,
+          samples: [{ timeSec: 10, hullYawDeg: 0, turretRelativeYawDeg: 0 }, { timeSec: 14, hullYawDeg: 0, turretRelativeYawDeg: 0 }] }],
+        healthTransitions: [{ timeSec: 0, currentHp: 1000, knowledge: 'CURRENT', displayCapacityHp: 1000, relativeFull: true, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' }],
+        lifeTransitions: [], damageLosses: [], consumableTransitions: [], moduleCrewTransitions: [],
+      })
+    }
+    return vehicles
+  }
+
+  it('pause + zoom 密集冲突：PlayerName / TankName / HP 始终可见', async () => {
     stubRaf()
-    let fakeNow = 50_000
-    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
     const wrapper = mountWithPlayer(overlapOverview(), 12)
     await flushPromises()
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await flushPromises()
-    // 暂停态 zoom（wheel）→ 布局变化；hysteresis 时钟必须继续（轻量 RAF）
+    expect(playerVisible(wrapper, 2001)).toBe(true)
+    expect(tankVisible(wrapper, 2001)).toBe(true)
+    expect(hpVisible(wrapper, 2001)).toBe(true)
     await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 400, clientY: 300 })
     await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // 未到阈值
-    expect(rafCb).toBeTruthy() // 轻量 hysteresis RAF 已注册（未决 transition）
-    fakeNow = 50_000 + PLAYER_HIDE_MS + 50
-    rafCb(fakeNow)
-    await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // 暂停态 250ms 后隐藏
-    nowSpy.mockRestore()
+    expect(playerVisible(wrapper, 2001)).toBe(true)
+    expect(tankVisible(wrapper, 2001)).toBe(true)
+    expect(hpVisible(wrapper, 2001)).toBe(true)
+    if (rafCb) { rafCb(50_100); await flushPromises() }
+    expect(playerVisible(wrapper, 2001)).toBe(true)
+    expect(tankVisible(wrapper, 2001)).toBe(true)
+    expect(hpVisible(wrapper, 2001)).toBe(true)
   })
 
-  it('暂停 + 冲突解除 → ~300ms 后正常 show（seek 不破坏 hysteresis）', async () => {
+  it('seek 到冲突/分离位置：PlayerName / HP 始终可见', async () => {
     stubRaf()
-    let fakeNow = 60_000
-    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
-    const { overview, ds } = overlapOverview()
-    // t≤12 同位冲突；t=13.8 两车分离（线性插值）
-    setPositionSamples(ds, 1001, [
-      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
-      { x: -300, y: -260, timeSec: 14 },
-    ], 0, 60)
-    setPositionSamples(ds, 2001, [
-      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
-      { x: 300, y: 260, timeSec: 14 },
-    ], 0, 60)
-    const wrapper = mountWithPlayer({ overview, ds }, 11)
-    await flushPromises()
-    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
-    await flushPromises()
-    // 隐藏（250ms）
-    fakeNow = 60_000 + PLAYER_HIDE_MS + 50
-    rafCb(fakeNow)
-    await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toContain('display: none')
-    // 冲突解除（seek 到分离位置）→ show 计时重新开始
-    await wrapper.find('.pb-range').setValue(13.8)
-    await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // 未到 300ms
-    fakeNow = 60_000 + PLAYER_HIDE_MS + 50 + PLAYER_SHOW_MS + 50
-    rafCb(fakeNow)
-    await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // 恢复显示
-    expect(playerElOf(wrapper).classes()).toContain('pb-label-fading') // fade-in 开始
-    nowSpy.mockRestore()
-  })
-
-  it('fade-in 不会在下一个 RAF 立即消失（≥PLAYER_FADE_MS 完整生命周期）', async () => {
-    stubRaf()
-    let fakeNow = 70_000
-    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
     const { overview, ds } = overlapOverview()
     setPositionSamples(ds, 1001, [
       { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
@@ -676,201 +668,87 @@ describe('PR4 §33 B3 — hysteresis 使用 UI wall clock（暂停不冻结；fa
     await flushPromises()
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await flushPromises()
-    const el = () => playerElOf(wrapper)
-    // hide
-    fakeNow = 70_000 + PLAYER_HIDE_MS + 50
-    rafCb(fakeNow)
-    await flushPromises()
-    expect(el().attributes('style')).toContain('display: none')
-    // show（解除冲突）
+    expect(playerVisible(wrapper, 2001)).toBe(true)
+    expect(tankVisible(wrapper, 2001)).toBe(true)
+    expect(hpVisible(wrapper, 2001)).toBe(true)
     await wrapper.find('.pb-range').setValue(13.8)
     await flushPromises()
-    fakeNow = 70_000 + PLAYER_HIDE_MS + 50 + PLAYER_SHOW_MS + 50
-    rafCb(fakeNow)
+    expect(playerVisible(wrapper, 2001)).toBe(true)
+    expect(tankVisible(wrapper, 2001)).toBe(true)
+    expect(hpVisible(wrapper, 2001)).toBe(true)
+    await wrapper.find('.pb-range').setValue(11)
     await flushPromises()
-    expect(el().classes()).toContain('pb-label-fading')
-    // 下一 RAF（10ms 后）仍保持 fade 类（不被下一次 resolve 取消）
-    fakeNow += 10
-    rafCb(fakeNow)
-    await flushPromises()
-    expect(el().classes()).toContain('pb-label-fading')
-    // 超过 PLAYER_FADE_MS → 类移除
-    fakeNow += PLAYER_FADE_MS + 20
-    rafCb(fakeNow)
-    await flushPromises()
-    expect(el().classes()).not.toContain('pb-label-fading')
-    nowSpy.mockRestore()
+    expect(playerVisible(wrapper, 2001)).toBe(true)
+    expect(tankVisible(wrapper, 2001)).toBe(true)
+    expect(hpVisible(wrapper, 2001)).toBe(true)
   })
 
-  it('播放中同样工作（frame() 驱动时钟）', async () => {
+  it('播放/暂停切换：PlayerName 恒可见', async () => {
     stubRaf()
-    let fakeNow = 80_000
-    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
     const wrapper = mountWithPlayer(overlapOverview(), 12)
     await flushPromises()
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // 未到阈值
-    await wrapper.find('[data-test="pb-play"]').trigger('click') // 播放
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
     await flushPromises()
-    fakeNow = 80_000 + PLAYER_HIDE_MS + 50
-    rafCb(fakeNow) // frame → nowMs 刷新 → resolve
+    expect(playerVisible(wrapper, 2001)).toBe(true)
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
     await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // 播放中 250ms 后隐藏
-    nowSpy.mockRestore()
+    expect(playerVisible(wrapper, 2001)).toBe(true)
+    expect(tankVisible(wrapper, 2001)).toBe(true)
+    expect(hpVisible(wrapper, 2001)).toBe(true)
   })
 
-  it('Blocker1：播放中 conflict 未完成 → Pause → 轻量 clock 接管 → 到 250ms 正常 hide', async () => {
+  it('fullscreen 进入/退出：PlayerName / HP 始终可见', async () => {
     stubRaf()
-    let fakeNow = 90_000
-    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
-    const wrapper = mountWithPlayer(overlapOverview(), 12)
+    const origReqFs = typeof Element.prototype !== 'undefined' ? Element.prototype.requestFullscreen : undefined
+    const origFsElDesc = typeof document !== 'undefined' ? Object.getOwnPropertyDescriptor(document, 'fullscreenElement') : undefined
+    const reqFs = vi.fn().mockResolvedValue(undefined)
+    Element.prototype.requestFullscreen = reqFs
+    const setFsEl = (el) => Object.defineProperty(document, 'fullscreenElement', { value: el, configurable: true, writable: true })
+    try {
+      const wrapper = mountWithPlayer(overlapOverview(), 12)
+      await flushPromises()
+      await wrapper.find('[data-test="pb-show-player"]').setValue(true)
+      await flushPromises()
+      await wrapper.find('[data-test="pb-fullscreen"]').trigger('click')
+      setFsEl(wrapper.find('[data-test="battle-playback"]').element)
+      document.dispatchEvent(new Event('fullscreenchange'))
+      await flushPromises()
+      expect(playerVisible(wrapper, 2001)).toBe(true)
+      expect(tankVisible(wrapper, 2001)).toBe(true)
+      expect(hpVisible(wrapper, 2001)).toBe(true)
+      setFsEl(null)
+      document.dispatchEvent(new Event('fullscreenchange'))
+      await flushPromises()
+      expect(playerVisible(wrapper, 2001)).toBe(true)
+      expect(tankVisible(wrapper, 2001)).toBe(true)
+      expect(hpVisible(wrapper, 2001)).toBe(true)
+    } finally {
+      if (origReqFs === undefined) delete Element.prototype.requestFullscreen
+      else Element.prototype.requestFullscreen = origReqFs
+      if (origFsElDesc) Object.defineProperty(document, 'fullscreenElement', origFsElDesc)
+      else delete document.fullscreenElement
+    }
+  })
+
+  it('dense collision（多车同位）：所有标记的标签与 HP 均可见', async () => {
+    stubRaf()
+    const ds = makePlaybackV2({ vehicles: buildDenseVehicles(6), events: [] })
+    const wrapper = mountWithPlayer({ overview: makeOverview(), ds }, 12)
     await flushPromises()
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await flushPromises()
-    // 播放（frame 驱动 nowMs）
-    await wrapper.find('[data-test="pb-play"]').trigger('click')
-    await flushPromises()
-    expect(rafCb).toBeTruthy()
-    fakeNow = 90_000 + 100 // 播放 100ms，conflict 尚未到 hide 阈值
-    rafCb(fakeNow) // frame：首帧 delta 0，nowMs 刷新
-    await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // 未隐藏
-    // Pause：pending hide 的 clock 必须由轻量 hysteresis RAF 接管
-    await wrapper.find('[data-test="pb-play"]').trigger('click')
-    await flushPromises()
-    fakeNow = 90_000 + PLAYER_HIDE_MS + 50
-    rafCb(fakeNow) // hystTick
-    await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // Pause 后仍到达 250ms
-    nowSpy.mockRestore()
-  })
-
-  it('Blocker1：播放中隐藏 → 冲突解除（show pending）→ Pause → 到 300ms 正常 show', async () => {
-    stubRaf()
-    let fakeNow = 91_000
-    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
-    const { overview, ds } = overlapOverview()
-    // 前段同位冲突，后段分离：seek 到分离段解除冲突
-    setPositionSamples(ds, 1001, [
-      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
-      { x: -300, y: -260, timeSec: 14 },
-    ], 0, 60)
-    setPositionSamples(ds, 2001, [
-      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
-      { x: 300, y: 260, timeSec: 14 },
-    ], 0, 60)
-    const wrapper = mountWithPlayer({ overview, ds }, 11)
-    await flushPromises()
-    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
-    await flushPromises()
-    // 播放中完成 hide
-    await wrapper.find('[data-test="pb-play"]').trigger('click')
-    await flushPromises()
-    fakeNow = 91_000 + PLAYER_HIDE_MS + 50
-    rafCb(fakeNow) // frame 首帧 delta 0
-    await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toContain('display: none')
-    // 冲突解除（seek 分离段）→ show pending
-    await wrapper.find('.pb-range').setValue(13.8)
-    await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // 未到 300ms
-    // Pause：show pending 的 clock 接管
-    await wrapper.find('[data-test="pb-play"]').trigger('click')
-    await flushPromises()
-    fakeNow = 91_000 + PLAYER_HIDE_MS + 50 + PLAYER_SHOW_MS + 50
-    rafCb(fakeNow)
-    await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // 已恢复显示
-    expect(playerElOf(wrapper).classes()).toContain('pb-label-fading')
-    nowSpy.mockRestore()
-  })
-
-  it('Blocker1：fade-in 开始 → Pause → 120ms 后 class 正常清除', async () => {
-    stubRaf()
-    let fakeNow = 92_000
-    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
-    const { overview, ds } = overlapOverview()
-    // 前段同位冲突，后段分离：seek 到分离段解除冲突（保持 showPlayer on，player 元素恒存在）
-    setPositionSamples(ds, 1001, [
-      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
-      { x: -300, y: -260, timeSec: 14 },
-    ], 0, 60)
-    setPositionSamples(ds, 2001, [
-      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
-      { x: 300, y: 260, timeSec: 14 },
-    ], 0, 60)
-    const wrapper = mountWithPlayer({ overview, ds }, 11)
-    await flushPromises()
-    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
-    await flushPromises()
-    // 播放中 hide
-    await wrapper.find('[data-test="pb-play"]').trigger('click')
-    await flushPromises()
-    fakeNow = 92_000 + PLAYER_HIDE_MS + 50
-    rafCb(fakeNow)
-    await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toContain('display: none')
-    // 冲突解除（seek 分离段）→ show pending（播放中，frame 仍驱动时钟）
-    await wrapper.find('.pb-range').setValue(13.8)
-    await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // 未到 300ms
-    fakeNow = 92_000 + PLAYER_HIDE_MS + 50 + PLAYER_SHOW_MS + 50
-    rafCb(fakeNow) // frame：delta 300 → currentTime 14.1（分离位置，无冲突）→ show + fade 开始
-    await flushPromises()
-    expect(playerElOf(wrapper).classes()).toContain('pb-label-fading')
-    // Pause：fade 剩余生命周期由轻量 clock 接管
-    await wrapper.find('[data-test="pb-play"]').trigger('click')
-    await flushPromises()
-    fakeNow += 10
-    rafCb(fakeNow)
-    await flushPromises()
-    expect(playerElOf(wrapper).classes()).toContain('pb-label-fading') // 未到 120ms 仍保留
-    fakeNow += PLAYER_FADE_MS + 20
-    rafCb(fakeNow)
-    await flushPromises()
-    expect(playerElOf(wrapper).classes()).not.toContain('pb-label-fading')
-    nowSpy.mockRestore()
-  })
-
-  it('Blocker1：无 pending 时 Pause 不启动轻量 RAF（不永久轮询）', async () => {
-    stubRaf()
-    let fakeNow = 93_000
-    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
-    let rafCount = 0
-    vi.stubGlobal('requestAnimationFrame', (cb) => { rafCount++; rafCb = cb; return rafCount })
-    vi.stubGlobal('cancelAnimationFrame', () => {})
-    const wrapper = mountPlayback(makeOverview(), 12) // 默认两车相距远 → 无冲突
-    await flushPromises()
-    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
-    await flushPromises()
-    await wrapper.find('[data-test="pb-play"]').trigger('click')
-    await flushPromises()
-    const afterPlay = rafCount
-    expect(afterPlay).toBeGreaterThan(0)
-    // Pause：无 pending → 不新增 RAF
-    await wrapper.find('[data-test="pb-play"]').trigger('click')
-    await flushPromises()
-    expect(rafCount).toBe(afterPlay)
-    nowSpy.mockRestore()
-  })
-
-  it('Blocker1：unmount 时正确 cancel hystRaf（不残留）', async () => {
-    stubRaf()
-    let fakeNow = 94_000
-    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
-    const cancelled = []
-    vi.stubGlobal('cancelAnimationFrame', (id) => cancelled.push(id))
-    vi.stubGlobal('requestAnimationFrame', (cb) => { rafCb = cb; return 7 })
-    const wrapper = mountWithPlayer(overlapOverview(), 12)
-    await flushPromises()
-    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
-    await flushPromises()
-    // pending hide → scheduler 已注册 hystRaf（id 7）
-    expect(cancelled).not.toContain(7)
-    wrapper.unmount()
-    expect(cancelled).toContain(7) // hystRaf 被 cancel
-    nowSpy.mockRestore()
+    const markers = wrapper.findAll('[data-test^="pb-marker-"]')
+    expect(markers.length).toBeGreaterThan(0)
+    for (const m of markers) {
+      expect(m.find('.pb-label-player').exists()).toBe(true)
+      expect(m.find('.pb-label-player').isVisible()).toBe(true)
+      expect(m.find('.pb-label-tank').exists()).toBe(true)
+      expect(m.find('.pb-label-tank').isVisible()).toBe(true)
+      expect(m.find('[data-test="pb-hp-num"]').exists()).toBe(true)
+      expect(m.find('[data-test="pb-hp-num"]').isVisible()).toBe(true)
+    }
   })
 })
 describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
@@ -980,32 +858,30 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toBe(viewportBefore)
   })
 
-  it('11/12/13：ResizeObserver 容器宽变化 → markerScreen/labelLayout 使用新尺寸（相对距离随容器缩放）', async () => {
+  it('11/12/13：ResizeObserver 容器宽变化 → markerScreen/labelLayout 使用新尺寸（标签恒可见）', async () => {
     stubRaf()
     const roCb = stubResizeObserver()
     const overview = makeOverview()
     const ds = makePlaybackV2()
-    // markerScreen 返回容器比例坐标（×W/766）：两车 Δx=20 地图单位 → 800 宽屏幕距 ≈26.6px
-    // < 标签盒 30.4px → 冲突；1600 宽屏幕距 ≈53.3px > 30.4 → 无冲突（标签屏幕恒定）
     setPositionSamples(ds, 1001, [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }], 0, 60)
     setPositionSamples(ds, 2001, [{ x: -205, y: -196.7, timeSec: 10 }, { x: -205, y: -196.7, timeSec: 14 }], 0, 60)
     const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     expect(roCb()).toBeTruthy() // RO 已挂载
     const mapEl = wrapper.find('[data-test="pb-map"]').element
-    // 2001（map y=-196.7）屏幕位置更靠上 → 是"上方"标签（冲突时上移让位）
-    const labelsStyle = () => wrapper.find('[data-test="pb-marker-2001"]').find('.pb-labels').attributes('style') || ''
-    const dy = (s) => parseFloat(s.match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || '2')
-    // 800 宽：两车屏幕距 ≈26.6px < 标签宽 30.4px → 冲突 → 上方 2001 上移
+    const tankVisible = (id) => wrapper.find('[data-test="pb-marker-' + id + '"]').find('.pb-label-tank').isVisible()
+    // 800 宽：两车屏幕距 ≈26.6px < 标签宽 30.4px → 冲突 → 标签走稳定 lane，但不隐藏
     Object.defineProperty(mapEl, 'clientWidth', { value: 800, configurable: true })
     roCb()([{ contentRect: { width: 800, height: 800 } }])
     await flushPromises()
-    expect(dy(labelsStyle())).toBeLessThan(2)
-    // 800 → 1600（fullscreen 容器变化）→ RO 触发 → 屏幕距翻倍（≈53px）→ 无冲突 → 基准 2px
+    expect(tankVisible(1001)).toBe(true)
+    expect(tankVisible(2001)).toBe(true)
+    // 800 → 1600（fullscreen 容器变化）：无冲突 → 标签仍可见
     Object.defineProperty(mapEl, 'clientWidth', { value: 1600, configurable: true })
     roCb()([{ contentRect: { width: 1600, height: 1600 } }])
     await flushPromises()
-    expect(dy(labelsStyle())).toBe(2)
+    expect(tankVisible(1001)).toBe(true)
+    expect(tankVisible(2001)).toBe(true)
   })
 
   it('14：Resize 后 selectAt/hitbox 使用新尺寸（同一视觉位置点击选中最近车辆）', async () => {
@@ -1026,7 +902,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-info"]').text()).toContain('EnemyA') // B = 2001 = EnemyA
   })
 
-  it('15：fullscreen（1600）+ 1×/2× zoom → collision 使用新 viewport 继续正确', async () => {
+  it('15：fullscreen（1600）+ 1×/2× zoom → collision 使用新 viewport 继续正确（标签恒可见）', async () => {
     stubRaf()
     const roCb = stubResizeObserver()
     const overview = makeOverview()
@@ -1051,8 +927,13 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     await flushPromises()
     const style2x = labelsStyle()
     expect(style2x).toContain('scale(0.6944') // 2× 反缩放
-    const dy2x = parseFloat(style2x.match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || '2')
-    expect(dy2x).toBeLessThan(2) // 2× 下同位冲突位移仍生效（tankDy×inv < 2）
+    // 2× 下同位冲突：标签与 HP 恒可见（不再隐藏/位移判定）
+    expect(wrapper.find('[data-test="pb-marker-1001"]').find('.pb-label-player').isVisible()).toBe(true)
+    expect(wrapper.find('[data-test="pb-marker-2001"]').find('.pb-label-player').isVisible()).toBe(true)
+    expect(wrapper.find('[data-test="pb-marker-1001"]').find('.pb-label-tank').isVisible()).toBe(true)
+    expect(wrapper.find('[data-test="pb-marker-2001"]').find('.pb-label-tank').isVisible()).toBe(true)
+    expect(wrapper.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-num"]').isVisible()).toBe(true)
+    expect(wrapper.find('[data-test="pb-marker-2001"]').find('[data-test="pb-hp-num"]').isVisible()).toBe(true)
   })
 
   it('16：重复进入/退出 fullscreen 不累积 fullscreenchange listener；unmount 移除', async () => {

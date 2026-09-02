@@ -170,17 +170,3 @@ export function computeLabelLayout(items, opts = {}) {
 
   return result
 }
-
-// Compatibility exports for the current caller. Hysteresis no longer hides player labels.
-export const PLAYER_HIDE_MS = 250
-export const PLAYER_SHOW_MS = 300
-export const PLAYER_FADE_MS = 120
-
-export function resolvePlayerVisibility(conflicts, prev, nowMs) {
-  const state = new Map()
-  const ids = new Set([...(prev?.keys() || []), ...(conflicts || [])])
-  for (const id of ids) {
-    state.set(id, { hidden: false, conflict: false, since: Number.isFinite(nowMs) ? nowMs : 0 })
-  }
-  return { state, hidden: new Set(), fading: new Set() }
-}
