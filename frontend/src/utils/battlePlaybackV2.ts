@@ -156,12 +156,33 @@ export function friendlyHealthAt(
   return aggregateHealth(perspectiveTracks, t)
 }
 
+/**
+ * Presentation scale is a sticky, already-disclosed fact: a later canonical HP transition with
+ * displayCapacityHp=null means "this transition does not provide a new capacity", not "forget the
+ * previously disclosed scale". This is deliberately separate from current HP authority so an
+ * enemy switching from tankopedia provisional HP to replay HP cannot make the team bar jump to
+ * PARTIAL/100%. A later positive replay capacity replaces the older scale naturally.
+ */
+function presentationCapacityAt(track, t) {
+  let capacity = null
+  for (const tr of track?.healthTransitions || []) {
+    if (!tr || !Number.isFinite(tr.timeSec) || tr.timeSec > t + 1e-6) continue
+    if (typeof tr.displayCapacityHp === 'number'
+      && Number.isFinite(tr.displayCapacityHp) && tr.displayCapacityHp > 0) {
+      capacity = tr.displayCapacityHp
+    }
+  }
+  return capacity
+}
+
 function aggregateHealth(teamTracks, t) {
   if (teamTracks.length === 0) {
     return { totalMax: 0, knownRemaining: 0, unknownMax: 0, spawnFullCount: 0, openingFullCount: 0, state: 'UNKNOWN' }
   }
 
   const displays = teamTracks.map(track => healthDisplayAt(track, t))
+  const capacities = teamTracks.map(track => presentationCapacityAt(track, t))
+  const hasCompletePresentationScale = capacities.every(capacity => capacity != null && capacity > 0)
   const exact = displays.every(display => display
     && display.currentHp != null
     && display.displayCapacityHp != null
@@ -171,8 +192,11 @@ function aggregateHealth(teamTracks, t) {
     && display.relativeFull === true && display.destroyed !== true)
   const knownRemaining = displays.reduce((sum, display) =>
     sum + (display?.currentHp != null && Number.isFinite(display.currentHp) ? display.currentHp : 0), 0)
-  const totalMax = exact
-    ? displays.reduce((sum, display) => sum + (display?.displayCapacityHp || 0), 0)
+  // Keep a stable presentation denominator when every member has already disclosed one. A null
+  // capacity on the latest replay HP transition does not erase the older scale and therefore cannot
+  // turn a real 80% bar into a fake 100% PARTIAL bar. This never fabricates capacity from currentHp.
+  const totalMax = hasCompletePresentationScale
+    ? capacities.reduce((sum, capacity) => sum + capacity, 0)
     : 0
   const hasKnownEvidence = displays.some(display => display && (
     display.currentHp != null || display.destroyed || display.knowledge === 'LAST_KNOWN'))
