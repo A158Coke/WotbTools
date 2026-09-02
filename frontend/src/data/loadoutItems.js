@@ -83,12 +83,12 @@ export const CONSUMABLE_NAMES = {
 /** provision：logicalItemId -> { zh, en, ru } */
 export const PROVISION_NAMES = {
   "SMALL_FOOD": {
-    "zh": "小型食品",
+    "zh": "小补给",
     "en": "Small Food",
     "ru": "Малый паёк"
   },
   "LARGE_FOOD": {
-    "zh": "大型食品",
+    "zh": "大补给",
     "en": "Large Food",
     "ru": "Большой паёк"
   },
@@ -177,7 +177,7 @@ export const EQUIPMENT_NAMES = {
     "ru": "Точное орудие"
   },
   "107": {
-    "zh": "超级充能器",
+    "zh": "弹药超荷",
     "en": "Supercharger",
     "ru": "Суперзарядник"
   },
