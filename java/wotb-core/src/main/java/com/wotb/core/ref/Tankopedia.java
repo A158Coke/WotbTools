@@ -35,10 +35,18 @@ public final class Tankopedia {
     }
 
     /**
-     * 从 classpath 的 4 个等级文件加载（tankopedia-tier{7,8,9,10}.json）。
-     * Application code should use {@link TankopediaReferenceData#tankopedia()} so the data is loaded once.
+     * Compatibility entry point. Application code should prefer
+     * {@link TankopediaReferenceData#tankopedia()} explicitly.
+     *
+     * <p>This method no longer reloads classpath resources: every caller receives the same
+     * application-level immutable reference-data instance.</p>
      */
-    static Tankopedia load() {
+    public static Tankopedia load() {
+        return TankopediaReferenceData.tankopedia();
+    }
+
+    /** Package-private bootstrap used exactly once by {@link TankopediaReferenceData}. */
+    static Tankopedia loadFromResources() {
         final Map<Long, JsonNode> map = new HashMap<>();
         for (final String resource : TIER_RESOURCES) {
             try (InputStream in = Tankopedia.class.getResourceAsStream(resource)) {
