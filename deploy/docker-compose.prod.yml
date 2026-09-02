@@ -27,6 +27,8 @@ services:
       KC_DB_USERNAME: wotb
       KC_DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       WG_APPLICATION_ID: ${WG_APPLICATION_ID:?WG_APPLICATION_ID is required}
+      KC_HTTP_MANAGEMENT_PORT: "9000"
+      KC_HTTP_MANAGEMENT_SCHEME: http
     command: start --hostname=auth.wotbtools.com --hostname-strict=false --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
     ports:
       - "127.0.0.1:8080:8080"
@@ -99,7 +101,20 @@ services:
       - keycloak
     restart: unless-stopped
     logging: *default-logging
-  # Observability stack: Prometheus / Loki / Alloy / Grafana (docker-internal only)
+  # Observability stack: Prometheus / Loki / Alloy / Grafana / node-exporter (docker-internal only)
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 64m
   prometheus:
     image: prom/prometheus:v2.55.1
     command:
@@ -111,6 +126,7 @@ services:
       - prometheus_data:/prometheus
     depends_on:
       - wotb-backend
+      - node-exporter
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 384m

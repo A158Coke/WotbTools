@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PreDestroy;
@@ -89,6 +90,11 @@ private final ThreadPoolExecutor executor;
                 new NamedDaemonThreadFactory(),
                 new ThreadPoolExecutor.AbortPolicy());
         this.meterRegistry = meterRegistry;
+        if (meterRegistry != null) {
+            Gauge.builder("wotb_ai_review_queue_depth", this, AiReviewWorkerExecutor::queueDepth)
+                    .description("当前等待执行的 AI Review worker 数")
+                    .register(meterRegistry);
+        }
     }
 
     /** 测试便利构造器：使用默认 4/4/1100。 */
@@ -137,6 +143,10 @@ private final ThreadPoolExecutor executor;
     @Override
     public void close() {
         executor.shutdown();
+    }
+
+    private int queueDepth() {
+        return executor.getQueue().size();
     }
 
     private static final class NamedDaemonThreadFactory implements ThreadFactory {

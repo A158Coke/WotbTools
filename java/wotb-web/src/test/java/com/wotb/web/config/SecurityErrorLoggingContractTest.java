@@ -136,10 +136,10 @@ class SecurityErrorLoggingContractTest {
 
     private static String errorExplorerQuery(final JsonNode root) {
         for (final JsonNode panel : root.get("panels")) {
-            if ("Filtered error explorer".equals(panel.get("title").asText())) {
+            if ("过滤后的错误日志".equals(panel.get("title").asText())) {
                 return panel.get("targets").get(0).get("expr").asText();
             }
         }
-        throw new AssertionError("Filtered error explorer panel is missing");
+        throw new AssertionError("过滤后的错误日志面板缺失");
     }
 }
