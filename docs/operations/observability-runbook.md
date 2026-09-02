@@ -30,8 +30,8 @@ docker compose -f docker-compose.prod.yml logs --tail=100 keycloak alloy prometh
 
 - HTTP 5xx 大于 0：查看 `HTTP 请求与错误趋势`、延迟 P95/P99 和后端最近错误。
 - AI 等待队列持续接近 4：结合 `wotb_ai_review_queue_depth`、`wotb_ai_review_in_flight`、`wotb_ai_review_queue_wait_seconds` 和 503 `AI_REVIEW_BUSY` 日志判断是否饱和。
-- Replay 队列持续增长：查看 parse active/queue、Processing Job 终态和 `wotb_replay_processing_file_duration_seconds`；Job `READY/FAILED` 不等价于逐文件 parse success/failure。
-- Backend JVM 异常：查看 Heap、线程、GC、Hikari pending，以及主机 CPU/RAM/Disk/Load。
+- Replay 队列持续增长：查看 parse active/queue、Processing Job 终态和 `wotb_replay_processing_file_duration_seconds`；Job `ready/failed` 不等价于逐文件 parse success/failure。
+- Backend JVM 异常：查看堆内存、线程、GC、Hikari pending，以及主机 CPU/RAM/磁盘/负载。
 
 ## 4. 主机资源阈值
 

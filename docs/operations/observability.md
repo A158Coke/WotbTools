@@ -246,10 +246,10 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
       - **WotBTools · JVM 与基础设施**（uid `wotbtools-backend-overview`）— process/system CPU、heap、memory pool、GC、线程、Hikari、磁盘与诊断日志；保留原 UID 兼容已有链接
       - **WotBTools · HTTP 与错误**（uid `wotbtools-http-errors`）— 请求/状态码次数、URI Top 10、过滤低样本慢 URI 的 P95、P50/P95/P99 趋势与 Loki errorCode 分布
       - **WotBTools · 回放解析**（uid `wotbtools-replay-parser`）— 回放解析功能使用情况
-      - **WotBTools 使用统计**（uid `wotbtools-usage`）— Replay Processing Job/files/success/failure 与 AI Review started/success/failure/rejected（均按 Grafana 所选时间范围估算增量，非永久累计）
-      - **WotBTools · 生产总览**（uid `wotbtools-production-overview`）— 默认最近 15 分钟展示 Backend/Keycloak/Host 状态、HTTP P50/P95/P99、Replay/AI 队列、主机资源、JVM/GC 与最近异常；所有 Panel 标题中文化
+      - **WotBTools 使用统计**（uid `wotbtools-usage`）— Replay Processing Job/files/已完成/失败与 AI Review 已启动/成功/失败/事实校验退回（均按 Grafana 所选时间范围估算增量，非永久累计）
+      - **WotBTools · 生产总览**（uid `wotbtools-production-overview`）— 默认最近 15 分钟展示生产状态、HTTP、Replay、AI、认证与系统资源，以及 JVM/GC 与最近异常；所有 Panel 标题中文化
       - **WotBTools · Keycloak**（uid `wotbtools-keycloak`）— Keycloak management metrics、HTTP 5xx/P95、JVM/GC 与认证/Identity Broker 日志；保留 Loki 关键词兜底
-      - **WotBTools · AI 复盘**（uid `wotbtools-ai-review`）— AI 已启动/成功/失败/拒绝、duration P50/P95/P99、queue/upstream P95、validation/error 与 SSE lifecycle 日志
+      - **WotBTools · AI 复盘**（uid `wotbtools-ai-review`）— AI 已启动/成功/失败/事实校验退回、耗时 P50/P95/P99、队列/上游 P95、校验/错误与 SSE 生命周期日志
       - **WotBTools · 错误检索**（uid `wotbtools-error-explorer`）— 按 service、diagnostic id、errorCode、traceId、jobId 检索 Loki 错误日志；同时覆盖 canonical `api_request_failed` ERROR 与 `api_request_rejected` INFO
 
 看板使用现有 Prometheus/Loki 数据源，并仅增加两项最小观测能力：Keycloak management `/metrics` 与低基数 node-exporter。Production Overview 聚合 Backend、Keycloak、Host、Replay、AI 和最近异常；JVM、HTTP、Replay、AI、错误检索仍保留为独立下钻看板。未引入 cAdvisor、Postgres exporter 或 Alertmanager。
@@ -260,14 +260,14 @@ Spring Security 的 401/403（`AUTH_UNAUTHENTICATED` / `AUTH_FORBIDDEN`）也会
 
 Production Overview 的 Replay 统计使用线上实际暴露的 `wotb_replay_processing_job_total`、`wotb_replay_full_processing_total`、`wotb_replay_processing_job_result_total` 与 `wotb_replay_processing_file_duration_seconds_*`；不使用当前线上无样本的 legacy `wotb_replay_requests_total` / `wotb_replay_parse_duration_seconds_*` 作为 V2 Processing Job 信号。
 
-Processing Job 终态口径：`READY` 表示 Processing Job 已正常完成 finalization；一个 `READY` Job 仍可能包含 source-level replay failures，因此 `READY` 不等于所有 replay 解析成功。`FAILED` 表示 Job 未完成正常 finalization，也不等于 replay 文件解析失败数。当前没有 authoritative 的 per-source success/failure Prometheus metric，Dashboard 与告警不得把 Job `READY` / `FAILED` 描述成 replay parse success / failure。
+Processing Job 终态口径：`ready` 表示 Processing Job 已正常完成 finalization；一个 `ready` Job 仍可能包含 source-level replay failures，因此“已完成”不等于所有 replay 解析成功。`failed` 表示 Job 未完成正常 finalization，也不等于 replay 文件解析失败数。当前没有 authoritative 的 per-source success/failure Prometheus metric，Dashboard 与告警不得把 Job 终态描述成 replay parse success / failure。
 
 **统计口径说明（WotBTools 使用统计 / Replay Parser）**
 
 - Prometheus Counter 会在 Backend 重启或重新部署后归零，Dashboard 中的"次数"均为 **Grafana 所选时间范围内的估算增量**（`increase()` + `round()`），不是历史累计。
 - **Replay jobs / files**：当前 V2 使用 `wotb_replay_processing_job_total`、`wotb_replay_processing_job_files_total` 与 `wotb_replay_full_processing_total`；其中 `processing_job_files_total` 表示提交到 Job 的输入文件数（Replay files submitted），`full_processing_total` 表示实际执行 full processing 的文件数（Replay files processed），不再把 legacy operation 请求误当作当前处理入口。
-- **AI Review 请求次数**：统计所有请求尝试，包括成功、失败、超时和被拒绝，不等同于成功次数。
-- **AI Review 成功次数**：仅统计 `wotb_ai_review_results_total{result="success"}`；**未成功次数**保留 `failure` 与 `rejected` 独立标签，不混为同一结果。
+- **AI Review 请求次数**：统计所有请求尝试，包括成功、失败、超时和事实校验退回，不等同于成功次数。
+- **AI Review 成功次数**：仅统计 `wotb_ai_review_results_total{result="success"}`；**未成功次数**保留 `failure` 与 `rejected` 独立标签，不混为同一结果，`rejected` 在 Dashboard 中显示为“事实校验退回”。
 - **AI 平均每次调用 Token**：`wotb_ai_upstream_tokens_total{token_type="total"}` 增量 ÷ `wotb_ai_upstream_requests_total` 增量（分母含失败调用，失败计 0 token），即「平均每次发起的 AI 上游调用消耗的 token」；按模式面板可区分单机复盘（`PRE_BATTLE_STRATEGIC_PRIOR` + `TACTICAL_REVIEW_HARNESS`）与团队复盘（`SINGLE_TEAM_BATTLE` + `TEAM_AUTOPSY`）各阶段消耗。
 - **数据保留**：Prometheus 仅保留约 7 天，不提供网站历史永久累计；如未来需要永久累计，应写入 PostgreSQL（当前不引入），而非依赖 Counter。
 
@@ -276,7 +276,7 @@ Processing Job 终态口径：`READY` 表示 Processing Job 已正常完成 fina
 1. Backend Up
 2. Processing Job started（`wotb_replay_processing_job_total`，所选区间）
 3. Replay files processed（`wotb_replay_full_processing_total`，所选区间）
-4. Jobs READY / FAILED（`wotb_replay_processing_job_result_total`，Job 终态）
+4. 已完成 / 失败作业（`wotb_replay_processing_job_result_total`，Job 终态）
 5. 当前 parse active / queue depth / jobs active / queued
 6. 解析耗时 P50/P95/P99（`wotb_replay_processing_file_duration_seconds_*`）
 7. Processing Job outcome trend 与最近 Replay 错误日志
@@ -286,11 +286,11 @@ Processing Job 终态口径：`READY` 表示 Processing Job 已正常完成 fina
 
 **旧 Backend Overview 已迁移为 JVM / Infrastructure；生产首页面板清单**
 
-1. Backend / Keycloak / node-exporter 状态、请求数、5xx、HTTP P95（首屏）
-2. Replay jobs/files、READY/FAILED Job 终态与 parse active/queued
-3. AI active/queue 与 success/failure/rejected
+1. 生产状态、HTTP、认证与 CPU/内存/磁盘/主机负载（首屏）
+2. Replay 处理中、等待中、最近完成与最近失败
+3. AI 当前并发、等待队列、成功、失败与事实校验退回
 4. HTTP、Replay、AI、Keycloak 的趋势与 P50/P95/P99
-5. CPU、RAM、Disk、Load、Backend JVM/GC 摘要
+5. CPU、内存、磁盘、负载、Backend JVM/GC 摘要
 6. Recent Backend / Keycloak errors（Loki）
 
 > Dashboard JSON 提交在 `deploy/observability/grafana/dashboards/`，volume 丢失后随 provisioning 自动重建。
@@ -498,7 +498,7 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
 - **HikariCP**：`hikaricp_connections_active/idle/pending`
 - **AI Review**（自定义，`AiReplayReviewService.analyze` 边界，**一次进入 worker 的请求 = 一次 Review**）：
   - `wotb_ai_review_requests_total` — Review 请求量（每次 analyze +1，与上游调用次数无关）
-  - `wotb_ai_review_results_total{result=success|failure|rejected}` — 结果（rejected 为流内拒绝：AI 未配置/不支持战斗类型/perspective 未确定/token budget 拒绝；混合批次中单文件解析失败返回 FAILED 结果不抛异常，计入 success 的请求完成语义）。**注意**：SSE worker 池饱和（503 `AI_REVIEW_BUSY`）与 request-envelope 预校验失败（文件数超限 `REPLAY_FILE_COUNT_EXCEEDED` / 文件类型非法 / 文件过大 / 总大小超限 / 未知 locale）由 `@ExceptionHandler` 在提交 worker 前同步返回 HTTP 400/503，**不进入 `analyze`，不计入这些 AI Review 计数器**——只能在 `http_server_requests_seconds_*`（按 status 4xx/5xx）与 nginx access log 中观察；监控告警须结合两者，不能只看 `wotb_ai_review_*`。
+  - `wotb_ai_review_results_total{result=success|failure|rejected}` — 结果（rejected 在 Dashboard 中显示为“事实校验退回”，含流内拒绝：AI 未配置/不支持战斗类型/perspective 未确定/token budget 拒绝；混合批次中单文件解析失败返回 FAILED 结果不抛异常，计入 success 的请求完成语义）。**注意**：SSE worker 池饱和（503 `AI_REVIEW_BUSY`）与 request-envelope 预校验失败（文件数超限 `REPLAY_FILE_COUNT_EXCEEDED` / 文件类型非法 / 文件过大 / 总大小超限 / 未知 locale）由 `@ExceptionHandler` 在提交 worker 前同步返回 HTTP 400/503，**不进入 `analyze`，不计入这些 AI Review 计数器**——只能在 `http_server_requests_seconds_*`（按 status 4xx/5xx）与 nginx access log 中观察；监控告警须结合两者，不能只看 `wotb_ai_review_*`。
   - `wotb_ai_review_errors_total{type=<固定枚举>}` — 错误分类（仅流内失败，与 `failure` 一致；HTTP 4xx 预校验失败不在此处计数）
   - `wotb_ai_review_duration_seconds` — Review 完整总耗时（Timer，histogram，成功与异常都结束，覆盖文件验证→解析→分析→AI 调用→响应处理）
   - `wotb_ai_review_in_flight` — 当前处理中的 Review 数（Gauge，即"已进入 worker、尚未完成"的请求数；不含队列中等待的请求，也不含被 `AI_REVIEW_BUSY` 回绝的请求）
@@ -529,7 +529,7 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
 
 **Keycloak / Host**：
 
-- Keycloak management interface：Prometheus job `keycloak` 抓取 `keycloak:9000/metrics`；Dashboard 使用 `up`、HTTP request histogram、JVM/GC 与 Loki 认证关键词，不假设不存在的 auth-event metric。
+- Keycloak management interface：Prometheus job `keycloak` 抓取 `keycloak:9000/metrics`；Dashboard 仅使用 Keycloak 26.6.x 文档/发行版实际支持的 `http_server_*`、`jvm_*`、`system_load_average_1m` 与 Prometheus target `up`，不使用 `base_cpu_processCpuLoad` 或 `system_cpu_usage` 等未纳入该指标契约的名称；认证事件仍通过 Loki 关键词观察。
 - Host：Prometheus job `node-exporter` 抓取 `node-exporter:9100`；生产首页使用 `node_cpu_seconds_total`、`node_memory_*`、`node_filesystem_*` 与 `node_load1` 展示 CPU/RAM/Disk/Load。
 
 **Label 约束**：不使用用户 ID、Replay ID、文件名、IP、correlation ID、Prompt、Completion、异常正文作为 label；URI 一律为 Spring MVC 模板（如 `/api/preview`）。Token Usage 仅以低基数 `mode`/`token_type` 统计。

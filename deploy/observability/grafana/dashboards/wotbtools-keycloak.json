@@ -5,7 +5,7 @@
   "panels": [
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "none", "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "正常", "color": "green" } } }] }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "none", "mappings": [{ "type": "value", "options": { "0": { "text": "不可用", "color": "red" }, "1": { "text": "正常", "color": "green" } } }] }, "overrides": [] },
       "gridPos": { "h": 5, "w": 4, "x": 0, "y": 0 },
       "id": 1,
       "links": [{ "title": "打开生产首页", "type": "dashboard", "uid": "wotbtools-production-overview", "keepTime": true, "includeVars": true }],
@@ -71,9 +71,9 @@
       "id": 7,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
-        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"2..\"}[$__rate_interval]))", "legendFormat": "2xx", "refId": "A" },
-        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"4..\"}[$__rate_interval]))", "legendFormat": "4xx", "refId": "B" },
-        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"5..\"}[$__rate_interval]))", "legendFormat": "5xx", "refId": "C" }
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"2..\"}[$__rate_interval]))", "legendFormat": "成功 2xx", "refId": "A" },
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"4..\"}[$__rate_interval]))", "legendFormat": "客户端错误 4xx", "refId": "B" },
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"5..\"}[$__rate_interval]))", "legendFormat": "服务端错误 5xx", "refId": "C" }
       ],
       "title": "HTTP 请求趋势",
       "type": "timeseries"
@@ -85,11 +85,9 @@
       "id": 8,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
-        { "expr": "base_cpu_processCpuLoad{job=\"keycloak\"}", "legendFormat": "进程 CPU", "refId": "A" },
-        { "expr": "system_cpu_usage{job=\"keycloak\"}", "legendFormat": "系统 CPU", "refId": "B" },
-        { "expr": "jvm_gc_overhead{job=\"keycloak\"}", "legendFormat": "GC 开销", "refId": "C" }
+        { "expr": "jvm_gc_overhead{job=\"keycloak\"}", "legendFormat": "GC 开销", "refId": "A" }
       ],
-      "title": "CPU 与 GC",
+      "title": "GC 开销",
       "type": "timeseries"
     },
     {
@@ -98,7 +96,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 14 },
       "id": 9,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "targets": [{ "expr": "sum(jvm_memory_used_bytes{job=\"keycloak\",area=\"heap\"}) / sum(jvm_memory_committed_bytes{job=\"keycloak\",area=\"heap\"})", "legendFormat": "Heap 使用率", "refId": "A" }],
+      "targets": [{ "expr": "sum(jvm_memory_used_bytes{job=\"keycloak\",area=\"heap\"}) / sum(jvm_memory_committed_bytes{job=\"keycloak\",area=\"heap\"})", "legendFormat": "堆内存使用率", "refId": "A" }],
       "title": "JVM 堆内存",
       "type": "timeseries"
     },
@@ -121,11 +119,8 @@
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 14 },
       "id": 11,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "targets": [
-        { "expr": "system_load_average_1m{job=\"keycloak\"}", "legendFormat": "系统负载 1m", "refId": "A" },
-        { "expr": "jvm_threads_peak_threads{job=\"keycloak\"}", "legendFormat": "线程峰值", "refId": "B" }
-      ],
-      "title": "负载与线程",
+      "targets": [{ "expr": "system_load_average_1m{job=\"keycloak\"}", "legendFormat": "系统负载（1 分钟）", "refId": "A" }],
+      "title": "系统负载",
       "type": "timeseries"
     },
     {
