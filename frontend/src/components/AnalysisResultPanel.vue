@@ -203,6 +203,9 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   color: var(--text);
   padding: 12px 14px 14px;
   margin: 0;
+  /* 超宽表格（MarkdownContent :deep(table) width:100%）在正文区域内横向滚动，
+     不再被 .analysis-panel 的 overflow:hidden（圆角裁切所需，保留）切断。 */
+  overflow-x: auto;
 }
 .prebattle-block {
   padding: 10px 14px;

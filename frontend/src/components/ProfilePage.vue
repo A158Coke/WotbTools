@@ -779,7 +779,8 @@ function notificationMessage(notification) {
 .notification-time { font-size: .72rem; color: #9aa09c; margin-top: 3px; }
 
 @media (width < 768px) {
-  .profile-body { flex-direction: column; }
+  /* .profile-body 的移动端形态由 showcase.css 全局规则（display:block !important）
+     唯一拥有，此处不再声明对 block 容器无效的 flex-direction。 */
   .profile-right { width: 100%; }
   .profile-hero { flex-direction: column; gap: 12px; align-items: flex-start; }
 }
