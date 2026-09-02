@@ -17,7 +17,6 @@ import {
   hofAdminHundredApprove,
   hofAdminMark3Approve,
   hofDownload,
-  hofHundredSubmitWargaming,
   hofMark3Submit,
   hofUpload,
   ratingV2Admin,
@@ -106,32 +105,6 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
     )
     // 401 在创建 blob / object URL / 触发下载之前抛错，不得有任何下载副作用
     expect(objectUrlSpy).not.toHaveBeenCalled()
-  })
-
-  it('WG hundred submission sends authenticated JSON without multipart data', async () => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, {
-      id: 9,
-      status: 'CURRENT',
-      decision: 'AUTO_APPROVED',
-      verifiedAverageDamage: 3800,
-      verifiedBattleCount: 120,
-    }))
-    const body = { vehicleId: 385, averageDamage: 3750, battleCount: 120 }
-
-    const result = await hofHundredSubmitWargaming(body)
-
-    expect(result.decision).toBe('AUTO_APPROVED')
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      '/api/hof/hundred/submissions/wargaming',
-      expect.objectContaining({
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer test-token',
-        },
-        body: JSON.stringify(body),
-      }),
-    )
   })
 
   it('approves a hundred-battle submission without a score payload', async () => {

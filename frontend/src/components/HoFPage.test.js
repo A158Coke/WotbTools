@@ -20,9 +20,6 @@ const lbApi = vi.hoisted(() => ({
   hofDownload: vi.fn(() => Promise.resolve(undefined)),
   hofHundredList: vi.fn(() => Promise.resolve({ vehicleId: null, vehicleName: '', items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })),
   hofHundredSubmit: vi.fn(() => Promise.resolve({ id: 1, status: 'PENDING' })),
-  hofHundredSubmitWargaming: vi.fn(() => Promise.resolve({
-    id: 2, status: 'CURRENT', decision: 'AUTO_APPROVED', verifiedAverageDamage: 3800, verifiedBattleCount: 120
-  })),
   hofHundredCancel: vi.fn(() => Promise.resolve({ id: 1, status: 'CANCELLED' })),
   hofHundredMyStatus: vi.fn(() => Promise.resolve({ current: [], pending: [], rejected: [] })),
   hofMark3List: vi.fn(() => Promise.resolve({ vehicleId: null, vehicleName: '', items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })),
@@ -70,9 +67,6 @@ describe('HoFPage', () => {
     lbApi.hofVehicleOptions.mockResolvedValue([])
     lbApi.hofHundredSubmit.mockResolvedValue({ id: 1, status: 'PENDING' })
     lbApi.hofHundredMyStatus.mockResolvedValue({ current: [], pending: [], rejected: [] })
-    lbApi.hofHundredSubmitWargaming.mockResolvedValue({
-      id: 2, status: 'CURRENT', decision: 'AUTO_APPROVED', verifiedAverageDamage: 3800, verifiedBattleCount: 120
-    })
     lbApi.hofMark3List.mockResolvedValue({ vehicleId: null, vehicleName: '', items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })
     lbApi.hofMark3Submit.mockResolvedValue({ id: 3, status: 'PENDING' })
     lbApi.hofMark3MyStatus.mockResolvedValue({ current: [], pending: [], rejected: [] })
@@ -426,123 +420,6 @@ describe('HoFPage', () => {
     expect(lbApi.hofHundredSubmit).not.toHaveBeenCalled()
   })
 
-  it('keeps WG mode disabled for incomplete identities and exposes an explicit logout/manual path', async () => {
-    tokenClaims = { wotb_verified: true, wotb_region: 'ASIA', wotb_nickname: 'Incomplete' }
-    const wrapper = mountPage()
-    await flushPromises()
-    await openHundredSubmit(wrapper)
-
-    const modal = wrapper.find('.h100-modal')
-    expect(modal.find('.h100-mode-wg').attributes('disabled')).toBeDefined()
-    expect(modal.find('.h100-wg-locked').exists()).toBe(true)
-    expect(modal.text()).toContain('hundred.logoutForWg')
-    expect(modal.text()).toContain('hundred.continueManual')
-
-    await modal.findAll('.h100-wg-actions button')[0].trigger('click')
-    expect(api.logout).toHaveBeenCalledTimes(1)
-    expect(api.login).not.toHaveBeenCalled()
-    expect(lbApi.hofHundredSubmitWargaming).not.toHaveBeenCalled()
-  })
-
-  it('preserves the manual file draft while WG mode sends JSON only and auto-approves', async () => {
-    tokenClaims = {
-      wotb_verified: 'true', wotb_region: 'EU',
-      wotb_account_id: '572253806', wotb_nickname: 'WgPlayer'
-    }
-    const wrapper = mountPage()
-    await flushPromises()
-    await openHundredSubmit(wrapper)
-
-    let modal = wrapper.find('.h100-modal')
-    await modal.find('select').setValue('385')
-    await modal.find('#h100-submit-damage').setValue('3750')
-    await modal.find('#h100-submit-battles').setValue('120')
-    await setFiles(modal.findAll('input[type="file"]')[0], [
-      new File(['proof'], 'proof.png', { type: 'image/png', lastModified: 1 })
-    ])
-    await vi.waitFor(() => expect(modal.text()).toContain('proof.png'))
-    await setFiles(modal.findAll('input[type="file"]')[1], [
-      new File(['replay'], 'manual-draft.wotbreplay', { lastModified: 2 })
-    ])
-
-    await modal.find('.h100-mode-wg').trigger('click')
-    modal = wrapper.find('.h100-modal')
-    expect(modal.find('.h100-manual-evidence').attributes('style')).toContain('display: none')
-
-    await modal.find('.h100-modal-submit').trigger('click')
-    await flushPromises()
-    expect(lbApi.hofHundredSubmitWargaming).toHaveBeenCalledWith({
-      vehicleId: 385, averageDamage: 3750, battleCount: 120
-    })
-    expect(lbApi.hofHundredSubmit).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('hundred.wgAutoApproved')
-
-    await wrapper.find('.h100-submit-btn').trigger('click')
-    await flushPromises()
-    modal = wrapper.find('.h100-modal')
-    await modal.find('.h100-mode-manual').trigger('click')
-    expect(modal.text()).toContain('proof.png')
-    expect(modal.text()).toContain('manual-draft.wotbreplay')
-    expect(modal.find('#h100-submit-damage').element.value).toBe('')
-  })
-
-  it('shows a distinct success result when WG verification requires manual review', async () => {
-    tokenClaims = {
-      wotb_verified: true, wotb_region: 'NA',
-      wotb_account_id: '572253806', wotb_nickname: 'HighDamage'
-    }
-    lbApi.hofHundredSubmitWargaming.mockResolvedValue({
-      id: 3, status: 'PENDING', decision: 'MANUAL_REVIEW',
-      verifiedAverageDamage: 4101, verifiedBattleCount: 188
-    })
-    const wrapper = mountPage()
-    await flushPromises()
-    await openHundredSubmit(wrapper)
-
-    const modal = wrapper.find('.h100-modal')
-    await modal.find('.h100-mode-wg').trigger('click')
-    await modal.find('select').setValue('385')
-    await modal.find('#h100-submit-damage').setValue('3900')
-    await modal.find('#h100-submit-battles').setValue('180')
-    await modal.find('.h100-modal-submit').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('hundred.wgManualReview')
-    expect(lbApi.hofHundredMyStatus.mock.calls.length).toBeGreaterThanOrEqual(2)
-    expect(lbApi.hofHundredList.mock.calls.length).toBeGreaterThanOrEqual(2)
-  })
-
-  it('shows official WG values instead of claimed values in the pending card', async () => {
-    lbApi.hofHundredMyStatus.mockResolvedValue({
-      current: [],
-      pending: [{
-        id: 8,
-        vehicleId: 385,
-        vehicleName: 'Progetto 65',
-        status: 'PENDING',
-        verificationSource: 'WARGAMING_API',
-        claimedAverageDamage: 3500,
-        claimedBattleCount: 120,
-        officialAverageDamage: 4101,
-        officialTankBattleCount: 188,
-        submittedAt: '2026-08-23T10:00:00Z',
-      }],
-      rejected: [],
-    })
-    const wrapper = mountPage()
-    await flushPromises()
-    await wrapper.findAll('.tabs button')[1].trigger('click')
-    await flushPromises()
-    await wrapper.find('.h100-vehicle-select').setValue('385')
-    await flushPromises()
-
-    const pending = wrapper.find('.h100-pending-card')
-    expect(pending.text()).toContain('4,101')
-    expect(pending.text()).toContain('188')
-    expect(pending.text()).not.toContain('3,500')
-    expect(pending.text()).not.toContain('120')
-  })
-
   it('keeps the current-page draft and selected files after closing by the backdrop', async () => {
     const wrapper = mountPage()
     await flushPromises()
@@ -603,38 +480,6 @@ describe('HoFPage', () => {
       expect(reopened.text()).toContain('late-proof.png')
       expect(reopened.find('.h100-file-reading').exists()).toBe(false)
       expect(reopened.find('.h100-modal-submit').attributes('disabled')).toBeUndefined()
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('preserves a pending hundred-battle screenshot read while switching to WG verification', async () => {
-    tokenClaims = {
-      wotb_verified: true, wotb_region: 'EU',
-      wotb_account_id: '572253806', wotb_nickname: 'WgPlayer',
-    }
-    const readers = stubDeferredFileReader()
-    try {
-      const wrapper = mountPage()
-      await flushPromises()
-      await openHundredSubmit(wrapper)
-      const modal = wrapper.find('.h100-modal')
-      await setFiles(
-        modal.findAll('input[type="file"]')[0],
-        [new File(['proof'], 'late-wg-proof.png', { type: 'image/png', lastModified: 1 })]
-      )
-      expect(readers).toHaveLength(1)
-
-      await modal.find('.h100-mode-wg').trigger('click')
-      expect(modal.find('.h100-manual-evidence').attributes('style')).toContain('display: none')
-      readers[0].result = 'data:image/png;base64,AAAA'
-      readers[0].onload()
-      await flushPromises()
-
-      await modal.find('.h100-mode-manual').trigger('click')
-      expect(modal.text()).toContain('late-wg-proof.png')
-      expect(modal.find('.h100-file-reading').exists()).toBe(false)
-      expect(modal.find('.h100-modal-submit').attributes('disabled')).toBeUndefined()
     } finally {
       vi.unstubAllGlobals()
     }

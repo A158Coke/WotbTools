@@ -38,4 +38,16 @@ describe('useAuth', () => {
     await auth.logout()
     expect(kcLogout).toHaveBeenCalled()
   })
+
+  it('hasRole() reads the reactive realm roles without granting access to other roles', async () => {
+    const auth = useAuth()
+    await auth.initPromise
+
+    auth.tokenParsed.value = { realm_access: { roles: ['wotbtools-admin'] } }
+    expect(auth.hasRole('wotbtools-admin')).toBe(true)
+    expect(auth.hasRole('boost-manager')).toBe(false)
+    expect(auth.hasRole('')).toBe(false)
+
+    auth.tokenParsed.value = null
+  })
 })
