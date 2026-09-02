@@ -19,10 +19,12 @@
 | Page                 | File                                      | Role                                | 替换约束                                                                                                      |
 |----------------------|-------------------------------------------|-------------------------------------|---------------------------------------------------------------------------------------------------------------|
 | Home — Hero          | `home/hero-v4.png`                        | Hero 横幅背景（全屏 + hero 内背景） | 坦克主体应在画面右侧、左侧留暗色负空间给文案；保持宽幅（约 2.5:1）；背景文字不得替代真实 UI                       |
-| Home — Replay 卡片   | `home/card-replay-analysis-v1.png`        | feature card media area（3:2 裁切） | 建议 3:2；主体居中即可，卡片以 object-fit: cover 裁切                                                         |
-| Home — HoF 卡片      | `home/card-hall-of-fame-v1.png`           | feature card media area（3:2 裁切） | 同上                                                                                                          |
-| Home — Coaching 卡片 | `home/card-coaching-v1.png`               | feature card media area（3:2 裁切） | 同上（训练场主题）                                                                                            |
-| Home — Support 卡片  | `home/card-support-v1.png`                | feature card media area（3:2 裁切） | 同上（工坊/支持主题）                                                                                         |
+| Home — Replay 卡片   | `home/card-replay-parser-v1.png`          | feature card media area（cover 裁切） | Replay 解析主题；卡片以 object-fit: cover 裁切                                                               |
+| Home — AI 复盘卡片   | `home/card-ai-review-v1.png`              | feature card media area（cover 裁切） | AI 复盘/训练主题；卡片以 object-fit: cover 裁切                                                               |
+| Home — 战局重建卡片  | `home/card-battle-playback-v1.png`       | feature card media area（cover 裁切） | 战局地图主题；卡片以 object-fit: cover 裁切                                                                   |
+| Home — HoF 卡片      | `home/card-hall-of-fame-v1.png`           | feature card media area（cover 裁切） | 名人堂主题                                                                                                    |
+| Home — Boost 卡片    | `home/card-boost-training-v1.png`        | feature card media area（cover 裁切） | 训练场主题                                                                                                    |
+| Home — Sponsor 卡片  | `home/card-sponsor-v1.png`                | feature card media area（cover 裁切） | 支持/赞助主题                                                                                                 |
 | Replay Parser        | `replay/replay-hero-battlefield-v1.png`   | 全屏背景 + upload 战术表面          | 16:9；暗部为主；背景中的地图/标记仅作氛围，不作为回放事实                                               |
 | Hall of Fame         | `hof/hof-hero-hall-v1.png`                | 全屏背景                            | 16:9；金色荣誉大厅主题                                                                                        |
 | Rating               | `rating/rating-hero-analysis-v1.png`      | 全屏背景                            | 16:9；图片内即使有生成式 dashboard 元素也只能是低权重氛围，真实 Rating 数据必须覆盖在独立 readable surface 上 |

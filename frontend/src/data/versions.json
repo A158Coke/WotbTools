@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.66",
+    "date": "2026-09-03",
+    "tag": "fix",
+    "zh": "修复主页功能卡片背景重复：Replay 解析、AI 复盘、战局重建、Boost 和 Sponsor 卡片现在使用各自的视觉素材。",
+    "en": "Fixed repeated homepage card backgrounds: Replay Parser, AI Review, Battle Playback, Boost and Sponsor cards now use dedicated artwork.",
+    "ru": "Исправлены повторяющиеся фоны карточек на главной: для карточек Replay Parser, AI Review, Battle Playback, Boost и Sponsor теперь используются отдельные изображения."
+  },
+  {
     "v": "2.12.65",
     "date": "2026-09-03",
     "tag": "chg",
