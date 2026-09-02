@@ -9,6 +9,15 @@ import consumablesJson from '../../../common/wotb-item-catalog-json/consumables.
 import provisionsJson from '../../../common/wotb-item-catalog-json/provisions.json'
 import equipmentJson from '../../../common/wotb-item-catalog-json/equipment.json'
 
+const ZH_PROVISION_OVERRIDES = {
+  SMALL_FOOD: '小补给',
+  LARGE_FOOD: '大补给',
+}
+
+const ZH_EQUIPMENT_OVERRIDES = {
+  107: '弹药超荷',
+}
+
 describe('loadoutItems', () => {
   it('所有 consumable/provision/equipment 条目都带 zh/en/ru 三语', () => {
     for (const map of [CONSUMABLE_NAMES, PROVISION_NAMES, EQUIPMENT_NAMES]) {
@@ -22,19 +31,27 @@ describe('loadoutItems', () => {
     }
   })
 
-  it('zh/en 完全由 common authoritative catalog 驱动（adapter 返回值 == catalog nameZh/nameEn）', () => {
-    for (const it of consumablesJson.items) {
-      expect(loadoutItemLabel('consumable', it.code, 'zh')).toBe(it.nameZh)
-      expect(loadoutItemLabel('consumable', it.code, 'en')).toBe(it.nameEn)
+  it('en 由 authoritative catalog 驱动；zh 仅允许显式 UI 术语 override', () => {
+    for (const item of consumablesJson.items) {
+      expect(loadoutItemLabel('consumable', item.code, 'zh')).toBe(item.nameZh)
+      expect(loadoutItemLabel('consumable', item.code, 'en')).toBe(item.nameEn)
     }
-    for (const it of provisionsJson.items) {
-      expect(loadoutItemLabel('provision', it.code, 'zh')).toBe(it.nameZh)
-      expect(loadoutItemLabel('provision', it.code, 'en')).toBe(it.nameEn)
+    for (const item of provisionsJson.items) {
+      const expectedZh = ZH_PROVISION_OVERRIDES[item.code] ?? item.nameZh
+      expect(loadoutItemLabel('provision', item.code, 'zh')).toBe(expectedZh)
+      expect(loadoutItemLabel('provision', item.code, 'en')).toBe(item.nameEn)
     }
-    for (const it of equipmentJson.items) {
-      expect(loadoutItemLabel('equipment', it.id, 'zh')).toBe(it.nameZh)
-      expect(loadoutItemLabel('equipment', it.id, 'en')).toBe(it.nameEn)
+    for (const item of equipmentJson.items) {
+      const expectedZh = ZH_EQUIPMENT_OVERRIDES[item.id] ?? item.nameZh
+      expect(loadoutItemLabel('equipment', item.id, 'zh')).toBe(expectedZh)
+      expect(loadoutItemLabel('equipment', item.id, 'en')).toBe(item.nameEn)
     }
+  })
+
+  it('固定中文 UI 术语 override', () => {
+    expect(loadoutItemLabel('provision', 'SMALL_FOOD', 'zh')).toBe('小补给')
+    expect(loadoutItemLabel('provision', 'LARGE_FOOD', 'zh')).toBe('大补给')
+    expect(loadoutItemLabel('equipment', 107, 'zh')).toBe('弹药超荷')
   })
 
   it('ru 由 overlay 提供；未知 id/code 返回 null；未知 locale 回退英文', () => {
