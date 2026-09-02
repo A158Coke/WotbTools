@@ -5,8 +5,8 @@
 ## 核心规则
 
 - 每个正式产品页面必须拥有自己的专属背景资产，不再使用一个 shared background 覆盖多个页面。
-- **当前正式展示层使用高质量 PNG**（`*-v1.png` / `hero-v4.png`）；它们是当前 showcase 的 canonical assets。
-- V1/V2/V3 SVG 保留在仓库中作为 fallback / 视觉历史，**不再控制正式页面**（正式 CSS 不优先引用它们）。
+- **当前 SPA 正式展示层使用高质量 PNG**（`*-v1.png` / `hero-v4.png`）；它们是当前 showcase 的 canonical assets。
+- V1/V2/V3 SVG 保留在仓库中作为 fallback / 视觉历史，**不再控制 SPA 正式页面**（正式 CSS 不优先引用它们）；独立静态页可使用专属 SVG 资产。
 - 素材不得包含必须可读的文字、Logo、按钮或业务数值；真实 UI 必须由 Vue/CSS 渲染。
 - 背景只承担 atmosphere / product identity，不得作为 Replay、Map、Tankopedia、Rating 或 AI Review 的事实来源。
 - 背景必须铺满 Topbar 下方整个 viewport（`position: fixed` 伪元素，见 `showcase-backgrounds.css` 的基础 contract）；不得只存在于 1420/1720/1760px content container 内；不使用 `background-attachment: fixed`。
@@ -32,6 +32,7 @@
 | HoF Admin            | `hof-admin/hof-admin-hero-command-v1.png` | 全屏背景（强度较弱）                | 16:9；CRUD / review 数据必须保持清晰                                                                          |
 | Version / Changelog  | `version/version-hero-workshop-v1.png`    | 全屏背景                            | 16:9；工坊主题                                                                                                |
 | Contact              | `contact/contact-hero-radio-v1.png`       | 全屏背景                            | 16:9；通信塔/无线电主题                                                                                       |
+| Sponsor              | `sponsor/sponsor-bg-v1.svg`               | 独立赞助页背景                      | 纯抽象工坊几何元素；不得包含品牌标识、可读文字或第三方素材                                                     |
 
 隐藏的 `PlaybackQaPage` 是 QA / production-component verification 页面，不属于正式产品 Showcase，因此不创建营销背景。
 
