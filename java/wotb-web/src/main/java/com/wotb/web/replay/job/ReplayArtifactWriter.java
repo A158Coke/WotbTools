@@ -124,9 +124,9 @@ public final class ReplayArtifactWriter {
             removeSampleKnowledge(vehicleObject, "positionSegments");
             removeSampleKnowledge(vehicleObject, "orientationSegments");
             removeUnknownTransitions(vehicleObject, "orientationSegments", "knowledge");
+            normalizeLegacyHealthFacts(vehicleObject);
             removeUnknownTransitions(vehicleObject, "healthTransitions", "knowledge");
             removeUnknownTransitions(vehicleObject, "lifeTransitions", "lifeState");
-            normalizeLegacyHealthFacts(vehicleObject);
             normalizeLegacyDamageFacts(vehicleObject);
             normalizeLegacyModuleFacts(vehicleObject);
             normalizeLegacyLoadout(vehicleObject);
@@ -221,7 +221,14 @@ public final class ReplayArtifactWriter {
         final JsonNode transitions = vehicle.get("healthTransitions");
         if (!(transitions instanceof ArrayNode array)) return;
         for (final JsonNode transition : array) {
-            if (transition instanceof ObjectNode object && !object.has("relativeFull")) {
+            if (!(transition instanceof ObjectNode object)) continue;
+            if ("UNKNOWN".equals(object.path("knowledge").asText())) {
+                object.putNull("currentHp");
+                object.putNull("knowledge");
+                object.putNull("source");
+                object.putNull("displayCapacityHp");
+                object.put("relativeFull", false);
+            } else if (!object.has("relativeFull")) {
                 object.put("relativeFull", object.path("currentHp").isNull()
                         && "CURRENT".equals(object.path("knowledge").asText()));
             }

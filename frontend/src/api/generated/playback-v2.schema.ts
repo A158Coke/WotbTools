@@ -463,10 +463,21 @@ export default {
           "minimum": 0
         },
         "knowledge": {
-          "$ref": "#/$defs/HealthKnowledge"
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "CURRENT",
+            "LAST_KNOWN",
+            null
+          ]
         },
         "source": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "displayCapacityHp": {
           "type": [

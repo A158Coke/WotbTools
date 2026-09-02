@@ -56,13 +56,14 @@ export function healthAt(
   t: number,
 ): HealthAtResult | null {
   const tr = lastAtOrBefore(track?.healthTransitions, t)
-  if (!tr || (tr.knowledge !== 'CURRENT' && tr.knowledge !== 'LAST_KNOWN')) return null
+  if (!tr || tr.knowledge == null
+    || (tr.knowledge !== 'CURRENT' && tr.knowledge !== 'LAST_KNOWN')) return null
   if (tr.currentHp != null && (typeof tr.currentHp !== 'number' || !Number.isFinite(tr.currentHp))) return null
   if (tr.currentHp == null && tr.relativeFull !== true) return null
   return {
     currentHp: tr.currentHp,
     knowledge: tr.knowledge,
-    source: tr.source,
+    source: tr.source ?? 'UNKNOWN',
     displayCapacityHp: tr.displayCapacityHp ?? null,
     relativeFull: tr.relativeFull === true,
     confidence: tr.confidence ?? 'UNKNOWN',

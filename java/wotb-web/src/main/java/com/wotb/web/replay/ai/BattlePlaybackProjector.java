@@ -296,8 +296,7 @@ public final class BattlePlaybackProjector {
         for (final BattleFrame frame : timeline.frames()) {
             final FrameVehicle v = vehicleInAny(frame, entityIds);
             final FrameHealth h = v == null ? null : v.health();
-            if (h == null || h.currentHp() == null || h.knowledge() == null
-                    || h.knowledge() == FrameHealth.HealthKnowledge.UNKNOWN) {
+            if (h == null) {
                 if (friendly && previous == null && v != null && v.lifeState() != LifeState.DESTROYED) {
                     out.add(new HealthTransition(frame.stateAtSec(), null, "CURRENT", "RELATIVE_FULL",
                             null, true, ConfidenceDto.UNKNOWN));
@@ -305,12 +304,28 @@ public final class BattlePlaybackProjector {
                 }
                 continue;
             }
-            final boolean relativeFull = friendly && openingFull
-                    && h.knowledge() == FrameHealth.HealthKnowledge.CURRENT
-                    && h.currentHp() > 0;
+            if (h.currentHp() == null || h.knowledge() == null
+                    || h.knowledge() == FrameHealth.HealthKnowledge.UNKNOWN) {
+                if (friendly && previous == null && v != null && v.lifeState() != LifeState.DESTROYED) {
+                    out.add(new HealthTransition(frame.stateAtSec(), null, "CURRENT", "RELATIVE_FULL",
+                            null, true, ConfidenceDto.UNKNOWN));
+                    previous = out.getLast();
+                } else if (previous != null && v != null && v.lifeState() != LifeState.UNKNOWN
+                        && v.knowledgeState() != com.wotb.core.replay.timeline.VehicleKnowledgeState.UNKNOWN) {
+                    out.add(new HealthTransition(frame.stateAtSec(), null, null, null,
+                            null, false, toConfidence(h.confidence())));
+                    previous = out.getLast();
+                    openingFull = false;
+                }
+                previousHp = null;
+                continue;
+            }
             if ((previousHp != null && h.currentHp() < previousHp) || h.currentHp() <= 0) {
                 openingFull = false;
             }
+            final boolean relativeFull = friendly && openingFull
+                    && h.knowledge() == FrameHealth.HealthKnowledge.CURRENT
+                    && h.currentHp() > 0;
             final HealthTransition next = new HealthTransition(frame.stateAtSec(), h.currentHp(),
                     h.knowledge().name(), h.source() == null ? "UNKNOWN" : h.source().name(),
                     h.displayCapacityHp(), relativeFull, toConfidence(h.confidence()));

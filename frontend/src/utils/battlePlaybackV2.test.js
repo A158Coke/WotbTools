@@ -36,6 +36,22 @@ describe('healthAt', () => {
       state: 'UNKNOWN', currentHp: null,
     })
   })
+
+  it('honors an explicit health invalidation boundary before reacquired HP', () => {
+    const track = {
+      healthTransitions: [
+        lh(10, 2000, 'CURRENT', 2000),
+        { timeSec: 20, currentHp: null, knowledge: null, source: null,
+          displayCapacityHp: null, relativeFull: false, confidence: 'UNKNOWN' },
+        lh(30, 1500, 'CURRENT', 2000),
+      ],
+      lifeTransitions: [],
+    }
+    expect(healthAt(track, 15)).toMatchObject({ currentHp: 2000 })
+    expect(healthAt(track, 25)).toBeNull()
+    expect(healthDisplayAt(track, 25)).toMatchObject({ state: 'UNKNOWN', currentHp: null })
+    expect(healthAt(track, 35)).toMatchObject({ currentHp: 1500, relativeFull: false })
+  })
 })
 
 describe('lifeAt', () => {
