@@ -1,4 +1,4 @@
-# 开发者本地构建：从源码编译镜像并启动八服务（业务四件套 + 观测四件套）。
+# 开发者本地构建：从源码编译镜像并启动九服务（业务四件套 + 观测五件套）。
 # 用法：
 #   cd docker/online && docker compose up -d --build
 # Log rotation: 20MB per file, max 3 files (shared by all services)
@@ -38,6 +38,8 @@ services:
       KC_DB_USERNAME: wotb
       KC_DB_PASSWORD: wotb
       WG_APPLICATION_ID: ${WG_APPLICATION_ID:-}
+      KC_HTTP_MANAGEMENT_PORT: "9000"
+      KC_HTTP_MANAGEMENT_SCHEME: http
     volumes:
       - ../keycloak/wotbtools-realm.json:/opt/keycloak/data/import/wotbtools-realm.json
     command: start --import-realm --hostname-strict=false --http-enabled=true --http-port=8080
@@ -113,7 +115,21 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
-  # Observability stack: Prometheus / Loki / Alloy / Grafana (docker-internal only)
+  # Observability stack: Prometheus / Loki / Alloy / Grafana / node-exporter (docker-internal only)
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 64m
+
   prometheus:
     image: prom/prometheus:v2.55.1
     command:
@@ -125,6 +141,7 @@ services:
       - prometheus_data:/prometheus
     depends_on:
       - wotb-backend
+      - node-exporter
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 384m
