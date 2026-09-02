@@ -21,13 +21,32 @@ public final class Tankopedia {
     };
 
     private final Map<Long, JsonNode> vehicles;
+    private final Set<String> names;
 
     private Tankopedia(final Map<Long, JsonNode> vehicles) {
-        this.vehicles = vehicles;
+        this.vehicles = Map.copyOf(vehicles);
+        final Set<String> knownNames = new HashSet<>();
+        for (final JsonNode vehicle : this.vehicles.values()) {
+            if (vehicle != null && vehicle.hasNonNull("name")) {
+                knownNames.add(vehicle.get("name").asText());
+            }
+        }
+        this.names = Set.copyOf(knownNames);
     }
 
-    /** 从 classpath 的 4 个等级文件加载（tankopedia-tier{7,8,9,10}.json）。 */
+    /**
+     * Compatibility entry point. Application code should prefer
+     * {@link TankopediaReferenceData#tankopedia()} explicitly.
+     *
+     * <p>This method no longer reloads classpath resources: every caller receives the same
+     * application-level immutable reference-data instance.</p>
+     */
     public static Tankopedia load() {
+        return TankopediaReferenceData.tankopedia();
+    }
+
+    /** Package-private bootstrap used exactly once by {@link TankopediaReferenceData}. */
+    static Tankopedia loadFromResources() {
         final Map<Long, JsonNode> map = new HashMap<>();
         for (final String resource : TIER_RESOURCES) {
             try (InputStream in = Tankopedia.class.getResourceAsStream(resource)) {
@@ -85,12 +104,6 @@ public final class Tankopedia {
      * 是否属于本场 roster。名称本身仍是权威专有名词，不得由名称推断属性。</p>
      */
     public Set<String> names() {
-        final Set<String> names = new HashSet<>();
-        for (final JsonNode vehicle : vehicles.values()) {
-            if (vehicle != null && vehicle.hasNonNull("name")) {
-                names.add(vehicle.get("name").asText());
-            }
-        }
         return names;
     }
 }
