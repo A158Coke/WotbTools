@@ -11,6 +11,7 @@ import './styles/showcase-cohesion.css'
 import './styles/showcase-regressions.css'
 import './styles/app-shell.css'
 import './styles/classic-profile.css'
+import './styles/playback-overlap-ux.css'
 import { messages } from './locales/messages.js'
 import router from './app/router.js'
 
