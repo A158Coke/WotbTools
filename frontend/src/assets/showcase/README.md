@@ -16,22 +16,22 @@
 
 > 全部标记为 **REPLACEABLE_GENERATED_SHOWCASE_ASSET**：未来可直接替换同路径文件，无需改代码。替换后按「替换流程」检查三档响应式 crop。
 
-| Page | File | Role | 替换约束 |
-|---|---|---|---|
-| Home — Hero | `home/hero-v4.png` | Hero 横幅背景（全屏 + hero 内背景） | 坦克主体应在画面右侧、左侧留暗色负空间给文案；保持宽幅（约 2.5:1）；不得含可读文字/按钮 |
-| Home — Replay 卡片 | `home/card-replay-analysis-v1.png` | feature card media area（3:2 裁切） | 建议 3:2；主体居中即可，卡片以 object-fit: cover 裁切 |
-| Home — HoF 卡片 | `home/card-hall-of-fame-v1.png` | feature card media area（3:2 裁切） | 同上 |
-| Home — Coaching 卡片 | `home/card-coaching-v1.png` | feature card media area（3:2 裁切） | 同上（训练场主题） |
-| Home — Support 卡片 | `home/card-support-v1.png` | feature card media area（3:2 裁切） | 同上（工坊/支持主题） |
-| Replay Parser | `replay/replay-hero-battlefield-v1.png` | 全屏背景 + upload 战术表面 | 16:9；暗部为主；不得出现 UI/dashboard 元素 |
-| Hall of Fame | `hof/hof-hero-hall-v1.png` | 全屏背景 | 16:9；金色荣誉大厅主题 |
-| Rating | `rating/rating-hero-analysis-v1.png` | 全屏背景 | 16:9；图片内即使有生成式 dashboard 元素也只能是低权重氛围，真实 Rating 数据必须覆盖在独立 readable surface 上 |
-| Profile | `profile/profile-hero-camp-v1.png` | 全屏背景 + profile-hero 表面 | 16:9；不引入 avatar 依赖 |
-| Boost | `boost/boost-hero-training-v1.png` | 全屏背景 | 16:9；训练场主题 |
-| Admin Users | `admin/admin-hero-command-v1.png` | 全屏背景（强度较弱） | 16:9；Operations Console 优先，管理效率优先 |
-| HoF Admin | `hof-admin/hof-admin-hero-command-v1.png` | 全屏背景（强度较弱） | 16:9；CRUD / review 数据必须保持清晰 |
-| Version / Changelog | `version/version-hero-workshop-v1.png` | 全屏背景 | 16:9；工坊主题 |
-| Contact | `contact/contact-hero-radio-v1.png` | 全屏背景 | 16:9；通信塔/无线电主题 |
+| Page                 | File                                      | Role                                | 替换约束                                                                                                      |
+|----------------------|-------------------------------------------|-------------------------------------|---------------------------------------------------------------------------------------------------------------|
+| Home — Hero          | `home/hero-v4.png`                        | Hero 横幅背景（全屏 + hero 内背景） | 坦克主体应在画面右侧、左侧留暗色负空间给文案；保持宽幅（约 2.5:1）；不得含可读文字/按钮                       |
+| Home — Replay 卡片   | `home/card-replay-analysis-v1.png`        | feature card media area（3:2 裁切） | 建议 3:2；主体居中即可，卡片以 object-fit: cover 裁切                                                         |
+| Home — HoF 卡片      | `home/card-hall-of-fame-v1.png`           | feature card media area（3:2 裁切） | 同上                                                                                                          |
+| Home — Coaching 卡片 | `home/card-coaching-v1.png`               | feature card media area（3:2 裁切） | 同上（训练场主题）                                                                                            |
+| Home — Support 卡片  | `home/card-support-v1.png`                | feature card media area（3:2 裁切） | 同上（工坊/支持主题）                                                                                         |
+| Replay Parser        | `replay/replay-hero-battlefield-v1.png`   | 全屏背景 + upload 战术表面          | 16:9；暗部为主；不得出现 UI/dashboard 元素                                                                    |
+| Hall of Fame         | `hof/hof-hero-hall-v1.png`                | 全屏背景                            | 16:9；金色荣誉大厅主题                                                                                        |
+| Rating               | `rating/rating-hero-analysis-v1.png`      | 全屏背景                            | 16:9；图片内即使有生成式 dashboard 元素也只能是低权重氛围，真实 Rating 数据必须覆盖在独立 readable surface 上 |
+| Profile              | `profile/profile-hero-camp-v1.png`        | 全屏背景 + profile-hero 表面        | 16:9；不引入 avatar 依赖                                                                                      |
+| Boost                | `boost/boost-hero-training-v1.png`        | 全屏背景                            | 16:9；训练场主题                                                                                              |
+| Admin Users          | `admin/admin-hero-command-v1.png`         | 全屏背景（强度较弱）                | 16:9；Operations Console 优先，管理效率优先                                                                   |
+| HoF Admin            | `hof-admin/hof-admin-hero-command-v1.png` | 全屏背景（强度较弱）                | 16:9；CRUD / review 数据必须保持清晰                                                                          |
+| Version / Changelog  | `version/version-hero-workshop-v1.png`    | 全屏背景                            | 16:9；工坊主题                                                                                                |
+| Contact              | `contact/contact-hero-radio-v1.png`       | 全屏背景                            | 16:9；通信塔/无线电主题                                                                                       |
 
 隐藏的 `PlaybackQaPage` 是 QA / production-component verification 页面，不属于正式产品 Showcase，因此不创建营销背景。
 

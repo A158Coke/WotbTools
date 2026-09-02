@@ -11,6 +11,7 @@
 - **Hundred WG statistics path**：移除百场 `WARGAMING_API` 官方统计、自动审核 endpoint、snapshot DTO/映射与前端分支；Wargaming ASIA/EU/NA 登录和 Profile 同步保留，百场统一走 MANUAL 截图 + 5 replay 审核。新增生产存量清理工具，默认 dry-run，并按共享引用保护 MANUAL 与单场名人堂回放。
 
 ### Changed
+- **Keycloak 与生产观测升级**：Keycloak 26.6.4 image build 启用 health/metrics，management `/metrics` 通过 Docker 内部端口 `9000` 纳入 Prometheus；Alloy/Loki 纳入 Keycloak 日志；新增固定版本 node-exporter、AI review queue depth Gauge 与 Keycloak/生产总览 Dashboard。保持公共 HTTP/Android contract、数据库 schema、业务处理入口与无用户级 metric label 不变。
 - **Battle Playback V2 backend-owned state facts**：将相对满血证明、DamageLoss 的 transient/ghost
   事实、模块/乘员清除 transition 与 consumable 全局失效边界收敛到 canonical backend projection；
   前端只按时间查询并负责百分比、格式化和展示，legacy artifact 兼容仍限于读取边界。
@@ -44,6 +45,7 @@
 - **Frontend application-shell routing foundation（PR1）**：引入 Vue Router 作为 SPA history/deep-link owner，保留 `?view=` 公开 URL、旧别名（leaderboard / extended / reconstruction）与 `/download/android[/]` 兼容；`App.vue` 收敛为最小路由根，应用壳、顶栏、用户菜单、全局错误弹窗与页面注册迁入 `src/app/`。新增前端架构约定、可复用 `frontend-architecture` skill 与架构文档，为后续 Replay 状态/Workspace/Playback 分步迁移建立边界；未改变后端契约或产品流程。
 
 ### Fixed
+- **Showcase 背景素材版权风险收口**：替换主页、回放、名人堂、Rating、Profile、Boost、Admin、HoF Admin、版本与联系页的正式 PNG 背景，移除原背景中可识别的 WG / World of Tanks 品牌图形与文字；页面槽位、遮罩和响应式布局保持不变。
 - **Android WebView 登录 Cookie / OAuth 链路修复**：Android WebView 现在显式启用认证所需的
   first-party/third-party Cookie；Keycloak → QQ/IdP → callback 认证事务保持在同一个 WebView
   cookie jar 中，不再因中间导航切入系统浏览器而分裂 session。provider 仍使用证据驱动的精确
