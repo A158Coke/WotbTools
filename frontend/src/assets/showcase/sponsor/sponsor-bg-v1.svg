@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#070c10"/>
+      <stop offset=".52" stop-color="#172027"/>
+      <stop offset="1" stop-color="#24170d"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="78%" cy="28%" r="54%">
+      <stop stop-color="#e09a38" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#e09a38" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bench" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#0b1216" stop-opacity=".2"/>
+      <stop offset=".5" stop-color="#0b1216" stop-opacity=".86"/>
+      <stop offset="1" stop-color="#0b1216" stop-opacity=".18"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#background)"/>
+  <rect width="1600" height="900" fill="url(#glow)"/>
+  <g fill="none" stroke="#d79a3d" stroke-opacity=".2">
+    <path d="M-80 760 420 420l300 100 360-280 600 190" stroke-width="3"/>
+    <path d="M-40 840 450 510l270 95 370-280 560 170" stroke-width="1.5"/>
+    <circle cx="1210" cy="270" r="118" stroke-width="3"/>
+    <circle cx="1210" cy="270" r="176" stroke-width="1.5"/>
+    <path d="M1210 94v352M1034 270h352" stroke-width="1"/>
+  </g>
+  <g fill="#0a1115" opacity=".7">
+    <path d="M0 655 260 560l180 55 220-120 220 85 220-95 220 75 280-130v470H0z"/>
+    <path d="M0 790h1600v110H0z" fill="url(#bench)"/>
+  </g>
+  <g fill="#e09a38" opacity=".42">
+    <circle cx="260" cy="720" r="5"/>
+    <circle cx="310" cy="694" r="3"/>
+    <circle cx="1380" cy="676" r="4"/>
+    <circle cx="1430" cy="650" r="6"/>
+  </g>
+</svg>
