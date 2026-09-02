@@ -362,4 +362,7 @@ body {
   .profile-page .hero-name { font-size: 1.35rem !important; }
   .hof-page thead th,
   .hof-wrap thead th { top: 56px; }
+  /* Same 56px topbar offset for the admin users table; !important is required
+   * to beat the global .admin-table th { top: 0 !important } rule above. */
+  .admin-table th { top: 56px !important; }
 }
