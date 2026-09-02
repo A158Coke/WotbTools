@@ -15,15 +15,3 @@ export interface PlaybackDirection {
   turretRelativeYawDeg: number | null
   timeSec: number
 }
-
-export interface PlaybackHpLoss {
-  fromSec: number
-  toSec: number
-  hpLoss: number
-}
-
-export interface PlaybackMarkerStyle {
-  left: string
-  top: string
-  transform: string
-}

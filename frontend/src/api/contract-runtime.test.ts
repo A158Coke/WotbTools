@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { validateApiError, validateBattlePlaybackDataset } from './contract-runtime.js'
 import { API_ERROR_CODES } from './generated/api-error-codes.js'
+import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil.js'
 
 function dataset(confidence = 'HIGH') {
   return {
@@ -23,18 +24,18 @@ function dataset(confidence = 'HIGH') {
         consumableWireCodes: [null, 13, null],
         provisions: [null, null, null],
         provisionWireCodes: [null, null, null],
-        equipmentIds: [null, 1, null],
+        equipmentIds: [null, 1, null, null, null, null, null, null, null],
         confidence,
       },
       positionSegments: [],
       orientationSegments: [],
       healthTransitions: [],
       lifeTransitions: [],
+      damageLosses: [],
       consumableTransitions: [],
       moduleCrewTransitions: [],
     }],
     events: [],
-    shots: [],
     pointsSamples: [],
     limitations: [],
     capability: 'FULL',
@@ -46,6 +47,11 @@ describe('HTTP contract runtime validator', () => {
   it('accepts the production-shaped Playback V2 envelope', () => {
     const result = validateBattlePlaybackDataset(dataset())
     expect(result.data?.vehicles[0].loadout?.confidence).toBe('HIGH')
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it('accepts the shared component fixture at the runtime contract boundary', () => {
+    const result = validateBattlePlaybackDataset(makeBattlePlaybackDataset())
     expect(result.diagnostics).toEqual([])
   })
 

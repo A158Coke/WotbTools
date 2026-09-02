@@ -42,7 +42,7 @@ const props = defineProps({
       playerHidden: false, playerFading: false,
     }),
   },
-  /** HP HUD presentation（current/pct/fullState/destroyed）；null=不渲染 */
+  /** HP HUD presentation（current/pct/state/knowledge/destroyed）；null=不渲染 */
   hp: { type: Object, default: null },
   /** HP HUD 开关（关闭后隐藏数字/bar/ghost，不影响其余 combat feedback） */
   hpVisible: { type: Boolean, default: true },
@@ -89,11 +89,16 @@ const hullImageStyle = computed(() => {
   return { transform: hullDeg.value != null ? `rotate(${hullDeg.value}deg)` : 'none' }
 })
 // generic 模式 hull/turret：现有 translate(-50%,-50%) rotate() 组合
+// destroyed 且无方向时仅保留既有未旋转素材可见性；projected state 仍保持 null。
 const genericHullStyle = computed(() =>
-  hullDeg.value != null ? { transform: `translate(-50%, -50%) rotate(${hullDeg.value}deg)` } : null,
+  hullDeg.value != null
+    ? { transform: `translate(-50%, -50%) rotate(${hullDeg.value}deg)` }
+    : st.value.destroyed ? { transform: 'translate(-50%, -50%) rotate(0deg)' } : null,
 )
 const genericTurretStyle = computed(() =>
-  turretDeg.value != null ? { transform: `translate(-50%, -50%) rotate(${turretDeg.value}deg)` } : null,
+  turretDeg.value != null
+    ? { transform: `translate(-50%, -50%) rotate(${turretDeg.value}deg)` }
+    : st.value.destroyed ? { transform: 'translate(-50%, -50%) rotate(0deg)' } : null,
 )
 
 // —— overlay 屏幕间距恒定（B2）：selected/recorder 的 layout offset（bottom/top calc）处于
@@ -187,24 +192,21 @@ const hpHudStyle = computed(() => ({
   // §22：HP HUD 与 label 块同源位移（labelLayout tankDy 联动；碰撞位移只作用于堆叠，不影响车体）
   bottom: 'calc(100% + ' + (LABEL_ANCHOR_PX + labelScreenHeight.value + HP_HUD_GAP_PX + props.label.tankDy * overlayInv.value) + 'px)',
 }))
-// 填充（PR #107 HP provenance）：
-// - pct 已知 → 精确百分比；
-// - relative-full presentation（fullState=true，仅本方开局）→
-//   100% 阵营色实心条（相对满血；开局即使有 current sample、全队 entry/max 未全部证明也无斜纹）；
-// - CURRENT_HP_EXACT_MAX_UNKNOWN / INCONSISTENT（current 有值、max 未证明/矛盾）→
-//   100% 宽 + 阵营色 indeterminate 斜纹（INCONSISTENT：比例不可信，保留真实 current）；
-// - UNKNOWN（敌方可未知）→ 空条（灰色/未知）。
+// 填充只消费 canonical health state：RELATIVE_FULL / CURRENT / LAST_KNOWN /
+// UNKNOWN / DESTROYED；没有可证明百分比时不推导比例。
 const hpFillWidth = computed(() => {
   const d = props.hp
   if (!d) return '0%'
-  if (d.pct != null) return d.pct + '%'
-  if (d.fullState === true) return '100%' // 相对满血状态：完整阵营色条
-  return d.current != null ? '100%' : '0%'
+  if (d.state === 'DESTROYED' || d.state === 'UNKNOWN') return '0%'
+  if (d.state === 'RELATIVE_FULL') return '100%'
+  if ((d.state === 'CURRENT' || d.state === 'LAST_KNOWN') && d.pct != null) return d.pct + '%'
+  return (d.state === 'CURRENT' || d.state === 'LAST_KNOWN') && d.current != null ? '100%' : '0%'
 })
-// indeterminate = 有当前 HP 但最大值未知（不允许按 tankopedia base 算百分比）；
-// fullState（己方开局相对满血）除外——
-// 开局即使有 current sample、全队 entry/max 尚未全部证明，也渲染 100% 阵营色实心条（无斜纹）
-const hpFillUnknown = computed(() => !!props.hp && props.hp.current != null && props.hp.pct == null && props.hp.fullState !== true)
+// 当前/最后已知 HP 有数字但没有可证明容量时，显示 indeterminate 纹理；
+// RELATIVE_FULL 是相对展示状态，UNKNOWN/DESTROYED 不冒充已知 HP。
+const hpFillUnknown = computed(() => !!props.hp
+  && (props.hp.state === 'CURRENT' || props.hp.state === 'LAST_KNOWN')
+  && props.hp.current != null && props.hp.pct == null)
 const hpGhostWidth = computed(() => {
   const g = props.hpGhost
   if (!g || !Number.isFinite(g.prevPct) || !Number.isFinite(g.nextPct)) return null
@@ -218,21 +220,18 @@ const hpGhostLeft = computed(() => {
 const hpTitle = computed(() => {
   const d = props.hp
   if (!d) return ''
-  if (d.state === 'RULE_DERIVED_FULL_AT_SPAWN' || d.state === 'OPENING_RELATIVE_FULL') {
+  if (d.state === 'RELATIVE_FULL') {
     return props.t ? props.t('recon.map.playback.hp_full_spawn') : ''
-  }
-  if (d.state === 'CURRENT_HP_EXACT_MAX_UNKNOWN' || d.state === 'INCONSISTENT') {
-    return props.t ? props.t('recon.map.playback.hp_current_max_unknown') : ''
   }
   return ''
 })
 const hpClasses = computed(() => ({
-  'pb-hp-lastknown': st.value.lastKnown && !st.value.destroyed,
+  'pb-hp-lastknown': props.hp && props.hp.state === 'LAST_KNOWN' && !props.hp.destroyed,
   'pb-hp-destroyed': st.value.destroyed,
   'pb-hp-flash': props.hpFlash,
   'pb-hp-no-transition': props.hpNoTransition,
-  // PR #107：相对满血（fullState）或 max 未知但有当前值（indeterminate）→ 阵营色填充
-  'pb-hp-full-spawn': props.hp && props.hp.fullState === true,
+  // 相对满血 → 阵营色实心条
+  'pb-hp-full-spawn': props.hp && props.hp.state === 'RELATIVE_FULL',
 }))
 </script>
 
@@ -297,7 +296,7 @@ const hpClasses = computed(() => ({
       <!-- generic：现有双层 PNG（共同 pivot 居中旋转，行为不变） -->
       <template v-else>
         <img
-          v-if="hullDeg != null"
+          v-if="hullDeg != null || st.destroyed"
           class="pb-hull"
           :src="st.hullImage"
           alt=""
@@ -305,7 +304,7 @@ const hpClasses = computed(() => ({
           :style="genericHullStyle"
         />
         <img
-          v-if="turretDeg != null"
+          v-if="turretDeg != null || st.destroyed"
           class="pb-turret"
           :src="st.turretImage"
           alt=""

@@ -56,7 +56,7 @@ describe('V2VehicleInspector', () => {
     expect(hp).toContain('最后已知 HP')   // LAST_KNOWN knowledge during hidden interval
     // loadout 保持 KNOWN（持久配置），即使 120s 在 hidden interval
     expect(w.get('[data-test="v2-inspector-loadout"]').exists()).toBe(true)
-    expect(w.get('[data-test="v2-inspector-module"]').text()).toContain('ENGINE')
+    expect(w.get('[data-test="v2-inspector-module"]').text()).toContain('发动机')
   })
 
   it('after re-acquire at 140 shows current HP 600', () => {
