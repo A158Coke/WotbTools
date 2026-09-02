@@ -41,6 +41,10 @@
 - **Frontend application-shell routing foundation（PR1）**：引入 Vue Router 作为 SPA history/deep-link owner，保留 `?view=` 公开 URL、旧别名（leaderboard / extended / reconstruction）与 `/download/android[/]` 兼容；`App.vue` 收敛为最小路由根，应用壳、顶栏、用户菜单、全局错误弹窗与页面注册迁入 `src/app/`。新增前端架构约定、可复用 `frontend-architecture` skill 与架构文档，为后续 Replay 状态/Workspace/Playback 分步迁移建立边界；未改变后端契约或产品流程。
 
 ### Fixed
+- **Android WebView 登录 Cookie / OAuth 链路修复**：Android WebView 现在显式启用认证所需的
+  first-party/third-party Cookie；Keycloak → QQ/IdP → callback 认证事务保持在同一个 WebView
+  cookie jar 中，不再因中间导航切入系统浏览器而分裂 session。provider 仍使用证据驱动的精确
+  hostname allowlist，普通外链与 Native Bridge origin 边界不变。
 - **Replay Workspace capability 切换状态同步/结果丢失（生产 hotfix）**：两个关联 bug——①在「战局回放」上传单 replay，READY 后 Map 不自动出现，需手动切一次 tab；②data/playback 间切换后赛果可能消失/进入空态。根因是 ReplayWorkspace 用两个碎片化 watcher（`[activeCapability, currentTargetFile]` prepare + `selectionRevision→reset`）驱动 capability dataset，`selectionRevision` reset 在 prepare 之后执行会自增 token，使 in-flight `requestDirectAction` 的 resolve 被 stale-guard 丢弃（datasetRef 永不设置），且 prepare 不看 READY（processingJobId/currentBattleId）变化，导致必须靠切 tab 重新触发。重构为**单一 reconcile watcher**：由 authoritative Workspace 源（`activeCapability + currentBattleId + currentProcessingJobId + currentTargetFile + selectionRevision + files`）驱动当前活跃 capability 的 dataset，`useCapabilityReplay.reconcile` 幂等 + 在途不重发；capability 切换只改 `activeWorkspaceTab` 与 capability-specific dataset，绝不 reset 基础 replay state（files/resp/currentBattleId/processingJob）。`App.vue` 三个 replay URL 映射同一 `ReplayWorkspace`（KeepAlive，无 `:key` 强制 remount），实例与状态共用，确认非 remount 根因。新增 Case1/Case2/跨 capability selection 回归。验证：frontend full test（81 files / 1381 passed）+ `npm run build`。
 
 - **PR188 Known-Bugs 收尾：Replay Workspace 共享 selection + Battle Playback 反未来泄漏 + 战斗装载本地化**：

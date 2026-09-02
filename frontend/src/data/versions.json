@@ -1,4 +1,12 @@
 [{
+    "v": "2.12.62",
+    "date": "2026-09-02",
+    "tag": "fix",
+    "zh": "修复 Android QQ / Keycloak 登录：认证过程保持在同一个 WebView 中，并显式启用登录所需 Cookie，避免中途打开系统浏览器导致会话丢失。",
+    "en": "Fixed Android QQ / Keycloak sign-in: the authentication flow now stays in one WebView with the required cookies enabled, avoiding session loss caused by opening the system browser mid-flow.",
+    "ru": "Исправлен вход Android через QQ / Keycloak: процесс аутентификации теперь остаётся в одном WebView с включёнными необходимыми cookie, поэтому открытие системного браузера посреди входа больше не приводит к потере сеанса."
+  },
+  {
     "v": "2.12.61",
     "date": "2026-09-02",
     "tag": "chg",
