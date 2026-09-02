@@ -51,8 +51,8 @@ const open = computed(() => !!props.context && !!props.player)
 const closeBtn = ref(null)
 const isSummary = computed(() => props.context?.scope === 'summary')
 
-// 桌面/平板非模态侧栏，移动端(<768px)保持 modal：复用现有 mobile 断点（max-width: 767px）。
-const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth <= 767 : false)
+// 桌面/平板非模态侧栏，移动端(<768px)保持 modal：复用现有 mobile 断点（width < 768px）。
+const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
 // 仅 Desktop (>=1200px) 提供自由 resize；Tablet/Mobile 保持原有行为。
 const isDesktop = ref(typeof window !== 'undefined' ? window.innerWidth >= 1200 : true)
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1440)
@@ -143,7 +143,7 @@ watch([isDesktop, open, drawerWidth], () => {
 
 function updateViewport() {
   const w = window.innerWidth
-  isMobile.value = w <= 767
+  isMobile.value = w < 768
   isDesktop.value = w >= 1200
   viewportWidth.value = w
   // 屏幕尺寸变化时自动 clamp 当前宽度，不强制写回 localStorage。
@@ -715,12 +715,14 @@ function ensureImageLoaded(url) {
 }
 .drawer-backdrop.pd-modal {
   pointer-events: auto;
-  background: color-mix(in srgb, var(--text-heading) 35%, transparent);
+  background: rgb(0 0 0 / .35);
 }
 .player-drawer {
   position: fixed; top: calc(var(--topbar-h) + 8px); right: 8px; bottom: 8px; width: min(380px, calc(100vw - 16px));
   background: var(--bg-card2); border: 1px solid var(--border); border-radius: 12px;
   box-shadow: var(--surface-shadow); overflow-y: auto; padding: 16px;
+  /* Android edge-to-edge 预备：env() 今日解析为 0，视觉零变化 */
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
   animation: pd-slide-in .22s ease-out;
   pointer-events: auto;
 }
@@ -820,7 +822,7 @@ body.pd-resizing .pd-resizer-line,
 .pd-vehicle-meta { min-width: 0; }
 .pd-vehicle-name { font-size: .95rem; font-weight: 800; color: var(--text-heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pd-vehicle-stats { display: flex; gap: 10px; margin-top: 3px; font-size: .78rem; color: var(--text-sub); font-variant-numeric: tabular-nums; }
-@media (max-width: 768px) { .pd-vehicle-img { width: 100px; } }
+@media (width < 768px) { .pd-vehicle-img { width: 100px; } }
 
 /* 切换动画（§35/§38）：next 旧左出新右入；prev 旧右出新左入；reduced-motion 关闭（§40） */
 .pd-dir-next-enter-from { transform: translateX(28px); opacity: 0; }

@@ -135,7 +135,7 @@ describe('PlayerDetailDrawer', () => {
     expect(wrapper.find('.radar-stub').exists()).toBe(true)
   })
 
-  it('mobile(≤767px) backdrop 点击关闭（modal，§34）；desktop backdrop 点击不关闭（非模态）', async () => {
+  it('mobile(<768px) backdrop 点击关闭（modal，§34）；desktop backdrop 点击不关闭（非模态）', async () => {
     // 桌面：backdrop 是 click-through，点击不应关闭
     window.innerWidth = 1024
     const desktop = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)

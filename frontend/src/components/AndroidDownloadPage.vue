@@ -116,4 +116,7 @@ onMounted(async () => {
 .download-actions { margin: 16px 0; }
 .sha { margin-top: 12px; word-break: break-all; color: var(--text-sub); font-size: .85rem; }
 .sha code { word-break: break-all; }
+@media (width < 768px) {
+  .download-card, .installed-banner, .unavailable, .login-gate { padding: 14px 16px; }
+}
 </style>

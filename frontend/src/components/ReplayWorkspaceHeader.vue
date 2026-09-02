@@ -30,7 +30,7 @@ const emit = defineEmits(['clear'])
 }
 .ws-title h1 { margin: 2px 0 0; font-size: 1.5rem; }
 .ws-actions { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
-@media (max-width: 768px) {
+@media (width < 768px) {
   .workspace-header { gap: 8px; }
   .ws-actions { margin-left: 0; width: 100%; justify-content: space-between; }
 }

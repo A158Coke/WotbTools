@@ -155,4 +155,9 @@ const emit = defineEmits([
 .pb-annot-width input { width: 80px; }
 .pb-annot-width-val { font-variant-numeric: tabular-nums; min-width: 2ch; }
 .pb-annot-sep { width: 1px; height: 16px; background: var(--border); }
+/* 手机触控目标：按钮/chip ≥36px（对齐 PlayerRatingRadar 缩放按钮先例），色板 ≥24px；桌面不变 */
+@media (width < 768px) {
+  .pb-btn, .pb-chip, .pb-annot-btn { min-height: 36px; min-width: 36px; }
+  .pb-annot-color { width: 24px; height: 24px; }
+}
 </style>
