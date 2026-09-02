@@ -5,7 +5,6 @@ import {
   healthDisplayAt,
   lifeAt,
   positionCoveredAtV2,
-  orientationKnownAt,
   consumableRuntimeSlotsAt,
   moduleCrewStatesAt,
 } from '../utils/battlePlaybackV2.ts'
@@ -25,7 +24,6 @@ const { t, te, locale } = useI18n()
 const life = computed(() => lifeAt(props.track, props.timeSec))
 const health = computed(() => healthDisplayAt(props.track, props.timeSec))
 const covered = computed(() => positionCoveredAtV2(props.track.positionSegments, props.timeSec))
-const orientation = computed(() => orientationKnownAt(props.track, props.timeSec))
 const loadout = computed(() => props.track.loadout || null)
 
 /**
@@ -107,12 +105,6 @@ const stateLabel = computed(() => {
 
 const valueSeen = computed(() => health.value != null || loadout.value != null)
 
-const orientationLabel = computed(() => {
-  if (orientation.value === 'CURRENT') return t('recon.map.playback.orientation_current')
-  if (orientation.value === 'LAST_KNOWN') return t('recon.map.playback.orientation_last_known')
-  return t('recon.map.playback.unknown')
-})
-
 /** tankClass 为 canonical 英文 class（Heavy tank/Medium tank/...）；UI 用已有三语翻译，不裸显英文。 */
 const VEHICLE_CLASS_KEYS = {
   'Heavy tank': 'recon.map.playback.vehicle_class_heavy',
@@ -170,11 +162,6 @@ function moduleStateLabel(state) {
     <div class="v2-inspector-row" data-test="v2-inspector-tier">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.tank_tier') }}</span>
       <span class="v2-inspector-val">{{ track.tankTier ?? '—' }}</span>
-    </div>
-
-    <div class="v2-inspector-row" data-test="v2-inspector-orientation">
-      <span class="v2-inspector-key">{{ $t('recon.map.playback.orientation') }}</span>
-      <span class="v2-inspector-val">{{ orientationLabel }}</span>
     </div>
 
     <template v-if="loadout">
@@ -258,20 +245,19 @@ function moduleStateLabel(state) {
   margin-left: 6px; padding: 1px 5px; border-radius: 3px;
   background: rgba(255,255,255,0.12); font-size: 10px;
 }
-.v2-inspector-cap { margin-left: 4px; color: var(--pb-dim, #9aa); }
+.v2-inspector-cap { color: var(--pb-dim, #9aa); margin-left: 2px; }
 .v2-inspector-loadout { display: flex; flex-direction: column; gap: 8px; }
 .v2-loadout-group { display: flex; flex-direction: column; gap: 4px; }
-.v2-loadout-group-title { color: var(--pb-dim, #9aa); font-size: 10px; }
-.v2-loadout-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.v2-equipment-row { display: block; }
+.v2-loadout-group-title { color: var(--pb-dim, #9aa); font-size: 11px; }
+.v2-loadout-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.v2-equipment-row { display: contents; }
 .v2-inspector-chip {
-  display: flex; flex-direction: column; gap: 2px; padding: 4px 6px;
-  border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 11px;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 4px 5px; border-radius: 4px;
+  background: rgba(255,255,255,0.07);
+  min-width: 0; overflow: hidden;
 }
-.v2-chip-state { color: var(--pb-dim, #9aa); font-size: 9px; }
-@media (max-width: 520px) {
-  .v2-loadout-grid { grid-template-columns: repeat(3, minmax(92px, 1fr)); overflow-x: auto; }
-  .v2-equipment-row { display: block; }
-}
-.v2-chip-type { color: var(--pb-dim, #9aa); font-size: 9px; text-transform: uppercase; }
+.v2-inspector-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-chip-type { color: var(--pb-dim, #9aa); font-size: 10px; }
+.v2-chip-state { color: var(--pb-dim, #9aa); font-size: 10px; }
 </style>
