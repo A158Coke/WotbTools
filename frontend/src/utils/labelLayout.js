@@ -29,7 +29,7 @@ export const SELECTED_NAME_GAP_PX = 3
 export const DESTROYED_X_PX = 30
 
 /** Stable lane offsets in screen px. Never hide when all lanes overlap. */
-export const LABEL_LANES_PX = Object.freeze([0, -12, 12, -24])
+export const LABEL_LANES_PX = Object.freeze([0, -10, 10, -20])
 
 export function estimateLabelWidth(text, fontSizePx, maxWidthPx = Infinity) {
   if (text == null || text === '') return 0
@@ -143,8 +143,8 @@ export function computeLabelLayout(items, opts = {}) {
       let score = 0
       for (const candidate of candidateBoxes) {
         for (const other of placed) {
-          for (const obstacle of [other.coreBox, other.destroyedBox, other.selectedBox, other.recorderBox,
-            other.tankBox, other.playerBox, other.hpBox]) {
+          // 只允许 label/tag ↔ label/tag 参与 lane 评分；核心/销毁/选中/记录器盒不影响 lane。
+          for (const obstacle of [other.tankBox, other.playerBox, other.hpBox]) {
             score += overlapArea(candidate, obstacle)
           }
         }

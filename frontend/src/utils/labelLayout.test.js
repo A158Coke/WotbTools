@@ -100,4 +100,28 @@ describe('computeLabelLayout overlap-first UX', () => {
     expect(result.get(1).tankBox).not.toBeNull()
     expect(result.get(2).tankBox).toBeNull()
   })
+
+  it('lane 仅由 tag 盒评分：core / destroyed / selected / recorder 不影响 lane', () => {
+    const opts = { showTank: true, showPlayer: true, viewportW: 800, viewportH: 600 }
+    const plain = computeLabelLayout([item(1, 200, 200), item(2, 200, 200)], opts)
+    const overlay = computeLabelLayout(
+      [item(1, 200, 200, { destroyed: true, selected: true, recorder: true }), item(2, 200, 200)],
+      opts,
+    )
+    // 同位两车：tag 重叠 → v2 走非零 lane（保证测试非空转）
+    expect(LABEL_LANES_PX).toContain(plain.get(2).tankDy)
+    expect(plain.get(2).tankDy).not.toBe(0)
+    // 给 v1 加 destroyed / selected / recorder 盒（core 恒在）后 v2 的 lane 必须不变
+    // —— 这些盒不参与 lane 评分，只有 tankBox/playerBox/hpBox（tag）才参与。
+    expect(overlay.get(2).tankDy).toBe(plain.get(2).tankDy)
+    expect(overlay.get(1).tankDy).toBe(plain.get(1).tankDy)
+  })
+
+  it('只有 tag 重叠才触发 lane 位移：仅与车辆 core 重叠时 lane 为 0', () => {
+    const opts = { showTank: true, showPlayer: true, viewportW: 800, viewportH: 600 }
+    // v1(200,200) core 盒 y∈[185,215]；v2(200,251) 的 hp/player 盒 y∈[185,220] 与 v1 core 重叠，
+    // 但与 v1 的 tag 盒（tank/player/hp，y≤183）无重叠 → 无 tag overlap → lane 0（core 不触发位移）。
+    const res = computeLabelLayout([item(1, 200, 200), item(2, 200, 251)], opts)
+    expect(res.get(2).tankDy).toBe(0)
+  })
 })
