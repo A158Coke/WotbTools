@@ -72,12 +72,28 @@ Android 不在 Native 层重写 AI Review / Battle Reconstruction / capability �
 Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`/`replay-open`/
 `app-update`），不涉及 replay 业务 capability 判断（FULL/DEGRADED/PERFORMANCE 等由 Web 端接入）。
 
-认证：正常 Keycloak 登录与 Juhe QQ IdP（`open.juhedenglu.cn`）允许留在 WebView（明确 origin
-policy），其余外链走系统浏览器；Native Bridge 不暴露给认证页面。QQ 返回链需真机验证后收口。
+## Authentication Boundary
+
+- Android 沿用 Web Keycloak/OIDC，不实现 native OAuth client、token store 或第二套登录状态。
+- Keycloak → QQ/IdP → Keycloak callback 的一次 authentication transaction 必须始终运行在同一个
+  WebView cookie jar 中。`MainActivity.configureWebView()` 显式启用 WebView CookieManager 的
+  first-party 与认证所需 third-party cookies；应用不读取、复制或持久化 Cookie。
+- `auth.wotbtools.com` 只在 WebView 内启动/保持 `inAuthFlow`。认证期间，provider 仅按
+  `AuthNavigationPolicy.AUTH_PROVIDER_HOSTS` 的精确 hostname allowlist 留在 WebView；当前有仓库
+  证据的 QQ host 是 `graph.qq.com`。`ssl.ptlogin2.qq.com`、`xui.ptlogin2.qq.com`、
+  `ptlogin2.qq.com`、`open.juhedenglu.cn` 等只有在真实 top-level navigation evidence 确认后才可
+  逐个加入，并必须同步 regression test；禁止 `*.qq.com` 或整个 `qq.com` 通配。
+- 返回 `wotbtools.com` / `www.wotbtools.com` 表示 callback 成功并结束 auth flow。认证外直接访问
+  provider host 不获得 privileged WebView handling；其它 top-level host 由系统浏览器打开。
+- Native Bridge 与 OAuth navigation 是两个独立安全边界。Bridge origins 仍严格限于
+  `https://wotbtools.com` 与 `https://www.wotbtools.com`，不暴露给 Keycloak、QQ/IdP 或第三方 frame。
+- 禁止在 WebView 与系统 browser 之间同步 Cookie。真机发现新 provider hostname 时，只记录不含
+  query/code/Cookie/token 的 host evidence，判断其是否属于实际认证链后最小追加 allowlist。
 
 ## WebView 安全（规格 §28–§29 / §86–§88）
 
-- 仅信任 `wotbtools.com` / `www.wotbtools.com` / `auth.wotbtools.com`；其余外链走系统浏览器。
+- app host 始终允许留在 WebView；Keycloak 与 provider 仅按上面的 Authentication Boundary 在认证
+  flow 中允许留在 WebView；其它外链走系统浏览器。
 - `usesCleartextTraffic=false`；`mixedContentMode=NEVER_ALLOW`；`allowFileAccess=false`；
   `allowContentAccess=false`；`setGeolocationEnabled(false)`。
 - 禁用 `allowUniversalAccessFromFileURLs` / `ignoreSslErrors`；SSL 错误必须失败。
