@@ -27,11 +27,15 @@
 ### HP / orientation 统一
 
 - **FrameHealth**：统一 `currentHp` 权威，去掉 `baseHp/effectiveMaxHp` 业务语义；
-  `baseHp` 属 `VehicleReferenceMetadata`（tankopedia 参考展示）。新增
+  `baseHp` 属 `VehicleReferenceMetadata`（tankopedia 参考展示）。新增 
   `HealthKnowledge(CURRENT/LAST_KNOWN)`；无 HP fact 由空 transition track 表达，
   己方相对满血证明由独立的 `relativeFull` sparse fact 表达；
   presentation-only `displayCapacityHp` 与 backend 投影的 `relativeFull`
   （= 截至 t 的真实可信 currentHp 最大值，**anti-future-leak**，绝非 canonical max HP）。
+  health track 中没有 transition 表示上一事实继续；backend 若观察到既有活动车辆的
+  显式未知健康状态，则发出 `currentHp/knowledge/source/displayCapacityHp=null`、
+  `relativeFull=false` 的 invalidation transition，直到新的健康事实出现；HTTP 不恢复
+  `HealthKnowledge.UNKNOWN` enum。
 - **FrameOrientation**：新增 `OrientationKnowledge` + `ageSec`；敌方离开 AoI 后方向
   `CURRENT → LAST_KNOWN`，不得继续表现为实时炮塔方向。无 orientation fact 不生成 HTTP
   segment；HTTP wire 只保留 `CURRENT/LAST_KNOWN`，domain 的 `UNKNOWN` 仅表示内部无事实。

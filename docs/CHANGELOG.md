@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Changed
+- **Battle Playback V2 health invalidation boundary**：健康轨迹现在区分“没有新 transition，
+  上一事实继续”和“后端显式确认从该时刻起未知”；后者使用 nullable sparse transition，
+  不向 HTTP 恢复 `UNKNOWN` health enum。重新获得 HP 前前端保持未知，重新获得后也不会错误
+  恢复开局相对满血。
 - **Battle Playback V2 backend-owned state facts**：将相对满血证明、DamageLoss 的 transient/ghost
   事实、模块/乘员清除 transition 与 consumable 全局失效边界收敛到 canonical backend projection；
   前端只按时间查询并负责百分比、格式化和展示，legacy artifact 兼容仍限于读取边界。
