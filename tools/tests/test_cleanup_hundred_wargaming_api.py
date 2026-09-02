@@ -54,7 +54,9 @@ class ResumableApplyDb:
         if "SELECT sha256 FROM hundred_battle_replay_evidence WHERE submission_id" in sql:
             return [] if self.deleted else [("b" * 64,)]
         if "SELECT sha256 FROM hundred_battle_replay_evidence WHERE sha256" in sql:
-            return []
+            # Before deletion the hash is still referenced by the WG evidence,
+            # but the production query must exclude this batch's submission ID.
+            return [] if "submission_id NOT IN" in sql else ([] if self.deleted else [("b" * 64,)])
         if "SELECT replay_hash FROM hall_of_fame_record" in sql:
             return []
         if "SELECT COUNT(*) FROM hundred_battle_submission WHERE verification_source" in sql:
@@ -151,6 +153,61 @@ class CleanupToolTest(unittest.TestCase):
             self.assertFalse(manifest.exists())
             self.assertTrue(any("Cleanup verification: PASS" in str(call)
                                 for call in print_mock.call_args_list))
+
+    def test_apply_deletes_wg_only_hash_even_while_wg_evidence_exists(self):
+        db = ResumableApplyDb()
+        connection = Mock()
+        digest = "b" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            replay_dir = Path(directory)
+            replay_file = replay_dir / f"{digest}.wotbreplay"
+            replay_file.write_bytes(b"wg-only")
+            manifest = replay_dir / "cleanup.json"
+            argv = ["--apply", "--dsn", "unused", "--confirm", MODULE.CONFIRMATION,
+                    "--replay-dir", str(replay_dir), "--manifest", str(manifest)]
+
+            with patch.object(MODULE, "load_connection", return_value=connection), \
+                    patch.object(MODULE, "Database", return_value=db):
+                self.assertEqual(MODULE.main(argv), 0)
+
+            self.assertFalse(replay_file.exists())
+            self.assertFalse(manifest.exists())
+
+    def test_apply_preserves_wg_manual_shared_hash(self):
+        class SharedApplyDb(ResumableApplyDb):
+            shared = "c" * 64
+
+            def query(self, sql, params=()):
+                if "SELECT sha256 FROM hundred_battle_replay_evidence WHERE submission_id" in sql:
+                    return [] if self.deleted else [("b" * 64,), (self.shared,)]
+                if "SELECT sha256 FROM hundred_battle_replay_evidence WHERE sha256" in sql:
+                    # The shared hash is the MANUAL reference. A query that fails
+                    # to exclude the WG batch would incorrectly return both hashes.
+                    return [(self.shared,)] if "submission_id NOT IN" in sql else (
+                        [] if self.deleted else [("b" * 64,), (self.shared,)])
+                return super().query(sql, params)
+
+        db = SharedApplyDb()
+        connection = Mock()
+        wg_digest = "b" * 64
+        shared_digest = db.shared
+        with tempfile.TemporaryDirectory() as directory:
+            replay_dir = Path(directory)
+            wg_file = replay_dir / f"{wg_digest}.wotbreplay"
+            shared_file = replay_dir / f"{shared_digest}.wotbreplay"
+            wg_file.write_bytes(b"wg-only")
+            shared_file.write_bytes(b"manual-shared")
+            manifest = replay_dir / "cleanup.json"
+            argv = ["--apply", "--dsn", "unused", "--confirm", MODULE.CONFIRMATION,
+                    "--replay-dir", str(replay_dir), "--manifest", str(manifest)]
+
+            with patch.object(MODULE, "load_connection", return_value=connection), \
+                    patch.object(MODULE, "Database", return_value=db):
+                self.assertEqual(MODULE.main(argv), 0)
+
+            self.assertFalse(wg_file.exists())
+            self.assertTrue(shared_file.exists())
+            self.assertFalse(manifest.exists())
 
 
 if __name__ == "__main__":

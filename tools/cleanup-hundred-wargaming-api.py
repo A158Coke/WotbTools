@@ -160,14 +160,21 @@ def delete_rows(db: Database, ids: list[int]) -> None:
     )
 
 
-def referenced_hashes(db: Database, hashes: set[str]) -> set[str]:
+def referenced_hashes(db: Database, hashes: set[str], excluded_submission_ids: Iterable[int] = ()) -> set[str]:
     if not hashes:
         return set()
     values = sorted(hashes)
     marks = ",".join("%s" for _ in values)
+    excluded_ids = sorted({int(value) for value in excluded_submission_ids})
+    evidence_sql = f"SELECT sha256 FROM hundred_battle_replay_evidence WHERE sha256 IN ({marks})"
+    evidence_params: list[Any] = list(values)
+    if excluded_ids:
+        excluded_marks = ",".join("%s" for _ in excluded_ids)
+        evidence_sql += f" AND submission_id NOT IN ({excluded_marks})"
+        evidence_params.extend(excluded_ids)
     referenced = set(str(row[0]) for row in db.query(
-        f"SELECT sha256 FROM hundred_battle_replay_evidence WHERE sha256 IN ({marks})",
-        values,
+        evidence_sql,
+        evidence_params,
     ))
     referenced.update(str(row[0]) for row in db.query(
         f"SELECT replay_hash FROM hall_of_fame_record WHERE replay_hash IN ({marks})",
@@ -309,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
         candidate_hashes = hashes | pending_manifest_hashes
         # Calculate the protected set before deleting DB evidence, then checkpoint
         # only the hashes that may need filesystem removal before the transaction.
-        deletion_hashes = candidate_hashes - referenced_hashes(db, candidate_hashes)
+        deletion_hashes = candidate_hashes - referenced_hashes(db, candidate_hashes, ids)
         save_manifest(manifest_path, replay_dir, deletion_hashes)
         delete_rows(db, ids)
         if ids:
