@@ -42,11 +42,7 @@ import { projectVehicleState } from '../utils/playbackVehicleState'
 import { advancePlaybackTime, clampPlaybackTime, nextPlaybackSpeed } from '../utils/playbackClock'
 import {
   MARKER_CORE_PX,
-  PLAYER_FADE_MS,
-  PLAYER_HIDE_MS,
-  PLAYER_SHOW_MS,
   computeLabelLayout,
-  resolvePlayerVisibility,
 } from '../utils/labelLayout'
 import {
   ANNOT_COLORS,
@@ -216,9 +212,9 @@ function hpValueText(hp) {
 const currentTime = ref(0)
 const playing = ref(false)
 const speed = ref(1)
-// PR4 §33：hysteresis 时间基准 = UI wall clock（performance.now）。
-// 播放时由 frame() 每帧刷新；暂停时由 ensureHysteresisClock 的轻量 RAF 继续推进
-//（仅当存在未决 transition），不依赖 replay 播放状态；replay currentTime 不是 collision 时钟。
+// transient/animation 时间基准 = UI wall clock（performance.now）。
+// 播放时由 frame() 每帧刷新；暂停时由 ensurePauseClock 的轻量 RAF 继续推进
+//（仅当存在未决 transient），不依赖 replay 播放状态。
 const nowMs = ref(typeof performance !== 'undefined' ? performance.now() : 0)
 
 // ---- PR4 §26：玩家/坦克名显示偏好（默认 showPlayerName=false / showTankName=true，localStorage 持久化）----
@@ -458,15 +454,8 @@ const eventPopupSec = ref(null)
 let rafId = null
 let lastFrameTs = null
 
-// PR4 §33 hysteresis 状态（声明提前：seekTo watch immediate 可能在 setup 早期触发 pause →
-// ensureHysteresisClock/hasPendingHysteresis 必须能访问；ref/Map/let 需先初始化，避免 TDZ）
-const playerVisState = ref(new Map())
-const playerHidden = ref(new Set())
-// fade-in 生命周期：accountId → fade 结束时刻（performance.now 基准）。
-// 非响应式 Map，由 nowMs 变化驱动重渲染；恢复帧开始计时 PLAYER_FADE_MS，
-// 期间不被下一次 collision resolve 取消（CSS animation 0.12s 与之一致）。
-const fadeUntil = new Map()
-let hystRafId = null
+// 暂停期 transient 时钟的 RAF id（仅当存在未决 transient 时运行，不永久轮询）。
+let pauseRafId = null
 
 // ---- 地图视图缩放/平移：单一 transform 层保证地图/网格/炮线/标记严格对齐 ----
 const mapComponent = ref(null)
@@ -965,8 +954,8 @@ function frame(ts) {
     }
     playing.value = false
     rafId = null
-    // 播放到末尾自然停止 → 若有未决 transition，轻量 clock 接管
-    ensureHysteresisClock(realNowMs())
+    // 播放到末尾自然停止 → 若有未决 transient，轻量 clock 接管
+    ensurePauseClock(realNowMs())
     return
   }
   rafId = requestAnimationFrame(frame)
@@ -977,10 +966,10 @@ function play() {
   if (playing.value || duration.value <= 0) return
   playing.value = true
   lastFrameTs = null
-  // 播放开始：hysteresis 时钟由 playback frame() 驱动——作废可能残留的轻量 hystRAF
-  //（stub 环境只保留最近回调，若不清理，pause() 的 ensureHysteresisClock 会误判"已有 RAF"
+  // 播放开始：transient 时钟由 playback frame() 驱动——作废可能残留的轻量 pause RAF
+  //（stub 环境只保留最近回调，若不清理，pause() 的 ensurePauseClock 会误判"已有 RAF"
   //  而无法注册接管时钟；真实浏览器中残留回调至多无害地刷新一次 nowMs）
-  hystRafId = null
+  pauseRafId = null
   rafId = requestAnimationFrame(frame)
 }
 
@@ -991,9 +980,9 @@ function pause() {
     cancelAnimationFrame(rafId)
     rafId = null
   }
-  // Blocker 1：播放中可能有未决 hide/show/fade transition——暂停后立即让轻量
-  // hysteresis clock（UI wall clock）接管；无 pending 时不启动 RAF（不永久轮询）。
-  ensureHysteresisClock(typeof performance !== 'undefined' ? performance.now() : Date.now())
+  // 播放中可能有未决 transient——暂停后立即让轻量 pause clock（UI wall clock）接管；
+  // 无 pending 时不启动 RAF（不永久轮询）。
+  ensurePauseClock(typeof performance !== 'undefined' ? performance.now() : Date.now())
 }
 
 watch(() => props.seekTo, (sec) => {
@@ -1015,8 +1004,8 @@ function seek(sec) {
 }
 
 /** seek 后单帧禁用 HP bar transition（§20.1：只恢复状态，不补 150–300ms 缩短动画）。
- * 用 setTimeout 而非 requestAnimationFrame 清旗标：不占用共享 RAF 槽位（播放/hysteresis
- * 时钟仍由 rafCb 驱动，测试中 seek 后 rafCb 必须仍指向时钟回调）。 */
+ * 用 setTimeout 而非 requestAnimationFrame 清旗标：不占用共享 RAF 槽位（播放/
+ * 暂停时钟仍由 rafCb 驱动，测试中 seek 后 rafCb 必须仍指向时钟回调）。 */
 function suppressHpTransition() {
   hpNoTransition.value = true
   if (typeof setTimeout === 'function') {
@@ -1061,7 +1050,7 @@ function toggleType(type) {
 
 onBeforeUnmount(() => {
   if (rafId != null) cancelAnimationFrame(rafId)
-  if (hystRafId != null) cancelAnimationFrame(hystRafId)
+  if (pauseRafId != null) cancelAnimationFrame(pauseRafId)
   if (mapResizeObserver) {
     mapResizeObserver.disconnect()
     mapResizeObserver = null
@@ -1407,7 +1396,7 @@ function floatTeamClass(friendly) {
   return 'pb-float-neutral'
 }
 
-// ---- PR4 §32–§35：标签碰撞布局（纯函数；screen px）+ PlayerName hysteresis ----
+// ---- PR4 §32–§35：标签碰撞布局（纯函数；screen px；碰撞永不隐藏标签/HP）----
 // §21–§28 + PR #107 Blocker 1：碰撞基于真实 screen-space visual footprint。
 // 坐标空间（统一约定）：
 //   - marker core 本体在 viewport 内随地图缩放：屏幕尺寸 = CSS size（offsetWidth，36/28）
@@ -1462,60 +1451,32 @@ const labelLayout = computed(() => {
   })
 })
 
-// （playerVisState / playerHidden / fadeUntil / hystRafId 声明见播放状态区——
-//   seekTo immediate watch 早期触发 pause 时需已初始化，避免 TDZ）
-
-/** 是否存在未决的 hysteresis transition（hide/show 截止未到，或 fade-in 未结束）。 */
-function hasPendingHysteresis(now) {
-  for (const s of playerVisState.value.values()) {
-    if (s.conflict && !s.hidden && now - s.since < PLAYER_HIDE_MS) return true
-    if (!s.conflict && s.hidden && now - s.since < PLAYER_SHOW_MS) return true
-  }
-  for (const until of fadeUntil.values()) if (until > now) return true
-  // PR5：暂停时 transient feedback（floating damage/burst/kill feed/ghost/flash）
-  // 也需轻量时钟自然完成（§20.2）
-  if (hasPendingTransients(now)) return true
-  return false
+/** 是否存在未决的 transient（暂停时需轻量时钟自然完成，§20.2）。 */
+function hasPendingPauseClock(now) {
+  return hasPendingTransients(now)
 }
 
-/** 轻量时钟：仅当存在未决 transition 且未在播放时维持 RAF；播放时由 frame() 驱动，
- *  无 pending 即停（不做永久轮询）。注意：只更新 nowMs 触发 watch，**不在 watcher 内
- *  回写 nowMs**（nowMs 是 watch source，回写会自触发无限循环）。
- * @param now 当前 resolve 使用的新鲜 wall clock（用于 pending 判定）
+/** 轻量时钟：仅当存在未决 transient 且未在播放时维持 RAF；播放时由 frame() 驱动，
+ *  无 pending 即停（不做永久轮询）。注意：只更新 nowMs，不在 watcher 内回写 nowMs
+ *  （nowMs 是 watch source，回写会自触发无限循环）。
+ * @param now 当前新鲜 wall clock（用于 pending 判定）
  */
-function ensureHysteresisClock(now) {
-  if (hystRafId != null || playing.value) return
-  if (hasPendingHysteresis(now)) {
-    hystRafId = requestAnimationFrame(() => {
-      hystRafId = null
+function ensurePauseClock(now) {
+  if (pauseRafId != null || playing.value) return
+  if (hasPendingPauseClock(now)) {
+    pauseRafId = requestAnimationFrame(() => {
+      pauseRafId = null
       nowMs.value = typeof performance !== 'undefined' ? performance.now() : Date.now()
-      // nowMs 变化 → watch → resolve → ensureHysteresisClock(新鲜 now) 决定续/停
+      // nowMs 变化 → transient watch → ensurePauseClock(新鲜 now) 决定续/停
     })
   }
 }
 
-watch([labelLayout, nowMs], () => {
-  // 每次 resolve 取**新鲜** wall clock：即使 nowMs 因暂停而陈旧，冲突出现/解除时刻
-  // 也以真实时刻计，阈值不会因暂停冻结（B3）。
-  const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
-  const conflicts = new Set()
-  for (const [id, r] of labelLayout.value) {
-    if (r.playerConflict) conflicts.add(id)
-  }
-  const res = resolvePlayerVisibility(conflicts, playerVisState.value, now, PLAYER_HIDE_MS, PLAYER_SHOW_MS)
-  playerVisState.value = res.state
-  playerHidden.value = res.hidden
-  // fade-in：恢复帧开始计时，完整 PLAYER_FADE_MS 生命周期
-  for (const id of res.fading) fadeUntil.set(id, now + PLAYER_FADE_MS)
-  for (const [id, until] of fadeUntil) if (until <= now) fadeUntil.delete(id)
-  ensureHysteresisClock(now)
-}, { immediate: true })
-
 // transient 过期清理（nowMs/currentTime 变化驱动；reactive Map 不无限增长）
 watch([nowMs, currentTime], () => pruneTransients(nowMs.value))
 
-/** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 + player 显隐/fade +
- *  §25 blockHidden/hpHidden：不可分离碰撞时的优先级隐藏）。 */
+/** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 +
+ *  §25 blockHidden/hpHidden：不可分离碰撞时的优先级隐藏兼容输出，恒 false）。 */
 function markerLabel(accountId) {
   const l = labelLayout.value.get(accountId)
   return {
@@ -1524,8 +1485,6 @@ function markerLabel(accountId) {
     tankDy: l ? l.tankDy : 0,
     blockHidden: l ? l.blockHidden : false,
     hpHidden: l ? l.hpHidden : false,
-    playerHidden: playerHidden.value.has(accountId),
-    playerFading: (fadeUntil.get(accountId) || 0) > nowMs.value,
   }
 }
 

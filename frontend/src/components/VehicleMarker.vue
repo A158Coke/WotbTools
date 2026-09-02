@@ -39,7 +39,6 @@ const props = defineProps({
     type: Object,
     default: () => ({
       showPlayer: false, showTank: true, tankDy: 0, blockHidden: false, hpHidden: false,
-      playerHidden: false, playerFading: false,
     }),
   },
   /** HP HUD presentation（current/pct/state/knowledge/destroyed）；null=不渲染 */
@@ -146,7 +145,7 @@ const labelsStyle = computed(() => ({
 const playerLineEl = ref(null)
 const playerTruncated = ref(false)
 watch(
-  () => [props.label.showPlayer, props.label.playerHidden, st.value.playerName],
+  () => [props.label, st.value.playerName],
   () => {
     nextTick(() => {
       const el = playerLineEl.value
@@ -156,7 +155,7 @@ watch(
   { immediate: true },
 )
 const playerTooltip = computed(() =>
-  playerTruncated.value && props.label.showPlayer && !props.label.playerHidden && st.value.playerName
+  playerTruncated.value && props.label.showPlayer && st.value.playerName
     ? st.value.playerName
     : undefined,
 )
@@ -381,10 +380,8 @@ const hpClasses = computed(() => ({
     >
       <span
         v-if="label.showPlayer && st.playerName"
-        v-show="!label.playerHidden"
         ref="playerLineEl"
         class="pb-label-player"
-        :class="{ 'pb-label-fading': label.playerFading }"
         :title="playerTooltip"
         data-test="pb-label-player"
       >{{ st.playerName }}</span>
@@ -610,18 +607,6 @@ const hpClasses = computed(() => ({
 .pb-last-known .pb-labels .pb-label-player {
   opacity: .65;
 }
-/* §33 恢复 fade-in（约 120ms，仅 opacity；无 translate/bounce/背景过渡） */
-.pb-label-fading {
-  animation: pb-label-fade-in 0.12s ease;
-}
-@keyframes pb-label-fade-in {
-  from { opacity: 0; }
-  to { opacity: 0.9; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .pb-label-fading { animation: none; }
-}
-
 /* —— HP HUD（docs/features/battle-playback.md HP HUD）：数字 + 定宽 bar，screen-space
    恒定（overlayInverseScale 反缩放）；friendly/enemy 沿用 team token（§4.2 现有阵营色）——
     friendly = --pb-team-text（地图 tone），enemy = --pb-enemy-text（red）——与整车 outline 同源。

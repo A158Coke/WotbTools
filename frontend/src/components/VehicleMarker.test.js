@@ -330,7 +330,7 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
 })
 
 describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
-  const label = { showPlayer: false, showTank: true, tankDy: 0, playerHidden: false, playerFading: false }
+  const label = { showPlayer: false, showTank: true, tankDy: 0, blockHidden: false, hpHidden: false }
 
   it('§26/§27：默认只显示 TankName；showPlayer 开启后两行共享背景块', () => {
     const w = mount(VehicleMarker, { props: { marker: genericMarker, selected: false, label } })
@@ -361,21 +361,20 @@ describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
     // 模拟截断：scrollWidth > clientWidth
     Object.defineProperty(w.find('.pb-label-player').element, 'scrollWidth', { value: 200, configurable: true })
     Object.defineProperty(w.find('.pb-label-player').element, 'clientWidth', { value: 60, configurable: true })
-    // watch 依赖变化触发重测
-    await w.setProps({ label: { ...label, showPlayer: true, playerHidden: true } })
-    await w.setProps({ label: { ...label, showPlayer: true, playerHidden: false } })
+    // watch 依赖（label 对象）变化触发重测
+    await w.setProps({ label: { ...label, showPlayer: true } })
     await new Promise((r) => setTimeout(r, 0))
     expect(w.find('.pb-label-player').attributes('title')).toBe('You')
   })
 
-  it('§32/§33：playerHidden → v-show 隐藏；playerFading → fade 动画 class', () => {
+  it('§32/§33：碰撞永不隐藏 PlayerName——无 v-show、无 fade 类、无 fade CSS', () => {
     const src = markerSource
-    expect(src).toContain('animation: pb-label-fade-in 0.12s ease;')
-    const hidden = mount(VehicleMarker, { props: { marker: genericMarker, selected: false, label: { ...label, showPlayer: true, playerHidden: true } } })
-    expect(hidden.find('.pb-label-player').attributes('style')).toContain('display: none') // v-show
-    const fading = mount(VehicleMarker, { props: { marker: genericMarker, selected: false, label: { ...label, showPlayer: true, playerFading: true } } })
-    expect(fading.find('.pb-label-player').classes()).toContain('pb-label-fading')
-    expect(src).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.pb-label-fading \{ animation: none; \}/)
+    expect(src).not.toContain('.pb-label-fading')
+    expect(src).not.toContain('pb-label-fade-in')
+    const w = mount(VehicleMarker, { props: { marker: genericMarker, selected: false, label: { ...label, showPlayer: true } } })
+    expect(w.find('.pb-label-player').exists()).toBe(true) // 恒渲染
+    expect(w.find('.pb-label-player').attributes('style')).toBeUndefined() // 无 v-show 隐藏 style
+    expect(w.find('.pb-label-player').isVisible()).toBe(true) // 恒可见
   })
 
   it('§34 tankDy：标签块 bottom 上移（tankDy×inv），selected 三角同步上移；车体不受影响', () => {
