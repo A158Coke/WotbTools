@@ -263,8 +263,8 @@ components:
       properties:
         timeSec: { type: number, minimum: 0 }
         currentHp: { type: [integer, 'null'], minimum: 0 }
-        knowledge: { $ref: '#/components/schemas/HealthKnowledge' }
-        source: { type: string }
+        knowledge: { type: [string, 'null'], enum: [CURRENT, LAST_KNOWN, null] }
+        source: { type: [string, 'null'] }
         displayCapacityHp: { type: [integer, 'null'], minimum: 0 }
         relativeFull: { type: boolean }
         confidence: { $ref: '#/components/schemas/PlaybackConfidence' }

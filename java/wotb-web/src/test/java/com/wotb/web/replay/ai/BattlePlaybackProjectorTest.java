@@ -201,6 +201,50 @@ class BattlePlaybackProjectorTest {
     }
 
     @Test
+    void healthUnknownBoundaryClearsRelativeFullUntilHpIsReacquired() {
+        final long account = 2001L;
+        final int entityId = 7;
+        final Battle battle = syntheticBattle(account, 1);
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(entityId, new TeamEntityIdentity(entityId, account, "Recorder", 456L,
+                        "Recorder", 1, DecodeConfidence.EXACT)),
+                Map.of(account, List.of(entityId)), Map.of(), 0, List.of());
+        final List<BattleFrame> frames = List.of(
+                new BattleFrame(0, 0, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 1, true,
+                                new FrameHealth(2000, 0.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, 2000, Confidence.HIGH), 0)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(10, 10, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 1, true,
+                                new FrameHealth(1500, 10.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, 2000, Confidence.HIGH), 10)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(20, 20, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 1, true,
+                                FrameHealth.unknown(), 20)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(30, 30, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 1, true,
+                                new FrameHealth(1400, 30.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, 2000, Confidence.HIGH), 30)),
+                        List.of(), List.of(), Map.of(), List.of()));
+
+        final BattlePlaybackDataset.VehiclePlaybackTrack track = BattlePlaybackProjector.project(
+                battle, syntheticTimeline(40, frames, List.of()), mapping, account).vehicles().getFirst();
+        assertEquals(java.util.Arrays.asList(2000, 1500, null, 1400), track.healthTransitions().stream()
+                .map(BattlePlaybackDataset.HealthTransition::currentHp).toList());
+        assertTrue(track.healthTransitions().get(0).relativeFull());
+        assertFalse(track.healthTransitions().get(1).relativeFull(),
+                "damage must clear opening relative-full before projecting the transition");
+        assertNull(track.healthTransitions().get(2).knowledge(),
+                "an explicit unknown observation is a sparse invalidation boundary");
+        assertFalse(track.healthTransitions().get(2).relativeFull());
+        assertFalse(track.healthTransitions().get(3).relativeFull(),
+                "reacquired HP must not regain opening relative-full");
+    }
+
+    @Test
     void unavailableCanonicalFactsAreOmittedFromCurrentWireTracks() {
         final long account = 2001L;
         final int entityId = 7;
@@ -560,6 +604,14 @@ class BattlePlaybackProjectorTest {
                         FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH),
                 null, null, FrameMapState.UNKNOWN, VehicleKnowledgeState.POSITION_STREAM_ACTIVE,
                 destroyedKnownAtSec, List.of());
+    }
+
+    private static FrameVehicle frameVehicleWithHealth(final int entityId, final long account,
+                                                       final int team, final boolean friendly,
+                                                       final FrameHealth health, final int second) {
+        return new FrameVehicle(entityId, account, "Recorder", 456, "Recorder", "Medium tank", 10,
+                team, friendly, LifeState.ALIVE, health, null, null, FrameMapState.UNKNOWN,
+                VehicleKnowledgeState.POSITION_STREAM_ACTIVE, null, List.of());
     }
 
     private static VehicleBattleLoadout.LoadoutItemSlot item(final int slot, final int wireCode,

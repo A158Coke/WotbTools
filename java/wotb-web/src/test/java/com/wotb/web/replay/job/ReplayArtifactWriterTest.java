@@ -122,8 +122,11 @@ class ReplayArtifactWriterTest {
             assertEquals(1, read.vehicles().get(0).positionSegments().getFirst().samples().getFirst().x());
             assertEquals(1, read.vehicles().get(0).orientationSegments().size(),
                     "legacy UNKNOWN orientation is a gap and must be removed at read boundary");
-            assertTrue(read.vehicles().get(0).healthTransitions().isEmpty(),
-                    "legacy UNKNOWN health is a no-fact transition and must be removed at read boundary");
+            assertEquals(1, read.vehicles().get(0).healthTransitions().size(),
+                    "legacy UNKNOWN health preserves its explicit invalidation boundary");
+            assertNull(read.vehicles().get(0).healthTransitions().getFirst().currentHp());
+            assertNull(read.vehicles().get(0).healthTransitions().getFirst().knowledge());
+            assertFalse(read.vehicles().get(0).healthTransitions().getFirst().relativeFull());
             assertTrue(read.vehicles().get(0).lifeTransitions().isEmpty(),
                     "legacy UNKNOWN life is a no-fact transition and must be removed at read boundary");
         } finally {

@@ -107,8 +107,9 @@ export interface components {
         HealthTransition: {
             timeSec: number;
             currentHp: number | null;
-            knowledge: components["schemas"]["HealthKnowledge"];
-            source: string;
+            /** @enum {string|null} */
+            knowledge: "CURRENT" | "LAST_KNOWN" | null;
+            source: string | null;
             displayCapacityHp: number | null;
             relativeFull: boolean;
             confidence: components["schemas"]["PlaybackConfidence"];
