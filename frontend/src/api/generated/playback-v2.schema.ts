@@ -3,6 +3,588 @@ export default {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/BattlePlaybackDataset",
   "$defs": {
+    "HundredCreateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING"
+          ]
+        }
+      }
+    },
+    "HundredSubmissionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "vehicleId",
+        "vehicleName",
+        "status",
+        "claimedAverageDamage",
+        "claimedBattleCount"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "vehicleId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "vehicleName": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "CURRENT",
+            "SUPERSEDED",
+            "REJECTED",
+            "CANCELLED",
+            "DELETED"
+          ]
+        },
+        "claimedAverageDamage": {
+          "type": "integer"
+        },
+        "claimedBattleCount": {
+          "type": "integer"
+        },
+        "approvedAverageDamage": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "approvedBattleCount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "submittedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "approvedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "rejectReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rejectReasonText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "HundredUserStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "current",
+        "pending",
+        "rejected"
+      ],
+      "properties": {
+        "current": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HundredSubmissionSummary"
+          }
+        },
+        "pending": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HundredSubmissionSummary"
+          }
+        },
+        "rejected": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HundredSubmissionSummary"
+          }
+        }
+      }
+    },
+    "HundredLeaderboardItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "rank",
+        "vehicleId",
+        "vehicleName",
+        "nickname",
+        "approvedAverageDamage",
+        "approvedBattleCount"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "rank": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "vehicleId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "vehicleName": {
+          "type": "string"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "approvedAverageDamage": {
+          "type": "integer"
+        },
+        "approvedBattleCount": {
+          "type": "integer"
+        },
+        "approvedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "HundredLeaderboardPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "totalPages"
+      ],
+      "properties": {
+        "vehicleId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "vehicleName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HundredLeaderboardItem"
+          }
+        },
+        "page": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "totalItems": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "totalPages": {
+          "type": "integer"
+        }
+      }
+    },
+    "HundredAdminListItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "vehicleId",
+        "vehicleName",
+        "gameAccountIdSnapshot",
+        "nicknameSnapshot"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "status": {
+          "type": "string"
+        },
+        "vehicleId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "vehicleName": {
+          "type": "string"
+        },
+        "gameAccountIdSnapshot": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "nicknameSnapshot": {
+          "type": "string"
+        },
+        "approvedAverageDamage": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "approvedBattleCount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "replayParseOk": {
+          "type": "boolean"
+        },
+        "replayGameIdMatch": {
+          "type": "boolean"
+        },
+        "replayVehicleMatch": {
+          "type": "boolean"
+        },
+        "replayDistinctBattles": {
+          "type": "boolean"
+        },
+        "submittedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "approvedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "rejectReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deleteReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "HundredAdminPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "totalPages"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HundredAdminListItem"
+          }
+        },
+        "page": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "totalItems": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "totalPages": {
+          "type": "integer"
+        }
+      }
+    },
+    "HundredAdminDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "vehicleId",
+        "vehicleName",
+        "gameAccountIdSnapshot",
+        "nicknameSnapshot",
+        "claimedAverageDamage",
+        "claimedBattleCount",
+        "replayParseOk",
+        "replayGameIdMatch",
+        "replayVehicleMatch",
+        "replayDistinctBattles"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "CURRENT",
+            "SUPERSEDED",
+            "REJECTED",
+            "CANCELLED",
+            "DELETED"
+          ]
+        },
+        "vehicleId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "vehicleName": {
+          "type": "string"
+        },
+        "gameAccountIdSnapshot": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "nicknameSnapshot": {
+          "type": "string"
+        },
+        "claimedAverageDamage": {
+          "type": "integer"
+        },
+        "claimedBattleCount": {
+          "type": "integer"
+        },
+        "approvedAverageDamage": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "approvedBattleCount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "proofScreenshot": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replayParseOk": {
+          "type": "boolean"
+        },
+        "replayGameIdMatch": {
+          "type": "boolean"
+        },
+        "replayVehicleMatch": {
+          "type": "boolean"
+        },
+        "replayDistinctBattles": {
+          "type": "boolean"
+        },
+        "submittedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "approvedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "approvedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rejectedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "rejectedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rejectReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rejectReasonText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cancelledAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "deletedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "deletedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deleteReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deleteReasonText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "HundredReplayEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "slot",
+        "originalFilename",
+        "fileSize",
+        "arenaId",
+        "sha256",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "slot": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "originalFilename": {
+          "type": "string"
+        },
+        "fileSize": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "arenaId": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "createdAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "HundredRejectRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rejectReason"
+      ],
+      "properties": {
+        "rejectReason": {
+          "type": "string"
+        },
+        "rejectReasonText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "HundredDeleteRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deleteReason"
+      ],
+      "properties": {
+        "deleteReason": {
+          "type": "string"
+        },
+        "deleteReasonText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
     "DatasetReference": {
       "type": "object",
       "additionalProperties": false,

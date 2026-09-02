@@ -53,7 +53,7 @@ cd docker/online && docker compose up -d --build
 
 后端没有“无数据库” profile。测试 Keycloak Admin 写操作时需要 `wotbtools-admin-api` 服务账号与 `KEYCLOAK_ADMIN_CLIENT_SECRET`。
 
-Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 同时获得相同 `WG_APPLICATION_ID`。缺失时服务仍应启动，只让相应 WG 能力稳定不可用；百场人工截图 + 5 replay 流程不得受影响。
+Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backend 不再调用 WG stats，也不再接收百场 WG 自动认证；百场统一使用截图 + 5 replay 人工流程。
 
 真实回放 CI fixture 位于 `common/fixtures/replays/*.wotbreplay`；本地可用 gitignored `common/data/*.wotbreplay` 扩展样本。
 
@@ -138,7 +138,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 - `replay`：Processing Job、Export Job、Battle Reconstruction、AI Review。
 - `hof`：单场名人堂。
-- `hundred`：百场名人堂（MANUAL + WARGAMING_API）。
+- `hundred`：百场名人堂（MANUAL 人工证据审核）。
 - `mark3`：Tier X 单车最速三环人工审核排行榜（PENDING/CURRENT/REJECTED/CANCELLED/DELETED，无 SUPERSEDED）。
 - `user`：Profile、WoTB 账号、Notification。
 - `boost`：陪练/打手业务。
@@ -180,11 +180,10 @@ Battle 直接取该场 `tank_id`/`tank_name`（来源 `PlayerResult.tankId`）�
 
 百场域生命周期为 `PENDING/CURRENT/SUPERSEDED/REJECTED/CANCELLED/DELETED`：
 
-- MANUAL：截图 + 5 个 replay，管理员审核。
-- WARGAMING_API：只接受可信 ASIA/EU/NA WG 身份；账号总场次 >=5000、目标车 >=100；官方精确场均 <=3900 自动 CURRENT，>3900 创建无文件 PENDING。
-- 首次 WG 登录可直接提交：服务端先同步 Profile，再做 JWT ↔ Profile ↔ WG 官方响应交叉校验。
+- MANUAL：截图 + 5 个 replay，管理员审核；WG 登录用户同样使用此流程。
 - 管理员只能通过、拒绝或删除，不能改写成绩。
-- 管理员百场摘要列表只展示认证值：WG 使用冻结官方快照，MANUAL 使用通过后的值；申报值仅在详情保留。
+- 管理员百场摘要列表只展示通过后的值；申报值仅在详情保留。
+- V20 的 `verification_source` / 官方 snapshot 列是历史 schema residue，应用不再映射；发布新版本前须先备份数据库，在旧版本/schema 上运行 `tools/cleanup-hundred-wargaming-api.py` dry-run，核对数量后再用精确确认 token apply。工具只删除 `WARGAMING_API` 来源，并按 MANUAL 与单场 HoF 的共享回放引用保护物理文件。
 
 三环域只走人工审核：1–2 张截图、5 个已验证 replay，按 approved battleCount 升序 competition rank；CURRENT 不可替换，REJECTED/CANCELLED/DELETED 可重提。三环 replay 解析通过共享 `ReplayCapacityLimiter`，容量满沿用 `REPLAY_BUSY`。
 
@@ -329,7 +328,7 @@ WG broker 身份以 `wg:{region}:{account_id}` 隔离区服；`account_id` 必�
 
 JWT mapper 提供 `wotb_region / wotb_account_id / wotb_nickname / wotb_verified`。WG Profile 为只读来源；Profile 不存在时 `PUT /api/users/wotb-account/from-login` 可以原子创建/同步 WARGAMING 资料。
 
-`WG_APPLICATION_ID` 同时注入 Keycloak 和 backend：前者用于 WG IdP，后者用于百场官方 account/info + tanks/stats。
+`WG_APPLICATION_ID` 仅注入 Keycloak，用于 WG IdP；backend 不再需要该配置。
 
 IdP 部署步骤见 `docs/auth/wargaming-asia-deployment.md`。
 

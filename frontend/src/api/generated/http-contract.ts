@@ -4,6 +4,193 @@
  */
 
 export interface paths {
+    "/api/hof/hundred": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the public Hundred Battles leaderboard */
+        get: operations["listHundredLeaderboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hof/hundred/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a manual Hundred Battles submission */
+        post: operations["createHundredSubmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hof/hundred/submissions/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel the authenticated user's pending submission */
+        post: operations["cancelHundredSubmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/hundred/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the authenticated user's Hundred submission status */
+        get: operations["getHundredUserStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/hundred/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Hundred submissions for moderation */
+        get: operations["listHundredAdminSubmissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/hundred/submissions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one Hundred submission for moderation */
+        get: operations["getHundredAdminSubmission"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/hundred/submissions/{id}/replays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List replay evidence metadata for moderation */
+        get: operations["listHundredReplayEvidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/hundred/submissions/{submissionId}/replays/{replayId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download one replay evidence file */
+        get: operations["downloadHundredReplayEvidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/hundred/submissions/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve a manual Hundred submission */
+        post: operations["approveHundredSubmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/hundred/submissions/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a manual Hundred submission */
+        post: operations["rejectHundredSubmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/hundred/submissions/{id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete a current Hundred submission */
+        post: operations["deleteHundredSubmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/replay/battle-playback-v2": {
         parameters: {
             query?: never;
@@ -25,6 +212,149 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        HundredCreateResult: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            status: "PENDING";
+        };
+        HundredSubmissionSummary: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            vehicleId: number;
+            vehicleName: string;
+            /** @enum {string} */
+            status: "PENDING" | "CURRENT" | "SUPERSEDED" | "REJECTED" | "CANCELLED" | "DELETED";
+            claimedAverageDamage: number;
+            claimedBattleCount: number;
+            approvedAverageDamage?: number | null;
+            approvedBattleCount?: number | null;
+            /** Format: date-time */
+            submittedAt?: string | null;
+            /** Format: date-time */
+            approvedAt?: string | null;
+            rejectReason?: string | null;
+            rejectReasonText?: string | null;
+        };
+        HundredUserStatus: {
+            current: components["schemas"]["HundredSubmissionSummary"][];
+            pending: components["schemas"]["HundredSubmissionSummary"][];
+            rejected: components["schemas"]["HundredSubmissionSummary"][];
+        };
+        HundredLeaderboardItem: {
+            /** Format: int64 */
+            id: number;
+            rank: number | null;
+            /** Format: int64 */
+            vehicleId: number;
+            vehicleName: string;
+            nickname: string;
+            approvedAverageDamage: number;
+            approvedBattleCount: number;
+            /** Format: date-time */
+            approvedAt?: string | null;
+        };
+        HundredLeaderboardPage: {
+            /** Format: int64 */
+            vehicleId?: number | null;
+            vehicleName?: string | null;
+            items: components["schemas"]["HundredLeaderboardItem"][];
+            page: number;
+            size: number;
+            /** Format: int64 */
+            totalItems: number;
+            totalPages: number;
+        };
+        HundredAdminListItem: {
+            /** Format: int64 */
+            id: number;
+            status: string;
+            /** Format: int64 */
+            vehicleId: number;
+            vehicleName: string;
+            /** Format: int64 */
+            gameAccountIdSnapshot: number;
+            nicknameSnapshot: string;
+            approvedAverageDamage?: number | null;
+            approvedBattleCount?: number | null;
+            replayParseOk?: boolean;
+            replayGameIdMatch?: boolean;
+            replayVehicleMatch?: boolean;
+            replayDistinctBattles?: boolean;
+            /** Format: date-time */
+            submittedAt?: string | null;
+            /** Format: date-time */
+            approvedAt?: string | null;
+            rejectReason?: string | null;
+            deleteReason?: string | null;
+        };
+        HundredAdminPage: {
+            items: components["schemas"]["HundredAdminListItem"][];
+            page: number;
+            size: number;
+            /** Format: int64 */
+            totalItems: number;
+            totalPages: number;
+        };
+        HundredAdminDetail: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            status: "PENDING" | "CURRENT" | "SUPERSEDED" | "REJECTED" | "CANCELLED" | "DELETED";
+            /** Format: int64 */
+            vehicleId: number;
+            vehicleName: string;
+            /** Format: int64 */
+            gameAccountIdSnapshot: number;
+            nicknameSnapshot: string;
+            claimedAverageDamage: number;
+            claimedBattleCount: number;
+            approvedAverageDamage?: number | null;
+            approvedBattleCount?: number | null;
+            proofScreenshot?: string | null;
+            replayParseOk: boolean;
+            replayGameIdMatch: boolean;
+            replayVehicleMatch: boolean;
+            replayDistinctBattles: boolean;
+            /** Format: date-time */
+            submittedAt?: string | null;
+            /** Format: date-time */
+            approvedAt?: string | null;
+            approvedBy?: string | null;
+            /** Format: date-time */
+            rejectedAt?: string | null;
+            rejectedBy?: string | null;
+            rejectReason?: string | null;
+            rejectReasonText?: string | null;
+            /** Format: date-time */
+            cancelledAt?: string | null;
+            /** Format: date-time */
+            deletedAt?: string | null;
+            deletedBy?: string | null;
+            deleteReason?: string | null;
+            deleteReasonText?: string | null;
+        };
+        HundredReplayEvidence: {
+            /** Format: int64 */
+            id: number;
+            slot: number;
+            originalFilename: string;
+            /** Format: int64 */
+            fileSize: number;
+            arenaId: string;
+            sha256: string;
+            /** Format: date-time */
+            createdAt: string | null;
+        };
+        HundredRejectRequest: {
+            rejectReason: string;
+            rejectReasonText?: string | null;
+        };
+        HundredDeleteRequest: {
+            deleteReason: string;
+            deleteReasonText?: string | null;
+        };
         DatasetReference: {
             processingJobId: string;
             sourceId: string;
@@ -183,6 +513,319 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listHundredLeaderboard: {
+        parameters: {
+            query?: {
+                vehicleId?: number;
+                nation?: string;
+                vehicleType?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Hundred leaderboard page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HundredLeaderboardPage"];
+                };
+            };
+            /** @description Invalid filter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    createHundredSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: int64 */
+                    vehicleId: number;
+                    averageDamage: number;
+                    battleCount: number;
+                    /** @description Base64 image data URL */
+                    screenshot: string;
+                    replays: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Pending submission */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HundredCreateResult"];
+                };
+            };
+            /** @description Invalid submission */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cancelHundredSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled submission */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HundredSubmissionSummary"];
+                };
+            };
+            /** @description Not the submission owner */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getHundredUserStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User Hundred status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HundredUserStatus"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listHundredAdminSubmissions: {
+        parameters: {
+            query?: {
+                status?: string;
+                nation?: string;
+                vehicleType?: string;
+                vehicleId?: number;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Moderation page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HundredAdminPage"];
+                };
+            };
+        };
+    };
+    getHundredAdminSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Submission detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HundredAdminDetail"];
+                };
+            };
+        };
+    };
+    listHundredReplayEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Replay evidence metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HundredReplayEvidence"][];
+                };
+            };
+        };
+    };
+    downloadHundredReplayEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submissionId: number;
+                replayId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original replay file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+        };
+    };
+    approveHundredSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current submission */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HundredSubmissionSummary"];
+                };
+            };
+        };
+    };
+    rejectHundredSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HundredRejectRequest"];
+            };
+        };
+        responses: {
+            /** @description Rejected submission */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HundredSubmissionSummary"];
+                };
+            };
+        };
+    };
+    deleteHundredSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HundredDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Deleted submission */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HundredSubmissionSummary"];
+                };
+            };
+        };
+    };
     getBattlePlaybackV2: {
         parameters: {
             query?: never;

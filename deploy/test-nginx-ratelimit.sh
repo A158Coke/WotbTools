@@ -38,8 +38,10 @@ grep -q 'set_real_ip_from 172.28.0.1;' "$CFG" \
   || { echo "FAIL: prod config must trust the pinned compose gateway 172.28.0.1" >&2; exit 1; }
 grep -q 'set_real_ip_from 0.0.0.0/0;' "$CFG" \
   && { echo "FAIL: prod config must not trust all sources" >&2; exit 1; }
-grep -q 'location = /api/hof/hundred/submissions/wargaming {' "$CFG" \
-  || { echo "FAIL: WG hundred-battle verification endpoint must have an exact rate-limited location" >&2; exit 1; }
+if grep -q 'submissions/wargaming' "$CFG"; then
+  echo "FAIL: retired WG hundred-battle endpoint must not be present" >&2
+  exit 1
+fi
 trust_count="$(grep -c 'set_real_ip_from ' "$CFG")"
 [[ "$trust_count" == "1" ]] \
   || { echo "FAIL: prod config must trust exactly one source (found $trust_count)" >&2; exit 1; }

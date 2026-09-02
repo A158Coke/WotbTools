@@ -1,4 +1,11 @@
-[
+[{
+    "v": "2.12.61",
+    "date": "2026-09-02",
+    "tag": "chg",
+    "zh": "百场统一为截图 + 5 个回放人工审核；保留 Wargaming 三服登录与 Profile 同步",
+    "en": "Hundred Battles now uses screenshot + five replay manual review for everyone; Wargaming login and Profile sync remain supported",
+    "ru": "Для всех в Hundred Battles используется ручная проверка по скриншоту и пяти реплеям; вход Wargaming и синхронизация Profile сохранены"
+  },
   {
     "v": "2.12.60",
     "date": "2026-09-01",

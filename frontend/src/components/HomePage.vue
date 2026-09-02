@@ -6,8 +6,11 @@ import cardHofImg from '../assets/showcase/home/card-hall-of-fame-v1.png'
 import cardCoachingImg from '../assets/showcase/home/card-coaching-v1.png'
 import cardSupportImg from '../assets/showcase/home/card-support-v1.png'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
+import { useAuth } from '../composables/useAuth.js'
 
 const topRecord = ref(null)
+const { hasRole } = useAuth()
+const showBoost = computed(() => hasRole('wotbtools-admin'))
 const topDamageDisplay = computed(() => {
   const damage = Number(topRecord.value?.damageDealt)
   return Number.isFinite(damage) ? formatDamage(damage) : '--'
@@ -69,7 +72,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
         <div class="feature-visual"><img :src="cardHofImg" alt="" aria-hidden="true"><span class="feature-index">04</span></div>
         <div class="feature-copy"><h2>{{ $t('hof.btn') }}</h2><p>{{ $t('home.hofDesc') }}</p><span class="feature-action">{{ $t('hof.btn') }} →</span></div>
       </a>
-      <a class="feature-card" href="/?view=boost">
+      <a v-if="showBoost" class="feature-card" href="/?view=boost">
         <div class="feature-visual"><img :src="cardCoachingImg" alt="" aria-hidden="true"><span class="feature-index">05</span></div>
         <div class="feature-copy"><h2>{{ $t('app.boost_tab') }}</h2><p>{{ $t('home.boostDesc') }}</p><span class="feature-action">{{ $t('app.boost_tab') }} →</span></div>
       </a>
