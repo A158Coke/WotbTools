@@ -21,12 +21,19 @@ vi.mock('./components/HomePage.vue', () => ({ default: { template: '<div data-te
 vi.mock('./components/HoFPage.vue', () => ({ default: { template: '<div data-test="view-hof" />' } }))
 vi.mock('./components/AndroidDownloadPage.vue', () => ({ default: { template: '<div data-test="view-android" />' } }))
 
-const authState = vi.hoisted(() => ({ authenticated: false, username: '', login: vi.fn(), logout: vi.fn() }))
+const authState = vi.hoisted(() => ({
+  authenticated: false,
+  username: '',
+  login: vi.fn(),
+  logout: vi.fn(),
+  hasRole: vi.fn(() => false),
+}))
 vi.mock('./composables/useAuth.js', () => ({
   useAuth: () => ({
     initPromise: Promise.resolve(authState.authenticated), tokenParsed: { value: null },
     login: authState.login, logout: authState.logout, isAuthenticated: () => authState.authenticated,
     userName: () => authState.username,
+    hasRole: authState.hasRole,
   }),
 }))
 

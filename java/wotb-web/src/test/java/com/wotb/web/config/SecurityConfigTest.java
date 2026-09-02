@@ -232,10 +232,6 @@ class SecurityConfigTest {
                 .andExpect(status().isOk());
         mvc.perform(get("/api/hof/1/replay").with(jwt()))
                 .andExpect(status().isOk());
-        mvc.perform(get("/api/hof/hundred/submissions/wargaming"))
-                .andExpect(status().isUnauthorized());
-        mvc.perform(get("/api/hof/hundred/submissions/wargaming").with(jwt()))
-                .andExpect(status().isOk());
         // 名人堂查询保持公开
         mvc.perform(get("/api/hof"))
                 .andExpect(status().isOk());
@@ -323,7 +319,6 @@ class SecurityConfigTest {
                 "/api/hof/1/replay",
                 "/api/hof",
                 "/api/hof/vehicle-options",
-                "/api/hof/hundred/submissions/wargaming",
                 "/api/admin/hof/probe",
                 "/api/admin/hof/audit",
                 "/api/admin/rating-v2/processing-jobs/probe",

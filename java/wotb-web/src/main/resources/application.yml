@@ -91,9 +91,6 @@ keycloak:
     client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
 
 wotb:
-  wargaming:
-    # empty default: app still starts; WG hundred-battle submission returns HUNDRED_WARGAMING_NOT_CONFIGURED
-    application-id: ${WG_APPLICATION_ID:}
   ai:
     # empty default: app still starts without a key; /api/replay/analyze returns AI_NOT_CONFIGURED
     api-key: ${AI_API_KEY:}

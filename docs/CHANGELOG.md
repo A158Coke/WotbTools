@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Removed
+- **Hundred WG statistics path**：移除百场 `WARGAMING_API` 官方统计、自动审核 endpoint、snapshot DTO/映射与前端分支；Wargaming ASIA/EU/NA 登录和 Profile 同步保留，百场统一走 MANUAL 截图 + 5 replay 审核。新增生产存量清理工具，默认 dry-run，并按共享引用保护 MANUAL 与单场名人堂回放。
+
 ### Changed
 - **Battle Playback V2 backend-owned state facts**：将相对满血证明、DamageLoss 的 transient/ghost
   事实、模块/乘员清除 transition 与 consumable 全局失效边界收敛到 canonical backend projection；
