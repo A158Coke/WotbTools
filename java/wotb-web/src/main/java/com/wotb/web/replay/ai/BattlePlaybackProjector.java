@@ -339,11 +339,9 @@ public final class BattlePlaybackProjector {
                         : (h.displayCapacityHp() != null ? h.displayCapacityHp() : h.currentHp());
             } else {
                 // First trusted replay HP permanently supersedes tankopedia for this battle.
-                // From this point onward capacity is derived only from replay observations.
+                // Capacity is replay-authoritative too: a current HP value must never fabricate max HP.
                 if (h.displayCapacityHp() != null && h.displayCapacityHp() > 0) {
                     replayDisplayCapacity = h.displayCapacityHp();
-                } else if (replayDisplayCapacity == null && h.currentHp() > 0) {
-                    replayDisplayCapacity = h.currentHp();
                 }
             }
 
