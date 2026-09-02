@@ -1,4 +1,13 @@
-[{
+[
+   {
+    "v": "2.12.64",
+    "date": "2026-09-02",
+    "tag": "fix",
+    "zh": "手机端界面全面优化：浅色主题下多页文字对比度修复；名人堂工具条、AI 分析表格、弹窗遮罩等手机显示问题修复；导出列支持按钮排序；输入框聚焦不再自动放大；播放控制与导航按钮触控尺寸加大。",
+    "en": "Mobile UI overhaul: fixed low-contrast text on the light theme across several pages; fixed mobile display of the HoF toolbar, AI analysis tables and modal overlays; export columns can now be reordered with buttons; inputs no longer trigger iOS auto-zoom; larger touch targets for playback controls and navigation.",
+    "ru": "Улучшен мобильный интерфейс: исправлена читаемость текста на светлой теме; исправлены отображение панели HoF, таблиц AI-анализа и затемнения модальных окон на телефоне; столбцы экспорта теперь можно переставлять кнопками; поля ввода больше не вызывают автомасштабирование iOS; увеличены сенсорные цели кнопок воспроизведения и навигации."
+  },
+  {
     "v": "2.12.63",
     "date": "2026-09-02",
     "tag": "fix",

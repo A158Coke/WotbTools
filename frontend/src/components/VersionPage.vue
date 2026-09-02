@@ -35,5 +35,5 @@ function versionTagLabel(tag) {
 .ver-tag.add { background: var(--tag-bg); color: var(--accent-dark); }
 .ver-tag.fix { background: var(--status-err-bg); color: var(--status-err-fg); }
 .ver p { font-size: .82rem; color: var(--text-muted); margin: 2px 0 0; flex-basis: 100%; line-height: 1.55; }
-@media (max-width: 560px) { .version-page { padding: 14px 12px 44px; } }
+@media (width < 768px) { .version-page { padding: 14px 12px 44px; } }
 </style>

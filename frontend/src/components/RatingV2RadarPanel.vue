@@ -55,7 +55,7 @@ const playerComplete = computed(() => ratingV2RadarComplete(metrics.value))
 .rating-v2-radar-close { min-width: 34px; min-height: 34px; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--text-sub); cursor: pointer; font: inherit; font-size: 1rem; }
 .rating-v2-radar-close:hover, .rating-v2-radar-close:focus-visible { border-color: var(--accent); color: var(--text-heading); outline: none; }
 .rating-v2-radar-empty { margin: 12px 0 0; padding: 14px; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-muted); text-align: center; }
-@media (max-width: 767px) {
+@media (width < 768px) {
   .rating-v2-radar-panel { padding: 12px; }
 }
 </style>

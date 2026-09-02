@@ -151,6 +151,6 @@ defineExpose({ mapEl, textInputRef })
 .pb-annot-text { paint-order: stroke; stroke: color-mix(in srgb, var(--bg) 65%, transparent); stroke-width: 1; }
 .pb-drawing { pointer-events: none; }
 .pb-text-input { position: absolute; width: 140px; font-size: 13px; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 3px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--text); z-index: 6; }
-@media (max-width: 768px) { .pb-map { width: 100%; } .pb-vehicle { width: 28px; height: 28px; } }
+@media (width < 768px) { .pb-map { width: 100%; } .pb-vehicle { width: 28px; height: 28px; } }
 @media (prefers-reduced-motion: reduce) { .pb-float-dmg, .pb-burst, .pb-feed-item { animation: none; } }
 </style>
