@@ -33,11 +33,11 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-      WG_APPLICATION_ID: ${WG_APPLICATION_ID:-}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: wotb
       KC_DB_PASSWORD: wotb
+      WG_APPLICATION_ID: ${WG_APPLICATION_ID:-}
     volumes:
       - ../keycloak/wotbtools-realm.json:/opt/keycloak/data/import/wotbtools-realm.json
     command: start --import-realm --hostname-strict=false --http-enabled=true --http-port=8080
@@ -63,7 +63,6 @@ services:
       KEYCLOAK_ADMIN_REALM: wotbtools
       KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-}
-      WG_APPLICATION_ID: ${WG_APPLICATION_ID:-}
       BOOST_AUTO_CONFIRM_HOURS: ${BOOST_AUTO_CONFIRM_HOURS:-72}
       BOOST_AUTO_CONFIRM_SCAN_MS: ${BOOST_AUTO_CONFIRM_SCAN_MS:-300000}
       AI_API_KEY: ${AI_API_KEY:-}

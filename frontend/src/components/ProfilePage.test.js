@@ -293,11 +293,10 @@ describe('ProfilePage Wargaming regions', () => {
         vehicleId: 385,
         vehicleName: 'Progetto 65',
         status: 'PENDING',
-        verificationSource: 'WARGAMING_API',
         claimedAverageDamage: 3500,
         claimedBattleCount: 120,
-        officialAverageDamage: 4101,
-        officialTankBattleCount: 188,
+        approvedAverageDamage: 4101,
+        approvedBattleCount: 188,
         submittedAt: '2024-02-02T00:00:00Z'
       }],
       rejected: [{

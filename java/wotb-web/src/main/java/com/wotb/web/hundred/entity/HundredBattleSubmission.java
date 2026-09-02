@@ -63,29 +63,6 @@ public class HundredBattleSubmission {
     @Column(name = "status", nullable = false, length = 16)
     private String status;
 
-    /** 认证来源：MANUAL（截图+回放）或 WARGAMING_API（官方 totals 快照）。 */
-    @Column(name = "verification_source", nullable = false, length = 32)
-    private String verificationSource = "MANUAL";
-
-    @Column(name = "verified_at")
-    private OffsetDateTime verifiedAt;
-
-    /** WG 国际服稳定码：ASIA / EU / NA；人工来源为空。 */
-    @Column(name = "verified_server", length = 16)
-    private String verifiedServer;
-
-    @Column(name = "official_account_battle_count")
-    private Long officialAccountBattleCount;
-
-    @Column(name = "official_tank_battle_count")
-    private Long officialTankBattleCount;
-
-    @Column(name = "official_tank_damage_dealt")
-    private Long officialTankDamageDealt;
-
-    @Column(name = "official_average_damage")
-    private Integer officialAverageDamage;
-
     /** 临时私有审核资产：base64 data URL；终态事务内清空，不永久保存。 */
     @Column(name = "proof_screenshot", columnDefinition = "text")
     private String proofScreenshot;
@@ -166,20 +143,6 @@ public class HundredBattleSubmission {
     public void setApprovedBattleCount(final Integer approvedBattleCount) { this.approvedBattleCount = approvedBattleCount; }
     public String getStatus() { return status; }
     public void setStatus(final String status) { this.status = status; }
-    public String getVerificationSource() { return verificationSource; }
-    public void setVerificationSource(final String verificationSource) { this.verificationSource = verificationSource; }
-    public OffsetDateTime getVerifiedAt() { return verifiedAt; }
-    public void setVerifiedAt(final OffsetDateTime verifiedAt) { this.verifiedAt = verifiedAt; }
-    public String getVerifiedServer() { return verifiedServer; }
-    public void setVerifiedServer(final String verifiedServer) { this.verifiedServer = verifiedServer; }
-    public Long getOfficialAccountBattleCount() { return officialAccountBattleCount; }
-    public void setOfficialAccountBattleCount(final Long value) { this.officialAccountBattleCount = value; }
-    public Long getOfficialTankBattleCount() { return officialTankBattleCount; }
-    public void setOfficialTankBattleCount(final Long value) { this.officialTankBattleCount = value; }
-    public Long getOfficialTankDamageDealt() { return officialTankDamageDealt; }
-    public void setOfficialTankDamageDealt(final Long value) { this.officialTankDamageDealt = value; }
-    public Integer getOfficialAverageDamage() { return officialAverageDamage; }
-    public void setOfficialAverageDamage(final Integer value) { this.officialAverageDamage = value; }
     public String getProofScreenshot() { return proofScreenshot; }
     public void setProofScreenshot(final String proofScreenshot) { this.proofScreenshot = proofScreenshot; }
     public boolean isReplayParseOk() { return replayParseOk; }

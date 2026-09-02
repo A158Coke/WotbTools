@@ -527,8 +527,8 @@ function notificationMessage(notification) {
                   <tbody>
                     <tr v-for="s in hundredStatus.pending" :key="s.id">
                       <td class="rec-tank">{{ s.vehicleName || '--' }}</td>
-                      <td class="rec-dmg">{{ (s.verificationSource === 'WARGAMING_API' ? s.officialAverageDamage : s.claimedAverageDamage)?.toLocaleString() ?? '--' }}</td>
-                      <td>{{ (s.verificationSource === 'WARGAMING_API' ? s.officialTankBattleCount : s.claimedBattleCount)?.toLocaleString() ?? '--' }}</td>
+                      <td class="rec-dmg">{{ (s.approvedAverageDamage ?? s.claimedAverageDamage)?.toLocaleString() ?? '--' }}</td>
+                      <td>{{ (s.approvedBattleCount ?? s.claimedBattleCount)?.toLocaleString() ?? '--' }}</td>
                       <td class="rec-map">{{ formatTime(s.submittedAt) }}</td>
                       <td><span class="badge-ok">{{ $t('hundred.reviewStatus') }}</span></td>
                       <td class="hundred-action">
