@@ -68,3 +68,52 @@ describe('ColumnPicker 上下移按钮（触屏/键盘重排序）', () => {
     expect(wrapper.emitted('reorder')).toBeFalsy()
   })
 })
+
+describe('ColumnPicker fixedKeys 固定区域契约（按钮与拖拽同一套 legalReorder）', () => {
+  it('damage 不能上移穿过 league_rating：▲ 禁用，且任何路径都不产生 reorder', async () => {
+    const wrapper = mountPicker()
+    const damageUp = wrapper.findAll('.collist li')[2].findAll('.colmove-btn')[0]
+    expect(damageUp.attributes('disabled')).toBeDefined()
+    await damageUp.trigger('click')
+    expect(wrapper.emitted('reorder')).toBeFalsy()
+  })
+
+  it('drag/drop 不能跨过或插入 fixedKeys 固定区域', async () => {
+    // damage(2) drop 到 nickname(0)：会把 nickname 挤到 1 → 非法
+    const ontoFixed = mountPicker()
+    let lis = ontoFixed.findAll('.collist li')
+    await lis[2].trigger('dragstart')
+    await lis[0].trigger('drop')
+    expect(ontoFixed.emitted('reorder')).toBeFalsy()
+
+    // kills(4) drop 到 league_rating(1)：会把 league_rating 挤到 2 → 非法
+    const acrossFixed = mountPicker()
+    lis = acrossFixed.findAll('.collist li')
+    await lis[4].trigger('dragstart')
+    await lis[1].trigger('drop')
+    expect(acrossFixed.emitted('reorder')).toBeFalsy()
+  })
+
+  it('所有合法移动的 emit 结果都保持 fixedKeys 顺序与位置（nickname@0, league_rating@1）', async () => {
+    const wrapper = mountPicker()
+    const lis = wrapper.findAll('.collist li')
+    await lis[2].findAll('.colmove-btn')[1].trigger('click') // damage 下移
+    await lis[4].findAll('.colmove-btn')[0].trigger('click') // kills 上移
+    const emitted = wrapper.emitted('reorder') ?? []
+    expect(emitted.length).toBeGreaterThan(0)
+    for (const [next] of emitted) {
+      expect(next[0]).toBe('nickname')
+      expect(next[1]).toBe('league_rating')
+    }
+  })
+
+  it('非 fixed 列之间仍可正常上下移动与拖拽（含跨多行 drop）', async () => {
+    // damage(2) drop 到 kills(4)：不触碰固定区 → 合法
+    const wrapper = mountPicker()
+    const lis = wrapper.findAll('.collist li')
+    await lis[2].trigger('dragstart')
+    await lis[4].trigger('drop')
+    expect(wrapper.emitted('reorder')?.[0]?.[0])
+      .toEqual(['nickname', 'league_rating', 'wins', 'kills', 'damage'])
+  })
+})
