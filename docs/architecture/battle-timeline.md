@@ -27,7 +27,7 @@
 ### HP / orientation 统一
 
 - **FrameHealth**：统一 `currentHp` 权威，去掉 `baseHp/effectiveMaxHp` 业务语义；
-  `baseHp` 属 `VehicleReferenceMetadata`（tankopedia 参考展示）。新增 
+  `baseHp` 属 `VehicleReferenceMetadata`（tankopedia 参考展示）。新增
   `HealthKnowledge(CURRENT/LAST_KNOWN)`；无 HP fact 由空 transition track 表达，
   己方相对满血证明由独立的 `relativeFull` sparse fact 表达；
   presentation-only `displayCapacityHp` 与 backend 投影的 `relativeFull`

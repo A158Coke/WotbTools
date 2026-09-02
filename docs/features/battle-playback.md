@@ -247,11 +247,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   - **双方总血量条 + 争霸赛实时点数**：地图下方两条 bar（本方/敌方阵营色）——
     `friendlyHealthAt` 只聚合 canonical `healthTransitions`、`lifeTransitions` 与 `friendly`；
     `EXACT` 才显示已证明的 current/displayCapacityHp 分数；己方的 `FULL_RELATIVE` 只消费
-   backend 在 HealthTransition 上直接投影的 `relativeFull` fact，敌方无 evidence 为 UNKNOWN。
-   不得使用静态参考容量或旧 artifact 字段推导本局总 HP。
-   health transition 缺失表示上一事实继续；backend 显式发出的全 null health transition
-   表示从该时刻起未知，selector 只查询该边界并显示 UNKNOWN，后续重新获得的 HP 不会恢复
-   开局 `relativeFull`。
+    backend 在 HealthTransition 上直接投影的 `relativeFull` fact，敌方无 evidence 为 UNKNOWN。
+    不得使用静态参考容量或旧 artifact 字段推导本局总 HP。
      争霸赛实时点数来自回放广播 `pointsSamples`（type-8 subtype48 root field12，PROVEN；纯函数
      `teamPointsAt` 取最近一次 ≤currentTime 的广播值，随进度条变化；非争霸赛/无广播不显示，
      结算值不得冒充实时比分）。
