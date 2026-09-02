@@ -79,5 +79,7 @@
     bottom: 8px !important;
     width: auto !important;
     max-height: min(46vh, 300px);
+    /* Android edge-to-edge 预备：14px 对齐组件基础 padding，env() 今日解析为 0 */
+    padding-bottom: calc(14px + env(safe-area-inset-bottom)) !important;
   }
 }

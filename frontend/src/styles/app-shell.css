@@ -21,6 +21,8 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
 .tb-content { padding-top: var(--topbar-h); }
 .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: var(--topbar-h);
   display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+  /* Android edge-to-edge 预备：env() 今日解析为 0（非 edge-to-edge），视觉零变化 */
+  padding-top: calc(8px + env(safe-area-inset-top));
   background: color-mix(in srgb, var(--bg-card) 92%, transparent);
   border-bottom: 1px solid var(--border-header);
   box-shadow: 0 10px 24px rgba(18, 22, 18, .08);
@@ -215,12 +217,17 @@ tr:hover td { background: var(--bg-list-hover); }
 .linkbtn { border: 1px solid #39444a; border-radius: 6px; background: #151d21; color: #d7d3ca; padding: 5px 9px; cursor: pointer; font: inherit; font-size: 12px; }
 .linkbtn:hover { border-color: var(--accent); color: #f0a42b; }
 .collist { list-style: none; margin: 0; padding: 8px; overflow-y: auto; max-height: calc(100vh - 166px); }
-.collist li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; color: var(--text); }
+.collist li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; color: var(--text); }
 .collist li:hover { background: var(--bg-list-hover); }
 .collist li.dragging { opacity: .5; }
 .grip { color: var(--text-sub); cursor: grab; font-size: 13px; }
 .colitem { min-width: 0; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cat { color: #9aa09c; font-size: 11px; }
+/* 上下移按钮（触屏/键盘重排序）：图标按钮 + aria-label，风格对齐 .grip 符号化控件 */
+.colmove { display: inline-flex; gap: 2px; }
+.colmove-btn { width: 24px; height: 24px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: transparent; color: var(--text-sub); cursor: pointer; font-size: 10px; line-height: 1; font-family: inherit; }
+.colmove-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.colmove-btn:disabled { opacity: .35; cursor: default; }
 @media (width < 768px) {
   .mcards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filebar { flex-wrap: wrap; }
@@ -230,8 +237,14 @@ tr:hover td { background: var(--bg-list-hover); }
   .tabs button { flex: none; white-space: nowrap; }
   .colpanel { top: 58px; right: 12px; width: calc(100vw - 24px); max-height: calc(100vh - 72px); }
   .collist { max-height: calc(100vh - 146px); }
+  .colmove-btn { width: 32px; height: 32px; font-size: 13px; }
   .tablewrap { background: linear-gradient(to right, transparent calc(100% - 48px), var(--scroll-fade) 100%), var(--bg-card); }
+  /* iOS Safari 聚焦缩放阈值 16px：全局兜底，各组件 ≤14px 的 input/select 无需逐条覆盖 */
+  input, select, textarea { font-size: max(16px, 1em); }
+  /* 自原 max-width:480px 块合并：在 768 档同样成立（90% 与 100vw-32px 在手机上几乎等价） */
+  .modal { width: calc(100vw - 32px); }
 }
+/* 仅针对超窄手机（≤480px）的收缩规则：480–767px 已由上方 768 档覆盖，勿并入。 */
 @media (max-width: 480px) {
   .wrap { padding: 12px 8px 48px; }
   .mcards { grid-template-columns: 1fr; gap: 6px; }
@@ -254,7 +267,6 @@ tr:hover td { background: var(--bg-list-hover); }
   .tabs { flex: none; width: 100%; }
   .restoolbar .resactions { width: 100%; gap: 4px; }
   .restoolbar .resactions button { flex: 1; min-width: 0; }
-  .modal { width: calc(100vw - 32px); }
   th, td { padding: 4px 5px; font-size: 11px; }
   .chip { font-size: 11px; padding: 2px 4px; }
 }
@@ -270,20 +282,18 @@ tr:hover td { background: var(--bg-list-hover); }
   .scroll-hint { display: block; text-align: center; font-size: 11px; color: var(--text-sub); margin: 6px 0 0; padding-bottom: 4px; }
 }
 @media (width < 768px) {
-  .topbar { position: sticky; height: auto; padding: 8px 10px; gap: 6px; flex-wrap: wrap; }
+  .topbar { position: sticky; height: auto; padding: 8px 10px; gap: 6px; flex-wrap: wrap;
+    /* 覆盖上方 sticky 块的 padding 简写，保留 safe-area 顶距（env() 今日为 0） */
+    padding-top: calc(8px + env(safe-area-inset-top)); }
   .tb-content { padding-top: 0; }
   .tb-spacer { display: none; }
   .topbar nav { order: 3; width: 100%; gap: 2px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .topbar nav::-webkit-scrollbar { display: none; }
-  .topbar nav button { padding: 5px 8px; font-size: .78rem; }
+  /* 触控目标 ≥36px（对齐 PlayerRatingRadar 缩放按钮先例）；原 480px 档的 4px 6px/.72rem 已删除 */
+  .topbar nav button { min-height: 36px; padding: 6px 10px; font-size: .78rem; }
+  .auth-btn { min-height: 36px; }
+  /* 自原 480px 档合并：缩小 logo 给 nav 让位，不与触控目标冲突 */
+  .tb-logo { height: 22px; }
   .uploadwrap { max-width: 100%; }
   .lb-toolbar { flex-wrap: wrap; gap: 6px; }
-}
-@media (max-width: 480px) {
-  .topbar { padding: 6px; gap: 4px; }
-  .tb-content { padding-top: 0; }
-  .topbar nav button { padding: 4px 6px; font-size: .72rem; }
-  .lang-select { font-size: .7rem; padding: 3px 18px 3px 5px; background-size: 10px; }
-  .tb-logo { height: 22px; }
-  .auth-btn { padding: 4px 8px; font-size: .75rem; }
 }
