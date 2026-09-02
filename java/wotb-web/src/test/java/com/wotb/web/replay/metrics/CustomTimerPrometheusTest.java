@@ -105,6 +105,8 @@ class CustomTimerPrometheusTest {
             assertTrue(firstTaskStarted.await(2, TimeUnit.SECONDS), "first worker task did not start");
 
             executor.execute(queuedTaskFinished::countDown);
+            assertEquals(1.0, registry.get("wotb_ai_review_queue_depth").gauge().value(),
+                    "AI review queue depth must expose the queued task");
             Thread.sleep(25);
             releaseFirstTask.countDown();
             assertTrue(queuedTaskFinished.await(2, TimeUnit.SECONDS), "queued worker task did not finish");
