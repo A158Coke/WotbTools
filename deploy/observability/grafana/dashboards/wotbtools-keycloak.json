@@ -1,0 +1,172 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "none", "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "正常", "color": "green" } } }] }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 0 },
+      "id": 1,
+      "links": [{ "title": "打开生产首页", "type": "dashboard", "uid": "wotbtools-production-overview", "keepTime": true, "includeVars": true }],
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "up{job=\"keycloak\"}", "refId": "A" }],
+      "title": "Keycloak 状态",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 0 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "round(sum(increase(http_server_requests_seconds_count{job=\"keycloak\"}[$__range]))) or vector(0)", "instant": true, "refId": "A" }],
+      "title": "HTTP 请求",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 0 },
+      "id": 3,
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "round(sum(increase(http_server_requests_seconds_count{job=\"keycloak\",status=~\"5..\"}[$__range]))) or vector(0)", "instant": true, "refId": "A" }],
+      "title": "HTTP 5xx",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 2 }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 0 },
+      "id": 4,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{job=\"keycloak\"}[$__rate_interval])) by (le))", "refId": "A" }],
+      "title": "HTTP P95",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 0 },
+      "id": 5,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "round(sum(increase(http_server_requests_seconds_count{job=\"keycloak\",uri=~\"/realms/.*/(protocol|login-actions).*\",status=~\"5..\"}[$__range]))) or vector(0)", "instant": true, "refId": "A" }],
+      "title": "认证服务端错误",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
+      "id": 6,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "http_server_active_requests{job=\"keycloak\"}", "instant": true, "refId": "A" }],
+      "title": "当前请求",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"2..\"}[$__rate_interval]))", "legendFormat": "2xx", "refId": "A" },
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"4..\"}[$__rate_interval]))", "legendFormat": "4xx", "refId": "B" },
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"5..\"}[$__rate_interval]))", "legendFormat": "5xx", "refId": "C" }
+      ],
+      "title": "HTTP 请求趋势",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 1 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "expr": "base_cpu_processCpuLoad{job=\"keycloak\"}", "legendFormat": "进程 CPU", "refId": "A" },
+        { "expr": "system_cpu_usage{job=\"keycloak\"}", "legendFormat": "系统 CPU", "refId": "B" },
+        { "expr": "jvm_gc_overhead{job=\"keycloak\"}", "legendFormat": "GC 开销", "refId": "C" }
+      ],
+      "title": "CPU 与 GC",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 1 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 14 },
+      "id": 9,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "sum(jvm_memory_used_bytes{job=\"keycloak\",area=\"heap\"}) / sum(jvm_memory_committed_bytes{job=\"keycloak\",area=\"heap\"})", "legendFormat": "Heap 使用率", "refId": "A" }],
+      "title": "JVM 堆内存",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 14 },
+      "id": 10,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "expr": "sum(rate(jvm_gc_pause_seconds_sum{job=\"keycloak\"}[$__rate_interval]))", "legendFormat": "GC 暂停秒/秒", "refId": "A" },
+        { "expr": "sum(rate(jvm_gc_pause_seconds_count{job=\"keycloak\"}[$__rate_interval]))", "legendFormat": "GC 次数/秒", "refId": "B" }
+      ],
+      "title": "GC",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 14 },
+      "id": 11,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "expr": "system_load_average_1m{job=\"keycloak\"}", "legendFormat": "系统负载 1m", "refId": "A" },
+        { "expr": "jvm_threads_peak_threads{job=\"keycloak\"}", "legendFormat": "线程峰值", "refId": "B" }
+      ],
+      "title": "负载与线程",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "id": 12,
+      "links": [{ "title": "打开生产首页", "type": "dashboard", "uid": "wotbtools-production-overview", "keepTime": true, "includeVars": true }],
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": true, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{ "expr": "{service=\"keycloak\"} |= \"ERROR\"", "queryType": "range", "refId": "A" }],
+      "title": "最近 Keycloak 错误",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "id": 13,
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": true, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{ "expr": "{service=\"keycloak\"} |~ \"(?i)IdentityBrokerException|authentication_session|identity provider|broker|oauth|callback|state|code|LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|CODE_TO_TOKEN_ERROR\"", "queryType": "range", "refId": "A" }],
+      "title": "认证与身份代理日志",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 30 },
+      "id": 14,
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": true, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{ "expr": "{service=\"keycloak\"} |= \"WARN\"", "queryType": "range", "refId": "A" }],
+      "title": "最近 Keycloak 警告",
+      "type": "logs"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["wotbtools", "keycloak", "production"],
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "browser",
+  "title": "WotBTools · Keycloak",
+  "uid": "wotbtools-keycloak",
+  "version": 1,
+  "weekStart": ""
+}

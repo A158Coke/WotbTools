@@ -1,42 +1,164 @@
 {
-  "annotations": { "list": [] },
+  "annotations": {"list": []},
   "editable": false,
   "graphTooltip": 1,
   "panels": [
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "none", "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }] }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 0, "y": 0 }, "id": 1, "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "up{job=\"wotb-backend\"}", "refId": "A" }], "title": "Backend", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 3, "y": 0 }, "id": 2, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(http_server_requests_seconds_count[$__range]))) or vector(0)", "instant": true, "refId": "A" }], "title": "Requests · selected range", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 6, "y": 0 }, "id": 3, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(http_server_requests_seconds_count{status=~\"4..\"}[$__range]))) or vector(0)", "instant": true, "refId": "A" }], "title": "HTTP 4xx · selected range", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 9, "y": 0 }, "id": 4, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(http_server_requests_seconds_count{status=~\"5..\"}[$__range]))) or vector(0)", "instant": true, "refId": "A" }], "title": "HTTP 5xx · selected range", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "s", "decimals": 2 }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 12, "y": 0 }, "id": 5, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "histogram_quantile(0.50, sum(rate(http_server_requests_seconds_bucket[$__rate_interval])) by (le))", "refId": "A" }], "title": "HTTP P50", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "s", "decimals": 2 }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 15, "y": 0 }, "id": 6, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket[$__rate_interval])) by (le))", "refId": "A" }], "title": "HTTP P95", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "s", "decimals": 2 }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 18, "y": 0 }, "id": 7, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket[$__rate_interval])) by (le))", "refId": "A" }], "title": "HTTP P99", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 21, "y": 0 }, "id": 8, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "wotb_replay_parse_active", "legendFormat": "active", "refId": "A" }, { "expr": "wotb_replay_parse_queue_depth", "legendFormat": "queued", "refId": "B" }], "title": "Replay active / queued", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 0, "y": 4 }, "id": 9, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(wotb_replay_processing_job_total[$__range]))) or vector(0)", "instant": true, "refId": "A" }], "title": "Replay jobs started", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 3, "y": 4 }, "id": 10, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(wotb_replay_full_processing_total[$__range]))) or vector(0)", "instant": true, "refId": "A" }], "title": "Replay files processed", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 6, "y": 4 }, "id": 11, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(wotb_replay_processing_job_result_total{result=\"ready\"}[$__range]))) or vector(0)", "instant": true, "refId": "A" }], "title": "Replay Jobs READY", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 9, "y": 4 }, "id": 12, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(wotb_replay_processing_job_result_total{result=\"failed\"}[$__range]))) or vector(0)", "instant": true, "refId": "A" }], "title": "Replay Jobs FAILED", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 12, "y": 4 }, "id": 13, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(wotb_ai_review_requests_total[$__range]))) or vector(0)", "instant": true, "refId": "A" }], "title": "AI started", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 15, "y": 4 }, "id": 14, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(wotb_ai_review_results_total{result=\"success\"}[$__range]))) or vector(0)", "instant": true, "refId": "A" }], "title": "AI succeeded", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 18, "y": 4 }, "id": 15, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(wotb_ai_review_results_total{result=\"failure\"}[$__range]))) or vector(0)", "instant": true, "refId": "A" }], "title": "AI failed", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 21, "y": 4 }, "id": 16, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "round(sum(increase(wotb_ai_review_results_total{result=\"rejected\"}[$__range]))) or vector(0)", "instant": true, "refId": "A" }], "title": "AI rejected · selected range", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 4, "w": 3, "x": 21, "y": 8 }, "id": 26, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" }, "targets": [{ "expr": "wotb_ai_review_in_flight", "instant": true, "refId": "A" }], "title": "AI active now", "type": "stat" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "s", "decimals": 2 }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 }, "id": 17, "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }, "targets": [{ "expr": "histogram_quantile(0.50, sum(rate(http_server_requests_seconds_bucket[$__rate_interval])) by (le))", "legendFormat": "P50", "refId": "A" }, { "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket[$__rate_interval])) by (le))", "legendFormat": "P95", "refId": "B" }, { "expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket[$__rate_interval])) by (le))", "legendFormat": "P99", "refId": "C" }], "title": "HTTP latency trend · P50 / P95 / P99", "type": "timeseries" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "s", "decimals": 2 }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 }, "id": 18, "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }, "targets": [{ "expr": "histogram_quantile(0.50, sum(rate(wotb_replay_processing_file_duration_seconds_bucket[$__rate_interval])) by (le))", "legendFormat": "P50", "refId": "A" }, { "expr": "histogram_quantile(0.95, sum(rate(wotb_replay_processing_file_duration_seconds_bucket[$__rate_interval])) by (le))", "legendFormat": "P95", "refId": "B" }, { "expr": "histogram_quantile(0.99, sum(rate(wotb_replay_processing_file_duration_seconds_bucket[$__rate_interval])) by (le))", "legendFormat": "P99", "refId": "C" }], "title": "Replay parse duration · P50 / P95 / P99", "type": "timeseries" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "s", "decimals": 2 }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 }, "id": 19, "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }, "targets": [{ "expr": "histogram_quantile(0.50, sum(rate(wotb_ai_review_duration_seconds_bucket[$__rate_interval])) by (le))", "legendFormat": "P50", "refId": "A" }, { "expr": "histogram_quantile(0.95, sum(rate(wotb_ai_review_duration_seconds_bucket[$__rate_interval])) by (le))", "legendFormat": "P95", "refId": "B" }, { "expr": "histogram_quantile(0.99, sum(rate(wotb_ai_review_duration_seconds_bucket[$__rate_interval])) by (le))", "legendFormat": "P99", "refId": "C" }], "title": "AI duration · P50 / P95 / P99", "type": "timeseries" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 }, "id": 20, "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }, "targets": [{ "expr": "sum by (result) (rate(wotb_replay_processing_job_result_total[$__rate_interval]))", "legendFormat": "replay {{result}}", "refId": "A" }, { "expr": "sum by (result) (rate(wotb_ai_review_results_total[$__rate_interval]))", "legendFormat": "AI {{result}}", "refId": "B" }], "title": "Replay / AI outcome trend", "type": "timeseries" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 1 }, "overrides": [] }, "gridPos": { "h": 8, "w": 8, "x": 0, "y": 28 }, "id": 21, "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }, "targets": [{ "expr": "process_cpu_usage", "legendFormat": "process", "refId": "A" }, { "expr": "system_cpu_usage", "legendFormat": "system", "refId": "B" }], "title": "CPU summary", "type": "timeseries" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }, "gridPos": { "h": 8, "w": 8, "x": 8, "y": 28 }, "id": 22, "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }, "targets": [{ "expr": "sum(jvm_memory_used_bytes{area=\"heap\"})", "legendFormat": "heap used", "refId": "A" }, { "expr": "sum(jvm_memory_max_bytes{area=\"heap\"})", "legendFormat": "heap max", "refId": "B" }], "title": "Heap summary", "type": "timeseries" },
-    { "datasource": { "type": "prometheus", "uid": "prometheus" }, "fieldConfig": { "defaults": { "unit": "s", "decimals": 3, "custom": {} }, "overrides": [{ "matcher": { "id": "byName", "options": "GC pause seconds/s" }, "properties": [{ "id": "unit", "value": "percentunit" }] }, { "matcher": { "id": "byName", "options": "GC pauses/s" }, "properties": [{ "id": "unit", "value": "cps" }] }] }, "gridPos": { "h": 8, "w": 8, "x": 16, "y": 28 }, "id": 23, "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }, "targets": [{ "expr": "sum(rate(jvm_gc_pause_seconds_sum[$__rate_interval]))", "legendFormat": "GC pause seconds/s", "refId": "A" }, { "expr": "sum(rate(jvm_gc_pause_seconds_count[$__rate_interval]))", "legendFormat": "GC pauses/s", "refId": "B" }], "title": "GC pause summary", "type": "timeseries" },
-    { "datasource": { "type": "loki", "uid": "loki" }, "fieldConfig": { "defaults": {}, "overrides": [] }, "gridPos": { "h": 7, "w": 24, "x": 0, "y": 36 }, "id": 24, "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true }, "targets": [{ "expr": "{container_name=\"wotb-backend\"} | json | level=~\"ERROR|WARN\"", "queryType": "range", "refId": "A" }], "title": "Recent backend errors / warnings", "type": "logs" },
-    { "fieldConfig": { "defaults": {}, "overrides": [] }, "gridPos": { "h": 4, "w": 24, "x": 0, "y": 43 }, "id": 25, "options": { "mode": "markdown", "content": "### Deferred metrics gaps\n\nRabbitMQ / worker queue depth, oldest queued age, worker health, and host-level metrics are not currently exported by the backend or scraped by Prometheus. No synthetic panels are added until those metrics exist." }, "title": "Deferred Metrics Gaps", "type": "text" }
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "none", "mappings": [{"type": "value", "options": {"0": {"text": "异常", "color": "red"}, "1": {"text": "正常", "color": "green"}}}]}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}, "id": 1,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "up{job=\"wotb-backend\"}", "refId": "A"}], "title": "后端服务", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "none", "mappings": [{"type": "value", "options": {"0": {"text": "异常", "color": "red"}, "1": {"text": "正常", "color": "green"}}}]}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0}, "id": 2,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "up{job=\"keycloak\"}", "refId": "A"}], "title": "Keycloak 认证", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "none", "mappings": [{"type": "value", "options": {"0": {"text": "异常", "color": "red"}, "1": {"text": "正常", "color": "green"}}}]}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0}, "id": 3,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "up{job=\"node-exporter\"}", "refId": "A"}], "title": "主机指标采集", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]}}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0}, "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "round(sum(increase(http_server_requests_seconds_count{job=\"wotb-backend\",status=~\"5..\"}[$__range]))) or vector(0)", "instant": true, "refId": "A"}], "title": "HTTP 5xx（时间范围）", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 4}, "id": 5,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "sum(rate(http_server_requests_seconds_count{job=\"wotb-backend\"}[$__rate_interval])) or vector(0)", "instant": true, "refId": "A"}], "title": "当前 HTTP 吞吐", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 2}, {"color": "red", "value": 4}]}}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 4}, "id": 6,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "wotb_ai_review_queue_depth or vector(0)", "instant": true, "refId": "A"}], "title": "AI 等待队列", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 4}, "id": 7,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "wotb_replay_parse_queue_depth or vector(0)", "instant": true, "refId": "A"}], "title": "回放等待队列", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s", "decimals": 2, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 3}]}}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 4}, "id": 8,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{job=\"wotb-backend\"}[$__rate_interval])) by (le))", "refId": "A"}], "title": "HTTP 延迟 P95", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}, "id": 9,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"wotb-backend\",status=~\"2..\"}[$__rate_interval]))", "legendFormat": "成功 2xx", "refId": "A"},
+        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"wotb-backend\",status=~\"4..\"}[$__rate_interval]))", "legendFormat": "客户端错误 4xx", "refId": "B"},
+        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"wotb-backend\",status=~\"5..\"}[$__rate_interval]))", "legendFormat": "服务端错误 5xx", "refId": "C"}
+      ], "title": "HTTP 请求与错误趋势", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s", "decimals": 2}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}, "id": 10,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(http_server_requests_seconds_bucket{job=\"wotb-backend\"}[$__rate_interval])) by (le))", "legendFormat": "P50", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{job=\"wotb-backend\"}[$__rate_interval])) by (le))", "legendFormat": "P95", "refId": "B"},
+        {"expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{job=\"wotb-backend\"}[$__rate_interval])) by (le))", "legendFormat": "P99", "refId": "C"}
+      ], "title": "HTTP 延迟 P50 / P95 / P99", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}, "id": 11,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "sum by (result) (rate(wotb_replay_processing_job_result_total[$__rate_interval]))", "legendFormat": "回放 {{result}}", "refId": "A"},
+        {"expr": "sum by (result) (rate(wotb_ai_review_results_total[$__rate_interval]))", "legendFormat": "AI {{result}}", "refId": "B"}
+      ], "title": "回放与 AI 结果趋势", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 0.8}, {"color": "red", "value": 0.9}]}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}, "id": 12,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "1 - avg(rate(node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"}[$__rate_interval]))", "legendFormat": "CPU 使用率", "refId": "A"},
+        {"expr": "1 - (node_memory_MemAvailable_bytes{job=\"node-exporter\"} / node_memory_MemTotal_bytes{job=\"node-exporter\"})", "legendFormat": "内存使用率", "refId": "B"},
+        {"expr": "1 - (max(node_filesystem_avail_bytes{job=\"node-exporter\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"}) / max(node_filesystem_size_bytes{job=\"node-exporter\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"}))", "legendFormat": "根分区使用率", "refId": "C"}
+      ], "title": "主机资源使用率", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 2, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 2}, {"color": "red", "value": 4}]}}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 39}, "id": 18,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "node_load1{job=\"node-exporter\"}", "instant": true, "refId": "A"}], "title": "主机 Load 1m", "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}, "id": 13,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"2..\"}[$__rate_interval]))", "legendFormat": "认证成功 2xx", "refId": "A"},
+        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"4..\"}[$__rate_interval]))", "legendFormat": "认证客户端错误 4xx", "refId": "B"},
+        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"5..\"}[$__rate_interval]))", "legendFormat": "认证服务端错误 5xx", "refId": "C"}
+      ], "title": "Keycloak 认证请求趋势", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 2}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}, "id": 14,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "sum(jvm_memory_used_bytes{job=\"wotb-backend\",area=\"heap\"})", "legendFormat": "后端 Heap 已用", "refId": "A"},
+        {"expr": "sum(jvm_threads_live_threads{job=\"wotb-backend\"})", "legendFormat": "后端活动线程", "refId": "B"},
+        {"expr": "sum(rate(jvm_gc_pause_seconds_sum{job=\"wotb-backend\"}[$__rate_interval]))", "legendFormat": "GC 暂停速率", "refId": "C"}
+      ], "title": "后端 JVM 健康", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 32}, "id": 15,
+      "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
+      "targets": [{"expr": "{container_name=\"wotb-backend\"} | json | level=~\"ERROR|WARN\"", "queryType": "range", "refId": "A"}], "title": "后端最近错误与警告", "type": "logs"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 32}, "id": 16,
+      "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
+      "targets": [{"expr": "{container_name=\"keycloak\"} |~ \"(?i)(error|exception|failed|denied|broker)\"", "queryType": "range", "refId": "A"}], "title": "Keycloak 最近异常", "type": "logs"
+    },
+    {
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 4, "w": 18, "x": 6, "y": 39}, "id": 17,
+      "options": {"mode": "markdown", "content": "### 生产排障入口\n\n默认窗口为最近 15 分钟、每 30 秒刷新。先看顶部服务状态与 HTTP 5xx，再结合延迟 P95/P99、AI/回放队列和最近日志定位。资源使用率告警参考：CPU 80% / 90%，内存 85% / 90%，磁盘 80% / 90%。"},
+      "title": "生产排障说明", "type": "text"
+    }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["wotbtools", "production"],
-  "time": { "from": "now-1h", "to": "now" },
+  "tags": ["wotbtools", "production", "中文"],
+  "time": {"from": "now-15m", "to": "now"},
   "timezone": "browser",
-  "title": "WotBTools Production Overview",
+  "title": "WotBTools · 生产总览",
   "uid": "wotbtools-production-overview",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }

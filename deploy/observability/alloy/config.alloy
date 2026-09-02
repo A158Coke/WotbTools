@@ -1,5 +1,5 @@
 // Alloy 配置 — WotBTools 观测栈
-// 只采集 wotb-backend 容器的 stdout/stderr 日志，转发到 Loki。
+// 采集 wotb-backend 与 keycloak 容器的 stdout/stderr 日志，转发到 Loki。
 // 需要挂载 /var/run/docker.sock（见 docker-compose）。
 
 discovery.docker "backend" {
@@ -32,6 +32,44 @@ discovery.relabel "backend" {
 loki.source.docker "backend" {
 	host       = "unix:///var/run/docker.sock"
 	targets    = discovery.relabel.backend.output
+	forward_to = [loki.write.default.receiver]
+}
+
+discovery.docker "keycloak" {
+	host = "unix:///var/run/docker.sock"
+
+	filter {
+		name   = "name"
+		values = [".*keycloak.*"]
+	}
+}
+
+discovery.relabel "keycloak" {
+	targets = discovery.docker.keycloak.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = ".*keycloak.*"
+		action        = "keep"
+	}
+	// 将容器名规范化为 keycloak，避免 compose project name 进入查询语义。
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = ".*(keycloak).*"
+		target_label  = "container_name"
+		replacement   = "$1"
+	}
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = ".*(keycloak).*"
+		target_label  = "service"
+		replacement   = "$1"
+	}
+}
+
+loki.source.docker "keycloak" {
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.keycloak.output
 	forward_to = [loki.write.default.receiver]
 }
 
