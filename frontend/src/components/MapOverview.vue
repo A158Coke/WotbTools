@@ -415,7 +415,7 @@ const gridRegions = computed(() => {
   border-radius: 4px;
   background: #111;
 }
-@media (max-width: 768px) {
+@media (width < 768px) {
   .map-svg { width: 100%; }
 }
 .grid-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; }

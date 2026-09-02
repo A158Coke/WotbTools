@@ -326,10 +326,9 @@ body {
   .profile-page { padding-top: 18px !important; }
   .restoolbar { top: 64px; }
   .admin-table-wrap { max-height: none; }
-  .profile-page .profile-body { grid-template-columns: minmax(0,1fr) minmax(260px,.6fr) !important; }
 }
 
-@media (max-width: 767px) {
+@media (width < 768px) {
   :root { --showcase-gutter: 8px; }
   .topbar { min-height: 56px !important; height: 56px !important; }
   .tb-content { padding-top: 56px !important; }
@@ -363,4 +362,7 @@ body {
   .profile-page .hero-name { font-size: 1.35rem !important; }
   .hof-page thead th,
   .hof-wrap thead th { top: 56px; }
+  /* Same 56px topbar offset for the admin users table; !important is required
+   * to beat the global .admin-table th { top: 0 !important } rule above. */
+  .admin-table th { top: 56px !important; }
 }
