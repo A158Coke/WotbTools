@@ -41,4 +41,14 @@ const emit = defineEmits(['drag-start', 'seek', 'jump'])
 .pb-progress { position: relative; margin: 2px 0; }
 .pb-range { width: 100%; display: block; }
 .pb-marker { position: absolute; top: 2px; width: 3px; height: 10px; background: var(--accent); cursor: pointer; transform: translateX(-50%); }
+/* 触屏命中区：透明伪元素扩到 24×24 居中于标记，视觉尺寸不变 */
+.pb-marker::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+}
 </style>

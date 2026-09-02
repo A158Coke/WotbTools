@@ -187,7 +187,7 @@
   .layout-data-workspace .uploadwrap { padding: 20px !important; }
 }
 
-@media (max-width: 767px) {
+@media (width < 768px) {
   .layout-data-workspace .uploadwrap { padding: 16px !important; }
   .layout-data-workspace .uploadwrap::after { display: none; }
   .layout-data-workspace .uploadhead h1 { font-size: 1.35rem !important; }

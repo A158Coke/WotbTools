@@ -72,7 +72,7 @@ describe('HoF admin tab strip CSS contract', () => {
   })
 
   it('flattens the tab strip to static on mobile (no sticky offset issues)', () => {
-    const mobile = mediaBlock(rankings, '@media(max-width:767px)')
+    const mobile = mediaBlock(rankings, '@media (width < 768px)')
     const body = ruleBody(mobile, '.hof-admin-tabs')
     expect(body).toMatch(/position:\s*static/)
   })

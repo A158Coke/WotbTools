@@ -235,7 +235,7 @@
   .boost-page table thead th { top: 112px; }
 }
 
-@media (max-width:767px) {
+@media (width < 768px) {
   .boost-page,
   .version-page,
   .rating-docs-page,

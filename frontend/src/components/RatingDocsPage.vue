@@ -64,7 +64,7 @@ function goBack() {
   overflow-x: auto;
 }
 
-@media (max-width: 767px) {
+@media (width < 768px) {
   .rating-docs-header {
     flex-direction: column;
     align-items: stretch;
