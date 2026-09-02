@@ -70,6 +70,7 @@
    用新 abstraction 转移而非减少复杂度。Agents/skills 只引用并执行本规则，不复制维护第二份完整定义。
    具体执行点：`.agents/skills/plan-executer/SKILL.md`（Reuse Audit）与
    `.agents/skills/review-with-docs/SKILL.md`（新增 abstraction 审查 gate）。
+13. **外部数据生命周期** — 持久化外部 API 返回的个人或统计数据时，必须同时提供明确的 retention/deletion path；删除流程需限定数据来源、遵守真实 FK 顺序，并保护仍被其他业务引用的共享文件或记录。
 
 ## 禁止
 

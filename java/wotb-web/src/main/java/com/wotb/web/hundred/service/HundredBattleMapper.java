@@ -19,8 +19,6 @@ import java.util.Map;
 @Service
 public class HundredBattleMapper implements Mapper<HundredBattleSubmission, HundredSubmissionSummaryDto> {
 
-    private static final String WARGAMING_VERIFICATION_SOURCE = "WARGAMING_API";
-
     @Override
     public HundredSubmissionSummaryDto toDto(final HundredBattleSubmission s) {
         return toSummary(s);
@@ -32,8 +30,7 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 s.getId(), s.getVehicleId(), s.getVehicleName(), s.getStatus(),
                 s.getClaimedAverageDamage(), s.getClaimedBattleCount(),
                 s.getApprovedAverageDamage(), s.getApprovedBattleCount(),
-                s.getSubmittedAt(), s.getApprovedAt(), s.getRejectReason(), s.getRejectReasonText(),
-                s.getVerificationSource(), s.getOfficialTankBattleCount(), s.getOfficialAverageDamage());
+                s.getSubmittedAt(), s.getApprovedAt(), s.getRejectReason(), s.getRejectReasonText());
     }
 
     /** 公开排行榜行；rank 为 query-time 派生的 competition ranking（无上下文时传 null）。 */
@@ -50,25 +47,11 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
         return new HundredAdminListItemDto(
                 s.getId(), s.getStatus(), s.getVehicleId(), s.getVehicleName(),
                 s.getGameAccountIdSnapshot(), s.getNicknameSnapshot(),
-                certifiedAverageDamage(s), certifiedBattleCount(s),
+                s.getApprovedAverageDamage(), s.getApprovedBattleCount() == null
+                        ? null : s.getApprovedBattleCount().longValue(),
                 s.isReplayParseOk(), s.isReplayGameIdMatch(),
                 s.isReplayVehicleMatch(), s.isReplayDistinctBattles(),
-                s.getSubmittedAt(), s.getApprovedAt(), s.getRejectReason(), s.getDeleteReason(),
-                s.getVerificationSource());
-    }
-
-    private static Integer certifiedAverageDamage(final HundredBattleSubmission submission) {
-        return WARGAMING_VERIFICATION_SOURCE.equals(submission.getVerificationSource())
-                ? submission.getOfficialAverageDamage()
-                : submission.getApprovedAverageDamage();
-    }
-
-    private static Long certifiedBattleCount(final HundredBattleSubmission submission) {
-        if (WARGAMING_VERIFICATION_SOURCE.equals(submission.getVerificationSource())) {
-            return submission.getOfficialTankBattleCount();
-        }
-        return submission.getApprovedBattleCount() == null
-                ? null : submission.getApprovedBattleCount().longValue();
+                s.getSubmittedAt(), s.getApprovedAt(), s.getRejectReason(), s.getDeleteReason());
     }
 
     /** 管理后台回放证据 metadata（admin-only；不含文件内容）。 */
@@ -78,7 +61,7 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 e.getFileSize(), e.getArenaId(), e.getSha256(), e.getCreatedAt());
     }
 
-    /** 管理后台详情；proofScreenshot 仅 MANUAL PENDING 可能对外，WG 来源使用官方快照。 */
+    /** 管理后台详情；proofScreenshot 仅 PENDING 可能对外。 */
     public HundredAdminDetailDto toAdminDetail(final HundredBattleSubmission s) {
         final boolean pending = "PENDING".equals(s.getStatus());
         return new HundredAdminDetailDto(
@@ -92,10 +75,7 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 s.getSubmittedAt(), s.getApprovedAt(), s.getApprovedBy(),
                 s.getRejectedAt(), s.getRejectedBy(), s.getRejectReason(), s.getRejectReasonText(),
                 s.getCancelledAt(),
-                s.getDeletedAt(), s.getDeletedBy(), s.getDeleteReason(), s.getDeleteReasonText(),
-                s.getVerificationSource(), s.getVerifiedAt(), s.getVerifiedServer(),
-                s.getOfficialAccountBattleCount(), s.getOfficialTankBattleCount(),
-                s.getOfficialTankDamageDealt(), s.getOfficialAverageDamage());
+                s.getDeletedAt(), s.getDeletedBy(), s.getDeleteReason(), s.getDeleteReasonText());
     }
 
     /**

@@ -75,6 +75,11 @@ function isAuthenticated() {
   return authenticated.value
 }
 
+function hasRole(role) {
+  return Boolean(role) && Array.isArray(tokenParsed.value?.realm_access?.roles)
+    && tokenParsed.value.realm_access.roles.includes(role)
+}
+
 function userName() {
   return tokenParsed.value?.preferred_username
     || tokenParsed.value?.name
@@ -111,6 +116,7 @@ export function useAuth() {
     login,
     logout,
     isAuthenticated,
+    hasRole,
     userName,
     token,
     ensureToken,

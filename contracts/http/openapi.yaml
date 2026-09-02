@@ -4,6 +4,126 @@ info:
   version: 1.0.0
   description: FE ↔ BE wire contract. Domain models and Control/Worker contracts are separate authorities.
 paths:
+  /api/hof/hundred:
+    get:
+      operationId: listHundredLeaderboard
+      summary: List the public Hundred Battles leaderboard
+      parameters:
+        - { name: vehicleId, in: query, required: false, schema: { type: integer, format: int64 } }
+        - { name: nation, in: query, required: false, schema: { type: string } }
+        - { name: vehicleType, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, default: 1, minimum: 1 } }
+        - { name: size, in: query, required: false, schema: { type: integer, default: 50, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Hundred leaderboard page
+          content: { application/json: { schema: { $ref: '#/components/schemas/HundredLeaderboardPage' } } }
+        '400': { description: Invalid filter, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/hof/hundred/submissions:
+    post:
+      operationId: createHundredSubmission
+      summary: Create a manual Hundred Battles submission
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [vehicleId, averageDamage, battleCount, screenshot, replays]
+              properties:
+                vehicleId: { type: integer, format: int64 }
+                averageDamage: { type: integer, minimum: 1 }
+                battleCount: { type: integer, minimum: 1 }
+                screenshot: { type: string, description: Base64 image data URL }
+                replays: { type: array, minItems: 5, maxItems: 5, items: { type: string, format: binary } }
+      responses:
+        '200': { description: Pending submission, content: { application/json: { schema: { $ref: '#/components/schemas/HundredCreateResult' } } } }
+        '400': { description: Invalid submission, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/hof/hundred/submissions/{id}/cancel:
+    post:
+      operationId: cancelHundredSubmission
+      summary: Cancel the authenticated user's pending submission
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]
+      responses:
+        '200': { description: Cancelled submission, content: { application/json: { schema: { $ref: '#/components/schemas/HundredSubmissionSummary' } } } }
+        '403': { description: Not the submission owner, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/users/hundred/status:
+    get:
+      operationId: getHundredUserStatus
+      summary: Read the authenticated user's Hundred submission status
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: User Hundred status, content: { application/json: { schema: { $ref: '#/components/schemas/HundredUserStatus' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/admin/hof/hundred/submissions:
+    get:
+      operationId: listHundredAdminSubmissions
+      summary: List Hundred submissions for moderation
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string } }
+        - { name: nation, in: query, required: false, schema: { type: string } }
+        - { name: vehicleType, in: query, required: false, schema: { type: string } }
+        - { name: vehicleId, in: query, required: false, schema: { type: integer, format: int64 } }
+        - { name: page, in: query, required: false, schema: { type: integer, default: 1, minimum: 1 } }
+        - { name: size, in: query, required: false, schema: { type: integer, default: 50, minimum: 1, maximum: 100 } }
+      responses:
+        '200': { description: Moderation page, content: { application/json: { schema: { $ref: '#/components/schemas/HundredAdminPage' } } } }
+  /api/admin/hof/hundred/submissions/{id}:
+    get:
+      operationId: getHundredAdminSubmission
+      summary: Read one Hundred submission for moderation
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]
+      responses:
+        '200': { description: Submission detail, content: { application/json: { schema: { $ref: '#/components/schemas/HundredAdminDetail' } } } }
+  /api/admin/hof/hundred/submissions/{id}/replays:
+    get:
+      operationId: listHundredReplayEvidence
+      summary: List replay evidence metadata for moderation
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]
+      responses:
+        '200': { description: Replay evidence metadata, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/HundredReplayEvidence' } } } } }
+  /api/admin/hof/hundred/submissions/{submissionId}/replays/{replayId}:
+    get:
+      operationId: downloadHundredReplayEvidence
+      summary: Download one replay evidence file
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: submissionId, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: replayId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Original replay file, content: { application/octet-stream: { schema: { type: string, format: binary } } } }
+  /api/admin/hof/hundred/submissions/{id}/approve:
+    post:
+      operationId: approveHundredSubmission
+      summary: Approve a manual Hundred submission
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]
+      responses:
+        '200': { description: Current submission, content: { application/json: { schema: { $ref: '#/components/schemas/HundredSubmissionSummary' } } } }
+  /api/admin/hof/hundred/submissions/{id}/reject:
+    post:
+      operationId: rejectHundredSubmission
+      summary: Reject a manual Hundred submission
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/HundredRejectRequest' } } } }
+      responses:
+        '200': { description: Rejected submission, content: { application/json: { schema: { $ref: '#/components/schemas/HundredSubmissionSummary' } } } }
+  /api/admin/hof/hundred/submissions/{id}/delete:
+    post:
+      operationId: deleteHundredSubmission
+      summary: Delete a current Hundred submission
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/HundredDeleteRequest' } } } }
+      responses:
+        '200': { description: Deleted submission, content: { application/json: { schema: { $ref: '#/components/schemas/HundredSubmissionSummary' } } } }
   /api/replay/battle-playback-v2:
     post:
       operationId: getBattlePlaybackV2
@@ -74,6 +194,154 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    HundredCreateResult:
+      type: object
+      additionalProperties: false
+      required: [id, status]
+      properties:
+        id: { type: integer, format: int64 }
+        status: { type: string, enum: [PENDING] }
+    HundredSubmissionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, vehicleId, vehicleName, status, claimedAverageDamage, claimedBattleCount]
+      properties:
+        id: { type: integer, format: int64 }
+        vehicleId: { type: integer, format: int64 }
+        vehicleName: { type: string }
+        status: { type: string, enum: [PENDING, CURRENT, SUPERSEDED, REJECTED, CANCELLED, DELETED] }
+        claimedAverageDamage: { type: integer }
+        claimedBattleCount: { type: integer }
+        approvedAverageDamage: { type: [integer, 'null'] }
+        approvedBattleCount: { type: [integer, 'null'] }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        approvedAt: { type: [string, 'null'], format: date-time }
+        rejectReason: { type: [string, 'null'] }
+        rejectReasonText: { type: [string, 'null'] }
+    HundredUserStatus:
+      type: object
+      additionalProperties: false
+      required: [current, pending, rejected]
+      properties:
+        current: { type: array, items: { $ref: '#/components/schemas/HundredSubmissionSummary' } }
+        pending: { type: array, items: { $ref: '#/components/schemas/HundredSubmissionSummary' } }
+        rejected: { type: array, items: { $ref: '#/components/schemas/HundredSubmissionSummary' } }
+    HundredLeaderboardItem:
+      type: object
+      additionalProperties: false
+      required: [id, rank, vehicleId, vehicleName, nickname, approvedAverageDamage, approvedBattleCount]
+      properties:
+        id: { type: integer, format: int64 }
+        rank: { type: [integer, 'null'] }
+        vehicleId: { type: integer, format: int64 }
+        vehicleName: { type: string }
+        nickname: { type: string }
+        approvedAverageDamage: { type: integer }
+        approvedBattleCount: { type: integer }
+        approvedAt: { type: [string, 'null'], format: date-time }
+    HundredLeaderboardPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalItems, totalPages]
+      properties:
+        vehicleId: { type: [integer, 'null'], format: int64 }
+        vehicleName: { type: [string, 'null'] }
+        items: { type: array, items: { $ref: '#/components/schemas/HundredLeaderboardItem' } }
+        page: { type: integer }
+        size: { type: integer }
+        totalItems: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    HundredAdminListItem:
+      type: object
+      additionalProperties: false
+      required: [id, status, vehicleId, vehicleName, gameAccountIdSnapshot, nicknameSnapshot]
+      properties:
+        id: { type: integer, format: int64 }
+        status: { type: string }
+        vehicleId: { type: integer, format: int64 }
+        vehicleName: { type: string }
+        gameAccountIdSnapshot: { type: integer, format: int64 }
+        nicknameSnapshot: { type: string }
+        approvedAverageDamage: { type: [integer, 'null'] }
+        approvedBattleCount: { type: [integer, 'null'] }
+        replayParseOk: { type: boolean }
+        replayGameIdMatch: { type: boolean }
+        replayVehicleMatch: { type: boolean }
+        replayDistinctBattles: { type: boolean }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        approvedAt: { type: [string, 'null'], format: date-time }
+        rejectReason: { type: [string, 'null'] }
+        deleteReason: { type: [string, 'null'] }
+    HundredAdminPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalItems, totalPages]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/HundredAdminListItem' } }
+        page: { type: integer }
+        size: { type: integer }
+        totalItems: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    HundredAdminDetail:
+      type: object
+      additionalProperties: false
+      required: [id, status, vehicleId, vehicleName, gameAccountIdSnapshot, nicknameSnapshot,
+                 claimedAverageDamage, claimedBattleCount, replayParseOk, replayGameIdMatch,
+                 replayVehicleMatch, replayDistinctBattles]
+      properties:
+        id: { type: integer, format: int64 }
+        status: { type: string, enum: [PENDING, CURRENT, SUPERSEDED, REJECTED, CANCELLED, DELETED] }
+        vehicleId: { type: integer, format: int64 }
+        vehicleName: { type: string }
+        gameAccountIdSnapshot: { type: integer, format: int64 }
+        nicknameSnapshot: { type: string }
+        claimedAverageDamage: { type: integer }
+        claimedBattleCount: { type: integer }
+        approvedAverageDamage: { type: [integer, 'null'] }
+        approvedBattleCount: { type: [integer, 'null'] }
+        proofScreenshot: { type: [string, 'null'] }
+        replayParseOk: { type: boolean }
+        replayGameIdMatch: { type: boolean }
+        replayVehicleMatch: { type: boolean }
+        replayDistinctBattles: { type: boolean }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        approvedAt: { type: [string, 'null'], format: date-time }
+        approvedBy: { type: [string, 'null'] }
+        rejectedAt: { type: [string, 'null'], format: date-time }
+        rejectedBy: { type: [string, 'null'] }
+        rejectReason: { type: [string, 'null'] }
+        rejectReasonText: { type: [string, 'null'] }
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        deletedAt: { type: [string, 'null'], format: date-time }
+        deletedBy: { type: [string, 'null'] }
+        deleteReason: { type: [string, 'null'] }
+        deleteReasonText: { type: [string, 'null'] }
+    HundredReplayEvidence:
+      type: object
+      additionalProperties: false
+      required: [id, slot, originalFilename, fileSize, arenaId, sha256, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        slot: { type: integer, minimum: 1, maximum: 5 }
+        originalFilename: { type: string }
+        fileSize: { type: integer, format: int64 }
+        arenaId: { type: string }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        createdAt: { type: [string, 'null'], format: date-time }
+    HundredRejectRequest:
+      type: object
+      additionalProperties: false
+      required: [rejectReason]
+      properties:
+        rejectReason: { type: string }
+        rejectReasonText: { type: [string, 'null'] }
+    HundredDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [deleteReason]
+      properties:
+        deleteReason: { type: string }
+        deleteReasonText: { type: [string, 'null'] }
     DatasetReference:
       type: object
       additionalProperties: false

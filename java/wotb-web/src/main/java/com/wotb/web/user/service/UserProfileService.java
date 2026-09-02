@@ -43,6 +43,11 @@ public class UserProfileService {
         return repository.findByKeycloakUserId(keycloakUserId);
     }
 
+    /** 当前 JWT 是否为可用于 WG 资料同步的可信 ASIA/EU/NA 身份。 */
+    public boolean hasTrustedWargamingIdentity() {
+        return trustedWgRegionOrNull() != null;
+    }
+
     /** 供跨域写操作串行化用户删除、打手创建与换绑。 */
     @Transactional
     public Optional<UserProfile> findEntityByKeycloakUserIdForUpdate(final String keycloakUserId) {
