@@ -7,9 +7,13 @@ import org.springframework.util.StringUtils;
  * Both TEAM_PERSPECTIVE and PLAYER_FOCUSED paths use the same contract:
  * <ul>
  *   <li>map internal code → {@link MapNames} → user-visible map name</li>
- *   <li>tankId → {@link Tankopedia} → user-visible tank name</li>
- *   <li>tankId → {@link Tankopedia} → structured vehicle class</li>
+ *   <li>tankId → application-level {@link TankopediaReferenceData} → user-visible tank name</li>
+ *   <li>tankId → application-level {@link TankopediaReferenceData} → structured vehicle class</li>
  * </ul>
+ *
+ * <p>Tankopedia lifecycle/ownership does not belong here. This class only formats display-facing
+ * values from the shared application reference data; new replay/AI/vehicle-detail code should
+ * consume {@link TankopediaReferenceData} directly when it needs structured vehicle facts.</p>
  *
  * <p>坦克名称是权威专有名词：解析只走 {@code tankId → tankopedia}，
  * 绝不解析名称文本本身。车辆类型同样只来自 tankopedia 的结构化
@@ -17,8 +21,6 @@ import org.springframework.util.StringUtils;
  * （例如不得因为名称含 {@code SPHT} 就判定为 SPG / 自行火炮）。</p>
  */
 public final class ReplayDisplayNames {
-
-    private static final Tankopedia TANKOPEDIA = Tankopedia.load();
 
     /** tankopedia 未提供车辆类型时的稳定占位值。 */
     public static final String UNKNOWN_TANK_CLASS = "未知";
@@ -39,7 +41,7 @@ public final class ReplayDisplayNames {
 
     public static String tankName(final long tankId, final String existingTankName) {
         if (tankId > 0) {
-            final String name = TANKOPEDIA.info(tankId).name();
+            final String name = TankopediaReferenceData.tankopedia().info(tankId).name();
             if (isValidDisplayName(name)) {
                 return name;
             }
@@ -60,7 +62,7 @@ public final class ReplayDisplayNames {
         if (tankId <= 0) {
             return UNKNOWN_TANK_CLASS;
         }
-        final String type = TANKOPEDIA.info(tankId).type();
+        final String type = TankopediaReferenceData.tankopedia().info(tankId).type();
         if (!StringUtils.hasText(type)) {
             return UNKNOWN_TANK_CLASS;
         }
@@ -76,7 +78,7 @@ public final class ReplayDisplayNames {
         if (tankId <= 0) {
             return "";
         }
-        final String type = TANKOPEDIA.info(tankId).type();
+        final String type = TankopediaReferenceData.tankopedia().info(tankId).type();
         return StringUtils.hasText(type) ? type : "";
     }
 
@@ -85,7 +87,7 @@ public final class ReplayDisplayNames {
         if (tankId <= 0) {
             return "";
         }
-        final Object tier = TANKOPEDIA.info(tankId).tier();
+        final Object tier = TankopediaReferenceData.tankopedia().info(tankId).tier();
         final String text = tier == null ? "" : String.valueOf(tier);
         return text.isBlank() ? "" : text;
     }
@@ -95,7 +97,7 @@ public final class ReplayDisplayNames {
         if (tankId <= 0) {
             return "";
         }
-        final String nation = TANKOPEDIA.info(tankId).nation();
+        final String nation = TankopediaReferenceData.tankopedia().info(tankId).nation();
         return StringUtils.hasText(nation) ? nation : "";
     }
 
@@ -104,7 +106,7 @@ public final class ReplayDisplayNames {
         if (tankId <= 0) {
             return "";
         }
-        final Integer alpha = TANKOPEDIA.info(tankId).alphaDamage();
+        final Integer alpha = TankopediaReferenceData.tankopedia().info(tankId).alphaDamage();
         return alpha != null && alpha > 0 ? String.valueOf(alpha) : "";
     }
 
@@ -113,27 +115,26 @@ public final class ReplayDisplayNames {
         if (tankId <= 0) {
             return "";
         }
-        final Integer hp = TANKOPEDIA.info(tankId).maxHp();
+        final Integer hp = TankopediaReferenceData.tankopedia().info(tankId).maxHp();
         return hp != null && hp > 0 ? String.valueOf(hp) : "";
     }
 
     /**
-     * 结构化车辆 tankopedia 满血量数值（legacy 名 {@code tankMaxHp}）。
+     * 结构化车辆 tankopedia 满血量数值（legacy compatibility facade）。
      *
      * <p><b>契约</b>：该值只是 {@code BASE_REFERENCE}——tankopedia base HP，
-     * 不是本场 actualStartingHp / actualMaxHp / currentHp。回放实测 HP（含装备/物资加成）
-     * 可能高于 base（PR147 actual-hp-type5-settlement.md）。新代码应使用
-     * {@link #tankBaseHpValue}（同值、语义明确的名称）；不得把本值当本场实际容量。</p>
+     * 不是本场 actualStartingHp / actualMaxHp / currentHp。新代码需要结构化 reference data 时
+     * 应直接使用 {@link TankopediaReferenceData}，不要继续扩展本 display helper。</p>
      */
     public static Integer tankMaxHpValue(final long tankId) {
         if (tankId <= 0) {
             return null;
         }
-        final Integer hp = TANKOPEDIA.info(tankId).maxHp();
+        final Integer hp = TankopediaReferenceData.tankopedia().info(tankId).maxHp();
         return hp != null && hp > 0 ? hp : null;
     }
 
-    /** 车辆 tankopedia base HP（BASE_REFERENCE，不是本场 actual capacity；同 {@link #tankMaxHpValue}）。 */
+    /** Legacy compatibility alias; new code should query {@link TankopediaReferenceData} directly. */
     public static Integer tankBaseHpValue(final long tankId) {
         return tankMaxHpValue(tankId);
     }
@@ -143,7 +144,7 @@ public final class ReplayDisplayNames {
         if (tankId <= 0) {
             return "";
         }
-        final String knowledge = TANKOPEDIA.info(tankId).extraInfo();
+        final String knowledge = TankopediaReferenceData.tankopedia().info(tankId).extraInfo();
         return StringUtils.hasText(knowledge) ? knowledge.trim() : "";
     }
 

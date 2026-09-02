@@ -169,6 +169,7 @@ class BattlePlaybackProjectorTest {
         friendly.team = 1;
         friendly.tankId = 456L;
         friendly.nickname = "Recorder";
+        friendly.raw = Map.of(1, List.of(2400));
         battle.players = new ArrayList<>(List.of(friendly));
 
         final TeamEntityMapping mapping = new TeamEntityMapping(
@@ -193,15 +194,17 @@ class BattlePlaybackProjectorTest {
 
         final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(battle, timeline, mapping, account);
         final BattlePlaybackDataset.VehiclePlaybackTrack track = dataset.vehicles().getFirst();
-        assertEquals(1, track.healthTransitions().size());
-        assertEquals(2400, track.healthTransitions().getFirst().currentHp());
-        assertEquals(2400, track.healthTransitions().getFirst().displayCapacityHp());
-        assertTrue(track.healthTransitions().getFirst().relativeFull());
-        assertEquals("CURRENT", track.healthTransitions().getFirst().knowledge());
+        final BattlePlaybackDataset.HealthTransition opening = track.healthTransitions().getFirst();
+        assertEquals(0d, opening.timeSec(), 1e-9);
+        assertEquals(2400, opening.currentHp());
+        assertEquals(2400, opening.displayCapacityHp());
+        assertFalse(opening.relativeFull());
+        assertEquals("CURRENT", opening.knowledge());
+        assertEquals("SETTLEMENT_OPENING_HP_EXACT", opening.source());
     }
 
     @Test
-    void healthUnknownBoundaryClearsRelativeFullUntilHpIsReacquired() {
+    void healthUnknownGapKeepsLastKnownUntilHpIsReacquired() {
         final long account = 2001L;
         final int entityId = 7;
         final Battle battle = syntheticBattle(account, 1);
@@ -232,16 +235,79 @@ class BattlePlaybackProjectorTest {
 
         final BattlePlaybackDataset.VehiclePlaybackTrack track = BattlePlaybackProjector.project(
                 battle, syntheticTimeline(40, frames, List.of()), mapping, account).vehicles().getFirst();
-        assertEquals(java.util.Arrays.asList(2000, 1500, null, 1400), track.healthTransitions().stream()
+        assertEquals(List.of(2000, 1500, 1400), track.healthTransitions().stream()
                 .map(BattlePlaybackDataset.HealthTransition::currentHp).toList());
-        assertTrue(track.healthTransitions().get(0).relativeFull());
-        assertFalse(track.healthTransitions().get(1).relativeFull(),
-                "damage must clear opening relative-full before projecting the transition");
-        assertNull(track.healthTransitions().get(2).knowledge(),
-                "an explicit unknown observation is a sparse invalidation boundary");
-        assertFalse(track.healthTransitions().get(2).relativeFull());
-        assertFalse(track.healthTransitions().get(3).relativeFull(),
-                "reacquired HP must not regain opening relative-full");
+        assertTrue(track.healthTransitions().stream().allMatch(t -> !t.relativeFull()));
+        assertTrue(track.healthTransitions().stream().noneMatch(t -> t.currentHp() == null),
+                "hidden/UNKNOWN gap must preserve the previous canonical HP instead of clearing it");
+    }
+
+    @Test
+    void enemyHpAuthoritySwitchesPermanentlyWithoutFabricatingCapacity() {
+        final long account = 2001L;
+        final int entityId = 7;
+        final Battle battle = new Battle();
+        battle.mapName = "middleburg";
+        battle.durationS = 40.0;
+        final PlayerResult enemy = new PlayerResult();
+        enemy.accountId = account;
+        enemy.team = 2;
+        enemy.tankId = 29985L; // SPHT: tankopedia base HP 3400
+        enemy.nickname = "Enemy";
+        battle.players = new ArrayList<>(List.of(enemy));
+
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(entityId, new TeamEntityIdentity(entityId, account, "Enemy", 29985L,
+                        "Enemy", 2, DecodeConfidence.EXACT)),
+                Map.of(account, List.of(entityId)), Map.of(), 0, List.of());
+        final List<BattleFrame> frames = List.of(
+                new BattleFrame(0, 0, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 2, false, FrameHealth.unknown(), 0)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(5, 5, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 2, false,
+                                new FrameHealth(3200, 5.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, null, Confidence.HIGH), 5)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(10, 10, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 2, false, FrameHealth.unknown(), 10)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(15, 15, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 2, false,
+                                new FrameHealth(2800, 15.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, null, Confidence.HIGH), 15)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(20, 20, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 2, false,
+                                new FrameHealth(2700, 20.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, 3570, Confidence.HIGH), 20)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(25, 25, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 2, false,
+                                new FrameHealth(0, 25.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, 3570, Confidence.HIGH), 25)),
+                        List.of(), List.of(), Map.of(), List.of()));
+
+        final BattlePlaybackDataset.VehiclePlaybackTrack track = BattlePlaybackProjector.project(
+                battle, syntheticTimeline(40, frames, List.of()), mapping, null).vehicles().getFirst();
+        final List<BattlePlaybackDataset.HealthTransition> hp = track.healthTransitions();
+        assertEquals(List.of(3400, 3200, 2800, 2700, 0), hp.stream()
+                .map(BattlePlaybackDataset.HealthTransition::currentHp).toList());
+        assertEquals("TANKOPEDIA_BASE_PROVISIONAL", hp.get(0).source());
+        assertEquals(3400, hp.get(0).displayCapacityHp());
+        assertNull(hp.get(1).displayCapacityHp(),
+                "first trusted replay HP without capacity must not fabricate currentHp/currentHp full health");
+        assertNull(hp.get(2).displayCapacityHp(),
+                "reacquired replay HP must stay replay-authoritative and must not fall back to tankopedia");
+        assertEquals(3570, hp.get(3).displayCapacityHp(),
+                "a later replay-provided capacity becomes authoritative when it actually exists");
+        assertEquals(3570, hp.get(4).displayCapacityHp());
+        assertTrue(hp.subList(1, hp.size()).stream()
+                .noneMatch(t -> "TANKOPEDIA_BASE_PROVISIONAL".equals(t.source())),
+                "after first trusted replay HP the authority switch is permanent");
+        assertTrue(hp.stream().noneMatch(t -> t.timeSec() == 10d),
+                "hidden/UNKNOWN gap must not emit an HP-clearing transition");
+        assertEquals(0, hp.getLast().currentHp(), "destroyed/terminal zero HP must converge to 0");
     }
 
     @Test

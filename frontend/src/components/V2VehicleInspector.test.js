@@ -54,6 +54,7 @@ describe('V2VehicleInspector', () => {
     const hp = w.get('[data-test="v2-inspector-hp"]').text()
     expect(hp).toContain('1200')          // <=t sample, not future 600
     expect(hp).toContain('最后已知 HP')   // LAST_KNOWN knowledge during hidden interval
+    expect(w.find('[data-test="v2-inspector-orientation"]').exists()).toBe(false)
     // loadout 保持 KNOWN（持久配置），即使 120s 在 hidden interval
     expect(w.get('[data-test="v2-inspector-loadout"]').exists()).toBe(true)
     expect(w.get('[data-test="v2-inspector-module"]').text()).toContain('发动机')
@@ -65,22 +66,6 @@ describe('V2VehicleInspector', () => {
     expect(hp).toContain('600')
   })
 
-  it('orientation 用 orientationLabel：CURRENT/LAST_KNOWN/UNKNOWN 不裸显、不映射成 Detected', () => {
-    // CURRENT 朝向 → orientation_current（"当前朝向"），不再是 state_detected（"已发现"）
-    const w = mountInspector(95)
-    const orient = w.get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()
-    expect(orient).toBe('当前朝向')
-    expect(['CURRENT', 'LAST_KNOWN', 'UNKNOWN', '已发现', '位置上报中']).not.toContain(orient)
-    // LAST_KNOWN 朝向 → orientation_last_known
-    const t1 = track()
-    t1.orientationSegments = [{ startSec: 90, endSec: 100, knowledge: 'CURRENT', samples: [] }]
-    expect(mountInspector(120, 'zh', t1).get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()).toBe('最后已知朝向')
-    // 无朝向数据 → unknown（"未知"）
-    const t2 = track()
-    t2.orientationSegments = []
-    expect(mountInspector(95, 'zh', t2).get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()).toBe('未知')
-  })
-
   it('state CURRENT observation：coverage ≠ 点亮，显示 "当前观测" 而非 "已发现"', () => {
     const w = mountInspector(95)
     const state = w.get('[data-test="v2-inspector-life"] .v2-inspector-val').text()
@@ -88,23 +73,13 @@ describe('V2VehicleInspector', () => {
     expect(['已发现', 'Detected', 'Обнаружен']).not.toContain(state)
   })
 
-  it.each(['zh', 'en', 'ru'])('locale %s：orientation/state 不裸显 raw CURRENT/LAST_KNOWN/UNKNOWN', (locale) => {
+  it.each(['zh', 'en', 'ru'])('locale %s：state 不裸显 raw CURRENT/LAST_KNOWN/UNKNOWN', (locale) => {
     const rawOrDetected = ['CURRENT', 'LAST_KNOWN', 'UNKNOWN', '已发现', 'Detected', 'Обнаружен']
-    // CURRENT observation + orientation CURRENT
-    const wc = mountInspector(95, locale)
-    const orient = wc.get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()
-    const state = wc.get('[data-test="v2-inspector-life"] .v2-inspector-val').text()
-    expect(orient.length).toBeGreaterThan(0)
+    const w = mountInspector(95, locale)
+    const state = w.get('[data-test="v2-inspector-life"] .v2-inspector-val').text()
     expect(state.length).toBeGreaterThan(0)
-    expect(rawOrDetected).not.toContain(orient)
     expect(rawOrDetected).not.toContain(state)
-    // LAST_KNOWN orientation
-    const t = track()
-    t.orientationSegments = [{ startSec: 90, endSec: 100, knowledge: 'CURRENT', samples: [] }]
-    const wl = mountInspector(120, locale, t)
-    const olast = wl.get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()
-    expect(olast.length).toBeGreaterThan(0)
-    expect(rawOrDetected).not.toContain(olast)
+    expect(w.find('[data-test="v2-inspector-orientation"]').exists()).toBe(false)
   })
 
   it('loadout 显示本地化名称，绝不裸显 internal logical id / 数字 equipment id', () => {

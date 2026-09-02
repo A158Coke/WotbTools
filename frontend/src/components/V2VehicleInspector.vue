@@ -5,7 +5,6 @@ import {
   healthDisplayAt,
   lifeAt,
   positionCoveredAtV2,
-  orientationKnownAt,
   consumableRuntimeSlotsAt,
   moduleCrewStatesAt,
 } from '../utils/battlePlaybackV2.ts'
@@ -25,7 +24,6 @@ const { t, te, locale } = useI18n()
 const life = computed(() => lifeAt(props.track, props.timeSec))
 const health = computed(() => healthDisplayAt(props.track, props.timeSec))
 const covered = computed(() => positionCoveredAtV2(props.track.positionSegments, props.timeSec))
-const orientation = computed(() => orientationKnownAt(props.track, props.timeSec))
 const loadout = computed(() => props.track.loadout || null)
 
 /**
@@ -107,12 +105,6 @@ const stateLabel = computed(() => {
 
 const valueSeen = computed(() => health.value != null || loadout.value != null)
 
-const orientationLabel = computed(() => {
-  if (orientation.value === 'CURRENT') return t('recon.map.playback.orientation_current')
-  if (orientation.value === 'LAST_KNOWN') return t('recon.map.playback.orientation_last_known')
-  return t('recon.map.playback.unknown')
-})
-
 /** tankClass 为 canonical 英文 class（Heavy tank/Medium tank/...）；UI 用已有三语翻译，不裸显英文。 */
 const VEHICLE_CLASS_KEYS = {
   'Heavy tank': 'recon.map.playback.vehicle_class_heavy',
@@ -144,14 +136,11 @@ function moduleStateLabel(state) {
     <div class="v2-inspector-row" data-test="v2-inspector-hp">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.current_hp') }}</span>
       <span class="v2-inspector-val">
-        {{ health?.relativeFull ? '100%' : (health?.currentHp ?? '—') }}
+        {{ health?.currentHp ?? '—' }}
         <span v-if="health?.knowledge === 'LAST_KNOWN'" class="v2-inspector-badge">
           {{ $t('recon.map.playback.last_known_hp') }}
         </span>
-        <span v-if="health?.relativeFull" class="v2-inspector-badge">
-          {{ $t('recon.map.playback.hp_full_spawn') }}
-        </span>
-        <span v-if="!health?.relativeFull && health?.displayCapacityHp" class="v2-inspector-cap">
+        <span v-if="health?.displayCapacityHp" class="v2-inspector-cap">
           / {{ health.displayCapacityHp }}
         </span>
       </span>
@@ -170,11 +159,6 @@ function moduleStateLabel(state) {
     <div class="v2-inspector-row" data-test="v2-inspector-tier">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.tank_tier') }}</span>
       <span class="v2-inspector-val">{{ track.tankTier ?? '—' }}</span>
-    </div>
-
-    <div class="v2-inspector-row" data-test="v2-inspector-orientation">
-      <span class="v2-inspector-key">{{ $t('recon.map.playback.orientation') }}</span>
-      <span class="v2-inspector-val">{{ orientationLabel }}</span>
     </div>
 
     <template v-if="loadout">
