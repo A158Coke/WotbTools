@@ -11,8 +11,8 @@
 .pb-vehicle:has(.pb-selected-mark) { z-index: 60 !important; }
 .pb-vehicle:has(.pb-hitbox:hover) { z-index: 55 !important; }
 .pb-vehicle:has(.pb-recorder-badge) { z-index: 50 !important; }
+.pb-vehicle.pb-destroyed { z-index: 45; }
 .pb-vehicle:not(.pb-destroyed) { z-index: 40; }
-.pb-vehicle.pb-destroyed { z-index: 35; }
 
 /* Preserve text readability when overlap is unavoidable. */
 .pb-labels,

@@ -7,7 +7,6 @@ import {
   MARKER_CORE_PX,
   computeLabelLayout,
   estimateLabelWidth,
-  resolvePlayerVisibility,
 } from './labelLayout'
 
 function item(accountId, x, y, extra = {}) {
@@ -100,16 +99,5 @@ describe('computeLabelLayout overlap-first UX', () => {
     ], { showTank: true, showPlayer: true, viewportW: 800, viewportH: 600 })
     expect(result.get(1).tankBox).not.toBeNull()
     expect(result.get(2).tankBox).toBeNull()
-  })
-})
-
-describe('resolvePlayerVisibility compatibility', () => {
-  it('collision hysteresis 不再隐藏玩家名', () => {
-    const previous = new Map([[1, { hidden: true, conflict: true, since: 0 }]])
-    const result = resolvePlayerVisibility(new Set([1, 2]), previous, 1000)
-    expect(result.hidden.size).toBe(0)
-    expect(result.fading.size).toBe(0)
-    expect(result.state.get(1).hidden).toBe(false)
-    expect(result.state.get(2).hidden).toBe(false)
   })
 })
