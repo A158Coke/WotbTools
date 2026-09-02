@@ -1,4 +1,12 @@
 [{
+    "v": "2.12.63",
+    "date": "2026-09-02",
+    "tag": "fix",
+    "zh": "更新 Showcase 背景素材：主页及各功能页改用无品牌标识的战术场景图片，移除原背景中的 WG / World of Tanks 图形与文字。",
+    "en": "Updated Showcase backgrounds: the home page and feature pages now use tactical scenes without brand marks, removing WG / World of Tanks graphics and text from the previous backgrounds.",
+    "ru": "Обновлены фоны Showcase: на главной и функциональных страницах используются тактические сцены без фирменных знаков, а графика и текст WG / World of Tanks удалены из прежних фонов."
+  },
+  {
     "v": "2.12.62",
     "date": "2026-09-02",
     "tag": "fix",
