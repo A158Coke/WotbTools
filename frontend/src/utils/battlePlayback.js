@@ -400,9 +400,9 @@ export const GHOST_MS = 600
 export const FLASH_MS = 280
 /** 击毁 burst（真实 ms）。 */
 export const BURST_MS = 700
-/** kill feed 生命周期（真实 ms，§16：普通关键事件 2.5–3s；此处用 3s）。 */
-export const KILL_FEED_MS = 3000
-/** kill feed 最多保留 2 条 visible（§17：第 3 条及以后队列，从最旧挤出）。 */
+/** Event Banner 生命周期（真实 ms，§3：Destroyed 停留约 4s）。 */
+export const KILL_FEED_MS = 4000
+/** Event Banner 最多同时显示 2 条；第 3 条及以后排队（activeFeed 提升展示，不 slice 挤出）。 */
 const KILL_FEED_MAX = 2
 
 /**
@@ -416,9 +416,33 @@ export function transientsActive(items, nowRealMs) {
       && nowRealMs - i.bornRealMs < i.durationMs)
 }
 
-/** kill feed 入队：尾部追加，超限从最旧挤出（不合并多条 KILL）。 */
-export function pushFeed(items, entry, max = KILL_FEED_MAX) {
-  const limit = Number.isFinite(max) && max > 0 ? Math.floor(max) : 0
-  if (limit <= 0) return []
-  return [...items, entry].slice(-limit)
+/**
+ * Event Banner 真实队列：返回最多 max 条「正在展示」的条目。
+ * - 展示起点由 shownAt（id → shownAtRealMs Map）记录；duration 从展示起点算。
+ * - 排队条目（shownAt 为空）且有展示空位时提升为「正在展示」（此刻起算 duration）。
+ * - 绝不 slice 掉尚未展示完的旧事件：第 3 条及以后等待，待到空位才展示。
+ */
+export function activeFeed(items, nowRealMs, shownAt, max = KILL_FEED_MAX) {
+  if (!Array.isArray(items) || !Number.isFinite(nowRealMs)) return []
+  const shownMs = (id) => (shownAt && shownAt.get(id)) ?? null
+  const visible = (it) => {
+    const s = shownMs(it.id)
+    return s != null && Number.isFinite(it.durationMs) && nowRealMs - s < it.durationMs
+  }
+  const active = items.filter(visible)
+  let slots = Math.max(0, max - active.length)
+  for (const it of items) {
+    if (slots <= 0) break
+    if (shownMs(it.id) == null) {
+      shownAt.set(it.id, nowRealMs)
+      active.push(it)
+      slots--
+    }
+  }
+  return active.slice(0, max)
+}
+
+/** Event Banner 入队：只追加（排队展示由 activeFeed 决定，不直接 slice 挤掉旧事件）。 */
+export function pushFeed(items, entry) {
+  return [...items, entry]
 }

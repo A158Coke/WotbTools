@@ -166,14 +166,15 @@ defineExpose({ mapEl, textInputRef })
 .pb-burst.pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
 .pb-burst.pb-float-neutral { color: var(--text-muted, #999); }
 @keyframes pb-burst-ring { 0% { opacity: .9; transform: translate(-50%, -50%) scale(.3); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); } }
-/* §14：Event Banner 位于 Map Workspace top-center（非 100vw center——fullscreen 左右有固定栏）。 */
-.pb-kill-feed { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 3px; z-index: 10; pointer-events: none; width: max-content; max-width: 92%; }
-.pb-feed-item { display: flex; align-items: center; gap: 4px; font-size: .75rem; background: color-mix(in srgb, var(--bg) 60%, transparent); border: 1px solid color-mix(in srgb, var(--text) 14%, transparent); border-radius: 3px; padding: 2px 6px; animation: pb-feed-in .25s ease-out; }
-.pb-feed-skull { color: var(--text); }
+/* §3 Event Banner：位于 Map Workspace top-center（非 100vw center——fullscreen 左右有固定栏）。
+   视觉量级明显放大（约 16–18px），高度/padding/背景对比提高，Destroyed 停留约 4s（KILL_FEED_MS）。 */
+.pb-kill-feed { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 10; pointer-events: none; width: max-content; max-width: 92%; }
+.pb-feed-item { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; line-height: 1.25; background: color-mix(in srgb, var(--bg) 84%, transparent); border: 1px solid color-mix(in srgb, var(--text) 22%, transparent); border-radius: 10px; padding: 8px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.4); animation: pb-feed-in .3s ease-out; }
+.pb-feed-skull { color: var(--text); font-size: 1.1em; }
 .pb-feed-friendly .pb-feed-victim { color: var(--pb-team-text, #4ade80); }
 .pb-feed-enemy .pb-feed-victim { color: var(--pb-enemy-text, #f87171); }
 .pb-feed-neutral .pb-feed-victim { color: var(--text-muted, #999); }
-.pb-feed-destroyed { color: var(--text-muted, #999); }
+.pb-feed-destroyed { color: var(--text-muted, #999); font-weight: 600; }
 @keyframes pb-feed-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
 .pb-annotations { pointer-events: none; }
 .pb-annot-text { paint-order: stroke; stroke: color-mix(in srgb, var(--bg) 65%, transparent); stroke-width: 1; }

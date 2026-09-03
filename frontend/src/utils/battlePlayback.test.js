@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  activeFeed,
   clampViewPan,
   eventsCrossed,
   formatClock,
+  KILL_FEED_MS,
   lastKnownPosition,
   normalizeDeg,
   parseAiTime,
@@ -464,13 +466,24 @@ describe('eventsCrossed / transients', () => {
     expect(eventsCrossed(events, 20, 30)).toEqual([{ timeSec: 30 }])
   })
 
-  it('transientsActive / pushFeed: wall-clock lifecycle + queue eviction', () => {
+  it('transientsActive: wall-clock lifecycle', () => {
     const items = [
       { bornRealMs: 1000, durationMs: 500 },
       { bornRealMs: 1500, durationMs: 1000 },
       { bornRealMs: 500, durationMs: 1000 }
     ]
     expect(transientsActive(items, 1999)).toEqual([items[1]])
-    expect(pushFeed(['a', 'b', 'c'], 'd', 3)).toEqual(['b', 'c', 'd'])
+  })
+
+  it('pushFeed / activeFeed: real banner queue — max 2 visible, 3rd waits (not sliced away)', () => {
+    const shown = new Map()
+    const mk = (id) => ({ id, durationMs: KILL_FEED_MS })
+    // pushFeed 只追加，不 slice 掉旧事件
+    expect(pushFeed([{ id: 1 }], { id: 2 })).toEqual([{ id: 1 }, { id: 2 }])
+    // 三条同时到达：只显示前两条，第三条排队（不挤出）
+    expect(activeFeed([mk(1), mk(2), mk(3)], 1000, shown).map(i => i.id)).toEqual([1, 2])
+    expect(activeFeed([mk(1), mk(2), mk(3)], 1500, shown).map(i => i.id)).toEqual([1, 2])
+    // 4s 后：前两条已展示完，第三条被提升展示（事件仍在队列中，未被挤出）
+    expect(activeFeed([mk(1), mk(2), mk(3)], 7000, shown).map(i => i.id)).toEqual([3])
   })
 })

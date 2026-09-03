@@ -56,25 +56,27 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(rail).toContain('grid-column: 1')
     expect(rail).toContain('display: flex')
     expect(ruleBody('.battle-playback:fullscreen .pb-rail-btn')).toContain('cursor: pointer')
+    // fullscreen 下隐藏旧右上角 tab launcher（Left Rail 是唯一入口）
+    expect(ruleBody('.battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell .pb-panel-launcher')).toContain('display: none')
     const panel = ruleBody('.battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell .pb-side-panel')
     expect(panel).toContain('position: absolute')
     expect(panel).toContain('right: 0')
   })
 
-  it('HUD is a top overlay that does not consume map layout height', () => {
+  it('HUD is a top overlay covering only the Map Workspace (after the 64px rail)', () => {
     const body = ruleBody('.battle-playback:fullscreen .pb-hud')
     expect(body).toContain('position: absolute')
     expect(body).toContain('top: 0')
-    expect(body).toContain('left: 0')
+    expect(body).toContain('left: 64px')
     expect(body).toContain('right: 0')
     expect(body).toContain('z-index: 50')
   })
 
-  it('controls + timeline are a bottom overlay that never leaves the first screen', () => {
+  it('controls + timeline are a bottom overlay over the Map Workspace (after 64px rail)', () => {
     const body = ruleBody('.battle-playback:fullscreen .pb-mobile-overlay')
     expect(body).toContain('position: absolute')
     expect(body).toContain('bottom: 0')
-    expect(body).toContain('left: 0')
+    expect(body).toContain('left: 64px')
     expect(body).toContain('right: 0')
     expect(body).toContain('z-index: 40')
     expect(body).toContain('pointer-events: auto')
