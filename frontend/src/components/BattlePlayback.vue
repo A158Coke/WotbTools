@@ -1805,7 +1805,7 @@ const mapStyle = computed(() => ({
         :title="$t('recon.map.playback.panel_battle')"
         :aria-label="$t('recon.map.playback.panel_battle')"
         @click="activePanel = activePanel === 'battle' ? null : 'battle'"
-      >⚔</button>
+      ><span class="pb-rail-glyph">⚔</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_battle') }}</span></button>
       <button
         type="button"
         class="pb-rail-btn"
@@ -1815,7 +1815,7 @@ const mapStyle = computed(() => ({
         :title="$t('recon.map.playback.panel_vehicle')"
         :aria-label="$t('recon.map.playback.panel_vehicle')"
         @click="activePanel = activePanel === 'vehicle' ? null : 'vehicle'"
-      >▣</button>
+      ><span class="pb-rail-glyph">▣</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_vehicle') }}</span></button>
       <button
         type="button"
         class="pb-rail-btn"
@@ -1825,7 +1825,7 @@ const mapStyle = computed(() => ({
         :title="$t('recon.map.playback.panel_display')"
         :aria-label="$t('recon.map.playback.panel_display')"
         @click="activePanel = activePanel === 'display' ? null : 'display'"
-      >⚙</button>
+      ><span class="pb-rail-glyph">⚙</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_display') }}</span></button>
       <button
         type="button"
         class="pb-rail-btn"
@@ -1835,7 +1835,7 @@ const mapStyle = computed(() => ({
         :title="$t('recon.map.playback.panel_events')"
         :aria-label="$t('recon.map.playback.panel_events')"
         @click="activePanel = activePanel === 'events' ? null : 'events'"
-      >☰</button>
+      ><span class="pb-rail-glyph">☰</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_events') }}</span></button>
       <button
         type="button"
         class="pb-rail-btn"
@@ -1845,7 +1845,7 @@ const mapStyle = computed(() => ({
         :title="$t('recon.map.playback.annotation')"
         :aria-label="$t('recon.map.playback.annotation')"
         @click="annotationOpen = !annotationOpen"
-      >✎</button>
+      ><span class="pb-rail-glyph">✎</span><span class="pb-rail-label">{{ $t('recon.map.playback.annotation') }}</span></button>
       <button
         type="button"
         class="pb-rail-btn"
@@ -1854,7 +1854,7 @@ const mapStyle = computed(() => ({
         :title="$t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
         :aria-label="$t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
         @click="toggleFullscreen"
-      >⛶</button>
+      ><span class="pb-rail-glyph">⛶</span><span class="pb-rail-label">{{ $t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen') }}</span></button>
       <button
         type="button"
         class="pb-rail-btn"
@@ -1862,7 +1862,7 @@ const mapStyle = computed(() => ({
         :title="$t('recon.map.playback.reset_view')"
         :aria-label="$t('recon.map.playback.reset_view')"
         @click="resetView"
-      >↺</button>
+      ><span class="pb-rail-glyph">↺</span><span class="pb-rail-label">{{ $t('recon.map.playback.reset_view') }}</span></button>
     </div>
 
     <div class="pb-main" data-test="pb-main">

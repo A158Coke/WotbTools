@@ -25,26 +25,42 @@
   border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   overflow-y: auto;
 }
+/* §improved-rail：Left Rail 为宽面板，导航按钮为「图标+文字」行，占满面板宽度。 */
 .battle-playback .pb-rail-btn {
-  min-height: 38px;
-  width: 44px;
-  padding: 4px 6px;
+  min-height: 40px;
+  width: 100%;
+  padding: 6px 10px;
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: 6px;
+  border-radius: 7px;
   background: color-mix(in srgb, var(--bg-card2) 78%, transparent);
   color: var(--text-label);
-  font-size: 1rem;
-  font-weight: 800;
   cursor: pointer;
-  white-space: nowrap;
-  display: grid;
-  place-items: center;
-  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  transition: background .15s ease, border-color .15s ease;
 }
-/* §symmetric-rail：Left Rail 为宽面板（与右侧 details 同宽），导航图标紧凑左对齐。 */
+.battle-playback .pb-rail-btn:hover {
+  background: color-mix(in srgb, var(--bg-card2) 96%, transparent);
+  border-color: color-mix(in srgb, var(--border) 92%, transparent);
+}
+.battle-playback .pb-rail-btn .pb-rail-glyph {
+  flex: 0 0 22px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  text-align: center;
+}
+.battle-playback .pb-rail-btn .pb-rail-label {
+  min-width: 0;
+  font-size: .78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .battle-playback .pb-left-rail {
-  flex-wrap: wrap;
-  align-content: flex-start;
+  flex-wrap: nowrap;
 }
 .battle-playback:fullscreen .pb-rail-btn.active {
   border-color: var(--accent);
