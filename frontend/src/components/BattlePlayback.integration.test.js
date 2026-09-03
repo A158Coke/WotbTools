@@ -888,6 +888,62 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toBe(viewportBefore)
   })
 
+  it('§fullscreen-exit：退出 fullscreen 后以 page-mode 几何重新 fit（不带回 fullscreen camera），持久状态保留', async () => {
+    stubRaf()
+    stubFullscreenApi()
+    const getRoCb = stubResizeObserver()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const roCb = getRoCb()
+    expect(roCb).toBeTruthy()
+
+    // happy-dom 无真实布局：给 stage 高度、给 map 宽度（经 ResizeObserver 写入 mapSize）。
+    const stageEl = wrapper.find('.pb-map-stage').element
+    Object.defineProperty(stageEl, 'clientHeight', { value: 900, configurable: true })
+    const mapEl = wrapper.find('[data-test="pb-map"]').element
+
+    // 持久状态：选中车辆 + 记录时间/所选信息
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
+    await flushPromises()
+    const timeBefore = wrapper.find('.pb-time').text()
+    const selBefore = wrapper.find('[data-test="pb-info"]').text()
+
+    const scaleOf = () => {
+      const st = wrapper.find('[data-test="pb-viewport"]').attributes('style') || ''
+      const m = st.match(/scale\(([\d.]+)\)/)
+      return m ? parseFloat(m[1]) : NaN
+    }
+
+    // 初始 page fit：地图近方形(766×769)，stage 高 900、map 宽 1200 → scale < 1（contain 居中）
+    expect(roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])).toBe(undefined)
+    await flushPromises()
+    const pageScale = scaleOf()
+    expect(pageScale).toBeGreaterThan(0)
+    expect(pageScale).toBeLessThan(1)
+
+    // 进入 fullscreen：几何更宽 → 重新 fit，scale 变化（不等于 page fit）
+    setFullscreen(wrapper.find('[data-test="battle-playback"]').element)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+    roCb([{ target: mapEl, contentRect: { width: 1800, height: 1807 } }])
+    await flushPromises()
+    const fsScale = scaleOf()
+    expect(fsScale).not.toBe(pageScale)
+    expect(fsScale).toBeGreaterThan(0)
+
+    // 退出 fullscreen → 重新以 page 宽 fit：scale 回到 page fit（不带回 fullscreen camera）
+    setFullscreen(null)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+    roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])
+    await flushPromises()
+    expect(scaleOf()).toBeCloseTo(pageScale, 3)
+
+    // 持久状态保留（currentTime / selected vehicle）
+    expect(wrapper.find('.pb-time').text()).toBe(timeBefore)
+    expect(wrapper.find('[data-test="pb-info"]').text()).toBe(selBefore)
+  })
+
   it('workspace Left Rail：buttons toggle panels; annotation/reset wired（§2）', async () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)

@@ -39,7 +39,8 @@ function hpText(hp, density) {
   if (hp.state === 'EXACT') {
     if (density === 'wide') return wideNumber(hp.knownRemaining) + ' / ' + wideNumber(hp.totalMax)
     if (density === 'medium') return compactNumber(hp.knownRemaining) + ' / ' + compactNumber(hp.totalMax)
-    return compactNumber(hp.knownRemaining)
+    // §compact：EXACT 也必须保留 current / total（不丢弃 totalMax）；宽度由响应式换行/字号解决。
+    return compactNumber(hp.knownRemaining) + ' / ' + compactNumber(hp.totalMax)
   }
   return density === 'wide' ? wideNumber(hp.knownRemaining) : compactNumber(hp.knownRemaining)
 }
@@ -205,6 +206,9 @@ function baseStatus(state) {
   .pb-hud-label { display: inline; font-size: .62rem; }
   .pb-hud-wide, .pb-hud-medium { display: none; }
   .pb-hud-compact { display: inline; }
+  /* §compact：EXACT 的 current / total 可能较宽 → 允许换行 + 稍小字号，不丢 totalMax。 */
+  .pb-hud-value { white-space: normal; }
+  .pb-hud-compact { font-size: .72rem; line-height: 1.2; }
   .pb-hud-team { grid-template-columns: minmax(0, 1fr); gap: 3px; }
   .pb-hud-friendly .pb-hud-value { grid-column: 1; }
   .pb-hud-enemy .pb-hud-label, .pb-hud-enemy .pb-hud-value { grid-column: 1; }

@@ -559,8 +559,11 @@ function onFullscreenChange() {
     orientationRequestToken += 1
     unlockOrientation()
   }
-  // §3：fullscreen enter/exit 后布局改变 → 下帧重新 fit（contain 居中，不超出/不上下挪动）。
-  nextTick(() => fitViewIfReady(true))
+  // §fullscreen-exit：进入/退出 fullscreen 后布局改变。不能把 fullscreen 的 camera/几何直接带回
+  // page mode。这里只“重新武装”待重算标记，等 ResizeObserver 在布局稳定后以新 mode 的
+  // stage/rect 重新测量并应用默认 fit（contain 居中）；不能用旧尺寸立即 resetView（会算错并把
+  // fullscreen 的 scale 带回 page mode）。
+  fitInitialized = false
 }
 let orientationHintTimer = null
 function showOrientationHint() {
@@ -619,14 +622,17 @@ watch(() => mapEl.value, (el) => {
   if (!el || mapResizeObserver) return
   if (typeof ResizeObserver === 'function') {
     mapResizeObserver = new ResizeObserver((entries) => {
-      const e = entries && entries[0]
-      if (e && e.contentRect) {
-        mapSize.value = { w: e.contentRect.width, h: e.contentRect.height }
+      for (const e of entries || []) {
+        if (e && e.target === el) {
+          mapSize.value = { w: e.contentRect.width, h: e.contentRect.height }
+        }
       }
-      // §3：首次可测量即 fit（contain 居中），作为默认视图。
+      // §fullscreen-exit：地图或 stage 尺寸就绪（布局稳定）后，以新 mode 的几何重新应用默认 fit
+      //（contain 居中）。mode change 会 re-arm fitInitialized；非 mode 的 resize 保持已生效的 view。
       fitViewIfReady()
     })
     mapResizeObserver.observe(el)
+    if (mapStageEl.value) mapResizeObserver.observe(mapStageEl.value)
   }
 })
 
@@ -1748,8 +1754,9 @@ const mapStyle = computed(() => ({
         data-test="pb-rail-battle"
         :aria-expanded="activePanel === 'battle'"
         :title="$t('recon.map.playback.panel_battle')"
+        :aria-label="$t('recon.map.playback.panel_battle')"
         @click="activePanel = activePanel === 'battle' ? null : 'battle'"
-      >{{ $t('recon.map.playback.panel_battle') }}</button>
+      >⚔</button>
       <button
         type="button"
         class="pb-rail-btn"
@@ -1757,8 +1764,9 @@ const mapStyle = computed(() => ({
         data-test="pb-rail-vehicle"
         :aria-expanded="activePanel === 'vehicle'"
         :title="$t('recon.map.playback.panel_vehicle')"
+        :aria-label="$t('recon.map.playback.panel_vehicle')"
         @click="activePanel = activePanel === 'vehicle' ? null : 'vehicle'"
-      >{{ $t('recon.map.playback.panel_vehicle') }}</button>
+      >▣</button>
       <button
         type="button"
         class="pb-rail-btn"
@@ -1766,8 +1774,9 @@ const mapStyle = computed(() => ({
         data-test="pb-rail-display"
         :aria-expanded="activePanel === 'display'"
         :title="$t('recon.map.playback.panel_display')"
+        :aria-label="$t('recon.map.playback.panel_display')"
         @click="activePanel = activePanel === 'display' ? null : 'display'"
-      >{{ $t('recon.map.playback.panel_display') }}</button>
+      >⚙</button>
       <button
         type="button"
         class="pb-rail-btn"
@@ -1775,8 +1784,9 @@ const mapStyle = computed(() => ({
         data-test="pb-rail-events"
         :aria-expanded="activePanel === 'events'"
         :title="$t('recon.map.playback.panel_events')"
+        :aria-label="$t('recon.map.playback.panel_events')"
         @click="activePanel = activePanel === 'events' ? null : 'events'"
-      >{{ $t('recon.map.playback.panel_events') }}</button>
+      >☰</button>
       <button
         type="button"
         class="pb-rail-btn"
@@ -1784,15 +1794,17 @@ const mapStyle = computed(() => ({
         data-test="pb-rail-annotation"
         :aria-expanded="annotationOpen"
         :title="$t('recon.map.playback.annotation')"
+        :aria-label="$t('recon.map.playback.annotation')"
         @click="annotationOpen = !annotationOpen"
-      >{{ $t('recon.map.playback.annotation') }}</button>
+      >✎</button>
       <button
         type="button"
         class="pb-rail-btn"
         data-test="pb-rail-reset"
         :title="$t('recon.map.playback.reset_view')"
+        :aria-label="$t('recon.map.playback.reset_view')"
         @click="resetView"
-      >{{ $t('recon.map.playback.reset_view') }}</button>
+      >↺</button>
     </div>
 
     <div class="pb-main" data-test="pb-main">
@@ -1826,7 +1838,6 @@ const mapStyle = computed(() => ({
           :text-input-style="textInputStyle"
           :visible-floats="visibleFloats"
           :visible-bursts="visibleBursts"
-          :visible-feed="visibleFeed"
           :float-team-class="floatTeamClass"
           @wheel="onWheel"
           @pointer-down="onPointerDown"
@@ -1948,6 +1959,10 @@ const mapStyle = computed(() => ({
           @seek="seek"
         />
       </PlaybackMobileOverlay>
+
+      <div v-if="visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
+        <div v-for="feed in visibleFeed" :key="'feed-' + feed.id" class="pb-feed-item" :class="feed.victimFriendly === true ? 'pb-feed-friendly' : (feed.victimFriendly === false ? 'pb-feed-enemy' : 'pb-feed-neutral')"><span class="pb-feed-skull" aria-hidden="true">☠</span><span class="pb-feed-victim">{{ feed.victimPlayerName ? feed.victimPlayerName + '（' + feed.victimName + '）' : feed.victimName }}</span><span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span></div>
+      </div>
     </div>
   </div>
 </template>
@@ -2036,30 +2051,35 @@ const mapStyle = computed(() => ({
 }
 .pb-kill-feed {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: calc(max(8px, env(safe-area-inset-top)) + 50px);
+  left: 0;
+  right: var(--pb-details-w, 0);
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  z-index: 10;
+  align-items: center;
+  gap: 6px;
+  z-index: 45;
   pointer-events: none;
-  max-width: 62%;
 }
 .pb-feed-item {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: .75rem;
-  background: rgba(0, 0, 0, .6);
-  border: 1px solid rgba(255, 255, 255, .14);
-  border-radius: 3px;
-  padding: 2px 6px;
-  animation: pb-feed-in .25s ease-out;
+  gap: 8px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
+  border-radius: 10px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.4);
+  animation: pb-feed-in .3s ease-out;
 }
-.pb-feed-skull { color: #fff; }
+.pb-feed-skull { color: var(--text); font-size: 1.1em; }
 .pb-feed-friendly .pb-feed-victim { color: var(--pb-team-text, #4ade80); }
 .pb-feed-enemy .pb-feed-victim { color: var(--pb-enemy-text, #f87171); }
-.pb-feed-destroyed { color: var(--text-muted, #999); }
+.pb-feed-neutral .pb-feed-victim { color: var(--text-muted, #999); }
+.pb-feed-destroyed { color: var(--text-muted, #999); font-weight: 600; }
 @keyframes pb-feed-in {
   from { opacity: 0; transform: translateX(8px); }
   to { opacity: 1; transform: none; }
