@@ -55,22 +55,6 @@ export function teamPointsAt(samples, team, t) {
   return points
 }
 
-/** 事件按秒聚合（进度条标记）：[{ sec, count, types }]。 */
-export function aggregateEventsBySecond(events) {
-  const map = new Map()
-  for (const ev of events || []) {
-    if (!Number.isFinite(ev.timeSec)) continue
-    const sec = Math.round(ev.timeSec)
-    const bucket = map.get(sec) || { sec, count: 0, types: new Set() }
-    bucket.count++
-    bucket.types.add(ev.type)
-    map.set(sec, bucket)
-  }
-  return [...map.values()]
-    .sort((a, b) => a.sec - b.sec)
-    .map(b => ({ sec: b.sec, count: b.count, types: [...b.types] }))
-}
-
 /**
  * 识别 AI 报告中的明确时间文本 → 秒；不支持裸数字（防止 854:275 等误识别）。
  * 支持：03:20 / 3分20秒 / 3m 20s / 3 мин 20 с。
@@ -141,23 +125,6 @@ export function lastKnownPosition(points, t) {
     best = { x: p.x, y: p.y, timeSec: p.timeSec }
   }
   return best
-}
-
-/** 事件是否与录像者相关（随机战默认过滤；位置覆盖事件恒显示）。 */
-export function recorderRelated(event, recorderAccountId) {
-  if (event.type === 'POSITION_REPORTED' || event.type === 'POSITION_STALE') return true
-  if (recorderAccountId == null) return true
-  return event.accountId === recorderAccountId || event.targetAccountId === recorderAccountId
-}
-
-/** 事件是否涉及某阵营（团队视角默认过滤）。 */
-export function teamRelated(event, team, vehiclesByAccount) {
-  if (event.type === 'POSITION_REPORTED' || event.type === 'POSITION_STALE') return true
-  const a = vehiclesByAccount.get(event.accountId)
-  const b = vehiclesByAccount.get(event.targetAccountId)
-  // V2's backend-resolved friendly flag is the perspective authority. The
-  // numeric team is retained in the signature for legacy callers only.
-  return (a && a.friendly === true) || (b && b.friendly === true)
 }
 
 /**

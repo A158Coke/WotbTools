@@ -54,12 +54,18 @@ vi.mock('../vehicle-portraits/runtime.js', () => ({
   loadVehiclePortrait: vi.fn(async (tankId) => tankId === 2 ? '/portraits/2.webp' : null),
 }))
 
-function mountPlayback(overview = makeOverview(), seekTo = null, dataset = undefined) {
-  const finalDataset = dataset === undefined ? makePlaybackV2() : dataset
-  return mount(BattlePlayback, {
-    props: { overview, seekTo, playbackV2: finalDataset },
+function mountBattlePlayback(props) {
+  const wrapper = mount(BattlePlayback, {
+    props,
     global: { mocks: { $t: i18n.t } }
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
+}
+
+function mountPlayback(overview = makeOverview(), seekTo = null, dataset = undefined) {
+  const finalDataset = dataset === undefined ? makePlaybackV2() : dataset
+  return mountBattlePlayback({ overview, seekTo, playbackV2: finalDataset })
 }
 
 function trackOf(dataset, accountId) {
@@ -79,6 +85,7 @@ function setLife(dataset, accountId, timeSec) {
 }
 
 let rafCb
+const mountedWrappers = []
 
 function stubRaf() {
   vi.stubGlobal('requestAnimationFrame', (cb) => {
@@ -102,6 +109,7 @@ function enemyHudNum(wrapper) {
 
 describe('BattlePlayback', () => {
   afterEach(() => {
+    mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount())
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })
@@ -129,15 +137,13 @@ describe('BattlePlayback', () => {
       recorderAccountId: 1001,
       arenaBonusType: 1,
     }
-    const wrapper = mount(BattlePlayback, {
-      props: { overview: null, seekTo: null, playbackV2: v2Only },
-      global: { mocks: { $t: i18n.t } },
-    })
+    const wrapper = mountBattlePlayback({ overview: null, seekTo: null, playbackV2: v2Only })
     await flushPromises()
     expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
-    // recorder 存在时显示「全部事件」过滤器（来自 V2 recorderAccountId）
-    expect(wrapper.find('[data-test="pb-all-events"]').exists()).toBe(true)
+    // 事件面板默认折叠，事件事实仍保留在 playback owner 中。
+    expect(wrapper.find('[data-test="pb-event-panel"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-event-toggle"]').exists()).toBe(true)
   })
 
   it('seeks on seekTo and pauses', async () => {
@@ -149,10 +155,7 @@ describe('BattlePlayback', () => {
 
   it('drives marker + inspector from V2 canonical tracks (AC-10)', async () => {
     stubRaf()
-    const wrapper = mount(BattlePlayback, {
-      props: { overview: makeOverview(), playbackV2: makePlaybackV2(), seekTo: 30 },
-      global: { mocks: { $t: i18n.t } },
-    })
+    const wrapper = mountBattlePlayback({ overview: makeOverview(), playbackV2: makePlaybackV2(), seekTo: 30 })
     await flushPromises()
     // t=30：EnemyA 在 V2 中已 DESTROYED（lifeTransition 25s）→ 存在 destroyed marker
     // （legacy overview 里 EnemyA deathSec=null，因此 destroyed 只能来自 V2 lifeTransition，
@@ -173,17 +176,21 @@ describe('BattlePlayback', () => {
     expect(wrapper.text()).toContain('00:01 / 01:00')
   })
 
-  it('event markers open the per-second popup', async () => {
+  it('Event Panel is collapsed by default and event rows seek while paused', async () => {
     stubRaf()
     const wrapper = mountPlayback()
     await flushPromises()
-    const markers = wrapper.findAll('.pb-marker')
-    expect(markers.length).toBeGreaterThanOrEqual(3)
-    const damageMarker = markers.find(m => m.attributes('style').includes('20%'))
-    await damageMarker.trigger('click')
-    expect(wrapper.find('[data-test="pb-popup"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-event-panel"]').exists()).toBe(false)
+    expect(wrapper.findAll('.pb-progress .pb-marker')).toHaveLength(0)
+    await wrapper.find('[data-test="pb-event-toggle"]').trigger('click')
+    const events = wrapper.findAll('[data-test="pb-event"]')
+    expect(events).toHaveLength(1)
+    await events.find(event => event.text().includes('event_DAMAGE')).trigger('click')
+    expect(wrapper.find('[data-test="pb-event-panel"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('recon.map.playback.event_DAMAGE')
     expect(wrapper.text()).toContain('400')
+    expect(wrapper.find('.pb-time').text()).toContain('00:12 / 01:00')
+    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.play')
   })
 
   function gapOverview() {
@@ -228,13 +235,23 @@ describe('BattlePlayback', () => {
     expect(wrapper.text()).toContain('00:00 / 01:00')
   })
 
-  it('event marker click and prev/next jumps keep the player paused', async () => {
+  it('keyboard Space and arrows control playback without stealing input focus', async () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 11)
     await flushPromises()
-    await wrapper.find('[data-test="pb-next"]').trigger('click')
-    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.play')
-    expect(wrapper.text()).toContain('00:12 / 01:00')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    await flushPromises()
+    expect(wrapper.find('.pb-time').text()).toContain('00:16 / 01:00')
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.focus()
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.find('.pb-time').text()).toContain('00:16 / 01:00')
+    input.remove()
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ' }))
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.pause')
   })
 
   it('a single play click schedules exactly one RAF loop', async () => {
@@ -550,15 +567,14 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    const btn = wrapper.find('[data-test="pb-speed"]')
-    await btn.trigger('click')
-    expect(btn.text()).toBe('2×')
-    await btn.trigger('click')
-    expect(btn.text()).toBe('4×')
-    await btn.trigger('click')
-    expect(btn.text()).toBe('0.5×')
-    await btn.trigger('click')
-    expect(btn.text()).toBe('1×')
+    await wrapper.find('[data-test="pb-speed-2"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-speed-2"]').classes()).toContain('active')
+    await wrapper.find('[data-test="pb-speed-4"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-speed-4"]').classes()).toContain('active')
+    await wrapper.find('[data-test="pb-speed-0.5"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-speed-0.5"]').classes()).toContain('active')
+    await wrapper.find('[data-test="pb-speed-1"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-speed-1"]').classes()).toContain('active')
     // loop：seek 到接近末尾 → 播放 → 越过末尾自动回 0 继续
     await wrapper.setProps({ loop: true })
     const wrap = mountPlayback(makeOverview(), 59)
@@ -830,14 +846,14 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
     await wrapper.find('.pb-range').setValue(12)
-    await wrapper.find('[data-test="pb-speed"]').trigger('click') // 2×
+    await wrapper.find('[data-test="pb-speed-2"]').trigger('click') // 2×
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 }) // 选中
     for (let i = 0; i < 3; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 400, clientY: 300 })
     }
     await flushPromises()
     const timeBefore = wrapper.find('.pb-time').text()
-    const speedBefore = wrapper.find('[data-test="pb-speed"]').text()
+    const speedBefore = wrapper.find('.pb-speed .active').text()
     const infoBefore = wrapper.find('[data-test="pb-info"]').text()
     const viewportBefore = wrapper.find('[data-test="pb-viewport"]').attributes('style')
     // 进入
@@ -845,7 +861,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     document.dispatchEvent(new Event('fullscreenchange'))
     await flushPromises()
     expect(wrapper.find('.pb-time').text()).toBe(timeBefore)
-    expect(wrapper.find('[data-test="pb-speed"]').text()).toBe(speedBefore)
+    expect(wrapper.find('.pb-speed .active').text()).toBe(speedBefore)
     expect(wrapper.find('[data-test="pb-info"]').text()).toBe(infoBefore)
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toBe(viewportBefore)
     // 退出
@@ -853,7 +869,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     document.dispatchEvent(new Event('fullscreenchange'))
     await flushPromises()
     expect(wrapper.find('.pb-time').text()).toBe(timeBefore)
-    expect(wrapper.find('[data-test="pb-speed"]').text()).toBe(speedBefore)
+    expect(wrapper.find('.pb-speed .active').text()).toBe(speedBefore)
     expect(wrapper.find('[data-test="pb-info"]').text()).toBe(infoBefore)
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toBe(viewportBefore)
   })
@@ -1280,12 +1296,6 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     return clock
   }
 
-  function clickChip(wrapper, labelFragment) {
-    const chip = wrapper.findAll('.pb-chip').find((b) => b.text().includes(labelFragment))
-    if (!chip) throw new Error('chip not found: ' + labelFragment)
-    return chip.trigger('click')
-  }
-
   /** 从当前状态 dl 读 dt 对应 dd 文本（finalStats 分区不渲染时唯一）。 */
   function sidebarValue(wrapper, dtKey) {
     const dts = wrapper.findAll('.pb-sb-grid dt')
@@ -1299,7 +1309,7 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     return wrapper.findAll('.pb-sb-log li').map((li) => li.find('.pb-sb-log-time').text())
   }
 
-  it('B1-1 typeFilter：关闭 DAMAGE/KILL checkbox 后 deterministic stats 完全不变', async () => {
+  it('B1-1 Event Panel：真实事件与 deterministic stats 使用同一 authoritative source', async () => {
     stubRaf()
     const overview = makeOverview()
     const ds = makePlaybackV2()
@@ -1320,20 +1330,19 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('400')
     expect(sidebarValue(info, 'recon.map.playback.damage_received')).toBe('200')
     expect(sidebarValue(info, 'recon.map.playback.kills')).toBe('1')
-    // 关闭 DAMAGE checkbox → presentation 变化（事件标记减少），stats 完全不变
-    const markersBefore = wrapper.findAll('.pb-marker').length
-    await clickChip(wrapper, 'event_DAMAGE')
-    await flushPromises()
-    expect(wrapper.findAll('.pb-marker').length).toBeLessThan(markersBefore)
+    // 不再有事件过滤器或 timeline marker；面板只展示用户可读的战斗事件。
+    expect(wrapper.find('[data-test="pb-all-events"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-event-panel"]').exists()).toBe(false)
+    await wrapper.find('[data-test="pb-event-toggle"]').trigger('click')
+    expect(wrapper.findAll('[data-test="pb-event"]')).toHaveLength(3)
     info = wrapper.find('[data-test="pb-info"]')
     expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('400')
     expect(sidebarValue(info, 'recon.map.playback.damage_received')).toBe('200')
     expect(sidebarValue(info, 'recon.map.playback.kills')).toBe('1')
-    // 关闭 KILL checkbox → kills 仍不变
-    await clickChip(wrapper, 'event_KILL')
-    await flushPromises()
-    info = wrapper.find('[data-test="pb-info"]')
-    expect(sidebarValue(info, 'recon.map.playback.kills')).toBe('1')
+    const eventPanelText = wrapper.find('[data-test="pb-event-panel"]').text()
+    expect(eventPanelText).toContain('event_KILL')
+    expect(eventPanelText).not.toContain('event_POSITION_REPORTED')
+    expect(eventPanelText).not.toContain('event_POSITION_STALE')
   })
 
   it('B1-1 recorder/team scope：presentation scope 不截断 sidebar 当前统计（authoritative 全量）', async () => {
@@ -1352,10 +1361,10 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     await wrapper.find('[data-test="pb-marker-2001"]').trigger('click')
     let info = wrapper.find('[data-test="pb-info"]')
     expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('300')
-    // 该事件同时被 presentation scope 隐藏（无 15s 事件标记）——证明 stats 未被 scope 截断
-    const titles = wrapper.findAll('.pb-marker').map((m) => m.attributes('title') || '')
-    expect(titles.some((s) => s.includes('00:15'))).toBe(false)
-    // team scope（arenaBonusType=2）：2001→2002 双方均非 friendly team → presentation 过滤，stats 仍计入
+    // scope 已移除；真实事件面板保留该事件，不截断 authoritative stats。
+    await wrapper.find('[data-test="pb-event-toggle"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-event-panel"]').text()).toContain('00:15')
+    // team metadata 仍不影响真实事件与 stats。
     const overview2 = makeOverview()
     const ds2 = makePlaybackV2()
     ds2.arenaBonusType = 2
@@ -1368,11 +1377,11 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     await w2.find('[data-test="pb-marker-2001"]').trigger('click')
     info = w2.find('[data-test="pb-info"]')
     expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('300')
-    const titles2 = w2.findAll('.pb-marker').map((m) => m.attributes('title') || '')
-    expect(titles2.some((s) => s.includes('00:15'))).toBe(false)
+    await w2.find('[data-test="pb-event-toggle"]').trigger('click')
+    expect(w2.find('[data-test="pb-event-panel"]').text()).toContain('00:15')
   })
 
-  it('B1-1 combat feedback 不依赖列表过滤器：DAMAGE/KILL checkbox 关闭时播放跨过仍触发', async () => {
+  it('B1-1 combat feedback 不依赖 Event Panel 折叠状态：播放跨过仍触发', async () => {
     stubRaf()
     const clock = fakeClock()
     const overview = makeOverview()
@@ -1381,17 +1390,13 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     const wrapper = mountPlayback(overview, 11, ds)
     await flushPromises()
     Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
-    // 关闭 DAMAGE 与 KILL 的事件列表 checkbox
-    await clickChip(wrapper, 'event_DAMAGE')
-    await clickChip(wrapper, 'event_KILL')
-    await flushPromises()
     await wrapper.find('[data-test="pb-play"]').trigger('click')
     clock.now = 100
     rafCb(0)
     clock.now = 6000
     rafCb(6000) // +6s → t=17：跨过 DAMAGE@12 与 KILL@16
     await flushPromises()
-    // 即使事件列表 UI 不显示，combat feedback 仍按需求触发
+    // 即使事件面板折叠，combat feedback 仍按需求触发
     expect(wrapper.find('[data-test="pb-float-dmg"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-float-dmg"]').text()).toBe('-400')
     expect(wrapper.find('[data-test="pb-kill-feed"]').exists()).toBe(true)
