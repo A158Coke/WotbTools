@@ -25,36 +25,63 @@ function item(accountId, x, y, extra = {}) {
 
 describe('computeTankCollisionLayout', () => {
   const tank = (accountId, extra = {}) => ({ accountId, x: 100, y: 100, width: 32, height: 32, ...extra })
-  const box = (it, offset) => ({
-    x: it.x + offset.x - (it.width * 1.05) / 2,
-    y: it.y + offset.y - (it.height * 1.05) / 2,
-    w: it.width * 1.05,
-    h: it.height * 1.05,
-  })
-  const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x
-    && a.y < b.y + b.h && a.y + a.h > b.y
-  const expectPairwiseNonOverlap = (items, result) => {
-    const boxes = items.map(it => box(it, result.get(it.accountId)))
-    for (let i = 0; i < boxes.length; i += 1) {
-      for (let j = i + 1; j < boxes.length; j += 1) {
-        expect(overlaps(boxes[i], boxes[j])).toBe(false)
-      }
+  const expectBounded = (items, result, maxOffset = 10) => {
+    for (const it of items) {
+      const offset = result.get(it.accountId)
+      expect(Math.hypot(offset.x, offset.y)).toBeLessThanOrEqual(maxOffset)
+    }
+  }
+  const expectInside = (items, result, viewport) => {
+    for (const it of items) {
+      const offset = result.get(it.accountId)
+      expect(it.x + offset.x - it.width / 2).toBeGreaterThanOrEqual(viewport.x)
+      expect(it.y + offset.y - it.height / 2).toBeGreaterThanOrEqual(viewport.y)
+      expect(it.x + offset.x + it.width / 2).toBeLessThanOrEqual(viewport.x + viewport.w)
+      expect(it.y + offset.y + it.height / 2).toBeLessThanOrEqual(viewport.y + viewport.h)
     }
   }
 
-  it.each([3, 7, 14])('keeps %i dense model boxes pairwise non-overlapping', (count) => {
+  it.each([3, 7, 14])('keeps %i dense model offsets bounded and canonical coordinates untouched', (count) => {
     const items = Array.from({ length: count }, (_, i) => tank(i + 1))
     const result = computeTankCollisionLayout(items)
     expect(result.get(1)).toEqual({ x: 0, y: 0 })
-    expectPairwiseNonOverlap(items, result)
+    expectBounded(items, result)
+    expect(items.every(it => it.x === 100 && it.y === 100)).toBe(true)
   })
 
-  it('keeps canonical coordinates and hit-test anchors independent from presentation offsets', () => {
+  it('uses the smaller mobile offset budget and accepts residual model overlap', () => {
+    const items = Array.from({ length: 14 }, (_, i) => tank(i + 1))
+    const result = computeTankCollisionLayout(items, new Map(), null, { mobile: true })
+    expectBounded(items, result, 8)
+    const boxes = items.map((it) => {
+      const offset = result.get(it.accountId)
+      return { x: it.x + offset.x - it.width / 2, y: it.y + offset.y - it.height / 2, w: it.width, h: it.height }
+    })
+    const hasResidualOverlap = boxes.some((a, index) => boxes.slice(index + 1).some((b) => (
+      a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+    )))
+    expect(hasResidualOverlap).toBe(true)
+  })
+
+  it('uses a small soft offset for a light collision instead of forcing zero overlap', () => {
     const items = [tank(1), tank(2)]
     const result = computeTankCollisionLayout(items)
-    expect(items.map(({ x, y }) => ({ x, y }))).toEqual([{ x: 100, y: 100 }, { x: 100, y: 100 }])
     expect(result.get(1)).toEqual({ x: 0, y: 0 })
     expect(result.get(2)).not.toEqual({ x: 0, y: 0 })
+    expectBounded(items, result)
+    expect(items.map(({ x, y }) => ({ x, y }))).toEqual([{ x: 100, y: 100 }, { x: 100, y: 100 }])
+  })
+
+  it('does not let nickname, tank name, HP, or tag changes affect model layout', () => {
+    const items = [tank(1), tank(2)]
+    const decorated = items.map((it, index) => ({
+      ...it,
+      playerName: index === 0 ? 'A very long nickname' : 'B',
+      tankName: index === 0 ? 'A very long tank name' : 'B',
+      hpDisplayText: index === 0 ? '0' : '9999',
+      tag: index === 0 ? '[CLAN]' : undefined,
+    }))
+    expect(computeTankCollisionLayout(decorated)).toEqual(computeTankCollisionLayout(items))
   })
 
   it('gives selected vehicles priority and preserves non-selected offsets when possible', () => {
@@ -64,43 +91,45 @@ describe('computeTankCollisionLayout', () => {
     expect(result.get(1)).not.toEqual({ x: 0, y: 0 })
   })
 
-  it.each([1, 2, 4])('keeps model boxes non-overlapping across zoom scale %i and resize geometry', (scale) => {
+  it.each([1, 2, 4])('keeps model offsets bounded across zoom scale %i and resize geometry', (scale) => {
     const items = [
       tank(1, { width: 32 * scale, height: 28 * scale }),
       tank(2, { width: 38 * scale, height: 30 * scale }),
       tank(3, { width: 26 * scale, height: 34 * scale }),
     ]
     const result = computeTankCollisionLayout(items, new Map([[2, { x: 64, y: 0 }]]))
-    expectPairwiseNonOverlap(items, result)
+    expectBounded(items, result)
   })
 
   it.each([
-    ['left', 1, 8, 120, 320, 240],
-    ['right', 1, 312, 120, 320, 240],
-    ['top', 1, 160, 8, 320, 240],
-    ['bottom', 1, 160, 232, 320, 240],
-    ['left', 2, 16, 240, 640, 480],
-    ['right', 2, 624, 240, 640, 480],
-    ['top', 2, 320, 16, 640, 480],
-    ['bottom', 2, 320, 464, 640, 480],
-    ['left', 4, 32, 480, 1280, 960],
-    ['right', 4, 1248, 480, 1280, 960],
-    ['top', 4, 640, 32, 1280, 960],
-    ['bottom', 4, 640, 928, 1280, 960],
-  ])('keeps 14 model boxes inside the viewport at the %s edge and %ix zoom', (_edge, scale, x, y, w, h) => {
+    ['left', 1, 20, 120, 320, 240],
+    ['right', 1, 300, 120, 320, 240],
+    ['top', 1, 160, 20, 320, 240],
+    ['bottom', 1, 160, 220, 320, 240],
+    ['left', 2, 40, 240, 640, 480],
+    ['right', 2, 600, 240, 640, 480],
+    ['top', 2, 320, 40, 640, 480],
+    ['bottom', 2, 320, 440, 640, 480],
+    ['left', 4, 80, 480, 1280, 960],
+    ['right', 4, 1200, 480, 1280, 960],
+    ['top', 4, 640, 80, 1280, 960],
+    ['bottom', 4, 640, 880, 1280, 960],
+  ])('keeps 14 model offsets bounded at the %s edge and %ix zoom', (_edge, scale, x, y, w, h) => {
     const items = Array.from({ length: 14 }, (_, i) => tank(i + 1, {
       x, y, width: 32 * scale, height: 32 * scale,
     }))
     const viewport = { x: 0, y: 0, w, h }
     const result = computeTankCollisionLayout(items, new Map(), viewport)
-    expectPairwiseNonOverlap(items, result)
-    for (const it of items) {
-      const b = box(it, result.get(it.accountId))
-      expect(b.x).toBeGreaterThanOrEqual(0)
-      expect(b.y).toBeGreaterThanOrEqual(0)
-      expect(b.x + b.w).toBeLessThanOrEqual(viewport.w)
-      expect(b.y + b.h).toBeLessThanOrEqual(viewport.h)
-    }
+    expectBounded(items, result)
+    expectInside(items, result, viewport)
+  })
+
+  it('finds a non-grid bounded offset when an edge needs fractional correction', () => {
+    const items = [tank(1, { x: 0.5, y: 10, width: 19.6, height: 10 })]
+    const viewport = { x: 0, y: 0, w: 20, h: 20 }
+    const result = computeTankCollisionLayout(items, new Map(), viewport)
+    expect(result.get(1).x).toBeCloseTo(9.496)
+    expectInside(items, result, viewport)
   })
 
   it('uses a deterministic bounded fallback instead of throwing for an impossible viewport', () => {
@@ -116,7 +145,15 @@ describe('computeTankCollisionLayout', () => {
     const first = computeTankCollisionLayout(items, new Map(), { x: 0, y: 0, w: 320, h: 240 })
     const second = computeTankCollisionLayout(items, first, { x: 0, y: 0, w: 640, h: 480 })
     expect(second).toEqual(first)
-    expectPairwiseNonOverlap(items, second)
+    expectBounded(items, second)
+  })
+
+  it('reuses a valid previous offset when it does not create a new conflict', () => {
+    const items = [tank(1, { x: 100, y: 100 }), tank(2, { x: 220, y: 100 })]
+    const previous = new Map([[1, { x: 8, y: 0 }], [2, { x: -6, y: 0 }]])
+    const result = computeTankCollisionLayout(items, previous)
+    expect(result.get(1)).toEqual({ x: 8, y: 0 })
+    expect(result.get(2)).toEqual({ x: -6, y: 0 })
   })
 })
 

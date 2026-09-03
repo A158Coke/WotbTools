@@ -106,6 +106,16 @@ const genericTurretStyle = computed(() =>
 const overlayInv = computed(() =>
   Number.isFinite(st.value.overlayInverse) && st.value.overlayInverse > 0 ? st.value.overlayInverse : 1,
 )
+const hitboxStyle = computed(() => {
+  const size = st.value.hitTargetSize
+  if (size && Number.isFinite(size.width) && Number.isFinite(size.height)) {
+    return { width: `${size.width}px`, height: `${size.height}px` }
+  }
+  return {
+    width: Math.round((st.value.hitbox ? st.value.hitbox.w : 0.9) * 100) + '%',
+    height: Math.round((st.value.hitbox ? st.value.hitbox.h : 0.9) * 100) + '%',
+  }
+})
 // selected 三角 bottom（layout px）推导（B2 残余 + PR4 §27 label 块高度适配）：
 // - label 块：bottom anchor 2px；块高 = 显示行数 × 行高 + 块 padding（PR4 单行/双行自适应）；
 //   transform scale(inv) 绕中心 → 块顶边 screen = (2 + half)·s + half。
@@ -244,11 +254,12 @@ const hpClasses = computed(() => ({
     :data-test="`pb-marker-${st.vehicle.accountId}`"
     @click="emit('select', $event)"
   >
-    <!-- PR4 §36：hull hitbox（车体视觉范围 + 小 padding，随 marker 缩放；
-         按钮其余区域 pointer-events:none 不拦截点击，label/✕/三角/菱形均不可点） -->
+    <!-- Hull hit target follows the vehicle-aware marker box. It is slightly
+         larger than the visible model for touch usability, but is not part of
+         visual collision. -->
     <span
       class="pb-hitbox"
-      :style="{ width: Math.round((st.hitbox ? st.hitbox.w : 0.9) * 100) + '%', height: Math.round((st.hitbox ? st.hitbox.h : 0.9) * 100) + '%' }"
+      :style="hitboxStyle"
       aria-hidden="true"
     ></span>
     <!-- 车型视觉层容器：destroyed/last-known 的 opacity/grayscale/team 光晕精确作用于此处
@@ -433,8 +444,7 @@ const hpClasses = computed(() => ({
   inset: 0;
 }
 
-/* —— PR4 §36 hull hitbox：车体视觉范围 + 小 padding（inline 尺寸 % 随 marker 缩放）；
-   不含 gun overflow / 三角 / 菱形 / ✕ / label；destroyed/last-known 仍可点击（§36）—— */
+/* —— Hull hit target：略大于 vehicle-aware visible model，便于触控；不参与视觉碰撞。 —— */
 .pb-hitbox {
   position: absolute;
   left: 50%;

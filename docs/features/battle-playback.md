@@ -29,7 +29,7 @@ controls 的活动显示与淡出，不拥有 playback state。
 `utils/playbackClock.ts` 提供播放时间/倍速纯函数。拆分不新增数据源、不改变 V2 query-at-time、
 anti-future-leak 或现有 tank-marker 资产契约。
 
-### PR228 响应式展示契约
+### 响应式展示契约
 
 - Desktop（`>=1200px`）、Tablet（`768–1199px`）和 Mobile（`<768px`）共用同一套
   Universal Battle HUD：己方在左、权威比分/基地状态在中（无事实时不渲染占位符）、敌方在右；HP 的
@@ -161,13 +161,13 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     所有 wire 时间字段由 producer 保证为 finite 且 `[0, durationSec]`。
   - **双层坦克标记**：前端 `BattlePlayback.vue` 用 PR #72 四张运行时 PNG
     （`frontend/src/assets/tank-icons/tank-marker-{friendly,enemy}-{hull,turret}.png`，512×512
-    RGBA、共同 pivot 256,256）渲染 HTML overlay 标记（**PR3 增补：按钮约 36px，移动端 28px**
-    ——人工 QA 全局地图视角车型辨识度不足，约 +28%；按钮不再反缩放 → 坦克随地图同比缩放）：
+    RGBA、共同 pivot 256,256）渲染 HTML overlay 标记；marker 尺寸由
+    `utils/vehicleMarkerSizing.js` 集中计算：Tier X 优先使用模型 metadata 的真实 `hullBounds`，
+    其它车辆按 replay/tankopedia vehicle class fallback，桌面/移动端分别 clamp 在约 18–30px /
+    16–26px 的长边范围内，并保留投影后的车体长宽关系。按钮不反缩放 → 坦克随地图同比缩放：
     hull/turret img 放大到按钮 **134%** 并以共同 pivot 居中旋转
     （`translate(-50%,-50%) rotate(...)`）——generic 素材透明留白实测有效车体 bbox
-    ≈210×336/512（长边占 65.6%），dedicated hull.webp 车体长边 ≈88.1%（fit padding 0.88），
-    **134% = 0.881/0.656 使 generic 车体长边视觉与 dedicated 对齐**（36px 容器下均 ≈31.7px；
-    generic 车体宽 ≈19.8px、dedicated 按真实长宽比 ≈11–16px，宽体 icon 为素材固有比例）；
+    ≈210×336/512（长边占 65.6%），dedicated hull.webp 车体按自身模型盒渲染；
     放大地图不再显小；hull 层按 `hullYawDeg` 旋转、turret 层按
     `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；**阵营视觉**：整车 team outline+glow
     由 `VehicleMarker .pb-graphics` 双层 drop-shadow 表达（CSS vars `--pb-team-*/`--pb-enemy-*`，
@@ -192,10 +192,12 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     clock**——播放由 frame 刷新、暂停由轻量 RAF 继续推进，不依赖播放状态）隐藏/恢复（~120ms
     opacity fade-in，类保持完整生命周期不被下一次 resolve 取消）；PlayerName 盒从 final TankName
     盒推导（与共享 label 块整体位移一致）；zoom 结束由 computed
-    依赖 view.scale 自然重算；点击命中改为 hull hitbox（dedicated 90% / generic 58%×90% 盒比例，
-    随 marker 缩放，不含 gun overflow/label/三角/菱形/✕；destroyed/last-known 仍可点），重叠时
+    依赖 view.scale 自然重算；点击命中使用随 vehicle-aware marker 与 presentation offset 移动的
+    小幅扩展 hit target（不参与视觉碰撞，不含 gun overflow/label/三角/菱形/✕；destroyed/last-known 仍可点），重叠时
     取指针最近车辆、距离几乎一致且已选中则保持、否则 render order tie-break；倍速含 0.5×；
-    `loop` prop（QA 场景循环）。
+    `loop` prop（QA 场景循环）。Tank model collision 仅作用于 model box，使用 desktop 约 10px /
+     mobile 约 8px 的 soft bounded avoidance，以 overlap cost + minimal displacement + previous
+     layout stability 为目标；预算耗尽时接受 residual overlap，不改变 canonical position。
    - **全屏模式（原生 Fullscreen API）**：控制栏「⛶ 全屏 / 退出全屏」（i18n 三语 `enter_fullscreen`/`exit_fullscreen`）；
     全屏对象 = `.battle-playback` 根容器（地图 + 全部 controls + 标注 + 信息面板，不含页面 header/nav）；
     状态事实源 = `document.fullscreenElement` + `fullscreenchange`（ESC/浏览器 UI 退出立即同步，

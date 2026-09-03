@@ -31,12 +31,10 @@ export const DESTROYED_X_PX = 30
 /** Stable lane offsets in screen px. Never hide when all lanes overlap. */
 export const LABEL_LANES_PX = Object.freeze([0, -10, 10, -20])
 
-const TANK_COLLISION_PADDING = 1.05
-const TANK_COLLISION_GRID_STEP_PX = 12
-// Dense formations need more than the original three rings. This is the base
-// presentation-only search radius; a viewport-bound density radius may expand it
-// for large zoomed models without allowing unbounded drift.
-const TANK_COLLISION_MAX_OFFSET_PX = 192
+const TANK_COLLISION_PADDING = 1.02
+const TANK_COLLISION_GRID_STEP_PX = 2
+const TANK_COLLISION_MAX_OFFSET_DESKTOP_PX = 10
+const TANK_COLLISION_MAX_OFFSET_MOBILE_PX = 8
 
 function collisionBox(item, offset) {
   return {
@@ -57,22 +55,51 @@ function insideViewport(box, viewport) {
     && box.y + box.h <= bottom + 1e-6
 }
 
-function collisionOverlap(a, b) {
-  return a.x < b.x + b.w && a.x + a.w > b.x
-    && a.y < b.y + b.h && a.y + a.h > b.y
+function viewportOverflow(box, viewport) {
+  if (!viewport) return 0
+  const right = viewport.x + viewport.w
+  const bottom = viewport.y + viewport.h
+  return Math.max(0, viewport.x - box.x)
+    + Math.max(0, viewport.y - box.y)
+    + Math.max(0, box.x + box.w - right)
+    + Math.max(0, box.y + box.h - bottom)
+}
+
+function viewportCandidates(item, viewport) {
+  if (!viewport) return []
+  const minX = viewport.x + item.width / 2 - item.x
+  const maxX = viewport.x + viewport.w - item.width / 2 - item.x
+  const minY = viewport.y + item.height / 2 - item.y
+  const maxY = viewport.y + viewport.h - item.height / 2 - item.y
+  return [
+    { x: minX, y: 0 },
+    { x: maxX, y: 0 },
+    { x: 0, y: minY },
+    { x: 0, y: maxY },
+    { x: minX, y: minY },
+    { x: minX, y: maxY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+  ].filter(candidate => Number.isFinite(candidate.x) && Number.isFinite(candidate.y))
 }
 
 /**
- * Stable presentation-only tank geometry layout. The input coordinates are screen pixels;
- * returned offsets never mutate canonical positions. Selected and recorder vehicles are
- * placed first, and the previous offset is preferred to prevent seek/playback jitter.
+ * Soft, bounded presentation-only tank geometry layout. The input coordinates are screen
+ * pixels; returned offsets never mutate canonical positions. Model overlap is a cost, not
+ * a hard constraint: once the small offset budget is exhausted, residual overlap is kept
+ * rather than moving a marker away from its canonical position.
  */
-export function computeTankCollisionLayout(items, previous = new Map(), viewport = null) {
+export function computeTankCollisionLayout(items, previous = new Map(), viewport = null, options = {}) {
   if (!Array.isArray(items)) return new Map()
   const bounds = viewport && Number.isFinite(viewport.x) && Number.isFinite(viewport.y)
     && Number.isFinite(viewport.w) && viewport.w > 0
     && Number.isFinite(viewport.h) && viewport.h > 0
     ? viewport : null
+  const mobile = options?.mobile === true
+  const maxOffset = Number.isFinite(options?.maxOffsetPx) && options.maxOffsetPx >= 0
+    ? Math.min(options.maxOffsetPx, mobile ? TANK_COLLISION_MAX_OFFSET_MOBILE_PX : TANK_COLLISION_MAX_OFFSET_DESKTOP_PX)
+    : (mobile ? TANK_COLLISION_MAX_OFFSET_MOBILE_PX : TANK_COLLISION_MAX_OFFSET_DESKTOP_PX)
+  const withinOffset = (candidate) => Math.hypot(candidate.x, candidate.y) <= maxOffset + 1e-6
   const ordered = items.filter(item => item && item.accountId != null
     && Number.isFinite(item.x) && Number.isFinite(item.y)
     && Number.isFinite(item.width) && Number.isFinite(item.height))
@@ -83,20 +110,12 @@ export function computeTankCollisionLayout(items, previous = new Map(), viewport
     }))
     .sort((a, b) => (Number(Boolean(b.selected)) - Number(Boolean(a.selected)))
       || (Number(Boolean(b.recorder)) - Number(Boolean(a.recorder)))
-      || (a.y - b.y)
       || String(a.accountId).localeCompare(String(b.accountId)))
   const offsets = new Map()
   const placed = []
-  // Keep the candidate lattice fine enough for large zoomed models to find a
-  // non-overlapping placement inside the bounded search radius.
   const step = TANK_COLLISION_GRID_STEP_PX
-  const maxModelDimension = ordered.reduce((max, item) => Math.max(max, item.width, item.height), 0)
-  const densityRadius = maxModelDimension * Math.ceil(Math.sqrt(Math.max(1, ordered.length)))
-  const searchRadius = bounds
-    ? Math.min(Math.max(bounds.w, bounds.h), Math.max(TANK_COLLISION_MAX_OFFSET_PX, densityRadius))
-    : TANK_COLLISION_MAX_OFFSET_PX
   const candidates = [{ x: 0, y: 0 }]
-  const maxRing = Math.ceil(searchRadius / step)
+  const maxRing = Math.ceil(maxOffset / step)
   for (let ring = 1; ring <= maxRing; ring += 1) {
     for (let gridX = -ring; gridX <= ring; gridX += 1) {
       for (let gridY = -ring; gridY <= ring; gridY += 1) {
@@ -108,35 +127,51 @@ export function computeTankCollisionLayout(items, previous = new Map(), viewport
 
   for (const item of ordered) {
     const prior = previous instanceof Map ? previous.get(item.accountId) : null
-    const candidatesForItem = item.selected
-      ? candidates
-      : (prior && Number.isFinite(prior.x) && Number.isFinite(prior.y)
-        ? [{ x: prior.x, y: prior.y }, ...candidates]
-        : candidates)
+    const candidatesForItem = [
+      ...(prior && Number.isFinite(prior.x) && Number.isFinite(prior.y) && withinOffset(prior)
+        ? [prior]
+        : []),
+      ...viewportCandidates(item, bounds),
+      ...candidates,
+    ]
     let best = null
     let bestScore = Number.POSITIVE_INFINITY
     for (const candidate of candidatesForItem) {
-      if (Math.abs(candidate.x) > searchRadius || Math.abs(candidate.y) > searchRadius) continue
+      if (!withinOffset(candidate)) continue
       const box = collisionBox(item, candidate)
       if (!insideViewport(box, bounds)) continue
-      const overlap = placed.reduce((sum, other) => sum + (collisionOverlap(box, other.box) ? 1 : 0), 0)
-      if (overlap > 0) continue
-      const score = overlap * 1_000_000 + Math.hypot(candidate.x, candidate.y)
-        + (prior && candidate.x === prior.x && candidate.y === prior.y ? -0.25 : 0)
+      const overlap = placed.reduce((sum, other) => sum + overlapArea(box, other.box), 0)
+      const displacement = Math.hypot(candidate.x, candidate.y)
+      // Reuse a valid previous offset strongly enough to prevent frame-to-frame
+      // swapping; a meaningful overlap cost still wins over stale history.
+      const stability = prior && candidate.x === prior.x && candidate.y === prior.y ? -25 : 0
+      const score = overlap * 100 + displacement + stability
       if (score < bestScore) {
         bestScore = score
         best = candidate
-        if (prior && candidate.x === prior.x && candidate.y === prior.y) break
       }
     }
     if (!best) {
-      // A renderer must remain alive even for an impossible presentation layout.
-      // Keep the fallback deterministic and bounded; valid viewport candidates are
-      // preferred, while overlap is accepted only as the final bounded fallback.
+      // If the canonical point is too close to an already clipped viewport edge,
+      // retain the least-displaced valid position. For a physically impossible
+      // viewport/model combination, minimize overflow deterministically without
+      // expanding the offset budget or throwing from the renderer.
       best = candidatesForItem.find(candidate => {
-        if (Math.abs(candidate.x) > searchRadius || Math.abs(candidate.y) > searchRadius) return false
+        if (!withinOffset(candidate)) return false
         return insideViewport(collisionBox(item, candidate), bounds)
-      }) || { x: 0, y: 0 }
+      })
+      if (!best) {
+        best = candidatesForItem
+          .filter(withinOffset)
+          .map(candidate => ({
+            candidate,
+            overflow: viewportOverflow(collisionBox(item, candidate), bounds),
+            displacement: Math.hypot(candidate.x, candidate.y),
+          }))
+          .sort((a, b) => a.overflow - b.overflow || a.displacement - b.displacement
+            || a.candidate.x - b.candidate.x || a.candidate.y - b.candidate.y)[0]?.candidate
+          || { x: 0, y: 0 }
+      }
     }
     const offset = { x: best.x, y: best.y }
     const box = collisionBox(item, offset)

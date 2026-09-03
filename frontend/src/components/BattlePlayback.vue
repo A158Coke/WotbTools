@@ -41,6 +41,7 @@ import {
   victimFeedbackAllowedV2,
 } from '../utils/battlePlaybackV2'
 import { projectVehicleState } from '../utils/playbackVehicleState'
+import { computeVehicleMarkerSize } from '../utils/vehicleMarkerSizing'
 import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
 import {
   MARKER_CORE_PX,
@@ -1230,12 +1231,22 @@ const baseVehicleStates = computed(() => {
   return tracks
     .map(track => {
       const vehicle = track
+      const model = vehicleModel(track)
+      const mobile = typeof window !== 'undefined' && window.innerWidth < 768
+      const markerSize = computeVehicleMarkerSize(vehicle, {
+        model,
+        mapView: mapView.value,
+        mapWidthPx: mapWidth(),
+        mapHeightPx: mapHeight(),
+        mobile,
+      })
       return projectVehicleState({
       vehicle,
       track,
       time: currentTime.value,
       recorderAccountId: pbOverview.value.recorderAccountId,
-      model: vehicleModel(track),
+      model,
+      markerSize,
       // Unknown perspective keeps neutral CSS state; enemy assets are only a
       // visual fallback because the asset pack has no neutral hull/turret.
       hullImage: track.friendly === true ? friendlyHull : enemyHull,
@@ -1255,12 +1266,11 @@ const collisionOffsets = ref(new Map())
 watch(
   [baseVehicleStates, () => currentTime.value, () => view.scale, () => mapWidth(), () => mapHeight(), () => selectedAccountId.value],
   ([states]) => {
-    const markerCssSize = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || 32
     const items = states.map((state) => {
       const point = canonicalMarkerScreen(state)
       if (!point) return null
-      const width = markerCssSize * state.hitbox.w * view.scale
-      const height = markerCssSize * state.hitbox.h * view.scale
+      const width = state.markerSize.width * view.scale
+      const height = state.markerSize.height * view.scale
       return {
         accountId: state.vehicle.accountId,
         x: point.x,
@@ -1276,6 +1286,7 @@ watch(
       items,
       collisionOffsets.value,
       viewport.w > 0 && viewport.h > 0 ? viewport : null,
+      { mobile: typeof window !== 'undefined' && window.innerWidth < 768 },
     )
   },
   { immediate: true },
@@ -1289,6 +1300,8 @@ const vehicleStates = computed(() => baseVehicleStates.value.map((state) => {
     presentationOffset: offset,
     markerStyle: {
       ...state.markerStyle,
+      width: `${state.markerSize.width}px`,
+      height: `${state.markerSize.height}px`,
       left: `calc(${markerLeft(state.pos.x)} + ${offset.x / scale}px)`,
       top: `calc(${markerTop(state.pos.y)} + ${offset.y / scale}px)`,
     },
@@ -1380,10 +1393,8 @@ function selectAt(accountId, clientX, clientY) {
   const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
   const px = hasPoint ? clientX - rect.left : NaN
   const py = hasPoint ? clientY - rect.top : NaN
-  // §36 hitbox 尺寸（content px）：读取实际 marker 盒宽（CSS 32px desktop / 25px mobile，
-  // media query 生效于 viewport 变换前 → offsetWidth 即 content px）；测试环境无布局 → 回退 32
-  const markerBox = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || 32
-  // 命中判定：内容坐标（撤销 viewport 变换）落在 hull hitbox 内
+  // Hit-test uses the final vehicle-aware hit target and the same presentation offset
+  // used by the rendered marker. Selection still returns the canonical vehicle.
   const hitTest = (s) => {
     const cx = (px - view.tx) / view.scale
     const cy = (py - view.ty) / view.scale
@@ -1392,8 +1403,9 @@ function selectAt(accountId, clientX, clientY) {
     const offset = s.presentationOffset || { x: 0, y: 0 }
     const x = (mapView.value.toX(s.pos.x) / mapView.value.W) * W + offset.x / view.scale
     const y = (mapView.value.toY(s.pos.y) / mapView.value.H) * H + offset.y / view.scale
-    const hw = (markerBox * s.hitbox.w) / 2
-    const hh = (markerBox * s.hitbox.h) / 2
+    const hitTarget = s.hitTargetSize || s.markerSize?.hitTarget
+    const hw = (hitTarget?.width || 20) / 2
+    const hh = (hitTarget?.height || 20) / 2
     return Math.abs(cx - x) <= hw && Math.abs(cy - y) <= hh
   }
   let candidates
@@ -1516,8 +1528,8 @@ function floatTeamClass(friendly) {
 // ---- PR4 §32–§35：标签碰撞布局（纯函数；screen px；碰撞永不隐藏标签/HP）----
 // §21–§28 + PR #107 Blocker 1：碰撞基于真实 screen-space visual footprint。
 // 坐标空间（统一约定）：
-//   - marker core 本体在 viewport 内随地图缩放：屏幕尺寸 = CSS size（offsetWidth，36/28）
-//     × view.scale；coreSize 必须传这个**真实屏幕尺寸**，不得传 transform 前值。
+//   - marker core 本体在 viewport 内随地图缩放：每辆车的 vehicle-aware CSS footprint
+//     × view.scale；coreSize 仅作为 label 几何的代表值，不参与 model collision。
 //   - inverse-scaled 叠加层（selected 三角 / destroyed ✕ / recorder 菱形 / 名称 / HP HUD）
 //     用 scale(1/view.scale) 保持屏幕恒定，labelLayout 用屏幕恒定常量描述其盒。
 //   - viewport resize / fullscreen / mobile media query / zoom / 显示开关变化都会经
@@ -1525,10 +1537,12 @@ function floatTeamClass(friendly) {
 const labelLayout = computed(() => {
   const W = mapWidth()
   if (!W || mapView.value.W <= 0) return new Map()
-  // marker CSS layout size（transform 前；media query desktop 36 / mobile 28）
-  const markerCssSize = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || MARKER_CORE_PX
-  // 真实屏幕尺寸：随 viewport scale 缩放（Blocker 1：4× zoom → 144px 视觉、144px 碰撞）
-  const coreSize = markerCssSize * view.scale
+  // Label geometry remains screen-space and only needs a representative core size;
+  // the model collision solver above uses each vehicle's real display footprint.
+  const coreSize = Math.max(
+    ...vehicleStates.value.map((st) => Math.max(st.markerSize?.width || 0, st.markerSize?.height || 0)),
+    MARKER_CORE_PX,
+  )
   // HP HUD 真实渲染尺寸（.pb-hp-hud 屏幕恒定；测试环境无布局 → 回退 null 走 CSS 常量）。
   // PR #107 Blocker 4：querySelector 第一辆车的 HUD 只作测量基准——不同车辆的显示文本不同
   //（数字 vs —）可能影响宽度，labelLayout 侧再按每车 hpDisplayText 估算并取 max（保守覆盖全部状态）。
@@ -1822,18 +1836,17 @@ const mapStyle = computed(() => ({
   inset: 0;
   pointer-events: none;
 }
-/* Playback enhancement：车辆视觉尺寸相对旧版缩小约 11%，降低密集地图的遮挡——
-   desktop 36 → 32px / mobile 28 → 25px；zoom 契约不变（viewport 整体 scale，
-   车辆随地图缩放；name/✕/selected/recorder 继续 inverse-scale 保持屏幕尺寸）。 */
+/* Vehicle-aware sizing supplies the production width/height inline. These are
+   only safe defaults for isolated component rendering without a projected model. */
 .pb-vehicle {
   position: absolute;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   transform: translate(-50%, -50%);
   border: none;
   background: none;
   padding: 0;
-  /* PR4 §36：按钮本身不拦截点击，只有 .pb-hitbox（hull 范围）可点 */
+  /* The button itself does not intercept the map; only .pb-hitbox is clickable. */
   pointer-events: none;
 }
 @media (width < 768px) {
