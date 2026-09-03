@@ -68,8 +68,9 @@ function mountPlayback(overview = makeOverview(), seekTo = null, dataset = undef
   return mountBattlePlayback({ overview, seekTo, playbackV2: finalDataset })
 }
 
+// 左侧二级菜单：面板内容现在由左侧导航项（pb-rail-*）打开。
 async function openPanel(wrapper, name) {
-  const tab = wrapper.find(`[data-test="pb-panel-${name}"]`)
+  const tab = wrapper.find(`[data-test="pb-rail-${name}"]`)
   if (tab.attributes('aria-expanded') !== 'true') await tab.trigger('click')
   await flushPromises()
 }
@@ -147,9 +148,9 @@ describe('BattlePlayback', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
-    // 事件面板默认折叠，事件事实仍保留在 playback owner 中。
+    // 事件面板默认折叠（左侧二级菜单未打开），事件入口为左侧 pb-rail-events。
     expect(wrapper.find('[data-test="pb-event-panel"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="pb-panel-events"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-rail-events"]').exists()).toBe(true)
   })
 
   it('seeks on seekTo and pauses', async () => {
@@ -995,10 +996,13 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-rail-events"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-rail-annotation"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-rail-reset"]').exists()).toBe(true)
-    // 点击 rail battle → 打开 side panel
+    // 点击 rail battle → 左侧二级菜单显示战局内容
     await wrapper.find('[data-test="pb-rail-battle"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-panel-content-battle"]').exists()).toBe(true)
+    // 返回一级菜单
+    await wrapper.find('[data-test="pb-rail-back"]').trigger('click')
+    await flushPromises()
     // reset view 不改变回放状态
     const timeBefore = wrapper.find('.pb-time').text()
     await wrapper.find('[data-test="pb-rail-reset"]').trigger('click')
@@ -1006,19 +1010,21 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('.pb-time').text()).toBe(timeBefore)
   })
 
-  it('§3 Right Details：fullscreen 下默认展示用户引导提示（无需先选 panel，不重复 HUD 的战局摘要）', async () => {
+  it('§3 Right Details：右侧仅保留点击车辆后的详情；未选车辆时无战局/提示重复', async () => {
     stubRaf()
     stubFullscreenApi()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    // 非 fullscreen：无 panel 时不渲染 aside
-    expect(wrapper.find('[data-test="pb-side-panel-shell"] .pb-side-panel').exists()).toBe(false)
-    // 进入 fullscreen → Right Details persistent，默认显示引导提示（而非重复 HUD 已有的战局摘要）
+    // 右侧列存在（对称），但未选车辆时无详情/提示内容
+    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
+    // 进入 fullscreen + 点击车辆 → 右侧显示详情
     setFullscreen(wrapper.find('[data-test="battle-playback"]').element)
     document.dispatchEvent(new Event('fullscreenchange'))
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-side-panel-shell"] .pb-side-panel').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-panel-content-hint"]').exists()).toBe(true)
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
   })
 
   it('11/12/13：ResizeObserver 容器宽变化 → markerScreen/labelLayout 使用新尺寸（标签恒可见）', async () => {
