@@ -944,6 +944,46 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-info"]').text()).toBe(selBefore)
   })
 
+  it('§zoom：放大后再缩小能回到完整地图 fit（不再卡在 1x）', async () => {
+    stubRaf()
+    const getRoCb = stubResizeObserver()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const roCb = getRoCb()
+    expect(roCb).toBeTruthy()
+
+    const stageEl = wrapper.find('.pb-map-stage').element
+    Object.defineProperty(stageEl, 'clientHeight', { value: 900, configurable: true })
+    const mapEl = wrapper.find('[data-test="pb-map"]').element
+
+    const scaleOf = () => {
+      const st = wrapper.find('[data-test="pb-viewport"]').attributes('style') || ''
+      const m = st.match(/scale\(([\d.]+)\)/)
+      return m ? parseFloat(m[1]) : NaN
+    }
+
+    // 初始 fit：map 宽 1200、近方形(766×769)、stage 高 900 → fitScale < 1
+    roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])
+    await flushPromises()
+    const fitScale = scaleOf()
+    expect(fitScale).toBeGreaterThan(0)
+    expect(fitScale).toBeLessThan(1)
+
+    // 放大 3 步（deltaY<0）
+    for (let i = 0; i < 3; i++) {
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    }
+    await flushPromises()
+    expect(scaleOf()).toBeGreaterThan(fitScale)
+
+    // 缩小足够多步（deltaY>0）→ 回到 fitScale（缩放下限 = 完整地图 fit，不是 1x）
+    for (let i = 0; i < 20; i++) {
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: 120, clientX: 0, clientY: 0 })
+    }
+    await flushPromises()
+    expect(scaleOf()).toBeCloseTo(fitScale, 3)
+  })
+
   it('workspace Left Rail：buttons toggle panels; annotation/reset wired（§2）', async () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
