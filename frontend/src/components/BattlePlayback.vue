@@ -680,7 +680,8 @@ function screenPoint(clientX, clientY) {
 
 function onWheel(e) {
   const p = screenPoint(e.clientX, e.clientY)
-  applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP))
+  // 缩放下限 = 完整地图 fit scale：放大后再缩小能回到原始完整视图，不会卡在 1x。
+  applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, fitScale()))
 }
 
 function pinchInfo() {
@@ -747,7 +748,8 @@ function onPointerMove(e) {
     if (pinchStart.dist > 0 && dist > 0) {
       const next = zoomViewAt(
         { scale: pinchStart.scale, tx: pinchStart.tx, ty: pinchStart.ty },
-        pinchStart.anchorScreen.x, pinchStart.anchorScreen.y, dist / pinchStart.dist
+        pinchStart.anchorScreen.x, pinchStart.anchorScreen.y, dist / pinchStart.dist,
+        fitScale()
       )
       // 两指中点整体移动 = 屏幕平移（translate 单位为屏幕像素，直接加 client 位移）
       next.tx += mid.x - pinchStart.mid.x
@@ -809,6 +811,18 @@ function onViewportClick(e) {
   mobileOverlay.value?.reveal?.()
 }
 
+/** 完整地图视图（contain/fit）的 scale：把整张 rendered map 放进可见 stage 的最小缩放。
+ *  缩放下限（minScale）应为它——zoomed 后回到的就是它，避免「放大后再缩不回原样」。 */
+function fitScale() {
+  const stageW = mapWidth()
+  const stageH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const rect = mapRenderRect()
+  if (stageW > 0 && stageH > 0 && rect.width > 0 && rect.height > 0) {
+    return Math.min(stageW / rect.width, stageH / rect.height)
+  }
+  return 1
+}
+
 function resetView() {
   // Reset View：恢复「完整地图视图」——fit 整张 rendered map 到可见 stage 并居中
   //（cover 下地图大于 stage 时 fit 到 scale<1，恢复完整视野；不再只是 scale=1 复位）。
@@ -816,7 +830,7 @@ function resetView() {
   const stageH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
   const rect = mapRenderRect()
   if (stageW > 0 && stageH > 0 && rect.width > 0 && rect.height > 0) {
-    const scale = Math.min(stageW / rect.width, stageH / rect.height)
+    const scale = fitScale()
     const tx = (stageW - rect.width * scale) / 2
     const ty = (stageH - rect.height * scale) / 2
     applyView({ scale, tx, ty })
