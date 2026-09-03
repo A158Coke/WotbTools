@@ -1921,4 +1921,18 @@ describe('V2 HP regression (restored critical coverage)', () => {
     expect(info.text()).toContain('recon.map.playback.state_destroyed')
     expect(info.text()).toContain('00:25')
   })
+
+  it('队伍阵容：从 result 名单取，不依赖事件流（无位置的敌方也列出）', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    await openPanel(wrapper, 'team')
+    const friendly = wrapper.findAll('[data-test="pb-team-friendly"] li')
+    const enemy = wrapper.findAll('[data-test="pb-team-enemy"] li')
+    expect(friendly).toHaveLength(1)      // 仅 You/Maus（friendly roster）
+    expect(enemy).toHaveLength(2)          // EnemyA/T49 + NeverSeen：后者在 event 流中从无位置，但仍来自 result 名单
+    expect(friendly[0].text()).toContain('Maus')
+    expect(enemy[0].text()).toContain('T49')
+    expect(enemy[1].text()).toContain('NeverSeen')
+  })
 })
