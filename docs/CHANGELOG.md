@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Added
+- **Local Frontend → Production Backend / Keycloak 开发模式**：前端新增 `npm run dev:production-remote`，通过 Vite `/api` 开发代理连接生产站点，同时复用现有生产 Keycloak issuer 配置；开发 Topbar 显示非模态环境提示并提醒不要上传测试或敏感数据。普通 `npm run dev` 的本地后端代理保持不变。详见 `docs/frontend/local-production-dev.md`。
+
 ### Changed
 - **Battle Playback Event Panel presentation cleanup**：事件面板仅展示 `DAMAGE`、`KILL` 和 `DESTROYED`；`authoritativeEvents` 仍完整供播放状态、战斗反馈、炮线和统计使用，不改变 canonical 事件事实。
 - **Battle Playback UI hierarchy cleanup**：移除用户可见路线视图、路线筛选/图例与相关残留；时间轴改为无事件标记装饰，事件集中到默认折叠且可点击 seek 的 Event Panel；控制栏收敛为播放、±5 秒、0.5/1/2/4 倍速、Reset View 和 Fullscreen。保留后端 route aggregate 合同及真实事件、HP、选中状态。
