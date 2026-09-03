@@ -956,58 +956,61 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-info"]').text()).toBe(selBefore)
   })
 
-  it('§fullscreen-blackedge：mobile bottom controls(≈140) → 第一次进 fullscreen → bottom inset 归零 → fit 重算（无旧黑边）', async () => {
+  it('§safeInsets-contract：normal mobile controls hidden→bottom=0 不缩地图；fullscreen mobile controls visible→reserve content；content reflow→safe 更新', async () => {
     stubRaf()
     stubFullscreenApi()
+    stubMatchMedia({
+      '(pointer: coarse) and (max-width: 1200px)': true,
+      '(min-width: 1200px)': false,
+    })
     const getRoCb = stubResizeObserver()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
     const roCb = getRoCb()
     expect(roCb).toBeTruthy()
+    const root = wrapper.find('[data-test="battle-playback"]')
 
     const stageEl = wrapper.find('.pb-map-stage').element
     Object.defineProperty(stageEl, 'clientHeight', { value: 900, configurable: true })
     const mapEl = wrapper.find('[data-test="pb-map"]').element
-    // §safeInsets-DOM：mobile wrapper 是 position:absolute; inset:0（铺满地图），其 clientHeight=整张地图高度，
-    // 不是 controls 高度。真实 controls 高度在 .pb-mobile-overlay-content（≈140）。
-    const overlayContentEl = wrapper.find('.pb-mobile-overlay-content').element
-    Object.defineProperty(overlayContentEl, 'clientHeight', { value: 140, configurable: true })
-
+    // §safeInsets-DOM：真实 controls 高度在 .pb-mobile-overlay-content（wrapper 是 inset:0）。
+    const overlayEl = wrapper.find('.pb-mobile-overlay-content').element
     const scaleOf = () => {
       const st = wrapper.find('[data-test="pb-viewport"]').attributes('style') || ''
       const m = st.match(/scale\(([\d.]+)\)/)
       return m ? parseFloat(m[1]) : NaN
     }
 
-    // mobile（非 fullscreen、controls 在 bottom overlay）：bottom inset=140 → safeH=760 → 较小 fit
+    // --- normal mobile：controls 为 transient overlay（默认 opacity:0）。即使 content 高≠0，
+    //    因非 fullscreen → bottom=0 → 地图不为其留黑边（scale 不变）。 ---
+    Object.defineProperty(overlayEl, 'clientHeight', { value: 0, configurable: true })
     roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])
     await flushPromises()
-    const mobileScale = scaleOf()
+    const normalZero = scaleOf()
+    Object.defineProperty(overlayEl, 'clientHeight', { value: 140, configurable: true })
+    roCb([])
+    await flushPromises()
+    expect(scaleOf()).toBeCloseTo(normalZero, 6)
 
-    // 第一进 fullscreen：controls 搬到 Left Rail → bottom inset 归零（safeH=900）→ fit 变大（地图更大、无 140px 黑边）
-    setFullscreen(wrapper.find('[data-test="battle-playback"]').element)
+    // --- fullscreen mobile：controls 始终显示 → reserve bottom=140 → 更小 fit；
+    //    content 高改 0 → 不再 reserve → 更大 fit。 ---
+    setFullscreen(root.element)
     document.dispatchEvent(new Event('fullscreenchange'))
     await flushPromises()
     roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])
     await flushPromises()
-    const fsScale = scaleOf()
-    expect(fsScale).toBeGreaterThan(mobileScale)
-
-    // Reset View（fullscreen）应与当前 fit 一致：完整地图、无旧 bottom-controls safe inset 残留
-    await wrapper.find('[data-test="pb-rail-reset"]').trigger('click')
-    await flushPromises()
-    expect(scaleOf()).toBeCloseTo(fsScale, 3)
-
-    // 第二次进 fullscreen 一致（不累积布局误差）
-    setFullscreen(null)
-    document.dispatchEvent(new Event('fullscreenchange'))
-    await flushPromises()
-    setFullscreen(wrapper.find('[data-test="battle-playback"]').element)
-    document.dispatchEvent(new Event('fullscreenchange'))
-    await flushPromises()
+    const fsReserve = scaleOf()
+    Object.defineProperty(overlayEl, 'clientHeight', { value: 0, configurable: true })
     roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])
     await flushPromises()
-    expect(scaleOf()).toBeCloseTo(fsScale, 3)
+    const fsNoReserve = scaleOf()
+    expect(fsReserve).toBeLessThan(fsNoReserve)
+
+    // --- content reflow：fullscreen mobile content 高度变化 → safe 几何更新（200>140 → reserve 更多 → 更小 fit）。 ---
+    Object.defineProperty(overlayEl, 'clientHeight', { value: 200, configurable: true })
+    roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])
+    await flushPromises()
+    expect(scaleOf()).toBeLessThan(fsReserve)
   })
 
   it('§mobile-fullscreen-contract：手机 fullscreen + landscape（内宽>768）仍保持 mobile mode（bottom-overlay controls、无 rail/details）', async () => {
