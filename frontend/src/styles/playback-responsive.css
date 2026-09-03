@@ -100,6 +100,11 @@
   max-width: none;
   margin: 0;
 }
+/* §Playback 战局回放地图：
+   - 地图 PNG 已烘焙 6×6 格线/坐标标签/米色边框，前端不二次描边（隐藏 .pb-grid）；
+   - 边线用内嵌红色叠加（inset box-shadow，不占空间、不影响地图适配几何）。 */
+.battle-playback .pb-grid { display: none; }
+.battle-playback .pb-svg { box-shadow: inset 0 0 0 2px #e0301e; }
 
 .battle-playback .pb-map-stage > .pb-side-panel-shell {
   position: absolute;
