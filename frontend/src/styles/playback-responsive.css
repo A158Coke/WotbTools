@@ -262,6 +262,8 @@
     min-height: 0;
   }
   .battle-playback:not(:fullscreen) .pb-map-stage {
+    /* 大桌面（非 fullscreen）Workspace 高度有界：地图 contain-fit，避免超出页面。 */
+    height: min(calc(100vh - 170px), 850px);
     display: grid;
     grid-template-columns: minmax(0, 1fr) var(--pb-details-w);
     grid-template-rows: minmax(0, 1fr);
@@ -272,6 +274,11 @@
   .battle-playback:not(:fullscreen) .pb-main .pb-map {
     grid-column: 1;
     align-self: center;
+    justify-self: center;
+    width: auto;
+    height: 100%;
+    max-width: 100%;
+    aspect-ratio: var(--pb-map-ratio);
   }
   .battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell {
     position: static;
