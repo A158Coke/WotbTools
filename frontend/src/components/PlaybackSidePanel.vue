@@ -57,22 +57,28 @@ watch(() => props.panel, (panel, previousPanel) => {
       :class="{ 'pb-side-panel-persistent': props.persistent, 'pb-side-panel-overlay': !!props.panel }"
       :role="props.panel ? 'dialog' : undefined"
       :aria-modal="props.panel ? 'true' : undefined"
-      :aria-label="props.groups.find((group) => group.name === (props.panel || 'battle'))?.label"
+      :aria-label="props.panel ? (props.groups.find((group) => group.name === props.panel)?.label) : $t('recon.map.playback.panel_hint_title')"
     >
       <div class="pb-side-panel-head">
-        <strong>{{ props.groups.find((group) => group.name === (props.panel || 'battle'))?.label }}</strong>
+        <strong>{{ props.panel ? (props.groups.find((group) => group.name === props.panel)?.label) : $t('recon.map.playback.panel_hint_title') }}</strong>
         <button v-if="props.panel" ref="closeButton" type="button" class="pb-panel-close" data-test="pb-panel-close" :aria-label="$t('recon.map.playback.close')" @click="close">×</button>
       </div>
-      <section v-if="props.panel === 'battle' || (props.persistent && !props.panel)" data-test="pb-panel-content-battle"><slot name="battle" /></section>
+      <section v-if="props.panel === 'battle'" data-test="pb-panel-content-battle"><slot name="battle" /></section>
       <section v-else-if="props.panel === 'vehicle'" data-test="pb-panel-content-vehicle"><slot name="vehicle" /></section>
       <section v-else-if="props.panel === 'display'" data-test="pb-panel-content-display"><slot name="display" /></section>
       <section v-else-if="props.panel === 'events'" data-test="pb-panel-content-events"><slot name="events" /></section>
+      <!-- §3：persistent 列未选面板/车辆 → 用户引导提示，而非重复展示 HUD 已有的战局摘要 -->
+      <section v-else-if="props.persistent && !props.panel" data-test="pb-panel-content-hint" class="pb-side-panel-hint">
+        <p>{{ $t('recon.map.playback.panel_hint_body') }}</p>
+      </section>
     </aside>
   </div>
 </template>
 
 <style scoped>
 .pb-side-panel-shell { position: relative; z-index: 40; }
+.pb-side-panel-hint { display: grid; place-items: center; min-height: 140px; padding: 12px; text-align: center; color: var(--text-muted); font-size: .82rem; line-height: 1.5; }
+.pb-side-panel-hint p { margin: 0; max-width: 24ch; }
 .pb-panel-launcher { display: flex; flex-wrap: wrap; gap: 4px; }
 .pb-panel-tab, .pb-panel-close { min-height: 30px; border: 1px solid var(--border-ghost); border-radius: 5px; background: var(--bg-card2); color: var(--text-label); cursor: pointer; font: inherit; font-size: .76rem; padding: 3px 8px; }
 .pb-panel-tab.active { border-color: var(--accent); background: var(--accent); color: var(--bg); }

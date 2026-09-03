@@ -1369,6 +1369,8 @@
                 "panel_vehicle": "车辆",
                 "panel_display": "显示",
                 "panel_events": "事件",
+                "panel_hint_title": "提示",
+                "panel_hint_body": "点击地图上的车辆查看详情。",
                 "annotation": "标注",
                 "objective": "目标",
                 "base_status_neutral": "中立",

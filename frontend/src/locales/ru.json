@@ -1369,6 +1369,8 @@
                 "panel_vehicle": "Техника",
                 "panel_display": "Вид",
                 "panel_events": "События",
+                "panel_hint_title": "Подсказка",
+                "panel_hint_body": "Нажмите на машину на карте, чтобы увидеть детали.",
                 "annotation": "Пометки",
                 "objective": "Цель",
                 "base_status_neutral": "Нейтральная",
