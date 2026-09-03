@@ -35,7 +35,7 @@ const emit = defineEmits([
     <span class="pb-time" data-test="pb-time">{{ props.formatClock(props.currentTime) }} / {{ props.formatClock(props.duration) }}</span>
     <button type="button" class="pb-btn pb-secondary-btn" data-test="pb-panels" :aria-label="$t('recon.map.playback.panels')" @click="emit('toggle-panels')">☰</button>
     <button type="button" class="pb-btn pb-secondary-btn" data-test="pb-annotation" :aria-label="$t('recon.map.playback.annotation')" @click="emit('toggle-annotation')">✎</button>
-    <button type="button" class="pb-btn" data-test="pb-reset" :aria-label="$t('recon.map.playback.reset_view')" @click="emit('reset-view')">{{ $t('recon.map.playback.reset_view') }}</button>
+    <button type="button" class="pb-btn pb-reset" data-test="pb-reset" :aria-label="$t('recon.map.playback.reset_view')" @click="emit('reset-view')">{{ $t('recon.map.playback.reset_view') }}</button>
     <button v-if="props.fullscreenSupported" type="button" class="pb-btn pb-fullscreen-btn" data-test="pb-fullscreen" :aria-label="$t(props.isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')" @click="emit('toggle-fullscreen')">
       <span class="pb-icon pb-fullscreen-icon" aria-hidden="true"></span><span class="pb-control-label">{{ props.isFullscreen ? $t('recon.map.playback.exit_fullscreen') : $t('recon.map.playback.enter_fullscreen') }}</span>
     </button>
