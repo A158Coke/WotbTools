@@ -559,6 +559,8 @@ function onFullscreenChange() {
     orientationRequestToken += 1
     unlockOrientation()
   }
+  // §3：fullscreen enter/exit 后布局改变 → 下帧重新 fit（contain 居中，不超出/不上下挪动）。
+  nextTick(() => fitViewIfReady(true))
 }
 let orientationHintTimer = null
 function showOrientationHint() {
@@ -621,6 +623,8 @@ watch(() => mapEl.value, (el) => {
       if (e && e.contentRect) {
         mapSize.value = { w: e.contentRect.width, h: e.contentRect.height }
       }
+      // §3：首次可测量即 fit（contain 居中），作为默认视图。
+      fitViewIfReady()
     })
     mapResizeObserver.observe(el)
   }
@@ -813,6 +817,18 @@ function resetView() {
     return
   }
   applyView({ scale: 1, tx: 0, ty: 0 })
+}
+
+// §3：默认视图 = 完整地图 contain（fit 居中，固定大小，不超出/不上下挪动）。
+// 地图一旦可测量即 fit 一次；fullscreen enter/exit 重新 fit。缩放后仍可自由 pan/zoom。
+let fitInitialized = false
+function fitViewIfReady(force = false) {
+  if (!force && fitInitialized) return
+  const stageH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  if (mapWidth() > 0 && stageH > 0) {
+    resetView()
+    fitInitialized = true
+  }
 }
 
 // ---- 地图标注（临时纯前端：切视图/切文件即清空；几何一律存语义坐标） ----
