@@ -1067,9 +1067,10 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubFullscreenApi()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    // 右侧列存在（对称），但未选车辆时无详情/提示内容
+    // 右侧列存在（对称）；未选车辆时右侧为空壳：无详情、无战局 Summary、无提示
     expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-panel-content-battle"]').exists()).toBe(false)
     // 进入 fullscreen + 点击车辆 → 右侧显示详情
     setFullscreen(wrapper.find('[data-test="battle-playback"]').element)
     document.dispatchEvent(new Event('fullscreenchange'))
@@ -1077,6 +1078,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
     await flushPromises()
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-panel-content-battle"]').exists()).toBe(false)
   })
 
   it('11/12/13：ResizeObserver 容器宽变化 → markerScreen/labelLayout 使用新尺寸（标签恒可见）', async () => {
