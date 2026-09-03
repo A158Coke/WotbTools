@@ -9,6 +9,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.ValueCallback
@@ -44,6 +45,9 @@ class MainActivity : Activity() {
         private const val REPLAY_URL = BASE_URL + "?view=replay"
         private const val FILE_CHOOSER_REQUEST = 1001
         private const val BRIDGE_NAME = "WotbNative"
+
+        /** Auth navigation 诊断日志 tag。 */
+        private const val TAG = "WotbAuth"
 
         /** Native Bridge 唯一允许的调用 origin；绝不暴露给 Keycloak / IdP / 任意 frame。 */
         private val BRIDGE_ORIGINS = setOf(
@@ -176,17 +180,35 @@ class MainActivity : Activity() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-                inAuthFlow = AuthNavigationPolicy.decide(
-                    host = url?.let { Uri.parse(it).host },
-                    inAuthFlow = inAuthFlow
-                ).inAuthFlow
+                val host = url?.let { Uri.parse(it).host }
+                val before = inAuthFlow
+                val decision = AuthNavigationPolicy.decide(host, inAuthFlow)
+                inAuthFlow = decision.inAuthFlow
+                Log.d(
+                    TAG,
+                    "pageStart host=${host ?: "null"} action=${decision.action} " +
+                        "inAuthFlow=$before->$inAuthFlow mainFrame=true " +
+                        "source=${AuthNavigationPolicy.sourceCategory(host)}"
+                )
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 if (!request.isForMainFrame) return false
                 val host = request.url.host
+                val before = inAuthFlow
                 val decision = AuthNavigationPolicy.decide(host, inAuthFlow)
                 inAuthFlow = decision.inAuthFlow
+                val source = AuthNavigationPolicy.sourceCategory(host)
+                Log.d(
+                    TAG,
+                    "nav host=${host ?: "null"} action=${decision.action} " +
+                        "inAuthFlow=$before->$inAuthFlow mainFrame=true source=$source"
+                )
+                if (decision.action == AuthNavigationAction.AUTH_FAILURE) {
+                    // 未验证 host 进入 auth flow：阻断该导航并进入 auth-failure recovery。
+                    enterAuthFailureRecovery(host)
+                    return true
+                }
                 if (host == null) return false
                 if (decision.action != AuthNavigationAction.OPEN_EXTERNAL) return false
                 try {
@@ -273,6 +295,23 @@ class MainActivity : Activity() {
         webViewContainer.visibility = View.VISIBLE
         if (webView.url.isNullOrEmpty()) webView.loadUrl(entryUrl())
         else webView.reload()
+    }
+
+    /**
+     * auth transaction 失败恢复：退出 auth flow，不无限 reload、不停留在空白 WebView，
+     * 返回可操作的 WotBTools 首页并给出明确的「登录失败，请重试」提示。
+     * 仅此路径导航回首页；普通 WebView error（含任意 HTTP 500）保持既有行为，不触发本恢复。
+     */
+    private fun enterAuthFailureRecovery(reasonHost: String?) {
+        val wasInAuthFlow = inAuthFlow
+        inAuthFlow = false
+        Log.d(
+            TAG,
+            "auth-recovery host=${reasonHost ?: "null"} inAuthFlow=$wasInAuthFlow->false"
+        )
+        toast(getString(R.string.auth_login_failed_retry))
+        // 明确回首页，而不是 reload 当前（可能损坏的）auth URL，避免无限循环。
+        webView.loadUrl(BASE_URL)
     }
 
     private fun showNetworkGate() {
