@@ -258,6 +258,9 @@
 /* §mobile-contract：手机 fullscreen + landscape 保持 mobile playback mode：
    单列（HUD+Map 为主）、无永久 Left Rail/Right Details、controls 走 bottom overlay、details 走 sheet。 */
 .battle-playback:fullscreen.pb-device-mobile {
+  /* §details-token：mobile fullscreen 没有 persistent Right Details，必须把 --pb-details-w 归零，
+     否则依赖该 token 的 overlay（kill-feed / orientation-hint / annotation-surface）会为不存在的右栏留空间。 */
+  --pb-details-w: 0px;
   grid-template-columns: minmax(0, 1fr);
 }
 .battle-playback:fullscreen.pb-device-mobile .pb-left-rail { display: none; }
