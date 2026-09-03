@@ -322,6 +322,7 @@ function resetTransients(sec) {
   floatItems.value = []
   burstItems.value = []
   feedItems.value = []
+  feedShownAt.clear()
   ghostByAccount.clear()
   flashByAccount.clear()
 }
@@ -402,7 +403,12 @@ function consumeEvents(fromSec, toSec) {
 function hasPendingTransients(now) {
   if (transientsActive(floatItems.value, now).length) return true
   if (transientsActive(burstItems.value, now).length) return true
-  if (transientsActive(feedItems.value, now).length) return true
+  // Event Banner queue：以 shownAt 计时（activeFeed）。存在「排队等待」或「正在展示且未过期」的
+  // 条目都算 pending —— pause 下也要完整展示 4s 并自然消失（不能按 bornRealMs 判断 feed）。
+  if (feedItems.value.some(it => {
+    const s = feedShownAt.get(it.id)
+    return s == null || !Number.isFinite(it.durationMs) || now - s < it.durationMs
+  })) return true
   for (const g of ghostByAccount.values()) if (g.untilRealMs > now) return true
   for (const u of flashByAccount.values()) if (u > now) return true
   return false
@@ -507,6 +513,7 @@ let pauseRafId = null
 // ---- 地图视图缩放/平移：单一 transform 层保证地图/网格/炮线/标记严格对齐 ----
 const mapComponent = ref(null)
 const mapEl = computed(() => mapComponent.value?.mapEl || null)
+const mapStageEl = ref(null)
 // ---- 地图容器真实渲染尺寸（reactive）：fullscreen enter/exit / 窗口缩放等任何尺寸变化
 // 由 ResizeObserver 更新 → 依赖容器尺寸的 screen-space 布局（markerScreen/labelLayout/
 // hitbox/textInput）在新尺寸下重新计算；无 RO 环境（测试/旧浏览器）回退 clientWidth 读取。
@@ -626,11 +633,12 @@ let suppressClick = false
 let gestureMoved = false
 
 function applyView(next) {
-  const clamped = clampViewPan(
-    next,
-    mapWidth(),
-    mapHeight()
-  )
+  // stage = 可见 map-stage（visible viewport）；map = rendered map rect。
+  // pan bounds / reset fit 都以二者为据，而非 map 自身尺寸。
+  const stageW = mapWidth()
+  const stageH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const rect = mapRenderRect()
+  const clamped = clampViewPan(next, stageW, stageH, rect.width, rect.height)
   view.scale = clamped.scale
   view.tx = clamped.tx
   view.ty = clamped.ty
@@ -786,6 +794,18 @@ function onViewportClick(e) {
 }
 
 function resetView() {
+  // Reset View：恢复「完整地图视图」——fit 整张 rendered map 到可见 stage 并居中
+  //（cover 下地图大于 stage 时 fit 到 scale<1，恢复完整视野；不再只是 scale=1 复位）。
+  const stageW = mapWidth()
+  const stageH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const rect = mapRenderRect()
+  if (stageW > 0 && stageH > 0 && rect.width > 0 && rect.height > 0) {
+    const scale = Math.min(stageW / rect.width, stageH / rect.height)
+    const tx = (stageW - rect.width * scale) / 2
+    const ty = (stageH - rect.height * scale) / 2
+    applyView({ scale, tx, ty })
+    return
+  }
   applyView({ scale: 1, tx: 0, ty: 0 })
 }
 
@@ -1741,7 +1761,7 @@ const mapStyle = computed(() => ({
     </div>
 
     <div class="pb-main" data-test="pb-main">
-      <div class="pb-map-stage">
+      <div class="pb-map-stage" ref="mapStageEl">
         <BattleMap
           ref="mapComponent"
           :image="image"
