@@ -36,16 +36,29 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(body).toContain('height: 100vh')
     expect(body).toContain('overflow: hidden')
     expect(body).toContain('padding: 0')
+    expect(body).toContain('grid-template-columns: 64px 1fr')
     expect(body).not.toContain('grid-template-rows')
   })
 
-  it('pb-main and pb-map-stage fill the viewport as the primary surface', () => {
-    expect(ruleBody('.battle-playback:fullscreen .pb-main')).toContain('position: absolute')
-    expect(ruleBody('.battle-playback:fullscreen .pb-main')).toContain('inset: 0')
+  it('pb-main is the map-workspace column (grid col 2) and pb-map-stage fills it', () => {
+    const main = ruleBody('.battle-playback:fullscreen .pb-main')
+    expect(main).toContain('grid-column: 2')
+    expect(main).toContain('position: relative')
     const stage = ruleBody('.battle-playback:fullscreen .pb-map-stage')
     expect(stage).toContain('position: absolute')
     expect(stage).toContain('inset: 0')
     expect(stage).toContain('overflow: hidden')
+  })
+
+  it('Left Rail is fullscreen-only left column; Right Details docks right', () => {
+    expect(ruleBody('.battle-playback .pb-left-rail')).toContain('display: none')
+    const rail = ruleBody('.battle-playback:fullscreen .pb-left-rail')
+    expect(rail).toContain('grid-column: 1')
+    expect(rail).toContain('display: flex')
+    expect(ruleBody('.battle-playback:fullscreen .pb-rail-btn')).toContain('cursor: pointer')
+    const panel = ruleBody('.battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell .pb-side-panel')
+    expect(panel).toContain('position: absolute')
+    expect(panel).toContain('right: 0')
   })
 
   it('HUD is a top overlay that does not consume map layout height', () => {

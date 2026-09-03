@@ -1664,6 +1664,62 @@ const mapStyle = computed(() => ({
     />
 
     <!-- 地图是主视觉；控制条在桌面流式布局，移动端由首次触摸唤起。 -->
+    <!-- §2：Fullscreen Workspace —— Left Rail（fullscreen 下作为左列；普通页面隐藏） -->
+    <div class="pb-left-rail" data-test="pb-left-rail" aria-label="Playback workspace rail">
+      <button
+        type="button"
+        class="pb-rail-btn"
+        :class="{ active: activePanel === 'battle' }"
+        data-test="pb-rail-battle"
+        :aria-expanded="activePanel === 'battle'"
+        :title="$t('recon.map.playback.panel_battle')"
+        @click="activePanel = activePanel === 'battle' ? null : 'battle'"
+      >{{ $t('recon.map.playback.panel_battle') }}</button>
+      <button
+        type="button"
+        class="pb-rail-btn"
+        :class="{ active: activePanel === 'vehicle' }"
+        data-test="pb-rail-vehicle"
+        :aria-expanded="activePanel === 'vehicle'"
+        :title="$t('recon.map.playback.panel_vehicle')"
+        @click="activePanel = activePanel === 'vehicle' ? null : 'vehicle'"
+      >{{ $t('recon.map.playback.panel_vehicle') }}</button>
+      <button
+        type="button"
+        class="pb-rail-btn"
+        :class="{ active: activePanel === 'display' }"
+        data-test="pb-rail-display"
+        :aria-expanded="activePanel === 'display'"
+        :title="$t('recon.map.playback.panel_display')"
+        @click="activePanel = activePanel === 'display' ? null : 'display'"
+      >{{ $t('recon.map.playback.panel_display') }}</button>
+      <button
+        type="button"
+        class="pb-rail-btn"
+        :class="{ active: activePanel === 'events' }"
+        data-test="pb-rail-events"
+        :aria-expanded="activePanel === 'events'"
+        :title="$t('recon.map.playback.panel_events')"
+        @click="activePanel = activePanel === 'events' ? null : 'events'"
+      >{{ $t('recon.map.playback.panel_events') }}</button>
+      <button
+        type="button"
+        class="pb-rail-btn"
+        :class="{ active: annotationOpen }"
+        data-test="pb-rail-annotation"
+        :aria-expanded="annotationOpen"
+        :title="$t('recon.map.playback.annotation')"
+        @click="annotationOpen = !annotationOpen"
+      >{{ $t('recon.map.playback.annotation') }}</button>
+      <button
+        type="button"
+        class="pb-rail-btn"
+        data-test="pb-rail-reset"
+        :title="$t('recon.map.playback.reset_view')"
+        @click="resetView"
+      >{{ $t('recon.map.playback.reset_view') }}</button>
+    </div>
+
     <div class="pb-main" data-test="pb-main">
       <div class="pb-map-stage">
         <BattleMap

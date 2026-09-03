@@ -888,6 +888,28 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toBe(viewportBefore)
   })
 
+  it('workspace Left Rail：buttons toggle panels; annotation/reset wired（§2）', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    // rail 常驻 DOM（fullscreen 下才视觉显示为左列）；所有 rail 按钮存在
+    expect(wrapper.find('[data-test="pb-rail-battle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-rail-vehicle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-rail-display"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-rail-events"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-rail-annotation"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-rail-reset"]').exists()).toBe(true)
+    // 点击 rail battle → 打开 side panel
+    await wrapper.find('[data-test="pb-rail-battle"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(true)
+    // reset view 不改变回放状态
+    const timeBefore = wrapper.find('.pb-time').text()
+    await wrapper.find('[data-test="pb-rail-reset"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.pb-time').text()).toBe(timeBefore)
+  })
+
   it('11/12/13：ResizeObserver 容器宽变化 → markerScreen/labelLayout 使用新尺寸（标签恒可见）', async () => {
     stubRaf()
     const roCb = stubResizeObserver()
