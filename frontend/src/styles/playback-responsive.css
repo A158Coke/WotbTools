@@ -142,13 +142,12 @@
 }
 
 /* Map element：保持 canonical aspect（--pb-map-aspect / --pb-map-ratio）。全屏默认
-   contain（Reset View 回到完整地图）；地图本身可大于可视 viewport（zoom 后随
-   pan/zoom 裁剪）。绝不横向拉伸成 viewport 比例。 */
+   cover（fill 中央 workspace 宽度，宽屏不再出现两侧极宽 gutter；地图可大于可视 viewport，
+   随 pan/zoom 裁剪浏览）。绝不横向拉伸成 viewport 比例。 */
 .battle-playback:fullscreen .pb-main .pb-map {
   flex: 0 0 auto;
-  width: min(100%, calc(100vh * var(--pb-map-ratio, 1)));
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  max-width: none;
 }
 .battle-playback:fullscreen .pb-main .pb-map .pb-viewport {
   width: 100%;
