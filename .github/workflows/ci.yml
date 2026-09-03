@@ -227,11 +227,31 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import glob, json, yaml
+
+          # Panel links of type=dashboard + uid without a valid url crash the Grafana
+          # frontend (TypeError: Cannot read properties of undefined (reading 'replace')).
+          # Forbid this structure so the dashboard runtime stays stable.
+          def walk_dashboard_panels(node, where):
+              if not isinstance(node, dict):
+                  return
+              for link in node.get("links") or []:
+                  if isinstance(link, dict) and link.get("type") == "dashboard" and isinstance(link.get("uid"), str):
+                      url = link.get("url")
+                      if not isinstance(url, str) or not url.strip():
+                          raise SystemExit(
+                              f"{where}: panel link type=dashboard with uid but no valid url: {link}"
+                          )
+              for key in ("panels", "rows"):
+                  for i, child in enumerate(node.get(key) or []):
+                      walk_dashboard_panels(child, f"{where}.{key}[{i}]")
+
           for p in glob.glob("deploy/observability/grafana/provisioning/**/*.yml", recursive=True):
               yaml.safe_load(open(p, encoding="utf-8"))
           for p in glob.glob("deploy/observability/grafana/dashboards/*.json"):
               d = json.load(open(p, encoding="utf-8"))
               assert d.get("panels"), "empty dashboard " + p
+              for i, panel in enumerate(d.get("panels", [])):
+                  walk_dashboard_panels(panel, f"{p}::panels[{i}]")
           print("provisioning yml + dashboards json OK")
           PY
       - name: No host port mappings for observability/backend management

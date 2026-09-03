@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **生产 Grafana 看板 runtime crash**：移除 `WotBTools · Keycloak` 看板若干 panel 的非法 dashboard links（`type=dashboard + uid` 但缺失有效 `url`），该结构会触发 Grafana 前端 `TypeError: Cannot read properties of undefined (reading 'replace')`；并在 CI observability 校验中加入静态守卫，禁止此类 panel links 回归。
+
 ### Added
 - **Local Frontend → Production Backend / Keycloak 开发模式**：前端新增 `npm run dev:production-remote`，通过 Vite `/api` 开发代理连接生产站点，同时复用现有生产 Keycloak issuer 配置；开发 Topbar 显示非模态环境提示并提醒不要上传测试或敏感数据。普通 `npm run dev` 的本地后端代理保持不变。详见 `docs/frontend/local-production-dev.md`。
 
