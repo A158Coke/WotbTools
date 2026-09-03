@@ -2,8 +2,8 @@ import { positionCoveredAtV2, positionAtV2, orientationAtV2, lifeAt } from './ba
 import { screenRotation, turretWorldYawDeg } from './battlePlayback'
 
 type MarkerSize = {
-  width: number
-  height: number
+  renderBox: { width: number; height: number }
+  collisionFootprint: { width: number; height: number }
   hitTarget?: { width: number; height: number } | null
 }
 

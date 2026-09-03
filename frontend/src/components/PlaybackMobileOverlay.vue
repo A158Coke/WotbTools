@@ -1,32 +1,19 @@
 <script setup>
-import { onBeforeUnmount, ref } from 'vue'
+import { ref } from 'vue'
 
 defineOptions({ name: 'PlaybackMobileOverlay' })
 
 const open = ref(false)
-let hideTimer = null
-
-function clearHideTimer() {
-  if (hideTimer != null) clearTimeout(hideTimer)
-  hideTimer = null
-}
 
 function reveal() {
   open.value = true
-  clearHideTimer()
-  hideTimer = setTimeout(() => {
-    open.value = false
-    hideTimer = null
-  }, 3000)
 }
 
 function hide() {
-  clearHideTimer()
   open.value = false
 }
 
 defineExpose({ reveal, hide, open })
-onBeforeUnmount(clearHideTimer)
 </script>
 
 <template>

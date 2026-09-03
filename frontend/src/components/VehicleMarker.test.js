@@ -74,6 +74,19 @@ describe('generic（非 Tier X / fallback）', () => {
 })
 
 describe('dedicated turreted（嵌套 transform）', () => {
+  it('dedicated raster 只使用等比 square render box，不二次压缩 hull aspect', () => {
+    const w = mountMarker({
+      ...dedicatedMarker,
+      markerStyle: { ...dedicatedMarker.markerStyle, width: '24px', height: '24px' },
+    })
+    expect(w.find('button').attributes('style')).toContain('width: 24px')
+    expect(w.find('button').attributes('style')).toContain('height: 24px')
+    expect(w.find('.pb-hull-dedicated').attributes('style')).not.toContain('scaleX')
+    expect(w.find('.pb-hull-dedicated').attributes('style')).not.toContain('scaleY')
+    expect(w.find('.pb-turret-dedicated').attributes('style')).not.toContain('scaleX')
+    expect(w.find('.pb-turret-dedicated').attributes('style')).not.toContain('scaleY')
+  })
+
   it('hull 满盒绕中心旋转 + turret assembly 随 hull 移动 + 子层绕 image-local pivot 旋转 T-H', () => {
     const w = mountMarker(dedicatedMarker)
     const hull = w.find('.pb-hull-dedicated')

@@ -17,7 +17,7 @@
  *
  * 渲染路径：
  * - generic（marker.model == null）：现有通用 PNG 双层（共同 pivot 居中旋转，行为不变）；
- * - dedicated turreted：hull.webp 填满标记盒绕中心旋转 + turret assembly
+ * - dedicated turreted：hull.webp 填满等比 square render box 绕中心旋转 + turret assembly
  *   （父层 rotate(H) around 盒中心；子层按 turretRaster 百分比定位，绕 image-local
  *   pivot rotate(T-H)）——数学见 vehicle-models/pivot.js（marker*Transform）；
  * - dedicated turretless：仅 hull（gun/mantlet 已 bake 进 hull；无 fake turret layer）。
@@ -78,7 +78,7 @@ const turretImageStyle = computed(() => {
     raster: model.value.turretRaster,
   })
 })
-// hull 图片样式：dedicated 填满标记盒（0/0/100%/100%，绕盒中心 = 自身中心旋转）；
+// hull 图片样式：dedicated 填满等比 square render box（0/0/100%/100%，绕盒中心 = 自身中心旋转）；
 // generic 居中模式：scale 134%（PR3 增补重新校准——generic 素材车体 bbox ≈210×336/512
 // （长边 65.6%），dedicated hull.webp 车体长边 ≈88.1%（fit padding 0.88）；134% = 0.881/0.656
 // 使 generic 车体长边视觉与 dedicated 对齐（≈31.7px @36px box），img 物理尺寸略大于 box
@@ -266,7 +266,8 @@ const hpClasses = computed(() => ({
          （而非整个 button）——pb-death ✕ / pb-selected-mark / pb-recorder-badge / pb-labels
          是 button 直接子元素、在容器外，保持完整强度（parent opacity 无法被子元素抵消）。 -->
     <div class="pb-graphics">
-      <!-- dedicated turreted：hull 满盒 + turret assembly（父层绕盒中心 H，子层绕 image-local pivot T-H） -->
+      <!-- dedicated turreted：hull 填满等比 square render box + turret assembly
+           （父层绕盒中心 H，子层绕 image-local pivot T-H） -->
       <template v-if="isDedicated && isTurreted">
         <img
           v-if="hullDeg != null"
@@ -419,7 +420,7 @@ const hpClasses = computed(() => ({
 }
 .pb-hull { z-index: 1; }
 .pb-turret { z-index: 2; }
-/* dedicated hull：填满标记盒，绕盒中心（= 自身中心）旋转（rotate 由 inline style 提供） */
+/* dedicated hull：填满等比 square render box，绕盒中心（= 自身中心）旋转（rotate 由 inline style 提供） */
 .pb-hull-dedicated {
   position: absolute;
   left: 0;
