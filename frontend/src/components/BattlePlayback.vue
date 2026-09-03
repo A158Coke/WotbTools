@@ -854,14 +854,32 @@ function resetView() {
   applyView({ scale: 1, tx: 0, ty: 0 })
 }
 
-// §3：默认视图 = 完整地图 contain（fit 居中，固定大小，不超出/不上下挪动）。
-// 地图一旦可测量即 fit 一次；fullscreen enter/exit 重新 fit。缩放后仍可自由 pan/zoom。
+// §fullscreen-cover：全屏默认 cover（铺满安全区，无黑边；裁剪部分可 pan/重置找回）。
+// page mode 默认 contain（完整地图、有界高度）。
+function coverView() {
+  const stageW = mapWidth()
+  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const safe = safeInsets()
+  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
+  const rect = mapRenderRect()
+  if (stageW > 0 && safeH > 0 && rect.width > 0 && rect.height > 0) {
+    const scale = Math.max(stageW / rect.width, safeH / rect.height)
+    const tx = (stageW - rect.width * scale) / 2
+    const ty = (safeH - rect.height * scale) / 2
+    applyView({ scale, tx, ty })
+    return
+  }
+  applyView({ scale: 1, tx: 0, ty: 0 })
+}
+
+// §3：默认视图 —— fullscreen = cover（铺满无黑边）；page mode = contain（完整地图居中）。
 let fitInitialized = false
 function fitViewIfReady(force = false) {
   if (!force && fitInitialized) return
   const stageH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
   if (mapWidth() > 0 && stageH > 0) {
-    resetView()
+    if (isFullscreen.value) coverView()
+    else resetView()
     fitInitialized = true
   }
 }
