@@ -1577,14 +1577,14 @@ function selectAt(accountId, clientX, clientY) {
   mobileOverlay.value?.reveal?.()
 }
 
-// §队伍：双方阵容（按阵营分组），供左侧「队伍」二级展示。
+// §队伍阵容：从 result 全量名单（playbackV2.vehicles）取，不依赖回放事件流/vehicleStates。
 const teamVehicles = computed(() => {
+  const vehicles = props.playbackV2?.vehicles || []
   const friendly = []
   const enemy = []
-  for (const st of vehicleStates.value) {
-    const v = st.vehicle
-    if (v.friendly === true) friendly.push(st)
-    else if (v.friendly === false) enemy.push(st)
+  for (const v of vehicles) {
+    if (v.friendly === true) friendly.push(v)
+    else if (v.friendly === false) enemy.push(v)
   }
   return { friendly, enemy }
 })
@@ -1841,17 +1841,17 @@ const mapStyle = computed(() => ({
         <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
         <strong class="pb-team-head" data-test="pb-team-friendly-head">{{ $t('recon.map.playback.team_friendly') }}</strong>
         <ul class="pb-team-list" data-test="pb-team-friendly">
-          <li v-for="st in teamVehicles.friendly" :key="st.vehicle.accountId">
-            <span class="pb-team-tank">{{ st.vehicle.tankName || st.vehicle.tankId }}</span>
-            <span class="pb-team-player">{{ st.vehicle.playerName }}</span>
+          <li v-for="st in teamVehicles.friendly" :key="st.accountId">
+            <span class="pb-team-tank">{{ st.tankName || st.tankId }}</span>
+            <span class="pb-team-player">{{ st.playerName }}</span>
           </li>
           <li v-if="teamVehicles.friendly.length === 0" class="pb-team-empty">{{ $t('recon.map.playback.no_events') }}</li>
         </ul>
         <strong class="pb-team-head" data-test="pb-team-enemy-head">{{ $t('recon.map.playback.team_enemy') }}</strong>
         <ul class="pb-team-list" data-test="pb-team-enemy">
-          <li v-for="st in teamVehicles.enemy" :key="st.vehicle.accountId">
-            <span class="pb-team-tank">{{ st.vehicle.tankName || st.vehicle.tankId }}</span>
-            <span class="pb-team-player">{{ st.vehicle.playerName }}</span>
+          <li v-for="st in teamVehicles.enemy" :key="st.accountId">
+            <span class="pb-team-tank">{{ st.tankName || st.tankId }}</span>
+            <span class="pb-team-player">{{ st.playerName }}</span>
           </li>
           <li v-if="teamVehicles.enemy.length === 0" class="pb-team-empty">{{ $t('recon.map.playback.no_events') }}</li>
         </ul>
