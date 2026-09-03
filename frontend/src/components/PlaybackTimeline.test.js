@@ -17,7 +17,7 @@ describe('PlaybackTimeline', () => {
     expect(formatClock).not.toHaveBeenCalled()
   })
 
-  it('emits drag, seek, and jump events from native timeline interactions', async () => {
+  it('emits drag and seek events from native timeline interactions', async () => {
     const wrapper = mount(PlaybackTimeline, {
       props: { currentTime: 5, duration: 20 },
       global: { mocks: { $t: key => key } },
@@ -29,6 +29,5 @@ describe('PlaybackTimeline', () => {
 
     expect(wrapper.emitted('drag-start')).toHaveLength(1)
     expect(wrapper.emitted('seek')).toEqual([[12.5]])
-    expect(wrapper.emitted('jump')).toBeUndefined()
   })
 })

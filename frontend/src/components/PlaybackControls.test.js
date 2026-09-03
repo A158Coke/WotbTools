@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import PlaybackControls from './PlaybackControls.vue'
 
 const timelineStub = defineComponent({
-  emits: ['drag-start', 'seek', 'jump'],
+  emits: ['drag-start', 'seek'],
   setup(_, { emit }) {
     return () => h('div', { 'data-test': 'timeline-stub' }, [
       h('button', { 'data-test': 'timeline-seek', onClick: () => emit('seek', 17) }),
@@ -20,21 +20,8 @@ const props = () => ({
   speed: 1,
   currentTime: 12,
   duration: 60,
-  labelPrefs: { showPlayerName: false, showTankName: true },
-  hpPrefs: { showHp: true },
   fullscreenSupported: true,
   isFullscreen: false,
-  activeTool: null,
-  annotColors: ['#f00', '#0f0'],
-  annotColor: '#f00',
-  annotVisible: true,
-  annotWidthSlider: 2,
-  annotWidthMin: 1,
-  annotWidthMax: 10,
-  historyIndex: 1,
-  history: [{}],
-  canUndo: () => true,
-  canRedo: () => false,
   formatClock: sec => `00:${sec}`,
 })
 
@@ -61,28 +48,16 @@ describe('PlaybackControls', () => {
     expect(wrapper.emitted('toggle-fullscreen')).toHaveLength(1)
   })
 
-  it('keeps annotations separate from playback controls and forwards timeline events', async () => {
+  it('keeps panels and annotations as compact secondary actions and forwards timeline events', async () => {
     const wrapper = mountControls()
 
-    await wrapper.find('[data-test="pb-annot-arrow"]').trigger('click')
-    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
-    await wrapper.find('[data-test="pb-show-hp"]').setValue(false)
-    await wrapper.findAll('.pb-annot-color')[1].trigger('click')
-    await wrapper.find('.pb-annot-width input').setValue('5')
-    await wrapper.find('[data-test="pb-annot-undo"]').trigger('click')
-    await wrapper.find('[data-test="pb-annot-clear"]').trigger('click')
-    await wrapper.find('[data-test="pb-annot-toggle"]').trigger('click')
+    await wrapper.find('[data-test="pb-panels"]').trigger('click')
+    await wrapper.find('[data-test="pb-annotation"]').trigger('click')
     await wrapper.find('[data-test="timeline-drag"]').trigger('click')
     await wrapper.find('[data-test="timeline-seek"]').trigger('click')
 
-    expect(wrapper.emitted('toggle-tool')).toEqual([['arrow']])
-    expect(wrapper.emitted('update-label-pref')).toEqual([['showPlayerName', true]])
-    expect(wrapper.emitted('update-hp-pref')).toEqual([['showHp', false]])
-    expect(wrapper.emitted('set-annot-color')).toEqual([['#0f0']])
-    expect(wrapper.emitted('update:annot-width')).toEqual([[5]])
-    expect(wrapper.emitted('undo')).toHaveLength(1)
-    expect(wrapper.emitted('clear-annotations')).toHaveLength(1)
-    expect(wrapper.emitted('toggle-annotations')).toHaveLength(1)
+    expect(wrapper.emitted('toggle-panels')).toHaveLength(1)
+    expect(wrapper.emitted('toggle-annotation')).toHaveLength(1)
     expect(wrapper.emitted('drag-start')).toHaveLength(1)
     expect(wrapper.emitted('seek')).toEqual([[17]])
     expect(wrapper.find('.pb-filters').exists()).toBe(false)
