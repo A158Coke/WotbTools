@@ -399,6 +399,18 @@ describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
     expect(d.find('.pb-hitbox').attributes('style')).toContain('height: 90%')
   })
 
+  it('vehicle-aware marker uses the final expanded pixel hit target', () => {
+    const w = mount(VehicleMarker, {
+      props: {
+        marker: { ...genericMarker, markerSize: { width: 18, height: 26 }, hitTargetSize: { width: 22, height: 30 } },
+        selected: false,
+        label,
+      },
+    })
+    expect(w.find('.pb-hitbox').attributes('style')).toContain('width: 22px')
+    expect(w.find('.pb-hitbox').attributes('style')).toContain('height: 30px')
+  })
+
   it('select 事件带原生 event（§37 需要 clientX/Y）', async () => {
     const w = mount(VehicleMarker, { props: { marker: genericMarker, selected: false, label } })
     await w.find('button').trigger('click', { clientX: 10, clientY: 20 })

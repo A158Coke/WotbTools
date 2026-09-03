@@ -3,9 +3,9 @@
     "v": "2.12.69",
     "date": "2026-09-03",
     "tag": "chg",
-    "zh": "扩展战局回放：接入权威 A/B/C/D 基地状态，新增默认开启且可记忆的最近 2 秒车辆轨迹；全屏地图使用剩余空间，密集坦克标记会稳定避让；无真实点数或目标事实时不再显示占位符。",
-    "en": "Enhanced Battle Playback with authoritative A/B/C/D base status, a default-on persisted recent 2-second vehicle trail, remaining-space fullscreen maps, and stable dense-marker avoidance; unsupported points and objective facts no longer render placeholders.",
-    "ru": "Улучшено воспроизведение боя: добавлены достоверные состояния баз A/B/C/D, сохраняемый включённый по умолчанию след техники за последние 2 секунды, карта на оставшемся месте в полноэкранном режиме и стабильное разведение плотных маркеров; неподтверждённые очки и цели больше не показываются заглушками."
+    "zh": "扩展战局回放：接入权威 A/B/C/D 基地状态，新增默认开启且可记忆的最近 2 秒车辆轨迹；全屏地图使用剩余空间，坦克标记按车型真实大小关系显示并在小范围内稳定避让；无真实点数或目标事实时不再显示占位符。",
+    "en": "Enhanced Battle Playback with authoritative A/B/C/D base status, a default-on persisted recent 2-second vehicle trail, remaining-space fullscreen maps, vehicle-aware marker sizing, and small bounded dense-marker avoidance; unsupported points and objective facts no longer render placeholders.",
+    "ru": "Улучшено воспроизведение боя: добавлены достоверные состояния баз A/B/C/D, сохраняемый включённый по умолчанию след техники за последние 2 секунды, карта на оставшемся месте в полноэкранном режиме, размеры маркеров с учётом техники и небольшое ограниченное разведение плотных маркеров; неподтверждённые очки и цели больше не показываются заглушками."
   },
   {
     "v": "2.12.68",

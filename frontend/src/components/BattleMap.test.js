@@ -399,7 +399,7 @@ describe('vehicle marker presentation', () => {
     expect(wrapper.find('[data-test="pb-points-enemy"]').text()).toContain('280')
   })
 })
-describe('fixed-size vehicle markers', () => {
+describe('vehicle-aware vehicle markers', () => {
   function parseMarkerScale(style) {
     const m = style.match(/scale\(([-\d.]+)\)/)
     return m ? Number(m[1]) : null
@@ -546,7 +546,7 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     expect(imgs.length).toBe(2)
     for (const img of imgs) {
       const style = img.attributes('style')
-      expect(style).toContain('translate(-50%, -50%)') // 以素材共同 pivot 居中（131% 有效车体缩放）
+      expect(style).toContain('translate(-50%, -50%)') // 以素材共同 pivot 居中（vehicle-aware marker box）
       expect(style).toContain('rotate(')
     }
   })

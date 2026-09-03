@@ -1,6 +1,12 @@
 import { positionCoveredAtV2, positionAtV2, orientationAtV2, lifeAt } from './battlePlaybackV2'
 import { screenRotation, turretWorldYawDeg } from './battlePlayback'
 
+type MarkerSize = {
+  width: number
+  height: number
+  hitTarget?: { width: number; height: number } | null
+}
+
 const HULL_HITBOX = Object.freeze({
   dedicated: Object.freeze({ w: 0.9, h: 0.9 }),
   generic: Object.freeze({ w: 0.58, h: 0.9 }),
@@ -16,6 +22,7 @@ export function projectVehicleState({
   time,
   recorderAccountId,
   model,
+  markerSize = null as MarkerSize | null,
   hullImage,
   turretImage,
   markerLeft,
@@ -53,6 +60,7 @@ export function projectVehicleState({
     friendly,
     direction,
     model,
+    markerSize,
     hullImage,
     turretImage,
     hullScreenDeg: hullDeg,
@@ -63,6 +71,7 @@ export function projectVehicleState({
     playerName: vehicle.playerName || '',
     tankName: vehicle.tankName || String(vehicle.tankId),
     hitbox: model ? HULL_HITBOX.dedicated : HULL_HITBOX.generic,
+    hitTargetSize: markerSize?.hitTarget || null,
     ariaLabel: `${vehicle.playerName}: ${translate(destroyed ? 'recon.map.playback.state_destroyed' : (covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`,
     lastKnown: !covered,
   }

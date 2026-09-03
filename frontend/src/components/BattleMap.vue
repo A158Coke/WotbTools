@@ -147,7 +147,7 @@ defineExpose({ mapEl, textInputRef })
 .pb-viewport { position: relative; width: 100%; transform-origin: 0 0; touch-action: none; }
 .pb-svg { display: block; width: 100%; height: auto; border-radius: 4px; background: var(--bg-elevated); }
 .pb-markers { position: absolute; inset: 0; pointer-events: none; }
-.pb-vehicle { position: absolute; width: 32px; height: 32px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
+  .pb-vehicle { position: absolute; width: 30px; height: 30px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
 .pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.55)); stroke-width: 1; fill: none; }
 .pb-tracer, .pb-tracer-core { stroke-linecap: round; }
 .pb-trail { stroke-linecap: round; }

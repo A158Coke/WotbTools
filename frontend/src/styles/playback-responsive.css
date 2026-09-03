@@ -1,4 +1,4 @@
-/* PR228: map-first playback shell. The root owns state; this sheet owns layout across
+/* Map-first playback shell. The root owns state; this sheet owns layout across
    the map, controls overlay, annotation surface, and responsive panel layers. */
 .battle-playback {
   display: flex;
