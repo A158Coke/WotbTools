@@ -209,6 +209,25 @@ describe('marker 根元素（按钮）', () => {
     })
     expect(positionCurrentHealthLastKnown.find('[data-test="pb-hp-hud"]').classes()).toContain('pb-hp-lastknown')
   })
+
+  it('DESTROYED（lifeState）隐藏单车 HP number+bar；保留 ✕ / label / selected', async () => {
+    // ALIVE + known HP → 单车 HP HUD 可见
+    const alive = mountMarker({ ...genericMarker, destroyed: false })
+    await alive.setProps({ hp: { current: 800, pct: 80, destroyed: false, state: 'CURRENT', knowledge: 'CURRENT' } })
+    expect(alive.find('[data-test="pb-hp-hud"]').exists()).toBe(true)
+
+    // DESTROYED + HP=0 → 隐藏单车 HP（lifeState 权威，非 hp===0）
+    const dead0 = mountMarker({ ...genericMarker, destroyed: true })
+    await dead0.setProps({ hp: { current: 0, pct: 0, destroyed: true, state: 'DESTROYED' } })
+    expect(dead0.find('[data-test="pb-hp-hud"]').exists()).toBe(false)
+    expect(dead0.find('.pb-death').exists()).toBe(true)
+    expect(dead0.find('[data-test="pb-label-tank"]').exists()).toBe(true)
+
+    // DESTROYED + stale HP=500 → 仍隐藏单车 HP（不得因残留血量而重新显示）
+    const dead500 = mountMarker({ ...genericMarker, destroyed: true })
+    await dead500.setProps({ hp: { current: 500, pct: 50, destroyed: true, state: 'DESTROYED' } })
+    expect(dead500.find('[data-test="pb-hp-hud"]').exists()).toBe(false)
+  })
 })
 
 describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {

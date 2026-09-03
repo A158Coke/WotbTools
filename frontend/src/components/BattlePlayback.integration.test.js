@@ -1005,7 +1005,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     return clock
   }
 
-  it('§4/§5/§6 HP HUD：数字+bar 随 timeline 确定性重建；UNKNOWN 显示 —；destroyed 归零', async () => {
+  it('§4/§5/§6 HP HUD：数字+bar 随 timeline 确定性重建；UNKNOWN 显示 —；destroyed 隐藏单车 HP', async () => {
     stubRaf()
     const overview = makeOverview()
     const ds = makePlaybackV2()
@@ -1021,7 +1021,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     expect(hud.find('[data-test="pb-hp-num"]').text()).toBe('2600')
     const ehud = wrapper.find('[data-test="pb-marker-2001"]').find('[data-test="pb-hp-hud"]')
     expect(ehud.find('[data-test="pb-hp-num"]').text()).toBe('—')
-    // destroyed → 权威 0
+    // destroyed（lifeState）→ 隐藏单车 HP number+bar
     ds.vehicles[1].healthTransitions = [
       { timeSec: 0, currentHp: 2600, knowledge: 'CURRENT', displayCapacityHp: 2600, source: 'EXACT_BATTLE_EVENT' },
       { timeSec: 12, currentHp: 0, knowledge: 'CURRENT', displayCapacityHp: 2600, source: 'EXACT_BATTLE_EVENT' },
@@ -1029,7 +1029,9 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     ds.vehicles[1].lifeTransitions = [{ timeSec: 12, lifeState: 'DESTROYED', destroyedKnownAtSec: 12 }]
     const w2 = mountPlayback(overview, 15, ds)
     await flushPromises()
-    expect(w2.find('[data-test="pb-marker-2001"]').find('[data-test="pb-hp-num"]').text()).toBe('0')
+    // §18/§19：DESTROYED（lifeState）隐藏单车 HP，不得靠 hp===0 归零展示
+    expect(w2.find('[data-test="pb-marker-2001"]').find('[data-test="pb-hp-hud"]').exists()).toBe(false)
+    expect(w2.find('[data-test="pb-marker-2001"]').find('.pb-death').exists()).toBe(true)
   })
 
   it('§4.3 HP HUD 开关：默认开启、localStorage 持久化、关闭隐藏数字/bar/ghost', async () => {
@@ -1705,14 +1707,15 @@ describe('V2 HP regression (restored critical coverage)', () => {
     expect(detailsHpNum(w.find('[data-test="pb-info"]'))).toBe('600')
   })
 
-  it('destroyed：标记归零 + Details 显示 0 与 destroyed_at', async () => {
+  it('destroyed：隐藏单车 HP + Details 显示 0 与 destroyed_at', async () => {
     const ds = makePlaybackV2()
     ds.vehicles[1].lifeTransitions = [{ timeSec: 25, lifeState: 'DESTROYED', destroyedKnownAtSec: 25 }]
     const w = mountV2(30, ds)
     await flushPromises()
-    // marker 阵亡 → 0
-    expect(enemyHudNum(w)).toBe('0')
-    expect(w.find('[data-test="pb-marker-2001"] .pb-hp-fill').attributes('style')).toContain('0%')
+    // marker 阵亡（lifeState）→ 隐藏单车 HP number+bar（§18/§19）
+    expect(w.find('[data-test="pb-marker-2001"]').find('[data-test="pb-hp-hud"]').exists()).toBe(false)
+    expect(w.find('[data-test="pb-marker-2001"] .pb-hp-fill').exists()).toBe(false)
+    expect(w.find('[data-test="pb-marker-2001"]').find('.pb-death').exists()).toBe(true)
     // Details HP → 0；destroyed_at → 00:25
     await w.find('[data-test="pb-marker-2001"]').trigger('click')
     await flushPromises()
