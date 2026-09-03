@@ -10,7 +10,6 @@ import AnnotationToolbar from './AnnotationToolbar.vue'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import PlaybackControls from './PlaybackControls.vue'
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
-import PlaybackSidePanel from './PlaybackSidePanel.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
 import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
@@ -1551,7 +1550,8 @@ function selectAt(accountId, clientX, clientY) {
   }
   // PR5 §8.1：点击 marker 恒选中/直接切换（不 toggle-off）；点击空白不关闭；必须 × 显式关闭
   selectedAccountId.value = best.vehicle.accountId
-  activePanel.value = 'vehicle'
+  // §右侧 only 车辆详情：不再开左侧 vehicle 二级，右侧由 selectedState 驱动。
+  activePanel.value = null
   mobileOverlay.value?.reveal?.()
 }
 
@@ -1777,26 +1777,96 @@ const mapStyle = computed(() => ({
     <!-- 地图是主视觉；控制条在桌面流式布局，移动端由首次触摸唤起。 -->
     <!-- §2：Fullscreen Workspace —— Left Rail（fullscreen 下作为左列；普通页面隐藏） -->
     <div class="pb-left-rail" data-test="pb-left-rail" aria-label="Playback workspace rail">
-      <PlaybackControls
-        v-if="isFullscreen || wideLayout"
-        :playing="playing"
-        :speed="speed"
-        :current-time="currentTime"
-        :duration="duration"
-        :fullscreen-supported="fullscreenSupported"
-        :is-fullscreen="isFullscreen"
-        :rail-visible="isFullscreen || wideLayout"
-        :format-clock="formatClock"
-        @toggle-play="togglePlay"
-        @step="step"
-        @set-speed="setSpeed"
-        @reset-view="resetView"
-        @toggle-fullscreen="toggleFullscreen"
-        @toggle-panels="activePanel = activePanel ? null : 'battle'"
-        @toggle-annotation="annotationOpen = !annotationOpen"
-        @drag-start="dragStart"
-        @seek="seek"
-      />
+      <!-- §二级菜单：左侧展开对应内容，带返回按钮（不占右侧 details panel） -->
+      <template v-if="annotationOpen">
+        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="annotationOpen = false">← {{ $t('recon.map.playback.back') }}</button>
+        <AnnotationToolbar
+          :open="true"
+          :active-tool="activeTool"
+          :annot-colors="ANNOT_COLORS"
+          :annot-color="annotColor"
+          :annot-visible="annotVisible"
+          :annot-width-slider="annotWidthSlider"
+          :annot-width-min="ANNOT_WIDTH_MIN"
+          :annot-width-max="ANNOT_WIDTH_MAX"
+          :history-index="historyIndex"
+          :history="history"
+          :can-undo="canUndo"
+          :can-redo="canRedo"
+          @close="annotationOpen = false"
+          @toggle-tool="toggleTool"
+          @set-annot-color="annotColor = $event"
+          @update:annot-width="annotWidthSlider = $event"
+          @undo="undoAnnot"
+          @redo="redoAnnot"
+          @clear-annotations="clearAll"
+          @toggle-annotations="annotVisible = !annotVisible"
+        />
+      </template>
+      <template v-else-if="activePanel === 'battle'">
+        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
+        <dl class="pb-panel-facts" data-test="pb-panel-content-battle">
+          <dt>{{ $t('recon.map.playback.team_friendly') }}</dt>
+          <dd>{{ hpValueText(friendlyHp) }}</dd>
+          <dt>{{ $t('recon.map.playback.team_enemy') }}</dt>
+          <dd>{{ hpValueText(enemyHp) }}</dd>
+          <dt v-if="friendlyPoints != null || enemyPoints != null">{{ $t('recon.map.playback.points') }}</dt>
+          <dd v-if="friendlyPoints != null || enemyPoints != null">{{ [friendlyPoints, enemyPoints].filter(value => value != null).join(' : ') }}</dd>
+          <dt>{{ $t('recon.map.playback.kills') }}</dt>
+          <dd data-test="pb-panel-kills">{{ friendlyKills }} : {{ enemyKills }}</dd>
+          <dt v-if="baseStatesAt.length">{{ $t('recon.map.playback.objective') }}</dt>
+          <dd v-if="baseStatesAt.length" data-test="pb-panel-objective">{{ baseStatesAt.map(state => state.baseId).join(' · ') }}</dd>
+        </dl>
+      </template>
+      <template v-else-if="activePanel === 'display'">
+        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
+        <div class="pb-panel-options" data-test="pb-panel-content-display">
+          <label><input data-test="pb-show-player" type="checkbox" :checked="labelPrefs.showPlayerName" @change="labelPrefs.showPlayerName = $event.target.checked"> {{ $t('recon.map.playback.show_player_name') }}</label>
+          <label><input data-test="pb-show-tank" type="checkbox" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ $t('recon.map.playback.show_tank_name') }}</label>
+          <label><input data-test="pb-show-hp" type="checkbox" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ $t('recon.map.playback.show_hp') }}</label>
+          <label><input data-test="pb-show-trail" type="checkbox" :checked="trailPrefs.showTrail" @change="trailPrefs.showTrail = $event.target.checked"> {{ $t('recon.map.playback.show_trail_2s') }}</label>
+        </div>
+      </template>
+      <template v-else-if="activePanel === 'events'">
+        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
+        <div class="pb-event-list" data-test="pb-event-panel">
+          <button
+            v-for="(event, index) in userVisibleEvents"
+            :key="`${event.type}-${event.timeSec}-${index}`"
+            type="button"
+            class="pb-event-row"
+            data-test="pb-event"
+            @click="seekToEvent(event.timeSec)"
+          >
+            <span class="pb-event-time">{{ formatClock(event.timeSec) }}</span>
+            <span class="pb-event-type">{{ $t(`recon.map.playback.event_${event.type}`) }}</span>
+            <span>{{ eventLabel(event) }}</span>
+          </button>
+          <p v-if="userVisibleEvents.length === 0" class="pb-event-empty">{{ $t('recon.map.playback.no_events') }}</p>
+        </div>
+      </template>
+      <!-- 一级菜单：播放控制 + 导航 -->
+      <template v-else>
+        <PlaybackControls
+          v-if="isFullscreen || wideLayout"
+          :playing="playing"
+          :speed="speed"
+          :current-time="currentTime"
+          :duration="duration"
+          :fullscreen-supported="fullscreenSupported"
+          :is-fullscreen="isFullscreen"
+          :rail-visible="isFullscreen || wideLayout"
+          :format-clock="formatClock"
+          @toggle-play="togglePlay"
+          @step="step"
+          @set-speed="setSpeed"
+          @reset-view="resetView"
+          @toggle-fullscreen="toggleFullscreen"
+          @toggle-panels="activePanel = activePanel ? null : 'battle'"
+          @toggle-annotation="annotationOpen = !annotationOpen"
+          @drag-start="dragStart"
+          @seek="seek"
+        />
       <button
         type="button"
         class="pb-rail-btn"
@@ -1810,12 +1880,12 @@ const mapStyle = computed(() => ({
       <button
         type="button"
         class="pb-rail-btn"
-        :class="{ active: activePanel === 'vehicle' }"
+        :class="{ active: selectedState != null }"
         data-test="pb-rail-vehicle"
-        :aria-expanded="activePanel === 'vehicle'"
+        :aria-expanded="selectedState != null"
         :title="$t('recon.map.playback.panel_vehicle')"
         :aria-label="$t('recon.map.playback.panel_vehicle')"
-        @click="activePanel = activePanel === 'vehicle' ? null : 'vehicle'"
+        @click="activePanel = null; selectedAccountId = selectedAccountId"
       ><span class="pb-rail-glyph">▣</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_vehicle') }}</span></button>
       <button
         type="button"
@@ -1864,6 +1934,7 @@ const mapStyle = computed(() => ({
         :aria-label="$t('recon.map.playback.reset_view')"
         @click="resetView"
       ><span class="pb-rail-glyph">↺</span><span class="pb-rail-label">{{ $t('recon.map.playback.reset_view') }}</span></button>
+      </template>
     </div>
 
     <div class="pb-main" data-test="pb-main">
@@ -1909,68 +1980,23 @@ const mapStyle = computed(() => ({
           @cancel-text="cancelSession"
         />
 
-        <PlaybackSidePanel
-          :panel="activePanel"
-          :groups="panelGroups"
-          :persistent="isFullscreen || wideLayout"
-          @update:panel="activePanel = $event"
-          @close="closePanel"
-        >
-          <template #battle>
-            <dl class="pb-panel-facts">
-              <dt>{{ $t('recon.map.playback.team_friendly') }}</dt>
-              <dd>{{ hpValueText(friendlyHp) }}</dd>
-              <dt>{{ $t('recon.map.playback.team_enemy') }}</dt>
-              <dd>{{ hpValueText(enemyHp) }}</dd>
-              <dt v-if="friendlyPoints != null || enemyPoints != null">{{ $t('recon.map.playback.points') }}</dt>
-              <dd v-if="friendlyPoints != null || enemyPoints != null">{{ [friendlyPoints, enemyPoints].filter(value => value != null).join(' : ') }}</dd>
-              <dt>{{ $t('recon.map.playback.kills') }}</dt>
-              <dd data-test="pb-panel-kills">{{ friendlyKills }} : {{ enemyKills }}</dd>
-              <dt v-if="baseStatesAt.length">{{ $t('recon.map.playback.objective') }}</dt>
-              <dd v-if="baseStatesAt.length" data-test="pb-panel-objective">{{ baseStatesAt.map(state => state.baseId).join(' · ') }}</dd>
-            </dl>
-          </template>
-          <template #vehicle>
-            <VehicleDetailsPanel
-              :selected-state="selectedState"
-              :selected-portrait-url="selectedPortraitUrl"
-              :sel-last-known-sec="selLastKnownSec"
-              :sel-cur-stats="selCurStats"
-              :selected-track="selectedTrack"
-              :current-time="currentTime"
-              :sel-damage-log="selDamageLog"
-              :format-clock="formatClock"
-              @close="closeSidebar"
-            />
-          </template>
-          <template #display>
-            <div class="pb-panel-options">
-              <label><input data-test="pb-show-player" type="checkbox" :checked="labelPrefs.showPlayerName" @change="labelPrefs.showPlayerName = $event.target.checked"> {{ $t('recon.map.playback.show_player_name') }}</label>
-              <label><input data-test="pb-show-tank" type="checkbox" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ $t('recon.map.playback.show_tank_name') }}</label>
-              <label><input data-test="pb-show-hp" type="checkbox" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ $t('recon.map.playback.show_hp') }}</label>
-              <label><input data-test="pb-show-trail" type="checkbox" :checked="trailPrefs.showTrail" @change="trailPrefs.showTrail = $event.target.checked"> {{ $t('recon.map.playback.show_trail_2s') }}</label>
-            </div>
-          </template>
-          <template #events>
-            <div class="pb-event-list" data-test="pb-event-panel">
-              <button
-                v-for="(event, index) in userVisibleEvents"
-                :key="`${event.type}-${event.timeSec}-${index}`"
-                type="button"
-                class="pb-event-row"
-                data-test="pb-event"
-                @click="seekToEvent(event.timeSec)"
-              >
-                <span class="pb-event-time">{{ formatClock(event.timeSec) }}</span>
-                <span class="pb-event-type">{{ $t(`recon.map.playback.event_${event.type}`) }}</span>
-                <span>{{ eventLabel(event) }}</span>
-              </button>
-              <p v-if="userVisibleEvents.length === 0" class="pb-event-empty">{{ $t('recon.map.playback.no_events') }}</p>
-            </div>
-          </template>
-        </PlaybackSidePanel>
+        <div class="pb-side-panel-shell" data-test="pb-side-panel-shell">
+          <VehicleDetailsPanel
+            v-if="selectedState"
+            :selected-state="selectedState"
+            :selected-portrait-url="selectedPortraitUrl"
+            :sel-last-known-sec="selLastKnownSec"
+            :sel-cur-stats="selCurStats"
+            :selected-track="selectedTrack"
+            :current-time="currentTime"
+            :sel-damage-log="selDamageLog"
+            :format-clock="formatClock"
+            @close="closeSidebar"
+          />
+        </div>
 
-        <div class="pb-annotation-surface">
+        <!-- 移动端（rail 隐藏）在底部显示标注工具栏；桌面走左侧二级菜单，不重复 -->
+        <div v-if="annotationOpen && !(isFullscreen || wideLayout)" class="pb-annotation-surface">
           <AnnotationToolbar
             :open="annotationOpen"
             :active-tool="activeTool"
