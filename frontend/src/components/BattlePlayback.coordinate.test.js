@@ -19,18 +19,17 @@ describe('Battle Playback coordinate SSoT (source regression)', () => {
     expect(src).toContain('mapView.value.H')
   })
 
-  it('canonicalMarkerScreen (collision/floats) uses mapWidth() — the same .pb-map rect as the markers', () => {
-    expect(src).toContain('function canonicalMarkerScreen(st)')
-    expect(src).toContain('const W = mapWidth()')
+  it('MapRenderRect SSoT is the single source of truth for marker/collision/hit-test', () => {
+    expect(src).toContain('function mapRenderRect()')
+    expect(src).toContain('canonicalMarkerScreen(st)')
+    expect(src).toContain('const rect = mapRenderRect()')
     expect(src).toContain('mapView.value.toX(st.pos.x)')
     expect(src).toContain('mapView.value.toY(st.pos.y)')
-    expect(src).toContain('mapView.value.W')
-    expect(src).toContain('mapView.value.H')
   })
 
-  it('hit-test converts pointer via .pb-map getBoundingClientRect + mapWidth()', () => {
+  it('hit-test converts pointer via .pb-map getBoundingClientRect + mapRenderRect', () => {
     expect(src).toContain('mapEl.value.getBoundingClientRect()')
-    expect(src).toContain('const W = mapWidth()')
+    expect(src).toContain('const rect = mapRenderRect()')
     expect(src).toContain('mapView.value.toX(s.pos.x)')
   })
 
