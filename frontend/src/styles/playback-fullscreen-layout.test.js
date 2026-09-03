@@ -31,7 +31,7 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(body).toContain('height: 100vh')
     expect(body).toContain('overflow: hidden')
     expect(body).toContain('padding: 0')
-    expect(body).toContain('grid-template-columns: 64px 1fr')
+    expect(body).toContain('grid-template-columns: var(--pb-details-w) minmax(0, 1fr)')
     expect(body).not.toContain('grid-template-rows')
   })
 
@@ -66,7 +66,7 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     const body = ruleBody('.battle-playback:fullscreen .pb-hud')
     expect(body).toContain('position: absolute')
     expect(body).toContain('top: 0')
-    expect(body).toContain('left: 64px')
+    expect(body).toContain('left: var(--pb-details-w)')
     expect(body).toContain('right: var(--pb-details-w)')
     expect(body).toContain('z-index: 50')
   })

@@ -1776,6 +1776,26 @@ const mapStyle = computed(() => ({
     <!-- 地图是主视觉；控制条在桌面流式布局，移动端由首次触摸唤起。 -->
     <!-- §2：Fullscreen Workspace —— Left Rail（fullscreen 下作为左列；普通页面隐藏） -->
     <div class="pb-left-rail" data-test="pb-left-rail" aria-label="Playback workspace rail">
+      <PlaybackControls
+        v-if="isFullscreen || wideLayout"
+        :playing="playing"
+        :speed="speed"
+        :current-time="currentTime"
+        :duration="duration"
+        :fullscreen-supported="fullscreenSupported"
+        :is-fullscreen="isFullscreen"
+        :rail-visible="isFullscreen || wideLayout"
+        :format-clock="formatClock"
+        @toggle-play="togglePlay"
+        @step="step"
+        @set-speed="setSpeed"
+        @reset-view="resetView"
+        @toggle-fullscreen="toggleFullscreen"
+        @toggle-panels="activePanel = activePanel ? null : 'battle'"
+        @toggle-annotation="annotationOpen = !annotationOpen"
+        @drag-start="dragStart"
+        @seek="seek"
+      />
       <button
         type="button"
         class="pb-rail-btn"
@@ -1979,6 +1999,7 @@ const mapStyle = computed(() => ({
 
       <PlaybackMobileOverlay ref="mobileOverlay">
         <PlaybackControls
+          v-if="!(isFullscreen || wideLayout)"
           :playing="playing"
           :speed="speed"
           :current-time="currentTime"

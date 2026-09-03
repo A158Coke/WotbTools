@@ -26,7 +26,8 @@
   overflow-y: auto;
 }
 .battle-playback .pb-rail-btn {
-  min-height: 34px;
+  min-height: 38px;
+  width: 44px;
   padding: 4px 6px;
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   border-radius: 6px;
@@ -38,6 +39,12 @@
   white-space: nowrap;
   display: grid;
   place-items: center;
+  align-self: flex-start;
+}
+/* §symmetric-rail：Left Rail 为宽面板（与右侧 details 同宽），导航图标紧凑左对齐。 */
+.battle-playback .pb-left-rail {
+  flex-wrap: wrap;
+  align-content: flex-start;
 }
 .battle-playback:fullscreen .pb-rail-btn.active {
   border-color: var(--accent);
@@ -131,7 +138,7 @@
   --pb-details-w: min(340px, 32vw);
   position: relative;
   display: grid;
-  grid-template-columns: 64px 1fr;
+  grid-template-columns: var(--pb-details-w) minmax(0, 1fr);
   width: 100vw;
   height: 100vh;
   margin: 0;
@@ -185,7 +192,7 @@
 .battle-playback:fullscreen .pb-hud {
   position: absolute;
   top: 0;
-  left: 64px;
+  left: var(--pb-details-w);
   right: var(--pb-details-w);
   z-index: 50;
   border-radius: 0;
@@ -242,7 +249,7 @@
   .battle-playback:not(:fullscreen) {
     --pb-details-w: min(340px, 28vw);
     display: grid;
-    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-columns: var(--pb-details-w) minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     gap: 8px;
   }
