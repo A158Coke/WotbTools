@@ -76,13 +76,14 @@ function hasCenterData() {
 //（150–250ms 克制过渡）；seek/恢复（hpNoTransition）直接同步，不补播伤害动画。
 function fillPctNum(hp) {
   if (!hp || typeof hp !== 'object') return 0
-  if (hp.state === 'DESTROYED' || hp.state === 'UNKNOWN') return 0
-  if (hp.state === 'RELATIVE_FULL') return 100
-  if ((hp.state === 'CURRENT' || hp.state === 'LAST_KNOWN') && hp.pct != null) return hp.pct
+  // §13 aggregated states only：FULL_RELATIVE / EXACT / PARTIAL / UNKNOWN
+  // （TEAM HUD 用 friendlyHealthAt 聚合态，不用单车 RELATIVE_FULL/CURRENT/LAST_KNOWN/DESTROYED）。
+  if (hp.state === 'UNKNOWN') return 0
+  if (hp.state === 'FULL_RELATIVE') return 100
   const totalValue = finiteNumber(hp.totalMax)
   const total = totalValue === null ? 0 : Math.max(0, totalValue)
   const knownRemaining = finiteNumber(hp.knownRemaining)
-  if (total <= 0) return (hp.state === 'CURRENT' || hp.state === 'LAST_KNOWN') && knownRemaining != null && knownRemaining > 0 ? 100 : 0
+  if (total <= 0) return hp.state === 'PARTIAL' && knownRemaining != null && knownRemaining > 0 ? 100 : 0
   const value = finiteNumber(knownRemaining) ?? 0
   return Math.max(0, Math.min(100, (value / total) * 100))
 }
@@ -201,7 +202,7 @@ function baseStatus(state) {
 @media (width < 768px) {
   .pb-hud { padding: 6px 7px; border-radius: 6px; }
   .pb-hud-grid { gap: 5px; }
-  .pb-hud-label { display: none; }
+  .pb-hud-label { display: inline; font-size: .62rem; }
   .pb-hud-wide, .pb-hud-medium { display: none; }
   .pb-hud-compact { display: inline; }
   .pb-hud-team { grid-template-columns: minmax(0, 1fr); gap: 3px; }

@@ -362,23 +362,41 @@ export function zoomViewAt(view, px, py, factor, minScale = VIEW_MIN_SCALE, maxS
 }
 
 /**
- * 平移钳制：保证地图内容不会完全滑出视口（viewW/viewH 为视口 CSS 尺寸）。
- * scale≤1 时复位；尺寸未知（≤0，如无布局的测试环境）时不做钳制。
+ * 平移钳制：基于「可见 stage（viewW/viewH）」与「rendered map rect（mapW/mapH）」。
+ * - 地图（mapW*scale）大于 stage → 允许平移（tx/ty ∈ [stage - scaled, 0]），
+ *   即使 scale≤1（cover 下被裁切区域必须可达）。
+ * - 地图小于/等于 stage → 居中（tx = (viewW - scaledW)/2）。
+ * pan bounds 依据 stage 与 rendered map rect，而非 map 自身尺寸。尺寸未知（≤0）时不做钳制。
  */
-export function clampViewPan(view, viewW, viewH) {
+export function clampViewPan(view, viewW, viewH, mapW = viewW, mapH = viewH) {
   if (!view || !Number.isFinite(view.scale)) return view
-  if (view.scale <= 1) return { scale: view.scale, tx: 0, ty: 0 }
   const s = view.scale
-  const noW = !Number.isFinite(viewW) || viewW <= 0
-  const noH = !Number.isFinite(viewH) || viewH <= 0
-  if (noW && noH) return { scale: s, tx: view.tx, ty: view.ty }
-  const txMin = noW ? -Infinity : viewW * (1 - s)
-  const tyMin = noH ? -Infinity : viewH * (1 - s)
-  return {
-    scale: s,
-    tx: noW ? view.tx : Math.min(0, Math.max(txMin, view.tx)),
-    ty: noH ? view.ty : Math.min(0, Math.max(tyMin, view.ty))
+  const known = Number.isFinite(viewW) && viewW > 0 && Number.isFinite(viewH) && viewH > 0
+    && Number.isFinite(mapW) && mapW > 0 && Number.isFinite(mapH) && mapH > 0
+  if (!known) {
+    // 尺寸未知（如无布局的测试环境）：scale<=1 复位到基视图；scale>1 按旧 viewW/viewH clamp。
+    if (s <= 1) return { scale: s, tx: 0, ty: 0 }
+    const noW = !Number.isFinite(viewW) || viewW <= 0
+    const noH = !Number.isFinite(viewH) || viewH <= 0
+    const txMin = noW ? -Infinity : viewW * (1 - s)
+    const tyMin = noH ? -Infinity : viewH * (1 - s)
+    return {
+      scale: s,
+      tx: noW ? view.tx : Math.min(0, Math.max(txMin, view.tx)),
+      ty: noH ? view.ty : Math.min(0, Math.max(tyMin, view.ty)),
+    }
   }
+  // 尺寸已知：基于可见 stage 与 rendered map rect 的 bounds。
+  // cover（地图大于 stage）时 scale<=1 也可平移（被裁区域可达）；地图小于 stage 时居中。
+  const scaledW = mapW * s
+  const scaledH = mapH * s
+  let tx = view.tx
+  let ty = view.ty
+  if (scaledW > viewW) tx = Math.min(0, Math.max(viewW - scaledW, tx))
+  else tx = (viewW - scaledW) / 2
+  if (scaledH > viewH) ty = Math.min(0, Math.max(viewH - scaledH, ty))
+  else ty = (viewH - scaledH) / 2
+  return { scale: s, tx, ty }
 }
 /**
  * 播放时钟从 fromSec 前进到 toSec 时跨过的（新消费）事件：严格 > from（事件恰在

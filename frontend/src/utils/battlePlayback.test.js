@@ -486,4 +486,14 @@ describe('eventsCrossed / transients', () => {
     // 4s 后：前两条已展示完，第三条被提升展示（事件仍在队列中，未被挤出）
     expect(activeFeed([mk(1), mk(2), mk(3)], 7000, shown).map(i => i.id)).toEqual([3])
   })
+
+  it('clampViewPan: pan bounds based on visible stage vs rendered map rect (cover/fit)', () => {
+    // 方形地图、宽 stage：scale=1 时 map 宽=stage 宽、map 高>stage 高 → 纵向可平移（被裁区域可达）
+    expect(clampViewPan({ scale: 1, tx: 0, ty: 0 }, 1600, 900, 1600, 1600)).toEqual({ scale: 1, tx: 0, ty: 0 })
+    expect(clampViewPan({ scale: 1, tx: 0, ty: -400 }, 1600, 900, 1600, 1600).ty).toBe(-400)
+    // fit（scale<1 使完整地图可见）→ 居中，不可平移
+    expect(clampViewPan({ scale: 0.5, tx: 999, ty: 999 }, 1600, 900, 1600, 1600)).toEqual({ scale: 0.5, tx: 400, ty: 50 })
+    // 地图小于 stage（窄图宽视口）→ 居中
+    expect(clampViewPan({ scale: 1, tx: 0, ty: 0 }, 1600, 900, 600, 900)).toEqual({ scale: 1, tx: 500, ty: 0 })
+  })
 })
