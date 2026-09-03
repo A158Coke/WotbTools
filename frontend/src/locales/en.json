@@ -1369,6 +1369,7 @@
                 "panel_vehicle": "Vehicle",
                 "panel_display": "Display",
                 "panel_events": "Events",
+                "panel_team": "Team Lineup",
                 "back": "Back",
                 "panel_hint_title": "Hint",
                 "panel_hint_body": "Click a vehicle on the map to view its details.",

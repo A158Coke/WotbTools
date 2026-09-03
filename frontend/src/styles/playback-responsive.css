@@ -162,6 +162,47 @@
   font-size: .86rem;
   font-weight: 800;
 }
+.battle-playback .pb-team-head {
+  display: block;
+  margin: 4px 0 4px;
+  color: var(--text-heading);
+  font-size: .8rem;
+  font-weight: 800;
+}
+.battle-playback .pb-team-list {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.battle-playback .pb-team-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-card2) 60%, transparent);
+  font-size: .76rem;
+}
+.battle-playback .pb-team-tank {
+  font-weight: 700;
+  color: var(--text-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.battle-playback .pb-team-player {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.battle-playback .pb-team-empty { color: var(--text-muted); font-size: .76rem; }
 .battle-playback .pb-panel-facts {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
