@@ -1,4 +1,4 @@
-name: Inspect WGC map package
+name: Probe multi-volume WGC map source
 
 on:
   push:
@@ -14,29 +14,119 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect current client archive headers
+      - name: Install extractors
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 https://github.com/Monstrofil/wgc-download.git /tmp/wgc-download
+          python -m pip install /tmp/wgc-download
+          git clone --depth 1 https://github.com/Revenant30102000/wotblitz-mcp.git /tmp/wotblitz-mcp
+          cd /tmp/wotblitz-mcp && npm ci
+
+      - name: Extract Black Goldville client colormap by HTTP ranges
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p probe
-          URL='https://dl-wotb-gc.wargaming.net/wotb.ww.production/wds_default/patches/11.20.0.6254/wotb_11.20.0.6254_client.wgpkg.001'
-          curl -fsSLI "$URL" | tee probe/headers.txt
-          curl -fsSL -H 'Range: bytes=0-1023' "$URL" -o probe/head.bin
-          echo 'FIRST 128 BYTES:' | tee probe/hexdump.txt
-          xxd -l 128 probe/head.bin | tee -a probe/hexdump.txt
-          file probe/head.bin | tee -a probe/hexdump.txt
-          wc -c probe/head.bin | tee -a probe/hexdump.txt
-          python - <<'PY' | tee -a probe/hexdump.txt
+          cat > /tmp/extract_multi.py <<'PY'
+          import io, urllib.request, urllib.error
           from pathlib import Path
-          b=Path('probe/head.bin').read_bytes()
-          print('magic', b[:32])
-          for sig in (b'7z\xbc\xaf\x27\x1c', b'PK\x03\x04', b'DVPL'):
-              print(sig, b.find(sig))
+          from wgc_download.api import USER_AGENT
+          from wgc_download.remote7z import parse_archive_index, decompress_entry
+
+          BASE='https://dl-wotb-gc.wargaming.net/wotb.ww.production/wds_default/patches/11.20.0.6254/wotb_11.20.0.6254_client.wgpkg.'
+
+          class MultiRemoteFile(io.RawIOBase):
+              BLOCK = 256 * 1024
+              def __init__(self, urls):
+                  super().__init__()
+                  self.urls=[]; self.sizes=[]; self.starts=[]; total=0
+                  for url in urls:
+                      try:
+                          req=urllib.request.Request(url, method='HEAD', headers={'User-Agent':USER_AGENT})
+                          r=urllib.request.urlopen(req, timeout=20)
+                          size=int(r.headers['Content-Length'])
+                      except Exception:
+                          break
+                      self.urls.append(url); self.sizes.append(size); self.starts.append(total); total += size
+                  self._size=total; self._pos=0; self._cache={}
+                  print('volumes', len(self.urls), 'sizes', self.sizes, 'total', self._size)
+              def seekable(self): return True
+              def readable(self): return True
+              def writable(self): return False
+              def tell(self): return self._pos
+              def seek(self, offset, whence=0):
+                  if whence==0: self._pos=offset
+                  elif whence==1: self._pos += offset
+                  elif whence==2: self._pos = self._size + offset
+                  return self._pos
+              def _fetch_global(self, start, size):
+                  out=bytearray(); pos=start; remain=size
+                  while remain>0 and pos<self._size:
+                      idx=max(i for i,s in enumerate(self.starts) if s<=pos)
+                      local=pos-self.starts[idx]
+                      take=min(remain, self.sizes[idx]-local)
+                      req=urllib.request.Request(self.urls[idx], headers={'User-Agent':USER_AGENT,'Range':f'bytes={local}-{local+take-1}'})
+                      data=urllib.request.urlopen(req, timeout=120).read()
+                      if len(data)!=take: raise RuntimeError(f'range mismatch {idx=} {local=} {take=} got={len(data)}')
+                      out.extend(data); pos += take; remain -= take
+                  return bytes(out)
+              def read(self,n=-1):
+                  if n is None or n<0: n=self._size-self._pos
+                  if n<=0 or self._pos>=self._size: return b''
+                  n=min(n,self._size-self._pos)
+                  out=bytearray(); end=self._pos+n
+                  while self._pos<end:
+                      block=self._pos//self.BLOCK
+                      if block not in self._cache:
+                          bs=block*self.BLOCK; take=min(self.BLOCK,self._size-bs)
+                          self._cache[block]=self._fetch_global(bs,take)
+                      data=self._cache[block]; off=self._pos-block*self.BLOCK
+                      take=min(len(data)-off,end-self._pos)
+                      out.extend(data[off:off+take]); self._pos += take
+                  return bytes(out)
+              def readinto(self,b):
+                  d=self.read(len(b)); b[:len(d)]=d; return len(d)
+              def fetch_range(self,offset,size): return self._fetch_global(offset,size)
+
+          urls=[BASE+f'{i:03d}' for i in range(1,20)]
+          rf=MultiRemoteFile(urls)
+          entries=parse_archive_index(rf)
+          print('entry_count',len(entries))
+          matches=[e for e in entries if '21_mountain_mnt' in e['filename'].lower() and '_colormap' in e['filename'].lower() and e['filename'].lower().endswith('.dds.dvpl')]
+          for e in matches: print('MATCH', e['filename'], e['compressed_size'], e['uncompressed_size'])
+          if not matches: raise SystemExit('no mountain colormap found')
+          e=matches[-1]
+          packed=rf.fetch_range(e['offset'], e['compressed_size'])
+          raw=decompress_entry(packed,e['filters'],e['uncompressed_size'])
+          out=Path('probe')/Path(e['filename']).name
+          out.write_bytes(raw)
+          print('saved',out,len(raw))
           PY
+          python /tmp/extract_multi.py | tee probe/extract.log
+
+      - name: Decode colormap
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat > /tmp/decode-map.ts <<'TS'
+          import { readFile, writeFile } from 'node:fs/promises';
+          import { decodeDVPL } from '/tmp/wotblitz-mcp/src/dvpl/reader.ts';
+          import { decodeDDS, getDDSInfo } from '/tmp/wotblitz-mcp/src/decoders/dds.ts';
+          const input = process.argv[2], output = process.argv[3];
+          const dds = decodeDVPL(await readFile(input));
+          console.log(getDDSInfo(dds));
+          await writeFile(output, await decodeDDS(dds));
+          TS
+          input=$(find probe -maxdepth 1 -type f -name '*.dvpl' | head -n 1)
+          cd /tmp/wotblitz-mcp
+          npx tsx /tmp/decode-map.ts "$GITHUB_WORKSPACE/$input" "$GITHUB_WORKSPACE/probe/mountain-client.png"
+          file "$GITHUB_WORKSPACE/probe/mountain-client.png"
+          ls -lh "$GITHUB_WORKSPACE/probe/mountain-client.png"
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: wgc-package-probe
+          name: wgc-mountain-source
           path: probe
           retention-days: 1
