@@ -1387,6 +1387,8 @@
                 "team": "Команда",
                 "team_friendly": "Союзники",
                 "team_enemy": "Противник",
+                "hud_friendly_hp": "HP союзников",
+                "hud_enemy_hp": "HP противника",
                 "state": "Состояние",
                 "state_position_reported": "Позиция передаётся",
                 "state_position_stale": "Позиция устарела (последняя известная)",

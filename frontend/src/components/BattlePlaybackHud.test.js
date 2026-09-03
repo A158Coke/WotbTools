@@ -45,6 +45,15 @@ describe('BattlePlaybackHud', () => {
     expect(wrapper.find('[data-test="pb-hud"]').text()).toContain('22305')
   })
 
+  it('shows explicit HP / points semantics labels (§12)', () => {
+    const wrapper = mountHud()
+    expect(wrapper.find('[data-test="pb-hud-points-label-friendly"]').text()).toBe('recon.map.playback.hud_friendly_hp')
+    expect(wrapper.find('[data-test="pb-hud-points-label-enemy"]').text()).toBe('recon.map.playback.hud_enemy_hp')
+    expect(wrapper.find('[data-test="pb-hud-points-label"]').text()).toBe('recon.map.playback.points')
+    expect(wrapper.find('[data-test="pb-hud-score"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-hud-score"]').text()).toBe('3 : 1')
+  })
+
   it('does not invent a denominator for partial or unknown health', () => {
     const wrapper = mountHud({
       friendlyHp: hp('PARTIAL', 800, 0),

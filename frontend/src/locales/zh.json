@@ -1387,6 +1387,8 @@
                 "team": "阵营",
                 "team_friendly": "本方",
                 "team_enemy": "敌方",
+                "hud_friendly_hp": "己方总HP",
+                "hud_enemy_hp": "敌方总HP",
                 "state": "状态",
                 "state_position_reported": "位置上报中",
                 "state_position_stale": "位置中断（最后已知位置）",

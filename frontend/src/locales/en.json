@@ -1387,6 +1387,8 @@
                 "team": "Team",
                 "team_friendly": "Friendly",
                 "team_enemy": "Enemy",
+                "hud_friendly_hp": "Friendly HP",
+                "hud_enemy_hp": "Enemy HP",
                 "state": "State",
                 "state_position_reported": "Position reporting",
                 "state_position_stale": "Position stale (last known)",
