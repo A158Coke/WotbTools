@@ -854,14 +854,35 @@ function resetView() {
   applyView({ scale: 1, tx: 0, ty: 0 })
 }
 
-// §3：默认视图 = 完整地图 contain（fit 居中，完整显示；地图在「下 HUD、上 controls」安全区内，
-// 顶部不会伸进血条，四周留少量黑边）。裁剪/平移后可「重置视图」恢复完整居中。
+// §fullscreen-cover：全屏默认 cover（填满安全区，地图更大、黑边更少），但顶部锚定在血条下方，
+// 不裁到 HUD 后面；page mode 仍 contain（完整地图、有界高度）。
+function coverView() {
+  const stageW = mapWidth()
+  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const safe = safeInsets()
+  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
+  const rect = mapRenderRect()
+  if (stageW > 0 && safeH > 0 && rect.width > 0 && rect.height > 0) {
+    const scale = Math.max(stageW / rect.width, safeH / rect.height)
+    const scaledW = rect.width * scale
+    const scaledH = rect.height * scale
+    const tx = (stageW - scaledW) / 2
+    // 顶部锚定安全区顶部（血条下方）：地图上缘不高于 safe.top；居中裁剪会顶到 HUD 后面。
+    const ty = Math.max(0, (safeH - scaledH) / 2)
+    applyView({ scale, tx, ty })
+    return
+  }
+  applyView({ scale: 1, tx: 0, ty: 0 })
+}
+
+// §3：默认视图 —— fullscreen = cover（填满、地图更大、血条分离）；page mode = contain。
 let fitInitialized = false
 function fitViewIfReady(force = false) {
   if (!force && fitInitialized) return
   const stageH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
   if (mapWidth() > 0 && stageH > 0) {
-    resetView()
+    if (isFullscreen.value) coverView()
+    else resetView()
     fitInitialized = true
   }
 }
