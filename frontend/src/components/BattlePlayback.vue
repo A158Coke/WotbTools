@@ -193,20 +193,6 @@ const baseStatesAt = computed(() => {
   }
   return [...latest.values()].sort((a, b) => a.baseId.localeCompare(b.baseId))
 })
-/**
- * HP 数值区显示文本（绝不显示虚假的 knownRemaining / totalMax 分数）：
- * - FULL_RELATIVE → 「100%」（开局相对满血状态，非具体 HP 数字）；
- * - UNKNOWN → —（无任何数据）；
- * - EXACT（全队当前 HP 与 displayCapacityHp 均已证明且一致）→ 「knownRemaining / totalMax」；
- * - PARTIAL/MIXED（部分证明/混合 provenance/证据矛盾）→ 只显示真实已知剩余数字（不伪造分母——
- *   无已证明分母时绝不显示 knownRemaining / partialTotalMax）。
- */
-function hpValueText(hp) {
-  if (hp.state === 'FULL_RELATIVE') return '100%'
-  if (hp.state === 'UNKNOWN') return '—'
-  if (hp.state === 'EXACT') return `${hp.knownRemaining} / ${hp.totalMax}`
-  return String(hp.knownRemaining)
-}
 
 // ---- 播放状态 ----
 const currentTime = ref(0)
@@ -1454,16 +1440,6 @@ const authoritativeEvents = computed(() => (playback.value ? playback.value.even
 const userVisibleEvents = computed(() => authoritativeEvents.value.filter((event) => (
   event.type === 'DAMAGE' || event.type === 'KILL' || event.type === 'DESTROYED'
 )))
-const friendlyAccountIds = computed(() => new Set(hpVehicles.value
-  .filter((vehicle) => vehicle.friendly === true)
-  .map((vehicle) => vehicle.accountId)))
-const enemyAccountIds = computed(() => new Set(hpVehicles.value
-  .filter((vehicle) => vehicle.friendly === false)
-  .map((vehicle) => vehicle.accountId)))
-const friendlyKills = computed(() => authoritativeEvents.value.filter((event) =>
-  event.type === 'KILL' && event.timeSec <= currentTime.value && friendlyAccountIds.value.has(event.accountId)).length)
-const enemyKills = computed(() => authoritativeEvents.value.filter((event) =>
-  event.type === 'KILL' && event.timeSec <= currentTime.value && enemyAccountIds.value.has(event.accountId)).length)
 
 // 炮线：仅来自真实事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
 const visibleTracers = computed(() => tracerLines(authoritativeEvents.value, routesByAccount.value, currentTime.value, speed.value))
@@ -2021,21 +1997,6 @@ const mapStyle = computed(() => ({
             :format-clock="formatClock"
             @close="closeSidebar"
           />
-          <template v-else-if="isFullscreen || wideLayout">
-            <strong class="pb-side-panel-title">{{ $t('recon.map.playback.panel_battle') }}</strong>
-            <dl class="pb-panel-facts" data-test="pb-panel-content-battle">
-              <dt>{{ $t('recon.map.playback.team_friendly') }}</dt>
-              <dd>{{ hpValueText(friendlyHp) }}</dd>
-              <dt>{{ $t('recon.map.playback.team_enemy') }}</dt>
-              <dd>{{ hpValueText(enemyHp) }}</dd>
-              <dt v-if="friendlyPoints != null || enemyPoints != null">{{ $t('recon.map.playback.points') }}</dt>
-              <dd v-if="friendlyPoints != null || enemyPoints != null">{{ [friendlyPoints, enemyPoints].filter(value => value != null).join(' : ') }}</dd>
-              <dt>{{ $t('recon.map.playback.kills') }}</dt>
-              <dd data-test="pb-panel-kills">{{ friendlyKills }} : {{ enemyKills }}</dd>
-              <dt v-if="baseStatesAt.length">{{ $t('recon.map.playback.objective') }}</dt>
-              <dd v-if="baseStatesAt.length" data-test="pb-panel-objective">{{ baseStatesAt.map(state => state.baseId).join(' · ') }}</dd>
-            </dl>
-          </template>
         </div>
 
         <!-- 移动端（rail 隐藏）在底部显示标注工具栏；桌面走左侧二级菜单，不重复 -->
