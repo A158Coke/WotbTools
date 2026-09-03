@@ -1,7 +1,7 @@
 # 地图鸟瞰与战局回放（Battle Playback）
 
 > 用户可见契约：`ReplayPage` Workspace 的「战局回放」面板（`BattlePlaybackPanel.vue`）
-> （热力 + 路线 + 战局回放三视图），**不依赖 AI 复盘**——不跑 AI 也能看图。
+> （热力 + 战局回放），**不依赖 AI 复盘**——不跑 AI 也能看图。
 > 数据来源与素材权威见 `docs/reference/maps.md`（内部 code ↔ 展示名 ↔ 语义 mapId ↔ 素材）。
 > 生产状态：回放 timeline 事实按 canonical 语义（AFFIRMED）；AoI hidden=UNKNOWN、禁止跨 AoI gap 插值、死亡 clamp 到权威死亡时刻。
 
@@ -20,7 +20,7 @@ schema 从该文件生成。Java domain facts 通过显式 mapper 投影为 wire
 
 `BattlePlayback.vue` 是单一编排入口，负责时间、视图、选择与事件命令；展示层拆为
 `BattleMap.vue`（SVG、坦克标记、炮线、标注及瞬时反馈）、`PlaybackControls.vue`
-（播放控制、筛选与标注工具）、`PlaybackTimeline.vue`（进度条与事件标记）和
+（播放控制与标注工具）、`PlaybackTimeline.vue`（纯进度条）和
 `VehicleDetailsPanel.vue`（当前车辆详情）。
 `utils/playbackVehicleState.ts` 负责将 canonical V2 track 投影为 marker state，
 `utils/playbackClock.ts` 提供播放时间/倍速纯函数。拆分不新增数据源、不改变 V2 query-at-time、
@@ -75,7 +75,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 战局回放面板读取同一 Processing Dataset 的 `map-overview.json` derived artifact：
 `POST /api/replay/map-overview`（`Content-Type: application/json`，body `{ processingJobId, sourceId }`）
 → `MapOverviewQueryService.buildOverviewFromDataset` → `ReplayArtifactWriter.readMapOverview` →
-前端 `MapOverview.vue` 纯 SVG 渲染（热力 + 路线辅助视图）。
+前端 `MapOverview.vue` 纯 SVG 渲染热力辅助视图。后端 overview 中的 `routes` 聚合字段及其
+采样合同继续保留，供后续能力与兼容消费者使用；本轮只移除用户可见的路线视图、筛选和图例。
 - **不重新上传 replay、不单独 full-process**：AI Review / Battle Playback / Export 共用同一 Processing Dataset。
 - 地图不可构建（未知地图/无语义网格/无名册/无观测/视角未解析）→ `mapOverview = null` → 204。
 - `JOB_NOT_FOUND`（Processing Job / Dataset identity 已被 TTL 清理）→ 触发前端 Dataset recovery（exactly-once + generation-owned + authoritative invalidation）。
@@ -96,24 +97,24 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   分析网格坐标仍来自 `playableBounds`，绘制时经同一变换换算，因此只覆盖可玩区、不铺满整图。
 - **标题三语**：`MapOverview` 携带 `displayNames{zh,en,ru}`（来自 `common/map_names.json`，
   未收录时三语同 code）；前端按 vue-i18n 当前 locale 取标题，缺失回退 `displayName`（en）。
-- **模式与录像者**：`MapOverview` 携带 `arenaBonusType`（meta.json 原值；1=随机战斗，其他=训练/联赛等，
+- **模式与录像者**：`MapOverview` 继续携带 `arenaBonusType`（meta.json 原值；1=随机战斗，其他=训练/联赛等，
   未知为 null）与 `recorderAccountId`（经 `Battle.recorderResult()` 解析，录像者昵称已在
-  `ReplayParser.resolveRecorderNickname` 归一化为纯昵称；未解析为 null）。随机战路线视图提供
-  「全部/本方/敌方/仅玩家」筛选，「仅玩家」只渲染录像者一条路线（含阶段切片）；非随机战维持三档。
+  `ReplayParser.resolveRecorderNickname` 归一化为纯昵称；未解析为 null）。这些字段仍供 Battle Playback
+  编排和事件事实使用；路线聚合仍按既有 wire contract 生成，但不再在 MapOverview 中提供用户视图。
 - **自适应配色**：前端 `frontend/src/utils/mapPalette.js` 将底图降采样 64×64 后计算平均相对亮度
   （sRGB 线性化后按 0.2126/0.7152/0.0722 加权），阈值 0.45——低于视为暗图用亮色系、否则用深饱和色系；
-  路线 7+7 色、热力、网格/九宫格/出生点/死亡标记与路线对比描边均随色板切换；canvas 不可用或计算失败时
+  热力、网格/九宫格/出生点均随色板切换；canvas 不可用或计算失败时
   回退暗图默认色板。不做每图手工配色表。
 - **布局与标注**：鸟瞰 SVG 宽度由 scoped CSS 控制——桌面/平板为容器宽度 66.7%（约 2/3）并居中，
   `max-width: 768px` 时恢复 100%（viewBox 不变、不裁切）；九宫格仅绘制分区框（region-line），
   不绘制数字标注（region-label）。
 - **热力口径**：伤害热力按**受击方**位置落格（受击方阵营）；驻留/阵亡为事件计数；
   每层 36 个值按 `gridCells` 顺序，前端按 max 归一化。
-- **路线**：双方 14 车，2s 均匀采样（间隔 = max(2s, duration/200)，每车 ≤200 点），
-  `firstObservedSec/lastObservedSec` 诚实标注观测区间（敌方静止开局通常缺失，
-  前端显示「位置观测自 X 秒起」），阵亡时刻由 canonical `lifeTransitions` 标注；连续点是否可插值
-  由 position segment permission 决定，不以固定 packet gap 作为 Battle Playback authority。
-- **战局回放（Battle Playback，第三视图）**：`BattlePlaybackDataset` 是唯一 current
+- **路线聚合合同（非本轮 UI）**：双方 14 车，2s 均匀采样（间隔 = max(2s, duration/200，
+  每车 ≤200 点），`firstObservedSec/lastObservedSec` 保留诚实观测区间，阵亡时刻由 canonical
+  `lifeTransitions` 标注；连续点是否可插值由 position segment permission 决定，不以固定 packet gap
+  作为 Battle Playback authority。本轮不删除这些后端字段或生成逻辑。
+   - **战局回放（Battle Playback）**：`BattlePlaybackDataset` 是唯一 current
   playback 输入；每辆 `VehiclePlaybackTrack` 携带账号/昵称/坦克/阵营/`friendly` 以及
   `positionSegments`、`orientationSegments`、`healthTransitions`、`lifeTransitions`、
   loadout/runtime transitions。battle-level `events` 按 battle-relative 秒升序，稳定码为
@@ -191,7 +192,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，
     两次翻转抵消，无符号/偏移修正）。
    - **炮线/曳光线（已知射击）**：`visibleTracers` 由纯函数 `tracerLines`（`utils/battlePlayback.js`）
-     按当前时间推导——候选 = 过滤后事件流中的 DAMAGE 与 KILL（攻击者已解析），同刻同 attacker/target
+     按当前时间推导——候选 = 真实事件流中的 DAMAGE 与 KILL（攻击者已解析），同刻同 attacker/target
       去重为一条；Battle Playback 两端必须满足 canonical `positionSegments` 的 OBSERVED 覆盖与
       事件时刻位置查询，segment gap/末点后/首点前一律拒绝，不用最后已知位置伪造射击位置；可见窗口 =
      `0.4s × 播放倍速`（1×/2×/4× 各约 **0.4s 真实时间**，`TRACER_BASE_SEC=0.4`——短 shot effect，
@@ -211,8 +212,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
      逐元素绑定（光晕 `6/view.scale`、内芯 `1.75/view.scale`，屏幕宽度恒定，放大后不变成粗色带；
      长度仍随地图坐标）；
      网格/区域/出生点（A/B/C 基地）属地图内容，随缩放。**战局回放视图不再渲染车辆路线**
-     （用户 2026-08-14 确认去除；路线数据仍被车辆位置插值与炮线端点复用，只删渲染层；
-     想看路线用「路线」视图）。
+     （用户 2026-08-14 确认去除；路线数据仍仅作为位置插值与炮线端点的内部输入）。
    - **地图标注（画笔/形状/文字，2026-08-16 新增）**：纯前端临时标注，不持久化、不调后端——
      刷新/切文件/切离战局回放视图即清空（切文件经 `BattlePlayback` `watch(overview)` 重置，
      切视图经 v-if 卸载）。工具栏提供画笔/橡皮擦/箭头/直线/矩形/圆/文字 + 8 色固定色板 +
@@ -257,9 +257,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
    `knowledge`、`interpolationAllowed` 与 sample range，绝不以固定 packet gap 推断可插值性；
    跨 segment/位置中断/无效坐标禁止穿线；`positionCoveredAtV2` 决定车辆当前是否有位置流覆盖——
   覆盖中实体实心显示、位置中断实体淡化最后已知位置、从未上报位置实体不显示、阵亡实体在阵亡时刻切换为 ✕；
-  随机战默认只显示与录像者相关的伤害/击杀/阵亡 + 全部可见性事件（可切换「全部已知事件」），
-  训练房/联赛默认显示本方关键事件；进度条按秒聚合事件标记，点击标记跳转该秒并弹出事件列表。
-  播放控制：播放/暂停、±5s、上一/下一事件、1×/2×/4×、拖动 seek。
+  Event Panel 默认折叠，展开后列出全部真实事件；点击事件行 seek 到该事件时间并保持暂停。
+  播放控制：播放/暂停、±5s、0.5×/1×/2×/4×、Reset View、Fullscreen 和拖动 seek。
    - **segment 内/外查询**：`positionAtV2` 只在 canonical segment 明确允许且相邻 sample
      可形成区间时插值；`interpolationAllowed=false`、LAST_KNOWN、segment gap、未来 segment
      不生成新坐标，改为返回当前时刻以前的最后可信 sample。`vehicleState.lastKnown = !covered`，
@@ -267,7 +266,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
      阵亡优先于位置中断。
     阵亡优先于位置中断；「最后已知」面板显示真实的最后可信时间（`pos.timeSec`），不再显示 `currentTime`。
   - **拖动与跳转即暂停**：进度条 `pointerdown/mousedown/touchstart` 立即暂停，拖动中实时 seek，
-    松开保持暂停（不恢复拖动前状态）；事件标记点击、上一/下一事件跳转、AI 报告时间跳转均保持暂停。
+  松开保持暂停（不恢复拖动前状态）；Event Panel 行跳转和 AI 报告时间跳转均保持暂停。
+  键盘焦点不在输入框、下拉框或按钮时，Space 播放/暂停，Left/Right 分别 seek -5/+5 秒；
+  输入控件保留浏览器自身键盘行为。
   - **RAF 幂等**：`play()` 在已播放时直接返回、`pause()` 取消未完成回调，任意时刻至多一个 RAF 循环；
     播放到结尾、切离 playback Tab、折叠地图鸟瞰、组件卸载均停止。
   - **时间格式**：`formatClock` 先对总秒数统一取整再分解分钟/秒（杜绝 59.6s 显示为 00:60）。

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { advancePlaybackTime, clampPlaybackTime, nextPlaybackSpeed } from './playbackClock.js'
+import { advancePlaybackTime, clampPlaybackTime } from './playbackClock.js'
 
 describe('playbackClock', () => {
   it('clamps seek values to the replay duration', () => {
@@ -18,8 +18,4 @@ describe('playbackClock', () => {
     expect(advancePlaybackTime(10, 60, Number.NaN, 2)).toBe(10)
   })
 
-  it('cycles the supported speed contract', () => {
-    expect(nextPlaybackSpeed(0.5)).toBe(1)
-    expect(nextPlaybackSpeed(4)).toBe(0.5)
-  })
 })
