@@ -6,7 +6,11 @@ import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
 import BattleMap from './BattleMap.vue'
+import AnnotationToolbar from './AnnotationToolbar.vue'
+import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import PlaybackControls from './PlaybackControls.vue'
+import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
+import PlaybackSidePanel from './PlaybackSidePanel.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
 import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
@@ -106,8 +110,19 @@ const mapView = computed(() => createMapView(image.value, pbOverview.value))
 
 // 自适应配色（与热力覆盖层使用同一色板）
 const palette = ref(darkMapPalette)
+let paletteRequestToken = 0
 watch(image, async (img) => {
-  palette.value = paletteForLuminance(await luminanceOfImage(img))
+  const token = ++paletteRequestToken
+  if (!img) {
+    palette.value = darkMapPalette
+    return
+  }
+  try {
+    const luminance = await luminanceOfImage(img)
+    if (token === paletteRequestToken) palette.value = paletteForLuminance(luminance)
+  } catch {
+    if (token === paletteRequestToken) palette.value = darkMapPalette
+  }
 }, { immediate: true })
 
 // V2 canonical dataset 是唯一 playback 事实源（cleanup：移除 legacy overview.playback）。
@@ -166,30 +181,6 @@ const enemyPoints = computed(() =>
   enemyTeam.value == null
     ? null
     : teamPointsAt(playback.value?.pointsSamples, enemyTeam.value, currentTime.value))
-const showPoints = computed(() => (friendlyPoints.value !== null && friendlyPoints.value !== undefined)
-  || (enemyPoints.value !== null && enemyPoints.value !== undefined))
-/**
- * HP bar 填充宽度（PR #107 Blocker 2 aggregate state）：
- * - FULL_RELATIVE（本方开局相对满血：全部存活车辆无权威掉血/阵亡证据，即使有 current sample
- *   也 100% 实心条）→ known 段固定 100% 阵营色实心条（相对状态，无具体数字、无斜纹）；
- * - EXACT（全队当前 HP 与 displayCapacityHp 均已证明且一致）→ known = knownRemaining/totalMax、
- *   unknown = unknownMax/totalMax（灰段参考）；
- * - PARTIAL/MIXED（部分证明/混合 provenance/证据矛盾：有真实已知剩余但无「全队已证明且一致的分母」）→
- *   known 段 100% + indeterminate 斜纹（无法算真实比例，绝不显示 known/partialTotalMax 分数）；
- * - UNKNOWN → 0%（灰段也不渲染——无任何数据）。
- * 禁止出现「totalMax=0、knownRemaining>0 却仍 0%」的空条。
- */
-function hpBarFill(hp, kind) {
-  if (hp.state === 'FULL_RELATIVE') return kind === 'known' ? '100%' : '0%'
-  const total = hp.totalMax || 0
-  if (total <= 0) {
-    if (kind === 'known') return hp.state === 'PARTIAL' && hp.knownRemaining > 0 ? '100%' : '0%'
-    return '0%'
-  }
-  const val = kind === 'known' ? hp.knownRemaining : hp.unknownMax
-  return `${Math.max(0, Math.min(100, (val / total) * 100)).toFixed(1)}%`
-}
-
 /**
  * HP 数值区显示文本（绝不显示虚假的 knownRemaining / totalMax 分数）：
  * - FULL_RELATIVE → 「100%」（开局相对满血状态，非具体 HP 数字）；
@@ -445,7 +436,16 @@ const visibleBursts = computed(() => {
 })
 const visibleFeed = computed(() => transientsActive(feedItems.value, nowMs.value))
 const selectedAccountId = ref(null)
-const eventPanelOpen = ref(false)
+const activePanel = ref(null)
+const annotationOpen = ref(false)
+const mobileOverlay = ref(null)
+const orientationHint = ref('')
+const panelGroups = computed(() => [
+  { name: 'battle', label: t('recon.map.playback.panel_battle') },
+  { name: 'vehicle', label: t('recon.map.playback.panel_vehicle') },
+  { name: 'display', label: t('recon.map.playback.panel_display') },
+  { name: 'events', label: t('recon.map.playback.panel_events') },
+])
 let rafId = null
 let lastFrameTs = null
 
@@ -476,19 +476,63 @@ const fullscreenSupported = computed(() =>
   && pbRoot.value != null
   && typeof pbRoot.value.requestFullscreen === 'function'
 )
+let playbackLifecycleActive = true
+let orientationRequestToken = 0
 function onFullscreenChange() {
   isFullscreen.value = !!(typeof document !== 'undefined' && document.fullscreenElement)
+  if (!isFullscreen.value) {
+    orientationRequestToken += 1
+    unlockOrientation()
+  }
+}
+let orientationHintTimer = null
+function showOrientationHint() {
+  if (!playbackLifecycleActive) return
+  orientationHint.value = t('recon.map.playback.orientation_hint')
+  if (orientationHintTimer != null) clearTimeout(orientationHintTimer)
+  orientationHintTimer = setTimeout(() => { orientationHint.value = '' }, 2400)
+}
+function lockOrientation() {
+  if (!playbackLifecycleActive || (typeof document !== 'undefined' && document.fullscreenElement !== pbRoot.value)) return
+  if (typeof window !== 'undefined' && window.innerWidth >= 768) return
+  const orientation = typeof screen !== 'undefined' ? screen.orientation : null
+  if (!orientation || typeof orientation.lock !== 'function') return
+  const token = ++orientationRequestToken
+  try {
+    const result = orientation.lock('landscape')
+    if (result && typeof result.catch === 'function') {
+      result.catch(() => {
+        if (playbackLifecycleActive && token === orientationRequestToken) showOrientationHint()
+      })
+    }
+  } catch {
+    if (token === orientationRequestToken) showOrientationHint()
+  }
+}
+function unlockOrientation() {
+  const orientation = typeof screen !== 'undefined' ? screen.orientation : null
+  if (orientation && typeof orientation.unlock === 'function') {
+    try { orientation.unlock() } catch { /* unsupported browsers may throw */ }
+  }
 }
 function toggleFullscreen() {
   if (typeof document === 'undefined' || !pbRoot.value) return
   if (document.fullscreenElement) {
     if (typeof document.exitFullscreen === 'function') {
-      const p = document.exitFullscreen()
-      if (p && typeof p.catch === 'function') p.catch(() => {})
+      try {
+        const p = document.exitFullscreen()
+        if (p && typeof p.catch === 'function') p.catch(() => {})
+      } catch { /* unsupported browsers may throw */ }
     }
   } else if (typeof pbRoot.value.requestFullscreen === 'function') {
-    const p = pbRoot.value.requestFullscreen()
-    if (p && typeof p.catch === 'function') p.catch(() => {})
+    try {
+      const p = pbRoot.value.requestFullscreen()
+      if (p && typeof p.then === 'function') {
+        p.then(() => { if (playbackLifecycleActive) lockOrientation() }).catch(() => {})
+      } else {
+        lockOrientation()
+      }
+    } catch { /* unsupported browsers may throw */ }
   }
 }
 
@@ -674,7 +718,9 @@ function onViewportClick(e) {
     suppressClick = false
     e.stopPropagation()
     e.preventDefault()
+    return
   }
+  mobileOverlay.value?.reveal?.()
 }
 
 function resetView() {
@@ -1049,8 +1095,12 @@ function onKeydown(e) {
 }
 
 onBeforeUnmount(() => {
+  playbackLifecycleActive = false
+  paletteRequestToken += 1
+  orientationRequestToken += 1
   if (rafId != null) cancelAnimationFrame(rafId)
   if (pauseRafId != null) cancelAnimationFrame(pauseRafId)
+  if (orientationHintTimer != null) clearTimeout(orientationHintTimer)
   if (mapResizeObserver) {
     mapResizeObserver.disconnect()
     mapResizeObserver = null
@@ -1059,7 +1109,12 @@ onBeforeUnmount(() => {
     document.removeEventListener('fullscreenchange', onFullscreenChange)
     // 组件在 fullscreen 中被卸载 → 主动退出（浏览器通常会自动退出，这里兜底）
     if (pbRoot.value && pbRoot.value === document.fullscreenElement && typeof document.exitFullscreen === 'function') {
-      document.exitFullscreen()
+      try {
+        const exitResult = document.exitFullscreen()
+        if (exitResult && typeof exitResult.catch === 'function') exitResult.catch(() => {})
+      } catch {
+        // fullscreen teardown is best-effort during component unmount
+      }
     }
   }
   window.removeEventListener('keydown', onKeydown)
@@ -1171,6 +1226,16 @@ const authoritativeEvents = computed(() => (playback.value ? playback.value.even
 const userVisibleEvents = computed(() => authoritativeEvents.value.filter((event) => (
   event.type === 'DAMAGE' || event.type === 'KILL' || event.type === 'DESTROYED'
 )))
+const friendlyAccountIds = computed(() => new Set(hpVehicles.value
+  .filter((vehicle) => vehicle.friendly === true)
+  .map((vehicle) => vehicle.accountId)))
+const enemyAccountIds = computed(() => new Set(hpVehicles.value
+  .filter((vehicle) => vehicle.friendly === false)
+  .map((vehicle) => vehicle.accountId)))
+const friendlyKills = computed(() => authoritativeEvents.value.filter((event) =>
+  event.type === 'KILL' && event.timeSec <= currentTime.value && friendlyAccountIds.value.has(event.accountId)).length)
+const enemyKills = computed(() => authoritativeEvents.value.filter((event) =>
+  event.type === 'KILL' && event.timeSec <= currentTime.value && enemyAccountIds.value.has(event.accountId)).length)
 
 // 炮线：仅来自真实事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
 const visibleTracers = computed(() => tracerLines(authoritativeEvents.value, routesByAccount.value, currentTime.value, speed.value))
@@ -1274,6 +1339,8 @@ function selectAt(accountId, clientX, clientY) {
   }
   // PR5 §8.1：点击 marker 恒选中/直接切换（不 toggle-off）；点击空白不关闭；必须 × 显式关闭
   selectedAccountId.value = best.vehicle.accountId
+  activePanel.value = 'vehicle'
+  mobileOverlay.value?.reveal?.()
 }
 
 const selectedState = computed(() => {
@@ -1311,6 +1378,11 @@ watch(
 
 function closeSidebar() {
   selectedAccountId.value = null
+  activePanel.value = null
+}
+
+function closePanel() {
+  activePanel.value = null
 }
 
 const selLastKnownSec = computed(() => {
@@ -1475,198 +1547,169 @@ const mapStyle = computed(() => ({
 
 <template>
   <div v-if="image && playback" ref="pbRoot" class="battle-playback" :style="mapStyle" data-test="battle-playback">
-    <PlaybackControls
-      :playing="playing"
-      :speed="speed"
-      :current-time="currentTime"
-      :duration="duration"
-      :label-prefs="labelPrefs"
-      :hp-prefs="hpPrefs"
-      :fullscreen-supported="fullscreenSupported"
-      :is-fullscreen="isFullscreen"
-      :active-tool="activeTool"
-      :annot-colors="ANNOT_COLORS"
-      :annot-color="annotColor"
-      :annot-visible="annotVisible"
-      :annot-width-slider="annotWidthSlider"
-      :annot-width-min="ANNOT_WIDTH_MIN"
-      :annot-width-max="ANNOT_WIDTH_MAX"
-      :history-index="historyIndex"
-      :history="history"
-      :can-undo="canUndo"
-      :can-redo="canRedo"
-      :format-clock="formatClock"
-      @toggle-play="togglePlay"
-      @step="step"
-      @set-speed="setSpeed"
-      @reset-view="resetView"
-      @toggle-fullscreen="toggleFullscreen"
-      @update-label-pref="(key, value) => { labelPrefs[key] = value }"
-      @update-hp-pref="(key, value) => { hpPrefs[key] = value }"
-      @toggle-tool="toggleTool"
-      @set-annot-color="annotColor = $event"
-      @update:annot-width="annotWidthSlider = $event"
-      @undo="undoAnnot"
-      @redo="redoAnnot"
-      @clear-annotations="clearAll"
-      @toggle-annotations="annotVisible = !annotVisible"
-      @drag-start="dragStart"
-      @seek="seek"
+    <BattlePlaybackHud
+      :friendly-hp="friendlyHp"
+      :enemy-hp="enemyHp"
+      :friendly-points="friendlyPoints"
+      :enemy-points="enemyPoints"
     />
 
-    <!-- 地图 + detail sidebar 主区（宽屏并排，窄屏上下堆叠；§8.2） -->
+    <!-- 地图是主视觉；控制条在桌面流式布局，移动端由首次触摸唤起。 -->
     <div class="pb-main" data-test="pb-main">
-      <BattleMap
-        ref="mapComponent"
-        :image="image"
-        :map-view="mapView"
-        :pb-overview="pbOverview"
-        :friendly-team="friendlyTeam"
-        :grid-regions="gridRegions"
-        :visible-tracers="visibleTracers"
-        :tracer-color="tracerColor"
-        :view-scale="view.scale"
-        :viewport-style="viewportStyle"
-        :annot-visible="annotVisible"
-        :rendered-annotations="renderedAnnotations"
-        :annot-font-size="ANNOT_FONT_SIZE"
-        :active-tool="activeTool"
-        :vehicle-states="vehicleStates"
-        :selected-account-id="selectedAccountId"
-        :marker-label="markerLabel"
-        :hp-for="hpFor"
-        :hp-prefs="hpPrefs"
-        :translate="t"
-        :ghost-for="ghostFor"
-        :flash-for="flashFor"
-        :hp-no-transition="hpNoTransition"
-        :text-session="textSession"
-        :text-input-style="textInputStyle"
-        :visible-floats="visibleFloats"
-        :visible-bursts="visibleBursts"
-        :visible-feed="visibleFeed"
-        :float-team-class="floatTeamClass"
-        @wheel="onWheel"
-        @pointer-down="onPointerDown"
-        @pointer-move="onPointerMove"
-        @pointer-up="onPointerUp"
-        @viewport-click="onViewportClick"
-        @marker-select="onMarkerSelect"
-        @update-text="textSession.text = $event"
-        @commit-text="commitSession"
-        @cancel-text="cancelSession"
-      />
+      <div class="pb-map-stage">
+        <BattleMap
+          ref="mapComponent"
+          :image="image"
+          :map-view="mapView"
+          :pb-overview="pbOverview"
+          :friendly-team="friendlyTeam"
+          :grid-regions="gridRegions"
+          :visible-tracers="visibleTracers"
+          :tracer-color="tracerColor"
+          :view-scale="view.scale"
+          :viewport-style="viewportStyle"
+          :annot-visible="annotVisible"
+          :rendered-annotations="renderedAnnotations"
+          :annot-font-size="ANNOT_FONT_SIZE"
+          :active-tool="activeTool"
+          :vehicle-states="vehicleStates"
+          :selected-account-id="selectedAccountId"
+          :marker-label="markerLabel"
+          :hp-for="hpFor"
+          :hp-prefs="hpPrefs"
+          :translate="t"
+          :ghost-for="ghostFor"
+          :flash-for="flashFor"
+          :hp-no-transition="hpNoTransition"
+          :text-session="textSession"
+          :text-input-style="textInputStyle"
+          :visible-floats="visibleFloats"
+          :visible-bursts="visibleBursts"
+          :visible-feed="visibleFeed"
+          :float-team-class="floatTeamClass"
+          @wheel="onWheel"
+          @pointer-down="onPointerDown"
+          @pointer-move="onPointerMove"
+          @pointer-up="onPointerUp"
+          @viewport-click="onViewportClick"
+          @marker-select="onMarkerSelect"
+          @update-text="textSession.text = $event"
+          @commit-text="commitSession"
+          @cancel-text="cancelSession"
+        />
 
-    <!-- PR5 §8：detail sidebar（宽屏右侧固定，窄屏置于地图下方；点击 marker 打开/切换，
-         点击空白不关闭，必须 × 显式关闭；destroyed 车可选；seek 保持同一 selected vehicle） -->
-    <VehicleDetailsPanel
-      :selected-state="selectedState"
-      :selected-portrait-url="selectedPortraitUrl"
-      :sel-last-known-sec="selLastKnownSec"
-      :sel-cur-stats="selCurStats"
-      :selected-track="selectedTrack"
-      :current-time="currentTime"
-      :sel-damage-log="selDamageLog"
-      :format-clock="formatClock"
-      @close="closeSidebar"
-    />
-    </div>
-
-    <!-- 双方总血量条 + 争霸赛实时点数（PR #107 Blocker 2 aggregate state）：
-         FULL_RELATIVE=100% 阵营色实心（相对满血）；EXACT=真实分数（known/totalMax）；
-         PARTIAL=100% 斜纹 indeterminate（有真实已知剩余、无已证明分母）；UNKNOWN=空/— -->
-    <div class="pb-hp-bars" data-test="pb-hp-bars">
-      <div class="pb-hp-row">
-        <span class="pb-hp-label">{{ $t('recon.map.playback.team_friendly') }}</span>
-        <div class="pb-hp-track">
-          <div
-            class="pb-hp-fill pb-hp-friendly"
-            :class="{ 'pb-hp-partial': friendlyHp.state === 'PARTIAL' }"
-            :style="{ width: hpBarFill(friendlyHp, 'known') }"
-            data-test="pb-hp-fill-friendly"
-          ></div>
-          <div class="pb-hp-fill pb-hp-unknown" :style="{ width: hpBarFill(friendlyHp, 'unknown') }"></div>
-        </div>
-        <span class="pb-hp-value" data-test="pb-hp-value-friendly">{{ hpValueText(friendlyHp) }}</span>
-        <span v-if="friendlyHp.spawnFullCount > 0" class="pb-hp-unknown-text" data-test="pb-hp-spawn-full-friendly">{{ $t('recon.map.playback.hp_full_spawn') }} ({{ friendlyHp.spawnFullCount }})</span>
-        <span v-if="friendlyHp.unknownMax > 0" class="pb-hp-unknown-text" data-test="pb-hp-unknown-friendly">{{ $t('recon.map.playback.hp_unknown') }} {{ friendlyHp.unknownMax }}</span>
-        <span v-if="showPoints && friendlyPoints != null" class="pb-hp-points" data-test="pb-points-friendly">{{ $t('recon.map.playback.points') }}: {{ friendlyPoints }}</span>
-      </div>
-      <div class="pb-hp-row">
-        <span class="pb-hp-label">{{ $t('recon.map.playback.team_enemy') }}</span>
-        <div class="pb-hp-track">
-          <div
-            class="pb-hp-fill pb-hp-enemy"
-            :class="{ 'pb-hp-partial': enemyHp.state === 'PARTIAL' }"
-            :style="{ width: hpBarFill(enemyHp, 'known') }"
-            data-test="pb-hp-fill-enemy"
-          ></div>
-          <div class="pb-hp-fill pb-hp-unknown" :style="{ width: hpBarFill(enemyHp, 'unknown') }"></div>
-        </div>
-        <span class="pb-hp-value" data-test="pb-hp-value-enemy">{{ hpValueText(enemyHp) }}</span>
-        <span v-if="enemyHp.unknownMax > 0" class="pb-hp-unknown-text" data-test="pb-hp-unknown-enemy">{{ $t('recon.map.playback.hp_unknown') }} {{ enemyHp.unknownMax }}</span>
-        <span v-if="showPoints && enemyPoints != null" class="pb-hp-points" data-test="pb-points-enemy">{{ $t('recon.map.playback.points') }}: {{ enemyPoints }}</span>
-      </div>
-    </div>
-
-    <!-- 真实事件面板默认折叠；事件行是唯一的事件 seek 入口。 -->
-    <section class="pb-event-panel" data-test="pb-events">
-      <button
-        type="button"
-        class="pb-event-toggle"
-        data-test="pb-event-toggle"
-        :aria-expanded="eventPanelOpen"
-        @click="eventPanelOpen = !eventPanelOpen"
-      >
-        {{ $t('recon.map.playback.events') }} ({{ userVisibleEvents.length }})
-      </button>
-      <div v-if="eventPanelOpen" class="pb-event-list" data-test="pb-event-panel">
-        <button
-          v-for="(event, index) in userVisibleEvents"
-          :key="`${event.type}-${event.timeSec}-${index}`"
-          type="button"
-          class="pb-event-row"
-          data-test="pb-event"
-          @click="seekToEvent(event.timeSec)"
+        <PlaybackSidePanel
+          :panel="activePanel"
+          :groups="panelGroups"
+          @update:panel="activePanel = $event"
+          @close="closePanel"
         >
-          <span class="pb-event-time">{{ formatClock(event.timeSec) }}</span>
-          <span class="pb-event-type">{{ $t(`recon.map.playback.event_${event.type}`) }}</span>
-          <span>{{ eventLabel(event) }}</span>
-        </button>
-        <p v-if="userVisibleEvents.length === 0" class="pb-event-empty">{{ $t('recon.map.playback.no_events') }}</p>
+          <template #battle>
+            <dl class="pb-panel-facts">
+              <dt>{{ $t('recon.map.playback.team_friendly') }}</dt>
+              <dd>{{ hpValueText(friendlyHp) }}</dd>
+              <dt>{{ $t('recon.map.playback.team_enemy') }}</dt>
+              <dd>{{ hpValueText(enemyHp) }}</dd>
+              <dt>{{ $t('recon.map.playback.points') }}</dt>
+              <dd>{{ friendlyPoints == null ? '—' : friendlyPoints }} : {{ enemyPoints == null ? '—' : enemyPoints }}</dd>
+              <dt>{{ $t('recon.map.playback.kills') }}</dt>
+              <dd data-test="pb-panel-kills">{{ friendlyKills }} : {{ enemyKills }}</dd>
+              <dt>{{ $t('recon.map.playback.objective') }}</dt>
+              <dd data-test="pb-panel-objective">—</dd>
+            </dl>
+          </template>
+          <template #vehicle>
+            <VehicleDetailsPanel
+              :selected-state="selectedState"
+              :selected-portrait-url="selectedPortraitUrl"
+              :sel-last-known-sec="selLastKnownSec"
+              :sel-cur-stats="selCurStats"
+              :selected-track="selectedTrack"
+              :current-time="currentTime"
+              :sel-damage-log="selDamageLog"
+              :format-clock="formatClock"
+              @close="closeSidebar"
+            />
+          </template>
+          <template #display>
+            <div class="pb-panel-options">
+              <label><input data-test="pb-show-player" type="checkbox" :checked="labelPrefs.showPlayerName" @change="labelPrefs.showPlayerName = $event.target.checked"> {{ $t('recon.map.playback.show_player_name') }}</label>
+              <label><input data-test="pb-show-tank" type="checkbox" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ $t('recon.map.playback.show_tank_name') }}</label>
+              <label><input data-test="pb-show-hp" type="checkbox" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ $t('recon.map.playback.show_hp') }}</label>
+            </div>
+          </template>
+          <template #events>
+            <div class="pb-event-list" data-test="pb-event-panel">
+              <button
+                v-for="(event, index) in userVisibleEvents"
+                :key="`${event.type}-${event.timeSec}-${index}`"
+                type="button"
+                class="pb-event-row"
+                data-test="pb-event"
+                @click="seekToEvent(event.timeSec)"
+              >
+                <span class="pb-event-time">{{ formatClock(event.timeSec) }}</span>
+                <span class="pb-event-type">{{ $t(`recon.map.playback.event_${event.type}`) }}</span>
+                <span>{{ eventLabel(event) }}</span>
+              </button>
+              <p v-if="userVisibleEvents.length === 0" class="pb-event-empty">{{ $t('recon.map.playback.no_events') }}</p>
+            </div>
+          </template>
+        </PlaybackSidePanel>
+
+        <div class="pb-annotation-surface">
+          <AnnotationToolbar
+            :open="annotationOpen"
+            :active-tool="activeTool"
+            :annot-colors="ANNOT_COLORS"
+            :annot-color="annotColor"
+            :annot-visible="annotVisible"
+            :annot-width-slider="annotWidthSlider"
+            :annot-width-min="ANNOT_WIDTH_MIN"
+            :annot-width-max="ANNOT_WIDTH_MAX"
+            :history-index="historyIndex"
+            :history="history"
+            :can-undo="canUndo"
+            :can-redo="canRedo"
+            @close="annotationOpen = false"
+            @toggle-tool="toggleTool"
+            @set-annot-color="annotColor = $event"
+            @update:annot-width="annotWidthSlider = $event"
+            @undo="undoAnnot"
+            @redo="redoAnnot"
+            @clear-annotations="clearAll"
+            @toggle-annotations="annotVisible = !annotVisible"
+          />
+        </div>
+
+        <div v-if="orientationHint" class="pb-orientation-hint" data-test="pb-orientation-hint">{{ orientationHint }}</div>
       </div>
-    </section>
+
+      <PlaybackMobileOverlay ref="mobileOverlay">
+        <PlaybackControls
+          :playing="playing"
+          :speed="speed"
+          :current-time="currentTime"
+          :duration="duration"
+          :fullscreen-supported="fullscreenSupported"
+          :is-fullscreen="isFullscreen"
+          :format-clock="formatClock"
+          @toggle-play="togglePlay"
+          @step="step"
+          @set-speed="setSpeed"
+          @reset-view="resetView"
+          @toggle-fullscreen="toggleFullscreen"
+          @toggle-panels="activePanel = activePanel ? null : 'battle'"
+          @toggle-annotation="annotationOpen = !annotationOpen"
+          @drag-start="dragStart"
+          @seek="seek"
+        />
+      </PlaybackMobileOverlay>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.battle-playback {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
-}
-/* 全屏（原生 Fullscreen API，:fullscreen 作用于 .battle-playback 自身）：
-   填满视口、内部滚动兜底；地图保持自身宽高比（不拉伸/不 letterbox），
-   用垂直预算限制地图最大宽度以适配剩余空间，toolbar/时间轴不被挤出。 */
-.battle-playback:fullscreen {
-  width: 100%;
-  height: 100%;
-  margin-top: 0;
-  background: var(--bg, #0b0f0d);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.battle-playback:fullscreen .pb-map {
-  width: 100%;
-  max-width: calc(100vh - 190px); /* 全屏垂直预算：控制区/时间轴/血量条等固定 UI 约 190px */
-  margin: auto; /* 垂直居中利用剩余空间；超高时滚动兜底 */
-}
-.battle-playback:fullscreen .pb-main { align-items: center; }
-.battle-playback:fullscreen .pb-main .pb-map { flex: 0 1 auto; }
-.pb-main { display: flex; align-items: flex-start; gap: 8px; }
-/* 地图自适应剩余宽度（§8.2 宽屏：右侧固定 sidebar，地图占剩余） */
-.pb-main .pb-map { width: auto; margin: 0; flex: 1 1 auto; min-width: 0; }
 .pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; }
 .pb-viewport {
   position: relative;
@@ -1680,12 +1723,6 @@ const mapStyle = computed(() => ({
   height: auto;
   border-radius: 4px;
   background: #111;
-}
-@media (width < 768px) {
-  .pb-map { width: 100%; }
-  /* §8.2 窄屏：sidebar 置于地图/播放器下方，不强行压缩成窄右侧栏 */
-  .pb-main { flex-direction: column; }
-  .pb-main .pb-map { width: 100%; }
 }
 .pb-markers {
   position: absolute;
@@ -1719,25 +1756,6 @@ const mapStyle = computed(() => ({
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
-
-/* 双方总血量条：阵营色填充（本方/敌方），随播放实时下降；争霸赛附点数 */
-.pb-hp-bars { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
-.pb-hp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .78rem; color: var(--text-label); }
-.pb-hp-label { width: 3.5em; flex-shrink: 0; }
-.pb-hp-track { flex: 1; min-width: 0; display: flex; height: 10px; border-radius: 5px; background: var(--bg-chip, rgba(128,128,128,.25)); overflow: hidden; }
-.pb-hp-fill { height: 100%; transition: width .15s linear; }
-.pb-hp-friendly { background: var(--map-spawn-friendly, #8ef7b0); }
-.pb-hp-enemy { background: var(--map-spawn-enemy, #ff8d8d); }
-.pb-hp-unknown { background: rgba(128,128,128,.45); }
-/* PARTIAL（有真实已知剩余、无已证明分母）：阵营色底 + indeterminate 斜纹——
-   不是开局 fallback 条纹（开局用 FULL_RELATIVE 纯实心阵营色），只是「已知部分不完整」的表达 */
-.pb-hp-friendly.pb-hp-partial,
-.pb-hp-enemy.pb-hp-partial {
-  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.35) 0 3px, transparent 3px 6px);
-}
-.pb-hp-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pb-hp-unknown-text { color: var(--text-muted, #999); white-space: nowrap; }
-.pb-hp-points { white-space: nowrap; }
 
 /* PR5 §10/§12/§16 transient feedback 层（floating damage / destruction burst / kill feed）：
    wall-clock 生命周期、任意倍速可读时长一致；seek 清空、pause 自然完成。 */
@@ -1806,22 +1824,6 @@ const mapStyle = computed(() => ({
 }
 @media (prefers-reduced-motion: reduce) {
   .pb-float-dmg, .pb-burst, .pb-feed-item { animation: none; }
-}
-.pb-event-panel {
-  border: 1px solid var(--border-ghost);
-  border-radius: 4px;
-  background: var(--bg-card2);
-  overflow: hidden;
-}
-.pb-event-toggle {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: var(--text-label);
-  padding: 6px 8px;
-  text-align: left;
-  cursor: pointer;
-  font-size: .8rem;
 }
 .pb-event-list {
   display: flex;

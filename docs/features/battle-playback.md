@@ -19,12 +19,30 @@ schema 从该文件生成。Java domain facts 通过显式 mapper 投影为 wire
 ### 前端职责边界
 
 `BattlePlayback.vue` 是单一编排入口，负责时间、视图、选择与事件命令；展示层拆为
-`BattleMap.vue`（SVG、坦克标记、炮线、标注及瞬时反馈）、`PlaybackControls.vue`
-（播放控制与标注工具）、`PlaybackTimeline.vue`（纯进度条）和
-`VehicleDetailsPanel.vue`（当前车辆详情）。
+`BattlePlaybackHud.vue`（双方 HP、权威点数与空 objective slot）、`BattleMap.vue`
+（SVG、坦克标记、炮线、标注及瞬时反馈）、`PlaybackControls.vue`（紧凑播放控制）、
+`PlaybackTimeline.vue`（纯进度条）、`AnnotationToolbar.vue`（折叠式标注工具）、
+`PlaybackSidePanel.vue`（Battle / Vehicle / Display / Events 面板）和
+`VehicleDetailsPanel.vue`（当前车辆详情）。`PlaybackMobileOverlay.vue` 只管理移动端
+controls 的活动显示与淡出，不拥有 playback state。
 `utils/playbackVehicleState.ts` 负责将 canonical V2 track 投影为 marker state，
 `utils/playbackClock.ts` 提供播放时间/倍速纯函数。拆分不新增数据源、不改变 V2 query-at-time、
 anti-future-leak 或现有 tank-marker 资产契约。
+
+### PR228 响应式展示契约
+
+- Desktop（`>=1200px`）、Tablet（`768–1199px`）和 Mobile（`<768px`）共用同一套
+  Universal Battle HUD：己方在左、比分与空 objective slot 在中、敌方在右；HP 的
+  `FULL_RELATIVE`、`EXACT`、`PARTIAL`、`UNKNOWN` 语义保持不变。
+- 地图是 workspace 的主视觉。Desktop / Tablet 的 controls 为紧凑流式布局，Mobile
+  初始只保留地图和 HUD；轻触地图才显示约 3 秒的播放 controls，控制事件不会穿透到地图。
+- Display、Events、Vehicle 与 Battle 内容通过侧面板按需显示；Events 只呈现
+  `DAMAGE`、`KILL`、`DESTROYED`，点击事件执行 seek + pause，纯时间轴不承载事件标记。
+- 标注工具默认折叠，绘图不暂停 battle clock。Fullscreen 继续保持同一组件实例的
+  current time、playing、倍速、选中车辆、zoom/pan、annotations 和偏好；移动端只对
+  `screen.orientation.lock('landscape')` 做 best-effort 尝试，失败不阻断播放。
+- 当前 `BattlePlaybackDataset` 没有 base-state schema，因此 objective slot 为空/隐藏；
+  本次不新增 backend Base contract、2 秒轨迹或 marker collision avoidance。
 
 测试也按同一责任边界组织：地图/标记/手势、控制、时间线和详情面板分别由对应 focused
 suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fixture 位于 testing-only
@@ -185,8 +203,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     selectAt（hitTest 像素→内容坐标）/ textInputStyle / semanticPoint 全部经 mapWidth/mapHeight 读取
     → fullscreen enter/exit 后 collision / hitbox / 标注换算立即用新尺寸重算（禁止 magic delay）；
     zoom/pan 不自动 reset（无 auto-fit；Reset View 由用户使用）。全屏样式 `.battle-playback:fullscreen`
-    （100%×100%、内部滚动兜底）与 `.battle-playback:fullscreen .pb-map`（100% 宽、垂直预算
-    `max-width: calc(100vh - 190px)`、`margin: auto` 居中——保持宽高比、不拉伸/不 letterbox）。
+    （100%×100%、map stage `min-height:0`、内部滚动兜底）让地图在剩余空间中尽可能展开，
+    不再使用旧 toolbar 的固定 `calc(100vh - 190px)` 垂直预算。
     生命周期：`fullscreenchange` listener 与 ResizeObserver 在 unmount 时移除/disconnect；组件在全屏
     中被卸载时主动 `exitFullscreen`。
     旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，
