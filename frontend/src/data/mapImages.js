@@ -61,7 +61,7 @@ export const mapImages = {
   karelia: { src: rockfieldImg, width: 1536, height: 1536, coordinateBounds: WORLD_BOUNDS_300 },
   lagoon: { src: lagoonImg, width: 1530, height: 1532, coordinateBounds: WORLD_BOUNDS_300 },
   lumber: { src: horrorstadtImg, width: 1542, height: 1544, coordinateBounds: WORLD_BOUNDS_300 },
-  malinovka: { src: winterMalinovkaImg, width: 1206, height: 1196, coordinateBounds: WORLD_BOUNDS_300 },
+  malinovka: { src: winterMalinovkaImg, width: 1508, height: 1524, coordinateBounds: WORLD_BOUNDS_300 },
   medvedkovo: { src: deadRailImg, width: 1526, height: 1532, coordinateBounds: WORLD_BOUNDS_300 },
   milbase: { src: yamatoHarborImg, width: 1538, height: 1530, coordinateBounds: WORLD_BOUNDS_300 },
   mountain: { src: blackGoldvilleImg, width: 1542, height: 1544, coordinateBounds: WORLD_BOUNDS_300 },

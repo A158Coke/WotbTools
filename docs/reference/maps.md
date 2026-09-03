@@ -25,7 +25,7 @@
 | karieri | 铜矿采集场 | Copperfield | 23_karieri_kr | copperfield.png (1526x1536) | ✅ 有素材 |
 | lagoon | 海岸礁湖 | Lagoon | 15_lagoon_ln | lagoon.png (1530x1532) | ✅ 有素材 |
 | lumber | 山麓角逐 | Horrorstadt | 31_lumber_lm | horrorstadt.png (1542x1544) | ✅ 有素材 |
-| malinovka | 马利诺夫卡 | Winter Malinovka | 12_malinovka_ma | winter-malinovka.png (1206x1196) | ✅ 有素材 |
+| malinovka | 马利诺夫卡 | Winter Malinovka | 12_malinovka_ma | winter-malinovka.png (1508x1524) | ✅ 有素材 |
 | medvedkovo | 废弃轨道 | Dead Rail | 04_medvedkovo_md | dead-rail.png (1526x1532) | ✅ 有素材 |
 | milbase | 落日军港 | Yamato Harbor | 24_milibase_mlb | yamato-harbor.png (1538x1530) | ✅ 有素材 |
 | mountain | 暗金矿窑 | Black Goldville | 21_mountain_mnt | black-goldville.png (1542x1544) | ✅ 有素材 |
