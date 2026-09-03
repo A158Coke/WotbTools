@@ -541,6 +541,9 @@ const pbRoot = ref(null)
 const isFullscreen = ref(false)
 // §3：大桌面（>=1200px）即使不进入 fullscreen，也用持久 rail|map|details 三列布局。
 const wideLayout = ref(false)
+// §fullscreen：PlaybackControls 是否已在 Left Rail（fullscreen 或大桌面）。是则 bottom 不再有
+// bottom-overlay controls，safe area 的 bottom inset 恒为 0（不再读到切换前的旧高度）。
+const controlsInRail = computed(() => isFullscreen.value || wideLayout.value)
 const fullscreenSupported = computed(() =>
   typeof document !== 'undefined'
   && pbRoot.value != null
@@ -558,11 +561,10 @@ function onFullscreenChange() {
     orientationRequestToken += 1
     unlockOrientation()
   }
-  // §fullscreen-exit：进入/退出 fullscreen 后布局改变。不能把 fullscreen 的 camera/几何直接带回
-  // page mode。这里只“重新武装”待重算标记，等 ResizeObserver 在布局稳定后以新 mode 的
-  // stage/rect 重新测量并应用默认 fit（contain 居中）；不能用旧尺寸立即 resetView（会算错并把
-  // fullscreen 的 scale 带回 page mode）。
-  fitInitialized = false
+  // §fullscreen：进入/退出后布局改变。等 Vue 完成 Bottom Overlay ↔ Left Rail 的 controls 搬迁后
+  //（nextTick），用新 mode 的真实几何 force 一次 authoritative fit（geometry-signature 也会捕获
+  // bottom inset 归零/变化）。不用 setTimeout magic delay。
+  nextTick(() => fitViewIfReady(true))
 }
 let orientationHintTimer = null
 function showOrientationHint() {
@@ -632,6 +634,12 @@ watch(() => mapEl.value, (el) => {
     })
     mapResizeObserver.observe(el)
     if (mapStageEl.value) mapResizeObserver.observe(mapStageEl.value)
+    // §safe-viewport：观察影响 camera safe area 的真实元素 —— HUD（top inset）与 bottom overlay
+    // controls（bottom inset）。controls 从 Bottom Overlay 搬到 Left Rail 后，bottom overlay 高度归零，
+    // 这里触发 fitViewIfReady → geometry-signature 变化 → 重新 fit，不再残留旧 bottom inset。
+    const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
+    if (hud && hud !== el) mapResizeObserver.observe(hud)
+    if (mobileOverlay.value?.$el) mapResizeObserver.observe(mobileOverlay.value.$el)
   }
 })
 
@@ -647,13 +655,20 @@ let suppressClick = false
 // 手势结束后的首个 click 必须被吞掉，纯点击车辆仍正常选中
 let gestureMoved = false
 
-/** fullscreen 下 HUD（顶部）与 controls/timeline（底部）为地图留出的安全区高度；
- *  page mode 的 map-stage 已是流式布局（有界高度），不加额外 inset。 */
+/** 安全区：fullscreen 下 HUD（顶部 overlay）高度为 top inset；bottom inset 仅当真有
+ *  bottom-overlay controls（mobile，controls 不在 rail）时才量取，否则为 0 —— 因为
+ *  controls 已在 Left Rail（controlsInRail），不占 Map Workspace bottom，也避免读到
+ *  切换 fullscreen 前旧 bottom-overlay 高度造成底部黑边。 */
 function safeInsets() {
-  if (!isFullscreen.value) return { top: 0, bottom: 0 }
-  const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
-  const top = hud ? hud.clientHeight : 0
-  const bottom = mobileOverlay.value?.$el?.clientHeight || 0
+  let top = 0
+  let bottom = 0
+  if (isFullscreen.value) {
+    const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
+    top = hud ? hud.clientHeight : 0
+  }
+  if (!controlsInRail.value) {
+    bottom = mobileOverlay.value?.$el?.clientHeight || 0
+  }
   return { top, bottom }
 }
 
@@ -856,14 +871,21 @@ function resetView() {
 
 // §3：默认视图 = 完整地图 contain（fit 居中、完整可见，无需手动调整）。
 // 地图在「下 HUD、上 controls」安全区内，顶部不伸进血条；四周黑边取决于地图与安全区的比例。
-let fitInitialized = false
+// §geometry-signature：以 mode + stage/map/safe 尺寸为 signature，变化即重新 fit，
+// 不靠布尔（fitInitialized）锁死旧几何——mode 或 safe area 改变（如 bottom inset 归零）会重新 fit。
+let lastFitSignature = ''
 function fitViewIfReady(force = false) {
-  if (!force && fitInitialized) return
-  const stageH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
-  if (mapWidth() > 0 && stageH > 0) {
-    resetView()
-    fitInitialized = true
-  }
+  if (force) lastFitSignature = ''
+  const stageW = mapWidth()
+  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const safe = safeInsets()
+  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
+  const rect = mapRenderRect()
+  if (stageW <= 0 || safeH <= 0 || rect.width <= 0 || rect.height <= 0) return
+  const signature = [isFullscreen.value, wideLayout.value, stageW, safeH, rect.width, rect.height, safe.top, safe.bottom].join('|')
+  if (!force && signature === lastFitSignature) return
+  lastFitSignature = signature
+  resetView()
 }
 
 // ---- 地图标注（临时纯前端：切视图/切文件即清空；几何一律存语义坐标） ----
@@ -1803,21 +1825,6 @@ const mapStyle = computed(() => ({
           @toggle-annotations="annotVisible = !annotVisible"
         />
       </template>
-      <template v-else-if="activePanel === 'battle'">
-        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
-        <dl class="pb-panel-facts" data-test="pb-panel-content-battle">
-          <dt>{{ $t('recon.map.playback.team_friendly') }}</dt>
-          <dd>{{ hpValueText(friendlyHp) }}</dd>
-          <dt>{{ $t('recon.map.playback.team_enemy') }}</dt>
-          <dd>{{ hpValueText(enemyHp) }}</dd>
-          <dt v-if="friendlyPoints != null || enemyPoints != null">{{ $t('recon.map.playback.points') }}</dt>
-          <dd v-if="friendlyPoints != null || enemyPoints != null">{{ [friendlyPoints, enemyPoints].filter(value => value != null).join(' : ') }}</dd>
-          <dt>{{ $t('recon.map.playback.kills') }}</dt>
-          <dd data-test="pb-panel-kills">{{ friendlyKills }} : {{ enemyKills }}</dd>
-          <dt v-if="baseStatesAt.length">{{ $t('recon.map.playback.objective') }}</dt>
-          <dd v-if="baseStatesAt.length" data-test="pb-panel-objective">{{ baseStatesAt.map(state => state.baseId).join(' · ') }}</dd>
-        </dl>
-      </template>
       <template v-else-if="activePanel === 'display'">
         <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
         <div class="pb-panel-options" data-test="pb-panel-content-display">
@@ -1875,7 +1882,7 @@ const mapStyle = computed(() => ({
         :aria-expanded="activePanel === 'battle'"
         :title="$t('recon.map.playback.panel_battle')"
         :aria-label="$t('recon.map.playback.panel_battle')"
-        @click="activePanel = activePanel === 'battle' ? null : 'battle'"
+        @click="activePanel = null"
       ><span class="pb-rail-glyph">⚔</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_battle') }}</span></button>
       <button
         type="button"
@@ -1993,6 +2000,21 @@ const mapStyle = computed(() => ({
             :format-clock="formatClock"
             @close="closeSidebar"
           />
+          <template v-else-if="isFullscreen || wideLayout">
+            <strong class="pb-side-panel-title">{{ $t('recon.map.playback.panel_battle') }}</strong>
+            <dl class="pb-panel-facts" data-test="pb-panel-content-battle">
+              <dt>{{ $t('recon.map.playback.team_friendly') }}</dt>
+              <dd>{{ hpValueText(friendlyHp) }}</dd>
+              <dt>{{ $t('recon.map.playback.team_enemy') }}</dt>
+              <dd>{{ hpValueText(enemyHp) }}</dd>
+              <dt v-if="friendlyPoints != null || enemyPoints != null">{{ $t('recon.map.playback.points') }}</dt>
+              <dd v-if="friendlyPoints != null || enemyPoints != null">{{ [friendlyPoints, enemyPoints].filter(value => value != null).join(' : ') }}</dd>
+              <dt>{{ $t('recon.map.playback.kills') }}</dt>
+              <dd data-test="pb-panel-kills">{{ friendlyKills }} : {{ enemyKills }}</dd>
+              <dt v-if="baseStatesAt.length">{{ $t('recon.map.playback.objective') }}</dt>
+              <dd v-if="baseStatesAt.length" data-test="pb-panel-objective">{{ baseStatesAt.map(state => state.baseId).join(' · ') }}</dd>
+            </dl>
+          </template>
         </div>
 
         <!-- 移动端（rail 隐藏）在底部显示标注工具栏；桌面走左侧二级菜单，不重复 -->

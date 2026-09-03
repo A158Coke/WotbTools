@@ -155,6 +155,13 @@
    隐藏其自带的重复 close，避免同一面板出现两个 ×。 */
 .battle-playback .pb-side-panel .pb-sb-close { display: none; }
 
+.battle-playback .pb-side-panel-title {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-heading);
+  font-size: .86rem;
+  font-weight: 800;
+}
 .battle-playback .pb-panel-facts {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

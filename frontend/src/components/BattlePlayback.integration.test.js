@@ -945,6 +945,59 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-info"]').text()).toBe(selBefore)
   })
 
+  it('§fullscreen-blackedge：mobile bottom controls(≈140) → 第一次进 fullscreen → bottom inset 归零 → fit 重算（无旧黑边）', async () => {
+    stubRaf()
+    stubFullscreenApi()
+    const getRoCb = stubResizeObserver()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const roCb = getRoCb()
+    expect(roCb).toBeTruthy()
+
+    const stageEl = wrapper.find('.pb-map-stage').element
+    Object.defineProperty(stageEl, 'clientHeight', { value: 900, configurable: true })
+    const mapEl = wrapper.find('[data-test="pb-map"]').element
+    // mobile：底部 overlay controls 高度 ≈140（切换前的旧 bottom-overlay 高度）
+    const overlayEl = wrapper.find('[data-test="pb-mobile-overlay"]').element
+    Object.defineProperty(overlayEl, 'clientHeight', { value: 140, configurable: true })
+
+    const scaleOf = () => {
+      const st = wrapper.find('[data-test="pb-viewport"]').attributes('style') || ''
+      const m = st.match(/scale\(([\d.]+)\)/)
+      return m ? parseFloat(m[1]) : NaN
+    }
+
+    // mobile（非 fullscreen、controls 在 bottom overlay）：bottom inset=140 → safeH=760 → 较小 fit
+    roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])
+    await flushPromises()
+    const mobileScale = scaleOf()
+
+    // 第一进 fullscreen：controls 搬到 Left Rail → bottom inset 归零（safeH=900）→ fit 变大（地图更大、无 140px 黑边）
+    setFullscreen(wrapper.find('[data-test="battle-playback"]').element)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+    roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])
+    await flushPromises()
+    const fsScale = scaleOf()
+    expect(fsScale).toBeGreaterThan(mobileScale)
+
+    // Reset View（fullscreen）应与当前 fit 一致：完整地图、无旧 bottom-controls safe inset 残留
+    await wrapper.find('[data-test="pb-rail-reset"]').trigger('click')
+    await flushPromises()
+    expect(scaleOf()).toBeCloseTo(fsScale, 3)
+
+    // 第二次进 fullscreen 一致（不累积布局误差）
+    setFullscreen(null)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+    setFullscreen(wrapper.find('[data-test="battle-playback"]').element)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+    roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])
+    await flushPromises()
+    expect(scaleOf()).toBeCloseTo(fsScale, 3)
+  })
+
   it('§zoom：放大后再缩小能回到完整地图 fit（不再卡在 1x）', async () => {
     stubRaf()
     const getRoCb = stubResizeObserver()
@@ -996,10 +1049,10 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-rail-events"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-rail-annotation"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-rail-reset"]').exists()).toBe(true)
-    // 点击 rail battle → 左侧二级菜单显示战局内容
-    await wrapper.find('[data-test="pb-rail-battle"]').trigger('click')
+    // 点击 rail display → 左侧二级菜单显示显示选项
+    await wrapper.find('[data-test="pb-rail-display"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-panel-content-battle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-panel-content-display"]').exists()).toBe(true)
     // 返回一级菜单
     await wrapper.find('[data-test="pb-rail-back"]').trigger('click')
     await flushPromises()
