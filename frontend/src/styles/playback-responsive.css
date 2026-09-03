@@ -14,6 +14,35 @@
   min-width: 0;
 }
 
+/* §2：Left Rail —— 默认隐藏，仅在 fullscreen 下作为左列（workspace）。 */
+.battle-playback .pb-left-rail { display: none; }
+.battle-playback:fullscreen .pb-left-rail {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  overflow-y: auto;
+}
+.battle-playback:fullscreen .pb-rail-btn {
+  min-height: 34px;
+  padding: 4px 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-card2) 78%, transparent);
+  color: var(--text-label);
+  font-size: .68rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.battle-playback:fullscreen .pb-rail-btn.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-card2));
+  color: var(--accent-dark);
+}
+
 .battle-playback .pb-map-stage {
   position: relative;
   min-width: 0;
@@ -85,7 +114,8 @@
    overlay layer——它们都不占用地图的 layout height（不再用三行 grid 压缩地图）。 */
 .battle-playback:fullscreen {
   position: relative;
-  display: block;
+  display: grid;
+  grid-template-columns: 64px 1fr;
   width: 100vw;
   height: 100vh;
   margin: 0;
@@ -96,8 +126,8 @@
 
 /* Map stage = 整个 viewport：地图是 fullscreen 的主背景 / 主交互 surface。 */
 .battle-playback:fullscreen .pb-main {
-  position: absolute;
-  inset: 0;
+  grid-column: 2;
+  position: relative;
   display: block;
   min-height: 0;
 }
@@ -144,6 +174,21 @@
 }
 
 /* Controls + Timeline：底部 overlay，始终可操作，遵守 safe-area；不占 map layout height。 */
+/* §2：Right Details（panel 打开时）在 fullscreen 下 dock 为右侧全高列，不占地图 layout。 */
+.battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(340px, 32vw);
+  max-height: none;
+  border-radius: 0;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  box-shadow: none;
+  overflow-y: auto;
+}
 .battle-playback:fullscreen .pb-mobile-overlay {
   position: absolute;
   left: 0;
