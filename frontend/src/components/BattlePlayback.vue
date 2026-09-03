@@ -666,10 +666,8 @@ function applyView(next) {
   const safe = safeInsets()
   const safeH = Math.max(0, fullH - safe.top - safe.bottom)
   const rect = mapRenderRect()
-  // §下黑边：地图垂直向下偏 gap/4，把底部黑边减到约居中的一半（更贴近底部控制条）。
-  const scaledH = rect.height * next.scale
-  const centerBiasY = Math.max(0, (safeH - scaledH) * 0.5)
-  const clamped = clampViewPan(next, stageW, safeH, rect.width, rect.height, centerBiasY)
+  // §对称：地图在安全区内垂直居中，顶部/底部黑边完全对称（无向下偏移）。
+  const clamped = clampViewPan(next, stageW, safeH, rect.width, rect.height)
   view.scale = clamped.scale
   view.tx = clamped.tx
   view.ty = clamped.ty + safe.top
