@@ -527,9 +527,15 @@ const pbRoot = ref(null)
 const isFullscreen = ref(false)
 // §3：大桌面（>=1200px）即使不进入 fullscreen，也用持久 rail|map|details 三列布局。
 const wideLayout = ref(false)
-// §fullscreen：PlaybackControls 是否已在 Left Rail（fullscreen 或大桌面）。是则 bottom 不再有
-// bottom-overlay controls，safe area 的 bottom inset 恒为 0（不再读到切换前的旧高度）。
-const controlsInRail = computed(() => isFullscreen.value || wideLayout.value)
+// §mobile-contract：设备是否为「移动端」（primary pointer=coarse 且视口 <=1200px）。手机在
+// fullscreen + landscape 时内宽可 >768，因此移动端判定不得只依赖 innerWidth<768；一旦判定为
+// 移动端，无论全屏/横竖屏都保持 mobile playback mode（HUD+Map 为主、bottom overlay controls、
+// details sheet、无永久 Left Rail / Right Details）。
+const mobileLayoutQuery = '(pointer: coarse) and (max-width: 1200px)'
+const isMobileDevice = ref(false)
+// §fullscreen：PlaybackControls 是否已在 Left Rail。移动端必须保持 bottom overlay，故全屏/大桌面
+// 且非移动端才为 true；移动端全屏仍走 overlay，bottom inset 由真实 overlay content 高度决定。
+const controlsInRail = computed(() => (isFullscreen.value || wideLayout.value) && !isMobileDevice.value)
 const fullscreenSupported = computed(() =>
   typeof document !== 'undefined'
   && pbRoot.value != null
@@ -538,8 +544,12 @@ const fullscreenSupported = computed(() =>
 let playbackLifecycleActive = true
 let orientationRequestToken = 0
 let wideLayoutQuery = null
+let mobileLayoutQueryMql = null
 function onWideLayoutChange(event) {
   wideLayout.value = !!(event && event.matches)
+}
+function onMobileLayoutChange(event) {
+  isMobileDevice.value = !!(event && event.matches)
 }
 function onFullscreenChange() {
   isFullscreen.value = !!(typeof document !== 'undefined' && document.fullscreenElement)
@@ -561,7 +571,8 @@ function showOrientationHint() {
 }
 function lockOrientation() {
   if (!playbackLifecycleActive || (typeof document !== 'undefined' && document.fullscreenElement !== pbRoot.value)) return
-  if (typeof window !== 'undefined' && window.innerWidth >= 768) return
+  // §mobile-contract：仅移动端设备尝试锁横屏（不依赖 innerWidth，手机横屏可 >768）。
+  if (!isMobileDevice.value) return
   const orientation = typeof screen !== 'undefined' ? screen.orientation : null
   if (!orientation || typeof orientation.lock !== 'function') return
   const token = ++orientationRequestToken
@@ -652,8 +663,13 @@ function safeInsets() {
     const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
     top = hud ? hud.clientHeight : 0
   }
+  // §safeInsets-DOM：mobile wrapper 是 position:absolute; inset:0（铺满地图），其 clientHeight
+  // 是整张地图高度而非 controls 高度，绝不能作为 bottom inset。只量取 .pb-mobile-overlay-content
+  // 的真实 rendered 高度；且仅当 controls 真正 bottom-overlay map（!controlsInRail）时才 >0。
   if (!controlsInRail.value) {
-    bottom = mobileOverlay.value?.$el?.clientHeight || 0
+    const wrap = mobileOverlay.value?.$el
+    const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null
+    bottom = content ? content.clientHeight : 0
   }
   return { top, bottom }
 }
@@ -868,7 +884,7 @@ function fitViewIfReady(force = false) {
   const safeH = Math.max(0, fullH - safe.top - safe.bottom)
   const rect = mapRenderRect()
   if (stageW <= 0 || safeH <= 0 || rect.width <= 0 || rect.height <= 0) return
-  const signature = [isFullscreen.value, wideLayout.value, stageW, safeH, rect.width, rect.height, safe.top, safe.bottom].join('|')
+  const signature = [isFullscreen.value, wideLayout.value, isMobileDevice.value, stageW, safeH, rect.width, rect.height, safe.top, safe.bottom].join('|')
   if (!force && signature === lastFitSignature) return
   lastFitSignature = signature
   resetView()
@@ -1121,6 +1137,13 @@ onMounted(() => {
     if (typeof wideLayoutQuery.addEventListener === 'function') {
       wideLayoutQuery.addEventListener('change', onWideLayoutChange)
     }
+    // §mobile-contract：移动端以 pointer:coarse + 视口<=1200 判定（不依赖 innerWidth<768），
+    // 进入全屏/横屏后仍保持 mobile playback mode。
+    mobileLayoutQueryMql = window.matchMedia(mobileLayoutQuery)
+    isMobileDevice.value = !!mobileLayoutQueryMql.matches
+    if (typeof mobileLayoutQueryMql.addEventListener === 'function') {
+      mobileLayoutQueryMql.addEventListener('change', onMobileLayoutChange)
+    }
   }
   window.addEventListener('keydown', onKeydown)
 })
@@ -1277,6 +1300,10 @@ onBeforeUnmount(() => {
     wideLayoutQuery.removeEventListener('change', onWideLayoutChange)
   }
   wideLayoutQuery = null
+  if (mobileLayoutQueryMql && typeof mobileLayoutQueryMql.removeEventListener === 'function') {
+    mobileLayoutQueryMql.removeEventListener('change', onMobileLayoutChange)
+  }
+  mobileLayoutQueryMql = null
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
@@ -1355,7 +1382,7 @@ const baseVehicleStates = computed(() => {
     .map(track => {
       const vehicle = track
       const model = vehicleModel(track)
-      const mobile = typeof window !== 'undefined' && window.innerWidth < 768
+      const mobile = isMobileDevice.value
       const markerSize = computeVehicleMarkerSize(vehicle, {
         model,
         mapView: mapView.value,
@@ -1407,7 +1434,7 @@ watch(
     collisionOffsets.value = computeTankCollisionLayout(
       items,
       collisionOffsets.value,
-      { mobile: typeof window !== 'undefined' && window.innerWidth < 768 },
+      { mobile: isMobileDevice.value },
     )
   },
   { immediate: true },
@@ -1773,7 +1800,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :style="mapStyle" data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen) }" :style="mapStyle" data-test="battle-playback">
     <BattlePlaybackHud
       :friendly-hp="friendlyHp"
       :enemy-hp="enemyHp"
@@ -1786,7 +1813,7 @@ const mapStyle = computed(() => ({
 
     <!-- 地图是主视觉；控制条在桌面流式布局，移动端由首次触摸唤起。 -->
     <!-- §2：Fullscreen Workspace —— Left Rail（fullscreen 下作为左列；普通页面隐藏） -->
-    <div class="pb-left-rail" data-test="pb-left-rail" aria-label="Playback workspace rail">
+    <div class="pb-left-rail" :class="{ 'pb-rail-expanded': !!(activePanel || annotationOpen) }" data-test="pb-left-rail" aria-label="Playback workspace rail">
       <!-- §二级菜单：左侧展开对应内容，带返回按钮（不占右侧 details panel） -->
       <template v-if="annotationOpen">
         <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="annotationOpen = false">← {{ $t('recon.map.playback.back') }}</button>
@@ -1862,14 +1889,14 @@ const mapStyle = computed(() => ({
       <!-- 一级菜单：播放控制 + 导航 -->
       <template v-else>
         <PlaybackControls
-          v-if="isFullscreen || wideLayout"
+          v-if="controlsInRail"
           :playing="playing"
           :speed="speed"
           :current-time="currentTime"
           :duration="duration"
           :fullscreen-supported="fullscreenSupported"
           :is-fullscreen="isFullscreen"
-          :rail-visible="isFullscreen || wideLayout"
+          :rail-visible="controlsInRail"
           :format-clock="formatClock"
           @toggle-play="togglePlay"
           @step="step"
@@ -2030,14 +2057,14 @@ const mapStyle = computed(() => ({
 
       <PlaybackMobileOverlay ref="mobileOverlay">
         <PlaybackControls
-          v-if="!(isFullscreen || wideLayout)"
+          v-if="!controlsInRail"
           :playing="playing"
           :speed="speed"
           :current-time="currentTime"
           :duration="duration"
           :fullscreen-supported="fullscreenSupported"
           :is-fullscreen="isFullscreen"
-          :rail-visible="isFullscreen || wideLayout"
+          :rail-visible="controlsInRail"
           :format-clock="formatClock"
           @toggle-play="togglePlay"
           @step="step"

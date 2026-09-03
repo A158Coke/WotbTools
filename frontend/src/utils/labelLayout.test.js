@@ -25,7 +25,7 @@ function item(accountId, x, y, extra = {}) {
 
 describe('computeTankCollisionLayout', () => {
   const tank = (accountId, extra = {}) => ({ accountId, x: 100, y: 100, width: 32, height: 32, ...extra })
-  const expectBounded = (items, result, maxOffset = 30) => {
+  const expectBounded = (items, result, maxOffset = 12) => {
     for (const it of items) {
       const offset = result.get(it.accountId)
       expect(Math.hypot(offset.x, offset.y)).toBeLessThanOrEqual(maxOffset)
@@ -43,7 +43,7 @@ describe('computeTankCollisionLayout', () => {
   it('uses the smaller mobile offset budget and accepts residual model overlap', () => {
     const items = Array.from({ length: 14 }, (_, i) => tank(i + 1))
     const result = computeTankCollisionLayout(items, new Map(), { mobile: true })
-    expectBounded(items, result, 22)
+    expectBounded(items, result, 10)
     const boxes = items.map((it) => {
       const offset = result.get(it.accountId)
       return { x: it.x + offset.x - it.width / 2, y: it.y + offset.y - it.height / 2, w: it.width, h: it.height }

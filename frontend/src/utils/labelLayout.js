@@ -33,8 +33,10 @@ export const LABEL_LANES_PX = Object.freeze([0, -10, 10, -20])
 
 const TANK_COLLISION_PADDING = 1.02
 const TANK_COLLISION_GRID_STEP_PX = 2
-const TANK_COLLISION_MAX_OFFSET_DESKTOP_PX = 30
-const TANK_COLLISION_MAX_OFFSET_MOBILE_PX = 22
+// §review: 回退到 bounded 小偏移（desktop 12px / mobile 10px）。canonical position fidelity 优先，
+// residual model overlap 是允许结果；不允许 marker 因碰撞偏移整整一个车身距离。
+const TANK_COLLISION_MAX_OFFSET_DESKTOP_PX = 12
+const TANK_COLLISION_MAX_OFFSET_MOBILE_PX = 10
 
 function collisionBox(item, offset) {
   return {

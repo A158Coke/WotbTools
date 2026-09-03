@@ -31,7 +31,7 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(body).toContain('height: 100vh')
     expect(body).toContain('overflow: hidden')
     expect(body).toContain('padding: 0')
-    expect(body).toContain('grid-template-columns: var(--pb-details-w) minmax(0, 1fr)')
+    expect(body).toContain('grid-template-columns: var(--pb-left-col) minmax(0, 1fr)')
     expect(body).not.toContain('grid-template-rows')
   })
 
@@ -66,7 +66,7 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     const body = ruleBody('.battle-playback:fullscreen .pb-hud')
     expect(body).toContain('position: absolute')
     expect(body).toContain('top: 0')
-    expect(body).toContain('left: var(--pb-details-w)')
+    expect(body).toContain('left: var(--pb-left-col)')
     expect(body).toContain('right: var(--pb-details-w)')
     expect(body).toContain('z-index: 50')
   })
@@ -75,7 +75,7 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     const body = ruleBody('.battle-playback:fullscreen .pb-mobile-overlay')
     expect(body).toContain('position: absolute')
     expect(body).toContain('bottom: 0')
-    expect(body).toContain('left: 0')
+    expect(body).toContain('left: var(--pb-left-col)')
     expect(body).toContain('right: var(--pb-details-w)')
     expect(body).toContain('z-index: 40')
     expect(body).toContain('pointer-events: auto')
@@ -122,5 +122,29 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(map).not.toContain('aspect-ratio')
     // the stage clips (overflow hidden) so cover can legally extend beyond the viewport.
     expect(ruleBody('.battle-playback:fullscreen .pb-map-stage')).toContain('overflow: hidden')
+  })
+
+  it('Fix2 widths: Left Rail 列是独立的小 collapsed rail（~60px），不再复用 --pb-details-w；Right Details 单独 ~340px', () => {
+    const base = ruleBody('.battle-playback')
+    expect(base).toContain('--pb-rail-w: 60px')
+    expect(base).toContain('--pb-panel-w: 300px')
+    // fullscreen grid col1 用 --pb-left-col（collapsed rail 60px / 展开 panel 300px），而非 --pb-details-w
+    const fs = ruleBody('.battle-playback:fullscreen')
+    expect(fs).toContain('grid-template-columns: var(--pb-left-col) minmax(0, 1fr)')
+    expect(fs).not.toContain('grid-template-columns: var(--pb-details-w)')
+    // Right Details 是 map-stage 的独立 col2（--pb-details-w）
+    const stage = ruleBody('.battle-playback:fullscreen .pb-map-stage')
+    expect(stage).toContain('grid-template-columns: minmax(0, 1fr) var(--pb-details-w)')
+  })
+
+  it('mobile fullscreen contract: 手机 fullscreen+landscape 保持单列、无 rail、details 为 sheet、controls 为 bottom overlay', () => {
+    const fsM = ruleBody('.battle-playback:fullscreen.pb-device-mobile')
+    expect(fsM).toContain('grid-template-columns: minmax(0, 1fr)')
+    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-left-rail')).toContain('display: none')
+    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-main')).toContain('grid-column: 1')
+    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-hud')).toContain('left: 0; right: 0')
+    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-map-stage')).toContain('grid-template-columns: minmax(0, 1fr)')
+    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell')).toContain('position: absolute')
+    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay')).toContain('left: 0; right: 0')
   })
 })
