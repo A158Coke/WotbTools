@@ -1169,7 +1169,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     expect(marker.find('.pb-hp-fill').attributes('style')).toContain('84.61') // 2200/2600（已证明 entryHp）
   })
 
-  it('§16 kill feed：只显示受害者被击毁（§15.2 无攻击者名）；最多 3 条队列', async () => {
+  it('§16 kill feed：只显示受害者被击毁（§15.2 无攻击者名）；最多 2 条可见队列（§17）', async () => {
     stubRaf()
     fakeClock()
     const overview = makeOverview()
@@ -1183,7 +1183,8 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     rafCb(0)
     rafCb(5100) // t=17.1 跨过 4 条 KILL
     await flushPromises()
-    expect(wrapper.findAll('.pb-feed-item')).toHaveLength(3)
+    // §17：最多 2 条 visible，第 3 条及以后排队（从最旧挤出）
+    expect(wrapper.findAll('.pb-feed-item')).toHaveLength(2)
     const item = wrapper.find('.pb-feed-item')
     expect(item.text()).toContain('T49') // 受害者坦克名
     expect(item.text()).toContain('recon.map.playback.feed_destroyed')
@@ -1415,6 +1416,9 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     expect(wrapper.find('[data-test="pb-float-dmg"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-float-dmg"]').text()).toBe('-400')
     expect(wrapper.find('[data-test="pb-kill-feed"]').exists()).toBe(true)
+    // §15：banner 显示「玩家名（车辆名）被击毁」，来自 canonical vehicle identity。
+    expect(wrapper.find('[data-test="pb-kill-feed"]').text()).toContain('EnemyA（T49）')
+    expect(wrapper.find('[data-test="pb-kill-feed"]').text()).toContain('recon.map.playback.feed_destroyed')
   })
 
   it('B1-2 damage log 无 future leak：只显示 <= currentTime 的事件，backward seek 后未来事件消失', async () => {

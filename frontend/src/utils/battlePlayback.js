@@ -400,10 +400,10 @@ export const GHOST_MS = 600
 export const FLASH_MS = 280
 /** 击毁 burst（真实 ms）。 */
 export const BURST_MS = 700
-/** kill feed 生命周期（真实 ms约 4–6s）。 */
-export const KILL_FEED_MS = 5000
-/** kill feed 最多保留 3 条；新条目加入时淘汰最旧条目。 */
-const KILL_FEED_MAX = 3
+/** kill feed 生命周期（真实 ms，§16：普通关键事件 2.5–3s；此处用 3s）。 */
+export const KILL_FEED_MS = 3000
+/** kill feed 最多保留 2 条 visible（§17：第 3 条及以后队列，从最旧挤出）。 */
+const KILL_FEED_MAX = 2
 
 /**
  * 过滤仍未过期的 transient 项：item 需携带 bornRealMs（performance.now 基准）与 durationMs。
