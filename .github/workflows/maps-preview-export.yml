@@ -1,24 +1,33 @@
-name: Export full map assets
-
+name: PR231 environment basemap cleanup
 on:
   push:
     branches:
       - feat/maps-hd-assets
     paths:
       - .github/workflows/maps-preview-export.yml
-
 permissions:
-  contents: read
-
+  contents: write
 jobs:
-  export:
+  clean:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/upload-artifact@v4
         with:
-          name: maps-full-assets
-          path: frontend/src/assets/maps
-          retention-days: 1
-
-# rerun export for environment-layer cleanup
+          ref: feat/maps-hd-assets
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: python -m pip install --disable-pip-version-check numpy opencv-python-headless
+      - run: python .github/scripts/pr231_clean_maps.py
+      - name: Validate and commit cleaned basemaps
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find frontend/src/assets/maps -maxdepth 1 -name '*.png' | wc -l)" -eq 28
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add frontend/src/assets/maps/*.png
+          git diff --cached --quiet && exit 0
+          git commit -m "feat(maps): remove baked runtime UI from basemaps"
+          git push origin HEAD:feat/maps-hd-assets
