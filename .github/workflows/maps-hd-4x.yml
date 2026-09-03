@@ -1,0 +1,102 @@
+name: Regenerate map assets to 4x physical density
+
+on:
+  push:
+    branches:
+      - feat/maps-hd-assets
+    paths:
+      - .github/workflows/maps-hd-4x.yml
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Restore original map PNGs and install Pillow
+        run: |
+          git checkout origin/main -- frontend/src/assets/maps
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Rebuild all registered map PNGs to 4x physical density
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          from PIL import Image, ImageFilter
+
+          MAP_IMAGES = Path('frontend/src/data/mapImages.js')
+          MAPS_DIR = Path('frontend/src/assets/maps')
+          DOC = Path('docs/reference/maps.md')
+          SCALE = 4
+          EXPECTED = 28
+
+          js = MAP_IMAGES.read_text(encoding='utf-8')
+          imports = dict(re.findall(r"import\s+(\w+)\s+from\s+'\.\./assets/maps/([^']+)'", js))
+          registrations = re.findall(r"\w+: \{ src: (\w+), width: (\d+), height: (\d+), coordinateBounds: [^}]+ \}", js)
+          if len(imports) != EXPECTED or len(registrations) != EXPECTED:
+              raise RuntimeError(f'expected {EXPECTED} map registrations/imports, got {len(imports)} imports and {len(registrations)} registrations')
+
+          target_dims = {}
+          for variable, width, height in registrations:
+              filename = imports.get(variable)
+              if not filename:
+                  raise RuntimeError(f'missing import for {variable}')
+              target_dims[filename] = (int(width) * SCALE, int(height) * SCALE)
+
+          if len(target_dims) != EXPECTED:
+              raise RuntimeError(f'expected {EXPECTED} targets, got {len(target_dims)}')
+
+          for filename, target in sorted(target_dims.items()):
+              path = MAPS_DIR / filename
+              with Image.open(path) as src:
+                  src.load()
+                  out = src.resize(target, Image.Resampling.LANCZOS)
+                  out = out.filter(ImageFilter.UnsharpMask(radius=1.0, percent=110, threshold=3))
+                  save_kwargs = {
+                      'format': 'PNG',
+                      'optimize': True,
+                      'compress_level': 9,
+                  }
+                  if src.info.get('icc_profile'):
+                      save_kwargs['icc_profile'] = src.info['icc_profile']
+                  if src.info.get('dpi'):
+                      save_kwargs['dpi'] = src.info['dpi']
+                  out.save(path, **save_kwargs)
+              with Image.open(path) as check:
+                  if check.size != target:
+                      raise RuntimeError(f'{filename}: expected {target}, got {check.size}')
+              print(f'{filename}: -> {target[0]}x{target[1]}')
+
+          doc = DOC.read_text(encoding='utf-8')
+          for filename, (width, height) in sorted(target_dims.items()):
+              doc, replacements = re.subn(
+                  rf"{re.escape(filename)} \(\d+x\d+\)",
+                  f"{filename} ({width}x{height})",
+                  doc,
+              )
+              if replacements != 1:
+                  raise RuntimeError(f'{filename}: expected one dimension entry in docs, got {replacements}')
+          DOC.write_text(doc, encoding='utf-8')
+          PY
+
+      - name: Verify scope and commit
+        run: |
+          git diff --check
+          test "$(git diff --name-only | grep '^frontend/src/assets/maps/.*\.png$' | wc -l)" -eq 28
+          git diff --name-only | grep -Ev '^frontend/src/assets/maps/.*\.png$|^docs/reference/maps\.md$' && exit 1 || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/assets/maps docs/reference/maps.md
+          git commit -m "feat(maps): regenerate bird-eye assets to 4x density"
+          git push origin HEAD:feat/maps-hd-assets
