@@ -382,6 +382,9 @@ function consumeEvents(fromSec, toSec) {
       feedItems.value = pushFeed(feedItems.value, {
         id: ++transientSeq,
         victimAccountId: ev.targetAccountId,
+        // §15：banner 使用 canonical vehicle identity（playerName + tankName），
+        // 显示「玩家名（车辆名）被击毁」；不猜车型、不解析 label 字符串。
+        victimPlayerName: victim.playerName || '',
         victimName: victim.tankName || String(victim.tankId),
         victimFriendly: victim.friendly,
         bornRealMs: now,

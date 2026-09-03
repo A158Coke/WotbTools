@@ -137,7 +137,7 @@ defineExpose({ mapEl, textInputRef })
       <span v-for="burst in props.visibleBursts" :key="'burst-' + burst.id" class="pb-burst" data-test="pb-burst" :class="props.floatTeamClass(burst.friendly)" :style="{ left: burst.x + 'px', top: burst.y + 'px' }"></span>
     </div>
     <div v-if="props.visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
-      <div v-for="feed in props.visibleFeed" :key="'feed-' + feed.id" class="pb-feed-item" :class="feed.victimFriendly === true ? 'pb-feed-friendly' : (feed.victimFriendly === false ? 'pb-feed-enemy' : 'pb-feed-neutral')"><span class="pb-feed-skull" aria-hidden="true">☠</span><span class="pb-feed-victim">{{ feed.victimName }}</span><span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span></div>
+      <div v-for="feed in props.visibleFeed" :key="'feed-' + feed.id" class="pb-feed-item" :class="feed.victimFriendly === true ? 'pb-feed-friendly' : (feed.victimFriendly === false ? 'pb-feed-enemy' : 'pb-feed-neutral')"><span class="pb-feed-skull" aria-hidden="true">☠</span><span class="pb-feed-victim">{{ feed.victimPlayerName ? feed.victimPlayerName + '（' + feed.victimName + '）' : feed.victimName }}</span><span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span></div>
     </div>
   </div>
 </template>
@@ -166,7 +166,8 @@ defineExpose({ mapEl, textInputRef })
 .pb-burst.pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
 .pb-burst.pb-float-neutral { color: var(--text-muted, #999); }
 @keyframes pb-burst-ring { 0% { opacity: .9; transform: translate(-50%, -50%) scale(.3); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); } }
-.pb-kill-feed { position: absolute; top: 6px; right: 6px; display: flex; flex-direction: column; gap: 3px; z-index: 10; pointer-events: none; max-width: 62%; }
+/* §14：Event Banner 位于 Map Workspace top-center（非 100vw center——fullscreen 左右有固定栏）。 */
+.pb-kill-feed { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 3px; z-index: 10; pointer-events: none; width: max-content; max-width: 92%; }
 .pb-feed-item { display: flex; align-items: center; gap: 4px; font-size: .75rem; background: color-mix(in srgb, var(--bg) 60%, transparent); border: 1px solid color-mix(in srgb, var(--text) 14%, transparent); border-radius: 3px; padding: 2px 6px; animation: pb-feed-in .25s ease-out; }
 .pb-feed-skull { color: var(--text); }
 .pb-feed-friendly .pb-feed-victim { color: var(--pb-team-text, #4ade80); }
