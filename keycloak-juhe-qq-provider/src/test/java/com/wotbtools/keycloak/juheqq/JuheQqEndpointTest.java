@@ -8,8 +8,10 @@ import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.KeycloakSession;
 
 import java.io.IOException;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -45,17 +47,40 @@ class JuheQqEndpointTest {
     void brokerAuthenticatedPreservesProtocol() {
         stub.respond("{\"code\":0,\"type\":\"qq\",\"social_uid\":\"12345\",\"nickname\":\"PlayerOne\"}");
 
-        final Response response = endpoint.handleCallback(VALID_STATE, "qq", "code-1");
+        try (LogCapture capture = new LogCapture()) {
+            final Response response = endpoint.handleCallback(VALID_STATE, "qq", "code-1");
 
-        assertEquals(200, response.getStatus());
-        final BrokeredIdentityContext context = authFake.captured;
-        assertNotNull(context);
-        assertEquals("qq:12345", context.getBrokerUserId());
-        assertEquals("PlayerOne", context.getUserAttribute("displayName"));
-        assertEquals("CN", context.getUserAttribute("region"));
-        assertEquals("qq", context.getUserAttribute("juhe.provider"));
-        assertEquals("12345", context.getUserAttribute("juhe.social_uid"));
-        assertEquals(1, stub.requestsWith("callback"));
+            assertEquals(200, response.getStatus());
+            final BrokeredIdentityContext context = authFake.captured;
+            assertNotNull(context);
+            assertEquals("qq:12345", context.getBrokerUserId());
+            assertEquals("PlayerOne", context.getUserAttribute("displayName"));
+            assertEquals("CN", context.getUserAttribute("region"));
+            assertEquals("qq", context.getUserAttribute("juhe.provider"));
+            assertEquals("12345", context.getUserAttribute("juhe.social_uid"));
+            assertEquals(1, stub.requestsWith("callback"));
+            assertTrue(capture.messages().stream()
+                            .anyMatch(m -> m.contains("stage=broker_authenticated ")),
+                    "authenticated() 成功返回后必须记录 broker_authenticated 成功日志");
+        }
+    }
+
+    @Test
+    void brokerAuthenticatedFailureLogsFailureStageAndNotFalseSuccess() {
+        stub.respond("{\"code\":0,\"type\":\"qq\",\"social_uid\":\"12345\",\"nickname\":\"PlayerOne\"}");
+        authFake.failOnAuthenticated = true;
+
+        try (LogCapture capture = new LogCapture()) {
+            final Response response = endpoint.handleCallback(VALID_STATE, "qq", "code-1");
+
+            assertEquals(500, response.getStatus());
+            assertNull(authFake.captured, "authenticated() 抛出异常，不得捕获成功上下文");
+            final List<String> messages = capture.messages();
+            assertTrue(messages.stream().anyMatch(m -> m.contains("stage=broker_authenticated_failed")),
+                    "必须记录属于 broker authenticated 阶段的失败日志");
+            assertFalse(messages.stream().anyMatch(m -> m.contains("stage=broker_authenticated ")),
+                    "authenticated() 抛出异常时不得出现 broker_authenticated 假成功日志");
+        }
     }
 
     @Test

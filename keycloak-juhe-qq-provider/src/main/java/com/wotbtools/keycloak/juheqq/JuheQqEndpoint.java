@@ -175,10 +175,21 @@ public final class JuheQqEndpoint {
                 context.setUserAttribute("juhe.faceimg", faceimg);
             }
 
+            // 只有 authenticated() 真正成功返回后，才记录 broker_authenticated 成功日志；
+            // 否则会产生“假成功”日志，且无法确认 Internal Error 是否发生在 broker authenticated 阶段。
+            final Response authenticated;
+            try {
+                authenticated = authCallback.authenticated(context);
+            } catch (final RuntimeException e) {
+                log.error(JuheQqIdentityProvider.loggable("broker_authenticated_failed", realm, providerAlias,
+                        "juheType", respType,
+                        "socialUid", "present"), e);
+                return JuheQqIdentityProvider.errorResponse();
+            }
             log.info(JuheQqIdentityProvider.loggable("broker_authenticated", realm, providerAlias,
                     "juheType", respType,
                     "socialUid", "present"));
-            return authCallback.authenticated(context);
+            return authenticated;
 
         } catch (final JsonProcessingException e) {
             log.error(JuheQqIdentityProvider.loggable("juhe_callback_invalid_json", realm, providerAlias), e);
