@@ -158,11 +158,11 @@
   height: auto;
 }
 
-/* HUD：顶部 overlay，不占 map layout height，遵守 safe-area。 */
+/* HUD：只覆盖 Map Workspace（col2，从 rail 右侧开始），不覆盖 Left Rail。 */
 .battle-playback:fullscreen .pb-hud {
   position: absolute;
   top: 0;
-  left: 0;
+  left: 64px;
   right: 0;
   z-index: 50;
   border-radius: 0;
@@ -172,8 +172,23 @@
   padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
 }
 
-/* Controls + Timeline：底部 overlay，始终可操作，遵守 safe-area；不占 map layout height。 */
-/* §2：Right Details（panel 打开时）在 fullscreen 下 dock 为右侧全高列，不占地图 layout。 */
+/* Controls + Timeline：底部覆盖 Map Workspace（col2），遵守 safe-area；不占 map layout height。 */
+.battle-playback:fullscreen .pb-mobile-overlay {
+  position: absolute;
+  left: 64px;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  pointer-events: auto;
+  opacity: 1;
+  padding: 0 max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+}
+
+/* §2 fullscreen：隐藏旧的右上角 tab launcher（Left Rail 已是唯一入口，避免重复）。 */
+.battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell .pb-panel-launcher {
+  display: none;
+}
+/* §2 Right Details：右侧 persistent 列（覆盖 map workspace 右缘），不占地图 layout height。 */
 .battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
   position: absolute;
   top: 0;
@@ -187,16 +202,6 @@
   border-bottom: 0;
   box-shadow: none;
   overflow-y: auto;
-}
-.battle-playback:fullscreen .pb-mobile-overlay {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 40;
-  pointer-events: auto;
-  opacity: 1;
-  padding: 0 max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
 }
 
 @media (768px <= width < 1200px) {

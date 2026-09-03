@@ -19,6 +19,7 @@ import friendlyTurret from '../assets/tank-icons/tank-marker-friendly-turret.png
 import {
   BURST_MS,
   FLOAT_DMG_MS,
+  activeFeed,
   FLASH_MS,
   GHOST_MS,
   KILL_FEED_MS,
@@ -303,7 +304,9 @@ let transientSeq = 0
 const eventCursor = ref(0)
 const floatItems = ref([]) // [{ id, victimAccountId, damage, bornRealMs, durationMs }]
 const burstItems = ref([]) // [{ id, victimAccountId, bornRealMs, durationMs }]
-const feedItems = ref([]) // [{ id, victimAccountId, victimName, victimFriendly, bornRealMs, durationMs }]
+const feedItems = ref([]) // [{ id, victimAccountId, victimPlayerName, victimName, victimFriendly, durationMs }]
+// Event Banner 真实队列：id -> 展示起点 realMs（非响应式，避免 computed 副作用循环）。
+const feedShownAt = new Map()
 const ghostByAccount = reactive(new Map()) // accountId -> { prevPct, nextPct, untilRealMs }
 const flashByAccount = reactive(new Map()) // accountId -> untilRealMs
 // seek/状态恢复帧：禁用 HP bar 过渡动画（§20.1 seek 只恢复状态不补动画）
@@ -409,6 +412,15 @@ function hasPendingTransients(now) {
 function pruneTransients(now) {
   for (const [id, g] of ghostByAccount) if (g.untilRealMs <= now) ghostByAccount.delete(id)
   for (const [id, u] of flashByAccount) if (u <= now) flashByAccount.delete(id)
+  // Event Banner 队列：移除已完整展示并过期的条目及其 shownAt 记录；
+  // 排队中（shownAt 空）的条目保留（待空位展示，不直接挤出）。
+  feedItems.value = feedItems.value.filter(it => {
+    const s = feedShownAt.get(it.id)
+    return s == null || !Number.isFinite(it.durationMs) || now - s < it.durationMs
+  })
+  for (const id of [...feedShownAt.keys()]) {
+    if (!feedItems.value.some(it => it.id === id)) feedShownAt.delete(id)
+  }
 }
 
 // ---- 单车 HP HUD 数据（§4/§5/§6/§7）----
@@ -474,7 +486,7 @@ const visibleBursts = computed(() => {
     return { ...item, x: p.x, y: p.y, friendly: st.vehicle.friendly }
   }).filter(Boolean)
 })
-const visibleFeed = computed(() => transientsActive(feedItems.value, nowMs.value))
+const visibleFeed = computed(() => activeFeed(feedItems.value, nowMs.value, feedShownAt))
 const selectedAccountId = ref(null)
 const activePanel = ref(null)
 const annotationOpen = ref(false)
