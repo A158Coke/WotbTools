@@ -480,6 +480,11 @@ const visibleBursts = computed(() => {
 const visibleFeed = computed(() => activeFeed(feedItems.value, nowMs.value, feedShownAt))
 const selectedAccountId = ref(null)
 const activePanel = ref(null)
+// §mobile-panels：移动端/中型宽度没有永久 Left Rail，用 ☰ 打开一个 drawer/sheet 以进入
+// Team / Display / Events / Annotation（避免 dead action）。
+const mobileDrawerOpen = ref(false)
+const railDrawerOpen = computed(() => mobileDrawerOpen.value
+  && (isMobileDevice.value || !(isFullscreen.value || wideLayout.value)))
 const annotationOpen = ref(false)
 const mobileOverlay = ref(null)
 const orientationHint = ref('')
@@ -1800,7 +1805,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen) }" :style="mapStyle" data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen), 'pb-drawer-open': railDrawerOpen }" :style="mapStyle" data-test="battle-playback">
     <BattlePlaybackHud
       :friendly-hp="friendlyHp"
       :enemy-hp="enemyHp"
@@ -1813,6 +1818,8 @@ const mapStyle = computed(() => ({
 
     <!-- 地图是主视觉；控制条在桌面流式布局，移动端由首次触摸唤起。 -->
     <!-- §2：Fullscreen Workspace —— Left Rail（fullscreen 下作为左列；普通页面隐藏） -->
+    <!-- §mobile-panels：无永久 rail（mobile/medium）时 ☰ 打开 drawer；backdrop 点击关闭。 -->
+    <div v-if="railDrawerOpen" class="pb-drawer-backdrop" data-test="pb-drawer-backdrop" @click="mobileDrawerOpen = false" />
     <div class="pb-left-rail" :class="{ 'pb-rail-expanded': !!(activePanel || annotationOpen) }" data-test="pb-left-rail" aria-label="Playback workspace rail">
       <!-- §二级菜单：左侧展开对应内容，带返回按钮（不占右侧 details panel） -->
       <template v-if="annotationOpen">
@@ -1903,7 +1910,7 @@ const mapStyle = computed(() => ({
           @set-speed="setSpeed"
           @reset-view="resetView"
           @toggle-fullscreen="toggleFullscreen"
-          @toggle-panels="activePanel = activePanel ? null : 'battle'"
+          @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
           @toggle-annotation="annotationOpen = !annotationOpen"
           @drag-start="dragStart"
           @seek="seek"
@@ -2011,7 +2018,7 @@ const mapStyle = computed(() => ({
           @cancel-text="cancelSession"
         />
 
-        <div class="pb-side-panel-shell" data-test="pb-side-panel-shell">
+        <div class="pb-side-panel-shell" :class="{ 'pb-details-active': !!selectedState }" data-test="pb-side-panel-shell">
           <VehicleDetailsPanel
             v-if="selectedState"
             :selected-state="selectedState"
@@ -2071,7 +2078,7 @@ const mapStyle = computed(() => ({
           @set-speed="setSpeed"
           @reset-view="resetView"
           @toggle-fullscreen="toggleFullscreen"
-          @toggle-panels="activePanel = activePanel ? null : 'battle'"
+          @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
           @toggle-annotation="annotationOpen = !annotationOpen"
           @drag-start="dragStart"
           @seek="seek"

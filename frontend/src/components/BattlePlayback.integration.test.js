@@ -1035,19 +1035,91 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     // overlay 内有 controls：mobile mode 以 bottom-overlay controls 承载
     expect(wrapper.find('[data-test="pb-mobile-overlay"] [data-test="pb-controls"]').exists()).toBe(true)
 
-    // 不出现永久 Right Details：未选中车辆时右侧空壳（无 pb-info）
+    // §details-blocker：未选中车辆时 shell 空壳且不带 pb-details-active（不遮挡/不 tint/不接管 pointer）
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-side-panel-shell"]').classes()).not.toContain('pb-details-active')
 
-    // 选中车辆 → details 以 sheet/drawer 出现（shell 在 DOM，pb-info 出现）
+    // §mobile-drawer：☰ 不是 dead action——打开 mobile drawer，能进入 Team/Display/Events
+    await wrapper.find('[data-test="pb-panels"]').trigger('click')
+    await flushPromises()
+    expect(root.classes()).toContain('pb-drawer-open')
+    expect(wrapper.find('[data-test="pb-drawer-backdrop"]').exists()).toBe(true)
+    await wrapper.find('[data-test="pb-rail-team"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-team-friendly"]').exists()).toBe(true)
+    await wrapper.find('[data-test="pb-rail-back"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-team-friendly"]').exists()).toBe(false)
+    await wrapper.find('[data-test="pb-drawer-backdrop"]').trigger('click')
+    await flushPromises()
+    expect(root.classes()).not.toContain('pb-drawer-open')
+
+    // 选中车辆 → details 以 sheet/drawer 出现，且 shell 进入 active（接管 pointer）
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
     await flushPromises()
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-side-panel-shell"]').classes()).toContain('pb-details-active')
     // 退出 fullscreen 后仍保持 mobile overlay controls（不回到 rail）
     setFullscreen(null)
     document.dispatchEvent(new Event('fullscreenchange'))
     await flushPromises()
     expect(wrapper.find('.pb-left-rail [data-test="pb-controls"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-mobile-overlay"] [data-test="pb-controls"]').exists()).toBe(true)
+  })
+
+  it('§mobile-pointer-regression：未选车辆 mobile fullscreen 下 map pan + marker click 可操作（空 shell 不阻挡 pointer）', async () => {
+    stubRaf()
+    stubFullscreenApi()
+    stubMatchMedia({
+      '(pointer: coarse) and (max-width: 1200px)': true,
+      '(min-width: 1200px)': false,
+    })
+    const getRoCb = stubResizeObserver()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const roCb = getRoCb()
+    expect(roCb).toBeTruthy()
+
+    const stageEl = wrapper.find('.pb-map-stage').element
+    Object.defineProperty(stageEl, 'clientHeight', { value: 900, configurable: true })
+    const mapEl = wrapper.find('[data-test="pb-map"]').element
+    Object.defineProperty(mapEl, 'clientWidth', { value: 1200, configurable: true })
+
+    // 进入 mobile fullscreen（横屏）
+    const root = wrapper.find('[data-test="battle-playback"]')
+    setFullscreen(root.element)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+    roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])
+    await flushPromises()
+
+    // 空 shell：未选中车辆，无 pb-details-active → shell 不接管 pointer
+    expect(wrapper.find('[data-test="pb-side-panel-shell"]').classes()).not.toContain('pb-details-active')
+
+    // 先 zoom in，让地图走出 contain-fit、产生可平移余量（真实手势路径：手指拖动）
+    const map = wrapper.find('[data-test="pb-map"]')
+    for (let i = 0; i < 3; i++) {
+      await map.trigger('wheel', { deltaY: -120, clientX: 400, clientY: 300 })
+    }
+    await flushPromises()
+
+    // pan：单指拖动超阈值（>5px）→ viewport translate 应变化（地图未被空 shell 阻挡）
+    const viewport = wrapper.find('[data-test="pb-viewport"]')
+    const before = viewport.attributes('style') || ''
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 500, clientY: 400 })
+    await viewport.trigger('pointermove', { pointerId: 1, clientX: 300, clientY: 250 })
+    await viewport.trigger('pointerup', { pointerId: 1, clientX: 300, clientY: 250 })
+    await flushPromises()
+    expect(viewport.attributes('style')).not.toBe(before)
+
+    // 手势后的首个 click 会被 suppressClick 吞掉，先 drain 一次（off-map，不选中）
+    await viewport.trigger('click', { clientX: 9999, clientY: 9999 })
+    await flushPromises()
+
+    // marker click 仍可选中
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
   })
 
   it('§zoom：放大后再缩小能回到完整地图 fit（不再卡在 1x）', async () => {

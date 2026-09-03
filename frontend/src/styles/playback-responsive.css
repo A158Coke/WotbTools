@@ -265,9 +265,17 @@
 .battle-playback:fullscreen.pb-device-mobile .pb-hud { left: 0; right: 0; }
 .battle-playback:fullscreen.pb-device-mobile .pb-map-stage { grid-template-columns: minmax(0, 1fr); }
 .battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell {
+  /* §details-blocker：未选车辆（pb-details-active 缺省）时 shell 不遮挡、不 tint、不接管 pointer；
+     选中车辆（pb-details-active）才打开真正的 fullscreen/sheet Details。 */
   position: absolute;
   inset: 0;
   grid-column: 1;
+  pointer-events: none;
+  background: transparent;
+}
+.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active {
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--bg) 52%, transparent);
 }
 .battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay { left: 0; right: 0; }
 
@@ -475,9 +483,142 @@
   .battle-playback .pb-map-stage > .pb-side-panel-shell {
     position: absolute;
     inset: 0;
+    /* §details-blocker：空 shell（未选车辆）不遮挡/不 tint/不接管 pointer；选中才成 sheet。 */
+    pointer-events: none;
+    background: transparent;
+  }
+  .battle-playback .pb-map-stage > .pb-side-panel-shell.pb-details-active {
+    pointer-events: auto;
+    background: color-mix(in srgb, var(--bg) 52%, transparent);
   }
 
   .battle-playback .pb-annotation-surface {
     bottom: 8px;
   }
+}
+
+/* §mobile-contract：以 .pb-device-mobile（pointer:coarse+视口<=1200，JS 判定）驱动移动端样式，
+   不再只依赖 @media(width<768px)——手机 landscape 内宽可 >768，仍须保持 mobile UX。 */
+.battle-playback.pb-device-mobile {
+  gap: 5px;
+  margin-top: 4px;
+}
+.battle-playback.pb-device-mobile .pb-map-stage {
+  overflow: hidden;
+  border-radius: 5px;
+}
+.battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: transparent;
+}
+.battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active {
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--bg) 52%, transparent);
+}
+/* §mobile-details-sheet：选中车辆后在 mobile fullscreen 以 bottom-sheet 展示 Details。 */
+.battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  top: auto;
+  width: auto;
+  max-height: min(72vh, 640px);
+  border-radius: 10px;
+}
+.battle-playback.pb-device-mobile .pb-annotation-surface {
+  bottom: 8px;
+}
+
+/* §mobile-panels-drawer：无永久 rail（mobile/medium）时 ☰ 打开 rail 作为 drawer；backdrop 点击关闭。 */
+.battle-playback .pb-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 74;
+  background: rgba(0, 0, 0, .45);
+}
+.battle-playback.pb-drawer-open .pb-left-rail {
+  display: flex;
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: min(84vw, 320px);
+  z-index: 75;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  padding: 8px;
+  overflow-y: auto;
+}
+/* mobile fullscreen：赢过 .pb-device-mobile .pb-left-rail 的 display:none。 */
+.battle-playback:fullscreen.pb-device-mobile.pb-drawer-open .pb-left-rail {
+  display: flex;
+  position: fixed;
+  left: 8px;
+  top: 8px;
+  bottom: 8px;
+  width: min(84vw, 320px);
+  z-index: 75;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  overflow-y: auto;
+}
+/* drawer 内显示导航 label（覆盖 collapsed 60px 的图标化）。 */
+.battle-playback.pb-drawer-open .pb-left-rail .pb-rail-label { display: inline; }
+.battle-playback.pb-drawer-open .pb-left-rail .pb-rail-btn {
+  justify-content: flex-start;
+  padding: 6px 10px;
+  gap: 9px;
+}
+
+/* §mobile-contract：控件/按钮尺寸与 overlay content 卡片在 .pb-device-mobile 下同样生效，
+   手机 landscape（内宽>768）仍保持 mobile UX（不再只依赖 @media(width<768px)）。 */
+.battle-playback.pb-device-mobile .pb-controls { justify-content: center; gap: 4px; }
+.battle-playback.pb-device-mobile .pb-controls .pb-btn { min-width: 36px; min-height: 36px; padding: 2px 6px; }
+.battle-playback.pb-device-mobile .pb-controls .pb-control-label { display: none; }
+.battle-playback.pb-device-mobile .pb-controls .pb-time {
+  flex-basis: 100%;
+  margin-inline: 0;
+  text-align: center;
+  order: 20;
+}
+.battle-playback.pb-device-mobile .pb-controls .pb-secondary-btn,
+.battle-playback.pb-device-mobile .pb-controls .pb-fullscreen-btn { min-width: 36px; }
+.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay-visible {
+  pointer-events: auto;
+  opacity: 1;
+}
+.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay-content {
+  position: absolute;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  left: 8px;
+  display: grid;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-card2) 78%, transparent);
+  backdrop-filter: blur(8px);
+}
+.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay-content {
+  display: grid;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-card2) 78%, transparent);
+  backdrop-filter: blur(8px);
 }
