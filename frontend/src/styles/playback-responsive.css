@@ -102,6 +102,9 @@
   border: 0;
   box-shadow: none;
 }
+/* 车辆详情（V2）在 side panel 内已由面板头 close（pb-panel-close）负责关闭，
+   隐藏其自带的重复 close，避免同一面板出现两个 ×。 */
+.battle-playback .pb-side-panel .pb-sb-close { display: none; }
 
 .battle-playback .pb-panel-facts {
   display: grid;
