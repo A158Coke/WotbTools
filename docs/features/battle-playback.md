@@ -210,10 +210,12 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     无 RO 环境回退 `clientWidth`（`mapWidth()/mapHeight()`）；markerScreen / labelLayout（viewportW/H）/
     selectAt（hitTest 像素→内容坐标）/ textInputStyle / semanticPoint 全部经 mapWidth/mapHeight 读取
     → fullscreen enter/exit 后 collision / hitbox / 标注换算立即用新尺寸重算（禁止 magic delay）；
-    zoom/pan 不自动 reset（无 auto-fit；Reset View 由用户使用）。全屏样式 `.battle-playback:fullscreen`
-    （100%×100%、map stage `min-height:0`、内部滚动兜底）让地图在剩余空间中尽可能展开，
-    不再使用旧 toolbar 的固定 `calc(100vh - 190px)` 垂直预算；HUD、地图、controls 与时间轴
-    通过 fullscreen grid/flex 同时保留在视口内，地图按真实宽高比填充剩余空间。
+    zoom/pan 不自动 reset（无 auto-fit；Reset View 由用户使用）。全屏 `.battle-playback:fullscreen`
+    为 3-column Workspace grid（64px Left Rail | Map Workspace | Right Details）：Left Rail 提供
+    Battle/Vehicle/Display/Events/Annotation/Reset View；Map Workspace 中央列承载 HUD + 地图 + controls
+    （均为 overlay，不占地图 layout）；Right Details 常驻（未选状态默认 Battle Summary，选车/选事件切换
+    对应 Details）。地图按 `--pb-map-ratio` 保持真实宽高比（contain，无非等比拉伸，zoom 后可大于
+    viewport 随 pan/zoom 裁剪）；HUD / controls 为顶部/底部 overlay；non-fullscreen 仍 map-first。
     生命周期：`fullscreenchange` listener 与 ResizeObserver 在 unmount 时移除/disconnect；组件在全屏
     中被卸载时主动 `exitFullscreen`。
     旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，
@@ -337,20 +339,27 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   backend 提供的 `relativeFull=true`，混合 exact-full/relative-full 仍返回 `FULL_RELATIVE`；已知掉血/阵亡返回
   `PARTIAL`，无证据返回 `UNKNOWN`，不读取 tankopedia base 或旧 sample 推导本局分母。
 - **HP HUD**：每辆可显示车辆常驻「HP 数字 + 定宽 bar」（screen-space 恒定，friendly=地图 tone、
-  enemy=red 与整车 team token 同源）；last-known 冻结最后可信值并弱化、destroyed 归零；
+  enemy=red 与整车 team token 同源）；last-known 冻结最后可信值并弱化；destroyed（lifeState 权威）
+  隐藏单车 HP number+bar（§18/§19，保留 ✕/灰化/labels/selected/recorder）；
   开关「显示血量」（默认开，`wotb.pb.hp-prefs` localStorage 持久化）隐藏数字/bar/ghost，
   不影响 floating damage / destroyed ✕ / sidebar HP / combat state / kill feed / timeline 正确性；
   重新开启立即按当前 timestamp 显示正确 HP（纯派生，不重头累计）。
   module/crew transition 的 `state=null` 表示该 component 当前无 active fault；consumable
   runtime 的全局失效由 `invalidation=true` 明确表达，前端只按 transition 应用状态。
+- **HUD 数字与语义（§11/§12）**：队总 HP 显示完整整数（禁止 1k / 22.3k 缩写）；label 明确
+  「己方总HP / 敌方总HP / 点数」（三语 i18n `hud_friendly_hp` / `hud_enemy_hp` / `points`）。
+- **Team HP 延迟伤害（§13）**：authoritative current HP 立即更新，delayed-damage chip 短暂停留旧值并追赶
+  （0.42s 克制过渡；`prefers-reduced-motion` 禁用；seek/恢复帧 `hpNoTransition` 直接同步不补播）。
+- **destroyed Details（§21）**：selected vehicle 已击毁时 V2VehicleInspector 明确显示「已击毁」（而非 0 HP /
+  空血条）；伤害历史 / 击杀 / 承受伤害 / 最后位置等 authoritative facts 仍正常展示。
 - **战斗反馈（wall-clock transient，seek 清空 / pause 自然完成 / resume 不重复）**：
   播放时钟跨过事件由 `eventsCrossed`（严格左开 cursor）消费——DAMAGE → 伤害飘字
   （-N，受击方阵营色，约 1s 可读时长，同车连续受击纵向 stack）+ HP 数字立即切换 +
   bar 150–300ms 缩短（CSS transition，seek 单帧禁用）+ hit flash + lost-HP ghost
   （同阵营色浅版，约 600ms 消退）。`DamageLoss.transientAllowed`、`fromHp`、`toHp` 与
   `displayCapacityHp` 均由 backend 直接投影；无法证明时前端不显示 transient/ghost。
-  DESTROYED → 克制 2D burst；KILL → kill feed
-  （只显示「受害者被击毁」，victim-only，最多 3 条队列、约 5s 生命周期）。
+  DESTROYED → 克制 2D burst；KILL → Event Banner（Map Workspace top-center）
+  （「玩家名（车辆名）被击毁」，victim-only，来自 canonical playerName+tankName，最多 2 条队列、约 3s 生命周期）。
   失察期间受击（事件时刻无位置流覆盖）不跳伤害、不更新 HP、不显示 attacker；
   prefers-reduced-motion 取消 ghost/flash/burst/feed 动画（事实保留）。
 - **Detail Sidebar（2026-08 收敛为 current-state only）**：点击 marker 打开/切换（不 toggle-off）、
