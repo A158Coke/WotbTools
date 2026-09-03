@@ -152,8 +152,9 @@ async function loadMapOverview() {
 
 /**
  * 拉取 V2 canonical battle-playback dataset（独立竞态序号）。显式状态机，绝不在 204/error 时静默
- * 置 null 导致 Playback 整块消失。204 → UNAVAILABLE（确定性原因）；非 200 → ERROR（本地化，
- * 是否显示 retry 由 canonical retryable 决定）；
+ * 置 null 导致 Playback 整块消失。204 → UNAVAILABLE（确定性原因）；非 200 → ERROR（本地化；
+ * 手动「重试加载」在 ERROR 态始终可见——datasetReady 由外层模板保证，canonical retryable
+ * 仅保留为错误语义/自动重试策略，不门控手动恢复入口）；
  * 200 → FULL/PARTIAL。日志记录 processingJobId / sourceId / V2 status / capability / limitations /
  * failure code；绝不记录 token。
  */
@@ -370,9 +371,11 @@ onBeforeUnmount(() => {
           <div v-else-if="playbackV2State === 'UNAVAILABLE'" class="pb-status pb-unavailable" data-test="pb-unavailable">
             {{ playbackV2UnavailableReason }}
           </div>
-          <div v-else-if="playbackV2State === 'ERROR'" class="pb-status pb-error" data-test="pb-error">
+          <div v-else-if="playbackV2State === 'ERROR'" class="pb-status pb-error" data-test="pb-error" :data-retryable="playbackV2Retryable">
             <span>{{ playbackV2Error }}</span>
-            <button v-if="playbackV2Retryable" type="button" class="ghost sm" data-test="pb-retry" @click="retryPlaybackV2">{{ $t('recon.playback.retry') }}</button>
+            <!-- ERROR 态始终提供手动「重试加载」（外层 v-else 已保证 datasetReady）；
+                 canonical retryable 仅保留为错误语义/自动重试策略，不门控手动恢复入口。 -->
+            <button type="button" class="ghost sm" data-test="pb-retry" @click="retryPlaybackV2">{{ $t('recon.playback.retry') }}</button>
           </div>
           <div v-else-if="playbackV2State === 'LOADING'" class="pb-status" data-test="pb-loading">
             <span class="map-status-spinner" aria-hidden="true"></span>{{ $t('recon.playback.loading') }}
