@@ -58,6 +58,7 @@ final class JuheQqTestSupport {
         private final String validState;
         private final AuthenticationSessionModel session;
         BrokeredIdentityContext captured;
+        boolean failOnAuthenticated = false;
 
         AuthCallbackFake(final String validState) {
             this.validState = validState;
@@ -74,6 +75,9 @@ final class JuheQqTestSupport {
                 case "getAndVerifyAuthenticationSession":
                     return validState.equals(args[0]) ? session : null;
                 case "authenticated":
+                    if (failOnAuthenticated) {
+                        throw new RuntimeException("broker authenticated failed (test)");
+                    }
                     captured = (BrokeredIdentityContext) args[0];
                     return Response.ok().build();
                 default:
