@@ -80,10 +80,10 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(body).toContain('pointer-events: auto')
   })
 
-  it('map keeps its canonical aspect — no non-uniform X/Y stretch', () => {
+  it('map keeps its canonical aspect — cover-fill, no non-uniform X/Y stretch', () => {
     const map = ruleBody('.battle-playback:fullscreen .pb-main .pb-map')
-    expect(map).toContain('min(100%, calc(100vh * var(--pb-map-ratio, 1)))')
-    expect(map).toContain('max-height: 100%')
+    expect(map).toContain('width: 100%')
+    expect(map).toContain('max-width: none')
     // SVG stays aspect-preserving (height:auto) so the raster geometry is never
     // distorted by a non-aspect container box.
     expect(ruleBody('.battle-playback:fullscreen .pb-main .pb-map .pb-svg')).toContain('height: auto')
