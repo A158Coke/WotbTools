@@ -1814,6 +1814,15 @@ const mapStyle = computed(() => ({
       <button
         type="button"
         class="pb-rail-btn"
+        :class="{ active: isFullscreen }"
+        data-test="pb-rail-fullscreen"
+        :title="$t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
+        :aria-label="$t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
+        @click="toggleFullscreen"
+      >⛶</button>
+      <button
+        type="button"
+        class="pb-rail-btn"
         data-test="pb-rail-reset"
         :title="$t('recon.map.playback.reset_view')"
         :aria-label="$t('recon.map.playback.reset_view')"
