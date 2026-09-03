@@ -24,7 +24,7 @@ schema 从该文件生成。Java domain facts 通过显式 mapper 投影为 wire
 `PlaybackTimeline.vue`（纯进度条）、`AnnotationToolbar.vue`（折叠式标注工具）、
 `PlaybackSidePanel.vue`（Battle / Vehicle / Display / Events 面板）和
 `VehicleDetailsPanel.vue`（当前车辆详情）。`PlaybackMobileOverlay.vue` 只管理移动端
-controls 的活动显示与淡出，不拥有 playback state。
+controls 的显隐，不拥有 playback state。
 `utils/playbackVehicleState.ts` 负责将 canonical V2 track 投影为 marker state，
 `utils/playbackClock.ts` 提供播放时间/倍速纯函数。拆分不新增数据源、不改变 V2 query-at-time、
 anti-future-leak 或现有 tank-marker 资产契约。
@@ -35,7 +35,7 @@ anti-future-leak 或现有 tank-marker 资产契约。
   Universal Battle HUD：己方在左、权威比分/基地状态在中（无事实时不渲染占位符）、敌方在右；HP 的
   `FULL_RELATIVE`、`EXACT`、`PARTIAL`、`UNKNOWN` 语义保持不变。
 - 地图是 workspace 的主视觉。Desktop / Tablet 的 controls 为紧凑流式布局，Mobile
-  初始只保留地图和 HUD；轻触地图才显示约 3 秒的播放 controls，控制事件不会穿透到地图。
+  初始只保留地图和 HUD；轻触地图显示播放 controls，控制事件不会穿透到地图。
 - Display、Events、Vehicle 与 Battle 内容通过侧面板按需显示；Events 只呈现
   `DAMAGE`、`KILL`、`DESTROYED`，点击事件执行 seek + pause，纯时间轴不承载事件标记。
 - 标注工具默认折叠，绘图不暂停 battle clock。Fullscreen 继续保持同一组件实例的
@@ -164,7 +164,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     RGBA、共同 pivot 256,256）渲染 HTML overlay 标记；marker 尺寸由
     `utils/vehicleMarkerSizing.js` 集中计算：Tier X 优先使用模型 metadata 的真实 `hullBounds`，
     其它车辆按 replay/tankopedia vehicle class fallback，桌面/移动端分别 clamp 在约 18–30px /
-    16–26px 的长边范围内，并保留投影后的车体长宽关系。按钮不反缩放 → 坦克随地图同比缩放：
+    16–26px 的标记范围内。raster 使用等比 square renderBox（dedicated bake 的车体长边约占 88%，
+    真实长宽比已由图片 geometry 编码），physical footprint 只单独用于 tank model collision，
+    hit target 也独立于二者计算；不对 raster 做非等比 X/Y 拉伸。按钮不反缩放 → 坦克随地图同比缩放：
     hull/turret img 放大到按钮 **134%** 并以共同 pivot 居中旋转
     （`translate(-50%,-50%) rotate(...)`）——generic 素材透明留白实测有效车体 bbox
     ≈210×336/512（长边占 65.6%），dedicated hull.webp 车体按自身模型盒渲染；
@@ -186,7 +188,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     （默认 玩家名关 / 坦克名开，`localStorage` 持久化 `wotb.pb.label-prefs`）；PlayerName + TankName
     共用一个半透明深色背景块（自适应宽度、team 文字色 `--pb-team-text`/`--pb-enemy-text`、
     destroyed/last-known 只弱化文字）；PlayerName 按实际像素截断（max-width+ellipsis），截断才有
-    完整名 tooltip；碰撞纯函数 `utils/labelLayout.js`（screen px，viewport 内才参与）——
+    完整名 tooltip；碰撞纯函数 `utils/labelLayout.js`（screen px，仅 tank model box 参与，离开 viewport 时自然裁剪）——
     TankName 冲突**从下往上** greedy 上移让位（下方先 finalized、上限一行，3+ 连锁不重新产生
     overlap）、PlayerName 冲突经时间阈值（hide 250ms / show 300ms，`performance.now` **UI wall
     clock**——播放由 frame 刷新、暂停由轻量 RAF 继续推进，不依赖播放状态）隐藏/恢复（~120ms

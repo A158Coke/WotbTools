@@ -22,7 +22,9 @@ const CLASS_FOOTPRINT_M = Object.freeze({
   unknown: Object.freeze({ width: 3.2, length: 7.5 }),
 })
 
-const FOOTPRINT_SCALE = 1.6
+// Dedicated hull geometry occupies roughly 88% of its square bake. Keep this
+// scalar in the render-size path; never apply physical X/Y dimensions to CSS.
+const READABILITY_SCALE = 1.6
 const FALLBACK_WORLD_SPAN_M = 600
 const HIT_TARGET_EXTRA_PX = 4
 const HIT_TARGET_MIN_PX = Object.freeze({ desktop: 20, mobile: 18 })
@@ -60,9 +62,9 @@ function projectedPixelsPerWorld(mapView, mapWidthPx, mapHeightPx) {
 }
 
 /**
- * Compute the visible marker box and its slightly larger click target.
- * The long edge is clamped while the short edge keeps the projected hull
- * aspect ratio, so a compact LT cannot become the same size as a large HT/TD.
+ * Compute separate square raster, physical collision footprint and click target.
+ * The raster stays isotropic because hull.webp already contains the vehicle
+ * aspect ratio. Physical dimensions are retained only for collision geometry.
  */
 export function computeVehicleMarkerSize(vehicle, {
   model = null,
@@ -81,18 +83,19 @@ export function computeVehicleMarkerSize(vehicle, {
   const pixelsPerWorld = projectedPixelsPerWorld(mapView, widthPx, heightPx)
   const projectedWidth = footprint.width * pixelsPerWorld.x
   const projectedHeight = footprint.length * pixelsPerWorld.y
-  const projectedLongEdge = Math.max(projectedWidth, projectedHeight)
-  const longEdge = Math.min(limits.max, Math.max(limits.min, projectedLongEdge * FOOTPRINT_SCALE))
-  const ratio = projectedLongEdge > 0 ? longEdge / projectedLongEdge : 1
-  const width = Math.round(projectedWidth * ratio * 100) / 100
-  const height = Math.round(projectedHeight * ratio * 100) / 100
-  const hitWidth = Math.max(width + HIT_TARGET_EXTRA_PX, hitMin)
-  const hitHeight = Math.max(height + HIT_TARGET_EXTRA_PX, hitMin)
+  const physicalLongEdge = Math.max(projectedWidth, projectedHeight)
+  const renderSize = Math.min(limits.max, Math.max(limits.min, physicalLongEdge * READABILITY_SCALE))
+  const footprintScale = physicalLongEdge > 0 ? renderSize / physicalLongEdge : 1
+  const collisionFootprint = {
+    width: Math.round(projectedWidth * footprintScale * 100) / 100,
+    height: Math.round(projectedHeight * footprintScale * 100) / 100,
+  }
+  const hitSize = Math.max(renderSize + HIT_TARGET_EXTRA_PX, hitMin)
 
   return Object.freeze({
-    width,
-    height,
-    hitTarget: Object.freeze({ width: hitWidth, height: hitHeight }),
+    renderBox: Object.freeze({ width: renderSize, height: renderSize }),
+    collisionFootprint: Object.freeze(collisionFootprint),
+    hitTarget: Object.freeze({ width: hitSize, height: hitSize }),
     source,
     footprint: Object.freeze({ width: footprint.width, length: footprint.length }),
   })

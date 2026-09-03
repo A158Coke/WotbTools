@@ -1264,13 +1264,13 @@ const baseVehicleStates = computed(() => {
 
 const collisionOffsets = ref(new Map())
 watch(
-  [baseVehicleStates, () => currentTime.value, () => view.scale, () => mapWidth(), () => mapHeight(), () => selectedAccountId.value],
+  [baseVehicleStates, () => currentTime.value, () => view.scale, () => view.tx, () => view.ty, () => mapWidth(), () => mapHeight(), () => selectedAccountId.value],
   ([states]) => {
     const items = states.map((state) => {
       const point = canonicalMarkerScreen(state)
       if (!point) return null
-      const width = state.markerSize.width * view.scale
-      const height = state.markerSize.height * view.scale
+      const width = state.markerSize.collisionFootprint.width * view.scale
+      const height = state.markerSize.collisionFootprint.height * view.scale
       return {
         accountId: state.vehicle.accountId,
         x: point.x,
@@ -1281,11 +1281,9 @@ watch(
         recorder: state.recorder,
       }
     }).filter(Boolean)
-    const viewport = { x: 0, y: 0, w: mapWidth(), h: mapHeight() }
     collisionOffsets.value = computeTankCollisionLayout(
       items,
       collisionOffsets.value,
-      viewport.w > 0 && viewport.h > 0 ? viewport : null,
       { mobile: typeof window !== 'undefined' && window.innerWidth < 768 },
     )
   },
@@ -1300,8 +1298,8 @@ const vehicleStates = computed(() => baseVehicleStates.value.map((state) => {
     presentationOffset: offset,
     markerStyle: {
       ...state.markerStyle,
-      width: `${state.markerSize.width}px`,
-      height: `${state.markerSize.height}px`,
+      width: `${state.markerSize.renderBox.width}px`,
+      height: `${state.markerSize.renderBox.height}px`,
       left: `calc(${markerLeft(state.pos.x)} + ${offset.x / scale}px)`,
       top: `calc(${markerTop(state.pos.y)} + ${offset.y / scale}px)`,
     },
@@ -1540,7 +1538,7 @@ const labelLayout = computed(() => {
   // Label geometry remains screen-space and only needs a representative core size;
   // the model collision solver above uses each vehicle's real display footprint.
   const coreSize = Math.max(
-    ...vehicleStates.value.map((st) => Math.max(st.markerSize?.width || 0, st.markerSize?.height || 0)),
+    ...vehicleStates.value.map((st) => st.markerSize?.renderBox?.width || 0),
     MARKER_CORE_PX,
   )
   // HP HUD 真实渲染尺寸（.pb-hp-hud 屏幕恒定；测试环境无布局 → 回退 null 走 CSS 常量）。

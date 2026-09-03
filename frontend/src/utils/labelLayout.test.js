@@ -31,15 +31,6 @@ describe('computeTankCollisionLayout', () => {
       expect(Math.hypot(offset.x, offset.y)).toBeLessThanOrEqual(maxOffset)
     }
   }
-  const expectInside = (items, result, viewport) => {
-    for (const it of items) {
-      const offset = result.get(it.accountId)
-      expect(it.x + offset.x - it.width / 2).toBeGreaterThanOrEqual(viewport.x)
-      expect(it.y + offset.y - it.height / 2).toBeGreaterThanOrEqual(viewport.y)
-      expect(it.x + offset.x + it.width / 2).toBeLessThanOrEqual(viewport.x + viewport.w)
-      expect(it.y + offset.y + it.height / 2).toBeLessThanOrEqual(viewport.y + viewport.h)
-    }
-  }
 
   it.each([3, 7, 14])('keeps %i dense model offsets bounded and canonical coordinates untouched', (count) => {
     const items = Array.from({ length: count }, (_, i) => tank(i + 1))
@@ -51,7 +42,7 @@ describe('computeTankCollisionLayout', () => {
 
   it('uses the smaller mobile offset budget and accepts residual model overlap', () => {
     const items = Array.from({ length: 14 }, (_, i) => tank(i + 1))
-    const result = computeTankCollisionLayout(items, new Map(), null, { mobile: true })
+    const result = computeTankCollisionLayout(items, new Map(), { mobile: true })
     expectBounded(items, result, 8)
     const boxes = items.map((it) => {
       const offset = result.get(it.accountId)
@@ -101,49 +92,29 @@ describe('computeTankCollisionLayout', () => {
     expectBounded(items, result)
   })
 
-  it.each([
-    ['left', 1, 20, 120, 320, 240],
-    ['right', 1, 300, 120, 320, 240],
-    ['top', 1, 160, 20, 320, 240],
-    ['bottom', 1, 160, 220, 320, 240],
-    ['left', 2, 40, 240, 640, 480],
-    ['right', 2, 600, 240, 640, 480],
-    ['top', 2, 320, 40, 640, 480],
-    ['bottom', 2, 320, 440, 640, 480],
-    ['left', 4, 80, 480, 1280, 960],
-    ['right', 4, 1200, 480, 1280, 960],
-    ['top', 4, 640, 80, 1280, 960],
-    ['bottom', 4, 640, 880, 1280, 960],
-  ])('keeps 14 model offsets bounded at the %s edge and %ix zoom', (_edge, scale, x, y, w, h) => {
-    const items = Array.from({ length: 14 }, (_, i) => tank(i + 1, {
-      x, y, width: 32 * scale, height: 32 * scale,
-    }))
-    const viewport = { x: 0, y: 0, w, h }
-    const result = computeTankCollisionLayout(items, new Map(), viewport)
-    expectBounded(items, result)
-    expectInside(items, result, viewport)
+  it.each(['left', 'right', 'top', 'bottom'])('does not move a lone marker because of viewport clipping at the %s edge', (edge) => {
+    const position = {
+      left: { x: 0, y: 100 },
+      right: { x: 320, y: 100 },
+      top: { x: 160, y: 0 },
+      bottom: { x: 160, y: 240 },
+    }[edge]
+    const result = computeTankCollisionLayout([tank(1, position)])
+    expect(result.get(1)).toEqual({ x: 0, y: 0 })
   })
 
-  it('finds a non-grid bounded offset when an edge needs fractional correction', () => {
-    const items = [tank(1, { x: 0.5, y: 10, width: 19.6, height: 10 })]
-    const viewport = { x: 0, y: 0, w: 20, h: 20 }
-    const result = computeTankCollisionLayout(items, new Map(), viewport)
-    expect(result.get(1).x).toBeCloseTo(9.496)
-    expectInside(items, result, viewport)
-  })
-
-  it('uses a deterministic bounded fallback instead of throwing for an impossible viewport', () => {
+  it('uses a deterministic bounded fallback instead of throwing for malformed layout input', () => {
     const items = [tank(1), tank(2)]
-    expect(() => computeTankCollisionLayout(items, new Map(), { x: 0, y: 0, w: 20, h: 20 })).not.toThrow()
-    expect(computeTankCollisionLayout(items, new Map(), { x: 0, y: 0, w: 20, h: 20 })).toEqual(
-      computeTankCollisionLayout(items, new Map(), { x: 0, y: 0, w: 20, h: 20 }),
+    expect(() => computeTankCollisionLayout(items, new Map(), { mobile: true })).not.toThrow()
+    expect(computeTankCollisionLayout(items, new Map(), { mobile: true })).toEqual(
+      computeTankCollisionLayout(items, new Map(), { mobile: true }),
     )
   })
 
   it('keeps a feasible previous layout stable across viewport resize', () => {
     const items = [tank(1, { x: 160, y: 120 }), tank(2, { x: 160, y: 120 })]
-    const first = computeTankCollisionLayout(items, new Map(), { x: 0, y: 0, w: 320, h: 240 })
-    const second = computeTankCollisionLayout(items, first, { x: 0, y: 0, w: 640, h: 480 })
+    const first = computeTankCollisionLayout(items)
+    const second = computeTankCollisionLayout(items, first)
     expect(second).toEqual(first)
     expectBounded(items, second)
   })
