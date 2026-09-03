@@ -46,6 +46,9 @@
 # Targeted：cd frontend && npx vitest run <related-test-files>
 # Type check：cd frontend && npm run typecheck
 # Build（仅当改动涉及 build 范围）：cd frontend && npm run build
+# Local Frontend → Production Backend / Keycloak（开发代理，谨慎使用真实数据）
+# cd frontend && npm run dev:production-remote
+# 说明与验收边界见 docs/frontend/local-production-dev.md；普通 npm run dev 仍代理 localhost:8087。
 
 # 本地完整开发环境
 cd docker/online && docker compose up -d --build

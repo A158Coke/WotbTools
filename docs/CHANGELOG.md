@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Added
+- **Local Frontend → Production Backend / Keycloak 开发模式**：前端新增 `npm run dev:production-remote`，通过 Vite `/api` 开发代理连接生产站点，同时复用现有生产 Keycloak issuer 配置；开发 Topbar 显示非模态环境提示并提醒不要上传测试或敏感数据。普通 `npm run dev` 的本地后端代理保持不变。详见 `docs/frontend/local-production-dev.md`。
+
 ### Changed
 - **手机端（<768px）UI 布局优化**：Mobile 断点统一为 `@media (width < 768px)` range 语法并消除 JS/CSS 1px 错配；补齐 classic 浅色主题在 AdminUsers/Contact/Boost/Profile 的对比度覆写；修复 HoF mark3 工具条挤压、分析面板表格裁剪、admin 表头移动端 sticky 偏移、modal 遮罩 showcase 语义反转、ColumnPicker 触屏不可重排序（新增上/下移按钮 + 三语 i18n）、批量选择 bottom-sheet 无遮罩等问题；移动端输入框字号 ≥16px、主要触控目标 ≥36px，并预留 viewport-fit/safe-area 兼容。无 API/路由/数据契约变化。
 
