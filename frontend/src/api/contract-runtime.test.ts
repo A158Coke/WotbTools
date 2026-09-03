@@ -37,6 +37,7 @@ function dataset(confidence = 'HIGH') {
     }],
     events: [],
     pointsSamples: [],
+    baseStates: [],
     limitations: [],
     capability: 'FULL',
     arenaBonusType: null,

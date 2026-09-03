@@ -6,6 +6,7 @@ import {
   LABEL_PAD_X,
   MARKER_CORE_PX,
   computeLabelLayout,
+  computeTankCollisionLayout,
   estimateLabelWidth,
 } from './labelLayout'
 
@@ -21,6 +22,23 @@ function item(accountId, x, y, extra = {}) {
     ...extra,
   }
 }
+
+describe('computeTankCollisionLayout', () => {
+  const tank = (accountId, extra = {}) => ({ accountId, x: 100, y: 100, width: 32, height: 32, ...extra })
+
+  it('keeps canonical coordinates untouched and separates dense tank boxes', () => {
+    const result = computeTankCollisionLayout([tank(1), tank(2)])
+    expect(result.get(1)).toEqual({ x: 0, y: 0 })
+    expect(result.get(2)).not.toEqual({ x: 0, y: 0 })
+  })
+
+  it('gives selected vehicles priority and preserves non-selected offsets when possible', () => {
+    const previous = new Map([[2, { x: 32, y: 0 }]])
+    const result = computeTankCollisionLayout([tank(1), tank(2, { selected: true })], previous)
+    expect(result.get(2)).toEqual({ x: 0, y: 0 })
+    expect(result.get(1)).not.toEqual({ x: 0, y: 0 })
+  })
+})
 
 describe('estimateLabelWidth', () => {
   it('估算拉丁/CJK 宽度并支持 maxWidth', () => {

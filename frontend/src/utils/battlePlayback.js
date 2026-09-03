@@ -151,6 +151,51 @@ function trustedRoutePosition(route, t) {
   return trustedPositionAt(route?.points, t)
 }
 
+/**
+ * Build the last battle-relative two seconds of observed positions for each vehicle.
+ * Segments are never joined, future samples are ignored, and LAST_KNOWN/unknown
+ * intervals do not extend the visible trail.
+ */
+export function recentPositionTrails(vehicles, nowSec, windowSec = 2) {
+  if (!Array.isArray(vehicles) || !Number.isFinite(nowSec)) return []
+  const span = Number.isFinite(windowSec) && windowSec > 0 ? windowSec : 2
+  const start = nowSec - span
+  const trails = []
+  for (const vehicle of vehicles) {
+    for (const segment of vehicle?.positionSegments || []) {
+      if (segment?.knowledge !== 'OBSERVED' || !Array.isArray(segment.samples)) continue
+      const samples = segment.samples
+        .filter(sample => sample && Number.isFinite(sample.timeSec)
+          && Number.isFinite(sample.x) && Number.isFinite(sample.y)
+          && sample.timeSec >= start - 1e-6 && sample.timeSec <= nowSec + 1e-6)
+        .sort((a, b) => a.timeSec - b.timeSec)
+      for (let index = 1; index < samples.length; index += 1) {
+        const from = samples[index - 1]
+        const to = samples[index]
+        if (to.timeSec - from.timeSec > OBSERVED_GAP_SEC) continue
+        const age = Math.max(0, nowSec - to.timeSec)
+        trails.push({
+          accountId: vehicle.accountId,
+          friendly: vehicle.friendly,
+          from,
+          to,
+          opacity: 0.12 + 0.58 * Math.max(0, 1 - age / span),
+        })
+      }
+      if (samples.length === 1) {
+        const point = samples[0]
+        trails.push({
+          accountId: vehicle.accountId,
+          friendly: vehicle.friendly,
+          point,
+          opacity: 0.2 + 0.5 * Math.max(0, 1 - Math.max(0, nowSec - point.timeSec) / span),
+        })
+      }
+    }
+  }
+  return trails
+}
+
 /** 炮线可见窗口基础时长（真实秒）：实际窗口 = TRACER_BASE_SEC × 播放倍速——1×/2×/4× 各约 0.4s 真实时间
  * （游戏时间窗口 = 0.4 × speed）。短 shot effect：命中后 ≈400ms 完全消失，不再挂在地图上整秒。 */
 const TRACER_BASE_SEC = 0.4

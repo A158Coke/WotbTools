@@ -26,6 +26,7 @@ import {
   eventsCrossed,
   formatClock,
   pushFeed,
+  recentPositionTrails,
   teamPointsAt,
   tracerLines,
   transientsActive,
@@ -44,6 +45,7 @@ import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
 import {
   MARKER_CORE_PX,
   computeLabelLayout,
+  computeTankCollisionLayout,
 } from '../utils/labelLayout'
 import {
   ANNOT_COLORS,
@@ -181,6 +183,15 @@ const enemyPoints = computed(() =>
   enemyTeam.value == null
     ? null
     : teamPointsAt(playback.value?.pointsSamples, enemyTeam.value, currentTime.value))
+const baseStatesAt = computed(() => {
+  const latest = new Map()
+  for (const state of playback.value?.baseStates || []) {
+    if (!state || !Number.isFinite(state.timeSec) || state.timeSec > currentTime.value + 1e-6) continue
+    if (!Number.isInteger(state.baseIndex) || state.baseIndex < 0) continue
+    latest.set(state.baseIndex, state)
+  }
+  return [...latest.values()].sort((a, b) => a.baseIndex - b.baseIndex)
+})
 /**
  * HP 数值区显示文本（绝不显示虚假的 knownRemaining / totalMax 分数）：
  * - FULL_RELATIVE → 「100%」（开局相对满血状态，非具体 HP 数字）；
@@ -255,6 +266,31 @@ watch(hpPrefs, (p) => {
     // 隐私模式/配额满：静默（本次会话内仍生效）
   }
 }, { deep: true })
+
+// 最近 2 秒位置轨迹偏好：只消费 canonical observed positionSegments；持久化与
+// 既有 label/HP display preferences 同级，不改变 replay state owner。
+const TRAIL_PREFS_KEY = 'wotb.pb.trail-prefs'
+function loadTrailPrefs() {
+  try {
+    const raw = localStorage.getItem(TRAIL_PREFS_KEY)
+    if (raw) return { showTrail: JSON.parse(raw).showTrail !== false }
+  } catch {
+    // 损坏/不可用 → 默认开启
+  }
+  return { showTrail: true }
+}
+const trailPrefs = reactive(loadTrailPrefs())
+watch(trailPrefs, (p) => {
+  try {
+    localStorage.setItem(TRAIL_PREFS_KEY, JSON.stringify(p))
+  } catch {
+    // 隐私模式/配额满：静默（本次会话内仍生效）
+  }
+}, { deep: true })
+
+const visibleTrails = computed(() => trailPrefs.showTrail
+  ? recentPositionTrails(hpVehicles.value, currentTime.value, 2)
+  : [])
 
 // ---- PR5（§1.3/§10/§16/§20）：deterministic state 与 transient feedback 分层。
 // transient 全部 wall-clock（performance.now）驱动，播放帧推进时消费新跨过的事件，
@@ -1185,7 +1221,7 @@ function markerTop(y) {
   return `${((mapView.value.toY(y)) / mapView.value.H) * 100}%`
 }
 
-const vehicleStates = computed(() => {
+const baseVehicleStates = computed(() => {
   // preload 未完成（asset decision 未定）时不渲染车辆——禁止 generic 闪现后替换
   if (preload.value.phase !== 'ready') return []
   // V2-only：V2 track 为唯一事实源；无 V2 车辆 → 空（不再有 legacy overview.playback 兜底）。
@@ -1214,6 +1250,45 @@ const vehicleStates = computed(() => {
     })
     .filter(Boolean)
 })
+
+const collisionOffsets = ref(new Map())
+watch(
+  [baseVehicleStates, () => currentTime.value, () => view.scale, () => mapWidth(), () => selectedAccountId.value],
+  ([states]) => {
+    const markerCssSize = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || 32
+    const items = states.map((state) => {
+      const point = canonicalMarkerScreen(state)
+      if (!point) return null
+      const width = markerCssSize * state.hitbox.w * view.scale
+      const height = markerCssSize * state.hitbox.h * view.scale
+      return {
+        accountId: state.vehicle.accountId,
+        x: point.x,
+        y: point.y,
+        width,
+        height,
+        selected: selectedAccountId.value === state.vehicle.accountId,
+        recorder: state.recorder,
+      }
+    }).filter(Boolean)
+    collisionOffsets.value = computeTankCollisionLayout(items, collisionOffsets.value)
+  },
+  { immediate: true },
+)
+
+const vehicleStates = computed(() => baseVehicleStates.value.map((state) => {
+  const offset = collisionOffsets.value.get(state.vehicle.accountId) || { x: 0, y: 0 }
+  const scale = view.scale || 1
+  return {
+    ...state,
+    presentationOffset: offset,
+    markerStyle: {
+      ...state.markerStyle,
+      left: `calc(${markerLeft(state.pos.x)} + ${offset.x / scale}px)`,
+      top: `calc(${markerTop(state.pos.y)} + ${offset.y / scale}px)`,
+    },
+  }
+}))
 
 /**
  * authoritative playback events：全部回放事件。
@@ -1277,7 +1352,7 @@ function onMarkerSelect(vehicle, event) {
 }
 
 /** 标记中心 → 相对地图容器的屏幕 px（viewport 变换后）。 */
-function markerScreen(st) {
+function canonicalMarkerScreen(st) {
   const W = mapWidth()
   if (!W || mapView.value.W <= 0) return null
   const H = W * (mapView.value.H / mapView.value.W)
@@ -1287,23 +1362,31 @@ function markerScreen(st) {
   }
 }
 
+function markerScreen(st) {
+  const point = canonicalMarkerScreen(st)
+  if (!point) return null
+  const offset = st.presentationOffset || { x: 0, y: 0 }
+  return { x: point.x + offset.x, y: point.y + offset.y }
+}
+
 function selectAt(accountId, clientX, clientY) {
   const states = vehicleStates.value
   const hasPoint = Number.isFinite(clientX) && mapEl.value && mapWidth() > 0
   const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
   const px = hasPoint ? clientX - rect.left : NaN
   const py = hasPoint ? clientY - rect.top : NaN
-  // §36 hitbox 尺寸（content px）：读取实际 marker 盒宽（CSS 36px desktop / 28px mobile，
-  // media query 生效于 viewport 变换前 → offsetWidth 即 content px）；测试环境无布局 → 回退 36
-  const markerBox = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || 36
+  // §36 hitbox 尺寸（content px）：读取实际 marker 盒宽（CSS 32px desktop / 25px mobile，
+  // media query 生效于 viewport 变换前 → offsetWidth 即 content px）；测试环境无布局 → 回退 32
+  const markerBox = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || 32
   // 命中判定：内容坐标（撤销 viewport 变换）落在 hull hitbox 内
   const hitTest = (s) => {
     const cx = (px - view.tx) / view.scale
     const cy = (py - view.ty) / view.scale
     const W = mapWidth()
     const H = W * (mapView.value.H / mapView.value.W)
-    const x = (mapView.value.toX(s.pos.x) / mapView.value.W) * W
-    const y = (mapView.value.toY(s.pos.y) / mapView.value.H) * H
+    const offset = s.presentationOffset || { x: 0, y: 0 }
+    const x = (mapView.value.toX(s.pos.x) / mapView.value.W) * W + offset.x / view.scale
+    const y = (mapView.value.toY(s.pos.y) / mapView.value.H) * H + offset.y / view.scale
     const hw = (markerBox * s.hitbox.w) / 2
     const hh = (markerBox * s.hitbox.h) / 2
     return Math.abs(cx - x) <= hw && Math.abs(cy - y) <= hh
@@ -1534,6 +1617,7 @@ const gridRegions = computed(() => {
 })
 
 const mapStyle = computed(() => ({
+  '--pb-map-aspect': `${mapView.value.W} / ${mapView.value.H}`,
   // Battle Playback 6x6 网格：用显式强对比线，保证每一列可见地隔开（热力图鸟瞰用弱 gridStroke）。
   '--map-grid-stroke': palette.value.gridStrokeStrong,
   '--map-region-stroke': palette.value.regionStroke,
@@ -1552,6 +1636,8 @@ const mapStyle = computed(() => ({
       :enemy-hp="enemyHp"
       :friendly-points="friendlyPoints"
       :enemy-points="enemyPoints"
+      :base-states="baseStatesAt"
+      :friendly-team="friendlyTeam"
     />
 
     <!-- 地图是主视觉；控制条在桌面流式布局，移动端由首次触摸唤起。 -->
@@ -1565,6 +1651,7 @@ const mapStyle = computed(() => ({
           :friendly-team="friendlyTeam"
           :grid-regions="gridRegions"
           :visible-tracers="visibleTracers"
+          :visible-trails="visibleTrails"
           :tracer-color="tracerColor"
           :view-scale="view.scale"
           :viewport-style="viewportStyle"
@@ -1610,12 +1697,12 @@ const mapStyle = computed(() => ({
               <dd>{{ hpValueText(friendlyHp) }}</dd>
               <dt>{{ $t('recon.map.playback.team_enemy') }}</dt>
               <dd>{{ hpValueText(enemyHp) }}</dd>
-              <dt>{{ $t('recon.map.playback.points') }}</dt>
-              <dd>{{ friendlyPoints == null ? '—' : friendlyPoints }} : {{ enemyPoints == null ? '—' : enemyPoints }}</dd>
+              <dt v-if="friendlyPoints != null || enemyPoints != null">{{ $t('recon.map.playback.points') }}</dt>
+              <dd v-if="friendlyPoints != null || enemyPoints != null">{{ [friendlyPoints, enemyPoints].filter(value => value != null).join(' : ') }}</dd>
               <dt>{{ $t('recon.map.playback.kills') }}</dt>
               <dd data-test="pb-panel-kills">{{ friendlyKills }} : {{ enemyKills }}</dd>
-              <dt>{{ $t('recon.map.playback.objective') }}</dt>
-              <dd data-test="pb-panel-objective">—</dd>
+              <dt v-if="baseStatesAt.length">{{ $t('recon.map.playback.objective') }}</dt>
+              <dd v-if="baseStatesAt.length" data-test="pb-panel-objective">{{ baseStatesAt.map(state => String.fromCharCode(65 + state.baseIndex)).join(' · ') }}</dd>
             </dl>
           </template>
           <template #vehicle>
@@ -1636,6 +1723,7 @@ const mapStyle = computed(() => ({
               <label><input data-test="pb-show-player" type="checkbox" :checked="labelPrefs.showPlayerName" @change="labelPrefs.showPlayerName = $event.target.checked"> {{ $t('recon.map.playback.show_player_name') }}</label>
               <label><input data-test="pb-show-tank" type="checkbox" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ $t('recon.map.playback.show_tank_name') }}</label>
               <label><input data-test="pb-show-hp" type="checkbox" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ $t('recon.map.playback.show_hp') }}</label>
+              <label><input data-test="pb-show-trail" type="checkbox" :checked="trailPrefs.showTrail" @change="trailPrefs.showTrail = $event.target.checked"> {{ $t('recon.map.playback.show_trail_2s') }}</label>
             </div>
           </template>
           <template #events>
@@ -1729,13 +1817,13 @@ const mapStyle = computed(() => ({
   inset: 0;
   pointer-events: none;
 }
-/* PR3 增补：车辆视觉尺寸上调（人工 QA：全局地图视角下车型辨识度不足）——
-   desktop 28 → 36px / mobile 22 → 28px（约 +28%）；zoom 契约不变（viewport 整体 scale，
+/* Playback enhancement：车辆视觉尺寸相对旧版缩小约 11%，降低密集地图的遮挡——
+   desktop 36 → 32px / mobile 28 → 25px；zoom 契约不变（viewport 整体 scale，
    车辆随地图缩放；name/✕/selected/recorder 继续 inverse-scale 保持屏幕尺寸）。 */
 .pb-vehicle {
   position: absolute;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   transform: translate(-50%, -50%);
   border: none;
   background: none;
@@ -1744,7 +1832,7 @@ const mapStyle = computed(() => ({
   pointer-events: none;
 }
 @media (width < 768px) {
-  .pb-vehicle { width: 28px; height: 28px; }
+  .pb-vehicle { width: 25px; height: 25px; }
 }
 /* marker 内部样式（hull/turret/death/name/状态视觉）全部随 VehicleMarker 组件迁移：
    PR3 —— last-known/destroyed 弱化由 VehicleMarker .pb-graphics 容器承担（root 不再

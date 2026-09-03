@@ -24,6 +24,7 @@ export type ConsumableTransition = components['schemas']['ConsumableTransition']
 export type ModuleCrewTransition = components['schemas']['ModuleCrewTransition']
 export type BattleEvent = components['schemas']['BattleEvent']
 export type PointsSample = components['schemas']['PointsSample']
+export type BaseStateTransition = components['schemas']['BaseStateTransition']
 
 export function isBattlePlaybackDataset(value: unknown): value is BattlePlaybackDataset {
   return validateBattlePlaybackDataset(value).data !== null

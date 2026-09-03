@@ -31,6 +31,88 @@ export const DESTROYED_X_PX = 30
 /** Stable lane offsets in screen px. Never hide when all lanes overlap. */
 export const LABEL_LANES_PX = Object.freeze([0, -10, 10, -20])
 
+const TANK_COLLISION_PADDING = 1.05
+const TANK_COLLISION_MAX_OFFSET_PX = 96
+
+function collisionOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x
+    && a.y < b.y + b.h && a.y + a.h > b.y
+}
+
+/**
+ * Stable presentation-only tank geometry layout. The input coordinates are screen pixels;
+ * returned offsets never mutate canonical positions. Selected and recorder vehicles are
+ * placed first, and the previous offset is preferred to prevent seek/playback jitter.
+ */
+export function computeTankCollisionLayout(items, previous = new Map()) {
+  if (!Array.isArray(items)) return new Map()
+  const ordered = items.filter(item => item && item.accountId != null
+    && Number.isFinite(item.x) && Number.isFinite(item.y)
+    && Number.isFinite(item.width) && Number.isFinite(item.height))
+    .map(item => ({
+      ...item,
+      width: Math.max(1, item.width) * TANK_COLLISION_PADDING,
+      height: Math.max(1, item.height) * TANK_COLLISION_PADDING,
+    }))
+    .sort((a, b) => (Number(Boolean(b.selected)) - Number(Boolean(a.selected)))
+      || (Number(Boolean(b.recorder)) - Number(Boolean(a.recorder)))
+      || (a.y - b.y)
+      || String(a.accountId).localeCompare(String(b.accountId)))
+  const offsets = new Map()
+  const placed = []
+  const step = Math.max(12, ...ordered.map(item => Math.max(item.width, item.height)))
+  const candidates = [{ x: 0, y: 0 }]
+  for (let ring = 1; ring <= Math.ceil(TANK_COLLISION_MAX_OFFSET_PX / step); ring += 1) {
+    const distance = ring * step
+    candidates.push(
+      { x: distance, y: 0 }, { x: -distance, y: 0 },
+      { x: 0, y: distance }, { x: 0, y: -distance },
+      { x: distance, y: distance }, { x: -distance, y: distance },
+      { x: distance, y: -distance }, { x: -distance, y: -distance },
+    )
+  }
+
+  for (const item of ordered) {
+    const prior = previous instanceof Map ? previous.get(item.accountId) : null
+    const candidatesForItem = item.selected
+      ? candidates
+      : (prior && Number.isFinite(prior.x) && Number.isFinite(prior.y)
+        ? [{ x: prior.x, y: prior.y }, ...candidates]
+        : candidates)
+    let best = candidatesForItem[0]
+    let bestScore = Number.POSITIVE_INFINITY
+    for (const candidate of candidatesForItem) {
+      if (Math.abs(candidate.x) > TANK_COLLISION_MAX_OFFSET_PX
+        || Math.abs(candidate.y) > TANK_COLLISION_MAX_OFFSET_PX) continue
+      const box = {
+        x: item.x + candidate.x - item.width / 2,
+        y: item.y + candidate.y - item.height / 2,
+        w: item.width,
+        h: item.height,
+      }
+      const overlap = placed.reduce((sum, other) => sum + (collisionOverlap(box, other.box) ? 1 : 0), 0)
+      const score = overlap * 1_000_000 + Math.hypot(candidate.x, candidate.y)
+        + (prior && candidate.x === prior.x && candidate.y === prior.y ? -0.25 : 0)
+      if (score < bestScore) {
+        bestScore = score
+        best = candidate
+        if (overlap === 0 && prior && candidate.x === prior.x && candidate.y === prior.y) break
+      }
+      if (bestScore === 0) break
+    }
+    const offset = { x: best.x, y: best.y }
+    const box = {
+      x: item.x + offset.x - item.width / 2,
+      y: item.y + offset.y - item.height / 2,
+      w: item.width,
+      h: item.height,
+    }
+    offsets.set(item.accountId, offset)
+    placed.push({ box })
+  }
+  return offsets
+}
+
 export function estimateLabelWidth(text, fontSizePx, maxWidthPx = Infinity) {
   if (text == null || text === '') return 0
   let w = LABEL_PAD_X
