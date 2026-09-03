@@ -812,6 +812,17 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     vi.stubGlobal('ResizeObserver', RO)
     return () => roCb
   }
+  /** matchMedia stub：按 query 返回 matches（用于模拟移动端/大桌面判定）。 */
+  function stubMatchMedia(matchesByQuery = {}) {
+    const mql = (query) => ({
+      matches: !!matchesByQuery[query],
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })
+    vi.stubGlobal('matchMedia', mql)
+    return mql
+  }
 
   afterEach(() => {
     localStorage.clear()
@@ -957,9 +968,10 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     const stageEl = wrapper.find('.pb-map-stage').element
     Object.defineProperty(stageEl, 'clientHeight', { value: 900, configurable: true })
     const mapEl = wrapper.find('[data-test="pb-map"]').element
-    // mobile：底部 overlay controls 高度 ≈140（切换前的旧 bottom-overlay 高度）
-    const overlayEl = wrapper.find('[data-test="pb-mobile-overlay"]').element
-    Object.defineProperty(overlayEl, 'clientHeight', { value: 140, configurable: true })
+    // §safeInsets-DOM：mobile wrapper 是 position:absolute; inset:0（铺满地图），其 clientHeight=整张地图高度，
+    // 不是 controls 高度。真实 controls 高度在 .pb-mobile-overlay-content（≈140）。
+    const overlayContentEl = wrapper.find('.pb-mobile-overlay-content').element
+    Object.defineProperty(overlayContentEl, 'clientHeight', { value: 140, configurable: true })
 
     const scaleOf = () => {
       const st = wrapper.find('[data-test="pb-viewport"]').attributes('style') || ''
@@ -996,6 +1008,46 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])
     await flushPromises()
     expect(scaleOf()).toBeCloseTo(fsScale, 3)
+  })
+
+  it('§mobile-fullscreen-contract：手机 fullscreen + landscape（内宽>768）仍保持 mobile mode（bottom-overlay controls、无 rail/details）', async () => {
+    stubRaf()
+    stubFullscreenApi()
+    // 移动端：primary pointer=coarse 且视口<=1200（手机横屏内宽>768 仍命中）。大桌面 1200 判定为 false。
+    stubMatchMedia({
+      '(pointer: coarse) and (max-width: 1200px)': true,
+      '(min-width: 1200px)': false,
+    })
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const root = wrapper.find('[data-test="battle-playback"]')
+    // 判定为移动设备 → root 带 pb-device-mobile
+    expect(root.classes()).toContain('pb-device-mobile')
+
+    // 进入 fullscreen（相当于手机锁横屏）→ isFullscreen 为真，但必须仍为 mobile mode
+    setFullscreen(root.element)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
+
+    // controls 在 bottom overlay：Left Rail 内不再有 pb-controls
+    expect(wrapper.find('.pb-left-rail [data-test="pb-controls"]').exists()).toBe(false)
+    // overlay 内有 controls：mobile mode 以 bottom-overlay controls 承载
+    expect(wrapper.find('[data-test="pb-mobile-overlay"] [data-test="pb-controls"]').exists()).toBe(true)
+
+    // 不出现永久 Right Details：未选中车辆时右侧空壳（无 pb-info）
+    expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
+
+    // 选中车辆 → details 以 sheet/drawer 出现（shell 在 DOM，pb-info 出现）
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
+    // 退出 fullscreen 后仍保持 mobile overlay controls（不回到 rail）
+    setFullscreen(null)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+    expect(wrapper.find('.pb-left-rail [data-test="pb-controls"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-mobile-overlay"] [data-test="pb-controls"]').exists()).toBe(true)
   })
 
   it('§zoom：放大后再缩小能回到完整地图 fit（不再卡在 1x）', async () => {

@@ -1,12 +1,21 @@
 /* Map-first playback shell. The root owns state; this sheet owns layout across
    the map, controls overlay, annotation surface, and responsive panel layers. */
 .battle-playback {
+  /* §review-widths：collapsed nav rail 固定 ~60px；二级内容展开成 ~300px panel；
+     Right Details 单独 ~340px（--pb-details-w）。Left Rail 不再复用 --pb-details-w。 */
+  --pb-rail-w: 60px;
+  --pb-panel-w: 300px;
+  /* §review-widths：左列实际宽度（collapsed rail 60px / 二级展开 300px）。HUD、bottom controls 与
+     grid col1 统一使用它，展开 rail 时 overlaps 仍正确停靠在 rail 右缘。 */
+  --pb-left-col: var(--pb-rail-w);
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
   margin-top: 6px;
 }
+/* §review-widths：left col 随二级展开从 60px（collapsed rail）扩到 300px（panel）。 */
+.battle-playback.pb-rail-expanded { --pb-left-col: var(--pb-panel-w); }
 
 .battle-playback .pb-main {
   position: relative;
@@ -89,6 +98,15 @@
   background: color-mix(in srgb, var(--accent) 16%, var(--bg-card2));
   color: var(--accent-dark);
 }
+/* §review-widths：collapsed nav rail（未展开二级）只显示图标并居中（rail 宽 ~60px）；
+   展开成二级内容后由 grid col（--pb-panel-w ~300px）承载面板，不再显示这一排导航。 */
+.battle-playback .pb-left-rail:not(.pb-rail-expanded) .pb-rail-label { display: none; }
+.battle-playback .pb-left-rail:not(.pb-rail-expanded) .pb-rail-btn {
+  justify-content: center;
+  padding: 6px 0;
+  gap: 0;
+}
+.battle-playback .pb-left-rail:not(.pb-rail-expanded) .pb-rail-btn .pb-rail-glyph { flex: 0 0 auto; }
 
 .battle-playback .pb-map-stage {
   position: relative;
@@ -229,7 +247,7 @@
   --pb-details-w: min(340px, 32vw);
   position: relative;
   display: grid;
-  grid-template-columns: var(--pb-details-w) minmax(0, 1fr);
+  grid-template-columns: var(--pb-left-col) minmax(0, 1fr);
   width: 100vw;
   height: 100vh;
   margin: 0;
@@ -237,8 +255,23 @@
   overflow: hidden;
   background: var(--bg);
 }
+/* §mobile-contract：手机 fullscreen + landscape 保持 mobile playback mode：
+   单列（HUD+Map 为主）、无永久 Left Rail/Right Details、controls 走 bottom overlay、details 走 sheet。 */
+.battle-playback:fullscreen.pb-device-mobile {
+  grid-template-columns: minmax(0, 1fr);
+}
+.battle-playback:fullscreen.pb-device-mobile .pb-left-rail { display: none; }
+.battle-playback:fullscreen.pb-device-mobile .pb-main { grid-column: 1; }
+.battle-playback:fullscreen.pb-device-mobile .pb-hud { left: 0; right: 0; }
+.battle-playback:fullscreen.pb-device-mobile .pb-map-stage { grid-template-columns: minmax(0, 1fr); }
+.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell {
+  position: absolute;
+  inset: 0;
+  grid-column: 1;
+}
+.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay { left: 0; right: 0; }
 
-/* §3 真三列：Left Rail（64px）| Map Workspace（.pb-main）| Persistent Right Details。
+/* §3 真三列：Left Rail（--pb-rail-w 60px，二级展开 --pb-panel-w 300px）| Map Workspace（.pb-main）| Persistent Right Details。
    Right Details 作为 map-stage 内的独立 grid 列（非 overlay 覆盖地图），HUD/controls
    只在 Map Workspace 内覆盖（右侧停在 details 左缘）。 */
 .battle-playback:fullscreen .pb-main {
@@ -283,7 +316,8 @@
 .battle-playback:fullscreen .pb-hud {
   position: absolute;
   top: 0;
-  left: var(--pb-details-w);
+  /* §review-widths：HUD 只覆盖 Map Workspace（col2），从 left col（collapsed rail / expanded panel）右缘开始、到 Right Details 左缘停下。 */
+  left: var(--pb-left-col);
   right: var(--pb-details-w);
   z-index: 50;
   border-radius: 0;
@@ -296,7 +330,8 @@
 /* Controls + Timeline：底部覆盖 Map Workspace（col2），右侧停在 Right Details 左缘；不占 map layout height。 */
 .battle-playback:fullscreen .pb-mobile-overlay {
   position: absolute;
-  left: 0;
+  /* §review-widths：desktop fullscreen overlay 从 left col 右缘开始、到 Right Details 左缘停下（mobile 由 .pb-device-mobile 覆盖为左右归零）。 */
+  left: var(--pb-left-col);
   right: var(--pb-details-w);
   bottom: 0;
   z-index: 40;
@@ -340,7 +375,7 @@
   .battle-playback:not(:fullscreen) {
     --pb-details-w: min(340px, 28vw);
     display: grid;
-    grid-template-columns: var(--pb-details-w) minmax(0, 1fr);
+    grid-template-columns: var(--pb-left-col) minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     gap: 8px;
   }
