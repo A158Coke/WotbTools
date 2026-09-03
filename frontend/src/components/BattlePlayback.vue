@@ -1660,6 +1660,7 @@ const mapStyle = computed(() => ({
       :enemy-points="enemyPoints"
       :base-states="baseStatesAt"
       :friendly-team="friendlyTeam"
+      :hp-no-transition="hpNoTransition"
     />
 
     <!-- 地图是主视觉；控制条在桌面流式布局，移动端由首次触摸唤起。 -->

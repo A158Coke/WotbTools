@@ -1,4 +1,5 @@
 <script setup>
+import { computed, nextTick, reactive, watch } from 'vue'
 defineOptions({ name: 'BattlePlaybackHud' })
 
 const props = defineProps({
@@ -8,6 +9,8 @@ const props = defineProps({
   enemyPoints: { type: Number, default: null },
   baseStates: { type: Array, default: () => [] },
   friendlyTeam: { type: Number, default: null },
+  // §13：seek/恢复帧不补播 HP 伤害动画（与单车 hpNoTransition 同源，父组件传入）。
+  hpNoTransition: { type: Boolean, default: false },
 })
 
 function finiteNumber(value) {
@@ -68,6 +71,40 @@ function hasCenterData() {
   return hasPoints() || props.baseStates.length > 0
 }
 
+// ---- §13：Team HP delayed-damage bar ----
+// authoritative current HP 立即更新；delayed bar 短暂停留在旧值，随后追赶当前值
+//（150–250ms 克制过渡）；seek/恢复（hpNoTransition）直接同步，不补播伤害动画。
+const FILL_TRANSITION_MS = 200
+const LAG_DRAIN_MS = 420
+function fillPctNum(hp) {
+  if (!hp || typeof hp !== 'object') return 0
+  if (hp.state === 'DESTROYED' || hp.state === 'UNKNOWN') return 0
+  if (hp.state === 'RELATIVE_FULL') return 100
+  if ((hp.state === 'CURRENT' || hp.state === 'LAST_KNOWN') && hp.pct != null) return hp.pct
+  const totalValue = finiteNumber(hp.totalMax)
+  const total = totalValue === null ? 0 : Math.max(0, totalValue)
+  const knownRemaining = finiteNumber(hp.knownRemaining)
+  if (total <= 0) return (hp.state === 'CURRENT' || hp.state === 'LAST_KNOWN') && knownRemaining != null && knownRemaining > 0 ? 100 : 0
+  const value = finiteNumber(knownRemaining) ?? 0
+  return Math.max(0, Math.min(100, (value / total) * 100))
+}
+const lagPct = reactive({ friendly: 0, enemy: 0 })
+const lastPct = reactive({ friendly: null, enemy: null })
+function trackHp(team, hp) {
+  const cur = fillPctNum(hp)
+  const prev = lastPct[team]
+  if (prev != null && cur < prev - 0.01 && !props.hpNoTransition) {
+    const drop = prev - cur
+    lagPct[team] = drop
+    nextTick(() => { if (!props.hpNoTransition) lagPct[team] = 0 })
+  } else {
+    lagPct[team] = 0
+  }
+  lastPct[team] = cur
+}
+watch(() => props.friendlyHp, (hp) => trackHp('friendly', hp), { immediate: true })
+watch(() => props.enemyHp, (hp) => trackHp('enemy', hp), { immediate: true })
+
 function baseStatus(state) {
   if (state.capturingTeam != null) return 'capturing'
   if (state.ownerTeam == null) return 'neutral'
@@ -87,6 +124,7 @@ function baseStatus(state) {
       <span class="pb-hud-value pb-hud-compact">{{ hpText(props.friendlyHp, 'compact') }}</span>
       <span class="pb-hud-track pb-hp-track" aria-hidden="true">
         <span class="pb-hud-fill pb-hp-fill pb-hud-fill-friendly" :class="{ 'pb-hud-partial': props.friendlyHp?.state === 'PARTIAL' }" :style="{ width: barFill(props.friendlyHp, 'known') }" data-test="pb-hp-fill-friendly"></span>
+        <span class="pb-hud-lag" data-test="pb-hud-lag-friendly" :style="{ left: barFill(props.friendlyHp, 'known'), width: lagPct.friendly + '%' }"></span>
         <span class="pb-hud-fill pb-hp-fill pb-hud-fill-unknown" :style="{ width: barFill(props.friendlyHp, 'unknown') }"></span>
       </span>
     </div>
@@ -115,6 +153,7 @@ function baseStatus(state) {
       <span class="pb-hud-value pb-hud-compact">{{ hpText(props.enemyHp, 'compact') }}</span>
       <span class="pb-hud-track pb-hp-track" aria-hidden="true">
         <span class="pb-hud-fill pb-hp-fill pb-hud-fill-enemy" :class="{ 'pb-hud-partial': props.enemyHp?.state === 'PARTIAL' }" :style="{ width: barFill(props.enemyHp, 'known') }" data-test="pb-hp-fill-enemy"></span>
+        <span class="pb-hud-lag" data-test="pb-hud-lag-enemy" :style="{ left: barFill(props.enemyHp, 'known'), width: lagPct.enemy + '%' }"></span>
         <span class="pb-hud-fill pb-hp-fill pb-hud-fill-unknown" :style="{ width: barFill(props.enemyHp, 'unknown') }"></span>
       </span>
     </div>
@@ -135,11 +174,13 @@ function baseStatus(state) {
 .pb-hud-enemy .pb-hud-label { grid-column: 2; }
 .pb-hud-value { grid-row: 1; grid-column: 2; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: clamp(.72rem, 1.2vw, .9rem); font-weight: 800; }
 .pb-hud-enemy .pb-hud-value { grid-column: 1; }
-.pb-hud-track { grid-column: 1 / -1; grid-row: 2; display: flex; min-width: 0; height: 8px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--text-muted) 18%, transparent); }
+.pb-hud-track { position: relative; grid-column: 1 / -1; grid-row: 2; display: flex; min-width: 0; height: 8px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--text-muted) 18%, transparent); }
 .pb-hud-fill { height: 100%; transition: width .15s linear; }
 .pb-hud-fill-friendly { background: var(--map-spawn-friendly); }
 .pb-hud-fill-enemy { background: var(--map-spawn-enemy); }
 .pb-hud-fill-unknown { background: color-mix(in srgb, var(--text-muted) 42%, transparent); }
+/* §13.2：delayed-damage chip —— HP 下降时短暂停留在旧值，随后 0.42s 追赶当前值 */
+.pb-hud-lag { position: absolute; top: 0; height: 100%; background: color-mix(in srgb, var(--error) 45%, transparent); transition: width .42s ease-out; pointer-events: none; }
 .pb-hud-partial { background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--text) 28%, transparent) 0 3px, transparent 3px 6px); }
 .pb-hud-center { display: grid; justify-items: center; gap: 3px; min-width: 7ch; color: var(--text-heading); font-variant-numeric: tabular-nums; }
 .pb-hud-center strong { font-size: clamp(.9rem, 2vw, 1.2rem); white-space: nowrap; }
@@ -174,5 +215,8 @@ function baseStatus(state) {
   .pb-hud-center strong { font-size: .82rem; }
   .pb-hud-base-status { display: none; }
   .pb-hud-base { min-width: 1.8em; justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pb-hud-fill, .pb-hud-lag { transition: none; }
 }
 </style>

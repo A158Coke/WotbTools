@@ -54,6 +54,18 @@ describe('BattlePlaybackHud', () => {
     expect(wrapper.find('[data-test="pb-hud-score"]').text()).toBe('3 : 1')
   })
 
+  it('§13 delayed-damage bar: lag chip exists; hpNoTransition syncs immediately (no replay)', async () => {
+    const wrapper = mountHud({ friendlyHp: hp('EXACT', 3000, 3000) })
+    expect(wrapper.find('[data-test="pb-hud-lag-friendly"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-hud-lag-enemy"]').exists()).toBe(true)
+    // 稳态：无 lag chip
+    expect(wrapper.find('[data-test="pb-hud-lag-friendly"]').attributes('style')).toContain('width: 0%')
+    // seek/恢复（hpNoTransition）→ 直接同步新 HP，不补播伤害动画（lag 保持 0%）
+    await wrapper.setProps({ friendlyHp: hp('EXACT', 2000, 3000), hpNoTransition: true })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-hud-lag-friendly"]').attributes('style')).toContain('width: 0%')
+  })
+
   it('does not invent a denominator for partial or unknown health', () => {
     const wrapper = mountHud({
       friendlyHp: hp('PARTIAL', 800, 0),
