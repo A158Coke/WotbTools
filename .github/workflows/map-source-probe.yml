@@ -1,0 +1,47 @@
+name: Probe clean minimap source
+
+on:
+  push:
+    branches:
+      - feat/maps-hd-assets
+    paths:
+      - .github/workflows/map-source-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe candidate clean-map URLs
+        shell: bash
+        run: |
+          set -u
+          mkdir -p probe
+          urls=(
+            "https://stratsketch.com/img/games/wotb/maps/black_goldville.webp"
+            "https://stratsketch.com/img/games/wotb/maps/mountain.webp"
+            "https://stratsketch.com/img/games/wotb/maps/21_mountain_mnt.webp"
+          )
+          i=0
+          for url in "${urls[@]}"; do
+            i=$((i+1))
+            out="probe/candidate-${i}.webp"
+            echo "--- $url"
+            if curl -fL --retry 2 --connect-timeout 10 --max-time 60 "$url" -o "$out"; then
+              file "$out"
+              sha256sum "$out"
+              ls -lh "$out"
+            else
+              rm -f "$out"
+              echo "MISS"
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map-source-probe
+          path: probe
+          if-no-files-found: ignore
+          retention-days: 1
