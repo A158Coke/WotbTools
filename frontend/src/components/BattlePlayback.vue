@@ -1970,6 +1970,7 @@ const mapStyle = computed(() => ({
           :duration="duration"
           :fullscreen-supported="fullscreenSupported"
           :is-fullscreen="isFullscreen"
+          :rail-visible="isFullscreen || wideLayout"
           :format-clock="formatClock"
           @toggle-play="togglePlay"
           @step="step"

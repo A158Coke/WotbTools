@@ -115,7 +115,7 @@ function baseStatus(state) {
 </script>
 
 <template>
-  <section class="pb-hud" data-test="pb-hud" :aria-label="$t('recon.map.playback.hud')">
+  <section class="pb-hud" :class="{ 'pb-hud-notransition': props.hpNoTransition }" data-test="pb-hud" :aria-label="$t('recon.map.playback.hud')">
     <div class="pb-hud-grid" data-test="pb-hp-bars">
     <div class="pb-hud-team pb-hud-friendly pb-hud-column-friendly pb-hp-row" data-test="pb-hud-friendly">
       <span class="pb-hud-label" data-test="pb-hud-points-label-friendly">{{ $t('recon.map.playback.hud_friendly_hp') }}</span>
@@ -175,12 +175,14 @@ function baseStatus(state) {
 .pb-hud-value { grid-row: 1; grid-column: 2; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: clamp(.72rem, 1.2vw, .9rem); font-weight: 800; }
 .pb-hud-enemy .pb-hud-value { grid-column: 1; }
 .pb-hud-track { position: relative; grid-column: 1 / -1; grid-row: 2; display: flex; min-width: 0; height: 8px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--text-muted) 18%, transparent); }
-.pb-hud-fill { height: 100%; transition: width .15s linear; }
+.pb-hud-fill { height: 100%; transition: width .5s ease-out; }
 .pb-hud-fill-friendly { background: var(--map-spawn-friendly); }
 .pb-hud-fill-enemy { background: var(--map-spawn-enemy); }
 .pb-hud-fill-unknown { background: color-mix(in srgb, var(--text-muted) 42%, transparent); }
-/* §13.2：delayed-damage chip —— HP 下降时短暂停留在旧值，随后 0.42s 追赶当前值 */
-.pb-hud-lag { position: absolute; top: 0; height: 100%; background: color-mix(in srgb, var(--error) 45%, transparent); transition: width .42s ease-out; pointer-events: none; }
+/* §13.2：delayed-damage chip —— HP 下降时短暂停留在旧值，随后 1.2s 追赶当前值（更慢、更清晰）。 */
+.pb-hud-lag { position: absolute; top: 0; height: 100%; background: color-mix(in srgb, var(--error) 45%, transparent); transition: width 1.2s ease-out; pointer-events: none; }
+/* seek/恢复：hpNoTransition 时不播伤害/追赶动画（瞬时同步，不符播）。 */
+.pb-hud-notransition .pb-hud-fill, .pb-hud-notransition .pb-hud-lag { transition: none; }
 .pb-hud-partial { background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--text) 28%, transparent) 0 3px, transparent 3px 6px); }
 .pb-hud-center { display: grid; justify-items: center; gap: 3px; min-width: 7ch; color: var(--text-heading); font-variant-numeric: tabular-nums; }
 .pb-hud-center strong { font-size: clamp(.9rem, 2vw, 1.2rem); white-space: nowrap; }

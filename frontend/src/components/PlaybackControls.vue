@@ -10,6 +10,8 @@ const props = defineProps({
   duration: { type: Number, default: 0 },
   fullscreenSupported: Boolean,
   isFullscreen: Boolean,
+  // §right-rail：左边 Left Rail 可见时，底部右侧的 面板/标注/重置/全屏 与其重叠 → 隐藏。
+  railVisible: Boolean,
   formatClock: { type: Function, required: true },
 })
 
@@ -20,7 +22,7 @@ const emit = defineEmits([
 </script>
 
 <template>
-  <div class="pb-controls" data-test="pb-controls" @pointerdown.stop @click.stop>
+  <div class="pb-controls" :class="{ 'pb-controls-rail-mode': props.railVisible }" data-test="pb-controls" @pointerdown.stop @click.stop>
     <button type="button" class="pb-btn pb-play-btn" data-test="pb-play" :aria-label="$t(props.playing ? 'recon.map.playback.pause' : 'recon.map.playback.play')" @click="emit('toggle-play')">
       <span class="pb-icon pb-play-icon" :class="{ playing: props.playing }" aria-hidden="true"></span>
       <span class="pb-control-label">{{ $t(props.playing ? 'recon.map.playback.pause' : 'recon.map.playback.play') }}</span>
@@ -51,6 +53,10 @@ const emit = defineEmits([
 .pb-play-icon.playing::before { content: 'Ⅱ'; }
 .pb-fullscreen-icon::before { content: '⛶'; }
 .pb-time { margin-inline: auto; color: var(--text-label); font-size: .8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* §right-rail：Left Rail 可见（fullscreen 或大桌面）时，底部右侧与 rail 重复的面板/标注/重置/全屏隐藏。 */
+.pb-controls-rail-mode .pb-secondary-btn,
+.pb-controls-rail-mode .pb-reset,
+.pb-controls-rail-mode .pb-fullscreen-btn { display: none; }
 @media (width < 768px) {
   .pb-controls { justify-content: center; gap: 4px; }
   .pb-btn { min-width: 36px; min-height: 36px; padding: 2px 6px; }
