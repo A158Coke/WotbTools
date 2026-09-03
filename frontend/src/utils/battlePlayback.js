@@ -2,8 +2,8 @@
 
 import { positionAtV2, positionCoveredAtV2 } from './battlePlaybackV2.js'
 
-/** 相邻可信位置的最大间隔（秒）；超过则断线，禁止穿线插值。 */
-const OBSERVED_GAP_SEC = 5
+/** Legacy point-route interpolation limit. V2 routes use canonical segment boundaries. */
+const LEGACY_OBSERVED_GAP_SEC = 5
 
 /**
  * 某时刻车辆位置：
@@ -16,7 +16,8 @@ export function positionAt(points, t) {
   if (!points || points.length === 0 || !Number.isFinite(t)) return null
   if (t < points[0].timeSec - 1e-6) return null
   // t 恰为采样点（含 gap 后重新上报的首点）：直接返回该点本身；
-  // gap > OBSERVED_GAP_SEC 的断线判定只用于「两点之间」的插值，不适用于落在采样点上的时刻。
+  // gap > LEGACY_OBSERVED_GAP_SEC 的断线判定只用于「两点之间」的插值，
+  // 不适用于落在采样点上的时刻。
   if (t <= points[0].timeSec + 1e-6) {
     return { x: points[0].x, y: points[0].y, timeSec: points[0].timeSec }
   }
@@ -28,7 +29,7 @@ export function positionAt(points, t) {
         return { x: next.x, y: next.y, timeSec: next.timeSec }
       }
       const gap = next.timeSec - prev.timeSec
-      if (gap > OBSERVED_GAP_SEC) return null
+      if (gap > LEGACY_OBSERVED_GAP_SEC) return null
       const ratio = gap <= 0 ? 0 : Math.min(1, Math.max(0, (t - prev.timeSec) / gap))
       return {
         x: prev.x + (next.x - prev.x) * ratio,
@@ -128,7 +129,7 @@ export function lastKnownPosition(points, t) {
 }
 
 /**
- * 事件时刻严格可信位置：仅当 t 落在该车路线首末点之间、所在相邻点 gap ≤ OBSERVED_GAP_SEC
+ * 事件时刻严格可信位置：仅当 t 落在该车路线首末点之间、所在相邻点 gap ≤ LEGACY_OBSERVED_GAP_SEC
  * （即 positionAt 返回插值/采样点本身，timeSec === t）且坐标为有限值时返回。
  * 末点之后的最后已知位置、gap 内、首点之前与非有限坐标一律 null——
  * 炮线端点禁止用最后已知位置伪造射击位置。
@@ -153,8 +154,10 @@ function trustedRoutePosition(route, t) {
 
 /**
  * Build the last battle-relative two seconds of observed positions for each vehicle.
- * Segments are never joined, future samples are ignored, and LAST_KNOWN/unknown
- * intervals do not extend the visible trail.
+ * V2 segment boundaries and interpolationAllowed are the only interpolation authority:
+ * segments are never joined, future samples are never emitted, and LAST_KNOWN/unknown
+ * intervals do not extend the visible trail. The current endpoint is queried through
+ * canonical segment interpolation when the current time is inside that segment.
  */
 export function recentPositionTrails(vehicles, nowSec, windowSec = 2) {
   if (!Array.isArray(vehicles) || !Number.isFinite(nowSec)) return []
@@ -163,16 +166,42 @@ export function recentPositionTrails(vehicles, nowSec, windowSec = 2) {
   const trails = []
   for (const vehicle of vehicles) {
     for (const segment of vehicle?.positionSegments || []) {
-      if (segment?.knowledge !== 'OBSERVED' || !Array.isArray(segment.samples)) continue
+      if (segment?.knowledge !== 'OBSERVED'
+        || segment.interpolationAllowed === false
+        || !Array.isArray(segment.samples)) continue
+      const segmentStart = Number.isFinite(segment.startSec) ? segment.startSec : Number.NEGATIVE_INFINITY
+      const segmentEnd = Number.isFinite(segment.endSec) ? segment.endSec : Number.POSITIVE_INFINITY
       const samples = segment.samples
         .filter(sample => sample && Number.isFinite(sample.timeSec)
           && Number.isFinite(sample.x) && Number.isFinite(sample.y)
-          && sample.timeSec >= start - 1e-6 && sample.timeSec <= nowSec + 1e-6)
+          && sample.timeSec >= segmentStart - 1e-6
+          && sample.timeSec <= segmentEnd + 1e-6)
         .sort((a, b) => a.timeSec - b.timeSec)
-      for (let index = 1; index < samples.length; index += 1) {
-        const from = samples[index - 1]
-        const to = samples[index]
-        if (to.timeSec - from.timeSec > OBSERVED_GAP_SEC) continue
+      if (samples.length === 0) continue
+
+      const path = []
+      const first = samples[0]
+      const last = samples[samples.length - 1]
+      if (start > first.timeSec + 1e-6 && start < last.timeSec - 1e-6) {
+        const clippedStart = positionAtV2([segment], start)
+        if (clippedStart && Math.abs(clippedStart.timeSec - start) <= 1e-6) {
+          path.push({ ...clippedStart, timeSec: start })
+        }
+      }
+      path.push(...samples.filter(sample => sample.timeSec >= start - 1e-6
+        && sample.timeSec <= nowSec + 1e-6))
+      if (nowSec > first.timeSec + 1e-6 && nowSec < last.timeSec - 1e-6) {
+        const current = positionAtV2([segment], nowSec)
+        if (current && Math.abs(current.timeSec - nowSec) <= 1e-6) {
+          path.push({ ...current, timeSec: nowSec })
+        }
+      }
+      path.sort((a, b) => a.timeSec - b.timeSec)
+      const uniquePath = path.filter((point, index) => index === 0
+        || Math.abs(point.timeSec - path[index - 1].timeSec) > 1e-6)
+      for (let index = 1; index < uniquePath.length; index += 1) {
+        const from = uniquePath[index - 1]
+        const to = uniquePath[index]
         const age = Math.max(0, nowSec - to.timeSec)
         trails.push({
           accountId: vehicle.accountId,
@@ -182,8 +211,8 @@ export function recentPositionTrails(vehicles, nowSec, windowSec = 2) {
           opacity: 0.12 + 0.58 * Math.max(0, 1 - age / span),
         })
       }
-      if (samples.length === 1) {
-        const point = samples[0]
+      if (uniquePath.length === 1) {
+        const point = uniquePath[0]
         trails.push({
           accountId: vehicle.accountId,
           friendly: vehicle.friendly,

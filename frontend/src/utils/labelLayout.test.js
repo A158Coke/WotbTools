@@ -73,6 +73,51 @@ describe('computeTankCollisionLayout', () => {
     const result = computeTankCollisionLayout(items, new Map([[2, { x: 64, y: 0 }]]))
     expectPairwiseNonOverlap(items, result)
   })
+
+  it.each([
+    ['left', 1, 8, 120, 320, 240],
+    ['right', 1, 312, 120, 320, 240],
+    ['top', 1, 160, 8, 320, 240],
+    ['bottom', 1, 160, 232, 320, 240],
+    ['left', 2, 16, 240, 640, 480],
+    ['right', 2, 624, 240, 640, 480],
+    ['top', 2, 320, 16, 640, 480],
+    ['bottom', 2, 320, 464, 640, 480],
+    ['left', 4, 32, 480, 1280, 960],
+    ['right', 4, 1248, 480, 1280, 960],
+    ['top', 4, 640, 32, 1280, 960],
+    ['bottom', 4, 640, 928, 1280, 960],
+  ])('keeps 14 model boxes inside the viewport at the %s edge and %ix zoom', (_edge, scale, x, y, w, h) => {
+    const items = Array.from({ length: 14 }, (_, i) => tank(i + 1, {
+      x, y, width: 32 * scale, height: 32 * scale,
+    }))
+    const viewport = { x: 0, y: 0, w, h }
+    const result = computeTankCollisionLayout(items, new Map(), viewport)
+    expectPairwiseNonOverlap(items, result)
+    for (const it of items) {
+      const b = box(it, result.get(it.accountId))
+      expect(b.x).toBeGreaterThanOrEqual(0)
+      expect(b.y).toBeGreaterThanOrEqual(0)
+      expect(b.x + b.w).toBeLessThanOrEqual(viewport.w)
+      expect(b.y + b.h).toBeLessThanOrEqual(viewport.h)
+    }
+  })
+
+  it('uses a deterministic bounded fallback instead of throwing for an impossible viewport', () => {
+    const items = [tank(1), tank(2)]
+    expect(() => computeTankCollisionLayout(items, new Map(), { x: 0, y: 0, w: 20, h: 20 })).not.toThrow()
+    expect(computeTankCollisionLayout(items, new Map(), { x: 0, y: 0, w: 20, h: 20 })).toEqual(
+      computeTankCollisionLayout(items, new Map(), { x: 0, y: 0, w: 20, h: 20 }),
+    )
+  })
+
+  it('keeps a feasible previous layout stable across viewport resize', () => {
+    const items = [tank(1, { x: 160, y: 120 }), tank(2, { x: 160, y: 120 })]
+    const first = computeTankCollisionLayout(items, new Map(), { x: 0, y: 0, w: 320, h: 240 })
+    const second = computeTankCollisionLayout(items, first, { x: 0, y: 0, w: 640, h: 480 })
+    expect(second).toEqual(first)
+    expectPairwiseNonOverlap(items, second)
+  })
 })
 
 describe('estimateLabelWidth', () => {

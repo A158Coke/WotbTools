@@ -33,12 +33,39 @@ describe('recentPositionTrails', () => {
 
   it('does not draw across observed gaps or LAST_KNOWN segments', () => {
     const trails = recentPositionTrails([vehicle([
-      { knowledge: 'OBSERVED', samples: [{ timeSec: 8, x: 0, y: 0 }, { timeSec: 14, x: 10, y: 0 }] },
+      { knowledge: 'OBSERVED', startSec: 8, endSec: 8, samples: [{ timeSec: 8, x: 0, y: 0 }] },
+      { knowledge: 'OBSERVED', startSec: 14, endSec: 14, samples: [{ timeSec: 14, x: 10, y: 0 }] },
       { knowledge: 'LAST_KNOWN', samples: [{ timeSec: 9, x: 1, y: 1 }, { timeSec: 10, x: 2, y: 2 }] },
     ])], 14)
     expect(trails).toHaveLength(1)
     expect(trails[0].point.timeSec).toBe(14)
     expect(trails.some(trail => trail.from)).toBe(false)
+  })
+
+  it('uses canonical interpolation for a long single OBSERVED segment without a 5s break', () => {
+    const trails = recentPositionTrails([vehicle([{
+      knowledge: 'OBSERVED',
+      interpolationAllowed: true,
+      startSec: 8,
+      endSec: 16,
+      samples: [{ timeSec: 8, x: 0, y: 0 }, { timeSec: 16, x: 80, y: 0 }],
+    }])], 15)
+    expect(trails).toHaveLength(1)
+    expect(trails[0].from.timeSec).toBe(13)
+    expect(trails[0].to.timeSec).toBe(15)
+    expect(trails[0].from.x).toBeCloseTo(50)
+    expect(trails[0].to.x).toBeCloseTo(70)
+  })
+
+  it('does not interpolate a segment that explicitly disallows interpolation', () => {
+    const trails = recentPositionTrails([vehicle([{
+      knowledge: 'OBSERVED',
+      interpolationAllowed: false,
+      startSec: 8,
+      endSec: 16,
+      samples: [{ timeSec: 8, x: 0, y: 0 }, { timeSec: 16, x: 80, y: 0 }],
+    }])], 15)
+    expect(trails).toHaveLength(0)
   })
 })
 
