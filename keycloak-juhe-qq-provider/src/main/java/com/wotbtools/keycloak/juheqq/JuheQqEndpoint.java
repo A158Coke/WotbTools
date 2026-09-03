@@ -1,13 +1,16 @@
 package com.wotbtools.keycloak.juheqq;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
+import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.UserAuthenticationIdentityProvider.AuthenticationCallback;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.io.IOException;
@@ -16,7 +19,15 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 
+/**
+ * Juhe QQ callback endpoint。诊断策略与 {@link JuheQqIdentityProvider} 一致：每个失败阶段记录
+ * 结构化日志（stage + realm/provider alias + 脱敏判别信息），保留异常 stack trace；绝不记录
+ * appkey、authorization code、access token、完整 state、social_uid 原值、完整 callback
+ * URL/query 或 Cookie。对用户仍返回安全的 generic error，不改变既有成功登录协议行为。
+ */
 public final class JuheQqEndpoint {
+
+    private static final Logger log = Logger.getLogger(JuheQqEndpoint.class);
 
     private final KeycloakSession session;
     private final JuheQqIdentityProvider provider;
@@ -39,15 +50,22 @@ public final class JuheQqEndpoint {
                                    @QueryParam("type") final String type,
                                    @QueryParam("code") final String code) {
 
+        final String realm = realmName();
+        final String providerAlias = config.getAlias();
+
         if (state == null || state.isBlank()) {
+            log.warn(JuheQqIdentityProvider.loggable("callback_state_missing", realm, providerAlias));
             return JuheQqIdentityProvider.errorResponse();
         }
 
         if (!"qq".equals(type)) {
+            log.warn(JuheQqIdentityProvider.loggable("callback_type_invalid", realm, providerAlias,
+                    "type", type == null ? "null" : type));
             return JuheQqIdentityProvider.errorResponse();
         }
 
         if (code == null || code.isBlank()) {
+            log.warn(JuheQqIdentityProvider.loggable("callback_code_missing", realm, providerAlias));
             return JuheQqIdentityProvider.errorResponse();
         }
 
@@ -55,6 +73,8 @@ public final class JuheQqEndpoint {
         final AuthenticationSessionModel authenticationSession =
                 authCallback.getAndVerifyAuthenticationSession(state);
         if (authenticationSession == null) {
+            log.warn(JuheQqIdentityProvider.loggable("authentication_session_restore", realm, providerAlias,
+                    "state", "invalid"));
             return JuheQqIdentityProvider.errorResponse();
         }
         session.getContext().setAuthenticationSession(authenticationSession);
@@ -64,6 +84,7 @@ public final class JuheQqEndpoint {
         final String loginBaseUrl = config.getLoginBaseUrl();
 
         if (JuheQqIdentityProvider.isBlank(appid) || JuheQqIdentityProvider.isBlank(appkey)) {
+            log.warn(JuheQqIdentityProvider.loggable("config_missing", realm, providerAlias));
             return JuheQqIdentityProvider.errorResponse();
         }
 
@@ -83,6 +104,8 @@ public final class JuheQqEndpoint {
                     .send(httpReq, HttpResponse.BodyHandlers.ofString());
 
             if (httpResp.statusCode() != 200) {
+                log.warn(JuheQqIdentityProvider.loggable("juhe_callback_http", realm, providerAlias,
+                        "httpStatus", String.valueOf(httpResp.statusCode())));
                 return JuheQqIdentityProvider.errorResponse();
             }
 
@@ -94,14 +117,26 @@ public final class JuheQqEndpoint {
             final String socialUid = json.path("social_uid").asText("");
 
             if (respCode != 0) {
+                log.warn(JuheQqIdentityProvider.loggable("juhe_callback_response_rejected", realm, providerAlias,
+                        "juheCode", String.valueOf(respCode),
+                        "juheType", respType,
+                        "socialUid", socialUid.isEmpty() ? "empty" : "present"));
                 return JuheQqIdentityProvider.errorResponse();
             }
 
             if (!"qq".equals(respType)) {
+                log.warn(JuheQqIdentityProvider.loggable("juhe_callback_response_rejected", realm, providerAlias,
+                        "juheCode", String.valueOf(respCode),
+                        "juheType", respType,
+                        "socialUid", socialUid.isEmpty() ? "empty" : "present"));
                 return JuheQqIdentityProvider.errorResponse();
             }
 
             if (socialUid.isEmpty()) {
+                log.warn(JuheQqIdentityProvider.loggable("juhe_callback_response_rejected", realm, providerAlias,
+                        "juheCode", String.valueOf(respCode),
+                        "juheType", respType,
+                        "socialUid", "empty"));
                 return JuheQqIdentityProvider.errorResponse();
             }
 
@@ -111,6 +146,9 @@ public final class JuheQqEndpoint {
 
             final String cleanedNickname = prepareNickname(nickname);
             if (cleanedNickname == null) {
+                log.warn(JuheQqIdentityProvider.loggable("nickname_invalid", realm, providerAlias,
+                        "juheType", respType,
+                        "socialUid", "present"));
                 return Response.status(400)
                         .entity("QQ nickname is invalid. Please set a valid nickname in your QQ profile and try again.")
                         .build();
@@ -137,14 +175,33 @@ public final class JuheQqEndpoint {
                 context.setUserAttribute("juhe.faceimg", faceimg);
             }
 
+            log.info(JuheQqIdentityProvider.loggable("broker_authenticated", realm, providerAlias,
+                    "juheType", respType,
+                    "socialUid", "present"));
             return authCallback.authenticated(context);
 
-        } catch (final IOException | InterruptedException | RuntimeException e) {
+        } catch (final JsonProcessingException e) {
+            log.error(JuheQqIdentityProvider.loggable("juhe_callback_invalid_json", realm, providerAlias), e);
+            return JuheQqIdentityProvider.errorResponse();
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error(JuheQqIdentityProvider.loggable("callback_exception", realm, providerAlias), e);
+            return JuheQqIdentityProvider.errorResponse();
+        } catch (final IOException | RuntimeException e) {
+            log.error(JuheQqIdentityProvider.loggable("callback_exception", realm, providerAlias), e);
             return JuheQqIdentityProvider.errorResponse();
         }
     }
 
     // ── 辅助方法 ──────────────────────────────────────────────────────
+
+    private String realmName() {
+        if (session == null) {
+            return null;
+        }
+        final RealmModel realm = session.getContext().getRealm();
+        return realm == null ? null : realm.getName();
+    }
 
     /**
      * 清洗并验证昵称。

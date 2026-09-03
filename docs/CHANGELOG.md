@@ -6,8 +6,10 @@
 
 ### Added
 - **Local Frontend → Production Backend / Keycloak 开发模式**：前端新增 `npm run dev:production-remote`，通过 Vite `/api` 开发代理连接生产站点，同时复用现有生产 Keycloak issuer 配置；开发 Topbar 显示非模态环境提示并提醒不要上传测试或敏感数据。普通 `npm run dev` 的本地后端代理保持不变。详见 `docs/frontend/local-production-dev.md`。
+- **QQ 登录诊断与失败恢复基础**：Juhe QQ Keycloak SPI 与 Android auth navigation 各关键失败阶段新增结构化诊断日志（stage + realm/provider alias + 脱敏判别信息，保留异常 stack trace；绝不记录 appkey / authorization code / access token / 完整 state / social_uid 原值 / 完整 callback URL/query / Cookie），用于定位 production 的 `cookie_not_found`、Keycloak Internal Error 与 Android 黑屏。Android auth 流量新增 hostname / navigation action / inAuthFlow before-after / main-frame / source-category trace。
 
 ### Changed
+- **Android auth flow 未知 host 策略与失败恢复**：auth flow 内遇到未验证 host 不再 `OPEN_EXTERNAL + 清空 inAuthFlow`（这是 `cookie_not_found` 与黑屏的关键根因之一），改为 `AUTH_FAILURE` 阻断该导航并进入 auth-failure recovery：退出 auth flow、返回 WotBTools 首页并提示「登录失败，请重试」。非 auth flow 的普通外链 `OPEN_EXTERNAL` 行为不变；不新增 `*.qq.com` 等通配白名单，仅在未来真实 navigation trace 证明后逐个加入 exact hostname。
 - **Battle Playback Event Panel presentation cleanup**：事件面板仅展示 `DAMAGE`、`KILL` 和 `DESTROYED`；`authoritativeEvents` 仍完整供播放状态、战斗反馈、炮线和统计使用，不改变 canonical 事件事实。
 - **Battle Playback UI hierarchy cleanup**：移除用户可见路线视图、路线筛选/图例与相关残留；时间轴改为无事件标记装饰，事件集中到默认折叠且可点击 seek 的 Event Panel；控制栏收敛为播放、±5 秒、0.5/1/2/4 倍速、Reset View 和 Fullscreen。保留后端 route aggregate 合同及真实事件、HP、选中状态。
 - **手机端（<768px）UI 布局优化**：Mobile 断点统一为 `@media (width < 768px)` range 语法并消除 JS/CSS 1px 错配；补齐 classic 浅色主题在 AdminUsers/Contact/Boost/Profile 的对比度覆写；修复 HoF mark3 工具条挤压、分析面板表格裁剪、admin 表头移动端 sticky 偏移、modal 遮罩 showcase 语义反转、ColumnPicker 触屏不可重排序（新增上/下移按钮 + 三语 i18n）、批量选择 bottom-sheet 无遮罩等问题；移动端输入框字号 ≥16px、主要触控目标 ≥36px，并预留 viewport-fit/safe-area 兼容。无 API/路由/数据契约变化。
