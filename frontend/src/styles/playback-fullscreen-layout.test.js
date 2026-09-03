@@ -1,7 +1,9 @@
 // Source-level regression: Battle Playback fullscreen must turn the whole
-// 100vw×100vh into a playback stage (map = primary surface), with HUD as a top
-// overlay and controls/timeline as a bottom overlay — NOT a 3-row grid that
-// compresses the map. Vitest does not execute global CSS layout, so the layout
+// 100vw×100vh into a 3-column stage — Left Rail | Map Workspace | Persistent
+// Right Details — with HUD as a top overlay and controls/timeline as a bottom
+// overlay confined to the Map Workspace (right edge stops at the Details column).
+// NOT a 3-row grid that compresses the map, and NOT Details as an overlay
+// covering the map. Vitest does not execute global CSS layout, so the layout
 // contract is asserted against the stylesheet source (same pattern as
 // classic-theme-source-regression.test.js / classic-profile-css.test.js).
 import { describe, expect, it } from 'vitest'
@@ -20,13 +22,6 @@ function ruleBody(selector) {
   })
   return chunk ? chunk.slice(chunk.indexOf('{') + 1).trim() : null
 }
-
-const VIEWPORTS = [
-  { name: '1920x1080', w: 1920, h: 1080 },
-  { name: '1366x768', w: 1366, h: 768 },
-  { name: 'tablet landscape (1024x768)', w: 1024, h: 768 },
-  { name: 'mobile landscape (844x390)', w: 844, h: 390 },
-]
 
 describe('Battle Playback fullscreen layout (source regression)', () => {
   it('fullscreen root is the whole viewport, no page frame, no 3-row grid', () => {
@@ -50,7 +45,7 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(stage).toContain('overflow: hidden')
   })
 
-  it('Left Rail is fullscreen-only left column; Right Details docks right', () => {
+  it('Left Rail is fullscreen-only left column; Right Details is a persistent column (not an overlay)', () => {
     expect(ruleBody('.battle-playback .pb-left-rail')).toContain('display: none')
     const rail = ruleBody('.battle-playback:fullscreen .pb-left-rail')
     expect(rail).toContain('grid-column: 1')
@@ -58,28 +53,45 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(ruleBody('.battle-playback:fullscreen .pb-rail-btn')).toContain('cursor: pointer')
     // fullscreen 下隐藏旧右上角 tab launcher（Left Rail 是唯一入口）
     expect(ruleBody('.battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell .pb-panel-launcher')).toContain('display: none')
+    // §3 真三列：Right Details 是 map-stage grid 的 persistent col2 列（非绝对 overlay 覆盖地图）
+    const shell = ruleBody('.battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell')
+    expect(shell).toContain('position: static')
+    expect(shell).toContain('grid-column: 2')
     const panel = ruleBody('.battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell .pb-side-panel')
-    expect(panel).toContain('position: absolute')
-    expect(panel).toContain('right: 0')
+    expect(panel).toContain('position: static')
+    expect(panel).toContain('flex: 1 1 auto')
   })
 
-  it('HUD is a top overlay covering only the Map Workspace (after the 64px rail)', () => {
+  it('HUD is a top overlay covering only the Map Workspace (stops at the Details column)', () => {
     const body = ruleBody('.battle-playback:fullscreen .pb-hud')
     expect(body).toContain('position: absolute')
     expect(body).toContain('top: 0')
     expect(body).toContain('left: 64px')
-    expect(body).toContain('right: 0')
+    expect(body).toContain('right: var(--pb-details-w)')
     expect(body).toContain('z-index: 50')
   })
 
-  it('controls + timeline are a bottom overlay over the Map Workspace (after 64px rail)', () => {
+  it('controls + timeline are a bottom overlay over the Map Workspace (stops at the Details column)', () => {
     const body = ruleBody('.battle-playback:fullscreen .pb-mobile-overlay')
     expect(body).toContain('position: absolute')
     expect(body).toContain('bottom: 0')
-    expect(body).toContain('left: 64px')
-    expect(body).toContain('right: 0')
+    expect(body).toContain('left: 0')
+    expect(body).toContain('right: var(--pb-details-w)')
     expect(body).toContain('z-index: 40')
     expect(body).toContain('pointer-events: auto')
+  })
+
+  it('map workspace is a true 2-column grid (Map | Persistent Details)', () => {
+    const stage = ruleBody('.battle-playback:fullscreen .pb-map-stage')
+    expect(stage).toContain('display: grid')
+    expect(stage).toContain('grid-template-columns: minmax(0, 1fr) var(--pb-details-w)')
+    const map = ruleBody('.battle-playback:fullscreen .pb-main .pb-map')
+    expect(map).toContain('grid-column: 1')
+  })
+
+  it('annotation surface and orientation hint stay over the Map Workspace (stop at the Details column)', () => {
+    expect(ruleBody('.battle-playback:fullscreen .pb-annotation-surface')).toContain('right: calc(var(--pb-details-w, min(340px, 32vw)) + 8px)')
+    expect(ruleBody('.battle-playback:fullscreen .pb-orientation-hint')).toContain('right: calc(var(--pb-details-w, min(340px, 32vw)) + 12px)')
   })
 
   it('map keeps its canonical aspect — cover-fill, no non-uniform X/Y stretch', () => {
@@ -99,17 +111,16 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(base).not.toContain('position: absolute')
   })
 
-  it.each(VIEWPORTS)('at $name the contained map stays inside the viewport and aspect-correct', ({ w, h }) => {
-    // Mirror the fullscreen contain sizing: width = min(vw, vh * ratio), height = width / ratio.
-    // The map geometry must never be stretched to fill a non-matching viewport ratio.
-    const ratio = 766 / 769 // holland map fixture (near-square canonical aspect)
-    const width = Math.min(w, h * ratio)
-    const height = width / ratio
-    // Float tolerance: the min(100%, calc(100vh * ratio)) / aspect math can land
-    // a hair (≤1e-6) outside the viewport dimension without any real overflow.
-    expect(width).toBeLessThanOrEqual(w + 1e-6)
-    expect(height).toBeLessThanOrEqual(h + 1e-6)
-    // aspect preserved → no non-uniform X/Y stretch despite a mismatched viewport ratio
-    expect(width / height).toBeCloseTo(ratio, 5)
+  it('cover-fill sizing: the map fills the workspace width and never force-contains to a viewport ratio', () => {
+    // §3 cover-fill：地图填满 Map Workspace 宽度（width:100%），高度按 canonical aspect 推导，
+    // 允许高于视口（裁切可被 pan/viewport 到达），绝不横向拉伸成 viewport 比例。这也是对
+    // 「旧 contain 假几何回归」的替换——真实几何由 battlePlayback.test.js 的 clampViewPan /
+    // mapRenderRect 宽视口回归覆盖。
+    const map = ruleBody('.battle-playback:fullscreen .pb-main .pb-map')
+    expect(map).toContain('width: 100%')
+    expect(map).toContain('max-width: none')
+    expect(map).not.toContain('aspect-ratio')
+    // the stage clips (overflow hidden) so cover can legally extend beyond the viewport.
+    expect(ruleBody('.battle-playback:fullscreen .pb-map-stage')).toContain('overflow: hidden')
   })
 })
