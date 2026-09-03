@@ -507,6 +507,16 @@ function mapHeight() {
   return mapSize.value.h || (mapEl.value ? mapEl.value.clientHeight : 0)
 }
 
+// §1：MapRenderRect SSoT —— 当前地图实际绘制的矩形（相对 .pb-map origin）。
+// 所有 presentation geometry（marker/碰撞/hitbox/label/float/screenToSemantic）都经由它换算，
+// 保证 SVG map 与 HTML overlay 共享同一坐标系（fullscreen/contain 下 marker 不再跑进 gutter）。
+// 用读取即时值而非缓存 computed：依赖（mapSize/mapView）由调用方 computed/watch 追踪，实时重算。
+function mapRenderRect() {
+  const width = mapWidth()
+  const ratio = mapView.value.H / mapView.value.W
+  return { left: 0, top: 0, width, height: width * ratio }
+}
+
 // ---- Fullscreen：原生 Fullscreen API；document.fullscreenElement + fullscreenchange 为事实源
 //（不维护手工 isFullscreen = !isFullscreen，ESC/浏览器 UI 退出后状态自动同步）----
 const pbRoot = ref(null)
@@ -1372,12 +1382,11 @@ function onMarkerSelect(vehicle, event) {
 
 /** 标记中心 → 相对地图容器的屏幕 px（viewport 变换后）。 */
 function canonicalMarkerScreen(st) {
-  const W = mapWidth()
-  if (!W || mapView.value.W <= 0) return null
-  const H = W * (mapView.value.H / mapView.value.W)
+  const rect = mapRenderRect()
+  if (!rect || rect.width <= 0 || mapView.value.W <= 0) return null
   return {
-    x: (mapView.value.toX(st.pos.x) / mapView.value.W) * W * view.scale + view.tx,
-    y: (mapView.value.toY(st.pos.y) / mapView.value.H) * H * view.scale + view.ty,
+    x: (mapView.value.toX(st.pos.x) / mapView.value.W) * rect.width * view.scale + view.tx,
+    y: (mapView.value.toY(st.pos.y) / mapView.value.H) * rect.height * view.scale + view.ty,
   }
 }
 
@@ -1399,11 +1408,10 @@ function selectAt(accountId, clientX, clientY) {
   const hitTest = (s) => {
     const cx = (px - view.tx) / view.scale
     const cy = (py - view.ty) / view.scale
-    const W = mapWidth()
-    const H = W * (mapView.value.H / mapView.value.W)
+    const rect = mapRenderRect()
     const offset = s.presentationOffset || { x: 0, y: 0 }
-    const x = (mapView.value.toX(s.pos.x) / mapView.value.W) * W + offset.x / view.scale
-    const y = (mapView.value.toY(s.pos.y) / mapView.value.H) * H + offset.y / view.scale
+    const x = (mapView.value.toX(s.pos.x) / mapView.value.W) * rect.width + offset.x / view.scale
+    const y = (mapView.value.toY(s.pos.y) / mapView.value.H) * rect.height + offset.y / view.scale
     const hitTarget = s.hitTargetSize || s.markerSize?.hitTarget
     const hw = (hitTarget?.width || 20) / 2
     const hh = (hitTarget?.height || 20) / 2
