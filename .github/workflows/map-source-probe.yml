@@ -1,4 +1,4 @@
-name: Probe Steam client map assets
+name: Inspect WGC map package
 
 on:
   push:
@@ -14,26 +14,29 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Build DepotDownloader
+      - name: Inspect current client archive headers
         shell: bash
         run: |
           set -euxo pipefail
-          git clone --depth 1 https://github.com/SteamRE/DepotDownloader.git /tmp/DepotDownloader
-          dotnet publish /tmp/DepotDownloader/DepotDownloader/DepotDownloader.csproj -c Release -o /tmp/depot
-
-      - name: Inspect current WotB Windows depot
-        shell: bash
-        run: |
-          set -euxo pipefail
-          mkdir -p probe/steam
-          dotnet /tmp/depot/DepotDownloader.dll -app 444200 -depot 444202 -manifest-only -dir probe/steam 2>&1 | tee probe/depot.log
-          find probe -maxdepth 4 -type f -print
-          grep -RniE 'mountain|21_mountain|colormap|minimap' probe/steam probe/depot.log | head -200 || true
+          mkdir -p probe
+          URL='https://dl-wotb-gc.wargaming.net/wotb.ww.production/wds_default/patches/11.20.0.6254/wotb_11.20.0.6254_client.wgpkg.001'
+          curl -fsSLI "$URL" | tee probe/headers.txt
+          curl -fsSL -H 'Range: bytes=0-1023' "$URL" -o probe/head.bin
+          echo 'FIRST 128 BYTES:' | tee probe/hexdump.txt
+          xxd -l 128 probe/head.bin | tee -a probe/hexdump.txt
+          file probe/head.bin | tee -a probe/hexdump.txt
+          wc -c probe/head.bin | tee -a probe/hexdump.txt
+          python - <<'PY' | tee -a probe/hexdump.txt
+          from pathlib import Path
+          b=Path('probe/head.bin').read_bytes()
+          print('magic', b[:32])
+          for sig in (b'7z\xbc\xaf\x27\x1c', b'PK\x03\x04', b'DVPL'):
+              print(sig, b.find(sig))
+          PY
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: map-steam-source-probe
+          name: wgc-package-probe
           path: probe
-          if-no-files-found: error
           retention-days: 1
