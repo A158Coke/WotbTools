@@ -190,7 +190,7 @@ describe('MapOverview', () => {
     expect(fallback.find('.map-title').text()).toBe('Desert Sands')
   })
 
-  it('switches heatmap team and type tabs', async () => {
+  it('switches heatmap team and type filters', async () => {
     const wrapper = mountOverview(makeOverview())
     const buttons = wrapper.findAll('.filter-btn')
     // 阵营：本方/敌方
@@ -202,63 +202,42 @@ describe('MapOverview', () => {
     expect(typeButtons[1].classes()).toContain('active')
   })
 
-  it('renders routes with per-team colors and death marks', async () => {
+  it('does not render the removed routes view while retaining route data in the input contract', async () => {
     const overview = makeOverview()
     const wrapper = mountOverview(overview)
-    const routeTab = wrapper.findAll('.map-tab')[1]
-    await routeTab.trigger('click')
-
-    expect(wrapper.findAll('.routes .route-line').length).toBe(2)
-    expect(wrapper.findAll('.routes .death-mark').length).toBe(1)
-    // 迟观测提示（敌方 firstObservedSec=30 > 5）
-    expect(wrapper.find('.observed-note').exists()).toBe(true)
-    expect(wrapper.text()).toContain('LateEnemy')
+    expect(overview.routes).toHaveLength(2)
+    expect(wrapper.find('.routes').exists()).toBe(false)
+    expect(wrapper.find('.map-tab').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('LateEnemy')
   })
 
-  it('filters routes by phase', async () => {
+  it('does not expose route-specific filters or observation notes', async () => {
     const overview = makeOverview()
     const wrapper = mountOverview(overview)
-    await wrapper.findAll('.map-tab')[1].trigger('click')
-    // 阶段 Tab 全部/开局/中期/残局
-    const phaseButtons = wrapper.findAll('.filter-group')[1].findAll('button')
-    await phaseButtons[1].trigger('click') // 开局
-    expect(phaseButtons[1].classes()).toContain('active')
-    // 开局 [0,45]：FriendlyTank 有 0/2s 两点 → 有线段；LateEnemy 起点 30s → 也在内
-    expect(wrapper.findAll('.routes .route-line').length).toBeGreaterThan(0)
+    expect(wrapper.findAll('.filter-btn').map(button => button.text())).toEqual([
+      'recon.map.team_friendly', 'recon.map.team_enemy',
+      'recon.map.type_dwell', 'recon.map.type_damage', 'recon.map.type_deaths'
+    ])
+    expect(wrapper.find('.observed-note').exists()).toBe(false)
   })
 
-  it('shows the player-only filter for random battles and renders only the recorder route', async () => {
+  it('does not expose a player-only route filter', async () => {
     luminanceOfImage.mockResolvedValue(null)
     const overview = makeOverview({ arenaBonusType: 1, recorderAccountId: 1 })
     const wrapper = mountOverview(overview)
-    await wrapper.findAll('.map-tab')[1].trigger('click')
-
-    const teamButtons = wrapper.findAll('.filter-group')[0].findAll('button')
-    expect(teamButtons.map(b => b.text())).toEqual([
-      'recon.map.team_friendly',
-      'recon.map.team_enemy',
-      'recon.map.team_all',
-      'recon.map.team_player'
-    ])
-
-    await teamButtons[3].trigger('click')
-    await flushPromises()
-    // 仅渲染录像者（accountId=1）一条路线（含对比描边，route-line 只有一条主路线）
-    expect(wrapper.findAll('.routes .route-line').length).toBe(1)
+    expect(wrapper.findAll('.filter-btn').map(b => b.text())).not.toContain('recon.map.team_player')
   })
 
   it('hides the player-only filter for non-random battles or unresolved recorder', async () => {
     luminanceOfImage.mockResolvedValue(null)
 
     const nonRandom = mountOverview(makeOverview())
-    await nonRandom.findAll('.map-tab')[1].trigger('click')
     expect(nonRandom.findAll('.filter-group')[0].findAll('button').map(b => b.text()))
-      .toEqual(['recon.map.team_friendly', 'recon.map.team_enemy', 'recon.map.team_all'])
+      .toEqual(['recon.map.team_friendly', 'recon.map.team_enemy'])
 
     const unresolved = mountOverview(makeOverview({ arenaBonusType: 1, recorderAccountId: null }))
-    await unresolved.findAll('.map-tab')[1].trigger('click')
     expect(unresolved.findAll('.filter-group')[0].findAll('button').map(b => b.text()))
-      .toEqual(['recon.map.team_friendly', 'recon.map.team_enemy', 'recon.map.team_all'])
+      .toEqual(['recon.map.team_friendly', 'recon.map.team_enemy'])
   })
 
   it('applies the light palette on bright maps and falls back to dark when brightness is unknown', async () => {
@@ -283,12 +262,6 @@ describe('MapOverview', () => {
 
   it('maps the map center (0,0) to the image center and does not push the top-right spawn to the edge', async () => {
     const wrapper = mountOverview(makeHollandOverview())
-    await wrapper.findAll('.map-tab')[1].trigger('click')
-
-    // 中心点 (0,0) → (383.0, 384.5)：出现在路线 polyline 中。
-    const polyline = wrapper.find('.routes .route-line')
-    expect(polyline.attributes('points')).toContain('383.0,384.5')
-
     // Molendijk 右上出生点 Spawn_2_14（真实世界坐标）不再被推近图片边缘。
     const spawn = wrapper.findAll('.spawns circle')[1]
     const expected = toSvg(180.2034, 252.0772, MOLENDIJK_WORLD, 766, 769)
@@ -298,18 +271,10 @@ describe('MapOverview', () => {
     expect(Number(spawn.attributes('cy'))).toBeGreaterThan(20)
   })
 
-  it('uses the same world-to-SVG transform for routes, spawns, death marks and grid cells', async () => {
+  it('uses the same world-to-SVG transform for spawns and grid cells', async () => {
     const wrapper = mountOverview(makeHollandOverview())
-    await wrapper.findAll('.map-tab')[1].trigger('click')
 
     const spawn = toSvg(-180.6257, -241.2817, MOLENDIJK_WORLD, 766, 769)
-    const routePolyline = wrapper.find('.routes .route-line')
-    expect(routePolyline.attributes('points')).toContain(`${spawn.x.toFixed(1)},${spawn.y.toFixed(1)}`)
-    expect(routePolyline.attributes('points')).toContain('383.0,384.5')
-
-    const death = wrapper.find('.death-mark')
-    expect(Number(death.attributes('x'))).toBeCloseTo(spawn.x, 1)
-    expect(Number(death.attributes('y'))).toBeCloseTo(spawn.y, 1)
 
     // 分析网格 F1 仍由 playableBounds 系坐标绘制，但经 coordinateBounds 换算：
     // 只覆盖可玩区左上角，不再被拉伸铺满整张图片。
@@ -332,20 +297,16 @@ describe('MapOverview', () => {
     expect(Number(spawn.attributes('cy'))).toBeCloseTo(expected.y, 1)
   })
 
-  it('是纯地图鸟瞰 secondary：无「战局回放」tab，只有 热力/路线', () => {
+  it('是纯地图鸟瞰 secondary：不包含战局回放或路线 tab', () => {
     const wrapper = mountOverview(makeOverview())
     expect(wrapper.find('[data-test="map-tab-playback"]').exists()).toBe(false)
-    const tabs = wrapper.findAll('.map-tab')
-    expect(tabs).toHaveLength(2)
-    expect(tabs.map(t => t.text()).join(',')).toContain('recon.map.view_heatmap')
-    expect(tabs.map(t => t.text()).join(',')).toContain('recon.map.view_routes')
+    expect(wrapper.findAll('.map-tab')).toHaveLength(0)
     // 默认热力视图渲染地图 SVG
     expect(wrapper.find('.map-svg').exists()).toBe(true)
   })
 
-  it('route view > svg 仍存在（无 playback 分支）', async () => {
+  it('always renders the heatmap SVG', () => {
     const wrapper = mountOverview(makeOverview())
-    await wrapper.findAll('.map-tab')[1].trigger('click')
     expect(wrapper.find('.map-svg').exists()).toBe(true)
   })
 })

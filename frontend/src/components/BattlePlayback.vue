@@ -18,14 +18,11 @@ import {
   FLASH_MS,
   GHOST_MS,
   KILL_FEED_MS,
-  aggregateEventsBySecond,
   clampViewPan,
   eventsCrossed,
   formatClock,
   pushFeed,
-  recorderRelated,
   teamPointsAt,
-  teamRelated,
   tracerLines,
   transientsActive,
   zoomViewAt
@@ -39,7 +36,7 @@ import {
   victimFeedbackAllowedV2,
 } from '../utils/battlePlaybackV2'
 import { projectVehicleState } from '../utils/playbackVehicleState'
-import { advancePlaybackTime, clampPlaybackTime, nextPlaybackSpeed } from '../utils/playbackClock'
+import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
 import {
   MARKER_CORE_PX,
   computeLabelLayout,
@@ -65,13 +62,13 @@ import {
 } from '../utils/annotation'
 
 /**
- * 战局回放（Battle Playback）：地图鸟瞰第三视图。
+ * 战局回放（Battle Playback）：地图鸟瞰中的主播放视图。
  * 复用 mapImages 素材、coordinateBounds 坐标映射、自适应色板与响应式布局；
  * RAF 只推进 battle-relative 时间，坐标查询遵循 canonical positionSegments。
  */
 const props = defineProps({
   /**
-   * MapOverview（heatmap/routes/secondary 鸟瞰）overlay 数据。仅提供可选 overlay 事实
+   * MapOverview（heatmap/secondary 鸟瞰）overlay 数据。仅提供可选 overlay 事实
    * （gridCells/spawnPoints/routes/playableBounds）；必选战局回放元数据以 {@code playbackV2} 为权威。
    * 可空：Battle Playback PRIMARY 以 V2 dataset 为核心输入，不再被 map-overview artifact 锁死。
    */
@@ -107,7 +104,7 @@ const pbOverview = computed(() => {
 const image = computed(() => mapImages[pbOverview.value.mapCode] || null)
 const mapView = computed(() => createMapView(image.value, pbOverview.value))
 
-// 自适应配色（与热力/路线视图同一色板）
+// 自适应配色（与热力覆盖层使用同一色板）
 const palette = ref(darkMapPalette)
 watch(image, async (img) => {
   palette.value = paletteForLuminance(await luminanceOfImage(img))
@@ -273,7 +270,7 @@ watch(hpPrefs, (p) => {
 // seek 清空（§20.1 不补播）、pause 自然完成（§20.2）、resume 不重复已消费事件（§20.3，
 // eventCursor 严格左开：恰在 cursor 上的事件不重复触发）。
 // Blocker 1：consumption 源 = authoritativeEvents（原始 playback events），
-// 不受事件列表 UI 过滤（typeFilter/showAll/recorder/team scope）影响。
+// 不受 Event Panel 折叠状态影响。
 let transientSeq = 0
 const eventCursor = ref(0)
 const floatItems = ref([]) // [{ id, victimAccountId, damage, bornRealMs, durationMs }]
@@ -447,10 +444,8 @@ const visibleBursts = computed(() => {
   }).filter(Boolean)
 })
 const visibleFeed = computed(() => transientsActive(feedItems.value, nowMs.value))
-const showAll = ref(false)
-const typeFilter = ref(new Set(['DAMAGE', 'DESTROYED', 'KILL', 'POSITION_REPORTED', 'POSITION_STALE']))
 const selectedAccountId = ref(null)
-const eventPopupSec = ref(null)
+const eventPanelOpen = ref(false)
 let rafId = null
 let lastFrameTs = null
 
@@ -926,6 +921,7 @@ onMounted(() => {
   if (typeof document !== 'undefined') {
     document.addEventListener('fullscreenchange', onFullscreenChange)
   }
+  window.addEventListener('keydown', onKeydown)
 })
 
 function frame(ts) {
@@ -989,7 +985,6 @@ watch(() => props.seekTo, (sec) => {
   if (Number.isFinite(sec)) {
     pause() // 点击 AI 时间 → seek + 自动暂停（含取消 RAF）
     currentTime.value = clampPlaybackTime(sec, duration.value)
-    eventPopupSec.value = Math.round(sec)
     resetTransients(currentTime.value)
     suppressHpTransition()
   }
@@ -997,7 +992,6 @@ watch(() => props.seekTo, (sec) => {
 
 function seek(sec) {
   currentTime.value = clampPlaybackTime(sec, duration.value)
-  eventPopupSec.value = Math.round(sec)
   nowMs.value = realNowMs()
   resetTransients(currentTime.value)
   suppressHpTransition()
@@ -1025,8 +1019,8 @@ function dragStart() {
   pause()
 }
 
-/** 事件标记点击：跳转并保持暂停。 */
-function jumpTo(sec) {
+/** Event Panel 行点击：跳转并保持暂停。 */
+function seekToEvent(sec) {
   pause()
   seek(sec)
 }
@@ -1037,15 +1031,21 @@ function step(delta) {
   suppressHpTransition()
 }
 
-function toggleSpeed() {
-  speed.value = nextPlaybackSpeed(speed.value)
+function setSpeed(next) {
+  if ([0.5, 1, 2, 4].includes(next)) speed.value = next
 }
 
-function toggleType(type) {
-  const next = new Set(typeFilter.value)
-  if (next.has(type)) next.delete(type)
-  else next.add(type)
-  typeFilter.value = next
+function onKeydown(e) {
+  const target = e.target
+  const tagName = target && target.tagName
+  if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(tagName)) return
+  if (e.code === 'Space' || e.key === ' ') {
+    e.preventDefault()
+    togglePlay()
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault()
+    step(e.key === 'ArrowLeft' ? -5 : 5)
+  }
 }
 
 onBeforeUnmount(() => {
@@ -1062,6 +1062,7 @@ onBeforeUnmount(() => {
       document.exitFullscreen()
     }
   }
+  window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
   window.removeEventListener('pointercancel', onPointerUp)
@@ -1159,66 +1160,21 @@ const vehicleStates = computed(() => {
     .filter(Boolean)
 })
 
-const filteredEvents = computed(() => {
-  const events = (playback.value ? playback.value.events : [])
-    .filter(event => typeFilter.value.has(event.type))
-  if (showAll.value) return events
-  const recorderId = pbOverview.value.recorderAccountId
-  if (pbOverview.value.arenaBonusType === 1
-      && recorderId !== null && recorderId !== undefined) {
-    return events.filter(event => recorderRelated(event, recorderId))
-  }
-  if (pbOverview.value.arenaBonusType !== null && pbOverview.value.arenaBonusType !== undefined
-      && friendlyTeam.value !== null && friendlyTeam.value !== undefined) {
-    return events.filter(event => teamRelated(event, friendlyTeam.value, vehiclesByAccount.value))
-  }
-  return events
-})
-
 /**
- * authoritative playback events：全部回放事件（无 typeFilter / showAll / recorder / team scope 过滤）。
+ * authoritative playback events：全部回放事件。
  * deterministic state（当前累计伤害/击杀）与 combat feedback（floating damage / hit flash / ghost /
  * destruction burst / kill feed / damage log）必须消费本源——「战斗事实有没有发生」不取决于事件列表
- * UI 是否显示（review Blocker 1）。presentation 过滤（filteredEvents）只用于 timeline markers /
- * popup / prev-next 事件跳转 / 受 filter 控制的 visual overlay（炮线）。
+ * UI 是否折叠。Event Panel 与炮线都消费同一份真实事件。
  */
 const authoritativeEvents = computed(() => (playback.value ? playback.value.events : []))
 
-const eventMarkers = computed(() => aggregateEventsBySecond(filteredEvents.value))
-
-// 炮线：仅来自过滤后事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
-const visibleTracers = computed(() => tracerLines(filteredEvents.value, routesByAccount.value, currentTime.value, speed.value))
+// 炮线：仅来自真实事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
+const visibleTracers = computed(() => tracerLines(authoritativeEvents.value, routesByAccount.value, currentTime.value, speed.value))
 
 function tracerColor(accountId) {
   const vehicle = vehiclesByAccount.value.get(accountId)
   return vehicle ? vehicleColor(vehicle) : palette.value.routeOutline
 }
-
-function nearestEvent(direction) {
-  const events = filteredEvents.value
-  if (!events.length) return
-  const t = currentTime.value
-  let best = null
-  for (const event of events) {
-    if (direction === 'prev' && event.timeSec < t - 0.1) {
-      if (best === null || event.timeSec > best.timeSec) best = event
-    } else if (direction === 'next' && event.timeSec > t + 0.1) {
-      if (best === null || event.timeSec < best.timeSec) best = event
-    }
-  }
-  if (best) {
-    pause() // 上一/下一事件跳转后保持暂停
-    currentTime.value = best.timeSec
-    eventPopupSec.value = Math.round(best.timeSec)
-    resetTransients(currentTime.value)
-    suppressHpTransition()
-  }
-}
-
-const popupEvents = computed(() => {
-  if (eventPopupSec.value == null) return []
-  return filteredEvents.value.filter(event => Math.round(event.timeSec) === eventPopupSec.value)
-})
 
 function playerName(accountId) {
   const vehicle = vehiclesByAccount.value.get(accountId)
@@ -1511,7 +1467,6 @@ const mapStyle = computed(() => ({
   '--map-spawn-friendly': palette.value.spawnFriendly,
   '--map-spawn-enemy': palette.value.spawnEnemy,
   '--map-route-outline': palette.value.routeOutline,
-  '--map-death-mark': palette.value.deathMark,
   // PR3 §19/§20：marker team tokens（friendly 按地图显式 tone，enemy 固定 red）
   ...teamCssVars(pbOverview.value.mapCode)
 }))
@@ -1524,13 +1479,10 @@ const mapStyle = computed(() => ({
       :speed="speed"
       :current-time="currentTime"
       :duration="duration"
-      :recorder-account-id="pbOverview.recorderAccountId"
-      :show-all="showAll"
       :label-prefs="labelPrefs"
       :hp-prefs="hpPrefs"
       :fullscreen-supported="fullscreenSupported"
       :is-fullscreen="isFullscreen"
-      :type-filter="typeFilter"
       :active-tool="activeTool"
       :annot-colors="ANNOT_COLORS"
       :annot-color="annotColor"
@@ -1542,19 +1494,14 @@ const mapStyle = computed(() => ({
       :history="history"
       :can-undo="canUndo"
       :can-redo="canRedo"
-      :event-markers="eventMarkers"
       :format-clock="formatClock"
       @toggle-play="togglePlay"
       @step="step"
-      @previous-event="nearestEvent('prev')"
-      @next-event="nearestEvent('next')"
-      @toggle-speed="toggleSpeed"
+      @set-speed="setSpeed"
       @reset-view="resetView"
       @toggle-fullscreen="toggleFullscreen"
-      @update:show-all="showAll = $event"
       @update-label-pref="(key, value) => { labelPrefs[key] = value }"
       @update-hp-pref="(key, value) => { hpPrefs[key] = value }"
-      @toggle-type="toggleType"
       @toggle-tool="toggleTool"
       @set-annot-color="annotColor = $event"
       @update:annot-width="annotWidthSlider = $event"
@@ -1564,7 +1511,6 @@ const mapStyle = computed(() => ({
       @toggle-annotations="annotVisible = !annotVisible"
       @drag-start="dragStart"
       @seek="seek"
-      @jump="jumpTo"
     />
 
     <!-- 地图 + detail sidebar 主区（宽屏并排，窄屏上下堆叠；§8.2） -->
@@ -1662,19 +1608,33 @@ const mapStyle = computed(() => ({
       </div>
     </div>
 
-    <!-- 事件弹层（点击进度条标记展示该秒事件） -->
-    <div v-if="popupEvents.length" class="pb-popup" data-test="pb-popup">
-      <div class="pb-popup-head">
-        {{ formatClock(eventPopupSec) }}
-        <button type="button" class="pb-close" @click="eventPopupSec = null">&times;</button>
-      </div>
-      <ul>
-        <li v-for="(event, i) in popupEvents" :key="i">
+    <!-- 真实事件面板默认折叠；事件行是唯一的事件 seek 入口。 -->
+    <section class="pb-event-panel" data-test="pb-events">
+      <button
+        type="button"
+        class="pb-event-toggle"
+        data-test="pb-event-toggle"
+        :aria-expanded="eventPanelOpen"
+        @click="eventPanelOpen = !eventPanelOpen"
+      >
+        {{ $t('recon.map.playback.events') }} ({{ authoritativeEvents.length }})
+      </button>
+      <div v-if="eventPanelOpen" class="pb-event-list" data-test="pb-event-panel">
+        <button
+          v-for="(event, index) in authoritativeEvents"
+          :key="`${event.type}-${event.timeSec}-${index}`"
+          type="button"
+          class="pb-event-row"
+          data-test="pb-event"
+          @click="seekToEvent(event.timeSec)"
+        >
+          <span class="pb-event-time">{{ formatClock(event.timeSec) }}</span>
           <span class="pb-event-type">{{ $t(`recon.map.playback.event_${event.type}`) }}</span>
-          {{ eventLabel(event) }}
-        </li>
-      </ul>
-    </div>
+          <span>{{ eventLabel(event) }}</span>
+        </button>
+        <p v-if="authoritativeEvents.length === 0" class="pb-event-empty">{{ $t('recon.map.playback.no_events') }}</p>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -1846,18 +1806,46 @@ const mapStyle = computed(() => ({
 @media (prefers-reduced-motion: reduce) {
   .pb-float-dmg, .pb-burst, .pb-feed-item { animation: none; }
 }
-.pb-popup {
-  background: rgba(13, 18, 22, .97);
-  border: 1px solid #303a40;
+.pb-event-panel {
+  border: 1px solid var(--border-ghost);
   border-radius: 4px;
-  padding: 6px 8px;
-  font-size: .8rem;
-  color: #d8d5cd;
+  background: var(--bg-card2);
+  overflow: hidden;
 }
-.pb-popup-head { display: flex; justify-content: space-between; font-weight: 700; }
-.pb-popup ul { margin: 4px 0 0; padding-left: 16px; }
+.pb-event-toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text-label);
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+  font-size: .8rem;
+}
+.pb-event-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-ghost);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.pb-event-row {
+  display: flex;
+  gap: 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border-ghost);
+  background: transparent;
+  color: var(--text);
+  padding: 5px 8px;
+  text-align: left;
+  cursor: pointer;
+  font-size: .78rem;
+}
+.pb-event-row:last-child { border-bottom: 0; }
+.pb-event-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.pb-event-time { min-width: 3.2em; font-variant-numeric: tabular-nums; color: var(--text-label); }
 .pb-event-type { color: var(--accent); margin-right: 4px; }
-.pb-close { border: none; background: none; cursor: pointer; color: var(--text-muted); }
+.pb-event-empty { margin: 8px; color: var(--text-muted); font-size: .78rem; }
 
 /* 地图标注层 + 文字输入 */
 .pb-annotations { pointer-events: none; }

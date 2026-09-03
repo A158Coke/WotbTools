@@ -2,7 +2,7 @@
   战局回放 / 战局重建能力面板。
   Dataset-only：读已解析 Processing Job 的 cached map-overview.json（processingJobId + sourceId），
   不重新上传 replay / 不重新 full process（multipart map-overview 已随 /api/replay/map-overview 废弃为 410）。
-  热力/路线/战局回放（MapOverview）。与 AI 复盘解耦——不想跑 AI 复盘时也能看图。
+  热力/战局回放（MapOverview）。与 AI 复盘解耦——不想跑 AI 复盘时也能看图。
   目标文件由父组件以 prop 传入；file identity 与「是否开始加载」解耦：仅当宿主声明
   active=true 且该文件尚未尝试加载时才自动请求 cached map-overview；手动按钮仅用于重试。
   seekTo 支持 AI 报告时间链接（未加载先拉取、自动展开折叠，MapOverview 收到 seek 后切回放视图）。
@@ -74,7 +74,7 @@ const playbackV2Error = ref('')
 const playbackV2Retryable = ref(false)
 const playbackV2UnavailableReason = ref('')
 /**
- * PRIMARY Battle Playback 的 overview 输入：MapOverview 存在时用其完整 overlay（heatmap/routes 之外的
+ * PRIMARY Battle Playback 的 overview 输入：MapOverview 存在时用其完整 overlay（heatmap 之外的
  * gridCells/spawnPoints/playableBounds 为可选项）；MapOverview 不可用/缺失时由 V2 dataset 合成最小
  * authoritative overview（mapCode/friendlyTeam/recorderAccountId/arenaBonusType），保证 PRIMARY 不依赖
  * map-overview artifact 是否存在才能渲染（Blocker 2：Battle Playback PRIMARY 不被 MapOverview capability 锁死）。
@@ -379,7 +379,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- SECONDARY：地图鸟瞰（heatmap / routes） -->
+        <!-- SECONDARY：地图鸟瞰（heatmap） -->
         <div v-show="panelView === 'map'" data-test="pb-map-secondary">
           <MapOverview v-if="mapOverview" :overview="mapOverview" />
           <p v-else-if="mapLoaded && !mapLoading" class="map-unavailable" data-test="map-unavailable">
