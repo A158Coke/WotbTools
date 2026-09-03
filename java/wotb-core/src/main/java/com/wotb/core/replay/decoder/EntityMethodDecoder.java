@@ -15,6 +15,7 @@ import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.ShotResultEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
+import com.wotb.core.replay.event.RawSupremacyBaseUpdate;
 import com.wotb.core.replay.event.TargetingInfoSnapshotEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
@@ -78,6 +79,8 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     static final int SUBTYPE_ROUND_FINISHED = 4;
     /** subtype48 wrapper=3 = ARENA_PERIOD 更新（root field3 = period；PROVEN）。 */
     public static final long WRAPPER_ARENA_PERIOD = 3L;
+    /** subtype48 wrapper=12 = realtime Supremacy base state（root field11；PROVEN current corpus）。 */
+    public static final long WRAPPER_SUPREMACY_BASE = 12L;
     /** wrapper3 root field：arena period 值。 */
     static final int ARENA_PERIOD_ROOT_FIELD = 3;
     static final int AVATAR_METHOD5_ARGS_LEN = 3;
@@ -365,6 +368,9 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     }
                     // 争霸赛实时点数仅在 nested shape 校验通过时解码。
                     events.addAll(parseSupremacyPoints(payload, packet, ts));
+                    // Wrapper12 realtime base ownership/capture state：只接受已闭合的
+                    // wrapper/root/field shape，不从点数或静态地图基地圈推导。
+                    events.addAll(parseRawSupremacyBaseUpdates(payload, packet, ts));
                     // PR147 wrapper=3 ARENA_PERIOD（root field3 = period）；period=3 BATTLE = battle-start anchor。
                     events.addAll(parseArenaPeriod(payload, packet, ts));
                     if (events.size() == before) {
@@ -719,6 +725,67 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     DecodeConfidence.EXACT, (int) team, (int) points));
         }
         return out;
+    }
+
+    /**
+     * 解析 subtype48 wrapper12 的实时基地状态（root field11 repeated protobuf）。
+     * 这里只做 wire decode：缺失 scalar 字段保持 null，显式 protobuf default 0 保持 0。
+     * field5/field6 仍仅作为 raw diagnostics 保留，不能在 decoder 中赋予语义。
+     */
+    private List<RawSupremacyBaseUpdate> parseRawSupremacyBaseUpdates(
+            byte[] payload, RawReplayPacket packet, ReplayTimestamp ts) {
+        final DecodedUpdateArena2 decoded = decodeUpdateArena2(payload);
+        if (decoded == null || decoded.wrapperFieldNumber() != WRAPPER_SUPREMACY_BASE) {
+            return List.of();
+        }
+        final List<Object> baseBlocks = decoded.root().get(11);
+        if (baseBlocks == null || baseBlocks.isEmpty()) {
+            return List.of();
+        }
+        final List<RawSupremacyBaseUpdate> out = new ArrayList<>();
+        for (final Object blockRaw : baseBlocks) {
+            if (!(blockRaw instanceof byte[] block)) {
+                continue;
+            }
+            final Map<Integer, List<Object>> fields;
+            try {
+                fields = ProtobufDecoder.decode(block);
+            } catch (IllegalArgumentException malformedBlock) {
+                // A malformed child is raw-preserved by the outer method decoder;
+                // it must never become a partial canonical base state.
+                continue;
+            }
+            final Long baseIndex = optionalLong(fields, 1);
+            final Long owner = optionalLong(fields, 2);
+            final Long capturing = optionalLong(fields, 3);
+            final Long progress = optionalLong(fields, 4);
+            final Long rawField5 = optionalLong(fields, 5);
+            final Long rawField6 = optionalLong(fields, 6);
+            if ((baseIndex != null && (baseIndex < 0 || baseIndex > 3))
+                    || !validOptionalTeam(owner) || !validOptionalTeam(capturing)
+                    || (progress != null && (progress < 0 || progress > 99))) {
+                continue;
+            }
+            out.add(new RawSupremacyBaseUpdate(
+                    packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                    baseIndex == null ? null : baseIndex.intValue(),
+                    owner == null ? null : owner.intValue(),
+                    capturing == null ? null : capturing.intValue(),
+                    progress == null ? null : progress.intValue(),
+                    rawField5 == null ? null : rawField5.intValue(),
+                    rawField6 == null ? null : rawField6.intValue()));
+        }
+        return out;
+    }
+
+    private static Long optionalLong(final Map<Integer, List<Object>> fields, final int fieldNumber) {
+        return fields.containsKey(fieldNumber)
+                ? ProtobufDecoder.firstLong(fields, fieldNumber, 0)
+                : null;
+    }
+
+    private static boolean validOptionalTeam(final Long team) {
+        return team == null || team == 0 || team == 1 || team == 2;
     }
 
     /**

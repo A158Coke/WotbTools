@@ -21,6 +21,8 @@ public sealed interface ReplayEvent
                 ParticipantMappingEvent,
                 TurretDirectionChangedEvent,
                 SupremacyPointsChangedEvent,
+                RawSupremacyBaseUpdate,
+                SupremacyBaseStateTransition,
                 RecorderHealthChangedEvent,
                 VehicleHealthStateEvent,
                 VehicleModuleCrewStateEvent,

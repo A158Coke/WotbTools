@@ -21,6 +21,7 @@ import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.AiResponseFormat;
 import com.wotb.web.replay.ai.gateway.SpringAiChatGateway;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -38,6 +39,7 @@ import java.util.List;
  * "-Dtest=TeamReviewDetailedReproProbeTest" "-Dai.probe.excludedGroups=" "-Dprobe.replay=<file>"}
  */
 @Tag("ai-live")
+@Disabled("Live DeepSeek API probe; skipped in CI and normal local test runs")
 class TeamReviewDetailedReproProbeTest {
 
     @Test

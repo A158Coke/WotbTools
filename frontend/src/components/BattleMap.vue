@@ -11,6 +11,7 @@ const props = defineProps({
   friendlyTeam: { type: [Number, String], default: null },
   gridRegions: { type: Array, default: () => [] },
   visibleTracers: { type: Array, default: () => [] },
+  visibleTrails: { type: Array, default: () => [] },
   tracerColor: { type: Function, required: true },
   viewScale: { type: Number, default: 1 },
   viewportStyle: { type: String, default: '' },
@@ -31,7 +32,6 @@ const props = defineProps({
   textInputStyle: { type: Object, default: () => ({}) },
   visibleFloats: { type: Array, default: () => [] },
   visibleBursts: { type: Array, default: () => [] },
-  visibleFeed: { type: Array, default: () => [] },
   floatTeamClass: { type: Function, required: true },
 })
 
@@ -68,6 +68,31 @@ defineExpose({ mapEl, textInputRef })
         </g>
         <g class="pb-spawns">
           <circle v-for="(spawn, index) in props.pbOverview.spawnPoints" :key="`${spawn.name}-${index}`" :cx="props.mapView.toX(spawn.x)" :cy="props.mapView.toY(spawn.y)" r="4" :class="props.friendlyTeam === null || props.friendlyTeam === undefined ? 'pb-spawn-neutral' : (spawn.team === props.friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy')" />
+        </g>
+        <g class="pb-trails" data-test="pb-trails" aria-hidden="true">
+          <template v-for="(trail, index) in props.visibleTrails" :key="`trail-${trail.accountId}-${index}`">
+            <line
+              v-if="trail.from && trail.to"
+              class="pb-trail"
+              :x1="props.mapView.toX(trail.from.x)"
+              :y1="props.mapView.toY(trail.from.y)"
+              :x2="props.mapView.toX(trail.to.x)"
+              :y2="props.mapView.toY(trail.to.y)"
+              :stroke="trail.friendly === true ? 'var(--map-spawn-friendly)' : (trail.friendly === false ? 'var(--map-spawn-enemy)' : 'var(--text-muted)')"
+              :stroke-width="1.5 / props.viewScale"
+              stroke-dasharray="2 4"
+              :opacity="trail.opacity"
+            />
+            <circle
+              v-else-if="trail.point"
+              class="pb-trail-point"
+              :cx="props.mapView.toX(trail.point.x)"
+              :cy="props.mapView.toY(trail.point.y)"
+              :r="1.8 / props.viewScale"
+              :fill="trail.friendly === true ? 'var(--map-spawn-friendly)' : (trail.friendly === false ? 'var(--map-spawn-enemy)' : 'var(--text-muted)')"
+              :opacity="trail.opacity"
+            />
+          </template>
         </g>
         <g class="pb-tracers" aria-hidden="true">
           <template v-for="(line, index) in props.visibleTracers" :key="`tracer-${line.timeSec}-${index}`">
@@ -110,9 +135,6 @@ defineExpose({ mapEl, textInputRef })
       <span v-for="float in props.visibleFloats" :key="'dmg-' + float.id" class="pb-float-dmg" data-test="pb-float-dmg" :class="props.floatTeamClass(float.friendly)" :style="{ left: float.x + 'px', top: float.y + 'px' }">-{{ float.hpLoss }}</span>
       <span v-for="burst in props.visibleBursts" :key="'burst-' + burst.id" class="pb-burst" data-test="pb-burst" :class="props.floatTeamClass(burst.friendly)" :style="{ left: burst.x + 'px', top: burst.y + 'px' }"></span>
     </div>
-    <div v-if="props.visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
-      <div v-for="feed in props.visibleFeed" :key="'feed-' + feed.id" class="pb-feed-item" :class="feed.victimFriendly === true ? 'pb-feed-friendly' : (feed.victimFriendly === false ? 'pb-feed-enemy' : 'pb-feed-neutral')"><span class="pb-feed-skull" aria-hidden="true">☠</span><span class="pb-feed-victim">{{ feed.victimName }}</span><span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span></div>
-    </div>
   </div>
 </template>
 
@@ -121,9 +143,10 @@ defineExpose({ mapEl, textInputRef })
 .pb-viewport { position: relative; width: 100%; transform-origin: 0 0; touch-action: none; }
 .pb-svg { display: block; width: 100%; height: auto; border-radius: 4px; background: var(--bg-elevated); }
 .pb-markers { position: absolute; inset: 0; pointer-events: none; }
-.pb-vehicle { position: absolute; width: 36px; height: 36px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
+  .pb-vehicle { position: absolute; width: 30px; height: 30px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
 .pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.55)); stroke-width: 1; fill: none; }
 .pb-tracer, .pb-tracer-core { stroke-linecap: round; }
+.pb-trail { stroke-linecap: round; }
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
@@ -139,18 +162,10 @@ defineExpose({ mapEl, textInputRef })
 .pb-burst.pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
 .pb-burst.pb-float-neutral { color: var(--text-muted, #999); }
 @keyframes pb-burst-ring { 0% { opacity: .9; transform: translate(-50%, -50%) scale(.3); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); } }
-.pb-kill-feed { position: absolute; top: 6px; right: 6px; display: flex; flex-direction: column; gap: 3px; z-index: 10; pointer-events: none; max-width: 62%; }
-.pb-feed-item { display: flex; align-items: center; gap: 4px; font-size: .75rem; background: color-mix(in srgb, var(--bg) 60%, transparent); border: 1px solid color-mix(in srgb, var(--text) 14%, transparent); border-radius: 3px; padding: 2px 6px; animation: pb-feed-in .25s ease-out; }
-.pb-feed-skull { color: var(--text); }
-.pb-feed-friendly .pb-feed-victim { color: var(--pb-team-text, #4ade80); }
-.pb-feed-enemy .pb-feed-victim { color: var(--pb-enemy-text, #f87171); }
-.pb-feed-neutral .pb-feed-victim { color: var(--text-muted, #999); }
-.pb-feed-destroyed { color: var(--text-muted, #999); }
-@keyframes pb-feed-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
 .pb-annotations { pointer-events: none; }
 .pb-annot-text { paint-order: stroke; stroke: color-mix(in srgb, var(--bg) 65%, transparent); stroke-width: 1; }
 .pb-drawing { pointer-events: none; }
 .pb-text-input { position: absolute; width: 140px; font-size: 13px; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 3px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--text); z-index: 6; }
-@media (width < 768px) { .pb-map { width: 100%; } .pb-vehicle { width: 28px; height: 28px; } }
-@media (prefers-reduced-motion: reduce) { .pb-float-dmg, .pb-burst, .pb-feed-item { animation: none; } }
+@media (width < 768px) { .pb-map { width: 100%; } .pb-vehicle { width: 25px; height: 25px; } }
+@media (prefers-reduced-motion: reduce) { .pb-float-dmg, .pb-burst { animation: none; } }
 </style>

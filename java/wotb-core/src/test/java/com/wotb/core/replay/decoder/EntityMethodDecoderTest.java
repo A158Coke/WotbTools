@@ -5,6 +5,7 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ProjectileLaunchedEvent;
 import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
+import com.wotb.core.replay.event.RawSupremacyBaseUpdate;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
 import com.wotb.core.replay.event.VehicleFiredEvent;
@@ -19,6 +20,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -298,6 +300,71 @@ class EntityMethodDecoderTest {
         assertEquals(306, t2.points());
         assertEquals(DecodeConfidence.EXACT, t2.confidence());
         assertEquals(DecodeStatus.SUCCESS, result.status());
+    }
+
+    @Test
+    void updateArena2Wrapper12DecodesAuthoritativeBaseStateFields() {
+        context.entityClassRegistry().markAvatar(0);
+        // wrapper12 root field11: base B (zero-based index 1), capturing team 1, 3% progress.
+        // Fields 5/6 are retained only as raw diagnostics; they have no production semantics.
+        final byte[] base = new byte[]{0x08, 0x01, 0x18, 0x01, 0x20, 0x03, 0x28, 0x01, 0x30, 0x01};
+        final ReplayDecodeResult result = decoder.decode(context,
+                rawPacket48(EntityMethodDecoder.WRAPPER_SUPREMACY_BASE, fieldDelimited(11, base)));
+        final RawSupremacyBaseUpdate event = assertInstanceOf(
+                RawSupremacyBaseUpdate.class, result.events().getFirst());
+        assertEquals(1, event.baseIndex());
+        assertNull(event.ownerTeam());
+        assertEquals(1, event.capturingTeam());
+        assertEquals(3, event.captureProgress());
+        assertEquals(1, event.rawField5());
+        assertEquals(1, event.rawField6());
+        assertEquals(DecodeConfidence.EXACT, event.confidence());
+        assertEquals(DecodeStatus.SUCCESS, result.status());
+    }
+
+    @Test
+    void updateArena2Wrapper12PreservesExplicitZeroCaptureProgress() {
+        context.entityClassRegistry().markAvatar(0);
+        final byte[] baseWithExplicitZeroProgress = new byte[]{0x08, 0x02, 0x20, 0x00};
+        final ReplayDecodeResult result = decoder.decode(context,
+                rawPacket48(EntityMethodDecoder.WRAPPER_SUPREMACY_BASE,
+                        fieldDelimited(11, baseWithExplicitZeroProgress)));
+
+        final RawSupremacyBaseUpdate event = assertInstanceOf(
+                RawSupremacyBaseUpdate.class, result.events().getFirst());
+        assertEquals(2, event.baseIndex());
+        assertEquals(0, event.captureProgress());
+    }
+
+    @Test
+    void updateArena2Wrapper12PreservesAbsentFieldsAndProtobufDefaultBase() {
+        context.entityClassRegistry().markAvatar(0);
+        final ReplayDecodeResult result = decoder.decode(context,
+                rawPacket48(EntityMethodDecoder.WRAPPER_SUPREMACY_BASE,
+                        fieldDelimited(11, new byte[]{0x20, 0x00})));
+
+        final RawSupremacyBaseUpdate event = assertInstanceOf(
+                RawSupremacyBaseUpdate.class, result.events().getFirst());
+        assertNull(event.baseIndex(), "field1 absent must remain distinguishable from explicit zero");
+        assertNull(event.ownerTeam());
+        assertNull(event.capturingTeam());
+        assertEquals(0, event.captureProgress(), "explicit field4=0 must be preserved");
+        assertNull(event.rawField5());
+        assertNull(event.rawField6());
+    }
+
+    @Test
+    void malformedOrWrongWrapper12DoesNotProduceBaseStateEvent() {
+        context.entityClassRegistry().markAvatar(0);
+        final ReplayDecodeResult malformed = decoder.decode(context,
+                rawPacket48(EntityMethodDecoder.WRAPPER_SUPREMACY_BASE,
+                        fieldDelimited(11, new byte[]{0x08})));
+        assertTrue(malformed.events().stream().noneMatch(RawSupremacyBaseUpdate.class::isInstance));
+
+        final ReplayDecodeResult wrongWrapper = decoder.decode(context,
+                rawPacket48(EntityMethodDecoder.WRAPPER_ARENA_PERIOD,
+                        fieldDelimited(11, new byte[]{0x08, 0x00})));
+        assertTrue(wrongWrapper.events().stream().noneMatch(RawSupremacyBaseUpdate.class::isInstance));
     }
 
     @Test

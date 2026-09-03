@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  activeFeed,
   clampViewPan,
   eventsCrossed,
   formatClock,
+  KILL_FEED_MS,
   lastKnownPosition,
   normalizeDeg,
   parseAiTime,
   positionAt,
   pushFeed,
+  recentPositionTrails,
   screenRotation,
   shortestArcDeg,
   teamPointsAt,
@@ -17,6 +20,56 @@ import {
   turretWorldYawDeg,
   zoomViewAt
 } from './battlePlayback'
+
+describe('recentPositionTrails', () => {
+  const vehicle = (positionSegments) => ({ accountId: 7, friendly: true, positionSegments })
+
+  it('renders only observed samples in the last two seconds and never future points', () => {
+    const trails = recentPositionTrails([vehicle([{
+      knowledge: 'OBSERVED',
+      samples: [{ timeSec: 8, x: 0, y: 0 }, { timeSec: 9, x: 10, y: 0 }, { timeSec: 10, x: 20, y: 0 }, { timeSec: 11, x: 30, y: 0 }],
+    }])], 10)
+    expect(trails).toHaveLength(2)
+    expect(trails.every(trail => trail.to?.timeSec <= 10)).toBe(true)
+  })
+
+  it('does not draw across observed gaps or LAST_KNOWN segments', () => {
+    const trails = recentPositionTrails([vehicle([
+      { knowledge: 'OBSERVED', startSec: 8, endSec: 8, samples: [{ timeSec: 8, x: 0, y: 0 }] },
+      { knowledge: 'OBSERVED', startSec: 14, endSec: 14, samples: [{ timeSec: 14, x: 10, y: 0 }] },
+      { knowledge: 'LAST_KNOWN', samples: [{ timeSec: 9, x: 1, y: 1 }, { timeSec: 10, x: 2, y: 2 }] },
+    ])], 14)
+    expect(trails).toHaveLength(1)
+    expect(trails[0].point.timeSec).toBe(14)
+    expect(trails.some(trail => trail.from)).toBe(false)
+  })
+
+  it('uses canonical interpolation for a long single OBSERVED segment without a 5s break', () => {
+    const trails = recentPositionTrails([vehicle([{
+      knowledge: 'OBSERVED',
+      interpolationAllowed: true,
+      startSec: 8,
+      endSec: 16,
+      samples: [{ timeSec: 8, x: 0, y: 0 }, { timeSec: 16, x: 80, y: 0 }],
+    }])], 15)
+    expect(trails).toHaveLength(1)
+    expect(trails[0].from.timeSec).toBe(13)
+    expect(trails[0].to.timeSec).toBe(15)
+    expect(trails[0].from.x).toBeCloseTo(50)
+    expect(trails[0].to.x).toBeCloseTo(70)
+  })
+
+  it('does not interpolate a segment that explicitly disallows interpolation', () => {
+    const trails = recentPositionTrails([vehicle([{
+      knowledge: 'OBSERVED',
+      interpolationAllowed: false,
+      startSec: 8,
+      endSec: 16,
+      samples: [{ timeSec: 8, x: 0, y: 0 }, { timeSec: 16, x: 80, y: 0 }],
+    }])], 15)
+    expect(trails).toHaveLength(0)
+  })
+})
 
 describe('positionAt', () => {
   const points = [
@@ -413,13 +466,53 @@ describe('eventsCrossed / transients', () => {
     expect(eventsCrossed(events, 20, 30)).toEqual([{ timeSec: 30 }])
   })
 
-  it('transientsActive / pushFeed: wall-clock lifecycle + queue eviction', () => {
+  it('transientsActive: wall-clock lifecycle', () => {
     const items = [
       { bornRealMs: 1000, durationMs: 500 },
       { bornRealMs: 1500, durationMs: 1000 },
       { bornRealMs: 500, durationMs: 1000 }
     ]
     expect(transientsActive(items, 1999)).toEqual([items[1]])
-    expect(pushFeed(['a', 'b', 'c'], 'd', 3)).toEqual(['b', 'c', 'd'])
+  })
+
+  it('pushFeed / activeFeed: real banner queue — max 2 visible, 3rd waits (not sliced away)', () => {
+    const shown = new Map()
+    const mk = (id) => ({ id, durationMs: KILL_FEED_MS })
+    // pushFeed 只追加，不 slice 掉旧事件
+    expect(pushFeed([{ id: 1 }], { id: 2 })).toEqual([{ id: 1 }, { id: 2 }])
+    // 三条同时到达：只显示前两条，第三条排队（不挤出）
+    expect(activeFeed([mk(1), mk(2), mk(3)], 1000, shown).map(i => i.id)).toEqual([1, 2])
+    expect(activeFeed([mk(1), mk(2), mk(3)], 1500, shown).map(i => i.id)).toEqual([1, 2])
+    // 4s 后：前两条已展示完，第三条被提升展示（事件仍在队列中，未被挤出）
+    expect(activeFeed([mk(1), mk(2), mk(3)], 7000, shown).map(i => i.id)).toEqual([3])
+  })
+
+  it('clampViewPan: pan bounds based on visible stage vs rendered map rect (cover/fit)', () => {
+    // 方形地图、宽 stage：scale=1 时 map 宽=stage 宽、map 高>stage 高 → 纵向可平移（被裁区域可达）
+    expect(clampViewPan({ scale: 1, tx: 0, ty: 0 }, 1600, 900, 1600, 1600)).toEqual({ scale: 1, tx: 0, ty: 0 })
+    expect(clampViewPan({ scale: 1, tx: 0, ty: -400 }, 1600, 900, 1600, 1600).ty).toBe(-400)
+    // fit（scale<1 使完整地图可见）→ 居中，不可平移
+    expect(clampViewPan({ scale: 0.5, tx: 999, ty: 999 }, 1600, 900, 1600, 1600)).toEqual({ scale: 0.5, tx: 400, ty: 50 })
+    // 地图小于 stage（窄图宽视口）→ 居中
+    expect(clampViewPan({ scale: 1, tx: 0, ty: 0 }, 1600, 900, 600, 900)).toEqual({ scale: 1, tx: 500, ty: 0 })
+    // 超宽视口（3440×1440）cover-fill：地图宽=stage 宽、高度超高 → 纵向被裁区域可达（底边 ty=-2000 可到），
+    // 横向无裁切则居中（tx=0）。这是对「宽视口几何」的真实回归：没被 clamp 钉死在 tx/ty=0。
+    expect(clampViewPan({ scale: 1, tx: 0, ty: -5000 }, 3440, 1440, 3440, 3440)).toEqual({ scale: 1, tx: 0, ty: -2000 })
+    expect(clampViewPan({ scale: 1, tx: 999, ty: 0 }, 3440, 1440, 3440, 3440).tx).toBe(0)
+    // 宽视口拟合（地图高 < stage 高）→ 纵向居中，不可平移。
+    expect(clampViewPan({ scale: 1, tx: 0, ty: 999 }, 3440, 1440, 3440, 900).ty).toBe(270)
+  })
+
+  it('clampViewPan: 1500×1080 stage + 1500×1500 map — 顶边/底边可达 + Reset View fit(scale<1) 不偏移', () => {
+    // §Blocker 1：锚定 origin（无 CSS 居中偏移）后，cover 下上下裁剪区域都必须可达，
+    // 且 fit(scale<1) 得到完整地图视图不被 clamp 偏移。
+    // 顶边：ty=0 即地图顶部（无法再往上 pan）→ 顶端可见。
+    expect(clampViewPan({ scale: 1, tx: 0, ty: 0 }, 1500, 1080, 1500, 1500)).toEqual({ scale: 1, tx: 0, ty: 0 })
+    // 底边：ty 可下探到 stageH - mapH = 1080 - 1500 = -420（被裁底端可达，而非钉在 0）。
+    expect(clampViewPan({ scale: 1, tx: 0, ty: -9999 }, 1500, 1080, 1500, 1500)).toEqual({ scale: 1, tx: 0, ty: -420 })
+    expect(clampViewPan({ scale: 1, tx: 0, ty: -420 }, 1500, 1080, 1500, 1500).ty).toBe(-420)
+    // Reset View full-map fit：scale = min(1500/1500, 1080/1500) = 0.72，横向居中(210)、纵向恰好贴满(0)。
+    // clampViewPan 需保留该 fit 视图（不被错误重置/偏移）。
+    expect(clampViewPan({ scale: 0.72, tx: 210, ty: 0 }, 1500, 1080, 1500, 1500)).toEqual({ scale: 0.72, tx: 210, ty: 0 })
   })
 })

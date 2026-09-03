@@ -28,8 +28,9 @@ const mapView = createMapView({
 }, null)
 
 describe('annotation constants', () => {
-  it('color palette has 8 hex colors', () => {
-    expect(ANNOT_COLORS).toHaveLength(8)
+  it('color palette has 9 hex colors including pure black', () => {
+    expect(ANNOT_COLORS).toHaveLength(9)
+    expect(ANNOT_COLORS).toContain('#000000')
     for (const c of ANNOT_COLORS) expect(c).toMatch(/^#[0-9a-f]{6}$/)
   })
   it('width slider bounds are sane', () => {

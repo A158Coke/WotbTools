@@ -708,6 +708,12 @@ export default {
             "$ref": "#/$defs/PointsSample"
           }
         },
+        "baseStates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BaseStateTransition"
+          }
+        },
         "limitations": {
           "type": "array",
           "items": {
@@ -1306,6 +1312,62 @@ export default {
         "points": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "BaseStateTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeSec",
+        "baseId",
+        "ownerTeam",
+        "capturingTeam",
+        "captureProgress"
+      ],
+      "properties": {
+        "timeSec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "baseId": {
+          "type": "string",
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "ownerTeam": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "enum": [
+            1,
+            2,
+            null
+          ]
+        },
+        "capturingTeam": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "enum": [
+            1,
+            2,
+            null
+          ]
+        },
+        "captureProgress": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 99
         }
       }
     },

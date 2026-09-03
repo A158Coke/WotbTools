@@ -2,7 +2,7 @@
  * Battle Playback 标签布局纯函数。
  *
  * UX contract：用户选择显示的 TankName / PlayerName / HP HUD 永不因碰撞而隐藏。
- * 碰撞只允许有限的垂直 lane 位移；如果所有 lane 仍冲突，则接受 overlap。
+ * 碰撞只作用于 model box；标签、名称与 HP 不参与 model collision。
  * marker / selected / destroyed / recorder 仅作为 lane 评分障碍，不再驱动 visibility。
  */
 
@@ -30,6 +30,95 @@ export const DESTROYED_X_PX = 30
 
 /** Stable lane offsets in screen px. Never hide when all lanes overlap. */
 export const LABEL_LANES_PX = Object.freeze([0, -10, 10, -20])
+
+const TANK_COLLISION_PADDING = 1.02
+const TANK_COLLISION_GRID_STEP_PX = 2
+// §review: 回退到 bounded 小偏移（desktop 12px / mobile 10px）。canonical position fidelity 优先，
+// residual model overlap 是允许结果；不允许 marker 因碰撞偏移整整一个车身距离。
+const TANK_COLLISION_MAX_OFFSET_DESKTOP_PX = 12
+const TANK_COLLISION_MAX_OFFSET_MOBILE_PX = 10
+
+function collisionBox(item, offset) {
+  return {
+    x: item.x + offset.x - item.width / 2,
+    y: item.y + offset.y - item.height / 2,
+    w: item.width,
+    h: item.height,
+  }
+}
+
+/**
+ * Soft, bounded presentation-only tank geometry layout. The input coordinates are screen
+ * pixels; returned offsets never mutate canonical positions. Model overlap is a cost, not
+ * a hard constraint: once the small offset budget is exhausted, residual overlap is kept
+ * rather than moving a marker away from its canonical position.
+ */
+export function computeTankCollisionLayout(items, previous = new Map(), options = {}) {
+  if (!Array.isArray(items)) return new Map()
+  const mobile = options?.mobile === true
+  const maxOffset = Number.isFinite(options?.maxOffsetPx) && options.maxOffsetPx >= 0
+    ? Math.min(options.maxOffsetPx, mobile ? TANK_COLLISION_MAX_OFFSET_MOBILE_PX : TANK_COLLISION_MAX_OFFSET_DESKTOP_PX)
+    : (mobile ? TANK_COLLISION_MAX_OFFSET_MOBILE_PX : TANK_COLLISION_MAX_OFFSET_DESKTOP_PX)
+  const withinOffset = (candidate) => Math.hypot(candidate.x, candidate.y) <= maxOffset + 1e-6
+  const ordered = items.filter(item => item && item.accountId != null
+    && Number.isFinite(item.x) && Number.isFinite(item.y)
+    && Number.isFinite(item.width) && Number.isFinite(item.height))
+    .map(item => ({
+      ...item,
+      width: Math.max(1, item.width) * TANK_COLLISION_PADDING,
+      height: Math.max(1, item.height) * TANK_COLLISION_PADDING,
+    }))
+    .sort((a, b) => (Number(Boolean(b.selected)) - Number(Boolean(a.selected)))
+      || (Number(Boolean(b.recorder)) - Number(Boolean(a.recorder)))
+      || String(a.accountId).localeCompare(String(b.accountId)))
+  const offsets = new Map()
+  const placed = []
+  const step = TANK_COLLISION_GRID_STEP_PX
+  const candidates = [{ x: 0, y: 0 }]
+  const maxRing = Math.ceil(maxOffset / step)
+  for (let ring = 1; ring <= maxRing; ring += 1) {
+    for (let gridX = -ring; gridX <= ring; gridX += 1) {
+      for (let gridY = -ring; gridY <= ring; gridY += 1) {
+        if (Math.max(Math.abs(gridX), Math.abs(gridY)) !== ring) continue
+        candidates.push({ x: gridX * step, y: gridY * step })
+      }
+    }
+  }
+
+  for (const item of ordered) {
+    const prior = previous instanceof Map ? previous.get(item.accountId) : null
+    const candidatesForItem = [
+      ...(prior && Number.isFinite(prior.x) && Number.isFinite(prior.y) && withinOffset(prior)
+        ? [prior]
+        : []),
+      ...candidates,
+    ]
+    let best = null
+    let bestScore = Number.POSITIVE_INFINITY
+    for (const candidate of candidatesForItem) {
+      if (!withinOffset(candidate)) continue
+      const box = collisionBox(item, candidate)
+      const overlap = placed.reduce((sum, other) => sum + overlapArea(box, other.box), 0)
+      const displacement = Math.hypot(candidate.x, candidate.y)
+      // Reuse a valid previous offset strongly enough to prevent frame-to-frame
+      // swapping; a meaningful overlap cost still wins over stale history.
+      const stability = prior && candidate.x === prior.x && candidate.y === prior.y ? -25 : 0
+      const score = overlap * 100 + displacement + stability
+      if (score < bestScore) {
+        bestScore = score
+        best = candidate
+      }
+    }
+    if (!best) {
+      best = candidatesForItem.find(withinOffset) || { x: 0, y: 0 }
+    }
+    const offset = { x: best.x, y: best.y }
+    const box = collisionBox(item, offset)
+    offsets.set(item.accountId, offset)
+    placed.push({ box })
+  }
+  return offsets
+}
 
 export function estimateLabelWidth(text, fontSizePx, maxWidthPx = Infinity) {
   if (text == null || text === '') return 0

@@ -408,6 +408,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PointsSample'
+        # Additive, backward-compatible wire field (PR #229 rolling deployment):
+        # not required — the previous production contract omits it, and the frontend
+        # contract boundary normalizes a missing value to [] so older responses still
+        # validate. Newer producers MUST still emit baseStates: [] or real transitions.
+        baseStates:
+          type: array
+          items:
+            $ref: '#/components/schemas/BaseStateTransition'
         limitations:
           type: array
           items: { type: string }
@@ -599,6 +607,16 @@ components:
         timeSec: { type: number, minimum: 0 }
         team: { type: integer }
         points: { type: integer, minimum: 0 }
+    BaseStateTransition:
+      type: object
+      additionalProperties: false
+      required: [timeSec, baseId, ownerTeam, capturingTeam, captureProgress]
+      properties:
+        timeSec: { type: number, minimum: 0 }
+        baseId: { type: string, enum: [A, B, C, D] }
+        ownerTeam: { type: [integer, 'null'], enum: [1, 2, null] }
+        capturingTeam: { type: [integer, 'null'], enum: [1, 2, null] }
+        captureProgress: { type: [integer, 'null'], minimum: 0, maximum: 99 }
     ApiError:
       type: object
       additionalProperties: false

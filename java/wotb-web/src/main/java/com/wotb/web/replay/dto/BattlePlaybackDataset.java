@@ -23,6 +23,7 @@ import java.util.Map;
  * @param recorderAccountId 录像者账号（null = 未解析）
  * @param vehicles          参战车辆转录（稀疏 transition tracks）
  * @param pointsSamples     争霸赛实时点数广播（battle-relative 秒升序）
+ * @param baseStates        争霸赛基地实时状态（wrapper12；battle-relative 秒升序）
  * @param limitations       content limitations（如 BATTLE_RELATIVE_TIME_UNAVAILABLE）；空 = 无限制
  * @param arenaBonusType    战斗模式（meta.json#arenaBonusType 原值；null = 未知）。
  *                          仅携带该权威类别事实（前端用于标准/争霸事件过滤），<b>不</b>复制 MapOverview。
@@ -38,6 +39,7 @@ public record BattlePlaybackDataset(
         List<VehiclePlaybackTrack> vehicles,
         List<BattleEvent> events,
         List<PointsSample> pointsSamples,
+        List<BaseStateTransition> baseStates,
         List<String> limitations,
         Capability capability,
         Integer arenaBonusType
@@ -52,6 +54,7 @@ public record BattlePlaybackDataset(
         vehicles = vehicles == null ? List.of() : List.copyOf(vehicles);
         events = events == null ? List.of() : List.copyOf(events);
         pointsSamples = pointsSamples == null ? List.of() : List.copyOf(pointsSamples);
+        baseStates = baseStates == null ? List.of() : List.copyOf(baseStates);
         limitations = limitations == null ? List.of() : List.copyOf(limitations);
         // capability is a projection of limitations, never an independent truth.
         // A null value remains readable for old artifacts, but an explicit contradictory
@@ -70,7 +73,7 @@ public record BattlePlaybackDataset(
             List<PointsSample> pointsSamples,
             List<String> limitations) {
         this(durationSec, mapCode, friendlyTeam, recorderAccountId, vehicles, events,
-                pointsSamples, limitations, null, null);
+                pointsSamples, List.of(), limitations, null, null);
     }
 
     /** 9-arg convenience constructor（携带能力），arenaBonusType 未知。 */
@@ -85,7 +88,23 @@ public record BattlePlaybackDataset(
             List<String> limitations,
             Capability capability) {
         this(durationSec, mapCode, friendlyTeam, recorderAccountId, vehicles, events,
-                pointsSamples, limitations, capability, null);
+                pointsSamples, List.of(), limitations, capability, null);
+    }
+
+    /** 10-arg compatibility constructor（既有 caller 携带 arenaBonusType）；基地状态默认为空。 */
+    public BattlePlaybackDataset(
+            double durationSec,
+            String mapCode,
+            Integer friendlyTeam,
+            Long recorderAccountId,
+            List<VehiclePlaybackTrack> vehicles,
+            List<BattleEvent> events,
+            List<PointsSample> pointsSamples,
+            List<String> limitations,
+            Capability capability,
+            Integer arenaBonusType) {
+        this(durationSec, mapCode, friendlyTeam, recorderAccountId, vehicles, events,
+                pointsSamples, List.of(), limitations, capability, arenaBonusType);
     }
 
     /**
@@ -257,6 +276,16 @@ public record BattlePlaybackDataset(
     }
 
     public record PointsSample(double timeSec, int team, int points) {
+    }
+
+    /** One backend-reconstructed full-state transition; protocol indexes never cross this boundary. */
+    public record BaseStateTransition(
+            double timeSec,
+            String baseId,
+            Integer ownerTeam,
+            Integer capturingTeam,
+            Integer captureProgress
+    ) {
     }
 
     /** 置信度枚举（DTO 层稳定英文码，前端本地化）；由 projector 从 domain confidence 映射。 */

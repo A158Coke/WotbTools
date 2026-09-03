@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpServer;
 import com.wotb.web.config.AiModelProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
@@ -25,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * AI usage / AI provider failure）必须不含 API key、Authorization、prompt、completion、
  * 回放内容等敏感文本；只记录低基数 metadata。
  */
+@Disabled("DS API gateway logging test; run only in the dedicated network-capable CI job")
 class SpringAiChatGatewaySensitiveLogTest {
 
     private static final String FAKE_API_KEY = "sk-test-sensitive-1234567890abcdef";

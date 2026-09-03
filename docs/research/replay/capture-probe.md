@@ -54,8 +54,8 @@ wrapper12 field1 = zero-based base index          PROVEN
 wrapper12 field2 = current owner team             PROVEN
 wrapper12 field3 = current capturing team         PROVEN
 wrapper12 field4 = realtime capture progress      PROVEN
-wrapper12 field5 = contested/interruption candidate PARTIAL
-wrapper12 field6 = recorder-local capture participation family STRONG PARTIAL
+wrapper12 field5 = UNKNOWN (raw diagnostic only)
+wrapper12 field6 = UNKNOWN (raw diagnostic only)
 ```
 
 113 个独立基地易主事件都能从高位 captureProgress (`95..99`) 闭环到随后约 0.5 秒的 ownerTeam 切换。
@@ -77,4 +77,6 @@ final player totals = settlement #32/#33
 “不升级 CAPTURE_TIMELINE；回放只有结算级占点信息”
 ```
 
-正确的新结论请以 [`wrapper12-supremacy-capture-state.md`](wrapper12-supremacy-capture-state.md) 为准。
+正确的新结论请以 [`supremacy-base-state.md`](supremacy-base-state.md) 为准；旧的
+`wrapper12-supremacy-capture-state.md` 也仅保留为 superseded index，不得把 field5/6
+提升为 production semantics。

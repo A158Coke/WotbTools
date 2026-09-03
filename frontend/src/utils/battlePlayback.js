@@ -2,8 +2,8 @@
 
 import { positionAtV2, positionCoveredAtV2 } from './battlePlaybackV2.js'
 
-/** 相邻可信位置的最大间隔（秒）；超过则断线，禁止穿线插值。 */
-const OBSERVED_GAP_SEC = 5
+/** Legacy point-route interpolation limit. V2 routes use canonical segment boundaries. */
+const LEGACY_OBSERVED_GAP_SEC = 5
 
 /**
  * 某时刻车辆位置：
@@ -16,7 +16,8 @@ export function positionAt(points, t) {
   if (!points || points.length === 0 || !Number.isFinite(t)) return null
   if (t < points[0].timeSec - 1e-6) return null
   // t 恰为采样点（含 gap 后重新上报的首点）：直接返回该点本身；
-  // gap > OBSERVED_GAP_SEC 的断线判定只用于「两点之间」的插值，不适用于落在采样点上的时刻。
+  // gap > LEGACY_OBSERVED_GAP_SEC 的断线判定只用于「两点之间」的插值，
+  // 不适用于落在采样点上的时刻。
   if (t <= points[0].timeSec + 1e-6) {
     return { x: points[0].x, y: points[0].y, timeSec: points[0].timeSec }
   }
@@ -28,7 +29,7 @@ export function positionAt(points, t) {
         return { x: next.x, y: next.y, timeSec: next.timeSec }
       }
       const gap = next.timeSec - prev.timeSec
-      if (gap > OBSERVED_GAP_SEC) return null
+      if (gap > LEGACY_OBSERVED_GAP_SEC) return null
       const ratio = gap <= 0 ? 0 : Math.min(1, Math.max(0, (t - prev.timeSec) / gap))
       return {
         x: prev.x + (next.x - prev.x) * ratio,
@@ -128,7 +129,7 @@ export function lastKnownPosition(points, t) {
 }
 
 /**
- * 事件时刻严格可信位置：仅当 t 落在该车路线首末点之间、所在相邻点 gap ≤ OBSERVED_GAP_SEC
+ * 事件时刻严格可信位置：仅当 t 落在该车路线首末点之间、所在相邻点 gap ≤ LEGACY_OBSERVED_GAP_SEC
  * （即 positionAt 返回插值/采样点本身，timeSec === t）且坐标为有限值时返回。
  * 末点之后的最后已知位置、gap 内、首点之前与非有限坐标一律 null——
  * 炮线端点禁止用最后已知位置伪造射击位置。
@@ -149,6 +150,79 @@ function trustedRoutePosition(route, t) {
       && Math.abs(p.timeSec - t) <= 1e-6 ? p : null
   }
   return trustedPositionAt(route?.points, t)
+}
+
+/**
+ * Build the last battle-relative two seconds of observed positions for each vehicle.
+ * V2 segment boundaries and interpolationAllowed are the only interpolation authority:
+ * segments are never joined, future samples are never emitted, and LAST_KNOWN/unknown
+ * intervals do not extend the visible trail. The current endpoint is queried through
+ * canonical segment interpolation when the current time is inside that segment.
+ */
+export function recentPositionTrails(vehicles, nowSec, windowSec = 2) {
+  if (!Array.isArray(vehicles) || !Number.isFinite(nowSec)) return []
+  const span = Number.isFinite(windowSec) && windowSec > 0 ? windowSec : 2
+  const start = nowSec - span
+  const trails = []
+  for (const vehicle of vehicles) {
+    for (const segment of vehicle?.positionSegments || []) {
+      if (segment?.knowledge !== 'OBSERVED'
+        || segment.interpolationAllowed === false
+        || !Array.isArray(segment.samples)) continue
+      const segmentStart = Number.isFinite(segment.startSec) ? segment.startSec : Number.NEGATIVE_INFINITY
+      const segmentEnd = Number.isFinite(segment.endSec) ? segment.endSec : Number.POSITIVE_INFINITY
+      const samples = segment.samples
+        .filter(sample => sample && Number.isFinite(sample.timeSec)
+          && Number.isFinite(sample.x) && Number.isFinite(sample.y)
+          && sample.timeSec >= segmentStart - 1e-6
+          && sample.timeSec <= segmentEnd + 1e-6)
+        .sort((a, b) => a.timeSec - b.timeSec)
+      if (samples.length === 0) continue
+
+      const path = []
+      const first = samples[0]
+      const last = samples[samples.length - 1]
+      if (start > first.timeSec + 1e-6 && start < last.timeSec - 1e-6) {
+        const clippedStart = positionAtV2([segment], start)
+        if (clippedStart && Math.abs(clippedStart.timeSec - start) <= 1e-6) {
+          path.push({ ...clippedStart, timeSec: start })
+        }
+      }
+      path.push(...samples.filter(sample => sample.timeSec >= start - 1e-6
+        && sample.timeSec <= nowSec + 1e-6))
+      if (nowSec > first.timeSec + 1e-6 && nowSec < last.timeSec - 1e-6) {
+        const current = positionAtV2([segment], nowSec)
+        if (current && Math.abs(current.timeSec - nowSec) <= 1e-6) {
+          path.push({ ...current, timeSec: nowSec })
+        }
+      }
+      path.sort((a, b) => a.timeSec - b.timeSec)
+      const uniquePath = path.filter((point, index) => index === 0
+        || Math.abs(point.timeSec - path[index - 1].timeSec) > 1e-6)
+      for (let index = 1; index < uniquePath.length; index += 1) {
+        const from = uniquePath[index - 1]
+        const to = uniquePath[index]
+        const age = Math.max(0, nowSec - to.timeSec)
+        trails.push({
+          accountId: vehicle.accountId,
+          friendly: vehicle.friendly,
+          from,
+          to,
+          opacity: 0.12 + 0.58 * Math.max(0, 1 - age / span),
+        })
+      }
+      if (uniquePath.length === 1) {
+        const point = uniquePath[0]
+        trails.push({
+          accountId: vehicle.accountId,
+          friendly: vehicle.friendly,
+          point,
+          opacity: 0.2 + 0.5 * Math.max(0, 1 - Math.max(0, nowSec - point.timeSec) / span),
+        })
+      }
+    }
+  }
+  return trails
 }
 
 /** 炮线可见窗口基础时长（真实秒）：实际窗口 = TRACER_BASE_SEC × 播放倍速——1×/2×/4× 各约 0.4s 真实时间
@@ -288,23 +362,41 @@ export function zoomViewAt(view, px, py, factor, minScale = VIEW_MIN_SCALE, maxS
 }
 
 /**
- * 平移钳制：保证地图内容不会完全滑出视口（viewW/viewH 为视口 CSS 尺寸）。
- * scale≤1 时复位；尺寸未知（≤0，如无布局的测试环境）时不做钳制。
+ * 平移钳制：基于「可见 stage（viewW/viewH）」与「rendered map rect（mapW/mapH）」。
+ * - 地图（mapW*scale）大于 stage → 允许平移（tx/ty ∈ [stage - scaled, 0]），
+ *   即使 scale≤1（cover 下被裁切区域必须可达）。
+ * - 地图小于/等于 stage → 居中（tx = (viewW - scaledW)/2）。
+ * pan bounds 依据 stage 与 rendered map rect，而非 map 自身尺寸。尺寸未知（≤0）时不做钳制。
  */
-export function clampViewPan(view, viewW, viewH) {
+export function clampViewPan(view, viewW, viewH, mapW = viewW, mapH = viewH) {
   if (!view || !Number.isFinite(view.scale)) return view
-  if (view.scale <= 1) return { scale: view.scale, tx: 0, ty: 0 }
   const s = view.scale
-  const noW = !Number.isFinite(viewW) || viewW <= 0
-  const noH = !Number.isFinite(viewH) || viewH <= 0
-  if (noW && noH) return { scale: s, tx: view.tx, ty: view.ty }
-  const txMin = noW ? -Infinity : viewW * (1 - s)
-  const tyMin = noH ? -Infinity : viewH * (1 - s)
-  return {
-    scale: s,
-    tx: noW ? view.tx : Math.min(0, Math.max(txMin, view.tx)),
-    ty: noH ? view.ty : Math.min(0, Math.max(tyMin, view.ty))
+  const known = Number.isFinite(viewW) && viewW > 0 && Number.isFinite(viewH) && viewH > 0
+    && Number.isFinite(mapW) && mapW > 0 && Number.isFinite(mapH) && mapH > 0
+  if (!known) {
+    // 尺寸未知（如无布局的测试环境）：scale<=1 复位到基视图；scale>1 按旧 viewW/viewH clamp。
+    if (s <= 1) return { scale: s, tx: 0, ty: 0 }
+    const noW = !Number.isFinite(viewW) || viewW <= 0
+    const noH = !Number.isFinite(viewH) || viewH <= 0
+    const txMin = noW ? -Infinity : viewW * (1 - s)
+    const tyMin = noH ? -Infinity : viewH * (1 - s)
+    return {
+      scale: s,
+      tx: noW ? view.tx : Math.min(0, Math.max(txMin, view.tx)),
+      ty: noH ? view.ty : Math.min(0, Math.max(tyMin, view.ty)),
+    }
   }
+  // 尺寸已知：基于可见 stage 与 rendered map rect 的 bounds。
+  // cover（地图大于 stage）时 scale<=1 也可平移（被裁区域可达）；地图小于 stage 时居中。
+  const scaledW = mapW * s
+  const scaledH = mapH * s
+  let tx = view.tx
+  let ty = view.ty
+  if (scaledW > viewW) tx = Math.min(0, Math.max(viewW - scaledW, tx))
+  else tx = (viewW - scaledW) / 2
+  if (scaledH > viewH) ty = Math.min(0, Math.max(viewH - scaledH, ty))
+  else ty = (viewH - scaledH) / 2
+  return { scale: s, tx, ty }
 }
 /**
  * 播放时钟从 fromSec 前进到 toSec 时跨过的（新消费）事件：严格 > from（事件恰在
@@ -326,10 +418,10 @@ export const GHOST_MS = 600
 export const FLASH_MS = 280
 /** 击毁 burst（真实 ms）。 */
 export const BURST_MS = 700
-/** kill feed 生命周期（真实 ms约 4–6s）。 */
-export const KILL_FEED_MS = 5000
-/** kill feed 最多保留 3 条；新条目加入时淘汰最旧条目。 */
-const KILL_FEED_MAX = 3
+/** Event Banner 生命周期（真实 ms，§3：Destroyed 停留约 4s）。 */
+export const KILL_FEED_MS = 4000
+/** Event Banner 最多同时显示 2 条；第 3 条及以后排队（activeFeed 提升展示，不 slice 挤出）。 */
+const KILL_FEED_MAX = 2
 
 /**
  * 过滤仍未过期的 transient 项：item 需携带 bornRealMs（performance.now 基准）与 durationMs。
@@ -342,9 +434,33 @@ export function transientsActive(items, nowRealMs) {
       && nowRealMs - i.bornRealMs < i.durationMs)
 }
 
-/** kill feed 入队：尾部追加，超限从最旧挤出（不合并多条 KILL）。 */
-export function pushFeed(items, entry, max = KILL_FEED_MAX) {
-  const limit = Number.isFinite(max) && max > 0 ? Math.floor(max) : 0
-  if (limit <= 0) return []
-  return [...items, entry].slice(-limit)
+/**
+ * Event Banner 真实队列：返回最多 max 条「正在展示」的条目。
+ * - 展示起点由 shownAt（id → shownAtRealMs Map）记录；duration 从展示起点算。
+ * - 排队条目（shownAt 为空）且有展示空位时提升为「正在展示」（此刻起算 duration）。
+ * - 绝不 slice 掉尚未展示完的旧事件：第 3 条及以后等待，待到空位才展示。
+ */
+export function activeFeed(items, nowRealMs, shownAt, max = KILL_FEED_MAX) {
+  if (!Array.isArray(items) || !Number.isFinite(nowRealMs)) return []
+  const shownMs = (id) => (shownAt && shownAt.get(id)) ?? null
+  const visible = (it) => {
+    const s = shownMs(it.id)
+    return s != null && Number.isFinite(it.durationMs) && nowRealMs - s < it.durationMs
+  }
+  const active = items.filter(visible)
+  let slots = Math.max(0, max - active.length)
+  for (const it of items) {
+    if (slots <= 0) break
+    if (shownMs(it.id) == null) {
+      shownAt.set(it.id, nowRealMs)
+      active.push(it)
+      slots--
+    }
+  }
+  return active.slice(0, max)
+}
+
+/** Event Banner 入队：只追加（排队展示由 activeFeed 决定，不直接 slice 挤掉旧事件）。 */
+export function pushFeed(items, entry) {
+  return [...items, entry]
 }
