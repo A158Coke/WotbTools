@@ -540,6 +540,8 @@ function mapRenderRect() {
 //（不维护手工 isFullscreen = !isFullscreen，ESC/浏览器 UI 退出后状态自动同步）----
 const pbRoot = ref(null)
 const isFullscreen = ref(false)
+// §3：大桌面（>=1200px）即使不进入 fullscreen，也用持久 rail|map|details 三列布局。
+const wideLayout = ref(false)
 const fullscreenSupported = computed(() =>
   typeof document !== 'undefined'
   && pbRoot.value != null
@@ -547,6 +549,10 @@ const fullscreenSupported = computed(() =>
 )
 let playbackLifecycleActive = true
 let orientationRequestToken = 0
+let wideLayoutQuery = null
+function onWideLayoutChange(event) {
+  wideLayout.value = !!(event && event.matches)
+}
 function onFullscreenChange() {
   isFullscreen.value = !!(typeof document !== 'undefined' && document.fullscreenElement)
   if (!isFullscreen.value) {
@@ -1049,6 +1055,14 @@ onMounted(() => {
   if (typeof document !== 'undefined') {
     document.addEventListener('fullscreenchange', onFullscreenChange)
   }
+  // §3：大桌面三列布局 —— 以 matchMedia 为事实源，监听宽度跨 1200px 边界。
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    wideLayoutQuery = window.matchMedia('(min-width: 1200px)')
+    wideLayout.value = !!wideLayoutQuery.matches
+    if (typeof wideLayoutQuery.addEventListener === 'function') {
+      wideLayoutQuery.addEventListener('change', onWideLayoutChange)
+    }
+  }
   window.addEventListener('keydown', onKeydown)
 })
 
@@ -1199,6 +1213,11 @@ onBeforeUnmount(() => {
       }
     }
   }
+  // §3：清理大桌面三列布局的 matchMedia 监听。
+  if (wideLayoutQuery && typeof wideLayoutQuery.removeEventListener === 'function') {
+    wideLayoutQuery.removeEventListener('change', onWideLayoutChange)
+  }
+  wideLayoutQuery = null
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
@@ -1807,7 +1826,7 @@ const mapStyle = computed(() => ({
         <PlaybackSidePanel
           :panel="activePanel"
           :groups="panelGroups"
-          :persistent="isFullscreen"
+          :persistent="isFullscreen || wideLayout"
           @update:panel="activePanel = $event"
           @close="closePanel"
         >

@@ -495,5 +495,11 @@ describe('eventsCrossed / transients', () => {
     expect(clampViewPan({ scale: 0.5, tx: 999, ty: 999 }, 1600, 900, 1600, 1600)).toEqual({ scale: 0.5, tx: 400, ty: 50 })
     // 地图小于 stage（窄图宽视口）→ 居中
     expect(clampViewPan({ scale: 1, tx: 0, ty: 0 }, 1600, 900, 600, 900)).toEqual({ scale: 1, tx: 500, ty: 0 })
+    // 超宽视口（3440×1440）cover-fill：地图宽=stage 宽、高度超高 → 纵向被裁区域可达（底边 ty=-2000 可到），
+    // 横向无裁切则居中（tx=0）。这是对「宽视口几何」的真实回归：没被 clamp 钉死在 tx/ty=0。
+    expect(clampViewPan({ scale: 1, tx: 0, ty: -5000 }, 3440, 1440, 3440, 3440)).toEqual({ scale: 1, tx: 0, ty: -2000 })
+    expect(clampViewPan({ scale: 1, tx: 999, ty: 0 }, 3440, 1440, 3440, 3440).tx).toBe(0)
+    // 宽视口拟合（地图高 < stage 高）→ 纵向居中，不可平移。
+    expect(clampViewPan({ scale: 1, tx: 0, ty: 999 }, 3440, 1440, 3440, 900).ty).toBe(270)
   })
 })
