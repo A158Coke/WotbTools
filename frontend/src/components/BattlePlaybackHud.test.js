@@ -30,6 +30,21 @@ describe('BattlePlaybackHud', () => {
     expect(wrapper.find('[data-test="pb-hp-fill-friendly"]').attributes('style')).toContain('width: 50.0%')
   })
 
+  it('shows full integer HP (no k abbreviation) even for large values (§11)', () => {
+    const wrapper = mountHud({
+      friendlyHp: hp('EXACT', 22305, 21446),
+      enemyHp: hp('EXACT', 0, 21446),
+      friendlyPoints: 584,
+      enemyPoints: 0,
+    })
+
+    // 完整整数，而非 "22.3k" / "1.5k"
+    expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('22305 / 21446')
+    expect(wrapper.find('[data-test="pb-hp-value-enemy"]').text()).toBe('0 / 21446')
+    expect(wrapper.find('[data-test="pb-hud-score"]').text()).toBe('584 : 0')
+    expect(wrapper.find('[data-test="pb-hud"]').text()).toContain('22305')
+  })
+
   it('does not invent a denominator for partial or unknown health', () => {
     const wrapper = mountHud({
       friendlyHp: hp('PARTIAL', 800, 0),

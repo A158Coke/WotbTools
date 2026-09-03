@@ -1635,6 +1635,8 @@ const gridRegions = computed(() => {
 
 const mapStyle = computed(() => ({
   '--pb-map-aspect': `${mapView.value.W} / ${mapView.value.H}`,
+  // Numeric aspect ratio (W/H) for fullscreen contain sizing (aspect-ratio needs a unit string).
+  '--pb-map-ratio': String(mapView.value.W / mapView.value.H),
   // Battle Playback 6x6 网格：用显式强对比线，保证每一列可见地隔开（热力图鸟瞰用弱 gridStroke）。
   '--map-grid-stroke': palette.value.gridStrokeStrong,
   '--map-region-stroke': palette.value.regionStroke,

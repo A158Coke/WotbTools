@@ -355,10 +355,12 @@ const hpClasses = computed(() => ({
     ></span>
 
     <!-- HP HUD（docs/features/battle-playback.md HP HUD）：HP 数字 + 定宽 bar，
-         位于 marker 上方、标签块之上（HP 优先级最高）；last-known 弱化、destroyed 归零、
+         位于 marker 上方、标签块之上（HP 优先级最高）；last-known 弱化；
+         destroyed 由权威 lifeState 判定（st.destroyed，非 hp===0）→ 隐藏单车
+         HP number+bar（§18/§19），保留 ✕ / 灰化 marker / labels / selected / recorder；
          UNKNOWN 显示 —；ghost/flash 由外层 transient 状态驱动；hpVisible=false 整体隐藏 -->
     <div
-      v-if="hpVisible && hp && !label.hpHidden"
+      v-if="hpVisible && hp && !label.hpHidden && !st.destroyed"
       class="pb-hp-hud"
       :class="hpClasses"
       :style="hpHudStyle"

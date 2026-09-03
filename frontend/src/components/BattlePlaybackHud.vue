@@ -19,8 +19,9 @@ function finiteNumber(value) {
 function compactNumber(value) {
   const n = finiteNumber(value)
   if (n === null) return '—'
-  if (Math.abs(n) < 1000) return String(Math.round(n))
-  return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
+  // §11：HUD 禁止缩写（1k / 22.3k），必须显示完整整数（1000 / 22305）；
+  // 空间不足时靠 responsive layout 调整，不牺牲 authoritative value 精度。
+  return String(Math.round(n))
 }
 
 function wideNumber(value) {
