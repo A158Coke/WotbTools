@@ -1,4 +1,4 @@
-name: Probe clean minimap source
+name: Probe authoritative WGC map source
 
 on:
   push:
@@ -14,34 +14,65 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe candidate clean-map URLs
+      - name: Install WGC partial extractor
         shell: bash
         run: |
-          set -u
-          mkdir -p probe
-          urls=(
-            "https://stratsketch.com/img/games/wotb/maps/black_goldville.webp"
-            "https://stratsketch.com/img/games/wotb/maps/mountain.webp"
-            "https://stratsketch.com/img/games/wotb/maps/21_mountain_mnt.webp"
-          )
-          i=0
-          for url in "${urls[@]}"; do
-            i=$((i+1))
-            out="probe/candidate-${i}.webp"
-            echo "--- $url"
-            if curl -fL --retry 2 --connect-timeout 10 --max-time 60 "$url" -o "$out"; then
-              file "$out"
-              sha256sum "$out"
-              ls -lh "$out"
-            else
-              rm -f "$out"
-              echo "MISS"
+          set -euxo pipefail
+          git clone --depth 1 https://github.com/Monstrofil/wgc-download.git /tmp/wgc-download
+          python -m pip install /tmp/wgc-download
+
+      - name: Find and extract Black Goldville colormap
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p probe/extracted
+          found=""
+          found_part=""
+          for part in client sdcontent; do
+            if wgc-download extract WOTB.WW.PRODUCTION "$part" --list > "probe/${part}-list.txt" 2>&1; then
+              match=$(grep -Ei '21_mountain_mnt/.*/[^/]*_colormap[^/]*\.dds\.dvpl$' "probe/${part}-list.txt" | tail -n 1 | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' || true)
+              if [ -n "$match" ]; then
+                found="$match"
+                found_part="$part"
+                break
+              fi
             fi
           done
+          echo "FOUND_PART=$found_part"
+          echo "FOUND_PATH=$found"
+          test -n "$found"
+          wgc-download extract WOTB.WW.PRODUCTION "$found_part" "$found" -d probe/extracted
+          find probe/extracted -type f -maxdepth 12 -print -exec ls -lh {} \;
+
+      - name: Decode DVPL/DDS to PNG
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 https://github.com/Revenant30102000/wotblitz-mcp.git /tmp/wotblitz-mcp
+          cd /tmp/wotblitz-mcp
+          npm ci
+          cat > /tmp/decode-map.ts <<'TS'
+          import { readFile, writeFile } from 'node:fs/promises';
+          import { decodeDVPL } from '/tmp/wotblitz-mcp/src/dvpl/reader.ts';
+          import { decodeDDS, getDDSInfo } from '/tmp/wotblitz-mcp/src/decoders/dds.ts';
+          const input = process.argv[2];
+          const output = process.argv[3];
+          const dvpl = await readFile(input);
+          const dds = decodeDVPL(dvpl);
+          console.log(getDDSInfo(dds));
+          const png = await decodeDDS(dds);
+          await writeFile(output, png);
+          TS
+          input=$(find "$GITHUB_WORKSPACE/probe/extracted" -type f -name '*.dvpl' | head -n 1)
+          npx tsx /tmp/decode-map.ts "$input" "$GITHUB_WORKSPACE/probe/mountain-wgc.png"
+          file "$GITHUB_WORKSPACE/probe/mountain-wgc.png"
+          sha256sum "$GITHUB_WORKSPACE/probe/mountain-wgc.png"
+          ls -lh "$GITHUB_WORKSPACE/probe/mountain-wgc.png"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: map-source-probe
+          name: map-wgc-source-probe
           path: probe
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 1
