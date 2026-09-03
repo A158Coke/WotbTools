@@ -8,35 +8,35 @@
 
 | 内部 code（meta.json mapName） | 中文名 | 英文名 | 语义 mapId | 素材（逻辑画布 WxH） | 状态 |
 |---|---|---|---|---|---|
-| amigosville | 乡间溪流 | Falls Creek | 05_amigosville_am | falls-creek.png (768x765) | ✅ 有素材 |
-| canal | 运河尽头 | Canal | 18_canal_cn | canal.png (778x772) | ✅ 有素材 |
-| canyon | 夺命峡谷 | Canyon | 25_canyon_ca | canyon.png (769x768) | ✅ 有素材 |
-| desert_train | 黄沙荒漠 | Desert Sands | 02_desert_train_dt | desert-sands.png (765x772) | ✅ 有素材 |
-| erlenberg | 米德尔堡 | Middleburg | 03_erlenberg_er | middleburg.png (763x768) | ✅ 有素材 |
-| faust | 浮士德 | Faust | 32_faust_fa_night | faust.png (769x763) | ✅ 有素材 |
-| forgecity | 都市港口 | New Bay | 34_forgecity_fc | new-bay.png (768x780) | ✅ 有素材 |
-| fort | 绝望堡垒 | Fort Despair | 07_fort_ft | fort-despair.png (766x772) | ✅ 有素材 |
-| himmelsdorf | 锡默尔斯多夫 | Himmelsdorf | 19_himmelsdorf_hm | himmelsdorf.png (768x765) | ✅ 有素材 |
-| holland | 莫伦迪克 | Molendijk | 16_holland_hl | molendijk.png (766x769) | ✅ 有素材 |
+| amigosville | 乡间溪流 | Falls Creek | 05_amigosville_am | falls-creek.png (3072x3060) | ✅ 有素材 |
+| canal | 运河尽头 | Canal | 18_canal_cn | canal.png (3112x3088) | ✅ 有素材 |
+| canyon | 夺命峡谷 | Canyon | 25_canyon_ca | canyon.png (3076x3072) | ✅ 有素材 |
+| desert_train | 黄沙荒漠 | Desert Sands | 02_desert_train_dt | desert-sands.png (3060x3088) | ✅ 有素材 |
+| erlenberg | 米德尔堡 | Middleburg | 03_erlenberg_er | middleburg.png (3052x3072) | ✅ 有素材 |
+| faust | 浮士德 | Faust | 32_faust_fa_night | faust.png (3076x3052) | ✅ 有素材 |
+| forgecity | 都市港口 | New Bay | 34_forgecity_fc | new-bay.png (3072x3120) | ✅ 有素材 |
+| fort | 绝望堡垒 | Fort Despair | 07_fort_ft | fort-despair.png (3064x3088) | ✅ 有素材 |
+| himmelsdorf | 锡默尔斯多夫 | Himmelsdorf | 19_himmelsdorf_hm | himmelsdorf.png (3072x3060) | ✅ 有素材 |
+| holland | 莫伦迪克 | Molendijk | 16_holland_hl | molendijk.png (3064x3076) | ✅ 有素材 |
 | holmeisk | 废弃之地 | Wasteland | 26_holmeisk_hk | — | ⏳ 缺素材 |
-| idle | 峪崆 | Yukon | 08_idle_id | yukon.png (766x769) | ✅ 有素材 |
-| italy | 葡萄庄园 | Vineyards | 22_italy_it | vineyards.png (772x772) | ✅ 有素材 |
-| karelia | 乱石荒野 | Rockfield | 17_karelia_ka | rockfield.png (768x768) | ✅ 有素材 |
-| karieri | 铜矿采集场 | Copperfield | 23_karieri_kr | copperfield.png (763x768) | ✅ 有素材 |
-| lagoon | 海岸礁湖 | Lagoon | 15_lagoon_ln | lagoon.png (765x766) | ✅ 有素材 |
-| lumber | 山麓角逐 | Horrorstadt | 31_lumber_lm | horrorstadt.png (771x772) | ✅ 有素材 |
-| malinovka | 马利诺夫卡 | Winter Malinovka | 12_malinovka_ma | winter-malinovka.png (754x762) | ✅ 有素材 |
-| medvedkovo | 废弃轨道 | Dead Rail | 04_medvedkovo_md | dead-rail.png (763x766) | ✅ 有素材 |
-| milbase | 落日军港 | Yamato Harbor | 24_milibase_mlb | yamato-harbor.png (769x765) | ✅ 有素材 |
-| mountain | 暗金矿窑 | Black Goldville | 21_mountain_mnt | black-goldville.png (771x772) | ✅ 有素材 |
-| neptune | 滩涂阵地 | Normandy | 33_neptune_nt | normandy.png (778x769) | ✅ 有素材 |
-| plant | 幽灵工厂 | Ghost Factory | 11_plant_pn | ghost-factory.png (766x771) | ✅ 有素材 |
-| pliego | 卡斯提拉 | Castilla | 13_pliego_pl | castilla.png (783x777) | ✅ 有素材 |
-| port | 港湾小镇 | Port Bay | 14_port_pt | port-bay.png (769x769) | ✅ 有素材 |
-| rift | 海拉斯 | Hellas | 35_rift_rt | hellas.png (766x765) | ✅ 有素材 |
-| rock | 古老秘境 | Mayan Ruins | 28_rock_rc | mayan-ruins.png (769x771) | ✅ 有素材 |
-| savanna | 沙漠之心 | Oasis Palms | 09_savanna_sv | oasis-palms.png (762x766) | ✅ 有素材 |
-| skit | 海防前沿 | Naval Frontier | 29_skit_sk | naval-frontier.png (762x771) | ✅ 有素材 |
+| idle | 峪崆 | Yukon | 08_idle_id | yukon.png (3064x3076) | ✅ 有素材 |
+| italy | 葡萄庄园 | Vineyards | 22_italy_it | vineyards.png (3088x3088) | ✅ 有素材 |
+| karelia | 乱石荒野 | Rockfield | 17_karelia_ka | rockfield.png (3072x3072) | ✅ 有素材 |
+| karieri | 铜矿采集场 | Copperfield | 23_karieri_kr | copperfield.png (3052x3072) | ✅ 有素材 |
+| lagoon | 海岸礁湖 | Lagoon | 15_lagoon_ln | lagoon.png (3060x3064) | ✅ 有素材 |
+| lumber | 山麓角逐 | Horrorstadt | 31_lumber_lm | horrorstadt.png (3084x3088) | ✅ 有素材 |
+| malinovka | 马利诺夫卡 | Winter Malinovka | 12_malinovka_ma | winter-malinovka.png (3016x3048) | ✅ 有素材 |
+| medvedkovo | 废弃轨道 | Dead Rail | 04_medvedkovo_md | dead-rail.png (3052x3064) | ✅ 有素材 |
+| milbase | 落日军港 | Yamato Harbor | 24_milibase_mlb | yamato-harbor.png (3076x3060) | ✅ 有素材 |
+| mountain | 暗金矿窑 | Black Goldville | 21_mountain_mnt | black-goldville.png (3084x3088) | ✅ 有素材 |
+| neptune | 滩涂阵地 | Normandy | 33_neptune_nt | normandy.png (3112x3076) | ✅ 有素材 |
+| plant | 幽灵工厂 | Ghost Factory | 11_plant_pn | ghost-factory.png (3064x3084) | ✅ 有素材 |
+| pliego | 卡斯提拉 | Castilla | 13_pliego_pl | castilla.png (3132x3108) | ✅ 有素材 |
+| port | 港湾小镇 | Port Bay | 14_port_pt | port-bay.png (3076x3076) | ✅ 有素材 |
+| rift | 海拉斯 | Hellas | 35_rift_rt | hellas.png (3064x3060) | ✅ 有素材 |
+| rock | 古老秘境 | Mayan Ruins | 28_rock_rc | mayan-ruins.png (3076x3084) | ✅ 有素材 |
+| savanna | 沙漠之心 | Oasis Palms | 09_savanna_sv | oasis-palms.png (3048x3064) | ✅ 有素材 |
+| skit | 海防前沿 | Naval Frontier | 29_skit_sk | naval-frontier.png (3048x3084) | ✅ 有素材 |
 
 ## 命名与维护约定
 
