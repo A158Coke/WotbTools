@@ -70,9 +70,11 @@
   z-index: 35;
   pointer-events: none;
 }
-/* §3：annotation toolbar 只覆盖 Map Workspace（右侧停在 Right Details 左缘）。 */
+/* §3：annotation toolbar 只覆盖 Map Workspace（右侧停在 Right Details 左缘），
+   并让出底部 controls/timeline 高度，避免与播放设置重叠。 */
 .battle-playback:fullscreen .pb-annotation-surface {
   right: calc(var(--pb-details-w, min(340px, 32vw)) + 8px);
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 64px);
 }
 
 .battle-playback .pb-annotation-surface .pb-annotation-toolbar {
