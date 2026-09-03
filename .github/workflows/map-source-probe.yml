@@ -1,4 +1,4 @@
-name: Probe multi-volume WGC map source
+name: Locate current WGC minimap assets
 
 on:
   push:
@@ -14,100 +14,72 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Install lightweight extractors
+      - name: Install index reader
         shell: bash
         run: |
           set -euxo pipefail
           git clone --depth 1 https://github.com/Monstrofil/wgc-download.git /tmp/wgc-download
-          python -m pip install /tmp/wgc-download lz4 Pillow
+          python -m pip install /tmp/wgc-download
 
-      - name: Extract and render Black Goldville from current client
+      - name: Search current client archive index
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p probe
-          cat > /tmp/extract_multi.py <<'PY'
-          import io, struct, urllib.request
-          from pathlib import Path
-          import lz4.block
-          from PIL import Image, ImageFilter
+          cat > /tmp/search_multi.py <<'PY'
+          import io, urllib.request
           from wgc_download.api import USER_AGENT
-          from wgc_download.remote7z import parse_archive_index, decompress_entry
-
+          from wgc_download.remote7z import parse_archive_index
           BASE='https://dl-wotb-gc.wargaming.net/wotb.ww.production/wds_default/patches/11.20.0.6254/wotb_11.20.0.6254_client.wgpkg.'
-
-          class MultiRemoteFile(io.RawIOBase):
+          class M(io.RawIOBase):
               BLOCK=256*1024
               def __init__(self):
                   super().__init__(); self.urls=[]; self.sizes=[]; self.starts=[]; total=0
                   for i in range(1,20):
-                      url=BASE+f'{i:03d}'
+                      u=BASE+f'{i:03d}'
                       try:
-                          r=urllib.request.urlopen(urllib.request.Request(url,method='HEAD',headers={'User-Agent':USER_AGENT}),timeout=20)
-                          size=int(r.headers['Content-Length'])
+                          r=urllib.request.urlopen(urllib.request.Request(u,method='HEAD',headers={'User-Agent':USER_AGENT}),timeout=20); z=int(r.headers['Content-Length'])
                       except Exception: break
-                      self.urls.append(url); self.sizes.append(size); self.starts.append(total); total+=size
-                  self._size=total; self._pos=0; self._cache={}
-                  print('volumes',len(self.urls),'sizes',self.sizes,'total',self._size)
-              def seekable(self): return True
+                      self.urls.append(u); self.sizes.append(z); self.starts.append(total); total+=z
+                  self._size=total; self._pos=0; self._cache={}; print('VOLUMES',len(self.urls),'TOTAL',total)
               def readable(self): return True
-              def writable(self): return False
+              def seekable(self): return True
               def tell(self): return self._pos
-              def seek(self,o,w=0):
-                  self._pos = o if w==0 else self._pos+o if w==1 else self._size+o
-                  return self._pos
-              def _fetch(self,start,size):
-                  out=bytearray(); pos=start; remain=size
-                  while remain and pos<self._size:
-                      idx=max(i for i,s in enumerate(self.starts) if s<=pos)
-                      local=pos-self.starts[idx]; take=min(remain,self.sizes[idx]-local)
-                      req=urllib.request.Request(self.urls[idx],headers={'User-Agent':USER_AGENT,'Range':f'bytes={local}-{local+take-1}'})
-                      data=urllib.request.urlopen(req,timeout=120).read()
-                      if len(data)!=take: raise RuntimeError(f'range mismatch {idx=} {local=} {take=} {len(data)=}')
-                      out+=data; pos+=take; remain-=take
+              def seek(self,o,w=0): self._pos=o if w==0 else self._pos+o if w==1 else self._size+o; return self._pos
+              def _fetch(self,s,n):
+                  out=bytearray(); p=s
+                  while n:
+                      i=max(j for j,x in enumerate(self.starts) if x<=p); local=p-self.starts[i]; take=min(n,self.sizes[i]-local)
+                      q=urllib.request.Request(self.urls[i],headers={'User-Agent':USER_AGENT,'Range':f'bytes={local}-{local+take-1}'})
+                      d=urllib.request.urlopen(q,timeout=120).read(); assert len(d)==take,(i,local,take,len(d)); out+=d; p+=take; n-=take
                   return bytes(out)
               def read(self,n=-1):
-                  if n is None or n<0: n=self._size-self._pos
-                  if n<=0 or self._pos>=self._size: return b''
+                  if n<0: n=self._size-self._pos
                   end=min(self._size,self._pos+n); out=bytearray()
                   while self._pos<end:
-                      block=self._pos//self.BLOCK
-                      if block not in self._cache:
-                          bs=block*self.BLOCK; self._cache[block]=self._fetch(bs,min(self.BLOCK,self._size-bs))
-                      d=self._cache[block]; off=self._pos-block*self.BLOCK; take=min(len(d)-off,end-self._pos)
-                      out+=d[off:off+take]; self._pos+=take
+                      k=self._pos//self.BLOCK
+                      if k not in self._cache:
+                          s=k*self.BLOCK; self._cache[k]=self._fetch(s,min(self.BLOCK,self._size-s))
+                      d=self._cache[k]; off=self._pos-k*self.BLOCK; take=min(len(d)-off,end-self._pos); out+=d[off:off+take]; self._pos+=take
                   return bytes(out)
-              def readinto(self,b):
-                  d=self.read(len(b)); b[:len(d)]=d; return len(d)
-              def fetch_range(self,o,n): return self._fetch(o,n)
-
-          def decode_dvpl(b):
-              if b[-4:]!=b'DVPL': raise RuntimeError('bad DVPL magic')
-              orig,comp,crc,typ=struct.unpack('<IIII',b[-20:-4]); data=b[:-20]
-              if len(data)!=comp: raise RuntimeError(f'DVPL compressed size {len(data)} != {comp}')
-              if typ==0: return data
-              if typ in (1,2): return lz4.block.decompress(data,uncompressed_size=orig)
-              raise RuntimeError(f'unsupported DVPL type {typ}')
-
-          rf=MultiRemoteFile(); entries=parse_archive_index(rf); print('entries',len(entries))
-          matches=[e for e in entries if '21_mountain_mnt' in e['filename'].lower() and '_colormap' in e['filename'].lower() and e['filename'].lower().endswith('.dds.dvpl')]
-          for e in matches: print('MATCH',e['filename'],e['compressed_size'],e['uncompressed_size'])
-          if not matches: raise SystemExit('no mountain colormap')
-          e=matches[-1]; packed=rf.fetch_range(e['offset'],e['compressed_size']); dvpl=decompress_entry(packed,e['filters'],e['uncompressed_size'])
-          dds=decode_dvpl(dvpl); Path('probe/mountain.dds').write_bytes(dds)
-          img=Image.open(io.BytesIO(dds)).convert('RGB'); print('dds image',img.size,img.mode)
-          img.save('probe/mountain-client.webp','WEBP',quality=95,method=6)
-          out=img.resize((3084,3088),Image.Resampling.LANCZOS).filter(ImageFilter.UnsharpMask(radius=1.2,percent=85,threshold=3))
-          out.save('probe/black-goldville.webp','WEBP',quality=95,method=6)
-          print('output',out.size,Path('probe/black-goldville.webp').stat().st_size)
+              def readinto(self,b): d=self.read(len(b)); b[:len(d)]=d; return len(d)
+          entries=parse_archive_index(M()); print('ENTRIES',len(entries))
+          names=[e['filename'] for e in entries if not e['is_dir']]
+          queries=['mountain','goldville','colormap','minimap','/maps/','\\maps\\']
+          for q in queries:
+              hits=[n for n in names if q in n.lower()]
+              print('\n###',q,'COUNT',len(hits))
+              for n in hits[:300]: print(n)
+          print('\n### WEBP MAP-LIKE')
+          for n in [n for n in names if n.lower().endswith('.webp') and any(k in n.lower() for k in ('map','mountain','karelia','malinovka','desert_train'))][:500]: print(n)
+          print('\n### DDS MAP-LIKE')
+          for n in [n for n in names if n.lower().endswith('.dds.dvpl') and any(k in n.lower() for k in ('mountain','karelia','malinovka','desert_train','landscape'))][:500]: print(n)
           PY
-          python /tmp/extract_multi.py | tee probe/extract.log
-          file probe/*.webp probe/mountain.dds
-          ls -lh probe
+          python /tmp/search_multi.py | tee probe/index-search.txt
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: wgc-mountain-source
+          name: wgc-index-search
           path: probe
           retention-days: 1
