@@ -276,6 +276,8 @@
 .battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active {
   pointer-events: auto;
   background: color-mix(in srgb, var(--bg) 52%, transparent);
+  /* §layering：active Details 高于 controls(≤40)/HUD(50)/events(45)，低于 workspace drawer(74/75)。 */
+  z-index: 60;
 }
 .battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay { left: 0; right: 0; }
 
@@ -490,6 +492,7 @@
   .battle-playback .pb-map-stage > .pb-side-panel-shell.pb-details-active {
     pointer-events: auto;
     background: color-mix(in srgb, var(--bg) 52%, transparent);
+    z-index: 60;
   }
 
   .battle-playback .pb-annotation-surface {
@@ -516,6 +519,7 @@
 .battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active {
   pointer-events: auto;
   background: color-mix(in srgb, var(--bg) 52%, transparent);
+  z-index: 60;
 }
 /* §mobile-details-sheet：选中车辆后在 mobile fullscreen 以 bottom-sheet 展示 Details。 */
 .battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {

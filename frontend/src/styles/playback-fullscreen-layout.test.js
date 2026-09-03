@@ -154,6 +154,13 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(shell).toContain('background: transparent')
     const shellActive = ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active')
     expect(shellActive).toContain('pointer-events: auto')
+    // §layering：active Details 必须显式 z-index（不依赖 768-1199 media 的 var(--z-modal)）
+    expect(shellActive).toContain('z-index: 60')
+    // 稳定层级：controls(≤40) < events(45) < HUD(50) < active Details(60) < drawer backdrop(74)/rail(75)
+    expect(ruleBody('.battle-playback:fullscreen .pb-hud')).toContain('z-index: 50')
+    expect(ruleBody('.battle-playback:fullscreen .pb-mobile-overlay')).toContain('z-index: 40')
+    expect(ruleBody('.battle-playback .pb-drawer-backdrop')).toContain('z-index: 74')
+    expect(ruleBody('.battle-playback.pb-drawer-open .pb-left-rail')).toContain('z-index: 75')
   })
 
   it('mobile drawer: ☰ 用 .pb-drawer-open 把 rail 打开为 drawer（backdrop 关闭），非 dead action', () => {

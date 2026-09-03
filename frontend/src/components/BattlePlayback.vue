@@ -641,7 +641,10 @@ watch(() => mapEl.value, (el) => {
     // 这里触发 fitViewIfReady → geometry-signature 变化 → 重新 fit，不再残留旧 bottom inset。
     const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
     if (hud && hud !== el) mapResizeObserver.observe(hud)
-    if (mobileOverlay.value?.$el) mapResizeObserver.observe(mobileOverlay.value.$el)
+    // §safeInsets-DOM：观察真实 .pb-mobile-overlay-content（controls 实际高度），而非 inset:0 wrapper；
+    // controls content reflow → RO 触发 fitViewIfReady → safe 几何更新。
+    const overlayContent = mobileOverlay.value?.$el?.querySelector('.pb-mobile-overlay-content')
+    if (overlayContent && overlayContent !== el) mapResizeObserver.observe(overlayContent)
   }
 })
 
@@ -668,10 +671,12 @@ function safeInsets() {
     const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
     top = hud ? hud.clientHeight : 0
   }
-  // §safeInsets-DOM：mobile wrapper 是 position:absolute; inset:0（铺满地图），其 clientHeight
-  // 是整张地图高度而非 controls 高度，绝不能作为 bottom inset。只量取 .pb-mobile-overlay-content
-  // 的真实 rendered 高度；且仅当 controls 真正 bottom-overlay map（!controlsInRail）时才 >0。
-  if (!controlsInRail.value) {
+  // §safeInsets-DOM：只量取 .pb-mobile-overlay-content 的真实 rendered 高度（wrapper 是 inset:0，
+  // 其 clientHeight 是整张地图高度，不能当 controls 高度）。
+  // §safeInsets-contract：normal mobile 的 controls 是 transient overlay（默认 opacity:0），
+  // 不因不可见 controls 永久缩小 map —— 非 fullscreen 一律 bottom=0。
+  // fullscreen mobile controls 始终显示时，才 reserve 底部 safe area（= content 实高）。
+  if (!controlsInRail.value && isFullscreen.value) {
     const wrap = mobileOverlay.value?.$el
     const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null
     bottom = content ? content.clientHeight : 0
