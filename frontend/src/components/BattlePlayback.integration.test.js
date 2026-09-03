@@ -1212,7 +1212,9 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     let info = wrapper.find('[data-test="pb-info"]')
     expect(info.exists()).toBe(true)
     expect(info.find('[data-test="pb-sb-tank"]').text()).toBe('T49')
-    expect(detailsHpNum(info)).toBe('0')
+    // §21：已击毁状态明确，不重点展示 0 HP
+    expect(detailsHpNum(info)).toBeNull()
+    expect(info.text()).toContain('recon.map.playback.state_destroyed')
     expect(info.text()).toContain('00:12') // destroyed at / last spotted
     // 点击另一辆切换
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
@@ -1720,11 +1722,12 @@ describe('V2 HP regression (restored critical coverage)', () => {
     expect(w.find('[data-test="pb-marker-2001"]').find('[data-test="pb-hp-hud"]').exists()).toBe(false)
     expect(w.find('[data-test="pb-marker-2001"] .pb-hp-fill').exists()).toBe(false)
     expect(w.find('[data-test="pb-marker-2001"]').find('.pb-death').exists()).toBe(true)
-    // Details HP → 0；destroyed_at → 00:25
+    // §21：Details 明确「已击毁」状态，不重点展示 0 HP；destroyed_at → 00:25
     await w.find('[data-test="pb-marker-2001"]').trigger('click')
     await flushPromises()
     const info = w.find('[data-test="pb-info"]')
-    expect(detailsHpNum(info)).toBe('0')
+    expect(detailsHpNum(info)).toBeNull()
+    expect(info.text()).toContain('recon.map.playback.state_destroyed')
     expect(info.text()).toContain('00:25')
   })
 })

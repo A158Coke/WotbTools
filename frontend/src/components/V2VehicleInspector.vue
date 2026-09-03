@@ -136,13 +136,18 @@ function moduleStateLabel(state) {
     <div class="v2-inspector-row" data-test="v2-inspector-hp">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.current_hp') }}</span>
       <span class="v2-inspector-val">
-        {{ health?.currentHp ?? '—' }}
-        <span v-if="health?.knowledge === 'LAST_KNOWN'" class="v2-inspector-badge">
-          {{ $t('recon.map.playback.last_known_hp') }}
-        </span>
-        <span v-if="health?.displayCapacityHp" class="v2-inspector-cap">
-          / {{ health.displayCapacityHp }}
-        </span>
+        <!-- §21：已击毁状态明确显示「已击毁」，不重点展示 0 HP / 空血条；
+             但 伤害历史/击杀/承受伤害/最后位置 等 authoritative facts 仍正常展示。 -->
+        <template v-if="health?.destroyed">{{ $t('recon.map.playback.state_destroyed') }}</template>
+        <template v-else>
+          {{ health?.currentHp ?? '—' }}
+          <span v-if="health?.knowledge === 'LAST_KNOWN'" class="v2-inspector-badge">
+            {{ $t('recon.map.playback.last_known_hp') }}
+          </span>
+          <span v-if="health?.displayCapacityHp" class="v2-inspector-cap">
+            / {{ health.displayCapacityHp }}
+          </span>
+        </template>
       </span>
     </div>
 
