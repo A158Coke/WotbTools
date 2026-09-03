@@ -6,6 +6,8 @@ defineOptions({ name: 'PlaybackSidePanel' })
 const props = defineProps({
   panel: { type: String, default: null },
   groups: { type: Array, default: () => [] },
+  // §4：fullscreen Right Details 为 persistent 列——未选 panel 时默认展示 Battle Summary。
+  persistent: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:panel', 'close'])
 const closeButton = ref(null)
@@ -49,12 +51,19 @@ watch(() => props.panel, (panel, previousPanel) => {
         @click="selectPanel(group.name, $event)"
       >{{ group.label }}</button>
     </nav>
-    <aside v-if="props.panel" class="pb-side-panel" role="dialog" aria-modal="true" :aria-label="$t('recon.map.playback.panel')">
+    <aside
+      v-if="props.panel || props.persistent"
+      class="pb-side-panel"
+      :class="{ 'pb-side-panel-persistent': props.persistent, 'pb-side-panel-overlay': !!props.panel }"
+      :role="props.panel ? 'dialog' : undefined"
+      :aria-modal="props.panel ? 'true' : undefined"
+      :aria-label="props.groups.find((group) => group.name === (props.panel || 'battle'))?.label"
+    >
       <div class="pb-side-panel-head">
-        <strong>{{ props.groups.find((group) => group.name === props.panel)?.label }}</strong>
-        <button ref="closeButton" type="button" class="pb-panel-close" data-test="pb-panel-close" :aria-label="$t('recon.map.playback.close')" @click="close">×</button>
+        <strong>{{ props.groups.find((group) => group.name === (props.panel || 'battle'))?.label }}</strong>
+        <button v-if="props.panel" ref="closeButton" type="button" class="pb-panel-close" data-test="pb-panel-close" :aria-label="$t('recon.map.playback.close')" @click="close">×</button>
       </div>
-      <section v-if="props.panel === 'battle'" data-test="pb-panel-content-battle"><slot name="battle" /></section>
+      <section v-if="props.panel === 'battle' || (props.persistent && !props.panel)" data-test="pb-panel-content-battle"><slot name="battle" /></section>
       <section v-else-if="props.panel === 'vehicle'" data-test="pb-panel-content-vehicle"><slot name="vehicle" /></section>
       <section v-else-if="props.panel === 'display'" data-test="pb-panel-content-display"><slot name="display" /></section>
       <section v-else-if="props.panel === 'events'" data-test="pb-panel-content-events"><slot name="events" /></section>
