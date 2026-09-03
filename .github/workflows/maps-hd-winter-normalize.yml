@@ -1,0 +1,69 @@
+name: Normalize Winter Malinovka HD
+
+on:
+  push:
+    branches:
+      - feat/maps-hd-assets
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Restore original Winter Malinovka and install Pillow
+        run: |
+          git checkout origin/main -- frontend/src/assets/maps/winter-malinovka.png
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Preserve legacy render geometry at 2x density
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageFilter
+
+          path = Path('frontend/src/assets/maps/winter-malinovka.png')
+          target = (1508, 1524)  # strict 2x of the legacy registered 754x762 render canvas
+          with Image.open(path) as src:
+              src.load()
+              out = src.resize(target, Image.Resampling.LANCZOS)
+              out = out.filter(ImageFilter.UnsharpMask(radius=1.0, percent=110, threshold=3))
+              out.save(path, format='PNG', optimize=True, compress_level=9)
+          with Image.open(path) as check:
+              assert check.size == target, check.size
+
+          js = Path('frontend/src/data/mapImages.js')
+          text = js.read_text(encoding='utf-8')
+          old = 'malinovka: { src: winterMalinovkaImg, width: 1206, height: 1196, coordinateBounds: WORLD_BOUNDS_300 }'
+          new = 'malinovka: { src: winterMalinovkaImg, width: 1508, height: 1524, coordinateBounds: WORLD_BOUNDS_300 }'
+          assert old in text
+          js.write_text(text.replace(old, new), encoding='utf-8')
+
+          doc = Path('docs/reference/maps.md')
+          text = doc.read_text(encoding='utf-8')
+          old = 'winter-malinovka.png (1206x1196)'
+          new = 'winter-malinovka.png (1508x1524)'
+          assert old in text
+          doc.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+
+      - name: Verify and commit
+        run: |
+          git diff --check
+          test "$(git diff --name-only | wc -l)" -eq 3
+          git diff --name-only | grep -Ev '^frontend/src/assets/maps/winter-malinovka\.png$|^frontend/src/data/mapImages\.js$|^docs/reference/maps\.md$' && exit 1 || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/assets/maps/winter-malinovka.png frontend/src/data/mapImages.js docs/reference/maps.md
+          git commit -m "fix(maps): preserve Winter Malinovka render geometry at 2x"
+          git push origin HEAD:feat/maps-hd-assets
