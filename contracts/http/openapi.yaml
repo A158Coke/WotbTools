@@ -382,7 +382,6 @@ components:
         - vehicles
         - events
         - pointsSamples
-        - baseStates
         - limitations
         - capability
         - arenaBonusType
@@ -409,6 +408,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PointsSample'
+        # Additive, backward-compatible wire field (PR #229 rolling deployment):
+        # not required — the previous production contract omits it, and the frontend
+        # contract boundary normalizes a missing value to [] so older responses still
+        # validate. Newer producers MUST still emit baseStates: [] or real transitions.
         baseStates:
           type: array
           items:

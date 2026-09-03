@@ -380,7 +380,7 @@ export interface components {
             vehicles: components["schemas"]["VehiclePlaybackTrack"][];
             events: components["schemas"]["BattleEvent"][];
             pointsSamples: components["schemas"]["PointsSample"][];
-            baseStates: components["schemas"]["BaseStateTransition"][];
+            baseStates?: components["schemas"]["BaseStateTransition"][];
             limitations: string[];
             capability: components["schemas"]["PlaybackCapability"];
             arenaBonusType: number | null;

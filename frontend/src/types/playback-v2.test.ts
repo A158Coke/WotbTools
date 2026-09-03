@@ -53,7 +53,7 @@ it('accepts a complete authoritative payload only after raw validation', () => {
   expect(isBattlePlaybackDataset(dataset)).toBe(true)
 })
 
-it.each(['mapCode', 'friendlyTeam', 'recorderAccountId', 'limitations', 'arenaBonusType', 'baseStates'])
+it.each(['mapCode', 'friendlyTeam', 'recorderAccountId', 'limitations', 'arenaBonusType'])
   ('rejects missing required wire field %s', field => {
     const invalid: Record<string, unknown> = { ...dataset }
     delete invalid[field]
