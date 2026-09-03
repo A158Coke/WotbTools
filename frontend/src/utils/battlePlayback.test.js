@@ -502,4 +502,17 @@ describe('eventsCrossed / transients', () => {
     // 宽视口拟合（地图高 < stage 高）→ 纵向居中，不可平移。
     expect(clampViewPan({ scale: 1, tx: 0, ty: 999 }, 3440, 1440, 3440, 900).ty).toBe(270)
   })
+
+  it('clampViewPan: 1500×1080 stage + 1500×1500 map — 顶边/底边可达 + Reset View fit(scale<1) 不偏移', () => {
+    // §Blocker 1：锚定 origin（无 CSS 居中偏移）后，cover 下上下裁剪区域都必须可达，
+    // 且 fit(scale<1) 得到完整地图视图不被 clamp 偏移。
+    // 顶边：ty=0 即地图顶部（无法再往上 pan）→ 顶端可见。
+    expect(clampViewPan({ scale: 1, tx: 0, ty: 0 }, 1500, 1080, 1500, 1500)).toEqual({ scale: 1, tx: 0, ty: 0 })
+    // 底边：ty 可下探到 stageH - mapH = 1080 - 1500 = -420（被裁底端可达，而非钉在 0）。
+    expect(clampViewPan({ scale: 1, tx: 0, ty: -9999 }, 1500, 1080, 1500, 1500)).toEqual({ scale: 1, tx: 0, ty: -420 })
+    expect(clampViewPan({ scale: 1, tx: 0, ty: -420 }, 1500, 1080, 1500, 1500).ty).toBe(-420)
+    // Reset View full-map fit：scale = min(1500/1500, 1080/1500) = 0.72，横向居中(210)、纵向恰好贴满(0)。
+    // clampViewPan 需保留该 fit 视图（不被错误重置/偏移）。
+    expect(clampViewPan({ scale: 0.72, tx: 210, ty: 0 }, 1500, 1080, 1500, 1500)).toEqual({ scale: 0.72, tx: 210, ty: 0 })
+  })
 })

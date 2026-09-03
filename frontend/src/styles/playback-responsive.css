@@ -25,17 +25,19 @@
   border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   overflow-y: auto;
 }
-.battle-playback:fullscreen .pb-rail-btn {
+.battle-playback .pb-rail-btn {
   min-height: 34px;
   padding: 4px 6px;
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   border-radius: 6px;
   background: color-mix(in srgb, var(--bg-card2) 78%, transparent);
   color: var(--text-label);
-  font-size: .68rem;
+  font-size: 1rem;
   font-weight: 800;
   cursor: pointer;
   white-space: nowrap;
+  display: grid;
+  place-items: center;
 }
 .battle-playback:fullscreen .pb-rail-btn.active {
   border-color: var(--accent);
@@ -160,10 +162,11 @@
    cover（fill 中央 workspace 宽度，宽屏不再出现两侧极宽 gutter；地图可大于可视 viewport，
    随 pan/zoom 裁剪浏览）。绝不横向拉伸成 viewport 比例。 */
 .battle-playback:fullscreen .pb-main .pb-map {
-  /* §3：作为 map-stage grid 的 col1（左侧 Map Workspace），垂直居中，宽填满该列。 */
+  /* §3：锚定 Map Workspace 原点（左上，无 CSS 居中偏移）。cover/fit/pan 全由
+     tx/ty/scale 驱动，mapRenderRect/clampViewPan 以同一坐标系工作；被裁区域可达、
+     Reset View fit 不再被外层居中偏移。 */
   grid-column: 1;
-  align-self: center;
-  flex: 0 0 auto;
+  align-self: start;
   width: 100%;
   max-width: none;
 }
@@ -275,13 +278,11 @@
     min-height: 0;
   }
   .battle-playback:not(:fullscreen) .pb-main .pb-map {
+    /* 与 fullscreen 一致：锚定 Origin（左上），cover/fit/pan 全由 tx/ty/scale 驱动。 */
     grid-column: 1;
-    align-self: center;
-    justify-self: center;
-    width: auto;
-    height: 100%;
-    max-width: 100%;
-    aspect-ratio: var(--pb-map-ratio);
+    align-self: start;
+    width: 100%;
+    max-width: none;
   }
   .battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell {
     position: static;

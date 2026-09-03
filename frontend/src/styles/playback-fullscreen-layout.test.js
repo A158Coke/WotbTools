@@ -50,7 +50,7 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     const rail = ruleBody('.battle-playback:fullscreen .pb-left-rail')
     expect(rail).toContain('grid-column: 1')
     expect(rail).toContain('display: flex')
-    expect(ruleBody('.battle-playback:fullscreen .pb-rail-btn')).toContain('cursor: pointer')
+    expect(ruleBody('.battle-playback .pb-rail-btn')).toContain('cursor: pointer')
     // fullscreen 下隐藏旧右上角 tab launcher（Left Rail 是唯一入口）
     expect(ruleBody('.battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell .pb-panel-launcher')).toContain('display: none')
     // §3 真三列：Right Details 是 map-stage grid 的 persistent col2 列（非绝对 overlay 覆盖地图）

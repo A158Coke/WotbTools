@@ -32,7 +32,6 @@ const props = defineProps({
   textInputStyle: { type: Object, default: () => ({}) },
   visibleFloats: { type: Array, default: () => [] },
   visibleBursts: { type: Array, default: () => [] },
-  visibleFeed: { type: Array, default: () => [] },
   floatTeamClass: { type: Function, required: true },
 })
 
@@ -136,9 +135,6 @@ defineExpose({ mapEl, textInputRef })
       <span v-for="float in props.visibleFloats" :key="'dmg-' + float.id" class="pb-float-dmg" data-test="pb-float-dmg" :class="props.floatTeamClass(float.friendly)" :style="{ left: float.x + 'px', top: float.y + 'px' }">-{{ float.hpLoss }}</span>
       <span v-for="burst in props.visibleBursts" :key="'burst-' + burst.id" class="pb-burst" data-test="pb-burst" :class="props.floatTeamClass(burst.friendly)" :style="{ left: burst.x + 'px', top: burst.y + 'px' }"></span>
     </div>
-    <div v-if="props.visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
-      <div v-for="feed in props.visibleFeed" :key="'feed-' + feed.id" class="pb-feed-item" :class="feed.victimFriendly === true ? 'pb-feed-friendly' : (feed.victimFriendly === false ? 'pb-feed-enemy' : 'pb-feed-neutral')"><span class="pb-feed-skull" aria-hidden="true">☠</span><span class="pb-feed-victim">{{ feed.victimPlayerName ? feed.victimPlayerName + '（' + feed.victimName + '）' : feed.victimName }}</span><span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span></div>
-    </div>
   </div>
 </template>
 
@@ -166,20 +162,10 @@ defineExpose({ mapEl, textInputRef })
 .pb-burst.pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
 .pb-burst.pb-float-neutral { color: var(--text-muted, #999); }
 @keyframes pb-burst-ring { 0% { opacity: .9; transform: translate(-50%, -50%) scale(.3); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); } }
-/* §3 Event Banner：位于 Map Workspace top-center（非 100vw center——fullscreen 左右有固定栏）。
-   视觉量级明显放大（约 16–18px），高度/padding/背景对比提高，Destroyed 停留约 4s（KILL_FEED_MS）。 */
-.pb-kill-feed { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 10; pointer-events: none; width: max-content; max-width: 92%; }
-.pb-feed-item { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; line-height: 1.25; background: color-mix(in srgb, var(--bg) 84%, transparent); border: 1px solid color-mix(in srgb, var(--text) 22%, transparent); border-radius: 10px; padding: 8px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.4); animation: pb-feed-in .3s ease-out; }
-.pb-feed-skull { color: var(--text); font-size: 1.1em; }
-.pb-feed-friendly .pb-feed-victim { color: var(--pb-team-text, #4ade80); }
-.pb-feed-enemy .pb-feed-victim { color: var(--pb-enemy-text, #f87171); }
-.pb-feed-neutral .pb-feed-victim { color: var(--text-muted, #999); }
-.pb-feed-destroyed { color: var(--text-muted, #999); font-weight: 600; }
-@keyframes pb-feed-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
 .pb-annotations { pointer-events: none; }
 .pb-annot-text { paint-order: stroke; stroke: color-mix(in srgb, var(--bg) 65%, transparent); stroke-width: 1; }
 .pb-drawing { pointer-events: none; }
 .pb-text-input { position: absolute; width: 140px; font-size: 13px; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 3px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--text); z-index: 6; }
 @media (width < 768px) { .pb-map { width: 100%; } .pb-vehicle { width: 25px; height: 25px; } }
-@media (prefers-reduced-motion: reduce) { .pb-float-dmg, .pb-burst, .pb-feed-item { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .pb-float-dmg, .pb-burst { animation: none; } }
 </style>
