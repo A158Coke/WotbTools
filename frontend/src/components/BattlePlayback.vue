@@ -1767,6 +1767,7 @@ const mapStyle = computed(() => ({
         <PlaybackSidePanel
           :panel="activePanel"
           :groups="panelGroups"
+          :persistent="isFullscreen"
           @update:panel="activePanel = $event"
           @close="closePanel"
         >

@@ -910,6 +910,21 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('.pb-time').text()).toBe(timeBefore)
   })
 
+  it('§4 Right Details：fullscreen 下默认展示 battle summary（无需先选 panel）', async () => {
+    stubRaf()
+    stubFullscreenApi()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    // 非 fullscreen：无 panel 时不渲染 aside
+    expect(wrapper.find('[data-test="pb-side-panel-shell"] .pb-side-panel').exists()).toBe(false)
+    // 进入 fullscreen → Right Details persistent，默认显示 battle summary
+    setFullscreen(wrapper.find('[data-test="battle-playback"]').element)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-side-panel-shell"] .pb-side-panel').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-panel-content-battle"]').exists()).toBe(true)
+  })
+
   it('11/12/13：ResizeObserver 容器宽变化 → markerScreen/labelLayout 使用新尺寸（标签恒可见）', async () => {
     stubRaf()
     const roCb = stubResizeObserver()
