@@ -257,7 +257,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
    `knowledge`、`interpolationAllowed` 与 sample range，绝不以固定 packet gap 推断可插值性；
    跨 segment/位置中断/无效坐标禁止穿线；`positionCoveredAtV2` 决定车辆当前是否有位置流覆盖——
   覆盖中实体实心显示、位置中断实体淡化最后已知位置、从未上报位置实体不显示、阵亡实体在阵亡时刻切换为 ✕；
-  Event Panel 默认折叠，展开后列出全部真实事件；点击事件行 seek 到该事件时间并保持暂停。
+  Event Panel 默认折叠，展开后仅列出用户可读的 DAMAGE/KILL/DESTROYED 事件；POSITION_REPORTED/
+  POSITION_STALE 等 coverage 事件仍保留在 canonical 事件流，供 playback state、combat feedback
+  与 tracer 等内部逻辑使用，不展示给普通用户。点击事件行 seek 到该事件时间并保持暂停。
   播放控制：播放/暂停、±5s、0.5×/1×/2×/4×、Reset View、Fullscreen 和拖动 seek。
    - **segment 内/外查询**：`positionAtV2` 只在 canonical segment 明确允许且相邻 sample
      可形成区间时插值；`interpolationAllowed=false`、LAST_KNOWN、segment gap、未来 segment

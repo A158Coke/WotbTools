@@ -184,7 +184,7 @@ describe('BattlePlayback', () => {
     expect(wrapper.findAll('.pb-progress .pb-marker')).toHaveLength(0)
     await wrapper.find('[data-test="pb-event-toggle"]').trigger('click')
     const events = wrapper.findAll('[data-test="pb-event"]')
-    expect(events).toHaveLength(3)
+    expect(events).toHaveLength(1)
     await events.find(event => event.text().includes('event_DAMAGE')).trigger('click')
     expect(wrapper.find('[data-test="pb-event-panel"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('recon.map.playback.event_DAMAGE')
@@ -1330,16 +1330,19 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('400')
     expect(sidebarValue(info, 'recon.map.playback.damage_received')).toBe('200')
     expect(sidebarValue(info, 'recon.map.playback.kills')).toBe('1')
-    // 不再有事件过滤器或 timeline marker；面板展开后显示完整事件流。
+    // 不再有事件过滤器或 timeline marker；面板只展示用户可读的战斗事件。
     expect(wrapper.find('[data-test="pb-all-events"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-event-panel"]').exists()).toBe(false)
     await wrapper.find('[data-test="pb-event-toggle"]').trigger('click')
-    expect(wrapper.findAll('[data-test="pb-event"]')).toHaveLength(5)
+    expect(wrapper.findAll('[data-test="pb-event"]')).toHaveLength(3)
     info = wrapper.find('[data-test="pb-info"]')
     expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('400')
     expect(sidebarValue(info, 'recon.map.playback.damage_received')).toBe('200')
     expect(sidebarValue(info, 'recon.map.playback.kills')).toBe('1')
-    expect(wrapper.find('[data-test="pb-event-panel"]').text()).toContain('event_KILL')
+    const eventPanelText = wrapper.find('[data-test="pb-event-panel"]').text()
+    expect(eventPanelText).toContain('event_KILL')
+    expect(eventPanelText).not.toContain('event_POSITION_REPORTED')
+    expect(eventPanelText).not.toContain('event_POSITION_STALE')
   })
 
   it('B1-1 recorder/team scope：presentation scope 不截断 sidebar 当前统计（authoritative 全量）', async () => {

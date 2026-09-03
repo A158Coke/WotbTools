@@ -1164,9 +1164,13 @@ const vehicleStates = computed(() => {
  * authoritative playback events：全部回放事件。
  * deterministic state（当前累计伤害/击杀）与 combat feedback（floating damage / hit flash / ghost /
  * destruction burst / kill feed / damage log）必须消费本源——「战斗事实有没有发生」不取决于事件列表
- * UI 是否折叠。Event Panel 与炮线都消费同一份真实事件。
+ * UI 是否折叠。Event Panel 只消费 presentation-only 的 userVisibleEvents；炮线仍消费
+ * 同一份完整真实事件。
  */
 const authoritativeEvents = computed(() => (playback.value ? playback.value.events : []))
+const userVisibleEvents = computed(() => authoritativeEvents.value.filter((event) => (
+  event.type === 'DAMAGE' || event.type === 'KILL' || event.type === 'DESTROYED'
+)))
 
 // 炮线：仅来自真实事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
 const visibleTracers = computed(() => tracerLines(authoritativeEvents.value, routesByAccount.value, currentTime.value, speed.value))
@@ -1192,9 +1196,6 @@ function eventLabel(event) {
     case 'KILL':
       return `${playerName(event.accountId)} → ${playerName(event.targetAccountId)}`
     case 'DESTROYED':
-      return playerName(event.accountId)
-    case 'POSITION_REPORTED':
-    case 'POSITION_STALE':
       return playerName(event.accountId)
     default:
       return type
@@ -1617,11 +1618,11 @@ const mapStyle = computed(() => ({
         :aria-expanded="eventPanelOpen"
         @click="eventPanelOpen = !eventPanelOpen"
       >
-        {{ $t('recon.map.playback.events') }} ({{ authoritativeEvents.length }})
+        {{ $t('recon.map.playback.events') }} ({{ userVisibleEvents.length }})
       </button>
       <div v-if="eventPanelOpen" class="pb-event-list" data-test="pb-event-panel">
         <button
-          v-for="(event, index) in authoritativeEvents"
+          v-for="(event, index) in userVisibleEvents"
           :key="`${event.type}-${event.timeSec}-${index}`"
           type="button"
           class="pb-event-row"
@@ -1632,7 +1633,7 @@ const mapStyle = computed(() => ({
           <span class="pb-event-type">{{ $t(`recon.map.playback.event_${event.type}`) }}</span>
           <span>{{ eventLabel(event) }}</span>
         </button>
-        <p v-if="authoritativeEvents.length === 0" class="pb-event-empty">{{ $t('recon.map.playback.no_events') }}</p>
+        <p v-if="userVisibleEvents.length === 0" class="pb-event-empty">{{ $t('recon.map.playback.no_events') }}</p>
       </div>
     </section>
   </div>

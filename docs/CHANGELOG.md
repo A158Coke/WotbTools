@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Changed
+- **Battle Playback Event Panel presentation cleanup**：事件面板仅展示 `DAMAGE`、`KILL` 和 `DESTROYED`；`authoritativeEvents` 仍完整供播放状态、战斗反馈、炮线和统计使用，不改变 canonical 事件事实。
 - **Battle Playback UI hierarchy cleanup**：移除用户可见路线视图、路线筛选/图例与相关残留；时间轴改为无事件标记装饰，事件集中到默认折叠且可点击 seek 的 Event Panel；控制栏收敛为播放、±5 秒、0.5/1/2/4 倍速、Reset View 和 Fullscreen。保留后端 route aggregate 合同及真实事件、HP、选中状态。
 - **手机端（<768px）UI 布局优化**：Mobile 断点统一为 `@media (width < 768px)` range 语法并消除 JS/CSS 1px 错配；补齐 classic 浅色主题在 AdminUsers/Contact/Boost/Profile 的对比度覆写；修复 HoF mark3 工具条挤压、分析面板表格裁剪、admin 表头移动端 sticky 偏移、modal 遮罩 showcase 语义反转、ColumnPicker 触屏不可重排序（新增上/下移按钮 + 三语 i18n）、批量选择 bottom-sheet 无遮罩等问题；移动端输入框字号 ≥16px、主要触控目标 ≥36px，并预留 viewport-fit/safe-area 兼容。无 API/路由/数据契约变化。
 
