@@ -6,7 +6,7 @@
 
 ## 主表
 
-| 内部 code（meta.json mapName） | 中文名 | 英文名 | 语义 mapId | 素材（逻辑画布 WxH） | 状态 |
+| 内部 code（meta.json mapName） | 中文名 | 英文名 | 语义 mapId | 素材（4× PNG 物理尺寸） | 状态 |
 |---|---|---|---|---|---|
 | amigosville | 乡间溪流 | Falls Creek | 05_amigosville_am | falls-creek.png (3072x3060) | ✅ 有素材 |
 | canal | 运河尽头 | Canal | 18_canal_cn | canal.png (3112x3088) | ✅ 有素材 |
@@ -38,25 +38,42 @@
 | savanna | 沙漠之心 | Oasis Palms | 09_savanna_sv | oasis-palms.png (3048x3064) | ✅ 有素材 |
 | skit | 海防前沿 | Naval Frontier | 29_skit_sk | naval-frontier.png (3048x3084) | ✅ 有素材 |
 
+## 底图与运行时 Overlay 契约
+
+地图 PNG 是 **environment layer（纯环境底图）**。底图负责表达稳定的地图环境；与具体战斗、队伍或 UI 状态有关的信息必须由运行时 overlay 提供。
+
+底图应保留：
+
+- 道路、建筑、山体、岩石、植被、草地、沙地、雪地；
+- 河流、湖泊、铁路、桥梁及其他天然/固定地形细节。
+
+底图不得烘焙：
+
+- 红/绿出生点及 `1 / 2` spawn marker；
+- `A / B / C / D` 基地 UI；
+- 队伍颜色、capture state、capture team、capture progress；
+- 6×6 辅助网格、顶部数字/左侧字母坐标提示；
+- 视野线、调试线、红色辅助边界线或其他非地图环境 UI。
+
+基地/出生点及其动态状态由 replay parser / BE 提供事实数据，再由 FE overlay 渲染。底图清理不得改变地图 extent、旋转、裁切或坐标映射；相关运行时 overlay 的具体实现应放在独立业务 PR，不与素材清理混做。
+
 ## 命名与维护约定
 
 - **内部 code**（meta.json 的 `mapName`，如 `neptune`/`erlenberg`/`rock`）是**不可变键**：由游戏客户端回放元数据发出，语义文件 `mapCodes`、`mapImages.js` 的 key 都以它为准。**不要改名**，否则真实回放解析会失配。
-- **展示名**（zh/en/ru）来自 `common/map_names.json`（游戏客户端名称）。注意内部 code 与英文名常不一致（如 `neptune`=Normandy、`erlenberg`=Middleburg、`rock`=Mayan Ruins），这是正常的，两套分别对应"解析键"与"用户可见名"。
+- **展示名**（zh/en/ru）来自 `common/map_names.json`（游戏客户端名称）。注意内部 code 与英文名常不一致（如 `neptune`=Normandy、`erlenberg`=Middleburg、`rock`=Mayan Ruins），这是正常的，两套分别对应“解析键”与“用户可见名”。
 - **素材文件名**：统一为**英文展示名小写中划线**（如 Normandy → `normandy.png`，Middleburg → `middleburg.png`，Winter Malinovka → `winter-malinovka.png`）。文件位于 `frontend/src/assets/maps/`。
-- **逻辑画布尺寸**：`mapImages.js` 的 `width`/`height` 是 SVG/坐标渲染使用的逻辑画布，不等同于 PNG 必须采用的物理像素尺寸。它会影响车辆标记、血条、标注与坐标映射比例，**仅替换高清底图时不得跟随 PNG 像素翻倍**。
-- **高清素材密度**：当前 28 张已登记 PNG 均按逻辑画布的 **2× 物理像素密度**提供；浏览器仍按原逻辑画布渲染，因此只提升底图清晰度，不改变 Playback / Map Overview 的几何、marker 尺寸或坐标关系。
-- **唯一权威**：素材注册、逻辑画布尺寸与坐标边界只在 `frontend/src/data/mapImages.js` 维护（后端 `MapOverview.image` 恒 null）。新增/修改素材只需改这一处 + 本表。
-- **渲染坐标边界**：每条素材配置 `coordinateBounds`（图片对应的世界坐标范围，取自语义 JSON 的
-  `coordinateSystem.worldBounds`；当前 28 张均为 -300..300）。渲染统一用它换算像素，
-  分析网格仍用 `playableBounds`——两者分离，逐图可独立校准。
+- **逻辑画布尺寸**：`mapImages.js` 的 `width`/`height` 是 SVG/坐标渲染使用的逻辑画布，不等同于 PNG 的物理像素尺寸。它会影响车辆标记、血条、标注与坐标映射比例，**仅替换/清理高清底图时不得跟随 PNG 像素密度修改**。
+- **高清素材密度**：当前 28 张已登记 PNG 均按逻辑画布的 **4× 物理像素密度**提供；浏览器仍按原逻辑画布渲染，因此只提升底图清晰度，不改变 Playback / Map Overview 的几何、marker 尺寸或坐标关系。
+- **唯一权威**：素材注册、逻辑画布尺寸与坐标边界只在 `frontend/src/data/mapImages.js` 维护（后端 `MapOverview.image` 恒 null）。新增/修改素材只需改这一处 + 本表；单纯替换同一地图底图且逻辑契约不变时，不修改 `mapImages.js`。
+- **渲染坐标边界**：每条素材配置 `coordinateBounds`（图片对应的世界坐标范围，取自语义 JSON 的 `coordinateSystem.worldBounds`；当前 28 张均为 -300..300）。渲染统一用它换算像素，分析网格仍用 `playableBounds`——两者分离，逐图可独立校准。
 - **语义数据手工调整**：`common/map-semantics/*.semantic.json` 的区域 label/特征/风险等人类可读字段为中文，可直接手工修改；**改后不要重跑 map-semanticizer**（重新生成会整份覆盖），直到语义化器引入人工覆写合并。
 
 ## 新增地图 / 素材流程
 
-1. 素材图片按英文展示名小写中划线放入 `frontend/src/assets/maps/`（如 `wasteland.png`）；正式鸟瞰素材优先提供逻辑画布 **2×** 的物理像素密度。
-2. 在 `frontend/src/data/mapImages.js` 加一行：`import xxxImg from '../assets/maps/xxx.png'` + `code: { src: xxxImg, width, height, coordinateBounds }`（key 为内部 code；`width/height` 填逻辑画布尺寸，不是 2× PNG 像素；`coordinateBounds` 取该图语义 JSON 的 `coordinateSystem.worldBounds`）。
-3. 更新本表对应行（素材文件/逻辑画布尺寸/状态）。
-4. 后端无需改动；前端 `vite build` 会自动打包素材。CI 绿后合并部署即生效。
+1. 素材图片按英文展示名小写中划线放入 `frontend/src/assets/maps/`（如 `wasteland.png`）；正式鸟瞰素材优先提供逻辑画布 **4×** 的物理像素密度，并遵守“纯环境底图”契约。
+2. 新增地图时，在 `frontend/src/data/mapImages.js` 加一行：`import xxxImg from '../assets/maps/xxx.png'` + `code: { src: xxxImg, width, height, coordinateBounds }`（key 为内部 code；`width/height` 填逻辑画布尺寸，不是 4× PNG 像素；`coordinateBounds` 取该图语义 JSON 的 `coordinateSystem.worldBounds`）。仅替换已有地图的同坐标底图时不要修改逻辑尺寸。
+3. 更新本表对应行（素材文件/4× PNG 物理尺寸/状态）。
+4. 后端无需因静态底图替换而改动；前端 `vite build` 会自动打包素材。CI 绿后合并部署即生效。
 
 ## 待补素材
 
