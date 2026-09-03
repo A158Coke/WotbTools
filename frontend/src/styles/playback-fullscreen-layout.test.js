@@ -140,6 +140,8 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
   it('mobile fullscreen contract: 手机 fullscreen+landscape 保持单列、无 rail、details 为 sheet、controls 为 bottom overlay', () => {
     const fsM = ruleBody('.battle-playback:fullscreen.pb-device-mobile')
     expect(fsM).toContain('grid-template-columns: minmax(0, 1fr)')
+    // §details-token：mobile fullscreen 无 Right Details，须把 --pb-details-w 归零，防 desktop token 泄漏到 overlay（kill-feed/orientation-hint） */
+    expect(fsM).toContain('--pb-details-w: 0px')
     expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-left-rail')).toContain('display: none')
     expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-main')).toContain('grid-column: 1')
     expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-hud')).toContain('left: 0; right: 0')
