@@ -666,7 +666,10 @@ function applyView(next) {
   const safe = safeInsets()
   const safeH = Math.max(0, fullH - safe.top - safe.bottom)
   const rect = mapRenderRect()
-  const clamped = clampViewPan(next, stageW, safeH, rect.width, rect.height)
+  // §下黑边：地图垂直向下偏 gap/4，把底部黑边减到约居中的一半（更贴近底部控制条）。
+  const scaledH = rect.height * next.scale
+  const centerBiasY = Math.max(0, (safeH - scaledH) / 4)
+  const clamped = clampViewPan(next, stageW, safeH, rect.width, rect.height, centerBiasY)
   view.scale = clamped.scale
   view.tx = clamped.tx
   view.ty = clamped.ty + safe.top

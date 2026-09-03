@@ -368,7 +368,7 @@ export function zoomViewAt(view, px, py, factor, minScale = VIEW_MIN_SCALE, maxS
  * - 地图小于/等于 stage → 居中（tx = (viewW - scaledW)/2）。
  * pan bounds 依据 stage 与 rendered map rect，而非 map 自身尺寸。尺寸未知（≤0）时不做钳制。
  */
-export function clampViewPan(view, viewW, viewH, mapW = viewW, mapH = viewH) {
+export function clampViewPan(view, viewW, viewH, mapW = viewW, mapH = viewH, centerBiasY = 0) {
   if (!view || !Number.isFinite(view.scale)) return view
   const s = view.scale
   const known = Number.isFinite(viewW) && viewW > 0 && Number.isFinite(viewH) && viewH > 0
@@ -395,7 +395,7 @@ export function clampViewPan(view, viewW, viewH, mapW = viewW, mapH = viewH) {
   if (scaledW > viewW) tx = Math.min(0, Math.max(viewW - scaledW, tx))
   else tx = (viewW - scaledW) / 2
   if (scaledH > viewH) ty = Math.min(0, Math.max(viewH - scaledH, ty))
-  else ty = (viewH - scaledH) / 2
+  else ty = (viewH - scaledH) / 2 + centerBiasY
   return { scale: s, tx, ty }
 }
 /**
