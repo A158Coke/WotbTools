@@ -658,7 +658,6 @@ export default {
         "vehicles",
         "events",
         "pointsSamples",
-        "baseStates",
         "limitations",
         "capability",
         "arenaBonusType"
