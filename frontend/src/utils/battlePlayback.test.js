@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  aggregateEventsBySecond,
   clampViewPan,
   eventsCrossed,
   formatClock,
@@ -9,7 +8,6 @@ import {
   parseAiTime,
   positionAt,
   pushFeed,
-  recorderRelated,
   screenRotation,
   shortestArcDeg,
   teamPointsAt,
@@ -179,31 +177,13 @@ describe('direction utilities', () => {
 
 })
 
-describe('aggregateEventsBySecond / recorderRelated', () => {
-  it('aggregates events by rounded second', () => {
-    const events = [
-      { type: 'DAMAGE', timeSec: 10.1 },
-      { type: 'DAMAGE', timeSec: 10.4 },
-      { type: 'DESTROYED', timeSec: 30.4 }
-    ]
-    const buckets = aggregateEventsBySecond(events)
-    expect(buckets).toHaveLength(2)
-    expect(buckets[0]).toMatchObject({ sec: 10, count: 2 })
-    expect(buckets[0].types).toContain('DAMAGE')
-  })
-
+describe('playback presentation utilities', () => {
   it('formats clocks', () => {
     expect(formatClock(0)).toBe('00:00')
     expect(formatClock(200)).toBe('03:20')
     expect(formatClock(75.4)).toBe('01:15')
   })
 
-  it('filters recorder-related events', () => {
-    expect(recorderRelated({ type: 'POSITION_REPORTED', accountId: 2 }, 1)).toBe(true)
-    expect(recorderRelated({ type: 'DAMAGE', accountId: 2, targetAccountId: 3 }, 1)).toBe(false)
-    expect(recorderRelated({ type: 'DAMAGE', accountId: 1, targetAccountId: 3 }, 1)).toBe(true)
-    expect(recorderRelated({ type: 'DAMAGE', accountId: 2, targetAccountId: 1 }, 1)).toBe(true)
-  })
 })
 
 describe('trustedPositionAt', () => {

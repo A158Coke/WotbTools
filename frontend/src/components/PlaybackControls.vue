@@ -8,13 +8,10 @@ const props = defineProps({
   speed: { type: Number, default: 1 },
   currentTime: { type: Number, default: 0 },
   duration: { type: Number, default: 0 },
-  recorderAccountId: { type: [Number, String], default: null },
-  showAll: Boolean,
   labelPrefs: { type: Object, required: true },
   hpPrefs: { type: Object, required: true },
   fullscreenSupported: Boolean,
   isFullscreen: Boolean,
-  typeFilter: { type: Object, required: true },
   activeTool: { type: String, default: null },
   annotColors: { type: Array, default: () => [] },
   annotColor: { type: String, default: '' },
@@ -26,14 +23,13 @@ const props = defineProps({
   history: { type: Array, default: () => [] },
   canUndo: { type: Function, required: true },
   canRedo: { type: Function, required: true },
-  eventMarkers: { type: Array, default: () => [] },
   formatClock: { type: Function, required: true },
 })
 
 const emit = defineEmits([
-  'toggle-play', 'step', 'previous-event', 'next-event', 'toggle-speed', 'reset-view', 'toggle-fullscreen',
-  'update:show-all', 'update-label-pref', 'update-hp-pref', 'toggle-type', 'toggle-tool', 'set-annot-color', 'update:annot-width', 'undo', 'redo', 'clear-annotations',
-  'toggle-annotations', 'drag-start', 'seek', 'jump',
+  'toggle-play', 'step', 'set-speed', 'reset-view', 'toggle-fullscreen',
+  'update-label-pref', 'update-hp-pref', 'toggle-tool', 'set-annot-color', 'update:annot-width', 'undo', 'redo', 'clear-annotations',
+  'toggle-annotations', 'drag-start', 'seek',
 ])
 </script>
 
@@ -44,45 +40,37 @@ const emit = defineEmits([
     </button>
     <button type="button" class="pb-btn" data-test="pb-back5" @click="emit('step', -5)">-5s</button>
     <button type="button" class="pb-btn" data-test="pb-fwd5" @click="emit('step', 5)">+5s</button>
-    <button type="button" class="pb-btn" data-test="pb-prev" @click="emit('previous-event')">◀</button>
-    <button type="button" class="pb-btn" data-test="pb-next" @click="emit('next-event')">▶</button>
-    <button type="button" class="pb-btn" data-test="pb-speed" @click="emit('toggle-speed')">{{ props.speed }}×</button>
+    <div class="pb-speed" role="group" :aria-label="$t('recon.map.playback.speed')">
+      <button
+        v-for="option in [0.5, 1, 2, 4]"
+        :key="option"
+        type="button"
+        class="pb-btn"
+        :class="{ active: props.speed === option }"
+        :data-test="`pb-speed-${option}`"
+        @click="emit('set-speed', option)"
+      >{{ option }}×</button>
+    </div>
     <button type="button" class="pb-btn" data-test="pb-reset" @click="emit('reset-view')">{{ $t('recon.map.playback.reset_view') }}</button>
     <span class="pb-time">{{ props.formatClock(props.currentTime) }} / {{ props.formatClock(props.duration) }}</span>
-    <span v-if="props.recorderAccountId != null" class="pb-filter">
-      <label class="pb-check">
-        <input type="checkbox" :checked="props.showAll" data-test="pb-all-events" @change="emit('update:show-all', $event.target.checked)" />
-        {{ $t('recon.map.playback.all_events') }}
-      </label>
-    </span>
-    <span class="pb-filter">
-      <label class="pb-check">
-        <input type="checkbox" :checked="props.labelPrefs.showPlayerName" data-test="pb-show-player" @change="emit('update-label-pref', 'showPlayerName', $event.target.checked)" />
-        {{ $t('recon.map.playback.show_player_name') }}
-      </label>
-      <label class="pb-check">
-        <input type="checkbox" :checked="props.labelPrefs.showTankName" data-test="pb-show-tank" @change="emit('update-label-pref', 'showTankName', $event.target.checked)" />
-        {{ $t('recon.map.playback.show_tank_name') }}
-      </label>
-      <label class="pb-check">
-        <input type="checkbox" :checked="props.hpPrefs.showHp" data-test="pb-show-hp" @change="emit('update-hp-pref', 'showHp', $event.target.checked)" />
-        {{ $t('recon.map.playback.show_hp') }}
-      </label>
-    </span>
     <button v-if="props.fullscreenSupported" type="button" class="pb-btn" data-test="pb-fullscreen" @click="emit('toggle-fullscreen')">
       {{ props.isFullscreen ? $t('recon.map.playback.exit_fullscreen') : $t('recon.map.playback.enter_fullscreen') }}
     </button>
   </div>
 
-  <div class="pb-filters">
-    <button
-      v-for="type in ['DAMAGE', 'DESTROYED', 'KILL', 'POSITION_REPORTED', 'POSITION_STALE']"
-      :key="type"
-      type="button"
-      class="pb-chip"
-      :class="{ active: props.typeFilter.has(type) }"
-      @click="emit('toggle-type', type)"
-    >{{ $t(`recon.map.playback.event_${type}`) }}</button>
+  <div class="pb-display-options">
+    <label class="pb-check">
+      <input type="checkbox" :checked="props.labelPrefs.showPlayerName" data-test="pb-show-player" @change="emit('update-label-pref', 'showPlayerName', $event.target.checked)" />
+      {{ $t('recon.map.playback.show_player_name') }}
+    </label>
+    <label class="pb-check">
+      <input type="checkbox" :checked="props.labelPrefs.showTankName" data-test="pb-show-tank" @change="emit('update-label-pref', 'showTankName', $event.target.checked)" />
+      {{ $t('recon.map.playback.show_tank_name') }}
+    </label>
+    <label class="pb-check">
+      <input type="checkbox" :checked="props.hpPrefs.showHp" data-test="pb-show-hp" @change="emit('update-hp-pref', 'showHp', $event.target.checked)" />
+      {{ $t('recon.map.playback.show_hp') }}
+    </label>
   </div>
 
   <div class="pb-annot-toolbar" data-test="pb-annot-toolbar">
@@ -122,17 +110,15 @@ const emit = defineEmits([
   <PlaybackTimeline
     :current-time="props.currentTime"
     :duration="props.duration"
-    :event-markers="props.eventMarkers"
-    :format-clock="props.formatClock"
     @drag-start="emit('drag-start')"
     @seek="emit('seek', $event)"
-    @jump="emit('jump', $event)"
   />
 </template>
 
 <style scoped>
-.pb-controls, .pb-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.pb-btn, .pb-chip {
+.pb-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pb-speed { display: inline-flex; gap: 2px; }
+.pb-btn {
   border: 1px solid var(--border-ghost);
   background: var(--bg-card2);
   color: var(--text-label);
@@ -141,9 +127,9 @@ const emit = defineEmits([
   font-size: .78rem;
   cursor: pointer;
 }
-.pb-chip.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.pb-btn.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 .pb-time { font-size: .8rem; color: var(--text-label); font-variant-numeric: tabular-nums; }
-.pb-filter { display: inline-flex; align-items: center; gap: 4px; font-size: .78rem; }
+.pb-display-options { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .78rem; }
 .pb-check { display: inline-flex; align-items: center; gap: 4px; }
 .pb-annot-toolbar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .pb-annot-btn { border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label); border-radius: 4px; padding: 2px 8px; font-size: .78rem; cursor: pointer; }
@@ -155,9 +141,9 @@ const emit = defineEmits([
 .pb-annot-width input { width: 80px; }
 .pb-annot-width-val { font-variant-numeric: tabular-nums; min-width: 2ch; }
 .pb-annot-sep { width: 1px; height: 16px; background: var(--border); }
-/* 手机触控目标：按钮/chip ≥36px（对齐 PlayerRatingRadar 缩放按钮先例），色板 ≥24px；桌面不变 */
+/* 手机触控目标：按钮/chip ≥36px；色板 ≥24px。 */
 @media (width < 768px) {
-  .pb-btn, .pb-chip, .pb-annot-btn { min-height: 36px; min-width: 36px; }
+  .pb-btn, .pb-annot-btn { min-height: 36px; min-width: 36px; }
   .pb-annot-color { width: 24px; height: 24px; }
 }
 </style>
