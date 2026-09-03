@@ -1,4 +1,4 @@
-name: Export map previews
+name: Export full map assets
 
 on:
   push:
@@ -15,40 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: python -m pip install --disable-pip-version-check pillow
-      - name: Build previews
-        run: |
-          mkdir -p /tmp/map-previews
-          python - <<'PY'
-          from pathlib import Path
-          from PIL import Image, ImageOps, ImageDraw
-          src = Path('frontend/src/assets/maps')
-          out = Path('/tmp/map-previews')
-          files = sorted(src.glob('*.png'))
-          thumbs=[]
-          for p in files:
-              with Image.open(p) as im:
-                  im = im.convert('RGB')
-                  im.thumbnail((420,420), Image.Resampling.LANCZOS)
-                  canvas = Image.new('RGB',(440,460),'black')
-                  x=(440-im.width)//2; y=10+(420-im.height)//2
-                  canvas.paste(im,(x,y))
-                  d=ImageDraw.Draw(canvas)
-                  d.text((10,435), p.name, fill='white')
-                  canvas.save(out/p.name, optimize=True)
-                  thumbs.append(canvas)
-          cols=4
-          rows=(len(thumbs)+cols-1)//cols
-          sheet=Image.new('RGB',(cols*440,rows*460),'black')
-          for i,im in enumerate(thumbs):
-              sheet.paste(im,((i%cols)*440,(i//cols)*460))
-          sheet.save(out/'contact-sheet.jpg',quality=90)
-          PY
       - uses: actions/upload-artifact@v4
         with:
-          name: maps-preview
-          path: /tmp/map-previews
+          name: maps-full-assets
+          path: frontend/src/assets/maps
           retention-days: 1
