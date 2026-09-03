@@ -315,8 +315,9 @@ Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标�
 `PlaybackControls.vue`/`AnnotationToolbar.vue` 渲染。`PlaybackTimeline.vue` 是纯 seek bar，事件列表位于
 `PlaybackSidePanel.vue` 并通过 root command 执行 seek + pause；当前车辆详情仍由
 `VehicleDetailsPanel.vue` 渲染。wrapper12 权威基地状态由后端 projector 提供 `baseStates`，前端只按当前
-回放时间查询，不从静态地图或最终结果推导；坦克重叠避让只改 presentation offset，canonical 坐标和命中
-判定语义保持一致。
+回放时间查询，不从静态地图或最终结果推导。wrapper12 raw update 只在后端经过
+`SupremacyBaseStateReconstructor` 形成带 `baseId`（A/B/C/D）的完整 canonical state，前端不合并
+protobuf sparse update；坦克重叠避让只改 presentation offset，canonical 坐标和命中判定语义保持一致。
 车辆状态投影与时钟推进分别由 `utils/playbackVehicleState.ts`、`utils/playbackClock.ts` 提供纯函数，
 组件只负责把 canonical V2 数据转换为展示 props/commands。
 对应测试按 ownership 分层：地图/标记/手势、控制、时间线、详情面板及时钟/车辆投影各有 focused

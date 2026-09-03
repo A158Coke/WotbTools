@@ -1321,22 +1321,24 @@ export default {
       "additionalProperties": false,
       "required": [
         "timeSec",
-        "baseIndex",
+        "baseId",
         "ownerTeam",
         "capturingTeam",
-        "captureProgress",
-        "captureSuspended",
-        "recorderCaptureFlag6"
+        "captureProgress"
       ],
       "properties": {
         "timeSec": {
           "type": "number",
           "minimum": 0
         },
-        "baseIndex": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 3
+        "baseId": {
+          "type": "string",
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
         },
         "ownerTeam": {
           "type": [
@@ -1367,15 +1369,6 @@ export default {
           ],
           "minimum": 0,
           "maximum": 99
-        },
-        "captureSuspended": {
-          "type": "boolean"
-        },
-        "recorderCaptureFlag6": {
-          "type": [
-            "boolean",
-            "null"
-          ]
         }
       }
     },

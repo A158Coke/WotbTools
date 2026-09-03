@@ -7,7 +7,7 @@ import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
-import com.wotb.core.replay.event.SupremacyBaseStateChangedEvent;
+import com.wotb.core.replay.event.SupremacyBaseStateTransition;
 import com.wotb.core.replay.event.VehicleBattleLoadout;
 import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.feature.PlaybackCombatReconstruction;
@@ -691,7 +691,7 @@ public final class BattlePlaybackProjector {
         }
         final List<BaseStateTransition> states = new ArrayList<>();
         for (final ReplayEvent event : timeline.events()) {
-            if (!(event instanceof SupremacyBaseStateChangedEvent base)
+            if (!(event instanceof SupremacyBaseStateTransition base)
                     || base.confidence() != DecodeConfidence.EXACT) {
                 continue;
             }
@@ -701,15 +701,13 @@ public final class BattlePlaybackProjector {
             }
             states.add(new BaseStateTransition(
                     Math.max(0d, timeSec),
-                    base.baseIndex(),
+                    base.baseId().name(),
                     base.ownerTeam(),
                     base.capturingTeam(),
-                    base.captureProgress(),
-                    base.captureSuspended(),
-                    base.recorderCaptureFlag6()));
+                    base.captureProgress()));
         }
         states.sort(Comparator.comparingDouble(BaseStateTransition::timeSec)
-                .thenComparingInt(BaseStateTransition::baseIndex));
+                .thenComparing(BaseStateTransition::baseId));
         return List.copyOf(states);
     }
 
@@ -815,8 +813,8 @@ public final class BattlePlaybackProjector {
         }
         for (final BaseStateTransition state : dataset.baseStates()) {
             requireActiveTime("base.timeSec", state.timeSec());
-            if (state.baseIndex() < 0 || state.baseIndex() > 3) {
-                throw new IllegalStateException("base index outside supported A-D range: " + state.baseIndex());
+            if (!List.of("A", "B", "C", "D").contains(state.baseId())) {
+                throw new IllegalStateException("base id outside supported A-D range: " + state.baseId());
             }
         }
     }

@@ -278,15 +278,13 @@ public record BattlePlaybackDataset(
     public record PointsSample(double timeSec, int team, int points) {
     }
 
-    /** One canonical wrapper12 update; null fields mean the verified protobuf scalar was omitted. */
+    /** One backend-reconstructed full-state transition; protocol indexes never cross this boundary. */
     public record BaseStateTransition(
             double timeSec,
-            int baseIndex,
+            String baseId,
             Integer ownerTeam,
             Integer capturingTeam,
-            Integer captureProgress,
-            boolean captureSuspended,
-            Boolean recorderCaptureFlag6
+            Integer captureProgress
     ) {
     }
 

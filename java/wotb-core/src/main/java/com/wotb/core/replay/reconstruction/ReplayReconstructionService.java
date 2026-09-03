@@ -137,6 +137,10 @@ public class ReplayReconstructionService {
         final Double settledDur = settlementFacts == null ? null : settlementFacts.settlementDurationSec();
         final Float battleStartResolved = resolveBattleStartRawClock(allEvents, settledDur);
 
+        // Wrapper12 is a sparse wire update. Keep raw updates for diagnostics,
+        // and append backend-reconstructed full states for playback consumers.
+        allEvents.addAll(SupremacyBaseStateReconstructor.reconstruct(allEvents));
+
         // 5. 重建战场状态
         final BattleStateReconstructor reconstructor = new BattleStateReconstructor();
         final ReconstructionResult reconstructionResult =

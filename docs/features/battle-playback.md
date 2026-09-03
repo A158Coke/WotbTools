@@ -41,9 +41,10 @@ anti-future-leak 或现有 tank-marker 资产契约。
 - 标注工具默认折叠，绘图不暂停 battle clock。Fullscreen 继续保持同一组件实例的
   current time、playing、倍速、选中车辆、zoom/pan、annotations 和偏好；移动端只对
   `screen.orientation.lock('landscape')` 做 best-effort 尝试，失败不阻断播放。
-- `BattlePlaybackDataset.baseStates` 是 wrapper12（UpdateArena2 root field11）投影的权威基地
-  transition；查询 UI 时间点时只消费 `timeSec <= currentTime` 的最新 A/B/C/D 状态，字段缺失
-  保持未知，不合成进度或阵营结论。前端另以 canonical `positionSegments` 的 OBSERVED
+- `BattlePlaybackDataset.baseStates` 是 wrapper12（UpdateArena2 root field11）经后端 sparse
+  reconstruction 投影的权威基地 transition；查询 UI 时间点时只消费 `timeSec <= currentTime` 的最新
+  A/B/C/D 完整状态。前端不接触 raw protobuf update，不负责合并缺失字段或协议 index，也不合成
+  进度或阵营结论。前端另以 canonical `positionSegments` 的 OBSERVED
   samples 派生最近 2 秒轨迹：不跨 segment/AoI gap，不使用 LAST_KNOWN，不读取未来样本，暂停
   冻结、seek 重算、倍速只改变时间推进语义。
 

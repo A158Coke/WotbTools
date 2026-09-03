@@ -187,10 +187,10 @@ const baseStatesAt = computed(() => {
   const latest = new Map()
   for (const state of playback.value?.baseStates || []) {
     if (!state || !Number.isFinite(state.timeSec) || state.timeSec > currentTime.value + 1e-6) continue
-    if (!Number.isInteger(state.baseIndex) || state.baseIndex < 0) continue
-    latest.set(state.baseIndex, state)
+    if (!['A', 'B', 'C', 'D'].includes(state.baseId)) continue
+    latest.set(state.baseId, state)
   }
-  return [...latest.values()].sort((a, b) => a.baseIndex - b.baseIndex)
+  return [...latest.values()].sort((a, b) => a.baseId.localeCompare(b.baseId))
 })
 /**
  * HP 数值区显示文本（绝不显示虚假的 knownRemaining / totalMax 分数）：
@@ -1702,7 +1702,7 @@ const mapStyle = computed(() => ({
               <dt>{{ $t('recon.map.playback.kills') }}</dt>
               <dd data-test="pb-panel-kills">{{ friendlyKills }} : {{ enemyKills }}</dd>
               <dt v-if="baseStatesAt.length">{{ $t('recon.map.playback.objective') }}</dt>
-              <dd v-if="baseStatesAt.length" data-test="pb-panel-objective">{{ baseStatesAt.map(state => String.fromCharCode(65 + state.baseIndex)).join(' · ') }}</dd>
+              <dd v-if="baseStatesAt.length" data-test="pb-panel-objective">{{ baseStatesAt.map(state => state.baseId).join(' · ') }}</dd>
             </dl>
           </template>
           <template #vehicle>

@@ -492,14 +492,13 @@ export interface components {
         };
         BaseStateTransition: {
             timeSec: number;
-            baseIndex: number;
+            /** @enum {string} */
+            baseId: "A" | "B" | "C" | "D";
             /** @enum {integer|null} */
             ownerTeam: 1 | 2 | null;
             /** @enum {integer|null} */
             capturingTeam: 1 | 2 | null;
             captureProgress: number | null;
-            captureSuspended: boolean;
-            recorderCaptureFlag6: boolean | null;
         };
         ApiError: {
             id: string | null;

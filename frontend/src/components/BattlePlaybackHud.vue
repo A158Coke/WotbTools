@@ -68,16 +68,12 @@ function hasCenterData() {
 }
 
 function baseStatus(state) {
-  if (state.captureSuspended === true) return 'contested'
   if (state.capturingTeam != null) return 'capturing'
   if (state.ownerTeam == null) return 'neutral'
   if (props.friendlyTeam == null) return 'controlled'
   return state.ownerTeam === props.friendlyTeam ? 'friendly_controlled' : 'enemy_controlled'
 }
 
-function baseLetter(state) {
-  return String.fromCharCode(65 + state.baseIndex)
-}
 </script>
 
 <template>
@@ -101,8 +97,8 @@ function baseLetter(state) {
         <span v-if="props.enemyPoints != null" data-test="pb-points-enemy">{{ compactNumber(props.enemyPoints) }}</span>
       </strong>
       <div v-if="props.baseStates.length" class="pb-hud-bases" data-test="pb-hud-bases">
-        <span v-for="state in props.baseStates" :key="state.baseIndex" class="pb-hud-base" :class="`pb-hud-base-${baseStatus(state)}`" :title="$t(`recon.map.playback.base_status_${baseStatus(state)}`)">
-          <b>{{ baseLetter(state) }}</b>
+        <span v-for="state in props.baseStates" :key="state.baseId" class="pb-hud-base" :class="`pb-hud-base-${baseStatus(state)}`" :title="$t(`recon.map.playback.base_status_${baseStatus(state)}`)">
+          <b>{{ state.baseId }}</b>
           <span class="pb-hud-base-status">{{ $t(`recon.map.playback.base_status_${baseStatus(state)}`) }}</span>
           <i v-if="state.captureProgress != null" class="pb-hud-base-progress" :style="{ '--pb-base-progress': `${state.captureProgress}%` }" :aria-label="$t('recon.map.playback.base_progress', { progress: state.captureProgress })"></i>
         </span>
@@ -145,7 +141,7 @@ function baseLetter(state) {
 .pb-hud-base-status { color: var(--text-muted); }
 .pb-hud-base-friendly_controlled { color: var(--map-spawn-friendly); }
 .pb-hud-base-enemy_controlled { color: var(--map-spawn-enemy); }
-.pb-hud-base-capturing, .pb-hud-base-contested { color: var(--accent); }
+.pb-hud-base-capturing { color: var(--accent); }
 .pb-hud-base-neutral { color: var(--text-muted); }
 .pb-hud-base-controlled { color: var(--text-label); }
 .pb-hud-base-progress { display: inline-block; width: 22px; height: 4px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--text-muted) 22%, transparent); }

@@ -1376,7 +1376,6 @@
                 "base_status_enemy_controlled": "Enemy controlled",
                 "base_status_controlled": "Controlled",
                 "base_status_capturing": "Capturing",
-                "base_status_contested": "Contested",
                 "base_progress": "Capture progress {progress}%",
                 "orientation_hint": "Rotate your device to landscape for the best playback view.",
                 "show_player_name": "Show player names",

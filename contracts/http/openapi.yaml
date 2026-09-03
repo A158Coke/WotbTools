@@ -607,15 +607,13 @@ components:
     BaseStateTransition:
       type: object
       additionalProperties: false
-      required: [timeSec, baseIndex, ownerTeam, capturingTeam, captureProgress, captureSuspended, recorderCaptureFlag6]
+      required: [timeSec, baseId, ownerTeam, capturingTeam, captureProgress]
       properties:
         timeSec: { type: number, minimum: 0 }
-        baseIndex: { type: integer, minimum: 0, maximum: 3 }
+        baseId: { type: string, enum: [A, B, C, D] }
         ownerTeam: { type: [integer, 'null'], enum: [1, 2, null] }
         capturingTeam: { type: [integer, 'null'], enum: [1, 2, null] }
         captureProgress: { type: [integer, 'null'], minimum: 0, maximum: 99 }
-        captureSuspended: { type: boolean }
-        recorderCaptureFlag6: { type: [boolean, 'null'] }
     ApiError:
       type: object
       additionalProperties: false
