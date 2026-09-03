@@ -71,7 +71,7 @@ watch(() => props.panel, (panel, previousPanel) => {
 .pb-side-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; color: var(--text-heading); }
 .pb-panel-close { min-width: 30px; padding: 0; font-size: 1.2rem; line-height: 1; }
 @media (768px <= width < 1200px) {
-  .pb-side-panel { position: fixed; top: 8px; right: 8px; bottom: 8px; width: min(340px, calc(100vw - 16px)); max-height: none; z-index: var(--z-modal); }
+  .pb-side-panel { top: calc(100% + 6px); right: 0; width: min(340px, calc(100vw - 16px)); max-height: min(68vh, 560px); z-index: var(--z-modal); }
 }
 @media (width < 768px) {
   .pb-panel-launcher { display: none; position: absolute; top: 8px; right: 8px; justify-content: flex-end; max-width: calc(100% - 16px); }

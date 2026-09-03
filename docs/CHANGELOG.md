@@ -8,6 +8,7 @@
 - **Local Frontend → Production Backend / Keycloak 开发模式**：前端新增 `npm run dev:production-remote`，通过 Vite `/api` 开发代理连接生产站点，同时复用现有生产 Keycloak issuer 配置；开发 Topbar 显示非模态环境提示并提醒不要上传测试或敏感数据。普通 `npm run dev` 的本地后端代理保持不变。详见 `docs/frontend/local-production-dev.md`。
 
 ### Changed
+- **Battle Playback playback enhancement**：接入 wrapper12 权威 A/B/C/D 基地状态并按回放时间查询；新增不跨观测断点的最近 2 秒车辆轨迹（默认开启且记忆）；全屏 shell 以 grid/flex 保证 HUD、地图、控制和时间轴共同可见，密集坦克标记做稳定的 presentation-only 避让；无权威点数/目标时移除虚假占位符，标注色板增加纯黑。保持 backend route aggregate 供 AI/export 消费，但不恢复独立 Routes UI。
 - **Battle Playback responsive shell**：Battle Playback now uses a shared map-first shell with a universal three-column HUD, compact playback controls, on-demand Battle/Vehicle/Display/Events panels, and a collapsible annotation toolbar. Mobile keeps the map and HUD visible by default, reveals controls on map activity, and uses best-effort landscape fullscreen without changing replay state or the V2/API contract.
 - **Battle Playback Event Panel presentation cleanup**：事件面板仅展示 `DAMAGE`、`KILL` 和 `DESTROYED`；`authoritativeEvents` 仍完整供播放状态、战斗反馈、炮线和统计使用，不改变 canonical 事件事实。
 - **Battle Playback UI hierarchy cleanup**：移除用户可见路线视图、路线筛选/图例与相关残留；时间轴改为无事件标记装饰，事件集中到默认折叠且可点击 seek 的 Event Panel；控制栏收敛为播放、±5 秒、0.5/1/2/4 倍速、Reset View 和 Fullscreen。保留后端 route aggregate 合同及真实事件、HP、选中状态。

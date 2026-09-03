@@ -658,6 +658,7 @@ export default {
         "vehicles",
         "events",
         "pointsSamples",
+        "baseStates",
         "limitations",
         "capability",
         "arenaBonusType"
@@ -706,6 +707,12 @@ export default {
           "type": "array",
           "items": {
             "$ref": "#/$defs/PointsSample"
+          }
+        },
+        "baseStates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BaseStateTransition"
           }
         },
         "limitations": {
@@ -1306,6 +1313,69 @@ export default {
         "points": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "BaseStateTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeSec",
+        "baseIndex",
+        "ownerTeam",
+        "capturingTeam",
+        "captureProgress",
+        "captureSuspended",
+        "recorderCaptureFlag6"
+      ],
+      "properties": {
+        "timeSec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "baseIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "ownerTeam": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "enum": [
+            1,
+            2,
+            null
+          ]
+        },
+        "capturingTeam": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "enum": [
+            1,
+            2,
+            null
+          ]
+        },
+        "captureProgress": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 99
+        },
+        "captureSuspended": {
+          "type": "boolean"
+        },
+        "recorderCaptureFlag6": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       }
     },

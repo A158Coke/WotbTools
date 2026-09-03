@@ -310,9 +310,13 @@ Processing error/retry，不无限重试）；普通 Web/FileUploader 手动选�
 （cached map-overview + MapOverview）提供。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，
 由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
-Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标记/瞬时反馈由 `BattleMap.vue` 渲染，
-播放控制与标注工具由 `PlaybackControls.vue` 渲染，进度条与事件标记由 `PlaybackTimeline.vue` 渲染，
-当前车辆详情由 `VehicleDetailsPanel.vue` 渲染。
+Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标记/瞬时反馈与 canonical 2 秒轨迹由
+`BattleMap.vue` 渲染，通用 HUD 由 `BattlePlaybackHud.vue` 渲染，播放控制与标注工具由
+`PlaybackControls.vue`/`AnnotationToolbar.vue` 渲染。`PlaybackTimeline.vue` 是纯 seek bar，事件列表位于
+`PlaybackSidePanel.vue` 并通过 root command 执行 seek + pause；当前车辆详情仍由
+`VehicleDetailsPanel.vue` 渲染。wrapper12 权威基地状态由后端 projector 提供 `baseStates`，前端只按当前
+回放时间查询，不从静态地图或最终结果推导；坦克重叠避让只改 presentation offset，canonical 坐标和命中
+判定语义保持一致。
 车辆状态投影与时钟推进分别由 `utils/playbackVehicleState.ts`、`utils/playbackClock.ts` 提供纯函数，
 组件只负责把 canonical V2 数据转换为展示 props/commands。
 对应测试按 ownership 分层：地图/标记/手势、控制、时间线、详情面板及时钟/车辆投影各有 focused

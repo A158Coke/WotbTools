@@ -19,7 +19,7 @@ schema 从该文件生成。Java domain facts 通过显式 mapper 投影为 wire
 ### 前端职责边界
 
 `BattlePlayback.vue` 是单一编排入口，负责时间、视图、选择与事件命令；展示层拆为
-`BattlePlaybackHud.vue`（双方 HP、权威点数与空 objective slot）、`BattleMap.vue`
+`BattlePlaybackHud.vue`（双方 HP、权威点数与权威基地状态）、`BattleMap.vue`
 （SVG、坦克标记、炮线、标注及瞬时反馈）、`PlaybackControls.vue`（紧凑播放控制）、
 `PlaybackTimeline.vue`（纯进度条）、`AnnotationToolbar.vue`（折叠式标注工具）、
 `PlaybackSidePanel.vue`（Battle / Vehicle / Display / Events 面板）和
@@ -32,7 +32,7 @@ anti-future-leak 或现有 tank-marker 资产契约。
 ### PR228 响应式展示契约
 
 - Desktop（`>=1200px`）、Tablet（`768–1199px`）和 Mobile（`<768px`）共用同一套
-  Universal Battle HUD：己方在左、比分与空 objective slot 在中、敌方在右；HP 的
+  Universal Battle HUD：己方在左、权威比分/基地状态在中（无事实时不渲染占位符）、敌方在右；HP 的
   `FULL_RELATIVE`、`EXACT`、`PARTIAL`、`UNKNOWN` 语义保持不变。
 - 地图是 workspace 的主视觉。Desktop / Tablet 的 controls 为紧凑流式布局，Mobile
   初始只保留地图和 HUD；轻触地图才显示约 3 秒的播放 controls，控制事件不会穿透到地图。
@@ -41,8 +41,11 @@ anti-future-leak 或现有 tank-marker 资产契约。
 - 标注工具默认折叠，绘图不暂停 battle clock。Fullscreen 继续保持同一组件实例的
   current time、playing、倍速、选中车辆、zoom/pan、annotations 和偏好；移动端只对
   `screen.orientation.lock('landscape')` 做 best-effort 尝试，失败不阻断播放。
-- 当前 `BattlePlaybackDataset` 没有 base-state schema，因此 objective slot 为空/隐藏；
-  本次不新增 backend Base contract、2 秒轨迹或 marker collision avoidance。
+- `BattlePlaybackDataset.baseStates` 是 wrapper12（UpdateArena2 root field11）投影的权威基地
+  transition；查询 UI 时间点时只消费 `timeSec <= currentTime` 的最新 A/B/C/D 状态，字段缺失
+  保持未知，不合成进度或阵营结论。前端另以 canonical `positionSegments` 的 OBSERVED
+  samples 派生最近 2 秒轨迹：不跨 segment/AoI gap，不使用 LAST_KNOWN，不读取未来样本，暂停
+  冻结、seek 重算、倍速只改变时间推进语义。
 
 测试也按同一责任边界组织：地图/标记/手势、控制、时间线和详情面板分别由对应 focused
 suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fixture 位于 testing-only
@@ -204,7 +207,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     → fullscreen enter/exit 后 collision / hitbox / 标注换算立即用新尺寸重算（禁止 magic delay）；
     zoom/pan 不自动 reset（无 auto-fit；Reset View 由用户使用）。全屏样式 `.battle-playback:fullscreen`
     （100%×100%、map stage `min-height:0`、内部滚动兜底）让地图在剩余空间中尽可能展开，
-    不再使用旧 toolbar 的固定 `calc(100vh - 190px)` 垂直预算。
+    不再使用旧 toolbar 的固定 `calc(100vh - 190px)` 垂直预算；HUD、地图、controls 与时间轴
+    通过 fullscreen grid/flex 同时保留在视口内，地图按真实宽高比填充剩余空间。
     生命周期：`fullscreenchange` listener 与 ResizeObserver 在 unmount 时移除/disconnect；组件在全屏
     中被卸载时主动 `exitFullscreen`。
     旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，
@@ -233,7 +237,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
      （用户 2026-08-14 确认去除；路线数据仍仅作为位置插值与炮线端点的内部输入）。
    - **地图标注（画笔/形状/文字，2026-08-16 新增）**：纯前端临时标注，不持久化、不调后端——
      刷新/切文件/切离战局回放视图即清空（切文件经 `BattlePlayback` `watch(overview)` 重置，
-     切视图经 v-if 卸载）。工具栏提供画笔/橡皮擦/箭头/直线/矩形/圆/文字 + 8 色固定色板 +
+     切视图经 v-if 卸载）。工具栏提供画笔/橡皮擦/箭头/直线/矩形/圆/文字 + 9 色固定色板（含纯黑） +
      粗细滑块（1–12）+ 撤回/重做/清空/显隐开关；绘制需显式选工具（未选工具保持原有缩放/平移/
      选车交互；绘制中车标按钮 `pointer-events:none` 防误触，双指捏合/滚轮缩放保留）。几何一律存
      **语义坐标**（x=回放 x，y=回放 z），渲染经 `createMapView.toX/toY`（新增 `fromX/fromY`

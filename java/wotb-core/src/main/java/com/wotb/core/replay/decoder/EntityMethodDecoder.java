@@ -15,6 +15,7 @@ import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.ShotResultEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
+import com.wotb.core.replay.event.SupremacyBaseStateChangedEvent;
 import com.wotb.core.replay.event.TargetingInfoSnapshotEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
@@ -78,6 +79,8 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     static final int SUBTYPE_ROUND_FINISHED = 4;
     /** subtype48 wrapper=3 = ARENA_PERIOD 更新（root field3 = period；PROVEN）。 */
     public static final long WRAPPER_ARENA_PERIOD = 3L;
+    /** subtype48 wrapper=12 = realtime Supremacy base state（root field11；PROVEN current corpus）。 */
+    public static final long WRAPPER_SUPREMACY_BASE = 12L;
     /** wrapper3 root field：arena period 值。 */
     static final int ARENA_PERIOD_ROOT_FIELD = 3;
     static final int AVATAR_METHOD5_ARGS_LEN = 3;
@@ -365,6 +368,9 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     }
                     // 争霸赛实时点数仅在 nested shape 校验通过时解码。
                     events.addAll(parseSupremacyPoints(payload, packet, ts));
+                    // Wrapper12 realtime base ownership/capture state：只接受已闭合的
+                    // wrapper/root/field shape，不从点数或静态地图基地圈推导。
+                    events.addAll(parseSupremacyBaseStates(payload, packet, ts));
                     // PR147 wrapper=3 ARENA_PERIOD（root field3 = period）；period=3 BATTLE = battle-start anchor。
                     events.addAll(parseArenaPeriod(payload, packet, ts));
                     if (events.size() == before) {
@@ -719,6 +725,56 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     DecodeConfidence.EXACT, (int) team, (int) points));
         }
         return out;
+    }
+
+    /**
+     * 解析 subtype48 wrapper12 的实时基地状态（root field11 repeated protobuf）。
+     * 缺失 scalar 字段遵守 protobuf default：index/owner/capturing/progress 为 0，
+     * suspended/recorder flag 为 false；对外使用 nullable 仅保留「字段未携带」的来源事实。
+     */
+    private List<SupremacyBaseStateChangedEvent> parseSupremacyBaseStates(
+            byte[] payload, RawReplayPacket packet, ReplayTimestamp ts) {
+        final DecodedUpdateArena2 decoded = decodeUpdateArena2(payload);
+        if (decoded == null || decoded.wrapperFieldNumber() != WRAPPER_SUPREMACY_BASE) {
+            return List.of();
+        }
+        final List<Object> baseBlocks = decoded.root().get(11);
+        if (baseBlocks == null || baseBlocks.isEmpty()) {
+            return List.of();
+        }
+        final List<SupremacyBaseStateChangedEvent> out = new ArrayList<>();
+        for (final Object blockRaw : baseBlocks) {
+            if (!(blockRaw instanceof byte[] block)) {
+                continue;
+            }
+            final var fields = ProtobufDecoder.decode(block);
+            final long baseIndex = ProtobufDecoder.firstLong(fields, 1, 0);
+            final long owner = ProtobufDecoder.firstLong(fields, 2, 0);
+            final long capturing = ProtobufDecoder.firstLong(fields, 3, 0);
+            final long progress = ProtobufDecoder.firstLong(fields, 4, 0);
+            final long suspended = ProtobufDecoder.firstLong(fields, 5, 0);
+            final long recorderFlag = ProtobufDecoder.firstLong(fields, 6, 0);
+            if (baseIndex < 0 || baseIndex > 3
+                    || !validOptionalTeam(owner) || !validOptionalTeam(capturing)
+                    || progress < 0 || progress > 99
+                    || (suspended != 0 && suspended != 1)
+                    || (recorderFlag != 0 && recorderFlag != 1)) {
+                continue;
+            }
+            out.add(new SupremacyBaseStateChangedEvent(
+                    packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                    (int) baseIndex,
+                    owner == 0 ? null : (int) owner,
+                    capturing == 0 ? null : (int) capturing,
+                    fields.containsKey(4) ? (int) progress : null,
+                    suspended == 1,
+                    fields.containsKey(6) ? recorderFlag == 1 : null));
+        }
+        return out;
+    }
+
+    private static boolean validOptionalTeam(final long team) {
+        return team == 0 || team == 1 || team == 2;
     }
 
     /**

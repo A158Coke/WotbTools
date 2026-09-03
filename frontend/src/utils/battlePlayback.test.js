@@ -8,6 +8,7 @@ import {
   parseAiTime,
   positionAt,
   pushFeed,
+  recentPositionTrails,
   screenRotation,
   shortestArcDeg,
   teamPointsAt,
@@ -17,6 +18,29 @@ import {
   turretWorldYawDeg,
   zoomViewAt
 } from './battlePlayback'
+
+describe('recentPositionTrails', () => {
+  const vehicle = (positionSegments) => ({ accountId: 7, friendly: true, positionSegments })
+
+  it('renders only observed samples in the last two seconds and never future points', () => {
+    const trails = recentPositionTrails([vehicle([{
+      knowledge: 'OBSERVED',
+      samples: [{ timeSec: 8, x: 0, y: 0 }, { timeSec: 9, x: 10, y: 0 }, { timeSec: 10, x: 20, y: 0 }, { timeSec: 11, x: 30, y: 0 }],
+    }])], 10)
+    expect(trails).toHaveLength(2)
+    expect(trails.every(trail => trail.to?.timeSec <= 10)).toBe(true)
+  })
+
+  it('does not draw across observed gaps or LAST_KNOWN segments', () => {
+    const trails = recentPositionTrails([vehicle([
+      { knowledge: 'OBSERVED', samples: [{ timeSec: 8, x: 0, y: 0 }, { timeSec: 14, x: 10, y: 0 }] },
+      { knowledge: 'LAST_KNOWN', samples: [{ timeSec: 9, x: 1, y: 1 }, { timeSec: 10, x: 2, y: 2 }] },
+    ])], 14)
+    expect(trails).toHaveLength(1)
+    expect(trails[0].point.timeSec).toBe(14)
+    expect(trails.some(trail => trail.from)).toBe(false)
+  })
+})
 
 describe('positionAt', () => {
   const points = [

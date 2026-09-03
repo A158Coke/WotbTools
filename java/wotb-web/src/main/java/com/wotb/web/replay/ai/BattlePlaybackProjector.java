@@ -7,6 +7,7 @@ import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
+import com.wotb.core.replay.event.SupremacyBaseStateChangedEvent;
 import com.wotb.core.replay.event.VehicleBattleLoadout;
 import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.feature.PlaybackCombatReconstruction;
@@ -37,6 +38,7 @@ import com.wotb.web.replay.dto.BattlePlaybackDataset.ModuleCrewTransition;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.OrientationSample;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.OrientationSegment;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.PointsSample;
+import com.wotb.web.replay.dto.BattlePlaybackDataset.BaseStateTransition;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.PositionSample;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.PositionSegment;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.VehicleBattleLoadoutDto;
@@ -123,6 +125,7 @@ public final class BattlePlaybackProjector {
                 tracks,
                 events(timeline, mapping, tracks, effectiveRecorder, duration, combat),
                 pointsSamples(timeline),
+                baseStates(timeline),
                 limitations,
                 null,
                 battle.arenaBonusType);
@@ -682,6 +685,34 @@ public final class BattlePlaybackProjector {
         return samples;
     }
 
+    private static List<BaseStateTransition> baseStates(final BattleTimeline timeline) {
+        if (timeline.events() == null) {
+            return List.of();
+        }
+        final List<BaseStateTransition> states = new ArrayList<>();
+        for (final ReplayEvent event : timeline.events()) {
+            if (!(event instanceof SupremacyBaseStateChangedEvent base)
+                    || base.confidence() != DecodeConfidence.EXACT) {
+                continue;
+            }
+            final double timeSec = battleClockOf(event, timeline);
+            if (!isActiveTime(timeSec) || timeSec > timeline.durationSec() + 1e-9) {
+                continue;
+            }
+            states.add(new BaseStateTransition(
+                    Math.max(0d, timeSec),
+                    base.baseIndex(),
+                    base.ownerTeam(),
+                    base.capturingTeam(),
+                    base.captureProgress(),
+                    base.captureSuspended(),
+                    base.recorderCaptureFlag6()));
+        }
+        states.sort(Comparator.comparingDouble(BaseStateTransition::timeSec)
+                .thenComparingInt(BaseStateTransition::baseIndex));
+        return List.copyOf(states);
+    }
+
     static VehicleBattleLoadoutDto toLoadoutDto(final VehicleBattleLoadout l) {
         if (l == null) {
             return null;
@@ -781,6 +812,12 @@ public final class BattlePlaybackProjector {
         }
         for (final PointsSample sample : dataset.pointsSamples()) {
             requireActiveTime("points.timeSec", sample.timeSec());
+        }
+        for (final BaseStateTransition state : dataset.baseStates()) {
+            requireActiveTime("base.timeSec", state.timeSec());
+            if (state.baseIndex() < 0 || state.baseIndex() > 3) {
+                throw new IllegalStateException("base index outside supported A-D range: " + state.baseIndex());
+            }
         }
     }
 

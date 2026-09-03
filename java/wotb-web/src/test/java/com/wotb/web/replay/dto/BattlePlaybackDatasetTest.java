@@ -122,7 +122,7 @@ class BattlePlaybackDatasetTest {
 
         final JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(dataset));
         assertFieldNames(json, Set.of("durationSec", "mapCode", "friendlyTeam", "recorderAccountId",
-                "vehicles", "events", "pointsSamples", "limitations", "capability", "arenaBonusType"));
+                "vehicles", "events", "pointsSamples", "baseStates", "limitations", "capability", "arenaBonusType"));
         final JsonNode vehicles = requiredField(json, "vehicles");
         assertTrue(vehicles.isArray());
         final JsonNode serializedVehicle = vehicles.get(0);

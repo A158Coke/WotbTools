@@ -12,10 +12,10 @@
  * - text:   { type:'text',   color, x, y, text }
  */
 
-/** 标注颜色固定色板（8 色，暗图高对比）。 */
+/** 标注颜色固定色板（含纯黑，供亮色地图与标注对比）。 */
 export const ANNOT_COLORS = [
-  '#ff4d4f', '#ffd166', '#ffffff', '#40c4ff',
-  '#69f0ae', '#ff7eb6', '#ff9f43', '#9c88ff'
+  '#ff4d4f', '#ffd166', '#ffffff', '#000000',
+  '#40c4ff', '#69f0ae', '#ff7eb6', '#ff9f43', '#9c88ff'
 ]
 
 /** 粗细滑块范围与默认值（SVG 单位，随地图缩放）。 */

@@ -11,6 +11,7 @@ const props = defineProps({
   friendlyTeam: { type: [Number, String], default: null },
   gridRegions: { type: Array, default: () => [] },
   visibleTracers: { type: Array, default: () => [] },
+  visibleTrails: { type: Array, default: () => [] },
   tracerColor: { type: Function, required: true },
   viewScale: { type: Number, default: 1 },
   viewportStyle: { type: String, default: '' },
@@ -69,6 +70,31 @@ defineExpose({ mapEl, textInputRef })
         <g class="pb-spawns">
           <circle v-for="(spawn, index) in props.pbOverview.spawnPoints" :key="`${spawn.name}-${index}`" :cx="props.mapView.toX(spawn.x)" :cy="props.mapView.toY(spawn.y)" r="4" :class="props.friendlyTeam === null || props.friendlyTeam === undefined ? 'pb-spawn-neutral' : (spawn.team === props.friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy')" />
         </g>
+        <g class="pb-trails" data-test="pb-trails" aria-hidden="true">
+          <template v-for="(trail, index) in props.visibleTrails" :key="`trail-${trail.accountId}-${index}`">
+            <line
+              v-if="trail.from && trail.to"
+              class="pb-trail"
+              :x1="props.mapView.toX(trail.from.x)"
+              :y1="props.mapView.toY(trail.from.y)"
+              :x2="props.mapView.toX(trail.to.x)"
+              :y2="props.mapView.toY(trail.to.y)"
+              :stroke="trail.friendly === true ? 'var(--map-spawn-friendly)' : (trail.friendly === false ? 'var(--map-spawn-enemy)' : 'var(--text-muted)')"
+              :stroke-width="1.5 / props.viewScale"
+              stroke-dasharray="2 4"
+              :opacity="trail.opacity"
+            />
+            <circle
+              v-else-if="trail.point"
+              class="pb-trail-point"
+              :cx="props.mapView.toX(trail.point.x)"
+              :cy="props.mapView.toY(trail.point.y)"
+              :r="1.8 / props.viewScale"
+              :fill="trail.friendly === true ? 'var(--map-spawn-friendly)' : (trail.friendly === false ? 'var(--map-spawn-enemy)' : 'var(--text-muted)')"
+              :opacity="trail.opacity"
+            />
+          </template>
+        </g>
         <g class="pb-tracers" aria-hidden="true">
           <template v-for="(line, index) in props.visibleTracers" :key="`tracer-${line.timeSec}-${index}`">
             <line class="pb-tracer" :x1="props.mapView.toX(line.x1)" :y1="props.mapView.toY(line.y1)" :x2="props.mapView.toX(line.x2)" :y2="props.mapView.toY(line.y2)" :stroke="props.tracerColor(line.attackerAccountId)" :stroke-width="6 / props.viewScale" :opacity="line.opacity * 0.35" />
@@ -121,9 +147,10 @@ defineExpose({ mapEl, textInputRef })
 .pb-viewport { position: relative; width: 100%; transform-origin: 0 0; touch-action: none; }
 .pb-svg { display: block; width: 100%; height: auto; border-radius: 4px; background: var(--bg-elevated); }
 .pb-markers { position: absolute; inset: 0; pointer-events: none; }
-.pb-vehicle { position: absolute; width: 36px; height: 36px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
+.pb-vehicle { position: absolute; width: 32px; height: 32px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
 .pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.55)); stroke-width: 1; fill: none; }
 .pb-tracer, .pb-tracer-core { stroke-linecap: round; }
+.pb-trail { stroke-linecap: round; }
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
@@ -151,6 +178,6 @@ defineExpose({ mapEl, textInputRef })
 .pb-annot-text { paint-order: stroke; stroke: color-mix(in srgb, var(--bg) 65%, transparent); stroke-width: 1; }
 .pb-drawing { pointer-events: none; }
 .pb-text-input { position: absolute; width: 140px; font-size: 13px; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 3px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--text); z-index: 6; }
-@media (width < 768px) { .pb-map { width: 100%; } .pb-vehicle { width: 28px; height: 28px; } }
+@media (width < 768px) { .pb-map { width: 100%; } .pb-vehicle { width: 25px; height: 25px; } }
 @media (prefers-reduced-motion: reduce) { .pb-float-dmg, .pb-burst, .pb-feed-item { animation: none; } }
 </style>
