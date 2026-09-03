@@ -74,8 +74,6 @@ function hasCenterData() {
 // ---- §13：Team HP delayed-damage bar ----
 // authoritative current HP 立即更新；delayed bar 短暂停留在旧值，随后追赶当前值
 //（150–250ms 克制过渡）；seek/恢复（hpNoTransition）直接同步，不补播伤害动画。
-const FILL_TRANSITION_MS = 200
-const LAG_DRAIN_MS = 420
 function fillPctNum(hp) {
   if (!hp || typeof hp !== 'object') return 0
   if (hp.state === 'DESTROYED' || hp.state === 'UNKNOWN') return 0
