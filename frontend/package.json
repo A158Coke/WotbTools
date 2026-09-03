@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:production-remote": "vite --mode production-remote",
     "test": "vitest run",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
     "build": "vite build",
