@@ -380,6 +380,7 @@ export interface components {
             vehicles: components["schemas"]["VehiclePlaybackTrack"][];
             events: components["schemas"]["BattleEvent"][];
             pointsSamples: components["schemas"]["PointsSample"][];
+            baseStates?: components["schemas"]["BaseStateTransition"][];
             limitations: string[];
             capability: components["schemas"]["PlaybackCapability"];
             arenaBonusType: number | null;
@@ -488,6 +489,16 @@ export interface components {
             timeSec: number;
             team: number;
             points: number;
+        };
+        BaseStateTransition: {
+            timeSec: number;
+            /** @enum {string} */
+            baseId: "A" | "B" | "C" | "D";
+            /** @enum {integer|null} */
+            ownerTeam: 1 | 2 | null;
+            /** @enum {integer|null} */
+            capturingTeam: 1 | 2 | null;
+            captureProgress: number | null;
         };
         ApiError: {
             id: string | null;

@@ -36,6 +36,7 @@ const dataset: BattlePlaybackDataset = {
   vehicles: [track],
   events: [],
   pointsSamples: [],
+  baseStates: [],
   limitations: [],
   capability: 'FULL',
   arenaBonusType: null,

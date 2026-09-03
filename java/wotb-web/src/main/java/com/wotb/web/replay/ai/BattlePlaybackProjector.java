@@ -7,6 +7,7 @@ import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
+import com.wotb.core.replay.event.SupremacyBaseStateTransition;
 import com.wotb.core.replay.event.VehicleBattleLoadout;
 import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.feature.PlaybackCombatReconstruction;
@@ -37,6 +38,7 @@ import com.wotb.web.replay.dto.BattlePlaybackDataset.ModuleCrewTransition;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.OrientationSample;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.OrientationSegment;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.PointsSample;
+import com.wotb.web.replay.dto.BattlePlaybackDataset.BaseStateTransition;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.PositionSample;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.PositionSegment;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.VehicleBattleLoadoutDto;
@@ -45,8 +47,10 @@ import com.wotb.web.replay.dto.BattlePlaybackDataset.VehiclePlaybackTrack;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Battle Playback V2 <b>pure projection</b>（plan §22）：把 canonical {@link BattleTimeline}
@@ -123,6 +127,7 @@ public final class BattlePlaybackProjector {
                 tracks,
                 events(timeline, mapping, tracks, effectiveRecorder, duration, combat),
                 pointsSamples(timeline),
+                baseStates(timeline),
                 limitations,
                 null,
                 battle.arenaBonusType);
@@ -682,6 +687,60 @@ public final class BattlePlaybackProjector {
         return samples;
     }
 
+    private static List<BaseStateTransition> baseStates(final BattleTimeline timeline) {
+        if (timeline.events() == null) {
+            return List.of();
+        }
+        final List<BaseStateTransition> states = new ArrayList<>();
+        final Map<String, BaseStateTransition> latestPreBattle = new HashMap<>();
+        final Set<String> basesWithZeroState = new HashSet<>();
+        for (final ReplayEvent event : timeline.events()) {
+            if (!(event instanceof SupremacyBaseStateTransition base)
+                    || base.confidence() != DecodeConfidence.EXACT) {
+                continue;
+            }
+            final double timeSec = battleClockOf(event, timeline);
+            if (!Double.isFinite(timeSec)) {
+                continue;
+            }
+            final BaseStateTransition projected = new BaseStateTransition(
+                    timeSec,
+                    base.baseId().name(),
+                    base.ownerTeam(),
+                    base.capturingTeam(),
+                    base.captureProgress());
+            if (timeSec < 0d) {
+                // Base updates before battle start are canonical full states. Retain the
+                // latest one per base so playback has a deterministic t=0 seed.
+                final BaseStateTransition previous = latestPreBattle.get(projected.baseId());
+                if (previous == null || previous.timeSec() < timeSec) {
+                    latestPreBattle.put(projected.baseId(), projected);
+                }
+                continue;
+            }
+            if (timeSec > timeline.durationSec() + 1e-9) {
+                continue;
+            }
+            states.add(projected);
+            if (timeSec <= 1e-9) {
+                basesWithZeroState.add(projected.baseId());
+            }
+        }
+        for (final BaseStateTransition seed : latestPreBattle.values()) {
+            if (!basesWithZeroState.contains(seed.baseId())) {
+                states.add(new BaseStateTransition(
+                        0d,
+                        seed.baseId(),
+                        seed.ownerTeam(),
+                        seed.capturingTeam(),
+                        seed.captureProgress()));
+            }
+        }
+        states.sort(Comparator.comparingDouble(BaseStateTransition::timeSec)
+                .thenComparing(BaseStateTransition::baseId));
+        return List.copyOf(states);
+    }
+
     static VehicleBattleLoadoutDto toLoadoutDto(final VehicleBattleLoadout l) {
         if (l == null) {
             return null;
@@ -781,6 +840,12 @@ public final class BattlePlaybackProjector {
         }
         for (final PointsSample sample : dataset.pointsSamples()) {
             requireActiveTime("points.timeSec", sample.timeSec());
+        }
+        for (final BaseStateTransition state : dataset.baseStates()) {
+            requireActiveTime("base.timeSec", state.timeSec());
+            if (!List.of("A", "B", "C", "D").contains(state.baseId())) {
+                throw new IllegalStateException("base id outside supported A-D range: " + state.baseId());
+            }
         }
     }
 

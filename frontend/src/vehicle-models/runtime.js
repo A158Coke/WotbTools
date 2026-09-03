@@ -32,14 +32,15 @@ export const PRELOAD_TIMEOUT_MS = 3000
  * （无外部直接构造/继承需求，不导出——避免无人消费的公共 API）。
  */
 class VehicleModel {
-  /** @param {{modelKey:string, kind:'turreted'|'turretless', hullSrc:string, turretSrc:string|null, turretPivot:({x:number,y:number}|null), turretRaster:(object|null)}} init */
-  constructor({ modelKey, kind, hullSrc, turretSrc, turretPivot, turretRaster }) {
+  /** @param {{modelKey:string, kind:'turreted'|'turretless', hullSrc:string, turretSrc:string|null, turretPivot:({x:number,y:number}|null), turretRaster:(object|null), hullBounds:(object|null)}} init */
+  constructor({ modelKey, kind, hullSrc, turretSrc, turretPivot, turretRaster, hullBounds }) {
     this.modelKey = modelKey
     this.kind = kind
     this.hullSrc = hullSrc
     this.turretSrc = turretSrc
     this.turretPivot = turretPivot
     this.turretRaster = turretRaster
+    this.hullBounds = hullBounds
   }
 }
 
@@ -59,8 +60,22 @@ export function resolveModel(modelKey) {
   if (!hullSrc) return null
   const kind = meta.kind
   if (kind !== 'turreted' && kind !== 'turretless') return null
+  const rawHullBounds = meta.generation?.hullBounds
+  const hullBounds = rawHullBounds
+    && Array.isArray(rawHullBounds.min) && Array.isArray(rawHullBounds.max)
+    && rawHullBounds.min.length >= 2 && rawHullBounds.max.length >= 2
+    && rawHullBounds.min.every(Number.isFinite) && rawHullBounds.max.every(Number.isFinite)
+    && rawHullBounds.max[0] > rawHullBounds.min[0]
+    && rawHullBounds.max[1] > rawHullBounds.min[1]
+    ? Object.freeze({
+      minX: rawHullBounds.min[0],
+      maxX: rawHullBounds.max[0],
+      minY: rawHullBounds.min[1],
+      maxY: rawHullBounds.max[1],
+    })
+    : null
   if (kind === 'turretless') {
-    return new VehicleModel({ modelKey, kind, hullSrc, turretSrc: null, turretPivot: null, turretRaster: null })
+    return new VehicleModel({ modelKey, kind, hullSrc, turretSrc: null, turretPivot: null, turretRaster: null, hullBounds })
   }
   const turretSrc = turretUrls[`./assets/${modelKey}/turret.webp`]
   if (!turretSrc || !meta.turretPivot || !meta.turretRaster) return null
@@ -71,6 +86,7 @@ export function resolveModel(modelKey) {
     turretSrc,
     turretPivot: meta.turretPivot,
     turretRaster: meta.turretRaster,
+    hullBounds,
   })
 }
 

@@ -75,7 +75,7 @@ describe('BattlePlaybackPanel dataset request', () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: async () => ({ durationSec: 0, mapCode: null, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null, capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [], events: [], pointsSamples: [] })
+          json: async () => ({ durationSec: 0, mapCode: null, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null, capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [], events: [], pointsSamples: [], baseStates: [] })
         })
       }
       return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
@@ -97,7 +97,7 @@ describe('BattlePlaybackPanel dataset request', () => {
           status: 200,
           json: async () => ({
             durationSec: 0, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null,
-            capability: 'PARTIAL', limitations: [], vehicles: [], events: [], pointsSamples: []
+            capability: 'PARTIAL', limitations: [], vehicles: [], events: [], pointsSamples: [], baseStates: []
           })
         })
       : Promise.resolve({ ok: true, status: 204 })))
@@ -108,7 +108,8 @@ describe('BattlePlaybackPanel dataset request', () => {
     expect(error.exists()).toBe(true)
     expect(error.text()).toContain('errors.invalid_response')
     expect(error.text()).not.toContain('errors.unknown_error')
-    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(false)
+    // INVALID_RESPONSE（retryable=false）也必须提供手动「重试加载」入口。
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(true)
     vi.unstubAllGlobals()
   })
 
@@ -162,7 +163,7 @@ describe('BattlePlaybackPanel dataset request', () => {
           json: async () => ({
             capability: 'PARTIAL',
             limitations: ['TIMELINE_UNAVAILABLE'],
-            vehicles: [], events: [], pointsSamples: [], durationSec: 0,
+            vehicles: [], events: [], pointsSamples: [], baseStates: [], durationSec: 0,
             mapCode: null, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null
           })
         })
@@ -208,7 +209,8 @@ describe('BattlePlaybackPanel dataset request', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-test="pb-error"]').text()).toContain('errors.auth_forbidden')
     expect(wrapper.find('[data-test="pb-error"]').text()).toContain('err-403')
-    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(false)
+    // 手动恢复入口不绑定 retryable：ERROR 态 + datasetReady → 始终提供「重试加载」。
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(true)
     vi.unstubAllGlobals()
   })
 
@@ -225,7 +227,8 @@ describe('BattlePlaybackPanel dataset request', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-test="pb-error"]').text()).toContain('errors.auth_unauthenticated')
     expect(wrapper.find('[data-test="pb-error"]').text()).toContain('err-401')
-    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(false)
+    // 手动恢复入口不绑定 retryable：ERROR 态 + datasetReady → 始终提供「重试加载」。
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(true)
     vi.unstubAllGlobals()
   })
 
@@ -250,7 +253,7 @@ describe('BattlePlaybackPanel dataset request', () => {
         return Promise.resolve({
           ok: true, status: 200,
           json: async () => ({
-            capability: 'FULL', limitations: [], vehicles: [], events: [], pointsSamples: [], durationSec: 0,
+            capability: 'FULL', limitations: [], vehicles: [], events: [], pointsSamples: [], baseStates: [], durationSec: 0,
             mapCode: 'holland', friendlyTeam: 1, recorderAccountId: 1001, arenaBonusType: 1
           })
         })
@@ -277,7 +280,7 @@ describe('BattlePlaybackPanel dataset request', () => {
         return Promise.resolve({
           ok: true, status: 200,
           json: async () => ({
-            capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [], events: [], pointsSamples: [], durationSec: 0,
+            capability: 'PARTIAL', limitations: ['BATTLE_RELATIVE_TIME_UNAVAILABLE'], vehicles: [], events: [], pointsSamples: [], baseStates: [], durationSec: 0,
             mapCode: 'holland', friendlyTeam: 1, recorderAccountId: 1001, arenaBonusType: 1
           })
         })
@@ -343,6 +346,143 @@ describe('BattlePlaybackPanel dataset request', () => {
     expect(status.find('.map-status-spinner').exists()).toBe(false, 'FAILURE 状态不得显示 spinner')
     expect(status.text()).toContain('workspace.dataset_prepare_failed')
     expect(status.find('.map-dataset-error').exists()).toBe(true, 'FAILURE 应使用错误色文案')
+    vi.unstubAllGlobals()
+  })
+
+  it('retryable=true ERROR → 始终显示「重试加载」并保留 retryable 语义', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => String(url).endsWith('battle-playback-v2')
+      ? Promise.resolve({ ok: false, status: 500, text: async () => 'DATASET_UNAVAILABLE' })
+      : Promise.resolve({ ok: true, status: 204 })))
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-error"]').attributes('data-retryable')).toBe('true')
+    vi.unstubAllGlobals()
+  })
+
+  it('retryable=false INVALID_RESPONSE → 同样显示「重试加载」', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => String(url) === '/api/replay/battle-playback-v2'
+      ? Promise.resolve({
+          ok: true, status: 200,
+          json: async () => ({
+            durationSec: 0, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null,
+            capability: 'PARTIAL', limitations: [], vehicles: [], events: [], pointsSamples: [], baseStates: []
+          })
+        })
+      : Promise.resolve({ ok: true, status: 204 })))
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-error"]').text()).toContain('errors.invalid_response')
+    // retryable=false 也提供手动恢复入口；retryable 语义保留在 data-retryable 上。
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-error"]').attributes('data-retryable')).toBe('false')
+    vi.unstubAllGlobals()
+  })
+
+  it('datasetReady=false → 不显示无效「重试加载」按钮', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(BattlePlaybackPanel, {
+      props: { file: { name: 'a.wotbreplay' }, processingJobId: null, sourceId: null, active: true },
+      global: {
+        mocks: { $t: key => key },
+        stubs: {
+          MapOverview: { template: '<div class="map-stub" />' },
+          BattlePlayback: { template: '<div data-test="pb-stub" />' }
+        }
+      }
+    })
+    await new Promise(r => setTimeout(r, 20))
+    await new Promise(r => setTimeout(r, 20))
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-error"]').exists()).toBe(false)
+    vi.unstubAllGlobals()
+  })
+
+  it('点击 retry → ERROR → LOADING → FULL（重试只重新读取当前 dataset）', async () => {
+    let v2Call = 0
+    let resolveRetry
+    const retryPromise = new Promise(resolve => { resolveRetry = resolve })
+    const fetchMock = vi.fn((url) => {
+      if (String(url) === '/api/replay/battle-playback-v2') {
+        v2Call++
+        if (v2Call === 1) {
+          // 首次：contract validation 失败 → INVALID_RESPONSE（retryable=false）
+          return Promise.resolve({
+            ok: true, status: 200,
+            json: async () => ({
+              durationSec: 0, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null,
+              capability: 'PARTIAL', limitations: [], vehicles: [], events: [], pointsSamples: [], baseStates: []
+            })
+          })
+        }
+        return retryPromise
+      }
+      return Promise.resolve({ ok: true, status: 204 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(true)
+
+    // 点击 retry → LOADING（重试期间按钮消失，避免重复点击）
+    await wrapper.find('[data-test="pb-retry"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(false)
+
+    // 重试成功 → FULL
+    resolveRetry({
+      ok: true, status: 200,
+      json: async () => ({
+        capability: 'FULL', limitations: [], vehicles: [], events: [], pointsSamples: [],
+        baseStates: [], durationSec: 0, mapCode: 'holland', friendlyTeam: 1, recorderAccountId: 1001, arenaBonusType: 1
+      })
+    })
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-stub"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-error"]').exists()).toBe(false)
+    expect(v2Call).toBe(2)
+    vi.unstubAllGlobals()
+  })
+
+  it('连续失败 → 再次 ERROR 且「重试加载」按钮重新出现', async () => {
+    let v2Call = 0
+    const fetchMock = vi.fn((url) => {
+      if (String(url) === '/api/replay/battle-playback-v2') {
+        v2Call++
+        // 每次都 contract validation 失败 → ERROR（retryable=false）
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: async () => ({
+            durationSec: 0, friendlyTeam: null, recorderAccountId: null, arenaBonusType: null,
+            capability: 'PARTIAL', limitations: [], vehicles: [], events: [], pointsSamples: [], baseStates: []
+          })
+        })
+      }
+      return Promise.resolve({ ok: true, status: 204 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountDatasetPanel()
+    await new Promise(r => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(true)
+
+    // 点击 retry → LOADING → 再次失败 → ERROR + 按钮重新出现
+    await wrapper.find('[data-test="pb-retry"]').trigger('click')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="pb-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-retry"]').exists()).toBe(true)
+    expect(v2Call).toBe(2)
     vi.unstubAllGlobals()
   })
 })

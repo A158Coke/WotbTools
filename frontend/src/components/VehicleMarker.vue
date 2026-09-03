@@ -17,7 +17,7 @@
  *
  * 渲染路径：
  * - generic（marker.model == null）：现有通用 PNG 双层（共同 pivot 居中旋转，行为不变）；
- * - dedicated turreted：hull.webp 填满标记盒绕中心旋转 + turret assembly
+ * - dedicated turreted：hull.webp 填满等比 square render box 绕中心旋转 + turret assembly
  *   （父层 rotate(H) around 盒中心；子层按 turretRaster 百分比定位，绕 image-local
  *   pivot rotate(T-H)）——数学见 vehicle-models/pivot.js（marker*Transform）；
  * - dedicated turretless：仅 hull（gun/mantlet 已 bake 进 hull；无 fake turret layer）。
@@ -78,7 +78,7 @@ const turretImageStyle = computed(() => {
     raster: model.value.turretRaster,
   })
 })
-// hull 图片样式：dedicated 填满标记盒（0/0/100%/100%，绕盒中心 = 自身中心旋转）；
+// hull 图片样式：dedicated 填满等比 square render box（0/0/100%/100%，绕盒中心 = 自身中心旋转）；
 // generic 居中模式：scale 134%（PR3 增补重新校准——generic 素材车体 bbox ≈210×336/512
 // （长边 65.6%），dedicated hull.webp 车体长边 ≈88.1%（fit padding 0.88）；134% = 0.881/0.656
 // 使 generic 车体长边视觉与 dedicated 对齐（≈31.7px @36px box），img 物理尺寸略大于 box
@@ -106,6 +106,16 @@ const genericTurretStyle = computed(() =>
 const overlayInv = computed(() =>
   Number.isFinite(st.value.overlayInverse) && st.value.overlayInverse > 0 ? st.value.overlayInverse : 1,
 )
+const hitboxStyle = computed(() => {
+  const size = st.value.hitTargetSize
+  if (size && Number.isFinite(size.width) && Number.isFinite(size.height)) {
+    return { width: `${size.width}px`, height: `${size.height}px` }
+  }
+  return {
+    width: Math.round((st.value.hitbox ? st.value.hitbox.w : 0.9) * 100) + '%',
+    height: Math.round((st.value.hitbox ? st.value.hitbox.h : 0.9) * 100) + '%',
+  }
+})
 // selected 三角 bottom（layout px）推导（B2 残余 + PR4 §27 label 块高度适配）：
 // - label 块：bottom anchor 2px；块高 = 显示行数 × 行高 + 块 padding（PR4 单行/双行自适应）；
 //   transform scale(inv) 绕中心 → 块顶边 screen = (2 + half)·s + half。
@@ -244,18 +254,20 @@ const hpClasses = computed(() => ({
     :data-test="`pb-marker-${st.vehicle.accountId}`"
     @click="emit('select', $event)"
   >
-    <!-- PR4 §36：hull hitbox（车体视觉范围 + 小 padding，随 marker 缩放；
-         按钮其余区域 pointer-events:none 不拦截点击，label/✕/三角/菱形均不可点） -->
+    <!-- Hull hit target follows the vehicle-aware marker box. It is slightly
+         larger than the visible model for touch usability, but is not part of
+         visual collision. -->
     <span
       class="pb-hitbox"
-      :style="{ width: Math.round((st.hitbox ? st.hitbox.w : 0.9) * 100) + '%', height: Math.round((st.hitbox ? st.hitbox.h : 0.9) * 100) + '%' }"
+      :style="hitboxStyle"
       aria-hidden="true"
     ></span>
     <!-- 车型视觉层容器：destroyed/last-known 的 opacity/grayscale/team 光晕精确作用于此处
          （而非整个 button）——pb-death ✕ / pb-selected-mark / pb-recorder-badge / pb-labels
          是 button 直接子元素、在容器外，保持完整强度（parent opacity 无法被子元素抵消）。 -->
     <div class="pb-graphics">
-      <!-- dedicated turreted：hull 满盒 + turret assembly（父层绕盒中心 H，子层绕 image-local pivot T-H） -->
+      <!-- dedicated turreted：hull 填满等比 square render box + turret assembly
+           （父层绕盒中心 H，子层绕 image-local pivot T-H） -->
       <template v-if="isDedicated && isTurreted">
         <img
           v-if="hullDeg != null"
@@ -343,10 +355,12 @@ const hpClasses = computed(() => ({
     ></span>
 
     <!-- HP HUD（docs/features/battle-playback.md HP HUD）：HP 数字 + 定宽 bar，
-         位于 marker 上方、标签块之上（HP 优先级最高）；last-known 弱化、destroyed 归零、
+         位于 marker 上方、标签块之上（HP 优先级最高）；last-known 弱化；
+         destroyed 由权威 lifeState 判定（st.destroyed，非 hp===0）→ 隐藏单车
+         HP number+bar（§18/§19），保留 ✕ / 灰化 marker / labels / selected / recorder；
          UNKNOWN 显示 —；ghost/flash 由外层 transient 状态驱动；hpVisible=false 整体隐藏 -->
     <div
-      v-if="hpVisible && hp && !label.hpHidden"
+      v-if="hpVisible && hp && !label.hpHidden && !st.destroyed"
       class="pb-hp-hud"
       :class="hpClasses"
       :style="hpHudStyle"
@@ -408,7 +422,7 @@ const hpClasses = computed(() => ({
 }
 .pb-hull { z-index: 1; }
 .pb-turret { z-index: 2; }
-/* dedicated hull：填满标记盒，绕盒中心（= 自身中心）旋转（rotate 由 inline style 提供） */
+/* dedicated hull：填满等比 square render box，绕盒中心（= 自身中心）旋转（rotate 由 inline style 提供） */
 .pb-hull-dedicated {
   position: absolute;
   left: 0;
@@ -433,8 +447,7 @@ const hpClasses = computed(() => ({
   inset: 0;
 }
 
-/* —— PR4 §36 hull hitbox：车体视觉范围 + 小 padding（inline 尺寸 % 随 marker 缩放）；
-   不含 gun overflow / 三角 / 菱形 / ✕ / label；destroyed/last-known 仍可点击（§36）—— */
+/* —— Hull hit target：略大于 vehicle-aware visible model，便于触控；不参与视觉碰撞。 —— */
 .pb-hitbox {
   position: absolute;
   left: 50%;

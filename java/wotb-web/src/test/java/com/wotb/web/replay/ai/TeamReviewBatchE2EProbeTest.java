@@ -11,6 +11,7 @@ import com.wotb.web.config.AiModelProperties;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.SpringAiChatGateway;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +28,7 @@ import java.util.List;
  * "-Dtest=TeamReviewBatchE2EProbeTest" "-Dai.probe.excludedGroups="}
  */
 @Tag("ai-live")
+@Disabled("Live DeepSeek API probe; skipped in CI and normal local test runs")
 class TeamReviewBatchE2EProbeTest {
 
     private static final List<String> SAMPLES = List.of(

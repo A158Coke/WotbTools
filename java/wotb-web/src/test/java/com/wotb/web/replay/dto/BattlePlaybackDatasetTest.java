@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.stream.StreamSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -118,11 +119,12 @@ class BattlePlaybackDatasetTest {
                 List.of(), List.of(), List.of(), List.of());
         final BattlePlaybackDataset dataset = new BattlePlaybackDataset(
                 100, "lagoon", 1, 42L, List.of(vehicle), List.of(), List.of(),
+                List.of(new BattlePlaybackDataset.BaseStateTransition(12.5, "A", 2, 1, 42)),
                 List.of(), Capability.FULL, 0);
 
         final JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(dataset));
         assertFieldNames(json, Set.of("durationSec", "mapCode", "friendlyTeam", "recorderAccountId",
-                "vehicles", "events", "pointsSamples", "limitations", "capability", "arenaBonusType"));
+                "vehicles", "events", "pointsSamples", "baseStates", "limitations", "capability", "arenaBonusType"));
         final JsonNode vehicles = requiredField(json, "vehicles");
         assertTrue(vehicles.isArray());
         final JsonNode serializedVehicle = vehicles.get(0);
@@ -150,6 +152,15 @@ class BattlePlaybackDatasetTest {
                 .map(transition -> requiredField(transition, "confidence").asText())
                 .collect(java.util.stream.Collectors.toSet());
         assertEquals(Set.of("HIGH", "MEDIUM", "LOW", "UNKNOWN"), confidenceValues);
+
+        final JsonNode baseStates = requiredField(json, "baseStates");
+        assertEquals(1, baseStates.size());
+        assertFieldNames(baseStates.get(0), Set.of(
+                "timeSec", "baseId", "ownerTeam", "capturingTeam", "captureProgress"));
+        assertEquals("A", requiredField(baseStates.get(0), "baseId").asText());
+        assertFalse(baseStates.get(0).toString().contains("baseIndex"));
+        assertFalse(baseStates.get(0).toString().contains("field5"));
+        assertFalse(baseStates.get(0).toString().contains("field6"));
     }
 
     private static JsonNode requiredField(final JsonNode object, final String field) {

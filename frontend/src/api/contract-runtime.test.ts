@@ -37,6 +37,7 @@ function dataset(confidence = 'HIGH') {
     }],
     events: [],
     pointsSamples: [],
+    baseStates: [],
     limitations: [],
     capability: 'FULL',
     arenaBonusType: null,
@@ -108,5 +109,37 @@ describe('HTTP contract runtime validator', () => {
     expect(result.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ schema: 'ApiError', path: '$' }),
     ]))
+  })
+
+  // PR #229 rolling-deployment compatibility: baseStates is an additive wire field.
+  it('legacy payload without baseStates validates and normalizes to []', () => {
+    const legacy = { ...dataset() } as Record<string, unknown>
+    delete legacy.baseStates
+    const result = validateBattlePlaybackDataset(legacy)
+    expect(result.diagnostics).toEqual([])
+    expect(result.data).not.toBeNull()
+    expect(Array.isArray(result.data!.baseStates)).toBe(true)
+    expect(result.data!.baseStates).toEqual([])
+  })
+
+  it('payload with valid baseStates preserves values', () => {
+    const states = [
+      { timeSec: 0, baseId: 'A' as const, ownerTeam: 1, capturingTeam: null, captureProgress: 0 },
+    ]
+    const withStates = { ...dataset(), baseStates: states }
+    const result = validateBattlePlaybackDataset(withStates)
+    expect(result.diagnostics).toEqual([])
+    expect(result.data!.baseStates).toEqual(states)
+  })
+
+  it('malformed baseStates still fails validation', () => {
+    const bad = { ...dataset(), baseStates: 'not-an-array' }
+    expect(validateBattlePlaybackDataset(bad).data).toBeNull()
+  })
+
+  it('missing an unrelated required field still fails validation', () => {
+    const missing = { ...dataset() } as Record<string, unknown>
+    delete missing.durationSec
+    expect(validateBattlePlaybackDataset(missing).data).toBeNull()
   })
 })

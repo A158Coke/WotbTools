@@ -7,6 +7,7 @@ import com.wotb.web.config.AiModelProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -36,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * reasoning_effort) and completion parsing. The API key is a synthetic value
  * and assertions never print it in failure messages.
  */
+@Disabled("DS API gateway boundary test; run only in the dedicated network-capable CI job")
 class SpringAiChatGatewayHttpBoundaryTest {
 
     private static final String FAKE_API_KEY = "sk-test-boundary-1234567890abcdef";

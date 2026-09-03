@@ -1,5 +1,5 @@
 /** Build the single current-shape Battle Playback V2 fixture used by component tests. */
-export function makeBattlePlaybackDataset({ vehicles = defaultVehicles(), events = defaultEvents() } = {}) {
+export function makeBattlePlaybackDataset({ vehicles = defaultVehicles(), events = defaultEvents(), baseStates = [] } = {}) {
   return {
     durationSec: 60,
     mapCode: 'holland',
@@ -8,6 +8,7 @@ export function makeBattlePlaybackDataset({ vehicles = defaultVehicles(), events
     vehicles,
     events,
     pointsSamples: [],
+    baseStates,
     limitations: [],
     capability: 'FULL',
     arenaBonusType: null,

@@ -1,5 +1,21 @@
 [
   {
+    "v": "2.12.69",
+    "date": "2026-09-03",
+    "tag": "chg",
+    "zh": "扩展战局回放：接入权威 A/B/C/D 基地状态，新增默认开启且可记忆的最近 2 秒车辆轨迹；全屏地图使用剩余空间，坦克标记按车型真实大小关系显示并在小范围内稳定避让；无真实点数或目标事实时不再显示占位符。",
+    "en": "Enhanced Battle Playback with authoritative A/B/C/D base status, a default-on persisted recent 2-second vehicle trail, remaining-space fullscreen maps, vehicle-aware marker sizing, and small bounded dense-marker avoidance; unsupported points and objective facts no longer render placeholders.",
+    "ru": "Улучшено воспроизведение боя: добавлены достоверные состояния баз A/B/C/D, сохраняемый включённый по умолчанию след техники за последние 2 секунды, карта на оставшемся месте в полноэкранном режиме, размеры маркеров с учётом техники и небольшое ограниченное разведение плотных маркеров; неподтверждённые очки и цели больше не показываются заглушками."
+  },
+  {
+    "v": "2.12.68",
+    "date": "2026-09-03",
+    "tag": "chg",
+    "zh": "战局回放改为响应式地图优先界面：桌面、平板和手机共用统一战况 HUD，播放控制、车辆详情、显示选项、事件和标注工具按需展开；手机默认只显示地图与战况，轻触地图显示控制条，全屏时尽力切换横屏且保留播放状态。",
+    "en": "Battle Playback now has a responsive map-first interface: desktop, tablet, and mobile share one universal battle HUD, while playback controls, vehicle details, display options, events, and annotations open on demand; mobile keeps the map and battle status visible by default, reveals controls on map activity, and preserves playback state in fullscreen.",
+    "ru": "Воспроизведение боя получило адаптивный интерфейс с приоритетом карты: на компьютере, планшете и телефоне используется единый боевой HUD, а управление, детали техники, параметры вида, события и пометки открываются по запросу; на телефоне карта и состояние боя видны по умолчанию, управление появляется при касании карты, а полноэкранный режим сохраняет состояние воспроизведения."
+  },
+  {
     "v": "2.12.67",
     "date": "2026-09-03",
     "tag": "chg",
