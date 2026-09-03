@@ -1376,7 +1376,6 @@
                 "base_status_enemy_controlled": "Под контролем врага",
                 "base_status_controlled": "Под контролем",
                 "base_status_capturing": "Захватывается",
-                "base_status_contested": "Оспаривается",
                 "base_progress": "Прогресс захвата {progress}%",
                 "orientation_hint": "Поверните устройство в альбомный режим для лучшего просмотра.",
                 "show_player_name": "Показывать имена игроков",

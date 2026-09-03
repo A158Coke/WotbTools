@@ -2,7 +2,7 @@
  * Battle Playback 标签布局纯函数。
  *
  * UX contract：用户选择显示的 TankName / PlayerName / HP HUD 永不因碰撞而隐藏。
- * 碰撞只允许有限的垂直 lane 位移；如果所有 lane 仍冲突，则接受 overlap。
+ * 碰撞只作用于 model box；标签、名称与 HP 不参与 model collision。
  * marker / selected / destroyed / recorder 仅作为 lane 评分障碍，不再驱动 visibility。
  */
 
@@ -32,7 +32,10 @@ export const DESTROYED_X_PX = 30
 export const LABEL_LANES_PX = Object.freeze([0, -10, 10, -20])
 
 const TANK_COLLISION_PADDING = 1.05
-const TANK_COLLISION_MAX_OFFSET_PX = 96
+// Dense formations need more than the original three rings. This remains a
+// presentation-only, bounded search area and is large enough for the supported
+// 14-vehicle cluster without ever accepting an overlapping model box.
+const TANK_COLLISION_MAX_OFFSET_PX = 512
 
 function collisionOverlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x
@@ -79,7 +82,7 @@ export function computeTankCollisionLayout(items, previous = new Map()) {
       : (prior && Number.isFinite(prior.x) && Number.isFinite(prior.y)
         ? [{ x: prior.x, y: prior.y }, ...candidates]
         : candidates)
-    let best = candidatesForItem[0]
+    let best = null
     let bestScore = Number.POSITIVE_INFINITY
     for (const candidate of candidatesForItem) {
       if (Math.abs(candidate.x) > TANK_COLLISION_MAX_OFFSET_PX
@@ -91,14 +94,17 @@ export function computeTankCollisionLayout(items, previous = new Map()) {
         h: item.height,
       }
       const overlap = placed.reduce((sum, other) => sum + (collisionOverlap(box, other.box) ? 1 : 0), 0)
+      if (overlap > 0) continue
       const score = overlap * 1_000_000 + Math.hypot(candidate.x, candidate.y)
         + (prior && candidate.x === prior.x && candidate.y === prior.y ? -0.25 : 0)
       if (score < bestScore) {
         bestScore = score
         best = candidate
-        if (overlap === 0 && prior && candidate.x === prior.x && candidate.y === prior.y) break
+        if (prior && candidate.x === prior.x && candidate.y === prior.y) break
       }
-      if (bestScore === 0) break
+    }
+    if (!best) {
+      throw new Error(`Unable to place tank model ${String(item.accountId)} without collision`)
     }
     const offset = { x: best.x, y: best.y }
     const box = {

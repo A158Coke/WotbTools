@@ -55,8 +55,8 @@ describe('BattlePlaybackHud', () => {
       enemyPoints: null,
       friendlyTeam: null,
       baseStates: [
-        { baseIndex: 0, ownerTeam: 1, capturingTeam: null, captureProgress: null, captureSuspended: false },
-        { baseIndex: 1, ownerTeam: null, capturingTeam: 2, captureProgress: 42, captureSuspended: false },
+        { baseId: 'A', ownerTeam: 1, capturingTeam: null, captureProgress: null },
+        { baseId: 'B', ownerTeam: null, capturingTeam: 2, captureProgress: 42 },
       ],
     })
     expect(wrapper.find('[data-test="pb-hud-score"]').exists()).toBe(false)

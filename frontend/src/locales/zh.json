@@ -1376,7 +1376,6 @@
                 "base_status_enemy_controlled": "敌方控制",
                 "base_status_controlled": "已控制",
                 "base_status_capturing": "占领中",
-                "base_status_contested": "争夺中",
                 "base_progress": "占领进度 {progress}%",
                 "orientation_hint": "旋转设备至横屏，获得更好的回放视图。",
                 "show_player_name": "显示玩家名",

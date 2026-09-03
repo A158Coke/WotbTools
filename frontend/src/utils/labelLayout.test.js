@@ -25,9 +25,34 @@ function item(accountId, x, y, extra = {}) {
 
 describe('computeTankCollisionLayout', () => {
   const tank = (accountId, extra = {}) => ({ accountId, x: 100, y: 100, width: 32, height: 32, ...extra })
+  const box = (it, offset) => ({
+    x: it.x + offset.x - (it.width * 1.05) / 2,
+    y: it.y + offset.y - (it.height * 1.05) / 2,
+    w: it.width * 1.05,
+    h: it.height * 1.05,
+  })
+  const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x
+    && a.y < b.y + b.h && a.y + a.h > b.y
+  const expectPairwiseNonOverlap = (items, result) => {
+    const boxes = items.map(it => box(it, result.get(it.accountId)))
+    for (let i = 0; i < boxes.length; i += 1) {
+      for (let j = i + 1; j < boxes.length; j += 1) {
+        expect(overlaps(boxes[i], boxes[j])).toBe(false)
+      }
+    }
+  }
 
-  it('keeps canonical coordinates untouched and separates dense tank boxes', () => {
-    const result = computeTankCollisionLayout([tank(1), tank(2)])
+  it.each([3, 7, 14])('keeps %i dense model boxes pairwise non-overlapping', (count) => {
+    const items = Array.from({ length: count }, (_, i) => tank(i + 1))
+    const result = computeTankCollisionLayout(items)
+    expect(result.get(1)).toEqual({ x: 0, y: 0 })
+    expectPairwiseNonOverlap(items, result)
+  })
+
+  it('keeps canonical coordinates and hit-test anchors independent from presentation offsets', () => {
+    const items = [tank(1), tank(2)]
+    const result = computeTankCollisionLayout(items)
+    expect(items.map(({ x, y }) => ({ x, y }))).toEqual([{ x: 100, y: 100 }, { x: 100, y: 100 }])
     expect(result.get(1)).toEqual({ x: 0, y: 0 })
     expect(result.get(2)).not.toEqual({ x: 0, y: 0 })
   })
@@ -37,6 +62,16 @@ describe('computeTankCollisionLayout', () => {
     const result = computeTankCollisionLayout([tank(1), tank(2, { selected: true })], previous)
     expect(result.get(2)).toEqual({ x: 0, y: 0 })
     expect(result.get(1)).not.toEqual({ x: 0, y: 0 })
+  })
+
+  it.each([1, 2, 4])('keeps model boxes non-overlapping across zoom scale %i and resize geometry', (scale) => {
+    const items = [
+      tank(1, { width: 32 * scale, height: 28 * scale }),
+      tank(2, { width: 38 * scale, height: 30 * scale }),
+      tank(3, { width: 26 * scale, height: 34 * scale }),
+    ]
+    const result = computeTankCollisionLayout(items, new Map([[2, { x: 64, y: 0 }]]))
+    expectPairwiseNonOverlap(items, result)
   })
 })
 
