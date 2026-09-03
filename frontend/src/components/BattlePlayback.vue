@@ -648,16 +648,28 @@ let suppressClick = false
 // 手势结束后的首个 click 必须被吞掉，纯点击车辆仍正常选中
 let gestureMoved = false
 
+/** fullscreen 下 HUD（顶部）与 controls/timeline（底部）为地图留出的安全区高度；
+ *  page mode 的 map-stage 已是流式布局（有界高度），不加额外 inset。 */
+function safeInsets() {
+  if (!isFullscreen.value) return { top: 0, bottom: 0 }
+  const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
+  const top = hud ? hud.clientHeight : 0
+  const bottom = mobileOverlay.value?.$el?.clientHeight || 0
+  return { top, bottom }
+}
+
 function applyView(next) {
-  // stage = 可见 map-stage（visible viewport）；map = rendered map rect。
-  // pan bounds / reset fit 都以二者为据，而非 map 自身尺寸。
+  // stage = 可见 map-stage；map = rendered map rect。pan bounds / reset fit 都以二者为据。
+  // 地图只在「下 HUD、上 controls」之间的 safe area 内完整显示/平移，不遮挡进 HUD/controls。
   const stageW = mapWidth()
-  const stageH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const safe = safeInsets()
+  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
   const rect = mapRenderRect()
-  const clamped = clampViewPan(next, stageW, stageH, rect.width, rect.height)
+  const clamped = clampViewPan(next, stageW, safeH, rect.width, rect.height)
   view.scale = clamped.scale
   view.tx = clamped.tx
-  view.ty = clamped.ty
+  view.ty = clamped.ty + safe.top
 }
 
 const viewportStyle = computed(() => `transform: translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`)
@@ -811,28 +823,31 @@ function onViewportClick(e) {
   mobileOverlay.value?.reveal?.()
 }
 
-/** 完整地图视图（contain/fit）的 scale：把整张 rendered map 放进可见 stage 的最小缩放。
+/** 完整地图视图（contain/fit）的 scale：把整张 rendered map 放进安全区的最小缩放。
  *  缩放下限（minScale）应为它——zoomed 后回到的就是它，避免「放大后再缩不回原样」。 */
 function fitScale() {
   const stageW = mapWidth()
-  const stageH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const safe = safeInsets()
+  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
   const rect = mapRenderRect()
-  if (stageW > 0 && stageH > 0 && rect.width > 0 && rect.height > 0) {
-    return Math.min(stageW / rect.width, stageH / rect.height)
+  if (stageW > 0 && safeH > 0 && rect.width > 0 && rect.height > 0) {
+    return Math.min(stageW / rect.width, safeH / rect.height)
   }
   return 1
 }
 
 function resetView() {
-  // Reset View：恢复「完整地图视图」——fit 整张 rendered map 到可见 stage 并居中
-  //（cover 下地图大于 stage 时 fit 到 scale<1，恢复完整视野；不再只是 scale=1 复位）。
+  // Reset View：恢复「完整地图视图」——fit 整张 rendered map 到安全区（下 HUD、上 controls）并居中。
   const stageW = mapWidth()
-  const stageH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const safe = safeInsets()
+  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
   const rect = mapRenderRect()
-  if (stageW > 0 && stageH > 0 && rect.width > 0 && rect.height > 0) {
+  if (stageW > 0 && safeH > 0 && rect.width > 0 && rect.height > 0) {
     const scale = fitScale()
     const tx = (stageW - rect.width * scale) / 2
-    const ty = (stageH - rect.height * scale) / 2
+    const ty = (safeH - rect.height * scale) / 2
     applyView({ scale, tx, ty })
     return
   }
