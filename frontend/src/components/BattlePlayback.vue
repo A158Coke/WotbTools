@@ -668,7 +668,7 @@ function applyView(next) {
   const rect = mapRenderRect()
   // §下黑边：地图垂直向下偏 gap/4，把底部黑边减到约居中的一半（更贴近底部控制条）。
   const scaledH = rect.height * next.scale
-  const centerBiasY = Math.max(0, (safeH - scaledH) / 4)
+  const centerBiasY = Math.max(0, (safeH - scaledH) * 0.5)
   const clamped = clampViewPan(next, stageW, safeH, rect.width, rect.height, centerBiasY)
   view.scale = clamped.scale
   view.tx = clamped.tx
