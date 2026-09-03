@@ -116,6 +116,51 @@ class BattlePlaybackProjectorTest {
         assertFalse(json.contains("field6"));
     }
 
+    @Test
+    void seedsLatestPreBattleBaseStateAtPlaybackZeroForThreeAndFourBaseBattles() {
+        final long account = 2001L;
+        final Battle battle = syntheticBattle(account, 1);
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(7, new TeamEntityIdentity(7, account, "Recorder", 456L, "Recorder", 1,
+                        DecodeConfidence.EXACT)),
+                Map.of(account, List.of(7)), Map.of(), 0, List.of());
+        final FrameHealth health = new FrameHealth(1000, 0.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH);
+
+        for (final List<SupremacyBaseId> baseIds : List.of(
+                List.of(SupremacyBaseId.A, SupremacyBaseId.B, SupremacyBaseId.C),
+                List.of(SupremacyBaseId.A, SupremacyBaseId.B, SupremacyBaseId.C, SupremacyBaseId.D))) {
+            final List<ReplayEvent> events = new ArrayList<>();
+            for (final SupremacyBaseId baseId : baseIds) {
+                events.add(new SupremacyBaseStateTransition(
+                        10, new ReplayTimestamp(-5f, -5f), 12, DecodeConfidence.EXACT,
+                        baseId, 2, null, 0));
+                events.add(new SupremacyBaseStateTransition(
+                        11, new ReplayTimestamp(-1f, -1f), 12, DecodeConfidence.EXACT,
+                        baseId, 2, 1, 25));
+            }
+            final BattleTimeline timeline = syntheticTimeline(40,
+                    List.of(new BattleFrame(0, 0, null,
+                            List.of(frameVehicleWithHealth(7, account, 1, true, health, 0)),
+                            List.of(), List.of(), Map.of(), List.of())),
+                    events);
+
+            final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(
+                    battle, timeline, mapping, account);
+
+            assertEquals(baseIds.size(), dataset.baseStates().size());
+            assertEquals(baseIds.stream().map(Enum::name).sorted().toList(),
+                    dataset.baseStates().stream().map(BattlePlaybackDataset.BaseStateTransition::baseId)
+                            .sorted().toList());
+            for (final BattlePlaybackDataset.BaseStateTransition state : dataset.baseStates()) {
+                assertEquals(0d, state.timeSec(), 1e-9);
+                assertEquals(2, state.ownerTeam());
+                assertEquals(1, state.capturingTeam());
+                assertEquals(25, state.captureProgress());
+            }
+        }
+    }
+
     private static Path fixture() throws Exception {
         final Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "common", "fixtures", "replays")
                 .normalize();

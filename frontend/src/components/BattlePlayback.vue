@@ -1253,7 +1253,7 @@ const baseVehicleStates = computed(() => {
 
 const collisionOffsets = ref(new Map())
 watch(
-  [baseVehicleStates, () => currentTime.value, () => view.scale, () => mapWidth(), () => selectedAccountId.value],
+  [baseVehicleStates, () => currentTime.value, () => view.scale, () => mapWidth(), () => mapHeight(), () => selectedAccountId.value],
   ([states]) => {
     const markerCssSize = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || 32
     const items = states.map((state) => {
@@ -1271,7 +1271,12 @@ watch(
         recorder: state.recorder,
       }
     }).filter(Boolean)
-    collisionOffsets.value = computeTankCollisionLayout(items, collisionOffsets.value)
+    const viewport = { x: 0, y: 0, w: mapWidth(), h: mapHeight() }
+    collisionOffsets.value = computeTankCollisionLayout(
+      items,
+      collisionOffsets.value,
+      viewport.w > 0 && viewport.h > 0 ? viewport : null,
+    )
   },
   { immediate: true },
 )

@@ -66,4 +66,11 @@ describe('BattlePlaybackHud', () => {
     expect(wrapper.findAll('.pb-hud-base-capturing')).toHaveLength(1)
     expect(wrapper.find('.pb-hud-base-progress').attributes('style')).toContain('42%')
   })
+
+  it('keeps the enemy in column 3 when score and bases are absent', () => {
+    const wrapper = mountHud({ friendlyPoints: null, enemyPoints: null, baseStates: [] })
+    expect(wrapper.find('[data-test="pb-hud-center"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-hud-friendly"]').classes()).toContain('pb-hud-column-friendly')
+    expect(wrapper.find('[data-test="pb-hud-enemy"]').classes()).toContain('pb-hud-column-enemy')
+  })
 })

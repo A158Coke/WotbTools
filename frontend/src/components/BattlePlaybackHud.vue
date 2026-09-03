@@ -79,7 +79,7 @@ function baseStatus(state) {
 <template>
   <section class="pb-hud" data-test="pb-hud" :aria-label="$t('recon.map.playback.hud')">
     <div class="pb-hud-grid" data-test="pb-hp-bars">
-    <div class="pb-hud-team pb-hud-friendly pb-hp-row" data-test="pb-hud-friendly">
+    <div class="pb-hud-team pb-hud-friendly pb-hud-column-friendly pb-hp-row" data-test="pb-hud-friendly">
       <span class="pb-hud-label">{{ $t('recon.map.playback.team_friendly') }}</span>
       <span class="pb-hud-value pb-hp-value pb-hud-wide" data-test="pb-hp-value-friendly">{{ hpText(props.friendlyHp, 'wide') }}</span>
       <span class="pb-hud-value pb-hud-medium">{{ hpText(props.friendlyHp, 'medium') }}</span>
@@ -90,7 +90,7 @@ function baseStatus(state) {
       </span>
     </div>
 
-    <div v-if="hasCenterData()" class="pb-hud-center" data-test="pb-hud-center">
+    <div v-if="hasCenterData()" class="pb-hud-center pb-hud-column-center" data-test="pb-hud-center">
       <strong v-if="hasPoints()" data-test="pb-hud-score">
         <span v-if="props.friendlyPoints != null" data-test="pb-points-friendly">{{ compactNumber(props.friendlyPoints) }}</span>
         <span v-if="props.friendlyPoints != null && props.enemyPoints != null"> : </span>
@@ -104,7 +104,7 @@ function baseStatus(state) {
         </span>
       </div>
     </div>
-    <div class="pb-hud-team pb-hud-enemy pb-hp-row" data-test="pb-hud-enemy">
+    <div class="pb-hud-team pb-hud-enemy pb-hud-column-enemy pb-hp-row" data-test="pb-hud-enemy">
       <span class="pb-hud-label">{{ $t('recon.map.playback.team_enemy') }}</span>
       <span class="pb-hud-value pb-hp-value pb-hud-wide" data-test="pb-hp-value-enemy">{{ hpText(props.enemyHp, 'wide') }}</span>
       <span class="pb-hud-value pb-hud-medium">{{ hpText(props.enemyHp, 'medium') }}</span>
@@ -119,8 +119,11 @@ function baseStatus(state) {
 </template>
 
 <style scoped>
-.pb-hud { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: clamp(8px, 2vw, 28px); padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--bg-card2) 86%, transparent); color: var(--text-label); }
-.pb-hud-grid { display: contents; }
+.pb-hud { padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--bg-card2) 86%, transparent); color: var(--text-label); }
+.pb-hud-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: clamp(8px, 2vw, 28px); }
+.pb-hud-column-friendly { grid-column: 1; }
+.pb-hud-column-center { grid-column: 2; }
+.pb-hud-column-enemy { grid-column: 3; }
 .pb-hud-team { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 9px; min-width: 0; }
 .pb-hud-enemy { text-align: right; grid-template-columns: auto minmax(0, 1fr); }
 .pb-hud-label { grid-column: 1; grid-row: 1; color: var(--text-muted); font-size: .68rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
@@ -152,7 +155,8 @@ function baseStatus(state) {
   .pb-hud-medium { display: inline; }
 }
 @media (width < 768px) {
-  .pb-hud { gap: 5px; padding: 6px 7px; border-radius: 6px; }
+  .pb-hud { padding: 6px 7px; border-radius: 6px; }
+  .pb-hud-grid { gap: 5px; }
   .pb-hud-label { display: none; }
   .pb-hud-wide, .pb-hud-medium { display: none; }
   .pb-hud-compact { display: inline; }

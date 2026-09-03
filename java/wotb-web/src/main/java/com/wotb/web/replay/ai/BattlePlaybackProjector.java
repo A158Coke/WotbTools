@@ -47,8 +47,10 @@ import com.wotb.web.replay.dto.BattlePlaybackDataset.VehiclePlaybackTrack;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Battle Playback V2 <b>pure projection</b>（plan §22）：把 canonical {@link BattleTimeline}
@@ -690,21 +692,49 @@ public final class BattlePlaybackProjector {
             return List.of();
         }
         final List<BaseStateTransition> states = new ArrayList<>();
+        final Map<String, BaseStateTransition> latestPreBattle = new HashMap<>();
+        final Set<String> basesWithZeroState = new HashSet<>();
         for (final ReplayEvent event : timeline.events()) {
             if (!(event instanceof SupremacyBaseStateTransition base)
                     || base.confidence() != DecodeConfidence.EXACT) {
                 continue;
             }
             final double timeSec = battleClockOf(event, timeline);
-            if (!isActiveTime(timeSec) || timeSec > timeline.durationSec() + 1e-9) {
+            if (!Double.isFinite(timeSec)) {
                 continue;
             }
-            states.add(new BaseStateTransition(
-                    Math.max(0d, timeSec),
+            final BaseStateTransition projected = new BaseStateTransition(
+                    timeSec,
                     base.baseId().name(),
                     base.ownerTeam(),
                     base.capturingTeam(),
-                    base.captureProgress()));
+                    base.captureProgress());
+            if (timeSec < 0d) {
+                // Base updates before battle start are canonical full states. Retain the
+                // latest one per base so playback has a deterministic t=0 seed.
+                final BaseStateTransition previous = latestPreBattle.get(projected.baseId());
+                if (previous == null || previous.timeSec() < timeSec) {
+                    latestPreBattle.put(projected.baseId(), projected);
+                }
+                continue;
+            }
+            if (timeSec > timeline.durationSec() + 1e-9) {
+                continue;
+            }
+            states.add(projected);
+            if (timeSec <= 1e-9) {
+                basesWithZeroState.add(projected.baseId());
+            }
+        }
+        for (final BaseStateTransition seed : latestPreBattle.values()) {
+            if (!basesWithZeroState.contains(seed.baseId())) {
+                states.add(new BaseStateTransition(
+                        0d,
+                        seed.baseId(),
+                        seed.ownerTeam(),
+                        seed.capturingTeam(),
+                        seed.captureProgress()));
+            }
         }
         states.sort(Comparator.comparingDouble(BaseStateTransition::timeSec)
                 .thenComparing(BaseStateTransition::baseId));
