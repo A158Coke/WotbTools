@@ -8,6 +8,12 @@
       "showcaseDescription": "丰富的视觉层级与展示效果"
     },
 
+    "environment": {
+      "label": "开发模式",
+      "local": "API → 本地后端",
+      "productionRemote": "API → 生产后端；请勿上传测试或敏感数据"
+    },
+
     "android": {
       "nav": "下载 Android 版",
       "kicker": "WotBTools Android",
@@ -155,6 +161,12 @@
       "showcaseDescription": "Rich visual hierarchy and showcase effect"
     },
 
+    "environment": {
+      "label": "Development",
+      "local": "API → local backend",
+      "productionRemote": "API → production backend; do not upload test or sensitive data"
+    },
+
     "android": {
       "nav": "Download Android",
       "kicker": "WotBTools Android",
@@ -300,6 +312,12 @@
       "showcase": "Showcase",
       "classicDescription": "Упрощённая светлая тема, без AI/декоративных фонов, сдержаннее",
       "showcaseDescription": "Богатая визуальная иерархия и эффект показа"
+    },
+
+    "environment": {
+      "label": "Режим разработки",
+      "local": "API → локальный backend",
+      "productionRemote": "API → production backend; не загружайте тестовые или чувствительные данные"
     },
 
     "android": {

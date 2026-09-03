@@ -12,6 +12,10 @@ const activeView = computed(() => viewFromRoute(route))
 const { hasRole } = useAuth()
 const showBoost = computed(() => hasRole('wotbtools-admin'))
 const showHome = isHomeHost(window.location.hostname)
+const showDevEnvironmentNotice = import.meta.env.DEV
+const devEnvironmentNoticeKey = import.meta.env.MODE === 'production-remote'
+  ? 'environment.productionRemote'
+  : 'environment.local'
 const languageOptions = [
   { key: 'zh', label: '中文' },
   { key: 'en', label: 'English' },
@@ -34,6 +38,15 @@ function onLangChange(event) {
       <button :class="{ active: activeView === 'hof' }" @click="navigate('hof')">{{ $t('hof.btn') }}</button>
       <button v-if="showBoost" :class="{ active: activeView === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
     </nav>
+    <span
+      v-if="showDevEnvironmentNotice"
+      class="dev-environment-notice"
+      data-testid="dev-environment-notice"
+      role="status"
+    >
+      <span class="dev-environment-label">{{ $t('environment.label') }}</span>
+      {{ $t(devEnvironmentNoticeKey) }}
+    </span>
     <div class="tb-spacer"></div>
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
       <option v-for="language in languageOptions" :key="language.key" :value="language.key">{{ language.label }}</option>

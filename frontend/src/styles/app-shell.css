@@ -36,6 +36,21 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
   background: transparent; color: var(--text-sub); cursor: pointer; font-size: .85rem; font-family: inherit; white-space: nowrap; }
 .topbar nav button.active { background: var(--bg-blue); color: var(--accent-dark); border-color: var(--border-tab-active); font-weight: 700; }
 .topbar nav button:hover { background: var(--bg-card-hover); color: var(--text-label); }
+.dev-environment-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(420px, 40vw);
+  padding: 4px 8px;
+  border: 1px solid var(--border-warn);
+  border-radius: 6px;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: .72rem;
+  line-height: 1.35;
+  white-space: normal;
+}
+.dev-environment-label { font-weight: 800; white-space: nowrap; }
 .tb-spacer { flex: 1; }
 .auth-btn { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px;
   background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-size: .82rem; font-family: inherit; white-space: nowrap; }
@@ -275,6 +290,7 @@ tr:hover td { background: var(--bg-list-hover); }
   .topbar { position: sticky; height: auto; padding: 8px 10px; gap: 6px; flex-wrap: wrap; }
   .tb-content { padding-top: 0; }
   .tb-spacer { display: none; }
+  .dev-environment-notice { order: 2; max-width: min(360px, 100%); }
   .topbar nav { order: 3; width: 100%; gap: 2px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .topbar nav::-webkit-scrollbar { display: none; }
 }
@@ -287,6 +303,7 @@ tr:hover td { background: var(--bg-list-hover); }
     padding-top: calc(8px + env(safe-area-inset-top)); }
   .tb-content { padding-top: 0; }
   .tb-spacer { display: none; }
+  .dev-environment-notice { flex: 1 1 100%; max-width: none; order: 2; }
   .topbar nav { order: 3; width: 100%; gap: 2px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .topbar nav::-webkit-scrollbar { display: none; }
   /* 触控目标 ≥36px（对齐 PlayerRatingRadar 缩放按钮先例）；原 480px 档的 4px 6px/.72rem 已删除 */
