@@ -147,4 +147,28 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell')).toContain('position: absolute')
     expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay')).toContain('left: 0; right: 0')
   })
+
+  it('details-blocker: mobile 空 shell 不接管 pointer，选中（pb-details-active）才打开 sheet', () => {
+    const shell = ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell')
+    expect(shell).toContain('pointer-events: none')
+    expect(shell).toContain('background: transparent')
+    const shellActive = ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active')
+    expect(shellActive).toContain('pointer-events: auto')
+  })
+
+  it('mobile drawer: ☰ 用 .pb-drawer-open 把 rail 打开为 drawer（backdrop 关闭），非 dead action', () => {
+    expect(ruleBody('.battle-playback .pb-drawer-backdrop')).toContain('position: fixed')
+    expect(ruleBody('.battle-playback.pb-drawer-open .pb-left-rail')).toContain('position: fixed')
+    expect(ruleBody('.battle-playback.pb-drawer-open .pb-left-rail')).toContain('width: min(84vw, 320px)')
+    // mobile fullscreen 也要 win 过 .pb-device-mobile 的 display:none
+    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile.pb-drawer-open .pb-left-rail')).toContain('display: flex')
+  })
+
+  it('mobile-contract: .pb-device-mobile 控件/overlay 尺寸生效（横屏>768 仍 mobile UX，不依赖 @media(width<768px)）', () => {
+    expect(ruleBody('.battle-playback.pb-device-mobile .pb-controls')).toContain('justify-content: center')
+    expect(ruleBody('.battle-playback.pb-device-mobile .pb-controls .pb-control-label')).toContain('display: none')
+    expect(ruleBody('.battle-playback.pb-device-mobile .pb-controls .pb-btn')).toContain('min-height: 36px')
+    expect(ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay-content')).toContain('position: absolute')
+    expect(ruleBody('.battle-playback.pb-device-mobile .pb-controls .pb-time')).toContain('order: 20')
+  })
 })
