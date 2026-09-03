@@ -81,7 +81,7 @@ function baseStatus(state) {
   <section class="pb-hud" data-test="pb-hud" :aria-label="$t('recon.map.playback.hud')">
     <div class="pb-hud-grid" data-test="pb-hp-bars">
     <div class="pb-hud-team pb-hud-friendly pb-hud-column-friendly pb-hp-row" data-test="pb-hud-friendly">
-      <span class="pb-hud-label">{{ $t('recon.map.playback.team_friendly') }}</span>
+      <span class="pb-hud-label" data-test="pb-hud-points-label-friendly">{{ $t('recon.map.playback.hud_friendly_hp') }}</span>
       <span class="pb-hud-value pb-hp-value pb-hud-wide" data-test="pb-hp-value-friendly">{{ hpText(props.friendlyHp, 'wide') }}</span>
       <span class="pb-hud-value pb-hud-medium">{{ hpText(props.friendlyHp, 'medium') }}</span>
       <span class="pb-hud-value pb-hud-compact">{{ hpText(props.friendlyHp, 'compact') }}</span>
@@ -92,11 +92,14 @@ function baseStatus(state) {
     </div>
 
     <div v-if="hasCenterData()" class="pb-hud-center pb-hud-column-center" data-test="pb-hud-center">
-      <strong v-if="hasPoints()" data-test="pb-hud-score">
-        <span v-if="props.friendlyPoints != null" data-test="pb-points-friendly">{{ compactNumber(props.friendlyPoints) }}</span>
-        <span v-if="props.friendlyPoints != null && props.enemyPoints != null"> : </span>
-        <span v-if="props.enemyPoints != null" data-test="pb-points-enemy">{{ compactNumber(props.enemyPoints) }}</span>
-      </strong>
+      <div v-if="hasPoints()" class="pb-hud-points" data-test="pb-hud-points">
+        <span class="pb-hud-label" data-test="pb-hud-points-label">{{ $t('recon.map.playback.points') }}</span>
+        <strong data-test="pb-hud-score">
+          <span v-if="props.friendlyPoints != null" data-test="pb-points-friendly">{{ compactNumber(props.friendlyPoints) }}</span>
+          <span v-if="props.friendlyPoints != null && props.enemyPoints != null"> : </span>
+          <span v-if="props.enemyPoints != null" data-test="pb-points-enemy">{{ compactNumber(props.enemyPoints) }}</span>
+        </strong>
+      </div>
       <div v-if="props.baseStates.length" class="pb-hud-bases" data-test="pb-hud-bases">
         <span v-for="state in props.baseStates" :key="state.baseId" class="pb-hud-base" :class="`pb-hud-base-${baseStatus(state)}`" :title="$t(`recon.map.playback.base_status_${baseStatus(state)}`)">
           <b>{{ state.baseId }}</b>
@@ -106,7 +109,7 @@ function baseStatus(state) {
       </div>
     </div>
     <div class="pb-hud-team pb-hud-enemy pb-hud-column-enemy pb-hp-row" data-test="pb-hud-enemy">
-      <span class="pb-hud-label">{{ $t('recon.map.playback.team_enemy') }}</span>
+      <span class="pb-hud-label" data-test="pb-hud-points-label-enemy">{{ $t('recon.map.playback.hud_enemy_hp') }}</span>
       <span class="pb-hud-value pb-hp-value pb-hud-wide" data-test="pb-hp-value-enemy">{{ hpText(props.enemyHp, 'wide') }}</span>
       <span class="pb-hud-value pb-hud-medium">{{ hpText(props.enemyHp, 'medium') }}</span>
       <span class="pb-hud-value pb-hud-compact">{{ hpText(props.enemyHp, 'compact') }}</span>
@@ -124,6 +127,7 @@ function baseStatus(state) {
 .pb-hud-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: clamp(8px, 2vw, 28px); }
 .pb-hud-column-friendly { grid-column: 1; }
 .pb-hud-column-center { grid-column: 2; }
+.pb-hud-points { display: flex; align-items: center; gap: 8px; justify-content: center; }
 .pb-hud-column-enemy { grid-column: 3; }
 .pb-hud-team { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 9px; min-width: 0; }
 .pb-hud-enemy { text-align: right; grid-template-columns: auto minmax(0, 1fr); }
