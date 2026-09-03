@@ -19,6 +19,13 @@ describe('locale message composition', () => {
     }
   })
 
+  it('contains both development backend notices in all supported locales', () => {
+    for (const locale of ['zh', 'en', 'ru']) {
+      expect(messages[locale].environment.local).toBeTruthy()
+      expect(messages[locale].environment.productionRemote).toBeTruthy()
+    }
+  })
+
   it('keeps historical submitted Boost notifications translatable', () => {
     for (const locale of ['zh', 'en', 'ru']) {
       expect(messages[locale].boost.notificationTitle.BOOST_REQUEST_SUBMITTED).toBeTruthy()
