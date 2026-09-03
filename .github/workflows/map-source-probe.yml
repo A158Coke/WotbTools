@@ -1,4 +1,4 @@
-name: Locate current WGC minimap assets
+name: Verify exact WGC minimap source
 
 on:
   push:
@@ -14,23 +14,27 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Install index reader
+      - name: Install range/DVPL tools
         shell: bash
         run: |
           set -euxo pipefail
           git clone --depth 1 https://github.com/Monstrofil/wgc-download.git /tmp/wgc-download
-          python -m pip install /tmp/wgc-download
+          python -m pip install /tmp/wgc-download lz4 Pillow
 
-      - name: Search current client archive index
+      - name: Extract mountain MiniMapSmall@2x from current client
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p probe
-          cat > /tmp/search_multi.py <<'PY'
-          import io, urllib.request
+          cat > /tmp/extract.py <<'PY'
+          import io, struct, urllib.request, hashlib, zlib
+          from pathlib import Path
+          import lz4.block
+          from PIL import Image
           from wgc_download.api import USER_AGENT
-          from wgc_download.remote7z import parse_archive_index
+          from wgc_download.remote7z import parse_archive_index, decompress_entry
           BASE='https://dl-wotb-gc.wargaming.net/wotb.ww.production/wds_default/patches/11.20.0.6254/wotb_11.20.0.6254_client.wgpkg.'
+          TARGET='Data/Gfx/UI/BattleScreenHUD/minimap/mountain/MiniMapSmall@2x.packed.webp.dvpl'
           class M(io.RawIOBase):
               BLOCK=256*1024
               def __init__(self):
@@ -63,23 +67,27 @@ jobs:
                       d=self._cache[k]; off=self._pos-k*self.BLOCK; take=min(len(d)-off,end-self._pos); out+=d[off:off+take]; self._pos+=take
                   return bytes(out)
               def readinto(self,b): d=self.read(len(b)); b[:len(d)]=d; return len(d)
-          entries=parse_archive_index(M()); print('ENTRIES',len(entries))
-          names=[e['filename'] for e in entries if not e['is_dir']]
-          queries=['mountain','goldville','colormap','minimap','/maps/','\\maps\\']
-          for q in queries:
-              hits=[n for n in names if q in n.lower()]
-              print('\n###',q,'COUNT',len(hits))
-              for n in hits[:300]: print(n)
-          print('\n### WEBP MAP-LIKE')
-          for n in [n for n in names if n.lower().endswith('.webp') and any(k in n.lower() for k in ('map','mountain','karelia','malinovka','desert_train'))][:500]: print(n)
-          print('\n### DDS MAP-LIKE')
-          for n in [n for n in names if n.lower().endswith('.dds.dvpl') and any(k in n.lower() for k in ('mountain','karelia','malinovka','desert_train','landscape'))][:500]: print(n)
+              def fetch_range(self,s,n): return self._fetch(s,n)
+          def dvpl_decode(b):
+              assert b[-4:]==b'DVPL'; orig,comp,crc,typ=struct.unpack('<IIII',b[-20:-4]); data=b[:-20]
+              assert len(data)==comp; assert (zlib.crc32(data)&0xffffffff)==crc
+              if typ==0: out=data
+              elif typ in (1,2): out=lz4.block.decompress(data,uncompressed_size=orig)
+              else: raise RuntimeError(f'DVPL type {typ}')
+              assert len(out)==orig; return out
+          rf=M(); entries=parse_archive_index(rf); by={e['filename']:e for e in entries if not e['is_dir']}
+          e=by[TARGET]; print('ENTRY',e['compressed_size'],e['uncompressed_size'],e['offset'])
+          dvpl=decompress_entry(rf.fetch_range(e['offset'],e['compressed_size']),e['filters'],e['uncompressed_size'])
+          webp=dvpl_decode(dvpl); Path('probe/mountain.webp').write_bytes(webp)
+          print('SIZE',len(webp)); print('SHA256',hashlib.sha256(webp).hexdigest()); print('IMAGE',Image.open(io.BytesIO(webp)).size)
           PY
-          python /tmp/search_multi.py | tee probe/index-search.txt
+          python /tmp/extract.py | tee probe/result.txt
+          sha256sum probe/mountain.webp
+          file probe/mountain.webp
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: wgc-index-search
+          name: exact-mountain-client-source
           path: probe
           retention-days: 1
