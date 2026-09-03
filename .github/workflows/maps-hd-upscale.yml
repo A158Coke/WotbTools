@@ -1,0 +1,45 @@
+name: Map HD Upscale
+
+on:
+  push:
+    branches:
+      - feat/maps-hd-assets
+
+permissions:
+  contents: write
+
+jobs:
+  upscale:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Pillow
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Upscale maps without changing geometry
+        run: python .github/scripts/upscale_maps_hd.py
+
+      - name: Sync registered dimensions
+        run: python .github/scripts/update_map_dimensions_hd.py
+
+      - name: Verify scope
+        run: |
+          git diff --check
+          test "$(git diff --name-only | grep '^frontend/src/assets/maps/.*\.png$' | wc -l)" -eq 28
+          git diff --name-only | grep -Ev '^frontend/src/assets/maps/.*\.png$|^frontend/src/data/mapImages\.js$|^docs/reference/maps\.md$' && exit 1 || true
+
+      - name: Commit HD assets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/assets/maps frontend/src/data/mapImages.js docs/reference/maps.md
+          git commit -m "feat(maps): upscale bird-eye map assets to 2x HD"
+          git push origin HEAD:feat/maps-hd-assets
