@@ -1043,8 +1043,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
     // rail 常驻 DOM（fullscreen 下才视觉显示为左列）；所有 rail 按钮存在
-    expect(wrapper.find('[data-test="pb-rail-battle"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-rail-vehicle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-rail-team"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-rail-display"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-rail-events"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-rail-annotation"]').exists()).toBe(true)

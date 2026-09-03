@@ -1577,6 +1577,18 @@ function selectAt(accountId, clientX, clientY) {
   mobileOverlay.value?.reveal?.()
 }
 
+// §队伍：双方阵容（按阵营分组），供左侧「队伍」二级展示。
+const teamVehicles = computed(() => {
+  const friendly = []
+  const enemy = []
+  for (const st of vehicleStates.value) {
+    const v = st.vehicle
+    if (v.friendly === true) friendly.push(st)
+    else if (v.friendly === false) enemy.push(st)
+  }
+  return { friendly, enemy }
+})
+
 const selectedState = computed(() => {
   if (selectedAccountId.value == null) return null
   return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
@@ -1825,6 +1837,25 @@ const mapStyle = computed(() => ({
           @toggle-annotations="annotVisible = !annotVisible"
         />
       </template>
+      <template v-else-if="activePanel === 'team'">
+        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
+        <strong class="pb-team-head" data-test="pb-team-friendly-head">{{ $t('recon.map.playback.team_friendly') }}</strong>
+        <ul class="pb-team-list" data-test="pb-team-friendly">
+          <li v-for="st in teamVehicles.friendly" :key="st.vehicle.accountId">
+            <span class="pb-team-tank">{{ st.vehicle.tankName || st.vehicle.tankId }}</span>
+            <span class="pb-team-player">{{ st.vehicle.playerName }}</span>
+          </li>
+          <li v-if="teamVehicles.friendly.length === 0" class="pb-team-empty">{{ $t('recon.map.playback.no_events') }}</li>
+        </ul>
+        <strong class="pb-team-head" data-test="pb-team-enemy-head">{{ $t('recon.map.playback.team_enemy') }}</strong>
+        <ul class="pb-team-list" data-test="pb-team-enemy">
+          <li v-for="st in teamVehicles.enemy" :key="st.vehicle.accountId">
+            <span class="pb-team-tank">{{ st.vehicle.tankName || st.vehicle.tankId }}</span>
+            <span class="pb-team-player">{{ st.vehicle.playerName }}</span>
+          </li>
+          <li v-if="teamVehicles.enemy.length === 0" class="pb-team-empty">{{ $t('recon.map.playback.no_events') }}</li>
+        </ul>
+      </template>
       <template v-else-if="activePanel === 'display'">
         <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
         <div class="pb-panel-options" data-test="pb-panel-content-display">
@@ -1877,23 +1908,13 @@ const mapStyle = computed(() => ({
       <button
         type="button"
         class="pb-rail-btn"
-        :class="{ active: activePanel === 'battle' }"
-        data-test="pb-rail-battle"
-        :aria-expanded="activePanel === 'battle'"
-        :title="$t('recon.map.playback.panel_battle')"
-        :aria-label="$t('recon.map.playback.panel_battle')"
-        @click="activePanel = null"
-      ><span class="pb-rail-glyph">⚔</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_battle') }}</span></button>
-      <button
-        type="button"
-        class="pb-rail-btn"
-        :class="{ active: selectedState != null }"
-        data-test="pb-rail-vehicle"
-        :aria-expanded="selectedState != null"
-        :title="$t('recon.map.playback.panel_vehicle')"
-        :aria-label="$t('recon.map.playback.panel_vehicle')"
-        @click="activePanel = null; selectedAccountId = selectedAccountId"
-      ><span class="pb-rail-glyph">▣</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_vehicle') }}</span></button>
+        :class="{ active: activePanel === 'team' }"
+        data-test="pb-rail-team"
+        :aria-expanded="activePanel === 'team'"
+        :title="$t('recon.map.playback.panel_team')"
+        :aria-label="$t('recon.map.playback.panel_team')"
+        @click="activePanel = activePanel === 'team' ? null : 'team'"
+      ><span class="pb-rail-glyph">⚖</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_team') }}</span></button>
       <button
         type="button"
         class="pb-rail-btn"
