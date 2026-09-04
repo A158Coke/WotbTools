@@ -453,7 +453,41 @@ def inspect_auxiliary_resources(
             continue
 
         raw = archive.read(member)
-        decoded = decode_dvpl(raw) if normalize_member(member.filename).lower().endswith(".dvpl") else raw
+        dvpl_footer = None
+        if len(raw) >= 20 and raw[-4:] == b"DVPL":
+            unpacked_size, packed_size, crc32, compression_raw, magic = struct.unpack_from(
+                "<III4s4s", raw, len(raw) - 20
+            )
+            dvpl_footer = {
+                "unpackedSize": unpacked_size,
+                "packedSize": packed_size,
+                "crc32": f"{crc32:08x}",
+                "compressionType": compression_raw[0],
+                "magic": magic.decode("ascii", errors="replace"),
+            }
+
+        try:
+            decoded = (
+                decode_dvpl(raw)
+                if normalize_member(member.filename).lower().endswith(".dvpl")
+                else raw
+            )
+        except Sc2ParseError as error:
+            results.append(
+                {
+                    "reference": value,
+                    "extension": reference["extension"],
+                    "resolved": True,
+                    "archiveMember": normalize_member(member.filename),
+                    "compressedBytes": member.compress_size,
+                    "storedBytes": member.file_size,
+                    "dvplFooter": dvpl_footer,
+                    "decodeError": str(error),
+                    "interpretation": "OPAQUE_BINARY_DECODE_BLOCKED",
+                }
+            )
+            continue
+
         strings = []
         for match in ASCII_RUN_RE.finditer(decoded):
             value_text = match.group(0).decode("ascii", errors="replace")
@@ -471,6 +505,7 @@ def inspect_auxiliary_resources(
                 "archiveMember": normalize_member(member.filename),
                 "compressedBytes": member.compress_size,
                 "storedBytes": member.file_size,
+                "dvplFooter": dvpl_footer,
                 "decodedBytes": len(decoded),
                 "headHex": decoded[:64].hex(),
                 "headAscii": "".join(chr(byte) if 32 <= byte <= 126 else "." for byte in decoded[:64]),
