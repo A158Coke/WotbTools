@@ -5,13 +5,9 @@ The output intentionally strips textures, materials, normals, tangents, and
 other client presentation data. It writes one shared local-space position/index
 buffer plus an instance manifest containing the SC2 world transforms.
 
-Usage:
-    python common/python/export_map_geometry_poc.py C:\\path\\to\\Maps.zip 05_amigosville_am
-
-Default outputs:
-    tmp/map-research/<map-id>-geometry-poc.json
-    tmp/map-research/<map-id>-positions.f32le.bin
-    tmp/map-research/<map-id>-indices.u32le.bin
+DAVA RenderObject activates a batch when both its LOD and switch index equal the
+requested value or are ``-1`` (shared/wildcard). This exporter mirrors that rule
+instead of treating ``-1`` as inactive.
 """
 
 from __future__ import annotations
@@ -27,12 +23,7 @@ from typing import Any, Iterator
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from wotb_sc2 import (  # noqa: E402
-    Sc2ParseError,
-    decode_dvpl,
-    entity_components,
-    read_sc2,
-)
+from wotb_sc2 import Sc2ParseError, decode_dvpl, entity_components, read_sc2  # noqa: E402
 from wotb_scg import (  # noqa: E402
     decode_polygon_indices,
     decode_polygon_positions,
@@ -41,6 +32,8 @@ from wotb_scg import (  # noqa: E402
     position_aabb,
     read_scg,
 )
+
+SHARED_BATCH_INDEX = -1
 
 
 class ExportMapGeometryError(RuntimeError):
@@ -157,15 +150,40 @@ def world_transform(entity: dict[str, Any]) -> dict[str, list[float]]:
 def iter_render_batches(
     render_object: dict[str, Any],
 ) -> Iterator[tuple[int, dict[str, Any]]]:
+    """Yield batch index + archive while preserving DAVA GenKeyFromIndex ids."""
+
     batches = render_object.get("ro.batches")
     if isinstance(batches, dict):
-        for index, batch in enumerate(batches.values()):
-            if isinstance(batch, dict):
-                yield index, batch
+        for raw_index, batch in batches.items():
+            if not isinstance(batch, dict):
+                continue
+            text = str(raw_index)
+            if not text.isdigit():
+                raise ExportMapGeometryError(
+                    f"RenderObject has non-numeric ro.batches key {raw_index!r}"
+                )
+            yield int(text), batch
     elif isinstance(batches, list):
         for index, batch in enumerate(batches):
             if isinstance(batch, dict):
                 yield index, batch
+
+
+def batch_option(render_object: dict[str, Any], batch_index: int, name: str) -> int:
+    """Read DAVA batch option; SceneFileV2 load defaults missing values to -1."""
+
+    value = render_object.get(f"rb{batch_index}.{name}", SHARED_BATCH_INDEX)
+    if not isinstance(value, int):
+        raise ExportMapGeometryError(
+            f"RenderObject rb{batch_index}.{name} must be int, got {type(value).__name__}"
+        )
+    return value
+
+
+def batch_is_active(batch_index: int, requested_index: int) -> bool:
+    """Mirror RenderObject::UpdateActiveRenderBatchesFromCollection."""
+
+    return batch_index == requested_index or batch_index == SHARED_BATCH_INDEX
 
 
 def collect_instances(
@@ -173,7 +191,7 @@ def collect_instances(
     target_lod: int,
     target_switch: int,
 ) -> tuple[list[dict[str, Any]], Counter[str]]:
-    """Collect initial-state Mesh render batches without baking transforms."""
+    """Collect active Mesh render batches without baking transforms."""
 
     instances: list[dict[str, Any]] = []
     skipped: Counter[str] = Counter()
@@ -187,8 +205,9 @@ def collect_instances(
         if not isinstance(render_object, dict):
             skipped["render_object_missing"] += 1
             continue
-        if render_object.get("##name") != "Mesh":
-            skipped[f"render_class:{render_object.get('##name', '<unknown>')}"] += 1
+        render_class = str(render_object.get("##name", "<unknown>"))
+        if render_class != "Mesh":
+            skipped[f"render_class:{render_class}"] += 1
             continue
         if render_object.get("ro.notShadowOnly") is False:
             skipped["shadow_only"] += 1
@@ -202,16 +221,13 @@ def collect_instances(
                 skipped["batch_without_datasource"] += 1
                 continue
 
-            lod_key = f"rb{batch_index}.lodIndex"
-            switch_key = f"rb{batch_index}.switchIndex"
-            lod_index = render_object.get(lod_key)
-            switch_index = render_object.get(switch_key)
-
-            if isinstance(lod_index, int) and lod_index != target_lod:
-                skipped["other_lod"] += 1
+            lod_index = batch_option(render_object, batch_index, "lodIndex")
+            switch_index = batch_option(render_object, batch_index, "switchIndex")
+            if not batch_is_active(lod_index, target_lod):
+                skipped["inactive_lod"] += 1
                 continue
-            if isinstance(switch_index, int) and switch_index != target_switch:
-                skipped["other_switch"] += 1
+            if not batch_is_active(switch_index, target_switch):
+                skipped["inactive_switch"] += 1
                 continue
 
             signature = (entity_path, datasource, batch_index)
@@ -219,7 +235,6 @@ def collect_instances(
                 skipped["duplicate_signature"] += 1
                 continue
             seen.add(signature)
-
             instances.append(
                 {
                     "entityPath": entity_path,
@@ -261,8 +276,6 @@ def write_geometry_buffers(
 
             positions = decode_polygon_positions(group)
             indices = decode_polygon_indices(group)
-            local_aabb = position_aabb(positions)
-            stride = polygon_group_vertex_stride(group)
             primitive_type = group.get("rhi_primitiveType")
             primitive_types[str(primitive_type)] += 1
 
@@ -276,7 +289,7 @@ def write_geometry_buffers(
                     "id": datasource_id,
                     "idHex": f"0x{datasource_id:016x}",
                     "vertexFormat": group.get("vertexFormat"),
-                    "sourceVertexStrideBytes": stride,
+                    "sourceVertexStrideBytes": polygon_group_vertex_stride(group),
                     "vertexCount": len(positions),
                     "positionFloatOffset": position_float_offset,
                     "positionFloatCount": len(positions) * 3,
@@ -284,7 +297,7 @@ def write_geometry_buffers(
                     "indexOffset": index_offset,
                     "primitiveType": primitive_type,
                     "primitiveCount": group.get("primitiveCount"),
-                    "localAabb": local_aabb,
+                    "localAabb": position_aabb(positions),
                 }
             )
             position_float_offset += len(positions) * 3
@@ -305,20 +318,20 @@ def write_geometry_buffers(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("input", type=pathlib.Path, help="Path to Maps.zip")
-    parser.add_argument("map_id", help="Client map id, e.g. 05_amigosville_am")
+    parser.add_argument("map_id", help="Client map id, e.g. 18_canal_cn")
     parser.add_argument(
         "--output-dir",
         type=pathlib.Path,
         default=pathlib.Path("tmp/map-research"),
         help="Derived PoC output directory; defaults to tmp/map-research",
     )
-    parser.add_argument("--lod", type=int, default=0, help="RenderBatch LOD index")
+    parser.add_argument("--lod", type=int, default=0, help="Requested active LOD index")
     parser.add_argument(
         "--switch",
         type=int,
         default=0,
         dest="switch_index",
-        help="RenderBatch switch/state index",
+        help="Requested active switch/state index",
     )
     return parser
 
@@ -328,6 +341,9 @@ def main() -> int:
     archive_path = args.input.expanduser().resolve()
     if not archive_path.is_file():
         print(f"error: archive not found: {archive_path}", file=sys.stderr)
+        return 2
+    if args.lod < 0 or args.switch_index < 0:
+        print("error: --lod and --switch must be >= 0; batch -1 is included automatically", file=sys.stderr)
         return 2
 
     output_dir = args.output_dir.expanduser().resolve()
@@ -354,11 +370,7 @@ def main() -> int:
         )
         scene = read_sc2(scene_payload)
         scg = read_scg(scg_payload)
-        groups = [
-            group
-            for group in scg.get("polygonGroups", [])
-            if isinstance(group, dict)
-        ]
+        groups = [group for group in scg.get("polygonGroups", []) if isinstance(group, dict)]
         groups_by_id = {
             identifier: group
             for group in groups
@@ -366,6 +378,12 @@ def main() -> int:
         }
 
         instances, skipped = collect_instances(scene, args.lod, args.switch_index)
+        if not instances:
+            raise ExportMapGeometryError(
+                f"no active Mesh batches for lod={args.lod}, switch={args.switch_index}; "
+                f"skipped={dict(skipped.most_common())}"
+            )
+
         required_ids = sorted({int(instance["datasourceId"]) for instance in instances})
         unmatched_ids = [identifier for identifier in required_ids if identifier not in groups_by_id]
         if unmatched_ids:
@@ -376,14 +394,11 @@ def main() -> int:
 
         output_dir.mkdir(parents=True, exist_ok=True)
         geometry_records, geometry_summary = write_geometry_buffers(
-            groups_by_id,
-            required_ids,
-            positions_path,
-            indices_path,
+            groups_by_id, required_ids, positions_path, indices_path
         )
 
         manifest = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "mapId": args.map_id,
             "source": {
                 "sceneMember": normalize_member(scene_member.filename),
@@ -393,6 +408,8 @@ def main() -> int:
                 "renderObjectClass": "Mesh",
                 "lodIndex": args.lod,
                 "switchIndex": args.switch_index,
+                "sharedBatchIndex": SHARED_BATCH_INDEX,
+                "activeRule": "batch index equals requested index or -1",
                 "excludeShadowOnly": True,
             },
             "coordinateContract": {
@@ -430,7 +447,8 @@ def main() -> int:
             "instances": instances,
             "evidenceRule": (
                 "Positions are decoded from EVF_VERTEX at offset zero of the interleaved SCPG "
-                "vertex stride; indices are decoded from PolygonGroup indexFormat. Instance "
+                "vertex stride; indices are decoded from PolygonGroup indexFormat. DAVA shared "
+                "RenderBatch LOD/switch value -1 participates in every requested state. Instance "
                 "transforms are preserved from SC2 TransformComponent world fields. Textures, "
                 "materials, normals, tangents, UVs, vegetation, and gameplay collision are not "
                 "exported by this PoC."
