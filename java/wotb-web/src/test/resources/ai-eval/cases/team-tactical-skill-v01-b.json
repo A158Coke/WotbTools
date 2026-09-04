@@ -1,0 +1,13 @@
+{
+  "id": "team-tactical-skill-v01-b-commitment",
+  "mode": "TEAM_PERSPECTIVE",
+  "arenaBonusType": 3,
+  "fixtureKey": "cw-cap-defense-01",
+  "expectedJudgment": "越过暴露路段后出现新敌情，不机械要求撤退；评估完成动作与可达掩护",
+  "checks": [
+    { "kind": "system_prompt_contains", "text": "commitment point" },
+    { "kind": "system_prompt_contains", "text": "新敌情出现不等于机械撤退" },
+    { "kind": "system_prompt_contains", "text": "不得用后来的敌方位置回填更早窗口" }
+  ],
+  "note": "Golden B：新情报改变风险，但不自动证明中途停止比完成动作更好。"
+}

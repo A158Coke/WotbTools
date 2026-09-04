@@ -234,7 +234,7 @@ public final class TeamFactualConsistencyValidator {
         }
         if (envelope.primaryDiagnosis() == null || !envelope.primaryDiagnosis().hasContent()) {
             conflicts.add(new FactConflict("DIAGNOSIS",
-                    "缺少主判断：必须选择且只选择一个 PRIMARY DIAGNOSIS（title + reasoning 非空）。"));
+                    "缺少主结论：必须选择且只选择一个 PRIMARY DIAGNOSIS（title + reasoning 非空；可以是无明显确认错误）。"));
         }
 
         final List<String> units = new ArrayList<>();

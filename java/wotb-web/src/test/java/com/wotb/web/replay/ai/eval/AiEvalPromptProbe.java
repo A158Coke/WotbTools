@@ -5,12 +5,13 @@ import com.wotb.core.replay.evidence.EvidenceSkillContext;
 import com.wotb.core.replay.evidence.EvidenceSkillEngine;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.web.replay.ai.AiPromptLibrary;
 import com.wotb.web.replay.ai.TacticalReviewPromptBuilder;
 import com.wotb.web.replay.ai.TeamAiPromptBuilder;
 
 import java.util.List;
 
-/** 不调 AI：按 golden case 构建 prompt（team/player 按 mode 分流）并返回 user 文本（供断言/报告）。 */
+/** 不调 AI：按 golden case 构建 user/system prompt（team/player 按 mode 分流）。 */
 public final class AiEvalPromptProbe {
 
     private AiEvalPromptProbe() {
@@ -22,6 +23,14 @@ public final class AiEvalPromptProbe {
         }
         final SingleTeamBattleAnalysisContext context = AiEvalFixtures.context(caze.fixtureKey());
         return TeamAiPromptBuilder.single(context, List.of(), null, null, Integer.MAX_VALUE).content();
+    }
+
+    /** 返回实际 team system prompt，供模块化战术技能的契约断言使用。 */
+    public static String systemPrompt(final AiEvalCase caze) {
+        if ("PLAYER_FOCUSED".equals(caze.mode())) {
+            return "";
+        }
+        return AiPromptLibrary.zh("team/single");
     }
 
     /** player 路径：真实证据链（EvidenceSkillEngine 含 PlayerSeparationEvidenceSkill）→ TacticalReviewPromptBuilder。 */

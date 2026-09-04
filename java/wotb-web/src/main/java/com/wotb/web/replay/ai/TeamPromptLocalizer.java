@@ -200,60 +200,48 @@ final class TeamPromptLocalizer {
     static final String TEAM_PRIMARY_DIAGNOSIS_RULE = """
 
             === 主判断（Primary Diagnosis，强制） ===
-            你必须选出且只选出一个 PRIMARY DIAGNOSIS：这局最主要的问题是什么、
-            为什么你认为它是主要问题、下一次最该改什么。
-            除非回放几乎完全不可分析，否则禁止回答「无法判断主要问题」，也禁止把多个可能解释
-            并列丢给用户（如「可能是分兵，也可能是站位，也可能是沟通或集火」）。
-            如果多个解释均可能成立：选择你认为最符合全部已知证据、同时最有训练价值的那一个
-            作为主判断；可以在正文中简短说明一个重要不确定点，但不得用「不确定」替代结论。
-            无法证明最细节的因果链 ≠ 无法给出上层战术判断：不能确认「对方具体瞄准了谁/谁当时
-            有 LOS/谁被哪块掩体挡住」，仍然可以判断「第一轮交换节奏出了问题」；基于全部已知
-            evidence 选择最符合证据、同时最有训练价值的主解释，不要因为缺少最细粒度证明就放弃判断。
-            你是在做战术复盘，不是在做司法鉴定：事实必须准确，战术判断不要求数学证明；
-            事实允许多个解释时，你应该做最佳判断，而不是把所有可能性都列给用户。
-            用户需要的是方向和训练重点。
+            你必须选出且只选出一个 PRIMARY DIAGNOSIS：它表示本场最重要的结论，不等于必须找出错误。
+            结论可以是 TEAM_EXECUTION_PROBLEM、INDIVIDUAL_EXECUTION_PROBLEM、KEY_SUCCESS_FACTOR、
+            OPPONENT_EXECUTED_BETTER 或 NO_SIGNIFICANT_CONFIRMED_ERROR；不要机械输出这些英文枚举，
+            title 和 reasoning 用自然教练语言表达即可。
+            只有证据支持时才指出团队执行问题、个人执行问题或战术决策问题；证据不足就跳过该判断。
+            如果本场没有足以作为主要问题的明确执行失误，可以直接写「本场没有发现足以作为主要问题的明显执行失误；
+            对方在某个已观察阶段处理得更有效」或等价结论，不得为了填满字段制造轮转、沟通、地图意识或协调问题。
+            多个解释均可能成立时，选择最符合已知证据的单一结论；不要把无法观察的赛前计划、语音 call、
+            沟通、谁下令或谁忽略指令当作原因。不能证明最细节的因果链时，保留可证明的上层执行现象，
+            不要用猜测填补空白。
             """;
 
     static final String TEAM_PRIMARY_DIAGNOSIS_RULE_EN = """
 
                         === PRIMARY DIAGNOSIS (mandatory) ===
-                        You must choose exactly one PRIMARY DIAGNOSIS: what the main problem of this battle was, why you
-                        believe it is the main problem, and what should change next time.
-                        Unless the replay is almost completely unanalyzable, never answer "the main problem cannot be
-                        determined" and never dump multiple possible explanations on the user (e.g. "it could be the split,
-                        or the positioning, or communication, or focus fire").
-                        When several interpretations are plausible: pick the one you believe best fits ALL known evidence and
-                        has the most training value as the primary diagnosis; you may briefly note one important uncertainty
-                        in the body, but never replace the conclusion with "uncertain".
-                        Not being able to prove the finest-grained causal chain ≠ not being able to give a higher-level
-                        tactical judgment: you cannot confirm "exactly who the enemy was aiming at / who had LOS / which cover
-                        blocked whom", but you can still judge "the exchange tempo in the first engagement was off"; base the
-                        primary interpretation on all known evidence — do not abandon judgment just because the finest proof
-                        is missing.
-                        You are doing a tactical review, not forensic identification: facts must be accurate, but tactical
-                        judgments do not require mathematical proof; when the facts allow several readings, make your best
-                        call instead of listing every possibility. The user needs direction and training focus.
+                        You must choose exactly one PRIMARY DIAGNOSIS: it is the battle's most important conclusion, not a
+                        requirement to find an error. It may be a team-execution problem, an individual-execution problem,
+                        a key success factor, the opponent executing better, or no significant confirmed error; express the
+                        result in natural coaching language rather than mechanically printing enum names.
+                        Name a team, individual, or decision problem only when the evidence supports it. If no clear execution
+                        error is important enough to lead the review, say so and, when supported, note that the opponent handled
+                        an observed phase more effectively. Never invent a rotation, communication, map-awareness, or coordination
+                        problem just to fill this field.
+                        Do not treat an unknown pre-battle plan, voice call, communication, commander order, or ignored order as
+                        a cause. When the finest causal chain is unprovable, retain the observable execution pattern and skip the
+                        unsupported explanation.
             """;
 
     static final String TEAM_PRIMARY_DIAGNOSIS_RULE_RU = """
 
                         === ОСНОВНОЙ ДИАГНОЗ (PRIMARY DIAGNOSIS, обязательно) ===
-                        Вы должны выбрать ровно один PRIMARY DIAGNOSIS: в чём была главная проблема этого боя, почему вы
-                        считаете её главной и что следует изменить в следующий раз.
-                        Если только реплей не является почти полностью неанализируемым, никогда не отвечайте «главную проблему
-                        определить нельзя» и не сваливайте на пользователя перечень возможных объяснений (например, «может быть,
-                        разделение, или позиции, или коммуникация, или фокус-огонь»).
-                        Когда правдоподобны несколько объяснений: выберите то, которое, по вашему мнению, лучше всего
-                        соответствует ВСЕМ известным данным и обладает наибольшей тренировочной ценностью, как основной диагноз;
-                        в тексте можно кратко отметить одну важную неопределённость, но нельзя заменять вывод словом «неопределённо».
-                        Невозможность доказать самую детальную причинную цепочку ≠ невозможность дать тактический вывод верхнего
-                        уровня: вы не можете подтвердить «по кому именно целился противник / у кого была линия огня / какой укрытие
-                        кого закрывало», но можете судить «темп размена в первом столкновении был нарушен»; выбирайте основную
-                        интерпретацию на основе всех известных данных — не отказывайтесь от суждения лишь из-за отсутствия самого
-                        детального доказательства.
-                        Вы делаете тактический разбор, а не судебную идентификацию: факты должны быть точными, но тактические
-                        суждения не требуют математического доказательства; когда факты допускают несколько прочтений, выносите
-                        лучшее суждение, а не перечисляйте все возможности. Пользователю нужны направление и фокус тренировки.
+                        Вы должны выбрать ровно один PRIMARY DIAGNOSIS: это самый важный вывод боя, а не обязательное требование
+                        найти ошибку. Это может быть проблема командного исполнения, индивидуального исполнения, ключевой фактор
+                        успеха, более эффективное исполнение противника или отсутствие существенной подтверждённой ошибки; выражайте
+                        результат естественным тренерским языком, не печатайте имена enum механически.
+                        Называйте проблему команды, игрока или решения только при наличии подтверждающих данных. Если явной ошибки,
+                        достаточно важной для главного вывода, нет — так и скажите и, если это подтверждено, отметьте, что противник
+                        эффективнее обработал наблюдаемую фазу. Не выдумывайте ротацию, коммуникацию, осведомлённость о карте или
+                        координацию только для заполнения поля.
+                        Не выдавайте неизвестный предбоевой план, голосовой call, коммуникацию, приказ командира или его игнорирование
+                        за причину. Если детальная причинная цепочка недоказуема, оставьте наблюдаемую картину исполнения и пропустите
+                        неподтверждённое объяснение.
             """;
 
     /** Team 专用（Natural Coach 轮）：GROUNDING FACTS 使用 + JSON envelope 输出契约。 */
@@ -269,7 +257,7 @@ final class TeamPromptLocalizer {
             {
               "primaryDiagnosis": {
                 "title": "一句话主判断",
-                "reasoning": "为什么你认为它是主要问题（2-4 句）",
+                "reasoning": "为什么这是本场最重要的结论（2-4 句；没有明确失误时说明证据支持的无明显错误/对手处理更有效）",
                 "supportingEvidenceIds": ["E1xx", "E1xx"]
               },
               "reviewMarkdown": "完整的自然语言复盘正文（用户最终看到的全部内容，Markdown；主标题用 ## 团队复盘）",
@@ -557,34 +545,34 @@ final class TeamPromptLocalizer {
             === 赛前战略基线（Call #1）使用规则（强制） ===
             输入可能包含 PRE-BATTLE STRATEGIC PRIOR：仅基于地图、双方阵容、双方总血量与坦克战术属性的
             赛前先验判断（含分阶段预期打法），未读取任何战斗结果。
+            它只是战略基线和可能性空间，不是队伍实际制定或执行过的战术计划。
             其中 TEAM_A=你的队伍（teamDisplayLabel，无值时称「我方」）、TEAM_B=对方队伍；没有该段时不得编造基线。
-            复盘必须对照基线：先识别本场实际战局类型（常规推进 / 一波流 / 蹲坑僵持 / 其他特殊战局），
-            再逐条对照"预期打法 vs 实际执行"的差异与原因；实际战局偏离预期不等于失误，
-            一波流等特殊战局可能让任何阶段计划失效，必须基于实际事件判断，不得仅因胜负倒推。""";
+            可以用它理解阵容特征、潜在优劣和合理选项，也可以帮助解释某个已观察交换为何代价较高；
+            不得仅因为实际执行偏离基线就判错。先看实际发生的时序、局部人数、位置、血量和目标压力，
+            再判断是否存在证据支持的执行或决策问题，不得把未知计划、call 或沟通原因补写出来。""";
 
     static final String TEAM_PRIOR_RULE_EN = """
 
             === PRE-BATTLE STRATEGIC PRIOR (Call #1) USAGE RULE (mandatory) ===
             The input may include a PRE-BATTLE STRATEGIC PRIOR: a pre-battle judgment based only on the map,
             both lineups, total HP and tank tactical attributes (including staged expected play), with no battle results read.
+            It is a strategic baseline and possibility space, not the team's actual planned or called strategy.
             In it, TEAM_A = your team (teamDisplayLabel, or "our team" when empty) and TEAM_B = the opposing team; if the section is absent, never fabricate a baseline.
-            The review must be checked against this baseline: first identify the actual battle pattern
-            (normal push / one-lane rush / camped stalemate / other special pattern), then compare
-            "expected play vs actual execution" item by item with reasons. Deviation from the expectation
-            is not automatically a mistake; special patterns such as a one-lane rush can invalidate any
-            staged plan, so judge from actual events, never reason backwards from the result alone.""";
+            Use it to understand lineup characteristics, plausible strengths/weaknesses and why an observed exchange may have been costly;
+            deviation from it is not automatically an error. Judge actual timing, local numbers, positions, HP and objective pressure first,
+            then decide whether an execution or decision problem is supported. Never fill in an unknown plan, call, or communication cause.""";
 
     static final String TEAM_PRIOR_RULE_RU = """
 
             === ПРАВИЛО ПРЕДБОЕВОЙ БАЗЫ (Call #1) (обязательно) ===
             Во входе может быть PRE-BATTLE STRATEGIC PRIOR — предбоевое суждение только по карте, составам,
             суммарному HP и тактическим атрибутам машин (включая поэтапный ожидаемый план), без чтения результатов боя.
-            В нём TEAM_A = ваша команда (teamDisplayLabel, при отсутствии — «наша команда»), TEAM_B = команда противника; если секции нет, базу выдумывать нельзя.
-            Разбор сверяйте с базой: сначала определите фактический паттерн боя (обычное продвижение /
-            рывок одной линией / окопное противостояние / другой особый паттерн), затем по пунктам сравните
-            «ожидаемый план vs фактическое исполнение» с причинами. Отклонение от ожиданий — не автоматически
-            ошибка; особые паттерны (например, рывок одной линией) могут обесценить любой поэтапный план,
-            судите по фактическим событиям, а не только по счёту.""";
+            Это стратегическая база и пространство возможностей, а не фактический план или приказ команды.
+            В ней TEAM_A = ваша команда (teamDisplayLabel, при отсутствии — «наша команда»), TEAM_B = команда противника; если секции нет, базу выдумывать нельзя.
+            Используйте её для понимания состава, возможных сильных/слабых сторон и цены наблюдаемого размена;
+            отклонение от базы не является автоматически ошибкой. Сначала оценивайте фактические время, локальные силы,
+            позиции, HP и давление на цель, затем решайте, подтверждена ли проблема исполнения или решения. Не додумывайте
+            неизвестный план, call или причину, связанную с коммуникацией.""";
 
     /** Team 专用：九宫格 region 与真实距离的关系规则（强制；EN/RU 本地化时替换）。 */
     static final String TEAM_REGION_RULE = """
@@ -961,6 +949,100 @@ final class TeamPromptLocalizer {
                d. Окно входа в зону контроля (CONTROL_REGION_ENTRY_WINDOWS) выражает лишь структурный факт — машины переместились извне зоны точки захвата внутрь неё; само по себе оно не доказывает атаку, захват, оборону, ротацию или тактическую правильность/ошибочность. Урон, который обороняющиеся наносят входящим машинам, — лишь наблюдаемый факт обмена HP; означает ли он «недостаточную плату за проезд / ошибку обороны» — ваше supported tactical inference из сигнала очков за фраги, присутствия в зонах контроля, локальных чисел, времени боя, урона, потерь и последующего движения — никогда не превращайте «окно входа + низкий урон» в обязательный вердикт «ошибка обороны». Когда цифры урона недоступны (OBSERVED_DAMAGE_IS_PARTIAL), описывайте только качественно и не называйте чисел.
                e. При недостаточных или противоречивых сигналах не навязывайте вывод «позади/впереди» — оставьте это суждение внутренним UNKNOWN и объясняйте естественно только при выполнении условия глобального селективного UNKNOWN.""";
 
+    /** Tournament Tactical Skill v0.1：模块锚点由 AiPromptLibrary 提供，EN/RU 替换保持单一资源入口。 */
+    static final String TEAM_EXECUTION_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/team-execution");
+    static final String POSITION_TEMPO_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/position-tempo");
+    static final String HP_TRADES_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/hp-trades");
+    static final String MODE_OBJECTIVES_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/mode-objectives");
+
+    static final String TEAM_EXECUTION_SKILL_RULE_EN = """
+
+            === TEAM EXECUTION TACTICAL SKILL v0.1 ===
+            This is a compact training-room/clan-battle reasoning reference, not a backend verdict rule. Use it only when evidence is sufficient; otherwise skip the inference.
+            1. Review observable execution, never treat an unknown pre-battle plan, voice, call, or mental intent as fact.
+            2. Check entry timing, who could actually participate in the engagement, local numbers, and formation coherence; the latest arrival is not automatically responsible.
+            3. Identify the commitment point: after crossing exposed ground, with forward vehicles committed and reachable cover ahead, stopping may fragment the formation more than completing the action. New enemies do not mechanically require retreat.
+            4. Use half-commit only when the observable combination is present: not continuing, not successfully disengaging, and not forming a useful firing position. Otherwise describe the observed timing, positions, and exchange.
+            5. After commitment, value action completeness and synchronization; do not split forward, rear, and side members into pieces that can be handled separately.
+            6. Treat information updates as tactical triggers: compare what was known before, what appeared, how risk changed, and whether the response adapted. Never use later enemy positions to rewrite an earlier window.
+            Separate execution/mechanical errors (miss, provable non-penetration, poor physical follow-up, half-completed movement, unnecessary exposure) from decision problems (costly second attack, abandoning valuable position for a low-value kill, staying on a dead lane, or failing to react to a major information update). Do not assign a cause without evidence.
+            """;
+
+    static final String TEAM_EXECUTION_SKILL_RULE_RU = """
+
+            === ТАКТИЧЕСКИЙ НАВЫК КОМАНДНОГО ИСПОЛНЕНИЯ v0.1 ===
+            Это компактный ориентир для тренировочного/кланового разбора, а не вердикт бэкенда. Используйте его только при достаточных данных; иначе пропускайте вывод.
+            1. Разбирайте наблюдаемое исполнение, не выдавая неизвестный предбоевой план, голос, call или намерение за факт.
+            2. Проверяйте время входа, кто реально мог участвовать в столкновении, локальные числа и целостность строя; самый поздний участник не автоматически виноват.
+            3. Определяйте точку commitment: после перехода открытого участка, когда передние машины уже вошли, а впереди есть достижимое укрытие, остановка может сильнее раздробить строй, чем завершение действия. Новые враги не означают обязательный отход.
+            4. Называйте half-commit только при наблюдаемом сочетании: действие не продолжается, безопасного выхода нет и полезная огневая позиция не создана. Иначе описывайте только время, позиции и обмен.
+            5. После commitment важны завершённость действия и синхронность; не разделяйте передних, задних и боковых участников на части для раздельного уничтожения.
+            6. Считайте обновление информации тактическим триггером: сравнивайте, что было известно, что появилось, как изменился риск и адаптировалась ли команда. Не переносите поздние позиции противника в раннее окно.
+            Разделяйте ошибки исполнения/механики (промах, доказанный непробитый выстрел, слабое физическое следование, незавершённое движение, лишняя открытость) и проблемы решения (дорогая вторая атака, отказ от ценой позиции ради дешёвого фрага, оставание на пустой линии или отсутствие реакции на важную информацию). Без данных причину не приписывайте.
+            """;
+
+    static final String POSITION_TEMPO_SKILL_RULE_EN = """
+
+            === POSITION AND TEMPO TACTICAL SKILL v0.1 ===
+            Position value usually exceeds the value of one kill. A kill is not automatically profitable if it costs the retreat path, a viable position, formation coherence, continued contribution, or time from the main fight.
+            1. A geometrically strong position may have low current value. Combine confirmed enemy information, main-battle location, current output, and opportunity cost; potential value is not realized value.
+            2. Before judging a hold or rotation, ask whether the vehicle can disengage safely. If pressure is distant and rotation can produce value soon, rotation may be better; if pressure is close and leaving exposes the vehicle, delaying the enemy may be the better remaining action.
+            3. Compare the marginal value of staying with time-to-value after rotation. A successful lane need not chase every retreating enemy; if the enemy has re-established a strong defense, a second attack is costly, and the team gained important objective value, preserve the position and transfer the advantage.
+            4. One defender is not automatically an effective line. Check whether it can delay, exchange, preserve depth, and retreat between positions; leaving a lane that cannot stop a multi-vehicle push may create tempo rather than be an error.
+            5. Stationary time is not inactivity by itself. Holding a stronger position without objective/time pressure may be correct when the enemy must expose itself first.
+            """;
+
+    static final String POSITION_TEMPO_SKILL_RULE_RU = """
+
+            === ТАКТИЧЕСКИЙ НАВЫК ПОЗИЦИИ И ТЕМПА v0.1 ===
+            Ценность позиции обычно выше ценности одного фрага. Фраг не автоматически выгоден, если ради него потеряны путь отхода, рабочая позиция, целостность строя, дальнейший вклад или время главного боя.
+            1. Геометрически сильная позиция может быть малоценной сейчас. Учитывайте подтверждённую информацию о противнике, место главного боя, текущий вклад и цену оставания; потенциальная ценность не равна реализованной.
+            2. Перед оценкой удержания или ротации спросите, может ли машина безопасно выйти. При далёком давлении и быстрой пользе от ротации она может быть лучше; при близком давлении и опасном уходе лучшее оставшееся действие может быть задержкой противника.
+            3. Сравнивайте предельную пользу оставания со временем до пользы после ротации. Успешную линию не нужно продолжать до уничтожения каждого отходящего; при восстановленной обороне врага, дорогой второй атаке и уже полученной ценности цели сохраняйте позицию и переносите преимущество.
+            4. Один защитник не автоматически образует линию. Проверяйте способность задерживать, размениваться, сохранять глубину и отходить между позициями; уход с линии, которую не остановить нескольким машинам, может создать темп, а не быть ошибкой.
+            5. Само по себе стояние не означает бездействие. Удержание сильной позиции без давления цели/времени может быть верным, если противник должен первым открыться.
+            """;
+
+    static final String HP_TRADES_SKILL_RULE_EN = """
+
+            === HP AND GUN-TRADE TACTICAL SKILL v0.1 ===
+            Default to reliable damage with no unnecessary HP loss, but judge an exchange by future gun value, not vehicle count alone.
+            1. A controlled extra HP cost for an immediately confirmable kill may be worthwhile because a live enemy gun is removed; roughly 1.2x is an experienced-player reference, never a backend threshold or GOOD_TRADE verdict.
+            2. Compare remaining HP, survival likelihood, current position, mobility, future rotation value, and important role. A 1-for-1 is not inherently equal; do not treat low-value enemy and high-value friendly guns as equivalent.
+            3. HP is a team resource: a high-HP member may absorb necessary damage to preserve a low-HP friendly gun, but high HP does not mean it must always lead and it should not lose HP deliberately when safe damage exists.
+            4. In a stable endgame, preserve multiple firing lines when possible; sacrificing a high-HP vehicle merely to create action may be worse than making the opponent act first.
+            """;
+
+    static final String HP_TRADES_SKILL_RULE_RU = """
+
+            === ТАКТИЧЕСКИЙ НАВЫК HP И РАЗМЕНА ОГНЕВЫХ ЕДИНИЦ v0.1 ===
+            По умолчанию выбирайте надёжный урон без лишней потери HP, но оценивайте размен по будущей ценности огневых единиц, а не только по числу машин.
+            1. Контролируемая дополнительная цена HP за немедленно подтверждаемый фраг может окупаться удалением живой пушки противника; примерно 1,2× — ориентир опытного игрока, не порог бэкенда и не вердикт GOOD_TRADE.
+            2. Сравнивайте оставшийся HP, вероятность выживания, текущую позицию, мобильность, будущую ценность ротации и важную роль. Размен 1 к 1 не равен автоматически; слабую машину противника и ценную машину союзника нельзя считать равными.
+            3. HP — ресурс команды: машина с большим HP может принять необходимый урон, сохранив союзную машину с малым HP, но большой запас HP не означает обязательный первый номер и не требует намеренно терять HP при безопасном уроне.
+            4. В стабильном эндшпиле по возможности сохраняйте несколько линий огня; жертва здоровой машины ради действия может быть хуже, чем заставить противника ошибиться первым.
+            """;
+
+    static final String MODE_OBJECTIVES_SKILL_RULE_EN = """
+
+            === MODE AND OBJECTIVE TACTICAL SKILL v0.1 ===
+            Judge objective pressure with mode, observed objective state, time, local numbers, and kill opportunities; never apply “base capture seen => defend immediately”.
+            1. In Supremacy, a kill removes an enemy gun and carries about +40 points of value. Below roughly 750 points kills usually remain high priority; roughly 750–800 is a warning zone; around 800+ objective pressure grows materially. These are experience gradients, not a 749/750/800 state machine.
+            2. Even in the warning zone, a kill confirmable in about 1–2 seconds may beat an objective action; a target requiring 10–15 seconds of pursuit has different value. Never present an unproven live total or score formula as fact.
+            3. In Assault, uninterrupted full capture of the single large base takes about 100 seconds. At roughly 25–40 seconds, do not mechanically override a strong local kill opportunity; around 70–80 seconds is a meaningful warning region, while reset feasibility still matters.
+            4. All thresholds are prioritization heuristics, not verdict rules. Return to actual evidence for the trade-off between objective, kills, position, and HP.
+            """;
+
+    static final String MODE_OBJECTIVES_SKILL_RULE_RU = """
+
+            === ТАКТИЧЕСКИЙ НАВЫК РЕЖИМОВ И ЦЕЛЕЙ v0.1 ===
+            Оценивайте давление цели с учётом режима, наблюдаемого состояния цели, времени, локальных сил и возможностей фрага; не применяйте правило «увидел захват базы — немедленно защищай».
+            1. В Supremacy фраг удаляет пушку противника и даёт около +40 очков ценности. Ниже примерно 750 очков фраги обычно сохраняют высокий приоритет; примерно 750–800 — зона предупреждения; около 800+ давление цели заметно возрастает. Это градиент опыта, а не автомат состояний 749/750/800.
+            2. Даже в зоне предупреждения фраг, подтверждаемый примерно за 1–2 секунды, может быть важнее действия у цели; цель, требующая 10–15 секунд погони, имеет другую ценность. Не выдавайте недоказанный текущий счёт или формулу очков за факт.
+            3. В Assault непрерывный полный захват одной большой базы занимает около 100 секунд. При прогрессе примерно 25–40 секунд не отбрасывайте автоматически сильную локальную возможность фрага; около 70–80 секунд — существенная зона предупреждения, но всё ещё важна реальная возможность сбросить захват.
+            4. Все пороги — эвристика расстановки приоритетов, а не вердикты. Возвращайтесь к фактам при выборе между целью, фрагом, позицией и HP.
+            """;
+
     /**
      * 组装团队 system prompt：ZH 返回原样；EN/RU 在中文基座上替换中文输出强制句
      * （输出语言、时间格式、语言规则与团队规则）。
@@ -996,6 +1078,14 @@ final class TeamPromptLocalizer {
                 .replace(PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE,
                         en ? PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE_EN
                                 : PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE_RU)
+                .replace(TEAM_EXECUTION_SKILL_RULE,
+                        en ? TEAM_EXECUTION_SKILL_RULE_EN : TEAM_EXECUTION_SKILL_RULE_RU)
+                .replace(POSITION_TEMPO_SKILL_RULE,
+                        en ? POSITION_TEMPO_SKILL_RULE_EN : POSITION_TEMPO_SKILL_RULE_RU)
+                .replace(HP_TRADES_SKILL_RULE,
+                        en ? HP_TRADES_SKILL_RULE_EN : HP_TRADES_SKILL_RULE_RU)
+                .replace(MODE_OBJECTIVES_SKILL_RULE,
+                        en ? MODE_OBJECTIVES_SKILL_RULE_EN : MODE_OBJECTIVES_SKILL_RULE_RU)
                 .replace(TEAM_PRIOR_RULE,
                         en ? TEAM_PRIOR_RULE_EN : TEAM_PRIOR_RULE_RU)
                 .replace(TEAM_REGION_RULE,

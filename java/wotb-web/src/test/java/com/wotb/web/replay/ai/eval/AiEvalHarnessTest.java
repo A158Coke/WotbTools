@@ -76,8 +76,17 @@ class AiEvalHarnessTest {
                 "training recommendations must map to confirmed issues");
         assertTrue(zh.contains("没有足够强的 positive 证据时不得硬写「做得好的团队行为」"),
                 "must not force a positive section");
-        assertTrue(zh.contains("必须选出且只选出一个 PRIMARY DIAGNOSIS"),
-                "must carry the primary-diagnosis contract");
+        assertTrue(zh.contains("表示本场最重要的结论，不等于必须找出错误"),
+                "primary diagnosis must be the most important conclusion, not a forced error");
+        assertTrue(zh.contains("NO_SIGNIFICANT_CONFIRMED_ERROR"),
+                "must allow a no-confirmed-error conclusion");
+        assertTrue(zh.contains("不得为了填满字段制造轮转、沟通、地图意识或协调问题"),
+                "must ban manufactured errors");
+        assertTrue(zh.contains("团队执行战术技能 v0.1")
+                        && zh.contains("位置与节奏战术技能 v0.1")
+                        && zh.contains("HP 与火力交换战术技能 v0.1")
+                        && zh.contains("模式与目标战术技能 v0.1"),
+                "team prompt must include all modular tactical skills");
         assertTrue(zh.contains("GROUNDING FACTS 与结构化输出"),
                 "must carry the GROUNDING FACTS structured-output contract");
         assertTrue(zh.contains("reviewMarkdown"), "must carry the reviewMarkdown field of the JSON envelope");
@@ -91,8 +100,9 @@ class AiEvalHarnessTest {
         final List<AiEvalReportWriter.CaseResult> results = cases.stream()
                 .map(caze -> {
                     final String prompt = AiEvalPromptProbe.prompt(caze);
+                    final String systemPrompt = AiEvalPromptProbe.systemPrompt(caze);
                     final List<AiEvalAssertions.CheckResult> checks =
-                            AiEvalAssertions.evaluate(caze, prompt);
+                            AiEvalAssertions.evaluate(caze, prompt, systemPrompt);
                     return new AiEvalReportWriter.CaseResult(
                             caze, AiEvalAssertions.allPassed(checks), checks);
                 })
