@@ -246,6 +246,64 @@ function loadHpPrefs() {
   }
   return { showHp: true }
 }
+// 左右两栏宽度可拖拽调整。未调整过时留 null，让 CSS 里的响应式默认值继续生效。
+const PANE_WIDTH_KEY = 'wotb.pb.pane-widths'
+const RAIL_W_RANGE = { min: 160, max: 420 }
+const DETAILS_W_RANGE = { min: 240, max: 560 }
+function loadPaneWidths() {
+  try {
+    const raw = localStorage.getItem(PANE_WIDTH_KEY)
+    if (raw) {
+      const p = JSON.parse(raw)
+      return {
+        rail: Number.isFinite(p.rail) ? p.rail : null,
+        details: Number.isFinite(p.details) ? p.details : null,
+      }
+    }
+  } catch {
+    // 损坏/不可用 → 用 CSS 默认
+  }
+  return { rail: null, details: null }
+}
+const paneWidths = reactive(loadPaneWidths())
+watch(paneWidths, (w) => {
+  try {
+    localStorage.setItem(PANE_WIDTH_KEY, JSON.stringify(w))
+  } catch {
+    // 隐私模式/配额满：静默（本次会话内仍生效）
+  }
+}, { deep: true })
+
+const clampWidth = (value, range) => Math.min(range.max, Math.max(range.min, value))
+
+/** 拖拽改宽：edge 决定按指针换算成哪一侧的宽度。 */
+function startPaneResize(event, pane) {
+  if (event.button != null && event.button !== 0) return
+  event.preventDefault()
+  event.stopPropagation()
+  const target = event.currentTarget
+  if (target && typeof target.setPointerCapture === 'function') {
+    target.setPointerCapture(event.pointerId)
+  }
+  const rootRect = pbRoot.value ? pbRoot.value.getBoundingClientRect() : null
+  if (!rootRect) return
+  const move = (moveEvent) => {
+    const next = pane === 'rail'
+      ? moveEvent.clientX - rootRect.left
+      : rootRect.right - moveEvent.clientX
+    paneWidths[pane] = clampWidth(Math.round(next),
+      pane === 'rail' ? RAIL_W_RANGE : DETAILS_W_RANGE)
+  }
+  const stop = () => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', stop)
+    window.removeEventListener('pointercancel', stop)
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', stop)
+  window.addEventListener('pointercancel', stop)
+}
+
 const hpPrefs = reactive(loadHpPrefs())
 watch(hpPrefs, (p) => {
   try {
@@ -1822,6 +1880,9 @@ const basesAt = computed(() => {
 })
 
 const mapStyle = computed(() => ({
+  // 只有用户真的拖过才覆盖；否则保持 CSS 里的响应式默认宽度。
+  ...(paneWidths.rail != null ? { '--pb-rail-w': `${paneWidths.rail}px` } : {}),
+  ...(paneWidths.details != null ? { '--pb-details-w': `${paneWidths.details}px` } : {}),
   '--pb-map-aspect': `${mapView.value.W} / ${mapView.value.H}`,
   // Numeric aspect ratio (W/H) for fullscreen contain sizing (aspect-ratio needs a unit string).
   '--pb-map-ratio': String(mapView.value.W / mapView.value.H),
@@ -1853,6 +1914,14 @@ const mapStyle = computed(() => ({
     <!-- §mobile-panels：无永久 rail（mobile/medium）时 ☰ 打开 drawer；backdrop 点击关闭。 -->
     <div v-if="railDrawerOpen" class="pb-drawer-backdrop" data-test="pb-drawer-backdrop" @click="mobileDrawerOpen = false" />
     <div class="pb-left-rail" :class="{ 'pb-rail-expanded': !!(activePanel || annotationOpen) }" data-test="pb-left-rail" aria-label="Playback workspace rail">
+      <div
+        class="pb-pane-resizer pb-pane-resizer-rail"
+        data-test="pb-rail-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        :aria-label="$t('recon.map.playback.panel_team')"
+        @pointerdown="startPaneResize($event, 'rail')"
+      />
       <!-- §二级菜单：左侧展开对应内容，带返回按钮（不占右侧 details panel） -->
       <template v-if="annotationOpen">
         <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="annotationOpen = false">← {{ $t('recon.map.playback.back') }}</button>
@@ -2051,6 +2120,13 @@ const mapStyle = computed(() => ({
         />
 
         <div class="pb-side-panel-shell" :class="{ 'pb-details-active': !!selectedState }" data-test="pb-side-panel-shell">
+          <div
+            class="pb-pane-resizer pb-pane-resizer-details"
+            data-test="pb-details-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            @pointerdown="startPaneResize($event, 'details')"
+          />
           <VehicleDetailsPanel
             v-if="selectedState"
             :selected-state="selectedState"

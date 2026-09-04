@@ -94,7 +94,12 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(shell).toContain('grid-column: 2')
     const panel = ruleBody('.battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell .pb-side-panel')
     expect(panel).toContain('position: static')
-    expect(panel).toContain('flex: 1 1 auto')
+    // 面板跟着列高走：内容短时被 shell 垂直居中，内容超过列高才填满并内部滚动。
+    // 不能是 flex: 1 1 auto——那会强行撑满并把短内容顶到列顶。
+    expect(panel).toContain('flex: 0 1 auto')
+    expect(panel).toContain('max-height: 100%')
+    expect(panel).toContain('overflow-y: auto')
+    expect(shell).toContain('justify-content: center')
   })
 
   it('HUD is a top overlay covering only the Map Workspace (stops at the Details column)', () => {
