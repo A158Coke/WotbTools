@@ -197,6 +197,19 @@ public final class JuheQqIdentityProvider
         }
     }
 
+    /**
+     * Callback correlation id：state 的单向 SHA-256 前 8 hex。
+     * 同一次 authentication transaction 的多个 callback（重复 / 重放）得到相同 callbackRef，
+     * 用于在脱敏日志中关联判定 duplicate callback；不记录 state/code/socialUid 原值。
+     */
+    static String callbackRef(final String state) {
+        if (isBlank(state)) {
+            return "unknown";
+        }
+        final String hash = sha256prefix(state);
+        return hash.length() >= 8 ? hash.substring(0, 8) : hash;
+    }
+
     static boolean isBlank(final String s) {
         return s == null || s.isBlank();
     }
