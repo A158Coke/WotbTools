@@ -5,7 +5,7 @@
   生命周期、竞态 generation 与显式 UI 状态机。
 -->
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import {
@@ -20,6 +20,8 @@ import { normalizeApiError } from '../utils/http.js'
 import type { BattlePlaybackDataset } from '../types/playback-v2.js'
 import MapOverview from './MapOverview.vue'
 import BattlePlayback from './BattlePlayback.vue'
+
+const BattleMap3D = defineAsyncComponent(() => import('./BattleMap3D.vue'))
 
 const props = defineProps({
   file: { type: Object, default: null },
@@ -63,6 +65,10 @@ const pbOverview = computed(() => {
 })
 
 const panelView = ref('playback')
+const playbackDimension = ref<'2d' | '3d'>('2d')
+// Prototype assets are intentionally local-only. Production never advertises a 3D mode
+// until derived map assets have a committed distribution contract.
+const playback3dEnabled = import.meta.env.DEV
 const mapLoading = ref(false)
 const mapLoaded = ref(false)
 const mapError = ref('')
@@ -190,6 +196,7 @@ function resetMap() {
   playbackV2Retryable.value = false
   playbackV2UnavailableReason.value = ''
   panelView.value = 'playback'
+  playbackDimension.value = '2d'
   mapLoading.value = false
   mapLoaded.value = false
   mapError.value = ''
@@ -255,8 +262,22 @@ onBeforeUnmount(() => {
 
         <div v-show="panelView === 'playback'" data-test="pb-primary">
           <template v-if="playbackV2State === 'FULL' || playbackV2State === 'PARTIAL'">
+            <div v-if="playback3dEnabled && pbOverview" class="pb-view-toggle pb-dimension-toggle" role="tablist" aria-label="Playback map dimension">
+              <button type="button" class="pb-view-tab" :class="{ active: playbackDimension === '2d' }" data-test="pb-dimension-2d" @click="playbackDimension = '2d'">2D</button>
+              <button type="button" class="pb-view-tab" :class="{ active: playbackDimension === '3d' }" data-test="pb-dimension-3d" @click="playbackDimension = '3d'">3D</button>
+            </div>
             <p v-if="playbackV2State === 'PARTIAL'" class="pb-capability-note" data-test="pb-capability-partial">{{ $t('recon.playback.partial') }}</p>
-            <BattlePlayback v-if="pbOverview" :overview="pbOverview || undefined" :playback-v2="mapPlaybackV2 || undefined" :seek-to="mapSeek ?? undefined" />
+            <BattlePlayback
+              v-if="pbOverview"
+              v-show="playbackDimension === '2d'"
+              :overview="pbOverview || undefined"
+              :playback-v2="mapPlaybackV2 || undefined"
+              :seek-to="mapSeek ?? undefined"
+            />
+            <BattleMap3D
+              v-if="playback3dEnabled && pbOverview && playbackDimension === '3d'"
+              :map-code="String(mapPlaybackV2?.mapCode || '')"
+            />
           </template>
           <div v-else-if="playbackV2State === 'UNAVAILABLE'" class="pb-status pb-unavailable" data-test="pb-unavailable">{{ playbackV2UnavailableReason }}</div>
           <div v-else-if="playbackV2State === 'ERROR'" class="pb-status pb-error" data-test="pb-error" :data-retryable="playbackV2Retryable">
@@ -339,6 +360,7 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: var(--bg-card);
 }
+.pb-dimension-toggle { margin: 0 0 10px; }
 .pb-view-tab {
   padding: 6px 12px;
   border: none;
