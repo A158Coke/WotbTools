@@ -135,8 +135,10 @@ ${productionCss}
 <script type="module">
 import { playbackSafeInsetOwnership } from ${JSON.stringify(safeInsetsUrl)}
 
-window.addEventListener('load', () => {
-  requestAnimationFrame(() => {
+// This module script is deferred by HTML and `load` waits for its module graph to finish.
+// Publish the geometry result synchronously during module evaluation so Chrome `--dump-dom`
+// cannot serialize the page between `load` and a queued requestAnimationFrame callback.
+{
     const root = document.getElementById('root')
     const stage = root.querySelector('.pb-map-stage')
     const map = root.querySelector('.pb-map')
@@ -229,8 +231,7 @@ window.addEventListener('load', () => {
     require(document.documentElement.scrollWidth <= innerWidth + 1, 'layout must not create page-level horizontal overflow')
     const result = { name: ${JSON.stringify(scenario.name)}, width: innerWidth, height: innerHeight, failures }
     document.body.dataset.result = btoa(JSON.stringify(result))
-  })
-})
+}
 </script>
 </body>
 </html>`
