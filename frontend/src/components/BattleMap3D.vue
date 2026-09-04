@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
@@ -7,15 +7,15 @@ const props = defineProps({
   mapCode: { type: String, default: '' },
 })
 
-const host = ref<HTMLElement | null>(null)
-const status = ref<'loading' | 'ready' | 'missing' | 'error'>('loading')
+const host = ref(null)
+const status = ref('loading')
 const detail = ref('')
 
-let renderer: THREE.WebGLRenderer | null = null
-let scene: THREE.Scene | null = null
-let camera: THREE.PerspectiveCamera | null = null
-let controls: OrbitControls | null = null
-let resizeObserver: ResizeObserver | null = null
+let renderer = null
+let scene = null
+let camera = null
+let controls = null
+let resizeObserver = null
 let animationFrame = 0
 let loadToken = 0
 
@@ -27,10 +27,9 @@ function disposeScene() {
   controls?.dispose()
   controls = null
   scene?.traverse((object) => {
-    const mesh = object as THREE.Mesh
-    mesh.geometry?.dispose?.()
-    if (Array.isArray(mesh.material)) mesh.material.forEach((material) => material.dispose())
-    else (mesh.material as THREE.Material | undefined)?.dispose?.()
+    object.geometry?.dispose?.()
+    if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose())
+    else object.material?.dispose?.()
   })
   renderer?.dispose()
   if (renderer?.domElement.parentElement) renderer.domElement.parentElement.removeChild(renderer.domElement)
@@ -56,7 +55,7 @@ function animate() {
   animationFrame = requestAnimationFrame(animate)
 }
 
-async function fetchRequired(url: string): Promise<Response> {
+async function fetchRequired(url) {
   const response = await fetch(url, { cache: 'no-store' })
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${url}`)
   return response
@@ -127,7 +126,7 @@ async function loadMap() {
       side: THREE.DoubleSide,
     })
 
-    const geometries = new Map<number, THREE.BufferGeometry>()
+    const geometries = new Map()
     for (const record of manifest.geometry || []) {
       const positions = new Float32Array(
         positionsBuffer,
@@ -146,7 +145,7 @@ async function loadMap() {
       geometries.set(Number(record.id), geometry)
     }
 
-    const instancesByDatasource = new Map<number, any[]>()
+    const instancesByDatasource = new Map()
     for (const instance of manifest.instances || []) {
       const id = Number(instance.datasourceId)
       const bucket = instancesByDatasource.get(id) || []
