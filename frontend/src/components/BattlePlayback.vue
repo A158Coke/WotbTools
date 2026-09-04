@@ -245,14 +245,6 @@ function startPaneResize(event, pane) {
   window.addEventListener('pointercancel', stop)
 }
 
-const hpPrefs = reactive(loadHpPrefs())
-watch(hpPrefs, (p) => {
-  try {
-    localStorage.setItem(HP_PREFS_KEY, JSON.stringify(p))
-  } catch {
-    // 隐私模式/配额满：静默（本次会话内仍生效）
-  }
-}, { deep: true })
 
 // 最近 2 秒位置轨迹只消费 canonical observed positionSegments；显示偏好由 usePlaybackPreferences 持久化。
 const visibleTrails = computed(() => trailPrefs.showTrail
