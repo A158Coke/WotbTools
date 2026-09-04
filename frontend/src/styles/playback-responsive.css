@@ -667,6 +667,50 @@
 }
 .battle-playback:not(.pb-device-mobile):not(:fullscreen) .pb-drawer-backdrop { display: none; }
 
+/* §mobile-layout：手机非全屏。
+   左栏不再是覆盖式抽屉，展开后排在地图「下方」——根节点是纵向 flex，用 order 调序，
+   不改 DOM 顺序（DOM 里 rail 在 map 之前，是桌面三列需要的）。
+   右侧详情不再是底部 sheet，改为从右侧滑入的窗口，形态与 PlayerDetailDrawer 一致。 */
+.battle-playback:not(:fullscreen).pb-device-mobile .pb-main { order: 1; }
+.battle-playback:not(:fullscreen).pb-device-mobile.pb-drawer-open .pb-left-rail {
+  order: 2;
+  position: static;
+  width: auto;
+  z-index: auto;
+  margin-top: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 8px;
+}
+.battle-playback:not(:fullscreen).pb-device-mobile .pb-drawer-backdrop { display: none; }
+
+.battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  left: auto;
+  width: min(380px, calc(100vw - 16px));
+  max-height: none;
+  padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card2);
+  box-shadow: var(--surface-shadow);
+  overflow-y: auto;
+  z-index: var(--z-modal);
+  animation: pb-details-slide-in .22s ease-out;
+}
+@keyframes pb-details-slide-in {
+  from { transform: translateX(30px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
+    animation: none;
+  }
+}
+
 /* mobile fullscreen：赢过 .pb-device-mobile .pb-left-rail 的 display:none。 */
 .battle-playback:fullscreen.pb-device-mobile.pb-drawer-open .pb-left-rail {
   display: flex;
