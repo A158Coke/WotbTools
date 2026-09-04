@@ -28,8 +28,8 @@ from wotb_sc2 import Sc2ParseError, decode_dvpl, entity_components, read_sc2  # 
 from wotb_scg import (  # noqa: E402
     decode_polygon_indices,
     decode_polygon_positions,
-    polygon_group_id,
     polygon_group_vertex_stride,
+    polygon_groups_by_id,
     position_aabb,
     read_scg,
 )
@@ -394,11 +394,7 @@ def main() -> int:
         scene = read_sc2(scene_payload)
         scg = read_scg(scg_payload)
         groups = [group for group in scg.get("polygonGroups", []) if isinstance(group, dict)]
-        groups_by_id = {
-            identifier: group
-            for group in groups
-            if (identifier := polygon_group_id(group)) is not None
-        }
+        groups_by_id = polygon_groups_by_id(groups)
 
         instances, skipped = collect_instances(scene, args.lod, args.switch_index)
         if not instances:
@@ -475,13 +471,15 @@ def main() -> int:
             "geometry": geometry_records,
             "instances": instances,
             "evidenceRule": (
-                "Initial Mesh selection honors DAVA RenderObject::VISIBLE from serialized ro.flags; "
-                "it never infers state from entity filenames. Positions are decoded from EVF_VERTEX "
-                "at offset zero of the interleaved SCPG vertex stride; indices are decoded from "
-                "PolygonGroup indexFormat. DAVA shared RenderBatch LOD/switch value -1 participates "
-                "in every requested state. Instance transforms are preserved from SC2 "
-                "TransformComponent world fields. Textures, materials, normals, tangents, UVs, "
-                "vegetation, and gameplay collision are not exported by this PoC."
+                "Positions are decoded from EVF_VERTEX at offset zero of the interleaved SCPG "
+                "vertex stride; indices are decoded from PolygonGroup indexFormat. DAVA shared "
+                "RenderBatch LOD/switch value -1 participates in every requested state. Initial "
+                "RenderObject visibility follows the serialized DAVA VISIBLE bit, with missing "
+                "ro.flags treated as visible according to RenderObject::Load. PolygonGroup #id "
+                "values are validated as unique before datasource resolution. Instance transforms "
+                "are preserved from SC2 TransformComponent world fields. Textures, materials, "
+                "normals, tangents, UVs, vegetation, and gameplay collision are not exported by "
+                "this PoC."
             ),
         }
         manifest_path.write_text(
