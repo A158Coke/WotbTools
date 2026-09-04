@@ -581,6 +581,10 @@ const mapStageEl = ref(null)
 // 由 ResizeObserver 更新 → 依赖容器尺寸的 screen-space 布局（markerScreen/labelLayout/
 // hitbox/textInput）在新尺寸下重新计算；无 RO 环境（测试/旧浏览器）回退 clientWidth 读取。
 const mapSize = ref({ w: 0, h: 0 })
+// §side-slots：Map Workspace（stage）的真实尺寸。地图是方的，横屏全屏下它受高度限制，
+// 于是两侧必然各留 (stageW - stageH) / 2 的黑边。够宽时 HUD 与 controls 就搬进这两条
+// 黑边，地图吃满高度；不够宽（含竖屏）则保持上下形态。
+const stageSize = ref({ w: 0, h: 0 })
 let mapResizeObserver = null
 function mapWidth() {
   return mapSize.value.w || (mapEl.value ? mapEl.value.clientWidth : 0)
@@ -606,7 +610,11 @@ const isFullscreen = ref(false)
 // §3：大桌面（>=1200px）即使不进入 fullscreen，也用持久 rail|map|details 三列布局。
 const wideLayout = ref(false)
 // rail 在 >=1200px 或 fullscreen（且非移动端）出现；控制条跟着 rail 走，否则回落到地图下方。
-const controlsInRail = computed(() => (isFullscreen.value || wideLayout.value) && !isMobileDevice.value)
+// 收起左栏时控件必须搬出去：非触屏设备的 controls 本来渲染在 rail 内，rail 一收起
+// 正文整块 display:none，播放/进度条会跟着消失，只剩一个展开箭头。
+const controlsInRail = computed(() => (isFullscreen.value || wideLayout.value)
+  && !isMobileDevice.value
+  && !railCollapsed.value)
 // §mobile-contract：设备是否为「移动端」（primary pointer=coarse 且视口 <=1200px）。手机在
 // fullscreen + landscape 时内宽可 >768，因此移动端判定不得只依赖 innerWidth<768；一旦判定为
 // 移动端，无论全屏/横竖屏都保持 mobile playback mode（HUD+Map 为主、bottom overlay controls、
@@ -718,12 +726,46 @@ let suppressClick = false
 // 手势结束后的首个 click 必须被吞掉，纯点击车辆仍正常选中
 let gestureMoved = false
 
+/* §side-slots：横屏黑边够宽就把 HUD / controls 放两侧，竖屏（或黑边不够）放下面。
+   判定用真实像素而不是宽高比——宽高比推不出黑边有多少像素，882×344 与 1600×900
+   宽高比相差很大却都放得下侧栏，而 740×360 放不下。
+   一条侧栏要放下竖排的播放控制与时间轴，实测 168px 是可用下限。 */
+const SIDE_SLOT_MIN_PX = 168
+const sideSlotWidth = computed(() => {
+  if (!isFullscreen.value) return 0
+  const { w, h } = stageSize.value
+  if (!w || !h) return 0
+  const gutter = Math.floor((w - h) / 2)
+  return gutter >= SIDE_SLOT_MIN_PX ? gutter : 0
+})
+const sideSlots = computed(() => sideSlotWidth.value > 0)
+// Map Workspace（stage）尺寸单独观察：sideSlotWidth 依赖它，不能搭在 mapEl 的
+// observer 上——那条挂载要求 mapEl 就绪时 mapStageEl 也已就绪，不成立时 stageSize
+// 会一直停在 0，侧栏形态永远不触发。
+let stageResizeObserver = null
+watch(() => mapStageEl.value, (el) => {
+  if (stageResizeObserver) { stageResizeObserver.disconnect(); stageResizeObserver = null }
+  if (!el || typeof ResizeObserver !== 'function') return
+  stageResizeObserver = new ResizeObserver((entries) => {
+    for (const e of entries || []) {
+      if (e && e.target === el) stageSize.value = { w: e.contentRect.width, h: e.contentRect.height }
+    }
+  })
+  stageResizeObserver.observe(el)
+}, { immediate: true })
+
+// 侧栏形态切换会改变地图可用高度 → 用新几何强制重新 fit。
+watch(sideSlots, () => { nextTick(() => fitViewIfReady(true)) })
+
 /** 安全区：fullscreen 下 HUD（顶部 overlay）高度为 top inset；bottom inset 只在 fullscreen
  *  量取 —— 非 fullscreen 时 bottom overlay 不是绝对定位，controls 走正常文档流排在地图
  *  下方，不占 Map Workspace，量了反而会误缩地图。 */
 function safeInsets() {
   let top = 0
   let bottom = 0
+  // §side-slots：HUD/controls 都在两侧黑边里，上下不再占用高度——地图因此吃满 stage 高度。
+  // 水平方向不需要 inset：地图是方的且受高度限制，居中后左右正好空出黑边给两条侧栏。
+  if (sideSlots.value) return { top, bottom }
   if (isFullscreen.value) {
     const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
     top = hud ? hud.clientHeight : 0
@@ -1371,6 +1413,10 @@ onBeforeUnmount(() => {
     mapResizeObserver.disconnect()
     mapResizeObserver = null
   }
+  if (stageResizeObserver) {
+    stageResizeObserver.disconnect()
+    stageResizeObserver = null
+  }
   if (typeof document !== 'undefined') {
     document.removeEventListener('fullscreenchange', onFullscreenChange)
     // 组件在 fullscreen 中被卸载 → 主动退出（浏览器通常会自动退出，这里兜底）
@@ -1902,6 +1948,8 @@ const mapStyle = computed(() => ({
   // 只有用户真的拖过才覆盖；否则保持 CSS 里的响应式默认宽度。
   ...(paneWidths.rail != null ? { '--pb-rail-w': `${paneWidths.rail}px` } : {}),
   ...(paneWidths.details != null ? { '--pb-details-w': `${paneWidths.details}px` } : {}),
+  // §side-slots：两侧黑边实宽（0 = 不启用侧栏形态）。
+  ...(sideSlotWidth.value ? { '--pb-slot-w': `${sideSlotWidth.value}px` } : {}),
   '--pb-map-aspect': `${mapView.value.W} / ${mapView.value.H}`,
   // Numeric aspect ratio (W/H) for fullscreen contain sizing (aspect-ratio needs a unit string).
   '--pb-map-ratio': String(mapView.value.W / mapView.value.H),
@@ -1917,7 +1965,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen), 'pb-drawer-open': railDrawerOpen, 'pb-rail-collapsed': railCollapsed }" :style="mapStyle" data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen), 'pb-drawer-open': railDrawerOpen, 'pb-rail-collapsed': railCollapsed, 'pb-side-slots': sideSlots }" :style="mapStyle" data-test="battle-playback">
     <BattlePlaybackHud
       :friendly-hp="friendlyHp"
       :enemy-hp="enemyHp"
