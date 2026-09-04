@@ -266,6 +266,16 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(sheet).toContain('animation: pb-details-slide-up')
     expect(css).not.toContain('.battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell')
 
+    // 流内还不够：详情内容能到 ~650px（战斗装载那几组），不封顶就把地图整个顶出视口，
+    // 形式上没盖住地图、实际效果一样。手机上必须像标注工具栏那样是一块有界区块。
+    // 该选择器在 <1200px 与 <768px 两个 media 块里都出现，ruleBody 只返回第一处，
+    // 所以这里显式切到 768 块再断言。
+    const phoneBlock = stripped.slice(stripped.lastIndexOf('@media (width < 768px)'))
+    const capped = phoneBlock.slice(phoneBlock.indexOf('.pb-side-panel-shell.pb-details-active .pb-sidebar'))
+    const cappedBody = capped.slice(capped.indexOf('{') + 1, capped.indexOf('}'))
+    expect(cappedBody).toContain('max-height: min(46dvh, 380px)')
+    expect(cappedBody).toContain('overflow-y: auto')
+
     // §no-overlay：没有持久列的宽度区间（<1200px 非全屏）没有黑边可用，详情必须排进流里。
     // 按宽度而不是设备类判定——.pb-device-mobile 要求 pointer: coarse，窄的桌面窗口拿不到。
     const inflow = ruleBody('.battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar')
