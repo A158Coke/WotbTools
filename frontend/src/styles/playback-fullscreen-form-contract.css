@@ -1,0 +1,100 @@
+/* Fullscreen form ownership guard.
+   The shared pb-side-slots optimization may reuse horizontal gutter space for
+   controls, but it must never relocate battle state (HP / points / bases) away
+   from the map HUD. Mobile fullscreen additionally keeps PR #245's transient
+   bottom controller contract instead of turning it into a permanent side rail. */
+
+/* Tablet fullscreen: same HUD ownership as PC. Details remains a separate right
+   column, so the HUD spans only the map workspace between rail and details. */
+.battle-playback.pb-form-tablet:fullscreen.pb-side-slots .pb-hud {
+  left: var(--pb-left-col);
+  right: var(--pb-details-w);
+  top: 0;
+  bottom: auto;
+  width: auto;
+  display: block;
+  align-items: initial;
+  overflow-y: visible;
+  padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+}
+
+/* Mobile fullscreen: HP / points / bases stay as the horizontal top HUD. There
+   is no persistent Details column, so the right edge is the map workspace edge. */
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-hud {
+  left: var(--pb-left-col);
+  right: 0;
+  top: 0;
+  bottom: auto;
+  width: auto;
+  display: block;
+  align-items: initial;
+  overflow-y: visible;
+  padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+}
+
+/* Undo the shared side-slot HUD's vertical single-column form. All three battle
+   state groups keep the canonical friendly | points/bases | enemy structure. */
+.battle-playback.pb-form-tablet:fullscreen.pb-side-slots .pb-hud-grid,
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-hud-grid {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: clamp(8px, 2vw, 28px);
+  width: auto;
+}
+.battle-playback.pb-form-tablet:fullscreen.pb-side-slots .pb-hud-column-friendly,
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-hud-column-friendly { grid-column: 1; }
+.battle-playback.pb-form-tablet:fullscreen.pb-side-slots .pb-hud-column-center,
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-hud-column-center { grid-column: 2; }
+.battle-playback.pb-form-tablet:fullscreen.pb-side-slots .pb-hud-column-enemy,
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-hud-column-enemy { grid-column: 3; }
+.battle-playback.pb-form-tablet:fullscreen.pb-side-slots .pb-hud-enemy,
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-hud-enemy {
+  text-align: right;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.battle-playback.pb-form-tablet:fullscreen.pb-side-slots .pb-hud-enemy .pb-hud-label,
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-hud-enemy .pb-hud-label { grid-column: 2; }
+.battle-playback.pb-form-tablet:fullscreen.pb-side-slots .pb-hud-enemy .pb-hud-value,
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-hud-enemy .pb-hud-value { grid-column: 1; }
+
+/* Mobile fullscreen controller ownership belongs to PlaybackMobileOverlay / PR
+   #245. pb-side-slots must not turn the viewport-sized transient wrapper into a
+   left-side permanent controller. Keep the wrapper map-wide and let the scoped
+   component CSS decide hidden/visible state and bottom placement. */
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-mobile-overlay {
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: auto;
+  display: block;
+  align-items: initial;
+  overflow-y: visible;
+  padding: 0;
+}
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-mobile-overlay-content {
+  width: auto;
+}
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-controls {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-controls .pb-btn {
+  width: auto;
+}
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-controls .pb-speed {
+  display: inline-flex;
+  grid-template-columns: none;
+  gap: 2px;
+}
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-controls .pb-speed .pb-btn {
+  padding: 2px 6px;
+  text-align: initial;
+}
+.battle-playback.pb-form-mobile:fullscreen.pb-side-slots .pb-controls .pb-time {
+  flex-basis: 100%;
+  margin-inline: 0;
+  text-align: center;
+  order: 20;
+}

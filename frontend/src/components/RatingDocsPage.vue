@@ -1,11 +1,12 @@
 <script setup>
 import { inject } from 'vue'
+import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import MarkdownContent from './MarkdownContent.vue'
 // 构建期把 canonical Markdown 作为 raw 资源纳入独立 chunk（懒加载），
 // 不维护第二份人工副本；文档正文唯一事实源始终是 docs/WotBTools_League_Rating_V5.md。
 import leagueRatingV5 from '../../../docs/WotBTools_League_Rating_V5.md?raw'
 
-const navigate = inject('navigate', null)
+const navigate = inject(NAVIGATE_VIEW_KEY, null)
 
 function goBack() {
   navigate && navigate('replay')
