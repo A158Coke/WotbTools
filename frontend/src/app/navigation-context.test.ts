@@ -16,12 +16,23 @@ function productionSources(root: string): string[] {
   return out
 }
 
-describe('application navigation context', () => {
-  it('does not use magic-string navigation injection in production sources', () => {
+const REMOVED_STRING_CONTEXTS = [
+  'navigate',
+  'isAuthenticated',
+  'login',
+  'authInit',
+  'replay',
+  'replayWorkspace',
+] as const
+
+describe('application context boundaries', () => {
+  it('does not restore removed magic-string service locators in production sources', () => {
     const src = resolve(process.cwd(), 'src')
-    const offenders = productionSources(src).filter((path) => {
+    const offenders = productionSources(src).flatMap((path) => {
       const text = readFileSync(path, 'utf8')
-      return /(?:inject|provide)\(\s*['"]navigate['"]/.test(text)
+      return REMOVED_STRING_CONTEXTS
+        .filter((key) => new RegExp(`(?:inject|provide)\\(\\s*['\"]${key}['\"]`).test(text))
+        .map((key) => `${path}:${key}`)
     })
     expect(offenders).toEqual([])
   })
