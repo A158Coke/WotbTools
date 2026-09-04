@@ -30,6 +30,13 @@ vi.mock('../data/mapImages', () => ({
       width: 766,
       height: 769,
       coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
+    },
+    // 有底图但 mapBases 未收录几何——新地图上线到基地坐标补齐之间的真实状态。
+    map_without_base_geometry: {
+      src: 'no-bases.webp',
+      width: 766,
+      height: 769,
+      coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
     }
   }
 }))
@@ -107,6 +114,34 @@ describe('Supremacy 基地 overlay', () => {
   })
 
   // 非争霸战（baseStates 为空，或旧 producer 未发该字段）不得靠地图几何画出基地。
+  // HUD chip 是 fallback：地图能画基地时不重复；mapBases 未收录该图时 HUD 必须仍然显示，
+  // 否则新地图上线到素材补齐之间会完全看不到基地归属。
+  it('keeps the HUD base chips when mapBases has no geometry for the map', async () => {
+    const states = [
+      { timeSec: 0, baseId: 'A', ownerTeam: 1, capturingTeam: null, captureProgress: null },
+      { timeSec: 0, baseId: 'B', ownerTeam: 2, capturingTeam: null, captureProgress: null },
+    ]
+    const overview = { ...makeOverview(), mapCode: 'map_without_base_geometry' }
+    const dataset = { ...makePlaybackV2({ baseStates: states }), mapCode: 'map_without_base_geometry' }
+    const wrapper = await mountPlayback(overview, null, dataset)
+
+    expect(wrapper.findAll('.pb-base-circle')).toHaveLength(0)
+    const hud = wrapper.find('[data-test="pb-hud-bases"]')
+    expect(hud.exists()).toBe(true)
+    expect(hud.text()).toContain('A')
+    expect(hud.text()).toContain('B')
+  })
+
+  // 反向：地图画得出基地时 HUD 不再重复一份。
+  it('hides the HUD base chips once the map renders the bases', async () => {
+    const dataset = makePlaybackV2({
+      baseStates: [{ timeSec: 0, baseId: 'A', ownerTeam: 1, capturingTeam: null, captureProgress: null }],
+    })
+    const wrapper = await mountPlayback(makeOverview(), null, dataset)
+    expect(wrapper.findAll('.pb-base-circle').length).toBeGreaterThan(0)
+    expect(wrapper.find('[data-test="pb-hud-bases"]').exists()).toBe(false)
+  })
+
   // 契约：省略的字段保留旧值，所以放弃占领后 captureProgress 仍是旧数，只有 capturingTeam 归 null。
   // 水位必须跟着 capturingTeam 消失，否则地图上会一直挂着一个没踩下来的进度。
   it('clears the capture fill when the capture is abandoned but progress is retained', async () => {

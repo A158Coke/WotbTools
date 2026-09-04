@@ -1794,6 +1794,10 @@ function capturedBy(state) {
   return state.capturingTeam === friendlyTeam.value ? 'friendly' : 'enemy'
 }
 
+// HUD 的基地 chip 是 fallback：地图能画基地时不重复显示，地图缺该图几何时
+// （mapBases 未收录该 mapCode）HUD 仍是唯一的基地信息来源。
+const hudBaseStates = computed(() => (basesAt.value.length ? [] : baseStatesAt.value))
+
 const basesAt = computed(() => {
   // 只在存在 canonical Supremacy base tracks 时绘制。空 baseStates 表示非争霸战，
   // 或旧 producer 未发该字段（契约把缺失归一化为 []）；两种情况都不能靠地图几何
@@ -1839,6 +1843,7 @@ const mapStyle = computed(() => ({
       :enemy-hp="enemyHp"
       :friendly-points="friendlyPoints"
       :enemy-points="enemyPoints"
+      :base-states="hudBaseStates"
       :friendly-team="friendlyTeam"
       :hp-no-transition="hpNoTransition"
     />
