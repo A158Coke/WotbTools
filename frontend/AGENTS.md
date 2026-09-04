@@ -16,8 +16,8 @@
   [`.agents/skills/frontend-architecture/SKILL.md`](../.agents/skills/frontend-architecture/SKILL.md)，并以
   [`docs/frontend/architecture.md`](../docs/frontend/architecture.md) 为当前实现事实。
 - 依赖方向为 `app → features → shared`。现有 flat `components/`、`composables/`、`utils/` 是当前代码布局；不得为了“对齐架构”创建空壳目录或虚构尚未实现的迁移。
-- 跨 app/feature 的注入 contract 使用 `shared/` 中的 typed `InjectionKey<T>`；禁止新增 magic-string service locator。
-- 每个业务状态只有一个权威 owner；其他组件只通过 props、事件、provide/inject 或 computed 消费，不复制并行状态。`watch()` 只用于真实副作用或生命周期桥接。
+- 跨 app/feature 的注入 contract 使用 `shared/` 中的 typed `InjectionKey<T>`；禁止新增 magic-string service locator。直接父子组件优先使用显式 props/emits，不得用 provide/inject 隐藏本来就可见的 Replay/Workspace 依赖。
+- 每个业务状态只有一个权威 owner；其他组件只通过 props、事件、typed context 或 computed 消费，不复制并行状态。`watch()` 只用于真实副作用或生命周期桥接。
 
 ## Vue component / API boundary
 
@@ -46,6 +46,7 @@
 - 测试与组件/模块同目录，命名 `*.test.js` / `*.test.ts`；按需声明 `happy-dom` 环境。
 - 回归测试必须锁定真实 invariant（状态 owner、路由契约、API boundary、Profile 或响应式约束），不能只断言函数被调用。
 - source/architecture guard 只锁定 dependency/API ownership；真实 CSS/layout/fullscreen/pointer 行为优先由 browser-level test 覆盖，不得用正则测试冒充浏览器验证。
+- 修改 Playback layout 时至少保持 `npm run test:browser-layout` 通过；当前 browser gate 覆盖 PC / tablet / mobile 实际 CSS geometry 与 form isolation，不宣称模拟真实 coarse-pointer 硬件或 Fullscreen API。
 - 修改架构边界时覆盖受影响的深链、历史导航、认证目的地或共享状态；修改 build/dependency 时运行 `npm run build`。
 - 变更后执行 review-fix；影响界面、构建或文档时再执行 review-with-docs。
 
