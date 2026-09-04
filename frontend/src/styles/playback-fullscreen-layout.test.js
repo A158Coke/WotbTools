@@ -175,9 +175,22 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(map).toContain('grid-column: 1')
   })
 
-  it('annotation surface and orientation hint stay over the Map Workspace (stop at the Details column)', () => {
-    expect(ruleBody('.battle-playback:fullscreen .pb-annotation-surface')).toContain('right: calc(var(--pb-details-w, min(340px, 32vw)) + 8px)')
-    expect(ruleBody('.battle-playback:fullscreen .pb-orientation-hint')).toContain('right: calc(var(--pb-details-w, min(340px, 32vw)) + 12px)')
+  // 标注工具栏排在地图下方的流内容器里，展开时把页面顶开而不是向上长着盖住地图。
+  // 任何 absolute/bottom 锚定都会让它重新浮回地图上。
+  it('annotation toolbar is in flow, never an overlay anchored over the map', () => {
+    const surface = ruleBody('.battle-playback .pb-annotation-surface')
+    expect(surface).not.toBeNull()
+    expect(surface).not.toContain('position: absolute')
+    expect(surface).not.toContain('bottom:')
+    expect(surface).not.toContain('z-index')
+    // 全屏走左栏二级菜单，不该再有任何 fullscreen 浮层偏移残留
+    expect(ruleBody('.battle-playback:fullscreen .pb-annotation-surface')).toBeNull()
+  })
+
+  // 地图上只允许短暂的事件播报。横屏提示是进入全屏时 orientation.lock 失败的兜底 toast，
+  // 不是事件播报，所以整条被删除（自动转横屏本身保留）。
+  it('no orientation hint element or style survives anywhere', () => {
+    expect(css).not.toContain('pb-orientation-hint')
   })
 
   it('map keeps its canonical aspect — cover-fill, no non-uniform X/Y stretch', () => {
@@ -320,7 +333,7 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     const fsM = ruleBody('.battle-playback:fullscreen.pb-device-mobile')
     expect(fsM).toContain('grid-template-columns: var(--pb-left-col) minmax(0, 1fr)')
     expect(fsM).toContain('--pb-rail-w: 148px')
-    // Details 是抽屉不是常驻列，token 仍归零：kill-feed / orientation-hint 不为浮层预留空间。
+    // Details 是抽屉不是常驻列，token 仍归零：kill-feed / annotation-surface 不为浮层预留空间。
     expect(fsM).toContain('--pb-details-w: 0px')
     expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-left-rail')).toContain('display: flex')
     expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-main')).toContain('grid-column: 2')
