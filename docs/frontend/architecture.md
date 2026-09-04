@@ -44,17 +44,19 @@ Playback tests follow those ownership boundaries: map/marker/gesture contracts l
 
 The UI profile remains presentation-only: `wotb-ui-profile` is the single persistence key, and its derived `data-theme` does not create a separate theme state. Showcase and Classic must use the same components, APIs, and business state.
 
-## Consolidation direction
+## Single-PR consolidation scope
 
-The architecture cleanup is intentionally completed inside one PR so `main` never contains half-migrated boundaries. The order is:
+The architecture cleanup is intentionally completed inside one PR so `main` never contains half-migrated boundaries. The PR is considered complete only after these layers are reviewed together:
 
-1. shared typed application contracts;
-2. typed Replay/AI/Playback API ownership;
-3. Replay/Playback orchestration extraction where a component still owns unrelated state machines;
-4. browser-level regression coverage for layout/navigation paths that happy-dom cannot model reliably;
-5. only then optional routing/feature-folder cleanup when it deletes real bridge code.
+- [x] feature-neutral typed application navigation contract;
+- [x] Dataset-only AI Review / Map Overview / Battle Playback API ownership moved out of panels;
+- [x] architecture guards for navigation and replay capability transport ownership;
+- [ ] reduce remaining Replay Workspace orchestration/service-locator coupling without duplicating replay state;
+- [ ] extract high-value Battle Playback orchestration concerns that are still unrelated to rendering;
+- [ ] add browser-level regression coverage for layout/navigation paths that happy-dom cannot model reliably;
+- [ ] final architecture/code-smell pass and stale bridge cleanup.
 
-Do not perform directory-only rewrites, introduce Pinia without a demonstrated state-ownership need, or combine this consolidation with visual redesign.
+Directory-only rewrites, Pinia adoption without a demonstrated ownership need, broad visual redesign, and unrelated product changes are explicitly outside this PR. Routing changes are allowed only when they delete a verified synchronization bridge while preserving existing compatible deep links.
 
 ## Canonical feature references
 
