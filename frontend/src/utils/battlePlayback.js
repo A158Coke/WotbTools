@@ -225,19 +225,18 @@ export function recentPositionTrails(vehicles, nowSec, windowSec = 2) {
   return trails
 }
 
-/** 炮线可见窗口基础时长（真实秒）：实际窗口 = TRACER_BASE_SEC × 播放倍速——1×/2×/4× 各约 0.4s 真实时间
- * （游戏时间窗口 = 0.4 × speed）。短 shot effect：命中后 ≈400ms 完全消失，不再挂在地图上整秒。 */
-const TRACER_BASE_SEC = 0.4
+/** 炮线可见窗口基础时长（真实秒）：实际窗口 = TRACER_BASE_SEC × 播放倍速。
+ * 原值 0.4s 实测太短，跟不上就看不见，整组时长按同比例加倍。 */
+const TRACER_BASE_SEC = 0.8
 
-/** 炮线全亮保持期（真实秒）：激光「先亮后淡」——保持 0.15s 后快速线性淡出到窗口结束（≈0.4s 完全消失）。 */
-const TRACER_HOLD_REAL_SEC = 0.15
+/** 炮线全亮保持期（真实秒）：「先亮后淡」——保持后线性淡出到窗口结束。 */
+const TRACER_HOLD_REAL_SEC = 0.3
 
-/** 命中闪光生命周期（真实秒）：0.35s 内完成「扩散 + 峰值→淡出」，短于炮线本体（≈0.35s 完全消失）。 */
-const TRACER_FLASH_REAL_SEC = 0.35
+/** 命中闪光生命周期（真实秒）：完成「扩散 + 峰值→淡出」，短于炮线本体。 */
+const TRACER_FLASH_REAL_SEC = 0.7
 
-/** 命中闪光到达峰值的时间（真实秒）：前 0.1s 由 0 升至峰值（0.9），之后线性淡出到 0——短促冲击闪光，
- * 不再出现长时间实体圆球/孤立 waypoint 感。 */
-const TRACER_FLASH_PEAK_REAL_SEC = 0.1
+/** 命中闪光到达峰值的时间（真实秒）：由 0 升至峰值（0.9），之后线性淡出到 0。 */
+const TRACER_FLASH_PEAK_REAL_SEC = 0.2
 
 /** 同一次射击的判同窗口（秒）：同 attacker/target 且时间差 ≤ 该值的 DAMAGE/KILL 只画一条炮线。 */
 const SAME_SHOT_WINDOW_SEC = 0.25
@@ -301,8 +300,10 @@ export function tracerLines(events, routesByAccount, nowSec, speed) {
     const to = routesByAccount.get(ev.targetAccountId)
     const a = from ? trustedRoutePosition(from, t) : null
     const b = to ? trustedRoutePosition(to, t) : null
-    if (!a || !b) continue
-    if (Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.y - b.y) < 1e-9) continue
+    // 目标位置是画命中闪光的最低要求；射手未被侦察时没有可信位置，只出闪光不连线
+    // ——绝不用最后已知位置伪造射击点。
+    if (!b) continue
+    const hasLine = !!a && !(Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.y - b.y) < 1e-9)
     const elapsed = nowSec - t
     const holdSec = TRACER_HOLD_REAL_SEC * rate
     const fadeSpan = windowSec - holdSec
@@ -323,8 +324,9 @@ export function tracerLines(events, routesByAccount, nowSec, speed) {
           : ((1 - flashProgress) / (1 - flashPeak)) * 0.9)
       : (1 - flashProgress) * 0.9
     lines.push({
-      x1: a.x,
-      y1: a.y,
+      hasLine,
+      x1: hasLine ? a.x : null,
+      y1: hasLine ? a.y : null,
       x2: b.x,
       y2: b.y,
       opacity,

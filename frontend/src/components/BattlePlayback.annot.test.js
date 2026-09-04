@@ -96,7 +96,9 @@ function svgToCssInverse(sx, sy, view, W, H, rw, rh) {
 /** 在战局回放地图上画一条折线：pen 工具 → down/move/up。 */
 async function drawStroke(wrapper, points) {
   await openAnnotations(wrapper)
-  await wrapper.find('[data-test="pb-annot-pen"]').trigger('click')
+  // 打开标注已自动选中画笔；工具按钮是 toggle，已选中时再点会把它切掉。
+  const pen = wrapper.find('[data-test="pb-annot-pen"]')
+  if (!pen.classes().includes('active')) await pen.trigger('click')
   const viewport = wrapper.find('[data-test="pb-viewport"]')
   await viewport.trigger('pointerdown', { pointerId: 1, clientX: points[0][0], clientY: points[0][1] })
   for (const [x, y] of points.slice(1)) {
@@ -200,7 +202,7 @@ describe('BattlePlayback annotations', () => {
   it('zoom + pan round-trip: stroke and text input land on the pointer', async () => {
     const wrapper = mountAnnot()
     await flushPromises()
-    await openAnnotations(wrapper)
+    // 先缩放平移再开标注：打开标注会自动选中画笔，之后的拖拽是画线而不是平移。
     setMapLayout(wrapper, 600, 602)
     // 滚轮在 (100,100) 放大 ×1.2 → tx=ty=-20；拖拽 (100,100)→(140,130) 平移 +40/+30
     await wrapper.find('[data-test="pb-map"]').trigger('wheel', { clientX: 100, clientY: 100, deltaY: -100 })
@@ -307,6 +309,42 @@ describe('BattlePlayback annotations', () => {
     await drawStroke(wrapper, [[300, 300], [400, 300]])
     expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(true)
     await wrapper.setProps({ overview: makeOverview(), playbackV2: makeBattlePlaybackDataset({ vehicles: [], events: [] }) })
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(false)
+  })
+
+  // 打开标注后 activeTool 曾经仍是 null：用户在地图上划一下什么也不会发生，
+  // 得先自己再点一次画笔。打开即应进入可画状态。
+  it('auto-selects the pen when annotations open, so the first stroke draws', async () => {
+    const wrapper = mountAnnot()
+    await flushPromises()
+    setMapLayout(wrapper, 600, 602)
+    await openAnnotations(wrapper)
+
+    expect(wrapper.find('[data-test="pb-annot-pen"]').classes()).toContain('active')
+
+    // 不点画笔，直接画
+    const viewport = wrapper.find('[data-test="pb-viewport"]')
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 300, clientY: 301 })
+    dispatchPointer('pointermove', { pointerId: 1, clientX: 360, clientY: 301 })
+    dispatchPointer('pointerup', { pointerId: 1, clientX: 360, clientY: 301 })
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(true)
+  })
+
+  // 关闭标注必须同时收起画笔，否则退出后地图上继续画而不是平移。
+  it('clears the active tool when annotations close', async () => {
+    const wrapper = mountAnnot()
+    await flushPromises()
+    setMapLayout(wrapper, 600, 602)
+    await openAnnotations(wrapper)
+    await wrapper.find('[data-test="pb-annotation"]').trigger('click')
+    await flushPromises()
+
+    const viewport = wrapper.find('[data-test="pb-viewport"]')
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 300, clientY: 301 })
+    dispatchPointer('pointermove', { pointerId: 1, clientX: 360, clientY: 301 })
+    dispatchPointer('pointerup', { pointerId: 1, clientX: 360, clientY: 301 })
     await flushPromises()
     expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(false)
   })

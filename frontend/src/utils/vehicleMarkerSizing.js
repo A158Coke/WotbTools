@@ -1,16 +1,20 @@
 /**
  * Vehicle-aware playback marker sizing.
  *
- * A resolved Tier X model may carry the source-faithful hull bounds from its
- * BlitzKit metadata.  Generic vehicles use the replay/tankopedia class only
- * as a deliberately small fallback.  The returned dimensions are CSS pixels
+ * `vehicleSizes` carries the real hull length/width in metres for every tankId
+ * (BlitzKit hull bounding box), so markers are drawn to map scale. A resolved
+ * Tier X model's own hull bounds and the per-class table remain as fallbacks
+ * for tankIds the table does not cover. The returned dimensions are CSS pixels
  * before the map viewport transform; the viewport scale then enlarges the
  * complete marker together with the map.
  */
 
+import { DEFAULT_VEHICLE_LENGTH_M, vehicleSizes } from '../data/vehicleSizes'
+
+// 下限只保证「还看得见」，点击目标另有 HIT_TARGET_MIN_PX 兜底，所以可以放到接近真实尺寸。
 export const MARKER_SIZE_LIMITS = Object.freeze({
-  desktop: Object.freeze({ min: 18, max: 30 }),
-  mobile: Object.freeze({ min: 16, max: 26 }),
+  desktop: Object.freeze({ min: 10, max: 30 }),
+  mobile: Object.freeze({ min: 10, max: 26 }),
 })
 
 const CLASS_FOOTPRINT_M = Object.freeze({
@@ -19,12 +23,12 @@ const CLASS_FOOTPRINT_M = Object.freeze({
   heavy: Object.freeze({ width: 4.0, length: 9.0 }),
   tankDestroyer: Object.freeze({ width: 3.6, length: 9.5 }),
   spg: Object.freeze({ width: 3.8, length: 9.5 }),
-  unknown: Object.freeze({ width: 3.2, length: 7.5 }),
+  // 未知车种用全表真实中位车长，而不是拍一个数。
+  unknown: Object.freeze({ width: 3.2, length: DEFAULT_VEHICLE_LENGTH_M }),
 })
 
-// Dedicated hull geometry occupies roughly 88% of its square bake. Keep this
-// scalar in the render-size path; never apply physical X/Y dimensions to CSS.
-const READABILITY_SCALE = 1.6
+// 车体图形约占方形烘焙的 88%，这里补回来让贴图边界贴合真实车体；不再额外放大。
+const READABILITY_SCALE = 1.14
 const FALLBACK_WORLD_SPAN_M = 600
 const HIT_TARGET_EXTRA_PX = 4
 const HIT_TARGET_MIN_PX = Object.freeze({ desktop: 20, mobile: 18 })
@@ -41,6 +45,16 @@ function classFootprint(vehicle) {
   if (raw.includes('spg') || raw.includes('self-propelled') || raw.includes('artillery')) return CLASS_FOOTPRINT_M.spg
   if (raw.includes('heavy') || raw === 'ht') return CLASS_FOOTPRINT_M.heavy
   return CLASS_FOOTPRINT_M.unknown
+}
+
+/** 真实车体尺寸（米），按回放 tankId 查表——覆盖全部 735 辆，优先于 metadata 与 class 猜测。 */
+function blitzkitFootprint(vehicle) {
+  const id = vehicle?.tankId
+  const size = id == null ? null : vehicleSizes[id]
+  if (!Array.isArray(size)) return null
+  const length = finitePositive(size[0])
+  const width = finitePositive(size[1])
+  return length && width ? { width, length } : null
 }
 
 function modelFootprint(model) {
@@ -77,9 +91,10 @@ export function computeVehicleMarkerSize(vehicle, {
   const hitMin = mobile ? HIT_TARGET_MIN_PX.mobile : HIT_TARGET_MIN_PX.desktop
   const widthPx = finitePositive(mapWidthPx) || 800
   const heightPx = finitePositive(mapHeightPx) || widthPx
-  const metadataFootprint = modelFootprint(model)
-  const footprint = metadataFootprint || classFootprint(vehicle)
-  const source = metadataFootprint ? 'hull-metadata' : 'class-fallback'
+  const realFootprint = blitzkitFootprint(vehicle)
+  const metadataFootprint = realFootprint ? null : modelFootprint(model)
+  const footprint = realFootprint || metadataFootprint || classFootprint(vehicle)
+  const source = realFootprint ? 'blitzkit-hull' : (metadataFootprint ? 'hull-metadata' : 'class-fallback')
   const pixelsPerWorld = projectedPixelsPerWorld(mapView, widthPx, heightPx)
   const projectedWidth = footprint.width * pixelsPerWorld.x
   const projectedHeight = footprint.length * pixelsPerWorld.y
