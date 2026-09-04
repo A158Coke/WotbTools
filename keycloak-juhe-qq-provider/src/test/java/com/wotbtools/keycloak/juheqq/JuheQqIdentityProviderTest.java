@@ -12,13 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * JuheQqIdentityProvider 诊断 stage 覆盖。
- *
- * <p>这些断言验证「关键 failure stage 进入对应诊断路径」：以返回的 HTTP 状态 / 实体作为
- * 稳定可观测结果（stage 本身在 catch/分支内以结构化日志体现）。敏感值仅以判别信息参与日志，
- * 用户侧始终返回安全的 generic error。</p>
- */
 class JuheQqIdentityProviderTest {
 
     private JuheApiStub stub;
@@ -45,9 +38,7 @@ class JuheQqIdentityProviderTest {
         final KeycloakSession session = JuheQqTestSupport.sessionWith(JuheQqTestSupport.contextWith());
         final JuheQqIdentityProvider p = JuheQqTestSupport.providerWith(session,
                 JuheQqTestSupport.configWith("", "", ""));
-
         final Response response = p.performLogin(null);
-
         assertEquals(500, response.getStatus());
         assertTrue(((String) response.getEntity()).contains("not configured"));
         assertEquals(0, stub.requestsWith("login"));
@@ -56,7 +47,6 @@ class JuheQqIdentityProviderTest {
     @Test
     void stateMissingReturnsSafeError() {
         final Response response = provider.performLogin(JuheQqTestSupport.requestWithState(null));
-
         assertEquals(500, response.getStatus());
         assertEquals("QQ login failed. Please try again.", response.getEntity());
         assertEquals(0, stub.requestsWith("login"));
@@ -65,63 +55,61 @@ class JuheQqIdentityProviderTest {
     @Test
     void loginHttpNon200ReturnsSafeError() {
         stub.respondStatus(500, "{\"code\":0}");
-
         final Response response = provider.buildLoginResponse(
                 "appid-test", "appkey-test", stub.base(),
                 "https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint?state=s0",
                 null, "juhe-qq");
-
         assertEquals(500, response.getStatus());
     }
 
     @Test
     void loginInvalidJsonReturnsSafeError() {
         stub.respond("not-json");
-
         final Response response = provider.buildLoginResponse(
                 "appid-test", "appkey-test", stub.base(),
                 "https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint?state=s0",
                 null, "juhe-qq");
-
         assertEquals(500, response.getStatus());
     }
 
     @Test
     void loginResponseRejectedReturnsSafeError() {
         stub.respond("{\"code\":1,\"type\":\"qq\",\"url\":\"https://graph.qq.com/x\"}");
-
         final Response response = provider.buildLoginResponse(
                 "appid-test", "appkey-test", stub.base(),
                 "https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint?state=s0",
                 null, "juhe-qq");
-
         assertEquals(500, response.getStatus());
     }
 
     @Test
     void loginSuccessStillRedirectsToProviderUrl() {
         stub.respond("{\"code\":0,\"type\":\"qq\",\"url\":\"https://graph.qq.com/login?token=abc\"}");
-
         final Response response = provider.buildLoginResponse(
                 "appid-test", "appkey-test", stub.base(),
                 "https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint?state=s0",
                 null, "juhe-qq");
-
         assertEquals(302, response.getStatus());
         assertEquals("https://graph.qq.com/login?token=abc", response.getHeaderString("Location"));
         assertEquals(1, stub.requestsWith("login"));
     }
 
     @Test
+    void webViewMarkerDoesNotMatchOrdinaryAndroidChrome() {
+        assertTrue(JuheQqIdentityProvider.isAndroidWebViewUserAgent(
+                "Mozilla/5.0 (Linux; Android 15; PHU110 Build/X; wv) AppleWebKit/537.36 Version/4.0 Chrome/152 Mobile"));
+        assertTrue(!JuheQqIdentityProvider.isAndroidWebViewUserAgent(
+                "Mozilla/5.0 (Linux; Android 15; PHU110) AppleWebKit/537.36 Chrome/152 Mobile"));
+    }
+
+    @Test
     void loginExceptionReturnsSafeErrorWithoutLeaking() {
         final String base = stub.base();
-        stub.close(); // 连接被拒 → IOException → juhe_login_exception
-
+        stub.close();
         final Response response = provider.buildLoginResponse(
                 "appid-test", "appkey-test", base,
                 "https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint?state=s0",
                 null, "juhe-qq");
-
         assertEquals(500, response.getStatus());
         assertEquals("QQ login failed. Please try again.", response.getEntity());
     }
@@ -131,12 +119,10 @@ class JuheQqIdentityProviderTest {
         final String state = "state-super-secret-abc";
         final String ref1 = JuheQqIdentityProvider.callbackRef(state);
         final String ref2 = JuheQqIdentityProvider.callbackRef(state);
-
-        assertEquals(ref1, ref2, "callbackRef must be deterministic for the same state");
-        assertEquals(8, ref1.length(), "callbackRef must be a short 8-hex prefix");
-        assertTrue(!ref1.contains(state), "callbackRef must not reveal the original state");
-        assertNotEquals(ref1, JuheQqIdentityProvider.callbackRef("state-other"),
-                "different states must produce different callbackRef");
+        assertEquals(ref1, ref2);
+        assertEquals(8, ref1.length());
+        assertTrue(!ref1.contains(state));
+        assertNotEquals(ref1, JuheQqIdentityProvider.callbackRef("state-other"));
         assertEquals("unknown", JuheQqIdentityProvider.callbackRef(null));
         assertEquals("unknown", JuheQqIdentityProvider.callbackRef(""));
     }
