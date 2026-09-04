@@ -85,26 +85,19 @@ describe('BattlePlaybackHud', () => {
     expect(wrapper.find('[data-test="pb-hp-fill-enemy"]').attributes('style')).toContain('width: 0%')
   })
 
-  it('renders only authoritative base states and avoids ownership guesses without perspective', () => {
+  // 基地归属改由地图上的圆圈表达，HUD 不再重复一份 chip。
+  it('does not render base chips', () => {
     const wrapper = mountHud({
       friendlyPoints: null,
       enemyPoints: null,
       friendlyTeam: null,
-      baseStates: [
-        { baseId: 'A', ownerTeam: 1, capturingTeam: null, captureProgress: null },
-        { baseId: 'B', ownerTeam: null, capturingTeam: 2, captureProgress: 42 },
-      ],
     })
-    expect(wrapper.find('[data-test="pb-hud-score"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="pb-hud-bases"]').text()).toContain('A')
-    expect(wrapper.find('[data-test="pb-hud-bases"]').text()).toContain('B')
-    expect(wrapper.findAll('.pb-hud-base-controlled')).toHaveLength(1)
-    expect(wrapper.findAll('.pb-hud-base-capturing')).toHaveLength(1)
-    expect(wrapper.find('.pb-hud-base-progress').attributes('style')).toContain('42%')
+    expect(wrapper.find('[data-test="pb-hud-bases"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-hud-center"]').exists()).toBe(false)
   })
 
   it('keeps the enemy in column 3 when score and bases are absent', () => {
-    const wrapper = mountHud({ friendlyPoints: null, enemyPoints: null, baseStates: [] })
+    const wrapper = mountHud({ friendlyPoints: null, enemyPoints: null })
     expect(wrapper.find('[data-test="pb-hud-center"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-hud-friendly"]').classes()).toContain('pb-hud-column-friendly')
     expect(wrapper.find('[data-test="pb-hud-enemy"]').classes()).toContain('pb-hud-column-enemy')

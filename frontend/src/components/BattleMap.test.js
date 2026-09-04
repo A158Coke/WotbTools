@@ -72,7 +72,6 @@ describe('BattleMap', () => {
     const wrapper = mountMap()
 
     expect(wrapper.find('image').attributes('href')).toBe('/map.png')
-    expect(wrapper.findAll('.pb-border-line')).toHaveLength(1)
     expect(wrapper.findAll('.pb-base-circle')).toHaveLength(2)
     expect(wrapper.find('[data-test="pb-bases"]').text()).toContain('A')
     expect(wrapper.findAll('.pb-base-friendly_controlled')).toHaveLength(1)

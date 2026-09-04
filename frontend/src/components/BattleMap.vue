@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, useId } from 'vue'
 import VehicleMarker from './VehicleMarker.vue'
 
 defineOptions({ name: 'BattleMap' })
@@ -43,9 +43,22 @@ const mapEl = ref(null)
 const textInputRef = ref(null)
 defineExpose({ mapEl, textInputRef })
 
+// clipPath id 是文档级的，多个实例同时挂载时不能撞名。
+const clipPrefix = `pb-base-clip-${useId()}`
+
 // 基地半径是世界米，经同一 toX 换算成 SVG 单位。
 function baseRadius(base) {
   return props.mapView.toX(base.x + base.radius) - props.mapView.toX(base.x)
+}
+
+// 占领进度像瓶里的水，从底部往上涨；100% 时整个圆都是占领方的颜色。
+function fillHeight(base) {
+  const clamped = Math.min(Math.max(base.progress ?? 0, 0), 100)
+  return baseRadius(base) * 2 * clamped / 100
+}
+
+function fillTop(base) {
+  return props.mapView.toY(base.y) + baseRadius(base) - fillHeight(base)
 }
 </script>
 
@@ -63,12 +76,30 @@ function baseRadius(base) {
     >
       <svg class="pb-svg" :viewBox="`0 0 ${props.mapView.W} ${props.mapView.H}`" role="img">
         <image :href="props.image.src" :width="props.mapView.W" :height="props.mapView.H" preserveAspectRatio="none" />
-        <g v-if="props.pbOverview.playableBounds" class="pb-border" data-test="pb-border">
-          <rect :x="props.mapView.toX(props.pbOverview.playableBounds.xMin)" :y="props.mapView.toY(props.pbOverview.playableBounds.yMax)" :width="props.mapView.toX(props.pbOverview.playableBounds.xMax) - props.mapView.toX(props.pbOverview.playableBounds.xMin)" :height="props.mapView.toY(props.pbOverview.playableBounds.yMin) - props.mapView.toY(props.pbOverview.playableBounds.yMax)" class="pb-border-line" />
-        </g>
+        <defs>
+          <clipPath v-for="base in props.bases" :key="base.baseId" :id="`${clipPrefix}-${base.baseId}`">
+            <rect
+              class="pb-base-fill-clip"
+              :x="props.mapView.toX(base.x) - baseRadius(base)"
+              :y="fillTop(base)"
+              :width="baseRadius(base) * 2"
+              :height="fillHeight(base)"
+            />
+          </clipPath>
+        </defs>
         <g class="pb-bases" data-test="pb-bases">
-          <g v-for="base in props.bases" :key="base.baseId" :class="`pb-base-${base.status}`">
+          <g v-for="base in props.bases" :key="base.baseId" :class="`pb-base-${base.status}`" :data-test="`pb-base-${base.baseId}`">
             <circle :cx="props.mapView.toX(base.x)" :cy="props.mapView.toY(base.y)" :r="baseRadius(base)" class="pb-base-circle" />
+            <circle
+              v-if="base.progress != null"
+              class="pb-base-fill"
+              :class="`pb-capture-${base.capturedBy}`"
+              data-test="pb-base-fill"
+              :cx="props.mapView.toX(base.x)"
+              :cy="props.mapView.toY(base.y)"
+              :r="baseRadius(base)"
+              :clip-path="`url(#${clipPrefix}-${base.baseId})`"
+            />
             <text :x="props.mapView.toX(base.x)" :y="props.mapView.toY(base.y)" class="pb-base-label" text-anchor="middle" dominant-baseline="central">{{ base.baseId }}</text>
           </g>
         </g>
@@ -150,14 +181,24 @@ function baseRadius(base) {
 .pb-svg { display: block; width: 100%; height: auto; border-radius: 4px; background: var(--bg-elevated); }
 .pb-markers { position: absolute; inset: 0; pointer-events: none; }
   .pb-vehicle { position: absolute; width: 30px; height: 30px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
-.pb-border-line { fill: none; stroke: var(--map-border-stroke, #e0453f); stroke-width: 1.6; }
 .pb-base-circle { fill: color-mix(in srgb, currentColor 18%, transparent); stroke: currentColor; stroke-width: 1.6; }
 .pb-base-label { fill: currentColor; font-size: 13px; font-weight: 700; paint-order: stroke; stroke: rgba(0,0,0,.55); stroke-width: 2.5; }
-.pb-base-neutral { color: var(--text-muted, #b9b9b9); }
+/* 圆圈颜色 = 当前归属；进度弧颜色 = 正在占领的一方。两个信息都要看得出来。 */
+.pb-base-neutral { color: #fff; }
 .pb-base-friendly_controlled { color: var(--map-spawn-friendly, #ffd166); }
 .pb-base-enemy_controlled { color: var(--map-spawn-enemy, #ff8d8d); }
 .pb-base-controlled { color: var(--text, #e8e8e8); }
-.pb-base-capturing { color: var(--map-base-capturing, #6fd08c); }
+/* 占领进度：水位从下往上涨，100% 时整圆铺满占领方颜色。 */
+.pb-base-fill { stroke: none; animation: pb-base-pulse 1.3s ease-in-out infinite; }
+.pb-base-fill-clip { transition: y .35s linear, height .35s linear; }
+.pb-capture-friendly { fill: var(--map-spawn-friendly, #ffd166); }
+.pb-capture-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
+.pb-capture-unknown { fill: #fff; }
+@keyframes pb-base-pulse { 0%, 100% { opacity: .95; } 50% { opacity: .6; } }
+@media (prefers-reduced-motion: reduce) {
+  .pb-base-fill { animation: none; }
+  .pb-base-fill-clip { transition: none; }
+}
 .pb-tracer, .pb-tracer-core { stroke-linecap: round; }
 .pb-trail { stroke-linecap: round; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }

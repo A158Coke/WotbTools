@@ -53,10 +53,16 @@ const emit = defineEmits([
 .pb-play-icon.playing::before { content: 'Ⅱ'; }
 .pb-fullscreen-icon::before { content: '⛶'; }
 .pb-time { margin-inline: auto; color: var(--text-label); font-size: .8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* §right-rail：Left Rail 可见（fullscreen 或大桌面）时，底部右侧与 rail 重复的面板/标注/重置/全屏隐藏。 */
+/* §right-rail：控制条在 Left Rail 内时，面板/标注/重置/全屏与 rail 的图标导航重复，隐藏掉。 */
 .pb-controls-rail-mode .pb-secondary-btn,
 .pb-controls-rail-mode .pb-reset,
 .pb-controls-rail-mode .pb-fullscreen-btn { display: none; }
+/* rail 是竖向窄列：按钮铺满宽度，速度档位排成一行四格。 */
+.pb-controls-rail-mode { flex-direction: column; align-items: stretch; gap: 6px; }
+.pb-controls-rail-mode .pb-btn { width: 100%; }
+.pb-controls-rail-mode .pb-speed { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
+.pb-controls-rail-mode .pb-speed .pb-btn { padding: 2px 0; text-align: center; }
+.pb-controls-rail-mode .pb-time { margin-inline: 0; text-align: center; }
 @media (width < 768px) {
   .pb-controls { justify-content: center; gap: 4px; }
   .pb-btn { min-width: 36px; min-height: 36px; padding: 2px 6px; }
