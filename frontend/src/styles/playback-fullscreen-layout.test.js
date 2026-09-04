@@ -70,19 +70,28 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(rail).toContain('order: 2')
     expect(rail).toContain('position: static')
 
+    // 横屏：右侧滑入的窗口（不贴左边、不满宽）
     const details = ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel')
     expect(details).toContain('position: fixed')
     expect(details).toContain('right: 8px')
-    // 不是底部 sheet：不贴左边、不满宽
     expect(details).toContain('left: auto')
     expect(details).toContain('animation: pb-details-slide-in')
     expect(stripped).toContain('@keyframes pb-details-slide-in')
+
+    // 竖屏：~400px 宽的屏上右侧窗口等于满屏，会盖住地图，因此改为从底部滑上来的 sheet，
+    // 地图始终留在上方可见。
+    expect(stripped).toContain('@media (orientation: portrait)')
+    expect(stripped).toContain('@keyframes pb-details-slide-up')
+    const portrait = stripped.slice(stripped.indexOf('@media (orientation: portrait)'))
+    expect(portrait).toContain('max-height: min(58dvh, 480px)')
+    expect(portrait).toContain('animation: pb-details-slide-up')
   })
 
   // 非全屏窄视口：两侧面板都排进正常文档流，不做浮层弹窗/抽屉。
   it('keeps the side panes inline outside fullscreen instead of floating them', () => {
     const details = ruleBody('.battle-playback .pb-map-stage > .pb-side-panel-shell')
-    expect(details).toContain('position: static')
+    // relative（不是 absolute）：在流内参与布局，同时作为拖拽把手的定位基准。
+    expect(details).toContain('position: relative')
     expect(details).not.toContain('position: absolute')
 
     const detailsPanel = ruleBody('.battle-playback .pb-map-stage > .pb-side-panel-shell .pb-side-panel')
@@ -209,6 +218,22 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     // Right Details 是 map-stage 的独立 col2（--pb-details-w）
     const stage = ruleBody('.battle-playback:fullscreen .pb-map-stage')
     expect(stage).toContain('grid-template-columns: minmax(0, 1fr) var(--pb-details-w)')
+  })
+
+  // 同一选择器写两遍时，后一条静默赢过前一条——本文件的 ruleBody 只取第一条，
+  // 于是「测试断言的」和「浏览器生效的」可以完全不同。这里守住关键选择器不重复。
+  it('does not declare the same layout selector twice at the top level', () => {
+    // 只查顶层：media query 内的同名选择器是不同上下文，不算重复。
+    const topLevel = stripped.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '')
+    const seen = new Map()
+    for (const chunk of topLevel.split(/}/).filter((c) => c.includes('{'))) {
+      const head = chunk.slice(0, chunk.lastIndexOf('{')).trim()
+      const sel = head.split(String.fromCharCode(10)).pop().trim()
+      if (!sel.includes('pb-side-panel-shell') && !sel.includes('pb-left-rail')) continue
+      seen.set(sel, (seen.get(sel) || 0) + 1)
+    }
+    const duplicated = [...seen.entries()].filter(([, n]) => n > 1).map(([sel]) => sel)
+    expect(duplicated).toEqual([])
   })
 
   // 手机 fullscreen 必然横屏，横向放得下三段，因此与桌面同构：窄 Left Rail | Map |

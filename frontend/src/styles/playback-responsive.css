@@ -24,7 +24,12 @@
 }
 
 /* §2：Left Rail —— 默认隐藏，仅在 fullscreen 下作为左列（workspace）。 */
-.battle-playback .pb-left-rail { display: none; }
+.battle-playback .pb-left-rail {
+  display: none;
+  /* 拖拽把手是 absolute，必须以本栏为定位基准。 */
+  position: relative;
+  flex-wrap: nowrap;
+}
 .battle-playback:fullscreen .pb-left-rail {
   grid-column: 1;
   display: flex;
@@ -67,9 +72,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.battle-playback .pb-left-rail {
-  flex-wrap: nowrap;
 }
 /* §二级菜单返回按钮（标注/战局/显示/事件 的上一级返回）。 */
 .battle-playback .pb-rail-back {
@@ -115,7 +117,8 @@
 /* 非全屏窄视口：详情不做浮层弹窗（飘在地图上、圆角阴影加自己的滚动条，和页面割裂），
    而是作为地图下方的正常内容块随页面排布。桌面三列与全屏另有各自规则覆盖。 */
 .battle-playback .pb-map-stage > .pb-side-panel-shell {
-  position: static;
+  /* relative 而非 static：拖拽把手是 absolute，必须以本栏为定位基准。两者都在流内。 */
+  position: relative;
   margin-top: 8px;
   min-width: 0;
 }
@@ -329,10 +332,8 @@
 
 /* §pane-resize：左右两栏的拖拽把手。默认隐藏在栏内侧边缘，hover/拖拽时才显形，
    不占布局宽度（absolute），因此不影响地图 fit 几何。栏本身不显示时把手也不显示。
-   两个容器必须 position: relative——否则 absolute 把手会以更外层的定位祖先为基准，
-   跑到栏边缘之外。 */
-.battle-playback .pb-left-rail,
-.battle-playback .pb-map-stage > .pb-side-panel-shell { position: relative; }
+   两个容器的 position: relative 都写在各自的基础规则里——否则 absolute 把手会以
+   更外层的定位祖先为基准，跑到栏边缘之外。 */
 .battle-playback .pb-pane-resizer {
   position: absolute;
   top: 0;
@@ -546,20 +547,6 @@
   /* Right Details 列是满高的，面板必须跟着列走：内容短则垂直居中，内容超过列高才内部滚动。
      组件自带的 max-height: min(68vh, 560px) 是给浮层弹窗用的，在这里会造成
      「列还有空位却出现滚动条」。 */
-  .battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
-    position: static;
-    flex: 0 1 auto;
-    width: auto;
-    max-height: 100%;
-    border-radius: 0;
-    border: 0;
-    box-shadow: none;
-    overflow-y: auto;
-    padding: 10px 12px;
-  }
-  .battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell .pb-panel-launcher {
-    display: none;
-  }
   .battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell {
     position: static;
     grid-column: 2;
@@ -575,11 +562,16 @@
   .battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell .pb-panel-launcher {
     display: none;
   }
+  /* 面板就是这一列本身：铺满列宽、去掉自己的卡片描边（描边由 shell 承担），
+     内容短于列高时被 shell 垂直居中，超过列高才内部滚动。
+     用 flex: 1 1 auto 会强行撑满，短内容被顶到列顶、右侧留白，看起来像一张浮在
+     空列里的小卡片。 */
   .battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
     position: static;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     width: auto;
-    max-height: none;
+    max-width: none;
+    max-height: 100%;
     border-radius: 0;
     border: 0;
     box-shadow: none;
@@ -726,12 +718,33 @@
   z-index: var(--z-modal);
   animation: pb-details-slide-in .22s ease-out;
 }
+/* 竖屏手机：右侧滑入的窗口在 ~400px 宽的屏上等于满宽满高，会整块盖住地图。
+   竖屏改为从底部滑上来的 sheet——同样是「滑进滑出」，但地图始终留在上方可见。
+   横屏（含全屏）保持右侧窗口。 */
+@media (orientation: portrait) {
+  .battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
+    top: auto;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    width: auto;
+    max-height: min(58dvh, 480px);
+    border-radius: 12px;
+    animation: pb-details-slide-up .22s ease-out;
+  }
+}
+@keyframes pb-details-slide-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 @keyframes pb-details-slide-in {
   from { transform: translateX(30px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
+  .battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel,
+  .battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
     animation: none;
   }
 }
