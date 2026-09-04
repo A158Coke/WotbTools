@@ -2,58 +2,57 @@
 
 ## 状态
 
-**COMPLETE / PR1 GATE PASS / PR2 HANDOFF READY**
+**COMPLETE / PR1 GATE PASS / PR247 REVIEW FIXES APPLIED / PR2 HANDOFF READY**
 
-Canal + Port Bay 已使用 schema v3 exporter 完成真实 `Maps.zip` 双地图验证。SC2/SCG geometry extraction、DAVA RenderBatch selection、initial RenderObject visibility 三层 contract 均已闭环。
+PR #247 已完成 Client Map Research 主目标，并闭环后续 review 发现的 2 个 MAJOR + 1 个 MINOR。
 
-PR #247 已具备 Ready for Review 条件；下一阶段为 PR2 Map Geometry Core。
-
-## 已通过：SC2 -> SCG extraction contract
+## 已通过的核心 contract
 
 ```text
 SC2 Entity
   -> RenderComponent
   -> Mesh
-  -> RenderBatch
+  -> RenderObject initial visibility
+  -> active RenderBatch (LOD/switch, shared -1)
   -> rb.datasource
   -> same-basename companion SCG
-  -> PolygonGroup #id
+  -> unique PolygonGroup #id
   -> vertices / indices
 ```
 
 ### Canal / `18_canal_cn`
 
-SCG recursive cross-check：
-
-- recursive entities：2,725；
-- PolygonGroups：237；
-- vertices：173,017；
-- indices：299,156；
-- unique datasource：237；
-- matched：237 / 237；
-- unmatched：0；
-- unreferenced PolygonGroup：0；
-- warnings / index payload mismatch：0。
+- recursive SC2 entities：2,725
+- SCG PolygonGroups：237
+- datasource exact match：237 / 237
+- unmatched / unreferenced：0 / 0
+- schema v3 geometry：70
+- Mesh instances：590
+- positions：85,028 / 1,020,336 bytes
+- indices：156,543 / 626,172 bytes
+- invisible RenderObject skipped：363
+- selected State 0 diagnostic siblings：347
+- selected State 1 diagnostic siblings：0
+- mutually-exclusive sibling overlap：0
 
 ### Port Bay / `14_port_pt`
 
-SCG recursive cross-check：
+- recursive SC2 entities：3,890
+- SCG PolygonGroups：217
+- datasource exact match：217 / 217
+- unmatched / unreferenced：0 / 0
+- schema v3 geometry：80
+- Mesh instances：1,326
+- positions：65,291 / 783,492 bytes
+- indices：123,054 / 492,216 bytes
+- invisible RenderObject skipped：713
+- selected State 0 diagnostic siblings：596
+- selected State 1 diagnostic siblings：0
+- mutually-exclusive sibling overlap：0
 
-- recursive entities：3,890；
-- PolygonGroups：217；
-- vertices：126,466；
-- indices：223,764；
-- unique datasource：217；
-- matched：217 / 217；
-- unmatched：0；
-- unreferenced PolygonGroup：0；
-- warnings / index payload mismatch：0。
+## DAVA selection semantics
 
-结论：geometry source/reference/extraction contract 已通过双地图 gate。
-
-## 已通过：DAVA RenderBatch wildcard
-
-DAVA active-batch rule：
+RenderBatch active rule：
 
 ```text
 (batch.lodIndex == requestedLod OR batch.lodIndex == -1)
@@ -61,78 +60,67 @@ AND
 (batch.switchIndex == requestedSwitch OR batch.switchIndex == -1)
 ```
 
-`-1` 是 shared/wildcard。exporter 已覆盖 missing default `-1`、numeric `ro.batches` keys、nested hierarchy 与 zero-instance fail-fast。
-
-## 已通过：initial RenderObject visibility
-
-DAVA authoritative contract：
+Initial RenderObject visibility：
 
 ```text
 RenderObject::VISIBLE = 1 << 0
+explicit ro.flags -> require bit 0
+missing ro.flags  -> visible by DAVA RenderObject::Load default
 ```
 
-生产 selector：
+Production selector 不读取 `State 0` / `State 1` filename。
 
-```text
-explicit ro.flags -> require (ro.flags & 1) != 0
-missing ro.flags  -> visible, matching DAVA RenderObject::Load default
-then apply shadow / LOD / switch rules
-```
+## PR #247 review closure
 
-生产逻辑不读取 `State 0` / `State 1` filename。
+### MAJOR 1 — raw `.sc2` scene loading
 
-真实 state-switcher evidence：
+已修复：
 
-- Canal：347 groups；347 / 347 State 0 visible=true；347 / 347 State 1 visible=false；
-- Port Bay：596 groups；596 / 596 State 0 visible=true；596 / 596 State 1 visible=false。
+- `inspect_map_scene.py` 不再无条件 `decode_dvpl(raw)`；
+- `.dvpl` member 才解 DVPL；
+- raw `.sc2` 直接交给 `read_sc2()`；
+- 新增 regression test，验证 raw `.sc2` 不调用 DVPL decoder，`.sc2.dvpl` 必须调用。
 
-## Schema v3 final real gate
+### MAJOR 2 — duplicate PolygonGroup id
 
-### Canal / `18_canal_cn`
+已修复为 shared parser invariant：
 
-- schemaVersion：3；
-- geometry：70；
-- Mesh instances：590；
-- unique datasource：70；
-- decoded positions：85,028；
-- decoded indices：156,543；
-- positions bytes：1,020,336；
-- indices bytes：626,172；
-- skipped invisible RenderObject：363；
-- selected State 0 diagnostic instances：347；
-- selected State 1 diagnostic instances：0；
-- mutually-exclusive sibling groups simultaneously selected：0；
-- orphan datasource：0；
-- buffer/count consistency blocker：0。
+- `wotb_scg.read_scg()` 在解析完成后验证所有可解码 `PolygonGroup #id` 唯一；
+- duplicate id 直接 `Sc2ParseError` fail-fast，错误包含重复 id 与两个 group index；
+- `export_map_geometry_poc.py` 使用共享 `polygon_groups_by_id()`，不再用会静默覆盖的 dict comprehension；
+- SCG inspector 同样经过 `read_scg()`，因此 duplicate id 无法进入 set-based cross-check 造成假阳性；
+- 新增 duplicate-id regression test。
 
-### Port Bay / `14_port_pt`
+### MINOR — scene inspector nested hierarchy
 
-- schemaVersion：3；
-- geometry：80；
-- Mesh instances：1,326；
-- unique datasource：80；
-- decoded positions：65,291；
-- decoded indices：123,054；
-- positions bytes：783,492；
-- indices bytes：492,216；
-- skipped invisible RenderObject：713；
-- selected State 0 diagnostic instances：596；
-- selected State 1 diagnostic instances：0；
-- mutually-exclusive sibling groups simultaneously selected：0；
-- orphan datasource：0；
-- buffer/count consistency blocker：0。
+已修复：
 
-Final visual gate：**PASS**。
+- `inspect_map_scene.py` 改为 recursive `#hierarchy` traversal；
+- report schema 升到 v3；
+- 增加 `sceneTraversal.mode = recursive #hierarchy`；
+- target component sample 增加 `entityPath`；
+- nested RenderComponent / CollisionTypeComponent regression test 已覆盖。
 
-## PR2 handoff contract
+## Regression protection
 
-PR2 输入：
+- SCG duplicate PolygonGroup id fail-fast
+- raw `.sc2` vs `.sc2.dvpl` loading
+- recursive scene hierarchy inspection
+- shared `-1` LOD/switch
+- numeric `ro.batches` keys
+- zero-instance fail-fast
+- visibility bit + missing-flags default
+- intentionally inverted State names，确保不存在 filename heuristic
+
+## PR2 handoff
+
+输入：
 
 ```text
 SC2 + companion SCG + heightmap + existing map semantics
 ```
 
-PR2 输出：
+输出：
 
 ```text
 deterministic renderer-neutral manifest
@@ -145,8 +133,6 @@ deterministic renderer-neutral manifest
 
 Canal + Port Bay 继续作为双地图 gate。
 
-大范围 environment/surroundings Mesh 可能合法超出 playable bounds；禁止按尺寸或 filename 删除。PR2 应报告 transformed world-AABB / role sanity，但 selection 继续基于 scene/render evidence。
-
 ## Collision / nav 边界
 
 - `CollisionTypeComponent` metadata 已证明；独立 gameplay collision mesh 未证明；
@@ -155,21 +141,22 @@ Canal + Port Bay 继续作为双地图 gate。
 
 ## PR1 Definition of Done
 
-- [x] Maps.zip inventory；
-- [x] terrain + coordinate baseline；
-- [x] SCPG / PolygonGroup parser；
-- [x] recursive SC2 datasource ↔ SCG exact link；
-- [x] vertex/index decoder；
-- [x] DAVA RenderBatch shared `-1` contract；
-- [x] renderer-neutral geometry exporter；
-- [x] Canal extraction blocker=0；
-- [x] Port Bay extraction blocker=0；
-- [x] collision/nav research boundary；
-- [x] prove initial scene visibility semantics；
-- [x] authoritative initial-state selector + regression tests；
-- [x] Canal schema v3 duplicated-active-state blocker=0；
-- [x] Port Bay schema v3 duplicated-active-state blocker=0；
-- [x] PR2 handoff finalized。
+- [x] Maps.zip inventory
+- [x] terrain + coordinate baseline
+- [x] SCPG / PolygonGroup parser
+- [x] recursive SC2 datasource ↔ SCG exact link
+- [x] vertex/index decoder
+- [x] unique PolygonGroup id invariant
+- [x] DAVA RenderBatch shared `-1` contract
+- [x] DAVA initial RenderObject visibility contract
+- [x] raw `.sc2` / `.sc2.dvpl` scene loading
+- [x] recursive scene inspector evidence
+- [x] Canal schema v3 final gate
+- [x] Port Bay schema v3 final gate
+- [x] collision/nav research boundary
+- [x] PR247 review findings closure
+
+**PR1 blocker = 0. PR2 handoff ready.**
 
 ## 非目标
 
