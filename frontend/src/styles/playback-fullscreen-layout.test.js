@@ -247,16 +247,18 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
   it('gives the mobile drawer treatment to the details element itself', () => {
     const sheet = ruleBody('.battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar')
     expect(sheet).not.toBeNull()
-    // 竖屏默认：底部 sheet，地图留在上方
-    expect(sheet).toContain('bottom: 8px')
-    expect(sheet).toContain('top: auto')
     expect(sheet).toContain('animation: pb-details-slide-up')
-    expect(sheet).toContain('max-height: min(58dvh, 480px)')
-    // 横屏：右侧滑入窗口
+
+    // §no-overlay：手机非全屏没有黑边可用，详情必须排进流里，不能盖住地图。
+    const inflow = ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar')
+    expect(inflow).toContain('position: static')
+    expect(ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell')).toContain('position: static')
+
+    // 手机全屏横屏：抽屉宽度按黑边实宽算（(100vw - 100vh) / 2），不越到地图上。
     expect(stripped).toContain('@media (orientation: landscape)')
     const landscape = stripped.slice(stripped.indexOf('@media (orientation: landscape)'))
+    expect(landscape).toContain('calc((100vw - 100vh) / 2 - 8px)')
     expect(landscape).toContain('animation: pb-details-slide-in')
-    expect(landscape).toContain('left: auto')
   })
 
   // VehicleDetailsPanel 挂在 .pb-side-panel-shell 下，不在 .pb-side-panel 内。
@@ -342,7 +344,10 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(ruleBody('.battle-playback.pb-device-mobile .pb-controls')).toContain('justify-content: center')
     expect(ruleBody('.battle-playback.pb-device-mobile .pb-controls .pb-control-label')).toContain('display: none')
     expect(ruleBody('.battle-playback.pb-device-mobile .pb-controls .pb-btn')).toContain('min-height: 36px')
-    expect(ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay-content')).toContain('position: absolute')
+    // 手机非全屏：控制条排在地图下方的正常流里，不再是压住地图的浮层。
+    expect(ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay-content')).toContain('position: static')
+    expect(ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay')).toContain('position: static')
+    expect(ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay')).toContain('opacity: 1')
     expect(ruleBody('.battle-playback.pb-device-mobile .pb-controls .pb-time')).toContain('order: 20')
   })
 })

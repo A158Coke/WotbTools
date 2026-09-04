@@ -684,21 +684,36 @@
   border-radius: 10px;
   animation: pb-details-slide-up .22s ease-out;
 }
-/* 横屏（含全屏）：右侧滑入的窗口。竖屏用右侧窗口会占满整屏、盖掉地图。 */
+/* §no-overlay：地图上不允许任何常驻 UI，只有短暂的事件播报例外。
+   详情因此只在「方图两侧的黑边」里浮；黑边不够宽就退回占据真实空间（挤地图）。
+   手机竖屏没有黑边可言 —— 上面那条 sheet 排在地图下方的流里，不覆盖地图。 */
+.battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell {
+  position: static;
+  inset: auto;
+  pointer-events: auto;
+  background: transparent;
+}
+.battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
+  position: static;
+  inset: auto;
+  width: auto;
+  margin-top: 8px;
+  max-height: none;
+}
+
+/* 手机全屏（必然横屏）：右侧确有黑边，抽屉按黑边实宽算，绝不越到地图上。
+   单侧黑边 =（100vw − 100vh）/ 2；再留 8px 间距。黑边窄于 168px 时不浮，
+   由上面的流内形态兜底。 */
 @media (orientation: landscape) {
-  .battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
+  .battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
     left: auto;
     right: 8px;
     top: 8px;
     bottom: 8px;
-    width: min(340px, calc(100vw - 16px));
+    width: min(340px, calc((100vw - 100vh) / 2 - 8px));
     max-height: none;
     border-radius: 12px;
     animation: pb-details-slide-in .22s ease-out;
-  }
-  .battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
-    /* 全屏时左侧有 rail 列，宽度要让开它。 */
-    width: min(340px, calc(100vw - var(--pb-left-col) - 16px));
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -758,6 +773,22 @@
   border-radius: 8px;
 }
 .battle-playback:not(:fullscreen).pb-device-mobile .pb-drawer-backdrop { display: none; }
+
+/* 播放控制条同样排到地图下方，而不是压在地图上的浮层。手机竖屏地图本来就小，
+   一块盖住大半张图的控制条没法用。它在 .pb-main 内、地图之后，static 即落在地图下方。
+   在流内就不需要「触摸唤起」，常驻可见。 */
+.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay {
+  position: static;
+  inset: auto;
+  opacity: 1;
+  pointer-events: auto;
+  z-index: auto;
+}
+.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay-content {
+  position: static;
+  inset: auto;
+  margin-top: 8px;
+}
 
 .battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
   position: fixed;
