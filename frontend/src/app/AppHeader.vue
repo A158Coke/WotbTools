@@ -2,8 +2,8 @@
 import { computed, inject } from 'vue'
 import { useRoute } from 'vue-router'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
+import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { useAuth } from '../composables/useAuth.js'
-import { NAVIGATE_VIEW_KEY } from './context.js'
 import { isHomeHost, viewFromRoute } from './navigation.js'
 import UserMenu from './UserMenu.vue'
 
