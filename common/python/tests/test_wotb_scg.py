@@ -5,6 +5,7 @@ import os
 import struct
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -15,6 +16,7 @@ from wotb_scg import (
     polygon_group_id,
     polygon_group_vertex_stride,
     position_aabb,
+    read_scg,
 )
 
 
@@ -78,6 +80,15 @@ class ScgGeometryDecoderTest(unittest.TestCase):
 
         with self.assertRaisesRegex(Sc2ParseError, "EVF_VERTEX"):
             decode_polygon_positions(group)
+
+    def test_read_scg_rejects_duplicate_polygon_group_ids(self):
+        raw = b"SCPG" + struct.pack("<III", 1, 2, 2)
+        duplicate_id = byte_array((77).to_bytes(8, "little"))
+        groups = [{"#id": duplicate_id}, {"#id": duplicate_id}]
+
+        with patch("wotb_scg.read_archive", side_effect=groups):
+            with self.assertRaisesRegex(Sc2ParseError, "Duplicate PolygonGroup #id 77"):
+                read_scg(raw)
 
 
 if __name__ == "__main__":
