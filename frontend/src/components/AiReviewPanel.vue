@@ -1,16 +1,16 @@
 <!--
   AI 复盘能力面板：SSE 分析流（call1/evidence/call2/autopsy）+ 流式进度 + 结果面板。
-  不负责页面级登录门禁/自动跳转（由宿主入口把关）；仅在发起请求时经 authedFetch 兜底
-  ensureToken + 401/403 处理。目标文件由父组件以 prop 传入（文件始终在 ReplayPage 内存中，
-  由 capability page 传入（可来自解析页的内存 handoff）。
+  不负责页面级登录门禁/自动跳转（由宿主入口把关）。HTTP endpoint / auth / canonical
+  error handling 由 api/replay-capabilities.ts 统一拥有；本组件只编排 run lifecycle 与 SSE 展示状态。
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
+import { cancelAiReview, openAiReviewStream, type ReplayAuthSession } from '../api/replay-capabilities.js'
 import { localizeAiError, isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
 import { apiErrorLabel } from '../utils/display.js'
-import { ApiError, apiErrorFromResponse, apiFetch, normalizeApiError } from '../utils/http.js'
+import { ApiError, normalizeApiError } from '../utils/http.js'
 import type { AiReviewCapability, AiReviewResult, AiReviewRunState } from '../types/ai-review.js'
 import type { AiReviewEvent } from '../types/ai-review.js'
 import { createAiReviewSseParser } from '../utils/aiReviewSse.js'
@@ -19,6 +19,7 @@ import ReplayAnalysisAction from './ReplayAnalysisAction.vue'
 
 type AuthTokenParsed = { realm_access?: { roles?: unknown } } | null
 type AiRuntimeError = Error & { recoverableDatasource?: boolean; isLocalized?: boolean }
+type AiPanelAuth = ReplayAuthSession & { tokenParsed: { value: AuthTokenParsed } }
 
 const props = defineProps({
   /** 目标回放文件（null = 尚未选择，显示空态提示）。 */
@@ -33,11 +34,8 @@ const props = defineProps({
 const emit = defineEmits(['seek', 'dataset-recover'])
 
 const { t, te, locale } = useI18n()
-const { tokenParsed, token, ensureToken } = useAuth() as {
-  tokenParsed: { value: AuthTokenParsed }
-  token: () => string
-  ensureToken: (minValidity?: number) => Promise<boolean>
-}
+const auth = useAuth() as AiPanelAuth
+const { tokenParsed } = auth
 
 // AI Review 权限：已登录 + wotbtools-user 或 wotbtools-admin
 const canUseAiReview = computed(() => {
@@ -80,11 +78,8 @@ const partialAnalysis = ref('')
 // 超时链对齐：后端整体 deadline=1100s < nginx analyze 1120s；前端 1100s 在 nginx 之前给出干净 AI_TIMEOUT。
 const AI_ANALYZE_TIMEOUT_MS = 1_100_000
 /**
- * 当前 AI analysis run：每次 runAnalyze 创建独立 run context
- * {controller, correlationId, startedAt, timeoutTimer, cancelRequested, timedOut}。
- * Dataset identity 变化（file / processingJobId / sourceId）只取消旧 activeRun（它自己
- * 的 timer / correlationId / controller），再解除 active ownership 并重置共享 UI 状态；
- * stale run 通过 activeRun === run 判定作废，绝不修改新 generation 的状态。
+ * 当前 AI analysis run：每次 runAnalyze 创建独立 run context。
+ * Dataset identity 变化只取消旧 activeRun；stale run 绝不修改新 generation 的状态。
  */
 let activeRun: AiReviewRunState | null = null
 
@@ -94,49 +89,20 @@ function resetResults() {
   partialAnalysis.value = ''
 }
 
-// 目标 file 或 Dataset identity 变化：只取消 oldRun（自己的 timer/correlationId/controller），
-// 再解除 active ownership；新 B run 不得被 oldRun 的异步 unwind 影响。
 watch(() => [props.file, props.processingJobId, props.sourceId], () => {
   datasetRecovering.value = false
   const oldRun = activeRun
-  if (oldRun) {
-    cancelRun(oldRun)
-  }
+  if (oldRun) cancelRun(oldRun)
   activeRun = null
   analyzing.value = false
   resetResults()
   error.value = ''
 })
 
-// 统一的受保护请求：确保带上有效的 Keycloak Bearer Token（/api/replay/* 需要角色），
-// 并统一处理 token 刷新失败 / 401 / 403。
-async function authedFetch(url: string, body: BodyInit | null, { signal }: { signal?: AbortSignal } = {}): Promise<Response> {
-  const valid = await ensureToken(30)
-  if (!valid) {
-    throw new ApiError({ code: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false })
-  }
-  const accessToken = token()
-  const headers: Record<string, string> = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
-  if (typeof body === 'string') headers['Content-Type'] = 'application/json'
-  const r = await apiFetch(url, { method: 'POST', headers, body, signal })
-  if (r.status === 401) {
-    const apiError = await apiErrorFromResponse(r)
-    throw apiError
-  }
-  if (!r.ok) throw await apiErrorFromResponse(r)
-  return r
-}
-
 /** 尽力而为地通知后端取消 in-flight 请求（按钮取消 / 面板卸载 / 前端超时）。 */
 function fireCancel(correlationId: string) {
   if (!correlationId) return
-  const accessToken = token()
-  const headers: Record<string, string> = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
-  apiFetch(`/api/replay/analyze/cancel?correlationId=${encodeURIComponent(correlationId)}`, {
-    method: 'POST',
-    headers,
-    keepalive: true
-  }).catch(() => {})
+  cancelAiReview(auth, correlationId).catch(() => {})
 }
 
 /** 只取消指定 run（closure-capture：只操作 run 自己的 timer / correlationId / controller）。 */
@@ -169,9 +135,20 @@ function handleDatasetRecover(code) {
   emit('dataset-recover', code)
 }
 
+function analyzeRequest(correlationId: string) {
+  if (!props.processingJobId || !props.sourceId) {
+    throw new Error(t('recon.errors.DATASET_REFERENCE_REQUIRED'))
+  }
+  return {
+    processingJobId: props.processingJobId,
+    sourceId: props.sourceId,
+    lang: locale.value,
+    correlationId,
+  }
+}
+
 async function runAnalyze() {
   if (analyzing.value) return
-  // Dataset 尚未就绪属于状态机问题（PREPARING_DATASET），不是用户错误：不发请求、不显示裸错误码。
   if (!datasetReady.value) return
   const run: AiReviewRunState = {
     controller: new AbortController(),
@@ -187,26 +164,20 @@ async function runAnalyze() {
   analysisResult.value = null
   progressStage.value = 'call1'
   partialAnalysis.value = ''
-  // timeout closure-capture run：fire 时只读 run.correlationId / run.controller。
   run.timeoutTimer = setTimeout(() => {
     run.timedOut = true
     fireCancel(run.correlationId)
     run.controller.abort()
   }, AI_ANALYZE_TIMEOUT_MS)
   try {
-    const r = await authedFetch('/api/replay/analyze', analyzeBody(run.correlationId),
-      { signal: run.controller.signal })
-    if (activeRun !== run) return // stale response：不读流、不写任何状态
-    // SSE 流式解析：阶段事件 + call2_token 主复盘增量 + done 收尾。
+    const r = await openAiReviewStream(auth, analyzeRequest(run.correlationId), run.controller.signal)
+    if (activeRun !== run) return
     const receivedDone = await readAnalyzeStream(r, run)
     if (!receivedDone && !run.cancelRequested) {
-      // 流异常中断（未收到 done 且未取消）：视为无效响应。
       throw new Error(t('recon.errors.AI_RESPONSE_INVALID'))
     }
   } catch (e) {
-    // file / Dataset identity 已切换：本次分析作废，不写任何状态。
     if (activeRun !== run) return
-    // 数据集引用过期（后端稳定码 / SSE error 事件）：交回父组件重建，不显示裸错误码。
     const runtimeError = e as AiRuntimeError
     if (runtimeError.recoverableDatasource) {
       handleDatasetRecover(runtimeError.message)
@@ -220,7 +191,6 @@ async function runAnalyze() {
     if (normalized.code === 'REQUEST_ABORTED') {
       error.value = run.timedOut ? t('recon.errors.AI_TIMEOUT') : t('recon.cancelled')
     } else if (run.cancelRequested) {
-      // 用户主动取消：保持「已取消」语义，忽略后端 error 事件。
       error.value = t('recon.cancelled')
     } else {
       error.value = e instanceof ApiError || e instanceof TypeError
@@ -228,7 +198,6 @@ async function runAnalyze() {
         : (runtimeError.message || String(runtimeError))
     }
   } finally {
-    // 只清理自己的 timer；非当前 run 的 finally 不得触碰共享 UI 状态。
     if (run.timeoutTimer) clearTimeout(run.timeoutTimer)
     run.timeoutTimer = null
     if (activeRun === run) {
@@ -239,30 +208,7 @@ async function runAnalyze() {
 }
 
 /**
- * Dataset 路径：必须携带 processingJobId+sourceId，绝不回退 multipart
- * 重新上传/重新 full process。
- */
-function analyzeBody(correlationId) {
-  if (!props.processingJobId || !props.sourceId) {
-    // 防御：runAnalyze 已用 datasetReady 守卫；此路径正常情况下不可达。绝不裸抛内部错误码，
-    // 以本地化消息兜底（状态机问题，非最终用户错误）。
-    throw new Error(t('recon.errors.DATASET_REFERENCE_REQUIRED'))
-  }
-  return JSON.stringify({
-    processingJobId: props.processingJobId,
-    sourceId: props.sourceId,
-    lang: locale.value,
-    correlationId
-  })
-}
-
-/**
- * 读取 SSE 响应体并分发事件（run context 显式传入）：
- * call1_start/call1_done/evidence_done → 阶段状态；
- * call2_token → 主复盘文本累积（token 滚动）；
- * autopsy_start/autopsy_done → 团队剖析阶段；
- * done → 设置最终结果并返回 true；
- * error → 抛出本地化错误。
+ * 读取 SSE 响应体并分发事件（run context 显式传入）。
  * @returns {Promise<boolean>} 是否收到 done 事件
  */
 async function readAnalyzeStream(r, run) {
@@ -272,10 +218,7 @@ async function readAnalyzeStream(r, run) {
   const deadlineMs = run.startedAt + AI_ANALYZE_TIMEOUT_MS
 
   const handleStreamEvent = (event: AiReviewEvent) => {
-    if (activeRun !== run) {
-      // Dataset identity 已在途变化：本流属于旧 generation，任何阶段/结果都不得写回。
-      return
-    }
+    if (activeRun !== run) return
     switch (event.type) {
       case 'call1_start':
         progressStage.value = 'call1'
@@ -287,13 +230,7 @@ async function readAnalyzeStream(r, run) {
         progressStage.value = 'call2'
         break
       case 'call2_token':
-        // fallback 路径（NON_ZH/NO_RECONSTRUCTION/RECORDER_UNRESOLVED/
-        // FEATURES_UNAVAILABLE/PRE_BATTLE_UNAVAILABLE 等）会直接进入旧
-        // PlayerReplay 流，不发送 evidence_done/call2 阶段事件；token 到达即
-        // 说明已在生成主复盘，阶段强制进入 call2，避免停留在「赛前预测/证据分析」。
-        if (progressStage.value !== 'call2') {
-          progressStage.value = 'call2'
-        }
+        if (progressStage.value !== 'call2') progressStage.value = 'call2'
         partialAnalysis.value += event.delta
         break
       case 'autopsy_start':
@@ -308,8 +245,6 @@ async function readAnalyzeStream(r, run) {
         receivedDone = true
         break
       case 'error':
-        // 流中途失败：以稳定错误码本地化后终止流。
-        // 数据集引用过期（JOB_NOT_FOUND 等）不是 AI 错误：作为可恢复信号向上传播。
         if (isRecoverableDatasetCode(event.code)) {
           const recoverable = new Error(event.code || 'JOB_NOT_FOUND') as AiRuntimeError
           recoverable.recoverableDatasource = true
@@ -330,7 +265,6 @@ async function readAnalyzeStream(r, run) {
 
   try {
     for (;;) {
-      // 墙钟超时兜底：后台标签定时器被节流时，活跃流仍按 1100s 语义中止。
       if (Date.now() >= deadlineMs) {
         run.timedOut = true
         fireCancel(run.correlationId)
@@ -348,19 +282,9 @@ async function readAnalyzeStream(r, run) {
       if (receivedDone) break
     }
   } catch (e) {
-    if (e && e.name === 'AbortError') {
-      // 用户取消/超时：保持取消语义，不当作流异常。
-      throw e
-    }
+    if (e && e.name === 'AbortError') throw e
     const runtimeError = e as AiRuntimeError
-    if (runtimeError.isLocalized) {
-      // error 事件已生成本地化消息：原样传播。
-      throw e
-    }
-    if (runtimeError.recoverableDatasource) {
-      // 数据集引用过期：交给 runAnalyze 的 recover 分支。
-      throw e
-    }
+    if (runtimeError.isLocalized || runtimeError.recoverableDatasource) throw e
     throw new Error(t('recon.errors.AI_RESPONSE_INVALID'))
   } finally {
     reader.releaseLock?.()
@@ -370,9 +294,7 @@ async function readAnalyzeStream(r, run) {
 
 function onPageLeave() {
   const run = activeRun
-  if (run) {
-    fireCancel(run.correlationId)
-  }
+  if (run) fireCancel(run.correlationId)
 }
 
 onMounted(() => {
@@ -391,7 +313,6 @@ onBeforeUnmount(() => {
         <ReplayAnalysisAction :analyzing="analyzing" :disabled="!datasetReady" @analyze="runAnalyze" @cancel="cancelAnalyze" />
       </div>
 
-      <!-- dataset 未就绪（PREPARING_DATASET / JOB_NOT_FOUND / FAILURE）：AI Analyze 禁用，显示准备/失败状态 -->
       <div v-if="!datasetReady" class="ai-dataset-status" data-test="ai-dataset-status">
         <span v-if="!datasetError" class="stream-spinner" aria-hidden="true"></span>
         <span :class="{ 'ai-dataset-error': !!datasetError }">{{ datasetMessage }}</span>
@@ -418,8 +339,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* AI Review Workspace 唯一 width owner：AI Action / Error / Streaming / Analysis Result
-   全部共享同一 left/right edge 与 max-width；子组件不再各自决定页面宽度。 */
 .ai-review-panel {
   width: min(1100px, 100%);
   margin-inline: auto;
@@ -439,8 +358,6 @@ onBeforeUnmount(() => {
   margin: 16px 0;
 }
 .ws-note { margin: 18px 4px; color: var(--text-muted); font-size: .85rem; }
-
-/* Dataset 准备中/过期重试状态：loading 文案（非红色错误） */
 .ai-dataset-status {
   display: flex;
   align-items: center;
@@ -449,12 +366,7 @@ onBeforeUnmount(() => {
   font-size: .9rem;
   color: var(--text-label);
 }
-/* FAILURE：与 PREPARING 明确区分——无 spinner、错误色文本 */
-.ai-dataset-status .ai-dataset-error {
-  color: var(--error);
-}
-
-/* 流式生成面板：阶段状态 + 主复盘 token 滚动预览 */
+.ai-dataset-status .ai-dataset-error { color: var(--error); }
 .streaming-panel { margin-top: 16px; }
 .stream-status {
   display: flex;
@@ -473,9 +385,7 @@ onBeforeUnmount(() => {
   animation: stream-spin 0.9s linear infinite;
   flex-shrink: 0;
 }
-@keyframes stream-spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes stream-spin { to { transform: rotate(360deg); } }
 .stream-text {
   white-space: pre-wrap;
   line-height: 1.6;
