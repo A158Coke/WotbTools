@@ -263,9 +263,28 @@ onBeforeUnmount(() => {
         <div v-show="panelView === 'playback'" data-test="pb-primary">
           <template v-if="playbackV2State === 'FULL' || playbackV2State === 'PARTIAL'">
             <p v-if="playbackV2State === 'PARTIAL'" class="pb-capability-note" data-test="pb-capability-partial">{{ $t('recon.playback.partial') }}</p>
-            <div class="pb-dimension-stage">
+            <BattlePlayback
+              v-if="pbOverview"
+              :overview="pbOverview || undefined"
+              :playback-v2="mapPlaybackV2 || undefined"
+              :seek-to="mapSeek ?? undefined"
+            />
+
+            <!-- Vue 3.5 defer resolves the target after BattlePlayback renders its map stage in the same tick.
+                 The existing BattlePlayback remains the state owner; 3D only replaces the visual map layer. -->
+            <Teleport
+              v-if="playback3dEnabled && pbOverview"
+              defer
+              to="[data-test='pb-primary'] .pb-map-stage"
+            >
+              <div
+                v-if="playbackDimension === '3d'"
+                class="pb-3d-stage-layer"
+                data-test="pb-map-3d-layer"
+              >
+                <BattleMap3D :map-code="String(mapPlaybackV2?.mapCode || '')" />
+              </div>
               <button
-                v-if="playback3dEnabled && pbOverview"
                 type="button"
                 class="pb-dimension-corner-btn"
                 data-test="pb-dimension-toggle"
@@ -273,18 +292,7 @@ onBeforeUnmount(() => {
                 :title="playbackDimension === '2d' ? 'Switch to 3D view' : 'Switch to 2D view'"
                 @click="playbackDimension = playbackDimension === '2d' ? '3d' : '2d'"
               >{{ playbackDimension === '2d' ? '3D' : '2D' }}</button>
-              <BattlePlayback
-                v-if="pbOverview"
-                v-show="playbackDimension === '2d'"
-                :overview="pbOverview || undefined"
-                :playback-v2="mapPlaybackV2 || undefined"
-                :seek-to="mapSeek ?? undefined"
-              />
-              <BattleMap3D
-                v-if="playback3dEnabled && pbOverview && playbackDimension === '3d'"
-                :map-code="String(mapPlaybackV2?.mapCode || '')"
-              />
-            </div>
+            </Teleport>
           </template>
           <div v-else-if="playbackV2State === 'UNAVAILABLE'" class="pb-status pb-unavailable" data-test="pb-unavailable">{{ playbackV2UnavailableReason }}</div>
           <div v-else-if="playbackV2State === 'ERROR'" class="pb-status pb-error" data-test="pb-error" :data-retryable="playbackV2Retryable">
@@ -380,12 +388,31 @@ onBeforeUnmount(() => {
 }
 .pb-view-tab.active { background: color-mix(in srgb, var(--accent) 14%, var(--bg-card)); color: var(--accent-dark); }
 .pb-view-tab:hover:not(.active) { color: var(--text-heading); }
-.pb-dimension-stage { position: relative; }
+
+/* Teleported directly into BattlePlayback's map stage. Keep it below details/controls layers,
+   but above the existing 2D BattleMap. */
+.pb-3d-stage-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  overflow: hidden;
+  background: #111820;
+  pointer-events: auto;
+}
+.pb-3d-stage-layer :deep(.map3d-shell) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
 .pb-dimension-corner-btn {
   position: absolute;
   top: 10px;
   right: 10px;
-  z-index: 30;
+  z-index: 35;
   min-width: 40px;
   height: 30px;
   padding: 0 9px;
