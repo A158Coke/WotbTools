@@ -32,11 +32,11 @@ docker/keycloak/themes/wotbtools/login/
 
 ## 背景轮换
 
-选片在 Keycloak 渲染时由 `background-rotation.ftl` 完成（服务端，无 JS）：没有首屏闪烁，也不受浏览器禁用脚本影响。结果写成 `:root` 自定义属性（`--auth-bg-desktop` / `--auth-bg-desktop-pos` / `--auth-bg-mobile` / `--auth-bg-mobile-pos`），`auth-shell.css` 用 `var(…, url('../img/login-battlefield.webp'))` 消费并保留硬编码兜底——该文件即使被删，登录页仍有背景。
+选片在 Keycloak 渲染时由 `background-rotation.ftl` 完成（服务端，无 JS）：没有首屏闪烁，也不受浏览器禁用脚本影响。结果写成 `:root` 自定义属性（`--auth-bg-desktop` / `--auth-bg-desktop-pos` / `--auth-bg-mobile` / `--auth-bg-mobile-pos`），`auth-shell.css` 用 `var(…, url('../img/login-battlefield.webp'))` 消费并保留硬编码兜底。`template.ftl` 使用 `<#attempt>/<#recover>` 隔离轮换模板失败，因此该文件缺失或渲染异常时认证入口仍继续渲染并使用 CSS 默认背景。
 
 规则：
 
-- **按天轮换**：同一天所有访客看到同一张，跨零点换下一张（按容器时区的 epoch 天数取模）。
+- **按天轮换**：日期与轮换 index 统一按 **UTC calendar day** 计算；同一个 UTC 日期所有访客看到同一张，UTC 零点切换下一张，不依赖访客本地时区或容器/JVM 默认时区。
 - **档期窗口**：条目带 `from` / `to`（`yyyyMMdd` 整数，含首尾两天）即为档期图。今天落在任一窗口内 → 只在这些档期图里轮换，常规图全部让位；无窗口命中 → 回到常规池。赛事结束后无需回来删配置。
 - FreeMarker 的 `<` / `>` 只支持数字与日期，不支持字符串，所以日期必须写成整数 `20260401`，不能写 `"2026-04-01"`。
 
