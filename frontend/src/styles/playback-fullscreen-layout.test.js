@@ -35,6 +35,29 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(body).not.toContain('grid-template-rows')
   })
 
+  // §float-panels：桌面 fullscreen 下地图占满整宽，Left Rail / Right Details 浮在
+  // 方图两侧必然出现的黑边上。视口不够宽时它们会盖住地图外缘，所以必须半透明。
+  it('desktop fullscreen gives the map the full width and floats the panels', () => {
+    const shell = ruleBody('.battle-playback:fullscreen:not(.pb-device-mobile)')
+    expect(shell).toContain('grid-template-columns: minmax(0, 1fr)')
+
+    const rail = ruleBody('.battle-playback:fullscreen:not(.pb-device-mobile) .pb-left-rail')
+    expect(rail).toContain('position: absolute')
+    expect(rail).toContain('left: 0')
+    expect(rail).toContain('width: var(--pb-left-col)')
+    expect(rail).toContain('backdrop-filter')
+
+    const details = ruleBody('.battle-playback:fullscreen:not(.pb-device-mobile) .pb-map-stage > .pb-side-panel-shell')
+    expect(details).toContain('position: absolute')
+    expect(details).toContain('right: 0')
+    expect(details).toContain('width: var(--pb-details-w)')
+    expect(details).toContain('backdrop-filter')
+
+    // map-stage 不再为 Right Details 保留一列
+    const stage = ruleBody('.battle-playback:fullscreen:not(.pb-device-mobile) .pb-map-stage')
+    expect(stage).toContain('grid-template-columns: minmax(0, 1fr)')
+  })
+
   // rail 同时承载图标导航与播放控制，60px 放不下速度档位那一排。
   it('the Left Rail is wide enough to hold the playback controls', () => {
     const body = ruleBody('.battle-playback')
