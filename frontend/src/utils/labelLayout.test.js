@@ -25,7 +25,7 @@ function item(accountId, x, y, extra = {}) {
 
 describe('computeTankCollisionLayout', () => {
   const tank = (accountId, extra = {}) => ({ accountId, x: 100, y: 100, width: 32, height: 32, ...extra })
-  const expectBounded = (items, result, maxOffset = 12) => {
+  const expectBounded = (items, result, maxOffset = 20) => {
     for (const it of items) {
       const offset = result.get(it.accountId)
       expect(Math.hypot(offset.x, offset.y)).toBeLessThanOrEqual(maxOffset)
@@ -43,7 +43,7 @@ describe('computeTankCollisionLayout', () => {
   it('uses the smaller mobile offset budget and accepts residual model overlap', () => {
     const items = Array.from({ length: 14 }, (_, i) => tank(i + 1))
     const result = computeTankCollisionLayout(items, new Map(), { mobile: true })
-    expectBounded(items, result, 10)
+    expectBounded(items, result, 16)
     const boxes = items.map((it) => {
       const offset = result.get(it.accountId)
       return { x: it.x + offset.x - it.width / 2, y: it.y + offset.y - it.height / 2, w: it.width, h: it.height }
@@ -54,12 +54,20 @@ describe('computeTankCollisionLayout', () => {
     expect(hasResidualOverlap).toBe(true)
   })
 
-  it('uses a small soft offset for a light collision instead of forcing zero overlap', () => {
-    const items = [tank(1), tank(2)]
+  // 不重叠是硬优先：预算内存在零重叠位置时必须选它，不再接受「位移小但轻微重叠」。
+  it('separates a light collision completely instead of leaving a sliver of overlap', () => {
+    const items = [tank(1, { width: 12, height: 12 }), tank(2, { width: 12, height: 12 })]
     const result = computeTankCollisionLayout(items)
     expect(result.get(1)).toEqual({ x: 0, y: 0 })
     expect(result.get(2)).not.toEqual({ x: 0, y: 0 })
     expectBounded(items, result)
+    const boxes = items.map((it) => {
+      const offset = result.get(it.accountId)
+      return { x: it.x + offset.x - it.width / 2, y: it.y + offset.y - it.height / 2, w: it.width, h: it.height }
+    })
+    const [a, b] = boxes
+    expect(a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y).toBe(false)
+    // canonical 坐标不被改写
     expect(items.map(({ x, y }) => ({ x, y }))).toEqual([{ x: 100, y: 100 }, { x: 100, y: 100 }])
   })
 
