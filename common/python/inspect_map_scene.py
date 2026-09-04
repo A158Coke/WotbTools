@@ -106,23 +106,26 @@ def select_scene_member(
             )
         return matches[0]
 
-    preferred = {
-        f"maps/{map_id}/{map_id}.sc2.dvpl".lower(),
-        f"{map_id}/{map_id}.sc2.dvpl".lower(),
-    }
-    exact = [info for info in files if normalize_member(info.filename).lower() in preferred]
-    if len(exact) == 1:
-        return exact[0]
-    if len(exact) > 1:
-        raise InspectError(f"multiple exact main scenes found for {map_id}")
+    by_name = {normalize_member(info.filename).lower(): info for info in files}
+    for candidate in (
+        f"Maps/{map_id}/{map_id}.sc2.dvpl",
+        f"Maps/{map_id}/{map_id}.sc2",
+        f"{map_id}/{map_id}.sc2.dvpl",
+        f"{map_id}/{map_id}.sc2",
+    ):
+        match = by_name.get(candidate.lower())
+        if match is not None:
+            return match
 
-    prefix = f"maps/{map_id}/".lower()
+    prefixes = (f"maps/{map_id}/".lower(), f"{map_id}/".lower())
     candidates = [
         info
         for info in files
-        if normalize_member(info.filename).lower().startswith(prefix)
-        and normalize_member(info.filename).lower().endswith(".sc2.dvpl")
+        if any(normalize_member(info.filename).lower().startswith(prefix) for prefix in prefixes)
+        and normalize_member(info.filename).lower().endswith((".sc2.dvpl", ".sc2"))
     ]
+    if len(candidates) == 1:
+        return candidates[0]
     if not candidates:
         raise InspectError(f"no SC2 scene found for map: {map_id}")
     rendered = ", ".join(normalize_member(info.filename) for info in candidates[:12])
