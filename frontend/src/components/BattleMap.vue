@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, useId } from 'vue'
 import VehicleMarker from './VehicleMarker.vue'
 
 defineOptions({ name: 'BattleMap' })
@@ -9,7 +9,7 @@ const props = defineProps({
   mapView: { type: Object, required: true },
   pbOverview: { type: Object, required: true },
   friendlyTeam: { type: [Number, String], default: null },
-  gridRegions: { type: Array, default: () => [] },
+  bases: { type: Array, default: () => [] },
   visibleTracers: { type: Array, default: () => [] },
   visibleTrails: { type: Array, default: () => [] },
   tracerColor: { type: Function, required: true },
@@ -42,6 +42,24 @@ const emit = defineEmits([
 const mapEl = ref(null)
 const textInputRef = ref(null)
 defineExpose({ mapEl, textInputRef })
+
+// clipPath id 是文档级的，多个实例同时挂载时不能撞名。
+const clipPrefix = `pb-base-clip-${useId()}`
+
+// 基地半径是世界米，经同一 toX 换算成 SVG 单位。
+function baseRadius(base) {
+  return props.mapView.toX(base.x + base.radius) - props.mapView.toX(base.x)
+}
+
+// 占领进度像瓶里的水，从底部往上涨；100% 时整个圆都是占领方的颜色。
+function fillHeight(base) {
+  const clamped = Math.min(Math.max(base.progress ?? 0, 0), 100)
+  return baseRadius(base) * 2 * clamped / 100
+}
+
+function fillTop(base) {
+  return props.mapView.toY(base.y) + baseRadius(base) - fillHeight(base)
+}
 </script>
 
 <template>
@@ -58,12 +76,31 @@ defineExpose({ mapEl, textInputRef })
     >
       <svg class="pb-svg" :viewBox="`0 0 ${props.mapView.W} ${props.mapView.H}`" role="img">
         <image :href="props.image.src" :width="props.mapView.W" :height="props.mapView.H" preserveAspectRatio="none" />
-        <g class="pb-grid">
-          <rect v-for="cell in props.pbOverview.gridCells" :key="cell.id" :x="props.mapView.toX(cell.bounds.xMin)" :y="props.mapView.toY(cell.bounds.yMax)" :width="props.mapView.toX(cell.bounds.xMax) - props.mapView.toX(cell.bounds.xMin)" :height="props.mapView.toY(cell.bounds.yMin) - props.mapView.toY(cell.bounds.yMax)" class="pb-cell" />
-        </g>
-        <g class="pb-regions">
-          <g v-for="[region, regionBounds] in props.gridRegions" :key="region">
-            <rect :x="props.mapView.toX(regionBounds.xMin)" :y="props.mapView.toY(regionBounds.yMax)" :width="props.mapView.toX(regionBounds.xMax) - props.mapView.toX(regionBounds.xMin)" :height="props.mapView.toY(regionBounds.yMin) - props.mapView.toY(regionBounds.yMax)" class="pb-region-line" />
+        <defs>
+          <clipPath v-for="base in props.bases" :key="base.baseId" :id="`${clipPrefix}-${base.baseId}`">
+            <rect
+              class="pb-base-fill-clip"
+              :x="props.mapView.toX(base.x) - baseRadius(base)"
+              :y="fillTop(base)"
+              :width="baseRadius(base) * 2"
+              :height="fillHeight(base)"
+            />
+          </clipPath>
+        </defs>
+        <g class="pb-bases" data-test="pb-bases">
+          <g v-for="base in props.bases" :key="base.baseId" :class="`pb-base-${base.status}`" :data-test="`pb-base-${base.baseId}`">
+            <circle :cx="props.mapView.toX(base.x)" :cy="props.mapView.toY(base.y)" :r="baseRadius(base)" class="pb-base-circle" />
+            <circle
+              v-if="base.progress != null"
+              class="pb-base-fill"
+              :class="`pb-capture-${base.capturedBy}`"
+              data-test="pb-base-fill"
+              :cx="props.mapView.toX(base.x)"
+              :cy="props.mapView.toY(base.y)"
+              :r="baseRadius(base)"
+              :clip-path="`url(#${clipPrefix}-${base.baseId})`"
+            />
+            <text :x="props.mapView.toX(base.x)" :y="props.mapView.toY(base.y)" class="pb-base-label" text-anchor="middle" dominant-baseline="central">{{ base.baseId }}</text>
           </g>
         </g>
         <g class="pb-spawns">
@@ -96,8 +133,8 @@ defineExpose({ mapEl, textInputRef })
         </g>
         <g class="pb-tracers" aria-hidden="true">
           <template v-for="(line, index) in props.visibleTracers" :key="`tracer-${line.timeSec}-${index}`">
-            <line class="pb-tracer" :x1="props.mapView.toX(line.x1)" :y1="props.mapView.toY(line.y1)" :x2="props.mapView.toX(line.x2)" :y2="props.mapView.toY(line.y2)" :stroke="props.tracerColor(line.attackerAccountId)" :stroke-width="6 / props.viewScale" :opacity="line.opacity * 0.35" />
-            <line class="pb-tracer-core" :x1="props.mapView.toX(line.x1)" :y1="props.mapView.toY(line.y1)" :x2="props.mapView.toX(line.x2)" :y2="props.mapView.toY(line.y2)" stroke="#fff" :stroke-width="1.75 / props.viewScale" :opacity="line.opacity" />
+            <line v-if="line.hasLine" class="pb-tracer" :x1="props.mapView.toX(line.x1)" :y1="props.mapView.toY(line.y1)" :x2="props.mapView.toX(line.x2)" :y2="props.mapView.toY(line.y2)" :stroke="props.tracerColor(line.attackerAccountId)" :stroke-width="6 / props.viewScale" :opacity="line.opacity * 0.35" />
+            <line v-if="line.hasLine" class="pb-tracer-core" :x1="props.mapView.toX(line.x1)" :y1="props.mapView.toY(line.y1)" :x2="props.mapView.toX(line.x2)" :y2="props.mapView.toY(line.y2)" stroke="#fff" :stroke-width="1.75 / props.viewScale" :opacity="line.opacity" />
             <circle v-if="line.flashProgress < 1" class="pb-tracer-flash" :cx="props.mapView.toX(line.x2)" :cy="props.mapView.toY(line.y2)" :r="(3 + 9 * line.flashProgress) / props.viewScale" :fill="props.tracerColor(line.attackerAccountId)" :opacity="line.flashOpacity" />
           </template>
         </g>
@@ -144,10 +181,26 @@ defineExpose({ mapEl, textInputRef })
 .pb-svg { display: block; width: 100%; height: auto; border-radius: 4px; background: var(--bg-elevated); }
 .pb-markers { position: absolute; inset: 0; pointer-events: none; }
   .pb-vehicle { position: absolute; width: 30px; height: 30px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
-.pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.55)); stroke-width: 1; fill: none; }
+.pb-base-circle { fill: color-mix(in srgb, currentColor 18%, transparent); stroke: currentColor; stroke-width: 1.6; }
+.pb-base-label { fill: currentColor; font-size: 13px; font-weight: 700; paint-order: stroke; stroke: rgba(0,0,0,.55); stroke-width: 2.5; }
+/* 圆圈颜色 = 当前归属；进度弧颜色 = 正在占领的一方。两个信息都要看得出来。 */
+.pb-base-neutral { color: #fff; }
+.pb-base-friendly_controlled { color: var(--map-spawn-friendly, #ffd166); }
+.pb-base-enemy_controlled { color: var(--map-spawn-enemy, #ff8d8d); }
+.pb-base-controlled { color: var(--text, #e8e8e8); }
+/* 占领进度：水位从下往上涨，100% 时整圆铺满占领方颜色。 */
+.pb-base-fill { stroke: none; animation: pb-base-pulse 1.3s ease-in-out infinite; }
+.pb-base-fill-clip { transition: y .35s linear, height .35s linear; }
+.pb-capture-friendly { fill: var(--map-spawn-friendly, #ffd166); }
+.pb-capture-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
+.pb-capture-unknown { fill: #fff; }
+@keyframes pb-base-pulse { 0%, 100% { opacity: .95; } 50% { opacity: .6; } }
+@media (prefers-reduced-motion: reduce) {
+  .pb-base-fill { animation: none; }
+  .pb-base-fill-clip { transition: none; }
+}
 .pb-tracer, .pb-tracer-core { stroke-linecap: round; }
 .pb-trail { stroke-linecap: round; }
-.pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
 .pb-spawn-neutral { fill: var(--text-muted, #999); }
