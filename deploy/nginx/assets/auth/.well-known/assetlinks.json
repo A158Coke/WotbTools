@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.wotbtools.app",
+      "sha256_cert_fingerprints": [
+        "BD:1B:66:9D:79:93:51:A4:E5:96:BC:11:6B:8F:AE:08:43:29:AC:74:7A:F7:8D:EF:61:97:48:FC:B4:28:06:CE"
+      ]
+    }
+  }
+]
