@@ -15,13 +15,15 @@ const css = read('./playback-responsive.css')
 const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '')
 
 const rules = stripped.split(/}/).filter((chunk) => chunk.includes('{'))
-// 选择器取最后一个 '{' 之前的部分，这样嵌在 @media 里的规则也能命中。
+// 取最后一个 '{' 之前的部分作为选择器头：这样嵌在 @media 里的规则也能命中。
+// 再按 ',' 拆开，逗号分组里的任一条命中即可。
+function selectorsOf(chunk) {
+  const head = chunk.slice(0, chunk.lastIndexOf('{'))
+  const own = head.slice(head.lastIndexOf('{') + 1)
+  return own.split(',').map((part) => part.trim()).filter(Boolean)
+}
 function ruleBody(selector) {
-  const chunk = rules.find((c) => {
-    const sel = c.slice(0, c.lastIndexOf('{')).trim()
-    return sel === selector || sel.endsWith(`{ ${selector}`) || sel.endsWith(`
-  ${selector}`)
-  })
+  const chunk = rules.find((c) => selectorsOf(c).includes(selector))
   return chunk ? chunk.slice(chunk.lastIndexOf('{') + 1).trim() : null
 }
 
@@ -220,6 +222,17 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(stage).toContain('grid-template-columns: minmax(0, 1fr) var(--pb-details-w)')
   })
 
+  // VehicleDetailsPanel 挂在 .pb-side-panel-shell 下，不在 .pb-side-panel 内。
+  // 只覆盖 .pb-side-panel .pb-sidebar 的写法匹配不到它，组件的 width: 260px 会一直生效，
+  // 详情就在几百像素宽的列里缩成一张窄卡片。
+  it('overrides the sidebar on its real DOM path, not only inside pb-side-panel', () => {
+    const body = ruleBody('.battle-playback .pb-map-stage > .pb-side-panel-shell > .pb-sidebar')
+    expect(body).not.toBeNull()
+    expect(body).toContain('width: auto')
+    expect(body).toContain('max-height: none')
+    expect(body).toContain('border: 0')
+  })
+
   // 同一选择器写两遍时，后一条静默赢过前一条——本文件的 ruleBody 只取第一条，
   // 于是「测试断言的」和「浏览器生效的」可以完全不同。这里守住关键选择器不重复。
   it('does not declare the same layout selector twice at the top level', () => {
@@ -227,10 +240,10 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     const topLevel = stripped.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '')
     const seen = new Map()
     for (const chunk of topLevel.split(/}/).filter((c) => c.includes('{'))) {
-      const head = chunk.slice(0, chunk.lastIndexOf('{')).trim()
-      const sel = head.split(String.fromCharCode(10)).pop().trim()
-      if (!sel.includes('pb-side-panel-shell') && !sel.includes('pb-left-rail')) continue
-      seen.set(sel, (seen.get(sel) || 0) + 1)
+      for (const sel of selectorsOf(chunk)) {
+        if (!sel.includes('pb-side-panel-shell') && !sel.includes('pb-left-rail')) continue
+        seen.set(sel, (seen.get(sel) || 0) + 1)
+      }
     }
     const duplicated = [...seen.entries()].filter(([, n]) => n > 1).map(([sel]) => sel)
     expect(duplicated).toEqual([])

@@ -168,13 +168,30 @@
   right: calc(var(--pb-details-w, min(340px, 32vw)) + 12px);
 }
 
-.battle-playback .pb-side-panel .pb-sidebar {
+/* VehicleDetailsPanel 渲染成 .pb-side-panel-shell 的直接子元素，不在 .pb-side-panel 内，
+   所以只写 `.pb-side-panel .pb-sidebar` 的旧覆盖从来没匹配上——组件自带的
+   width: 260px / max-height: 72vh / 卡片描边一直生效，于是详情在几百像素宽的列里
+   缩成一张窄卡片，还带自己的滚动条。两条 DOM 路径都要覆盖。 */
+.battle-playback .pb-side-panel .pb-sidebar,
+.battle-playback .pb-map-stage > .pb-side-panel-shell > .pb-sidebar {
   width: auto;
+  max-width: none;
   max-height: none;
   padding: 0;
   border: 0;
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
 }
+/* 持久列（全屏 / >=1200 非全屏）里详情跟着列走：内容短时被 shell 垂直居中，
+   超过列高才内部滚动。组件的 flex-shrink: 0 会让高内容直接溢出被 shell 裁掉。 */
+.battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell > .pb-sidebar,
+.battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell > .pb-sidebar {
+  flex: 0 1 auto;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
 /* 车辆详情（V2）在 side panel 内已由面板头 close（pb-panel-close）负责关闭，
    隐藏其自带的重复 close，避免同一面板出现两个 ×。 */
 .battle-playback .pb-side-panel .pb-sb-close { display: none; }
