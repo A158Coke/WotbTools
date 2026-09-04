@@ -75,7 +75,9 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     const body = ruleBody('.battle-playback:fullscreen .pb-mobile-overlay')
     expect(body).toContain('position: absolute')
     expect(body).toContain('bottom: 0')
-    expect(body).toContain('left: var(--pb-left-col)')
+    // overlay 是 .pb-main（col2）的子元素，left 从 col2 左缘起算；再加 --pb-left-col 会重复偏移。
+    expect(body).toContain('left: 0')
+    expect(body).not.toContain('left: var(--pb-left-col)')
     expect(body).toContain('right: var(--pb-details-w)')
     expect(body).toContain('z-index: 40')
     expect(body).toContain('pointer-events: auto')

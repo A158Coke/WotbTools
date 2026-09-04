@@ -59,3 +59,34 @@
 ## 待补素材
 
 - `holmeisk`（Wasteland / 废弃之地）——尚无素材，收到图片后按上述流程补。
+
+## 基地（占领点）几何
+
+`frontend/src/data/mapBases.js` 是**生成文件**，来源为客户端地图场景 `Maps/<mapId>/<mapId>.sc2`。
+底图为纯环境层（不含烘焙的基地图形），基地由前端按这份坐标绘制。
+
+| 场景实体 | 对应模式 | 每图数量 | 说明 |
+|---|---|---|---|
+| `strategicpoint` | 争霸赛 | 3–4 | `baseID` 0..3 与后端 `SupremacyBaseId.fromProtocolIndex()` 及 wire 字段 `baseStates[].baseId` 同源，直接 join，无需推断 |
+| `controlpoint` | 攻防战 / 遭遇战 | 1（按模式配置可能多份） | `team` 为守方；半径大于争霸基地。**当前已抽取但未渲染** |
+
+半径由场景 `radius` 声明（争霸基地 93 个里 92 个为 15 m）。坐标是世界米，与回放坐标、
+`mapImages.js` 的 `coordinateBounds` 同一坐标系，可直接落到底图上。
+
+### 客户端更新后如何重新生成
+
+```
+python common/python/extract_map_bases.py <Maps.zip 或解包后的 Maps 目录>
+python common/python/extract_map_bases.py <同上> --check   # CI：过期即失败
+```
+
+解析器在 `common/python/wotb_sc2.py`（DAVA SceneFileV2 + DVPL，纯标准库），
+自外部 map-semanticizer 工具移植而来——即生成 `common/map-semantics/*.semantic.json` 的那个工具。
+
+### 已知限制
+
+- `controlpoint` 每图有 1–5 个（如 `milbase` 5 个），是同一基地的不同模式配置；
+  场景实体不带 variant 标签（`entity_labels` 为空），**无法自动判定哪个属于哪个模式**。
+  需要渲染攻防战基地时必须先解决这个归属问题。
+- `botspawn` 实体全部为 `performanceTestBot: true`（性能测试假车），不是战斗数据，未抽取。
+

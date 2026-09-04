@@ -541,7 +541,6 @@ const mobileLayoutQuery = '(pointer: coarse) and (max-width: 1200px)'
 const isMobileDevice = ref(false)
 // §fullscreen：PlaybackControls 是否已在 Left Rail。移动端必须保持 bottom overlay，故全屏/大桌面
 // 且非移动端才为 true；移动端全屏仍走 overlay，bottom inset 由真实 overlay content 高度决定。
-const controlsInRail = computed(() => (isFullscreen.value || wideLayout.value) && !isMobileDevice.value)
 const fullscreenSupported = computed(() =>
   typeof document !== 'undefined'
   && pbRoot.value != null
@@ -661,10 +660,9 @@ let suppressClick = false
 // 手势结束后的首个 click 必须被吞掉，纯点击车辆仍正常选中
 let gestureMoved = false
 
-/** 安全区：fullscreen 下 HUD（顶部 overlay）高度为 top inset；bottom inset 仅当真有
- *  bottom-overlay controls（mobile，controls 不在 rail）时才量取，否则为 0 —— 因为
- *  controls 已在 Left Rail（controlsInRail），不占 Map Workspace bottom，也避免读到
- *  切换 fullscreen 前旧 bottom-overlay 高度造成底部黑边。 */
+/** 安全区：fullscreen 下 HUD（顶部 overlay）高度为 top inset；bottom inset 只在 fullscreen
+ *  量取 —— 非 fullscreen 时 bottom overlay 不是绝对定位，controls 走正常文档流排在地图
+ *  下方，不占 Map Workspace，量了反而会误缩地图。 */
 function safeInsets() {
   let top = 0
   let bottom = 0
@@ -677,7 +675,7 @@ function safeInsets() {
   // §safeInsets-contract：normal mobile 的 controls 是 transient overlay（默认 opacity:0），
   // 不因不可见 controls 永久缩小 map —— 非 fullscreen 一律 bottom=0。
   // fullscreen mobile controls 始终显示时，才 reserve 底部 safe area（= content 实高）。
-  if (!controlsInRail.value && isFullscreen.value) {
+  if (isFullscreen.value) {
     const wrap = mobileOverlay.value?.$el
     const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null
     bottom = content ? content.clientHeight : 0
@@ -1900,28 +1898,8 @@ const mapStyle = computed(() => ({
           <p v-if="userVisibleEvents.length === 0" class="pb-event-empty">{{ $t('recon.map.playback.no_events') }}</p>
         </div>
       </template>
-      <!-- 一级菜单：播放控制 + 导航 -->
+      <!-- 一级菜单：图标导航。播放控制一律在 Map Workspace 底部 overlay，不进 rail。 -->
       <template v-else>
-        <PlaybackControls
-          v-if="controlsInRail"
-          :playing="playing"
-          :speed="speed"
-          :current-time="currentTime"
-          :duration="duration"
-          :fullscreen-supported="fullscreenSupported"
-          :is-fullscreen="isFullscreen"
-          :rail-visible="controlsInRail"
-          :format-clock="formatClock"
-          @toggle-play="togglePlay"
-          @step="step"
-          @set-speed="setSpeed"
-          @reset-view="resetView"
-          @toggle-fullscreen="toggleFullscreen"
-          @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
-          @toggle-annotation="annotationOpen = !annotationOpen"
-          @drag-start="dragStart"
-          @seek="seek"
-        />
       <button
         type="button"
         class="pb-rail-btn"
@@ -2071,14 +2049,12 @@ const mapStyle = computed(() => ({
 
       <PlaybackMobileOverlay ref="mobileOverlay">
         <PlaybackControls
-          v-if="!controlsInRail"
           :playing="playing"
           :speed="speed"
           :current-time="currentTime"
           :duration="duration"
           :fullscreen-supported="fullscreenSupported"
           :is-fullscreen="isFullscreen"
-          :rail-visible="controlsInRail"
           :format-clock="formatClock"
           @toggle-play="togglePlay"
           @step="step"
