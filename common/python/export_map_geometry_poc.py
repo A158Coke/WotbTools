@@ -6,8 +6,9 @@ other client presentation data. It writes one shared local-space position/index
 buffer plus an instance manifest containing the SC2 world transforms.
 
 DAVA RenderObject activates a batch when both its LOD and switch index equal the
-requested value or are ``-1`` (shared/wildcard). This exporter mirrors that rule
-instead of treating ``-1`` as inactive.
+requested value or are ``-1`` (shared/wildcard). Initial scene visibility is a
+separate RenderObject contract: the serialized ``ro.flags`` VISIBLE bit must be
+set. This exporter mirrors both rules instead of inferring state from filenames.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from wotb_scg import (  # noqa: E402
 )
 
 SHARED_BATCH_INDEX = -1
+RENDER_OBJECT_VISIBLE_FLAG = 1 << 0
 
 
 class ExportMapGeometryError(RuntimeError):
@@ -186,12 +188,30 @@ def batch_is_active(batch_index: int, requested_index: int) -> bool:
     return batch_index == requested_index or batch_index == SHARED_BATCH_INDEX
 
 
+def render_object_is_visible(render_object: dict[str, Any]) -> bool:
+    """Mirror the serialized DAVA RenderObject VISIBLE flag for initial state.
+
+    RenderObject::Load defaults a missing ``ro.flags`` field to its serialization
+    criteria, which includes VISIBLE. Therefore absence means visible; an
+    explicit flags value must be an integer and bit 0 controls visibility.
+    """
+
+    flags = render_object.get("ro.flags")
+    if flags is None:
+        return True
+    if not isinstance(flags, int):
+        raise ExportMapGeometryError(
+            f"RenderObject ro.flags must be int, got {type(flags).__name__}"
+        )
+    return (flags & RENDER_OBJECT_VISIBLE_FLAG) == RENDER_OBJECT_VISIBLE_FLAG
+
+
 def collect_instances(
     scene: dict[str, Any],
     target_lod: int,
     target_switch: int,
 ) -> tuple[list[dict[str, Any]], Counter[str]]:
-    """Collect active Mesh render batches without baking transforms."""
+    """Collect initially visible active Mesh batches without baking transforms."""
 
     instances: list[dict[str, Any]] = []
     skipped: Counter[str] = Counter()
@@ -208,6 +228,9 @@ def collect_instances(
         render_class = str(render_object.get("##name", "<unknown>"))
         if render_class != "Mesh":
             skipped[f"render_class:{render_class}"] += 1
+            continue
+        if not render_object_is_visible(render_object):
+            skipped["invisible_render_object"] += 1
             continue
         if render_object.get("ro.notShadowOnly") is False:
             skipped["shadow_only"] += 1
@@ -380,8 +403,8 @@ def main() -> int:
         instances, skipped = collect_instances(scene, args.lod, args.switch_index)
         if not instances:
             raise ExportMapGeometryError(
-                f"no active Mesh batches for lod={args.lod}, switch={args.switch_index}; "
-                f"skipped={dict(skipped.most_common())}"
+                f"no initially visible active Mesh batches for lod={args.lod}, "
+                f"switch={args.switch_index}; skipped={dict(skipped.most_common())}"
             )
 
         required_ids = sorted({int(instance["datasourceId"]) for instance in instances})
@@ -398,7 +421,7 @@ def main() -> int:
         )
 
         manifest = {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "mapId": args.map_id,
             "source": {
                 "sceneMember": normalize_member(scene_member.filename),
@@ -406,6 +429,12 @@ def main() -> int:
             },
             "selection": {
                 "renderObjectClass": "Mesh",
+                "requireInitialVisibility": True,
+                "visibleFlag": RENDER_OBJECT_VISIBLE_FLAG,
+                "visibleRule": (
+                    "ro.flags bit 0 (DAVA RenderObject::VISIBLE) must be set; "
+                    "missing ro.flags defaults to visible per RenderObject::Load"
+                ),
                 "lodIndex": args.lod,
                 "switchIndex": args.switch_index,
                 "sharedBatchIndex": SHARED_BATCH_INDEX,
@@ -446,12 +475,13 @@ def main() -> int:
             "geometry": geometry_records,
             "instances": instances,
             "evidenceRule": (
-                "Positions are decoded from EVF_VERTEX at offset zero of the interleaved SCPG "
-                "vertex stride; indices are decoded from PolygonGroup indexFormat. DAVA shared "
-                "RenderBatch LOD/switch value -1 participates in every requested state. Instance "
-                "transforms are preserved from SC2 TransformComponent world fields. Textures, "
-                "materials, normals, tangents, UVs, vegetation, and gameplay collision are not "
-                "exported by this PoC."
+                "Initial Mesh selection honors DAVA RenderObject::VISIBLE from serialized ro.flags; "
+                "it never infers state from entity filenames. Positions are decoded from EVF_VERTEX "
+                "at offset zero of the interleaved SCPG vertex stride; indices are decoded from "
+                "PolygonGroup indexFormat. DAVA shared RenderBatch LOD/switch value -1 participates "
+                "in every requested state. Instance transforms are preserved from SC2 "
+                "TransformComponent world fields. Textures, materials, normals, tangents, UVs, "
+                "vegetation, and gameplay collision are not exported by this PoC."
             ),
         }
         manifest_path.write_text(
