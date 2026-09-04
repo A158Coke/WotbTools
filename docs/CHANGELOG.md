@@ -14,6 +14,17 @@
   unknown host 仍 `AUTH_FAILURE`，非 auth 外链仍 `OPEN_EXTERNAL`，CookieManager /
   Native Bridge origin 边界不变。同步 `AuthNavigationPolicyTest`（新增生产链 regression +
   xui 边界 + sourceCategory）与 `docs/android/architecture.md` Authentication Boundary。
+- **Android QQ 登录 native auth handoff**：真实生产链在 `xui.ptlogin2.qq.com` 之后会发起
+  `wtloginmqq://ptlogin/...` native 跳转（`ptlogin` 不是普通 HTTPS hostname）。新增
+  `AuthNavigationAction.NATIVE_AUTH_HANDOFF` 与 `AuthNavigationPolicy.NATIVE_AUTH_TARGETS`
+  （精确 `scheme=wtloginmqq` + `host=ptlogin` pair），仅在 `inAuthFlow=true` 时把该 URI 交给
+  QQ App（ACTION_VIEW），保留当前 WebView auth transaction / cookie jar，不进入 `auth-recovery`、
+  不 reload 首页、不切系统浏览器；QQ App 未安装时提示安装后重试（fail closed，不 silent fallback）。
+  不把 `ptlogin` 加入 `AUTH_PROVIDER_HOSTS`，不扩 `mqq*`/`*.qq.com`/suffix/前缀通配；未知
+  native scheme/host（含 host=null 的未知 custom scheme）在 auth flow 内仍 `AUTH_FAILURE` 且不退出
+  auth flow（fail closed）。同步 `AuthNavigationPolicyTest`
+  （native handoff 精确匹配 + 越权/越域 rejection + 生产链到 native handoff）与
+  `docs/android/architecture.md` Authentication Boundary（区分 Web auth hosts 与 native handoff）。
 
 ### Added
 - **Local Frontend → Production Backend / Keycloak 开发模式**：前端新增 `npm run dev:production-remote`，通过 Vite `/api` 开发代理连接生产站点，同时复用现有生产 Keycloak issuer 配置；开发 Topbar 显示非模态环境提示并提醒不要上传测试或敏感数据。普通 `npm run dev` 的本地后端代理保持不变。详见 `docs/frontend/local-production-dev.md`。
