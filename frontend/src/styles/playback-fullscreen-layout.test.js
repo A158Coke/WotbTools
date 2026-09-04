@@ -62,6 +62,22 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(stage).toContain('grid-template-columns: minmax(0, 1fr)')
   })
 
+  // 非全屏窄视口：两侧面板都排进正常文档流，不做浮层弹窗/抽屉。
+  it('keeps the side panes inline outside fullscreen instead of floating them', () => {
+    const details = ruleBody('.battle-playback .pb-map-stage > .pb-side-panel-shell')
+    expect(details).toContain('position: static')
+    expect(details).not.toContain('position: absolute')
+
+    const detailsPanel = ruleBody('.battle-playback .pb-map-stage > .pb-side-panel-shell .pb-side-panel')
+    expect(detailsPanel).toContain('max-height: none')
+    expect(detailsPanel).toContain('box-shadow: none')
+
+    const rail = ruleBody('.battle-playback:not(.pb-device-mobile):not(:fullscreen).pb-drawer-open .pb-left-rail')
+    expect(rail).toContain('position: static')
+    const backdrop = ruleBody('.battle-playback:not(.pb-device-mobile):not(:fullscreen) .pb-drawer-backdrop')
+    expect(backdrop).toContain('display: none')
+  })
+
   // rail 同时承载图标导航与播放控制，60px 放不下速度档位那一排。
   it('the Left Rail is wide enough to hold the playback controls', () => {
     const body = ruleBody('.battle-playback')
