@@ -36,15 +36,13 @@ class AuthReturnBridgeTest {
     }
 
     @Test
-    void expiredTicketIsRejected() {
+    void ticketUsesConfiguredExpiry() {
         final Instant issuedAt = Instant.parse("2026-09-04T08:00:00Z");
-        final Clock issuingClock = Clock.fixed(issuedAt, ZoneOffset.UTC);
-        final AuthReturnTicketStore store = new AuthReturnTicketStore(Duration.ofSeconds(1), issuingClock);
+        final Clock clock = Clock.fixed(issuedAt, ZoneOffset.UTC);
+        final AuthReturnTicketStore store = new AuthReturnTicketStore(Duration.ofSeconds(1), clock);
         final String ticket = store.issue("state", "qq", "code");
 
         assertNotNull(ticket);
-
-        // A fresh store cannot observe the old map, so expiry is covered through the Ticket timestamp contract.
         final AuthReturnTicketStore.Ticket consumed = store.consume(ticket);
         assertNotNull(consumed);
         assertEquals(issuedAt.plusSeconds(1), consumed.expiresAt());
