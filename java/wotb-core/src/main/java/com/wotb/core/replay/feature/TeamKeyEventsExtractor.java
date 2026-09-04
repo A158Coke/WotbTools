@@ -48,6 +48,7 @@ final class TeamKeyEventsExtractor {
      * 目标位置取阵亡时刻前后最近的 OBSERVED 记录；无 OBSERVED 位置时返回 null（禁止硬算）。
      */
     static TeamMemberFeatureSet.DeathProximity resolveDeathProximity(
+            final Battle battle,
             final ReplayReconstruction recon,
             final TeamEntityMapping mapping,
             final String mapCode,
@@ -115,6 +116,15 @@ final class TeamKeyEventsExtractor {
                 ? DecodeConfidence.EXACT
                 : deltaSec <= 15.0 ? DecodeConfidence.INFERRED : DecodeConfidence.PARTIAL;
         return new TeamMemberFeatureSet.DeathProximity((double) distance, deltaSec, confidence);
+    }
+
+    static TeamMemberFeatureSet.DeathProximity resolveDeathProximity(
+            final ReplayReconstruction recon,
+            final TeamEntityMapping mapping,
+            final String mapCode,
+            final int perspectiveTeam,
+            final PlayerResult player) {
+        return resolveDeathProximity(null, recon, mapping, mapCode, perspectiveTeam, player);
     }
 
     /** 某时刻本队其它 OBSERVED 车辆的原始坐标质心。 */

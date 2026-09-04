@@ -3,13 +3,15 @@
  * 生成 `frontend/src/data/loadoutItems.js`（Battle Playback 战斗装载本地化名映射）。
  *
  * 单一来源原则（review PR189 Minor）：
- *   - consumable / provision / equipment 的 **zh / en** 姓名一律取自
+ *   - consumable / provision / equipment 的 **en** 姓名取自
  *     `common/wotb-item-catalog-json/{consumables,provisions,equipment}.json` 的
- *     authoritative `code/nameZh/nameEn`（以 `id` 或 `code` 为稳定 key）。
+ *     authoritative `code/nameEn`（以 `id` 或 `code` 为稳定 key）。
+ *   - **zh** 默认取 catalog `nameZh`，仅允许本脚本内显式维护少量 UI 术语 overlay；
+ *     overlay 只影响用户可见中文，不改变 catalog / logical ID / protocol 语义。
  *   - **ru** 由本脚本维护的 RU overlay 提供（common catalog 暂无 ru；官方游戏术语）。
- *   - 绝不手工在生成产物里复制 zh/en。
+ *   - 绝不手工在生成产物里复制或修改翻译。
  *
- * 运行：`node frontend/scripts/generate-loadout-items.mjs`（改动 common catalog 后重跑）。
+ * 运行：`node frontend/scripts/generate-loadout-items.mjs`（改动 catalog/overlay 后重跑）。
  * 产物 `loadoutItems.js` 由本脚本自动生成并提交；不得手工编辑。
  */
 
@@ -24,7 +26,17 @@ const outFile = resolve(__dirname, '../src/data/loadoutItems.js')
 
 const readItems = (file) => JSON.parse(readFileSync(resolve(catalogDir, file), 'utf8')).items
 
-/** RU overlay：common catalog 暂无 ru，此处维护官方游戏术语（仅 ru，zh/en 由 catalog 驱动）。 */
+/** 中文 UI 术语 overlay：仅 display，不修改 authoritative catalog / ID / protocol。 */
+const ZH_PROVISION = {
+  SMALL_FOOD: '小补给',
+  LARGE_FOOD: '大补给',
+}
+
+const ZH_EQUIPMENT = {
+  107: '弹药超荷',
+}
+
+/** RU overlay：common catalog 暂无 ru，此处维护官方游戏术语。 */
 const RU_CONSUMABLE = {
   AUTOMATIC_FIRE_EXTINGUISHER: 'Автоматический огнетушитель',
   FIRST_AID_KIT: 'Аптечка',
@@ -65,6 +77,7 @@ const RU_EQUIPMENT = {
   106: 'Точное орудие',
   107: 'Суперзарядник',
   108: 'Улучшенные модули',
+  120: 'Доработанные модули +',
   109: 'Система защиты',
   110: 'Усиленная броня',
   111: 'Улучшенная сборка',
@@ -79,12 +92,12 @@ const RU_EQUIPMENT = {
   123: 'Улучшенная подвеска',
 }
 
-const mapToObject = (items, keyFn, ruOverlay) => {
+const mapToObject = (items, keyFn, ruOverlay, zhOverlay = {}) => {
   const out = {}
   for (const item of items) {
     const key = String(keyFn(item))
     out[key] = {
-      zh: item.nameZh,
+      zh: zhOverlay[key] ?? item.nameZh,
       en: item.nameEn,
       ru: ruOverlay[key] ?? null,
     }
@@ -93,8 +106,8 @@ const mapToObject = (items, keyFn, ruOverlay) => {
 }
 
 const consumables = mapToObject(readItems('consumables.json'), (i) => i.code, RU_CONSUMABLE)
-const provisions = mapToObject(readItems('provisions.json'), (i) => i.code, RU_PROVISION)
-const equipment = mapToObject(readItems('equipment.json'), (i) => i.id, RU_EQUIPMENT)
+const provisions = mapToObject(readItems('provisions.json'), (i) => i.code, RU_PROVISION, ZH_PROVISION)
+const equipment = mapToObject(readItems('equipment.json'), (i) => i.id, RU_EQUIPMENT, ZH_EQUIPMENT)
 
 const indent = (obj, pad) => JSON.stringify(obj, null, 2).replace(/\n/g, `\n${' '.repeat(pad)}`)
 
@@ -102,8 +115,8 @@ const body = `/**
  * Battle Playback 战斗装载（consumable / provision / equipment）本地化名称。
  *
  * ⚠️ 本文件由 \`frontend/scripts/generate-loadout-items.mjs\` 自动生成，请勿手工编辑。
- * 单一来源：zh/nameEn 取自 \`common/wotb-item-catalog-json/**\` authoritative catalog；
- * ru 由生成脚本内的 RU overlay 提供（官方游戏术语）。后端 DTO 只返回稳定协议标识
+ * 单一来源：en 取自 \`common/wotb-item-catalog-json/**\` authoritative catalog；zh 默认取 catalog，
+ * 仅允许生成脚本内显式 UI 术语 overlay；ru 由生成脚本内 RU overlay 提供。后端 DTO 只返回稳定协议标识
  * （logicalItemId / equipmentId），用户可见文案一律由本模块 + i18n 提供，绝不裸露
  * raw protocol ID（plan §21/§22/§23）。
  *

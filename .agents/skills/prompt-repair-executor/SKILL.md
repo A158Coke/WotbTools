@@ -15,6 +15,8 @@ description: >
 定位：**REPAIR EXECUTOR**，不是 PLAN DESIGNER / PLAN EXECUTOR / ARCHITECTURE EXPLORER /
 FULL REPOSITORY REVIEW / REQUIREMENT DISCOVERY。
 
+涉及 FE ↔ BE HTTP shape 的 repair prompt 仍必须遵守 `contracts/http/openapi.yaml`、generated artifact 与显式 domain→transport mapping 规则；repair 不得新增平行 wire contract。
+
 用户已给出 repair prompt ⇒ 需求已确定、product contract 已确定、当前 blockers 已由 reviewer
 指出。Agent 的工作是：**验证真实代码 → 定位问题 → 修复问题 → 验证修复**，而不是重新理解
 已被 reviewer 理解过的整个项目。

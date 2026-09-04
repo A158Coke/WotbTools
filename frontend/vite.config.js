@@ -3,8 +3,18 @@ import vue from '@vitejs/plugin-vue'
 import { execSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-// dev 时把 /api 代理到本地后端；生产由 nginx 反向代理。
+// dev 时把 /api 代理到选定的后端；生产 bundle 由 nginx 反向代理。
+const configDirectory = fileURLToPath(new URL('.', import.meta.url))
+const DEV_PROXY_TARGETS = Object.freeze({
+  local: 'http://localhost:8087',
+  'production-remote': 'https://wotbtools.com',
+})
+
+export function devProxyTarget(mode) {
+  return DEV_PROXY_TARGETS[mode] || DEV_PROXY_TARGETS.local
+}
 
 /** Build identity：生产 bundle 可精确对应 git commit + 构建时间（见 /version.json 与 console 输出）。
  * 优先取 Docker 构建参数 BUILD_COMMIT（CI 传入，Docker 上下文无 .git 无法自行 rev-parse），
@@ -27,14 +37,14 @@ function buildIdentity() {
 
 const identity = buildIdentity()
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
     {
       name: 'wotb-build-identity',
       apply: 'build',
       closeBundle() {
-        const outDir = resolve(__dirname, 'dist')
+        const outDir = resolve(configDirectory, 'dist')
         writeFileSync(resolve(outDir, 'version.json'),
           JSON.stringify({ commit: identity.commit, buildTime: identity.buildTime }, null, 2) + '\n')
       },
@@ -49,7 +59,11 @@ export default defineConfig({
     // 允许 dev server 读取仓库根的共享 JSON (common/map_names.json 等)。
     fs: { allow: ['..'] },
     proxy: {
-      '/api': { target: 'http://localhost:8087', changeOrigin: true }
+      '/api': {
+        target: devProxyTarget(mode),
+        changeOrigin: true,
+        secure: mode === 'production-remote',
+      },
     }
   },
   publicDir: '../common/assets',
@@ -57,8 +71,8 @@ export default defineConfig({
     outDir: 'dist',
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'index.html')
+        main: resolve(configDirectory, 'index.html')
       }
     }
   }
-})
+}))

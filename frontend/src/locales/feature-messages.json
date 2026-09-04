@@ -8,6 +8,12 @@
       "showcaseDescription": "丰富的视觉层级与展示效果"
     },
 
+    "environment": {
+      "label": "开发模式",
+      "local": "API → 本地后端",
+      "productionRemote": "API → 生产后端；请勿上传测试或敏感数据"
+    },
+
     "android": {
       "nav": "下载 Android 版",
       "kicker": "WotBTools Android",
@@ -81,7 +87,6 @@
       "unrated_count": "{count} 场未生成 Rating",
       "failure_view": "查看详情",
       "failure_hide": "收起详情",
-      "death_time_unknown_warning": "{count} 名阵亡玩家的精确死亡时刻无法从回放可靠确认；这些玩家的「存活 / 互换」维度按 0 分保守计算。",
       "unavailable_mixed": "League Rating 不适用于混合批次（普通回放与训练赛/联赛回放混传），已按普通回放展示",
       "docs_button": "算法说明",
       "docs_page_title": "League Rating V5 算法说明",
@@ -154,6 +159,12 @@
       "showcase": "Showcase",
       "classicDescription": "Simplified light theme; drops AI/decorative backgrounds for a calmer look",
       "showcaseDescription": "Rich visual hierarchy and showcase effect"
+    },
+
+    "environment": {
+      "label": "Development",
+      "local": "API → local backend",
+      "productionRemote": "API → production backend; do not upload test or sensitive data"
     },
 
     "android": {
@@ -229,7 +240,6 @@
       "unrated_count": "{count} battle(s) without Rating",
       "failure_view": "View details",
       "failure_hide": "Hide details",
-      "death_time_unknown_warning": "{count} destroyed player(s) have an exact death time that cannot be reliably confirmed from the replay; their Survival / Trade dimension is conservatively scored 0.",
       "unavailable_mixed": "League Rating is not available for mixed batches (standard + training/tournament replays); shown as standard replays",
       "docs_button": "Algorithm docs",
       "docs_page_title": "League Rating V5 — Algorithm Guide",
@@ -302,6 +312,12 @@
       "showcase": "Showcase",
       "classicDescription": "Упрощённая светлая тема, без AI/декоративных фонов, сдержаннее",
       "showcaseDescription": "Богатая визуальная иерархия и эффект показа"
+    },
+
+    "environment": {
+      "label": "Режим разработки",
+      "local": "API → локальный backend",
+      "productionRemote": "API → production backend; не загружайте тестовые или чувствительные данные"
     },
 
     "android": {
@@ -377,7 +393,6 @@
       "unrated_count": "{count} боя без рейтинга",
       "failure_view": "Подробнее",
       "failure_hide": "Скрыть",
-      "death_time_unknown_warning": "Точное время гибели {count} уничтоженного(ых) игрока(ов) не удаётся надёжно подтвердить; их измерение «Выживание / Обмен» консервативно оценено в 0.",
       "unavailable_mixed": "League Rating недоступен для смешанных наборов (обычные + тренировочные/турнирные реплеи); показаны как обычные реплеи",
       "docs_button": "Описание алгоритма",
       "docs_page_title": "League Rating V5 — описание алгоритма",

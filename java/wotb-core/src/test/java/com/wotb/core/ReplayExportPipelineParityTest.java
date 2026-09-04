@@ -2,7 +2,6 @@ package com.wotb.core;
 
 import com.wotb.core.export.ExcelExporter;
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayParser;
@@ -31,9 +30,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 回归：preview 与 Excel export 必须消费同一 authoritative full processing Battle。
  *
- * <p>已提交夹具（random-battle-example，rift 随机战）天然证明：raw parse 的死亡时间启发式
- * 与 {@code DeathTimeReconciler} 校准结果不同，导致 survivalTimeSec / TradeFacts.tradedDeaths /
- * KAST 不同。若 export 走 raw parse，Excel 的 KAST / 互换击杀 将与网页 preview 不一致。</p>
+ * <p>已提交夹具（random-battle-example，rift 随机战）证明：full processing 的 live death
+ * observations 与 settlement projection 分层保存。若 export 走 raw parse，Excel 的派生指标
+ * 仍必须来自同一个 full-processing Battle。</p>
  */
 class ReplayExportPipelineParityTest {
 
@@ -48,7 +47,7 @@ class ReplayExportPipelineParityTest {
     }
 
     @Test
-    void rawParseDeathTimeDiffersFromFullProcessing() throws Exception {
+    void fullProcessingAddsLiveObservationWithoutMutatingSettlement() throws Exception {
         final byte[] bytes = Files.readAllBytes(fixture());
         final Battle raw = ReplayParser.parse(bytes);
         final DefaultReplayProcessingFacade facade = new DefaultReplayProcessingFacade();
@@ -59,26 +58,20 @@ class ReplayExportPipelineParityTest {
         assertEquals(14, raw.players.size());
         assertEquals(raw.players.size(), full.players.size());
 
-        // 至少存在一名玩家：raw 与 full 的死亡时刻/存活时间不同（DeathTimeReconciler 校准 vs 启发式）
-        boolean survivalDiffers = false;
+        // Settlement projection remains identical; reconciliation no longer writes live precision
+        // back into PlayerResult.
+        boolean settlementDiffers = false;
         for (int i = 0; i < raw.players.size(); i++) {
-            if (Math.abs(raw.players.get(i).survivalTimeSec - full.players.get(i).survivalTimeSec) > 1e-6) {
-                survivalDiffers = true;
+            if (raw.players.get(i).deathTimeMillis != full.players.get(i).deathTimeMillis
+                    || Double.compare(raw.players.get(i).settlementLifeTimeSec,
+                    full.players.get(i).settlementLifeTimeSec) != 0
+                    || raw.players.get(i).survived != full.players.get(i).survived) {
+                settlementDiffers = true;
                 break;
             }
         }
-        assertTrue(survivalDiffers,
-                "夹具必须证明 raw parse 与 full processing 的死亡时间不同（否则无法验证 pipeline 差异）");
-
-        // PR147: raw parse now produces authoritative settlement death (field24 lifeTime whole-second),
-        // full processing refines to LIVE_EXACT (sub-second). The export/preview must both use the refined
-        // full-processing Battle, so at least one dead player must be refined to LIVE_EXACT (not settlement).
-        final boolean anyLiveExact = full.players.stream()
-                .anyMatch(p -> p.deathTimeSource == DeathTimeSource.LIVE_EXACT);
-        assertTrue(anyLiveExact,
-                "夹具必须证明 full processing 把至少一名阵亡玩家精化到 LIVE_EXACT（否则 export 与 preview 同源不成立）");
-        assertTrue(raw.players.stream().noneMatch(p -> p.deathTimeSource == DeathTimeSource.LIVE_EXACT),
-                "raw parse（settlement-only）不得声称 LIVE_EXACT 精化");
+        assertTrue(!settlementDiffers, "full processing 不得修改 settlement projection");
+        assertEquals(raw.players.size(), full.players.size(), "full processing preserves settlement players");
     }
 
     @Test
@@ -91,8 +84,9 @@ class ReplayExportPipelineParityTest {
         first.players.sort(Comparator.comparingLong(p -> p.accountId));
         second.players.sort(Comparator.comparingLong(p -> p.accountId));
         for (int i = 0; i < first.players.size(); i++) {
-            assertEquals(first.players.get(i).survivalTimeSec, second.players.get(i).survivalTimeSec, 1e-6,
-                    "同一 replay 两次 full processing 的死亡时间必须确定（export 与 preview 同源）");
+            assertEquals(first.players.get(i).settlementLifeTimeSec,
+                    second.players.get(i).settlementLifeTimeSec, 1e-6,
+                    "同一 replay 两次 full processing 的 settlement projection 必须确定");
         }
     }
 

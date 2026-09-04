@@ -3,8 +3,8 @@ package com.wotb.web.hundred.dto;
 import java.time.OffsetDateTime;
 
 /**
- * 管理后台百场详情（审核页一屏数据）。MANUAL PENDING 可返回 proofScreenshot；WG 来源返回
- * 冻结的官方统计快照。终态文件证据已清理，普通用户无任何读取入口。
+ * 管理后台百场详情（审核页一屏数据）。PENDING 可返回 proofScreenshot；
+ * 终态文件证据已清理，普通用户无任何读取入口。
  */
 public record HundredAdminDetailDto(
     Long id,
@@ -33,13 +33,6 @@ public record HundredAdminDetailDto(
     OffsetDateTime deletedAt,
     String deletedBy,
     String deleteReason,
-    String deleteReasonText,
-    String verificationSource,
-    OffsetDateTime verifiedAt,
-    String verifiedServer,
-    Long officialAccountBattleCount,
-    Long officialTankBattleCount,
-    Long officialTankDamageDealt,
-    Integer officialAverageDamage
+    String deleteReasonText
 ) {
 }

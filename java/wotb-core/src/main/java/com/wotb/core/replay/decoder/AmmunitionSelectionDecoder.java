@@ -8,7 +8,7 @@ import com.wotb.core.replay.stream.RawReplayPacket;
 
 import java.util.List;
 
-/** Type28 recorder ammunition-selection state, PR147 current 11.19 profile only. */
+/** Type28 recorder ammunition-selection state; valid four-byte framing is decoded independently of version text. */
 public class AmmunitionSelectionDecoder implements ReplayPacketDecoder {
 
     static final int TYPE_AMMUNITION_SELECTION = 28;
@@ -22,14 +22,6 @@ public class AmmunitionSelectionDecoder implements ReplayPacketDecoder {
     public ReplayDecodeResult decode(final ReplayDecodeContext context, final RawReplayPacket packet) {
         final byte[] payload = packet.payload();
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
-        if (!ReplayVersionGate.ammoSelectionAllowed(context.clientVersion())) {
-            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
-                    List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(), payload.length,
-                            "VERSION_UNSUPPORTED_TYPE28", DecodeConfidence.UNKNOWN)),
-                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "Type28 ammunition-selection semantics not affirmed for client version: "
-                                    + context.clientVersion())));
-        }
         if (payload.length != 4) {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED,
                     List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(), payload.length,

@@ -5,11 +5,10 @@ defineOptions({ name: 'VehicleDetailsPanel' })
 
 const props = defineProps({
   selectedState: { type: Object, default: null },
-  friendlyTeam: { type: [Number, String], default: null },
   selectedPortraitUrl: { type: String, default: null },
   selLastKnownSec: { type: Number, default: null },
   selCurStats: { type: Object, default: () => ({ dealt: 0, received: 0, kills: 0 }) },
-  selectedV2Track: { type: Object, default: null },
+  selectedTrack: { type: Object, default: null },
   currentTime: { type: Number, default: 0 },
   selDamageLog: { type: Array, default: () => [] },
   formatClock: { type: Function, required: true },
@@ -32,7 +31,7 @@ const emit = defineEmits(['close'])
     </div>
     <dl class="pb-sb-grid">
       <dt>{{ $t('recon.map.playback.team') }}</dt>
-      <dd>{{ $t(props.selectedState.vehicle.team === props.friendlyTeam ? 'recon.map.playback.team_friendly' : 'recon.map.playback.team_enemy') }}</dd>
+      <dd>{{ $t(props.selectedState.vehicle.friendly === true ? 'recon.map.playback.team_friendly' : (props.selectedState.vehicle.friendly === false ? 'recon.map.playback.team_enemy' : 'recon.map.playback.unknown')) }}</dd>
       <template v-if="props.selLastKnownSec != null">
         <dt>{{ $t('recon.map.playback.last_spotted') }}</dt>
         <dd>{{ props.formatClock(props.selLastKnownSec) }}</dd>
@@ -51,9 +50,9 @@ const emit = defineEmits(['close'])
       <dd>{{ props.selCurStats.kills }}</dd>
     </dl>
     <V2VehicleInspector
-      v-if="props.selectedV2Track"
+      v-if="props.selectedTrack"
       data-test="pb-sb-v2-inspector"
-      :track="props.selectedV2Track"
+      :track="props.selectedTrack"
       :time-sec="props.currentTime"
     />
     <template v-if="props.selDamageLog.length">
@@ -88,5 +87,5 @@ const emit = defineEmits(['close'])
 .pb-sb-log-in { color: var(--pb-enemy-text, #f87171); }
 .pb-sb-log-out { color: var(--pb-team-text, #4ade80); }
 .pb-sb-log em { font-style: normal; opacity: .75; }
-@media (max-width: 768px) { .pb-sidebar { width: 100%; max-height: none; } }
+@media (width < 768px) { .pb-sidebar { width: 100%; max-height: none; } }
 </style>

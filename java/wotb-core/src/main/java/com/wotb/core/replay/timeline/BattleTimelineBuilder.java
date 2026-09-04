@@ -153,7 +153,7 @@ public final class BattleTimelineBuilder {
         // 交火活动强度只使用权威 HP loss（Type-8 raw 语义未证明）
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
-                        orderedEvents, mapping, clock.startRawClockSec(), duration);
+                        orderedEvents, mapping, clock.startRawClockSec(), duration, battle);
 
         for (int second = 0; second <= maxSecond; second++) {
             final double t = second;
@@ -385,6 +385,12 @@ public final class BattleTimelineBuilder {
             final double t = TimelineClock.battleClockOf(e, startRawClockSec);
             if (t > endInclusive) {
                 break;
+            }
+            // Pre-battle events remain available in the canonical event stream for
+            // provenance, but they are not active-battle frame events. In particular,
+            // frame 0 must not absorb an INITIALIZED event from t < 0.
+            if (t < 0d) {
+                continue;
             }
             if (t > startExclusive) {
                 out.add(e);

@@ -8,12 +8,19 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:production-remote": "vite --mode production-remote",
     "test": "vitest run",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "api:generate": "openapi-typescript ../contracts/http/openapi.yaml -o src/api/generated/http-contract.ts && node scripts/generate-api-contract.mjs",
+    "api:check": "npm run api:generate && git diff --exit-code -- src/api/generated/http-contract.ts src/api/generated/playback-v2.schema.ts src/api/generated/api-error-codes.ts",
+    "api:lint": "node scripts/validate-openapi.mjs",
+    "api:fixture": "node scripts/validate-playback-fixture.mjs"
   },
   "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
     "dompurify": "^3.4.12",
     "html2canvas": "^1.4.1",
     "keycloak-js": "^26.2.0",
@@ -23,6 +30,7 @@
     "vue-router": "4.6.4"
   },
   "devDependencies": {
+    "@apidevtools/swagger-parser": "^10.1.0",
     "@fallow-cli/fallow-node": "^3.16.0",
     "@gltf-transform/core": "^4.4.2",
     "@types/node": "^20.19.43",
@@ -36,6 +44,8 @@
     "typescript": "^5.9.3",
     "vite": "^6.0.7",
     "vitest": "^3.2.4",
+    "openapi-typescript": "^7.9.1",
+    "yaml": "^2.8.1",
     "vue-tsc": "^3.3.11"
   },
   "optionalDependencies": {

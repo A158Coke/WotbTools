@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import type { BattlePlaybackDataset, VehiclePlaybackTrack } from './playback-v2.js'
 import { isBattlePlaybackDataset, parseBattlePlaybackDataset } from './playback-v2.js'
+import { validateBattlePlaybackDataset } from '../api/contract-runtime.js'
 
 const track: VehiclePlaybackTrack = {
   accountId: 7,
@@ -17,11 +18,12 @@ const track: VehiclePlaybackTrack = {
     endSec: 10,
     knowledge: 'OBSERVED',
     interpolationAllowed: true,
-    samples: [{ timeSec: 0, x: 0, y: 0, knowledge: 'OBSERVED' }],
+    samples: [{ timeSec: 0, x: 0, y: 0 }],
   }],
   orientationSegments: [],
   healthTransitions: [],
   lifeTransitions: [],
+  damageLosses: [],
   consumableTransitions: [],
   moduleCrewTransitions: [],
 }
@@ -33,8 +35,8 @@ const dataset: BattlePlaybackDataset = {
   recorderAccountId: 7,
   vehicles: [track],
   events: [],
-  shots: [],
   pointsSamples: [],
+  baseStates: [],
   limitations: [],
   capability: 'FULL',
   arenaBonusType: null,
@@ -45,21 +47,18 @@ it('models nullable playback facts without inventing values', () => {
   expect(dataset.mapCode).toBeNull()
 })
 
-it('normalizes additive cache omissions before the playback boundary', () => {
-  const parsed = parseBattlePlaybackDataset({
-    durationSec: 0,
-    vehicles: [],
-    events: [],
-    shots: [],
-    pointsSamples: [],
-    limitations: ['TIMELINE_UNAVAILABLE'],
-    capability: 'PARTIAL',
-  })
-  expect(parsed?.durationSec).toBe(0)
-  expect(parsed?.capability).toBe('PARTIAL')
-  expect(parsed?.mapCode).toBeNull()
-  expect(isBattlePlaybackDataset(parsed)).toBe(true)
-  expect(parseBattlePlaybackDataset({ vehicles: 'not-an-array' })).toBeNull()
+it('accepts a complete authoritative payload only after raw validation', () => {
+  expect(validateBattlePlaybackDataset(dataset).data).toEqual(dataset)
+  expect(parseBattlePlaybackDataset(dataset)).toEqual(dataset)
+  expect(isBattlePlaybackDataset(dataset)).toBe(true)
+})
+
+it.each(['mapCode', 'friendlyTeam', 'recorderAccountId', 'limitations', 'arenaBonusType'])
+  ('rejects missing required wire field %s', field => {
+    const invalid: Record<string, unknown> = { ...dataset }
+    delete invalid[field]
+    expect(validateBattlePlaybackDataset(invalid).data).toBeNull()
+    expect(parseBattlePlaybackDataset(invalid)).toBeNull()
 })
 
 it('rejects a missing authoritative envelope', () => {
@@ -68,14 +67,12 @@ it('rejects a missing authoritative envelope', () => {
     durationSec: 0,
     vehicles: [],
     events: [],
-    shots: [],
     pointsSamples: [],
   })).toBeNull()
   expect(parseBattlePlaybackDataset({
     durationSec: 0,
     vehicles: [{}],
     events: [],
-    shots: [],
     pointsSamples: [],
     capability: 'FULL',
   })).toBeNull()
@@ -83,7 +80,6 @@ it('rejects a missing authoritative envelope', () => {
     durationSec: 0,
     vehicles: [],
     events: [],
-    shots: [],
     pointsSamples: [],
     capability: 'FULL',
     friendlyTeam: 'bad',

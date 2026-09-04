@@ -2,7 +2,7 @@
 
 > Corpus: strict-framing 34 unique arenas from the 44-file Blitz 11.19.0 China research corpus, with one independent T-100 LT sample used for later loadout closure.
 >
-> This document records the relationship between Type33, Type5 and Type10. The goal is to separate an entity's **transport/materialization lifecycle** from combat death and from later continuous position streaming.
+> This document records the relationship between Type33, Type5 and Type10. The goal is to separate an entity's **transport/materialization lifecycle** from combat death, participant identity, and later continuous position streaming.
 
 ## Executive verdict
 
@@ -27,13 +27,15 @@ Type10 continuous transform/position stream
 
 Type5 is therefore not an opaque "enterWorld-ish" packet anymore. Its current physical role is **entity materialization with an initial transform/state snapshot and class-specific initialization data**.
 
-For current combat vehicles, part of that class-specific initialization is now independently decoded as the battle loadout:
+For the reviewed mobile/loadout-shaped Type5 family, part of that class-specific initialization is independently decoded as:
 
 ```text
 3 consumable descriptors
 3 provision descriptors
 9 equipment IDs
 ```
+
+This is structural loadout evidence, not participant identity evidence. A valid 3+3+9 Type5 payload does **not** by itself prove that the entity is a `battle_results.dat #301` settled combatant. Participant identity is established independently through entity/account mapping plus settlement evidence. See [`loadout-materialization.md`](loadout-materialization.md) and [`observer-provision-wirecodes.md`](observer-provision-wirecodes.md).
 
 Exact historical BigWorld symbolic message names remain `PARTIAL` until a version-matched transport schema is recovered.
 
@@ -98,7 +100,7 @@ entityTypeId=3:
   other/static entities   : 2,713
 ```
 
-Therefore the numeric type ID is real and strongly class-selective in this Blitz version. It must remain version-gated; do not transplant PC entity type numbers.
+Therefore the numeric type ID is real and strongly class-selective in this Blitz version, but **entityTypeId=2 is not equivalent to #301 settled combatant identity**. It must remain version-gated; do not transplant PC entity type numbers or collapse class evidence into settlement identity.
 
 ## Initial transform block is structurally tied to Type10
 
@@ -156,7 +158,7 @@ without a large vehicle-specific initialization block.
 
 ### `entityTypeId=2` / mobile vehicle-family records
 
-Vehicle records are much larger and variable, commonly around:
+Vehicle/mobile-family records are much larger and variable, commonly around:
 
 ```text
 ~208 .. 282 bytes
@@ -170,9 +172,9 @@ Verdict:
 
 > Type5 consists of a **common materialization transform prefix plus entity-class-specific initialization data** — `PROVEN structure / PARTIAL complete field-level schema`.
 
-## Decoded combat-vehicle loadout tail
+## Decoded loadout-shaped Type5 tail
 
-Current combat-vehicle Type5 payloads expose a stable loadout tail:
+The reviewed loadout-shaped Type5 population exposes a stable tail:
 
 ```text
 0A 06
@@ -181,20 +183,40 @@ Current combat-vehicle Type5 payloads expose a stable loadout tail:
   9 equipment-ID bytes
 ```
 
-Across the current 34-arena corpus plus one independent T-100 LT sample:
+Across the current 34-arena corpus plus one independent T-100 LT sample, the original structural scan found:
 
 ```text
 Type5 payloads with valid 9-byte equipment surface : 1,097
-full six-item combat-loadout family                : 1,037
-four-item observer/non-combat family               :    60
+full six-item loadout-shaped family                : 1,037
+four-item non-combat/observer family               :    60
 ```
 
-For all 1,037 full combat loadouts:
+For all 1,037 full loadout-shaped records:
 
 ```text
 item[0..2] = consumable slots : 1,037 / 1,037
 item[3..5] = provision slots  : 1,037 / 1,037
 ```
+
+That proves positional structure only. A later 34-arena participant-boundary re-analysis classified complete 3+3+9 materializations independently against `battle_results.dat #301`:
+
+```text
+complete 3+3+9 Type5 materializations : 1,017
+mapped to #301 settled combatants      :   960
+non-#301 entities                      :    57
+```
+
+Therefore:
+
+```text
+0A 06 + 3+3+9
+  -> loadout-shaped Type5 structure
+
+entity/account mapping + #301 settlement evidence
+  -> settled-combatant identity
+```
+
+Do not collapse those two evidence dimensions.
 
 The nine equipment bytes are direct numeric equipment IDs:
 
@@ -204,18 +226,20 @@ equipmentId = unsignedByte(rawEquipmentBytes[slot])
 
 Twenty distinct current equipment IDs were naturally observed and all satisfy the byte=ID rule with the expected equipment-grid slot position.
 
-Enemy re-materialization independently proves this is not recorder-only:
+Enemy re-materialization independently proves the loadout surface is not recorder-only:
 
 ```text
 enemy Type5 re-materializations inspected : 683
 complete 3+3+9 loadout surface            : 683 / 683
 ```
 
-See `loadout-materialization.md` for the full equipment table, provision/consumable wire-code inventory and versioning rules.
+Those enemy identities are established independently; the 3+3+9 shape itself is not the identity proof.
+
+See `loadout-materialization.md` for the full equipment table, provision/consumable wire-code inventory and versioning rules. See `observer-provision-wirecodes.md` for the observer-vs-settled participant boundary.
 
 Verdict:
 
-> current combat Vehicle Type5 carries **battle loadout materialization — PROVEN**.
+> the reviewed Type5 family carries **direct loadout materialization — PROVEN structural surface**; settled-combatant status remains an independent evidence dimension.
 
 ## Relationship to enemy visibility/AoI lifecycle
 
@@ -238,9 +262,10 @@ Type4            = observed-entity removal / hidden interval start
 Type33 -> Type5  = re-entry + materialization
 Type10           = continuous observed transform stream
 Death            = independent settlement / HP / kill fact
+Participant role = independent entity/account + settlement fact
 ```
 
-These concerns must not be collapsed into one "entity gone" state.
+These concerns must not be collapsed into one "entity gone" or "combat vehicle" state.
 
 A useful consequence of loadout materialization is that re-entering enemy vehicles re-send their current initialization/loadout surface rather than requiring the recorder to retain an inferred hidden-state configuration.
 
@@ -257,12 +282,15 @@ on Type5(eid, type, initialState, initPayload):
     entity.entityTypeId = type
     seed transform/state from Type5
 
-    if supported combat-loadout tail exists:
+    if supported loadout-shaped tail exists:
         decode 3 consumable wire descriptors
         decode 3 provision wire descriptors
         decode 9 direct equipment IDs
 
     preserve all remaining undecoded initialization bytes
+
+participant classification:
+    resolve independently from entity/account mapping + #301 settlement evidence
 
 on Type10(eid, transform):
     entity.lifecycle = ACTIVE_OBSERVED
@@ -278,8 +306,8 @@ on Type4(enemy eid):
 1. Exact symbolic BigWorld/Blitz names for Type33 and Type5.
 2. Complete byte-level field map of the common transform/state block beyond the already consumed Type10 coordinates/orientation.
 3. Remaining vehicle-specific initialization fields outside the now-proven HP/loadout surfaces.
-4. Exact provision wire-code -> logical provision mapping inside the three provision descriptors.
-5. Meaning of the 136 non-settlement `entityTypeId=2` entities, including the smaller four-item initialization family.
+4. Exact identities for unresolved observer/future provision wire codes such as `0x13` / `0x1A`; settled-combatant production mappings are documented separately.
+5. Meaning of the remaining non-settlement `entityTypeId=2` population beyond the observer cases already classified.
 6. Full semantics of `entityTypeId=3` static entities and whether additional entity type IDs appear in other game modes/maps.
 
-Until these are closed, preserve unknown initialization bytes rather than discarding them or guessing names.
+Until these are closed, preserve unknown initialization bytes and raw wire values rather than discarding them or guessing names.

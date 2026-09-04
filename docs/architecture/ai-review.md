@@ -97,11 +97,43 @@ AI 提示词正文维护在 `java/wotb-web/src/main/resources/prompts/` 下的 `
 
 - UTF-8、LF 换行（加载器会把 CRLF 归一化为 LF；文件末尾换行保留——`confidence-legend` 以换行结尾，勿删）。
 - 文件是 ZH 完整 prompt；EN/RU 由 `PlayerPromptRules.localizePlayerSystemPrompt` / `TeamPromptLocalizer.localizeTeamSystemPrompt` 对 ZH 规则片段做字符串替换生成。**展开后 md 内中文规则片段必须与 Java 常量（`COMMON_*_RULE` / `TEAM_*_RULE` 等）逐字一致**，否则 EN/RU 替换失效（`PromptRuleContractTest` 强制）。
-- 多文件 AI 复盘已移除（2026-08-12）：`player/multi` / `team/multi` 提示词、`analyzeMulti`、`MULTI_*_BATTLE` AI 分支与团队多视角分区合并全部删除；AI 复盘仅单文件（`AiReplayBatchPolicy.MAX_FILES=1`），由 `AiReplayReviewService.analyzeResults` 经 `BatchAnalyzer`（单结果分组 + `isAiAnalyzable` + `plan.mode()` 只取 NONE/SINGLE_*）决定分析单元。对应旧多文件批量分析的 `ReplayAnalysisMode.MULTI_*`、`DefaultReplayProcessingFacade.processBatch`/`buildBatchResult` 与 `ReplayBatchProcessingResult`/`ReplayBatchSummary` 已删除（无 current production consumer；legacy `/api/replay/process`、`/api/replay/reconstruct-batch`、multipart analyze 一律 410，已不存在多文件批量端点）。
+- 多文件 AI 复盘已移除（2026-08-12）：`player/multi` / `team/multi` 提示词、`analyzeMulti`、`MULTI_*_BATTLE` AI 分支与团队多视角分区合并全部删除；AI 复盘仅单文件（`AiReplayBatchPolicy.MAX_FILES=1`），由 `AiReplayReviewService.analyzeResults` 直接按 `ReplayProcessingCapabilities.aiAnalyzable(scope)` 判定 eligibility（单一 SSOT；`BatchAnalyzer` 的 group/representative machinery 仅作为测试设置复用）。对应旧多文件批量分析的 `ReplayAnalysisMode.MULTI_*`、`DefaultReplayProcessingFacade.processBatch`/`buildBatchResult` 与 `ReplayBatchProcessingResult`/`ReplayBatchSummary` 已删除（无 current production consumer；legacy `/api/replay/process`、`/api/replay/reconstruct-batch`、multipart analyze 一律 410，已不存在多文件批量端点）。
 
 ### AI 复盘评估 harness（golden cases + lessons）
 
 - **CI 模式**：`AiEvalHarnessTest`（`@Tag("ai-eval")`，默认构建运行）加载 `src/test/resources/ai-eval/cases/*.json`（synthetic 7v7 争霸赛场景），用 `TeamAiPromptBuilder.single` 构建 prompt（不调 AI），执行 `prompt_contains` / `prompt_omits` 断言，写 `target/ai-eval-report/report.md` + `report.json`；任一 FAIL 构建失败。
+
+#### AI 测试分层与 live provider 隔离
+
+| 类型 | 内容 | 默认 CI/`mvn test` 行为 |
+|---|---|---|
+| Unit / deterministic | fake/mock gateway、gateway 单测、loopback HTTP boundary、prompt/validator contract | 正常执行；不访问外部 provider |
+| AI eval | `AiEvalHarnessTest` 等基于 synthetic case 的 prompt/evidence 确定性评估 | 正常执行；不调用 LLM，不消耗 provider token |
+| `ai-live` probe | 真实 `SpringAiChatGateway` + DeepSeek/provider 请求，例如 team review E2E/repro probes | JUnit `@Tag("ai-live")` 且 Maven Surefire 默认排除；人工显式运行，可能产生 token/cost |
+
+`AI_API_KEY` 表示机器具有 provider 访问资格，不表示普通测试具有调用意图。真实 probe 必须同时满足：显式选择 live 测试、显式清空 `-Dai.probe.excludedGroups=`、提供不写入仓库或日志的 `AI_API_KEY`。缺少 key 时 probe 仍通过 JUnit assumption skip；默认 `mvn test` 即使环境中存在 key 也不执行 `ai-live`。普通 GitHub Actions CI 不注入 DeepSeek secret，不新增 paid/live AI job。
+
+当前 `wotb-web` 真实 DeepSeek probes 为 `TeamReviewRealE2EProbeTest`、`TeamReviewBatchE2EProbeTest` 和 `TeamReviewDetailedReproProbeTest`。`LiveAiTestIsolationTest` 对已知 probe 的 tag、测试源码中的 production external-provider 组合信号以及 `ai.probe.excludedGroups` POM contract 做 deterministic guard；loopback、Mockito、配置断言和 deterministic eval 不因引用 gateway 类型而被标为 live。
+
+PowerShell 人工运行示例（从 `java` 目录执行；将占位符替换为通过带外方式取得的 key/回放路径）：
+
+```powershell
+$env:AI_API_KEY = "<provided-out-of-band>"
+mvn -pl wotb-web -am test `
+  "-Dtest=TeamReviewRealE2EProbeTest" `
+  "-Dai.probe.excludedGroups=" `
+  "-Dprobe.replay=<file>"
+
+mvn -pl wotb-web -am test `
+  "-Dtest=TeamReviewBatchE2EProbeTest" `
+  "-Dai.probe.excludedGroups="
+
+mvn -pl wotb-web -am test `
+  "-Dtest=TeamReviewDetailedReproProbeTest" `
+  "-Dai.probe.excludedGroups=" `
+  "-Dprobe.replay=<file>"
+```
+
 - **空间分离证据（Backend Evidence Boundary）**：`TeamSeparationEvidenceSkill` / `PlayerSeparationEvidenceSkill`（wotb-core）从阵型簇/移动段/交火推导中性 `SPATIAL_SEPARATION` 证据（`kind=OPENING_SPREAD` / `SEPARATION_WINDOW` + 距离/距离增长/静止占比/局部敌情/承伤/输出/阵亡/主力簇位移等确定性测量），`TeamEvidenceFormatter` 渲染 `SPATIAL_SEPARATION_EVIDENCE` 段（P3 optional）。不再输出 `SOLO_DELAY` / `SOLO_DETACHED` / `teammateBenefit` 等战术 verdict——是否拖延/脱节由 LLM 综合判断。
 - **player 路径同规则**：`PlayerSeparationEvidenceSkill`（wotb-core）复用 `RouteSkill` 空间分离窗口推导同口径中性证据（个人复盘同样不输出拖延/脱节 verdict），已在 `EvidenceSkillEngine` 注册；player prompt（fallback/single/tactical）追加三语 `SEPARATION_EVIDENCE_RULE`。
 - **争霸赛占点与点数胜负结束方式**：`FriendlyEnemyResult.resolveTeamBattle` 新增派生 `pointsEndReason`（`REACHED_1000`=双方均有存活 + 标准业务规则 + 时长<420s：某一方达到 1000 分上限导致提前结束，与胜方解耦，不使用任何点数字段；`TIME_EXPIRED`=标准规则 + 时长≥420s：时间耗尽，双方终局比分未解码；`UNKNOWN`=类别未知 / rosterComplete=false / 时长缺失；全歼=NOT_APPLICABLE），`TeamEvidenceFormatter` 在 `CAPTURE_AND_POINTS` 段输出 `pointsEndReason`（逐人/双方占点分、`pointsDecided`、占领点区域）；`TeamAiPromptBuilder` mandatory header 同时输出 `result` 与 `resultSource`（BATTLE_RESULTS 权威 / SURVIVOR_SETTLEMENT 结算存活推导 / UNKNOWN；POINTS_INFERENCE 已停用——枚举保留但不再产出，fail closed）；**所有依赖完整逐人结算的存活/点数推断共享"结算阵容完整"前提**（`Battle.rosterComplete`：ReplayParser 校验名册 #201 与战绩 #301 账号集合一致且每个账号队伍一致才为 true；不写死每队 7 人，完整名册的非 7v7 训练房同样生效）：SURVIVOR_SETTLEMENT 推导与 `annihilationSuffix` 在阵容不完整时一律 fail-closed；winnerTeam 缺失 + 双方均有存活 → 胜方 UNKNOWN（结束方式仍按标准时限证据判定，用于结果行后缀，禁止比较占点字段推断）；winnerTeam 存在时胜方为 BATTLE_RESULTS，`pointsEndReason` 正常判定（rosterComplete=false 时 UNKNOWN，result 只写通用「点数判定」）；`CAPTURE_AND_POINTS` 在阵容不完整时输出 `SETTLEMENT_ROSTER_INCOMPLETE=true` / `pointsTotalsUnavailable=true` 并抑制占点分总量；提示词 `CAPTURE_RULE`（ZH/EN/RU，含 2d 条阵容不完整口径）写明结束条件三分法——全歼胜（双向：全歼敌方获胜 / 被敌方全歼落败）/ 1000 分提前结束（某一方达到 1000 分上限，具体胜方由 winnerTeam 决定；缺失时只写「某一方达到 1000 分导致提前结束，具体胜方未知」，双方终局比分一律 UNKNOWN，不把 1000 分配给任何队伍）/ 时间耗尽点数决胜（仅双方均有存活且标准规则可证），`TIME_EXPIRED` 叙述必须写「时间耗尽」，禁止用 <1000 的中间比分作为获胜理由，禁止把失败方被全歼写成「全歼敌方获胜」；团队剖析胜负标签按结束方式输出「（时间耗尽点数判定）/（达到 1000 分提前获胜）/（某一方达到 1000 分提前结束，具体胜方未知）/（时间耗尽点数判定，具体胜方未知）/（点数判定）/（全歼敌方）/（被敌方全歼）」。`TeamPromptLocalizer` 三语 `SOLO_INTENT_RULE` / `CAPTURE_RULE`。
@@ -238,9 +270,8 @@ Draft → validate → PASS → 流式输出
 
 ### Grounding Facts（TeamGroundingFacts，wotb-core）
 
-- **死亡时刻时钟契约**：`PlayerResultFormat.deathSec()` 数值域不统一
-  （`deathTimeMillis`/legacy 估算为原始时钟域，`DeathTimeReconciler` 校准的 `survivalTimeSec`
-  为 battle-relative）；`TeamGroundingFacts.build` 统一按 `raw > startRaw → raw − startRaw`
+- **死亡时刻时钟契约**：`PlayerResultFormat.deathSec()` 只读取 settlement `field24 lifeTime`（业务秒值）；
+  live reconstruction 事件仅用于 Playback/HP/动画/诊断，不得覆盖 settlement。`TeamGroundingFacts.build` 统一按 `raw > startRaw → raw − startRaw`
   转 battle-relative——compat 入口（无 timeline）必须传 `reconstruction.battleStartRawClockSec()`。
 - 从权威结算 + 已验证 canonical BattleTimeline 提取带稳定证据编号（E1xx，确定性顺序：
   阵亡→存活变化→关注窗口→位置快照→敌方位置知识）的事实清单；timeline 为 null（兼容入口）
@@ -396,6 +427,6 @@ POST /api/replay/analyze（Dataset JSON `{processingJobId, sourceId, lang, corre
 - `RANDOM` 仍是录像者个人复盘；`TRAINING` / `TOURNAMENT` 是录像者所在整队复盘。
 - 录像者不获得特殊个人分析权重，只用于解析 `perspectiveTeam`。
 - 同场同队回放是 `SAME_TEAM_DUPLICATE_PERSPECTIVE`，只选质量最高的代表；禁止拼接原始事件流。
-- **死亡时刻口径**：死亡权威链为 `LIVE_EXACT`（回放 live EXACT，sub-second）→ `SETTLEMENT_SECOND`（结算 `deathTimeMillis`）→ `UNKNOWN`（`survivalTimeSec=0`）；prompt 用 `DEATH_SOURCE` 标注来源（`BattlePhaseSummary.deathSourceLabel`），`PlayerResultFormat.deathSec` 按 `deathTimeSource` 消费，legacy 启发式不作为权威。阶段存活人数为「至阶段末」语义（`BattlePhaseTimelineSection`），prompt 注入双方逐车阵亡时间线（`DEATH_TIMELINE`）。
+- **死亡时刻口径**：业务死亡秒值只来自 settlement `#301 field24 lifeTime`；settlement 无效时依赖死亡时刻的证据 fail-closed。Playback/live reconstruction 不覆盖 `PlayerResult`，也不产生额外死亡 provenance 层；legacy 启发式不作为权威。阶段存活人数为「至阶段末」语义（`BattlePhaseTimelineSection`），prompt 注入双方逐车阵亡时间线（`DEATH_TIMELINE`）。
 - **观测伤害抑制**：事件流覆盖未达 100% 时 `DefaultTeam/PlayerBattleFeatureExtractor` 条件标记 `OBSERVED_DAMAGE_IS_PARTIAL`，prompt 层抑制观测数字（`TeamAiPromptBuilder.appendObserved` / 随机战交火段），以权威结算为唯一口径；覆盖补齐后自动恢复。
 - **赛前预测渲染**：`PreBattleSectionRenderer` 覆盖 TEAM 变体（A队/B队/A 队/队伍1 等）、AREA ID → 中文名 + 九宫格（复用 `MapTacticalSemanticsRegistry`）、composition 键值三语翻译。

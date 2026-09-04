@@ -108,7 +108,7 @@ class UpdateEquipmentParserTest(unittest.TestCase):
             "IMPROVED_MODULES", "DEFENSE_SYSTEM", "ENHANCED_ARMOR",
             "IMPROVED_ASSEMBLY", "ENHANCED_TRACKS", "TOOLBOX", "IMPROVED_OPTICS",
             "CAMOUFLAGE_NET", "IMPROVED_CONTROL", "ENGINE_ACCELERATOR",
-            "CONSUMABLE_DELIVERY_SYSTEM", "HIGH_END_CONSUMABLES",
+            "CONSUMABLE_DELIVERY_SYSTEM", "HIGH_END_CONSUMABLES", "IMPROVED_MODULES_PLUS",
         }
         self.assertEqual(
             expected_codes,

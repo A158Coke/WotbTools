@@ -9,7 +9,7 @@ import zh from '../locales/zh.json'
 import en from '../locales/en.json'
 import ru from '../locales/ru.json'
 import BattlePlayback from './BattlePlayback.vue'
-import { legacyPlaybackToV2Dataset } from '../test/playbackV2TestUtil'
+import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil'
 
 vi.mock('../data/mapImages', () => ({
   mapImages: {
@@ -47,18 +47,13 @@ function makeOverview() {
     gridCells: [],
     spawnPoints: [],
     routes: [],
-    playback: {
-      durationSec: 60,
-      vehicles: [],
-      events: []
-    }
   }
 }
 
 function mountAnnot(lang = 'zh') {
   const i18n = createI18n({ locale: lang, fallbackLocale: 'en', messages: { zh, en, ru } })
   return mount(BattlePlayback, {
-    props: { overview: makeOverview(), seekTo: null, playbackV2: legacyPlaybackToV2Dataset(makeOverview()) },
+    props: { overview: makeOverview(), seekTo: null, playbackV2: makeBattlePlaybackDataset({ vehicles: [], events: [] }) },
     global: { plugins: [i18n] }
   })
 }
@@ -100,6 +95,7 @@ function svgToCssInverse(sx, sy, view, W, H, rw, rh) {
 
 /** 在战局回放地图上画一条折线：pen 工具 → down/move/up。 */
 async function drawStroke(wrapper, points) {
+  await openAnnotations(wrapper)
   await wrapper.find('[data-test="pb-annot-pen"]').trigger('click')
   const viewport = wrapper.find('[data-test="pb-viewport"]')
   await viewport.trigger('pointerdown', { pointerId: 1, clientX: points[0][0], clientY: points[0][1] })
@@ -108,6 +104,12 @@ async function drawStroke(wrapper, points) {
   }
   dispatchPointer('pointerup', { pointerId: 1, clientX: points[points.length - 1][0], clientY: points[points.length - 1][1] })
   await flushPromises()
+}
+
+async function openAnnotations(wrapper) {
+  if (!wrapper.find('[data-test="pb-annot-toolbar"]').exists()) {
+    await wrapper.find('[data-test="pb-annotation"]').trigger('click')
+  }
 }
 
 describe('BattlePlayback annotations', () => {
@@ -120,6 +122,7 @@ describe('BattlePlayback annotations', () => {
     for (const lang of ['zh', 'en', 'ru']) {
       const wrapper = mountAnnot(lang)
       await flushPromises()
+      await openAnnotations(wrapper)
       const toolbar = wrapper.find('[data-test="pb-annot-toolbar"]')
       expect(toolbar.exists()).toBe(true)
       const text = toolbar.text()
@@ -134,6 +137,7 @@ describe('BattlePlayback annotations', () => {
   it('draws a pen stroke that lands on the pointer (desktop responsive round-trip)', async () => {
     const wrapper = mountAnnot()
     await flushPromises()
+    await openAnnotations(wrapper)
     expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(false)
 
     // 渲染尺寸 600×602 ≠ viewBox 766×769：1 CSS px ≠ 1 SVG unit
@@ -170,6 +174,7 @@ describe('BattlePlayback annotations', () => {
   it('mobile: rendered width 360 — stroke lands on the pointer (no CSS-as-SVG bug)', async () => {
     const wrapper = mountAnnot()
     await flushPromises()
+    await openAnnotations(wrapper)
     setMapLayout(wrapper, 360, 361)
     const clicks = [[180, 181], [240, 181]]
     await drawStroke(wrapper, clicks)
@@ -195,6 +200,7 @@ describe('BattlePlayback annotations', () => {
   it('zoom + pan round-trip: stroke and text input land on the pointer', async () => {
     const wrapper = mountAnnot()
     await flushPromises()
+    await openAnnotations(wrapper)
     setMapLayout(wrapper, 600, 602)
     // 滚轮在 (100,100) 放大 ×1.2 → tx=ty=-20；拖拽 (100,100)→(140,130) 平移 +40/+30
     await wrapper.find('[data-test="pb-map"]').trigger('wheel', { clientX: 100, clientY: 100, deltaY: -100 })
@@ -233,6 +239,7 @@ describe('BattlePlayback annotations', () => {
   it('clears all annotations with the clear button', async () => {
     const wrapper = mountAnnot()
     await flushPromises()
+    await openAnnotations(wrapper)
     await drawStroke(wrapper, [[300, 300], [400, 300]])
     await wrapper.find('[data-test="pb-annot-clear"]').trigger('click')
     await flushPromises()
@@ -242,6 +249,7 @@ describe('BattlePlayback annotations', () => {
   it('hides and shows annotations without losing them', async () => {
     const wrapper = mountAnnot()
     await flushPromises()
+    await openAnnotations(wrapper)
     await drawStroke(wrapper, [[300, 300], [400, 300]])
     await wrapper.find('[data-test="pb-annot-toggle"]').trigger('click')
     await flushPromises()
@@ -254,6 +262,7 @@ describe('BattlePlayback annotations', () => {
   it('erases a pen stroke locally with the eraser', async () => {
     const wrapper = mountAnnot()
     await flushPromises()
+    await openAnnotations(wrapper)
     await drawStroke(wrapper, [[300, 300], [350, 300], [400, 300]])
     expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(true)
 
@@ -270,6 +279,7 @@ describe('BattlePlayback annotations', () => {
   it('commits a text annotation on Enter and positions the input at the click point', async () => {
     const wrapper = mountAnnot()
     await flushPromises()
+    await openAnnotations(wrapper)
     setMapLayout(wrapper, 600, 602)
     await wrapper.find('[data-test="pb-annot-text"]').trigger('click')
     const viewport = wrapper.find('[data-test="pb-viewport"]')
@@ -293,9 +303,10 @@ describe('BattlePlayback annotations', () => {
   it('resets annotations when the overview (file) changes', async () => {
     const wrapper = mountAnnot()
     await flushPromises()
+    await openAnnotations(wrapper)
     await drawStroke(wrapper, [[300, 300], [400, 300]])
     expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(true)
-    await wrapper.setProps({ overview: makeOverview(), playbackV2: legacyPlaybackToV2Dataset(makeOverview()) })
+    await wrapper.setProps({ overview: makeOverview(), playbackV2: makeBattlePlaybackDataset({ vehicles: [], events: [] }) })
     await flushPromises()
     expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(false)
   })

@@ -14,7 +14,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 批量回放分析器：分组、去重、代表选择、模式判定。
+ * 当前 AI request 的 result-set 分析器：分组、去重、代表选择、模式判定。
+ * <p>它保留现有多-source request 的确定性收尾契约；不表示 future worker queue、job
+ * status 或 batch manager，也不增加异步基础设施。</p>
  * <p>
  * 处理流程：
  * <ol>
@@ -132,7 +134,7 @@ public class BatchAnalyzer {
         final ReplayAnalysisScope dominantScope = scopes.isEmpty() ? null : scopes.iterator().next();
         final int analyzableCount = (int) perspectiveGroups.stream()
                 .filter(g -> g.representative().capabilities() != null
-                        && isAiAnalyzable(g.representative(), dominantScope))
+                        && g.representative().capabilities().aiAnalyzable(dominantScope))
                 .count();
 
         final ReplayAnalysisMode mode = resolveMode(dominantScope, analyzableCount);
@@ -230,28 +232,6 @@ public class BatchAnalyzer {
             }
         }
         return null;
-    }
-
-    /** 基于 scope 的实际可分析判定（不在 Facade 中预计算）。 */
-    public static boolean isAiAnalyzable(final ReplayProcessingCapabilities caps, final ReplayAnalysisScope scope) {
-        if (caps == null || scope == null) return false;
-        return switch (scope) {
-            case PLAYER_FOCUSED -> caps.summaryAvailable() && caps.recorderResultAvailable();
-            case TEAM_PERSPECTIVE -> caps.summaryAvailable()
-                    && caps.perspectiveTeamResolved()
-                    && (caps.recorderResultAvailable()
-                            || caps.teamFeatureExtractionPossible());
-        };
-    }
-
-    /** 从 ReplayProcessingResult 提取 capabilities。 */
-    public static boolean isAiAnalyzable(final ReplayProcessingResult result, final ReplayAnalysisScope scope) {
-        return isAiAnalyzable(result != null ? result.capabilities() : null, scope);
-    }
-
-    /** 简化重载：从 ScopedResult 取 scope。 */
-    public static boolean isAiAnalyzable(final ReplayProcessingResult result, final ScopedResult scoped) {
-        return isAiAnalyzable(result, scoped != null ? scoped.scope() : null);
     }
 
     /**

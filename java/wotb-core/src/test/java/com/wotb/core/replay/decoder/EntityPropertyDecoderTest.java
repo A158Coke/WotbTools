@@ -9,7 +9,6 @@ import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -76,11 +75,7 @@ class EntityPropertyDecoderTest {
         assertEquals(12_345, eMax.entityId());
     }
 
-    /**
-     * PR162 forward compatibility: an ordinary positive HP is a structural value decodable for a future
-     * version, while the special sentinels (0xFFFE / 0xFFFD) are version-scoped closed semantics that a
-     * future version must NOT inherit → raw/UNKNOWN, never terminal.
-     */
+    /** Future version strings do not gate structurally valid properties; unproven 0xFFFE stays unknown. */
     @Test
     void futureVersionDecodesStructuralHpButNotSpecialSentinel() {
         final ReplayDecodeContext future = new ReplayDecodeContext("11.22.0_china");
@@ -95,10 +90,11 @@ class EntityPropertyDecoderTest {
         final HealthChangedEvent fffeEvent = assertInstanceOf(HealthChangedEvent.class, fffe.events().getFirst());
         assertEquals(HpRawState.UNKNOWN_OTHER, fffeEvent.rawState(), "未认证特殊 sentinel 不得继承 terminal");
         assertEquals(DecodeConfidence.PARTIAL, fffeEvent.confidence());
-        // 0xFFFD special sentinel → likewise raw/UNKNOWN
+        // 0xFFFD is a proven terminal wire value and remains terminal independent of version metadata.
         final ReplayDecodeResult fffd = decoder.decode(future, packet(3, new byte[]{(byte) 0xFD, (byte) 0xFF}));
         final HealthChangedEvent fffdEvent = assertInstanceOf(HealthChangedEvent.class, fffd.events().getFirst());
-        assertEquals(HpRawState.UNKNOWN_OTHER, fffdEvent.rawState());
+        assertEquals(HpRawState.DEATH_TERMINAL_FFFD, fffdEvent.rawState());
+        assertEquals(Boolean.FALSE, fffdEvent.alive());
     }
 
     @Test
@@ -108,21 +104,20 @@ class EntityPropertyDecoderTest {
         assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst());
     }
 
-    /** PR162/P0-2：prop2 turret-yaw 语义由 PROP_TURRET_YAW 授权；future prop2 不得继承 turret semantic。 */
+    /** A structurally valid prop2 payload has the same semantic result for any version metadata. */
     @Test
-    void prop2TurretYawIsCapabilityGated() {
+    void prop2TurretYawIsVersionIndependent() {
         final byte[] yaw = new byte[]{0x00, 0x00};
-        // 11.19 + 11.18（有独立 evidence）→ TurretDirectionChangedEvent EXACT
+        // Known and future version strings are metadata only.
         final TurretDirectionChangedEvent e19 = assertInstanceOf(TurretDirectionChangedEvent.class,
                 decoder.decode(new ReplayDecodeContext("11.19.0_china"), packet(2, yaw)).events().getFirst());
         assertEquals(DecodeConfidence.EXACT, e19.confidence());
         assertInstanceOf(TurretDirectionChangedEvent.class,
                 decoder.decode(new ReplayDecodeContext("11.18.0_china_apple"), packet(2, yaw)).events().getFirst());
-        // future 11.22 prop2 2B → 禁止产出 turret semantic（raw-preserve UnknownReplayEvent）
+        // Future 11.22 with the same valid shape still decodes exactly.
         final ReplayDecodeResult future = decoder.decode(new ReplayDecodeContext("11.22.0_china"), packet(2, yaw));
-        assertInstanceOf(UnknownReplayEvent.class, future.events().getFirst(),
-                "future prop2 不得自动产出 TurretDirectionChangedEvent");
-        assertFalse(future.events().stream().anyMatch(TurretDirectionChangedEvent.class::isInstance));
+        assertInstanceOf(TurretDirectionChangedEvent.class, future.events().getFirst());
+        assertEquals(DecodeConfidence.EXACT, future.events().getFirst().confidence());
     }
 
     @Test

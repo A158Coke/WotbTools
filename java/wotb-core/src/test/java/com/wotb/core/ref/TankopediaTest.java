@@ -3,12 +3,14 @@ package com.wotb.core.ref;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class TankopediaTest {
 
     @Test
     void loadsAlphaDamageForSingleGunTierTenTanks() {
-        final Tankopedia tankopedia = Tankopedia.load();
+        final Tankopedia tankopedia = TankopediaReferenceData.tankopedia();
 
         assertEquals(350, tankopedia.info(385).alphaDamage());
         assertEquals(370, tankopedia.info(14609).alphaDamage());
@@ -19,9 +21,21 @@ class TankopediaTest {
 
     @Test
     void multiGunTierTenTanksExposeNoAuthoritativeAlphaDamage() {
-        final Tankopedia tankopedia = Tankopedia.load();
+        final Tankopedia tankopedia = TankopediaReferenceData.tankopedia();
         // E 100 有两把 10 级终局炮（12,8cm / 15cm），回放无法确定实际所用炮：
         // 不输出权威炮伤，避免把数组第一把炮的伤害伪装成本场实际炮伤。
         assertEquals(null, tankopedia.info(9489).alphaDamage());
+    }
+
+    @Test
+    void legacyLoadReturnsApplicationSharedReference() {
+        assertSame(TankopediaReferenceData.tankopedia(), Tankopedia.load());
+        assertSame(Tankopedia.load(), Tankopedia.load());
+    }
+
+    @Test
+    void publishedNameSetIsImmutable() {
+        final var names = TankopediaReferenceData.tankopedia().names();
+        assertThrows(UnsupportedOperationException.class, () -> names.add("not-a-real-tank"));
     }
 }

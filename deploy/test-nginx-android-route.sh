@@ -37,6 +37,8 @@ grep -q 'location = /download/android/version.json {' "$CFG" \
   || { echo "FAIL: version.json must have its own exact static location" >&2; exit 1; }
 grep -q 'location /download/android/ {' "$CFG" \
   || { echo "FAIL: APK static prefix location must exist" >&2; exit 1; }
+grep -q 'location = /.well-known/assetlinks.json' "$CFG" \
+  || { echo "FAIL: assetlinks exact location must exist in the auth server block" >&2; exit 1; }
 
 # Build a deterministic payload matching production layout: a stub index.html at root (SPA marker),
 # version.json + apk under /download/android. 路由验证只关心「页面路由落到 index.html」，不校验
@@ -66,6 +68,12 @@ done
 
 code() { curl -s -o /dev/null -w '%{http_code}' -H 'Host: wotbtools.com' -H "X-Forwarded-For: $1" "http://127.0.0.1:18081/$2"; }
 content() { curl -s -H 'Host: wotbtools.com' "http://127.0.0.1:18081/$1"; }
+content_auth() { curl -s -H 'Host: auth.wotbtools.com' "http://127.0.0.1:18081/$1"; }
+
+# 供 auth.wotbtools.com/.well-known/assetlinks.json 静态路由验证的 domain-association payload。
+mkdir -p "$HTML_ROOT/.well-known"
+printf '[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"com.wotbtools.app","sha256_cert_fingerprints":["BD:1B:66:9D:79:93:51:A4:E5:96:BC:11:6B:8F:AE:08:43:29:AC:74:7A:F7:8D:EF:61:97:48:FC:B4:28:06:CE"]}}]\n' \
+  > "$HTML_ROOT/.well-known/assetlinks.json"
 
 # 1) /download/android -> SPA index.html
 [[ "$(code 9.9.9.1 download/android)" == "200" ]] \
@@ -101,4 +109,14 @@ apk_bytes="$(content "download/android/wotbtools-android-v1.0.0.apk" | wc -c)"
 [[ "$(content "download/android/nonexistent.apk")" != *"SPA-index"* ]] \
   || { echo "FAIL: nonexistent APK must not fallback to index.html" >&2; exit 1; }
 
-echo "OK: nginx -t passed; /download/android and /download/android/ -> SPA; version.json -> static manifest; APK -> static; nonexistent APK -> 404"
+# 6) auth.wotbtools.com/.well-known/assetlinks.json -> 真实 static JSON，绝不代理给 Keycloak。
+auth_asset_code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: auth.wotbtools.com' "http://127.0.0.1:18081/.well-known/assetlinks.json")"
+[[ "$auth_asset_code" == "200" ]] \
+  || { echo "FAIL: auth.wotbtools.com/.well-known/assetlinks.json must return 200 (static)" >&2; exit 1; }
+[[ "$(content_auth ".well-known/assetlinks.json")" == *"delegate_permission/common.handle_all_urls"* ]] \
+  || { echo "FAIL: assetlinks.json must be served as the real JSON, not proxied to keycloak" >&2; exit 1; }
+curl -s -D - -o /dev/null -H 'Host: auth.wotbtools.com' "http://127.0.0.1:18081/.well-known/assetlinks.json" \
+  | grep -qi 'content-type: application/json' \
+  || { echo "FAIL: assetlinks.json must be served as application/json" >&2; exit 1; }
+
+echo "OK: nginx -t passed; /download/android and /download/android/ -> SPA; version.json -> static manifest; APK -> static; nonexistent APK -> 404; auth assetlinks.json -> static application/json"

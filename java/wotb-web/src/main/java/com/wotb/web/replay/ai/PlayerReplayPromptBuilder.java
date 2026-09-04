@@ -145,9 +145,26 @@ public final class PlayerReplayPromptBuilder {
         PlayerEvidenceFormatter.appendPlayerLine(sb, p, isFriendly);
     }
 
+    static void appendPlayerLine(final StringBuilder sb, final Battle battle,
+                                 final PlayerResult p, final boolean isFriendly) {
+        PlayerEvidenceFormatter.appendPlayerLine(sb, battle, p, isFriendly);
+    }
+
     static void appendPlayerLine(final StringBuilder sb, final PlayerResult p,
                                  final boolean isFriendly, final boolean isYou) {
         PlayerEvidenceFormatter.appendPlayerLine(sb, p, isFriendly, isYou);
+    }
+
+    static void appendPlayerLine(final StringBuilder sb, final Battle battle, final PlayerResult p,
+                                 final boolean isFriendly, final boolean isYou) {
+        PlayerEvidenceFormatter.appendPlayerLine(sb, battle, p, isFriendly, isYou);
+    }
+
+    static void appendAggregates(final StringBuilder sb, final Battle battle,
+                                 final List<PlayerResult> friendlies,
+                                 final List<PlayerResult> enemies,
+                                 final List<PlayerResult> unknowns) {
+        PlayerEvidenceFormatter.appendAggregates(sb, battle, friendlies, enemies, unknowns);
     }
 
     static void appendDeathTimeline(final StringBuilder sb, final Battle battle) {

@@ -27,7 +27,7 @@ AI Review「战局回放」的俯视坦克标记素材契约。最终方案为**
 ## 接入契约（未来播放器变更）
 
 - `hullYaw` / `turretRelativeYaw` / `turretWorldYaw` 已接入播放器：DTO 提供
-  `directionSamples`，`VehicleMarker.vue`（PR2 起）在 generic 路径用四张运行时素材渲染双层标记
+  `orientationSegments` 及其 samples，`VehicleMarker.vue`（PR2 起）在 generic 路径用四张运行时素材渲染双层标记
   （hull 按 `hullYawDeg`、turret 按 `turretWorldYawDeg` 独立旋转，共同 pivot 256,256）。
 - 阵亡（`pb-destroyed`）：敌我一致——双层素材冻结在最后可信方向（无方向样本时以素材默认 0° 渲染，
   不代表真实朝向），整体 opacity .35 + grayscale(1) 去饱和，叠加**红色大号 ✕**（PR #92 Review A：
@@ -36,12 +36,13 @@ AI Review「战局回放」的俯视坦克标记素材契约。最终方案为**
 - 历史轨迹只代表车辆曾经的位置，不代表车体或炮塔朝向。
 - 最后已知状态只使用透明灰，不添加时钟图标。
 - 录像者、选中、低血量、阵亡、悬停属于 UI overlay，不烘焙进基础 sprite。
-- 推荐地图显示尺寸为 `28px`（移动端 22px）；阵营色由四张基础 sprite 表达，选中、低血量、阵亡、悬停和
-  录像者标记由消费组件的独立 UI 覆盖层表达。
+- generic marker 的显示盒由 `utils/vehicleMarkerSizing.js` 按 vehicle class fallback 计算，
+  不再把 `28px/22px` 当作所有车辆的固定尺寸；阵营色由四张基础 sprite 表达，选中、低血量、阵亡、
+  悬停和录像者标记由消费组件的独立 UI 覆盖层表达。
 - **有效可见尺寸（2026-08-14 起）**：素材 512×512 含大量透明留白（实测有效车体 bbox ≈210×336，
-  炮塔层 ≈162×323），`BattlePlayback.vue` 将两层 img 放大到按钮的 131% 并以共同 pivot 居中旋转
-  （`translate(-50%,-50%) rotate(...)`）——桌面 28px 容器下有效可见车体 ≈15×24px，地图缩放时
-  标记屏幕尺寸恒定、不再显得过小。改素材时保持画布中心 pivot 与留白比例，否则需同步该缩放系数。
+  炮塔层 ≈162×323），`BattlePlayback.vue` 将两层 img 放大到按钮的 134% 并以共同 pivot 居中旋转
+  （`translate(-50%,-50%) rotate(...)`）——marker 盒由车型 footprint 与当前地图投影共同决定，
+  地图缩放时随地图同比放大。改素材时保持画布中心 pivot 与留白比例，否则需同步该渲染契约。
 - 无障碍名称与车辆状态由消费组件提供；地图上的装饰性实例应设置 `aria-hidden="true"`。
 
 ## 设计与验收源（非运行时资产）

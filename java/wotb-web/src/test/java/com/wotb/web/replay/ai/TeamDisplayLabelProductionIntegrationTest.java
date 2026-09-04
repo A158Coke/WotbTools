@@ -158,8 +158,7 @@ class TeamDisplayLabelProductionIntegrationTest {
     }
 
     private static ReplayProcessingResult result(final Battle battle) {
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         return new ReplayProcessingResult(
                 "display.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("hash-display", battle.arenaId, "11.0", battle.mapName,

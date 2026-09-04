@@ -2,7 +2,7 @@
   战局回放 / 战局重建能力面板。
   Dataset-only：读已解析 Processing Job 的 cached map-overview.json（processingJobId + sourceId），
   不重新上传 replay / 不重新 full process（multipart map-overview 已随 /api/replay/map-overview 废弃为 410）。
-  热力/路线/战局回放（MapOverview）。与 AI 复盘解耦——不想跑 AI 复盘时也能看图。
+  热力/战局回放（MapOverview）。与 AI 复盘解耦——不想跑 AI 复盘时也能看图。
   目标文件由父组件以 prop 传入；file identity 与「是否开始加载」解耦：仅当宿主声明
   active=true 且该文件尚未尝试加载时才自动请求 cached map-overview；手动按钮仅用于重试。
   seekTo 支持 AI 报告时间链接（未加载先拉取、自动展开折叠，MapOverview 收到 seek 后切回放视图）。
@@ -15,7 +15,7 @@ import { isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { ApiError, apiErrorFromResponse, apiFetch, normalizeApiError } from '../utils/http.js'
 import type { BattlePlaybackDataset } from '../types/playback-v2.js'
-import { parseBattlePlaybackDataset } from '../types/playback-v2.js'
+import { validateBattlePlaybackDataset } from '../api/contract-runtime.js'
 import MapOverview from './MapOverview.vue'
 import BattlePlayback from './BattlePlayback.vue'
 
@@ -63,7 +63,7 @@ async function authedFetch(url: string, body: BodyInit | null, { signal }: { sig
 }
 
 const mapOverview = ref(null)
-/** V2 canonical battle-playback dataset（可选；迁移期守卫，加载失败不阻断 legacy map）。 */
+/** V2 canonical battle-playback dataset；未加载或 204 时为空。 */
 const mapPlaybackV2 = ref<BattlePlaybackDataset | null>(null)
 /**
  * V2 battle-playback 显式状态机（禁止静默吞掉 204/error）：LOADING | FULL | PARTIAL | UNAVAILABLE | ERROR。
@@ -74,24 +74,21 @@ const playbackV2Error = ref('')
 const playbackV2Retryable = ref(false)
 const playbackV2UnavailableReason = ref('')
 /**
- * PRIMARY Battle Playback 的 overview 输入：MapOverview 存在时用其完整 overlay（heatmap/routes 之外的
+ * PRIMARY Battle Playback 的 overview 输入：MapOverview 存在时用其完整 overlay（heatmap 之外的
  * gridCells/spawnPoints/playableBounds 为可选项）；MapOverview 不可用/缺失时由 V2 dataset 合成最小
  * authoritative overview（mapCode/friendlyTeam/recorderAccountId/arenaBonusType），保证 PRIMARY 不依赖
  * map-overview artifact 是否存在才能渲染（Blocker 2：Battle Playback PRIMARY 不被 MapOverview capability 锁死）。
  */
 const pbOverview = computed(() => {
-  if (mapOverview.value) return mapOverview.value
   const v2 = mapPlaybackV2.value
   if (!v2) return null
+  const overlay = mapOverview.value || {}
   return {
-    mapCode: v2.mapCode || null,
-    friendlyTeam: v2.friendlyTeam,
+    ...overlay,
+    mapCode: v2.mapCode ?? null,
+    friendlyTeam: v2.friendlyTeam ?? null,
     recorderAccountId: v2.recorderAccountId ?? null,
     arenaBonusType: v2.arenaBonusType ?? null,
-    playableBounds: null,
-    gridCells: [],
-    spawnPoints: [],
-    routes: [],
   }
 })
 /** 面板内视图：默认 BattlePlayback 为主；地图鸟瞰为 secondary。 */
@@ -155,8 +152,9 @@ async function loadMapOverview() {
 
 /**
  * 拉取 V2 canonical battle-playback dataset（独立竞态序号）。显式状态机，绝不在 204/error 时静默
- * 置 null 导致 Playback 整块消失。204 → UNAVAILABLE（确定性原因）；非 200 → ERROR（本地化，
- * 是否显示 retry 由 canonical retryable 决定）；
+ * 置 null 导致 Playback 整块消失。204 → UNAVAILABLE（确定性原因）；非 200 → ERROR（本地化；
+ * 手动「重试加载」在 ERROR 态始终可见——datasetReady 由外层模板保证，canonical retryable
+ * 仅保留为错误语义/自动重试策略，不门控手动恢复入口）；
  * 200 → FULL/PARTIAL。日志记录 processingJobId / sourceId / V2 status / capability / limitations /
  * failure code；绝不记录 token。
  */
@@ -187,21 +185,16 @@ async function loadPlaybackV2() {
     }
     const ds = await r.json()
     if (seq !== playbackV2Seq) return
-    const dataset = parseBattlePlaybackDataset(ds)
-    if (!dataset) {
+    const validation = validateBattlePlaybackDataset(ds)
+    if (!validation.data) {
+      // Diagnostic metadata is safe; never log response payload, token, or replay content.
+      console.warn('[playback-v2] contract validation failed', {
+        ...logBase,
+        diagnostics: validation.diagnostics.slice(0, 8),
+      })
       throw new ApiError({ code: 'INVALID_RESPONSE', status: r.status, retryable: false })
     }
-    if (dataset.capability === 'UNAVAILABLE') {
-      mapPlaybackV2.value = null
-      playbackV2State.value = 'UNAVAILABLE'
-      playbackV2UnavailableReason.value = t('recon.playback.unavailable')
-      // eslint-disable-next-line no-console
-      console.warn('[playback-v2] unavailable (capability)', {
-        ...logBase,
-        limitations: dataset.limitations
-      })
-      return
-    }
+    const dataset = validation.data
     mapPlaybackV2.value = dataset
     playbackV2State.value = dataset.capability === 'PARTIAL' ? 'PARTIAL' : 'FULL'
     // eslint-disable-next-line no-console
@@ -378,16 +371,18 @@ onBeforeUnmount(() => {
           <div v-else-if="playbackV2State === 'UNAVAILABLE'" class="pb-status pb-unavailable" data-test="pb-unavailable">
             {{ playbackV2UnavailableReason }}
           </div>
-          <div v-else-if="playbackV2State === 'ERROR'" class="pb-status pb-error" data-test="pb-error">
+          <div v-else-if="playbackV2State === 'ERROR'" class="pb-status pb-error" data-test="pb-error" :data-retryable="playbackV2Retryable">
             <span>{{ playbackV2Error }}</span>
-            <button v-if="playbackV2Retryable" type="button" class="ghost sm" data-test="pb-retry" @click="retryPlaybackV2">{{ $t('recon.playback.retry') }}</button>
+            <!-- ERROR 态始终提供手动「重试加载」（外层 v-else 已保证 datasetReady）；
+                 canonical retryable 仅保留为错误语义/自动重试策略，不门控手动恢复入口。 -->
+            <button type="button" class="ghost sm" data-test="pb-retry" @click="retryPlaybackV2">{{ $t('recon.playback.retry') }}</button>
           </div>
           <div v-else-if="playbackV2State === 'LOADING'" class="pb-status" data-test="pb-loading">
             <span class="map-status-spinner" aria-hidden="true"></span>{{ $t('recon.playback.loading') }}
           </div>
         </div>
 
-        <!-- SECONDARY：地图鸟瞰（heatmap / routes） -->
+        <!-- SECONDARY：地图鸟瞰（heatmap） -->
         <div v-show="panelView === 'map'" data-test="pb-map-secondary">
           <MapOverview v-if="mapOverview" :overview="mapOverview" />
           <p v-else-if="mapLoaded && !mapLoading" class="map-unavailable" data-test="map-unavailable">

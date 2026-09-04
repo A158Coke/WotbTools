@@ -66,6 +66,34 @@ class BattleTimelineBuilderTest {
     }
 
     @Test
+    void type5OpeningHpSeedsTheActiveBattleFrame() {
+        final Battle battle = TimelineTestFixtures.battle(60.0);
+        final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        events.removeIf(event -> event instanceof HealthChangedEvent health
+                && health.entityId() == TimelineTestFixtures.ENEMY2_EID);
+        events.add(new com.wotb.core.replay.event.MaterializationEvent(
+                ++TimelineTestFixtures.seq,
+                TimelineTestFixtures.ts(-2),
+                5,
+                DecodeConfidence.EXACT,
+                TimelineTestFixtures.ENEMY2_EID,
+                2,
+                2400,
+                new byte[8],
+                new byte[0]));
+
+        final ReplayReconstruction recon = TimelineTestFixtures.recon(60.0, events);
+        final BattleTimeline timeline = BattleTimelineBuilder
+                .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
+
+        final FrameVehicle atStart = vehicleAt(timeline, TimelineTestFixtures.ENEMY2_EID, 0);
+        assertNotNull(atStart.health());
+        assertEquals(2400, atStart.health().currentHp());
+        assertEquals(FrameHealth.HealthKnowledge.CURRENT, atStart.health().knowledge());
+        assertEquals(2400, atStart.health().displayCapacityHp());
+    }
+
+    @Test
     void enemyKnowledgeStaysActiveAcrossQuietGapWithinOpenObservedSegment() {
         // P0-1 回归：enemy positional stream @10，无 Type4（无 leave）→ 观测段 [10, battleEnd) 保持打开；
         // 15/16/25 秒（age > 5）不得因「超时无包」自动降级 LAST_KNOWN（禁止 5s AoI authority）。
@@ -247,6 +275,25 @@ class BattleTimelineBuilderTest {
         // frame 0 的 events 里也不得有它
         assertTrue(timeline.frameAt(0).events().stream().noneMatch(e -> e.sequence() == 999),
                 "null timestamp 事件不得被塞进 frame 0");
+    }
+
+    @Test
+    void preBattleEventsRemainInCanonicalStreamButNotInActiveFrameZero() {
+        final Battle battle = TimelineTestFixtures.battle(60.0);
+        final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        events.add(new com.wotb.core.replay.event.DamageEvent(
+                999, TimelineTestFixtures.ts(-5), 8, DecodeConfidence.EXACT,
+                TimelineTestFixtures.RECORDER_EID, TimelineTestFixtures.ENEMY_EID,
+                null, null, 420, false));
+        final ReplayReconstruction recon = TimelineTestFixtures.recon(60.0, events);
+
+        final BattleTimeline timeline = BattleTimelineBuilder
+                .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
+
+        assertTrue(timeline.events().stream().anyMatch(e -> e.sequence() == 999),
+                "canonical stream must retain pre-battle evidence");
+        assertTrue(timeline.frameAt(0).events().stream().noneMatch(e -> e.sequence() == 999),
+                "pre-battle evidence must not become an active frame-0 event");
     }
 
     @Test

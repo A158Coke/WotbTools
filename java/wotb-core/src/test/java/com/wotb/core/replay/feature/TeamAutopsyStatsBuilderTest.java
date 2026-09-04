@@ -1,7 +1,6 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.evidence.AiEvidence;
@@ -35,8 +34,7 @@ class TeamAutopsyStatsBuilderTest {
         p.deathTimeMillis = survived ? 0 : (long) (deathSec * 1000);
         p.survivalTimeSec = survived ? 300.0 : deathSec;
         if (!survived) {
-            p.deathTimeSource = deathSec > 0
-                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+            p.settlementLifeTimeSec = deathSec;
         }
         return p;
     }

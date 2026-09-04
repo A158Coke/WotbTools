@@ -3,12 +3,19 @@ import { computed, inject } from 'vue'
 import { useRoute } from 'vue-router'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { isHomeHost, viewFromRoute } from './navigation.js'
+import { useAuth } from '../composables/useAuth.js'
 import UserMenu from './UserMenu.vue'
 
 const route = useRoute()
 const navigate = inject('navigate')
 const activeView = computed(() => viewFromRoute(route))
+const { hasRole } = useAuth()
+const showBoost = computed(() => hasRole('wotbtools-admin'))
 const showHome = isHomeHost(window.location.hostname)
+const showDevEnvironmentNotice = import.meta.env.DEV
+const devEnvironmentNoticeKey = import.meta.env.MODE === 'production-remote'
+  ? 'environment.productionRemote'
+  : 'environment.local'
 const languageOptions = [
   { key: 'zh', label: '中文' },
   { key: 'en', label: 'English' },
@@ -29,8 +36,17 @@ function onLangChange(event) {
       <button v-if="showHome" :class="{ active: activeView === 'home' }" @click="navigate('home')">{{ $t('profile.home') }}</button>
       <button :class="{ active: ['replay', 'ai-review', 'battle-playback'].includes(activeView) }" @click="navigate('replay')">{{ $t('home.replayParse') }}</button>
       <button :class="{ active: activeView === 'hof' }" @click="navigate('hof')">{{ $t('hof.btn') }}</button>
-      <button :class="{ active: activeView === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
+      <button v-if="showBoost" :class="{ active: activeView === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
     </nav>
+    <span
+      v-if="showDevEnvironmentNotice"
+      class="dev-environment-notice"
+      data-testid="dev-environment-notice"
+      role="status"
+    >
+      <span class="dev-environment-label">{{ $t('environment.label') }}</span>
+      {{ $t(devEnvironmentNoticeKey) }}
+    </span>
     <div class="tb-spacer"></div>
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
       <option v-for="language in languageOptions" :key="language.key" :value="language.key">{{ language.label }}</option>

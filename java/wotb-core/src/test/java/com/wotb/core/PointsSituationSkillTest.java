@@ -1,7 +1,6 @@
 package com.wotb.core;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.evidence.PointsSituationSkill;
 import com.wotb.core.replay.evidence.PointsSituationSkill.CapturePresence;
@@ -31,8 +30,7 @@ class PointsSituationSkillTest {
         player.team = team;
         player.survived = false;
         player.deathTimeMillis = deathTimeMillis;
-        player.deathTimeSource = deathTimeMillis > 0
-                ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+        player.settlementLifeTimeSec = deathTimeMillis / 1000.0;
         return player;
     }
 

@@ -1,6 +1,12 @@
 import { positionCoveredAtV2, positionAtV2, orientationAtV2, lifeAt } from './battlePlaybackV2'
 import { screenRotation, turretWorldYawDeg } from './battlePlayback'
 
+type MarkerSize = {
+  renderBox: { width: number; height: number }
+  collisionFootprint: { width: number; height: number }
+  hitTarget?: { width: number; height: number } | null
+}
+
 const HULL_HITBOX = Object.freeze({
   dedicated: Object.freeze({ w: 0.9, h: 0.9 }),
   generic: Object.freeze({ w: 0.58, h: 0.9 }),
@@ -15,8 +21,8 @@ export function projectVehicleState({
   track,
   time,
   recorderAccountId,
-  friendlyTeam,
   model,
+  markerSize = null as MarkerSize | null,
   hullImage,
   turretImage,
   markerLeft,
@@ -33,9 +39,15 @@ export function projectVehicleState({
   const covered = positionCoveredAtV2(track.positionSegments, time)
   const recorder = vehicle.accountId === recorderAccountId
   const direction = orientationAtV2(track.orientationSegments, time)
-  const friendly = vehicle.team === friendlyTeam
-  const hullDeg = direction ? screenRotation(direction.hullYawDeg) : null
+  // friendly is a canonical track fact. The perspective team is presentation
+  // context only and must not re-derive vehicle identity from team numbers.
+  const friendly = track.friendly === true ? true : track.friendly === false ? false : null
+  const hullDeg = direction && Number.isFinite(direction.hullYawDeg)
+    ? screenRotation(direction.hullYawDeg)
+    : null
   const turretDeg = direction
+    && Number.isFinite(direction.hullYawDeg)
+    && Number.isFinite(direction.turretRelativeYawDeg)
     ? screenRotation(turretWorldYawDeg(direction.hullYawDeg, direction.turretRelativeYawDeg))
     : null
   return {
@@ -48,16 +60,18 @@ export function projectVehicleState({
     friendly,
     direction,
     model,
+    markerSize,
     hullImage,
     turretImage,
-    hullScreenDeg: destroyed ? (hullDeg == null ? 0 : hullDeg) : hullDeg,
-    turretScreenDeg: destroyed ? (turretDeg == null ? 0 : turretDeg) : turretDeg,
+    hullScreenDeg: hullDeg,
+    turretScreenDeg: turretDeg,
     markerStyle: { left: markerLeft(pos.x), top: markerTop(pos.y), transform: markerTransform },
     overlayInverseScale,
     overlayInverse,
     playerName: vehicle.playerName || '',
     tankName: vehicle.tankName || String(vehicle.tankId),
     hitbox: model ? HULL_HITBOX.dedicated : HULL_HITBOX.generic,
+    hitTargetSize: markerSize?.hitTarget || null,
     ariaLabel: `${vehicle.playerName}: ${translate(destroyed ? 'recon.map.playback.state_destroyed' : (covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`,
     lastKnown: !covered,
   }

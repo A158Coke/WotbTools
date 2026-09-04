@@ -10,6 +10,8 @@ import com.wotb.web.config.AiModelProperties;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.SpringAiChatGateway;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -21,8 +23,12 @@ import java.util.List;
  * （Call #1 + Team Call #2 validator retry loop + Autopsy），记录每个 validation attempt
  * 的 parse/validation 结果与冲突。
  * <p>必须设置环境变量 AI_API_KEY（临时 key，不在仓库出现）。</p>
- * Run: {@code mvn -pl wotb-web -am test -Dtest=TeamReviewRealE2EProbeTest -Dprobe.replay=<file>}
+ * Run from the {@code java} directory in PowerShell after supplying an out-of-band key:
+ * {@code $env:AI_API_KEY = "<provided-out-of-band>"; mvn -pl wotb-web -am test
+ * "-Dtest=TeamReviewRealE2EProbeTest" "-Dai.probe.excludedGroups=" "-Dprobe.replay=<file>"}
  */
+@Tag("ai-live")
+@Disabled("Live DeepSeek API probe; skipped in CI and normal local test runs")
 class TeamReviewRealE2EProbeTest {
 
     @Test

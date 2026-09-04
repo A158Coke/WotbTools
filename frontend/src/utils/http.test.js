@@ -24,6 +24,7 @@ describe('apiErrorFromResponse', () => {
   ])('parses canonical %s responses', async (status, code) => {
     const error = await apiErrorFromResponse(response(status, JSON.stringify({
       errorCode: code,
+      errorMsg: null,
       status,
       id: 'err-1',
       retryable: status >= 500,
@@ -32,6 +33,27 @@ describe('apiErrorFromResponse', () => {
     })))
     expect(error).toBeInstanceOf(ApiError)
     expect(error).toMatchObject({ errorCode: code, code, status, id: 'err-1', retryable: status >= 500 })
+  })
+
+  it('rejects canonical responses whose body status differs from HTTP status', async () => {
+    const error = await apiErrorFromResponse(response(500, JSON.stringify({
+      errorCode: 'INTERNAL_ERROR', errorMsg: null, status: 400, id: 'err-1',
+      retryable: false, details: {}, timestamp: null,
+    })))
+    expect(error).toMatchObject({ code: 'MALFORMED_ERROR_RESPONSE', status: 500 })
+  })
+
+  it('rejects lowercase canonical error codes', async () => {
+    const error = await apiErrorFromResponse(response(400, JSON.stringify({
+      errorCode: 'invalid_request', errorMsg: null, status: 400, id: 'err-1',
+      retryable: false, details: {}, timestamp: null,
+    })))
+    expect(error.code).toBe('MALFORMED_ERROR_RESPONSE')
+  })
+
+  it('rejects incomplete canonical error bodies instead of using their errorCode', async () => {
+    const error = await apiErrorFromResponse(response(400, '{"errorCode":"FILE_TOO_LARGE"}'))
+    expect(error.code).toBe('MALFORMED_ERROR_RESPONSE')
   })
 
   it('keeps legacy {error} compatibility', async () => {
@@ -105,10 +127,36 @@ describe('XHR and job compatibility', () => {
   it('parses canonical XHR errors', () => {
     const error = apiErrorFromXhr({
       status: 413,
-      responseText: '{"errorCode":"FILE_TOO_LARGE","id":"upload-id","retryable":false}',
+      responseText: '{"errorCode":"FILE_TOO_LARGE","errorMsg":null,"status":413,"id":"upload-id","retryable":false,"details":{},"timestamp":null}',
       getResponseHeader: () => null,
     })
     expect(error).toMatchObject({ errorCode: 'FILE_TOO_LARGE', code: 'FILE_TOO_LARGE', id: 'upload-id', retryable: false })
+  })
+
+  it('rejects incomplete canonical XHR errors', () => {
+    const error = apiErrorFromXhr({ status: 400, responseText: '{"errorCode":"FILE_TOO_LARGE"}' })
+    expect(error).toMatchObject({ code: 'MALFORMED_ERROR_RESPONSE', status: 400 })
+  })
+
+  it('rejects canonical XHR errors whose body status differs from HTTP status', () => {
+    const error = apiErrorFromXhr({
+      status: 500,
+      responseText: '{"errorCode":"INTERNAL_ERROR","errorMsg":null,"status":400,"id":"err-1","retryable":false,"details":{},"timestamp":null}',
+    })
+    expect(error).toMatchObject({ code: 'MALFORMED_ERROR_RESPONSE', status: 500 })
+  })
+
+  it('rejects lowercase canonical XHR error codes', () => {
+    const error = apiErrorFromXhr({
+      status: 400,
+      responseText: '{"errorCode":"invalid_request","errorMsg":null,"status":400,"id":"err-1","retryable":false,"details":{},"timestamp":null}',
+    })
+    expect(error.code).toBe('MALFORMED_ERROR_RESPONSE')
+  })
+
+  it('keeps legacy XHR error codes compatible', () => {
+    expect(apiErrorFromXhr({ status: 503, responseText: '{"error":"REPLAY_BUSY"}' }))
+      .toMatchObject({ code: 'REPLAY_BUSY', status: 503 })
   })
 
   it('maps malformed JSON XHR responses to the protocol error code', () => {

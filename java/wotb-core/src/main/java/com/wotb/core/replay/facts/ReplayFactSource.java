@@ -13,8 +13,6 @@ public enum ReplayFactSource {
     DERIVED_FROM_OBSERVED,
     /** 结算精确值（battle_results.dat 精确字段）。 */
     SETTLEMENT_EXACT,
-    /** 结算秒级精度（如结算死亡时刻只有秒级）。 */
-    SETTLEMENT_SECOND,
     /** tankopedia / 静态参考基线（不是本场实际值）。 */
     BASE_REFERENCE,
     /** 未知。 */

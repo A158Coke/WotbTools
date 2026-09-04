@@ -4,7 +4,87 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Android QQ 登录返回原 WebView（Verified App Link，CODE READY / PRODUCTION VALIDATION REQUIRED）**：QQ App 完成授权后
+  会把 `auth.wotbtools.com/.../broker/juhe-qq/endpoint` callback 打开到系统浏览器，导致 Browser B != 原 WebView A、
+  AuthenticationSession continuity 被破坏 → `already_logged_in`。现用 **Verified App Link** 把这个 exact Juhe QQ
+  broker callback 路由回原 WotBTools App（same MainActivity / same WebView / same cookie jar，inAuthFlow 保持 true），
+  复用同一次 auth transaction。App Link 只接管 `https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint`，
+  不接管整个 `auth.wotbtools.com` / 其它 realm / 其它 IdP provider；`AuthReturnPolicy` 仅做路由边界
+  （scheme/host/path/type=qq/state/code presence），不解释 state/code 载荷；`auth.wotbtools.com/.well-known/assetlinks.json`
+  由 nginx 直接返回 `application/json`（非代理 Keycloak）。热返回走 `onNewIntent`，冷返回（进程被杀）走
+  `pendingAuthReturn` + startup gate，不绕过强制更新。日志只记录 `auth-return action=... source=app-link`，
+  不记录完整 callback URI/query/state/code。同步 `AuthReturnPolicyTest` 与 `docs/android/architecture.md`。
+  需真机 + 生产 Keycloak 验证 App Link 路由与 `already_logged_in` 消除（PR 描述已标注 PRODUCTION VALIDATION REQUIRED）。
+- **Battle Playback review regressions**：开局投影现在保留战前每个 canonical 据点的最后完整状态并在缺少显式 `t=0` 时 seed，确保 3/4 据点回放从 `00:00` 显示完整状态；最近 2 秒轨迹只按合法 OBSERVED segment 与 `interpolationAllowed` 裁剪，不再用固定 5 秒断线；坦克标记按可靠车体 metadata 显示，车辆模型碰撞只做 tank-vs-tank 小范围 presentation-only 软避让（不因视口边缘移动车辆、接近/离开视口自然裁剪）；无比分/据点时敌方仍固定在 HUD 第 3 列。
+- **生产 Grafana 看板 runtime crash**：移除 `WotBTools · Keycloak` 看板若干 panel 的非法 dashboard links（`type=dashboard + uid` 但缺失有效 `url`），该结构会触发 Grafana 前端 `TypeError: Cannot read properties of undefined (reading 'replace')`；并在 CI observability 校验中加入静态守卫，禁止此类 panel links 回归。
+- **Android QQ 登录 auth host allowlist（1.0.9）**：允许已在生产链证实的 `xui.ptlogin2.qq.com`
+  进入 `AuthNavigationPolicy.AUTH_PROVIDER_HOSTS`（基于 Android 1.0.8 真机 ADB 证据：
+  Keycloak → graph.qq.com → xui.ptlogin2.qq.com → callback，此前因 allowlist 缺失触发
+  `AUTH_FAILURE`）。仅追加 exact hostname，不扩 `*.qq.com` / suffix / 整域 trust；auth flow 内
+  unknown host 仍 `AUTH_FAILURE`，非 auth 外链仍 `OPEN_EXTERNAL`，CookieManager /
+  Native Bridge origin 边界不变。同步 `AuthNavigationPolicyTest`（新增生产链 regression +
+  xui 边界 + sourceCategory）与 `docs/android/architecture.md` Authentication Boundary。
+- **Android QQ 登录 native auth handoff**：真实生产链在 `xui.ptlogin2.qq.com` 之后会发起
+  `wtloginmqq://ptlogin/...` native 跳转（`ptlogin` 不是普通 HTTPS hostname）。新增
+  `AuthNavigationAction.NATIVE_AUTH_HANDOFF` 与 `AuthNavigationPolicy.NATIVE_AUTH_TARGETS`
+  （精确 `scheme=wtloginmqq` + `host=ptlogin` pair），仅在 `inAuthFlow=true` 时把该 URI 交给
+  QQ App（ACTION_VIEW），保留当前 WebView auth transaction / cookie jar，不进入 `auth-recovery`、
+  不 reload 首页、不切系统浏览器；QQ App 未安装时提示安装后重试（fail closed，不 silent fallback）。
+  不把 `ptlogin` 加入 `AUTH_PROVIDER_HOSTS`，不扩 `mqq*`/`*.qq.com`/suffix/前缀通配；未知
+  native scheme/host（含 host=null 的未知 custom scheme）在 auth flow 内仍 `AUTH_FAILURE` 且不退出
+  auth flow（fail closed）。同步 `AuthNavigationPolicyTest`
+  （native handoff 精确匹配 + 越权/越域 rejection + 生产链到 native handoff）与
+  `docs/android/architecture.md` Authentication Boundary（区分 Web auth hosts 与 native handoff）。
+
+### Added
+- **Juhe QQ callback 阶段追踪与 callbackRef 关联（已脱敏）**：JuheQqEndpoint.handleCallback 增加完整 stage 序列
+  （callback_entered → authentication_session_restored → juhe_callback_accepted → before_broker_authenticated →
+  broker_authenticated / broker_authenticated_failed），所有 stage 带同一 callbackRef（state 的 SHA-256 前 8 hex，
+  单向、不可逆、可关联同一 transaction 的重复 callback / replay）。仅记录 realm / provider / juheType /
+  authenticationSession=present|invalid / socialUid=present|empty / exception；绝不记录完整 state、authorization
+  code、access token、appkey、Cookie、完整 callback URL/query、social_uid 原值。用于定位 Keycloak
+  IDENTITY_PROVIDER_LOGIN_ERROR already_logged_in 的真实失败边界（evidence-first，本阶段不改登录行为）。
+  同步 JuheQqEndpointTest / JuheQqIdentityProviderTest（stage 顺序 + callbackRef 稳定/不可逆 + 敏感值不落日志）。
+- **Local Frontend → Production Backend / Keycloak 开发模式**：前端新增 `npm run dev:production-remote`，通过 Vite `/api` 开发代理连接生产站点，同时复用现有生产 Keycloak issuer 配置；开发 Topbar 显示非模态环境提示并提醒不要上传测试或敏感数据。普通 `npm run dev` 的本地后端代理保持不变。详见 `docs/frontend/local-production-dev.md`。
+
 ### Changed
+- **Battle Playback workspace / HUD / event / destroyed 增强**：fullscreen 改为 3-column Workspace（64px Left Rail + Map Workspace + Right Details；Right Details 未选状态默认 Battle Summary）；HUD 显示完整整数（去掉 1k/22.3k 缩写）并带「己方总HP / 敌方总HP / 点数」语义 label + Team HP 延迟伤害 chip（seek/恢复帧 hpNoTransition 直接同步、prefers-reduced-motion 禁用）；kill feed 改为 Map Workspace top-center Event Banner（玩家名（车辆名）被击毁、victim-only、最多 2 条队列、约 3s）；destroyed 单车隐藏 HP、Details 明确「已击毁」。坐标 SSoT：SVG map / HTML marker / collision / hitbox / label / float 同用 .pb-map / mapWidth() rect，fullscreen/contain 下 marker 不再跑进 gutter（新增 source-level 回归）。
+- **Battle Playback playback enhancement**：接入 wrapper12 权威 A/B/C/D 基地状态并按回放时间查询；新增不跨观测断点的最近 2 秒车辆轨迹（默认开启且记忆）；全屏 shell 以 grid/flex 保证 HUD、地图、控制和时间轴共同可见，密集坦克标记做稳定的 presentation-only 避让；无权威点数/目标时移除虚假占位符，标注色板增加纯黑。保持 backend route aggregate 供 AI/export 消费，但不恢复独立 Routes UI。
+- **Battle Playback responsive shell**：Battle Playback now uses a shared map-first shell with a universal three-column HUD, compact playback controls, on-demand Battle/Vehicle/Display/Events panels, and a collapsible annotation toolbar. Mobile keeps the map and HUD visible by default, reveals controls on map activity, and uses best-effort landscape fullscreen without changing replay state or the V2/API contract.
+- **Android auth flow 未知 host 策略与失败恢复**：auth flow 内遇到未验证 host 不再 `OPEN_EXTERNAL + 清空 inAuthFlow`（这是 `cookie_not_found` 与黑屏的关键根因之一），改为 `AUTH_FAILURE` 阻断该导航并进入 auth-failure recovery：退出 auth flow、返回 WotBTools 首页并提示「登录失败，请重试」。非 auth flow 的普通外链 `OPEN_EXTERNAL` 行为不变；不新增 `*.qq.com` 等通配白名单，仅在未来真实 navigation trace 证明后逐个加入 exact hostname。
+- **Battle Playback Event Panel presentation cleanup**：事件面板仅展示 `DAMAGE`、`KILL` 和 `DESTROYED`；`authoritativeEvents` 仍完整供播放状态、战斗反馈、炮线和统计使用，不改变 canonical 事件事实。
+- **Battle Playback UI hierarchy cleanup**：移除用户可见路线视图、路线筛选/图例与相关残留；时间轴改为无事件标记装饰，事件集中到默认折叠且可点击 seek 的 Event Panel；控制栏收敛为播放、±5 秒、0.5/1/2/4 倍速、Reset View 和 Fullscreen。保留后端 route aggregate 合同及真实事件、HP、选中状态。
+- **手机端（<768px）UI 布局优化**：Mobile 断点统一为 `@media (width < 768px)` range 语法并消除 JS/CSS 1px 错配；补齐 classic 浅色主题在 AdminUsers/Contact/Boost/Profile 的对比度覆写；修复 HoF mark3 工具条挤压、分析面板表格裁剪、admin 表头移动端 sticky 偏移、modal 遮罩 showcase 语义反转、ColumnPicker 触屏不可重排序（新增上/下移按钮 + 三语 i18n）、批量选择 bottom-sheet 无遮罩等问题；移动端输入框字号 ≥16px、主要触控目标 ≥36px，并预留 viewport-fit/safe-area 兼容。无 API/路由/数据契约变化。
+
+### Removed
+- **Hundred WG statistics path**：移除百场 `WARGAMING_API` 官方统计、自动审核 endpoint、snapshot DTO/映射与前端分支；Wargaming ASIA/EU/NA 登录和 Profile 同步保留，百场统一走 MANUAL 截图 + 5 replay 审核。新增生产存量清理工具，默认 dry-run，并按共享引用保护 MANUAL 与单场名人堂回放。
+
+### Changed
+- **Homepage feature card backgrounds**：为 Replay 解析、AI 复盘、战局重建、Boost 和 Sponsor 卡片分配独立视觉素材，并按业务用途整理资源文件名；不改变页面布局和功能。
+- **Showcase background assets**：主页、各功能页和独立赞助页改用用户提供的原创背景素材；保留现有 canonical 资源路径、页面结构与响应式规则。
+- **Keycloak 与生产观测升级**：Keycloak 26.6.4 image build 启用 health/metrics，management `/metrics` 通过 Docker 内部端口 `9000` 纳入 Prometheus；Alloy/Loki 纳入 Keycloak 日志；新增固定版本 node-exporter、AI review queue depth Gauge 与 Keycloak/生产总览 Dashboard。保持公共 HTTP/Android contract、数据库 schema、业务处理入口与无用户级 metric label 不变。
+- **Battle Playback V2 backend-owned state facts**：将相对满血证明、DamageLoss 的 transient/ghost
+  事实、模块/乘员清除 transition 与 consumable 全局失效边界收敛到 canonical backend projection；
+  前端只按时间查询并负责百分比、格式化和展示，legacy artifact 兼容仍限于读取边界。
+- **Battle Playback V2 canonical truth closure**：V2 HTTP playback now removes the dead
+  `shots`/`ShotTrack` surface, transports canonical `damageLosses`, and keeps capability
+  limited to `FULL`/`PARTIAL`; old persisted artifacts are normalized only while being read.
+  Position/orientation sample knowledge is no longer duplicated, perspective remains neutral
+  when unresolved, consumable slots and 3/3/9 loadout shapes are explicit, and marker/HP/
+  Inspector/damage-log consumers read the current V2 dataset directly.
+- **Battle Playback V2 canonical consumption cleanup**：Battle Playback now consumes
+  `VehiclePlaybackTrack` directly. V2-native health/team-health selectors unify marker,
+  team bar, Details and Inspector presentation; `track.friendly`, position interpolation
+  permission and canonical life/health transitions are authoritative; health decreases are the
+  received-damage truth, while event `observedHpLoss` is used only for reliable attacker attribution.
+  Type5 combat-vehicle opening HP now seeds the canonical timeline. No OpenAPI shape change.
+- **Battle Playback temporal/loadout closure**：active-battle playback now excludes negative-time events while retaining canonical provenance, deduplicates pre-battle `INITIALIZED` seeds by entity+wireCode, and rejects negative temporal fields at the producer boundary. Type5 loadout decoding now shares the Type32 consumable mapping and covers the reviewed 11.19 food, fuel, protective-kit, and gear-oil wire-code families; current BlitzKit `equipment.pb` identity for vehicle-specific raw equipment `120` (`Improved Modules +`) is cataloged and generated into the three-language Inspector labels; unknown codes retain raw values. Contract-invalid playback responses have an explicit localized error instead of the generic unknown error, and the Inspector equipment rows remain a fixed 3×3 grid at narrow widths.
+- **真实 DeepSeek E2E 测试隔离**：三个真实 provider probe 统一标记为 `ai-live`，`wotb-web` 默认 Surefire 排除 live probe；普通测试即使存在 `AI_API_KEY` 也不会因此发起付费请求。新增 deterministic isolation guard，并明确 live probe 的人工显式运行约定；mock、loopback、prompt contract 与 AI eval 测试保持普通测试路径。
+- **FE ↔ BE HTTP contract infrastructure**：新增 OpenAPI 3.1 wire contract 作为 HTTP 唯一事实源，生成前端 transport/schema/error-code registry，加入 OpenAPI/ref、generated drift、生产形状 fixture、Ajv runtime 与 Playback serialization 的独立 CI gate；补齐 domain/transport/artifact compatibility 与 ApiError 维护规则。Playback 旧 artifact 仅在读取边界兼容，live response 不放宽为 legacy enum；server error registry 与前端 network/abort/malformed 等 synthetic application error 分层。
+- **League #301-only + settled fingerprint + PR-E single-source AI dispatch**：League Rating 以 #301 的 14 settled combatants 为唯一 authority——删除 `settlementAccountsCoveredByRoster`/`settlementRosterTeamConsistent` eligibility 依赖及字段（#201 仅用于 nickname/clan/rank/prebattle metadata enrichment，缺失/extra 不阻塞评分；`Battle.rosterComplete` 保留给 SURVIVOR_SETTLEMENT/annihilation 推断）。`LeagueRatingConflictDetector` 改为确定性 settlement/Rating 指纹（第一份 canonical，O(n) 非 all-pairs），删除 roster/#201/clan/killer/resultEntity 等非 Rating identity 字段。AI 复盘改为单文件 `ReplayProcessingResult` 直接 scope/eligibility/consumer dispatch（不再 `List.of(result) -> BatchAnalyzer -> grouping -> representative`）；`ReplayProcessingCapabilities` 收敛为 5 个不可重算事实（删除 recorderParticipantResolved / recorderEntityMapped / playerFeatureExtractionPossible 三个可推导状态）。无 Web/Android contract、Flyway 或生产处理入口变化。
+- **PR203 AI eligibility 单一 SSOT**：AI eligibility 判定收敛为单一来源——`ReplayProcessingCapabilities.aiAnalyzable(scope)` 按当前 result 的实际 capability facts 即时判定（PLAYER_FOCUSED 需 summary+recorder；TEAM_PERSPECTIVE 需 summary+perspectiveTeamResolved+recorder/feature），删除独立 `AiAnalysisEligibility` utility（Reuse/Extend：职责最匹配的现有类型是 capabilities value）与 `BatchAnalyzer` 内重复 `isAiAnalyzable` switch；`BatchAnalyzer.analyzePartition()` 与 web 单文件 consumer 复用同一 SSOT；`ReplayProcessingResult.analyzable()` 死代码删除（零调用方）。无 Web/Android contract、Flyway 或生产处理入口变化。
+- **Replay/League authority cleanup**：settlement `#301 field24 lifeTime` 成为唯一业务死亡秒值；Playback/live reconstruction 仅服务播放、HP/动画与诊断，不覆盖 `PlayerResult`。Trade 与 League 校验改为 settlement-only/fail-closed；decoder 按 packet/envelope/shape/invariant 处理，无法证明的 numeric semantic raw-preserve。保留兼容 projection、Web/Android contract、Flyway 与生产处理入口不变。
 - **PR G 首批可观测性看板**：新增 Production Overview、AI Review、Error Explorer 三张 Grafana 看板，覆盖 Backend health、HTTP error/P95、Replay active/queued、AI lifecycle/validation、CPU/JVM 与 Loki 错误关联检索。复用现有 Prometheus/Loki 采集链路，不引入新的 exporter，不改变生产业务、Web/Android contract、Flyway、RabbitMQ 或 COS。
 - **Independent Control API acceptance slice**：从 async contracts 基线单独提供 `wotb-control` artifact；使用真实 PostgreSQL Testcontainers + `JdbcClient SELECT 1`，并以独立 management port 的真实 Spring Boot/Actuator security smoke 验证 health、metrics、admin probe 与 401/403 边界。无 Flyway、RabbitMQ、COS 或 Web/Android public contract 变更；Native POC 已完成并记录 JVM/Native 对比结果，生产部署仍延期。
 - **Pre-Dual-Cloud contract foundation**：新增无 Spring/provider SDK 依赖的 `wotb-contracts` artifact，建立 metadata-only async ports 与分别面向 current processing-job/source contract 的显式 status adapters；RabbitMQ/COS/AI/Replay extension 保持延期，当前 Web/Android contract 不变。
@@ -18,6 +98,11 @@
 
 ### Fixed
 - **三环单张截图提交被误判为无效**：修复 `proofScreenshots` 仅包含一个 data URL 时，Spring 将其中的逗号按集合分隔符拆开，继而触发 `MARK3_INVALID_IMAGE_DATA` 的问题。Controller 现在直接读取 multipart 的原始重复参数值，保持既有 1–2 张 base64 `data:image/` API 契约；新增单图与双图 HTTP 参数绑定回归测试。
+- **Showcase 背景素材版权风险收口**：替换主页、回放、名人堂、Rating、Profile、Boost、Admin、HoF Admin、版本与联系页的正式 PNG 背景，移除原背景中可识别的 WG / World of Tanks 品牌图形与文字；页面槽位、遮罩和响应式布局保持不变。
+- **Android WebView 登录 Cookie / OAuth 链路修复**：Android WebView 现在显式启用认证所需的
+  first-party/third-party Cookie；Keycloak → QQ/IdP → callback 认证事务保持在同一个 WebView
+  cookie jar 中，不再因中间导航切入系统浏览器而分裂 session。provider 仍使用证据驱动的精确
+  hostname allowlist，普通外链与 Native Bridge origin 边界不变。
 - **Replay Workspace capability 切换状态同步/结果丢失（生产 hotfix）**：两个关联 bug——①在「战局回放」上传单 replay，READY 后 Map 不自动出现，需手动切一次 tab；②data/playback 间切换后赛果可能消失/进入空态。根因是 ReplayWorkspace 用两个碎片化 watcher（`[activeCapability, currentTargetFile]` prepare + `selectionRevision→reset`）驱动 capability dataset，`selectionRevision` reset 在 prepare 之后执行会自增 token，使 in-flight `requestDirectAction` 的 resolve 被 stale-guard 丢弃（datasetRef 永不设置），且 prepare 不看 READY（processingJobId/currentBattleId）变化，导致必须靠切 tab 重新触发。重构为**单一 reconcile watcher**：由 authoritative Workspace 源（`activeCapability + currentBattleId + currentProcessingJobId + currentTargetFile + selectionRevision + files`）驱动当前活跃 capability 的 dataset，`useCapabilityReplay.reconcile` 幂等 + 在途不重发；capability 切换只改 `activeWorkspaceTab` 与 capability-specific dataset，绝不 reset 基础 replay state（files/resp/currentBattleId/processingJob）。`App.vue` 三个 replay URL 映射同一 `ReplayWorkspace`（KeepAlive，无 `:key` 强制 remount），实例与状态共用，确认非 remount 根因。新增 Case1/Case2/跨 capability selection 回归。验证：frontend full test（81 files / 1381 passed）+ `npm run build`。
 
 - **PR188 Known-Bugs 收尾：Replay Workspace 共享 selection + Battle Playback 反未来泄漏 + 战斗装载本地化**：
@@ -92,7 +177,7 @@
 - **Rating V2 雷达改为右侧选手抽屉**：隐藏管理员灰度页不再把六轴雷达追加到长结果表底部；点击玩家昵称后通过 `Teleport` 打开固定右侧抽屉，桌面/平板保持非模态并可继续点击表格切换玩家，移动端使用遮罩面板。补齐 Esc 关闭、触发按钮焦点回收与 reduced-motion；V2 公式/API、共享雷达几何及 League V5 页面不变。
 - **Battle Playback V2 UI 收尾（前端全 V2-only + 删除 Playback 影子层）**：前端 `BattlePlayback.vue` 的
   marker / HP HUD / Details Panel / team HP / 事件 feed 全部消费 canonical V2 事实（`healthAt` /
-  `lifeAt` / `positionAtV2` / `orientationAtV2` / `v2VehicleView`），不再回退 legacy
+  `lifeAt` / `healthDisplayAt` / `teamHealthAt` / `positionAtV2` / `orientationAtV2`），不再回退 legacy
   `MapOverview.Playback`。backend 删除 Playback 影子层（`MapOverview.Playback/PlaybackVehicle/
   PlaybackEvent/HpSample/DirectionSample/PositionInterval/HpLoss/FinalStats` + `buildPlayback` +
   `BattlePlaybackAdapter` + `AoiPositionCoverage`）；`BattlePlaybackDataset` 增加 battle-level
@@ -453,7 +538,7 @@
   - `LeagueFailure.Code.MISSING_DEATH_TIME` 全链路删除（core 常量 / Excel 失败标签 /
     前端三语 i18n / 测试 / 文档）。
   - 新增非阻断 `ratingQuality.unknownDeathTimePlayers`（core `LeagueRatingBatch` →
-    `LeagueRatingDto` → preview 响应）；前端在存在 UNKNOWN 玩家时显示 quality warning
+    `LeagueRatingDto` → preview 响应）；该兼容槽不驱动前端 quality warning
     （可评分 X/X 不变、不计入「未生成 Rating」）。
   - 回归保护：`TradeFacts` 对 `survivalTimeSec <= 0` fail-closed 语义不变（新增
     `unknownDeathTimeDoesNotInferTrade` 等单测）；`DeathTimeReconciler` correctness

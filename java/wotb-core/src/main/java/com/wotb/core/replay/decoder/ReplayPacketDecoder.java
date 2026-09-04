@@ -14,7 +14,7 @@ public interface ReplayPacketDecoder {
     /**
      * 判断此 decoder 是否能处理给定的原始包。
      *
-     * @param context 解码上下文（含游戏版本等）
+     * @param context 解码上下文（含本次解码共享的实体类证据）
      * @param packet  原始事件包
      * @return true 如果此 decoder 支持解码该包
      */

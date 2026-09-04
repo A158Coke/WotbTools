@@ -37,6 +37,10 @@ description: >
    验收标准 / 待确认项。
 6. **交给 Plan**：方案单写入计划文件后即 Plan 素材，等待用户批准后才进入编码。
 
+## HTTP Contract planning
+
+涉及 API/跨层 shape 时，方案必须额外包含 `Contract Impact`、authoritative source、兼容性边界、生成产物、contract validation 与 migration 顺序；明确 domain、transport、view model 的 owner，禁止以兼容为由让前端掩盖后端 producer violation。
+
 ## 规则
 
 - 只用证据说话：引用 `文档:章节` 与 `文件:路径`；无法从事实源确认的写「待确认」，不猜。

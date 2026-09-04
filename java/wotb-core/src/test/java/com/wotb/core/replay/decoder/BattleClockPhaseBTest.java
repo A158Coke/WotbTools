@@ -35,6 +35,7 @@ class BattleClockPhaseBTest {
     private static RawReplayPacket rawPacket48(final long wrapper, final byte[] root) {
         final byte[] payload = new byte[8 + 4 + 1 + 1 + root.length];
         payload[4] = EntityMethodDecoder.SUBTYPE_UPDATE_ARENA2;
+        payload[8] = (byte) (2 + root.length); // strict Type8 outer argLen
         payload[12] = (byte) wrapper;
         payload[13] = (byte) root.length;
         System.arraycopy(root, 0, payload, 14, root.length);

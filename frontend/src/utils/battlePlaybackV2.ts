@@ -1,9 +1,10 @@
-import type { PlaybackDirection, PlaybackHpLoss, PlaybackPosition } from '../types/playback.js'
+import type { PlaybackDirection, PlaybackPosition } from '../types/playback.js'
 import type {
   ConsumableRuntimeResult,
   ConsumableTransition,
+  BattleEvent,
+  DamageLoss,
   HealthAtResult,
-  HealthTransition,
   LifeAtResult,
   LifeTransition,
   ModuleCrewResult,
@@ -14,32 +15,7 @@ import type {
   PositionSample,
   PositionSegment,
   VehiclePlaybackTrack,
-  V2VehicleView,
 } from '../types/playback-v2.js'
-
-type TrackWithLegacyHpLosses = VehiclePlaybackTrack & {
-  /** Legacy test/adapter data may carry precomputed losses; V2 DTOs do not. */
-  hpLosses?: PlaybackHpLoss[]
-}
-
-interface VehicleInspection {
-  identity: {
-    accountId: number
-    playerName: string
-    tankId: number
-    tankName: string
-    tankClass: string
-    team: number
-    friendly: boolean
-  }
-  health: HealthAtResult | null
-  lifeState: LifeTransition['lifeState']
-  destroyedKnownAtSec: number | null
-  positionCovered: boolean
-  orientationKnowledge: OrientationKnowledge
-  loadout: VehiclePlaybackTrack['loadout']
-  loadoutKnown: boolean
-}
 
 /**
  * Battle Playback V2（canonical sparse transition tracks）纯查询工具。
@@ -74,18 +50,22 @@ function lastAtOrBefore<T extends { timeSec: number }>(
   return ans
 }
 
-/** 最近一次 <= t 的 health transition（含 knowledge / displayCapacityHp）。 */
+/** 最近一次 <= t 的 backend health fact。 */
 export function healthAt(
   track: Pick<VehiclePlaybackTrack, 'healthTransitions'> | null | undefined,
   t: number,
 ): HealthAtResult | null {
   const tr = lastAtOrBefore(track?.healthTransitions, t)
-  if (!tr) return null
+  if (!tr || tr.knowledge == null
+    || (tr.knowledge !== 'CURRENT' && tr.knowledge !== 'LAST_KNOWN')) return null
+  if (tr.currentHp != null && (typeof tr.currentHp !== 'number' || !Number.isFinite(tr.currentHp))) return null
+  if (tr.currentHp == null && tr.relativeFull !== true) return null
   return {
-    currentHp: tr.currentHp ?? null,
-    knowledge: tr.knowledge ?? 'UNKNOWN',
+    currentHp: tr.currentHp,
+    knowledge: tr.knowledge,
     source: tr.source ?? 'UNKNOWN',
     displayCapacityHp: tr.displayCapacityHp ?? null,
+    relativeFull: tr.relativeFull === true,
     confidence: tr.confidence ?? 'UNKNOWN',
   }
 }
@@ -96,10 +76,233 @@ export function lifeAt(
   t: number,
 ): LifeAtResult | null {
   const tr = lastAtOrBefore(track?.lifeTransitions, t)
-  if (!tr) return null
+  if (!tr || (tr.lifeState !== 'ALIVE' && tr.lifeState !== 'DESTROYED')) return null
   return {
-    lifeState: tr.lifeState ?? 'UNKNOWN',
+    lifeState: tr.lifeState,
     destroyedKnownAtSec: tr.destroyedKnownAtSec ?? null,
+  }
+}
+
+/**
+ * Canonical HP presentation for one track at t.
+ *
+ * `relativeFull` is a backend-projected presentation-safe fact: it never
+ * invents an actual current/max HP pair. A missing enemy fact remains UNKNOWN.
+ */
+export function healthDisplayAt(
+  track: Pick<VehiclePlaybackTrack, 'healthTransitions' | 'lifeTransitions'> | null | undefined,
+  t: number,
+) {
+  if (!track || !Number.isFinite(t)) return null
+  const life = lifeAt(track, t)
+  const health = healthAt(track, t)
+  const destroyed = life?.lifeState === 'DESTROYED'
+  if (destroyed) {
+    const capacity = health?.displayCapacityHp ?? null
+    return {
+      currentHp: 0,
+      displayCapacityHp: capacity,
+      pct: capacity && capacity > 0 ? 0 : null,
+      knowledge: 'CURRENT',
+      source: 'DESTROYED',
+      confidence: health?.confidence ?? 'UNKNOWN',
+      destroyed: true,
+      relativeFull: false,
+      state: 'DESTROYED',
+    }
+  }
+
+  if (health?.currentHp != null && Number.isFinite(health.currentHp)) {
+    const rawCapacity = health.displayCapacityHp
+    const capacity = typeof rawCapacity === 'number' && Number.isFinite(rawCapacity) && rawCapacity > 0
+      ? rawCapacity
+      : null
+    const pct = capacity == null ? null : Math.max(0, Math.min(100, (health.currentHp / capacity) * 100))
+    const relativeFull = health.relativeFull === true
+    return {
+      currentHp: health.currentHp,
+      displayCapacityHp: capacity,
+      pct,
+      knowledge: health.knowledge,
+      source: health.source,
+      confidence: health.confidence,
+      destroyed: false,
+      relativeFull,
+      state: relativeFull && capacity == null ? 'RELATIVE_FULL' : health.knowledge,
+    }
+  }
+
+  const relativeFull = health?.relativeFull === true
+  return {
+    currentHp: null,
+    displayCapacityHp: null,
+    pct: null,
+    knowledge: null,
+    source: null,
+    confidence: health?.confidence ?? 'UNKNOWN',
+    destroyed: false,
+    relativeFull,
+    state: relativeFull ? 'RELATIVE_FULL' : 'UNKNOWN',
+  }
+}
+
+/** Aggregate canonical health by the backend-resolved friendly perspective. */
+export function friendlyHealthAt(
+  tracks: readonly VehiclePlaybackTrack[] | null | undefined,
+  friendly: boolean,
+  t: number,
+) {
+  const perspectiveTracks = (tracks || []).filter(track => track && track.friendly === friendly)
+  return aggregateHealth(perspectiveTracks, t)
+}
+
+/**
+ * Presentation scale is a sticky, already-disclosed fact: a later canonical HP transition with
+ * displayCapacityHp=null means "this transition does not provide a new capacity", not "forget the
+ * previously disclosed scale". This is deliberately separate from current HP authority so an
+ * enemy switching from tankopedia provisional HP to replay HP cannot make the team bar jump to
+ * PARTIAL/100%. A later positive replay capacity replaces the older scale naturally.
+ */
+function presentationCapacityAt(track, t) {
+  let capacity = null
+  for (const tr of track?.healthTransitions || []) {
+    if (!tr || !Number.isFinite(tr.timeSec) || tr.timeSec > t + 1e-6) continue
+    if (typeof tr.displayCapacityHp === 'number'
+      && Number.isFinite(tr.displayCapacityHp) && tr.displayCapacityHp > 0) {
+      capacity = tr.displayCapacityHp
+    }
+  }
+  return capacity
+}
+
+function aggregateHealth(teamTracks, t) {
+  if (teamTracks.length === 0) {
+    return { totalMax: 0, knownRemaining: 0, unknownMax: 0, spawnFullCount: 0, openingFullCount: 0, state: 'UNKNOWN' }
+  }
+
+  const displays = teamTracks.map(track => healthDisplayAt(track, t))
+  const capacities = teamTracks.map(track => presentationCapacityAt(track, t))
+  const hasCompletePresentationScale = capacities.every(capacity => capacity != null && capacity > 0)
+  const exact = displays.every(display => display
+    && display.currentHp != null
+    && display.displayCapacityHp != null
+    && display.displayCapacityHp > 0
+    && (display.knowledge === 'CURRENT' || display.destroyed))
+  const allRelativeFull = displays.every(display => display
+    && display.relativeFull === true && display.destroyed !== true)
+  const knownRemaining = displays.reduce((sum, display) =>
+    sum + (display?.currentHp != null && Number.isFinite(display.currentHp) ? display.currentHp : 0), 0)
+  // Keep a stable presentation denominator when every member has already disclosed one. A null
+  // capacity on the latest replay HP transition does not erase the older scale and therefore cannot
+  // turn a real 80% bar into a fake 100% PARTIAL bar. This never fabricates capacity from currentHp.
+  const totalMax = hasCompletePresentationScale
+    ? capacities.reduce((sum, capacity) => sum + capacity, 0)
+    : 0
+  const hasKnownEvidence = displays.some(display => display && (
+    display.currentHp != null || display.destroyed || display.knowledge === 'LAST_KNOWN'))
+  let state = 'UNKNOWN'
+  if (exact) {
+    state = 'EXACT'
+  } else if (allRelativeFull) {
+    state = 'FULL_RELATIVE'
+  } else if (hasKnownEvidence) {
+    state = 'PARTIAL'
+  }
+  const relativeCount = displays.filter(display => display?.relativeFull === true).length
+  return {
+    totalMax,
+    knownRemaining,
+    unknownMax: 0,
+    spawnFullCount: relativeCount,
+    openingFullCount: relativeCount,
+    state,
+  }
+}
+
+/** Canonical combat statistics; all damage numbers come from backend DamageLoss facts. */
+export function cumulativeStatsAtV2(
+  events: readonly BattleEvent[] | null | undefined,
+  selectedTrack: Pick<VehiclePlaybackTrack, 'accountId' | 'damageLosses'> | null | undefined,
+  t: number,
+  tracks: readonly Pick<VehiclePlaybackTrack, 'accountId' | 'damageLosses'>[] | null | undefined = [],
+) {
+  if (!selectedTrack || !Number.isFinite(t)) return { dealt: 0, received: 0, kills: 0 }
+  const accountId = selectedTrack.accountId
+  const received = (selectedTrack.damageLosses || [])
+    .filter(loss => loss && loss.toSec <= t + 1e-6)
+    .reduce((sum, loss) => sum + (Number.isFinite(loss.hpLoss) ? loss.hpLoss : 0), 0)
+  const dealt = (tracks || [])
+    .flatMap(track => track?.damageLosses || [])
+    .filter(loss => loss && loss.toSec <= t + 1e-6
+      && loss.attackerReliable === true && loss.attackerAccountId === accountId)
+    .reduce((sum, loss) => sum + (Number.isFinite(loss.hpLoss) ? loss.hpLoss : 0), 0)
+  let kills = 0
+  for (const event of events || []) {
+    if (!event || !Number.isFinite(event.timeSec) || event.timeSec > t + 1e-6) continue
+    if (event.type === 'KILL' && event.accountId === accountId) kills += 1
+  }
+  return { dealt, received, kills }
+}
+
+/** Canonical damage log: incoming/outgoing rows are direct projections of DamageLoss facts. */
+export function damageLogAtV2(
+  events: readonly BattleEvent[] | null | undefined,
+  selectedTrack: Pick<VehiclePlaybackTrack, 'accountId' | 'damageLosses'> | null | undefined,
+  t: number,
+  maxRows = 8,
+  tracks: readonly Pick<VehiclePlaybackTrack, 'accountId' | 'damageLosses'>[] | null | undefined = [],
+) {
+  if (!selectedTrack || !Number.isFinite(t)) return []
+  const selectedAccountId = selectedTrack.accountId
+  const rows: Array<{
+    timeSec: number
+    dir: 'in' | 'out'
+    hpLoss: number
+    attackerAccountId?: number | null
+    attackerReliable?: boolean
+    victimAccountId?: number
+  }> = []
+  for (const loss of selectedTrack.damageLosses || []) {
+    if (!loss || loss.toSec > t + 1e-6) continue
+    rows.push({
+      timeSec: loss.toSec,
+      dir: 'in',
+      hpLoss: loss.hpLoss,
+      attackerAccountId: loss.attackerAccountId ?? null,
+      attackerReliable: loss.attackerReliable === true,
+    })
+  }
+  for (const track of tracks || []) {
+    for (const loss of track?.damageLosses || []) {
+      if (!loss || loss.toSec > t + 1e-6 || loss.attackerReliable !== true
+          || loss.attackerAccountId !== selectedAccountId || track.accountId === selectedAccountId) continue
+      rows.push({ timeSec: loss.toSec, dir: 'out', hpLoss: loss.hpLoss, victimAccountId: track.accountId })
+    }
+  }
+  rows.sort((a, b) => a.timeSec - b.timeSec)
+  const limit = Number.isFinite(maxRows) && maxRows > 0 ? Math.floor(maxRows) : 8
+  return rows.slice(-limit)
+}
+
+/** V2 feedback anchor check: the canonical position segment must cover event time. */
+export function victimFeedbackAllowedV2(
+  track: Pick<VehiclePlaybackTrack, 'positionSegments'> | null | undefined,
+  eventTimeSec: number,
+) {
+  return Number.isFinite(eventTimeSec) && positionCoveredAtV2(track?.positionSegments, eventTimeSec)
+}
+
+/** Lost-HP ghost percentages from backend-projected canonical facts. */
+export function ghostAroundV2(
+  loss: Pick<DamageLoss, 'fromHp' | 'toHp' | 'displayCapacityHp'> | null | undefined,
+) {
+  if (!loss || typeof loss.fromHp !== 'number' || !Number.isFinite(loss.fromHp)
+    || typeof loss.toHp !== 'number' || !Number.isFinite(loss.toHp)
+    || typeof loss.displayCapacityHp !== 'number' || !Number.isFinite(loss.displayCapacityHp)
+    || loss.displayCapacityHp <= 0 || loss.fromHp < loss.toHp) return null
+  return {
+    prevPct: (loss.fromHp / loss.displayCapacityHp) * 100,
+    nextPct: (loss.toHp / loss.displayCapacityHp) * 100,
   }
 }
 
@@ -129,7 +332,7 @@ export function positionAtV2(
     if (seg.startSec > t + 1e-6) continue
     const samples = seg.samples || []
     if (samples.length === 0) continue
-    if (seg.knowledge === 'OBSERVED') {
+    if (seg.knowledge === 'OBSERVED' && seg.interpolationAllowed !== false) {
       // 段内插值
       const lo = samples[0]
       const hi = samples[samples.length - 1]
@@ -178,7 +381,7 @@ export function positionAtV2(
 export function orientationKnownAt(
   track: Pick<VehiclePlaybackTrack, 'orientationSegments'> | null | undefined,
   t: number,
-): OrientationKnowledge {
+): OrientationKnowledge | 'UNKNOWN' {
   if (!Array.isArray(track?.orientationSegments) || track.orientationSegments.length === 0) {
     return 'UNKNOWN'
   }
@@ -186,7 +389,8 @@ export function orientationKnownAt(
   let lastSeen: OrientationSegment | null = null
   for (const seg of track.orientationSegments) {
     if (t >= seg.startSec - 1e-6 && t <= seg.endSec + 1e-6) {
-      return seg.knowledge ?? 'UNKNOWN'
+      return seg.knowledge === 'CURRENT' || seg.knowledge === 'LAST_KNOWN'
+        ? seg.knowledge : 'UNKNOWN'
     }
     if (seg.startSec <= t) {
       lastSeen = seg
@@ -211,7 +415,8 @@ export function orientationAtV2(
     const lo = samples[0]
     const hi = samples[samples.length - 1]
     if (t >= lo.timeSec - 1e-6 && t <= hi.timeSec + 1e-6) {
-      if (seg.knowledge !== 'CURRENT') {
+      if (seg.knowledge !== 'CURRENT' && seg.knowledge !== 'LAST_KNOWN') continue
+      if (seg.knowledge === 'LAST_KNOWN') {
         // LAST_KNOWN 段：冻结在「最后一个 <= t」的样本（绝不返回未来方向，plan §18）。
         let cand: OrientationSample | null = null
         for (const s of samples) {
@@ -235,17 +440,16 @@ export function orientationAtV2(
           const gap = n.timeSec - p.timeSec
           if (gap <= 0) return { hullYawDeg: p.hullYawDeg, turretRelativeYawDeg: p.turretRelativeYawDeg, timeSec: p.timeSec }
           const ratio = Math.min(1, Math.max(0, (t - p.timeSec) / gap))
-          // DTO permits null yaw values. Number(null) intentionally preserves the
-          // legacy JS coercion (null behaves as zero) while keeping arithmetic typed.
           const norm = (a: number) => ((a + 180) % 360 + 360) % 360 - 180
           const shortest = (a: number, b: number) => norm(a - b)
-          const previousHull = Number(p.hullYawDeg)
-          const nextHull = Number(n.hullYawDeg)
-          const previousTurret = Number(p.turretRelativeYawDeg)
-          const nextTurret = Number(n.turretRelativeYawDeg)
+          const interpolate = (previous: number | null, next: number | null) => {
+            if (typeof previous !== 'number' || !Number.isFinite(previous)
+              || typeof next !== 'number' || !Number.isFinite(next)) return null
+            return norm(previous + shortest(next, previous) * ratio)
+          }
           return {
-            hullYawDeg: norm(previousHull + shortest(nextHull, previousHull) * ratio),
-            turretRelativeYawDeg: norm(previousTurret + shortest(nextTurret, previousTurret) * ratio),
+            hullYawDeg: interpolate(p.hullYawDeg, n.hullYawDeg),
+            turretRelativeYawDeg: interpolate(p.turretRelativeYawDeg, n.turretRelativeYawDeg),
             timeSec: t,
           }
         }
@@ -260,131 +464,49 @@ export function orientationAtV2(
     : null
 }
 
-/**
- * “在 t 时刻我们到底知道什么” —— Vehicle Inspector 的单一确定性视图
- * （plan §24 / §40）。返回纯事实 + knowledge/provenance，不猜测。
- */
-export function inspectVehicleAt(
-  track: VehiclePlaybackTrack | null | undefined,
-  t: number,
-): VehicleInspection | null {
-  if (!track) return null
-  const health = healthAt(track, t)
-  const life = lifeAt(track, t)
-  const loadoutKnown = Boolean(track.loadout) && track.loadout !== null
-  return {
-    identity: {
-      accountId: track.accountId,
-      playerName: track.playerName,
-      tankId: track.tankId,
-      tankName: track.tankName,
-      tankClass: track.tankClass,
-      team: track.team,
-      friendly: track.friendly,
-    },
-    health,
-    lifeState: life?.lifeState ?? 'UNKNOWN',
-    destroyedKnownAtSec: life?.destroyedKnownAtSec ?? null,
-    positionCovered: positionCoveredAtV2(track.positionSegments, t),
-    orientationKnowledge: orientationKnownAt(track, t),
-    // loadout 是持久配置：一旦 materialized combat vehicle 被观察，离开 AoI 仍 KNOWN。
-    loadout: loadoutKnown ? track.loadout : null,
-    loadoutKnown,
-  }
-}
-
-/**
- * t 时刻 consumable runtime 状态。hidden interval（AoI 未观测）= UNKNOWN，
- * 绝不因“没看到 activation”显示 READY。返回 { logicalItemId, state, wireCode }。
- */
-export function consumableRuntimeAt(
+/** Current runtime state keyed by canonical consumable slot, not array position or wire code. */
+export function consumableRuntimeSlotsAt(
   transitions: readonly ConsumableTransition[] | null | undefined,
   t: number,
-): ConsumableRuntimeResult {
-  const tr = lastAtOrBefore(transitions, t)
-  if (!tr) return { state: 'UNKNOWN', logicalItemId: null, wireCode: null }
-  return {
-    state: tr.state ?? 'UNKNOWN',
-    logicalItemId: tr.logicalItemId ?? null,
-    wireCode: tr.wireCode ?? null,
+): Map<number, ConsumableRuntimeResult> {
+  const states = new Map<number, ConsumableRuntimeResult>()
+  for (const tr of transitions || []) {
+    if (!tr || !Number.isFinite(tr.timeSec) || tr.timeSec > t + 1e-6) continue
+    if (tr.invalidation === true) {
+      states.clear()
+      continue
+    }
+    if (tr.consumableSlot === null || tr.consumableSlot === undefined
+      || typeof tr.state !== 'string') continue
+    states.set(tr.consumableSlot, {
+      state: tr.state,
+      logicalItemId: tr.logicalItemId ?? null,
+      wireCode: tr.wireCode ?? null,
+    })
   }
+  return states
 }
 
-/** t 时刻 module/crew 状态（recorder-visible provenance）。 */
-export function moduleCrewAt(
+/** Current recorder-visible state per module/crew component. */
+export function moduleCrewStatesAt(
   transitions: readonly ModuleCrewTransition[] | null | undefined,
   t: number,
-): ModuleCrewResult | null {
-  const tr = lastAtOrBefore(transitions, t)
-  if (!tr) return null
-  return {
-    component: tr.component,
-    state: tr.state,
-    recorderVisible: tr.recorderVisible,
-    confidence: tr.confidence,
-  }
-}
-
-/**
- * 从 canonical healthTransitions 推导每辆车到 t 的 HP losses（相邻 transition 的 currentHp 下降）。
- * 用于累积统计 / 伤害日志（legacy vehicle.hpLosses 的 V2 等价），只消费 <= t 的 transition。
- * @returns [{ fromSec, toSec, hpLoss }]
- */
-export function deriveHpLosses(
-  healthTransitions: readonly HealthTransition[] | null | undefined,
-  t: number,
-): PlaybackHpLoss[] {
-  if (!Array.isArray(healthTransitions) || healthTransitions.length === 0) return []
-  const out: PlaybackHpLoss[] = []
-  let prev: HealthTransition | null = null
-  for (const tr of healthTransitions) {
-    if (tr.timeSec > t + 1e-6) break
-    const previousHp = prev?.currentHp
-    const currentHp = tr.currentHp
-    if (prev != null && previousHp != null && currentHp != null
-        && Number.isFinite(previousHp) && Number.isFinite(currentHp)
-        && currentHp < previousHp) {
-      out.push({ fromSec: prev.timeSec, toSec: tr.timeSec, hpLoss: previousHp - currentHp })
+): ModuleCrewResult[] {
+  if (!Array.isArray(transitions)) return []
+  const byComponent = new Map<string, ModuleCrewResult>()
+  for (const tr of transitions) {
+    if (!tr || !Number.isFinite(tr.timeSec) || tr.timeSec > t + 1e-6) continue
+    if (!tr.component) continue
+    if (tr.state == null) {
+      byComponent.delete(tr.component)
+      continue
     }
-    prev = tr
+    byComponent.set(tr.component, {
+      component: tr.component,
+      state: tr.state,
+      recorderVisible: tr.recorderVisible,
+      confidence: tr.confidence ?? 'UNKNOWN',
+    })
   }
-  return out
-}
-
-/**
- * V2 canonical vehicle view：把 VehiclePlaybackTrack 规范化为与既有
- * vehicleHpAt/teamHp/cumulativeStatsAt/damageLogAt/hpDisplay 兼容的对象
- * （携带 healthTransitions/lifeTransitions/team/accountId/deathSec/hpLosses）。
- */
-export function v2VehicleView(
-  track: TrackWithLegacyHpLosses | null | undefined,
-): V2VehicleView | null {
-  if (!track) return null
-  const lt = track.lifeTransitions || []
-  const lastLife: LifeTransition | null = lt[lt.length - 1] || null
-  // legacy 兼容视图字段（供 positionCoveredAt / interpolateDirection / victimFeedbackAllowed 复用）
-  const positionIntervals = (track.positionSegments || [])
-    .filter(s => s.knowledge === 'OBSERVED')
-    .map(s => ({ startSec: s.startSec, endSec: s.endSec }))
-  const directionSamples = (track.orientationSegments || [])
-    .flatMap(s => (s.samples || []).map(x => ({ timeSec: x.timeSec, hullYawDeg: x.hullYawDeg, turretRelativeYawDeg: x.turretRelativeYawDeg })))
-  return {
-    accountId: track.accountId,
-    playerName: track.playerName || '',
-    tankId: track.tankId,
-    tankName: track.tankName || '',
-    team: track.team,
-    tankType: track.tankClass || '',
-    healthTransitions: track.healthTransitions || [],
-    lifeTransitions: lt,
-    deathSec: lastLife && lastLife.lifeState === 'DESTROYED' ? lastLife.destroyedKnownAtSec : null,
-    hpLosses: Array.isArray(track.hpLosses) && track.hpLosses.length > 0
-      ? track.hpLosses
-      : deriveHpLosses(track.healthTransitions, Number.POSITIVE_INFINITY),
-    positionIntervals,
-    directionSamples,
-    positionSegments: track.positionSegments || [],
-    orientationSegments: track.orientationSegments || [],
-    loadout: track.loadout || null,
-  }
+  return [...byComponent.values()].sort((a, b) => a.component.localeCompare(b.component))
 }

@@ -6,14 +6,14 @@
 
 ## Executive verdict
 
-Current Vehicle Type5 materialization does not carry only transform/HP state. For combat vehicles it directly exposes battle loadout:
+Current Vehicle Type5 materialization does not carry only transform/HP state. A loadout-shaped Type5 structure directly exposes:
 
 ```text
 6 × 14-byte item descriptors
 9-byte equipment-selection string
 ```
 
-The six-item surface cross-closes with Type32 item initialization/lifecycle traffic and is now positionally closed as:
+The six-item surface cross-closes with Type32 item initialization/lifecycle traffic and is positionally closed as:
 
 ```text
 item[0..2] = three consumable slots
@@ -28,17 +28,23 @@ equipmentId = unsignedByte(equipmentString[slot])
 
 Verdict:
 
-> **battle loadout is directly materialized in the replay — PROVEN structural/behavioral family**.
+> **the 3+3+9 loadout shape is directly materialized in Type5 — PROVEN structural/behavioral family**.
 >
-> **3 consumable + 3 provision positional ordering — PROVEN on current combat Type5 population**.
+> **3 consumable + 3 provision positional ordering — PROVEN on the reviewed loadout-shaped Type5 population**.
 >
-> **equipment selection is directly decodable by byte value / ASCII code point — PROVEN on current 11.19 corpus**.
+> **equipment selection is directly decodable by byte value / ASCII code point — PROVEN on the reviewed 11.19 corpus**.
+
+Important participant boundary:
+
+> A structurally valid `0A 06 + 3+3+9` Type5 payload does **not by itself prove that the entity is a `battle_results.dat #301` settled combatant**. The stream also contains tournament observer entities with the same loadout-shaped structure. Participant identity must be established independently through the existing entity/account mapping and settlement evidence.
+
+The post-merge 34-arena re-analysis is recorded in [`observer-provision-wirecodes.md`](observer-provision-wirecodes.md).
 
 This supersedes the earlier need to infer equipment identity slot-by-slot from derived effects such as HP or consumable duration.
 
-# Exact Type5 tail structure for combat vehicles
+# Exact Type5 tail structure for loadout-shaped entities
 
-For every currently decoded combat-vehicle Type5 payload carrying the full loadout, the equipment string is part of a stable tail structure:
+For every currently decoded Type5 payload carrying the full 3+3+9 loadout shape, the equipment string is part of a stable tail structure:
 
 ```text
 0A 06
@@ -84,33 +90,46 @@ The final nine bytes decode as ASCII `dmrhotiqe`, but the byte values themselves
 65h = 101
 ```
 
-## Combat vs non-combat Type5 distinction
+## Loadout shape vs participant identity
 
 Current equipment-string scan:
 
 ```text
 Type5 payloads with valid 9-byte equipment string : 1,097
-full `0A 06` six-item combat-loadout family       : 1,037
+full `0A 06` six-item loadout-shaped family       : 1,037
 smaller `0A 04` four-item family                  :    60
 ```
 
 The `0A 04` examples belong to non-settlement / observer-style entities and must not be interpreted as a normal player battle loadout.
 
-Safe parser rule:
+The later 34-arena participant-boundary re-analysis additionally inspected 1,017 complete `0A 06 + 3+3+9` materializations and classified them independently against `battle_results.dat #301`:
+
+```text
+complete 3+3+9 Type5 materializations : 1,017
+mapped to #301 settled combatants      :   960
+non-#301 entities                      :    57
+```
+
+Therefore the safe structural rule is:
 
 ```text
 0A 06 + six descriptors + 0B 09 + nine equipment bytes
-  -> supported combat-vehicle loadout surface
+  -> supported loadout-shaped Type5 surface
 
-other counts
+entity/account mapping + #301 settlement evidence
+  -> determines whether that entity is a settled combatant
+
+other item-count families
   -> preserve raw; do not coerce to normal 3+3 player loadout
 ```
+
+Do not collapse those two evidence dimensions into a single rule.
 
 # Six item descriptors — consumables + provisions
 
 ## Positional closure
 
-Across all 1,037 current full six-item combat loadouts:
+Across all 1,037 current full six-item loadout-shaped Type5 records in the original structural scan:
 
 ```text
 item[0] consumable-family code : 1,037 / 1,037
@@ -126,7 +145,9 @@ No positional counterexample exists in the studied 11.19 population.
 
 Verdict:
 
-> Type5 six-item ordering = **three consumables followed by three provisions — PROVEN current corpus**.
+> Type5 six-item ordering = **three consumables followed by three provisions — PROVEN for the reviewed loadout-shaped family**.
+
+This positional result is structural. It does not independently classify an entity as a settled combatant.
 
 ## T-100 LT natural sample
 
@@ -161,6 +182,8 @@ Their descriptor payload ends in `80 BF` (`f32 -1.0` in the current tail positio
 
 ## Corpus-level dynamic/static code inventory
 
+The following inventories are **stream-wide inventories of loadout-shaped Type5 records**, not lists restricted to `#301` settled combatants.
+
 Observed consumable-slot codes:
 
 ```text
@@ -171,10 +194,36 @@ Observed provision-slot codes:
 
 ```text
 0E 0F 10 11 12 13 16 17 18 19 1A 1C 1D 1E
-44 45 46 47 49 6B 6C
+44 45 46 47 48 49 6B 6C
 ```
 
-Exact provision code -> symbolic item identities remain item-specific research. Do not assume these wire codes equal catalog `sourceIds`; the dynamic consumable family already proves that the replay wire namespace is not simply the public catalog ID namespace.
+The post-merge 34-arena re-analysis established an important scope boundary for `0x13` and `0x1A`:
+
+```text
+0x13 : 11 stream-wide occurrences, 0 on #301 settled combatants
+0x1A :  4 stream-wide occurrences, 0 on #301 settled combatants
+```
+
+All reviewed `0x13` / `0x1A` occurrences belong to tournament observer entities. Their numeric placement near known food-family values is **not sufficient evidence** to assign `LARGE_FOOD` / `SMALL_FOOD`. They remain raw-preserved with unresolved logical identity. See [`observer-provision-wirecodes.md`](observer-provision-wirecodes.md).
+
+The reviewed 11.19 production mapping closes the provision families observed on the **960 `#301` settled-combatant materializations** in that re-analysis:
+
+```text
+0x0E/0x0F/0x10/0x11/0x12/0x46/0x49 -> LARGE_FOOD
+0x16/0x17/0x18/0x19/0x47/0x48        -> SMALL_FOOD
+0x1C -> STANDARD_FUEL
+0x1D -> IMPROVED_FUEL
+0x1E -> PROTECTIVE_KIT
+0x44 -> SANDBAG_ARMOR
+0x45 -> ENHANCED_SANDBAG_ARMOR
+0x6A -> GEAR_OIL
+0x6B -> IMPROVED_GEAR_OIL
+0x6C -> IMPROVED_GUNPOWDER
+```
+
+Within those 960 settled-combatant materializations, the current production provision mapping leaves **0 unknown provision slots**.
+
+These are version-scoped semantic mappings; the raw wire code remains authoritative evidence and unknown values remain null/raw-preserved.
 
 # Proven provision wire-code mappings
 
@@ -236,11 +285,11 @@ Verdict:
 
 This independently strengthens method29's launch-vector magnitude interpretation as physical shell-velocity telemetry.
 
-# Strong provision families not yet promoted
+# Provision mapping promoted for the reviewed 11.19 settled-combatant scope
 
-Several provision codes show highly structured nation/item-family patterns but remain below `PROVEN` until physical effects or a direct current schema close them.
+The food, common fuel/protection, and gear-oil families are now promoted for the reviewed 11.19 **settled-combatant production mapping**. The evidence grades and corpus limits remain recorded in `provision-wirecode-mapping.md`; promotion does not convert observer-only wire values into combatant identities and does not justify guessing from numeric adjacency.
 
-Observed first-provision patterns include:
+Observed settled-combatant first-provision patterns include:
 
 ```text
 Germany  : 0x0E
@@ -251,7 +300,7 @@ Japan    : 0x12
 European nation-specific branches include 0x46 / 0x49
 ```
 
-These align strongly with nation-specific food families. Separate codes such as `0x16/0x17/0x18/0x19/...` form a plausible second food-size family.
+These align strongly with nation-specific food families. Separate settled-combatant codes such as `0x16/0x17/0x18/0x19/...` form the reviewed second food-size family.
 
 A SPHT natural reload contrast is especially suggestive for `0x16`:
 
@@ -261,13 +310,13 @@ comparison branch       -> initial full reload ~= 8.8049 s
 ratio                    -> ~0.98715
 ```
 
-That magnitude is consistent with a small crew-mastery food effect, but the exact crew formula and hidden loadout interactions mean `0x16 = SMALL_FOOD` remains **VERY STRONG PARTIAL**, not yet `PROVEN`.
+That magnitude is consistent with the small-food effect and is now used as the reviewed production mapping for the current scope.
 
-Common codes `0x1C/0x1D/0x1E` are strong candidates for Standard Fuel / Improved Fuel / Protective Kit, but current movement/turret-speed natural samples are still too player-input-dependent to assign exact identities without overclaiming.
+Common codes `0x1C/0x1D/0x1E` are mapped to Standard Fuel / Improved Fuel / Protective Kit for the reviewed production scope; raw codes remain available for later version-specific validation.
 
 Verdict:
 
-> keep food/fuel/protective exact symbolic mappings `PARTIAL` until stronger controlled closure.
+> keep these exact symbolic mappings scoped to evidence-backed settled-combatant identities and fail closed for unresolved observer/future wire values.
 
 # Nine equipment bytes — direct equipment IDs
 
@@ -277,7 +326,7 @@ Across the current 34-arena corpus plus the independent T-100 LT sample:
 
 ```text
 Type5 equipment strings inspected      : 1,097
-full six-item combat loadout strings   : 1,037
+full six-item loadout-shaped strings   : 1,037
 four-item non-combat/observer strings  :    60
 string length                          : 9 / 9
 observed distinct equipment IDs        : 20
@@ -317,6 +366,8 @@ Observed mapping:
 | 8 | `v` | 118 | CONSUMABLE_DELIVERY_SYSTEM |
 
 Equipment ID 122 (`IMPROVED_VERTICAL_STABILIZER`, byte `z`) is present in the current catalog but was not naturally selected in the studied replay corpus. The general byte=ID encoding rule is nevertheless independently closed across the other 20 observed IDs; unsupported/unseen IDs should still be raw-preserved and catalog-resolved rather than hard-coded as a finite character enum.
+
+The current authoritative BlitzKit `equipment.pb` catalog does contain equipment ID 120. It is `IMPROVED_MODULES_PLUS` (`改进型模块+`; Russian: `Доработанные модули +`). The current Object 244 vehicle-specific `HEprotectionPreset` places it in the VITALITY row, slot 1, LEFT position. This closes the previously unresolved raw value without guessing a mapping; the identity is sourced from the current catalog and the vehicle-specific preset. The raw wire value remains preserved as canonical evidence.
 
 Verdict:
 
@@ -359,14 +410,14 @@ Enemy vehicles are independently identified through the proven Type4 leave -> la
 ```text
 enemy Type5 re-materializations inspected : 683
 with complete 9-byte equipment string     : 683 / 683
-with full six-item combat descriptor      : 683 / 683
+with full six-item loadout descriptor      : 683 / 683
 ```
 
 Therefore:
 
-> **when an enemy combat vehicle materializes into the replay POV, its current Type5 payload carries the same complete 3-consumable + 3-provision + 9-equipment loadout descriptor — PROVEN current corpus**.
+> **when an enemy combat vehicle is independently identified and materializes into the replay POV, its Type5 payload carries the same complete 3-consumable + 3-provision + 9-equipment loadout-shaped descriptor — PROVEN current corpus**.
 
-This does not mean an enemy that never materializes can be reconstructed; absence remains absence of replay evidence.
+This does not mean an enemy that never materializes can be reconstructed; absence remains absence of replay evidence. It also does not mean every stream entity carrying the same structural shape is automatically a settled combatant.
 
 # 11.19 equipment rebalance boundary
 
@@ -413,28 +464,32 @@ VehicleBattleLoadout {
 
 Safe uses:
 
-- display actual battle equipment for any materialized combat vehicle;
-- display consumables/provisions once their wire codes are version-mapped;
+- decode the loadout-shaped structure without pretending that structure alone proves `#301` participant identity;
+- display actual battle equipment for independently identified materialized combat vehicles;
+- display consumables/provisions once their wire codes are evidence-backed for the relevant production participant scope;
 - explain observed HP/reload/aim/movement/consumable-duration differences using the actual equipment ID plus a versioned catalog;
 - preserve unknown raw item codes without inventing names;
-- support enemy loadout only when corresponding enemy Type5 materialization exists.
+- support enemy loadout only when corresponding enemy Type5 materialization and participant identity evidence exist.
 
 # Scope boundary
 
-This PR remains protocol research, not production implementation.
+The reviewed 11.19 settled-combatant mapping is consumed by the production Type5 decoder and generated frontend catalog adapter. Unknown symbols remain raw-preserved.
+
+`0x13` and `0x1A` are explicitly outside the current settled-combatant semantic mapping: in the reviewed 34-arena re-analysis they occur only on non-`#301` tournament observer entities. See [`observer-provision-wirecodes.md`](observer-provision-wirecodes.md).
 
 Do not:
 
 - hard-code 11.19 equipment percentages into packet decoding;
-- assume future client versions retain the same tail framing without version validation;
+- assume future client versions retain the same tail framing without validation;
+- equate `0A 06 + 3+3+9` structure with `#301` settled-combatant identity;
 - guess provision names solely from similar numeric IDs;
+- promote observer-only `0x13` / `0x1A` into the settled-combatant mapping without new direct evidence;
 - infer a never-materialized enemy loadout;
 - reduce equipment decoding to a closed ASCII enum when the byte value itself is the equipment ID.
 
 # Remaining work
 
-1. close the remaining food/fuel/protective provision wire codes with controlled physical effects or a current schema;
-2. map any still-unclosed consumable wire codes in the first three item slots;
-3. verify the 6+9 tail on non-Tier-X combat vehicles / random battles before widening production version gates;
-4. validate future Blitz versions before assuming the Type5 relative tail structure is unchanged;
-5. retain raw 14-byte item descriptor payloads until their internal timers/state fields are fully decoded.
+1. verify the 6+9 tail on non-Tier-X combat vehicles / random battles before widening production assumptions;
+2. validate future Blitz versions before assuming the Type5 relative tail structure is unchanged;
+3. retain raw 14-byte item descriptor payloads until their internal timers/state fields are fully decoded;
+4. if `0x13` / `0x1A` later appear on independently identified settled combatants or obtain direct controlled UI evidence, research them as a separate semantic-mapping step rather than inferring from numeric adjacency.

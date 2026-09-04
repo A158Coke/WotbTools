@@ -2,7 +2,7 @@
 
 **默认 caveman mode**：回复极简、砍废话、无寒暄。用户说"退出 caveman"才恢复正常。
 
-> 按作用域继承：进入具体目录时同时读取该目录的 `AGENTS.md`（java/frontend/common/deploy/.github/
+> 按作用域继承：进入具体目录时同时读取该目录的 `AGENTS.md`（contracts/java/frontend/common/deploy/.github/
 > keycloak 两个 provider/map-semanticizer）。构建/运行命令见 `docs/DEVELOPER_GUIDE.md`，不在本文件重复。
 
 项目：WoT Blitz `.wotbreplay` 回放工具集（解析/Excel/排行榜/评分/AI 复盘/Keycloak）。入口 wotbtools.com。
@@ -14,6 +14,7 @@
 3. **改动即更新文档** — 影响界面/导出/数据/构建的改动，同提交更新 CHANGELOG、CHANGELOG-PRODUCT、DEVELOPER_GUIDE、相关 README、`docs/current-plan.md`（任务状态）。
 4. **跨层一致** — 列 key（snake_case）API/前端/导出三方一致；显示名前端三语 locale + 导出两处一致。跨层改动走 `.agents/skills/wotb-sync/SKILL.md`（单一事实源）；增删列再走 `column-sync`。
 5. **API 纯英文** — 只回 key+数据；中文归前端/导出。
+5a. **HTTP Contract First** — FE ↔ BE 序列化契约唯一事实源是 `contracts/http/openapi.yaml`；generated FE transport 不手改，domain enum 必须显式映射，旧 artifact 兼容只放读取边界。`java/wotb-contracts` 仍是独立 Control ↔ Worker contract。
 6. **测试策略 — Fast Feedback First** — 开发过程中禁止无理由重复运行 repository-level full test。
    默认分层验证：
    1. **Targeted**：修改后运行与改动直接相关的最小测试集（单个测试类 / 单个组件测试）；
@@ -54,6 +55,22 @@
 9. **子代理** — spawn 子代理后必须显式验证其完成状态与产物（不可假设自动完成），完成后以醒目格式通知用户。
 10. **大需求拆分** — 一次性大需求拆为多个小任务，每个小任务一个子代理，主代理最后执行 review-fix。
 11. **Ponytail — 懒资深工程师模式** — 懒=高效：先理解问题（读任务+读它触碰的代码+端到端追真实流程），沿梯子往上爬，停在第一个成立的档（不建→复用→标准库→平台特性→已装依赖→一行→最小代码）。Bug fix 修根因不修表象（grep 全部调用方，在共享函数处修一次）。删优于增、文件数最少；故意抄近路留 `ponytail:` 注释（写明天花板+升级路径）。带非平凡逻辑的懒代码留一个最小自检。不许偷懒：理解问题、输入校验、防数据丢失、安全、可访问性、被明确要求的东西。
+12. **Reuse / Extend First — 单一 SSOT 优先** — 新建 abstraction 的优先级：`reuse > extend > simplify/merge > create`。
+   任何新增 production class / interface / record / DTO / util / helper / service / manager /
+   resolver / facade / enum / module / file 前必须先走 Reuse Audit：
+   1. repo-wide 搜索是否存在相同或高度相似职责的现有实现；
+   2. 检查能否直接复用已有 API；
+   3. 检查能否扩展职责匹配的现有 abstraction（而非新建）；
+   4. 检查新增 abstraction 是否只是把已有逻辑搬到另一个文件；
+   5. 检查是否会形成第二个 SSOT（同一业务 switch / rule / validation contract 只允许一份）；
+   6. 检查新增长期维护成本是否真的低于复用 / 扩展现有结构。
+   仅当 1~6 条均确认现有结构无法合理承载该职责时才允许新建 abstraction。
+   禁止：「发现一段逻辑 → 默认新建一个类」；单调用方无必要 wrapper/helper/manager/resolver/facade；
+   为所谓 clean architecture 机械新增 abstraction；两个类维护同一业务 switch/rule/validation contract；
+   用新 abstraction 转移而非减少复杂度。Agents/skills 只引用并执行本规则，不复制维护第二份完整定义。
+   具体执行点：`.agents/skills/plan-executer/SKILL.md`（Reuse Audit）与
+   `.agents/skills/review-with-docs/SKILL.md`（新增 abstraction 审查 gate）。
+13. **外部数据生命周期** — 持久化外部 API 返回的个人或统计数据时，必须同时提供明确的 retention/deletion path；删除流程需限定数据来源、遵守真实 FK 顺序，并保护仍被其他业务引用的共享文件或记录。
 
 ## 禁止
 

@@ -22,6 +22,6 @@ public record LeagueRatingDto(
         List<ColumnDef> teamSummaryColumns,
         // 校验失败/冲突（fileName + arenaId + 稳定 code）
         List<LeagueFailureDto> failures,
-        // 评分质量限制（非阻断 warning：如死亡时间 UNKNOWN 玩家数；不是 failure）
+        // Deprecated compatibility slot. Death provenance is not League business state.
         LeagueRatingQualityDto ratingQuality) {
 }

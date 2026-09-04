@@ -6,7 +6,10 @@ import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
 import BattleMap from './BattleMap.vue'
+import AnnotationToolbar from './AnnotationToolbar.vue'
+import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import PlaybackControls from './PlaybackControls.vue'
+import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
 import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
@@ -15,39 +18,35 @@ import friendlyTurret from '../assets/tank-icons/tank-marker-friendly-turret.png
 import {
   BURST_MS,
   FLOAT_DMG_MS,
+  activeFeed,
   FLASH_MS,
   GHOST_MS,
   KILL_FEED_MS,
-  aggregateEventsBySecond,
   clampViewPan,
-  cumulativeStatsAt,
-  damageLogAt,
   eventsCrossed,
   formatClock,
-  ghostAround,
-  hpDisplay,
   pushFeed,
-  recorderRelated,
-  teamHp,
+  recentPositionTrails,
   teamPointsAt,
-  teamRelated,
   tracerLines,
   transientsActive,
-  victimFeedbackAllowed,
   zoomViewAt
 } from '../utils/battlePlayback'
 import {
-  v2VehicleView,
+  cumulativeStatsAtV2,
+  damageLogAtV2,
+  friendlyHealthAt,
+  ghostAroundV2,
+  healthDisplayAt,
+  victimFeedbackAllowedV2,
 } from '../utils/battlePlaybackV2'
 import { projectVehicleState } from '../utils/playbackVehicleState'
-import { advancePlaybackTime, clampPlaybackTime, nextPlaybackSpeed } from '../utils/playbackClock'
+import { computeVehicleMarkerSize } from '../utils/vehicleMarkerSizing'
+import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
 import {
   MARKER_CORE_PX,
-  PLAYER_FADE_MS,
-  PLAYER_HIDE_MS,
-  PLAYER_SHOW_MS,
   computeLabelLayout,
-  resolvePlayerVisibility,
+  computeTankCollisionLayout,
 } from '../utils/labelLayout'
 import {
   ANNOT_COLORS,
@@ -70,13 +69,13 @@ import {
 } from '../utils/annotation'
 
 /**
- * 战局回放（Battle Playback）：地图鸟瞰第三视图。
+ * 战局回放（Battle Playback）：地图鸟瞰中的主播放视图。
  * 复用 mapImages 素材、coordinateBounds 坐标映射、自适应色板与响应式布局；
- * RAF 推进播放时间，仅在同一可信连续点（gap ≤ 5s）之间插值。
+ * RAF 只推进 battle-relative 时间，坐标查询遵循 canonical positionSegments。
  */
 const props = defineProps({
   /**
-   * MapOverview（heatmap/routes/secondary 鸟瞰）overlay 数据。仅提供可选 overlay 事实
+   * MapOverview（heatmap/secondary 鸟瞰）overlay 数据。仅提供可选 overlay 事实
    * （gridCells/spawnPoints/routes/playableBounds）；必选战局回放元数据以 {@code playbackV2} 为权威。
    * 可空：Battle Playback PRIMARY 以 V2 dataset 为核心输入，不再被 map-overview artifact 锁死。
    */
@@ -84,7 +83,7 @@ const props = defineProps({
   seekTo: { type: Number, default: null },
   /** QA 场景循环播放（PR4 §49：时间线到末尾自动回到 0 继续） */
   loop: { type: Boolean, default: false },
-  /** V2 canonical battle-playback-dataset（可选；迁移期守卫：present 时用 V2 检查器）。 */
+  /** V2 canonical battle-playback-dataset；未加载时为空。 */
   playbackV2: { type: Object, default: null }
 })
 
@@ -93,39 +92,44 @@ const { t } = useI18n()
 /**
  * 呈现元数据（Battle Playback PRIMARY 核心输入）：V2 canonical dataset 为权威源
  * （mapCode / friendlyTeam / recorderAccountId / arenaBonusType），MapOverview 仅提供可选 overlay
- * 事实（gridCells / spawnPoints / routes / playableBounds）。V2 缺失字段回退 overview；两者兼缺 → null-safe。
+ * 事实（gridCells / spawnPoints / routes / playableBounds）。V2 metadata 缺失保持 null；不从 overview 推导。
  * 副要求：Battle Playback 不依赖 MapOverview artifact 存在才能渲染。
  */
 const pbOverview = computed(() => {
-  const v2 = props.playbackV2 || {}
+  const v2 = props.playbackV2
   const ov = props.overview || {}
+  if (!v2) return ov
   return {
     ...ov,
-    mapCode: (v2.mapCode ?? ov.mapCode) || null,
-    friendlyTeam: v2.friendlyTeam ?? ov.friendlyTeam,
-    recorderAccountId: v2.recorderAccountId ?? ov.recorderAccountId ?? null,
-    arenaBonusType: v2.arenaBonusType ?? ov.arenaBonusType ?? null,
+    mapCode: v2.mapCode ?? null,
+    friendlyTeam: v2.friendlyTeam ?? null,
+    recorderAccountId: v2.recorderAccountId ?? null,
+    arenaBonusType: v2.arenaBonusType ?? null,
   }
 })
 
 const image = computed(() => mapImages[pbOverview.value.mapCode] || null)
 const mapView = computed(() => createMapView(image.value, pbOverview.value))
 
-// 自适应配色（与热力/路线视图同一色板）
+// 自适应配色（与热力覆盖层使用同一色板）
 const palette = ref(darkMapPalette)
+let paletteRequestToken = 0
 watch(image, async (img) => {
-  palette.value = paletteForLuminance(await luminanceOfImage(img))
+  const token = ++paletteRequestToken
+  if (!img) {
+    palette.value = darkMapPalette
+    return
+  }
+  try {
+    const luminance = await luminanceOfImage(img)
+    if (token === paletteRequestToken) palette.value = paletteForLuminance(luminance)
+  } catch {
+    if (token === paletteRequestToken) palette.value = darkMapPalette
+  }
 }, { immediate: true })
 
 // V2 canonical dataset 是唯一 playback 事实源（cleanup：移除 legacy overview.playback）。
 const playback = computed(() => props.playbackV2 || null)
-/** V2 canonical tracks 按账号索引（迁移期守卫：present 时 marker/HUD 用 V2 事实源）。 */
-const v2TrackByAccount = computed(() => {
-  const tracks = props.playbackV2?.vehicles || []
-  const m = new Map()
-  for (const tr of tracks) m.set(tr.accountId, tr)
-  return m
-})
 const duration = computed(() => (playback.value ? Math.max(0, playback.value.durationSec) : 0))
 const friendlyTeam = computed(() => pbOverview.value.friendlyTeam)
 
@@ -161,75 +165,42 @@ watch(
   { immediate: true },
 )
 
-// 双方总血量（实时剩余，随播放时间/进度条变化；争霸赛附终局点数）
-// 本方：开局相对满血展示判定（存活 + 当前时间之前无权威 hpLoss + 无 destroyed 证据）→
-// FULL_RELATIVE 100% 阵营色实心条（即使部分车辆已有 current sample、但全队 entry/max 尚未
-// 全部证明，开局也不显示斜纹；不伪造具体数字）；敌方：无可信采样恒 UNKNOWN 灰段
-// （不把 tankopedia base 当已知血量）
-// V2 为主：playbackV2 present 时，teamHp 聚合 canonical healthTransitions + displayCapacityHp；
-// legacy 仅当无 V2 时才进入 HP 状态机推理。
-const hpVehicles = computed(() => {
-  if (props.playbackV2?.vehicles?.length) {
-    return props.playbackV2.vehicles.map(t => ({
-      team: t.team,
-      healthTransitions: t.healthTransitions || [],
-      lifeTransitions: t.lifeTransitions || [],
-    }))
-  }
-  return playback.value?.vehicles || []
-})
-const friendlyHp = computed(() => teamHp(hpVehicles.value, friendlyTeam.value, currentTime.value, true))
-const enemyHp = computed(() => teamHp(hpVehicles.value, friendlyTeam.value === 1 ? 2 : 1, currentTime.value, false))
+// 双方总血量（实时剩余，随播放时间/进度条变化；争霸赛附终局点数）。
+// relativeFull 是后端投影的 presentation-safe fact；前端只按 t 查询 transition、做聚合与绘制，
+// 不扫描 HP/life history 重新判断开局状态，也不把 tankopedia base 当已知血量。
+const hpVehicles = computed(() => playback.value?.vehicles || [])
+const friendlyHp = computed(() => friendlyHealthAt(hpVehicles.value, true, currentTime.value))
+const enemyHp = computed(() => friendlyHealthAt(hpVehicles.value, false, currentTime.value))
 // 争霸赛实时点数：来自回放广播 pointsSamples（随 currentTime 变化）；非争霸赛/无广播 → null 不显示
 const friendlyPoints = computed(() =>
   teamPointsAt(playback.value?.pointsSamples, friendlyTeam.value, currentTime.value))
+const enemyTeam = computed(() => {
+  const teams = [...new Set(hpVehicles.value
+    .filter(vehicle => vehicle.friendly === false && Number.isFinite(vehicle.team))
+    .map(vehicle => vehicle.team))]
+  return teams.length === 1 ? teams[0] : null
+})
 const enemyPoints = computed(() =>
-  teamPointsAt(playback.value?.pointsSamples, friendlyTeam.value === 1 ? 2 : 1, currentTime.value))
-const showPoints = computed(() => friendlyPoints.value != null || enemyPoints.value != null)
-/**
- * HP bar 填充宽度（PR #107 Blocker 2 aggregate state）：
- * - FULL_RELATIVE（本方开局相对满血：全部存活车辆无权威掉血/阵亡证据，即使有 current sample
- *   也 100% 实心条）→ known 段固定 100% 阵营色实心条（相对状态，无具体数字、无斜纹）；
- * - EXACT（全队 entryHp 均已证明且证据一致）→ known = knownRemaining/totalMax、
- *   unknown = unknownMax/totalMax（灰段参考）；
- * - PARTIAL/MIXED（部分证明/混合 provenance/证据矛盾：有真实已知剩余但无「全队已证明且一致的分母」）→
- *   known 段 100% + indeterminate 斜纹（无法算真实比例，绝不显示 known/partialTotalMax 分数）；
- * - UNKNOWN → 0%（灰段也不渲染——无任何数据）。
- * 禁止出现「totalMax=0、knownRemaining>0 却仍 0%」的空条。
- */
-function hpBarFill(hp, kind) {
-  if (hp.state === 'FULL_RELATIVE') return kind === 'known' ? '100%' : '0%'
-  const total = hp.totalMax || 0
-  if (total <= 0) {
-    if (kind === 'known') return hp.state === 'PARTIAL' ? '100%' : '0%'
-    return '0%'
+  enemyTeam.value == null
+    ? null
+    : teamPointsAt(playback.value?.pointsSamples, enemyTeam.value, currentTime.value))
+const baseStatesAt = computed(() => {
+  const latest = new Map()
+  for (const state of playback.value?.baseStates || []) {
+    if (!state || !Number.isFinite(state.timeSec) || state.timeSec > currentTime.value + 1e-6) continue
+    if (!['A', 'B', 'C', 'D'].includes(state.baseId)) continue
+    latest.set(state.baseId, state)
   }
-  const val = kind === 'known' ? hp.knownRemaining : hp.unknownMax
-  return `${Math.max(0, Math.min(100, (val / total) * 100)).toFixed(1)}%`
-}
-
-/**
- * HP 数值区显示文本（绝不显示虚假的 knownRemaining / totalMax 分数）：
- * - FULL_RELATIVE → 「100%」（开局相对满血状态，非具体 HP 数字）；
- * - UNKNOWN → —（无任何数据）；
- * - EXACT（全队 entryHp 均已证明且证据一致）→ 「knownRemaining / totalMax」（真实已证明总数）；
- * - PARTIAL/MIXED（部分证明/混合 provenance/证据矛盾）→ 只显示真实已知剩余数字（不伪造分母——
- *   totalMax 已被 teamHp 归零，绝不显示 knownRemaining / partialTotalMax）。
- */
-function hpValueText(hp) {
-  if (hp.state === 'FULL_RELATIVE') return '100%'
-  if (hp.state === 'UNKNOWN') return '—'
-  if (hp.state === 'EXACT') return `${hp.knownRemaining} / ${hp.totalMax}`
-  return String(hp.knownRemaining)
-}
+  return [...latest.values()].sort((a, b) => a.baseId.localeCompare(b.baseId))
+})
 
 // ---- 播放状态 ----
 const currentTime = ref(0)
 const playing = ref(false)
 const speed = ref(1)
-// PR4 §33：hysteresis 时间基准 = UI wall clock（performance.now）。
-// 播放时由 frame() 每帧刷新；暂停时由 ensureHysteresisClock 的轻量 RAF 继续推进
-//（仅当存在未决 transition），不依赖 replay 播放状态；replay currentTime 不是 collision 时钟。
+// transient/animation 时间基准 = UI wall clock（performance.now）。
+// 播放时由 frame() 每帧刷新；暂停时由 ensurePauseClock 的轻量 RAF 继续推进
+//（仅当存在未决 transient），不依赖 replay 播放状态。
 const nowMs = ref(typeof performance !== 'undefined' ? performance.now() : 0)
 
 // ---- PR4 §26：玩家/坦克名显示偏好（默认 showPlayerName=false / showTankName=true，localStorage 持久化）----
@@ -283,17 +254,44 @@ watch(hpPrefs, (p) => {
   }
 }, { deep: true })
 
+// 最近 2 秒位置轨迹偏好：只消费 canonical observed positionSegments；持久化与
+// 既有 label/HP display preferences 同级，不改变 replay state owner。
+const TRAIL_PREFS_KEY = 'wotb.pb.trail-prefs'
+function loadTrailPrefs() {
+  try {
+    const raw = localStorage.getItem(TRAIL_PREFS_KEY)
+    if (raw) return { showTrail: JSON.parse(raw).showTrail !== false }
+  } catch {
+    // 损坏/不可用 → 默认开启
+  }
+  return { showTrail: true }
+}
+const trailPrefs = reactive(loadTrailPrefs())
+watch(trailPrefs, (p) => {
+  try {
+    localStorage.setItem(TRAIL_PREFS_KEY, JSON.stringify(p))
+  } catch {
+    // 隐私模式/配额满：静默（本次会话内仍生效）
+  }
+}, { deep: true })
+
+const visibleTrails = computed(() => trailPrefs.showTrail
+  ? recentPositionTrails(hpVehicles.value, currentTime.value, 2)
+  : [])
+
 // ---- PR5（§1.3/§10/§16/§20）：deterministic state 与 transient feedback 分层。
 // transient 全部 wall-clock（performance.now）驱动，播放帧推进时消费新跨过的事件，
 // seek 清空（§20.1 不补播）、pause 自然完成（§20.2）、resume 不重复已消费事件（§20.3，
 // eventCursor 严格左开：恰在 cursor 上的事件不重复触发）。
 // Blocker 1：consumption 源 = authoritativeEvents（原始 playback events），
-// 不受事件列表 UI 过滤（typeFilter/showAll/recorder/team scope）影响。
+// 不受 Event Panel 折叠状态影响。
 let transientSeq = 0
 const eventCursor = ref(0)
 const floatItems = ref([]) // [{ id, victimAccountId, damage, bornRealMs, durationMs }]
 const burstItems = ref([]) // [{ id, victimAccountId, bornRealMs, durationMs }]
-const feedItems = ref([]) // [{ id, victimAccountId, victimName, victimTeam, bornRealMs, durationMs }]
+const feedItems = ref([]) // [{ id, victimAccountId, victimPlayerName, victimName, victimFriendly, durationMs }]
+// Event Banner 真实队列：id -> 展示起点 realMs（非响应式，避免 computed 副作用循环）。
+const feedShownAt = new Map()
 const ghostByAccount = reactive(new Map()) // accountId -> { prevPct, nextPct, untilRealMs }
 const flashByAccount = reactive(new Map()) // accountId -> untilRealMs
 // seek/状态恢复帧：禁用 HP bar 过渡动画（§20.1 seek 只恢复状态不补动画）
@@ -309,6 +307,7 @@ function resetTransients(sec) {
   floatItems.value = []
   burstItems.value = []
   feedItems.value = []
+  feedShownAt.clear()
   ghostByAccount.clear()
   flashByAccount.clear()
 }
@@ -319,42 +318,44 @@ function consumeEvents(fromSec, toSec) {
   // 「战斗事实有没有发生」不取决于 DAMAGE/KILL checkbox 是否显示）。
   // 左界 = max(fromSec, eventCursor)（严格左开 cursor：seek/回绕把 cursor 重置到新时间点后，
   // prev 滞后不会把旧时间点事件重复消费——Blocker 2 loop 下一轮不重复上一轮末尾事件）。
-  const crossed = eventsCrossed(authoritativeEvents.value, Math.max(fromSec, eventCursor.value), toSec)
-  if (crossed.length === 0) {
+  const damageLeft = Math.max(fromSec, eventCursor.value)
+  const crossed = eventsCrossed(authoritativeEvents.value, damageLeft, toSec)
+  const damageCrossed = hpVehicles.value.some(track =>
+    (track.damageLosses || []).some(loss => loss && loss.toSec > damageLeft + 1e-6 && loss.toSec <= toSec + 1e-6))
+  if (crossed.length === 0 && !damageCrossed) {
     eventCursor.value = Math.max(eventCursor.value, toSec)
     return
   }
   const now = realNowMs()
   const states = vehicleStates.value
   const stateByAccount = new Map(states.map(s => [s.vehicle.accountId, s]))
-  for (const ev of crossed) {
-    if (ev.type === 'DAMAGE') {
-      const victim = vehiclesByAccount.value.get(ev.targetAccountId)
-      // §7.2/§10.1：只有事件时刻位置流覆盖（当前可见/可展示）才跳伤害——
-      // 失察期间受击不跳伤害、不更新 HP、不显示 attacker、不画炮线（HP 冻结为最后可信值）
-      if (!victim || !victimFeedbackAllowed(victim, ev.timeSec)) continue
-      if (!stateByAccount.has(ev.targetAccountId)) continue // 无 marker 锚点不显示
-      // §11/§12：浮伤害只显示可证明的权威掉血（observedHpLoss，Type-7 推导）；
-      // raw Type-8 协议值语义未证明，不得作为精确伤害飘字
-      if (ev.observedHpLoss == null) continue
-      // ref 数组必须整体替换才能触发 reactivity（in-place push 不触发）
+  // DamageLoss is the sole numeric damage authority. Notification events below
+  // remain responsible for lifecycle feedback only.
+  for (const track of hpVehicles.value) {
+    for (const loss of track.damageLosses || []) {
+      if (!loss || loss.toSec <= Math.max(fromSec, eventCursor.value) + 1e-6 || loss.toSec > toSec + 1e-6) continue
+      const victim = vehiclesByAccount.value.get(track.accountId)
+      if (!victim || loss.transientAllowed !== true) continue
+      if (!stateByAccount.has(track.accountId)) continue
       floatItems.value = [...floatItems.value, {
         id: ++transientSeq,
-        victimAccountId: ev.targetAccountId,
-        hpLoss: ev.observedHpLoss,
+        victimAccountId: track.accountId,
+        hpLoss: loss.hpLoss,
         bornRealMs: now,
         durationMs: FLOAT_DMG_MS,
       }]
-      // §10.3/§11：HP 数字立即切换（确定性），bar 快速缩短（CSS transition），
-      // hit flash + lost-HP ghost（同阵营色浅版，§11 连续受击重置消退计时）
-      const friendly = victim.team === friendlyTeam.value
-      const g = ghostAround(victim, ev.timeSec, { friendly })
-      if (g) ghostByAccount.set(ev.targetAccountId, { prevPct: g.prevPct, nextPct: g.nextPct, untilRealMs: now + GHOST_MS })
-      flashByAccount.set(ev.targetAccountId, now + FLASH_MS)
+      const g = ghostAroundV2(loss)
+      if (g) ghostByAccount.set(track.accountId, { prevPct: g.prevPct, nextPct: g.nextPct, untilRealMs: now + GHOST_MS })
+      flashByAccount.set(track.accountId, now + FLASH_MS)
+    }
+  }
+  for (const ev of crossed) {
+    if (ev.type === 'DAMAGE') {
+      continue
     } else if (ev.type === 'DESTROYED') {
       // §12：击毁 burst（轻量 2D，克制；仅受击方位置流覆盖时锚定）
       const victim = vehiclesByAccount.value.get(ev.accountId)
-      if (!victim || !victimFeedbackAllowed(victim, ev.timeSec)) continue
+      if (!victim || !victimFeedbackAllowedV2(victim, ev.timeSec)) continue
       if (!stateByAccount.has(ev.accountId)) continue
       burstItems.value = [...burstItems.value, {
         id: ++transientSeq,
@@ -370,8 +371,11 @@ function consumeEvents(fromSec, toSec) {
       feedItems.value = pushFeed(feedItems.value, {
         id: ++transientSeq,
         victimAccountId: ev.targetAccountId,
+        // §15：banner 使用 canonical vehicle identity（playerName + tankName），
+        // 显示「玩家名（车辆名）被击毁」；不猜车型、不解析 label 字符串。
+        victimPlayerName: victim.playerName || '',
         victimName: victim.tankName || String(victim.tankId),
-        victimTeam: victim.team,
+        victimFriendly: victim.friendly,
         bornRealMs: now,
         durationMs: KILL_FEED_MS,
       })
@@ -384,7 +388,12 @@ function consumeEvents(fromSec, toSec) {
 function hasPendingTransients(now) {
   if (transientsActive(floatItems.value, now).length) return true
   if (transientsActive(burstItems.value, now).length) return true
-  if (transientsActive(feedItems.value, now).length) return true
+  // Event Banner queue：以 shownAt 计时（activeFeed）。存在「排队等待」或「正在展示且未过期」的
+  // 条目都算 pending —— pause 下也要完整展示 4s 并自然消失（不能按 bornRealMs 判断 feed）。
+  if (feedItems.value.some(it => {
+    const s = feedShownAt.get(it.id)
+    return s == null || !Number.isFinite(it.durationMs) || now - s < it.durationMs
+  })) return true
   for (const g of ghostByAccount.values()) if (g.untilRealMs > now) return true
   for (const u of flashByAccount.values()) if (u > now) return true
   return false
@@ -394,19 +403,29 @@ function hasPendingTransients(now) {
 function pruneTransients(now) {
   for (const [id, g] of ghostByAccount) if (g.untilRealMs <= now) ghostByAccount.delete(id)
   for (const [id, u] of flashByAccount) if (u <= now) flashByAccount.delete(id)
+  // Event Banner 队列：移除已完整展示并过期的条目及其 shownAt 记录；
+  // 排队中（shownAt 空）的条目保留（待空位展示，不直接挤出）。
+  feedItems.value = feedItems.value.filter(it => {
+    const s = feedShownAt.get(it.id)
+    return s == null || !Number.isFinite(it.durationMs) || now - s < it.durationMs
+  })
+  for (const id of [...feedShownAt.keys()]) {
+    if (!feedItems.value.some(it => it.id === id)) feedShownAt.delete(id)
+  }
 }
 
 // ---- 单车 HP HUD 数据（§4/§5/§6/§7）----
 function hpFor(vehicle) {
-  const v2 = v2TrackByAccount.value?.get(vehicle.accountId)
-  if (v2) {
-    return hpDisplay(
-      { ...vehicle, healthTransitions: v2.healthTransitions || [], lifeTransitions: v2.lifeTransitions || [] },
-      currentTime.value,
-      { friendly: vehicle.team === friendlyTeam.value },
-    )
+  const display = healthDisplayAt(vehicle, currentTime.value)
+  if (!display) return null
+  return {
+    current: display.currentHp,
+    maxHp: display.displayCapacityHp,
+    pct: display.pct,
+    knowledge: display.knowledge,
+    destroyed: display.destroyed,
+    state: display.state,
   }
-  return hpDisplay(vehicle, currentTime.value, { friendly: vehicle.team === friendlyTeam.value })
 }
 /** marker HP HUD 数字区实际渲染文本（VehicleMarker .pb-hp-num 同款：current 有值→数字，否则 —）。
  *  labelLayout 碰撞用：数字文本可能影响 HUD 盒宽（不同状态不同文本），必须按实际文本估算。 */
@@ -441,7 +460,7 @@ const visibleFloats = computed(() => {
     if (!p) continue
     // §10.1：连续快速受击纵向 stack/stagger，每条独立生命周期
     list.forEach((item, idx) => {
-      out.push({ ...item, x: p.x, y: p.y - 34 - idx * 16, team: st.vehicle.team })
+      out.push({ ...item, x: p.x, y: p.y - 34 - idx * 16, friendly: st.vehicle.friendly })
     })
   }
   return out
@@ -455,30 +474,36 @@ const visibleBursts = computed(() => {
     if (!st) return null
     const p = markerScreen(st)
     if (!p) return null
-    return { ...item, x: p.x, y: p.y, team: st.vehicle.team }
+    return { ...item, x: p.x, y: p.y, friendly: st.vehicle.friendly }
   }).filter(Boolean)
 })
-const visibleFeed = computed(() => transientsActive(feedItems.value, nowMs.value))
-const showAll = ref(false)
-const typeFilter = ref(new Set(['DAMAGE', 'DESTROYED', 'KILL', 'POSITION_REPORTED', 'POSITION_STALE']))
+const visibleFeed = computed(() => activeFeed(feedItems.value, nowMs.value, feedShownAt))
 const selectedAccountId = ref(null)
-const eventPopupSec = ref(null)
+const activePanel = ref(null)
+// §mobile-panels：移动端/中型宽度没有永久 Left Rail，用 ☰ 打开一个 drawer/sheet 以进入
+// Team / Display / Events / Annotation（避免 dead action）。
+const mobileDrawerOpen = ref(false)
+const railDrawerOpen = computed(() => mobileDrawerOpen.value
+  && (isMobileDevice.value || !(isFullscreen.value || wideLayout.value)))
+const annotationOpen = ref(false)
+const mobileOverlay = ref(null)
+const orientationHint = ref('')
+const panelGroups = computed(() => [
+  { name: 'battle', label: t('recon.map.playback.panel_battle') },
+  { name: 'vehicle', label: t('recon.map.playback.panel_vehicle') },
+  { name: 'display', label: t('recon.map.playback.panel_display') },
+  { name: 'events', label: t('recon.map.playback.panel_events') },
+])
 let rafId = null
 let lastFrameTs = null
 
-// PR4 §33 hysteresis 状态（声明提前：seekTo watch immediate 可能在 setup 早期触发 pause →
-// ensureHysteresisClock/hasPendingHysteresis 必须能访问；ref/Map/let 需先初始化，避免 TDZ）
-const playerVisState = ref(new Map())
-const playerHidden = ref(new Set())
-// fade-in 生命周期：accountId → fade 结束时刻（performance.now 基准）。
-// 非响应式 Map，由 nowMs 变化驱动重渲染；恢复帧开始计时 PLAYER_FADE_MS，
-// 期间不被下一次 collision resolve 取消（CSS animation 0.12s 与之一致）。
-const fadeUntil = new Map()
-let hystRafId = null
+// 暂停期 transient 时钟的 RAF id（仅当存在未决 transient 时运行，不永久轮询）。
+let pauseRafId = null
 
 // ---- 地图视图缩放/平移：单一 transform 层保证地图/网格/炮线/标记严格对齐 ----
 const mapComponent = ref(null)
 const mapEl = computed(() => mapComponent.value?.mapEl || null)
+const mapStageEl = ref(null)
 // ---- 地图容器真实渲染尺寸（reactive）：fullscreen enter/exit / 窗口缩放等任何尺寸变化
 // 由 ResizeObserver 更新 → 依赖容器尺寸的 screen-space 布局（markerScreen/labelLayout/
 // hitbox/textInput）在新尺寸下重新计算；无 RO 环境（测试/旧浏览器）回退 clientWidth 读取。
@@ -491,28 +516,106 @@ function mapHeight() {
   return mapSize.value.h || (mapEl.value ? mapEl.value.clientHeight : 0)
 }
 
+// §1：MapRenderRect SSoT —— 当前地图实际绘制的矩形（相对 .pb-map origin）。
+// 所有 presentation geometry（marker/碰撞/hitbox/label/float/screenToSemantic）都经由它换算，
+// 保证 SVG map 与 HTML overlay 共享同一坐标系（fullscreen/contain 下 marker 不再跑进 gutter）。
+// 用读取即时值而非缓存 computed：依赖（mapSize/mapView）由调用方 computed/watch 追踪，实时重算。
+function mapRenderRect() {
+  const width = mapWidth()
+  const ratio = mapView.value.H / mapView.value.W
+  return { left: 0, top: 0, width, height: width * ratio }
+}
+
 // ---- Fullscreen：原生 Fullscreen API；document.fullscreenElement + fullscreenchange 为事实源
 //（不维护手工 isFullscreen = !isFullscreen，ESC/浏览器 UI 退出后状态自动同步）----
 const pbRoot = ref(null)
 const isFullscreen = ref(false)
+// §3：大桌面（>=1200px）即使不进入 fullscreen，也用持久 rail|map|details 三列布局。
+const wideLayout = ref(false)
+// §mobile-contract：设备是否为「移动端」（primary pointer=coarse 且视口 <=1200px）。手机在
+// fullscreen + landscape 时内宽可 >768，因此移动端判定不得只依赖 innerWidth<768；一旦判定为
+// 移动端，无论全屏/横竖屏都保持 mobile playback mode（HUD+Map 为主、bottom overlay controls、
+// details sheet、无永久 Left Rail / Right Details）。
+const mobileLayoutQuery = '(pointer: coarse) and (max-width: 1200px)'
+const isMobileDevice = ref(false)
+// §fullscreen：PlaybackControls 是否已在 Left Rail。移动端必须保持 bottom overlay，故全屏/大桌面
+// 且非移动端才为 true；移动端全屏仍走 overlay，bottom inset 由真实 overlay content 高度决定。
+const controlsInRail = computed(() => (isFullscreen.value || wideLayout.value) && !isMobileDevice.value)
 const fullscreenSupported = computed(() =>
   typeof document !== 'undefined'
   && pbRoot.value != null
   && typeof pbRoot.value.requestFullscreen === 'function'
 )
+let playbackLifecycleActive = true
+let orientationRequestToken = 0
+let wideLayoutQuery = null
+let mobileLayoutQueryMql = null
+function onWideLayoutChange(event) {
+  wideLayout.value = !!(event && event.matches)
+}
+function onMobileLayoutChange(event) {
+  isMobileDevice.value = !!(event && event.matches)
+}
 function onFullscreenChange() {
   isFullscreen.value = !!(typeof document !== 'undefined' && document.fullscreenElement)
+  if (!isFullscreen.value) {
+    orientationRequestToken += 1
+    unlockOrientation()
+  }
+  // §fullscreen：进入/退出后布局改变。等 Vue 完成 Bottom Overlay ↔ Left Rail 的 controls 搬迁后
+  //（nextTick），用新 mode 的真实几何 force 一次 authoritative fit（geometry-signature 也会捕获
+  // bottom inset 归零/变化）。不用 setTimeout magic delay。
+  nextTick(() => fitViewIfReady(true))
+}
+let orientationHintTimer = null
+function showOrientationHint() {
+  if (!playbackLifecycleActive) return
+  orientationHint.value = t('recon.map.playback.orientation_hint')
+  if (orientationHintTimer != null) clearTimeout(orientationHintTimer)
+  orientationHintTimer = setTimeout(() => { orientationHint.value = '' }, 2400)
+}
+function lockOrientation() {
+  if (!playbackLifecycleActive || (typeof document !== 'undefined' && document.fullscreenElement !== pbRoot.value)) return
+  // §mobile-contract：仅移动端设备尝试锁横屏（不依赖 innerWidth，手机横屏可 >768）。
+  if (!isMobileDevice.value) return
+  const orientation = typeof screen !== 'undefined' ? screen.orientation : null
+  if (!orientation || typeof orientation.lock !== 'function') return
+  const token = ++orientationRequestToken
+  try {
+    const result = orientation.lock('landscape')
+    if (result && typeof result.catch === 'function') {
+      result.catch(() => {
+        if (playbackLifecycleActive && token === orientationRequestToken) showOrientationHint()
+      })
+    }
+  } catch {
+    if (token === orientationRequestToken) showOrientationHint()
+  }
+}
+function unlockOrientation() {
+  const orientation = typeof screen !== 'undefined' ? screen.orientation : null
+  if (orientation && typeof orientation.unlock === 'function') {
+    try { orientation.unlock() } catch { /* unsupported browsers may throw */ }
+  }
 }
 function toggleFullscreen() {
   if (typeof document === 'undefined' || !pbRoot.value) return
   if (document.fullscreenElement) {
     if (typeof document.exitFullscreen === 'function') {
-      const p = document.exitFullscreen()
-      if (p && typeof p.catch === 'function') p.catch(() => {})
+      try {
+        const p = document.exitFullscreen()
+        if (p && typeof p.catch === 'function') p.catch(() => {})
+      } catch { /* unsupported browsers may throw */ }
     }
   } else if (typeof pbRoot.value.requestFullscreen === 'function') {
-    const p = pbRoot.value.requestFullscreen()
-    if (p && typeof p.catch === 'function') p.catch(() => {})
+    try {
+      const p = pbRoot.value.requestFullscreen()
+      if (p && typeof p.then === 'function') {
+        p.then(() => { if (playbackLifecycleActive) lockOrientation() }).catch(() => {})
+      } else {
+        lockOrientation()
+      }
+    } catch { /* unsupported browsers may throw */ }
   }
 }
 
@@ -522,12 +625,26 @@ watch(() => mapEl.value, (el) => {
   if (!el || mapResizeObserver) return
   if (typeof ResizeObserver === 'function') {
     mapResizeObserver = new ResizeObserver((entries) => {
-      const e = entries && entries[0]
-      if (e && e.contentRect) {
-        mapSize.value = { w: e.contentRect.width, h: e.contentRect.height }
+      for (const e of entries || []) {
+        if (e && e.target === el) {
+          mapSize.value = { w: e.contentRect.width, h: e.contentRect.height }
+        }
       }
+      // §fullscreen-exit：地图或 stage 尺寸就绪（布局稳定）后，以新 mode 的几何重新应用默认 fit
+      //（contain 居中）。mode change 会 re-arm fitInitialized；非 mode 的 resize 保持已生效的 view。
+      fitViewIfReady()
     })
     mapResizeObserver.observe(el)
+    if (mapStageEl.value) mapResizeObserver.observe(mapStageEl.value)
+    // §safe-viewport：观察影响 camera safe area 的真实元素 —— HUD（top inset）与 bottom overlay
+    // controls（bottom inset）。controls 从 Bottom Overlay 搬到 Left Rail 后，bottom overlay 高度归零，
+    // 这里触发 fitViewIfReady → geometry-signature 变化 → 重新 fit，不再残留旧 bottom inset。
+    const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
+    if (hud && hud !== el) mapResizeObserver.observe(hud)
+    // §safeInsets-DOM：观察真实 .pb-mobile-overlay-content（controls 实际高度），而非 inset:0 wrapper；
+    // controls content reflow → RO 触发 fitViewIfReady → safe 几何更新。
+    const overlayContent = mobileOverlay.value?.$el?.querySelector('.pb-mobile-overlay-content')
+    if (overlayContent && overlayContent !== el) mapResizeObserver.observe(overlayContent)
   }
 })
 
@@ -543,15 +660,43 @@ let suppressClick = false
 // 手势结束后的首个 click 必须被吞掉，纯点击车辆仍正常选中
 let gestureMoved = false
 
+/** 安全区：fullscreen 下 HUD（顶部 overlay）高度为 top inset；bottom inset 仅当真有
+ *  bottom-overlay controls（mobile，controls 不在 rail）时才量取，否则为 0 —— 因为
+ *  controls 已在 Left Rail（controlsInRail），不占 Map Workspace bottom，也避免读到
+ *  切换 fullscreen 前旧 bottom-overlay 高度造成底部黑边。 */
+function safeInsets() {
+  let top = 0
+  let bottom = 0
+  if (isFullscreen.value) {
+    const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
+    top = hud ? hud.clientHeight : 0
+  }
+  // §safeInsets-DOM：只量取 .pb-mobile-overlay-content 的真实 rendered 高度（wrapper 是 inset:0，
+  // 其 clientHeight 是整张地图高度，不能当 controls 高度）。
+  // §safeInsets-contract：normal mobile 的 controls 是 transient overlay（默认 opacity:0），
+  // 不因不可见 controls 永久缩小 map —— 非 fullscreen 一律 bottom=0。
+  // fullscreen mobile controls 始终显示时，才 reserve 底部 safe area（= content 实高）。
+  if (!controlsInRail.value && isFullscreen.value) {
+    const wrap = mobileOverlay.value?.$el
+    const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null
+    bottom = content ? content.clientHeight : 0
+  }
+  return { top, bottom }
+}
+
 function applyView(next) {
-  const clamped = clampViewPan(
-    next,
-    mapWidth(),
-    mapHeight()
-  )
+  // stage = 可见 map-stage；map = rendered map rect。pan bounds / reset fit 都以二者为据。
+  // 地图只在「下 HUD、上 controls」之间的 safe area 内完整显示/平移，不遮挡进 HUD/controls。
+  const stageW = mapWidth()
+  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const safe = safeInsets()
+  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
+  const rect = mapRenderRect()
+  // §对称：地图在安全区内垂直居中，顶部/底部黑边完全对称（无向下偏移）。
+  const clamped = clampViewPan(next, stageW, safeH, rect.width, rect.height)
   view.scale = clamped.scale
   view.tx = clamped.tx
-  view.ty = clamped.ty
+  view.ty = clamped.ty + safe.top
 }
 
 const viewportStyle = computed(() => `transform: translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`)
@@ -574,7 +719,8 @@ function screenPoint(clientX, clientY) {
 
 function onWheel(e) {
   const p = screenPoint(e.clientX, e.clientY)
-  applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP))
+  // 缩放下限 = 完整地图 fit scale：放大后再缩小能回到原始完整视图，不会卡在 1x。
+  applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, fitScale()))
 }
 
 function pinchInfo() {
@@ -641,7 +787,8 @@ function onPointerMove(e) {
     if (pinchStart.dist > 0 && dist > 0) {
       const next = zoomViewAt(
         { scale: pinchStart.scale, tx: pinchStart.tx, ty: pinchStart.ty },
-        pinchStart.anchorScreen.x, pinchStart.anchorScreen.y, dist / pinchStart.dist
+        pinchStart.anchorScreen.x, pinchStart.anchorScreen.y, dist / pinchStart.dist,
+        fitScale()
       )
       // 两指中点整体移动 = 屏幕平移（translate 单位为屏幕像素，直接加 client 位移）
       next.tx += mid.x - pinchStart.mid.x
@@ -698,11 +845,59 @@ function onViewportClick(e) {
     suppressClick = false
     e.stopPropagation()
     e.preventDefault()
+    return
   }
+  mobileOverlay.value?.reveal?.()
+}
+
+/** 完整地图视图（contain/fit）的 scale：把整张 rendered map 放进安全区的最小缩放。
+ *  缩放下限（minScale）应为它——zoomed 后回到的就是它，避免「放大后再缩不回原样」。 */
+function fitScale() {
+  const stageW = mapWidth()
+  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const safe = safeInsets()
+  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
+  const rect = mapRenderRect()
+  if (stageW > 0 && safeH > 0 && rect.width > 0 && rect.height > 0) {
+    return Math.min(stageW / rect.width, safeH / rect.height)
+  }
+  return 1
 }
 
 function resetView() {
+  // Reset View：恢复「完整地图视图」——fit 整张 rendered map 到安全区（下 HUD、上 controls）并居中。
+  const stageW = mapWidth()
+  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const safe = safeInsets()
+  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
+  const rect = mapRenderRect()
+  if (stageW > 0 && safeH > 0 && rect.width > 0 && rect.height > 0) {
+    const scale = fitScale()
+    const tx = (stageW - rect.width * scale) / 2
+    const ty = (safeH - rect.height * scale) / 2
+    applyView({ scale, tx, ty })
+    return
+  }
   applyView({ scale: 1, tx: 0, ty: 0 })
+}
+
+// §3：默认视图 = 完整地图 contain（fit 居中、完整可见，无需手动调整）。
+// 地图在「下 HUD、上 controls」安全区内，顶部不伸进血条；四周黑边取决于地图与安全区的比例。
+// §geometry-signature：以 mode + stage/map/safe 尺寸为 signature，变化即重新 fit，
+// 不靠布尔（fitInitialized）锁死旧几何——mode 或 safe area 改变（如 bottom inset 归零）会重新 fit。
+let lastFitSignature = ''
+function fitViewIfReady(force = false) {
+  if (force) lastFitSignature = ''
+  const stageW = mapWidth()
+  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
+  const safe = safeInsets()
+  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
+  const rect = mapRenderRect()
+  if (stageW <= 0 || safeH <= 0 || rect.width <= 0 || rect.height <= 0) return
+  const signature = [isFullscreen.value, wideLayout.value, isMobileDevice.value, stageW, safeH, rect.width, rect.height, safe.top, safe.bottom].join('|')
+  if (!force && signature === lastFitSignature) return
+  lastFitSignature = signature
+  resetView()
 }
 
 // ---- 地图标注（临时纯前端：切视图/切文件即清空；几何一律存语义坐标） ----
@@ -945,6 +1140,22 @@ onMounted(() => {
   if (typeof document !== 'undefined') {
     document.addEventListener('fullscreenchange', onFullscreenChange)
   }
+  // §3：大桌面三列布局 —— 以 matchMedia 为事实源，监听宽度跨 1200px 边界。
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    wideLayoutQuery = window.matchMedia('(min-width: 1200px)')
+    wideLayout.value = !!wideLayoutQuery.matches
+    if (typeof wideLayoutQuery.addEventListener === 'function') {
+      wideLayoutQuery.addEventListener('change', onWideLayoutChange)
+    }
+    // §mobile-contract：移动端以 pointer:coarse + 视口<=1200 判定（不依赖 innerWidth<768），
+    // 进入全屏/横屏后仍保持 mobile playback mode。
+    mobileLayoutQueryMql = window.matchMedia(mobileLayoutQuery)
+    isMobileDevice.value = !!mobileLayoutQueryMql.matches
+    if (typeof mobileLayoutQueryMql.addEventListener === 'function') {
+      mobileLayoutQueryMql.addEventListener('change', onMobileLayoutChange)
+    }
+  }
+  window.addEventListener('keydown', onKeydown)
 })
 
 function frame(ts) {
@@ -973,8 +1184,8 @@ function frame(ts) {
     }
     playing.value = false
     rafId = null
-    // 播放到末尾自然停止 → 若有未决 transition，轻量 clock 接管
-    ensureHysteresisClock(realNowMs())
+    // 播放到末尾自然停止 → 若有未决 transient，轻量 clock 接管
+    ensurePauseClock(realNowMs())
     return
   }
   rafId = requestAnimationFrame(frame)
@@ -985,10 +1196,10 @@ function play() {
   if (playing.value || duration.value <= 0) return
   playing.value = true
   lastFrameTs = null
-  // 播放开始：hysteresis 时钟由 playback frame() 驱动——作废可能残留的轻量 hystRAF
-  //（stub 环境只保留最近回调，若不清理，pause() 的 ensureHysteresisClock 会误判"已有 RAF"
+  // 播放开始：transient 时钟由 playback frame() 驱动——作废可能残留的轻量 pause RAF
+  //（stub 环境只保留最近回调，若不清理，pause() 的 ensurePauseClock 会误判"已有 RAF"
   //  而无法注册接管时钟；真实浏览器中残留回调至多无害地刷新一次 nowMs）
-  hystRafId = null
+  pauseRafId = null
   rafId = requestAnimationFrame(frame)
 }
 
@@ -999,16 +1210,15 @@ function pause() {
     cancelAnimationFrame(rafId)
     rafId = null
   }
-  // Blocker 1：播放中可能有未决 hide/show/fade transition——暂停后立即让轻量
-  // hysteresis clock（UI wall clock）接管；无 pending 时不启动 RAF（不永久轮询）。
-  ensureHysteresisClock(typeof performance !== 'undefined' ? performance.now() : Date.now())
+  // 播放中可能有未决 transient——暂停后立即让轻量 pause clock（UI wall clock）接管；
+  // 无 pending 时不启动 RAF（不永久轮询）。
+  ensurePauseClock(typeof performance !== 'undefined' ? performance.now() : Date.now())
 }
 
 watch(() => props.seekTo, (sec) => {
   if (Number.isFinite(sec)) {
     pause() // 点击 AI 时间 → seek + 自动暂停（含取消 RAF）
     currentTime.value = clampPlaybackTime(sec, duration.value)
-    eventPopupSec.value = Math.round(sec)
     resetTransients(currentTime.value)
     suppressHpTransition()
   }
@@ -1016,15 +1226,14 @@ watch(() => props.seekTo, (sec) => {
 
 function seek(sec) {
   currentTime.value = clampPlaybackTime(sec, duration.value)
-  eventPopupSec.value = Math.round(sec)
   nowMs.value = realNowMs()
   resetTransients(currentTime.value)
   suppressHpTransition()
 }
 
 /** seek 后单帧禁用 HP bar transition（§20.1：只恢复状态，不补 150–300ms 缩短动画）。
- * 用 setTimeout 而非 requestAnimationFrame 清旗标：不占用共享 RAF 槽位（播放/hysteresis
- * 时钟仍由 rafCb 驱动，测试中 seek 后 rafCb 必须仍指向时钟回调）。 */
+ * 用 setTimeout 而非 requestAnimationFrame 清旗标：不占用共享 RAF 槽位（播放/
+ * 暂停时钟仍由 rafCb 驱动，测试中 seek 后 rafCb 必须仍指向时钟回调）。 */
 function suppressHpTransition() {
   hpNoTransition.value = true
   if (typeof setTimeout === 'function') {
@@ -1044,8 +1253,8 @@ function dragStart() {
   pause()
 }
 
-/** 事件标记点击：跳转并保持暂停。 */
-function jumpTo(sec) {
+/** Event Panel 行点击：跳转并保持暂停。 */
+function seekToEvent(sec) {
   pause()
   seek(sec)
 }
@@ -1056,20 +1265,30 @@ function step(delta) {
   suppressHpTransition()
 }
 
-function toggleSpeed() {
-  speed.value = nextPlaybackSpeed(speed.value)
+function setSpeed(next) {
+  if ([0.5, 1, 2, 4].includes(next)) speed.value = next
 }
 
-function toggleType(type) {
-  const next = new Set(typeFilter.value)
-  if (next.has(type)) next.delete(type)
-  else next.add(type)
-  typeFilter.value = next
+function onKeydown(e) {
+  const target = e.target
+  const tagName = target && target.tagName
+  if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(tagName)) return
+  if (e.code === 'Space' || e.key === ' ') {
+    e.preventDefault()
+    togglePlay()
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault()
+    step(e.key === 'ArrowLeft' ? -5 : 5)
+  }
 }
 
 onBeforeUnmount(() => {
+  playbackLifecycleActive = false
+  paletteRequestToken += 1
+  orientationRequestToken += 1
   if (rafId != null) cancelAnimationFrame(rafId)
-  if (hystRafId != null) cancelAnimationFrame(hystRafId)
+  if (pauseRafId != null) cancelAnimationFrame(pauseRafId)
+  if (orientationHintTimer != null) clearTimeout(orientationHintTimer)
   if (mapResizeObserver) {
     mapResizeObserver.disconnect()
     mapResizeObserver = null
@@ -1078,9 +1297,24 @@ onBeforeUnmount(() => {
     document.removeEventListener('fullscreenchange', onFullscreenChange)
     // 组件在 fullscreen 中被卸载 → 主动退出（浏览器通常会自动退出，这里兜底）
     if (pbRoot.value && pbRoot.value === document.fullscreenElement && typeof document.exitFullscreen === 'function') {
-      document.exitFullscreen()
+      try {
+        const exitResult = document.exitFullscreen()
+        if (exitResult && typeof exitResult.catch === 'function') exitResult.catch(() => {})
+      } catch {
+        // fullscreen teardown is best-effort during component unmount
+      }
     }
   }
+  // §3：清理大桌面三列布局的 matchMedia 监听。
+  if (wideLayoutQuery && typeof wideLayoutQuery.removeEventListener === 'function') {
+    wideLayoutQuery.removeEventListener('change', onWideLayoutChange)
+  }
+  wideLayoutQuery = null
+  if (mobileLayoutQueryMql && typeof mobileLayoutQueryMql.removeEventListener === 'function') {
+    mobileLayoutQueryMql.removeEventListener('change', onMobileLayoutChange)
+  }
+  mobileLayoutQueryMql = null
+  window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
   window.removeEventListener('pointercancel', onPointerUp)
@@ -1094,15 +1328,14 @@ onBeforeUnmount(() => {
 // ---- 数据 ----
 const routesByAccount = computed(() => {
   const map = new Map()
-  for (const route of pbOverview.value.routes || []) map.set(route.accountId, route)
+  for (const track of playback.value?.vehicles || []) map.set(track.accountId, track)
   return map
 })
 
 const vehiclesByAccount = computed(() => {
   const map = new Map()
   for (const vehicle of (playback.value ? playback.value.vehicles : [])) {
-    // V2 canonical vehicle view（带 hpLosses/deathSec 供累计统计/伤害日志/teamRelated）
-    map.set(vehicle.accountId, v2VehicleView(vehicle))
+    map.set(vehicle.accountId, vehicle)
   }
   return map
 })
@@ -1115,7 +1348,7 @@ function vehicleColor(vehicle) {
     .map(st => st.vehicle)
     .filter(v => v.team === vehicle.team)
   const index = teamVehicles.indexOf(vehicle)
-  const list = vehicle.team === friendlyTeam.value ? friendlyColors.value : enemyColors.value
+  const list = vehicle.friendly === true ? friendlyColors.value : enemyColors.value
   return list[Math.max(0, index) % list.length]
 }
 
@@ -1149,7 +1382,7 @@ function markerTop(y) {
   return `${((mapView.value.toY(y)) / mapView.value.H) * 100}%`
 }
 
-const vehicleStates = computed(() => {
+const baseVehicleStates = computed(() => {
   // preload 未完成（asset decision 未定）时不渲染车辆——禁止 generic 闪现后替换
   if (preload.value.phase !== 'ready') return []
   // V2-only：V2 track 为唯一事实源；无 V2 车辆 → 空（不再有 legacy overview.playback 兜底）。
@@ -1157,16 +1390,27 @@ const vehicleStates = computed(() => {
   if (tracks.length === 0) return []
   return tracks
     .map(track => {
-      const vehicle = v2VehicleView(track)
+      const vehicle = track
+      const model = vehicleModel(track)
+      const mobile = isMobileDevice.value
+      const markerSize = computeVehicleMarkerSize(vehicle, {
+        model,
+        mapView: mapView.value,
+        mapWidthPx: mapWidth(),
+        mapHeightPx: mapHeight(),
+        mobile,
+      })
       return projectVehicleState({
       vehicle,
       track,
       time: currentTime.value,
       recorderAccountId: pbOverview.value.recorderAccountId,
-      friendlyTeam: friendlyTeam.value,
-      model: vehicleModel(vehicle),
-      hullImage: track.team === friendlyTeam.value ? friendlyHull : enemyHull,
-      turretImage: track.team === friendlyTeam.value ? friendlyTurret : enemyTurret,
+      model,
+      markerSize,
+      // Unknown perspective keeps neutral CSS state; enemy assets are only a
+      // visual fallback because the asset pack has no neutral hull/turret.
+      hullImage: track.friendly === true ? friendlyHull : enemyHull,
+      turretImage: track.friendly === true ? friendlyTurret : enemyTurret,
       markerLeft: markerLeft,
       markerTop: markerTop,
       markerTransform: markerTransform.value,
@@ -1178,64 +1422,69 @@ const vehicleStates = computed(() => {
     .filter(Boolean)
 })
 
-const filteredEvents = computed(() => {
-  const events = (playback.value ? playback.value.events : [])
-    .filter(event => typeFilter.value.has(event.type))
-  if (showAll.value) return events
-  const recorderId = pbOverview.value.recorderAccountId
-  if (pbOverview.value.arenaBonusType === 1 && recorderId != null) {
-    return events.filter(event => recorderRelated(event, recorderId))
+const collisionOffsets = ref(new Map())
+watch(
+  [baseVehicleStates, () => currentTime.value, () => view.scale, () => view.tx, () => view.ty, () => mapWidth(), () => mapHeight(), () => selectedAccountId.value],
+  ([states]) => {
+    const items = states.map((state) => {
+      const point = canonicalMarkerScreen(state)
+      if (!point) return null
+      const width = state.markerSize.collisionFootprint.width * view.scale
+      const height = state.markerSize.collisionFootprint.height * view.scale
+      return {
+        accountId: state.vehicle.accountId,
+        x: point.x,
+        y: point.y,
+        width,
+        height,
+        selected: selectedAccountId.value === state.vehicle.accountId,
+        recorder: state.recorder,
+      }
+    }).filter(Boolean)
+    collisionOffsets.value = computeTankCollisionLayout(
+      items,
+      collisionOffsets.value,
+      { mobile: isMobileDevice.value },
+    )
+  },
+  { immediate: true },
+)
+
+const vehicleStates = computed(() => baseVehicleStates.value.map((state) => {
+  const offset = collisionOffsets.value.get(state.vehicle.accountId) || { x: 0, y: 0 }
+  const scale = view.scale || 1
+  return {
+    ...state,
+    presentationOffset: offset,
+    markerStyle: {
+      ...state.markerStyle,
+      width: `${state.markerSize.renderBox.width}px`,
+      height: `${state.markerSize.renderBox.height}px`,
+      left: `calc(${markerLeft(state.pos.x)} + ${offset.x / scale}px)`,
+      top: `calc(${markerTop(state.pos.y)} + ${offset.y / scale}px)`,
+    },
   }
-  if (pbOverview.value.arenaBonusType !== 1) {
-    return events.filter(event => teamRelated(event, friendlyTeam.value, vehiclesByAccount.value))
-  }
-  return events
-})
+}))
 
 /**
- * authoritative playback events：全部回放事件（无 typeFilter / showAll / recorder / team scope 过滤）。
+ * authoritative playback events：全部回放事件。
  * deterministic state（当前累计伤害/击杀）与 combat feedback（floating damage / hit flash / ghost /
  * destruction burst / kill feed / damage log）必须消费本源——「战斗事实有没有发生」不取决于事件列表
- * UI 是否显示（review Blocker 1）。presentation 过滤（filteredEvents）只用于 timeline markers /
- * popup / prev-next 事件跳转 / 受 filter 控制的 visual overlay（炮线）。
+ * UI 是否折叠。Event Panel 只消费 presentation-only 的 userVisibleEvents；炮线仍消费
+ * 同一份完整真实事件。
  */
 const authoritativeEvents = computed(() => (playback.value ? playback.value.events : []))
+const userVisibleEvents = computed(() => authoritativeEvents.value.filter((event) => (
+  event.type === 'DAMAGE' || event.type === 'KILL' || event.type === 'DESTROYED'
+)))
 
-const eventMarkers = computed(() => aggregateEventsBySecond(filteredEvents.value))
-
-// 炮线：仅来自过滤后事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
-const visibleTracers = computed(() => tracerLines(filteredEvents.value, routesByAccount.value, currentTime.value, speed.value))
+// 炮线：仅来自真实事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
+const visibleTracers = computed(() => tracerLines(authoritativeEvents.value, routesByAccount.value, currentTime.value, speed.value))
 
 function tracerColor(accountId) {
   const vehicle = vehiclesByAccount.value.get(accountId)
   return vehicle ? vehicleColor(vehicle) : palette.value.routeOutline
 }
-
-function nearestEvent(direction) {
-  const events = filteredEvents.value
-  if (!events.length) return
-  const t = currentTime.value
-  let best = null
-  for (const event of events) {
-    if (direction === 'prev' && event.timeSec < t - 0.1) {
-      if (best === null || event.timeSec > best.timeSec) best = event
-    } else if (direction === 'next' && event.timeSec > t + 0.1) {
-      if (best === null || event.timeSec < best.timeSec) best = event
-    }
-  }
-  if (best) {
-    pause() // 上一/下一事件跳转后保持暂停
-    currentTime.value = best.timeSec
-    eventPopupSec.value = Math.round(best.timeSec)
-    resetTransients(currentTime.value)
-    suppressHpTransition()
-  }
-}
-
-const popupEvents = computed(() => {
-  if (eventPopupSec.value == null) return []
-  return filteredEvents.value.filter(event => Math.round(event.timeSec) === eventPopupSec.value)
-})
 
 function playerName(accountId) {
   const vehicle = vehiclesByAccount.value.get(accountId)
@@ -1254,9 +1503,6 @@ function eventLabel(event) {
       return `${playerName(event.accountId)} → ${playerName(event.targetAccountId)}`
     case 'DESTROYED':
       return playerName(event.accountId)
-    case 'POSITION_REPORTED':
-    case 'POSITION_STALE':
-      return playerName(event.accountId)
     default:
       return type
   }
@@ -1272,14 +1518,20 @@ function onMarkerSelect(vehicle, event) {
 }
 
 /** 标记中心 → 相对地图容器的屏幕 px（viewport 变换后）。 */
-function markerScreen(st) {
-  const W = mapWidth()
-  if (!W || mapView.value.W <= 0) return null
-  const H = W * (mapView.value.H / mapView.value.W)
+function canonicalMarkerScreen(st) {
+  const rect = mapRenderRect()
+  if (!rect || rect.width <= 0 || mapView.value.W <= 0) return null
   return {
-    x: (mapView.value.toX(st.pos.x) / mapView.value.W) * W * view.scale + view.tx,
-    y: (mapView.value.toY(st.pos.y) / mapView.value.H) * H * view.scale + view.ty,
+    x: (mapView.value.toX(st.pos.x) / mapView.value.W) * rect.width * view.scale + view.tx,
+    y: (mapView.value.toY(st.pos.y) / mapView.value.H) * rect.height * view.scale + view.ty,
   }
+}
+
+function markerScreen(st) {
+  const point = canonicalMarkerScreen(st)
+  if (!point) return null
+  const offset = st.presentationOffset || { x: 0, y: 0 }
+  return { x: point.x + offset.x, y: point.y + offset.y }
 }
 
 function selectAt(accountId, clientX, clientY) {
@@ -1288,19 +1540,18 @@ function selectAt(accountId, clientX, clientY) {
   const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
   const px = hasPoint ? clientX - rect.left : NaN
   const py = hasPoint ? clientY - rect.top : NaN
-  // §36 hitbox 尺寸（content px）：读取实际 marker 盒宽（CSS 36px desktop / 28px mobile，
-  // media query 生效于 viewport 变换前 → offsetWidth 即 content px）；测试环境无布局 → 回退 36
-  const markerBox = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || 36
-  // 命中判定：内容坐标（撤销 viewport 变换）落在 hull hitbox 内
+  // Hit-test uses the final vehicle-aware hit target and the same presentation offset
+  // used by the rendered marker. Selection still returns the canonical vehicle.
   const hitTest = (s) => {
     const cx = (px - view.tx) / view.scale
     const cy = (py - view.ty) / view.scale
-    const W = mapWidth()
-    const H = W * (mapView.value.H / mapView.value.W)
-    const x = (mapView.value.toX(s.pos.x) / mapView.value.W) * W
-    const y = (mapView.value.toY(s.pos.y) / mapView.value.H) * H
-    const hw = (markerBox * s.hitbox.w) / 2
-    const hh = (markerBox * s.hitbox.h) / 2
+    const rect = mapRenderRect()
+    const offset = s.presentationOffset || { x: 0, y: 0 }
+    const x = (mapView.value.toX(s.pos.x) / mapView.value.W) * rect.width + offset.x / view.scale
+    const y = (mapView.value.toY(s.pos.y) / mapView.value.H) * rect.height + offset.y / view.scale
+    const hitTarget = s.hitTargetSize || s.markerSize?.hitTarget
+    const hw = (hitTarget?.width || 20) / 2
+    const hh = (hitTarget?.height || 20) / 2
     return Math.abs(cx - x) <= hw && Math.abs(cy - y) <= hh
   }
   let candidates
@@ -1334,15 +1585,30 @@ function selectAt(accountId, clientX, clientY) {
   }
   // PR5 §8.1：点击 marker 恒选中/直接切换（不 toggle-off）；点击空白不关闭；必须 × 显式关闭
   selectedAccountId.value = best.vehicle.accountId
+  // §右侧 only 车辆详情：不再开左侧 vehicle 二级，右侧由 selectedState 驱动。
+  activePanel.value = null
+  mobileOverlay.value?.reveal?.()
 }
+
+// §队伍阵容：从 result 全量名单（playbackV2.vehicles）取，不依赖回放事件流/vehicleStates。
+const teamVehicles = computed(() => {
+  const vehicles = props.playbackV2?.vehicles || []
+  const friendly = []
+  const enemy = []
+  for (const v of vehicles) {
+    if (v.friendly === true) friendly.push(v)
+    else if (v.friendly === false) enemy.push(v)
+  }
+  return { friendly, enemy }
+})
 
 const selectedState = computed(() => {
   if (selectedAccountId.value == null) return null
   return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
 })
 
-// V2 守卫：当 playbackV2 dataset 存在时，定位选中车辆的 V2 track（按 accountId）。
-const selectedV2Track = computed(() => {
+// Selected vehicle details consume the canonical track directly by accountId.
+const selectedTrack = computed(() => {
   if (!props.playbackV2 || !selectedState.value) return null
   const accountId = selectedState.value.vehicle.accountId
   const tracks = props.playbackV2.vehicles || []
@@ -1371,6 +1637,11 @@ watch(
 
 function closeSidebar() {
   selectedAccountId.value = null
+  activePanel.value = null
+}
+
+function closePanel() {
+  activePanel.value = null
 }
 
 const selLastKnownSec = computed(() => {
@@ -1382,31 +1653,21 @@ const selLastKnownSec = computed(() => {
 const selCurStats = computed(() => {
   const st = selectedState.value
   if (!st) return { dealt: 0, received: 0, kills: 0 }
-  return cumulativeStatsAt(
-    authoritativeEvents.value,
-    st.vehicle.accountId,
-    currentTime.value,
-    Array.from(vehiclesByAccount.value.values())
-  )
+  return cumulativeStatsAtV2(authoritativeEvents.value, st.vehicle, currentTime.value, hpVehicles.value)
 })
-/** §12/§13/§19 最近伤害记录：全部车辆的权威 HP loss（Type-7 推导），attacker 不可证明时
+/** §12/§13/§19 最近伤害记录：incoming 使用 canonical HP decrease，outgoing 使用 observedHpLoss；attacker 不可证明时
  *  显示「来源未知」；raw Type-8 协议值不参与。Blocker 2：只消费 toSec <= currentTime 的记录
  *  （forward/backward seek 与任意 timestamp 重建天然正确，未来事件绝不泄漏）；取最近 8 条。 */
 const selDamageLog = computed(() => {
   const st = selectedState.value
   if (!st) return []
-  const rows = damageLogAt(
-    Array.from(vehiclesByAccount.value.values()),
-    st.vehicle.accountId,
-    currentTime.value,
-    8
-  )
+  const rows = damageLogAtV2(authoritativeEvents.value, st.vehicle, currentTime.value, 8, hpVehicles.value)
   return rows.map((d) => {
     if (d.dir === 'in') {
       if (d.attackerReliable && d.attackerAccountId != null) {
         const attacker = vehiclesByAccount.value.get(d.attackerAccountId)
         // §13：事件时刻位置流未覆盖的攻击者不得泄露身份
-        const covered = attacker && victimFeedbackAllowed(attacker, d.timeSec)
+        const covered = attacker && victimFeedbackAllowedV2(attacker, d.timeSec)
         return { ...d, label: attacker && covered
           ? (attacker.playerName || '#' + attacker.accountId)
           : t('recon.map.playback.source_unknown') }
@@ -1417,15 +1678,17 @@ const selDamageLog = computed(() => {
     return { ...d, label: victim ? (victim.tankName || '#' + victim.accountId) : '#' + d.victimAccountId }
   })
 })
-function floatTeamClass(team) {
-  return team === friendlyTeam.value ? 'pb-float-friendly' : 'pb-float-enemy'
+function floatTeamClass(friendly) {
+  if (friendly === true) return 'pb-float-friendly'
+  if (friendly === false) return 'pb-float-enemy'
+  return 'pb-float-neutral'
 }
 
-// ---- PR4 §32–§35：标签碰撞布局（纯函数；screen px）+ PlayerName hysteresis ----
+// ---- PR4 §32–§35：标签碰撞布局（纯函数；screen px；碰撞永不隐藏标签/HP）----
 // §21–§28 + PR #107 Blocker 1：碰撞基于真实 screen-space visual footprint。
 // 坐标空间（统一约定）：
-//   - marker core 本体在 viewport 内随地图缩放：屏幕尺寸 = CSS size（offsetWidth，36/28）
-//     × view.scale；coreSize 必须传这个**真实屏幕尺寸**，不得传 transform 前值。
+//   - marker core 本体在 viewport 内随地图缩放：每辆车的 vehicle-aware CSS footprint
+//     × view.scale；coreSize 仅作为 label 几何的代表值，不参与 model collision。
 //   - inverse-scaled 叠加层（selected 三角 / destroyed ✕ / recorder 菱形 / 名称 / HP HUD）
 //     用 scale(1/view.scale) 保持屏幕恒定，labelLayout 用屏幕恒定常量描述其盒。
 //   - viewport resize / fullscreen / mobile media query / zoom / 显示开关变化都会经
@@ -1433,10 +1696,12 @@ function floatTeamClass(team) {
 const labelLayout = computed(() => {
   const W = mapWidth()
   if (!W || mapView.value.W <= 0) return new Map()
-  // marker CSS layout size（transform 前；media query desktop 36 / mobile 28）
-  const markerCssSize = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || MARKER_CORE_PX
-  // 真实屏幕尺寸：随 viewport scale 缩放（Blocker 1：4× zoom → 144px 视觉、144px 碰撞）
-  const coreSize = markerCssSize * view.scale
+  // Label geometry remains screen-space and only needs a representative core size;
+  // the model collision solver above uses each vehicle's real display footprint.
+  const coreSize = Math.max(
+    ...vehicleStates.value.map((st) => st.markerSize?.renderBox?.width || 0),
+    MARKER_CORE_PX,
+  )
   // HP HUD 真实渲染尺寸（.pb-hp-hud 屏幕恒定；测试环境无布局 → 回退 null 走 CSS 常量）。
   // PR #107 Blocker 4：querySelector 第一辆车的 HUD 只作测量基准——不同车辆的显示文本不同
   //（数字 vs —）可能影响宽度，labelLayout 侧再按每车 hpDisplayText 估算并取 max（保守覆盖全部状态）。
@@ -1446,7 +1711,7 @@ const labelLayout = computed(() => {
   const items = vehicleStates.value.map((st) => {
     const p = markerScreen(st)
     if (!p) return null
-    const hp = hpDisplay(st.vehicle, currentTime.value, { friendly: st.friendly })
+    const hp = hpFor(st.vehicle)
     return {
       accountId: st.vehicle.accountId,
       x: p.x,
@@ -1454,7 +1719,7 @@ const labelLayout = computed(() => {
       tankName: st.tankName,
       playerName: st.playerName,
       // PR #107 Blocker 4：HP footprint 是否存在 = DOM 是否实际渲染 HUD（showHp 开且
-      // hpDisplay 有结果），不是 current 是否为 null——RULE_DERIVED_FULL_AT_SPAWN（current=null）
+      // health selector 有结果），不是 current 是否为 null——relativeFull（current=null）
       // 与 UNKNOWN 都会渲染 HUD（数字 — + bar），碰撞系统必须为它们建模真实盒。
       hpRendered: hpPrefs.showHp && hp != null,
       // 实际渲染的数字文本（VehicleMarker .pb-hp-num 同款：current 有值→数字，否则 —）；
@@ -1476,60 +1741,32 @@ const labelLayout = computed(() => {
   })
 })
 
-// （playerVisState / playerHidden / fadeUntil / hystRafId 声明见播放状态区——
-//   seekTo immediate watch 早期触发 pause 时需已初始化，避免 TDZ）
-
-/** 是否存在未决的 hysteresis transition（hide/show 截止未到，或 fade-in 未结束）。 */
-function hasPendingHysteresis(now) {
-  for (const s of playerVisState.value.values()) {
-    if (s.conflict && !s.hidden && now - s.since < PLAYER_HIDE_MS) return true
-    if (!s.conflict && s.hidden && now - s.since < PLAYER_SHOW_MS) return true
-  }
-  for (const until of fadeUntil.values()) if (until > now) return true
-  // PR5：暂停时 transient feedback（floating damage/burst/kill feed/ghost/flash）
-  // 也需轻量时钟自然完成（§20.2）
-  if (hasPendingTransients(now)) return true
-  return false
+/** 是否存在未决的 transient（暂停时需轻量时钟自然完成，§20.2）。 */
+function hasPendingPauseClock(now) {
+  return hasPendingTransients(now)
 }
 
-/** 轻量时钟：仅当存在未决 transition 且未在播放时维持 RAF；播放时由 frame() 驱动，
- *  无 pending 即停（不做永久轮询）。注意：只更新 nowMs 触发 watch，**不在 watcher 内
- *  回写 nowMs**（nowMs 是 watch source，回写会自触发无限循环）。
- * @param now 当前 resolve 使用的新鲜 wall clock（用于 pending 判定）
+/** 轻量时钟：仅当存在未决 transient 且未在播放时维持 RAF；播放时由 frame() 驱动，
+ *  无 pending 即停（不做永久轮询）。注意：只更新 nowMs，不在 watcher 内回写 nowMs
+ *  （nowMs 是 watch source，回写会自触发无限循环）。
+ * @param now 当前新鲜 wall clock（用于 pending 判定）
  */
-function ensureHysteresisClock(now) {
-  if (hystRafId != null || playing.value) return
-  if (hasPendingHysteresis(now)) {
-    hystRafId = requestAnimationFrame(() => {
-      hystRafId = null
+function ensurePauseClock(now) {
+  if (pauseRafId != null || playing.value) return
+  if (hasPendingPauseClock(now)) {
+    pauseRafId = requestAnimationFrame(() => {
+      pauseRafId = null
       nowMs.value = typeof performance !== 'undefined' ? performance.now() : Date.now()
-      // nowMs 变化 → watch → resolve → ensureHysteresisClock(新鲜 now) 决定续/停
+      // nowMs 变化 → transient watch → ensurePauseClock(新鲜 now) 决定续/停
     })
   }
 }
 
-watch([labelLayout, nowMs], () => {
-  // 每次 resolve 取**新鲜** wall clock：即使 nowMs 因暂停而陈旧，冲突出现/解除时刻
-  // 也以真实时刻计，阈值不会因暂停冻结（B3）。
-  const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
-  const conflicts = new Set()
-  for (const [id, r] of labelLayout.value) {
-    if (r.playerConflict) conflicts.add(id)
-  }
-  const res = resolvePlayerVisibility(conflicts, playerVisState.value, now, PLAYER_HIDE_MS, PLAYER_SHOW_MS)
-  playerVisState.value = res.state
-  playerHidden.value = res.hidden
-  // fade-in：恢复帧开始计时，完整 PLAYER_FADE_MS 生命周期
-  for (const id of res.fading) fadeUntil.set(id, now + PLAYER_FADE_MS)
-  for (const [id, until] of fadeUntil) if (until <= now) fadeUntil.delete(id)
-  ensureHysteresisClock(now)
-}, { immediate: true })
-
 // transient 过期清理（nowMs/currentTime 变化驱动；reactive Map 不无限增长）
 watch([nowMs, currentTime], () => pruneTransients(nowMs.value))
 
-/** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 + player 显隐/fade +
- *  §25 blockHidden/hpHidden：不可分离碰撞时的优先级隐藏）。 */
+/** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 +
+ *  §25 blockHidden/hpHidden：不可分离碰撞时的优先级隐藏兼容输出，恒 false）。 */
 function markerLabel(accountId) {
   const l = labelLayout.value.get(accountId)
   return {
@@ -1538,8 +1775,6 @@ function markerLabel(accountId) {
     tankDy: l ? l.tankDy : 0,
     blockHidden: l ? l.blockHidden : false,
     hpHidden: l ? l.hpHidden : false,
-    playerHidden: playerHidden.value.has(accountId),
-    playerFading: (fadeUntil.get(accountId) || 0) > nowMs.value,
   }
 }
 
@@ -1560,208 +1795,309 @@ const gridRegions = computed(() => {
 })
 
 const mapStyle = computed(() => ({
+  '--pb-map-aspect': `${mapView.value.W} / ${mapView.value.H}`,
+  // Numeric aspect ratio (W/H) for fullscreen contain sizing (aspect-ratio needs a unit string).
+  '--pb-map-ratio': String(mapView.value.W / mapView.value.H),
   // Battle Playback 6x6 网格：用显式强对比线，保证每一列可见地隔开（热力图鸟瞰用弱 gridStroke）。
   '--map-grid-stroke': palette.value.gridStrokeStrong,
   '--map-region-stroke': palette.value.regionStroke,
   '--map-spawn-friendly': palette.value.spawnFriendly,
   '--map-spawn-enemy': palette.value.spawnEnemy,
   '--map-route-outline': palette.value.routeOutline,
-  '--map-death-mark': palette.value.deathMark,
   // PR3 §19/§20：marker team tokens（friendly 按地图显式 tone，enemy 固定 red）
   ...teamCssVars(pbOverview.value.mapCode)
 }))
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :style="mapStyle" data-test="battle-playback">
-    <PlaybackControls
-      :playing="playing"
-      :speed="speed"
-      :current-time="currentTime"
-      :duration="duration"
-      :recorder-account-id="pbOverview.recorderAccountId"
-      :show-all="showAll"
-      :label-prefs="labelPrefs"
-      :hp-prefs="hpPrefs"
-      :fullscreen-supported="fullscreenSupported"
-      :is-fullscreen="isFullscreen"
-      :type-filter="typeFilter"
-      :active-tool="activeTool"
-      :annot-colors="ANNOT_COLORS"
-      :annot-color="annotColor"
-      :annot-visible="annotVisible"
-      :annot-width-slider="annotWidthSlider"
-      :annot-width-min="ANNOT_WIDTH_MIN"
-      :annot-width-max="ANNOT_WIDTH_MAX"
-      :history-index="historyIndex"
-      :history="history"
-      :can-undo="canUndo"
-      :can-redo="canRedo"
-      :event-markers="eventMarkers"
-      :format-clock="formatClock"
-      @toggle-play="togglePlay"
-      @step="step"
-      @previous-event="nearestEvent('prev')"
-      @next-event="nearestEvent('next')"
-      @toggle-speed="toggleSpeed"
-      @reset-view="resetView"
-      @toggle-fullscreen="toggleFullscreen"
-      @update:show-all="showAll = $event"
-      @update-label-pref="(key, value) => { labelPrefs[key] = value }"
-      @update-hp-pref="(key, value) => { hpPrefs[key] = value }"
-      @toggle-type="toggleType"
-      @toggle-tool="toggleTool"
-      @set-annot-color="annotColor = $event"
-      @update:annot-width="annotWidthSlider = $event"
-      @undo="undoAnnot"
-      @redo="redoAnnot"
-      @clear-annotations="clearAll"
-      @toggle-annotations="annotVisible = !annotVisible"
-      @drag-start="dragStart"
-      @seek="seek"
-      @jump="jumpTo"
-    />
-
-    <!-- 地图 + detail sidebar 主区（宽屏并排，窄屏上下堆叠；§8.2） -->
-    <div class="pb-main" data-test="pb-main">
-      <BattleMap
-        ref="mapComponent"
-        :image="image"
-        :map-view="mapView"
-        :pb-overview="pbOverview"
-        :friendly-team="friendlyTeam"
-        :grid-regions="gridRegions"
-        :visible-tracers="visibleTracers"
-        :tracer-color="tracerColor"
-        :view-scale="view.scale"
-        :viewport-style="viewportStyle"
-        :annot-visible="annotVisible"
-        :rendered-annotations="renderedAnnotations"
-        :annot-font-size="ANNOT_FONT_SIZE"
-        :active-tool="activeTool"
-        :vehicle-states="vehicleStates"
-        :selected-account-id="selectedAccountId"
-        :marker-label="markerLabel"
-        :hp-for="hpFor"
-        :hp-prefs="hpPrefs"
-        :translate="t"
-        :ghost-for="ghostFor"
-        :flash-for="flashFor"
-        :hp-no-transition="hpNoTransition"
-        :text-session="textSession"
-        :text-input-style="textInputStyle"
-        :visible-floats="visibleFloats"
-        :visible-bursts="visibleBursts"
-        :visible-feed="visibleFeed"
-        :float-team-class="floatTeamClass"
-        @wheel="onWheel"
-        @pointer-down="onPointerDown"
-        @pointer-move="onPointerMove"
-        @pointer-up="onPointerUp"
-        @viewport-click="onViewportClick"
-        @marker-select="onMarkerSelect"
-        @update-text="textSession.text = $event"
-        @commit-text="commitSession"
-        @cancel-text="cancelSession"
-      />
-
-    <!-- PR5 §8：detail sidebar（宽屏右侧固定，窄屏置于地图下方；点击 marker 打开/切换，
-         点击空白不关闭，必须 × 显式关闭；destroyed 车可选；seek 保持同一 selected vehicle） -->
-    <VehicleDetailsPanel
-      :selected-state="selectedState"
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen), 'pb-drawer-open': railDrawerOpen }" :style="mapStyle" data-test="battle-playback">
+    <BattlePlaybackHud
+      :friendly-hp="friendlyHp"
+      :enemy-hp="enemyHp"
+      :friendly-points="friendlyPoints"
+      :enemy-points="enemyPoints"
+      :base-states="baseStatesAt"
       :friendly-team="friendlyTeam"
-      :selected-portrait-url="selectedPortraitUrl"
-      :sel-last-known-sec="selLastKnownSec"
-      :sel-cur-stats="selCurStats"
-      :selected-v2-track="selectedV2Track"
-      :current-time="currentTime"
-      :sel-damage-log="selDamageLog"
-      :format-clock="formatClock"
-      @close="closeSidebar"
+      :hp-no-transition="hpNoTransition"
     />
+
+    <!-- 地图是主视觉；控制条在桌面流式布局，移动端由首次触摸唤起。 -->
+    <!-- §2：Fullscreen Workspace —— Left Rail（fullscreen 下作为左列；普通页面隐藏） -->
+    <!-- §mobile-panels：无永久 rail（mobile/medium）时 ☰ 打开 drawer；backdrop 点击关闭。 -->
+    <div v-if="railDrawerOpen" class="pb-drawer-backdrop" data-test="pb-drawer-backdrop" @click="mobileDrawerOpen = false" />
+    <div class="pb-left-rail" :class="{ 'pb-rail-expanded': !!(activePanel || annotationOpen) }" data-test="pb-left-rail" aria-label="Playback workspace rail">
+      <!-- §二级菜单：左侧展开对应内容，带返回按钮（不占右侧 details panel） -->
+      <template v-if="annotationOpen">
+        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="annotationOpen = false">← {{ $t('recon.map.playback.back') }}</button>
+        <AnnotationToolbar
+          :open="true"
+          :active-tool="activeTool"
+          :annot-colors="ANNOT_COLORS"
+          :annot-color="annotColor"
+          :annot-visible="annotVisible"
+          :annot-width-slider="annotWidthSlider"
+          :annot-width-min="ANNOT_WIDTH_MIN"
+          :annot-width-max="ANNOT_WIDTH_MAX"
+          :history-index="historyIndex"
+          :history="history"
+          :can-undo="canUndo"
+          :can-redo="canRedo"
+          @close="annotationOpen = false"
+          @toggle-tool="toggleTool"
+          @set-annot-color="annotColor = $event"
+          @update:annot-width="annotWidthSlider = $event"
+          @undo="undoAnnot"
+          @redo="redoAnnot"
+          @clear-annotations="clearAll"
+          @toggle-annotations="annotVisible = !annotVisible"
+        />
+      </template>
+      <template v-else-if="activePanel === 'team'">
+        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
+        <strong class="pb-team-head" data-test="pb-team-friendly-head">{{ $t('recon.map.playback.team_friendly') }}</strong>
+        <ul class="pb-team-list" data-test="pb-team-friendly">
+          <li v-for="st in teamVehicles.friendly" :key="st.accountId">
+            <span class="pb-team-tank">{{ st.tankName || st.tankId }}</span>
+            <span class="pb-team-player">{{ st.playerName }}</span>
+          </li>
+          <li v-if="teamVehicles.friendly.length === 0" class="pb-team-empty">{{ $t('recon.map.playback.no_events') }}</li>
+        </ul>
+        <strong class="pb-team-head" data-test="pb-team-enemy-head">{{ $t('recon.map.playback.team_enemy') }}</strong>
+        <ul class="pb-team-list" data-test="pb-team-enemy">
+          <li v-for="st in teamVehicles.enemy" :key="st.accountId">
+            <span class="pb-team-tank">{{ st.tankName || st.tankId }}</span>
+            <span class="pb-team-player">{{ st.playerName }}</span>
+          </li>
+          <li v-if="teamVehicles.enemy.length === 0" class="pb-team-empty">{{ $t('recon.map.playback.no_events') }}</li>
+        </ul>
+      </template>
+      <template v-else-if="activePanel === 'display'">
+        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
+        <div class="pb-panel-options" data-test="pb-panel-content-display">
+          <label><input data-test="pb-show-player" type="checkbox" :checked="labelPrefs.showPlayerName" @change="labelPrefs.showPlayerName = $event.target.checked"> {{ $t('recon.map.playback.show_player_name') }}</label>
+          <label><input data-test="pb-show-tank" type="checkbox" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ $t('recon.map.playback.show_tank_name') }}</label>
+          <label><input data-test="pb-show-hp" type="checkbox" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ $t('recon.map.playback.show_hp') }}</label>
+          <label><input data-test="pb-show-trail" type="checkbox" :checked="trailPrefs.showTrail" @change="trailPrefs.showTrail = $event.target.checked"> {{ $t('recon.map.playback.show_trail_2s') }}</label>
+        </div>
+      </template>
+      <template v-else-if="activePanel === 'events'">
+        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
+        <div class="pb-event-list" data-test="pb-event-panel">
+          <button
+            v-for="(event, index) in userVisibleEvents"
+            :key="`${event.type}-${event.timeSec}-${index}`"
+            type="button"
+            class="pb-event-row"
+            data-test="pb-event"
+            @click="seekToEvent(event.timeSec)"
+          >
+            <span class="pb-event-time">{{ formatClock(event.timeSec) }}</span>
+            <span class="pb-event-type">{{ $t(`recon.map.playback.event_${event.type}`) }}</span>
+            <span>{{ eventLabel(event) }}</span>
+          </button>
+          <p v-if="userVisibleEvents.length === 0" class="pb-event-empty">{{ $t('recon.map.playback.no_events') }}</p>
+        </div>
+      </template>
+      <!-- 一级菜单：播放控制 + 导航 -->
+      <template v-else>
+        <PlaybackControls
+          v-if="controlsInRail"
+          :playing="playing"
+          :speed="speed"
+          :current-time="currentTime"
+          :duration="duration"
+          :fullscreen-supported="fullscreenSupported"
+          :is-fullscreen="isFullscreen"
+          :rail-visible="controlsInRail"
+          :format-clock="formatClock"
+          @toggle-play="togglePlay"
+          @step="step"
+          @set-speed="setSpeed"
+          @reset-view="resetView"
+          @toggle-fullscreen="toggleFullscreen"
+          @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
+          @toggle-annotation="annotationOpen = !annotationOpen"
+          @drag-start="dragStart"
+          @seek="seek"
+        />
+      <button
+        type="button"
+        class="pb-rail-btn"
+        :class="{ active: activePanel === 'team' }"
+        data-test="pb-rail-team"
+        :aria-expanded="activePanel === 'team'"
+        :title="$t('recon.map.playback.panel_team')"
+        :aria-label="$t('recon.map.playback.panel_team')"
+        @click="activePanel = activePanel === 'team' ? null : 'team'"
+      ><span class="pb-rail-glyph">⚖</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_team') }}</span></button>
+      <button
+        type="button"
+        class="pb-rail-btn"
+        :class="{ active: activePanel === 'display' }"
+        data-test="pb-rail-display"
+        :aria-expanded="activePanel === 'display'"
+        :title="$t('recon.map.playback.panel_display')"
+        :aria-label="$t('recon.map.playback.panel_display')"
+        @click="activePanel = activePanel === 'display' ? null : 'display'"
+      ><span class="pb-rail-glyph">⚙</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_display') }}</span></button>
+      <button
+        type="button"
+        class="pb-rail-btn"
+        :class="{ active: activePanel === 'events' }"
+        data-test="pb-rail-events"
+        :aria-expanded="activePanel === 'events'"
+        :title="$t('recon.map.playback.panel_events')"
+        :aria-label="$t('recon.map.playback.panel_events')"
+        @click="activePanel = activePanel === 'events' ? null : 'events'"
+      ><span class="pb-rail-glyph">☰</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_events') }}</span></button>
+      <button
+        type="button"
+        class="pb-rail-btn"
+        :class="{ active: annotationOpen }"
+        data-test="pb-rail-annotation"
+        :aria-expanded="annotationOpen"
+        :title="$t('recon.map.playback.annotation')"
+        :aria-label="$t('recon.map.playback.annotation')"
+        @click="annotationOpen = !annotationOpen"
+      ><span class="pb-rail-glyph">✎</span><span class="pb-rail-label">{{ $t('recon.map.playback.annotation') }}</span></button>
+      <button
+        type="button"
+        class="pb-rail-btn"
+        :class="{ active: isFullscreen }"
+        data-test="pb-rail-fullscreen"
+        :title="$t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
+        :aria-label="$t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
+        @click="toggleFullscreen"
+      ><span class="pb-rail-glyph">⛶</span><span class="pb-rail-label">{{ $t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen') }}</span></button>
+      <button
+        type="button"
+        class="pb-rail-btn"
+        data-test="pb-rail-reset"
+        :title="$t('recon.map.playback.reset_view')"
+        :aria-label="$t('recon.map.playback.reset_view')"
+        @click="resetView"
+      ><span class="pb-rail-glyph">↺</span><span class="pb-rail-label">{{ $t('recon.map.playback.reset_view') }}</span></button>
+      </template>
     </div>
 
-    <!-- 双方总血量条 + 争霸赛实时点数（PR #107 Blocker 2 aggregate state）：
-         FULL_RELATIVE=100% 阵营色实心（相对满血）；EXACT=真实分数（known/totalMax）；
-         PARTIAL=100% 斜纹 indeterminate（有真实已知剩余、无已证明分母）；UNKNOWN=空/— -->
-    <div class="pb-hp-bars" data-test="pb-hp-bars">
-      <div class="pb-hp-row">
-        <span class="pb-hp-label">{{ $t('recon.map.playback.team_friendly') }}</span>
-        <div class="pb-hp-track">
-          <div
-            class="pb-hp-fill pb-hp-friendly"
-            :class="{ 'pb-hp-partial': friendlyHp.state === 'PARTIAL' }"
-            :style="{ width: hpBarFill(friendlyHp, 'known') }"
-            data-test="pb-hp-fill-friendly"
-          ></div>
-          <div class="pb-hp-fill pb-hp-unknown" :style="{ width: hpBarFill(friendlyHp, 'unknown') }"></div>
-        </div>
-        <span class="pb-hp-value" data-test="pb-hp-value-friendly">{{ hpValueText(friendlyHp) }}</span>
-        <span v-if="friendlyHp.spawnFullCount > 0" class="pb-hp-unknown-text" data-test="pb-hp-spawn-full-friendly">{{ $t('recon.map.playback.hp_full_spawn') }} ({{ friendlyHp.spawnFullCount }})</span>
-        <span v-if="friendlyHp.unknownMax > 0" class="pb-hp-unknown-text" data-test="pb-hp-unknown-friendly">{{ $t('recon.map.playback.hp_unknown') }} {{ friendlyHp.unknownMax }}</span>
-        <span v-if="showPoints && friendlyPoints != null" class="pb-hp-points" data-test="pb-points-friendly">{{ $t('recon.map.playback.points') }}: {{ friendlyPoints }}</span>
-      </div>
-      <div class="pb-hp-row">
-        <span class="pb-hp-label">{{ $t('recon.map.playback.team_enemy') }}</span>
-        <div class="pb-hp-track">
-          <div
-            class="pb-hp-fill pb-hp-enemy"
-            :class="{ 'pb-hp-partial': enemyHp.state === 'PARTIAL' }"
-            :style="{ width: hpBarFill(enemyHp, 'known') }"
-            data-test="pb-hp-fill-enemy"
-          ></div>
-          <div class="pb-hp-fill pb-hp-unknown" :style="{ width: hpBarFill(enemyHp, 'unknown') }"></div>
-        </div>
-        <span class="pb-hp-value" data-test="pb-hp-value-enemy">{{ hpValueText(enemyHp) }}</span>
-        <span v-if="enemyHp.unknownMax > 0" class="pb-hp-unknown-text" data-test="pb-hp-unknown-enemy">{{ $t('recon.map.playback.hp_unknown') }} {{ enemyHp.unknownMax }}</span>
-        <span v-if="showPoints && enemyPoints != null" class="pb-hp-points" data-test="pb-points-enemy">{{ $t('recon.map.playback.points') }}: {{ enemyPoints }}</span>
-      </div>
-    </div>
+    <div class="pb-main" data-test="pb-main">
+      <div class="pb-map-stage" ref="mapStageEl">
+        <BattleMap
+          ref="mapComponent"
+          :image="image"
+          :map-view="mapView"
+          :pb-overview="pbOverview"
+          :friendly-team="friendlyTeam"
+          :grid-regions="gridRegions"
+          :visible-tracers="visibleTracers"
+          :visible-trails="visibleTrails"
+          :tracer-color="tracerColor"
+          :view-scale="view.scale"
+          :viewport-style="viewportStyle"
+          :annot-visible="annotVisible"
+          :rendered-annotations="renderedAnnotations"
+          :annot-font-size="ANNOT_FONT_SIZE"
+          :active-tool="activeTool"
+          :vehicle-states="vehicleStates"
+          :selected-account-id="selectedAccountId"
+          :marker-label="markerLabel"
+          :hp-for="hpFor"
+          :hp-prefs="hpPrefs"
+          :translate="t"
+          :ghost-for="ghostFor"
+          :flash-for="flashFor"
+          :hp-no-transition="hpNoTransition"
+          :text-session="textSession"
+          :text-input-style="textInputStyle"
+          :visible-floats="visibleFloats"
+          :visible-bursts="visibleBursts"
+          :float-team-class="floatTeamClass"
+          @wheel="onWheel"
+          @pointer-down="onPointerDown"
+          @pointer-move="onPointerMove"
+          @pointer-up="onPointerUp"
+          @viewport-click="onViewportClick"
+          @marker-select="onMarkerSelect"
+          @update-text="textSession.text = $event"
+          @commit-text="commitSession"
+          @cancel-text="cancelSession"
+        />
 
-    <!-- 事件弹层（点击进度条标记展示该秒事件） -->
-    <div v-if="popupEvents.length" class="pb-popup" data-test="pb-popup">
-      <div class="pb-popup-head">
-        {{ formatClock(eventPopupSec) }}
-        <button type="button" class="pb-close" @click="eventPopupSec = null">&times;</button>
+        <div class="pb-side-panel-shell" :class="{ 'pb-details-active': !!selectedState }" data-test="pb-side-panel-shell">
+          <VehicleDetailsPanel
+            v-if="selectedState"
+            :selected-state="selectedState"
+            :selected-portrait-url="selectedPortraitUrl"
+            :sel-last-known-sec="selLastKnownSec"
+            :sel-cur-stats="selCurStats"
+            :selected-track="selectedTrack"
+            :current-time="currentTime"
+            :sel-damage-log="selDamageLog"
+            :format-clock="formatClock"
+            @close="closeSidebar"
+          />
+        </div>
+
+        <!-- 移动端（rail 隐藏）在底部显示标注工具栏；桌面走左侧二级菜单，不重复 -->
+        <div v-if="annotationOpen && !(isFullscreen || wideLayout)" class="pb-annotation-surface">
+          <AnnotationToolbar
+            :open="annotationOpen"
+            :active-tool="activeTool"
+            :annot-colors="ANNOT_COLORS"
+            :annot-color="annotColor"
+            :annot-visible="annotVisible"
+            :annot-width-slider="annotWidthSlider"
+            :annot-width-min="ANNOT_WIDTH_MIN"
+            :annot-width-max="ANNOT_WIDTH_MAX"
+            :history-index="historyIndex"
+            :history="history"
+            :can-undo="canUndo"
+            :can-redo="canRedo"
+            @close="annotationOpen = false"
+            @toggle-tool="toggleTool"
+            @set-annot-color="annotColor = $event"
+            @update:annot-width="annotWidthSlider = $event"
+            @undo="undoAnnot"
+            @redo="redoAnnot"
+            @clear-annotations="clearAll"
+            @toggle-annotations="annotVisible = !annotVisible"
+          />
+        </div>
+
+        <div v-if="orientationHint" class="pb-orientation-hint" data-test="pb-orientation-hint">{{ orientationHint }}</div>
       </div>
-      <ul>
-        <li v-for="(event, i) in popupEvents" :key="i">
-          <span class="pb-event-type">{{ $t(`recon.map.playback.event_${event.type}`) }}</span>
-          {{ eventLabel(event) }}
-        </li>
-      </ul>
+
+      <PlaybackMobileOverlay ref="mobileOverlay">
+        <PlaybackControls
+          v-if="!controlsInRail"
+          :playing="playing"
+          :speed="speed"
+          :current-time="currentTime"
+          :duration="duration"
+          :fullscreen-supported="fullscreenSupported"
+          :is-fullscreen="isFullscreen"
+          :rail-visible="controlsInRail"
+          :format-clock="formatClock"
+          @toggle-play="togglePlay"
+          @step="step"
+          @set-speed="setSpeed"
+          @reset-view="resetView"
+          @toggle-fullscreen="toggleFullscreen"
+          @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
+          @toggle-annotation="annotationOpen = !annotationOpen"
+          @drag-start="dragStart"
+          @seek="seek"
+        />
+      </PlaybackMobileOverlay>
+
+      <div v-if="visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
+        <div v-for="feed in visibleFeed" :key="'feed-' + feed.id" class="pb-feed-item" :class="feed.victimFriendly === true ? 'pb-feed-friendly' : (feed.victimFriendly === false ? 'pb-feed-enemy' : 'pb-feed-neutral')"><span class="pb-feed-skull" aria-hidden="true">☠</span><span class="pb-feed-victim">{{ feed.victimPlayerName ? feed.victimPlayerName + '（' + feed.victimName + '）' : feed.victimName }}</span><span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span></div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.battle-playback {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
-}
-/* 全屏（原生 Fullscreen API，:fullscreen 作用于 .battle-playback 自身）：
-   填满视口、内部滚动兜底；地图保持自身宽高比（不拉伸/不 letterbox），
-   用垂直预算限制地图最大宽度以适配剩余空间，toolbar/时间轴不被挤出。 */
-.battle-playback:fullscreen {
-  width: 100%;
-  height: 100%;
-  margin-top: 0;
-  background: var(--bg, #0b0f0d);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.battle-playback:fullscreen .pb-map {
-  width: 100%;
-  max-width: calc(100vh - 190px); /* 全屏垂直预算：控制区/时间轴/血量条等固定 UI 约 190px */
-  margin: auto; /* 垂直居中利用剩余空间；超高时滚动兜底 */
-}
-.battle-playback:fullscreen .pb-main { align-items: center; }
-.battle-playback:fullscreen .pb-main .pb-map { flex: 0 1 auto; }
-.pb-main { display: flex; align-items: flex-start; gap: 8px; }
-/* 地图自适应剩余宽度（§8.2 宽屏：右侧固定 sidebar，地图占剩余） */
-.pb-main .pb-map { width: auto; margin: 0; flex: 1 1 auto; min-width: 0; }
 .pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; }
 .pb-viewport {
   position: relative;
@@ -1776,33 +2112,26 @@ const mapStyle = computed(() => ({
   border-radius: 4px;
   background: #111;
 }
-@media (max-width: 768px) {
-  .pb-map { width: 100%; }
-  /* §8.2 窄屏：sidebar 置于地图/播放器下方，不强行压缩成窄右侧栏 */
-  .pb-main { flex-direction: column; }
-  .pb-main .pb-map { width: 100%; }
-}
 .pb-markers {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
-/* PR3 增补：车辆视觉尺寸上调（人工 QA：全局地图视角下车型辨识度不足）——
-   desktop 28 → 36px / mobile 22 → 28px（约 +28%）；zoom 契约不变（viewport 整体 scale，
-   车辆随地图缩放；name/✕/selected/recorder 继续 inverse-scale 保持屏幕尺寸）。 */
+/* Vehicle-aware sizing supplies the production width/height inline. These are
+   only safe defaults for isolated component rendering without a projected model. */
 .pb-vehicle {
   position: absolute;
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   transform: translate(-50%, -50%);
   border: none;
   background: none;
   padding: 0;
-  /* PR4 §36：按钮本身不拦截点击，只有 .pb-hitbox（hull 范围）可点 */
+  /* The button itself does not intercept the map; only .pb-hitbox is clickable. */
   pointer-events: none;
 }
-@media (max-width: 768px) {
-  .pb-vehicle { width: 28px; height: 28px; }
+@media (width < 768px) {
+  .pb-vehicle { width: 25px; height: 25px; }
 }
 /* marker 内部样式（hull/turret/death/name/状态视觉）全部随 VehicleMarker 组件迁移：
    PR3 —— last-known/destroyed 弱化由 VehicleMarker .pb-graphics 容器承担（root 不再
@@ -1814,25 +2143,6 @@ const mapStyle = computed(() => ({
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
-
-/* 双方总血量条：阵营色填充（本方/敌方），随播放实时下降；争霸赛附点数 */
-.pb-hp-bars { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
-.pb-hp-row { display: flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--text-label); }
-.pb-hp-label { width: 3.5em; flex-shrink: 0; }
-.pb-hp-track { flex: 1; display: flex; height: 10px; border-radius: 5px; background: var(--bg-chip, rgba(128,128,128,.25)); overflow: hidden; }
-.pb-hp-fill { height: 100%; transition: width .15s linear; }
-.pb-hp-friendly { background: var(--map-spawn-friendly, #8ef7b0); }
-.pb-hp-enemy { background: var(--map-spawn-enemy, #ff8d8d); }
-.pb-hp-unknown { background: rgba(128,128,128,.45); }
-/* PARTIAL（有真实已知剩余、无已证明分母）：阵营色底 + indeterminate 斜纹——
-   不是开局 fallback 条纹（开局用 FULL_RELATIVE 纯实心阵营色），只是「已知部分不完整」的表达 */
-.pb-hp-friendly.pb-hp-partial,
-.pb-hp-enemy.pb-hp-partial {
-  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.35) 0 3px, transparent 3px 6px);
-}
-.pb-hp-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pb-hp-unknown-text { color: var(--text-muted, #999); white-space: nowrap; }
-.pb-hp-points { white-space: nowrap; }
 
 /* PR5 §10/§12/§16 transient feedback 层（floating damage / destruction burst / kill feed）：
    wall-clock 生命周期、任意倍速可读时长一致；seek 清空、pause 自然完成。 */
@@ -1871,30 +2181,35 @@ const mapStyle = computed(() => ({
 }
 .pb-kill-feed {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: calc(max(8px, env(safe-area-inset-top)) + 50px);
+  left: 0;
+  right: var(--pb-details-w, 0);
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  z-index: 10;
+  align-items: center;
+  gap: 6px;
+  z-index: 45;
   pointer-events: none;
-  max-width: 62%;
 }
 .pb-feed-item {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: .75rem;
-  background: rgba(0, 0, 0, .6);
-  border: 1px solid rgba(255, 255, 255, .14);
-  border-radius: 3px;
-  padding: 2px 6px;
-  animation: pb-feed-in .25s ease-out;
+  gap: 8px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
+  border-radius: 10px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.4);
+  animation: pb-feed-in .3s ease-out;
 }
-.pb-feed-skull { color: #fff; }
+.pb-feed-skull { color: var(--text); font-size: 1.1em; }
 .pb-feed-friendly .pb-feed-victim { color: var(--pb-team-text, #4ade80); }
 .pb-feed-enemy .pb-feed-victim { color: var(--pb-enemy-text, #f87171); }
-.pb-feed-destroyed { color: var(--text-muted, #999); }
+.pb-feed-neutral .pb-feed-victim { color: var(--text-muted, #999); }
+.pb-feed-destroyed { color: var(--text-muted, #999); font-weight: 600; }
 @keyframes pb-feed-in {
   from { opacity: 0; transform: translateX(8px); }
   to { opacity: 1; transform: none; }
@@ -1902,18 +2217,30 @@ const mapStyle = computed(() => ({
 @media (prefers-reduced-motion: reduce) {
   .pb-float-dmg, .pb-burst, .pb-feed-item { animation: none; }
 }
-.pb-popup {
-  background: rgba(13, 18, 22, .97);
-  border: 1px solid #303a40;
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-size: .8rem;
-  color: #d8d5cd;
+.pb-event-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-ghost);
+  max-height: 220px;
+  overflow-y: auto;
 }
-.pb-popup-head { display: flex; justify-content: space-between; font-weight: 700; }
-.pb-popup ul { margin: 4px 0 0; padding-left: 16px; }
+.pb-event-row {
+  display: flex;
+  gap: 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border-ghost);
+  background: transparent;
+  color: var(--text);
+  padding: 5px 8px;
+  text-align: left;
+  cursor: pointer;
+  font-size: .78rem;
+}
+.pb-event-row:last-child { border-bottom: 0; }
+.pb-event-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.pb-event-time { min-width: 3.2em; font-variant-numeric: tabular-nums; color: var(--text-label); }
 .pb-event-type { color: var(--accent); margin-right: 4px; }
-.pb-close { border: none; background: none; cursor: pointer; color: var(--text-muted); }
+.pb-event-empty { margin: 8px; color: var(--text-muted); font-size: .78rem; }
 
 /* 地图标注层 + 文字输入 */
 .pb-annotations { pointer-events: none; }

@@ -19,12 +19,12 @@ import java.util.List;
  *   <li><b>Generic envelope</b>（P0-2/P0-3）：{@code entityId(u32 LE) + flag(u8) + bodyLength(u32 LE) + body}，
  *       校验 {@code bodyLength == payload.length - 9}。任何 malformed framing fail-closed → raw-preserve + 诊断；
  *       之后总是产出 {@link EntityAuxiliaryBlobEvent}（结构事实，不解释 body 语义）。</li>
- *   <li><b>Semantic routing</b>（P0-4/P0-5）：仅当 {@code supported replay version} + {@code VEHICLE} +
- *       {@code flag==0} + {@code bodyLength==16} 时，额外产出 {@link ConsumableLifecycleEvent}。</li>
+ *   <li><b>Semantic routing</b>（P0-4/P0-5）：仅当 {@code VEHICLE} + {@code flag==0} +
+ *       {@code bodyLength==16} 时，额外产出 {@link ConsumableLifecycleEvent}。</li>
  * </ol>
  *
- * <p><b>禁止</b>用 {@code switch(bodyLength)} 当语义路由；语义路由至少依据 client version + entity class +
- * flag + body length。class 只能来自真实生命周期证据（{@link EntityClassRegistry}），不靠 method-shape 反推。</p>
+ * <p><b>禁止</b>用 {@code switch(bodyLength)} 当语义路由；语义路由至少依据 entity class + flag +
+ * body length。class 只能来自真实生命周期证据（{@link EntityClassRegistry}），不靠 method-shape 反推。</p>
  */
 public final class EntityAuxiliaryBlobDecoder implements ReplayPacketDecoder {
 
@@ -80,10 +80,7 @@ public final class EntityAuxiliaryBlobDecoder implements ReplayPacketDecoder {
 
         // Semantic routing：只在真实生命周期证明的 VEHICLE 上启用 consumable 语义。
         final EntityClass entityClass = context.entityClassRegistry().resolve(entityId);
-        final boolean consumableSemanticAllowed =
-                ReplayVersionGate.type32ConsumableLifecycleAllowed(context.clientVersion());
-        if (consumableSemanticAllowed
-                && entityClass == EntityClass.VEHICLE
+        if (entityClass == EntityClass.VEHICLE
                 && flag == CONSUMABLE_FLAG
                 && bodyLength == CONSUMABLE_BODY_LENGTH) {
             final int wireCode = body[WIRE_CODE_OFFSET] & 0xFF;

@@ -1,7 +1,5 @@
 package com.wotb.web.replay.dto;
 
-import com.wotb.core.replay.event.DecodeConfidence;
-
 import java.util.List;
 import java.util.Map;
 
@@ -24,13 +22,13 @@ import java.util.Map;
  * @param friendlyTeam      本方（录像者）队伍号（1/2）
  * @param recorderAccountId 录像者账号（null = 未解析）
  * @param vehicles          参战车辆转录（稀疏 transition tracks）
- * @param shots             射击轨道
  * @param pointsSamples     争霸赛实时点数广播（battle-relative 秒升序）
+ * @param baseStates        争霸赛基地实时状态（wrapper12；battle-relative 秒升序）
  * @param limitations       content limitations（如 BATTLE_RELATIVE_TIME_UNAVAILABLE）；空 = 无限制
  * @param arenaBonusType    战斗模式（meta.json#arenaBonusType 原值；null = 未知）。
  *                          仅携带该权威类别事实（前端用于标准/争霸事件过滤），<b>不</b>复制 MapOverview。
- * @param capability        FULL / PARTIAL / UNAVAILABLE（派生：limitations 空 = FULL，非空 = PARTIAL；
- *                          UNAVAILABLE 由 dataset == null 即 204 语义，不在 DTO 内）；与 limitations 一致，
+ * @param capability        FULL / PARTIAL（派生：limitations 空 = FULL，非空 = PARTIAL；
+ *                          204 由 dataset == null 语义，不在 DTO 内）；与 limitations 一致，
  *                          前端据此显示「完整 / 部分 / 不可用」降级，不得猜测未观测事实。
  */
 public record BattlePlaybackDataset(
@@ -40,8 +38,8 @@ public record BattlePlaybackDataset(
         Long recorderAccountId,
         List<VehiclePlaybackTrack> vehicles,
         List<BattleEvent> events,
-        List<ShotTrack> shots,
         List<PointsSample> pointsSamples,
+        List<BaseStateTransition> baseStates,
         List<String> limitations,
         Capability capability,
         Integer arenaBonusType
@@ -49,22 +47,22 @@ public record BattlePlaybackDataset(
     /** 战局回放完整度 capability（与 limitations 严格一致，前端本地化）。 */
     public enum Capability {
         FULL,
-        PARTIAL,
-        UNAVAILABLE
+        PARTIAL
     }
 
     public BattlePlaybackDataset {
         vehicles = vehicles == null ? List.of() : List.copyOf(vehicles);
         events = events == null ? List.of() : List.copyOf(events);
-        shots = shots == null ? List.of() : List.copyOf(shots);
         pointsSamples = pointsSamples == null ? List.of() : List.copyOf(pointsSamples);
+        baseStates = baseStates == null ? List.of() : List.copyOf(baseStates);
         limitations = limitations == null ? List.of() : List.copyOf(limitations);
-        // 兼容旧缓存 JSON（无 capability 字段）：null -> 由 limitations 派生。
-        capability = capability != null ? capability
-                : (limitations.isEmpty() ? Capability.FULL : Capability.PARTIAL);
+        // capability is a projection of limitations, never an independent truth.
+        // A null value remains readable for old artifacts, but an explicit contradictory
+        // value is not allowed to survive into the current DTO either.
+        capability = limitations.isEmpty() ? Capability.FULL : Capability.PARTIAL;
     }
 
-    /** 9-arg convenience constructor（既有 caller 投影）：capability 由 limitations 派生；arenaBonusType 未知。 */
+    /** 8-arg convenience constructor（既有 caller 投影）：capability 由 limitations 派生；arenaBonusType 未知。 */
     public BattlePlaybackDataset(
             double durationSec,
             String mapCode,
@@ -72,14 +70,13 @@ public record BattlePlaybackDataset(
             Long recorderAccountId,
             List<VehiclePlaybackTrack> vehicles,
             List<BattleEvent> events,
-            List<ShotTrack> shots,
             List<PointsSample> pointsSamples,
             List<String> limitations) {
-        this(durationSec, mapCode, friendlyTeam, recorderAccountId, vehicles, events, shots,
-                pointsSamples, limitations, null, null);
+        this(durationSec, mapCode, friendlyTeam, recorderAccountId, vehicles, events,
+                pointsSamples, List.of(), limitations, null, null);
     }
 
-    /** 10-arg convenience constructor（携带能力），arenaBonusType 未知。 */
+    /** 9-arg convenience constructor（携带能力），arenaBonusType 未知。 */
     public BattlePlaybackDataset(
             double durationSec,
             String mapCode,
@@ -87,12 +84,27 @@ public record BattlePlaybackDataset(
             Long recorderAccountId,
             List<VehiclePlaybackTrack> vehicles,
             List<BattleEvent> events,
-            List<ShotTrack> shots,
             List<PointsSample> pointsSamples,
             List<String> limitations,
             Capability capability) {
-        this(durationSec, mapCode, friendlyTeam, recorderAccountId, vehicles, events, shots,
-                pointsSamples, limitations, capability, null);
+        this(durationSec, mapCode, friendlyTeam, recorderAccountId, vehicles, events,
+                pointsSamples, List.of(), limitations, capability, null);
+    }
+
+    /** 10-arg compatibility constructor（既有 caller 携带 arenaBonusType）；基地状态默认为空。 */
+    public BattlePlaybackDataset(
+            double durationSec,
+            String mapCode,
+            Integer friendlyTeam,
+            Long recorderAccountId,
+            List<VehiclePlaybackTrack> vehicles,
+            List<BattleEvent> events,
+            List<PointsSample> pointsSamples,
+            List<String> limitations,
+            Capability capability,
+            Integer arenaBonusType) {
+        this(durationSec, mapCode, friendlyTeam, recorderAccountId, vehicles, events,
+                pointsSamples, List.of(), limitations, capability, arenaBonusType);
     }
 
     /**
@@ -111,6 +123,21 @@ public record BattlePlaybackDataset(
     ) {
     }
 
+    /** Canonical HP loss reconstructed from trusted health samples and combat attribution. */
+    public record DamageLoss(
+            double fromSec,
+            double toSec,
+            int hpLoss,
+            Long attackerAccountId,
+            boolean attackerReliable,
+            int damageEventCount,
+            Integer fromHp,
+            Integer toHp,
+            Integer displayCapacityHp,
+            boolean transientAllowed
+    ) {
+    }
+
     /** 一辆车的完整投影：identity / loadout / 各 transition track。 */
     public record VehiclePlaybackTrack(
             long accountId,
@@ -120,12 +147,13 @@ public record BattlePlaybackDataset(
             String tankClass,
             Integer tankTier,
             int team,
-            boolean friendly,
+            Boolean friendly,
             VehicleBattleLoadoutDto loadout,
             List<PositionSegment> positionSegments,
             List<OrientationSegment> orientationSegments,
             List<HealthTransition> healthTransitions,
             List<LifeTransition> lifeTransitions,
+            List<DamageLoss> damageLosses,
             List<ConsumableTransition> consumableTransitions,
             List<ModuleCrewTransition> moduleCrewTransitions
     ) {
@@ -137,6 +165,7 @@ public record BattlePlaybackDataset(
             orientationSegments = orientationSegments == null ? List.of() : List.copyOf(orientationSegments);
             healthTransitions = healthTransitions == null ? List.of() : List.copyOf(healthTransitions);
             lifeTransitions = lifeTransitions == null ? List.of() : List.copyOf(lifeTransitions);
+            damageLosses = damageLosses == null ? List.of() : List.copyOf(damageLosses);
             consumableTransitions = consumableTransitions == null ? List.of() : List.copyOf(consumableTransitions);
             moduleCrewTransitions = moduleCrewTransitions == null ? List.of() : List.copyOf(moduleCrewTransitions);
         }
@@ -150,24 +179,25 @@ public record BattlePlaybackDataset(
             List<String> provisions,    // 3；nullable
             List<Integer> provisionWireCodes,
             List<Integer> equipmentIds, // 9
-            DecodeConfidence confidence
+            ConfidenceDto confidence
     ) {
         public VehicleBattleLoadoutDto {
-            // 契约：logicalItemId / wireCode / equipmentId 可为 null（unknown raw-preserve）。
-            // List.copyOf 拒绝 null 元素 → 一旦 loadout 事实携带 null 直接 NPE → V2 整个 204。
-            // 这里改用 null-tolerant 不可变拷贝，保留 null 语义（前端按 unknown 处理）。
-            consumables = immutableNullable(consumables);
-            consumableWireCodes = immutableNullable(consumableWireCodes);
-            provisions = immutableNullable(provisions);
-            provisionWireCodes = immutableNullable(provisionWireCodes);
-            equipmentIds = immutableNullable(equipmentIds);
-            confidence = confidence == null ? DecodeConfidence.UNKNOWN : confidence;
+            // Current producer shape is strict: legacy padding/truncation belongs only to
+            // ReplayArtifactWriter's read-only compatibility boundary.
+            consumables = exactNullable(consumables, 3, "consumables");
+            consumableWireCodes = exactNullable(consumableWireCodes, 3, "consumableWireCodes");
+            provisions = exactNullable(provisions, 3, "provisions");
+            provisionWireCodes = exactNullable(provisionWireCodes, 3, "provisionWireCodes");
+            equipmentIds = exactNullable(equipmentIds, 9, "equipmentIds");
+            confidence = confidence == null ? ConfidenceDto.UNKNOWN : confidence;
         }
     }
 
-    /** null-tolerant 不可变列表拷贝：允许元素为 null，但返回真正的不可变列表。 */
-    private static <T> List<T> immutableNullable(final List<T> list) {
-        return list == null ? List.of() : java.util.Collections.unmodifiableList(new java.util.ArrayList<>(list));
+    private static <T> List<T> exactNullable(final List<T> list, final int size, final String field) {
+        if (list == null || list.size() != size) {
+            throw new IllegalArgumentException(field + " must contain exactly " + size + " slots");
+        }
+        return java.util.Collections.unmodifiableList(new java.util.ArrayList<>(list));
     }
 
     /** 位置观察段（AoI boundary authority）：段内可插值，段间 UNKNOWN_AOI 禁止。 */
@@ -183,7 +213,7 @@ public record BattlePlaybackDataset(
         }
     }
 
-    public record PositionSample(double timeSec, double x, double y, String knowledge) {
+    public record PositionSample(double timeSec, double x, double y) {
     }
 
     public record OrientationSegment(
@@ -200,8 +230,7 @@ public record BattlePlaybackDataset(
     public record OrientationSample(
             double timeSec,
             Double hullYawDeg,
-            Double turretRelativeYawDeg,
-            String knowledge      // CURRENT / LAST_KNOWN / UNKNOWN
+            Double turretRelativeYawDeg
     ) {
     }
 
@@ -209,16 +238,17 @@ public record BattlePlaybackDataset(
     public record HealthTransition(
             double timeSec,
             Integer currentHp,
-            String knowledge,          // CURRENT / LAST_KNOWN / UNKNOWN
+            String knowledge,          // CURRENT / LAST_KNOWN
             String source,             // EXACT_BATTLE_EVENT / ...
             Integer displayCapacityHp, // presentation-only
+            boolean relativeFull,      // canonical friendly opening relative-full fact
             ConfidenceDto confidence
     ) {
     }
 
     public record LifeTransition(
             double timeSec,
-            String lifeState,          // ALIVE / DESTROYED / UNKNOWN
+            String lifeState,          // ALIVE / DESTROYED
             Double destroyedKnownAtSec
     ) {
     }
@@ -230,6 +260,7 @@ public record BattlePlaybackDataset(
             String logicalItemId,       // null = unknown wire
             Integer wireCode,
             String state,               // INITIALIZED / ACTIVATED / ACTIVE_ENDED_OR_COOLDOWN / TEARDOWN
+            boolean invalidation,       // true = canonical global runtime invalidation
             ConfidenceDto confidence
     ) {
     }
@@ -244,18 +275,20 @@ public record BattlePlaybackDataset(
     ) {
     }
 
-    public record ShotTrack(
-            long shooterAccountId,
-            double launchTimeSec,
-            Double terminalTimeSec,
-            String resolution       // only for recorder shots; null otherwise
-    ) {
-    }
-
     public record PointsSample(double timeSec, int team, int points) {
     }
 
-    /** 置信度枚举（DTO 层稳定英文码，前端本地化）；映射自 {@link DecodeConfidence}。 */
+    /** One backend-reconstructed full-state transition; protocol indexes never cross this boundary. */
+    public record BaseStateTransition(
+            double timeSec,
+            String baseId,
+            Integer ownerTeam,
+            Integer capturingTeam,
+            Integer captureProgress
+    ) {
+    }
+
+    /** 置信度枚举（DTO 层稳定英文码，前端本地化）；由 projector 从 domain confidence 映射。 */
     public enum ConfidenceDto {
         HIGH,
         MEDIUM,

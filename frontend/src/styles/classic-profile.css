@@ -451,3 +451,37 @@ html[data-ui-profile="classic"] .profile-page .notification-item.unread {backgro
 html[data-ui-profile="classic"] .profile-page .notification-item .notification-title {color: var(--text-heading) !important}
 html[data-ui-profile="classic"] .profile-page .notification-item .notification-msg {color: var(--text-sub) !important}
 html[data-ui-profile="classic"] .profile-page .notification-item .notification-time {color: var(--text-muted) !important}
+
+/* ---- Classic 对比度收尾：组件 scoped 写死的浅色文字落在浅色面上（Admin Users / Contact / Boost / Profile） ---- */
+
+/* AdminUsersPage：h2 / 提示 / 时间 / 状态色（scoped #f2ede3 / #9aa09c / #ff8f86 / #f0c97e / #9fd39a 落浅色面不可读） */
+html[data-ui-profile="classic"] .admin-page h2 {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .admin-page :is(.admin-hint, .admin-muted) {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .admin-page .cell-time {color: var(--text-muted) !important}
+html[data-ui-profile="classic"] .admin-page .admin-error {color: var(--status-err-fg) !important}
+html[data-ui-profile="classic"] .admin-page .admin-warn {color: var(--status-warn-fg) !important}
+html[data-ui-profile="classic"] .admin-page .admin-ok {color: var(--status-ok-fg) !important}
+
+/* ContactPage：.contact-value 浅灰字（#d8d5cd）落浅色软面（classic --showcase-tactical-soft-2≈白）≈1.4:1 */
+html[data-ui-profile="classic"] .contact-page .contact-value {color: var(--text-code) !important}
+
+/* Boost：.boost-login/.boost-error 根节点在 .boost-page 之外（v-else 分支），容器级覆盖到不了；
+   其余为 boost-card/booster-editor 内 scoped 写死浅字（#a3a6a0 / #9aa09c / #9fd39a / #ff8f86）落浅色面 */
+html[data-ui-profile="classic"] :is(.boost-loading, .boost-empty, .boost-login) {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .boost-error {color: var(--status-err-fg) !important}
+html[data-ui-profile="classic"] .boost-success {color: var(--status-ok-fg) !important}
+html[data-ui-profile="classic"] :is(.boost-page, .booster-editor) .field-hint {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .booster-editor .booster-readonly-value {color: var(--text) !important}
+html[data-ui-profile="classic"] .boost-page :is(.boost-hint, .admin-count, .booster-stats, .my-meta, .admin-meta) {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .boost-page :is(.my-time, .admin-time) {color: var(--text-muted) !important}
+html[data-ui-profile="classic"] .boost-page .my-assigned {color: var(--status-ok-fg) !important}
+html[data-ui-profile="classic"] .boost-page :is(.application-summary, .application-details) span {color: var(--text-sub) !important}
+
+/* Profile：info/security/account 行 label、表单 label、状态与 meta 浅字（#a3a6a0 / #9aa09c / #f0a42b / #ff8f86）落浅色卡。
+   account-row/sec-row 的 value 位含 badge（.badge-ok/.availability-badge），只覆盖首位 label span，不动 badge 配色 */
+html[data-ui-profile="classic"] .profile-page .profile-empty {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .profile-page :is(.section-meta, .info-label, .text-muted, .rec-map, .hundred-rejected-text, .assign-group-title, .assign-meta, .assign-note) {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .profile-page :is(.account-row, .sec-row) > span:first-child {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .profile-page :is(.account-row, .sec-row) code {color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .profile-page .edit-form label {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .profile-page .error {color: var(--status-err-fg) !important}

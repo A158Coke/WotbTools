@@ -4,6 +4,7 @@ import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityCreatedEvent;
 import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.MaterializationEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
@@ -106,6 +107,18 @@ final class EntityIndex {
                             && h.confidence() == DecodeConfidence.EXACT) {
                         destroys.computeIfAbsent(h.entityId(), k -> new ArrayList<>())
                                 .add(new DestroySample(t, h.sequence()));
+                    }
+                }
+                case MaterializationEvent m -> {
+                    // Type5 combat-vehicle materialization carries a proven opening/current HP
+                    // snapshot. Keep its battle-relative timestamp (which may be pre-battle) so
+                    // frameAt(0) can seed the active timeline without fabricating a t=0 event.
+                    if (m.currentHp() != null
+                            && HealthChangedEvent.isPlausibleHp(m.currentHp())
+                            && m.confidence() == DecodeConfidence.EXACT) {
+                        healths.computeIfAbsent(m.entityId(), k -> new ArrayList<>())
+                                .add(new HpSample(t, m.currentHp(), true, m.confidence(), m.sequence()));
+                        firstObserved.merge(m.entityId(), t, Math::min);
                     }
                 }
                 case VehicleDestroyedEvent vd -> {

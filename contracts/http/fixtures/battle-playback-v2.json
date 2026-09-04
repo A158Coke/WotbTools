@@ -1,0 +1,40 @@
+{
+  "durationSec": 60,
+  "mapCode": null,
+  "friendlyTeam": 1,
+  "recorderAccountId": 7,
+  "vehicles": [
+    {
+      "accountId": 7,
+      "playerName": "Player",
+      "tankId": 123,
+      "tankName": "Tank",
+      "tankClass": "medium",
+      "tankTier": null,
+      "team": 1,
+      "friendly": true,
+      "loadout": {
+        "replayVersion": null,
+        "consumables": [null, "REPAIR_KIT", null],
+        "consumableWireCodes": [null, 13, null],
+        "provisions": [null, null, null],
+        "provisionWireCodes": [null, null, null],
+        "equipmentIds": [null, 1, null, null, null, null, null, null, null],
+        "confidence": "HIGH"
+      },
+      "positionSegments": [],
+      "orientationSegments": [],
+      "healthTransitions": [],
+      "lifeTransitions": [],
+      "damageLosses": [],
+      "consumableTransitions": [],
+      "moduleCrewTransitions": []
+    }
+  ],
+  "events": [],
+  "pointsSamples": [],
+  "baseStates": [],
+  "limitations": [],
+  "capability": "FULL",
+  "arenaBonusType": null
+}
