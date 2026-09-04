@@ -172,24 +172,27 @@
    所以只写 `.pb-side-panel .pb-sidebar` 的旧覆盖从来没匹配上——组件自带的
    width: 260px / max-height: 72vh / 卡片描边一直生效，于是详情在几百像素宽的列里
    缩成一张窄卡片，还带自己的滚动条。两条 DOM 路径都要覆盖。 */
+/* 所有形态都只做一件事：填满可用宽度（组件自带 width: 260px 是给旧浮层用的）。
+   背景板 / 边框 / 高度上限一律保留——浮层与 sheet 形态没有背景就会让文字直接透在地图上。 */
 .battle-playback .pb-side-panel .pb-sidebar,
 .battle-playback .pb-map-stage > .pb-side-panel-shell > .pb-sidebar {
   width: auto;
   max-width: none;
-  max-height: none;
+}
+/* 只有持久列（全屏 / >=1200 非全屏）里，详情就是这一列本身：去掉自己的卡片外观
+   （背景由列承担），跟着列高走——内容短时被 shell 垂直居中，超过列高才内部滚动。
+   组件的 flex-shrink: 0 会让高内容直接溢出被 shell 裁掉。
+   这些只能限定在持久列：写成全局会让手机上的浮层/sheet 失去背景板，文字透到地图上。 */
+.battle-playback:fullscreen:not(.pb-device-mobile) .pb-map-stage > .pb-side-panel-shell > .pb-sidebar,
+.battle-playback:not(:fullscreen):not(.pb-device-mobile) .pb-map-stage > .pb-side-panel-shell > .pb-sidebar {
+  flex: 0 1 auto;
+  max-height: 100%;
+  overflow-y: auto;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-}
-/* 持久列（全屏 / >=1200 非全屏）里详情跟着列走：内容短时被 shell 垂直居中，
-   超过列高才内部滚动。组件的 flex-shrink: 0 会让高内容直接溢出被 shell 裁掉。 */
-.battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell > .pb-sidebar,
-.battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell > .pb-sidebar {
-  flex: 0 1 auto;
-  max-height: 100%;
-  overflow-y: auto;
 }
 
 /* 车辆详情（V2）在 side panel 内已由面板头 close（pb-panel-close）负责关闭，
@@ -378,19 +381,21 @@
 .battle-playback .pb-pane-resizer:hover,
 .battle-playback .pb-pane-resizer:active,
 .battle-playback .pb-pane-resizer:focus-visible { opacity: 1; }
-.battle-playback .pb-pane-resizer-rail { right: -6px; }
-.battle-playback .pb-pane-resizer-details { left: -6px; }
+/* 热区完全落在栏内：两栏都有 overflow 裁剪，负偏移会让握柄在一侧被裁掉、
+   另一侧却看得见，表现左右不对称。 */
+.battle-playback .pb-pane-resizer-rail { right: 0; }
+.battle-playback .pb-pane-resizer-details { left: 0; }
 /* 只有栏作为持久列/浮层出现时才可拖：移动端 drawer 与窄视口下没有可调的列。 */
 .battle-playback .pb-left-rail .pb-pane-resizer,
 .battle-playback .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer { display: none; }
 .battle-playback:fullscreen:not(.pb-device-mobile) .pb-left-rail .pb-pane-resizer,
 .battle-playback:fullscreen:not(.pb-device-mobile) .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer {
-  display: block;
+  display: flex;
 }
 @media (min-width: 1200px) {
   .battle-playback:not(:fullscreen) .pb-left-rail .pb-pane-resizer,
   .battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer {
-    display: block;
+    display: flex;
   }
 }
 
