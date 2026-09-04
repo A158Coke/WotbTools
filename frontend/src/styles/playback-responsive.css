@@ -131,42 +131,15 @@
   overflow: visible;
 }
 
+/* §map-clean：标注工具栏排在地图下方的流内容器（.pb-mobile-overlay-content）里，与 controls
+   同列。以前它是 .pb-map-stage 内 bottom 锚定的 absolute 浮层，展开时向上长、盖住地图。
+   fullscreen 下标注走左栏二级菜单，这个元素根本不渲染。 */
 .battle-playback .pb-annotation-surface {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  left: 8px;
-  z-index: 35;
-  pointer-events: none;
-}
-/* §3：annotation toolbar 只覆盖 Map Workspace（右侧停在 Right Details 左缘），
-   并让出底部 controls/timeline 高度，避免与播放设置重叠。 */
-.battle-playback:fullscreen .pb-annotation-surface {
-  right: calc(var(--pb-details-w, min(340px, 32vw)) + 8px);
-  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 64px);
+  min-width: 0;
 }
 
-.battle-playback .pb-annotation-surface .pb-annotation-toolbar {
-  pointer-events: auto;
-}
-
-.battle-playback .pb-orientation-hint {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  z-index: 60;
-  max-width: min(320px, calc(100% - 24px));
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--bg-card2) 86%, transparent);
-  color: var(--text-label);
-  font-size: .8rem;
-}
-/* §3：orientation hint 只覆盖 Map Workspace（右侧停在 Right Details 左缘）。 */
-.battle-playback:fullscreen .pb-orientation-hint {
-  right: calc(var(--pb-details-w, min(340px, 32vw)) + 12px);
-}
+/* §map-clean：横屏提示已移除——进入全屏时 screen.orientation.lock('landscape') 自动转横屏，
+   锁失败时也不在地图上放提示（地图上只允许短暂的事件播报）。 */
 
 /* VehicleDetailsPanel 渲染成 .pb-side-panel-shell 的直接子元素，不在 .pb-side-panel 内，
    所以只写 `.pb-side-panel .pb-sidebar` 的旧覆盖从来没匹配上——组件自带的
@@ -280,7 +253,7 @@
    Left Rail（窄）| Map | 右侧滑入的 Details 抽屉。controls 仍走 bottom overlay——
    全屏下拇指够得到底部，rail 只承载导航图标。
    Details 是抽屉不是常驻列，所以 --pb-details-w 保持 0：依赖该 token 的
-   kill-feed / orientation-hint / annotation-surface 不该为一个浮层预留空间。 */
+   kill-feed / annotation-surface 不该为一个浮层预留空间。 */
 .battle-playback:fullscreen.pb-device-mobile {
   --pb-details-w: 0px;
   /* 手机横屏宽度有限，rail 比桌面窄一档。 */
@@ -612,12 +585,6 @@
     overflow-y: auto;
     padding: 10px 12px;
   }
-  .battle-playback:not(:fullscreen) .pb-annotation-surface {
-    right: calc(var(--pb-details-w, min(340px, 28vw)) + 8px);
-  }
-  .battle-playback:not(:fullscreen) .pb-orientation-hint {
-    right: calc(var(--pb-details-w, min(340px, 28vw)) + 12px);
-  }
 }
 
 @media (width < 768px) {
@@ -642,10 +609,6 @@
     pointer-events: auto;
     background: color-mix(in srgb, var(--bg) 52%, transparent);
     z-index: 60;
-  }
-
-  .battle-playback .pb-annotation-surface {
-    bottom: 8px;
   }
 }
 
@@ -723,10 +686,6 @@
     animation: none;
   }
 }
-.battle-playback.pb-device-mobile .pb-annotation-surface {
-  bottom: 8px;
-}
-
 /* §mobile-panels-drawer：无永久 rail（mobile/medium）时 ☰ 打开 rail 作为 drawer；backdrop 点击关闭。 */
 .battle-playback .pb-drawer-backdrop {
   position: fixed;

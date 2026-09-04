@@ -550,7 +550,6 @@ const railDrawerOpen = computed(() => mobileDrawerOpen.value
   && (isMobileDevice.value || !(isFullscreen.value || wideLayout.value)))
 const annotationOpen = ref(false)
 const mobileOverlay = ref(null)
-const orientationHint = ref('')
 const panelGroups = computed(() => [
   { name: 'battle', label: t('recon.map.playback.panel_battle') },
   { name: 'vehicle', label: t('recon.map.playback.panel_vehicle') },
@@ -611,7 +610,6 @@ const fullscreenSupported = computed(() =>
   && typeof pbRoot.value.requestFullscreen === 'function'
 )
 let playbackLifecycleActive = true
-let orientationRequestToken = 0
 let wideLayoutQuery = null
 let mobileLayoutQueryMql = null
 function onWideLayoutChange(event) {
@@ -622,21 +620,11 @@ function onMobileLayoutChange(event) {
 }
 function onFullscreenChange() {
   isFullscreen.value = !!(typeof document !== 'undefined' && document.fullscreenElement)
-  if (!isFullscreen.value) {
-    orientationRequestToken += 1
-    unlockOrientation()
-  }
+  if (!isFullscreen.value) unlockOrientation()
   // §fullscreen：进入/退出后布局改变。等 Vue 完成 Bottom Overlay ↔ Left Rail 的 controls 搬迁后
   //（nextTick），用新 mode 的真实几何 force 一次 authoritative fit（geometry-signature 也会捕获
   // bottom inset 归零/变化）。不用 setTimeout magic delay。
   nextTick(() => fitViewIfReady(true))
-}
-let orientationHintTimer = null
-function showOrientationHint() {
-  if (!playbackLifecycleActive) return
-  orientationHint.value = t('recon.map.playback.orientation_hint')
-  if (orientationHintTimer != null) clearTimeout(orientationHintTimer)
-  orientationHintTimer = setTimeout(() => { orientationHint.value = '' }, 2400)
 }
 function lockOrientation() {
   if (!playbackLifecycleActive || (typeof document !== 'undefined' && document.fullscreenElement !== pbRoot.value)) return
@@ -644,17 +632,12 @@ function lockOrientation() {
   if (!isMobileDevice.value) return
   const orientation = typeof screen !== 'undefined' ? screen.orientation : null
   if (!orientation || typeof orientation.lock !== 'function') return
-  const token = ++orientationRequestToken
+  // §map-clean：锁失败（系统旋转锁定 / 浏览器不支持）不做任何提示——地图上除事件播报外
+  // 不放任何东西，用户自己转屏即可。
   try {
     const result = orientation.lock('landscape')
-    if (result && typeof result.catch === 'function') {
-      result.catch(() => {
-        if (playbackLifecycleActive && token === orientationRequestToken) showOrientationHint()
-      })
-    }
-  } catch {
-    if (token === orientationRequestToken) showOrientationHint()
-  }
+    if (result && typeof result.catch === 'function') result.catch(() => {})
+  } catch { /* unsupported browsers may throw */ }
 }
 function unlockOrientation() {
   const orientation = typeof screen !== 'undefined' ? screen.orientation : null
@@ -1014,6 +997,16 @@ watch(() => props.overview, resetAnnotations)
 function toggleTool(tool) {
   activeTool.value = activeTool.value === tool ? null : tool
 }
+// 打开标注即进入可画状态：默认选中画笔。以前打开后 activeTool 仍是 null，
+// 用户在地图上划一下什么也不会发生，得先自己再点一次画笔。
+function toggleAnnotation() {
+  annotationOpen.value = !annotationOpen.value
+  activeTool.value = annotationOpen.value ? 'pen' : null
+}
+function closeAnnotation() {
+  annotationOpen.value = false
+  activeTool.value = null
+}
 
 function undoAnnot() {
   const s = undo(history.value, historyIndex.value)
@@ -1351,10 +1344,8 @@ function onKeydown(e) {
 onBeforeUnmount(() => {
   playbackLifecycleActive = false
   paletteRequestToken += 1
-  orientationRequestToken += 1
   if (rafId != null) cancelAnimationFrame(rafId)
   if (pauseRafId != null) cancelAnimationFrame(pauseRafId)
-  if (orientationHintTimer != null) clearTimeout(orientationHintTimer)
   if (mapResizeObserver) {
     mapResizeObserver.disconnect()
     mapResizeObserver = null
@@ -1931,7 +1922,7 @@ const mapStyle = computed(() => ({
       />
       <!-- §二级菜单：左侧展开对应内容，带返回按钮（不占右侧 details panel） -->
       <template v-if="annotationOpen">
-        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="annotationOpen = false">← {{ $t('recon.map.playback.back') }}</button>
+        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="closeAnnotation">← {{ $t('recon.map.playback.back') }}</button>
         <AnnotationToolbar
           :open="true"
           :active-tool="activeTool"
@@ -1945,7 +1936,7 @@ const mapStyle = computed(() => ({
           :history="history"
           :can-undo="canUndo"
           :can-redo="canRedo"
-          @close="annotationOpen = false"
+          @close="closeAnnotation"
           @toggle-tool="toggleTool"
           @set-annot-color="annotColor = $event"
           @update:annot-width="annotWidthSlider = $event"
@@ -2019,7 +2010,7 @@ const mapStyle = computed(() => ({
           @reset-view="resetView"
           @toggle-fullscreen="toggleFullscreen"
           @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
-          @toggle-annotation="annotationOpen = !annotationOpen"
+          @toggle-annotation="toggleAnnotation()"
           @drag-start="dragStart"
           @seek="seek"
         />
@@ -2061,7 +2052,7 @@ const mapStyle = computed(() => ({
         :aria-expanded="annotationOpen"
         :title="$t('recon.map.playback.annotation')"
         :aria-label="$t('recon.map.playback.annotation')"
-        @click="annotationOpen = !annotationOpen"
+        @click="toggleAnnotation()"
       ><span class="pb-rail-glyph">✎</span><span class="pb-rail-label">{{ $t('recon.map.playback.annotation') }}</span></button>
       <button
         type="button"
@@ -2148,33 +2139,6 @@ const mapStyle = computed(() => ({
           />
         </div>
 
-        <!-- 移动端（rail 隐藏）在底部显示标注工具栏；桌面走左侧二级菜单，不重复 -->
-        <div v-if="annotationOpen && !(isFullscreen || wideLayout)" class="pb-annotation-surface">
-          <AnnotationToolbar
-            :open="annotationOpen"
-            :active-tool="activeTool"
-            :annot-colors="ANNOT_COLORS"
-            :annot-color="annotColor"
-            :annot-visible="annotVisible"
-            :annot-width-slider="annotWidthSlider"
-            :annot-width-min="ANNOT_WIDTH_MIN"
-            :annot-width-max="ANNOT_WIDTH_MAX"
-            :history-index="historyIndex"
-            :history="history"
-            :can-undo="canUndo"
-            :can-redo="canRedo"
-            @close="annotationOpen = false"
-            @toggle-tool="toggleTool"
-            @set-annot-color="annotColor = $event"
-            @update:annot-width="annotWidthSlider = $event"
-            @undo="undoAnnot"
-            @redo="redoAnnot"
-            @clear-annotations="clearAll"
-            @toggle-annotations="annotVisible = !annotVisible"
-          />
-        </div>
-
-        <div v-if="orientationHint" class="pb-orientation-hint" data-test="pb-orientation-hint">{{ orientationHint }}</div>
       </div>
 
       <PlaybackMobileOverlay ref="mobileOverlay">
@@ -2193,10 +2157,36 @@ const mapStyle = computed(() => ({
           @reset-view="resetView"
           @toggle-fullscreen="toggleFullscreen"
           @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
-          @toggle-annotation="annotationOpen = !annotationOpen"
+          @toggle-annotation="toggleAnnotation()"
           @drag-start="dragStart"
           @seek="seek"
         />
+        <!-- 移动端（rail 隐藏）标注工具栏：和 controls 一样排在地图下方的流内容器里。
+             以前它是 .pb-map-stage 里 bottom 锚定的 absolute 浮层，展开时向上长、挡住地图。 -->
+        <div v-if="annotationOpen && !(isFullscreen || wideLayout)" class="pb-annotation-surface">
+          <AnnotationToolbar
+            :open="annotationOpen"
+            :active-tool="activeTool"
+            :annot-colors="ANNOT_COLORS"
+            :annot-color="annotColor"
+            :annot-visible="annotVisible"
+            :annot-width-slider="annotWidthSlider"
+            :annot-width-min="ANNOT_WIDTH_MIN"
+            :annot-width-max="ANNOT_WIDTH_MAX"
+            :history-index="historyIndex"
+            :history="history"
+            :can-undo="canUndo"
+            :can-redo="canRedo"
+            @close="closeAnnotation"
+            @toggle-tool="toggleTool"
+            @set-annot-color="annotColor = $event"
+            @update:annot-width="annotWidthSlider = $event"
+            @undo="undoAnnot"
+            @redo="redoAnnot"
+            @clear-annotations="clearAll"
+            @toggle-annotations="annotVisible = !annotVisible"
+          />
+        </div>
       </PlaybackMobileOverlay>
 
       <div v-if="visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
