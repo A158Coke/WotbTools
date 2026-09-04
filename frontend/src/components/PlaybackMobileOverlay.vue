@@ -4,10 +4,12 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 defineOptions({ name: 'PlaybackMobileOverlay' })
 
 const AUTO_HIDE_MS = 2500
+const MOBILE_QUERY = '(pointer: coarse) and (max-width: 1199.98px)'
 const root = ref(null)
 const open = ref(false)
 const transientFullscreen = ref(false)
 let hideTimer = null
+let mobileMql = null
 
 function clearHideTimer() {
   if (hideTimer != null) {
@@ -16,10 +18,18 @@ function clearHideTimer() {
   }
 }
 
-function isMobileFullscreen() {
-  if (typeof document === 'undefined' || !document.fullscreenElement) return false
+function fullscreenActive() {
+  return typeof document !== 'undefined' && !!document.fullscreenElement
+}
+
+function mobileQueryMatches() {
+  if (mobileMql) return !!mobileMql.matches
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
-  return window.matchMedia('(pointer: coarse) and (max-width: 1199.98px)').matches
+  return !!window.matchMedia(MOBILE_QUERY).matches
+}
+
+function isMobileFullscreen() {
+  return fullscreenActive() && mobileQueryMatches()
 }
 
 function scheduleHide() {
@@ -43,6 +53,15 @@ function hide() {
   transientFullscreen.value = false
 }
 
+function syncResponsiveMode() {
+  clearHideTimer()
+  const nextTransient = isMobileFullscreen()
+  transientFullscreen.value = nextTransient
+  // Crossing into or out of the mobile fullscreen form must never leave a stale viewport overlay
+  // visible. The parent owns the form switch; a fresh tap/reveal re-opens controls when appropriate.
+  open.value = false
+}
+
 function onDocumentClick(event) {
   if (!isMobileFullscreen()) return
   const fullscreenRoot = document.fullscreenElement
@@ -56,15 +75,26 @@ function onDocumentClick(event) {
 }
 
 onMounted(() => {
-  // Fullscreen state is owned by BattlePlayback. This overlay deliberately does not register its
-  // own fullscreenchange listener; explicit reveal() and document clicks sample the current native
-  // fullscreen fact instead. That preserves the single-listener lifecycle contract of the parent.
+  // BattlePlayback remains the single owner of fullscreenchange. This overlay only owns the
+  // responsive breakpoint that decides whether its controls are transient. Keeping the MQL live
+  // prevents orientation / viewport changes during fullscreen from leaving stale pointer behavior.
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    mobileMql = window.matchMedia(MOBILE_QUERY)
+    if (typeof mobileMql.addEventListener === 'function') {
+      mobileMql.addEventListener('change', syncResponsiveMode)
+    }
+  }
+  transientFullscreen.value = isMobileFullscreen()
   document.addEventListener('click', onDocumentClick, true)
 })
 
 onBeforeUnmount(() => {
   clearHideTimer()
   document.removeEventListener('click', onDocumentClick, true)
+  if (mobileMql && typeof mobileMql.removeEventListener === 'function') {
+    mobileMql.removeEventListener('change', syncResponsiveMode)
+  }
+  mobileMql = null
 })
 
 defineExpose({ reveal, hide, open, transientFullscreen })
@@ -78,26 +108,10 @@ defineExpose({ reveal, hide, open, transientFullscreen })
       'pb-mobile-overlay-visible': open,
       'pb-mobile-overlay-transient': transientFullscreen,
     }"
-    :style="transientFullscreen ? {
-      position: 'absolute',
-      inset: '0',
-      zIndex: 25,
-      pointerEvents: 'none',
-      opacity: open ? '1' : '0',
-      transition: 'opacity .18s ease',
-    } : null"
     data-test="pb-mobile-overlay"
   >
     <div
       class="pb-mobile-overlay-content"
-      :style="transientFullscreen ? {
-        position: 'absolute',
-        right: '8px',
-        bottom: 'calc(8px + env(safe-area-inset-bottom))',
-        left: '8px',
-        display: open ? 'grid' : 'none',
-        pointerEvents: open ? 'auto' : 'none',
-      } : null"
       @pointerdown.stop="reveal"
       @click.stop="reveal"
     >
@@ -109,6 +123,30 @@ defineExpose({ reveal, hide, open, transientFullscreen })
 <style scoped>
 .pb-mobile-overlay { display: block; }
 .pb-mobile-overlay-content { display: block; }
+
+/* Fullscreen-mobile behavior is class-driven rather than inline so reduced-motion can override it. */
+.pb-mobile-overlay-transient {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+.pb-mobile-overlay-transient.pb-mobile-overlay-visible { opacity: 1; }
+.pb-mobile-overlay-transient .pb-mobile-overlay-content {
+  position: absolute;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  left: 8px;
+  display: none;
+  pointer-events: none;
+}
+.pb-mobile-overlay-transient.pb-mobile-overlay-visible .pb-mobile-overlay-content {
+  display: grid;
+  pointer-events: auto;
+}
+
 @media (width < 768px) {
   .pb-mobile-overlay { position: absolute; inset: 0; z-index: 25; display: block; pointer-events: none; opacity: 0; transition: opacity .18s ease; }
   .pb-mobile-overlay-visible { opacity: 1; }
