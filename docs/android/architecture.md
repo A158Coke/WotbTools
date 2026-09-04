@@ -86,6 +86,20 @@ Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`
   `ssl.ptlogin2.qq.com`、`ptlogin2.qq.com`、`open.juhedenglu.cn` 等只有在真实 top-level
   navigation evidence 确认后才可逐个加入，并必须同步 regression test；禁止 `*.qq.com` 或整个
   `qq.com` 通配。
+- **Native auth handoff**：Android 1.0.9 真机 ADB 证据显示 `xui.ptlogin2.qq.com` 之后 QQ 登录会发起
+  native 跳转 `wtloginmqq://ptlogin/...`。这里 `ptlogin` **不是**普通 HTTPS hostname，而是 QQ native
+  login handoff 的 URI host。用 `AuthNavigationPolicy.NATIVE_AUTH_TARGETS` 以精确 (scheme, host) 建模
+  （当前 evidence-backed 目标为 `scheme=wtloginmqq` `host=ptlogin`），并严格区分：
+   - **Web authentication hosts**（`AUTH_PROVIDER_HOSTS`）：`graph.qq.com` / `xui.ptlogin2.qq.com`
+     → `ALLOW_AUTH_WEBVIEW`，仅在 `inAuthFlow=true`。
+   - **Native authentication handoff**（`NATIVE_AUTH_TARGETS`）：`wtloginmqq://ptlogin` 在
+     `inAuthFlow=true` 时 `NATIVE_AUTH_HANDOFF`，交给 QQ App（ACTION_VIEW）并保留当前 WebView
+     auth transaction 与 cookie jar；**不**进入 `auth-recovery`、不 reload 首页、不打开系统浏览器、
+     不复制 cookie。QQ App 未安装时 fail closed（提示安装后重试），不 silent fallback。
+  native handoff 不做 scheme 前缀 / host 后缀 / `mqq*` / `*.qq.com` 通配信任；未观察到的 native
+  scheme/host（含 host=null 的未知 custom scheme）在 auth flow 内仍 `AUTH_FAILURE` 且不退出 auth flow
+  （fail closed）。日志只记录 `scheme`/`host`/`source`，不记录
+  完整 URI/query/token/code/state（见 `AuthNavigationPolicyTest.verifiedNativeQqHandoffOnlyDuringAuthFlow`）。
 - 返回 `wotbtools.com` / `www.wotbtools.com` 表示 callback 成功并结束 auth flow。认证外直接访问
   provider host 不获得 privileged WebView handling；其它 top-level host 由系统浏览器打开。
 - Native Bridge 与 OAuth navigation 是两个独立安全边界。Bridge origins 仍严格限于
