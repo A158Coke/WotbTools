@@ -918,10 +918,14 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
   }
   /** ResizeObserver stub：捕获回调，测试里手动触发模拟尺寸变化。 */
   function stubResizeObserver() {
-    let roCb = null
-    const RO = vi.fn(function (cb) { roCb = cb; this.observe = vi.fn(); this.disconnect = vi.fn() })
+    // 组件里不止一个 ResizeObserver（地图一个、Map Workspace 一个）。只留最后一个回调
+    // 会让喂进去的 entries 落到错误的观察者身上，于是 mapSize 永远是 0、scale 恒为 1。
+    // 广播给全部回调即可——每个回调本来就按 e.target 过滤自己关心的元素。
+    const callbacks = []
+    const RO = vi.fn(function (cb) { callbacks.push(cb); this.observe = vi.fn(); this.disconnect = vi.fn() })
     vi.stubGlobal('ResizeObserver', RO)
-    return () => roCb
+    // 保持原 API：返回的是「取回调」的 getter，取到的才是喂 entries 的那个函数。
+    return () => (callbacks.length ? (entries) => { for (const cb of callbacks) cb(entries) } : null)
   }
   /** matchMedia stub：按 query 返回 matches（用于模拟移动端/大桌面判定）。 */
   function stubMatchMedia(matchesByQuery = {}) {
@@ -951,6 +955,43 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(src).toContain('state.markerSize.renderBox.width * view.scale')
     expect(src).toContain('state.markerSize.renderBox.height * view.scale')
     expect(src).not.toContain('state.markerSize.collisionFootprint.width * view.scale')
+  })
+
+  // §side-slots：侧栏形态下 safeInsets 必须归零。忘了归零的话上下仍按 HUD/controls
+  // 高度预留，地图白白小一圈——882×344 上是 336px 与 188px 的差别。
+  it('stops reserving top/bottom insets once the panels move into the gutters', () => {
+    const src = readFileSync(resolve(process.cwd(), 'src/components/BattlePlayback.vue'), 'utf8')
+    const fn = src.slice(src.indexOf('function safeInsets()'))
+    const body = fn.slice(0, fn.indexOf('function applyView'))
+    expect(body).toContain('if (sideSlots.value) return { top, bottom }')
+    // 判定必须早于 HUD/controls 的高度量取
+    expect(body.indexOf('sideSlots.value')).toBeLessThan(body.indexOf('.pb-hud'))
+  })
+
+  // 收起左栏时 controls 必须搬出 rail：非触屏设备的 controls 渲染在 rail 内，
+  // 而收起态把 .pb-rail-body 整块 display:none，播放/进度条会跟着一起消失，
+  // 屏幕上只剩一个展开箭头。
+  it('moves the controls out of the rail when the rail collapses', async () => {
+    stubRaf()
+    stubMatchMedia({ '(min-width: 1200px)': true })
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+
+    const railBody = () => wrapper.find('[data-test="pb-rail-body"]')
+    const controls = () => wrapper.find('[data-test="pb-controls"]')
+    expect(controls().exists()).toBe(true)
+    expect(railBody().element.contains(controls().element)).toBe(true)
+
+    await wrapper.find('[data-test="pb-rail-collapse"]').trigger('click')
+    await flushPromises()
+
+    expect(controls().exists()).toBe(true)
+    expect(railBody().element.contains(controls().element)).toBe(false)
+
+    // 再展开回到 rail 内
+    await wrapper.find('[data-test="pb-rail-collapse"]').trigger('click')
+    await flushPromises()
+    expect(railBody().element.contains(controls().element)).toBe(true)
   })
 
   // 左右两栏可拖拽改宽：把手写入 --pb-rail-w / --pb-details-w，并夹在合理区间内。

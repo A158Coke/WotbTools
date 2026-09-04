@@ -369,6 +369,73 @@
   align-items: stretch;
 }
 
+/* §side-slots：横屏全屏且两侧黑边够宽（JS 按真实像素判定，见 sideSlotWidth）时，
+   HUD 与 controls 从上下改到两侧黑边里，地图因此吃满 stage 高度。
+   方形地图在横屏下受高度限制：上下各让出 47px + 110px 是真金白银的地图面积，
+   而两侧各有两三百像素完全空着。竖屏或黑边不够时本段不生效，保持上下形态。
+   --pb-slot-w 由 JS 写入（= (stageW - stageH) / 2），CSS 推不出这个像素值。 */
+.battle-playback:fullscreen.pb-side-slots .pb-hud {
+  left: auto;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--pb-slot-w);
+  display: flex;
+  align-items: center;
+  overflow-y: auto;
+  padding: 8px max(8px, env(safe-area-inset-right)) 8px 8px;
+}
+.battle-playback:fullscreen.pb-side-slots .pb-mobile-overlay {
+  left: 0;
+  right: auto;
+  top: 0;
+  bottom: 0;
+  width: var(--pb-slot-w);
+  display: flex;
+  align-items: center;
+  overflow-y: auto;
+  padding: 8px 8px 8px max(8px, env(safe-area-inset-left));
+}
+.battle-playback:fullscreen.pb-side-slots .pb-mobile-overlay-content { width: 100%; }
+/* HUD 在窄高的侧栏里改成单列竖排：己方 / 点数 / 敌方 依次堆叠，敌方那栏取消右对齐。 */
+.battle-playback:fullscreen.pb-side-slots .pb-hud-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+.battle-playback:fullscreen.pb-side-slots .pb-hud-column-friendly,
+.battle-playback:fullscreen.pb-side-slots .pb-hud-column-center,
+.battle-playback:fullscreen.pb-side-slots .pb-hud-column-enemy {
+  grid-column: 1;
+}
+.battle-playback:fullscreen.pb-side-slots .pb-hud-enemy {
+  text-align: left;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.battle-playback:fullscreen.pb-side-slots .pb-hud-enemy .pb-hud-label { grid-column: 1; }
+.battle-playback:fullscreen.pb-side-slots .pb-hud-enemy .pb-hud-value { grid-column: 2; }
+/* controls 在侧栏里竖排：按钮铺满宽度，速度档位四格一行。与 rail-mode 同一形态，
+   但不隐藏面板/标注/重置/全屏——左栏可能是收起状态，这些动作没有别的入口。 */
+.battle-playback:fullscreen.pb-side-slots .pb-controls {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.battle-playback:fullscreen.pb-side-slots .pb-controls .pb-btn { width: 100%; }
+.battle-playback:fullscreen.pb-side-slots .pb-controls .pb-speed {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+}
+.battle-playback:fullscreen.pb-side-slots .pb-controls .pb-speed .pb-btn {
+  padding: 2px 0;
+  text-align: center;
+}
+.battle-playback:fullscreen.pb-side-slots .pb-controls .pb-time {
+  margin-inline: 0;
+  text-align: center;
+}
+
 /* §pane-resize：左右两栏的拖拽把手。默认隐藏在栏内侧边缘，hover/拖拽时才显形，
    不占布局宽度（absolute），因此不影响地图 fit 几何。栏本身不显示时把手也不显示。
    两个容器的 position: relative 都写在各自的基础规则里——否则 absolute 把手会以

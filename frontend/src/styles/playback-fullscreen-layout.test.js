@@ -125,6 +125,31 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(ruleBody('.battle-playback:fullscreen .pb-rail-collapse')).toContain('display: flex')
   })
 
+  // §side-slots：横屏全屏且两侧黑边够宽时，HUD/controls 改放两侧黑边，地图吃满高度。
+  // 竖屏或黑边不够时不生效（放下面）。判定用真实像素（JS 的 sideSlotWidth），
+  // 不是宽高比——宽高比推不出黑边有多少像素。
+  it('parks the HUD and controls in the side gutters when they fit there', () => {
+    const hud = ruleBody('.battle-playback:fullscreen.pb-side-slots .pb-hud')
+    expect(hud).toContain('right: 0')
+    expect(hud).toContain('left: auto')
+    expect(hud).toContain('top: 0')
+    expect(hud).toContain('bottom: 0')
+    expect(hud).toContain('width: var(--pb-slot-w)')
+
+    const controls = ruleBody('.battle-playback:fullscreen.pb-side-slots .pb-mobile-overlay')
+    expect(controls).toContain('left: 0')
+    expect(controls).toContain('right: auto')
+    expect(controls).toContain('top: 0')
+    expect(controls).toContain('bottom: 0')
+    expect(controls).toContain('width: var(--pb-slot-w)')
+
+    // 窄高的侧栏里 HUD 必须竖排单列、controls 必须竖排
+    expect(ruleBody('.battle-playback:fullscreen.pb-side-slots .pb-hud-grid'))
+      .toContain('grid-template-columns: minmax(0, 1fr)')
+    expect(ruleBody('.battle-playback:fullscreen.pb-side-slots .pb-controls'))
+      .toContain('flex-direction: column')
+  })
+
   // rail 同时承载图标导航与播放控制，60px 放不下速度档位那一排。
   it('the Left Rail is wide enough to hold the playback controls', () => {
     const body = ruleBody('.battle-playback')
