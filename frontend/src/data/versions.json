@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.70",
+    "date": "2026-09-04",
+    "tag": "fix",
+    "zh": "修复三环成绩只上传一张截图时被误判为无效的问题：从 0 场开始打三环的新车现在可以按页面说明提交单张截图，两张截图的正常流程不受影响。",
+    "en": "Fixed Mark 3 submissions with a single screenshot being incorrectly rejected: vehicles whose Mark 3 run started at zero battles can now submit one screenshot as described, while the normal two-screenshot flow is unchanged.",
+    "ru": "Исправлен ошибочный отказ при отправке результата трёх отметок с одним снимком: для техники, путь к трём отметкам на которой начат с нуля боёв, теперь можно отправить один снимок, как указано на странице; обычная отправка двух снимков не изменилась."
+  },
+  {
     "v": "2.12.69",
     "date": "2026-09-03",
     "tag": "chg",
