@@ -1,52 +1,137 @@
-# Android QQ Auth Return Bridge
+# 3D Battle Playback First — PR1 Client Map Research
 
 ## 状态
 
-IMPLEMENTED / SELF-REVIEW FIXED / PR VALIDATED / PRODUCTION VALIDATED
+**COMPLETE / PR1 GATE PASS / PR247 REVIEW FIXES APPLIED / PR2 HANDOFF READY**
 
-## 证据
+PR #247 已完成 Client Map Research 主目标，并闭环 review 发现的 2 个 MAJOR + 1 个 MINOR，以及复审发现的 raw `.sc2` default-discovery BLOCKER。
 
-- Android QQ native handoff 已实机证实为 `wtloginmqq://ptlogin`。
-- QQ 授权返回时由 QQ 显式启动 `com.android.chrome` 打开 `https://ssl.ptlogin2.qq.com/...`，因此普通 Verified App Link 不能接管这一步。
-- `auth.wotbtools.com` App Link 已修复为 `verified`，且手工 ACTION_VIEW 能直接打开 WotBTools；问题是 QQ/Chrome return chain 的 browser-context 切换。
-- Keycloak 在旧 Chrome callback 中报 `IDENTITY_PROVIDER_LOGIN_ERROR error=already_logged_in`，失败发生在 `getAndVerifyAuthenticationSession(state)` 恢复原 AuthenticationSession 之前。
-- PR #237 已合并并部署到生产；生产 Keycloak 运行 `ghcr.io/a158coke/wotbtools-keycloak:sha-4682b7ad`。
-- 2026-09-04 Android 真机完成完整 QQ 登录链路并成功登录，证明 return bridge 能把授权流程从 Chrome 返回原 WotBTools WebView，并恢复 Keycloak AuthenticationSession continuity。
+## 核心 contract
 
-## 实现
+```text
+SC2 Entity
+  -> RenderComponent
+  -> Mesh
+  -> RenderObject initial visibility
+  -> active RenderBatch (LOD/switch, shared -1)
+  -> rb.datasource
+  -> companion SCG
+  -> unique PolygonGroup #id
+  -> vertices / indices
+```
 
-1. Bridge 决策在登录发起阶段绑定，而不是在 Chrome 回程靠 Android UA 猜测：只有原请求 UA 符合 Android WebView（`Android` + `; wv)`）时，Juhe `redirect_uri` 才指向 `/endpoint/mobile-return?state=...`；普通 Android Chrome / desktop browser 继续使用原 `/endpoint?state=...`。
-2. `mobile-return` 只服务已在 login-start 被分类为 app/WebView 的 transaction，不再读取回程 User-Agent 做二次判断。
-3. Android return 在 Keycloak 内签发 2 分钟、单次消费、256-bit 随机 opaque ticket；ticket server-side 保存 `state/type/code`，Android intent 不携带真实 state/code。
-4. `mobile-return` 返回需要用户点击的“返回 WotBTools”页面，使用 `intent:` + `package=com.wotbtools.app` 显式回到 App。
-5. 无 browser fallback callback：intent 不携带 `browser_fallback_url`，Chrome 无法打开 App 时 ticket 不会在错误 browser context 被 consume；页面明确提示返回 App 后重新发起登录。
-6. App 继续复用 PR #236 的 exact HTTPS callback App Link 与 `singleTask` MainActivity；intent 使用非敏感 `state=bridge&code=bridge` 只满足现有路由边界，真正 payload 由 ticket 恢复。
-7. 原 WebView 请求 broker endpoint 后 atomic consume ticket，再执行原 `getAndVerifyAuthenticationSession(state)` → Juhe code exchange → `authenticated()`；不绕过 Keycloak session 校验。
-8. 日志只记录 `callbackRef` / `returnRef`（SHA-256 前缀）和 stage，不记录 ticket/state/code/full callback URL。
+### Canal / `18_canal_cn`
 
-## 约束
+- recursive SC2 entities：2,725
+- SCG PolygonGroups：237
+- datasource exact match：237 / 237
+- unmatched / unreferenced：0 / 0
+- schema v3 geometry：70
+- Mesh instances：590
+- positions：85,028 / 1,020,336 bytes
+- indices：156,543 / 626,172 bytes
+- invisible RenderObject skipped：363
+- selected diagnostic State 0：347
+- selected diagnostic State 1：0
+- mutually-exclusive overlap：0
 
-- 当前 app-origin routing marker 使用平台 Android WebView UA 的 `; wv)` token；它只决定 return routing，不参与身份认证或授权。最终认证 authority 仍是 Keycloak state / AuthenticationSession 校验。
-- 当前 ticket store 是 JVM-local，符合当前单 Keycloak instance 生产拓扑；未来水平扩容 Keycloak 前必须替换为共享 atomic store。
-- hot return（原 WebView 仍存活）是 authoritative path；cold start 仍是 best effort。
-- 不扩大 QQ host/scheme allowlist，不新增 native OAuth/AppAuth，不复制 Cookie。
+### Port Bay / `14_port_pt`
 
-## Self-review 修复
+- recursive SC2 entities：3,890
+- SCG PolygonGroups：217
+- datasource exact match：217 / 217
+- unmatched / unreferenced：0 / 0
+- schema v3 geometry：80
+- Mesh instances：1,326
+- positions：65,291 / 783,492 bytes
+- indices：123,054 / 492,216 bytes
+- invisible RenderObject skipped：713
+- selected diagnostic State 0：596
+- selected diagnostic State 1：0
+- mutually-exclusive overlap：0
 
-- Major #1 已修：不再用 callback Chrome 的 Android UA 决定是否拉 App；routing 在原 login request 阶段绑定，普通 Android Chrome 保持 browser-direct。
-- Major #2 已修：删除 `browser_fallback_url -> mobile-resume -> consume(ticket)` 失败链；无法打开 App 时不在 Chrome 中消费 ticket。
+## DAVA selection semantics
 
-## 生产验证结果
+```text
+(batch.lodIndex == requestedLod OR batch.lodIndex == -1)
+AND
+(batch.switchIndex == requestedSwitch OR batch.switchIndex == -1)
+```
 
-生产真机已验证成功：
+```text
+RenderObject::VISIBLE = 1 << 0
+explicit ro.flags -> require bit 0
+missing ro.flags  -> visible by RenderObject::Load default
+```
 
-`WotBTools WebView -> Keycloak -> Juhe -> QQ -> QQ App -> Chrome -> mobile-return -> WotBTools -> original WebView -> Keycloak broker callback -> login success`
+Production selector 不读取 `State 0` / `State 1` filename。
 
-验收结论：
+## PR247 review closure
 
-- Android App QQ 登录成功。
-- return bridge 能将 Chrome 中的授权回程显式交还 WotBTools App。
-- 原 WebView 的 Keycloak AuthenticationSession continuity 得以恢复。
-- 旧 `already_logged_in` 生产故障不再阻塞该登录链路。
+### MAJOR 1 + 复审 BLOCKER — raw `.sc2`
 
-普通 Android Chrome 网页登录仍必须保持 `browser-direct`，不得被拉起 WotBTools App。
+- `.dvpl` member 才调用 `decode_dvpl`；
+- raw `.sc2` 直接传给 `read_sc2`；
+- 默认 exact main discovery 同时支持 `.sc2.dvpl` / `.sc2`；
+- exact main 不存在时，fallback discovery 同时支持 `.sc2.dvpl` / `.sc2`；
+- `inspect_map_scene.py` 与 `inspect_map_state_switchers.py` 使用相同 discovery contract；
+- state-switcher inspector 新增 `--scene`，多 SC2 场景可显式选择；
+- regression test 覆盖 raw `.sc2` exact、raw fallback、state explicit override；
+- `inspect_map_scene.main()` 端到端测试验证不传 `--scene` 时 `Maps/99_test/99_test.sc2` raw bytes 原样进入 `read_sc2`。
+
+### MAJOR 2 — duplicate PolygonGroup id
+
+- `wotb_scg.read_scg()` 在共享 parser boundary 校验所有可解码 `#id` 唯一；
+- duplicate id 直接 `Sc2ParseError` fail-fast；
+- 错误包含 duplicate id 与两个 PolygonGroup index；
+- exporter 使用共享 `polygon_groups_by_id()`，不再静默覆盖；
+- SCG inspector 同样无法让 duplicate id 进入 set-based cross-check；
+- regression test 覆盖 duplicate id。
+
+### MINOR — nested scene entities
+
+- scene inspector 改为 recursive `#hierarchy` traversal；
+- report schema v3；
+- `sceneTraversal.mode = recursive #hierarchy`；
+- target component sample 包含 `entityPath`；
+- regression test 覆盖 nested RenderComponent / CollisionTypeComponent。
+
+## PR2 handoff
+
+```text
+SC2 + companion SCG + heightmap + existing map semantics
+  -> deterministic renderer-neutral manifest
+  -> shared local static geometry buffers
+  -> initially-visible instance transforms
+  -> terrain representation
+  -> canonical world bounds / coordinate metadata
+  -> transformed world-AABB sanity report
+```
+
+Canal + Port Bay 继续作为双地图 gate。
+
+## Collision / nav 边界
+
+- `CollisionTypeComponent` metadata 已证明；独立 gameplay collision mesh 未证明；
+- `.mkm/.lka` 与 TerrainData association 已证明；navmesh/passability semantics 未证明；
+- visual PR2 不消费未经证明的数据。
+
+## PR1 DoD
+
+- [x] Maps.zip inventory
+- [x] terrain + coordinate baseline
+- [x] SCPG / PolygonGroup parser
+- [x] recursive SC2 datasource ↔ SCG exact link
+- [x] vertex/index decoder
+- [x] unique PolygonGroup id invariant
+- [x] RenderBatch shared `-1` contract
+- [x] initial RenderObject visibility contract
+- [x] raw `.sc2` / `.sc2.dvpl` decode + default discovery + fallback
+- [x] state-switcher explicit scene override
+- [x] recursive scene inspector
+- [x] Canal schema v3 final gate
+- [x] Port Bay schema v3 final gate
+- [x] collision/nav research boundary
+- [x] PR247 review findings closure
+
+**PR1 blocker = 0. PR2 handoff ready.**
