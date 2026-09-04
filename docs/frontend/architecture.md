@@ -16,7 +16,9 @@ App.vue
 
 `router.js` owns browser history, deep-link handling, redirects, and Back/Forward. Product URLs deliberately retain the compatible query contract: `?view=replay`, `?view=ai-review`, and `?view=battle-playback` all resolve to the same kept-alive Replay Workspace with a different initial capability. Legacy aliases (`leaderboard`, `extended`, `reconstruction`) redirect once to their canonical query values. `/download/android` and `/download/android/` resolve to the Android page.
 
-`ViewHost.vue` maps the existing flat page components to a route-derived product view. The flat layout is the current implementation; do not treat another directory layout as already present. Do not add manual `history.pushState`, `replaceState`, or `popstate` listeners to a component; use the injected `navigate(view)` command, which delegates to Vue Router.
+`ViewHost.vue` maps the existing flat page components to a route-derived product view. The flat layout is the current implementation; do not treat another directory layout as already present. Do not add manual `history.pushState`, `replaceState`, or `popstate` listeners to a component; use the injected navigation command, which delegates to Vue Router.
+
+Application navigation is provided through the typed `NAVIGATE_VIEW_KEY` in `frontend/src/app/context.ts`. Production code must not introduce magic-string `inject('navigate')` / `provide('navigate')` calls; this keeps the app-level navigation service discoverable and typeable while Vue Router remains the browser-history authority.
 
 ## Dependency and state rules
 
