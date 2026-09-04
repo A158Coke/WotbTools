@@ -292,62 +292,6 @@
   overflow: hidden;
   background: var(--bg);
 }
-/* §mobile-contract：手机 fullscreen 必然是横屏，横向放得下三段，因此与桌面同构：
-   Left Rail（窄）| Map | 右侧滑入的 Details 抽屉。controls 仍走 bottom overlay——
-   全屏下拇指够得到底部，rail 只承载导航图标。
-   Details 是抽屉不是常驻列，所以 --pb-details-w 保持 0：依赖该 token 的
-   kill-feed / annotation-surface 不该为一个浮层预留空间。 */
-.battle-playback:fullscreen.pb-device-mobile {
-  --pb-details-w: 0px;
-  /* 手机横屏宽度有限，rail 比桌面窄一档。 */
-  --pb-rail-w: 148px;
-  grid-template-columns: var(--pb-left-col) minmax(0, 1fr);
-}
-.battle-playback:fullscreen.pb-device-mobile .pb-left-rail {
-  display: flex;
-  grid-column: 1;
-}
-.battle-playback:fullscreen.pb-device-mobile .pb-main { grid-column: 2; }
-.battle-playback:fullscreen.pb-device-mobile .pb-hud { left: var(--pb-left-col); right: 0; }
-.battle-playback:fullscreen.pb-device-mobile .pb-map-stage { grid-template-columns: minmax(0, 1fr); }
-.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell {
-  /* §details-blocker：未选车辆（pb-details-active 缺省）时 shell 不遮挡、不 tint、不接管 pointer；
-     选中车辆（pb-details-active）才打开真正的 fullscreen/sheet Details。 */
-  position: absolute;
-  inset: 0;
-  grid-column: 1;
-  pointer-events: none;
-  background: transparent;
-}
-.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active {
-  pointer-events: auto;
-  background: color-mix(in srgb, var(--bg) 52%, transparent);
-  /* §layering：active Details 高于 controls(≤40)/HUD(50)/events(45)，低于 workspace drawer(74/75)。 */
-  z-index: 60;
-}
-/* overlay 是 .pb-main（grid col2）的子元素，left 已从 col2 左缘起算；再加 --pb-left-col
-   会重复偏移一个 rail 宽——实测 740×360 手机全屏下 controls 从 x=173 被推到 x=321，
-   宽度从 587 缩到 439，右侧被裁。手机没有常驻 Details 列，所以左右都归零。 */
-.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay { left: 0; right: 0; }
-/* 手机全屏 Details：与非全屏同一形态的右侧滑入窗口，而不是覆盖全屏的 sheet。 */
-.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
-  position: fixed;
-  top: 8px;
-  right: 8px;
-  bottom: 8px;
-  left: auto;
-  width: min(340px, calc(100vw - var(--pb-left-col) - 16px));
-  max-height: none;
-  padding: 14px;
-  padding-bottom: calc(14px + env(safe-area-inset-bottom));
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-card2);
-  box-shadow: var(--surface-shadow);
-  overflow-y: auto;
-  z-index: var(--z-modal);
-  animation: pb-details-slide-in .22s ease-out;
-}
 
 /* §3 真三列：Left Rail（--pb-rail-w 60px，二级展开 --pb-panel-w 300px）| Map Workspace（.pb-main）| Persistent Right Details。
    Right Details 作为 map-stage 内的独立 grid 列（非 overlay 覆盖地图），HUD/controls
@@ -724,32 +668,6 @@
     z-index: 60;
   }
 }
-
-/* §mobile-contract：以 .pb-device-mobile（pointer:coarse+视口<=1200，JS 判定）驱动移动端样式，
-   不再只依赖 @media(width<768px)——手机 landscape 内宽可 >768，仍须保持 mobile UX。 */
-.battle-playback.pb-device-mobile {
-  gap: 5px;
-  margin-top: 4px;
-}
-.battle-playback.pb-device-mobile .pb-map-stage {
-  overflow: hidden;
-  border-radius: 5px;
-}
-/* §mobile-details：车辆详情是 .pb-sidebar（VehicleDetailsPanel），不是 .pb-side-panel
-   （后者是战局/显示/事件的标签面板）。两者都挂在 shell 下，抽屉形态必须分别写。
-   非全屏一律走流内形态（地图下方），只有全屏没有「下方」可用才做抽屉。
-   全屏竖屏：底部滑上来的 sheet，地图留在上方可见。 */
-.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 8px;
-  top: auto;
-  width: auto;
-  max-height: min(58dvh, 480px);
-  border-radius: 10px;
-  animation: pb-details-slide-up .22s ease-out;
-}
 /* §no-overlay：地图上不允许任何常驻 UI，只有短暂的事件播报例外。
    详情因此只在「方图两侧的黑边」里浮；黑边不够宽就退回占据真实空间（挤地图）。
    手机竖屏没有黑边可言 —— 上面那条 sheet 排在地图下方的流里，不覆盖地图。 */
@@ -780,26 +698,6 @@
   }
 }
 
-/* 手机全屏（必然横屏）：右侧确有黑边，抽屉按黑边实宽算，绝不越到地图上。
-   单侧黑边 =（100vw − 100vh）/ 2；再留 8px 间距。黑边窄于 168px 时不浮，
-   由上面的流内形态兜底。 */
-@media (orientation: landscape) {
-  .battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
-    left: auto;
-    right: 8px;
-    top: 8px;
-    bottom: 8px;
-    width: min(340px, calc((100vw - 100vh) / 2 - 8px));
-    max-height: none;
-    border-radius: 12px;
-    animation: pb-details-slide-in .22s ease-out;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
-    animation: none;
-  }
-}
 /* §mobile-panels-drawer：无永久 rail（mobile/medium）时 ☰ 打开 rail 作为 drawer；backdrop 点击关闭。 */
 .battle-playback .pb-drawer-backdrop {
   position: fixed;
@@ -833,22 +731,6 @@
 }
 .battle-playback:not(.pb-device-mobile):not(:fullscreen) .pb-drawer-backdrop { display: none; }
 
-/* §mobile-layout：手机非全屏。
-   左栏不再是覆盖式抽屉，展开后排在地图「下方」——根节点是纵向 flex，用 order 调序，
-   不改 DOM 顺序（DOM 里 rail 在 map 之前，是桌面三列需要的）。
-   右侧详情不再是底部 sheet，改为从右侧滑入的窗口，形态与 PlayerDetailDrawer 一致。 */
-.battle-playback:not(:fullscreen).pb-device-mobile .pb-main { order: 1; }
-.battle-playback:not(:fullscreen).pb-device-mobile.pb-drawer-open .pb-left-rail {
-  order: 2;
-  position: static;
-  width: auto;
-  z-index: auto;
-  margin-top: 8px;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: 8px;
-}
-.battle-playback:not(:fullscreen).pb-device-mobile .pb-drawer-backdrop { display: none; }
-
 /* 播放控制条排到地图下方，而不是压在地图上的浮层。它在 .pb-main 内、地图之后，
    static 即落在地图下方；在流内就不需要「触摸唤起」，常驻可见。
 
@@ -869,40 +751,6 @@
     margin-top: 8px;
   }
 }
-
-.battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
-  position: fixed;
-  top: 8px;
-  right: 8px;
-  bottom: 8px;
-  left: auto;
-  width: min(380px, calc(100vw - 16px));
-  max-height: none;
-  padding: 16px;
-  padding-bottom: calc(16px + env(safe-area-inset-bottom));
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-card2);
-  box-shadow: var(--surface-shadow);
-  overflow-y: auto;
-  z-index: var(--z-modal);
-  animation: pb-details-slide-in .22s ease-out;
-}
-/* 竖屏手机：右侧滑入的窗口在 ~400px 宽的屏上等于满宽满高，会整块盖住地图。
-   竖屏改为从底部滑上来的 sheet——同样是「滑进滑出」，但地图始终留在上方可见。
-   横屏（含全屏）保持右侧窗口。 */
-@media (orientation: portrait) {
-  .battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
-    top: auto;
-    right: 8px;
-    bottom: 8px;
-    left: 8px;
-    width: auto;
-    max-height: min(58dvh, 480px);
-    border-radius: 12px;
-    animation: pb-details-slide-up .22s ease-out;
-  }
-}
 @keyframes pb-details-slide-up {
   from { transform: translateY(24px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
@@ -912,77 +760,10 @@
   from { transform: translateX(30px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel,
-  .battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
-    animation: none;
-  }
-}
-
-/* mobile fullscreen：赢过 .pb-device-mobile .pb-left-rail 的 display:none。 */
-.battle-playback:fullscreen.pb-device-mobile.pb-drawer-open .pb-left-rail {
-  display: flex;
-  position: fixed;
-  left: 8px;
-  top: 8px;
-  bottom: 8px;
-  width: min(84vw, 320px);
-  z-index: 75;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 8px;
-  overflow-y: auto;
-}
 /* drawer 内显示导航 label（覆盖 collapsed 60px 的图标化）。 */
 .battle-playback.pb-drawer-open .pb-left-rail .pb-rail-label { display: inline; }
 .battle-playback.pb-drawer-open .pb-left-rail .pb-rail-btn {
   justify-content: flex-start;
   padding: 6px 10px;
   gap: 9px;
-}
-
-/* §mobile-contract：控件/按钮尺寸与 overlay content 卡片在 .pb-device-mobile 下同样生效，
-   手机 landscape（内宽>768）仍保持 mobile UX（不再只依赖 @media(width<768px)）。 */
-.battle-playback.pb-device-mobile .pb-controls { justify-content: center; gap: 4px; }
-.battle-playback.pb-device-mobile .pb-controls .pb-btn { min-width: 36px; min-height: 36px; padding: 2px 6px; }
-.battle-playback.pb-device-mobile .pb-controls .pb-control-label { display: none; }
-.battle-playback.pb-device-mobile .pb-controls .pb-time {
-  flex-basis: 100%;
-  margin-inline: 0;
-  text-align: center;
-  order: 20;
-}
-.battle-playback.pb-device-mobile .pb-controls .pb-secondary-btn,
-.battle-playback.pb-device-mobile .pb-controls .pb-fullscreen-btn { min-width: 36px; }
-/* §no-overlay：控制条不再是「压在地图上、触摸才唤起」的浮层——它现在排在地图下方的
-   正常流里，常驻可见。原来的 opacity: 0 + pointer-events: none 在流内形态下等于
-   彻底消失：元素不在地图上，也就没有能唤起它的触摸。
-   卡片外观（内边距/描边/背景）保留，它现在是地图下方的一个内容块。 */
-.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay {
-  position: static;
-  inset: auto;
-  z-index: auto;
-  pointer-events: auto;
-  opacity: 1;
-}
-.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay-content {
-  position: static;
-  inset: auto;
-  margin-top: 8px;
-  display: grid;
-  gap: 5px;
-  padding: 7px;
-  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-card2) 78%, transparent);
-}
-.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay-content {
-  display: grid;
-  gap: 5px;
-  padding: 7px;
-  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-card2) 78%, transparent);
-  backdrop-filter: blur(8px);
 }

@@ -12,6 +12,8 @@ import './styles/showcase-regressions.css'
 import './styles/app-shell.css'
 import './styles/playback-overlap-ux.css'
 import './styles/playback-responsive.css'
+// 形态文件排在基础表之后：迁出的规则原本就在后面，顺序不变则同特异性的胜负不变。
+import './styles/playback-mobile.css'
 import './styles/classic-profile.css'
 import { messages } from './locales/messages.js'
 import router from './app/router.js'
