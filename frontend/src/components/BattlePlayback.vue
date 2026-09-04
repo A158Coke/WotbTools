@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { mapBases } from '../data/mapBases'
 import { mapImages } from '../data/mapImages'
 import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
@@ -1778,20 +1779,21 @@ function markerLabel(accountId) {
   }
 }
 
-const gridRegions = computed(() => {
-  const regions = new Map()
-  for (const cell of pbOverview.value.gridCells || []) {
-    const key = cell.nineGridRegion
-    if (!regions.has(key)) {
-      regions.set(key, { xMin: Infinity, yMin: Infinity, xMax: -Infinity, yMax: -Infinity })
-    }
-    const r = regions.get(key)
-    r.xMin = Math.min(r.xMin, cell.bounds.xMin)
-    r.yMin = Math.min(r.yMin, cell.bounds.yMin)
-    r.xMax = Math.max(r.xMax, cell.bounds.xMax)
-    r.yMax = Math.max(r.yMax, cell.bounds.yMax)
-  }
-  return [...regions.entries()].sort((a, b) => a[0] - b[0])
+// 与 BattlePlaybackHud 的 baseStatus 同一套语义，地图与 HUD 的着色不能分叉。
+function baseStatus(state) {
+  if (!state) return 'neutral'
+  if (state.capturingTeam != null) return 'capturing'
+  if (state.ownerTeam == null) return 'neutral'
+  if (friendlyTeam.value == null) return 'controlled'
+  return state.ownerTeam === friendlyTeam.value ? 'friendly_controlled' : 'enemy_controlled'
+}
+
+const basesAt = computed(() => {
+  const geometry = mapBases[pbOverview.value?.mapCode]?.supremacy || []
+  const states = new Map(baseStatesAt.value.map((state) => [state.baseId, state]))
+  return geometry
+    .filter((base) => base.radius != null)
+    .map((base) => ({ ...base, status: baseStatus(states.get(base.baseId)) }))
 })
 
 const mapStyle = computed(() => ({
@@ -1988,7 +1990,7 @@ const mapStyle = computed(() => ({
           :map-view="mapView"
           :pb-overview="pbOverview"
           :friendly-team="friendlyTeam"
-          :grid-regions="gridRegions"
+          :bases="basesAt"
           :visible-tracers="visibleTracers"
           :visible-trails="visibleTrails"
           :tracer-color="tracerColor"

@@ -75,6 +75,35 @@ async function openPanel(wrapper, name) {
   await flushPromises()
 }
 
+describe('Supremacy 基地 overlay', () => {
+  // 底图不再烤基地图形，几何来自 mapBases（客户端场景），状态来自 baseStates（回放）。
+  // 这条断言覆盖 BattlePlayback -> BattleMap 的 bases 接线，接线断掉时必须失败。
+  it('renders one circle per Supremacy base and colours it from baseStates', async () => {
+    const dataset = makePlaybackV2({
+      baseStates: [
+        { timeSec: 0, baseId: 'A', ownerTeam: 1, capturingTeam: null, captureProgress: null },
+        { timeSec: 0, baseId: 'B', ownerTeam: 2, capturingTeam: null, captureProgress: null },
+        { timeSec: 0, baseId: 'C', ownerTeam: null, capturingTeam: 2, captureProgress: 40 },
+      ],
+    })
+    const wrapper = await mountPlayback(makeOverview(), null, dataset)
+
+    // holland 在 mapBases 里是 3 个争霸基地
+    expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(3)
+    expect(wrapper.find('[data-test="pb-bases"]').text()).toContain('A')
+    expect(wrapper.findAll('.pb-base-friendly_controlled')).toHaveLength(1)
+    expect(wrapper.findAll('.pb-base-enemy_controlled')).toHaveLength(1)
+    expect(wrapper.findAll('.pb-base-capturing')).toHaveLength(1)
+  })
+
+  it('draws the playable-area boundary instead of the analysis grid', async () => {
+    const wrapper = await mountPlayback()
+    expect(wrapper.findAll('[data-test="pb-border"] .pb-border-line')).toHaveLength(1)
+    expect(wrapper.findAll('.pb-cell')).toHaveLength(0)
+    expect(wrapper.findAll('.pb-region-line')).toHaveLength(0)
+  })
+})
+
 function trackOf(dataset, accountId) {
   return dataset.vehicles.find((vehicle) => vehicle.accountId === accountId)
 }
