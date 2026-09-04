@@ -1,6 +1,6 @@
 # Frontend architecture
 
-## Current foundation (PR 1)
+## Current foundation
 
 The application root, [`frontend/src/App.vue`](../../frontend/src/App.vue), only renders Vue Router's outlet. Application concerns live in `frontend/src/app/`:
 
@@ -34,6 +34,8 @@ Each business state has one authoritative owner. Replay state is owned by `front
 
 Core Replay/API/AI/Playback contracts live under `frontend/src/types/` and are validated at external JSON/SSE boundaries. JavaScript and TypeScript may coexist during the migration; a `.js` import specifier may resolve to its `.ts` implementation through the Vite/TypeScript resolver, but there must be only one implementation.
 
+Replay capability HTTP ownership is centralized under `frontend/src/api/`. `replay.ts` owns Processing/Export job transport; `replay-capabilities.ts` owns Dataset-only AI Review / Map Overview / Battle Playback endpoints, bearer-token refresh, canonical HTTP errors, and Playback V2 runtime validation. `AiReviewPanel.vue` and `BattlePlaybackPanel.vue` own run/view lifecycle only and must not recreate `authedFetch`, call `apiFetch` directly, or hard-code `/api/replay/*` transport calls.
+
 Replay Workspace presentation is split into focused children (`ReplayWorkspaceHeader.vue`, `ReplayCapabilityTabs.vue`, and `ReplaySourcePanel.vue`). They receive derived state and emit commands; selection, capability, authentication, upload, and Processing ownership remains in the Workspace/session orchestration layer.
 
 Battle Playback follows the same presentation boundary: `BattlePlayback.vue` remains the orchestration root, while `BattlePlaybackHud.vue`, `BattleMap.vue`, `PlaybackControls.vue`, `PlaybackTimeline.vue`, `PlaybackSidePanel.vue`, `AnnotationToolbar.vue`, and `VehicleDetailsPanel.vue` own HUD, map, controls, timeline, panel, annotation, and selected-vehicle presentation respectively. `PlaybackMobileOverlay.vue` owns only transient mobile controls visibility. Pure playback projection and clock helpers live in `utils/playbackVehicleState.ts` and `utils/playbackClock.ts`; canonical V2 query semantics and tank-marker assets remain unchanged.
@@ -41,6 +43,18 @@ Battle Playback follows the same presentation boundary: `BattlePlayback.vue` rem
 Playback tests follow those ownership boundaries: map/marker/gesture contracts live in `BattleMap.test.js`, control contracts in `PlaybackControls.test.js`, timeline contracts in `PlaybackTimeline.test.js`, HUD/mobile/panel contracts in their focused component suites, detail-panel contracts in `VehicleDetailsPanel.test.js`, and pure projection/clock contracts in `utils/playbackVehicleState.test.js` / `utils/playbackClock.test.js`. Shared playback fixtures live in the testing-only `playbackTestHarness.js`. `BattlePlayback.test.js` and the remaining `BattlePlayback.integration.test.js` cases are reserved for cross-component/domain regressions; presentation cases are not duplicated there.
 
 The UI profile remains presentation-only: `wotb-ui-profile` is the single persistence key, and its derived `data-theme` does not create a separate theme state. Showcase and Classic must use the same components, APIs, and business state.
+
+## Consolidation direction
+
+The architecture cleanup is intentionally completed inside one PR so `main` never contains half-migrated boundaries. The order is:
+
+1. shared typed application contracts;
+2. typed Replay/AI/Playback API ownership;
+3. Replay/Playback orchestration extraction where a component still owns unrelated state machines;
+4. browser-level regression coverage for layout/navigation paths that happy-dom cannot model reliably;
+5. only then optional routing/feature-folder cleanup when it deletes real bridge code.
+
+Do not perform directory-only rewrites, introduce Pinia without a demonstrated state-ownership need, or combine this consolidation with visual redesign.
 
 ## Canonical feature references
 
