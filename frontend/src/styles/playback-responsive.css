@@ -343,8 +343,10 @@
 /* Controls + Timeline：底部覆盖 Map Workspace（col2），右侧停在 Right Details 左缘；不占 map layout height。 */
 .battle-playback:fullscreen .pb-mobile-overlay {
   position: absolute;
-  /* §review-widths：desktop fullscreen overlay 从 left col 右缘开始、到 Right Details 左缘停下（mobile 由 .pb-device-mobile 覆盖为左右归零）。 */
-  left: var(--pb-left-col);
+  /* §review-widths：overlay 是 .pb-main（grid col2）的子元素，left 已经从 col2 左缘起算，
+     再加 --pb-left-col 会重复偏移一个 rail 宽。右侧停在 Right Details 左缘
+     （mobile 由 .pb-device-mobile 覆盖为左右归零）。 */
+  left: 0;
   right: var(--pb-details-w);
   bottom: 0;
   z-index: 40;

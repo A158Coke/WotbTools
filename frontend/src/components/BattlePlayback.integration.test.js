@@ -861,6 +861,24 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     resetFullscreenGlobals()
   })
 
+  // 宽桌面（>=1200px）曾把 controls 塞进 60px 的 Left Rail，被压成竖条。
+  // Left Rail 只放图标导航，播放控制一律在 Map Workspace 底部 overlay。
+  it('wide desktop keeps playback controls out of the 60px Left Rail', async () => {
+    stubRaf()
+    stubMatchMedia({ '(min-width: 1200px)': true })
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+
+    const rail = wrapper.find('[data-test="pb-left-rail"]')
+    expect(rail.exists()).toBe(true)
+    expect(rail.find('[data-test="pb-controls"]').exists()).toBe(false)
+
+    const overlay = wrapper.find('[data-test="pb-mobile-overlay"]')
+    expect(overlay.find('[data-test="pb-controls"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-test="pb-controls"]')).toHaveLength(1)
+    expect(wrapper.find('[data-test="pb-controls"]').classes()).not.toContain('pb-controls-rail-mode')
+  })
+
   it('1/2/3/4/5：API 可用 → 按钮可见；进入调 root.requestFullscreen；fullscreenchange 同步；退出调 exitFullscreen；ESC 外部退出恢复', async () => {
     stubRaf()
     const { reqFs, exitFs } = stubFullscreenApi()
