@@ -15,12 +15,14 @@ const css = read('./playback-responsive.css')
 const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '')
 
 const rules = stripped.split(/}/).filter((chunk) => chunk.includes('{'))
+// 选择器取最后一个 '{' 之前的部分，这样嵌在 @media 里的规则也能命中。
 function ruleBody(selector) {
   const chunk = rules.find((c) => {
-    const sel = c.slice(0, c.indexOf('{')).trim()
-    return sel === selector
+    const sel = c.slice(0, c.lastIndexOf('{')).trim()
+    return sel === selector || sel.endsWith(`{ ${selector}`) || sel.endsWith(`
+  ${selector}`)
   })
-  return chunk ? chunk.slice(chunk.indexOf('{') + 1).trim() : null
+  return chunk ? chunk.slice(chunk.lastIndexOf('{') + 1).trim() : null
 }
 
 describe('Battle Playback fullscreen layout (source regression)', () => {
@@ -38,6 +40,8 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
   // §float-panels：桌面 fullscreen 下地图占满整宽，Left Rail / Right Details 浮在
   // 方图两侧必然出现的黑边上。视口不够宽时它们会盖住地图外缘，所以必须半透明。
   it('desktop fullscreen gives the map the full width and floats the panels', () => {
+    // 护栏：黑边放得下面板时才浮，否则回落三列（大平板横屏 / 窄桌面窗口）。
+    expect(stripped).toContain('@media (min-width: 1600px) and (min-aspect-ratio: 3/2)')
     const shell = ruleBody('.battle-playback:fullscreen:not(.pb-device-mobile)')
     expect(shell).toContain('grid-template-columns: minmax(0, 1fr)')
 
