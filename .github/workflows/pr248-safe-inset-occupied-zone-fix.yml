@@ -1,0 +1,90 @@
+name: PR 248 mobile safe inset occupied-zone fix
+
+on:
+  push:
+    branches:
+      - fix/playback-fullscreen-hud-position
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/playback-fullscreen-hud-position
+          fetch-depth: 0
+      - name: Patch production safe inset and browser fixture
+        shell: python
+        run: |
+          from pathlib import Path
+
+          vue = Path('frontend/src/components/BattlePlayback.vue')
+          src = vue.read_text(encoding='utf-8')
+          old = """  if (ownership.reserveBottom) {
+            const wrap = mobileOverlay.value?.$el
+            const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null
+            bottom = content ? content.clientHeight : 0
+          }
+"""
+          new = """  if (ownership.reserveBottom) {
+            const wrap = mobileOverlay.value?.$el
+            const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null
+            if (wrap && content && content.clientHeight > 0) {
+              const wrapRect = wrap.getBoundingClientRect()
+              const contentRect = content.getBoundingClientRect()
+              // Reserve the whole occupied bottom zone, not just the card height. The transient
+              // controller is offset from the bottom by 8px + safe-area-inset-bottom; ignoring that
+              // gap still lets the fitted map sit underneath the visible controller.
+              bottom = Math.max(0, wrapRect.bottom - contentRect.top)
+            }
+          }
+"""
+          if src.count(old) != 1:
+              raise SystemExit('BattlePlayback safeInsets target did not match exactly once')
+          vue.write_text(src.replace(old, new, 1), encoding='utf-8')
+
+          script = Path('frontend/scripts/browser-playback-layout.mjs')
+          src = script.read_text(encoding='utf-8')
+          old = """      const hudRectBefore = hud.getBoundingClientRect()
+                const contentRectBefore = overlayContent.getBoundingClientRect()
+                const mapRectBefore = map.getBoundingClientRect()
+                const stageRect = stage.getBoundingClientRect()
+                const top = ownership.reserveTop ? hudRectBefore.height : 0
+                const bottom = ownership.reserveBottom && contentRectBefore.height > 0 ? contentRectBefore.height : 0
+"""
+          new = """      const hudRectBefore = hud.getBoundingClientRect()
+                const contentRectBefore = overlayContent.getBoundingClientRect()
+                const overlayWrapRectBefore = root.querySelector('.pb-mobile-overlay').getBoundingClientRect()
+                const mapRectBefore = map.getBoundingClientRect()
+                const stageRect = stage.getBoundingClientRect()
+                const top = ownership.reserveTop ? hudRectBefore.height : 0
+                const bottom = ownership.reserveBottom && contentRectBefore.height > 0
+                  ? Math.max(0, overlayWrapRectBefore.bottom - contentRectBefore.top)
+                  : 0
+"""
+          if src.count(old) != 1:
+              raise SystemExit('browser fixture safe inset target did not match exactly once')
+          script.write_text(src.replace(old, new, 1), encoding='utf-8')
+
+          test = Path('frontend/src/components/BattlePlayback.integration.test.js')
+          src = test.read_text(encoding='utf-8')
+          needle = "    expect(body).toContain(\"querySelector('.pb-mobile-overlay-content')\")\n"
+          addition = needle + "    expect(body).toContain('wrapRect.bottom - contentRect.top')\n"
+          if src.count(needle) != 1:
+              raise SystemExit('integration safe inset assertion target did not match exactly once')
+          test.write_text(src.replace(needle, addition, 1), encoding='utf-8')
+
+          Path('.github/workflows/pr248-safe-inset-occupied-zone-fix.yml').unlink()
+      - name: Commit fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add frontend/src/components/BattlePlayback.vue frontend/scripts/browser-playback-layout.mjs frontend/src/components/BattlePlayback.integration.test.js
+          git add -u .github/workflows/pr248-safe-inset-occupied-zone-fix.yml
+          git diff --cached --check
+          git commit -m "fix(playback): reserve mobile controller occupied zone"
+          git push origin HEAD:fix/playback-fullscreen-hud-position
