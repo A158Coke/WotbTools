@@ -96,6 +96,7 @@ services:
       - ./config/sponsor-config.json:/usr/share/nginx/html/sponsor-config.json:ro
       - ./config/sponsor:/usr/share/nginx/html/sponsor-assets:ro
       - ./android-release:/usr/share/nginx/html/download/android:ro
+      - ./deploy/nginx/assets/auth/.well-known/assetlinks.json:/usr/share/nginx/html/.well-known/assetlinks.json:ro
     depends_on:
       - wotb-backend
       - keycloak
