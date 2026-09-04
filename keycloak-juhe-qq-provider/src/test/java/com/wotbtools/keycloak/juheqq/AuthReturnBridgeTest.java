@@ -6,6 +6,7 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -36,16 +37,14 @@ class AuthReturnBridgeTest {
     }
 
     @Test
-    void ticketUsesConfiguredExpiry() {
-        final Instant issuedAt = Instant.parse("2026-09-04T08:00:00Z");
-        final Clock clock = Clock.fixed(issuedAt, ZoneOffset.UTC);
+    void expiredTicketIsRejected() {
+        final MutableClock clock = new MutableClock(Instant.parse("2026-09-04T08:00:00Z"));
         final AuthReturnTicketStore store = new AuthReturnTicketStore(Duration.ofSeconds(1), clock);
         final String ticket = store.issue("state", "qq", "code");
 
         assertNotNull(ticket);
-        final AuthReturnTicketStore.Ticket consumed = store.consume(ticket);
-        assertNotNull(consumed);
-        assertEquals(issuedAt.plusSeconds(1), consumed.expiresAt());
+        clock.advance(Duration.ofSeconds(2));
+        assertNull(store.consume(ticket), "expired ticket must not restore auth payload");
     }
 
     @Test
@@ -71,5 +70,32 @@ class AuthReturnBridgeTest {
         assertFalse(JuheQqEndpoint.isAndroidUserAgent(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/152"));
         assertFalse(JuheQqEndpoint.isAndroidUserAgent(null));
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant now;
+
+        private MutableClock(final Instant initial) {
+            this.now = initial;
+        }
+
+        void advance(final Duration duration) {
+            now = now.plus(duration);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(final ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
     }
 }
