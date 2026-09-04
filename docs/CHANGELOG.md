@@ -5,6 +5,17 @@
 ## [Unreleased]
 
 ### Fixed
+- **Android QQ 登录返回原 WebView（Verified App Link，CODE READY / PRODUCTION VALIDATION REQUIRED）**：QQ App 完成授权后
+  会把 `auth.wotbtools.com/.../broker/juhe-qq/endpoint` callback 打开到系统浏览器，导致 Browser B != 原 WebView A、
+  AuthenticationSession continuity 被破坏 → `already_logged_in`。现用 **Verified App Link** 把这个 exact Juhe QQ
+  broker callback 路由回原 WotBTools App（same MainActivity / same WebView / same cookie jar，inAuthFlow 保持 true），
+  复用同一次 auth transaction。App Link 只接管 `https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint`，
+  不接管整个 `auth.wotbtools.com` / 其它 realm / 其它 IdP provider；`AuthReturnPolicy` 仅做路由边界
+  （scheme/host/path/type=qq/state/code presence），不解释 state/code 载荷；`auth.wotbtools.com/.well-known/assetlinks.json`
+  由 nginx 直接返回 `application/json`（非代理 Keycloak）。热返回走 `onNewIntent`，冷返回（进程被杀）走
+  `pendingAuthReturn` + startup gate，不绕过强制更新。日志只记录 `auth-return action=... source=app-link`，
+  不记录完整 callback URI/query/state/code。同步 `AuthReturnPolicyTest` 与 `docs/android/architecture.md`。
+  需真机 + 生产 Keycloak 验证 App Link 路由与 `already_logged_in` 消除（PR 描述已标注 PRODUCTION VALIDATION REQUIRED）。
 - **Battle Playback review regressions**：开局投影现在保留战前每个 canonical 据点的最后完整状态并在缺少显式 `t=0` 时 seed，确保 3/4 据点回放从 `00:00` 显示完整状态；最近 2 秒轨迹只按合法 OBSERVED segment 与 `interpolationAllowed` 裁剪，不再用固定 5 秒断线；坦克标记按可靠车体 metadata 显示，车辆模型碰撞只做 tank-vs-tank 小范围 presentation-only 软避让（不因视口边缘移动车辆、接近/离开视口自然裁剪）；无比分/据点时敌方仍固定在 HUD 第 3 列。
 - **生产 Grafana 看板 runtime crash**：移除 `WotBTools · Keycloak` 看板若干 panel 的非法 dashboard links（`type=dashboard + uid` 但缺失有效 `url`），该结构会触发 Grafana 前端 `TypeError: Cannot read properties of undefined (reading 'replace')`；并在 CI observability 校验中加入静态守卫，禁止此类 panel links 回归。
 - **Android QQ 登录 auth host allowlist（1.0.9）**：允许已在生产链证实的 `xui.ptlogin2.qq.com`

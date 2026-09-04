@@ -36,6 +36,17 @@
                 <data android:scheme="content" />
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
+            <!-- 仅接管 Juhe QQ broker callback 的 verified App Link（QQ native 登录返回原 WebView）。
+                 绝不接管整个 auth.wotbtools.com / 其它 realm / 其它 IdP provider。 -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="auth.wotbtools.com"
+                    android:path="/realms/wotbtools/broker/juhe-qq/endpoint" />
+            </intent-filter>
         </activity>
 
         <provider
