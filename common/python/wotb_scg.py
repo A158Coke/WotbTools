@@ -40,7 +40,9 @@ def read_scg(raw: bytes) -> dict[str, Any]:
     ``SCPG | uint32 version | uint32 nodeCount | uint32 nodeCount2 | KA...``
 
     The two node counts are expected to agree. A mismatch is retained as a
-    warning rather than silently choosing a different count.
+    warning rather than silently choosing a different count. PolygonGroup ids
+    are required to be unique because SC2 RenderBatch ``rb.datasource`` uses
+    that id as an exact geometry reference.
     """
 
     reader = Reader(raw)
@@ -62,6 +64,10 @@ def read_scg(raw: bytes) -> dict[str, Any]:
         )
 
     polygon_groups = [read_archive(reader) for _ in range(node_count)]
+    # A duplicate id makes rb.datasource resolution ambiguous. Reject it at the
+    # shared parser boundary so inspectors/exporters cannot silently overwrite it.
+    polygon_groups_by_id(polygon_groups)
+
     trailing_bytes = len(raw) - reader.offset
     if trailing_bytes:
         warnings.append(f"SCPG has {trailing_bytes} trailing bytes after declared polygon groups")
@@ -90,6 +96,26 @@ def polygon_group_id(group: dict[str, Any]) -> int | None:
     if payload is None or not payload or len(payload) > 8:
         return None
     return int.from_bytes(payload, "little", signed=False)
+
+
+def polygon_groups_by_id(groups: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    """Index PolygonGroups by ``#id`` and reject ambiguous duplicate ids."""
+
+    result: dict[int, dict[str, Any]] = {}
+    first_indices: dict[int, int] = {}
+    for index, group in enumerate(groups):
+        identifier = polygon_group_id(group)
+        if identifier is None:
+            continue
+        if identifier in result:
+            raise Sc2ParseError(
+                "Duplicate PolygonGroup #id "
+                f"{identifier} (0x{identifier:016x}) at indices "
+                f"{first_indices[identifier]} and {index}"
+            )
+        result[identifier] = group
+        first_indices[identifier] = index
+    return result
 
 
 def polygon_group_vertex_stride(group: dict[str, Any]) -> int:
