@@ -48,13 +48,10 @@
   }
 ]>
 
-<#--
-  以 Unix epoch day 作为唯一日界线（UTC）。先把 epoch day 转回 UTC 毫秒时间，
-  再显式以 UTC 格式化 yyyyMMdd，避免 .now?string() 受 JVM/容器默认时区影响。
--->
+<#-- UTC 是唯一日界线：ISO UTC 日期与 epoch day 都不依赖 JVM/容器默认时区。 -->
+<#assign bgUtcDate = .now?iso_utc?substring(0, 10)?replace("-", "")>
+<#assign bgToday = bgUtcDate?number>
 <#assign bgDayIndex = (.now?long / 86400000)?floor>
-<#assign bgUtcDayMillis = bgDayIndex * 86400000>
-<#assign bgToday = bgUtcDayMillis?number_to_date?string("yyyyMMdd", "UTC")?number>
 
 <#assign bgScheduled = []>
 <#assign bgPool = []>
