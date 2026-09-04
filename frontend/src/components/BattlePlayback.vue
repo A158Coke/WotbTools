@@ -691,9 +691,9 @@ function safeInsets() {
     const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
     top = hud ? hud.clientHeight : 0
   }
-  // §safeInsets-DOM：只量取 .pb-mobile-overlay-content 的真实 rendered 高度（wrapper 是 inset:0，
-  // 其 clientHeight 是整张地图高度，不能当 controls 高度）。transient mobile controls hidden
-  // 时 contentHeight=0；显示/重排后 ResizeObserver 会触发重新 fit，避免地图被可见 controls 覆盖。
+  // §safeInsets-DOM：wrapper 是 inset:0，不能把 wrapper.clientHeight 当 controls 高度。
+  // transient controls 显示时按 wrapper bottom → content top 量取完整占用区（含 bottom/safe-area gap）；
+  // hidden 时 contentHeight=0。内容重排由 ResizeObserver 触发重新 fit。
   if (ownership.reserveBottom) {
     const wrap = mobileOverlay.value?.$el
     const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null

@@ -1215,8 +1215,22 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     const stageEl = wrapper.find('.pb-map-stage').element
     Object.defineProperty(stageEl, 'clientHeight', { value: 900, configurable: true })
     const mapEl = wrapper.find('[data-test="pb-map"]').element
-    // §safeInsets-DOM：真实 controls 高度在 .pb-mobile-overlay-content（wrapper 是 inset:0）。
+    // §safeInsets-DOM：生产逻辑按 overlay wrapper bottom → content top 的真实占用区计算。
+    // happy-dom 不做 CSS layout，因此这里显式提供与 transient bottom:8px 契约一致的 rect。
+    const overlayWrapEl = wrapper.find('[data-test="pb-mobile-overlay"]').element
     const overlayEl = wrapper.find('.pb-mobile-overlay-content').element
+    Object.defineProperty(overlayWrapEl, 'getBoundingClientRect', {
+      value: () => ({ top: 0, left: 0, right: 1200, bottom: 900, width: 1200, height: 900 }),
+      configurable: true,
+    })
+    Object.defineProperty(overlayEl, 'getBoundingClientRect', {
+      value: () => {
+        const height = overlayEl.clientHeight || 0
+        const bottom = 892
+        return { top: bottom - height, left: 8, right: 1192, bottom, width: 1184, height }
+      },
+      configurable: true,
+    })
     const scaleOf = () => {
       const st = wrapper.find('[data-test="pb-viewport"]').attributes('style') || ''
       const m = st.match(/scale\(([\d.]+)\)/)
