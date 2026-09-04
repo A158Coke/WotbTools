@@ -144,6 +144,20 @@ describe('Supremacy 基地 overlay', () => {
     expect(wrapper.find('[data-test="pb-hud-bases"]').exists()).toBe(false)
   })
 
+  // wire 契约不保证 baseStates 按 timeSec 排序。靠数组顺序取「当前状态」会选中过期的一条，
+  // 表现就是车早已离开、占领已清空，地图上却还画着进度。
+  it('uses the latest transition by time, not by array order', async () => {
+    const dataset = makePlaybackV2({
+      baseStates: [
+        // 故意乱序：清空（t=5）排在开始占领（t=1）之前
+        { timeSec: 5, baseId: 'A', ownerTeam: null, capturingTeam: null, captureProgress: 60 },
+        { timeSec: 1, baseId: 'A', ownerTeam: null, capturingTeam: 1, captureProgress: 60 },
+      ],
+    })
+    const wrapper = await mountPlayback(makeOverview(), 8, dataset)
+    expect(wrapper.findAll('[data-test="pb-base-fill"]')).toHaveLength(0)
+  })
+
   // 契约：省略的字段保留旧值，所以放弃占领后 captureProgress 仍是旧数，只有 capturingTeam 归 null。
   // 水位必须跟着 capturingTeam 消失，否则地图上会一直挂着一个没踩下来的进度。
   it('clears the capture fill when the capture is abandoned but progress is retained', async () => {

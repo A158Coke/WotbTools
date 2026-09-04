@@ -190,7 +190,11 @@ const baseStatesAt = computed(() => {
   for (const state of playback.value?.baseStates || []) {
     if (!state || !Number.isFinite(state.timeSec) || state.timeSec > currentTime.value + 1e-6) continue
     if (!['A', 'B', 'C', 'D'].includes(state.baseId)) continue
-    latest.set(state.baseId, state)
+    // 取时间上最新的一条，而不是数组里最后出现的一条：wire 契约没有保证 baseStates
+    // 按 timeSec 排序，靠数组顺序会显示已经过期的状态（例如车早已离开、占领已清空，
+    // 却仍然画着占领进度）。
+    const kept = latest.get(state.baseId)
+    if (!kept || state.timeSec >= kept.timeSec) latest.set(state.baseId, state)
   }
   return [...latest.values()].sort((a, b) => a.baseId.localeCompare(b.baseId))
 })

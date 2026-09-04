@@ -338,19 +338,31 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 10px;
+  width: 12px;
   z-index: 58;
   cursor: col-resize;
   touch-action: none;
   background: transparent;
-  transition: background .15s ease;
+  /* 与 PlayerDetailDrawer 的 .pd-resizer 同款：整条高只是热区，可见的是中间一根短握柄。
+     整条高的色块会和栏自己的 border 并排，看起来像有两条可拖的边。 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.battle-playback .pb-pane-resizer::after {
+  content: '';
+  width: 2px;
+  height: 52px;
+  border-radius: 2px;
+  background: var(--accent);
 }
 .battle-playback .pb-pane-resizer:hover,
-.battle-playback .pb-pane-resizer:active {
-  background: color-mix(in srgb, var(--accent) 45%, transparent);
-}
-.battle-playback .pb-pane-resizer-rail { right: -5px; }
-.battle-playback .pb-pane-resizer-details { left: -5px; }
+.battle-playback .pb-pane-resizer:active,
+.battle-playback .pb-pane-resizer:focus-visible { opacity: 1; }
+.battle-playback .pb-pane-resizer-rail { right: -6px; }
+.battle-playback .pb-pane-resizer-details { left: -6px; }
 /* 只有栏作为持久列/浮层出现时才可拖：移动端 drawer 与窄视口下没有可调的列。 */
 .battle-playback .pb-left-rail .pb-pane-resizer,
 .battle-playback .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer { display: none; }
