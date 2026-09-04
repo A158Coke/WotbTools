@@ -1,0 +1,86 @@
+/* Mobile fullscreen refinement.
+   The base mobile form lives in playback-mobile.css. These rules own only the
+   fullscreen vehicle-details geometry: Details participates in layout and must
+   never float over the tactical map. */
+
+.battle-playback:fullscreen.pb-form-mobile .pb-map-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell {
+  position: static;
+  inset: auto;
+  grid-column: 2;
+  grid-row: 1;
+  width: 0;
+  min-width: 0;
+  height: 100%;
+  margin-top: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+  z-index: auto;
+  transition: width .18s ease;
+}
+
+.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active {
+  width: min(320px, 38vw);
+  max-width: 40vw;
+  pointer-events: auto;
+  background: var(--bg-card2);
+  border-left: 1px solid var(--border);
+}
+
+.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active > .pb-sidebar {
+  position: static;
+  inset: auto;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow-y: auto;
+  animation: none;
+}
+
+.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer-details {
+  display: none;
+}
+
+/* Orientation lock is best-effort. If the OS keeps the phone in portrait,
+   Details becomes a bounded second row instead of a narrow right column. The
+   map is resized; it is still never covered. */
+@media (orientation: portrait) {
+  .battle-playback:fullscreen.pb-form-mobile .pb-map-stage {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell {
+    grid-column: 1;
+    grid-row: 2;
+    width: 100%;
+    height: 0;
+    transition: height .18s ease;
+  }
+
+  .battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active {
+    width: 100%;
+    max-width: none;
+    height: min(38dvh, 380px);
+    max-height: 42dvh;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell {
+    transition: none;
+  }
+}
