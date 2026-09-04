@@ -34,7 +34,7 @@ final class AuthReturnTicketStore {
         this.clock = clock;
     }
 
-    String issue(final String state, final String type, final String code) {
+    synchronized String issue(final String state, final String type, final String code) {
         cleanupExpired();
         if (tickets.size() >= MAX_TICKETS) {
             return null;
