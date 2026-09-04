@@ -292,6 +292,39 @@
   align-items: stretch;
 }
 
+/* §pane-resize：左右两栏的拖拽把手。默认隐藏在栏内侧边缘，hover/拖拽时才显形，
+   不占布局宽度（absolute），因此不影响地图 fit 几何。栏本身不显示时把手也不显示。 */
+.battle-playback .pb-pane-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  z-index: 58;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+  transition: background .15s ease;
+}
+.battle-playback .pb-pane-resizer:hover,
+.battle-playback .pb-pane-resizer:active {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.battle-playback .pb-pane-resizer-rail { right: -5px; }
+.battle-playback .pb-pane-resizer-details { left: -5px; }
+/* 只有栏作为持久列/浮层出现时才可拖：移动端 drawer 与窄视口下没有可调的列。 */
+.battle-playback .pb-left-rail .pb-pane-resizer,
+.battle-playback .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer { display: none; }
+.battle-playback:fullscreen:not(.pb-device-mobile) .pb-left-rail .pb-pane-resizer,
+.battle-playback:fullscreen:not(.pb-device-mobile) .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer {
+  display: block;
+}
+@media (min-width: 1200px) {
+  .battle-playback:not(:fullscreen) .pb-left-rail .pb-pane-resizer,
+  .battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer {
+    display: block;
+  }
+}
+
 /* §float-panels：桌面 fullscreen 下 Map Workspace 占满整个视口宽度，方形地图居中后
    左右必然留出黑边（600m 方图 vs 宽视口，几何上消不掉）。Left Rail 与 Right Details
    改为浮层落在这两块黑边上，把原本浪费的空间用起来——地图因此从「整宽减去两列」
@@ -397,6 +430,8 @@
   align-self: stretch;
   display: flex;
   flex-direction: column;
+  /* 内容短于列高时垂直居中，不贴顶。 */
+  justify-content: center;
   overflow: hidden;
   min-width: 0;
   background: color-mix(in srgb, var(--bg-card2) 38%, transparent);
@@ -406,12 +441,12 @@
 .battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell .pb-panel-launcher {
   display: none;
 }
-/* §3 fullscreen：Right Details 面板填满 col2，内部滚动、无独立边框（列边框由 shell 承担）。 */
+/* §3 fullscreen：Right Details 内容短时垂直居中（列很高时不再贴顶），内容超过列高才填满并内部滚动。 */
 .battle-playback:fullscreen .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
   position: static;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   width: auto;
-  max-height: none;
+  max-height: 100%;
   border-radius: 0;
   border: 0;
   box-shadow: none;
@@ -469,12 +504,30 @@
     width: 100%;
     max-width: none;
   }
+  /* Right Details 列是满高的，面板必须跟着列走：内容短则垂直居中，内容超过列高才内部滚动。
+     组件自带的 max-height: min(68vh, 560px) 是给浮层弹窗用的，在这里会造成
+     「列还有空位却出现滚动条」。 */
+  .battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
+    position: static;
+    flex: 0 1 auto;
+    width: auto;
+    max-height: 100%;
+    border-radius: 0;
+    border: 0;
+    box-shadow: none;
+    overflow-y: auto;
+    padding: 10px 12px;
+  }
+  .battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell .pb-panel-launcher {
+    display: none;
+  }
   .battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell {
     position: static;
     grid-column: 2;
     align-self: stretch;
     display: flex;
     flex-direction: column;
+    justify-content: center;
     overflow: hidden;
     min-width: 0;
     background: color-mix(in srgb, var(--bg-card2) 38%, transparent);

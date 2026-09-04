@@ -927,6 +927,32 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     resetFullscreenGlobals()
   })
 
+  // 左右两栏可拖拽改宽：把手写入 --pb-rail-w / --pb-details-w，并夹在合理区间内。
+  it('resizes the rail by dragging its handle and clamps the width', async () => {
+    stubRaf()
+    stubMatchMedia({ '(min-width: 1200px)': true })
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+
+    const root = wrapper.find('[data-test="battle-playback"]')
+    expect(root.attributes('style') || '').not.toContain('--pb-rail-w')
+
+    const handle = wrapper.find('[data-test="pb-rail-resizer"]')
+    expect(handle.exists()).toBe(true)
+    root.element.getBoundingClientRect = () => ({ left: 0, right: 1600, top: 0, bottom: 900 })
+
+    await handle.trigger('pointerdown', { button: 0, pointerId: 1 })
+    window.dispatchEvent(new window.PointerEvent('pointermove', { clientX: 300 }))
+    await flushPromises()
+    expect(wrapper.find('[data-test="battle-playback"]').attributes('style')).toContain('--pb-rail-w: 300px')
+
+    // 超出上限被夹住（rail 最大 420）
+    window.dispatchEvent(new window.PointerEvent('pointermove', { clientX: 9999 }))
+    await flushPromises()
+    expect(wrapper.find('[data-test="battle-playback"]').attributes('style')).toContain('--pb-rail-w: 420px')
+    window.dispatchEvent(new window.PointerEvent('pointerup', {}))
+  })
+
   // 宽桌面（>=1200px）：播放控制在 Left Rail 内（rail 已加宽到放得下速度档位那一排），
   // 且与 rail 图标导航重复的面板/标注/重置/全屏按钮必须隐藏，不能在右下角再出现一份。
   it('wide desktop puts playback controls in the Left Rail without duplicating rail actions', async () => {
