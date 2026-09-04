@@ -2,6 +2,7 @@ package com.wotbtools.app
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
@@ -183,13 +184,13 @@ class MainActivity : Activity() {
                 val host = url?.let { Uri.parse(it).host }
                 val scheme = url?.let { Uri.parse(it).scheme }
                 val before = inAuthFlow
-                val decision = AuthNavigationPolicy.decide(host, inAuthFlow)
+                val decision = AuthNavigationPolicy.decide(scheme, host, inAuthFlow)
                 inAuthFlow = decision.inAuthFlow
                 Log.d(
                     TAG,
                     "pageStart scheme=${scheme ?: "null"} host=${host ?: "null"} action=${decision.action} " +
                         "inAuthFlow=$before->$inAuthFlow mainFrame=true " +
-                        "source=${AuthNavigationPolicy.sourceCategory(host)}"
+                        "source=${AuthNavigationPolicy.sourceCategory(scheme, host)}"
                 )
             }
 
@@ -198,27 +199,35 @@ class MainActivity : Activity() {
                 val host = request.url.host
                 val scheme = request.url.scheme
                 val before = inAuthFlow
-                val decision = AuthNavigationPolicy.decide(host, inAuthFlow)
+                val decision = AuthNavigationPolicy.decide(scheme, host, inAuthFlow)
                 inAuthFlow = decision.inAuthFlow
-                val source = AuthNavigationPolicy.sourceCategory(host)
+                val source = AuthNavigationPolicy.sourceCategory(scheme, host)
                 Log.d(
                     TAG,
                     "nav scheme=${scheme ?: "null"} host=${host ?: "null"} action=${decision.action} " +
                         "inAuthFlow=$before->$inAuthFlow mainFrame=true source=$source"
                 )
-                if (decision.action == AuthNavigationAction.AUTH_FAILURE) {
-                    // 未验证 host 进入 auth flow：阻断该导航并进入 auth-failure recovery。
-                    enterAuthFailureRecovery(host)
-                    return true
+                return when (decision.action) {
+                    AuthNavigationAction.AUTH_FAILURE -> {
+                        // 未验证 host 进入 auth flow：阻断该导航并进入 auth-failure recovery。
+                        enterAuthFailureRecovery(host)
+                        true
+                    }
+                    AuthNavigationAction.NATIVE_AUTH_HANDOFF -> {
+                        // 已验证 QQ native handoff：交给 QQ App，保留当前 WebView auth transaction。
+                        launchNativeAuthHandoff(request.url, scheme, host)
+                        true
+                    }
+                    AuthNavigationAction.OPEN_EXTERNAL -> {
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW, request.url))
+                        } catch (_: Exception) {
+                            // 无可用 browser 时忽略，留在原页。
+                        }
+                        true
+                    }
+                    else -> false // ALLOW_WEBVIEW / ALLOW_AUTH_WEBVIEW 留在 WebView
                 }
-                if (host == null) return false
-                if (decision.action != AuthNavigationAction.OPEN_EXTERNAL) return false
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, request.url))
-                } catch (_: Exception) {
-                    // 无可用 browser 时忽略，留在原页。
-                }
-                return true
             }
 
             /**
@@ -314,6 +323,28 @@ class MainActivity : Activity() {
         toast(getString(R.string.auth_login_failed_retry))
         // 明确回首页，而不是 reload 当前（可能损坏的）auth URL，避免无限循环。
         webView.loadUrl(BASE_URL)
+    }
+
+    /**
+     * Verified native login handoff (e.g. QQ `wtloginmqq://ptlogin`): hand the URI to the app
+     * that owns it (ACTION_VIEW) while keeping the current WebView auth transaction alive.
+     *
+     * - Never enters auth-failure recovery, never reloads BASE_URL, never clears the auth-flow
+     *   marker, and never falls back to the system browser.
+     * - On no handler (QQ not installed) we show a clear prompt and stay in the current state;
+     *   the user can install the app and retry, or back out manually.
+     * - Logs only scheme/host/error category — never the full URI, query, code, or token.
+     */
+    private fun launchNativeAuthHandoff(uri: Uri, scheme: String?, host: String?) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
+        } catch (_: ActivityNotFoundException) {
+            Log.d(TAG, "native-handoff-failed scheme=${scheme ?: "null"} host=${host ?: "null"} category=no-qq-app")
+            toast(getString(R.string.qq_client_missing_retry))
+        } catch (e: Exception) {
+            Log.d(TAG, "native-handoff-failed scheme=${scheme ?: "null"} host=${host ?: "null"} category=${e.javaClass.simpleName}")
+            toast(getString(R.string.qq_client_missing_retry))
+        }
     }
 
     private fun showNetworkGate() {
