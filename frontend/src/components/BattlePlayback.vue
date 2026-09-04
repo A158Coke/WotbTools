@@ -280,6 +280,17 @@ watch(paneWidths, (w) => {
 
 const clampWidth = (value, range) => Math.min(range.max, Math.max(range.min, value))
 
+/* 全屏（手机横屏尤其明显）下常驻左栏要吃掉 148–220px 宽。允许收起成一条只剩
+   开关的窄条——收起而不是完全消失，否则重新打开的入口只能放到地图上，违反
+   「地图上不能有任何东西」。 */
+const RAIL_COLLAPSED_KEY = 'wotb.pb.rail-collapsed'
+const railCollapsed = ref((() => {
+  try { return localStorage.getItem(RAIL_COLLAPSED_KEY) === '1' } catch { return false }
+})())
+watch(railCollapsed, (v) => {
+  try { localStorage.setItem(RAIL_COLLAPSED_KEY, v ? '1' : '0') } catch { /* 隐私模式：本次会话内仍生效 */ }
+})
+
 /** 拖拽改宽：edge 决定按指针换算成哪一侧的宽度。 */
 function startPaneResize(event, pane) {
   if (event.button != null && event.button !== 0) return
@@ -1006,6 +1017,16 @@ function toggleAnnotation() {
 function closeAnnotation() {
   annotationOpen.value = false
   activeTool.value = null
+}
+/* 收起左栏时一并收掉二级面板：否则 .pb-rail-expanded 仍把 --pb-left-col 撑到
+   panel 宽，收起就没有效果。收起/展开都改变列宽 → 用新几何强制重新 fit 一次。 */
+function toggleRailCollapsed() {
+  railCollapsed.value = !railCollapsed.value
+  if (railCollapsed.value) {
+    activePanel.value = null
+    closeAnnotation()
+  }
+  nextTick(() => fitViewIfReady(true))
 }
 
 function undoAnnot() {
@@ -1896,7 +1917,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen), 'pb-drawer-open': railDrawerOpen }" :style="mapStyle" data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen), 'pb-drawer-open': railDrawerOpen, 'pb-rail-collapsed': railCollapsed }" :style="mapStyle" data-test="battle-playback">
     <BattlePlaybackHud
       :friendly-hp="friendlyHp"
       :enemy-hp="enemyHp"
@@ -1920,6 +1941,19 @@ const mapStyle = computed(() => ({
         :aria-label="$t('recon.map.playback.panel_team')"
         @pointerdown="startPaneResize($event, 'rail')"
       />
+      <!-- 收起/展开左栏。收起后本按钮是窄条里唯一剩下的东西，也是唯一的重开入口——
+           所以不能收成 0 宽，否则入口只能放到地图上。 -->
+      <button
+        type="button"
+        class="pb-rail-collapse"
+        data-test="pb-rail-collapse"
+        :title="railCollapsed ? $t('recon.map.playback.rail_expand') : $t('recon.map.playback.rail_collapse')"
+        :aria-label="railCollapsed ? $t('recon.map.playback.rail_expand') : $t('recon.map.playback.rail_collapse')"
+        :aria-expanded="!railCollapsed"
+        aria-controls="pb-left-rail-body"
+        @click="toggleRailCollapsed"
+      ><span class="pb-rail-glyph" aria-hidden="true">{{ railCollapsed ? '»' : '«' }}</span><span class="pb-rail-label">{{ $t('recon.map.playback.rail_collapse') }}</span></button>
+      <div id="pb-left-rail-body" class="pb-rail-body" data-test="pb-rail-body">
       <!-- §二级菜单：左侧展开对应内容，带返回按钮（不占右侧 details panel） -->
       <template v-if="annotationOpen">
         <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="closeAnnotation">← {{ $t('recon.map.playback.back') }}</button>
@@ -2072,6 +2106,7 @@ const mapStyle = computed(() => ({
         @click="resetView"
       ><span class="pb-rail-glyph">↺</span><span class="pb-rail-label">{{ $t('recon.map.playback.reset_view') }}</span></button>
       </template>
+      </div>
     </div>
 
     <div class="pb-main" data-test="pb-main">

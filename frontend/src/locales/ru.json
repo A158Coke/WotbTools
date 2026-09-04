@@ -1401,6 +1401,8 @@
                 "hp_unknown": "неизвестно",
                 "hp_full_spawn": "Полное HP на старте; точное HP ещё не подтверждено из реплея",
                 "reset_view": "Сброс вида",
+                "rail_collapse": "Свернуть панель",
+                "rail_expand": "Развернуть панель",
                 "unknown": "Неизвестно",
                 "event_DAMAGE": "Урон",
                 "event_DESTROYED": "Уничтожен",

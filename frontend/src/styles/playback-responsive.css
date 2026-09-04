@@ -5,6 +5,8 @@
      二级内容展开成 ~300px panel；Right Details 单独 ~340px（--pb-details-w）。 */
   --pb-rail-w: 220px;
   --pb-panel-w: 300px;
+  /* §rail-collapse：收起态窄条宽度（只放得下开关本身）。 */
+  --pb-rail-collapsed-w: 44px;
   /* §review-widths：左列实际宽度（collapsed rail 60px / 二级展开 300px）。HUD、bottom controls 与
      grid col1 统一使用它，展开 rail 时 overlaps 仍正确停靠在 rail 右缘。 */
   --pb-left-col: var(--pb-rail-w);
@@ -16,6 +18,11 @@
 }
 /* §review-widths：left col 随二级展开从 60px（collapsed rail）扩到 300px（panel）。 */
 .battle-playback.pb-rail-expanded { --pb-left-col: var(--pb-panel-w); }
+/* §rail-collapse：全屏（手机横屏尤其明显）下常驻左栏要吃掉 148–220px 宽，允许收起。
+   收起成一条只剩开关的窄条而不是 0 宽——重新展开的入口必须有地方放，放到地图上
+   会违反「地图上不能有任何东西」。这条写在 .pb-rail-expanded 之后：同特异性，
+   收起态胜出（toggleRailCollapsed 也会关掉二级面板，这里只是兜底）。 */
+.battle-playback.pb-rail-collapsed { --pb-left-col: var(--pb-rail-collapsed-w); }
 
 .battle-playback .pb-main {
   position: relative;
@@ -39,6 +46,42 @@
   border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   overflow-y: auto;
 }
+.battle-playback .pb-rail-body {
+  display: contents;
+}
+/* 收起开关只有在左栏作为常驻列（fullscreen）时才有意义：非全屏时左栏要么隐藏，
+   要么已经排到地图下方，没有「收起」可言。 */
+.battle-playback .pb-rail-collapse { display: none; }
+.battle-playback:fullscreen .pb-rail-collapse {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: .76rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.battle-playback:fullscreen .pb-rail-collapse:hover {
+  background: color-mix(in srgb, var(--bg-card2) 88%, transparent);
+  color: var(--text-label);
+}
+/* 收起态：窄条里只剩开关，正文与拖拽把手都收掉（把手在 44px 条上没有意义）。 */
+.battle-playback.pb-rail-collapsed .pb-rail-body { display: none; }
+.battle-playback.pb-rail-collapsed .pb-pane-resizer-rail { display: none; }
+.battle-playback.pb-rail-collapsed:fullscreen .pb-left-rail { padding: 8px 5px; }
+.battle-playback.pb-rail-collapsed:fullscreen .pb-rail-collapse {
+  justify-content: center;
+  padding: 4px 0;
+}
+.battle-playback.pb-rail-collapsed .pb-rail-collapse .pb-rail-label { display: none; }
+
 /* §improved-rail：Left Rail 为宽面板，导航按钮为「图标+文字」行，占满面板宽度。 */
 .battle-playback .pb-rail-btn {
   min-height: 40px;
