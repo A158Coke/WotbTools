@@ -30,7 +30,6 @@ from wotb_sc2 import (  # noqa: E402
     decode_dvpl,
     entity_components,
     read_sc2,
-    scene_entities,
 )
 
 ASSET_SUFFIX_RE = re.compile(
@@ -54,6 +53,32 @@ class InspectError(RuntimeError):
 
 def normalize_member(name: str) -> str:
     return name.replace("\\", "/").lstrip("/")
+
+
+def decode_scene_payload(raw: bytes, member_name: str) -> bytes:
+    """Decode DVPL-wrapped scenes while accepting raw ``.sc2`` members."""
+
+    return (
+        decode_dvpl(raw)
+        if normalize_member(member_name).lower().endswith(".dvpl")
+        else raw
+    )
+
+
+def iter_entities_recursive(
+    container: dict[str, Any], path: str = "$"
+) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Yield every entity in nested DAVA ``#hierarchy`` order."""
+
+    hierarchy = container.get("#hierarchy")
+    if not isinstance(hierarchy, list):
+        return
+    for index, entity in enumerate(hierarchy):
+        if not isinstance(entity, dict):
+            continue
+        entity_path = f"{path}.#hierarchy[{index}]"
+        yield entity_path, entity
+        yield from iter_entities_recursive(entity, entity_path)
 
 
 def unwrap_dvpl_suffix(value: str) -> str:
@@ -258,7 +283,7 @@ def inspect_data_nodes(scene: dict[str, Any], sample_limit: int) -> dict[str, An
 
 
 def inspect_scene(scene: dict[str, Any], scene_member: zipfile.ZipInfo, sample_limit: int) -> dict[str, Any]:
-    entities = scene_entities(scene)
+    entities = list(iter_entities_recursive(scene))
     component_counts: Counter[str] = Counter()
     component_key_counts: dict[str, Counter[str]] = defaultdict(Counter)
     target_component_samples: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -272,7 +297,7 @@ def inspect_scene(scene: dict[str, Any], scene_member: zipfile.ZipInfo, sample_l
     render_batch_samples: list[dict[str, Any]] = []
     detail_limit = min(sample_limit, 6)
 
-    for entity_index, entity in enumerate(entities):
+    for entity_index, (entity_path, entity) in enumerate(entities):
         name = entity.get("name")
         if isinstance(name, str):
             add_sample(entity_name_samples, name, sample_limit)
@@ -286,6 +311,7 @@ def inspect_scene(scene: dict[str, Any], scene_member: zipfile.ZipInfo, sample_l
                     target_component_samples[type_name],
                     {
                         "entityIndex": entity_index,
+                        "entityPath": entity_path,
                         "entityName": name,
                         "component": summarize_value(component),
                     },
@@ -360,11 +386,15 @@ def inspect_scene(scene: dict[str, Any], scene_member: zipfile.ZipInfo, sample_l
     ]
 
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "sceneMember": normalize_member(scene_member.filename),
         "sceneCompressedBytes": scene_member.compress_size,
         "sceneStoredBytes": scene_member.file_size,
         "sceneMetadata": scene.get("$metadata", {}),
+        "sceneTraversal": {
+            "mode": "recursive #hierarchy",
+            "entityCount": len(entities),
+        },
         "entityCount": len(entities),
         "entityNameSamples": entity_name_samples,
         "componentTypeCounts": dict(component_counts.most_common()),
@@ -399,6 +429,7 @@ def inspect_scene(scene: dict[str, Any], scene_member: zipfile.ZipInfo, sample_l
         "renderRelatedStringSamples": string_samples,
         "interpretationRule": (
             "SC2 fields and decoded PolygonGroup metadata are exact format evidence. "
+            "Entity/component/render statistics recursively traverse the complete #hierarchy. "
             "CollisionTypeComponent and TerrainDataComponent fields are reported exactly, but "
             "opaque auxiliary payloads remain UNKNOWN until decoded. External DAVA source documents "
             "PolygonGroup vertices/indices layout; actual client vertexFormat still needs decoding."
@@ -551,7 +582,7 @@ def main() -> int:
         with zipfile.ZipFile(archive_path) as archive:
             member = select_scene_member(archive, args.map_id, args.scene)
             raw = archive.read(member)
-            scene = read_sc2(decode_dvpl(raw))
+            scene = read_sc2(decode_scene_payload(raw, member.filename))
             report = inspect_scene(scene, member, args.sample_limit)
             report["auxiliaryResources"] = inspect_auxiliary_resources(
                 archive, member, report, args.sample_limit
