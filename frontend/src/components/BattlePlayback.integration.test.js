@@ -959,13 +959,17 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
 
   // §side-slots：侧栏形态下 safeInsets 必须归零。忘了归零的话上下仍按 HUD/controls
   // 高度预留，地图白白小一圈——882×344 上是 336px 与 188px 的差别。
-  it('stops reserving top/bottom insets once the panels move into the gutters', () => {
+  it('keeps the fullscreen HUD inset and delegates bottom inset ownership by form', () => {
     const src = readFileSync(resolve(process.cwd(), 'src/components/BattlePlayback.vue'), 'utf8')
     const fn = src.slice(src.indexOf('function safeInsets()'))
     const body = fn.slice(0, fn.indexOf('function applyView'))
-    expect(body).toContain('if (sideSlots.value) return { top, bottom }')
-    // 判定必须早于 HUD/controls 的高度量取
-    expect(body.indexOf('sideSlots.value')).toBeLessThan(body.indexOf('.pb-hud'))
+    expect(body).toContain('playbackSafeInsetOwnership')
+    expect(body).toContain('if (ownership.reserveTop)')
+    expect(body).toContain("querySelector('.pb-hud')")
+    expect(body).toContain('if (ownership.reserveBottom)')
+    expect(body).toContain("querySelector('.pb-mobile-overlay-content')")
+    expect(body).not.toContain('if (sideSlots.value) return { top, bottom }')
+    expect(body).toContain('formFactor: formFactor.value')
   })
 
   // 三档必须严格互补：mobile 的上界与 pc 的下界不能重叠，否则同一视口既是
