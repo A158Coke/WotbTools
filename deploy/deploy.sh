@@ -6,7 +6,7 @@
 #   AI_API_KEY, GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD
 # Optional vars carry the same defaults as the previous inline workflow script.
 # Flow: pre-deploy backup -> write .env -> render docker-compose.prod.yml -> pull ->
-# promote to docker-compose.yml -> compose up -> health checks -> rollback.
+# promote to docker-compose.yml -> compose up -> reload Alloy -> health checks -> rollback.
 #
 # The formal docker-compose.yml is RENDERED (all ${...} resolved to concrete values)
 # so later independent SSH sessions (daily DB backup, diagnostics, manual ops) never
@@ -99,10 +99,27 @@ pull_compose() {
   return 1
 }
 
-# Health checks: backend /api/health, frontend nginx E2E, Keycloak realm availability
+# bind-mounted Alloy 配置内容变化不会让 `docker compose up -d` 自动重建容器。
+# Alloy 官方支持 SIGHUP 重新读取配置；显式触发，确保本次 deploy 的观测配置真正生效。
+reload_alloy_config() {
+  echo "== Reloading Alloy config =="
+  if ! docker compose kill -s HUP alloy; then
+    echo "ERROR: failed to send SIGHUP to Alloy; observability config was not reloaded." >&2
+    return 1
+  fi
+  sleep 1
+  if docker compose ps -a alloy | grep -qE "Restarting|Exited"; then
+    echo "ERROR: Alloy is not running after config reload." >&2
+    return 1
+  fi
+  echo "Alloy config reload requested."
+}
+
+# Health checks: backend /api/health, frontend nginx E2E, Keycloak realm availability,
+# plus Alloy process state so an observability failure cannot be silently deployed.
 wait_healthy() {
   for i in $(seq 1 "$HEALTH_RETRIES"); do
-    if docker compose ps -a | grep -E "wotb-backend|wotb-frontend|keycloak" | grep -qE "Restarting|Exited"; then
+    if docker compose ps -a | grep -E "wotb-backend|wotb-frontend|keycloak|alloy" | grep -qE "Restarting|Exited"; then
       sleep 2
       continue
     fi
@@ -161,6 +178,8 @@ dump_logs() {
   docker compose logs --tail 80 wotb-frontend || true
   echo "== keycloak logs =="
   docker compose logs --tail 80 keycloak || true
+  echo "== alloy logs =="
+  docker compose logs --tail 120 alloy || true
 }
 
 if ! pull_compose docker-compose.next.yml; then
@@ -187,6 +206,10 @@ chmod 600 docker-compose.yml
 rollback_needed=false
 if ! docker compose up -d --remove-orphans; then
   echo "ERROR: docker compose up failed; attempting rollback." >&2
+  rollback_needed=true
+elif ! reload_alloy_config; then
+  echo "ERROR: Alloy config reload failed; attempting rollback." >&2
+  dump_logs
   rollback_needed=true
 else
   docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
