@@ -6,7 +6,7 @@
 
 Canal + Port Bay 已使用 schema v3 exporter 完成真实 `Maps.zip` 双地图验证。SC2/SCG geometry extraction、DAVA RenderBatch selection、initial RenderObject visibility 三层 contract 均已闭环。
 
-PR #247 已进入 Ready for Review；下一阶段为 PR2 Map Geometry Core。
+PR #247 已具备 Ready for Review 条件；下一阶段为 PR2 Map Geometry Core。
 
 ## 已通过：SC2 -> SCG extraction contract
 
