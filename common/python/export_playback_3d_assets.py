@@ -10,6 +10,11 @@ In addition to static SCG geometry, the exporter derives the map's real tiled
 uint16 heightmap into a renderer-neutral little-endian float32 height buffer.
 No client textures/materials are copied.
 
+IMPORTANT: output is intentionally LOCAL RESEARCH ONLY. It contains geometry and
+terrain derived from user-supplied client resources and is not a production
+asset pack. The frontend production build fails closed when this directory is
+present so these files cannot be copied into ``dist`` accidentally.
+
 Example:
     python common/python/export_playback_3d_assets.py \\
       "C:\\Users\\yu.chen\\Downloads\\Maps.zip" canal port
@@ -209,6 +214,7 @@ def export_terrain(
             "min": min(heights),
             "max": max(heights),
         },
+        # Kept for local audit/debug only; never consumed as a production URL.
         "sourceMember": normalize_member(member.filename),
     }
 
@@ -293,8 +299,17 @@ def main() -> int:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     index = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "source": "LOCAL_CLIENT_DERIVED",
+        "toolingPolicy": {
+            "scope": "LOCAL_RESEARCH_ONLY",
+            "productionEligible": False,
+            "redistributionEnabled": False,
+            "containsClientDerivedGeometry": True,
+            "containsClientDerivedTerrain": True,
+            "containsClientTextures": False,
+            "containsClientMaterials": False,
+        },
         "maps": {},
     }
     try:
@@ -325,6 +340,7 @@ def main() -> int:
         encoding="utf-8",
     )
     print(f"local Battle Playback 3D assets -> {index_path.relative_to(REPO)}")
+    print("LOCAL RESEARCH ONLY: do not commit, publish, package, or redistribute generated map-3d-local assets.")
     return 0
 
 
