@@ -258,9 +258,13 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
   // 车辆详情是 .pb-sidebar，标签面板是 .pb-side-panel——两个不同元素都挂在 shell 下。
   // 手机抽屉形态曾经只写给 .pb-side-panel，结果车辆详情完全没被改到。
   it('gives the mobile drawer treatment to the details element itself', () => {
-    const sheet = ruleBody('.battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar')
+    // 抽屉形态只属于全屏——全屏地图占满屏幕，没有「地图下方」可用。非全屏一律排进流里。
+    // 以前这条没写 :fullscreen，(0,6,0) 压过宽度键控的流内规则 (0,5,0)，手机上详情
+    // 始终是盖在地图上的 sheet，违反「地图上不能有任何东西」。
+    const sheet = ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar')
     expect(sheet).not.toBeNull()
     expect(sheet).toContain('animation: pb-details-slide-up')
+    expect(css).not.toContain('.battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell')
 
     // §no-overlay：没有持久列的宽度区间（<1200px 非全屏）没有黑边可用，详情必须排进流里。
     // 按宽度而不是设备类判定——.pb-device-mobile 要求 pointer: coarse，窄的桌面窗口拿不到。
@@ -335,12 +339,17 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(fsM).toContain('--pb-rail-w: 148px')
     // Details 是抽屉不是常驻列，token 仍归零：kill-feed / annotation-surface 不为浮层预留空间。
     expect(fsM).toContain('--pb-details-w: 0px')
+    // overlay 已经是 col2 的子元素；再加 --pb-left-col 会重复偏移一个 rail 宽，
+    // 把 controls 推进地图里并裁掉右侧（实测 740×360：x 173→321，宽 587→439）。
+    const fsOverlay = ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay')
+    expect(fsOverlay).toContain('left: 0')
+    expect(fsOverlay).not.toContain('--pb-left-col')
     expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-left-rail')).toContain('display: flex')
     expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-main')).toContain('grid-column: 2')
     expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-hud')).toContain('left: var(--pb-left-col)')
     expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-map-stage')).toContain('grid-template-columns: minmax(0, 1fr)')
-    // controls 仍是底部 overlay，只是从 rail 右缘开始
-    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay')).toContain('left: var(--pb-left-col)')
+    // .pb-hud 是根的子元素，偏移 --pb-left-col 才能停在 rail 右缘；.pb-mobile-overlay
+    // 在 .pb-main（col2）里，同样的偏移会叠加一次 rail 宽——两者不能照抄。
     // Details 走与非全屏一致的右侧滑入窗口
     const details = ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel')
     expect(details).toContain('position: fixed')
