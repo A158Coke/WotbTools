@@ -1,1 +1,0 @@
-Trigger the one-shot PR #248 review-closure transport. This file is deleted by that workflow.
