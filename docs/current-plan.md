@@ -282,6 +282,8 @@ tmp/map-research/14_port_pt-indices.u32le.bin
 
 如果两张图出现不同 SC2/SCG/LOD/switch 结构，则先修通用 parser/exporter，不做 map-id hardcode。
 
+PR2 进入浏览器 3D vertical slice 后，再分别使用数据库中的运河/港湾真实 replay 做 vehicle positions、timeline、HP/death/base state 与 3D terrain/static geometry 的端到端对齐验证。
+
 ## PR1 Definition of Done
 
 - [x] 真实 Maps.zip inventory；
