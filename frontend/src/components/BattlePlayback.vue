@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import { mapBases } from '../data/mapBases'
 import { mapImages } from '../data/mapImages'
 import { teamCssVars } from '../data/mapTeamColors'
@@ -208,88 +209,13 @@ const speed = ref(1)
 //（仅当存在未决 transient），不依赖 replay 播放状态。
 const nowMs = ref(typeof performance !== 'undefined' ? performance.now() : 0)
 
-// ---- PR4 §26：玩家/坦克名显示偏好（默认 showPlayerName=false / showTankName=true，localStorage 持久化）----
-const LABEL_PREFS_KEY = 'wotb.pb.label-prefs'
-function loadLabelPrefs() {
-  try {
-    const raw = localStorage.getItem(LABEL_PREFS_KEY)
-    if (raw) {
-      const p = JSON.parse(raw)
-      return {
-        showPlayerName: p.showPlayerName === true,
-        showTankName: p.showTankName !== false,
-      }
-    }
-  } catch {
-    // 损坏/不可用 → 默认值
-  }
-  return { showPlayerName: false, showTankName: true }
-}
-const labelPrefs = reactive(loadLabelPrefs())
-watch(labelPrefs, (p) => {
-  try {
-    localStorage.setItem(LABEL_PREFS_KEY, JSON.stringify(p))
-  } catch {
-    // 隐私模式/配额满：静默（本次会话内仍生效）
-  }
-}, { deep: true })
+// Playback presentation preferences have one persistence owner. BattlePlayback only consumes refs.
+const { labelPrefs, hpPrefs, trailPrefs, paneWidths, railCollapsed } = usePlaybackPreferences()
 
-// ---- PR5（docs/features/battle-playback.md HP HUD 开关）：单车 HP HUD 显示开关（默认开启，localStorage 持久化）。
-// 关闭后隐藏地图 HP 数字/bar/ghost；floating damage / destroyed ✕ / sidebar HP / combat state /
-// kill feed / timeline 正确性均不受影响；重新开启立即按当前 timestamp 显示正确 HP（纯派生，不重头累计）。
-const HP_PREFS_KEY = 'wotb.pb.hp-prefs'
-function loadHpPrefs() {
-  try {
-    const raw = localStorage.getItem(HP_PREFS_KEY)
-    if (raw) {
-      const p = JSON.parse(raw)
-      return { showHp: p.showHp !== false }
-    }
-  } catch {
-    // 损坏/不可用 → 默认开启
-  }
-  return { showHp: true }
-}
-// 左右两栏宽度可拖拽调整。未调整过时留 null，让 CSS 里的响应式默认值继续生效。
-const PANE_WIDTH_KEY = 'wotb.pb.pane-widths'
+// 左右两栏宽度可拖拽调整；持久化由 usePlaybackPreferences 负责。
 const RAIL_W_RANGE = { min: 160, max: 420 }
 const DETAILS_W_RANGE = { min: 240, max: 560 }
-function loadPaneWidths() {
-  try {
-    const raw = localStorage.getItem(PANE_WIDTH_KEY)
-    if (raw) {
-      const p = JSON.parse(raw)
-      return {
-        rail: Number.isFinite(p.rail) ? p.rail : null,
-        details: Number.isFinite(p.details) ? p.details : null,
-      }
-    }
-  } catch {
-    // 损坏/不可用 → 用 CSS 默认
-  }
-  return { rail: null, details: null }
-}
-const paneWidths = reactive(loadPaneWidths())
-watch(paneWidths, (w) => {
-  try {
-    localStorage.setItem(PANE_WIDTH_KEY, JSON.stringify(w))
-  } catch {
-    // 隐私模式/配额满：静默（本次会话内仍生效）
-  }
-}, { deep: true })
-
 const clampWidth = (value, range) => Math.min(range.max, Math.max(range.min, value))
-
-/* 全屏（手机横屏尤其明显）下常驻左栏要吃掉 148–220px 宽。允许收起成一条只剩
-   开关的窄条——收起而不是完全消失，否则重新打开的入口只能放到地图上，违反
-   「地图上不能有任何东西」。 */
-const RAIL_COLLAPSED_KEY = 'wotb.pb.rail-collapsed'
-const railCollapsed = ref((() => {
-  try { return localStorage.getItem(RAIL_COLLAPSED_KEY) === '1' } catch { return false }
-})())
-watch(railCollapsed, (v) => {
-  try { localStorage.setItem(RAIL_COLLAPSED_KEY, v ? '1' : '0') } catch { /* 隐私模式：本次会话内仍生效 */ }
-})
 
 /** 拖拽改宽：edge 决定按指针换算成哪一侧的宽度。 */
 function startPaneResize(event, pane) {
@@ -328,27 +254,7 @@ watch(hpPrefs, (p) => {
   }
 }, { deep: true })
 
-// 最近 2 秒位置轨迹偏好：只消费 canonical observed positionSegments；持久化与
-// 既有 label/HP display preferences 同级，不改变 replay state owner。
-const TRAIL_PREFS_KEY = 'wotb.pb.trail-prefs'
-function loadTrailPrefs() {
-  try {
-    const raw = localStorage.getItem(TRAIL_PREFS_KEY)
-    if (raw) return { showTrail: JSON.parse(raw).showTrail !== false }
-  } catch {
-    // 损坏/不可用 → 默认开启
-  }
-  return { showTrail: true }
-}
-const trailPrefs = reactive(loadTrailPrefs())
-watch(trailPrefs, (p) => {
-  try {
-    localStorage.setItem(TRAIL_PREFS_KEY, JSON.stringify(p))
-  } catch {
-    // 隐私模式/配额满：静默（本次会话内仍生效）
-  }
-}, { deep: true })
-
+// 最近 2 秒位置轨迹只消费 canonical observed positionSegments；显示偏好由 usePlaybackPreferences 持久化。
 const visibleTrails = computed(() => trailPrefs.showTrail
   ? recentPositionTrails(hpVehicles.value, currentTime.value, 2)
   : [])
