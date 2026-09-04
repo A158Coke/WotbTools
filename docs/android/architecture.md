@@ -80,9 +80,12 @@ Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`
   first-party 与认证所需 third-party cookies；应用不读取、复制或持久化 Cookie。
 - `auth.wotbtools.com` 只在 WebView 内启动/保持 `inAuthFlow`。认证期间，provider 仅按
   `AuthNavigationPolicy.AUTH_PROVIDER_HOSTS` 的精确 hostname allowlist 留在 WebView；当前有仓库
-  证据的 QQ host 是 `graph.qq.com`。`ssl.ptlogin2.qq.com`、`xui.ptlogin2.qq.com`、
-  `ptlogin2.qq.com`、`open.juhedenglu.cn` 等只有在真实 top-level navigation evidence 确认后才可
-  逐个加入，并必须同步 regression test；禁止 `*.qq.com` 或整个 `qq.com` 通配。
+  证据的 QQ host 是 `graph.qq.com` 与 `xui.ptlogin2.qq.com`（后者基于 Android 1.0.8 真机 ADB
+  生产链 evidence：Keycloak → graph.qq.com → xui.ptlogin2.qq.com → callback，见
+  `AuthNavigationPolicyTest.productionQqAuthChainStaysInWebViewUntilAppCallback`）。
+  `ssl.ptlogin2.qq.com`、`ptlogin2.qq.com`、`open.juhedenglu.cn` 等只有在真实 top-level
+  navigation evidence 确认后才可逐个加入，并必须同步 regression test；禁止 `*.qq.com` 或整个
+  `qq.com` 通配。
 - 返回 `wotbtools.com` / `www.wotbtools.com` 表示 callback 成功并结束 auth flow。认证外直接访问
   provider host 不获得 privileged WebView handling；其它 top-level host 由系统浏览器打开。
 - Native Bridge 与 OAuth navigation 是两个独立安全边界。Bridge origins 仍严格限于

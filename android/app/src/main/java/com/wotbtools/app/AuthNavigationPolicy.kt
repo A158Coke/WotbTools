@@ -39,7 +39,8 @@ internal object AuthNavigationPolicy {
 
     /** Evidence-backed provider hosts; extend only with verified top-level auth navigation. */
     internal val AUTH_PROVIDER_HOSTS = setOf(
-        "graph.qq.com"
+        "graph.qq.com",
+        "xui.ptlogin2.qq.com"
     )
 
     fun decide(host: String?, inAuthFlow: Boolean): AuthNavigationDecision {
