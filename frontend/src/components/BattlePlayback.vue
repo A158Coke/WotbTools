@@ -45,6 +45,7 @@ import {
 import { projectVehicleState } from '../utils/playbackVehicleState'
 import { computeVehicleMarkerSize } from '../utils/vehicleMarkerSizing'
 import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
+import { playbackSafeInsetOwnership } from '../utils/playbackSafeInsets.js'
 import {
   MARKER_CORE_PX,
   computeLabelLayout,
@@ -640,16 +641,18 @@ let suppressClick = false
 // 手势结束后的首个 click 必须被吞掉，纯点击车辆仍正常选中
 let gestureMoved = false
 
-/* §side-slots：横屏黑边够宽就把 HUD / controls 放两侧，竖屏（或黑边不够）放下面。
-   判定用真实像素而不是宽高比——宽高比推不出黑边有多少像素，882×344 与 1600×900
-   宽高比相差很大却都放得下侧栏，而 740×360 放不下。
-   一条侧栏要放下竖排的播放控制与时间轴，实测 168px 是可用下限。 */
+/* §side-slots：仅非 mobile 的横屏 fullscreen 才尝试把「不在 rail 内」的 controls 放进
+   地图列左右黑边。Battle HUD 已永久归属顶部，不再参与 side-slot relocation；mobile
+   fullscreen 由 PR #245 的 transient bottom controller 独占，不进入本优化。
+   黑边按实际 map workspace 宽度而不是整个 stage 宽度计算，避免把 tablet Details 列
+   错算成地图 gutter。168px 是竖排 controls 的可用下限。 */
 const SIDE_SLOT_MIN_PX = 168
 const sideSlotWidth = computed(() => {
-  if (!isFullscreen.value) return 0
-  const { w, h } = stageSize.value
-  if (!w || !h) return 0
-  const gutter = Math.floor((w - h) / 2)
+  if (!isFullscreen.value || formFactor.value === 'mobile') return 0
+  const mapW = mapSize.value.w || mapWidth()
+  const stageH = stageSize.value.h
+  if (!mapW || !stageH) return 0
+  const gutter = Math.floor((mapW - stageH) / 2)
   return gutter >= SIDE_SLOT_MIN_PX ? gutter : 0
 })
 const sideSlots = computed(() => sideSlotWidth.value > 0)
@@ -671,28 +674,36 @@ watch(() => mapStageEl.value, (el) => {
 // 侧栏形态切换会改变地图可用高度 → 用新几何强制重新 fit。
 watch(sideSlots, () => { nextTick(() => fitViewIfReady(true)) })
 
-/** 安全区：fullscreen 下 HUD（顶部 overlay）高度为 top inset；bottom inset 只在 fullscreen
- *  量取 —— 非 fullscreen 时 bottom overlay 不是绝对定位，controls 走正常文档流排在地图
- *  下方，不占 Map Workspace，量了反而会误缩地图。 */
+/** 安全区：fullscreen battle HUD 永远位于顶部，因此始终按真实 HUD 高度保留 top inset。
+ * controls 的 bottom inset 按形态决定：mobile fullscreen 属于 PR #245 的底部 transient
+ * controller（显示时按真实 content 高度避让）；PC/tablet 只有 controls 真正在 bottom overlay
+ * 时才保留，rail/side-slot 形态不占 bottom。 */
 function safeInsets() {
   let top = 0
   let bottom = 0
-  // §side-slots：HUD/controls 都在两侧黑边里，上下不再占用高度——地图因此吃满 stage 高度。
-  // 水平方向不需要 inset：地图是方的且受高度限制，居中后左右正好空出黑边给两条侧栏。
-  if (sideSlots.value) return { top, bottom }
-  if (isFullscreen.value) {
+  const ownership = playbackSafeInsetOwnership({
+    isFullscreen: isFullscreen.value,
+    formFactor: formFactor.value,
+    sideSlots: sideSlots.value,
+    controlsInRail: controlsInRail.value,
+  })
+  if (ownership.reserveTop) {
     const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
     top = hud ? hud.clientHeight : 0
   }
-  // §safeInsets-DOM：只量取 .pb-mobile-overlay-content 的真实 rendered 高度（wrapper 是 inset:0，
-  // 其 clientHeight 是整张地图高度，不能当 controls 高度）。
-  // §safeInsets-contract：normal mobile 的 controls 是 transient overlay（默认 opacity:0），
-  // 不因不可见 controls 永久缩小 map —— 非 fullscreen 一律 bottom=0。
-  // fullscreen mobile controls 始终显示时，才 reserve 底部 safe area（= content 实高）。
-  if (!controlsInRail.value && isFullscreen.value) {
+  // §safeInsets-DOM：wrapper 是 inset:0，不能把 wrapper.clientHeight 当 controls 高度。
+  // transient controls 显示时按 wrapper bottom → content top 量取完整占用区（含 bottom/safe-area gap）；
+  // hidden 时 contentHeight=0。内容重排由 ResizeObserver 触发重新 fit。
+  if (ownership.reserveBottom) {
     const wrap = mobileOverlay.value?.$el
     const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null
-    bottom = content ? content.clientHeight : 0
+    if (wrap && content && content.clientHeight > 0) {
+      const wrapRect = wrap.getBoundingClientRect()
+      const contentRect = content.getBoundingClientRect()
+      // Reserve the complete occupied bottom zone, including the controller's
+      // bottom offset / safe-area gap, rather than only the card height.
+      bottom = Math.max(0, wrapRect.bottom - contentRect.top)
+    }
   }
   return { top, bottom }
 }
