@@ -1,0 +1,44 @@
+name: Frontend refactor patch
+
+on:
+  push:
+    branches: [refactor/frontend-navigation-context]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refactor/frontend-navigation-context
+      - name: Remove stale preference bridge
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('frontend/src/components/BattlePlayback.vue')
+          s = p.read_text(encoding='utf-8')
+          pattern = re.compile(r"\nconst hpPrefs = reactive\(loadHpPrefs\(\)\)\nwatch\(hpPrefs, \(p\) => \{\n  try \{\n    localStorage\.setItem\(HP_PREFS_KEY, JSON\.stringify\(p\)\)\n  \} catch \{\n    // 隐私模式/配额满：静默（本次会话内仍生效）\n  \}\n\}, \{ deep: true \}\)\n")
+          s, count = pattern.subn('\n', s, count=1)
+          assert count == 1, f'expected one stale hpPrefs bridge, got {count}'
+          for forbidden in (
+              'LABEL_PREFS_KEY', 'HP_PREFS_KEY', 'TRAIL_PREFS_KEY', 'PANE_WIDTH_KEY', 'RAIL_COLLAPSED_KEY',
+              'loadLabelPrefs', 'loadHpPrefs', 'loadTrailPrefs', 'loadPaneWidths'):
+              assert forbidden not in s, f'stale preference ownership remains: {forbidden}'
+          assert s.count('const { labelPrefs, hpPrefs, trailPrefs, paneWidths, railCollapsed } = usePlaybackPreferences()') == 1
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Remove one-shot workflow and commit patch
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/frontend-refactor-patch.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/components/BattlePlayback.vue
+          git commit -m "refactor(playback): remove stale preference ownership"
+          git push origin HEAD:refactor/frontend-navigation-context
