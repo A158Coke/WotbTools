@@ -62,6 +62,23 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(stage).toContain('grid-template-columns: minmax(0, 1fr)')
   })
 
+  // 手机非全屏：左栏排到地图下方（order），右侧详情是从右滑入的窗口而不是底部 sheet。
+  it('puts the mobile rail under the map and slides the details in from the right', () => {
+    const main = ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-main')
+    expect(main).toContain('order: 1')
+    const rail = ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile.pb-drawer-open .pb-left-rail')
+    expect(rail).toContain('order: 2')
+    expect(rail).toContain('position: static')
+
+    const details = ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel')
+    expect(details).toContain('position: fixed')
+    expect(details).toContain('right: 8px')
+    // 不是底部 sheet：不贴左边、不满宽
+    expect(details).toContain('left: auto')
+    expect(details).toContain('animation: pb-details-slide-in')
+    expect(stripped).toContain('@keyframes pb-details-slide-in')
+  })
+
   // 非全屏窄视口：两侧面板都排进正常文档流，不做浮层弹窗/抽屉。
   it('keeps the side panes inline outside fullscreen instead of floating them', () => {
     const details = ruleBody('.battle-playback .pb-map-stage > .pb-side-panel-shell')
