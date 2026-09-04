@@ -5,13 +5,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 
 describe('PlaybackMobileOverlay', () => {
+  let mql
+  let mqlChange
+
   beforeEach(() => {
     vi.useFakeTimers()
-    vi.stubGlobal('matchMedia', vi.fn(() => ({
+    mqlChange = null
+    mql = {
       matches: true,
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn((type, handler) => {
+        if (type === 'change') mqlChange = handler
+      }),
       removeEventListener: vi.fn(),
-    })))
+    }
+    vi.stubGlobal('matchMedia', vi.fn(() => mql))
     Object.defineProperty(document, 'fullscreenElement', {
       configurable: true,
       value: null,
@@ -48,21 +55,20 @@ describe('PlaybackMobileOverlay', () => {
     const wrapper = mount(PlaybackMobileOverlay, { slots: { default: '<button>Controls</button>' } })
     await wrapper.vm.$nextTick()
 
+    expect(wrapper.classes()).toContain('pb-mobile-overlay-transient')
     expect(wrapper.classes()).not.toContain('pb-mobile-overlay-visible')
 
     wrapper.vm.reveal()
     await wrapper.vm.$nextTick()
     expect(wrapper.classes()).toContain('pb-mobile-overlay-transient')
     expect(wrapper.classes()).toContain('pb-mobile-overlay-visible')
-    // The viewport-sized wrapper must never become the pointer target; only visible controls do.
-    expect(wrapper.attributes('style')).toContain('pointer-events: none')
-    expect(wrapper.find('.pb-mobile-overlay-content').attributes('style')).toContain('pointer-events: auto')
+    // Pointer ownership is class-driven: the fullscreen wrapper never becomes the map gesture target.
+    expect(wrapper.attributes('style')).toBeUndefined()
+    expect(wrapper.find('.pb-mobile-overlay-content').attributes('style')).toBeUndefined()
 
     vi.advanceTimersByTime(2500)
     await wrapper.vm.$nextTick()
-
     expect(wrapper.classes()).not.toContain('pb-mobile-overlay-visible')
-    expect(wrapper.find('.pb-mobile-overlay-content').attributes('style')).toContain('display: none')
   })
 
   it('reveals transient controls on a normal fullscreen tap and hides them again', async () => {
@@ -81,5 +87,37 @@ describe('PlaybackMobileOverlay', () => {
     vi.advanceTimersByTime(2500)
     await wrapper.vm.$nextTick()
     expect(wrapper.classes()).not.toContain('pb-mobile-overlay-visible')
+  })
+
+  it('tracks mobile breakpoint changes during fullscreen and clears stale overlay state', async () => {
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      value: document.body,
+    })
+    const wrapper = mount(PlaybackMobileOverlay, { slots: { default: '<button>Controls</button>' } })
+    wrapper.vm.reveal()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.classes()).toContain('pb-mobile-overlay-transient')
+    expect(wrapper.classes()).toContain('pb-mobile-overlay-visible')
+
+    mql.matches = false
+    mqlChange?.({ matches: false })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.classes()).not.toContain('pb-mobile-overlay-transient')
+    expect(wrapper.classes()).not.toContain('pb-mobile-overlay-visible')
+
+    mql.matches = true
+    mqlChange?.({ matches: true })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.classes()).toContain('pb-mobile-overlay-transient')
+    expect(wrapper.classes()).not.toContain('pb-mobile-overlay-visible')
+  })
+
+  it('cleans the responsive MQL listener on unmount', () => {
+    const wrapper = mount(PlaybackMobileOverlay, { slots: { default: '<button>Controls</button>' } })
+    expect(mql.addEventListener).toHaveBeenCalledWith('change', expect.any(Function))
+    const handler = mqlChange
+    wrapper.unmount()
+    expect(mql.removeEventListener).toHaveBeenCalledWith('change', handler)
   })
 })
