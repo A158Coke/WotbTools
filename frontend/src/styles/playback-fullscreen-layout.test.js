@@ -249,10 +249,11 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(sheet).not.toBeNull()
     expect(sheet).toContain('animation: pb-details-slide-up')
 
-    // §no-overlay：手机非全屏没有黑边可用，详情必须排进流里，不能盖住地图。
-    const inflow = ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar')
+    // §no-overlay：没有持久列的宽度区间（<1200px 非全屏）没有黑边可用，详情必须排进流里。
+    // 按宽度而不是设备类判定——.pb-device-mobile 要求 pointer: coarse，窄的桌面窗口拿不到。
+    const inflow = ruleBody('.battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar')
     expect(inflow).toContain('position: static')
-    expect(ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-map-stage > .pb-side-panel-shell')).toContain('position: static')
+    expect(ruleBody('.battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell')).toContain('position: static')
 
     // 手机全屏横屏：抽屉宽度按黑边实宽算（(100vw - 100vh) / 2），不越到地图上。
     expect(stripped).toContain('@media (orientation: landscape)')
@@ -344,10 +345,12 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(ruleBody('.battle-playback.pb-device-mobile .pb-controls')).toContain('justify-content: center')
     expect(ruleBody('.battle-playback.pb-device-mobile .pb-controls .pb-control-label')).toContain('display: none')
     expect(ruleBody('.battle-playback.pb-device-mobile .pb-controls .pb-btn')).toContain('min-height: 36px')
-    // 手机非全屏：控制条排在地图下方的正常流里，不再是压住地图的浮层。
-    expect(ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay-content')).toContain('position: static')
-    expect(ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay')).toContain('position: static')
-    expect(ruleBody('.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay')).toContain('opacity: 1')
+    // <1200px 非全屏：控制条排在地图下方的正常流里，不再是压住地图的浮层。
+    // 按宽度判定，窄的桌面浏览器窗口（精确指针、拿不到 .pb-device-mobile）同样生效。
+    expect(ruleBody('.battle-playback:not(:fullscreen) .pb-mobile-overlay-content')).toContain('position: static')
+    const overlay = ruleBody('.battle-playback:not(:fullscreen) .pb-mobile-overlay')
+    expect(overlay).toContain('position: static')
+    expect(overlay).toContain('opacity: 1')
     expect(ruleBody('.battle-playback.pb-device-mobile .pb-controls .pb-time')).toContain('order: 20')
   })
 })
