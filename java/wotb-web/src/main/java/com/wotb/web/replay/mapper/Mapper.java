@@ -118,11 +118,10 @@ public final class Mapper {
         out.add(new ColumnDef("nickname", false));
         out.add(new ColumnDef("clan", false));
         out.add(new ColumnDef("battles", true));
-        // 评分场次（rated-only 样本，与 Replay Aggregate 的解析场次 battles 分开）
+        // 评分场次（rated-only 样本，与 Replay Aggregate 的解析场次分开）
         out.add(new ColumnDef("rated_battles", true));
         out.add(new ColumnDef(LeagueColumns.RATING, true));
-        // V5 explainability：Raw Observed Median（默认可隐藏，非主 Rating）
-        out.add(new ColumnDef(LeagueColumns.RATING_RAW_MEDIAN, true));
+        out.add(new ColumnDef(LeagueColumns.OBSERVED_MEAN, true));
         for (final String key : LeagueColumns.DIM_KEYS) {
             out.add(new ColumnDef(key, true));
         }
@@ -142,8 +141,9 @@ public final class Mapper {
     public static List<ColumnDef> leagueTeamSummaryColumns() {
         final List<ColumnDef> out = new ArrayList<>();
         out.add(new ColumnDef("team_name", false));
-        out.add(new ColumnDef("battles", true));
+        out.add(new ColumnDef("rated_battles", true));
         out.add(new ColumnDef(LeagueColumns.RATING, true));
+        out.add(new ColumnDef(LeagueColumns.OBSERVED_MEAN, true));
         for (final String key : LeagueColumns.DIM_KEYS) {
             out.add(new ColumnDef(key, true));
         }
@@ -434,10 +434,9 @@ public final class Mapper {
         for (final PlayerLeagueSummary s : league.playerSummaries()) {
             final PerformanceMetricsCalculator.Row perf = perfById.get(s.accountId());
             players.add(new LeaguePlayerSummaryDto(
-                    s.accountId(), s.nickname(), s.clan(), s.battles(),
-                    r1(s.batchRatingV5()),
-                    r1(s.ratingMedian()),
-                    s.dimensionMedians().stream().map(Mapper::r1).toList(),
+                    s.accountId(), s.nickname(), s.clan(), s.ratedBattles(),
+                    r1(s.rating()),
+                    r1(s.observedMean()),
                     s.dimensionMeans().stream().map(Mapper::r1).toList(),
                     s.mvpCount(), s.wins(), s.damageTotal(), s.assistTotal(), s.killsTotal(),
                     // 跨场 Performance Metrics（与 resp.aggregate 同一全部已解析场次样本）；
@@ -450,9 +449,9 @@ public final class Mapper {
         final List<LeagueTeamSummaryDto> teams = new ArrayList<>();
         for (final TeamLeagueSummary s : league.teamSummaries()) {
             teams.add(new LeagueTeamSummaryDto(
-                    s.teamKey(), s.autoName(), s.nameSource(), s.battles(),
-                    r1(s.ratingMedian()),
-                    s.dimensionMedians().stream().map(Mapper::r1).toList(),
+                    s.teamKey(), s.autoName(), s.nameSource(), s.ratedBattles(),
+                    r1(s.rating()), r1(s.observedMean()),
+                    s.dimensionMeans().stream().map(Mapper::r1).toList(),
                     s.wins(), s.arenaTeams()));
         }
         final List<LeagueFailureDto> failures = new ArrayList<>();

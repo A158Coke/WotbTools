@@ -132,7 +132,7 @@ settlement 秒值，使用 `[0, +5s]` directional 窗口，无法建立窗口即
   最终计算保留高精度；API 返回未取整值；**总 Rating 页面只显示整数（如 `927`）**，
   不显示 /1000 换算的冗余完成度百分比（`927 · 92.7%` 会被误读为百分位/胜率）；
   七维维度仍显示 `实际分 / 维度满分 · 百分比`（如 `342 / 365 · 93.7%`，满分来自后端
-  `league.columns` metadata）。排名 / MVP / 中位数一律使用未取整分数。
+  `league.columns` metadata）。排名 / MVP / 汇总一律使用未取整分数。
 
 ### V4.1 冻结规范速查
 
@@ -156,7 +156,7 @@ Shooting: rawAcc = hits/shots；rawPen = pens/hits（zero-safe，clamp [0,1]）
           score = 110 × min(1, conf/0.70) × min(1, dmg/teamAvgDamage)
 
 Winner final = min(1000, base × 1.05)；Loser final = base
-单场 Team Rating = 本队 7 人 finalRating 算术平均；batch（选手/战队）= median
+单场 Team Rating = 本队 7 人 finalRating 算术平均；batch（选手/战队）= pooled sum/count + prior
 Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 killer attribution
 禁止：Tankopedia HP normalization / role bonus / LOSER_TOP4 / dual algorithm / 调参
 ```
@@ -173,22 +173,20 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   优先按多数军团标签或用户确认的名称作为批次 team key，无法确定跨场身份时保持为
   `arenaId:team` 行。
 
-## 批次汇总（V5 Batch Player Rating + Raw Median）
+## 批次汇总（V6 pooled Rating）
 
-> 当前版本：**League Rating V5**。单场评分继续使用 V4.1；V5 只新增 Batch Player
-> Evidence Adjustment。完整算法定义（canonical 唯一正文）见
-> `docs/WotBTools_League_Rating_V5.md`，本文件只记录与实现相关的契约要点。
+> 当前版本：**League Rating V6**。单场评分继续使用 V4.1；V6 只改变批次汇总。
+> 完整算法定义（canonical 唯一正文）见 `docs/WotBTools_League_Rating_V6.md`，本文件只记录
+> 与实现相关的契约要点。
 
-- 选手汇总按 accountId：参赛场次、finalRating 中位数、七维度中位数、MVP 次数（仅展示）、
+- 选手汇总按 accountId：评分场次、pooled Rating、Observed Mean、七维度算术均值、MVP 次数（仅展示）、
   胜场与关键原始统计总量/均值、获取点数/场（客观统计）。
-- 战队汇总按批次 team key：参赛场次、单场 teamRating 中位数、七维度中位数、胜场。
-- **V5 Batch Player Rating（主 Rating）**：`raw = 玩家自己的单场 V4.1 Final Rating
-  中位数`；`E(n)=1-exp(-n/6)`（`n` = 该玩家自己的有效评分场次数）；`raw <= 450` 时
-  V5 = raw（单边，不加分）；`raw > 450` 时 `V5 = 450 + E(n)·(raw-450)`，最后 clamp
-  到 0–1000。Anchor=450、tau=6 为冻结常量；无动态 batch prior、无 series/opponent/map
-  factor、无 hard release threshold。七维 median/mean 与 Team Rating **不应用** V5。
-- **Raw Observed Median**：`ratingMedian` 保留为 explainability 信息（列
-  `league_rating_raw_median`，默认可隐藏），与主 Rating 严格区分。
+- 战队汇总按批次 team key：评分场次、pooled Team Rating、Observed Mean、七维算术均值、胜场。
+- **V6 主 Rating**：设有效单场 finalRating raw sum 为 `S`、场次为 `n`、anchor 为 `A=475`：
+  选手 `rating=(S+5A)/(n+5)`；战队 `rating=(S+A)/(n+1)`。`n=0` 时结果为 null。
+  不使用 median、证据曲线、series/opponent/map factor 或 hard release threshold。
+- **Observed Mean**：`observedMean=S/n`，仅用于透明展示；维度使用同一 rated-only 分母的
+  pooled 算术均值。主 Rating、维度、排行和 MVP 均不使用 median。
 - CW 汇总页（League 模式）：玩家信息合并为**一张统一玩家表**（Replay Aggregate 为基底，
   按 accountId join League Player Summary；有 Aggregate 无 Rating 的玩家保留并补 "--"）。
   **列契约**：只有「玩家 + 总 Rating」固定（sticky 核心对），其余列（七维 / MVP / 表现指标 /
@@ -198,8 +196,7 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   （rated-only），两列独立显示，不互相覆盖。
   点击任意玩家行右侧滑出选手详情 Drawer（**可自定义指标/顺序的雷达图** + 表现指标 +
   scope 语义的评分/事实）。战队独立一张表。
-- 中位数：奇数取中间值、偶数取两个中间值的算术平均；使用未取整分数；不设最低场次；
-  不排序、不产生批次 MVP/前三名；必须显示参赛场次。
+- 使用未取整分数；`n=0` 明确不可用；不排序、不产生批次 MVP/前三名；必须显示评分场次。
 - 选手与战队汇总并入库内现有「合并汇总」视图（两个紧邻表格，不混行伪装）。
 
 ## Excel 导出
@@ -257,7 +254,7 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   偏好独立 localStorage（`wotb-radar-metric-order`），Summary 与 Battle 共用；Contribution/KAST/Impact
   继续保留在表现指标区，不进入 Radar。每个玩家顶点常驻标注 0–150 视觉分；明细默认显示玩家/平均视觉分，
   可切换为 raw `score/max` 与真实平均值，切换不改变几何。维度 raw score 与权威 `max` 均来自后端 metadata；
-  V5 最终几何把 `0..当前 Battle/Global Average` 线性映射到 `0..75`，把 `average..max` 线性映射到
+  V6 最终几何把 `0..当前 Battle/Global Average` 线性映射到 `0..75`，把 `average..max` 线性映射到
   `75..150`。max 缺失/非法或 average 不在 `(0,max)` 时整轴 fail-closed，不回退旧相对公式。Rating Profile
   PNG 与页面复用同一 bounded series、顶点分数定位并默认导出分数明细。
 - 所有可见列（单场 / 普通汇总 / CW 统一玩家表 / 战队汇总）均支持 ASC/DESC 排序：
@@ -273,7 +270,7 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   （胜方存活 75 / directional trade 50 / 败方存活恒 0 —— LOSER_TOP4 回归锁）、
   trade 边界（[0,+5s] 含边界、敌方早死不计、同队/存活/UNKNOWN 不计）、
   胜方 ×1.05 与 1000 封顶、MVP/队内最佳/重复徽标、战队七人平均、七维满分总和=1000、
-  争霸点数不影响 Rating（points independence）、奇数/偶数中位数。
+  争霸点数不影响 Rating（points independence）。
 - 完整性：标准 7v7、13/15 人、非 7/7、重复账号、缺 tankId、roster 不完整、队伍冲突、
   未知胜方、平局、死亡时间 UNKNOWN（`survivalTimeSec == 0`）不阻塞评分、负数/NaN/Infinity/
   超时长死亡时间拒绝、合法零值、protobuf 缺失字段不误拒、非法数值关系、
@@ -352,8 +349,8 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
 
 | Context   | 指标        | 数据来源                                |
 | --------- | ----------- | --------------------------------------- |
-| Summary   | Final Rating | `batchRatingV5`（V5 Evidence Adjustment 后主 Rating） |
-| Summary   | Raw Median   | `ratingMedian`（Raw Observed Median，explainability） |
+| Summary   | Final Rating | `rating`（V6 pooled sum/count + prior 后主 Rating） |
+| Summary   | Observed Mean | `observedMean`（pooled raw mean，explainability） |
 | Summary   | League 七维  | `dimensionMeans`（rated-battle 算术平均） |
 | Battle    | Final Rating | 当前单场 `league_rating`                 |
 | Battle    | League 七维  | 当前单场 `league_*_score`（`dimensionScores`） |
@@ -365,13 +362,12 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
 - **Summary 七维 = arithmetic mean of rated battle scores**（分母 = 评分场次，
   Rating-ineligible 场不进入；UNKNOWN death-time 场是合法 rated sample，
   Survival/Trade 的真实 0 必须进入 mean，不能过滤；真实 0 参与平均，
-  禁止只平均非零场次）。「典型比赛得分」（Table/Excel）仍用
-  `dimensionMedians`——两个 UI 回答不同问题，禁止把 mean 改名成 median 或反之。
+  禁止只平均非零场次）。Table/Excel 也使用 `dimensionMeans`，不得回退为 median。
 - **Battle Radar 永远显示本场数据**；`ReplayPage` / `PlayerDetailDrawer` 按 scope
   取数（summary → `dimensionMeans`，battle → `dimensionScores`），
   禁止 summary 数据污染 battle radar 或 battle 数据污染 summary radar。
 - **missing / invalid ≠ 真实 0**：`dimensionScores` 非 7 维、null、NaN、Infinity 是
-  invariant violation（`LeagueRatingBatchAggregator.chunkMeans/chunkMedians`
+  invariant violation（`LeagueRatingBatchAggregator` 的 pooled accumulator
   对残缺 stride fail fast）；Radar 轴缺失显示 `--`，不冒充 0/0%。
 - **几何标尺**：League 维度满分来自后端 `resp.league.columns`（key/max），frontend 不硬编码 domain max。
   设玩家维度分 `p`、当前 Battle/Global Average `a`、权威满分 `m`：`p<=a` 时

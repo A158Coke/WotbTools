@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.72",
+    "date": "2026-09-05",
+    "tag": "chg",
+    "zh": "训练赛/联赛批次评分升级为 League Rating V6：玩家总 Rating 按所有有效场次的评分总和与 5 场先验计算，战队总 Rating 按团队评分总和与 1 场先验计算；汇总、排名、MVP、雷达、详情与 Excel 统一使用同一套批次结果，样本数为 0 时明确显示不可用。",
+    "en": "Training/tournament batch ratings now use League Rating V6: player total Rating uses the sum of all valid battle scores with a five-battle prior, while team total Rating uses the sum of team scores with a one-battle prior. Summaries, ranking, MVP, radars, details and Excel now share the same batch result, and zero-sample results are explicitly unavailable.",
+    "ru": "Пакетные рейтинги тренировочных и турнирных боёв переведены на League Rating V6: общий рейтинг игрока рассчитывается по сумме всех действительных оценок с априором пяти боёв, а рейтинг команды — по сумме командных оценок с априором одного боя. Сводки, сортировка, MVP, радары, детали и Excel используют один и тот же результат пакета, а при нулевом числе образцов явно показывается недоступность."
+  },
+  {
     "v": "2.12.71",
     "date": "2026-09-04",
     "tag": "fix",

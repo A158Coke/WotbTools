@@ -146,7 +146,7 @@
 .version-page .ver-date { color: #a4a9a3 !important; }
 .version-page .ver p { color: #c3c0b8 !important; }
 
-/* Rating docs（League Rating V5 算法说明） */
+/* Rating docs（League Rating V6 算法说明） */
 .rating-docs-page {
   width: min(1120px, calc(100vw - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;

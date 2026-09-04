@@ -24,8 +24,9 @@ function teamRow(overrides = {}) {
     autoName: 'AAA',
     nameSource: 'CLAN_MAJORITY',
     battles: 2,
-    ratingMedian: 850.4,
-    dimensionMedians: [300.2, 60, 70, 110, 40, 80, 45],
+    rating: 850.4,
+    observedMean: 850.4,
+    dimensionMeans: [300.2, 60, 70, 110, 40, 80, 45],
     wins: 1,
     arenaTeams: ['111:1', '222:1'],
     ...overrides
@@ -33,13 +34,13 @@ function teamRow(overrides = {}) {
 }
 
 describe('LeagueSummaryTable', () => {
-  it('七维 invariant：战队汇总 dimensionMedians 恰好 7 个值（无残留第八维）', () => {
-    expect(teamRow().dimensionMedians).toHaveLength(7)
+  it('七维 invariant：战队汇总 dimensionMeans 恰好 7 个值（无残留第八维）', () => {
+    expect(teamRow().dimensionMeans).toHaveLength(7)
     // 七维 key 集恰好 7 个（与 CW_DIM_KEYS 单一事实源对齐；禁止 fixture 偷偷保留第八维）
     expect(CW_DIM_KEYS).toHaveLength(7)
   })
 
-  it('renders rows with team name, battles and rating median', () => {
+  it('renders rows with team name, battles and rating', () => {
     const wrapper = mount(LeagueSummaryTable, {
       props: { title: 'T', rows: [teamRow()], columns: SUMMARY_COLS, teamNames: {} },
       global: { mocks: { $t: key => key } }
@@ -111,13 +112,13 @@ describe('LeagueSummaryTable', () => {
     expect(wrapper.find('td.league-summary-empty').text()).not.toBe('--')
   })
 
-  it('sorts rating median asc by raw ratingMedian (valueGetter 映射修复)', async () => {
+  it('sorts rating asc by raw rating (valueGetter 映射修复)', async () => {
     // 输入故意乱序：AAA(850) 在前、BBB(700) 在后——若排序读 row.league_rating（undefined，
-    // 全 missing → stable 假通过）则 AAA 会留在第一行；必须按 row.ratingMedian 真实排序。
+    // 全 missing → stable 假通过）则 AAA 会留在第一行；必须按 row.rating 真实排序。
     const rows = [
-      teamRow({ teamKey: 'clan:AAA', ratingMedian: 850.4, autoName: 'AAA' }),
-      teamRow({ teamKey: 'clan:CCC', ratingMedian: null, autoName: 'CCC' }),
-      teamRow({ teamKey: 'clan:BBB', ratingMedian: 700.2, autoName: 'BBB' }),
+      teamRow({ teamKey: 'clan:AAA', rating: 850.4, autoName: 'AAA' }),
+      teamRow({ teamKey: 'clan:CCC', rating: null, autoName: 'CCC' }),
+      teamRow({ teamKey: 'clan:BBB', rating: 700.2, autoName: 'BBB' }),
     ]
     const wrapper = mount(LeagueSummaryTable, {
       props: { title: 'T', rows, columns: SUMMARY_COLS, teamNames: {} },

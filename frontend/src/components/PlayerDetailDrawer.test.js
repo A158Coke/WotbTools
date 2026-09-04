@@ -42,8 +42,7 @@ const SUMMARY_PLAYER = {
   nickname: 'Alpha',
   clan: 'AAA',
   rating: 850.4,
-  rawMedian: 850.4,
-  dimensionMedians: [342, 60, 70, 110, 40, 80, 100],
+  observedMean: 850.4,
   dimensionMeans: [250, 40, 30, 75, 10, 50, 65],
   mvpCount: 2,
   battles: 3,
@@ -183,13 +182,13 @@ describe('PlayerDetailDrawer', () => {
   })
 })
 
-describe('PlayerDetailDrawer header / scope（V4.1 vs V5）', () => {
-  it('summary: header shows Rating label + V5 + Observed Median + Rated Battles', () => {
+describe('PlayerDetailDrawer header / scope（V4.1 vs League V6）', () => {
+  it('summary: header shows Rating label + V6 + Observed Mean + Rated Battles', () => {
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
     const text = wrapper.text()
     expect(text).toContain('league.drawer.rating_label')
     expect(text).toContain('850')
-    expect(text).toContain('league.drawer.observed_median')
+    expect(text).toContain('league.drawer.observed_mean')
     expect(text).toContain('league.drawer.rated_battles')
     expect(text).toContain('8')
     // 头部不再依赖 facts 重复展示 median/rated_battles
@@ -198,14 +197,14 @@ describe('PlayerDetailDrawer header / scope（V4.1 vs V5）', () => {
     expect(rating.text()).toBe('850')
   })
 
-  it('battle: V4.1 single-battle Rating (not replaced by V5)', () => {
+  it('battle: V4.1 single-battle Rating (not replaced by League V6)', () => {
     const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, BATTLE_PLAYER)
     const rating = wrapper.find('[data-testid="drawer-rating"]')
     expect(rating.text()).toBe('813') // 812.6 rounded
-    expect(wrapper.text()).not.toContain('league.drawer.observed_median')
+    expect(wrapper.text()).not.toContain('league.drawer.observed_mean')
   })
 
-  it('summary facts: battles/wins/mvp/averages but NOT rated_battles/observed_median（已移入头部）', () => {
+  it('summary facts: battles/wins/mvp/averages but NOT rated_battles/observed_mean（已移入头部）', () => {
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
     const facts = wrapper.find('[data-testid="player-facts"]').text()
     expect(facts).toContain('league.drawer.battles')
@@ -213,7 +212,7 @@ describe('PlayerDetailDrawer header / scope（V4.1 vs V5）', () => {
     expect(facts).toContain('league.drawer.mvp')
     expect(facts).toContain('league.drawer.damage_avg')
     expect(facts).not.toContain('league.drawer.rated_battles')
-    expect(facts).not.toContain('league.drawer.observed_median')
+    expect(facts).not.toContain('league.drawer.observed_mean')
   })
 
   it('battle facts: blocked/shots/hits/pens/survived/points_earned', () => {
@@ -325,7 +324,7 @@ describe('PlayerDetailDrawer reference average', () => {
     { cells: { account_id: 1002 }, league: { dimensionMeans: meansB } },
   ]
 
-  it('summary: reference passed = Global Average（global_average label），V5 不影响几何', () => {
+  it('summary: reference passed = Global Average（global_average label），League V6 不影响几何', () => {
     const row = scopes(
       [250, 40, 30, 75, 10, 50, 65],
       [150, 20, 10, 25, 0, 30, 35],
@@ -370,7 +369,7 @@ describe('PlayerDetailDrawer reference average', () => {
     expect(radarReference(wrapper).every(axis => axis.normalized === 0.5)).toBe(true)
   })
 
-  it('summary maps every authoritative V5 dimension max to 150 and the current cohort average to 75', () => {
+  it('summary maps every authoritative League V6 dimension max to 150 and the current cohort average to 75', () => {
     const maxes = [365, 110, 110, 180, 50, 75, 110]
     const player = { ...SUMMARY_PLAYER, dimensionMeans: maxes }
     const scopePlayers = scopes(maxes, maxes.map(max => max / 2))
@@ -467,7 +466,6 @@ describe('Radar scope-aware data source contract', () => {
       ...BATTLE_PLAYER,
       dimensionScores: [320, 55, 70, 110, 40, 70, 82],
       dimensionMeans: [1, 2, 3, 4, 5, 6, 7],
-      dimensionMedians: [8, 9, 10, 11, 12, 13, 14],
     }
     const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, battle)
     const values = radarValues(wrapper)
@@ -477,7 +475,7 @@ describe('Radar scope-aware data source contract', () => {
     expect(values.league_kill_score.rawValue).not.toBe(10)
   })
 
-  it('column.max 缺失时 V5 bounded geometry fail-closed，不回退旧 relative scale', () => {
+  it('column.max 缺失时 V6 bounded geometry fail-closed，不回退旧 relative scale', () => {
     const columnsWithoutMax = LEAGUE_COLUMNS.map(column => ({ key: column.key, fixed: column.fixed }))
     const wrapper = mountDrawer(
       { scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER, { leagueColumns: columnsWithoutMax })

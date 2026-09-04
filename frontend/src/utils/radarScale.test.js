@@ -23,7 +23,7 @@ describe('radarScale', () => {
     expect(radarVisualValue(1000, 20)).toBe(RADAR_DISPLAY_CAP)
   })
 
-  it('maps V5 zero / cohort average / strong threshold / dimension max to 0 / 75 / 100 / 150', () => {
+  it('maps League V6 zero / cohort average / strong threshold / dimension max to 0 / 75 / 100 / 150', () => {
     const average = 40
     const max = 100
     expect(radarBoundedVisualValue(0, average, max)).toBe(0)
@@ -33,7 +33,7 @@ describe('radarScale', () => {
     expect(radarBoundedVisualValue(max, average, max)).toBe(RADAR_DISPLAY_CAP)
   })
 
-  it('maps the approved V5 screenshot sample with average75/max150 semantics', () => {
+  it('maps the approved League V6 screenshot sample with average75/max150 semantics', () => {
     const player = [290, 90, 53, 75, 26, 148, 11]
     const average = [183, 69, 37, 35, 22, 89, 34]
     const max = [365, 110, 110, 75, 50, 180, 110]
@@ -43,7 +43,7 @@ describe('radarScale', () => {
     })
   })
 
-  it('fails closed when bounded V5 anchors are missing, invalid, or contradictory', () => {
+  it('fails closed when bounded League V6 anchors are missing, invalid, or contradictory', () => {
     for (const [player, reference, max] of [
       [null, 20, 100], ['', 20, 100], [Number.NaN, 20, 100],
       [10, null, 100], [10, 0, 100], [10, Number.POSITIVE_INFINITY, 100],
@@ -113,7 +113,7 @@ describe('radarScale', () => {
     }
   })
 
-  it('scales V5 by authoritative per-axis max while preserving a regular 75 reference ring', () => {
+  it('scales League V6 by authoritative per-axis max while preserving a regular 75 reference ring', () => {
     const metrics = [
       { key: 'damage', rawValue: 80, displayValue: '80 / 100', available: true },
       { key: 'assist', rawValue: 20, displayValue: '20 / 120', available: true },
@@ -132,7 +132,7 @@ describe('radarScale', () => {
     expect(scaled.reference.map(axis => axis.normalized)).toEqual([0.5, 0.5])
   })
 
-  it('marks V5 player/reference unavailable when authoritative max metadata is absent', () => {
+  it('marks League V6 player/reference unavailable when authoritative max metadata is absent', () => {
     const metric = { key: 'assist', rawValue: 60, displayValue: '60', available: true }
     const reference = { key: 'assist', rawValue: 40, displayValue: '40', available: true }
     for (const maxByKey of [{}, { assist: null }, { assist: 0 }, { assist: 40 }]) {

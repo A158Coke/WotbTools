@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * League Rating 批量工作簿：选手汇总（中位数）/ 战队汇总（中位数）/ 每场明细 /
+ * League Rating 批量工作簿：选手汇总 / 战队汇总 / 每场明细 /
  * 战斗列表（含重复、冲突、校验失败）。不产生赛季排名或批次奖项。
  */
 final class LeagueAggregateSheets {
@@ -58,12 +58,11 @@ final class LeagueAggregateSheets {
         header.add(new String[]{"战队", "10"});
         // rated-only sample：League 专属 summary 的场次是评分样本，与 Replay 汇总的解析场次区分
         header.add(new String[]{"评分场次", "8"});
-        // V5：主 Rating = Batch Player Rating（Evidence Adjustment）；Raw Median 是 explainability
+        // V6：主 Rating 为固定先验投影，同时导出实际比赛 Observed Mean
         header.add(new String[]{"总Rating", "12"});
-        header.add(new String[]{"原始中位数", "12"});
-        // 七维标题单一来源：LeagueExcelColumns.dimensionTitle（key 由 LeagueColumns.DIM_KEYS 驱动）
+        header.add(new String[]{"Observed Mean", "12"});
         for (final String key : LeagueColumns.DIM_KEYS) {
-            header.add(new String[]{LeagueExcelColumns.dimensionTitle(key) + "中位数", "10"});
+            header.add(new String[]{LeagueExcelColumns.dimensionTitle(key) + "平均", "10"});
         }
         header.add(new String[]{"MVP次数", "8"});
         header.add(new String[]{"胜场", "6"});
@@ -77,10 +76,10 @@ final class LeagueAggregateSheets {
             int c = 0;
             styles.setCell(row.createCell(c++), s.nickname(), styles.plain(), "nickname");
             styles.setCell(row.createCell(c++), s.clan(), styles.plain(), "clan");
-            styles.setCell(row.createCell(c++), s.battles(), styles.plain(), "battles");
-            styles.setCell(row.createCell(c++), ExcelStyles.r1(s.batchRatingV5()), styles.plain(), "league_rating");
-            styles.setCell(row.createCell(c++), ExcelStyles.r1(s.ratingMedian()), styles.plain(), "league_rating_raw_median");
-            for (final Double d : s.dimensionMedians()) {
+            styles.setCell(row.createCell(c++), s.ratedBattles(), styles.plain(), "rated_battles");
+            styles.setCell(row.createCell(c++), ExcelStyles.r1(s.rating()), styles.plain(), "league_rating");
+            styles.setCell(row.createCell(c++), ExcelStyles.r1(s.observedMean()), styles.plain(), "league_observed_mean");
+            for (final Double d : s.dimensionMeans()) {
                 styles.setCell(row.createCell(c++), ExcelStyles.r1(d), styles.plain(), "league_score");
             }
             styles.setCell(row.createCell(c++), s.mvpCount(), styles.plain(), "mvp_count");
@@ -98,10 +97,10 @@ final class LeagueAggregateSheets {
         header.add(new String[]{"战队", "20"});
         // rated-only sample（同选手汇总：评分场次 ≠ Replay 解析场次）
         header.add(new String[]{"评分场次", "8"});
-        header.add(new String[]{"战队Rating中位数", "12"});
-        // 七维标题单一来源：LeagueExcelColumns.dimensionTitle（key 由 LeagueColumns.DIM_KEYS 驱动）
+        header.add(new String[]{"战队Rating", "12"});
+        header.add(new String[]{"Observed Mean", "12"});
         for (final String key : LeagueColumns.DIM_KEYS) {
-            header.add(new String[]{LeagueExcelColumns.dimensionTitle(key) + "中位数", "10"});
+            header.add(new String[]{LeagueExcelColumns.dimensionTitle(key) + "平均", "10"});
         }
         header.add(new String[]{"胜场", "6"});
         styles.writeHeader(ws, header);
@@ -110,9 +109,10 @@ final class LeagueAggregateSheets {
             final Row row = ws.createRow(rIdx++);
             int c = 0;
             styles.setCell(row.createCell(c++), teamDisplayName(s), styles.plain(), "team_name");
-            styles.setCell(row.createCell(c++), s.battles(), styles.plain(), "battles");
-            styles.setCell(row.createCell(c++), ExcelStyles.r1(s.ratingMedian()), styles.plain(), "league_rating");
-            for (final Double d : s.dimensionMedians()) {
+            styles.setCell(row.createCell(c++), s.ratedBattles(), styles.plain(), "rated_battles");
+            styles.setCell(row.createCell(c++), ExcelStyles.r1(s.rating()), styles.plain(), "league_rating");
+            styles.setCell(row.createCell(c++), ExcelStyles.r1(s.observedMean()), styles.plain(), "league_observed_mean");
+            for (final Double d : s.dimensionMeans()) {
                 styles.setCell(row.createCell(c++), ExcelStyles.r1(d), styles.plain(), "league_score");
             }
             styles.setCell(row.createCell(c++), s.wins(), styles.plain(), "wins");
