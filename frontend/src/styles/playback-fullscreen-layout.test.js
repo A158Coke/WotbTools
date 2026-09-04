@@ -242,6 +242,23 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     }
   })
 
+  // 车辆详情是 .pb-sidebar，标签面板是 .pb-side-panel——两个不同元素都挂在 shell 下。
+  // 手机抽屉形态曾经只写给 .pb-side-panel，结果车辆详情完全没被改到。
+  it('gives the mobile drawer treatment to the details element itself', () => {
+    const sheet = ruleBody('.battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar')
+    expect(sheet).not.toBeNull()
+    // 竖屏默认：底部 sheet，地图留在上方
+    expect(sheet).toContain('bottom: 8px')
+    expect(sheet).toContain('top: auto')
+    expect(sheet).toContain('animation: pb-details-slide-up')
+    expect(sheet).toContain('max-height: min(58dvh, 480px)')
+    // 横屏：右侧滑入窗口
+    expect(stripped).toContain('@media (orientation: landscape)')
+    const landscape = stripped.slice(stripped.indexOf('@media (orientation: landscape)'))
+    expect(landscape).toContain('animation: pb-details-slide-in')
+    expect(landscape).toContain('left: auto')
+  })
+
   // VehicleDetailsPanel 挂在 .pb-side-panel-shell 下，不在 .pb-side-panel 内。
   // 只覆盖 .pb-side-panel .pb-sidebar 的写法匹配不到它，组件的 width: 260px 会一直生效，
   // 详情就在几百像素宽的列里缩成一张窄卡片。

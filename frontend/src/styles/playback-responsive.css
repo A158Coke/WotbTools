@@ -670,7 +670,9 @@
   background: color-mix(in srgb, var(--bg) 52%, transparent);
   z-index: 60;
 }
-/* §mobile-details-sheet：选中车辆后在 mobile fullscreen 以 bottom-sheet 展示 Details。 */
+/* §mobile-details：车辆详情是 .pb-sidebar（VehicleDetailsPanel），不是 .pb-side-panel
+   （后者是战局/显示/事件的标签面板）。两者都挂在 shell 下，抽屉形态必须分别写。
+   竖屏：底部滑上来的 sheet，地图留在上方可见。 */
 .battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
   position: absolute;
   left: 8px;
@@ -678,8 +680,31 @@
   bottom: 8px;
   top: auto;
   width: auto;
-  max-height: min(72vh, 640px);
+  max-height: min(58dvh, 480px);
   border-radius: 10px;
+  animation: pb-details-slide-up .22s ease-out;
+}
+/* 横屏（含全屏）：右侧滑入的窗口。竖屏用右侧窗口会占满整屏、盖掉地图。 */
+@media (orientation: landscape) {
+  .battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
+    left: auto;
+    right: 8px;
+    top: 8px;
+    bottom: 8px;
+    width: min(340px, calc(100vw - 16px));
+    max-height: none;
+    border-radius: 12px;
+    animation: pb-details-slide-in .22s ease-out;
+  }
+  .battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
+    /* 全屏时左侧有 rail 列，宽度要让开它。 */
+    width: min(340px, calc(100vw - var(--pb-left-col) - 16px));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
+    animation: none;
+  }
 }
 .battle-playback.pb-device-mobile .pb-annotation-surface {
   bottom: 8px;
