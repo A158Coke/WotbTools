@@ -42,8 +42,8 @@ function fitRenderer() {
   if (!host.value || !renderer || !camera) return
   const width = Math.max(1, host.value.clientWidth)
   const height = Math.max(1, host.value.clientHeight)
-  renderer.setSize(width, height, false)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+  renderer.setSize(width, height, false)
   camera.aspect = width / height
   camera.updateProjectionMatrix()
 }
@@ -74,7 +74,7 @@ function finiteNumber(value, fallback = 0) {
 function terrainColor(height, minHeight, maxHeight, target) {
   const span = Math.max(1e-6, maxHeight - minHeight)
   const t = Math.max(0, Math.min(1, (height - minHeight) / span))
-  // Renderer-neutral derived presentation: elevation shading only. No client texture/material data.
+  // Elevation-only derived presentation; no client textures/materials are redistributed.
   const low = [0.16, 0.20, 0.20]
   const mid = [0.30, 0.36, 0.33]
   const high = [0.52, 0.56, 0.52]
@@ -102,13 +102,13 @@ function buildTerrainGeometry(terrainMeta, terrainBuffer) {
   const yMax = finiteNumber(bounds.yMax)
   if (!(xMax > xMin) || !(yMax > yMin)) throw new Error('Terrain world bounds are invalid')
 
-  // DAVA semantic contract maps samples with range / size spacing (not range / (size - 1)).
+  // DAVA semantic contract uses range / size spacing, validated by SC2 point-Z sampling.
   const xSpacing = (xMax - xMin) / size
   const ySpacing = (yMax - yMin) / size
   const positions = new Float32Array(size * size * 3)
   const colors = new Float32Array(size * size * 3)
-  const minHeight = finiteNumber(terrainMeta?.heightRangeMeters?.min, Math.min(...heights))
-  const maxHeight = finiteNumber(terrainMeta?.heightRangeMeters?.max, Math.max(...heights))
+  const minHeight = finiteNumber(terrainMeta?.heightRangeMeters?.min, 0)
+  const maxHeight = finiteNumber(terrainMeta?.heightRangeMeters?.max, minHeight + 1)
   const rgb = [0, 0, 0]
 
   for (let y = 0; y < size; y++) {
@@ -126,8 +126,7 @@ function buildTerrainGeometry(terrainMeta, terrainBuffer) {
     }
   }
 
-  const cellCount = (size - 1) * (size - 1)
-  const indices = new Uint32Array(cellCount * 6)
+  const indices = new Uint32Array((size - 1) * (size - 1) * 6)
   let cursor = 0
   for (let y = 0; y < size - 1; y++) {
     const row = y * size
@@ -156,6 +155,24 @@ function buildTerrainGeometry(terrainMeta, terrainBuffer) {
   return geometry
 }
 
+function buildStaticGeometry(record, positionsBuffer, indicesBuffer) {
+  const positions = new Float32Array(
+    positionsBuffer,
+    Number(record.positionFloatOffset) * 4,
+    Number(record.positionFloatCount),
+  )
+  const indices = new Uint32Array(
+    indicesBuffer,
+    Number(record.indexOffset) * 4,
+    Number(record.indexCount),
+  )
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1))
+  geometry.computeVertexNormals()
+  return geometry
+}
+
 async function loadMap() {
   const token = ++loadToken
   disposeScene()
@@ -180,12 +197,14 @@ async function loadMap() {
       detail.value = 'Local 3D map assets are missing. Run export_playback_3d_assets.py first.'
       return
     }
+
     let index
     try {
       index = JSON.parse(indexText)
     } catch (error) {
       throw new Error(`Invalid local 3D asset index: ${error instanceof Error ? error.message : String(error)}`)
     }
+
     const entry = index?.maps?.[props.mapCode]
     if (!entry?.manifest) {
       status.value = 'missing'
@@ -198,9 +217,7 @@ async function loadMap() {
       return
     }
 
-    const referenceGroundZ = Number.isFinite(Number(entry.referenceGroundZMeters))
-      ? Number(entry.referenceGroundZMeters)
-      : 0
+    const referenceGroundZ = finiteNumber(entry.referenceGroundZMeters, 0)
     const manifestResponse = await fetchRequired(entry.manifest)
     const manifestText = await manifestResponse.text()
     if (looksLikeHtml(manifestResponse, manifestText)) {
@@ -208,6 +225,7 @@ async function loadMap() {
     }
     const manifest = JSON.parse(manifestText)
     if (manifest?.schemaVersion !== 3) throw new Error(`Unsupported geometry schema: ${manifest?.schemaVersion}`)
+
     const baseUrl = entry.manifest.slice(0, entry.manifest.lastIndexOf('/') + 1)
     const [positionsBuffer, indicesBuffer, terrainBuffer] = await Promise.all([
       fetchRequired(baseUrl + manifest.buffers.positions.file).then((response) => response.arrayBuffer()),
@@ -246,8 +264,7 @@ async function loadMap() {
     nextRenderer.shadowMap.enabled = false
     host.value.appendChild(nextRenderer.domElement)
 
-    const ambient = new THREE.HemisphereLight(0xcfe0e9, 0x20292b, 1.72)
-    nextScene.add(ambient)
+    nextScene.add(new THREE.HemisphereLight(0xcfe0e9, 0x20292b, 1.72))
     const sun = new THREE.DirectionalLight(0xfff4dd, 2.75)
     sun.position.set(centerX - span * 0.72, centerY - span * 0.92, actualMaxZ + span * 1.15)
     nextScene.add(sun)
@@ -255,14 +272,15 @@ async function loadMap() {
     fill.position.set(centerX + span * 0.8, centerY + span * 0.45, actualMaxZ + span * 0.38)
     nextScene.add(fill)
 
-    const terrainGeometry = buildTerrainGeometry(entry.terrain, terrainBuffer)
-    const terrainMaterial = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 1,
-      metalness: 0,
-      side: THREE.FrontSide,
-    })
-    const terrainMesh = new THREE.Mesh(terrainGeometry, terrainMaterial)
+    const terrainMesh = new THREE.Mesh(
+      buildTerrainGeometry(entry.terrain, terrainBuffer),
+      new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 1,
+        metalness: 0,
+        side: THREE.FrontSide,
+      }),
+    )
     terrainMesh.name = 'derived-real-heightmap-terrain'
     nextScene.add(terrainMesh)
 
@@ -272,24 +290,9 @@ async function loadMap() {
       metalness: 0.015,
       side: THREE.DoubleSide,
     })
-
     const geometries = new Map()
     for (const record of manifest.geometry || []) {
-      const positions = new Float32Array(
-        positionsBuffer,
-        Number(record.positionFloatOffset) * 4,
-        Number(record.positionFloatCount),
-      )
-      const indices = new Uint32Array(
-        indicesBuffer,
-        Number(record.indexOffset) * 4,
-        Number(record.indexCount),
-      )
-      const geometry = new THREE.BufferGeometry()
-      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-      geometry.setIndex(new THREE.BufferAttribute(indices, 1))
-      geometry.computeVertexNormals()
-      geometries.set(Number(record.id), geometry)
+      geometries.set(Number(record.id), buildStaticGeometry(record, positionsBuffer, indicesBuffer))
     }
 
     const instancesByDatasource = new Map()
