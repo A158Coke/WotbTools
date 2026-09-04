@@ -97,7 +97,8 @@ Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`
      auth transaction 与 cookie jar；**不**进入 `auth-recovery`、不 reload 首页、不打开系统浏览器、
      不复制 cookie。QQ App 未安装时 fail closed（提示安装后重试），不 silent fallback。
   native handoff 不做 scheme 前缀 / host 后缀 / `mqq*` / `*.qq.com` 通配信任；未观察到的 native
-  scheme/host 在 auth flow 内仍 `AUTH_FAILURE`。日志只记录 `scheme`/`host`/`source`，不记录
+  scheme/host（含 host=null 的未知 custom scheme）在 auth flow 内仍 `AUTH_FAILURE` 且不退出 auth flow
+  （fail closed）。日志只记录 `scheme`/`host`/`source`，不记录
   完整 URI/query/token/code/state（见 `AuthNavigationPolicyTest.verifiedNativeQqHandoffOnlyDuringAuthFlow`）。
 - 返回 `wotbtools.com` / `www.wotbtools.com` 表示 callback 成功并结束 auth flow。认证外直接访问
   provider host 不获得 privileged WebView handling；其它 top-level host 由系统浏览器打开。

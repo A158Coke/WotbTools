@@ -76,30 +76,33 @@ internal object AuthNavigationPolicy {
             return AuthNavigationDecision(AuthNavigationAction.NATIVE_AUTH_HANDOFF, true)
         }
 
-        val resolvedHost = normalizedHost
-            ?: return AuthNavigationDecision(AuthNavigationAction.ALLOW_WEBVIEW, false)
-
         // App host ends the auth flow (successful callback back to the app).
-        if (resolvedHost in APP_HOSTS) {
+        if (normalizedHost != null && normalizedHost in APP_HOSTS) {
             return AuthNavigationDecision(AuthNavigationAction.ALLOW_WEBVIEW, false)
         }
 
-        if (resolvedHost in KEYCLOAK_HOSTS) {
+        if (normalizedHost != null && normalizedHost in KEYCLOAK_HOSTS) {
             return AuthNavigationDecision(AuthNavigationAction.ALLOW_AUTH_WEBVIEW, true)
         }
 
-        if (resolvedHost in AUTH_PROVIDER_HOSTS && inAuthFlow) {
+        if (normalizedHost != null && normalizedHost in AUTH_PROVIDER_HOSTS && inAuthFlow) {
             return AuthNavigationDecision(AuthNavigationAction.ALLOW_AUTH_WEBVIEW, true)
         }
 
-        // Unverified host inside the auth flow: block and enter recovery. Never OPEN_EXTERNAL
-        // here, and never clear the auth-flow marker as part of this decision.
+        // Inside the auth flow: any unverified navigation — including a hostless unknown
+        // custom scheme — must fail closed. Never OPEN_EXTERNAL here, and never clear the
+        // auth-flow marker as part of this decision.
         if (inAuthFlow) {
             return AuthNavigationDecision(AuthNavigationAction.AUTH_FAILURE, true)
         }
 
-        // Non-auth flow: ordinary external links (web or custom scheme) open outside the WebView.
-        return AuthNavigationDecision(AuthNavigationAction.OPEN_EXTERNAL, false)
+        // Non-auth flow: hostless navigation stays in the WebView (no external target to open);
+        // ordinary external links (with a host) open outside the WebView.
+        return if (normalizedHost == null) {
+            AuthNavigationDecision(AuthNavigationAction.ALLOW_WEBVIEW, false)
+        } else {
+            AuthNavigationDecision(AuthNavigationAction.OPEN_EXTERNAL, false)
+        }
     }
 
     /** Source category for the navigation trace: app / keycloak / auth-provider / auth-provider-native / unknown. */

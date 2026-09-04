@@ -313,11 +313,39 @@ class AuthNavigationPolicyTest {
     }
 
     @Test
-    fun hostlessNavigationEndsAuthState() {
-        val decision = AuthNavigationPolicy.decide(null, null, inAuthFlow = true)
+    fun hostlessNavigationFailsClosedInsideAuthFlow() {
+        // hostless 导航在 auth flow 内必须 fail closed：不得 ALLOW_WEBVIEW 并退出 auth flow，
+        // 而是 AUTH_FAILURE + 保留 inAuthFlow（交给 recovery 处理）。
+        val inAuth = AuthNavigationPolicy.decide(null, null, inAuthFlow = true)
 
-        assertEquals(AuthNavigationAction.ALLOW_WEBVIEW, decision.action)
-        assertEquals(false, decision.inAuthFlow)
+        assertEquals(AuthNavigationAction.AUTH_FAILURE, inAuth.action)
+        assertEquals(true, inAuth.inAuthFlow)
+
+        // 非 auth flow 下的 hostless 导航保持在 WebView（没有外部目标可打开）。
+        val nonAuth = AuthNavigationPolicy.decide(null, null, inAuthFlow = false)
+        assertEquals(AuthNavigationAction.ALLOW_WEBVIEW, nonAuth.action)
+        assertEquals(false, nonAuth.inAuthFlow)
+    }
+
+    @Test
+    fun unknownCustomSchemeWithNullHostFailsClosedInAuthFlow() {
+        // 回归：auth flow 内出现 hostless 未知 custom scheme（host=null）时，
+        // 不得绕过 fail-closed 进入 ALLOW_WEBVIEW 并清空 inAuthFlow。
+        assertDecision(
+            scheme = "unknownscheme",
+            host = null,
+            inAuthFlow = true,
+            action = AuthNavigationAction.AUTH_FAILURE,
+            nextInAuthFlow = true
+        )
+        // 非 auth flow 下的 hostless custom scheme 仍保持在 WebView。
+        assertDecision(
+            scheme = "unknownscheme",
+            host = null,
+            inAuthFlow = false,
+            action = AuthNavigationAction.ALLOW_WEBVIEW,
+            nextInAuthFlow = false
+        )
     }
 
     @Test
