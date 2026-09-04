@@ -37,7 +37,7 @@ const baseProps = () => ({
     { baseId: 'A', x: -10, y: 10, radius: 15, status: 'friendly_controlled' },
     { baseId: 'B', x: 10, y: -10, radius: 15, status: 'capturing' },
   ],
-  visibleTracers: [{ timeSec: 2, x1: 1, y1: 2, x2: 5, y2: 6, attackerAccountId: 1, opacity: 1, flashProgress: 1, flashOpacity: 0 }],
+  visibleTracers: [{ timeSec: 2, hasLine: true, x1: 1, y1: 2, x2: 5, y2: 6, attackerAccountId: 1, opacity: 1, flashProgress: 1, flashOpacity: 0 }],
   tracerColor: () => '#fff',
   renderedAnnotations: [{ type: 'text', x: 30, y: 30, text: 'Callout', color: '#fff' }],
   annotVisible: true,

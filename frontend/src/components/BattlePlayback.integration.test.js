@@ -107,6 +107,21 @@ describe('Supremacy 基地 overlay', () => {
   })
 
   // 非争霸战（baseStates 为空，或旧 producer 未发该字段）不得靠地图几何画出基地。
+  // 契约：省略的字段保留旧值，所以放弃占领后 captureProgress 仍是旧数，只有 capturingTeam 归 null。
+  // 水位必须跟着 capturingTeam 消失，否则地图上会一直挂着一个没踩下来的进度。
+  it('clears the capture fill when the capture is abandoned but progress is retained', async () => {
+    const dataset = makePlaybackV2({
+      baseStates: [
+        { timeSec: 0, baseId: 'A', ownerTeam: null, capturingTeam: 2, captureProgress: 80 },
+        { timeSec: 5, baseId: 'A', ownerTeam: null, capturingTeam: null, captureProgress: 80 },
+      ],
+    })
+    const wrapper = await mountPlayback(makeOverview(), 6, dataset)
+    expect(wrapper.findAll('[data-test="pb-base-fill"]')).toHaveLength(0)
+    // 圆圈本身仍在（基地还是中立），只是没有进度水位
+    expect(wrapper.findAll('.pb-base-circle')).toHaveLength(3)
+  })
+
   it('renders no base circles when the replay has no Supremacy base tracks', async () => {
     const wrapper = await mountPlayback(makeOverview(), null, makePlaybackV2({ baseStates: [] }))
     expect(wrapper.findAll('.pb-base-circle')).toHaveLength(0)
