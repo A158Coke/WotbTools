@@ -282,6 +282,22 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(column).toContain('max-height: 100%')
   })
 
+  // 控制条在流内时不能再被「触摸唤起」的 opacity: 0 压住——元素已不在地图上，
+  // 没有能唤起它的触摸，结果就是控制条彻底消失。这条规则特异性高于按宽度写的那条，
+  // 所以必须一起改，否则真机上仍然看不见。
+  it('never hides the in-flow controls behind a touch-reveal opacity', () => {
+    for (const sel of [
+      '.battle-playback:not(:fullscreen) .pb-mobile-overlay',
+      '.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay',
+    ]) {
+      const body = ruleBody(sel)
+      expect(body).not.toBeNull()
+      expect(body).toContain('position: static')
+      expect(body).toContain('opacity: 1')
+      expect(body).not.toContain('pointer-events: none')
+    }
+  })
+
   // 同一选择器写两遍时，后一条静默赢过前一条——本文件的 ruleBody 只取第一条，
   // 于是「测试断言的」和「浏览器生效的」可以完全不同。这里守住关键选择器不重复。
   it('does not declare the same layout selector twice at the top level', () => {
