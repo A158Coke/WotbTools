@@ -1808,7 +1808,10 @@ const basesAt = computed(() => {
       return {
         ...base,
         status: baseStatus(state),
-        progress: state?.captureProgress ?? null,
+        // 水位表示「有人正在占领」，门禁是 capturingTeam 而不是 captureProgress：
+        // 契约规定省略的字段保留旧值（wrapper12-supremacy-capture-state.md#lifecycle-rules），
+        // 所以车踩了一半离开后 progress 仍是旧数，只有 capturingTeam 会归 null。
+        progress: state?.capturingTeam != null ? (state.captureProgress ?? null) : null,
         capturedBy: capturedBy(state),
       }
     })
