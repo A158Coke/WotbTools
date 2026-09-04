@@ -29,6 +29,11 @@ IMPLEMENTED / PR VALIDATION REQUIRED / PRODUCTION VALIDATION REQUIRED
 - hot return（原 WebView 仍存活）是 authoritative path；cold start 仍是 best effort。
 - 不扩大 QQ host/scheme allowlist，不新增 native OAuth/AppAuth，不复制 Cookie。
 
+## Review 修复
+
+- 修复 Major #1：不再用 callback Chrome 的 Android UA 决定是否拉 App；routing 在原 login request 阶段绑定，普通 Android Chrome 保持 browser-direct。
+- 修复 Major #2：删除 `browser_fallback_url -> mobile-resume -> consume(ticket)` 失败链；无法打开 App 时不在 Chrome 中消费 ticket。
+
 ## 验收
 
 PR CI authoritative validation：
