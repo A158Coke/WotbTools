@@ -10,6 +10,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import BattlePlayback from './BattlePlayback.vue'
 import { makeOverview, makePlaybackV2 } from './playbackTestHarness.js'
 import { preloadBattleModels } from '../vehicle-models/runtime.js'
@@ -27,6 +29,13 @@ vi.mock('../data/mapImages', () => ({
   mapImages: {
     holland: {
       src: 'molendijk.png',
+      width: 766,
+      height: 769,
+      coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
+    },
+    // 有底图但 mapBases 未收录几何——新地图上线到基地坐标补齐之间的真实状态。
+    map_without_base_geometry: {
+      src: 'no-bases.webp',
       width: 766,
       height: 769,
       coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
@@ -74,6 +83,108 @@ async function openPanel(wrapper, name) {
   if (tab.attributes('aria-expanded') !== 'true') await tab.trigger('click')
   await flushPromises()
 }
+
+describe('Supremacy 基地 overlay', () => {
+  // 底图不再烤基地图形，几何来自 mapBases（客户端场景），状态来自 baseStates（回放）。
+  // 这条断言覆盖 BattlePlayback -> BattleMap 的 bases 接线，接线断掉时必须失败。
+  it('renders one circle per Supremacy base and colours it from baseStates', async () => {
+    const dataset = makePlaybackV2({
+      baseStates: [
+        { timeSec: 0, baseId: 'A', ownerTeam: 1, capturingTeam: null, captureProgress: null },
+        { timeSec: 0, baseId: 'B', ownerTeam: 2, capturingTeam: null, captureProgress: null },
+        { timeSec: 0, baseId: 'C', ownerTeam: null, capturingTeam: 2, captureProgress: 40 },
+      ],
+    })
+    const wrapper = await mountPlayback(makeOverview(), null, dataset)
+
+    // holland 在 mapBases 里是 3 个争霸基地
+    expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(3)
+    expect(wrapper.find('[data-test="pb-bases"]').text()).toContain('A')
+    // 圆圈颜色 = 当前归属；C 还没易主，所以是 neutral 而不是占领方颜色
+    expect(wrapper.findAll('.pb-base-friendly_controlled')).toHaveLength(1)
+    expect(wrapper.findAll('.pb-base-enemy_controlled')).toHaveLength(1)
+    expect(wrapper.findAll('.pb-base-neutral')).toHaveLength(1)
+    // 进度水位只画在正在被占的 C 上，颜色是占领方（敌方）
+    const fills = wrapper.findAll('[data-test="pb-base-fill"]')
+    expect(fills).toHaveLength(1)
+    expect(fills[0].classes()).toContain('pb-capture-enemy')
+    // 水位由 clipPath 的矩形高度决定：40% 进度 → 高度是直径的 40%
+    const clipRects = wrapper.findAll('clipPath rect')
+    expect(clipRects).toHaveLength(3)
+    const diameter = Number(clipRects[2].attributes('width'))
+    expect(Number(clipRects[2].attributes('height'))).toBeCloseTo(diameter * 0.4, 3)
+  })
+
+  // 非争霸战（baseStates 为空，或旧 producer 未发该字段）不得靠地图几何画出基地。
+  // HUD chip 是 fallback：地图能画基地时不重复；mapBases 未收录该图时 HUD 必须仍然显示，
+  // 否则新地图上线到素材补齐之间会完全看不到基地归属。
+  it('keeps the HUD base chips when mapBases has no geometry for the map', async () => {
+    const states = [
+      { timeSec: 0, baseId: 'A', ownerTeam: 1, capturingTeam: null, captureProgress: null },
+      { timeSec: 0, baseId: 'B', ownerTeam: 2, capturingTeam: null, captureProgress: null },
+    ]
+    const overview = { ...makeOverview(), mapCode: 'map_without_base_geometry' }
+    const dataset = { ...makePlaybackV2({ baseStates: states }), mapCode: 'map_without_base_geometry' }
+    const wrapper = await mountPlayback(overview, null, dataset)
+
+    expect(wrapper.findAll('.pb-base-circle')).toHaveLength(0)
+    const hud = wrapper.find('[data-test="pb-hud-bases"]')
+    expect(hud.exists()).toBe(true)
+    expect(hud.text()).toContain('A')
+    expect(hud.text()).toContain('B')
+  })
+
+  // 反向：地图画得出基地时 HUD 不再重复一份。
+  it('hides the HUD base chips once the map renders the bases', async () => {
+    const dataset = makePlaybackV2({
+      baseStates: [{ timeSec: 0, baseId: 'A', ownerTeam: 1, capturingTeam: null, captureProgress: null }],
+    })
+    const wrapper = await mountPlayback(makeOverview(), null, dataset)
+    expect(wrapper.findAll('.pb-base-circle').length).toBeGreaterThan(0)
+    expect(wrapper.find('[data-test="pb-hud-bases"]').exists()).toBe(false)
+  })
+
+  // wire 契约不保证 baseStates 按 timeSec 排序。靠数组顺序取「当前状态」会选中过期的一条，
+  // 表现就是车早已离开、占领已清空，地图上却还画着进度。
+  it('uses the latest transition by time, not by array order', async () => {
+    const dataset = makePlaybackV2({
+      baseStates: [
+        // 故意乱序：清空（t=5）排在开始占领（t=1）之前
+        { timeSec: 5, baseId: 'A', ownerTeam: null, capturingTeam: null, captureProgress: 60 },
+        { timeSec: 1, baseId: 'A', ownerTeam: null, capturingTeam: 1, captureProgress: 60 },
+      ],
+    })
+    const wrapper = await mountPlayback(makeOverview(), 8, dataset)
+    expect(wrapper.findAll('[data-test="pb-base-fill"]')).toHaveLength(0)
+  })
+
+  // 契约：省略的字段保留旧值，所以放弃占领后 captureProgress 仍是旧数，只有 capturingTeam 归 null。
+  // 水位必须跟着 capturingTeam 消失，否则地图上会一直挂着一个没踩下来的进度。
+  it('clears the capture fill when the capture is abandoned but progress is retained', async () => {
+    const dataset = makePlaybackV2({
+      baseStates: [
+        { timeSec: 0, baseId: 'A', ownerTeam: null, capturingTeam: 2, captureProgress: 80 },
+        { timeSec: 5, baseId: 'A', ownerTeam: null, capturingTeam: null, captureProgress: 80 },
+      ],
+    })
+    const wrapper = await mountPlayback(makeOverview(), 6, dataset)
+    expect(wrapper.findAll('[data-test="pb-base-fill"]')).toHaveLength(0)
+    // 圆圈本身仍在（基地还是中立），只是没有进度水位
+    expect(wrapper.findAll('.pb-base-circle')).toHaveLength(3)
+  })
+
+  it('renders no base circles when the replay has no Supremacy base tracks', async () => {
+    const wrapper = await mountPlayback(makeOverview(), null, makePlaybackV2({ baseStates: [] }))
+    expect(wrapper.findAll('.pb-base-circle')).toHaveLength(0)
+    expect(wrapper.findAll('[data-test="pb-base-fill"]')).toHaveLength(0)
+  })
+
+  it('no longer draws the analysis grid or the nine-grid region outlines', async () => {
+    const wrapper = await mountPlayback()
+    expect(wrapper.findAll('.pb-cell')).toHaveLength(0)
+    expect(wrapper.findAll('.pb-region-line')).toHaveLength(0)
+  })
+})
 
 function trackOf(dataset, accountId) {
   return dataset.vehicles.find((vehicle) => vehicle.accountId === accountId)
@@ -807,10 +918,14 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
   }
   /** ResizeObserver stub：捕获回调，测试里手动触发模拟尺寸变化。 */
   function stubResizeObserver() {
-    let roCb = null
-    const RO = vi.fn(function (cb) { roCb = cb; this.observe = vi.fn(); this.disconnect = vi.fn() })
+    // 组件里不止一个 ResizeObserver（地图一个、Map Workspace 一个）。只留最后一个回调
+    // 会让喂进去的 entries 落到错误的观察者身上，于是 mapSize 永远是 0、scale 恒为 1。
+    // 广播给全部回调即可——每个回调本来就按 e.target 过滤自己关心的元素。
+    const callbacks = []
+    const RO = vi.fn(function (cb) { callbacks.push(cb); this.observe = vi.fn(); this.disconnect = vi.fn() })
     vi.stubGlobal('ResizeObserver', RO)
-    return () => roCb
+    // 保持原 API：返回的是「取回调」的 getter，取到的才是喂 entries 的那个函数。
+    return () => (callbacks.length ? (entries) => { for (const cb of callbacks) cb(entries) } : null)
   }
   /** matchMedia stub：按 query 返回 matches（用于模拟移动端/大桌面判定）。 */
   function stubMatchMedia(matchesByQuery = {}) {
@@ -830,6 +945,128 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     vi.unstubAllGlobals()
     vi.useRealTimers()
     resetFullscreenGlobals()
+  })
+
+  // 碰撞必须喂渲染方框，不能喂各向异性的车体矩形：贴图按航向在方框内旋转，方框才是
+  // 屏幕外接盒。喂车体矩形时横向行驶/接近垂直的两车判定失准，视觉上仍然叠在一起。
+  it('feeds the rendered box into the collision layout, not the hull rectangle', () => {
+    // happy-dom 下 import.meta.url 不是 file URL，用 cwd 相对路径读源码。
+    const src = readFileSync(resolve(process.cwd(), 'src/components/BattlePlayback.vue'), 'utf8')
+    expect(src).toContain('state.markerSize.renderBox.width * view.scale')
+    expect(src).toContain('state.markerSize.renderBox.height * view.scale')
+    expect(src).not.toContain('state.markerSize.collisionFootprint.width * view.scale')
+  })
+
+  // §side-slots：侧栏形态下 safeInsets 必须归零。忘了归零的话上下仍按 HUD/controls
+  // 高度预留，地图白白小一圈——882×344 上是 336px 与 188px 的差别。
+  it('stops reserving top/bottom insets once the panels move into the gutters', () => {
+    const src = readFileSync(resolve(process.cwd(), 'src/components/BattlePlayback.vue'), 'utf8')
+    const fn = src.slice(src.indexOf('function safeInsets()'))
+    const body = fn.slice(0, fn.indexOf('function applyView'))
+    expect(body).toContain('if (sideSlots.value) return { top, bottom }')
+    // 判定必须早于 HUD/controls 的高度量取
+    expect(body.indexOf('sideSlots.value')).toBeLessThan(body.indexOf('.pb-hud'))
+  })
+
+  // 三档必须严格互补：mobile 的上界与 pc 的下界不能重叠，否则同一视口既是
+  // mobile 形态、又命中 pc 的媒体查询，互斥性就是假的。
+  it('keeps the mobile and pc breakpoints strictly complementary', () => {
+    const src = readFileSync(resolve(process.cwd(), 'src/components/BattlePlayback.vue'), 'utf8')
+    const mobileMax = /max-width:\s*([\d.]+)px\)'/.exec(src)
+    const pcMin = /matchMedia\('\(min-width:\s*([\d.]+)px\)'\)/.exec(src)
+    expect(mobileMax).not.toBeNull()
+    expect(pcMin).not.toBeNull()
+    expect(Number(mobileMax[1])).toBeLessThan(Number(pcMin[1]))
+  })
+
+  // §three-forms：根元素任何时刻只挂一个形态类。互斥性由这里保证，而不是靠媒体查询
+  // 之间的算术——旧写法里一档的规则会以更高特异性压掉另一档，反复打穿。
+  it('puts exactly one mutually exclusive form class on the root', async () => {
+    const cases = [
+      ['mobile', { '(pointer: coarse) and (max-width: 1199.98px)': true }],
+      ['pc', { '(min-width: 1200px)': true }],
+      ['tablet', {}],
+    ]
+    for (const [expected, queries] of cases) {
+      stubRaf()
+      stubMatchMedia(queries)
+      const wrapper = mountPlayback(makeOverview(), 12)
+      await flushPromises()
+      const classes = wrapper.find('[data-test="battle-playback"]').classes()
+      const forms = classes.filter((c) => c.startsWith('pb-form-'))
+      expect(forms).toEqual([`pb-form-${expected}`])
+      wrapper.unmount()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  // 收起左栏时 controls 必须搬出 rail：非触屏设备的 controls 渲染在 rail 内，
+  // 而收起态把 .pb-rail-body 整块 display:none，播放/进度条会跟着一起消失，
+  // 屏幕上只剩一个展开箭头。
+  it('moves the controls out of the rail when the rail collapses', async () => {
+    stubRaf()
+    stubMatchMedia({ '(min-width: 1200px)': true })
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+
+    const railBody = () => wrapper.find('[data-test="pb-rail-body"]')
+    const controls = () => wrapper.find('[data-test="pb-controls"]')
+    expect(controls().exists()).toBe(true)
+    expect(railBody().element.contains(controls().element)).toBe(true)
+
+    await wrapper.find('[data-test="pb-rail-collapse"]').trigger('click')
+    await flushPromises()
+
+    expect(controls().exists()).toBe(true)
+    expect(railBody().element.contains(controls().element)).toBe(false)
+
+    // 再展开回到 rail 内
+    await wrapper.find('[data-test="pb-rail-collapse"]').trigger('click')
+    await flushPromises()
+    expect(railBody().element.contains(controls().element)).toBe(true)
+  })
+
+  // 左右两栏可拖拽改宽：把手写入 --pb-rail-w / --pb-details-w，并夹在合理区间内。
+  it('resizes the rail by dragging its handle and clamps the width', async () => {
+    stubRaf()
+    stubMatchMedia({ '(min-width: 1200px)': true })
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+
+    const root = wrapper.find('[data-test="battle-playback"]')
+    expect(root.attributes('style') || '').not.toContain('--pb-rail-w')
+
+    const handle = wrapper.find('[data-test="pb-rail-resizer"]')
+    expect(handle.exists()).toBe(true)
+    root.element.getBoundingClientRect = () => ({ left: 0, right: 1600, top: 0, bottom: 900 })
+
+    await handle.trigger('pointerdown', { button: 0, pointerId: 1 })
+    window.dispatchEvent(new window.PointerEvent('pointermove', { clientX: 300 }))
+    await flushPromises()
+    expect(wrapper.find('[data-test="battle-playback"]').attributes('style')).toContain('--pb-rail-w: 300px')
+
+    // 超出上限被夹住（rail 最大 420）
+    window.dispatchEvent(new window.PointerEvent('pointermove', { clientX: 9999 }))
+    await flushPromises()
+    expect(wrapper.find('[data-test="battle-playback"]').attributes('style')).toContain('--pb-rail-w: 420px')
+    window.dispatchEvent(new window.PointerEvent('pointerup', {}))
+  })
+
+  // 宽桌面（>=1200px）：播放控制在 Left Rail 内（rail 已加宽到放得下速度档位那一排），
+  // 且与 rail 图标导航重复的面板/标注/重置/全屏按钮必须隐藏，不能在右下角再出现一份。
+  it('wide desktop puts playback controls in the Left Rail without duplicating rail actions', async () => {
+    stubRaf()
+    stubMatchMedia({ '(min-width: 1200px)': true })
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+
+    const rail = wrapper.find('[data-test="pb-left-rail"]')
+    expect(rail.find('[data-test="pb-controls"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-test="pb-controls"]')).toHaveLength(1)
+    expect(wrapper.find('[data-test="pb-controls"]').classes()).toContain('pb-controls-rail-mode')
+    // rail 里已有这些图标，控制条不再重复
+    expect(wrapper.find('[data-test="pb-rail-reset"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-rail-fullscreen"]').exists()).toBe(true)
   })
 
   it('1/2/3/4/5：API 可用 → 按钮可见；进入调 root.requestFullscreen；fullscreenchange 同步；退出调 exitFullscreen；ESC 外部退出恢复', async () => {
@@ -960,7 +1197,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubRaf()
     stubFullscreenApi()
     stubMatchMedia({
-      '(pointer: coarse) and (max-width: 1200px)': true,
+      '(pointer: coarse) and (max-width: 1199.98px)': true,
       '(min-width: 1200px)': false,
     })
     const getRoCb = stubResizeObserver()
@@ -1018,7 +1255,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubFullscreenApi()
     // 移动端：primary pointer=coarse 且视口<=1200（手机横屏内宽>768 仍命中）。大桌面 1200 判定为 false。
     stubMatchMedia({
-      '(pointer: coarse) and (max-width: 1200px)': true,
+      '(pointer: coarse) and (max-width: 1199.98px)': true,
       '(min-width: 1200px)': false,
     })
     const wrapper = mountPlayback(makeOverview(), 12)
@@ -1074,7 +1311,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubRaf()
     stubFullscreenApi()
     stubMatchMedia({
-      '(pointer: coarse) and (max-width: 1200px)': true,
+      '(pointer: coarse) and (max-width: 1199.98px)': true,
       '(min-width: 1200px)': false,
     })
     const getRoCb = stubResizeObserver()

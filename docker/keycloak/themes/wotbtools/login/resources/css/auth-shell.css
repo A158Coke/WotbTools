@@ -5,17 +5,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helv
 
 .wbtb-shell { position: relative; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; overflow-x: hidden; background: var(--auth-bg); }
 
-.wbtb-shell__bg { position: fixed; inset: 0; z-index: 0; background-image: url('../img/login-battlefield.webp'); background-position: 68% center; background-size: cover; background-repeat: no-repeat; background-color: #0b0e13; transition: opacity .3s ease; }
+.wbtb-shell__bg { position: fixed; inset: 0; z-index: 0; background-image: var(--auth-bg-desktop, url('../img/login-battlefield.webp')); background-position: var(--auth-bg-desktop-pos, 68% center); background-size: cover; background-repeat: no-repeat; background-color: #0b0e13; transition: opacity .3s ease; }
 html[data-theme="light"] .wbtb-shell__bg { background-image: none; background-color: transparent; }
 html[data-theme="light"] .wbtb-shell:before { content: ""; position: fixed; inset: 0; z-index: 0; background: var(--auth-bg-gradient); }
-/* Mobile / tablet-portrait use the dedicated portrait Battlefield asset (dark theme only).
+/* Mobile / tablet-portrait use the dedicated portrait asset of whichever background
+   background-rotation.ftl picked for today (dark theme only).
    The mobile crop (900x1600) was centered on the hero-v4 subject, so 'center' is the correct
    starting point; light theme hides the artwork via the higher-specificity rule above. */
 @media (max-width: 767px) {
-    .wbtb-shell__bg { background-image: url('../img/login-battlefield-mobile.webp'); background-position: 50% 45%; }
+    .wbtb-shell__bg { background-image: var(--auth-bg-mobile, url('../img/login-battlefield-mobile.webp')); background-position: var(--auth-bg-mobile-pos, 50% 45%); }
 }
 @media (min-width: 768px) and (max-width: 1179px) and (orientation: portrait) {
-    .wbtb-shell__bg { background-image: url('../img/login-battlefield-mobile.webp'); background-position: 50% 40%; }
+    .wbtb-shell__bg { background-image: var(--auth-bg-mobile, url('../img/login-battlefield-mobile.webp')); background-position: var(--auth-bg-mobile-pos, 50% 40%); }
 }
 
 .wbtb-shell__topbar { position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 28px; }

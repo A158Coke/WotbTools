@@ -11,7 +11,12 @@ import './styles/showcase-cohesion.css'
 import './styles/showcase-regressions.css'
 import './styles/app-shell.css'
 import './styles/playback-overlap-ux.css'
-import './styles/playback-responsive.css'
+import './styles/playback-shared.css'
+// 形态文件排在基础表之后：迁出的规则原本就在后面，顺序不变则同特异性的胜负不变。
+// 三档互斥（根元素只挂一个 pb-form-*），三者之间没有层叠冲突，顺序无关紧要。
+import './styles/playback-pc.css'
+import './styles/playback-tablet.css'
+import './styles/playback-mobile.css'
 import './styles/classic-profile.css'
 import { messages } from './locales/messages.js'
 import router from './app/router.js'

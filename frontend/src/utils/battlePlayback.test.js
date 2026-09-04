@@ -283,10 +283,10 @@ describe('tracerLines', () => {
     expect(at[0].x1).toBeCloseTo(50)
     expect(at[0].y2).toBeCloseTo(100)
     expect(at[0].opacity).toBeCloseTo(1)
-    // 前 0.15s（真实时间）保持全亮（激光感），之后快速线性淡出到 0.4s 窗口结束
-    expect(tracerLines([damage], routes, 12.15, 1)[0].opacity).toBeCloseTo(1)
-    expect(tracerLines([damage], routes, 12.25, 1)[0].opacity).toBeCloseTo(0.6) // 1 - 0.1/0.25
-    expect(tracerLines([damage], routes, 12.4, 1)).toEqual([])
+    // 前 0.3s（真实时间）保持全亮（激光感），之后线性淡出到 0.8s 窗口结束
+    expect(tracerLines([damage], routes, 12.3, 1)[0].opacity).toBeCloseTo(1)
+    expect(tracerLines([damage], routes, 12.5, 1)[0].opacity).toBeCloseTo(0.6) // 1 - 0.2/0.5
+    expect(tracerLines([damage], routes, 12.8, 1)).toEqual([])
     expect(tracerLines([damage], routes, 12, 1)).toHaveLength(1)
   })
 
@@ -304,46 +304,46 @@ describe('tracerLines', () => {
   })
 
   it('impact flash: short peak curve (invisible→0.9 at 0.1s→0) and vanishes at window end', () => {
-    // flashProgress 0→1 over 0.35s real at any speed
+    // flashProgress 0→1 over 0.7s real at any speed
     expect(tracerLines([damage], routes, 12, 1)[0].flashProgress).toBeCloseTo(0)
-    expect(tracerLines([damage], routes, 12.1, 1)[0].flashProgress).toBeCloseTo(0.1 / 0.35)
-    // flashOpacity 峰值曲线：0ms 不可见 → 0.1s 达峰值 0.9 → 0.35s 归零（不再全程实体圆球）
+    expect(tracerLines([damage], routes, 12.2, 1)[0].flashProgress).toBeCloseTo(0.2 / 0.7)
+    // flashOpacity 峰值曲线：0ms 不可见 → 0.2s 达峰值 0.9 → 0.7s 归零
     expect(tracerLines([damage], routes, 12, 1)[0].flashOpacity).toBeCloseTo(0)
-    expect(tracerLines([damage], routes, 12.1, 1)[0].flashOpacity).toBeCloseTo(0.9)
-    // 闪光窗口结束点（真实 0.35s）：flashProgress 钳制为 1、flashOpacity 归零（组件不再渲染圆点），
-    // 而炮线本体仍在淡出（0.15→0.4s），不随闪光一起消失
-    const atFlashEnd = tracerLines([damage], routes, 12.35, 1)[0]
+    expect(tracerLines([damage], routes, 12.2, 1)[0].flashOpacity).toBeCloseTo(0.9)
+    // 闪光窗口结束点（真实 0.7s）：flashProgress 钳制为 1、flashOpacity 归零，
+    // 而炮线本体仍在淡出（0.3→0.8s），不随闪光一起消失
+    const atFlashEnd = tracerLines([damage], routes, 12.7, 1)[0]
     expect(atFlashEnd.flashProgress).toBeCloseTo(1)
     expect(atFlashEnd.flashOpacity).toBeCloseTo(0)
     expect(atFlashEnd.opacity).toBeCloseTo(0.2)
-    // 炮线窗口结束（真实 0.4s）后整条线消失
-    expect(tracerLines([damage], routes, 12.4, 1)).toEqual([])
-    // 2×/4×：真实 0.35s 对应游戏 0.7s / 1.4s
-    expect(tracerLines([damage], routes, 12.35, 2)[0].flashProgress).toBeCloseTo(0.5)
-    expect(tracerLines([damage], routes, 12.7, 4)[0].flashProgress).toBeCloseTo(0.5)
+    // 炮线窗口结束（真实 0.8s）后整条线消失
+    expect(tracerLines([damage], routes, 12.8, 1)).toEqual([])
+    // 2×/4×：真实 0.7s 对应游戏 1.4s / 2.8s
+    expect(tracerLines([damage], routes, 12.7, 2)[0].flashProgress).toBeCloseTo(0.5)
+    expect(tracerLines([damage], routes, 13.4, 4)[0].flashProgress).toBeCloseTo(0.5)
   })
 
   it('windows scale with playback speed (1x/2x/4x) — short shot effect', () => {
-    expect(tracerLines([damage], routes, 12.4, 1)).toEqual([])
-    // 1×：窗口 0.4s、保持 0.15s → 12.3（elapsed 0.3）opacity = 1-(0.3-0.15)/0.25 = 0.4
-    expect(tracerLines([damage], routes, 12.3, 1)[0].opacity).toBeCloseTo(0.4)
-    // 2×：窗口 0.8s、保持 0.3s → 12.75（elapsed 0.75）opacity = 1-(0.75-0.3)/0.5
-    expect(tracerLines([damage], routes, 12.75, 2)[0].opacity).toBeCloseTo(1 - 0.45 / 0.5)
-    expect(tracerLines([damage], routes, 12.8, 2)).toEqual([])
-    // 4×：窗口 1.6s、保持 0.6s → 13.5（elapsed 1.5）opacity = 1-(1.5-0.6)/1.0
-    expect(tracerLines([damage], routes, 13.5, 4)[0].opacity).toBeCloseTo(1 - 0.9 / 1.0)
-    expect(tracerLines([damage], routes, 13.6, 4)).toEqual([])
+    expect(tracerLines([damage], routes, 12.8, 1)).toEqual([])
+    // 1×：窗口 0.8s、保持 0.3s → 12.6（elapsed 0.6）opacity = 1-(0.6-0.3)/0.5 = 0.4
+    expect(tracerLines([damage], routes, 12.6, 1)[0].opacity).toBeCloseTo(0.4)
+    // 2×：窗口 1.6s、保持 0.6s → 13.5（elapsed 1.5）opacity = 1-(1.5-0.6)/1.0
+    expect(tracerLines([damage], routes, 13.5, 2)[0].opacity).toBeCloseTo(1 - 0.9 / 1.0)
+    expect(tracerLines([damage], routes, 13.6, 2)).toEqual([])
+    // 4×：窗口 3.2s、保持 1.2s → 15（elapsed 3.0）opacity = 1-(3.0-1.2)/2.0
+    expect(tracerLines([damage], routes, 15, 4)[0].opacity).toBeCloseTo(1 - 1.8 / 2.0)
+    expect(tracerLines([damage], routes, 15.2, 4)).toEqual([])
   })
 
-  it('real visible duration is ≈0.4s at 1x/2x/4x (identical perceived lifetime)', () => {
-    // 真实时间 0.3s：三种倍速都仍可见（游戏时间 = 0.3 × speed）
-    expect(tracerLines([damage], routes, 12.3, 1)).toHaveLength(1)
-    expect(tracerLines([damage], routes, 12.6, 2)).toHaveLength(1)
-    expect(tracerLines([damage], routes, 13.2, 4)).toHaveLength(1)
-    // 真实时间 0.41s：三种倍速都已消失（不再挂在地图上整秒）
-    expect(tracerLines([damage], routes, 12.41, 1)).toEqual([])
-    expect(tracerLines([damage], routes, 12.82, 2)).toEqual([])
-    expect(tracerLines([damage], routes, 13.64, 4)).toEqual([])
+  it('real visible duration is ≈0.8s at 1x/2x/4x (identical perceived lifetime)', () => {
+    // 真实时间 0.6s：三种倍速都仍可见（游戏时间 = 0.6 × speed）
+    expect(tracerLines([damage], routes, 12.6, 1)).toHaveLength(1)
+    expect(tracerLines([damage], routes, 13.2, 2)).toHaveLength(1)
+    expect(tracerLines([damage], routes, 14.4, 4)).toHaveLength(1)
+    // 真实时间 0.81s：三种倍速都已消失
+    expect(tracerLines([damage], routes, 12.81, 1)).toEqual([])
+    expect(tracerLines([damage], routes, 13.62, 2)).toEqual([])
+    expect(tracerLines([damage], routes, 15.24, 4)).toEqual([])
   })
 
   it('shot geometry stays at event-time trusted positions while vehicles keep moving', () => {
@@ -366,7 +366,7 @@ describe('tracerLines', () => {
     expect(tracerLines([damage], routes, 11.9, 1)).toEqual([]) // 事件前
     expect(tracerLines([damage], routes, 12.2, 1)).toHaveLength(1) // 窗口内
     expect(tracerLines([damage], routes, 12.3, 4)).toHaveLength(1) // 4× 窗口内（游戏时间 1.2s）
-    expect(tracerLines([damage], routes, 12.5, 1)).toEqual([]) // 1× 窗口后
+    expect(tracerLines([damage], routes, 12.9, 1)).toEqual([]) // 1× 窗口后
   })
 
   it('dedupes DAMAGE+KILL of the same shot into one line', () => {
