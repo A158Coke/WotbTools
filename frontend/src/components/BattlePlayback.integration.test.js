@@ -968,6 +968,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(body).toContain("querySelector('.pb-hud')")
     expect(body).toContain('if (ownership.reserveBottom)')
     expect(body).toContain("querySelector('.pb-mobile-overlay-content')")
+    expect(body).toContain('wrapRect.bottom - contentRect.top')
     expect(body).not.toContain('if (sideSlots.value) return { top, bottom }')
     expect(body).toContain('formFactor: formFactor.value')
   })
