@@ -19,25 +19,25 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
           p = Path('.github/workflows/ci.yml')
           s = p.read_text(encoding='utf-8')
-          old = """      - name: Unit tests
-                working-directory: frontend
-                run: npm test
-              - name: Build
-          """
-          new = """      - name: Unit tests
-                working-directory: frontend
-                run: npm test
-              - name: Real-browser Playback layout regression
-                working-directory: frontend
-                run: npm run test:browser-layout
-              - name: Build
-          """
-          if old in s:
-              s = s.replace(old, new, 1)
-          else:
-              assert 'Real-browser Playback layout regression' in s, 'frontend CI insertion point changed'
+          if 'Real-browser Playback layout regression' not in s:
+              pattern = re.compile(
+                  r"(?P<indent>\s*)- name: Unit tests\n"
+                  r"(?P=indent)  working-directory: frontend\n"
+                  r"(?P=indent)  run: npm test\n"
+              )
+              match = pattern.search(s)
+              assert match, 'frontend Unit tests step not found'
+              indent = match.group('indent')
+              addition = (
+                  f"{indent}- name: Real-browser Playback layout regression\n"
+                  f"{indent}  working-directory: frontend\n"
+                  f"{indent}  run: npm run test:browser-layout\n"
+              )
+              s = s[:match.end()] + addition + s[match.end():]
           p.write_text(s, encoding='utf-8')
           PY
       - name: Remove one-shot workflow and commit patch
