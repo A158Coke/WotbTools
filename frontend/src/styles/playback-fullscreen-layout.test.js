@@ -222,15 +222,44 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(stage).toContain('grid-template-columns: minmax(0, 1fr) var(--pb-details-w)')
   })
 
+  // 两侧把手必须对称：两栏都有 overflow 裁剪，负偏移会让一侧的握柄落在栏外被裁掉，
+  // 于是「左边有右边没有」。显示时也必须保持 flex，block 会让握柄不再居中。
+  it('shows the resize handle on both panes symmetrically', () => {
+    expect(ruleBody('.battle-playback .pb-pane-resizer-rail')).toContain('right: 0')
+    expect(ruleBody('.battle-playback .pb-pane-resizer-details')).toContain('left: 0')
+
+    const base = ruleBody('.battle-playback .pb-pane-resizer')
+    expect(base).toContain('display: flex')
+    expect(base).toContain('justify-content: center')
+
+    for (const sel of [
+      '.battle-playback:fullscreen:not(.pb-device-mobile) .pb-left-rail .pb-pane-resizer',
+      '.battle-playback:fullscreen:not(.pb-device-mobile) .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer',
+      '.battle-playback:not(:fullscreen) .pb-left-rail .pb-pane-resizer',
+      '.battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer',
+    ]) {
+      expect(ruleBody(sel)).toContain('display: flex')
+    }
+  })
+
   // VehicleDetailsPanel 挂在 .pb-side-panel-shell 下，不在 .pb-side-panel 内。
   // 只覆盖 .pb-side-panel .pb-sidebar 的写法匹配不到它，组件的 width: 260px 会一直生效，
   // 详情就在几百像素宽的列里缩成一张窄卡片。
   it('overrides the sidebar on its real DOM path, not only inside pb-side-panel', () => {
+    // 所有形态：只解开组件的 width: 260px，让它填满可用宽度。
     const body = ruleBody('.battle-playback .pb-map-stage > .pb-side-panel-shell > .pb-sidebar')
     expect(body).not.toBeNull()
     expect(body).toContain('width: auto')
-    expect(body).toContain('max-height: none')
-    expect(body).toContain('border: 0')
+    expect(body).toContain('max-width: none')
+    // 背景/边框不能在这里去掉：浮层与 sheet 形态没有背景板会让文字直接透在地图上。
+    expect(body).not.toContain('background: transparent')
+    expect(body).not.toContain('border: 0')
+
+    // 只有持久列里详情才变成「列本身」——去卡片外观、跟着列高走。
+    const column = ruleBody('.battle-playback:not(:fullscreen):not(.pb-device-mobile) .pb-map-stage > .pb-side-panel-shell > .pb-sidebar')
+    expect(column).toContain('background: transparent')
+    expect(column).toContain('border: 0')
+    expect(column).toContain('max-height: 100%')
   })
 
   // 同一选择器写两遍时，后一条静默赢过前一条——本文件的 ruleBody 只取第一条，
