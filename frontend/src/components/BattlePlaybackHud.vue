@@ -166,7 +166,8 @@ function baseStatus(state) {
 .pb-hud-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: clamp(8px, 2vw, 28px); }
 .pb-hud-column-friendly { grid-column: 1; }
 .pb-hud-column-center { grid-column: 2; }
-.pb-hud-points { display: flex; align-items: center; gap: 8px; justify-content: center; }
+/* 「点数」是这一列的标题，排在比分上方居中，而不是和比分并排。 */
+.pb-hud-points { display: grid; justify-items: center; gap: 2px; }
 .pb-hud-column-enemy { grid-column: 3; }
 .pb-hud-team { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 9px; min-width: 0; }
 .pb-hud-enemy { text-align: right; grid-template-columns: auto minmax(0, 1fr); }
@@ -206,6 +207,19 @@ function baseStatus(state) {
   .pb-hud { padding: 6px 7px; border-radius: 6px; }
   .pb-hud-grid { gap: 5px; }
   .pb-hud-label { display: inline; font-size: .62rem; }
+  /* 手机上 .pb-hud-team 压成单列，「我方/敌方总HP」和数值都落在 row1/col1，两段文字
+     直接叠在一起。数值本身已说明是血量，标签视觉上去掉；absolute + clip 让它退出
+     grid 流但仍留给读屏软件（不能用 display: none，那会连语义一起丢）。 */
+  .pb-hud-team .pb-hud-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   .pb-hud-wide, .pb-hud-medium { display: none; }
   .pb-hud-compact { display: inline; }
   /* §compact：EXACT 的 current / total 可能较宽 → 允许换行 + 稍小字号，不丢 totalMax。 */

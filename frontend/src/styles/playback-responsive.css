@@ -282,7 +282,10 @@
   /* §layering：active Details 高于 controls(≤40)/HUD(50)/events(45)，低于 workspace drawer(74/75)。 */
   z-index: 60;
 }
-.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay { left: var(--pb-left-col); right: 0; }
+/* overlay 是 .pb-main（grid col2）的子元素，left 已从 col2 左缘起算；再加 --pb-left-col
+   会重复偏移一个 rail 宽——实测 740×360 手机全屏下 controls 从 x=173 被推到 x=321，
+   宽度从 587 缩到 439，右侧被裁。手机没有常驻 Details 列，所以左右都归零。 */
+.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay { left: 0; right: 0; }
 /* 手机全屏 Details：与非全屏同一形态的右侧滑入窗口，而不是覆盖全屏的 sheet。 */
 .battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
   position: fixed;
@@ -622,21 +625,11 @@
   overflow: hidden;
   border-radius: 5px;
 }
-.battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: transparent;
-}
-.battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active {
-  pointer-events: auto;
-  background: color-mix(in srgb, var(--bg) 52%, transparent);
-  z-index: 60;
-}
 /* §mobile-details：车辆详情是 .pb-sidebar（VehicleDetailsPanel），不是 .pb-side-panel
    （后者是战局/显示/事件的标签面板）。两者都挂在 shell 下，抽屉形态必须分别写。
-   竖屏：底部滑上来的 sheet，地图留在上方可见。 */
-.battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
+   非全屏一律走流内形态（地图下方），只有全屏没有「下方」可用才做抽屉。
+   全屏竖屏：底部滑上来的 sheet，地图留在上方可见。 */
+.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
   position: absolute;
   left: 8px;
   right: 8px;
@@ -682,7 +675,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .battle-playback.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
+  .battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
     animation: none;
   }
 }

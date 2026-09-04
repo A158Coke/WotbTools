@@ -3,6 +3,12 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+// happy-dom 环境下 import.meta.url 不是 file: URL，只能走 cwd（vitest 在 frontend/ 下运行）。
+const hudSource = readFileSync(resolve(process.cwd(), 'src/components/BattlePlaybackHud.vue'), 'utf8')
+const hudMobileBlock = hudSource.slice(hudSource.indexOf('@media (width < 768px)'))
 
 const hp = (state, knownRemaining = 0, totalMax = 0) => ({ state, knownRemaining, totalMax, unknownMax: 0 })
 
@@ -101,5 +107,27 @@ describe('BattlePlaybackHud', () => {
     expect(wrapper.find('[data-test="pb-hud-center"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-hud-friendly"]').classes()).toContain('pb-hud-column-friendly')
     expect(wrapper.find('[data-test="pb-hud-enemy"]').classes()).toContain('pb-hud-column-enemy')
+  })
+})
+
+describe('BattlePlaybackHud 手机版式（源码回归）', () => {
+  // 手机上 .pb-hud-team 压成单列，标签与数值都落在 row1/col1 —— 两段文字直接叠在一起。
+  it('hides the team HP label on phones so it cannot overlap the value', () => {
+    expect(hudMobileBlock).toContain('.pb-hud-team .pb-hud-label')
+    const rule = hudMobileBlock.slice(hudMobileBlock.indexOf('.pb-hud-team .pb-hud-label'))
+    const body = rule.slice(rule.indexOf('{') + 1, rule.indexOf('}'))
+    // absolute + clip 而不是 display: none —— 读屏软件仍要能念出「己方/敌方总HP」。
+    expect(body).toContain('position: absolute')
+    expect(body).toContain('clip-path: inset(50%)')
+    expect(body).not.toContain('display: none')
+  })
+
+  // 「点数」是这一列的标题，排在比分正上方，而不是和比分并排。
+  it('stacks the points label above the score', () => {
+    const rule = hudSource.slice(hudSource.indexOf('.pb-hud-points {'))
+    const body = rule.slice(rule.indexOf('{') + 1, rule.indexOf('}'))
+    expect(body).toContain('display: grid')
+    expect(body).toContain('justify-items: center')
+    expect(body).not.toContain('display: flex')
   })
 })
