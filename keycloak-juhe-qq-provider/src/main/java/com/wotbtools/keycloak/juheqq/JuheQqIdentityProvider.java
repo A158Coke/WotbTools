@@ -74,8 +74,10 @@ public final class JuheQqIdentityProvider
             return errorResponse();
         }
 
+        // Juhe 的 redirect_uri 先落到 return bridge，而不是直接执行 broker callback。
+        // Android QQ 会显式把授权回程交给 Chrome；bridge 负责把一次性 ticket 送回原 WebView。
         final URI endpointUri = session.getContext().getUri().getBaseUriBuilder()
-                .path("realms/{realm}/broker/{provider}/endpoint")
+                .path("realms/{realm}/broker/{provider}/endpoint/mobile-return")
                 .build(realm, providerAlias);
         final String callbackUrl = endpointUri.toString() + "?state=" + encode(state);
 
