@@ -88,6 +88,9 @@ async function loadMap() {
       return
     }
 
+    const referenceGroundZ = Number.isFinite(Number(entry.referenceGroundZMeters))
+      ? Number(entry.referenceGroundZMeters)
+      : 0
     const manifestResponse = await fetchRequired(entry.manifest)
     const manifest = await manifestResponse.json()
     if (manifest?.schemaVersion !== 3) throw new Error(`Unsupported geometry schema: ${manifest?.schemaVersion}`)
@@ -104,7 +107,7 @@ async function loadMap() {
 
     const nextCamera = new THREE.PerspectiveCamera(48, 1, 0.5, 3000)
     nextCamera.up.set(0, 0, 1)
-    nextCamera.position.set(420, -460, 330)
+    nextCamera.position.set(420, -460, referenceGroundZ + 300)
 
     const nextRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
     nextRenderer.outputColorSpace = THREE.SRGBColorSpace
@@ -114,7 +117,7 @@ async function loadMap() {
     const ambient = new THREE.HemisphereLight(0xd7e8ff, 0x28313a, 2.15)
     nextScene.add(ambient)
     const sun = new THREE.DirectionalLight(0xffffff, 2.4)
-    sun.position.set(-260, -340, 620)
+    sun.position.set(-260, -340, referenceGroundZ + 620)
     nextScene.add(sun)
 
     const material = new THREE.MeshStandardMaterial({
@@ -175,12 +178,14 @@ async function loadMap() {
       nextScene.add(mesh)
     }
 
+    // Reference plane only: this deliberately does not pretend to be the real heightmap terrain.
     const grid = new THREE.GridHelper(600, 12, 0x607080, 0x34414b)
     grid.rotation.x = Math.PI / 2
+    grid.position.z = referenceGroundZ
     nextScene.add(grid)
 
     const nextControls = new OrbitControls(nextCamera, nextRenderer.domElement)
-    nextControls.target.set(0, 0, 35)
+    nextControls.target.set(0, 0, referenceGroundZ)
     nextControls.enableDamping = true
     nextControls.dampingFactor = 0.08
     nextControls.minDistance = 40
