@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """State-switcher research inspector tests (stdlib unittest, no client assets)."""
 
+import io
 import os
 import sys
 import unittest
@@ -8,7 +9,18 @@ import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from inspect_map_state_switchers import build_report
+from inspect_map_state_switchers import build_report, select_scene_member
+
+
+def archive_with(*members: tuple[str, bytes]) -> zipfile.ZipFile:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, payload in members:
+            archive.writestr(name, payload)
+    buffer.seek(0)
+    archive = zipfile.ZipFile(buffer)
+    archive._test_buffer = buffer  # type: ignore[attr-defined]
+    return archive
 
 
 def mesh_entity(name: str, flags: int, datasource: int):
@@ -34,6 +46,28 @@ def mesh_entity(name: str, flags: int, datasource: int):
 
 
 class StateSwitcherInspectorTest(unittest.TestCase):
+    def test_default_selection_accepts_raw_sc2_exact_main(self):
+        with archive_with(("Maps/99_test/99_test.sc2", b"raw")) as archive:
+            member = select_scene_member(archive, "99_test")
+        self.assertEqual("Maps/99_test/99_test.sc2", member.filename)
+
+    def test_default_selection_accepts_single_raw_sc2_fallback(self):
+        with archive_with(("Maps/99_test/alternate.sc2", b"raw")) as archive:
+            member = select_scene_member(archive, "99_test")
+        self.assertEqual("Maps/99_test/alternate.sc2", member.filename)
+
+    def test_explicit_scene_can_resolve_ambiguous_raw_scene(self):
+        with archive_with(
+            ("Maps/99_test/first.sc2", b"one"),
+            ("Maps/99_test/second.sc2", b"two"),
+        ) as archive:
+            member = select_scene_member(
+                archive,
+                "99_test",
+                "Maps/99_test/second.sc2",
+            )
+        self.assertEqual("Maps/99_test/second.sc2", member.filename)
+
     def test_reports_raw_state_switcher_and_child_visibility(self):
         scene = {
             "$metadata": {"version": 48},
