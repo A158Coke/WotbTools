@@ -9,6 +9,7 @@ import org.keycloak.models.KeycloakSession;
 import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -123,5 +124,20 @@ class JuheQqIdentityProviderTest {
 
         assertEquals(500, response.getStatus());
         assertEquals("QQ login failed. Please try again.", response.getEntity());
+    }
+
+    @Test
+    void callbackRefIsStableOpaqueShortHash() {
+        final String state = "state-super-secret-abc";
+        final String ref1 = JuheQqIdentityProvider.callbackRef(state);
+        final String ref2 = JuheQqIdentityProvider.callbackRef(state);
+
+        assertEquals(ref1, ref2, "callbackRef must be deterministic for the same state");
+        assertEquals(8, ref1.length(), "callbackRef must be a short 8-hex prefix");
+        assertTrue(!ref1.contains(state), "callbackRef must not reveal the original state");
+        assertNotEquals(ref1, JuheQqIdentityProvider.callbackRef("state-other"),
+                "different states must produce different callbackRef");
+        assertEquals("unknown", JuheQqIdentityProvider.callbackRef(null));
+        assertEquals("unknown", JuheQqIdentityProvider.callbackRef(""));
     }
 }
