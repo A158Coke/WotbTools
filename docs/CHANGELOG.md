@@ -27,6 +27,14 @@
   `docs/android/architecture.md` Authentication Boundary（区分 Web auth hosts 与 native handoff）。
 
 ### Added
+- **Juhe QQ callback 阶段追踪与 callbackRef 关联（已脱敏）**：JuheQqEndpoint.handleCallback 增加完整 stage 序列
+  （callback_entered → authentication_session_restored → juhe_callback_accepted → before_broker_authenticated →
+  broker_authenticated / broker_authenticated_failed），所有 stage 带同一 callbackRef（state 的 SHA-256 前 8 hex，
+  单向、不可逆、可关联同一 transaction 的重复 callback / replay）。仅记录 realm / provider / juheType /
+  authenticationSession=present|invalid / socialUid=present|empty / exception；绝不记录完整 state、authorization
+  code、access token、appkey、Cookie、完整 callback URL/query、social_uid 原值。用于定位 Keycloak
+  IDENTITY_PROVIDER_LOGIN_ERROR already_logged_in 的真实失败边界（evidence-first，本阶段不改登录行为）。
+  同步 JuheQqEndpointTest / JuheQqIdentityProviderTest（stage 顺序 + callbackRef 稳定/不可逆 + 敏感值不落日志）。
 - **Local Frontend → Production Backend / Keycloak 开发模式**：前端新增 `npm run dev:production-remote`，通过 Vite `/api` 开发代理连接生产站点，同时复用现有生产 Keycloak issuer 配置；开发 Topbar 显示非模态环境提示并提醒不要上传测试或敏感数据。普通 `npm run dev` 的本地后端代理保持不变。详见 `docs/frontend/local-production-dev.md`。
 
 ### Changed
