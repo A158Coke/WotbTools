@@ -193,10 +193,13 @@ import { playbackSafeInsetOwnership } from ${JSON.stringify(safeInsetsUrl)}
       })
       const hudRectBefore = hud.getBoundingClientRect()
       const contentRectBefore = overlayContent.getBoundingClientRect()
+      const overlayWrapRectBefore = root.querySelector('.pb-mobile-overlay').getBoundingClientRect()
       const mapRectBefore = map.getBoundingClientRect()
       const stageRect = stage.getBoundingClientRect()
       const top = ownership.reserveTop ? hudRectBefore.height : 0
-      const bottom = ownership.reserveBottom && contentRectBefore.height > 0 ? contentRectBefore.height : 0
+      const bottom = ownership.reserveBottom && contentRectBefore.height > 0
+        ? Math.max(0, overlayWrapRectBefore.bottom - contentRectBefore.top)
+        : 0
       const safeH = Math.max(1, stageRect.height - top - bottom)
       const naturalW = mapRectBefore.width
       const naturalH = naturalW

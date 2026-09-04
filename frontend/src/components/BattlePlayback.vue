@@ -697,7 +697,13 @@ function safeInsets() {
   if (ownership.reserveBottom) {
     const wrap = mobileOverlay.value?.$el
     const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null
-    bottom = content ? content.clientHeight : 0
+    if (wrap && content && content.clientHeight > 0) {
+      const wrapRect = wrap.getBoundingClientRect()
+      const contentRect = content.getBoundingClientRect()
+      // Reserve the complete occupied bottom zone, including the controller's
+      // bottom offset / safe-area gap, rather than only the card height.
+      bottom = Math.max(0, wrapRect.bottom - contentRect.top)
+    }
   }
   return { top, bottom }
 }
