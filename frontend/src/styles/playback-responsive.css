@@ -253,17 +253,23 @@
   overflow: hidden;
   background: var(--bg);
 }
-/* §mobile-contract：手机 fullscreen + landscape 保持 mobile playback mode：
-   单列（HUD+Map 为主）、无永久 Left Rail/Right Details、controls 走 bottom overlay、details 走 sheet。 */
+/* §mobile-contract：手机 fullscreen 必然是横屏，横向放得下三段，因此与桌面同构：
+   Left Rail（窄）| Map | 右侧滑入的 Details 抽屉。controls 仍走 bottom overlay——
+   全屏下拇指够得到底部，rail 只承载导航图标。
+   Details 是抽屉不是常驻列，所以 --pb-details-w 保持 0：依赖该 token 的
+   kill-feed / orientation-hint / annotation-surface 不该为一个浮层预留空间。 */
 .battle-playback:fullscreen.pb-device-mobile {
-  /* §details-token：mobile fullscreen 没有 persistent Right Details，必须把 --pb-details-w 归零，
-     否则依赖该 token 的 overlay（kill-feed / orientation-hint / annotation-surface）会为不存在的右栏留空间。 */
   --pb-details-w: 0px;
-  grid-template-columns: minmax(0, 1fr);
+  /* 手机横屏宽度有限，rail 比桌面窄一档。 */
+  --pb-rail-w: 148px;
+  grid-template-columns: var(--pb-left-col) minmax(0, 1fr);
 }
-.battle-playback:fullscreen.pb-device-mobile .pb-left-rail { display: none; }
-.battle-playback:fullscreen.pb-device-mobile .pb-main { grid-column: 1; }
-.battle-playback:fullscreen.pb-device-mobile .pb-hud { left: 0; right: 0; }
+.battle-playback:fullscreen.pb-device-mobile .pb-left-rail {
+  display: flex;
+  grid-column: 1;
+}
+.battle-playback:fullscreen.pb-device-mobile .pb-main { grid-column: 2; }
+.battle-playback:fullscreen.pb-device-mobile .pb-hud { left: var(--pb-left-col); right: 0; }
 .battle-playback:fullscreen.pb-device-mobile .pb-map-stage { grid-template-columns: minmax(0, 1fr); }
 .battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell {
   /* §details-blocker：未选车辆（pb-details-active 缺省）时 shell 不遮挡、不 tint、不接管 pointer；
@@ -280,7 +286,26 @@
   /* §layering：active Details 高于 controls(≤40)/HUD(50)/events(45)，低于 workspace drawer(74/75)。 */
   z-index: 60;
 }
-.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay { left: 0; right: 0; }
+.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay { left: var(--pb-left-col); right: 0; }
+/* 手机全屏 Details：与非全屏同一形态的右侧滑入窗口，而不是覆盖全屏的 sheet。 */
+.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  left: auto;
+  width: min(340px, calc(100vw - var(--pb-left-col) - 16px));
+  max-height: none;
+  padding: 14px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card2);
+  box-shadow: var(--surface-shadow);
+  overflow-y: auto;
+  z-index: var(--z-modal);
+  animation: pb-details-slide-in .22s ease-out;
+}
 
 /* §3 真三列：Left Rail（--pb-rail-w 60px，二级展开 --pb-panel-w 300px）| Map Workspace（.pb-main）| Persistent Right Details。
    Right Details 作为 map-stage 内的独立 grid 列（非 overlay 覆盖地图），HUD/controls
