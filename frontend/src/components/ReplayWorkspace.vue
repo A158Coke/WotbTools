@@ -1,5 +1,6 @@
 <script setup>
 import { computed, inject, nextTick, onMounted, provide, watch } from 'vue'
+import { NAVIGATE_VIEW_KEY } from '../app/context.js'
 import { displayName } from '../utils/helpers.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
@@ -25,7 +26,7 @@ const props = defineProps({
 const isAuthenticated = inject('isAuthenticated', () => false)
 const login = inject('login', null)
 const authInit = inject('authInit', Promise.resolve())
-const navigate = inject('navigate', null)
+const navigate = inject(NAVIGATE_VIEW_KEY, null)
 
 /**
  * Workspace 持有唯一一份 replay selection / Processing Job，并向下 provide。
@@ -142,7 +143,7 @@ async function setCapability(key) {
   const ok = await awaitAuthGate(key)
   if (!ok) return
   workspace.setWorkspaceTab(key)
-  if (navigate) navigate(VIEW_BY_CAPABILITY[key] || 'replay', null)
+  if (navigate) navigate(VIEW_BY_CAPABILITY[key] || 'replay')
 }
 
 /**
