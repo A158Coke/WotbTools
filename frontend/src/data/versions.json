@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.71",
+    "date": "2026-09-04",
+    "tag": "fix",
+    "zh": "修复战局回放全屏布局：桌面、平板和手机的双方总 HP、点数与基地状态始终固定在地图顶部，地图会避开顶部 HUD 与手机弹出的底部控制条，超宽横屏不再把战况或控制条错误搬到侧边。",
+    "en": "Fixed Battle Playback fullscreen layout: team HP, points and base status stay attached to the top of the map on desktop, tablet and mobile; the map now respects the top HUD and visible mobile bottom controls, and ultra-wide landscape no longer misplaces battle status or controls into side gutters.",
+    "ru": "Исправлена полноэкранная компоновка воспроизведения боя: HP команд, очки и состояние баз остаются в верхнем HUD карты на ПК, планшете и телефоне; карта учитывает верхний HUD и видимые нижние мобильные элементы управления, а сверхширокий альбомный режим больше не переносит боевой статус или управление в боковые поля."
+  },
+  {
     "v": "2.12.70",
     "date": "2026-09-04",
     "tag": "fix",
