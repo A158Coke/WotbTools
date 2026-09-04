@@ -50,7 +50,7 @@ The UI profile remains presentation-only: `wotb-ui-profile` is the single persis
 
 ## Single-PR consolidation scope
 
-The architecture cleanup is intentionally completed inside one PR so `main` never contains half-migrated boundaries. The PR is considered complete only after these layers are reviewed together:
+The architecture cleanup is intentionally completed inside one PR so `main` never contains half-migrated boundaries. The consolidated boundary is complete when these layers are reviewed together:
 
 - [x] feature-neutral typed application navigation contract;
 - [x] Dataset-only AI Review / Map Overview / Battle Playback API ownership moved out of panels;
@@ -58,7 +58,7 @@ The architecture cleanup is intentionally completed inside one PR so `main` neve
 - [x] high-value Battle Playback persistence ownership extracted from the orchestration root;
 - [x] architecture guards for removed service-locator keys and replay capability transport ownership;
 - [x] real-browser Playback geometry / form-isolation gate added to frontend CI;
-- [ ] final architecture/code-smell pass and stale bridge cleanup.
+- [x] final architecture/code-smell pass removed stale navigation/auth/replay injection bridges and duplicate Playback persistence ownership.
 
 Directory-only rewrites, Pinia adoption without a demonstrated ownership need, broad visual redesign, and unrelated product changes are explicitly outside this PR. The existing `?view=` compatibility contract remains in place because deleting that compatibility layer is a product URL migration, not a prerequisite for fixing the ownership problems above.
 
