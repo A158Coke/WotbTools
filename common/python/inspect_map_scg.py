@@ -6,7 +6,7 @@ Usage:
 
 The report is evidence-oriented: it verifies the actual SCPG payload, summarizes
 PolygonGroup geometry, and checks whether SC2 ``rb.datasource`` ids resolve to
-PolygonGroup ``#id`` values.  It does not export or redistribute raw client
+PolygonGroup ``#id`` values. It does not export or redistribute raw client
 geometry.
 """
 
@@ -30,7 +30,7 @@ from wotb_sc2 import (  # noqa: E402
     read_sc2,
     scene_entities,
 )
-from wotb_scg import read_scg  # noqa: E402
+from wotb_scg import polygon_group_id, read_scg  # noqa: E402
 
 
 VERTEX_ATTRIBUTES = {
@@ -144,16 +144,6 @@ def collect_datasource_ids(scene: dict[str, Any]) -> Counter[int]:
     return result
 
 
-def group_id(group: dict[str, Any]) -> int | None:
-    value = group.get("#id")
-    if isinstance(value, int):
-        return value
-    payload = decode_bytes(value)
-    if payload is None or not payload or len(payload) > 8:
-        return None
-    return int.from_bytes(payload, "little", signed=False)
-
-
 def vertex_attributes(vertex_format: Any) -> list[str]:
     if not isinstance(vertex_format, int):
         return []
@@ -185,7 +175,7 @@ def summarize_groups(groups: list[dict[str, Any]], sample_limit: int) -> dict[st
         vertex_format = group.get("vertexFormat")
         index_format = group.get("indexFormat")
         primitive_type = group.get("rhi_primitiveType")
-        identifier = group_id(group)
+        identifier = polygon_group_id(group)
 
         total_vertices += vertex_count
         total_indices += index_count
@@ -258,7 +248,11 @@ def datasource_cross_check(
     groups: list[dict[str, Any]],
     sample_limit: int,
 ) -> dict[str, Any]:
-    group_ids = {identifier for group in groups if (identifier := group_id(group)) is not None}
+    group_ids = {
+        identifier
+        for group in groups
+        if (identifier := polygon_group_id(group)) is not None
+    }
     datasource_ids = set(datasource_counts)
     matched_ids = datasource_ids & group_ids
     unmatched_datasource_ids = datasource_ids - group_ids
