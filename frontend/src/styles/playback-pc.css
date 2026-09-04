@@ -164,3 +164,35 @@
   border-radius: 8px;
 }
 .battle-playback.pb-form-pc:not(:fullscreen) .pb-drawer-backdrop { display: none; }
+
+/* Fullscreen desktop HUD ownership: HP/points stay attached to the map as the
+   horizontal top HUD. The generic side-slot optimization is useful for mobile /
+   tablet controls, but moving the desktop battle HUD into the right gutter makes
+   it look like an unrelated side panel and leaves the map without its status bar.
+   These form-scoped overrides intentionally keep the map at full-height: on PC the
+   HUD is an overlay, while the Left Rail continues to own playback controls. */
+.battle-playback.pb-form-pc:fullscreen.pb-side-slots .pb-hud {
+  left: var(--pb-left-col);
+  right: var(--pb-details-w);
+  top: 0;
+  bottom: auto;
+  width: auto;
+  display: block;
+  align-items: initial;
+  overflow-y: visible;
+  padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+}
+.battle-playback.pb-form-pc:fullscreen.pb-side-slots .pb-hud-grid {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: clamp(8px, 2vw, 28px);
+  width: auto;
+}
+.battle-playback.pb-form-pc:fullscreen.pb-side-slots .pb-hud-column-friendly { grid-column: 1; }
+.battle-playback.pb-form-pc:fullscreen.pb-side-slots .pb-hud-column-center { grid-column: 2; }
+.battle-playback.pb-form-pc:fullscreen.pb-side-slots .pb-hud-column-enemy { grid-column: 3; }
+.battle-playback.pb-form-pc:fullscreen.pb-side-slots .pb-hud-enemy {
+  text-align: right;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.battle-playback.pb-form-pc:fullscreen.pb-side-slots .pb-hud-enemy .pb-hud-label { grid-column: 2; }
+.battle-playback.pb-form-pc:fullscreen.pb-side-slots .pb-hud-enemy .pb-hud-value { grid-column: 1; }
