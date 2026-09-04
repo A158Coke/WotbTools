@@ -40,7 +40,7 @@ Falls Creek / 乡间溪流。
 
 原因：
 
-- 用户数据库没有 `05_amigosville_am` 的 replay，因此它不适合作为第一批端到端 Playback 验证图；
+- 当前没有 `05_amigosville_am` 的可用 replay，因此它不适合作为第一批端到端 Playback 验证图；
 - `18_canal_cn` 与 `14_port_pt` 都已有 WotBTools 2D basemap；
 - 两张地图后续可直接使用真实 replay 验证 `replay coordinates -> terrain -> static geometry -> vehicle overlay`；
 - 第一批使用两张图而不是一张，可尽早发现 map-specific SC2/SCG/LOD/switch 差异，避免把单图偶然结构误写成全地图 contract。
@@ -234,11 +234,14 @@ renderer-neutral derived geometry PoC：
 在开发机更新分支后执行：
 
 ```powershell
-python common/python/inspect_map_scg.py "<Maps.zip>" 18_canal_cn
-python common/python/export_map_geometry_poc.py "<Maps.zip>" 18_canal_cn
+git checkout research/client-map-3d-inventory
+git pull origin research/client-map-3d-inventory
 
-python common/python/inspect_map_scg.py "<Maps.zip>" 14_port_pt
-python common/python/export_map_geometry_poc.py "<Maps.zip>" 14_port_pt
+python common/python/inspect_map_scg.py "C:\Users\yu.chen\Downloads\Maps.zip" 18_canal_cn
+python common/python/export_map_geometry_poc.py "C:\Users\yu.chen\Downloads\Maps.zip" 18_canal_cn
+
+python common/python/inspect_map_scg.py "C:\Users\yu.chen\Downloads\Maps.zip" 14_port_pt
+python common/python/export_map_geometry_poc.py "C:\Users\yu.chen\Downloads\Maps.zip" 14_port_pt
 ```
 
 默认输出：
