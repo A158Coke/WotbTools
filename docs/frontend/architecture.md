@@ -18,7 +18,7 @@ App.vue
 
 `ViewHost.vue` maps the existing flat page components to a route-derived product view. The flat layout is the current implementation; do not treat another directory layout as already present. Do not add manual `history.pushState`, `replaceState`, or `popstate` listeners to a component; use the injected navigation command, which delegates to Vue Router.
 
-Application navigation is provided through the typed `NAVIGATE_VIEW_KEY` in `frontend/src/app/context.ts`. Production code must not introduce magic-string `inject('navigate')` / `provide('navigate')` calls; this keeps the app-level navigation service discoverable and typeable while Vue Router remains the browser-history authority.
+Application navigation is defined by the feature-neutral typed `NAVIGATE_VIEW_KEY` in `frontend/src/shared/navigation.ts`. `AppShell` provides the command; app and feature consumers inject the shared contract without importing router internals or an `app/` implementation module. Production code must not introduce magic-string `inject('navigate')` / `provide('navigate')` calls.
 
 ## Dependency and state rules
 
