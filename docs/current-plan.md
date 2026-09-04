@@ -221,7 +221,7 @@ PR1 **不能证明**：
 
 ## PR2 — Map Geometry Core contract
 
-PR2 目标：把 PR1 的 research PoC 收敛成可重复、可测试、可供浏览器 renderer 消费的 **renderer-neutral Map Geometry Core**。
+PR2 目标：把 PR1 的 research PoC 收敛成可重复、可测试、可供后续 browser renderer 消费的 **renderer-neutral Map Geometry Core**。
 
 ### 输入
 
@@ -277,7 +277,19 @@ Canal + Port Bay 必须同时满足：
 9. targeted Python tests 覆盖 conversion contract；
 10. 为 PR3 Browser 3D Technical Prototype 提供稳定输入。
 
-PR3 再负责第一张真正的 browser 3D map：terrain + static mesh + camera，随后叠加真实 replay vehicle state。
+## PR3 — Browser 3D Technical Prototype
+
+PR3 才进入真正浏览器 3D vertical slice：
+
+```text
+PR2 derived terrain + static geometry
+  -> browser 3D scene
+  -> camera / controls
+  -> first real Canal + Port Bay visual validation
+  -> real replay vehicle overlay
+```
+
+这样避免在 geometry conversion contract 尚未固化时，把 parser/converter 与 frontend renderer 耦合在同一个 PR。
 
 ## PR1 Definition of Done
 
