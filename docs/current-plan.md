@@ -2,7 +2,7 @@
 
 ## 状态
 
-IMPLEMENTING / STATIC GEOMETRY CHAIN PROVEN / DERIVED GEOMETRY POC VALIDATION NEXT
+IMPLEMENTING / STATIC GEOMETRY CHAIN PROVEN / CANAL + PORT BAY DERIVED POC VALIDATION NEXT
 
 ## 目标
 
@@ -10,10 +10,42 @@ IMPLEMENTING / STATIC GEOMETRY CHAIN PROVEN / DERIVED GEOMETRY POC VALIDATION NE
 
 1. 用真实客户端资源证明 terrain / static geometry / collision / terrain-associated data 的来源；
 2. 留下可重复的 research tooling；
-3. 产出第一张地图的 renderer-neutral derived geometry PoC；
+3. 对第一批真实 Playback example 产出 renderer-neutral derived geometry PoC；
 4. 明确 PR2 的 Map Geometry Core 输入。
 
 当前不实现 frontend 3D renderer。
+
+## Example 策略
+
+### 格式逆向 research sample
+
+保留：
+
+```text
+05_amigosville_am
+```
+
+Falls Creek / 乡间溪流。
+
+它已经完成 SC2 / SCG / datasource / PolygonGroup 格式链路的实证研究，因此继续作为**格式研究样本**，无需因为后续 Playback example 调整而重做。
+
+### 第一批 3D Playback examples
+
+改为两张：
+
+```text
+18_canal_cn   = Canal / 运河尽头
+14_port_pt    = Port Bay / 港湾小镇
+```
+
+原因：
+
+- 用户数据库没有 `05_amigosville_am` 的 replay，因此它不适合作为第一批端到端 Playback 验证图；
+- `18_canal_cn` 与 `14_port_pt` 都已有 WotBTools 2D basemap；
+- 两张地图后续可直接使用真实 replay 验证 `replay coordinates -> terrain -> static geometry -> vehicle overlay`；
+- 第一批使用两张图而不是一张，可尽早发现 map-specific SC2/SCG/LOD/switch 差异，避免把单图偶然结构误写成全地图 contract。
+
+PR1 / PR2 后续不得再把 `05_amigosville_am` 描述为首批 Playback demo；它仅保留为 reverse-engineering reference sample。
 
 ## 已确认基础
 
@@ -37,15 +69,9 @@ IMPLEMENTING / STATIC GEOMETRY CHAIN PROVEN / DERIVED GEOMETRY POC VALIDATION NE
 - `.lka.dvpl` 65；
 - texture payload 约占 uncompressed archive 86.3%。
 
-第一张 vertical slice：
+## 已证明的 SC2 -> SCG static geometry contract
 
-```text
-05_amigosville_am
-```
-
-Falls Creek / 乡间溪流。
-
-## SC2 真实结论
+以下数字来自 `05_amigosville_am` research sample：
 
 主场景：
 
@@ -57,44 +83,15 @@ Falls Creek / 乡间溪流。
 - Mesh render objects 773；
 - RenderBatch 3876。
 
-主 SC2 `#dataNodes`：
+主 SC2 `#dataNodes` 中 PolygonGroup = 0。
 
-- NMaterial 5559；
-- ParticleEmitterNode 3689；
-- SceneRenderConfig 1；
-- AnimationData 1；
-- **PolygonGroup 0**。
+companion SCG：
 
-所以地图 static mesh 不在主 SC2 dataNodes 内。
-
-每个 RenderBatch 都带整数：
-
-```text
-rb.datasource
-```
-
-## Static geometry reference chain — 已确认
-
-真实 companion sidecar：
-
-```text
-Maps/05_amigosville_am/05_amigosville_am.sc2.dvpl
-Maps/05_amigosville_am/05_amigosville_am.scg.dvpl
-```
-
-SCG：
-
-- SCPG version 1；
-- nodeCount = nodeCount2 = 221；
-- parsed bytes = file bytes = 10,243,320；
-- trailing bytes = 0；
+- SCPG v1；
 - 221 PolygonGroups；
-- 221/221 有唯一 `#id`；
 - 164,307 vertices；
 - 266,417 indices；
 - 95,833 primitives；
-- vertex payload 9,643,728 bytes；
-- index payload 532,834 bytes；
 - index payload mismatch = 0。
 
 SC2 ↔ SCG exact datasource cross-check：
@@ -108,7 +105,7 @@ matched RenderBatch occurrences  3876 / 3876
 unmatched datasource ids            0
 ```
 
-因此 static geometry source/reference chain 已闭环：
+因此以下链路已被真实数据证明：
 
 ```text
 SC2 Entity
@@ -116,85 +113,41 @@ SC2 Entity
   -> Mesh
   -> RenderBatch
   -> rb.datasource
-  -> companion SCG PolygonGroup #id
+  -> same-basename companion SCG
+  -> PolygonGroup #id
   -> vertices / indices
 ```
 
-114 个 SCG PolygonGroup 未被当前主场景 RenderBatch 引用；不能在没有消费证据时自动加入 runtime geometry。
+接下来 `18_canal_cn` 和 `14_port_pt` 的任务不是重新猜格式，而是验证这套 contract 是否可复用，并产出真实 derived geometry。
 
-## Vertex / index format
+## Vertex / index contract
 
-真实 SCG vertexFormat：
+当前真实样本已经确认：
 
-```text
-411    157 groups
-27      25
-13837   22
-395      9
-5129     3
-5        3
-5133     1
-17       1
-```
+- interleaved vertex buffer；
+- `EVF_VERTEX` 为 offset 0 的 float32 XYZ；
+- stride 可由 `len(vertices) / vertexCount` 严格验证；
+- 当前 221 个 PolygonGroup 的 `indexFormat=0`，实际 payload 均满足 `indexCount * 2`，即 uint16；
+- decoder 会验证 finite position、index payload size 与 local index bounds。
 
-真实 derived stride：
-
-```text
-64 B  157 groups
-56 B   31
-40 B   28
-16 B    3
-44 B    1
-20 B    1
-```
-
-indexFormat：
-
-```text
-0 = all 221 groups
-```
-
-真实 payload 对 `indexCount * 2` 全部匹配，所以当前样本 indexFormat 0 对应 uint16 payload。
-
-DAVA `PolygonGroup::UpdateDataPointersAndStreams()` 的实现确认：
-
-1. vertex buffer 是 interleaved stride；
-2. `EVF_VERTEX` 最先处理；
-3. `EVF_VERTEX` 是 float3 position；
-4. 所以后续 PoC 可按每个 vertex 的 offset 0 读取 `<fff>` position。
-
-## World transform contract
-
-DAVA `TransformComponent::Serialize()` 明确保存：
-
-```text
-tc.worldTranslation
-tc.worldScale
-tc.worldRotation
-```
-
-Quaternion layout：
-
-```text
-x, y, z, w
-```
-
-DAVA world transform 语义：
+DAVA world transform contract：
 
 ```text
 scaled = worldScale * localVertex
 world = worldRotation.ApplyToVectorFast(scaled) + worldTranslation
 ```
 
-因此 geometry 不需要 bake 成重复 world-space mesh；最终结构应保留：
+最终数据模型继续保持：
 
 ```text
 shared local geometry + instance world transform
 ```
 
+而不是为每个建筑实例复制 baked geometry。
+
 ## Collision
 
-已确认 1056 个 `CollisionTypeComponent`，字段：
+`05_amigosville_am` 已确认大量 `CollisionTypeComponent`，字段：
 
 ```text
 CollisionType
@@ -204,46 +157,21 @@ Health
 MaterialKind
 ```
 
-当前能确认：
+当前结论：
 
 > collision / destruction / material classification metadata 属于 scene entity。
 
-仍未确认：
+仍未证明独立 collision mesh，或 gameplay collision 是否复用 visual PolygonGroup。
 
-- 是否存在独立 collision mesh；
-- gameplay collision 是否直接复用 visual PolygonGroup；
-- `CollisionType` 的完整 enum 语义。
-
-PR1 不因为 collision mesh 未完全逆向而阻塞 static 3D Playback geometry PoC；但必须在 PR2 spatial-analysis 前继续解决。
+这不阻塞首批 3D Playback visual geometry，但会在后续 AI LOS/pathfinding spatial core 前继续解决。
 
 ## TerrainData / MKM / LKA
 
-TerrainDataComponent 明确引用：
+research sample 已确认 TerrainDataComponent 直接引用 `.mkm/.lka`。
 
-```text
-blitz/05_amigosville_am.mkm
-blitz/05_amigosville_am.lka
-blitz/map_effects.yaml
-```
+MKM 的 24-byte header + 262,144-byte payload 是强 packed-grid 特征，但语义未证明；LKA 也仍是 terrain-associated opaque data。
 
-MKM：
-
-- 262,168 decoded bytes；
-- `kkm\0`；
-- header uint32 出现 `1 / 1024 / 262144`；
-- 24-byte header + 262,144-byte payload。
-
-该 shape 很像固定尺寸 packed map，但目前只记录为：
-
-> fixed-size packed terrain-associated binary
-
-不得提前写成 navmesh/passability。
-
-LKA：
-
-- 12,862 decoded bytes；
-- KeyedArchive-like `KA` header；
-- 当前仍为 opaque terrain-associated binary。
+因此不得提前把 MKM/LKA 写成 navmesh/passability。
 
 ## 当前工具
 
@@ -261,7 +189,7 @@ LKA：
 
 ### `common/python/wotb_scg.py`
 
-已从最小 SCPG reader 扩展为 reusable geometry decoder：
+Reusable SCPG geometry decoder：
 
 - `read_scg()`；
 - `polygon_group_id()`；
@@ -269,14 +197,6 @@ LKA：
 - `decode_polygon_positions()`；
 - `decode_polygon_indices()`；
 - `position_aabb()`。
-
-decoder 会验证：
-
-- EVF_VERTEX 存在；
-- vertex payload 可整除 vertexCount；
-- position 为 finite float3；
-- index payload size；
-- index 不越界。
 
 ### `common/python/inspect_map_scg.py`
 
@@ -288,22 +208,6 @@ decoder 会验证：
 
 renderer-neutral derived geometry PoC：
 
-输入：
-
-```text
-Maps.zip + map id
-```
-
-输出到 `tmp/map-research/`：
-
-```text
-05_amigosville_am-geometry-poc.json
-05_amigosville_am-positions.f32le.bin
-05_amigosville_am-indices.u32le.bin
-```
-
-设计：
-
 - 只选 `Mesh` render objects；
 - 默认 `lodIndex=0`；
 - 默认 `switchIndex=0`；
@@ -311,13 +215,13 @@ Maps.zip + map id
 - 每个实际引用到的 PolygonGroup 只 decode 一次；
 - positions 输出 float32 XYZ；
 - indices 规范化输出 uint32；
-- instance manifest 保留 SC2 world scale/rotation/translation；
+- manifest 保留 SC2 world scale/rotation/translation；
 - 不输出 textures/materials/normals/tangents/UV/SpeedTree；
-- 不提交 derived output，默认全部位于已 ignore 的 `tmp/`。
+- derived output 位于已 ignore 的 `tmp/`。
 
 ### Tests
 
-`common/python/tests/test_wotb_scg.py`：
+`common/python/tests/test_wotb_scg.py` 覆盖：
 
 - interleaved position decode；
 - uint16 index decode；
@@ -325,40 +229,70 @@ Maps.zip + map id
 - out-of-range index rejection；
 - missing EVF_VERTEX rejection。
 
-## 下一执行步骤
+## 下一执行步骤 — 第一批双地图
 
-在开发机更新分支后运行：
+在开发机更新分支后执行：
 
 ```powershell
-python common/python/export_map_geometry_poc.py "<Maps.zip>" 05_amigosville_am
+python common/python/inspect_map_scg.py "<Maps.zip>" 18_canal_cn
+python common/python/export_map_geometry_poc.py "<Maps.zip>" 18_canal_cn
+
+python common/python/inspect_map_scg.py "<Maps.zip>" 14_port_pt
+python common/python/export_map_geometry_poc.py "<Maps.zip>" 14_port_pt
 ```
 
-目标不是再次证明 SCG link，而是验证：
+默认输出：
 
-1. 107 个当前场景实际使用的 geometry 是否全部成功 decode；
-2. position/index validation blocker 是否为 0；
-3. 初始状态 `LOD 0 / switch 0` 实际得到多少 Mesh instances；
-4. derived position/index buffer 大小；
-5. manifest 中 world transform 是否完整；
-6. 是否出现 unsupported / malformed group。
+```text
+tmp/map-research/18_canal_cn-scg-inspection.json
+tmp/map-research/18_canal_cn-geometry-poc.json
+tmp/map-research/18_canal_cn-positions.f32le.bin
+tmp/map-research/18_canal_cn-indices.u32le.bin
 
-成功后，PR1 的 static geometry 研究部分结束。
+tmp/map-research/14_port_pt-scg-inspection.json
+tmp/map-research/14_port_pt-geometry-poc.json
+tmp/map-research/14_port_pt-positions.f32le.bin
+tmp/map-research/14_port_pt-indices.u32le.bin
+```
+
+两张图都必须记录：
+
+1. companion SCG 是否存在；
+2. `rb.datasource -> PolygonGroup #id` 命中率；
+3. selected Mesh instance count；
+4. selected unique datasource count；
+5. decoded position/index count；
+6. output buffer bytes；
+7. skipped LOD/switch/shadow counts；
+8. malformed / unsupported geometry blocker。
+
+### 双地图 Gate
+
+只有同时满足：
+
+```text
+18_canal_cn blocker = 0
+14_port_pt  blocker = 0
+```
+
+才把当前 static-geometry extraction contract 升级为 PR2 的首版 Map Geometry Core contract。
+
+如果两张图出现不同 SC2/SCG/LOD/switch 结构，则先修通用 parser/exporter，不做 map-id hardcode。
 
 ## PR1 Definition of Done
 
 - [x] 真实 Maps.zip inventory；
-- [x] map count / extension / per-map/shared structure；
 - [x] terrain + coordinate 基础能力；
-- [x] 第一张地图 SC2 scene/resource trace；
-- [x] CollisionTypeComponent 字段确认；
-- [x] `.mkm/.lka` TerrainDataComponent 引用与 basic payload shape；
-- [x] 主 SC2 PolygonGroup=0；
+- [x] `05_amigosville_am` format research sample；
+- [x] main SC2 PolygonGroup=0；
 - [x] companion SCG SCPG/PolygonGroup decode；
 - [x] SC2 datasource ↔ SCG PolygonGroup exact link 107/107；
-- [x] vertex/index format + stride/index payload contract；
-- [x] reusable position/index decoder implementation；
-- [x] renderer-neutral derived geometry PoC exporter implementation；
-- [ ] 在真实 Maps.zip 上执行 derived geometry PoC，blocker=0；
+- [x] vertex/index format contract；
+- [x] reusable position/index decoder；
+- [x] renderer-neutral derived geometry PoC exporter；
+- [x] first Playback examples 改为 `18_canal_cn` + `14_port_pt`；
+- [ ] `18_canal_cn` real derived geometry PoC blocker=0；
+- [ ] `14_port_pt` real derived geometry PoC blocker=0；
 - [ ] collision representation 的 PR1 最终边界说明；
 - [ ] nav/passability 的 PR1 最终边界说明；
 - [ ] PR2 Map Geometry Core 输入/DoD 定稿。
@@ -369,7 +303,7 @@ PR1 不做：
 
 - frontend 3D renderer；
 - 2D/3D toggle；
-- 全地图批量 conversion；
+- 全地图 batch conversion；
 - 原客户端纹理/材质复刻；
 - SpeedTree/草地重建；
 - 完整 tank 3D model；
