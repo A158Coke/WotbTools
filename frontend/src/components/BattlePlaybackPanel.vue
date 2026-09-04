@@ -262,22 +262,29 @@ onBeforeUnmount(() => {
 
         <div v-show="panelView === 'playback'" data-test="pb-primary">
           <template v-if="playbackV2State === 'FULL' || playbackV2State === 'PARTIAL'">
-            <div v-if="playback3dEnabled && pbOverview" class="pb-view-toggle pb-dimension-toggle" role="tablist" aria-label="Playback map dimension">
-              <button type="button" class="pb-view-tab" :class="{ active: playbackDimension === '2d' }" data-test="pb-dimension-2d" @click="playbackDimension = '2d'">2D</button>
-              <button type="button" class="pb-view-tab" :class="{ active: playbackDimension === '3d' }" data-test="pb-dimension-3d" @click="playbackDimension = '3d'">3D</button>
-            </div>
             <p v-if="playbackV2State === 'PARTIAL'" class="pb-capability-note" data-test="pb-capability-partial">{{ $t('recon.playback.partial') }}</p>
-            <BattlePlayback
-              v-if="pbOverview"
-              v-show="playbackDimension === '2d'"
-              :overview="pbOverview || undefined"
-              :playback-v2="mapPlaybackV2 || undefined"
-              :seek-to="mapSeek ?? undefined"
-            />
-            <BattleMap3D
-              v-if="playback3dEnabled && pbOverview && playbackDimension === '3d'"
-              :map-code="String(mapPlaybackV2?.mapCode || '')"
-            />
+            <div class="pb-dimension-stage">
+              <button
+                v-if="playback3dEnabled && pbOverview"
+                type="button"
+                class="pb-dimension-corner-btn"
+                data-test="pb-dimension-toggle"
+                :aria-label="playbackDimension === '2d' ? 'Switch to 3D view' : 'Switch to 2D view'"
+                :title="playbackDimension === '2d' ? 'Switch to 3D view' : 'Switch to 2D view'"
+                @click="playbackDimension = playbackDimension === '2d' ? '3d' : '2d'"
+              >{{ playbackDimension === '2d' ? '3D' : '2D' }}</button>
+              <BattlePlayback
+                v-if="pbOverview"
+                v-show="playbackDimension === '2d'"
+                :overview="pbOverview || undefined"
+                :playback-v2="mapPlaybackV2 || undefined"
+                :seek-to="mapSeek ?? undefined"
+              />
+              <BattleMap3D
+                v-if="playback3dEnabled && pbOverview && playbackDimension === '3d'"
+                :map-code="String(mapPlaybackV2?.mapCode || '')"
+              />
+            </div>
           </template>
           <div v-else-if="playbackV2State === 'UNAVAILABLE'" class="pb-status pb-unavailable" data-test="pb-unavailable">{{ playbackV2UnavailableReason }}</div>
           <div v-else-if="playbackV2State === 'ERROR'" class="pb-status pb-error" data-test="pb-error" :data-retryable="playbackV2Retryable">
@@ -360,7 +367,6 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: var(--bg-card);
 }
-.pb-dimension-toggle { margin: 0 0 10px; }
 .pb-view-tab {
   padding: 6px 12px;
   border: none;
@@ -374,6 +380,33 @@ onBeforeUnmount(() => {
 }
 .pb-view-tab.active { background: color-mix(in srgb, var(--accent) 14%, var(--bg-card)); color: var(--accent-dark); }
 .pb-view-tab:hover:not(.active) { color: var(--text-heading); }
+.pb-dimension-stage { position: relative; }
+.pb-dimension-corner-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 30;
+  min-width: 40px;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 7px;
+  background: rgb(10 16 22 / 78%);
+  color: #eef5f9;
+  font: 800 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .04em;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 22%);
+}
+.pb-dimension-corner-btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 65%, white 10%);
+  background: rgb(10 16 22 / 92%);
+}
+.pb-dimension-corner-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .pb-status {
   display: flex;
   align-items: center;
@@ -396,5 +429,14 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--warn-text) 10%, var(--bg-card));
   color: var(--warn-text);
   font-size: .82rem;
+}
+@media (max-width: 767px) {
+  .pb-dimension-corner-btn {
+    top: 8px;
+    right: 8px;
+    min-width: 38px;
+    height: 28px;
+    padding: 0 8px;
+  }
 }
 </style>
