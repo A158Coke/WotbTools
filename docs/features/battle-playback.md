@@ -41,6 +41,7 @@ anti-future-leak 或现有 tank-marker 资产契约。
 - 标注工具默认折叠，绘图不暂停 battle clock。Fullscreen 继续保持同一组件实例的
   current time、playing、倍速、选中车辆、zoom/pan、annotations 和偏好；移动端只对
   `screen.orientation.lock('landscape')` 做 best-effort 尝试，失败不阻断播放。
+- Fullscreen 几何 ownership 按 form 固定：Universal Battle HUD 在 PC / Tablet / Mobile 始终属于地图顶部，即使存在 `pb-side-slots` 也不会迁移到 gutter；side-slot 只允许复用 PC / Tablet 的非移动端 controls 空白侧边空间。camera fit 动态量取顶部 `.pb-hud` 的真实高度，并在 Mobile transient controls 可见时额外量取 `.pb-mobile-overlay-content` 作为 bottom safe inset；Mobile 本身不启用 side-slot optimization。`test:browser-layout` 用真实 Chrome 几何断言覆盖 fullscreen + side-slot / mobile bottom-overlay，禁止只靠 CSS 源码正则判断。
 - `BattlePlaybackDataset.baseStates` 是 wrapper12（UpdateArena2 root field11）经后端 sparse
   reconstruction 投影的权威基地 transition；查询 UI 时间点时只消费 `timeSec <= currentTime` 的最新
   A/B/C/D 完整状态。前端不接触 raw protobuf update，不负责合并缺失字段或协议 index，也不合成
