@@ -135,8 +135,8 @@ ${productionCss}
 <script type="module">
 import { playbackSafeInsetOwnership } from ${JSON.stringify(safeInsetsUrl)}
 
-// This module script is deferred by HTML and `load` waits for its module graph to finish.
-// Publish the geometry result synchronously during module evaluation so Chrome `--dump-dom`
+// This module script is deferred by HTML and the load event waits for its module graph to finish.
+// Publish the geometry result synchronously during module evaluation so Chrome --dump-dom
 // cannot serialize the page between `load` and a queued requestAnimationFrame callback.
 {
     const root = document.getElementById('root')
