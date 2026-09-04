@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { replayAggregatePlayerCount } from '../utils/replayView.js'
@@ -507,7 +508,7 @@ async function downloadResultPng() {
 
 
 /** League Rating 算法说明入口：跳转独立文档页（App.vue 注册的 rating-docs 视图）。 */
-const navigate = inject('navigate', null)
+const navigate = inject(NAVIGATE_VIEW_KEY, null)
 
 function openRatingDocs() {
   navigate && navigate('rating-docs')
