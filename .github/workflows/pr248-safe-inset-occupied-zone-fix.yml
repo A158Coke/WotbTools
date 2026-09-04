@@ -24,48 +24,51 @@ jobs:
 
           vue = Path('frontend/src/components/BattlePlayback.vue')
           src = vue.read_text(encoding='utf-8')
-          old = """  if (ownership.reserveBottom) {
-            const wrap = mobileOverlay.value?.$el
-            const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null
-            bottom = content ? content.clientHeight : 0
-          }
-"""
-          new = """  if (ownership.reserveBottom) {
-            const wrap = mobileOverlay.value?.$el
-            const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null
-            if (wrap && content && content.clientHeight > 0) {
-              const wrapRect = wrap.getBoundingClientRect()
-              const contentRect = content.getBoundingClientRect()
-              // Reserve the whole occupied bottom zone, not just the card height. The transient
-              // controller is offset from the bottom by 8px + safe-area-inset-bottom; ignoring that
-              // gap still lets the fitted map sit underneath the visible controller.
-              bottom = Math.max(0, wrapRect.bottom - contentRect.top)
-            }
-          }
-"""
+          old = (
+              "  if (ownership.reserveBottom) {\n"
+              "    const wrap = mobileOverlay.value?.$el\n"
+              "    const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null\n"
+              "    bottom = content ? content.clientHeight : 0\n"
+              "  }\n"
+          )
+          new = (
+              "  if (ownership.reserveBottom) {\n"
+              "    const wrap = mobileOverlay.value?.$el\n"
+              "    const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null\n"
+              "    if (wrap && content && content.clientHeight > 0) {\n"
+              "      const wrapRect = wrap.getBoundingClientRect()\n"
+              "      const contentRect = content.getBoundingClientRect()\n"
+              "      // Reserve the complete occupied bottom zone, including the controller's\n"
+              "      // bottom offset / safe-area gap, rather than only the card height.\n"
+              "      bottom = Math.max(0, wrapRect.bottom - contentRect.top)\n"
+              "    }\n"
+              "  }\n"
+          )
           if src.count(old) != 1:
               raise SystemExit('BattlePlayback safeInsets target did not match exactly once')
           vue.write_text(src.replace(old, new, 1), encoding='utf-8')
 
           script = Path('frontend/scripts/browser-playback-layout.mjs')
           src = script.read_text(encoding='utf-8')
-          old = """      const hudRectBefore = hud.getBoundingClientRect()
-                const contentRectBefore = overlayContent.getBoundingClientRect()
-                const mapRectBefore = map.getBoundingClientRect()
-                const stageRect = stage.getBoundingClientRect()
-                const top = ownership.reserveTop ? hudRectBefore.height : 0
-                const bottom = ownership.reserveBottom && contentRectBefore.height > 0 ? contentRectBefore.height : 0
-"""
-          new = """      const hudRectBefore = hud.getBoundingClientRect()
-                const contentRectBefore = overlayContent.getBoundingClientRect()
-                const overlayWrapRectBefore = root.querySelector('.pb-mobile-overlay').getBoundingClientRect()
-                const mapRectBefore = map.getBoundingClientRect()
-                const stageRect = stage.getBoundingClientRect()
-                const top = ownership.reserveTop ? hudRectBefore.height : 0
-                const bottom = ownership.reserveBottom && contentRectBefore.height > 0
-                  ? Math.max(0, overlayWrapRectBefore.bottom - contentRectBefore.top)
-                  : 0
-"""
+          old = (
+              "      const hudRectBefore = hud.getBoundingClientRect()\n"
+              "      const contentRectBefore = overlayContent.getBoundingClientRect()\n"
+              "      const mapRectBefore = map.getBoundingClientRect()\n"
+              "      const stageRect = stage.getBoundingClientRect()\n"
+              "      const top = ownership.reserveTop ? hudRectBefore.height : 0\n"
+              "      const bottom = ownership.reserveBottom && contentRectBefore.height > 0 ? contentRectBefore.height : 0\n"
+          )
+          new = (
+              "      const hudRectBefore = hud.getBoundingClientRect()\n"
+              "      const contentRectBefore = overlayContent.getBoundingClientRect()\n"
+              "      const overlayWrapRectBefore = root.querySelector('.pb-mobile-overlay').getBoundingClientRect()\n"
+              "      const mapRectBefore = map.getBoundingClientRect()\n"
+              "      const stageRect = stage.getBoundingClientRect()\n"
+              "      const top = ownership.reserveTop ? hudRectBefore.height : 0\n"
+              "      const bottom = ownership.reserveBottom && contentRectBefore.height > 0\n"
+              "        ? Math.max(0, overlayWrapRectBefore.bottom - contentRectBefore.top)\n"
+              "        : 0\n"
+          )
           if src.count(old) != 1:
               raise SystemExit('browser fixture safe inset target did not match exactly once')
           script.write_text(src.replace(old, new, 1), encoding='utf-8')
