@@ -2,14 +2,15 @@
 
 ## 状态
 
-PR1 / Phase 0：**IN PROGRESS — EXTRACTION PROVEN / INITIAL VISUAL STATE SEMANTICS NOT YET PROVEN**。
+PR1 / Phase 0：**IN PROGRESS — EXTRACTION + INITIAL VISIBILITY CONTRACT PROVEN / SCHEMA V3 REAL RERUN NEXT**。
 
-本报告刻意区分两件事：
+本报告区分三层：
 
-1. 能否从 SC2/SCG 稳定提取 geometry；
-2. 能否证明哪些 scene branches 在战斗初始时应该可见。
+1. SC2/SCG 是否能稳定提取 geometry；
+2. RenderBatch LOD/switch 是否能确定 active batches；
+3. scene hierarchy 中哪些 RenderObject 在战斗初始时可见。
 
-第 1 项已经通过 Canal + Port Bay 双地图 gate；第 2 项仍是 PR1 blocker。
+前两层已通过；第 3 层现也已由 DAVA source + Canal/Port Bay 真实 scene evidence 证明。剩余工作只有 schema v3 双地图重跑。
 
 ---
 
@@ -46,16 +47,7 @@ warnings                           0
 index payload mismatch             0
 ```
 
-Raw candidate geometry PoC：
-
-```text
-selected geometry groups           94
-Mesh instances                    953
-positions                       99736
-indices                        182451
-positions bytes               1196832
-indices bytes                  729804
-```
+旧 raw candidate PoC：94 geometry / 953 Mesh instances / 99,736 positions / 182,451 indices。
 
 ## Port Bay / 14_port_pt
 
@@ -75,24 +67,13 @@ warnings                           0
 index payload mismatch             0
 ```
 
-Raw candidate geometry PoC：
+旧 raw candidate PoC：106 geometry / 2,039 Mesh instances / 79,837 positions / 149,793 indices。
 
-```text
-selected geometry groups          106
-Mesh instances                   2039
-positions                       79837
-indices                        149793
-positions bytes                958044
-indices bytes                  599172
-```
-
-因此 SC2↔SCG extraction contract 已经不是单图偶然结构。
+因此 SC2 ↔ SCG geometry source/reference/extraction contract 已通过双地图 gate。
 
 ---
 
 # RenderBatch wildcard — PASS
-
-第一轮空 PoC 根因已确认并修复。
 
 DAVA RenderObject active batch rule：
 
@@ -104,124 +85,179 @@ AND
 
 `-1` 是 shared/wildcard batch。
 
-schema v2 exporter 已复现该规则，并验证 numeric batch archive key / missing default / recursive hierarchy。
+exporter 已复现该规则，并验证 numeric batch archive key、missing default `-1` 与 recursive hierarchy。
 
 ---
 
-# New blocker — scene-level state variants
+# Initial scene visibility — PROVEN
 
-最终 sanity check 发现 raw candidate PoC 同时包含大量 State 0 / State 1 sibling geometry。
+旧 schema v2 PoC 的 sanity check 发现大量同一 parent 下的 State 0 / State 1 siblings 同时进入输出。两边 RenderBatch 都是 `switchIndex=-1`，所以 scene branch selection 不能由 batch switch 独立决定。
 
-Port Bay 例子：
+## DAVA authoritative contract
 
-```text
-$.#hierarchy[65].#hierarchy[1]  bld_pt_brickfence.sc2 State 0
-$.#hierarchy[65].#hierarchy[2]  bld_pt_brickfence.sc2 State 1
-```
-
-两者都进入 PoC，且 batch switchIndex 都是 `-1`。
-
-Canal 例子：
+公开 DAVA `RenderObject::eFlags` 明确定义：
 
 ```text
-$.#hierarchy[184].#hierarchy[1] fag_cn_03_woodenstuff.sc2 State 0
-$.#hierarchy[184].#hierarchy[2] fag_cn_03_woodenstuff.sc2 State 1
+VISIBLE = 1 << 0
 ```
 
-同样两者都进入 PoC，batch switchIndex 都是 `-1`。
+并且 `RenderObject::Load()` 对 `ro.flags`：
 
-因此：
+- explicit serialized flags：只恢复 serialization criteria 中的 flags；
+- missing `ro.flags`：默认使用 `SERIALIZATION_CRITERIA`；
+- `SERIALIZATION_CRITERIA` 包含 `VISIBLE`。
 
-> RenderBatch LOD/switch selection 能决定一个 RenderObject 的 active batches，但当前证据不足以决定 scene-level State 0/State 1 branch 的初始可见性。
+因此 renderer-neutral initial scene selector 可以直接复现 DAVA RenderObject 自身语义：
 
-raw candidate PoC 不能被称为“initial visual scene”。
+```text
+explicit ro.flags -> require bit 0
+missing ro.flags  -> visible by DAVA Load default
+```
+
+这比 entity filename 或 WoTB-specific state naming 更通用、更接近引擎真实 render state。
+
+## Canal real evidence
+
+- recursive entities：2,725；
+- `StateSwitcherComponent`：347；
+- Mesh RenderObject visible bit：590 true / 363 false；
+- diagnostic State 0/1 sibling groups：347；
+- **347 / 347** State 0：visible=true；
+- **347 / 347** State 1：visible=false；
+- sibling RenderBatch switch 仍全部 `-1`。
+
+示例：
+
+```text
+bld_cn_shed01.sc2
+  State 0 -> ro.flags=8193 -> VISIBLE bit set
+  State 1 -> ro.flags=8192 -> VISIBLE bit clear
+```
+
+## Port Bay real evidence
+
+- recursive entities：3,890；
+- `StateSwitcherComponent`：596；
+- Mesh RenderObject visible bit：1,326 true / 713 false；
+- diagnostic State 0/1 sibling groups：596；
+- **596 / 596** State 0：visible=true；
+- **596 / 596** State 1：visible=false；
+- sibling RenderBatch switch 仍全部 `-1`。
+
+示例：
+
+```text
+bld_pt_brickfence.sc2
+  State 0 -> ro.flags=8193 -> VISIBLE bit set
+  State 1 -> ro.flags=8192 -> VISIBLE bit clear
+```
+
+`State 0/State 1` 名称在这里仅用于 evidence cross-check，不成为 production selector。
 
 ---
 
-# Standard DAVA SwitchComponent evidence
+# Schema v3 geometry exporter
 
-公开 DAVA `SwitchSystem` 的行为已经确认：
+`common/python/export_map_geometry_poc.py` 已升级到 schema v3：
 
 ```text
-SwitchComponent newSwitchIndex
-  -> SwitchSystem.SetSwitchHierarchy(entity, index)
-  -> RenderObject.SetSwitchIndex(index)
-  -> recursively apply to children
+RenderComponent
+  -> Mesh
+  -> DAVA RenderObject::VISIBLE check
+  -> exclude shadow-only
+  -> DAVA active LOD/switch rule
+  -> rb.datasource
+  -> SCG PolygonGroup
 ```
 
-但 WoTB map scene 里还存在大量 `StateSwitcherComponent`，其行为不能从标准 `SwitchComponent` 自动类推。
+行为：
 
-特别禁止：
+- explicit `ro.flags & 1 == 0`：跳过整个 RenderObject；
+- missing `ro.flags`：按 DAVA Load default 保持 visible；
+- skipped summary 新增 `invisible_render_object`；
+- manifest 明确记录 initial visibility contract；
+- entity filename 不参与 selection。
 
-- 不能用 entity name `State 0` 直接作为 production initial-state rule；
-- 不能简单删掉所有 `State 1`；
-- 不能把 batch `switch=-1` 当成 scene-state selection。
+Regression tests 额外故意构造：
+
+```text
+name = "... State 1", ro.flags = 8193 -> 必须导出
+name = "... State 0", ro.flags = 8192 -> 必须排除
+```
+
+以确保 selector 永远不会退化为 filename heuristic。
 
 ---
 
 # State-switcher diagnostic tooling
 
-新增：
+保留：
 
 ```text
 common/python/inspect_map_state_switchers.py
 common/python/tests/test_inspect_map_state_switchers.py
 ```
 
-报告内容：
+它用于版本升级或新地图研究时重新验证：
 
-- recursive component inventory；
-- `StateSwitcherComponent` raw archive；
-- `SwitchComponent` raw archive；
-- parent / immediate-child hierarchy；
-- `ro.flags`；
-- DAVA VISIBLE bit；
-- child RenderBatch datasource / LOD / switch；
-- State 0/State 1 name pair 仅作为 research locator。
+- StateSwitcher/Switch components；
+- parent-child hierarchy；
+- `ro.flags` / VISIBLE；
+- batch datasource / LOD / switch；
+- diagnostic state sibling correlation。
 
-生产 selector 必须来自 component/visibility evidence，而不是命名 heuristic。
+它不是 production runtime dependency。
 
-下一次真实命令：
+---
+
+# Final PR1 real rerun
+
+不再需要重跑 state inspector 或 SCG inspector，只运行：
 
 ```powershell
-python common/python/inspect_map_state_switchers.py "C:\Users\yu.chen\Downloads\Maps.zip" 18_canal_cn
-python common/python/inspect_map_state_switchers.py "C:\Users\yu.chen\Downloads\Maps.zip" 14_port_pt
+python common/python/export_map_geometry_poc.py "C:\Users\yu.chen\Downloads\Maps.zip" 18_canal_cn
+python common/python/export_map_geometry_poc.py "C:\Users\yu.chen\Downloads\Maps.zip" 14_port_pt
+```
+
+最终双地图 gate：
+
+```text
+schemaVersion = 3
+geometryCount > 0
+instance count > 0
+positionsBytes > 0
+indicesBytes > 0
+skipped.invisible_render_object > 0
+selected datasource blocker = 0
+same mutually-exclusive state group duplicated in selected instances = 0
+```
+
+通过后 PR247 才 Ready，随后进入 PR2。
+
+---
+
+# PR2 Map Geometry Core handoff
+
+输入：
+
+```text
+SC2 + companion SCG + heightmap + existing map semantics
 ```
 
 输出：
 
 ```text
-tmp/map-research/18_canal_cn-state-switcher-inspection.json
-tmp/map-research/14_port_pt-state-switcher-inspection.json
+deterministic renderer-neutral manifest
++ shared local static geometry buffers
++ initially-visible instance transforms
++ terrain representation
++ canonical world bounds / coordinate metadata
++ transformed world-AABB sanity report
 ```
 
----
+Canal + Port Bay 继续作为双地图 gate。
 
-# Visual-state Gate
-
-在 PR1 完成前必须证明 authoritative initial-state rule，候选证据包括：
-
-- RenderObject `ro.flags` / VISIBLE；
-- `SwitchComponent.sc.switchindex` + DAVA hierarchy propagation；
-- WoTB `StateSwitcherComponent` raw fields；
-- 其它可验证 scene metadata。
-
-然后必须：
-
-1. 实现通用 initial-state selector；
-2. targeted regression tests；
-3. rerun Canal + Port Bay；
-4. 确认同一 state-switch group 不会把互斥 visual branches 同时输出。
-
-通过前 PR247 保持 Draft，PR2 不开始。
-
----
-
-# Large environment mesh note
-
-PoC 中存在超出 playable `-300..300` bounds 的大范围 environment/surroundings meshes。它们可能是合法远景/环境 geometry，不能按尺寸或 filename 硬删。
-
-PR2 应增加 transformed world-AABB / role sanity report，但任何 selection 都必须来自 scene/render evidence。
+Large environment/surroundings meshes 可能合法超出 playable `-300..300` bounds，禁止按尺寸或 filename 删除。PR2 只增加 transformed world-AABB / role sanity，selection 仍必须来自 scene/render evidence。
 
 ---
 
@@ -234,7 +270,7 @@ PR2 应增加 transformed world-AABB / role sanity report，但任何 selection 
 - `.mkm/.lka` 与 TerrainData 关联；
 - navmesh/passability semantics 未证明。
 
-这些不阻塞 visual 3D Playback，但未来 AI LOS/pathing Spatial Analysis 前必须继续研究。
+这些不阻塞 visual 3D Playback；未来 AI LOS/pathing Spatial Analysis 前单独继续研究。
 
 ---
 
@@ -246,11 +282,11 @@ PR2 应增加 transformed world-AABB / role sanity report，但任何 selection 
 - [x] recursive SC2 datasource ↔ SCG exact link；
 - [x] vertex/index decoder；
 - [x] DAVA RenderBatch wildcard contract；
-- [x] Canal raw candidate geometry extraction blocker=0；
-- [x] Port Bay raw candidate geometry extraction blocker=0；
+- [x] Canal raw extraction blocker=0；
+- [x] Port Bay raw extraction blocker=0；
 - [x] state-switcher diagnostic tool + synthetic tests；
-- [ ] prove initial scene state/visibility semantics；
-- [ ] implement authoritative initial-state selector；
-- [ ] Canal duplicated-active-state blocker=0；
-- [ ] Port Bay duplicated-active-state blocker=0；
-- [ ] finalize PR2 handoff。
+- [x] prove initial scene visibility semantics；
+- [x] implement authoritative initial-state selector；
+- [ ] Canal schema v3 duplicated-active-state blocker=0；
+- [ ] Port Bay schema v3 duplicated-active-state blocker=0；
+- [ ] finalize PR2 handoff after real rerun。
