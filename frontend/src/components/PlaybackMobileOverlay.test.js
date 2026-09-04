@@ -34,12 +34,13 @@ describe('PlaybackMobileOverlay', () => {
     wrapper.vm.reveal()
     await wrapper.vm.$nextTick()
     expect(wrapper.classes()).toContain('pb-mobile-overlay-visible')
+    expect(wrapper.classes()).not.toContain('pb-mobile-overlay-transient')
     wrapper.vm.hide()
     await wrapper.vm.$nextTick()
     expect(wrapper.classes()).not.toContain('pb-mobile-overlay-visible')
   })
 
-  it('auto-hides mobile fullscreen controls without taking map pointer events', async () => {
+  it('keeps mobile fullscreen controls hidden until requested and never takes map pointer events', async () => {
     Object.defineProperty(document, 'fullscreenElement', {
       configurable: true,
       value: document.body,
@@ -47,6 +48,10 @@ describe('PlaybackMobileOverlay', () => {
     const wrapper = mount(PlaybackMobileOverlay, { slots: { default: '<button>Controls</button>' } })
     await wrapper.vm.$nextTick()
 
+    expect(wrapper.classes()).not.toContain('pb-mobile-overlay-visible')
+
+    wrapper.vm.reveal()
+    await wrapper.vm.$nextTick()
     expect(wrapper.classes()).toContain('pb-mobile-overlay-transient')
     expect(wrapper.classes()).toContain('pb-mobile-overlay-visible')
     // The viewport-sized wrapper must never become the pointer target; only visible controls do.
@@ -66,13 +71,12 @@ describe('PlaybackMobileOverlay', () => {
       value: document.body,
     })
     const wrapper = mount(PlaybackMobileOverlay, { slots: { default: '<button>Controls</button>' } })
-    vi.advanceTimersByTime(2500)
-    await wrapper.vm.$nextTick()
     expect(wrapper.classes()).not.toContain('pb-mobile-overlay-visible')
 
     document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await wrapper.vm.$nextTick()
     expect(wrapper.classes()).toContain('pb-mobile-overlay-visible')
+    expect(wrapper.classes()).toContain('pb-mobile-overlay-transient')
 
     vi.advanceTimersByTime(2500)
     await wrapper.vm.$nextTick()
