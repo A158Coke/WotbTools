@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, ref, computed, toRaw, watch, onMounted, onUnmounted } from 'vue'
 import ReplayPage from './ReplayPage.vue'
+import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { setUiProfile } from '../composables/useUiProfile.js'
 
 const i18n = vi.hoisted(() => ({
@@ -297,15 +298,12 @@ function makeResp(overrides = {}) {
 }
 
 function mountPage(overrides = {}) {
-  const auth = overrides.auth || { authenticated: true, login: vi.fn() }
   const navigate = overrides.navigate || vi.fn()
   return mount(ReplayPage, {
     global: {
       mocks: { $t: i18n.t },
       provide: {
-        navigate,
-        isAuthenticated: () => auth.authenticated,
-        login: auth.login,
+        [NAVIGATE_VIEW_KEY]: navigate,
       },
       stubs: {
         FileUploader: {

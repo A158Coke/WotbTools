@@ -3,8 +3,9 @@ import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useAuth } from '../composables/useAuth.js'
 import { useUiProfile } from '../composables/useUiProfile.js'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
+import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 
-const navigate = inject('navigate')
+const navigate = inject(NAVIGATE_VIEW_KEY)
 const { login, logout, isAuthenticated, userName, tokenParsed } = useAuth()
 const { uiProfile, setUiProfile } = useUiProfile()
 const open = ref(false)

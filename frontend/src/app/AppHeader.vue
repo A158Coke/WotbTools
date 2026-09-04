@@ -2,12 +2,13 @@
 import { computed, inject } from 'vue'
 import { useRoute } from 'vue-router'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
-import { isHomeHost, viewFromRoute } from './navigation.js'
+import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { useAuth } from '../composables/useAuth.js'
+import { isHomeHost, viewFromRoute } from './navigation.js'
 import UserMenu from './UserMenu.vue'
 
 const route = useRoute()
-const navigate = inject('navigate')
+const navigate = inject(NAVIGATE_VIEW_KEY)
 const activeView = computed(() => viewFromRoute(route))
 const { hasRole } = useAuth()
 const showBoost = computed(() => hasRole('wotbtools-admin'))
