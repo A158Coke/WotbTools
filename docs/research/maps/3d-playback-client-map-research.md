@@ -2,185 +2,99 @@
 
 ## 状态
 
-PR1 / Phase 0：**COMPLETE — READY FOR REVIEW**。
+PR1 / Phase 0：**IN PROGRESS — EXTRACTION PROVEN / INITIAL VISUAL STATE SEMANTICS NOT YET PROVEN**。
 
-本报告记录 `Maps.zip` 中 terrain / static geometry / collision metadata / terrain-associated data 的实证结果，并定义后续 PR2 Map Geometry Core 的边界。
+本报告刻意区分两件事：
 
----
+1. 能否从 SC2/SCG 稳定提取 geometry；
+2. 能否证明哪些 scene branches 在战斗初始时应该可见。
 
-# 1. Sample policy
-
-Reverse-engineering reference：
-
-```text
-05_amigosville_am = Falls Creek / 乡间溪流
-```
-
-首批 Playback examples：
-
-```text
-18_canal_cn = Canal / 运河尽头
-14_port_pt  = Port Bay / 港湾小镇
-```
-
-Falls Creek 用于最初格式逆向；Canal + Port Bay 用 schema v2 recursive traversal 和 derived exporter 作为真正 PR1 gate。
+第 1 项已经通过 Canal + Port Bay 双地图 gate；第 2 项仍是 PR1 blocker。
 
 ---
 
-# 2. Existing repository baseline
+# Static geometry extraction — PASS
 
-仓库已具备：
-
-- `common/python/wotb_sc2.py`：DVPL + DAVA SceneFileV2；
-- `map-semanticizer`：Landscape world bounds / heightmap / elevation / slope；
-- SC2 spawn/base Z 与 heightmap sampling 的交叉验证；
-- replay/client/2D basemap 共用 world-coordinate contract。
-
-因此 3D Playback 不新建第二套地图坐标系。
-
----
-
-# 3. Maps.zip inventory
-
-真实 archive：
-
-- bytes：2,107,519,076；
-- files：4,316；
-- 33 battle maps + `00_global_content` + `00_shared_content`；
-- `.sc2.dvpl`：84；
-- `.scg.dvpl`：84；
-- `.heightmap.dvpl`：38；
-- `.mkm.dvpl`：37；
-- `.lka.dvpl`：65。
-
-Texture payload 约占 uncompressed archive 86.3%。
-
-结论：production 不应分发整个客户端纹理集合；本路线只生产 derived runtime geometry，并使用自有材质。
-
----
-
-# 4. Static geometry source/reference contract
-
-已证明主链：
+已证明：
 
 ```text
 SC2 Entity
   -> RenderComponent
   -> Mesh
   -> RenderBatch
-  -> rb.datasource integer id
+  -> rb.datasource
   -> same-basename companion SCG
   -> PolygonGroup #id
   -> vertices / indices
 ```
 
-主 SC2 本身不是 static PolygonGroup container；几何数据位于 companion SCPG `.scg` sidecar。
+## Canal / 18_canal_cn
 
-## Falls Creek
-
-早期 schema v1 research sample：
-
-- SCPG v1；
-- PolygonGroups：221；
-- vertices：164,307；
-- indices：266,417；
-- top-level traversal 中 unique datasource：107；
-- matched：107/107；
-- unmatched：0。
-
-注意：该旧 report 在 recursive inspector 引入前生成，因此它证明 exact id link，但不用于和 schema v2 的 absolute datasource coverage 对比。
-
-## Canal — schema v2
-
-Scene：
-
-- recursive entities：2,725。
-
-SCG：
-
-- SCPG v1；
-- PolygonGroups：237；
-- groups with id：237；
-- unique ids：237；
-- vertices：173,017；
-- indices：299,156；
-- primitives：104,600；
-- trailing bytes：0；
-- warnings：0；
-- index payload mismatch：0。
-
-Recursive datasource cross-check：
+schema v2 recursive SCG inspection：
 
 ```text
-RenderBatch datasource occurrences = 3573
-unique SC2 datasource ids           = 237
-SCG PolygonGroup ids                = 237
-matched unique ids                  = 237 / 237
-unmatched ids                       = 0
-unreferenced PolygonGroup ids       = 0
+entities                         2725
+PolygonGroups                    237
+vertices                      173017
+indices                       299156
+RenderBatch datasource occ.     3573
+unique datasource ids            237
+matched ids                  237/237
+unmatched                          0
+unreferenced PolygonGroups          0
+warnings                           0
+index payload mismatch             0
 ```
 
-## Port Bay — schema v2
-
-Scene：
-
-- recursive entities：3,890。
-
-SCG：
-
-- SCPG v1；
-- PolygonGroups：217；
-- groups with id：217；
-- unique ids：217；
-- vertices：126,466；
-- indices：223,764；
-- primitives：77,454；
-- trailing bytes：0；
-- warnings：0；
-- index payload mismatch：0。
-
-Recursive datasource cross-check：
+Raw candidate geometry PoC：
 
 ```text
-RenderBatch datasource occurrences = 4702
-unique SC2 datasource ids           = 217
-SCG PolygonGroup ids                = 217
-matched unique ids                  = 217 / 217
-unmatched ids                       = 0
-unreferenced PolygonGroup ids       = 0
+selected geometry groups           94
+Mesh instances                    953
+positions                       99736
+indices                        182451
+positions bytes               1196832
+indices bytes                  729804
 ```
 
-结论：Canal + Port Bay 中 companion SCG 的 PolygonGroup id universe 与 recursively discovered SC2 datasource universe 完全一致。
+## Port Bay / 14_port_pt
+
+schema v2 recursive SCG inspection：
+
+```text
+entities                         3890
+PolygonGroups                    217
+vertices                      126466
+indices                       223764
+RenderBatch datasource occ.     4702
+unique datasource ids            217
+matched ids                  217/217
+unmatched                          0
+unreferenced PolygonGroups          0
+warnings                           0
+index payload mismatch             0
+```
+
+Raw candidate geometry PoC：
+
+```text
+selected geometry groups          106
+Mesh instances                   2039
+positions                       79837
+indices                        149793
+positions bytes                958044
+indices bytes                  599172
+```
+
+因此 SC2↔SCG extraction contract 已经不是单图偶然结构。
 
 ---
 
-# 5. Vertex / index contract
+# RenderBatch wildcard — PASS
 
-当前真实数据证明：
+第一轮空 PoC 根因已确认并修复。
 
-- interleaved vertex storage；
-- `EVF_VERTEX` 位于 offset 0；
-- position = little-endian float32 XYZ；
-- stride = `len(vertices) / vertexCount`，必须严格整除；
-- 当前三张样本 index payload validation 均通过；
-- decoder 会拒绝 non-finite position、index payload mismatch、out-of-range local index。
-
-Runtime 不复制每个建筑 mesh，而使用：
-
-```text
-shared local geometry
-+ SC2 worldScale
-+ SC2 worldRotation quaternion XYZW
-+ SC2 worldTranslation
-```
-
----
-
-# 6. DAVA RenderBatch active rule
-
-第一轮 Canal + Port Bay PoC 都得到空 geometry，最终确认是 exporter bug，而不是客户端资源缺失。
-
-DAVA active rule：
+DAVA RenderObject active batch rule：
 
 ```text
 (batch.lodIndex == requestedLod OR batch.lodIndex == -1)
@@ -190,179 +104,153 @@ AND
 
 `-1` 是 shared/wildcard batch。
 
-schema v2 exporter 已修复：
-
-- requested LOD=0 / switch=0；
-- 接纳 shared `-1`；
-- missing option 使用 DAVA load default `-1`；
-- numeric archive batch key 作为真实 batch index；
-- zero selected instances fail-fast；
-- tests 覆盖 wildcard、nested hierarchy、batch key ordering。
+schema v2 exporter 已复现该规则，并验证 numeric batch archive key / missing default / recursive hierarchy。
 
 ---
 
-# 7. Derived geometry PoC gate
+# New blocker — scene-level state variants
 
-## Canal — PASS
+最终 sanity check 发现 raw candidate PoC 同时包含大量 State 0 / State 1 sibling geometry。
 
-```text
-selected geometry groups = 94
-Mesh instances           = 953
-unique selected ids      = 94
-decoded positions        = 99,736
-decoded indices          = 182,451
-positions bytes          = 1,196,832
-indices bytes            = 729,804
-orphan instance ids      = 0
-unused selected geometry = 0
-blocker                   = 0
-```
-
-Skipped intentionally：inactive LOD 925、SpeedTree 311、Vegetation 3、MapBorder 2、Landscape 1、Water 1。
-
-## Port Bay — PASS
+Port Bay 例子：
 
 ```text
-selected geometry groups = 106
-Mesh instances           = 2,039
-unique selected ids      = 106
-decoded positions        = 79,837
-decoded indices          = 149,793
-positions bytes          = 958,044
-indices bytes            = 599,172
-orphan instance ids      = 0
-unused selected geometry = 0
-blocker                   = 0
+$.#hierarchy[65].#hierarchy[1]  bld_pt_brickfence.sc2 State 0
+$.#hierarchy[65].#hierarchy[2]  bld_pt_brickfence.sc2 State 1
 ```
 
-Skipped intentionally：inactive LOD 1,571、SpeedTree 162、Vegetation 3、Landscape 1、Water 1、MapBorder 1。
+两者都进入 PoC，且 batch switchIndex 都是 `-1`。
 
-双地图 gate：
+Canal 例子：
 
 ```text
-18_canal_cn blocker = 0
-14_port_pt blocker  = 0
+$.#hierarchy[184].#hierarchy[1] fag_cn_03_woodenstuff.sc2 State 0
+$.#hierarchy[184].#hierarchy[2] fag_cn_03_woodenstuff.sc2 State 1
 ```
 
-**PASS**。
-
----
-
-# 8. Collision boundary
-
-已确认 scene entity 中存在 `CollisionTypeComponent`：
-
-```text
-CollisionType
-Density
-FallingType
-Health
-MaterialKind
-```
-
-可证明：collision/destruction/material classification metadata 属于 scene entity。
-
-不可证明：
-
-- 独立 gameplay collision mesh 来源；
-- gameplay collision 是否复用 visual SCG PolygonGroup；
-- CollisionType 完整 enum/engine behavior。
-
-所以 PR1 明确禁止把 visual SCG geometry 描述成 gameplay collision geometry。
-
-这不阻塞 visual 3D Playback；未来 AI LOS/pathing spatial core 前再继续研究。
-
----
-
-# 9. MKM / LKA / nav-passability boundary
-
-`TerrainDataComponent` 已证明引用 `.mkm/.lka`。
-
-MKM 有 fixed-size packed-grid 特征；LKA 是 terrain-associated opaque data。
-
-没有足够证据证明它们是 navmesh/passability。
+同样两者都进入 PoC，batch switchIndex 都是 `-1`。
 
 因此：
 
-- PR2 不消费 MKM/LKA；
-- code/schema/doc 不提前命名为 navmesh/passability；
-- spatial-analysis 阶段另开研究。
+> RenderBatch LOD/switch selection 能决定一个 RenderObject 的 active batches，但当前证据不足以决定 scene-level State 0/State 1 branch 的初始可见性。
+
+raw candidate PoC 不能被称为“initial visual scene”。
 
 ---
 
-# 10. PR2 Map Geometry Core handoff
+# Standard DAVA SwitchComponent evidence
 
-PR2 输入：
+公开 DAVA `SwitchSystem` 的行为已经确认：
 
 ```text
-map SC2
-+ companion SCG
-+ heightmap
-+ existing common map semantics/world bounds/base metadata
+SwitchComponent newSwitchIndex
+  -> SwitchSystem.SetSwitchHierarchy(entity, index)
+  -> RenderObject.SetSwitchIndex(index)
+  -> recursively apply to children
 ```
 
-PR2 derived runtime representation：
+但 WoTB map scene 里还存在大量 `StateSwitcherComponent`，其行为不能从标准 `SwitchComponent` 自动类推。
+
+特别禁止：
+
+- 不能用 entity name `State 0` 直接作为 production initial-state rule；
+- 不能简单删掉所有 `State 1`；
+- 不能把 batch `switch=-1` 当成 scene-state selection。
+
+---
+
+# State-switcher diagnostic tooling
+
+新增：
 
 ```text
-renderer-neutral manifest
-+ shared static position/index buffers
-+ instance transforms
-+ terrain representation
-+ canonical world bounds/coordinate metadata
+common/python/inspect_map_state_switchers.py
+common/python/tests/test_inspect_map_state_switchers.py
 ```
 
-PR2 v1 static selection：
+报告内容：
 
-- Mesh only；
-- LOD 0 / switch 0 + shared `-1`；
-- exclude shadow-only；
-- no SpeedTree/vegetation；
-- Landscape 走 heightmap terrain pipeline；
-- Water / MapBorder 不作为 static dependency；
-- no client texture/material/UV/tangent bulk export。
+- recursive component inventory；
+- `StateSwitcherComponent` raw archive；
+- `SwitchComponent` raw archive；
+- parent / immediate-child hierarchy；
+- `ro.flags`；
+- DAVA VISIBLE bit；
+- child RenderBatch datasource / LOD / switch；
+- State 0/State 1 name pair 仅作为 research locator。
 
-PR2 DoD：
+生产 selector 必须来自 component/visibility evidence，而不是命名 heuristic。
 
-1. Canal + Port Bay deterministic conversion；
-2. static geometry blocker=0；
-3. terrain blocker=0；
-4. world bounds/coordinate contract 与现有 map/replay 一致；
-5. no orphan datasource；
-6. manifest validates counts/bytes；
-7. derived package 不含 raw SC2/SCG 或原 texture bulk assets；
-8. targeted Python tests；
-9. 为 PR3 Browser 3D Technical Prototype 提供稳定输入。
+下一次真实命令：
 
-PR3 才开始真正 browser scene：terrain + static mesh + camera，然后接真实 replay vehicle state。
+```powershell
+python common/python/inspect_map_state_switchers.py "C:\Users\yu.chen\Downloads\Maps.zip" 18_canal_cn
+python common/python/inspect_map_state_switchers.py "C:\Users\yu.chen\Downloads\Maps.zip" 14_port_pt
+```
 
----
+输出：
 
-# 11. Research tooling retained
-
-- `common/python/inventory_maps_zip.py`
-- `common/python/inspect_map_scene.py`
-- `common/python/wotb_scg.py`
-- `common/python/inspect_map_scg.py`
-- `common/python/export_map_geometry_poc.py`
-- `common/python/tests/test_wotb_scg.py`
-- `common/python/tests/test_export_map_geometry_poc.py`
-
-Derived outputs 留在 ignored `tmp/`；禁止提交完整 Maps.zip 或 bulk raw client assets。
+```text
+tmp/map-research/18_canal_cn-state-switcher-inspection.json
+tmp/map-research/14_port_pt-state-switcher-inspection.json
+```
 
 ---
 
-# 12. PR1 Definition of Done
+# Visual-state Gate
+
+在 PR1 完成前必须证明 authoritative initial-state rule，候选证据包括：
+
+- RenderObject `ro.flags` / VISIBLE；
+- `SwitchComponent.sc.switchindex` + DAVA hierarchy propagation；
+- WoTB `StateSwitcherComponent` raw fields；
+- 其它可验证 scene metadata。
+
+然后必须：
+
+1. 实现通用 initial-state selector；
+2. targeted regression tests；
+3. rerun Canal + Port Bay；
+4. 确认同一 state-switch group 不会把互斥 visual branches 同时输出。
+
+通过前 PR247 保持 Draft，PR2 不开始。
+
+---
+
+# Large environment mesh note
+
+PoC 中存在超出 playable `-300..300` bounds 的大范围 environment/surroundings meshes。它们可能是合法远景/环境 geometry，不能按尺寸或 filename 硬删。
+
+PR2 应增加 transformed world-AABB / role sanity report，但任何 selection 都必须来自 scene/render evidence。
+
+---
+
+# Collision / nav boundary
+
+已确认：
+
+- `CollisionTypeComponent` metadata 存在；
+- 独立 gameplay collision mesh 未证明；
+- `.mkm/.lka` 与 TerrainData 关联；
+- navmesh/passability semantics 未证明。
+
+这些不阻塞 visual 3D Playback，但未来 AI LOS/pathing Spatial Analysis 前必须继续研究。
+
+---
+
+# PR1 DoD
 
 - [x] Maps.zip inventory；
 - [x] terrain + coordinate baseline；
 - [x] SCPG / PolygonGroup parser；
-- [x] SC2 datasource ↔ SCG exact link；
-- [x] recursive datasource traversal；
+- [x] recursive SC2 datasource ↔ SCG exact link；
 - [x] vertex/index decoder；
-- [x] DAVA shared LOD/switch contract；
-- [x] renderer-neutral derived exporter；
-- [x] Canal real PoC blocker=0；
-- [x] Port Bay real PoC blocker=0；
-- [x] collision boundary closed；
-- [x] nav/passability boundary closed；
-- [x] PR2 Map Geometry Core handoff defined。
+- [x] DAVA RenderBatch wildcard contract；
+- [x] Canal raw candidate geometry extraction blocker=0；
+- [x] Port Bay raw candidate geometry extraction blocker=0；
+- [x] state-switcher diagnostic tool + synthetic tests；
+- [ ] prove initial scene state/visibility semantics；
+- [ ] implement authoritative initial-state selector；
+- [ ] Canal duplicated-active-state blocker=0；
+- [ ] Port Bay duplicated-active-state blocker=0；
+- [ ] finalize PR2 handoff。
