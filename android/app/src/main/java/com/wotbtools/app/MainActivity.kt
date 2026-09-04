@@ -181,12 +181,13 @@ class MainActivity : Activity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
                 val host = url?.let { Uri.parse(it).host }
+                val scheme = url?.let { Uri.parse(it).scheme }
                 val before = inAuthFlow
                 val decision = AuthNavigationPolicy.decide(host, inAuthFlow)
                 inAuthFlow = decision.inAuthFlow
                 Log.d(
                     TAG,
-                    "pageStart host=${host ?: "null"} action=${decision.action} " +
+                    "pageStart scheme=${scheme ?: "null"} host=${host ?: "null"} action=${decision.action} " +
                         "inAuthFlow=$before->$inAuthFlow mainFrame=true " +
                         "source=${AuthNavigationPolicy.sourceCategory(host)}"
                 )
@@ -195,13 +196,14 @@ class MainActivity : Activity() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 if (!request.isForMainFrame) return false
                 val host = request.url.host
+                val scheme = request.url.scheme
                 val before = inAuthFlow
                 val decision = AuthNavigationPolicy.decide(host, inAuthFlow)
                 inAuthFlow = decision.inAuthFlow
                 val source = AuthNavigationPolicy.sourceCategory(host)
                 Log.d(
                     TAG,
-                    "nav host=${host ?: "null"} action=${decision.action} " +
+                    "nav scheme=${scheme ?: "null"} host=${host ?: "null"} action=${decision.action} " +
                         "inAuthFlow=$before->$inAuthFlow mainFrame=true source=$source"
                 )
                 if (decision.action == AuthNavigationAction.AUTH_FAILURE) {
