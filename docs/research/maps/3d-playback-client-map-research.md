@@ -8,6 +8,25 @@ This research establishes the renderer-neutral client-map contract needed before
 
 ---
 
+# Distribution / copyright-risk boundary
+
+The current 3D work is a **local research / QA prototype**, not a production asset-distribution design.
+
+Engineering policy for all client-derived 3D outputs:
+
+- user supplies their own local `Maps.zip`;
+- raw client resources are never committed;
+- generated `common/assets/map-3d-local/` output is gitignored;
+- generated terrain/static geometry is marked `LOCAL_RESEARCH_ONLY` and `productionEligible=false`;
+- the frontend production build fails closed if `map-3d-local` exists, preventing Vite `publicDir` from copying local derived assets into `dist`;
+- client textures, materials and shaders are not exported;
+- water research begins with metadata/AABB/transform evidence only; client water vertices are not exported by the inspector;
+- production redistribution of client-derived geometry/terrain remains out of scope until the project has a separate licensing/legal decision.
+
+This is an engineering risk-control policy, not a statement that any particular use is legally authorized.
+
+---
+
 # Static geometry extraction — PASS
 
 Proven chain:
@@ -132,6 +151,21 @@ RenderComponent
 ```
 
 The exporter emits renderer-neutral local geometry plus preserved SC2 world transforms. It intentionally excludes raw client textures/material presentation, vegetation, and unproven gameplay collision/nav semantics.
+
+---
+
+# Water evidence boundary
+
+`inspect_map_water.py` is intentionally metadata-only. It records:
+
+- Water RenderObject count;
+- visibility;
+- world transform;
+- serialized render-object bbox when present;
+- referenced datasource ids;
+- PolygonGroup vertex/index counts and local AABB statistics.
+
+It does **not** export water vertices, indices, textures, materials, or shaders. The goal is to determine whether water can be reconstructed procedurally from proven bounds/height/transform facts before considering any geometry extraction.
 
 ---
 
