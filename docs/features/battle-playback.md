@@ -394,3 +394,29 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   observedHpLoss=null（cumulative dealt / 伤害日志 / 事件级掉血均不得归给窗口内 direct DAMAGE）；
   destroyed 事实保留并去重，不因 killer 未知删除 HP=0/击毁。每 KILL 由同炮 DAMAGE 支撑的断言在
   `BattlePlaybackAdapterParityTest` 真实 fixture 上强制执行。
+
+## 车辆标记尺寸（真实车体比例）
+
+标记按地图米制缩放：`frontend/src/data/vehicleSizes.js` 是**生成文件**，存全部 735 辆的真实
+车体长/宽（米），来源 BlitzKit `definitions/models.pb` 的车体包围盒——不含炮管。
+
+尺寸优先级（`frontend/src/utils/vehicleMarkerSizing.js`）：
+
+1. `vehicleSizes[tankId]` —— 真实车体表，覆盖全部车辆
+2. 模型 metadata 的 `hullBounds` —— 表未覆盖的 tankId 才用
+3. `CLASS_FOOTPRINT_M` 按车种猜测 —— 最后兜底；未知车种用全表真实中位车长
+
+渲染尺寸 = `车体长 × 每米像素 × READABILITY_SCALE`，再按 `MARKER_SIZE_LIMITS` 钳制。
+`READABILITY_SCALE = 1.14` 只补偿车体图形约占方形烘焙 88% 的空白，不额外放大；
+下限只保证「还看得见」，**点击目标由 `HIT_TARGET_MIN_PX` 单独兜底**，所以视觉可以贴近真实尺寸。
+
+> 历史：曾用 `READABILITY_SCALE = 1.6` + 下限 18px，导致 800px 地图上毛斯画到 21.6px
+> （真实约 12px）、轻坦被下限抬到 18px（真实约 9px），与地形明显不成比例。
+
+### 客户端/BlitzKit 更新后如何重新生成
+
+```
+python common/python/extract_vehicle_sizes.py
+python common/python/extract_vehicle_sizes.py --check   # CI：过期即失败
+```
+

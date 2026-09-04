@@ -853,8 +853,8 @@ function onViewportClick(e) {
 
 /** 完整地图视图（contain/fit）的 scale：把整张 rendered map 放进安全区的最小缩放。
  *  缩放下限（minScale）应为它——zoomed 后回到的就是它，避免「放大后再缩不回原样」。 */
-// fit 后四周留一圈黑边：地图与安全区比例接近时也不会顶到边缘。
-const FIT_MARGIN = 0.94
+// fit 后四周留一圈窄黑边：不顶到边缘，同时尽量少浪费宽屏空间。
+const FIT_MARGIN = 0.98
 
 function fitScale() {
   const stageW = mapWidth()
