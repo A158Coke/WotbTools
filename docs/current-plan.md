@@ -13,11 +13,11 @@ IMPLEMENTED / PR VALIDATION REQUIRED / PRODUCTION VALIDATION REQUIRED
 
 ## 实现
 
-1. Bridge 决策在 **登录发起阶段** 绑定，而不是在 Chrome 回程靠 Android UA 猜测：只有原请求 UA 符合 Android WebView（`Android` + `; wv)`）时，Juhe `redirect_uri` 才指向 `/endpoint/mobile-return?state=...`；普通 Android Chrome / desktop browser 继续使用原 `/endpoint?state=...`。
+1. Bridge 决策在登录发起阶段绑定，而不是在 Chrome 回程靠 Android UA 猜测：只有原请求 UA 符合 Android WebView（`Android` + `; wv)`）时，Juhe `redirect_uri` 才指向 `/endpoint/mobile-return?state=...`；普通 Android Chrome / desktop browser 继续使用原 `/endpoint?state=...`。
 2. `mobile-return` 只服务已在 login-start 被分类为 app/WebView 的 transaction，不再读取回程 User-Agent 做二次判断。
 3. Android return 在 Keycloak 内签发 2 分钟、单次消费、256-bit 随机 opaque ticket；ticket server-side 保存 `state/type/code`，Android intent 不携带真实 state/code。
 4. `mobile-return` 返回需要用户点击的“返回 WotBTools”页面，使用 `intent:` + `package=com.wotbtools.app` 显式回到 App。
-5. **无 browser fallback callback**：intent 不再携带 `browser_fallback_url`，Chrome 无法打开 App 时 ticket 不会在错误 browser context 被 consume；页面明确提示返回 App 后重新发起登录。
+5. 无 browser fallback callback：intent 不携带 `browser_fallback_url`，Chrome 无法打开 App 时 ticket 不会在错误 browser context 被 consume；页面明确提示返回 App 后重新发起登录。
 6. App 继续复用 PR #236 的 exact HTTPS callback App Link 与 `singleTask` MainActivity；intent 使用非敏感 `state=bridge&code=bridge` 只满足现有路由边界，真正 payload 由 ticket 恢复。
 7. 原 WebView 请求 broker endpoint 后 atomic consume ticket，再执行原 `getAndVerifyAuthenticationSession(state)` → Juhe code exchange → `authenticated()`；不绕过 Keycloak session 校验。
 8. 日志只记录 `callbackRef` / `returnRef`（SHA-256 前缀）和 stage，不记录 ticket/state/code/full callback URL。
