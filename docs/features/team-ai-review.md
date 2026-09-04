@@ -20,6 +20,19 @@
 - 同场双方 perspectives 各自独立分析，不得合并
 - Recorder 只用于确定视角，不被 AI 视为分析对象
 
+### Team Tactical Skill v0.1
+
+Team Call #2 通过 `AiPromptLibrary` 的模块化 include 注入四个紧凑的训练房/联赛推理模块：
+`team-execution`、`position-tempo`、`hp-trades` 和 `mode-objectives`。它们是给 LLM 的经验性思考框架，不是后端战术 verdict；后端仍只提供 Canonical Timeline 和确定性证据。
+
+- 复盘 observable execution，不假设赛前战术计划，也不推断语音、call、指挥责任或心理原因。
+- 用进入时序、局部人数、commitment/half-commit、信息更新、轮转可行性、位置节奏和未来火力价值组织判断；证据不足时跳过判断。
+- `primaryDiagnosis` 仍保留以避免契约变更，但含义是“本场最重要的结论”，可以是关键成功因素、对手处理更好或没有明显确认错误，不要求制造问题。
+- Strategic Prior 是阵容与可能性空间的战略基线，不是队伍实际计划；实际执行偏离它不能单独构成失误。
+- 争霸赛使用约 +40 击杀价值、750–800 警戒区、800+ 高压力的经验梯度；攻防战使用约 100 秒完整捕获与 70–80 秒警戒区。阈值只影响 LLM 排序，不进入后端状态机。
+
+模块同时提供 EN/RU 本地化替换锚点，`PromptRuleContractTest` 保证 include 展开和三语规则不漂移。相关行为由 `team-tactical-skill-v01-*.json` golden cases 与 prompt/validator 回归覆盖。
+
 ## 2. 入口和分层（Dataset-only）
 
 ```

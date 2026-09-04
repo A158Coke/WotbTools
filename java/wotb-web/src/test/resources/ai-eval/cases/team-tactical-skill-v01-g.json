@@ -1,0 +1,13 @@
+{
+  "id": "team-tactical-skill-v01-g-supremacy-danger",
+  "mode": "TEAM_PERSPECTIVE",
+  "arenaBonusType": 3,
+  "fixtureKey": "cw-cap-defense-01",
+  "expectedJudgment": "约 800+ 目标压力变大，长追击不能与短击杀同等处理",
+  "checks": [
+    { "kind": "system_prompt_contains", "text": "约 750–800 是警戒区" },
+    { "kind": "system_prompt_contains", "text": "约 800 以上目标压力明显增大" },
+    { "kind": "system_prompt_contains", "text": "10–15 秒追击" }
+  ],
+  "note": "Golden G：高目标压力改变排序，但不生成后端 800 分状态。"
+}

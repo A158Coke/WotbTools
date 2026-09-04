@@ -129,6 +129,21 @@ class TeamFactualConsistencyValidatorTest {
         return conflicts.stream().anyMatch(c -> c.checkId().equals(checkId));
     }
 
+    @Test
+    void noConfirmedErrorConclusionPassesGrounding() {
+        final TeamReviewEnvelope env = new TeamReviewEnvelope(
+                new TeamReviewEnvelope.PrimaryDiagnosis(
+                        "本场没有发现足以作为主要问题的明显执行失误",
+                        "现有事实未显示明确的团队执行断层；对方在中盘处理得更有效。",
+                        List.of()),
+                "## 团队复盘\n\n本场没有发现足以作为主要问题的明显执行失误。",
+                List.of());
+
+        assertTrue(TeamFactualConsistencyValidator.validate(
+                env, new GroundingFacts(List.of(), Map.of(), List.of(), List.of(), List.of())).isEmpty(),
+                "无明显错误是合法主结论，不应被 grounding validator 强制改成问题");
+    }
+
     // ===== G1：V1 temporal ownership =====
 
     @Test

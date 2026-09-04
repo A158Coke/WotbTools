@@ -21,7 +21,7 @@ public record TeamReviewEnvelope(
         List<Claim> claims
 ) {
 
-    /** 唯一主判断（必须有内容：title + reasoning 非空）。 */
+    /** 唯一主判断（必须有内容：title + reasoning 非空；可以是无明显确认错误的结论）。 */
     public record PrimaryDiagnosis(
             String title,
             String reasoning,
@@ -101,7 +101,7 @@ public record TeamReviewEnvelope(
         claims = claims == null ? List.of() : List.copyOf(claims);
     }
 
-    /** 是否有可用内容（reviewMarkdown 非空且 primaryDiagnosis 有内容）。 */
+    /** 是否有可用内容（正文与「最重要结论」均非空；该结论不要求必须是错误）。 */
     public boolean hasContent() {
         return reviewMarkdown != null && !reviewMarkdown.isBlank()
                 && primaryDiagnosis != null && primaryDiagnosis.hasContent();

@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Natural Coach Mode 提示词契约。
- * <p>验证：主正文为自由组织的自然复盘（无固定章节模板）；必须有唯一 PRIMARY DIAGNOSIS；
+ * <p>验证：主正文为自由组织的自然复盘（无固定章节模板）；必须有唯一「最重要结论」；
  * Focus Window 是内部 attention 提示而非用户模板；GROUNDING FACTS 结构化输出契约；
  * 教练不是司法鉴定员；ZH/EN/RU 三语一致。</p>
  */
@@ -43,17 +43,14 @@ class TeamReviewNaturalCoachContractTest {
     }
 
     @Test
-    void primaryDiagnosisMustBeChosen() {
+    void primaryDiagnosisAllowsNoConfirmedError() {
         assertTrue(ZH.contains("必须选出且只选出一个 PRIMARY DIAGNOSIS"), "必须选出一个主判断");
-        assertTrue(ZH.contains("禁止回答「无法判断主要问题」"), "禁止无法判断");
-        assertTrue(ZH.contains("选择你认为最符合全部已知证据、同时最有训练价值的那一个"),
-                "多个解释时选最符合证据且有训练价值的");
-        assertTrue(ZH.contains("不得用「不确定」替代结论"), "不得用不确定替代结论");
-        assertTrue(ZH.contains("无法证明最细节的因果链"), "无法证明细节 ≠ 无法上层判断");
-        assertTrue(ZH.contains("第一轮交换节奏出了问题"), "上层战术判断示例");
-        assertTrue(ZH.contains("你是在做战术复盘，不是在做司法鉴定"), "教练不是司法鉴定员");
-        assertTrue(ZH.contains("战术判断不要求数学证明"), "战术判断不要求数学证明");
-        assertTrue(ZH.contains("用户需要的是方向和训练重点"), "用户需要方向和训练重点");
+        assertTrue(ZH.contains("表示本场最重要的结论，不等于必须找出错误"), "主判断不是强制错误");
+        assertTrue(ZH.contains("NO_SIGNIFICANT_CONFIRMED_ERROR"), "允许无明显确认错误");
+        assertTrue(ZH.contains("不得为了填满字段制造轮转、沟通、地图意识或协调问题"),
+                "禁止为字段制造问题");
+        assertTrue(ZH.contains("不要把无法观察的赛前计划、语音 call、"), "禁止猜测 call/计划");
+        assertTrue(ZH.contains("只有证据支持时才指出团队执行问题"), "问题必须有证据");
     }
 
     @Test
