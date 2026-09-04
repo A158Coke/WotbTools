@@ -18,6 +18,8 @@ frontend/node_modules/
 frontend/dist/
 # Battle Playback 3D 本地客户端派生资产（由 Maps.zip 生成，不入库）
 common/assets/map-3d-local/
+# PR #249 早期 prototype 曾输出到这里；保留 ignore，--clean 会删除旧目录。
+frontend/public/map-3d-local/
 # BlitzKit 车型参考图本地缓存（脚本生成，不入库）
 frontend/scripts/.vehicle-model-refs/
 **/.m2repo/
