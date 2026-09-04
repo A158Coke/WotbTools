@@ -659,6 +659,17 @@
   }
 }
 
+/* 手机上详情内容可以很高（战斗装载那几组能到 ~650px），流内不封顶就会把地图整个
+   顶出视口——形式上没盖住地图，实际效果和盖住一样。像标注工具栏那样封顶成一块
+   有界的区块，内容超了在面板内部滚，地图始终留在上方可见。
+   用 max-height 而不是 height：内容短时不会凭空多出一条滚动条。 */
+@media (width < 768px) {
+  .battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
+    max-height: min(46dvh, 380px);
+    overflow-y: auto;
+  }
+}
+
 /* 手机全屏（必然横屏）：右侧确有黑边，抽屉按黑边实宽算，绝不越到地图上。
    单侧黑边 =（100vw − 100vh）/ 2；再留 8px 间距。黑边窄于 168px 时不浮，
    由上面的流内形态兜底。 */
