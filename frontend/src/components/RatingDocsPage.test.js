@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import RatingDocsPage from './RatingDocsPage.vue'
 
 function mountPage() {
@@ -9,7 +10,7 @@ function mountPage() {
   const wrapper = mount(RatingDocsPage, {
     global: {
       mocks: { $t: (key) => key },
-      provide: { navigate },
+      provide: { [NAVIGATE_VIEW_KEY]: navigate },
     },
   })
   return { wrapper, navigate }
