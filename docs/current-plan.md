@@ -79,7 +79,7 @@ Production selector 不读取 `State 0` / `State 1` filename。
 - `inspect_map_scene.py` 不再无条件 `decode_dvpl(raw)`；
 - `.dvpl` member 才解 DVPL；
 - raw `.sc2` 直接交给 `read_sc2()`；
-- 新增 regression test，验证 raw `.sc2` 不调用 DVPL decoder，`.sc2.dvpl` 必须调用。
+- regression test 验证 raw `.sc2` 不调用 DVPL decoder，`.sc2.dvpl` 必须调用。
 
 ### MAJOR 2 — duplicate PolygonGroup id
 
@@ -88,8 +88,8 @@ Production selector 不读取 `State 0` / `State 1` filename。
 - `wotb_scg.read_scg()` 在解析完成后验证所有可解码 `PolygonGroup #id` 唯一；
 - duplicate id 直接 `Sc2ParseError` fail-fast，错误包含重复 id 与两个 group index；
 - `export_map_geometry_poc.py` 使用共享 `polygon_groups_by_id()`，不再用会静默覆盖的 dict comprehension；
-- SCG inspector 同样经过 `read_scg()`，因此 duplicate id 无法进入 set-based cross-check 造成假阳性；
-- 新增 duplicate-id regression test。
+- SCG inspector 同样经过 `read_scg()`，duplicate id 无法进入 set-based cross-check 造成假阳性；
+- duplicate-id regression test 已覆盖。
 
 ### MINOR — scene inspector nested hierarchy
 
