@@ -250,13 +250,21 @@ public class ReplayProcessingJobService {
         try {
             result = processFullResultTracked(source);
         } catch (final Exception e) {
-            final String message = e.getMessage() == null || e.getMessage().isBlank()
-                    ? "REPLAY_PROCESSING_FAILED" : e.getMessage();
-            job.markSourceFailed(index, message);
+            final String errorCode = e instanceof ReplayProcessingSourceException sourceError
+                    ? sourceError.errorCode() : "REPLAY_PROCESSING_FAILED";
+            final String message = StringUtils.hasText(e.getMessage())
+                    ? e.getMessage() : "REPLAY_PROCESSING_FAILED";
+            final String failureMessage = errorCode.equals(message)
+                    ? errorCode : errorCode + ": " + message;
+            job.markSourceFailed(index, failureMessage);
             job.recordParseFailure();
-            entries[index] = new Replays.ParsedEntry(index, name, null, message);
-            LOGGER.debug(logLine("processing_job_source_failed", job.jobId(),
-                    "sourceIndex", index, "sourceName", name, "error", message));
+            entries[index] = new Replays.ParsedEntry(index, name, null, failureMessage);
+            // Source-level parser failures are production diagnostics. Keep the batch-level terminal
+            // code stable (NO_VALID_REPLAYS when all sources fail), but do not hide the actual
+            // facade error behind DEBUG-only logging.
+            LOGGER.warn(logLine("processing_job_source_failed", job.jobId(),
+                    "sourceIndex", index, "sourceName", name,
+                    "errorCode", errorCode, "error", message));
             return;
         }
         final Battle battle = result.battle();
@@ -453,9 +461,11 @@ public class ReplayProcessingJobService {
             meterRegistry.counter("wotb_replay_full_processing_total").increment();
         }
         if (result.battle() == null) {
+            final String errorCode = result.error() != null && StringUtils.hasText(result.error().code())
+                    ? result.error().code() : "REPLAY_PROCESSING_FAILED";
             final String message = result.error() != null && StringUtils.hasText(result.error().message())
                     ? result.error().message() : "REPLAY_PROCESSING_FAILED";
-            throw new IllegalArgumentException(message);
+            throw new ReplayProcessingSourceException(errorCode, message);
         }
         return result;
     }
@@ -572,6 +582,20 @@ public class ReplayProcessingJobService {
             sb.append(' ').append(kv[i]).append('=').append(kv[i + 1]);
         }
         return sb.toString();
+    }
+
+    /** Facade-level source failure preserving the structured processing error code. */
+    private static final class ReplayProcessingSourceException extends RuntimeException {
+        private final String errorCode;
+
+        ReplayProcessingSourceException(final String errorCode, final String message) {
+            super(message);
+            this.errorCode = errorCode;
+        }
+
+        String errorCode() {
+            return errorCode;
+        }
     }
 
     /** 协作取消 checkpoint 信号（finalize 阶段间检查，统一转 CANCELLED）。 */
