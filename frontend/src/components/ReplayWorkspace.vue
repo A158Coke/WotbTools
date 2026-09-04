@@ -1,7 +1,8 @@
 <script setup>
-import { computed, inject, nextTick, onMounted, provide, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, watch } from 'vue'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { displayName } from '../utils/helpers.js'
+import { useAuth } from '../composables/useAuth.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
@@ -23,18 +24,15 @@ const props = defineProps({
   initialCapability: { type: String, default: 'data' },
 })
 
-const isAuthenticated = inject('isAuthenticated', () => false)
-const login = inject('login', null)
-const authInit = inject('authInit', Promise.resolve())
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
+const { initPromise: authInit, isAuthenticated, login } = useAuth()
 
 /**
- * Workspace 持有唯一一份 replay selection / Processing Job，并向下 provide。
+ * Workspace 持有唯一一份 replay selection / Processing Job。
  * data / ai / playback 三个能力共享这份状态——选择一次、只建一次 Job。
+ * 直接子组件通过显式 props 消费，不再通过 string provide/inject 隐藏依赖。
  */
 const workspace = useReplayWorkspace(props.initialCapability || 'data')
-provide('replay', workspace.replay)
-provide('replayWorkspace', workspace)
 
 const {
   files, loading, error, resp, updateFiles,
@@ -49,10 +47,8 @@ const {
  * 保持现有手动 UX。绝不自动启动 AI Review。
  */
 async function importPendingFile(file) {
-  // 强制默认 data/replay capability，绝不误入 AI。
   workspace.setWorkspaceTab('data')
   updateFiles([file])
-  // 自动解析一次：startProcessingJob 内部 single-flight + 现有 Processing error/retry，不无限自动重试。
   await startProcessingJob()
 }
 
@@ -97,17 +93,9 @@ const battleOptions = computed(() => {
   })
 })
 
-// AI 与 Playback 各自持有独立 Dataset 状态，互不污染（计划 §12 错误域拆分）。
 const aiReplay = useCapabilityReplay(workspace.replay)
 const playbackReplay = useCapabilityReplay(workspace.replay)
 
-/**
- * 单一 reconcile：由 authoritative Workspace 源（活跃 capability + currentBattleId/sourceId +
- * processingJobId + files + selectionRevision）驱动，只准备「当前活跃」capability 的 dataset。
- * capability 切换 / 上传 / READY / 选场任一变化都会重新推导目标文件并按 identity 幂等 prepare；
- * 绝不 reset 基础 replay state（files/resp/currentBattleId/processingJob）——data/ai/playback
- * 只是消费同一 Workspace state 的 capability（生产 Bug：Playback READY 后不自动显示 / 切换丢结果）。
- */
 watch(
   [
     activeCapability,
@@ -119,7 +107,6 @@ watch(
   ],
   () => {
     const cap = activeCapability.value
-    // data 是基础能力，不需要 capability dataset。
     if (cap !== 'ai' && cap !== 'playback') return
     const helper = cap === 'ai' ? aiReplay : playbackReplay
     const file = workspace.currentTargetFile.value
@@ -132,10 +119,6 @@ watch(
   { immediate: true },
 )
 
-/**
- * Replay Workspace 全部要求登录：三个 capability（data / ai / playback）都走 auth gate。
- * 未登录进入任意 replay URL → 自动 Keycloak/OIDC，登录成功后按 redirectUri 回原 capability。
- */
 const VIEW_BY_CAPABILITY = Object.freeze({ data: 'replay', ai: 'ai-review', playback: 'battle-playback' })
 
 async function setCapability(key) {
@@ -147,15 +130,15 @@ async function setCapability(key) {
 }
 
 /**
- * 登录门禁（auth race safe）：先等 Keycloak init 完成，再据「已确认的 authenticated」判断。
- * 只有在确认未登录时才 login 一次；已有 SSO/session 的用户进入 Workspace 不触发无谓 kc.login()。
+ * 登录门禁（auth race safe）：直接消费 useAuth singleton，不再经 AppShell string service locator。
+ * 先等 Keycloak init 完成，再据已确认的 authenticated 判断。
  */
 async function awaitAuthGate(cap) {
   try { await authInit } catch { /* init 失败视作未登录 */ }
   if (isAuthenticated()) return true
   if (!loginAttempted) {
     loginAttempted = true
-    if (login) login(VIEW_BY_CAPABILITY[cap] || 'replay')
+    login(VIEW_BY_CAPABILITY[cap] || 'replay')
   }
   return false
 }
@@ -179,15 +162,11 @@ function clearSelection() {
 }
 
 onMounted(() => {
-  // 任意 replay capability：未登录自动跳 Keycloak，登录后回原 capability。
-  // awaitAuthGate 内部先等 Keycloak init 完成再判断 authenticated（auth race safe）。
   awaitAuthGate(activeCapability.value).then((ok) => {
-    // Android 外部 replay：仅确认已登录后才尝试导入（跨 auth 保留 pending）。
     if (ok) nextTick(() => consumePendingWhenReady())
   }).catch(() => {})
 })
 
-// 外部导航（URL 直访 / battle action）同步能力 tab。
 watch(() => props.initialCapability, (val) => {
   if (val) workspace.setWorkspaceTab(val)
 }, { immediate: true })
@@ -207,7 +186,6 @@ watch(() => props.initialCapability, (val) => {
       @select-battle="onBattleSelect"
     />
 
-    <!-- 单一上传器 + Processing 面板（Workspace 级，任何能力共享同一 selection / job）。 -->
     <FileUploader
       :files="files"
       :loading="loading"
@@ -228,12 +206,13 @@ watch(() => props.initialCapability, (val) => {
     />
     <p v-if="error" class="error">{{ error }}</p>
 
-    <!-- v-show 保持各能力面板常驻，切换到其它 tab 不丢各自 UI 状态（计划 §10.3）。 -->
     <div class="workspace-content">
       <ReplayPage
         v-show="activeCapability === 'data'"
         data-testid="ws-data"
         :embedded="true"
+        :replay-context="workspace.replay"
+        :workspace-context="workspace"
       />
       <div v-show="activeCapability === 'ai'" class="capability-pane" data-testid="ws-ai">
         <AiReviewPanel
