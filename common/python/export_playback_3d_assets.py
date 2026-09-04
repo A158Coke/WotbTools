@@ -62,10 +62,14 @@ def export_map(maps_zip: pathlib.Path, map_code: str, document: dict) -> dict:
         raise ExportPlayback3dError(
             f"{map_code}: expected geometry schema 3, got {manifest.get('schemaVersion')}"
         )
+    terrain = document.get("terrain") or {}
+    elevation = terrain.get("playableElevationMeters") or {}
+    ground_z = elevation.get("median")
     return {
         "mapId": map_id,
         "displayName": document.get("displayName") or map_id,
         "manifest": f"/map-3d-local/{manifest_name}",
+        "referenceGroundZMeters": float(ground_z) if isinstance(ground_z, (int, float)) else 0.0,
         "geometryCount": manifest.get("geometrySummary", {}).get("geometryCount"),
         "instanceCount": manifest.get("instanceSummary", {}).get("count"),
     }
