@@ -323,7 +323,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   `docs/reference/maps.md` 主表。完整映射（内部 code ↔ 展示名 ↔ 语义 mapId ↔ 素材）见
   `docs/reference/maps.md`。
 - **对齐依据**：每张图片在 `frontend/src/data/mapImages.js` 配置 `coordinateBounds`——来源为对应
-  `map-semantics/*.semantic.json` 的 `coordinateSystem.worldBounds`（当前 28 张已登记图均为
+  `map-semantics/*.semantic.json` 的 `coordinateSystem.worldBounds`（当前 29 张已登记图均为
   -300..300，即完整世界坐标截图；新图以各自语义 JSON 为准，逐图校准）。渲染统一用
   `coordinateBounds`，不得用 `playableBounds` 铺满图片（会越靠近边缘偏移越大）。无
   `coordinateBounds` 的旧配置按兼容策略回退 `playableBounds`。

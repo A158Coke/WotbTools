@@ -1,9 +1,9 @@
 /* Map-first playback shell. The root owns state; this sheet owns layout across
    the map, controls overlay, annotation surface, and responsive panel layers. */
 .battle-playback {
-  /* §review-widths：collapsed nav rail 固定 ~60px；二级内容展开成 ~300px panel；
-     Right Details 单独 ~340px（--pb-details-w）。Left Rail 不再复用 --pb-details-w。 */
-  --pb-rail-w: 60px;
+  /* §review-widths：Left Rail 同时承载图标导航与播放控制，宽度要放得下速度档位那一排；
+     二级内容展开成 ~300px panel；Right Details 单独 ~340px（--pb-details-w）。 */
+  --pb-rail-w: 220px;
   --pb-panel-w: 300px;
   /* §review-widths：左列实际宽度（collapsed rail 60px / 二级展开 300px）。HUD、bottom controls 与
      grid col1 统一使用它，展开 rail 时 overlaps 仍正确停靠在 rail 右缘。 */
@@ -98,16 +98,6 @@
   background: color-mix(in srgb, var(--accent) 16%, var(--bg-card2));
   color: var(--accent-dark);
 }
-/* §review-widths：collapsed nav rail（未展开二级）只显示图标并居中（rail 宽 ~60px）；
-   展开成二级内容后由 grid col（--pb-panel-w ~300px）承载面板，不再显示这一排导航。 */
-.battle-playback .pb-left-rail:not(.pb-rail-expanded) .pb-rail-label { display: none; }
-.battle-playback .pb-left-rail:not(.pb-rail-expanded) .pb-rail-btn {
-  justify-content: center;
-  padding: 6px 0;
-  gap: 0;
-}
-.battle-playback .pb-left-rail:not(.pb-rail-expanded) .pb-rail-btn .pb-rail-glyph { flex: 0 0 auto; }
-
 .battle-playback .pb-map-stage {
   position: relative;
   min-width: 0;
@@ -118,10 +108,8 @@
   max-width: none;
   margin: 0;
 }
-/* §Playback 战局回放地图：
-   - 地图 PNG 已烘焙 6×6 格线/坐标标签/米色边框，前端不二次描边（隐藏 .pb-grid）；
-   - 边线用内嵌红色叠加（inset box-shadow，不占空间、不影响地图适配几何）。 */
-.battle-playback .pb-grid { display: none; }
+/* §Playback 战局回放地图：底图为纯环境层，可玩区边线由这条内嵌红色叠加提供
+   （inset box-shadow，不占空间、不影响地图适配几何）。 */
 .battle-playback .pb-svg { box-shadow: inset 0 0 0 2px #e0301e; }
 
 .battle-playback .pb-map-stage > .pb-side-panel-shell {

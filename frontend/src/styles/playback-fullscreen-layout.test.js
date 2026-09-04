@@ -35,6 +35,14 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(body).not.toContain('grid-template-rows')
   })
 
+  // rail 同时承载图标导航与播放控制，60px 放不下速度档位那一排。
+  it('the Left Rail is wide enough to hold the playback controls', () => {
+    const body = ruleBody('.battle-playback')
+    const width = /--pb-rail-w:\s*(\d+)px/.exec(body)
+    expect(width).not.toBeNull()
+    expect(Number(width[1])).toBeGreaterThanOrEqual(180)
+  })
+
   it('pb-main is the map-workspace column (grid col 2) and pb-map-stage fills it', () => {
     const main = ruleBody('.battle-playback:fullscreen .pb-main')
     expect(main).toContain('grid-column: 2')
@@ -126,9 +134,8 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(ruleBody('.battle-playback:fullscreen .pb-map-stage')).toContain('overflow: hidden')
   })
 
-  it('Fix2 widths: Left Rail 列是独立的小 collapsed rail（~60px），不再复用 --pb-details-w；Right Details 单独 ~340px', () => {
+  it('Fix2 widths: Left Rail 列是独立 token（不复用 --pb-details-w）；Right Details 单独 ~340px', () => {
     const base = ruleBody('.battle-playback')
-    expect(base).toContain('--pb-rail-w: 60px')
     expect(base).toContain('--pb-panel-w: 300px')
     // fullscreen grid col1 用 --pb-left-col（collapsed rail 60px / 展开 panel 300px），而非 --pb-details-w
     const fs = ruleBody('.battle-playback:fullscreen')

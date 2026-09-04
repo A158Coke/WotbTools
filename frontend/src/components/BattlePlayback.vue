@@ -533,6 +533,8 @@ const pbRoot = ref(null)
 const isFullscreen = ref(false)
 // §3：大桌面（>=1200px）即使不进入 fullscreen，也用持久 rail|map|details 三列布局。
 const wideLayout = ref(false)
+// rail 在 >=1200px 或 fullscreen（且非移动端）出现；控制条跟着 rail 走，否则回落到地图下方。
+const controlsInRail = computed(() => (isFullscreen.value || wideLayout.value) && !isMobileDevice.value)
 // §mobile-contract：设备是否为「移动端」（primary pointer=coarse 且视口 <=1200px）。手机在
 // fullscreen + landscape 时内宽可 >768，因此移动端判定不得只依赖 innerWidth<768；一旦判定为
 // 移动端，无论全屏/横竖屏都保持 mobile playback mode（HUD+Map 为主、bottom overlay controls、
@@ -675,7 +677,7 @@ function safeInsets() {
   // §safeInsets-contract：normal mobile 的 controls 是 transient overlay（默认 opacity:0），
   // 不因不可见 controls 永久缩小 map —— 非 fullscreen 一律 bottom=0。
   // fullscreen mobile controls 始终显示时，才 reserve 底部 safe area（= content 实高）。
-  if (isFullscreen.value) {
+  if (!controlsInRail.value && isFullscreen.value) {
     const wrap = mobileOverlay.value?.$el
     const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null
     bottom = content ? content.clientHeight : 0
@@ -851,6 +853,9 @@ function onViewportClick(e) {
 
 /** 完整地图视图（contain/fit）的 scale：把整张 rendered map 放进安全区的最小缩放。
  *  缩放下限（minScale）应为它——zoomed 后回到的就是它，避免「放大后再缩不回原样」。 */
+// fit 后四周留一圈黑边：地图与安全区比例接近时也不会顶到边缘。
+const FIT_MARGIN = 0.94
+
 function fitScale() {
   const stageW = mapWidth()
   const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
@@ -858,7 +863,7 @@ function fitScale() {
   const safeH = Math.max(0, fullH - safe.top - safe.bottom)
   const rect = mapRenderRect()
   if (stageW > 0 && safeH > 0 && rect.width > 0 && rect.height > 0) {
-    return Math.min(stageW / rect.width, safeH / rect.height)
+    return Math.min(stageW / rect.width, safeH / rect.height) * FIT_MARGIN
   }
   return 1
 }
@@ -1777,21 +1782,36 @@ function markerLabel(accountId) {
   }
 }
 
-// 与 BattlePlaybackHud 的 baseStatus 同一套语义，地图与 HUD 的着色不能分叉。
+// 圆圈颜色只表示当前归属；正在占领由进度弧单独表达，不覆盖归属。
 function baseStatus(state) {
-  if (!state) return 'neutral'
-  if (state.capturingTeam != null) return 'capturing'
-  if (state.ownerTeam == null) return 'neutral'
+  if (!state || state.ownerTeam == null) return 'neutral'
   if (friendlyTeam.value == null) return 'controlled'
   return state.ownerTeam === friendlyTeam.value ? 'friendly_controlled' : 'enemy_controlled'
 }
 
+function capturedBy(state) {
+  if (!state || state.capturingTeam == null || friendlyTeam.value == null) return 'unknown'
+  return state.capturingTeam === friendlyTeam.value ? 'friendly' : 'enemy'
+}
+
 const basesAt = computed(() => {
+  // 只在存在 canonical Supremacy base tracks 时绘制。空 baseStates 表示非争霸战，
+  // 或旧 producer 未发该字段（契约把缺失归一化为 []）；两种情况都不能靠地图几何
+  // 反推出「这是争霸战」，否则遭遇战/攻防战会凭空多出 A/B/C 中立圈。
+  if (!baseStatesAt.value.length) return []
   const geometry = mapBases[pbOverview.value?.mapCode]?.supremacy || []
   const states = new Map(baseStatesAt.value.map((state) => [state.baseId, state]))
   return geometry
     .filter((base) => base.radius != null)
-    .map((base) => ({ ...base, status: baseStatus(states.get(base.baseId)) }))
+    .map((base) => {
+      const state = states.get(base.baseId)
+      return {
+        ...base,
+        status: baseStatus(state),
+        progress: state?.captureProgress ?? null,
+        capturedBy: capturedBy(state),
+      }
+    })
 })
 
 const mapStyle = computed(() => ({
@@ -1816,7 +1836,6 @@ const mapStyle = computed(() => ({
       :enemy-hp="enemyHp"
       :friendly-points="friendlyPoints"
       :enemy-points="enemyPoints"
-      :base-states="baseStatesAt"
       :friendly-team="friendlyTeam"
       :hp-no-transition="hpNoTransition"
     />
@@ -1898,8 +1917,28 @@ const mapStyle = computed(() => ({
           <p v-if="userVisibleEvents.length === 0" class="pb-event-empty">{{ $t('recon.map.playback.no_events') }}</p>
         </div>
       </template>
-      <!-- 一级菜单：图标导航。播放控制一律在 Map Workspace 底部 overlay，不进 rail。 -->
+      <!-- 一级菜单：播放控制 + 图标导航。rail 宽 --pb-rail-w，放得下速度档位那一排。 -->
       <template v-else>
+        <PlaybackControls
+          v-if="controlsInRail"
+          :playing="playing"
+          :speed="speed"
+          :current-time="currentTime"
+          :duration="duration"
+          :fullscreen-supported="fullscreenSupported"
+          :is-fullscreen="isFullscreen"
+          :rail-visible="true"
+          :format-clock="formatClock"
+          @toggle-play="togglePlay"
+          @step="step"
+          @set-speed="setSpeed"
+          @reset-view="resetView"
+          @toggle-fullscreen="toggleFullscreen"
+          @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
+          @toggle-annotation="annotationOpen = !annotationOpen"
+          @drag-start="dragStart"
+          @seek="seek"
+        />
       <button
         type="button"
         class="pb-rail-btn"
@@ -2049,6 +2088,7 @@ const mapStyle = computed(() => ({
 
       <PlaybackMobileOverlay ref="mobileOverlay">
         <PlaybackControls
+          v-if="!controlsInRail"
           :playing="playing"
           :speed="speed"
           :current-time="currentTime"

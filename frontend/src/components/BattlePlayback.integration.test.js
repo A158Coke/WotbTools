@@ -91,14 +91,30 @@ describe('Supremacy 基地 overlay', () => {
     // holland 在 mapBases 里是 3 个争霸基地
     expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(3)
     expect(wrapper.find('[data-test="pb-bases"]').text()).toContain('A')
+    // 圆圈颜色 = 当前归属；C 还没易主，所以是 neutral 而不是占领方颜色
     expect(wrapper.findAll('.pb-base-friendly_controlled')).toHaveLength(1)
     expect(wrapper.findAll('.pb-base-enemy_controlled')).toHaveLength(1)
-    expect(wrapper.findAll('.pb-base-capturing')).toHaveLength(1)
+    expect(wrapper.findAll('.pb-base-neutral')).toHaveLength(1)
+    // 进度水位只画在正在被占的 C 上，颜色是占领方（敌方）
+    const fills = wrapper.findAll('[data-test="pb-base-fill"]')
+    expect(fills).toHaveLength(1)
+    expect(fills[0].classes()).toContain('pb-capture-enemy')
+    // 水位由 clipPath 的矩形高度决定：40% 进度 → 高度是直径的 40%
+    const clipRects = wrapper.findAll('clipPath rect')
+    expect(clipRects).toHaveLength(3)
+    const diameter = Number(clipRects[2].attributes('width'))
+    expect(Number(clipRects[2].attributes('height'))).toBeCloseTo(diameter * 0.4, 3)
   })
 
-  it('draws the playable-area boundary instead of the analysis grid', async () => {
+  // 非争霸战（baseStates 为空，或旧 producer 未发该字段）不得靠地图几何画出基地。
+  it('renders no base circles when the replay has no Supremacy base tracks', async () => {
+    const wrapper = await mountPlayback(makeOverview(), null, makePlaybackV2({ baseStates: [] }))
+    expect(wrapper.findAll('.pb-base-circle')).toHaveLength(0)
+    expect(wrapper.findAll('[data-test="pb-base-fill"]')).toHaveLength(0)
+  })
+
+  it('no longer draws the analysis grid or the nine-grid region outlines', async () => {
     const wrapper = await mountPlayback()
-    expect(wrapper.findAll('[data-test="pb-border"] .pb-border-line')).toHaveLength(1)
     expect(wrapper.findAll('.pb-cell')).toHaveLength(0)
     expect(wrapper.findAll('.pb-region-line')).toHaveLength(0)
   })
@@ -861,22 +877,21 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     resetFullscreenGlobals()
   })
 
-  // 宽桌面（>=1200px）曾把 controls 塞进 60px 的 Left Rail，被压成竖条。
-  // Left Rail 只放图标导航，播放控制一律在 Map Workspace 底部 overlay。
-  it('wide desktop keeps playback controls out of the 60px Left Rail', async () => {
+  // 宽桌面（>=1200px）：播放控制在 Left Rail 内（rail 已加宽到放得下速度档位那一排），
+  // 且与 rail 图标导航重复的面板/标注/重置/全屏按钮必须隐藏，不能在右下角再出现一份。
+  it('wide desktop puts playback controls in the Left Rail without duplicating rail actions', async () => {
     stubRaf()
     stubMatchMedia({ '(min-width: 1200px)': true })
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
 
     const rail = wrapper.find('[data-test="pb-left-rail"]')
-    expect(rail.exists()).toBe(true)
-    expect(rail.find('[data-test="pb-controls"]').exists()).toBe(false)
-
-    const overlay = wrapper.find('[data-test="pb-mobile-overlay"]')
-    expect(overlay.find('[data-test="pb-controls"]').exists()).toBe(true)
+    expect(rail.find('[data-test="pb-controls"]').exists()).toBe(true)
     expect(wrapper.findAll('[data-test="pb-controls"]')).toHaveLength(1)
-    expect(wrapper.find('[data-test="pb-controls"]').classes()).not.toContain('pb-controls-rail-mode')
+    expect(wrapper.find('[data-test="pb-controls"]').classes()).toContain('pb-controls-rail-mode')
+    // rail 里已有这些图标，控制条不再重复
+    expect(wrapper.find('[data-test="pb-rail-reset"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-rail-fullscreen"]').exists()).toBe(true)
   })
 
   it('1/2/3/4/5：API 可用 → 按钮可见；进入调 root.requestFullscreen；fullscreenchange 同步；退出调 exitFullscreen；ESC 外部退出恢复', async () => {
