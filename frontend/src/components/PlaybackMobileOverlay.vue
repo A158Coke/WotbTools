@@ -16,6 +16,12 @@ function clearHideTimer() {
   }
 }
 
+function isMobileFullscreen() {
+  if (typeof document === 'undefined' || !document.fullscreenElement) return false
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+  return window.matchMedia('(pointer: coarse) and (max-width: 1199.98px)').matches
+}
+
 function scheduleHide() {
   clearHideTimer()
   if (!transientFullscreen.value) return
@@ -26,6 +32,7 @@ function scheduleHide() {
 }
 
 function reveal() {
+  transientFullscreen.value = isMobileFullscreen()
   open.value = true
   scheduleHide()
 }
@@ -33,46 +40,30 @@ function reveal() {
 function hide() {
   clearHideTimer()
   open.value = false
-}
-
-function isMobileFullscreen() {
-  if (typeof document === 'undefined' || !document.fullscreenElement) return false
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
-  return window.matchMedia('(pointer: coarse) and (max-width: 1199.98px)').matches
-}
-
-function syncFullscreenMode() {
-  transientFullscreen.value = isMobileFullscreen()
-  if (transientFullscreen.value) {
-    // Entering fullscreen: controls are discoverable briefly, then yield the screen to the map.
-    reveal()
-  } else {
-    clearHideTimer()
-    open.value = false
-  }
+  transientFullscreen.value = false
 }
 
 function onDocumentClick(event) {
-  if (!transientFullscreen.value) return
+  if (!isMobileFullscreen()) return
   const fullscreenRoot = document.fullscreenElement
   const overlayRoot = root.value
   if (!fullscreenRoot || !overlayRoot || !fullscreenRoot.contains(event.target)) return
 
-  // A normal single tap anywhere in the fullscreen playback reveals the controls. Because the
-  // wrapper never owns pointer events, pan/pinch still go directly to the map; pinch does not
-  // synthesize a click, so it does not keep the controls alive.
+  // A normal single tap anywhere in fullscreen reveals the controls. The viewport-sized wrapper
+  // remains pointer-transparent, so pan/pinch continue directly to the map. Pinch does not
+  // synthesize a click, therefore it cannot keep the controller alive.
   reveal()
 }
 
 onMounted(() => {
-  syncFullscreenMode()
-  document.addEventListener('fullscreenchange', syncFullscreenMode)
+  // Fullscreen state is owned by BattlePlayback. This overlay deliberately does not register its
+  // own fullscreenchange listener; explicit reveal() and document clicks sample the current native
+  // fullscreen fact instead. That preserves the single-listener lifecycle contract of the parent.
   document.addEventListener('click', onDocumentClick, true)
 })
 
 onBeforeUnmount(() => {
   clearHideTimer()
-  document.removeEventListener('fullscreenchange', syncFullscreenMode)
   document.removeEventListener('click', onDocumentClick, true)
 })
 
@@ -120,8 +111,9 @@ defineExpose({ reveal, hide, open, transientFullscreen })
 .pb-mobile-overlay-content { display: block; }
 @media (width < 768px) {
   .pb-mobile-overlay { position: absolute; inset: 0; z-index: 25; display: block; pointer-events: none; opacity: 0; transition: opacity .18s ease; }
-  .pb-mobile-overlay-visible { pointer-events: auto; opacity: 1; }
-  .pb-mobile-overlay-content { position: absolute; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); left: 8px; display: grid; gap: 5px; padding: 7px; border: 1px solid color-mix(in srgb, var(--text) 18%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--bg-card2) 78%, transparent); backdrop-filter: blur(8px); }
+  .pb-mobile-overlay-visible { opacity: 1; }
+  .pb-mobile-overlay-visible .pb-mobile-overlay-content { pointer-events: auto; }
+  .pb-mobile-overlay-content { position: absolute; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); left: 8px; display: grid; gap: 5px; padding: 7px; border: 1px solid color-mix(in srgb, var(--text) 18%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--bg-card2) 78%, transparent); backdrop-filter: blur(8px); pointer-events: none; }
 }
 @media (prefers-reduced-motion: reduce) { .pb-mobile-overlay { transition: none; } }
 </style>
