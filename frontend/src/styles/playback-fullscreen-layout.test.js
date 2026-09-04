@@ -211,17 +211,24 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(stage).toContain('grid-template-columns: minmax(0, 1fr) var(--pb-details-w)')
   })
 
-  it('mobile fullscreen contract: 手机 fullscreen+landscape 保持单列、无 rail、details 为 sheet、controls 为 bottom overlay', () => {
+  // 手机 fullscreen 必然横屏，横向放得下三段，因此与桌面同构：窄 Left Rail | Map |
+  // 右侧滑入的 Details 抽屉。controls 仍走 bottom overlay（拇指够得到底部）。
+  it('mobile fullscreen contract: 窄 rail + 地图 + 右侧 Details 抽屉，controls 仍在 bottom overlay', () => {
     const fsM = ruleBody('.battle-playback:fullscreen.pb-device-mobile')
-    expect(fsM).toContain('grid-template-columns: minmax(0, 1fr)')
-    // §details-token：mobile fullscreen 无 Right Details，须把 --pb-details-w 归零，防 desktop token 泄漏到 overlay（kill-feed/orientation-hint） */
+    expect(fsM).toContain('grid-template-columns: var(--pb-left-col) minmax(0, 1fr)')
+    expect(fsM).toContain('--pb-rail-w: 148px')
+    // Details 是抽屉不是常驻列，token 仍归零：kill-feed / orientation-hint 不为浮层预留空间。
     expect(fsM).toContain('--pb-details-w: 0px')
-    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-left-rail')).toContain('display: none')
-    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-main')).toContain('grid-column: 1')
-    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-hud')).toContain('left: 0; right: 0')
+    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-left-rail')).toContain('display: flex')
+    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-main')).toContain('grid-column: 2')
+    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-hud')).toContain('left: var(--pb-left-col)')
     expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-map-stage')).toContain('grid-template-columns: minmax(0, 1fr)')
-    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell')).toContain('position: absolute')
-    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay')).toContain('left: 0; right: 0')
+    // controls 仍是底部 overlay，只是从 rail 右缘开始
+    expect(ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay')).toContain('left: var(--pb-left-col)')
+    // Details 走与非全屏一致的右侧滑入窗口
+    const details = ruleBody('.battle-playback:fullscreen.pb-device-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel')
+    expect(details).toContain('position: fixed')
+    expect(details).toContain('animation: pb-details-slide-in')
   })
 
   it('details-blocker: mobile 空 shell 不接管 pointer，选中（pb-details-active）才打开 sheet', () => {
