@@ -112,10 +112,20 @@
    （inset box-shadow，不占空间、不影响地图适配几何）。 */
 .battle-playback .pb-svg { box-shadow: inset 0 0 0 2px #e0301e; }
 
+/* 非全屏窄视口：详情不做浮层弹窗（飘在地图上、圆角阴影加自己的滚动条，和页面割裂），
+   而是作为地图下方的正常内容块随页面排布。桌面三列与全屏另有各自规则覆盖。 */
 .battle-playback .pb-map-stage > .pb-side-panel-shell {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+  position: static;
+  margin-top: 8px;
+  min-width: 0;
+}
+.battle-playback .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
+  position: static;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  box-shadow: none;
+  overflow: visible;
 }
 
 .battle-playback .pb-annotation-surface {
@@ -555,15 +565,6 @@
   }
 }
 
-@media (768px <= width < 1200px) {
-  .battle-playback .pb-map-stage > .pb-side-panel-shell {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    z-index: var(--z-modal);
-  }
-}
-
 @media (width < 768px) {
   .battle-playback {
     gap: 5px;
@@ -649,6 +650,19 @@
   padding: 8px;
   overflow-y: auto;
 }
+/* 非移动设备的窄视口（窄桌面窗口/小笔记本）：左栏同样不做浮层抽屉——固定定位的
+   84vw 面板加全屏遮罩，对一个只有几个导航项的菜单太重。展开后作为正常内容块排在
+   地图上方，跟右侧详情一致。真移动设备与全屏仍保持抽屉/侧栏形态。 */
+.battle-playback:not(.pb-device-mobile):not(:fullscreen).pb-drawer-open .pb-left-rail {
+  position: static;
+  width: auto;
+  z-index: auto;
+  margin-bottom: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 8px;
+}
+.battle-playback:not(.pb-device-mobile):not(:fullscreen) .pb-drawer-backdrop { display: none; }
+
 /* mobile fullscreen：赢过 .pb-device-mobile .pb-left-rail 的 display:none。 */
 .battle-playback:fullscreen.pb-device-mobile.pb-drawer-open .pb-left-rail {
   display: flex;
