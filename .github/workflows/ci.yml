@@ -106,6 +106,9 @@ jobs:
       - name: Unit tests
         working-directory: frontend
         run: npm test
+      - name: Real-browser Playback layout regression
+        working-directory: frontend
+        run: npm run test:browser-layout
       - name: Build
         working-directory: frontend
         run: npm run build
