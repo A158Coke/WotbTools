@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory } from 'vue-router'
 import { nextTick, inject } from 'vue'
 import App from './App.vue'
-import { NAVIGATE_VIEW_KEY } from './app/context.js'
+import { NAVIGATE_VIEW_KEY } from './shared/navigation.js'
 import { createAppRouter } from './app/router.js'
 import { setUiProfile } from './composables/useUiProfile.js'
 
