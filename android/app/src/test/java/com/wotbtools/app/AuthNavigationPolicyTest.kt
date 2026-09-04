@@ -174,7 +174,7 @@ class AuthNavigationPolicyTest {
         )
         chain.forEachIndexed { index, (host, expected) ->
             val decision = AuthNavigationPolicy.decide("https", host, inAuthFlow)
-            assertEquals(expected, decision.action, "step $index ($host)")
+            assertEquals("step $index ($host)", expected, decision.action)
             inAuthFlow = decision.inAuthFlow
         }
         assertEquals(false, inAuthFlow)
@@ -286,7 +286,7 @@ class AuthNavigationPolicyTest {
         )
         chain.forEachIndexed { index, (scheme, host, expected) ->
             val decision = AuthNavigationPolicy.decide(scheme, host, inAuthFlow)
-            assertEquals(expected, decision.action, "step $index ($scheme://$host)")
+            assertEquals("step $index ($scheme://$host)", expected, decision.action)
             inAuthFlow = decision.inAuthFlow
         }
         // native handoff 结束 auth flow：保留 inAuthFlow=true。
