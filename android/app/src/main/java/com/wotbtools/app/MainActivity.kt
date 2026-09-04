@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -83,6 +84,12 @@ class MainActivity : Activity() {
     @Volatile private var inAuthFlow = false
     @Volatile private var awaitingUnknownSourcesPermission = false
 
+    /** HTML Fullscreen API 在 Android WebView 中通过 WebChromeClient custom-view 回调落地。 */
+    private var fullscreenView: View? = null
+    private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
+    private var fullscreenPreviousOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    private var fullscreenPreviousSystemUiVisibility: Int = View.SYSTEM_UI_FLAG_VISIBLE
+
     /** 冷启动验证的 QQ broker callback；进入 startup gate 后作为 entry URL 一次性加载并清空。 */
     @Volatile private var pendingAuthReturn: Uri? = null
 
@@ -156,6 +163,18 @@ class MainActivity : Activity() {
         )
 
         webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                if (view == null || callback == null) {
+                    callback?.onCustomViewHidden()
+                    return
+                }
+                showFullscreenView(view, callback)
+            }
+
+            override fun onHideCustomView() {
+                hideFullscreenView(notifyWeb = false)
+            }
+
             override fun onShowFileChooser(
                 view: WebView,
                 callback: ValueCallback<Array<Uri>>,
@@ -277,6 +296,63 @@ class MainActivity : Activity() {
             }
         }
         return true
+    }
+
+    /**
+     * Android WebView 的 HTML Fullscreen API 不会自动替 Activity 切换系统 UI。
+     * Chromium 通过 WebChromeClient custom-view 回调把 fullscreen element 交给宿主；
+     * 这里才是真正的 native fullscreen 边界。BattlePlayback 继续使用标准 requestFullscreen()，
+     * 不需要 Android 专用前端分支，也不会 reset playback state。
+     */
+    private fun showFullscreenView(view: View, callback: WebChromeClient.CustomViewCallback) {
+        if (fullscreenView != null) {
+            callback.onCustomViewHidden()
+            return
+        }
+
+        fullscreenPreviousOrientation = requestedOrientation
+        fullscreenPreviousSystemUiVisibility = window.decorView.systemUiVisibility
+        fullscreenView = view
+        fullscreenCallback = callback
+
+        webView.visibility = View.GONE
+        webViewContainer.addView(
+            view,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            )
+    }
+
+    /**
+     * notifyWeb=true 用于 Android Back：通知 Chromium 结束 fullscreen，使 document.fullscreenElement /
+     * fullscreenchange 与 Vue 状态同步；Web 自己退出时 onHideCustomView 已表示 Chromium 完成退出，
+     * 此时不能再次 callback，避免重复退出。
+     */
+    private fun hideFullscreenView(notifyWeb: Boolean) {
+        val view = fullscreenView ?: return
+        val callback = fullscreenCallback
+
+        webViewContainer.removeView(view)
+        fullscreenView = null
+        fullscreenCallback = null
+        webView.visibility = View.VISIBLE
+
+        requestedOrientation = fullscreenPreviousOrientation
+        window.decorView.systemUiVisibility = fullscreenPreviousSystemUiVisibility
+
+        if (notifyWeb) callback?.onCustomViewHidden()
     }
 
     // ── 启动门禁（fail-closed）──
@@ -625,10 +701,15 @@ class MainActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        if (fullscreenView != null) {
+            hideFullscreenView(notifyWeb = true)
+            return
+        }
         if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
     }
 
     override fun onDestroy() {
+        if (fullscreenView != null) hideFullscreenView(notifyWeb = true)
         webViewContainer.removeAllViews()
         webView.destroy()
         executor.shutdown()

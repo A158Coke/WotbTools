@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Fixed
+- **Battle Playback 全屏 HUD / 安全区布局修复**：PC、平板和手机全屏下双方 HP / 点数 / 基地状态固定归属地图顶部 HUD，不再被通用 `pb-side-slots` 优化搬到侧栏；camera fit 按真实 HUD 与可见移动端底部控制条动态保留 safe inset，side-slot 仅作用于非移动端 controls，并按实际 map workspace 宽度判定，避免把 Details 列误算为 gutter；`test:browser-layout` 新增 fullscreen + side-slot 的真实 Chrome 几何回归。
 - **Android QQ 登录返回原 WebView（Verified App Link，CODE READY / PRODUCTION VALIDATION REQUIRED）**：QQ App 完成授权后
   会把 `auth.wotbtools.com/.../broker/juhe-qq/endpoint` callback 打开到系统浏览器，导致 Browser B != 原 WebView A、
   AuthenticationSession continuity 被破坏 → `already_logged_in`。现用 **Verified App Link** 把这个 exact Juhe QQ
@@ -98,6 +99,7 @@
 - **Frontend application-shell routing foundation（PR1）**：引入 Vue Router 作为 SPA history/deep-link owner，保留 `?view=` 公开 URL、旧别名（leaderboard / extended / reconstruction）与 `/download/android[/]` 兼容；`App.vue` 收敛为最小路由根，应用壳、顶栏、用户菜单、全局错误弹窗与页面注册迁入 `src/app/`。新增前端架构约定、可复用 `frontend-architecture` skill 与架构文档，为后续 Replay 状态/Workspace/Playback 分步迁移建立边界；未改变后端契约或产品流程。
 
 ### Fixed
+- **三环单张截图提交被误判为无效**：修复 `proofScreenshots` 仅包含一个 data URL 时，Spring 将其中的逗号按集合分隔符拆开，继而触发 `MARK3_INVALID_IMAGE_DATA` 的问题。Controller 现在直接读取 multipart 的原始重复参数值，保持既有 1–2 张 base64 `data:image/` API 契约；新增单图与双图 HTTP 参数绑定回归测试。
 - **Showcase 背景素材版权风险收口**：替换主页、回放、名人堂、Rating、Profile、Boost、Admin、HoF Admin、版本与联系页的正式 PNG 背景，移除原背景中可识别的 WG / World of Tanks 品牌图形与文字；页面槽位、遮罩和响应式布局保持不变。
 - **Android WebView 登录 Cookie / OAuth 链路修复**：Android WebView 现在显式启用认证所需的
   first-party/third-party Cookie；Keycloak → QQ/IdP → callback 认证事务保持在同一个 WebView

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { replayAggregatePlayerCount } from '../utils/replayView.js'
@@ -28,14 +29,16 @@ import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 defineOptions({ name: 'ReplayPage' })
 
 const props = defineProps({
-  /** 嵌入 Replay Workspace 时的结果 tab：不重复渲染上传器 / Processing 面板，使用 provide 的共享 selection。 */
+  /** 嵌入 Replay Workspace 时的结果 tab：不重复渲染上传器 / Processing 面板。 */
   embedded: { type: Boolean, default: false },
+  /** Workspace 直接传入唯一 Replay session；独立使用时为空并回退 useReplay。 */
+  replayContext: { type: Object, default: null },
+  /** Workspace presentation state（dataViewMode/currentBattleIndex 等）；独立使用时为空。 */
+  workspaceContext: { type: Object, default: null },
 })
 const { locale, t, te } = useI18n()
-// Workspace 提供共享 selection / job；独立使用（旧路由）时回退到本地 useReplay。
-const replay = inject('replay', null) || useReplay()
-/** Blocker #1/#2：嵌入 Workspace 时消费公共 dataViewMode / currentBattleIndex（单一事实源）。 */
-const replayWorkspace = inject('replayWorkspace', null)
+const replay = props.replayContext || useReplay()
+const replayWorkspace = props.workspaceContext
 const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles, selectionRevision,
   processingJob, processingError,
   uploadState, cancelProcessing,
@@ -177,30 +180,23 @@ const drawerPlayer = computed(() => {
   const ctx = selectedPlayerContext.value
   if (!ctx) return null
   if (ctx.scope === 'summary') {
-    // 统一玩家表行：优先 unifiedRows（含 league join），按 accountId 查找
     const row = unifiedRows.value.find(r => Number(r.cells.account_id) === Number(ctx.accountId))
     if (!row) return null
     return {
       accountId: row.cells.account_id,
       nickname: row.cells.nickname,
       clan: row.cells.clan || '',
-      // V5：批次主 Rating = league_rating（Evidence Adjustment 后）；rawMedian 为观察中位数
       rating: row.cells.league_rating,
       rawMedian: row.cells.league_rating_raw_median,
-      // Summary Radar 七维 = league playerSummary 的 dimensionMeans（rated-battle 算术平均；
-      // 与 Table 的 dimensionMedians 严格分离）。aggregate-only 玩家（row.league null）→
-      // undefined → Radar 轴 unavailable（"--"），不冒充 0。
       dimensionMeans: row.league?.dimensionMeans ?? null,
       mvpCount: row.cells.mvp_count,
       battles: row.cells.battles,
       wins: row.cells.wins,
-      // 当前批次 rated-only 最常使用坦克（后端唯一结果；无可靠数据为 null）
       mostUsedVehicle: row.league?.mostUsedVehicle ?? null,
       ratedBattles: row.cells?.rated_battles ?? null,
       cells: row.cells,
     }
   }
-  // scope === 'battle'：该场 BattleTable 玩家行
   const battle = (resp.value?.battles || []).find(b => b.arenaId === ctx.arenaId)
   const row = battle?.players?.find(p => Number(p.cells.account_id) === Number(ctx.accountId))
   if (!row) return null
@@ -209,9 +205,7 @@ const drawerPlayer = computed(() => {
     nickname: row.cells.nickname,
     clan: row.cells.clan || '',
     rating: row.cells.league_rating,
-    // Battle Radar 七维 = 本场 league_*_score（禁止命名/复用跨场 dimensionMedians/Means）
     dimensionScores: CW_DIM_KEYS.map(k => row.cells[k]),
-    // 本场实际坦克（cells.tank_id 来自后端 PlayerResult，可靠；非解析 cells.tanks 字符串）
     tankId: row.cells?.tank_id ?? null,
     tankName: row.cells?.tank_name ?? '',
     tankBattles: 1,
@@ -219,21 +213,18 @@ const drawerPlayer = computed(() => {
   }
 })
 
-/** selection 变化（上传/删除/替换/clear/新 batch）→ 关闭 Drawer 防旧数据污染。 */
 watch(selectionRevision, () => {
   selectedPlayerContext.value = null
   navOrder.value = []
   navIndex.value = -1
 })
 
-/** 数据视图切换（汇总视图 ↔ 单场视图 / 单场切换）→ 关闭 Drawer 避免上下文混淆。 */
 watch([isSummaryView, currentSingleIndex], () => {
   selectedPlayerContext.value = null
   navOrder.value = []
   navIndex.value = -1
 })
 
-/** 当前 scope 的玩家集合（summary=unifiedRows；battle=本场 players），供 Drawer 计算参考平均。 */
 const drawerScopePlayers = computed(() => {
   const ctx = selectedPlayerContext.value
   if (!ctx) return []
@@ -242,16 +233,12 @@ const drawerScopePlayers = computed(() => {
   return battle ? battle.players : []
 })
 
-// ---- League Rating 校验失败展示（neutral/warning 语义 + 可展开汇总，
-//      不把 league failure 显示成红色「文件解析失败」，不默认铺满超长文件名）----
 const showLeagueFailures = ref(false)
 const expandedLeagueGroups = ref({})
 
-/** 已评分场数（battle.league != null ⟺ 该场完成 Rating；identity 绑定，不依赖数组 index）。 */
 const ratedBattleCount = computed(() =>
   (resp.value?.battles || []).filter(b => !!b.league).length)
 
-/** League 校验失败按稳定 code 分组（保持首次出现顺序；code 文案走 api_errors 三语）。 */
 const leagueFailureGroups = computed(() => {
   const groups = {}
   for (const lf of leagueData.value?.failures || []) {
@@ -269,23 +256,12 @@ function toggleLeagueGroup(code) {
   expandedLeagueGroups.value = { ...expandedLeagueGroups.value, [code]: !expandedLeagueGroups.value[code] }
 }
 
-/** 混合批次（普通 + 训练赛/联赛混传）League Rating 不可用提示。 */
 const leagueUnavailableMessage = computed(() => {
   const code = resp.value?.leagueUnavailableCode
   if (!code) return ''
   return t('league.unavailable_mixed')
 })
-/**
- * 汇总 tab 的真实基础选手数量：一律来自 Replay Core 的 resp.aggregate。
- * League Rating 的选手数属于 League 区块，不得混入基础汇总人数。
- */
 const aggregatePlayerCount = computed(() => replayAggregatePlayerCount(resp.value))
-/**
- * 两种独立的战队名称 override（禁止扁平混合）：
- * - battleTeamNames：{arenaId:team} → 名（单场显示 / 单场 PNG / 单场与 each Excel）
- * - summaryTeamNames：{teamKey} → 名（批次战队汇总显示 / aggregate Excel 战队汇总）
- * 仅当前页面内存；批次 rename 不得反向写入所有 {arenaId:team}。
- */
 const battleTeamNames = ref({})
 const summaryTeamNames = ref({})
 
@@ -308,7 +284,6 @@ function updateSummaryTeamName(payload) {
   summaryTeamNames.value = next
 }
 
-/** Export Job 的战队名称覆盖 payload（无覆盖 → null；multipart field 传递，不拼 URL query）。 */
 function teamNamesPayload() {
   const battle = battleTeamNames.value
   const summary = summaryTeamNames.value
@@ -316,12 +291,6 @@ function teamNamesPayload() {
   return { battle, summary }
 }
 
-/**
- * Team override 绑定当前 replay selection：任何 selection 变化
- * （add/remove/replace/clear/remove battle/folder，全部经 updateFiles → selectionRevision++）
- * 都使两组 override 同时失效；同一 selection 单纯重新 Processing 不清空（不依赖
- * startProcessingJob / Processing lifecycle）。
- */
 watch(selectionRevision, () => {
   battleTeamNames.value = {}
   summaryTeamNames.value = {}
@@ -363,15 +332,6 @@ function createExportClone(target, theme) {
   return { clone, container }
 }
 
-/**
- * Make the export clone a deterministic, html2canvas-safe static snapshot.
- * - Remove interaction-only state (drawer/hover .selected) so the cursor or a
- *   lingering selection never changes the PNG.
- * - Disable fixed (sticky) columns for full-width table export (no column
- *   overlap / stale left offsets). The .replay-export-root CSS also forces
- *   position:static via !important; the inline override is belt-and-suspenders
- *   and directly testable in happy-dom.
- */
 function prepareReplayExportClone(clone) {
   if (!clone) return
   for (const el of clone.querySelectorAll('.selected')) {
@@ -394,13 +354,11 @@ function expandExportTables(clone) {
 }
 
 function measureExportClone(clone) {
-  // Read the clone's natural scroll width (includes padding in normal flow)
   const naturalRootW = maxFiniteDimension(
     clone.scrollWidth,
     clone.getBoundingClientRect().width
   )
 
-  // Find the widest descendant content (tablewrap / table / direct children)
   let maxDescendantW = 0
   for (const wrap of clone.querySelectorAll('.tablewrap')) {
     const wrapW = maxFiniteDimension(wrap.scrollWidth, wrap.getBoundingClientRect().width)
@@ -415,8 +373,6 @@ function measureExportClone(clone) {
     if (csw > maxDescendantW) maxDescendantW = csw
   }
 
-  // When the required width comes from descendants (not root's own scroll),
-  // we must add the root's horizontal padding and border so they are not clipped.
   const cs = clone.ownerDocument.defaultView.getComputedStyle(clone)
   const padLeft = parseFloat(cs.paddingLeft) || 0
   const padRight = parseFloat(cs.paddingRight) || 0
@@ -424,15 +380,12 @@ function measureExportClone(clone) {
   const borderRight = parseFloat(cs.borderRightWidth) || 0
   const hExtra = padLeft + padRight + borderLeft + borderRight
 
-  // naturalRootW already includes padding. When descendant dictates the width,
-  // add hExtra so padding+border are not clipped.
   const requiredW = maxDescendantW > naturalRootW
     ? maxDescendantW + hExtra
     : naturalRootW
 
   clone.style.width = Math.ceil(requiredW) + 'px'
 
-  // Re-read final layout after width is set (height may have changed due to reflow)
   const finalW = maxFiniteDimension(clone.scrollWidth, clone.getBoundingClientRect().width)
   const finalH = maxFiniteDimension(clone.scrollHeight, clone.getBoundingClientRect().height)
 
@@ -454,7 +407,6 @@ function cleanupExportClone(container) {
 async function downloadResultPng() {
   if (exportingPng.value || loading.value) return
 
-  // Save immutable export context before any async operation (dataViewMode-driven export scope).
   const exportSummary = isSummaryView.value
   const exportBattleIdx = exportSummary ? NaN : currentSingleIndex.value
   const exportTab = exportSummary ? 'aggregate' : `b${exportBattleIdx}`
@@ -476,8 +428,6 @@ async function downloadResultPng() {
     cloneCtx = createExportClone(target, exportTheme)
     prepareReplayExportClone(cloneCtx.clone)
     expandExportTables(cloneCtx.clone)
-    // PNG = 当前视图（所见即所得）：克隆当前 DOM 即得到当前 ColumnPicker 可见列与顺序、
-    // 当前排序与战队名称覆盖，不做任何全量列替换（XLSX 才是完整数据导出，与前端偏好解耦）。
     await waitForLayout()
     const measured = measureExportClone(cloneCtx.clone)
     const dims = computeExportDimensions(measured)
@@ -505,9 +455,7 @@ async function downloadResultPng() {
   }
 }
 
-
-/** League Rating 算法说明入口：跳转独立文档页（App.vue 注册的 rating-docs 视图）。 */
-const navigate = inject('navigate', null)
+const navigate = inject(NAVIGATE_VIEW_KEY, null)
 
 function openRatingDocs() {
   navigate && navigate('rating-docs')
@@ -523,15 +471,12 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 
 <template>
   <div :class="props.embedded ? 'replay-data-embedded' : 'layout-data-workspace'">
-    <!-- 独立使用（旧路由/测试）时保留上传器；嵌入 Workspace 时由 Workspace 提供单一上传器。 -->
     <FileUploader v-if="!props.embedded" :files="files" :loading="loading" :confirm-remove="!!resp"
       @update:files="updateFiles" @preview="preview" @remove-request="onFileRemoveRequest"
       />
 
     <p v-if="error" class="error">{{ error }}</p>
 
-    <!-- 主操作区 inline 进度面板：不依赖 files/resp 渲染条件，
-         与 Export 任务卡各自独立，不再互斥隐藏。 -->
     <ReplayProcessingPanel
       v-if="!props.embedded && (uploadState || processingJob)"
       :upload-state="uploadState"
@@ -540,8 +485,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
       @cancel="cancelProcessing"
       @dismiss="dismissProcessingJob" />
 
-    <!-- 解析结果区：有文件或已有解析结果时可见；resp 依赖 files 才存在，
-         故 files.length || resp 与真实状态机一致。 -->
     <template v-if="files.length || resp">
       <div>
         <p v-if="!resp" class="replay-empty-note">{{ $t('workspace.results_hint') }}</p>
@@ -603,8 +546,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
                 <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} v
               </button>
               <Teleport to="body">
-              <!-- Teleport 到 body：脱离 .restoolbar 的 backdrop-filter 层级上下文 / containing block，
-                   否则 fixed 的 .colpanel 会被其 stacking context 锁住，被下方结果表（同样 backdrop-filter）盖住。 -->
               <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
                 :visible="pickerScope === 'agg' ? aggVisibleKeys : pickerScope === 'cw' ? cwVisibleKeys : visibleKeys"
                 :fixed-keys="(pickerScope === 'cw' || (pickerScope === 'player' && leagueMode)) ? ['nickname', 'league_rating'] : []"
@@ -628,13 +569,10 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
         <p v-if="!resp.battles.length && !resp.aggregate.length && !leagueData" class="replay-empty-note">{{ $t('replay.no_results') }}</p>
 
         <div v-show="isSummaryView && (resp.aggregate.length || leagueMode)" ref="aggregateRef">
-          <!-- 普通模式：基础 Replay Aggregate（Standard Replay 保持原语义）。 -->
           <template v-if="!leagueMode && resp.aggregate.length">
             <h2 class="replay-section-title" data-testid="base-aggregate-title">{{ $t('result.base_summary_title') }}</h2>
             <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
           </template>
-          <!-- CW 模式：统一玩家主表（Replay Aggregate ∪ League Rating 按 accountId，
-               缺失 League 补 "--"）+ 战队独立表。不允许再出现两张平级玩家表。 -->
           <template v-if="leagueMode">
             <h2 class="replay-section-title" data-testid="league-summary-title">{{ $t('league.summary.section_title') }}</h2>
             <CwPlayerSummaryTable :title="$t('league.summary.title_player')"
@@ -680,9 +618,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 </template>
 
 <style>
-/* Replay results and export controls. Capability navigation lives in App.vue. */
-/* 汇总 Tab 双区块：基础 Replay Aggregate 与 League Rating 汇总并列，
-   各自独立标题，League Rating 是附加分析不是替代品。 */
 .replay-section-title {
   margin: 18px 0 8px;
   font-size: .92rem;
@@ -701,7 +636,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   background: color-mix(in srgb, var(--bg-card) 82%, transparent);
 }
 .replay-empty-note { padding: 18px 4px; color: var(--text-muted); font-size: .85rem; }
-/* 数据视图切换（汇总视图 / 单场视图）：与旧 .tabs 同款外观，避免视觉回归。 */
 .dataview-toggle {
   display: inline-flex;
   align-items: center;
@@ -727,7 +661,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   color: var(--accent-dark);
 }
-/* League Rating 校验失败汇总：warning 语义，可展开，不铺满超长文件名 */
 .league-failure-summary { margin-top: 10px; padding: 10px 14px; }
 .league-failure-head {
   display: flex;
@@ -809,14 +742,12 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   line-height: 1.5;
   max-width: none;
 }
-/* PNG 导出：取消 sticky 定位 + 清除偏移，避免固定列覆盖其他列（完整宽表导出） */
 .replay-export-root .sticky-col {
   position: static !important;
   left: auto !important;
   right: auto !important;
   z-index: auto !important;
 }
-/* PNG 导出：League 概览与汇总表样式（深色/浅色均可读） */
 .replay-export-root .league-overview {
   border: 1px solid var(--exp-border);
   border-radius: 8px;
@@ -922,15 +853,12 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   background: var(--exp-destroyed);
   color: var(--exp-bg);
 }
-/* PNG 导出：确定性静态快照。禁用动画/过渡/滤镜/backdrop-filter，
-   避免 html2canvas 解析或时序不稳定的 CSS（以及 hover/animation 干扰画面）。 */
 .replay-export-root * {
   animation: none !important;
   transition: none !important;
   backdrop-filter: none !important;
   filter: none !important;
 }
-/* PNG 导出：汇总空态也使用实色（替代 color-mix），避免导出失败 */
 .replay-export-root .league-summary-empty {
   background: var(--exp-card-bg) !important;
   color: var(--exp-text-sub) !important;

@@ -6,6 +6,7 @@ import com.wotb.web.mark3.dto.Mark3LeaderboardPageDto;
 import com.wotb.web.mark3.dto.Mark3SubmissionSummaryDto;
 import com.wotb.web.mark3.service.Mark3SubmissionService;
 import com.wotb.web.util.JwtUtil;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -50,8 +51,13 @@ public class Mark3Controller {
             @RequestParam(name = "battleCount") final int battleCount,
             @RequestParam(name = "averageDamage") final int averageDamage,
             @RequestParam(name = "winRate") final BigDecimal winRate,
-            @RequestParam(name = "proofScreenshots") final List<String> proofScreenshots,
-            @RequestParam(name = "replays") final List<MultipartFile> replays) {
+            @RequestParam(name = "replays") final List<MultipartFile> replays,
+            final HttpServletRequest request) {
+        // Spring converts one String to List<String> as a comma-delimited value, but every data URL contains a comma.
+        final String[] proofScreenshotValues = request.getParameterValues("proofScreenshots");
+        final List<String> proofScreenshots = proofScreenshotValues == null
+                ? List.of()
+                : List.of(proofScreenshotValues);
         return service.createSubmission(
                 JwtUtil.requireUserId(), vehicleId, battleCount, averageDamage, winRate, proofScreenshots, replays);
     }

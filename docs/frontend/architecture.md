@@ -1,6 +1,6 @@
 # Frontend architecture
 
-## Current foundation (PR 1)
+## Current foundation
 
 The application root, [`frontend/src/App.vue`](../../frontend/src/App.vue), only renders Vue Router's outlet. Application concerns live in `frontend/src/app/`:
 
@@ -16,7 +16,9 @@ App.vue
 
 `router.js` owns browser history, deep-link handling, redirects, and Back/Forward. Product URLs deliberately retain the compatible query contract: `?view=replay`, `?view=ai-review`, and `?view=battle-playback` all resolve to the same kept-alive Replay Workspace with a different initial capability. Legacy aliases (`leaderboard`, `extended`, `reconstruction`) redirect once to their canonical query values. `/download/android` and `/download/android/` resolve to the Android page.
 
-`ViewHost.vue` maps the existing flat page components to a route-derived product view. The flat layout is the current implementation; do not treat another directory layout as already present. Do not add manual `history.pushState`, `replaceState`, or `popstate` listeners to a component; use the injected `navigate(view)` command, which delegates to Vue Router.
+`ViewHost.vue` maps the existing flat page components to a route-derived product view. The flat layout is the current implementation; do not treat another directory layout as already present. Do not add manual `history.pushState`, `replaceState`, or `popstate` listeners to a component; use the injected navigation command, which delegates to Vue Router.
+
+Application navigation is defined by the feature-neutral typed `NAVIGATE_VIEW_KEY` in `frontend/src/shared/navigation.ts`. `AppShell` provides the command; app and feature consumers inject the shared contract without importing router internals or an `app/` implementation module. Production code must not introduce magic-string `inject('navigate')` / `provide('navigate')` calls.
 
 ## Dependency and state rules
 
@@ -32,13 +34,33 @@ Each business state has one authoritative owner. Replay state is owned by `front
 
 Core Replay/API/AI/Playback contracts live under `frontend/src/types/` and are validated at external JSON/SSE boundaries. JavaScript and TypeScript may coexist during the migration; a `.js` import specifier may resolve to its `.ts` implementation through the Vite/TypeScript resolver, but there must be only one implementation.
 
-Replay Workspace presentation is split into focused children (`ReplayWorkspaceHeader.vue`, `ReplayCapabilityTabs.vue`, and `ReplaySourcePanel.vue`). They receive derived state and emit commands; selection, capability, authentication, upload, and Processing ownership remains in the Workspace/session orchestration layer.
+Replay capability HTTP ownership is centralized under `frontend/src/api/`. `replay.ts` owns Processing/Export job transport; `replay-capabilities.ts` owns Dataset-only AI Review / Map Overview / Battle Playback endpoints, bearer-token refresh, canonical HTTP errors, and Playback V2 runtime validation. `AiReviewPanel.vue` and `BattlePlaybackPanel.vue` own run/view lifecycle only and must not recreate `authedFetch`, call `apiFetch` directly, or hard-code `/api/replay/*` transport calls.
+
+Replay Workspace presentation is split into focused children (`ReplayWorkspaceHeader.vue`, `ReplayCapabilityTabs.vue`, and `ReplaySourcePanel.vue`). Selection / Processing Job / current battle remain owned by `useReplayWorkspace()` / the Replay session. Direct parent-child dependencies are explicit: `ReplayWorkspace.vue` passes the authoritative replay session and workspace presentation state to `ReplayPage.vue` as props instead of hiding them behind `provide('replay')` / `provide('replayWorkspace')`. Authentication is consumed from the existing `useAuth()` singleton rather than re-exported by `AppShell` through string service-locator keys.
 
 Battle Playback follows the same presentation boundary: `BattlePlayback.vue` remains the orchestration root, while `BattlePlaybackHud.vue`, `BattleMap.vue`, `PlaybackControls.vue`, `PlaybackTimeline.vue`, `PlaybackSidePanel.vue`, `AnnotationToolbar.vue`, and `VehicleDetailsPanel.vue` own HUD, map, controls, timeline, panel, annotation, and selected-vehicle presentation respectively. `PlaybackMobileOverlay.vue` owns only transient mobile controls visibility. Pure playback projection and clock helpers live in `utils/playbackVehicleState.ts` and `utils/playbackClock.ts`; canonical V2 query semantics and tank-marker assets remain unchanged.
 
+Persisted Playback presentation state is owned by `composables/usePlaybackPreferences.ts`: player/tank labels, HP HUD visibility, recent trails, pane widths, and rail collapse all retain their historical storage keys/defaults but no longer implement independent localStorage readers/watchers inside `BattlePlayback.vue`. The root consumes these reactive preferences and keeps domain projection/rendering independent from persistence policy.
+
 Playback tests follow those ownership boundaries: map/marker/gesture contracts live in `BattleMap.test.js`, control contracts in `PlaybackControls.test.js`, timeline contracts in `PlaybackTimeline.test.js`, HUD/mobile/panel contracts in their focused component suites, detail-panel contracts in `VehicleDetailsPanel.test.js`, and pure projection/clock contracts in `utils/playbackVehicleState.test.js` / `utils/playbackClock.test.js`. Shared playback fixtures live in the testing-only `playbackTestHarness.js`. `BattlePlayback.test.js` and the remaining `BattlePlayback.integration.test.js` cases are reserved for cross-component/domain regressions; presentation cases are not duplicated there.
 
+Source-level CSS guards remain useful for ownership invariants, but final layout behavior is not inferred from CSS text. `npm run test:browser-layout` launches the Chrome/Chromium available on the CI runner, loads the actual shared/PC/tablet/mobile Playback stylesheets, and checks real computed styles / geometry for 1600×900 PC, 1024×768 tablet, 390×844 mobile, plus a cross-form isolation case. This gate runs in the frontend CI before the production build.
+
 The UI profile remains presentation-only: `wotb-ui-profile` is the single persistence key, and its derived `data-theme` does not create a separate theme state. Showcase and Classic must use the same components, APIs, and business state.
+
+## Single-PR consolidation scope
+
+The architecture cleanup is intentionally completed inside one PR so `main` never contains half-migrated boundaries. The consolidated boundary is complete when these layers are reviewed together:
+
+- [x] feature-neutral typed application navigation contract;
+- [x] Dataset-only AI Review / Map Overview / Battle Playback API ownership moved out of panels;
+- [x] Replay Workspace string service-locator dependencies replaced with direct auth consumption and explicit parent-child replay/workspace props;
+- [x] high-value Battle Playback persistence ownership extracted from the orchestration root;
+- [x] architecture guards for removed service-locator keys and replay capability transport ownership;
+- [x] real-browser Playback geometry / form-isolation gate added to frontend CI;
+- [x] final architecture/code-smell pass removed stale navigation/auth/replay injection bridges and duplicate Playback persistence ownership.
+
+Directory-only rewrites, Pinia adoption without a demonstrated ownership need, broad visual redesign, and unrelated product changes are explicitly outside this PR. The existing `?view=` compatibility contract remains in place because deleting that compatibility layer is a product URL migration, not a prerequisite for fixing the ownership problems above.
 
 ## Canonical feature references
 
@@ -48,4 +70,4 @@ The UI profile remains presentation-only: `wotb-ui-profile` is the single persis
 
 ## Verification expectations
 
-Architecture work starts with `.agents/skills/frontend-architecture/SKILL.md`. Cover the changed boundary with focused tests. Routing work must cover legacy/deep links, Back/Forward, authentication destinations when affected, and the Android route. Dependency or router changes require `npm run build`; full frontend CI remains the final repository-wide gate.
+Architecture work starts with `.agents/skills/frontend-architecture/SKILL.md`. Cover the changed boundary with focused tests. Routing work must cover legacy/deep links, Back/Forward, authentication destinations when affected, and the Android route. Playback layout changes must keep `npm run test:browser-layout` green in addition to focused Vitest suites. Dependency or router changes require `npm run build`; full frontend CI remains the final repository-wide gate.

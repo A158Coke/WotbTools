@@ -17,6 +17,13 @@ import './styles/playback-shared.css'
 import './styles/playback-pc.css'
 import './styles/playback-tablet.css'
 import './styles/playback-mobile.css'
+// Mobile fullscreen has stricter map-first behavior than the generic mobile form:
+// controller is transient and vehicle details must resize, never cover, the map.
+import './styles/playback-mobile-fullscreen.css'
+// Final fullscreen ownership guard: side-slot space reuse may move controls, but
+// HP / points / bases stay attached to the map HUD in every form. Mobile keeps
+// PR #245's transient bottom-controller contract even on ultra-wide screens.
+import './styles/playback-fullscreen-form-contract.css'
 import './styles/classic-profile.css'
 import { messages } from './locales/messages.js'
 import router from './app/router.js'

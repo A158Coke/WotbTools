@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import { mapBases } from '../data/mapBases'
 import { mapImages } from '../data/mapImages'
 import { teamCssVars } from '../data/mapTeamColors'
@@ -44,6 +45,7 @@ import {
 import { projectVehicleState } from '../utils/playbackVehicleState'
 import { computeVehicleMarkerSize } from '../utils/vehicleMarkerSizing'
 import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
+import { playbackSafeInsetOwnership } from '../utils/playbackSafeInsets.js'
 import {
   MARKER_CORE_PX,
   computeLabelLayout,
@@ -208,88 +210,13 @@ const speed = ref(1)
 //（仅当存在未决 transient），不依赖 replay 播放状态。
 const nowMs = ref(typeof performance !== 'undefined' ? performance.now() : 0)
 
-// ---- PR4 §26：玩家/坦克名显示偏好（默认 showPlayerName=false / showTankName=true，localStorage 持久化）----
-const LABEL_PREFS_KEY = 'wotb.pb.label-prefs'
-function loadLabelPrefs() {
-  try {
-    const raw = localStorage.getItem(LABEL_PREFS_KEY)
-    if (raw) {
-      const p = JSON.parse(raw)
-      return {
-        showPlayerName: p.showPlayerName === true,
-        showTankName: p.showTankName !== false,
-      }
-    }
-  } catch {
-    // 损坏/不可用 → 默认值
-  }
-  return { showPlayerName: false, showTankName: true }
-}
-const labelPrefs = reactive(loadLabelPrefs())
-watch(labelPrefs, (p) => {
-  try {
-    localStorage.setItem(LABEL_PREFS_KEY, JSON.stringify(p))
-  } catch {
-    // 隐私模式/配额满：静默（本次会话内仍生效）
-  }
-}, { deep: true })
+// Playback presentation preferences have one persistence owner. BattlePlayback only consumes refs.
+const { labelPrefs, hpPrefs, trailPrefs, paneWidths, railCollapsed } = usePlaybackPreferences()
 
-// ---- PR5（docs/features/battle-playback.md HP HUD 开关）：单车 HP HUD 显示开关（默认开启，localStorage 持久化）。
-// 关闭后隐藏地图 HP 数字/bar/ghost；floating damage / destroyed ✕ / sidebar HP / combat state /
-// kill feed / timeline 正确性均不受影响；重新开启立即按当前 timestamp 显示正确 HP（纯派生，不重头累计）。
-const HP_PREFS_KEY = 'wotb.pb.hp-prefs'
-function loadHpPrefs() {
-  try {
-    const raw = localStorage.getItem(HP_PREFS_KEY)
-    if (raw) {
-      const p = JSON.parse(raw)
-      return { showHp: p.showHp !== false }
-    }
-  } catch {
-    // 损坏/不可用 → 默认开启
-  }
-  return { showHp: true }
-}
-// 左右两栏宽度可拖拽调整。未调整过时留 null，让 CSS 里的响应式默认值继续生效。
-const PANE_WIDTH_KEY = 'wotb.pb.pane-widths'
+// 左右两栏宽度可拖拽调整；持久化由 usePlaybackPreferences 负责。
 const RAIL_W_RANGE = { min: 160, max: 420 }
 const DETAILS_W_RANGE = { min: 240, max: 560 }
-function loadPaneWidths() {
-  try {
-    const raw = localStorage.getItem(PANE_WIDTH_KEY)
-    if (raw) {
-      const p = JSON.parse(raw)
-      return {
-        rail: Number.isFinite(p.rail) ? p.rail : null,
-        details: Number.isFinite(p.details) ? p.details : null,
-      }
-    }
-  } catch {
-    // 损坏/不可用 → 用 CSS 默认
-  }
-  return { rail: null, details: null }
-}
-const paneWidths = reactive(loadPaneWidths())
-watch(paneWidths, (w) => {
-  try {
-    localStorage.setItem(PANE_WIDTH_KEY, JSON.stringify(w))
-  } catch {
-    // 隐私模式/配额满：静默（本次会话内仍生效）
-  }
-}, { deep: true })
-
 const clampWidth = (value, range) => Math.min(range.max, Math.max(range.min, value))
-
-/* 全屏（手机横屏尤其明显）下常驻左栏要吃掉 148–220px 宽。允许收起成一条只剩
-   开关的窄条——收起而不是完全消失，否则重新打开的入口只能放到地图上，违反
-   「地图上不能有任何东西」。 */
-const RAIL_COLLAPSED_KEY = 'wotb.pb.rail-collapsed'
-const railCollapsed = ref((() => {
-  try { return localStorage.getItem(RAIL_COLLAPSED_KEY) === '1' } catch { return false }
-})())
-watch(railCollapsed, (v) => {
-  try { localStorage.setItem(RAIL_COLLAPSED_KEY, v ? '1' : '0') } catch { /* 隐私模式：本次会话内仍生效 */ }
-})
 
 /** 拖拽改宽：edge 决定按指针换算成哪一侧的宽度。 */
 function startPaneResize(event, pane) {
@@ -319,36 +246,8 @@ function startPaneResize(event, pane) {
   window.addEventListener('pointercancel', stop)
 }
 
-const hpPrefs = reactive(loadHpPrefs())
-watch(hpPrefs, (p) => {
-  try {
-    localStorage.setItem(HP_PREFS_KEY, JSON.stringify(p))
-  } catch {
-    // 隐私模式/配额满：静默（本次会话内仍生效）
-  }
-}, { deep: true })
 
-// 最近 2 秒位置轨迹偏好：只消费 canonical observed positionSegments；持久化与
-// 既有 label/HP display preferences 同级，不改变 replay state owner。
-const TRAIL_PREFS_KEY = 'wotb.pb.trail-prefs'
-function loadTrailPrefs() {
-  try {
-    const raw = localStorage.getItem(TRAIL_PREFS_KEY)
-    if (raw) return { showTrail: JSON.parse(raw).showTrail !== false }
-  } catch {
-    // 损坏/不可用 → 默认开启
-  }
-  return { showTrail: true }
-}
-const trailPrefs = reactive(loadTrailPrefs())
-watch(trailPrefs, (p) => {
-  try {
-    localStorage.setItem(TRAIL_PREFS_KEY, JSON.stringify(p))
-  } catch {
-    // 隐私模式/配额满：静默（本次会话内仍生效）
-  }
-}, { deep: true })
-
+// 最近 2 秒位置轨迹只消费 canonical observed positionSegments；显示偏好由 usePlaybackPreferences 持久化。
 const visibleTrails = computed(() => trailPrefs.showTrail
   ? recentPositionTrails(hpVehicles.value, currentTime.value, 2)
   : [])
@@ -742,16 +641,18 @@ let suppressClick = false
 // 手势结束后的首个 click 必须被吞掉，纯点击车辆仍正常选中
 let gestureMoved = false
 
-/* §side-slots：横屏黑边够宽就把 HUD / controls 放两侧，竖屏（或黑边不够）放下面。
-   判定用真实像素而不是宽高比——宽高比推不出黑边有多少像素，882×344 与 1600×900
-   宽高比相差很大却都放得下侧栏，而 740×360 放不下。
-   一条侧栏要放下竖排的播放控制与时间轴，实测 168px 是可用下限。 */
+/* §side-slots：仅非 mobile 的横屏 fullscreen 才尝试把「不在 rail 内」的 controls 放进
+   地图列左右黑边。Battle HUD 已永久归属顶部，不再参与 side-slot relocation；mobile
+   fullscreen 由 PR #245 的 transient bottom controller 独占，不进入本优化。
+   黑边按实际 map workspace 宽度而不是整个 stage 宽度计算，避免把 tablet Details 列
+   错算成地图 gutter。168px 是竖排 controls 的可用下限。 */
 const SIDE_SLOT_MIN_PX = 168
 const sideSlotWidth = computed(() => {
-  if (!isFullscreen.value) return 0
-  const { w, h } = stageSize.value
-  if (!w || !h) return 0
-  const gutter = Math.floor((w - h) / 2)
+  if (!isFullscreen.value || formFactor.value === 'mobile') return 0
+  const mapW = mapSize.value.w || mapWidth()
+  const stageH = stageSize.value.h
+  if (!mapW || !stageH) return 0
+  const gutter = Math.floor((mapW - stageH) / 2)
   return gutter >= SIDE_SLOT_MIN_PX ? gutter : 0
 })
 const sideSlots = computed(() => sideSlotWidth.value > 0)
@@ -773,28 +674,36 @@ watch(() => mapStageEl.value, (el) => {
 // 侧栏形态切换会改变地图可用高度 → 用新几何强制重新 fit。
 watch(sideSlots, () => { nextTick(() => fitViewIfReady(true)) })
 
-/** 安全区：fullscreen 下 HUD（顶部 overlay）高度为 top inset；bottom inset 只在 fullscreen
- *  量取 —— 非 fullscreen 时 bottom overlay 不是绝对定位，controls 走正常文档流排在地图
- *  下方，不占 Map Workspace，量了反而会误缩地图。 */
+/** 安全区：fullscreen battle HUD 永远位于顶部，因此始终按真实 HUD 高度保留 top inset。
+ * controls 的 bottom inset 按形态决定：mobile fullscreen 属于 PR #245 的底部 transient
+ * controller（显示时按真实 content 高度避让）；PC/tablet 只有 controls 真正在 bottom overlay
+ * 时才保留，rail/side-slot 形态不占 bottom。 */
 function safeInsets() {
   let top = 0
   let bottom = 0
-  // §side-slots：HUD/controls 都在两侧黑边里，上下不再占用高度——地图因此吃满 stage 高度。
-  // 水平方向不需要 inset：地图是方的且受高度限制，居中后左右正好空出黑边给两条侧栏。
-  if (sideSlots.value) return { top, bottom }
-  if (isFullscreen.value) {
+  const ownership = playbackSafeInsetOwnership({
+    isFullscreen: isFullscreen.value,
+    formFactor: formFactor.value,
+    sideSlots: sideSlots.value,
+    controlsInRail: controlsInRail.value,
+  })
+  if (ownership.reserveTop) {
     const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
     top = hud ? hud.clientHeight : 0
   }
-  // §safeInsets-DOM：只量取 .pb-mobile-overlay-content 的真实 rendered 高度（wrapper 是 inset:0，
-  // 其 clientHeight 是整张地图高度，不能当 controls 高度）。
-  // §safeInsets-contract：normal mobile 的 controls 是 transient overlay（默认 opacity:0），
-  // 不因不可见 controls 永久缩小 map —— 非 fullscreen 一律 bottom=0。
-  // fullscreen mobile controls 始终显示时，才 reserve 底部 safe area（= content 实高）。
-  if (!controlsInRail.value && isFullscreen.value) {
+  // §safeInsets-DOM：wrapper 是 inset:0，不能把 wrapper.clientHeight 当 controls 高度。
+  // transient controls 显示时按 wrapper bottom → content top 量取完整占用区（含 bottom/safe-area gap）；
+  // hidden 时 contentHeight=0。内容重排由 ResizeObserver 触发重新 fit。
+  if (ownership.reserveBottom) {
     const wrap = mobileOverlay.value?.$el
     const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null
-    bottom = content ? content.clientHeight : 0
+    if (wrap && content && content.clientHeight > 0) {
+      const wrapRect = wrap.getBoundingClientRect()
+      const contentRect = content.getBoundingClientRect()
+      // Reserve the complete occupied bottom zone, including the controller's
+      // bottom offset / safe-area gap, rather than only the card height.
+      bottom = Math.max(0, wrapRect.bottom - contentRect.top)
+    }
   }
   return { top, bottom }
 }

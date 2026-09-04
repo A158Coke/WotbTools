@@ -54,6 +54,38 @@ class Mark3ControllerTest {
     }
 
     @Test
+    void multipartCreatePreservesCommaInSingleScreenshotDataUrl() throws Exception {
+        final Mark3SubmissionService service = mock(Mark3SubmissionService.class);
+        when(service.createSubmission(
+                eq("kc-user"), eq(385L), eq(36), eq(4_203), eq(new BigDecimal("78")),
+                eq(List.of("data:image/jpeg;base64,AAAA")), anyList()))
+                .thenReturn(new Mark3CreateResult(6L, "PENDING"));
+        final Jwt jwt = Jwt.withTokenValue("t").header("alg", "none").subject("kc-user").build();
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(jwt, null));
+        final MockMvc mvc = MockMvcBuilders.standaloneSetup(new Mark3Controller(service)).build();
+
+        final var request = multipart("/api/hof/mark3/submissions")
+                .file(replay("a"))
+                .file(replay("b"))
+                .file(replay("c"))
+                .file(replay("d"))
+                .file(replay("e"))
+                .param("vehicleId", "385")
+                .param("battleCount", "36")
+                .param("averageDamage", "4203")
+                .param("winRate", "78")
+                .param("proofScreenshots", "data:image/jpeg;base64,AAAA");
+        mvc.perform(request)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(6))
+                .andExpect(jsonPath("$.status").value("PENDING"));
+
+        verify(service).createSubmission(
+                eq("kc-user"), eq(385L), eq(36), eq(4_203), eq(new BigDecimal("78")),
+                eq(List.of("data:image/jpeg;base64,AAAA")), anyList());
+    }
+
+    @Test
     void multipartCreateBindsTwoScreenshotsAndFiveReplays() throws Exception {
         final Mark3SubmissionService service = mock(Mark3SubmissionService.class);
         when(service.createSubmission(
