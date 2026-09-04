@@ -8,7 +8,11 @@ import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.KeycloakSession;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -168,5 +172,76 @@ class JuheQqEndpointTest {
         final String entity = (String) response.getEntity();
         assertTrue(!entity.contains("SECRET_APPKEY"), "must not leak appkey");
         assertTrue(!entity.contains("SECRET_CODE"), "must not leak authorization code");
+    }
+
+    @Test
+    void callbackStagesFollowExpectedOrderWithSingleOpaqueCallbackRef() {
+        stub.respond("{\"code\":0,\"type\":\"qq\",\"social_uid\":\"12345\",\"nickname\":\"PlayerOne\"}");
+
+        try (LogCapture capture = new LogCapture()) {
+            final Response response = endpoint.handleCallback(VALID_STATE, "qq", "code-1");
+            assertEquals(200, response.getStatus());
+
+            final List<String> stages = capture.messages().stream()
+                    .filter(m -> m.contains("stage=callback_entered")
+                            || m.contains("stage=authentication_session_restored")
+                            || m.contains("stage=juhe_callback_accepted")
+                            || m.contains("stage=before_broker_authenticated")
+                            || m.contains("stage=broker_authenticated"))
+                    .map(JuheQqEndpointTest::stage)
+                    .collect(Collectors.toList());
+
+            assertEquals(5, stages.size(), "must trace all 5 callback stages in the success flow");
+            assertEquals(List.of("callback_entered", "authentication_session_restored",
+                    "juhe_callback_accepted", "before_broker_authenticated", "broker_authenticated"), stages);
+
+            final List<String> refs = capture.messages().stream()
+                    .filter(m -> m.contains("stage=callback_entered")
+                            || m.contains("stage=authentication_session_restored")
+                            || m.contains("stage=juhe_callback_accepted")
+                            || m.contains("stage=before_broker_authenticated")
+                            || m.contains("stage=broker_authenticated"))
+                    .map(JuheQqEndpointTest::callbackRef)
+                    .distinct()
+                    .collect(Collectors.toList());
+            assertEquals(1, refs.size(), "all callback stages must carry the same callbackRef");
+            assertFalse(refs.get(0).isEmpty(), "callbackRef must be present and non-empty");
+        }
+    }
+
+    @Test
+    void sensitiveValuesNeverLeakIntoDiagnosticLogs() {
+        final String state = "state-opaque-9f3a";
+        final String code = "code-secret-7b1c";
+        final String socialUid = "social-secret-4d8e";
+        final JuheQqTestSupport.AuthCallbackFake auth = new JuheQqTestSupport.AuthCallbackFake(state);
+        final KeycloakSession session = JuheQqTestSupport.sessionWith(JuheQqTestSupport.contextWith());
+        final JuheQqIdentityProviderConfig config = JuheQqTestSupport.configWith(
+                "appid-test", "appkey-secret-5f20", stub.base());
+        final JuheQqEndpoint ep = new JuheQqEndpoint(session, null, config, auth.callback());
+        stub.respond("{\"code\":0,\"type\":\"qq\",\"social_uid\":\"" + socialUid + "\",\"nickname\":\"PlayerOne\"}");
+
+        try (LogCapture capture = new LogCapture()) {
+            final Response response = ep.handleCallback(state, "qq", code);
+            assertEquals(200, response.getStatus());
+
+            final List<String> messages = capture.messages();
+            assertFalse(messages.stream().anyMatch(m -> m.contains(state)), "must not log raw state");
+            assertFalse(messages.stream().anyMatch(m -> m.contains(code)), "must not log authorization code");
+            assertFalse(messages.stream().anyMatch(m -> m.contains(socialUid)), "must not log social_uid original value");
+            assertFalse(messages.stream().anyMatch(m -> m.contains("appkey-secret-5f20")), "must not log appkey");
+        }
+    }
+
+    /** 从结构化日志行中抽取 stage 名。 */
+    private static String stage(final String message) {
+        final Matcher m = Pattern.compile("stage=([a-zA-Z_]+)").matcher(message);
+        return m.find() ? m.group(1) : "";
+    }
+
+    /** 从结构化日志行中抽取 callbackRef（8 位 hex）。 */
+    private static String callbackRef(final String message) {
+        final Matcher m = Pattern.compile("callbackRef=([0-9a-f]{8})").matcher(message);
+        return m.find() ? m.group(1) : "";
     }
 }
