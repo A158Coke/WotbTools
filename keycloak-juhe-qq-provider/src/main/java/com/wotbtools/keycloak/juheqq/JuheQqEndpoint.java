@@ -56,6 +56,11 @@ public final class JuheQqEndpoint {
         this.authCallback = authCallback;
     }
 
+    /** Test/source compatibility helper; HTTP requests use the annotated four-argument method. */
+    Response handleCallback(final String state, final String type, final String code) {
+        return handleCallback(state, type, code, null);
+    }
+
     @GET
     @Path("")
     public Response handleCallback(@QueryParam("state") final String state,
