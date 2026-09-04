@@ -1,52 +1,88 @@
-# Android QQ Auth Return Bridge
+# 3D Battle Playback First — PR1 Client Map Research
 
 ## 状态
 
-IMPLEMENTED / SELF-REVIEW FIXED / PR VALIDATED / PRODUCTION VALIDATED
+IMPLEMENTING / LOCAL MAPS.ZIP SCAN PENDING
 
-## 证据
+## 目标
 
-- Android QQ native handoff 已实机证实为 `wtloginmqq://ptlogin`。
-- QQ 授权返回时由 QQ 显式启动 `com.android.chrome` 打开 `https://ssl.ptlogin2.qq.com/...`，因此普通 Verified App Link 不能接管这一步。
-- `auth.wotbtools.com` App Link 已修复为 `verified`，且手工 ACTION_VIEW 能直接打开 WotBTools；问题是 QQ/Chrome return chain 的 browser-context 切换。
-- Keycloak 在旧 Chrome callback 中报 `IDENTITY_PROVIDER_LOGIN_ERROR error=already_logged_in`，失败发生在 `getAndVerifyAuthenticationSession(state)` 恢复原 AuthenticationSession 之前。
-- PR #237 已合并并部署到生产；生产 Keycloak 运行 `ghcr.io/a158coke/wotbtools-keycloak:sha-4682b7ad`。
-- 2026-09-04 Android 真机完成完整 QQ 登录链路并成功登录，证明 return bridge 能把授权流程从 Chrome 返回原 WotBTools WebView，并恢复 Keycloak AuthenticationSession continuity。
+先完成 `maps.zip -> Map Geometry Core -> 3D Battle Playback` 路线中的 PR1：客户端地图资源研究。
 
-## 实现
+本 PR 只回答客户端真实提供了哪些可用于 3D Playback 的地图数据，不进入 frontend renderer 实现。
 
-1. Bridge 决策在登录发起阶段绑定，而不是在 Chrome 回程靠 Android UA 猜测：只有原请求 UA 符合 Android WebView（`Android` + `; wv)`）时，Juhe `redirect_uri` 才指向 `/endpoint/mobile-return?state=...`；普通 Android Chrome / desktop browser 继续使用原 `/endpoint?state=...`。
-2. `mobile-return` 只服务已在 login-start 被分类为 app/WebView 的 transaction，不再读取回程 User-Agent 做二次判断。
-3. Android return 在 Keycloak 内签发 2 分钟、单次消费、256-bit 随机 opaque ticket；ticket server-side 保存 `state/type/code`，Android intent 不携带真实 state/code。
-4. `mobile-return` 返回需要用户点击的“返回 WotBTools”页面，使用 `intent:` + `package=com.wotbtools.app` 显式回到 App。
-5. 无 browser fallback callback：intent 不携带 `browser_fallback_url`，Chrome 无法打开 App 时 ticket 不会在错误 browser context 被 consume；页面明确提示返回 App 后重新发起登录。
-6. App 继续复用 PR #236 的 exact HTTPS callback App Link 与 `singleTask` MainActivity；intent 使用非敏感 `state=bridge&code=bridge` 只满足现有路由边界，真正 payload 由 ticket 恢复。
-7. 原 WebView 请求 broker endpoint 后 atomic consume ticket，再执行原 `getAndVerifyAuthenticationSession(state)` → Juhe code exchange → `authenticated()`；不绕过 Keycloak session 校验。
-8. 日志只记录 `callbackRef` / `returnRef`（SHA-256 前缀）和 stage，不记录 ticket/state/code/full callback URL。
+## 已确认基础
 
-## 约束
+1. `common/python/wotb_sc2.py` 已能解析 DVPL + DAVA SceneFileV2；禁止新建第二套 parser。
+2. `map-semanticizer` 已能读取 Landscape world bounds 和 heightmap，并生成 elevation / slope。
+3. SC2 spawn/base Z 与 heightmap sampling 已存在数值交叉验证。
+4. `docs/reference/maps.md` 已记录 client scene / replay / 2D basemap 使用同一 world-coordinate contract。
+5. `extract_map_bases.py` 已证明完整 `Maps.zip` 可以按 map id 直接读取主 SC2。
 
-- 当前 app-origin routing marker 使用平台 Android WebView UA 的 `; wv)` token；它只决定 return routing，不参与身份认证或授权。最终认证 authority 仍是 Keycloak state / AuthenticationSession 校验。
-- 当前 ticket store 是 JVM-local，符合当前单 Keycloak instance 生产拓扑；未来水平扩容 Keycloak 前必须替换为共享 atomic store。
-- hot return（原 WebView 仍存活）是 authoritative path；cold start 仍是 best effort。
-- 不扩大 QQ host/scheme allowlist，不新增 native OAuth/AppAuth，不复制 Cookie。
+因此 PR1 的核心未知项已经收敛为：
 
-## Self-review 修复
+- static 3D geometry；
+- object/resource reference chain；
+- collision representation；
+- navigation/passability representation；
+- derived runtime asset 的可转换边界。
 
-- Major #1 已修：不再用 callback Chrome 的 Android UA 决定是否拉 App；routing 在原 login request 阶段绑定，普通 Android Chrome 保持 browser-direct。
-- Major #2 已修：删除 `browser_fallback_url -> mobile-resume -> consume(ticket)` 失败链；无法打开 App 时不在 Chrome 中消费 ticket。
+## 当前实现
 
-## 生产验证结果
+新增：
 
-生产真机已验证成功：
+```text
+common/python/inventory_maps_zip.py
+```
 
-`WotBTools WebView -> Keycloak -> Juhe -> QQ -> QQ App -> Chrome -> mobile-return -> WotBTools -> original WebView -> Keycloak broker callback -> login success`
+能力：
 
-验收结论：
+- central-directory-only inventory，不全量解压多 GB archive；
+- extension / bytes / per-map 统计；
+- scene / heightmap / geometry / collision / navigation / material / texture candidate 分组；
+- candidate 只代表 filename/path evidence，不冒充已解码事实；
+- 支持只抽取一张地图到 `tmp/map-research/extracted/`；
+- extraction 有 traversal 防护与默认 1 GiB 单图大小上限。
 
-- Android App QQ 登录成功。
-- return bridge 能将 Chrome 中的授权回程显式交还 WotBTools App。
-- 原 WebView 的 Keycloak AuthenticationSession continuity 得以恢复。
-- 旧 `already_logged_in` 生产故障不再阻塞该登录链路。
+研究说明：
 
-普通 Android Chrome 网页登录仍必须保持 `browser-direct`，不得被拉起 WotBTools App。
+```text
+docs/research/maps/3d-playback-client-map-research.md
+```
+
+## 下一执行步骤
+
+在开发机真实运行：
+
+```powershell
+python common/python/inventory_maps_zip.py "<Maps.zip>"
+```
+
+然后：
+
+1. 检查 `tmp/map-research/maps-inventory.json`；
+2. 确认真实 map 数量与资源类型；
+3. 从 candidate groups 选择一张地图；
+4. `--extract-map <mapId>` 只抽取该地图；
+5. 追 SC2 static object / resource references；
+6. 验证 geometry / collision / navigation 实际格式；
+7. 选定 PR2 vertical slice 地图和转换输入。
+
+## PR1 Definition of Done
+
+- [ ] 真实 Maps.zip inventory 完成；
+- [ ] map count / extension / per-map/shared structure 已落档；
+- [x] terrain + coordinate 基础能力已从现有代码确认；
+- [ ] static geometry source / reference chain 已确认；
+- [ ] collision representation 已确认；
+- [ ] nav/passability representation 已确认；
+- [ ] 至少一张地图 selective extraction 完成；
+- [ ] 第一张 3D vertical-slice 地图已选定；
+- [ ] PR2 的真实输入和复用边界明确。
+
+## 非目标
+
+- 不实现 3D renderer；
+- 不选定 Three.js/Babylon.js；
+- 不批量转换全部地图；
+- 不提交完整 Maps.zip / raw client asset；
+- 不开始 AI spatial analysis。
