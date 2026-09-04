@@ -106,6 +106,25 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(backdrop).toContain('display: none')
   })
 
+  // §rail-collapse：全屏下左栏可收起成窄条。绝不能收成 0 宽——重新展开的入口
+  // 必须有地方放，放到地图上会违反「地图上不能有任何东西」。
+  it('collapses the fullscreen rail to a strip that still holds the re-open control', () => {
+    const collapsed = ruleBody('.battle-playback.pb-rail-collapsed')
+    expect(collapsed).toContain('--pb-left-col: var(--pb-rail-collapsed-w)')
+    const w = /--pb-rail-collapsed-w:\s*(\d+)px/.exec(ruleBody('.battle-playback'))
+    expect(w).not.toBeNull()
+    expect(Number(w[1])).toBeGreaterThanOrEqual(32)
+
+    // 同特异性 (0,2,0)，靠源码顺序决出胜负：收起态必须写在二级展开之后。
+    expect(stripped.indexOf('.battle-playback.pb-rail-collapsed'))
+      .toBeGreaterThan(stripped.indexOf('.battle-playback.pb-rail-expanded'))
+
+    expect(ruleBody('.battle-playback.pb-rail-collapsed .pb-rail-body')).toContain('display: none')
+    // 开关只在左栏是常驻列（fullscreen）时出现；非全屏左栏已排到地图下方。
+    expect(ruleBody('.battle-playback .pb-rail-collapse')).toContain('display: none')
+    expect(ruleBody('.battle-playback:fullscreen .pb-rail-collapse')).toContain('display: flex')
+  })
+
   // rail 同时承载图标导航与播放控制，60px 放不下速度档位那一排。
   it('the Left Rail is wide enough to hold the playback controls', () => {
     const body = ruleBody('.battle-playback')

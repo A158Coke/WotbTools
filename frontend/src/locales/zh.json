@@ -1401,6 +1401,8 @@
                 "hp_unknown": "未知",
                 "hp_full_spawn": "开局满血，具体 HP 尚未从回放确认",
                 "reset_view": "重置视图",
+                "rail_collapse": "收起工具栏",
+                "rail_expand": "展开工具栏",
                 "unknown": "未知",
                 "event_DAMAGE": "伤害",
                 "event_DESTROYED": "击毁",

@@ -1401,6 +1401,8 @@
                 "hp_unknown": "unknown",
                 "hp_full_spawn": "Full HP at spawn; exact HP not yet confirmed from replay",
                 "reset_view": "Reset view",
+                "rail_collapse": "Collapse toolbar",
+                "rail_expand": "Expand toolbar",
                 "unknown": "Unknown",
                 "event_DAMAGE": "Damage",
                 "event_DESTROYED": "Destroyed",
