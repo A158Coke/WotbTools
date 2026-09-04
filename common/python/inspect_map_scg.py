@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 """Inspect one map's SCG geometry sidecar and cross-check SC2 RenderBatch ids.
 
-Usage:
-    python common/python/inspect_map_scg.py C:\\path\\to\\Maps.zip 05_amigosville_am
-
-The report is evidence-oriented: it verifies the actual SCPG payload, summarizes
-PolygonGroup geometry, and checks whether SC2 ``rb.datasource`` ids resolve to
-PolygonGroup ``#id`` values. It does not export or redistribute raw client
-geometry.
+The report verifies the actual SCPG payload, summarizes PolygonGroup geometry,
+and checks every recursively nested SC2 RenderBatch ``rb.datasource`` against
+PolygonGroup ``#id`` values. It does not export raw client geometry.
 """
 
 from __future__ import annotations
@@ -28,10 +24,8 @@ from wotb_sc2 import (  # noqa: E402
     decode_dvpl,
     entity_components,
     read_sc2,
-    scene_entities,
 )
 from wotb_scg import polygon_group_id, read_scg  # noqa: E402
-
 
 VERTEX_ATTRIBUTES = {
     0: "VERTEX",
@@ -116,6 +110,17 @@ def select_companion_scg(
     )
 
 
+def iter_entities_recursive(container: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    hierarchy = container.get("#hierarchy")
+    if not isinstance(hierarchy, list):
+        return
+    for entity in hierarchy:
+        if not isinstance(entity, dict):
+            continue
+        yield entity
+        yield from iter_entities_recursive(entity)
+
+
 def iter_render_batches(render_object: dict[str, Any]) -> Iterator[dict[str, Any]]:
     batches = render_object.get("ro.batches")
     if isinstance(batches, dict):
@@ -128,9 +133,11 @@ def iter_render_batches(render_object: dict[str, Any]) -> Iterator[dict[str, Any
                 yield value
 
 
-def collect_datasource_ids(scene: dict[str, Any]) -> Counter[int]:
+def collect_datasource_ids(scene: dict[str, Any]) -> tuple[Counter[int], int]:
     result: Counter[int] = Counter()
-    for entity in scene_entities(scene):
+    entity_count = 0
+    for entity in iter_entities_recursive(scene):
+        entity_count += 1
         for component in entity_components(entity):
             if component.get("comp.typename") != "RenderComponent":
                 continue
@@ -141,7 +148,7 @@ def collect_datasource_ids(scene: dict[str, Any]) -> Counter[int]:
                 datasource = batch.get("rb.datasource")
                 if isinstance(datasource, int):
                     result[datasource] += 1
-    return result
+    return result, entity_count
 
 
 def vertex_attributes(vertex_format: Any) -> list[str]:
@@ -268,8 +275,8 @@ def datasource_cross_check(
         "unreferencedPolygonGroupIds": len(unreferenced_group_ids),
         "unreferencedPolygonGroupIdSamples": sorted(unreferenced_group_ids)[:sample_limit],
         "interpretation": (
-            "Exact integer-id equality between SC2 RenderBatch rb.datasource and SCPG PolygonGroup #id. "
-            "A high match rate proves the SC2 render batches consume geometry from this SCG sidecar."
+            "Exact integer-id equality between recursively discovered SC2 RenderBatch rb.datasource "
+            "and companion SCPG PolygonGroup #id."
         ),
     }
 
@@ -277,7 +284,7 @@ def datasource_cross_check(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("input", type=pathlib.Path, help="Path to Maps.zip")
-    parser.add_argument("map_id", help="Client map id, e.g. 05_amigosville_am")
+    parser.add_argument("map_id", help="Client map id, e.g. 18_canal_cn")
     parser.add_argument(
         "--output",
         type=pathlib.Path,
@@ -307,35 +314,51 @@ def main() -> int:
             scene_raw = archive.read(scene_member)
             scg_raw = archive.read(scg_member)
 
-        scene_payload = decode_dvpl(scene_raw) if normalize_member(scene_member.filename).lower().endswith(".dvpl") else scene_raw
-        scg_payload = decode_dvpl(scg_raw) if normalize_member(scg_member.filename).lower().endswith(".dvpl") else scg_raw
+        scene_payload = (
+            decode_dvpl(scene_raw)
+            if normalize_member(scene_member.filename).lower().endswith(".dvpl")
+            else scene_raw
+        )
+        scg_payload = (
+            decode_dvpl(scg_raw)
+            if normalize_member(scg_member.filename).lower().endswith(".dvpl")
+            else scg_raw
+        )
         scene = read_sc2(scene_payload)
         scg = read_scg(scg_payload)
         groups = [group for group in scg.get("polygonGroups", []) if isinstance(group, dict)]
-        datasource_counts = collect_datasource_ids(scene)
+        datasource_counts, recursive_entity_count = collect_datasource_ids(scene)
 
         report = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "mapId": args.map_id,
             "sceneMember": normalize_member(scene_member.filename),
             "scgMember": normalize_member(scg_member.filename),
             "sceneDecodedBytes": len(scene_payload),
             "scgDecodedBytes": len(scg_payload),
+            "sceneTraversal": {
+                "mode": "recursive #hierarchy",
+                "entityCount": recursive_entity_count,
+            },
             "scgMetadata": scg.get("$metadata", {}),
             "polygonGroups": summarize_groups(groups, args.sample_limit),
             "datasourceCrossCheck": datasource_cross_check(
                 datasource_counts, groups, args.sample_limit
             ),
             "evidenceRule": (
-                "SCPG header, KeyedArchive PolygonGroup fields, byte sizes, ids, and datasource-id matches "
-                "are decoded facts. Vertex attribute names follow the public SCPG bitmask documentation; "
-                "actual vertex component storage must be validated before exporting geometry."
+                "SCPG header, KeyedArchive PolygonGroup fields, byte sizes, ids, and datasource-id "
+                "matches are decoded facts. Scene datasource discovery recursively traverses nested "
+                "#hierarchy entities. Vertex attribute names follow the public SCPG bitmask "
+                "documentation; actual component storage is validated separately by the geometry decoder."
             ),
         }
 
         output = output.expanduser().resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        output.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
     except (OSError, ValueError, zipfile.BadZipFile, Sc2ParseError, InspectScgError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
@@ -346,7 +369,7 @@ def main() -> int:
         f"SCG inspection: {summary['count']} polygon groups, "
         f"{summary['totalVertices']} vertices, {summary['totalIndices']} indices; "
         f"matched {cross['matchedUniqueDatasourceIds']}/{cross['uniqueRenderBatchDatasourceIds']} "
-        f"unique SC2 datasource ids -> {output}"
+        f"unique recursive SC2 datasource ids -> {output}"
     )
     return 0
 
