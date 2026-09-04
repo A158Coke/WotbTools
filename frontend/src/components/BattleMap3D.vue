@@ -66,6 +66,96 @@ function looksLikeHtml(response, text = '') {
   return contentType.includes('text/html') || text.trimStart().startsWith('<')
 }
 
+function finiteNumber(value, fallback = 0) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : fallback
+}
+
+function terrainColor(height, minHeight, maxHeight, target) {
+  const span = Math.max(1e-6, maxHeight - minHeight)
+  const t = Math.max(0, Math.min(1, (height - minHeight) / span))
+  // Renderer-neutral derived presentation: elevation shading only. No client texture/material data.
+  const low = [0.16, 0.20, 0.20]
+  const mid = [0.30, 0.36, 0.33]
+  const high = [0.52, 0.56, 0.52]
+  const a = t < 0.58 ? low : mid
+  const b = t < 0.58 ? mid : high
+  const local = t < 0.58 ? t / 0.58 : (t - 0.58) / 0.42
+  target[0] = a[0] + (b[0] - a[0]) * local
+  target[1] = a[1] + (b[1] - a[1]) * local
+  target[2] = a[2] + (b[2] - a[2]) * local
+}
+
+function buildTerrainGeometry(terrainMeta, terrainBuffer) {
+  const size = Number(terrainMeta?.samplesPerAxis)
+  const bounds = terrainMeta?.worldBounds || {}
+  if (!Number.isInteger(size) || size < 2) throw new Error(`Invalid terrain sample size: ${size}`)
+
+  const heights = new Float32Array(terrainBuffer)
+  if (heights.length !== size * size) {
+    throw new Error(`Terrain buffer sample mismatch: expected ${size * size}, got ${heights.length}`)
+  }
+
+  const xMin = finiteNumber(bounds.xMin)
+  const yMin = finiteNumber(bounds.yMin)
+  const xMax = finiteNumber(bounds.xMax)
+  const yMax = finiteNumber(bounds.yMax)
+  if (!(xMax > xMin) || !(yMax > yMin)) throw new Error('Terrain world bounds are invalid')
+
+  // DAVA semantic contract maps samples with range / size spacing (not range / (size - 1)).
+  const xSpacing = (xMax - xMin) / size
+  const ySpacing = (yMax - yMin) / size
+  const positions = new Float32Array(size * size * 3)
+  const colors = new Float32Array(size * size * 3)
+  const minHeight = finiteNumber(terrainMeta?.heightRangeMeters?.min, Math.min(...heights))
+  const maxHeight = finiteNumber(terrainMeta?.heightRangeMeters?.max, Math.max(...heights))
+  const rgb = [0, 0, 0]
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const sample = y * size + x
+      const offset = sample * 3
+      const z = heights[sample]
+      positions[offset] = xMin + x * xSpacing
+      positions[offset + 1] = yMin + y * ySpacing
+      positions[offset + 2] = z
+      terrainColor(z, minHeight, maxHeight, rgb)
+      colors[offset] = rgb[0]
+      colors[offset + 1] = rgb[1]
+      colors[offset + 2] = rgb[2]
+    }
+  }
+
+  const cellCount = (size - 1) * (size - 1)
+  const indices = new Uint32Array(cellCount * 6)
+  let cursor = 0
+  for (let y = 0; y < size - 1; y++) {
+    const row = y * size
+    const nextRow = (y + 1) * size
+    for (let x = 0; x < size - 1; x++) {
+      const a = row + x
+      const b = a + 1
+      const c = nextRow + x
+      const d = c + 1
+      indices[cursor++] = a
+      indices[cursor++] = b
+      indices[cursor++] = d
+      indices[cursor++] = a
+      indices[cursor++] = d
+      indices[cursor++] = c
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1))
+  geometry.computeVertexNormals()
+  geometry.computeBoundingBox()
+  geometry.computeBoundingSphere()
+  return geometry
+}
+
 async function loadMap() {
   const token = ++loadToken
   disposeScene()
@@ -102,6 +192,11 @@ async function loadMap() {
       detail.value = `No local 3D asset for mapCode=${props.mapCode}. Re-run the exporter with this map.`
       return
     }
+    if (!entry?.terrain?.heightBuffer) {
+      status.value = 'missing'
+      detail.value = 'Local 3D terrain is missing. Re-run export_playback_3d_assets.py after pulling the latest PR branch.'
+      return
+    }
 
     const referenceGroundZ = Number.isFinite(Number(entry.referenceGroundZMeters))
       ? Number(entry.referenceGroundZMeters)
@@ -114,35 +209,67 @@ async function loadMap() {
     const manifest = JSON.parse(manifestText)
     if (manifest?.schemaVersion !== 3) throw new Error(`Unsupported geometry schema: ${manifest?.schemaVersion}`)
     const baseUrl = entry.manifest.slice(0, entry.manifest.lastIndexOf('/') + 1)
-    const [positionsBuffer, indicesBuffer] = await Promise.all([
+    const [positionsBuffer, indicesBuffer, terrainBuffer] = await Promise.all([
       fetchRequired(baseUrl + manifest.buffers.positions.file).then((response) => response.arrayBuffer()),
       fetchRequired(baseUrl + manifest.buffers.indices.file).then((response) => response.arrayBuffer()),
+      fetchRequired(entry.terrain.heightBuffer).then((response) => response.arrayBuffer()),
     ])
     if (token !== loadToken || !host.value) return
 
-    const nextScene = new THREE.Scene()
-    nextScene.background = new THREE.Color(0x111820)
-    nextScene.fog = new THREE.Fog(0x111820, 650, 1450)
+    const terrainBounds = entry.terrain.worldBounds || {}
+    const xMin = finiteNumber(terrainBounds.xMin, -300)
+    const yMin = finiteNumber(terrainBounds.yMin, -300)
+    const xMax = finiteNumber(terrainBounds.xMax, 300)
+    const yMax = finiteNumber(terrainBounds.yMax, 300)
+    const actualMinZ = finiteNumber(entry.terrain?.heightRangeMeters?.min, referenceGroundZ)
+    const actualMaxZ = finiteNumber(entry.terrain?.heightRangeMeters?.max, referenceGroundZ + 80)
+    const centerX = (xMin + xMax) / 2
+    const centerY = (yMin + yMax) / 2
+    const span = Math.max(xMax - xMin, yMax - yMin, 1)
 
-    const nextCamera = new THREE.PerspectiveCamera(48, 1, 0.5, 3000)
+    const nextScene = new THREE.Scene()
+    nextScene.background = new THREE.Color(0x0c1318)
+    nextScene.fog = new THREE.Fog(0x0c1318, span * 1.35, span * 3.15)
+
+    const nextCamera = new THREE.PerspectiveCamera(45, 1, 0.5, span * 6)
     nextCamera.up.set(0, 0, 1)
-    nextCamera.position.set(420, -460, referenceGroundZ + 300)
+    nextCamera.position.set(
+      centerX + span * 0.76,
+      centerY - span * 0.88,
+      actualMaxZ + span * 0.52,
+    )
 
     const nextRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
     nextRenderer.outputColorSpace = THREE.SRGBColorSpace
+    nextRenderer.toneMapping = THREE.ACESFilmicToneMapping
+    nextRenderer.toneMappingExposure = 1.08
     nextRenderer.shadowMap.enabled = false
     host.value.appendChild(nextRenderer.domElement)
 
-    const ambient = new THREE.HemisphereLight(0xd7e8ff, 0x28313a, 2.15)
+    const ambient = new THREE.HemisphereLight(0xcfe0e9, 0x20292b, 1.72)
     nextScene.add(ambient)
-    const sun = new THREE.DirectionalLight(0xffffff, 2.4)
-    sun.position.set(-260, -340, referenceGroundZ + 620)
+    const sun = new THREE.DirectionalLight(0xfff4dd, 2.75)
+    sun.position.set(centerX - span * 0.72, centerY - span * 0.92, actualMaxZ + span * 1.15)
     nextScene.add(sun)
+    const fill = new THREE.DirectionalLight(0x9fc7dc, 0.72)
+    fill.position.set(centerX + span * 0.8, centerY + span * 0.45, actualMaxZ + span * 0.38)
+    nextScene.add(fill)
 
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x87939b,
-      roughness: 0.92,
-      metalness: 0.02,
+    const terrainGeometry = buildTerrainGeometry(entry.terrain, terrainBuffer)
+    const terrainMaterial = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 1,
+      metalness: 0,
+      side: THREE.FrontSide,
+    })
+    const terrainMesh = new THREE.Mesh(terrainGeometry, terrainMaterial)
+    terrainMesh.name = 'derived-real-heightmap-terrain'
+    nextScene.add(terrainMesh)
+
+    const staticMaterial = new THREE.MeshStandardMaterial({
+      color: 0x9aa7ad,
+      roughness: 0.9,
+      metalness: 0.015,
       side: THREE.DoubleSide,
     })
 
@@ -180,9 +307,9 @@ async function loadMap() {
     for (const [datasourceId, instances] of instancesByDatasource) {
       const geometry = geometries.get(datasourceId)
       if (!geometry || instances.length === 0) continue
-      const mesh = new THREE.InstancedMesh(geometry, material, instances.length)
+      const mesh = new THREE.InstancedMesh(geometry, staticMaterial, instances.length)
       mesh.frustumCulled = false
-      instances.forEach((instance, index) => {
+      instances.forEach((instance, instanceIndex) => {
         const transform = instance.worldTransform || {}
         const t = transform.translation || [0, 0, 0]
         const s = transform.scale || [1, 1, 1]
@@ -191,25 +318,19 @@ async function loadMap() {
         scale.set(Number(s[0]), Number(s[1]), Number(s[2]))
         quaternion.set(Number(q[0]), Number(q[1]), Number(q[2]), Number(q[3])).normalize()
         matrix.compose(position, quaternion, scale)
-        mesh.setMatrixAt(index, matrix)
+        mesh.setMatrixAt(instanceIndex, matrix)
       })
       mesh.instanceMatrix.needsUpdate = true
       nextScene.add(mesh)
     }
 
-    // Reference plane only: this deliberately does not pretend to be the real heightmap terrain.
-    const grid = new THREE.GridHelper(600, 12, 0x607080, 0x34414b)
-    grid.rotation.x = Math.PI / 2
-    grid.position.z = referenceGroundZ
-    nextScene.add(grid)
-
     const nextControls = new OrbitControls(nextCamera, nextRenderer.domElement)
-    nextControls.target.set(0, 0, referenceGroundZ)
+    nextControls.target.set(centerX, centerY, Math.max(actualMinZ, referenceGroundZ))
     nextControls.enableDamping = true
-    nextControls.dampingFactor = 0.08
-    nextControls.minDistance = 40
-    nextControls.maxDistance = 1350
-    nextControls.maxPolarAngle = Math.PI * 0.48
+    nextControls.dampingFactor = 0.075
+    nextControls.minDistance = Math.max(22, span * 0.055)
+    nextControls.maxDistance = span * 2.45
+    nextControls.maxPolarAngle = Math.PI * 0.49
     nextControls.screenSpacePanning = true
     nextControls.update()
 
@@ -257,7 +378,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: #111820;
+  background: #0c1318;
 }
 .map3d-host { position: absolute; inset: 0; }
 .map3d-host :deep(canvas) { display: block; width: 100%; height: 100%; touch-action: none; }
