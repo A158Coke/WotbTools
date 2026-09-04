@@ -4,7 +4,7 @@
 
 **COMPLETE / PR1 GATE PASS / PR247 REVIEW FIXES APPLIED / PR2 HANDOFF READY**
 
-PR #247 已完成 Client Map Research 主目标，并闭环 review 发现的 2 个 MAJOR + 1 个 MINOR。
+PR #247 已完成 Client Map Research 主目标，并闭环 review 发现的 2 个 MAJOR + 1 个 MINOR，以及复审发现的 raw `.sc2` default-discovery BLOCKER。
 
 ## 核心 contract
 
@@ -68,11 +68,16 @@ Production selector 不读取 `State 0` / `State 1` filename。
 
 ## PR247 review closure
 
-### MAJOR 1 — raw `.sc2`
+### MAJOR 1 + 复审 BLOCKER — raw `.sc2`
 
 - `.dvpl` member 才调用 `decode_dvpl`；
 - raw `.sc2` 直接传给 `read_sc2`；
-- regression test 覆盖 raw `.sc2` 与 `.sc2.dvpl` 两条路径。
+- 默认 exact main discovery 同时支持 `.sc2.dvpl` / `.sc2`；
+- exact main 不存在时，fallback discovery 同时支持 `.sc2.dvpl` / `.sc2`；
+- `inspect_map_scene.py` 与 `inspect_map_state_switchers.py` 使用相同 discovery contract；
+- state-switcher inspector 新增 `--scene`，多 SC2 场景可显式选择；
+- regression test 覆盖 raw `.sc2` exact、raw fallback、state explicit override；
+- `inspect_map_scene.main()` 端到端测试验证不传 `--scene` 时 `Maps/99_test/99_test.sc2` raw bytes 原样进入 `read_sc2`。
 
 ### MAJOR 2 — duplicate PolygonGroup id
 
@@ -121,7 +126,8 @@ Canal + Port Bay 继续作为双地图 gate。
 - [x] unique PolygonGroup id invariant
 - [x] RenderBatch shared `-1` contract
 - [x] initial RenderObject visibility contract
-- [x] raw `.sc2` / `.sc2.dvpl` loading
+- [x] raw `.sc2` / `.sc2.dvpl` decode + default discovery + fallback
+- [x] state-switcher explicit scene override
 - [x] recursive scene inspector
 - [x] Canal schema v3 final gate
 - [x] Port Bay schema v3 final gate
