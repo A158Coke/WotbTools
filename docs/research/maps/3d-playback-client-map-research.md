@@ -271,7 +271,7 @@ Derived files live under ignored `tmp/` and are not committed.
 
 ## Tests
 
-`common/python/tests/test_wotb_scg.py` covers position/index decoding and malformed-payload validation without client assets。
+`common/python/tests/test_wotb_scg.py` covers position/index decoding and malformed-payload validation without client assets.
 
 ---
 
