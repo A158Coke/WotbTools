@@ -100,6 +100,18 @@ Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`
   scheme/host（含 host=null 的未知 custom scheme）在 auth flow 内仍 `AUTH_FAILURE` 且不退出 auth flow
   （fail closed）。日志只记录 `scheme`/`host`/`source`，不记录
   完整 URI/query/token/code/state（见 `AuthNavigationPolicyTest.verifiedNativeQqHandoffOnlyDuringAuthFlow`）。
+- **QQ native login return bridge（Verified App Link）**：QQ App 完成授权后，把 Keycloak Juhe QQ broker
+  callback 经 **Verified App Link** 路由回原 WotBTools App，复用同一 WebView / cookie jar / `inAuthFlow`，
+  保持 AuthenticationSession continuity；绝不打开系统浏览器处理 broker callback（否则 Browser B != 原
+  WebView A，getAndVerifyAuthenticationSession 无法恢复原 auth transaction → already_logged_in）。链路：
+   `WebView → native QQ → verified HTTPS App Link → 同一 MainActivity（singleTask）→ 原 WebView.loadUrl(callback)`。
+  App Link 只接管 exact `https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint`，不接管整个
+  `auth.wotbtools.com` / 其它 realm / 其它 IdP provider。`AuthReturnPolicy` 仅做路由边界（scheme/host/path/
+  type=qq/state/code presence），不解释 state/code 载荷（Keycloak 仍是认证 authority）；
+  `auth.wotbtools.com/.well-known/assetlinks.json` 由 nginx 直接返回 application/json（非代理 Keycloak）。
+  热返回走 `onNewIntent`（`handleAuthReturnHot`），冷返回（进程被杀）走 `pendingAuthReturn` + startup gate
+  后加载（`handleAuthReturnColdStart`），不绕过网络/版本/强制更新门禁。日志只记录
+  `auth-return action=... source=app-link`，不记录完整 callback URI/query/state/code（见 `AuthReturnPolicyTest`）。
 - 返回 `wotbtools.com` / `www.wotbtools.com` 表示 callback 成功并结束 auth flow。认证外直接访问
   provider host 不获得 privileged WebView handling；其它 top-level host 由系统浏览器打开。
 - Native Bridge 与 OAuth navigation 是两个独立安全边界。Bridge origins 仍严格限于
