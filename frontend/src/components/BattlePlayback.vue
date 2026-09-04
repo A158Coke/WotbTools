@@ -631,7 +631,11 @@ const controlsInRail = computed(() => (isFullscreen.value || wideLayout.value)
 // fullscreen + landscape 时内宽可 >768，因此移动端判定不得只依赖 innerWidth<768；一旦判定为
 // 移动端，无论全屏/横竖屏都保持 mobile playback mode（HUD+Map 为主、bottom overlay controls、
 // details sheet、无永久 Left Rail / Right Details）。
-const mobileLayoutQuery = '(pointer: coarse) and (max-width: 1200px)'
+// §three-forms：与 wideLayoutQuery('(min-width: 1200px)') 必须严格互补。
+// 原来写的是 max-width: 1200px，与之在恰好 1200px 处重叠：触屏设备在该宽度上
+// form 判为 mobile，而 @media (min-width: 1200px) 的规则同时生效——形态就不再互斥。
+// 1199.98 是 CSS 惯用的「差一个亚像素」写法（媒体查询按分数像素比较）。
+const mobileLayoutQuery = '(pointer: coarse) and (max-width: 1199.98px)'
 const isMobileDevice = ref(false)
 // §fullscreen：PlaybackControls 是否已在 Left Rail。移动端必须保持 bottom overlay，故全屏/大桌面
 // 且非移动端才为 true；移动端全屏仍走 overlay，bottom inset 由真实 overlay content 高度决定。

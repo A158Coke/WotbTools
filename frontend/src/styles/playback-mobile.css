@@ -218,3 +218,68 @@
   background: color-mix(in srgb, var(--bg-card2) 78%, transparent);
   backdrop-filter: blur(8px);
 }
+
+/* ── 以下由 playback-responsive.css 的宽度键控规则迁入 ───────────────
+   原 @media (width < 1200px / 768px) 同时作用于 tablet 与 mobile，
+   因此 tablet 文件里也各有一份。 */
+
+@media (width < 768px) {
+  .battle-playback.pb-form-mobile {
+      gap: 5px;
+      margin-top: 4px;
+    }
+  .battle-playback.pb-form-mobile .pb-map-stage {
+      overflow: hidden;
+      border-radius: 5px;
+    }
+  .battle-playback.pb-form-mobile .pb-map-stage > .pb-side-panel-shell {
+      position: absolute;
+      inset: 0;
+      /* §details-blocker：空 shell（未选车辆）不遮挡/不 tint/不接管 pointer；选中才成 sheet。 */
+      pointer-events: none;
+      background: transparent;
+    }
+  .battle-playback.pb-form-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active {
+      pointer-events: auto;
+      background: color-mix(in srgb, var(--bg) 52%, transparent);
+      z-index: 60;
+    }
+}
+
+@media (width < 1200px) {
+  .battle-playback.pb-form-mobile:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell {
+      position: static;
+      inset: auto;
+      pointer-events: auto;
+      background: transparent;
+    }
+  .battle-playback.pb-form-mobile:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
+      position: static;
+      inset: auto;
+      width: auto;
+      margin-top: 8px;
+      max-height: none;
+    }
+}
+
+@media (width < 768px) {
+  .battle-playback.pb-form-mobile:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
+      max-height: min(46dvh, 380px);
+      overflow-y: auto;
+    }
+}
+
+@media (width < 1200px) {
+  .battle-playback.pb-form-mobile:not(:fullscreen) .pb-mobile-overlay {
+      position: static;
+      inset: auto;
+      opacity: 1;
+      pointer-events: auto;
+      z-index: auto;
+    }
+  .battle-playback.pb-form-mobile:not(:fullscreen) .pb-mobile-overlay-content {
+      position: static;
+      inset: auto;
+      margin-top: 8px;
+    }
+}

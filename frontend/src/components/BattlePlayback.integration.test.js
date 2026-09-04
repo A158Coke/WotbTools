@@ -968,11 +968,22 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(body.indexOf('sideSlots.value')).toBeLessThan(body.indexOf('.pb-hud'))
   })
 
+  // 三档必须严格互补：mobile 的上界与 pc 的下界不能重叠，否则同一视口既是
+  // mobile 形态、又命中 pc 的媒体查询，互斥性就是假的。
+  it('keeps the mobile and pc breakpoints strictly complementary', () => {
+    const src = readFileSync(resolve(process.cwd(), 'src/components/BattlePlayback.vue'), 'utf8')
+    const mobileMax = /max-width:\s*([\d.]+)px\)'/.exec(src)
+    const pcMin = /matchMedia\('\(min-width:\s*([\d.]+)px\)'\)/.exec(src)
+    expect(mobileMax).not.toBeNull()
+    expect(pcMin).not.toBeNull()
+    expect(Number(mobileMax[1])).toBeLessThan(Number(pcMin[1]))
+  })
+
   // §three-forms：根元素任何时刻只挂一个形态类。互斥性由这里保证，而不是靠媒体查询
   // 之间的算术——旧写法里一档的规则会以更高特异性压掉另一档，反复打穿。
   it('puts exactly one mutually exclusive form class on the root', async () => {
     const cases = [
-      ['mobile', { '(pointer: coarse) and (max-width: 1200px)': true }],
+      ['mobile', { '(pointer: coarse) and (max-width: 1199.98px)': true }],
       ['pc', { '(min-width: 1200px)': true }],
       ['tablet', {}],
     ]
@@ -1186,7 +1197,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubRaf()
     stubFullscreenApi()
     stubMatchMedia({
-      '(pointer: coarse) and (max-width: 1200px)': true,
+      '(pointer: coarse) and (max-width: 1199.98px)': true,
       '(min-width: 1200px)': false,
     })
     const getRoCb = stubResizeObserver()
@@ -1244,7 +1255,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubFullscreenApi()
     // 移动端：primary pointer=coarse 且视口<=1200（手机横屏内宽>768 仍命中）。大桌面 1200 判定为 false。
     stubMatchMedia({
-      '(pointer: coarse) and (max-width: 1200px)': true,
+      '(pointer: coarse) and (max-width: 1199.98px)': true,
       '(min-width: 1200px)': false,
     })
     const wrapper = mountPlayback(makeOverview(), 12)
@@ -1300,7 +1311,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubRaf()
     stubFullscreenApi()
     stubMatchMedia({
-      '(pointer: coarse) and (max-width: 1200px)': true,
+      '(pointer: coarse) and (max-width: 1199.98px)': true,
       '(min-width: 1200px)': false,
     })
     const getRoCb = stubResizeObserver()
