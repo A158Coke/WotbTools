@@ -3,7 +3,8 @@
 
 This wrapper keeps the user's client Maps.zip outside Git and reuses the proven
 ``export_map_geometry_poc.py`` contract from PR #247. Outputs are written to
-``frontend/public/map-3d-local`` so Vite can serve them during local testing.
+``common/assets/map-3d-local`` because ``frontend/vite.config.js`` uses
+``../common/assets`` as Vite's publicDir during local development.
 
 Example:
     python common/python/export_playback_3d_assets.py \
@@ -22,7 +23,8 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SEMANTICS_DIR = REPO / "common" / "map-semantics"
 EXPORTER = REPO / "common" / "python" / "export_map_geometry_poc.py"
-OUTPUT_DIR = REPO / "frontend" / "public" / "map-3d-local"
+OUTPUT_DIR = REPO / "common" / "assets" / "map-3d-local"
+LEGACY_OUTPUT_DIR = REPO / "frontend" / "public" / "map-3d-local"
 
 
 class ExportPlayback3dError(RuntimeError):
@@ -104,8 +106,13 @@ def main() -> int:
         )
         return 2
 
-    if args.clean and OUTPUT_DIR.exists():
-        shutil.rmtree(OUTPUT_DIR)
+    if args.clean:
+        if OUTPUT_DIR.exists():
+            shutil.rmtree(OUTPUT_DIR)
+        # PR #249 originally wrote here, but Vite never served it because
+        # publicDir is ../common/assets. Remove stale files during migration.
+        if LEGACY_OUTPUT_DIR.exists():
+            shutil.rmtree(LEGACY_OUTPUT_DIR)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     index = {
