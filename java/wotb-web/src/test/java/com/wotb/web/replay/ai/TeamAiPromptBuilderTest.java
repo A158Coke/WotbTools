@@ -3,7 +3,6 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -379,8 +378,7 @@ class TeamAiPromptBuilderTest {
         battle.winnerTeam = 1;
         battle.players = players;
         battle.recorder = players.getFirst().nickname;
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         final var result = new ReplayProcessingResult(
                 "budget.wotbreplay",
                 ReplayProcessingStatus.PARTIAL_SUCCESS,
@@ -574,7 +572,7 @@ class TeamAiPromptBuilderTest {
         allyKnown.survived = false;
         allyKnown.deathTimeMillis = 62_000L;
         allyKnown.survivalTimeSec = 62.0;
-        allyKnown.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+        allyKnown.settlementLifeTimeSec = 62;
         final PlayerResult allyUnknown = new PlayerResult();
         allyUnknown.accountId = 10_002L;
         allyUnknown.nickname = "AllyUnknown";
@@ -612,8 +610,7 @@ class TeamAiPromptBuilderTest {
                 null, List.of(), null);
         final String content = TeamAiPromptBuilder.single(context).content();
 
-        assertTrue(content.contains("DEATH_SOURCE=未知"),
-                "any unknown death time must mark source as 未知: " + content);
+        assertFalse(content.contains("SOURCE="), "death precision provenance is not a business model");
         assertTrue(content.contains("1分02秒 本队 \"AllyKnown\""),
                 "known death time must keep X分XX秒: " + content);
         assertTrue(content.contains("未知 本队 \"AllyUnknown\""),
@@ -834,7 +831,7 @@ class TeamAiPromptBuilderTest {
             player.team = 1;
             player.survived = false;
             player.deathTimeMillis = 40_000L + index * 5_000L;
-        player.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+        player.settlementLifeTimeSec = 40 + index * 5;
             players.add(player);
         }
         for (int index = 0; index < 7; index++) {

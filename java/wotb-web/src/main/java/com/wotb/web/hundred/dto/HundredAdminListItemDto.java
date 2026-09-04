@@ -10,8 +10,8 @@ public record HundredAdminListItemDto(
     String vehicleName,
     long gameAccountIdSnapshot,
     String nicknameSnapshot,
-    Integer certifiedAverageDamage,
-    Long certifiedBattleCount,
+    Integer approvedAverageDamage,
+    Long approvedBattleCount,
     boolean replayParseOk,
     boolean replayGameIdMatch,
     boolean replayVehicleMatch,
@@ -19,7 +19,6 @@ public record HundredAdminListItemDto(
     OffsetDateTime submittedAt,
     OffsetDateTime approvedAt,
     String rejectReason,
-    String deleteReason,
-    String verificationSource
+    String deleteReason
 ) {
 }

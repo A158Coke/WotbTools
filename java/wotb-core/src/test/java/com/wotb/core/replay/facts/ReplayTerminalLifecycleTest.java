@@ -39,7 +39,7 @@ class ReplayTerminalLifecycleTest {
         return new ReplayTimestamp(raw, null);
     }
 
-    /** HealthChangedEvent carrying an explicit version-scoped rawState (canonical terminal surface). */
+    /** HealthChangedEvent carrying an explicit rawState (canonical terminal surface). */
     private static HealthChangedEvent hpTerminal(final int seq, final float raw, final HpRawState rawState) {
         return new HealthChangedEvent(seq, ts(raw), 7, DecodeConfidence.EXACT, EID,
                 null, null, null, null, rawState);
@@ -51,8 +51,11 @@ class ReplayTerminalLifecycleTest {
     }
 
     private static VehicleHealthStateEvent drowning(final int seq, final float raw, final int hpRaw) {
+        // decoder-like production shape: raw causeFlag preserved, semantic cause=null; self-source is
+        // the PR147 packet-local drowning relation. The validated cause comes from the field-specific
+        // validator (production path), not from a hardcoded semantic Cause on the raw event.
         return new VehicleHealthStateEvent(seq, ts(raw), 8, DecodeConfidence.EXACT, EID,
-                hpRaw, 0, 5, VehicleHealthStateEvent.Cause.DROWNING, HpRawState.CURRENT_HP);
+                hpRaw, EID, 5, null, HpRawState.CURRENT_HP);
     }
 
     private static double deathSec(final List<ReplayEvent> events) {

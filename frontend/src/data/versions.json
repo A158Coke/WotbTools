@@ -1,11 +1,99 @@
 [
   {
-    "v": "2.12.59",
-    "date": "2026-09-01",
+    "v": "2.12.70",
+    "date": "2026-09-04",
     "tag": "fix",
     "zh": "修复三环成绩只上传一张截图时被误判为无效的问题：从 0 场开始打三环的新车现在可以按页面说明提交单张截图，两张截图的正常流程不受影响。",
     "en": "Fixed Mark 3 submissions with a single screenshot being incorrectly rejected: vehicles whose Mark 3 run started at zero battles can now submit one screenshot as described, while the normal two-screenshot flow is unchanged.",
     "ru": "Исправлен ошибочный отказ при отправке результата трёх отметок с одним снимком: для техники, путь к трём отметкам на которой начат с нуля боёв, теперь можно отправить один снимок, как указано на странице; обычная отправка двух снимков не изменилась."
+  },
+  {
+    "v": "2.12.69",
+    "date": "2026-09-03",
+    "tag": "chg",
+    "zh": "扩展战局回放：接入权威 A/B/C/D 基地状态，新增默认开启且可记忆的最近 2 秒车辆轨迹；全屏地图使用剩余空间，坦克标记按车型真实大小关系显示并在小范围内稳定避让；无真实点数或目标事实时不再显示占位符。",
+    "en": "Enhanced Battle Playback with authoritative A/B/C/D base status, a default-on persisted recent 2-second vehicle trail, remaining-space fullscreen maps, vehicle-aware marker sizing, and small bounded dense-marker avoidance; unsupported points and objective facts no longer render placeholders.",
+    "ru": "Улучшено воспроизведение боя: добавлены достоверные состояния баз A/B/C/D, сохраняемый включённый по умолчанию след техники за последние 2 секунды, карта на оставшемся месте в полноэкранном режиме, размеры маркеров с учётом техники и небольшое ограниченное разведение плотных маркеров; неподтверждённые очки и цели больше не показываются заглушками."
+  },
+  {
+    "v": "2.12.68",
+    "date": "2026-09-03",
+    "tag": "chg",
+    "zh": "战局回放改为响应式地图优先界面：桌面、平板和手机共用统一战况 HUD，播放控制、车辆详情、显示选项、事件和标注工具按需展开；手机默认只显示地图与战况，轻触地图显示控制条，全屏时尽力切换横屏且保留播放状态。",
+    "en": "Battle Playback now has a responsive map-first interface: desktop, tablet, and mobile share one universal battle HUD, while playback controls, vehicle details, display options, events, and annotations open on demand; mobile keeps the map and battle status visible by default, reveals controls on map activity, and preserves playback state in fullscreen.",
+    "ru": "Воспроизведение боя получило адаптивный интерфейс с приоритетом карты: на компьютере, планшете и телефоне используется единый боевой HUD, а управление, детали техники, параметры вида, события и пометки открываются по запросу; на телефоне карта и состояние боя видны по умолчанию, управление появляется при касании карты, а полноэкранный режим сохраняет состояние воспроизведения."
+  },
+  {
+    "v": "2.12.67",
+    "date": "2026-09-03",
+    "tag": "chg",
+    "zh": "战局回放界面层级收敛：地图鸟瞰移除用户可见路线视图，时间轴去掉事件标记装饰，事件改为默认折叠且可点击跳转的面板（仅展示伤害、击杀和击毁），控制栏收敛为播放、步进、四档倍速、重置视图和全屏；真实回放状态、血量、选中状态及后端 route aggregate 合同保持不变。",
+    "en": "Streamlined battle playback hierarchy: removed the user-facing route view from Map Overview, removed decorative timeline event markers, moved user-facing damage, kill and destruction events into a collapsed panel with click-to-seek rows, and reduced controls to playback, stepping, four explicit speeds, reset view and fullscreen; replay state, HP, selection state and the backend route aggregate contract remain intact.",
+    "ru": "Упрощена иерархия повтора боя: из обзора карты убран пользовательский вид маршрутов, с таймлайна удалены декоративные метки событий, пользовательские события урона, уничтожения и фраги перенесены в свёрнутую панель с переходом по клику, а панель управления сокращена до воспроизведения, шагов, четырёх скоростей, сброса вида и полноэкранного режима; состояние повтора, HP, выбранное состояние и backend-контракт route aggregate сохранены."
+  },
+  {
+    "v": "2.12.66",
+    "date": "2026-09-03",
+    "tag": "fix",
+    "zh": "修复主页功能卡片背景重复：Replay 解析、AI 复盘、战局重建、Boost 和 Sponsor 卡片现在使用各自的视觉素材。",
+    "en": "Fixed repeated homepage card backgrounds: Replay Parser, AI Review, Battle Playback, Boost and Sponsor cards now use dedicated artwork.",
+    "ru": "Исправлены повторяющиеся фоны карточек на главной: для карточек Replay Parser, AI Review, Battle Playback, Boost и Sponsor теперь используются отдельные изображения."
+  },
+  {
+    "v": "2.12.65",
+    "date": "2026-09-03",
+    "tag": "chg",
+    "zh": "更新主页、各功能页和赞助页背景素材：改用用户提供的原创 WTC 视觉图片，页面布局和功能不变。",
+    "en": "Updated home, feature-page, and sponsor backgrounds with the user's original WTC artwork; page layout and functionality are unchanged.",
+    "ru": "Обновлены фоны главной, функциональных страниц и страницы поддержки с использованием оригинальных визуальных материалов WTC пользователя; структура и функции страниц не изменились."
+  },
+  {
+    "v": "2.12.64",
+    "date": "2026-09-02",
+    "tag": "fix",
+    "zh": "手机端界面全面优化：浅色主题下多页文字对比度修复；名人堂工具条、AI 分析表格、弹窗遮罩等手机显示问题修复；导出列支持按钮排序；输入框聚焦不再自动放大；播放控制与导航按钮触控尺寸加大。",
+    "en": "Mobile UI overhaul: fixed low-contrast text on the light theme across several pages; fixed mobile display of the HoF toolbar, AI analysis tables and modal overlays; export columns can now be reordered with buttons; inputs no longer trigger iOS auto-zoom; larger touch targets for playback controls and navigation.",
+    "ru": "Улучшен мобильный интерфейс: исправлена читаемость текста на светлой теме; исправлены отображение панели HoF, таблиц AI-анализа и затемнения модальных окон на телефоне; столбцы экспорта теперь можно переставлять кнопками; поля ввода больше не вызывают автомасштабирование iOS; увеличены сенсорные цели кнопок воспроизведения и навигации."
+  },
+  {
+    "v": "2.12.63",
+    "date": "2026-09-02",
+    "tag": "fix",
+    "zh": "更新 Showcase 背景素材：主页及各功能页改用无品牌标识的战术场景图片，移除原背景中的 WG / World of Tanks 图形与文字。",
+    "en": "Updated Showcase backgrounds: the home page and feature pages now use tactical scenes without brand marks, removing WG / World of Tanks graphics and text from the previous backgrounds.",
+    "ru": "Обновлены фоны Showcase: на главной и функциональных страницах используются тактические сцены без фирменных знаков, а графика и текст WG / World of Tanks удалены из прежних фонов."
+  },
+  {
+    "v": "2.12.62",
+    "date": "2026-09-02",
+    "tag": "fix",
+    "zh": "修复 Android QQ / Keycloak 登录：认证过程保持在同一个 WebView 中，并显式启用登录所需 Cookie，避免中途打开系统浏览器导致会话丢失。",
+    "en": "Fixed Android QQ / Keycloak sign-in: the authentication flow now stays in one WebView with the required cookies enabled, avoiding session loss caused by opening the system browser mid-flow.",
+    "ru": "Исправлен вход Android через QQ / Keycloak: процесс аутентификации теперь остаётся в одном WebView с включёнными необходимыми cookie, поэтому открытие системного браузера посреди входа больше не приводит к потере сеанса."
+  },
+  {
+    "v": "2.12.61",
+    "date": "2026-09-02",
+    "tag": "chg",
+    "zh": "百场统一为截图 + 5 个回放人工审核；保留 Wargaming 三服登录与 Profile 同步",
+    "en": "Hundred Battles now uses screenshot + five replay manual review for everyone; Wargaming login and Profile sync remain supported",
+    "ru": "Для всех в Hundred Battles используется ручная проверка по скриншоту и пяти реплеям; вход Wargaming и синхронизация Profile сохранены"
+  },
+  {
+    "v": "2.12.60",
+    "date": "2026-09-01",
+    "tag": "chg",
+    "zh": "战局回放 V2 完成事实源收敛：地图、阵营和战斗模式元数据只来自回放数据，未知视角保持中立；伤害记录、统计与飘字统一使用可证明的掉血窗口，车辆位置/朝向/血量的未知间隔不再被前端补猜；车辆详情补齐等级、消耗品槽位和多个模块/乘员状态。",
+    "en": "Battle Playback V2 now uses one canonical fact source: map, team and battle-mode metadata come from the playback dataset, and an unknown perspective stays neutral; damage logs, statistics and floating numbers share the same proven damage-loss windows, while unknown gaps in position, orientation and HP are no longer guessed by the frontend. Vehicle details now include tier, consumable slots, and multiple module/crew states.",
+    "ru": "Воспроизведение боя V2 теперь использует один канонический источник фактов: карта, команда и режим берутся из набора данных воспроизведения, а неизвестная перспектива остаётся нейтральной; журнал урона, статистика и всплывающие числа используют одни и те же подтверждённые интервалы потери HP, а неизвестные промежутки позиции, направления и HP больше не заполняются догадками frontend. В деталях техники добавлены уровень, слоты расходников и несколько состояний модулей/экипажа."
+  },
+  {
+    "v": "2.12.59",
+    "date": "2026-09-01",
+    "tag": "fix",
+    "zh": "修复战局回放 V2 在部分生产响应下显示“响应无效”的问题：内部置信度值现在转换为稳定协议值，旧缓存仍可兼容读取。",
+    "en": "Fixed Battle Playback V2 showing an invalid response for some production payloads: internal confidence values are now mapped to stable wire values, while old cached artifacts remain readable.",
+    "ru": "Исправлено отображение недействительного ответа в Battle Playback V2 для некоторых производственных данных: внутренние значения уверенности теперь преобразуются в стабильные значения протокола, а старые кэшированные артефакты остаются читаемыми."
   },
   {
     "v": "2.12.58",

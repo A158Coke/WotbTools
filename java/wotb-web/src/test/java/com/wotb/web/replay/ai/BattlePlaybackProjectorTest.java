@@ -27,10 +27,19 @@ import com.wotb.core.replay.timeline.PositionKnowledge;
 import com.wotb.core.replay.timeline.PositionSource;
 import com.wotb.core.replay.timeline.VehicleKnowledgeState;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.SupremacyBaseId;
+import com.wotb.core.replay.event.SupremacyBaseStateTransition;
+import com.wotb.core.replay.event.VehicleBattleLoadout;
+import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.facts.AoiObservationSegment;
 import com.wotb.core.replay.timeline.TimelineError;
 import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.web.replay.dto.BattlePlaybackDataset;
+import com.wotb.web.replay.dto.BattlePlaybackDataset.ConfidenceDto;
+import com.wotb.web.replay.dto.BattlePlaybackDataset.VehicleBattleLoadoutDto;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -43,6 +52,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -50,6 +60,106 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@link BattlePlaybackDataset}。真实夹具验证 —— timeline 可用时必须产出可用 dataset。
  */
 class BattlePlaybackProjectorTest {
+
+    @Test
+    void loadoutConfidenceMapsDomainEnumToPlaybackWireEnum() {
+        final Map<DecodeConfidence, ConfidenceDto> expected = Map.of(
+                DecodeConfidence.EXACT, ConfidenceDto.HIGH,
+                DecodeConfidence.INFERRED, ConfidenceDto.MEDIUM,
+                DecodeConfidence.PARTIAL, ConfidenceDto.LOW,
+                DecodeConfidence.UNKNOWN, ConfidenceDto.UNKNOWN);
+        for (final Map.Entry<DecodeConfidence, ConfidenceDto> entry : expected.entrySet()) {
+            final VehicleBattleLoadout loadout = new VehicleBattleLoadout(
+                    7, "11.19", List.of(item(0, 13, "REPAIR_KIT"), item(1, 0, null), item(2, 0, null)),
+                    List.of(item(3, 0, null), item(4, 0, null), item(5, 0, null)),
+                    List.of(equipment(0), equipment(1), equipment(2), equipment(3), equipment(4),
+                            equipment(5), equipment(6), equipment(7), equipment(8)), entry.getKey());
+            assertEquals(entry.getValue(), BattlePlaybackProjector.toLoadoutDto(loadout).confidence(),
+                    entry.getKey().name());
+        }
+    }
+
+    @Test
+    void projectsCanonicalBaseTransitionWithoutProtocolOrRawFields() throws Exception {
+        final long account = 2001L;
+        final Battle battle = syntheticBattle(account, 1);
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(7, new TeamEntityIdentity(7, account, "Recorder", 456L, "Recorder", 1,
+                        DecodeConfidence.EXACT)),
+                Map.of(account, List.of(7)), Map.of(), 0, List.of());
+        final FrameHealth health = new FrameHealth(1000, 0.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH);
+        final ReplayEvent base = new SupremacyBaseStateTransition(
+                11, new ReplayTimestamp(10f, 10f), 12, DecodeConfidence.EXACT,
+                SupremacyBaseId.B, 2, 1, 25);
+        final BattleTimeline timeline = syntheticTimeline(40,
+                List.of(new BattleFrame(0, 0, null,
+                        List.of(frameVehicleWithHealth(7, account, 1, true, health, 0)),
+                        List.of(), List.of(), Map.of(), List.of())),
+                List.of(base));
+
+        final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(
+                battle, timeline, mapping, account);
+
+        assertNotNull(dataset);
+        assertEquals(1, dataset.baseStates().size());
+        final BattlePlaybackDataset.BaseStateTransition projected = dataset.baseStates().getFirst();
+        assertEquals(10.0, projected.timeSec(), 1e-9);
+        assertEquals("B", projected.baseId());
+        assertEquals(2, projected.ownerTeam());
+        assertEquals(1, projected.capturingTeam());
+        assertEquals(25, projected.captureProgress());
+        final String json = tools.jackson.databind.json.JsonMapper.builder().build()
+                .writeValueAsString(dataset);
+        assertFalse(json.contains("baseIndex"));
+        assertFalse(json.contains("field5"));
+        assertFalse(json.contains("field6"));
+    }
+
+    @Test
+    void seedsLatestPreBattleBaseStateAtPlaybackZeroForThreeAndFourBaseBattles() {
+        final long account = 2001L;
+        final Battle battle = syntheticBattle(account, 1);
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(7, new TeamEntityIdentity(7, account, "Recorder", 456L, "Recorder", 1,
+                        DecodeConfidence.EXACT)),
+                Map.of(account, List.of(7)), Map.of(), 0, List.of());
+        final FrameHealth health = new FrameHealth(1000, 0.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH);
+
+        for (final List<SupremacyBaseId> baseIds : List.of(
+                List.of(SupremacyBaseId.A, SupremacyBaseId.B, SupremacyBaseId.C),
+                List.of(SupremacyBaseId.A, SupremacyBaseId.B, SupremacyBaseId.C, SupremacyBaseId.D))) {
+            final List<ReplayEvent> events = new ArrayList<>();
+            for (final SupremacyBaseId baseId : baseIds) {
+                events.add(new SupremacyBaseStateTransition(
+                        10, new ReplayTimestamp(-5f, -5f), 12, DecodeConfidence.EXACT,
+                        baseId, 2, null, 0));
+                events.add(new SupremacyBaseStateTransition(
+                        11, new ReplayTimestamp(-1f, -1f), 12, DecodeConfidence.EXACT,
+                        baseId, 2, 1, 25));
+            }
+            final BattleTimeline timeline = syntheticTimeline(40,
+                    List.of(new BattleFrame(0, 0, null,
+                            List.of(frameVehicleWithHealth(7, account, 1, true, health, 0)),
+                            List.of(), List.of(), Map.of(), List.of())),
+                    events);
+
+            final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(
+                    battle, timeline, mapping, account);
+
+            assertEquals(baseIds.size(), dataset.baseStates().size());
+            assertEquals(baseIds.stream().map(Enum::name).sorted().toList(),
+                    dataset.baseStates().stream().map(BattlePlaybackDataset.BaseStateTransition::baseId)
+                            .sorted().toList());
+            for (final BattlePlaybackDataset.BaseStateTransition state : dataset.baseStates()) {
+                assertEquals(0d, state.timeSec(), 1e-9);
+                assertEquals(2, state.ownerTeam());
+                assertEquals(1, state.capturingTeam());
+                assertEquals(25, state.captureProgress());
+            }
+        }
+    }
 
     private static Path fixture() throws Exception {
         final Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "common", "fixtures", "replays")
@@ -98,6 +208,12 @@ class BattlePlaybackProjectorTest {
                 "V2 dataset must carry canonical battle-level events (damage/destroyed/position)");
         assertTrue(ds.events().stream().anyMatch(e -> "DAMAGE".equals(e.type())),
                 "real fixture must yield at least one DAMAGE event");
+        ds.vehicles().stream().flatMap(v -> v.damageLosses().stream()).forEach(loss -> {
+            assertTrue(loss.fromSec() >= 0, "loss fromSec=" + loss.fromSec());
+            assertTrue(loss.toSec() >= loss.fromSec(), "loss boundary=" + loss.fromSec() + ".." + loss.toSec());
+            assertTrue(loss.hpLoss() > 0, "loss hpLoss=" + loss.hpLoss());
+            assertTrue(loss.damageEventCount() >= 0, "loss eventCount=" + loss.damageEventCount());
+        });
     }
 
     @Test
@@ -123,6 +239,210 @@ class BattlePlaybackProjectorTest {
         assertTrue(ds.vehicles().stream()
                 .filter(v -> v.accountId() == recorder.accountId)
                 .findFirst().orElseThrow().friendly());
+    }
+
+    @Test
+    void canonicalOpeningHealthIsProjectedWithItsDisplayCapacity() {
+        final long account = 2001L;
+        final int entityId = 7;
+        final Battle battle = new Battle();
+        battle.mapName = "middleburg";
+        battle.durationS = 30.0;
+        final PlayerResult friendly = new PlayerResult();
+        friendly.accountId = account;
+        friendly.team = 1;
+        friendly.tankId = 456L;
+        friendly.nickname = "Recorder";
+        friendly.raw = Map.of(1, List.of(2400));
+        battle.players = new ArrayList<>(List.of(friendly));
+
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(entityId, new TeamEntityIdentity(entityId, account, "Recorder", 456L, "Recorder", 1,
+                        DecodeConfidence.EXACT)),
+                Map.of(account, List.of(entityId)), Map.of(), 0, List.of());
+        final FrameVehicle vehicle = new FrameVehicle(
+                entityId, account, "Recorder", 456, "Recorder", "Medium tank", 10, 1, true,
+                LifeState.ALIVE,
+                new FrameHealth(2400, 0.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                        FrameHealth.HealthKnowledge.CURRENT, 2400, Confidence.HIGH),
+                new FramePosition(new Vector3(0, 0, 0), 0.0, 0.0,
+                        PositionKnowledge.CURRENT, PositionSource.OBSERVED_EVENT, Confidence.HIGH),
+                new FrameOrientation(0f, 0f, 0f, 0.0, 0.0,
+                        FrameOrientation.OrientationKnowledge.CURRENT, Confidence.HIGH),
+                FrameMapState.UNKNOWN, VehicleKnowledgeState.POSITION_STREAM_ACTIVE, null, List.of());
+        final BattleTimeline timeline = new BattleTimeline(
+                "middleburg", 30.0, 0.0, BattleTimelineClock.IDENTIFIED,
+                List.of(new BattleFrame(0, 0, null, List.of(vehicle), List.of(), List.of(),
+                        Map.of(), List.of())), List.of(), List.of(),
+                BattleTimelineValidationResult.ok(), List.of());
+
+        final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(battle, timeline, mapping, account);
+        final BattlePlaybackDataset.VehiclePlaybackTrack track = dataset.vehicles().getFirst();
+        final BattlePlaybackDataset.HealthTransition opening = track.healthTransitions().getFirst();
+        assertEquals(0d, opening.timeSec(), 1e-9);
+        assertEquals(2400, opening.currentHp());
+        assertEquals(2400, opening.displayCapacityHp());
+        assertFalse(opening.relativeFull());
+        assertEquals("CURRENT", opening.knowledge());
+        assertEquals("SETTLEMENT_OPENING_HP_EXACT", opening.source());
+    }
+
+    @Test
+    void healthUnknownGapKeepsLastKnownUntilHpIsReacquired() {
+        final long account = 2001L;
+        final int entityId = 7;
+        final Battle battle = syntheticBattle(account, 1);
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(entityId, new TeamEntityIdentity(entityId, account, "Recorder", 456L,
+                        "Recorder", 1, DecodeConfidence.EXACT)),
+                Map.of(account, List.of(entityId)), Map.of(), 0, List.of());
+        final List<BattleFrame> frames = List.of(
+                new BattleFrame(0, 0, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 1, true,
+                                new FrameHealth(2000, 0.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, 2000, Confidence.HIGH), 0)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(10, 10, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 1, true,
+                                new FrameHealth(1500, 10.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, 2000, Confidence.HIGH), 10)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(20, 20, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 1, true,
+                                FrameHealth.unknown(), 20)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(30, 30, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 1, true,
+                                new FrameHealth(1400, 30.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, 2000, Confidence.HIGH), 30)),
+                        List.of(), List.of(), Map.of(), List.of()));
+
+        final BattlePlaybackDataset.VehiclePlaybackTrack track = BattlePlaybackProjector.project(
+                battle, syntheticTimeline(40, frames, List.of()), mapping, account).vehicles().getFirst();
+        assertEquals(List.of(2000, 1500, 1400), track.healthTransitions().stream()
+                .map(BattlePlaybackDataset.HealthTransition::currentHp).toList());
+        assertTrue(track.healthTransitions().stream().allMatch(t -> !t.relativeFull()));
+        assertTrue(track.healthTransitions().stream().noneMatch(t -> t.currentHp() == null),
+                "hidden/UNKNOWN gap must preserve the previous canonical HP instead of clearing it");
+    }
+
+    @Test
+    void enemyHpAuthoritySwitchesPermanentlyWithoutFabricatingCapacity() {
+        final long account = 2001L;
+        final int entityId = 7;
+        final Battle battle = new Battle();
+        battle.mapName = "middleburg";
+        battle.durationS = 40.0;
+        final PlayerResult enemy = new PlayerResult();
+        enemy.accountId = account;
+        enemy.team = 2;
+        enemy.tankId = 29985L; // SPHT: tankopedia base HP 3400
+        enemy.nickname = "Enemy";
+        battle.players = new ArrayList<>(List.of(enemy));
+
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(entityId, new TeamEntityIdentity(entityId, account, "Enemy", 29985L,
+                        "Enemy", 2, DecodeConfidence.EXACT)),
+                Map.of(account, List.of(entityId)), Map.of(), 0, List.of());
+        final List<BattleFrame> frames = List.of(
+                new BattleFrame(0, 0, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 2, false, FrameHealth.unknown(), 0)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(5, 5, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 2, false,
+                                new FrameHealth(3200, 5.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, null, Confidence.HIGH), 5)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(10, 10, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 2, false, FrameHealth.unknown(), 10)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(15, 15, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 2, false,
+                                new FrameHealth(2800, 15.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, null, Confidence.HIGH), 15)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(20, 20, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 2, false,
+                                new FrameHealth(2700, 20.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, 3570, Confidence.HIGH), 20)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(25, 25, null,
+                        List.of(frameVehicleWithHealth(entityId, account, 2, false,
+                                new FrameHealth(0, 25.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                                        FrameHealth.HealthKnowledge.CURRENT, 3570, Confidence.HIGH), 25)),
+                        List.of(), List.of(), Map.of(), List.of()));
+
+        final BattlePlaybackDataset.VehiclePlaybackTrack track = BattlePlaybackProjector.project(
+                battle, syntheticTimeline(40, frames, List.of()), mapping, null).vehicles().getFirst();
+        final List<BattlePlaybackDataset.HealthTransition> hp = track.healthTransitions();
+        assertEquals(List.of(3400, 3200, 2800, 2700, 0), hp.stream()
+                .map(BattlePlaybackDataset.HealthTransition::currentHp).toList());
+        assertEquals("TANKOPEDIA_BASE_PROVISIONAL", hp.get(0).source());
+        assertEquals(3400, hp.get(0).displayCapacityHp());
+        assertNull(hp.get(1).displayCapacityHp(),
+                "first trusted replay HP without capacity must not fabricate currentHp/currentHp full health");
+        assertNull(hp.get(2).displayCapacityHp(),
+                "reacquired replay HP must stay replay-authoritative and must not fall back to tankopedia");
+        assertEquals(3570, hp.get(3).displayCapacityHp(),
+                "a later replay-provided capacity becomes authoritative when it actually exists");
+        assertEquals(3570, hp.get(4).displayCapacityHp());
+        assertTrue(hp.subList(1, hp.size()).stream()
+                .noneMatch(t -> "TANKOPEDIA_BASE_PROVISIONAL".equals(t.source())),
+                "after first trusted replay HP the authority switch is permanent");
+        assertTrue(hp.stream().noneMatch(t -> t.timeSec() == 10d),
+                "hidden/UNKNOWN gap must not emit an HP-clearing transition");
+        assertEquals(0, hp.getLast().currentHp(), "destroyed/terminal zero HP must converge to 0");
+    }
+
+    @Test
+    void unavailableCanonicalFactsAreOmittedFromCurrentWireTracks() {
+        final long account = 2001L;
+        final int entityId = 7;
+        final Battle battle = new Battle();
+        battle.mapName = "middleburg";
+        battle.durationS = 30.0;
+        final PlayerResult player = new PlayerResult();
+        player.accountId = account;
+        player.team = 2;
+        player.tankId = 456L;
+        player.nickname = "Enemy";
+        battle.players = new ArrayList<>(List.of(player));
+
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(entityId, new TeamEntityIdentity(entityId, account, "Enemy", 456L, "Enemy", 2,
+                        DecodeConfidence.EXACT)),
+                Map.of(account, List.of(entityId)), Map.of(), 0, List.of());
+        final FrameVehicle unavailable = new FrameVehicle(
+                entityId, account, "Enemy", 456, "Enemy", "Medium tank", 10, 2, false,
+                LifeState.UNKNOWN, FrameHealth.unknown(), FramePosition.UNKNOWN, FrameOrientation.UNKNOWN,
+                FrameMapState.UNKNOWN, VehicleKnowledgeState.UNKNOWN, null, List.of());
+        final FrameVehicle available = new FrameVehicle(
+                entityId, account, "Enemy", 456, "Enemy", "Medium tank", 10, 2, false,
+                LifeState.ALIVE,
+                new FrameHealth(1000, 1.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                        FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH),
+                new FramePosition(new Vector3(1, 0, 1), 1.0, 0.0,
+                        PositionKnowledge.CURRENT, PositionSource.OBSERVED_EVENT, Confidence.HIGH),
+                new FrameOrientation(0f, 0f, 0f, 1.0, 0.0,
+                        FrameOrientation.OrientationKnowledge.CURRENT, Confidence.HIGH),
+                FrameMapState.UNKNOWN, VehicleKnowledgeState.POSITION_STREAM_ACTIVE, null, List.of());
+        final BattleTimeline timeline = new BattleTimeline(
+                "middleburg", 30.0, 0.0, BattleTimelineClock.IDENTIFIED,
+                List.of(
+                        new BattleFrame(0, 0, null, List.of(unavailable), List.of(), List.of(), Map.of(), List.of()),
+                        new BattleFrame(1, 1, null, List.of(available), List.of(), List.of(), Map.of(), List.of())),
+                List.of(), List.of(), BattleTimelineValidationResult.ok(), List.of());
+
+        final BattlePlaybackDataset.VehiclePlaybackTrack track =
+                BattlePlaybackProjector.project(battle, timeline, mapping, null).vehicles().getFirst();
+        assertEquals(1, track.healthTransitions().size());
+        assertEquals(1000, track.healthTransitions().getFirst().currentHp());
+        assertEquals("CURRENT", track.healthTransitions().getFirst().knowledge());
+        assertFalse(track.healthTransitions().getFirst().relativeFull());
+        assertEquals(List.of("ALIVE"), track.lifeTransitions().stream()
+                .map(BattlePlaybackDataset.LifeTransition::lifeState).toList());
+        assertEquals(List.of("CURRENT"), track.orientationSegments().stream()
+                .map(BattlePlaybackDataset.OrientationSegment::knowledge).toList());
     }
 
     /**
@@ -181,9 +501,6 @@ class BattlePlaybackProjectorTest {
                 "CURRENT→LAST_KNOWN 应拆成 2 个段，而非 1 个硬编码 CURRENT");
         assertEquals("CURRENT", track.orientationSegments().get(0).knowledge());
         assertEquals("LAST_KNOWN", track.orientationSegments().get(1).knowledge());
-        // 每个 sample 也带 behind knowledge（防 cast 数据丢失）
-        assertEquals("CURRENT", track.orientationSegments().get(0).samples().get(0).knowledge());
-        assertEquals("LAST_KNOWN", track.orientationSegments().get(1).samples().get(0).knowledge());
     }
 
     /**
@@ -260,8 +577,201 @@ class BattlePlaybackProjectorTest {
                 "close 前（<=20 事实）必须仍是 ACTIVATED");
         assertEquals("UNKNOWN", stateAt(track.consumableTransitions(), 22.0),
                 "AoI close @20 必须插入 explicit UNKNOWN，隐区间查询为 UNKNOWN，不得残留 ACTIVATED");
+        assertTrue(track.consumableTransitions().stream()
+                .filter(t -> t.timeSec() == 20d)
+                .findFirst().orElseThrow().invalidation());
         assertEquals("TEARDOWN", stateAt(track.consumableTransitions(), 26.0),
                 "后续 TEARDOWN @25 必须覆盖 UNKNOWN（25+ = TEARDOWN）");
+    }
+
+    @Test
+    void preBattleConsumableIsSeededAtZeroAndSupremacyPointsDropNegativeSamples() {
+        final long account = 2001L;
+        final int entityId = 7;
+        final Battle battle = new Battle();
+        battle.mapName = "middleburg";
+        battle.durationS = 30.0;
+        final PlayerResult enemy = new PlayerResult();
+        enemy.accountId = account;
+        enemy.team = 2;
+        enemy.tankId = 456L;
+        enemy.nickname = "Enemy";
+        battle.players = new ArrayList<>(List.of(enemy));
+
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(entityId, new TeamEntityIdentity(entityId, account, "Enemy", 456L, "Enemy", 2,
+                        DecodeConfidence.EXACT)),
+                Map.of(account, List.of(entityId)), Map.of(), 0, List.of());
+        final List<com.wotb.core.replay.event.ReplayEvent> events = new ArrayList<>();
+        events.add(new com.wotb.core.replay.event.ConsumableLifecycleEvent(
+                1, new com.wotb.core.replay.event.ReplayTimestamp(-5f, -5f), 32,
+                DecodeConfidence.EXACT, entityId, -5f, 0x0D, "REPAIR_KIT",
+                com.wotb.core.replay.event.ConsumableLifecycleEvent.ConsumableLifecycleState.INITIALIZED,
+                0, 0f));
+        events.add(new com.wotb.core.replay.event.ConsumableLifecycleEvent(
+                5, new com.wotb.core.replay.event.ReplayTimestamp(-9f, -9f), 32,
+                DecodeConfidence.EXACT, entityId, -9f, 0x0D, null,
+                com.wotb.core.replay.event.ConsumableLifecycleEvent.ConsumableLifecycleState.INITIALIZED,
+                0, 0f));
+        events.add(new com.wotb.core.replay.event.ConsumableLifecycleEvent(
+                6, new com.wotb.core.replay.event.ReplayTimestamp(-4f, -4f), 32,
+                DecodeConfidence.EXACT, entityId, -4f, 0x09, "ADRENALINE",
+                com.wotb.core.replay.event.ConsumableLifecycleEvent.ConsumableLifecycleState.INITIALIZED,
+                0, 0f));
+        events.add(new com.wotb.core.replay.event.ConsumableLifecycleEvent(
+                7, new com.wotb.core.replay.event.ReplayTimestamp(8f, 8f), 32,
+                DecodeConfidence.EXACT, entityId, 8f, 0x0D, "REPAIR_KIT",
+                com.wotb.core.replay.event.ConsumableLifecycleEvent.ConsumableLifecycleState.INITIALIZED,
+                0, 0f));
+        events.add(new com.wotb.core.replay.event.SupremacyPointsChangedEvent(
+                2, new com.wotb.core.replay.event.ReplayTimestamp(-4f, -4f), 8,
+                DecodeConfidence.EXACT, 1, 120));
+        events.add(new com.wotb.core.replay.event.SupremacyPointsChangedEvent(
+                3, new com.wotb.core.replay.event.ReplayTimestamp(-3f, -3f), 8,
+                DecodeConfidence.EXACT, 2, 80));
+        events.add(new com.wotb.core.replay.event.SupremacyPointsChangedEvent(
+                4, new com.wotb.core.replay.event.ReplayTimestamp(10f, 10f), 8,
+                DecodeConfidence.EXACT, 1, 140));
+
+        final BattleTimeline timeline = new BattleTimeline(
+                "middleburg", 30.0, 0.0, BattleTimelineClock.IDENTIFIED,
+                List.of(), events, List.of(), BattleTimelineValidationResult.ok(), List.of());
+        final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(battle, timeline, mapping, null);
+        assertNotNull(dataset);
+
+        final BattlePlaybackDataset.VehiclePlaybackTrack track = dataset.vehicles().getFirst();
+        assertEquals(0d, track.consumableTransitions().getFirst().timeSec(), 1e-9);
+        assertEquals("INITIALIZED", track.consumableTransitions().getFirst().state());
+        assertEquals(2, track.consumableTransitions().stream()
+                .filter(t -> t.timeSec() == 0d).count(),
+                "same entity+wireCode duplicate pre-battle INITIALIZED records must yield one seed");
+        assertEquals(1, track.consumableTransitions().stream()
+                .filter(t -> t.timeSec() == 0d && t.wireCode() == 0x0D).count());
+        assertEquals(1, track.consumableTransitions().stream()
+                .filter(t -> t.timeSec() == 0d && t.wireCode() == 0x09).count());
+        assertEquals(1, track.consumableTransitions().stream()
+                .filter(t -> t.timeSec() == 8d && t.wireCode() == 0x0D).count(),
+                "post-start rematerialization remains a distinct transition");
+        assertEquals(7, timeline.events().size(), "canonical raw evidence remains intact");
+        assertTrue(dataset.events().stream().allMatch(e -> e.timeSec() >= 0d));
+        assertTrue(dataset.pointsSamples().stream().allMatch(s -> s.timeSec() >= 0d));
+        assertEquals(120, dataset.pointsSamples().stream()
+                .filter(s -> s.team() == 1 && s.timeSec() == 0d)
+                .findFirst().orElseThrow().points());
+        assertEquals(80, dataset.pointsSamples().stream()
+                .filter(s -> s.team() == 2 && s.timeSec() == 0d)
+                .findFirst().orElseThrow().points());
+    }
+
+    @Test
+    void multiEntityReentryUsesActiveEntityTruthWithoutUnknownOverwrite() {
+        final long account = 2001L;
+        final Battle battle = syntheticBattle(account, 2);
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(
+                        7, new TeamEntityIdentity(7, account, "Enemy", 456L, "Enemy", 2, DecodeConfidence.EXACT),
+                        8, new TeamEntityIdentity(8, account, "Enemy", 456L, "Enemy", 2, DecodeConfidence.EXACT)),
+                Map.of(account, List.of(7, 8)), Map.of(), 0, List.of());
+        final List<BattleFrame> frames = List.of(
+                new BattleFrame(0, 0, null,
+                        List.of(frameVehicle(8, account, 1000, LifeState.ALIVE, 0, null)),
+                        List.of(), List.of(), Map.of(), List.of()),
+                new BattleFrame(1, 1, null,
+                        List.of(frameVehicle(7, account, 700, LifeState.DESTROYED, 1, 1.0)),
+                        List.of(), List.of(), Map.of(), List.of()));
+        final BattleTimeline timeline = syntheticTimeline(30, frames, List.of());
+
+        final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(battle, timeline, mapping, account);
+        final BattlePlaybackDataset.VehiclePlaybackTrack track = dataset.vehicles().getFirst();
+        assertEquals(List.of(1000, 700), track.healthTransitions().stream()
+                .map(BattlePlaybackDataset.HealthTransition::currentHp).toList());
+        assertEquals(List.of("ALIVE", "DESTROYED"), track.lifeTransitions().stream()
+                .map(BattlePlaybackDataset.LifeTransition::lifeState).toList());
+    }
+
+    @Test
+    void invalidTimeExplicitDestroyedDoesNotSuppressCanonicalDestroyed() {
+        final long account = 2001L;
+        final int entityId = 7;
+        final Battle battle = syntheticBattle(account, 1);
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(entityId, new TeamEntityIdentity(entityId, account, "Enemy", 456L, "Enemy", 1,
+                        DecodeConfidence.EXACT)),
+                Map.of(account, List.of(entityId)), Map.of(), 0, List.of());
+        final ReplayEvent invalidExplicit = new VehicleDestroyedEvent(
+                1, new ReplayTimestamp(-1f, -1f), 8, DecodeConfidence.EXACT, entityId, null, false);
+        final ReplayEvent canonicalHealth = new HealthChangedEvent(
+                2, new ReplayTimestamp(31f, 31f), 7, DecodeConfidence.EXACT, entityId, 0, null, false);
+        final BattleTimeline timeline = syntheticTimeline(40,
+                List.of(new BattleFrame(0, 0, null,
+                        List.of(frameVehicle(entityId, account, 1000, LifeState.ALIVE, 0, null)),
+                        List.of(), List.of(), Map.of(), List.of())),
+                List.of(invalidExplicit, canonicalHealth));
+
+        final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(battle, timeline, mapping, account);
+        final List<BattlePlaybackDataset.BattleEvent> destroyed = dataset.events().stream()
+                .filter(event -> "DESTROYED".equals(event.type())).toList();
+        assertEquals(1, destroyed.size());
+        assertEquals(31.0, destroyed.getFirst().timeSec(), 1e-9);
+    }
+
+    @Test
+    void duplicateConsumableWireCannotResolveToAPlaybackSlot() {
+        final VehicleBattleLoadoutDto loadout = new VehicleBattleLoadoutDto(
+                "11.19", List.of("REPAIR_KIT", "REPAIR_KIT", "ADRENALINE"), List.of(13, 13, 9),
+                List.of("FOOD", "FOOD", "FOOD"), List.of(20, 21, 22),
+                List.of(1, 2, 3, 4, 5, 6, 7, 8, 9), ConfidenceDto.HIGH);
+        assertNull(BattlePlaybackProjector.consumableSlot(loadout, 13));
+        assertEquals(2, BattlePlaybackProjector.consumableSlot(loadout, 9));
+    }
+
+    private static Battle syntheticBattle(final long account, final int team) {
+        final Battle battle = new Battle();
+        battle.mapName = "middleburg";
+        battle.durationS = 40.0;
+        final PlayerResult player = new PlayerResult();
+        player.accountId = account;
+        player.team = team;
+        player.tankId = 456L;
+        player.nickname = "Enemy";
+        battle.players = new ArrayList<>(List.of(player));
+        return battle;
+    }
+
+    private static BattleTimeline syntheticTimeline(final double duration,
+                                                    final List<BattleFrame> frames,
+                                                    final List<ReplayEvent> events) {
+        return new BattleTimeline("middleburg", duration, 0.0, BattleTimelineClock.IDENTIFIED,
+                frames, events, List.of(), BattleTimelineValidationResult.ok(), List.of());
+    }
+
+    private static FrameVehicle frameVehicle(final int entityId, final long account, final int hp,
+                                             final LifeState lifeState, final int second,
+                                             final Double destroyedKnownAtSec) {
+        return new FrameVehicle(entityId, account, "Enemy", 456, "Enemy", "Medium tank", 10, 2, false,
+                lifeState,
+                new FrameHealth(hp, (double) second, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                        FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH),
+                null, null, FrameMapState.UNKNOWN, VehicleKnowledgeState.POSITION_STREAM_ACTIVE,
+                destroyedKnownAtSec, List.of());
+    }
+
+    private static FrameVehicle frameVehicleWithHealth(final int entityId, final long account,
+                                                       final int team, final boolean friendly,
+                                                       final FrameHealth health, final int second) {
+        return new FrameVehicle(entityId, account, "Recorder", 456, "Recorder", "Medium tank", 10,
+                team, friendly, LifeState.ALIVE, health, null, null, FrameMapState.UNKNOWN,
+                VehicleKnowledgeState.POSITION_STREAM_ACTIVE, null, List.of());
+    }
+
+    private static VehicleBattleLoadout.LoadoutItemSlot item(final int slot, final int wireCode,
+                                                             final String logicalItemId) {
+        return new VehicleBattleLoadout.LoadoutItemSlot(slot, wireCode, 0, new byte[0], logicalItemId,
+                logicalItemId == null ? DecodeConfidence.PARTIAL : DecodeConfidence.EXACT);
+    }
+
+    private static VehicleBattleLoadout.EquipmentSelection equipment(final int slot) {
+        return new VehicleBattleLoadout.EquipmentSelection(slot, slot + 1, (byte) (slot + 1));
     }
 
     /** 与前端 lastAtOrBefore 同构：返回 timeSec <= t 的最近一个 transition 的 state。 */

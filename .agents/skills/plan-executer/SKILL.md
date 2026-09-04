@@ -37,6 +37,7 @@ description: >
    只执行当前计划内任务。
 5. **逐项执行（每步）**：
    - 读该步文件清单与影响面，定位相关代码（用 `rg` / `rg --files`）；
+   - **Reuse Audit（新增 production type/file 前）**：先 `rg` / repo-wide 搜索候选现有实现，优先 reuse / extend；如仍需新增，在实现 reasoning 中明确为什么现有 abstraction 无法合理承载（按 `.agents/AGENTS.md` 的 Reuse / Extend First contract，只引用不复制、无需长 ADR）；
    - 实现，遵循项目约定（`.agents/AGENTS.md`、`wotb-sync` 跨层检查单）；
    - 运行该步对应测试/构建验证；失败先修复再前进；
    - 更新计划状态表（进行中 → 完成），并在 commentary 简短汇报。
@@ -60,6 +61,10 @@ description: >
    决定清理回初始状态（默认保留完成记录，询问用户是否清理）。
    任务分支与提交保留；review-with-docs 零 blocker 时按步骤 7 直接开 PR。
    PR 合并后由 `finish-task` 清理分支与计划文件。
+
+## HTTP Contract Audit
+
+涉及 API/跨层 shape 时，核对 `contracts/http/openapi.yaml` 是否为唯一 wire authority；确认 generated FE artifacts 已重生成且无 drift、required/nullable/enum 与实际序列化一致、domain→transport mapping 显式、旧 artifact 兼容仅在读取边界、ApiError 与 204 语义未被混淆。
 
 ## 规则
 

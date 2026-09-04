@@ -80,28 +80,31 @@ class BattleTimelineStructuralEvalTest {
                         recorder.accountId > 0 ? recorder.accountId : null, recorder.team)).timeline();
         assertNotNull(timeline);
 
-        // 帧内事件分区必须互斥（无重复）；battle-relative 落在 [0, duration] 的事件必须恰好出现一次（无丢失）。
-        // 开战前（负时间）与战斗结束后的尾部事件不属于任何帧窗口，不计入 lossless。
-        final Set<Integer> seen = new HashSet<>();
+        // 帧内事件分区必须互斥（无重复）；active-battle 内落在 [0, duration] 的事件必须恰好出现一次（无丢失）。
+        // 开战前（负时间）与战斗结束后的尾部事件不属于任何帧窗口，不计入 lossless；
+        // canonical timeline 仍保留这些原始事件供 provenance 使用。
+        // One raw packet may intentionally produce a generic structural event plus one
+        // semantically routed event.  Identity is therefore (sequence, event class), not sequence alone.
+        final Set<String> seen = new HashSet<>();
         int total = 0;
         int inRange = 0;
         for (final BattleFrame frame : timeline.frames()) {
             for (final com.wotb.core.replay.event.ReplayEvent e : frame.events()) {
-                assertTrue(seen.add(e.sequence()),
+                assertTrue(seen.add(e.sequence() + ":" + e.getClass().getName()),
                         "事件重复: seq=" + e.sequence() + " frame=" + frame.second());
                 total++;
             }
         }
-        // 帧窗口实际覆盖 (-1, maxSecond]（frame 0 含开战前 1s 内的负时间事件；末帧含尾事件）
+        // 帧窗口实际覆盖 [0, maxSecond]；canonical raw timeline 中的负时间事件不属于 active frame。
         final double lastFrameSec = timeline.frames().getLast().stateAtSec();
         for (final com.wotb.core.replay.event.ReplayEvent e : timeline.events()) {
             final double t = TimelineClock.battleClockOf(e, timeline.battleStartRawClockSec());
-            if (t > -1 && t <= lastFrameSec) {
+            if (t >= 0 && t <= lastFrameSec) {
                 inRange++;
             }
         }
         assertEquals(inRange, total,
-                "(-1, maxSecond] 内事件必须恰好出现一次（无丢失/无重复）");
+                "[0, maxSecond] 内 active-battle 事件必须恰好出现一次（无丢失/无重复）");
     }
 
     @Test

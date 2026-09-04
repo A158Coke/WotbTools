@@ -182,8 +182,7 @@ class TeamReplayAnalysisServiceTimelineGateTest {
             players.add(enemy);
         }
         battle.players = players;
-        final var capabilities = new ReplayProcessingCapabilities(
-                true, true, false, false, false, true, false, false);
+        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
         return new ReplayProcessingResult(
                 fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",

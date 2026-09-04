@@ -17,7 +17,7 @@
  *
  * 渲染路径：
  * - generic（marker.model == null）：现有通用 PNG 双层（共同 pivot 居中旋转，行为不变）；
- * - dedicated turreted：hull.webp 填满标记盒绕中心旋转 + turret assembly
+ * - dedicated turreted：hull.webp 填满等比 square render box 绕中心旋转 + turret assembly
  *   （父层 rotate(H) around 盒中心；子层按 turretRaster 百分比定位，绕 image-local
  *   pivot rotate(T-H)）——数学见 vehicle-models/pivot.js（marker*Transform）；
  * - dedicated turretless：仅 hull（gun/mantlet 已 bake 进 hull；无 fake turret layer）。
@@ -39,10 +39,9 @@ const props = defineProps({
     type: Object,
     default: () => ({
       showPlayer: false, showTank: true, tankDy: 0, blockHidden: false, hpHidden: false,
-      playerHidden: false, playerFading: false,
     }),
   },
-  /** HP HUD 显示数据（hpDisplay 结果：{current,maxHp,pct,destroyed}|null；null=不渲染） */
+  /** HP HUD presentation（current/pct/state/knowledge/destroyed）；null=不渲染 */
   hp: { type: Object, default: null },
   /** HP HUD 开关（关闭后隐藏数字/bar/ghost，不影响其余 combat feedback） */
   hpVisible: { type: Boolean, default: true },
@@ -79,7 +78,7 @@ const turretImageStyle = computed(() => {
     raster: model.value.turretRaster,
   })
 })
-// hull 图片样式：dedicated 填满标记盒（0/0/100%/100%，绕盒中心 = 自身中心旋转）；
+// hull 图片样式：dedicated 填满等比 square render box（0/0/100%/100%，绕盒中心 = 自身中心旋转）；
 // generic 居中模式：scale 134%（PR3 增补重新校准——generic 素材车体 bbox ≈210×336/512
 // （长边 65.6%），dedicated hull.webp 车体长边 ≈88.1%（fit padding 0.88）；134% = 0.881/0.656
 // 使 generic 车体长边视觉与 dedicated 对齐（≈31.7px @36px box），img 物理尺寸略大于 box
@@ -89,11 +88,16 @@ const hullImageStyle = computed(() => {
   return { transform: hullDeg.value != null ? `rotate(${hullDeg.value}deg)` : 'none' }
 })
 // generic 模式 hull/turret：现有 translate(-50%,-50%) rotate() 组合
+// destroyed 且无方向时仅保留既有未旋转素材可见性；projected state 仍保持 null。
 const genericHullStyle = computed(() =>
-  hullDeg.value != null ? { transform: `translate(-50%, -50%) rotate(${hullDeg.value}deg)` } : null,
+  hullDeg.value != null
+    ? { transform: `translate(-50%, -50%) rotate(${hullDeg.value}deg)` }
+    : st.value.destroyed ? { transform: 'translate(-50%, -50%) rotate(0deg)' } : null,
 )
 const genericTurretStyle = computed(() =>
-  turretDeg.value != null ? { transform: `translate(-50%, -50%) rotate(${turretDeg.value}deg)` } : null,
+  turretDeg.value != null
+    ? { transform: `translate(-50%, -50%) rotate(${turretDeg.value}deg)` }
+    : st.value.destroyed ? { transform: 'translate(-50%, -50%) rotate(0deg)' } : null,
 )
 
 // —— overlay 屏幕间距恒定（B2）：selected/recorder 的 layout offset（bottom/top calc）处于
@@ -102,6 +106,16 @@ const genericTurretStyle = computed(() =>
 const overlayInv = computed(() =>
   Number.isFinite(st.value.overlayInverse) && st.value.overlayInverse > 0 ? st.value.overlayInverse : 1,
 )
+const hitboxStyle = computed(() => {
+  const size = st.value.hitTargetSize
+  if (size && Number.isFinite(size.width) && Number.isFinite(size.height)) {
+    return { width: `${size.width}px`, height: `${size.height}px` }
+  }
+  return {
+    width: Math.round((st.value.hitbox ? st.value.hitbox.w : 0.9) * 100) + '%',
+    height: Math.round((st.value.hitbox ? st.value.hitbox.h : 0.9) * 100) + '%',
+  }
+})
 // selected 三角 bottom（layout px）推导（B2 残余 + PR4 §27 label 块高度适配）：
 // - label 块：bottom anchor 2px；块高 = 显示行数 × 行高 + 块 padding（PR4 单行/双行自适应）；
 //   transform scale(inv) 绕中心 → 块顶边 screen = (2 + half)·s + half。
@@ -141,7 +155,7 @@ const labelsStyle = computed(() => ({
 const playerLineEl = ref(null)
 const playerTruncated = ref(false)
 watch(
-  () => [props.label.showPlayer, props.label.playerHidden, st.value.playerName],
+  () => [props.label, st.value.playerName],
   () => {
     nextTick(() => {
       const el = playerLineEl.value
@@ -151,7 +165,7 @@ watch(
   { immediate: true },
 )
 const playerTooltip = computed(() =>
-  playerTruncated.value && props.label.showPlayer && !props.label.playerHidden && st.value.playerName
+  playerTruncated.value && props.label.showPlayer && st.value.playerName
     ? st.value.playerName
     : undefined,
 )
@@ -187,24 +201,21 @@ const hpHudStyle = computed(() => ({
   // §22：HP HUD 与 label 块同源位移（labelLayout tankDy 联动；碰撞位移只作用于堆叠，不影响车体）
   bottom: 'calc(100% + ' + (LABEL_ANCHOR_PX + labelScreenHeight.value + HP_HUD_GAP_PX + props.label.tankDy * overlayInv.value) + 'px)',
 }))
-// 填充（PR #107 HP provenance）：
-// - pct 已知 → 精确百分比；
-// - RULE_DERIVED_FULL_AT_SPAWN / OPENING_RELATIVE_FULL（fullState=true，仅本方开局）→
-//   100% 阵营色实心条（相对满血；开局即使有 current sample、全队 entry/max 未全部证明也无斜纹）；
-// - CURRENT_HP_EXACT_MAX_UNKNOWN / INCONSISTENT（current 有值、max 未证明/矛盾）→
-//   100% 宽 + 阵营色 indeterminate 斜纹（INCONSISTENT：比例不可信，保留真实 current）；
-// - UNKNOWN（敌方可未知）→ 空条（灰色/未知）。
+// 填充只消费 canonical health state：RELATIVE_FULL / CURRENT / LAST_KNOWN /
+// UNKNOWN / DESTROYED；没有可证明百分比时不推导比例。
 const hpFillWidth = computed(() => {
   const d = props.hp
   if (!d) return '0%'
-  if (d.pct != null) return d.pct + '%'
-  if (d.fullState === true) return '100%' // 相对满血状态：完整阵营色条
-  return d.current != null ? '100%' : '0%'
+  if (d.state === 'DESTROYED' || d.state === 'UNKNOWN') return '0%'
+  if (d.state === 'RELATIVE_FULL') return '100%'
+  if ((d.state === 'CURRENT' || d.state === 'LAST_KNOWN') && d.pct != null) return d.pct + '%'
+  return (d.state === 'CURRENT' || d.state === 'LAST_KNOWN') && d.current != null ? '100%' : '0%'
 })
-// indeterminate = 有当前 HP 但最大值未知（不允许按 tankopedia base 算百分比）；
-// fullState（RULE_DERIVED_FULL_AT_SPAWN / OPENING_RELATIVE_FULL，己方开局相对满血）除外——
-// 开局即使有 current sample、全队 entry/max 尚未全部证明，也渲染 100% 阵营色实心条（无斜纹）
-const hpFillUnknown = computed(() => !!props.hp && props.hp.current != null && props.hp.pct == null && props.hp.fullState !== true)
+// 当前/最后已知 HP 有数字但没有可证明容量时，显示 indeterminate 纹理；
+// RELATIVE_FULL 是相对展示状态，UNKNOWN/DESTROYED 不冒充已知 HP。
+const hpFillUnknown = computed(() => !!props.hp
+  && (props.hp.state === 'CURRENT' || props.hp.state === 'LAST_KNOWN')
+  && props.hp.current != null && props.hp.pct == null)
 const hpGhostWidth = computed(() => {
   const g = props.hpGhost
   if (!g || !Number.isFinite(g.prevPct) || !Number.isFinite(g.nextPct)) return null
@@ -218,21 +229,18 @@ const hpGhostLeft = computed(() => {
 const hpTitle = computed(() => {
   const d = props.hp
   if (!d) return ''
-  if (d.state === 'RULE_DERIVED_FULL_AT_SPAWN' || d.state === 'OPENING_RELATIVE_FULL') {
+  if (d.state === 'RELATIVE_FULL') {
     return props.t ? props.t('recon.map.playback.hp_full_spawn') : ''
-  }
-  if (d.state === 'CURRENT_HP_EXACT_MAX_UNKNOWN' || d.state === 'INCONSISTENT') {
-    return props.t ? props.t('recon.map.playback.hp_current_max_unknown') : ''
   }
   return ''
 })
 const hpClasses = computed(() => ({
-  'pb-hp-lastknown': st.value.lastKnown && !st.value.destroyed,
+  'pb-hp-lastknown': props.hp && props.hp.state === 'LAST_KNOWN' && !props.hp.destroyed,
   'pb-hp-destroyed': st.value.destroyed,
   'pb-hp-flash': props.hpFlash,
   'pb-hp-no-transition': props.hpNoTransition,
-  // PR #107：相对满血（fullState）或 max 未知但有当前值（indeterminate）→ 阵营色填充
-  'pb-hp-full-spawn': props.hp && props.hp.fullState === true,
+  // 相对满血 → 阵营色实心条
+  'pb-hp-full-spawn': props.hp && props.hp.state === 'RELATIVE_FULL',
 }))
 </script>
 
@@ -246,18 +254,20 @@ const hpClasses = computed(() => ({
     :data-test="`pb-marker-${st.vehicle.accountId}`"
     @click="emit('select', $event)"
   >
-    <!-- PR4 §36：hull hitbox（车体视觉范围 + 小 padding，随 marker 缩放；
-         按钮其余区域 pointer-events:none 不拦截点击，label/✕/三角/菱形均不可点） -->
+    <!-- Hull hit target follows the vehicle-aware marker box. It is slightly
+         larger than the visible model for touch usability, but is not part of
+         visual collision. -->
     <span
       class="pb-hitbox"
-      :style="{ width: Math.round((st.hitbox ? st.hitbox.w : 0.9) * 100) + '%', height: Math.round((st.hitbox ? st.hitbox.h : 0.9) * 100) + '%' }"
+      :style="hitboxStyle"
       aria-hidden="true"
     ></span>
     <!-- 车型视觉层容器：destroyed/last-known 的 opacity/grayscale/team 光晕精确作用于此处
          （而非整个 button）——pb-death ✕ / pb-selected-mark / pb-recorder-badge / pb-labels
          是 button 直接子元素、在容器外，保持完整强度（parent opacity 无法被子元素抵消）。 -->
     <div class="pb-graphics">
-      <!-- dedicated turreted：hull 满盒 + turret assembly（父层绕盒中心 H，子层绕 image-local pivot T-H） -->
+      <!-- dedicated turreted：hull 填满等比 square render box + turret assembly
+           （父层绕盒中心 H，子层绕 image-local pivot T-H） -->
       <template v-if="isDedicated && isTurreted">
         <img
           v-if="hullDeg != null"
@@ -297,7 +307,7 @@ const hpClasses = computed(() => ({
       <!-- generic：现有双层 PNG（共同 pivot 居中旋转，行为不变） -->
       <template v-else>
         <img
-          v-if="hullDeg != null"
+          v-if="hullDeg != null || st.destroyed"
           class="pb-hull"
           :src="st.hullImage"
           alt=""
@@ -305,7 +315,7 @@ const hpClasses = computed(() => ({
           :style="genericHullStyle"
         />
         <img
-          v-if="turretDeg != null"
+          v-if="turretDeg != null || st.destroyed"
           class="pb-turret"
           :src="st.turretImage"
           alt=""
@@ -345,10 +355,12 @@ const hpClasses = computed(() => ({
     ></span>
 
     <!-- HP HUD（docs/features/battle-playback.md HP HUD）：HP 数字 + 定宽 bar，
-         位于 marker 上方、标签块之上（HP 优先级最高）；last-known 弱化、destroyed 归零、
+         位于 marker 上方、标签块之上（HP 优先级最高）；last-known 弱化；
+         destroyed 由权威 lifeState 判定（st.destroyed，非 hp===0）→ 隐藏单车
+         HP number+bar（§18/§19），保留 ✕ / 灰化 marker / labels / selected / recorder；
          UNKNOWN 显示 —；ghost/flash 由外层 transient 状态驱动；hpVisible=false 整体隐藏 -->
     <div
-      v-if="hpVisible && hp && !label.hpHidden"
+      v-if="hpVisible && hp && !label.hpHidden && !st.destroyed"
       class="pb-hp-hud"
       :class="hpClasses"
       :style="hpHudStyle"
@@ -382,10 +394,8 @@ const hpClasses = computed(() => ({
     >
       <span
         v-if="label.showPlayer && st.playerName"
-        v-show="!label.playerHidden"
         ref="playerLineEl"
         class="pb-label-player"
-        :class="{ 'pb-label-fading': label.playerFading }"
         :title="playerTooltip"
         data-test="pb-label-player"
       >{{ st.playerName }}</span>
@@ -412,7 +422,7 @@ const hpClasses = computed(() => ({
 }
 .pb-hull { z-index: 1; }
 .pb-turret { z-index: 2; }
-/* dedicated hull：填满标记盒，绕盒中心（= 自身中心）旋转（rotate 由 inline style 提供） */
+/* dedicated hull：填满等比 square render box，绕盒中心（= 自身中心）旋转（rotate 由 inline style 提供） */
 .pb-hull-dedicated {
   position: absolute;
   left: 0;
@@ -437,8 +447,7 @@ const hpClasses = computed(() => ({
   inset: 0;
 }
 
-/* —— PR4 §36 hull hitbox：车体视觉范围 + 小 padding（inline 尺寸 % 随 marker 缩放）；
-   不含 gun overflow / 三角 / 菱形 / ✕ / label；destroyed/last-known 仍可点击（§36）—— */
+/* —— Hull hit target：略大于 vehicle-aware visible model，便于触控；不参与视觉碰撞。 —— */
 .pb-hitbox {
   position: absolute;
   left: 50%;
@@ -611,18 +620,6 @@ const hpClasses = computed(() => ({
 .pb-last-known .pb-labels .pb-label-player {
   opacity: .65;
 }
-/* §33 恢复 fade-in（约 120ms，仅 opacity；无 translate/bounce/背景过渡） */
-.pb-label-fading {
-  animation: pb-label-fade-in 0.12s ease;
-}
-@keyframes pb-label-fade-in {
-  from { opacity: 0; }
-  to { opacity: 0.9; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .pb-label-fading { animation: none; }
-}
-
 /* —— HP HUD（docs/features/battle-playback.md HP HUD）：数字 + 定宽 bar，screen-space
    恒定（overlayInverseScale 反缩放）；friendly/enemy 沿用 team token（§4.2 现有阵营色）——
     friendly = --pb-team-text（地图 tone），enemy = --pb-enemy-text（red）——与整车 outline 同源。

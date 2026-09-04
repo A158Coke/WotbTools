@@ -4,8 +4,8 @@ package com.wotb.core.replay.event;
  * Type32 mobile {@code flag=0} 16-byte body 的 consumable lifecycle semantic event
  * （docs/research/replay/consumable-lifecycle.md，P0-2/P0-5）。
  *
- * <p><b>仅</b>对 proven 组合解码：{@code supported replay version（TYPE32_CONSUMABLE_LIFECYCLE VERIFIED）}
- * + {@code entityClass == VEHICLE} + {@code flag == 0} + {@code bodyLength == 16}。其它 flag/长度/
+ * <p><b>仅</b>对 proven 组合解码：{@code entityClass == VEHICLE} + {@code flag == 0}
+ * + {@code bodyLength == 16}。其它 flag/长度/
  * 实体类组合保持 raw-preserve（见 {@link EntityAuxiliaryBlobEvent}），<b>绝不</b>把 flag=1 短族、
  * static 实体或 15 字节 body 当 consumable。</p>
  *
@@ -61,11 +61,12 @@ public record ConsumableLifecycleEvent(
     }
 
     /**
-     * proven consumable wireCode→logicalItemId（current 11.19 corpus，consumable-lifecycle.md）。
-     * 未知 → null（raw-preserve，不猜名）。
+     * Version-scoped consumable wireCode→logicalItemId mapping shared by Type32 and Type5.
+     * Unknown values remain null while the raw wireCode is preserved by the caller.
      */
     public static String logicalItemIdOf(final int wireCode) {
         return switch (wireCode) {
+            case 0x08 -> "AUTOMATIC_FIRE_EXTINGUISHER";
             case 0x09 -> "ADRENALINE";
             case 0x0A -> "ENGINE_POWER_BOOST";
             case 0x0B -> "MULTI_PURPOSE_RESTORATION_PACK";
@@ -75,6 +76,7 @@ public record ConsumableLifecycleEvent(
             case 0x3E -> "RETICLE_CALIBRATION";
             case 0x42 -> "REACTIVE_ARMOR";
             case 0x69 -> "TUNGSTEN_SHELLS";
+            case 0xBD -> "REDUCED_ENGINE_POWER_BOOST";
             default -> null;
         };
     }

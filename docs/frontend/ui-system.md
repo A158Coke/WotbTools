@@ -13,6 +13,9 @@
 - 应用壳与通用 token：`frontend/src/styles/app-shell.css`、`tokens.css`；Showcase 分层样式：`showcase.css`、`showcase-workspaces.css`、`showcase-pages.css`、`showcase-regressions.css`。
 - 复用 `layout-content`、`layout-wide`、`layout-data-workspace`、`layout-full-workspace` 等已有 primitive；宽表优先保持信息密度，横向滚动只能是字段过多时的明确 fallback。
 - 当前支持 Desktop `>=1200px`、Tablet `768–1199px`、Mobile `<768px` 三档。窄屏保留任务语义，不能整体缩放页面来规避 overflow。
+- Mobile 档断点统一写作 `@media (width < 768px)`（range 语法，无 1px 缝隙/重叠），JS 判断统一 `window.innerWidth < 768`；禁止再引入 `max-width: 767/768px` 或 640/560/520 等新散值（`app-shell.css` 保留一个带注释的 `max-width: 480px` 超窄手机块）。
+- Mobile 档交互约定：`input/select/textarea` 字号 ≥16px（防 iOS 聚焦缩放，`app-shell.css` 全局兜底）；主要触控目标 ≥36px（参照 `PlayerRatingRadar` 缩放按钮）；modal 遮罩用固定暗色 scrim（`rgb(0 0 0 / .35|.72)`），禁止用 `color-mix(var(--text-heading))`（showcase 下语义反转成亮纱）。
+- `index.html` viewport 已带 `viewport-fit=cover`；topbar、底部 sheet、drawer 预留 `env(safe-area-inset-*)`（当前非 edge-to-edge 解析为 0），新增贴顶/贴底固定元素时同步加 inset。
 - 视觉回归至少检查对比度、overflow、sticky、hover/focus、loading/empty/error；页面级验收细节见 [`docs/DEVELOPER_GUIDE.md`](../DEVELOPER_GUIDE.md)。
 
 ## Canonical feature references

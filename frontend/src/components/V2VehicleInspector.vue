@@ -2,12 +2,11 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  healthAt,
+  healthDisplayAt,
   lifeAt,
   positionCoveredAtV2,
-  orientationKnownAt,
-  consumableRuntimeAt,
-  moduleCrewAt,
+  consumableRuntimeSlotsAt,
+  moduleCrewStatesAt,
 } from '../utils/battlePlaybackV2.ts'
 import { loadoutItemLabel } from '../data/loadoutItems.js'
 
@@ -23,34 +22,21 @@ const props = defineProps({
 const { t, te, locale } = useI18n()
 
 const life = computed(() => lifeAt(props.track, props.timeSec))
-const health = computed(() => {
-  // 与 marker/HUD 一致：阵亡为权威事实，current=0（绝不显示阵亡前最后一次健康值）。
-  if (life.value?.lifeState === 'DESTROYED') {
-    return {
-      currentHp: 0,
-      knowledge: 'CURRENT',
-      displayCapacityHp: healthAt(props.track, props.timeSec)?.displayCapacityHp ?? null,
-      source: 'DESTROYED',
-    }
-  }
-  return healthAt(props.track, props.timeSec)
-})
+const health = computed(() => healthDisplayAt(props.track, props.timeSec))
 const covered = computed(() => positionCoveredAtV2(props.track.positionSegments, props.timeSec))
-const orientation = computed(() => orientationKnownAt(props.track, props.timeSec))
 const loadout = computed(() => props.track.loadout || null)
 
 /**
- * loadout 条目显示名：优先本地化名称；未知/未映射走 i18n fallback 并保留 raw id 仅作诊断
- * （plan §22/§23 —— 绝不裸露 `MULTI_PURPOSE_RESTORATION_PACK` / `103` 之类 internal id 当产品文案）。
+ * loadout 条目显示名：优先本地化名称；未知/未映射走通用 i18n fallback。
+ * raw wire/id 仍由后端保留，但不进入普通用户界面。
  */
 function itemLabel(scope, id) {
   const name = loadoutItemLabel(scope, id, locale.value)
   if (name) return name
-  if (id == null || id === '') return t('recon.map.playback.unknown')
-  const key = scope === 'consumable' ? 'recon.map.playback.loadout_unknown_consumable'
-    : scope === 'provision' ? 'recon.map.playback.loadout_unknown_provision'
-      : 'recon.map.playback.loadout_unknown_equipment'
-  return t(key, { id })
+  let key = 'recon.map.playback.loadout_unknown_equipment'
+  if (scope === 'consumable') key = 'recon.map.playback.loadout_unknown_consumable'
+  if (scope === 'provision') key = 'recon.map.playback.loadout_unknown_provision'
+  return t(key)
 }
 
 /**
@@ -68,37 +54,46 @@ const consumables = computed(() => {
   if (!loadout.value) return []
   const wireCodes = loadout.value.consumableWireCodes || []
   const ids = loadout.value.consumables || []
-  return ids.map((id, i) => {
+  const runtimes = consumableRuntimeSlotsAt(props.track.consumableTransitions, props.timeSec)
+  return Array.from({ length: 3 }, (_, i) => {
+    const id = ids[i] ?? null
     const slotWire = wireCodes[i]
-    const rt = consumableRuntimeAt(props.track.consumableTransitions, props.timeSec)
-    const slotMatch = rt.wireCode == null || rt.wireCode === slotWire
+    const rt = runtimes.get(i)
     return {
       slot: i,
-      logicalItemId: slotMatch ? (rt.logicalItemId || id) : id,
+      logicalItemId: rt?.logicalItemId || id,
       wireCode: slotWire,
-      runtimeState: slotMatch ? rt.state : 'UNKNOWN',
-      label: itemLabel('consumable', slotMatch ? (rt.logicalItemId || id) : id),
+      runtimeState: rt?.state || 'UNKNOWN',
+      label: itemLabel('consumable', rt?.logicalItemId || id),
     }
   })
 })
 
 const provisionLabels = computed(() => {
   if (!loadout.value) return []
-  return (loadout.value.provisions || []).map((p, i) => ({
+  return Array.from({ length: 3 }, (_, i) => ({
     slot: i,
-    label: itemLabel('provision', p),
+    label: itemLabel('provision', loadout.value.provisions?.[i] ?? null),
   }))
 })
 
 const equipmentLabels = computed(() => {
   if (!loadout.value) return []
-  return (loadout.value.equipmentIds || []).map((e, i) => ({
+  const slotKeys = ['f1', 'v1', 's1', 'f2', 'v2', 's2', 'f3', 'v3', 's3']
+  return Array.from({ length: 9 }, (_, i) => ({
     slot: i,
-    label: itemLabel('equipment', e),
+    semanticKey: slotKeys[i],
+    label: itemLabel('equipment', loadout.value.equipmentIds?.[i] ?? null),
   }))
 })
 
-const modules = computed(() => moduleCrewAt(props.track.moduleCrewTransitions, props.timeSec))
+const equipmentRows = computed(() => [
+  { key: 'row1', slots: equipmentLabels.value.slice(0, 3) },
+  { key: 'row2', slots: equipmentLabels.value.slice(3, 6) },
+  { key: 'row3', slots: equipmentLabels.value.slice(6, 9) },
+])
+
+const modules = computed(() => moduleCrewStatesAt(props.track.moduleCrewTransitions, props.timeSec))
 
 const stateLabel = computed(() => {
   if (life.value?.lifeState === 'DESTROYED') return t('recon.map.playback.state_destroyed')
@@ -109,12 +104,6 @@ const stateLabel = computed(() => {
 })
 
 const valueSeen = computed(() => health.value != null || loadout.value != null)
-
-const orientationLabel = computed(() => {
-  if (orientation.value === 'CURRENT') return t('recon.map.playback.orientation_current')
-  if (orientation.value === 'LAST_KNOWN') return t('recon.map.playback.orientation_last_known')
-  return t('recon.map.playback.unknown')
-})
 
 /** tankClass 为 canonical 英文 class（Heavy tank/Medium tank/...）；UI 用已有三语翻译，不裸显英文。 */
 const VEHICLE_CLASS_KEYS = {
@@ -130,6 +119,16 @@ const tankClassLabel = computed(() => {
   const key = VEHICLE_CLASS_KEYS[cls]
   return key ? t(key) : cls
 })
+
+function moduleComponentLabel(component) {
+  const key = `recon.map.playback.module_component.${component}`
+  return te(key) ? t(key) : t('recon.map.playback.module_component.UNKNOWN')
+}
+
+function moduleStateLabel(state) {
+  const key = `recon.map.playback.module_value.${state}`
+  return te(key) ? t(key) : t('recon.map.playback.module_value.UNKNOWN')
+}
 </script>
 
 <template>
@@ -137,13 +136,18 @@ const tankClassLabel = computed(() => {
     <div class="v2-inspector-row" data-test="v2-inspector-hp">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.current_hp') }}</span>
       <span class="v2-inspector-val">
-        {{ health?.currentHp ?? '—' }}
-        <span v-if="health?.knowledge === 'LAST_KNOWN'" class="v2-inspector-badge">
-          {{ $t('recon.map.playback.last_known_hp') }}
-        </span>
-        <span v-if="health?.displayCapacityHp" class="v2-inspector-cap">
-          / {{ health.displayCapacityHp }}
-        </span>
+        <!-- §21：已击毁状态明确显示「已击毁」，不重点展示 0 HP / 空血条；
+             但 伤害历史/击杀/承受伤害/最后位置 等 authoritative facts 仍正常展示。 -->
+        <template v-if="health?.destroyed">{{ $t('recon.map.playback.state_destroyed') }}</template>
+        <template v-else>
+          {{ health?.currentHp ?? '—' }}
+          <span v-if="health?.knowledge === 'LAST_KNOWN'" class="v2-inspector-badge">
+            {{ $t('recon.map.playback.last_known_hp') }}
+          </span>
+          <span v-if="health?.displayCapacityHp" class="v2-inspector-cap">
+            / {{ health.displayCapacityHp }}
+          </span>
+        </template>
       </span>
     </div>
 
@@ -157,34 +161,50 @@ const tankClassLabel = computed(() => {
       <span class="v2-inspector-val">{{ tankClassLabel }}</span>
     </div>
 
-    <div class="v2-inspector-row" data-test="v2-inspector-orientation">
-      <span class="v2-inspector-key">{{ $t('recon.map.playback.orientation') }}</span>
-      <span class="v2-inspector-val">{{ orientationLabel }}</span>
+    <div class="v2-inspector-row" data-test="v2-inspector-tier">
+      <span class="v2-inspector-key">{{ $t('recon.map.playback.tank_tier') }}</span>
+      <span class="v2-inspector-val">{{ track.tankTier ?? '—' }}</span>
     </div>
 
     <template v-if="loadout">
       <div class="v2-inspector-section">{{ $t('recon.map.playback.loadout') }}</div>
-      <div class="v2-inspector-grid" data-test="v2-inspector-loadout">
+      <div class="v2-inspector-loadout" data-test="v2-inspector-loadout">
+        <div class="v2-loadout-group" data-test="v2-inspector-consumables">
+          <div class="v2-loadout-group-title">{{ $t('recon.map.playback.consumable') }}</div>
+          <div class="v2-loadout-grid">
         <div v-for="c in consumables" :key="'c' + c.slot" class="v2-inspector-chip">
-          <span class="v2-chip-type">{{ $t('recon.map.playback.consumable') }}</span>
           <span>{{ c.label }}</span>
           <span v-if="c.runtimeState !== 'UNKNOWN'" class="v2-chip-state">{{ consumableStateLabel(c.runtimeState) }}</span>
         </div>
+          </div>
+        </div>
+        <div class="v2-loadout-group" data-test="v2-inspector-provisions">
+          <div class="v2-loadout-group-title">{{ $t('recon.map.playback.provision') }}</div>
+          <div class="v2-loadout-grid">
         <div
           v-for="p in provisionLabels"
           :key="'p' + p.slot"
           class="v2-inspector-chip"
         >
-          <span class="v2-chip-type">{{ $t('recon.map.playback.provision') }}</span>
           <span>{{ p.label }}</span>
         </div>
+          </div>
+        </div>
+        <div class="v2-loadout-group" data-test="v2-inspector-equipment">
+          <div class="v2-loadout-group-title">{{ $t('recon.map.playback.equipment') }}</div>
+          <div v-for="row in equipmentRows" :key="row.key" class="v2-equipment-row" :data-equipment-group="row.key">
+            <div class="v2-loadout-grid">
         <div
-          v-for="e in equipmentLabels"
+          v-for="e in row.slots"
           :key="'e' + e.slot"
           class="v2-inspector-chip"
+          :data-equipment-slot="e.slot"
         >
-          <span class="v2-chip-type">{{ $t('recon.map.playback.equipment') }} #{{ e.slot + 1 }}</span>
+          <span class="v2-chip-type">{{ $t(`recon.map.playback.equipment_slot_${e.semanticKey}`) }}</span>
           <span>{{ e.label }}</span>
+        </div>
+            </div>
+          </div>
         </div>
       </div>
     </template>
@@ -193,13 +213,13 @@ const tankClassLabel = computed(() => {
       <span class="v2-inspector-val">{{ $t('recon.map.playback.unknown') }}</span>
     </div>
 
-    <template v-if="modules">
+    <template v-if="modules.length">
       <div class="v2-inspector-section">{{ $t('recon.map.playback.module_state') }}</div>
-      <div class="v2-inspector-row" data-test="v2-inspector-module">
-        <span class="v2-inspector-key">{{ modules.component }}</span>
+      <div v-for="module in modules" :key="module.component" class="v2-inspector-row" data-test="v2-inspector-module">
+        <span class="v2-inspector-key">{{ moduleComponentLabel(module.component) }}</span>
         <span class="v2-inspector-val">
-          {{ modules.state }}
-          <span v-if="modules.recorderVisible" class="v2-inspector-badge">{{ $t('recon.map.playback.recorder_visible') }}</span>
+          {{ moduleStateLabel(module.state) }}
+          <span v-if="module.recorderVisible" class="v2-inspector-badge">{{ $t('recon.map.playback.recorder_visible') }}</span>
         </span>
       </div>
     </template>
@@ -228,11 +248,19 @@ const tankClassLabel = computed(() => {
   background: rgba(255,255,255,0.12); font-size: 10px;
 }
 .v2-inspector-cap { margin-left: 4px; color: var(--pb-dim, #9aa); }
-.v2-inspector-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.v2-inspector-loadout { display: flex; flex-direction: column; gap: 8px; }
+.v2-loadout-group { display: flex; flex-direction: column; gap: 4px; }
+.v2-loadout-group-title { color: var(--pb-dim, #9aa); font-size: 10px; }
+.v2-loadout-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.v2-equipment-row { display: block; }
 .v2-inspector-chip {
   display: flex; flex-direction: column; gap: 2px; padding: 4px 6px;
   border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 11px;
 }
-.v2-chip-type { color: var(--pb-dim, #9aa); font-size: 9px; text-transform: uppercase; }
 .v2-chip-state { color: var(--pb-dim, #9aa); font-size: 9px; }
+@media (width < 768px) {
+  .v2-loadout-grid { grid-template-columns: repeat(3, minmax(92px, 1fr)); overflow-x: auto; }
+  .v2-equipment-row { display: block; }
+}
+.v2-chip-type { color: var(--pb-dim, #9aa); font-size: 9px; text-transform: uppercase; }
 </style>

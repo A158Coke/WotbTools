@@ -39,6 +39,10 @@ description: >
 
 ---
 
+## HTTP Contract Gate
+
+涉及 API、构建或跨层数据 shape 时，Layer A 必须补查：`contracts/http/openapi.yaml` 是否为唯一 wire authority；OpenAPI endpoint/status/schema 是否与实际 Jackson serialization 一致；generated FE types/schema/error registry 是否最新且未手改；是否存在重复手写 transport contract、domain enum 泄漏、required/nullable 漂移或把客户端 fallback code 当服务端 registry；Playback 旧 artifact 是否只在读取边界 normalization；ApiError envelope 与 `204 capability unavailable` 语义是否保持；fixture、Ajv runtime、后端 contract tests 与受影响 UI/parser tests 是否都覆盖。发现 producer violation 时修 producer/mapper，不放宽 FE schema 作为掩盖。
+
 ## OCR 就绪检查
 
 - 检查：`ocr --version`（应输出 `open-code-review v1.9.10` 或兼容版本）
@@ -215,6 +219,25 @@ requirement 未完成 → **即使 OCR 无 finding 也必须成为 BLOCKER**。
       才按 `.agents/AGENTS.md` 的 Full-test 例外规则跑 full，并先声明 Affected scope / Selected validation / Why）
 - [ ] **安全边界（绝不能删）**：前端消费的 JSON 字段/DTO/错误码；Flyway 迁移与实体列；Spring bean 装配/Jackson 反序列化/反射引用；Prometheus/Grafana 指标名（dashboards 引用）；i18n keys（三语 locale）；文档承诺的功能；测试夹具仍需要的行为
 - [ ] **品味判断**引用 `.agents/skills/code-smell/SKILL.md`（不复制其清单）
+
+### A5. 新增 abstraction 审查 gate（Reuse / Extend First）
+
+> 按 `.agents/AGENTS.md` 的 Reuse / Extend First contract 执行（规则定义在 AGENTS.md；
+> 本 gate 只引用并执行，不复制维护一份完整定义）。
+
+对本次**新增**的 production class / interface / record / DTO / util / service / manager /
+resolver / facade / enum / module / file：
+
+- [ ] 是否存在可复用 / 扩展现有实现（repo-wide `rg` 证明，参考 A4 的全仓引用扫描）
+- [ ] 是否制造第二个 SSOT（同一业务 switch / rule / validation contract 是否已有另一份）
+- [ ] 是否只有单一调用方且无独立 domain boundary（单实现 wrapper / facade 等）
+- [ ] 可以删除 / 合并时优先删除 / 合并（删优于增）
+
+不合规的新 abstraction 定级：
+
+- 存在等价现有实现 → **BLOCKER**
+- 制造第二 SSOT → **BLOCKER**
+- 纯机械 wrapper / speculative abstraction → **MAJOR**；能安全收缩则本轮直接修掉
 
 ## Layer C — Review Reconciler（汇总 / 去重 / 重定级 / blocker 判定）
 

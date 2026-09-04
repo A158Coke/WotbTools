@@ -7,6 +7,7 @@
 | 文档 | 何时读 |
 |---|---|
 | `DEVELOPER_GUIDE.md` | 接手维护 / 找环境、构建、仓库结构、架构速览时（最先） |
+| `frontend/local-production-dev.md` | 本地前端连接生产后端 / Keycloak 开发模式时 |
 | `../README.md` / `../README.en-US.md` | 了解产品是什么、功能与工程取舍 |
 | `../.agents/AGENTS.md` | 动手前必读（仓库级硬约定） |
 
@@ -46,7 +47,7 @@
 
 | 文档 | 何时读 |
 |---|---|
-| `operations/observability.md` | 动监控 / 日志 / Grafana / 保留策略 / 排障时 |
+| `operations/observability.md` | 监控 / 日志 / Grafana / 保留策略 / 排障时 |
 
 ## Reference（参考字典）
 

@@ -115,6 +115,43 @@ jobs:
       - name: Alpine Docker build
         run: docker build -f docker/Dockerfile.frontend -t wotbtools-frontend:pr .
 
+  http-contract:
+    name: HTTP contract gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend contract tooling
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Validate OpenAPI and local refs
+        working-directory: frontend
+        run: npm run api:lint
+      - name: Verify generated frontend contract is current
+        working-directory: frontend
+        run: npm run api:check
+      - name: Validate shared Playback fixture
+        working-directory: frontend
+        run: npm run api:fixture
+      - name: Runtime contract tests
+        working-directory: frontend
+        run: npx vitest run src/api/contract-runtime.test.ts
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Backend Playback serialization contract tests
+        working-directory: java
+        run: |
+          set -euo pipefail
+          mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo -pl wotb-web -am -DskipTests install
+          mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo -pl wotb-web -Dtest=BattlePlaybackDatasetTest,BattlePlaybackProjectorTest,ReplayArtifactWriterTest -Dsurefire.failIfNoSpecifiedTests=true test
+
   android:
     name: Android debug build (PR gate)
     runs-on: ubuntu-latest
@@ -136,6 +173,9 @@ jobs:
       - name: Assemble debug APK
         working-directory: android
         run: gradle :app:assembleDebug --no-daemon
+      - name: Run Android JVM unit tests (AuthNavigationPolicy)
+        working-directory: android
+        run: gradle :app:testDebugUnitTest --no-daemon
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -190,11 +230,31 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import glob, json, yaml
+
+          # Panel links of type=dashboard + uid without a valid url crash the Grafana
+          # frontend (TypeError: Cannot read properties of undefined (reading 'replace')).
+          # Forbid this structure so the dashboard runtime stays stable.
+          def walk_dashboard_panels(node, where):
+              if not isinstance(node, dict):
+                  return
+              for link in node.get("links") or []:
+                  if isinstance(link, dict) and link.get("type") == "dashboard" and isinstance(link.get("uid"), str):
+                      url = link.get("url")
+                      if not isinstance(url, str) or not url.strip():
+                          raise SystemExit(
+                              f"{where}: panel link type=dashboard with uid but no valid url: {link}"
+                          )
+              for key in ("panels", "rows"):
+                  for i, child in enumerate(node.get(key) or []):
+                      walk_dashboard_panels(child, f"{where}.{key}[{i}]")
+
           for p in glob.glob("deploy/observability/grafana/provisioning/**/*.yml", recursive=True):
               yaml.safe_load(open(p, encoding="utf-8"))
           for p in glob.glob("deploy/observability/grafana/dashboards/*.json"):
               d = json.load(open(p, encoding="utf-8"))
               assert d.get("panels"), "empty dashboard " + p
+              for i, panel in enumerate(d.get("panels", [])):
+                  walk_dashboard_panels(panel, f"{p}::panels[{i}]")
           print("provisioning yml + dashboards json OK")
           PY
       - name: No host port mappings for observability/backend management
@@ -209,10 +269,15 @@ jobs:
           import json
           with open('/tmp/compose.json', encoding='utf-8') as f:
               svc = json.load(f)["services"]
-          no_host_ports = {"prometheus", "loki", "alloy", "grafana", "wotb-backend"}
+          no_host_ports = {"prometheus", "loki", "alloy", "grafana", "node-exporter", "wotb-backend"}
           for name, s in svc.items():
               if name in no_host_ports:
                   assert not s.get("ports"), f"service {name} must not expose host ports: {s.get('ports')}"
+          keycloak_ports = [str(p) for p in svc["keycloak"].get("ports", [])]
+          assert not any(":9000" in p or p.endswith("9000") for p in keycloak_ports), \
+              f"Keycloak management port must stay internal: {keycloak_ports}"
+          assert not svc["node-exporter"].get("ports"), \
+              f"node-exporter must stay internal: {svc['node-exporter'].get('ports')}"
           print("no host exposure of observability/backend-management ports")
           PY
 
@@ -261,6 +326,10 @@ jobs:
           with open('/tmp/compose.json', encoding='utf-8') as f:
               svc = json.load(f)["services"]
           assert "mcp-grafana" not in svc, "mcp-grafana must be removed from production compose"
+          assert not svc["node-exporter"].get("ports"), "node-exporter must stay internal"
+          keycloak_ports = [str(p) for p in svc["keycloak"].get("ports", [])]
+          assert not any(":9000" in p or p.endswith("9000") for p in keycloak_ports), \
+              f"Keycloak management port must stay internal: {keycloak_ports}"
           for name, s in svc.items():
               for p in s.get("ports", []):
                   assert "8000" not in str(p), f"service {name} must not publish port 8000: {p}"

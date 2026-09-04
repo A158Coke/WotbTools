@@ -1,5 +1,5 @@
 // Alloy 配置 — WotBTools 观测栈
-// 只采集 wotb-backend 容器的 stdout/stderr 日志，转发到 Loki。
+// 采集 wotb-backend、keycloak，以及经过脱敏的 Android APK 下载日志，转发到 Loki。
 // 需要挂载 /var/run/docker.sock（见 docker-compose）。
 
 discovery.docker "backend" {
@@ -33,6 +33,118 @@ loki.source.docker "backend" {
 	host       = "unix:///var/run/docker.sock"
 	targets    = discovery.relabel.backend.output
 	forward_to = [loki.write.default.receiver]
+}
+
+discovery.docker "keycloak" {
+	host = "unix:///var/run/docker.sock"
+
+	filter {
+		name   = "name"
+		values = [".*keycloak.*"]
+	}
+}
+
+discovery.relabel "keycloak" {
+	targets = discovery.docker.keycloak.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = ".*keycloak.*"
+		action        = "keep"
+	}
+	// 将容器名规范化为 keycloak，避免 compose project name 进入查询语义。
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = ".*(keycloak).*"
+		target_label  = "container_name"
+		replacement   = "$1"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = ".*(keycloak).*"
+		target_label  = "service"
+		replacement   = "$1"
+	}
+}
+
+loki.source.docker "keycloak" {
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.keycloak.output
+	forward_to = [loki.write.default.receiver]
+}
+
+// Android APK 由 frontend nginx 直接静态托管，不经过 Spring Boot。
+// 这里只采集 GET /download/android/*.apk 的 access log，并在写入 Loki 前丢弃
+// 客户端 IP、Referer、User-Agent 等原始字段，只保留计数所需的文件名、状态码与字节数。
+discovery.docker "frontend" {
+	host = "unix:///var/run/docker.sock"
+
+	filter {
+		name   = "name"
+		values = [".*wotb-frontend.*"]
+	}
+}
+
+discovery.relabel "frontend" {
+	targets = discovery.docker.frontend.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = ".*wotb-frontend.*"
+		action        = "keep"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = ".*(wotb-frontend).*"
+		target_label  = "container_name"
+		replacement   = "$1"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = ".*(wotb-frontend).*"
+		target_label  = "service"
+		replacement   = "$1"
+	}
+}
+
+loki.source.docker "frontend" {
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.frontend.output
+	forward_to = [loki.process.android_download.receiver]
+}
+
+loki.process "android_download" {
+	forward_to = [loki.write.default.receiver]
+
+	// 仅保留真实 APK GET；下载页、version.json、普通前端流量全部丢弃。
+	stage.match {
+		selector            = "{container_name=\"wotb-frontend\"} !~ \"GET /download/android/[^ ]+\\.apk\""
+		action              = "drop"
+		drop_counter_reason = "not_android_apk_download"
+	}
+
+	// nginx combined log: "GET /download/android/<apk> HTTP/1.1" <status> <bytes> ...
+	stage.regex {
+		expression = "\\\"(?P<method>GET) /download/android/(?P<apk>[^/? ]+\\.apk)(?:\\?[^ ]*)? HTTP/[^\\\"]+\\\" (?P<status>[0-9]{3}) (?P<bytes>[0-9]+)"
+	}
+
+	stage.template {
+		source   = "sanitized"
+		template = "event=android_apk_download method={{ .method }} apk={{ .apk }} status={{ .status }} bytes={{ .bytes }}"
+	}
+
+	stage.static_labels {
+		values = {
+			event = "android_apk_download",
+		}
+	}
+
+	stage.output {
+		source = "sanitized"
+	}
 }
 
 loki.write "default" {

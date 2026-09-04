@@ -5,9 +5,9 @@
 ## 核心规则
 
 - 每个正式产品页面必须拥有自己的专属背景资产，不再使用一个 shared background 覆盖多个页面。
-- **当前正式展示层使用高质量 PNG**（`*-v1.png` / `hero-v4.png`）；它们是当前 showcase 的 canonical assets。
-- V1/V2/V3 SVG 保留在仓库中作为 fallback / 视觉历史，**不再控制正式页面**（正式 CSS 不优先引用它们）。
-- 素材不得包含必须可读的文字、Logo、按钮或业务数值；真实 UI 必须由 Vue/CSS 渲染。
+- **当前 SPA 正式展示层使用高质量 PNG**（`*-v1.png` / `hero-v4.png`）；它们是当前 showcase 的 canonical assets。
+- V1/V2/V3 SVG 保留在仓库中作为 fallback / 视觉历史，**不再控制 SPA 正式页面**（正式 CSS 不优先引用它们）；独立静态页可使用专属 SVG 资产。
+- 素材只负责氛围和页面识别；背景中的装饰性文字、Logo 或徽标必须来自已获授权的用户提供素材，不能替代真实 UI、按钮、业务数值或可交互状态。
 - 背景只承担 atmosphere / product identity，不得作为 Replay、Map、Tankopedia、Rating 或 AI Review 的事实来源。
 - 背景必须铺满 Topbar 下方整个 viewport（`position: fixed` 伪元素，见 `showcase-backgrounds.css` 的基础 contract）；不得只存在于 1420/1720/1760px content container 内；不使用 `background-attachment: fixed`。
 - 表格、表单、真实地图、战局重建和操作按钮可读性优先；遮罩（light/dark）由 overlay/surface 控制，由 `showcase-backgrounds.css` + `showcase-backgrounds-v3.css` + `showcase-cohesion.css` 实现，不需要为明暗主题准备两套图片。
@@ -16,22 +16,25 @@
 
 > 全部标记为 **REPLACEABLE_GENERATED_SHOWCASE_ASSET**：未来可直接替换同路径文件，无需改代码。替换后按「替换流程」检查三档响应式 crop。
 
-| Page | File | Role | 替换约束 |
-|---|---|---|---|
-| Home — Hero | `home/hero-v4.png` | Hero 横幅背景（全屏 + hero 内背景） | 坦克主体应在画面右侧、左侧留暗色负空间给文案；保持宽幅（约 2.5:1）；不得含可读文字/按钮 |
-| Home — Replay 卡片 | `home/card-replay-analysis-v1.png` | feature card media area（3:2 裁切） | 建议 3:2；主体居中即可，卡片以 object-fit: cover 裁切 |
-| Home — HoF 卡片 | `home/card-hall-of-fame-v1.png` | feature card media area（3:2 裁切） | 同上 |
-| Home — Coaching 卡片 | `home/card-coaching-v1.png` | feature card media area（3:2 裁切） | 同上（训练场主题） |
-| Home — Support 卡片 | `home/card-support-v1.png` | feature card media area（3:2 裁切） | 同上（工坊/支持主题） |
-| Replay Parser | `replay/replay-hero-battlefield-v1.png` | 全屏背景 + upload 战术表面 | 16:9；暗部为主；不得出现 UI/dashboard 元素 |
-| Hall of Fame | `hof/hof-hero-hall-v1.png` | 全屏背景 | 16:9；金色荣誉大厅主题 |
-| Rating | `rating/rating-hero-analysis-v1.png` | 全屏背景 | 16:9；图片内即使有生成式 dashboard 元素也只能是低权重氛围，真实 Rating 数据必须覆盖在独立 readable surface 上 |
-| Profile | `profile/profile-hero-camp-v1.png` | 全屏背景 + profile-hero 表面 | 16:9；不引入 avatar 依赖 |
-| Boost | `boost/boost-hero-training-v1.png` | 全屏背景 | 16:9；训练场主题 |
-| Admin Users | `admin/admin-hero-command-v1.png` | 全屏背景（强度较弱） | 16:9；Operations Console 优先，管理效率优先 |
-| HoF Admin | `hof-admin/hof-admin-hero-command-v1.png` | 全屏背景（强度较弱） | 16:9；CRUD / review 数据必须保持清晰 |
-| Version / Changelog | `version/version-hero-workshop-v1.png` | 全屏背景 | 16:9；工坊主题 |
-| Contact | `contact/contact-hero-radio-v1.png` | 全屏背景 | 16:9；通信塔/无线电主题 |
+| Page                 | File                                      | Role                                | 替换约束                                                                                                      |
+|----------------------|-------------------------------------------|-------------------------------------|---------------------------------------------------------------------------------------------------------------|
+| Home — Hero          | `home/hero-v4.png`                        | Hero 横幅背景（全屏 + hero 内背景） | 坦克主体应在画面右侧、左侧留暗色负空间给文案；保持宽幅（约 2.5:1）；背景文字不得替代真实 UI                       |
+| Home — Replay 卡片   | `home/card-replay-parser-v1.png`          | feature card media area（cover 裁切） | Replay 解析主题；卡片以 object-fit: cover 裁切                                                               |
+| Home — AI 复盘卡片   | `home/card-ai-review-v1.png`              | feature card media area（cover 裁切） | AI 复盘/训练主题；卡片以 object-fit: cover 裁切                                                               |
+| Home — 战局重建卡片  | `home/card-battle-playback-v1.png`       | feature card media area（cover 裁切） | 战局地图主题；卡片以 object-fit: cover 裁切                                                                   |
+| Home — HoF 卡片      | `home/card-hall-of-fame-v1.png`           | feature card media area（cover 裁切） | 名人堂主题                                                                                                    |
+| Home — Boost 卡片    | `home/card-boost-training-v1.png`        | feature card media area（cover 裁切） | 训练场主题                                                                                                    |
+| Home — Sponsor 卡片  | `home/card-sponsor-v1.png`                | feature card media area（cover 裁切） | 支持/赞助主题                                                                                                 |
+| Replay Parser        | `replay/replay-hero-battlefield-v1.png`   | 全屏背景 + upload 战术表面          | 16:9；暗部为主；背景中的地图/标记仅作氛围，不作为回放事实                                               |
+| Hall of Fame         | `hof/hof-hero-hall-v1.png`                | 全屏背景                            | 16:9；金色荣誉大厅主题                                                                                        |
+| Rating               | `rating/rating-hero-analysis-v1.png`      | 全屏背景                            | 16:9；图片内即使有生成式 dashboard 元素也只能是低权重氛围，真实 Rating 数据必须覆盖在独立 readable surface 上 |
+| Profile              | `profile/profile-hero-camp-v1.png`        | 全屏背景 + profile-hero 表面        | 16:9；不引入 avatar 依赖                                                                                      |
+| Boost                | `boost/boost-hero-training-v1.png`        | 全屏背景                            | 16:9；训练场主题                                                                                              |
+| Admin Users          | `admin/admin-hero-command-v1.png`         | 全屏背景（强度较弱）                | 16:9；Operations Console 优先，管理效率优先                                                                   |
+| HoF Admin            | `hof-admin/hof-admin-hero-command-v1.png` | 全屏背景（强度较弱）                | 16:9；CRUD / review 数据必须保持清晰                                                                          |
+| Version / Changelog  | `version/version-hero-workshop-v1.png`    | 全屏背景                            | 16:9；工坊主题                                                                                                |
+| Contact              | `contact/contact-hero-radio-v1.png`       | 全屏背景                            | 16:9；通信塔/无线电主题                                                                                       |
+| Sponsor              | `../../../public/sponsor-bg.png`          | 独立赞助页背景                      | 用户提供的原创素材；仅作赞助页氛围背景，不承载赞助配置或二维码                                               |
 
 隐藏的 `PlaybackQaPage` 是 QA / production-component verification 页面，不属于正式产品 Showcase，因此不创建营销背景。
 
@@ -54,4 +57,4 @@
 
 当前 PNG 单张约 2–2.5MB，全站资产约 35MB（dist 产物）。浏览器只会在对应页面渲染时下载该页背景（CSS background-image 惰性加载），但 Home 页一次会加载 hero + 4 张卡片约 11MB。若后续需要优化体积，优先考虑 WebP/AVIF 编码或服务端尺寸分级，**不要牺牲画面质量**。
 
-Last updated: 2026-08-24
+Last updated: 2026-09-03

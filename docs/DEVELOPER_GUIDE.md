@@ -40,11 +40,15 @@
 # Targeted（改单个 class/function）：mvn -pl wotb-core -Dtest=<TestClass> test
 # Module（单模块/一个 feature）：mvn -pl wotb-core test 或 mvn -pl wotb-web -am test
 # Full（PR CI authoritative validation，Agent 默认不跑）：cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test
+# 注意：wotb-web 的真实外部 AI probe 标记为 ai-live，默认被 Surefire 排除；不要仅因环境存在 AI_API_KEY 就解除排除。
 
 # 前端分层测试
 # Targeted：cd frontend && npx vitest run <related-test-files>
 # Type check：cd frontend && npm run typecheck
 # Build（仅当改动涉及 build 范围）：cd frontend && npm run build
+# Local Frontend → Production Backend / Keycloak（开发代理，谨慎使用真实数据）
+# cd frontend && npm run dev:production-remote
+# 说明与验收边界见 docs/frontend/local-production-dev.md；普通 npm run dev 仍代理 localhost:8087。
 
 # 本地完整开发环境
 cd docker/online && docker compose up -d --build
@@ -52,7 +56,7 @@ cd docker/online && docker compose up -d --build
 
 后端没有“无数据库” profile。测试 Keycloak Admin 写操作时需要 `wotbtools-admin-api` 服务账号与 `KEYCLOAK_ADMIN_CLIENT_SECRET`。
 
-Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 同时获得相同 `WG_APPLICATION_ID`。缺失时服务仍应启动，只让相应 WG 能力稳定不可用；百场人工截图 + 5 replay 流程不得受影响。
+Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backend 不再调用 WG stats，也不再接收百场 WG 自动认证；百场统一使用截图 + 5 replay 人工流程。
 
 真实回放 CI fixture 位于 `common/fixtures/replays/*.wotbreplay`；本地可用 gitignored `common/data/*.wotbreplay` 扩展样本。
 
@@ -62,6 +66,7 @@ Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 
 
 - **改动即更新文档**：影响界面、导出、数据、构建或用法的改动，同一次提交更新相关文档。
 - **API 纯英文**：成功 DTO 返回 raw enum 与数据；失败返回 canonical `ApiErrorResponse`（唯一错误 `id`、稳定 `errorCode`、可选 `errorMsg`、status、retryable、details、timestamp），不返回本地化 `*Label/message` 或 exception message。完整契约见 `docs/api/error-contract.md`。
+- **HTTP Contract First**：FE ↔ BE 的序列化契约以 `contracts/http/openapi.yaml` 为唯一事实源；前端 generated transport、Ajv runtime schema 与 fixture 由它生成/校验。修改 HTTP shape 时按 `docs/architecture/http-contracts.md` 的顺序执行，不让 Java domain enum 或 Vue view model 直接泄漏到 wire。
 - **显示名分两类出口**：前端三语 locale + Excel 导出中文标签；改列必须同步两边。
 - **单一数据源**：车辆库为 `common/tankopedia-tier{7,8,9,10}.json`，地图名为 `common/map_names.json`；禁止模块内复制一份。
 - 不引入 Lombok；record 用于不可变模型；Controller 只处理 HTTP，业务逻辑进入 service/core。
@@ -75,6 +80,7 @@ Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 
 ```text
 .
 ├── common/                     # 共享车辆/地图/资产/回放 fixture
+├── contracts/                  # FE ↔ BE HTTP OpenAPI wire contract
 ├── java/                       # Java Maven 根：wotb-contracts + wotb-core + wotb-control + wotb-web
 ├── frontend/                   # Vue 3 SPA + 独立 Sponsor 页
 │   ├── index.html
@@ -97,6 +103,10 @@ Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 
 ```
 
 旧 `frontend/homepage/index.html` / `profile.html` 已删除；公共主页与个人中心统一由 Vue SPA 提供。
+
+### HTTP Contract workflow
+
+HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/serialization → runtime validation → contract tests → affected tests → PR CI`。在 `frontend/` 使用 `npm run api:lint`、`npm run api:generate`、`npm run api:check`、`npm run api:fixture`；生成文件位于 `frontend/src/api/generated/`，不可手改。Playback 旧 artifact 的兼容处理只能放在读取边界；`204` capability unavailable 与 `200` schema violation 必须保持不同语义。完整边界与兼容规则见 [`docs/architecture/http-contracts.md`](architecture/http-contracts.md)。
 
 ---
 
@@ -131,7 +141,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 - `replay`：Processing Job、Export Job、Battle Reconstruction、AI Review。
 - `hof`：单场名人堂。
-- `hundred`：百场名人堂（MANUAL + WARGAMING_API）。
+- `hundred`：百场名人堂（MANUAL 人工证据审核）。
 - `mark3`：Tier X 单车最速三环人工审核排行榜（PENDING/CURRENT/REJECTED/CANCELLED/DELETED，无 SUPERSEDED）。
 - `user`：Profile、WoTB 账号、Notification。
 - `boost`：陪练/打手业务。
@@ -173,11 +183,10 @@ Battle 直接取该场 `tank_id`/`tank_name`（来源 `PlayerResult.tankId`）�
 
 百场域生命周期为 `PENDING/CURRENT/SUPERSEDED/REJECTED/CANCELLED/DELETED`：
 
-- MANUAL：截图 + 5 个 replay，管理员审核。
-- WARGAMING_API：只接受可信 ASIA/EU/NA WG 身份；账号总场次 >=5000、目标车 >=100；官方精确场均 <=3900 自动 CURRENT，>3900 创建无文件 PENDING。
-- 首次 WG 登录可直接提交：服务端先同步 Profile，再做 JWT ↔ Profile ↔ WG 官方响应交叉校验。
+- MANUAL：截图 + 5 个 replay，管理员审核；WG 登录用户同样使用此流程。
 - 管理员只能通过、拒绝或删除，不能改写成绩。
-- 管理员百场摘要列表只展示认证值：WG 使用冻结官方快照，MANUAL 使用通过后的值；申报值仅在详情保留。
+- 管理员百场摘要列表只展示通过后的值；申报值仅在详情保留。
+- V20 的 `verification_source` / 官方 snapshot 列是历史 schema residue，应用不再映射；发布新版本前须先备份数据库，在旧版本/schema 上运行 `tools/cleanup-hundred-wargaming-api.py` dry-run，核对数量后再用精确确认 token apply。工具只删除 `WARGAMING_API` 来源，并按 MANUAL 与单场 HoF 的共享回放引用保护物理文件。
 
 三环域只走人工审核：1–2 张截图、5 个已验证 replay，按 approved battleCount 升序 competition rank；CURRENT 不可替换，REJECTED/CANCELLED/DELETED 可重提。三环 replay 解析通过共享 `ReplayCapacityLimiter`，容量满沿用 `REPLAY_BUSY`。
 
@@ -301,9 +310,15 @@ Processing error/retry，不无限重试）；普通 Web/FileUploader 手动选�
 （cached map-overview + MapOverview）提供。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，
 由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
-Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标记/瞬时反馈由 `BattleMap.vue` 渲染，
-播放控制与标注工具由 `PlaybackControls.vue` 渲染，进度条与事件标记由 `PlaybackTimeline.vue` 渲染，
-当前车辆详情由 `VehicleDetailsPanel.vue` 渲染。
+Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标记/瞬时反馈与 canonical 2 秒轨迹由
+`BattleMap.vue` 渲染，通用 HUD 由 `BattlePlaybackHud.vue` 渲染，播放控制与标注工具由
+`PlaybackControls.vue`/`AnnotationToolbar.vue` 渲染。`PlaybackTimeline.vue` 是纯 seek bar，事件列表位于
+`PlaybackSidePanel.vue` 并通过 root command 执行 seek + pause；当前车辆详情仍由
+`VehicleDetailsPanel.vue` 渲染。wrapper12 权威基地状态由后端 projector 提供 `baseStates`，前端只按当前
+回放时间查询，不从静态地图或最终结果推导。wrapper12 raw update 只在后端经过
+`SupremacyBaseStateReconstructor` 形成带 `baseId`（A/B/C/D）的完整 canonical state，前端不合并
+protobuf sparse update；坦克 marker sizing 优先使用可靠 hull metadata，model overlap 只通过有界
+presentation offset 软避让，canonical 坐标和命中判定语义保持一致。
 车辆状态投影与时钟推进分别由 `utils/playbackVehicleState.ts`、`utils/playbackClock.ts` 提供纯函数，
 组件只负责把 canonical V2 数据转换为展示 props/commands。
 对应测试按 ownership 分层：地图/标记/手势、控制、时间线、详情面板及时钟/车辆投影各有 focused
@@ -322,7 +337,7 @@ WG broker 身份以 `wg:{region}:{account_id}` 隔离区服；`account_id` 必�
 
 JWT mapper 提供 `wotb_region / wotb_account_id / wotb_nickname / wotb_verified`。WG Profile 为只读来源；Profile 不存在时 `PUT /api/users/wotb-account/from-login` 可以原子创建/同步 WARGAMING 资料。
 
-`WG_APPLICATION_ID` 同时注入 Keycloak 和 backend：前者用于 WG IdP，后者用于百场官方 account/info + tanks/stats。
+`WG_APPLICATION_ID` 仅注入 Keycloak，用于 WG IdP；backend 不再需要该配置。
 
 IdP 部署步骤见 `docs/auth/wargaming-asia-deployment.md`。
 
@@ -385,6 +400,7 @@ Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb/config/sponsor-config.j
   不重复跑 repository-level full test；仓库级 full validation 由 PR CI 统一执行（authoritative gate）。
   仅当改动影响跨模块 / build / test infrastructure（`.agents/AGENTS.md` 的 Full-test 例外清单）时，
   Agent 才跑 `cd java && mvn -s settings.xml test` / `cd frontend && npm test && npm run build`。
+- `wotb-web` 的真实 DeepSeek/provider probe 使用 `@Tag("ai-live")`，普通 `mvn test` 默认不执行；仅在明确选择 probe、清空 `-Dai.probe.excludedGroups=` 且通过环境变量提供 key 时手动运行。gateway mock、loopback 和 deterministic AI eval 仍属于普通测试。
 - 涉及 Docker/部署时同时跑对应 Docker build 与 deployment smoke；Deploy 不重复运行测试套件。
 
 ---

@@ -20,6 +20,8 @@
 
 ## Vue component / API boundary
 
+- **HTTP contract boundary**：`contracts/http/openapi.yaml` 是 FE ↔ BE wire SSOT；优先消费 `src/api/generated/` transport types，经过 runtime validation/adapter 后再进入 view model。不得复制手写 wire interface，也不得为了兼容 producer 违规而同时接受两套 enum。
+
 - Vue 组件负责渲染、交互编排和局部视图状态；可复用业务规则放在 composable 或纯函数模块，并由测试覆盖。
 - API 请求集中在已有 API/util 边界；组件不得重造鉴权、上传、错误解析或 dataset identity 逻辑。
 - 后端 API 保持稳定英文 key/data 契约；用户文案、显示名和错误本地化留在 locale/display 层。

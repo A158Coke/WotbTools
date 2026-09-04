@@ -695,7 +695,7 @@ class ReplayExportJobServiceTest {
 
     @Test
     void leagueAggregateExportFromResultWithUnknownDeathTimeReady() throws Exception {
-        // PR #135 契约：UNKNOWN death-time 场照常评分；ratingQuality / canonical 收口
+        // UNKNOWN death-time 场照常评分；death observation 不进入 League state
         // 不得破坏 Export path（processingJobId reuse + aggregate → READY + XLSX 合法）。
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-league-agg-unknown"), 60);
@@ -711,8 +711,6 @@ class ReplayExportJobServiceTest {
                     List.of(LeagueRatingCalculator.calculate(unknown),
                             LeagueRatingCalculator.calculate(normal)),
                     List.of());
-            assertEquals(1, batch.ratingQuality().unknownDeathTimePlayers(),
-                    "canonical 后 UNKNOWN 玩家计入 quality（aggregate 路径一致性）");
             final ProcessedDataset ds = new ProcessedDataset(
                     List.of(unknown, normal),
                     List.of("arena-1.wotbreplay", "arena-2.wotbreplay"),

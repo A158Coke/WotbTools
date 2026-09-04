@@ -76,29 +76,24 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: k => k, te: () => true, tm: op
 
 const pendingItem = {
   id: 11, status: 'PENDING', vehicleId: 6481, vehicleName: 'FV4005',
-  verificationSource: 'MANUAL',
   gameAccountIdSnapshot: 'game-123', nicknameSnapshot: 'SnapUser',
   claimedAverageDamage: 4200, claimedBattleCount: 100,
   approvedAverageDamage: null, approvedBattleCount: null,
-  certifiedAverageDamage: null, certifiedBattleCount: null,
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
   submittedAt: '2024-01-01T00:00:00Z', approvedAt: null, rejectReason: null, deleteReason: null
 }
 
 const currentItem = {
   id: 12, status: 'CURRENT', vehicleId: 6491, vehicleName: 'E 100',
-  verificationSource: 'MANUAL',
   gameAccountIdSnapshot: 'game-456', nicknameSnapshot: 'CurUser',
   claimedAverageDamage: 3800, claimedBattleCount: 120,
   approvedAverageDamage: 3800, approvedBattleCount: 120,
-  certifiedAverageDamage: 3800, certifiedBattleCount: 120,
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
   submittedAt: '2023-12-01T00:00:00Z', approvedAt: '2023-12-02T00:00:00Z', rejectReason: null, deleteReason: null
 }
 
 const rejectedItem = {
   id: 13, status: 'REJECTED', vehicleId: 113, vehicleName: 'Vindicator UM',
-  verificationSource: 'MANUAL',
   gameAccountIdSnapshot: 'game-789', nicknameSnapshot: 'RejectedUser',
   claimedAverageDamage: 3600, claimedBattleCount: 100,
   approvedAverageDamage: null, approvedBattleCount: null,
@@ -135,34 +130,6 @@ const rejectedDetail = {
   deletedAt: null,
   deletedBy: null,
   deleteReasonText: null,
-}
-
-const wargamingPendingItem = {
-  ...pendingItem,
-  id: 14,
-  vehicleId: 385,
-  vehicleName: 'Progetto 65',
-  nicknameSnapshot: 'WgPlayer',
-  gameAccountIdSnapshot: '572253806',
-  verificationSource: 'WARGAMING_API',
-  certifiedAverageDamage: 4101,
-  certifiedBattleCount: 188,
-  officialAverageDamage: 4101,
-}
-
-const wargamingPendingDetail = {
-  ...wargamingPendingItem,
-  proofScreenshot: null,
-  verifiedAt: '2024-02-01T12:30:00Z',
-  verifiedServer: 'EU',
-  officialAccountBattleCount: 12500,
-  officialTankBattleCount: 188,
-  officialTankDamageDealt: 770988,
-  officialAverageDamage: 4101,
-  replayParseOk: false,
-  replayGameIdMatch: false,
-  replayVehicleMatch: false,
-  replayDistinctBattles: false,
 }
 
 const mark3PendingItem = {
@@ -367,24 +334,24 @@ describe('HoFAdminPage', () => {
     })
   })
 
-  it('hundred summary shows certified values instead of claimed values', async () => {
-    const officialItem = {
-      ...wargamingPendingItem,
+  it('hundred summary shows approved values instead of claimed values', async () => {
+    const approvedItem = {
+      ...currentItem,
       claimedAverageDamage: 3800,
       claimedBattleCount: 100,
-      certifiedAverageDamage: 3814,
-      certifiedBattleCount: 103,
+      approvedAverageDamage: 3814,
+      approvedBattleCount: 103,
     }
     hofAdminApi.hofAdminHundredList.mockResolvedValue({
-      items: [officialItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+      items: [approvedItem], page: 1, size: 50, totalItems: 1, totalPages: 1
     })
     const wrapper = mountPage()
     await flushPromises()
     await switchToHundred(wrapper)
 
     const table = wrapper.find('.hof-hundred .hof-admin-table')
-    expect(table.findAll('th').map(header => header.text())).toContain('hundredAdmin.certifiedDamage')
-    expect(table.findAll('th').map(header => header.text())).toContain('hundredAdmin.certifiedBattles')
+    expect(table.findAll('th').map(header => header.text())).toContain('hundredAdmin.approvedDamage')
+    expect(table.findAll('th').map(header => header.text())).toContain('hundredAdmin.approvedBattles')
     expect(table.text()).toContain('3814')
     expect(table.text()).toContain('103')
     expect(table.text()).not.toContain('3800')
@@ -447,63 +414,6 @@ describe('HoFAdminPage', () => {
     expect(hofAdminApi.hofAdminHundredApprove).toHaveBeenCalledWith(11)
     expect(hofAdminApi.hofAdminHundredList).toHaveBeenCalledTimes(2)
     expect(wrapper.find('.hof-review-modal').exists()).toBe(false)
-  })
-
-  it('WG PENDING shows official snapshot, skips replay evidence, and approves without score fields', async () => {
-    hofAdminApi.hofAdminHundredList.mockResolvedValue({
-      items: [wargamingPendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
-    })
-    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(wargamingPendingDetail)
-    const wrapper = mountPage()
-    await flushPromises()
-    await switchToHundred(wrapper)
-
-    expect(wrapper.find('.hof-hundred').text()).toContain('hundredAdmin.verificationSource.WARGAMING_API')
-    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
-    await flushPromises()
-
-    const modal = wrapper.find('.hof-review-modal')
-    expect(hofAdminApi.hofAdminHundredDetail).toHaveBeenCalledWith(14)
-    expect(hofAdminApi.hofAdminHundredReplays, 'WG detail must not request replay evidence').not.toHaveBeenCalled()
-    expect(modal.find('.hundred-wg-snapshot').exists(), 'WG snapshot section').toBe(true)
-    expect(modal.text()).toContain('12,500')
-    expect(modal.text()).toContain('770,988')
-    expect(modal.text()).toContain('4,101')
-    expect(modal.find('.hundred-legacy-warn').exists(), 'no legacy warning').toBe(false)
-    expect(modal.find('.replay-evidence-list').exists(), 'no replay evidence list').toBe(false)
-    expect(modal.find('.val-list').exists(), 'no replay validation list').toBe(false)
-
-    expect(modal.findAll('.hundred-inputs input')).toHaveLength(0)
-    const approve = () => wrapper.findAll('.hof-review-modal button')
-      .find(button => button.text() === 'hundredAdmin.approve')
-    expect(approve().attributes('disabled')).toBeUndefined()
-    await approve().trigger('click')
-    await approve().trigger('click')
-    await flushPromises()
-    expect(hofAdminApi.hofAdminHundredApprove).toHaveBeenCalledWith(14)
-  })
-
-  it('WG PENDING with an incomplete or inconsistent official snapshot disables approval without legacy evidence warning', async () => {
-    hofAdminApi.hofAdminHundredList.mockResolvedValue({
-      items: [wargamingPendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
-    })
-    hofAdminApi.hofAdminHundredDetail.mockResolvedValue({
-      ...wargamingPendingDetail,
-      officialTankDamageDealt: null,
-      officialAverageDamage: null,
-    })
-    const wrapper = mountPage()
-    await flushPromises()
-    await switchToHundred(wrapper)
-    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
-    await flushPromises()
-
-    const approve = wrapper.findAll('.hof-review-modal button')
-      .find(button => button.text() === 'hundredAdmin.approve')
-    expect(approve.attributes('disabled')).toBeDefined()
-    expect(approve.attributes('title')).toBe('hundredAdmin.wgSnapshotIncomplete')
-    expect(wrapper.find('.hundred-legacy-warn').exists(), 'no legacy warning').toBe(false)
-    expect(hofAdminApi.hofAdminHundredReplays, 'WG detail must not request replay evidence').not.toHaveBeenCalled()
   })
 
   it('reject select renders stable category values from $tm object', async () => {

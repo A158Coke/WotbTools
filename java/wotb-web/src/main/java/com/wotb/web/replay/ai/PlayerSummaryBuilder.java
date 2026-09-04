@@ -55,9 +55,7 @@ final class PlayerSummaryBuilder {
                                                    final AllowedLanguage language) {
         final List<KeyBattleEvent> keyEvents = buildDeathTimeline(battle);
         final String enemySection = EnemyLastKnownPositionsSection.renderPlayerSection(battle, recon);
-        final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(
-                buildFallbackPhases(battle),
-                BattlePhaseSummary.deathSourceLabel(battle));
+        final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(buildFallbackPhases(battle));
         // 点数局势：fallback 无覆盖口径信号，伤害数字抑制（定性）；recon 缺失时仅击杀夺分时间线
         final Integer recorderTeam = battle == null
                 ? null : PlayerSideResolver.resolveRecorderTeam(battle);
@@ -297,13 +295,13 @@ final class PlayerSummaryBuilder {
         // 玩家本人单独成段，绝不再以「友方/队友」身份出现在队友阵容里
         if (rec != null) {
             sb.append("\n=== YOU_AUTHORITATIVE（你的战绩·权威结算） ===\n");
-            PlayerEvidenceFormatter.appendPlayerLine(sb, rec, true, true);
+            PlayerEvidenceFormatter.appendPlayerLine(sb, battle, rec, true, true);
         }
         sb.append("\n=== TEAMMATE_LINEUP_AUTHORITATIVE（你的队友阵容·权威结算，不含你本人） ===\n");
         boolean anyTeammate = false;
         for (final PlayerResult p : friendlies) {
             if (PlayerAnalysisPromptFormatter.isSamePlayer(p, rec)) continue;
-            PlayerEvidenceFormatter.appendPlayerLine(sb, p, true);
+            PlayerEvidenceFormatter.appendPlayerLine(sb, battle, p, true);
             anyTeammate = true;
         }
         if (!anyTeammate) {
@@ -311,7 +309,7 @@ final class PlayerSummaryBuilder {
         }
         sb.append("=== ENEMY_LINEUP_AUTHORITATIVE（敌方阵容·权威结算） ===\n");
         for (final PlayerResult p : enemies) {
-            PlayerEvidenceFormatter.appendPlayerLine(sb, p, false);
+            PlayerEvidenceFormatter.appendPlayerLine(sb, battle, p, false);
         }
         if (!unknowns.isEmpty()) {
             sb.append("=== UNKNOWN_LINEUP_AUTHORITATIVE（未确定阵营·权威结算） ===\n");
@@ -329,7 +327,7 @@ final class PlayerSummaryBuilder {
         PlayerEvidenceFormatter.appendClassSummary(sb, friendlies, enemies, unknowns, battle);
 
         // ====== 6. Backend-computed aggregates ======
-        PlayerEvidenceFormatter.appendAggregates(sb, friendlies, enemies, unknowns);
+        PlayerEvidenceFormatter.appendAggregates(sb, battle, friendlies, enemies, unknowns);
 
         // ====== 7. Recorder ranking ======
         if (rec != null && !friendlies.isEmpty()) {
@@ -361,7 +359,7 @@ final class PlayerSummaryBuilder {
         final List<KeyBattleEvent> events = new ArrayList<>();
         if (battle.players != null) {
             final var dead = battle.players.stream()
-                    .filter(p -> !p.survived)
+                    .filter(p -> !p.survived && PlayerResultFormat.deathSec(p) > 0)
                     .sorted(Comparator
                             .comparingDouble((PlayerResult p) -> PlayerResultFormat.deathSec(p) > 0
                                     ? PlayerResultFormat.deathSec(p) : Double.MAX_VALUE)
@@ -382,7 +380,7 @@ final class PlayerSummaryBuilder {
                         PlayerAnalysisTerms.knownDeathClock(deathSec) + " " + who
                                 + "（" + PlayerResultFormat.quoteForPrompt(
                                         ReplayDisplayNames.tankName(p.tankId, p.tankName)) + "）"
-                                + (deathSec > 0 ? "阵亡" : "阵亡（时刻未知）")));
+                                + "阵亡"));
             }
         }
         final float endSec = battle.durationS != null ? battle.durationS.floatValue() : 0f;

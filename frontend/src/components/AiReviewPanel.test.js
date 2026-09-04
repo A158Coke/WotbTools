@@ -153,7 +153,7 @@ describe('AiReviewPanel dataset request', () => {
       ok: false,
       status,
       text: async () => JSON.stringify({
-        errorCode: code, status, id: `err-${status}`,
+        errorCode: code, errorMsg: null, status, id: `err-${status}`,
         retryable: status === 429 || status >= 500, details: {}, timestamp: '2026-08-30T15:30:00Z'
       })
     }))

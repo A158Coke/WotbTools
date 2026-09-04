@@ -41,13 +41,13 @@ class LeagueDomainBoundaryGuardTest {
     @Test
     void leagueValidationFailureKeepsBattleOutOfParserFailures() {
         final Battle bad = training("222");
-        bad.settlementAccountsCoveredByRoster = false; // LEAGUE_ROSTER_INCOMPLETE
+        bad.players.remove(0); // 13 人
         final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(bad));
 
         assertEquals(1, r.battles().size(), "Rating-ineligible 场必须保留在 battles");
         assertTrue(r.failures().isEmpty(), "League validation failure 不得进入 parser failure 列表");
         assertEquals(1, r.leagueFailures().size());
-        assertEquals(LeagueFailure.Code.ROSTER_INCOMPLETE, r.leagueFailures().getFirst().code());
+        assertEquals(LeagueFailure.Code.NOT_SEVEN_VS_SEVEN, r.leagueFailures().getFirst().code());
         // 该场未评分（Rating 缺席）但 Battle 正常——battles 与 battleResults 数量可不等
         assertEquals(0, r.leagueBatch().battleResults().size());
     }
@@ -56,7 +56,7 @@ class LeagueDomainBoundaryGuardTest {
     @Test
     void battleRatingBindsByArenaIdentityNotPosition() {
         final Battle bad = training("222");
-        bad.settlementAccountsCoveredByRoster = false;
+        bad.players.remove(0); // 13 人
         final Battle good = training("111");
         final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(bad, good));
 

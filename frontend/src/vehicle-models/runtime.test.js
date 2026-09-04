@@ -39,6 +39,7 @@ describe('resolveModel（modelKey → 正式资产）', () => {
     expect(m.turretPivot.x).toBe(160)
     expect(m.turretRaster.pixelWidth).toBeGreaterThan(0)
     expect(m.turretRaster.pivotX).toBeGreaterThan(0)
+    expect(m.hullBounds).toEqual(expect.objectContaining({ minX: expect.any(Number), maxY: expect.any(Number) }))
   })
   it('turretless：仅 hull，无 turret / pivot / raster（无 fake turret layer，§14）', () => {
     const m = resolveModel('ho-ri')
@@ -48,6 +49,7 @@ describe('resolveModel（modelKey → 正式资产）', () => {
     expect(m.turretSrc).toBeNull()
     expect(m.turretPivot).toBeNull()
     expect(m.turretRaster).toBeNull()
+    expect(m.hullBounds.maxY).toBeGreaterThan(m.hullBounds.minY)
   })
   it('未知 modelKey → null（generic fallback）', () => {
     expect(resolveModel('not-a-tank')).toBeNull()

@@ -14,7 +14,11 @@ export function apiErrorLabel(t, te, error) {
     415: 'unsupported_media_type', 429: 'rate_limited', 500: 'internal_error',
     502: 'upstream_unavailable', 503: 'service_unavailable', 504: 'upstream_timeout',
   }[apiError.status]
+  const explicitErrorKey = {
+    INVALID_RESPONSE: 'errors.invalid_response',
+  }[apiError.errorCode]
   const keys = [
+    explicitErrorKey,
     `errors.${apiError.errorCode.toLowerCase()}`,
     `api_errors.${apiError.errorCode}`,
     statusFallback && `errors.${statusFallback}`,

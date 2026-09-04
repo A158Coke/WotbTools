@@ -25,7 +25,7 @@ function track() {
       consumableWireCodes: [0x0D, 0x77, 0x09],
       provisions: ['SANDBAG_ARMOR', null, null],
       provisionWireCodes: [0x44, 0x10, 0x11],
-      equipmentIds: [100, 108, 114, 104, 111, 117, 106, 113, 101],
+      equipmentIds: [100, 120, 114, 104, 111, 117, 106, 113, 101],
     },
     positionSegments: [{ startSec: 90, endSec: 100, knowledge: 'OBSERVED', samples: [] }],
     orientationSegments: [{ startSec: 90, endSec: 100, knowledge: 'CURRENT', samples: [] }],
@@ -54,31 +54,16 @@ describe('V2VehicleInspector', () => {
     const hp = w.get('[data-test="v2-inspector-hp"]').text()
     expect(hp).toContain('1200')          // <=t sample, not future 600
     expect(hp).toContain('最后已知 HP')   // LAST_KNOWN knowledge during hidden interval
+    expect(w.find('[data-test="v2-inspector-orientation"]').exists()).toBe(false)
     // loadout 保持 KNOWN（持久配置），即使 120s 在 hidden interval
     expect(w.get('[data-test="v2-inspector-loadout"]').exists()).toBe(true)
-    expect(w.get('[data-test="v2-inspector-module"]').text()).toContain('ENGINE')
+    expect(w.get('[data-test="v2-inspector-module"]').text()).toContain('发动机')
   })
 
   it('after re-acquire at 140 shows current HP 600', () => {
     const w = mountInspector(150)
     const hp = w.get('[data-test="v2-inspector-hp"]').text()
     expect(hp).toContain('600')
-  })
-
-  it('orientation 用 orientationLabel：CURRENT/LAST_KNOWN/UNKNOWN 不裸显、不映射成 Detected', () => {
-    // CURRENT 朝向 → orientation_current（"当前朝向"），不再是 state_detected（"已发现"）
-    const w = mountInspector(95)
-    const orient = w.get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()
-    expect(orient).toBe('当前朝向')
-    expect(['CURRENT', 'LAST_KNOWN', 'UNKNOWN', '已发现', '位置上报中']).not.toContain(orient)
-    // LAST_KNOWN 朝向 → orientation_last_known
-    const t1 = track()
-    t1.orientationSegments = [{ startSec: 90, endSec: 100, knowledge: 'CURRENT', samples: [] }]
-    expect(mountInspector(120, 'zh', t1).get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()).toBe('最后已知朝向')
-    // 无朝向数据 → unknown（"未知"）
-    const t2 = track()
-    t2.orientationSegments = []
-    expect(mountInspector(95, 'zh', t2).get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()).toBe('未知')
   })
 
   it('state CURRENT observation：coverage ≠ 点亮，显示 "当前观测" 而非 "已发现"', () => {
@@ -88,23 +73,13 @@ describe('V2VehicleInspector', () => {
     expect(['已发现', 'Detected', 'Обнаружен']).not.toContain(state)
   })
 
-  it.each(['zh', 'en', 'ru'])('locale %s：orientation/state 不裸显 raw CURRENT/LAST_KNOWN/UNKNOWN', (locale) => {
+  it.each(['zh', 'en', 'ru'])('locale %s：state 不裸显 raw CURRENT/LAST_KNOWN/UNKNOWN', (locale) => {
     const rawOrDetected = ['CURRENT', 'LAST_KNOWN', 'UNKNOWN', '已发现', 'Detected', 'Обнаружен']
-    // CURRENT observation + orientation CURRENT
-    const wc = mountInspector(95, locale)
-    const orient = wc.get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()
-    const state = wc.get('[data-test="v2-inspector-life"] .v2-inspector-val').text()
-    expect(orient.length).toBeGreaterThan(0)
+    const w = mountInspector(95, locale)
+    const state = w.get('[data-test="v2-inspector-life"] .v2-inspector-val').text()
     expect(state.length).toBeGreaterThan(0)
-    expect(rawOrDetected).not.toContain(orient)
     expect(rawOrDetected).not.toContain(state)
-    // LAST_KNOWN orientation
-    const t = track()
-    t.orientationSegments = [{ startSec: 90, endSec: 100, knowledge: 'CURRENT', samples: [] }]
-    const wl = mountInspector(120, locale, t)
-    const olast = wl.get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()
-    expect(olast.length).toBeGreaterThan(0)
-    expect(rawOrDetected).not.toContain(olast)
+    expect(w.find('[data-test="v2-inspector-orientation"]').exists()).toBe(false)
   })
 
   it('loadout 显示本地化名称，绝不裸显 internal logical id / 数字 equipment id', () => {
@@ -113,7 +88,7 @@ describe('V2VehicleInspector', () => {
     expect(text).toContain('修理箱')         // REPAIR_KIT
     expect(text).toContain('肾上腺素')       // ADRENALINE
     expect(text).toContain('沙袋装甲')       // SANDBAG_ARMOR
-    expect(text).toContain('改进型模块')     // 108
+    expect(text).toContain('改进型模块+')   // 120: Object 244 vehicle-specific preset
     expect(text).toContain('改进型光学系统') // 114
     // raw internal id 不得作为用户文案
     expect(text).not.toContain('REPAIR_KIT')
@@ -139,19 +114,44 @@ describe('V2VehicleInspector', () => {
     expect(text).not.toContain('SOME_INTERNAL_STATE')
   })
 
-  it.each(['zh', 'en', 'ru'])('locale %s：未知 equipment id 走「未知装备（id）」fallback 并保留 raw id', (locale) => {
+  it.each(['zh', 'en', 'ru'])('locale %s：未知 equipment id 使用通用未知文案，不把 raw id 带入产品 UI', (locale) => {
     const t = track()
     t.loadout = { ...t.loadout, equipmentIds: [9999, 100] }
     const w = mountInspector(120, locale, t)
     const text = w.get('[data-test="v2-inspector-loadout"]').text()
-    expect(text).toContain('9999') // 保留 raw id 仅作诊断
+    expect(text).toMatch(/未知装备|Unknown equipment|Неизвестное оборудование/)
+    expect(text).not.toContain('9999')
   })
 
-  it('未知 consumable code 走「未知消耗品（code）」fallback', () => {
+  it('未知 consumable code 走通用「未知消耗品」fallback', () => {
     const t = track()
     t.loadout = { ...t.loadout, consumables: ['SOME_INTERNAL_ENUM', null, 'REPAIR_KIT'], consumableWireCodes: [0x00, 0x77, 0x0D] }
     t.consumableTransitions = []
     const w = mountInspector(120, 'zh', t)
-    expect(w.get('[data-test="v2-inspector-loadout"]').text()).toContain('未知消耗品（SOME_INTERNAL_ENUM）')
+    expect(w.get('[data-test="v2-inspector-loadout"]').text()).toContain('未知消耗品')
+    expect(w.get('[data-test="v2-inspector-loadout"]').text()).not.toContain('SOME_INTERNAL_ENUM')
+  })
+
+  it('loadout is rendered as fixed 3 + 3 + 3x3 semantic cells', () => {
+    const w = mountInspector(120)
+    expect(w.findAll('[data-test="v2-inspector-consumables"] .v2-inspector-chip')).toHaveLength(3)
+    expect(w.findAll('[data-test="v2-inspector-provisions"] .v2-inspector-chip')).toHaveLength(3)
+    expect(w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')).toHaveLength(9)
+    expect(w.findAll('[data-test="v2-inspector-equipment"] [data-equipment-group="row1"] .v2-inspector-chip')).toHaveLength(3)
+    expect(w.findAll('[data-test="v2-inspector-equipment"] [data-equipment-group="row2"] .v2-inspector-chip')).toHaveLength(3)
+    expect(w.findAll('[data-test="v2-inspector-equipment"] [data-equipment-group="row3"] .v2-inspector-chip')).toHaveLength(3)
+    expect(w.get('[data-equipment-slot="0"] .v2-chip-type').text()).toBe('F1')
+    expect(w.get('[data-equipment-slot="1"] .v2-chip-type').text()).toBe('V1')
+    expect(w.get('[data-equipment-slot="2"] .v2-chip-type').text()).toBe('S1')
+
+    const equipment = w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')
+    expect(equipment.map(cell => cell.get('.v2-chip-type').text())).toEqual([
+      'F1', 'V1', 'S1', 'F2', 'V2', 'S2', 'F3', 'V3', 'S3',
+    ])
+    expect(equipment.map(cell => cell.text())).toEqual([
+      'F1火炮输弹机', 'V1改进型模块+', 'S1改进型光学系统',
+      'F2改进型炮控系统', 'V2改进型组装', 'S2发动机加速器',
+      'F3精密火炮', 'V3工具箱', 'S3高级消耗品',
+    ])
   })
 })

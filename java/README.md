@@ -16,7 +16,7 @@
 | `wotb-web`  | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087`（管理端口 `8088`，Actuator/Prometheus） |
 | `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
 | `keycloak-wargaming-provider` | Keycloak 26 自定义 Identity Provider：Wargaming.net 登录 SPI（Provider ID `wargaming`，region 配置 ASIA/EU/NA → 官方 host 白名单：认证 `api.worldoftanks.*/wot/auth/`、账号 `api.wotblitz.*/wotb/account/`；ASIA/EU/NA 三个实例） |
-| `docker/online/` | `docker-compose.yml`：`build:` 从源码编译运行八服务（postgres + keycloak + backend + frontend + prometheus + loki + alloy + grafana） |
+| `docker/online/` | `docker-compose.yml`：`build:` 从源码编译运行九服务（postgres + keycloak + backend + frontend + prometheus + loki + alloy + grafana + node-exporter） |
 
 > 车辆库 `common/tankopedia-tier{7,8,9,10}.json` 与地图名映射 `common/map_names.json`（仓库根的共享目录）都会在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放副本。
 
@@ -33,7 +33,7 @@ docker compose up -d --build
 
 访问 http://localhost:8088 （健康检查 `http://localhost:8088/api/health`）。
 
-`docker/online/docker-compose.yml` 启动**八服务**（`postgres:18` + `keycloak` + `wotb-backend` + `wotb-frontend` + `prometheus` + `loki` + `alloy` + `grafana`），后端与前端分别构建 `docker/Dockerfile.backend` 和 `docker/Dockerfile.frontend`，观测四件套使用固定版本镜像。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端连接 PostgreSQL 并由 Flyway 管理 schema。本地启动观测栈需在环境变量或 `docker/online/.env` 提供 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`（compose required 语法校验）。
+`docker/online/docker-compose.yml` 启动**九服务**（`postgres:18` + `keycloak` + `wotb-backend` + `wotb-frontend` + `prometheus` + `loki` + `alloy` + `grafana` + `node-exporter`），后端与前端分别构建 `docker/Dockerfile.backend` 和 `docker/Dockerfile.frontend`，观测五件套使用固定版本镜像。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端连接 PostgreSQL 并由 Flyway 管理 schema。本地启动观测栈需在环境变量或 `docker/online/.env` 提供 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`（compose required 语法校验）。
 
 赞助页从 `/sponsor-config.json` 读取运行时配置。生产配置保存在 `/opt/wotb/config/sponsor-config.json`，二维码保存在 `/opt/wotb/config/sponsor/`，以只读方式挂载到前端容器；仓库仅提供 disabled 示例配置，不包含个人收款二维码。
 
@@ -49,11 +49,11 @@ docker compose up -d --build
 
 线上 502 排查可手动运行 [`.github/workflows/prod-diagnostics.yml`](../.github/workflows/prod-diagnostics.yml)，读取 VPS compose 状态与后端/前端日志。
 
-> 八个服务：`postgres:18`（数据持久化，卷挂 `/var/lib/postgresql`）→ `keycloak`（认证，`auth.wotbtools.com`）→ `wotb-backend`（Spring Boot 8087，管理端口 8088）→ `wotb-frontend`（nginx + Vue，暴露 8088:80）+ 观测四件套（`prometheus`/`loki`/`alloy`/`grafana`，仅 Docker 内部网络）。`paths` 过滤使纯文档 push 不触发部署。
+> 九个服务：`postgres:18`（数据持久化，卷挂 `/var/lib/postgresql`）→ `keycloak`（认证，`auth.wotbtools.com`）→ `wotb-backend`（Spring Boot 8087，管理端口 8088）→ `wotb-frontend`（nginx + Vue，暴露 8088:80）+ 观测五件套（`prometheus`/`loki`/`alloy`/`grafana`/`node-exporter`，仅 Docker 内部网络）。`paths` 过滤使纯文档 push 不触发部署。
 
 ## 本地开发
 
-后端需要 JDK 21；完整运行使用八服务开发环境，确保 PostgreSQL、Keycloak 与必要环境变量同时存在。
+后端需要 JDK 21；完整运行使用九服务开发环境，确保 PostgreSQL、Keycloak 与必要环境变量同时存在。
 
 ```bash
 cd java
@@ -159,7 +159,7 @@ TTL 随 job 目录清理）。Dataset Lease：Export / AI / Playback 读取前 `
 
 **策略**：上传文件先统一校验扩展名、空文件和单文件大小；通过预校验后，解析/重建错误才按文件隔离。系统执行 SHA-256 精确去重，并按 battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
 
-团队总伤害、承伤、助攻、格挡、击杀、存活来自 `battle_results.dat` 权威结算；死亡时刻权威链为 `LIVE_EXACT`（回放 live EXACT，sub-second）→ `SETTLEMENT_SECOND`（结算 `deathTimeMillis`）→ `UNKNOWN`（`survivalTimeSec=0`）；`PlayerResultFormat.deathSec` 按 `deathTimeSource` 消费，legacy 启发式不作为死亡 authority；事件流伤害只作为观测子集。重建可用时补充每名队员独立移动、阵型、交火和关键事件；重建不可用时仍可生成明确标注的权威结算 fallback。AI 输入不包含原始事件流，prompt 长度由 token 估算器（`AiTokenEstimator`）按 `AiModelProperties` 预算控制（`singleReplayMaxInputTokens` 等），不再使用固定成员数/事件数/字符数截断；超限时返回 `AI_INPUT_TRUNCATED` limitation。
+团队总伤害、承伤、助攻、格挡、击杀、存活和业务死亡秒值来自 `battle_results.dat` 权威结算（`#301 field24 lifeTime`）；Playback/live reconstruction 仅服务播放、HP/动画与诊断，不能覆盖或回写 settlement `PlayerResult`。`deathTimeMillis`/`survivalTimeSec` 仅保留兼容投影，legacy 启发式不作为死亡 authority；事件流伤害只作为观测子集。重建可用时补充每名队员独立移动、阵型、交火和关键事件；重建不可用时仍可生成明确标注的权威结算 fallback。AI 输入不包含原始事件流，prompt 长度由 token 估算器（`AiTokenEstimator`）按 `AiModelProperties` 预算控制（`singleReplayMaxInputTokens` 等），不再使用固定成员数/事件数/字符数截断；超限时返回 `AI_INPUT_TRUNCATED` limitation。
 
 AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`AI_CANCELLED`、`AI_UPSTREAM_UNAVAILABLE` 等），前端以 zh/en/ru 本地化。`/api/replay/**` 需要 `wotbtools-user` 或 `wotbtools-admin` 角色；未配置 `AI_API_KEY` 时 `/analyze` 返回 `AI_NOT_CONFIGURED`，应用其余功能不受影响。全链路超时对齐：整体 deadline 默认 1100s（团队 3 次 AI 调用 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 前端 analyze 安全超时 1100s < 容器 nginx `/api/replay/analyze` 1120s，后端 AI 单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量；`AI_TIMEOUT` 不再自动重试（上游可能已计费）。
 
@@ -173,14 +173,13 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 - `GET /api/hof/{id}/replay` — 下载该记录原始回放文件（**需登录**，任意已登录用户；无文件 → 404 `REPLAY_FILE_NOT_FOUND`）。
 - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof`（国家/车种/等级可独立真实筛选并与具体车辆取交集，另支持搜索/排序/分页；不暴露 Arena ID 或原始 `arenaBonusType`）、`GET /api/admin/hof/vehicle-options`（复用公开车辆选项实现）、`GET /api/admin/hof/audit`（操作日志，只读）、`GET /api/admin/hof/{id}/replay`（下载）、`DELETE /api/admin/hof/{id}`（hard delete，audit+delete 单事务，最后引用清理物理文件；删除后同一回放可重新上传）。
 - 原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（默认 `data/replays`，生产 volume `/data/replays`）；老记录无文件不显示下载按钮。
-- **百场（Hundred Battles）**：Tier X 车辆独立的生涯场均伤害排行榜，同时提供原人工审核与 WG 官方 API 自动认证（`com.wotb.web.hundred` 域）：
+- **百场（Hundred Battles）**：Tier X 车辆独立的生涯场均伤害排行榜，所有用户统一使用人工证据审核（`com.wotb.web.hundred` 域）：
   - `GET /api/hof/hundred?nation=&vehicleType=&vehicleId=&page=&size=` — 公开排行榜（匿名；三项交集：全空为全站 CURRENT Top 10，仅分类为分类交集 Top 10，具体车辆为该车独立分页；competition ranking 与筛选上下文一致）。
   - `POST /api/hof/hundred/submissions` — 提交百场成绩（**需登录** + Profile gameId/nickname 已配置；multipart：vehicleId/averageDamage/battleCount/screenshot(base64)/replays×5）。硬门禁：Tier X authoritative 校验、5 个 replay 全部解析成功且 gameId/vehicleId 匹配、5 场不同 battle；任一失败整单拒绝不进入 PENDING。同车已有 PENDING → 409 `HUNDRED_PENDING_EXISTS`；新成绩未严格高于 CURRENT → 409 `HUNDRED_NOT_HIGHER`。
-  - `POST /api/hof/hundred/submissions/wargaming` — WG 自动认证（**仅 `wotb_verified` 的 ASIA/EU/NA 登录账号**；JSON：vehicleId/averageDamage/battleCount，不上传文件）。首次可信 WG 登录后可直接调用：后端先同步 Profile，再交叉校验 JWT/Profile/WG 官方响应；同步或身份冲突时不调用 WG stats、不创建 submission。账号总场次 >=5000、目标车场次 >=100，官方精确场均 <=3900 自动 CURRENT，>3900 自动创建无文件的 WG 来源 PENDING。claimed 值仅审计，不能影响分流或排名；WG 失败零落库并回退人工入口。
   - `POST /api/hof/hundred/submissions/{id}/cancel` — 用户撤销自己的 PENDING（**需登录**）。
   - `GET /api/users/hundred/status` — 个人中心百场状态（CURRENT / PENDING / 最近拒绝；**需登录**）。
-  - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/hundred/submissions?status=&nation=&vehicleType=&vehicleId=`（状态/国家/车种/车辆可独立筛选并取交集；摘要只返回 `certifiedAverageDamage` / `certifiedBattleCount`，WG 为冻结官方快照，MANUAL 为通过后的值）、`GET .../submissions/{id}`（所有状态详情，保留用户申报值；MANUAL PENDING 返回 proof，WG PENDING 返回官方快照）、`GET .../submissions/{id}/replays`（仅 MANUAL PENDING 回放证据 metadata）、`GET .../submissions/{submissionId}/replays/{replayId}`（下载原始 .wotbreplay，ownership 校验 + UTF-8 filename）、`POST .../{id}/approve`（无请求体；按来源校验证据后以 MANUAL 原申报值或 WG 官方冻结快照原子替换 CURRENT）、`POST .../{id}/reject`（原因强制）、`POST .../{id}/delete`（仅 CURRENT，原因强制，不恢复 SUPERSEDED）。
-  - 数据模型：`hundred_battle_submission` 单表生命周期（Flyway `V18`），partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT；Flyway `V20` 增加 `verification_source` 与 WG 官方 totals 快照。MANUAL proof 截图和 5 个原始 replay 仅 PENDING admin-only 保留，终态立即清理；WARGAMING_API 来源从不保存文件，管理员审核冻结的官方数字快照。
+  - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/hundred/submissions?status=&nation=&vehicleType=&vehicleId=`（状态/国家/车种/车辆可独立筛选并取交集；摘要返回通过后的 approved 值）、`GET .../submissions/{id}`（所有状态详情，PENDING 返回 proof）、`GET .../submissions/{id}/replays`（PENDING 回放证据 metadata）、`GET .../submissions/{submissionId}/replays/{replayId}`（下载原始 .wotbreplay，ownership 校验 + UTF-8 filename）、`POST .../{id}/approve`（无请求体；校验证据后以 MANUAL 原申报值原子替换 CURRENT）、`POST .../{id}/reject`（原因强制）、`POST .../{id}/delete`（仅 CURRENT，原因强制，不恢复 SUPERSEDED）。
+  - 数据模型：`hundred_battle_submission` 单表生命周期（Flyway `V18`），partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT；V20 的历史 source/snapshot 列保留为 retired schema residue，不再由应用映射。proof 截图和 5 个原始 replay 仅 PENDING admin-only 保留，终态立即清理。
 
 - **三环（Mark 3）**：Tier X 单车最速三环排行榜，仅走人工审核（`com.wotb.web.mark3` 域）：
   - `GET /api/hof/mark3?nation=&vehicleType=&vehicleId=&page=&size=` — 公开排行榜（匿名；与百场相同的国家/系别、车种、车辆交集；全空或仅分类时为 CURRENT Top 10，选择车辆后为该车独立分页；按 approvedBattleCount ASC，场数相同为 competition rank，稳定展示按 approvedAt ASC、id ASC）。
@@ -207,10 +206,10 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 - `GET /api/users/profile` — 当前用户资料；未创建返回 404 `PROFILE_NOT_FOUND`。
 - `POST /api/users/profile` — 懒创建资料。JWT 带可信 WG claims（`wotb_verified=true` 且 `wotb_region ∈ {ASIA,EU,NA}` 且账号/昵称有效）时自动创建对应区服资料（`wotb_account_source=WARGAMING`、`wotb_account_verified_at=首次同步时间`）；否则按 CN（`MANUAL`）创建。
 - `PATCH /api/users/wotb-account` — CN 手动绑定（仅允许 `wotbServer=CN`）；WARGAMING source 资料返回只读错误（ASIA 为 400 `ASIA_PROFILE_READONLY`，EU/NA 为 400 `WARGAMING_PROFILE_READONLY`）。
-- `PUT /api/users/wotb-account/from-login` — WG 登录后的幂等同步（无 body，只读 JWT）；Profile 不存在时原子创建 WARGAMING、空 Profile 升级为 WARGAMING、同 (region, account_id) 刷新官方昵称（不刷新 verified_at）；百场 WG 提交会在查询 stats 前复用相同同步。已绑定 CN 覆盖或跨区服返回 409 `PROFILE_REGION_MISMATCH`、换账号返回 409 `WOTB_ACCOUNT_MISMATCH`、账号被他人占用返回 409 `WOTB_ACCOUNT_ALREADY_USED`、Claims 缺失返回 400 `WOTB_CLAIMS_INVALID`。
+- `PUT /api/users/wotb-account/from-login` — WG 登录后的幂等同步（无 body，只读 JWT）；Profile 不存在时原子创建 WARGAMING、空 Profile 升级为 WARGAMING、同 (region, account_id) 刷新官方昵称（不刷新 verified_at）。已绑定 CN 覆盖或跨区服返回 409 `PROFILE_REGION_MISMATCH`、换账号返回 409 `WOTB_ACCOUNT_MISMATCH`、账号被他人占用返回 409 `WOTB_ACCOUNT_ALREADY_USED`、Claims 缺失返回 400 `WOTB_CLAIMS_INVALID`。
 - `DELETE /api/users/wotb-account` — 解绑；WARGAMING source 资料返回只读错误（ASIA 为 400 `ASIA_PROFILE_READONLY`，EU/NA 为 400 `WARGAMING_PROFILE_READONLY`）。
 
-资料 DTO 含 `wotbAccountSource`（MANUAL/WARGAMING）与 `wotbAccountVerifiedAt`（ISO 时间或 null）。JWT claims 由 Keycloak realm 的 4 个 protocol mapper 提供（`region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified(boolean)`）；Keycloak 与 backend 容器需注入同一个 `WG_APPLICATION_ID`（分别用于 WG 登录与百场官方认证，缺失时相应 WG 功能报错但应用和人工链路可用）。详见 [docs/auth/wargaming-asia-login.md](../docs/auth/wargaming-asia-login.md) 与部署手册 [docs/auth/wargaming-asia-deployment.md](../docs/auth/wargaming-asia-deployment.md)。
+资料 DTO 含 `wotbAccountSource`（MANUAL/WARGAMING）与 `wotbAccountVerifiedAt`（ISO 时间或 null）。JWT claims 由 Keycloak realm 的 4 个 protocol mapper 提供（`region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified(boolean)`）；WG 登录所需 `WG_APPLICATION_ID` 仅注入 Keycloak，backend 不再调用 WG stats。详见 [docs/auth/wargaming-asia-login.md](../docs/auth/wargaming-asia-login.md) 与部署手册 [docs/auth/wargaming-asia-deployment.md](../docs/auth/wargaming-asia-deployment.md)。
 
 ## 测试
 

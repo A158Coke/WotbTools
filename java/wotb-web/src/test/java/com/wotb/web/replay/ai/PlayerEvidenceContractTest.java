@@ -1,7 +1,6 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.KeyBattleEvent;
@@ -144,7 +143,7 @@ class PlayerEvidenceContractTest {
         final Battle battle = battle(1);
         battle.players.get(2).survived = false;
         battle.players.get(2).deathTimeMillis = 123_000L;
-battle.players.get(2).deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+battle.players.get(2).settlementLifeTimeSec = 123;
         assertNoRawSecondClocks(PlayerReplayPromptBuilder.buildSummary(battle, null, List.of(
                 new KeyBattleEvent(123f, "VEHICLE_DESTROYED", "被击毁",
                         DecodeConfidence.EXACT, "TEST", List.of()))));
@@ -155,7 +154,7 @@ battle.players.get(2).deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
         final Battle battle = battle(1);
         battle.players.get(2).survived = false;
         battle.players.get(2).deathTimeMillis = 123_000L;
-battle.players.get(2).deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+battle.players.get(2).settlementLifeTimeSec = 123;
         final String evidence = PlayerReplayPromptBuilder.buildSummary(battle, null, List.of());
 
         assertTrue(evidence.contains("阵亡@2分03秒"), evidence);

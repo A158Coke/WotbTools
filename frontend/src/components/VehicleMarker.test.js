@@ -74,6 +74,19 @@ describe('generic（非 Tier X / fallback）', () => {
 })
 
 describe('dedicated turreted（嵌套 transform）', () => {
+  it('dedicated raster 只使用等比 square render box，不二次压缩 hull aspect', () => {
+    const w = mountMarker({
+      ...dedicatedMarker,
+      markerStyle: { ...dedicatedMarker.markerStyle, width: '24px', height: '24px' },
+    })
+    expect(w.find('button').attributes('style')).toContain('width: 24px')
+    expect(w.find('button').attributes('style')).toContain('height: 24px')
+    expect(w.find('.pb-hull-dedicated').attributes('style')).not.toContain('scaleX')
+    expect(w.find('.pb-hull-dedicated').attributes('style')).not.toContain('scaleY')
+    expect(w.find('.pb-turret-dedicated').attributes('style')).not.toContain('scaleX')
+    expect(w.find('.pb-turret-dedicated').attributes('style')).not.toContain('scaleY')
+  })
+
   it('hull 满盒绕中心旋转 + turret assembly 随 hull 移动 + 子层绕 image-local pivot 旋转 T-H', () => {
     const w = mountMarker(dedicatedMarker)
     const hull = w.find('.pb-hull-dedicated')
@@ -94,10 +107,9 @@ describe('dedicated turreted（嵌套 transform）', () => {
     expect(turret.attributes('style')).toContain('rotate(30deg)') // T - H = 60 - 30
   })
 
-  it('destroyed 无方向样本 → 0° 渲染（最后可信姿态冻结语义）', () => {
-    const w = mountMarker({ ...dedicatedMarker, hullScreenDeg: 0, turretScreenDeg: 0, destroyed: true })
-    expect(w.find('.pb-hull-dedicated').attributes('style')).toContain('rotate(0deg)')
-    expect(w.find('.pb-turret-dedicated').attributes('style')).toContain('rotate(0deg)')
+  it('marker 收到 null 方向 → 不自行伪造朝向（projector 负责 destroyed presentation fallback）', () => {
+    const w = mountMarker({ ...dedicatedMarker, hullScreenDeg: null, turretScreenDeg: null, destroyed: true })
+    expect(w.findAll('img')).toHaveLength(0)
     expect(w.find('.pb-death').exists()).toBe(true)
   })
 
@@ -169,6 +181,52 @@ describe('marker 根元素（按钮）', () => {
     const d = mountMarker({ ...genericMarker, destroyed: true, lastKnown: true })
     expect(d.find('button').classes()).not.toContain('pb-last-known')
     expect(d.find('button').classes()).toContain('pb-destroyed')
+  })
+
+  it('relative-full HP 仍渲染 HUD 和满条；unknown 也不隐藏 HUD', async () => {
+    const full = mountMarker({ ...genericMarker, friendly: true }, false)
+    await full.setProps({ hp: { current: null, pct: null, destroyed: false, state: 'RELATIVE_FULL' } })
+    expect(full.find('[data-test="pb-hp-hud"]').exists()).toBe(true)
+    expect(full.find('[data-test="pb-hp-num"]').text()).toBe('—')
+    expect(full.find('.pb-hp-fill').attributes('style')).toContain('width: 100%')
+
+    const unknown = mountMarker({ ...genericMarker, friendly: false }, false)
+    await unknown.setProps({ hp: { current: null, pct: null, destroyed: false, state: 'UNKNOWN' } })
+    expect(unknown.find('[data-test="pb-hp-hud"]').exists()).toBe(true)
+    expect(unknown.find('.pb-hp-fill').attributes('style')).toContain('width: 0%')
+  })
+
+  it('HP last-known styling follows health state, not stale position state', async () => {
+    const positionStaleHealthCurrent = mountMarker({ ...genericMarker, lastKnown: true })
+    await positionStaleHealthCurrent.setProps({
+      hp: { current: 800, pct: 80, destroyed: false, state: 'CURRENT', knowledge: 'CURRENT' },
+    })
+    expect(positionStaleHealthCurrent.find('[data-test="pb-hp-hud"]').classes()).not.toContain('pb-hp-lastknown')
+
+    const positionCurrentHealthLastKnown = mountMarker({ ...genericMarker, lastKnown: false })
+    await positionCurrentHealthLastKnown.setProps({
+      hp: { current: 800, pct: 80, destroyed: false, state: 'LAST_KNOWN', knowledge: 'LAST_KNOWN' },
+    })
+    expect(positionCurrentHealthLastKnown.find('[data-test="pb-hp-hud"]').classes()).toContain('pb-hp-lastknown')
+  })
+
+  it('DESTROYED（lifeState）隐藏单车 HP number+bar；保留 ✕ / label / selected', async () => {
+    // ALIVE + known HP → 单车 HP HUD 可见
+    const alive = mountMarker({ ...genericMarker, destroyed: false })
+    await alive.setProps({ hp: { current: 800, pct: 80, destroyed: false, state: 'CURRENT', knowledge: 'CURRENT' } })
+    expect(alive.find('[data-test="pb-hp-hud"]').exists()).toBe(true)
+
+    // DESTROYED + HP=0 → 隐藏单车 HP（lifeState 权威，非 hp===0）
+    const dead0 = mountMarker({ ...genericMarker, destroyed: true })
+    await dead0.setProps({ hp: { current: 0, pct: 0, destroyed: true, state: 'DESTROYED' } })
+    expect(dead0.find('[data-test="pb-hp-hud"]').exists()).toBe(false)
+    expect(dead0.find('.pb-death').exists()).toBe(true)
+    expect(dead0.find('[data-test="pb-label-tank"]').exists()).toBe(true)
+
+    // DESTROYED + stale HP=500 → 仍隐藏单车 HP（不得因残留血量而重新显示）
+    const dead500 = mountMarker({ ...genericMarker, destroyed: true })
+    await dead500.setProps({ hp: { current: 500, pct: 50, destroyed: true, state: 'DESTROYED' } })
+    expect(dead500.find('[data-test="pb-hp-hud"]').exists()).toBe(false)
   })
 })
 
@@ -304,7 +362,7 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
 })
 
 describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
-  const label = { showPlayer: false, showTank: true, tankDy: 0, playerHidden: false, playerFading: false }
+  const label = { showPlayer: false, showTank: true, tankDy: 0, blockHidden: false, hpHidden: false }
 
   it('§26/§27：默认只显示 TankName；showPlayer 开启后两行共享背景块', () => {
     const w = mount(VehicleMarker, { props: { marker: genericMarker, selected: false, label } })
@@ -335,21 +393,20 @@ describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
     // 模拟截断：scrollWidth > clientWidth
     Object.defineProperty(w.find('.pb-label-player').element, 'scrollWidth', { value: 200, configurable: true })
     Object.defineProperty(w.find('.pb-label-player').element, 'clientWidth', { value: 60, configurable: true })
-    // watch 依赖变化触发重测
-    await w.setProps({ label: { ...label, showPlayer: true, playerHidden: true } })
-    await w.setProps({ label: { ...label, showPlayer: true, playerHidden: false } })
+    // watch 依赖（label 对象）变化触发重测
+    await w.setProps({ label: { ...label, showPlayer: true } })
     await new Promise((r) => setTimeout(r, 0))
     expect(w.find('.pb-label-player').attributes('title')).toBe('You')
   })
 
-  it('§32/§33：playerHidden → v-show 隐藏；playerFading → fade 动画 class', () => {
+  it('§32/§33：碰撞永不隐藏 PlayerName——无 v-show、无 fade 类、无 fade CSS', () => {
     const src = markerSource
-    expect(src).toContain('animation: pb-label-fade-in 0.12s ease;')
-    const hidden = mount(VehicleMarker, { props: { marker: genericMarker, selected: false, label: { ...label, showPlayer: true, playerHidden: true } } })
-    expect(hidden.find('.pb-label-player').attributes('style')).toContain('display: none') // v-show
-    const fading = mount(VehicleMarker, { props: { marker: genericMarker, selected: false, label: { ...label, showPlayer: true, playerFading: true } } })
-    expect(fading.find('.pb-label-player').classes()).toContain('pb-label-fading')
-    expect(src).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.pb-label-fading \{ animation: none; \}/)
+    expect(src).not.toContain('.pb-label-fading')
+    expect(src).not.toContain('pb-label-fade-in')
+    const w = mount(VehicleMarker, { props: { marker: genericMarker, selected: false, label: { ...label, showPlayer: true } } })
+    expect(w.find('.pb-label-player').exists()).toBe(true) // 恒渲染
+    expect(w.find('.pb-label-player').attributes('style')).toBeUndefined() // 无 v-show 隐藏 style
+    expect(w.find('.pb-label-player').isVisible()).toBe(true) // 恒可见
   })
 
   it('§34 tankDy：标签块 bottom 上移（tankDy×inv），selected 三角同步上移；车体不受影响', () => {
@@ -372,6 +429,18 @@ describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
     const d = mount(VehicleMarker, { props: { marker: { ...dedicatedMarker, hitbox: { w: 0.9, h: 0.9 } }, selected: false, label } })
     expect(d.find('.pb-hitbox').attributes('style')).toContain('width: 90%')
     expect(d.find('.pb-hitbox').attributes('style')).toContain('height: 90%')
+  })
+
+  it('vehicle-aware marker uses the final expanded pixel hit target', () => {
+    const w = mount(VehicleMarker, {
+      props: {
+        marker: { ...genericMarker, markerSize: { width: 18, height: 26 }, hitTargetSize: { width: 22, height: 30 } },
+        selected: false,
+        label,
+      },
+    })
+    expect(w.find('.pb-hitbox').attributes('style')).toContain('width: 22px')
+    expect(w.find('.pb-hitbox').attributes('style')).toContain('height: 30px')
   })
 
   it('select 事件带原生 event（§37 需要 clientX/Y）', async () => {

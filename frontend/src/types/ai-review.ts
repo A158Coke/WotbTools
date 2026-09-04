@@ -1,4 +1,4 @@
-import type { ApiErrorPayload, ErrorCode } from './api.js'
+import type { ApiErrorApplicationModel, ServerErrorCode } from './api.js'
 
 export type AiReviewCapability =
   | 'AVAILABLE'
@@ -38,7 +38,7 @@ export interface AiReviewDoneEvent {
 
 export interface AiReviewErrorEvent {
   type: 'error'
-  code: ErrorCode
+  code: ServerErrorCode
 }
 
 export type AiReviewEvent =
@@ -55,4 +55,4 @@ export function isAiReviewCapability(value: unknown): value is AiReviewCapabilit
 }
 
 /** Keep the imported API error shape available to callers without coupling SSE payloads to it. */
-export type AiReviewApiError = ApiErrorPayload
+export type AiReviewApiError = ApiErrorApplicationModel
