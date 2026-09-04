@@ -61,6 +61,11 @@ async function fetchRequired(url) {
   return response
 }
 
+function looksLikeHtml(response, text = '') {
+  const contentType = response.headers.get('content-type') || ''
+  return contentType.includes('text/html') || text.trimStart().startsWith('<')
+}
+
 async function loadMap() {
   const token = ++loadToken
   disposeScene()
@@ -76,14 +81,25 @@ async function loadMap() {
     if (token !== loadToken) return
     if (!indexResponse.ok) {
       status.value = 'missing'
-      detail.value = 'Run the local 3D asset export command first.'
+      detail.value = 'Local 3D map assets are missing. Run export_playback_3d_assets.py first.'
       return
     }
-    const index = await indexResponse.json()
+    const indexText = await indexResponse.text()
+    if (looksLikeHtml(indexResponse, indexText)) {
+      status.value = 'missing'
+      detail.value = 'Local 3D map assets are missing. Run export_playback_3d_assets.py first.'
+      return
+    }
+    let index
+    try {
+      index = JSON.parse(indexText)
+    } catch (error) {
+      throw new Error(`Invalid local 3D asset index: ${error instanceof Error ? error.message : String(error)}`)
+    }
     const entry = index?.maps?.[props.mapCode]
     if (!entry?.manifest) {
       status.value = 'missing'
-      detail.value = `No local 3D asset for mapCode=${props.mapCode}`
+      detail.value = `No local 3D asset for mapCode=${props.mapCode}. Re-run the exporter with this map.`
       return
     }
 
@@ -91,7 +107,11 @@ async function loadMap() {
       ? Number(entry.referenceGroundZMeters)
       : 0
     const manifestResponse = await fetchRequired(entry.manifest)
-    const manifest = await manifestResponse.json()
+    const manifestText = await manifestResponse.text()
+    if (looksLikeHtml(manifestResponse, manifestText)) {
+      throw new Error(`Local 3D manifest is missing for mapCode=${props.mapCode}. Re-run the exporter.`)
+    }
+    const manifest = JSON.parse(manifestText)
     if (manifest?.schemaVersion !== 3) throw new Error(`Unsupported geometry schema: ${manifest?.schemaVersion}`)
     const baseUrl = entry.manifest.slice(0, entry.manifest.lastIndexOf('/') + 1)
     const [positionsBuffer, indicesBuffer] = await Promise.all([
