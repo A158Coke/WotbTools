@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject, nextTick, onMounted, provide, watch } from 'vue'
-import { NAVIGATE_VIEW_KEY } from '../app/context.js'
+import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { displayName } from '../utils/helpers.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
