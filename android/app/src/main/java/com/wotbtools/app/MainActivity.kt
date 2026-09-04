@@ -2,6 +2,7 @@ package com.wotbtools.app
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
@@ -82,6 +83,9 @@ class MainActivity : Activity() {
     @Volatile private var inAuthFlow = false
     @Volatile private var awaitingUnknownSourcesPermission = false
 
+    /** 冷启动验证的 QQ broker callback；进入 startup gate 后作为 entry URL 一次性加载并清空。 */
+    @Volatile private var pendingAuthReturn: Uri? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -111,7 +115,12 @@ class MainActivity : Activity() {
         val webViewOk = configureWebView()
         // startup 清理 orphan replay cache，再处理冷启动 intent（可能新增一份）。
         ReplayIntentHandler.cleanupOrphans(this)
-        handleIncomingIntent(intent)
+        // 冷启动 intent 分类：verified auth return（QQ broker callback）优先于 replay ingress。
+        if (intent != null && handleAuthReturnColdStart(intent)) {
+            // pendingAuthReturn 已记录；startup gate 通过后作为 entry URL 加载。
+        } else {
+            handleIncomingIntent(intent)
+        }
         if (webViewOk) startStartupFlow()
     }
 
@@ -181,42 +190,52 @@ class MainActivity : Activity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
                 val host = url?.let { Uri.parse(it).host }
+                val scheme = url?.let { Uri.parse(it).scheme }
                 val before = inAuthFlow
-                val decision = AuthNavigationPolicy.decide(host, inAuthFlow)
+                val decision = AuthNavigationPolicy.decide(scheme, host, inAuthFlow)
                 inAuthFlow = decision.inAuthFlow
                 Log.d(
                     TAG,
-                    "pageStart host=${host ?: "null"} action=${decision.action} " +
+                    "pageStart scheme=${scheme ?: "null"} host=${host ?: "null"} action=${decision.action} " +
                         "inAuthFlow=$before->$inAuthFlow mainFrame=true " +
-                        "source=${AuthNavigationPolicy.sourceCategory(host)}"
+                        "source=${AuthNavigationPolicy.sourceCategory(scheme, host)}"
                 )
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 if (!request.isForMainFrame) return false
                 val host = request.url.host
+                val scheme = request.url.scheme
                 val before = inAuthFlow
-                val decision = AuthNavigationPolicy.decide(host, inAuthFlow)
+                val decision = AuthNavigationPolicy.decide(scheme, host, inAuthFlow)
                 inAuthFlow = decision.inAuthFlow
-                val source = AuthNavigationPolicy.sourceCategory(host)
+                val source = AuthNavigationPolicy.sourceCategory(scheme, host)
                 Log.d(
                     TAG,
-                    "nav host=${host ?: "null"} action=${decision.action} " +
+                    "nav scheme=${scheme ?: "null"} host=${host ?: "null"} action=${decision.action} " +
                         "inAuthFlow=$before->$inAuthFlow mainFrame=true source=$source"
                 )
-                if (decision.action == AuthNavigationAction.AUTH_FAILURE) {
-                    // 未验证 host 进入 auth flow：阻断该导航并进入 auth-failure recovery。
-                    enterAuthFailureRecovery(host)
-                    return true
+                return when (decision.action) {
+                    AuthNavigationAction.AUTH_FAILURE -> {
+                        // 未验证 host 进入 auth flow：阻断该导航并进入 auth-failure recovery。
+                        enterAuthFailureRecovery(host)
+                        true
+                    }
+                    AuthNavigationAction.NATIVE_AUTH_HANDOFF -> {
+                        // 已验证 QQ native handoff：交给 QQ App，保留当前 WebView auth transaction。
+                        launchNativeAuthHandoff(request.url, scheme, host)
+                        true
+                    }
+                    AuthNavigationAction.OPEN_EXTERNAL -> {
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW, request.url))
+                        } catch (_: Exception) {
+                            // 无可用 browser 时忽略，留在原页。
+                        }
+                        true
+                    }
+                    else -> false // ALLOW_WEBVIEW / ALLOW_AUTH_WEBVIEW 留在 WebView
                 }
-                if (host == null) return false
-                if (decision.action != AuthNavigationAction.OPEN_EXTERNAL) return false
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, request.url))
-                } catch (_: Exception) {
-                    // 无可用 browser 时忽略，留在原页。
-                }
-                return true
             }
 
             /**
@@ -288,13 +307,24 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun entryUrl(): String = if (pendingReplay != null) REPLAY_URL else BASE_URL
+    private fun entryUrl(): String {
+        // 优先级：verified auth return > replay > BASE_URL。
+        pendingAuthReturn?.let { return it.toString() }
+        if (pendingReplay != null) return REPLAY_URL
+        return BASE_URL
+    }
 
     private fun loadWeb() {
         hideAllGates()
         webViewContainer.visibility = View.VISIBLE
-        if (webView.url.isNullOrEmpty()) webView.loadUrl(entryUrl())
-        else webView.reload()
+        if (webView.url.isNullOrEmpty()) {
+            val url = entryUrl()
+            // callback 开始加载后清空，防止再次 loadWeb 重复加载同一 callback。
+            pendingAuthReturn = null
+            webView.loadUrl(url)
+        } else {
+            webView.reload()
+        }
     }
 
     /**
@@ -312,6 +342,28 @@ class MainActivity : Activity() {
         toast(getString(R.string.auth_login_failed_retry))
         // 明确回首页，而不是 reload 当前（可能损坏的）auth URL，避免无限循环。
         webView.loadUrl(BASE_URL)
+    }
+
+    /**
+     * Verified native login handoff (e.g. QQ `wtloginmqq://ptlogin`): hand the URI to the app
+     * that owns it (ACTION_VIEW) while keeping the current WebView auth transaction alive.
+     *
+     * - Never enters auth-failure recovery, never reloads BASE_URL, never clears the auth-flow
+     *   marker, and never falls back to the system browser.
+     * - On no handler (QQ not installed) we show a clear prompt and stay in the current state;
+     *   the user can install the app and retry, or back out manually.
+     * - Logs only scheme/host/error category — never the full URI, query, code, or token.
+     */
+    private fun launchNativeAuthHandoff(uri: Uri, scheme: String?, host: String?) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
+        } catch (_: ActivityNotFoundException) {
+            Log.d(TAG, "native-handoff-failed scheme=${scheme ?: "null"} host=${host ?: "null"} category=no-qq-app")
+            toast(getString(R.string.qq_client_missing_retry))
+        } catch (e: Exception) {
+            Log.d(TAG, "native-handoff-failed scheme=${scheme ?: "null"} host=${host ?: "null"} category=${e.javaClass.simpleName}")
+            toast(getString(R.string.qq_client_missing_retry))
+        }
     }
 
     private fun showNetworkGate() {
@@ -427,6 +479,8 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // 热启动返回：verified auth return（QQ broker callback）优先于 replay ingress。
+        if (handleAuthReturnHot(intent)) return
         handleIncomingIntent(intent)
         val replayPending = pendingReplay != null
         if (replayPending && webViewContainer.visibility == View.VISIBLE) {
@@ -454,6 +508,50 @@ class MainActivity : Activity() {
         // 只标记已消费、不可再次注入；文件保留到下一次 app startup cleanupOrphans() 安全清理。
         pendingReplay = null
         pendingReplayEligible = false
+    }
+
+    // ── Auth return（QQ native 登录 → verified App Link → 原 WebView）──
+
+    /**
+     * 冷启动：QQ App 在前台期间本进程被杀，App Link 经 onCreate(intent) 进入。
+     * 记录 verified auth return 为 pendingAuthReturn 并置 inAuthFlow=true；
+     * startup gate（网络/版本/强制更新）通过后由 entryUrl() 加载，不绕过强制更新。
+     */
+    private fun handleAuthReturnColdStart(intent: Intent): Boolean {
+        val uri = intent.data ?: return false
+        if (!verifyAuthReturn(intent, uri)) return false
+        pendingAuthReturn = uri
+        inAuthFlow = true
+        Log.d(TAG, "auth-return action=ALLOW_AUTH_RETURN source=app-link cold=true")
+        return true
+    }
+
+    /**
+     * 热启动：App 已在运行（QQ 在前台期间未被杀），App Link 经 onNewIntent(intent) 进入。
+     * 复用当前 WebView / CookieManager，把 callback URI 载回原 WebView，inAuthFlow 保持 true。
+     */
+    private fun handleAuthReturnHot(intent: Intent): Boolean {
+        val uri = intent.data ?: return false
+        if (!verifyAuthReturn(intent, uri)) return false
+        inAuthFlow = true
+        hideAllGates()
+        webViewContainer.visibility = View.VISIBLE
+        Log.d(TAG, "auth-return action=ALLOW_AUTH_RETURN source=app-link hot=true")
+        webView.post { webView.loadUrl(uri.toString()) }
+        return true
+    }
+
+    /** defense-in-depth 路由边界：仅接受验证的 Juhe QQ broker callback；不解释 state/code 载荷。 */
+    private fun verifyAuthReturn(intent: Intent, uri: Uri): Boolean {
+        if (intent.action != Intent.ACTION_VIEW) return false
+        return AuthReturnPolicy.isVerifiedBrokerReturn(
+            scheme = uri.scheme,
+            host = uri.host,
+            path = uri.path,
+            type = uri.getQueryParameter("type"),
+            hasState = !uri.getQueryParameter("state").isNullOrBlank(),
+            hasCode = !uri.getQueryParameter("code").isNullOrBlank()
+        )
     }
 
     // ── Native Bridge 白名单能力（供 Vue 端；origin-scoped）──

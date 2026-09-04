@@ -5,6 +5,17 @@
 ## [Unreleased]
 
 ### Fixed
+- **Android QQ 登录返回原 WebView（Verified App Link，CODE READY / PRODUCTION VALIDATION REQUIRED）**：QQ App 完成授权后
+  会把 `auth.wotbtools.com/.../broker/juhe-qq/endpoint` callback 打开到系统浏览器，导致 Browser B != 原 WebView A、
+  AuthenticationSession continuity 被破坏 → `already_logged_in`。现用 **Verified App Link** 把这个 exact Juhe QQ
+  broker callback 路由回原 WotBTools App（same MainActivity / same WebView / same cookie jar，inAuthFlow 保持 true），
+  复用同一次 auth transaction。App Link 只接管 `https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint`，
+  不接管整个 `auth.wotbtools.com` / 其它 realm / 其它 IdP provider；`AuthReturnPolicy` 仅做路由边界
+  （scheme/host/path/type=qq/state/code presence），不解释 state/code 载荷；`auth.wotbtools.com/.well-known/assetlinks.json`
+  由 nginx 直接返回 `application/json`（非代理 Keycloak）。热返回走 `onNewIntent`，冷返回（进程被杀）走
+  `pendingAuthReturn` + startup gate，不绕过强制更新。日志只记录 `auth-return action=... source=app-link`，
+  不记录完整 callback URI/query/state/code。同步 `AuthReturnPolicyTest` 与 `docs/android/architecture.md`。
+  需真机 + 生产 Keycloak 验证 App Link 路由与 `already_logged_in` 消除（PR 描述已标注 PRODUCTION VALIDATION REQUIRED）。
 - **Battle Playback review regressions**：开局投影现在保留战前每个 canonical 据点的最后完整状态并在缺少显式 `t=0` 时 seed，确保 3/4 据点回放从 `00:00` 显示完整状态；最近 2 秒轨迹只按合法 OBSERVED segment 与 `interpolationAllowed` 裁剪，不再用固定 5 秒断线；坦克标记按可靠车体 metadata 显示，车辆模型碰撞只做 tank-vs-tank 小范围 presentation-only 软避让（不因视口边缘移动车辆、接近/离开视口自然裁剪）；无比分/据点时敌方仍固定在 HUD 第 3 列。
 - **生产 Grafana 看板 runtime crash**：移除 `WotBTools · Keycloak` 看板若干 panel 的非法 dashboard links（`type=dashboard + uid` 但缺失有效 `url`），该结构会触发 Grafana 前端 `TypeError: Cannot read properties of undefined (reading 'replace')`；并在 CI observability 校验中加入静态守卫，禁止此类 panel links 回归。
 - **Android QQ 登录 auth host allowlist（1.0.9）**：允许已在生产链证实的 `xui.ptlogin2.qq.com`
@@ -14,8 +25,27 @@
   unknown host 仍 `AUTH_FAILURE`，非 auth 外链仍 `OPEN_EXTERNAL`，CookieManager /
   Native Bridge origin 边界不变。同步 `AuthNavigationPolicyTest`（新增生产链 regression +
   xui 边界 + sourceCategory）与 `docs/android/architecture.md` Authentication Boundary。
+- **Android QQ 登录 native auth handoff**：真实生产链在 `xui.ptlogin2.qq.com` 之后会发起
+  `wtloginmqq://ptlogin/...` native 跳转（`ptlogin` 不是普通 HTTPS hostname）。新增
+  `AuthNavigationAction.NATIVE_AUTH_HANDOFF` 与 `AuthNavigationPolicy.NATIVE_AUTH_TARGETS`
+  （精确 `scheme=wtloginmqq` + `host=ptlogin` pair），仅在 `inAuthFlow=true` 时把该 URI 交给
+  QQ App（ACTION_VIEW），保留当前 WebView auth transaction / cookie jar，不进入 `auth-recovery`、
+  不 reload 首页、不切系统浏览器；QQ App 未安装时提示安装后重试（fail closed，不 silent fallback）。
+  不把 `ptlogin` 加入 `AUTH_PROVIDER_HOSTS`，不扩 `mqq*`/`*.qq.com`/suffix/前缀通配；未知
+  native scheme/host（含 host=null 的未知 custom scheme）在 auth flow 内仍 `AUTH_FAILURE` 且不退出
+  auth flow（fail closed）。同步 `AuthNavigationPolicyTest`
+  （native handoff 精确匹配 + 越权/越域 rejection + 生产链到 native handoff）与
+  `docs/android/architecture.md` Authentication Boundary（区分 Web auth hosts 与 native handoff）。
 
 ### Added
+- **Juhe QQ callback 阶段追踪与 callbackRef 关联（已脱敏）**：JuheQqEndpoint.handleCallback 增加完整 stage 序列
+  （callback_entered → authentication_session_restored → juhe_callback_accepted → before_broker_authenticated →
+  broker_authenticated / broker_authenticated_failed），所有 stage 带同一 callbackRef（state 的 SHA-256 前 8 hex，
+  单向、不可逆、可关联同一 transaction 的重复 callback / replay）。仅记录 realm / provider / juheType /
+  authenticationSession=present|invalid / socialUid=present|empty / exception；绝不记录完整 state、authorization
+  code、access token、appkey、Cookie、完整 callback URL/query、social_uid 原值。用于定位 Keycloak
+  IDENTITY_PROVIDER_LOGIN_ERROR already_logged_in 的真实失败边界（evidence-first，本阶段不改登录行为）。
+  同步 JuheQqEndpointTest / JuheQqIdentityProviderTest（stage 顺序 + callbackRef 稳定/不可逆 + 敏感值不落日志）。
 - **Local Frontend → Production Backend / Keycloak 开发模式**：前端新增 `npm run dev:production-remote`，通过 Vite `/api` 开发代理连接生产站点，同时复用现有生产 Keycloak issuer 配置；开发 Topbar 显示非模态环境提示并提醒不要上传测试或敏感数据。普通 `npm run dev` 的本地后端代理保持不变。详见 `docs/frontend/local-production-dev.md`。
 
 ### Changed
