@@ -47,22 +47,47 @@ def normalize_member(name: str) -> str:
     return name.replace("\\", "/").lstrip("/")
 
 
-def select_scene_member(archive: zipfile.ZipFile, map_id: str) -> zipfile.ZipInfo:
-    by_name = {
-        normalize_member(info.filename).lower(): info
-        for info in archive.infolist()
-        if not info.is_dir()
-    }
+def select_scene_member(
+    archive: zipfile.ZipFile,
+    map_id: str,
+    explicit_scene: str | None = None,
+) -> zipfile.ZipInfo:
+    files = [info for info in archive.infolist() if not info.is_dir()]
+    if explicit_scene:
+        wanted = normalize_member(explicit_scene).lower()
+        matches = [info for info in files if normalize_member(info.filename).lower() == wanted]
+        if len(matches) != 1:
+            raise InspectStateSwitcherError(
+                f"--scene must match exactly one archive member; matched {len(matches)}: {explicit_scene}"
+            )
+        return matches[0]
+
+    by_name = {normalize_member(info.filename).lower(): info for info in files}
     for candidate in (
         f"Maps/{map_id}/{map_id}.sc2.dvpl",
-        f"{map_id}/{map_id}.sc2.dvpl",
         f"Maps/{map_id}/{map_id}.sc2",
+        f"{map_id}/{map_id}.sc2.dvpl",
         f"{map_id}/{map_id}.sc2",
     ):
         match = by_name.get(candidate.lower())
         if match is not None:
             return match
-    raise InspectStateSwitcherError(f"main SC2 not found for map: {map_id}")
+
+    prefixes = (f"maps/{map_id}/".lower(), f"{map_id}/".lower())
+    candidates = [
+        info
+        for info in files
+        if any(normalize_member(info.filename).lower().startswith(prefix) for prefix in prefixes)
+        and normalize_member(info.filename).lower().endswith((".sc2.dvpl", ".sc2"))
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise InspectStateSwitcherError(f"main SC2 not found for map: {map_id}")
+    rendered = ", ".join(normalize_member(info.filename) for info in candidates[:12])
+    raise InspectStateSwitcherError(
+        f"main SC2 is ambiguous for {map_id}; use --scene with one of: {rendered}"
+    )
 
 
 def iter_entities_recursive(
@@ -323,6 +348,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("input", type=pathlib.Path, help="Path to Maps.zip")
     parser.add_argument("map_id", help="Client map id, e.g. 18_canal_cn")
     parser.add_argument(
+        "--scene",
+        help="Exact archive member for maps with multiple SC2 files",
+    )
+    parser.add_argument(
         "--output",
         type=pathlib.Path,
         help=(
@@ -356,7 +385,7 @@ def main() -> int:
 
     try:
         with zipfile.ZipFile(archive_path) as archive:
-            scene_member = select_scene_member(archive, args.map_id)
+            scene_member = select_scene_member(archive, args.map_id, args.scene)
             raw = archive.read(scene_member)
         payload = (
             decode_dvpl(raw)
