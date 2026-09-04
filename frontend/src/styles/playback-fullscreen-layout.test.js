@@ -200,6 +200,30 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
       .toContain('flex-direction: column')
   })
 
+  // 平板：地图原本按容器宽度定尺寸（1024×768 上 969×972），比视口还高，
+  // 工具栏与详情因此被顶到首屏之外（详情 y=1254、控件 y=1633）。宽度够时
+  // 改成与 PC 同构的两列，把省下来的宽度给详情。
+  it('gives the tablet a real details column instead of stacking it off-screen', () => {
+    const stage = ruleBody('.battle-playback.pb-form-tablet:not(:fullscreen) .pb-map-stage')
+    expect(stage).not.toBeNull()
+    expect(stage).toContain('grid-template-columns: minmax(0, 1fr) var(--pb-details-w)')
+    expect(stage).toContain('height: min(calc(100dvh - 170px), 850px)')
+    expect(stage).toContain('overflow: hidden')
+
+    // 该选择器在 tablet 文件里有两条（宽度键控的流内那条在前），ruleBody 只返回
+    // 第一处，所以显式切到 >=860 的两列块再断言。
+    const twoCol = stripped.slice(stripped.indexOf('@media (min-width: 860px)'))
+    const shell = twoCol.slice(twoCol.indexOf('.pb-map-stage > .pb-side-panel-shell {'))
+    const shellBody = shell.slice(shell.indexOf('{') + 1, shell.indexOf('}'))
+    expect(shellBody).toContain('grid-column: 2')
+    expect(shellBody).toContain('justify-content: center')
+
+    // 窄平板/竖屏放不下两列时退回堆叠，但地图仍必须封顶——否则工具栏一样被顶出首屏。
+    expect(stripped).toContain('@media (width < 860px)')
+    const narrow = stripped.slice(stripped.indexOf('@media (width < 860px)'))
+    expect(narrow).toContain('max-width: min(100%, calc((100dvh - 210px) * var(--pb-map-ratio, 1)))')
+  })
+
   // rail 同时承载图标导航与播放控制，60px 放不下速度档位那一排。
   it('the Left Rail is wide enough to hold the playback controls', () => {
     const body = ruleBody('.battle-playback')
