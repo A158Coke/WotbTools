@@ -3,7 +3,6 @@ package com.wotbtools.keycloak.juheqq;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
@@ -24,14 +23,8 @@ import java.time.Clock;
 import java.time.Duration;
 
 /**
- * Juhe QQ callback endpoint。诊断策略与 {@link JuheQqIdentityProvider} 一致：每个失败阶段记录
- * 结构化日志（stage + realm/provider alias + 脱敏判别信息），保留异常 stack trace；绝不记录
- * appkey、authorization code、access token、完整 state、social_uid 原值、完整 callback
- * URL/query、return ticket 或 Cookie。对用户仍返回安全的 generic error。
- *
- * <p>Android QQ 会显式把 native 授权回程交给 Chrome，因此 mobile-return 先把 state/code 放入
- * 单次短 TTL ticket，再让 Chrome 通过 explicit package intent 回到 WotBTools。原 WebView 只接收
- * opaque ticket，并在本 endpoint 中消费后继续原有 Keycloak broker callback。</p>
+ * Juhe QQ callback endpoint。Android app flow 的 mobile-return 由 performLogin 在原 WebView
+ * 上下文中选择；回程不再依据 Chrome User-Agent 猜测来源。
  */
 public final class JuheQqEndpoint {
 
@@ -56,7 +49,6 @@ public final class JuheQqEndpoint {
         this.authCallback = authCallback;
     }
 
-    /** Test/source compatibility helper; HTTP requests use the annotated four-argument method. */
     Response handleCallback(final String state, final String type, final String code) {
         return handleCallback(state, type, code, null);
     }
@@ -67,7 +59,6 @@ public final class JuheQqEndpoint {
                                    @QueryParam("type") final String type,
                                    @QueryParam("code") final String code,
                                    @QueryParam("ticket") final String ticketToken) {
-
         final String realm = realmName();
         final String providerAlias = config.getAlias();
 
@@ -95,34 +86,24 @@ public final class JuheQqEndpoint {
     }
 
     /**
-     * Juhe redirect_uri target. Desktop/browser flows stay in the same browser context and continue
-     * directly. Android flows receive a user-gesture bridge page because QQ explicitly launches Chrome.
+     * Only app-originated flows are routed here by performLogin. This endpoint therefore always
+     * creates a one-time ticket and asks Chrome for an explicit package handoff back to WotBTools.
      */
     @GET
     @Path("mobile-return")
     public Response handleMobileReturn(@QueryParam("state") final String state,
                                        @QueryParam("type") final String type,
-                                       @QueryParam("code") final String code,
-                                       @HeaderParam("User-Agent") final String userAgent) {
+                                       @QueryParam("code") final String code) {
         final String realm = realmName();
         final String providerAlias = config.getAlias();
         final String callbackRef = JuheQqIdentityProvider.callbackRef(state);
-        final boolean android = isAndroidUserAgent(userAgent);
 
         log.info(JuheQqIdentityProvider.loggable("mobile_return_entered", realm, providerAlias,
-                "callbackRef", callbackRef,
-                "android", String.valueOf(android)));
+                "callbackRef", callbackRef));
 
         final Response validationError = validateCallbackInput(state, type, code, realm, providerAlias, callbackRef);
         if (validationError != null) {
             return validationError;
-        }
-
-        if (!android) {
-            log.info(JuheQqIdentityProvider.loggable("callback_entered", realm, providerAlias,
-                    "callbackRef", callbackRef,
-                    "returnMode", "browser-direct"));
-            return completeCallback(state, type, code, realm, providerAlias, callbackRef);
         }
 
         final String ticket = RETURN_TICKETS.issue(state, type, code);
@@ -148,6 +129,7 @@ public final class JuheQqEndpoint {
                 + "<p>请返回 WotBTools 继续完成登录。</p>"
                 + "<p><a style=\"display:inline-block;padding:.75rem 1rem;border:1px solid currentColor;border-radius:.5rem;text-decoration:none\" href=\""
                 + intentUrl + "\">返回 WotBTools</a></p>"
+                + "<p style=\"font-size:.9rem;opacity:.72\">如果没有打开 App，请返回 WotBTools 后重新发起登录；本页面不会在浏览器中继续认证。</p>"
                 + "</body></html>";
 
         return Response.ok(html)
@@ -157,29 +139,6 @@ public final class JuheQqEndpoint {
                 .header("Content-Security-Policy",
                         "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'")
                 .build();
-    }
-
-    /** Browser fallback used only when Chrome cannot resolve the explicit WotBTools package intent. */
-    @GET
-    @Path("mobile-resume")
-    public Response handleBrowserResume(@QueryParam("ticket") final String ticketToken) {
-        final String realm = realmName();
-        final String providerAlias = config.getAlias();
-        final String returnRef = JuheQqIdentityProvider.callbackRef(ticketToken);
-        final AuthReturnTicketStore.Ticket ticket = RETURN_TICKETS.consume(ticketToken);
-        if (ticket == null) {
-            log.warn(JuheQqIdentityProvider.loggable("auth_return_ticket_invalid", realm, providerAlias,
-                    "returnRef", returnRef,
-                    "returnMode", "browser-fallback"));
-            return JuheQqIdentityProvider.errorResponse();
-        }
-
-        final String callbackRef = JuheQqIdentityProvider.callbackRef(ticket.state());
-        log.info(JuheQqIdentityProvider.loggable("callback_entered", realm, providerAlias,
-                "callbackRef", callbackRef,
-                "returnRef", returnRef,
-                "returnMode", "browser-fallback"));
-        return completeCallback(ticket.state(), ticket.type(), ticket.code(), realm, providerAlias, callbackRef);
     }
 
     private Response completeCallback(final String state,
@@ -193,7 +152,6 @@ public final class JuheQqEndpoint {
             return validationError;
         }
 
-        // 通过 state 恢复 AuthenticationSession。bridge 只恢复原 browser context，不绕过 Keycloak 校验。
         final AuthenticationSessionModel authenticationSession =
                 authCallback.getAndVerifyAuthenticationSession(state);
         if (authenticationSession == null) {
@@ -210,7 +168,6 @@ public final class JuheQqEndpoint {
         final String appid = config.getAppid();
         final String appkey = config.getAppkey();
         final String loginBaseUrl = config.getLoginBaseUrl();
-
         if (JuheQqIdentityProvider.isBlank(appid) || JuheQqIdentityProvider.isBlank(appkey)) {
             log.warn(JuheQqIdentityProvider.loggable("config_missing", realm, providerAlias,
                     "callbackRef", callbackRef));
@@ -228,7 +185,6 @@ public final class JuheQqEndpoint {
                     .GET()
                     .timeout(Duration.ofSeconds(10))
                     .build();
-
             final HttpResponse<String> httpResp = JuheQqIdentityProvider.HTTP
                     .send(httpReq, HttpResponse.BodyHandlers.ofString());
 
@@ -243,7 +199,6 @@ public final class JuheQqEndpoint {
             final int respCode = json.path("code").asInt(-1);
             final String respType = json.path("type").asText("");
             final String socialUid = json.path("social_uid").asText("");
-
             if (respCode != 0 || !"qq".equals(respType) || socialUid.isEmpty()) {
                 log.warn(JuheQqIdentityProvider.loggable("juhe_callback_response_rejected", realm, providerAlias,
                         "callbackRef", callbackRef,
@@ -260,7 +215,6 @@ public final class JuheQqEndpoint {
 
             final String nickname = json.path("nickname").asText("");
             final String faceimg = json.path("faceimg").asText("");
-
             final String cleanedNickname = prepareNickname(nickname);
             if (cleanedNickname == null) {
                 log.warn(JuheQqIdentityProvider.loggable("nickname_invalid", realm, providerAlias,
@@ -274,7 +228,6 @@ public final class JuheQqEndpoint {
 
             final String externalId = "qq:" + socialUid;
             final String username = buildUsername(cleanedNickname, socialUid);
-
             final BrokeredIdentityContext context = new BrokeredIdentityContext(externalId, config);
             context.setId(externalId);
             context.setBrokerUserId(externalId);
@@ -283,7 +236,6 @@ public final class JuheQqEndpoint {
             context.setEmail(null);
             context.setIdp(provider);
             context.setAuthenticationSession(authenticationSession);
-
             context.setUserAttribute("displayName", nickname);
             context.setUserAttribute("region", "CN");
             context.setUserAttribute("juhe.provider", "qq");
@@ -313,7 +265,6 @@ public final class JuheQqEndpoint {
                     "juheType", respType,
                     "socialUid", "present"));
             return authenticated;
-
         } catch (final JsonProcessingException e) {
             log.error(JuheQqIdentityProvider.loggable("juhe_callback_invalid_json", realm, providerAlias,
                     "callbackRef", callbackRef), e);
@@ -361,22 +312,14 @@ public final class JuheQqEndpoint {
                 .build(realm, providerAlias);
     }
 
-    static boolean isAndroidUserAgent(final String userAgent) {
-        return userAgent != null && userAgent.toLowerCase(java.util.Locale.ROOT).contains("android");
-    }
-
     static String buildAndroidReturnIntent(final URI endpointUri, final String ticket) {
         final String encodedTicket = encodeForUrl(ticket);
-        final String fallbackUrl = endpointUri + "/mobile-resume?ticket=" + encodedTicket;
-        final String authority = endpointUri.getRawAuthority();
-        final String path = endpointUri.getRawPath();
-        return "intent://" + authority + path
+        return "intent://" + endpointUri.getRawAuthority() + endpointUri.getRawPath()
                 + "?type=qq&state=" + BRIDGE_PLACEHOLDER
                 + "&code=" + BRIDGE_PLACEHOLDER
                 + "&ticket=" + encodedTicket
                 + "#Intent;scheme=" + endpointUri.getScheme()
                 + ";package=" + ANDROID_PACKAGE
-                + ";S.browser_fallback_url=" + encodeForUrl(fallbackUrl)
                 + ";end";
     }
 
@@ -396,24 +339,20 @@ public final class JuheQqEndpoint {
         if (nickname == null || nickname.isBlank()) {
             return null;
         }
-
         String value = nickname.trim();
         value = value.replaceAll("\\p{Cntrl}", "");
         value = value.replaceAll("[/@\\\\:?#\\[\\]{}|<>\"']", "_");
         value = value.replaceAll("\\s+", "_");
-
         return value.isBlank() ? null : value;
     }
 
     private static String buildUsername(final String nickname, final String socialUid) {
         final String hashedUid = JuheQqIdentityProvider.sha256prefix(socialUid);
         final String shortHash = hashedUid.length() >= 8 ? hashedUid.substring(0, 8) : hashedUid;
-
         String value = nickname;
         if (value.length() > 55) {
             value = value.substring(0, 55);
         }
-
         return value + "-" + shortHash;
     }
 }
