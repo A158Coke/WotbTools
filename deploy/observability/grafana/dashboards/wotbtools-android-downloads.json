@@ -1,0 +1,87 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "unit": "short", "noValue": "0" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "sum(count_over_time({container_name=\"wotb-frontend\", event=\"android_apk_download\"} | logfmt | method=\"GET\" | status=\"200\" [$__range]))", "queryType": "instant", "refId": "A" }],
+      "title": "APK 下载次数（完整 200）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "unit": "short", "noValue": "0" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "sum(count_over_time({container_name=\"wotb-frontend\", event=\"android_apk_download\"} | logfmt | method=\"GET\" | status=\"206\" [$__range]))", "queryType": "instant", "refId": "A" }],
+      "title": "续传 / Range 请求（206）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "unit": "short", "noValue": "0" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "sum(count_over_time({container_name=\"wotb-frontend\", event=\"android_apk_download\"} | logfmt | method=\"GET\" | status=~\"4..|5..\" [$__range]))", "queryType": "instant", "refId": "A" }],
+      "title": "APK 下载失败（4xx / 5xx）",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 5 },
+      "id": 4,
+      "options": { "mode": "markdown", "content": "**下载次数口径**：只把 nginx 返回完整 APK 的 HTTP 200 GET 计为一次下载。HTTP 206 代表断点续传 / Range 分片请求，单独展示，不叠加到下载次数，避免一次下载被重复计算。Alloy 仅保留 APK 文件名、状态码和字节数；客户端 IP、Referer、User-Agent 不写入 Loki。" },
+      "title": "统计口径",
+      "type": "text"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "expr": "sum(count_over_time({container_name=\"wotb-frontend\", event=\"android_apk_download\"} | logfmt | method=\"GET\" | status=\"200\" [$__interval]))", "legendFormat": "完整下载 200", "queryType": "range", "refId": "A" },
+        { "expr": "sum(count_over_time({container_name=\"wotb-frontend\", event=\"android_apk_download\"} | logfmt | method=\"GET\" | status=\"206\" [$__interval]))", "legendFormat": "续传 206", "queryType": "range", "refId": "B" }
+      ],
+      "title": "APK 下载趋势",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
+      "id": 6,
+      "options": { "footer": { "countRows": false, "fields": "", "reducer": ["lastNotNull"] }, "showHeader": true },
+      "targets": [{ "expr": "sum by (apk) (count_over_time({container_name=\"wotb-frontend\", event=\"android_apk_download\"} | logfmt | method=\"GET\" | status=\"200\" [$__range]))", "queryType": "instant", "refId": "A" }],
+      "title": "按 APK 版本统计（完整 200）",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "id": 7,
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{ "expr": "{container_name=\"wotb-frontend\", event=\"android_apk_download\"} | logfmt", "queryType": "range", "refId": "A" }],
+      "title": "最近 APK 下载请求（已脱敏）",
+      "type": "logs"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["wotbtools", "android", "downloads", "usage"],
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "browser",
+  "title": "WotBTools · Android 下载",
+  "uid": "wotbtools-android-downloads",
+  "version": 1,
+  "weekStart": ""
+}
