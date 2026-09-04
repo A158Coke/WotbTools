@@ -292,6 +292,41 @@
   align-items: stretch;
 }
 
+/* §float-panels：桌面 fullscreen 下 Map Workspace 占满整个视口宽度，方形地图居中后
+   左右必然留出黑边（600m 方图 vs 16:9 视口，几何上消不掉）。Left Rail 与 Right Details
+   改为浮层落在这两块黑边上，把原本浪费的空间用起来——地图因此从「整宽减去两列」
+   变成「整宽」，在高度受限的 16:9 上直接变大。
+   视口不够宽时黑边窄于面板，面板会盖住地图外缘，所以两者都是半透明 + 背景模糊。 */
+.battle-playback:fullscreen:not(.pb-device-mobile) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.battle-playback:fullscreen:not(.pb-device-mobile) .pb-main { grid-column: 1; }
+.battle-playback:fullscreen:not(.pb-device-mobile) .pb-map-stage {
+  grid-template-columns: minmax(0, 1fr);
+}
+.battle-playback:fullscreen:not(.pb-device-mobile) .pb-left-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--pb-left-col);
+  /* §layering：低于 active Details(60) 与 workspace drawer(74/75)，高于 HUD(50)。 */
+  z-index: 55;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(10px);
+}
+.battle-playback:fullscreen:not(.pb-device-mobile) .pb-map-stage > .pb-side-panel-shell {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--pb-details-w);
+  overflow-y: auto;
+  z-index: 55;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(10px);
+}
+
 /* Map element：保持 canonical aspect（--pb-map-aspect / --pb-map-ratio）。全屏默认
    cover（fill 中央 workspace 宽度，宽屏不再出现两侧极宽 gutter；地图可大于可视 viewport，
    随 pan/zoom 裁剪浏览）。绝不横向拉伸成 viewport 比例。 */
