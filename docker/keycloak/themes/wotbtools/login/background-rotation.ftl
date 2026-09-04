@@ -3,7 +3,8 @@
 
   选择在 Keycloak 渲染时完成，不依赖 JS：没有首屏闪烁，也不会因为浏览器
   禁用脚本而退化。结果通过 :root 自定义属性交给 auth-shell.css；CSS 里保留
-  硬编码兜底值，所以本文件即使被移除，登录页也仍有背景。
+  硬编码兜底值。template.ftl 通过 <#attempt>/<#recover> 隔离本模板失败，
+  因此本文件缺失或渲染失败时登录页仍可继续使用 CSS 默认背景。
 
   ── 怎么加一张图 ────────────────────────────────────────────────────────
   1) 把 <id>.webp（横版，≤500KB）与 <id>-mobile.webp（900×1600 竖版，≤300KB）
@@ -16,8 +17,8 @@
   · 今天落在任何档期窗口内 → 只在这些档期图里轮换，常规图全部让位。
     （赛事期间想固定一张图，就给它一个只覆盖赛期的窗口，且同期不要有别的窗口。）
   · 没有任何档期命中 → 在常规图（不带 from/to 的条目）里轮换。
-  · 轮换粒度是「天」：同一天所有访客看到同一张，跨零点换下一张。
-    按 UTC 天计（Keycloak 容器时区），不是按访客本地时区。
+  · 日期与轮换都统一按 UTC calendar day 计算；与访客本地时区、容器/JVM 默认
+    时区无关。同一个 UTC 日期内所有访客看到同一张，UTC 零点切换下一张。
   · 档期图当天不在窗口内时完全不参与，因此赛后无需回来删配置。
 
   注意：FreeMarker 的 <、> 比较只支持数字与日期，不支持字符串，所以日期
@@ -47,9 +48,13 @@
   }
 ]>
 
-<#assign bgToday = .now?string("yyyyMMdd")?number>
-<#-- 自 epoch 起的天数：同一天内稳定，跨零点 +1。 -->
+<#--
+  以 Unix epoch day 作为唯一日界线（UTC）。先把 epoch day 转回 UTC 毫秒时间，
+  再显式以 UTC 格式化 yyyyMMdd，避免 .now?string() 受 JVM/容器默认时区影响。
+-->
 <#assign bgDayIndex = (.now?long / 86400000)?floor>
+<#assign bgUtcDayMillis = bgDayIndex * 86400000>
+<#assign bgToday = bgUtcDayMillis?number_to_date?string("yyyyMMdd", "UTC")?number>
 
 <#assign bgScheduled = []>
 <#assign bgPool = []>
