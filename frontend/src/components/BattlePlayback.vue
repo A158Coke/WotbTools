@@ -612,6 +612,18 @@ const wideLayout = ref(false)
 // rail 在 >=1200px 或 fullscreen（且非移动端）出现；控制条跟着 rail 走，否则回落到地图下方。
 // 收起左栏时控件必须搬出去：非触屏设备的 controls 本来渲染在 rail 内，rail 一收起
 // 正文整块 display:none，播放/进度条会跟着消失，只剩一个展开箭头。
+/* §three-forms：PC / tablet / mobile 三套互斥的布局形态，由 JS 判定后写成根类。
+   互斥性由「只挂一个类」保证，而不是靠媒体查询之间的算术——旧写法里
+   .pb-device-mobile(0,4,0) 会压掉宽度键控的规则(0,3,0)，一档的改动因此
+   反复打穿另一档。三档与旧行为逐条等价：
+     mobile = isMobileDevice（pointer: coarse 且 <=1200，旧 .pb-device-mobile）
+     pc     = 非 mobile 且 >=1200（旧 wideLayout 分支）
+     tablet = 非 mobile 且 <1200（旧「窄视口非触屏」分支） */
+const formFactor = computed(() => {
+  if (isMobileDevice.value) return 'mobile'
+  return wideLayout.value ? 'pc' : 'tablet'
+})
+
 const controlsInRail = computed(() => (isFullscreen.value || wideLayout.value)
   && !isMobileDevice.value
   && !railCollapsed.value)
@@ -1965,7 +1977,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen), 'pb-drawer-open': railDrawerOpen, 'pb-rail-collapsed': railCollapsed, 'pb-side-slots': sideSlots }" :style="mapStyle" data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen), 'pb-drawer-open': railDrawerOpen, 'pb-rail-collapsed': railCollapsed, 'pb-side-slots': sideSlots, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-test="battle-playback">
     <BattlePlaybackHud
       :friendly-hp="friendlyHp"
       :enemy-hp="enemyHp"

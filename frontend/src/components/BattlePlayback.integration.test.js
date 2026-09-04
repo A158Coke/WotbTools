@@ -968,6 +968,27 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(body.indexOf('sideSlots.value')).toBeLessThan(body.indexOf('.pb-hud'))
   })
 
+  // §three-forms：根元素任何时刻只挂一个形态类。互斥性由这里保证，而不是靠媒体查询
+  // 之间的算术——旧写法里一档的规则会以更高特异性压掉另一档，反复打穿。
+  it('puts exactly one mutually exclusive form class on the root', async () => {
+    const cases = [
+      ['mobile', { '(pointer: coarse) and (max-width: 1200px)': true }],
+      ['pc', { '(min-width: 1200px)': true }],
+      ['tablet', {}],
+    ]
+    for (const [expected, queries] of cases) {
+      stubRaf()
+      stubMatchMedia(queries)
+      const wrapper = mountPlayback(makeOverview(), 12)
+      await flushPromises()
+      const classes = wrapper.find('[data-test="battle-playback"]').classes()
+      const forms = classes.filter((c) => c.startsWith('pb-form-'))
+      expect(forms).toEqual([`pb-form-${expected}`])
+      wrapper.unmount()
+      vi.unstubAllGlobals()
+    }
+  })
+
   // 收起左栏时 controls 必须搬出 rail：非触屏设备的 controls 渲染在 rail 内，
   // 而收起态把 .pb-rail-body 整块 display:none，播放/进度条会跟着一起消失，
   // 屏幕上只剩一个展开箭头。
