@@ -2,69 +2,13 @@
 
 ## 状态
 
-IMPLEMENTING / CANAL + PORT BAY SCG CONTRACT PROVEN / DERIVED POC RERUN NEXT
+**COMPLETE / READY FOR REVIEW / PR2 MAP GEOMETRY CORE NEXT**
 
-## 目标
+本 PR 只完成客户端地图资源研究、解析 contract 与 renderer-neutral derived geometry PoC，不实现 frontend 3D renderer。
 
-完成 `Maps.zip -> Map Geometry Core -> 3D Battle Playback` 路线中的 PR1：
+## PR1 结论
 
-1. 用真实客户端资源证明 terrain / static geometry / collision / terrain-associated data 的来源；
-2. 留下可重复的 research tooling；
-3. 对第一批真实 Playback example 产出 renderer-neutral derived geometry PoC；
-4. 明确 PR2 的 Map Geometry Core 输入。
-
-当前不实现 frontend 3D renderer。
-
-## Example 策略
-
-### 格式逆向 research sample
-
-`05_amigosville_am`（Falls Creek / 乡间溪流）继续只作为格式研究样本。
-
-它已经完成 SC2 / SCG / datasource / PolygonGroup 的实证研究。由于当前没有可用 replay，不作为首批 Playback demo。
-
-### 第一批 3D Playback examples
-
-```text
-18_canal_cn = Canal / 运河尽头
-14_port_pt  = Port Bay / 港湾小镇
-```
-
-两张图都已有 WotBTools 2D basemap，并可后续用数据库真实 replay 验证：
-
-```text
-replay coordinates
-  -> terrain
-  -> static geometry
-  -> vehicle overlay
-  -> timeline / HP / death / base state
-```
-
-双地图同时验证可以尽早发现 map-specific SC2/SCG/LOD/switch 差异，禁止用 map-id hardcode 掩盖格式问题。
-
-## 已确认基础
-
-- `common/python/wotb_sc2.py`：DVPL + DAVA SceneFileV2 reader；
-- `map-semanticizer`：Landscape world bounds + heightmap + elevation/slope；
-- SC2 spawn/base Z 已与 heightmap sampling 做真实交叉验证；
-- client scene / replay / 2D basemap 已使用同一 world-coordinate contract；
-- 完整 `Maps.zip` 可按 map id 读取主 SC2。
-
-## 真实 Maps.zip inventory
-
-- archive：2,107,519,076 bytes（约 1.96 GiB）；
-- 4,316 files；
-- 35 个 `NN_*` 目录 = 33 battle maps + `00_global_content` + `00_shared_content`；
-- `.sc2.dvpl` 84；
-- `.scg.dvpl` 84；
-- `.heightmap.dvpl` 38；
-- `.mkm.dvpl` 37；
-- `.lka.dvpl` 65；
-- texture payload 约占 uncompressed archive 86.3%。
-
-## Static geometry contract — 已在三张真实地图成立
-
-格式链：
+`Maps.zip -> static geometry` 的主链路已经由真实客户端数据闭环：
 
 ```text
 SC2 Entity
@@ -77,99 +21,120 @@ SC2 Entity
   -> vertices / indices
 ```
 
-### 05_amigosville_am research sample
+第一批 Playback examples：
 
-- SCG PolygonGroups：221；
-- vertices：164,307；
-- indices：266,417；
-- unique `rb.datasource`：107；
-- datasource match：107 / 107；
-- unmatched：0。
+```text
+18_canal_cn = Canal / 运河尽头
+14_port_pt  = Port Bay / 港湾小镇
+```
 
-### 18_canal_cn / 运河尽头
+`05_amigosville_am`（Falls Creek / 乡间溪流）继续只作为早期 reverse-engineering reference sample；它的旧 SCG report 使用 schema v1 非递归 datasource traversal，因此不再拿旧绝对 datasource 数量与 schema v2 双地图结果做横向比较，但它仍提供了最初的 `rb.datasource -> PolygonGroup #id` exact-match 证据。
 
-真实 SCG inspection：
+## 真实 Maps.zip baseline
 
+- archive bytes：2,107,519,076（约 1.96 GiB）；
+- 4,316 files；
+- 33 battle maps + `00_global_content` + `00_shared_content`；
+- `.sc2.dvpl` 84；
+- `.scg.dvpl` 84；
+- `.heightmap.dvpl` 38；
+- `.mkm.dvpl` 37；
+- `.lka.dvpl` 65；
+- 原 texture payload 约占 uncompressed archive 86.3%。
+
+因此 production 3D pipeline 不应直接发布/加载整套客户端纹理；PR2 继续只生成 derived runtime data，并使用 WotBTools 自己的中性材质/视觉语言。
+
+## Canal schema v2 — PASS
+
+SCG inspection：
+
+- recursive `#hierarchy` entities：2,725；
 - SCPG v1；
 - PolygonGroups：237；
 - vertices：173,017；
 - indices：299,156；
-- primitives：104,600；
+- primitiveCount：104,600；
+- trailing bytes：0；
+- warnings：0；
 - index payload mismatch：0；
-- RenderBatch datasource occurrences：2,183；
-- unique `rb.datasource`：115；
-- matched：115 / 115；
-- unmatched：0。
+- RenderBatch datasource occurrences：3,573；
+- unique `rb.datasource`：237；
+- matched：237 / 237；
+- unmatched：0；
+- unreferenced PolygonGroup：0。
 
-### 14_port_pt / 港湾小镇
+Derived geometry PoC：
 
-真实 SCG inspection：
+- schemaVersion：2；
+- selected geometry：94；
+- selected unique datasource：94；
+- Mesh instances：953；
+- decoded positions：99,736；
+- decoded indices：182,451；
+- positions bytes：1,196,832；
+- indices bytes：729,804；
+- selected primitive type：triangle list only；
+- orphan instance datasource：0；
+- unused selected geometry：0；
+- malformed / unsupported blocker：0。
 
+Skipped by intended runtime policy：
+
+- inactive LOD：925；
+- SpeedTreeObject：311；
+- VegetationRenderObject：3；
+- MapBorderRenderObject：2；
+- Landscape：1；
+- WaterRenderObject：1。
+
+## Port Bay schema v2 — PASS
+
+SCG inspection：
+
+- recursive `#hierarchy` entities：3,890；
 - SCPG v1；
 - PolygonGroups：217；
 - vertices：126,466；
 - indices：223,764；
-- primitives：77,454；
+- primitiveCount：77,454；
+- trailing bytes：0；
+- warnings：0；
 - index payload mismatch：0；
-- RenderBatch datasource occurrences：2,781；
-- unique `rb.datasource`：114；
-- matched：114 / 114；
-- unmatched：0。
+- RenderBatch datasource occurrences：4,702；
+- unique `rb.datasource`：217；
+- matched：217 / 217；
+- unmatched：0；
+- unreferenced PolygonGroup：0。
 
-结论：
+Derived geometry PoC：
 
-> `SC2 rb.datasource -> companion SCG PolygonGroup #id` 已不再是单图偶然结构；至少在 Falls Creek、Canal、Port Bay 三张真实地图均成立且 unmatched=0。
+- schemaVersion：2；
+- selected geometry：106；
+- selected unique datasource：106；
+- Mesh instances：2,039；
+- decoded positions：79,837；
+- decoded indices：149,793；
+- positions bytes：958,044；
+- indices bytes：599,172；
+- selected primitive type：triangle list only；
+- orphan instance datasource：0；
+- unused selected geometry：0；
+- malformed / unsupported blocker：0。
 
-## Vertex / index contract
+Skipped by intended runtime policy：
 
-当前真实样本已确认：
+- inactive LOD：1,571；
+- SpeedTreeObject：162；
+- VegetationRenderObject：3；
+- Landscape：1；
+- WaterRenderObject：1；
+- MapBorderRenderObject：1。
 
-- interleaved vertex buffer；
-- `EVF_VERTEX` 为 offset 0 的 float32 XYZ；
-- stride 可由 `len(vertices) / vertexCount` 严格验证；
-- 当前样本 `indexFormat=0` 对应 uint16 payload；
-- decoder 验证 finite position、index payload size 与 local index bounds。
+## DAVA active RenderBatch contract
 
-DAVA world transform contract：
+第一轮双地图 PoC 暴露并已修复 exporter bug。
 
-```text
-scaled = worldScale * localVertex
-world = worldRotation.ApplyToVectorFast(scaled) + worldTranslation
-```
-
-derived runtime 数据模型保持：
-
-```text
-shared local geometry + instance world transform
-```
-
-而不是把重复建筑 bake 成重复 world-space mesh。
-
-## 第一轮 Canal / Port Bay geometry PoC 暴露的 exporter bug
-
-第一次运行 `export_map_geometry_poc.py` 时，两张图都输出：
-
-```text
-geometryCount = 0
-instanceCount = 0
-```
-
-这不是客户端缺少 geometry。
-
-当时 exporter 把 active batch 错误实现为：
-
-```text
-batch.lodIndex == requestedLod
-AND
-batch.switchIndex == requestedSwitch
-```
-
-因此把大量 `-1` batch 误记为 `other_lod / other_switch`：
-
-- Canal：`other_lod=1116`, `other_switch=762`；
-- Port Bay：`other_lod=2096`, `other_switch=1514`。
-
-DAVA `RenderObject::UpdateActiveRenderBatchesFromCollection()` 的真实规则是：
+真实 DAVA rule：
 
 ```text
 (batch.lodIndex == requestedLod OR batch.lodIndex == -1)
@@ -177,36 +142,41 @@ AND
 (batch.switchIndex == requestedSwitch OR batch.switchIndex == -1)
 ```
 
-即 `-1` 是 shared/wildcard batch。
+因此 `-1` 是 shared/wildcard batch，不是 inactive batch。
 
-### 已修复
+当前 schema v2 exporter：
 
-`common/python/export_map_geometry_poc.py` schema v2：
+- 默认 requested LOD=0 / switch=0；
+- 正确接纳 `-1` shared LOD/switch；
+- 缺失 option 按 DAVA load default `-1`；
+- `ro.batches` 使用真实 numeric archive key 解析 batch index；
+- 0 selected instances fail-fast；
+- regression tests 覆盖 wildcard、numeric batch key、nested hierarchy。
 
-- `-1` LOD/switch 按 DAVA shared batch 规则参与目标 0/0 state；
-- SceneFileV2 缺失 batch option 按 DAVA load default `-1` 处理；
-- `ro.batches` dict 使用真实 `0000/0001/...` archive key 解析 batch index，不依赖 Python dict enumeration；
-- 如果 selected Mesh instances 为 0，直接失败并删除空输出，不再生成“成功但 0 bytes”的 PoC；
-- manifest 明确记录 shared batch rule。
+## Coordinate / geometry contract
 
-`common/python/inspect_map_scg.py` schema v2：
+继续使用现有 canonical world frame：
 
-- datasource discovery 改为递归遍历全部 nested `#hierarchy`；
-- 与 exporter 使用一致的 entity universe。
+```text
+DAVA local XYZ
+  -> worldScale
+  -> worldRotation quaternion XYZW
+  -> worldTranslation
+```
 
-新增 `common/python/tests/test_export_map_geometry_poc.py`：
+runtime representation：
 
-- `lod=-1 / switch=-1` shared batch 必须被目标 0/0 接纳；
-- `lod=0 / switch=-1` 接纳；
-- `lod=-1 / switch=0` 接纳；
-- 非目标 LOD/switch 排除；
-- reverse insertion-order 的 `0000/0001/...` batch keys 仍映射正确；
-- non-numeric archive batch key fail-fast；
-- nested hierarchy traversal 覆盖。
+```text
+shared local geometry + SC2 world-transform instances
+```
 
-## Collision
+不把重复建筑 bake 成重复 world-space vertex buffers。
 
-已确认 `CollisionTypeComponent` 字段：
+Terrain 高度继续复用 `map-semanticizer` 已验证的 Landscape world bounds + heightmap pipeline；replay/client/2D basemap 已共享同一 world-coordinate contract。
+
+## Collision 边界 — PR1 CLOSED
+
+已证明：scene entity 广泛存在 `CollisionTypeComponent`，字段包含：
 
 ```text
 CollisionType
@@ -216,77 +186,116 @@ Health
 MaterialKind
 ```
 
-当前能证明 collision/destruction/material classification metadata 属于 scene entity。
+PR1 能证明的是：
 
-仍未证明：
+> collision / destruction / material classification metadata 属于 scene entity。
 
-- 是否存在独立 collision mesh；
-- gameplay collision 是否复用 visual PolygonGroup；
-- `CollisionType` 的完整 enum 语义。
+PR1 **不能证明**：
 
-这不阻塞首批 visual 3D Playback，但在 AI LOS/pathfinding spatial core 前必须继续解决。
+- 独立 gameplay collision mesh 的来源；
+- gameplay collision 是否直接复用 visual PolygonGroup；
+- `CollisionType` 完整 enum / engine 行为。
 
-## TerrainData / MKM / LKA
+因此：
 
-TerrainDataComponent 已确认直接引用 `.mkm/.lka`。
+- **不把 visual SCG geometry 声称为 gameplay collision geometry**；
+- collision mesh 不是 PR2 visual 3D Playback 的 blocker；
+- 在未来 AI LOS/pathing/spatial core 前单独继续研究。
 
-MKM research sample：24-byte header + 262,144-byte payload，具有强 packed-grid 特征；LKA 仍是 terrain-associated opaque data。
+## Nav / passability 边界 — PR1 CLOSED
 
-证据不足前不得标成 navmesh/passability。
+`TerrainDataComponent` 已证明直接引用 `.mkm/.lka`。
 
-## 当前工具
+当前仅能证明：
 
-- `common/python/inventory_maps_zip.py`：archive inventory / selective extraction；
-- `common/python/inspect_map_scene.py`：SC2/render/collision/terrain evidence；
-- `common/python/wotb_scg.py`：SCPG + position/index decoder；
-- `common/python/inspect_map_scg.py`：recursive SC2 datasource ↔ SCG exact cross-check；
-- `common/python/export_map_geometry_poc.py`：renderer-neutral shared geometry + instance manifest exporter。
+- MKM 是 fixed-size packed terrain-associated binary；
+- LKA 是 terrain-associated opaque archive/data。
 
-## 下一执行步骤
+当前不能证明它们是 navmesh、passability grid 或路径规划数据。
 
-更新分支后重新执行两张图。前一轮 SCG 已证明 contract，但 inspector 已升级为 recursive schema v2，因此建议一并重跑：
+因此：
 
-```powershell
-git checkout research/client-map-3d-inventory
-git pull origin research/client-map-3d-inventory
+- PR2 不消费 MKM/LKA；
+- 不在 API/schema/code 中使用 `navmesh` / `passability` 等未经证明的名称；
+- 后续 Spatial Analysis PR 再做语义逆向。
 
-python common/python/inspect_map_scg.py "C:\Users\yu.chen\Downloads\Maps.zip" 18_canal_cn
-python common/python/export_map_geometry_poc.py "C:\Users\yu.chen\Downloads\Maps.zip" 18_canal_cn
+## PR2 — Map Geometry Core contract
 
-python common/python/inspect_map_scg.py "C:\Users\yu.chen\Downloads\Maps.zip" 14_port_pt
-python common/python/export_map_geometry_poc.py "C:\Users\yu.chen\Downloads\Maps.zip" 14_port_pt
+PR2 目标：把 PR1 的 research PoC 收敛成可重复、可测试、可供浏览器 renderer 消费的 **renderer-neutral Map Geometry Core**。
+
+### 输入
+
+```text
+Maps.zip
+  ├─ <map>/<map>.sc2(.dvpl)
+  ├─ <map>/<map>.scg(.dvpl)
+  └─ <map>/<map>.heightmap(.dvpl)
+
++ existing common map semantics / world bounds / base metadata
 ```
 
-下一轮 Gate：
+### Derived runtime output
 
-1. `schemaVersion=2`；
-2. recursive datasource unmatched = 0；
-3. geometryCount > 0；
-4. instance count > 0；
-5. positionsBytes > 0；
-6. indicesBytes > 0；
-7. unsupported/malformed geometry blocker = 0。
+至少包含：
 
-只有 Canal + Port Bay 同时通过，才把当前 extraction contract 升级为 PR2 首版 Map Geometry Core contract。
+```text
+map-manifest.json
+static-positions.bin
+static-indices.bin
+terrain representation
+instance transforms
+world bounds / coordinate metadata
+```
+
+具体文件名可在实现中调整，但 contract 必须保持 renderer-neutral，不直接绑定 Three.js/Babylon.js/glTF。
+
+### Static mesh selection
+
+PR2 v1：
+
+- `Mesh` only；
+- requested LOD=0 / switch=0；
+- shared `-1` batch 生效；
+- exclude shadow-only；
+- SpeedTree / vegetation 不进入 v1；
+- Landscape 由 heightmap terrain pipeline 单独生成；
+- Water / map border 不作为 static-mesh dependency；
+- 不输出客户端 texture/material/UV/tangent 数据。
+
+### PR2 DoD
+
+Canal + Port Bay 必须同时满足：
+
+1. deterministic conversion；
+2. static geometry decode blocker=0；
+3. terrain decode blocker=0；
+4. canonical world bounds 一致；
+5. shared geometry + instances 无 orphan datasource；
+6. derived package 不包含 raw SC2/SCG/texture bulk asset；
+7. output size / counts 有 manifest validation；
+8. replay/world coordinate 不引入第二套 map coordinate system；
+9. targeted Python tests 覆盖 conversion contract；
+10. 为 PR3 Browser 3D Technical Prototype 提供稳定输入。
+
+PR3 再负责第一张真正的 browser 3D map：terrain + static mesh + camera，随后叠加真实 replay vehicle state。
 
 ## PR1 Definition of Done
 
 - [x] 真实 Maps.zip inventory；
-- [x] terrain + coordinate 基础能力；
-- [x] Falls Creek format research sample；
-- [x] companion SCG SCPG/PolygonGroup decode；
-- [x] Falls Creek datasource link 107/107；
-- [x] Canal datasource link 115/115；
-- [x] Port Bay datasource link 114/114；
+- [x] terrain + replay/client coordinate baseline；
+- [x] SCPG / PolygonGroup parser；
+- [x] SC2 `rb.datasource` -> SCG `#id` exact contract；
 - [x] vertex/index decoder；
 - [x] renderer-neutral geometry exporter；
-- [x] DAVA shared LOD/switch `-1` 规则修复 + regression tests；
-- [ ] Canal schema v2 derived geometry PoC blocker=0；
-- [ ] Port Bay schema v2 derived geometry PoC blocker=0；
-- [ ] collision representation 的 PR1 最终边界说明；
-- [ ] nav/passability 的 PR1 最终边界说明；
-- [ ] PR2 Map Geometry Core 输入/DoD 定稿。
+- [x] DAVA shared LOD/switch rule + regression tests；
+- [x] Canal schema v2 recursive datasource gate；
+- [x] Canal derived geometry PoC blocker=0；
+- [x] Port Bay schema v2 recursive datasource gate；
+- [x] Port Bay derived geometry PoC blocker=0；
+- [x] collision representation PR1 boundary；
+- [x] nav/passability PR1 boundary；
+- [x] PR2 Map Geometry Core input / output / DoD。
 
 ## 非目标
 
-PR1 不做 frontend 3D renderer、2D/3D toggle、全地图 batch conversion、原客户端纹理/材质复刻、SpeedTree/草地重建、完整 tank 3D model、AI LOS/pathfinding，也不提交 raw Maps.zip / bulk client assets。
+PR1 不做 frontend renderer、2D/3D toggle、full-map production conversion、客户端原视觉复刻、SpeedTree/草地重建、tank 3D model、AI LOS/pathfinding，也不提交 raw Maps.zip / bulk client assets。
