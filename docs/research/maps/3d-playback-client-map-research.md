@@ -18,7 +18,7 @@ PR1 / Phase 0：**IN PROGRESS — STATIC GEOMETRY CHAIN PROVEN / CANAL + PORT BA
 
 该地图已经完成 SC2 / SCG / datasource / PolygonGroup 的格式逆向实证，因此继续作为格式研究 reference sample。
 
-它**不再作为首批 3D Playback example**，原因是用户数据库当前没有该地图 replay，无法形成有价值的端到端 Playback 验证。
+它**不再作为首批 3D Playback example**，原因是当前没有可用于端到端 Playback 验证的对应 replay。
 
 ## First Playback examples
 
@@ -271,7 +271,7 @@ Derived files live under ignored `tmp/` and are not committed.
 
 ## Tests
 
-`common/python/tests/test_wotb_scg.py` covers position/index decoding and malformed-payload validation without client assets.
+`common/python/tests/test_wotb_scg.py` covers position/index decoding and malformed-payload validation without client assets。
 
 ---
 
