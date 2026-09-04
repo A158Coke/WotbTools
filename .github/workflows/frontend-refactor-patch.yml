@@ -1,0 +1,106 @@
+name: Frontend refactor patch
+
+on:
+  push:
+    branches: [refactor/frontend-navigation-context]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refactor/frontend-navigation-context
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Apply exact large-file migrations
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # ReplayPage test: use the same typed navigation key as production.
+          p = Path('frontend/src/components/ReplayPage.test.js')
+          s = p.read_text(encoding='utf-8')
+          old_import = "import ReplayPage from './ReplayPage.vue'\n"
+          new_import = old_import + "import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'\n"
+          if 'NAVIGATE_VIEW_KEY' not in s:
+              assert old_import in s
+              s = s.replace(old_import, new_import, 1)
+          old_mount = """function mountPage(overrides = {}) {
+            const auth = overrides.auth || { authenticated: true, login: vi.fn() }
+            const navigate = overrides.navigate || vi.fn()
+            return mount(ReplayPage, {
+              global: {
+                mocks: { $t: i18n.t },
+                provide: {
+                  navigate,
+                  isAuthenticated: () => auth.authenticated,
+                  login: auth.login,
+                },
+          """
+          new_mount = """function mountPage(overrides = {}) {
+            const navigate = overrides.navigate || vi.fn()
+            return mount(ReplayPage, {
+              global: {
+                mocks: { $t: i18n.t },
+                provide: {
+                  [NAVIGATE_VIEW_KEY]: navigate,
+                },
+          """
+          if old_mount in s:
+              s = s.replace(old_mount, new_mount, 1)
+          else:
+              assert '[NAVIGATE_VIEW_KEY]: navigate' in s, 'ReplayPage.test mount fixture not migrated'
+          p.write_text(s, encoding='utf-8')
+
+          # BattlePlayback: move persistence ownership to usePlaybackPreferences without touching domain projection.
+          p = Path('frontend/src/components/BattlePlayback.vue')
+          s = p.read_text(encoding='utf-8')
+          import_anchor = "import { useI18n } from 'vue-i18n'\n"
+          pref_import = "import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'\n"
+          if pref_import not in s:
+              assert import_anchor in s
+              s = s.replace(import_anchor, import_anchor + pref_import, 1)
+
+          start_marker = '// ---- PR4 §26：玩家/坦克名显示偏好'
+          end_marker = '/** 拖拽改宽：edge 决定按指针换算成哪一侧的宽度。 */'
+          if start_marker in s:
+              start = s.index(start_marker)
+              end = s.index(end_marker, start)
+              replacement = """// Playback presentation preferences have one persistence owner. BattlePlayback only consumes refs.
+          const { labelPrefs, hpPrefs, trailPrefs, paneWidths, railCollapsed } = usePlaybackPreferences()
+
+          // 左右两栏宽度可拖拽调整；持久化由 usePlaybackPreferences 负责。
+          const RAIL_W_RANGE = { min: 160, max: 420 }
+          const DETAILS_W_RANGE = { min: 240, max: 560 }
+          const clampWidth = (value, range) => Math.min(range.max, Math.max(range.min, value))
+
+          """
+              s = s[:start] + replacement + s[end:]
+          else:
+              assert 'usePlaybackPreferences()' in s, 'BattlePlayback preference owner not migrated'
+
+          trail_marker = '// 最近 2 秒位置轨迹偏好：只消费 canonical observed positionSegments；持久化与'
+          visible_marker = 'const visibleTrails = computed(() => trailPrefs.showTrail'
+          if trail_marker in s:
+              start = s.index(trail_marker)
+              end = s.index(visible_marker, start)
+              s = s[:start] + '// 最近 2 秒位置轨迹只消费 canonical observed positionSegments；显示偏好由 usePlaybackPreferences 持久化。\n' + s[end:]
+          else:
+              assert visible_marker in s and 'TRAIL_PREFS_KEY' not in s, 'trail preference duplicate still present'
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Remove one-shot workflow and commit patch
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/frontend-refactor-patch.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/components/ReplayPage.test.js frontend/src/components/BattlePlayback.vue
+          git commit -m "refactor(frontend): complete explicit ownership migration"
+          git push origin HEAD:refactor/frontend-navigation-context
