@@ -10,6 +10,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import BattlePlayback from './BattlePlayback.vue'
 import { makeOverview, makePlaybackV2 } from './playbackTestHarness.js'
 import { preloadBattleModels } from '../vehicle-models/runtime.js'
@@ -925,6 +927,16 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     vi.unstubAllGlobals()
     vi.useRealTimers()
     resetFullscreenGlobals()
+  })
+
+  // 碰撞必须喂渲染方框，不能喂各向异性的车体矩形：贴图按航向在方框内旋转，方框才是
+  // 屏幕外接盒。喂车体矩形时横向行驶/接近垂直的两车判定失准，视觉上仍然叠在一起。
+  it('feeds the rendered box into the collision layout, not the hull rectangle', () => {
+    // happy-dom 下 import.meta.url 不是 file URL，用 cwd 相对路径读源码。
+    const src = readFileSync(resolve(process.cwd(), 'src/components/BattlePlayback.vue'), 'utf8')
+    expect(src).toContain('state.markerSize.renderBox.width * view.scale')
+    expect(src).toContain('state.markerSize.renderBox.height * view.scale')
+    expect(src).not.toContain('state.markerSize.collisionFootprint.width * view.scale')
   })
 
   // 左右两栏可拖拽改宽：把手写入 --pb-rail-w / --pb-details-w，并夹在合理区间内。

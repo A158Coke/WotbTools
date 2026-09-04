@@ -1491,8 +1491,11 @@ watch(
     const items = states.map((state) => {
       const point = canonicalMarkerScreen(state)
       if (!point) return null
-      const width = state.markerSize.collisionFootprint.width * view.scale
-      const height = state.markerSize.collisionFootprint.height * view.scale
+      // 用渲染方框而不是车体矩形做碰撞：车体贴图按航向在方框内旋转，方框是它在屏幕上的
+      // 外接盒。用各向异性的车体矩形会判错——横向行驶的车实际占满方框宽度，矩形却说它很窄，
+      // 而且矩形不随航向旋转，两车接近垂直时判定完全失准。
+      const width = state.markerSize.renderBox.width * view.scale
+      const height = state.markerSize.renderBox.height * view.scale
       return {
         accountId: state.vehicle.accountId,
         x: point.x,

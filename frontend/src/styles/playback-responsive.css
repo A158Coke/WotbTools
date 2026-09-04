@@ -303,7 +303,11 @@
 }
 
 /* §pane-resize：左右两栏的拖拽把手。默认隐藏在栏内侧边缘，hover/拖拽时才显形，
-   不占布局宽度（absolute），因此不影响地图 fit 几何。栏本身不显示时把手也不显示。 */
+   不占布局宽度（absolute），因此不影响地图 fit 几何。栏本身不显示时把手也不显示。
+   两个容器必须 position: relative——否则 absolute 把手会以更外层的定位祖先为基准，
+   跑到栏边缘之外。 */
+.battle-playback .pb-left-rail,
+.battle-playback .pb-map-stage > .pb-side-panel-shell { position: relative; }
 .battle-playback .pb-pane-resizer {
   position: absolute;
   top: 0;
