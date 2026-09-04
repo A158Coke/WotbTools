@@ -21,7 +21,8 @@
   QQ App（ACTION_VIEW），保留当前 WebView auth transaction / cookie jar，不进入 `auth-recovery`、
   不 reload 首页、不切系统浏览器；QQ App 未安装时提示安装后重试（fail closed，不 silent fallback）。
   不把 `ptlogin` 加入 `AUTH_PROVIDER_HOSTS`，不扩 `mqq*`/`*.qq.com`/suffix/前缀通配；未知
-  native scheme/host 在 auth flow 内仍 `AUTH_FAILURE`。同步 `AuthNavigationPolicyTest`
+  native scheme/host（含 host=null 的未知 custom scheme）在 auth flow 内仍 `AUTH_FAILURE` 且不退出
+  auth flow（fail closed）。同步 `AuthNavigationPolicyTest`
   （native handoff 精确匹配 + 越权/越域 rejection + 生产链到 native handoff）与
   `docs/android/architecture.md` Authentication Boundary（区分 Web auth hosts 与 native handoff）。
 
