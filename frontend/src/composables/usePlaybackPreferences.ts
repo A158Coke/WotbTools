@@ -9,6 +9,10 @@ export interface PlaybackHpPreferences {
   showHp: boolean
 }
 
+export interface PlaybackTrailPreferences {
+  showTrail: boolean
+}
+
 export interface PlaybackPaneWidths {
   rail: number | null
   details: number | null
@@ -16,6 +20,7 @@ export interface PlaybackPaneWidths {
 
 const LABEL_PREFS_KEY = 'wotb.pb.label-prefs'
 const HP_PREFS_KEY = 'wotb.pb.hp-prefs'
+const TRAIL_PREFS_KEY = 'wotb.pb.trail-prefs'
 const PANE_WIDTH_KEY = 'wotb.pb.pane-widths'
 const RAIL_COLLAPSED_KEY = 'wotb.pb.rail-collapsed'
 
@@ -58,6 +63,15 @@ export function usePlaybackPreferences() {
     },
   ))
 
+  const trailPrefs = reactive<PlaybackTrailPreferences>(readJson(
+    TRAIL_PREFS_KEY,
+    { showTrail: true },
+    (value) => {
+      const record = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+      return { showTrail: record.showTrail !== false }
+    },
+  ))
+
   const paneWidths = reactive<PlaybackPaneWidths>(readJson(
     PANE_WIDTH_KEY,
     { rail: null, details: null },
@@ -79,6 +93,7 @@ export function usePlaybackPreferences() {
 
   watch(labelPrefs, (value) => persistJson(LABEL_PREFS_KEY, value), { deep: true })
   watch(hpPrefs, (value) => persistJson(HP_PREFS_KEY, value), { deep: true })
+  watch(trailPrefs, (value) => persistJson(TRAIL_PREFS_KEY, value), { deep: true })
   watch(paneWidths, (value) => persistJson(PANE_WIDTH_KEY, value), { deep: true })
   watch(railCollapsed, (value) => {
     try {
@@ -88,5 +103,5 @@ export function usePlaybackPreferences() {
     }
   })
 
-  return { labelPrefs, hpPrefs, paneWidths, railCollapsed }
+  return { labelPrefs, hpPrefs, trailPrefs, paneWidths, railCollapsed }
 }
