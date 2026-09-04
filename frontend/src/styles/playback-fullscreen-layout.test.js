@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 const read = (name) => readFileSync(fileURLToPath(new URL(name, import.meta.url)), 'utf8')
 // 布局分散在多个形态文件里（见 playback-mobile.css 头部说明）。契约断言针对「最终
 // 生效的那套样式」，所以按 main.js 的 import 顺序拼起来读——顺序即层叠顺序。
-const SHEETS = ['./playback-responsive.css', './playback-mobile.css']
+const SHEETS = ['./playback-shared.css', './playback-pc.css', './playback-tablet.css', './playback-mobile.css']
 const css = SHEETS.map(read).join('\n')
 const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '')
 
@@ -50,15 +50,30 @@ function selectorsIn(source) {
 }
 
 describe('Battle Playback form-scoped stylesheets', () => {
-  it('scopes every mobile rule to .pb-form-mobile', () => {
-    const selectors = selectorsIn(read('./playback-mobile.css'))
-    expect(selectors.length).toBeGreaterThan(20)
-    const leaked = selectors.filter((sel) => !sel.includes('.pb-form-mobile'))
-    expect(leaked).toEqual([])
-  })
+  // 每个形态文件里的每一条选择器都必须带自己的形态前缀。这把「一档的规则打穿
+  // 另一档」变成结构上不可能，而不是靠人记得加限定——旧结构里正是靠人记得，
+  // 结果 .pb-device-mobile(0,4,0) 压掉宽度键控(0,3,0) 出现了三次。
+  for (const [form, sheet] of [
+    ['pc', './playback-pc.css'],
+    ['tablet', './playback-tablet.css'],
+    ['mobile', './playback-mobile.css'],
+  ]) {
+    it(`scopes every ${form} rule to .pb-form-${form}`, () => {
+      const selectors = selectorsIn(read(sheet))
+      expect(selectors.length).toBeGreaterThan(8)
+      expect(selectors.filter((sel) => !sel.includes(`.pb-form-${form}`))).toEqual([])
+    })
+  }
 
-  it('keeps the mobile layout out of the shared sheet', () => {
-    expect(read('./playback-responsive.css')).not.toContain('.pb-form-mobile')
+  // 共享文件只放三档通用的东西：出现任何形态类都说明某一档的布局漏在了公共层，
+  // 那正是旧结构互相打穿的入口。
+  it('keeps every form-specific rule out of the shared sheet', () => {
+    const shared = read('./playback-shared.css')
+    for (const form of ['pc', 'tablet', 'mobile']) {
+      expect(shared).not.toContain(`.pb-form-${form}`)
+    }
+    // 旧的设备类判定也不该再出现在布局里（形态类是唯一入口）。
+    expect(selectorsIn(shared).filter((sel) => sel.includes('.pb-device-mobile'))).toEqual([])
   })
 })
 
@@ -79,23 +94,23 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
   it('desktop fullscreen gives the map the full width and floats the panels', () => {
     // 护栏：黑边放得下面板时才浮，否则回落三列（大平板横屏 / 窄桌面窗口）。
     expect(stripped).toContain('@media (min-width: 1600px) and (min-aspect-ratio: 3/2)')
-    const shell = ruleBody('.battle-playback:fullscreen:not(.pb-device-mobile)')
+    const shell = ruleBody('.battle-playback.pb-form-pc:fullscreen')
     expect(shell).toContain('grid-template-columns: minmax(0, 1fr)')
 
-    const rail = ruleBody('.battle-playback:fullscreen:not(.pb-device-mobile) .pb-left-rail')
+    const rail = ruleBody('.battle-playback.pb-form-pc:fullscreen .pb-left-rail')
     expect(rail).toContain('position: absolute')
     expect(rail).toContain('left: 0')
     expect(rail).toContain('width: var(--pb-left-col)')
     expect(rail).toContain('backdrop-filter')
 
-    const details = ruleBody('.battle-playback:fullscreen:not(.pb-device-mobile) .pb-map-stage > .pb-side-panel-shell')
+    const details = ruleBody('.battle-playback.pb-form-pc:fullscreen .pb-map-stage > .pb-side-panel-shell')
     expect(details).toContain('position: absolute')
     expect(details).toContain('right: 0')
     expect(details).toContain('width: var(--pb-details-w)')
     expect(details).toContain('backdrop-filter')
 
     // map-stage 不再为 Right Details 保留一列
-    const stage = ruleBody('.battle-playback:fullscreen:not(.pb-device-mobile) .pb-map-stage')
+    const stage = ruleBody('.battle-playback.pb-form-pc:fullscreen .pb-map-stage')
     expect(stage).toContain('grid-template-columns: minmax(0, 1fr)')
   })
 
@@ -135,9 +150,9 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(detailsPanel).toContain('max-height: none')
     expect(detailsPanel).toContain('box-shadow: none')
 
-    const rail = ruleBody('.battle-playback:not(.pb-device-mobile):not(:fullscreen).pb-drawer-open .pb-left-rail')
+    const rail = ruleBody('.battle-playback.pb-form-pc:not(:fullscreen).pb-drawer-open .pb-left-rail')
     expect(rail).toContain('position: static')
-    const backdrop = ruleBody('.battle-playback:not(.pb-device-mobile):not(:fullscreen) .pb-drawer-backdrop')
+    const backdrop = ruleBody('.battle-playback.pb-form-pc:not(:fullscreen) .pb-drawer-backdrop')
     expect(backdrop).toContain('display: none')
   })
 
@@ -325,10 +340,10 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(base).toContain('justify-content: center')
 
     for (const sel of [
-      '.battle-playback:fullscreen:not(.pb-device-mobile) .pb-left-rail .pb-pane-resizer',
-      '.battle-playback:fullscreen:not(.pb-device-mobile) .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer',
-      '.battle-playback:not(:fullscreen) .pb-left-rail .pb-pane-resizer',
-      '.battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer',
+      '.battle-playback.pb-form-pc:fullscreen .pb-left-rail .pb-pane-resizer',
+      '.battle-playback.pb-form-pc:fullscreen .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer',
+      '.battle-playback.pb-form-pc:not(:fullscreen) .pb-left-rail .pb-pane-resizer',
+      '.battle-playback.pb-form-pc:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell .pb-pane-resizer',
     ]) {
       expect(ruleBody(sel)).toContain('display: flex')
     }
@@ -343,7 +358,10 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     const sheet = ruleBody('.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar')
     expect(sheet).not.toBeNull()
     expect(sheet).toContain('animation: pb-details-slide-up')
-    expect(css).not.toContain('.battle-playback.pb-form-mobile .pb-map-stage > .pb-side-panel-shell')
+    // 非全屏的那条 shell 规则必须是流内形态（position: static），不能是覆盖地图的浮层。
+    const inflowShell = ruleBody('.battle-playback.pb-form-mobile:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell')
+    expect(inflowShell).toContain('position: static')
+    expect(inflowShell).not.toContain('position: absolute')
 
     // 流内还不够：详情内容能到 ~650px（战斗装载那几组），不封顶就把地图整个顶出视口，
     // 形式上没盖住地图、实际效果一样。手机上必须像标注工具栏那样是一块有界区块。
@@ -357,9 +375,9 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
 
     // §no-overlay：没有持久列的宽度区间（<1200px 非全屏）没有黑边可用，详情必须排进流里。
     // 按宽度而不是设备类判定——.pb-form-mobile 要求 pointer: coarse，窄的桌面窗口拿不到。
-    const inflow = ruleBody('.battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar')
+    const inflow = ruleBody('.battle-playback.pb-form-tablet:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar')
     expect(inflow).toContain('position: static')
-    expect(ruleBody('.battle-playback:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell')).toContain('position: static')
+    expect(ruleBody('.battle-playback.pb-form-tablet:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell')).toContain('position: static')
 
     // 手机全屏横屏：抽屉宽度按黑边实宽算（(100vw - 100vh) / 2），不越到地图上。
     expect(stripped).toContain('@media (orientation: landscape)')
@@ -382,7 +400,7 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(body).not.toContain('border: 0')
 
     // 只有持久列里详情才变成「列本身」——去卡片外观、跟着列高走。
-    const column = ruleBody('.battle-playback:not(:fullscreen):not(.pb-device-mobile) .pb-map-stage > .pb-side-panel-shell > .pb-sidebar')
+    const column = ruleBody('.battle-playback.pb-form-pc:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell > .pb-sidebar')
     expect(column).toContain('background: transparent')
     expect(column).toContain('border: 0')
     expect(column).toContain('max-height: 100%')
@@ -393,7 +411,8 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
   // 所以必须一起改，否则真机上仍然看不见。
   it('never hides the in-flow controls behind a touch-reveal opacity', () => {
     for (const sel of [
-      '.battle-playback:not(:fullscreen) .pb-mobile-overlay',
+      '.battle-playback.pb-form-tablet:not(:fullscreen) .pb-mobile-overlay',
+      '.battle-playback.pb-form-mobile:not(:fullscreen) .pb-mobile-overlay',
       '.battle-playback:not(:fullscreen).pb-form-mobile .pb-mobile-overlay',
     ]) {
       const body = ruleBody(sel)
@@ -474,8 +493,8 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(ruleBody('.battle-playback.pb-form-mobile .pb-controls .pb-btn')).toContain('min-height: 36px')
     // <1200px 非全屏：控制条排在地图下方的正常流里，不再是压住地图的浮层。
     // 按宽度判定，窄的桌面浏览器窗口（精确指针、拿不到 .pb-form-mobile）同样生效。
-    expect(ruleBody('.battle-playback:not(:fullscreen) .pb-mobile-overlay-content')).toContain('position: static')
-    const overlay = ruleBody('.battle-playback:not(:fullscreen) .pb-mobile-overlay')
+    expect(ruleBody('.battle-playback.pb-form-tablet:not(:fullscreen) .pb-mobile-overlay-content')).toContain('position: static')
+    const overlay = ruleBody('.battle-playback.pb-form-tablet:not(:fullscreen) .pb-mobile-overlay')
     expect(overlay).toContain('position: static')
     expect(overlay).toContain('opacity: 1')
     expect(ruleBody('.battle-playback.pb-form-mobile .pb-controls .pb-time')).toContain('order: 20')
