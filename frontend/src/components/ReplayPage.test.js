@@ -1174,8 +1174,8 @@ describe('ReplayPage PNG export', () => {
             { key: 'league_damage_score', max: 400 },
           ],
           playerSummaries: [
-            { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 1, ratingV5: 927.4, ratingRawMedian: 927.4,
-              dimensionMedians: [342, 60, 70, 110, 40, 80, 100], mvpCount: 1, wins: 1,
+            { accountId: 1001, nickname: 'Alpha', clan: 'AAA', ratedBattles: 1, rating: 927.4, observedMean: 927.4,
+              dimensionMeans: [342, 60, 70, 110, 40, 80, 100], mvpCount: 1, wins: 1,
               contribution: 22.4, kast: 100, impact: 151.2 },
           ],
           playerSummaryColumns: [
@@ -1185,8 +1185,8 @@ describe('ReplayPage PNG export', () => {
             { key: 'kast', num: true }, { key: 'impact', num: true },
           ],
           teamSummaries: [
-            { teamKey: 'AAA', autoName: 'AAA', battles: 1, ratingMedian: 900.6,
-              dimensionMedians: [300, 50, 60, 90, 30, 70, 80], wins: 1 },
+            { teamKey: 'AAA', autoName: 'AAA', ratedBattles: 1, rating: 900.6, observedMean: 900.6,
+              dimensionMeans: [300, 50, 60, 90, 30, 70, 80], wins: 1 },
           ],
           teamSummaryColumns: [
             { key: 'team_name', num: false }, { key: 'battles', num: true },
@@ -1957,7 +1957,7 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
       league: {
         mode: 'LEAGUE_RATING',
         columns: [],
-        playerSummaries: [{ nickname: 'P1', ratingV5: 1000, ratingRawMedian: 1500, battles: 5, wins: 3, damageTotal: 25000, killsTotal: 10, dimensionMedians: [] }],
+        playerSummaries: [{ nickname: 'P1', rating: 1000, observedMean: 1000, ratedBattles: 5, wins: 3, damageTotal: 25000, killsTotal: 10, dimensionMeans: [] }],
         playerSummaryColumns: [{ key: 'nickname', label: '昵称' }, { key: 'league_rating', label: 'Rating' }],
         teamSummaries: [],
         teamSummaryColumns: [],
@@ -1986,7 +1986,7 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
       league: {
         mode: 'LEAGUE_RATING',
         columns: [],
-        playerSummaries: [{ nickname: 'P1', ratingV5: 795.7, ratingRawMedian: 900, battles: 2, wins: 1, damageTotal: 9000, killsTotal: 4, dimensionMedians: [] }],
+        playerSummaries: [{ nickname: 'P1', rating: 795.7, observedMean: 900, ratedBattles: 2, wins: 1, damageTotal: 9000, killsTotal: 4, dimensionMeans: [] }],
         playerSummaryColumns: [{ key: 'nickname', label: '昵称' }, { key: 'league_rating', label: 'Rating' }],
         teamSummaries: [],
         teamSummaryColumns: [],
@@ -2129,8 +2129,7 @@ describe('ReplayPage Player Detail Drawer', () => {
         mode: 'LEAGUE_RATING',
         columns: [{ key: 'league_rating', max: 1000, fixed: true }],
         playerSummaries: [
-          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 3, ratingV5: 779.3, ratingRawMedian: 850.4,
-            dimensionMedians: [342, 60, 70, 110, 40, 80, 100],
+          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', ratedBattles: 3, rating: 779.3, observedMean: 850.4,
             dimensionMeans: [250, 40, 30, 75, 10, 50, 65], mvpCount: 2, wins: 2 },
         ],
         playerSummaryColumns: [{ key: 'nickname', label: '昵称' }, { key: 'league_rating', label: 'Rating' }],
@@ -2189,7 +2188,7 @@ describe('ReplayPage Player Detail Drawer', () => {
     wrapper.unmount()
   })
 
-  it('Battle Drawer：player 携带本场 dimensionScores，绝不携带跨场 dimensionMeans/dimensionMedians', async () => {
+  it('Battle Drawer：player 携带本场 dimensionScores，绝不携带跨场 dimensionMeans', async () => {
     state.init.resp = makeResp({
       aggregate: [],
       battles: [{
@@ -2220,7 +2219,6 @@ describe('ReplayPage Player Detail Drawer', () => {
     const text = wrapper.find('.drawer-stub').text()
     expect(text).toContain('"dimensionScores":[320,55,70,110,40,75,82]')
     expect(text).not.toContain('"dimensionMeans"')
-    expect(text).not.toContain('"dimensionMedians"')
     wrapper.unmount()
   })
 
@@ -2284,7 +2282,7 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
           { key: 'league_shooting_score', max: 100 },
         ],
         playerSummaries: [
-          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 8, ratingV5: 826.1, ratingRawMedian: 850.4, dimensionMedians: [342, 60, 70, 110, 40, 80, 100], mvpCount: 2, wins: 8, contribution: 22.4, kast: 100, impact: 151.2 },
+          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', ratedBattles: 8, rating: 826.1, observedMean: 850.4, dimensionMeans: [342, 60, 70, 110, 40, 80, 100], mvpCount: 2, wins: 8, contribution: 22.4, kast: 100, impact: 151.2 },
         ],
         playerSummaryColumns: [
           { key: 'nickname', num: false }, { key: 'clan', num: false }, { key: 'battles', num: true },
@@ -2388,8 +2386,8 @@ describe('ReplayPage Drawer 玩家坦克数据透传', () => {
       league: {
         mode: 'LEAGUE_RATING', columns: [],
         playerSummaries: [
-          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 8, ratingV5: 850, ratingRawMedian: 850,
-            dimensionMedians: [1, 2, 3, 4, 5, 6, 7], dimensionMeans: [2, 3, 4, 5, 6, 7, 8],
+          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', ratedBattles: 8, rating: 850, observedMean: 850,
+            dimensionMeans: [2, 3, 4, 5, 6, 7, 8],
             mostUsedVehicle: { tankId: 7169, tankName: 'IS-7', battles: 3 } },
         ],
         playerSummaryColumns: [], teamSummaries: [], teamSummaryColumns: [], failures: [],

@@ -23,7 +23,7 @@ export const LEAGUE_DEFAULT_VISIBLE = [
  * 七维 + MVP 默认展示（延续旧体验），但不再是 alwaysVisible 硬编码。
  */
 export const CW_SUMMARY_DEFAULT_VISIBLE = [
-  'nickname', 'league_rating', 'league_rating_raw_median',
+  'nickname', 'league_rating', 'league_observed_mean',
   'league_damage_score', 'league_assist_score', 'league_kill_score',
   'league_exchange_score', 'league_blocked_score', 'league_survival_score',
   'league_shooting_score', 'mvp_count',
@@ -71,7 +71,7 @@ const COL_GROUP_CAT = {
   n_hits_received: 'battle', n_penetrations_received: 'battle', n_enemies_damaged: 'battle',
   contribution: 'battle', kast: 'battle', impact: 'battle',
   multi_damage_rate: 'battle', traded_deaths: 'battle',
-  league_rating: 'rating', league_rating_raw_median: 'rating', league_damage_score: 'rating', league_assist_score: 'rating',
+  league_rating: 'rating', league_observed_mean: 'rating', league_damage_score: 'rating', league_assist_score: 'rating',
   league_kill_score: 'rating', league_exchange_score: 'rating', league_blocked_score: 'rating',
   league_survival_score: 'rating', league_shooting_score: 'rating',
   victory_points_earned: 'battle', victory_points_seized: 'battle',

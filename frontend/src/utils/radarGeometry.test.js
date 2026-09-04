@@ -103,7 +103,7 @@ describe('radarGeometry visual scale', () => {
     expect(counterOverlap).toBe(false)
   })
 
-  it('keeps the V5 bounded 150 RC badge clear of its seven-axis label', () => {
+  it('keeps the League V6 bounded 150 RC badge clear of its seven-axis label', () => {
     const scores = [119, 113, 91, 150, 86, 124, 24]
     const positions = radarScoreLabelLayout(
       scores.map(score => score / RADAR.DISPLAY_CAP), scores.map(String))

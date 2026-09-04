@@ -1,4 +1,6 @@
-# League Rating V5（训练赛 / 联赛批次证据评分）
+# League Rating V5（历史版本：训练赛 / 联赛批次证据评分）
+
+> 本文仅保留历史算法记录；当前生产批次语义已由 [League Rating V6](WotBTools_League_Rating_V6.md) 取代。
 
 > 状态：Implementation Candidate  
 > 日期：2026-08-26  

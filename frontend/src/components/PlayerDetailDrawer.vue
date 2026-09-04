@@ -21,14 +21,14 @@ import { sanitizeFilename, downloadBlob } from '../utils/exportReplayPng.js'
  * - position: fixed 右侧 overlay，不占 Table 布局空间。
  * - 打开时 focus 关闭按钮；Escape / × / backdrop 关闭；关闭后 focus 回到触发行。
  * - selection identity = accountId：排序/刷新后由父组件按 accountId 重新 resolve 数据。
- * - scope 语义：summary = 当前批次（V5 Rating + Observed Median + Rated Battles 头部；
+ * - scope 语义：summary = 当前批次（V6 Rating + Observed Mean + Rated Battles 头部；
  *   Radar 用 dimensionMeans → Global Average）；battle = 本场表现（V4.1 单场 Rating +
  *   本场七维 dimensionScores → Battle Average；禁止使用 dimensionMeans/Medians）。
  * - Radar：默认七维（仅 League 维度，§8），用户可自定义 3–7 个指标/顺序（presentation-only，
  *   独立于 Table ColumnPicker，独立 localStorage）；axis 缺失 → 整图 unavailable（§24）。
  *   League bounded 几何使用 player raw / reference raw / resp.league.columns max；max 同时解释 raw 明细，
  *   缺失/非法时整轴 fail-closed。
- * - 参考多边形（Battle/Global Average）由 utils/radarReference.js 纯函数计算；V5 Evidence Adjustment
+ * - 参考多边形（Battle/Global Average）由 utils/radarReference.js 纯函数计算；V6 聚合 Rating
  *   不修改七维 raw 或 Radar 几何。
  */
 const props = defineProps({
@@ -157,7 +157,7 @@ function num(v) {
 }
 
 /** 顶部 Rating 信息：缺失 → '--'；总 Rating 格式化统一走 helpers.ratingTotalText。
- *  rating 语义由父组件按 scope 提供：summary = V5 Batch Player Rating，battle = V4.1 单场。 */
+ *  rating 语义由父组件按 scope 提供：summary = V6 Batch Player Rating，battle = V4.1 单场。 */
 function ratingLine() {
   const p = props.player
   if (!p) return { rating: '--' }
@@ -210,7 +210,7 @@ const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
 
 /** player 雷达原始轴（顺序 = 用户偏好；league 维度按 scope 取数：
  *  summary → dimensionMeans[i]（rated-battle 算术平均），battle → dimensionScores[i]
- *  （本场七维）；V5 几何由当前 reference=75、权威维度 max=150 的 bounded scale 生成。禁止 battle 复用跨场聚合字段、
+ *  （本场七维）；V6 几何由当前 reference=75、权威维度 max=150 的 bounded scale 生成。禁止 battle 复用跨场聚合字段、
  *  禁止 summary 用 median 冒充 mean。 */
 const rawRadarMetrics = computed(() => {
   const p = props.player
@@ -265,7 +265,7 @@ const perfFacts = computed(() => {
   })
 })
 
-// ---- 比赛事实（scope 语义）；Raw Median / Rated Battles 已移入头部（§6），不在此重复 ----
+// ---- 比赛事实（scope 语义）；Observed Mean / Rated Battles 已移入头部（§6），不在此重复 ----
 const facts = computed(() => {
   const p = props.player
   if (!p) return []
@@ -402,7 +402,7 @@ const exportSnapshot = ref(null)
 const snapIsSummary = computed(() => !!exportSnapshot.value?.isSummary)
 const snapNickname = computed(() => exportSnapshot.value?.nickname || '--')
 const snapRating = computed(() => exportSnapshot.value?.rating || '--')
-const snapRawMedian = computed(() => exportSnapshot.value?.rawMedian ?? null)
+const snapObservedMean = computed(() => exportSnapshot.value?.observedMean ?? null)
 const snapRatedBattles = computed(() => exportSnapshot.value?.ratedBattles ?? null)
 const snapReferenceLabel = computed(() => exportSnapshot.value?.referenceLabel || '')
 const snapVehicle = computed(() => exportSnapshot.value?.vehicle || null)
@@ -427,7 +427,7 @@ function buildExportSnapshot() {
     isSummary: isSummary.value,
     nickname: p.nickname,
     rating: ratingLine().rating,
-    rawMedian: p.rawMedian,
+    observedMean: p.observedMean,
     ratedBattles: p.cells?.rated_battles ?? null,
     referenceLabel: referenceLabel.value,
     vehicle: v ? { ...v } : null,
@@ -538,7 +538,7 @@ function ensureImageLoaded(url) {
               <span class="pd-rating-value" data-testid="drawer-rating">{{ ratingLine().rating }}</span>
             </div>
             <div v-if="isSummary" class="pd-rating-extra">
-              <span class="pd-extra">{{ t('league.drawer.observed_median') }}: <b>{{ num(player?.rawMedian) }}</b></span>
+              <span class="pd-extra">{{ t('league.drawer.observed_mean') }}: <b>{{ num(player?.observedMean) }}</b></span>
               <span class="pd-extra">{{ t('league.drawer.rated_battles') }}: <b>{{ player?.cells?.rated_battles ?? '--' }}</b></span>
             </div>
 
@@ -636,7 +636,7 @@ function ensureImageLoaded(url) {
   <Teleport to="body">
     <div v-if="exportingProfile" class="rp-export" ref="exportCardRef">
       <div class="rp-card">
-        <div class="rp-brand">WotBTools · League Rating{{ snapIsSummary ? ' V5' : '' }}</div>
+        <div class="rp-brand">WotBTools · League Rating{{ snapIsSummary ? ' V6' : '' }}</div>
         <div class="rp-player">{{ snapNickname }}<span class="rp-scope">{{ snapReferenceLabel }}</span></div>
         <div class="rp-headline">
           <div class="rp-rating">
@@ -644,7 +644,7 @@ function ensureImageLoaded(url) {
             <span class="rp-rating-value">{{ snapRating }}</span>
           </div>
           <div v-if="snapIsSummary" class="rp-headline-extra">
-            <span class="rp-extra">{{ t('league.drawer.observed_median') }}: <b>{{ num(snapRawMedian) }}</b></span>
+            <span class="rp-extra">{{ t('league.drawer.observed_mean') }}: <b>{{ num(snapObservedMean) }}</b></span>
             <span class="rp-extra">{{ t('league.drawer.rated_battles') }}: <b>{{ snapRatedBattles ?? '--' }}</b></span>
           </div>
         </div>

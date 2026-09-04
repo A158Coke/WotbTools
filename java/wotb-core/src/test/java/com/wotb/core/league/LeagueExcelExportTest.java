@@ -402,7 +402,7 @@ class LeagueExcelExportTest {
                 int dimColumns = 0;
                 for (final String key : LeagueColumns.DIM_KEYS) {
                     final String title = dimensionTitleOracle(key);
-                    final String needle = sheetName.equals("每场明细") ? title : title + "中位数";
+                    final String needle = sheetName.equals("每场明细") ? title : title + "平均";
                     assertEquals(1, countOccurrences(header, needle),
                             sheetName + " 必须恰好含 " + key + " 的标题：" + needle + "，实际表头：" + header);
                     dimColumns++;
@@ -464,9 +464,9 @@ class LeagueExcelExportTest {
     }
 
     @Test
-    void aggregatePlayerExportUsesV5MainRatingAndKeepsRawMedian() throws Exception {
-        // V5：批次选手汇总主 Rating = Evidence Adjustment 后；原始中位数独立列。
-        // 单场明细仍 = V4.1 finalRating（battle scope 不得被 V5 污染）。
+    void aggregatePlayerExportUsesV6MainRatingAndKeepsObservedMean() throws Exception {
+        // V6：批次选手汇总主 Rating 使用 pooled raw sum + count；Observed Mean 独立展示。
+        // 单场明细仍 = V4.1 finalRating（battle scope 不得被 League V6 污染）。
         final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         final LeagueRatingResult result = LeagueRatingCalculator.calculate(battle);
         final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
@@ -480,15 +480,15 @@ class LeagueExcelExportTest {
         try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
             final Sheet players = wb.getSheet("选手汇总");
             final String header = headerText(players);
-            assertTrue(header.contains("总Rating"), "选手汇总主列必须为 总Rating（V5），实际：" + header);
-            assertTrue(header.contains("原始中位数"), "选手汇总必须含 Raw Observed Median 列，实际：" + header);
-            // 行值：总Rating = batchRatingV5；原始中位数 = ratingMedian
+            assertTrue(header.contains("总Rating"), "选手汇总主列必须为 总Rating（V6），实际：" + header);
+            assertTrue(header.contains("Observed Mean"), "选手汇总必须含 Observed Mean 列，实际：" + header);
+            // 行值：总Rating = V6 rating；Observed Mean = pooled observed mean
             final Row row = players.getRow(1);
-            assertEquals(Math.round(s.batchRatingV5() * 10) / 10.0,
-                    row.getCell(3).getNumericCellValue(), 1e-9, "总Rating 列必须 = V5");
-            assertEquals(Math.round(s.ratingMedian() * 10) / 10.0,
-                    row.getCell(4).getNumericCellValue(), 1e-9, "原始中位数列必须 = Raw Median");
-            // 单场明细：Rating 仍为 V4.1 finalRating（不得显示 V5）
+            assertEquals(Math.round(s.rating() * 10) / 10.0,
+                    row.getCell(3).getNumericCellValue(), 1e-9, "总Rating 列必须 = League V6");
+            assertEquals(Math.round(s.observedMean() * 10) / 10.0,
+                    row.getCell(4).getNumericCellValue(), 1e-9, "Observed Mean 列必须 = pooled observed mean");
+            // 单场明细：Rating 仍为 V4.1 finalRating（不得显示 League V6）
             final Sheet detail = wb.getSheet("每场明细");
             final String detailHeader = headerText(detail);
             assertTrue(detailHeader.contains("总Rating"), "单场明细保留 总Rating 列（V4.1 语义）");
@@ -499,35 +499,33 @@ class LeagueExcelExportTest {
     }
 
     @Test
-    void leagueSummaryDimensionMedianCountMatchesCanonicalDimensionKeys() throws Exception {
+    void leagueSummaryDimensionMeanCountMatchesCanonicalDimensionKeys() throws Exception {
         final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         final LeagueRatingResult result = LeagueRatingCalculator.calculate(battle);
         final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
                 List.of(battle), List.of(result), List.of());
-        // chunkMedians 输出维度数必须 == canonical DIM_KEYS（禁止 magic 7）
+        // 维度均值输出数必须 == canonical DIM_KEYS（禁止 magic 7）
         assertEquals(LeagueColumns.DIM_KEYS.size(),
-                batch.playerSummaries().getFirst().dimensionMedians().size(),
-                "选手维度中位数数量必须 == LeagueColumns.DIM_KEYS.size()");
+                batch.playerSummaries().getFirst().dimensionMeans().size(),
+                "选手维度均值数量必须 == LeagueColumns.DIM_KEYS.size()");
         assertEquals(LeagueColumns.DIM_KEYS.size(),
-                batch.teamSummaries().getFirst().dimensionMedians().size(),
-                "战队维度中位数数量必须 == LeagueColumns.DIM_KEYS.size()");
+                batch.teamSummaries().getFirst().dimensionMeans().size(),
+                "战队维度均值数量必须 == LeagueColumns.DIM_KEYS.size()");
 
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
         ExcelExporter.writeAggregateLeague(List.of(battle), List.of("one.wotbreplay"),
                 List.of(), batch, Tankopedia.load(), out);
         try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
             final Row header = wb.getSheet("选手汇总").getRow(0);
-            int medianCount = 0;
+            int meanCount = 0;
             for (int c = 0; c < header.getLastCellNum(); c++) {
                 final String title = header.getCell(c).getStringCellValue();
-                // 维度中位数列（排除 原始中位数（V5 explainability）与 战队Rating中位数）
-                if (title.endsWith("中位数") && !title.equals("原始中位数")
-                        && !title.equals("战队Rating中位数")) {
-                    medianCount++;
+                if (title.endsWith("平均")) {
+                    meanCount++;
                 }
             }
-            assertEquals(LeagueColumns.DIM_KEYS.size(), medianCount,
-                    "Excel 维度中位数列数必须 == LeagueColumns.DIM_KEYS.size()（禁止 magic 7）");
+            assertEquals(LeagueColumns.DIM_KEYS.size(), meanCount,
+                    "Excel 维度均值列数必须 == LeagueColumns.DIM_KEYS.size()（禁止 magic 7）");
         }
     }
 

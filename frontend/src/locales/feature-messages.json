@@ -89,7 +89,7 @@
       "failure_hide": "收起详情",
       "unavailable_mixed": "League Rating 不适用于混合批次（普通回放与训练赛/联赛回放混传），已按普通回放展示",
       "docs_button": "算法说明",
-      "docs_page_title": "League Rating V5 算法说明",
+      "docs_page_title": "League Rating V6 算法说明",
       "docs_page_sub": "训练赛 / 联赛批次证据评分 · 单场评分沿用 V4.1",
       "docs_back": "返回解析",
       "drawer": {
@@ -242,7 +242,7 @@
       "failure_hide": "Hide details",
       "unavailable_mixed": "League Rating is not available for mixed batches (standard + training/tournament replays); shown as standard replays",
       "docs_button": "Algorithm docs",
-      "docs_page_title": "League Rating V5 — Algorithm Guide",
+      "docs_page_title": "League Rating V6 — Algorithm Guide",
       "docs_page_sub": "Batch evidence scoring for Training / Tournament replays · single-battle scoring stays V4.1",
       "docs_back": "Back to analysis",
       "drawer": {
@@ -395,7 +395,7 @@
       "failure_hide": "Скрыть",
       "unavailable_mixed": "League Rating недоступен для смешанных наборов (обычные + тренировочные/турнирные реплеи); показаны как обычные реплеи",
       "docs_button": "Описание алгоритма",
-      "docs_page_title": "League Rating V5 — описание алгоритма",
+      "docs_page_title": "League Rating V6 — описание алгоритма",
       "docs_page_sub": "Пакетная оценка для тренировочных / турнирных реплеев · оценка одиночного боя остаётся V4.1",
       "docs_back": "Назад к анализу",
       "drawer": {

@@ -13,9 +13,9 @@ public record LeagueRatingDto(
         String mode,
         // Rating 列元数据（总 Rating 固定、七维度满分、占点字段等）
         List<LeagueColumnDef> columns,
-        // 批次选手中位数汇总（typed）
+        // 批次选手 V6 pooled 汇总（typed）
         List<LeaguePlayerSummaryDto> playerSummaries,
-        // 批次战队中位数汇总（typed）
+        // 批次战队 V6 pooled 汇总（typed）
         List<LeagueTeamSummaryDto> teamSummaries,
         // 选手/战队汇总表列定义
         List<ColumnDef> playerSummaryColumns,
