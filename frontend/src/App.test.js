@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory } from 'vue-router'
 import { nextTick, inject } from 'vue'
 import App from './App.vue'
+import { NAVIGATE_VIEW_KEY } from './app/context.js'
 import { createAppRouter } from './app/router.js'
 import { setUiProfile } from './composables/useUiProfile.js'
 
@@ -13,7 +14,7 @@ vi.mock('./components/ReplayWorkspace.vue', () => ({
   default: {
     name: 'ReplayWorkspace',
     props: ['initialCapability'],
-    setup() { return { navigate: inject('navigate') } },
+    setup() { return { navigate: inject(NAVIGATE_VIEW_KEY) } },
     template: `<div :data-cap="initialCapability" data-test="view-replay"><button data-testid="ws-tab" @click="navigate('ai-review')">ai</button></div>`,
   },
 }))
