@@ -3,6 +3,7 @@ import { provide } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { useError } from '../composables/useError.js'
+import { NAVIGATE_VIEW_KEY } from './context.js'
 import { locationForView } from './navigation.js'
 import AppHeader from './AppHeader.vue'
 import GlobalErrorDialog from './GlobalErrorDialog.vue'
@@ -20,7 +21,7 @@ function navigate(view) {
 provide('isAuthenticated', isAuthenticated)
 provide('login', login)
 provide('authInit', initPromise)
-provide('navigate', navigate)
+provide(NAVIGATE_VIEW_KEY, navigate)
 </script>
 
 <template>
