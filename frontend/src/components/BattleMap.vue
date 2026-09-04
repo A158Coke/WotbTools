@@ -9,7 +9,7 @@ const props = defineProps({
   mapView: { type: Object, required: true },
   pbOverview: { type: Object, required: true },
   friendlyTeam: { type: [Number, String], default: null },
-  gridRegions: { type: Array, default: () => [] },
+  bases: { type: Array, default: () => [] },
   visibleTracers: { type: Array, default: () => [] },
   visibleTrails: { type: Array, default: () => [] },
   tracerColor: { type: Function, required: true },
@@ -42,6 +42,11 @@ const emit = defineEmits([
 const mapEl = ref(null)
 const textInputRef = ref(null)
 defineExpose({ mapEl, textInputRef })
+
+// 基地半径是世界米，经同一 toX 换算成 SVG 单位。
+function baseRadius(base) {
+  return props.mapView.toX(base.x + base.radius) - props.mapView.toX(base.x)
+}
 </script>
 
 <template>
@@ -58,12 +63,13 @@ defineExpose({ mapEl, textInputRef })
     >
       <svg class="pb-svg" :viewBox="`0 0 ${props.mapView.W} ${props.mapView.H}`" role="img">
         <image :href="props.image.src" :width="props.mapView.W" :height="props.mapView.H" preserveAspectRatio="none" />
-        <g class="pb-grid">
-          <rect v-for="cell in props.pbOverview.gridCells" :key="cell.id" :x="props.mapView.toX(cell.bounds.xMin)" :y="props.mapView.toY(cell.bounds.yMax)" :width="props.mapView.toX(cell.bounds.xMax) - props.mapView.toX(cell.bounds.xMin)" :height="props.mapView.toY(cell.bounds.yMin) - props.mapView.toY(cell.bounds.yMax)" class="pb-cell" />
+        <g v-if="props.pbOverview.playableBounds" class="pb-border" data-test="pb-border">
+          <rect :x="props.mapView.toX(props.pbOverview.playableBounds.xMin)" :y="props.mapView.toY(props.pbOverview.playableBounds.yMax)" :width="props.mapView.toX(props.pbOverview.playableBounds.xMax) - props.mapView.toX(props.pbOverview.playableBounds.xMin)" :height="props.mapView.toY(props.pbOverview.playableBounds.yMin) - props.mapView.toY(props.pbOverview.playableBounds.yMax)" class="pb-border-line" />
         </g>
-        <g class="pb-regions">
-          <g v-for="[region, regionBounds] in props.gridRegions" :key="region">
-            <rect :x="props.mapView.toX(regionBounds.xMin)" :y="props.mapView.toY(regionBounds.yMax)" :width="props.mapView.toX(regionBounds.xMax) - props.mapView.toX(regionBounds.xMin)" :height="props.mapView.toY(regionBounds.yMin) - props.mapView.toY(regionBounds.yMax)" class="pb-region-line" />
+        <g class="pb-bases" data-test="pb-bases">
+          <g v-for="base in props.bases" :key="base.baseId" :class="`pb-base-${base.status}`">
+            <circle :cx="props.mapView.toX(base.x)" :cy="props.mapView.toY(base.y)" :r="baseRadius(base)" class="pb-base-circle" />
+            <text :x="props.mapView.toX(base.x)" :y="props.mapView.toY(base.y)" class="pb-base-label" text-anchor="middle" dominant-baseline="central">{{ base.baseId }}</text>
           </g>
         </g>
         <g class="pb-spawns">
@@ -144,10 +150,16 @@ defineExpose({ mapEl, textInputRef })
 .pb-svg { display: block; width: 100%; height: auto; border-radius: 4px; background: var(--bg-elevated); }
 .pb-markers { position: absolute; inset: 0; pointer-events: none; }
   .pb-vehicle { position: absolute; width: 30px; height: 30px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
-.pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.55)); stroke-width: 1; fill: none; }
+.pb-border-line { fill: none; stroke: var(--map-border-stroke, #e0453f); stroke-width: 1.6; }
+.pb-base-circle { fill: color-mix(in srgb, currentColor 18%, transparent); stroke: currentColor; stroke-width: 1.6; }
+.pb-base-label { fill: currentColor; font-size: 13px; font-weight: 700; paint-order: stroke; stroke: rgba(0,0,0,.55); stroke-width: 2.5; }
+.pb-base-neutral { color: var(--text-muted, #b9b9b9); }
+.pb-base-friendly_controlled { color: var(--map-spawn-friendly, #ffd166); }
+.pb-base-enemy_controlled { color: var(--map-spawn-enemy, #ff8d8d); }
+.pb-base-controlled { color: var(--text, #e8e8e8); }
+.pb-base-capturing { color: var(--map-base-capturing, #6fd08c); }
 .pb-tracer, .pb-tracer-core { stroke-linecap: round; }
 .pb-trail { stroke-linecap: round; }
-.pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
 .pb-spawn-neutral { fill: var(--text-muted, #999); }
