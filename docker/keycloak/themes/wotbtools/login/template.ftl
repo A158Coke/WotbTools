@@ -22,6 +22,12 @@
             <link href="${url.resourcesPath}/${style}" rel="stylesheet" />
         </#list>
     </#if>
+    <#-- 背景轮换是非关键装饰能力：任何模板失败都不能影响认证入口。 -->
+    <#attempt>
+        <#include "background-rotation.ftl">
+    <#recover>
+        <#-- auth-shell.css 的硬编码 fallback 保持生效。 -->
+    </#attempt>
     <#if properties.scripts?has_content>
         <#list properties.scripts?split(' ') as script>
             <script src="${url.resourcesPath}/${script}" type="text/javascript"></script>

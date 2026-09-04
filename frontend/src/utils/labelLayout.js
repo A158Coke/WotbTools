@@ -33,10 +33,14 @@ export const LABEL_LANES_PX = Object.freeze([0, -10, 10, -20])
 
 const TANK_COLLISION_PADDING = 1.02
 const TANK_COLLISION_GRID_STEP_PX = 2
-// §review: 回退到 bounded 小偏移（desktop 12px / mobile 10px）。canonical position fidelity 优先，
-// residual model overlap 是允许结果；不允许 marker 因碰撞偏移整整一个车身距离。
-const TANK_COLLISION_MAX_OFFSET_DESKTOP_PX = 12
-const TANK_COLLISION_MAX_OFFSET_MOBILE_PX = 10
+// 位移预算仍然 bounded —— canonical position fidelity 优先，挤不开就保留残余重叠，
+// 绝不把 marker 推开整整一个车身。数值随 marker 尺寸调整过：marker 改为真实车体比例后
+// 从 18–30px 缩到约 9–13px，同样的像素预算能分开的车更多，因此上调到约两个车身宽。
+const TANK_COLLISION_MAX_OFFSET_DESKTOP_PX = 20
+const TANK_COLLISION_MAX_OFFSET_MOBILE_PX = 16
+
+// 大于任何「零重叠候选」可能的评分（位移上限 + stability 余量），保证零重叠永远胜出。
+const OVERLAP_PENALTY = 1e6
 
 function collisionBox(item, offset) {
   return {
@@ -103,7 +107,10 @@ export function computeTankCollisionLayout(items, previous = new Map(), options 
       // Reuse a valid previous offset strongly enough to prevent frame-to-frame
       // swapping; a meaningful overlap cost still wins over stale history.
       const stability = prior && candidate.x === prior.x && candidate.y === prior.y ? -25 : 0
-      const score = overlap * 100 + displacement + stability
+      // 不重叠是硬优先：预算内只要存在零重叠位置就必须选它，位移再大也不退回重叠。
+      // 只有预算内无解时才退化为「重叠面积最小」，此时排序与旧行为一致。
+      const score = (overlap > 1e-9 ? OVERLAP_PENALTY : 0)
+        + overlap * 100 + displacement + stability
       if (score < bestScore) {
         bestScore = score
         best = candidate

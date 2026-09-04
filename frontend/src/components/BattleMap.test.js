@@ -29,12 +29,15 @@ const baseProps = () => ({
   image: { src: '/map.png' },
   mapView,
   pbOverview: {
-    gridCells: [{ id: 'a', bounds: { xMin: 0, xMax: 10, yMin: 0, yMax: 10 } }],
+    playableBounds: { xMin: -20, xMax: 20, yMin: -20, yMax: 20 },
     spawnPoints: [{ name: 'spawn', x: 4, y: 5, team: 1 }],
   },
   friendlyTeam: 1,
-  gridRegions: [['A', { xMin: 10, xMax: 20, yMin: 10, yMax: 20 }]],
-  visibleTracers: [{ timeSec: 2, x1: 1, y1: 2, x2: 5, y2: 6, attackerAccountId: 1, opacity: 1, flashProgress: 1, flashOpacity: 0 }],
+  bases: [
+    { baseId: 'A', x: -10, y: 10, radius: 15, status: 'friendly_controlled' },
+    { baseId: 'B', x: 10, y: -10, radius: 15, status: 'capturing' },
+  ],
+  visibleTracers: [{ timeSec: 2, hasLine: true, x1: 1, y1: 2, x2: 5, y2: 6, attackerAccountId: 1, opacity: 1, flashProgress: 1, flashOpacity: 0 }],
   tracerColor: () => '#fff',
   renderedAnnotations: [{ type: 'text', x: 30, y: 30, text: 'Callout', color: '#fff' }],
   annotVisible: true,
@@ -69,8 +72,10 @@ describe('BattleMap', () => {
     const wrapper = mountMap()
 
     expect(wrapper.find('image').attributes('href')).toBe('/map.png')
-    expect(wrapper.findAll('.pb-cell')).toHaveLength(1)
-    expect(wrapper.findAll('.pb-region-line')).toHaveLength(1)
+    expect(wrapper.findAll('.pb-base-circle')).toHaveLength(2)
+    expect(wrapper.find('[data-test="pb-bases"]').text()).toContain('A')
+    expect(wrapper.findAll('.pb-base-friendly_controlled')).toHaveLength(1)
+    expect(wrapper.findAll('.pb-base-capturing')).toHaveLength(1)
     expect(wrapper.findAll('.pb-spawn-friendly')).toHaveLength(1)
     expect(wrapper.findAll('.pb-tracer')).toHaveLength(1)
     expect(wrapper.find('[data-test="pb-annotations"]').text()).toContain('Callout')
