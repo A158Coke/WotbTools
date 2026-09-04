@@ -882,30 +882,27 @@
 }
 .battle-playback.pb-device-mobile .pb-controls .pb-secondary-btn,
 .battle-playback.pb-device-mobile .pb-controls .pb-fullscreen-btn { min-width: 36px; }
+/* §no-overlay：控制条不再是「压在地图上、触摸才唤起」的浮层——它现在排在地图下方的
+   正常流里，常驻可见。原来的 opacity: 0 + pointer-events: none 在流内形态下等于
+   彻底消失：元素不在地图上，也就没有能唤起它的触摸。
+   卡片外观（内边距/描边/背景）保留，它现在是地图下方的一个内容块。 */
 .battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 25;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity .18s ease;
-}
-.battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay-visible {
+  position: static;
+  inset: auto;
+  z-index: auto;
   pointer-events: auto;
   opacity: 1;
 }
 .battle-playback:not(:fullscreen).pb-device-mobile .pb-mobile-overlay-content {
-  position: absolute;
-  right: 8px;
-  bottom: calc(8px + env(safe-area-inset-bottom));
-  left: 8px;
+  position: static;
+  inset: auto;
+  margin-top: 8px;
   display: grid;
   gap: 5px;
   padding: 7px;
   border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--bg-card2) 78%, transparent);
-  backdrop-filter: blur(8px);
 }
 .battle-playback:fullscreen.pb-device-mobile .pb-mobile-overlay-content {
   display: grid;
