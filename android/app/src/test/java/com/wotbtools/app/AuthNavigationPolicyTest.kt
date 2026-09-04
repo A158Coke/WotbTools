@@ -45,6 +45,19 @@ class AuthNavigationPolicyTest {
             action = AuthNavigationAction.OPEN_EXTERNAL,
             nextInAuthFlow = false
         )
+        // xui.ptlogin2.qq.com 已被真实生产链证明（Android 1.0.8 真机 ADB）；仅 auth flow 内放行。
+        assertDecision(
+            host = "xui.ptlogin2.qq.com",
+            inAuthFlow = true,
+            action = AuthNavigationAction.ALLOW_AUTH_WEBVIEW,
+            nextInAuthFlow = true
+        )
+        assertDecision(
+            host = "xui.ptlogin2.qq.com",
+            inAuthFlow = false,
+            action = AuthNavigationAction.OPEN_EXTERNAL,
+            nextInAuthFlow = false
+        )
     }
 
     @Test
@@ -85,7 +98,7 @@ class AuthNavigationPolicyTest {
 
     @Test
     fun noWildcardQqHostsTrusted() {
-        // 只信精确 graph.qq.com；同类子域不因“像 QQ”而进入 allowlist。
+        // 只信精确 allowlist（graph.qq.com / xui.ptlogin2.qq.com）；同类子域不因“像 QQ”而进入。
         assertDecision(
             host = "sub.graph.qq.com",
             inAuthFlow = true,
@@ -133,6 +146,26 @@ class AuthNavigationPolicyTest {
     }
 
     @Test
+    fun productionQqAuthChainStaysInWebViewUntilAppCallback() {
+        // 真实生产链 regression（Android 1.0.8 真机 ADB 证据）：
+        // Keycloak → graph.qq.com → xui.ptlogin2.qq.com → Keycloak callback → app。
+        var inAuthFlow = false
+        val chain = listOf(
+            "auth.wotbtools.com" to AuthNavigationAction.ALLOW_AUTH_WEBVIEW,
+            "graph.qq.com" to AuthNavigationAction.ALLOW_AUTH_WEBVIEW,
+            "xui.ptlogin2.qq.com" to AuthNavigationAction.ALLOW_AUTH_WEBVIEW,
+            "auth.wotbtools.com" to AuthNavigationAction.ALLOW_AUTH_WEBVIEW,
+            "wotbtools.com" to AuthNavigationAction.ALLOW_WEBVIEW
+        )
+        chain.forEachIndexed { index, (host, expected) ->
+            val decision = AuthNavigationPolicy.decide(host, inAuthFlow)
+            assertEquals(expected, decision.action, "step $index ($host)")
+            inAuthFlow = decision.inAuthFlow
+        }
+        assertEquals(false, inAuthFlow)
+    }
+
+    @Test
     fun authFailureRecoveryStateTransition() {
         // 建模一次失败的 auth 交易再到恢复：unknown host 触发 AUTH_FAILURE 且保留 inAuthFlow，
         // recovery 回到 app host 后退出 auth flow（inAuthFlow=false）。
@@ -176,6 +209,7 @@ class AuthNavigationPolicyTest {
         assertEquals("app", AuthNavigationPolicy.sourceCategory("www.wotbtools.com"))
         assertEquals("keycloak", AuthNavigationPolicy.sourceCategory("auth.wotbtools.com"))
         assertEquals("auth-provider", AuthNavigationPolicy.sourceCategory("graph.qq.com"))
+        assertEquals("auth-provider", AuthNavigationPolicy.sourceCategory("xui.ptlogin2.qq.com"))
         assertEquals("unknown", AuthNavigationPolicy.sourceCategory("ssl.ptlogin2.qq.com"))
         assertEquals("unknown", AuthNavigationPolicy.sourceCategory(null))
     }

@@ -7,6 +7,13 @@
 ### Fixed
 - **Battle Playback review regressions**：开局投影现在保留战前每个 canonical 据点的最后完整状态并在缺少显式 `t=0` 时 seed，确保 3/4 据点回放从 `00:00` 显示完整状态；最近 2 秒轨迹只按合法 OBSERVED segment 与 `interpolationAllowed` 裁剪，不再用固定 5 秒断线；坦克标记按可靠车体 metadata 显示，车辆模型碰撞只做 tank-vs-tank 小范围 presentation-only 软避让（不因视口边缘移动车辆、接近/离开视口自然裁剪）；无比分/据点时敌方仍固定在 HUD 第 3 列。
 - **生产 Grafana 看板 runtime crash**：移除 `WotBTools · Keycloak` 看板若干 panel 的非法 dashboard links（`type=dashboard + uid` 但缺失有效 `url`），该结构会触发 Grafana 前端 `TypeError: Cannot read properties of undefined (reading 'replace')`；并在 CI observability 校验中加入静态守卫，禁止此类 panel links 回归。
+- **Android QQ 登录 auth host allowlist（1.0.9）**：允许已在生产链证实的 `xui.ptlogin2.qq.com`
+  进入 `AuthNavigationPolicy.AUTH_PROVIDER_HOSTS`（基于 Android 1.0.8 真机 ADB 证据：
+  Keycloak → graph.qq.com → xui.ptlogin2.qq.com → callback，此前因 allowlist 缺失触发
+  `AUTH_FAILURE`）。仅追加 exact hostname，不扩 `*.qq.com` / suffix / 整域 trust；auth flow 内
+  unknown host 仍 `AUTH_FAILURE`，非 auth 外链仍 `OPEN_EXTERNAL`，CookieManager /
+  Native Bridge origin 边界不变。同步 `AuthNavigationPolicyTest`（新增生产链 regression +
+  xui 边界 + sourceCategory）与 `docs/android/architecture.md` Authentication Boundary。
 
 ### Added
 - **Local Frontend → Production Backend / Keycloak 开发模式**：前端新增 `npm run dev:production-remote`，通过 Vite `/api` 开发代理连接生产站点，同时复用现有生产 Keycloak issuer 配置；开发 Topbar 显示非模态环境提示并提醒不要上传测试或敏感数据。普通 `npm run dev` 的本地后端代理保持不变。详见 `docs/frontend/local-production-dev.md`。
