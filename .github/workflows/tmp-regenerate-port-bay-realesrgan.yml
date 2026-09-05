@@ -26,6 +26,15 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check --index-url https://download.pytorch.org/whl/cpu torch torchvision
           python -m pip install --disable-pip-version-check realesrgan==0.3.0 pillow==11.3.0 opencv-python-headless==4.10.0.84
+          python - <<'PY'
+          from pathlib import Path
+          import basicsr
+          p = Path(basicsr.__file__).resolve().parent / 'data' / 'degradations.py'
+          text = p.read_text(encoding='utf-8')
+          text = text.replace('from torchvision.transforms.functional_tensor import rgb_to_grayscale', 'from torchvision.transforms.functional import rgb_to_grayscale')
+          p.write_text(text, encoding='utf-8')
+          print('patched', p)
+          PY
       - name: Fetch lightweight Real-ESRGAN model
         run: |
           curl --fail --location --retry 3 \
