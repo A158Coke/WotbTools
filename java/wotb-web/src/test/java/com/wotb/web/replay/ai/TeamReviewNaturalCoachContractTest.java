@@ -22,9 +22,10 @@ class TeamReviewNaturalCoachContractTest {
         assertTrue(ZH.contains("## 团队复盘"), "主标题为 ## 团队复盘");
         assertTrue(ZH.contains("按关键性自由组织，不设硬性段数或固定篇幅"), "不设硬性段数或固定篇幅");
         assertTrue(ZH.contains("复杂局允许充分展开"), "复杂局允许充分展开");
-        assertTrue(ZH.contains("先判断整场最值得讲的 1-2 件事"), "先判断最值得讲的 1-2 件事");
-        assertTrue(ZH.contains("如果实际上只有一个决定性问题，就只讲一个"), "只有一个问题就只讲一个");
-        assertTrue(ZH.contains("不要为了结构完整找第二、第三个问题或建议"), "不凑问题/建议数量");
+        assertTrue(ZH.contains("主因可以只有一个，不要为了凑结构制造不存在的问题"), "主因可以只有一个且不得凑结构造问题");
+        assertTrue(ZH.contains("但一个主因不等于正文只能讲一件事"), "主因不能压缩正文范围");
+        assertTrue(ZH.contains("必须保留解释该主因所需的 Information、Objectives、local engagements、cross-local propagation"),
+                "正文必须保留解释主因所需的战术链");
         // 旧固定章节不得作为强制结构存在
         assertFalse(ZH.contains("1. 核心结论：2-4 句"), "不得再强制核心结论章节");
         assertFalse(ZH.contains("2. 关键决策窗口：只输出"), "不得再强制关键决策窗口章节");

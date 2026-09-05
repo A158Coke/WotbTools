@@ -79,8 +79,12 @@ class AiEvalHarnessTest {
                 "primary diagnosis must not compress the body");
         assertTrue(zh.contains("“重点复查”和“高贡献者”是可选 section"),
                 "individual sections must remain optional");
-        assertTrue(zh.contains("先判断整场最值得讲的 1-2 件事"), "must decide the 1-2 things worth talking about");
-        assertTrue(zh.contains("如果实际上只有一个决定性问题，就只讲一个"), "one decisive problem -> write one only");
+        assertTrue(zh.contains("主因可以只有一个，不要为了凑结构制造不存在的问题"),
+                "one primary cause is allowed without inventing a second problem");
+        assertTrue(zh.contains("但一个主因不等于正文只能讲一件事"),
+                "one primary cause must not compress the body to one topic");
+        assertTrue(zh.contains("必须保留解释该主因所需的 Information、Objectives、local engagements、cross-local propagation"),
+                "body must retain the tactical chain needed to explain the cause");
         assertFalse(zh.contains("1. 核心结论：2-4 句"), "old core-conclusion section must be gone");
         assertFalse(zh.contains("2. 关键决策窗口：只输出"), "old key-decision-window section must be gone");
         assertTrue(zh.contains("每一条必须明确对应前面的一个「可确认问题」"),
