@@ -953,98 +953,148 @@ final class TeamPromptLocalizer {
                d. Окно входа в зону контроля (CONTROL_REGION_ENTRY_WINDOWS) выражает лишь структурный факт — машины переместились извне зоны точки захвата внутрь неё; само по себе оно не доказывает атаку, захват, оборону, ротацию или тактическую правильность/ошибочность. Урон, который обороняющиеся наносят входящим машинам, — лишь наблюдаемый факт обмена HP; означает ли он «недостаточную плату за проезд / ошибку обороны» — ваше supported tactical inference из сигнала очков за фраги, присутствия в зонах контроля, локальных чисел, времени боя, урона, потерь и последующего движения — никогда не превращайте «окно входа + низкий урон» в обязательный вердикт «ошибка обороны». Когда цифры урона недоступны (OBSERVED_DAMAGE_IS_PARTIAL), описывайте только качественно и не называйте чисел.
                e. При недостаточных или противоречивых сигналах не навязывайте вывод «позади/впереди» — оставьте это суждение внутренним UNKNOWN и объясняйте естественно только при выполнении условия глобального селективного UNKNOWN.""";
 
-    /** Tournament Tactical Skill v0.1：模块锚点由 AiPromptLibrary 提供，EN/RU 替换保持单一资源入口。 */
+    /** Team Tactical Skill v0.2：模块锚点由 AiPromptLibrary 提供，EN/RU 替换保持单一资源入口。 */
+    static final String INFORMATION_VISION_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/information-vision");
+    static final String LOCAL_ENGAGEMENTS_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/local-engagements");
     static final String TEAM_EXECUTION_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/team-execution");
     static final String POSITION_TEMPO_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/position-tempo");
     static final String HP_TRADES_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/hp-trades");
     static final String MODE_OBJECTIVES_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/mode-objectives");
 
+    static final String INFORMATION_VISION_SKILL_RULE_EN = """
+
+            === INFORMATION AND VISION TACTICAL SKILL v0.2 ===
+            This is the first reasoning layer for team review, not a backend verdict. Reconstruct what was known in each key window before using later outcomes; skip the inference when evidence is insufficient.
+            1. Separate CURRENT (reliable current position/visibility evidence), LAST_KNOWN (last reliable position after current evidence was lost), and UNSEEN/UNRESOLVED (no reliable position in the current phase). A marker disappearing does not prove departure; no marker does not prove an empty lane. Do not write LAST_KNOWN as the enemy's current location.
+            2. Use confirmed enemy counts, directions, last-known positions, and not-yet-seen vehicles to infer a credible local-number window. Seeing only a few enemies move to one lane does not prove that another lane is empty.
+            3. Trace whether information was used: information update -> interpretation of deployment/risk -> team action -> local result. Without dedicated visibility evidence, do not claim that a specific vehicle spotted a specific enemy.
+            4. LAST_KNOWN remains a risk signal until new evidence supports a rotation. When judging entry into that area, first check whether the action respected the information available at that time.
+            5. A free player is not defined by vehicle class. Check whether the vehicle confirmed deployment, constrained a lane, exposed a numbers gap, limited rotation, or supplied reliable information to the main group/objective. Distance from the main group alone is not detachment.
+            """;
+
+    static final String INFORMATION_VISION_SKILL_RULE_RU = """
+
+            === ТАКТИЧЕСКИЙ НАВЫК ИНФОРМАЦИИ И ОБЗОРА v0.2 ===
+            Это первый слой рассуждения командного разбора, а не вердикт бэкенда. Сначала восстановите, что было известно в каждом важном окне, и только затем используйте поздний результат; при недостатке данных пропускайте вывод.
+            1. Разделяйте CURRENT (надёжные текущие данные о позиции/видимости), LAST_KNOWN (последняя надёжная позиция после потери текущих данных) и UNSEEN/UNRESOLVED (в текущей фазе надёжной позиции нет). Исчезновение отметки не доказывает уход; отсутствие отметки не доказывает пустую линию. LAST_KNOWN нельзя выдавать за текущую позицию противника.
+            2. Используйте подтверждённое число противников, направления, последние известные позиции и ещё не обнаруженные машины для оценки достоверного окна локальных сил. Если на линии видны лишь несколько машин, это не доказывает, что другая линия пуста.
+            3. Прослеживайте использование информации: обновление информации → интерпретация расстановки/риска → действие команды → локальный результат. Без специального доказательства обзора не утверждайте, что конкретная машина обнаружила конкретного противника.
+            4. LAST_KNOWN остаётся сигналом риска, пока новые данные не подтверждают ротацию. При оценке входа в зону сначала проверяйте, учитывало ли действие доступную тогда информацию.
+            5. Свободная машина не определяется классом. Проверяйте, подтвердила ли она расстановку, ограничила линию, выявила нехватку сил, ограничила ротацию или дала главной группе/цели надёжную информацию. Одно лишь расстояние от главной группы не означает отрыв.
+            """;
+
+    static final String LOCAL_ENGAGEMENTS_SKILL_RULE_EN = """
+
+            === LOCAL ENGAGEMENTS AND PROPAGATION TACTICAL SKILL v0.2 ===
+            A 7v7 battle is not automatically one team fight. First identify simultaneous local engagements from meter-level positions, actual firing/support distance, movement, contacts, formation clusters, and objective location; then explain the global result.
+            1. A local may be a main front, flank fight, outnumbered distant fight, objective contest, high-ground hold, or free-player information line. Do not partition only by the 3x3 grid.
+            2. A local is not a closed box. Check which external vehicles can affect it through fire, immobilization, fixing a target, forcing exposure, blocking retreat, or crossfire; two visible pairs do not automatically mean a 2v2.
+            3. Ask who created the kill condition, not only who fired the final shot. Spotting requires dedicated evidence; fixing, forcing position, blocking escape, crossfire, high ground, or forcing a turret turn may be enabling actions. If not evidenced, describe only the observable structure.
+            4. After a local resolves, trace propagation: friendly/enemy vehicles released, information or fire crossing locals, space gained, and whether objective/points obligations changed. Later main-front HP loss may be the result of this propagation.
+            5. Count effective local strength as vehicles that can fire now or arrive soon. An outside vehicle may hold several enemies and create a temporary advantage, but the time window before those enemies are released matters.
+            """;
+
+    static final String LOCAL_ENGAGEMENTS_SKILL_RULE_RU = """
+
+            === ТАКТИЧЕСКИЙ НАВЫК ЛОКАЛЬНЫХ СТОЛКНОВЕНИЙ И РАСПРОСТРАНЕНИЯ v0.2 ===
+            Бой 7 на 7 не является автоматически одним общим сражением. Сначала определяйте одновременные локальные столкновения по позициям в метрах, реальной дальности огня/поддержки, движению, контактам, кластерам построения и расположению цели; затем объясняйте общий результат.
+            1. Локальной может быть главная линия, фланговая схватка, дальний неравный бой, спор за цель, удержание высоты или информационная линия свободной машины. Не делите бой только по сетке 3×3.
+            2. Локальная схватка не является закрытой коробкой. Проверяйте внешние машины, способные повлиять огнём, фиксацией цели, вынуждением открыться, блокировкой отхода или перекрёстным огнём; две пары машин не автоматически означают 2 на 2.
+            3. Спрашивайте, кто создал условие для уничтожения, а не только кто сделал последний выстрел. Обнаружение требует специального доказательства; фиксация, вынуждение сменить позицию, перекрытие отхода, перекрёстный огонь, высота или вынужденный поворот башни могут быть enabling actions. Без данных описывайте только наблюдаемую структуру.
+            4. После завершения локального боя прослеживайте распространение: освобождённые машины союзника/противника, переход информации или огня между локальными боями, полученное пространство и изменение обязанностей по цели/очкам. Последующая потеря HP на главной линии может быть результатом этого распространения.
+            5. Считайте локальные эффективные силы как машины, способные стрелять сейчас или быстро войти в бой. Внешняя машина может удерживать нескольких противников и создать временное преимущество, но важно, когда это окно закончится.
+            """;
+
     static final String TEAM_EXECUTION_SKILL_RULE_EN = """
 
-            === TEAM EXECUTION TACTICAL SKILL v0.1 ===
-            This is a compact training-room/clan-battle reasoning reference, not a backend verdict rule. Use it only when evidence is sufficient; otherwise skip the inference.
+            === TEAM EXECUTION TACTICAL SKILL v0.2 ===
+            This is a compact training-room/clan-battle reasoning reference, not a backend verdict rule. Use information, objectives, and local state before judging execution; when evidence is insufficient, skip the inference.
             1. Review observable execution, never treat an unknown pre-battle plan, voice, call, or mental intent as fact.
-            2. Check entry timing, who could actually participate in the engagement, local numbers, and formation coherence; the latest arrival is not automatically responsible.
+            2. Check entry timing, who could actually participate in the engagement, effective local numbers, and formation coherence; total roster count is not current effective strength, and the latest arrival is not automatically responsible.
             3. Identify the commitment point: after crossing exposed ground, with forward vehicles committed and reachable cover ahead, stopping may fragment the formation more than completing the action. New enemies do not mechanically require retreat.
             4. Use half-commit only when the observable combination is present: not continuing, not successfully disengaging, and not forming a useful firing position. Otherwise describe the observed timing, positions, and exchange.
             5. After commitment, value action completeness and synchronization; do not split forward, rear, and side members into pieces that can be handled separately.
-            6. Treat information updates as tactical triggers: compare what was known before, what appeared, how risk changed, and whether the response adapted. Never use later enemy positions to rewrite an earlier window.
+            6. Treat information updates as tactical triggers: compare what was known before, what appeared, how risk changed, and whether the response adapted. Never use later enemy positions to rewrite an earlier window. After an action, check whether it changed a neighboring local, objective obligation, or points initiative.
             Separate execution/mechanical errors (miss, provable non-penetration, poor physical follow-up, half-completed movement, unnecessary exposure) from decision problems (costly second attack, abandoning valuable position for a low-value kill, staying on a dead lane, or failing to react to a major information update). Do not assign a cause without evidence.
             """;
 
     static final String TEAM_EXECUTION_SKILL_RULE_RU = """
 
-            === ТАКТИЧЕСКИЙ НАВЫК КОМАНДНОГО ИСПОЛНЕНИЯ v0.1 ===
-            Это компактный ориентир для тренировочного/кланового разбора, а не вердикт бэкенда. Используйте его только при достаточных данных; иначе пропускайте вывод.
+            === ТАКТИЧЕСКИЙ НАВЫК КОМАНДНОГО ИСПОЛНЕНИЯ v0.2 ===
+            Это компактный ориентир для тренировочного/кланового разбора, а не вердикт бэкенда. Сначала используйте информацию, цели и локальное состояние; при недостатке данных пропускайте вывод.
             1. Разбирайте наблюдаемое исполнение, не выдавая неизвестный предбоевой план, голос, call или намерение за факт.
-            2. Проверяйте время входа, кто реально мог участвовать в столкновении, локальные числа и целостность строя; самый поздний участник не автоматически виноват.
+            2. Проверяйте время входа, кто реально мог участвовать в столкновении, эффективные локальные силы и целостность строя; общее число машин не равно текущим силам, самый поздний участник не автоматически виноват.
             3. Определяйте точку commitment: после перехода открытого участка, когда передние машины уже вошли, а впереди есть достижимое укрытие, остановка может сильнее раздробить строй, чем завершение действия. Новые враги не означают обязательный отход.
             4. Называйте half-commit только при наблюдаемом сочетании: действие не продолжается, безопасного выхода нет и полезная огневая позиция не создана. Иначе описывайте только время, позиции и обмен.
             5. После commitment важны завершённость действия и синхронность; не разделяйте передних, задних и боковых участников на части для раздельного уничтожения.
-            6. Считайте обновление информации тактическим триггером: сравнивайте, что было известно, что появилось, как изменился риск и адаптировалась ли команда. Не переносите поздние позиции противника в раннее окно.
+            6. Считайте обновление информации тактическим триггером: сравнивайте, что было известно, что появилось, как изменился риск и адаптировалась ли команда. Не переносите поздние позиции противника в раннее окно. После действия проверяйте его влияние на соседний локальный бой, обязанность по цели или инициативу по очкам.
             Разделяйте ошибки исполнения/механики (промах, доказанный непробитый выстрел, слабое физическое следование, незавершённое движение, лишняя открытость) и проблемы решения (дорогая вторая атака, отказ от ценой позиции ради дешёвого фрага, оставание на пустой линии или отсутствие реакции на важную информацию). Без данных причину не приписывайте.
             """;
 
     static final String POSITION_TEMPO_SKILL_RULE_EN = """
 
-            === POSITION AND TEMPO TACTICAL SKILL v0.1 ===
-            Position value usually exceeds the value of one kill. A kill is not automatically profitable if it costs the retreat path, a viable position, formation coherence, continued contribution, or time from the main fight.
+            === POSITION AND TEMPO TACTICAL SKILL v0.2 ===
+            Position value usually exceeds the value of one kill. Judge space with the information, local engagement, and objective obligation available at that time before using HP or kill results; a kill is not automatically profitable if it costs the retreat path, a viable position, formation coherence, continued contribution, or time from the main fight.
             1. A geometrically strong position may have low current value. Combine confirmed enemy information, main-battle location, current output, and opportunity cost; potential value is not realized value.
             2. Before judging a hold or rotation, ask whether the vehicle can disengage safely. If pressure is distant and rotation can produce value soon, rotation may be better; if pressure is close and leaving exposes the vehicle, delaying the enemy may be the better remaining action.
             3. Compare the marginal value of staying with time-to-value after rotation. A successful lane need not chase every retreating enemy; if the enemy has re-established a strong defense, a second attack is costly, and the team gained important objective value, preserve the position and transfer the advantage.
             4. One defender is not automatically an effective line. Check whether it can delay, exchange, preserve depth, and retreat between positions; leaving a lane that cannot stop a multi-vehicle push may create tempo rather than be an error.
-            5. Stationary time is not inactivity by itself. Holding a stronger position without objective/time pressure may be correct when the enemy must expose itself first.
+            5. Stationary time is not inactivity by itself. Holding a stronger position without objective/time pressure may be correct when the enemy must expose itself first; discuss a stalled attack only when all locals stop gaining space while the enemy keeps producing stable pressure.
+            6. After entering commitment, reassess whether continuing can create space: if yes, concentrate effective strength to finish; if not, seek a real disengage. The worst state is neither finishing nor exiting: a half-commit.
             """;
 
     static final String POSITION_TEMPO_SKILL_RULE_RU = """
 
-            === ТАКТИЧЕСКИЙ НАВЫК ПОЗИЦИИ И ТЕМПА v0.1 ===
-            Ценность позиции обычно выше ценности одного фрага. Фраг не автоматически выгоден, если ради него потеряны путь отхода, рабочая позиция, целостность строя, дальнейший вклад или время главного боя.
+            === ТАКТИЧЕСКИЙ НАВЫК ПОЗИЦИИ И ТЕМПА v0.2 ===
+            Ценность позиции обычно выше ценности одного фрага. Сначала оценивайте пространство с учётом доступной тогда информации, локального боя и обязанности по цели; фраг не автоматически выгоден, если ради него потеряны путь отхода, рабочая позиция, целостность строя, дальнейший вклад или время главного боя.
             1. Геометрически сильная позиция может быть малоценной сейчас. Учитывайте подтверждённую информацию о противнике, место главного боя, текущий вклад и цену оставания; потенциальная ценность не равна реализованной.
             2. Перед оценкой удержания или ротации спросите, может ли машина безопасно выйти. При далёком давлении и быстрой пользе от ротации она может быть лучше; при близком давлении и опасном уходе лучшее оставшееся действие может быть задержкой противника.
             3. Сравнивайте предельную пользу оставания со временем до пользы после ротации. Успешную линию не нужно продолжать до уничтожения каждого отходящего; при восстановленной обороне врага, дорогой второй атаке и уже полученной ценности цели сохраняйте позицию и переносите преимущество.
             4. Один защитник не автоматически образует линию. Проверяйте способность задерживать, размениваться, сохранять глубину и отходить между позициями; уход с линии, которую не остановить нескольким машинам, может создать темп, а не быть ошибкой.
-            5. Само по себе стояние не означает бездействие. Удержание сильной позиции без давления цели/времени может быть верным, если противник должен первым открыться.
+            5. Само по себе стояние не означает бездействие. Удержание сильной позиции без давления цели/времени может быть верным, если противник должен первым открыться; обсуждайте остановленную атаку лишь когда все локальные бои перестали получать пространство, а противник продолжает стабильно давить.
+            6. После входа в commitment заново решайте, создаёт ли продолжение пространство: если да, концентрируйте эффективные силы и завершайте действие; если нет, ищите настоящий отход. Худшее состояние — не завершить и не выйти: half-commit.
             """;
 
     static final String HP_TRADES_SKILL_RULE_EN = """
 
-            === HP AND GUN-TRADE TACTICAL SKILL v0.1 ===
-            Default to reliable damage with no unnecessary HP loss, but judge an exchange by future gun value, not vehicle count alone.
+            === HP AND GUN-TRADE TACTICAL SKILL v0.2 ===
+            HP, damage, and deaths are result/validation signals for position and decisions, not the default episode-discovery entry point. Default to reliable damage with no unnecessary HP loss, but judge an exchange by future gun value, not vehicle count alone.
             1. A controlled extra HP cost for an immediately confirmable kill may be worthwhile because a live enemy gun is removed; roughly 1.2x is an experienced-player reference, never a backend threshold or GOOD_TRADE verdict.
             2. Compare remaining HP, survival likelihood, current position, mobility, future rotation value, and important role. A 1-for-1 is not inherently equal; do not treat low-value enemy and high-value friendly guns as equivalent.
             3. HP is a team resource: a high-HP member may absorb necessary damage to preserve a low-HP friendly gun, but high HP does not mean it must always lead and it should not lose HP deliberately when safe damage exists.
-            4. In a stable endgame, preserve multiple firing lines when possible; sacrificing a high-HP vehicle merely to create action may be worse than making the opponent act first.
+            4. In a stable endgame, preserve multiple firing lines when possible; sacrificing a high-HP vehicle merely to create action may be worse than making the opponent act first. Later HP loss alone does not prove an earlier position or decision was wrong; return to information, space, local structure, and objective pressure.
             """;
 
     static final String HP_TRADES_SKILL_RULE_RU = """
 
-            === ТАКТИЧЕСКИЙ НАВЫК HP И РАЗМЕНА ОГНЕВЫХ ЕДИНИЦ v0.1 ===
-            По умолчанию выбирайте надёжный урон без лишней потери HP, но оценивайте размен по будущей ценности огневых единиц, а не только по числу машин.
+            === ТАКТИЧЕСКИЙ НАВЫК HP И РАЗМЕНА ОГНЕВЫХ ЕДИНИЦ v0.2 ===
+            HP, урон и смерти — сигналы результата/проверки позиции и решений, а не начальная точка поиска эпизодов. По умолчанию выбирайте надёжный урон без лишней потери HP, но оценивайте размен по будущей ценности огневых единиц, а не только по числу машин.
             1. Контролируемая дополнительная цена HP за немедленно подтверждаемый фраг может окупаться удалением живой пушки противника; примерно 1,2× — ориентир опытного игрока, не порог бэкенда и не вердикт GOOD_TRADE.
             2. Сравнивайте оставшийся HP, вероятность выживания, текущую позицию, мобильность, будущую ценность ротации и важную роль. Размен 1 к 1 не равен автоматически; слабую машину противника и ценную машину союзника нельзя считать равными.
             3. HP — ресурс команды: машина с большим HP может принять необходимый урон, сохранив союзную машину с малым HP, но большой запас HP не означает обязательный первый номер и не требует намеренно терять HP при безопасном уроне.
-            4. В стабильном эндшпиле по возможности сохраняйте несколько линий огня; жертва здоровой машины ради действия может быть хуже, чем заставить противника ошибиться первым.
+            4. В стабильном эндшпиле по возможности сохраняйте несколько линий огня; жертва здоровой машины ради действия может быть хуже, чем заставить противника ошибиться первым. Последующая потеря HP сама по себе не доказывает ошибку позиции или решения; возвращайтесь к информации, пространству, локальной структуре и давлению цели.
             """;
 
     static final String MODE_OBJECTIVES_SKILL_RULE_EN = """
 
-            === MODE AND OBJECTIVE TACTICAL SKILL v0.1 ===
-            Judge objective pressure with mode, observed objective state, time, local numbers, and kill opportunities; never apply “base capture seen => defend immediately”.
+            === MODE AND OBJECTIVE TACTICAL SKILL v0.2 ===
+            Judge objective pressure with mode, the realtime base network, observed capture state, realtime points, time, effective local numbers, and kill opportunities; never apply “base capture seen => defend immediately”.
             1. In Supremacy, a kill removes an enemy gun and carries about +40 points of value. Below roughly 750 points kills usually remain high priority; roughly 750–800 is a warning zone; around 800+ objective pressure grows materially. These are experience gradients, not a 749/750/800 state machine.
             2. Even in the warning zone, a kill confirmable in about 1–2 seconds may beat an objective action; a target requiring 10–15 seconds of pursuit has different value. Never present an unproven live total or score formula as fact.
             3. In Assault, uninterrupted full capture of the single large base takes about 100 seconds. At roughly 25–40 seconds, do not mechanically override a strong local kill opportunity; around 70–80 seconds is a meaningful warning region, while reset feasibility still matters.
-            4. All thresholds are prioritization heuristics, not verdict rules. Return to actual evidence for the trade-off between objective, kills, position, and HP.
+            4. Analyze base ownership, capture progress, and points together with position: who controls which base, who can affect another, time-to-value, growth, and remaining time determine who has the obligation to change the situation. More bases does not always mean defend, and entering an attack does not always mean continue.
+            5. All thresholds are prioritization heuristics, not verdict rules. Return to actual evidence for the trade-off between objective, kills, position, and HP. When realtime state is missing, do not reconstruct early score from kill-steal deltas or the final result.
             """;
 
     static final String MODE_OBJECTIVES_SKILL_RULE_RU = """
 
-            === ТАКТИЧЕСКИЙ НАВЫК РЕЖИМОВ И ЦЕЛЕЙ v0.1 ===
-            Оценивайте давление цели с учётом режима, наблюдаемого состояния цели, времени, локальных сил и возможностей фрага; не применяйте правило «увидел захват базы — немедленно защищай».
+            === ТАКТИЧЕСКИЙ НАВЫК РЕЖИМОВ И ЦЕЛЕЙ v0.2 ===
+            Оценивайте давление цели с учётом режима, сети баз в реальном времени, наблюдаемого прогресса захвата, текущих очков, времени, эффективных локальных сил и возможностей фрага; не применяйте правило «увидел захват базы — немедленно защищай».
             1. В Supremacy фраг удаляет пушку противника и даёт около +40 очков ценности. Ниже примерно 750 очков фраги обычно сохраняют высокий приоритет; примерно 750–800 — зона предупреждения; около 800+ давление цели заметно возрастает. Это градиент опыта, а не автомат состояний 749/750/800.
             2. Даже в зоне предупреждения фраг, подтверждаемый примерно за 1–2 секунды, может быть важнее действия у цели; цель, требующая 10–15 секунд погони, имеет другую ценность. Не выдавайте недоказанный текущий счёт или формулу очков за факт.
             3. В Assault непрерывный полный захват одной большой базы занимает около 100 секунд. При прогрессе примерно 25–40 секунд не отбрасывайте автоматически сильную локальную возможность фрага; около 70–80 секунд — существенная зона предупреждения, но всё ещё важна реальная возможность сбросить захват.
-            4. Все пороги — эвристика расстановки приоритетов, а не вердикты. Возвращайтесь к фактам при выборе между целью, фрагом, позицией и HP.
+            4. Анализируйте принадлежность базы, прогресс захвата и очки вместе с позицией: кто контролирует какую базу, кто может повлиять на другую, время до ценности, скорость роста и остаток времени определяют обязанность изменить ситуацию. Большее число баз не означает вечную оборону, а вход в атаку не означает обязательное продолжение.
+            5. Все пороги — эвристика расстановки приоритетов, а не вердикты. Возвращайтесь к фактам при выборе между целью, фрагом, позицией и HP. При отсутствии реального состояния не восстанавливайте ранний счёт по компоненте очков за фраги или итоговому результату.
             """;
 
     /**
@@ -1082,6 +1132,10 @@ final class TeamPromptLocalizer {
                 .replace(PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE,
                         en ? PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE_EN
                                 : PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE_RU)
+                .replace(INFORMATION_VISION_SKILL_RULE,
+                        en ? INFORMATION_VISION_SKILL_RULE_EN : INFORMATION_VISION_SKILL_RULE_RU)
+                .replace(LOCAL_ENGAGEMENTS_SKILL_RULE,
+                        en ? LOCAL_ENGAGEMENTS_SKILL_RULE_EN : LOCAL_ENGAGEMENTS_SKILL_RULE_RU)
                 .replace(TEAM_EXECUTION_SKILL_RULE,
                         en ? TEAM_EXECUTION_SKILL_RULE_EN : TEAM_EXECUTION_SKILL_RULE_RU)
                 .replace(POSITION_TEMPO_SKILL_RULE,

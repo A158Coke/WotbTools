@@ -10,6 +10,9 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.SupremacyBaseId;
+import com.wotb.core.replay.event.SupremacyBaseStateTransition;
+import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
@@ -26,6 +29,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -125,5 +129,31 @@ class TeamAiContextCompilerTest {
         assertTrue(block.equals(TeamAiPromptBuilder.renderTimelineBlock(timeline, 1)));
         // null（兼容/测试入口未提供 validated timeline）→ 不渲染任何段
         assertTrue(TeamAiPromptBuilder.renderTimelineBlock(null, 1).isEmpty());
+    }
+
+    @Test
+    void objectiveStateTimelineCarriesNeutralRealtimeBaseAndPointsFacts() {
+        final BattleTimeline base = BattleTimelineBuilder.build(
+                battle(), recon(), TimelinePerspective.team(1)).timeline();
+        final List<ReplayEvent> events = new ArrayList<>(base.events());
+        events.add(new SupremacyPointsChangedEvent(20,
+                new ReplayTimestamp(1015f, 15f), 8, DecodeConfidence.EXACT, 1, 710));
+        events.add(new SupremacyBaseStateTransition(21,
+                new ReplayTimestamp(1016f, 16f), 8, DecodeConfidence.EXACT,
+                SupremacyBaseId.B, 1, 2, 42));
+        final BattleTimeline withObjectives = new BattleTimeline(
+                base.mapCode(), base.durationSec(), base.battleStartRawClockSec(),
+                base.clockResolution(), base.frames(), events, base.aoiSegments(),
+                base.validation(), base.limitations());
+
+        final String section = TeamAiContextCompiler.renderObjectiveStateSection(withObjectives, 1);
+        assertTrue(section.contains("OBJECTIVE_STATE_TIMELINE"));
+        assertTrue(section.contains("SUPREMACY_POINTS team=FRIENDLY points=710"));
+        assertTrue(section.contains("BASE B owner=FRIENDLY capturing=ENEMY captureProgress=42"));
+        assertTrue(section.contains("中立确定性事实"));
+        assertTrue(section.contains("事实） ===\n"));
+        assertFalse(section.contains("\\n"));
+        assertTrue(TeamAiPromptBuilder.renderTimelineBlock(withObjectives, 1)
+                .contains("OBJECTIVE_STATE_TIMELINE"));
     }
 }

@@ -86,14 +86,39 @@ class AiEvalHarnessTest {
                 "must allow a no-confirmed-error conclusion");
         assertTrue(zh.contains("不得为了填满字段制造轮转、沟通、地图意识或协调问题"),
                 "must ban manufactured errors");
-        assertTrue(zh.contains("团队执行战术技能 v0.1")
-                        && zh.contains("位置与节奏战术技能 v0.1")
-                        && zh.contains("HP 与火力交换战术技能 v0.1")
-                        && zh.contains("模式与目标战术技能 v0.1"),
-                "team prompt must include all modular tactical skills");
+        assertTrue(zh.contains("信息与视野战术技能 v0.2")
+                        && zh.contains("模式与目标战术技能 v0.2")
+                        && zh.contains("局部战场与传播战术技能 v0.2")
+                        && zh.contains("位置与节奏战术技能 v0.2")
+                        && zh.contains("团队执行战术技能 v0.2")
+                        && zh.contains("HP 与火力交换战术技能 v0.2"),
+                "team prompt must include all v0.2 tactical skills");
+        assertTrue(indexOf(zh, "信息与视野战术技能 v0.2")
+                        < indexOf(zh, "模式与目标战术技能 v0.2")
+                        && indexOf(zh, "模式与目标战术技能 v0.2")
+                        < indexOf(zh, "局部战场与传播战术技能 v0.2")
+                        && indexOf(zh, "局部战场与传播战术技能 v0.2")
+                        < indexOf(zh, "位置与节奏战术技能 v0.2")
+                        && indexOf(zh, "位置与节奏战术技能 v0.2")
+                        < indexOf(zh, "团队执行战术技能 v0.2")
+                        && indexOf(zh, "团队执行战术技能 v0.2")
+                        < indexOf(zh, "HP 与火力交换战术技能 v0.2"),
+                "team prompt must assemble skills in evidence-first order");
+        assertTrue(zh.contains("灭点不等于离开") && zh.contains("没点亮不等于没人"),
+                "information skill must close vision shortcuts");
+        assertTrue(zh.contains("局部不是封闭盒子") && zh.contains("谁创造了击杀条件"),
+                "local skill must require cross-local enabling analysis");
+        assertTrue(zh.contains("基地归属、捕获进度和点数要与位置一起分析"),
+                "objective skill must join objective state with position");
         assertTrue(zh.contains("GROUNDING FACTS 与结构化输出"),
                 "must carry the GROUNDING FACTS structured-output contract");
         assertTrue(zh.contains("reviewMarkdown"), "must carry the reviewMarkdown field of the JSON envelope");
+    }
+
+    private static int indexOf(final String text, final String value) {
+        final int index = text.indexOf(value);
+        assertTrue(index >= 0, "missing prompt anchor: " + value);
+        return index;
     }
 
     @Test
