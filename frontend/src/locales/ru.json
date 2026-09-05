@@ -36,7 +36,9 @@
         "invalid_response": "Данные боевого реплея повреждены, безопасная загрузка невозможна.",
         "unknown_error": "Произошла неизвестная ошибка. Повторите попытку.",
         "job_failed": "Не удалось выполнить задачу.",
-        "diagnostic_id": "ID диагностики: {id}"
+        "diagnostic_id": "ID диагностики: {id}",
+        "copy_diagnostic_id": "Копировать ID",
+        "diagnostic_id_copied": "Скопировано"
     },
     "upload": {
         "drop_hint": "Перетащите .wotbreplay файлы сюда",

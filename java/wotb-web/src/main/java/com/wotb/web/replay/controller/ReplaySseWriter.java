@@ -18,7 +18,7 @@ import java.util.Map;
  * event: autopsy_start    // Team Autopsy（战犯/MVP）开始
  * event: autopsy_done     // Team Autopsy 结束
  * event: done             // 全部完成，data: {"analysis":"...","preBattleSection":"..."}
- * event: error            // 流中途失败，data: {"code":"AI_..."}
+ * event: error            // 流中途失败，data: {"id":"...","errorCode":"AI_...","errorMsg":null}
  * </pre>
  * <p>写入失败的 {@link IOException}（客户端断开）向上传播，由 Controller 负责
  * 终止上游调用；任何成功写入的事件都会使 {@link #eventSent()} 变为 {@code true}，
@@ -55,8 +55,14 @@ final class ReplaySseWriter {
         send("done", data);
     }
 
-    void error(final String code) throws IOException {
-        send("error", Map.of("code", code));
+    void error(final String errorId, final String errorCode, final String errorMsg) throws IOException {
+        final Map<String, Object> data = new LinkedHashMap<>();
+        data.put("id", errorId);
+        data.put("errorCode", errorCode);
+        data.put("errorMsg", errorMsg);
+        // Additive compatibility for clients deployed before the canonical error envelope.
+        data.put("code", errorCode);
+        send("error", data);
     }
 
     private void send(final String event, final Map<String, Object> data) throws IOException {

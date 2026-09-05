@@ -277,7 +277,7 @@ public class ReconstructionController {
                     "exceptionClass", e.getClass().getSimpleName(),
                     "elapsedMs", elapsedMillis(workerStartNanos)));
             try {
-                writer.error(errorCode);
+                writer.error(requestId, errorCode, null);
             } catch (final RuntimeException | IOException ignored) {
                 // 客户端同时断开（写入失败 / emitter 已终止）：无意义，静默。兜住 IOException 与
                 // 一切 RuntimeException（含 IllegalStateException）——否则 writer.error 自身失败
