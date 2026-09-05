@@ -8,6 +8,10 @@ import {
   createTerrainReliefModel,
   projectTerrainCoordinates,
 } from '../utils/terrainReliefProjection.js'
+import {
+  computeMap3dRenderTarget,
+  getMaxRenderBufferSize,
+} from '../utils/map3dRenderSizing.js'
 
 const props = defineProps({
   mapCode: { type: String, default: '' },
@@ -22,6 +26,7 @@ let camera = null
 let resizeObserver = null
 let viewportElement = null
 let reliefModel = null
+let sourceTextureSize = null
 let loadToken = 0
 
 // The 2.5D product is a tactical-map relief, not a physical 3D scene. Height
@@ -59,6 +64,7 @@ function disposeScene() {
   setViewportActive(false)
   clearTerrainRelief(reliefModel)
   reliefModel = null
+  sourceTextureSize = null
   scene?.traverse((object) => {
     object.geometry?.dispose?.()
     const materials = Array.isArray(object.material) ? object.material : [object.material]
@@ -83,8 +89,36 @@ function fitRenderer() {
   if (!host.value || !renderer) return
   const width = Math.max(1, host.value.clientWidth)
   const height = Math.max(1, host.value.clientHeight)
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
-  renderer.setSize(width, height, false)
+  // host.clientWidth/clientHeight are the post-layout dimensions of the 2D camera box;
+  // view.scale is already represented by them and must not be multiplied again here.
+  const target = computeMap3dRenderTarget({
+    cssWidth: width,
+    cssHeight: height,
+    devicePixelRatio: window.devicePixelRatio,
+    maxPixelRatio: 2,
+    textureWidth: sourceTextureSize?.width,
+    textureHeight: sourceTextureSize?.height,
+    maxRenderBufferSize: getMaxRenderBufferSize(renderer),
+  })
+  renderer.setPixelRatio(target.pixelRatio)
+  renderer.setSize(target.cssWidth, target.cssHeight, false)
+  const canvas = renderer.domElement
+  const viewport = host.value.closest('.pb-viewport')
+  const diagnostics = {
+    textureWidth: sourceTextureSize?.width || null,
+    textureHeight: sourceTextureSize?.height || null,
+    canvasCssWidth: canvas.getBoundingClientRect().width,
+    canvasCssHeight: canvas.getBoundingClientRect().height,
+    canvasWidth: canvas.width,
+    canvasHeight: canvas.height,
+    rendererPixelRatio: renderer.getPixelRatio(),
+    devicePixelRatio: window.devicePixelRatio || 1,
+    viewportCssWidth: viewport?.getBoundingClientRect().width || null,
+    viewportCssHeight: viewport?.getBoundingClientRect().height || null,
+    viewScale: Number(viewport?.dataset.viewScale) || 1,
+  }
+  host.value.dataset.renderDiagnostics = JSON.stringify(diagnostics)
+  if (import.meta.env.DEV) console.info('[map-2.5d] renderer metrics', diagnostics)
   renderScene()
 }
 
@@ -291,6 +325,10 @@ async function loadMap() {
     texture.magFilter = THREE.LinearFilter
     texture.anisotropy = nextRenderer.capabilities.getMaxAnisotropy()
     texture.needsUpdate = true
+    sourceTextureSize = {
+      width: Number(texture.image?.width) || 0,
+      height: Number(texture.image?.height) || 0,
+    }
 
     const terrain = new THREE.Mesh(
       buildTerrainGeometry(entry.terrain, heights, model),

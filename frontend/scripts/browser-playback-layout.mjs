@@ -41,6 +41,19 @@ const productionCss = cssPaths
   .join('\n')
   .replaceAll(':fullscreen', '.pb-test-fullscreen')
 const safeInsetsUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/playbackSafeInsets.js')).href
+const rasterDensityUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/mapRasterDensity.js')).href
+const battleMapSource = readFileSync(resolve(frontendRoot, 'src/components/BattleMap.vue'), 'utf8')
+const battlePlaybackSource = readFileSync(resolve(frontendRoot, 'src/components/BattlePlayback.vue'), 'utf8')
+if (!battleMapSource.includes('screenOffsetToSvgDelta(offset, props.mapView, renderedFrame)')
+  || /offset\.[xy]\s*\/\s*(scale|viewScale)/.test(battleMapSource)
+  || !battlePlaybackSource.includes('const renderedMapFrame = computed(() =>')
+  || !battlePlaybackSource.includes(':rendered-frame="renderedMapFrame"')) {
+  throw new Error('BattleMap leader-line production wiring must use the rendered SVG frame contract')
+}
+const hdManifest = JSON.parse(readFileSync(resolve(frontendRoot, 'src/assets/maps-hd/manifest.json'), 'utf8'))
+const faustManifestEntry = hdManifest.entries.find(entry => entry.enhanced.endsWith('/faust.webp'))
+if (!faustManifestEntry) throw new Error('faust.webp is missing from maps-hd manifest')
+const faustAssetUrl = pathToFileURL(resolve(frontendRoot, 'src/assets/maps-hd/faust.webp')).href
 
 const scenarios = [
   { name: 'pc-1600x900', form: 'pc', width: 1600, height: 900, check: 'pc' },
@@ -48,6 +61,12 @@ const scenarios = [
   { name: 'mobile-390x844', form: 'mobile', width: 390, height: 844, check: 'mobile' },
   // Structural isolation: a PC form at tablet width must not accidentally receive tablet geometry.
   { name: 'pc-isolated-at-1024', form: 'pc', width: 1024, height: 768, check: 'pc-isolated' },
+  // Real raster frame guard: intentionally non-square logical dimensions must remain the shared
+  // frame for the HD img, overlay SVG and marker layer.
+  { name: 'raster-frame-hd', form: 'pc', width: 1280, height: 900, check: 'raster' },
+  // Real leader-line geometry guard: a 4x layout-scaled, non-square SVG frame must preserve the
+  // same 20px screen displacement as the HTML marker on a mobile-sized visible map frame.
+  { name: 'leader-line-non-1-to-1', form: 'mobile', width: 390, height: 844, check: 'leader' },
 
   // Real browser geometry guards for the regression behind PR #248. sideSlots is forced on the
   // class for CSS-cascade coverage; production JS only enables it when the measured gutter qualifies.
@@ -96,6 +115,11 @@ function fixtureHtml(scenario) {
   .pb-map-stage { width: 100%; }
   .pb-map { position:relative; width:100%; height:100%; min-width:0; min-height:1px; overflow:hidden; background:#090909; }
   .pb-viewport { position:absolute; left:0; top:0; width:100%; aspect-ratio:1 / 1; transform-origin:0 0; background:#2b3b2b; }
+  .pb-basemap, .pb-svg { position:absolute; inset:0; display:block; width:100%; height:100%; }
+  .pb-basemap { object-fit:fill; }
+  .pb-markers { position:absolute; inset:0; pointer-events:none; }
+  .pb-marker { position:absolute; width:20px; height:20px; transform:translate(-50%,-50%); border-radius:50%; background:#f00; }
+  .pb-marker-leader { stroke:#aaa; stroke-width:1; }
   .pb-side-panel-shell { min-width:0; min-height:0; }
   .pb-sidebar, .pb-side-panel { min-height:120px; }
   .pb-mobile-overlay-content { min-height:72px; }
@@ -121,9 +145,11 @@ ${productionCss}
     </div>
   </section>
   <aside class="pb-left-rail"><button class="pb-rail-collapse">rail</button>${controlsInRail ? controlsMarkup : ''}</aside>
-  <main class="pb-main">
+    <main class="pb-main">
     <div class="pb-map-stage">
-      <div class="pb-map"><div class="pb-viewport"></div></div>
+      <div class="pb-map"${scenario.check === 'leader' ? ' style="width:390px;height:387px"' : ''}><div class="pb-viewport"${scenario.check === 'raster' ? ' style="aspect-ratio:769 / 763"' : scenario.check === 'leader' ? ' style="width:400%;aspect-ratio:769 / 763;transform:translate(-585px,-580.5px)"' : ''}>
+        ${scenario.check === 'raster' ? `<img class="pb-basemap" data-test="pb-basemap" src="${faustAssetUrl}" alt=""><svg class="pb-svg" viewBox="0 0 769 763"><rect x="0" y="0" width="769" height="763"></rect></svg><div class="pb-markers" data-test="pb-markers"></div>` : scenario.check === 'leader' ? `<svg class="pb-svg" viewBox="0 0 769 763"><line class="pb-marker-leader" x1="384.5" y1="381.5" x2="384.5" y2="381.5"></line></svg><div class="pb-markers"><div class="pb-marker" style="left:calc(50% + 20px);top:calc(50% - 16px)"></div></div>` : ''}
+      </div></div>
       <div class="pb-side-panel-shell pb-details-active">
         <div class="pb-sidebar">details</div>
         <div class="pb-side-panel">panel</div>
@@ -134,6 +160,7 @@ ${productionCss}
 </div>
 <script type="module">
 import { playbackSafeInsetOwnership } from ${JSON.stringify(safeInsetsUrl)}
+import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
 
 // This module script is deferred by HTML and the load event waits for its module graph to finish.
 // Publish the geometry result synchronously during module evaluation so Chrome --dump-dom
@@ -152,6 +179,7 @@ import { playbackSafeInsetOwnership } from ${JSON.stringify(safeInsetsUrl)}
     const stageStyle = getComputedStyle(stage)
     const buttonStyle = button ? getComputedStyle(button) : null
     const failures = []
+    let metrics = null
     const require = (ok, message) => { if (!ok) failures.push(message) }
 
     if (${JSON.stringify(scenario.check)} === 'pc') {
@@ -182,6 +210,102 @@ import { playbackSafeInsetOwnership } from ${JSON.stringify(safeInsetsUrl)}
     }
     if (${JSON.stringify(scenario.check)} === 'pc-isolated') {
       require(stageStyle.display !== 'grid', 'PC form at 1024px must not receive tablet grid rules')
+    }
+
+    if (${JSON.stringify(scenario.check)} === 'raster') {
+      const basemap = root.querySelector('[data-test="pb-basemap"]')
+      const svg = root.querySelector('.pb-svg')
+      const markers = root.querySelector('[data-test="pb-markers"]')
+      if (basemap && !basemap.complete) {
+        await new Promise(resolve => {
+          basemap.addEventListener('load', resolve, { once: true })
+          basemap.addEventListener('error', resolve, { once: true })
+        })
+      }
+      require(basemap && basemap.complete, 'HD basemap image must finish loading')
+      require(basemap && basemap.naturalWidth === ${JSON.stringify(faustManifestEntry.enhancedPixels[0])}, 'HD basemap naturalWidth must match manifest')
+      require(basemap && basemap.naturalHeight === ${JSON.stringify(faustManifestEntry.enhancedPixels[1])}, 'HD basemap naturalHeight must match manifest')
+      require(svg && !svg.querySelector('image'), 'overlay SVG must not contain a raster image')
+      const fitRect = basemap?.getBoundingClientRect()
+      const fitDensity = mapRasterDensity({
+        naturalWidth: basemap?.naturalWidth,
+        naturalHeight: basemap?.naturalHeight,
+        renderedCssWidth: fitRect?.width,
+        renderedCssHeight: fitRect?.height,
+        viewScale: 1,
+        devicePixelRatio,
+      })
+      require(fitDensity && fitDensity.effectiveSourcePxPerDevicePx > 0, 'fit raster density must be measurable')
+      const frame = (label) => {
+        const rects = [basemap, svg, markers].map(element => element?.getBoundingClientRect())
+        const [first, ...rest] = rects
+        require(first && rest.every(rect => rect && Math.abs(rect.left - first.left) < 0.5 && Math.abs(rect.top - first.top) < 0.5 && Math.abs(rect.width - first.width) < 0.5 && Math.abs(rect.height - first.height) < 0.5), 'frame ' + label + ': basemap/SVG/markers must share one frame')
+      }
+      frame('fit')
+      const viewport = root.querySelector('.pb-viewport')
+      viewport.style.width = '400%'
+      viewport.style.transform = 'translate(0px,0px)'
+      frame('4x')
+      const zoomRect = basemap?.getBoundingClientRect()
+      const zoomDensity = mapRasterDensity({
+        naturalWidth: basemap?.naturalWidth,
+        naturalHeight: basemap?.naturalHeight,
+        renderedCssWidth: fitRect?.width,
+        renderedCssHeight: fitRect?.height,
+        viewScale: 4,
+        devicePixelRatio,
+      })
+      require(zoomDensity && zoomDensity.requiredDeviceWidth > (fitDensity?.requiredDeviceWidth || 0), '4x raster density must account for camera scale')
+      require(zoomRect && zoomRect.width > (fitRect?.width || 0), '4x raster frame must be larger than fit frame')
+    }
+
+    if (${JSON.stringify(scenario.check)} === 'leader') {
+      const logical = { W: 769, H: 763 }
+      const offset = { x: 20, y: -16 }
+      const svg = root.querySelector('.pb-svg')
+      const line = root.querySelector('.pb-marker-leader')
+      const marker = root.querySelector('.pb-marker')
+      const visibleRect = map.getBoundingClientRect()
+      const renderedRect = svg?.getBoundingClientRect()
+      const delta = renderedRect && renderedRect.width > 0 && renderedRect.height > 0
+        ? {
+            x: offset.x * logical.W / renderedRect.width,
+            y: offset.y * logical.H / renderedRect.height,
+          }
+        : null
+      require(delta, 'leader-line SVG delta must be measurable')
+      const canonical = { x: logical.W / 2, y: logical.H / 2 }
+      const x2 = canonical.x + (delta?.x || 0)
+      const y2 = canonical.y + (delta?.y || 0)
+      line?.setAttribute('x2', String(x2))
+      line?.setAttribute('y2', String(y2))
+      const markerRect = marker?.getBoundingClientRect()
+      const endpoint = renderedRect ? {
+        x: renderedRect.left + x2 * renderedRect.width / logical.W,
+        y: renderedRect.top + y2 * renderedRect.height / logical.H,
+      } : null
+      const markerCenter = markerRect ? {
+        x: markerRect.left + markerRect.width / 2,
+        y: markerRect.top + markerRect.height / 2,
+      } : null
+      const pixelDelta = endpoint && markerCenter ? {
+        x: endpoint.x - markerCenter.x,
+        y: endpoint.y - markerCenter.y,
+      } : null
+      require(renderedRect && Math.abs(renderedRect.width - visibleRect.width * 4) < 0.5,
+        'leader-line fixture must use a 4x rendered SVG frame')
+      require(markerCenter && endpoint && Math.abs(pixelDelta.x) <= 0.5 && Math.abs(pixelDelta.y) <= 0.5,
+        'leader endpoint must match visible marker center within 0.5 CSS px')
+      metrics = {
+        logical,
+        visibleCss: { width: visibleRect.width, height: visibleRect.height },
+        renderedSvgCss: { width: renderedRect?.width, height: renderedRect?.height },
+        viewScale: 4,
+        presentationOffset: offset,
+        markerCenter,
+        leaderEndpoint: endpoint,
+        pixelDelta,
+      }
     }
 
     if (${JSON.stringify(fullscreen)}) {
@@ -232,7 +356,7 @@ import { playbackSafeInsetOwnership } from ${JSON.stringify(safeInsetsUrl)}
     }
 
     require(document.documentElement.scrollWidth <= innerWidth + 1, 'layout must not create page-level horizontal overflow')
-    const result = { name: ${JSON.stringify(scenario.name)}, width: innerWidth, height: innerHeight, failures }
+    const result = { name: ${JSON.stringify(scenario.name)}, width: innerWidth, height: innerHeight, failures, metrics }
     document.body.dataset.result = btoa(JSON.stringify(result))
 }
 </script>
@@ -261,7 +385,7 @@ try {
     if (result.failures.length) {
       throw new Error(`${scenario.name}:\n- ${result.failures.join('\n- ')}`)
     }
-    console.log(`[browser-layout] ${scenario.name} OK (${result.width}x${result.height})`)
+    console.log(`[browser-layout] ${scenario.name} OK (${result.width}x${result.height})${result.metrics ? ` ${JSON.stringify(result.metrics)}` : ''}`)
   }
 } finally {
   rmSync(temp, { recursive: true, force: true })

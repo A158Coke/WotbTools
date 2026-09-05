@@ -33,13 +33,10 @@ export const LABEL_LANES_PX = Object.freeze([0, -10, 10, -20])
 
 const TANK_COLLISION_PADDING = 1.02
 const TANK_COLLISION_GRID_STEP_PX = 2
-// 位移预算仍然 bounded —— canonical position fidelity 优先，挤不开就保留残余重叠，
-// 绝不把 marker 推开整整一个车身。数值随 marker 尺寸调整过：marker 改为真实车体比例后
-// 从 18–30px 缩到约 9–13px，同样的像素预算能分开的车更多，因此上调到约两个车身宽。
-const TANK_COLLISION_MAX_OFFSET_DESKTOP_PX = 20
-const TANK_COLLISION_MAX_OFFSET_MOBILE_PX = 16
-
-// 大于任何「零重叠候选」可能的评分（位移上限 + stability 余量），保证零重叠永远胜出。
+const TANK_COLLISION_MAX_SEARCH_RING = 64
+const TANK_COLLISION_CLEARANCE_PX = 1
+const TANK_COLLISION_COORDINATE_LIMIT_PX = 1e6
+const TANK_COLLISION_DIMENSION_LIMIT_PX = 4096
 const OVERLAP_PENALTY = 1e6
 
 function collisionBox(item, offset) {
@@ -52,21 +49,20 @@ function collisionBox(item, offset) {
 }
 
 /**
- * Soft, bounded presentation-only tank geometry layout. The input coordinates are screen
- * pixels; returned offsets never mutate canonical positions. Model overlap is a cost, not
- * a hard constraint: once the small offset budget is exhausted, residual overlap is kept
- * rather than moving a marker away from its canonical position.
+ * Strict presentation-only tank geometry layout. The input coordinates are screen pixels;
+ * returned offsets never mutate canonical positions. The solver expands its deterministic
+ * square search until every new model box is clear of the boxes already placed, so dense
+ * clusters never fall back to residual model overlap.
  */
 export function computeTankCollisionLayout(items, previous = new Map(), options = {}) {
   if (!Array.isArray(items)) return new Map()
-  const mobile = options?.mobile === true
-  const maxOffset = Number.isFinite(options?.maxOffsetPx) && options.maxOffsetPx >= 0
-    ? Math.min(options.maxOffsetPx, mobile ? TANK_COLLISION_MAX_OFFSET_MOBILE_PX : TANK_COLLISION_MAX_OFFSET_DESKTOP_PX)
-    : (mobile ? TANK_COLLISION_MAX_OFFSET_MOBILE_PX : TANK_COLLISION_MAX_OFFSET_DESKTOP_PX)
-  const withinOffset = (candidate) => Math.hypot(candidate.x, candidate.y) <= maxOffset + 1e-6
   const ordered = items.filter(item => item && item.accountId != null
     && Number.isFinite(item.x) && Number.isFinite(item.y)
-    && Number.isFinite(item.width) && Number.isFinite(item.height))
+    && Math.abs(item.x) <= TANK_COLLISION_COORDINATE_LIMIT_PX
+    && Math.abs(item.y) <= TANK_COLLISION_COORDINATE_LIMIT_PX
+    && Number.isFinite(item.width) && Number.isFinite(item.height)
+    && Math.max(1, item.width) <= TANK_COLLISION_DIMENSION_LIMIT_PX
+    && Math.max(1, item.height) <= TANK_COLLISION_DIMENSION_LIMIT_PX)
     .map(item => ({
       ...item,
       width: Math.max(1, item.width) * TANK_COLLISION_PADDING,
@@ -78,46 +74,109 @@ export function computeTankCollisionLayout(items, previous = new Map(), options 
   const offsets = new Map()
   const placed = []
   const step = TANK_COLLISION_GRID_STEP_PX
-  const candidates = [{ x: 0, y: 0 }]
-  const maxRing = Math.ceil(maxOffset / step)
-  for (let ring = 1; ring <= maxRing; ring += 1) {
-    for (let gridX = -ring; gridX <= ring; gridX += 1) {
-      for (let gridY = -ring; gridY <= ring; gridY += 1) {
-        if (Math.max(Math.abs(gridX), Math.abs(gridY)) !== ring) continue
-        candidates.push({ x: gridX * step, y: gridY * step })
-      }
-    }
+  const viewportW = Number.isFinite(options?.viewportW) && options.viewportW > 0
+    ? options.viewportW : null
+  const viewportH = Number.isFinite(options?.viewportH) && options.viewportH > 0
+    ? options.viewportH : null
+  const fitsViewport = (box) => (viewportW === null || viewportH === null)
+    || (box.x >= 0 && box.y >= 0 && box.x + box.w <= viewportW && box.y + box.h <= viewportH)
+  const intersectsViewport = (box) => (viewportW === null || viewportH === null)
+    || (box.x < viewportW && box.x + box.w > 0 && box.y < viewportH && box.y + box.h > 0)
+
+  const clearFallbacks = (item) => {
+    if (placed.length === 0) return [{ x: 0, y: 0 }]
+    const right = Math.max(...placed.map(({ box }) => box.x + box.w))
+    const left = Math.min(...placed.map(({ box }) => box.x))
+    const bottom = Math.max(...placed.map(({ box }) => box.y + box.h))
+    const top = Math.min(...placed.map(({ box }) => box.y))
+    return [
+      { x: right + TANK_COLLISION_CLEARANCE_PX + item.width / 2 - item.x, y: 0 },
+      { x: left - TANK_COLLISION_CLEARANCE_PX - item.width / 2 - item.x, y: 0 },
+      { x: 0, y: bottom + TANK_COLLISION_CLEARANCE_PX + item.height / 2 - item.y },
+      { x: 0, y: top - TANK_COLLISION_CLEARANCE_PX - item.height / 2 - item.y },
+    ]
   }
 
   for (const item of ordered) {
+    const canonicalBox = collisionBox(item, { x: 0, y: 0 })
+    if (!intersectsViewport(canonicalBox)) {
+      const offset = { x: 0, y: 0 }
+      offsets.set(item.accountId, offset)
+      placed.push({ box: canonicalBox })
+      continue
+    }
+
     const prior = previous instanceof Map ? previous.get(item.accountId) : null
-    const candidatesForItem = [
-      ...(prior && Number.isFinite(prior.x) && Number.isFinite(prior.y) && withinOffset(prior)
-        ? [prior]
-        : []),
-      ...candidates,
-    ]
+    const hasUsablePrior = prior && Number.isFinite(prior.x) && Number.isFinite(prior.y)
+
+    if (hasUsablePrior) {
+      const priorBox = collisionBox(item, prior)
+      const priorOverlap = placed.reduce((sum, other) => sum + overlapArea(priorBox, other.box), 0)
+      const selectedNeedsCanonicalPriority = item.selected === true
+        && (Math.abs(prior.x) > 1e-9 || Math.abs(prior.y) > 1e-9)
+      if (priorOverlap <= 1e-9 && fitsViewport(priorBox) && !selectedNeedsCanonicalPriority) {
+        const offset = { x: prior.x, y: prior.y }
+        offsets.set(item.accountId, offset)
+        placed.push({ box: priorBox })
+        continue
+      }
+    }
+
     let best = null
     let bestScore = Number.POSITIVE_INFINITY
-    for (const candidate of candidatesForItem) {
-      if (!withinOffset(candidate)) continue
+    let bestOverlap = Number.POSITIVE_INFINITY
+
+    const consider = (candidate, { allowOutside = false, preserveCanonical = false } = {}) => {
       const box = collisionBox(item, candidate)
       const overlap = placed.reduce((sum, other) => sum + overlapArea(box, other.box), 0)
+      if (!allowOutside && !fitsViewport(box) && !(preserveCanonical && overlap <= 1e-9)) return false
       const displacement = Math.hypot(candidate.x, candidate.y)
-      // Reuse a valid previous offset strongly enough to prevent frame-to-frame
-      // swapping; a meaningful overlap cost still wins over stale history.
-      const stability = prior && candidate.x === prior.x && candidate.y === prior.y ? -25 : 0
-      // 不重叠是硬优先：预算内只要存在零重叠位置就必须选它，位移再大也不退回重叠。
-      // 只有预算内无解时才退化为「重叠面积最小」，此时排序与旧行为一致。
+      const stability = hasUsablePrior && candidate.x === prior.x && candidate.y === prior.y ? -25 : 0
       const score = (overlap > 1e-9 ? OVERLAP_PENALTY : 0)
         + overlap * 100 + displacement + stability
       if (score < bestScore) {
         bestScore = score
+        bestOverlap = overlap
         best = candidate
       }
+      return overlap <= 1e-9
     }
-    if (!best) {
-      best = candidatesForItem.find(withinOffset) || { x: 0, y: 0 }
+
+    // A clear previous position participates as a stability candidate, but canonical (0, 0)
+    // still wins when it is cheaper. This preserves selected-marker priority while keeping
+    // an already stable, non-conflicting layout from swapping between frames.
+    if (hasUsablePrior) {
+      consider({ x: prior.x, y: prior.y })
+    }
+
+    let foundClearCandidate = false
+    for (let ring = 0; ring <= TANK_COLLISION_MAX_SEARCH_RING; ring += 1) {
+      let ringHasClearCandidate = false
+      for (let gridX = -ring; gridX <= ring; gridX += 1) {
+        for (let gridY = -ring; gridY <= ring; gridY += 1) {
+          if (ring > 0 && Math.max(Math.abs(gridX), Math.abs(gridY)) !== ring) continue
+          const candidate = {
+            x: gridX === 0 ? 0 : gridX * step,
+            y: gridY === 0 ? 0 : gridY * step,
+          }
+          const clear = consider(candidate, {
+            preserveCanonical: ring === 0 && candidate.x === 0 && candidate.y === 0
+              && (viewportW === null || viewportH === null),
+          })
+          if (clear) ringHasClearCandidate = true
+        }
+      }
+
+      if (ringHasClearCandidate) {
+        foundClearCandidate = true
+        break
+      }
+    }
+
+    if (!foundClearCandidate || bestOverlap > 1e-9) {
+      for (const candidate of clearFallbacks(item)) {
+        if (consider(candidate, { allowOutside: true })) break
+      }
     }
     const offset = { x: best.x, y: best.y }
     const box = collisionBox(item, offset)

@@ -198,9 +198,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     依赖 view.scale 自然重算；点击命中使用随 vehicle-aware marker 与 presentation offset 移动的
     小幅扩展 hit target（不参与视觉碰撞，不含 gun overflow/label/三角/菱形/✕；destroyed/last-known 仍可点），重叠时
     取指针最近车辆、距离几乎一致且已选中则保持、否则 render order tie-break；倍速含 0.5×；
-    `loop` prop（QA 场景循环）。Tank model collision 仅作用于 model box，使用 desktop 约 10px /
-     mobile 约 8px 的 soft bounded avoidance，以 overlap cost + minimal displacement + previous
-     layout stability 为目标；预算耗尽时接受 residual overlap，不改变 canonical position。
+    `loop` prop（QA 场景循环）。Tank model collision 仅作用于 model box，使用 screen-pixel
+     presentation offset 做确定性自适应避让：持续搜索直到同一帧内所有可见 model box 完全不重叠，
+     不改变 canonical position；拥挤时 marker 可离开真实点，并由 leader line 回指 canonical anchor。
    - **全屏模式（原生 Fullscreen API）**：控制栏「⛶ 全屏 / 退出全屏」（i18n 三语 `enter_fullscreen`/`exit_fullscreen`）；
     全屏对象 = `.battle-playback` 根容器（地图 + 全部 controls + 标注 + 信息面板，不含页面 header/nav）；
     状态事实源 = `document.fullscreenElement` + `fullscreenchange`（ESC/浏览器 UI 退出立即同步，
@@ -328,6 +328,24 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   -300..300，即完整世界坐标截图；新图以各自语义 JSON 为准，逐图校准）。渲染统一用
   `coordinateBounds`，不得用 `playableBounds` 铺满图片（会越靠近边缘偏移越大）。无
   `coordinateBounds` 的旧配置按兼容策略回退 `playableBounds`。
+
+### HD 底图运行时渲染契约
+
+- `maps-hd/*.webp` 的 intrinsic raster resolution（当前约 4048×4048）只描述文件本身的
+  解码像素；它不等于页面中的 logical map frame，也不等于任意 DPR/缩放下都能达到像素级
+  清晰度。
+- `mapImages.width/height` 是既有 logical/render-frame dimensions（约 754–783），由
+  `createMapView()` 生成 `mapView.W/H`，并继续作为 `coordinateBounds`、terrain projection、
+  SVG `viewBox`、车辆/基地/轨迹/标注及 pointer conversion 的共同坐标空间。它们不是 HD 文件
+  的 intrinsic width/height，不得替换为 4048。
+- Battle Playback 的 2D 底图由 `BattleMap.vue` 的独立 `.pb-basemap` HTML `<img>` 渲染；
+  `.pb-svg` 只承载 vector overlays，`.pb-markers` 与两者共享同一个 `.pb-viewport` camera
+  frame。底图和 SVG 都按 `mapView.W / mapView.H` 的 frame `fill`，因此近似正方形的 HD
+  intrinsic ratio 不会改变既有非正方形地图的 overlay 对齐。
+- 运行时 raster capacity 以
+  `requiredDeviceWidth = renderedCssWidth × view.scale × devicePixelRatio`（height 同理）
+  诊断。`naturalWidth / requiredDeviceWidth` 小于 1 表示源分辨率不足，不是通过滤镜或降低
+  最大缩放可以修复的 renderer bug；该诊断不改变 1×→4× camera contract。
 ### 单车血量 HUD / 战斗反馈 / 车辆详情面板（PR5）
 
 - **HP presentation selectors**：`healthDisplayAt(track, t)` 和 `friendlyHealthAt(tracks, friendly, t)`
