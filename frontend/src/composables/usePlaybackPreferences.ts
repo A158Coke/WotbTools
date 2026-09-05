@@ -22,7 +22,11 @@ const LABEL_PREFS_KEY = 'wotb.pb.label-prefs'
 const HP_PREFS_KEY = 'wotb.pb.hp-prefs'
 const TRAIL_PREFS_KEY = 'wotb.pb.trail-prefs'
 const PANE_WIDTH_KEY = 'wotb.pb.pane-widths'
-const RAIL_COLLAPSED_KEY = 'wotb.pb.rail-collapsed'
+// v2 deliberately resets the old persisted value once. The rail became persistent
+// in desktop non-fullscreen layout after the original preference was introduced;
+// an old collapsed=true value could therefore produce an empty 44px strip with no
+// visible recovery control. New values remain persisted normally.
+const RAIL_COLLAPSED_KEY = 'wotb.pb.rail-collapsed.v2'
 
 function readJson<T>(key: string, fallback: T, normalize: (value: unknown) => T): T {
   try {
