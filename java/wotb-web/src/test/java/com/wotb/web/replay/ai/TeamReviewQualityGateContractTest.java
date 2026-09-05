@@ -141,41 +141,70 @@ class TeamReviewQualityGateContractTest {
     }
 
     @Test
-    void v04InformationSupportabilityAndIndividualBindingContract() {
-        assertTrue(ZH.contains("Observed：当时确认了什么 → Remaining uncertainty：什么仍未知")
-                        && ZH.contains("Decision impact：这如何改变可选部署、风险或行动义务"),
-                "Information 必须形成 Observed -> uncertainty -> decision impact 链");
-        assertTrue(ZH.contains("几何距离是 evidence，不是 tactical verdict"),
-                "距离只能是 evidence，不是 tactical verdict");
-        assertTrue(ZH.contains("判断 supportability 必须综合 line of fire、地形/遮挡、time-to-influence"),
+    void v06InformationSupportabilityAndIndividualBindingContract() {
+        assertTrue(ZH.contains("Known → Remaining uncertainty → New observation → 哪种 uncertainty 被移除/缩小 → Decision impact"),
+                "Information 必须形成 Known -> uncertainty -> observation -> decision impact 链");
+        assertTrue(ZH.contains("distance 只是 evidence，不是 supportability verdict"),
+                "距离只能是 evidence，不是 supportability verdict");
+        assertTrue(ZH.contains("综合 line of fire、terrain / obstruction、time-to-influence、mobility、target availability"),
                 "支援能力必须综合几何之外的证据");
-        assertTrue(ZH.contains("禁止生成「150米最大间距"), "禁止 universal magic distance rule");
-        assertTrue(ZH.contains("state-based trigger") && ZH.contains("不得写「1分20秒必须合流"),
+        assertTrue(ZH.contains("不能把时间接近的死亡事件自动串成因果 episode"),
+                "相邻死亡不能自动构成因果 episode");
+        assertTrue(ZH.contains("HP、damage、deaths 是 position/decision 因果链的下游结果或验证信号"),
+                "HP/伤害/死亡必须作为下游验证");
+        assertTrue(ZH.contains("Trigger → Decision target → Training goal"),
                 "训练建议必须使用状态触发而非固定时刻");
-        assertTrue(ZH.contains("内部检查 base ownership、current points、point growth、remaining time"),
+        assertTrue(ZH.contains("结合 base ownership、current points、point growth、remaining time"),
                 "Objectives 必须检查行动义务");
-        assertTrue(ZH.contains("只能从正文已经识别并展开的 tactical episode 中选择"),
+        assertTrue(ZH.contains("重点复查与高贡献者只能从已展开的 tactical episode 选择"),
                 "个人 section 必须绑定正文 episode");
-        assertTrue(ZH.contains("不能重新从 settlement leaderboard 选人"),
+        assertTrue(ZH.contains("不能从 settlement leaderboard 重新选人"),
                 "个人 section 不得重新从结算榜单选人");
-        assertTrue(ZH.contains("如果只能回答「伤害高、击杀多、活得久」，就省略该 section"),
-                "高贡献者没有 tactical impact 时必须省略");
-        assertTrue(ZH.contains("描述对方时优先写可观察的 effect，不猜 intent"),
+        assertTrue(ZH.contains("没有证据就输出空数组"),
+                "个人 section 没有 tactical evidence 时必须省略");
+        assertTrue(ZH.contains("具体视野/掩体/LOS/装填/心理意图没有证据时不得写成事实"),
                 "不得猜测敌方意图");
-        assertTrue(ZH.contains("检查不等于必须找到传播"),
+        assertTrue(ZH.contains("证据不足时明确无法确认直接传播"),
                 "propagation 检查不强制制造传播");
     }
 
     @Test
-    void v04LocalizedReasoningContractIsAvailableInThreeLanguages() {
+    void v06ReasoningOrderIsExplicitAndOrdered() {
+        final String[] anchors = {
+                "Read authoritative facts",
+                "Establish information state",
+                "Identify remaining uncertainty",
+                "Evaluate objective obligation",
+                "Identify pivotal local engagements",
+                "Determine effective local participation",
+                "Trace tactical transition",
+                "Trace propagation",
+                "Use HP/damage/deaths as downstream validation",
+                "Select training targets",
+                "Select individual candidates only if episode-grounded",
+                "Produce structured JSON"
+        };
+        int previous = -1;
+        for (final String anchor : anchors) {
+            final int current = ZH.indexOf(anchor);
+            assertTrue(current > previous, "v0.6 推理顺序缺少或顺序错误: " + anchor);
+            previous = current;
+        }
+    }
+
+    @Test
+    void v06LocalizedReasoningContractIsAvailableInThreeLanguages() {
         final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
-        assertTrue(en.contains("V0.4 INFORMATION, SUPPORTABILITY, AND INDIVIDUAL REVIEW CONTRACT"));
-        assertTrue(en.contains("Geometry distance is evidence, not a tactical verdict"));
+        assertTrue(en.contains("TEAM REVIEW V0.6 REASONING ORDER AND CAUSAL QUALITY CONTRACT"));
+        assertTrue(en.contains("Distance is evidence, not a supportability verdict"));
+        assertTrue(en.contains("State before -> Change -> Immediate local consequence -> Propagation"));
+        assertTrue(en.contains("downstream validation"));
         assertFalse(en.contains("=== v0.4 信息链、支援能力与个人复查约束（强制） ==="));
 
         final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
-        assertTrue(ru.contains("КОНТРАКТ V0.4: ИНФОРМАЦИЯ, ПОДДЕРЖКА И ЛИЧНЫЙ РАЗБОР"));
-        assertTrue(ru.contains("Геометрическое расстояние — это evidence, а не тактический verdict"));
+        assertTrue(ru.contains("ПОРЯДОК РАССУЖДЕНИЯ КОМАНДНОГО РАЗБОРА V0.6"));
+        assertTrue(ru.contains("Расстояние — evidence, а не verdict о возможности поддержки"));
+        assertTrue(ru.contains("downstream validation"));
         assertFalse(ru.contains("=== v0.4 信息链、支援能力与个人复查约束（强制） ==="));
     }
 

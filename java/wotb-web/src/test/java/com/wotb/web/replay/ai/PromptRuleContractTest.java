@@ -73,7 +73,6 @@ class PromptRuleContractTest {
                     TeamPromptLocalizer.RELATIVE_DEPTH_HP_RULE,
                     TeamPromptLocalizer.TEAM_OUTPUT_STRUCTURE_RULE,
                     TeamPromptLocalizer.TEAM_PRIMARY_DIAGNOSIS_RULE,
-                    TeamPromptLocalizer.TEAM_GROUNDING_RULE,
                     TeamPromptLocalizer.TEAM_EVIDENCE_CONTRACT_RULE,
                     TeamPromptLocalizer.TEAM_REASONING_CONTRACT_RULE));
 
@@ -122,8 +121,8 @@ class PromptRuleContractTest {
                     lang + " 残留中文 reasoning contract");
         }
         assertTrue(TeamPromptLocalizer.localizeTeamSystemPrompt(team, AllowedLanguage.EN)
-                        .contains("TEAM REASONING ORDER AND QUALITY CONTRACT"));
+                        .contains("TEAM REVIEW V0.6 REASONING ORDER AND CAUSAL QUALITY CONTRACT"));
         assertTrue(TeamPromptLocalizer.localizeTeamSystemPrompt(team, AllowedLanguage.RU)
-                        .contains("ПОРЯДОК РАССУЖДЕНИЯ И КОНТРАКТ КАЧЕСТВА"));
+                        .contains("ПОРЯДОК РАССУЖДЕНИЯ КОМАНДНОГО РАЗБОРА V0.6 И КОНТРАКТ ПРИЧИННОСТИ"));
     }
 }

@@ -16,6 +16,7 @@ UNKNOWN 是合法内部状态：只有不说明会误写成确定因果、或该
 输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。
 {{common/tank-noun}}
 {{common/language}}
+{{team/reasoning-contract}}
 === 团队复盘输出结构（强制） ===
 主正文是【自由组织的自然复盘】，不是固定章节模板：禁止机械输出
 「核心结论」「关键决策窗口」「可确认的团队问题」「训练建议」等固定小标题结构。
@@ -47,59 +48,6 @@ title 和 reasoning 用自然教练语言表达即可。
 沟通、谁下令或谁忽略指令当作原因。不能证明最细节的因果链时，保留可证明的上层执行现象，
 不要用猜测填补空白。
 
-=== GROUNDING FACTS 与结构化输出（强制） ===
-输入末尾的 GROUNDING FACTS 是后端确定性事实清单，每条带稳定证据编号（E1xx）：
-本方/对方阵亡（PLAYER_DESTROYED）、存活变化（ALIVE_COUNT_TRANSITION）、关注窗口
-（FOCUS_WINDOW）、位置区域快照（POSITION_REGION）、敌方位置知识（ENEMY_POSITION_KNOWN，
-含 CURRENT / LAST_KNOWN）。这些事实绝对不能修改：时间、人数、玩家事件、位置、HP 与
-事件归属一律以 GROUNDING FACTS 为准；正文引用这些事实时不得改变其数值或时间归属。
-你必须按以下 JSON envelope 输出（这是你唯一的输出格式，不要输出其它文本）：
-{
-  "primaryDiagnosis": {
-    "title": "一句话主判断",
-    "reasoning": "为什么这是本场最重要的结论（2-4 句；没有确认的重大错误时，说明当前可确认/可观察证据的边界，或对手处理更有效）",
-    "supportingEvidenceIds": ["E1xx", "E1xx"]
-  },
-  "reviewMarkdown": "完整的自然语言复盘正文（用户最终看到的全部内容，Markdown；主标题用 ## 团队复盘）",
-  "claims": [
-    {"text": "一句涉及数值/时间/位置/玩家事件的陈述", "evidenceIds": ["E1xx"]}
-  ]
-}
-要求：
-1. reviewMarkdown 是用户看到的完整复盘，由你自由写出，不是 Backend 模板句的拼接；
-   不得在其中出现「E1xx」「evidenceIds」「GROUNDING FACTS」「primaryDiagnosis」等内部标识。
-2. claims 是同一批 factual assertions 的 machine projection，不是可选装饰：
-   正文中每个可验证事实陈述（时间/人数/玩家阵亡/区域位置/敌方位置知识）必须有一个对应
-   structured claim；纯战术观点可以没有 claim。claims 为空只允许在正文不含可验证事实陈述时。
-   机器字段（三语通用，language-neutral）：每条 claim 必须携带合法 claimType 及对应必填字段——
-   DEATH：subject（玩家昵称或坦克名）+ timeSec（battle-relative 秒，数字）+ evidenceIds；
-   ALIVE_TRANSITION：value（机器格式 "7v7 -> 4v6"）+ evidenceIds（timeSec 可选）；
-   POSITION_REGION：timeSec + region（1-9）+ count（车辆数，数字）+ side（FRIENDLY/ENEMY）
-     + countSemantics（EXACT/AT_LEAST/SUBSET）+ evidenceIds；
-   ENEMY_POSITION：subject + timeSec + region + knowledge（CURRENT/LAST_KNOWN）+ evidenceIds；
-   TACTICAL：纯战术观点，不要求 factual machine 字段。
-   身份字段：DEATH / ENEMY_POSITION 的 subject 可使用 subjectAccountId（后端账号ID，JSON number
-   正整数）作为稳定身份；同车型敌车多辆时（如两辆 IS-7）禁止只用坦克名绑定身份，必须用
-   subjectAccountId 或玩家昵称。
-   countSemantics 用机器字段声明（EXACT=恰好 count 辆 / AT_LEAST=至少 count 辆 / SUBSET=其中 count 辆），
-   不要依赖自然语言标记词；机器字段类型必须正确（数字字段必须是 JSON number，不能用字符串）。
-   无论输出语言（中文/English/Русский），机器字段与格式一致。
-3. 证据编号只能出现在结构化字段（primaryDiagnosis.supportingEvidenceIds / claims[].evidenceIds），
-   绝不进入 reviewMarkdown 正文。
-4. 敌方 ENEMY_POSITION_KNOWN 的 LAST_KNOWN 只是「最后一次被观测到的位置」，绝不能写成
-   「敌方此时就在这里/正在某区」/ "is right here now" / "прямо здесь"；ENEMY_POSITION claim
-   的 knowledge 必须如实声明 CURRENT/LAST_KNOWN，与后端一致。
-5. 正文时间一律用本地化格式（中文「XX分XX秒」/ English "Xm Xs" / Русский "X мин X с"），
-   禁止「1:15」或累计秒数；claims 的 timeSec 使用 battle-relative 秒（机器格式，如 112.4）。
-6. LOS / spotting / 视野类内容禁止作为事实 claim：claimType 不得为 LOS / SPOTTING / VISION /
-   LINE_OF_SIGHT（后端没有对应 evidence kind）；只能作为战术判断（claimType=TACTICAL）并
-   使用降级表达（更可能 / more likely / более вероятно）。
-7. evidence binding（强制）：claims 的 evidenceIds 必须引用真正支撑该 claim 的事实，不能借用无关编号——
-   DEATH 必须引用对应玩家的 PLAYER_DESTROYED 阵亡证据（身份+时间一致）；ALIVE_TRANSITION 必须引用
-   before/after 一致的 ALIVE_COUNT_TRANSITION 或 FOCUS_WINDOW 窗口级聚合证据；POSITION_REGION 必须
-   引用对应时刻 side/region/count/countSemantics 一致的位置快照证据；ENEMY_POSITION 必须引用
-   身份+时间+区域+knowledge 全部一致的 ENEMY_POSITION_KNOWN 证据；「全局恰好存在该变化/该数值」
-   不能替代「引用的证据确实支撑该 claim」；至少一个 evidenceIds 必须完整支撑该 claim。
 === 证据契约（强制）：FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN ===
 1. FACT（事实）：只能来自权威结算、权威阵容、已验证的 canonical timeline 与后端确定性证据。
    例如「1分52秒至2分12秒，本方连续损失3辆，对方同期损失1辆」。
@@ -175,7 +123,6 @@ FORMATION_DEPTH 段是确定性几何/测量证据，用于理解阵型纵深与
 {{tactical-skills/position-tempo}}
 {{tactical-skills/team-execution}}
 {{tactical-skills/hp-trades}}
-{{team/reasoning-contract}}
 === 赛前战略基线（Call #1）使用规则（强制） ===
 输入可能包含 PRE-BATTLE STRATEGIC PRIOR：仅基于地图、双方阵容、双方总血量与坦克战术属性的
 赛前先验判断（含分阶段预期打法），未读取任何战斗结果。
