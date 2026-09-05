@@ -74,12 +74,13 @@ function setMapLayout(wrapper, width, height) {
   Object.defineProperty(el, 'clientHeight', { value: height, configurable: true })
 }
 
-/** 从 viewport style 解析当前 view 变换（translate(tx,ty) scale(s)）。 */
+/** 从 viewport style 解析当前 view 变换（translate(tx,ty) + layout width scale）。 */
 function viewTransformOf(wrapper) {
   const style = wrapper.find('[data-test="pb-viewport"]').attributes('style')
-  const m = style.match(/translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/)
-  if (!m) throw new Error('cannot parse viewport style: ' + style)
-  return { tx: Number(m[1]), ty: Number(m[2]), scale: Number(m[3]) }
+  const translate = style.match(/translate\((-?[\d.]+)px, (-?[\d.]+)px\)/)
+  const width = style.match(/width: ([\d.]+)%/)
+  if (!translate || !width) throw new Error('cannot parse viewport style: ' + style)
+  return { tx: Number(translate[1]), ty: Number(translate[2]), scale: Number(width[1]) / 100 }
 }
 
 /**
@@ -364,6 +365,6 @@ describe('BattlePlayback annotations', () => {
     const style = wrapper.find('[data-test="pb-viewport"]').attributes('style')
     // 缩放锚点 (100,100) 把 tx/ty 推到 -20，再拖 50px → 30px
     expect(style).toContain('translate(30px, 30px)')
-    expect(style).toContain('scale(1.2)')
+    expect(style).toContain('width: 120%')
   })
 })
