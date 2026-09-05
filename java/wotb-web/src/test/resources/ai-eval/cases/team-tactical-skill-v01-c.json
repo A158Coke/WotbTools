@@ -7,7 +7,8 @@
   "checks": [
     { "kind": "system_prompt_contains", "text": "成功线路不必追杀每个撤退者" },
     { "kind": "system_prompt_contains", "text": "第二次攻击代价高" },
-    { "kind": "system_prompt_contains", "text": "位置价值通常高于单个人头" }
+    { "kind": "system_prompt_contains", "text": "位置价值通常高于单个人头" },
+    { "kind": "system_prompt_contains", "text": "局部不是封闭盒子" }
   ],
   "note": "Golden C：将成功线路的收束与高成本二次进攻交给 LLM 判断。"
 }

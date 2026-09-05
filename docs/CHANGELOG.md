@@ -45,6 +45,7 @@
   `docs/android/architecture.md` Authentication Boundary（区分 Web auth hosts 与 native handoff）。
 
 ### Added
+- **Team AI Tactical Review v0.2**：Team Call #2 改为 information/vision → objectives → local engagements → position/tempo → team execution → HP/trades 的证据优先推理顺序；新增信息/视野与局部传播 prompt skill，升级既有四个战术模块，并在 canonical timeline 中向 Team prompt 暴露已解码的实时基地状态与争霸点数中立时间线。补充三语本地化契约、反捷径 golden cases 与 objective timeline 回归；不新增后端 tactical verdict 或并行 episode schema。
 - **Team AI Tactical Review v0.1**：训练房/联赛 Team Call #2 增加模块化团队执行、位置节奏、HP/火力交换与模式目标推理参考；`primaryDiagnosis` 不再强制制造错误，Strategic Prior 明确为非权威基线，无法由回放证明的通信/call 原因保持跳过。同步三语 prompt 契约、grounding 回归与 golden cases。
 - **Juhe QQ callback 阶段追踪与 callbackRef 关联（已脱敏）**：JuheQqEndpoint.handleCallback 增加完整 stage 序列
   （callback_entered → authentication_session_restored → juhe_callback_accepted → before_broker_authenticated →

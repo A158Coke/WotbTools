@@ -7,7 +7,8 @@
   "checks": [
     { "kind": "system_prompt_contains", "text": "约 +40 的点数价值" },
     { "kind": "system_prompt_contains", "text": "低于约 750 分" },
-    { "kind": "system_prompt_contains", "text": "约 1–2 秒内可确认的击杀" }
+    { "kind": "system_prompt_contains", "text": "约 1–2 秒内可确认的击杀" },
+    { "kind": "system_prompt_contains", "text": "基地归属、捕获进度和点数要与位置一起分析" }
   ],
   "note": "Golden F：击杀价值与目标压力是模式化经验，不是比分硬状态机。"
 }

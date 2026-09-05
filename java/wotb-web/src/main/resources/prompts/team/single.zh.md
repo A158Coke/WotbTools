@@ -167,10 +167,12 @@ FORMATION_DEPTH 段是确定性几何/测量证据，用于理解阵型纵深与
 {{common/hp-loss}}
 
 {{common/evidence-logic}}
-{{tactical-skills/team-execution}}
-{{tactical-skills/position-tempo}}
-{{tactical-skills/hp-trades}}
+{{tactical-skills/information-vision}}
 {{tactical-skills/mode-objectives}}
+{{tactical-skills/local-engagements}}
+{{tactical-skills/position-tempo}}
+{{tactical-skills/team-execution}}
+{{tactical-skills/hp-trades}}
 === 赛前战略基线（Call #1）使用规则（强制） ===
 输入可能包含 PRE-BATTLE STRATEGIC PRIOR：仅基于地图、双方阵容、双方总血量与坦克战术属性的
 赛前先验判断（含分阶段预期打法），未读取任何战斗结果。
