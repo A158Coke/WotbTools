@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.75",
+    "date": "2026-09-05",
+    "tag": "fix",
+    "zh": "修复战局回放 HD 地图在实际页面和放大后仍然模糊的问题；Playback 现在直接使用高清底图渲染层，并保持车辆、基地、轨迹和标注与地图严格对齐。",
+    "en": "Fixed Battle Playback HD maps remaining blurry in the real page and after zooming; Playback now renders the HD basemap as a direct raster layer while keeping vehicles, bases, trails and annotations strictly aligned with the map.",
+    "ru": "Исправлена размытость HD-карт в реальном воспроизведении боя и после увеличения: Playback теперь напрямую использует слой HD-подложки, сохраняя точное выравнивание техники, баз, следов и пометок с картой."
+  },
+  {
     "v": "2.12.74",
     "date": "2026-09-05",
     "tag": "chg",

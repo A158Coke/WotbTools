@@ -41,6 +41,11 @@ const productionCss = cssPaths
   .join('\n')
   .replaceAll(':fullscreen', '.pb-test-fullscreen')
 const safeInsetsUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/playbackSafeInsets.js')).href
+const rasterDensityUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/mapRasterDensity.js')).href
+const hdManifest = JSON.parse(readFileSync(resolve(frontendRoot, 'src/assets/maps-hd/manifest.json'), 'utf8'))
+const faustManifestEntry = hdManifest.entries.find(entry => entry.enhanced.endsWith('/faust.webp'))
+if (!faustManifestEntry) throw new Error('faust.webp is missing from maps-hd manifest')
+const faustAssetUrl = pathToFileURL(resolve(frontendRoot, 'src/assets/maps-hd/faust.webp')).href
 
 const scenarios = [
   { name: 'pc-1600x900', form: 'pc', width: 1600, height: 900, check: 'pc' },
@@ -48,6 +53,9 @@ const scenarios = [
   { name: 'mobile-390x844', form: 'mobile', width: 390, height: 844, check: 'mobile' },
   // Structural isolation: a PC form at tablet width must not accidentally receive tablet geometry.
   { name: 'pc-isolated-at-1024', form: 'pc', width: 1024, height: 768, check: 'pc-isolated' },
+  // Real raster frame guard: intentionally non-square logical dimensions must remain the shared
+  // frame for the HD img, overlay SVG and marker layer.
+  { name: 'raster-frame-hd', form: 'pc', width: 1280, height: 900, check: 'raster' },
 
   // Real browser geometry guards for the regression behind PR #248. sideSlots is forced on the
   // class for CSS-cascade coverage; production JS only enables it when the measured gutter qualifies.
@@ -96,6 +104,9 @@ function fixtureHtml(scenario) {
   .pb-map-stage { width: 100%; }
   .pb-map { position:relative; width:100%; height:100%; min-width:0; min-height:1px; overflow:hidden; background:#090909; }
   .pb-viewport { position:absolute; left:0; top:0; width:100%; aspect-ratio:1 / 1; transform-origin:0 0; background:#2b3b2b; }
+  .pb-basemap, .pb-svg { position:absolute; inset:0; display:block; width:100%; height:100%; }
+  .pb-basemap { object-fit:fill; }
+  .pb-markers { position:absolute; inset:0; pointer-events:none; }
   .pb-side-panel-shell { min-width:0; min-height:0; }
   .pb-sidebar, .pb-side-panel { min-height:120px; }
   .pb-mobile-overlay-content { min-height:72px; }
@@ -121,9 +132,11 @@ ${productionCss}
     </div>
   </section>
   <aside class="pb-left-rail"><button class="pb-rail-collapse">rail</button>${controlsInRail ? controlsMarkup : ''}</aside>
-  <main class="pb-main">
+    <main class="pb-main">
     <div class="pb-map-stage">
-      <div class="pb-map"><div class="pb-viewport"></div></div>
+      <div class="pb-map"><div class="pb-viewport"${scenario.check === 'raster' ? ' style="aspect-ratio:769 / 763"' : ''}>
+        ${scenario.check === 'raster' ? `<img class="pb-basemap" data-test="pb-basemap" src="${faustAssetUrl}" alt=""><svg class="pb-svg" viewBox="0 0 769 763"><rect x="0" y="0" width="769" height="763"></rect></svg><div class="pb-markers" data-test="pb-markers"></div>` : ''}
+      </div></div>
       <div class="pb-side-panel-shell pb-details-active">
         <div class="pb-sidebar">details</div>
         <div class="pb-side-panel">panel</div>
@@ -134,6 +147,7 @@ ${productionCss}
 </div>
 <script type="module">
 import { playbackSafeInsetOwnership } from ${JSON.stringify(safeInsetsUrl)}
+import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
 
 // This module script is deferred by HTML and the load event waits for its module graph to finish.
 // Publish the geometry result synchronously during module evaluation so Chrome --dump-dom
@@ -182,6 +196,53 @@ import { playbackSafeInsetOwnership } from ${JSON.stringify(safeInsetsUrl)}
     }
     if (${JSON.stringify(scenario.check)} === 'pc-isolated') {
       require(stageStyle.display !== 'grid', 'PC form at 1024px must not receive tablet grid rules')
+    }
+
+    if (${JSON.stringify(scenario.check)} === 'raster') {
+      const basemap = root.querySelector('[data-test="pb-basemap"]')
+      const svg = root.querySelector('.pb-svg')
+      const markers = root.querySelector('[data-test="pb-markers"]')
+      if (basemap && !basemap.complete) {
+        await new Promise(resolve => {
+          basemap.addEventListener('load', resolve, { once: true })
+          basemap.addEventListener('error', resolve, { once: true })
+        })
+      }
+      require(basemap && basemap.complete, 'HD basemap image must finish loading')
+      require(basemap && basemap.naturalWidth === ${JSON.stringify(faustManifestEntry.enhancedPixels[0])}, 'HD basemap naturalWidth must match manifest')
+      require(basemap && basemap.naturalHeight === ${JSON.stringify(faustManifestEntry.enhancedPixels[1])}, 'HD basemap naturalHeight must match manifest')
+      require(svg && !svg.querySelector('image'), 'overlay SVG must not contain a raster image')
+      const fitRect = basemap?.getBoundingClientRect()
+      const fitDensity = mapRasterDensity({
+        naturalWidth: basemap?.naturalWidth,
+        naturalHeight: basemap?.naturalHeight,
+        renderedCssWidth: fitRect?.width,
+        renderedCssHeight: fitRect?.height,
+        viewScale: 1,
+        devicePixelRatio,
+      })
+      require(fitDensity && fitDensity.effectiveSourcePxPerDevicePx > 0, 'fit raster density must be measurable')
+      const frame = (label) => {
+        const rects = [basemap, svg, markers].map(element => element?.getBoundingClientRect())
+        const [first, ...rest] = rects
+        require(first && rest.every(rect => rect && Math.abs(rect.left - first.left) < 0.5 && Math.abs(rect.top - first.top) < 0.5 && Math.abs(rect.width - first.width) < 0.5 && Math.abs(rect.height - first.height) < 0.5), 'frame ' + label + ': basemap/SVG/markers must share one frame')
+      }
+      frame('fit')
+      const viewport = root.querySelector('.pb-viewport')
+      viewport.style.width = '400%'
+      viewport.style.transform = 'translate(0px,0px)'
+      frame('4x')
+      const zoomRect = basemap?.getBoundingClientRect()
+      const zoomDensity = mapRasterDensity({
+        naturalWidth: basemap?.naturalWidth,
+        naturalHeight: basemap?.naturalHeight,
+        renderedCssWidth: fitRect?.width,
+        renderedCssHeight: fitRect?.height,
+        viewScale: 4,
+        devicePixelRatio,
+      })
+      require(zoomDensity && zoomDensity.requiredDeviceWidth > (fitDensity?.requiredDeviceWidth || 0), '4x raster density must account for camera scale')
+      require(zoomRect && zoomRect.width > (fitRect?.width || 0), '4x raster frame must be larger than fit frame')
     }
 
     if (${JSON.stringify(fullscreen)}) {

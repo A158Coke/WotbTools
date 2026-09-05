@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Battle Playback
+- **Battle Playback HD basemap runtime sharpness**：使用同一 Faust HD 资源完成 Chrome SVG raster 与直接 HTML raster 的 A/B 诊断；父层 compositor scale 视觉等价后，追加 layout-scaled camera fallback，并将 2D HD 底图移出 `.pb-svg`，改为与 overlay SVG、markers 共用 logical render frame 的 `.pb-basemap` `<img>`。保留 `mapView.W/H`、coordinate projection、camera transform 与 1×→4× 交互。新增 natural raster dimensions、DPR 和 effective raster-density 的浏览器诊断/几何 gate；未修改 29 张原图或 HD 资源。
 - **Battle Playback HD 地图验证收口**：29 张 HD 底图增加 coverage/hash/真实尺寸/严格 2× frame/map import/5 MiB 单图预算的 deterministic gate；terrain attitude 补齐 yaw=90°、反向与 45° 局部轴测试。视觉几何仍要求人工 29/29 source↔HD QA，manifest 的 `geometryTransform=NONE` 仅描述生成流程，不作为视觉真实性证明。
 
 ### Production observability
