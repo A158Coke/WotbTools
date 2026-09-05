@@ -67,7 +67,18 @@ class AiEvalHarnessTest {
         assertTrue(zh.contains("自由组织的自然复盘"), "must carry the free-form natural review");
         assertTrue(zh.contains("不是固定章节模板"), "must not be a fixed-section template");
         assertTrue(zh.contains("## 团队复盘"), "main heading must be ## 团队复盘");
-        assertTrue(zh.contains("3-5 个自然段"), "must be 3-5 natural paragraphs");
+        assertTrue(zh.contains("按关键性自由组织，不设硬性段数或固定篇幅"),
+                "must avoid a hard paragraph count or fixed length");
+        assertTrue(zh.contains("关键 tactical episode，必须展开到足以说明"),
+                "must fully explain selected tactical episodes");
+        assertTrue(zh.contains("信息状态、基地/点数、局部交战或 cross-local propagation"),
+                "must not omit decision-changing evidence for brevity");
+        assertTrue(zh.contains("多个 local 必须检查是否有传播"),
+                "must check propagation across multiple locals");
+        assertTrue(zh.contains("primaryDiagnosis 只是整场摘要，不得压缩 reviewMarkdown"),
+                "primary diagnosis must not compress the body");
+        assertTrue(zh.contains("“重点复查”和“高贡献者”是可选 section"),
+                "individual sections must remain optional");
         assertTrue(zh.contains("先判断整场最值得讲的 1-2 件事"), "must decide the 1-2 things worth talking about");
         assertTrue(zh.contains("如果实际上只有一个决定性问题，就只讲一个"), "one decisive problem -> write one only");
         assertFalse(zh.contains("1. 核心结论：2-4 句"), "old core-conclusion section must be gone");

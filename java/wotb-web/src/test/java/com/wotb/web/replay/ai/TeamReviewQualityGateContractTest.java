@@ -32,7 +32,12 @@ class TeamReviewQualityGateContractTest {
         assertTrue(ZH.contains("自由组织的自然复盘"), "必须声明自由组织的自然复盘");
         assertTrue(ZH.contains("不是固定章节模板"), "必须声明不是固定章节模板");
         assertTrue(ZH.contains("## 团队复盘"), "主标题为 ## 团队复盘");
-        assertTrue(ZH.contains("3-5 个自然段"), "默认 3-5 个自然段");
+        assertTrue(ZH.contains("按关键性自由组织，不设硬性段数或固定篇幅"), "不设硬性段数或固定篇幅");
+        assertTrue(ZH.contains("关键 tactical episode，必须展开到足以说明"), "关键 episode 必须完整解释");
+        assertTrue(ZH.contains("不得为了“简洁”省略会改变战术判断的信息"), "不得因简洁省略关键战术信息");
+        assertTrue(ZH.contains("多个 local 必须检查是否有传播"), "多个 local 必须检查传播");
+        assertTrue(ZH.contains("primaryDiagnosis 只是整场摘要，不得压缩 reviewMarkdown"), "primaryDiagnosis 只是摘要");
+        assertTrue(ZH.contains("“重点复查”和“高贡献者”是可选 section"), "个人 section 可选");
         assertTrue(ZH.contains("先判断整场最值得讲的 1-2 件事"), "先判断最值得讲的 1-2 件事");
         assertTrue(ZH.contains("如果实际上只有一个决定性问题，就只讲一个"), "只有一个问题就只讲一个");
         assertTrue(ZH.contains("内部 attention 提示"), "Focus Window 是内部 attention primitive");

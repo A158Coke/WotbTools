@@ -80,7 +80,7 @@ final class TeamPromptLocalizer {
             2. 正文不得出现「UNKNOWN」「FACT」「SUPPORTED INFERENCE」「PARTIAL」「AUTHORITATIVE_*」
                「OBSERVED_*」「E101」「E102」「evidenceIds」「primaryDiagnosis」等机器标签；
                表达不确定性用自然中文（如「这个原因单靠回放看不死」）。
-            3. 避免「综上所述」「从多维度数据来看」等审计腔；像懂 WoT Blitz 的真人队友/教练：直接、简洁、有判断。
+            3. 避免「综上所述」「从多维度数据来看」等审计腔；像懂 WoT Blitz 的真人队友/教练：语言直接、避免重复，但关键战术因果必须完整展开。
             """;
 
     static final String TEAM_INTERNAL_VS_USER_FACING_RULE_EN = """
@@ -98,7 +98,7 @@ final class TeamPromptLocalizer {
                            E101, evidenceIds, primaryDiagnosis;
                            express uncertainty in natural language (e.g. "the replay alone cannot pin down this cause").
                         3. Avoid audit-report phrasing such as "in summary" / "from a multi-dimensional view"; sound like a real WoT Blitz
-                           teammate/coach: direct, concise, opinionated.
+                           teammate/coach: direct, avoid repetition, but fully explain key tactical causality.
             """;
 
     static final String TEAM_INTERNAL_VS_USER_FACING_RULE_RU = """
@@ -116,7 +116,7 @@ final class TeamPromptLocalizer {
                            E101, evidenceIds, primaryDiagnosis;
                            неопределённость выражайте естественно (например, «по одному реплею эту причину не установить»).
                         3. Избегайте канцелярских оборотов вроде «резюмируя» / «с многомерной точки зрения»; звучите как живой товарищ/тренер
-                           по WoT Blitz: прямо, кратко, с оценкой.
+                           по WoT Blitz: прямо, без повторов, но с полным объяснением ключевых тактических причин и следствий.
             """;
 
     /** 质量 harness 使用的结构性推理顺序；不是新增战术 verdict。 */
@@ -131,6 +131,12 @@ final class TeamPromptLocalizer {
                         Therefore the primaryDiagnosis object must contain `evidenceBasis: ["..."]`; this is a structured quality basis, not a new backend tactical verdict.
                         Individual judgments such as review focus, high contributor, or key threat require information, position, movement, objective, local participation, enabling action, crossfire, rotation, commitment, or propagation evidence. With only damage/kills/survival/death time, omit that judgment. Explain an observable tactical relationship and a decision/execution question for review focus; explain what a high contributor changed, rather than selecting the settlement leader.
                         Do not turn low/high damage or distance into a failure verdict, assign roles from vehicle class alone, infer an empty lane or enemy departure from unseen/vanished markers, or turn 5v3 into an automatic push order. If there is only a death cluster without an A-G structural cause, keep the primary diagnosis evidence-bounded.
+                        The goal is high information density with complete causal explanations, not maximum brevity. Do not recount every second; however, every selected tactical episode must be expanded enough to explain what happened, what was known then, which vehicles actually participated, why it mattered, and how it affected the next phase.
+                        When the evidence exists, do not omit information state, bases/points, local engagements, or cross-local propagation for brevity. Information must be explained as decision input, and multiple locals must be checked for propagation and consequence.
+                        When base/point state changes the action obligation, Objectives must say who had to act, who could wait, and how it changed the cost of holding position or rotating; do not treat objective state as narration to omit.
+                        primaryDiagnosis is only a summary and must not compress reviewMarkdown. The body may retain secondary key episodes, information changes, objective obligations, propagation, and execution consequences. Recommendations must come from the preceding causal chain, not generic filler.
+                        Review focus and high contributor are optional sections, each allowing 0-2 people; omit them entirely without structural evidence or a reviewable decision/execution question. If space is limited, keep team analysis, information, objectives, key episodes, and propagation before optional individual sections.
+                        Expand selected key episodes sufficiently, but do not produce a timeline dump; normally select 2-4 genuinely important episodes and include times only when they belong to that episode.
             """;
 
     static final String TEAM_REASONING_CONTRACT_RULE_RU = """
@@ -141,6 +147,12 @@ final class TeamPromptLocalizer {
                         Поэтому объект primaryDiagnosis должен содержать `evidenceBasis: ["..."]`; это структурная основа для проверки качества, а не новый тактический вердикт бэкенда.
                         Индивидуальные выводы вроде фокуса проверки, ценного игрока или ключевой угрозы требуют данных об информации, позиции, движении, цели, локальном участии, полезном действии, перекрёстном огне, ротации, commitment или переносе результата. При наличии только урона/фрагов/выживания/времени смерти такой вывод опускайте. Для фокуса проверки объясняйте наблюдаемую тактическую связь и вопрос решения/исполнения; для ценного игрока — что именно он изменил, а не только его итоговый результат.
                         Не превращайте низкий/высокий урон или расстояние автоматически в ошибку, не назначайте роль только по классу машины, не выводите пустую линию или уход противника из отсутствия видимости/исчезновения маркера и не превращайте 5v3 в обязательную атаку. Если есть только кластер смертей без структурной причины A-G, сохраняйте границы доказательств.
+                        Цель — высокая плотность информации и полное причинное объяснение, а не максимальная краткость. Не пересказывайте каждую секунду; однако каждый выбранный тактический эпизод нужно раскрыть настолько, чтобы объяснить, что произошло, что было известно в тот момент, какие машины реально участвовали, почему это важно и как это повлияло на следующую фазу.
+                        Если доказательства есть, не опускайте ради краткости состояние информации, базы/очки, локальные бои или перенос между локальными боями. Информацию объясняйте как вход для решения, а при нескольких локальных боях проверяйте перенос и его последствия.
+                        Если состояние баз/очков меняет обязанность действовать, раздел Objectives должен объяснить, кто должен был действовать, кто мог ждать и как это меняло цену удержания позиции или ротации; не опускайте цели как простой фон.
+                        primaryDiagnosis — только краткое резюме и не должен сжимать reviewMarkdown. В основном тексте можно сохранить вторичные ключевые эпизоды, изменения информации, обязанности по цели, перенос и последствия исполнения. Рекомендации должны следовать из причинной цепочки, а не быть общими фразами.
+                        «Фокус проверки» и «ценный игрок» — опциональные разделы, каждый допускает 0–2 человека; без структурных доказательств или проверяемого вопроса решения/исполнения полностью опускайте их. При нехватке места сначала сохраняйте командный разбор, информацию, цели, ключевые эпизоды и перенос, а затем убирайте личные разделы.
+                        Выбранные ключевые эпизоды нужно раскрывать достаточно подробно, но не превращать разбор в лог таймлайна; обычно выбирайте 2–4 действительно важных эпизода и указывайте время только внутри таких эпизодов.
             """;
 
     static final String TEAM_OUTPUT_STRUCTURE_RULE = """
@@ -148,16 +160,17 @@ final class TeamPromptLocalizer {
             === 团队复盘输出结构（强制） ===
             主正文是【自由组织的自然复盘】，不是固定章节模板：禁止机械输出
             「核心结论」「关键决策窗口」「可确认的团队问题」「训练建议」等固定小标题结构。
-            正文以「## 团队复盘」为主标题，下面自由组织为 3-5 个自然段：
-            简单局可以只写 2-3 段；复杂局可以写 5 段左右；不需要为了格式完整凑段数。
+            正文以「## 团队复盘」为主标题，按关键性自由组织，不设硬性段数或固定篇幅：
+            简单局可以更短；复杂局允许充分展开；不需要为了格式完整凑段数。
             先判断整场最值得讲的 1-2 件事；如果实际上只有一个决定性问题，就只讲一个，
             不要为了结构完整找第二、第三个问题或建议。
             训练建议（如给出）每一条必须明确对应前面的一个「可确认问题」或主判断；禁止通用教练式空话。
             输入中的 TEAM REVIEW FOCUS WINDOWS 只是「这里最值得集中分析」的内部 attention 提示，
             不要求逐窗口输出标题；自然语言可以直接写「这局真正崩掉是在1分52秒后面那二十秒」。
             对方关键威胁（可选）：只在确实有价值时提 1-3 辆；禁止逐车分析对方全部阵容。
-            长度：中文默认 400–1200 字；简单一边倒 300–700 字；复杂比赛最多约 1500 字；
-            不是硬 minimum，禁止为了达到字数填充；能一句说完，不写三句。
+            长度目标：普通 7v7 约 1200–2200 字；复杂赛事/训练局允许约 2500–3500 字；
+            简单一边倒可以明显更短。这是软目标，不是硬 minimum 或 maximum；禁止为了达到字数填充，
+            但也不得为了“简洁”删掉会改变战术判断的信息。
             数字筛选：输出只保留支撑核心判断的数字（如关键窗口减员比、人数变化）；
             总伤害/总承伤/总助攻/总格挡/双方逐车数据由 UI/后端展示，正文不得重复罗列。
             不单独建立「数据完整性/证据限制」章节；不重复结算结果；禁止把复盘写成时间线流水账。
@@ -169,8 +182,8 @@ final class TeamPromptLocalizer {
                         The main body is a FREE-FORM natural review, not a fixed-section template: never mechanically output
                         fixed headings such as "Core Conclusion", "Key Decision Windows", "Confirmed Team Problems",
                         "Training Recommendations".
-                        Write the body under the main heading "## Team Review", organizing it freely into 3-5 natural paragraphs:
-                        a simple battle may be only 2-3 paragraphs; a complex battle may be about 5; never pad paragraphs
+                        Write the body under the main heading "## Team Review", organizing it by importance without a hard paragraph
+                        count or fixed length: a simple battle may be shorter; a complex battle may expand as needed; never pad paragraphs
                         just to fill a structure.
                         First decide the 1-2 things most worth talking about in the whole battle; if there is actually only one
                         decisive problem, write about that one only — never invent a second or third problem or recommendation
@@ -182,9 +195,9 @@ final class TeamPromptLocalizer {
                         "This battle really collapsed in the twenty seconds after 1m52s."
                         Opposing threats (optional): name only 1-3 vehicles when genuinely useful; never write a
                         tank-by-tank essay of the whole opposing lineup.
-                        Length: default 400-1200 Chinese characters; 300-700 for a simple one-sided game; at most about
-                        1500 for a complex game; not a hard minimum — never pad to reach a length; if one sentence
-                        suffices, do not write three.
+                        Length target: about 1200-2200 Chinese characters for an ordinary 7v7; about 2500-3500 is allowed for a
+                        complex competitive/training battle; a simple one-sided battle may be much shorter. This is a soft target,
+                        not a hard minimum or maximum: never pad to reach a length, but do not omit information that changes a tactical judgment for brevity.
                         Number filtering: keep only the numbers that support the core judgment (e.g. kill ratios,
                         population changes in the key window); total damage/received/assisted/blocked and per-vehicle
                         data are shown by the UI/backend — do not re-list them.
@@ -198,8 +211,8 @@ final class TeamPromptLocalizer {
                         Основной текст — свободно организованный естественный разбор, а не шаблон фиксированных разделов: запрещено
                         механически выводить фиксированные подзаголовки вроде «Ключевой вывод», «Ключевые окна решений»,
                         «Подтверждённые проблемы команды», «Рекомендации».
-                        Пишите текст под главным заголовком «## Командный разбор», организуя его свободно в 3–5 естественных абзацев:
-                        простой бой может быть всего 2–3 абзаца; сложный — около 5; не добирайте абзацы ради структуры.
+                        Пишите текст под главным заголовком «## Командный разбор», организуя его по важности без жёсткого числа абзацев
+                        или фиксированного объёма: простой бой может быть короче; сложный можно раскрыть подробнее; не добирайте абзацы ради структуры.
                         Сначала решите, о чём в этом бою важнее всего рассказать (1–2 вещи); если фактически есть только одна
                         решающая проблема — расскажите только о ней; не выдумывайте вторую/третью проблему или рекомендацию
                         ради полноты структуры.
@@ -210,9 +223,10 @@ final class TeamPromptLocalizer {
                         «Этот бой реально развалился в двадцать секунд после 1 мин 52 с».
                         Угрозы противника (опционально): называйте 1–3 машины, только если это действительно полезно;
                         не разбирайте каждую машину противника отдельно.
-                        Объём: по умолчанию 400–1200 китайских знаков; 300–700 для простого одностороннего боя;
-                        не более примерно 1500 для сложного боя; это не жёсткий минимум — не добирайте объём ради объёма;
-                        если хватает одного предложения, не пишите трёх.
+                        Целевой объём: примерно 1200–2200 китайских знаков для обычного боя 7 на 7; примерно 2500–3500 допустимо
+                        для сложного соревновательного/тренировочного боя; простой односторонний бой может быть намного короче.
+                        Это мягкая цель, а не жёсткий минимум или максимум: не добавляйте текст ради объёма, но не опускайте ради краткости
+                        сведения, меняющие тактический вывод.
                         Фильтр цифр: оставляйте только цифры, поддерживающие ключевой вывод (например, соотношение потерь,
                         изменение числа машин в ключевом окне); общий урон/полученный урон/ассист/блок и данные по каждой
                         машине показывает UI/бэкенд — не перечисляйте их.
