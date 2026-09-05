@@ -1,3 +1,26 @@
+# Battle Playback 2.5D Vehicle Terrain Attitude
+
+## 状态
+
+IMPLEMENTED — READY FOR PR REVIEW
+
+## 范围
+
+- 保持现有 2D hull/turret 与 Tier X dedicated top-view assets，不引入 3D 坦克模型。
+- 复用 2.5D authoritative terrain heightfield，在车辆 footprint 的前/后/左/右采样地面高度。
+- hull yaw 仅负责把 terrain slope 转到车辆局部轴；pitch/roll 只作用于 `.pb-graphics`。
+- HP、标签、hitbox、selected/recorder、碰撞布局继续 screen-aligned，不随车体倾斜。
+- 视觉 pitch/roll 做轻度放大并分别 clamp ±14° / ±10°；不伪造 replay Z。
+
+## 验收
+
+- [x] 上坡/下坡可见车头抬起/下压；横坡可见轻微 roll。
+- [x] flat terrain = 0° attitude。
+- [x] marker 真实 footprint 继续来自现有 `vehicleMarkerSizing` SSOT。
+- [x] 无 heightfield 或无可靠 hull yaw 时退化为原 2D marker，不猜方向。
+- [x] targeted unit tests 覆盖 pitch/roll/clamp 与 graphics-only transform。
+
+---
 # Team AI Tactical Review v0.1
 
 ## 状态
@@ -173,3 +196,39 @@ Canal + Port Bay 继续作为双地图 gate。
 - [x] PR247 review findings closure
 
 **PR1 blocker = 0. PR2 handoff ready.**
+
+---
+
+# Team AI Review v0.3：降低过度压缩，提升完整战术解释
+
+## 状态
+
+IMPLEMENTED — TARGETED TESTS PASS — LIVE PROVIDER NOT RUN
+
+## 执行记录
+
+- [x] 从最新 `origin/main` 创建独立 worktree 与 `feat/ai-review-v03-complete-explanation` 分支。
+- [x] 审计 Team prompt、reasoning contract、三语 localizer 与 Team Call #2 输出上限；未修改 backend tactical inference。
+- [x] 将输出目标调整为 selective but complete：关键 episode 完整解释 Information/Objectives/Local/Propagation 因果，保留反 timeline-dump 约束。
+- [x] 将「重点复查」与「高贡献者」明确为有 structural evidence 时才输出的可选 section，并同步三语 prompt contract。
+- [x] 将 Team Call #2 默认专用输出上限调整为 8192 tokens，并更新 deterministic prompt tests 与三份指定文档。
+- [x] targeted tests：139 tests pass；首轮使用项目 settings.xml 遇到 Aliyun TLS PKIX，改用本机 Maven cache 后完成验证。
+- [x] review-fix / review-with-docs / code-smell：OCR reviewable 2/2，excluded 文件人工审查，Blocker count 0。
+- [x] commit / push / PR：`4c5ead50` 已推送，PR #258 已创建。
+
+---
+
+# Team AI Review Quality Harness v1
+
+## 状态
+
+IMPLEMENTED IN WORKTREE — TARGETED TESTS PASS — LIVE PROVIDER NOT RUN
+
+## 执行记录
+
+- [x] 从 `origin/main` 创建独立 worktree 与 `feat/team-ai-review-quality-harness-v1` 分支。
+- [x] 添加 additive `evidenceBasis`、推理顺序和 deterministic shortcut contract。
+- [x] 添加 6 个真实回放 gold case 与 production-chain offline harness。
+- [x] 添加显式 opt-in real-replay benchmark、runs/report/baseline metadata 约定及 0-token isolation guard。
+- [x] 更新 AI 架构、Team review、evaluation operations 与 changelog 文档。
+- [x] targeted Maven tests 通过；未调用 DeepSeek / ai-live。
