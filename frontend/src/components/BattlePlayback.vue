@@ -1569,8 +1569,10 @@ const vehicleStates = computed(() => baseVehicleStates.value.map((state) => {
       // The camera content is layout-scaled rather than transform-scaled. Keep the marker's
       // existing scale so vehicle artwork and screen-space inverse overlays retain their contract.
       transform: `translate(-50%, -50%) scale(${scale})`,
-      left: `calc(${markerLeft(state.pos.x)} + ${offset.x / scale}px)`,
-      top: `calc(${markerTop(state.pos.y)} + ${offset.y / scale}px)`,
+      // Collision offsets are already final screen-pixel presentation offsets. The layout-scaled
+      // camera does not scale absolute CSS px values, so preserve them unchanged here.
+      left: `calc(${markerLeft(state.pos.x)} + ${offset.x}px)`,
+      top: `calc(${markerTop(state.pos.y)} + ${offset.y}px)`,
     },
   }
 }))

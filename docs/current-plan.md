@@ -197,7 +197,12 @@ IMPLEMENTATION COMPLETE — review blocker 0；build validation blocked by pre-e
 
 ## 状态
 
-IMPLEMENTED — REVIEW FIX COMPLETE — FINAL PR CI PENDING
+IMPLEMENTATION IN PROGRESS — REAL PLAYBACK SHARPNESS NOT YET ACCEPTED
+
+Repair update: the collision-offset unit regression is fixed and the 2.5D renderer now
+sizes its drawing buffer from measured layout CSS pixels with source/GPU ceilings. The
+texture filter is staged on the less-soft mip path, but authenticated real Playback
+fit/2×/4× A/B evidence is still required before this plan can be marked complete.
 
 ## 范围
 
