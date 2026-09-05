@@ -76,13 +76,14 @@ class TeamQualityContractTest {
     }
 
     @Test
-    void promptPublishesReasoningOrderAndSafeEvidenceBasisContract() {
+    void promptPublishesV06ReasoningOrderContract() {
         final String prompt = TeamPromptLocalizer.SINGLE_TEAM_PROMPT;
-        assertTrue(prompt.contains("A 开局信息"));
-        assertTrue(prompt.contains("H HP/阵亡验证"));
-        assertTrue(prompt.contains("evidenceBasis"));
-        assertTrue(prompt.contains("不能成为主判断的唯一依据"));
-        assertTrue(prompt.indexOf("A 开局信息") < prompt.indexOf("H HP/阵亡验证"));
+        assertTrue(prompt.contains("1. Read authoritative facts"));
+        assertTrue(prompt.contains("9. Use HP/damage/deaths as downstream validation"));
+        assertTrue(prompt.contains("12. Produce structured JSON"));
+        assertFalse(prompt.contains("evidenceBasis"));
+        assertTrue(prompt.indexOf("1. Read authoritative facts")
+                        < prompt.indexOf("9. Use HP/damage/deaths as downstream validation"));
     }
 
     @Test
