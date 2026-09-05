@@ -129,10 +129,10 @@ settlement 秒值，使用 `[0, +5s]` directional 窗口，无法建立窗口即
   或占点时间线。
 - 某项指标全场为零 → 该维度全员 0，不把权重重新分配。
 - **最终分**：base = 七维之和；胜方 min(1000, base × 1.05)，败方 = base（不扣分）。
-  最终计算保留高精度；API 返回未取整值；**总 Rating 页面只显示整数（如 `927`）**，
+  最终计算保留高精度；API 返回未取整值；**总 Rating 页面以 1 位小数展示（如 `927.4`）**，
   不显示 /1000 换算的冗余完成度百分比（`927 · 92.7%` 会被误读为百分位/胜率）；
   七维维度仍显示 `实际分 / 维度满分 · 百分比`（如 `342 / 365 · 93.7%`，满分来自后端
-  `league.columns` metadata）。排名 / MVP / 汇总一律使用未取整分数。
+  `league.columns` metadata）。排名 / MVP / 汇总一律使用未取整分数；展示层只负责格式化。
 
 ### V4.1 冻结规范速查
 
@@ -182,11 +182,13 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
 - 选手汇总按 accountId：评分场次、pooled Rating、Observed Mean、七维度算术均值、MVP 次数（仅展示）、
   胜场与关键原始统计总量/均值、获取点数/场（客观统计）。
 - 战队汇总按批次 team key：评分场次、pooled Team Rating、Observed Mean、七维算术均值、胜场。
-- **V6 主 Rating**：设有效单场 finalRating raw sum 为 `S`、场次为 `n`、anchor 为 `A=475`：
-  选手 `rating=(S+5A)/(n+5)`；战队 `rating=(S+A)/(n+1)`。`n=0` 时结果为 null。
+- **V6 主 Rating**：选手的 `S` 是有效单场选手 V4.1 Final Rating 之和；战队的 `T` 是每场
+  `TeamBattleRating` 之和，其中 `TeamBattleRating` 是该场 7 名选手 Final Rating 的算术平均值。
+  以 `N` 表示有效评分场次、`A=475`：选手 `rating=(S+5A)/(N+5)`；战队
+  `rating=(T+A)/(N+1)`。`N=0` 时结果为 null。
   不使用 median、证据曲线、series/opponent/map factor 或 hard release threshold。
-- **Observed Mean**：`observedMean=S/n`，仅用于透明展示；维度使用同一 rated-only 分母的
-  pooled 算术均值。主 Rating、维度、排行和 MVP 均不使用 median。
+- **Observed Mean**：选手为 `S/N`，战队为 `T/N`，仅用于透明展示；维度使用同一 rated-only
+  分母的 pooled 算术均值。主 Rating、维度、排行和 MVP 均不使用 median。
 - CW 汇总页（League 模式）：玩家信息合并为**一张统一玩家表**（Replay Aggregate 为基底，
   按 accountId join League Player Summary；有 Aggregate 无 Rating 的玩家保留并补 "--"）。
   **列契约**：只有「玩家 + 总 Rating」固定（sticky 核心对），其余列（七维 / MVP / 表现指标 /
@@ -196,7 +198,8 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   （rated-only），两列独立显示，不互相覆盖。
   点击任意玩家行右侧滑出选手详情 Drawer（**可自定义指标/顺序的雷达图** + 表现指标 +
   scope 语义的评分/事实）。战队独立一张表。
-- 使用未取整分数；`n=0` 明确不可用；不排序、不产生批次 MVP/前三名；必须显示评分场次。
+- 使用未取整分数；`N=0` 明确不可用；核心 aggregator 只计算汇总，不创建赛季排名或批次 MVP/前三名；
+  UI 表格可以按 raw 的全精度 Rating 排序，展示值仍只保留 1 位小数；必须显示评分场次。
 - 选手与战队汇总并入库内现有「合并汇总」视图（两个紧邻表格，不混行伪装）。
 
 ## Excel 导出
