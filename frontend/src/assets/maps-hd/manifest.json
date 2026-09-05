@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "policy": "ORIGINALS_PRESERVED_IN_ASSETS_MAPS",
+  "entries": [
+    {
+      "source": "frontend/src/assets/maps/black-goldville.webp",
+      "enhanced": "frontend/src/assets/maps-hd/black-goldville.webp",
+      "method": "FSRCNN_X2_PLUS_CONSERVATIVE_UNSHARP",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "10595c5ca238820e4a74cb3e12a9306334fb335274c53c54ce8c463057dcad04",
+      "enhancedSha256": "dd117b5e883d3568774e07a2b4dc4647721ab29a176da38feb8b2bf63e3779e3",
+      "webpQuality": 92
+    }
+  ]
+}
