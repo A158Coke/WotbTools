@@ -3,8 +3,10 @@ import {
   RELIEF_EDGE_FADE_FRACTION,
   RELIEF_PADDING,
   RELIEF_Z_EXAGGERATION,
+  VEHICLE_ATTITUDE_MAX_PITCH_DEG,
   createTerrainReliefModel,
   projectTerrainPoint,
+  sampleTerrainAttitude,
   sampleTerrainHeight,
   terrainReliefEdgeWeight,
   unprojectTerrainPoint,
@@ -117,5 +119,44 @@ describe('footprint-preserving terrain relief projection', () => {
     expect(visualReliefZ(m, 20)).toBe(20)
     expect(visualReliefZ(m, 10)).toBe(0)
     expect(visualReliefZ(m, 30)).toBe(40)
+  })
+})
+
+
+describe('vehicle terrain attitude', () => {
+  function gradientModel(axis, step = 0.5) {
+    const size = 6
+    const heights = []
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        heights.push((axis === 'y' ? row : col) * step)
+      }
+    }
+    return createTerrainReliefModel({
+      mapCode: 'attitude',
+      worldBounds: { xMin: -12, yMin: -12, xMax: 12, yMax: 12 },
+      heightRangeMeters: { min: 0, max: 100 },
+      samplesPerAxis: size,
+      heights: new Float32Array(heights),
+      zExaggeration: 1,
+      padding: 0,
+    })
+  }
+
+  it('derives positive pitch from an uphill front/rear ground slope', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('y'), 0, 0, 0, { length: 8, width: 3.5 })
+    expect(attitude.pitchDeg).toBeGreaterThan(5)
+    expect(Math.abs(attitude.rollDeg)).toBeLessThan(0.01)
+  })
+
+  it('derives roll in vehicle-local axes without inventing pitch', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('x'), 0, 0, 0, { length: 8, width: 3.5 })
+    expect(attitude.rollDeg).toBeGreaterThan(5)
+    expect(Math.abs(attitude.pitchDeg)).toBeLessThan(0.01)
+  })
+
+  it('clamps extreme terrain to the presentation safety limit', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('y', 20), 0, 0, 0, { length: 8, width: 3.5 })
+    expect(attitude.pitchDeg).toBe(VEHICLE_ATTITUDE_MAX_PITCH_DEG)
   })
 })

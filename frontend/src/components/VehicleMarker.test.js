@@ -66,6 +66,23 @@ describe('generic（非 Tier X / fallback）', () => {
     expect(w.find('.pb-hull-dedicated').exists()).toBe(false)
   })
 
+
+
+  it('tilts only vehicle graphics with terrain pitch/roll while overlays stay screen-aligned', () => {
+    const w = mountMarker({
+      ...genericMarker,
+      terrainAttitude: { pitchDeg: 8, rollDeg: -3 },
+    })
+    const graphics = w.find('.pb-graphics')
+    const style = graphics.attributes('style') || ''
+    expect(style).toContain('rotateZ(30deg)')
+    expect(style).toContain('rotateX(-8deg)')
+    expect(style).toContain('rotateY(3deg)')
+    expect(style).toContain('rotateZ(-30deg)')
+    expect(w.find('button.pb-vehicle').attributes('style')).not.toContain('rotateX')
+    expect(w.find('.pb-hitbox').attributes('style')).not.toContain('rotateX')
+  })
+
   it('无方向样本（hullDeg/turretDeg null）→ 不渲染 img（不伪造朝向）', () => {
     const w = mountMarker({ ...genericMarker, hullScreenDeg: null, turretScreenDeg: null })
     expect(w.find('.pb-hull').exists()).toBe(false)

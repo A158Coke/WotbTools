@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Battle Playback
+- **Battle Playback 2.5D 车辆地形姿态**：复用 terrain heightfield 与现有真实车辆 footprint，在车辆局部前/后/左/右采样地面高度并计算受限 pitch/roll；只倾斜 hull/turret 视觉层，HP/标签/hitbox/碰撞布局继续保持屏幕对齐，无 heightfield 或无可靠朝向时退化为原平面 marker。
+
 ### Production observability
 - **AI Review 生产事故可追踪**：Team validator 冲突分类提升到 INFO 安全结构化日志；AI Review/Incident Explorer 看板增加 parse、validation、conflict、retry、upstream 与最终失败生命周期查询，SSE failure 复用 correlationId 作为 canonical error id，并由前端展示可复制的诊断 ID。Prometheus 仍只使用低基数统计，不记录 prompt、原始模型输出或用户级 token usage；部署后的真实数据验收保留为手工清单。
 - **Team AI Review Quality Harness v1**：新增 `evidenceBasis` 结构化质量契约、推理顺序与反 settlement-shortcut deterministic checks；真实 `.wotbreplay` offline harness 复用生产解析/时间线/grounding 链并保持 0-token；新增显式 opt-in real-replay benchmark 与无 prompt/key 的 JSON/Markdown 报告。synthetic prompt PASS 与真实回放质量明确分层，默认 CI 不调用 provider。

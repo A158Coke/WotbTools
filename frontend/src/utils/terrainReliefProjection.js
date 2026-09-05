@@ -113,6 +113,51 @@ export function sampleTerrainHeight(model, x, y) {
   return h0 + (h1 - h0) * ty
 }
 
+export const VEHICLE_ATTITUDE_MAX_PITCH_DEG = 14
+export const VEHICLE_ATTITUDE_MAX_ROLL_DEG = 10
+export const VEHICLE_ATTITUDE_RELIEF_SCALE = 1.35
+const VEHICLE_ATTITUDE_SAMPLE_FRACTION = 0.42
+const VEHICLE_ATTITUDE_DEFAULT_LENGTH_M = 7
+const VEHICLE_ATTITUDE_DEFAULT_WIDTH_M = 3.2
+
+/**
+ * Presentation-only vehicle attitude from the authoritative terrain heightfield.
+ * yaw follows the replay/map convention: 0° = +Y/north, 90° = +X/east.
+ * The vehicle footprint comes from the existing marker sizing SSOT when available.
+ * This does not invent replay Z or modify the terrain geometry; it only derives
+ * pitch/roll from front/rear/left/right ground samples under the current hull.
+ */
+export function sampleTerrainAttitude(model, x, y, hullYawDeg, footprint = null) {
+  if (!model || !Number.isFinite(Number(hullYawDeg))) return null
+  const length = clamp(finite(footprint?.length, VEHICLE_ATTITUDE_DEFAULT_LENGTH_M), 4, 12)
+  const width = clamp(finite(footprint?.width, VEHICLE_ATTITUDE_DEFAULT_WIDTH_M), 2, 5)
+  const halfLength = clamp(length * VEHICLE_ATTITUDE_SAMPLE_FRACTION, 1.5, 4.5)
+  const halfWidth = clamp(width * VEHICLE_ATTITUDE_SAMPLE_FRACTION, 0.8, 2.2)
+  const yaw = Number(hullYawDeg) * Math.PI / 180
+  const forwardX = Math.sin(yaw)
+  const forwardY = Math.cos(yaw)
+  const rightX = Math.cos(yaw)
+  const rightY = -Math.sin(yaw)
+
+  const frontZ = sampleTerrainHeight(model, x + forwardX * halfLength, y + forwardY * halfLength)
+  const rearZ = sampleTerrainHeight(model, x - forwardX * halfLength, y - forwardY * halfLength)
+  const rightZ = sampleTerrainHeight(model, x + rightX * halfWidth, y + rightY * halfWidth)
+  const leftZ = sampleTerrainHeight(model, x - rightX * halfWidth, y - rightY * halfWidth)
+
+  const pitchDeg = clamp(
+    Math.atan2(frontZ - rearZ, halfLength * 2) * 180 / Math.PI * VEHICLE_ATTITUDE_RELIEF_SCALE,
+    -VEHICLE_ATTITUDE_MAX_PITCH_DEG,
+    VEHICLE_ATTITUDE_MAX_PITCH_DEG,
+  )
+  const rollDeg = clamp(
+    Math.atan2(rightZ - leftZ, halfWidth * 2) * 180 / Math.PI * VEHICLE_ATTITUDE_RELIEF_SCALE,
+    -VEHICLE_ATTITUDE_MAX_ROLL_DEG,
+    VEHICLE_ATTITUDE_MAX_ROLL_DEG,
+  )
+
+  return Object.freeze({ pitchDeg, rollDeg })
+}
+
 export function terrainReliefEdgeWeight(model, x, y) {
   if (!model) return 0
   const { xMin, yMin, xMax, yMax } = model.worldBounds
