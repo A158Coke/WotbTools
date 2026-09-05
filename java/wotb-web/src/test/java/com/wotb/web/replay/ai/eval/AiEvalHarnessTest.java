@@ -75,7 +75,7 @@ class AiEvalHarnessTest {
                 "must not omit decision-changing evidence for brevity");
         assertTrue(zh.contains("多个 local 必须检查是否有传播"),
                 "must check propagation across multiple locals");
-        assertTrue(zh.contains("primaryDiagnosis 只是整场摘要，不得压缩 reviewMarkdown"),
+        assertTrue(zh.contains("primaryDiagnosis 只是整场摘要，不得压缩 v0.5 structured result 中的 episodes 或训练建议"),
                 "primary diagnosis must not compress the body");
         assertTrue(zh.contains("“重点复查”和“高贡献者”是可选 section"),
                 "individual sections must remain optional");
