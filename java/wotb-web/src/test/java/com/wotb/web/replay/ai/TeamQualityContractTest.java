@@ -60,7 +60,7 @@ class TeamQualityContractTest {
     void individualSettlementSelectionIsRejectedEvenWithStructuralTeamDiagnosis() {
         final TeamReviewEnvelope envelope = envelope(
                 "侧翼压力后的合流速度不足", "位置与局部交火证据支持这个判断。",
-                List.of("POSITION"), "## 重点复查\nA伤害最低且最早阵亡。");
+                List.of("POSITION"), "重点复查：A，因为伤害最低且最早阵亡。");
         assertTrue(TeamQualityShortcutValidator.validate(envelope).stream()
                         .anyMatch(v -> v.code().equals("INDIVIDUAL_SETTLEMENT_SHORTCUT")));
 
@@ -68,6 +68,11 @@ class TeamQualityContractTest {
                 "侧翼压力后的合流速度不足", "位置与局部交火证据支持这个判断。",
                 List.of("POSITION"), "## 重点复查\n2:05–2:15 主局部接触时，SPHT 的进入时机与后续同一射线是否形成，值得复查。");
         assertTrue(TeamQualityShortcutValidator.passes(episodeBound));
+
+        final TeamReviewEnvelope resultValidation = envelope(
+                "侧翼压力后的合流速度不足", "位置与局部交火证据支持这个判断。",
+                List.of("POSITION"), "重点复查：A 在 2:05–2:12 提前进入、队友尚未形成同一射线，值得复查进入时机；随后最早阵亡和低伤害仅作为该 episode 结果恶化的验证。");
+        assertTrue(TeamQualityShortcutValidator.passes(resultValidation));
     }
 
     @Test
