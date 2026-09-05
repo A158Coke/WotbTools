@@ -33,8 +33,17 @@ function toggleAnalysis() {
   analysisOpen.value = !analysisOpen.value
 }
 
-/** 一键复制最终复盘正文（result.analysis；可能包含团队剖析与免责声明；不含独立的赛前预测与地图鸟瞰）。
+/** 一键复制最终复盘正文（团队结果使用 authoritative display identity；不含独立的赛前预测与地图鸟瞰）。
  * 末尾附带一行网站宣传（recon.copy_footer，三语随界面语言）。 */
+function teamIdentityLabel(playerKey) {
+  const identity = Array.isArray(props.result.teamPlayers)
+    ? props.result.teamPlayers.find(item => item?.playerKey === playerKey)
+    : undefined
+  const displayName = identity?.displayName?.trim() || t('recon.team.unknownPlayer')
+  const tankName = identity?.tankName?.trim() || t('recon.team.unknownTank')
+  return `${displayName} / ${tankName}`
+}
+
 async function copyAnalysis() {
   const team = props.result.teamReview
   const text = team
@@ -43,8 +52,8 @@ async function copyAnalysis() {
         team.summary.primaryDiagnosis,
         ...team.episodes.map((episode) => `${episode.title}\n${episode.analysis}`),
         ...team.trainingSuggestions.map((suggestion) => `${suggestion.title}\n${suggestion.content}`),
-        ...team.reviewFocus.map((item) => `${item.playerKey}: ${item.reason}`),
-        ...team.highContributors.map((item) => `${item.playerKey}: ${item.reason}`)
+        ...team.reviewFocus.map((item) => `${teamIdentityLabel(item.playerKey)}: ${item.reason}`),
+        ...team.highContributors.map((item) => `${teamIdentityLabel(item.playerKey)}: ${item.reason}`)
       ].filter(Boolean).join('\n\n')
     : props.result.analysis
   if (!text) return
@@ -176,7 +185,7 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
       <section v-if="result.teamReview.reviewFocus.length" class="team-section">
         <h3>{{ $t('recon.team.reviewFocus') }}</h3>
         <article v-for="item in result.teamReview.reviewFocus" :key="`${item.playerKey}-${item.episodeId}`" class="team-card">
-          <strong>{{ item.playerKey }}</strong>
+          <strong>{{ teamIdentityLabel(item.playerKey) }}</strong>
           <MarkdownContent class="analysis-text" :content="item.reason" />
         </article>
       </section>
@@ -184,7 +193,7 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
       <section v-if="result.teamReview.highContributors.length" class="team-section">
         <h3>{{ $t('recon.team.highContributors') }}</h3>
         <article v-for="item in result.teamReview.highContributors" :key="`${item.playerKey}-${item.episodeId}`" class="team-card">
-          <strong>{{ item.playerKey }}</strong>
+          <strong>{{ teamIdentityLabel(item.playerKey) }}</strong>
           <MarkdownContent class="analysis-text" :content="item.reason" />
         </article>
       </section>

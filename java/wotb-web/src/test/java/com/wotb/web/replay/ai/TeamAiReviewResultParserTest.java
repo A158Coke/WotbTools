@@ -62,5 +62,8 @@ class TeamAiReviewResultParserTest {
                 TeamAiReviewResultParser.parse(VALID.replace(
                         "\"highContributors\":[]", "\"highContributors\":[],\"extra\":true"),
                         Set.of("P1")).failure());
+        assertTrue(TeamAiReviewResultParser.parse(VALID.replace(
+                "\"reason\":\"复查\"", "\"reason\":\"复查\",\"nickname\":\"Alice\""),
+                Set.of("P1")).failed(), "LLM identity fields must not be accepted in structured review items");
     }
 }

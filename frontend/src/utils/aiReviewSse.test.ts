@@ -69,6 +69,7 @@ describe('aiReviewSse runtime guards', () => {
   it('accepts the structured Team Review v0.5 result and omits empty sections in the renderer contract', () => {
     const event = parseAiReviewEvent('done', {
       analysis: null,
+      teamPlayers: [{ playerKey: 'P1', displayName: 'Alice', tankName: 'Kranvagn' }],
       teamReview: {
         summary: { verdict: '团队结论', primaryDiagnosis: '主要诊断' },
         episodes: [{
@@ -81,11 +82,25 @@ describe('aiReviewSse runtime guards', () => {
     })
     expect(event?.type).toBe('done')
     expect(isAiReviewResult(event?.type === 'done' ? event.result : null)).toBe(true)
+    expect(event?.type === 'done' ? event.result.teamPlayers : undefined).toEqual([
+      { playerKey: 'P1', displayName: 'Alice', tankName: 'Kranvagn' },
+    ])
     expect(parseAiReviewEvent('done', {
       analysis: null,
       teamReview: {
         summary: { verdict: 'x', primaryDiagnosis: 'y' }, episodes: [],
         trainingSuggestions: [], reviewFocus: [{ playerKey: 'P1', episodeId: 'missing', reason: 'x' }], highContributors: [],
+      },
+    })).toBeNull()
+    expect(parseAiReviewEvent('done', {
+      analysis: null,
+      teamPlayers: [
+        { playerKey: 'P1', displayName: 'Alice', tankName: 'Kranvagn' },
+        { playerKey: 'P1', displayName: 'Duplicate', tankName: 'Kranvagn' },
+      ],
+      teamReview: {
+        summary: { verdict: 'x', primaryDiagnosis: 'y' }, episodes: [],
+        trainingSuggestions: [], reviewFocus: [], highContributors: [],
       },
     })).toBeNull()
   })

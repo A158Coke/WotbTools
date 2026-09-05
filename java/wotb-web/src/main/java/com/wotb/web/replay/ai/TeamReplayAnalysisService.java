@@ -249,7 +249,7 @@ public class TeamReplayAnalysisService {
                         language,
                         firstContext.battle() == null ? null : firstContext.battle().mapName);
         return new TeamAnalyzeResult(firstAnalysis.analysis(), preBattleSection,
-                firstAnalysis.structuredResult());
+                firstAnalysis.structuredResult(), TeamRosterResolver.playerIdentities(firstContext));
     }
 
     /**
@@ -496,7 +496,7 @@ public class TeamReplayAnalysisService {
         final String groundingSection = TeamGroundingFacts.renderGroundingSection(facts);
         final String baseUser = input.content()
                 + (groundingSection.isEmpty() ? "" : "\n" + groundingSection);
-        final Set<String> rosterKeys = rosterPlayerKeys(context);
+        final Set<String> rosterKeys = TeamRosterResolver.playerKeys(context);
         String userContent = baseUser;
         final String correlationId = AiRequestContext.correlationId();
         final long reviewStartNanos = nanoTimeSource.getAsLong();
@@ -527,16 +527,6 @@ public class TeamReplayAnalysisService {
             countValidationRetry("TEAM_CALL_2", "SCHEMA");
         }
         throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
-    }
-
-    private static Set<String> rosterPlayerKeys(final SingleTeamBattleAnalysisContext context) {
-        final TeamRosterResolver.RosterEvidence evidence = TeamRosterResolver.RosterEvidence.from(context);
-        if (evidence.expectedMemberCount() <= 0) return Set.of();
-        final Set<String> keys = new HashSet<>();
-        for (int i = 1; i <= evidence.expectedMemberCount(); i++) {
-            keys.add("P" + i);
-        }
-        return Set.copyOf(keys);
     }
 
     private record TeamCallResult(AnalyzeResult analysis, TeamAiReviewResult structuredResult) {

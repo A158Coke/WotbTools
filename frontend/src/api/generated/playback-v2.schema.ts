@@ -788,6 +788,30 @@ export default {
         }
       }
     },
+    "TeamAiPlayerIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "playerKey",
+        "displayName",
+        "tankName"
+      ],
+      "properties": {
+        "playerKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "tankName": {
+          "type": "string",
+          "maxLength": 240
+        }
+      }
+    },
     "TeamAiReviewResult": {
       "type": "object",
       "additionalProperties": false,
@@ -828,6 +852,59 @@ export default {
           "maxItems": 2,
           "items": {
             "$ref": "#/$defs/TeamAiHighContributor"
+          }
+        }
+      }
+    },
+    "AiReviewDonePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "analysis",
+        "preBattleSection",
+        "capability",
+        "teamReview",
+        "teamPlayers"
+      ],
+      "properties": {
+        "analysis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "preBattleSection": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "capability": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "AVAILABLE",
+            "AVAILABLE_WITH_LIMITED_TIMELINE",
+            "UNAVAILABLE",
+            null
+          ]
+        },
+        "teamReview": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TeamAiReviewResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "teamPlayers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TeamAiPlayerIdentity"
           }
         }
       }

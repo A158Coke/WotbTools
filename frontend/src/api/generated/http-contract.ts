@@ -410,12 +410,25 @@ export interface components {
             episodeId: string;
             reason: string;
         };
+        TeamAiPlayerIdentity: {
+            playerKey: string;
+            displayName: string;
+            tankName: string;
+        };
         TeamAiReviewResult: {
             summary: components["schemas"]["TeamAiReviewSummary"];
             episodes: components["schemas"]["TeamAiReviewEpisode"][];
             trainingSuggestions: components["schemas"]["TeamAiTrainingSuggestion"][];
             reviewFocus: components["schemas"]["TeamAiReviewFocus"][];
             highContributors: components["schemas"]["TeamAiHighContributor"][];
+        };
+        AiReviewDonePayload: {
+            analysis: string | null;
+            preBattleSection: string | null;
+            /** @enum {string|null} */
+            capability: "AVAILABLE" | "AVAILABLE_WITH_LIMITED_TIMELINE" | "UNAVAILABLE" | null;
+            teamReview: components["schemas"]["TeamAiReviewResult"] | null;
+            teamPlayers: components["schemas"]["TeamAiPlayerIdentity"][];
         };
         /** @enum {string} */
         PlaybackCapability: "FULL" | "PARTIAL";
@@ -1002,7 +1015,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description SSE stream. The terminal done event carries analysis/preBattleSection or teamReview. */
+            /** @description SSE stream. The terminal done event carries analysis/preBattleSection or teamReview; teamPlayers is the authoritative playerKey-to-display-identity mapping for team reviews. */
             200: {
                 headers: {
                     [name: string]: unknown;

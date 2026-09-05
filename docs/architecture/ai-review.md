@@ -6,7 +6,8 @@ Team Call #2 返回 `TeamAiReviewResult`：`summary`、最多 6 个 `episodes`�
 `trainingSuggestions`、最多 2 个 `reviewFocus` 与最多 2 个 `highContributors`。
 Backend 只负责 JSON、类型、数量上限、roster/episode 引用和字符串边界；不判断战术正确性，
 也不再追加 settlement-only Team Autopsy 或第三次模型调用。SSE `done` 事件携带 `teamReview`，
-前端按固定组件层级渲染，Markdown 只允许出现在字段值内。
+并携带由 authoritative Team roster 生成的 `teamPlayers`（`playerKey` → `displayName` / `tankName`）映射；
+前端按固定组件层级渲染并用该映射显示身份，Markdown 只允许出现在字段值内。
 
 旧的 `TeamReviewEnvelope`、claims validator 与 Autopsy 类保留给历史测试/兼容读取，
 不属于 v0.5 production chain。

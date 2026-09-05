@@ -259,6 +259,7 @@ describe('AnalysisResultPanel structured Team review', () => {
   it('renders structured fields and hides empty optional sections', () => {
     const wrapper = mountPanel({
       analysis: null,
+      teamPlayers: [{ playerKey: 'P1', displayName: 'Alice', tankName: 'Kranvagn' }],
       teamReview: {
         summary: { verdict: 'team verdict', primaryDiagnosis: 'team diagnosis' },
         episodes: [{
@@ -277,5 +278,49 @@ describe('AnalysisResultPanel structured Team review', () => {
     expect(wrapper.text()).toContain('复查原因')
     expect(wrapper.text()).not.toContain('recon.team.highContributors')
     expect(wrapper.findAll('.team-section')).toHaveLength(3)
+  })
+
+  it('renders and copies authoritative team identity instead of the internal player key', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    stubClipboard(writeText)
+    const wrapper = mountPanel({
+      analysis: null,
+      teamPlayers: [{ playerKey: 'P1', displayName: 'Alice', tankName: 'Kranvagn' }],
+      teamReview: {
+        summary: { verdict: '结论', primaryDiagnosis: '诊断' },
+        episodes: [],
+        trainingSuggestions: [],
+        reviewFocus: [{ playerKey: 'P1', episodeId: null, reason: '复查原因' }],
+        highContributors: [{ playerKey: 'P1', episodeId: null, reason: '贡献原因' }]
+      }
+    })
+
+    expect(wrapper.text()).toContain('Alice / Kranvagn')
+    expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.text()).toContain('Kranvagn')
+    expect(wrapper.text()).not.toContain('P1')
+
+    await wrapper.get('[data-test="copy-analysis-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText.mock.calls[0][0]).toContain('Alice / Kranvagn')
+    expect(writeText.mock.calls[0][0]).not.toMatch(/\bP1\b/)
+  })
+
+  it('uses a safe localized fallback when the authoritative mapping is missing', () => {
+    const wrapper = mountPanel({
+      analysis: null,
+      teamReview: {
+        summary: { verdict: '结论', primaryDiagnosis: '诊断' },
+        episodes: [],
+        trainingSuggestions: [],
+        reviewFocus: [{ playerKey: 'P1', episodeId: null, reason: '复查原因' }],
+        highContributors: []
+      }
+    })
+
+    expect(wrapper.text()).toContain('recon.team.unknownPlayer / recon.team.unknownTank')
+    expect(wrapper.text()).not.toContain('P1')
   })
 })
