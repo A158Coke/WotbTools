@@ -42,6 +42,15 @@ const productionCss = cssPaths
   .replaceAll(':fullscreen', '.pb-test-fullscreen')
 const safeInsetsUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/playbackSafeInsets.js')).href
 const rasterDensityUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/mapRasterDensity.js')).href
+const mapViewUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/mapView.js')).href
+const battleMapSource = readFileSync(resolve(frontendRoot, 'src/components/BattleMap.vue'), 'utf8')
+const battlePlaybackSource = readFileSync(resolve(frontendRoot, 'src/components/BattlePlayback.vue'), 'utf8')
+if (!battleMapSource.includes('screenOffsetToSvgDelta(offset, props.mapView, renderedFrame)')
+  || /offset\.[xy]\s*\/\s*(scale|viewScale)/.test(battleMapSource)
+  || !battlePlaybackSource.includes('const renderedMapFrame = computed(() =>')
+  || !battlePlaybackSource.includes(':rendered-frame="renderedMapFrame"')) {
+  throw new Error('BattleMap leader-line production wiring must use the rendered SVG frame contract')
+}
 const hdManifest = JSON.parse(readFileSync(resolve(frontendRoot, 'src/assets/maps-hd/manifest.json'), 'utf8'))
 const faustManifestEntry = hdManifest.entries.find(entry => entry.enhanced.endsWith('/faust.webp'))
 if (!faustManifestEntry) throw new Error('faust.webp is missing from maps-hd manifest')
@@ -56,6 +65,9 @@ const scenarios = [
   // Real raster frame guard: intentionally non-square logical dimensions must remain the shared
   // frame for the HD img, overlay SVG and marker layer.
   { name: 'raster-frame-hd', form: 'pc', width: 1280, height: 900, check: 'raster' },
+  // Real leader-line geometry guard: a 4x layout-scaled, non-square SVG frame must preserve the
+  // same 20px screen displacement as the HTML marker on a mobile-sized visible map frame.
+  { name: 'leader-line-non-1-to-1', form: 'mobile', width: 390, height: 844, check: 'leader' },
 
   // Real browser geometry guards for the regression behind PR #248. sideSlots is forced on the
   // class for CSS-cascade coverage; production JS only enables it when the measured gutter qualifies.
@@ -107,6 +119,8 @@ function fixtureHtml(scenario) {
   .pb-basemap, .pb-svg { position:absolute; inset:0; display:block; width:100%; height:100%; }
   .pb-basemap { object-fit:fill; }
   .pb-markers { position:absolute; inset:0; pointer-events:none; }
+  .pb-marker { position:absolute; width:20px; height:20px; transform:translate(-50%,-50%); border-radius:50%; background:#f00; }
+  .pb-marker-leader { stroke:#aaa; stroke-width:1; }
   .pb-side-panel-shell { min-width:0; min-height:0; }
   .pb-sidebar, .pb-side-panel { min-height:120px; }
   .pb-mobile-overlay-content { min-height:72px; }
@@ -134,8 +148,8 @@ ${productionCss}
   <aside class="pb-left-rail"><button class="pb-rail-collapse">rail</button>${controlsInRail ? controlsMarkup : ''}</aside>
     <main class="pb-main">
     <div class="pb-map-stage">
-      <div class="pb-map"><div class="pb-viewport"${scenario.check === 'raster' ? ' style="aspect-ratio:769 / 763"' : ''}>
-        ${scenario.check === 'raster' ? `<img class="pb-basemap" data-test="pb-basemap" src="${faustAssetUrl}" alt=""><svg class="pb-svg" viewBox="0 0 769 763"><rect x="0" y="0" width="769" height="763"></rect></svg><div class="pb-markers" data-test="pb-markers"></div>` : ''}
+      <div class="pb-map"${scenario.check === 'leader' ? ' style="width:390px;height:387px"' : ''}><div class="pb-viewport"${scenario.check === 'raster' ? ' style="aspect-ratio:769 / 763"' : scenario.check === 'leader' ? ' style="width:400%;aspect-ratio:769 / 763;transform:translate(-585px,-580.5px)"' : ''}>
+        ${scenario.check === 'raster' ? `<img class="pb-basemap" data-test="pb-basemap" src="${faustAssetUrl}" alt=""><svg class="pb-svg" viewBox="0 0 769 763"><rect x="0" y="0" width="769" height="763"></rect></svg><div class="pb-markers" data-test="pb-markers"></div>` : scenario.check === 'leader' ? `<svg class="pb-svg" viewBox="0 0 769 763"><line class="pb-marker-leader" x1="384.5" y1="381.5" x2="384.5" y2="381.5"></line></svg><div class="pb-markers"><div class="pb-marker" style="left:calc(50% + 20px);top:calc(50% - 16px)"></div></div>` : ''}
       </div></div>
       <div class="pb-side-panel-shell pb-details-active">
         <div class="pb-sidebar">details</div>
@@ -148,6 +162,7 @@ ${productionCss}
 <script type="module">
 import { playbackSafeInsetOwnership } from ${JSON.stringify(safeInsetsUrl)}
 import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
+import { screenOffsetToSvgDelta } from ${JSON.stringify(mapViewUrl)}
 
 // This module script is deferred by HTML and the load event waits for its module graph to finish.
 // Publish the geometry result synchronously during module evaluation so Chrome --dump-dom
@@ -245,6 +260,50 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
       require(zoomRect && zoomRect.width > (fitRect?.width || 0), '4x raster frame must be larger than fit frame')
     }
 
+    if (${JSON.stringify(scenario.check)} === 'leader') {
+      const logical = { W: 769, H: 763 }
+      const offset = { x: 20, y: -16 }
+      const svg = root.querySelector('.pb-svg')
+      const line = root.querySelector('.pb-marker-leader')
+      const marker = root.querySelector('.pb-marker')
+      const visibleRect = map.getBoundingClientRect()
+      const renderedRect = svg?.getBoundingClientRect()
+      const delta = screenOffsetToSvgDelta(offset, logical, renderedRect)
+      require(delta, 'leader-line SVG delta must be measurable')
+      const canonical = { x: logical.W / 2, y: logical.H / 2 }
+      const x2 = canonical.x + (delta?.x || 0)
+      const y2 = canonical.y + (delta?.y || 0)
+      line?.setAttribute('x2', String(x2))
+      line?.setAttribute('y2', String(y2))
+      const markerRect = marker?.getBoundingClientRect()
+      const endpoint = renderedRect ? {
+        x: renderedRect.left + x2 * renderedRect.width / logical.W,
+        y: renderedRect.top + y2 * renderedRect.height / logical.H,
+      } : null
+      const markerCenter = markerRect ? {
+        x: markerRect.left + markerRect.width / 2,
+        y: markerRect.top + markerRect.height / 2,
+      } : null
+      const pixelDelta = endpoint && markerCenter ? {
+        x: endpoint.x - markerCenter.x,
+        y: endpoint.y - markerCenter.y,
+      } : null
+      require(renderedRect && Math.abs(renderedRect.width - visibleRect.width * 4) < 0.5,
+        'leader-line fixture must use a 4x rendered SVG frame')
+      require(markerCenter && endpoint && Math.abs(pixelDelta.x) <= 0.5 && Math.abs(pixelDelta.y) <= 0.5,
+        'leader endpoint must match visible marker center within 0.5 CSS px')
+      scenario.metrics = {
+        logical,
+        visibleCss: { width: visibleRect.width, height: visibleRect.height },
+        renderedSvgCss: { width: renderedRect?.width, height: renderedRect?.height },
+        viewScale: 4,
+        presentationOffset: offset,
+        markerCenter,
+        leaderEndpoint: endpoint,
+        pixelDelta,
+      }
+    }
+
     if (${JSON.stringify(fullscreen)}) {
       const ownership = playbackSafeInsetOwnership({
         isFullscreen: true,
@@ -293,7 +352,7 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
     }
 
     require(document.documentElement.scrollWidth <= innerWidth + 1, 'layout must not create page-level horizontal overflow')
-    const result = { name: ${JSON.stringify(scenario.name)}, width: innerWidth, height: innerHeight, failures }
+    const result = { name: ${JSON.stringify(scenario.name)}, width: innerWidth, height: innerHeight, failures, metrics: scenario.metrics || null }
     document.body.dataset.result = btoa(JSON.stringify(result))
 }
 </script>
@@ -322,7 +381,7 @@ try {
     if (result.failures.length) {
       throw new Error(`${scenario.name}:\n- ${result.failures.join('\n- ')}`)
     }
-    console.log(`[browser-layout] ${scenario.name} OK (${result.width}x${result.height})`)
+    console.log(`[browser-layout] ${scenario.name} OK (${result.width}x${result.height})${result.metrics ? ` ${JSON.stringify(result.metrics)}` : ''}`)
   }
 } finally {
   rmSync(temp, { recursive: true, force: true })

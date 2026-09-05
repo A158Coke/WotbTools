@@ -631,6 +631,13 @@ watch(() => mapEl.value, (el) => {
 })
 
 const view = reactive({ scale: 1, tx: 0, ty: 0 })
+// Actual rendered SVG frame in the shared camera layer. mapSize is updated by
+// the existing ResizeObserver; multiplying both axes by the camera width scale
+// keeps leader-line conversion reactive across resize/fullscreen/zoom changes.
+const renderedMapFrame = computed(() => {
+  const scale = Number.isFinite(view.scale) && view.scale > 0 ? view.scale : 1
+  return { width: mapWidth() * scale, height: mapHeight() * scale }
+})
 const PAN_THRESHOLD_PX = 5
 const PINCH_THRESHOLD_PX = 5
 const ZOOM_STEP = 1.2
@@ -2156,6 +2163,7 @@ const mapStyle = computed(() => ({
           :visible-trails="visibleTrails"
           :tracer-color="tracerColor"
           :view-scale="view.scale"
+          :rendered-frame="renderedMapFrame"
           :viewport-style="viewportStyle"
           :annot-visible="annotVisible"
           :rendered-annotations="renderedAnnotations"

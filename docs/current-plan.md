@@ -7,15 +7,15 @@ IMPLEMENTATION COMPLETE — review blocker 0；build validation blocked by pre-e
 ### 执行记录（2026-09-05）
 
 - 已从最新 `origin/main` 建立 `fix/playback-hd-runtime-sharpness`，未触碰地图原图、HD WebP 或 manifest。
-- Step 0：使用同一 Faust HD 资源完成 Chrome fixture 的 SVG raster / 直接 HTML raster A/B 诊断；两者在相同父层 compositor scale 下视觉等价，因此按计划进入 layout-scaled camera fallback。当前环境没有可复用的已认证真实 replay 会话，故未宣称完成真实 replay 的 fit/2×/4× 截图证据；browser gate 使用真实 manifest WebP 和生产布局 CSS。
+- Step 0：使用同一 Faust HD 资源完成 Chrome fixture 的 SVG raster / 直接 HTML raster A/B 诊断；两者在相同父层 compositor scale 下视觉等价，因此按计划进入 layout-scaled camera fallback。初始 agent 环境没有可复用的已认证真实 replay 会话；用户随后在同一地图、位置和缩放下完成了真实 Playback A/B，确认 WebGL 与直接 HD raster 肉眼几乎无差异。browser gate 使用真实 manifest WebP 和生产布局 CSS。
 - Step 1：新增 `mapRasterDensity()` 纯诊断 helper，覆盖 768 CSS px、1×/2×/4×、DPR 1/2；不参与渲染决策、不改变最大缩放。
 - Step 2：`BattleMap.vue` 将 HD 底图移为独立 `.pb-basemap` `<img>`，overlay SVG 改为透明 vector-only layer；basemap、SVG、markers 共享 `mapView.W/H` 对应的 `.pb-viewport` frame。
 - Step 3：`BattlePlayback.vue` 保留 `view.scale`、anchor、pan、projection 和交互语义，以 layout width + translation 实现 source-resolution-aware camera；车辆 marker 保留既有地图缩放与屏幕恒定 overlay 语义。
-- Step 4：focused DOM/interaction tests、fullscreen CSS test 与 Chrome 8-scenario geometry gate 均通过；Chrome gate 验证 manifest natural dimensions、fit density、4× required device pixels 和非正方形 frame 同框。
-- Step 5：已同步 feature contract、technical/product changelog、`versions.json` 2.12.75 三语 fix 条目和本计划。
-- 验证结果：受影响回归 11 files / 206 tests 通过；补充回归 4 files / 148 tests 通过；`npm run typecheck` 通过；`git diff --check` 通过；`npm run test:browser-layout` 8/8 通过。
+- Step 4：focused DOM/interaction tests、fullscreen CSS test 与既有 Chrome geometry gate 均通过；本次 repair 新增第 9 个 leader-line non-1:1 frame 场景，继续验证 manifest natural dimensions、fit density、4× required device pixels 和非正方形 frame 同框。
+- Step 5：已同步 feature contract、technical/product changelog、`versions.json` 2.12.76 三语 fix 条目和本计划；2.12.75 历史条目保持不变。
+- 验证结果：受影响回归 11 files / 206 tests 通过；补充回归 4 files / 148 tests 通过；本次 repair focused 回归 6 files / 161 tests 通过；`npm run typecheck` 通过；`git diff --check` 通过。修复后的 9-scenario browser gate 在当前 shell 因无 Chrome/Chromium 未执行；既有布局场景的通过结果保留为历史记录。
 - 审查结果：`ocr delegate preview` 识别 6 个 reviewable 文件、8 个按工具规则排除文件；已逐文件完成人工 Layer A/B/C 审查。发现并修复 1 个 overlay 实色背景覆盖 basemap 的正确性问题；review-fix / review-with-docs / code-smell 当前 blocker count 为 0。fallow CLI 的旧技能调用形式失败后按当前 CLI 语法重试，结果仅报告既有未使用 export/type/dependency 基线，未发现本次新增 helper 的死引用。
-- 未完成项：`npm run build` 在 Vite 编译前被仓库既有 fail-closed guard 阻止，因为工作区存在 `common/assets/map-3d-local` 本地研究资产；该目录是明确的 DEV/local-research-only 非目标，未删除、未绕过 guard。真实 authenticated replay 的视觉 before/after 截图也待具备该会话后补充。
+- 未完成项：`npm run build` 在 Vite 编译前被仓库既有 fail-closed guard 阻止，因为工作区存在 `common/assets/map-3d-local` 本地研究资产；该目录是明确的 DEV/local-research-only 非目标，未删除、未绕过 guard。真实 Playback A/B 已由用户完成，结论是 WebGL 与直接 HD raster 肉眼几乎无差异，剩余柔化归类为当前 4048×4048 资源的细节上限。
 - PR review repair：修正 `BattleMap3D` 对 Three.js `^0.185.1` 不存在的 `renderer.capabilities.maxRenderBufferSize` 假设；现在从活动 WebGL context 读取标准 `MAX_RENDERBUFFER_SIZE`，并以 focused regression 覆盖成功、缺失与 context 异常路径。该修复不改变既有 camera、basemap 或 2.5D 交互契约。
 
 ---
@@ -38,7 +38,7 @@ IMPLEMENTATION COMPLETE — TARGETED TESTS PASS — BROWSER GATE UNAVAILABLE IN 
 
 1. `frontend/src/utils/labelLayout.js`：将 tank collision solver 改为确定性的自适应搜索；保留稳定排序与既有 presentation offset 语义，取消“达到 20/16px 后接受残余重叠”的产品行为。有限输入必须找到无重叠候选，即使偏移超过桌面/移动端舒适半径。
 2. `frontend/src/components/BattlePlayback.vue`：继续以 canonical marker screen point 构造布局，仅消费 solver 的 presentation offset；不改 `selectAt`、damage float、burst、label 或 trajectory 的逻辑坐标换算。
-3. `frontend/src/components/BattleMap.vue`：在现有 overlay SVG 中绘制非零偏移 marker 的 leader line；SVG logical units 使用 `offset / viewScale`，确保 1×/4× 下仍指向同一 canonical 点。
+3. `frontend/src/components/BattleMap.vue`：在现有 overlay SVG 中绘制非零偏移 marker 的 leader line；将屏幕像素 offset 按实际 rendered SVG frame 换算为 SVG logical units，确保 1×/4× 下仍指向同一 canonical 点。
 4. 更新 `labelLayout` 与 `BattleMap` focused tests，覆盖 dense 14-marker、mobile、1×/4×、leader-line geometry、marker/interaction regression。
 5. 更新本计划与必要的用户可见文档；不改地图资源、manifest、backend、API、locale 或 3D renderer。
 
@@ -79,7 +79,7 @@ IMPLEMENTATION COMPLETE — TARGETED TESTS PASS — BROWSER GATE UNAVAILABLE IN 
 - 用同一张 HD 资源完成当前 SVG `<image>` 路径与直接 HTML `<img>` 路径的 A/B 对照；只有证据支持时才替换渲染架构。
 - 首选把 HD 底图移到 `.pb-viewport` 下的独立 `.pb-basemap` `<img>`，SVG 只保留 vector overlays；继续由同一个 camera parent 统一平移/缩放。
 - 保持 `mapView.W/H`、`coordinateBounds`、`createMapView()`、terrain projection、现有 1×→4× camera math 与用户交互不变。
-- 更新 BattleMap focused tests、浏览器几何回归、相关文档与 `frontend/src/data/versions.json` 的 2.12.75 fix 条目。
+- 更新 BattleMap focused tests、浏览器几何回归、相关文档与 `frontend/src/data/versions.json` 的 2.12.76 fix 条目。
 
 ### 非目标
 
@@ -96,7 +96,7 @@ IMPLEMENTATION COMPLETE — TARGETED TESTS PASS — BROWSER GATE UNAVAILABLE IN 
 - `.pb-basemap`、overlay SVG、marker layer 在 Desktop / Tablet / Mobile 的 frame 一致；已知基地、spawn、车辆和标注无漂移。
 - wheel zoom、cursor/midpoint anchor、pinch、drag pan、Reset View、fullscreen 和 marker/label/HP 行为保持回归通过。
 - 29 个 `maps-hd/*.webp` 与 29 个 `maps/*.webp` 字节不变；`mapHdAssets.test.js` 继续通过。
-- `versions.json` 只新增一个顶层 2.12.75 `fix` 条目，zh/en/ru 完整；文档与实现区分 intrinsic asset resolution、logical frame、runtime raster resolution。
+- `versions.json` 只新增一个顶层 2.12.76 `fix` 条目，恢复 2.12.75 历史内容且不改写；zh/en/ru 完整。文档与实现区分 intrinsic asset resolution、logical frame、runtime raster resolution。
 - targeted tests、`npm run test:browser-layout`、`npm run typecheck`、`npm run build` 通过；实现后 review-fix / review-with-docs / code-smell blocker 为 0。
 
 ### 关键假设与默认决策
@@ -164,7 +164,7 @@ IMPLEMENTATION COMPLETE — TARGETED TESTS PASS — BROWSER GATE UNAVAILABLE IN 
 
 - 在 `.pb-viewport` 下先渲染 `.pb-basemap` `<img>`，再渲染 overlay-only `.pb-svg`；二者 `position:absolute; inset:0; width:100%; height:100%`，图片 `object-fit:fill`，SVG 保持 `viewBox="0 0 W H"` 与 `preserveAspectRatio="none"`。
 - 让 `.pb-viewport` 通过 `mapView.W / mapView.H` 建立与旧 SVG frame 相同的 aspect；不让 4048×4048 intrinsic ratio 替换既有非正方形逻辑 frame。
-- 保持 `.pb-markers` 与其他 map feedback overlay 在同一 camera parent 下；继续使用 `projectSemantic()`、`projectTerrainPoint()`、`mapView.W/H` 和现有 `viewScale` 处理 marker offset/line width。
+- 保持 `.pb-markers` 与其他 map feedback overlay 在同一 camera parent 下；继续使用 `projectSemantic()`、`projectTerrainPoint()`、`mapView.W/H` 和实际 rendered SVG frame 处理 marker offset/line width。
 - 保持 `BattlePlayback.vue` 的 `viewportStyle`、`mapRenderRect()`、`fitScale()`、`semanticPoint()`、annotation 与 transient feedback 数学不变；只在实际 layout 需要时调整 DOM frame 取值。
 - 更新 fullscreen/shared CSS 中针对 `.pb-svg` 的 stale `height:auto` 规则，避免覆盖 100% overlay frame；作用域限定于普通 2D BattleMap，不能改写 `BattleMap3D` 非本任务路径。
 - 不把 HD intrinsic width/height 写回 `mapImages.width/height`；仅补充逻辑尺寸注释。
@@ -199,7 +199,7 @@ IMPLEMENTATION COMPLETE — TARGETED TESTS PASS — BROWSER GATE UNAVAILABLE IN 
 
 - 专题文档新增 runtime rendering contract：HD asset intrinsic resolution、logical map coordinate/render frame、runtime raster density 三者分开；说明 basemap 是 HTML raster layer、SVG 是 vector overlay，且不改变 semantic/world mapping。
 - 技术 changelog 记录 root-cause evidence、A/B gate、geometry/runtime density 约束；产品 changelog 记录实际用户可见的 Playback HD zoom 清晰度修复。
-- 在 `versions.json` 顶部只加入 2.12.75 / `fix` / 实际日期 / zh-en-ru 三语文案，不改 2.12.74 及历史项。
+- 在 `versions.json` 顶部只加入 2.12.76 / `fix` / 实际日期 / zh-en-ru 三语文案，不改已发布的 2.12.75、2.12.74 及更早历史项。
 - PR 描述附 fit/2×/4× before-after、natural dimensions、DPR/density、geometry regression、tests、changed files、29+29 assets byte-identical 与 blocker count。
 
 ### 影响面清单（wotb-sync）
