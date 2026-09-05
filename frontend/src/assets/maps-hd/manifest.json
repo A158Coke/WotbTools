@@ -17,6 +17,22 @@
       "sourceSha256": "10595c5ca238820e4a74cb3e12a9306334fb335274c53c54ce8c463057dcad04",
       "enhancedSha256": "dd117b5e883d3568774e07a2b4dc4647721ab29a176da38feb8b2bf63e3779e3",
       "webpQuality": 92
+    },
+    {
+      "source": "frontend/src/assets/maps/port-bay.webp",
+      "enhanced": "frontend/src/assets/maps-hd/port-bay.webp",
+      "method": "FSRCNN_X2_PLUS_CONSERVATIVE_UNSHARP",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "dd2f3b589f1098c41ab91ec69603519cff097add739ff381fe44375c25464755",
+      "enhancedSha256": "00fb47956f97cbfaccf22d67bab5ec8809eab5a0db18a641aac24a302beccfd9",
+      "webpQuality": 92
     }
   ]
 }
