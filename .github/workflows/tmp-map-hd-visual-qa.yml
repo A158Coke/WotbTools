@@ -1,0 +1,133 @@
+name: Temporary map HD visual QA
+
+on:
+  push:
+    branches:
+      - feat/maps-ai-hd-v2
+    paths:
+      - .github/workflows/tmp-map-hd-visual-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/maps-ai-hd-v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install image QA dependencies
+        run: python -m pip install --disable-pip-version-check pillow numpy
+
+      - name: Build 29/29 source-HD comparison sheets and metrics
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import math
+          import numpy as np
+          from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
+
+          root = Path('.')
+          manifest = json.loads((root / 'frontend/src/assets/maps-hd/manifest.json').read_text(encoding='utf-8'))
+          out = root / 'qa-map-hd'
+          out.mkdir(exist_ok=True)
+
+          def macro_edge_mask(img):
+              gray = img.convert('L').resize((512, 512), Image.Resampling.LANCZOS)
+              gray = gray.filter(ImageFilter.GaussianBlur(radius=1.2))
+              edge = gray.filter(ImageFilter.FIND_EDGES)
+              arr = np.asarray(edge, dtype=np.uint8)
+              threshold = max(18, int(np.percentile(arr, 82)))
+              return arr >= threshold
+
+          def dilate(mask, radius=2):
+              image = Image.fromarray((mask.astype(np.uint8) * 255), mode='L')
+              image = image.filter(ImageFilter.MaxFilter(radius * 2 + 1))
+              return np.asarray(image) > 0
+
+          def edge_match(source_mask, hd_mask):
+              src_d = dilate(source_mask)
+              hd_d = dilate(hd_mask)
+              src_match = float((source_mask & hd_d).sum()) / max(1, int(source_mask.sum()))
+              hd_match = float((hd_mask & src_d).sum()) / max(1, int(hd_mask.sum()))
+              return 2 * src_match * hd_match / max(1e-9, src_match + hd_match), src_match, hd_match
+
+          def edge_overlay(source, hd):
+              src = source.convert('L').resize((320, 320), Image.Resampling.LANCZOS).filter(ImageFilter.GaussianBlur(0.8)).filter(ImageFilter.FIND_EDGES)
+              enh = hd.convert('L').resize((320, 320), Image.Resampling.LANCZOS).filter(ImageFilter.GaussianBlur(0.8)).filter(ImageFilter.FIND_EDGES)
+              src = ImageOps.autocontrast(src).point(lambda p: 255 if p > 45 else 0)
+              enh = ImageOps.autocontrast(enh).point(lambda p: 255 if p > 45 else 0)
+              a = np.asarray(src, dtype=np.uint8)
+              b = np.asarray(enh, dtype=np.uint8)
+              rgb = np.zeros((320, 320, 3), dtype=np.uint8)
+              rgb[..., 0] = a
+              rgb[..., 1] = b
+              rgb[..., 2] = b
+              return Image.fromarray(rgb, mode='RGB')
+
+          rows = []
+          metrics = []
+          for entry in manifest['entries']:
+              src_path = root / entry['source']
+              hd_path = root / entry['enhanced']
+              source = Image.open(src_path).convert('RGB')
+              hd = Image.open(hd_path).convert('RGB')
+              hd_down = hd.resize(source.size, Image.Resampling.LANCZOS)
+
+              src_mask = macro_edge_mask(source)
+              hd_mask = macro_edge_mask(hd_down)
+              f1, src_match, hd_match = edge_match(src_mask, hd_mask)
+              name = src_path.stem
+              metrics.append({
+                  'map': name,
+                  'macroEdgeF1': round(f1, 4),
+                  'sourceEdgeMatched': round(src_match, 4),
+                  'hdEdgeMatched': round(hd_match, 4),
+                  'sourceBytes': src_path.stat().st_size,
+                  'hdBytes': hd_path.stat().st_size,
+                  'growth': round(hd_path.stat().st_size / src_path.stat().st_size, 3),
+              })
+
+              thumb_src = source.resize((320, 320), Image.Resampling.LANCZOS)
+              thumb_hd = hd.resize((320, 320), Image.Resampling.LANCZOS)
+              overlay = edge_overlay(source, hd_down)
+              row = Image.new('RGB', (960, 352), 'black')
+              row.paste(thumb_src, (0, 32))
+              row.paste(thumb_hd, (320, 32))
+              row.paste(overlay, (640, 32))
+              draw = ImageDraw.Draw(row)
+              draw.text((8, 8), f'{name} | edge F1={f1:.3f} | source', fill='white')
+              draw.text((328, 8), 'HD', fill='white')
+              draw.text((648, 8), 'edge overlay: source=red, HD=cyan, aligned=white', fill='white')
+              rows.append((name, row))
+
+          for sheet_idx in range(math.ceil(len(rows) / 5)):
+              chunk = rows[sheet_idx * 5:(sheet_idx + 1) * 5]
+              sheet = Image.new('RGB', (960, 352 * len(chunk)), 'black')
+              for i, (_, row) in enumerate(chunk):
+                  sheet.paste(row, (0, i * 352))
+              sheet.save(out / f'qa-sheet-{sheet_idx + 1}.png', optimize=True)
+
+          metrics.sort(key=lambda x: x['macroEdgeF1'])
+          (out / 'qa-report.json').write_text(json.dumps({
+              'count': len(metrics),
+              'metricNote': 'Macro edge F1 after downsample+blur; diagnostic only, manual side-by-side/overlay remains authoritative.',
+              'maps': metrics,
+          }, indent=2), encoding='utf-8')
+          print(json.dumps(metrics, indent=2))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr256-map-hd-visual-qa
+          path: qa-map-hd/
+          if-no-files-found: error
+          retention-days: 3
