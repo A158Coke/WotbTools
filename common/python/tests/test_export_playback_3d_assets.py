@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Local Battle Playback 3D asset export tests (no client assets required)."""
+"""Local Battle Playback 2.5D terrain export tests (no client assets required)."""
 
 import os
 import struct
@@ -59,7 +59,7 @@ def water_entity(*, translation_z=10.0, local_z=2.0, local_z_span=0.0, quaternio
     }
 
 
-class Playback3dAssetExportTest(unittest.TestCase):
+class Playback25dAssetExportTest(unittest.TestCase):
     def test_known_replay_map_codes_resolve_to_client_map_ids(self):
         targets = semantic_targets()
         self.assertEqual("18_canal_cn", targets["canal"]["mapId"])
@@ -96,14 +96,14 @@ class Playback3dAssetExportTest(unittest.TestCase):
                 {"zMin": 0, "zMax": 1},
             )
 
-    def test_derives_horizontal_water_plane_from_bbox_and_world_z(self):
+    def test_derives_horizontal_water_z_from_bbox_and_world_transform(self):
         scene = {"#hierarchy": [water_entity(translation_z=10.0, local_z=2.0)]}
         planes = extract_procedural_water_planes(scene)
 
         self.assertEqual(1, len(planes))
         self.assertEqual(12.0, planes[0]["zMeters"])
         self.assertEqual(
-            "WATER_RENDER_OBJECT_FLAT_BBOX_Z_PLUS_SC2_WORLD_TRANSFORM",
+            "WATER_FLAT_BBOX_Z_PLUS_SC2_WORLD_TRANSFORM",
             planes[0]["evidence"],
         )
 
