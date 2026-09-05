@@ -401,15 +401,20 @@ public final class BattlePlaybackProjector {
         return null;
     }
 
+    /**
+     * fromSec is the previous trustworthy HP sample, not a visibility-window start. For
+     * map-anchored hit feedback only the HP-loss endpoint must be currently observed;
+     * requiring one OBSERVED position segment to cover the whole HP sample interval
+     * suppresses real hits when a vehicle becomes observed after the previous HP sample.
+     */
     private static boolean transientAllowed(final List<PositionSegment> segments,
                                             final PlaybackCombatReconstruction.Loss loss) {
-        if (segments == null) {
+        if (segments == null || loss == null) {
             return false;
         }
-        return segments.stream().filter(segment -> "OBSERVED".equals(segment.knowledge())
-                        && segment.startSec() <= loss.fromSec() + 1e-6
-                        && segment.endSec() >= loss.toSec() - 1e-6)
-                .count() == 1;
+        return segments.stream().anyMatch(segment -> "OBSERVED".equals(segment.knowledge())
+                && segment.startSec() <= loss.toSec() + 1e-6
+                && segment.endSec() >= loss.toSec() - 1e-6);
     }
 
     private static List<LifeTransition> lifeTransitions(final BattleTimeline timeline,
