@@ -18,6 +18,54 @@ IMPLEMENTATION COMPLETE — review blocker 0；build validation blocked by pre-e
 - 未完成项：`npm run build` 在 Vite 编译前被仓库既有 fail-closed guard 阻止，因为工作区存在 `common/assets/map-3d-local` 本地研究资产；该目录是明确的 DEV/local-research-only 非目标，未删除、未绕过 guard。真实 authenticated replay 的视觉 before/after 截图也待具备该会话后补充。
 - PR review repair：修正 `BattleMap3D` 对 Three.js `^0.185.1` 不存在的 `renderer.capabilities.maxRenderBufferSize` 假设；现在从活动 WebGL context 读取标准 `MAX_RENDERBUFFER_SIZE`，并以 focused regression 覆盖成功、缺失与 context 异常路径。该修复不改变既有 camera、basemap 或 2.5D 交互契约。
 
+---
+
+# Battle Playback — Strict Tank Marker Non-Overlap
+
+## 状态
+
+IMPLEMENTATION COMPLETE — TARGETED TESTS PASS — BROWSER GATE UNAVAILABLE IN CURRENT SHELL
+
+## 需求确认
+
+- 目标：同一渲染帧中，坦克模型的可见外接盒不得互相重叠；布局拥挤时允许视觉 marker 远离真实点。
+- canonical replay 坐标仍是唯一事实源；presentation offset 只负责视觉避让，不改回放事实、轨迹、伤害、命中或选中逻辑。
+- marker 偏移与现有屏幕像素契约一致：渲染直接使用 screen px，逻辑逆变换继续按 `view.scale` 换算。
+- 当 marker 被移开时，用 SVG leader line 回指 canonical 位置，避免用户误解坦克实际位置。
+- 碰撞单位是 marker 的可见外接盒，不做透明像素级 alpha-mask 碰撞。
+
+## 分步方案
+
+1. `frontend/src/utils/labelLayout.js`：将 tank collision solver 改为确定性的自适应搜索；保留稳定排序与既有 presentation offset 语义，取消“达到 20/16px 后接受残余重叠”的产品行为。有限输入必须找到无重叠候选，即使偏移超过桌面/移动端舒适半径。
+2. `frontend/src/components/BattlePlayback.vue`：继续以 canonical marker screen point 构造布局，仅消费 solver 的 presentation offset；不改 `selectAt`、damage float、burst、label 或 trajectory 的逻辑坐标换算。
+3. `frontend/src/components/BattleMap.vue`：在现有 overlay SVG 中绘制非零偏移 marker 的 leader line；SVG logical units 使用 `offset / viewScale`，确保 1×/4× 下仍指向同一 canonical 点。
+4. 更新 `labelLayout` 与 `BattleMap` focused tests，覆盖 dense 14-marker、mobile、1×/4×、leader-line geometry、marker/interaction regression。
+5. 更新本计划与必要的用户可见文档；不改地图资源、manifest、backend、API、locale 或 3D renderer。
+
+## 影响面与非目标
+
+| 层 | 结果 | 说明 |
+|---|---|---|
+| Replay parser / canonical facts | 无影响 | 不改回放事实与时间线 |
+| Backend / API / OpenAPI | 无影响 | 纯前端 presentation layout |
+| Frontend rendering | 需改 | collision solver 与 SVG leader line |
+| Interaction | 保持 | hit/selection/HP/damage/burst/trajectory 使用既有 offset contract |
+| Static map assets | 无影响 | 不触碰任何底图资源 |
+
+非目标：不隐藏 marker、不改 canonical 点、不引入第二套坐标系统、不做 alpha 像素碰撞、不重新设计地图或坦克模型。
+
+## 验收标准
+
+- dense 3/7/14 marker 在 desktop/mobile、1×/4× 下，按相同 padding 的 marker 外接盒 pairwise overlap 为零。
+- 拥挤场景允许偏移超过原 20/16px 上限，但每个被移开的 marker 都有 leader line 回指 canonical 点。
+- canonical 坐标、逻辑命中/选中、伤害浮字、爆炸、轨迹和 marker 屏幕像素偏移回归通过。
+- 无偏移 marker 不渲染 leader line；非正方形逻辑 frame 与 terrain-relief projection 仍对齐。
+- targeted tests、typecheck、前端回归与现有 browser geometry gate 通过；构建若仍被 `map-3d-local` fail-closed guard 拦截，按既有环境 blocker 记录，不绕过 guard。
+
+## 待确认项
+
+- 阻塞性：无。用户已批准“扩大视觉偏移 + leader line”的默认方案。
+
 ## 需求确认单
 
 ### 目标

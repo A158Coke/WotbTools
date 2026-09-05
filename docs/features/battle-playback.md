@@ -198,9 +198,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     依赖 view.scale 自然重算；点击命中使用随 vehicle-aware marker 与 presentation offset 移动的
     小幅扩展 hit target（不参与视觉碰撞，不含 gun overflow/label/三角/菱形/✕；destroyed/last-known 仍可点），重叠时
     取指针最近车辆、距离几乎一致且已选中则保持、否则 render order tie-break；倍速含 0.5×；
-    `loop` prop（QA 场景循环）。Tank model collision 仅作用于 model box，使用 desktop 约 10px /
-     mobile 约 8px 的 soft bounded avoidance，以 overlap cost + minimal displacement + previous
-     layout stability 为目标；预算耗尽时接受 residual overlap，不改变 canonical position。
+    `loop` prop（QA 场景循环）。Tank model collision 仅作用于 model box，使用 screen-pixel
+     presentation offset 做确定性自适应避让：持续搜索直到同一帧内所有可见 model box 完全不重叠，
+     不改变 canonical position；拥挤时 marker 可离开真实点，并由 leader line 回指 canonical anchor。
    - **全屏模式（原生 Fullscreen API）**：控制栏「⛶ 全屏 / 退出全屏」（i18n 三语 `enter_fullscreen`/`exit_fullscreen`）；
     全屏对象 = `.battle-playback` 根容器（地图 + 全部 controls + 标注 + 信息面板，不含页面 header/nav）；
     状态事实源 = `document.fullscreenElement` + `fullscreenchange`（ESC/浏览器 UI 退出立即同步，

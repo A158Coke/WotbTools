@@ -25,42 +25,58 @@ function item(accountId, x, y, extra = {}) {
 
 describe('computeTankCollisionLayout', () => {
   const tank = (accountId, extra = {}) => ({ accountId, x: 100, y: 100, width: 32, height: 32, ...extra })
-  const expectBounded = (items, result, maxOffset = 20) => {
-    for (const it of items) {
-      const offset = result.get(it.accountId)
-      expect(Math.hypot(offset.x, offset.y)).toBeLessThanOrEqual(maxOffset)
-    }
+  const modelBox = (it, offset) => ({
+    x: it.x + offset.x - it.width * 1.02 / 2,
+    y: it.y + offset.y - it.height * 1.02 / 2,
+    w: it.width * 1.02,
+    h: it.height * 1.02,
+  })
+  const hasOverlap = (a, b) => (
+    a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+  )
+  const expectNoModelOverlap = (items, result) => {
+    const boxes = items.map((it) => modelBox(it, result.get(it.accountId)))
+    expect(boxes.every((a, index) => boxes.slice(index + 1).every((b) => !hasOverlap(a, b)))).toBe(true)
   }
 
-  it.each([3, 7, 14])('keeps %i dense model offsets bounded and canonical coordinates untouched', (count) => {
+  it.each([3, 7, 14])('strictly separates %i dense model boxes and preserves canonical coordinates', (count) => {
     const items = Array.from({ length: count }, (_, i) => tank(i + 1))
     const result = computeTankCollisionLayout(items)
     expect(result.get(1)).toEqual({ x: 0, y: 0 })
-    expectBounded(items, result)
+    expectNoModelOverlap(items, result)
     expect(items.every(it => it.x === 100 && it.y === 100)).toBe(true)
+    if (count === 14) {
+      expect(Math.max(...[...result.values()].map(offset => Math.hypot(offset.x, offset.y)))).toBeGreaterThan(20)
+    }
   })
 
-  it('uses the smaller mobile offset budget and accepts residual model overlap', () => {
+  it('strictly separates dense models on mobile instead of accepting residual overlap', () => {
     const items = Array.from({ length: 14 }, (_, i) => tank(i + 1))
-    const result = computeTankCollisionLayout(items, new Map(), { mobile: true })
-    expectBounded(items, result, 16)
-    const boxes = items.map((it) => {
-      const offset = result.get(it.accountId)
-      return { x: it.x + offset.x - it.width / 2, y: it.y + offset.y - it.height / 2, w: it.width, h: it.height }
-    })
-    const hasResidualOverlap = boxes.some((a, index) => boxes.slice(index + 1).some((b) => (
-      a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
-    )))
-    expect(hasResidualOverlap).toBe(true)
+    const result = computeTankCollisionLayout(items, new Map(), { viewportW: 320, viewportH: 240 })
+    expectNoModelOverlap(items, result)
+    expect(Math.max(...[...result.values()].map(offset => Math.hypot(offset.x, offset.y)))).toBeGreaterThan(16)
   })
 
-  // 不重叠是硬优先：预算内存在零重叠位置时必须选它，不再接受「位移小但轻微重叠」。
+  it('keeps a dense edge cluster inside the available viewport when possible', () => {
+    const items = Array.from({ length: 6 }, (_, i) => tank(i + 1, { x: 0, y: 0 }))
+    const result = computeTankCollisionLayout(items, new Map(), { viewportW: 160, viewportH: 160 })
+    expectNoModelOverlap(items, result)
+    for (const it of items) {
+      const box = modelBox(it, result.get(it.accountId))
+      expect(box.x).toBeGreaterThanOrEqual(0)
+      expect(box.y).toBeGreaterThanOrEqual(0)
+      expect(box.x + box.w).toBeLessThanOrEqual(160)
+      expect(box.y + box.h).toBeLessThanOrEqual(160)
+    }
+  })
+
+  // 不重叠是硬优先：只要存在零重叠位置就必须选它，不再接受「位移小但轻微重叠」。
   it('separates a light collision completely instead of leaving a sliver of overlap', () => {
     const items = [tank(1, { width: 12, height: 12 }), tank(2, { width: 12, height: 12 })]
     const result = computeTankCollisionLayout(items)
     expect(result.get(1)).toEqual({ x: 0, y: 0 })
     expect(result.get(2)).not.toEqual({ x: 0, y: 0 })
-    expectBounded(items, result)
+    expectNoModelOverlap(items, result)
     const boxes = items.map((it) => {
       const offset = result.get(it.accountId)
       return { x: it.x + offset.x - it.width / 2, y: it.y + offset.y - it.height / 2, w: it.width, h: it.height }
@@ -90,14 +106,14 @@ describe('computeTankCollisionLayout', () => {
     expect(result.get(1)).not.toEqual({ x: 0, y: 0 })
   })
 
-  it.each([1, 2, 4])('keeps model offsets bounded across zoom scale %i and resize geometry', (scale) => {
+  it.each([1, 2, 4])('keeps model boxes separate across zoom scale %i and resize geometry', (scale) => {
     const items = [
       tank(1, { width: 32 * scale, height: 28 * scale }),
       tank(2, { width: 38 * scale, height: 30 * scale }),
       tank(3, { width: 26 * scale, height: 34 * scale }),
     ]
     const result = computeTankCollisionLayout(items, new Map([[2, { x: 64, y: 0 }]]))
-    expectBounded(items, result)
+    expectNoModelOverlap(items, result)
   })
 
   it.each(['left', 'right', 'top', 'bottom'])('does not move a lone marker because of viewport clipping at the %s edge', (edge) => {
@@ -111,12 +127,27 @@ describe('computeTankCollisionLayout', () => {
     expect(result.get(1)).toEqual({ x: 0, y: 0 })
   })
 
-  it('uses a deterministic bounded fallback instead of throwing for malformed layout input', () => {
+  it('uses deterministic strict expansion instead of throwing for layout input', () => {
     const items = [tank(1), tank(2)]
-    expect(() => computeTankCollisionLayout(items, new Map(), { mobile: true })).not.toThrow()
-    expect(computeTankCollisionLayout(items, new Map(), { mobile: true })).toEqual(
-      computeTankCollisionLayout(items, new Map(), { mobile: true }),
-    )
+    expect(() => computeTankCollisionLayout(items, new Map())).not.toThrow()
+    const result = computeTankCollisionLayout(items, new Map())
+    expect(result).toEqual(computeTankCollisionLayout(items, new Map()))
+    expectNoModelOverlap(items, result)
+  })
+
+  it('ignores pathological finite geometry instead of entering an unbounded search', () => {
+    const result = computeTankCollisionLayout([
+      tank(1, { x: Number.MAX_VALUE }),
+      tank(2, { width: Number.MAX_VALUE }),
+    ])
+    expect(result).toEqual(new Map())
+  })
+
+  it('keeps a completely off-viewport marker at its canonical position', () => {
+    const items = [tank(1, { x: 400, y: 120 }), tank(2, { x: 120, y: 120 })]
+    const result = computeTankCollisionLayout(items, new Map(), { viewportW: 320, viewportH: 240 })
+
+    expect(result.get(1)).toEqual({ x: 0, y: 0 })
   })
 
   it('keeps a feasible previous layout stable across viewport resize', () => {
@@ -124,7 +155,7 @@ describe('computeTankCollisionLayout', () => {
     const first = computeTankCollisionLayout(items)
     const second = computeTankCollisionLayout(items, first)
     expect(second).toEqual(first)
-    expectBounded(items, second)
+    expectNoModelOverlap(items, second)
   })
 
   it('reuses a valid previous offset when it does not create a new conflict', () => {

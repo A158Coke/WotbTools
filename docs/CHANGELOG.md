@@ -6,6 +6,7 @@
 
 ### Battle Playback
 - **Battle Playback HD basemap runtime sharpness**：2D fallback 使用与 overlay SVG、markers 共用 logical render frame 的 `.pb-basemap` `<img>`；2.5D 主路径的 WebGL canvas 现在按实际 layout-scaled CSS frame 配置 drawing buffer，并受 HD source 与 GPU renderbuffer 上限约束；同时修复碰撞 presentation offset 的 screen-pixel 单位回归。真实 Playback 的同地图/同位置/同缩放 A/B 对照显示 WebGL 与直接 HD raster 基本等价，剩余柔化归类为当前 4048×4048 source-detail ceiling；保留现有 mipmap 过滤策略，不修改 29 张原图或 HD 资源。
+- **Battle Playback strict tank marker collision**：密集车辆的可见 model box 现在会自适应扩张布局直到完全不重叠；被移开的 marker 通过 leader line 回指 canonical 位置，且不改变 hit/selection、伤害反馈或轨迹坐标。
 - **Battle Playback HD 地图验证收口**：29 张 HD 底图增加 coverage/hash/真实尺寸/严格 2× frame/map import/5 MiB 单图预算的 deterministic gate；terrain attitude 补齐 yaw=90°、反向与 45° 局部轴测试。视觉几何仍要求人工 29/29 source↔HD QA，manifest 的 `geometryTransform=NONE` 仅描述生成流程，不作为视觉真实性证明。
 
 ### Production observability
