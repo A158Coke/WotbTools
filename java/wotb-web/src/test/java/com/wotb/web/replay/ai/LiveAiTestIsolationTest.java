@@ -47,6 +47,17 @@ class LiveAiTestIsolationTest {
     }
 
     @Test
+    void tacticalBehaviorProbeRequiresExplicitOptIn() throws IOException {
+        final Path sourcePath = testRoot().resolve(
+                "com/wotb/web/replay/ai/eval/TeamTacticalSkillLiveBehaviorEvalTest.java");
+        final String source = read(sourcePath);
+        assertTrue(source.contains("System.getProperty(\"ai.tactical.live.enabled\", \"false\")"),
+                "tactical behavior probe must default ai.tactical.live.enabled to false");
+        assertTrue(source.contains("-Dai.tactical.live.enabled=true"),
+                "tactical behavior probe must document explicit opt-in");
+    }
+
+    @Test
     void productionExternalProviderTestsMustBeTagged() throws IOException {
         final Path testRoot = testRoot();
         final List<String> violations = new ArrayList<>();

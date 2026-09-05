@@ -51,7 +51,28 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TeamTacticalSkillLiveBehaviorEvalTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String PROVIDER_NAME = "DeepSeek";
     private static final String REPORT_BASENAME = "team-tactical-skill-live-report";
+    private static final int CONNECT_TIMEOUT_SEC = 10;
+    private static final int READ_TIMEOUT_SEC = 120;
+    private static final int CALL_TIMEOUT_SEC = 200;
+    private static final int RETRY_MAX_ATTEMPTS = 1;
+    private static final long RETRY_INITIAL_BACKOFF_MILLIS = 1_000;
+    private static final long RETRY_MAX_BACKOFF_MILLIS = 8_000;
+    private static final double RETRY_BACKOFF_MULTIPLIER = 2.0;
+    private static final int CONTEXT_WINDOW_TOKENS = 1_000_000;
+    private static final int MAX_INPUT_TOKENS = 940_000;
+    private static final int MAX_OUTPUT_TOKENS = 32_768;
+    private static final int PROMPT_SAFETY_MARGIN_TOKENS = 16_384;
+    private static final int TEAM_REVIEW_MAX_OUTPUT_TOKENS = 4_096;
+    private static final int REQUEST_COMPLETION_TOKENS = 200;
+    private static final Pattern COMMUNICATION_ATTRIBUTION = Pattern.compile(
+            "沟通(?:失误|问题|责任|导致|不到位|不畅)|通信(?:失误|问题|责任|导致)|"
+                    + "语音(?:失误|问题|责任|导致)|call(?:失误|问题|责任|导致)|"
+                    + "指挥(?:失误|问题|责任|导致)|"
+                    + "(?:因为|由于|归因于|blame|due to)[^。；\\n]{0,12}"
+                    + "(?:沟通|通信|语音|call|指挥|communication|voice|commander)",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern PRESCRIPTIVE_RETREAT = Pattern.compile(
             "(必须|应该|应当|立即|立刻)([^。；\\n]{0,8})?(撤退|回撤)");
     private static final Map<String, BehaviorSpec> SPECS = specs();
@@ -67,8 +88,10 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
         final String model = System.getenv().getOrDefault("AI_MODEL", "deepseek-v4-flash");
         final String baseUrl = System.getenv().getOrDefault("AI_BASE_URL", "https://api.deepseek.com");
         final AiModelProperties properties = new AiModelProperties(
-                apiKey, baseUrl, model, 10, 120, 200, 1, 1000, 8000, 2.0,
-                1_000_000, 940_000, 32768, 16384, false, "max", false, 4096);
+                apiKey, baseUrl, model, CONNECT_TIMEOUT_SEC, READ_TIMEOUT_SEC, CALL_TIMEOUT_SEC,
+                RETRY_MAX_ATTEMPTS, RETRY_INITIAL_BACKOFF_MILLIS, RETRY_MAX_BACKOFF_MILLIS,
+                RETRY_BACKOFF_MULTIPLIER, CONTEXT_WINDOW_TOKENS, MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS,
+                PROMPT_SAFETY_MARGIN_TOKENS, false, "max", false, TEAM_REVIEW_MAX_OUTPUT_TOKENS);
         final SpringAiChatGateway gateway = SpringAiChatGateway.fromProperties(properties, null);
         final String systemPrompt = AiPromptLibrary.zh("team/single");
         final List<LiveResult> results = new ArrayList<>();
@@ -108,7 +131,7 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
         final TeamGroundingFacts.GroundingFacts facts = TeamGroundingFacts.build(
                 context.battle(), timelineResult.timeline(), context.perspectiveTeam());
         final String evidencePrompt = com.wotb.web.replay.ai.TeamAiPromptBuilder.single(
-                context, List.of(), null, new ConservativeDeepSeekTokenEstimator(), 940_000,
+                context, List.of(), null, new ConservativeDeepSeekTokenEstimator(), MAX_INPUT_TOKENS,
                 timelineResult.timeline()).content();
         final String userPrompt = evidencePrompt + "\n"
                 + TeamGroundingFacts.renderGroundingSection(facts)
@@ -117,8 +140,8 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
                 + "这是评估用的额外、明确标注的场景事实；只据此和上面的后端证据作答。"
                 + "请仍然输出唯一 JSON envelope，不要输出 JSON 之外的解释。";
         final AiChatRequest request = new AiChatRequest(
-                systemPrompt, userPrompt, model, null, 4096, false, null, null,
-                "SINGLE_TEAM_BATTLE", 200, AiResponseFormat.JSON_OBJECT);
+                systemPrompt, userPrompt, model, null, TEAM_REVIEW_MAX_OUTPUT_TOKENS, false, null, null,
+                "SINGLE_TEAM_BATTLE", REQUEST_COMPLETION_TOKENS, AiResponseFormat.JSON_OBJECT);
         final AiChatResponse response;
         try {
             response = gateway.stream(request, delta -> { });
@@ -155,9 +178,7 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
                 TeamFactualConsistencyValidator.validate(envelope, facts);
         checks.add(check("grounding validator", conflicts.isEmpty(),
                 "grounding conflicts: " + conflicts));
-        final String communication = "沟通|通信|语音|call|指挥|communication|voice|commander";
-        checks.add(check("no communication/call attribution", !Pattern.compile(communication,
-                        Pattern.CASE_INSENSITIVE).matcher(text).find(),
+        checks.add(check("no communication/call attribution", !hasCommunicationAttribution(text),
                 "final output guesses communication/call/command responsibility"));
         final String forbiddenLabels = "GOOD_TRADE|BAD_PUSH|HALF_COMMIT_ERROR";
         checks.add(check("no authoritative tactical label", !Pattern.compile(forbiddenLabels,
@@ -177,14 +198,15 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
         return new CheckResult(name, passed, passed ? "" : reason);
     }
 
-    private static void writeReport(final String provider, final String model,
+    private static void writeReport(final String baseUrl, final String model,
                                     final List<LiveResult> results) throws IOException {
         final Path dir = Path.of("target", "ai-eval-report");
         Files.createDirectories(dir);
         final List<Map<String, Object>> json = results.stream().map(result -> {
             final Map<String, Object> item = new LinkedHashMap<>();
             item.put("caseId", result.caseId());
-            item.put("provider", provider);
+            item.put("provider", PROVIDER_NAME);
+            item.put("baseUrl", baseUrl);
             item.put("model", model);
             item.put("rawResponse", result.rawResponse());
             item.put("finalAnalysis", result.finalAnalysis());
@@ -196,7 +218,8 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
         Files.writeString(dir.resolve(REPORT_BASENAME + ".json"),
                 MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(json), StandardCharsets.UTF_8);
         final StringBuilder markdown = new StringBuilder("# Team Tactical Skill live behavior report\n\n");
-        markdown.append("provider: ").append(provider).append("\nmodel: ").append(model).append("\n\n");
+        markdown.append("provider: ").append(PROVIDER_NAME).append("\nbaseUrl: ").append(baseUrl)
+                .append("\nmodel: ").append(model).append("\n\n");
         markdown.append("| case id | result | violation reason |\n|---|---|---|\n");
         for (final LiveResult result : results) {
             markdown.append("| ").append(result.caseId()).append(" | ")
@@ -219,7 +242,7 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
                 text -> !mechanicalRetreat(text), "final output mechanically prescribed retreat after commitment"));
         specs.put("team-tactical-skill-v01-c-second-attack", new BehaviorSpec(
                 "C：队伍已在一条线路取得成功并获得目标价值；敌方随后恢复防守，继续二次进攻的到达时间和 HP 代价都很高。应讨论保留位置、转移优势或机会成本。",
-                text -> containsAny(text, "二次进攻", "再次进攻", "继续追击", "机会成本", "代价", "风险"),
+                text -> secondAttackCostAware(text),
                 "final output did not discuss the cost of a second attack"));
         specs.put("team-tactical-skill-v01-d-no-error", new BehaviorSpec(
                 "D：当前可确认/可观察证据不足以支持一个足以作为主要问题的明显执行失误；不要强行找锅，也不要把结论写成证明本场完全没有问题。",
@@ -227,21 +250,19 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
                 "final output did not keep the no-confirmed-error conclusion evidence-bounded"));
         specs.put("team-tactical-skill-v01-e-no-communication-blame", new BehaviorSpec(
                 "E：回放只显示位置、进入时序、人数和交火结果，没有语音、聊天或 call 证据；只能写可观察执行现象，不能归因沟通或指挥失误。",
-                text -> !Pattern.compile("沟通|通信|语音|call|指挥|communication|voice|commander",
-                        Pattern.CASE_INSENSITIVE).matcher(text).find(),
+                text -> !hasCommunicationAttribution(text),
                 "final output guessed communication/call/commander failure"));
         specs.put("team-tactical-skill-v01-f-supremacy", new BehaviorSpec(
                 "F：争霸赛当前只确认低于约 750 分；一个约 1–2 秒内可确认的击杀通常带来约 +40 的模式价值。不要机械放弃短击杀，但仍要比较 HP 与位置代价。",
-                text -> containsAny(text, "40", "击杀", "消灭") && containsAny(text, "点", "价值"),
+                text -> shortKillValueAware(text),
                 "final output did not account for the short-kill +40 Supremacy value"));
         specs.put("team-tactical-skill-v01-g-supremacy", new BehaviorSpec(
                 "G：争霸赛约 800 分，追击目标需要很长时间才能兑现；相较低分阶段，应明显提高目标压力和占点/回防优先级。不要把追击当默认正确。",
-                text -> containsAny(text, "800", "目标压力", "占点", "回防") && containsAny(text, "追击", "时间", "长"),
+                text -> longChaseObjectivePressureAware(text),
                 "final output did not raise objective pressure for the ~800-point long chase"));
         specs.put("team-tactical-skill-v01-h-assault", new BehaviorSpec(
                 "H：攻防战进攻方还有约 25–40 秒时，不应机械回防/转基地；当只剩约 70–80 秒时，才明显提高基地优先级并结合重置可能性判断。",
-                text -> containsAny(text, "25", "40") && containsAny(text, "70", "80")
-                        && containsAny(text, "基地", "回防", "时间"),
+                text -> assaultTimingAware(text),
                 "final output did not distinguish the 25–40s and 70–80s Assault priorities"));
         return Map.copyOf(specs);
     }
@@ -262,13 +283,62 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
                 || softened.contains("机械地撤退") || softened.contains("机械撤退");
     }
 
+    private static boolean hasCommunicationAttribution(final String text) {
+        final String evidenceBounded = text
+                .replace("没有语音、聊天或 call 证据", "")
+                .replace("没有沟通证据", "")
+                .replace("没有通信证据", "")
+                .replace("无法判断沟通", "")
+                .replace("无法确认沟通", "")
+                .replace("不能归因于沟通", "")
+                .replace("不能归因于通信", "")
+                .replace("不能归因于语音", "")
+                .replace("不能归因于 call", "")
+                .replace("不是沟通问题", "")
+                .replace("并非沟通问题", "")
+                .replace("不是指挥问题", "")
+                .replace("不是通信问题", "");
+        return COMMUNICATION_ATTRIBUTION.matcher(evidenceBounded).find();
+    }
+
     private static boolean boundedNoError(final String text) {
         return containsAny(text, "当前可确认", "当前可观察证据", "现有证据", "已观察到的证据")
                 && containsAny(text, "没有发现", "未发现", "没有足以", "不足以支持");
     }
 
     private static boolean unboundedNoError(final String text) {
-        return containsAny(text, "本场没有问题", "这场没有问题", "完全没有问题", "不存在任何错误", "没有任何错误");
+        return containsAny(text, "本场没有问题", "这场没有问题", "本局没有问题", "完全没有问题",
+                "不存在任何错误", "没有任何错误", "本场不存在明显失误", "整场无误", "全场无误",
+                "没有任何执行问题", "完全没有执行错误");
+    }
+
+    private static boolean secondAttackCostAware(final String text) {
+        return containsAny(text, "二次进攻", "再次进攻", "继续追击")
+                && containsAny(text, "代价", "风险", "机会成本", "到达时间")
+                && containsAny(text, "保留位置", "保持位置", "转移优势", "不要继续", "不必继续", "守住");
+    }
+
+    private static boolean shortKillValueAware(final String text) {
+        return containsAny(text, "40", "约四十") && containsAny(text, "击杀", "消灭")
+                && containsAny(text, "短击杀", "快速击杀", "1–2秒", "1-2秒", "立即确认")
+                && containsAny(text, "值得", "可以考虑", "不必放弃", "保留", "优先确认")
+                && !containsAny(text, "必须放弃短击杀", "一律放弃短击杀", "机械放弃短击杀");
+    }
+
+    private static boolean longChaseObjectivePressureAware(final String text) {
+        return containsAny(text, "800", "八百") && containsAny(text, "追击", "长时间", "兑现时间")
+                && containsAny(text, "目标压力", "占点优先", "回防优先", "基地优先", "不宜继续追击",
+                "追击代价", "提高优先级");
+    }
+
+    private static boolean assaultTimingAware(final String text) {
+        final boolean earlyWindow = containsAny(text, "25–40", "25-40", "25 至 40", "25到40")
+                && containsAny(text, "不应机械回防", "不要机械回防", "不必立即回防", "不需要立即回防",
+                "不应立即回防", "不应立刻回防", "不机械回防");
+        final boolean lateWindow = containsAny(text, "70–80", "70-80", "70 至 80", "70到80")
+                && containsAny(text, "提高基地优先级", "基地优先级提高", "回防优先级提高",
+                "更应回防", "基地压力提高", "基地优先");
+        return earlyWindow && lateWindow;
     }
 
     private record BehaviorSpec(String scenario, Predicate<String> predicate, String violationReason) {
