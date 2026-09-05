@@ -3,9 +3,9 @@
     "v": "2.12.75",
     "date": "2026-09-05",
     "tag": "fix",
-    "zh": "改进战局回放 HD 地图在放大时的渲染清晰度与车辆对齐；车辆、基地、轨迹和标注继续与地图严格对齐，最终实际回放清晰度仍需验收。",
-    "en": "Improved Battle Playback HD map rendering and vehicle alignment while zooming; vehicles, bases, trails and annotations remain aligned with the map, with final real-replay sharpness validation still pending.",
-    "ru": "Улучшены четкость HD-карт Battle Playback и выравнивание техники при увеличении; техника, базы, следы и пометки сохраняют точное положение относительно карты, а финальная проверка четкости на реальном повторе еще ожидается."
+    "zh": "改进战局回放 HD 地图放大时的渲染缓冲与车辆对齐；实际回放对照确认剩余柔化受当前地图资源细节上限限制，车辆、基地、轨迹和标注继续与地图严格对齐。",
+    "en": "Improved Battle Playback HD map rendering buffers and vehicle alignment while zooming; real-replay comparison confirms that remaining softness is limited by the current map source detail, while vehicles, bases, trails and annotations remain aligned with the map.",
+    "ru": "Улучшены буфер рендеринга HD-карт Battle Playback и выравнивание техники при увеличении; сравнение на реальном повторе подтверждает, что оставшаяся мягкость ограничена детализацией текущего источника карты, а техника, базы, следы и пометки сохраняют точное положение относительно карты."
   },
   {
     "v": "2.12.74",

@@ -197,12 +197,14 @@ IMPLEMENTATION COMPLETE — review blocker 0；build validation blocked by pre-e
 
 ## 状态
 
-IMPLEMENTATION IN PROGRESS — REAL PLAYBACK SHARPNESS NOT YET ACCEPTED
+IMPLEMENTED — REAL PLAYBACK A/B COMPLETE — SOURCE DETAIL CEILING CONFIRMED
 
 Repair update: the collision-offset unit regression is fixed and the 2.5D renderer now
-sizes its drawing buffer from measured layout CSS pixels with source/GPU ceilings. The
-texture filter is staged on the less-soft mip path, but authenticated real Playback
-fit/2×/4× A/B evidence is still required before this plan can be marked complete.
+sizes its drawing buffer from measured layout CSS pixels with source/GPU ceilings. Local
+real Playback A/B at the same map/position/zoom found WebGL and direct HD raster visually
+equivalent, so the remaining softness is classified as the current 4048×4048 source-detail
+ceiling. The mip filter remains the existing trilinear mipmap policy because this A/B did
+not prove a visual improvement; no 8K asset generation is in scope.
 
 ## 范围
 
