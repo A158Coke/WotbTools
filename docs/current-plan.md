@@ -191,7 +191,7 @@ IMPLEMENTED — TARGETED TESTS PASS — LIVE PROVIDER NOT RUN
 - [x] 将 Team Call #2 默认专用输出上限调整为 8192 tokens，并更新 deterministic prompt tests 与三份指定文档。
 - [x] targeted tests：139 tests pass；首轮使用项目 settings.xml 遇到 Aliyun TLS PKIX，改用本机 Maven cache 后完成验证。
 - [x] review-fix / review-with-docs / code-smell：OCR reviewable 2/2，excluded 文件人工审查，Blocker count 0。
-- [ ] commit / push / PR
+- [x] commit / push / PR：`4c5ead50` 已推送，PR #258 已创建。
 
 ---
 
