@@ -8,7 +8,11 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from export_playback_3d_assets import decode_heightmap, semantic_targets
+from export_playback_3d_assets import (
+    decode_heightmap,
+    extract_procedural_water_planes,
+    semantic_targets,
+)
 
 
 def tiled_uint16_payload(rows, tile_size):
@@ -22,6 +26,37 @@ def tiled_uint16_payload(rows, tile_size):
                 start = block_x * tile_size
                 values.extend(rows[y][start:start + tile_size])
     return struct.pack("<II", size, tile_size) + struct.pack(f"<{len(values)}H", *values)
+
+
+def water_entity(*, translation_z=10.0, local_z=2.0, local_z_span=0.0, quaternion=None):
+    half_span = local_z_span / 2.0
+    bbox = struct.pack(
+        "<6f",
+        -100.0,
+        -100.0,
+        local_z - half_span,
+        100.0,
+        100.0,
+        local_z + half_span,
+    )
+    return {
+        "name": "Water",
+        "components": {
+            "0": {
+                "comp.typename": "TransformComponent",
+                "tc.worldTranslation": [0.0, 0.0, translation_z],
+                "tc.worldScale": [1.0, 1.0, 1.0],
+                "tc.worldRotation": quaternion or [0.0, 0.0, 0.0, 1.0],
+            },
+            "1": {
+                "comp.typename": "RenderComponent",
+                "rc.renderObj": {
+                    "##name": "Water",
+                    "bbox": {"$bytes": bbox.hex()},
+                },
+            },
+        },
+    }
 
 
 class Playback3dAssetExportTest(unittest.TestCase):
@@ -60,6 +95,36 @@ class Playback3dAssetExportTest(unittest.TestCase):
                 struct.pack("<IIH", 4, 2, 1),
                 {"zMin": 0, "zMax": 1},
             )
+
+    def test_derives_horizontal_water_plane_from_bbox_and_world_z(self):
+        scene = {"#hierarchy": [water_entity(translation_z=10.0, local_z=2.0)]}
+        planes = extract_procedural_water_planes(scene)
+
+        self.assertEqual(1, len(planes))
+        self.assertEqual(12.0, planes[0]["zMeters"])
+        self.assertEqual(
+            "WATER_RENDER_OBJECT_FLAT_BBOX_Z_PLUS_SC2_WORLD_TRANSFORM",
+            planes[0]["evidence"],
+        )
+
+    def test_rejects_non_flat_or_tilted_water_metadata(self):
+        scene = {
+            "#hierarchy": [
+                water_entity(local_z_span=1.0),
+                water_entity(quaternion=[0.1, 0.0, 0.0, 0.995]),
+            ]
+        }
+        self.assertEqual([], extract_procedural_water_planes(scene))
+
+    def test_deduplicates_multiple_water_entities_at_same_level(self):
+        scene = {
+            "#hierarchy": [
+                water_entity(translation_z=10.0, local_z=2.0),
+                water_entity(translation_z=10.004, local_z=2.0),
+            ]
+        }
+        planes = extract_procedural_water_planes(scene)
+        self.assertEqual(1, len(planes))
 
 
 if __name__ == "__main__":
