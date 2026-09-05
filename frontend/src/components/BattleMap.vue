@@ -2,6 +2,7 @@
 import { computed, ref, useId } from 'vue'
 import VehicleMarker from './VehicleMarker.vue'
 import { activeTerrainRelief, projectTerrainPoint } from '../utils/terrainReliefProjection.js'
+import { screenOffsetToSvgDelta } from '../utils/mapView.js'
 
 defineOptions({ name: 'BattleMap' })
 
@@ -15,6 +16,7 @@ const props = defineProps({
   visibleTrails: { type: Array, default: () => [] },
   tracerColor: { type: Function, required: true },
   viewScale: { type: Number, default: 1 },
+  renderedFrame: { type: Object, default: null },
   viewportStyle: { type: [String, Array], default: '' },
   annotVisible: Boolean,
   renderedAnnotations: { type: Array, default: () => [] },
@@ -137,7 +139,16 @@ const presentedVehicleStates = computed(() => {
 })
 
 const markerLeaderStates = computed(() => {
-  const scale = Number.isFinite(props.viewScale) && props.viewScale > 0 ? props.viewScale : 1
+  // BattlePlayback supplies this from its existing ResizeObserver-backed mapSize
+  // and camera scale. Standalone mounts retain the DOM measurement fallback.
+  const hintedFrame = props.renderedFrame
+  const svgRect = mapEl.value?.querySelector('.pb-svg')?.getBoundingClientRect?.()
+  const hasFrame = (frame) => frame
+    && Number.isFinite(frame.width) && Number.isFinite(frame.height)
+    && frame.width > 0 && frame.height > 0
+  const renderedFrame = hasFrame(hintedFrame)
+    ? hintedFrame
+    : (hasFrame(svgRect) ? svgRect : { width: props.mapView.W, height: props.mapView.H })
   return presentedVehicleStates.value.flatMap((state) => {
     const offset = state.presentationOffset
     if (!offset || !Number.isFinite(offset.x) || !Number.isFinite(offset.y)
@@ -147,13 +158,15 @@ const markerLeaderStates = computed(() => {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return []
     const canonical = projectSemantic(x, y)
     if (!Number.isFinite(canonical.x) || !Number.isFinite(canonical.y)) return []
+    const svgOffset = screenOffsetToSvgDelta(offset, props.mapView, renderedFrame)
+    if (!svgOffset) return []
     return [{
       key: state.vehicle.accountId,
       x1: canonical.x,
       y1: canonical.y,
-      x2: canonical.x + offset.x / scale,
-      y2: canonical.y + offset.y / scale,
-      strokeWidth: 1.25 / scale,
+      x2: canonical.x + svgOffset.x,
+      y2: canonical.y + svgOffset.y,
+      strokeWidth: 1.25 * props.mapView.W / renderedFrame.width,
     }]
   })
 })

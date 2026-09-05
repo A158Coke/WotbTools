@@ -69,6 +69,7 @@ function mountMap(overrides = {}) {
 afterEach(() => {
   activeTerrainRelief.value = null
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   vi.useRealTimers()
 })
 
@@ -133,9 +134,38 @@ describe('BattleMap', () => {
     expect(line.exists()).toBe(true)
     expect(line.attributes('x1')).toBe('25')
     expect(line.attributes('y1')).toBe('70')
-    expect(line.attributes('x2')).toBe('30')
-    expect(line.attributes('y2')).toBe('66')
-    expect(line.attributes('stroke-width')).toBe('0.3125')
+    expect(line.attributes('x2')).toBe('45')
+    expect(line.attributes('y2')).toBe('54')
+    expect(line.attributes('stroke-width')).toBe('1.25')
+  })
+
+  it('converts screen offsets with the actual non-1:1 rendered SVG frame', async () => {
+    const nonSquareMapView = {
+      ...mapView,
+      W: 769,
+      H: 763,
+      toY: value => 763 - value,
+    }
+    const state = {
+      vehicle: { accountId: 1, team: 1 },
+      pos: { x: 384.5, y: 381.5 },
+      presentationOffset: { x: 20, y: -16 },
+    }
+    const wrapper = mountMap({ mapView: nonSquareMapView, viewScale: 4, vehicleStates: [state] })
+    const svg = wrapper.find('.pb-svg').element
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
+      width: 1560,
+      height: 1548,
+      top: 0,
+      left: 0,
+      right: 1560,
+      bottom: 1548,
+    })
+    await wrapper.setProps({ vehicleStates: [{ ...state }] })
+
+    const line = wrapper.find('.pb-marker-leader')
+    expect(Number(line.attributes('x2'))).toBeCloseTo(394.358974, 5)
+    expect(Number(line.attributes('y2'))).toBeCloseTo(373.613695, 5)
   })
 
   it('does not draw leader lines for canonical marker positions', () => {
