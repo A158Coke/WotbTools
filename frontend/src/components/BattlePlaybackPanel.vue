@@ -65,10 +65,10 @@ const pbOverview = computed(() => {
 })
 
 const panelView = ref('playback')
-const playbackDimension = ref<'2d' | '3d'>('2d')
-// Prototype assets are intentionally local-only. Production never advertises a 3D mode
-// until derived map assets have a committed distribution contract.
-const playback3dEnabled = import.meta.env.DEV
+const playbackDimension = ref<'2d' | '25d'>('2d')
+// The relief renderer is a DEV-only, fixed top-down 2.5D experiment. It does not
+// reconstruct client static geometry and it never owns replay time or markers.
+const playback25dEnabled = import.meta.env.DEV
 const mapLoading = ref(false)
 const mapLoaded = ref(false)
 const mapError = ref('')
@@ -270,27 +270,29 @@ onBeforeUnmount(() => {
               :seek-to="mapSeek ?? undefined"
             />
 
-            <!-- Vue 3.5 defer resolves the target after BattlePlayback renders its map stage in the same tick.
-                 The existing BattlePlayback remains the state owner; 3D only replaces the visual map layer. -->
+            <!-- The 2.5D canvas is teleported *inside* BattleMap's existing viewport.
+                 Its parent receives the exact same pan/zoom transform as the 2D image,
+                 while SVG bases/tracers and DOM hull/turret markers remain above it. -->
             <Teleport
-              v-if="playback3dEnabled && pbOverview"
+              v-if="playback25dEnabled && pbOverview && playbackDimension === '25d'"
+              defer
+              to="[data-test='pb-primary'] .pb-viewport"
+            >
+              <BattleMap3D :map-code="String(mapPlaybackV2?.mapCode || '')" />
+            </Teleport>
+
+            <Teleport
+              v-if="playback25dEnabled && pbOverview"
               defer
               to="[data-test='pb-primary'] .pb-map-stage"
             >
-              <div
-                v-if="playbackDimension === '3d'"
-                class="pb-3d-stage-layer"
-                data-test="pb-map-3d-layer"
-              >
-                <BattleMap3D :map-code="String(mapPlaybackV2?.mapCode || '')" />
-              </div>
               <button
                 type="button"
                 class="pb-dimension-corner-btn"
                 data-test="pb-dimension-toggle"
-                :aria-label="playbackDimension === '2d' ? 'Switch to 3D view' : 'Switch to 2D view'"
-                :title="playbackDimension === '2d' ? 'Switch to 3D view' : 'Switch to 2D view'"
-                @click="playbackDimension = playbackDimension === '2d' ? '3d' : '2d'"
+                :aria-label="playbackDimension === '2d' ? 'Switch to terrain relief view' : 'Switch to flat 2D view'"
+                :title="playbackDimension === '2d' ? 'Switch to terrain relief view' : 'Switch to flat 2D view'"
+                @click="playbackDimension = playbackDimension === '2d' ? '25d' : '2d'"
               >{{ playbackDimension === '2d' ? '3D' : '2D' }}</button>
             </Teleport>
           </template>
@@ -389,25 +391,6 @@ onBeforeUnmount(() => {
 .pb-view-tab.active { background: color-mix(in srgb, var(--accent) 14%, var(--bg-card)); color: var(--accent-dark); }
 .pb-view-tab:hover:not(.active) { color: var(--text-heading); }
 
-/* Teleported directly into BattlePlayback's map stage. Keep it below details/controls layers,
-   but above the existing 2D BattleMap. */
-.pb-3d-stage-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 12;
-  overflow: hidden;
-  background: #111820;
-  pointer-events: auto;
-}
-.pb-3d-stage-layer :deep(.map3d-shell) {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  border: 0;
-  border-radius: 0;
-}
 .pb-dimension-corner-btn {
   position: absolute;
   top: 10px;
