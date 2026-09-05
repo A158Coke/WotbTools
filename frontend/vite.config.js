@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { execSync } from 'node:child_process'
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -18,15 +18,15 @@ export function devProxyTarget(mode) {
 }
 
 /**
- * Client-derived 3D map assets are a local research input only. `publicDir` is
- * shared with local dev, so a generated map-3d-local directory would otherwise
+ * Client-derived heightfield assets are a local research input only. `publicDir`
+ * is shared with local dev, so a generated map-3d-local directory would otherwise
  * be copied into dist during a production build. Fail closed instead of relying
  * on .gitignore, which only controls Git tracking and cannot protect build output.
  */
 export function assertLocal3dDistributionBoundary(command, localAssetsExist) {
   if (command === 'build' && localAssetsExist) {
     throw new Error(
-      'Production build blocked: common/assets/map-3d-local contains local client-derived 3D map assets. '
+      'Production build blocked: common/assets/map-3d-local contains local client-derived map height data. '
       + 'Remove that directory before building; these assets are DEV/local-research only and must not be redistributed.'
     )
   }
@@ -37,8 +37,8 @@ export function assertLocal3dDistributionBoundary(command, localAssetsExist) {
  * 本地构建再 fallback 到 git rev-parse；两者皆无时降级 unknown，不阻断构建。 */
 function buildIdentity() {
   const fromEnv = process.env.BUILD_COMMIT
-  let commit = (fromEnv && fromEnv.trim()) || 'unknown'
-  if (commit === 'unknown') {
+  let commit = fromEnv?.trim() || ''
+  if (!commit) {
     try {
       commit = execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim()
     } catch {
@@ -46,7 +46,7 @@ function buildIdentity() {
     }
   }
   return {
-    commit,
+    commit: commit || 'unknown',
     buildTime: new Date().toISOString(),
   }
 }
@@ -63,6 +63,7 @@ export default defineConfig(({ command, mode }) => {
         apply: 'build',
         closeBundle() {
           const outDir = resolve(configDirectory, 'dist')
+          mkdirSync(outDir, { recursive: true })
           writeFileSync(resolve(outDir, 'version.json'),
             JSON.stringify({ commit: identity.commit, buildTime: identity.buildTime }, null, 2) + '\n')
         },
