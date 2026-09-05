@@ -1,0 +1,94 @@
+name: Temporary 2.5D relief refinement
+
+on:
+  push:
+    branches:
+      - feat/playback-3d-prototype
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    if: contains(github.event.head_commit.message, '[apply-25d-refine]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/playback-3d-prototype
+          fetch-depth: 0
+
+      - name: Sync merged production fixes
+        run: |
+          git fetch origin main
+          git merge --no-edit origin/main
+
+      - name: Refine fixed 45 degree 2.5D relief
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if old not in text:
+                  if new in text:
+                      return
+                  raise SystemExit(f'expected text not found in {path}: {old!r}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          projection = 'frontend/src/utils/terrainReliefProjection.js'
+          replace(projection, 'export const RELIEF_Z_EXAGGERATION = 1.6', 'export const RELIEF_Z_EXAGGERATION = 2.0')
+          replace(projection, 'export const RELIEF_PADDING = 0.05', 'export const RELIEF_PADDING = 0.035')
+
+          renderer = 'frontend/src/components/BattleMap3D.vue'
+          replace(renderer, 'const RELIEF_NORMAL_GAIN = 1.8', 'const RELIEF_NORMAL_GAIN = 2.15')
+          replace(renderer, 'const RELIEF_CONTRAST = 1.35', 'const RELIEF_CONTRAST = 1.45')
+          replace(renderer, 'const RELIEF_MIN_SHADE = 0.62', 'const RELIEF_MIN_SHADE = 0.56')
+          replace(renderer, 'const RELIEF_MAX_SHADE = 1.16', 'const RELIEF_MAX_SHADE = 1.20')
+          replace(
+              renderer,
+              '''    texture.wrapS = THREE.ClampToEdgeWrapping\n    texture.wrapT = THREE.ClampToEdgeWrapping\n    texture.anisotropy = Math.min(8, nextRenderer.capabilities.getMaxAnisotropy())''',
+              '''    texture.wrapS = THREE.ClampToEdgeWrapping\n    texture.wrapT = THREE.ClampToEdgeWrapping\n    // The production basemaps are already 2024x2024 WebP. Preserve that native\n    // detail in the oblique 2.5D view instead of manufacturing larger rasters.\n    // Trilinear mipmaps avoid shimmer while maximum anisotropy keeps roads and\n    // building edges readable along the foreshortened north/south axis.\n    texture.generateMipmaps = true\n    texture.minFilter = THREE.LinearMipmapLinearFilter\n    texture.magFilter = THREE.LinearFilter\n    texture.anisotropy = nextRenderer.capabilities.getMaxAnisotropy()\n    texture.needsUpdate = true''')
+
+          panel = 'frontend/src/components/BattlePlaybackPanel.vue'
+          replace(panel, "'Switch to terrain relief view'", "'Switch to 2.5D terrain relief view'")
+          replace(panel, ">{{ playbackDimension === '2d' ? '3D' : '2D' }}</button>", ">{{ playbackDimension === '2d' ? '2.5D' : '2D' }}</button>")
+
+          test = Path('frontend/src/utils/terrainReliefProjection.test.js')
+          text = test.read_text(encoding='utf-8')
+          text = text.replace(
+              '''import {\n  createTerrainReliefModel,''',
+              '''import {\n  RELIEF_PADDING,\n  RELIEF_Z_EXAGGERATION,\n  createTerrainReliefModel,''',
+              1,
+          )
+          anchor = "describe('fixed 45 degree terrain relief projection', () => {\n"
+          addition = """describe('fixed 45 degree terrain relief projection', () => {\n  it('keeps the approved amplified tactical-relief defaults', () => {\n    expect(RELIEF_Z_EXAGGERATION).toBe(2)\n    expect(RELIEF_PADDING).toBeCloseTo(0.035)\n  })\n\n"""
+          if "keeps the approved amplified tactical-relief defaults" not in text:
+              if anchor not in text:
+                  raise SystemExit('terrain relief test describe anchor not found')
+              text = text.replace(anchor, addition, 1)
+          test.write_text(text, encoding='utf-8')
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Targeted frontend validation
+        working-directory: frontend
+        run: |
+          npm ci
+          npx vitest run src/utils/terrainReliefProjection.test.js src/composables/usePlaybackPreferences.test.ts
+          npm run build
+
+      - name: Remove temporary workflow and commit
+        run: |
+          git rm .github/workflows/tmp-refine-25d-relief.yml
+          git config user.name "WotbTools AI"
+          git config user.email "wotbtools-ai@local"
+          git add frontend/src/components/BattleMap3D.vue frontend/src/components/BattlePlaybackPanel.vue frontend/src/utils/terrainReliefProjection.js frontend/src/utils/terrainReliefProjection.test.js
+          git commit -m "feat(playback): sharpen and amplify 2.5d terrain relief"
+          git push origin HEAD:feat/playback-3d-prototype
