@@ -1,5 +1,13 @@
 # AI Review 架构（随机战双 Call / 团队复盘 / Team Autopsy）
 
+## Team AI Review Quality Harness v1
+
+质量验证分三层：普通 deterministic contract tests（0 token）、真实 `.wotbreplay` offline harness，以及显式手动 real-provider benchmark。offline harness 复用生产链 `ReplayParser/ReplayProcessingFacade → Reconstruction → BattleTimelineBuilder → TeamContextBuilder → TeamAiPromptBuilder → TeamGroundingFacts`，只验证 `evidence_required` 证据可用性，不判断模型是否找到了预期结论；benchmark 的 gold hit/miss 是 report-only lexical preflight，不能替代语义裁判。
+
+`AiEvalHarnessTest` 的 synthetic A–H cases 仍用于 prompt/rule contract；synthetic PASS 不等于真实回放质量 PASS。`TeamReplayQualityBenchmarkRunner` 是非默认 `ai-live` runner：必须显式设置 `-Dai.quality.enabled=true`、`-Dai.quality.case=...` 或 `-Dai.quality.all=true`，并提供 `AI_API_KEY`；`ai.quality.runs` 默认 1。runner 不把 gold 或 evaluation scenario 放进生产 prompt，输出 `target/ai-eval-report/team-replay-quality-report.{json,md}`，只保存低基数 metadata、确定性检查、维度分数和最终 review。
+
+Team primary diagnosis 的 additive `evidenceBasis` 只表达结构性依据（information/objective/local engagement/position/tempo/team execution/HP trade）；它不是后端 tactical verdict。deterministic shortcut validator 仅作为质量 harness 检查 settlement-only、车种套角色、未观测信息、自动推进和无结构性原因的死亡聚集。
+
 > 开发入口见 `docs/DEVELOPER_GUIDE.md`；Team-Level 复盘产品设计见 `docs/features/team-ai-review.md`。
 > 权威结算 vs 事件流观测的数据边界见文末「权威数据源与 AI 分析」。
 > 生产状态：AI 证据只消费 canonical facts（AFFIRMED）；UNKNOWN 为合法内部状态，不得猜成 0/无事件/静止/满血（选用例见 prompts 与 `PlayerEvidenceFormatter`）。

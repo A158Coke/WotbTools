@@ -26,7 +26,9 @@ class LiveAiTestIsolationTest {
             "com/wotb/web/replay/ai/TeamReviewRealE2EProbeTest.java",
             "com/wotb/web/replay/ai/TeamReviewBatchE2EProbeTest.java",
             "com/wotb/web/replay/ai/TeamReviewDetailedReproProbeTest.java",
-            "com/wotb/web/replay/ai/eval/TeamTacticalSkillLiveBehaviorEvalTest.java");
+            "com/wotb/web/replay/ai/eval/TeamTacticalSkillLiveBehaviorEvalTest.java",
+            "com/wotb/web/replay/ai/TeamReplayQualityBenchmarkRunner.java",
+            "com/wotb/web/replay/ai/TeamReplayQualityBenchmarkRunnerTest.java");
 
     @Test
     void everyKnownLiveTestIsTaggedAndStillPresent() throws IOException {
@@ -55,6 +57,23 @@ class LiveAiTestIsolationTest {
                 "tactical behavior probe must default ai.tactical.live.enabled to false");
         assertTrue(source.contains("-Dai.tactical.live.enabled=true"),
                 "tactical behavior probe must document explicit opt-in");
+    }
+
+    @Test
+    void realReplayBenchmarkRequiresExplicitQualitySelection() throws IOException {
+        final Path sourcePath = testRoot().resolve(
+                "com/wotb/web/replay/ai/TeamReplayQualityBenchmarkRunner.java");
+        final String source = read(sourcePath);
+        assertTrue(source.contains("System.getProperty(\"ai.quality.enabled\", \"false\")"),
+                "real replay benchmark must default to disabled");
+        assertTrue(source.contains("ai.quality.case"),
+                "real replay benchmark must require explicit case selection");
+        assertTrue(source.contains("ai.quality.all"),
+                "real replay benchmark must support explicit all-cases selection");
+        assertTrue(source.contains("AI_API_KEY"),
+                "real replay benchmark must check API key only after opt-in");
+        assertTrue(!source.contains("LIVE BEHAVIOR EVALUATION SCENARIO"),
+                "real replay benchmark must not leak a synthetic evaluation scenario");
     }
 
     @Test

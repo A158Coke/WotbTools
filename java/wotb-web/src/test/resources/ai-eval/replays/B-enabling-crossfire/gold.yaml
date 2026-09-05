@@ -1,0 +1,12 @@
+id: B-enabling-crossfire
+replay: common/fixtures/replays/cw-training-15-14-example.wotbreplay
+must_notice:
+  - apparent_duel_not_closed
+  - external_fire_affected_local
+  - tracking_created_kill_condition
+  - role_transition
+must_not:
+  - damage_only_high_contributor
+evidence_required:
+  - POSITION_REGION
+  - FOCUS_WINDOW

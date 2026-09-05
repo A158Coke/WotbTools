@@ -1,5 +1,11 @@
 # WotbTools：训练房 / 联赛 Team-Level AI 战术复盘 — 设计文档
 
+## Quality harness v1（0-token CI + 手动真实回放）
+
+Team review 的质量验证不依赖默认 CI 调用模型。deterministic contract tests 校验 envelope 的 `evidenceBasis`、推理顺序和反捷径规则；offline harness 对真实 `.wotbreplay` 走生产 parser、reconstruction、canonical timeline、team context、prompt 和 grounding facts 链，只校验证据类型与结构性 gold constraint。gold 不包含标准 review，也不会发送给模型；已有 synthetic golden cases 只证明 prompt contract，不证明真实 LLM 行为。
+
+手动 benchmark 使用非默认 `ai-live` 的 `TeamReplayQualityBenchmarkRunner`，显式选择 case/all 后才会创建 provider gateway。它不注入 synthetic scenario，运行次数默认 1，报告包含 model/prompt version/git SHA/date、grounding/shortcut/结构化 basis 结果、`must_notice`/`must_not`、最终 review 和可选 baseline 对比；不持久化 prompt、API key 或用户 token usage。
+
 ## 概述
 
 训练房和联赛回放现在可以通过 AI Review 进行 Team-Level 战术复盘。

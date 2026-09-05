@@ -173,3 +173,20 @@ Canal + Port Bay 继续作为双地图 gate。
 - [x] PR247 review findings closure
 
 **PR1 blocker = 0. PR2 handoff ready.**
+
+---
+
+# Team AI Review Quality Harness v1
+
+## 状态
+
+IMPLEMENTED IN WORKTREE — TARGETED TESTS PASS — LIVE PROVIDER NOT RUN
+
+## 执行记录
+
+- [x] 从 `origin/main` 创建独立 worktree 与 `feat/team-ai-review-quality-harness-v1` 分支。
+- [x] 添加 additive `evidenceBasis`、推理顺序和 deterministic shortcut contract。
+- [x] 添加 6 个真实回放 gold case 与 production-chain offline harness。
+- [x] 添加显式 opt-in real-replay benchmark、runs/report/baseline metadata 约定及 0-token isolation guard。
+- [x] 更新 AI 架构、Team review、evaluation operations 与 changelog 文档。
+- [x] targeted Maven tests 通过；未调用 DeepSeek / ai-live。
