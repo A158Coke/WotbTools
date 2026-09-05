@@ -7,6 +7,7 @@ import { mapImages } from '../data/mapImages'
 import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
+import { activeTerrainRelief, projectTerrainPoint, unprojectTerrainPoint } from '../utils/terrainReliefProjection.js'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
@@ -1037,6 +1038,14 @@ function draftFromTool(tool, a, b) {
 /** 指针 client 坐标 → 语义坐标（CSS px → 撤销 viewport 变换 → CSS↔SVG 比例 → fromX/fromY）。 */
 function semanticPoint(e) {
   const sp = screenPoint(e.clientX, e.clientY)
+  const model = reliefModelForPlayback()
+  const rect = mapRenderRect()
+  if (model && rect.width > 0 && rect.height > 0 && view.scale > 0) {
+    const xNorm = ((sp.x - view.tx) / view.scale) / rect.width
+    const yNorm = ((sp.y - view.ty) / view.scale) / rect.height
+    const point = unprojectTerrainPoint(model, xNorm, yNorm)
+    if (point) return { x: point.x, y: point.y }
+  }
   return screenToSemantic(view, mapView.value, sp.x, sp.y, mapWidth(), mapHeight())
 }
 
@@ -1133,6 +1142,15 @@ function cancelSession(session) {
 const textInputStyle = computed(() => {
   const session = textSession.value
   if (!session) return null
+  const model = reliefModelForPlayback()
+  if (model) {
+    const rect = mapRenderRect()
+    const point = projectedSemanticNorm(session.point.x, session.point.y)
+    return {
+      left: `${point.xNorm * rect.width * view.scale + view.tx}px`,
+      top: `${point.yNorm * rect.height * view.scale + view.ty}px`,
+    }
+  }
   const s = svgToScreen(
     mapView.value,
     view,
@@ -1421,6 +1439,23 @@ function vehicleModel(vehicle) {
   return p.resolved.get(modelKey) || null
 }
 
+function reliefModelForPlayback() {
+  const model = activeTerrainRelief.value
+  return model && model.mapCode === String(pbOverview.value.mapCode || '') ? model : null
+}
+
+function projectedSemanticNorm(x, y) {
+  const model = reliefModelForPlayback()
+  if (model) {
+    const point = projectTerrainPoint(model, Number(x), Number(y))
+    if (point) return { xNorm: point.xNorm, yNorm: point.yNorm }
+  }
+  return {
+    xNorm: mapView.value.toX(x) / mapView.value.W,
+    yNorm: mapView.value.toY(y) / mapView.value.H,
+  }
+}
+
 /** 标记水平位置（%）：地图用户坐标 → 容器百分比。 */
 function markerLeft(x) {
   return `${((mapView.value.toX(x)) / mapView.value.W) * 100}%`
@@ -1572,10 +1607,11 @@ function onMarkerSelect(vehicle, event) {
 /** 标记中心 → 相对地图容器的屏幕 px（viewport 变换后）。 */
 function canonicalMarkerScreen(st) {
   const rect = mapRenderRect()
-  if (!rect || rect.width <= 0 || mapView.value.W <= 0) return null
+  if (!rect || rect.width <= 0 || rect.height <= 0) return null
+  const point = projectedSemanticNorm(st.pos.x, st.pos.y)
   return {
-    x: (mapView.value.toX(st.pos.x) / mapView.value.W) * rect.width * view.scale + view.tx,
-    y: (mapView.value.toY(st.pos.y) / mapView.value.H) * rect.height * view.scale + view.ty,
+    x: point.xNorm * rect.width * view.scale + view.tx,
+    y: point.yNorm * rect.height * view.scale + view.ty,
   }
 }
 
@@ -1599,8 +1635,9 @@ function selectAt(accountId, clientX, clientY) {
     const cy = (py - view.ty) / view.scale
     const rect = mapRenderRect()
     const offset = s.presentationOffset || { x: 0, y: 0 }
-    const x = (mapView.value.toX(s.pos.x) / mapView.value.W) * rect.width + offset.x / view.scale
-    const y = (mapView.value.toY(s.pos.y) / mapView.value.H) * rect.height + offset.y / view.scale
+    const projected = projectedSemanticNorm(s.pos.x, s.pos.y)
+    const x = projected.xNorm * rect.width + offset.x / view.scale
+    const y = projected.yNorm * rect.height + offset.y / view.scale
     const hitTarget = s.hitTargetSize || s.markerSize?.hitTarget
     const hw = (hitTarget?.width || 20) / 2
     const hh = (hitTarget?.height || 20) / 2

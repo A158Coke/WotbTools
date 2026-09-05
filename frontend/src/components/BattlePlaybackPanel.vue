@@ -65,10 +65,8 @@ const pbOverview = computed(() => {
 })
 
 const panelView = ref('playback')
-const playbackDimension = ref<'2d' | '25d'>('2d')
-// The relief renderer is a DEV-only, fixed top-down 2.5D experiment. It does not
-// reconstruct client static geometry and it never owns replay time or markers.
-const playback25dEnabled = import.meta.env.DEV
+// 2.5D is the upgraded map presentation. The underlying 2D raster remains only
+// as a fail-safe while local/legal height data is unavailable; users do not switch modes.
 const mapLoading = ref(false)
 const mapLoaded = ref(false)
 const mapError = ref('')
@@ -196,7 +194,6 @@ function resetMap() {
   playbackV2Retryable.value = false
   playbackV2UnavailableReason.value = ''
   panelView.value = 'playback'
-  playbackDimension.value = '2d'
   mapLoading.value = false
   mapLoaded.value = false
   mapError.value = ''
@@ -270,30 +267,15 @@ onBeforeUnmount(() => {
               :seek-to="mapSeek ?? undefined"
             />
 
-            <!-- The 2.5D canvas is teleported *inside* BattleMap's existing viewport.
-                 Its parent receives the exact same pan/zoom transform as the 2D image,
-                 while SVG bases/tracers and DOM hull/turret markers remain above it. -->
+            <!-- 2.5D directly upgrades the map background. BattleMap still owns all
+                 replay overlays/time/state; if local height data is unavailable the
+                 original raster simply remains visible as a technical fallback. -->
             <Teleport
-              v-if="playback25dEnabled && pbOverview && playbackDimension === '25d'"
+              v-if="pbOverview"
               defer
               to="[data-test='pb-primary'] .pb-viewport"
             >
               <BattleMap3D :map-code="String(mapPlaybackV2?.mapCode || '')" />
-            </Teleport>
-
-            <Teleport
-              v-if="playback25dEnabled && pbOverview"
-              defer
-              to="[data-test='pb-primary'] .pb-map-stage"
-            >
-              <button
-                type="button"
-                class="pb-dimension-corner-btn"
-                data-test="pb-dimension-toggle"
-                :aria-label="playbackDimension === '2d' ? 'Switch to 2.5D terrain relief view' : 'Switch to flat 2D view'"
-                :title="playbackDimension === '2d' ? 'Switch to terrain relief view' : 'Switch to flat 2D view'"
-                @click="playbackDimension = playbackDimension === '2d' ? '25d' : '2d'"
-              >{{ playbackDimension === '2d' ? '2.5D' : '2D' }}</button>
             </Teleport>
           </template>
           <div v-else-if="playbackV2State === 'UNAVAILABLE'" class="pb-status pb-unavailable" data-test="pb-unavailable">{{ playbackV2UnavailableReason }}</div>
@@ -391,24 +373,6 @@ onBeforeUnmount(() => {
 .pb-view-tab.active { background: color-mix(in srgb, var(--accent) 14%, var(--bg-card)); color: var(--accent-dark); }
 .pb-view-tab:hover:not(.active) { color: var(--text-heading); }
 
-.pb-dimension-corner-btn {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 35;
-  min-width: 40px;
-  height: 30px;
-  padding: 0 9px;
-  border: 1px solid rgb(255 255 255 / 22%);
-  border-radius: 7px;
-  background: rgb(10 16 22 / 78%);
-  color: #eef5f9;
-  font: 800 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: .04em;
-  cursor: pointer;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 4px 14px rgb(0 0 0 / 22%);
-}
 .pb-dimension-corner-btn:hover {
   border-color: color-mix(in srgb, var(--accent) 65%, white 10%);
   background: rgb(10 16 22 / 92%);

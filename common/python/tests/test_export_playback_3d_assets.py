@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from export_playback_3d_assets import (
     decode_heightmap,
     extract_procedural_water_planes,
+    playback_map_codes,
     semantic_targets,
 )
 
@@ -64,6 +65,14 @@ class Playback25dAssetExportTest(unittest.TestCase):
         targets = semantic_targets()
         self.assertEqual("18_canal_cn", targets["canal"]["mapId"])
         self.assertEqual("14_port_pt", targets["port"]["mapId"])
+
+    def test_all_registered_playback_maps_have_height_semantics(self):
+        codes = playback_map_codes()
+        targets = semantic_targets()
+        self.assertEqual(29, len(codes))
+        self.assertEqual(len(codes), len(set(codes)))
+        self.assertEqual([], [code for code in codes if code not in targets])
+        self.assertTrue(all((targets[code].get("sourceFiles") or {}).get("heightmap") for code in codes))
 
     def test_decodes_tiled_heightmap_to_world_z_row_major(self):
         rows = [

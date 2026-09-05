@@ -17,7 +17,7 @@ accidentally.
 
 Example:
     python common/python/export_playback_3d_assets.py \\
-      "C:\\Users\\yu.chen\\Downloads\\Maps.zip" canal port --clean
+      "C:\\Users\\yu.chen\\Downloads\\Maps.zip" --clean
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ import argparse
 import json
 import math
 import pathlib
+import re
 import shutil
 import struct
 import sys
@@ -35,6 +36,7 @@ from typing import Any
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SEMANTICS_DIR = REPO / "common" / "map-semantics"
+MAP_IMAGES_REGISTRY = REPO / "frontend" / "src" / "data" / "mapImages.js"
 OUTPUT_DIR = REPO / "common" / "assets" / "map-3d-local"
 LEGACY_OUTPUT_DIR = REPO / "frontend" / "public" / "map-3d-local"
 
@@ -72,6 +74,22 @@ def semantic_targets() -> dict[str, dict]:
             if isinstance(code, str) and code:
                 result[code] = document
     return result
+
+
+def playback_map_codes() -> list[str]:
+    """Read the authoritative Playback basemap registry and return its mapCode keys."""
+
+    text = MAP_IMAGES_REGISTRY.read_text(encoding="utf-8")
+    marker = "export const mapImages = {"
+    if marker not in text:
+        raise ExportPlayback3dError("mapImages registry marker not found")
+    body = text.split(marker, 1)[1].rsplit("}", 1)[0]
+    codes = re.findall(r"(?m)^\s*([A-Za-z_][A-Za-z0-9_]*):\s*\{", body)
+    if not codes:
+        raise ExportPlayback3dError("mapImages registry contains no map codes")
+    if len(codes) != len(set(codes)):
+        raise ExportPlayback3dError("mapImages registry contains duplicate map codes")
+    return codes
 
 
 def resource_name_variants(name: str) -> list[str]:
@@ -333,8 +351,8 @@ def main() -> int:
     parser.add_argument("maps_zip", type=pathlib.Path, help="Path to client Maps.zip")
     parser.add_argument(
         "map_codes",
-        nargs="+",
-        help="Replay mapCode values, e.g. canal port",
+        nargs="*",
+        help="Optional Replay mapCode values. Omit to export every map registered in mapImages.js.",
     )
     parser.add_argument(
         "--clean",
@@ -349,7 +367,9 @@ def main() -> int:
         return 2
 
     targets = semantic_targets()
-    unknown = [code for code in args.map_codes if code not in targets]
+    export_all_registered = len(args.map_codes) == 0
+    requested_codes = playback_map_codes() if export_all_registered else list(dict.fromkeys(args.map_codes))
+    unknown = [code for code in requested_codes if code not in targets]
     if unknown:
         print(
             f"error: no semantic mapId for mapCode(s): {', '.join(unknown)}",
@@ -365,7 +385,7 @@ def main() -> int:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     index = {
-        "schemaVersion": 5,
+        "schemaVersion": 6,
         "source": "LOCAL_CLIENT_DERIVED_HEIGHTFIELD",
         "renderMode": "TOP_DOWN_2_5D_HEIGHTFIELD",
         "toolingPolicy": {
@@ -378,12 +398,19 @@ def main() -> int:
             "containsClientMaterials": False,
             "containsClientWaterGeometry": False,
         },
+        "coverage": {
+            "mode": "ALL_REGISTERED_PLAYBACK_MAPS" if export_all_registered else "SELECTED_MAPS",
+            "expectedMapCodes": requested_codes,
+            "expectedMapCount": len(requested_codes),
+            "exportedMapCount": 0,
+            "complete": False,
+        },
         "maps": {},
     }
 
     try:
         with zipfile.ZipFile(maps_zip) as archive:
-            for code in args.map_codes:
+            for code in requested_codes:
                 entry = export_map(archive, code, targets[code])
                 index["maps"][code] = entry
                 terrain = entry["terrain"]
@@ -404,11 +431,18 @@ def main() -> int:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
+    index["coverage"]["exportedMapCount"] = len(index["maps"])
+    index["coverage"]["complete"] = len(index["maps"]) == len(requested_codes)
+    if not index["coverage"]["complete"]:
+        print("error: 2.5D map coverage is incomplete", file=sys.stderr)
+        return 1
+
     index_path = OUTPUT_DIR / "index.json"
     index_path.write_text(
         json.dumps(index, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    print(f"2.5D coverage {len(index['maps'])}/{len(requested_codes)} maps complete")
     print(f"local Battle Playback 2.5D assets -> {index_path.relative_to(REPO)}")
     print("LOCAL RESEARCH ONLY: do not commit, publish, package, or redistribute generated map-3d-local assets.")
     return 0

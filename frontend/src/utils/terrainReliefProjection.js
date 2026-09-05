@@ -47,19 +47,39 @@ export function createTerrainReliefModel({
   const centerY = (yMin + yMax) / 2
   const centerZ = (minZ + maxZ) / 2
 
-  // Camera comes from map south and looks north/up at a fixed elevation. X therefore
-  // stays horizontal and north stays screen-up, preserving the normal tactical-map
-  // orientation while Z becomes visible in screen Y.
+  // Camera comes from map south and looks north/up at a fixed elevation. X stays
+  // horizontal and north stays screen-up. Fit against the *actual sampled terrain*
+  // envelope instead of the theoretical minZ/maxZ corner combination, and never
+  // force the projected frustum to a square. A square frustum made the 45° map look
+  // visibly shrunken inside the existing tactical viewport.
   const rawUMin = xMin - centerX
   const rawUMax = xMax - centerX
-  const rawVMin = (yMin - centerY) * cosElevation
-    + (minZ - centerZ) * zExaggeration * sinElevation
-  const rawVMax = (yMax - centerY) * cosElevation
-    + (maxZ - centerZ) * zExaggeration * sinElevation
+  const spacingY = (yMax - yMin) / size
+  let rawVMin = Number.POSITIVE_INFINITY
+  let rawVMax = Number.NEGATIVE_INFINITY
 
-  const centerU = (rawUMin + rawUMax) / 2
-  const centerV = (rawVMin + rawVMax) / 2
-  const half = Math.max(rawUMax - rawUMin, rawVMax - rawVMin) * 0.5 * (1 + padding * 2)
+  const observeV = (y, height) => {
+    const v = (y - centerY) * cosElevation
+      + (finite(height, centerZ) - centerZ) * zExaggeration * sinElevation
+    rawVMin = Math.min(rawVMin, v)
+    rawVMax = Math.max(rawVMax, v)
+  }
+
+  for (let sy = 0; sy < size; sy++) {
+    const y = yMin + sy * spacingY
+    const row = sy * size
+    for (let sx = 0; sx < size; sx++) observeV(y, heights[row + sx])
+  }
+  // Renderer duplicates the final sample row on the north world-bound edge. Include
+  // that real boundary in fit calculations so no terrain edge can be clipped.
+  const lastRow = (size - 1) * size
+  for (let sx = 0; sx < size; sx++) observeV(yMax, heights[lastRow + sx])
+
+  if (!Number.isFinite(rawVMin) || !Number.isFinite(rawVMax)) {
+    throw new Error('Relief projected terrain envelope is invalid')
+  }
+  const uPadding = (rawUMax - rawUMin) * padding
+  const vPadding = Math.max(rawVMax - rawVMin, 1e-6) * padding
 
   return Object.freeze({
     mapCode: String(mapCode || ''),
@@ -75,10 +95,10 @@ export function createTerrainReliefModel({
     centerY,
     centerZ,
     projectedBounds: Object.freeze({
-      left: centerU - half,
-      right: centerU + half,
-      bottom: centerV - half,
-      top: centerV + half,
+      left: rawUMin - uPadding,
+      right: rawUMax + uPadding,
+      bottom: rawVMin - vPadding,
+      top: rawVMax + vPadding,
     }),
   })
 }
@@ -124,6 +144,53 @@ export function projectTerrainPoint(model, x, y, z = null) {
     yNorm: 1 - ((v - bounds.bottom) / (bounds.top - bounds.bottom)),
     height,
   }
+}
+
+export function unprojectTerrainPoint(model, xNorm, yNorm) {
+  if (!model) return null
+  const bounds = model.projectedBounds
+  const spanU = bounds.right - bounds.left
+  const spanV = bounds.top - bounds.bottom
+  if (!(spanU > 0) || !(spanV > 0)) return null
+
+  const nx = clamp(finite(xNorm, 0.5), 0, 1)
+  const ny = clamp(finite(yNorm, 0.5), 0, 1)
+  const u = bounds.left + nx * spanU
+  const targetV = bounds.bottom + (1 - ny) * spanV
+  const x = clamp(model.centerX + u, model.worldBounds.xMin, model.worldBounds.xMax)
+  const { yMin, yMax } = model.worldBounds
+  const steps = model.samplesPerAxis
+  const spacingY = (yMax - yMin) / steps
+
+  const sampleV = (y) => {
+    const height = sampleTerrainHeight(model, x, y)
+    const v = (y - model.centerY) * model.cosElevation
+      + (height - model.centerZ) * model.zExaggeration * model.sinElevation
+    return { y, height, v }
+  }
+
+  let previous = sampleV(yMin)
+  let best = previous
+  let bestError = Math.abs(previous.v - targetV)
+  for (let i = 1; i <= steps; i++) {
+    const current = sampleV(yMin + i * spacingY)
+    const currentError = Math.abs(current.v - targetV)
+    if (currentError < bestError) {
+      best = current
+      bestError = currentError
+    }
+    const lo = Math.min(previous.v, current.v)
+    const hi = Math.max(previous.v, current.v)
+    if (targetV >= lo && targetV <= hi && Math.abs(current.v - previous.v) > 1e-9) {
+      // Camera looks south -> north, so the first crossing is the nearest visible
+      // surface when a steep heightfield folds in screen space.
+      const t = (targetV - previous.v) / (current.v - previous.v)
+      const y = previous.y + (current.y - previous.y) * t
+      return { x, y, height: sampleTerrainHeight(model, x, y) }
+    }
+    previous = current
+  }
+  return { x, y: best.y, height: best.height }
 }
 
 export function activateTerrainRelief(model) {

@@ -219,7 +219,7 @@ async function loadMap() {
       return
     }
     const index = JSON.parse(indexText)
-    if (index?.schemaVersion !== 5 || index?.renderMode !== 'TOP_DOWN_2_5D_HEIGHTFIELD') {
+    if (index?.schemaVersion !== 6 || index?.renderMode !== 'TOP_DOWN_2_5D_HEIGHTFIELD') {
       status.value = 'missing'
       console.warn('[map-2.5d] stale local assets; re-run export_playback_3d_assets.py')
       return
