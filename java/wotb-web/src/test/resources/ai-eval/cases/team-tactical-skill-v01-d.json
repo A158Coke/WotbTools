@@ -3,7 +3,7 @@
   "mode": "TEAM_PERSPECTIVE",
   "arenaBonusType": 3,
   "fixtureKey": "cw-cap-defense-01",
-  "expectedJudgment": "没有明显确认错误时允许输出无明显错误/对手处理更好",
+  "expectedJudgment": "当前可确认/可观察证据中没有确认的重大错误；不证明本场没有任何错误",
   "checks": [
     { "kind": "system_prompt_contains", "text": "NO_SIGNIFICANT_CONFIRMED_ERROR" },
     { "kind": "system_prompt_contains", "text": "不得为了填满字段制造" },
