@@ -34,7 +34,7 @@ IMPLEMENTED IN WORKTREE — READY FOR REVIEW
 
 ## 结果边界
 
-- 本 worktree 未执行 DeepSeek live provider evaluation；该项需要用户显式提供实际训练/联赛回放并 opt-in，以避免普通开发测试产生 provider 成本。
+- 本 worktree 未执行 DeepSeek live provider evaluation；该项仅作未来手动诊断工具，默认永远 skip，不进入 CI 或 PR 合并条件。A–H 的 deterministic static prompt/evidence contract 是本 PR 的 merge gate；live scenario 只提供 facts，expected behavior 仅存在于 assertions。
 ---
 # 3D Battle Playback First — PR1 Client Map Research
 
