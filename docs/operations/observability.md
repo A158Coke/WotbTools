@@ -407,7 +407,7 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 | `team_review_parse_result` | attempt, responseFormat, result=PASS/FAIL, reason | parser 结果分类 |
 | `team_review_validation` | attempt, result=PASS/FAIL, conflictCount, checks, durationMs | validator 结果 |
 | `team_review_validation_conflict`（INFO） | attempt, check, reasonCode, severity | 冲突机器分类明细；INFO 是生产默认级别，便于 grounding failure 诊断 |
-| `ai_validation_retry` | stage, validationAttempt, rewrite=TARGETED/FULL, reason | 业务返工重试；不改变现有重试策略 |
+| `ai_validation_retry` | stage, validationAttempt, rewrite=TARGETED/FULL/SAFE, reason | 业务返工重试；SAFE 是最终 bounded conservative recovery，之后必须再次完整校验 |
 | `team_review_completed` | validationAttempts, totalPromptTokens, totalCompletionTokens, durationMs, result | Team Call #2 阶段汇总 |
 
 #### parser 失败分类（低基数枚举）
@@ -423,9 +423,10 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 
 #### 常见错误码排障
 
-- **`AI_REVIEW_GROUNDING_FAILED`**（502）：Team Call #2 三次 validation attempt 全部 FAIL 后 fail-safe（当前行为保持不变）。
+- **`AI_REVIEW_GROUNDING_FAILED`**（502）：Team Call #2 draft、TARGETED、FULL、SAFE 四次 validation attempt 仍有 HARD_FACT 冲突后 fail-safe。
   查 `event=team_review_validation` 的 `checks` 与 `event=team_review_validation_conflict` 的 `reasonCode` 判断是哪个 check 反复失败；
-  `event=team_review_validation_attempt_completed` 看 token 放大（`cumulativePromptTokens`）。
+  `event=team_review_validation_attempt_completed` 看 token 放大（`cumulativePromptTokens`）；若 SAFE 已通过，最终
+  `team_review_validation attempt=4 result=PASS`，不会返回该错误。
 - **`AI_TIMEOUT`**：分 provider read timeout / 整体预算耗尽 / SSE timeout 三种；查 `event=ai_upstream_call_failed` 与调用耗时、remainingBudgetSec。
 - **`AI_UPSTREAM_UNAVAILABLE`**：上游 5xx / 连接失败；`event=ai_transport_retry` 记录退避重试。
 - **`AI_CANCELLED`**：客户端取消（cancel 端点 / SSE 断开）；查 `event=ai_review_cancelled` 的 `source`。
@@ -435,14 +436,14 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 1. 用户提供错误 UI 中的 `errorId`（AI SSE 中为 `id`，值与 `correlationId` 相同；普通 HTTP 错误使用 canonical `error.id`）。
 2. 打开 `WotBTools · 事故检索`，填入 `errorId`；必要时同时填写 `service`、`errorCode` 或 Replay `jobId`。
 3. 先看「近期事故」确认服务、事件、错误码和阶段，再看「单次 Incident 生命周期」的时间顺序。
-4. 若为 `AI_REVIEW_GROUNDING_FAILED`，依次检查 `team_review_parse_result`、`team_review_validation`、`team_review_validation_conflict`、`ai_validation_retry` 与 `team_review_validation_attempt_completed`，即可定位 parse、check/reasonCode、targeted/full rewrite 和最终失败。
+4. 若为 `AI_REVIEW_GROUNDING_FAILED`，依次检查 `team_review_parse_result`、`team_review_validation`、`team_review_validation_conflict`、`ai_validation_retry` 与 `team_review_validation_attempt_completed`，即可定位 parse、check/reasonCode、TARGETED/FULL/SAFE rewrite 和最终失败；若 SAFE 成功，则最后一次 validation 为 PASS 且不会返回该错误。
 
 看板只用 Prometheus 做计数/速率/延迟/低基数 breakdown；`correlationId`、`errorId`、`jobId` 和完整生命周期只进入 Loki 查询。冲突日志只保留 event、correlationId、attempt、check、reasonCode、severity，不记录 prompt、原始模型输出、回放内容、账号或 token。
 
 ### 生产验收清单（部署后）
 
 - 成功复盘：能看到 request → upstream → parse → validation PASS → success。
-- 校验返工：能看到 validation FAIL → `ai_validation_retry`（TARGETED/FULL）→ PASS 或最终失败。
+- 校验返工：能看到 validation FAIL → `ai_validation_retry`（TARGETED → FULL → SAFE）→ 最终 validation PASS 或 fail-safe。
 - `AI_REVIEW_GROUNDING_FAILED`：从 UI error ID 可定位同一 correlationId，并能看到每次 attempt 的 conflictCount、check/reasonCode、总耗时和上游状态。
 - 在 `monitor.wotbtools.com` 实际检查 AI Review 与 Incident Explorer 的真实数据、筛选结果和空数据提示；本地 JSON/PromQL 校验不能替代该生产验收。
 
@@ -522,7 +523,7 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
    - `wotb_ai_review_queue_wait_seconds` — worker 排队等待时长（Timer，histogram；由 `wotb_ai_review_queue_wait_seconds_bucket` 支撑 P95）
   - `wotb_ai_review_queue_depth` — 当前等待执行的 AI Review worker 数（Gauge；不含正在执行与已拒绝请求）
   - `wotb_ai_team_review_validation_attempt_total{result=pass|parser_invalid|validation_failed|metadata_only_pass}` — Team Call #2 validation attempt 分类；`parser_invalid` 与 `validation_failed` 表示 rework/失败尝试
-  - `wotb_ai_team_review_validation_retry_total{stage=TEAM_CALL_2,rewrite=TARGETED|FULL}` — validation retry 的低基数阶段与改写类型分布
+  - `wotb_ai_team_review_validation_retry_total{stage=TEAM_CALL_2,rewrite=TARGETED|FULL|SAFE}` — validation retry 的低基数阶段与改写类型分布
 - **AI upstream**（自定义，`SpringAiChatGateway.chat`，每次上游调用）：
   - `wotb_ai_upstream_requests_total{mode}` — 上游请求量（每个 attempt +1，含 retry 重试；token budget 拒绝不进入 gateway，不计）
   - `wotb_ai_upstream_success_total{mode}` — 成功调用数（一次逻辑调用 +1）

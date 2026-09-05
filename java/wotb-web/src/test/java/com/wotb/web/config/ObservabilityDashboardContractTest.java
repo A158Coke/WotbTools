@@ -47,6 +47,8 @@ class ObservabilityDashboardContractTest {
         assertTrue(serialized.contains("\"uid\":\"prometheus\""));
         assertTrue(serialized.contains("\"uid\":\"loki\""));
         assertTrue(hasVariable(dashboard, "correlationId"));
+        assertTrue(serialized.contains("TARGETED|FULL|SAFE"),
+                "AI dashboard must distinguish all bounded validation rewrite stages");
         assertFalse(serialized.contains("|~ \"error|failed\""),
                 "generic error-only Loki query must not replace lifecycle coverage");
 
@@ -135,6 +137,7 @@ class ObservabilityDashboardContractTest {
         assertFalse(source.contains("LOGGER.debug(AiReviewEventLog.line(\"team_review_validation_conflict\""));
         assertTrue(source.contains("\"rewrite\", rewrite"));
         assertTrue(source.contains("wotb_ai_team_review_validation_retry_total"));
+        assertTrue(source.contains("case 4 -> \"SAFE\""));
         assertTrue(source.contains("\"team_review_parse_result\""));
         assertTrue(source.contains("\"team_review_validation\""));
         assertTrue(source.contains("\"team_review_validation_attempt_completed\""));

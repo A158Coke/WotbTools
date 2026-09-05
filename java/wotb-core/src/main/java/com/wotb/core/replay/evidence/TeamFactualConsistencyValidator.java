@@ -34,7 +34,7 @@ import java.util.regex.Pattern;
  *   <li>引用不存在的证据编号 / 空输出。</li>
  * </ul>
  * <p>Validator 失败时不修改任何句子：由编排层把 {@link FactConflict} 反馈给 LLM 自行改写
- * （targeted rewrite → full rewrite → fail-safe），Backend 绝不代改正文。</p>
+ * （targeted rewrite → full rewrite → conservative safe rewrite → fail-safe），Backend 绝不代改正文。</p>
  */
 public final class TeamFactualConsistencyValidator {
 

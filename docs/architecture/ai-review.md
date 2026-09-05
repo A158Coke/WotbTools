@@ -193,7 +193,8 @@ Replay → Parser → Canonical BattleTimeline → 确定性 Grounding Facts（�
   → TeamAiPromptBuilder（TACTICAL TIMELINE + FOCUS WINDOWS + 全部确定性证据）
   → Call #2（system prompt 要求 JSON envelope）→ TeamReviewEnvelopeParser
   → TeamFactualConsistencyValidator（V1–V6）→ PASS → 流式输出 reviewMarkdown
-                                              → FAIL → 反馈 LLM 自修（targeted → full → fail-safe）
+                                              → HARD FAIL → 反馈 LLM 自修（targeted → full → conservative safe）
+                                                           → 再次完整校验 → fail-safe
 ```
 
 ### Team Call #2 structured envelope（内部 grounding 契约）
@@ -270,9 +271,10 @@ Replay → Parser → Canonical BattleTimeline → 确定性 Grounding Facts（�
 Draft → validate → PASS → 流式输出
                   → 仅 metadata 冲突（STRUCTURED_METADATA / FORMAT）→ PASS_METADATA 直接输出
                     （正文事实正确时不浪费 LLM retry；P0-2/P0-6）
-                  → HARD_FACT 冲突 #1 → targeted rewrite（携带 [V1]…[V6] 冲突反馈，LLM 自行改写）
+                  → HARD_FACT 冲突 #1 → targeted rewrite（携带逐条 [V1]…[V6] reasonCode 与机器约束）
                   → HARD_FACT 冲突 #2 → full rewrite
-                  → 仍 HARD_FACT 冲突 → fail-safe：AI_REVIEW_GROUNDING_FAILED 业务错误（绝不静默输出矛盾）
+                  → HARD_FACT 冲突 #3 → conservative safe rewrite（删除/概括无法证明的具体 claim，禁止发明替代事实）
+                  → 再次完整 validate；仍 HARD_FACT → fail-safe：AI_REVIEW_GROUNDING_FAILED（绝不静默输出矛盾）
 ```
 
 - **severity 分级（P0-2/P0-6）**：validator 把每条冲突分为 `HARD_FACT`（用户可见事实错误：
@@ -282,7 +284,10 @@ Draft → validate → PASS → 流式输出
   格式问题——由 parser 容错处理）。生产已证明旧行为「任何 structured 小错误都 3 次 140k prompt
   全量重写后 502」导致 AI Review 连续不可用，修复后 metadata-only 冲突 0 次额外 LLM 调用。
 - Backend 绝不代改句子；校验通过后才把 reviewMarkdown 转给前端（不暴露待改写草稿）。
-- 上限：`TeamReplayAnalysisService.MAX_VALIDATION_ATTEMPTS = 3`（draft + 2 次 rewrite，仅 HARD 冲突）。
+- 上限：`TeamReplayAnalysisService.MAX_VALIDATION_ATTEMPTS = 4`（draft + targeted + full + conservative safe，
+  仅 HARD 冲突触发）。SAFE 阶段要求只保留给定 evidence 明确证明的事实，删除/概括具体时间、人数、位置、
+  spotting/LOS、CURRENT 等无法证明的 claim，同时尽量保留有证据支撑的战术判断、位置/节奏、目标与局部交战分析；
+  完成后必须再次执行完整 validator。
 - **authoritative response source**：`callRaw()` 以 `AiChatResponse.completionText()`
   为唯一权威完整响应（Gateway 契约：callback 是流式增量 progress，正常结束时 completionText 为
   聚合后的完整文本；失败一律抛 `AiUpstreamException`，绝不返回 partial）；每轮 attempt 独立
