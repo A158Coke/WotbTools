@@ -1,0 +1,183 @@
+name: Temporary generate all Playback HD maps
+
+on:
+  push:
+    branches:
+      - feat/maps-ai-hd-v2
+    paths:
+      - .github/workflows/tmp-generate-all-maps-hd.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/maps-ai-hd-v2
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Real-ESRGAN CPU tooling
+        run: |
+          python -m pip install --disable-pip-version-check --index-url https://download.pytorch.org/whl/cpu torch torchvision
+          python -m pip install --disable-pip-version-check realesrgan==0.3.0 pillow==11.3.0 opencv-python-headless==4.10.0.84
+          python - <<'PY'
+          from pathlib import Path
+          import site
+          candidates = [Path(p) / 'basicsr' / 'data' / 'degradations.py' for p in site.getsitepackages()]
+          p = next((x for x in candidates if x.is_file()), None)
+          if p is None:
+              raise SystemExit(f'BasicSR degradations.py not found: {candidates}')
+          text = p.read_text(encoding='utf-8')
+          old = 'from torchvision.transforms.functional_tensor import rgb_to_grayscale'
+          new = 'from torchvision.transforms.functional import rgb_to_grayscale'
+          if old in text:
+              p.write_text(text.replace(old, new), encoding='utf-8')
+          print('patched', p)
+          PY
+
+      - name: Fetch Real-ESRGAN model
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth \
+            --output /tmp/realesr-general-x4v3.pth
+
+      - name: Regenerate all 29 HD basemaps from immutable originals
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import cv2
+          import numpy as np
+          from PIL import Image
+          from basicsr.archs.srvgg_arch import SRVGGNetCompact
+          from realesrgan import RealESRGANer
+
+          repo = Path.cwd()
+          src_dir = repo / 'frontend/src/assets/maps'
+          dst_dir = repo / 'frontend/src/assets/maps-hd'
+          manifest_path = dst_dir / 'manifest.json'
+          map_images = repo / 'frontend/src/data/mapImages.js'
+
+          sources = sorted(src_dir.glob('*.webp'))
+          if len(sources) != 29:
+              raise SystemExit(f'expected 29 original basemaps, found {len(sources)}')
+
+          model = SRVGGNetCompact(
+              num_in_ch=3, num_out_ch=3, num_feat=64,
+              num_conv=32, upscale=4, act_type='prelu')
+          upsampler = RealESRGANer(
+              scale=4,
+              model_path='/tmp/realesr-general-x4v3.pth',
+              model=model,
+              tile=256,
+              tile_pad=12,
+              pre_pad=0,
+              half=False,
+              gpu_id=None,
+          )
+
+          dst_dir.mkdir(parents=True, exist_ok=True)
+          for stale in dst_dir.glob('*.webp'):
+              stale.unlink()
+
+          def sha256(path: Path) -> str:
+              h = hashlib.sha256()
+              with path.open('rb') as f:
+                  for chunk in iter(lambda: f.read(1024 * 1024), b''):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          entries = []
+          for index, src in enumerate(sources, start=1):
+              image = cv2.imread(str(src), cv2.IMREAD_COLOR)
+              if image is None:
+                  raise SystemExit(f'failed to decode {src}')
+
+              # AI restoration starts from the immutable original every time.
+              restored, _ = upsampler.enhance(image, outscale=2)
+
+              # Geometry-preserving local contrast/detail finish. No warping,
+              # synthesis, cropping, topology edits, or generative repainting.
+              lab = cv2.cvtColor(restored, cv2.COLOR_BGR2LAB)
+              l, a, b = cv2.split(lab)
+              clahe = cv2.createCLAHE(clipLimit=1.35, tileGridSize=(12, 12))
+              l = clahe.apply(l)
+              finished = cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
+              blur = cv2.GaussianBlur(finished, (0, 0), 0.85)
+              finished = cv2.addWeighted(finished, 1.12, blur, -0.12, 0)
+              finished = np.clip(finished, 0, 255).astype(np.uint8)
+
+              dst = dst_dir / src.name
+              rgb = cv2.cvtColor(finished, cv2.COLOR_BGR2RGB)
+              Image.fromarray(rgb).save(dst, 'WEBP', quality=96, method=6, exact=True)
+
+              with Image.open(src) as im:
+                  source_size = list(im.size)
+              with Image.open(dst) as im:
+                  enhanced_size = list(im.size)
+
+              if enhanced_size != [source_size[0] * 2, source_size[1] * 2]:
+                  raise SystemExit(f'unexpected enhanced size for {src.name}: {enhanced_size}')
+
+              entries.append({
+                  'source': f'frontend/src/assets/maps/{src.name}',
+                  'enhanced': f'frontend/src/assets/maps-hd/{src.name}',
+                  'method': 'REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL',
+                  'sourcePixels': source_size,
+                  'enhancedPixels': enhanced_size,
+                  'sourceSha256': sha256(src),
+                  'enhancedSha256': sha256(dst),
+                  'webpQuality': 96,
+                  'sourceOfTruth': 'ORIGINAL_ONLY',
+                  'geometryTransform': 'NONE',
+              })
+              print(f'[{index:02d}/29] {src.name}: {source_size} -> {enhanced_size}, {dst.stat().st_size} bytes')
+
+          manifest = {
+              'schemaVersion': 2,
+              'policy': 'ORIGINALS_PRESERVED_IN_ASSETS_MAPS',
+              'generationRule': 'EVERY_HD_ASSET_GENERATED_DIRECTLY_FROM_ORIGINAL_SOURCE',
+              'expectedMapCount': 29,
+              'entries': entries,
+          }
+          manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+
+          # Playback should consume the HD variants for all registered maps.
+          text = map_images.read_text(encoding='utf-8')
+          text = text.replace("from '../assets/maps/", "from '../assets/maps-hd/")
+          map_images.write_text(text, encoding='utf-8')
+
+          hd_files = sorted(dst_dir.glob('*.webp'))
+          if len(hd_files) != 29:
+              raise SystemExit(f'expected 29 HD basemaps, found {len(hd_files)}')
+          if len(entries) != 29:
+              raise SystemExit(f'expected 29 manifest entries, found {len(entries)}')
+          print('HD coverage 29/29 complete')
+          PY
+
+      - name: Verify originals untouched and all imports use HD assets
+        run: |
+          git diff --exit-code -- frontend/src/assets/maps/
+          test "$(find frontend/src/assets/maps-hd -maxdepth 1 -name '*.webp' | wc -l)" -eq 29
+          test "$(grep -c "from '../assets/maps-hd/" frontend/src/data/mapImages.js)" -eq 29
+          ! grep -q "from '../assets/maps/" frontend/src/data/mapImages.js
+          grep -q '"expectedMapCount": 29' frontend/src/assets/maps-hd/manifest.json
+          grep -q '"geometryTransform": "NONE"' frontend/src/assets/maps-hd/manifest.json
+
+      - name: Commit all-map HD assets and remove temporary workflow
+        run: |
+          git config user.name 'WotbTools AI'
+          git config user.email 'wotbtools-ai@local'
+          git add frontend/src/assets/maps-hd frontend/src/data/mapImages.js
+          git rm .github/workflows/tmp-generate-all-maps-hd.yml
+          git commit -m 'feat(maps): AI-enhance all 29 playback basemaps'
+          git push origin HEAD:feat/maps-ai-hd-v2
