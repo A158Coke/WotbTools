@@ -1,0 +1,231 @@
+name: Temporary close PR249 all maps
+
+on:
+  push:
+    branches:
+      - feat/playback-3d-prototype
+
+permissions:
+  contents: write
+
+jobs:
+  close249:
+    if: contains(github.event.head_commit.message, '[close-249-all-maps]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/playback-3d-prototype
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "WotbTools AI"
+          git config user.email "wotbtools-ai@local"
+
+      - name: Close 2.5D coverage and projection contracts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def read(path):
+              return Path(path).read_text(encoding='utf-8')
+
+          def write(path, text):
+              Path(path).write_text(text, encoding='utf-8')
+
+          def replace_once(path, old, new):
+              text = read(path)
+              if old not in text:
+                  if new in text:
+                      return
+                  raise SystemExit(f'expected text not found in {path}: {old[:120]!r}')
+              write(path, text.replace(old, new, 1))
+
+          # 1) Tight tactical 45° fit + inverse projection for annotation/input hit coordinates.
+          projection = 'frontend/src/utils/terrainReliefProjection.js'
+          old_bounds = '''  // Camera comes from map south and looks north/up at a fixed elevation. X therefore\n  // stays horizontal and north stays screen-up, preserving the normal tactical-map\n  // orientation while Z becomes visible in screen Y.\n  const rawUMin = xMin - centerX\n  const rawUMax = xMax - centerX\n  const rawVMin = (yMin - centerY) * cosElevation\n    + (minZ - centerZ) * zExaggeration * sinElevation\n  const rawVMax = (yMax - centerY) * cosElevation\n    + (maxZ - centerZ) * zExaggeration * sinElevation\n\n  const centerU = (rawUMin + rawUMax) / 2\n  const centerV = (rawVMin + rawVMax) / 2\n  const half = Math.max(rawUMax - rawUMin, rawVMax - rawVMin) * 0.5 * (1 + padding * 2)\n'''
+          new_bounds = '''  // Camera comes from map south and looks north/up at a fixed elevation. X stays\n  // horizontal and north stays screen-up. Fit against the *actual sampled terrain*\n  // envelope instead of the theoretical minZ/maxZ corner combination, and never\n  // force the projected frustum to a square. A square frustum made the 45° map look\n  // visibly shrunken inside the existing tactical viewport.\n  const rawUMin = xMin - centerX\n  const rawUMax = xMax - centerX\n  const spacingY = (yMax - yMin) / size\n  let rawVMin = Number.POSITIVE_INFINITY\n  let rawVMax = Number.NEGATIVE_INFINITY\n\n  const observeV = (y, height) => {\n    const v = (y - centerY) * cosElevation\n      + (finite(height, centerZ) - centerZ) * zExaggeration * sinElevation\n    rawVMin = Math.min(rawVMin, v)\n    rawVMax = Math.max(rawVMax, v)\n  }\n\n  for (let sy = 0; sy < size; sy++) {\n    const y = yMin + sy * spacingY\n    const row = sy * size\n    for (let sx = 0; sx < size; sx++) observeV(y, heights[row + sx])\n  }\n  // Renderer duplicates the final sample row on the north world-bound edge. Include\n  // that real boundary in fit calculations so no terrain edge can be clipped.\n  const lastRow = (size - 1) * size\n  for (let sx = 0; sx < size; sx++) observeV(yMax, heights[lastRow + sx])\n\n  if (!Number.isFinite(rawVMin) || !Number.isFinite(rawVMax)) {\n    throw new Error('Relief projected terrain envelope is invalid')\n  }\n  const uPadding = (rawUMax - rawUMin) * padding\n  const vPadding = Math.max(rawVMax - rawVMin, 1e-6) * padding\n'''
+          replace_once(projection, old_bounds, new_bounds)
+          replace_once(
+              projection,
+              '''    projectedBounds: Object.freeze({\n      left: centerU - half,\n      right: centerU + half,\n      bottom: centerV - half,\n      top: centerV + half,\n    }),''',
+              '''    projectedBounds: Object.freeze({\n      left: rawUMin - uPadding,\n      right: rawUMax + uPadding,\n      bottom: rawVMin - vPadding,\n      top: rawVMax + vPadding,\n    }),''',
+          )
+          projection_text = read(projection)
+          if 'export function unprojectTerrainPoint' not in projection_text:
+              anchor = '''export function activateTerrainRelief(model) {\n'''
+              addition = '''export function unprojectTerrainPoint(model, xNorm, yNorm) {\n  if (!model) return null\n  const bounds = model.projectedBounds\n  const spanU = bounds.right - bounds.left\n  const spanV = bounds.top - bounds.bottom\n  if (!(spanU > 0) || !(spanV > 0)) return null\n\n  const nx = clamp(finite(xNorm, 0.5), 0, 1)\n  const ny = clamp(finite(yNorm, 0.5), 0, 1)\n  const u = bounds.left + nx * spanU\n  const targetV = bounds.bottom + (1 - ny) * spanV\n  const x = clamp(model.centerX + u, model.worldBounds.xMin, model.worldBounds.xMax)\n  const { yMin, yMax } = model.worldBounds\n  const steps = model.samplesPerAxis\n  const spacingY = (yMax - yMin) / steps\n\n  const sampleV = (y) => {\n    const height = sampleTerrainHeight(model, x, y)\n    const v = (y - model.centerY) * model.cosElevation\n      + (height - model.centerZ) * model.zExaggeration * model.sinElevation\n    return { y, height, v }\n  }\n\n  let previous = sampleV(yMin)\n  let best = previous\n  let bestError = Math.abs(previous.v - targetV)\n  for (let i = 1; i <= steps; i++) {\n    const current = sampleV(yMin + i * spacingY)\n    const currentError = Math.abs(current.v - targetV)\n    if (currentError < bestError) {\n      best = current\n      bestError = currentError\n    }\n    const lo = Math.min(previous.v, current.v)\n    const hi = Math.max(previous.v, current.v)\n    if (targetV >= lo && targetV <= hi && Math.abs(current.v - previous.v) > 1e-9) {\n      // Camera looks south -> north, so the first crossing is the nearest visible\n      // surface when a steep heightfield folds in screen space.\n      const t = (targetV - previous.v) / (current.v - previous.v)\n      const y = previous.y + (current.y - previous.y) * t\n      return { x, y, height: sampleTerrainHeight(model, x, y) }\n    }\n    previous = current\n  }\n  return { x, y: best.y, height: best.height }\n}\n\n'''
+              if anchor not in projection_text:
+                  raise SystemExit('projection activation anchor missing')
+              write(projection, projection_text.replace(anchor, addition + anchor, 1))
+
+          # 2) BattlePlayback screen-space geometry uses the same relief projection.
+          playback = 'frontend/src/components/BattlePlayback.vue'
+          replace_once(
+              playback,
+              "import { createMapView } from '../utils/mapView'\n",
+              "import { createMapView } from '../utils/mapView'\nimport { activeTerrainRelief, projectTerrainPoint, unprojectTerrainPoint } from '../utils/terrainReliefProjection.js'\n",
+          )
+          playback_text = read(playback)
+          helper_anchor = '''/** 标记水平位置（%）：地图用户坐标 → 容器百分比。 */\n'''
+          if 'function projectedSemanticNorm' not in playback_text:
+              helper = '''function reliefModelForPlayback() {\n  const model = activeTerrainRelief.value\n  return model && model.mapCode === String(pbOverview.value.mapCode || '') ? model : null\n}\n\nfunction projectedSemanticNorm(x, y) {\n  const model = reliefModelForPlayback()\n  if (model) {\n    const point = projectTerrainPoint(model, Number(x), Number(y))\n    if (point) return { xNorm: point.xNorm, yNorm: point.yNorm }\n  }\n  return {\n    xNorm: mapView.value.toX(x) / mapView.value.W,\n    yNorm: mapView.value.toY(y) / mapView.value.H,\n  }\n}\n\n'''
+              if helper_anchor not in playback_text:
+                  raise SystemExit('BattlePlayback helper anchor missing')
+              playback_text = playback_text.replace(helper_anchor, helper + helper_anchor, 1)
+              write(playback, playback_text)
+
+          replace_once(
+              playback,
+              '''function semanticPoint(e) {\n  const sp = screenPoint(e.clientX, e.clientY)\n  return screenToSemantic(view, mapView.value, sp.x, sp.y, mapWidth(), mapHeight())\n}\n''',
+              '''function semanticPoint(e) {\n  const sp = screenPoint(e.clientX, e.clientY)\n  const model = reliefModelForPlayback()\n  const rect = mapRenderRect()\n  if (model && rect.width > 0 && rect.height > 0 && view.scale > 0) {\n    const xNorm = ((sp.x - view.tx) / view.scale) / rect.width\n    const yNorm = ((sp.y - view.ty) / view.scale) / rect.height\n    const point = unprojectTerrainPoint(model, xNorm, yNorm)\n    if (point) return { x: point.x, y: point.y }\n  }\n  return screenToSemantic(view, mapView.value, sp.x, sp.y, mapWidth(), mapHeight())\n}\n''',
+          )
+
+          old_text_style = '''const textInputStyle = computed(() => {\n  const session = textSession.value\n  if (!session) return null\n  const s = svgToScreen(\n    mapView.value,\n    view,\n    mapView.value.toX(session.point.x),\n    mapView.value.toY(session.point.y),\n    mapWidth(),\n    mapHeight()\n  )\n  if (!s) return null\n  return { left: `${s.x}px`, top: `${s.y}px` }\n})\n'''
+          new_text_style = '''const textInputStyle = computed(() => {\n  const session = textSession.value\n  if (!session) return null\n  const model = reliefModelForPlayback()\n  if (model) {\n    const rect = mapRenderRect()\n    const point = projectedSemanticNorm(session.point.x, session.point.y)\n    return {\n      left: `${point.xNorm * rect.width * view.scale + view.tx}px`,\n      top: `${point.yNorm * rect.height * view.scale + view.ty}px`,\n    }\n  }\n  const s = svgToScreen(\n    mapView.value,\n    view,\n    mapView.value.toX(session.point.x),\n    mapView.value.toY(session.point.y),\n    mapWidth(),\n    mapHeight()\n  )\n  if (!s) return null\n  return { left: `${s.x}px`, top: `${s.y}px` }\n})\n'''
+          replace_once(playback, old_text_style, new_text_style)
+
+          replace_once(
+              playback,
+              '''function canonicalMarkerScreen(st) {\n  const rect = mapRenderRect()\n  if (!rect || rect.width <= 0 || mapView.value.W <= 0) return null\n  return {\n    x: (mapView.value.toX(st.pos.x) / mapView.value.W) * rect.width * view.scale + view.tx,\n    y: (mapView.value.toY(st.pos.y) / mapView.value.H) * rect.height * view.scale + view.ty,\n  }\n}\n''',
+              '''function canonicalMarkerScreen(st) {\n  const rect = mapRenderRect()\n  if (!rect || rect.width <= 0 || rect.height <= 0) return null\n  const point = projectedSemanticNorm(st.pos.x, st.pos.y)\n  return {\n    x: point.xNorm * rect.width * view.scale + view.tx,\n    y: point.yNorm * rect.height * view.scale + view.ty,\n  }\n}\n''',
+          )
+          replace_once(
+              playback,
+              '''    const x = (mapView.value.toX(s.pos.x) / mapView.value.W) * rect.width + offset.x / view.scale\n    const y = (mapView.value.toY(s.pos.y) / mapView.value.H) * rect.height + offset.y / view.scale\n''',
+              '''    const projected = projectedSemanticNorm(s.pos.x, s.pos.y)\n    const x = projected.xNorm * rect.width + offset.x / view.scale\n    const y = projected.yNorm * rect.height + offset.y / view.scale\n''',
+          )
+
+          # 3) 2.5D is the upgraded map presentation, not a parallel user-selectable mode.
+          panel = 'frontend/src/components/BattlePlaybackPanel.vue'
+          panel_text = read(panel)
+          panel_text = re.sub(r"\nconst playbackDimension = ref<'2d' \| '25d'>\('2d'\)\n", "\n", panel_text, count=1)
+          panel_text = panel_text.replace(
+              "// The relief renderer is a DEV-only, fixed top-down 2.5D experiment. It does not\n// reconstruct client static geometry and it never owns replay time or markers.\nconst playback25dEnabled = import.meta.env.DEV\n",
+              "// 2.5D is the upgraded map presentation. The underlying 2D raster remains only\n// as a fail-safe while local/legal height data is unavailable; users do not switch modes.\n",
+          )
+          panel_text = panel_text.replace("  playbackDimension.value = '2d'\n", "")
+          old_teleports = '''            <!-- The 2.5D canvas is teleported *inside* BattleMap's existing viewport.\n                 Its parent receives the exact same pan/zoom transform as the 2D image,\n                 while SVG bases/tracers and DOM hull/turret markers remain above it. -->\n            <Teleport\n              v-if="playback25dEnabled && pbOverview && playbackDimension === '25d'"\n              defer\n              to="[data-test='pb-primary'] .pb-viewport"\n            >\n              <BattleMap3D :map-code="String(mapPlaybackV2?.mapCode || '')" />\n            </Teleport>\n\n            <Teleport\n              v-if="playback25dEnabled && pbOverview"\n              defer\n              to="[data-test='pb-primary'] .pb-map-stage"\n            >\n              <button\n                type="button"\n                class="pb-dimension-corner-btn"\n                data-test="pb-dimension-toggle"\n                :aria-label="playbackDimension === '2d' ? 'Switch to 2.5D terrain relief view' : 'Switch to flat 2D view'"\n                :title="playbackDimension === '2d' ? 'Switch to terrain relief view' : 'Switch to flat 2D view'"\n                @click="playbackDimension = playbackDimension === '2d' ? '25d' : '2d'"\n              >{{ playbackDimension === '2d' ? '2.5D' : '2D' }}</button>\n            </Teleport>\n'''
+          new_teleport = '''            <!-- 2.5D directly upgrades the map background. BattleMap still owns all\n                 replay overlays/time/state; if local height data is unavailable the\n                 original raster simply remains visible as a technical fallback. -->\n            <Teleport\n              v-if="pbOverview"\n              defer\n              to="[data-test='pb-primary'] .pb-viewport"\n            >\n              <BattleMap3D :map-code="String(mapPlaybackV2?.mapCode || '')" />\n            </Teleport>\n'''
+          if old_teleports not in panel_text:
+              raise SystemExit('BattlePlaybackPanel old toggle block missing')
+          panel_text = panel_text.replace(old_teleports, new_teleport, 1)
+          # Remove obsolete toggle styling if present.
+          panel_text = re.sub(r"\n\.pb-dimension-corner-btn\s*\{.*?\n\}\n", "\n", panel_text, count=1, flags=re.S)
+          write(panel, panel_text)
+
+          # 4) New asset schema + all registered Playback maps by default.
+          renderer = 'frontend/src/components/BattleMap3D.vue'
+          replace_once(renderer, "index?.schemaVersion !== 5", "index?.schemaVersion !== 6")
+
+          exporter = 'common/python/export_playback_3d_assets.py'
+          replace_once(exporter, 'import pathlib\nimport shutil\n', 'import pathlib\nimport re\nimport shutil\n')
+          replace_once(
+              exporter,
+              'SEMANTICS_DIR = REPO / "common" / "map-semantics"\nOUTPUT_DIR',
+              'SEMANTICS_DIR = REPO / "common" / "map-semantics"\nMAP_IMAGES_REGISTRY = REPO / "frontend" / "src" / "data" / "mapImages.js"\nOUTPUT_DIR',
+          )
+          exporter_text = read(exporter)
+          target_anchor = '''def resource_name_variants(name: str) -> list[str]:\n'''
+          if 'def playback_map_codes()' not in exporter_text:
+              helper = '''def playback_map_codes() -> list[str]:\n    """Read the authoritative Playback basemap registry and return its mapCode keys."""\n\n    text = MAP_IMAGES_REGISTRY.read_text(encoding="utf-8")\n    marker = "export const mapImages = {"\n    if marker not in text:\n        raise ExportPlayback3dError("mapImages registry marker not found")\n    body = text.split(marker, 1)[1].rsplit("}", 1)[0]\n    codes = re.findall(r"(?m)^\\s*([A-Za-z_][A-Za-z0-9_]*):\\s*\\{", body)\n    if not codes:\n        raise ExportPlayback3dError("mapImages registry contains no map codes")\n    if len(codes) != len(set(codes)):\n        raise ExportPlayback3dError("mapImages registry contains duplicate map codes")\n    return codes\n\n\n'''
+              if target_anchor not in exporter_text:
+                  raise SystemExit('exporter helper anchor missing')
+              exporter_text = exporter_text.replace(target_anchor, helper + target_anchor, 1)
+              write(exporter, exporter_text)
+
+          replace_once(
+              exporter,
+              '''    parser.add_argument(\n        "map_codes",\n        nargs="+",\n        help="Replay mapCode values, e.g. canal port",\n    )\n''',
+              '''    parser.add_argument(\n        "map_codes",\n        nargs="*",\n        help="Optional Replay mapCode values. Omit to export every map registered in mapImages.js.",\n    )\n''',
+          )
+          replace_once(
+              exporter,
+              '''    targets = semantic_targets()\n    unknown = [code for code in args.map_codes if code not in targets]\n''',
+              '''    targets = semantic_targets()\n    export_all_registered = len(args.map_codes) == 0\n    requested_codes = playback_map_codes() if export_all_registered else list(dict.fromkeys(args.map_codes))\n    unknown = [code for code in requested_codes if code not in targets]\n''',
+          )
+          replace_once(exporter, '"schemaVersion": 5,', '"schemaVersion": 6,')
+          replace_once(
+              exporter,
+              '''        "maps": {},\n    }\n''',
+              '''        "coverage": {\n            "mode": "ALL_REGISTERED_PLAYBACK_MAPS" if export_all_registered else "SELECTED_MAPS",\n            "expectedMapCodes": requested_codes,\n            "expectedMapCount": len(requested_codes),\n            "exportedMapCount": 0,\n            "complete": False,\n        },\n        "maps": {},\n    }\n''',
+          )
+          replace_once(exporter, '            for code in args.map_codes:\n', '            for code in requested_codes:\n')
+          index_anchor = '''    index_path = OUTPUT_DIR / "index.json"\n'''
+          exporter_text = read(exporter)
+          if 'index["coverage"]["exportedMapCount"]' not in exporter_text:
+              coverage = '''    index["coverage"]["exportedMapCount"] = len(index["maps"])\n    index["coverage"]["complete"] = len(index["maps"]) == len(requested_codes)\n    if not index["coverage"]["complete"]:\n        print("error: 2.5D map coverage is incomplete", file=sys.stderr)\n        return 1\n\n'''
+              if index_anchor not in exporter_text:
+                  raise SystemExit('exporter index anchor missing')
+              exporter_text = exporter_text.replace(index_anchor, coverage + index_anchor, 1)
+              write(exporter, exporter_text)
+          replace_once(
+              exporter,
+              '    print(f"local Battle Playback 2.5D assets -> {index_path.relative_to(REPO)}")\n',
+              '    print(f"2.5D coverage {len(index[\'maps\'])}/{len(requested_codes)} maps complete")\n    print(f"local Battle Playback 2.5D assets -> {index_path.relative_to(REPO)}")\n',
+          )
+          # Example now documents the all-map default.
+          exporter_text = read(exporter).replace(
+              '"C:\\\\Users\\\\yu.chen\\\\Downloads\\\\Maps.zip" canal port --clean',
+              '"C:\\\\Users\\\\yu.chen\\\\Downloads\\\\Maps.zip" --clean',
+          )
+          write(exporter, exporter_text)
+
+          # 5) Regression tests for tight fit, inverse projection, unified transient coords and 29-map coverage.
+          terrain_test = 'frontend/src/utils/terrainReliefProjection.test.js'
+          test_text = read(terrain_test)
+          test_text = test_text.replace(
+              '  sampleTerrainHeight,\n  visualReliefZ,',
+              '  sampleTerrainHeight,\n  unprojectTerrainPoint,\n  visualReliefZ,',
+              1,
+          )
+          test_text = test_text.replace(
+              '''  it('pads to a square orthographic frustum so renderer and overlays share one normalized box', () => {\n    const m = model()\n    const width = m.projectedBounds.right - m.projectedBounds.left\n    const height = m.projectedBounds.top - m.projectedBounds.bottom\n    expect(width).toBeCloseTo(height, 8)\n  })\n''',
+              '''  it('tight-fits the actual projected terrain instead of forcing a square frustum', () => {\n    const m = model()\n    const width = m.projectedBounds.right - m.projectedBounds.left\n    const height = m.projectedBounds.top - m.projectedBounds.bottom\n    expect(width).toBeGreaterThan(0)\n    expect(height).toBeGreaterThan(0)\n    expect(width).not.toBeCloseTo(height, 8)\n  })\n\n  it('round-trips a visible screen point back to terrain semantic coordinates', () => {\n    const m = createTerrainReliefModel({\n      mapCode: 'flat',\n      worldBounds: { xMin: -2, yMin: -2, xMax: 2, yMax: 2 },\n      heightRangeMeters: { min: 10, max: 10 },\n      samplesPerAxis: 2,\n      heights: new Float32Array([10, 10, 10, 10]),\n      zExaggeration: 1,\n      padding: 0,\n    })\n    const projected = projectTerrainPoint(m, 0.5, -0.5)\n    const restored = unprojectTerrainPoint(m, projected.xNorm, projected.yNorm)\n    expect(restored.x).toBeCloseTo(0.5, 5)\n    expect(restored.y).toBeCloseTo(-0.5, 4)\n  })\n''',
+              1,
+          )
+          write(terrain_test, test_text)
+
+          coordinate_test = 'frontend/src/components/BattlePlayback.coordinate.test.js'
+          write(coordinate_test, '''// 2.5D coordinate SSoT source regression.\nimport { describe, expect, it } from 'vitest'\nimport { readFileSync } from 'node:fs'\nimport { fileURLToPath } from 'node:url'\n\nconst src = readFileSync(fileURLToPath(new URL('./BattlePlayback.vue', import.meta.url)), 'utf8')\n\ndescribe('Battle Playback 2.5D coordinate SSoT (source regression)', () => {\n  it('uses the active terrain relief projection for marker/collision/transient anchors', () => {\n    expect(src).toContain('activeTerrainRelief')\n    expect(src).toContain('projectTerrainPoint')\n    expect(src).toContain('function projectedSemanticNorm')\n    expect(src).toContain('const point = projectedSemanticNorm(st.pos.x, st.pos.y)')\n    expect(src).toContain('const projected = projectedSemanticNorm(s.pos.x, s.pos.y)')\n    // Floating damage and destruction bursts are anchored through markerScreen -> canonicalMarkerScreen.\n    expect(src).toContain('const p = markerScreen(st)')\n  })\n\n  it('uses inverse terrain projection for annotation input and projected text placement', () => {\n    expect(src).toContain('unprojectTerrainPoint(model, xNorm, yNorm)')\n    expect(src).toContain('projectedSemanticNorm(session.point.x, session.point.y)')\n  })\n\n  it('keeps MapRenderRect as the screen-space owner around the projected terrain', () => {\n    expect(src).toContain('function mapRenderRect()')\n    expect(src).toContain('point.xNorm * rect.width * view.scale + view.tx')\n    expect(src).toContain('point.yNorm * rect.height * view.scale + view.ty')\n  })\n})\n''')
+
+          py_test = 'common/python/tests/test_export_playback_3d_assets.py'
+          py_text = read(py_test)
+          py_text = py_text.replace(
+              '    extract_procedural_water_planes,\n    semantic_targets,\n',
+              '    extract_procedural_water_planes,\n    playback_map_codes,\n    semantic_targets,\n',
+              1,
+          )
+          known_test = '''    def test_known_replay_map_codes_resolve_to_client_map_ids(self):\n        targets = semantic_targets()\n        self.assertEqual("18_canal_cn", targets["canal"]["mapId"])\n        self.assertEqual("14_port_pt", targets["port"]["mapId"])\n\n'''
+          coverage_test = known_test + '''    def test_all_registered_playback_maps_have_height_semantics(self):\n        codes = playback_map_codes()\n        targets = semantic_targets()\n        self.assertEqual(29, len(codes))\n        self.assertEqual(len(codes), len(set(codes)))\n        self.assertEqual([], [code for code in codes if code not in targets])\n        self.assertTrue(all((targets[code].get("sourceFiles") or {}).get("heightmap") for code in codes))\n\n'''
+          if 'test_all_registered_playback_maps_have_height_semantics' not in py_text:
+              if known_test not in py_text:
+                  raise SystemExit('python coverage test anchor missing')
+              py_text = py_text.replace(known_test, coverage_test, 1)
+          write(py_test, py_text)
+          PY
+
+      - name: Python terrain/export validation
+        run: python3 -m unittest common.python.tests.test_export_playback_3d_assets
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend targeted validation
+        working-directory: frontend
+        run: |
+          npm ci
+          npx vitest run src/utils/terrainReliefProjection.test.js src/components/BattlePlayback.coordinate.test.js src/components/BattlePlayback.integration.test.js src/components/BattlePlaybackPanel.dataset.test.js
+          npm run build
+
+      - name: Remove temporary workflow and commit
+        run: |
+          git rm .github/workflows/tmp-close-249-all-maps.yml
+          git add common/python/export_playback_3d_assets.py common/python/tests/test_export_playback_3d_assets.py frontend/src/components/BattleMap3D.vue frontend/src/components/BattlePlayback.vue frontend/src/components/BattlePlaybackPanel.vue frontend/src/components/BattlePlayback.coordinate.test.js frontend/src/utils/terrainReliefProjection.js frontend/src/utils/terrainReliefProjection.test.js
+          git commit -m "feat(playback): close 2.5d relief across all maps"
+          git push origin HEAD:feat/playback-3d-prototype
