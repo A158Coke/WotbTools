@@ -224,4 +224,4 @@ COMPLETED — TARGETED TESTS PASS — LIVE PROVIDER NOT RUN
 - [x] 完成 Team prompt、三语 reasoning contract、quality shortcut validator 与既有 deterministic contract tests 的 delta audit。
 - [x] 完成 Information decision chain、supportability、state trigger、Objectives obligation 与 episode-bound individual review contract。
 - [x] 运行 targeted 0-token tests，完成 review-fix / review-with-docs / code-smell 闭环。
-- [ ] 提交、push 并创建 PR。
+- [x] 提交、push 并创建 PR：[#260](https://github.com/A158Coke/WotbTools/pull/260)。
