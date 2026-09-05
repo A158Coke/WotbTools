@@ -2,6 +2,14 @@
 
 ## Team AI Review Quality Harness v1
 
+## Team AI Review v0.4：信息链与个人复查边界
+
+v0.4 在 v0.3 的 selective but complete 目标上补强推理质量，不增加输出长度、固定小节或 backend tactical verdict。Information 只有在说明「当时确认了什么、什么仍是 CURRENT/LAST_KNOWN/UNSEEN、这如何改变部署或行动义务」后才算完成；后续结果不得回填早期窗口。
+
+几何距离是 evidence，不是 tactical verdict。Team Review 不得把距离或未经验证的 100/150/200 米阈值直接解释为脱节、无法支援、低价值或必须合流；supportability 需要结合射界、遮挡、time-to-influence、机动性、目标可用性、交叉火力、信息贡献、目标压力、敌方固定状态和安全路径。训练建议使用 observable state trigger，不使用通用固定时刻、通用距离阈值或仅按 vehicle class 指派职责。Objectives 若改变行动义务，必须解释谁行动、谁等待及其对持位/轮转成本的影响。
+
+个人重点复查、高贡献者和对方关键威胁只能从正文已经识别并展开的 tactical episode 选择；结算伤害、击杀、存活和阵亡数据只能在 episode 选定后验证结果。重点复查需要时间窗口、局部/位置、实际角色和待复查决策问题；高贡献者必须说明改变了什么，没有 tactical causal evidence 时省略。多个 local 仍需检查传播，但证据不足时可以保持未知，不得为了完整性制造 spotting、crossfire、release 或敌方 intent。
+
 质量验证分三层：普通 deterministic contract tests（0 token）、真实 `.wotbreplay` offline harness，以及显式手动 real-provider benchmark。offline harness 复用生产链 `ReplayParser/ReplayProcessingFacade → Reconstruction → BattleTimelineBuilder → TeamContextBuilder → TeamAiPromptBuilder → TeamGroundingFacts`，只验证 `evidence_required` 证据可用性，不判断模型是否找到了预期结论；benchmark 的 gold hit/miss 是 report-only lexical preflight，不能替代语义裁判。
 
 `AiEvalHarnessTest` 的 synthetic A–H cases 仍用于 prompt/rule contract；synthetic PASS 不等于真实回放质量 PASS。`TeamReplayQualityBenchmarkRunner` 是非默认 `ai-live` runner：必须显式设置 `-Dai.quality.enabled=true`、`-Dai.quality.case=...` 或 `-Dai.quality.all=true`，并提供 `AI_API_KEY`；`ai.quality.runs` 默认 1。runner 不把 gold 或 evaluation scenario 放进生产 prompt，输出 `target/ai-eval-report/team-replay-quality-report.{json,md}`，只保存低基数 metadata、确定性检查、维度分数和最终 review。

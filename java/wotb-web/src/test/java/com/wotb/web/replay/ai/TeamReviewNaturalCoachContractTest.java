@@ -151,6 +151,19 @@ class TeamReviewNaturalCoachContractTest {
     }
 
     @Test
+    void informationAndIndividualSectionsStayCausallyBound() {
+        assertTrue(ZH.contains("Observed：当时确认了什么 → Remaining uncertainty：什么仍未知"),
+                "信息必须写清观察与剩余未知");
+        assertTrue(ZH.contains("Decision impact：这如何改变可选部署、风险或行动义务"),
+                "信息必须落到决策影响");
+        assertTrue(ZH.contains("重点复查至少绑定 time/window、where/local、实际发生的 role 和 decision/execution question"),
+                "重点复查必须绑定正文 episode");
+        assertTrue(ZH.contains("不能重新从 settlement leaderboard 选人"),
+                "个人 section 不得从结算榜单重新选人");
+        assertTrue(ZH.contains("省略优于猜测"), "没有个人 tactical evidence 时允许省略");
+    }
+
+    @Test
     void localizedContractInThreeLanguages() {
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
             final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
