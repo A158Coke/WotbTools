@@ -122,7 +122,6 @@ describe('footprint-preserving terrain relief projection', () => {
   })
 })
 
-
 describe('vehicle terrain attitude', () => {
   function gradientModel(axis, step = 0.5) {
     const size = 6
@@ -142,6 +141,21 @@ describe('vehicle terrain attitude', () => {
       padding: 0,
     })
   }
+
+  it('keeps a flat surface level', () => {
+    const flat = createTerrainReliefModel({
+      mapCode: 'flat-attitude',
+      worldBounds: { xMin: -12, yMin: -12, xMax: 12, yMax: 12 },
+      heightRangeMeters: { min: 10, max: 10 },
+      samplesPerAxis: 3,
+      heights: new Float32Array(9).fill(10),
+      zExaggeration: 1,
+      padding: 0,
+    })
+    const attitude = sampleTerrainAttitude(flat, 0, 0, 37, { length: 8, width: 3.5 })
+    expect(attitude.pitchDeg).toBeCloseTo(0, 8)
+    expect(attitude.rollDeg).toBeCloseTo(0, 8)
+  })
 
   it('derives positive pitch from an uphill front/rear ground slope', () => {
     const attitude = sampleTerrainAttitude(gradientModel('y'), 0, 0, 0, { length: 8, width: 3.5 })
