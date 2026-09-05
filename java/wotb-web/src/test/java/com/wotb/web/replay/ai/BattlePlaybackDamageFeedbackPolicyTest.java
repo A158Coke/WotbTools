@@ -22,7 +22,7 @@ class BattlePlaybackDamageFeedbackPolicyTest {
         return (boolean) method.invoke(null, segments, loss);
     }
 
-    private static PlaybackCombatReconstruction.Loss singleReliableLoss(
+    private static PlaybackCombatReconstruction.Loss loss(
             final double fromSec,
             final double toSec) {
         return new PlaybackCombatReconstruction.Loss(
@@ -30,37 +30,37 @@ class BattlePlaybackDamageFeedbackPolicyTest {
     }
 
     @Test
-    void allowsFeedbackWhenTheVictimStillHasADisplayableLastKnownAnchor() throws Exception {
+    void allowsFeedbackWhenVictimIsObservedAtTheHpLossEndpoint() throws Exception {
         final List<PositionSegment> segments = List.of(
                 new PositionSegment(
-                        10.0, 12.0, "OBSERVED", true,
+                        19.0, 21.0, "OBSERVED", true,
+                        List.of(
+                                new PositionSample(19.0, 20.0, 30.0),
+                                new PositionSample(21.0, 20.0, 30.0))));
+
+        // fromSec is the previous trustworthy HP sample, not the start of a hit-visibility window.
+        // Requiring OBSERVED coverage all the way back to it suppresses a real hit at t=20 even
+        // though the victim is currently positioned and rendered when the HP loss becomes known.
+        assertTrue(transientAllowed(segments, loss(10.0, 20.0)));
+    }
+
+    @Test
+    void rejectsFeedbackWhenVictimIsOnlyLastKnownAtTheHpLossEndpoint() throws Exception {
+        final List<PositionSegment> segments = List.of(
+                new PositionSegment(
+                        10.0, 18.0, "OBSERVED", true,
                         List.of(
                                 new PositionSample(10.0, 20.0, 30.0),
-                                new PositionSample(12.0, 20.0, 30.0))),
+                                new PositionSample(18.0, 20.0, 30.0))),
                 new PositionSegment(
-                        12.0, 20.0, "LAST_KNOWN", false,
-                        List.of(new PositionSample(12.0, 20.0, 30.0))));
+                        18.0, 21.0, "LAST_KNOWN", false,
+                        List.of(new PositionSample(18.0, 20.0, 30.0))));
 
-        // A stationary/no-fresh-position vehicle can remain rendered at its canonical last-known
-        // anchor while an exact HP loss arrives later. Feedback describes the authoritative HP
-        // transition; it must not be suppressed merely because no new position packet arrived.
-        assertTrue(transientAllowed(segments, singleReliableLoss(12.0, 15.0)));
+        assertFalse(transientAllowed(segments, loss(10.0, 20.0)));
     }
 
     @Test
-    void rejectsFeedbackWhenNoMarkerAnchorHasEverBeenKnown() throws Exception {
-        assertFalse(transientAllowed(List.of(), singleReliableLoss(12.0, 15.0)));
-    }
-
-    @Test
-    void rejectsAggregatedOrAmbiguousDamageWindows() throws Exception {
-        final List<PositionSegment> segments = List.of(
-                new PositionSegment(
-                        10.0, 20.0, "OBSERVED", true,
-                        List.of(new PositionSample(10.0, 20.0, 30.0))));
-
-        final PlaybackCombatReconstruction.Loss multipleHits = new PlaybackCombatReconstruction.Loss(
-                12.0, 15.0, 800, null, false, 2, 2400, 1600);
-        assertFalse(transientAllowed(segments, multipleHits));
+    void rejectsFeedbackWhenNoPositionWasEverObserved() throws Exception {
+        assertFalse(transientAllowed(List.of(), loss(10.0, 20.0)));
     }
 }
