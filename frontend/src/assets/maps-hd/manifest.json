@@ -21,19 +21,19 @@
     {
       "source": "frontend/src/assets/maps/port-bay.webp",
       "enhanced": "frontend/src/assets/maps-hd/port-bay.webp",
-      "method": "EDSR_X2_NATIVE_RESTORATION",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_AGGRESSIVE_X2",
       "sourcePixels": [
         2024,
         2024
       ],
       "enhancedPixels": [
-        2024,
-        2024
+        4048,
+        4048
       ],
       "sourceSha256": "dd2f3b589f1098c41ab91ec69603519cff097add739ff381fe44375c25464755",
-      "enhancedSha256": "b7bdcfcdd2f7aa3476454ba0221acb1e3520d07bb128ce9b1ea819d8d9a35f6c",
+      "enhancedSha256": "76e142e978e0fb1c264ae159e5b5226444c09ea513dc12fccef9b03588a7a45e",
       "webpQuality": 96,
-      "restoreNative": true
+      "aggressiveRestoration": true
     }
   ]
 }
