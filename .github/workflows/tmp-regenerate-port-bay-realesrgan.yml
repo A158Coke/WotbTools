@@ -1,0 +1,114 @@
+name: Temporary regenerate Port Bay with Real-ESRGAN
+
+on:
+  push:
+    branches:
+      - feat/playback-3d-prototype
+    paths:
+      - .github/workflows/tmp-regenerate-port-bay-realesrgan.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/playback-3d-prototype
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Real-ESRGAN CPU tooling
+        run: |
+          python -m pip install --disable-pip-version-check --index-url https://download.pytorch.org/whl/cpu torch torchvision
+          python -m pip install --disable-pip-version-check realesrgan==0.3.0 pillow==11.3.0 opencv-python-headless==4.10.0.84
+      - name: Fetch lightweight Real-ESRGAN model
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth \
+            --output /tmp/realesr-general-x4v3.pth
+      - name: Aggressively restore Port Bay to 2x output
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          import cv2
+          from PIL import Image
+          from basicsr.archs.srvgg_arch import SRVGGNetCompact
+          from realesrgan import RealESRGANer
+
+          repo = Path.cwd()
+          src = repo / 'frontend/src/assets/maps/port-bay.webp'
+          dst = repo / 'frontend/src/assets/maps-hd/port-bay.webp'
+          manifest_path = repo / 'frontend/src/assets/maps-hd/manifest.json'
+
+          model = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=32, upscale=4, act_type='prelu')
+          upsampler = RealESRGANer(
+              scale=4,
+              model_path='/tmp/realesr-general-x4v3.pth',
+              model=model,
+              tile=256,
+              tile_pad=10,
+              pre_pad=0,
+              half=False,
+              gpu_id=None,
+          )
+
+          image = cv2.imread(str(src), cv2.IMREAD_COLOR)
+          if image is None:
+              raise SystemExit(f'failed to decode {src}')
+          out, _ = upsampler.enhance(image, outscale=2)
+          rgb = cv2.cvtColor(out, cv2.COLOR_BGR2RGB)
+          dst.parent.mkdir(parents=True, exist_ok=True)
+          Image.fromarray(rgb).save(dst, 'WEBP', quality=96, method=6, exact=True)
+
+          def sha256(path):
+              h = hashlib.sha256()
+              with open(path, 'rb') as f:
+                  for chunk in iter(lambda: f.read(1024*1024), b''):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          with Image.open(src) as im:
+              source_size = list(im.size)
+          with Image.open(dst) as im:
+              enhanced_size = list(im.size)
+
+          manifest = {'schemaVersion': 1, 'policy': 'ORIGINALS_PRESERVED_IN_ASSETS_MAPS', 'entries': []}
+          if manifest_path.exists():
+              manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          entries = {e['source']: e for e in manifest.get('entries', [])}
+          key = 'frontend/src/assets/maps/port-bay.webp'
+          entries[key] = {
+              'source': key,
+              'enhanced': 'frontend/src/assets/maps-hd/port-bay.webp',
+              'method': 'REAL_ESRGAN_GENERAL_X4V3_AGGRESSIVE_X2',
+              'sourcePixels': source_size,
+              'enhancedPixels': enhanced_size,
+              'sourceSha256': sha256(src),
+              'enhancedSha256': sha256(dst),
+              'webpQuality': 96,
+              'aggressiveRestoration': True,
+          }
+          manifest['entries'] = [entries[k] for k in sorted(entries)]
+          manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+          print(f'Port Bay: {source_size} -> {enhanced_size}')
+          print(f'output bytes: {dst.stat().st_size}')
+          PY
+      - name: Verify original Port Bay was not modified
+        run: |
+          git diff --exit-code -- frontend/src/assets/maps/port-bay.webp
+          test -f frontend/src/assets/maps-hd/port-bay.webp
+          grep -q 'REAL_ESRGAN_GENERAL_X4V3_AGGRESSIVE_X2' frontend/src/assets/maps-hd/manifest.json
+      - name: Commit aggressive Port Bay sample and remove temporary workflow
+        run: |
+          git config user.name 'WotbTools AI'
+          git config user.email 'wotbtools-ai@local'
+          git add frontend/src/assets/maps-hd/port-bay.webp frontend/src/assets/maps-hd/manifest.json
+          git rm .github/workflows/tmp-regenerate-port-bay-realesrgan.yml
+          git commit -m 'feat(maps): aggressively restore Port Bay with Real-ESRGAN'
+          git push origin HEAD:feat/playback-3d-prototype
