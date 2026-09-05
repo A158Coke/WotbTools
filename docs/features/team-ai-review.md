@@ -2,6 +2,14 @@
 
 ## Quality harness v1（0-token CI + 手动真实回放）
 
+### Team AI Review v0.4：从信息到决策影响
+
+v0.4 不改变 v0.3 的输出长度、自由正文或 evidence model，而是约束长篇复盘的因果精度：对关键 Information 依次检查当时已观察事实、剩余未知状态（CURRENT/LAST_KNOWN/UNSEEN）和 decision impact。没有把信息转成部署、风险或行动义务变化时，不能只写「拿到信息」。
+
+距离只能作为空间证据，不能单独判定脱节或支援价值。是否能支援局部要结合射界、遮挡、到达影响时间、机动性、目标、交叉火力、信息贡献、目标压力、敌方固定状态和安全路径。训练建议使用本局可观察状态触发，不生成通用的米数阈值、固定时刻或 vehicle-class mandatory role；目标状态改变行动义务时，应说明谁必须行动、谁可以等待。
+
+「重点复查」「高贡献者」和「关键威胁」只能绑定正文中已经展开的 tactical episode，不能重新从 settlement leaderboard 选择。重点复查要给出时间/窗口、局部位置、实际角色和决策/执行问题；高贡献者要回答「他改变了什么」，仅有伤害、击杀或存活数据时省略。传播需要检查，但不要求每次都找到传播；缺证据时保持不确定，也不猜测敌方意图。
+
 Team review 的质量验证不依赖默认 CI 调用模型。deterministic contract tests 校验 envelope 的 `evidenceBasis`、推理顺序和反捷径规则；offline harness 对真实 `.wotbreplay` 走生产 parser、reconstruction、canonical timeline、team context、prompt 和 grounding facts 链，只校验证据类型与结构性 gold constraint。gold 不包含标准 review，也不会发送给模型；已有 synthetic golden cases 只证明 prompt contract，不证明真实 LLM 行为。
 
 手动 benchmark 使用非默认 `ai-live` 的 `TeamReplayQualityBenchmarkRunner`，显式选择 case/all 后才会创建 provider gateway。它不注入 synthetic scenario，运行次数默认 1，报告包含 model/prompt version/git SHA/date、grounding/shortcut/结构化 basis 结果、`must_notice`/`must_not`、最终 review 和可选 baseline 对比；不持久化 prompt、API key 或用户 token usage。
