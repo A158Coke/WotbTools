@@ -1,7 +1,7 @@
 /**
  * Radar Metric Registry：
  * 选手画像雷达图只允许 League Rating 七维，禁止 contribution/kast/impact 进入 Radar。
- * 每个 League 维度保留 score/max 解释值；V5 Radar 几何由当前 reference=75、权威 max=150 的
+ * 每个 League 维度保留 score/max 解释值；V6 Radar 几何由当前 reference=75、权威 max=150 的
  * bounded scale 生成。
  * PlayerDetailDrawer 只消费本 registry + resolveRadarMetric，组件不硬编码业务公式。
  *
@@ -10,8 +10,8 @@
  *   永远不能改变 final Rating（七维 League Rating 算法固定）。
  * - Table ColumnPicker 与 Radar Metric Picker 是两套完全独立的偏好。
  * - 禁止复制后端 domain max 常量：League 维度满分由后端 resp.league.columns 提供，
- *   同时负责 score/max 明细与 V5 bounded geometry；max 缺失/非法时整轴 fail-closed。
- * - V5 Evidence Adjustment 只作用于 Batch Player Rating，不改 Radar 的 raw dimensionMeans；
+ *   同时负责 score/max 明细与 V6 bounded geometry；max 缺失/非法时整轴 fail-closed。
+ * - V6 pooled Rating 只作用于 Batch Player Rating，不改 Radar 的 raw dimensionMeans；
  *   最终 bounded geometry 由 radarScale 独立生成。
  */
 
@@ -105,7 +105,7 @@ export function saveRadarPreference(order) {
  * 把指标 key + 原始值解析为雷达轴输入（缺失 → available:false，UI 显示 "--"，
  * 绝不伪装成 0/0%）。
  * League 维度满分来自后端 metadata（maxByKey = resp.league.columns 的 key → max）。本函数只解析
- * raw/display；V5 bounded scaler 会再次验证 max，缺失/非法时令该轴 fail-closed。
+ * raw/display；V6 bounded scaler 会再次验证 max，缺失/非法时令该轴 fail-closed。
  * @param {string} key
  * @param {*} raw 原始值（null = unavailable）
  * @param {Object} [maxByKey] league 列满分元数据 {key: max}

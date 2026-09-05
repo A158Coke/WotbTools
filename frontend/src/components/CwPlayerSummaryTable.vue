@@ -60,7 +60,7 @@ function arrow(key) {
 // Rating 格式 contract 在 helpers.js 唯一实现（单场表 / CW 统一玩家表 / PNG 导出共用）。
 
 function isRatingKey(key) {
-  return props.leagueMode && (key === 'league_rating' || CW_DIM_KEYS.includes(key))
+  return props.leagueMode && (key === 'league_rating' || key === 'league_observed_mean' || CW_DIM_KEYS.includes(key))
 }
 
 function percentCell(value) {

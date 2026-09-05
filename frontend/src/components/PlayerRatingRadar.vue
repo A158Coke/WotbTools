@@ -26,7 +26,7 @@ const props = defineProps({
   referenceLabel: { type: String, default: '' },
   /** player 系列名（昵称），用于图例。 */
   playerLabel: { type: String, default: '' },
-  /** Optional caller-specific incomplete-reference text; V5 keeps its existing default. */
+  /** Optional caller-specific incomplete-reference text; League keeps its bounded default. */
   referenceUnavailableLabel: { type: String, default: '' },
 })
 
