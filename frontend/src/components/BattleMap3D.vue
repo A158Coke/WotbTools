@@ -33,10 +33,6 @@ const RELIEF_CONTRAST = 1.45
 const RELIEF_MIN_SHADE = 0.56
 const RELIEF_MAX_SHADE = 1.20
 const RELIEF_SUN = new THREE.Vector3(-0.72, 0.58, 0.38).normalize()
-// Keep mipmaps for minification, but sample one level at a time. This avoids the extra
-// trilinear blend softness of LinearMipmapLinearFilter on a mostly top-down tactical map;
-// the real Playback visual gate still decides whether this policy is retained.
-const TACTICAL_MAP_MIN_FILTER = THREE.LinearMipmapNearestFilter
 
 function finiteNumber(value, fallback = 0) {
   const number = Number(value)
@@ -322,7 +318,7 @@ async function loadMap() {
     texture.wrapS = THREE.ClampToEdgeWrapping
     texture.wrapT = THREE.ClampToEdgeWrapping
     texture.generateMipmaps = true
-    texture.minFilter = TACTICAL_MAP_MIN_FILTER
+    texture.minFilter = THREE.LinearMipmapLinearFilter
     texture.magFilter = THREE.LinearFilter
     texture.anisotropy = nextRenderer.capabilities.getMaxAnisotropy()
     texture.needsUpdate = true

@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 ### Battle Playback
-- **Battle Playback HD basemap runtime sharpness**：2D fallback 使用与 overlay SVG、markers 共用 logical render frame 的 `.pb-basemap` `<img>`；2.5D 主路径的 WebGL canvas 现在按实际 layout-scaled CSS frame 配置 drawing buffer，并受 HD source 与 GPU renderbuffer 上限约束，保留 mipmap 的单层采样以减少俯视图三线性软化；同时修复碰撞 presentation offset 的 screen-pixel 单位回归。保留 `mapView.W/H`、coordinate projection、camera transform 与 1×→4× 交互，新增 natural raster dimensions、DPR、effective raster-density 与 renderer diagnostics；真实认证 Playback 的 fit/2×/4× A/B 视觉 gate 仍待完成，未修改 29 张原图或 HD 资源。
+- **Battle Playback HD basemap runtime sharpness**：2D fallback 使用与 overlay SVG、markers 共用 logical render frame 的 `.pb-basemap` `<img>`；2.5D 主路径的 WebGL canvas 现在按实际 layout-scaled CSS frame 配置 drawing buffer，并受 HD source 与 GPU renderbuffer 上限约束；同时修复碰撞 presentation offset 的 screen-pixel 单位回归。真实 Playback 的同地图/同位置/同缩放 A/B 对照显示 WebGL 与直接 HD raster 基本等价，剩余柔化归类为当前 4048×4048 source-detail ceiling；保留现有 mipmap 过滤策略，不修改 29 张原图或 HD 资源。
 - **Battle Playback HD 地图验证收口**：29 张 HD 底图增加 coverage/hash/真实尺寸/严格 2× frame/map import/5 MiB 单图预算的 deterministic gate；terrain attitude 补齐 yaw=90°、反向与 45° 局部轴测试。视觉几何仍要求人工 29/29 source↔HD QA，manifest 的 `geometryTransform=NONE` 仅描述生成流程，不作为视觉真实性证明。
 
 ### Production observability
