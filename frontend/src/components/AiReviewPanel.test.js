@@ -96,7 +96,9 @@ describe('AiReviewPanel dataset request', () => {
         ...overrides
       },
       global: {
-        mocks: { $t: key => key },
+        mocks: {
+          $t: (key, params) => key === 'errors.diagnostic_id' ? `diagnostic:${params.id}` : key
+        },
         stubs: {
           ReplayAnalysisAction: {
             props: ['analyzing'],
@@ -162,6 +164,48 @@ describe('AiReviewPanel dataset request', () => {
     await flushPromises()
     expect(wrapper.vm.error).toContain(messageKey)
     expect(wrapper.vm.error).toContain(`err-${status}`)
+    vi.unstubAllGlobals()
+  })
+
+  it('展示并支持复制 SSE canonical error ID，同时保留用户可读错误文案', async () => {
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) }
+    vi.stubGlobal('navigator', { clipboard })
+    const wrapper = mountDatasetPanel()
+    wrapper.vm.error = 'errors.ai_review_grounding_failed'
+    wrapper.vm.errorId = 'corr-123'
+    await nextTick()
+
+    const errorPanel = wrapper.find('[data-test="ai-error"]')
+    expect(errorPanel.text()).toContain('errors.ai_review_grounding_failed')
+    expect(errorPanel.text()).toContain('diagnostic:corr-123')
+    await errorPanel.find('button').trigger('click')
+    await flushPromises()
+    expect(clipboard.writeText).toHaveBeenCalledWith('corr-123')
+    expect(errorPanel.text()).toContain('errors.diagnostic_id_copied')
+    vi.unstubAllGlobals()
+  })
+
+  it('保留 SSE canonical error 的用户文案与 correlationId', async () => {
+    let reads = 0
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: async () => reads++ === 0
+            ? { done: false, value: new TextEncoder().encode('event: error\ndata: {"id":"corr-123","errorCode":"AI_REVIEW_GROUNDING_FAILED","errorMsg":null}\n\n') }
+            : { done: true },
+          releaseLock: () => {}
+        })
+      }
+    }))
+    const wrapper = mountDatasetPanel()
+
+    await wrapper.find('.dataset-analyze').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.vm.error).toContain('errors.ai_review_grounding_failed')
+    expect(wrapper.vm.errorId).toBe('corr-123')
     vi.unstubAllGlobals()
   })
 

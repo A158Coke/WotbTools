@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 ### Battle Playback
-- **Battle Playback 2.5D 车辆地形姿态**：复用 terrain heightfield 与现有真实车辆 footprint，在车辆局部前/后/左/右采样地面高度并计算受限 pitch/roll；只倾斜 hull/turret 视觉层，HP/标签/hitbox/碰撞布局继续保持屏幕对齐，无 heightfield 或无可靠朝向时退化为原平面 marker。
+- **Battle Playback HD 地图验证收口**：29 张 HD 底图增加 coverage/hash/真实尺寸/严格 2× frame/map import/5 MiB 单图预算的 deterministic gate；terrain attitude 补齐 yaw=90°、反向与 45° 局部轴测试。视觉几何仍要求人工 29/29 source↔HD QA，manifest 的 `geometryTransform=NONE` 仅描述生成流程，不作为视觉真实性证明。
 
 ### Production observability
 - **AI Review 生产事故可追踪**：Team validator 冲突分类提升到 INFO 安全结构化日志；AI Review/Incident Explorer 看板增加 parse、validation、conflict、retry、upstream 与最终失败生命周期查询，SSE failure 复用 correlationId 作为 canonical error id，并由前端展示可复制的诊断 ID。Prometheus 仍只使用低基数统计，不记录 prompt、原始模型输出或用户级 token usage；部署后的真实数据验收保留为手工清单。

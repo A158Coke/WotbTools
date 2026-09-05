@@ -1,0 +1,13 @@
+id: E-information-objective-decision
+replay: common/fixtures/replays/tournament-14-14-example.wotbreplay
+must_notice:
+  - opening_enemy_allocation
+  - unresolved_enemy_capacity_decreased
+  - friendly_local_numbers_supported_attack
+  - proactive_objective_attack
+must_not:
+  - reactive_retake_only
+  - empty_lane_certainty
+evidence_required:
+  - POSITION_REGION
+  - ALIVE_COUNT_TRANSITION

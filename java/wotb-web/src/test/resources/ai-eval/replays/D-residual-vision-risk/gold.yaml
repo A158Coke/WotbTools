@@ -1,0 +1,11 @@
+id: D-residual-vision-risk
+replay: common/fixtures/replays/random-battle-example.wotbreplay
+must_notice:
+  - last_known_unresolved
+  - movement_without_safety_confirmation
+must_not:
+  - death_alone_as_diagnosis
+  - empty_lane_certainty
+evidence_required:
+  - ENEMY_POSITION
+  - POSITION_REGION

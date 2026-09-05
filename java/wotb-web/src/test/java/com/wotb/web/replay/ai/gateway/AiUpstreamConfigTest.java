@@ -37,6 +37,8 @@ class AiUpstreamConfigTest {
                 source.getProperty("wotb.ai.retry-max-backoff-millis"));
         assertEquals("${AI_RETRY_BACKOFF_MULTIPLIER:2.0}",
                 source.getProperty("wotb.ai.retry-backoff-multiplier"));
+        assertEquals("${AI_TEAM_REVIEW_MAX_OUTPUT_TOKENS:8192}",
+                source.getProperty("wotb.ai.team-review-max-output-tokens"));
     }
 
     @Test

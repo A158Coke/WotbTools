@@ -1,3 +1,18 @@
+# Battle Playback HD Basemaps + 2.5D Vehicle Terrain Attitude
+
+## 状态
+
+IMPLEMENTED — REVIEW FIX IN PROGRESS
+
+## 范围
+
+- 29/29 HD basemap 均由对应原图独立生成，原图永久保留为 rollback/source-of-truth。
+- HD 资源增加 deterministic gate：coverage、SHA-256、实际 WebP 尺寸、严格 2× frame、无 crop/aspect drift、mapImages import coverage、单图 5 MiB / 4× growth budget。
+- terrain attitude 继续复用 authoritative heightfield + canonical hull yaw + 真实车辆 footprint；不伪造 replay Z。
+- 新增 yaw=90°、反向 sign、45° diagonal 的局部轴回归测试。
+- 29/29 source ↔ HD 视觉几何仍需人工 QA；`geometryTransform=NONE` 不作为视觉真实性证明。
+
+---
 # Battle Playback 2.5D Vehicle Terrain Attitude
 
 ## 状态

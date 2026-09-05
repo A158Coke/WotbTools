@@ -38,7 +38,10 @@ export interface AiReviewDoneEvent {
 
 export interface AiReviewErrorEvent {
   type: 'error'
+  /** Canonical diagnostic id; for SSE AI failures this is the request correlation id. */
+  id: string | null
   code: ServerErrorCode
+  errorMsg: string | null
 }
 
 export type AiReviewEvent =

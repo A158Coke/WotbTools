@@ -526,5 +526,10 @@
       "sourceOfTruth": "ORIGINAL_ONLY",
       "geometryTransform": "NONE"
     }
-  ]
+  ],
+  "deliveryBudget": {
+    "maxEnhancedBytes": 5242880,
+    "maxGrowthRatio": 4.0,
+    "rationale": "Single-map Playback delivery budget for mobile/mainland links; one map is loaded at a time."
+  }
 }
