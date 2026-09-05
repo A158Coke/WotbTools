@@ -42,6 +42,12 @@ Team Call #2 通过 `AiPromptLibrary` 的模块化 include，按 INFORMATION/VIS
 
 `NO_SIGNIFICANT_CONFIRMED_ERROR` 只表示当前可确认/可观察证据中没有确认的重大错误，不证明本场不存在任何错误。证据覆盖不足时跳过不受支持的判断；保留 `primaryDiagnosis` 字段，不新增 backend tactical verdict、权威 `GOOD_TRADE`/`BAD_PUSH`/`HALF_COMMIT_ERROR` 标签或第二套 episode/harness。Strategic Prior 仍只是非实际赛前战术的战略基线，回放不能证明语音、call、沟通或指挥责任时不得猜测。
 
+### Team AI Review v0.3：只选关键内容，但完整解释关键内容
+
+Team Review 不再以尽可能短为目标，而是采用 selective but complete tactical review：不逐秒复述时间线、不为格式凑段落，但被选中的关键 episode 要完整说明「发生了什么 → 当时知道什么 → 哪些车辆参与 → 为什么重要 → 如何影响下一阶段」。当证据存在时，Information 要写出它怎样改变决策空间，Objectives/点数、局部交战和多个局部之间的传播也不能为了简洁省略。
+
+`primaryDiagnosis` 只是整场摘要，正文 `reviewMarkdown` 可以继续保留次级关键 episode、信息变化、目标义务、传播和执行后果。正文优先级为团队战术分析、Information/Objectives、关键 episode、propagation、训练建议，之后才是可选的「重点复查」和「高贡献者」；两个个人 section 各自最多 0–2 人，缺少 structural evidence 或可复查的决策/执行问题时完全省略。普通 7v7 约 1200–2200 字、复杂局允许约 2500–3500 字只是软目标；Team Call #2 默认专用输出上限调整为 8192 tokens，仍不改变 SSE/API contract。
+
 ## 2. 入口和分层（Dataset-only）
 
 ```
