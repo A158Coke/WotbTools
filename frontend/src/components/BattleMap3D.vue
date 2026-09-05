@@ -8,7 +8,10 @@ import {
   createTerrainReliefModel,
   projectTerrainCoordinates,
 } from '../utils/terrainReliefProjection.js'
-import { computeMap3dRenderTarget } from '../utils/map3dRenderSizing.js'
+import {
+  computeMap3dRenderTarget,
+  getMaxRenderBufferSize,
+} from '../utils/map3dRenderSizing.js'
 
 const props = defineProps({
   mapCode: { type: String, default: '' },
@@ -95,7 +98,7 @@ function fitRenderer() {
     maxPixelRatio: 2,
     textureWidth: sourceTextureSize?.width,
     textureHeight: sourceTextureSize?.height,
-    maxRenderBufferSize: renderer.capabilities.maxRenderBufferSize,
+    maxRenderBufferSize: getMaxRenderBufferSize(renderer),
   })
   renderer.setPixelRatio(target.pixelRatio)
   renderer.setSize(target.cssWidth, target.cssHeight, false)

@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest'
-import { computeMap3dRenderTarget } from './map3dRenderSizing.js'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  computeMap3dRenderTarget,
+  getMaxRenderBufferSize,
+} from './map3dRenderSizing.js'
 
 const source = { textureWidth: 4048, textureHeight: 4048, maxRenderBufferSize: 8192 }
 
@@ -38,5 +41,26 @@ describe('computeMap3dRenderTarget', () => {
     expect(target.pixelRatio).toBeCloseTo(4048 / 3072, 8)
     expect(target.drawingBufferWidth).toBe(4048)
     expect(target.drawingBufferHeight).toBe(4022)
+  })
+})
+
+describe('getMaxRenderBufferSize', () => {
+  it('reads MAX_RENDERBUFFER_SIZE from the active WebGL context', () => {
+    const getParameter = vi.fn(() => 4096)
+    const renderer = {
+      getContext: () => ({ MAX_RENDERBUFFER_SIZE: 0x84e8, getParameter }),
+    }
+
+    expect(getMaxRenderBufferSize(renderer)).toBe(4096)
+    expect(getParameter).toHaveBeenCalledWith(0x84e8)
+  })
+
+  it('returns null when the context cannot provide a renderbuffer limit', () => {
+    expect(getMaxRenderBufferSize({ getContext: () => ({}) })).toBeNull()
+    expect(
+      getMaxRenderBufferSize({
+        getContext: () => { throw new Error('lost context') },
+      }),
+    ).toBeNull()
   })
 })

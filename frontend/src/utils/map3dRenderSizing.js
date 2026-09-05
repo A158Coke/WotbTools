@@ -4,6 +4,20 @@ function positiveNumber(value) {
 }
 
 /**
+ * Read the actual WebGL renderbuffer limit exposed by the active context.
+ * Three.js does not expose MAX_RENDERBUFFER_SIZE on renderer.capabilities.
+ */
+export function getMaxRenderBufferSize(renderer) {
+  try {
+    const context = renderer?.getContext?.()
+    if (!context?.getParameter || context.MAX_RENDERBUFFER_SIZE == null) return null
+    return positiveNumber(context.getParameter(context.MAX_RENDERBUFFER_SIZE))
+  } catch {
+    return null
+  }
+}
+
+/**
  * Compute a 2.5D renderer target from the CSS size that the browser actually laid out.
  *
  * Battle Playback uses a layout-scaled viewport, so the host's client dimensions already
