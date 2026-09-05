@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.75",
+    "date": "2026-09-05",
+    "tag": "chg",
+    "zh": "团队 AI 复盘改为结构化展示关键战术阶段、训练建议、重点复查与高贡献者；没有足够依据的可选区块会自动隐藏。",
+    "en": "Team AI reviews now present key tactical episodes, training suggestions, review focus and high contributors in structured sections; optional sections without enough evidence stay hidden.",
+    "ru": "Командные AI-разборы теперь показывают ключевые тактические эпизоды, рекомендации для тренировки, объекты для повторной проверки и наиболее полезных участников в структурированных разделах; необязательные разделы без достаточных оснований скрываются."
+  },
+  {
     "v": "2.12.74",
     "date": "2026-09-05",
     "tag": "chg",

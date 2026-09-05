@@ -136,8 +136,9 @@ public class AiReplayReviewService {
         // capability 是 additive 元数据：与 prompt planner 的 battleStart 判定一致，
         // 不改变 AI 生成逻辑，仅向客户端表达「完整 / 受限时间轴」降级态。
         return base == null
-                ? new AnalyzeResponse(null, null, capabilityOf(facts))
-                : new AnalyzeResponse(base.analysis(), base.preBattleSection(), capabilityOf(facts));
+                ? new AnalyzeResponse(null, null, capabilityOf(facts), null)
+                : new AnalyzeResponse(base.analysis(), base.preBattleSection(), capabilityOf(facts),
+                        base.teamReview(), base.teamPlayers());
     }
 
     /**
@@ -284,12 +285,12 @@ public class AiReplayReviewService {
             case TEAM_PERSPECTIVE -> {
                 final TeamAnalyzeResult teamResult = aiAnalysisService
                         .analyzeTeamGroups(List.of(group), language, listener);
-                final Battle battle = result.battle();
-                final List<String> corrected = sanitizeClusterTerms(correctTankNames(packageSections(
-                        teamResult.analysis().analysis(), teamResult.preBattleSection()), battle), battle);
                 yield new AnalyzeResponse(
-                        withDisclaimerFooter(corrected.get(0), language),
-                        corrected.get(1));
+                        null,
+                        teamResult.preBattleSection(),
+                        AnalyzeResponse.Capability.AVAILABLE,
+                        teamResult.structuredResult(),
+                        teamResult.teamPlayers());
             }
         };
     }

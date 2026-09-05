@@ -64,6 +64,7 @@
 - UI token、Profile 与响应式索引：[`docs/frontend/ui-system.md`](../docs/frontend/ui-system.md)
 - 回放协议与解析事实：[`docs/research/replay/protocol.md`](../docs/research/replay/protocol.md)、[`docs/reference/replay-data.md`](../docs/reference/replay-data.md)
 - AI / Playback 产品与接口契约：[`docs/architecture/ai-review.md`](../docs/architecture/ai-review.md)、[`docs/features/team-ai-review.md`](../docs/features/team-ai-review.md)、[`docs/features/battle-playback.md`](../docs/features/battle-playback.md)
+- Team AI Review v0.5 的 `done.teamReview` 与可选 `teamPlayers` 必须经 `aiReviewSse` runtime guard；页面用 authoritative mapping 渲染身份，空的可选 structured sections 不渲染。
 - 地图素材：[`docs/reference/maps.md`](../docs/reference/maps.md)
 - tank marker 资产：[`docs/assets/battle-replay/`](../docs/assets/battle-replay/)、[`src/assets/tank-icons/README.md`](src/assets/tank-icons/README.md)
 - Tier X 车型资产：[`docs/assets/tier-x-models/README.md`](../docs/assets/tier-x-models/README.md)

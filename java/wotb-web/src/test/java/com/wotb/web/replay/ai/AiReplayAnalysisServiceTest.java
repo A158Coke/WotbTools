@@ -82,10 +82,15 @@ class AiReplayAnalysisServiceTest {
             + "\"mvps\":[{\"playerKey\":\"P1\",\"reason\":\"r\",\"evidence\":[\"e\"],"
             + "\"confidence\":\"PARTIAL\"}],\"limitations\":[\"l\"]}";
 
-    /** Natural Coach 轮：Call #2 必须返回合法 JSON envelope（reviewMarkdown 为断言文本）。 */
+    /** Legacy facade contract fixture; production team groups use structuredResult(). */
     private static String envelope(final String markdown) {
         return "{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
                 + "\"reviewMarkdown\":\"" + markdown + "\",\"claims\":[]}";
+    }
+
+    private static String structuredResult() {
+        return "{\"summary\":{\"verdict\":\"team review\",\"primaryDiagnosis\":\"诊断\"},"
+                + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],\"highContributors\":[]}";
     }
 
     /**
@@ -340,11 +345,13 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void singleTeamPerspectiveUsesSingleTeamContext() {
+        gateway.nextCompletionText = structuredResult();
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
                 teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
         final var result = service.analyzeTeamGroups(groups);
         assertEquals("team review", result.analysis().analysis());
+        assertNotNull(result.structuredResult());
         // 单文件 team single 路径：SINGLE_TEAM_CONTEXT，无 MULTI_TEAM_CONTEXT / PERSPECTIVE 分区
         //（多视角批量已随 legacy 端点删除，analyze() 对 >1 analyzable 单元 fail loud）
         assertTrue(teamLastBody().contains("SINGLE_TEAM_CONTEXT"),
@@ -361,13 +368,15 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void teamAnalyzeGroupsExposesRenderedPreBattleSectionWhenPriorAvailable() {
+        gateway.nextCompletionText = structuredResult();
         gateway.preBattleCompletionText = PRIOR_JSON;
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
                 teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
         final var result = service.analyzeTeamGroups(groups);
         assertEquals("team review", result.analysis().analysis(),
-                "analysis must be unaffected by preBattleSection");
+                "summary compatibility text must be unaffected by preBattleSection");
+        assertNotNull(result.structuredResult());
         final String section = result.preBattleSection();
         assertNotNull(section, "Call #1 prior must be rendered when available");
         assertTrue(section.contains("赛前预测"), "section must be user-visible Chinese");
@@ -380,17 +389,20 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void teamAnalyzeGroupsNullSectionWhenPriorUnavailable() {
+        gateway.nextCompletionText = structuredResult();
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
                 teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
         final var result = service.analyzeTeamGroups(groups);
         assertEquals("team review", result.analysis().analysis());
+        assertNotNull(result.structuredResult());
         assertNull(result.preBattleSection(),
                 "failed Call #1 must not block the review, section stays null");
     }
 
     @Test
     void teamCall2ForwardsThinkingOptionFromConfig() {
+        gateway.nextCompletionText = structuredResult();
         // startService() 使用 4 参构造（call2 thinking 默认开启 true/high），验证团队入口透传
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
@@ -408,6 +420,7 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void teamStreamingEmitsEvidenceDoneBeforeReviewCall() {
+        gateway.nextCompletionText = structuredResult();
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
                 teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
@@ -464,7 +477,7 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void singleTeamPerspectiveProducesOneRequest() {
-        gateway.nextCompletionText = envelope("team review");
+        gateway.nextCompletionText = structuredResult();
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
                 teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
