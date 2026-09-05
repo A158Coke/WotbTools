@@ -8,7 +8,9 @@ This wrapper keeps the user's client Maps.zip outside Git and reuses the proven
 
 In addition to static SCG geometry, the exporter derives the map's real tiled
 uint16 heightmap into a renderer-neutral little-endian float32 height buffer.
-No client textures/materials are copied.
+Water is represented only as proven horizontal Z levels derived from Water
+RenderObject bbox metadata + SC2 world transforms. No client water geometry,
+textures, materials or shaders are copied.
 
 IMPORTANT: output is intentionally LOCAL RESEARCH ONLY. It contains geometry and
 terrain derived from user-supplied client resources and is not a production
@@ -24,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import pathlib
 import shutil
 import struct
@@ -31,6 +34,7 @@ import subprocess
 import sys
 import zipfile
 from array import array
+from typing import Any
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SEMANTICS_DIR = REPO / "common" / "map-semantics"
@@ -39,11 +43,22 @@ OUTPUT_DIR = REPO / "common" / "assets" / "map-3d-local"
 LEGACY_OUTPUT_DIR = REPO / "frontend" / "public" / "map-3d-local"
 
 sys.path.insert(0, str(REPO / "common" / "python"))
-from wotb_sc2 import Sc2ParseError, decode_dvpl  # noqa: E402
+from export_map_geometry_poc import (  # noqa: E402
+    component_by_type,
+    iter_entities_recursive,
+    render_object_is_visible,
+    select_scene_member,
+    world_transform,
+)
+from wotb_sc2 import Sc2ParseError, decode_bytes, decode_dvpl, read_sc2  # noqa: E402
 
 
 class ExportPlayback3dError(RuntimeError):
     """Actionable local 3D export failure."""
+
+
+WATER_LOCAL_Z_SPAN_TOLERANCE_METERS = 0.25
+WATER_XY_TILT_QUATERNION_TOLERANCE = 1e-4
 
 
 def normalize_member(name: str) -> str:
@@ -219,6 +234,95 @@ def export_terrain(
     }
 
 
+def decode_render_bbox(render_object: dict[str, Any]) -> tuple[float, float, float, float, float, float] | None:
+    payload = decode_bytes(render_object.get("bbox"))
+    if payload is None:
+        return None
+    if len(payload) != 24:
+        raise ExportPlayback3dError(
+            f"Water RenderObject bbox has {len(payload)} bytes, expected 24"
+        )
+    return tuple(float(value) for value in struct.unpack("<6f", payload))
+
+
+def extract_procedural_water_planes(scene: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return proven horizontal Water Z levels without exporting water geometry.
+
+    A Water RenderObject is accepted only when its serialized bbox is effectively
+    flat in local Z and its world quaternion has no X/Y tilt. Rotation around Z
+    is harmless for a horizontal plane. The resulting world Z therefore follows
+    directly from local bbox center Z plus the SC2 world translation/scale.
+    """
+
+    candidates: list[dict[str, Any]] = []
+    for entity_path, entity in iter_entities_recursive(scene):
+        render = component_by_type(entity, "RenderComponent")
+        if render is None:
+            continue
+        render_object = render.get("rc.renderObj")
+        if not isinstance(render_object, dict):
+            continue
+        if str(render_object.get("##name", "")) != "Water":
+            continue
+        if not render_object_is_visible(render_object):
+            continue
+
+        bbox = decode_render_bbox(render_object)
+        if bbox is None:
+            continue
+        local_z_min, local_z_max = bbox[2], bbox[5]
+        local_z_span = abs(local_z_max - local_z_min)
+        if local_z_span > WATER_LOCAL_Z_SPAN_TOLERANCE_METERS:
+            continue
+
+        transform = world_transform(entity)
+        translation = transform.get("translation") or [0.0, 0.0, 0.0]
+        scale = transform.get("scale") or [1.0, 1.0, 1.0]
+        quaternion = transform.get("rotationQuaternionXYZW") or [0.0, 0.0, 0.0, 1.0]
+        if len(translation) != 3 or len(scale) != 3 or len(quaternion) != 4:
+            continue
+        if abs(float(quaternion[0])) > WATER_XY_TILT_QUATERNION_TOLERANCE:
+            continue
+        if abs(float(quaternion[1])) > WATER_XY_TILT_QUATERNION_TOLERANCE:
+            continue
+
+        local_surface_z = (local_z_min + local_z_max) / 2.0
+        world_z = float(translation[2]) + local_surface_z * float(scale[2])
+        if not math.isfinite(world_z):
+            continue
+        candidates.append({
+            "zMeters": round(world_z, 4),
+            "evidence": "WATER_RENDER_OBJECT_FLAT_BBOX_Z_PLUS_SC2_WORLD_TRANSFORM",
+            "entityName": entity.get("name") if isinstance(entity.get("name"), str) else None,
+            "entityPath": entity_path,
+            "localZSpanMeters": round(local_z_span, 6),
+        })
+
+    # Multiple Water entities at the same physical water level should produce one plane.
+    result: list[dict[str, Any]] = []
+    for candidate in sorted(candidates, key=lambda item: float(item["zMeters"])):
+        if result and abs(float(candidate["zMeters"]) - float(result[-1]["zMeters"])) < 0.01:
+            continue
+        result.append(candidate)
+    return result
+
+
+def export_water(archive: zipfile.ZipFile, map_id: str) -> dict[str, Any]:
+    scene_member = select_scene_member(archive, map_id)
+    scene = read_sc2(decode_resource(archive.read(scene_member), scene_member.filename))
+    planes = extract_procedural_water_planes(scene)
+    return {
+        "renderMode": "PROCEDURAL_HORIZONTAL_PLANES",
+        "planes": planes,
+        "usesClientWaterGeometry": False,
+        "usesClientTextures": False,
+        "usesClientMaterials": False,
+        "usesClientShaders": False,
+        "sourceFacts": "Water RenderObject bbox metadata + SC2 world transform only",
+        "sourceMember": normalize_member(scene_member.filename),
+    }
+
+
 def export_map(
     maps_zip: pathlib.Path,
     archive: zipfile.ZipFile,
@@ -246,6 +350,7 @@ def export_map(
         )
 
     terrain = export_terrain(archive, map_code, document)
+    water = export_water(archive, map_id)
     semantic_terrain = document.get("terrain") or {}
     elevation = semantic_terrain.get("playableElevationMeters") or {}
     ground_z = elevation.get("median")
@@ -254,6 +359,7 @@ def export_map(
         "displayName": document.get("displayName") or map_id,
         "manifest": f"/map-3d-local/{manifest_name}",
         "terrain": terrain,
+        "water": water,
         "referenceGroundZMeters": float(ground_z) if isinstance(ground_z, (int, float)) else 0.0,
         "geometryCount": manifest.get("geometrySummary", {}).get("geometryCount"),
         "instanceCount": manifest.get("instanceSummary", {}).get("count"),
@@ -299,7 +405,7 @@ def main() -> int:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     index = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "source": "LOCAL_CLIENT_DERIVED",
         "toolingPolicy": {
             "scope": "LOCAL_RESEARCH_ONLY",
@@ -309,6 +415,7 @@ def main() -> int:
             "containsClientDerivedTerrain": True,
             "containsClientTextures": False,
             "containsClientMaterials": False,
+            "containsClientWaterGeometry": False,
         },
         "maps": {},
     }
@@ -318,10 +425,13 @@ def main() -> int:
                 entry = export_map(maps_zip, archive, code, targets[code])
                 index["maps"][code] = entry
                 terrain = entry["terrain"]
+                water_planes = entry.get("water", {}).get("planes", [])
+                water_text = ", ".join(str(plane["zMeters"]) for plane in water_planes) or "none"
                 print(
                     f"{code} -> {entry['mapId']}: "
                     f"{entry['geometryCount']} geometry / {entry['instanceCount']} instances / "
-                    f"terrain {terrain['samplesPerAxis']}x{terrain['samplesPerAxis']}"
+                    f"terrain {terrain['samplesPerAxis']}x{terrain['samplesPerAxis']} / "
+                    f"procedural water Z={water_text}"
                 )
     except (
         OSError,
