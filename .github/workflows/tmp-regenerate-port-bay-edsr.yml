@@ -29,18 +29,18 @@ jobs:
           curl --fail --location --retry 3 \
             https://raw.githubusercontent.com/Saafke/EDSR_Tensorflow/master/models/EDSR_x2.pb \
             --output /tmp/EDSR_x2.pb
-      - name: Regenerate Port Bay HD sample with EDSR
-        run: python common/python/enhance_map_assets.py /tmp/EDSR_x2.pb port-bay --model-type edsr --quality 94
+      - name: Regenerate Port Bay native-size HD sample with EDSR
+        run: python common/python/enhance_map_assets.py /tmp/EDSR_x2.pb port-bay --model-type edsr --restore-native --quality 96
       - name: Verify original Port Bay was not modified
         run: |
           git diff --exit-code -- frontend/src/assets/maps/port-bay.webp
           test -f frontend/src/assets/maps-hd/port-bay.webp
-          grep -q 'EDSR_X2_PLUS_CONSERVATIVE_UNSHARP' frontend/src/assets/maps-hd/manifest.json
+          grep -q 'EDSR_X2_NATIVE_RESTORATION' frontend/src/assets/maps-hd/manifest.json
       - name: Commit EDSR sample and remove temporary workflow
         run: |
           git config user.name 'WotbTools AI'
           git config user.email 'wotbtools-ai@local'
           git add frontend/src/assets/maps-hd/port-bay.webp frontend/src/assets/maps-hd/manifest.json
           git rm .github/workflows/tmp-regenerate-port-bay-edsr.yml
-          git commit -m 'feat(maps): regenerate Port Bay HD with EDSR'
+          git commit -m 'feat(maps): regenerate Port Bay with native-size EDSR restoration'
           git push origin HEAD:feat/playback-3d-prototype
