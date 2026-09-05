@@ -1,0 +1,13 @@
+{
+  "id": "team-tactical-skill-v01-h-assault",
+  "mode": "TEAM_PERSPECTIVE",
+  "arenaBonusType": 3,
+  "fixtureKey": "cw-cap-defense-01",
+  "expectedJudgment": "攻防战 25–40 秒不机械视为紧急基地，70–80 秒进入警戒",
+  "checks": [
+    { "kind": "system_prompt_contains", "text": "约需 100 秒" },
+    { "kind": "system_prompt_contains", "text": "约 25–40 秒" },
+    { "kind": "system_prompt_contains", "text": "约 70–80 秒进入明显警戒区" }
+  ],
+  "note": "Golden H：攻防战目标压力遵循模式与进度梯度，仍需结合现实重置可能性。"
+}

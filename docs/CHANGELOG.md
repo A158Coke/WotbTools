@@ -45,6 +45,7 @@
   `docs/android/architecture.md` Authentication Boundary（区分 Web auth hosts 与 native handoff）。
 
 ### Added
+- **Team AI Tactical Review v0.1**：训练房/联赛 Team Call #2 增加模块化团队执行、位置节奏、HP/火力交换与模式目标推理参考；`primaryDiagnosis` 不再强制制造错误，Strategic Prior 明确为非权威基线，无法由回放证明的通信/call 原因保持跳过。同步三语 prompt 契约、grounding 回归与 golden cases。
 - **Juhe QQ callback 阶段追踪与 callbackRef 关联（已脱敏）**：JuheQqEndpoint.handleCallback 增加完整 stage 序列
   （callback_entered → authentication_session_restored → juhe_callback_accepted → before_broker_authenticated →
   broker_authenticated / broker_authenticated_failed），所有 stage 带同一 callbackRef（state 的 SHA-256 前 8 hex，
