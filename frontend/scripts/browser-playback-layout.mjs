@@ -42,7 +42,6 @@ const productionCss = cssPaths
   .replaceAll(':fullscreen', '.pb-test-fullscreen')
 const safeInsetsUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/playbackSafeInsets.js')).href
 const rasterDensityUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/mapRasterDensity.js')).href
-const mapViewUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/mapView.js')).href
 const battleMapSource = readFileSync(resolve(frontendRoot, 'src/components/BattleMap.vue'), 'utf8')
 const battlePlaybackSource = readFileSync(resolve(frontendRoot, 'src/components/BattlePlayback.vue'), 'utf8')
 if (!battleMapSource.includes('screenOffsetToSvgDelta(offset, props.mapView, renderedFrame)')
@@ -162,7 +161,6 @@ ${productionCss}
 <script type="module">
 import { playbackSafeInsetOwnership } from ${JSON.stringify(safeInsetsUrl)}
 import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
-import { screenOffsetToSvgDelta } from ${JSON.stringify(mapViewUrl)}
 
 // This module script is deferred by HTML and the load event waits for its module graph to finish.
 // Publish the geometry result synchronously during module evaluation so Chrome --dump-dom
@@ -268,7 +266,12 @@ import { screenOffsetToSvgDelta } from ${JSON.stringify(mapViewUrl)}
       const marker = root.querySelector('.pb-marker')
       const visibleRect = map.getBoundingClientRect()
       const renderedRect = svg?.getBoundingClientRect()
-      const delta = screenOffsetToSvgDelta(offset, logical, renderedRect)
+      const delta = renderedRect && renderedRect.width > 0 && renderedRect.height > 0
+        ? {
+            x: offset.x * logical.W / renderedRect.width,
+            y: offset.y * logical.H / renderedRect.height,
+          }
+        : null
       require(delta, 'leader-line SVG delta must be measurable')
       const canonical = { x: logical.W / 2, y: logical.H / 2 }
       const x2 = canonical.x + (delta?.x || 0)
