@@ -25,9 +25,9 @@ function model() {
 }
 
 describe('fixed 45 degree terrain relief projection', () => {
-  it('keeps the approved amplified tactical-relief defaults', () => {
+  it('uses amplified relief without shrinking the upgraded map rect', () => {
     expect(RELIEF_Z_EXAGGERATION).toBe(2)
-    expect(RELIEF_PADDING).toBeCloseTo(0.035)
+    expect(RELIEF_PADDING).toBe(0)
   })
 
   it('keeps X horizontal while higher Z moves north/up on screen', () => {
@@ -63,6 +63,19 @@ describe('fixed 45 degree terrain relief projection', () => {
     expect(width).toBeGreaterThan(0)
     expect(height).toBeGreaterThan(0)
     expect(width).not.toBeCloseTo(height, 8)
+  })
+
+  it('default fit maps the terrain X envelope exactly to the viewport edges', () => {
+    const m = createTerrainReliefModel({
+      mapCode: 'flat',
+      worldBounds: { xMin: -2, yMin: -2, xMax: 2, yMax: 2 },
+      heightRangeMeters: { min: 10, max: 10 },
+      samplesPerAxis: 2,
+      heights: new Float32Array([10, 10, 10, 10]),
+      zExaggeration: 1,
+    })
+    expect(projectTerrainPoint(m, -2, 0, 10).xNorm).toBeCloseTo(0, 8)
+    expect(projectTerrainPoint(m, 2, 0, 10).xNorm).toBeCloseTo(1, 8)
   })
 
   it('round-trips a visible screen point back to terrain semantic coordinates', () => {
