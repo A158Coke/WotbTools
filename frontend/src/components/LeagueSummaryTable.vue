@@ -29,7 +29,7 @@ const sortedRows = computed(() => {
     direction: sortReverse.value ? -1 : 1,
     num: isTeamName ? false : !!col?.num,
     locale: locale.value,
-    // 行是 TeamLeagueSummary（ratingMedian / dimensionMedians 字段，无 cells）；
+    // 行是 TeamLeagueSummary（rating / observedMean / dimensionMeans 字段，无 cells）；
     // 列 key → 行字段映射，否则 league_rating 排序会全读到 undefined（stable 假通过）
     valueGetter: isTeamName ? teamDisplayName : (row) => summarySortValue(row, sortKey.value),
     tiebreakGetter: row => row.teamKey,
@@ -53,15 +53,16 @@ function cellValue(row, key) {
   if (key === 'team_name') return ''
   if (key === 'nickname') return row.nickname
   if (key === 'clan') return row.clan
-  if (key === 'battles') return row.battles
-  if (key === 'league_rating') return row.ratingMedian
+  if (key === 'battles' || key === 'rated_battles') return row.ratedBattles ?? row.battles
+  if (key === 'league_rating') return row.rating
+  if (key === 'league_observed_mean') return row.observedMean
   if (key === 'mvp_count') return row.mvpCount
   if (key === 'wins') return row.wins
   if (key === 'damage_total') return row.damageTotal
   if (key === 'assist_total') return row.assistTotal
   if (key === 'kills_total') return row.killsTotal
   const dimIndex = CW_DIM_KEYS.indexOf(key)
-  if (dimIndex >= 0) return (row.dimensionMedians || [])[dimIndex]
+  if (dimIndex >= 0) return (row.dimensionMeans || [])[dimIndex]
   return row[key]
 }
 
@@ -72,14 +73,15 @@ function displayValue(value) {
   return String(value)
 }
 
-/** 列 key → 战队汇总行字段（排序用 raw 中位数/维度值）。 */
+/** 列 key → 战队汇总行字段（排序用 raw mean/维度值）。 */
 function summarySortValue(row, key) {
-  if (key === 'league_rating') return row.ratingMedian
-  if (key === 'battles') return row.battles
+  if (key === 'league_rating') return row.rating
+  if (key === 'league_observed_mean') return row.observedMean
+  if (key === 'battles' || key === 'rated_battles') return row.ratedBattles ?? row.battles
   if (key === 'wins') return row.wins
   if (key === 'mvp_count') return row.mvpCount
   const dimIndex = CW_DIM_KEYS.indexOf(key)
-  if (dimIndex >= 0) return (row.dimensionMedians || [])[dimIndex]
+  if (dimIndex >= 0) return (row.dimensionMeans || [])[dimIndex]
   return row[key]
 }
 

@@ -24,8 +24,9 @@ function teamRow(overrides = {}) {
     autoName: 'AAA',
     nameSource: 'CLAN_MAJORITY',
     battles: 2,
-    ratingMedian: 850.4,
-    dimensionMedians: [300.2, 60, 70, 110, 40, 80, 45],
+    rating: 850.4,
+    observedMean: 850.4,
+    dimensionMeans: [300.2, 60, 70, 110, 40, 80, 45],
     wins: 1,
     arenaTeams: ['111:1', '222:1'],
     ...overrides
@@ -33,20 +34,20 @@ function teamRow(overrides = {}) {
 }
 
 describe('LeagueSummaryTable', () => {
-  it('七维 invariant：战队汇总 dimensionMedians 恰好 7 个值（无残留第八维）', () => {
-    expect(teamRow().dimensionMedians).toHaveLength(7)
+  it('七维 invariant：战队汇总 dimensionMeans 恰好 7 个值（无残留第八维）', () => {
+    expect(teamRow().dimensionMeans).toHaveLength(7)
     // 七维 key 集恰好 7 个（与 CW_DIM_KEYS 单一事实源对齐；禁止 fixture 偷偷保留第八维）
     expect(CW_DIM_KEYS).toHaveLength(7)
   })
 
-  it('renders rows with team name, battles and rating median', () => {
+  it('renders rows with team name, battles and rating', () => {
     const wrapper = mount(LeagueSummaryTable, {
       props: { title: 'T', rows: [teamRow()], columns: SUMMARY_COLS, teamNames: {} },
       global: { mocks: { $t: key => key } }
     })
     const text = wrapper.text()
-    // 总 Rating 只显示整数（850），不显示 /1000 冗余完成度
-    expect(text).toContain('850')
+    // 总 Rating 展示保留 1 位小数，不显示 /1000 冗余完成度
+    expect(text).toContain('850.4')
     expect(text).not.toContain('850 ·')
     expect(text).toContain('2')
     const input = wrapper.find('input.team-name-input')
@@ -111,13 +112,13 @@ describe('LeagueSummaryTable', () => {
     expect(wrapper.find('td.league-summary-empty').text()).not.toBe('--')
   })
 
-  it('sorts rating median asc by raw ratingMedian (valueGetter 映射修复)', async () => {
+  it('sorts rating asc by raw rating (valueGetter 映射修复)', async () => {
     // 输入故意乱序：AAA(850) 在前、BBB(700) 在后——若排序读 row.league_rating（undefined，
-    // 全 missing → stable 假通过）则 AAA 会留在第一行；必须按 row.ratingMedian 真实排序。
+    // 全 missing → stable 假通过）则 AAA 会留在第一行；必须按 row.rating 真实排序。
     const rows = [
-      teamRow({ teamKey: 'clan:AAA', ratingMedian: 850.4, autoName: 'AAA' }),
-      teamRow({ teamKey: 'clan:CCC', ratingMedian: null, autoName: 'CCC' }),
-      teamRow({ teamKey: 'clan:BBB', ratingMedian: 700.2, autoName: 'BBB' }),
+      teamRow({ teamKey: 'clan:AAA', rating: 850.4, autoName: 'AAA' }),
+      teamRow({ teamKey: 'clan:CCC', rating: null, autoName: 'CCC' }),
+      teamRow({ teamKey: 'clan:BBB', rating: 700.2, autoName: 'BBB' }),
     ]
     const wrapper = mount(LeagueSummaryTable, {
       props: { title: 'T', rows, columns: SUMMARY_COLS, teamNames: {} },
@@ -126,9 +127,27 @@ describe('LeagueSummaryTable', () => {
     const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
     await th.trigger('click')
     const rowsOut = wrapper.findAll('tbody tr')
-    expect(rowsOut.at(0).text()).toContain('700')   // raw 700.2 → 700（BBB）
-    expect(rowsOut.at(1).text()).toContain('850')   // raw 850.4 → 850（AAA）
+    expect(rowsOut.at(0).text()).toContain('700.2')   // raw 700.2 → 700.2（BBB）
+    expect(rowsOut.at(1).text()).toContain('850.4')   // raw 850.4 → 850.4（AAA）
     expect(rowsOut.at(2).text()).toContain('--')    // missing last（CCC）
+  })
+
+  it('team summary sorting uses full-precision raw Rating when display values tie', async () => {
+    const rows = [
+      teamRow({ teamKey: 'clan:HIGH', rating: 700.24, autoName: 'HIGH' }),
+      teamRow({ teamKey: 'clan:LOW', rating: 700.21, autoName: 'LOW' })
+    ]
+    const wrapper = mount(LeagueSummaryTable, {
+      props: { title: 'T', rows, columns: SUMMARY_COLS, teamNames: {} },
+      global: { mocks: { $t: key => key } }
+    })
+    const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    await th.trigger('click')
+    const rowsOut = wrapper.findAll('tbody tr')
+    expect(rowsOut.at(0).find('input').element.value).toBe('LOW')
+    expect(rowsOut.at(1).find('input').element.value).toBe('HIGH')
+    expect(rowsOut.at(0).text()).toContain('700.2')
+    expect(rowsOut.at(1).text()).toContain('700.2')
   })
 
   it('sorts team name by final display name (override-aware)', async () => {

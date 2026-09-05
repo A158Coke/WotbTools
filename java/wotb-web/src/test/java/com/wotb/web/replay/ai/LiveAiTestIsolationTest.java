@@ -25,7 +25,8 @@ class LiveAiTestIsolationTest {
     private static final List<String> KNOWN_LIVE_TESTS = List.of(
             "com/wotb/web/replay/ai/TeamReviewRealE2EProbeTest.java",
             "com/wotb/web/replay/ai/TeamReviewBatchE2EProbeTest.java",
-            "com/wotb/web/replay/ai/TeamReviewDetailedReproProbeTest.java");
+            "com/wotb/web/replay/ai/TeamReviewDetailedReproProbeTest.java",
+            "com/wotb/web/replay/ai/eval/TeamTacticalSkillLiveBehaviorEvalTest.java");
 
     @Test
     void everyKnownLiveTestIsTaggedAndStillPresent() throws IOException {
@@ -43,6 +44,17 @@ class LiveAiTestIsolationTest {
             }
         }
         assertTrue(missing.isEmpty(), "Known live AI tests must remain tagged: " + missing);
+    }
+
+    @Test
+    void tacticalBehaviorProbeRequiresExplicitOptIn() throws IOException {
+        final Path sourcePath = testRoot().resolve(
+                "com/wotb/web/replay/ai/eval/TeamTacticalSkillLiveBehaviorEvalTest.java");
+        final String source = read(sourcePath);
+        assertTrue(source.contains("System.getProperty(\"ai.tactical.live.enabled\", \"false\")"),
+                "tactical behavior probe must default ai.tactical.live.enabled to false");
+        assertTrue(source.contains("-Dai.tactical.live.enabled=true"),
+                "tactical behavior probe must document explicit opt-in");
     }
 
     @Test

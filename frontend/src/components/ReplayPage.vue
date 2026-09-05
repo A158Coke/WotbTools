@@ -187,7 +187,7 @@ const drawerPlayer = computed(() => {
       nickname: row.cells.nickname,
       clan: row.cells.clan || '',
       rating: row.cells.league_rating,
-      rawMedian: row.cells.league_rating_raw_median,
+      observedMean: row.cells.league_observed_mean,
       dimensionMeans: row.league?.dimensionMeans ?? null,
       mvpCount: row.cells.mvp_count,
       battles: row.cells.battles,
