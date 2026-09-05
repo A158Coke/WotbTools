@@ -1,0 +1,535 @@
+{
+  "schemaVersion": 2,
+  "policy": "ORIGINALS_PRESERVED_IN_ASSETS_MAPS",
+  "generationRule": "EVERY_HD_ASSET_GENERATED_DIRECTLY_FROM_ORIGINAL_SOURCE",
+  "expectedMapCount": 29,
+  "entries": [
+    {
+      "source": "frontend/src/assets/maps/black-goldville.webp",
+      "enhanced": "frontend/src/assets/maps-hd/black-goldville.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "10595c5ca238820e4a74cb3e12a9306334fb335274c53c54ce8c463057dcad04",
+      "enhancedSha256": "0c2d80ccc170c3ac206e19815753a222bcb0866400bd59093ec44a1099d1538a",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/canal.webp",
+      "enhanced": "frontend/src/assets/maps-hd/canal.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "2b900527bf18f67b278f6bd04ac3c244fff66a57126ee0100804d460c9948d83",
+      "enhancedSha256": "aa5417f7d54bf219b19433caa4ee9b6d0567b046049f0443827f5e598bfb8e3c",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/canyon.webp",
+      "enhanced": "frontend/src/assets/maps-hd/canyon.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "a33255e9a3567e4115d5af77faf89414a305eb56025de0b675034a6ad86f2b1f",
+      "enhancedSha256": "62251dd021817a3f2d1d69c93aec8d20ccd23eb3fd4fe5aa832a51f57f0ad5ff",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/castilla.webp",
+      "enhanced": "frontend/src/assets/maps-hd/castilla.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "9678826cd78a949753019128c5533c462bc6d6440d068c9a03d9edb5305182c6",
+      "enhancedSha256": "78273534b17e11f349e758605f53b8a7050b695e1a8de4b32164d22bb9b9da19",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/copperfield.webp",
+      "enhanced": "frontend/src/assets/maps-hd/copperfield.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "8074e3f792e9ab1f6cc1f93e7f86bd52030737af99c9fc943b8bc822c2d76c01",
+      "enhancedSha256": "7b3875531439af4c58facc8cf36d03926b485aa39ad2aee44998b40132a949db",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/dead-rail.webp",
+      "enhanced": "frontend/src/assets/maps-hd/dead-rail.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "ff9f41d4892c968a499bdc9cb8d5a55d91e204860bfa01c7572e2dc90f60da2f",
+      "enhancedSha256": "67b21a39c1980ab0b73ef52a308f89b68e9fd5a0cb3e5df4354bb06886c69d14",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/desert-sands.webp",
+      "enhanced": "frontend/src/assets/maps-hd/desert-sands.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "be2dce06e0215d0630d015d4e724635154bfdc5078a853e354d5df82816b98d6",
+      "enhancedSha256": "e17db4efb8473830181e4d429bc4c7578cc0d8258eb35ea389fba78ffe3226ba",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/falls-creek.webp",
+      "enhanced": "frontend/src/assets/maps-hd/falls-creek.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "ff40e6ef69aaf7439e69a9e18ba87e16dd3c91b0e975eda93d1dea543758abdb",
+      "enhancedSha256": "09ebcf699ed1c10ae557eb1eaca66b7959b910c242d79ba323dca20b2cb8cf31",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/faust.webp",
+      "enhanced": "frontend/src/assets/maps-hd/faust.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "b2e51a3509b35537d701846aff4f5a65ac019ac661b3aacacea14f21a06b764c",
+      "enhancedSha256": "982ef2ee62bd40121ae36a0b576043a96b568ae3bf85861b7be0781bcd8f9b26",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/fort-despair.webp",
+      "enhanced": "frontend/src/assets/maps-hd/fort-despair.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "cd2825dad49d43d3d6616a45fcb2463875f23bfcb873df35c0540999b40f016f",
+      "enhancedSha256": "40aa997c7b43a28a7eb0a723295169f99878505542b38a68b0bf52b981692282",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/ghost-factory.webp",
+      "enhanced": "frontend/src/assets/maps-hd/ghost-factory.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "e1a799a70322b04acec82eda87b076d420c2a90f70c11e2ae631f609068890b8",
+      "enhancedSha256": "9fe2330f28237e5881b4a5cd12fe9b969ffa2f48fbf43c01c097a40051279459",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/hellas.webp",
+      "enhanced": "frontend/src/assets/maps-hd/hellas.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "1a843646642a5993af78bc57fe62063bbafc2dc3cfefb92ce2cda1665f501ba9",
+      "enhancedSha256": "3f694336b65f7a48179689bc9c1f6c2890246878bd31b7bd5c4b4add1a118740",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/himmelsdorf.webp",
+      "enhanced": "frontend/src/assets/maps-hd/himmelsdorf.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "8941c64c18d32eab32d6c899aba3f6ec3f7f4f8b4b6aa5895bed833cb01dd3f1",
+      "enhancedSha256": "13953ffffb5cee041b8a1d7453d1a313f51ea093f7ccfb57f1c5051f563e3238",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/horrorstadt.webp",
+      "enhanced": "frontend/src/assets/maps-hd/horrorstadt.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "f637186c4f1dd315ef4a0cd42f145786a4e3594d866e354046ae60ae997277eb",
+      "enhancedSha256": "94b09919fb3a7541c44ccd26e697a7ec7a7feda6738910fb44a78d3661c27214",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/lagoon.webp",
+      "enhanced": "frontend/src/assets/maps-hd/lagoon.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "c61e45ca5a2e0bedd1b90f235049e47b991fc3bab53a1530c54a471e7345067a",
+      "enhancedSha256": "fb9eaaf48b7084064db22da7023804763bca2f439cebd926c5f537788b35cd63",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/mayan-ruins.webp",
+      "enhanced": "frontend/src/assets/maps-hd/mayan-ruins.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "80fd4a843e051787d921c9be8911bc0d5f613c06924a45736b99d2acdd80102f",
+      "enhancedSha256": "cc84a6041716f2a8da3097fd9e49f01afd398bae69c6ccbf4c90fe5d8347353b",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/middleburg.webp",
+      "enhanced": "frontend/src/assets/maps-hd/middleburg.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "9c1102cc1c3667971ad9664f180cd9657ea5f4e25e07f7832205202d6d60e34f",
+      "enhancedSha256": "5c61e6facd90973dd279d0b20d46f6645ce58740ce754af2a462a7ad6c05addd",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/molendijk.webp",
+      "enhanced": "frontend/src/assets/maps-hd/molendijk.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "059b38960d6c22fefb367fb40b4fd170bf5bf86701e66eaf39acfcb3484b3ca4",
+      "enhancedSha256": "49800dbf4c8cde98af113eccd3cbb71acc12197fc3af835e1b397c30dda681f4",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/naval-frontier.webp",
+      "enhanced": "frontend/src/assets/maps-hd/naval-frontier.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "a7937e6054b6a636e5bb4b0b2f5ecea919d0fc9ce12059b57fc34409ec10c813",
+      "enhancedSha256": "4cf42ee723463a40375aadbd9e3c705c7afcd2be5283d5a7d7c71f56b7dd4b11",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/new-bay.webp",
+      "enhanced": "frontend/src/assets/maps-hd/new-bay.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "b5d98bb9ff3067c7cad3f479becfc22540a2f9e8976ad175cad8f31f4a9dbcc6",
+      "enhancedSha256": "16c7396c946c4f8936eb3dc82b16f5d4403b4830419099197d87065e33931d2e",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/normandy.webp",
+      "enhanced": "frontend/src/assets/maps-hd/normandy.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "fcf897367fdf1f76a5d0058fd858f10fd35a3fcd54e7724e8ae5181a53216f94",
+      "enhancedSha256": "13f9942bd91c3ec3abf3b31288ced372d849f7994a64bd1f6625d2105aca44a0",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/oasis-palms.webp",
+      "enhanced": "frontend/src/assets/maps-hd/oasis-palms.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "e643ae03755ae03f9e0ea4951343a1a9380e139df23213238de3381a35e27b46",
+      "enhancedSha256": "f27ae8795bbf3173b8ab0a26f0f4471f35317a479598c2651f1c2b37bfa5282f",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/port-bay.webp",
+      "enhanced": "frontend/src/assets/maps-hd/port-bay.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "dd2f3b589f1098c41ab91ec69603519cff097add739ff381fe44375c25464755",
+      "enhancedSha256": "8bd51d441ea7ece8369551d50dd59edbff9e6ba9846d0e1c5ed211d88bbdc8da",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/rockfield.webp",
+      "enhanced": "frontend/src/assets/maps-hd/rockfield.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "60f261f2b2ac82b010b0ed0dfb617bcb636f530e179be86054d4ffcd31893b43",
+      "enhancedSha256": "fed9e312853890fd2b4edbe361fc4dd31f41ca5e2b5db71f4352efada2720cb1",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/vineyards.webp",
+      "enhanced": "frontend/src/assets/maps-hd/vineyards.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "907c9fe18325a7858ac893fece9d93323f3dc46558ce4810258026ce43d7a10d",
+      "enhancedSha256": "28a946c4d08c32e8dd017f657c0e547aee5ab979a1cd02a0f25c970da2c20261",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/wasteland.webp",
+      "enhanced": "frontend/src/assets/maps-hd/wasteland.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "a9118b64cea6f465b7ed7f8e5ad80f172567acc624fa920432721edde1e18ee1",
+      "enhancedSha256": "ed698e43a2ae0a8bae0600054099fdd6144410ae055637bc5037eb84502e73f0",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/winter-malinovka.webp",
+      "enhanced": "frontend/src/assets/maps-hd/winter-malinovka.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "987f1cc64c2a741b14d8e7a12337587d6b4b607d36452dc9c82d95995f961e2b",
+      "enhancedSha256": "5b33d49799eec5f47ee47b5d9199e9d166cf0b7e32d91ac240989b58ba4b8113",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/yamato-harbor.webp",
+      "enhanced": "frontend/src/assets/maps-hd/yamato-harbor.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "6432caba96f77df9904124064a3f197d4283f59e4f2f944bae7f4700c867c3e0",
+      "enhancedSha256": "18a9740a57ad15c24bbe5701e1e7908be66b1b355cc121ac66988d364431b1c1",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    },
+    {
+      "source": "frontend/src/assets/maps/yukon.webp",
+      "enhanced": "frontend/src/assets/maps-hd/yukon.webp",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
+      "sourcePixels": [
+        2024,
+        2024
+      ],
+      "enhancedPixels": [
+        4048,
+        4048
+      ],
+      "sourceSha256": "4d99dfea59c4b1d41b6e6b1fc7a671959379a8477a42ea0ab4fbfe2093a38810",
+      "enhancedSha256": "2474498d83652ab8e1d27aa3401172c9727d676b3394865844cf67eefa287a5b",
+      "webpQuality": 96,
+      "sourceOfTruth": "ORIGINAL_ONLY",
+      "geometryTransform": "NONE"
+    }
+  ],
+  "deliveryBudget": {
+    "maxEnhancedBytes": 5242880,
+    "maxGrowthRatio": 4.0,
+    "rationale": "Single-map Playback delivery budget for mobile/mainland links; one map is loaded at a time."
+  }
+}
