@@ -628,7 +628,7 @@ V5 Batch Evidence 调整基于用户提供的冠军赛回放研究：
 - 476 player-game
 - 主要战队：CHRD / TOP / KSR / G7
 
-这批 2026 赛季数据是研究、校准与 sanity 检查语料，不是永久 Golden Dataset 或兼容性回归契约：
+这批 2026 赛季数据是研究、校准与 sanity 检查语料，不是永久回归数据或兼容性契约：
 
 - 仅用于 offline research / calibration / sanity checks；
 - 不允许把这届比赛战队名、玩家名、车辆 meta 写入生产评分；
