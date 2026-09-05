@@ -151,6 +151,38 @@
       overflow-y: auto;
       padding: 10px 12px;
     }
+
+  /* A collapsed rail preference can survive a previous fullscreen session. The
+     desktop non-fullscreen layout also owns a persistent rail, so hiding the
+     collapse button here leaves a blank 44px strip with no recovery path. Keep
+     the opener visible in this form as well. */
+  .battle-playback.pb-form-pc:not(:fullscreen) .pb-rail-collapse {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      width: 100%;
+      min-height: 34px;
+      padding: 4px 10px;
+      border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: .76rem;
+      font-weight: 700;
+      text-align: left;
+      cursor: pointer;
+    }
+  .battle-playback.pb-form-pc:not(:fullscreen) .pb-rail-collapse:hover {
+      background: color-mix(in srgb, var(--bg-card2) 88%, transparent);
+      color: var(--text-label);
+    }
+  .battle-playback.pb-form-pc:not(:fullscreen).pb-rail-collapsed .pb-left-rail {
+      padding: 8px 5px;
+    }
+  .battle-playback.pb-form-pc:not(:fullscreen).pb-rail-collapsed .pb-rail-collapse {
+      justify-content: center;
+      padding: 4px 0;
+    }
 }
 /* 非移动设备的窄视口（窄桌面窗口/小笔记本）：左栏同样不做浮层抽屉——固定定位的
    84vw 面板加全屏遮罩，对一个只有几个导航项的菜单太重。展开后作为正常内容块排在

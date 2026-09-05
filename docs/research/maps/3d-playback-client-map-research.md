@@ -8,6 +8,49 @@ This research establishes the renderer-neutral client-map contract needed before
 
 ---
 
+# Product boundary after the research prototype
+
+The SC2/SCG work below remains useful research evidence, but **Battle Playback no longer consumes exported static client geometry**.
+
+After visual validation of the first browser prototype, the product direction was deliberately narrowed to a fixed top-down **2.5D tactical relief view**:
+
+```text
+existing 2D tactical map
++ proven Z height samples
++ fixed 90° orthographic camera
++ renderer-owned hillshade
++ existing BattlePlayback SVG/DOM overlays
+```
+
+The following are explicitly outside the current Playback renderer:
+
+- SCG building / bridge / ship / obstacle meshes;
+- reconstructed client static-scene geometry;
+- client textures, materials, shaders or water meshes;
+- free perspective/orbit camera;
+- 3D tank models.
+
+Existing `VehicleMarker` hull/turret top-view layers remain the vehicle presentation authority. The 2.5D renderer is only a background relief layer, so replay time, markers, HP, bases, tracers and annotations continue to use the existing Battle Playback state.
+
+## Distribution / copyright-risk boundary
+
+The heightfield prototype is **local research / QA only**, not a production asset-distribution design.
+
+Engineering policy:
+
+- user supplies their own local `Maps.zip`;
+- raw client resources are never committed;
+- generated `common/assets/map-3d-local/` output is gitignored;
+- the local exporter emits height samples only; `containsClientDerivedGeometry=false`;
+- the frontend production build fails closed if `map-3d-local` exists, preventing Vite `publicDir` from copying local derived files into `dist`;
+- no client map meshes, textures, materials or shaders are exported;
+- optional water handling is limited to numeric horizontal Z facts; no water geometry is exported;
+- production redistribution of client-derived height data remains out of scope until a separate licensing/legal decision.
+
+This is an engineering risk-control policy, not a statement that any particular use is legally authorized.
+
+---
+
 # Static geometry extraction — PASS
 
 Proven chain:
@@ -131,11 +174,13 @@ RenderComponent
   -> unique SCG PolygonGroup
 ```
 
-The exporter emits renderer-neutral local geometry plus preserved SC2 world transforms. It intentionally excludes raw client textures/material presentation, vegetation, and unproven gameplay collision/nav semantics.
+The research exporter emits renderer-neutral local geometry plus preserved SC2 world transforms. It intentionally excludes raw client textures/material presentation, vegetation, and unproven gameplay collision/nav semantics.
+
+**Current product note:** this geometry exporter is not used by the 2.5D Battle Playback renderer.
 
 ---
 
-# PR2 Map Geometry Core handoff
+# PR2 Map Geometry Core research handoff
 
 Input:
 
@@ -143,7 +188,7 @@ Input:
 SC2 + companion SCG + heightmap + existing map semantics
 ```
 
-Output:
+Research output:
 
 ```text
 deterministic renderer-neutral manifest
@@ -154,9 +199,9 @@ deterministic renderer-neutral manifest
 + transformed world-AABB sanity report
 ```
 
-Canal + Port Bay remain the dual-map contract gate.
+Canal + Port Bay remain the dual-map research contract gate.
 
-Large environment/surroundings meshes may legitimately exceed playable bounds; PR2 must report transformed world AABBs but must not delete geometry by filename or size heuristics.
+Large environment/surroundings meshes may legitimately exceed playable bounds; research tooling must report transformed world AABBs but must not delete geometry by filename or size heuristics.
 
 ---
 
@@ -169,7 +214,7 @@ Confirmed:
 - `.mkm/.lka` are associated with TerrainData;
 - navmesh/passability semantics are not proven.
 
-These do not block visual 3D Playback. Spatial Analysis must continue this research separately before AI LOS/pathing consumes such data.
+These facts are not consumed by the 2.5D visual renderer. Spatial Analysis must continue this research separately before AI LOS/pathing consumes such data.
 
 ---
 
@@ -189,4 +234,4 @@ These do not block visual 3D Playback. Spatial Analysis must continue this resea
 - [x] Canal schema v3 final gate
 - [x] Port Bay schema v3 final gate
 - [x] PR247 review findings closure
-- [x] PR2 handoff
+- [x] PR2 research handoff

@@ -5,7 +5,7 @@
   生命周期、竞态 generation 与显式 UI 状态机。
 -->
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import {
@@ -20,6 +20,8 @@ import { normalizeApiError } from '../utils/http.js'
 import type { BattlePlaybackDataset } from '../types/playback-v2.js'
 import MapOverview from './MapOverview.vue'
 import BattlePlayback from './BattlePlayback.vue'
+
+const BattleMap3D = defineAsyncComponent(() => import('./BattleMap3D.vue'))
 
 const props = defineProps({
   file: { type: Object, default: null },
@@ -63,6 +65,8 @@ const pbOverview = computed(() => {
 })
 
 const panelView = ref('playback')
+// 2.5D is the upgraded map presentation. The underlying 2D raster remains only
+// as a fail-safe while local/legal height data is unavailable; users do not switch modes.
 const mapLoading = ref(false)
 const mapLoaded = ref(false)
 const mapError = ref('')
@@ -256,7 +260,23 @@ onBeforeUnmount(() => {
         <div v-show="panelView === 'playback'" data-test="pb-primary">
           <template v-if="playbackV2State === 'FULL' || playbackV2State === 'PARTIAL'">
             <p v-if="playbackV2State === 'PARTIAL'" class="pb-capability-note" data-test="pb-capability-partial">{{ $t('recon.playback.partial') }}</p>
-            <BattlePlayback v-if="pbOverview" :overview="pbOverview || undefined" :playback-v2="mapPlaybackV2 || undefined" :seek-to="mapSeek ?? undefined" />
+            <BattlePlayback
+              v-if="pbOverview"
+              :overview="pbOverview || undefined"
+              :playback-v2="mapPlaybackV2 || undefined"
+              :seek-to="mapSeek ?? undefined"
+            />
+
+            <!-- 2.5D directly upgrades the map background. BattleMap still owns all
+                 replay overlays/time/state; if local height data is unavailable the
+                 original raster simply remains visible as a technical fallback. -->
+            <Teleport
+              v-if="pbOverview"
+              defer
+              to="[data-test='pb-primary'] .pb-viewport"
+            >
+              <BattleMap3D :map-code="String(mapPlaybackV2?.mapCode || '')" />
+            </Teleport>
           </template>
           <div v-else-if="playbackV2State === 'UNAVAILABLE'" class="pb-status pb-unavailable" data-test="pb-unavailable">{{ playbackV2UnavailableReason }}</div>
           <div v-else-if="playbackV2State === 'ERROR'" class="pb-status pb-error" data-test="pb-error" :data-retryable="playbackV2Retryable">
@@ -352,6 +372,15 @@ onBeforeUnmount(() => {
 }
 .pb-view-tab.active { background: color-mix(in srgb, var(--accent) 14%, var(--bg-card)); color: var(--accent-dark); }
 .pb-view-tab:hover:not(.active) { color: var(--text-heading); }
+
+.pb-dimension-corner-btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 65%, white 10%);
+  background: rgb(10 16 22 / 92%);
+}
+.pb-dimension-corner-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .pb-status {
   display: flex;
   align-items: center;
@@ -374,5 +403,14 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--warn-text) 10%, var(--bg-card));
   color: var(--warn-text);
   font-size: .82rem;
+}
+@media (max-width: 767px) {
+  .pb-dimension-corner-btn {
+    top: 8px;
+    right: 8px;
+    min-width: 38px;
+    height: 28px;
+    padding: 0 8px;
+  }
 }
 </style>
