@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Conservative AI super-resolution for WotBTools tactical basemaps.
+"""Conservative AI restoration for WotBTools tactical basemaps.
 
 Original assets are never modified. Enhanced files are written to
 ``frontend/src/assets/maps-hd`` so the existing ``assets/maps`` directory remains
 an exact rollback source.
 
-The preferred model is EDSR x2. It is materially stronger than the earlier
-FSRCNN sample while remaining a deterministic super-resolution network rather
-than a generative image model. Tactical-map geometry (roads, buildings, borders)
-must remain spatially faithful; enhancement is limited to resolution recovery
-plus a conservative unsharp pass.
+The preferred model is EDSR x2. For the existing 2024x2024 basemaps, the
+``--restore-native`` mode first downsamples by exactly 2x and lets EDSR restore
+back to the original pixel dimensions. This keeps runtime texture cost unchanged
+while using the network as a learned deblur/detail-restoration pass rather than
+manufacturing a 4048x4048 raster that the UI does not need.
+
+Tactical-map geometry (roads, buildings, borders) must remain spatially faithful;
+enhancement is deterministic super-resolution plus a conservative unsharp pass.
 
 Optional tooling dependencies (generation only, not application runtime):
     pip install opencv-contrib-python-headless pillow
@@ -43,17 +46,47 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def enhance(source: Path, target: Path, model_path: Path, model_type: str, quality: int) -> dict:
+def enhance(
+    source: Path,
+    target: Path,
+    model_path: Path,
+    model_type: str,
+    quality: int,
+    restore_native: bool,
+) -> dict:
     image = cv2.imread(str(source), cv2.IMREAD_COLOR)
     if image is None:
         raise RuntimeError(f"Unable to decode source image: {source}")
 
     source_height, source_width = image.shape[:2]
     spec = MODEL_SPECS[model_type]
+
+    inference_input = image
+    method_label = spec["label"]
+    if restore_native:
+        scale = int(spec["scale"])
+        if source_width % scale or source_height % scale:
+            raise RuntimeError(
+                f"--restore-native requires source dimensions divisible by {scale}: "
+                f"{source_width}x{source_height}"
+            )
+        inference_input = cv2.resize(
+            image,
+            (source_width // scale, source_height // scale),
+            interpolation=cv2.INTER_AREA,
+        )
+        method_label = f"{model_type.upper()}_X{scale}_NATIVE_RESTORATION"
+
     sr = cv2.dnn_superres.DnnSuperResImpl_create()
     sr.readModel(str(model_path))
     sr.setModel(spec["opencv_name"], spec["scale"])
-    upscaled = sr.upsample(image)
+    upscaled = sr.upsample(inference_input)
+
+    if restore_native and upscaled.shape[:2] != image.shape[:2]:
+        raise RuntimeError(
+            f"Native restoration size mismatch: expected {source_width}x{source_height}, "
+            f"got {upscaled.shape[1]}x{upscaled.shape[0]}"
+        )
 
     # EDSR already reconstructs edges much better than FSRCNN. Keep the post-pass
     # deliberately light so roads/buildings remain faithful instead of becoming
@@ -61,7 +94,7 @@ def enhance(source: Path, target: Path, model_path: Path, model_type: str, quali
     rgb = cv2.cvtColor(upscaled, cv2.COLOR_BGR2RGB)
     pil = Image.fromarray(rgb)
     if model_type == "edsr":
-        pil = pil.filter(ImageFilter.UnsharpMask(radius=0.8, percent=45, threshold=3))
+        pil = pil.filter(ImageFilter.UnsharpMask(radius=0.7, percent=38, threshold=3))
     else:
         pil = pil.filter(ImageFilter.UnsharpMask(radius=1.0, percent=75, threshold=3))
 
@@ -74,12 +107,13 @@ def enhance(source: Path, target: Path, model_path: Path, model_type: str, quali
     return {
         "source": source.relative_to(REPO).as_posix(),
         "enhanced": target.relative_to(REPO).as_posix(),
-        "method": spec["label"],
+        "method": method_label,
         "sourcePixels": [source_width, source_height],
         "enhancedPixels": list(target_size),
         "sourceSha256": sha256(source),
         "enhancedSha256": sha256(target),
         "webpQuality": quality,
+        "restoreNative": bool(restore_native),
     }
 
 
@@ -88,6 +122,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("model", type=Path, help="Path to an OpenCV dnn_superres .pb model")
     parser.add_argument("maps", nargs="*", help="Basemap stems or filenames; omit with --all")
     parser.add_argument("--model-type", choices=sorted(MODEL_SPECS), default="edsr")
+    parser.add_argument(
+        "--restore-native",
+        action="store_true",
+        help="Downsample by the model scale, then restore to the original pixel dimensions",
+    )
     parser.add_argument("--all", action="store_true", help="Enhance every .webp in assets/maps")
     parser.add_argument("--quality", type=int, default=94)
     return parser.parse_args()
@@ -130,7 +169,14 @@ def main() -> int:
     entries_by_source = {entry["source"]: entry for entry in manifest.get("entries", [])}
     for source in sources:
         target = OUTPUT_DIR / source.name
-        entry = enhance(source, target, model_path, args.model_type, args.quality)
+        entry = enhance(
+            source,
+            target,
+            model_path,
+            args.model_type,
+            args.quality,
+            args.restore_native,
+        )
         entries_by_source[entry["source"]] = entry
         print(
             f"{source.name}: {entry['sourcePixels'][0]}x{entry['sourcePixels'][1]} -> "
