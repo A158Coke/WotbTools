@@ -141,6 +141,45 @@ class TeamReviewQualityGateContractTest {
     }
 
     @Test
+    void v04InformationSupportabilityAndIndividualBindingContract() {
+        assertTrue(ZH.contains("Observed：当时确认了什么 → Remaining uncertainty：什么仍未知")
+                        && ZH.contains("Decision impact：这如何改变可选部署、风险或行动义务"),
+                "Information 必须形成 Observed -> uncertainty -> decision impact 链");
+        assertTrue(ZH.contains("几何距离是 evidence，不是 tactical verdict"),
+                "距离只能是 evidence，不是 tactical verdict");
+        assertTrue(ZH.contains("判断 supportability 必须综合 line of fire、地形/遮挡、time-to-influence"),
+                "支援能力必须综合几何之外的证据");
+        assertTrue(ZH.contains("禁止生成「150米最大间距"), "禁止 universal magic distance rule");
+        assertTrue(ZH.contains("state-based trigger") && ZH.contains("不得写「1分20秒必须合流"),
+                "训练建议必须使用状态触发而非固定时刻");
+        assertTrue(ZH.contains("内部检查 base ownership、current points、point growth、remaining time"),
+                "Objectives 必须检查行动义务");
+        assertTrue(ZH.contains("只能从正文已经识别并展开的 tactical episode 中选择"),
+                "个人 section 必须绑定正文 episode");
+        assertTrue(ZH.contains("不能重新从 settlement leaderboard 选人"),
+                "个人 section 不得重新从结算榜单选人");
+        assertTrue(ZH.contains("如果只能回答「伤害高、击杀多、活得久」，就省略该 section"),
+                "高贡献者没有 tactical impact 时必须省略");
+        assertTrue(ZH.contains("描述对方时优先写可观察的 effect，不猜 intent"),
+                "不得猜测敌方意图");
+        assertTrue(ZH.contains("检查不等于必须找到传播"),
+                "propagation 检查不强制制造传播");
+    }
+
+    @Test
+    void v04LocalizedReasoningContractIsAvailableInThreeLanguages() {
+        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        assertTrue(en.contains("V0.4 INFORMATION, SUPPORTABILITY, AND INDIVIDUAL REVIEW CONTRACT"));
+        assertTrue(en.contains("Geometry distance is evidence, not a tactical verdict"));
+        assertFalse(en.contains("=== v0.4 信息链、支援能力与个人复查约束（强制） ==="));
+
+        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        assertTrue(ru.contains("КОНТРАКТ V0.4: ИНФОРМАЦИЯ, ПОДДЕРЖКА И ЛИЧНЫЙ РАЗБОР"));
+        assertTrue(ru.contains("Геометрическое расстояние — это evidence, а не тактический verdict"));
+        assertFalse(ru.contains("=== v0.4 信息链、支援能力与个人复查约束（强制） ==="));
+    }
+
+    @Test
     void noForcedPositiveAndNoPaddedCounts() {
         assertTrue(ZH.contains("没有足够强的 positive 证据时不得硬写「做得好的团队行为」"),
                 "不得强制「做得好的团队行为」");
