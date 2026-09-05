@@ -290,13 +290,14 @@ public class TeamReplayAnalysisService {
         return TeamContextBuilder.buildSingleTeamContext(group);
     }
 
-    /** Team Call #2 事实一致性校验的最大尝试次数（draft → targeted rewrite → full rewrite → fail-safe）。 */
-    static final int MAX_VALIDATION_ATTEMPTS = 3;
+    /** Team Call #2 事实一致性校验的最大尝试次数（draft → targeted → full → safe → fail-safe）。 */
+    static final int MAX_VALIDATION_ATTEMPTS = 4;
 
     /**
      * Team Call #2 编排（Natural Coach 轮）：envelope 解析 + 事实一致性校验 + LLM 自修循环。
      * <p>流程（Draft → validate；FAIL → targeted rewrite；
-     * FAIL → full rewrite；仍 FAIL → fail-safe（{@code AI_REVIEW_GROUNDING_FAILED}）。
+     * FAIL → full rewrite；仍 FAIL → conservative safe rewrite；再次完整校验后仍 FAIL
+     * → fail-safe（{@code AI_REVIEW_GROUNDING_FAILED}）。
      * Backend 绝不代改句子；校验通过后才把 {@code reviewMarkdown} 以 token 增量转给前端
      * （避免把待改写的草稿暴露给用户）。</p>
      */
@@ -331,20 +332,17 @@ public class TeamReplayAnalysisService {
                 + (groundingSection.isEmpty() ? "" : "\n" + groundingSection);
         String userContent = baseUser;
         String feedback = "";
-        boolean fullRewrite = false;
         long cumulativePromptTokens = 0L;
         long cumulativeCompletionTokens = 0L;
         for (int attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
             if (attempt > 1) {
+                final String rewrite = rewriteStage(attempt);
                 final StringBuilder fb = new StringBuilder();
                 fb.append("上一轮输出未通过事实一致性校验。请修改后重新输出完整的 JSON envelope；")
                         .append("不要改变你的主判断（除非事实不允许），只修正与 GROUNDING FACTS 冲突的表述。\n");
+                fb.append("本次重写阶段：").append(rewrite).append("。\n");
                 fb.append(feedback);
-                if (fullRewrite) {
-                    fb.append("\n要求：请整体重写完整的 JSON envelope（不是局部修补）；"
-                            + "每条数值/时间/位置/玩家事件表述都必须与 GROUNDING FACTS 一致，"
-                            + "无法满足时降级为「更可能/从交换结果看」级别的表达或删除该句。");
-                }
+                appendRewriteRequirements(fb, rewrite);
                 userContent = baseUser + "\n\n=== 事实一致性校验反馈 ===\n" + fb;
             }
             final AiChatResponse response = callRaw(systemPrompt, userContent,
@@ -384,7 +382,6 @@ public class TeamReplayAnalysisService {
                         + "禁止 LOS/SPOTTING/VISION/LINE_OF_SIGHT claimType。"
                         + "evidenceIds 必须引用真正支撑该 claim 的证据（类型/身份/时间/数值/区域/knowledge 一致），"
                         + "不能借用无关编号。";
-                fullRewrite = attempt >= 2;
                 continue;
             }
             LOGGER.info(AiReviewEventLog.line("team_review_parse_result", correlationId,
@@ -425,16 +422,14 @@ public class TeamReplayAnalysisService {
                     "checks", checks,
                     "durationMs", elapsedMillis(validationStartNanos)));
             countValidationAttempt(hardConflicts ? "validation_failed" : "metadata_only_pass");
-            // DEBUG 级安全化冲突明细（只记录 check/reasonCode 低基数
-            // 分类，不记录完整冲突 message / AI 原句 / Grounding Fact 内容）。
-            if (LOGGER.isDebugEnabled()) {
-                for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
-                    LOGGER.debug(AiReviewEventLog.line("team_review_validation_conflict", correlationId,
-                            "attempt", attempt,
-                            "check", c.checkId(),
-                            "reasonCode", c.reasonCode() == null ? "UNCLASSIFIED" : c.reasonCode(),
-                            "severity", c.severity().name()));
-                }
+            // INFO 级安全化冲突明细：生产默认级别必须能定位 grounding failure；只记录
+            // check/reasonCode 低基数分类，不记录完整冲突 message / AI 原句 / Grounding Fact 内容。
+            for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
+                LOGGER.info(AiReviewEventLog.line("team_review_validation_conflict", correlationId,
+                        "attempt", attempt,
+                        "check", c.checkId(),
+                        "reasonCode", c.reasonCode() == null ? "UNCLASSIFIED" : c.reasonCode(),
+                        "severity", c.severity().name()));
             }
             // P0-14：conflict 低基数指标（每类冲突累计，供 availability dashboard）。
             for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
@@ -443,9 +438,8 @@ public class TeamReplayAnalysisService {
                                 ? "HARD" : "METADATA");
             }
             // P0-2/P0-6：structured metadata 冲突（evidence binding 类型/时间细节、coverage 缺失、
-            // 非关键 machine 字段）不阻塞输出——正文事实正确时直接放行，不浪费 LLM retry
-            // （生产已证明 3 次 140k prompt 全量重写导致 AI Review 连续不可用）。只有 HARD_FACT
-            // 冲突（用户可见事实错误）才进入 targeted rewrite → full rewrite → fail-safe。
+            // 非关键 machine 字段）不阻塞输出——正文事实正确时直接放行，不浪费 LLM retry。
+            // 只有 HARD_FACT 冲突（用户可见事实错误）才进入 targeted → full → safe → fail-safe。
             if (!hardConflicts) {
                 LOGGER.info(AiReviewEventLog.line("team_review_metadata_passed", correlationId,
                         "attempt", attempt,
@@ -463,24 +457,65 @@ public class TeamReplayAnalysisService {
                         cumulativeCompletionTokens, "GROUNDING_FAILED", reviewStartNanos);
                 throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, correlationId);
             }
+            feedback = formatConflicts(conflicts);
             // validation retry（业务返工）与 transport retry（网关退避）区分记录。
+            final String rewrite = rewriteStage(attempt + 1);
             LOGGER.warn(AiReviewEventLog.line("ai_validation_retry", correlationId,
                     "stage", "TEAM_CALL_2",
                     "validationAttempt", attempt + 1,
+                    "rewrite", rewrite,
                     "reason", "VALIDATION_FAILED"));
-            feedback = formatConflicts(conflicts);
-            fullRewrite = attempt >= 2;
+            countValidationRetry("TEAM_CALL_2", rewrite);
         }
         throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, correlationId);
+    }
+
+    private static String rewriteStage(final int attempt) {
+        return switch (attempt) {
+            case 2 -> "TARGETED";
+            case 3 -> "FULL";
+            case 4 -> "SAFE";
+            default -> "NONE";
+        };
+    }
+
+    private static void appendRewriteRequirements(final StringBuilder feedback, final String rewrite) {
+        switch (rewrite) {
+            case "TARGETED" -> feedback.append("要求：只针对列出的 HARD_FACT 冲突修正相关 claim，"
+                    + "仍须输出完整 JSON envelope；不要删除有证据支持的战术判断。\n");
+            case "FULL" -> feedback.append("要求：整体重写完整 JSON envelope（不是局部修补）；"
+                    + "每条数值/时间/位置/玩家事件表述都必须与 GROUNDING FACTS 一致；"
+                    + "无法满足时删除该具体事实或改为证据允许的降级表达。\n");
+            case "SAFE" -> feedback.append("要求：执行 conservative safe rewrite。只保留给定 evidence 明确证明的事实；"
+                    + "删除或概括所有仍被 validator 标记的具体时间、人数、位置、spotting/LOS、CURRENT 等 claim；"
+                    + "不要补充新事实，不要发明替代事实；尽量保留有证据支撑的 tactical judgment、"
+                    + "position/tempo、objectives、local engagement reasoning。输出完整 JSON envelope，"
+                    + "并接受下一次完整 validator 校验。\n");
+            default -> { }
+        }
     }
 
     private static String formatConflicts(
             final List<TeamFactualConsistencyValidator.FactConflict> conflicts) {
         final StringBuilder sb = new StringBuilder();
         for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
-            sb.append('[').append(c.checkId()).append("] ").append(c.message()).append('\n');
+            sb.append('[').append(c.checkId()).append(' ').append(c.reasonCode()).append("] ")
+                    .append(c.message()).append('\n')
+                    .append("约束：").append(rewriteConstraint(c)).append('\n');
         }
         return sb.toString();
+    }
+
+    private static String rewriteConstraint(final TeamFactualConsistencyValidator.FactConflict conflict) {
+        return switch (conflict.reasonCode() == null ? "" : conflict.reasonCode()) {
+            case "KNOWLEDGE_MISMATCH" -> "不要把 LAST_KNOWN 写成 CURRENT；删除该断言，或改为“最后已知位置……，之后位置未知”，不得补充未知后续位置。";
+            case "UNSUPPORTED_HARD_FACT" -> "没有 dedicated LOS/spotting evidence；删除具体点亮、spotter attribution、LOS 或瞄准断言，"
+                    + "仅保留 evidence 明确支持的更概括观察或战术结论，不得发明替代事实。";
+            case "SUBJECT_MISMATCH" -> "不得把事实归因给错误玩家/车辆；删除该 claim，或改为 evidence 明确绑定的主体。";
+            case "TIME_MISMATCH", "TEMPORAL_OWNERSHIP" -> "只保留 evidence 明确支持的时间或时间窗口；无法证明时删除具体时间，不得猜测。";
+            case "REGION_MISMATCH", "COUNT_MISMATCH" -> "只保留 evidence 明确支持的区域/人数；无法证明时删除具体数值或概括表达，不得替换成猜测。";
+            default -> "只保留给定 evidence 明确支持的内容；删除无法证明的具体事实，不得发明替代事实。";
+        };
     }
 
     /** 把reviewMarkdown 按段落/句子边界切成 ≤400 字符增量转给前端（单线程顺序）。 */
@@ -680,6 +715,14 @@ public class TeamReplayAnalysisService {
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_team_review_validation_attempt_total", "result", result)
                     .increment();
+        }
+    }
+
+    /** validation retry 的有限值分布（不携带 request/user 标识）。 */
+    private void countValidationRetry(final String stage, final String rewrite) {
+        if (meterRegistry != null) {
+            meterRegistry.counter("wotb_ai_team_review_validation_retry_total",
+                    "stage", stage, "rewrite", rewrite).increment();
         }
     }
 

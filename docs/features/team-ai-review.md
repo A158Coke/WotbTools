@@ -1,5 +1,11 @@
 # WotbTools：训练房 / 联赛 Team-Level AI 战术复盘 — 设计文档
 
+## Quality harness v1（0-token CI + 手动真实回放）
+
+Team review 的质量验证不依赖默认 CI 调用模型。deterministic contract tests 校验 envelope 的 `evidenceBasis`、推理顺序和反捷径规则；offline harness 对真实 `.wotbreplay` 走生产 parser、reconstruction、canonical timeline、team context、prompt 和 grounding facts 链，只校验证据类型与结构性 gold constraint。gold 不包含标准 review，也不会发送给模型；已有 synthetic golden cases 只证明 prompt contract，不证明真实 LLM 行为。
+
+手动 benchmark 使用非默认 `ai-live` 的 `TeamReplayQualityBenchmarkRunner`，显式选择 case/all 后才会创建 provider gateway。它不注入 synthetic scenario，运行次数默认 1，报告包含 model/prompt version/git SHA/date、grounding/shortcut/结构化 basis 结果、`must_notice`/`must_not`、最终 review 和可选 baseline 对比；不持久化 prompt、API key 或用户 token usage。
+
 ## 概述
 
 训练房和联赛回放现在可以通过 AI Review 进行 Team-Level 战术复盘。
@@ -35,6 +41,12 @@ Team Call #2 通过 `AiPromptLibrary` 的模块化 include，按 INFORMATION/VIS
 模块同时提供 EN/RU 本地化替换锚点，`PromptRuleContractTest` 保证 include 展开和三语规则不漂移。`team-tactical-skill-v01-*.json` 是 prompt contract / static golden cases，保留用于验证规则进入 prompt，但不单独声称已验证实际 AI tactical behavior。未来手动诊断可使用 opt-in 的 `TeamTacticalSkillLiveBehaviorEvalTest`：复用现有 DeepSeek gateway 与 Team Call #2 JSON contract，解析最终输出并执行 A–H 的明确 contract checks；live scenario 只提供事实，expected behavior 只存在于测试 assertion，生成 `target/ai-eval-report/team-tactical-skill-live-report.{md,json}`。该测试带 `@Tag("ai-live")` 且需要 `-Dai.tactical.live.enabled=true`，永远不进入普通 `mvn test`、默认 CI 或 PR 合并条件；真实 provider evaluation 具有 token 成本和模型随机性。
 
 `NO_SIGNIFICANT_CONFIRMED_ERROR` 只表示当前可确认/可观察证据中没有确认的重大错误，不证明本场不存在任何错误。证据覆盖不足时跳过不受支持的判断；保留 `primaryDiagnosis` 字段，不新增 backend tactical verdict、权威 `GOOD_TRADE`/`BAD_PUSH`/`HALF_COMMIT_ERROR` 标签或第二套 episode/harness。Strategic Prior 仍只是非实际赛前战术的战略基线，回放不能证明语音、call、沟通或指挥责任时不得猜测。
+
+### Team AI Review v0.3：只选关键内容，但完整解释关键内容
+
+Team Review 不再以尽可能短为目标，而是采用 selective but complete tactical review：不逐秒复述时间线、不为格式凑段落，但被选中的关键 episode 要完整说明「发生了什么 → 当时知道什么 → 哪些车辆参与 → 为什么重要 → 如何影响下一阶段」。当证据存在时，Information 要写出它怎样改变决策空间，Objectives/点数、局部交战和多个局部之间的传播也不能为了简洁省略。
+
+`primaryDiagnosis` 只是整场摘要，正文 `reviewMarkdown` 可以继续保留次级关键 episode、信息变化、目标义务、传播和执行后果。正文优先级为团队战术分析、Information/Objectives、关键 episode、propagation、训练建议，之后才是可选的「重点复查」和「高贡献者」；两个个人 section 各自最多 0–2 人，缺少 structural evidence 或可复查的决策/执行问题时完全省略。普通 7v7 约 1200–2200 字、复杂局允许约 2500–3500 字只是软目标；Team Call #2 默认专用输出上限调整为 8192 tokens，仍不改变 SSE/API contract。
 
 ## 2. 入口和分层（Dataset-only）
 

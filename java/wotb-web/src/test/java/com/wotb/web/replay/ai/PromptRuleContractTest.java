@@ -74,7 +74,8 @@ class PromptRuleContractTest {
                     TeamPromptLocalizer.TEAM_OUTPUT_STRUCTURE_RULE,
                     TeamPromptLocalizer.TEAM_PRIMARY_DIAGNOSIS_RULE,
                     TeamPromptLocalizer.TEAM_GROUNDING_RULE,
-                    TeamPromptLocalizer.TEAM_EVIDENCE_CONTRACT_RULE));
+                    TeamPromptLocalizer.TEAM_EVIDENCE_CONTRACT_RULE,
+                    TeamPromptLocalizer.TEAM_REASONING_CONTRACT_RULE));
 
     @Test
     void mdPromptsCarryRuleConstantsVerbatim() {
@@ -117,6 +118,12 @@ class PromptRuleContractTest {
             assertFalse(localized.contains("=== 争霸赛占点规则（强制，训练房/联赛恒为争霸赛） ==="), lang + " 残留中文占点规则");
             assertFalse(localized.contains("=== 信息与视野战术技能 v0.2 ==="), lang + " 残留中文信息技能");
             assertFalse(localized.contains("=== 局部战场与传播战术技能 v0.2 ==="), lang + " 残留中文局部技能");
+            assertFalse(localized.contains("=== 团队推理顺序与质量约束（强制） ==="),
+                    lang + " 残留中文 reasoning contract");
         }
+        assertTrue(TeamPromptLocalizer.localizeTeamSystemPrompt(team, AllowedLanguage.EN)
+                        .contains("TEAM REASONING ORDER AND QUALITY CONTRACT"));
+        assertTrue(TeamPromptLocalizer.localizeTeamSystemPrompt(team, AllowedLanguage.RU)
+                        .contains("ПОРЯДОК РАССУЖДЕНИЯ И КОНТРАКТ КАЧЕСТВА"));
     }
 }

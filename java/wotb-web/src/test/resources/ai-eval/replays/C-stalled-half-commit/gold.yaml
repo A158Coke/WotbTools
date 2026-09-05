@@ -1,0 +1,12 @@
+id: C-stalled-half-commit
+replay: common/fixtures/replays/random-battle-example.wotbreplay
+must_notice:
+  - push_entered
+  - push_stalled
+  - no_successful_disengage
+  - stable_enemy_farm_followed
+must_not:
+  - opening_1_for_1_primary_failure
+evidence_required:
+  - POSITION_REGION
+  - ALIVE_COUNT_TRANSITION

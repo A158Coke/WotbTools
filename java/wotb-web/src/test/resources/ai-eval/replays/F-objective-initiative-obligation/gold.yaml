@@ -1,0 +1,11 @@
+id: F-objective-initiative-obligation
+replay: common/fixtures/replays/tournament-14-14-example.wotbreplay
+must_notice:
+  - points_changed_initiative
+  - bases_changed_initiative
+  - numerical_advantage_requires_context
+must_not:
+  - automatic_push_rule
+evidence_required:
+  - POSITION_REGION
+  - FOCUS_WINDOW

@@ -128,7 +128,8 @@ describe('vehicle terrain attitude', () => {
     const heights = []
     for (let row = 0; row < size; row++) {
       for (let col = 0; col < size; col++) {
-        heights.push((axis === 'y' ? row : col) * step)
+        const gradient = axis === 'y' ? row : axis === 'x' ? col : row + col
+        heights.push(gradient * step)
       }
     }
     return createTerrainReliefModel({
@@ -167,6 +168,30 @@ describe('vehicle terrain attitude', () => {
     const attitude = sampleTerrainAttitude(gradientModel('x'), 0, 0, 0, { length: 8, width: 3.5 })
     expect(attitude.rollDeg).toBeGreaterThan(5)
     expect(Math.abs(attitude.pitchDeg)).toBeLessThan(0.01)
+  })
+
+  it('rotates an east-facing X slope into vehicle-local pitch at yaw 90°', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('x'), 0, 0, 90, { length: 8, width: 3.5 })
+    expect(attitude.pitchDeg).toBeGreaterThan(5)
+    expect(Math.abs(attitude.rollDeg)).toBeLessThan(0.01)
+  })
+
+  it('rotates a north/south slope into vehicle-local roll at yaw 90°', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('y'), 0, 0, 90, { length: 8, width: 3.5 })
+    expect(attitude.rollDeg).toBeLessThan(-5)
+    expect(Math.abs(attitude.pitchDeg)).toBeLessThan(0.01)
+  })
+
+  it('flips pitch sign when the hull reverses against the same slope', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('y'), 0, 0, 180, { length: 8, width: 3.5 })
+    expect(attitude.pitchDeg).toBeLessThan(-5)
+    expect(Math.abs(attitude.rollDeg)).toBeLessThan(0.01)
+  })
+
+  it('keeps a 45° diagonal uphill aligned to pitch without spurious roll', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('diag'), 0, 0, 45, { length: 8, width: 3.5 })
+    expect(attitude.pitchDeg).toBeGreaterThan(5)
+    expect(Math.abs(attitude.rollDeg)).toBeLessThan(0.01)
   })
 
   it('clamps extreme terrain to the presentation safety limit', () => {
