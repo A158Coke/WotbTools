@@ -113,7 +113,7 @@ Team Review 不接受战术地图计划，也没有语音/通信证据。模型�
 
 ### AI 复盘评估 harness（golden cases + lessons）
 
-- **CI 模式**：`AiEvalHarnessTest`（`@Tag("ai-eval")`，默认构建运行）加载 `src/test/resources/ai-eval/cases/*.json`（synthetic Team 场景），用 `TeamAiPromptBuilder.single` 构建 user prompt，并加载实际 Team system prompt（不调 AI），执行 `prompt_contains` / `prompt_omits` / `system_prompt_contains` / `system_prompt_omits` 断言，写 `target/ai-eval-report/report.md` + `report.json`；任一 FAIL 构建失败。
+- **CI 模式**：`AiEvalHarnessTest`（`@Tag("ai-eval")`，默认构建运行）加载 `src/test/resources/ai-eval/cases/*.json`（synthetic Team 场景），用 `TeamAiPromptBuilder.single` 构建 user prompt，并加载实际 Team system prompt（不调 AI），执行 `prompt_contains` / `prompt_omits` / `system_prompt_contains` / `system_prompt_omits` 断言，写 `target/ai-eval-report/report.md` + `report.json`；任一 FAIL 构建失败。A–H `team-tactical-skill-v01-*.json` 是 prompt contract / static golden cases，只证明提示词契约，不单独证明实际 LLM tactical behavior。
 
 #### AI 测试分层与 live provider 隔离
 
@@ -125,7 +125,8 @@ Team Review 不接受战术地图计划，也没有语音/通信证据。模型�
 
 `AI_API_KEY` 表示机器具有 provider 访问资格，不表示普通测试具有调用意图。真实 probe 必须同时满足：显式选择 live 测试、显式清空 `-Dai.probe.excludedGroups=`、提供不写入仓库或日志的 `AI_API_KEY`。缺少 key 时 probe 仍通过 JUnit assumption skip；默认 `mvn test` 即使环境中存在 key 也不执行 `ai-live`。普通 GitHub Actions CI 不注入 DeepSeek secret，不新增 paid/live AI job。
 
-当前 `wotb-web` 真实 DeepSeek probes 为 `TeamReviewRealE2EProbeTest`、`TeamReviewBatchE2EProbeTest` 和 `TeamReviewDetailedReproProbeTest`。`LiveAiTestIsolationTest` 对已知 probe 的 tag、测试源码中的 production external-provider 组合信号以及 `ai.probe.excludedGroups` POM contract 做 deterministic guard；loopback、Mockito、配置断言和 deterministic eval 不因引用 gateway 类型而被标为 live。
+当前 `wotb-web` 真实 DeepSeek probes 为 `TeamReviewRealE2EProbeTest`、`TeamReviewBatchE2EProbeTest`、`TeamReviewDetailedReproProbeTest` 和 `TeamTacticalSkillLiveBehaviorEvalTest`。后者复用现有 `SpringAiChatGateway` 的 Team Call #2 JSON 请求，逐例解析最终 envelope，再执行 `primaryDiagnosis`、自然复盘标题、grounding validator、禁猜通信/call、禁 authoritative tactical label 以及 A–H 行为检查；报告包含 case id、provider/model、raw response、final analysis、每项检查与 violation reason，写入 `target/ai-eval-report/team-tactical-skill-live-report.{md,json}`。它要求额外的 `-Dai.tactical.live.enabled=true`，并且仍需显式选择测试和清空 `-Dai.probe.excludedGroups=`，因此默认 CI/普通 `mvn test` 不执行。
+`LiveAiTestIsolationTest` 对已知 probe 的 tag、测试源码中的 production external-provider 组合信号以及 `ai.probe.excludedGroups` POM contract 做 deterministic guard；loopback、Mockito、配置断言和 deterministic eval 不因引用 gateway 类型而被标为 live。
 
 PowerShell 人工运行示例（从 `java` 目录执行；将占位符替换为通过带外方式取得的 key/回放路径）：
 
@@ -144,6 +145,11 @@ mvn -pl wotb-web -am test `
   "-Dtest=TeamReviewDetailedReproProbeTest" `
   "-Dai.probe.excludedGroups=" `
   "-Dprobe.replay=<file>"
+
+mvn -pl wotb-web -am test `
+  "-Dtest=TeamTacticalSkillLiveBehaviorEvalTest" `
+  "-Dai.probe.excludedGroups=" `
+  "-Dai.tactical.live.enabled=true"
 ```
 
 - **空间分离证据（Backend Evidence Boundary）**：`TeamSeparationEvidenceSkill` / `PlayerSeparationEvidenceSkill`（wotb-core）从阵型簇/移动段/交火推导中性 `SPATIAL_SEPARATION` 证据（`kind=OPENING_SPREAD` / `SEPARATION_WINDOW` + 距离/距离增长/静止占比/局部敌情/承伤/输出/阵亡/主力簇位移等确定性测量），`TeamEvidenceFormatter` 渲染 `SPATIAL_SEPARATION_EVIDENCE` 段（P3 optional）。不再输出 `SOLO_DELAY` / `SOLO_DETACHED` / `teammateBenefit` 等战术 verdict——是否拖延/脱节由 LLM 综合判断。

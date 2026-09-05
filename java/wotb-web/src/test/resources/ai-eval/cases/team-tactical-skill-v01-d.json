@@ -7,7 +7,7 @@
   "checks": [
     { "kind": "system_prompt_contains", "text": "NO_SIGNIFICANT_CONFIRMED_ERROR" },
     { "kind": "system_prompt_contains", "text": "不得为了填满字段制造" },
-    { "kind": "system_prompt_contains", "text": "对方在某个已观察阶段处理得更有效" }
+    { "kind": "system_prompt_contains", "text": "当前可确认/可观察证据中" }
   ],
   "note": "Golden D：primaryDiagnosis 是最重要结论，不是强制错误标签。"
 }
