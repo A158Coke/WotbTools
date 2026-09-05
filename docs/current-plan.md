@@ -176,6 +176,25 @@ Canal + Port Bay 继续作为双地图 gate。
 
 ---
 
+# Team AI Review v0.3：降低过度压缩，提升完整战术解释
+
+## 状态
+
+IMPLEMENTED — TARGETED TESTS PASS — LIVE PROVIDER NOT RUN
+
+## 执行记录
+
+- [x] 从最新 `origin/main` 创建独立 worktree 与 `feat/ai-review-v03-complete-explanation` 分支。
+- [x] 审计 Team prompt、reasoning contract、三语 localizer 与 Team Call #2 输出上限；未修改 backend tactical inference。
+- [x] 将输出目标调整为 selective but complete：关键 episode 完整解释 Information/Objectives/Local/Propagation 因果，保留反 timeline-dump 约束。
+- [x] 将「重点复查」与「高贡献者」明确为有 structural evidence 时才输出的可选 section，并同步三语 prompt contract。
+- [x] 将 Team Call #2 默认专用输出上限调整为 8192 tokens，并更新 deterministic prompt tests 与三份指定文档。
+- [x] targeted tests：139 tests pass；首轮使用项目 settings.xml 遇到 Aliyun TLS PKIX，改用本机 Maven cache 后完成验证。
+- [x] review-fix / review-with-docs / code-smell：OCR reviewable 2/2，excluded 文件人工审查，Blocker count 0。
+- [x] commit / push / PR：`4c5ead50` 已推送，PR #258 已创建。
+
+---
+
 # Team AI Review Quality Harness v1
 
 ## 状态

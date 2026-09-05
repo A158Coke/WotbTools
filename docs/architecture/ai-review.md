@@ -121,6 +121,12 @@ Team Review 不接受战术地图计划，也没有语音/通信证据。模型�
 
 `TeamAiContextCompiler` 复用 canonical timeline 的已验证事件，额外输出 `OBJECTIVE_STATE_TIMELINE`：已解码的实时基地 owner/capturing/progress 与 Supremacy points。该段只输出中立事实；缺少状态不等于没有占点/没有点数，基地和点数的战术意义仍由 LLM 解释。模式模块中的 Supremacy +40 击杀价值、约 750–800/800+ 点数压力梯度，以及 Assault 约 100 秒完整捕获、70–80 秒警戒区，均是 LLM 的经验参考，不是精确阈值状态机。Golden cases (`team-tactical-skill-v01-a` 至 `h`) 扩展覆盖信息状态、局部传播、基地/点数主动权和反捷径约束。
 
+### Team AI Review v0.3：selective but complete tactical review
+
+v0.3 将 Team Review 的写作目标从 `concise review` 调整为「只选关键内容，但完整解释关键内容」。Team Call #2 仍使用同一套 A–H reasoning contract 和中性 backend evidence，不新增 tactical verdict、parser 或 episode schema；变化只在 prompt 表达优先级与输出空间。普通 7v7 以约 1200–2200 个中文字为软目标，复杂赛事/训练局允许约 2500–3500 字，简单一边倒可明显更短，不能为了篇幅删掉改变战术判断的信息。
+
+选中的关键 episode 要说明发生了什么、当时知道什么、实际参与车辆、重要性以及对下一阶段的影响；当证据存在时，Information 必须解释 decision impact，Objectives、局部交战和 cross-local propagation 不得因简洁省略。`primaryDiagnosis` 仍是 envelope 摘要，不压缩 `reviewMarkdown`；「重点复查」和「高贡献者」均为可选的 0–2 人 section，没有 structural evidence 或可复查问题时省略，输出空间不足时让位于团队分析、信息、目标、关键 episode 和传播。Team Call #2 默认专用上限为 8192 tokens（仍受全局上限约束），这是容量配置而非质量判定。
+
 ### AI 复盘评估 harness（golden cases + lessons）
 
 - **CI 模式**：`AiEvalHarnessTest`（`@Tag("ai-eval")`，默认构建运行）加载 `src/test/resources/ai-eval/cases/*.json`（synthetic Team 场景），用 `TeamAiPromptBuilder.single` 构建 user prompt，并加载实际 Team system prompt（不调 AI），执行 `prompt_contains` / `prompt_omits` / `system_prompt_contains` / `system_prompt_omits` 断言，写 `target/ai-eval-report/report.md` + `report.json`；任一 FAIL 构建失败。A–H `team-tactical-skill-v01-*.json` 是 prompt contract / static golden cases，只证明提示词契约，不单独证明实际 LLM tactical behavior。
@@ -217,8 +223,10 @@ Replay → Parser → Canonical BattleTimeline → 确定性 Grounding Facts（�
 
 - `reviewMarkdown` 由 LLM 自由写出，Backend 绝不拼接主体；`evidenceIds` 只出现在 structured
   字段，validator 拦截其泄漏进用户正文（INTERNAL 检查）。
-- Natural Coach Mode：主正文为 3-5 个自然段（简单 2-3、复杂约 5），无固定章节模板；
-  Focus Window 是内部 attention primitive（「这里最值得集中分析」），不是用户标题结构；
+- Natural Coach Mode：主正文按关键性自由组织，不设硬性段数或固定篇幅；普通 7v7 约 1200–2200 字、复杂局允许约 2500–3500 字只是软目标，简单局可明显更短；
+  Focus Window 是内部 attention primitive（「这里最值得集中分析」），不是用户标题结构；选中的关键 episode 必须完整解释信息状态、实际参与车辆、重要性和下一阶段影响；
+  当证据存在时不得为简洁省略 Information/Objectives/局部交战/跨局部传播，
+  `primaryDiagnosis` 只是摘要，个人重点复查与高贡献者 section 均为可选；
   必须有唯一 PRIMARY DIAGNOSIS（禁止「无法判断/可能性枚举」）；「教练不是司法鉴定员」——
   事实必须准确，战术判断不要求数学证明。
 
