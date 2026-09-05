@@ -9,6 +9,8 @@ Team Call #2 现在返回稳定 JSON 结果：`summary`、`episodes`、`training
 指向当前 roster 和已存在 episode。Backend 只做技术契约校验，不做 tactical validator、正文
 改写或 settlement-only Team Autopsy；SSE `done` 事件通过 `teamReview` 一次性传递最终结果。
 前端自行控制标题层级，空的可选区块不渲染，字段内部仍可使用 Markdown。
+SSE `done.teamPlayers` 同时携带由 authoritative Team roster 生成的 `playerKey` →
+`displayName` / `tankName` 映射；LLM structured JSON 仍只返回稳定 `playerKey`，前端展示和复制均使用该映射。
 
 ### Team AI Review v0.4：从信息到决策影响
 

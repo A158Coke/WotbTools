@@ -199,7 +199,7 @@ paths:
             schema: { $ref: '#/components/schemas/AiReviewAnalyzeRequest' }
       responses:
         '200':
-          description: SSE stream. The terminal done event carries analysis/preBattleSection or teamReview.
+          description: SSE stream. The terminal done event carries analysis/preBattleSection or teamReview; teamPlayers is the authoritative playerKey-to-display-identity mapping for team reviews.
           content:
             text/event-stream:
               schema: { type: string }
@@ -433,6 +433,14 @@ components:
         playerKey: { type: string, minLength: 1, maxLength: 64 }
         episodeId: { type: string, minLength: 1, maxLength: 64 }
         reason: { type: string, minLength: 1, maxLength: 2000 }
+    TeamAiPlayerIdentity:
+      type: object
+      additionalProperties: false
+      required: [playerKey, displayName, tankName]
+      properties:
+        playerKey: { type: string, minLength: 1, maxLength: 64 }
+        displayName: { type: string, maxLength: 240 }
+        tankName: { type: string, maxLength: 240 }
     TeamAiReviewResult:
       type: object
       additionalProperties: false
@@ -455,6 +463,18 @@ components:
           type: array
           maxItems: 2
           items: { $ref: '#/components/schemas/TeamAiHighContributor' }
+    AiReviewDonePayload:
+      type: object
+      additionalProperties: false
+      required: [analysis, preBattleSection, capability, teamReview, teamPlayers]
+      properties:
+        analysis: { type: [string, 'null'] }
+        preBattleSection: { type: [string, 'null'] }
+        capability: { type: [string, 'null'], enum: [AVAILABLE, AVAILABLE_WITH_LIMITED_TIMELINE, UNAVAILABLE, null] }
+        teamReview: { oneOf: [{ $ref: '#/components/schemas/TeamAiReviewResult' }, { type: 'null' }] }
+        teamPlayers:
+          type: array
+          items: { $ref: '#/components/schemas/TeamAiPlayerIdentity' }
     PlaybackCapability:
       type: string
       enum: [FULL, PARTIAL]

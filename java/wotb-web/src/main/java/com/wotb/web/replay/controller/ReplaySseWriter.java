@@ -52,6 +52,7 @@ final class ReplaySseWriter {
         data.put("preBattleSection", response.preBattleSection());
         data.put("capability", response.capability());
         data.put("teamReview", response.teamReview());
+        data.put("teamPlayers", response.teamPlayers());
         send("done", data);
     }
 

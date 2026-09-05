@@ -6,6 +6,7 @@ import type {
   AiReviewResult,
   AiReviewStageEvent,
   AiReviewTokenEvent,
+  TeamAiPlayerIdentity,
   TeamAiReviewResult,
 } from '../types/ai-review.js'
 import type { ServerErrorCode } from '../types/api.js'
@@ -46,6 +47,20 @@ function isBoundedNonEmptyString(value: unknown, maxLength: number): value is st
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.length <= 8
     && value.every(item => isBoundedNonEmptyString(item, 64))
+}
+
+function isTeamPlayerIdentity(value: unknown): value is TeamAiPlayerIdentity {
+  return isRecord(value)
+    && isBoundedNonEmptyString(value.playerKey, 64)
+    && typeof value.displayName === 'string' && value.displayName.length <= 240
+    && typeof value.tankName === 'string' && value.tankName.length <= 240
+}
+
+function isTeamPlayerMapping(value: unknown): value is TeamAiPlayerIdentity[] {
+  if (!Array.isArray(value)) return false
+  const keys = new Set<string>()
+  return value.every(item => isTeamPlayerIdentity(item) && !keys.has(item.playerKey)
+    && keys.add(item.playerKey))
 }
 
 function isNullableNonnegativeInteger(value: unknown): value is number | null {
@@ -97,6 +112,8 @@ function isTeamReviewResult(value: unknown): value is TeamAiReviewResult {
 
 function resultFromPayload(payload: unknown): AiReviewResult | null {
   if (!isRecord(payload)) return null
+  if ('teamPlayers' in payload && payload.teamPlayers !== undefined
+    && !isTeamPlayerMapping(payload.teamPlayers)) return null
   const hasTeam = isTeamReviewResult(payload.teamReview)
   const hasText = isNonEmptyString(payload.analysis)
   if (!hasTeam && !hasText) {
@@ -119,6 +136,8 @@ function resultFromPayload(payload: unknown): AiReviewResult | null {
       ? { analysis: payload.analysis as string | null } : {}),
     preBattleSection,
     ...(hasTeam ? { teamReview: payload.teamReview as TeamAiReviewResult } : {}),
+    ...(('teamPlayers' in payload && payload.teamPlayers !== undefined)
+      ? { teamPlayers: payload.teamPlayers as TeamAiPlayerIdentity[] } : {}),
     ...(capability === undefined ? {} : { capability }),
   }
 }
@@ -128,7 +147,7 @@ export function isAiReviewResult(value: unknown): value is AiReviewResult {
   return resultFromPayload(value) !== null
 }
 
-/** Runtime guard for the `call1_*`, `evidence_done`, and `autopsy_*` events. */
+/** Runtime guard for the `call1_*` and `evidence_done` events. */
 export function isAiReviewStageEvent(value: unknown): value is AiReviewStageEvent {
   return isRecord(value) && typeof value.type === 'string' && STAGE_EVENTS.has(value.type as AiReviewStageEvent['type'])
 }

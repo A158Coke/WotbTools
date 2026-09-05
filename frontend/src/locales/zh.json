@@ -1322,7 +1322,9 @@
             "episodes": "关键回合",
             "training": "训练建议",
             "reviewFocus": "重点复查",
-            "highContributors": "高贡献者"
+            "highContributors": "高贡献者",
+            "unknownPlayer": "未知玩家",
+            "unknownTank": "未知坦克"
         },
         "capability_limited": "AI 复盘基于受限时间轴（部分时间信息缺失），已降级到较粗的证据层级，不猜测未观测事实",
         "playback": {

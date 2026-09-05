@@ -1322,7 +1322,9 @@
             "episodes": "Key Episodes",
             "training": "Training Suggestions",
             "reviewFocus": "Review Focus",
-            "highContributors": "High Contributors"
+            "highContributors": "High Contributors",
+            "unknownPlayer": "Unknown player",
+            "unknownTank": "Unknown tank"
         },
         "capability_limited": "AI review is based on a limited timeline (some time info missing); it is degraded to a coarser evidence level and does not guess unobserved facts",
         "playback": {

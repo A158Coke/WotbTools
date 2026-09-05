@@ -7,6 +7,7 @@ export type AiReviewCapability =
   | 'UNAVAILABLE'
 
 export type TeamAiReviewResult = components['schemas']['TeamAiReviewResult']
+export type TeamAiPlayerIdentity = components['schemas']['TeamAiPlayerIdentity']
 
 export interface AiReviewResult {
   /** Text path retained for player reviews and older deployed backends. */
@@ -17,6 +18,8 @@ export interface AiReviewResult {
   capability?: AiReviewCapability
   /** Structured Team Review v0.5; mutually exclusive with the text-only production path. */
   teamReview?: TeamAiReviewResult
+  /** Authoritative playerKey → nickname/tank display mapping; absent only for safe fallback compatibility. */
+  teamPlayers?: TeamAiPlayerIdentity[]
 }
 
 export interface AiReviewRunState {

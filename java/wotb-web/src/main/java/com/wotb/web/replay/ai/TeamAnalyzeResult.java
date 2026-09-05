@@ -1,6 +1,9 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.replay.evidence.TeamAiReviewResult;
+import com.wotb.web.replay.dto.AnalyzeResponse;
+
+import java.util.List;
 
 /**
  * Team AI 结果：保留文本摘要兼容字段，并携带 v0.5 structured result。
@@ -16,14 +19,23 @@ import com.wotb.core.replay.evidence.TeamAiReviewResult;
 public record TeamAnalyzeResult(
         AnalyzeResult analysis,
         String preBattleSection,
-        TeamAiReviewResult structuredResult
+        TeamAiReviewResult structuredResult,
+        List<AnalyzeResponse.TeamPlayer> teamPlayers
 ) {
+    public TeamAnalyzeResult {
+        teamPlayers = teamPlayers == null ? List.of() : List.copyOf(teamPlayers);
+    }
 
     public TeamAnalyzeResult(final AnalyzeResult analysis) {
-        this(analysis, null, null);
+        this(analysis, null, null, List.of());
     }
 
     public TeamAnalyzeResult(final AnalyzeResult analysis, final String preBattleSection) {
-        this(analysis, preBattleSection, null);
+        this(analysis, preBattleSection, null, List.of());
+    }
+
+    public TeamAnalyzeResult(final AnalyzeResult analysis, final String preBattleSection,
+                             final TeamAiReviewResult structuredResult) {
+        this(analysis, preBattleSection, structuredResult, List.of());
     }
 }
