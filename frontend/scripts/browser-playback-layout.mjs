@@ -179,6 +179,7 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
     const stageStyle = getComputedStyle(stage)
     const buttonStyle = button ? getComputedStyle(button) : null
     const failures = []
+    let metrics = null
     const require = (ok, message) => { if (!ok) failures.push(message) }
 
     if (${JSON.stringify(scenario.check)} === 'pc') {
@@ -295,7 +296,7 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
         'leader-line fixture must use a 4x rendered SVG frame')
       require(markerCenter && endpoint && Math.abs(pixelDelta.x) <= 0.5 && Math.abs(pixelDelta.y) <= 0.5,
         'leader endpoint must match visible marker center within 0.5 CSS px')
-      scenario.metrics = {
+      metrics = {
         logical,
         visibleCss: { width: visibleRect.width, height: visibleRect.height },
         renderedSvgCss: { width: renderedRect?.width, height: renderedRect?.height },
@@ -355,7 +356,7 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
     }
 
     require(document.documentElement.scrollWidth <= innerWidth + 1, 'layout must not create page-level horizontal overflow')
-    const result = { name: ${JSON.stringify(scenario.name)}, width: innerWidth, height: innerHeight, failures, metrics: scenario.metrics || null }
+    const result = { name: ${JSON.stringify(scenario.name)}, width: innerWidth, height: innerHeight, failures, metrics }
     document.body.dataset.result = btoa(JSON.stringify(result))
 }
 </script>
