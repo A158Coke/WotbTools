@@ -8,6 +8,17 @@ V6 只改变批次选手/战队汇总。它不改 V4.1 单场公式、回放解�
 
 所有批次结果由有效单场 `finalRating` 的 raw sum 与 count 组成。不得先按 battle 做 median，也不得按 battle median 再平均。
 
+## Mandatory Scope-Risk Checkpoint
+
+| 类别 | 结果 | 本次结论 |
+|---|---|---|
+| REQUIRED | 完成 | V6 pooled player/team sum-count、DTO/API 精度、前端展示/排序、Excel、测试与 Docker 文档构建链 |
+| OPTIONAL | 完成 | 三语产品版本历史与 canonical 算法说明同步 |
+| OUT OF SCOPE | 保持不变 | V4.1 单场公式、解析/去重/冲突顺序、team identity、数据库、控制器、worker、对手/赛程/地图因素、V4.1 redesign |
+| BLOCKER | 0 | 未发现超出上述范围的行为、契约或构建阻塞 |
+
+**Checkpoint decision: GO.** Final scope audit confirms that the implementation and this repair remain limited to the requirements above; no unrelated cleanup or League Rating redesign was introduced.
+
 ## 公式
 
 设 `S` 为有效单场 finalRating 之和，`n` 为有效评分场次，anchor `A = 475`：

@@ -435,7 +435,7 @@ public final class Mapper {
             final PerformanceMetricsCalculator.Row perf = perfById.get(s.accountId());
             players.add(new LeaguePlayerSummaryDto(
                     s.accountId(), s.nickname(), s.clan(), s.ratedBattles(),
-                    r1(s.rating()),
+                    s.rating(),
                     r1(s.observedMean()),
                     s.dimensionMeans().stream().map(Mapper::r1).toList(),
                     s.mvpCount(), s.wins(), s.damageTotal(), s.assistTotal(), s.killsTotal(),
@@ -450,7 +450,7 @@ public final class Mapper {
         for (final TeamLeagueSummary s : league.teamSummaries()) {
             teams.add(new LeagueTeamSummaryDto(
                     s.teamKey(), s.autoName(), s.nameSource(), s.ratedBattles(),
-                    r1(s.rating()), r1(s.observedMean()),
+                    s.rating(), r1(s.observedMean()),
                     s.dimensionMeans().stream().map(Mapper::r1).toList(),
                     s.wins(), s.arenaTeams()));
         }
