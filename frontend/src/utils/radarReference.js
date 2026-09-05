@@ -13,7 +13,7 @@
  * - 非成员（rating-ineligible / aggregate-only / league==null 行）不属于 rated cohort，
  *   直接排除，不因其缺 dimensionMeans 就让 reference unavailable。
  * - 确定性（§59）：聚合前按 accountId 排序，与输入顺序/表格排序/选中玩家无关。
- * - V5 隔离（§65）：只消费 dimensionMeans / 单场 score，与 ratingV5/ratingRawMedian/battles 无关。
+ * - V6 隔离（§65）：只消费 dimensionMeans / 单场 score，与 rating/observedMean/ratedBattles 无关。
  */
 
 import { CW_DIM_KEYS } from './playerSummaryMerge.js'

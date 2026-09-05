@@ -3,8 +3,8 @@ import { inject } from 'vue'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import MarkdownContent from './MarkdownContent.vue'
 // 构建期把 canonical Markdown 作为 raw 资源纳入独立 chunk（懒加载），
-// 不维护第二份人工副本；文档正文唯一事实源始终是 docs/WotBTools_League_Rating_V5.md。
-import leagueRatingV5 from '../../../docs/WotBTools_League_Rating_V5.md?raw'
+// 不维护第二份人工副本；文档正文唯一事实源始终是 docs/WotBTools_League_Rating_V6.md。
+import leagueRatingV6 from '../../../docs/WotBTools_League_Rating_V6.md?raw'
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 
@@ -26,7 +26,7 @@ function goBack() {
     </header>
 
     <article class="rating-docs-card">
-      <MarkdownContent :content="leagueRatingV5" />
+      <MarkdownContent :content="leagueRatingV6" />
     </article>
   </div>
 </template>
