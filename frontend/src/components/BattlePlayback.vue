@@ -1550,7 +1550,7 @@ watch(
     collisionOffsets.value = computeTankCollisionLayout(
       items,
       collisionOffsets.value,
-      { mobile: isMobileDevice.value },
+      { viewportW: mapWidth(), viewportH: mapHeight() },
     )
   },
   { immediate: true },

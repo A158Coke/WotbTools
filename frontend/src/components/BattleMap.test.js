@@ -118,6 +118,55 @@ describe('BattleMap', () => {
     expect(style).not.toContain('+ -4px')
   })
 
+  it('draws a leader line from an offset marker back to its canonical point', () => {
+    const wrapper = mountMap({
+      viewScale: 4,
+      vehicleStates: [{
+        vehicle: { accountId: 1, team: 1 },
+        pos: { x: 25, y: 30 },
+        markerStyle: { left: '25%', top: '70%' },
+        presentationOffset: { x: 20, y: -16 },
+      }],
+    })
+
+    const line = wrapper.find('.pb-marker-leader')
+    expect(line.exists()).toBe(true)
+    expect(line.attributes('x1')).toBe('25')
+    expect(line.attributes('y1')).toBe('70')
+    expect(line.attributes('x2')).toBe('30')
+    expect(line.attributes('y2')).toBe('66')
+    expect(line.attributes('stroke-width')).toBe('0.3125')
+  })
+
+  it('does not draw leader lines for canonical marker positions', () => {
+    const wrapper = mountMap({
+      vehicleStates: [{
+        vehicle: { accountId: 1, team: 1 },
+        pos: { x: 25, y: 30 },
+        presentationOffset: { x: 0, y: 0 },
+      }],
+    })
+
+    expect(wrapper.findAll('.pb-marker-leader')).toHaveLength(0)
+  })
+
+  it('skips leader lines when an offset marker has no finite canonical position', () => {
+    expect(() => mountMap({
+      vehicleStates: [{
+        vehicle: { accountId: 1, team: 1 },
+        presentationOffset: { x: 20, y: -16 },
+      }],
+    })).not.toThrow()
+    const wrapper = mountMap({
+      vehicleStates: [{
+        vehicle: { accountId: 1, team: 1 },
+        pos: { x: Number.NaN, y: 30 },
+        presentationOffset: { x: 20, y: -16 },
+      }],
+    })
+    expect(wrapper.findAll('.pb-marker-leader')).toHaveLength(0)
+  })
+
   it('forwards map gestures and marker selection to the orchestrator', async () => {
     const wrapper = mountMap()
     const viewport = wrapper.find('[data-test="pb-viewport"]')

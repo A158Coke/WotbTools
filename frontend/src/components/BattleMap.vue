@@ -136,6 +136,28 @@ const presentedVehicleStates = computed(() => {
   })
 })
 
+const markerLeaderStates = computed(() => {
+  const scale = Number.isFinite(props.viewScale) && props.viewScale > 0 ? props.viewScale : 1
+  return presentedVehicleStates.value.flatMap((state) => {
+    const offset = state.presentationOffset
+    if (!offset || !Number.isFinite(offset.x) || !Number.isFinite(offset.y)
+      || (Math.abs(offset.x) <= 1e-9 && Math.abs(offset.y) <= 1e-9)) return []
+    const x = Number(state.pos?.x)
+    const y = Number(state.pos?.y)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return []
+    const canonical = projectSemantic(x, y)
+    if (!Number.isFinite(canonical.x) || !Number.isFinite(canonical.y)) return []
+    return [{
+      key: state.vehicle.accountId,
+      x1: canonical.x,
+      y1: canonical.y,
+      x2: canonical.x + offset.x / scale,
+      y2: canonical.y + offset.y / scale,
+      strokeWidth: 1.25 / scale,
+    }]
+  })
+})
+
 // clipPath id 是文档级的，多个实例同时挂载时不能撞名。
 const clipPrefix = `pb-base-clip-${useId()}`
 
@@ -181,6 +203,18 @@ function fillTop(base) {
             />
           </clipPath>
         </defs>
+        <g class="pb-marker-leaders" aria-hidden="true">
+          <line
+            v-for="leader in markerLeaderStates"
+            :key="`marker-leader-${leader.key}`"
+            class="pb-marker-leader"
+            :x1="leader.x1"
+            :y1="leader.y1"
+            :x2="leader.x2"
+            :y2="leader.y2"
+            :stroke-width="leader.strokeWidth"
+          />
+        </g>
         <g class="pb-bases" data-test="pb-bases">
           <g v-for="base in props.bases" :key="base.baseId" :class="`pb-base-${base.status}`" :data-test="`pb-base-${base.baseId}`">
             <circle :cx="projectedX(base.x, base.y)" :cy="projectedY(base.x, base.y)" :r="baseRadius(base)" class="pb-base-circle" />
@@ -283,6 +317,8 @@ function fillTop(base) {
 .pb-basemap { object-fit: fill; border-radius: 4px; user-select: none; pointer-events: none; }
 .pb-svg { border-radius: 4px; background: transparent; pointer-events: none; }
 .pb-viewport.pb-25d-active .pb-basemap { visibility: hidden; }
+.pb-marker-leaders { pointer-events: none; }
+.pb-marker-leader { stroke: var(--text-muted, #999); stroke-dasharray: 2 2; stroke-linecap: round; opacity: .78; }
 .pb-markers { position: absolute; inset: 0; pointer-events: none; }
   .pb-vehicle { position: absolute; width: 30px; height: 30px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
 .pb-base-circle { fill: color-mix(in srgb, currentColor 18%, transparent); stroke: currentColor; stroke-width: 1.6; }
