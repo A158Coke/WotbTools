@@ -17,7 +17,7 @@ function frame(event: string, data: unknown): string {
 
 describe('aiReviewSse runtime guards', () => {
   it('accepts the real stage event names and ignores unknown stages', () => {
-    for (const type of ['call1_start', 'call1_done', 'evidence_done', 'autopsy_start', 'autopsy_done']) {
+    for (const type of ['call1_start', 'call1_done', 'evidence_done']) {
       const event = parseAiReviewEvent(type, {})
       expect(event).toEqual({ type })
       expect(isAiReviewStageEvent(event)).toBe(true)
@@ -64,6 +64,45 @@ describe('aiReviewSse runtime guards', () => {
     expect(isAiReviewResult({ analysis: 'x', capability: 'NOT_A_CAPABILITY' })).toBe(false)
     expect(parseAiReviewEvent('done', { analysis: '   ' })).toBeNull()
     expect(parseAiReviewEvent('done', { analysis: 123 })).toBeNull()
+  })
+
+  it('accepts the structured Team Review v0.5 result and omits empty sections in the renderer contract', () => {
+    const event = parseAiReviewEvent('done', {
+      analysis: null,
+      teamPlayers: [{ playerKey: 'P1', displayName: 'Alice', tankName: 'Kranvagn' }],
+      teamReview: {
+        summary: { verdict: '团队结论', primaryDiagnosis: '主要诊断' },
+        episodes: [{
+          id: 'E1', startSec: 10, endSec: 20, title: '关键交火', analysis: '复盘', playerKeys: ['P1'],
+        }],
+        trainingSuggestions: [],
+        reviewFocus: [],
+        highContributors: [],
+      },
+    })
+    expect(event?.type).toBe('done')
+    expect(isAiReviewResult(event?.type === 'done' ? event.result : null)).toBe(true)
+    expect(event?.type === 'done' ? event.result.teamPlayers : undefined).toEqual([
+      { playerKey: 'P1', displayName: 'Alice', tankName: 'Kranvagn' },
+    ])
+    expect(parseAiReviewEvent('done', {
+      analysis: null,
+      teamReview: {
+        summary: { verdict: 'x', primaryDiagnosis: 'y' }, episodes: [],
+        trainingSuggestions: [], reviewFocus: [{ playerKey: 'P1', episodeId: 'missing', reason: 'x' }], highContributors: [],
+      },
+    })).toBeNull()
+    expect(parseAiReviewEvent('done', {
+      analysis: null,
+      teamPlayers: [
+        { playerKey: 'P1', displayName: 'Alice', tankName: 'Kranvagn' },
+        { playerKey: 'P1', displayName: 'Duplicate', tankName: 'Kranvagn' },
+      ],
+      teamReview: {
+        summary: { verdict: 'x', primaryDiagnosis: 'y' }, episodes: [],
+        trainingSuggestions: [], reviewFocus: [], highContributors: [],
+      },
+    })).toBeNull()
   })
 
   it('accepts stable uppercase future error codes and rejects malformed ones', () => {

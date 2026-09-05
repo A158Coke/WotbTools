@@ -208,6 +208,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/replay/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stream an AI replay review */
+        post: operations["analyzeReplay"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -358,6 +375,60 @@ export interface components {
         DatasetReference: {
             processingJobId: string;
             sourceId: string;
+        };
+        AiReviewAnalyzeRequest: {
+            processingJobId: string;
+            sourceId: string;
+            /** @enum {string} */
+            lang: "zh" | "en" | "ru";
+            correlationId: string;
+        };
+        TeamAiReviewSummary: {
+            verdict: string;
+            primaryDiagnosis: string;
+        };
+        TeamAiReviewEpisode: {
+            id: string;
+            startSec: number | null;
+            endSec: number | null;
+            title: string;
+            analysis: string;
+            playerKeys: string[];
+        };
+        TeamAiTrainingSuggestion: {
+            title: string;
+            content: string;
+            episodeId: string | null;
+        };
+        TeamAiReviewFocus: {
+            playerKey: string;
+            episodeId: string;
+            reason: string;
+        };
+        TeamAiHighContributor: {
+            playerKey: string;
+            episodeId: string;
+            reason: string;
+        };
+        TeamAiPlayerIdentity: {
+            playerKey: string;
+            displayName: string;
+            tankName: string;
+        };
+        TeamAiReviewResult: {
+            summary: components["schemas"]["TeamAiReviewSummary"];
+            episodes: components["schemas"]["TeamAiReviewEpisode"][];
+            trainingSuggestions: components["schemas"]["TeamAiTrainingSuggestion"][];
+            reviewFocus: components["schemas"]["TeamAiReviewFocus"][];
+            highContributors: components["schemas"]["TeamAiHighContributor"][];
+        };
+        AiReviewDonePayload: {
+            analysis: string | null;
+            preBattleSection: string | null;
+            /** @enum {string|null} */
+            capability: "AVAILABLE" | "AVAILABLE_WITH_LIMITED_TIMELINE" | "UNAVAILABLE" | null;
+            teamReview: components["schemas"]["TeamAiReviewResult"] | null;
+            teamPlayers: components["schemas"]["TeamAiPlayerIdentity"][];
         };
         /** @enum {string} */
         PlaybackCapability: "FULL" | "PARTIAL";
@@ -922,6 +993,48 @@ export interface operations {
             };
             /** @description Dataset storage is unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    analyzeReplay: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiReviewAnalyzeRequest"];
+            };
+        };
+        responses: {
+            /** @description SSE stream. The terminal done event carries analysis/preBattleSection or teamReview; teamPlayers is the authoritative playerKey-to-display-identity mapping for team reviews. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Invalid analyze request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

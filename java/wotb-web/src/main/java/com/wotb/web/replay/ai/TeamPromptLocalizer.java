@@ -1228,8 +1228,49 @@ final class TeamPromptLocalizer {
                 .replace(TEAM_REASONING_CONTRACT_RULE,
                         en ? TEAM_REASONING_CONTRACT_RULE_EN : TEAM_REASONING_CONTRACT_RULE_RU)
                 .replace(TEAM_REGROUP_INFERENCE_RULE,
-                        en ? TEAM_REGROUP_INFERENCE_RULE_EN : TEAM_REGROUP_INFERENCE_RULE_RU);
+                        en ? TEAM_REGROUP_INFERENCE_RULE_EN : TEAM_REGROUP_INFERENCE_RULE_RU)
+                .replace(TEAM_STRUCTURED_RESULT_RULE_ZH,
+                        en ? TEAM_STRUCTURED_RESULT_RULE_EN : TEAM_STRUCTURED_RESULT_RULE_RU);
     }
+
+    private static final String TEAM_STRUCTURED_RESULT_RULE_ZH = """
+
+            === Team AI Review v0.5 结构化结果（最终输出契约） ===
+            只输出一个 JSON object，不输出 Markdown heading，不输出旧的 reviewMarkdown/claims envelope：
+            {
+              "summary": {"verdict": "...", "primaryDiagnosis": "..."},
+              "episodes": [{"id": "E1", "startSec": 0, "endSec": 30, "title": "...", "analysis": "...", "playerKeys": ["P1"]}],
+              "trainingSuggestions": [{"title": "...", "content": "...", "episodeId": "E1"}],
+              "reviewFocus": [{"playerKey": "P1", "episodeId": "E1", "reason": "..."}],
+              "highContributors": [{"playerKey": "P2", "episodeId": "E1", "reason": "..."}]
+            }
+            episodes 最多 6 条，reviewFocus 与 highContributors 各最多 2 条；所有数组必须存在，可为空。
+            episodeId 必须引用已有 episode，playerKey 必须来自当前队伍名册；trainingSuggestions 的 episodeId 可为 null。
+            startSec/endSec 无法确定时使用 null。Markdown 只能出现在字段值内部；页面标题和层级由前端控制。
+            以上 v0.5 契约覆盖本提示中较早的旧 envelope 输出说明；不要调用或模拟 Team Autopsy。
+            """;
+
+    private static final String TEAM_STRUCTURED_RESULT_RULE_EN = """
+
+            === Team AI Review v0.5 structured result (final output contract) ===
+            Output exactly one JSON object. Do not output Markdown headings or the old reviewMarkdown/claims envelope:
+            {"summary":{"verdict":"...","primaryDiagnosis":"..."},"episodes":[{"id":"E1","startSec":0,"endSec":30,"title":"...","analysis":"...","playerKeys":["P1"]}],"trainingSuggestions":[{"title":"...","content":"...","episodeId":"E1"}],"reviewFocus":[{"playerKey":"P1","episodeId":"E1","reason":"..."}],"highContributors":[{"playerKey":"P2","episodeId":"E1","reason":"..."}]}
+            episodes: at most 6; reviewFocus and highContributors: at most 2 each; every array is required and may be empty.
+            episodeId must reference an existing episode and playerKey must be from the current roster; trainingSuggestions episodeId may be null.
+            Use null for unknown startSec/endSec. Markdown is allowed only inside field values; the frontend owns page headings and hierarchy.
+            This v0.5 contract overrides earlier envelope instructions; do not call or simulate Team Autopsy.
+            """;
+
+    private static final String TEAM_STRUCTURED_RESULT_RULE_RU = """
+
+            === Team AI Review v0.5 структурированный результат (итоговый контракт) ===
+            Выводите ровно один JSON object. Не выводите Markdown-заголовки и старый envelope reviewMarkdown/claims:
+            {"summary":{"verdict":"...","primaryDiagnosis":"..."},"episodes":[{"id":"E1","startSec":0,"endSec":30,"title":"...","analysis":"...","playerKeys":["P1"]}],"trainingSuggestions":[{"title":"...","content":"...","episodeId":"E1"}],"reviewFocus":[{"playerKey":"P1","episodeId":"E1","reason":"..."}],"highContributors":[{"playerKey":"P2","episodeId":"E1","reason":"..."}]}
+            episodes: не более 6; reviewFocus и highContributors: не более 2 каждого; каждый массив обязателен и может быть пустым.
+            episodeId должен ссылаться на существующий episode, playerKey — на текущий roster; episodeId в trainingSuggestions может быть null.
+            Если startSec/endSec неизвестны, используйте null. Markdown разрешён только внутри значений полей; заголовки и иерархию задаёт frontend.
+            Этот контракт v0.5 заменяет более ранние инструкции envelope; не вызывайте и не имитируйте Team Autopsy.
+            """;
 
     static final String SINGLE_TEAM_PROMPT = AiPromptLibrary.zh("team/single");
 

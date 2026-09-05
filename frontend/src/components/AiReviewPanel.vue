@@ -1,5 +1,5 @@
 <!--
-  AI 复盘能力面板：SSE 分析流（call1/evidence/call2/autopsy）+ 流式进度 + 结果面板。
+  AI 复盘能力面板：SSE 分析流（call1/evidence/call2）+ 流式进度 + 结果面板。
   不负责页面级登录门禁/自动跳转（由宿主入口把关）。HTTP endpoint / auth / canonical
   error handling 由 api/replay-capabilities.ts 统一拥有；本组件只编排 run lifecycle 与 SSE 展示状态。
 -->
@@ -71,7 +71,7 @@ const limitedTimelineNote = computed(() =>
     ? t('recon.capability_limited')
     : '')
 
-// 流式状态：当前阶段（call1 赛前预测 / evidence 证据分析 / call2 生成中 / autopsy 团队剖析）
+// 流式状态：当前阶段（call1 赛前预测 / evidence 证据分析 / call2 生成中）
 // 与主复盘已到达文本（token 滚动）。
 const progressStage = ref('')
 const partialAnalysis = ref('')
@@ -249,12 +249,6 @@ async function readAnalyzeStream(r, run) {
       case 'call2_token':
         if (progressStage.value !== 'call2') progressStage.value = 'call2'
         partialAnalysis.value += event.delta
-        break
-      case 'autopsy_start':
-        progressStage.value = 'autopsy'
-        break
-      case 'autopsy_done':
-        progressStage.value = 'call2'
         break
       case 'done':
         analysisResult.value = event.result

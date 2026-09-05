@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -81,7 +82,8 @@ class ReconstructionControllerTeamAnalysisTest {
 
     @Test
     void datasetDoneEventCarriesAnalysisTextAndDisclaimer() throws Exception {
-        doReturn(new AnalyzeResponse("team review"))
+        doReturn(new AnalyzeResponse("team review", null, AnalyzeResponse.Capability.AVAILABLE, null,
+                List.of(new AnalyzeResponse.TeamPlayer("P1", "Alice", "Kranvagn"))))
                 .when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final String body = drainUntilMarker(analyzeDirect("zh"), "event:done");
@@ -89,6 +91,8 @@ class ReconstructionControllerTeamAnalysisTest {
         assertTrue(body.contains("event:done"), body);
         assertTrue(body.contains("\"analysis\":\"team review"),
                 "controller 原样转发 reviewService 的 analysis（disclaimer 由 service 负责）: " + body);
+        assertTrue(body.contains("\"teamPlayers\":[{\"playerKey\":\"P1\",\"displayName\":\"Alice\",\"tankName\":\"Kranvagn\"}]"),
+                "terminal done event must carry authoritative display mapping: " + body);
     }
 
     @Test

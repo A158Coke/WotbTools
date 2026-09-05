@@ -15,9 +15,7 @@ import java.util.Map;
  * event: call1_done       // Call #1 结束（无论成败，真实发起调用时必发）
  * event: evidence_done    // 后端证据分析完成
  * event: call2_token      // 主复盘 token 增量，data: {"delta":"..."}
- * event: autopsy_start    // Team Autopsy（战犯/MVP）开始
- * event: autopsy_done     // Team Autopsy 结束
- * event: done             // 全部完成，data: {"analysis":"...","preBattleSection":"..."}
+ * event: done             // 全部完成，data: {"analysis":"...","preBattleSection":"...","teamReview":{...}}
  * event: error            // 流中途失败，data: {"id":"...","errorCode":"AI_...","errorMsg":null}
  * </pre>
  * <p>写入失败的 {@link IOException}（客户端断开）向上传播，由 Controller 负责
@@ -52,6 +50,9 @@ final class ReplaySseWriter {
         final Map<String, Object> data = new LinkedHashMap<>();
         data.put("analysis", response.analysis());
         data.put("preBattleSection", response.preBattleSection());
+        data.put("capability", response.capability());
+        data.put("teamReview", response.teamReview());
+        data.put("teamPlayers", response.teamPlayers());
         send("done", data);
     }
 

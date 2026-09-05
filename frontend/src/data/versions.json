@@ -2,10 +2,10 @@
   {
     "v": "2.12.75",
     "date": "2026-09-05",
-    "tag": "fix",
-    "zh": "改进战局回放 HD 地图放大时的渲染缓冲与车辆对齐；密集场景中的坦克标记会自动分开并用细线指回真实位置；实际回放对照确认剩余柔化受当前地图资源细节上限限制，车辆、基地、轨迹和标注继续与地图严格对齐。",
-    "en": "Improved Battle Playback HD map rendering buffers and vehicle alignment while zooming; dense tank markers now separate automatically and use leader lines to point back to their real positions; real-replay comparison confirms that remaining softness is limited by the current map source detail, while vehicles, bases, trails and annotations remain aligned with the map.",
-    "ru": "Улучшены буфер рендеринга HD-карт Battle Playback и выравнивание техники при увеличении; в плотных сценах маркеры танков автоматически разделяются и соединяются линиями с реальными позициями; сравнение на реальном повторе подтверждает, что оставшаяся мягкость ограничена детализацией текущего источника карты, а техника, базы, следы и пометки сохраняют точное положение относительно карты."
+    "tag": "chg",
+    "zh": "战局回放 HD 地图放大时的渲染缓冲与车辆对齐得到改进；密集场景中的坦克标记会自动分开并用细线指回真实位置，剩余柔化受当前地图资源细节上限限制。团队 AI 复盘改为结构化展示关键战术阶段、训练建议、重点复查与高贡献者；没有足够依据的可选区块会自动隐藏。",
+    "en": "Battle Playback HD map rendering buffers and vehicle alignment are improved while zooming; dense tank markers separate automatically and use leader lines to point back to their real positions, while remaining softness is limited by current map source detail. Team AI reviews now present key tactical episodes, training suggestions, review focus and high contributors in structured sections; optional sections without enough evidence stay hidden.",
+    "ru": "Улучшены буфер рендеринга HD-карт Battle Playback и выравнивание техники при увеличении; в плотных сценах маркеры танков автоматически разделяются и соединяются линиями с реальными позициями, а оставшаяся мягкость ограничена детализацией текущего источника карты. Командные AI-разборы теперь показывают ключевые тактические эпизоды, рекомендации для тренировки, объекты для повторной проверки и наиболее полезных участников в структурированных разделах; необязательные разделы без достаточных оснований скрываются."
   },
   {
     "v": "2.12.74",
