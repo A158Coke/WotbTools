@@ -194,13 +194,13 @@ describe('PlayerDetailDrawer header / scope（V4.1 vs League V6）', () => {
     // 头部不再依赖 facts 重复展示 median/rated_battles
     const rating = wrapper.find('[data-testid="drawer-rating"]')
     expect(rating.exists()).toBe(true)
-    expect(rating.text()).toBe('850')
+    expect(rating.text()).toBe('850.4')
   })
 
   it('battle: V4.1 single-battle Rating (not replaced by League V6)', () => {
     const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, BATTLE_PLAYER)
     const rating = wrapper.find('[data-testid="drawer-rating"]')
-    expect(rating.text()).toBe('813') // 812.6 rounded
+    expect(rating.text()).toBe('812.6')
     expect(wrapper.text()).not.toContain('league.drawer.observed_mean')
   })
 

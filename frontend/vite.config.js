@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { execSync } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -21,8 +21,8 @@ export function devProxyTarget(mode) {
  * 本地构建再 fallback 到 git rev-parse；两者皆无时降级 unknown，不阻断构建。 */
 function buildIdentity() {
   const fromEnv = process.env.BUILD_COMMIT
-  let commit = (fromEnv && fromEnv.trim()) || 'unknown'
-  if (commit === 'unknown') {
+  let commit = fromEnv?.trim() || ''
+  if (!commit) {
     try {
       commit = execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim()
     } catch {
@@ -30,7 +30,7 @@ function buildIdentity() {
     }
   }
   return {
-    commit,
+    commit: commit || 'unknown',
     buildTime: new Date().toISOString(),
   }
 }
@@ -45,6 +45,7 @@ export default defineConfig(({ mode }) => ({
       apply: 'build',
       closeBundle() {
         const outDir = resolve(configDirectory, 'dist')
+        mkdirSync(outDir, { recursive: true })
         writeFileSync(resolve(outDir, 'version.json'),
           JSON.stringify({ commit: identity.commit, buildTime: identity.buildTime }, null, 2) + '\n')
       },

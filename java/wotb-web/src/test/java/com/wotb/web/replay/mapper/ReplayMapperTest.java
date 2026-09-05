@@ -1,6 +1,9 @@
 package com.wotb.web.replay.mapper;
 
 import com.wotb.core.league.PlayerVehicleUsage;
+import com.wotb.core.league.LeagueRatingBatch;
+import com.wotb.core.league.PlayerLeagueSummary;
+import com.wotb.core.league.TeamLeagueSummary;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
@@ -9,6 +12,7 @@ import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.LeagueVehicleUsageDto;
+import com.wotb.web.replay.dto.PreviewResponse;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -31,6 +35,28 @@ class ReplayMapperTest {
 
         assertEquals("r10", dto.sourceId());
         assertEquals("folder_display.wotbreplay", dto.sourceName());
+    }
+
+    @Test
+    void leagueSummaryRatingKeepsFullPrecisionForApiSorting() {
+        final Battle battle = new Battle();
+        battle.arenaId = "golden-01";
+        battle.players = List.of();
+        final PlayerLeagueSummary player = new PlayerLeagueSummary(
+                5001L, "Golden", "ALPHA", 15, 418.93125, 400.2416666666667,
+                List.of(10.0, 20.0, 30.0, 40.0, 5.0, 6.0, 7.0),
+                0, 0, 0, 0, 0, List.of());
+        final TeamLeagueSummary team = new TeamLeagueSummary(
+                "clan:ALPHA", "ALPHA", "CLAN_MAJORITY", 34,
+                598.5285714285715, 602.1617647058823,
+                List.of(102.65, 21.0, 31.0, 41.0, 6.0, 7.0, 8.0),
+                0, List.of("golden-01:1"));
+        final PreviewResponse response = Mapper.toPreviewResponse(
+                List.of(battle), List.of(), List.of(), List.of(), Tankopedia.load(),
+                new LeagueRatingBatch(List.of(), List.of(player), List.of(team), List.of()));
+
+        assertEquals(418.93125, response.league().playerSummaries().getFirst().rating(), 0.0);
+        assertEquals(598.5285714285715, response.league().teamSummaries().getFirst().rating(), 0.0);
     }
 
     @Test

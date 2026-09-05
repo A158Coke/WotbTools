@@ -46,8 +46,8 @@ describe('LeagueSummaryTable', () => {
       global: { mocks: { $t: key => key } }
     })
     const text = wrapper.text()
-    // 总 Rating 只显示整数（850），不显示 /1000 冗余完成度
-    expect(text).toContain('850')
+    // 总 Rating 展示保留 1 位小数，不显示 /1000 冗余完成度
+    expect(text).toContain('850.4')
     expect(text).not.toContain('850 ·')
     expect(text).toContain('2')
     const input = wrapper.find('input.team-name-input')
@@ -127,9 +127,27 @@ describe('LeagueSummaryTable', () => {
     const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
     await th.trigger('click')
     const rowsOut = wrapper.findAll('tbody tr')
-    expect(rowsOut.at(0).text()).toContain('700')   // raw 700.2 → 700（BBB）
-    expect(rowsOut.at(1).text()).toContain('850')   // raw 850.4 → 850（AAA）
+    expect(rowsOut.at(0).text()).toContain('700.2')   // raw 700.2 → 700.2（BBB）
+    expect(rowsOut.at(1).text()).toContain('850.4')   // raw 850.4 → 850.4（AAA）
     expect(rowsOut.at(2).text()).toContain('--')    // missing last（CCC）
+  })
+
+  it('team summary sorting uses full-precision raw Rating when display values tie', async () => {
+    const rows = [
+      teamRow({ teamKey: 'clan:HIGH', rating: 700.24, autoName: 'HIGH' }),
+      teamRow({ teamKey: 'clan:LOW', rating: 700.21, autoName: 'LOW' })
+    ]
+    const wrapper = mount(LeagueSummaryTable, {
+      props: { title: 'T', rows, columns: SUMMARY_COLS, teamNames: {} },
+      global: { mocks: { $t: key => key } }
+    })
+    const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    await th.trigger('click')
+    const rowsOut = wrapper.findAll('tbody tr')
+    expect(rowsOut.at(0).find('input').element.value).toBe('LOW')
+    expect(rowsOut.at(1).find('input').element.value).toBe('HIGH')
+    expect(rowsOut.at(0).text()).toContain('700.2')
+    expect(rowsOut.at(1).text()).toContain('700.2')
   })
 
   it('sorts team name by final display name (override-aware)', async () => {
