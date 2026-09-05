@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  RELIEF_PADDING,
+  RELIEF_Z_EXAGGERATION,
   createTerrainReliefModel,
   projectTerrainPoint,
   sampleTerrainHeight,
@@ -22,6 +24,11 @@ function model() {
 }
 
 describe('fixed 45 degree terrain relief projection', () => {
+  it('keeps the approved amplified tactical-relief defaults', () => {
+    expect(RELIEF_Z_EXAGGERATION).toBe(2)
+    expect(RELIEF_PADDING).toBeCloseTo(0.035)
+  })
+
   it('keeps X horizontal while higher Z moves north/up on screen', () => {
     const m = model()
     const low = projectTerrainPoint(m, 0, 0, 0)

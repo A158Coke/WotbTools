@@ -27,10 +27,10 @@ let loadToken = 0
 // 45° geometry now carries most of the depth cue. Hillshade stays renderer-owned
 // and deliberately moderate: it improves slope readability without turning the
 // existing tactical raster into a synthetic texture pack.
-const RELIEF_NORMAL_GAIN = 1.8
-const RELIEF_CONTRAST = 1.35
-const RELIEF_MIN_SHADE = 0.62
-const RELIEF_MAX_SHADE = 1.16
+const RELIEF_NORMAL_GAIN = 2.15
+const RELIEF_CONTRAST = 1.45
+const RELIEF_MIN_SHADE = 0.56
+const RELIEF_MAX_SHADE = 1.20
 const RELIEF_SUN = new THREE.Vector3(-0.72, 0.58, 0.38).normalize()
 
 function finiteNumber(value, fallback = 0) {
@@ -280,7 +280,15 @@ async function loadMap() {
     texture.colorSpace = THREE.SRGBColorSpace
     texture.wrapS = THREE.ClampToEdgeWrapping
     texture.wrapT = THREE.ClampToEdgeWrapping
-    texture.anisotropy = Math.min(8, nextRenderer.capabilities.getMaxAnisotropy())
+    // The production basemaps are already 2024x2024 WebP. Preserve that native
+    // detail in the oblique 2.5D view instead of manufacturing larger rasters.
+    // Trilinear mipmaps avoid shimmer while maximum anisotropy keeps roads and
+    // building edges readable along the foreshortened north/south axis.
+    texture.generateMipmaps = true
+    texture.minFilter = THREE.LinearMipmapLinearFilter
+    texture.magFilter = THREE.LinearFilter
+    texture.anisotropy = nextRenderer.capabilities.getMaxAnisotropy()
+    texture.needsUpdate = true
 
     const terrain = new THREE.Mesh(
       buildTerrainGeometry(entry.terrain, heights, model),

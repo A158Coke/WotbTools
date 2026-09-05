@@ -1,8 +1,8 @@
 import { shallowRef } from 'vue'
 
 export const RELIEF_ELEVATION_DEG = 45
-export const RELIEF_Z_EXAGGERATION = 1.6
-export const RELIEF_PADDING = 0.05
+export const RELIEF_Z_EXAGGERATION = 2.0
+export const RELIEF_PADDING = 0.035
 
 export const activeTerrainRelief = shallowRef(null)
 
