@@ -1,19 +1,20 @@
 {
   "schemaVersion": 1,
+  "status": "EXPERIMENTAL",
   "policy": "ORIGINALS_PRESERVED_IN_ASSETS_MAPS",
+  "sourceOfTruth": "frontend/src/assets/maps",
+  "rules": [
+    "Every enhancement pass must start from the original source asset, never from a previously generated HD result.",
+    "Terrain geometry, road topology, coastline, building footprints and tactical landmarks must remain faithful to the original.",
+    "Generated HD assets are rejected if visual QA detects geometry drift or cumulative generation distortion."
+  ],
   "entries": [
     {
       "source": "frontend/src/assets/maps/black-goldville.webp",
       "enhanced": "frontend/src/assets/maps-hd/black-goldville.webp",
       "method": "FSRCNN_X2_PLUS_CONSERVATIVE_UNSHARP",
-      "sourcePixels": [
-        2024,
-        2024
-      ],
-      "enhancedPixels": [
-        4048,
-        4048
-      ],
+      "sourcePixels": [2024, 2024],
+      "enhancedPixels": [4048, 4048],
       "sourceSha256": "10595c5ca238820e4a74cb3e12a9306334fb335274c53c54ce8c463057dcad04",
       "enhancedSha256": "dd117b5e883d3568774e07a2b4dc4647721ab29a176da38feb8b2bf63e3779e3",
       "webpQuality": 92
@@ -22,14 +23,8 @@
       "source": "frontend/src/assets/maps/port-bay.webp",
       "enhanced": "frontend/src/assets/maps-hd/port-bay.webp",
       "method": "REAL_ESRGAN_GENERAL_X4V3_AGGRESSIVE_X2",
-      "sourcePixels": [
-        2024,
-        2024
-      ],
-      "enhancedPixels": [
-        4048,
-        4048
-      ],
+      "sourcePixels": [2024, 2024],
+      "enhancedPixels": [4048, 4048],
       "sourceSha256": "dd2f3b589f1098c41ab91ec69603519cff097add739ff381fe44375c25464755",
       "enhancedSha256": "76e142e978e0fb1c264ae159e5b5226444c09ea513dc12fccef9b03588a7a45e",
       "webpQuality": 96,
