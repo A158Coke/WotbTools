@@ -173,6 +173,44 @@ function buildStaticGeometry(record, positionsBuffer, indicesBuffer) {
   return geometry
 }
 
+function addProceduralWaterPlanes(nextScene, waterMeta, bounds) {
+  const planes = Array.isArray(waterMeta?.planes) ? waterMeta.planes : []
+  if (planes.length === 0) return
+
+  const xMin = finiteNumber(bounds.xMin, -300)
+  const yMin = finiteNumber(bounds.yMin, -300)
+  const xMax = finiteNumber(bounds.xMax, 300)
+  const yMax = finiteNumber(bounds.yMax, 300)
+  const width = xMax - xMin
+  const height = yMax - yMin
+  if (!(width > 0) || !(height > 0)) return
+
+  const centerX = (xMin + xMax) / 2
+  const centerY = (yMin + yMax) / 2
+  const waterMaterial = new THREE.MeshPhysicalMaterial({
+    color: 0x315a67,
+    transparent: true,
+    opacity: 0.48,
+    roughness: 0.22,
+    metalness: 0,
+    clearcoat: 0.35,
+    clearcoatRoughness: 0.28,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  })
+
+  for (const plane of planes) {
+    const z = Number(plane?.zMeters)
+    if (!Number.isFinite(z)) continue
+    // PlaneGeometry is already an XY plane with +Z normal, matching the map's Z-up frame.
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), waterMaterial)
+    mesh.name = `procedural-water-z-${z}`
+    mesh.position.set(centerX, centerY, z)
+    mesh.renderOrder = 2
+    nextScene.add(mesh)
+  }
+}
+
 async function loadMap() {
   const token = ++loadToken
   disposeScene()
@@ -283,6 +321,10 @@ async function loadMap() {
     )
     terrainMesh.name = 'derived-real-heightmap-terrain'
     nextScene.add(terrainMesh)
+
+    // Only a numeric Water Z fact is reused from the client scene. The plane geometry
+    // and material below are original renderer code; no client water mesh/material is copied.
+    addProceduralWaterPlanes(nextScene, entry.water, terrainBounds)
 
     const staticMaterial = new THREE.MeshStandardMaterial({
       color: 0x9aa7ad,
