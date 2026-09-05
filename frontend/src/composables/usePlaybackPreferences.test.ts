@@ -21,7 +21,7 @@ describe('usePlaybackPreferences', () => {
     localStorage.setItem('wotb.pb.hp-prefs', JSON.stringify({ showHp: false }))
     localStorage.setItem('wotb.pb.trail-prefs', JSON.stringify({ showTrail: false }))
     localStorage.setItem('wotb.pb.pane-widths', JSON.stringify({ rail: 240, details: 360 }))
-    localStorage.setItem('wotb.pb.rail-collapsed', '1')
+    localStorage.setItem('wotb.pb.rail-collapsed.v2', '1')
 
     const prefs = usePlaybackPreferences()
     expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: true, showTankName: false })
@@ -39,6 +39,14 @@ describe('usePlaybackPreferences', () => {
     expect(JSON.parse(localStorage.getItem('wotb.pb.hp-prefs') || '{}')).toEqual({ showHp: true })
     expect(JSON.parse(localStorage.getItem('wotb.pb.trail-prefs') || '{}')).toEqual({ showTrail: true })
     expect(JSON.parse(localStorage.getItem('wotb.pb.pane-widths') || '{}').details).toBe(420)
-    expect(localStorage.getItem('wotb.pb.rail-collapsed')).toBe('0')
+    expect(localStorage.getItem('wotb.pb.rail-collapsed.v2')).toBe('0')
+  })
+
+  it('does not hydrate the stale pre-desktop-rail collapsed preference', () => {
+    localStorage.setItem('wotb.pb.rail-collapsed', '1')
+
+    const prefs = usePlaybackPreferences()
+
+    expect(prefs.railCollapsed.value).toBe(false)
   })
 })
