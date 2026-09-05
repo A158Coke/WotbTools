@@ -28,11 +28,17 @@ jobs:
           python -m pip install --disable-pip-version-check realesrgan==0.3.0 pillow==11.3.0 opencv-python-headless==4.10.0.84
           python - <<'PY'
           from pathlib import Path
-          import basicsr
-          p = Path(basicsr.__file__).resolve().parent / 'data' / 'degradations.py'
+          import site
+          candidates = [Path(p) / 'basicsr' / 'data' / 'degradations.py' for p in site.getsitepackages()]
+          p = next((x for x in candidates if x.is_file()), None)
+          if p is None:
+              raise SystemExit(f'BasicSR degradations.py not found: {candidates}')
           text = p.read_text(encoding='utf-8')
-          text = text.replace('from torchvision.transforms.functional_tensor import rgb_to_grayscale', 'from torchvision.transforms.functional import rgb_to_grayscale')
-          p.write_text(text, encoding='utf-8')
+          old = 'from torchvision.transforms.functional_tensor import rgb_to_grayscale'
+          new = 'from torchvision.transforms.functional import rgb_to_grayscale'
+          if old not in text:
+              raise SystemExit(f'expected BasicSR import not found in {p}')
+          p.write_text(text.replace(old, new), encoding='utf-8')
           print('patched', p)
           PY
       - name: Fetch lightweight Real-ESRGAN model
