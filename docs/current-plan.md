@@ -2,7 +2,7 @@
 
 ## 状态
 
-READY FOR CI — approved execution in standalone worktree `feat/team-ai-review-v06-causal-reasoning`, based on `origin/main` at `3d71bc80dd51b0d5fdff7fd058830c1b7696df65`.
+PR #265 OPEN — approved execution in standalone worktree `feat/team-ai-review-v06-causal-reasoning`, based on `origin/main` at `3d71bc80dd51b0d5fdff7fd058830c1b7696df65`; CI validation pending.
 
 ## 执行边界
 
@@ -18,7 +18,7 @@ validator 或第二套 TacticalEpisode。测试由 CI 运行，本 worktree 不�
 - [x] 补齐 deterministic contract assertions，覆盖 Information、objective obligation、local participation、propagation、HP downstream、UNKNOWN、个人绑定和三语顺序。
 - [x] 同步 feature/architecture/changelog/Java agent 文档。
 - [x] 完成静态 diff、契约文本和 code-smell/review-with-docs 检查；测试结果留给 CI。
-- [ ] 提交并推送分支，创建 PR，等待 CI 验证。
+- [x] 提交并推送分支，创建 PR #265；等待 CI 验证。
 
 ---
 
