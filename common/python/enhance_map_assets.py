@@ -5,8 +5,9 @@ Original assets are never modified. Enhanced files are written to
 ``frontend/src/assets/maps-hd`` so the existing ``assets/maps`` directory remains
 an exact rollback source.
 
-This tool intentionally uses a small FSRCNN x2 super-resolution network instead
-of a generative image model. Tactical-map geometry (roads, buildings, borders)
+The preferred model is EDSR x2. It is materially stronger than the earlier
+FSRCNN sample while remaining a deterministic super-resolution network rather
+than a generative image model. Tactical-map geometry (roads, buildings, borders)
 must remain spatially faithful; enhancement is limited to resolution recovery
 plus a conservative unsharp pass.
 
@@ -28,6 +29,10 @@ REPO = Path(__file__).resolve().parents[2]
 SOURCE_DIR = REPO / "frontend" / "src" / "assets" / "maps"
 OUTPUT_DIR = REPO / "frontend" / "src" / "assets" / "maps-hd"
 MANIFEST_PATH = OUTPUT_DIR / "manifest.json"
+MODEL_SPECS = {
+    "edsr": {"opencv_name": "edsr", "scale": 2, "label": "EDSR_X2_PLUS_CONSERVATIVE_UNSHARP"},
+    "fsrcnn": {"opencv_name": "fsrcnn", "scale": 2, "label": "FSRCNN_X2_PLUS_CONSERVATIVE_UNSHARP"},
+}
 
 
 def sha256(path: Path) -> str:
@@ -38,22 +43,27 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def enhance(source: Path, target: Path, model_path: Path, quality: int) -> dict:
+def enhance(source: Path, target: Path, model_path: Path, model_type: str, quality: int) -> dict:
     image = cv2.imread(str(source), cv2.IMREAD_COLOR)
     if image is None:
         raise RuntimeError(f"Unable to decode source image: {source}")
 
     source_height, source_width = image.shape[:2]
+    spec = MODEL_SPECS[model_type]
     sr = cv2.dnn_superres.DnnSuperResImpl_create()
     sr.readModel(str(model_path))
-    sr.setModel("fsrcnn", 2)
+    sr.setModel(spec["opencv_name"], spec["scale"])
     upscaled = sr.upsample(image)
 
-    # Small, deterministic sharpening pass. Avoid aggressive local contrast or
-    # generative reconstruction because the tactical raster is authoritative for XY.
+    # EDSR already reconstructs edges much better than FSRCNN. Keep the post-pass
+    # deliberately light so roads/buildings remain faithful instead of becoming
+    # haloed or artificially textured.
     rgb = cv2.cvtColor(upscaled, cv2.COLOR_BGR2RGB)
     pil = Image.fromarray(rgb)
-    pil = pil.filter(ImageFilter.UnsharpMask(radius=1.0, percent=75, threshold=3))
+    if model_type == "edsr":
+        pil = pil.filter(ImageFilter.UnsharpMask(radius=0.8, percent=45, threshold=3))
+    else:
+        pil = pil.filter(ImageFilter.UnsharpMask(radius=1.0, percent=75, threshold=3))
 
     target.parent.mkdir(parents=True, exist_ok=True)
     pil.save(target, "WEBP", quality=quality, method=6, exact=True)
@@ -64,7 +74,7 @@ def enhance(source: Path, target: Path, model_path: Path, quality: int) -> dict:
     return {
         "source": source.relative_to(REPO).as_posix(),
         "enhanced": target.relative_to(REPO).as_posix(),
-        "method": "FSRCNN_X2_PLUS_CONSERVATIVE_UNSHARP",
+        "method": spec["label"],
         "sourcePixels": [source_width, source_height],
         "enhancedPixels": list(target_size),
         "sourceSha256": sha256(source),
@@ -75,10 +85,11 @@ def enhance(source: Path, target: Path, model_path: Path, quality: int) -> dict:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("model", type=Path, help="Path to OpenCV FSRCNN_x2.pb")
+    parser.add_argument("model", type=Path, help="Path to an OpenCV dnn_superres .pb model")
     parser.add_argument("maps", nargs="*", help="Basemap stems or filenames; omit with --all")
+    parser.add_argument("--model-type", choices=sorted(MODEL_SPECS), default="edsr")
     parser.add_argument("--all", action="store_true", help="Enhance every .webp in assets/maps")
-    parser.add_argument("--quality", type=int, default=92)
+    parser.add_argument("--quality", type=int, default=94)
     return parser.parse_args()
 
 
@@ -86,7 +97,7 @@ def main() -> int:
     args = parse_args()
     model_path = args.model.resolve()
     if not model_path.is_file():
-        raise SystemExit(f"FSRCNN model not found: {model_path}")
+        raise SystemExit(f"Super-resolution model not found: {model_path}")
     if not 1 <= args.quality <= 100:
         raise SystemExit("--quality must be 1..100")
 
@@ -119,11 +130,11 @@ def main() -> int:
     entries_by_source = {entry["source"]: entry for entry in manifest.get("entries", [])}
     for source in sources:
         target = OUTPUT_DIR / source.name
-        entry = enhance(source, target, model_path, args.quality)
+        entry = enhance(source, target, model_path, args.model_type, args.quality)
         entries_by_source[entry["source"]] = entry
         print(
             f"{source.name}: {entry['sourcePixels'][0]}x{entry['sourcePixels'][1]} -> "
-            f"{entry['enhancedPixels'][0]}x{entry['enhancedPixels'][1]}"
+            f"{entry['enhancedPixels'][0]}x{entry['enhancedPixels'][1]} ({entry['method']})"
         )
 
     manifest["entries"] = [entries_by_source[key] for key in sorted(entries_by_source)]
