@@ -2,10 +2,8 @@ import { shallowRef } from 'vue'
 
 export const RELIEF_ELEVATION_DEG = 45
 export const RELIEF_Z_EXAGGERATION = 2.0
-// 2.5D replaces the old 2D map presentation, so it must occupy the same map rect.
-// Do not inset the relief envelope: any positive padding makes the upgraded map
-// visibly shrink inside the BattleMap viewport.
 export const RELIEF_PADDING = 0
+export const RELIEF_EDGE_FADE_FRACTION = 0.08
 
 export const activeTerrainRelief = shallowRef(null)
 
@@ -18,6 +16,12 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value))
 }
 
+function smoothstep(edge0, edge1, value) {
+  if (!(edge1 > edge0)) return value >= edge1 ? 1 : 0
+  const t = clamp((value - edge0) / (edge1 - edge0), 0, 1)
+  return t * t * (3 - 2 * t)
+}
+
 export function createTerrainReliefModel({
   mapCode,
   worldBounds,
@@ -27,6 +31,7 @@ export function createTerrainReliefModel({
   elevationDeg = RELIEF_ELEVATION_DEG,
   zExaggeration = RELIEF_Z_EXAGGERATION,
   padding = RELIEF_PADDING,
+  edgeFadeFraction = RELIEF_EDGE_FADE_FRACTION,
 }) {
   const xMin = finite(worldBounds?.xMin)
   const yMin = finite(worldBounds?.yMin)
@@ -44,46 +49,19 @@ export function createTerrainReliefModel({
   }
 
   const elevation = elevationDeg * Math.PI / 180
-  const cosElevation = Math.cos(elevation)
   const sinElevation = Math.sin(elevation)
   const centerX = (xMin + xMax) / 2
   const centerY = (yMin + yMax) / 2
   const centerZ = (minZ + maxZ) / 2
+  const spanX = xMax - xMin
+  const spanY = yMax - yMin
+  const uPadding = spanX * Math.max(0, padding)
+  const vPadding = spanY * Math.max(0, padding)
 
-  // Camera comes from map south and looks north/up at a fixed elevation. X stays
-  // horizontal and north stays screen-up. Fit against the *actual sampled terrain*
-  // envelope instead of the theoretical minZ/maxZ corner combination, and never
-  // force the projected frustum to a square. A square frustum made the 45° map look
-  // visibly shrunken inside the existing tactical viewport.
-  const rawUMin = xMin - centerX
-  const rawUMax = xMax - centerX
-  const spacingY = (yMax - yMin) / size
-  let rawVMin = Number.POSITIVE_INFINITY
-  let rawVMax = Number.NEGATIVE_INFINITY
-
-  const observeV = (y, height) => {
-    const v = (y - centerY) * cosElevation
-      + (finite(height, centerZ) - centerZ) * zExaggeration * sinElevation
-    rawVMin = Math.min(rawVMin, v)
-    rawVMax = Math.max(rawVMax, v)
-  }
-
-  for (let sy = 0; sy < size; sy++) {
-    const y = yMin + sy * spacingY
-    const row = sy * size
-    for (let sx = 0; sx < size; sx++) observeV(y, heights[row + sx])
-  }
-  // Renderer duplicates the final sample row on the north world-bound edge. Include
-  // that real boundary in fit calculations so no terrain edge can be clipped.
-  const lastRow = (size - 1) * size
-  for (let sx = 0; sx < size; sx++) observeV(yMax, heights[lastRow + sx])
-
-  if (!Number.isFinite(rawVMin) || !Number.isFinite(rawVMax)) {
-    throw new Error('Relief projected terrain envelope is invalid')
-  }
-  const uPadding = (rawUMax - rawUMin) * padding
-  const vPadding = Math.max(rawVMax - rawVMin, 1e-6) * padding
-
+  // Product contract: 2.5D is an upgrade of the existing 2D tactical map, not a
+  // physically foreshortened camera view. Keep the original X/Y footprint as the
+  // projection frame and use the approved 45° angle only as a Z-derived vertical
+  // relief cue. This prevents the whole map from shrinking into a trapezoid/bowl.
   return Object.freeze({
     mapCode: String(mapCode || ''),
     worldBounds: Object.freeze({ xMin, yMin, xMax, yMax }),
@@ -92,16 +70,16 @@ export function createTerrainReliefModel({
     heights,
     elevationDeg,
     zExaggeration,
-    cosElevation,
     sinElevation,
+    edgeFadeFraction: clamp(finite(edgeFadeFraction, RELIEF_EDGE_FADE_FRACTION), 0, 0.49),
     centerX,
     centerY,
     centerZ,
     projectedBounds: Object.freeze({
-      left: rawUMin - uPadding,
-      right: rawUMax + uPadding,
-      bottom: rawVMin - vPadding,
-      top: rawVMax + vPadding,
+      left: -spanX / 2 - uPadding,
+      right: spanX / 2 + uPadding,
+      bottom: -spanY / 2 - vPadding,
+      top: spanY / 2 + vPadding,
     }),
   })
 }
@@ -135,17 +113,45 @@ export function sampleTerrainHeight(model, x, y) {
   return h0 + (h1 - h0) * ty
 }
 
-export function projectTerrainPoint(model, x, y, z = null) {
+export function terrainReliefEdgeWeight(model, x, y) {
+  if (!model) return 0
+  const { xMin, yMin, xMax, yMax } = model.worldBounds
+  const spanX = xMax - xMin
+  const spanY = yMax - yMin
+  if (!(spanX > 0) || !(spanY > 0)) return 0
+  const nx = clamp((finite(x, model.centerX) - xMin) / spanX, 0, 1)
+  const ny = clamp((finite(y, model.centerY) - yMin) / spanY, 0, 1)
+  const edgeDistance = Math.min(nx, 1 - nx, ny, 1 - ny)
+  return smoothstep(0, model.edgeFadeFraction, edgeDistance)
+}
+
+export function projectTerrainCoordinates(model, x, y, z = null) {
   if (!model) return null
   const height = Number.isFinite(z) ? Number(z) : sampleTerrainHeight(model, x, y)
-  const u = finite(x, model.centerX) - model.centerX
-  const v = (finite(y, model.centerY) - model.centerY) * model.cosElevation
-    + (height - model.centerZ) * model.zExaggeration * model.sinElevation
+  const worldX = finite(x, model.centerX)
+  const worldY = finite(y, model.centerY)
+  const edgeWeight = terrainReliefEdgeWeight(model, worldX, worldY)
+  const heightShift = (height - model.centerZ)
+    * model.zExaggeration
+    * model.sinElevation
+    * edgeWeight
+  return {
+    u: worldX - model.centerX,
+    v: (worldY - model.centerY) + heightShift,
+    height,
+    edgeWeight,
+  }
+}
+
+export function projectTerrainPoint(model, x, y, z = null) {
+  const projected = projectTerrainCoordinates(model, x, y, z)
+  if (!projected) return null
   const bounds = model.projectedBounds
   return {
-    xNorm: (u - bounds.left) / (bounds.right - bounds.left),
-    yNorm: 1 - ((v - bounds.bottom) / (bounds.top - bounds.bottom)),
-    height,
+    xNorm: (projected.u - bounds.left) / (bounds.right - bounds.left),
+    yNorm: 1 - ((projected.v - bounds.bottom) / (bounds.top - bounds.bottom)),
+    height: projected.height,
+    edgeWeight: projected.edgeWeight,
   }
 }
 
@@ -158,18 +164,16 @@ export function unprojectTerrainPoint(model, xNorm, yNorm) {
 
   const nx = clamp(finite(xNorm, 0.5), 0, 1)
   const ny = clamp(finite(yNorm, 0.5), 0, 1)
-  const u = bounds.left + nx * spanU
+  const targetU = bounds.left + nx * spanU
   const targetV = bounds.bottom + (1 - ny) * spanV
-  const x = clamp(model.centerX + u, model.worldBounds.xMin, model.worldBounds.xMax)
+  const x = clamp(model.centerX + targetU, model.worldBounds.xMin, model.worldBounds.xMax)
   const { yMin, yMax } = model.worldBounds
   const steps = model.samplesPerAxis
   const spacingY = (yMax - yMin) / steps
 
   const sampleV = (y) => {
-    const height = sampleTerrainHeight(model, x, y)
-    const v = (y - model.centerY) * model.cosElevation
-      + (height - model.centerZ) * model.zExaggeration * model.sinElevation
-    return { y, height, v }
+    const projected = projectTerrainCoordinates(model, x, y)
+    return { y, height: projected.height, v: projected.v }
   }
 
   let previous = sampleV(yMin)
@@ -185,8 +189,6 @@ export function unprojectTerrainPoint(model, xNorm, yNorm) {
     const lo = Math.min(previous.v, current.v)
     const hi = Math.max(previous.v, current.v)
     if (targetV >= lo && targetV <= hi && Math.abs(current.v - previous.v) > 1e-9) {
-      // Camera looks south -> north, so the first crossing is the nearest visible
-      // surface when a steep heightfield folds in screen space.
       const t = (targetV - previous.v) / (current.v - previous.v)
       const y = previous.y + (current.y - previous.y) * t
       return { x, y, height: sampleTerrainHeight(model, x, y) }
