@@ -401,15 +401,23 @@ public final class BattlePlaybackProjector {
         return null;
     }
 
+    /**
+     * Combat feedback needs a trustworthy damage fact and a place to render it; it does not
+     * require a fresh Type-10 position packet for the entire HP-sample interval. A stationary
+     * vehicle can legitimately keep the same canonical last-known anchor while its HP changes.
+     *
+     * <p>Keep the gate conservative: only a single, reliably attributed canonical damage event
+     * may animate. Multi-hit/ambiguous windows remain deterministic HP state changes only.</p>
+     */
     private static boolean transientAllowed(final List<PositionSegment> segments,
                                             final PlaybackCombatReconstruction.Loss loss) {
-        if (segments == null) {
+        if (segments == null || loss == null
+                || loss.damageEventCount() != 1 || !loss.attackerReliable()) {
             return false;
         }
-        return segments.stream().filter(segment -> "OBSERVED".equals(segment.knowledge())
-                        && segment.startSec() <= loss.fromSec() + 1e-6
-                        && segment.endSec() >= loss.toSec() - 1e-6)
-                .count() == 1;
+        return segments.stream()
+                .flatMap(segment -> segment.samples().stream())
+                .anyMatch(sample -> sample.timeSec() <= loss.toSec() + 1e-6);
     }
 
     private static List<LifeTransition> lifeTransitions(final BattleTimeline timeline,
