@@ -36,7 +36,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Opt-in DeepSeek behavior evaluation for Tactical Skill v0.1.
  *
- * <p>This is deliberately a live-provider test, not a default CI test. It sends
+ * <p>This is deliberately a live-provider test, not a default CI test or merge
+ * gate. It sends
  * the existing Team Call #2 JSON request through {@link SpringAiChatGateway},
  * parses the final envelope, and checks the final model text against explicit
  * behavior contracts. The A-H prompt golden cases remain a separate static
@@ -75,7 +76,7 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern PRESCRIPTIVE_RETREAT = Pattern.compile(
             "(必须|应该|应当|立即|立刻)([^。；\\n]{0,8})?(撤退|回撤)");
-    private static final Map<String, BehaviorSpec> SPECS = specs();
+    static final Map<String, BehaviorSpec> SPECS = specs();
 
     @Test
     void tacticalSkillBehaviorIsEvaluatedAgainstFinalProviderOutput() throws Exception {
@@ -231,37 +232,37 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
         Files.writeString(dir.resolve(REPORT_BASENAME + ".md"), markdown, StandardCharsets.UTF_8);
     }
 
-    private static Map<String, BehaviorSpec> specs() {
+    static Map<String, BehaviorSpec> specs() {
         final Map<String, BehaviorSpec> specs = new LinkedHashMap<>();
         specs.put("team-tactical-skill-v01-a-half-commit", new BehaviorSpec(
-                "A：3 辆先进入，1 辆滞后且没有明确脱离；判断为可观察的执行不同步/半跟进，只讨论执行现象，不猜原因。",
+                "A：时间线显示 3 辆车先进入，另一辆车在 5.5 秒后进入；在可见时间窗内未记录该车明确脱离；先进入的 3 辆车与滞后车辆之间发生了不同的交火事件。",
                 text -> containsAny(text, "half-commit", "半跟进", "执行断层", "脱节", "未同步", "跟进不完整"),
                 "final output did not identify the observable half-commit/execution split"));
         specs.put("team-tactical-skill-v01-b-commitment", new BehaviorSpec(
-                "B：队伍已经越过暴露路段并完成承诺动作后，新增敌人出现在后方；评估完成动作、可达掩护和重组价值，不把新增敌情机械转换为立即撤退。",
+                "B：队伍已越过一段暴露路段并完成一次交互；交互完成后，新的敌方车辆出现在队伍后方；前方最近可达掩护距离队伍约 6 秒；队伍当前仍有 3 辆车存活。",
                 text -> !mechanicalRetreat(text), "final output mechanically prescribed retreat after commitment"));
         specs.put("team-tactical-skill-v01-c-second-attack", new BehaviorSpec(
-                "C：队伍已在一条线路取得成功并获得目标价值；敌方随后恢复防守，继续二次进攻的到达时间和 HP 代价都很高。应讨论保留位置、转移优势或机会成本。",
+                "C：我方在第一次交战中击毁 2 辆敌车并取得基地控制；剩余敌车退到更深位置后恢复防守；我方继续移动到下一次接触点需要额外 18 秒，并要经过开放区域；另一侧同时出现敌方推进。",
                 text -> secondAttackCostAware(text),
                 "final output did not discuss the cost of a second attack"));
         specs.put("team-tactical-skill-v01-d-no-error", new BehaviorSpec(
-                "D：当前可确认/可观察证据不足以支持一个足以作为主要问题的明显执行失误；不要强行找锅，也不要把结论写成证明本场完全没有问题。",
+                "D：回放可确认的内容只有进入时序、可见位置、局部人数和交火结果；没有额外的语音、聊天或 call 记录；时间线中没有提供完整计划、意图或所有未观测位置的信息。",
                 text -> boundedNoError(text) && !unboundedNoError(text),
                 "final output did not keep the no-confirmed-error conclusion evidence-bounded"));
         specs.put("team-tactical-skill-v01-e-no-communication-blame", new BehaviorSpec(
-                "E：回放只显示位置、进入时序、人数和交火结果，没有语音、聊天或 call 证据；只能写可观察执行现象，不能归因沟通或指挥失误。",
+                "E：数据中只有位置、进入时序、人数和交火结果字段；没有语音转写、聊天记录或 call 日志；同一时间窗内记录到两辆队友进入时间不同。",
                 text -> !hasCommunicationAttribution(text),
                 "final output guessed communication/call/commander failure"));
         specs.put("team-tactical-skill-v01-f-supremacy", new BehaviorSpec(
-                "F：争霸赛当前只确认低于约 750 分；一个约 1–2 秒内可确认的击杀通常带来约 +40 的模式价值。不要机械放弃短击杀，但仍要比较 HP 与位置代价。",
+                "F：模式为争霸赛；当前记录的队伍积分为 710；前方一辆敌车处于可交火状态，按当前武器状态预计 1–2 秒内可完成击杀；我方附近基地仍在产生积分；完成击杀后队伍需要暴露约 4 秒才能回到掩体。",
                 text -> shortKillValueAware(text),
                 "final output did not account for the short-kill +40 Supremacy value"));
         specs.put("team-tactical-skill-v01-g-supremacy", new BehaviorSpec(
-                "G：争霸赛约 800 分，追击目标需要很长时间才能兑现；相较低分阶段，应明显提高目标压力和占点/回防优先级。不要把追击当默认正确。",
+                "G：模式为争霸赛；当前记录的队伍积分为 802；一辆残血敌车沿远离基地的路线移动，预计需要 16 秒才能重新接触；我方当前不在基地内；两个基地中有一个处于敌方控制，另一个距离我方约 8 秒。",
                 text -> longChaseObjectivePressureAware(text),
                 "final output did not raise objective pressure for the ~800-point long chase"));
         specs.put("team-tactical-skill-v01-h-assault", new BehaviorSpec(
-                "H：攻防战进攻方还有约 25–40 秒时，不应机械回防/转基地；当只剩约 70–80 秒时，才明显提高基地优先级并结合重置可能性判断。",
+                "H：模式为攻防战；样本包含两个时间点：进攻方占领进度计时分别为 32 秒和 76 秒；防守方基地在两个时间点都可被重置；我方车辆距离基地约 7 秒，且另有敌方车辆在基地附近。",
                 text -> assaultTimingAware(text),
                 "final output did not distinguish the 25–40s and 70–80s Assault priorities"));
         return Map.copyOf(specs);
@@ -341,7 +342,7 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
         return earlyWindow && lateWindow;
     }
 
-    private record BehaviorSpec(String scenario, Predicate<String> predicate, String violationReason) {
+    record BehaviorSpec(String scenario, Predicate<String> predicate, String violationReason) {
     }
 
     private record CheckResult(String check, boolean passed, String reason) {
