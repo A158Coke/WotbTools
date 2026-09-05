@@ -102,6 +102,32 @@ class ObservabilityDashboardContractTest {
     }
 
     @Test
+    void incidentIdentifierFiltersAreIndependentOptionalConstraints() throws Exception {
+        final JsonNode dashboard = readDashboard("wotbtools-error-explorer.json");
+        final String recentQuery = panelQuery(dashboard, "近期事故（倒序）");
+        final String lifecycleQuery = panelQuery(dashboard, "单次 Incident 生命周期（按时间）");
+
+        for (final String query : new String[]{recentQuery, lifecycleQuery}) {
+            assertTrue(query.contains("|~ \"${errorId:raw}\""));
+            assertTrue(query.contains("|~ \"${jobId:raw}\""));
+            assertTrue(query.contains("|~ \"${correlationId:raw}\""));
+            assertFalse(query.contains("jobId=${jobId:raw}|"),
+                    "wildcard jobId must not bypass the errorId filter");
+            assertFalse(query.contains("${errorId:raw})"),
+                    "errorId must not be embedded in an OR identifier group");
+        }
+
+        assertFalse(matchesLokiTextFilters(recentQuery, "event=ai_review_failed jobId=unrelated-job",
+                "err-123", ".*", ".*", ".*"));
+        assertFalse(matchesLokiTextFilters(recentQuery, "event=ai_review_failed id=unrelated-error",
+                ".*", "job-123", ".*", ".*"));
+        assertFalse(matchesLokiTextFilters(lifecycleQuery, "event=ai_review_started correlationId=corr-other",
+                ".*", ".*", "corr-123", ".*"));
+        assertTrue(matchesLokiTextFilters(lifecycleQuery,
+                "event=ai_review_started correlationId=corr-123", ".*", ".*", "corr-123", ".*"));
+    }
+
+    @Test
     void teamReviewLoggingContractIsInfoLevelAndDoesNotLogRawAiContent() throws Exception {
         final String source = Files.readString(resolve("java", "wotb-web", "src", "main", "java",
                 "com", "wotb", "web", "replay", "ai", "TeamReplayAnalysisService.java"));
@@ -127,6 +153,32 @@ class ObservabilityDashboardContractTest {
             }
         }
         return false;
+    }
+
+    private static String panelQuery(final JsonNode dashboard, final String title) {
+        for (final JsonNode panel : dashboard.path("panels")) {
+            if (title.equals(panel.path("title").asText())) {
+                return panel.path("targets").path(0).path("expr").asText();
+            }
+        }
+        throw new AssertionError("Panel is missing: " + title);
+    }
+
+    private static boolean matchesLokiTextFilters(final String query, final String logLine,
+                                                   final String errorId, final String jobId,
+                                                   final String correlationId, final String errorCode) {
+        final String interpolated = query
+                .replace("${errorId:raw}", errorId)
+                .replace("${jobId:raw}", jobId)
+                .replace("${correlationId:raw}", correlationId)
+                .replace("${errorCode:raw}", errorCode);
+        final Matcher matcher = Pattern.compile("\\|~ \\\"([^\\\"]*)\\\"").matcher(interpolated);
+        while (matcher.find()) {
+            if (!Pattern.compile(matcher.group(1)).matcher(logLine).find()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String metricBase(final String metric) {
