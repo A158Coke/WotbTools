@@ -1,3 +1,42 @@
+# Battle Playback HD Basemaps + 2.5D Vehicle Terrain Attitude
+
+## 状态
+
+IMPLEMENTED — REVIEW FIX COMPLETE — FINAL PR CI PENDING
+
+## 范围
+
+- 29/29 HD basemap 均由对应原图独立生成，原图永久保留为 rollback/source-of-truth。
+- HD 资源增加 deterministic gate：coverage、SHA-256、实际 WebP 尺寸、严格 2× frame、无 crop/aspect drift、mapImages import coverage、单图 5 MiB / 4× growth budget。
+- terrain attitude 继续复用 authoritative heightfield + canonical hull yaw + 真实车辆 footprint；不伪造 replay Z。
+- 新增 yaw=90°、反向 sign、45° diagonal 的局部轴回归测试。
+- [x] 29/29 source ↔ HD 已完成 side-by-side + macro-edge overlay 人工 QA：未发现 crop/warp、道路/建筑整体位移、岸线或主要地形轮廓漂移。最低 diagnostic macro-edge F1 为 Faust 0.9312、Desert Sands 0.9318；人工对照确认差异来自纹理/锐化边缘密度，而非战术拓扑重排。`geometryTransform=NONE` 仍只描述 pipeline，不单独作为真实性证明。
+- [x] 资源预算验证：最大单图 Canyon 4,666,308 B < 5 MiB；最大 growth Faust 3.748× < 4×。
+
+---
+# Battle Playback 2.5D Vehicle Terrain Attitude
+
+## 状态
+
+IMPLEMENTED — READY FOR PR REVIEW
+
+## 范围
+
+- 保持现有 2D hull/turret 与 Tier X dedicated top-view assets，不引入 3D 坦克模型。
+- 复用 2.5D authoritative terrain heightfield，在车辆 footprint 的前/后/左/右采样地面高度。
+- hull yaw 仅负责把 terrain slope 转到车辆局部轴；pitch/roll 只作用于 `.pb-graphics`。
+- HP、标签、hitbox、selected/recorder、碰撞布局继续 screen-aligned，不随车体倾斜。
+- 视觉 pitch/roll 做轻度放大并分别 clamp ±14° / ±10°；不伪造 replay Z。
+
+## 验收
+
+- [x] 上坡/下坡可见车头抬起/下压；横坡可见轻微 roll。
+- [x] flat terrain = 0° attitude。
+- [x] marker 真实 footprint 继续来自现有 `vehicleMarkerSizing` SSOT。
+- [x] 无 heightfield 或无可靠 hull yaw 时退化为原 2D marker，不猜方向。
+- [x] targeted unit tests 覆盖 pitch/roll/clamp 与 graphics-only transform。
+
+---
 # Team AI Tactical Review v0.1
 
 ## 状态

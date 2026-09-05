@@ -1,32 +1,32 @@
-import blackGoldvilleImg from '../assets/maps/black-goldville.webp'
-import canalImg from '../assets/maps/canal.webp'
-import canyonImg from '../assets/maps/canyon.webp'
-import castillaImg from '../assets/maps/castilla.webp'
-import copperfieldImg from '../assets/maps/copperfield.webp'
-import deadRailImg from '../assets/maps/dead-rail.webp'
-import desertSandsImg from '../assets/maps/desert-sands.webp'
-import fallsCreekImg from '../assets/maps/falls-creek.webp'
-import faustImg from '../assets/maps/faust.webp'
-import fortDespairImg from '../assets/maps/fort-despair.webp'
-import ghostFactoryImg from '../assets/maps/ghost-factory.webp'
-import hellasImg from '../assets/maps/hellas.webp'
-import himmelsdorfImg from '../assets/maps/himmelsdorf.webp'
-import horrorstadtImg from '../assets/maps/horrorstadt.webp'
-import lagoonImg from '../assets/maps/lagoon.webp'
-import mayanRuinsImg from '../assets/maps/mayan-ruins.webp'
-import middleburgImg from '../assets/maps/middleburg.webp'
-import molendijkImg from '../assets/maps/molendijk.webp'
-import navalFrontierImg from '../assets/maps/naval-frontier.webp'
-import newBayImg from '../assets/maps/new-bay.webp'
-import normandyImg from '../assets/maps/normandy.webp'
-import oasisPalmsImg from '../assets/maps/oasis-palms.webp'
-import portBayImg from '../assets/maps/port-bay.webp'
-import rockfieldImg from '../assets/maps/rockfield.webp'
-import vineyardsImg from '../assets/maps/vineyards.webp'
-import wastelandImg from '../assets/maps/wasteland.webp'
-import winterMalinovkaImg from '../assets/maps/winter-malinovka.webp'
-import yamatoHarborImg from '../assets/maps/yamato-harbor.webp'
-import yukonImg from '../assets/maps/yukon.webp'
+import blackGoldvilleImg from '../assets/maps-hd/black-goldville.webp'
+import canalImg from '../assets/maps-hd/canal.webp'
+import canyonImg from '../assets/maps-hd/canyon.webp'
+import castillaImg from '../assets/maps-hd/castilla.webp'
+import copperfieldImg from '../assets/maps-hd/copperfield.webp'
+import deadRailImg from '../assets/maps-hd/dead-rail.webp'
+import desertSandsImg from '../assets/maps-hd/desert-sands.webp'
+import fallsCreekImg from '../assets/maps-hd/falls-creek.webp'
+import faustImg from '../assets/maps-hd/faust.webp'
+import fortDespairImg from '../assets/maps-hd/fort-despair.webp'
+import ghostFactoryImg from '../assets/maps-hd/ghost-factory.webp'
+import hellasImg from '../assets/maps-hd/hellas.webp'
+import himmelsdorfImg from '../assets/maps-hd/himmelsdorf.webp'
+import horrorstadtImg from '../assets/maps-hd/horrorstadt.webp'
+import lagoonImg from '../assets/maps-hd/lagoon.webp'
+import mayanRuinsImg from '../assets/maps-hd/mayan-ruins.webp'
+import middleburgImg from '../assets/maps-hd/middleburg.webp'
+import molendijkImg from '../assets/maps-hd/molendijk.webp'
+import navalFrontierImg from '../assets/maps-hd/naval-frontier.webp'
+import newBayImg from '../assets/maps-hd/new-bay.webp'
+import normandyImg from '../assets/maps-hd/normandy.webp'
+import oasisPalmsImg from '../assets/maps-hd/oasis-palms.webp'
+import portBayImg from '../assets/maps-hd/port-bay.webp'
+import rockfieldImg from '../assets/maps-hd/rockfield.webp'
+import vineyardsImg from '../assets/maps-hd/vineyards.webp'
+import wastelandImg from '../assets/maps-hd/wasteland.webp'
+import winterMalinovkaImg from '../assets/maps-hd/winter-malinovka.webp'
+import yamatoHarborImg from '../assets/maps-hd/yamato-harbor.webp'
+import yukonImg from '../assets/maps-hd/yukon.webp'
 
 /**
  * 地图图片对应的世界坐标范围（米）。
@@ -42,8 +42,11 @@ const WORLD_BOUNDS_300 = { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
  * 地图鸟瞰素材注册表（唯一权威，素材开关）：mapCode（meta.json 的 mapName）→ 图片资源与尺寸。
  * 文件命名约定：游戏英文展示名小写中划线（如 Normandy → normandy.webp，Middleburg → middleburg.webp）；
  * 内部 code 与展示名的完整映射见 docs/reference/maps.md。
- * 新增素材流程：图片按英文展示名放入 assets/maps + 本文件加一行（含 coordinateBounds，
- * 来源见 docs/features/battle-playback.md）。未登记地图整块不渲染。
+ * 新增素材流程：原始图片按英文展示名放入 assets/maps；Playback 消费对应 assets/maps-hd 增强版，
+ * 本文件加一行（含 coordinateBounds，来源见 docs/features/battle-playback.md）。未登记地图整块不渲染。
+ *
+ * assets/maps 是不可变 source of truth / rollback backup；assets/maps-hd 只保存从对应原图直接生成的
+ * AI-enhanced basemap，禁止以上一轮增强图作为下一轮输入。
  */
 export const mapImages = {
   amigosville: { src: fallsCreekImg, width: 768, height: 765, coordinateBounds: WORLD_BOUNDS_300 },

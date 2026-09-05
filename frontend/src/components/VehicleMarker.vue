@@ -64,6 +64,22 @@ const isTurreted = computed(() => model.value?.kind === 'turreted')
 const hullDeg = computed(() => st.value.hullScreenDeg)
 const turretDeg = computed(() => st.value.turretScreenDeg)
 
+// 2.5D vehicle attitude: only the vehicle artwork tilts. Hitbox/HP/labels/selection
+// remain screen-aligned and keep their existing collision/accessibility contracts.
+const graphicsStyle = computed(() => {
+  const attitude = st.value.terrainAttitude
+  if (!attitude || hullDeg.value == null) return null
+  const pitch = Number(attitude.pitchDeg)
+  const roll = Number(attitude.rollDeg)
+  const heading = Number(hullDeg.value)
+  if (![pitch, roll, heading].every(Number.isFinite)) return null
+  return {
+    // Conjugate the 3D tilt by hull heading so pitch is always front/rear and
+    // roll is always left/right in vehicle-local axes while child yaw remains authoritative.
+    transform: `rotateZ(${heading}deg) rotateX(${-pitch}deg) rotateY(${-roll}deg) rotateZ(${-heading}deg)`,
+  }
+})
+
 // —— dedicated turret assembly（嵌套 transform）——
 const assemblyStyle = computed(() =>
   isDedicated.value && isTurreted.value && turretDeg.value != null
@@ -265,7 +281,7 @@ const hpClasses = computed(() => ({
     <!-- 车型视觉层容器：destroyed/last-known 的 opacity/grayscale/team 光晕精确作用于此处
          （而非整个 button）——pb-death ✕ / pb-selected-mark / pb-recorder-badge / pb-labels
          是 button 直接子元素、在容器外，保持完整强度（parent opacity 无法被子元素抵消）。 -->
-    <div class="pb-graphics">
+    <div class="pb-graphics" :style="graphicsStyle">
       <!-- dedicated turreted：hull 填满等比 square render box + turret assembly
            （父层绕盒中心 H，子层绕 image-local pivot T-H） -->
       <template v-if="isDedicated && isTurreted">
@@ -412,6 +428,10 @@ const hpClasses = computed(() => ({
 /* —— marker 内部样式（随组件迁移；父组件 scoped 不作用于子元素）—— */
 /* generic 素材 512×512 含大量透明留白：放大到按钮 134% 居中（PR3 增补校准，
    见 script 注释的素材占比推导），共同 pivot 旋转 */
+.pb-vehicle {
+  perspective: 96px;
+  transform-style: preserve-3d;
+}
 .pb-hull, .pb-turret {
   position: absolute;
   left: 50%;
@@ -445,6 +465,14 @@ const hpClasses = computed(() => ({
 .pb-graphics {
   position: absolute;
   inset: 0;
+  transform-origin: 50% 50%;
+  transform-style: preserve-3d;
+  backface-visibility: visible;
+  transition: transform 90ms linear;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pb-graphics { transition: none; }
 }
 
 /* —— Hull hit target：略大于 vehicle-aware visible model，便于触控；不参与视觉碰撞。 —— */
