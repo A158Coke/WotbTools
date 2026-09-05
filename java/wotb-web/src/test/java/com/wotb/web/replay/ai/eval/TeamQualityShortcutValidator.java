@@ -27,9 +27,18 @@ public final class TeamQualityShortcutValidator {
             "(?i)(?:\\d+(?:\\.\\d+)?\\s*(?:米|m)\\s*(?:以内)?\\s*最大间距|必须保持\\s*\\d+(?:\\.\\d+)?\\s*(?:米|m)\\s*以内|(?:距离|间距)?\\s*(?:超过|大于)\\s*(?:\\d+(?:\\.\\d+)?|x)\\s*(?:米|m)?(?:.{0,10}(?:必须|自动|只能)))");
     private static final Pattern FIXED_TIME_TACTICAL_RULE = Pattern.compile(
             "(?i)(?:\\d+\\s*分\\s*\\d+\\s*秒|\\d+\\s*:\\s*\\d{1,2}|(?:\\d+|x)\\s*(?:秒|s))\\s*(?:前后|左右|时)?\\s*(?:必须|一定要|只能|自动)");
-    private static final Pattern INDIVIDUAL_SETTLEMENT_SHORTCUT = Pattern.compile(
-            "(?is)(重点复查|高贡献者|关键威胁|review focus|high contributor|key threat).{0,120}"
-                    + "(低伤害|伤害低|最低伤害|最高伤害|最早阵亡|先阵亡|低击杀|高承伤|低格挡|damage|kills?|survival)");
+    private static final String INDIVIDUAL_SECTION_HEAD =
+            "(?:重点复查|高贡献者|关键威胁|review focus|high contributor|key threat)";
+    private static final String SETTLEMENT_STAT =
+            "(?:低伤害|伤害低|伤害最低|最低伤害|最高伤害|最早阵亡|先阵亡|低击杀|高承伤|低格挡|damage|kills?|survival)";
+    private static final Pattern INDIVIDUAL_SETTLEMENT_CAUSAL = Pattern.compile(
+            "(?is)" + INDIVIDUAL_SECTION_HEAD + ".{0,45}(?:因为|由于|仅因|根据|依据).{0,30}" + SETTLEMENT_STAT);
+    private static final Pattern INDIVIDUAL_SETTLEMENT_REASON = Pattern.compile(
+            "(?is)" + INDIVIDUAL_SECTION_HEAD + ".{0,24}" + SETTLEMENT_STAT
+                    + ".{0,24}(?:所以|因此|作为(?:重点复查|高贡献者|关键威胁|选择|原因)|选人原因|主因|理由|→)");
+    private static final Pattern INDIVIDUAL_SETTLEMENT_DIRECT = Pattern.compile(
+            "(?is)" + INDIVIDUAL_SECTION_HEAD + ".{0,24}" + SETTLEMENT_STAT
+                    + "(?=\\s*(?:[。；\\n]|$))");
     private static final Pattern ROLE_SHORTCUT = Pattern.compile(
             "(?i)(轻坦|中坦|重坦|坦克歼击车|自行反坦克炮|lt|mt|ht|td).{0,8}(必须|应该|只能).{0,8}(侦察|前排|抗线|后排|狙击|跟主团)");
     private static final Pattern VISION_SHORTCUT = Pattern.compile(
@@ -95,7 +104,10 @@ public final class TeamQualityShortcutValidator {
             violations.add(new Violation("INDIVIDUAL_JUDGMENT_WITHOUT_STRUCTURE",
                     "individual tactical judgments need non-settlement evidence"));
         }
-        if (INDIVIDUAL_SETTLEMENT_SHORTCUT.matcher(text(envelope.reviewMarkdown())).find()) {
+        final String reviewMarkdown = text(envelope.reviewMarkdown());
+        if (INDIVIDUAL_SETTLEMENT_CAUSAL.matcher(reviewMarkdown).find()
+                || INDIVIDUAL_SETTLEMENT_REASON.matcher(reviewMarkdown).find()
+                || INDIVIDUAL_SETTLEMENT_DIRECT.matcher(reviewMarkdown).find()) {
             violations.add(new Violation("INDIVIDUAL_SETTLEMENT_SHORTCUT",
                     "individual sections must be selected from tactical episodes, not settlement ranking"));
         }
