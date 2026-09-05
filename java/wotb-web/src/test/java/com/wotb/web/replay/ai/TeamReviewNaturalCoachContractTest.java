@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Natural Coach Mode 提示词契约。
  * <p>验证：主正文为自由组织的自然复盘（无固定章节模板）；必须有唯一「最重要结论」；
- * Focus Window 是内部 attention 提示而非用户模板；GROUNDING FACTS 结构化输出契约；
+ * Focus Window 是内部 attention 提示而非用户模板；v0.5 结构化输出契约；
  * 教练不是司法鉴定员；ZH/EN/RU 三语一致。</p>
  */
 class TeamReviewNaturalCoachContractTest {
@@ -60,71 +60,47 @@ class TeamReviewNaturalCoachContractTest {
     }
 
     @Test
-    void groundingFactsStructuredOutputContract() {
-        assertTrue(ZH.contains("=== GROUNDING FACTS 与结构化输出（强制） ==="), "必须有 GROUNDING 契约段");
-        assertTrue(ZH.contains("GROUNDING FACTS 是后端确定性事实清单"), "GROUNDING FACTS 是确定性事实");
-        assertTrue(ZH.contains("这些事实绝对不能修改"), "事实不可修改");
-        assertTrue(ZH.contains("primaryDiagnosis"), "envelope 必须有 primaryDiagnosis");
-        assertTrue(ZH.contains("reviewMarkdown"), "envelope 必须有 reviewMarkdown");
-        assertTrue(ZH.contains("supportingEvidenceIds"), "envelope 必须有 supportingEvidenceIds");
-        assertTrue(ZH.contains("claims"), "envelope 必须有 claims");
-        assertTrue(ZH.contains("不得在其中出现"), "正文不得出现内部标识");
-        assertTrue(ZH.contains("绝不进入 reviewMarkdown 正文"), "证据编号绝不进正文");
-        assertTrue(ZH.contains("LAST_KNOWN 只是「最后一次被观测到的位置」"), "LAST_KNOWN 语义");
-        assertTrue(ZH.contains("「敌方此时就在这里/正在某区」"), "禁止 LAST_KNOWN 写成当前");
+    void v05StructuredOutputContract() {
+        assertTrue(ZH.contains("=== Team AI Review v0.5 结构化结果（最终输出契约） ==="), "必须有 v0.5 输出契约段");
+        assertTrue(ZH.contains("\"summary\": {\"verdict\": \"...\", \"primaryDiagnosis\": \"...\"}"),
+                "v0.5 必须使用 summary 结构");
+        assertTrue(ZH.contains("episodes"), "v0.5 必须有 episodes");
+        assertTrue(ZH.contains("trainingSuggestions"), "v0.5 必须有 trainingSuggestions");
+        assertTrue(ZH.contains("reviewFocus"), "v0.5 必须有 reviewFocus");
+        assertTrue(ZH.contains("highContributors"), "v0.5 必须有 highContributors");
+        assertFalse(ZH.contains("\"primaryDiagnosis\": {"), "不得恢复旧 envelope 的嵌套 primaryDiagnosis");
+        assertFalse(ZH.contains("=== GROUNDING FACTS 与结构化输出（强制） ==="), "不得保留旧 GROUNDING envelope");
     }
 
     @Test
-    void groundingMachineFieldsContractTrilingual() {
-        // structured claims 必须支持机器可校验字段（语言无关）
-        assertTrue(ZH.contains("机器字段（三语通用，language-neutral）"),
-                "必须声明机器字段三语通用");
-        assertTrue(ZH.contains("timeSec"), "必须有 timeSec 机器字段");
-        assertTrue(ZH.contains("region"), "必须有 region 机器字段");
-        assertTrue(ZH.contains("count"), "必须有 count 机器字段");
-        assertTrue(ZH.contains("subject"), "必须有 subject 机器字段");
-        assertTrue(ZH.contains("value"), "必须有 value 机器字段");
-        assertTrue(ZH.contains("claimType"), "必须有 claimType 机器字段");
-        assertTrue(ZH.contains("countSemantics 用机器字段声明"),
-                "countSemantics 必须用机器字段声明（不依赖自然语言标记）");
-        assertTrue(ZH.contains("EXACT=恰好 count 辆"), "必须给出 EXACT 机器语义");
-        assertTrue(ZH.contains("AT_LEAST=至少 count 辆"), "必须给出 AT_LEAST 机器语义");
-        assertTrue(ZH.contains("SUBSET=其中 count 辆"), "必须给出 SUBSET 机器语义");
-        assertTrue(ZH.contains("DEATH：subject"), "必须给出 DEATH required fields（fail-close schema）");
-        assertTrue(ZH.contains("POSITION_REGION：timeSec + region"), "必须给出 POSITION_REGION required fields");
-        assertTrue(ZH.contains("ENEMY_POSITION：subject + timeSec + region + knowledge"),
-                "必须给出 ENEMY_POSITION required fields（knowledge）");
-        assertTrue(ZH.contains("TACTICAL：纯战术观点，不要求 factual machine 字段"),
-                "TACTICAL 必须声明不要求机器字段");
-        assertTrue(ZH.contains("claims 是同一批 factual assertions 的 machine projection，不是可选装饰"),
-                "claims 不得设计成可选装饰（coverage 契约）");
-        assertTrue(ZH.contains("数字字段必须是 JSON number，不能用字符串"),
-                "机器字段类型必须正确（fail-close）");
-        assertTrue(ZH.contains("claimType 不得为 LOS / SPOTTING / VISION"),
-                "必须禁止 LOS/spotting 事实 claim（V6m）");
-        assertTrue(ZH.contains("subjectAccountId"), "必须声明 subjectAccountId 稳定身份字段（B1）");
-        assertTrue(ZH.contains("evidence binding（强制）"), "必须声明 evidence binding 契约（B1）");
-        assertTrue(ZH.contains("至少一个 evidenceIds 必须完整支撑该 claim"),
-                "必须声明至少一个引用证据完整支撑（B1）");
+    void v06CausalReasoningContractIsTrilingual() {
+        assertTrue(ZH.contains("Known"), "必须区分 Known");
+        assertTrue(ZH.contains("Remaining uncertainty"), "必须区分 Remaining uncertainty");
+        assertTrue(ZH.contains("Decision impact"), "必须要求 Decision impact");
+        assertTrue(ZH.contains("effective local participation"), "必须要求 effective local participation");
+        assertTrue(ZH.contains("State before"), "必须要求 state before");
+        assertTrue(ZH.contains("Immediate local consequence"), "必须要求 immediate local consequence");
+        assertTrue(ZH.contains("Propagation"), "必须要求 propagation");
+        assertTrue(ZH.contains("downstream validation"), "HP 必须是 downstream validation");
+        assertTrue(ZH.contains("Trigger → Decision target → Training goal"), "建议必须绑定状态触发器");
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
             final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
-            assertTrue(localized.contains("language-neutral"), lang + " 必须携带 language-neutral 机器字段说明");
-            assertFalse(localized.contains("机器字段（三语通用，language-neutral）"),
-                    lang + " 残留中文机器字段规则");
+            assertFalse(localized.contains("=== 团队复盘 v0.6 推理顺序与因果质量约束（强制） ==="),
+                    lang + " 残留中文 v0.6 reasoning contract");
+            assertTrue(localized.contains("Remaining uncertainty"), lang + " 必须携带 uncertainty contract");
+            assertTrue(localized.contains("Effective local participation")
+                            || localized.contains("effective local participation"),
+                    lang + " 必须携带 local participation contract");
+            assertTrue(localized.contains("downstream validation"), lang + " 必须携带 HP validation contract");
         }
         final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
-        assertTrue(en.contains("MACHINE PROJECTION of the same factual assertions"),
-                "EN 必须声明 claims 是 machine projection（非可选装饰）");
-        assertTrue(en.contains("POSITION_REGION: timeSec + region (1-9) + count"),
-                "EN 必须声明 POSITION_REGION required fields");
-        assertTrue(en.contains("countSemantics as a machine field"), "EN 必须声明 countSemantics 机器字段");
-        assertTrue(en.contains("claimType must not be"), "EN 必须禁止 LOS/spotting 事实 claim");
+        assertTrue(en.contains("State before -> Change -> Immediate local consequence -> Propagation"),
+                "EN 必须携带 episode 因果链");
+        assertTrue(en.contains("Trigger -> Decision target -> Training goal"), "EN 必须携带建议因果链");
         final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
-        assertTrue(ru.contains("МАШИННАЯ ПРОЕКЦИЯ тех же фактических утверждений"),
-                "RU 必须声明 claims 是 machine projection");
-        assertTrue(ru.contains("POSITION_REGION: timeSec + region (1-9) + count"),
-                "RU 必须声明 POSITION_REGION required fields");
-        assertTrue(ru.contains("claimType не может быть"), "RU 必须禁止 LOS/spotting 事实 claim");
+        assertTrue(ru.contains("State before -> Change -> Immediate local consequence -> Propagation"),
+                "RU 必须携带 episode 因果链");
+        assertTrue(ru.contains("Trigger -> Decision target -> Training goal"), "RU 必须携带建议因果链");
     }
 
     @Test
@@ -144,7 +120,7 @@ class TeamReviewNaturalCoachContractTest {
         assertTrue(ZH.contains("如果基地/点数状态改变了行动义务，Objectives 必须说明谁需要主动、谁可以等待"),
                 "目标状态改变义务时必须解释行动影响");
         assertTrue(ZH.contains("多个 local 必须检查是否有传播"), "多个 local 必须检查传播");
-        assertTrue(ZH.contains("primaryDiagnosis 只是整场摘要，不得压缩 reviewMarkdown"),
+        assertTrue(ZH.contains("primaryDiagnosis 只是整场摘要，不得压缩 v0.5 structured result 中的 episodes 或训练建议"),
                 "primaryDiagnosis 只是摘要");
         assertTrue(ZH.contains("“重点复查”和“高贡献者”是可选 section"), "个人 section 可选");
         assertTrue(ZH.contains("没有明确 structural evidence"), "个人判断需要 structural evidence");
@@ -152,15 +128,15 @@ class TeamReviewNaturalCoachContractTest {
 
     @Test
     void informationAndIndividualSectionsStayCausallyBound() {
-        assertTrue(ZH.contains("Observed：当时确认了什么 → Remaining uncertainty：什么仍未知"),
-                "信息必须写清观察与剩余未知");
-        assertTrue(ZH.contains("Decision impact：这如何改变可选部署、风险或行动义务"),
+        assertTrue(ZH.contains("Known → Remaining uncertainty → New observation"),
+                "信息必须写清已知、剩余未知和新观察");
+        assertTrue(ZH.contains("Decision impact"),
                 "信息必须落到决策影响");
-        assertTrue(ZH.contains("重点复查至少绑定 time/window、where/local、实际发生的 role 和 decision/execution question"),
+        assertTrue(ZH.contains("必须有实际 role/action 与 decision/execution 依据"),
                 "重点复查必须绑定正文 episode");
-        assertTrue(ZH.contains("不能重新从 settlement leaderboard 选人"),
+        assertTrue(ZH.contains("不能从 settlement leaderboard 重新选人"),
                 "个人 section 不得从结算榜单重新选人");
-        assertTrue(ZH.contains("省略优于猜测"), "没有个人 tactical evidence 时允许省略");
+        assertTrue(ZH.contains("没有证据就输出空数组"), "没有个人 tactical evidence 时允许省略");
     }
 
     @Test
@@ -169,16 +145,15 @@ class TeamReviewNaturalCoachContractTest {
             final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
             assertFalse(localized.contains("=== 团队复盘输出结构（强制） ==="), lang + " 残留中文输出结构");
             assertFalse(localized.contains("=== 主判断（Primary Diagnosis，强制） ==="), lang + " 残留中文主判断");
-            assertFalse(localized.contains("=== GROUNDING FACTS 与结构化输出（强制） ==="), lang + " 残留中文 GROUNDING");
+            assertFalse(localized.contains("=== GROUNDING FACTS 与结构化输出（强制） ==="), lang + " 残留中文旧 GROUNDING");
         }
         final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
         assertTrue(en.contains("FREE-FORM natural review"), "EN 必须声明 free-form natural review");
         assertTrue(en.contains("not a fixed-section template"), "EN 必须声明非固定章节模板");
         assertTrue(en.contains("PRIMARY DIAGNOSIS (mandatory)"), "EN 必须有主判断契约");
-        assertTrue(en.contains("GROUNDING FACTS AND STRUCTURED OUTPUT (mandatory)"), "EN 必须有 GROUNDING 契约");
-        assertTrue(en.contains("reviewMarkdown"), "EN 必须有 reviewMarkdown");
+        assertTrue(en.contains("Team AI Review v0.5 structured result"), "EN 必须有 v0.5 structured result 契约");
         final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
         assertTrue(ru.contains("ОСНОВНОЙ ДИАГНОЗ (PRIMARY DIAGNOSIS, обязательно)"), "RU 必须有主判断契约");
-        assertTrue(ru.contains("GROUNDING FACTS И СТРУКТУРИРОВАННЫЙ ВЫВОД (обязательно)"), "RU 必须有 GROUNDING 契约");
+        assertTrue(ru.contains("Team AI Review v0.5"), "RU 必须有 v0.5 structured result 契约");
     }
 }

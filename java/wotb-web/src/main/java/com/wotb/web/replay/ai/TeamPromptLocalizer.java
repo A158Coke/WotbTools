@@ -125,52 +125,32 @@ final class TeamPromptLocalizer {
 
     static final String TEAM_REASONING_CONTRACT_RULE_EN = """
 
-                        === TEAM REASONING ORDER AND QUALITY CONTRACT (mandatory) ===
-                        Reason internally in this order before selecting one primary diagnosis: A opening information, B information state, C objective/points state, D local engagements, E cross-local propagation, F position/tempo transitions, G team execution, H HP/death validation. H is validation or a fallback when A-G do not provide enough evidence; it is not the default entry point for finding a problem.
-                        The primary diagnosis must show at least one structural basis in reasoning and list one or more evidenceBasis values: INFORMATION, OBJECTIVE, LOCAL_ENGAGEMENT, POSITION, TEMPO, TEAM_EXECUTION, HP_TRADE. Damage, kills, survival, death order, death time, blocked damage, or final rank alone cannot be its only basis.
-                        Therefore the primaryDiagnosis object must contain `evidenceBasis: ["..."]`; this is a structured quality basis, not a new backend tactical verdict.
-                        Individual judgments such as review focus, high contributor, or key threat require information, position, movement, objective, local participation, enabling action, crossfire, rotation, commitment, or propagation evidence. With only damage/kills/survival/death time, omit that judgment. Explain an observable tactical relationship and a decision/execution question for review focus; explain what a high contributor changed, rather than selecting the settlement leader.
-                        Do not turn low/high damage or distance into a failure verdict, assign roles from vehicle class alone, infer an empty lane or enemy departure from unseen/vanished markers, or turn 5v3 into an automatic push order. If there is only a death cluster without an A-G structural cause, keep the primary diagnosis evidence-bounded.
-                        The goal is high information density with complete causal explanations, not maximum brevity. Do not recount every second; however, every selected tactical episode must be expanded enough to explain what happened, what was known then, which vehicles actually participated, why it mattered, and how it affected the next phase.
-                        When the evidence exists, do not omit information state, bases/points, local engagements, or cross-local propagation for brevity. Information must be explained as decision input, and multiple locals must be checked for propagation and consequence.
-                        When base/point state changes the action obligation, Objectives must say who had to act, who could wait, and how it changed the cost of holding position or rotating; do not treat objective state as narration to omit.
-                        primaryDiagnosis is only a summary and must not compress reviewMarkdown. The body may retain secondary key episodes, information changes, objective obligations, propagation, and execution consequences. Recommendations must come from the preceding causal chain, not generic filler.
-                        Review focus and high contributor are optional sections, each allowing 0-2 people; omit them entirely without structural evidence or a reviewable decision/execution question. If space is limited, keep team analysis, information, objectives, key episodes, and propagation before optional individual sections.
-                        Expand selected key episodes sufficiently, but do not produce a timeline dump; normally select 2-4 genuinely important episodes and include times only when they belong to that episode.
-                        === V0.4 INFORMATION, SUPPORTABILITY, AND INDIVIDUAL REVIEW CONTRACT (mandatory) ===
-                        Information is complete only when it becomes decision impact. For every key information item that affects a tactical conclusion, reason internally as "Observed: what was confirmed then -> Remaining uncertainty: what was still unknown, CURRENT, LAST_KNOWN, or UNSEEN -> Decision impact: how did this change deployment options, risk, or action obligation"; natural prose may be used instead of these labels. Do not write only "information was obtained" or use later outcomes to backfill an earlier window.
-                        Vehicle class is only a capability factor and cannot determine an information role or mandate a tactical duty. Any vehicle may confirm enemy allocation, constrain a route, create a threat, maintain an information node, or support a local/objective; describe the actual role only when evidence supports it.
-                        Geometry distance is evidence, not a tactical verdict. Never turn "far" or distance over 100/150/200 meters directly into detachment, inability to support, low value, or a mandatory regroup. Judge supportability with line of fire, terrain/obstruction, time-to-influence, mobility, target availability, crossfire, information contribution, objective pressure, enemy fixation, and safe movement path; distance is only one observation. Do not invent universal rules such as "150m maximum spacing", "over 150m must slow down", or "all players must stay within X meters" without a specific game-physics evidence. Training advice should prefer effective support time, fire-entry time, shared firing-line setup time, and effective local participants.
-                        Training advice must use state-based triggers rather than fixed timestamps: for example, "when the enemy main direction is mostly confirmed, the marginal information value of the outside vehicle is falling, and the main local is about to engage, start evaluating a shorter support path." Do not write unsupported universal clock rules such as "must regroup at 1m20s" or "must rotate after X seconds"; a time example may only define the review window of this battle's episode.
-                        Do not downgrade Objectives. Internally inspect base ownership, current points, point growth, remaining time, who must act, and who can wait; only keep it brief when the objective state truly changes no action obligation in the current key episode. When it changes an obligation, explain how it changes the cost of holding, engaging, waiting, or rotating; do not skip it with "points do not need discussion" or "the base is not important".
-                        Review focus, high contributor, and key threat may be selected only from a tactical episode already identified and expanded in the body, never by reselecting from the settlement leaderboard. A review focus must bind a time/window, where/local, the actual observed role, and a decision/execution question. Low damage, earliest death, low kills, high damage received, or low blocked damage may validate a selected episode but cannot be the selection reason. A high contributor must have changed information, fixation, tracking, crossfire, a local result, release, objective pressure, delay, rotation, fire support, or an escape/support path; if the only answer is high damage, many kills, or long survival, omit the section. When tactical causal evidence is absent, omission is better than guessing.
-                        Describe opposing players by observable effect, not guessed intent. Do not state that an enemy "caught" a vehicle, "deliberately blocked" retreat, or "decided to focus fire" as fact; only call a retreat blocked when enemy positions, terrain/path, and timing support it, otherwise say safe retreat space was reduced or available routes were constrained. Check propagation across multiple locals for information, fire, released vehicles, and objective obligation, but checking does not require finding one; when evidence is insufficient, preserve that uncertainty and do not invent a crossfire, spotting, release, or causal link.
-                        Distinguish observed facts, strongly supported inferences, and plausible but unconfirmed possibilities in natural language without machine labels. Do not add fixed Information, Objectives, Local, or Propagation output sections; these are internal reasoning structure. Recommendations must remain grounded in observable state and must not assume a voice-command or communications system.
+                        === TEAM REVIEW V0.6 REASONING ORDER AND CAUSAL QUALITY CONTRACT (mandatory) ===
+                        This is a reasoning-quality upgrade, not an architecture or schema redesign. Keep the v0.5 Structured TeamAiReviewResult; do not add an LLM call, Team Autopsy, backend tactical semantic validator, or second TacticalEpisode model.
+                        Reason internally in this order before producing JSON: 1) read authoritative facts; 2) establish the information state; 3) identify remaining uncertainty; 4) evaluate objective obligation; 5) identify pivotal local engagements; 6) determine effective local participation; 7) trace the tactical transition; 8) trace propagation; 9) use HP/damage/deaths as downstream validation; 10) select training targets; 11) select individual candidates only if episode-grounded; 12) produce the structured JSON.
+                        For each key window, distinguish Known, Remaining uncertainty, and CURRENT / LAST_KNOWN / UNSEEN. New observation must state which uncertainty was removed or reduced and its Decision impact. UNSEEN means absence of evidence, not an empty lane or no enemy.
+                        Evaluate objective obligation with base ownership, current points, point growth, remaining time, alive vehicles, map position, and usable firepower: say who must act, who can wait, and who bears base or time pressure. A points lead is not an automatic push order and a points deficit is not an automatic charge.
+                        For local engagements, distinguish actual participants, potential participants, and alive vehicles that cannot influence the window. Judge effective local participation with line of fire, terrain/obstruction, time-to-influence, mobility, target availability, crossfire, enemy fixation, objective contribution, and a safe path. Distance is evidence, not a supportability verdict.
+                        Build each selected episode as State before -> Change -> Immediate local consequence -> Propagation. A nearby sequence of deaths is not automatically one causal episode; if direct propagation is not supported, say that the replay cannot confirm it. After the first loss, check which firing line or restraint disappeared, which enemy gun was freed, which angle became unsustainable, and whether mutual support changed; do not guess when the evidence is missing.
+                        HP, damage, and deaths are downstream validation signals, not the default episode-discovery entry point. Use an HP advantage as a primary diagnosis only when the reasoning explains how HP became time, space, fixation, objective control, or team fire.
+                        Training recommendations must use Trigger -> Decision target -> Training goal and must follow the battle's explained causal chain; usually give 2-4 high-quality items, fewer for a simple stomp, and never pad the count.
+                        Review focus and high contributor are optional, must be selected from an expanded tactical episode, and must not be reselected from the settlement leaderboard. With no structural tactical evidence or decision/execution question, omit them. Vehicle class never defines a tactical role, and opposing intent must be described only through observable effects.
+                        Keep complete causal explanations without a timeline dump. Do not add fixed Information, Objectives, Local, or Propagation user-facing sections; these are internal reasoning structure. Express uncertainty naturally and do not assume voice commands or a communications system.
             """;
 
     static final String TEAM_REASONING_CONTRACT_RULE_RU = """
 
-                        === ПОРЯДОК РАССУЖДЕНИЯ И КОНТРАКТ КАЧЕСТВА КОМАНДЫ (обязательно) ===
-                        Сначала рассуждайте внутри в таком порядке, затем выбирайте один основной диагноз: A стартовая информация, B состояние информации, C цель/очки, D локальные бои, E перенос локального результата, F переходы позиции/темпа, G командное исполнение, H проверка HP/смертей. H — только проверка или запасной источник, если A-G недостаточны; это не начальная точка поиска проблемы.
-                        Основной диагноз должен содержать структурную основу и перечислять один или несколько evidenceBasis: INFORMATION, OBJECTIVE, LOCAL_ENGAGEMENT, POSITION, TEMPO, TEAM_EXECUTION, HP_TRADE. Один только урон, фраги, выживание, порядок смертей, время смерти, заблокированный урон или итоговый ранг не может быть единственной основой.
-                        Поэтому объект primaryDiagnosis должен содержать `evidenceBasis: ["..."]`; это структурная основа для проверки качества, а не новый тактический вердикт бэкенда.
-                        Индивидуальные выводы вроде фокуса проверки, ценного игрока или ключевой угрозы требуют данных об информации, позиции, движении, цели, локальном участии, полезном действии, перекрёстном огне, ротации, commitment или переносе результата. При наличии только урона/фрагов/выживания/времени смерти такой вывод опускайте. Для фокуса проверки объясняйте наблюдаемую тактическую связь и вопрос решения/исполнения; для ценного игрока — что именно он изменил, а не только его итоговый результат.
-                        Не превращайте низкий/высокий урон или расстояние автоматически в ошибку, не назначайте роль только по классу машины, не выводите пустую линию или уход противника из отсутствия видимости/исчезновения маркера и не превращайте 5v3 в обязательную атаку. Если есть только кластер смертей без структурной причины A-G, сохраняйте границы доказательств.
-                        Цель — высокая плотность информации и полное причинное объяснение, а не максимальная краткость. Не пересказывайте каждую секунду; однако каждый выбранный тактический эпизод нужно раскрыть настолько, чтобы объяснить, что произошло, что было известно в тот момент, какие машины реально участвовали, почему это важно и как это повлияло на следующую фазу.
-                        Если доказательства есть, не опускайте ради краткости состояние информации, базы/очки, локальные бои или перенос между локальными боями. Информацию объясняйте как вход для решения, а при нескольких локальных боях проверяйте перенос и его последствия.
-                        Если состояние баз/очков меняет обязанность действовать, раздел Objectives должен объяснить, кто должен был действовать, кто мог ждать и как это меняло цену удержания позиции или ротации; не опускайте цели как простой фон.
-                        primaryDiagnosis — только краткое резюме и не должен сжимать reviewMarkdown. В основном тексте можно сохранить вторичные ключевые эпизоды, изменения информации, обязанности по цели, перенос и последствия исполнения. Рекомендации должны следовать из причинной цепочки, а не быть общими фразами.
-                        «Фокус проверки» и «ценный игрок» — опциональные разделы, каждый допускает 0–2 человека; без структурных доказательств или проверяемого вопроса решения/исполнения полностью опускайте их. При нехватке места сначала сохраняйте командный разбор, информацию, цели, ключевые эпизоды и перенос, а затем убирайте личные разделы.
-                        Выбранные ключевые эпизоды нужно раскрывать достаточно подробно, но не превращать разбор в лог таймлайна; обычно выбирайте 2–4 действительно важных эпизода и указывайте время только внутри таких эпизодов.
-                        === КОНТРАКТ V0.4: ИНФОРМАЦИЯ, ПОДДЕРЖКА И ЛИЧНЫЙ РАЗБОР (обязательно) ===
-                        Информация завершена только тогда, когда превращена в влияние на решение. Для каждого важного информационного факта, влияющего на тактический вывод, рассуждайте внутри так: «Observed: что подтверждено тогда → Remaining uncertainty: что осталось неизвестным, CURRENT, LAST_KNOWN или UNSEEN → Decision impact: как это изменило варианты построения, риск или обязанность действовать»; в тексте используйте естественную речь, а не эти метки. Не пишите только «информация получена» и не переносите поздний результат в раннее окно.
-                        Класс машины — только фактор возможностей, он не определяет роль в информации и не назначает обязательную тактическую задачу. Любая машина может подтвердить расстановку противника, ограничить маршрут, создать угрозу, поддерживать информационный узел или помогать локальному бою/цели; описывайте реальную роль только при наличии доказательств.
-                        Геометрическое расстояние — это evidence, а не тактический verdict. Не превращайте «далеко» или расстояние более 100/150/200 метров напрямую в отрыв, невозможность поддержки, низкую ценность или обязательную перегруппировку. Возможность поддержки оценивайте по линии огня, рельефу/преградам, времени до влияния, мобильности, доступности целей, перекрёстному огню, вкладу в информацию, давлению цели, фиксации противника и безопасному пути; расстояние — лишь один сигнал. Не выдумывайте универсальные правила вроде «максимум 150 м», «после 150 м нужно замедлиться» или «все должны быть в пределах X метров» без конкретного доказанного игрового физического порога. В советах предпочитайте эффективное время поддержки, время входа огня, время создания общей линии огня и эффективное число участников локального боя.
-                        Советы должны использовать триггеры состояния, а не фиксированные секунды: например, «когда основное направление противника в основном подтверждено, предельная ценность дальнейшей информации от внешней машины снижается, а главный локальный бой вот-вот начнётся, начинайте оценивать сокращение пути поддержки». Не пишите неподтверждённые универсальные правила вроде «обязательно перегруппироваться в 1:20» или «обязательно ротировать через X секунд»; время может обозначать только окно проверки эпизода этой битвы.
-                        Не занижайте значение Objectives. Внутри проверяйте принадлежность баз, текущие очки, рост очков, остаток времени, кто должен действовать и кто может ждать; кратко упоминайте цель только если её состояние действительно не изменило обязанность в текущем ключевом эпизоде. Если обязанность изменилась, объясните, как это меняет цену удержания, боя, ожидания или ротации; не пропускайте цель словами «очки не нужно обсуждать» или «база не важна».
-                        «Фокус проверки», «ценный игрок» и «ключевая угроза» выбираются только из уже найденного и раскрытого в тексте тактического эпизода, а не из таблицы результатов. Фокус проверки должен быть связан со временем/окном, местом/локальным боем, фактической ролью и вопросом решения/исполнения. Низкий урон, ранняя смерть, малое число фрагов, высокий полученный урон или малый заблокированный урон могут подтвердить уже выбранный эпизод, но не быть причиной выбора. Ценный игрок должен изменить информацию, фиксацию, отслеживание, перекрёстный огонь, локальный результат, освобождение сил, давление цели, задержку, ротацию, огневую поддержку или путь отхода/поддержки; если ответ лишь «нанёс много урона, сделал много фрагов или долго выживал», раздел опускайте. При отсутствии причинных тактических доказательств лучше ничего не выбирать, чем гадать.
-                        Описывайте противников по наблюдаемому эффекту, не приписывая намерение. Не утверждайте как факт, что противник «поймал» машину, «намеренно перекрыл» отход или «решил сосредоточить огонь»; говорить о перекрытом отходе можно только при подтверждении позициями противника, рельефом/маршрутом и временем, иначе пишите, что безопасное пространство отхода сократилось или доступные маршруты ограничились. Проверяйте перенос между несколькими локальными боями для информации, огня, освобождённых машин и обязанности по цели, но проверка не требует обязательно найти перенос; при недостатке данных сохраняйте неопределённость и не выдумывайте перекрёстный огонь, обнаружение, освобождение или причинную связь.
-                        Разделяйте наблюдаемые факты, сильно подтверждённые выводы и правдоподобные, но не подтверждённые возможности естественным языком, без машинных меток. Не добавляйте фиксированные выходные разделы Information, Objectives, Local или Propagation: это внутренняя структура рассуждения. Рекомендации должны оставаться привязанными к наблюдаемому состоянию и не предполагать систему голосовых команд или связи.
+                        === ПОРЯДОК РАССУЖДЕНИЯ КОМАНДНОГО РАЗБОРА V0.6 И КОНТРАКТ ПРИЧИННОСТИ (обязательно) ===
+                        Это обновление качества рассуждений, а не redesign архитектуры или schema. Сохраняйте v0.5 Structured TeamAiReviewResult; не добавляйте новый LLM call, Team Autopsy, семантический тактический валидатор бэкенда или вторую модель TacticalEpisode.
+                        Сначала рассуждайте в таком порядке: 1) authoritative facts; 2) состояние информации; 3) remaining uncertainty; 4) objective obligation; 5) ключевые локальные столкновения; 6) effective local participation; 7) тактический переход; 8) propagation; 9) HP/урон/гибели как downstream validation; 10) цели обучения; 11) кандидаты на личные разделы только из episode; 12) structured JSON.
+                        В каждом важном окне различайте Known, Remaining uncertainty и CURRENT / LAST_KNOWN / UNSEEN. Новое наблюдение должно указывать, какая неопределённость снята или уменьшена и каков Decision impact. UNSEEN означает отсутствие доказательства, а не пустой фланг или отсутствие противника.
+                        Оценивайте objective obligation по принадлежности баз, текущим очкам, росту очков, оставшемуся времени, живым машинам, позиции и доступному огню: кто обязан действовать, кто может ждать и кто несёт давление базы или времени. Преимущество по очкам не означает автоматическую атаку, а отставание не означает автоматический штурм.
+                        В локальном бою различайте фактических участников, потенциальных участников и живые машины, неспособные повлиять на это окно. Effective local participation оценивайте по линии огня, преградам, time-to-influence, мобильности, доступным целям, перекрёстному огню, фиксации противника, вкладу в цель и безопасному маршруту. Расстояние — evidence, а не verdict о возможности поддержки.
+                        Стройте каждый выбранный episode как State before -> Change -> Immediate local consequence -> Propagation. Близкая по времени серия гибелей не становится автоматически одним причинным эпизодом; если прямой перенос не подтверждён, скажите, что реплей не позволяет его установить. После первой потери проверьте исчезнувшую линию огня или сдерживание, освобождённую пушку противника, неустойчивый угол и изменение взаимной поддержки; при отсутствии данных не угадывайте.
+                        HP, урон и гибели — downstream validation, а не начальная точка поиска episode. Ставьте преимущество по HP в основной диагноз только если объяснено, как HP превратился во время, пространство, фиксацию, контроль цели или командный огонь.
+                        Каждая рекомендация должна иметь Trigger -> Decision target -> Training goal и следовать из причинной цепочки этой битвы; обычно давайте 2–4 качественных пункта, для простого разгрома можно меньше, количество не заполняйте искусственно.
+                        Фокус проверки и ценный игрок опциональны, выбираются из уже раскрытого тактического episode и не выбираются заново из settlement leaderboard. Без структурных тактических доказательств или вопроса решения/исполнения их нужно опустить. Класс машины не определяет тактическую роль, намерения противника описывайте только через наблюдаемые эффекты.
+                        Сохраняйте полное причинное объяснение без timeline dump. Не добавляйте фиксированные пользовательские разделы Information, Objectives, Local или Propagation: это внутренняя структура рассуждения. Неопределённость выражайте естественно и не предполагайте голосовые команды или систему связи.
             """;
 
     static final String TEAM_OUTPUT_STRUCTURE_RULE = """
@@ -305,208 +285,6 @@ final class TeamPromptLocalizer {
                         Не выдавайте неизвестный предбоевой план, голосовой call, коммуникацию, приказ командира или его игнорирование
                         за причину. Если детальная причинная цепочка недоказуема, оставьте наблюдаемую картину исполнения и пропустите
                         неподтверждённое объяснение.
-            """;
-
-    /** Team 专用（Natural Coach 轮）：GROUNDING FACTS 使用 + JSON envelope 输出契约。 */
-    static final String TEAM_GROUNDING_RULE = """
-
-            === GROUNDING FACTS 与结构化输出（强制） ===
-            输入末尾的 GROUNDING FACTS 是后端确定性事实清单，每条带稳定证据编号（E1xx）：
-            本方/对方阵亡（PLAYER_DESTROYED）、存活变化（ALIVE_COUNT_TRANSITION）、关注窗口
-            （FOCUS_WINDOW）、位置区域快照（POSITION_REGION）、敌方位置知识（ENEMY_POSITION_KNOWN，
-            含 CURRENT / LAST_KNOWN）。这些事实绝对不能修改：时间、人数、玩家事件、位置、HP 与
-            事件归属一律以 GROUNDING FACTS 为准；正文引用这些事实时不得改变其数值或时间归属。
-            你必须按以下 JSON envelope 输出（这是你唯一的输出格式，不要输出其它文本）：
-            {
-              "primaryDiagnosis": {
-                "title": "一句话主判断",
-                "reasoning": "为什么这是本场最重要的结论（2-4 句；没有确认的重大错误时，说明当前可确认/可观察证据的边界，或对手处理更有效）",
-                "supportingEvidenceIds": ["E1xx", "E1xx"]
-              },
-              "reviewMarkdown": "完整的自然语言复盘正文（用户最终看到的全部内容，Markdown；主标题用 ## 团队复盘）",
-              "claims": [
-                {"text": "一句涉及数值/时间/位置/玩家事件的陈述", "evidenceIds": ["E1xx"]}
-              ]
-            }
-            要求：
-            1. reviewMarkdown 是用户看到的完整复盘，由你自由写出，不是 Backend 模板句的拼接；
-               不得在其中出现「E1xx」「evidenceIds」「GROUNDING FACTS」「primaryDiagnosis」等内部标识。
-            2. claims 是同一批 factual assertions 的 machine projection，不是可选装饰：
-               正文中每个可验证事实陈述（时间/人数/玩家阵亡/区域位置/敌方位置知识）必须有一个对应
-               structured claim；纯战术观点可以没有 claim。claims 为空只允许在正文不含可验证事实陈述时。
-               机器字段（三语通用，language-neutral）：每条 claim 必须携带合法 claimType 及对应必填字段——
-               DEATH：subject（玩家昵称或坦克名）+ timeSec（battle-relative 秒，数字）+ evidenceIds；
-               ALIVE_TRANSITION：value（机器格式 "7v7 -> 4v6"）+ evidenceIds（timeSec 可选）；
-               POSITION_REGION：timeSec + region（1-9）+ count（车辆数，数字）+ side（FRIENDLY/ENEMY）
-                 + countSemantics（EXACT/AT_LEAST/SUBSET）+ evidenceIds；
-               ENEMY_POSITION：subject + timeSec + region + knowledge（CURRENT/LAST_KNOWN）+ evidenceIds；
-               TACTICAL：纯战术观点，不要求 factual machine 字段。
-               身份字段：DEATH / ENEMY_POSITION 的 subject 可使用 subjectAccountId（后端账号ID，JSON number
-               正整数）作为稳定身份；同车型敌车多辆时（如两辆 IS-7）禁止只用坦克名绑定身份，必须用
-               subjectAccountId 或玩家昵称。
-               countSemantics 用机器字段声明（EXACT=恰好 count 辆 / AT_LEAST=至少 count 辆 / SUBSET=其中 count 辆），
-               不要依赖自然语言标记词；机器字段类型必须正确（数字字段必须是 JSON number，不能用字符串）。
-               无论输出语言（中文/English/Русский），机器字段与格式一致。
-            3. 证据编号只能出现在结构化字段（primaryDiagnosis.supportingEvidenceIds / claims[].evidenceIds），
-               绝不进入 reviewMarkdown 正文。
-            4. 敌方 ENEMY_POSITION_KNOWN 的 LAST_KNOWN 只是「最后一次被观测到的位置」，绝不能写成
-               「敌方此时就在这里/正在某区」/ "is right here now" / "прямо здесь"；ENEMY_POSITION claim
-               的 knowledge 必须如实声明 CURRENT/LAST_KNOWN，与后端一致。
-            5. 正文时间一律用本地化格式（中文「XX分XX秒」/ English "Xm Xs" / Русский "X мин X с"），
-               禁止「1:15」或累计秒数；claims 的 timeSec 使用 battle-relative 秒（机器格式，如 112.4）。
-            6. LOS / spotting / 视野类内容禁止作为事实 claim：claimType 不得为 LOS / SPOTTING / VISION /
-               LINE_OF_SIGHT（后端没有对应 evidence kind）；只能作为战术判断（claimType=TACTICAL）并
-               使用降级表达（更可能 / more likely / более вероятно）。
-            7. evidence binding（强制）：claims 的 evidenceIds 必须引用真正支撑该 claim 的事实，不能借用无关编号——
-               DEATH 必须引用对应玩家的 PLAYER_DESTROYED 阵亡证据（身份+时间一致）；ALIVE_TRANSITION 必须引用
-               before/after 一致的 ALIVE_COUNT_TRANSITION 或 FOCUS_WINDOW 窗口级聚合证据；POSITION_REGION 必须
-               引用对应时刻 side/region/count/countSemantics 一致的位置快照证据；ENEMY_POSITION 必须引用
-               身份+时间+区域+knowledge 全部一致的 ENEMY_POSITION_KNOWN 证据；「全局恰好存在该变化/该数值」
-               不能替代「引用的证据确实支撑该 claim」；至少一个 evidenceIds 必须完整支撑该 claim。
-            """;
-
-    static final String TEAM_GROUNDING_RULE_EN = """
-
-                        === GROUNDING FACTS AND STRUCTURED OUTPUT (mandatory) ===
-                        The GROUNDING FACTS section at the end of the input is the backend's deterministic fact list; every
-                        fact carries a stable evidence id (E1xx): friendly/enemy deaths (PLAYER_DESTROYED), alive-count
-                        transitions (ALIVE_COUNT_TRANSITION), focus windows (FOCUS_WINDOW), position region snapshots
-                        (POSITION_REGION), enemy position knowledge (ENEMY_POSITION_KNOWN, with CURRENT / LAST_KNOWN).
-                        These facts must never be altered: time, counts, player events, positions, HP and event attribution
-                        are authoritative from GROUNDING FACTS; when the body references these facts, do not change their
-                        values or temporal attribution.
-                        You must output the following JSON envelope (this is your ONLY output format; do not output other text):
-                        {
-                          "primaryDiagnosis": {
-                            "title": "one-sentence primary diagnosis",
-                            "reasoning": "why you believe it is the main problem (2-4 sentences)",
-                            "supportingEvidenceIds": ["E1xx", "E1xx"]
-                          },
-                          "reviewMarkdown": "the complete natural-language review body (everything the user finally sees, Markdown; main heading ## Team Review)",
-                          "claims": [
-                            {"text": "a statement involving a number/time/position/player event", "evidenceIds": ["E1xx"]}
-                          ]
-                        }
-                        Requirements:
-                        1. reviewMarkdown is the complete review the user sees, written freely by you — not a concatenation of
-                           backend template sentences; it must not contain internal markers such as "E1xx", "evidenceIds",
-                           "GROUNDING FACTS", "primaryDiagnosis".
-                        2. claims are machine-readable grounding metadata: numeric, temporal, positional, explicit player-event
-                           and main-diagnosis-supporting factual statements must go into claims with the corresponding evidence
-                           ids; pure tactical opinions may omit claims and evidence ids.
-                           claims are the MACHINE PROJECTION of the same factual assertions — not optional decoration:
-                           every verifiable factual statement in the body (time / counts / player deaths / region
-                           positions / enemy position knowledge) must have a corresponding structured claim; claims may
-                           be empty only when the body contains no verifiable factual statement.
-                           Machine fields (language-neutral, identical in every output language): every claim must carry a
-                           valid claimType and its required fields —
-                           DEATH: subject (player nickname or tank name) + timeSec (battle-relative seconds, JSON number)
-                             + evidenceIds;
-                           ALIVE_TRANSITION: value (machine format "7v7 -> 4v6") + evidenceIds (timeSec optional);
-                           POSITION_REGION: timeSec + region (1-9) + count (number of vehicles, JSON number)
-                             + side (FRIENDLY/ENEMY) + countSemantics (EXACT/AT_LEAST/SUBSET) + evidenceIds;
-                           ENEMY_POSITION: subject + timeSec + region + knowledge (CURRENT/LAST_KNOWN) + evidenceIds;
-                           TACTICAL: pure tactical opinion, no factual machine fields required.
-                           Identity field: DEATH / ENEMY_POSITION subject may use subjectAccountId (backend account id,
-                           positive JSON number) as the stable identity; when several enemy vehicles share one tank name
-                           (e.g. two IS-7), NEVER bind identity by tank name alone — use subjectAccountId or the nickname.
-                           Declare countSemantics as a machine field (EXACT = exactly count vehicles / AT_LEAST = at least
-                           count / SUBSET = count of them); do not rely on natural-language marker words; machine field
-                           types must be correct (numeric fields must be JSON numbers, not strings).
-                        3. Evidence ids may only appear in structured fields (primaryDiagnosis.supportingEvidenceIds /
-                           claims[].evidenceIds); never in the reviewMarkdown body.
-                        4. An enemy ENEMY_POSITION_KNOWN of LAST_KNOWN is only "the last observed position" — never write
-                           "the enemy is right here now / is in region N" / "прямо здесь"; an ENEMY_POSITION claim must
-                           truthfully declare knowledge CURRENT/LAST_KNOWN consistent with the backend.
-                        5. Body times must use the localized format (Chinese "X分XX秒" / English "Xm Xs" / Russian "X мин X с");
-                           never "1:15" or cumulative seconds; claim timeSec uses battle-relative seconds (machine format,
-                           e.g. 112.4).
-                        6. LOS / spotting / vision content is forbidden as a factual claim: claimType must not be
-                           LOS / SPOTTING / VISION / LINE_OF_SIGHT (the backend has no such evidence kind); such content may
-                           only be a tactical judgment (claimType=TACTICAL) with hedged wording (more likely / более вероятно).
-                        7. Evidence binding (mandatory): the evidenceIds of a claim must cite the facts that actually
-                           support it — never borrow unrelated ids. DEATH must cite the PLAYER_DESTROYED death fact of
-                           that player (identity + time consistent); ALIVE_TRANSITION must cite an ALIVE_COUNT_TRANSITION
-                           or FOCUS_WINDOW aggregate whose before/after match the value; POSITION_REGION must cite the
-                           position snapshot whose side/region/count/countSemantics match at that time; ENEMY_POSITION
-                           must cite an ENEMY_POSITION_KNOWN matching identity + time + region + knowledge. "The global
-                           transition/value happens to exist" does NOT replace "the cited evidence actually supports this
-                           claim"; at least one evidenceIds entry must fully support the claim.
-            """;
-
-    static final String TEAM_GROUNDING_RULE_RU = """
-
-                        === GROUNDING FACTS И СТРУКТУРИРОВАННЫЙ ВЫВОД (обязательно) ===
-                        Секция GROUNDING FACTS в конце входа — детерминированный список фактов бэкенда; каждый факт несёт
-                        стабильный идентификатор доказательства (E1xx): гибели своих/противника (PLAYER_DESTROYED), переходы
-                        числа живых (ALIVE_COUNT_TRANSITION), окна внимания (FOCUS_WINDOW), снимки областей позиций
-                        (POSITION_REGION), знания о позициях противника (ENEMY_POSITION_KNOWN, с CURRENT / LAST_KNOWN).
-                        Эти факты нельзя изменять: время, числа, события игроков, позиции, HP и принадлежность событий
-                        авторитетны из GROUNDING FACTS; ссылаясь на эти факты в тексте, не меняйте их значения или временную
-                        принадлежность.
-                        Вы должны вывести следующий JSON envelope (это ЕДИНСТВЕННЫЙ формат вывода; не выводите другой текст):
-                        {
-                          "primaryDiagnosis": {
-                            "title": "основной диагноз одной фразой",
-                            "reasoning": "почему вы считаете это главной проблемой (2-4 предложения)",
-                            "supportingEvidenceIds": ["E1xx", "E1xx"]
-                          },
-                          "reviewMarkdown": "полный текст естественного разбора (всё, что в итоге видит пользователь, Markdown; главный заголовок ## Командный разбор)",
-                          "claims": [
-                            {"text": "утверждение, затрагивающее число/время/позицию/событие игрока", "evidenceIds": ["E1xx"]}
-                          ]
-                        }
-                        Требования:
-                        1. reviewMarkdown — полный разбор, который видит пользователь, написанный вами свободно, а не склейка
-                           шаблонных предложений бэкенда; в нём не должно быть внутренних меток вроде «E1xx», «evidenceIds»,
-                           «GROUNDING FACTS», «primaryDiagnosis».
-                        2. claims — machine-readable метаданные привязки к фактам: числовые, временные, позиционные, явные
-                           события игроков и фактические утверждения, поддерживающие основной диагноз, должны попадать в claims
-                           с соответствующими идентификаторами доказательств; чистые тактические мнения могут обходиться без claims
-                           и идентификаторов.
-                           Машинные поля (language-neutral, одинаковые на любом языке вывода): claims — это
-                           МАШИННАЯ ПРОЕКЦИЯ тех же фактических утверждений, а не опциональное украшение:
-                           каждое проверяемое фактическое утверждение в тексте (время / числа / гибели игроков /
-                           позиции в областях / знание о позиции противника) должно иметь соответствующий structured claim;
-                           claims могут быть пустыми, только если текст не содержит проверяемых фактических утверждений.
-                           Каждый claim обязан нести валидный claimType и свои обязательные поля —
-                           DEATH: subject (ник игрока или название машины) + timeSec (battle-relative секунды, JSON number)
-                             + evidenceIds;
-                           ALIVE_TRANSITION: value (машинный формат "7v7 -> 4v6") + evidenceIds (timeSec опционально);
-                           POSITION_REGION: timeSec + region (1-9) + count (число машин, JSON number)
-                             + side (FRIENDLY/ENEMY) + countSemantics (EXACT/AT_LEAST/SUBSET) + evidenceIds;
-                           ENEMY_POSITION: subject + timeSec + region + knowledge (CURRENT/LAST_KNOWN) + evidenceIds;
-                           TACTICAL: чисто тактическое мнение, машинные поля не требуются.
-                           Поле идентичности: subject у DEATH / ENEMY_POSITION может использовать subjectAccountId
-                           (идентификатор аккаунта бэкенда, положительное целое JSON number) как стабильную
-                           идентичность; если несколько машин противника имеют одно и то же название (например,
-                           две IS-7), ЗАПРЕЩЕНО связывать идентичность только по названию машины — используйте
-                           subjectAccountId или ник игрока.
-                           countSemantics объявляйте машинным полем (EXACT = ровно count машин / AT_LEAST = не менее count /
-                           SUBSET = count из них); не полагайтесь на слова-маркеры в естественном языке; типы машинных полей
-                           должны быть корректными (числовые поля — JSON number, а не строка).
-                        3. Идентификаторы доказательств могут появляться только в структурированных полях
-                           (primaryDiagnosis.supportingEvidenceIds / claims[].evidenceIds); никогда в теле reviewMarkdown.
-                        4. ENEMY_POSITION_KNOWN со значением LAST_KNOWN — лишь «последняя наблюдаемая позиция»; нельзя писать
-                           «противник сейчас прямо здесь / находится в области N» / "is right here now"; claim ENEMY_POSITION
-                           обязан честно объявлять knowledge CURRENT/LAST_KNOWN в соответствии с бэкендом.
-                        5. Время в тексте — только в локализованном формате (китайский «X分XX秒» / английский "Xm Xs" /
-                           русский «X мин X с»); нельзя «1:15» или только суммарные секунды; timeSec в claims —
-                           battle-relative секунды (машинный формат, например 112.4).
-                        6. Содержимое про LOS / засвет / обзор запрещено как фактическое утверждение: claimType не может быть
-                           LOS / SPOTTING / VISION / LINE_OF_SIGHT (у бэкенда нет такого evidence kind); такой контент может
-                           быть только тактическим суждением (claimType=TACTICAL) со смягчённой формулировкой
-                           (более вероятно / more likely).
-                        7. Привязка доказательств (обязательно): evidenceIds в claim должны ссылаться на факты,
-                           которые действительно его подтверждают, — нельзя заимствовать посторонние номера.
-                           DEATH обязан ссылаться на PLAYER_DESTROYED данного игрока (идентичность + время совпадают);
-                           ALIVE_TRANSITION обязан ссылаться на ALIVE_COUNT_TRANSITION или агрегат FOCUS_WINDOW,
-                           чьи before/after совпадают со значением; POSITION_REGION обязан ссылаться на снимок
-                           позиций, чьи side/region/count/countSemantics совпадают в этот момент; ENEMY_POSITION
-                           обязан ссылаться на ENEMY_POSITION_KNOWN с совпадением идентичности + времени + области +
-                           knowledge. «Это изменение/число глобально существует» НЕ заменяет «приведённое
-                           доказательство действительно подтверждает claim»; как минимум один evidenceIds
-                           должен полностью подтверждать claim.
             """;
 
     static final String TEAM_EVIDENCE_CONTRACT_RULE = """
@@ -1219,8 +997,6 @@ final class TeamPromptLocalizer {
                         en ? TEAM_OUTPUT_STRUCTURE_RULE_EN : TEAM_OUTPUT_STRUCTURE_RULE_RU)
                 .replace(TEAM_PRIMARY_DIAGNOSIS_RULE,
                         en ? TEAM_PRIMARY_DIAGNOSIS_RULE_EN : TEAM_PRIMARY_DIAGNOSIS_RULE_RU)
-                .replace(TEAM_GROUNDING_RULE,
-                        en ? TEAM_GROUNDING_RULE_EN : TEAM_GROUNDING_RULE_RU)
                 .replace(TEAM_EVIDENCE_CONTRACT_RULE,
                         en ? TEAM_EVIDENCE_CONTRACT_RULE_EN : TEAM_EVIDENCE_CONTRACT_RULE_RU)
                 .replace(TEAM_INTERNAL_VS_USER_FACING_RULE,
