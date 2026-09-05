@@ -1,4 +1,19 @@
-# AI Review 架构（随机战双 Call / 团队复盘 / Team Autopsy）
+# AI Review 架构（随机战双 Call / 团队复盘）
+
+## Team AI Review v0.5：结构化结果契约
+
+Team Call #2 返回 `TeamAiReviewResult`：`summary`、最多 6 个 `episodes`、
+`trainingSuggestions`、最多 2 个 `reviewFocus` 与最多 2 个 `highContributors`。
+Backend 只负责 JSON、类型、数量上限、roster/episode 引用和字符串边界；不判断战术正确性，
+也不再追加 settlement-only Team Autopsy 或第三次模型调用。SSE `done` 事件携带 `teamReview`，
+并携带由 authoritative Team roster 生成的 `teamPlayers`（`playerKey` → `displayName` / `tankName`）映射；
+前端按固定组件层级渲染并用该映射显示身份，Markdown 只允许出现在字段值内。
+
+旧的 `TeamReviewEnvelope`、claims validator 与 Autopsy 类保留给历史测试/兼容读取，
+不属于 v0.5 production chain。
+
+下方 v0.4/v0.3 章节和旧 JSON Output 章节保留为历史设计记录；其中的
+`reviewMarkdown`、claims、Team Autopsy 语义不覆盖 v0.5 当前生产契约。
 
 ## Team AI Review Quality Harness v1
 
@@ -20,7 +35,7 @@ Team primary diagnosis 的 additive `evidenceBasis` 只表达结构性依据（i
 > 权威结算 vs 事件流观测的数据边界见文末「权威数据源与 AI 分析」。
 > 生产状态：AI 证据只消费 canonical facts（AFFIRMED）；UNKNOWN 为合法内部状态，不得猜成 0/无事件/静止/满血（选用例见 prompts 与 `PlayerEvidenceFormatter`）。
 
-## AI Review Harness（随机战双 Call / 团队复盘 + Team Autopsy）
+## AI Review Harness（随机战双 Call / 团队复盘；Autopsy legacy only）
 
 随机战个人复盘在满足条件时走两 Call Harness（`TacticalReviewHarness`），否则自动降级到旧单 Call 路径：
 
@@ -104,7 +119,7 @@ AI 提示词正文维护在 `java/wotb-web/src/main/resources/prompts/` 下的 `
 | player/single | `prompts/player/single.zh.md` | `PlayerPromptRules.SINGLE_PLAYER_PROMPT` |
 | player/tactical | `prompts/player/tactical.zh.md` | `TacticalReviewPromptBuilder.TACTICAL_SYSTEM_PROMPT`（fallback + Harness 规则） |
 | team/single | `prompts/team/single.zh.md` | `TeamPromptLocalizer.SINGLE_TEAM_PROMPT` |
-| team/autopsy | `prompts/team/autopsy.zh.md` | `TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT_SETTLEMENT_ONLY` |
+| team/autopsy（legacy） | `prompts/team/autopsy.zh.md` | `TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT_SETTLEMENT_ONLY` |
 | prebattle/system | `prompts/prebattle/system.zh.md` | `PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT` |
 | prebattle/user-header | `prompts/prebattle/user-header.zh.md` | `PreBattlePromptBuilder.PRE_BATTLE_USER_HEADER`（含 `%s`/`%d` 占位，由 `.formatted()` 填充） |
 | prebattle/confidence-legend | `prompts/prebattle/confidence-legend.zh.md` | `PreBattlePromptBuilder.CONFIDENCE_LEGEND` |
@@ -213,13 +228,12 @@ mvn -pl wotb-web -am test `
 ```
 Replay → Parser → Canonical BattleTimeline → 确定性 Grounding Facts（证据编号 E1xx）
   → TeamAiPromptBuilder（TACTICAL TIMELINE + FOCUS WINDOWS + 全部确定性证据）
-  → Call #2（system prompt 要求 JSON envelope）→ TeamReviewEnvelopeParser
-  → TeamFactualConsistencyValidator（V1–V6）→ PASS → 流式输出 reviewMarkdown
-                                              → HARD FAIL → 反馈 LLM 自修（targeted → full → conservative safe）
-                                                           → 再次完整校验 → fail-safe
+  → Call #2（system prompt 要求 v0.5 JSON）→ TeamAiReviewResultParser
+  → 技术 schema/引用校验 → PASS → done.teamReview 一次性输出
+                          → FAIL → 仅针对 malformed/schema/technical contract 重试
 ```
 
-### Team Call #2 structured envelope（内部 grounding 契约）
+### Historical Team Call #2 structured envelope（legacy grounding 契约）
 
 ```json
 {
@@ -238,7 +252,9 @@ Replay → Parser → Canonical BattleTimeline → 确定性 Grounding Facts（�
   必须有唯一 PRIMARY DIAGNOSIS（禁止「无法判断/可能性枚举」）；「教练不是司法鉴定员」——
   事实必须准确，战术判断不要求数学证明。
 
-### TeamFactualConsistencyValidator（wotb-core `com.wotb.core.replay.evidence`，确定性）
+### Historical TeamFactualConsistencyValidator（legacy harness only）
+
+以下 envelope/claims validator 说明保留用于历史回归与离线 harness；不再是 v0.5 production truth boundary。
 
 只检查「LLM 有没有改写 Backend 事实」，**绝不判断战术观点**（「这局主要问题是第一次正面交换」
 「应该先回收」等 coaching judgment 一律放行）：
@@ -381,7 +397,7 @@ AI 复盘区分两种 scope，互不混用：
 | `maxOutputTokens` | `AI_MAX_OUTPUT_TOKENS` | 32768 | 单次请求最大输出 |
 | `promptSafetyMarginTokens` | `AI_PROMPT_SAFETY_MARGIN_TOKENS` | 16384 | 安全余量 |
 | `thinkingEnabled` | `AI_THINKING_ENABLED` | true | 是否启用思考模式 |
-| `call2ThinkingEnabled` | `AI_THINKING_ENABLED_CALL2` | false | Call #2 自由文本复盘是否启用思考；默认关闭以保证 SSE 逐段流式（`AI_THINKING_ENABLED` 为 legacy，Call #2 已改由本开关控制） |
+| `call2ThinkingEnabled` | `AI_THINKING_ENABLED_CALL2` | false | Call #2 的模型思考是否启用；个人路径输出自由文本，团队 v0.5 路径输出结构化 JSON；默认关闭以保证逐段流式（`AI_THINKING_ENABLED` 为 legacy） |
 | `reasoningEffort` | `AI_REASONING_EFFORT` | max | 推理力度（high/max） |
 
 启动时校验 `totalReserved <= contextWindowTokens`，不合规则 Spring Boot 启动失败。
@@ -392,7 +408,7 @@ AI 复盘区分两种 scope，互不混用：
 |------|---------|--------|------|
 | `wotb.ai.review-worker.max-concurrent` | `AI_REVIEW_WORKER_MAX_CONCURRENT` | 4 | AI Review SSE worker 池线程数（core = max，固定不弹性伸缩），必须 ≥ 1；V1 VPS 2C4G 默认 4 |
 | `wotb.ai.review-worker.queue-capacity` | `AI_REVIEW_WORKER_QUEUE_CAPACITY` | 4 | worker 池有界队列容量，必须 ≥ 1；满载（workers + queue 全占用）时第 N+1 个请求立即返回 `503 AI_REVIEW_BUSY`（`AbortPolicy`，绝不使用 `CallerRunsPolicy`） |
-| `wotb.ai.review-worker.overall-deadline-sec` | `AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC` | 1100 | 请求整体 deadline（提交时刻 + overall，排队计入预算）：默认 1100s 覆盖团队 3 次 AI 调用（Call #1 + Call #2 + Autopsy，各 ≤315s）+ 余量，对齐前端 1100s / nginx 1120s；worker 启动时剩余预算耗尽 → 干净失败 `AI_TIMEOUT`（E 阶段） |
+| `wotb.ai.review-worker.overall-deadline-sec` | `AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC` | 1100 | 请求整体 deadline（提交时刻 + overall，排队计入预算）：默认 1100s 覆盖团队 Call #1 + Call #2（各 ≤315s）+ 余量，对齐前端 1100s / nginx 1120s；worker 启动时剩余预算耗尽 → 干净失败 `AI_TIMEOUT`（E 阶段） |
 
 ### Token 估算器
 
@@ -411,16 +427,21 @@ AI 复盘区分两种 scope，互不混用：
 - 缺少 `AI_API_KEY` 时应用正常启动，`/api/replay/analyze` 返回 `AI_NOT_CONFIGURED`；其余功能不受影响。
 - timeout/retry 由 `AiRetryPolicy` 单层控制（SDK `maxRetries=0`，无双重重试）；可重试：429、连接失败、500/502/503/504；不重试：**超时（`AI_TIMEOUT`——上游可能已完成并计费，重试会重复扣费）**、认证/权限、invalid request、context too large、空/无效 completion。
 - 总调用边界：`AI_CALL_TIMEOUT_SEC` 使用单调时钟（`System.nanoTime`）覆盖一次 `chat()` 的整个生命周期（含响应体读取与 SDK 解析）；每轮尝试前检查剩余预算，backoff 不得超过剩余预算，in-flight 请求会在预算耗尽时被中止（okhttp interceptor 捕获 Call + 看门狗，覆盖连接→发送→等待→响应体读取→反序列化；成功返回前还会复检 deadline），因此单轮实际请求时间上限为 `min(AI_TIMEOUT_SEC, 剩余预算)`。预算耗尽统一返回稳定 `AI_TIMEOUT`，超时后绝不返回 success。
-- **全链路超时对齐**（改 nginx/Dockerfile/前端时必须保持）：后端 AI 单次调用预算 `AI_CALL_TIMEOUT_SEC=315s`（connect 10 + read 300 + 重试/backoff/解析余量）；团队复盘共 3 次 AI 调用（Call #1 + Call #2 + Team Autopsy），整体 deadline 默认 **1100s**（3×315 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）——覆盖「切页后仍在后台跑完」的长复盘，不再被旧 400s 硬杀；容器 nginx 对 `/api/replay/analyze` 的 `proxy_read/send_timeout` 为 **1120s**（余量防 504）；前端 analyze 请求安全超时 **1100s**（`AiReviewPanel.vue` 的 `AI_ANALYZE_TIMEOUT_MS`），在代理 504 之前给出干净 `AI_TIMEOUT`；`SseEmitter` 超时同步为 1120s。host 级 Caddy/Nginx 反代也必须允许 ≥1120s，否则会提前 504。
-- **SSE 流式协议（breaking change，analyze 已无同步 JSON 响应）**：`POST /api/replay/analyze` 返回 `text/event-stream`，`ReplaySseWriter` 序列化事件（自定 JSON event，`data` 为 JSON）：`call1_start` / `call1_done`（Call #1 开始/结束，真实发起调用时必发，无论成败）、`evidence_done`（证据分析完成；随机战 harness 与团队路径均发射，团队路径在 `TeamReplayAnalysisService.analyzeTeamGroups` 首轮 Call #2 前补发）、`call2_token`（`{"delta":"..."}` 主复盘 token 增量）、`autopsy_start` / `autopsy_done`（Team Autopsy）、`done`（`{"analysis":"...","preBattleSection":"..."}`；地图鸟瞰不由 AI 响应承载——由 Processing Job 的 canonical `map-overview.json` artifact 供独立战局回放面板消费，见 `docs/features/battle-playback.md`）、`error`（`{"id":"...","errorCode":"AI_...","errorMsg":null}`；旧 `code` 仅为兼容 alias）。**异常传达规则**：request-envelope 校验（`UNKNOWN_LOCALE` / `DATASET_REFERENCE_REQUIRED` / `INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID`）与 worker 池饱和（`AI_REVIEW_BUSY`）在返回 `SseEmitter` 前由 `@ExceptionHandler` 映射 HTTP 400 / 503；worker 启动后的运行时/业务失败（`NO_BATTLE_DATA` / `PERSPECTIVE_TEAM_UNRESOLVED` / `PERSPECTIVE_TEAM_CONFLICT` / `TEAM_FEATURES_UNAVAILABLE` / `AI_NOT_CONFIGURED` / `AI_PROMPT_MANDATORY_SECTION_TOO_LARGE` / `AI_RATE_LIMITED` / `AI_TIMEOUT` / `AI_CANCELLED` / `AI_UPSTREAM_UNAVAILABLE` 等）经 `error` 事件传达（HTTP 已 200），客户端断开时终止上游调用（cancel 端点语义）不向已断开连接写入。`AiChatGateway.stream(request, consumer)` 为单次尝试（不流内重试），失败即断流并保留已输出部分；总预算 watchdog 与 `correlationId` cancel 语义与 `chat()` 一致（`AI_TIMEOUT` / `AI_CANCELLED`）。**超大 delta 分块兜底**：`SpringAiChatGateway` 对单块 >512 字符的 delta 按句子边界切成 ≤128 字符片段、每片间隔 ~20ms 转发（上限 512 片，超长自动放大单片段），保证上游粗粒度返回时前端仍逐段出字；正常 token 流不触发。同步测试路径委托流式实现（`AiReviewStreamListener.NOOP`）。nginx 该 location 已配置 `proxy_buffering off` + `X-Accel-Buffering: no` + HTTP/1.1 + 清空 `Connection` 头（chunked 流式反代必需）；**任何 host 级反代改动必须保留上述三项**，否则阶段事件/token 无法实时到达。 **公开回放接口限流（C）**：Dataset 路径 replay 接口（`/api/replay/processing-jobs`、`/api/replay/export-jobs`、`/api/replay/analyze`、`/api/replay/map-overview`）应用 `limit_req`（单 IP 1r/s + burst 10 nodelay，429）与 `limit_conn`（单 IP 并发 5，503），仅 nginx 层，后端额度契约不变；legacy multipart 回放端点（`/api/preview`、`/api/export`）已弃用为 410，不在限流列。
+- **全链路超时对齐**（改 nginx/Dockerfile/前端时必须保持）：后端 AI 单次调用预算 `AI_CALL_TIMEOUT_SEC=315s`（connect 10 + read 300 + 重试/backoff/解析余量）；团队复盘为 Call #1 + Call #2 两次 AI 调用，整体 deadline 默认 **1100s**（2×315 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）——覆盖「切页后仍在后台跑完」的长复盘，不再被旧 400s 硬杀；容器 nginx 对 `/api/replay/analyze` 的 `proxy_read/send_timeout` 为 **1120s**（余量防 504）；前端 analyze 请求安全超时 **1100s**（`AiReviewPanel.vue` 的 `AI_ANALYZE_TIMEOUT_MS`），在代理 504 之前给出干净 `AI_TIMEOUT`；`SseEmitter` 超时同步为 1120s。host 级 Caddy/Nginx 反代也必须允许 ≥1120s，否则会提前 504。
+- **SSE 流式协议（breaking change，analyze 已无同步 JSON 响应）**：`POST /api/replay/analyze` 返回 `text/event-stream`，`ReplaySseWriter` 序列化事件（自定 JSON event，`data` 为 JSON）：`call1_start` / `call1_done`（Call #1 开始/结束，真实发起调用时必发，无论成败）、`evidence_done`（证据分析完成；随机战 harness 与团队路径均发射，团队路径在 `TeamReplayAnalysisService.analyzeTeamGroups` 首轮 Call #2 前补发）、`call2_token`（`{"delta":"..."}` 个人文本复盘 token 增量）、`done`（个人结果为 `{"analysis":"...","preBattleSection":"..."}`，团队结果为 `{"analysis":null,"preBattleSection":"...","teamReview":{...}}`；地图鸟瞰不由 AI 响应承载——由 Processing Job 的 canonical `map-overview.json` artifact 供独立战局回放面板消费，见 `docs/features/battle-playback.md`）、`error`（`{"id":"...","errorCode":"AI_...","errorMsg":null}`；旧 `code` 仅为兼容 alias）。团队 production chain 不发送 Autopsy 阶段事件。**异常传达规则**：request-envelope 校验（`UNKNOWN_LOCALE` / `DATASET_REFERENCE_REQUIRED` / `INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID`）与 worker 池饱和（`AI_REVIEW_BUSY`）在返回 `SseEmitter` 前由 `@ExceptionHandler` 映射 HTTP 400 / 503；worker 启动后的运行时/业务失败（`NO_BATTLE_DATA` / `PERSPECTIVE_TEAM_UNRESOLVED` / `PERSPECTIVE_TEAM_CONFLICT` / `TEAM_FEATURES_UNAVAILABLE` / `AI_NOT_CONFIGURED` / `AI_PROMPT_MANDATORY_SECTION_TOO_LARGE` / `AI_RATE_LIMITED` / `AI_TIMEOUT` / `AI_CANCELLED` / `AI_UPSTREAM_UNAVAILABLE` 等）经 `error` 事件传达（HTTP 已 200），客户端断开时终止上游调用（cancel 端点语义）不向已断开连接写入。`AiChatGateway.stream(request, consumer)` 为单次尝试（不流内重试），失败即断流并保留已输出部分；总预算 watchdog 与 `correlationId` cancel 语义与 `chat()` 一致（`AI_TIMEOUT` / `AI_CANCELLED`）。同步测试路径委托流式实现（`AiReviewStreamListener.NOOP`）。nginx 该 location 已配置 `proxy_buffering off` + `X-Accel-Buffering: no` + HTTP/1.1 + 清空 `Connection` 头（chunked 流式反代必需）；**任何 host 级反代改动必须保留上述三项**，否则阶段事件/token 无法实时到达。 **公开回放接口限流（C）**：Dataset 路径 replay 接口（`/api/replay/processing-jobs`、`/api/replay/export-jobs`、`/api/replay/analyze`、`/api/replay/map-overview`）应用 `limit_req`（单 IP 1r/s + burst 10 nodelay，429）与 `limit_conn`（单 IP 并发 5，503），仅 nginx 层，后端额度契约不变；legacy multipart 回放端点（`/api/preview`、`/api/export`）已弃用为 410，不在限流列。
 - **地图鸟瞰独立端点（不调 AI）**：`POST /api/replay/map-overview`（Dataset 路径 JSON body `{processingJobId, sourceId}`，同步 JSON，与 analyze 同角色/校验/错误码）经 `MapOverviewQueryService` 读 cached `map-overview.json`（不重新 full process；legacy multipart 已 410），地图不可构建返回 204。战场回放面板（`BattlePlaybackPanel.vue`，ReplayPage Workspace 的「战局回放」视图）消费该 cached 地图；AI 复盘页面不加载地图。analyze SSE `done` 载荷**已不含** `mapOverview`（地图由 Processing Job artifact 承载，非 AI 响应字段）。
 - **SSE worker 池配置（`AiReviewWorkerExecutor`）**：analyze 端点的整段 AI 复盘在 worker 线程执行，servlet request 线程提交完即返回 `SseEmitter`。worker 池为**有界**（core=max fixed thread pool + bounded queue + `AbortPolicy`），**绝不使用 `CallerRunsPolicy`**——后者会让 request 线程同步执行整段 AI 复盘，重新引入 SSE blocking bug。默认 **4 concurrent workers + 4 queued**（V1 VPS 2C4G，最多 8 active/pending），第 9 个请求被立即拒绝并返回 **`503 AI_REVIEW_BUSY`**（`AiReviewBusyException` → `@ExceptionHandler`）。容量经环境变量 **`AI_REVIEW_WORKER_MAX_CONCURRENT`** / **`AI_REVIEW_WORKER_QUEUE_CAPACITY`** 可调（无需 rebuild）。线程为 daemon，命名 `wotb-ai-review-worker-N`，`@PreDestroy` 关闭池。**request-envelope 校验前置**：Dataset 引用（`processingJobId` / `sourceId`）缺失或非法等请求在提交 worker 前就抛 `DATASET_REFERENCE_REQUIRED` → `@ExceptionHandler` 映射 HTTP 400 结构化错误码，不再进入 SSE 流后以 `error` 事件传达（worker 内 `analyzeInternal` 保留相同校验作防御）。**queued cancellation**：任务在队列中等待期间若被取消（客户端断开 / cancel 端点），worker 启动后第一时间检查 `AiCancellationToken.isCancelled()`，命中即 `complete()` emitter 并清理、不调回放解析与 AI Gateway、不向已断开连接写入。`emitter.onTimeout` / `emitter.onError`（客户端断开）只翻转 cancellation token、不主动 complete——连接错误由 Servlet async lifecycle 负责终止 emitter，worker `finally` 统一清理 `AiRequestContext` 与 cancellation registry，与显式 cancel 端点幂等。 **整体 deadline（E）**：任务在提交时刻计算 `now + overall-deadline-sec` 并通过 `AiRequestContext.overallDeadlineNanos()` 暴露给 worker；`TeamReplayAnalysisService` / `TacticalReviewHarness` 预算起点回溯到提交时刻（排队时长计入剩余预算），启动时预算耗尽直接抛 `AI_TIMEOUT`；排队等待记 DEBUG 日志与 `wotb_ai_review_queue_wait` timer。**request-envelope 校验收敛**：`ReconstructionController` 与 `AiReplayReviewService` 统一前置校验 dataset reference（`DATASET_REFERENCE_REQUIRED` / `SOURCE_NOT_FOUND` / `SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED`），错误码一致。
 - **客户端取消 → 上游中断**：analyze 请求携带 `correlationId`；前端取消按钮 / 页面离开（`beforeunload` keepalive）/ 前端超时会调用 `POST /api/replay/analyze/cancel`，后端 `AiCancellationRegistry` 命中后取消 in-flight okhttp Call 并停止重试（稳定错误码 `AI_CANCELLED`），避免为无人等待的响应继续计费。 **correlationId 契约（D）**：客户端提供的 correlationId 必须为 canonical UUID（格式+长度 36），analyze 与 cancel 端点非法/重复一律 400（`INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID`）；`AiCancellationRegistry.register` 对重复活跃 id 返回 null（不复用 token），`unregister(id, token)` 为 ConcurrentHashMap compare-and-remove（已完成的请求不会误删复用同一 id 的新注册）。
 - Prompt/completion 默认不记录、不进 metrics；Spring AI Observation 未启用（NOOP）。日志经 `AiSecretRedactor` 集中脱敏。
-- **Call #1 覆盖可观测性**：`PreBattleStrategicService` 每次调用前输出 `Pre-battle Call #1 input`（map、mapSemantics=found/UNKNOWN、verified、areas/relationships/spawnSemantics 数量、source、displayName、team1/team2 人数、curatedProfiles/fallbackProfiles 车辆 Profile 覆盖），成功后输出 `Pre-battle Call #1 success`（hypotheses/matchups/winConditions/双方 strengths·plans 数量）；`TacticalReviewHarness` 输出 `Harness prior obtained`（prior 已注入 Call #2）与 `Harness fell back to old path: <reason>`；`TeamAutopsyService` 成功输出 `Team autopsy success`（liabilities/mvps 数量）。新增指标 `wotb_ai_review_map_semantics_total{status=found|unknown}`。按 requestId 可在 Loki 逐请求验证地图/车辆语义是否进入 Call #1 并注入 Call #2。
+- **Call #1 覆盖可观测性**：`PreBattleStrategicService` 每次调用前输出 `Pre-battle Call #1 input`（map、mapSemantics=found/UNKNOWN、verified、areas/relationships/spawnSemantics 数量、source、displayName、team1/team2 人数、curatedProfiles/fallbackProfiles 车辆 Profile 覆盖），成功后输出 `Pre-battle Call #1 success`（hypotheses/matchups/winConditions/双方 strengths·plans 数量）；`TacticalReviewHarness` 输出 `Harness prior obtained`（prior 已注入 Call #2）与 `Harness fell back to old path: <reason>`；Team Autopsy 不属于 v0.5 production chain。新增指标 `wotb_ai_review_map_semantics_total{status=found|unknown}`。按 requestId 可在 Loki 逐请求验证地图/车辆语义是否进入 Call #1 并注入 Call #2。
 - **回放解析覆盖率可观测**：`AiReplayReviewService` 对每个回放输出 `Replay event-stream parsed`（file/map/packets/decoded/partial/unknown/failed/decodedRatio），可在 Loki 按回放查看事件流解码覆盖率；真实样本 `decodedRatio≈0.31–0.35`，type 39/31/35/7 为主要未知/未解桶（逆向推进的量化基线）。
 - 测试不调用真实 AI API：`SpringAiChatGatewayTest`/`SpringAiChatGatewayMetricsTest` 使用 mock `ChatModel`。
-#### DeepSeek 官方 JSON Output（Team Call #2）
+#### Historical: DeepSeek 官方 JSON Output（旧 Team Envelope，legacy）
+
+> 本节记录 v0.5 之前的 `TeamReviewEnvelope` / `TeamFactualConsistencyValidator` 方案，
+> 仅供兼容代码与历史测试追溯。当前 Team Call #2 的唯一生产契约是上文定义的
+> `TeamAiReviewResult`；Backend 只做 JSON/结构/技术约束校验，不执行 tactical truth validator，
+> 也不发送 Autopsy 阶段事件。
 
 - **目的**：消灭「非法 JSON / JSON 外多余文本 / JSON 格式漂移 → parser fail → 昂贵完整 LLM retry」这一类
   syntax 层失败。**不是** Strict Function Calling / JSON Schema constrained generation
@@ -470,10 +491,10 @@ AI 复盘区分两种 scope，互不混用：
 POST /api/replay/analyze（Dataset JSON `{processingJobId, sourceId, lang, correlationId}`）
   → ReconstructionController.analyzeDataset → dataset reference 校验（DATASET_REFERENCE_REQUIRED / SOURCE_NOT_FOUND）
   → AiReplayReviewService.analyzeFacts（acquire Dataset lease，读 Processing Job 的 ai-facts.json）
-       ├─ source READY → 视角判定（PLAYER_FOCUSED / TEAM_PERSPECTIVE）+ AI 链（Call #1 → Call #2 → Team Autopsy）
+        ├─ source READY → 视角判定（PLAYER_FOCUSED / TEAM_PERSPECTIVE）+ AI 链（Call #1 → Call #2；Team #2 为 structured result）
        ├─ source 未 READY → SOURCE_NOT_READY / SOURCE_PROCESSING_FAILED（稳定码，不重建）
        └─ artifact 读/解码/存储故障 → DATASET_UNAVAILABLE（503，不可恢复）
-  → SSE 流式：call1_start / evidence_done / call2_token / autopsy_* / done / error
+   → SSE 流式：call1_start / call1_done / evidence_done / call2_token（个人）/ done / error
 ```
 
 ### Team Perspective 语义

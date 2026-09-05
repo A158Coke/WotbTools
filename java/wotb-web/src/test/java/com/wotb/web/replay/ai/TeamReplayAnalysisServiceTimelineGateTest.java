@@ -261,8 +261,8 @@ class TeamReplayAnalysisServiceTimelineGateTest {
         public AiChatResponse chat(final AiChatRequest request) {
             requests.add(request);
             return new AiChatResponse(
-                    "{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
-                            + "\"reviewMarkdown\":\"## 团队复盘\\n\\n这是一段复盘。\",\"claims\":[]}",
+                    "{\"summary\":{\"verdict\":\"结论\",\"primaryDiagnosis\":\"诊断\"},"
+                            + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],\"highContributors\":[]}",
                     "DeepSeek", "test-model",
                     0, 0, 0, 0, 0, 0, "stop");
         }

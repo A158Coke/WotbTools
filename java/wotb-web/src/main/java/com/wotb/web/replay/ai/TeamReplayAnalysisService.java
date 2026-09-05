@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.replay.evidence.TeamAiReviewResult;
 import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
 import com.wotb.core.replay.evidence.TeamReviewEnvelope;
@@ -39,19 +40,18 @@ import java.util.function.LongSupplier;
 /**
  * 团队 AI 复盘编排（team perspective：训练房/联赛）。
  * <p>职责：兼容 facade 路径的单团队入口、{@code analyzeTeamGroups} 的完整编排（Call #1 prior、
- * 逐 context 的 Team Prompt 调用与 Team Autopsy 追加）；roster 校验/Context 组装/团队 Prompt 规则
+ * 逐 context 的 Team Prompt 调用）；roster 校验/Context 组装/团队 Prompt 规则
  * 分别由 {@link TeamRosterResolver} / {@link TeamContextBuilder} /
  * {@link TeamPromptLocalizer} 负责。Prompt 文本由 {@link TeamAiPromptBuilder} 产出，
  * HTTP/DTO/异常分类由 {@link AiChatGateway} 负责，预算由 {@link AiPromptBudgetGuard} 守，
  * {@code analysisUnitId} 由 {@link AnalysisUnitAssembler} 提供稳定实现。</p>
  * <p>团队复盘与随机战一样先执行 Call #1（Pre-Battle Strategic Prior：基于地图与双方阵容的赛前先验，
  * 含开局/分路假设），按视角队伍重标 TEAM_A 后注入团队 Prompt；Call #1 失败不阻断团队复盘（仅缺 prior 段）。
- * 单团队单元后追加 Team Autopsy（判负战犯 / 判胜 MVP）——这是<b>结算级</b>独立 TEAM_AUTOPSY
- * 调用：Autopsy 输入只有权威逐人结算（无 Call #1 prior / Critical Window / Route 证据），相关结论置信度
- * PARTIAL/UNKNOWN。随机战斗个人复盘不输出战犯/MVP。</p>
+ * Call #2 返回 Team AI Review v0.5 结构化结果；后端只做 JSON/schema/引用的技术校验，
+ * 不判断战术结论。</p>
  * <p><b>Canonical Timeline hard gate（PR #102 ）</b>：{@code analyzeTeamGroups}
  * 是 Team AI 的<b>唯一 production 编排入口</b>（由 {@code AiReplayReviewService} 调用）。
- * 它在<b>任何 LLM 调用之前</b>（Call #1 prior / Call #2 / Team Autopsy）为每个 context 构建并
+ * 它在<b>任何 LLM 调用之前</b>（Call #1 prior / Call #2）为每个 context 构建并
  * 验证 canonical BattleTimeline（一次 build、一次 validation）：reconstruction 缺失 /
  * timeline 不可用 / timeline 为 null → 立即抛 {@link AiTimelineUnusableException}（AI Gateway
  * requests = 0），禁止 settlement-only fallback；验证通过后同一 validated timeline 下传给
@@ -68,6 +68,7 @@ public class TeamReplayAnalysisService {
     private final AiChatGateway gateway;
     private final AiReplayAnalysisConfig config;
     private final PreBattleStrategicService preBattleService;
+    /** Legacy dependency retained for constructor compatibility; v0.5 never invokes it. */
     private final TeamAutopsyService teamAutopsyService;
     private final LongSupplier nanoTimeSource;
     private final MeterRegistry meterRegistry;
@@ -134,16 +135,18 @@ public class TeamReplayAnalysisService {
         final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.single(
                 context, extraLimitations, prior, config.estimator(), config.singleReplayMaxInputTokens());
         // 兼容入口无已验证 timeline：Grounding Facts 只含结算可推导事实（该稳定模块不动）。
-        return callSingleTeamContext(context, input, language, startNanos, listener, null);
+        // Historical facade compatibility only; production uses analyzeTeamGroups below and
+        // therefore never reaches the legacy envelope/autopsy path.
+        final String legacy = callLegacyValidatedTeamReview(
+                context, input, language, startNanos, listener, null);
+        return new AnalyzeResult(appendTeamAutopsy(context, legacy, language, startNanos, listener));
     }
 
     /**
-     * 单团队 Call #2（Team Call #2 唯一入口）：envelope 解析 + 事实一致性校验 + LLM 自修循环。
-     * <p>{@code timeline} 为已验证 canonical timeline（production 路径必传；兼容/测试入口传 null，
-     * 此时 Grounding Facts 只含结算可推导事实，位置/窗口类校验自动 no-op）。校验通过后
-     * 只把 {@code reviewMarkdown} 流式转给前端；校验失败由 LLM 自行改写，Backend 绝不代改句子。</p>
+     * 单团队 Call #2（Team production v0.5 唯一入口）：请求 JSON_OBJECT，解析并校验
+     * {@link TeamAiReviewResult}，然后把结构化结果交给 SSE done 事件。
      */
-    private AnalyzeResult callSingleTeamContext(
+    private TeamCallResult callSingleTeamContext(
             final SingleTeamBattleAnalysisContext context,
             final TeamAiPromptBuilder.PromptInput input,
             final AllowedLanguage language,
@@ -151,8 +154,9 @@ public class TeamReplayAnalysisService {
             final AiReviewStreamListener listener,
             final BattleTimeline timeline
     ) {
-        final String content = callValidatedTeamReview(context, input, language, startNanos, listener, timeline);
-        return new AnalyzeResult(appendTeamAutopsy(context, content, language, startNanos, listener));
+        final TeamAiReviewResult result = callStructuredTeamReview(
+                context, input, language, startNanos, listener, timeline);
+        return new TeamCallResult(new AnalyzeResult(result.summary().verdict()), result);
     }
 
     /**
@@ -189,7 +193,7 @@ public class TeamReplayAnalysisService {
             }
         }
         // Canonical Timeline hard gate（PR #102 ）：在任何 LLM 调用（Call #1 /
-        // Call #2 / Team Autopsy）之前为每个 context 构建并验证 canonical timeline。
+        // Call #2）之前为每个 context 构建并验证 canonical timeline。
         // reconstruction 缺失 / timeline 不可用 / timeline 为 null → 立即拒绝（AI Gateway
         // requests = 0），禁止 settlement-only fallback；验证通过后同一 timeline 下传给
         // TeamAiPromptBuilder 渲染 TACTICAL TIMELINE（不重复 build）。
@@ -213,7 +217,7 @@ public class TeamReplayAnalysisService {
         }
         // 证据分析完成：与随机战 harness 对齐，让前端阶段指示从「证据分析中…」推进到「战术复盘生成中…」
         listener.onStage("evidence_done");
-        AnalyzeResult firstAnalysis = null;
+        TeamCallResult firstAnalysis = null;
         SingleTeamBattleAnalysisContext firstContext = null;
         for (final SingleTeamBattleAnalysisContext ctx : contexts) {
             final TeamRosterResolver.RosterEvidence evidence = evidenceByUnitId.get(ctx.analysisUnitId());
@@ -225,7 +229,7 @@ public class TeamReplayAnalysisService {
                             config.estimator(),
                             config.singleReplayMaxInputTokens(),
                             timelinesByUnitId.get(ctx.analysisUnitId()));
-            final AnalyzeResult result = callSingleTeamContext(
+            final TeamCallResult result = callSingleTeamContext(
                     ctx, input, language, startNanos, listener,
                     timelinesByUnitId.get(ctx.analysisUnitId()));
             if (firstAnalysis == null) {
@@ -244,7 +248,8 @@ public class TeamReplayAnalysisService {
                         TeamRosterResolver.resolveDisplayLabel(firstContext.battle(), firstContext.perspectiveTeam()),
                         language,
                         firstContext.battle() == null ? null : firstContext.battle().mapName);
-        return new TeamAnalyzeResult(firstAnalysis, preBattleSection);
+        return new TeamAnalyzeResult(firstAnalysis.analysis(), preBattleSection,
+                firstAnalysis.structuredResult(), TeamRosterResolver.playerIdentities(firstContext));
     }
 
     /**
@@ -294,14 +299,15 @@ public class TeamReplayAnalysisService {
     static final int MAX_VALIDATION_ATTEMPTS = 4;
 
     /**
-     * Team Call #2 编排（Natural Coach 轮）：envelope 解析 + 事实一致性校验 + LLM 自修循环。
+     * Historical compatibility facade：旧 Natural Coach envelope 解析 + 事实一致性校验 + LLM 自修循环。
+     * 生产 Team AI Review v0.5 不调用此方法。
      * <p>流程（Draft → validate；FAIL → targeted rewrite；
      * FAIL → full rewrite；仍 FAIL → conservative safe rewrite；再次完整校验后仍 FAIL
      * → fail-safe（{@code AI_REVIEW_GROUNDING_FAILED}）。
      * Backend 绝不代改句子；校验通过后才把 {@code reviewMarkdown} 以 token 增量转给前端
      * （避免把待改写的草稿暴露给用户）。</p>
      */
-    private String callValidatedTeamReview(
+    private String callLegacyValidatedTeamReview(
             final SingleTeamBattleAnalysisContext context,
             final TeamAiPromptBuilder.PromptInput input,
             final AllowedLanguage language,
@@ -468,6 +474,62 @@ public class TeamReplayAnalysisService {
             countValidationRetry("TEAM_CALL_2", rewrite);
         }
         throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, correlationId);
+    }
+
+    /** Call #2 v0.5：仅重试 malformed/schema/technical contract，不做战术事实判定。 */
+    private TeamAiReviewResult callStructuredTeamReview(
+            final SingleTeamBattleAnalysisContext context,
+            final TeamAiPromptBuilder.PromptInput input,
+            final AllowedLanguage language,
+            final long startNanos,
+            final AiReviewStreamListener listener,
+            final BattleTimeline timeline
+    ) {
+        final String systemPrompt = TeamPromptLocalizer.localizeTeamSystemPrompt(
+                TeamPromptLocalizer.SINGLE_TEAM_PROMPT, language);
+        final TeamGroundingFacts.GroundingFacts facts = timeline != null
+                ? TeamGroundingFacts.build(context.battle(), timeline, context.perspectiveTeam())
+                : TeamGroundingFacts.build(context.battle(),
+                        context.reconstruction() == null || context.reconstruction().battleStartRawClockSec() == null
+                                ? null : context.reconstruction().battleStartRawClockSec().doubleValue(),
+                        context.perspectiveTeam());
+        final String groundingSection = TeamGroundingFacts.renderGroundingSection(facts);
+        final String baseUser = input.content()
+                + (groundingSection.isEmpty() ? "" : "\n" + groundingSection);
+        final Set<String> rosterKeys = TeamRosterResolver.playerKeys(context);
+        String userContent = baseUser;
+        final String correlationId = AiRequestContext.correlationId();
+        final long reviewStartNanos = nanoTimeSource.getAsLong();
+        for (int attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
+            if (attempt > 1) {
+                userContent = baseUser + "\n\n=== JSON schema feedback ===\n"
+                        + "请修正上一轮输出的 JSON 类型、必填字段、数量上限或引用关系，"
+                        + "仍然输出完整 TeamAiReviewResult，不要增加第三次调用。";
+            }
+            final AiChatResponse response = callRaw(systemPrompt, userContent,
+                    "SINGLE_TEAM_BATTLE", remainingBudget(startNanos), attempt);
+            final TeamAiReviewResultParser.ParseResult parsed =
+                    TeamAiReviewResultParser.parse(response.completionText(), rosterKeys);
+            if (!parsed.failed()) {
+                countValidationAttempt("pass");
+                logTeamReviewCompleted(correlationId, attempt, response.inputTokens(),
+                        response.outputTokens(), "PASS", reviewStartNanos);
+                return parsed.result();
+            }
+            countValidationAttempt("schema_invalid");
+            LOGGER.info(AiReviewEventLog.line("team_review_schema_failure", correlationId,
+                    "attempt", attempt, "reason", parsed.failure()));
+            if (attempt == MAX_VALIDATION_ATTEMPTS) {
+                logTeamReviewCompleted(correlationId, attempt, response.inputTokens(),
+                        response.outputTokens(), "SCHEMA_FAILED", reviewStartNanos);
+                throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
+            }
+            countValidationRetry("TEAM_CALL_2", "SCHEMA");
+        }
+        throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
+    }
+
+    private record TeamCallResult(AnalyzeResult analysis, TeamAiReviewResult structuredResult) {
     }
 
     private static String rewriteStage(final int attempt) {
