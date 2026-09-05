@@ -18,6 +18,11 @@ jobs:
           ref: feat/playback-3d-prototype
           fetch-depth: 0
 
+      - name: Configure Git identity
+        run: |
+          git config user.name "WotbTools AI"
+          git config user.email "wotbtools-ai@local"
+
       - name: Sync merged production fixes
         run: |
           git fetch origin main
@@ -57,11 +62,12 @@ jobs:
 
           test = Path('frontend/src/utils/terrainReliefProjection.test.js')
           text = test.read_text(encoding='utf-8')
-          text = text.replace(
-              '''import {\n  createTerrainReliefModel,''',
-              '''import {\n  RELIEF_PADDING,\n  RELIEF_Z_EXAGGERATION,\n  createTerrainReliefModel,''',
-              1,
-          )
+          if 'RELIEF_PADDING,' not in text:
+              text = text.replace(
+                  '''import {\n  createTerrainReliefModel,''',
+                  '''import {\n  RELIEF_PADDING,\n  RELIEF_Z_EXAGGERATION,\n  createTerrainReliefModel,''',
+                  1,
+              )
           anchor = "describe('fixed 45 degree terrain relief projection', () => {\n"
           addition = """describe('fixed 45 degree terrain relief projection', () => {\n  it('keeps the approved amplified tactical-relief defaults', () => {\n    expect(RELIEF_Z_EXAGGERATION).toBe(2)\n    expect(RELIEF_PADDING).toBeCloseTo(0.035)\n  })\n\n"""
           if "keeps the approved amplified tactical-relief defaults" not in text:
@@ -87,8 +93,6 @@ jobs:
       - name: Remove temporary workflow and commit
         run: |
           git rm .github/workflows/tmp-refine-25d-relief.yml
-          git config user.name "WotbTools AI"
-          git config user.email "wotbtools-ai@local"
           git add frontend/src/components/BattleMap3D.vue frontend/src/components/BattlePlaybackPanel.vue frontend/src/utils/terrainReliefProjection.js frontend/src/utils/terrainReliefProjection.test.js
           git commit -m "feat(playback): sharpen and amplify 2.5d terrain relief"
           git push origin HEAD:feat/playback-3d-prototype
