@@ -11,14 +11,48 @@ permissions:
   contents: write
 
 jobs:
-  generate:
+  restore:
+    name: restore-${{ matrix.map }}
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        map:
+          - black-goldville
+          - canal
+          - canyon
+          - castilla
+          - copperfield
+          - dead-rail
+          - desert-sands
+          - falls-creek
+          - faust
+          - fort-despair
+          - ghost-factory
+          - hellas
+          - himmelsdorf
+          - horrorstadt
+          - lagoon
+          - mayan-ruins
+          - middleburg
+          - molendijk
+          - naval-frontier
+          - new-bay
+          - normandy
+          - oasis-palms
+          - port-bay
+          - rockfield
+          - vineyards
+          - wasteland
+          - winter-malinovka
+          - yamato-harbor
+          - yukon
     steps:
       - uses: actions/checkout@v5
         with:
           ref: feat/maps-ai-hd-v2
-          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -40,7 +74,6 @@ jobs:
           new = 'from torchvision.transforms.functional import rgb_to_grayscale'
           if old in text:
               p.write_text(text.replace(old, new), encoding='utf-8')
-          print('patched', p)
           PY
 
       - name: Fetch Real-ESRGAN model
@@ -49,27 +82,25 @@ jobs:
             https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth \
             --output /tmp/realesr-general-x4v3.pth
 
-      - name: Regenerate all 29 HD basemaps from immutable originals
+      - name: Restore ${{ matrix.map }} from original source only
+        env:
+          MAP_NAME: ${{ matrix.map }}
         run: |
           python - <<'PY'
           from pathlib import Path
-          import hashlib
-          import json
+          import os
           import cv2
           import numpy as np
           from PIL import Image
           from basicsr.archs.srvgg_arch import SRVGGNetCompact
           from realesrgan import RealESRGANer
 
-          repo = Path.cwd()
-          src_dir = repo / 'frontend/src/assets/maps'
-          dst_dir = repo / 'frontend/src/assets/maps-hd'
-          manifest_path = dst_dir / 'manifest.json'
-          map_images = repo / 'frontend/src/data/mapImages.js'
-
-          sources = sorted(src_dir.glob('*.webp'))
-          if len(sources) != 29:
-              raise SystemExit(f'expected 29 original basemaps, found {len(sources)}')
+          name = os.environ['MAP_NAME']
+          src = Path('frontend/src/assets/maps') / f'{name}.webp'
+          out_dir = Path('hd-artifact')
+          dst = out_dir / f'{name}.webp'
+          if not src.is_file():
+              raise SystemExit(f'missing original source {src}')
 
           model = SRVGGNetCompact(
               num_in_ch=3, num_out_ch=3, num_feat=64,
@@ -82,14 +113,86 @@ jobs:
               tile_pad=12,
               pre_pad=0,
               half=False,
-              gpu_id=None,
-          )
+              gpu_id=None)
 
-          dst_dir.mkdir(parents=True, exist_ok=True)
-          for stale in dst_dir.glob('*.webp'):
-              stale.unlink()
+          image = cv2.imread(str(src), cv2.IMREAD_COLOR)
+          if image is None:
+              raise SystemExit(f'failed to decode {src}')
+          restored, _ = upsampler.enhance(image, outscale=2)
 
-          def sha256(path: Path) -> str:
+          # Stronger perceived-detail finish without any geometric transform.
+          lab = cv2.cvtColor(restored, cv2.COLOR_BGR2LAB)
+          l, a, b = cv2.split(lab)
+          l = cv2.createCLAHE(clipLimit=1.35, tileGridSize=(12, 12)).apply(l)
+          finished = cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
+          blur = cv2.GaussianBlur(finished, (0, 0), 0.85)
+          finished = cv2.addWeighted(finished, 1.12, blur, -0.12, 0)
+          finished = np.clip(finished, 0, 255).astype(np.uint8)
+
+          out_dir.mkdir(parents=True, exist_ok=True)
+          rgb = cv2.cvtColor(finished, cv2.COLOR_BGR2RGB)
+          Image.fromarray(rgb).save(dst, 'WEBP', quality=96, method=6, exact=True)
+          with Image.open(src) as s, Image.open(dst) as d:
+              if d.size != (s.size[0] * 2, s.size[1] * 2):
+                  raise SystemExit(f'bad size {name}: {s.size} -> {d.size}')
+              print(f'{name}: {s.size} -> {d.size}; {dst.stat().st_size} bytes')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hd-${{ matrix.map }}
+          path: hd-artifact/${{ matrix.map }}.webp
+          if-no-files-found: error
+          compression-level: 0
+
+  collect:
+    name: collect-29-hd-maps
+    needs: restore
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/maps-ai-hd-v2
+          fetch-depth: 0
+
+      - name: Replace previous HD experiments with complete artifact set
+        run: |
+          rm -rf frontend/src/assets/maps-hd
+          mkdir -p frontend/src/assets/maps-hd
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: hd-*
+          path: frontend/src/assets/maps-hd
+          merge-multiple: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build 29-map manifest and switch Playback registry to HD
+        run: |
+          python -m pip install --disable-pip-version-check pillow==11.3.0
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          from PIL import Image
+
+          src_dir = Path('frontend/src/assets/maps')
+          dst_dir = Path('frontend/src/assets/maps-hd')
+          map_images = Path('frontend/src/data/mapImages.js')
+          sources = sorted(src_dir.glob('*.webp'))
+          enhanced = sorted(dst_dir.glob('*.webp'))
+          if len(sources) != 29:
+              raise SystemExit(f'expected 29 originals, found {len(sources)}')
+          if len(enhanced) != 29:
+              raise SystemExit(f'expected 29 HD outputs, found {len(enhanced)}')
+          if [p.name for p in sources] != [p.name for p in enhanced]:
+              raise SystemExit('HD filenames do not exactly match original registry')
+
+          def sha256(path: Path):
               h = hashlib.sha256()
               with path.open('rb') as f:
                   for chunk in iter(lambda: f.read(1024 * 1024), b''):
@@ -97,37 +200,13 @@ jobs:
               return h.hexdigest()
 
           entries = []
-          for index, src in enumerate(sources, start=1):
-              image = cv2.imread(str(src), cv2.IMREAD_COLOR)
-              if image is None:
-                  raise SystemExit(f'failed to decode {src}')
-
-              # AI restoration starts from the immutable original every time.
-              restored, _ = upsampler.enhance(image, outscale=2)
-
-              # Geometry-preserving local contrast/detail finish. No warping,
-              # synthesis, cropping, topology edits, or generative repainting.
-              lab = cv2.cvtColor(restored, cv2.COLOR_BGR2LAB)
-              l, a, b = cv2.split(lab)
-              clahe = cv2.createCLAHE(clipLimit=1.35, tileGridSize=(12, 12))
-              l = clahe.apply(l)
-              finished = cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
-              blur = cv2.GaussianBlur(finished, (0, 0), 0.85)
-              finished = cv2.addWeighted(finished, 1.12, blur, -0.12, 0)
-              finished = np.clip(finished, 0, 255).astype(np.uint8)
-
+          for src in sources:
               dst = dst_dir / src.name
-              rgb = cv2.cvtColor(finished, cv2.COLOR_BGR2RGB)
-              Image.fromarray(rgb).save(dst, 'WEBP', quality=96, method=6, exact=True)
-
-              with Image.open(src) as im:
-                  source_size = list(im.size)
-              with Image.open(dst) as im:
-                  enhanced_size = list(im.size)
-
+              with Image.open(src) as s, Image.open(dst) as d:
+                  source_size = list(s.size)
+                  enhanced_size = list(d.size)
               if enhanced_size != [source_size[0] * 2, source_size[1] * 2]:
-                  raise SystemExit(f'unexpected enhanced size for {src.name}: {enhanced_size}')
-
+                  raise SystemExit(f'bad dimensions for {src.name}')
               entries.append({
                   'source': f'frontend/src/assets/maps/{src.name}',
                   'enhanced': f'frontend/src/assets/maps-hd/{src.name}',
@@ -138,42 +217,34 @@ jobs:
                   'enhancedSha256': sha256(dst),
                   'webpQuality': 96,
                   'sourceOfTruth': 'ORIGINAL_ONLY',
-                  'geometryTransform': 'NONE',
+                  'geometryTransform': 'NONE'
               })
-              print(f'[{index:02d}/29] {src.name}: {source_size} -> {enhanced_size}, {dst.stat().st_size} bytes')
 
           manifest = {
               'schemaVersion': 2,
               'policy': 'ORIGINALS_PRESERVED_IN_ASSETS_MAPS',
               'generationRule': 'EVERY_HD_ASSET_GENERATED_DIRECTLY_FROM_ORIGINAL_SOURCE',
               'expectedMapCount': 29,
-              'entries': entries,
+              'entries': entries
           }
-          manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+          (dst_dir / 'manifest.json').write_text(
+              json.dumps(manifest, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
 
-          # Playback should consume the HD variants for all registered maps.
           text = map_images.read_text(encoding='utf-8')
           text = text.replace("from '../assets/maps/", "from '../assets/maps-hd/")
           map_images.write_text(text, encoding='utf-8')
-
-          hd_files = sorted(dst_dir.glob('*.webp'))
-          if len(hd_files) != 29:
-              raise SystemExit(f'expected 29 HD basemaps, found {len(hd_files)}')
-          if len(entries) != 29:
-              raise SystemExit(f'expected 29 manifest entries, found {len(entries)}')
           print('HD coverage 29/29 complete')
           PY
 
-      - name: Verify originals untouched and all imports use HD assets
+      - name: Verify immutable originals and complete Playback coverage
         run: |
           git diff --exit-code -- frontend/src/assets/maps/
           test "$(find frontend/src/assets/maps-hd -maxdepth 1 -name '*.webp' | wc -l)" -eq 29
           test "$(grep -c "from '../assets/maps-hd/" frontend/src/data/mapImages.js)" -eq 29
           ! grep -q "from '../assets/maps/" frontend/src/data/mapImages.js
           grep -q '"expectedMapCount": 29' frontend/src/assets/maps-hd/manifest.json
-          grep -q '"geometryTransform": "NONE"' frontend/src/assets/maps-hd/manifest.json
 
-      - name: Commit all-map HD assets and remove temporary workflow
+      - name: Commit complete all-map HD set
         run: |
           git config user.name 'WotbTools AI'
           git config user.email 'wotbtools-ai@local'
