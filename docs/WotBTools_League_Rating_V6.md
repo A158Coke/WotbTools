@@ -6,30 +6,28 @@
 
 V6 只改变批次选手/战队汇总。它不改 V4.1 单场公式、回放解析、战队 identity、数据库、控制器、worker、对手强度、赛程或地图因素。批次仍只聚合 canonical、可评分的 League battles；duplicate/conflict 的既有处理顺序保持不变。
 
-所有批次结果由有效单场 `finalRating` 的 raw sum 与 count 组成。不得先按 battle 做 median，也不得按 battle median 再平均。
+选手汇总使用有效单场选手 `finalRating` 的 raw sum 与 count；战队汇总使用每场
+`TeamBattleRating` 的 raw sum 与 count。不得先按 battle 做 median，也不得按 battle median 再平均。
 
-## Mandatory Scope-Risk Checkpoint
+## Research Data Status
 
-| 类别 | 结果 | 本次结论 |
-|---|---|---|
-| REQUIRED | 完成 | V6 pooled player/team sum-count、DTO/API 精度、前端展示/排序、Excel、测试与 Docker 文档构建链 |
-| OPTIONAL | 完成 | 三语产品版本历史与 canonical 算法说明同步 |
-| OUT OF SCOPE | 保持不变 | V4.1 单场公式、解析/去重/冲突顺序、team identity、数据库、控制器、worker、对手/赛程/地图因素、V4.1 redesign |
-| BLOCKER | 0 | 未发现超出上述范围的行为、契约或构建阻塞 |
-
-**Checkpoint decision: GO.** Final scope audit confirms that the implementation and this repair remain limited to the requirements above; no unrelated cleanup or League Rating redesign was introduced.
+本季 2026 锦标赛的 34 个 arena 仅是研究、校准与 sanity 检查语料，不是永久 Golden Dataset，
+也不是永久 regression 或 compatibility fixture。长期回归只保留 V6 公式、property 与 invariant 测试。
 
 ## 公式
 
-设 `S` 为有效单场 finalRating 之和，`n` 为有效评分场次，anchor `A = 475`：
+对选手，设 `S` 为有效单场选手 V4.1 Final Rating 之和，`N` 为有效评分场次。
+对战队，设每场 `TeamBattleRating = 7 名选手 Final Rating 的算术平均值`，`T` 为这些每场
+TeamBattleRating 之和，`N` 为有效评分场次，anchor `A = 475`：
 
 ```text
-Player Rating = (S + 5 × A) / (n + 5) = (S + 2375) / (n + 5)
-Team Rating   = (S + 1 × A) / (n + 1) = (S + 475) / (n + 1)
-Observed Mean = S / n
+Player V6 Rating = (S + 5 × A) / (N + 5) = (S + 2375) / (N + 5)
+Team V6 Rating   = (T + 1 × A) / (N + 1) = (T + 475) / (N + 1)
+Player Observed Mean = S / N
+Team Observed Mean   = T / N
 ```
 
-`n = 0` 时没有 Rating、Observed Mean 或维度均值，API 使用 `null`/不可用语义。所有输出保持未取整的有限值并限制在 `[0,1000]`。
+`N = 0` 时没有 Rating、Observed Mean 或维度均值，API 使用 `null`/不可用语义。所有输出保持未取整的有限值并限制在 `[0,1000]`。
 
 选手 prior weight 为 5，战队 prior weight 为 1；两者都对称地把先验 475 作为额外观测。不同上传顺序、chunk 边界、重复输入顺序不得改变结果。
 
@@ -37,7 +35,9 @@ Observed Mean = S / n
 
 七个 League 维度各自按有效评分场次累加 raw dimension score，再除以同一有效场次数。真实 0 必须进入分子，不能因为是 0 而丢弃。维度均值只用于展示和 Radar，不参与批次 Rating、MVP 或排名。
 
-战队 Rating 使用该战队有效单场队员 finalRating 的 pooled sum/count 和 team prior。战队 identity 仍沿用既有 `teamKey` 规则：多数军团标签或用户确认名称可合并；无法确定时保留 `arenaId:team`。
+战队 V6 Rating 使用该战队每场 `TeamBattleRating` 的 pooled sum/count 和 team prior；每场
+`TeamBattleRating` 是该场 7 名队员 Final Rating 的算术平均值。战队 identity 仍沿用既有 `teamKey`
+规则：多数军团标签或用户确认名称可合并；无法确定时保留 `arenaId:team`。
 
 ## API、UI 与导出
 

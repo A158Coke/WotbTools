@@ -2,7 +2,7 @@
 
 > 本文仅保留历史算法记录；当前生产批次语义已由 [League Rating V6](WotBTools_League_Rating_V6.md) 取代。
 
-> 状态：Implementation Candidate  
+> 状态：Historical / Superseded by V6
 > 日期：2026-08-26  
 > 项目：A158Coke/WotbTools  
 > 适用范围：训练房（Training）与联赛 / 锦标赛（Tournament）回放  
@@ -618,7 +618,7 @@ if finals ...
 
 ---
 
-## 9. 真实数据研究基础
+## 9. 2026 赛季研究 / 校准数据基础
 
 V5 Batch Evidence 调整基于用户提供的冠军赛回放研究：
 
@@ -628,9 +628,9 @@ V5 Batch Evidence 调整基于用户提供的冠军赛回放研究：
 - 476 player-game
 - 主要战队：CHRD / TOP / KSR / G7
 
-原 V4.1 研究已明确：
+这批 2026 赛季数据是研究、校准与 sanity 检查语料，不是永久 Golden Dataset 或兼容性回归契约：
 
-- Golden Dataset 用于 offline calibration / regression；
+- 仅用于 offline research / calibration / sanity checks；
 - 不允许把这届比赛战队名、玩家名、车辆 meta 写入生产评分；
 - 新数据应做 out-of-sample validation，而不是反复调当前数据到完美。
 
