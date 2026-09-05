@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Production observability
+- **AI Review 生产事故可追踪**：Team validator 冲突分类提升到 INFO 安全结构化日志；AI Review/Incident Explorer 看板增加 parse、validation、conflict、retry、upstream 与最终失败生命周期查询，SSE failure 复用 correlationId 作为 canonical error id，并由前端展示可复制的诊断 ID。Prometheus 仍只使用低基数统计，不记录 prompt、原始模型输出或用户级 token usage；部署后的真实数据验收保留为手工清单。
+
 ### League Rating V6 批次汇总
 - 批次选手与战队 Rating 统一改为基于有效单场 `finalRating` 的 pooled raw sum/count，并分别使用 5 与 1 的对称 prior，anchor 为 475。
 - 选手与战队汇总改用 `rating`、`observedMean`、`dimensionMeans` 和 `ratedBattles`；median 不再驱动主 Rating、维度、排名或 MVP。

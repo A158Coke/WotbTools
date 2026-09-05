@@ -31,6 +31,11 @@ function optionalString(record: Record<string, unknown>, key: string): string | 
   return record[key] === null ? null : typeof record[key] === 'string' ? record[key] : undefined
 }
 
+function nullableString(record: Record<string, unknown>, key: string): string | null {
+  const value = optionalString(record, key)
+  return value === undefined ? null : value
+}
+
 function resultFromPayload(payload: unknown): AiReviewResult | null {
   if (!isRecord(payload) || typeof payload.analysis !== 'string' || !payload.analysis.trim()) {
     return null
@@ -75,6 +80,8 @@ export function isAiReviewDoneEvent(value: unknown): value is AiReviewDoneEvent 
 /** Runtime guard for stable error-code events; unknown future uppercase codes remain valid. */
 export function isAiReviewErrorEvent(value: unknown): value is AiReviewErrorEvent {
   return isRecord(value) && value.type === 'error' && isContractCode(value.code)
+    && (value.id === null || typeof value.id === 'string')
+    && (value.errorMsg === null || typeof value.errorMsg === 'string')
 }
 
 /** Runtime guard for the discriminated event union. */
@@ -107,9 +114,19 @@ export function parseAiReviewEvent(eventName: unknown, payload: unknown): AiRevi
     return result === null ? null : { type: 'done', result }
   }
 
-  return isRecord(payload) && isContractCode(payload.code)
-    ? { type: 'error', code: payload.code as ServerErrorCode }
-    : null
+  if (!isRecord(payload)) return null
+  // `code` remains a read-only compatibility alias for older deployed backends;
+  // the canonical SSE error contract uses errorCode/id/errorMsg.
+  const errorCode = isContractCode(payload.errorCode)
+    ? payload.errorCode
+    : isContractCode(payload.code) ? payload.code : null
+  if (!errorCode) return null
+  return {
+    type: 'error',
+    id: nullableString(payload, 'id'),
+    code: errorCode as ServerErrorCode,
+    errorMsg: nullableString(payload, 'errorMsg'),
+  }
 }
 
 /** Decode the JSON data field and parse a single event. */
