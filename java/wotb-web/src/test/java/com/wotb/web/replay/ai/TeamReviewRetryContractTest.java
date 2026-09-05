@@ -6,6 +6,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
@@ -66,6 +67,13 @@ class TeamReviewRetryContractTest {
             + "\"claims\":[{\"text\":\"WrongPlayer 在 10 秒阵亡。\","
             + "\"evidenceIds\":[\"E101\"],\"claimType\":\"DEATH\","
             + "\"timeSec\":10,\"subject\":\"WrongPlayer\"}]}";
+    /** V5 冲突：只引用最后已知位置，却在正文写成当前所在位置。 */
+    private static final String LAST_KNOWN_BAD_ENVELOPE = "{"
+            + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+            + "\"reviewMarkdown\":\"30秒时 SPHT 此时在这里。\",\"claims\":[]}";
+    private static final String LAST_KNOWN_GOOD_ENVELOPE = "{"
+            + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+            + "\"reviewMarkdown\":\"30秒时 SPHT 最后已知在这里，之后位置未知。\",\"claims\":[]}";
 
     @Test
     void passOnFirstDraftUsesSingleCall2Request() {
@@ -133,6 +141,24 @@ class TeamReviewRetryContractTest {
         assertTrue(call2.get(3).userPrompt().contains("本次重写阶段：SAFE"));
         assertTrue(call2.get(3).userPrompt().contains("不要补充新事实，不要发明替代事实"));
         assertTrue(call2.get(3).userPrompt().contains("尽量保留有证据支撑的 tactical judgment"));
+    }
+
+    @Test
+    void lastKnownRecoveryReportsV5AndReturnsValidatedDowngrade() {
+        final RetryGateway gateway = new RetryGateway(
+                List.of(LAST_KNOWN_BAD_ENVELOPE, LAST_KNOWN_GOOD_ENVELOPE));
+        final TeamReplayAnalysisService service = service(gateway);
+
+        final TeamAnalyzeResult result = service.analyzeTeamGroups(
+                lastKnownGroups(), AllowedLanguage.ZH);
+
+        assertEquals("30秒时 SPHT 最后已知在这里，之后位置未知。", result.analysis().analysis());
+        final List<AiChatRequest> call2 = gateway.requests().stream()
+                .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode())).toList();
+        assertEquals(2, call2.size(), "V5 初稿失败后应由 targeted rewrite 返回已验证的降级表达");
+        assertTrue(call2.get(1).userPrompt().contains("本次重写阶段：TARGETED"));
+        assertTrue(call2.get(1).userPrompt().contains("[V5 KNOWLEDGE_MISMATCH]"));
+        assertTrue(call2.get(1).userPrompt().contains("不要把 LAST_KNOWN 写成 CURRENT"));
     }
 
     @Test
@@ -231,6 +257,21 @@ class TeamReviewRetryContractTest {
         dead.settlementLifeTimeSec = 10.0;
         final List<ReplayPerspectiveGroup> groups = new BatchAnalyzer().analyze(List.of(result)).groups();
         return service.buildSingleTeamContext(groups.getFirst());
+    }
+
+    private static List<ReplayPerspectiveGroup> lastKnownGroups() {
+        final ReplayReconstruction base = validRecon();
+        final List<ReplayEvent> events = new ArrayList<>(base.events());
+        events.add(new EntityRemovedEvent(13,
+                new ReplayTimestamp(START_RAW + 8f, null), 4,
+                DecodeConfidence.EXACT, 3));
+        final ReplayReconstruction recon = new ReplayReconstruction(
+                base.metadata(), base.streamHeader(), base.battleDurationSec(),
+                base.battleStartRawClockSec(), base.participants(), events,
+                base.checkpoints(), base.finalState(), base.coverage(), base.diagnostics());
+        final ReplayProcessingResult result = teamResult(
+                "retry-last-known.wotbreplay", "arena-retry-last-known", "Ally", 1001L, 1, recon);
+        return new BatchAnalyzer().analyze(List.of(result)).groups();
     }
 
     private static ReplayProcessingResult teamResult(final String fileName,
