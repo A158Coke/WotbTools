@@ -3,8 +3,10 @@ import {
   RELIEF_EDGE_FADE_FRACTION,
   RELIEF_PADDING,
   RELIEF_Z_EXAGGERATION,
+  VEHICLE_ATTITUDE_MAX_PITCH_DEG,
   createTerrainReliefModel,
   projectTerrainPoint,
+  sampleTerrainAttitude,
   sampleTerrainHeight,
   terrainReliefEdgeWeight,
   unprojectTerrainPoint,
@@ -117,5 +119,83 @@ describe('footprint-preserving terrain relief projection', () => {
     expect(visualReliefZ(m, 20)).toBe(20)
     expect(visualReliefZ(m, 10)).toBe(0)
     expect(visualReliefZ(m, 30)).toBe(40)
+  })
+})
+
+describe('vehicle terrain attitude', () => {
+  function gradientModel(axis, step = 0.5) {
+    const size = 6
+    const heights = []
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        const gradient = axis === 'y' ? row : axis === 'x' ? col : row + col
+        heights.push(gradient * step)
+      }
+    }
+    return createTerrainReliefModel({
+      mapCode: 'attitude',
+      worldBounds: { xMin: -12, yMin: -12, xMax: 12, yMax: 12 },
+      heightRangeMeters: { min: 0, max: 100 },
+      samplesPerAxis: size,
+      heights: new Float32Array(heights),
+      zExaggeration: 1,
+      padding: 0,
+    })
+  }
+
+  it('keeps a flat surface level', () => {
+    const flat = createTerrainReliefModel({
+      mapCode: 'flat-attitude',
+      worldBounds: { xMin: -12, yMin: -12, xMax: 12, yMax: 12 },
+      heightRangeMeters: { min: 10, max: 10 },
+      samplesPerAxis: 3,
+      heights: new Float32Array(9).fill(10),
+      zExaggeration: 1,
+      padding: 0,
+    })
+    const attitude = sampleTerrainAttitude(flat, 0, 0, 37, { length: 8, width: 3.5 })
+    expect(attitude.pitchDeg).toBeCloseTo(0, 8)
+    expect(attitude.rollDeg).toBeCloseTo(0, 8)
+  })
+
+  it('derives positive pitch from an uphill front/rear ground slope', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('y'), 0, 0, 0, { length: 8, width: 3.5 })
+    expect(attitude.pitchDeg).toBeGreaterThan(5)
+    expect(Math.abs(attitude.rollDeg)).toBeLessThan(0.01)
+  })
+
+  it('derives roll in vehicle-local axes without inventing pitch', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('x'), 0, 0, 0, { length: 8, width: 3.5 })
+    expect(attitude.rollDeg).toBeGreaterThan(5)
+    expect(Math.abs(attitude.pitchDeg)).toBeLessThan(0.01)
+  })
+
+  it('rotates an east-facing X slope into vehicle-local pitch at yaw 90°', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('x'), 0, 0, 90, { length: 8, width: 3.5 })
+    expect(attitude.pitchDeg).toBeGreaterThan(5)
+    expect(Math.abs(attitude.rollDeg)).toBeLessThan(0.01)
+  })
+
+  it('rotates a north/south slope into vehicle-local roll at yaw 90°', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('y'), 0, 0, 90, { length: 8, width: 3.5 })
+    expect(attitude.rollDeg).toBeLessThan(-5)
+    expect(Math.abs(attitude.pitchDeg)).toBeLessThan(0.01)
+  })
+
+  it('flips pitch sign when the hull reverses against the same slope', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('y'), 0, 0, 180, { length: 8, width: 3.5 })
+    expect(attitude.pitchDeg).toBeLessThan(-5)
+    expect(Math.abs(attitude.rollDeg)).toBeLessThan(0.01)
+  })
+
+  it('keeps a 45° diagonal uphill aligned to pitch without spurious roll', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('diag'), 0, 0, 45, { length: 8, width: 3.5 })
+    expect(attitude.pitchDeg).toBeGreaterThan(5)
+    expect(Math.abs(attitude.rollDeg)).toBeLessThan(0.01)
+  })
+
+  it('clamps extreme terrain to the presentation safety limit', () => {
+    const attitude = sampleTerrainAttitude(gradientModel('y', 20), 0, 0, 0, { length: 8, width: 3.5 })
+    expect(attitude.pitchDeg).toBe(VEHICLE_ATTITUDE_MAX_PITCH_DEG)
   })
 })

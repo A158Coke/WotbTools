@@ -7,7 +7,7 @@ import { mapImages } from '../data/mapImages'
 import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
-import { activeTerrainRelief, projectTerrainPoint, unprojectTerrainPoint } from '../utils/terrainReliefProjection.js'
+import { activeTerrainRelief, projectTerrainPoint, sampleTerrainAttitude, unprojectTerrainPoint } from '../utils/terrainReliefProjection.js'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
@@ -1484,24 +1484,37 @@ const baseVehicleStates = computed(() => {
         mapHeightPx: mapHeight(),
         mobile,
       })
-      return projectVehicleState({
-      vehicle,
-      track,
-      time: currentTime.value,
-      recorderAccountId: pbOverview.value.recorderAccountId,
-      model,
-      markerSize,
-      // Unknown perspective keeps neutral CSS state; enemy assets are only a
-      // visual fallback because the asset pack has no neutral hull/turret.
-      hullImage: track.friendly === true ? friendlyHull : enemyHull,
-      turretImage: track.friendly === true ? friendlyTurret : enemyTurret,
-      markerLeft: markerLeft,
-      markerTop: markerTop,
-      markerTransform: markerTransform.value,
-      overlayInverseScale: overlayInverseScale.value,
-      overlayInverse: overlayInverse.value,
-      translate: t,
+      const state = projectVehicleState({
+        vehicle,
+        track,
+        time: currentTime.value,
+        recorderAccountId: pbOverview.value.recorderAccountId,
+        model,
+        markerSize,
+        // Unknown perspective keeps neutral CSS state; enemy assets are only a
+        // visual fallback because the asset pack has no neutral hull/turret.
+        hullImage: track.friendly === true ? friendlyHull : enemyHull,
+        turretImage: track.friendly === true ? friendlyTurret : enemyTurret,
+        markerLeft: markerLeft,
+        markerTop: markerTop,
+        markerTransform: markerTransform.value,
+        overlayInverseScale: overlayInverseScale.value,
+        overlayInverse: overlayInverse.value,
+        translate: t,
       })
+      if (!state) return null
+      const terrainModel = reliefModelForPlayback()
+      const hullYawDeg = state.direction?.hullYawDeg
+      const terrainAttitude = terrainModel && Number.isFinite(hullYawDeg)
+        ? sampleTerrainAttitude(
+          terrainModel,
+          state.pos.x,
+          state.pos.y,
+          hullYawDeg,
+          markerSize?.footprint,
+        )
+        : null
+      return { ...state, terrainAttitude }
     })
     .filter(Boolean)
 })
