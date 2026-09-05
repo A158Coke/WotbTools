@@ -1316,6 +1316,16 @@
         "analyze_multi_btn": "AI Multi-battle ({n})",
         "cancel_btn": "Cancel Analysis",
         "analysis_title_player": "AI Review",
+        "team": {
+            "verdict": "Team Verdict",
+            "diagnosis": "Primary Diagnosis",
+            "episodes": "Key Episodes",
+            "training": "Training Suggestions",
+            "reviewFocus": "Review Focus",
+            "highContributors": "High Contributors",
+            "unknownPlayer": "Unknown player",
+            "unknownTank": "Unknown tank"
+        },
         "capability_limited": "AI review is based on a limited timeline (some time info missing); it is degraded to a coarser evidence level and does not guess unobserved facts",
         "playback": {
             "title": "Battle Playback",

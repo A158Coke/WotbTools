@@ -22,6 +22,7 @@ import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
+import com.wotb.web.replay.dto.AnalyzeResponse;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -100,6 +101,20 @@ class TeamDisplayLabelProductionIntegrationTest {
                 prior(), 1, "CHRD", AllowedLanguage.ZH, "team_map");
         assertTrue(section.contains("我方（CHRD）画像"), section);
         assertTrue(section.contains("对方画像"), section);
+    }
+
+    @Test
+    void playerKeysMapToAuthoritativeDisplayIdentity() {
+        final Battle battle = battleWithClans(null, null);
+        battle.players.getFirst().nickname = "Alice";
+        battle.recorder = "Alice";
+
+        final List<AnalyzeResponse.TeamPlayer> identities =
+                TeamRosterResolver.playerIdentities(contextOf(battle));
+
+        assertEquals("P1", identities.getFirst().playerKey());
+        assertEquals("Alice", identities.getFirst().displayName());
+        assertEquals("Kranvagn", identities.getFirst().tankName());
     }
 
     // ---- fixture ----

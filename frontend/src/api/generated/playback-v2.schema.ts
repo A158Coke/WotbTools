@@ -603,6 +603,312 @@ export default {
         }
       }
     },
+    "AiReviewAnalyzeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processingJobId",
+        "sourceId",
+        "lang",
+        "correlationId"
+      ],
+      "properties": {
+        "processingJobId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceId": {
+          "type": "string",
+          "pattern": "^r[0-9]+$"
+        },
+        "lang": {
+          "type": "string",
+          "enum": [
+            "zh",
+            "en",
+            "ru"
+          ]
+        },
+        "correlationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "TeamAiReviewSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verdict",
+        "primaryDiagnosis"
+      ],
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "primaryDiagnosis": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        }
+      }
+    },
+    "TeamAiReviewEpisode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "startSec",
+        "endSec",
+        "title",
+        "analysis",
+        "playerKeys"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "startSec": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "endSec": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "analysis": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        },
+        "playerKeys": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      }
+    },
+    "TeamAiTrainingSuggestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "content",
+        "episodeId"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 6000
+        },
+        "episodeId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        }
+      }
+    },
+    "TeamAiReviewFocus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "playerKey",
+        "episodeId",
+        "reason"
+      ],
+      "properties": {
+        "playerKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "episodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      }
+    },
+    "TeamAiHighContributor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "playerKey",
+        "episodeId",
+        "reason"
+      ],
+      "properties": {
+        "playerKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "episodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      }
+    },
+    "TeamAiPlayerIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "playerKey",
+        "displayName",
+        "tankName"
+      ],
+      "properties": {
+        "playerKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "tankName": {
+          "type": "string",
+          "maxLength": 240
+        }
+      }
+    },
+    "TeamAiReviewResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "episodes",
+        "trainingSuggestions",
+        "reviewFocus",
+        "highContributors"
+      ],
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/TeamAiReviewSummary"
+        },
+        "episodes": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/TeamAiReviewEpisode"
+          }
+        },
+        "trainingSuggestions": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/TeamAiTrainingSuggestion"
+          }
+        },
+        "reviewFocus": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/TeamAiReviewFocus"
+          }
+        },
+        "highContributors": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/TeamAiHighContributor"
+          }
+        }
+      }
+    },
+    "AiReviewDonePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "analysis",
+        "preBattleSection",
+        "capability",
+        "teamReview",
+        "teamPlayers"
+      ],
+      "properties": {
+        "analysis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "preBattleSection": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "capability": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "AVAILABLE",
+            "AVAILABLE_WITH_LIMITED_TIMELINE",
+            "UNAVAILABLE",
+            null
+          ]
+        },
+        "teamReview": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TeamAiReviewResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "teamPlayers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TeamAiPlayerIdentity"
+          }
+        }
+      }
+    },
     "PlaybackCapability": {
       "type": "string",
       "enum": [
