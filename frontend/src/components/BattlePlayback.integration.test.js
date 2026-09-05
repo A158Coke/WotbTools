@@ -892,6 +892,32 @@ describe('PR4 §33 B3 — collision UX：标签与 HP 永不因碰撞隐藏', ()
       expect(m.find('[data-test="pb-hp-num"]').isVisible()).toBe(true)
     }
   })
+
+  it('layout-scaled camera keeps collision offsets in screen pixels at 1× and 4×', async () => {
+    stubRaf()
+    const wrapper = mountWithPlayer(overlapOverview(), 12)
+    await flushPromises()
+
+    const offsetOf = (accountId) => {
+      const style = markerOf(wrapper, accountId).attributes('style') || ''
+      const left = style.match(/left: calc\([^+]+ \+ (-?[\d.]+)px\)/)
+      const top = style.match(/top: calc\([^+]+ \+ (-?[\d.]+)px\)/)
+      return { x: Number(left?.[1]), y: Number(top?.[1]) }
+    }
+    const magnitude = (offset) => Math.hypot(offset.x, offset.y)
+    const fitOffset = offsetOf(2001)
+    const fitState = wrapper.vm.vehicleStates.find((state) => state.vehicle.accountId === 2001)
+    expect(fitState.presentationOffset).toEqual(fitOffset)
+
+    for (let i = 0; i < 14; i++) {
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 400, clientY: 300 })
+    }
+    await flushPromises()
+    const zoomOffset = offsetOf(2001)
+    const zoomState = wrapper.vm.vehicleStates.find((state) => state.vehicle.accountId === 2001)
+    expect(zoomState.presentationOffset).toEqual(zoomOffset)
+    expect(magnitude(zoomOffset)).toBeGreaterThan(0)
+  })
 })
 describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
   const origReqFs = typeof Element.prototype !== 'undefined' ? Element.prototype.requestFullscreen : undefined
@@ -1164,8 +1190,8 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
 
     const scaleOf = () => {
       const st = wrapper.find('[data-test="pb-viewport"]').attributes('style') || ''
-      const m = st.match(/scale\(([\d.]+)\)/)
-      return m ? parseFloat(m[1]) : NaN
+      const m = st.match(/width:\s*([\d.]+)%/)
+      return m ? parseFloat(m[1]) / 100 : NaN
     }
 
     // 初始 page fit：地图近方形(766×769)，stage 高 900、map 宽 1200 → scale < 1（contain 居中）
@@ -1233,8 +1259,8 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     })
     const scaleOf = () => {
       const st = wrapper.find('[data-test="pb-viewport"]').attributes('style') || ''
-      const m = st.match(/scale\(([\d.]+)\)/)
-      return m ? parseFloat(m[1]) : NaN
+      const m = st.match(/width:\s*([\d.]+)%/)
+      return m ? parseFloat(m[1]) / 100 : NaN
     }
 
     // --- normal mobile：controls 为 transient overlay（默认 opacity:0）。即使 content 高≠0，
@@ -1395,8 +1421,8 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
 
     const scaleOf = () => {
       const st = wrapper.find('[data-test="pb-viewport"]').attributes('style') || ''
-      const m = st.match(/scale\(([\d.]+)\)/)
-      return m ? parseFloat(m[1]) : NaN
+      const m = st.match(/width:\s*([\d.]+)%/)
+      return m ? parseFloat(m[1]) / 100 : NaN
     }
 
     // 初始 fit：map 宽 1200、近方形(766×769)、stage 高 900 → fitScale < 1

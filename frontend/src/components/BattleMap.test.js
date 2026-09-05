@@ -5,6 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import BattleMap from './BattleMap.vue'
 import { makeOverview, makePlaybackV2, mountPlayback, stubRaf } from './playbackTestHarness.js'
+import { activeTerrainRelief, createTerrainReliefModel } from '../utils/terrainReliefProjection.js'
 
 const markerStub = defineComponent({
   props: ['marker', 'selected', 'label', 'hp', 'hpVisible', 't', 'hpGhost', 'hpFlash', 'hpNoTransition'],
@@ -13,6 +14,7 @@ const markerStub = defineComponent({
     return () => h('button', {
       'data-test': `marker-${props.marker.vehicle.accountId}`,
       'data-selected': String(props.selected),
+      style: props.marker?.markerStyle || {},
       onClick: event => emit('select', event),
     })
   },
@@ -23,6 +25,8 @@ const mapView = {
   H: 100,
   toX: value => value,
   toY: value => 100 - value,
+  fromX: value => value,
+  fromY: value => 100 - value,
 }
 
 const baseProps = () => ({
@@ -63,15 +67,21 @@ function mountMap(overrides = {}) {
 }
 
 afterEach(() => {
+  activeTerrainRelief.value = null
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   vi.useRealTimers()
 })
 
 describe('BattleMap', () => {
-  it('renders map layers, annotations, and selected marker state', () => {
+  it('renders the HD raster as a standalone layer and keeps SVG overlay-only', () => {
     const wrapper = mountMap()
 
-    expect(wrapper.find('image').attributes('href')).toBe('/map.png')
+    expect(wrapper.find('[data-test="pb-basemap"]').element.tagName).toBe('IMG')
+    expect(wrapper.find('[data-test="pb-basemap"]').attributes('src')).toBe('/map.png')
+    expect(wrapper.find('.pb-svg image').exists()).toBe(false)
+    expect(wrapper.find('.pb-basemap').element.parentElement).toBe(wrapper.find('.pb-svg').element.parentElement)
+    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('aspect-ratio: 100 / 100')
     expect(wrapper.findAll('.pb-base-circle')).toHaveLength(2)
     expect(wrapper.find('[data-test="pb-bases"]').text()).toContain('A')
     expect(wrapper.findAll('.pb-base-friendly_controlled')).toHaveLength(1)
@@ -81,6 +91,110 @@ describe('BattleMap', () => {
     expect(wrapper.find('[data-test="pb-annotations"]').text()).toContain('Callout')
     expect(wrapper.find('[data-test="marker-1"]').attributes('data-selected')).toBe('false')
     expect(wrapper.find('[data-test="marker-2"]').attributes('data-selected')).toBe('true')
+  })
+
+  it('keeps relief collision offsets in screen pixels with the layout-scaled camera', () => {
+    activeTerrainRelief.value = createTerrainReliefModel({
+      mapCode: 'test',
+      worldBounds: { xMin: -100, xMax: 100, yMin: -100, yMax: 100 },
+      heightRangeMeters: { min: 0, max: 1 },
+      samplesPerAxis: 2,
+      heights: new Float32Array([0, 0, 0, 0]),
+    })
+    const wrapper = mountMap({
+      viewScale: 4,
+      pbOverview: { ...baseProps().pbOverview, mapCode: 'test' },
+      vehicleStates: [{
+        vehicle: { accountId: 1, team: 1 },
+        pos: { x: 0, y: 0 },
+        markerStyle: { left: '50%', top: '50%' },
+        presentationOffset: { x: 20, y: -16 },
+      }],
+    })
+
+    const style = wrapper.find('[data-test="marker-1"]').attributes('style')
+    expect(style).toContain('+ 20px')
+    expect(style).toContain('+ -16px')
+    expect(style).not.toContain('+ 5px')
+    expect(style).not.toContain('+ -4px')
+  })
+
+  it('draws a leader line from an offset marker back to its canonical point', () => {
+    const wrapper = mountMap({
+      viewScale: 4,
+      vehicleStates: [{
+        vehicle: { accountId: 1, team: 1 },
+        pos: { x: 25, y: 30 },
+        markerStyle: { left: '25%', top: '70%' },
+        presentationOffset: { x: 20, y: -16 },
+      }],
+    })
+
+    const line = wrapper.find('.pb-marker-leader')
+    expect(line.exists()).toBe(true)
+    expect(line.attributes('x1')).toBe('25')
+    expect(line.attributes('y1')).toBe('70')
+    expect(line.attributes('x2')).toBe('45')
+    expect(line.attributes('y2')).toBe('54')
+    expect(line.attributes('stroke-width')).toBe('1.25')
+  })
+
+  it('converts screen offsets with the actual non-1:1 rendered SVG frame', async () => {
+    const nonSquareMapView = {
+      ...mapView,
+      W: 769,
+      H: 763,
+      toY: value => 763 - value,
+    }
+    const state = {
+      vehicle: { accountId: 1, team: 1 },
+      pos: { x: 384.5, y: 381.5 },
+      presentationOffset: { x: 20, y: -16 },
+    }
+    const wrapper = mountMap({ mapView: nonSquareMapView, viewScale: 4, vehicleStates: [state] })
+    const svg = wrapper.find('.pb-svg').element
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
+      width: 1560,
+      height: 1548,
+      top: 0,
+      left: 0,
+      right: 1560,
+      bottom: 1548,
+    })
+    await wrapper.setProps({ vehicleStates: [{ ...state }] })
+
+    const line = wrapper.find('.pb-marker-leader')
+    expect(Number(line.attributes('x2'))).toBeCloseTo(394.358974, 5)
+    expect(Number(line.attributes('y2'))).toBeCloseTo(373.613695, 5)
+  })
+
+  it('does not draw leader lines for canonical marker positions', () => {
+    const wrapper = mountMap({
+      vehicleStates: [{
+        vehicle: { accountId: 1, team: 1 },
+        pos: { x: 25, y: 30 },
+        presentationOffset: { x: 0, y: 0 },
+      }],
+    })
+
+    expect(wrapper.findAll('.pb-marker-leader')).toHaveLength(0)
+  })
+
+  it('skips leader lines when an offset marker has no finite canonical position', () => {
+    expect(() => mountMap({
+      vehicleStates: [{
+        vehicle: { accountId: 1, team: 1 },
+        presentationOffset: { x: 20, y: -16 },
+      }],
+    })).not.toThrow()
+    const wrapper = mountMap({
+      vehicleStates: [{
+        vehicle: { accountId: 1, team: 1 },
+        pos: { x: Number.NaN, y: 30 },
+        presentationOffset: { x: 20, y: -16 },
+      }],
+    })
+    expect(wrapper.findAll('.pb-marker-leader')).toHaveLength(0)
   })
 
   it('forwards map gestures and marker selection to the orchestrator', async () => {
@@ -139,15 +253,15 @@ describe('map zoom and pan', () => {
 
   it('wheel zooms in/out anchored at the cursor and clamps to 1x-4x', async () => {
     const wrapper = await zoomedWrapper()
-    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('scale(1.2)')
+    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('width: 120%')
     for (let i = 0; i < 12; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
     }
-    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('scale(4)')
+    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('width: 400%')
     for (let i = 0; i < 20; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: 120, clientX: 0, clientY: 0 })
     }
-    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('scale(1)')
+    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('width: 100%')
   })
 
   it('dragging pans the viewport and suppresses the follow-up click (no accidental selection)', async () => {
@@ -173,7 +287,7 @@ describe('map zoom and pan', () => {
     await viewport.trigger('pointerdown', { pointerId: 1, clientX: 0, clientY: 0 })
     await viewport.trigger('pointerdown', { pointerId: 2, clientX: 100, clientY: 0 })
     await viewport.trigger('pointermove', { pointerId: 2, clientX: 200, clientY: 0 })
-    expect(viewport.attributes('style')).toContain('scale(2)')
+    expect(viewport.attributes('style')).toContain('width: 200%')
     await viewport.trigger('pointerup', { pointerId: 1 })
     await viewport.trigger('pointerup', { pointerId: 2 })
   })
@@ -202,7 +316,8 @@ describe('map zoom and pan', () => {
     await viewport.trigger('pointerdown', { pointerId: 2, clientX: 210, clientY: 60 })
     await viewport.trigger('pointermove', { pointerId: 2, clientX: 310, clientY: 60 })
     // 锚点局部 (60,10)，dist 100→200（ratio 2）：t'=anchor−anchor·2=(−60,−10)；中点位移 (50,0)
-    expect(viewport.attributes('style')).toContain('translate(-10px, -10px) scale(2)')
+    expect(viewport.attributes('style')).toContain('translate(-10px, -10px)')
+    expect(viewport.attributes('style')).toContain('width: 200%')
     await viewport.trigger('pointerup', { pointerId: 1 })
     await viewport.trigger('pointerup', { pointerId: 2 })
   })
@@ -214,12 +329,16 @@ describe('map zoom and pan', () => {
     wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
     await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 110, clientY: 60 })
     // 屏幕锚点 (10,10)：t' = 10 − 10×1.2 = −2
-    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('translate(-2px, -2px) scale(1.2)')
+    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('translate(-2px, -2px)')
+    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('width: 120%')
   })
 
   function parseTransform(style) {
-    const m = style.match(/translate\(([-\d.]+)px, ([-\d.]+)px\) scale\(([-\d.]+)\)/)
-    return m ? { tx: Number(m[1]), ty: Number(m[2]), scale: Number(m[3]) } : null
+    const translate = style.match(/translate\(([-\d.]+)px, ([-\d.]+)px\)/)
+    const width = style.match(/width: ([-\d.]+)%/)
+    return translate && width
+      ? { tx: Number(translate[1]), ty: Number(translate[2]), scale: Number(width[1]) / 100 }
+      : null
   }
 
   it('wheel zoom keeps the cursor content point fixed after prior zoom and pan', async () => {
@@ -316,14 +435,14 @@ describe('map zoom and pan', () => {
     const markerStyleBefore = wrapper.find('[data-test="pb-marker-1001"]').attributes('style')
     await wrapper.find('[data-test="pb-reset"]').trigger('click')
     const style = wrapper.find('[data-test="pb-viewport"]').attributes('style')
-    expect(style).toContain('scale(1)')
+    expect(style).toContain('width: 100%')
     expect(style).toContain('translate(0px, 0px)')
-    // 图层对齐契约：transform 只在 viewport 单层；标记 left/top（%）不随缩放变化，
-    // 标记本体不再反缩放（随地图缩放），svg 自身无 style
+    // 图层对齐契约：camera 只在 viewport 的 translate/width layout 上；标记 left/top（%）
+    // 不随缩放变化，marker 保留自身 scale，SVG 自身无 style。
     const markerAfter = wrapper.find('[data-test="pb-marker-1001"]').attributes('style')
     const leftTop = (s) => s.match(/left: ([^;]+); top: ([^;]+);/).slice(1, 3)
     expect(leftTop(markerAfter)).toEqual(leftTop(markerStyleBefore))
-    expect(markerAfter).not.toContain('scale(')
+    expect(markerAfter).toContain('scale(1)')
     expect(wrapper.find('.pb-svg').attributes('style')).toBeUndefined()
   })
 })
@@ -381,7 +500,7 @@ describe('vehicle marker presentation', () => {
     await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120 })
     await flushPromises()
     const marker = wrapper.find('[data-test="pb-marker-1001"]')
-    expect(marker.attributes('style')).not.toContain('scale(')
+    expect(marker.attributes('style')).toContain('scale(1.2)')
     expect(marker.find('.pb-labels').attributes('style')).toContain('scale(0.833')
   })
 
@@ -411,8 +530,8 @@ describe('vehicle-aware vehicle markers', () => {
   }
 
   function viewportScale(wrapper) {
-    const m = wrapper.find('[data-test="pb-viewport"]').attributes('style').match(/scale\(([-\d.]+)\)/)
-    return Number(m[1])
+    const m = wrapper.find('[data-test="pb-viewport"]').attributes('style').match(/width: ([-\d.]+)%/)
+    return Number(m[1]) / 100
   }
 
   it('marker scales with the map (no counter-scale) while the name overlay counter-scales to stay constant', async () => {
@@ -420,14 +539,14 @@ describe('vehicle-aware vehicle markers', () => {
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
     const marker = wrapper.find('[data-test="pb-marker-1001"]')
-    // 1×：标记本体无反缩放
-    expect(parseMarkerScale(marker.attributes('style'))).toBeNull()
-    // 2× → 4×（wheel）：标记仍无反缩放（随 viewport 同比放大），名称叠加层按 1/view.scale 反缩放
+    // 1×：标记自身保持 1×
+    expect(parseMarkerScale(marker.attributes('style'))).toBe(1)
+    // 2× → 4×（wheel）：camera content 改为 layout 放大，marker 保留自身同比缩放，名称按 1/view.scale 反缩放
     for (let i = 0; i < 14; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
     }
     expect(viewportScale(wrapper)).toBe(4)
-    expect(parseMarkerScale(marker.attributes('style'))).toBeNull()
+    expect(parseMarkerScale(marker.attributes('style'))).toBe(4)
     expect(marker.find('.pb-labels').attributes('style')).toContain('scale(0.25)')
   })
 
@@ -570,7 +689,7 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
       expect(label.attributes('style')).toContain('scale(')
     }
     const firstStyle = wrapper.find('.pb-vehicle').attributes('style')
-    expect(firstStyle).not.toContain('scale(') // 标记本体随地图缩放，不再反缩放
+    expect(firstStyle).toContain('scale(1)') // marker 自身保留缩放，避免 layout camera 改变其屏幕尺寸
     for (let i = 0; i < 12; i++) { // 1× → 4×
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
     }
@@ -642,7 +761,7 @@ describe('gesture click suppression and pointer cleanup', () => {
     await viewport.trigger('pointerup', { pointerId: 2 }) // 剩下一根手指
     await viewport.trigger('pointermove', { pointerId: 1, clientX: 50, clientY: 30 })
     const style = viewport.attributes('style')
-    expect(style).toContain('scale(2)')
+    expect(style).toContain('width: 200%')
     expect(style).toContain('translate(50px, 30px)')
     await viewport.trigger('pointerup', { pointerId: 1 })
   })

@@ -418,10 +418,11 @@
 .battle-playback:fullscreen .pb-main .pb-map .pb-viewport {
   width: 100%;
 }
-/* SVG 保持 aspect-preserving（height:auto），避免非等比拉伸。 */
+/* 2D BattleMap 的 raster 与 vector overlay 共享 logical render frame；
+   intrinsic HD square ratio 不得替换 mapView.W/H。 */
 .battle-playback:fullscreen .pb-main .pb-map .pb-svg {
   width: 100%;
-  height: auto;
+  height: 100%;
 }
 
 /* HUD：只覆盖 Map Workspace（col2，从 rail 右侧开始），右侧停在 Right Details 左缘。 */

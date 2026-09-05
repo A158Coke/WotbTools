@@ -2,6 +2,7 @@
 import { computed, ref, useId } from 'vue'
 import VehicleMarker from './VehicleMarker.vue'
 import { activeTerrainRelief, projectTerrainPoint } from '../utils/terrainReliefProjection.js'
+import { screenOffsetToSvgDelta } from '../utils/mapView.js'
 
 defineOptions({ name: 'BattleMap' })
 
@@ -15,7 +16,8 @@ const props = defineProps({
   visibleTrails: { type: Array, default: () => [] },
   tracerColor: { type: Function, required: true },
   viewScale: { type: Number, default: 1 },
-  viewportStyle: { type: String, default: '' },
+  renderedFrame: { type: Object, default: null },
+  viewportStyle: { type: [String, Array], default: '' },
   annotVisible: Boolean,
   renderedAnnotations: { type: Array, default: () => [] },
   annotFontSize: { type: Number, default: 14 },
@@ -120,7 +122,6 @@ function projectedCirclePoints(annotation) {
 
 const presentedVehicleStates = computed(() => {
   if (!reliefModel.value) return props.vehicleStates
-  const scale = props.viewScale || 1
   return props.vehicleStates.map((state) => {
     const point = projectSemantic(state.pos.x, state.pos.y)
     const offset = state.presentationOffset || { x: 0, y: 0 }
@@ -128,10 +129,45 @@ const presentedVehicleStates = computed(() => {
       ...state,
       markerStyle: {
         ...state.markerStyle,
-        left: `calc(${(point.x / props.mapView.W) * 100}% + ${offset.x / scale}px)`,
-        top: `calc(${(point.y / props.mapView.H) * 100}% + ${offset.y / scale}px)`,
+        // Collision offsets are already screen pixels. The camera enlarges the layout box,
+        // so they must not be divided by viewScale before entering CSS positioning.
+        left: `calc(${(point.x / props.mapView.W) * 100}% + ${offset.x}px)`,
+        top: `calc(${(point.y / props.mapView.H) * 100}% + ${offset.y}px)`,
       },
     }
+  })
+})
+
+const markerLeaderStates = computed(() => {
+  // BattlePlayback supplies this from its existing ResizeObserver-backed mapSize
+  // and camera scale. Standalone mounts retain the DOM measurement fallback.
+  const hintedFrame = props.renderedFrame
+  const svgRect = mapEl.value?.querySelector('.pb-svg')?.getBoundingClientRect?.()
+  const hasFrame = (frame) => frame
+    && Number.isFinite(frame.width) && Number.isFinite(frame.height)
+    && frame.width > 0 && frame.height > 0
+  const renderedFrame = hasFrame(hintedFrame)
+    ? hintedFrame
+    : (hasFrame(svgRect) ? svgRect : { width: props.mapView.W, height: props.mapView.H })
+  return presentedVehicleStates.value.flatMap((state) => {
+    const offset = state.presentationOffset
+    if (!offset || !Number.isFinite(offset.x) || !Number.isFinite(offset.y)
+      || (Math.abs(offset.x) <= 1e-9 && Math.abs(offset.y) <= 1e-9)) return []
+    const x = Number(state.pos?.x)
+    const y = Number(state.pos?.y)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return []
+    const canonical = projectSemantic(x, y)
+    if (!Number.isFinite(canonical.x) || !Number.isFinite(canonical.y)) return []
+    const svgOffset = screenOffsetToSvgDelta(offset, props.mapView, renderedFrame)
+    if (!svgOffset) return []
+    return [{
+      key: state.vehicle.accountId,
+      x1: canonical.x,
+      y1: canonical.y,
+      x2: canonical.x + svgOffset.x,
+      y2: canonical.y + svgOffset.y,
+      strokeWidth: 1.25 * props.mapView.W / renderedFrame.width,
+    }]
   })
 })
 
@@ -155,19 +191,20 @@ function fillTop(base) {
 </script>
 
 <template>
-  <div class="pb-map" data-test="pb-map" ref="mapEl" @wheel.prevent="emit('wheel', $event)">
+  <div class="pb-map" data-test="pb-map" ref="mapEl" :style="{ aspectRatio: `${props.mapView.W} / ${props.mapView.H}` }" @wheel.prevent="emit('wheel', $event)">
     <div
       class="pb-viewport"
       data-test="pb-viewport"
-      :style="props.viewportStyle"
+      :data-view-scale="props.viewScale"
+      :style="[props.viewportStyle, { aspectRatio: `${props.mapView.W} / ${props.mapView.H}` }]"
       @pointerdown="emit('pointer-down', $event)"
       @pointermove="emit('pointer-move', $event)"
       @pointerup="emit('pointer-up', $event)"
       @pointercancel="emit('pointer-up', $event)"
       @click.capture="emit('viewport-click', $event)"
     >
+      <img class="pb-basemap" data-test="pb-basemap" :src="props.image.src" alt="" aria-hidden="true" />
       <svg class="pb-svg" :viewBox="`0 0 ${props.mapView.W} ${props.mapView.H}`" role="img">
-        <image :href="props.image.src" :width="props.mapView.W" :height="props.mapView.H" preserveAspectRatio="none" />
         <defs>
           <clipPath v-for="base in props.bases" :key="base.baseId" :id="`${clipPrefix}-${base.baseId}`">
             <rect
@@ -179,6 +216,18 @@ function fillTop(base) {
             />
           </clipPath>
         </defs>
+        <g class="pb-marker-leaders" aria-hidden="true">
+          <line
+            v-for="leader in markerLeaderStates"
+            :key="`marker-leader-${leader.key}`"
+            class="pb-marker-leader"
+            :x1="leader.x1"
+            :y1="leader.y1"
+            :x2="leader.x2"
+            :y2="leader.y2"
+            :stroke-width="leader.strokeWidth"
+          />
+        </g>
         <g class="pb-bases" data-test="pb-bases">
           <g v-for="base in props.bases" :key="base.baseId" :class="`pb-base-${base.status}`" :data-test="`pb-base-${base.baseId}`">
             <circle :cx="projectedX(base.x, base.y)" :cy="projectedY(base.x, base.y)" :r="baseRadius(base)" class="pb-base-circle" />
@@ -274,9 +323,15 @@ function fillTop(base) {
 </template>
 
 <style>
-.pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; }
-.pb-viewport { position: relative; width: 100%; transform-origin: 0 0; touch-action: none; }
-.pb-svg { display: block; width: 100%; height: auto; border-radius: 4px; background: var(--bg-elevated); }
+.pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; aspect-ratio: var(--pb-map-aspect, 1 / 1); }
+.pb-viewport { position: absolute; inset: 0 auto auto 0; width: 100%; transform-origin: 0 0; touch-action: none; aspect-ratio: var(--pb-map-aspect, 1 / 1); }
+.pb-basemap,
+.pb-svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.pb-basemap { object-fit: fill; border-radius: 4px; user-select: none; pointer-events: none; }
+.pb-svg { border-radius: 4px; background: transparent; pointer-events: none; }
+.pb-viewport.pb-25d-active .pb-basemap { visibility: hidden; }
+.pb-marker-leaders { pointer-events: none; }
+.pb-marker-leader { stroke: var(--text-muted, #999); stroke-dasharray: 2 2; stroke-linecap: round; opacity: .78; }
 .pb-markers { position: absolute; inset: 0; pointer-events: none; }
   .pb-vehicle { position: absolute; width: 30px; height: 30px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
 .pb-base-circle { fill: color-mix(in srgb, currentColor 18%, transparent); stroke: currentColor; stroke-width: 1.6; }
