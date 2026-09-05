@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
-"""Generate local-only derived 3D map assets for Battle Playback.
+"""Generate local-only 2.5D terrain facts for Battle Playback.
 
-This wrapper keeps the user's client Maps.zip outside Git and reuses the proven
-``export_map_geometry_poc.py`` contract from PR #247. Outputs are written to
-``common/assets/map-3d-local`` because ``frontend/vite.config.js`` uses
-``../common/assets`` as Vite's publicDir during local development.
+The prototype deliberately does *not* reconstruct the client 3D scene. It keeps
+only the already-proven tiled heightfield plus optional numeric Water Z facts so
+the frontend can shade the existing 2D tactical map from a fixed top-down view.
+No SCG geometry, client meshes, textures, materials, or shaders are exported.
 
-In addition to static SCG geometry, the exporter derives the map's real tiled
-uint16 heightmap into a renderer-neutral little-endian float32 height buffer.
-Water is represented only as proven horizontal Z levels derived from Water
-RenderObject bbox metadata + SC2 world transforms. No client water geometry,
-textures, materials or shaders are copied.
+Outputs are written to ``common/assets/map-3d-local`` because
+``frontend/vite.config.js`` uses ``../common/assets`` as Vite's publicDir during
+local development.
 
-IMPORTANT: output is intentionally LOCAL RESEARCH ONLY. It contains geometry and
-terrain derived from user-supplied client resources and is not a production
-asset pack. The frontend production build fails closed when this directory is
-present so these files cannot be copied into ``dist`` accidentally.
+IMPORTANT: output is intentionally LOCAL RESEARCH ONLY. The heightfield is still
+derived from user-supplied client resources. The frontend production build fails
+closed when this directory exists so these files cannot be copied into ``dist``
+accidentally.
 
 Example:
     python common/python/export_playback_3d_assets.py \\
-      "C:\\Users\\yu.chen\\Downloads\\Maps.zip" canal port
+      "C:\\Users\\yu.chen\\Downloads\\Maps.zip" canal port --clean
 """
 
 from __future__ import annotations
@@ -30,7 +28,6 @@ import math
 import pathlib
 import shutil
 import struct
-import subprocess
 import sys
 import zipfile
 from array import array
@@ -38,7 +35,6 @@ from typing import Any
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SEMANTICS_DIR = REPO / "common" / "map-semantics"
-EXPORTER = REPO / "common" / "python" / "export_map_geometry_poc.py"
 OUTPUT_DIR = REPO / "common" / "assets" / "map-3d-local"
 LEGACY_OUTPUT_DIR = REPO / "frontend" / "public" / "map-3d-local"
 
@@ -54,7 +50,7 @@ from wotb_sc2 import Sc2ParseError, decode_bytes, decode_dvpl, read_sc2  # noqa:
 
 
 class ExportPlayback3dError(RuntimeError):
-    """Actionable local 3D export failure."""
+    """Actionable local 2.5D export failure."""
 
 
 WATER_LOCAL_Z_SPAN_TOLERANCE_METERS = 0.25
@@ -93,12 +89,7 @@ def select_map_resource(
     map_id: str,
     relative_name: str,
 ) -> zipfile.ZipInfo:
-    """Resolve a semantic source file inside one map directory.
-
-    Semantic manifests preserve the client-relative path and may name either a
-    raw resource or its ``.dvpl`` form. Local client archives can contain either,
-    so exact lookup deliberately supports both without guessing by basename.
-    """
+    """Resolve one semantic source resource inside exactly one map directory."""
 
     by_name = {
         normalize_member(info.filename).lower(): info
@@ -126,10 +117,12 @@ def decode_heightmap(
     raw: bytes,
     world_bounds: dict,
 ) -> tuple[int, int, list[float]]:
-    """Decode DAVA's tiled uint16 heightmap into row-major world Z meters.
+    """Decode DAVA tiled uint16 height samples into row-major world-Z meters.
 
-    The tiling/scale contract matches ``map-semanticizer/load_heightmap`` which
-    has already been validated against SC2 point Z coordinates.
+    The tiling/scale contract matches ``map-semanticizer/load_heightmap`` and was
+    previously validated against SC2 point-Z coordinates. Keeping this exact
+    sample grid avoids inventing terrain geometry; the frontend only connects
+    adjacent samples to shade the existing 2D map.
     """
 
     if len(raw) < 8:
@@ -229,7 +222,7 @@ def export_terrain(
             "min": min(heights),
             "max": max(heights),
         },
-        # Kept for local audit/debug only; never consumed as a production URL.
+        # Local audit fact only; not a production URL or redistributed resource.
         "sourceMember": normalize_member(member.filename),
     }
 
@@ -246,13 +239,7 @@ def decode_render_bbox(render_object: dict[str, Any]) -> tuple[float, float, flo
 
 
 def extract_procedural_water_planes(scene: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return proven horizontal Water Z levels without exporting water geometry.
-
-    A Water RenderObject is accepted only when its serialized bbox is effectively
-    flat in local Z and its world quaternion has no X/Y tilt. Rotation around Z
-    is harmless for a horizontal plane. The resulting world Z therefore follows
-    directly from local bbox center Z plus the SC2 world translation/scale.
-    """
+    """Return numeric horizontal Water Z facts without exporting water geometry."""
 
     candidates: list[dict[str, Any]] = []
     for entity_path, entity in iter_entities_recursive(scene):
@@ -292,13 +279,12 @@ def extract_procedural_water_planes(scene: dict[str, Any]) -> list[dict[str, Any
             continue
         candidates.append({
             "zMeters": round(world_z, 4),
-            "evidence": "WATER_RENDER_OBJECT_FLAT_BBOX_Z_PLUS_SC2_WORLD_TRANSFORM",
-            "entityName": entity.get("name") if isinstance(entity.get("name"), str) else None,
-            "entityPath": entity_path,
+            "evidence": "WATER_FLAT_BBOX_Z_PLUS_SC2_WORLD_TRANSFORM",
             "localZSpanMeters": round(local_z_span, 6),
+            # Kept only for local debugging; no geometry is exported.
+            "entityPath": entity_path,
         })
 
-    # Multiple Water entities at the same physical water level should produce one plane.
     result: list[dict[str, Any]] = []
     for candidate in sorted(candidates, key=lambda item: float(item["zMeters"])):
         if result and abs(float(candidate["zMeters"]) - float(result[-1]["zMeters"])) < 0.01:
@@ -310,45 +296,23 @@ def extract_procedural_water_planes(scene: dict[str, Any]) -> list[dict[str, Any
 def export_water(archive: zipfile.ZipFile, map_id: str) -> dict[str, Any]:
     scene_member = select_scene_member(archive, map_id)
     scene = read_sc2(decode_resource(archive.read(scene_member), scene_member.filename))
-    planes = extract_procedural_water_planes(scene)
     return {
-        "renderMode": "PROCEDURAL_HORIZONTAL_PLANES",
-        "planes": planes,
+        "renderMode": "NUMERIC_Z_FACTS_ONLY",
+        "planes": extract_procedural_water_planes(scene),
         "usesClientWaterGeometry": False,
         "usesClientTextures": False,
         "usesClientMaterials": False,
         "usesClientShaders": False,
-        "sourceFacts": "Water RenderObject bbox metadata + SC2 world transform only",
         "sourceMember": normalize_member(scene_member.filename),
     }
 
 
 def export_map(
-    maps_zip: pathlib.Path,
     archive: zipfile.ZipFile,
     map_code: str,
     document: dict,
 ) -> dict:
     map_id = str(document["mapId"])
-    command = [
-        sys.executable,
-        str(EXPORTER),
-        str(maps_zip),
-        map_id,
-        "--output-dir",
-        str(OUTPUT_DIR),
-    ]
-    subprocess.run(command, cwd=REPO, check=True)
-    manifest_name = f"{map_id}-geometry-poc.json"
-    manifest_path = OUTPUT_DIR / manifest_name
-    if not manifest_path.is_file():
-        raise ExportPlayback3dError(f"exporter did not create {manifest_path}")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("schemaVersion") != 3:
-        raise ExportPlayback3dError(
-            f"{map_code}: expected geometry schema 3, got {manifest.get('schemaVersion')}"
-        )
-
     terrain = export_terrain(archive, map_code, document)
     water = export_water(archive, map_id)
     semantic_terrain = document.get("terrain") or {}
@@ -357,12 +321,10 @@ def export_map(
     return {
         "mapId": map_id,
         "displayName": document.get("displayName") or map_id,
-        "manifest": f"/map-3d-local/{manifest_name}",
+        "renderMode": "TOP_DOWN_2_5D_HEIGHTFIELD",
         "terrain": terrain,
         "water": water,
         "referenceGroundZMeters": float(ground_z) if isinstance(ground_z, (int, float)) else 0.0,
-        "geometryCount": manifest.get("geometrySummary", {}).get("geometryCount"),
-        "instanceCount": manifest.get("instanceSummary", {}).get("count"),
     }
 
 
@@ -398,20 +360,19 @@ def main() -> int:
     if args.clean:
         if OUTPUT_DIR.exists():
             shutil.rmtree(OUTPUT_DIR)
-        # PR #249 originally wrote here, but Vite never served it because
-        # publicDir is ../common/assets. Remove stale files during migration.
         if LEGACY_OUTPUT_DIR.exists():
             shutil.rmtree(LEGACY_OUTPUT_DIR)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     index = {
-        "schemaVersion": 4,
-        "source": "LOCAL_CLIENT_DERIVED",
+        "schemaVersion": 5,
+        "source": "LOCAL_CLIENT_DERIVED_HEIGHTFIELD",
+        "renderMode": "TOP_DOWN_2_5D_HEIGHTFIELD",
         "toolingPolicy": {
             "scope": "LOCAL_RESEARCH_ONLY",
             "productionEligible": False,
             "redistributionEnabled": False,
-            "containsClientDerivedGeometry": True,
+            "containsClientDerivedGeometry": False,
             "containsClientDerivedTerrain": True,
             "containsClientTextures": False,
             "containsClientMaterials": False,
@@ -419,23 +380,22 @@ def main() -> int:
         },
         "maps": {},
     }
+
     try:
         with zipfile.ZipFile(maps_zip) as archive:
             for code in args.map_codes:
-                entry = export_map(maps_zip, archive, code, targets[code])
+                entry = export_map(archive, code, targets[code])
                 index["maps"][code] = entry
                 terrain = entry["terrain"]
                 water_planes = entry.get("water", {}).get("planes", [])
                 water_text = ", ".join(str(plane["zMeters"]) for plane in water_planes) or "none"
                 print(
                     f"{code} -> {entry['mapId']}: "
-                    f"{entry['geometryCount']} geometry / {entry['instanceCount']} instances / "
-                    f"terrain {terrain['samplesPerAxis']}x{terrain['samplesPerAxis']} / "
-                    f"procedural water Z={water_text}"
+                    f"2.5D terrain {terrain['samplesPerAxis']}x{terrain['samplesPerAxis']} / "
+                    f"water Z={water_text} / static geometry=disabled"
                 )
     except (
         OSError,
-        subprocess.CalledProcessError,
         ExportPlayback3dError,
         Sc2ParseError,
         json.JSONDecodeError,
@@ -449,7 +409,7 @@ def main() -> int:
         json.dumps(index, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    print(f"local Battle Playback 3D assets -> {index_path.relative_to(REPO)}")
+    print(f"local Battle Playback 2.5D assets -> {index_path.relative_to(REPO)}")
     print("LOCAL RESEARCH ONLY: do not commit, publish, package, or redistribute generated map-3d-local assets.")
     return 0
 
