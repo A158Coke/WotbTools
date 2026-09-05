@@ -7,7 +7,8 @@
   "checks": [
     { "kind": "system_prompt_contains", "text": "约 750–800 是警戒区" },
     { "kind": "system_prompt_contains", "text": "约 800 以上目标压力明显增大" },
-    { "kind": "system_prompt_contains", "text": "10–15 秒追击" }
+    { "kind": "system_prompt_contains", "text": "10–15 秒追击" },
+    { "kind": "system_prompt_contains", "text": "实时状态缺失时不得用击杀换分项" }
   ],
   "note": "Golden G：高目标压力改变排序，但不生成后端 800 分状态。"
 }
