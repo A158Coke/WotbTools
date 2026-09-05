@@ -1,0 +1,13 @@
+{
+  "id": "team-tactical-skill-v01-e-voice-boundary",
+  "mode": "TEAM_PERSPECTIVE",
+  "arenaBonusType": 3,
+  "fixtureKey": "cw-cap-defense-01",
+  "expectedJudgment": "只能写异步进入/局部人数，不得写未观察的沟通失败",
+  "checks": [
+    { "kind": "system_prompt_contains", "text": "语音、call" },
+    { "kind": "system_prompt_contains", "text": "未知计划、call 或沟通原因" },
+    { "kind": "system_prompt_omits", "text": "player failed to communicate" }
+  ],
+  "note": "Golden E：责任边界只允许 observable execution。"
+}

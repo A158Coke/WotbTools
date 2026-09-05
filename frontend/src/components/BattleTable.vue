@@ -150,7 +150,7 @@ function isSelectedRow(row) {
     && Number(row.cells.account_id) === Number(selId)
 }
 
-// ---- Rating 单元格（总分「927」；维度「342 / 400 · 85.5%」；缺失 → '--'）----
+// ---- Rating 单元格（总分「927.4」；维度「342 / 400 · 85.5%」；缺失 → '--'）----
 // 格式 contract 在 helpers.js 唯一实现（单场表 / CW 统一玩家表 / PNG 导出共用）。
 
 function rowFlags(row) {

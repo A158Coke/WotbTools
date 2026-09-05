@@ -167,7 +167,7 @@ Lease（读取期间 TTL 不清）。
 
 ### League Rating
 
-训练房 `arenaBonusType=2` 与联赛/锦标赛 `=4` 才启用 0–1000 League Rating。普通回放不显示 Rating；混合普通 + League 批次 League Rating 不聚合（`league=null` + `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通回放语义成功返回）。评分、完整性校验、批次中位数和 Excel 必须复用 core 单一公式。
+训练房 `arenaBonusType=2` 与联赛/锦标赛 `=4` 才启用 0–1000 League Rating。普通回放不显示 Rating；混合普通 + League 批次 League Rating 不聚合（`league=null` + `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通回放语义成功返回）。评分、完整性校验、V6 pooled sum/count 批次汇总和 Excel 必须复用 core 单一公式。
 
 选手 Drawer 的「最常使用坦克」是纯展示（不参与 Rating / 七维 / MVP / Team Rating）：Core
 `LeagueRatingBatchAggregator` 在 rated-only 循环里按 accountId 关联 `PlayerResult.tankId` 累计为
@@ -268,16 +268,16 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
 - `?view=admin-users`：用户管理。
 - `?view=version`：版本历史。
 - `?view=contact`：联系页。
-- `?view=rating-docs`：League Rating V5 算法说明页（构建期以 `?raw` 读取
-  `docs/WotBTools_League_Rating_V5.md`，canonical 单一事实源；ReplayPage League 模式
+  - `?view=rating-docs`：League Rating V6 算法说明页（构建期以 `?raw` 读取
+  `docs/WotBTools_League_Rating_V6.md`，canonical 单一事实源；ReplayPage League 模式
   「算法说明」按钮跳转进入，返回时经 KeepAlive 保留解析状态）。
 - `?view=playback-qa`：隐藏 QA 页（admin）。
 - `?view=rating-v2`：隐藏历史 Rating V2 灰度页（仅 `wotbtools-admin`，只读 READY Processing Job）；
   选中结果表玩家后在右侧非模态抽屉查看 V2 六轴雷达（移动端为遮罩面板）。V2 保持相对当前批次的
-  `平均=75 / 2×平均=100 / 4×=125 / 8×=150` 标尺；V5 七维改用 `0→0 / 当前 Battle/Global
+  `平均=75 / 2×平均=100 / 4×=125 / 8×=150` 标尺；V6 七维改用 `0→0 / 当前 Battle/Global
   Average→75 / 后端维度满分→150` 的分段线性标尺，100 对应平均到满分区间的三分之一。玩家顶点显示
   0–150 视觉分，明细默认分数并可切换原始值；共享图形支持 50%–150% 缩放（只影响页面 SVG，窄屏由
-  radar viewport 横向滚动），V2 桌面抽屉宽 560px，V5 继续使用可拖拽持久化侧栏。V5 Rating Profile PNG
+  radar viewport 横向滚动），V2 桌面抽屉宽 560px，V6 继续使用可拖拽持久化侧栏。V6 Rating Profile PNG
   同步 bounded geometry 但保持固定导出尺寸。移动端模态抽屉锁定 Tab 焦点，桌面非模态不锁；后端 raw
   score/评分公式与 API 不变。
 - `?view=ai-review` / `?view=battle-playback`：与 `?view=replay` 共用同一个 `ReplayWorkspace`，

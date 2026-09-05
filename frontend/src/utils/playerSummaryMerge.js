@@ -31,7 +31,7 @@ export const CW_DIM_KEYS = [
  * rated_battles 也来自 league.playerSummaryColumns（评分场次 ≠ 解析场次），
  * 必须进入 cw 列 universe（ColumnPicker 可显示/隐藏/reorder）。 */
 const LEAGUE_ONLY_KEYS = new Set([
-  'league_rating', 'league_rating_raw_median', ...CW_DIM_KEYS, 'mvp_count', 'rated_battles',
+  'league_rating', 'league_observed_mean', ...CW_DIM_KEYS, 'mvp_count', 'rated_battles',
 ])
 
 /**
@@ -40,8 +40,8 @@ const LEAGUE_ONLY_KEYS = new Set([
  * - 有 League 无 Aggregate：防御兜底——保留评分玩家，Aggregate 字段补 null（当前 contract 下
  *   CW 批次必生成 aggregate，正常不触发）。
  * @param {Array} aggregateRows resp.aggregate（每行 {team, cells}，cells 含 account_id）
- * @param {Array} playerSummaries league.playerSummaries（每项 accountId/nickname/clan/battles/ratingV5/ratingRawMedian/
- *   dimensionMedians/dimensionMeans/mvpCount/wins；dimensionMeans 原样透传到 row.league 供 Summary Radar）
+ * @param {Array} playerSummaries league.playerSummaries（每项 accountId/nickname/clan/ratedBattles/rating/observedMean/
+ *   dimensionMeans/mvpCount/wins；dimensionMeans 原样透传到 row.league 供 Summary Radar）
  * @returns {Array<{team:number, cells:Object, league:Object|null}>}
  */
 export function mergeCwPlayerRows(aggregateRows, playerSummaries) {
@@ -75,21 +75,20 @@ export function mergeCwPlayerRows(aggregateRows, playerSummaries) {
   return rows
 }
 
-/** 把 League summary 字段写入统一行 cells（V5 主 Rating / Raw Observed Median / 七维中位数 /
+/** 把 League summary 字段写入统一行 cells（V6 主 Rating / Observed Mean / 七维均值 /
  * MVP 次数 / 评分场次；
  * includePerf=true 时附加跨场 Performance Metrics，仅用于 aggregate 未覆盖的兜底行，
  * 绝不覆盖 aggregate 样本）。
  */
 function fillLeagueCells(cells, summary, includePerf = false) {
-  // V5：league_rating = Batch Player Rating（Evidence Adjustment 后主 Rating）；
-  // league_rating_raw_median = Raw Observed Median（explainability，可隐藏）。
-  cells.league_rating = summary?.ratingV5 ?? null
-  cells.league_rating_raw_median = summary?.ratingRawMedian ?? null
-  const dims = summary?.dimensionMedians || []
+  // V6：league_rating = pooled-sample Rating；Observed Mean 仅作透明度信息展示。
+  cells.league_rating = summary?.rating ?? null
+  cells.league_observed_mean = summary?.observedMean ?? null
+  const dims = summary?.dimensionMeans || []
   CW_DIM_KEYS.forEach((key, i) => { cells[key] = dims[i] ?? null })
   cells.mvp_count = summary?.mvpCount ?? null
   // 评分场次（rated-only 样本，独立于 aggregate 的解析场次）
-  cells.rated_battles = summary?.battles ?? null
+  cells.rated_battles = summary?.ratedBattles ?? summary?.battles ?? null
   // 跨场 Performance Metrics：只给 aggregate 未覆盖的兜底行补值
   if (includePerf) {
     cells.contribution = summary?.contribution ?? null

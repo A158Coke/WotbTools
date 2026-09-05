@@ -17,13 +17,17 @@ function mountPage() {
 }
 
 describe('RatingDocsPage', () => {
-  it('渲染 canonical Markdown 正文（League Rating V5）', () => {
+  it('渲染 canonical Markdown 正文（League Rating V6）', () => {
     const { wrapper } = mountPage()
     expect(wrapper.find('.rating-docs-page').exists()).toBe(true)
     expect(wrapper.find('[data-testid="docs-back-btn"]').exists()).toBe(true)
     const md = wrapper.find('.markdown-content')
     expect(md.exists()).toBe(true)
-    expect(md.text()).toContain('League Rating V5')
+    expect(md.text()).toContain('League Rating V6')
+    expect(md.text()).toContain('Research Data Status')
+    expect(md.text()).toContain('Team V6 Rating')
+    expect(md.text()).toContain('(T + 475) / (N + 1)')
+    expect(md.text()).not.toContain('Mandatory Scope-Risk Checkpoint')
   })
 
   it('返回按钮跳转回回放解析视图', async () => {

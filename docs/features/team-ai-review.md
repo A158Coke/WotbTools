@@ -20,6 +20,21 @@
 - 同场双方 perspectives 各自独立分析，不得合并
 - Recorder 只用于确定视角，不被 AI 视为分析对象
 
+### Team Tactical Skill v0.1
+
+Team Call #2 通过 `AiPromptLibrary` 的模块化 include 注入四个紧凑的训练房/联赛推理模块：
+`team-execution`、`position-tempo`、`hp-trades` 和 `mode-objectives`。它们是给 LLM 的经验性思考框架，不是后端战术 verdict；后端仍只提供 Canonical Timeline 和确定性证据。
+
+- 复盘 observable execution，不假设赛前战术计划，也不推断语音、call、指挥责任或心理原因。
+- 用进入时序、局部人数、commitment/half-commit、信息更新、轮转可行性、位置节奏和未来火力价值组织判断；证据不足时跳过判断。
+- `primaryDiagnosis` 仍保留以避免契约变更，但含义是“本场最重要的结论”，可以是关键成功因素、对手处理更好或没有明显确认错误，不要求制造问题。
+- Strategic Prior 是阵容与可能性空间的战略基线，不是队伍实际计划；实际执行偏离它不能单独构成失误。
+- 争霸赛使用约 +40 击杀价值、750–800 警戒区、800+ 高压力的经验梯度；攻防战使用约 100 秒完整捕获与 70–80 秒警戒区。阈值只影响 LLM 排序，不进入后端状态机。
+
+模块同时提供 EN/RU 本地化替换锚点，`PromptRuleContractTest` 保证 include 展开和三语规则不漂移。`team-tactical-skill-v01-*.json` 是 prompt contract / static golden cases，保留用于验证规则进入 prompt，但不单独声称已验证实际 AI tactical behavior。未来手动诊断可使用 opt-in 的 `TeamTacticalSkillLiveBehaviorEvalTest`：复用现有 DeepSeek gateway 与 Team Call #2 JSON contract，解析最终输出并执行 A–H 的明确 contract checks；live scenario 只提供事实，expected behavior 只存在于测试 assertion，生成 `target/ai-eval-report/team-tactical-skill-live-report.{md,json}`。该测试带 `@Tag("ai-live")` 且需要 `-Dai.tactical.live.enabled=true`，永远不进入普通 `mvn test`、默认 CI 或 PR 合并条件；真实 provider evaluation 具有 token 成本和模型随机性。
+
+`NO_SIGNIFICANT_CONFIRMED_ERROR` 只表示当前可确认/可观察证据中没有确认的重大错误，不证明本场不存在任何错误。证据覆盖不足时跳过不受支持的判断；保留 `primaryDiagnosis` 字段，不新增 backend tactical verdict、权威 `GOOD_TRADE`/`BAD_PUSH`/`HALF_COMMIT_ERROR` 标签或第二套 episode/harness。Strategic Prior 仍只是非实际赛前战术的战略基线，回放不能证明语音、call、沟通或指挥责任时不得猜测。
+
 ## 2. 入口和分层（Dataset-only）
 
 ```
