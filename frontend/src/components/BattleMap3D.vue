@@ -17,9 +17,23 @@ let resizeObserver = null
 let viewportElement = null
 let loadToken = 0
 
+// Top-down geometry alone is almost indistinguishable from the existing 2D raster:
+// Z does not move X/Y at a 90° orthographic view. Relief therefore has to be encoded
+// explicitly as hillshade. These constants affect presentation only; exported world Z
+// and every replay/spatial coordinate stay authoritative and unmodified.
+const RELIEF_NORMAL_GAIN = 2.8
+const RELIEF_CONTRAST = 1.9
+const RELIEF_MIN_SHADE = 0.46
+const RELIEF_MAX_SHADE = 1.22
+const RELIEF_SUN = new THREE.Vector3(-0.72, 0.58, 0.38).normalize()
+
 function finiteNumber(value, fallback = 0) {
   const number = Number(value)
   return Number.isFinite(number) ? number : fallback
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value))
 }
 
 function setViewportActive(active) {
@@ -82,6 +96,31 @@ function looksLikeHtml(response, text = '') {
   return contentType.includes('text/html') || text.trimStart().startsWith('<')
 }
 
+function terrainShade(heights, size, sampleX, sampleY, spacingX, spacingY) {
+  const x0 = Math.max(0, sampleX - 1)
+  const x1 = Math.min(size - 1, sampleX + 1)
+  const y0 = Math.max(0, sampleY - 1)
+  const y1 = Math.min(size - 1, sampleY + 1)
+
+  const left = heights[sampleY * size + x0]
+  const right = heights[sampleY * size + x1]
+  const down = heights[y0 * size + sampleX]
+  const up = heights[y1 * size + sampleX]
+  const dxMeters = Math.max(spacingX, (x1 - x0) * spacingX)
+  const dyMeters = Math.max(spacingY, (y1 - y0) * spacingY)
+  const dzdx = ((right - left) / dxMeters) * RELIEF_NORMAL_GAIN
+  const dzdy = ((up - down) / dyMeters) * RELIEF_NORMAL_GAIN
+
+  const normal = new THREE.Vector3(-dzdx, -dzdy, 1).normalize()
+  const lit = normal.dot(RELIEF_SUN)
+  const flatLit = RELIEF_SUN.z
+  return clamp(
+    1 + (lit - flatLit) * RELIEF_CONTRAST,
+    RELIEF_MIN_SHADE,
+    RELIEF_MAX_SHADE,
+  )
+}
+
 function buildTerrainGeometry(terrainMeta, terrainBuffer) {
   const size = Number(terrainMeta?.samplesPerAxis)
   const bounds = terrainMeta?.worldBounds || {}
@@ -106,6 +145,7 @@ function buildTerrainGeometry(terrainMeta, terrainBuffer) {
   const grid = size + 1
   const positions = new Float32Array(grid * grid * 3)
   const uvs = new Float32Array(grid * grid * 2)
+  const colors = new Float32Array(grid * grid * 3)
 
   for (let gy = 0; gy <= size; gy++) {
     const sampleY = Math.min(gy, size - 1)
@@ -119,6 +159,16 @@ function buildTerrainGeometry(terrainMeta, terrainBuffer) {
       positions[p + 2] = heights[sampleY * size + sampleX]
       uvs[uv] = gx / size
       uvs[uv + 1] = gy / size
+
+      // Deterministic renderer-owned hillshade. Flat ground stays at 1.0, slopes
+      // facing the synthetic sun brighten and opposite slopes darken strongly.
+      // MeshBasicMaterial multiplies the existing tactical raster by this value,
+      // so relief remains obvious even from an exact 90° camera.
+      const shade = terrainShade(heights, size, sampleX, sampleY, spacingX, spacingY)
+      const c = vertex * 3
+      colors[c] = shade
+      colors[c + 1] = shade
+      colors[c + 2] = shade
     }
   }
 
@@ -144,8 +194,8 @@ function buildTerrainGeometry(terrainMeta, terrainBuffer) {
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   geometry.setIndex(new THREE.BufferAttribute(indices, 1))
-  geometry.computeVertexNormals()
   geometry.computeBoundingSphere()
   return geometry
 }
@@ -238,17 +288,11 @@ async function loadMap() {
     texture.wrapT = THREE.ClampToEdgeWrapping
     texture.anisotropy = Math.min(8, nextRenderer.capabilities.getMaxAnisotropy())
 
-    // Original renderer lighting only: the existing 2D tactical map remains the
-    // visual content, while normals derived from Z create the readable relief.
-    nextScene.add(new THREE.AmbientLight(0xffffff, 1.12))
-    const sun = new THREE.DirectionalLight(0xffffff, 1.18)
-    sun.position.set(centerX - span * 0.7, centerY + span * 0.85, maxZ + span * 1.25)
-    nextScene.add(sun)
-
     const terrain = new THREE.Mesh(
       buildTerrainGeometry(entry.terrain, terrainBuffer),
-      new THREE.MeshLambertMaterial({
+      new THREE.MeshBasicMaterial({
         map: texture,
+        vertexColors: true,
         color: 0xffffff,
         side: THREE.FrontSide,
       }),
