@@ -48,6 +48,13 @@ describe('fixed 45 degree terrain relief projection', () => {
     expect(sampleTerrainHeight(m, 0, 0)).toBeCloseTo(30)
   })
 
+  it('pads to a square orthographic frustum so renderer and overlays share one normalized box', () => {
+    const m = model()
+    const width = m.projectedBounds.right - m.projectedBounds.left
+    const height = m.projectedBounds.top - m.projectedBounds.bottom
+    expect(width).toBeCloseTo(height, 8)
+  })
+
   it('applies visual Z exaggeration around the authoritative range midpoint only', () => {
     const m = createTerrainReliefModel({
       mapCode: 'test',
