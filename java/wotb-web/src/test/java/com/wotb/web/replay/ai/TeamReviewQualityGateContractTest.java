@@ -36,7 +36,7 @@ class TeamReviewQualityGateContractTest {
         assertTrue(ZH.contains("关键 tactical episode，必须展开到足以说明"), "关键 episode 必须完整解释");
         assertTrue(ZH.contains("不得为了“简洁”省略会改变战术判断的信息"), "不得因简洁省略关键战术信息");
         assertTrue(ZH.contains("多个 local 必须检查是否有传播"), "多个 local 必须检查传播");
-        assertTrue(ZH.contains("primaryDiagnosis 只是整场摘要，不得压缩 reviewMarkdown"), "primaryDiagnosis 只是摘要");
+        assertTrue(ZH.contains("primaryDiagnosis 只是整场摘要，不得压缩 v0.5 structured result 中的 episodes 或训练建议"), "primaryDiagnosis 只是摘要");
         assertTrue(ZH.contains("“重点复查”和“高贡献者”是可选 section"), "个人 section 可选");
         assertTrue(ZH.contains("主因可以只有一个，不要为了凑结构制造不存在的问题"), "主因可以只有一个且不得凑结构造问题");
         assertTrue(ZH.contains("但一个主因不等于正文只能讲一件事"), "主因不能压缩正文范围");
@@ -148,7 +148,7 @@ class TeamReviewQualityGateContractTest {
                 "距离只能是 evidence，不是 supportability verdict");
         assertTrue(ZH.contains("综合 line of fire、terrain / obstruction、time-to-influence、mobility、target availability"),
                 "支援能力必须综合几何之外的证据");
-        assertTrue(ZH.contains("不能把时间接近的死亡事件自动串成因果 episode"),
+        assertTrue(ZH.contains("不要把时间接近的死亡事件自动串成因果 episode"),
                 "相邻死亡不能自动构成因果 episode");
         assertTrue(ZH.contains("HP、damage、deaths 是 position/decision 因果链的下游结果或验证信号"),
                 "HP/伤害/死亡必须作为下游验证");

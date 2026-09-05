@@ -77,7 +77,7 @@ class TeamReviewNaturalCoachContractTest {
         assertTrue(ZH.contains("Known"), "必须区分 Known");
         assertTrue(ZH.contains("Remaining uncertainty"), "必须区分 Remaining uncertainty");
         assertTrue(ZH.contains("Decision impact"), "必须要求 Decision impact");
-        assertTrue(ZH.contains("Effective local participation"), "必须要求 effective local participation");
+        assertTrue(ZH.contains("effective local participation"), "必须要求 effective local participation");
         assertTrue(ZH.contains("State before"), "必须要求 state before");
         assertTrue(ZH.contains("Immediate local consequence"), "必须要求 immediate local consequence");
         assertTrue(ZH.contains("Propagation"), "必须要求 propagation");
@@ -88,7 +88,9 @@ class TeamReviewNaturalCoachContractTest {
             assertFalse(localized.contains("=== 团队复盘 v0.6 推理顺序与因果质量约束（强制） ==="),
                     lang + " 残留中文 v0.6 reasoning contract");
             assertTrue(localized.contains("Remaining uncertainty"), lang + " 必须携带 uncertainty contract");
-            assertTrue(localized.contains("Effective local participation"), lang + " 必须携带 local participation contract");
+            assertTrue(localized.contains("Effective local participation")
+                            || localized.contains("effective local participation"),
+                    lang + " 必须携带 local participation contract");
             assertTrue(localized.contains("downstream validation"), lang + " 必须携带 HP validation contract");
         }
         final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
@@ -118,7 +120,7 @@ class TeamReviewNaturalCoachContractTest {
         assertTrue(ZH.contains("如果基地/点数状态改变了行动义务，Objectives 必须说明谁需要主动、谁可以等待"),
                 "目标状态改变义务时必须解释行动影响");
         assertTrue(ZH.contains("多个 local 必须检查是否有传播"), "多个 local 必须检查传播");
-        assertTrue(ZH.contains("primaryDiagnosis 只是整场摘要，不得压缩 reviewMarkdown"),
+        assertTrue(ZH.contains("primaryDiagnosis 只是整场摘要，不得压缩 v0.5 structured result 中的 episodes 或训练建议"),
                 "primaryDiagnosis 只是摘要");
         assertTrue(ZH.contains("“重点复查”和“高贡献者”是可选 section"), "个人 section 可选");
         assertTrue(ZH.contains("没有明确 structural evidence"), "个人判断需要 structural evidence");
