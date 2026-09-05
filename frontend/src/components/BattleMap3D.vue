@@ -1,7 +1,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as THREE from 'three'
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { mapImages } from '../data/mapImages.js'
 
 const props = defineProps({
   mapCode: { type: String, default: '' },
@@ -9,27 +9,42 @@ const props = defineProps({
 
 const host = ref(null)
 const status = ref('loading')
-const detail = ref('')
 
 let renderer = null
 let scene = null
 let camera = null
-let controls = null
 let resizeObserver = null
-let animationFrame = 0
+let viewportElement = null
 let loadToken = 0
 
+function finiteNumber(value, fallback = 0) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : fallback
+}
+
+function setViewportActive(active) {
+  const next = host.value?.closest?.('.pb-viewport') || viewportElement
+  if (active && next) {
+    if (viewportElement && viewportElement !== next) viewportElement.classList.remove('pb-25d-active')
+    viewportElement = next
+    viewportElement.classList.add('pb-25d-active')
+    return
+  }
+  viewportElement?.classList.remove('pb-25d-active')
+  viewportElement = null
+}
+
 function disposeScene() {
-  cancelAnimationFrame(animationFrame)
-  animationFrame = 0
   resizeObserver?.disconnect()
   resizeObserver = null
-  controls?.dispose()
-  controls = null
+  setViewportActive(false)
   scene?.traverse((object) => {
     object.geometry?.dispose?.()
-    if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose())
-    else object.material?.dispose?.()
+    const materials = Array.isArray(object.material) ? object.material : [object.material]
+    for (const material of materials) {
+      material?.map?.dispose?.()
+      material?.dispose?.()
+    }
   })
   renderer?.dispose()
   if (renderer?.domElement.parentElement) renderer.domElement.parentElement.removeChild(renderer.domElement)
@@ -38,21 +53,22 @@ function disposeScene() {
   camera = null
 }
 
+function renderScene() {
+  if (!renderer || !scene || !camera) return
+  renderer.render(scene, camera)
+}
+
 function fitRenderer() {
-  if (!host.value || !renderer || !camera) return
+  if (!host.value || !renderer) return
   const width = Math.max(1, host.value.clientWidth)
   const height = Math.max(1, host.value.clientHeight)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
   renderer.setSize(width, height, false)
-  camera.aspect = width / height
-  camera.updateProjectionMatrix()
-}
-
-function animate() {
-  if (!renderer || !scene || !camera) return
-  controls?.update()
-  renderer.render(scene, camera)
-  animationFrame = requestAnimationFrame(animate)
+  // Intentionally do not aspect-correct the orthographic frustum. BattleMap's
+  // existing world->image mapping scales X and Y independently to the image box;
+  // stretching this canvas the same way keeps every DOM/SVG vehicle marker,
+  // base, trail and tracer aligned pixel-for-pixel with the 2.5D background.
+  renderScene()
 }
 
 async function fetchRequired(url) {
@@ -64,26 +80,6 @@ async function fetchRequired(url) {
 function looksLikeHtml(response, text = '') {
   const contentType = response.headers.get('content-type') || ''
   return contentType.includes('text/html') || text.trimStart().startsWith('<')
-}
-
-function finiteNumber(value, fallback = 0) {
-  const number = Number(value)
-  return Number.isFinite(number) ? number : fallback
-}
-
-function terrainColor(height, minHeight, maxHeight, target) {
-  const span = Math.max(1e-6, maxHeight - minHeight)
-  const t = Math.max(0, Math.min(1, (height - minHeight) / span))
-  // Elevation-only derived presentation; no client textures/materials are redistributed.
-  const low = [0.16, 0.20, 0.20]
-  const mid = [0.30, 0.36, 0.33]
-  const high = [0.52, 0.56, 0.52]
-  const a = t < 0.58 ? low : mid
-  const b = t < 0.58 ? mid : high
-  const local = t < 0.58 ? t / 0.58 : (t - 0.58) / 0.42
-  target[0] = a[0] + (b[0] - a[0]) * local
-  target[1] = a[1] + (b[1] - a[1]) * local
-  target[2] = a[2] + (b[2] - a[2]) * local
 }
 
 function buildTerrainGeometry(terrainMeta, terrainBuffer) {
@@ -102,36 +98,36 @@ function buildTerrainGeometry(terrainMeta, terrainBuffer) {
   const yMax = finiteNumber(bounds.yMax)
   if (!(xMax > xMin) || !(yMax > yMin)) throw new Error('Terrain world bounds are invalid')
 
-  // DAVA semantic contract uses range / size spacing, validated by SC2 point-Z sampling.
-  const xSpacing = (xMax - xMin) / size
-  const ySpacing = (yMax - yMin) / size
-  const positions = new Float32Array(size * size * 3)
-  const colors = new Float32Array(size * size * 3)
-  const minHeight = finiteNumber(terrainMeta?.heightRangeMeters?.min, 0)
-  const maxHeight = finiteNumber(terrainMeta?.heightRangeMeters?.max, minHeight + 1)
-  const rgb = [0, 0, 0]
+  // The proven client heightfield uses range/size sample spacing. Add one repeated
+  // edge row/column at xMax/yMax so the textured surface covers the full 2D map
+  // bounds without moving any authoritative sample away from its world position.
+  const spacingX = (xMax - xMin) / size
+  const spacingY = (yMax - yMin) / size
+  const grid = size + 1
+  const positions = new Float32Array(grid * grid * 3)
+  const uvs = new Float32Array(grid * grid * 2)
 
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const sample = y * size + x
-      const offset = sample * 3
-      const z = heights[sample]
-      positions[offset] = xMin + x * xSpacing
-      positions[offset + 1] = yMin + y * ySpacing
-      positions[offset + 2] = z
-      terrainColor(z, minHeight, maxHeight, rgb)
-      colors[offset] = rgb[0]
-      colors[offset + 1] = rgb[1]
-      colors[offset + 2] = rgb[2]
+  for (let gy = 0; gy <= size; gy++) {
+    const sampleY = Math.min(gy, size - 1)
+    for (let gx = 0; gx <= size; gx++) {
+      const sampleX = Math.min(gx, size - 1)
+      const vertex = gy * grid + gx
+      const p = vertex * 3
+      const uv = vertex * 2
+      positions[p] = xMin + gx * spacingX
+      positions[p + 1] = yMin + gy * spacingY
+      positions[p + 2] = heights[sampleY * size + sampleX]
+      uvs[uv] = gx / size
+      uvs[uv + 1] = gy / size
     }
   }
 
-  const indices = new Uint32Array((size - 1) * (size - 1) * 6)
+  const indices = new Uint32Array(size * size * 6)
   let cursor = 0
-  for (let y = 0; y < size - 1; y++) {
-    const row = y * size
-    const nextRow = (y + 1) * size
-    for (let x = 0; x < size - 1; x++) {
+  for (let y = 0; y < size; y++) {
+    const row = y * grid
+    const nextRow = (y + 1) * grid
+    for (let x = 0; x < size; x++) {
       const a = row + x
       const b = a + 1
       const c = nextRow + x
@@ -147,76 +143,20 @@ function buildTerrainGeometry(terrainMeta, terrainBuffer) {
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
   geometry.setIndex(new THREE.BufferAttribute(indices, 1))
   geometry.computeVertexNormals()
-  geometry.computeBoundingBox()
   geometry.computeBoundingSphere()
   return geometry
-}
-
-function buildStaticGeometry(record, positionsBuffer, indicesBuffer) {
-  const positions = new Float32Array(
-    positionsBuffer,
-    Number(record.positionFloatOffset) * 4,
-    Number(record.positionFloatCount),
-  )
-  const indices = new Uint32Array(
-    indicesBuffer,
-    Number(record.indexOffset) * 4,
-    Number(record.indexCount),
-  )
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geometry.setIndex(new THREE.BufferAttribute(indices, 1))
-  geometry.computeVertexNormals()
-  return geometry
-}
-
-function addProceduralWaterPlanes(nextScene, waterMeta, bounds) {
-  const planes = Array.isArray(waterMeta?.planes) ? waterMeta.planes : []
-  if (planes.length === 0) return
-
-  const xMin = finiteNumber(bounds.xMin, -300)
-  const yMin = finiteNumber(bounds.yMin, -300)
-  const xMax = finiteNumber(bounds.xMax, 300)
-  const yMax = finiteNumber(bounds.yMax, 300)
-  const width = xMax - xMin
-  const height = yMax - yMin
-  if (!(width > 0) || !(height > 0)) return
-
-  const centerX = (xMin + xMax) / 2
-  const centerY = (yMin + yMax) / 2
-  const waterMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0x315a67,
-    transparent: true,
-    opacity: 0.48,
-    roughness: 0.22,
-    metalness: 0,
-    clearcoat: 0.35,
-    clearcoatRoughness: 0.28,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  })
-
-  for (const plane of planes) {
-    const z = Number(plane?.zMeters)
-    if (!Number.isFinite(z)) continue
-    // PlaneGeometry is already an XY plane with +Z normal, matching the map's Z-up frame.
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), waterMaterial)
-    mesh.name = `procedural-water-z-${z}`
-    mesh.position.set(centerX, centerY, z)
-    mesh.renderOrder = 2
-    nextScene.add(mesh)
-  }
 }
 
 async function loadMap() {
   const token = ++loadToken
   disposeScene()
   status.value = 'loading'
-  detail.value = ''
-  if (!host.value || !props.mapCode) {
+
+  const image = mapImages[props.mapCode]
+  if (!host.value || !props.mapCode || !image?.src) {
     status.value = 'missing'
     return
   }
@@ -226,173 +166,110 @@ async function loadMap() {
     if (token !== loadToken) return
     if (!indexResponse.ok) {
       status.value = 'missing'
-      detail.value = 'Local 3D map assets are missing. Run export_playback_3d_assets.py first.'
       return
     }
     const indexText = await indexResponse.text()
     if (looksLikeHtml(indexResponse, indexText)) {
       status.value = 'missing'
-      detail.value = 'Local 3D map assets are missing. Run export_playback_3d_assets.py first.'
       return
     }
-
-    let index
-    try {
-      index = JSON.parse(indexText)
-    } catch (error) {
-      throw new Error(`Invalid local 3D asset index: ${error instanceof Error ? error.message : String(error)}`)
+    const index = JSON.parse(indexText)
+    if (index?.schemaVersion !== 5 || index?.renderMode !== 'TOP_DOWN_2_5D_HEIGHTFIELD') {
+      status.value = 'missing'
+      console.warn('[map-2.5d] stale local assets; re-run export_playback_3d_assets.py')
+      return
     }
 
     const entry = index?.maps?.[props.mapCode]
-    if (!entry?.manifest) {
-      status.value = 'missing'
-      detail.value = `No local 3D asset for mapCode=${props.mapCode}. Re-run the exporter with this map.`
-      return
-    }
     if (!entry?.terrain?.heightBuffer) {
       status.value = 'missing'
-      detail.value = 'Local 3D terrain is missing. Re-run export_playback_3d_assets.py after pulling the latest PR branch.'
       return
     }
 
-    const referenceGroundZ = finiteNumber(entry.referenceGroundZMeters, 0)
-    const manifestResponse = await fetchRequired(entry.manifest)
-    const manifestText = await manifestResponse.text()
-    if (looksLikeHtml(manifestResponse, manifestText)) {
-      throw new Error(`Local 3D manifest is missing for mapCode=${props.mapCode}. Re-run the exporter.`)
-    }
-    const manifest = JSON.parse(manifestText)
-    if (manifest?.schemaVersion !== 3) throw new Error(`Unsupported geometry schema: ${manifest?.schemaVersion}`)
-
-    const baseUrl = entry.manifest.slice(0, entry.manifest.lastIndexOf('/') + 1)
-    const [positionsBuffer, indicesBuffer, terrainBuffer] = await Promise.all([
-      fetchRequired(baseUrl + manifest.buffers.positions.file).then((response) => response.arrayBuffer()),
-      fetchRequired(baseUrl + manifest.buffers.indices.file).then((response) => response.arrayBuffer()),
-      fetchRequired(entry.terrain.heightBuffer).then((response) => response.arrayBuffer()),
-    ])
+    const terrainBuffer = await fetchRequired(entry.terrain.heightBuffer).then((response) => response.arrayBuffer())
     if (token !== loadToken || !host.value) return
 
-    const terrainBounds = entry.terrain.worldBounds || {}
-    const xMin = finiteNumber(terrainBounds.xMin, -300)
-    const yMin = finiteNumber(terrainBounds.yMin, -300)
-    const xMax = finiteNumber(terrainBounds.xMax, 300)
-    const yMax = finiteNumber(terrainBounds.yMax, 300)
-    const actualMinZ = finiteNumber(entry.terrain?.heightRangeMeters?.min, referenceGroundZ)
-    const actualMaxZ = finiteNumber(entry.terrain?.heightRangeMeters?.max, referenceGroundZ + 80)
+    const bounds = entry.terrain.worldBounds || {}
+    const xMin = finiteNumber(bounds.xMin, -300)
+    const yMin = finiteNumber(bounds.yMin, -300)
+    const xMax = finiteNumber(bounds.xMax, 300)
+    const yMax = finiteNumber(bounds.yMax, 300)
+    if (!(xMax > xMin) || !(yMax > yMin)) throw new Error('2.5D terrain bounds are invalid')
+
+    const minZ = finiteNumber(entry.terrain?.heightRangeMeters?.min, 0)
+    const maxZ = finiteNumber(entry.terrain?.heightRangeMeters?.max, minZ + 1)
     const centerX = (xMin + xMax) / 2
     const centerY = (yMin + yMax) / 2
     const span = Math.max(xMax - xMin, yMax - yMin, 1)
 
     const nextScene = new THREE.Scene()
-    nextScene.background = new THREE.Color(0x0c1318)
-    nextScene.fog = new THREE.Fog(0x0c1318, span * 1.35, span * 3.15)
+    nextScene.background = new THREE.Color(0x111820)
 
-    const nextCamera = new THREE.PerspectiveCamera(45, 1, 0.5, span * 6)
-    nextCamera.up.set(0, 0, 1)
-    nextCamera.position.set(
-      centerX + span * 0.76,
-      centerY - span * 0.88,
-      actualMaxZ + span * 0.52,
+    // Fixed 90-degree bird's-eye view. No orbit, pitch, roll or perspective.
+    // X/Y frustum == BattleMap coordinateBounds, so existing DOM markers remain
+    // the presentation authority and need no separate 3D projection path.
+    const nextCamera = new THREE.OrthographicCamera(
+      xMin - centerX,
+      xMax - centerX,
+      yMax - centerY,
+      yMin - centerY,
+      0.1,
+      span * 6,
     )
+    nextCamera.position.set(centerX, centerY, maxZ + span * 2)
+    nextCamera.up.set(0, 1, 0)
+    nextCamera.lookAt(centerX, centerY, minZ)
+    nextCamera.updateProjectionMatrix()
 
     const nextRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
     nextRenderer.outputColorSpace = THREE.SRGBColorSpace
-    nextRenderer.toneMapping = THREE.ACESFilmicToneMapping
-    nextRenderer.toneMappingExposure = 1.08
+    nextRenderer.toneMapping = THREE.NoToneMapping
     nextRenderer.shadowMap.enabled = false
     host.value.appendChild(nextRenderer.domElement)
 
-    nextScene.add(new THREE.HemisphereLight(0xcfe0e9, 0x20292b, 1.72))
-    const sun = new THREE.DirectionalLight(0xfff4dd, 2.75)
-    sun.position.set(centerX - span * 0.72, centerY - span * 0.92, actualMaxZ + span * 1.15)
-    nextScene.add(sun)
-    const fill = new THREE.DirectionalLight(0x9fc7dc, 0.72)
-    fill.position.set(centerX + span * 0.8, centerY + span * 0.45, actualMaxZ + span * 0.38)
-    nextScene.add(fill)
+    const texture = await new THREE.TextureLoader().loadAsync(image.src)
+    if (token !== loadToken) {
+      texture.dispose()
+      nextRenderer.dispose()
+      return
+    }
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.wrapS = THREE.ClampToEdgeWrapping
+    texture.wrapT = THREE.ClampToEdgeWrapping
+    texture.anisotropy = Math.min(8, nextRenderer.capabilities.getMaxAnisotropy())
 
-    const terrainMesh = new THREE.Mesh(
+    // Original renderer lighting only: the existing 2D tactical map remains the
+    // visual content, while normals derived from Z create the readable relief.
+    nextScene.add(new THREE.AmbientLight(0xffffff, 1.12))
+    const sun = new THREE.DirectionalLight(0xffffff, 1.18)
+    sun.position.set(centerX - span * 0.7, centerY + span * 0.85, maxZ + span * 1.25)
+    nextScene.add(sun)
+
+    const terrain = new THREE.Mesh(
       buildTerrainGeometry(entry.terrain, terrainBuffer),
-      new THREE.MeshStandardMaterial({
-        vertexColors: true,
-        roughness: 1,
-        metalness: 0,
+      new THREE.MeshLambertMaterial({
+        map: texture,
+        color: 0xffffff,
         side: THREE.FrontSide,
       }),
     )
-    terrainMesh.name = 'derived-real-heightmap-terrain'
-    nextScene.add(terrainMesh)
-
-    // Only a numeric Water Z fact is reused from the client scene. The plane geometry
-    // and material below are original renderer code; no client water mesh/material is copied.
-    addProceduralWaterPlanes(nextScene, entry.water, terrainBounds)
-
-    const staticMaterial = new THREE.MeshStandardMaterial({
-      color: 0x9aa7ad,
-      roughness: 0.9,
-      metalness: 0.015,
-      side: THREE.DoubleSide,
-    })
-    const geometries = new Map()
-    for (const record of manifest.geometry || []) {
-      geometries.set(Number(record.id), buildStaticGeometry(record, positionsBuffer, indicesBuffer))
-    }
-
-    const instancesByDatasource = new Map()
-    for (const instance of manifest.instances || []) {
-      const id = Number(instance.datasourceId)
-      const bucket = instancesByDatasource.get(id) || []
-      bucket.push(instance)
-      instancesByDatasource.set(id, bucket)
-    }
-
-    const matrix = new THREE.Matrix4()
-    const position = new THREE.Vector3()
-    const scale = new THREE.Vector3()
-    const quaternion = new THREE.Quaternion()
-    for (const [datasourceId, instances] of instancesByDatasource) {
-      const geometry = geometries.get(datasourceId)
-      if (!geometry || instances.length === 0) continue
-      const mesh = new THREE.InstancedMesh(geometry, staticMaterial, instances.length)
-      mesh.frustumCulled = false
-      instances.forEach((instance, instanceIndex) => {
-        const transform = instance.worldTransform || {}
-        const t = transform.translation || [0, 0, 0]
-        const s = transform.scale || [1, 1, 1]
-        const q = transform.rotationQuaternionXYZW || [0, 0, 0, 1]
-        position.set(Number(t[0]), Number(t[1]), Number(t[2]))
-        scale.set(Number(s[0]), Number(s[1]), Number(s[2]))
-        quaternion.set(Number(q[0]), Number(q[1]), Number(q[2]), Number(q[3])).normalize()
-        matrix.compose(position, quaternion, scale)
-        mesh.setMatrixAt(instanceIndex, matrix)
-      })
-      mesh.instanceMatrix.needsUpdate = true
-      nextScene.add(mesh)
-    }
-
-    const nextControls = new OrbitControls(nextCamera, nextRenderer.domElement)
-    nextControls.target.set(centerX, centerY, Math.max(actualMinZ, referenceGroundZ))
-    nextControls.enableDamping = true
-    nextControls.dampingFactor = 0.075
-    nextControls.minDistance = Math.max(22, span * 0.055)
-    nextControls.maxDistance = span * 2.45
-    nextControls.maxPolarAngle = Math.PI * 0.49
-    nextControls.screenSpacePanning = true
-    nextControls.update()
+    terrain.name = 'top-down-2.5d-tactical-map'
+    nextScene.add(terrain)
 
     scene = nextScene
     camera = nextCamera
     renderer = nextRenderer
-    controls = nextControls
     resizeObserver = new ResizeObserver(fitRenderer)
     resizeObserver.observe(host.value)
     fitRenderer()
+    setViewportActive(true)
     status.value = 'ready'
-    animate()
+    renderScene()
   } catch (error) {
     if (token !== loadToken) return
-    console.error('[map-3d] failed to load local derived map geometry', error)
+    console.error('[map-2.5d] failed to render local heightfield', error)
+    disposeScene()
     status.value = 'error'
-    detail.value = error instanceof Error ? error.message : String(error)
   }
 }
 
@@ -405,53 +282,41 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="map3d-shell" data-test="pb-map-3d">
-    <div ref="host" class="map3d-host"></div>
-    <div v-if="status !== 'ready'" class="map3d-status" :data-state="status">
-      <strong>{{ status === 'loading' ? '3D loading…' : '3D unavailable' }}</strong>
-      <span v-if="detail">{{ detail }}</span>
-    </div>
-    <div v-else class="map3d-help">Drag: orbit · wheel: zoom · right-drag: pan</div>
+  <div class="map25d-shell" data-test="pb-map-25d" :data-state="status">
+    <div ref="host" class="map25d-host"></div>
   </div>
 </template>
 
 <style scoped>
-.map3d-shell {
-  position: relative;
-  width: 100%;
-  min-height: clamp(520px, 72vh, 900px);
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: #0c1318;
-}
-.map3d-host { position: absolute; inset: 0; }
-.map3d-host :deep(canvas) { display: block; width: 100%; height: 100%; touch-action: none; }
-.map3d-status {
+.map25d-shell,
+.map25d-host {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-content: center;
-  gap: 8px;
-  padding: 24px;
-  text-align: center;
-  color: var(--text-label);
-  background: color-mix(in srgb, var(--bg-card) 86%, transparent);
-}
-.map3d-status span { max-width: 680px; font-size: .82rem; color: var(--text-secondary); }
-.map3d-help {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  padding: 6px 9px;
-  border-radius: 6px;
-  background: rgb(0 0 0 / 55%);
-  color: #d8e2ea;
-  font: 600 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   pointer-events: none;
 }
-@media (max-width: 767px) {
-  .map3d-shell { min-height: 68vh; }
-  .map3d-help { display: none; }
+.map25d-host :deep(canvas) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* BattleMap continues to own every overlay. Only its original raster image is
+   hidden while the aligned 2.5D canvas is ready. Keeping SVG/DOM overlays alive
+   means hull.webp/turret.webp, HP, bases, tracers and annotations stay on the
+   existing playback clock and do not need a parallel renderer. */
+:global(.pb-viewport.pb-25d-active .pb-svg) {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+:global(.pb-viewport.pb-25d-active .pb-svg > image) {
+  visibility: hidden;
+}
+:global(.pb-viewport.pb-25d-active .pb-markers) {
+  z-index: 2;
 }
 </style>
