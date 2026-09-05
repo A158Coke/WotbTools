@@ -1,25 +1,37 @@
+=== 团队复盘 v0.6 推理顺序与因果质量约束（强制） ===
+v0.6 是 reasoning-quality upgrade，不是架构或 schema redesign：继续使用 v0.5 Structured TeamAiReviewResult，禁止新增 LLM call、Team Autopsy、后端 tactical semantic validator 或第二套 TacticalEpisode 模型。
 
-=== 团队推理顺序与质量约束（强制） ===
-先按以下顺序内部推理，再选择一个主判断：A 开局信息，B 信息状态，C 目标/点数状态，D 局部交战，E 局部结果向全局传播，F 位置/节奏转移，G 团队执行，H HP/阵亡验证。H 只能用于验证或在 A-G 证据不足时补充，不能作为默认发现问题的入口。
-主判断必须在 reasoning 中体现至少一个结构性依据，并在 JSON 的 evidenceBasis 中填写一个或多个：INFORMATION、OBJECTIVE、LOCAL_ENGAGEMENT、POSITION、TEMPO、TEAM_EXECUTION、HP_TRADE。单独的伤害、击杀、存活、阵亡顺序、阵亡时间、格挡伤害或最终排名不能成为主判断的唯一依据。
-因此 primaryDiagnosis 对象必须包含 `evidenceBasis: ["..."]`；它是质量检查所用的结构化依据，不是新的后端战术 verdict。
-「重点复查」「高贡献者」「关键威胁」等个人判断也必须有信息、位置、移动、目标、局部参与、启用行动、交叉火力、轮转、承诺或传播依据；只有伤害/击杀/存活/阵亡时间时不要输出该判断。重点复查必须说明可观察的战术因果链和待复查的决策/执行问题；高贡献者必须说明他改变了什么（信息、目标、跟枪、交叉火力、高地、侧翼、目标压力、拖延或轮转），不能只因为结算最高而选出。
-禁止把「伤害低/最高伤害」「距离远」直接写成失败或脱节，禁止按车种自动套用角色，禁止把未点亮或标记消失当作空路/敌人已离开，禁止把 5v3 直接写成必须推进。若只有死亡聚集而没有 A-G 的结构性原因，主判断应保持证据边界。
+Team Call #2 必须先按以下顺序内部推理，再生成结构化 JSON：
+1. Read authoritative facts：先区分权威结算/阵容与事件流观测子集，确认时间、人数、位置、伤害覆盖和结果来源。
+2. Establish information state：在每个关键窗口写清当时 Known、敌方已确认信息和信息状态（CURRENT / LAST_KNOWN / UNSEEN）。
+3. Identify remaining uncertainty：明确 Remaining uncertainty——尚未确认的敌方数量、另一方向兵力、LAST_KNOWN 是否仍有效或某条路线是否安全；UNSEEN 是没有证据，不是无人。
+4. Evaluate objective obligation：结合 base ownership、current points、point growth、remaining time、存活车辆、地图位置和可用火力，判断谁必须主动、谁可以等待、谁承担基地/时间压力。
+5. Identify pivotal local engagements：分析实际参与者、短时间内可补枪者、虽然存活但无法影响该窗口者，以及外围提供有效侧射、信息或目标压力者。局部有效人数不是全队存活数。
+6. Determine effective local participation：综合 line of fire、terrain / obstruction、time-to-influence、mobility、target availability、crossfire、enemy fixation、objective contribution 和 safe path；distance 只是 evidence，不是 supportability verdict。
+7. Trace tactical transition：对每个关键 episode 检查 State before → Change → Immediate local consequence；不要把时间接近的死亡事件自动串成因果 episode。
+8. Trace propagation：继续检查局部结果如何影响后续局部的火力、空间、固定、释放车辆、支援路径、信息状态和 objective obligation；证据不足时明确无法确认直接传播，不要编造完整故事。
+9. Use HP/damage/deaths as downstream validation：HP、damage、deaths 是 position/decision 因果链的下游结果或验证信号，不是默认的 episode 入口。只有能说明 HP resource 如何转化为 time、space、fixing、objective control 或 team fire 时，才可把血量优势放进主诊断。
+10. Select training targets：每条建议必须是 Trigger → Decision target → Training goal，来自本局已解释的状态和因果链；通常 2–4 条，简单 stomp 可更少，不得凑数量。
+11. Select individual candidates only if episode-grounded：重点复查与高贡献者只能从已展开的 tactical episode 选择，必须有实际 role/action 与 decision/execution 依据，不能从 settlement leaderboard 重新选人；没有证据就输出空数组。
+12. Produce structured JSON：最后只输出 v0.5 的 summary、episodes、trainingSuggestions、reviewFocus、highContributors，不新增字段。
+
+=== 信息转移检查（强制） ===
+Information 只有转成 decision impact 才算完成。对每个影响战术判断的重要信息，内部检查：Known → Remaining uncertainty → New observation → 哪种 uncertainty 被移除/缩小 → Decision impact。信息价值会随时间变化：早期可能值得继续获取信息，敌方主方向和大部分兵力确认后，外围位置的边际信息价值可能下降，应重新比较回援、侧射、目标压力和压缩 time-to-influence。不要把后面才获得的信息回填到更早的窗口。
+
+=== 目标义务检查（强制） ===
+Objectives 不能只是报点。点数领先不自动等于必须进攻，点数落后也不自动等于立即冲锋；必须结合增长信号、剩余时间、基地状态、存活车辆、位置和局部可参与火力，解释谁承担行动义务、谁可以等待，以及这如何改变持位、换血、等待或转场的代价。无法证明实时比分或目标进度时，保持证据边界。
+
+=== 局部接敌与传播检查（强制） ===
+每个选中的关键 tactical episode，必须展开到足以说明：发生了什么、当时知道什么、仍未知什么、哪些车辆实际参与、哪些车辆只是潜在参与、为什么这个变化重要、立即后果是什么、是否传播到下一阶段。第一次减员后继续检查消失的射线、失去的牵制、被释放的敌方火力、变得不可维持的角度和后续互保；没有对应证据时不要猜。
 
 === 选择性完整表达（强制） ===
 目标是信息密度高、完整解释关键因果关系，而不是尽可能简短。不要逐秒复述所有事件；但凡选中的关键 tactical episode，必须展开到足以说明：发生了什么 → 当时知道什么 → 哪些车辆实际参与 → 为什么重要 → 如何影响下一阶段。
 如果对应证据存在，不得为了“简洁”省略会改变战术判断的信息状态、基地/点数、局部交战或 cross-local propagation；Information 必须说明它如何改变 decision input，多个 local 必须检查是否有传播及其后果。
 如果基地/点数状态改变了行动义务，Objectives 必须说明谁需要主动、谁可以等待，以及它如何改变位置或转场的代价；不要把目标状态当作旁白省略。
-primaryDiagnosis 只是整场摘要，不得压缩 reviewMarkdown；正文可以保留主因之外的次级关键 episode、信息变化、objective obligation、传播和 execution consequence。每个训练建议都必须从前文 causal chain 推出，不能用泛化空话替代解释。
+primaryDiagnosis 只是整场摘要，不得压缩 v0.5 structured result 中的 episodes 或训练建议。每个训练建议都必须从前文 causal chain 推出，不能用泛化空话替代解释。
 “重点复查”和“高贡献者”是可选 section，各自允许输出 0–2 人；没有明确 structural evidence 或可复查的 decision/execution question 时应完全省略。输出空间不足时，优先保留团队战术分析、Information、Objectives、关键 episode 与 propagation，再省略个人 section。
 关键 episode 必须充分展开，但不得变成 timeline dump；通常选择 2–4 个真正重要的 episode，时间点只在属于该 episode 时保留。
 
-=== v0.4 信息链、支援能力与个人复查约束（强制） ===
-Information 只有转成 decision impact 才算完成。对每个影响战术结论的关键信息，内部按「Observed：当时确认了什么 → Remaining uncertainty：什么仍未知、是 CURRENT 还是 LAST_KNOWN/UNSEEN → Decision impact：这如何改变可选部署、风险或行动义务」检查；正文可以自然表达，不必输出这三个标签。不得只写「拿到了信息」或用后续结果反推更早窗口。
-车辆类别只是能力因素，不能单独决定信息角色或强制战术职责。任何车辆都可能确认敌方分配、限制路线、制造威胁、维持信息节点或为局部/目标提供支援；只有证据支持时才描述实际发生的作用。
-几何距离是 evidence，不是 tactical verdict。不得从「距离远」「距离超过 100/150/200 米」直接推出脱节、无法支援、低价值或必须合流。判断 supportability 必须综合 line of fire、地形/遮挡、time-to-influence、机动性、可用目标、交叉火力、信息贡献、目标压力、敌方是否被固定和安全移动路径；距离只能作为其中一个观察量。禁止生成「150米最大间距」「超过150米就必须减速」「所有队员必须保持 X 米以内」等没有具体游戏物理证据的 universal rule。训练建议优先使用有效支援时间、火力进入时间、共同射界建立时间和局部有效参与人数。
-训练建议使用 state-based trigger，而不是固定时刻：例如「当敌方主力方向基本确认、外围信息的边际价值下降且主局部即将接敌时，开始评估缩短支援时间」。不得写「1分20秒必须合流」「X秒必须转场」等未经证据支持的 universal clock rule；时间示例只能服务于本局 episode 的复查窗口。
-Objectives 不得被主动降级。内部检查 base ownership、current points、point growth、remaining time、谁必须行动以及谁可以等待；只有在当前关键 episode 中目标状态确实没有改变行动义务时，才可以简短处理。若目标状态改变义务，必须解释它如何改变持位、交火、等待或轮转的代价，不得写「点数不需要多讲」或「基地不是重点」来跳过分析。
-「重点复查」「高贡献者」和「关键威胁」只能从正文已经识别并展开的 tactical episode 中选择，不能重新从 settlement leaderboard 选人。重点复查至少绑定 time/window、where/local、实际发生的 role 和 decision/execution question；低伤害、最早阵亡、低击杀、高承伤或低格挡只能在已选定 episode 后作为结果验证，不能作为选人主因。高贡献者是改变了信息、固定、跟踪、交叉火力、局部胜负、释放、目标压力、拖延、轮转、火力支援或退路/支援路径的 tactical action；如果只能回答「伤害高、击杀多、活得久」，就省略该 section。个人 section 没有 tactical causal evidence 时，省略优于猜测。
-描述对方时优先写可观察的 effect，不猜 intent。不得把「抓住某车」「故意封退路」「决定集火」写成事实；只有敌方位置、地形/路径和时序共同支持时才可说退路被封，否则写安全撤退空间减少或可用路线受限。多个 local 必须检查 information/fire/释放/目标义务的 propagation，但检查不等于必须找到传播；证据不足时明确保持无法确认，不得补造 crossfire、spotting、release 或因果连接。
-正文应区分观察到的事实、强支持的推断和仍然合理但未证实的可能性，用自然语言表达，不输出机器标签。不要新增 Information、Objectives、Local 或 Propagation 固定小节；这些是内部 reasoning structure。所有建议仍必须来自本局可观察状态，不得假设语音、指挥口令或通信体系。
+=== 证据边界与未知（强制） ===
+区分观察到的事实、强支持的推断和仍未证实的可能性，用自然教练语言表达。UNKNOWN 是合法答案，尤其适用于 intent、propagation、supportability 和 exact tactical responsibility；宁可少下结论，不要为了完整制造因果链。vehicle class 只能是能力因素，不能自动定义 tactical role；具体视野/掩体/LOS/装填/心理意图没有证据时不得写成事实。
+不要添加固定的 Information、Objectives、Local 或 Propagation 用户输出小节；这些是内部 reasoning structure。所有用户可见内容仍须遵守现有团队规则、证据契约和 v0.5 输出 schema。

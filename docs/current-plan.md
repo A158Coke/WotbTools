@@ -1,3 +1,27 @@
+# Team AI Review v0.6 — Tactical Reasoning Depth Upgrade
+
+## 状态
+
+READY FOR CI — approved execution in standalone worktree `feat/team-ai-review-v06-causal-reasoning`, based on `origin/main` at `3d71bc80dd51b0d5fdff7fd058830c1b7696df65`.
+
+## 执行边界
+
+只升级 Team Call #2 的 prompt / skill-harness guidance、deterministic prompt contract tests、
+文档和 agent rules。保持 v0.5 `TeamAiReviewResult` JSON、parser、API/SSE、前端、reconstruction、
+Team Autopsy legacy boundary 和 provider 数量不变；不新增 LLM call、后端 tactical semantic
+validator 或第二套 TacticalEpisode。测试由 CI 运行，本 worktree 不运行本地全量或 targeted tests。
+
+## 分步执行
+
+- [x] 更新中英俄 reasoning contract，固定「权威事实 → 信息状态/剩余未知 → 目标义务 → 局部有效参与 → episode → 传播 → HP 下游验证 → 训练 → 个人候选 → v0.5 JSON」顺序。
+- [x] 清理 `team/single.zh.md` 中与生产 v0.5 结果冲突的旧 envelope 输出说明，并保持 prompt include / Java localization anchors 同步。
+- [x] 补齐 deterministic contract assertions，覆盖 Information、objective obligation、local participation、propagation、HP downstream、UNKNOWN、个人绑定和三语顺序。
+- [x] 同步 feature/architecture/changelog/Java agent 文档。
+- [x] 完成静态 diff、契约文本和 code-smell/review-with-docs 检查；测试结果留给 CI。
+- [ ] 提交并推送分支，创建 PR，等待 CI 验证。
+
+---
+
 # Team AI Review v0.5 — Structured AI Result Contract
 
 ## 状态

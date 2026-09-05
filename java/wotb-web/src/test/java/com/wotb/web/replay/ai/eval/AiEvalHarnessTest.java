@@ -125,9 +125,10 @@ class AiEvalHarnessTest {
                 "local skill must require cross-local enabling analysis");
         assertTrue(zh.contains("基地归属、捕获进度和点数要与位置一起分析"),
                 "objective skill must join objective state with position");
-        assertTrue(zh.contains("GROUNDING FACTS 与结构化输出"),
-                "must carry the GROUNDING FACTS structured-output contract");
-        assertTrue(zh.contains("reviewMarkdown"), "must carry the reviewMarkdown field of the JSON envelope");
+        assertTrue(zh.contains("Team AI Review v0.5 结构化结果（最终输出契约）"),
+                "must carry the v0.5 structured-output contract");
+        assertTrue(zh.contains("trainingSuggestions") && zh.contains("highContributors"),
+                "must carry the v0.5 structured result fields");
     }
 
     private static int indexOf(final String text, final String value) {

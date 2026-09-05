@@ -1,5 +1,29 @@
 # AI Review 架构（随机战双 Call / 团队复盘）
 
+## Team AI Review v0.6：推理顺序与因果边界
+
+v0.6 是 prompt 层的战术推理深度升级，保持 v0.5 `TeamAiReviewResult`、SSE/API、
+解析器和前端渲染契约不变。`TeamAiPromptBuilder` 继续提供现有 canonical facts、timeline、
+team context 和 deterministic evidence；本版本不新增 LLM call、Team Autopsy、后端战术语义
+裁判或第二个 episode 模型。
+
+Team Call #2 的内部顺序固定为：权威事实 → Information state / Remaining uncertainty →
+objective obligation → pivotal local engagements → effective local participation →
+tactical transition → propagation → HP/damage/deaths downstream validation → training targets
+→ episode-grounded individual candidates → v0.5 structured JSON。Information 要形成
+`Known → Remaining uncertainty → New observation → reduced uncertainty → Decision impact`；
+`UNSEEN` 只代表没有证据，不代表空路或没有敌人。
+
+局部参与以实际影响窗口的能力判断，综合 line of fire、遮挡、time-to-influence、机动性、目标、
+交叉火力、敌方固定、目标贡献和安全路径，距离仅是证据。每个 episode 都要解释
+`State before → Change → Immediate local consequence → Propagation`；相邻死亡不能自动构成
+因果链，HP/伤害/死亡应验证而不是替代局部决策与传播分析。目标状态必须说明谁承担行动义务、
+谁可以等待；训练建议必须绑定 `Trigger → Decision target → Training goal`。重点复查和高贡献者
+只能来自有实际 role/action 与 decision/execution 依据的已展开 episode，没有证据则省略。
+
+这些规则由三语 prompt contract tests 做确定性文本守护；默认 CI 不调用 provider。真实回放的
+KSR / provider benchmark 仍是显式手动回归，不把 synthetic contract PASS 当作模型语义质量证明。
+
 ## Team AI Review v0.5：结构化结果契约
 
 Team Call #2 返回 `TeamAiReviewResult`：`summary`、最多 6 个 `episodes`、

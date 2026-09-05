@@ -2,6 +2,30 @@
 
 ## Quality harness v1（0-token CI + 手动真实回放）
 
+### Team AI Review v0.6：战术因果推理深度
+
+v0.6 是 Team Call #2 的 reasoning-quality upgrade，不改变 v0.5 的
+`TeamAiReviewResult` JSON、SSE/API 或前端字段，也不新增模型调用、Team Autopsy、
+后端 tactical semantic validator 或第二套 `TacticalEpisode`。生产链仍由现有
+`TeamAiPromptBuilder` 提供事实、时间线和确定性证据，质量提升集中在 prompt 的推理顺序与
+contract tests。
+
+模型必须先读权威事实，再建立 Information state，区分 Known、Remaining uncertainty 和
+`CURRENT` / `LAST_KNOWN` / `UNSEEN`，说明新观察移除了哪种不确定性及其 Decision impact；
+随后评估基地/点数、时间、存活、位置和可用火力形成的 objective obligation。每个关键 local
+engagement 都要区分实际参与、潜在参与和无法影响窗口的存活车辆，并以射界、遮挡、
+time-to-influence、目标、交叉火力、敌方固定、目标贡献和安全路径判断有效参与，距离只是证据。
+
+选中的 episode 按 `State before → Change → Immediate local consequence → Propagation` 展开，
+第一次减员后检查射线、牵制、释放的敌方火力、角度和互保是否变化；HP、伤害和死亡只作为
+下游验证，不作为默认的 episode 入口。训练建议使用 `Trigger → Decision target → Training goal`，
+个人重点复查和高贡献者只能从已展开且有 decision/execution 依据的 episode 选择，没有证据就省略。
+证据不足时保留 UNKNOWN，不把相邻死亡自动串成因果，也不把 vehicle class 当作 tactical role。
+
+v0.6 的 deterministic prompt contract tests 检查三语推理锚点、顺序、未知状态、目标义务、
+局部参与、传播和下游验证；默认 CI 与现有规则一样保持 0 provider token。真实 `.wotbreplay`
+质量仍通过显式手动 KSR / benchmark 回归确认，synthetic contract PASS 不代表真实模型语义 PASS。
+
 ### Team AI Review v0.5：结构化结果与前端渲染
 
 Team Call #2 现在返回稳定 JSON 结果：`summary`、`episodes`、`trainingSuggestions`、
@@ -20,7 +44,7 @@ v0.4 不改变 v0.3 的输出长度、自由正文或 evidence model，而是约
 
 「重点复查」「高贡献者」和「关键威胁」只能绑定正文中已经展开的 tactical episode，不能重新从 settlement leaderboard 选择。重点复查要给出时间/窗口、局部位置、实际角色和决策/执行问题；高贡献者要回答「他改变了什么」，仅有伤害、击杀或存活数据时省略。传播需要检查，但不要求每次都找到传播；缺证据时保持不确定，也不猜测敌方意图。
 
-Team review 的质量验证不依赖默认 CI 调用模型。deterministic contract tests 校验 envelope 的 `evidenceBasis`、推理顺序和反捷径规则；offline harness 对真实 `.wotbreplay` 走生产 parser、reconstruction、canonical timeline、team context、prompt 和 grounding facts 链，只校验证据类型与结构性 gold constraint。gold 不包含标准 review，也不会发送给模型；已有 synthetic golden cases 只证明 prompt contract，不证明真实 LLM 行为。
+Team review 的质量验证不依赖默认 CI 调用模型。deterministic contract tests 校验 prompt 的推理顺序、结构化输出边界和反 settlement-shortcut 规则；历史 offline harness 对真实 `.wotbreplay` 走生产 parser、reconstruction、canonical timeline、team context、prompt 和 grounding facts 链，只校验证据类型与结构性 gold constraint。gold 不包含标准 review，也不会发送给模型；已有 synthetic golden cases 只证明 prompt contract，不证明真实 LLM 行为。
 
 手动 benchmark 使用非默认 `ai-live` 的 `TeamReplayQualityBenchmarkRunner`，显式选择 case/all 后才会创建 provider gateway。它不注入 synthetic scenario，运行次数默认 1，报告包含 model/prompt version/git SHA/date、grounding/shortcut/结构化 basis 结果、`must_notice`/`must_not`、最终 review 和可选 baseline 对比；不持久化 prompt、API key 或用户 token usage。
 
