@@ -89,9 +89,10 @@ class SecurityErrorLoggingContractTest {
         final JsonNode root = objectMapper.readTree(Files.readString(dashboard));
         final String query = errorExplorerQuery(root);
 
-        assertTrue(query.contains("api_request_failed|api_request_rejected|ERROR|WARN"));
-        assertTrue(query.contains("${id:raw}"));
-        assertTrue(query.contains("${traceId:raw}"));
+        assertTrue(query.contains("api_request_failed|api_request_rejected"));
+        assertTrue(query.contains("${errorId:raw}"));
+        assertTrue(query.contains("${correlationId:raw}"));
+        assertTrue(query.contains("${jobId:raw}"));
         assertFalse(query.contains("${version:raw}"));
     }
 
@@ -129,17 +130,21 @@ class SecurityErrorLoggingContractTest {
     private static Path dashboardPath() {
         final Path relative = Path.of("deploy", "observability", "grafana", "dashboards",
                 "wotbtools-error-explorer.json");
-        final Path fromModule = Path.of("..", "..", "deploy", "observability", "grafana", "dashboards",
-                "wotbtools-error-explorer.json");
-        return Files.isRegularFile(relative) ? relative : fromModule;
+        for (final Path candidate : new Path[]{relative, Path.of("..").resolve(relative),
+                Path.of("..", "..").resolve(relative)}) {
+            if (Files.isRegularFile(candidate)) {
+                return candidate.normalize();
+            }
+        }
+        throw new AssertionError("Error Explorer dashboard file is missing");
     }
 
     private static String errorExplorerQuery(final JsonNode root) {
         for (final JsonNode panel : root.get("panels")) {
-            if ("过滤后的错误日志".equals(panel.get("title").asText())) {
+            if ("近期事故（倒序）".equals(panel.get("title").asText())) {
                 return panel.get("targets").get(0).get("expr").asText();
             }
         }
-        throw new AssertionError("过滤后的错误日志面板缺失");
+        throw new AssertionError("近期事故面板缺失");
     }
 }

@@ -249,12 +249,12 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
       - **WotBTools 使用统计**（uid `wotbtools-usage`）— Replay Processing Job/files/已完成/失败与 AI Review 已启动/成功/失败/事实校验退回（均按 Grafana 所选时间范围估算增量，非永久累计）
       - **WotBTools · 生产总览**（uid `wotbtools-production-overview`）— 默认最近 15 分钟展示生产状态、HTTP、Replay、AI、认证与系统资源，以及 JVM/GC 与最近异常；所有 Panel 标题中文化
       - **WotBTools · Keycloak**（uid `wotbtools-keycloak`）— Keycloak management metrics、HTTP 5xx/P95、JVM/GC 与认证/Identity Broker 日志；保留 Loki 关键词兜底
-      - **WotBTools · AI 复盘**（uid `wotbtools-ai-review`）— AI 已启动/成功/失败/事实校验退回、耗时 P50/P95/P99、队列/上游 P95、校验/错误与 SSE 生命周期日志
-      - **WotBTools · 错误检索**（uid `wotbtools-error-explorer`）— 按 service、diagnostic id、errorCode、traceId、jobId 检索 Loki 错误日志；同时覆盖 canonical `api_request_failed` ERROR 与 `api_request_rejected` INFO
+      - **WotBTools · AI 复盘诊断**（uid `wotbtools-ai-review`）— AI 请求健康、Grounding/Parser/Validation/Retry 分解、耗时 P50/P95/P99、队列/上游 P95、校验冲突与 SSE 生命周期日志
+      - **WotBTools · 错误检索**（uid `wotbtools-error-explorer`）— 按 service、correlationId、errorId、errorCode、jobId 检索 Loki 事故生命周期；同时覆盖 canonical `api_request_failed` ERROR、`api_request_rejected` INFO 与 AI/Replay 终态事件
 
 看板使用现有 Prometheus/Loki 数据源，并仅增加两项最小观测能力：Keycloak management `/metrics` 与低基数 node-exporter。Production Overview 聚合 Backend、Keycloak、Host、Replay、AI 和最近异常；JVM、HTTP、Replay、AI、错误检索仍保留为独立下钻看板。未引入 cAdvisor、Postgres exporter 或 Alertmanager。
 
-Error Explorer 的 `service` 变量映射 Loki 的 `container_name` 标签；`id` 是 canonical error 的主诊断 ID，其余变量作为日志内容中的 regex token 搜索，用于关联结构化日志里的 `errorCode`、`traceId` 与 `jobId`。当前没有 authoritative deployment/build version 字段，因此不提供 `version` filter。
+Error Explorer 的 `service` 变量映射 Loki 的 `container_name` 标签；`errorId` 对 AI SSE 映射为 `correlationId`，对普通 HTTP 错误映射为 canonical error 的 `id`，其余变量作为日志内容中的 regex token 搜索，用于关联结构化日志里的 `errorCode` 与 `jobId`。当前没有 authoritative deployment/build version 字段，因此不提供 `version` filter。
 
 Spring Security 的 401/403（`AUTH_UNAUTHENTICATED` / `AUTH_FORBIDDEN`）也会以 INFO 级 `api_request_rejected` 写入同一组 `traceId`、`id`、`errorCode`、`status`、`method`、`path` 字段，因此可直接用 response body 的 `id` 在 Error Explorer 定位。
 
@@ -325,7 +325,7 @@ Grafana → Explore → 选 Loki：
 {container_name="wotb-backend"} | json | requestId="<requestId>"
 ```
 
-3. 也可用 Error Explorer 顶部的 `service`、`id`、`errorCode`、`traceId`、`jobId` 变量 + Loki 面板联动；默认 service 为 `wotb-backend`，其它过滤器默认 `.*`。
+3. 也可用 Error Explorer 顶部的 `service`、`correlationId`、`errorId`、`errorCode`、`jobId` 变量 + Loki 面板联动；默认 service 为 `wotb-backend`，其它过滤器默认 `.*`。AI SSE 的 `errorId` 与该次请求 `correlationId` 相同，普通 HTTP 错误使用 canonical body 的 `id`。
 
 ### 查询 AI Review 错误
 
@@ -380,7 +380,8 @@ event=ai_upstream_call_started correlationId=... stage=TEAM_CALL_2 attempt=1 res
 event=team_review_validation_attempt_completed correlationId=... attempt=1 promptTokens=... cumulativePromptTokens=...
 event=team_review_parse_result correlationId=... attempt=1 responseFormat=JSON_OBJECT result=PASS
 event=team_review_validation correlationId=... attempt=1 result=FAIL conflictCount=2 checks=BINDING,V5
-event=ai_validation_retry correlationId=... stage=TEAM_CALL_2 validationAttempt=2 reason=VALIDATION_FAILED
+event=team_review_validation_conflict correlationId=... attempt=1 check=V5 reasonCode=TIME_MISMATCH severity=HARD_FACT
+event=ai_validation_retry correlationId=... stage=TEAM_CALL_2 validationAttempt=2 rewrite=TARGETED reason=VALIDATION_FAILED
 event=team_review_validation correlationId=... attempt=2 result=PASS conflictCount=0
 event=team_review_completed correlationId=... validationAttempts=2 totalPromptTokens=... result=PASS
 event=ai_review_sse_completed correlationId=... durationMs=...
@@ -405,8 +406,8 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 | `team_review_validation_attempt_completed` | attempt, promptTokens, completionTokens, cumulativePromptTokens, cumulativeCompletionTokens | 每轮 token 累计 |
 | `team_review_parse_result` | attempt, responseFormat, result=PASS/FAIL, reason | parser 结果分类 |
 | `team_review_validation` | attempt, result=PASS/FAIL, conflictCount, checks, durationMs | validator 结果 |
-| `team_review_validation_conflict`（DEBUG） | attempt, check, reasonCode | 冲突机器分类明细 |
-| `ai_validation_retry` | stage, validationAttempt, reason | 业务返工重试 |
+| `team_review_validation_conflict`（INFO） | attempt, check, reasonCode, severity | 冲突机器分类明细；INFO 是生产默认级别，便于 grounding failure 诊断 |
+| `ai_validation_retry` | stage, validationAttempt, rewrite=TARGETED/FULL, reason | 业务返工重试；不改变现有重试策略 |
 | `team_review_completed` | validationAttempts, totalPromptTokens, totalCompletionTokens, durationMs, result | Team Call #2 阶段汇总 |
 
 #### parser 失败分类（低基数枚举）
@@ -428,6 +429,22 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 - **`AI_TIMEOUT`**：分 provider read timeout / 整体预算耗尽 / SSE timeout 三种；查 `event=ai_upstream_call_failed` 与调用耗时、remainingBudgetSec。
 - **`AI_UPSTREAM_UNAVAILABLE`**：上游 5xx / 连接失败；`event=ai_transport_retry` 记录退避重试。
 - **`AI_CANCELLED`**：客户端取消（cancel 端点 / SSE 断开）；查 `event=ai_review_cancelled` 的 `source`。
+
+### 生产事故排查（Error ID → lifecycle）
+
+1. 用户提供错误 UI 中的 `errorId`（AI SSE 中为 `id`，值与 `correlationId` 相同；普通 HTTP 错误使用 canonical `error.id`）。
+2. 打开 `WotBTools · 事故检索`，填入 `errorId`；必要时同时填写 `service`、`errorCode` 或 Replay `jobId`。
+3. 先看「近期事故」确认服务、事件、错误码和阶段，再看「单次 Incident 生命周期」的时间顺序。
+4. 若为 `AI_REVIEW_GROUNDING_FAILED`，依次检查 `team_review_parse_result`、`team_review_validation`、`team_review_validation_conflict`、`ai_validation_retry` 与 `team_review_validation_attempt_completed`，即可定位 parse、check/reasonCode、targeted/full rewrite 和最终失败。
+
+看板只用 Prometheus 做计数/速率/延迟/低基数 breakdown；`correlationId`、`errorId`、`jobId` 和完整生命周期只进入 Loki 查询。冲突日志只保留 event、correlationId、attempt、check、reasonCode、severity，不记录 prompt、原始模型输出、回放内容、账号或 token。
+
+### 生产验收清单（部署后）
+
+- 成功复盘：能看到 request → upstream → parse → validation PASS → success。
+- 校验返工：能看到 validation FAIL → `ai_validation_retry`（TARGETED/FULL）→ PASS 或最终失败。
+- `AI_REVIEW_GROUNDING_FAILED`：从 UI error ID 可定位同一 correlationId，并能看到每次 attempt 的 conflictCount、check/reasonCode、总耗时和上游状态。
+- 在 `monitor.wotbtools.com` 实际检查 AI Review 与 Incident Explorer 的真实数据、筛选结果和空数据提示；本地 JSON/PromQL 校验不能替代该生产验收。
 
 ---
 
@@ -503,8 +520,9 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_review_duration_seconds` — Review 完整总耗时（Timer，histogram，成功与异常都结束，覆盖文件验证→解析→分析→AI 调用→响应处理）
   - `wotb_ai_review_in_flight` — 当前处理中的 Review 数（Gauge，即"已进入 worker、尚未完成"的请求数；不含队列中等待的请求，也不含被 `AI_REVIEW_BUSY` 回绝的请求）
    - `wotb_ai_review_queue_wait_seconds` — worker 排队等待时长（Timer，histogram；由 `wotb_ai_review_queue_wait_seconds_bucket` 支撑 P95）
-   - `wotb_ai_review_queue_depth` — 当前等待执行的 AI Review worker 数（Gauge；不含正在执行与已拒绝请求）
+  - `wotb_ai_review_queue_depth` — 当前等待执行的 AI Review worker 数（Gauge；不含正在执行与已拒绝请求）
   - `wotb_ai_team_review_validation_attempt_total{result=pass|parser_invalid|validation_failed|metadata_only_pass}` — Team Call #2 validation attempt 分类；`parser_invalid` 与 `validation_failed` 表示 rework/失败尝试
+  - `wotb_ai_team_review_validation_retry_total{stage=TEAM_CALL_2,rewrite=TARGETED|FULL}` — validation retry 的低基数阶段与改写类型分布
 - **AI upstream**（自定义，`SpringAiChatGateway.chat`，每次上游调用）：
   - `wotb_ai_upstream_requests_total{mode}` — 上游请求量（每个 attempt +1，含 retry 重试；token budget 拒绝不进入 gateway，不计）
   - `wotb_ai_upstream_success_total{mode}` — 成功调用数（一次逻辑调用 +1）

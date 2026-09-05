@@ -425,16 +425,14 @@ public class TeamReplayAnalysisService {
                     "checks", checks,
                     "durationMs", elapsedMillis(validationStartNanos)));
             countValidationAttempt(hardConflicts ? "validation_failed" : "metadata_only_pass");
-            // DEBUG 级安全化冲突明细（只记录 check/reasonCode 低基数
-            // 分类，不记录完整冲突 message / AI 原句 / Grounding Fact 内容）。
-            if (LOGGER.isDebugEnabled()) {
-                for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
-                    LOGGER.debug(AiReviewEventLog.line("team_review_validation_conflict", correlationId,
-                            "attempt", attempt,
-                            "check", c.checkId(),
-                            "reasonCode", c.reasonCode() == null ? "UNCLASSIFIED" : c.reasonCode(),
-                            "severity", c.severity().name()));
-                }
+            // INFO 级安全化冲突明细：生产默认级别必须能定位 grounding failure；只记录
+            // check/reasonCode 低基数分类，不记录完整冲突 message / AI 原句 / Grounding Fact 内容。
+            for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
+                LOGGER.info(AiReviewEventLog.line("team_review_validation_conflict", correlationId,
+                        "attempt", attempt,
+                        "check", c.checkId(),
+                        "reasonCode", c.reasonCode() == null ? "UNCLASSIFIED" : c.reasonCode(),
+                        "severity", c.severity().name()));
             }
             // P0-14：conflict 低基数指标（每类冲突累计，供 availability dashboard）。
             for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
@@ -464,10 +462,13 @@ public class TeamReplayAnalysisService {
                 throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, correlationId);
             }
             // validation retry（业务返工）与 transport retry（网关退避）区分记录。
+            final String rewrite = attempt + 1 >= 3 ? "FULL" : "TARGETED";
             LOGGER.warn(AiReviewEventLog.line("ai_validation_retry", correlationId,
                     "stage", "TEAM_CALL_2",
                     "validationAttempt", attempt + 1,
+                    "rewrite", rewrite,
                     "reason", "VALIDATION_FAILED"));
+            countValidationRetry("TEAM_CALL_2", rewrite);
             feedback = formatConflicts(conflicts);
             fullRewrite = attempt >= 2;
         }
@@ -680,6 +681,14 @@ public class TeamReplayAnalysisService {
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_team_review_validation_attempt_total", "result", result)
                     .increment();
+        }
+    }
+
+    /** validation retry 的有限值分布（不携带 request/user 标识）。 */
+    private void countValidationRetry(final String stage, final String rewrite) {
+        if (meterRegistry != null) {
+            meterRegistry.counter("wotb_ai_team_review_validation_retry_total",
+                    "stage", stage, "rewrite", rewrite).increment();
         }
     }
 

@@ -8,7 +8,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { cancelAiReview, openAiReviewStream, type ReplayAuthSession } from '../api/replay-capabilities.js'
-import { localizeAiError, isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
+import { isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { ApiError, normalizeApiError } from '../utils/http.js'
 import type { AiReviewCapability, AiReviewResult, AiReviewRunState } from '../types/ai-review.js'
@@ -60,6 +60,8 @@ const datasetMessage = computed(() => {
 })
 
 const error = ref('')
+const errorId = ref('')
+const copiedErrorId = ref(false)
 const analyzing = ref(false)
 const analysisResult = ref<AiReviewResult | null>(null)
 /** AI 复盘 capability（AnalyzeResponse.capability：AVAILABLE / AVAILABLE_WITH_LIMITED_TIMELINE / UNAVAILABLE）。 */
@@ -97,7 +99,19 @@ watch(() => [props.file, props.processingJobId, props.sourceId], () => {
   analyzing.value = false
   resetResults()
   error.value = ''
+  errorId.value = ''
+  copiedErrorId.value = false
 })
+
+async function copyErrorId() {
+  if (!errorId.value || typeof navigator === 'undefined' || !navigator.clipboard) return
+  try {
+    await navigator.clipboard.writeText(errorId.value)
+    copiedErrorId.value = true
+  } catch {
+    copiedErrorId.value = false
+  }
+}
 
 /** 尽力而为地通知后端取消 in-flight 请求（按钮取消 / 面板卸载 / 前端超时）。 */
 function fireCancel(correlationId: string) {
@@ -161,6 +175,8 @@ async function runAnalyze() {
   activeRun = run
   analyzing.value = true
   error.value = ''
+  errorId.value = ''
+  copiedErrorId.value = false
   analysisResult.value = null
   progressStage.value = 'call1'
   partialAnalysis.value = ''
@@ -188,6 +204,7 @@ async function runAnalyze() {
       return
     }
     const normalized = normalizeApiError(e)
+    errorId.value = normalized.id || normalized.traceId || ''
     if (normalized.code === 'REQUEST_ABORTED') {
       error.value = run.timedOut ? t('recon.errors.AI_TIMEOUT') : t('recon.cancelled')
     } else if (run.cancelRequested) {
@@ -250,9 +267,13 @@ async function readAnalyzeStream(r, run) {
           recoverable.recoverableDatasource = true
           throw recoverable
         }
-        const localized = new Error(localizeAiError({ code: event.code || '' }, 502, t)) as AiRuntimeError
-        localized.isLocalized = true
-        throw localized
+        throw new ApiError({
+          errorCode: event.code || 'AI_REVIEW_GROUNDING_FAILED',
+          errorMsg: event.errorMsg,
+          id: event.id,
+          status: 502,
+          retryable: false,
+        })
     }
   }
 
@@ -283,6 +304,7 @@ async function readAnalyzeStream(r, run) {
     }
   } catch (e) {
     if (e && e.name === 'AbortError') throw e
+    if (e instanceof ApiError) throw e
     const runtimeError = e as AiRuntimeError
     if (runtimeError.isLocalized || runtimeError.recoverableDatasource) throw e
     throw new Error(t('recon.errors.AI_RESPONSE_INVALID'))
@@ -318,7 +340,15 @@ onBeforeUnmount(() => {
         <span :class="{ 'ai-dataset-error': !!datasetError }">{{ datasetMessage }}</span>
       </div>
 
-      <p v-if="error" class="error">{{ error }}</p>
+      <div v-if="error" class="ai-error" data-test="ai-error">
+        <p class="error">{{ error }}</p>
+        <div v-if="errorId" class="ai-error-id">
+          <span>{{ $t('errors.diagnostic_id', { id: errorId }) }}</span>
+          <button type="button" class="btn-sm" @click="copyErrorId">
+            {{ copiedErrorId ? $t('errors.diagnostic_id_copied') : $t('errors.copy_diagnostic_id') }}
+          </button>
+        </div>
+      </div>
 
       <div v-if="analyzing" class="panel streaming-panel">
         <div class="stream-status">
@@ -394,5 +424,13 @@ onBeforeUnmount(() => {
   max-height: 320px;
   overflow-y: auto;
   word-break: break-word;
+}
+.ai-error-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: .82rem;
 }
 </style>

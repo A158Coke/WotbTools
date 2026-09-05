@@ -36,7 +36,9 @@
         "invalid_response": "战局回放数据异常，无法安全加载。",
         "unknown_error": "发生未知错误，请重试。",
         "job_failed": "任务执行失败。",
-        "diagnostic_id": "诊断 ID：{id}"
+        "diagnostic_id": "诊断 ID：{id}",
+        "copy_diagnostic_id": "复制 ID",
+        "diagnostic_id_copied": "已复制"
     },
     "upload": {
         "drop_hint": "拖拽 .wotbreplay 文件到这里",

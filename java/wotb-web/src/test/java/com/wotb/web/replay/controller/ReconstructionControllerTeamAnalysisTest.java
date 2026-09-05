@@ -19,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -149,7 +150,10 @@ class ReconstructionControllerTeamAnalysisTest {
 
         final String body = analyzeConveyingError("zh");
         assertTrue(body.contains("\"code\":\"AI_RATE_LIMITED\""), body);
-        assertTrue(!body.contains("private-correlation-id"), "upstream detail must not leak: " + body);
+        assertTrue(body.contains("\"id\":\"00000000-0000-0000-0000-0000000000ab\""), body);
+        assertTrue(body.contains("\"errorCode\":\"AI_RATE_LIMITED\""), body);
+        assertTrue(body.contains("\"errorMsg\":null"), body);
+        assertFalse(body.contains("private-correlation-id"), "upstream detail must not leak: " + body);
     }
 
     // ---- helpers ----
