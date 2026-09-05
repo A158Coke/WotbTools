@@ -21,15 +21,27 @@ public record TeamReviewEnvelope(
         List<Claim> claims
 ) {
 
-    /** 唯一主判断（必须有内容：title + reasoning 非空；可表达当前证据中没有确认的重大错误）。 */
+    /**
+     * 唯一主判断（必须有内容：title + reasoning 非空；可表达当前证据中没有确认的重大错误）。
+     * {@code evidenceBasis} 是语言无关的结构性依据元数据，不是后端战术 verdict。
+     */
     public record PrimaryDiagnosis(
             String title,
             String reasoning,
-            List<String> supportingEvidenceIds
+            List<String> supportingEvidenceIds,
+            List<String> evidenceBasis
     ) {
+        /** Backward-compatible constructor for existing callers that only bind evidence ids. */
+        public PrimaryDiagnosis(final String title,
+                                final String reasoning,
+                                final List<String> supportingEvidenceIds) {
+            this(title, reasoning, supportingEvidenceIds, List.of());
+        }
+
         public PrimaryDiagnosis {
             supportingEvidenceIds = supportingEvidenceIds == null
                     ? List.of() : List.copyOf(supportingEvidenceIds);
+            evidenceBasis = evidenceBasis == null ? List.of() : List.copyOf(evidenceBasis);
         }
 
         public boolean hasContent() {

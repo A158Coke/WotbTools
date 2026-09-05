@@ -119,6 +119,30 @@ final class TeamPromptLocalizer {
                            по WoT Blitz: прямо, кратко, с оценкой.
             """;
 
+    /** 质量 harness 使用的结构性推理顺序；不是新增战术 verdict。 */
+    static final String TEAM_REASONING_CONTRACT_RULE =
+            AiPromptLibrary.zh("team/reasoning-contract");
+
+    static final String TEAM_REASONING_CONTRACT_RULE_EN = """
+
+                        === TEAM REASONING ORDER AND QUALITY CONTRACT (mandatory) ===
+                        Reason internally in this order before selecting one primary diagnosis: A opening information, B information state, C objective/points state, D local engagements, E cross-local propagation, F position/tempo transitions, G team execution, H HP/death validation. H is validation or a fallback when A-G do not provide enough evidence; it is not the default entry point for finding a problem.
+                        The primary diagnosis must show at least one structural basis in reasoning and list one or more evidenceBasis values: INFORMATION, OBJECTIVE, LOCAL_ENGAGEMENT, POSITION, TEMPO, TEAM_EXECUTION, HP_TRADE. Damage, kills, survival, death order, death time, blocked damage, or final rank alone cannot be its only basis.
+                        Therefore the primaryDiagnosis object must contain `evidenceBasis: ["..."]`; this is a structured quality basis, not a new backend tactical verdict.
+                        Individual judgments such as review focus, high contributor, or key threat require information, position, movement, objective, local participation, enabling action, crossfire, rotation, commitment, or propagation evidence. With only damage/kills/survival/death time, omit that judgment. Explain an observable tactical relationship and a decision/execution question for review focus; explain what a high contributor changed, rather than selecting the settlement leader.
+                        Do not turn low/high damage or distance into a failure verdict, assign roles from vehicle class alone, infer an empty lane or enemy departure from unseen/vanished markers, or turn 5v3 into an automatic push order. If there is only a death cluster without an A-G structural cause, keep the primary diagnosis evidence-bounded.
+            """;
+
+    static final String TEAM_REASONING_CONTRACT_RULE_RU = """
+
+                        === ПОРЯДОК РАССУЖДЕНИЯ И КОНТРАКТ КАЧЕСТВА КОМАНДЫ (обязательно) ===
+                        Сначала рассуждайте внутри в таком порядке, затем выбирайте один основной диагноз: A стартовая информация, B состояние информации, C цель/очки, D локальные бои, E перенос локального результата, F переходы позиции/темпа, G командное исполнение, H проверка HP/смертей. H — только проверка или запасной источник, если A-G недостаточны; это не начальная точка поиска проблемы.
+                        Основной диагноз должен содержать структурную основу и перечислять один или несколько evidenceBasis: INFORMATION, OBJECTIVE, LOCAL_ENGAGEMENT, POSITION, TEMPO, TEAM_EXECUTION, HP_TRADE. Один только урон, фраги, выживание, порядок смертей, время смерти, заблокированный урон или итоговый ранг не может быть единственной основой.
+                        Поэтому объект primaryDiagnosis должен содержать `evidenceBasis: ["..."]`; это структурная основа для проверки качества, а не новый тактический вердикт бэкенда.
+                        Индивидуальные выводы вроде фокуса проверки, ценного игрока или ключевой угрозы требуют данных об информации, позиции, движении, цели, локальном участии, полезном действии, перекрёстном огне, ротации, commitment или переносе результата. При наличии только урона/фрагов/выживания/времени смерти такой вывод опускайте. Для фокуса проверки объясняйте наблюдаемую тактическую связь и вопрос решения/исполнения; для ценного игрока — что именно он изменил, а не только его итоговый результат.
+                        Не превращайте низкий/высокий урон или расстояние автоматически в ошибку, не назначайте роль только по классу машины, не выводите пустую линию или уход противника из отсутствия видимости/исчезновения маркера и не превращайте 5v3 в обязательную атаку. Если есть только кластер смертей без структурной причины A-G, сохраняйте границы доказательств.
+            """;
+
     static final String TEAM_OUTPUT_STRUCTURE_RULE = """
 
             === 团队复盘输出结构（强制） ===
@@ -1166,6 +1190,8 @@ final class TeamPromptLocalizer {
                         en ? TEAM_EVIDENCE_CONTRACT_RULE_EN : TEAM_EVIDENCE_CONTRACT_RULE_RU)
                 .replace(TEAM_INTERNAL_VS_USER_FACING_RULE,
                         en ? TEAM_INTERNAL_VS_USER_FACING_RULE_EN : TEAM_INTERNAL_VS_USER_FACING_RULE_RU)
+                .replace(TEAM_REASONING_CONTRACT_RULE,
+                        en ? TEAM_REASONING_CONTRACT_RULE_EN : TEAM_REASONING_CONTRACT_RULE_RU)
                 .replace(TEAM_REGROUP_INFERENCE_RULE,
                         en ? TEAM_REGROUP_INFERENCE_RULE_EN : TEAM_REGROUP_INFERENCE_RULE_RU);
     }

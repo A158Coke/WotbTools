@@ -1,0 +1,11 @@
+id: A-flank-local-propagation
+replay: common/fixtures/replays/cw-training-15-14-example.wotbreplay
+must_notice:
+  - separate_flank_local
+  - flank_released_enemy
+  - released_enemy_affected_main_group
+must_not:
+  - death_cluster_as_root_cause
+evidence_required:
+  - POSITION_REGION
+  - ENEMY_POSITION

@@ -22,6 +22,7 @@ import java.util.regex.Pattern;
  * 字符串数组字段（evidenceIds / supportingEvidenceIds）区分 MISSING（缺失）/ INVALID（存在但
  * 类型或元素非法，如字符串整体、{@code [{}]}、{@code [null]}）/ VALID（合法，可为空数组）三态，
  * malformed 字段进入 INVALID_MACHINE_FIELD_TYPE 而非误报 MISSING_REQUIRED_MACHINE_FIELD；
+ * evidenceBasis 另受有限枚举约束；
  * 合法 {@code []} 仍是合法空引用列表（factual claim 要求非空时才 → MISSING_REQUIRED_MACHINE_FIELD）。</p>
  */
 public final class TeamReviewEnvelopeParser {
@@ -67,9 +68,14 @@ public final class TeamReviewEnvelopeParser {
             if (supportingIds.invalid()) {
                 return ParseResult.fail(ParseFailureReason.INVALID_MACHINE_FIELD_TYPE);
             }
+            final StringListField basis = stringListField(diagnosis.get("evidenceBasis"));
+            if (basis.invalid() || basis.value().stream().anyMatch(value -> !EVIDENCE_BASIS.contains(value))) {
+                return ParseResult.fail(ParseFailureReason.INVALID_MACHINE_FIELD_TYPE);
+            }
             final TeamReviewEnvelope.PrimaryDiagnosis primary =
                     new TeamReviewEnvelope.PrimaryDiagnosis(
-                            title, reasoning, supportingIds.missing() ? List.of() : supportingIds.value());
+                            title, reasoning, supportingIds.missing() ? List.of() : supportingIds.value(),
+                            basis.missing() ? List.of() : basis.value());
             final String reviewMarkdown = text(root.get("reviewMarkdown"));
             if (reviewMarkdown.isBlank()) {
                 return ParseResult.fail(ParseFailureReason.MISSING_REVIEW_MARKDOWN);
@@ -230,6 +236,10 @@ public final class TeamReviewEnvelopeParser {
     static final Set<String> SIDES = Set.of("FRIENDLY", "ENEMY");
     static final Set<String> COUNT_SEMANTICS = Set.of("EXACT", "AT_LEAST", "SUBSET");
     static final Set<String> KNOWLEDGE_VALUES = Set.of("CURRENT", "LAST_KNOWN");
+    /** Structural reasoning bases used by the quality harness; additive and language-neutral. */
+    static final Set<String> EVIDENCE_BASIS = Set.of(
+            "INFORMATION", "OBJECTIVE", "LOCAL_ENGAGEMENT", "POSITION", "TEMPO",
+            "TEAM_EXECUTION", "HP_TRADE");
 
     /** ALIVE_TRANSITION value 机器格式（三语通用）："7v7 -> 4v6" / "7v7 → 4v6"。 */
     static final Pattern MACHINE_TRANSITION = Pattern.compile(
