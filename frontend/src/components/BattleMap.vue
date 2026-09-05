@@ -1,6 +1,7 @@
 <script setup>
-import { ref, useId } from 'vue'
+import { computed, ref, useId } from 'vue'
 import VehicleMarker from './VehicleMarker.vue'
+import { activeTerrainRelief, projectTerrainPoint } from '../utils/terrainReliefProjection.js'
 
 defineOptions({ name: 'BattleMap' })
 
@@ -43,22 +44,113 @@ const mapEl = ref(null)
 const textInputRef = ref(null)
 defineExpose({ mapEl, textInputRef })
 
+const reliefModel = computed(() => {
+  const model = activeTerrainRelief.value
+  return model && model.mapCode === String(props.pbOverview?.mapCode || '') ? model : null
+})
+const reliefActive = computed(() => !!reliefModel.value)
+
+function projectSemantic(x, y) {
+  const model = reliefModel.value
+  if (!model) return { x: props.mapView.toX(x), y: props.mapView.toY(y) }
+  const point = projectTerrainPoint(model, Number(x), Number(y))
+  if (!point) return { x: props.mapView.toX(x), y: props.mapView.toY(y) }
+  return {
+    x: point.xNorm * props.mapView.W,
+    y: point.yNorm * props.mapView.H,
+  }
+}
+
+function projectedX(x, y) {
+  return projectSemantic(x, y).x
+}
+
+function projectedY(x, y) {
+  return projectSemantic(x, y).y
+}
+
+function projectSvgPoint(x, y) {
+  if (!reliefActive.value) return { x: Number(x), y: Number(y) }
+  const semanticX = props.mapView.fromX(Number(x))
+  const semanticY = props.mapView.fromY(Number(y))
+  if (!Number.isFinite(semanticX) || !Number.isFinite(semanticY)) return { x: Number(x), y: Number(y) }
+  return projectSemantic(semanticX, semanticY)
+}
+
+function projectSvgPointString(points) {
+  if (!reliefActive.value || typeof points !== 'string') return points
+  return points.trim().split(/\s+/).map((pair) => {
+    const [x, y] = pair.split(',').map(Number)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return pair
+    const point = projectSvgPoint(x, y)
+    return `${point.x},${point.y}`
+  }).join(' ')
+}
+
+function projectedAnnotationPoint(annotation, xKey, yKey) {
+  return projectSvgPoint(annotation[xKey], annotation[yKey])
+}
+
+function projectedRectPoints(annotation) {
+  const corners = [
+    [annotation.x, annotation.y],
+    [annotation.x + annotation.w, annotation.y],
+    [annotation.x + annotation.w, annotation.y + annotation.h],
+    [annotation.x, annotation.y + annotation.h],
+  ]
+  return corners.map(([x, y]) => {
+    const point = projectSvgPoint(x, y)
+    return `${point.x},${point.y}`
+  }).join(' ')
+}
+
+function projectedCirclePoints(annotation) {
+  const points = []
+  const segments = 32
+  for (let i = 0; i < segments; i++) {
+    const angle = (i / segments) * Math.PI * 2
+    const point = projectSvgPoint(
+      annotation.cx + Math.cos(angle) * annotation.r,
+      annotation.cy + Math.sin(angle) * annotation.r,
+    )
+    points.push(`${point.x},${point.y}`)
+  }
+  return points.join(' ')
+}
+
+const presentedVehicleStates = computed(() => {
+  if (!reliefModel.value) return props.vehicleStates
+  const scale = props.viewScale || 1
+  return props.vehicleStates.map((state) => {
+    const point = projectSemantic(state.pos.x, state.pos.y)
+    const offset = state.presentationOffset || { x: 0, y: 0 }
+    return {
+      ...state,
+      markerStyle: {
+        ...state.markerStyle,
+        left: `calc(${(point.x / props.mapView.W) * 100}% + ${offset.x / scale}px)`,
+        top: `calc(${(point.y / props.mapView.H) * 100}% + ${offset.y / scale}px)`,
+      },
+    }
+  })
+})
+
 // clipPath id 是文档级的，多个实例同时挂载时不能撞名。
 const clipPrefix = `pb-base-clip-${useId()}`
 
-// 基地半径是世界米，经同一 toX 换算成 SVG 单位。
+// Tactical base symbol stays screen-readable in relief mode; only its anchor is
+// height-projected. It is deliberately not distorted into a physical ground ellipse.
 function baseRadius(base) {
   return props.mapView.toX(base.x + base.radius) - props.mapView.toX(base.x)
 }
 
-// 占领进度像瓶里的水，从底部往上涨；100% 时整个圆都是占领方的颜色。
 function fillHeight(base) {
   const clamped = Math.min(Math.max(base.progress ?? 0, 0), 100)
   return baseRadius(base) * 2 * clamped / 100
 }
 
 function fillTop(base) {
-  return props.mapView.toY(base.y) + baseRadius(base) - fillHeight(base)
+  return projectedY(base.x, base.y) + baseRadius(base) - fillHeight(base)
 }
 </script>
 
@@ -80,7 +172,7 @@ function fillTop(base) {
           <clipPath v-for="base in props.bases" :key="base.baseId" :id="`${clipPrefix}-${base.baseId}`">
             <rect
               class="pb-base-fill-clip"
-              :x="props.mapView.toX(base.x) - baseRadius(base)"
+              :x="projectedX(base.x, base.y) - baseRadius(base)"
               :y="fillTop(base)"
               :width="baseRadius(base) * 2"
               :height="fillHeight(base)"
@@ -89,32 +181,32 @@ function fillTop(base) {
         </defs>
         <g class="pb-bases" data-test="pb-bases">
           <g v-for="base in props.bases" :key="base.baseId" :class="`pb-base-${base.status}`" :data-test="`pb-base-${base.baseId}`">
-            <circle :cx="props.mapView.toX(base.x)" :cy="props.mapView.toY(base.y)" :r="baseRadius(base)" class="pb-base-circle" />
+            <circle :cx="projectedX(base.x, base.y)" :cy="projectedY(base.x, base.y)" :r="baseRadius(base)" class="pb-base-circle" />
             <circle
               v-if="base.progress != null"
               class="pb-base-fill"
               :class="`pb-capture-${base.capturedBy}`"
               data-test="pb-base-fill"
-              :cx="props.mapView.toX(base.x)"
-              :cy="props.mapView.toY(base.y)"
+              :cx="projectedX(base.x, base.y)"
+              :cy="projectedY(base.x, base.y)"
               :r="baseRadius(base)"
               :clip-path="`url(#${clipPrefix}-${base.baseId})`"
             />
-            <text :x="props.mapView.toX(base.x)" :y="props.mapView.toY(base.y)" class="pb-base-label" text-anchor="middle" dominant-baseline="central">{{ base.baseId }}</text>
+            <text :x="projectedX(base.x, base.y)" :y="projectedY(base.x, base.y)" class="pb-base-label" text-anchor="middle" dominant-baseline="central">{{ base.baseId }}</text>
           </g>
         </g>
         <g class="pb-spawns">
-          <circle v-for="(spawn, index) in props.pbOverview.spawnPoints" :key="`${spawn.name}-${index}`" :cx="props.mapView.toX(spawn.x)" :cy="props.mapView.toY(spawn.y)" r="4" :class="props.friendlyTeam === null || props.friendlyTeam === undefined ? 'pb-spawn-neutral' : (spawn.team === props.friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy')" />
+          <circle v-for="(spawn, index) in props.pbOverview.spawnPoints" :key="`${spawn.name}-${index}`" :cx="projectedX(spawn.x, spawn.y)" :cy="projectedY(spawn.x, spawn.y)" r="4" :class="props.friendlyTeam === null || props.friendlyTeam === undefined ? 'pb-spawn-neutral' : (spawn.team === props.friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy')" />
         </g>
         <g class="pb-trails" data-test="pb-trails" aria-hidden="true">
           <template v-for="(trail, index) in props.visibleTrails" :key="`trail-${trail.accountId}-${index}`">
             <line
               v-if="trail.from && trail.to"
               class="pb-trail"
-              :x1="props.mapView.toX(trail.from.x)"
-              :y1="props.mapView.toY(trail.from.y)"
-              :x2="props.mapView.toX(trail.to.x)"
-              :y2="props.mapView.toY(trail.to.y)"
+              :x1="projectedX(trail.from.x, trail.from.y)"
+              :y1="projectedY(trail.from.x, trail.from.y)"
+              :x2="projectedX(trail.to.x, trail.to.y)"
+              :y2="projectedY(trail.to.x, trail.to.y)"
               :stroke="trail.friendly === true ? 'var(--map-spawn-friendly)' : (trail.friendly === false ? 'var(--map-spawn-enemy)' : 'var(--text-muted)')"
               :stroke-width="1.5 / props.viewScale"
               stroke-dasharray="2 4"
@@ -123,8 +215,8 @@ function fillTop(base) {
             <circle
               v-else-if="trail.point"
               class="pb-trail-point"
-              :cx="props.mapView.toX(trail.point.x)"
-              :cy="props.mapView.toY(trail.point.y)"
+              :cx="projectedX(trail.point.x, trail.point.y)"
+              :cy="projectedY(trail.point.x, trail.point.y)"
               :r="1.8 / props.viewScale"
               :fill="trail.friendly === true ? 'var(--map-spawn-friendly)' : (trail.friendly === false ? 'var(--map-spawn-enemy)' : 'var(--text-muted)')"
               :opacity="trail.opacity"
@@ -133,25 +225,31 @@ function fillTop(base) {
         </g>
         <g class="pb-tracers" aria-hidden="true">
           <template v-for="(line, index) in props.visibleTracers" :key="`tracer-${line.timeSec}-${index}`">
-            <line v-if="line.hasLine" class="pb-tracer" :x1="props.mapView.toX(line.x1)" :y1="props.mapView.toY(line.y1)" :x2="props.mapView.toX(line.x2)" :y2="props.mapView.toY(line.y2)" :stroke="props.tracerColor(line.attackerAccountId)" :stroke-width="6 / props.viewScale" :opacity="line.opacity * 0.35" />
-            <line v-if="line.hasLine" class="pb-tracer-core" :x1="props.mapView.toX(line.x1)" :y1="props.mapView.toY(line.y1)" :x2="props.mapView.toX(line.x2)" :y2="props.mapView.toY(line.y2)" stroke="#fff" :stroke-width="1.75 / props.viewScale" :opacity="line.opacity" />
-            <circle v-if="line.flashProgress < 1" class="pb-tracer-flash" :cx="props.mapView.toX(line.x2)" :cy="props.mapView.toY(line.y2)" :r="(3 + 9 * line.flashProgress) / props.viewScale" :fill="props.tracerColor(line.attackerAccountId)" :opacity="line.flashOpacity" />
+            <line v-if="line.hasLine" class="pb-tracer" :x1="projectedX(line.x1, line.y1)" :y1="projectedY(line.x1, line.y1)" :x2="projectedX(line.x2, line.y2)" :y2="projectedY(line.x2, line.y2)" :stroke="props.tracerColor(line.attackerAccountId)" :stroke-width="6 / props.viewScale" :opacity="line.opacity * 0.35" />
+            <line v-if="line.hasLine" class="pb-tracer-core" :x1="projectedX(line.x1, line.y1)" :y1="projectedY(line.x1, line.y1)" :x2="projectedX(line.x2, line.y2)" :y2="projectedY(line.x2, line.y2)" stroke="#fff" :stroke-width="1.75 / props.viewScale" :opacity="line.opacity" />
+            <circle v-if="line.flashProgress < 1" class="pb-tracer-flash" :cx="projectedX(line.x2, line.y2)" :cy="projectedY(line.x2, line.y2)" :r="(3 + 9 * line.flashProgress) / props.viewScale" :fill="props.tracerColor(line.attackerAccountId)" :opacity="line.flashOpacity" />
           </template>
         </g>
         <g v-if="props.annotVisible" class="pb-annotations" data-test="pb-annotations">
           <template v-for="(annotation, index) in props.renderedAnnotations" :key="index">
-            <polyline v-if="annotation.type === 'pen'" :points="annotation.svgPoints" fill="none" :stroke="annotation.color" :stroke-width="annotation.widthSvg" stroke-linecap="round" stroke-linejoin="round" />
-            <line v-else-if="annotation.type === 'line'" :x1="annotation.x1" :y1="annotation.y1" :x2="annotation.x2" :y2="annotation.y2" :stroke="annotation.color" :stroke-width="annotation.widthSvg" stroke-linecap="round" />
-            <g v-else-if="annotation.type === 'arrow'"><line :x1="annotation.x1" :y1="annotation.y1" :x2="annotation.x2" :y2="annotation.y2" :stroke="annotation.color" :stroke-width="annotation.widthSvg" stroke-linecap="round" /><polygon :points="annotation.head" :fill="annotation.color" /></g>
-            <rect v-else-if="annotation.type === 'rect'" :x="annotation.x" :y="annotation.y" :width="annotation.w" :height="annotation.h" :stroke="annotation.color" :stroke-width="annotation.widthSvg" fill="none" />
-            <circle v-else-if="annotation.type === 'circle'" :cx="annotation.cx" :cy="annotation.cy" :r="annotation.r" :stroke="annotation.color" :stroke-width="annotation.widthSvg" fill="none" />
-            <text v-else-if="annotation.type === 'text'" :x="annotation.x" :y="annotation.y" :fill="annotation.color" :font-size="props.annotFontSize" text-anchor="middle" dominant-baseline="middle" class="pb-annot-text">{{ annotation.text }}</text>
+            <polyline v-if="annotation.type === 'pen'" :points="projectSvgPointString(annotation.svgPoints)" fill="none" :stroke="annotation.color" :stroke-width="annotation.widthSvg" stroke-linecap="round" stroke-linejoin="round" />
+            <line v-else-if="annotation.type === 'line'" :x1="projectedAnnotationPoint(annotation, 'x1', 'y1').x" :y1="projectedAnnotationPoint(annotation, 'x1', 'y1').y" :x2="projectedAnnotationPoint(annotation, 'x2', 'y2').x" :y2="projectedAnnotationPoint(annotation, 'x2', 'y2').y" :stroke="annotation.color" :stroke-width="annotation.widthSvg" stroke-linecap="round" />
+            <g v-else-if="annotation.type === 'arrow'"><line :x1="projectedAnnotationPoint(annotation, 'x1', 'y1').x" :y1="projectedAnnotationPoint(annotation, 'x1', 'y1').y" :x2="projectedAnnotationPoint(annotation, 'x2', 'y2').x" :y2="projectedAnnotationPoint(annotation, 'x2', 'y2').y" :stroke="annotation.color" :stroke-width="annotation.widthSvg" stroke-linecap="round" /><polygon :points="projectSvgPointString(annotation.head)" :fill="annotation.color" /></g>
+            <template v-else-if="annotation.type === 'rect'">
+              <polygon v-if="reliefActive" :points="projectedRectPoints(annotation)" :stroke="annotation.color" :stroke-width="annotation.widthSvg" fill="none" />
+              <rect v-else :x="annotation.x" :y="annotation.y" :width="annotation.w" :height="annotation.h" :stroke="annotation.color" :stroke-width="annotation.widthSvg" fill="none" />
+            </template>
+            <template v-else-if="annotation.type === 'circle'">
+              <polygon v-if="reliefActive" :points="projectedCirclePoints(annotation)" :stroke="annotation.color" :stroke-width="annotation.widthSvg" fill="none" />
+              <circle v-else :cx="annotation.cx" :cy="annotation.cy" :r="annotation.r" :stroke="annotation.color" :stroke-width="annotation.widthSvg" fill="none" />
+            </template>
+            <text v-else-if="annotation.type === 'text'" :x="projectedAnnotationPoint(annotation, 'x', 'y').x" :y="projectedAnnotationPoint(annotation, 'x', 'y').y" :fill="annotation.color" :font-size="props.annotFontSize" text-anchor="middle" dominant-baseline="middle" class="pb-annot-text">{{ annotation.text }}</text>
           </template>
         </g>
       </svg>
       <div class="pb-markers" :class="{ 'pb-drawing': !!props.activeTool }" data-test="pb-markers" aria-hidden="false">
         <VehicleMarker
-          v-for="state in props.vehicleStates"
+          v-for="state in presentedVehicleStates"
           :key="state.vehicle.accountId"
           :marker="state"
           :selected="props.selectedAccountId === state.vehicle.accountId"
