@@ -13,11 +13,20 @@ public final class AiEvalAssertions {
     }
 
     public static List<CheckResult> evaluate(final AiEvalCase caze, final String prompt) {
+        return evaluate(caze, prompt, "");
+    }
+
+    public static List<CheckResult> evaluate(
+            final AiEvalCase caze,
+            final String prompt,
+            final String systemPrompt) {
         final List<CheckResult> results = new ArrayList<>();
         for (final AiEvalCase.Check check : caze.checks()) {
             final boolean passed = switch (check.kind()) {
                 case "prompt_contains" -> prompt.contains(check.text());
                 case "prompt_omits" -> !prompt.contains(check.text());
+                case "system_prompt_contains" -> systemPrompt.contains(check.text());
+                case "system_prompt_omits" -> !systemPrompt.contains(check.text());
                 default -> throw new IllegalArgumentException(
                         "Unknown check kind '" + check.kind() + "' in case " + caze.id());
             };

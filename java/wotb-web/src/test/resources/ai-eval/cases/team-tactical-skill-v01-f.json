@@ -1,0 +1,13 @@
+{
+  "id": "team-tactical-skill-v01-f-supremacy",
+  "mode": "TEAM_PERSPECTIVE",
+  "arenaBonusType": 3,
+  "fixtureKey": "cw-cap-defense-01",
+  "expectedJudgment": "争霸赛约 +40 击杀价值；低分时不机械放弃短击杀",
+  "checks": [
+    { "kind": "system_prompt_contains", "text": "约 +40 的点数价值" },
+    { "kind": "system_prompt_contains", "text": "低于约 750 分" },
+    { "kind": "system_prompt_contains", "text": "约 1–2 秒内可确认的击杀" }
+  ],
+  "note": "Golden F：击杀价值与目标压力是模式化经验，不是比分硬状态机。"
+}

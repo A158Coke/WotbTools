@@ -1,0 +1,13 @@
+{
+  "id": "team-tactical-skill-v01-d-no-error",
+  "mode": "TEAM_PERSPECTIVE",
+  "arenaBonusType": 3,
+  "fixtureKey": "cw-cap-defense-01",
+  "expectedJudgment": "当前可确认/可观察证据中没有确认的重大错误；不证明本场没有任何错误",
+  "checks": [
+    { "kind": "system_prompt_contains", "text": "NO_SIGNIFICANT_CONFIRMED_ERROR" },
+    { "kind": "system_prompt_contains", "text": "不得为了填满字段制造" },
+    { "kind": "system_prompt_contains", "text": "当前可确认/可观察证据中" }
+  ],
+  "note": "Golden D：primaryDiagnosis 是最重要结论，不是强制错误标签。"
+}
