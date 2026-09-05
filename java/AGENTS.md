@@ -60,7 +60,7 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
 ## AI Review 边界（wotb-web/.../replay/ai + wotb-core/.../replay）
 
 - 单文件策略：`AiReplayBatchPolicy.MAX_FILES = 1`（仅 AI 复盘；多文件批量端点 `/process`、`/reconstruct-batch` 已 410，批量分析模式 `MULTI_*` 已删除）。
-- 编排归属：`AiReplayAnalysisService` 是**兼容 facade**（无真实编排）；随机战双 Call 在 `TacticalReviewHarness`，团队复盘在 `TeamReplayAnalysisService`，赛前基线 `PreBattleStrategicService`，Team Autopsy `TeamAutopsyService`。
+- 编排归属：`AiReplayAnalysisService` 是**兼容 facade**（无真实编排）；随机战双 Call 在 `TacticalReviewHarness`，团队复盘在 `TeamReplayAnalysisService`，赛前基线 `PreBattleStrategicService`。Team Call #2 的 v0.5 结果为 `TeamAiReviewResult`；`TeamAutopsyService` 仅保留历史兼容实现，不进入生产链。
 - transport 唯一生产实现：`SpringAiChatGateway`（Spring AI OpenAI-compatible → api.deepseek.com）；业务只依赖 `AiChatGateway` 接口。Prompt 文本单一来源 `wotb-web/src/main/resources/prompts/{player,prebattle,team}/*.zh.md`（`AiPromptLibrary.zh("player/tactical" 等 key)` 按 `classpath:/prompts/<key>.zh.md` 加载，如 `player/fallback`、`player/single`、`player/tactical`、`prebattle/system`、`prebattle/user-header`、`prebattle/confidence-legend`、`team/single`、`team/autopsy`；md 支持 `{{key}}` 占位包含（`AiPromptLibrary` 加载时递归展开，公共规则块在 `prompts/common/*.zh.md` 复用，循环包含 fail loud）；展开后 md 内 ZH 规则片段与 Java 常量必须逐字一致（`PromptRuleContractTest` 强制），否则 EN/RU `.replace` 锚点静默失效、残留中文规则段）。
 - 超时链：worker 整体 1100s（`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 单次 AI call 315s；SSE `SseEmitter` 1120s 对齐 nginx；改任何一层都要同步 `AiTimeoutChainContractTest` 与 deploy 校验。
 - 回放证据语义：位置流（type-10）≠ 点亮（`POSITION_REPORTED/POSITION_STALE` 只是位置覆盖）；炮塔方向 `type-7 propId=2 = u16*360/65536-180` 已证明，勿改编码常量；证据与解码结论见 `docs/research/replay/protocol.md` 与 `docs/research/replay/turret-direction.md`。

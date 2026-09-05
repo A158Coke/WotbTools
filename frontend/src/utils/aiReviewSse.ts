@@ -6,6 +6,7 @@ import type {
   AiReviewResult,
   AiReviewStageEvent,
   AiReviewTokenEvent,
+  TeamAiReviewResult,
 } from '../types/ai-review.js'
 import type { ServerErrorCode } from '../types/api.js'
 import { isAiReviewCapability } from '../types/ai-review.js'
@@ -15,8 +16,6 @@ const STAGE_EVENTS = new Set<AiReviewStageEvent['type']>([
   'call1_start',
   'call1_done',
   'evidence_done',
-  'autopsy_start',
-  'autopsy_done',
 ])
 
 const KNOWN_EVENTS = new Set([
@@ -36,13 +35,78 @@ function nullableString(record: Record<string, unknown>, key: string): string | 
   return value === undefined ? null : value
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function isBoundedNonEmptyString(value: unknown, maxLength: number): value is string {
+  return isNonEmptyString(value) && value.length <= maxLength
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length <= 8
+    && value.every(item => isBoundedNonEmptyString(item, 64))
+}
+
+function isNullableNonnegativeInteger(value: unknown): value is number | null {
+  return value === null || (Number.isInteger(value) && (value as number) >= 0)
+}
+
+function isTeamReviewResult(value: unknown): value is TeamAiReviewResult {
+  if (!isRecord(value) || !isRecord(value.summary)
+    || !isBoundedNonEmptyString(value.summary.verdict, 4000)
+    || !isBoundedNonEmptyString(value.summary.primaryDiagnosis, 4000)) return false
+  if (!Array.isArray(value.episodes) || value.episodes.length > 6
+    || !Array.isArray(value.trainingSuggestions)
+    || !Array.isArray(value.reviewFocus) || value.reviewFocus.length > 2
+    || !Array.isArray(value.highContributors) || value.highContributors.length > 2) return false
+  const episodeIds = new Set<string>()
+  for (const item of value.episodes) {
+    if (!isRecord(item)) return false
+    const startSec = item.startSec
+    const endSec = item.endSec
+    if (!Object.prototype.hasOwnProperty.call(item, 'startSec')
+      || !Object.prototype.hasOwnProperty.call(item, 'endSec')
+      || !isBoundedNonEmptyString(item.id, 64) || episodeIds.has(item.id)
+      || !isBoundedNonEmptyString(item.title, 240)
+      || !isBoundedNonEmptyString(item.analysis, 8000)
+      || !isStringArray(item.playerKeys)
+      || !isNullableNonnegativeInteger(startSec)
+      || !isNullableNonnegativeInteger(endSec)
+      || (startSec !== null && endSec !== null
+        && (endSec as number) < (startSec as number))) return false
+    episodeIds.add(item.id)
+  }
+  if (value.trainingSuggestions.length > 12) return false
+  for (const item of value.trainingSuggestions) {
+    if (!isRecord(item) || !Object.prototype.hasOwnProperty.call(item, 'episodeId')
+      || !isBoundedNonEmptyString(item.title, 240)
+      || !isBoundedNonEmptyString(item.content, 6000)
+      || (item.episodeId !== null
+        && (!isBoundedNonEmptyString(item.episodeId, 64) || !episodeIds.has(item.episodeId)))) return false
+  }
+  for (const list of [value.reviewFocus, value.highContributors]) {
+    for (const item of list) {
+      if (!isRecord(item) || !isBoundedNonEmptyString(item.playerKey, 64)
+        || !isBoundedNonEmptyString(item.episodeId, 64) || !episodeIds.has(item.episodeId)
+        || !isBoundedNonEmptyString(item.reason, 2000)) return false
+    }
+  }
+  return true
+}
+
 function resultFromPayload(payload: unknown): AiReviewResult | null {
-  if (!isRecord(payload) || typeof payload.analysis !== 'string' || !payload.analysis.trim()) {
+  if (!isRecord(payload)) return null
+  const hasTeam = isTeamReviewResult(payload.teamReview)
+  const hasText = isNonEmptyString(payload.analysis)
+  if (!hasTeam && !hasText) {
     return null
   }
 
   const preBattleSection = optionalString(payload, 'preBattleSection')
-  if ('preBattleSection' in payload && preBattleSection === undefined) return null
+  // JSON cannot carry undefined; an explicitly malformed non-undefined value is rejected.
+  if ('preBattleSection' in payload && payload.preBattleSection !== undefined
+    && preBattleSection === undefined) return null
 
   let capability: AiReviewCapability | undefined
   if ('capability' in payload) {
@@ -51,8 +115,10 @@ function resultFromPayload(payload: unknown): AiReviewResult | null {
   }
 
   return {
-    analysis: payload.analysis,
+    ...((hasText || (hasTeam && payload.analysis === null))
+      ? { analysis: payload.analysis as string | null } : {}),
     preBattleSection,
+    ...(hasTeam ? { teamReview: payload.teamReview as TeamAiReviewResult } : {}),
     ...(capability === undefined ? {} : { capability }),
   }
 }

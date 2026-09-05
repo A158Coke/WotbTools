@@ -254,3 +254,28 @@ describe('AnalysisResultPanel preBattleSection', () => {
     vi.useRealTimers()
   })
 })
+
+describe('AnalysisResultPanel structured Team review', () => {
+  it('renders structured fields and hides empty optional sections', () => {
+    const wrapper = mountPanel({
+      analysis: null,
+      teamReview: {
+        summary: { verdict: 'team verdict', primaryDiagnosis: 'team diagnosis' },
+        episodes: [{
+          id: 'E1', startSec: 10, endSec: 20, title: '关键回合',
+          analysis: 'episode analysis', playerKeys: ['P1']
+        }],
+        trainingSuggestions: [{ title: '训练建议', content: '建议内容', episodeId: null }],
+        reviewFocus: [{ playerKey: 'P1', episodeId: 'E1', reason: '复查原因' }],
+        highContributors: []
+      }
+    })
+
+    expect(wrapper.text()).toContain('team verdict')
+    expect(wrapper.text()).toContain('关键回合')
+    expect(wrapper.text()).toContain('训练建议')
+    expect(wrapper.text()).toContain('复查原因')
+    expect(wrapper.text()).not.toContain('recon.team.highContributors')
+    expect(wrapper.findAll('.team-section')).toHaveLength(3)
+  })
+})
