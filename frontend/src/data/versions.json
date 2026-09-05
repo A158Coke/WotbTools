@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.76",
+    "date": "2026-09-06",
+    "tag": "fix",
+    "zh": "优化战局回放 HD 地图在放大时的运行时渲染；坦克标记重叠时会自动分开，并用细线指回真实位置；极限放大后的剩余柔化受当前地图资源细节上限限制。",
+    "en": "Improved Battle Playback HD map rendering during zoom; overlapping tank markers now separate automatically and use leader lines to point back to their real positions; remaining softness at extreme zoom is limited by the current map source detail.",
+    "ru": "Улучшен рендеринг HD-карты Battle Playback при увеличении; перекрывающиеся маркеры танков автоматически разделяются и соединяются линиями с реальными позициями, а оставшаяся мягкость при экстремальном увеличении ограничена детализацией текущего источника карты."
+  },
+  {
     "v": "2.12.75",
     "date": "2026-09-05",
     "tag": "chg",

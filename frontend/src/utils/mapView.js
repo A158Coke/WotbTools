@@ -29,3 +29,23 @@ export function createMapView(image, overview) {
   }
   return { W, H, renderBounds, toX, toY, fromX, fromY }
 }
+
+/**
+ * Convert a presentation offset in screen CSS pixels to SVG viewBox units.
+ * The rendered frame must be the actual DOM frame after the layout-scaled camera
+ * has applied its width, so this does not infer a scale from replay state.
+ */
+export function screenOffsetToSvgDelta(offset, mapView, renderedFrame) {
+  const offsetX = Number(offset?.x)
+  const offsetY = Number(offset?.y)
+  const logicalW = Number(mapView?.W)
+  const logicalH = Number(mapView?.H)
+  const renderedW = Number(renderedFrame?.width)
+  const renderedH = Number(renderedFrame?.height)
+  if (![offsetX, offsetY, logicalW, logicalH, renderedW, renderedH].every(Number.isFinite)
+    || logicalW <= 0 || logicalH <= 0 || renderedW <= 0 || renderedH <= 0) return null
+  return {
+    x: offsetX * logicalW / renderedW,
+    y: offsetY * logicalH / renderedH,
+  }
+}
