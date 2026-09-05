@@ -7,6 +7,8 @@
   "checks": [
     { "kind": "system_prompt_contains", "text": "语音、call" },
     { "kind": "system_prompt_contains", "text": "未知计划、call 或沟通原因" },
+    { "kind": "system_prompt_contains", "text": "灭点不等于离开" },
+    { "kind": "system_prompt_contains", "text": "没点亮不等于没人" },
     { "kind": "system_prompt_omits", "text": "player failed to communicate" }
   ],
   "note": "Golden E：责任边界只允许 observable execution。"
