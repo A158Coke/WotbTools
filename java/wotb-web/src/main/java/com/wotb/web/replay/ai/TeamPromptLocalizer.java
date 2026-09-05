@@ -162,8 +162,9 @@ final class TeamPromptLocalizer {
             「核心结论」「关键决策窗口」「可确认的团队问题」「训练建议」等固定小标题结构。
             正文以「## 团队复盘」为主标题，按关键性自由组织，不设硬性段数或固定篇幅：
             简单局可以更短；复杂局允许充分展开；不需要为了格式完整凑段数。
-            先判断整场最值得讲的 1-2 件事；如果实际上只有一个决定性问题，就只讲一个，
-            不要为了结构完整找第二、第三个问题或建议。
+            主因可以只有一个，不要为了凑结构制造不存在的问题；但一个主因不等于正文只能讲一件事。
+            必须保留解释该主因所需的 Information、Objectives、local engagements、cross-local propagation、
+            position/tempo 和次级关键 episode。
             训练建议（如给出）每一条必须明确对应前面的一个「可确认问题」或主判断；禁止通用教练式空话。
             输入中的 TEAM REVIEW FOCUS WINDOWS 只是「这里最值得集中分析」的内部 attention 提示，
             不要求逐窗口输出标题；自然语言可以直接写「这局真正崩掉是在1分52秒后面那二十秒」。
@@ -185,9 +186,10 @@ final class TeamPromptLocalizer {
                         Write the body under the main heading "## Team Review", organizing it by importance without a hard paragraph
                         count or fixed length: a simple battle may be shorter; a complex battle may expand as needed; never pad paragraphs
                         just to fill a structure.
-                        First decide the 1-2 things most worth talking about in the whole battle; if there is actually only one
-                        decisive problem, write about that one only — never invent a second or third problem or recommendation
-                        just to make the structure look complete.
+                        The primary cause may be the only primary cause; never invent a problem just to fill the structure.
+                        However, one primary cause does not mean the body may discuss only one thing: retain the Information,
+                        Objectives, local engagements, cross-local propagation, position/tempo, and secondary key episodes needed
+                        to explain that cause.
                         Each training recommendation (if any) must map to a confirmed problem or the primary diagnosis above;
                         no generic coaching filler.
                         TEAM REVIEW FOCUS WINDOWS in the input are an internal attention hint ("this is where to focus"),
@@ -213,9 +215,10 @@ final class TeamPromptLocalizer {
                         «Подтверждённые проблемы команды», «Рекомендации».
                         Пишите текст под главным заголовком «## Командный разбор», организуя его по важности без жёсткого числа абзацев
                         или фиксированного объёма: простой бой может быть короче; сложный можно раскрыть подробнее; не добирайте абзацы ради структуры.
-                        Сначала решите, о чём в этом бою важнее всего рассказать (1–2 вещи); если фактически есть только одна
-                        решающая проблема — расскажите только о ней; не выдумывайте вторую/третью проблему или рекомендацию
-                        ради полноты структуры.
+                        Основная причина может быть только одной; не выдумывайте проблему ради заполнения структуры.
+                        Однако одна основная причина не означает, что в тексте можно обсуждать только один аспект: сохраняйте
+                        информацию, цели, локальные бои, перенос между локальными боями, позицию/темп и вторичные ключевые эпизоды,
+                        необходимые для объяснения этой причины.
                         Каждая тренировочная рекомендация (если она есть) должна соответствовать подтверждённой проблеме
                         или основному диагнозу выше; никаких общих тренерских шаблонов.
                         TEAM REVIEW FOCUS WINDOWS во входе — внутренняя подсказка внимания («здесь стоит сосредоточить анализ»),
