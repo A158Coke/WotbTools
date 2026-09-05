@@ -1,7 +1,9 @@
 package com.wotb.web.replay.dto;
 
+import com.wotb.core.replay.evidence.TeamAiReviewResult;
+
 /**
- * AI 战术复盘响应：复盘正文 + 可选的「赛前预测」区块。
+ * AI 战术复盘响应：文本复盘或 Team v0.5 structured result + 可选的「赛前预测」区块。
  * <p>前端 {@code AnalysisResultPanel.vue} 消费
  * {@code analysis}（复盘正文）与 {@code preBattleSection}（Call #1 赛前预测的用户
  * 可见中文渲染，后端生成）；Call #1 失败/降级/非中文时 {@code preBattleSection} 为
@@ -14,11 +16,13 @@ package com.wotb.web.replay.dto;
  * @param capability        AVAILABLE / AVAILABLE_WITH_LIMITED_TIMELINE / UNAVAILABLE
  *                          （派生：recon.battleStartRawClockSec 非 finite → LIMITED；UNAVAILABLE 由
  *                          AI_TIMELINE_UNUSABLE 错误路径表达，response 内不出现）。
+ * @param teamReview        Team AI Review v0.5 structured result；个人复盘时为 null
  */
 public record AnalyzeResponse(
         String analysis,
         String preBattleSection,
-        Capability capability
+        Capability capability,
+        TeamAiReviewResult teamReview
 ) {
     /** AI Review capability（与 prompt planner battleStart 判定一致；前端本地化）。 */
     public enum Capability {
@@ -28,10 +32,15 @@ public record AnalyzeResponse(
     }
 
     public AnalyzeResponse(final String analysis) {
-        this(analysis, null, Capability.AVAILABLE);
+        this(analysis, null, Capability.AVAILABLE, null);
     }
 
     public AnalyzeResponse(final String analysis, final String preBattleSection) {
-        this(analysis, preBattleSection, Capability.AVAILABLE);
+        this(analysis, preBattleSection, Capability.AVAILABLE, null);
+    }
+
+    public AnalyzeResponse(final String analysis, final String preBattleSection,
+                           final Capability capability) {
+        this(analysis, preBattleSection, capability, null);
     }
 }

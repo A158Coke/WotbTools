@@ -31,6 +31,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
@@ -194,11 +195,18 @@ class AllowedLanguagePromptTest {
     }
 
     private static AiChatGateway capturingGateway(final AtomicReference<AiChatRequest> captured) {
+        final AtomicInteger teamResponses = new AtomicInteger();
         return new AiChatGateway() {
             @Override
             public AiChatResponse chat(final AiChatRequest request) {
                 captured.set(request);
-                // Natural Coach 轮：Call #2 必须返回合法 JSON envelope
+                if ("SINGLE_TEAM_BATTLE".equals(request.analysisMode())
+                        && teamResponses.incrementAndGet() >= 3) {
+                    return new AiChatResponse("{\"summary\":{\"verdict\":\"结论\",\"primaryDiagnosis\":\"诊断\"},"
+                            + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],\"highContributors\":[]}",
+                            "DeepSeek", "test-model", 0, 0, 0, 0, 0, 0, "stop");
+                }
+                // Legacy facade calls retain the historical envelope for compatibility tests.
                 return new AiChatResponse("{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},\"reviewMarkdown\":\"ok\",\"claims\":[]}", "DeepSeek", "test-model",
                         0, 0, 0, 0, 0, 0, "stop");
             }

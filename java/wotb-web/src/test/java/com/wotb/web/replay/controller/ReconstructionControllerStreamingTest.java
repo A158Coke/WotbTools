@@ -49,7 +49,8 @@ import static org.mockito.Mockito.verify;
 /**
  * {@code /api/replay/analyze} SSE 流式契约测试（真实异步 worker）：
  * <ul>
- *   <li>阶段事件序列（call1_start/call1_done/evidence_done/call2_token/autopsy/error/done）与
+ *   <li>生产阶段事件序列（call1_start/call1_done/evidence_done/call2_token/error/done）与
+ *       legacy writer 对 autopsy 阶段的兼容转发，以及
  *       done 双字段契约；</li>
  *   <li><b>真异步时序</b>：第一条 SSE 事件在 AI 分析完成前到达、request 线程不被完整
  *       AI 调用占住、cancel 端点在流式期间可找到进行中请求；</li>
@@ -110,7 +111,7 @@ class ReconstructionControllerStreamingTest {
     }
 
     @Test
-    void autopsyEventsAreForwardedBeforeDone() throws Exception {
+    void legacyAutopsyEventsAreForwardedBeforeDone() throws Exception {
         doAnswer(invocation -> {
             final AiReviewStreamListener listener = invocation.getArgument(3);
             listener.onStage("call1_start");

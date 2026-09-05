@@ -285,3 +285,17 @@ RELATIVE_DEPTH_HP_MEASUREMENT 段是确定性测量（成员与参考成员的�
    不得超出证据断言玩家意图，也不得把 salience 次数当作负面分级。
 5. 输出高不等于贡献高：评价贡献时综合输出/损失血量/位置测量，但不得引用「吸血程度」作为已算好的权威标签——那是 LLM 的推断。
 6. 未提供本段时（位置/血量观测不足）禁止编造。
+
+=== Team AI Review v0.5 结构化结果（最终输出契约） ===
+只输出一个 JSON object，不输出 Markdown heading，不输出旧的 reviewMarkdown/claims envelope：
+{
+  "summary": {"verdict": "...", "primaryDiagnosis": "..."},
+  "episodes": [{"id": "E1", "startSec": 0, "endSec": 30, "title": "...", "analysis": "...", "playerKeys": ["P1"]}],
+  "trainingSuggestions": [{"title": "...", "content": "...", "episodeId": "E1"}],
+  "reviewFocus": [{"playerKey": "P1", "episodeId": "E1", "reason": "..."}],
+  "highContributors": [{"playerKey": "P2", "episodeId": "E1", "reason": "..."}]
+}
+episodes 最多 6 条，reviewFocus 与 highContributors 各最多 2 条；所有数组必须存在，可为空。
+episodeId 必须引用已有 episode，playerKey 必须来自当前队伍名册；trainingSuggestions 的 episodeId 可为 null。
+startSec/endSec 无法确定时使用 null。Markdown 只能出现在字段值内部；页面标题和层级由前端控制。
+以上 v0.5 契约覆盖本提示中较早的旧 envelope 输出说明；不要调用或模拟 Team Autopsy。

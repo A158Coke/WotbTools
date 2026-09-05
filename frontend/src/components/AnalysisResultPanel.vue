@@ -3,8 +3,8 @@ import { onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MarkdownContent from './MarkdownContent.vue'
 
-// 普通用户页面只展示 AI 复盘正文 + 可折叠的「赛前预测」区块。
-// 后端 /api/replay/analyze 返回 { analysis, preBattleSection? }；
+// 普通用户页面只展示 AI 复盘正文/Team v0.5 结构化结果 + 可折叠的「赛前预测」区块。
+// 后端 /api/replay/analyze 返回个人 { analysis, preBattleSection? } 或团队 { teamReview, preBattleSection? }；
 // preBattleSection 为 null/空（Call #1 失败/降级）时整个区块不渲染。
 // 地图鸟瞰（热力/路线/战局回放）已拆为页面级独立区块（ReplayPage Workspace / BattlePlaybackPanel 加载），
 // 不随 AI 复盘结果渲染；AI 报告时间链接经 seek 事件上抛给页面。
@@ -36,7 +36,17 @@ function toggleAnalysis() {
 /** 一键复制最终复盘正文（result.analysis；可能包含团队剖析与免责声明；不含独立的赛前预测与地图鸟瞰）。
  * 末尾附带一行网站宣传（recon.copy_footer，三语随界面语言）。 */
 async function copyAnalysis() {
-  const text = props.result.analysis
+  const team = props.result.teamReview
+  const text = team
+    ? [
+        team.summary.verdict,
+        team.summary.primaryDiagnosis,
+        ...team.episodes.map((episode) => `${episode.title}\n${episode.analysis}`),
+        ...team.trainingSuggestions.map((suggestion) => `${suggestion.title}\n${suggestion.content}`),
+        ...team.reviewFocus.map((item) => `${item.playerKey}: ${item.reason}`),
+        ...team.highContributors.map((item) => `${item.playerKey}: ${item.reason}`)
+      ].filter(Boolean).join('\n\n')
+    : props.result.analysis
   if (!text) return
   const withFooter = text + '\n' + t('recon.copy_footer')
   if (!(await copyTextWithFallback(withFooter))) return
@@ -131,11 +141,54 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
       />
     </div>
     <MarkdownContent
-      v-if="analysisOpen"
+      v-if="analysisOpen && !result.teamReview && result.analysis"
       class="analysis-text"
       :content="result.analysis"
       @seek="$emit('seek', $event)"
     />
+    <div v-if="analysisOpen && result.teamReview" class="team-review-content">
+      <section class="team-summary">
+        <h3>{{ $t('recon.team.verdict') }}</h3>
+        <MarkdownContent class="analysis-text" :content="result.teamReview.summary.verdict" />
+        <h3>{{ $t('recon.team.diagnosis') }}</h3>
+        <MarkdownContent class="analysis-text" :content="result.teamReview.summary.primaryDiagnosis" />
+      </section>
+
+      <section v-if="result.teamReview.episodes.length" class="team-section">
+        <h3>{{ $t('recon.team.episodes') }}</h3>
+        <article v-for="episode in result.teamReview.episodes" :key="episode.id" class="team-card">
+          <h4>{{ episode.title }}</h4>
+          <span v-if="episode.startSec !== null && episode.endSec !== null" class="team-time">
+            {{ episode.startSec }}s–{{ episode.endSec }}s
+          </span>
+          <MarkdownContent class="analysis-text" :content="episode.analysis" @seek="$emit('seek', $event)" />
+        </article>
+      </section>
+
+      <section v-if="result.teamReview.trainingSuggestions.length" class="team-section">
+        <h3>{{ $t('recon.team.training') }}</h3>
+        <article v-for="suggestion in result.teamReview.trainingSuggestions" :key="suggestion.title" class="team-card">
+          <h4>{{ suggestion.title }}</h4>
+          <MarkdownContent class="analysis-text" :content="suggestion.content" />
+        </article>
+      </section>
+
+      <section v-if="result.teamReview.reviewFocus.length" class="team-section">
+        <h3>{{ $t('recon.team.reviewFocus') }}</h3>
+        <article v-for="item in result.teamReview.reviewFocus" :key="`${item.playerKey}-${item.episodeId}`" class="team-card">
+          <strong>{{ item.playerKey }}</strong>
+          <MarkdownContent class="analysis-text" :content="item.reason" />
+        </article>
+      </section>
+
+      <section v-if="result.teamReview.highContributors.length" class="team-section">
+        <h3>{{ $t('recon.team.highContributors') }}</h3>
+        <article v-for="item in result.teamReview.highContributors" :key="`${item.playerKey}-${item.episodeId}`" class="team-card">
+          <strong>{{ item.playerKey }}</strong>
+          <MarkdownContent class="analysis-text" :content="item.reason" />
+        </article>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -228,4 +281,12 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 .prebattle-title { font-weight: 700; color: var(--text-heading); }
 .prebattle-state { font-size: .78rem; color: var(--text-muted); }
 .prebattle-content { margin: 8px 0 0; padding: 0; }
+.team-review-content { padding: 0 14px 14px; }
+.team-summary, .team-section { border-bottom: 1px solid var(--border); padding: 12px 0; }
+.team-section:last-child { border-bottom: 0; }
+.team-review-content h3 { margin: 0 0 8px; color: var(--text-heading); }
+.team-card { margin-top: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); }
+.team-card h4 { display: inline; margin: 0; color: var(--text-heading); }
+.team-time { margin-left: 8px; color: var(--text-muted); font-size: .8rem; }
+.team-card .analysis-text, .team-summary .analysis-text { padding: 0; }
 </style>

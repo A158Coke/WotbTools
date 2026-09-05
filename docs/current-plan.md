@@ -1,3 +1,28 @@
+# Team AI Review v0.5 — Structured AI Result Contract
+
+## 状态
+
+COMPLETE — 独立 worktree：`WotbTools-playback-hd-runtime-sharpness`
+
+## 执行记录
+
+- [x] 独立分支基于 `origin/main` 创建；原 worktree 的 Playback 改动未触碰。
+- [x] Java structured result / schema parser / SSE done contract。
+- [x] OpenAPI schema、前端 runtime guard、三语 structured renderer。
+- [x] 生产 Team Autopsy 与 factual validator 路径移除；旧实现仅留兼容。
+- [x] targeted tests 与 Java/前端全量验证通过；未调用真实 AI provider 或上传回放。
+- [x] review-fix / code-smell / review-with-docs 自审闭环；OCR preview/rule 已执行，未发现 blocker。
+- [x] commit/PR：见本文件末尾执行记录。
+
+## 执行结果
+
+- Worktree：`C:\Users\yu.chen\Desktop\MyPersonalProject\WotbTools-playback-hd-runtime-sharpness`
+- Branch：`fix/playback-hd-runtime-sharpness-execution`
+- 验证：`npm run api:lint`、`npm run api:generate`、`npm run typecheck`、`npm test`（114 files，1577 passed，37 skipped）、`npm run build`、`mvn -q -s settings.xml -pl wotb-web -am test`。
+- 范围外：真实 AI provider smoke、真实回放上传/生产写入；需显式用户请求。
+
+---
+
 # Battle Playback HD Basemaps + 2.5D Vehicle Terrain Attitude
 
 ## 状态

@@ -2,6 +2,14 @@
 
 ## Quality harness v1（0-token CI + 手动真实回放）
 
+### Team AI Review v0.5：结构化结果与前端渲染
+
+Team Call #2 现在返回稳定 JSON 结果：`summary`、`episodes`、`trainingSuggestions`、
+`reviewFocus`、`highContributors`。episodes 最多 6 条，后两类各最多 2 条；所有引用必须
+指向当前 roster 和已存在 episode。Backend 只做技术契约校验，不做 tactical validator、正文
+改写或 settlement-only Team Autopsy；SSE `done` 事件通过 `teamReview` 一次性传递最终结果。
+前端自行控制标题层级，空的可选区块不渲染，字段内部仍可使用 Markdown。
+
 ### Team AI Review v0.4：从信息到决策影响
 
 v0.4 不改变 v0.3 的输出长度、自由正文或 evidence model，而是约束长篇复盘的因果精度：对关键 Information 依次检查当时已观察事实、剩余未知状态（CURRENT/LAST_KNOWN/UNSEEN）和 decision impact。没有把信息转成部署、风险或行动义务变化时，不能只写「拿到信息」。
@@ -76,7 +84,7 @@ AI：
        -> ReplayProcessingJobStore.acquireForSource(processingJobId)   [Dataset lease]
        -> ReplayArtifactWriter.readAiFacts(...)
        -> AiReplayAnalysisService.analyzeTeamGroups / analyzePlayerOrFallback / TacticalReviewHarness
-  -> SSE 流式响应（call1 / evidence / call2 / autopsy 阶段事件 + call2_token 主复盘增量）
+   -> SSE 流式响应（call1 / evidence / call2 阶段事件；Team v0.5 在 done 一次性返回结构化结果）
 ```
 
 - 不重新上传 replay、不重新 full-process：AI Review / Battle Playback / Export 全部消费同一 Processing Dataset。
@@ -218,9 +226,7 @@ Enemy-only damage 不得延长 Team phase。
 | `call1_done` | `{}` | Call #1 结束（真实发起调用时必发，无论成败） |
 | `evidence_done` | `{}` | 后端证据分析完成（随机战 harness 与团队路径均发射；团队路径在 `TeamReplayAnalysisService.analyzeTeamGroups` 首轮 Call #2 前补发，前端阶段指示随之推进） |
 | `call2_token` | `{"delta":"..."}` | 主复盘 token 增量 |
-| `autopsy_start` | `{}` | Team Autopsy 开始 |
-| `autopsy_done` | `{}` | Team Autopsy 结束 |
-| `done` | `{"analysis":"...","preBattleSection":"..."}` | 全部完成；`preBattleSection` 为 null 时输出 JSON null |
+| `done` | `{"analysis":null,"preBattleSection":"...","teamReview":{...}}` | Team v0.5 结构化结果一次性完成；个人旧文本结果仍可使用 `analysis` |
 | `error` | `{"code":"AI_..."}` | 流中途失败（稳定错误码） |
 
 异常传达规则：request-envelope 校验（`UNKNOWN_LOCALE` / `NO_REPLAY_FILES` /
@@ -240,7 +246,7 @@ content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另�
 按句切分（≤128 字符/片、间隔 ~20ms、上限 512 片）兜底，保证前端 `stream-text` 在 `done`
 前持续出字。
 
-**Natural Coach Mode + Factual Consistency Guard（PR #103 之上，2026-08）**：
+**Historical Natural Coach Mode + Factual Consistency Guard（legacy，2026-08）**：
 - Team Call #2 输出改为 JSON envelope（`primaryDiagnosis` / `reviewMarkdown` / `claims`，
   由 `TeamReviewEnvelopeParser` 解析）；`done.analysis` 仍为 `reviewMarkdown`（用户看到的
   完整自然语言复盘，主标题 `## 团队复盘`），structured 字段为内部 grounding 契约，不进正文。
