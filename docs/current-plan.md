@@ -16,6 +16,7 @@ IMPLEMENTATION COMPLETE — review blocker 0；build validation blocked by pre-e
 - 验证结果：受影响回归 11 files / 206 tests 通过；补充回归 4 files / 148 tests 通过；`npm run typecheck` 通过；`git diff --check` 通过；`npm run test:browser-layout` 8/8 通过。
 - 审查结果：`ocr delegate preview` 识别 6 个 reviewable 文件、8 个按工具规则排除文件；已逐文件完成人工 Layer A/B/C 审查。发现并修复 1 个 overlay 实色背景覆盖 basemap 的正确性问题；review-fix / review-with-docs / code-smell 当前 blocker count 为 0。fallow CLI 的旧技能调用形式失败后按当前 CLI 语法重试，结果仅报告既有未使用 export/type/dependency 基线，未发现本次新增 helper 的死引用。
 - 未完成项：`npm run build` 在 Vite 编译前被仓库既有 fail-closed guard 阻止，因为工作区存在 `common/assets/map-3d-local` 本地研究资产；该目录是明确的 DEV/local-research-only 非目标，未删除、未绕过 guard。真实 authenticated replay 的视觉 before/after 截图也待具备该会话后补充。
+- PR review repair：修正 `BattleMap3D` 对 Three.js `^0.185.1` 不存在的 `renderer.capabilities.maxRenderBufferSize` 假设；现在从活动 WebGL context 读取标准 `MAX_RENDERBUFFER_SIZE`，并以 focused regression 覆盖成功、缺失与 context 异常路径。该修复不改变既有 camera、basemap 或 2.5D 交互契约。
 
 ## 需求确认单
 
