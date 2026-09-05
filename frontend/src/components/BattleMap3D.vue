@@ -2,6 +2,12 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as THREE from 'three'
 import { mapImages } from '../data/mapImages.js'
+import {
+  activateTerrainRelief,
+  clearTerrainRelief,
+  createTerrainReliefModel,
+  visualReliefZ,
+} from '../utils/terrainReliefProjection.js'
 
 const props = defineProps({
   mapCode: { type: String, default: '' },
@@ -15,16 +21,16 @@ let scene = null
 let camera = null
 let resizeObserver = null
 let viewportElement = null
+let reliefModel = null
 let loadToken = 0
 
-// Top-down geometry alone is almost indistinguishable from the existing 2D raster:
-// Z does not move X/Y at a 90° orthographic view. Relief therefore has to be encoded
-// explicitly as hillshade. These constants affect presentation only; exported world Z
-// and every replay/spatial coordinate stay authoritative and unmodified.
-const RELIEF_NORMAL_GAIN = 2.8
-const RELIEF_CONTRAST = 1.9
-const RELIEF_MIN_SHADE = 0.46
-const RELIEF_MAX_SHADE = 1.22
+// 45° geometry now carries most of the depth cue. Hillshade stays renderer-owned
+// and deliberately moderate: it improves slope readability without turning the
+// existing tactical raster into a synthetic texture pack.
+const RELIEF_NORMAL_GAIN = 1.8
+const RELIEF_CONTRAST = 1.35
+const RELIEF_MIN_SHADE = 0.62
+const RELIEF_MAX_SHADE = 1.16
 const RELIEF_SUN = new THREE.Vector3(-0.72, 0.58, 0.38).normalize()
 
 function finiteNumber(value, fallback = 0) {
@@ -52,6 +58,8 @@ function disposeScene() {
   resizeObserver?.disconnect()
   resizeObserver = null
   setViewportActive(false)
+  clearTerrainRelief(reliefModel)
+  reliefModel = null
   scene?.traverse((object) => {
     object.geometry?.dispose?.()
     const materials = Array.isArray(object.material) ? object.material : [object.material]
@@ -78,10 +86,6 @@ function fitRenderer() {
   const height = Math.max(1, host.value.clientHeight)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
   renderer.setSize(width, height, false)
-  // Intentionally do not aspect-correct the orthographic frustum. BattleMap's
-  // existing world->image mapping scales X and Y independently to the image box;
-  // stretching this canvas the same way keeps every DOM/SVG vehicle marker,
-  // base, trail and tracer aligned pixel-for-pixel with the 2.5D background.
   renderScene()
 }
 
@@ -121,12 +125,10 @@ function terrainShade(heights, size, sampleX, sampleY, spacingX, spacingY) {
   )
 }
 
-function buildTerrainGeometry(terrainMeta, terrainBuffer) {
+function buildTerrainGeometry(terrainMeta, heights, model) {
   const size = Number(terrainMeta?.samplesPerAxis)
   const bounds = terrainMeta?.worldBounds || {}
   if (!Number.isInteger(size) || size < 2) throw new Error(`Invalid terrain sample size: ${size}`)
-
-  const heights = new Float32Array(terrainBuffer)
   if (heights.length !== size * size) {
     throw new Error(`Terrain buffer sample mismatch: expected ${size * size}, got ${heights.length}`)
   }
@@ -137,9 +139,6 @@ function buildTerrainGeometry(terrainMeta, terrainBuffer) {
   const yMax = finiteNumber(bounds.yMax)
   if (!(xMax > xMin) || !(yMax > yMin)) throw new Error('Terrain world bounds are invalid')
 
-  // The proven client heightfield uses range/size sample spacing. Add one repeated
-  // edge row/column at xMax/yMax so the textured surface covers the full 2D map
-  // bounds without moving any authoritative sample away from its world position.
   const spacingX = (xMax - xMin) / size
   const spacingY = (yMax - yMin) / size
   const grid = size + 1
@@ -156,14 +155,10 @@ function buildTerrainGeometry(terrainMeta, terrainBuffer) {
       const uv = vertex * 2
       positions[p] = xMin + gx * spacingX
       positions[p + 1] = yMin + gy * spacingY
-      positions[p + 2] = heights[sampleY * size + sampleX]
+      positions[p + 2] = visualReliefZ(model, heights[sampleY * size + sampleX])
       uvs[uv] = gx / size
       uvs[uv + 1] = gy / size
 
-      // Deterministic renderer-owned hillshade. Flat ground stays at 1.0, slopes
-      // facing the synthetic sun brighten and opposite slopes darken strongly.
-      // MeshBasicMaterial multiplies the existing tactical raster by this value,
-      // so relief remains obvious even from an exact 90° camera.
       const shade = terrainShade(heights, size, sampleX, sampleY, spacingX, spacingY)
       const c = vertex * 3
       colors[c] = shade
@@ -238,37 +233,36 @@ async function loadMap() {
 
     const terrainBuffer = await fetchRequired(entry.terrain.heightBuffer).then((response) => response.arrayBuffer())
     if (token !== loadToken || !host.value) return
+    const heights = new Float32Array(terrainBuffer)
 
-    const bounds = entry.terrain.worldBounds || {}
-    const xMin = finiteNumber(bounds.xMin, -300)
-    const yMin = finiteNumber(bounds.yMin, -300)
-    const xMax = finiteNumber(bounds.xMax, 300)
-    const yMax = finiteNumber(bounds.yMax, 300)
-    if (!(xMax > xMin) || !(yMax > yMin)) throw new Error('2.5D terrain bounds are invalid')
-
-    const minZ = finiteNumber(entry.terrain?.heightRangeMeters?.min, 0)
-    const maxZ = finiteNumber(entry.terrain?.heightRangeMeters?.max, minZ + 1)
-    const centerX = (xMin + xMax) / 2
-    const centerY = (yMin + yMax) / 2
+    const model = createTerrainReliefModel({
+      mapCode: props.mapCode,
+      worldBounds: entry.terrain.worldBounds,
+      heightRangeMeters: entry.terrain.heightRangeMeters,
+      samplesPerAxis: entry.terrain.samplesPerAxis,
+      heights,
+    })
+    const { xMin, yMin, xMax, yMax } = model.worldBounds
     const span = Math.max(xMax - xMin, yMax - yMin, 1)
 
     const nextScene = new THREE.Scene()
     nextScene.background = new THREE.Color(0x111820)
 
-    // Fixed 90-degree bird's-eye view. No orbit, pitch, roll or perspective.
-    // X/Y frustum == BattleMap coordinateBounds, so existing DOM markers remain
-    // the presentation authority and need no separate 3D projection path.
+    // Fixed 45° orthographic tactical camera: south -> north, so map north stays
+    // screen-up and X stays horizontal. There is no orbit, roll or perspective.
+    const pb = model.projectedBounds
+    const cameraDistance = span * 2.2
     const nextCamera = new THREE.OrthographicCamera(
-      xMin - centerX,
-      xMax - centerX,
-      yMax - centerY,
-      yMin - centerY,
+      pb.left,
+      pb.right,
+      pb.top,
+      pb.bottom,
       0.1,
-      span * 6,
+      cameraDistance * 5,
     )
-    nextCamera.position.set(centerX, centerY, maxZ + span * 2)
-    nextCamera.up.set(0, 1, 0)
-    nextCamera.lookAt(centerX, centerY, minZ)
+    nextCamera.position.set(model.centerX, model.centerY - cameraDistance, model.centerZ + cameraDistance)
+    nextCamera.up.set(0, 0, 1)
+    nextCamera.lookAt(model.centerX, model.centerY, model.centerZ)
     nextCamera.updateProjectionMatrix()
 
     const nextRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
@@ -289,7 +283,7 @@ async function loadMap() {
     texture.anisotropy = Math.min(8, nextRenderer.capabilities.getMaxAnisotropy())
 
     const terrain = new THREE.Mesh(
-      buildTerrainGeometry(entry.terrain, terrainBuffer),
+      buildTerrainGeometry(entry.terrain, heights, model),
       new THREE.MeshBasicMaterial({
         map: texture,
         vertexColors: true,
@@ -297,12 +291,14 @@ async function loadMap() {
         side: THREE.FrontSide,
       }),
     )
-    terrain.name = 'top-down-2.5d-tactical-map'
+    terrain.name = 'fixed-45deg-2.5d-tactical-map'
     nextScene.add(terrain)
 
     scene = nextScene
     camera = nextCamera
     renderer = nextRenderer
+    reliefModel = model
+    activateTerrainRelief(model)
     resizeObserver = new ResizeObserver(fitRenderer)
     resizeObserver.observe(host.value)
     fitRenderer()
@@ -311,7 +307,7 @@ async function loadMap() {
     renderScene()
   } catch (error) {
     if (token !== loadToken) return
-    console.error('[map-2.5d] failed to render local heightfield', error)
+    console.error('[map-2.5d] failed to render fixed 45° heightfield', error)
     disposeScene()
     status.value = 'error'
   }
@@ -348,10 +344,8 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-/* BattleMap continues to own every overlay. Only its original raster image is
-   hidden while the aligned 2.5D canvas is ready. Keeping SVG/DOM overlays alive
-   means hull.webp/turret.webp, HP, bases, tracers and annotations stay on the
-   existing playback clock and do not need a parallel renderer. */
+/* BattleMap still owns tactical overlays and the replay clock. Only the original
+   raster is hidden; the SVG/DOM layers are reprojected by the shared relief model. */
 :global(.pb-viewport.pb-25d-active .pb-svg) {
   position: relative;
   z-index: 1;
