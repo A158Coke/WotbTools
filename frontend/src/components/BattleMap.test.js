@@ -5,6 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import BattleMap from './BattleMap.vue'
 import { makeOverview, makePlaybackV2, mountPlayback, stubRaf } from './playbackTestHarness.js'
+import { activeTerrainRelief, createTerrainReliefModel } from '../utils/terrainReliefProjection.js'
 
 const markerStub = defineComponent({
   props: ['marker', 'selected', 'label', 'hp', 'hpVisible', 't', 'hpGhost', 'hpFlash', 'hpNoTransition'],
@@ -13,6 +14,7 @@ const markerStub = defineComponent({
     return () => h('button', {
       'data-test': `marker-${props.marker.vehicle.accountId}`,
       'data-selected': String(props.selected),
+      style: props.marker?.markerStyle || {},
       onClick: event => emit('select', event),
     })
   },
@@ -23,6 +25,8 @@ const mapView = {
   H: 100,
   toX: value => value,
   toY: value => 100 - value,
+  fromX: value => value,
+  fromY: value => 100 - value,
 }
 
 const baseProps = () => ({
@@ -63,6 +67,7 @@ function mountMap(overrides = {}) {
 }
 
 afterEach(() => {
+  activeTerrainRelief.value = null
   vi.unstubAllGlobals()
   vi.useRealTimers()
 })
@@ -85,6 +90,32 @@ describe('BattleMap', () => {
     expect(wrapper.find('[data-test="pb-annotations"]').text()).toContain('Callout')
     expect(wrapper.find('[data-test="marker-1"]').attributes('data-selected')).toBe('false')
     expect(wrapper.find('[data-test="marker-2"]').attributes('data-selected')).toBe('true')
+  })
+
+  it('keeps relief collision offsets in screen pixels with the layout-scaled camera', () => {
+    activeTerrainRelief.value = createTerrainReliefModel({
+      mapCode: 'test',
+      worldBounds: { xMin: -100, xMax: 100, yMin: -100, yMax: 100 },
+      heightRangeMeters: { min: 0, max: 1 },
+      samplesPerAxis: 2,
+      heights: new Float32Array([0, 0, 0, 0]),
+    })
+    const wrapper = mountMap({
+      viewScale: 4,
+      pbOverview: { ...baseProps().pbOverview, mapCode: 'test' },
+      vehicleStates: [{
+        vehicle: { accountId: 1, team: 1 },
+        pos: { x: 0, y: 0 },
+        markerStyle: { left: '50%', top: '50%' },
+        presentationOffset: { x: 20, y: -16 },
+      }],
+    })
+
+    const style = wrapper.find('[data-test="marker-1"]').attributes('style')
+    expect(style).toContain('+ 20px')
+    expect(style).toContain('+ -16px')
+    expect(style).not.toContain('+ 5px')
+    expect(style).not.toContain('+ -4px')
   })
 
   it('forwards map gestures and marker selection to the orchestrator', async () => {

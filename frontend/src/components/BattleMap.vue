@@ -120,7 +120,6 @@ function projectedCirclePoints(annotation) {
 
 const presentedVehicleStates = computed(() => {
   if (!reliefModel.value) return props.vehicleStates
-  const scale = props.viewScale || 1
   return props.vehicleStates.map((state) => {
     const point = projectSemantic(state.pos.x, state.pos.y)
     const offset = state.presentationOffset || { x: 0, y: 0 }
@@ -128,8 +127,10 @@ const presentedVehicleStates = computed(() => {
       ...state,
       markerStyle: {
         ...state.markerStyle,
-        left: `calc(${(point.x / props.mapView.W) * 100}% + ${offset.x / scale}px)`,
-        top: `calc(${(point.y / props.mapView.H) * 100}% + ${offset.y / scale}px)`,
+        // Collision offsets are already screen pixels. The camera enlarges the layout box,
+        // so they must not be divided by viewScale before entering CSS positioning.
+        left: `calc(${(point.x / props.mapView.W) * 100}% + ${offset.x}px)`,
+        top: `calc(${(point.y / props.mapView.H) * 100}% + ${offset.y}px)`,
       },
     }
   })
@@ -159,6 +160,7 @@ function fillTop(base) {
     <div
       class="pb-viewport"
       data-test="pb-viewport"
+      :data-view-scale="props.viewScale"
       :style="[props.viewportStyle, { aspectRatio: `${props.mapView.W} / ${props.mapView.H}` }]"
       @pointerdown="emit('pointer-down', $event)"
       @pointermove="emit('pointer-move', $event)"
