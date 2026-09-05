@@ -45,7 +45,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Natural Coach 轮：Team Call #2 事实一致性校验 + LLM 自修循环编排契约。
  * <p>流程：Draft → validate；FAIL → targeted rewrite；
- * FAIL → full rewrite；仍 FAIL → fail-safe（AI_REVIEW_GROUNDING_FAILED）。Backend 绝不代改句子。</p>
+ * FAIL → full rewrite；仍 FAIL → conservative safe rewrite；再次完整校验后仍 FAIL
+ * → fail-safe（AI_REVIEW_GROUNDING_FAILED）。Backend 绝不代改句子。</p>
  */
 class TeamReviewRetryContractTest {
 
@@ -58,6 +59,13 @@ class TeamReviewRetryContractTest {
     private static final String BAD_ENVELOPE = "{"
             + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
             + "\"reviewMarkdown\":\"这波对方所有车辆都拥有直接炮线。\",\"claims\":[]}";
+    /** wrong-player hard fact：不能靠 availability recovery 放行。 */
+    private static final String WRONG_PLAYER_ENVELOPE = "{"
+            + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+            + "\"reviewMarkdown\":\"WrongPlayer 在 10 秒阵亡。\","
+            + "\"claims\":[{\"text\":\"WrongPlayer 在 10 秒阵亡。\","
+            + "\"evidenceIds\":[\"E101\"],\"claimType\":\"DEATH\","
+            + "\"timeSec\":10,\"subject\":\"WrongPlayer\"}]}";
 
     @Test
     void passOnFirstDraftUsesSingleCall2Request() {
@@ -88,20 +96,43 @@ class TeamReviewRetryContractTest {
                 .reduce((a, b) -> b).orElseThrow();
         assertTrue(rewrite.userPrompt().contains("事实一致性校验反馈"),
                 "重写请求必须携带 validator 反馈: " + rewrite.userPrompt());
-        assertTrue(rewrite.userPrompt().contains("[V6]"),
+        assertTrue(rewrite.userPrompt().contains("[V6 UNSUPPORTED_HARD_FACT]"),
                 "重写请求反馈必须包含具体冲突 checkId: " + rewrite.userPrompt());
     }
 
     @Test
     void repeatedConflictsExhaustRetriesAndFailSafe() {
-        final RetryGateway gateway = new RetryGateway(List.of(BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE));
+        final RetryGateway gateway = new RetryGateway(
+                List.of(BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE));
         final TeamReplayAnalysisService service = service(gateway);
         final AiUpstreamException e = assertThrows(AiUpstreamException.class,
                 () -> service.analyzeSingleTeamContext(context(gateway, service), AllowedLanguage.ZH));
         assertEquals("AI_REVIEW_GROUNDING_FAILED", e.code(),
                 "重试耗尽必须 fail-safe 为 AI_REVIEW_GROUNDING_FAILED");
         assertEquals(TeamReplayAnalysisService.MAX_VALIDATION_ATTEMPTS, gateway.teamCall2Requests(),
-                "必须恰好 3 次尝试（draft + targeted + full）后 fail-safe");
+                "必须恰好 4 次尝试（draft + targeted + full + safe）后 fail-safe");
+    }
+
+    @Test
+    void safeRewriteIsFinalBoundedRecoveryAndIsValidatedBeforeReturning() {
+        final RetryGateway gateway = new RetryGateway(
+                List.of(BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE, GOOD_ENVELOPE));
+        final TeamReplayAnalysisService service = service(gateway);
+
+        final AnalyzeResult result = service.analyzeSingleTeamContext(
+                context(gateway, service), AllowedLanguage.ZH);
+
+        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis());
+        final List<AiChatRequest> call2 = gateway.requests().stream()
+                .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode())).toList();
+        assertEquals(4, call2.size(), "SAFE recovery 必须是第 4 次、且仍须完整 validate");
+        assertTrue(call2.get(1).userPrompt().contains("本次重写阶段：TARGETED"));
+        assertTrue(call2.get(1).userPrompt().contains("[V6 UNSUPPORTED_HARD_FACT]"));
+        assertTrue(call2.get(1).userPrompt().contains("dedicated LOS/spotting evidence"));
+        assertTrue(call2.get(2).userPrompt().contains("本次重写阶段：FULL"));
+        assertTrue(call2.get(3).userPrompt().contains("本次重写阶段：SAFE"));
+        assertTrue(call2.get(3).userPrompt().contains("不要补充新事实，不要发明替代事实"));
+        assertTrue(call2.get(3).userPrompt().contains("尽量保留有证据支撑的 tactical judgment"));
     }
 
     @Test
@@ -182,9 +213,23 @@ class TeamReviewRetryContractTest {
 
     private static SingleTeamBattleAnalysisContext context(final AiChatGateway gateway,
                                                            final TeamReplayAnalysisService service) {
-        final List<ReplayPerspectiveGroup> groups = new BatchAnalyzer().analyze(
+        return service.buildSingleTeamContext(retryGroups().getFirst());
+    }
+
+    private static List<ReplayPerspectiveGroup> retryGroups() {
+        return new BatchAnalyzer().analyze(
                 List.of(teamResult("retry.wotbreplay", "arena-retry", "Ally", 1001L, 1, validRecon())))
                 .groups();
+    }
+
+    private static SingleTeamBattleAnalysisContext contextWithDeath(final AiChatGateway gateway,
+                                                                     final TeamReplayAnalysisService service) {
+        final ReplayProcessingResult result = teamResult(
+                "retry-death.wotbreplay", "arena-retry-death", "Ally", 1001L, 1, validRecon());
+        final PlayerResult dead = result.battle().players.getFirst();
+        dead.survived = false;
+        dead.settlementLifeTimeSec = 10.0;
+        final List<ReplayPerspectiveGroup> groups = new BatchAnalyzer().analyze(List.of(result)).groups();
         return service.buildSingleTeamContext(groups.getFirst());
     }
 
@@ -428,18 +473,33 @@ class TeamReviewRetryContractTest {
                 "P0-2: HARD 事实冲突（V6）仍必须触发 LLM retry");
     }
 
-    /** HARD 事实冲突连续 3 次 → 仍 fail-safe 502（保留）。 */
+    /** HARD 事实冲突连续 4 次 → 仍 fail-safe 502（保留）。 */
     @Test
     void hardFactConflictsStillFailSafeAfterExhaustion() {
         final RetryGateway gateway = new RetryGateway(
-                List.of(BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE));
+                List.of(BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE));
         final TeamReplayAnalysisService service = service(gateway);
         final AiUpstreamException e = assertThrows(AiUpstreamException.class,
                 () -> service.analyzeSingleTeamContext(context(gateway, service), AllowedLanguage.ZH));
         assertEquals("AI_REVIEW_GROUNDING_FAILED", e.code(),
                 "HARD 事实冲突重试耗尽仍必须 fail-safe（不静默输出矛盾）");
         assertEquals(TeamReplayAnalysisService.MAX_VALIDATION_ATTEMPTS, gateway.teamCall2Requests(),
-                "HARD 冲突仍恰好 3 次尝试后 fail-safe");
+                "HARD 冲突仍恰好 4 次尝试后 fail-safe");
+    }
+
+    @Test
+    void trueWrongPlayerHardFactStillFailsAfterSafeRecovery() {
+        final RetryGateway gateway = new RetryGateway(List.of(
+                WRONG_PLAYER_ENVELOPE, WRONG_PLAYER_ENVELOPE,
+                WRONG_PLAYER_ENVELOPE, WRONG_PLAYER_ENVELOPE));
+        final TeamReplayAnalysisService service = service(gateway);
+
+        final AiUpstreamException e = assertThrows(AiUpstreamException.class,
+                () -> service.analyzeSingleTeamContext(contextWithDeath(gateway, service), AllowedLanguage.ZH));
+
+        assertEquals("AI_REVIEW_GROUNDING_FAILED", e.code());
+        assertEquals(4, gateway.teamCall2Requests(),
+                "wrong-player HARD_FACT 只能在 SAFE 后最终 fail-safe，不能 availability 放行");
     }
 
     // ===== 只有 Team Call #2 使用 JSON_OBJECT =====

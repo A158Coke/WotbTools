@@ -68,11 +68,25 @@ describe('aiReviewSse runtime guards', () => {
 
   it('accepts stable uppercase future error codes and rejects malformed ones', () => {
     const event = parseAiReviewEventData('error', '{"code":"AI_REVIEW_GROUNDING_FAILED"}')
-    expect(event).toEqual({ type: 'error', code: 'AI_REVIEW_GROUNDING_FAILED' })
+    expect(event).toEqual({ type: 'error', id: null, code: 'AI_REVIEW_GROUNDING_FAILED', errorMsg: null })
     expect(isAiReviewErrorEvent(event)).toBe(true)
     expect(isAiReviewEvent(event)).toBe(true)
     expect(parseAiReviewEvent('error', { code: 'lowercase' })).toBeNull()
     expect(parseAiReviewEvent('error', { code: 503 })).toBeNull()
+  })
+
+  it('parses the canonical SSE error envelope without exposing provider details', () => {
+    const event = parseAiReviewEvent('error', {
+      id: 'corr-1',
+      errorCode: 'AI_REVIEW_GROUNDING_FAILED',
+      errorMsg: null,
+    })
+    expect(event).toEqual({
+      type: 'error', id: 'corr-1', code: 'AI_REVIEW_GROUNDING_FAILED', errorMsg: null,
+    })
+    expect(parseAiReviewEvent('error', {
+      id: 'corr-1', errorCode: 'AI_REVIEW_GROUNDING_FAILED', errorMsg: 'raw provider response',
+    })).toMatchObject({ id: 'corr-1', code: 'AI_REVIEW_GROUNDING_FAILED' })
   })
 
   it('ignores invalid JSON and unknown event names', () => {
