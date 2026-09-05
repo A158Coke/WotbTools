@@ -20,9 +20,8 @@ class TeamReviewNaturalCoachContractTest {
         assertTrue(ZH.contains("自由组织的自然复盘"), "必须声明自由组织的自然复盘");
         assertTrue(ZH.contains("不是固定章节模板"), "必须声明不是固定章节模板");
         assertTrue(ZH.contains("## 团队复盘"), "主标题为 ## 团队复盘");
-        assertTrue(ZH.contains("3-5 个自然段"), "默认 3-5 个自然段");
-        assertTrue(ZH.contains("简单局可以只写 2-3 段"), "简单局 2-3 段");
-        assertTrue(ZH.contains("复杂局可以写 5 段左右"), "复杂局约 5 段");
+        assertTrue(ZH.contains("按关键性自由组织，不设硬性段数或固定篇幅"), "不设硬性段数或固定篇幅");
+        assertTrue(ZH.contains("复杂局允许充分展开"), "复杂局允许充分展开");
         assertTrue(ZH.contains("先判断整场最值得讲的 1-2 件事"), "先判断最值得讲的 1-2 件事");
         assertTrue(ZH.contains("如果实际上只有一个决定性问题，就只讲一个"), "只有一个问题就只讲一个");
         assertTrue(ZH.contains("不要为了结构完整找第二、第三个问题或建议"), "不凑问题/建议数量");
@@ -129,10 +128,25 @@ class TeamReviewNaturalCoachContractTest {
 
     @Test
     void naturalToneAndLength() {
-        assertTrue(ZH.contains("400–1200"), "默认长度 400–1200 字");
-        assertTrue(ZH.contains("300–700"), "简单局 300–700 字");
-        assertTrue(ZH.contains("不是硬 minimum，禁止为了达到字数填充"), "禁止凑字数");
-        assertTrue(ZH.contains("能一句说完，不写三句"), "简洁原则");
+        assertTrue(ZH.contains("1200–2200"), "普通 7v7 软目标 1200–2200 字");
+        assertTrue(ZH.contains("2500–3500"), "复杂局允许 2500–3500 字");
+        assertTrue(ZH.contains("这是软目标，不是硬 minimum 或 maximum"), "长度只是软目标");
+        assertTrue(ZH.contains("不得为了“简洁”删掉会改变战术判断的信息"), "不得因简洁删除关键判断信息");
+        assertFalse(ZH.contains("400–1200"), "不得保留过窄的旧默认长度");
+    }
+
+    @Test
+    void selectiveCompleteReasoningContract() {
+        assertTrue(ZH.contains("关键 tactical episode，必须展开到足以说明"), "关键 episode 必须完整解释");
+        assertTrue(ZH.contains("信息状态、基地/点数、局部交战或 cross-local propagation"),
+                "信息/目标/局部/传播不得因简洁省略");
+        assertTrue(ZH.contains("如果基地/点数状态改变了行动义务，Objectives 必须说明谁需要主动、谁可以等待"),
+                "目标状态改变义务时必须解释行动影响");
+        assertTrue(ZH.contains("多个 local 必须检查是否有传播"), "多个 local 必须检查传播");
+        assertTrue(ZH.contains("primaryDiagnosis 只是整场摘要，不得压缩 reviewMarkdown"),
+                "primaryDiagnosis 只是摘要");
+        assertTrue(ZH.contains("“重点复查”和“高贡献者”是可选 section"), "个人 section 可选");
+        assertTrue(ZH.contains("没有明确 structural evidence"), "个人判断需要 structural evidence");
     }
 
     @Test

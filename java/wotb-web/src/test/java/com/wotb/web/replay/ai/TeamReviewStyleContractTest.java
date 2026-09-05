@@ -7,8 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Team 输出风格契约（prompt 主体，不需要 runtime regex sanitizer）。
- * <p>验证 Team prompt 明确：internal evidence ≠ user-facing output；中文默认 400–1200 字
- * （简单局更短、复杂局约 1500 上限）；UNKNOWN selective；不单独建立「数据完整性/证据限制」章节；
+ * <p>验证 Team prompt 明确：internal evidence ≠ user-facing output；中文输出采用选择性完整复盘的软目标
+ * （普通 7v7 约 1200–2200 字、复杂局允许约 2500–3500 字）；UNKNOWN selective；不单独建立「数据完整性/证据限制」章节；
  * Focus Window 只是内部 attention 提示、正文不机械输出；数字只保留支撑核心判断的。</p>
  */
 class TeamReviewStyleContractTest {
@@ -30,13 +30,11 @@ class TeamReviewStyleContractTest {
 
     @Test
     void lengthGuidanceIsExplicit() {
-        assertTrue(ZH.contains("400–1200"), "必须给出中文默认长度 400–1200 字");
-        assertTrue(ZH.contains("300–700"), "简单一边倒 300–700 字");
-        assertTrue(ZH.contains("1500"), "复杂比赛最多约 1500 字");
+        assertTrue(ZH.contains("1200–2200"), "普通 7v7 约 1200–2200 字");
+        assertTrue(ZH.contains("2500–3500"), "复杂局允许约 2500–3500 字");
+        assertTrue(ZH.contains("这是软目标，不是硬 minimum 或 maximum"), "长度必须是软目标");
         assertTrue(ZH.contains("禁止为了达到字数填充"), "禁止凑字数");
-        assertTrue(ZH.contains("能一句说完，不写三句"), "简洁原则");
-        assertTrue(ZH.contains("简单局可以只写 2-3 段"), "简单局 2-3 段");
-        assertTrue(ZH.contains("复杂局可以写 5 段左右"), "复杂局约 5 段");
+        assertTrue(ZH.contains("不得为了“简洁”删掉会改变战术判断的信息"), "不得因简洁删除关键判断信息");
     }
 
     @Test
