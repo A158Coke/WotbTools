@@ -36,7 +36,9 @@
         "invalid_response": "The battle replay data is invalid and cannot be loaded safely.",
         "unknown_error": "Something went wrong. Please try again.",
         "job_failed": "The task failed.",
-        "diagnostic_id": "Diagnostic ID: {id}"
+        "diagnostic_id": "Diagnostic ID: {id}",
+        "copy_diagnostic_id": "Copy ID",
+        "diagnostic_id_copied": "Copied"
     },
     "upload": {
         "drop_hint": "Drop .wotbreplay files here",
