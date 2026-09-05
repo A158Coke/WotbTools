@@ -166,12 +166,11 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
 - 每场一个全场 MVP + Team 1/Team 2 各一个队内最佳（同一玩家可同时拥有）。
 - MVP 排序：finalRating → 胜方优先 → damageDealt → damageAssisted → kills → accountId（技术兜底）。
 - 战队 Rating = 本队 7 人 finalRating 算术平均（不再叠加胜方倍率）。
-- 战队名称：本队 ≥4/7 玩家同军团标签时自动使用该标签（`CLAN_MAJORITY`）；否则待命名
-  （`UNNAMED`），由上传者填写。名称只保存在当前页面内存，刷新消失；修改立即反映在单场
-  战队 Rating 区域、批次合并汇总、PNG 导出与 Excel 导出（经导出请求 metadata 传递，
-  服务端仅本次调用内使用，不保存）。批次战队聚合**不得**把不同比赛的 Team 1 合并成一个战队：
-  优先按多数军团标签或用户确认的名称作为批次 team key，无法确定跨场身份时保持为
-  `arenaId:team` 行。
+- 战队 `teamKey`：≥4/7 玩家共享同一个非空 clan 标签时，使用 `clan:<tag>`，该战队可以跨
+  arena 聚合；否则使用 `arenaId:team`，不自动跨 arena 聚合。用户输入的战队名称只是现有
+  `teamKey` 的显示/导出覆盖，不改变 `teamKey`，也不合并不同 arena 的 unnamed teams。名称只
+  保存在当前页面内存，刷新消失；修改立即反映在单场战队 Rating 区域、批次合并汇总、PNG
+  导出与 Excel 导出（经导出请求 metadata 传递，服务端仅本次调用内使用，不保存）。
 
 ## 批次汇总（V6 pooled Rating）
 
