@@ -290,10 +290,10 @@ onBeforeUnmount(() => {
                 type="button"
                 class="pb-dimension-corner-btn"
                 data-test="pb-dimension-toggle"
-                :aria-label="playbackDimension === '2d' ? 'Switch to terrain relief view' : 'Switch to flat 2D view'"
+                :aria-label="playbackDimension === '2d' ? 'Switch to 2.5D terrain relief view' : 'Switch to flat 2D view'"
                 :title="playbackDimension === '2d' ? 'Switch to terrain relief view' : 'Switch to flat 2D view'"
                 @click="playbackDimension = playbackDimension === '2d' ? '25d' : '2d'"
-              >{{ playbackDimension === '2d' ? '3D' : '2D' }}</button>
+              >{{ playbackDimension === '2d' ? '2.5D' : '2D' }}</button>
             </Teleport>
           </template>
           <div v-else-if="playbackV2State === 'UNAVAILABLE'" class="pb-status pb-unavailable" data-test="pb-unavailable">{{ playbackV2UnavailableReason }}</div>
