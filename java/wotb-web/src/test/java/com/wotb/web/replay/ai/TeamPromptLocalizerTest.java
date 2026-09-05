@@ -5,34 +5,44 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 验证 ZH/EN/RU 新 CAPTURE_RULE 均完成替换，EN/RU 不残留中文规则（包内生产入口）。 */
+/** 验证 ZH/EN/RU Team Tactical Skill v0.2 均完成替换，EN/RU 不残留中文规则。 */
 class TeamPromptLocalizerTest {
 
     @Test
     void localizedTacticalSkillModulesReplaceChineseResources() {
         final String zh = AiPromptLibrary.zh("team/single");
-        assertTrue(zh.contains("团队执行战术技能 v0.1"));
-        assertTrue(zh.contains("位置与节奏战术技能 v0.1"));
-        assertTrue(zh.contains("HP 与火力交换战术技能 v0.1"));
-        assertTrue(zh.contains("模式与目标战术技能 v0.1"));
+        assertTrue(zh.contains("信息与视野战术技能 v0.2"));
+        assertTrue(zh.contains("局部战场与传播战术技能 v0.2"));
+        assertTrue(zh.contains("团队执行战术技能 v0.2"));
+        assertTrue(zh.contains("位置与节奏战术技能 v0.2"));
+        assertTrue(zh.contains("HP 与火力交换战术技能 v0.2"));
+        assertTrue(zh.contains("模式与目标战术技能 v0.2"));
 
         final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.EN);
-        assertTrue(en.contains("TEAM EXECUTION TACTICAL SKILL v0.1"));
-        assertTrue(en.contains("POSITION AND TEMPO TACTICAL SKILL v0.1"));
-        assertTrue(en.contains("HP AND GUN-TRADE TACTICAL SKILL v0.1"));
-        assertTrue(en.contains("MODE AND OBJECTIVE TACTICAL SKILL v0.1"));
-        assertFalse(en.contains("团队执行战术技能 v0.1"));
-        assertFalse(en.contains("位置与节奏战术技能 v0.1"));
-        assertFalse(en.contains("HP 与火力交换战术技能 v0.1"));
-        assertFalse(en.contains("模式与目标战术技能 v0.1"));
+        assertTrue(en.contains("INFORMATION AND VISION TACTICAL SKILL v0.2"));
+        assertTrue(en.contains("LOCAL ENGAGEMENTS AND PROPAGATION TACTICAL SKILL v0.2"));
+        assertTrue(en.contains("TEAM EXECUTION TACTICAL SKILL v0.2"));
+        assertTrue(en.contains("POSITION AND TEMPO TACTICAL SKILL v0.2"));
+        assertTrue(en.contains("HP AND GUN-TRADE TACTICAL SKILL v0.2"));
+        assertTrue(en.contains("MODE AND OBJECTIVE TACTICAL SKILL v0.2"));
+        assertFalse(en.contains("信息与视野战术技能 v0.2"));
+        assertFalse(en.contains("局部战场与传播战术技能 v0.2"));
+        assertFalse(en.contains("团队执行战术技能 v0.2"));
+        assertFalse(en.contains("位置与节奏战术技能 v0.2"));
+        assertFalse(en.contains("HP 与火力交换战术技能 v0.2"));
+        assertFalse(en.contains("模式与目标战术技能 v0.2"));
 
         final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.RU);
-        assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК КОМАНДНОГО ИСПОЛНЕНИЯ v0.1"));
-        assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК ПОЗИЦИИ И ТЕМПА v0.1"));
-        assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК HP И РАЗМЕНА ОГНЕВЫХ ЕДИНИЦ v0.1"));
-        assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК РЕЖИМОВ И ЦЕЛЕЙ v0.1"));
-        assertFalse(ru.contains("团队执行战术技能 v0.1"));
-        assertFalse(ru.contains("位置与节奏战术技能 v0.1"));
+        assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК ИНФОРМАЦИИ И ОБЗОРА v0.2"));
+        assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК ЛОКАЛЬНЫХ СТОЛКНОВЕНИЙ И РАСПРОСТРАНЕНИЯ v0.2"));
+        assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК КОМАНДНОГО ИСПОЛНЕНИЯ v0.2"));
+        assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК ПОЗИЦИИ И ТЕМПА v0.2"));
+        assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК HP И РАЗМЕНА ОГНЕВЫХ ЕДИНИЦ v0.2"));
+        assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК РЕЖИМОВ И ЦЕЛЕЙ v0.2"));
+        assertFalse(ru.contains("信息与视野战术技能 v0.2"));
+        assertFalse(ru.contains("局部战场与传播战术技能 v0.2"));
+        assertFalse(ru.contains("团队执行战术技能 v0.2"));
+        assertFalse(ru.contains("位置与节奏战术技能 v0.2"));
     }
 
     @Test

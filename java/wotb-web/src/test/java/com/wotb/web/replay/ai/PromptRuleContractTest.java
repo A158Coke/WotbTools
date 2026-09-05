@@ -59,6 +59,8 @@ class PromptRuleContractTest {
                     PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE,
                     PlayerPromptRules.HP_LOSS_TIME_RULE,
                     PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE,
+                    TeamPromptLocalizer.INFORMATION_VISION_SKILL_RULE,
+                    TeamPromptLocalizer.LOCAL_ENGAGEMENTS_SKILL_RULE,
                     TeamPromptLocalizer.TEAM_EXECUTION_SKILL_RULE,
                     TeamPromptLocalizer.POSITION_TEMPO_SKILL_RULE,
                     TeamPromptLocalizer.HP_TRADES_SKILL_RULE,
@@ -113,6 +115,8 @@ class PromptRuleContractTest {
             assertFalse(localized.contains("=== 证据逻辑与术语（强制） ==="), lang + " 残留中文证据逻辑");
             assertFalse(localized.contains("=== 团队复盘规则（强制，仅训练房/联赛团队复盘） ==="), lang + " 残留中文团队规则");
             assertFalse(localized.contains("=== 争霸赛占点规则（强制，训练房/联赛恒为争霸赛） ==="), lang + " 残留中文占点规则");
+            assertFalse(localized.contains("=== 信息与视野战术技能 v0.2 ==="), lang + " 残留中文信息技能");
+            assertFalse(localized.contains("=== 局部战场与传播战术技能 v0.2 ==="), lang + " 残留中文局部技能");
         }
     }
 }

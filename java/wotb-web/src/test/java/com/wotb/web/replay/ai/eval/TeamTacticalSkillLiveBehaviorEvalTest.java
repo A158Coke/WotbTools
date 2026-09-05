@@ -34,7 +34,7 @@ import java.util.regex.Pattern;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Opt-in DeepSeek behavior evaluation for Tactical Skill v0.1.
+ * Opt-in DeepSeek behavior evaluation for Team Tactical Skill v0.2.
  *
  * <p>This is deliberately a live-provider test, not a default CI test or merge
  * gate. It sends

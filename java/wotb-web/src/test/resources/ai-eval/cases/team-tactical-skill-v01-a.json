@@ -7,7 +7,9 @@
   "checks": [
     { "kind": "system_prompt_contains", "text": "half-commit / 执行到一半" },
     { "kind": "system_prompt_contains", "text": "最晚进入者不自动等于责任人" },
+    { "kind": "system_prompt_contains", "text": "CURRENT" },
+    { "kind": "system_prompt_contains", "text": "LAST_KNOWN" },
     { "kind": "system_prompt_omits", "text": "玩家失败沟通" }
   ],
-  "note": "Golden A：后端只提供进入时序/局部兵力/位置事实，half-commit 由 LLM 在证据足够时解释。"
+  "note": "Golden A：v0.2 同时要求按当时信息状态解释进入时序与局部兵力，half-commit 由 LLM 在证据足够时解释。"
 }
