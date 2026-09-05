@@ -258,6 +258,16 @@ class TeamFactualConsistencyValidatorTest {
                 "V5 LAST_KNOWN 措辞正确必须 PASS: " + conflicts);
     }
 
+    @Test
+    void conservativeLastKnownRecoveryKeepsTacticalValueAndPasses() {
+        final TeamReviewEnvelope env = envelope(
+                "侧翼压力形成后，主力正面的交战条件明显恶化；复盘时应重点检查侧翼失去控制后"
+                        + "主力是否及时调整。Maus 最后一次观测在1分57秒，之后位置未知。");
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertFalse(hasCheck(conflicts, "V5"),
+                "保留战术判断并将 CURRENT 降级为 LAST_KNOWN 后必须 PASS: " + conflicts);
+    }
+
     // ===== G4：V6 unsupported hard facts =====
 
     @Test
@@ -274,6 +284,21 @@ class TeamFactualConsistencyValidatorTest {
         final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
         assertFalse(hasCheck(conflicts, "V6"),
                 "V6 降级表达必须 PASS: " + conflicts);
+    }
+
+    @Test
+    void unsupportedSpotterAttributionFailsButEvidenceBoundedGeneralizationPasses() {
+        final TeamReviewEnvelope unsupported = envelope("IS-4点亮了敌方5台。\n");
+        final List<FactConflict> unsupportedConflicts =
+                TeamFactualConsistencyValidator.validate(unsupported, facts());
+        assertTrue(unsupportedConflicts.stream().anyMatch(c -> "V6".equals(c.checkId())
+                        && c.severity() == TeamFactualConsistencyValidator.Severity.HARD_FACT),
+                "无 dedicated spotting evidence 的具体点亮归因必须保持 HARD_FACT: " + unsupportedConflicts);
+
+        final TeamReviewEnvelope conservative = envelope(
+                "该阶段可确认敌方曾在GRID6出现；侧翼压力形成后，主力正面的交战条件明显恶化。");
+        assertTrue(TeamFactualConsistencyValidator.validate(conservative, facts()).isEmpty(),
+                "删除具体 spotter attribution 后，应允许保留有证据边界的概括战术判断");
     }
 
     // ===== G3 / G5：tactical opinion & coaching must PASS（Validator 不判断战术观点） =====
@@ -909,6 +934,8 @@ class TeamFactualConsistencyValidatorTest {
         assertTrue(conflicts.stream().anyMatch(c -> "BINDING".equals(c.checkId())
                         && "UNKNOWN_EVIDENCE".equals(c.reasonCode())),
                 "引用不存在证据必须携带 reasonCode=UNKNOWN_EVIDENCE: " + conflicts);
+        assertFalse(TeamFactualConsistencyValidator.hasHardConflict(conflicts),
+                "仅 evidence binding metadata 冲突不应把正文事实判为 HARD_FACT: " + conflicts);
     }
 
     @Test
