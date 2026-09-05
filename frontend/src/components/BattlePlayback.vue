@@ -473,7 +473,7 @@ let lastFrameTs = null
 // 暂停期 transient 时钟的 RAF id（仅当存在未决 transient 时运行，不永久轮询）。
 let pauseRafId = null
 
-// ---- 地图视图缩放/平移：单一 transform 层保证地图/网格/炮线/标记严格对齐 ----
+// ---- 地图视图缩放/平移：单一 camera layer 保证地图/网格/炮线/标记严格对齐 ----
 const mapComponent = ref(null)
 const mapEl = computed(() => mapComponent.value?.mapEl || null)
 const mapStageEl = ref(null)
@@ -724,7 +724,13 @@ function applyView(next) {
   view.ty = clamped.ty + safe.top
 }
 
-const viewportStyle = computed(() => `transform: translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`)
+// Raster camera fallback: enlarge the layout box before the browser paints the HD image,
+// then translate that box for pan. Keeping view.scale as the SSOT preserves all anchor math
+// while avoiding a compositor-only scale of an already-painted raster layer.
+const viewportStyle = computed(() => [
+  `transform: translate(${view.tx}px, ${view.ty}px)`,
+  `width: ${view.scale * 100}%`,
+])
 
 // 车辆标记随地图缩放（用户确认「坦克随地图一起放大，相对地图比例不变」）：
 // 标记中心锚定在地图坐标（left/top % 经 viewport 变换），本体不再反缩放；
@@ -1560,6 +1566,9 @@ const vehicleStates = computed(() => baseVehicleStates.value.map((state) => {
       ...state.markerStyle,
       width: `${state.markerSize.renderBox.width}px`,
       height: `${state.markerSize.renderBox.height}px`,
+      // The camera content is layout-scaled rather than transform-scaled. Keep the marker's
+      // existing scale so vehicle artwork and screen-space inverse overlays retain their contract.
+      transform: `translate(-50%, -50%) scale(${scale})`,
       left: `calc(${markerLeft(state.pos.x)} + ${offset.x / scale}px)`,
       top: `calc(${markerTop(state.pos.y)} + ${offset.y / scale}px)`,
     },
@@ -2261,13 +2270,6 @@ const mapStyle = computed(() => ({
   width: 100%;
   transform-origin: 0 0;
   touch-action: none;
-}
-.pb-svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  border-radius: 4px;
-  background: #111;
 }
 .pb-markers {
   position: absolute;

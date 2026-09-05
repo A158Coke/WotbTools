@@ -315,9 +315,9 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     const map = ruleBody('.battle-playback:fullscreen .pb-main .pb-map')
     expect(map).toContain('width: 100%')
     expect(map).toContain('max-width: none')
-    // SVG stays aspect-preserving (height:auto) so the raster geometry is never
-    // distorted by a non-aspect container box.
-    expect(ruleBody('.battle-playback:fullscreen .pb-main .pb-map .pb-svg')).toContain('height: auto')
+    // Raster and vector layers share the canonical logical frame; the frame's
+    // aspect-ratio, not the SVG intrinsic height, preserves map geometry.
+    expect(ruleBody('.battle-playback:fullscreen .pb-main .pb-map .pb-svg')).toContain('height: 100%')
   })
 
   it('exits fullscreen back to the normal page layout (no fullscreen-only absolute on the base)', () => {

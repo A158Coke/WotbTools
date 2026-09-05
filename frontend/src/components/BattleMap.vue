@@ -15,7 +15,7 @@ const props = defineProps({
   visibleTrails: { type: Array, default: () => [] },
   tracerColor: { type: Function, required: true },
   viewScale: { type: Number, default: 1 },
-  viewportStyle: { type: String, default: '' },
+  viewportStyle: { type: [String, Array], default: '' },
   annotVisible: Boolean,
   renderedAnnotations: { type: Array, default: () => [] },
   annotFontSize: { type: Number, default: 14 },
@@ -155,19 +155,19 @@ function fillTop(base) {
 </script>
 
 <template>
-  <div class="pb-map" data-test="pb-map" ref="mapEl" @wheel.prevent="emit('wheel', $event)">
+  <div class="pb-map" data-test="pb-map" ref="mapEl" :style="{ aspectRatio: `${props.mapView.W} / ${props.mapView.H}` }" @wheel.prevent="emit('wheel', $event)">
     <div
       class="pb-viewport"
       data-test="pb-viewport"
-      :style="props.viewportStyle"
+      :style="[props.viewportStyle, { aspectRatio: `${props.mapView.W} / ${props.mapView.H}` }]"
       @pointerdown="emit('pointer-down', $event)"
       @pointermove="emit('pointer-move', $event)"
       @pointerup="emit('pointer-up', $event)"
       @pointercancel="emit('pointer-up', $event)"
       @click.capture="emit('viewport-click', $event)"
     >
+      <img class="pb-basemap" data-test="pb-basemap" :src="props.image.src" alt="" aria-hidden="true" />
       <svg class="pb-svg" :viewBox="`0 0 ${props.mapView.W} ${props.mapView.H}`" role="img">
-        <image :href="props.image.src" :width="props.mapView.W" :height="props.mapView.H" preserveAspectRatio="none" />
         <defs>
           <clipPath v-for="base in props.bases" :key="base.baseId" :id="`${clipPrefix}-${base.baseId}`">
             <rect
@@ -274,9 +274,13 @@ function fillTop(base) {
 </template>
 
 <style>
-.pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; }
-.pb-viewport { position: relative; width: 100%; transform-origin: 0 0; touch-action: none; }
-.pb-svg { display: block; width: 100%; height: auto; border-radius: 4px; background: var(--bg-elevated); }
+.pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; aspect-ratio: var(--pb-map-aspect, 1 / 1); }
+.pb-viewport { position: absolute; inset: 0 auto auto 0; width: 100%; transform-origin: 0 0; touch-action: none; aspect-ratio: var(--pb-map-aspect, 1 / 1); }
+.pb-basemap,
+.pb-svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.pb-basemap { object-fit: fill; border-radius: 4px; user-select: none; pointer-events: none; }
+.pb-svg { border-radius: 4px; background: transparent; pointer-events: none; }
+.pb-viewport.pb-25d-active .pb-basemap { visibility: hidden; }
 .pb-markers { position: absolute; inset: 0; pointer-events: none; }
   .pb-vehicle { position: absolute; width: 30px; height: 30px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
 .pb-base-circle { fill: color-mix(in srgb, currentColor 18%, transparent); stroke: currentColor; stroke-width: 1.6; }

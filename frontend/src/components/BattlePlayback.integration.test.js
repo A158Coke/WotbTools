@@ -1164,8 +1164,8 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
 
     const scaleOf = () => {
       const st = wrapper.find('[data-test="pb-viewport"]').attributes('style') || ''
-      const m = st.match(/scale\(([\d.]+)\)/)
-      return m ? parseFloat(m[1]) : NaN
+      const m = st.match(/width:\s*([\d.]+)%/)
+      return m ? parseFloat(m[1]) / 100 : NaN
     }
 
     // 初始 page fit：地图近方形(766×769)，stage 高 900、map 宽 1200 → scale < 1（contain 居中）
@@ -1233,8 +1233,8 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     })
     const scaleOf = () => {
       const st = wrapper.find('[data-test="pb-viewport"]').attributes('style') || ''
-      const m = st.match(/scale\(([\d.]+)\)/)
-      return m ? parseFloat(m[1]) : NaN
+      const m = st.match(/width:\s*([\d.]+)%/)
+      return m ? parseFloat(m[1]) / 100 : NaN
     }
 
     // --- normal mobile：controls 为 transient overlay（默认 opacity:0）。即使 content 高≠0，
@@ -1395,8 +1395,8 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
 
     const scaleOf = () => {
       const st = wrapper.find('[data-test="pb-viewport"]').attributes('style') || ''
-      const m = st.match(/scale\(([\d.]+)\)/)
-      return m ? parseFloat(m[1]) : NaN
+      const m = st.match(/width:\s*([\d.]+)%/)
+      return m ? parseFloat(m[1]) / 100 : NaN
     }
 
     // 初始 fit：map 宽 1200、近方形(766×769)、stage 高 900 → fitScale < 1
