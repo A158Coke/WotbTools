@@ -36,8 +36,13 @@ Team Observed Mean   = T / N
 七个 League 维度各自按有效评分场次累加 raw dimension score，再除以同一有效场次数。真实 0 必须进入分子，不能因为是 0 而丢弃。维度均值只用于展示和 Radar，不参与批次 Rating、MVP 或排名。
 
 战队 V6 Rating 使用该战队每场 `TeamBattleRating` 的 pooled sum/count 和 team prior；每场
-`TeamBattleRating` 是该场 7 名队员 Final Rating 的算术平均值。战队 identity 仍沿用既有 `teamKey`
-规则：多数军团标签或用户确认名称可合并；无法确定时保留 `arenaId:team`。
+`TeamBattleRating` 是该场 7 名队员 Final Rating 的算术平均值。战队 identity / `teamKey` 规则为：
+
+- ≥4/7 玩家共享同一个非空 clan 标签：`teamKey = clan:<tag>`，该战队可以跨 arena 聚合；
+- 否则：`teamKey = arenaId:team`，不自动跨 arena 聚合。
+
+用户输入的战队名称仅是现有 `teamKey` 的显示/导出覆盖，不改变 `teamKey`，也不合并不同 arena
+的 unnamed teams。
 
 ## API、UI 与导出
 
