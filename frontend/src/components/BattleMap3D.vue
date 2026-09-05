@@ -6,7 +6,7 @@ import {
   activateTerrainRelief,
   clearTerrainRelief,
   createTerrainReliefModel,
-  visualReliefZ,
+  projectTerrainCoordinates,
 } from '../utils/terrainReliefProjection.js'
 
 const props = defineProps({
@@ -24,9 +24,8 @@ let viewportElement = null
 let reliefModel = null
 let loadToken = 0
 
-// 45° geometry now carries most of the depth cue. Hillshade stays renderer-owned
-// and deliberately moderate: it improves slope readability without turning the
-// existing tactical raster into a synthetic texture pack.
+// The 2.5D product is a tactical-map relief, not a physical 3D scene. Height
+// perception comes from the Z-derived screen warp plus renderer-owned hillshade.
 const RELIEF_NORMAL_GAIN = 2.15
 const RELIEF_CONTRAST = 1.45
 const RELIEF_MIN_SHADE = 0.56
@@ -148,14 +147,23 @@ function buildTerrainGeometry(terrainMeta, heights, model) {
 
   for (let gy = 0; gy <= size; gy++) {
     const sampleY = Math.min(gy, size - 1)
+    const worldY = yMin + gy * spacingY
     for (let gx = 0; gx <= size; gx++) {
       const sampleX = Math.min(gx, size - 1)
+      const worldX = xMin + gx * spacingX
+      const height = heights[sampleY * size + sampleX]
+      const projected = projectTerrainCoordinates(model, worldX, worldY, height)
       const vertex = gy * grid + gx
       const p = vertex * 3
       const uv = vertex * 2
-      positions[p] = xMin + gx * spacingX
-      positions[p + 1] = yMin + gy * spacingY
-      positions[p + 2] = visualReliefZ(model, heights[sampleY * size + sampleX])
+
+      // Pre-project the terrain into the tactical-map plane. The original 2D map
+      // footprint remains authoritative; Z only warps interior Y. Edge fade pins
+      // the perimeter to the original raster frame so the map never shrinks into
+      // a physical-camera trapezoid/bowl.
+      positions[p] = projected.u
+      positions[p + 1] = projected.v
+      positions[p + 2] = 0
       uvs[uv] = gx / size
       uvs[uv + 1] = gy / size
 
@@ -242,27 +250,25 @@ async function loadMap() {
       samplesPerAxis: entry.terrain.samplesPerAxis,
       heights,
     })
-    const { xMin, yMin, xMax, yMax } = model.worldBounds
-    const span = Math.max(xMax - xMin, yMax - yMin, 1)
 
     const nextScene = new THREE.Scene()
     nextScene.background = new THREE.Color(0x111820)
 
-    // Fixed 45° orthographic tactical camera: south -> north, so map north stays
-    // screen-up and X stays horizontal. There is no orbit, roll or perspective.
+    // Footprint-preserving orthographic presentation. The mesh has already been
+    // transformed into its tactical relief plane, so this camera does not add any
+    // second foreshortening/perspective step.
     const pb = model.projectedBounds
-    const cameraDistance = span * 2.2
     const nextCamera = new THREE.OrthographicCamera(
       pb.left,
       pb.right,
       pb.top,
       pb.bottom,
       0.1,
-      cameraDistance * 5,
+      10,
     )
-    nextCamera.position.set(model.centerX, model.centerY - cameraDistance, model.centerZ + cameraDistance)
-    nextCamera.up.set(0, 0, 1)
-    nextCamera.lookAt(model.centerX, model.centerY, model.centerZ)
+    nextCamera.position.set(0, 0, 1)
+    nextCamera.up.set(0, 1, 0)
+    nextCamera.lookAt(0, 0, 0)
     nextCamera.updateProjectionMatrix()
 
     const nextRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
@@ -280,10 +286,6 @@ async function loadMap() {
     texture.colorSpace = THREE.SRGBColorSpace
     texture.wrapS = THREE.ClampToEdgeWrapping
     texture.wrapT = THREE.ClampToEdgeWrapping
-    // The production basemaps are already 2024x2024 WebP. Preserve that native
-    // detail in the oblique 2.5D view instead of manufacturing larger rasters.
-    // Trilinear mipmaps avoid shimmer while maximum anisotropy keeps roads and
-    // building edges readable along the foreshortened north/south axis.
     texture.generateMipmaps = true
     texture.minFilter = THREE.LinearMipmapLinearFilter
     texture.magFilter = THREE.LinearFilter
@@ -296,10 +298,12 @@ async function loadMap() {
         map: texture,
         vertexColors: true,
         color: 0xffffff,
-        side: THREE.FrontSide,
+        side: THREE.DoubleSide,
+        depthTest: false,
+        depthWrite: false,
       }),
     )
-    terrain.name = 'fixed-45deg-2.5d-tactical-map'
+    terrain.name = 'edge-pinned-2.5d-tactical-map'
     nextScene.add(terrain)
 
     scene = nextScene
@@ -315,7 +319,7 @@ async function loadMap() {
     renderScene()
   } catch (error) {
     if (token !== loadToken) return
-    console.error('[map-2.5d] failed to render fixed 45° heightfield', error)
+    console.error('[map-2.5d] failed to render tactical heightfield relief', error)
     disposeScene()
     status.value = 'error'
   }
