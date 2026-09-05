@@ -116,7 +116,7 @@ jobs:
         working-directory: frontend
         run: node scripts/check-bundle-separation.mjs
       - name: Alpine Docker build
-        run: docker build -f docker/Dockerfile.frontend -t wotbtools-frontend:pr .
+        run: docker build --build-arg BUILD_COMMIT=ci-${{ github.sha }} -f docker/Dockerfile.frontend -t wotbtools-frontend:pr .
 
   http-contract:
     name: HTTP contract gate

@@ -2,7 +2,7 @@
  * Presentation-only Radar scales.
  *
  * Business score/raw values stay untouched. V2 keeps the relative log scale;
- * V5 uses the bounded average=75 / authoritative max=150 scale.
+ * League V6 uses the bounded average=75 / authoritative max=150 scale.
  */
 export const RADAR_AVERAGE_VALUE = 75
 export const RADAR_STRONG_VALUE = 100
@@ -25,7 +25,7 @@ export function radarVisualValue(playerRaw, referenceRaw) {
 }
 
 /**
- * V5-only bounded presentation scale. The current comparison-group average is
+ * League-only bounded presentation scale. The current comparison-group average is
  * the regular 75 ring and the authoritative League dimension max is 150.
  * Rating formulas/raw values stay untouched.
  */
@@ -107,7 +107,7 @@ export function scaleRadarSeries(metrics = [], reference = []) {
 }
 
 /**
- * V5-only series scaler. Unlike scaleRadarSeries (V2 relative scale), this
+ * League-only series scaler. Unlike scaleRadarSeries (V2 relative scale), this
  * consumes authoritative League column maxima so every dimension max maps to
  * the invisible 150 boundary.
  */

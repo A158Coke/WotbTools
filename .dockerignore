@@ -10,5 +10,5 @@ dist-desktop
 python
 common/data
 *.md
-!docs/WotBTools_League_Rating_V5.md
+!docs/WotBTools_League_Rating_V6.md
 **/tsconfig*.json

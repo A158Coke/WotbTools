@@ -120,11 +120,11 @@ describe('globalAverage', () => {
     expect(a.axes).toEqual(b.axes)
   })
 
-  it('V5 隔离：相同 dimensionMeans、不同 ratingV5/median/battles → 几何不变', () => {
+  it('V6 隔离：相同 dimensionMeans、不同 rating/observedMean/ratedBattles → 几何不变', () => {
     const base = [sr(1, { [D]: 300 }), sr(2, { [D]: 200 })]
     const varied = [
-      { ...sr(1, { [D]: 300 }), league: { ...sr(1, { [D]: 300 }).league, ratingV5: 1, ratingRawMedian: 2, battles: 99 } },
-      { ...sr(2, { [D]: 200 }), league: { ...sr(2, { [D]: 200 }).league, ratingV5: 3, ratingRawMedian: 4, battles: 1 } },
+      { ...sr(1, { [D]: 300 }), league: { ...sr(1, { [D]: 300 }).league, rating: 1, observedMean: 2, ratedBattles: 99 } },
+      { ...sr(2, { [D]: 200 }), league: { ...sr(2, { [D]: 200 }).league, rating: 3, observedMean: 4, ratedBattles: 1 } },
     ]
     const r1 = globalAverage(base, { dimKeys: [D] })
     const r2 = globalAverage(varied, { dimKeys: [D] })
