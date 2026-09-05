@@ -1,0 +1,46 @@
+name: Temporary regenerate Port Bay with EDSR
+
+on:
+  push:
+    branches:
+      - feat/playback-3d-prototype
+    paths:
+      - common/python/enhance_map_assets.py
+      - .github/workflows/tmp-regenerate-port-bay-edsr.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/playback-3d-prototype
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install one-time enhancement tooling
+        run: python -m pip install --disable-pip-version-check opencv-contrib-python-headless==4.10.0.84 pillow==11.3.0
+      - name: Fetch EDSR x2 weights
+        run: |
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/Saafke/EDSR_Tensorflow/master/models/EDSR_x2.pb \
+            --output /tmp/EDSR_x2.pb
+      - name: Regenerate Port Bay HD sample with EDSR
+        run: python common/python/enhance_map_assets.py /tmp/EDSR_x2.pb port-bay --model-type edsr --quality 94
+      - name: Verify original Port Bay was not modified
+        run: |
+          git diff --exit-code -- frontend/src/assets/maps/port-bay.webp
+          test -f frontend/src/assets/maps-hd/port-bay.webp
+          grep -q 'EDSR_X2_PLUS_CONSERVATIVE_UNSHARP' frontend/src/assets/maps-hd/manifest.json
+      - name: Commit EDSR sample and remove temporary workflow
+        run: |
+          git config user.name 'WotbTools AI'
+          git config user.email 'wotbtools-ai@local'
+          git add frontend/src/assets/maps-hd/port-bay.webp frontend/src/assets/maps-hd/manifest.json
+          git rm .github/workflows/tmp-regenerate-port-bay-edsr.yml
+          git commit -m 'feat(maps): regenerate Port Bay HD with EDSR'
+          git push origin HEAD:feat/playback-3d-prototype
