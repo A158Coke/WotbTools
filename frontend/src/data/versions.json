@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.74",
+    "date": "2026-09-05",
+    "tag": "chg",
+    "zh": "战局回放视觉与地形表现升级：29 张已注册地图全部使用对应原图生成的 2× HD 底图，并保留原始地图作为回滚源；车辆俯视模型会依据权威 2.5D 地形高度场呈现受限的俯仰/侧倾，血量、标签、选择状态与点击区域仍保持屏幕对齐；地形或朝向证据不足时自动回退为原平面标记。",
+    "en": "Battle Playback visual and terrain presentation upgraded: all 29 registered maps now use 2× HD basemaps generated from their corresponding originals while keeping the source maps as rollback assets; top-down vehicle artwork follows the authoritative 2.5D terrain heightfield with bounded pitch/roll, while HP, labels, selection state and hit targets stay screen-aligned; missing terrain or heading evidence falls back to the original flat marker.",
+    "ru": "Обновлена визуальная часть и отображение рельефа в повторе боя: все 29 зарегистрированных карт используют HD-подложки 2×, созданные из соответствующих оригиналов, при этом исходные карты сохранены для отката; вид техники сверху следует авторитетному полю высот 2.5D с ограниченными наклонами по тангажу и крену, а HP, подписи, выделение и область клика остаются выровненными по экрану; при отсутствии данных о рельефе или направлении используется прежний плоский маркер."
+  },
+  {
     "v": "2.12.73",
     "date": "2026-09-05",
     "tag": "chg",
@@ -188,7 +196,7 @@
     "date": "2026-08-30",
     "tag": "chg",
     "zh": "Rating V2 与 League Rating V5 雷达现在会在每个玩家顶点直接标出 0–150 视觉分数，明细可在「分数」与「原始数值」之间切换；两套雷达都支持 50%–150% 缩放，V2 桌面抽屉也扩大以容纳完整放大视图。V5 选手画像 PNG 同步分数标注，手机端 V2 抽屉补齐键盘焦点循环。评分公式、排序、API 与 Excel 均不改变。",
-    "en": "Rating V2 and League Rating V5 radars now label every player vertex with its 0–150 visual score, and details can switch between Scores and Raw values. Both radars support 50%–150% zoom, while the desktop V2 drawer is wider to fit the enlarged view. V5 Rating Profile PNGs include the same labels, and the mobile V2 drawer keeps keyboard focus inside the modal. Rating formulas, ranking, APIs and Excel remain unchanged.",
+    "en": "Rating V2 and League Rating V5 radars now label every player vertex with its 0–150 visual score, and details can switch between Scores and Raw values. Both radars support 50%–150% zoom, while the desktop V2 drawer is wider to fit the enlarged view. V5 Rating Profile PNGs include the same labels, and the mobile V2 drawer keeps keyboard focus inside the modal. Rating formulas, ranking, APIs and Excel are unchanged.",
     "ru": "На радарах Rating V2 и League Rating V5 у каждой вершины игрока теперь показан визуальный балл 0–150, а в деталях можно переключаться между баллами и исходными значениями. Оба радара масштабируются от 50% до 150%, а панель V2 на компьютере расширена для увеличенного вида. Те же подписи добавлены в PNG-профиль V5, а мобильная панель V2 удерживает клавиатурный фокус внутри модального окна. Формулы, сортировка, API и Excel не меняются."
   },
   {
@@ -477,7 +485,7 @@
     "tag": "chg",
     "zh": "导出大批量回放不再像页面卡死：点击导出后右下角出现任务卡片，实时显示已处理场数/总场数进度、当前阶段（解析回放 / 生成 Excel / 打包 ZIP）和重复/失败数量，可随时取消，完成后一键下载；导出期间页面照常使用。单场 Excel 打开后默认显示「玩家数据」表。",
     "en": "Exporting many replays no longer looks frozen: after clicking export a task card appears in the bottom-right corner with a live progress bar (processed/total), the current phase (parsing replays / building Excel / building ZIP), duplicate and failure counts, and a cancel button; when ready you download right from the card and the page stays usable during the whole export. Single-battle Excel files now open on the Players sheet.",
-    "ru": "Экспорт многих реплеев больше не выглядит как зависание: после нажатия экспорта в правом нижнем углу появляется карточка задачи с живым прогрессом (обработано/всего), текущей фазой (анализ реплеев / формирование Excel / формирование ZIP), счётчиком дублей и ошибок и кнопкой отмены; по готовности файл скачивается из карточки, а страница остаётся рабочей во время всего экспорта. Одиночный Excel теперь открывается на листе «Игроки»."
+    "ru": "Экспорт многих реплеев больше не выглядит как зависание: после нажатия экспорта в правом нижнем углу появляется карточка задачи с живым прогрессом (обработано/всего), текущей фазой (анализ реплеев / формирование Excel / упаковка ZIP), счётчиком дублей и ошибок и кнопкой отмены; по готовности файл скачивается из карточки, а страница остаётся рабочей во время всего экспорта. Одиночный Excel теперь открывается на листе «Игроки»."
   },
   {
     "v": "2.12.13",
@@ -853,7 +861,7 @@
     "tag": "add",
     "zh": "AI 复盘实时流式展示（阶段进度 + 正文逐段生成）· 赛前预测对照折叠区块 · 敌方最后已知位置（区域/距离/观察时间）· 阶段存活人数（每阶段我方/敌方存活 + 密集击杀标注）",
     "en": "AI review real-time streaming (stage progress + live text) · Collapsible pre-battle prediction block · Enemy last-known positions (region/distance/observed time) · Phase survival counts (per-phase alive + dense-kill markers)",
-    "ru": "Потоковый вывод AI-разбора (этапы + живой текст) · Сворачиваемый блок предбоевого прогноза · Последние известные позиции противников (регион/дистанция/время) · Выжившие по фазам (обе стороны + метки массовых потерь)"
+    "ru": "Потоковый вывод AI-разбора (этапы + живой текст) · Сворачиваемый предбоевой прогноз · Последние известные позиции противников (регион/дистанция/время) · Выжившие по фазам (обе стороны + метки массовых потерь)"
   },
   {
     "v": "2.4.0",
