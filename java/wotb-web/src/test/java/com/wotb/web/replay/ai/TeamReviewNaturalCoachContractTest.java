@@ -46,6 +46,12 @@ class TeamReviewNaturalCoachContractTest {
     void primaryDiagnosisAllowsNoConfirmedError() {
         assertTrue(ZH.contains("必须选出且只选出一个 PRIMARY DIAGNOSIS"), "必须选出一个主判断");
         assertTrue(ZH.contains("表示本场最重要的结论，不等于必须找出错误"), "主判断不是强制错误");
+        assertTrue(ZH.contains("当前可确认/可观察证据中，没有发现足以作为主要问题的明显执行失误"),
+                "无错误结论必须限定在当前可确认/可观察证据");
+        assertTrue(ZH.contains("不表示证明本场不存在任何错误"),
+                "无确认错误不得表述成证明全场无错误");
+        assertFalse(ZH.contains("本场没有发现足以作为主要问题的明显执行失误"),
+                "不得保留没有证据边界的旧式无错误措辞");
         assertTrue(ZH.contains("NO_SIGNIFICANT_CONFIRMED_ERROR"), "允许无明显确认错误");
         assertTrue(ZH.contains("不得为了填满字段制造轮转、沟通、地图意识或协调问题"),
                 "禁止为字段制造问题");

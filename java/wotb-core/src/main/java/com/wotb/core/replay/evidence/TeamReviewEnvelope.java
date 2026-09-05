@@ -21,7 +21,7 @@ public record TeamReviewEnvelope(
         List<Claim> claims
 ) {
 
-    /** 唯一主判断（必须有内容：title + reasoning 非空；可以是无明显确认错误的结论）。 */
+    /** 唯一主判断（必须有内容：title + reasoning 非空；可表达当前证据中没有确认的重大错误）。 */
     public record PrimaryDiagnosis(
             String title,
             String reasoning,

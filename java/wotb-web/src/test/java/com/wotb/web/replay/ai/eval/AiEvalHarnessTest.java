@@ -78,6 +78,10 @@ class AiEvalHarnessTest {
                 "must not force a positive section");
         assertTrue(zh.contains("表示本场最重要的结论，不等于必须找出错误"),
                 "primary diagnosis must be the most important conclusion, not a forced error");
+        assertTrue(zh.contains("当前可确认/可观察证据中，没有发现足以作为主要问题的明显执行失误"),
+                "no-error conclusion must be bounded by confirmed/observable evidence");
+        assertTrue(zh.contains("不表示证明本场不存在任何错误"),
+                "no confirmed error must not claim that no errors existed");
         assertTrue(zh.contains("NO_SIGNIFICANT_CONFIRMED_ERROR"),
                 "must allow a no-confirmed-error conclusion");
         assertTrue(zh.contains("不得为了填满字段制造轮转、沟通、地图意识或协调问题"),

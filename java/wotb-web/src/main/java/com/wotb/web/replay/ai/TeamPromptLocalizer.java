@@ -205,8 +205,8 @@ final class TeamPromptLocalizer {
             OPPONENT_EXECUTED_BETTER 或 NO_SIGNIFICANT_CONFIRMED_ERROR；不要机械输出这些英文枚举，
             title 和 reasoning 用自然教练语言表达即可。
             只有证据支持时才指出团队执行问题、个人执行问题或战术决策问题；证据不足就跳过该判断。
-            如果本场没有足以作为主要问题的明确执行失误，可以直接写「本场没有发现足以作为主要问题的明显执行失误；
-            对方在某个已观察阶段处理得更有效」或等价结论，不得为了填满字段制造轮转、沟通、地图意识或协调问题。
+            如果当前可确认/可观察证据中，没有发现足以作为主要问题的明显执行失误，只能表达为「当前可确认/可观察证据中，没有发现足以作为主要问题的明显执行失误」或等价的证据边界结论；
+            这表示 NO_SIGNIFICANT_CONFIRMED_ERROR（没有确认的重大错误），不表示证明本场不存在任何错误；不得为了填满字段制造轮转、沟通、地图意识或协调问题。
             多个解释均可能成立时，选择最符合已知证据的单一结论；不要把无法观察的赛前计划、语音 call、
             沟通、谁下令或谁忽略指令当作原因。不能证明最细节的因果链时，保留可证明的上层执行现象，
             不要用猜测填补空白。
@@ -219,8 +219,10 @@ final class TeamPromptLocalizer {
                         requirement to find an error. It may be a team-execution problem, an individual-execution problem,
                         a key success factor, the opponent executing better, or no significant confirmed error; express the
                         result in natural coaching language rather than mechanically printing enum names.
-                        Name a team, individual, or decision problem only when the evidence supports it. If no clear execution
-                        error is important enough to lead the review, say so and, when supported, note that the opponent handled
+                        Name a team, individual, or decision problem only when the evidence supports it. If the currently
+                        confirmed/observable evidence contains no clear execution error important enough to lead the review,
+                        say exactly that or an equivalent evidence-bounded conclusion. This means no confirmed significant error;
+                        it does not prove that the battle contained no errors. When supported, note that the opponent handled
                         an observed phase more effectively. Never invent a rotation, communication, map-awareness, or coordination
                         problem just to fill this field.
                         Do not treat an unknown pre-battle plan, voice call, communication, commander order, or ignored order as
@@ -235,9 +237,11 @@ final class TeamPromptLocalizer {
                         найти ошибку. Это может быть проблема командного исполнения, индивидуального исполнения, ключевой фактор
                         успеха, более эффективное исполнение противника или отсутствие существенной подтверждённой ошибки; выражайте
                         результат естественным тренерским языком, не печатайте имена enum механически.
-                        Называйте проблему команды, игрока или решения только при наличии подтверждающих данных. Если явной ошибки,
-                        достаточно важной для главного вывода, нет — так и скажите и, если это подтверждено, отметьте, что противник
-                        эффективнее обработал наблюдаемую фазу. Не выдумывайте ротацию, коммуникацию, осведомлённость о карте или
+                        Называйте проблему команды, игрока или решения только при наличии подтверждающих данных. Если в текущих
+                        подтверждённых/наблюдаемых данных не найдено явной ошибки исполнения, достаточно важной для главного вывода,
+                        скажите именно это или используйте эквивалентную формулировку с границами доказательств. Это означает отсутствие
+                        подтверждённой существенной ошибки, но не доказывает отсутствие любых ошибок в бою. Если подтверждено, отметьте,
+                        что противник эффективнее обработал наблюдаемую фазу. Не выдумывайте ротацию, коммуникацию, осведомлённость о карте или
                         координацию только для заполнения поля.
                         Не выдавайте неизвестный предбоевой план, голосовой call, коммуникацию, приказ командира или его игнорирование
                         за причину. Если детальная причинная цепочка недоказуема, оставьте наблюдаемую картину исполнения и пропустите
@@ -257,7 +261,7 @@ final class TeamPromptLocalizer {
             {
               "primaryDiagnosis": {
                 "title": "一句话主判断",
-                "reasoning": "为什么这是本场最重要的结论（2-4 句；没有明确失误时说明证据支持的无明显错误/对手处理更有效）",
+                "reasoning": "为什么这是本场最重要的结论（2-4 句；没有确认的重大错误时，说明当前可确认/可观察证据的边界，或对手处理更有效）",
                 "supportingEvidenceIds": ["E1xx", "E1xx"]
               },
               "reviewMarkdown": "完整的自然语言复盘正文（用户最终看到的全部内容，Markdown；主标题用 ## 团队复盘）",

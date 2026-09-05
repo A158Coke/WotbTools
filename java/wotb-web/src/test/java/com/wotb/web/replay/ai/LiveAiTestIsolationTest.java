@@ -25,7 +25,8 @@ class LiveAiTestIsolationTest {
     private static final List<String> KNOWN_LIVE_TESTS = List.of(
             "com/wotb/web/replay/ai/TeamReviewRealE2EProbeTest.java",
             "com/wotb/web/replay/ai/TeamReviewBatchE2EProbeTest.java",
-            "com/wotb/web/replay/ai/TeamReviewDetailedReproProbeTest.java");
+            "com/wotb/web/replay/ai/TeamReviewDetailedReproProbeTest.java",
+            "com/wotb/web/replay/ai/eval/TeamTacticalSkillLiveBehaviorEvalTest.java");
 
     @Test
     void everyKnownLiveTestIsTaggedAndStillPresent() throws IOException {
