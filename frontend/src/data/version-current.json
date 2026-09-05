@@ -1,8 +1,0 @@
-{
-  "v": "2.12.74",
-  "date": "2026-09-05",
-  "tag": "chg",
-  "zh": "战局回放视觉升级：29 张地图启用独立从原图生成的 2× HD 底图，并增加 5 MiB / 4× 单图预算与 29/29 几何对照验收；2D 坦克贴图同时根据权威高度场和车辆朝向显示受限的上坡、下坡与横坡姿态，不引入 3D 坦克模型。",
-  "en": "Battle Playback visual upgrade: all 29 maps now use independently generated 2× HD basemaps from the original sources, with a 5 MiB / 4× per-map budget and 29/29 geometry comparison gate; existing 2D tank artwork also follows authoritative terrain height and hull heading with constrained uphill, downhill and cross-slope attitude, without introducing 3D tank models.",
-  "ru": "Визуальное обновление воспроизведения боя: для всех 29 карт используются независимо созданные из оригиналов HD-подложки 2× с лимитом 5 MiB / 4× на карту и проверкой геометрии 29/29; существующие 2D-изображения техники также получают ограниченный наклон на подъёмах, спусках и поперечных склонах по достоверной карте высот и направлению корпуса без введения 3D-моделей техники."
-}
