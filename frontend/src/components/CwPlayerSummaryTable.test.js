@@ -48,8 +48,8 @@ describe('CwPlayerSummaryTable', () => {
   it('renders rating cells with score/max percentage format', () => {
     const wrapper = mountTable()
     const text = wrapper.text()
-    // 总 Rating 只显示整数（850），不显示 /1000 冗余完成度
-    expect(text).toContain('850')
+    // 总 Rating 在展示层保留 1 位小数，不显示 /1000 冗余完成度
+    expect(text).toContain('850.4')
     expect(text).not.toContain('850 ·')
     expect(text).not.toContain('85% ·')
     // 七维仍显示「342 / 400 · 85.5%」
@@ -114,6 +114,30 @@ describe('CwPlayerSummaryTable', () => {
     // A=850.4 rated, B=null → A first, B missing last
     expect(rows.at(0).text()).toContain('850')
     expect(rows.at(1).text()).toContain('--')
+  })
+
+  it('player summary sorting uses full-precision raw Rating when display values tie', async () => {
+    const wrapper = mountTable({
+      rows: [
+        { team: 1, league: { accountId: 1001 }, cells: {
+          account_id: 1001, nickname: 'HighRaw', league_rating: 700.24,
+        } },
+        { team: 1, league: { accountId: 1002 }, cells: {
+          account_id: 1002, nickname: 'LowRaw', league_rating: 700.21,
+        } },
+      ],
+      columns: [
+        { key: 'nickname', num: false },
+        { key: 'league_rating', num: true },
+      ],
+    })
+    const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    await th.trigger('click')
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows.at(0).text()).toContain('LowRaw')
+    expect(rows.at(1).text()).toContain('HighRaw')
+    expect(rows.at(0).text()).toContain('700.2')
+    expect(rows.at(1).text()).toContain('700.2')
   })
 
   it('renders Performance Metrics columns as percentages', () => {

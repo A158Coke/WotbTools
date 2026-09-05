@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### League Rating V6 批次汇总
+- 批次选手与战队 Rating 统一改为基于有效单场 `finalRating` 的 pooled raw sum/count，并分别使用 5 与 1 的对称 prior，anchor 为 475。
+- 选手与战队汇总改用 `rating`、`observedMean`、`dimensionMeans` 和 `ratedBattles`；median 不再驱动主 Rating、维度、排名或 MVP。
+- 同步 Java domain/API/Mapper、CW 汇总表与 Drawer、三语文案、Excel 导出、测试和 V6 canonical 算法文档；V5 文档标记为历史版本。
+- 修复 frontend Alpine Docker 构建：放行/复制 V6 算法文档，Docker build identity 不再调用不存在的 git，并确保 `dist/version.json` 始终可写；V6 summary Rating 通过 DTO/API 保留完整精度，前端仅在展示层保留 1 位小数。
+
 ### Fixed
 - **Battle Playback 全屏 HUD / 安全区布局修复**：PC、平板和手机全屏下双方 HP / 点数 / 基地状态固定归属地图顶部 HUD，不再被通用 `pb-side-slots` 优化搬到侧栏；camera fit 按真实 HUD 与可见移动端底部控制条动态保留 safe inset，side-slot 仅作用于非移动端 controls，并按实际 map workspace 宽度判定，避免把 Details 列误算为 gutter；`test:browser-layout` 新增 fullscreen + side-slot 的真实 Chrome 几何回归。
 - **Android QQ 登录返回原 WebView（Verified App Link，CODE READY / PRODUCTION VALIDATION REQUIRED）**：QQ App 完成授权后

@@ -167,9 +167,9 @@ describe('BattleTable League Rating', () => {
     const inputs = wrapper.findAll('input.team-name-input')
     expect(inputs[0].element.value).toBe('AAA')
     expect(inputs[1].element.value).toBe('BBB')
-    // 战队 Rating 只显示整数（881），不显示冗余 /1000 完成度
+    // 战队 Rating 展示保留 1 位小数，不显示冗余 /1000 完成度
     const text = wrapper.text()
-    expect(text).toContain('881')
+    expect(text).toContain('880.5')
     expect(text).not.toContain('88.1%')
   })
 
@@ -180,29 +180,28 @@ describe('BattleTable League Rating', () => {
     expect(text).toContain('★')            // B 队2 队内最佳
   })
 
-  it('总 Rating 只显示整数（927），不显示 /1000 冗余完成度', () => {
+  it('总 Rating 在前端展示层保留 1 位小数，不显示 /1000 冗余完成度', () => {
     const wrapper = mountLeague(makeLeagueBattle())
     const text = wrapper.text()
-    expect(text).toContain('927')
+    expect(text).toContain('927.4')
     expect(text).not.toContain('92.7%')
     expect(text).not.toContain('927 ·')
-    expect(text).toContain('813')
+    expect(text).toContain('812.6')
     expect(text).not.toContain('81.3%')
   })
 
-  it('raw league_rating=927.4 → display 927，但排序用 raw 927.4（回归）', async () => {
+  it('raw league_rating=927.4/927.8 → 展示保留 1 位小数，排序用 raw 值（回归）', async () => {
     const battle = makeLeagueBattle()
     battle.players = [
       { team: 1, cells: { nickname: 'A', account_id: 1001, league_rating: 927.4, league_damage_score: 342.1, damage_dealt: 3000 } },
       { team: 1, cells: { nickname: 'B', account_id: 1002, league_rating: 927.8, league_damage_score: 350.2, damage_dealt: 3100 } },
     ]
     const wrapper = mountLeague(battle, leagueCols())
-    // display 都是 927（整数），不出现 927.4/927.8 或百分比
-    expect(wrapper.text()).toContain('927')
-    expect(wrapper.text()).not.toContain('927.4')
-    expect(wrapper.text()).not.toContain('927.8')
+    // 展示保留 1 位小数，不显示更多后端精度或百分比
+    expect(wrapper.text()).toContain('927.4')
+    expect(wrapper.text()).toContain('927.8')
     expect(wrapper.text()).not.toMatch(/92\.7%/)
-    // 点击 Rating 表头 ASC：raw 927.4 排在 raw 927.8 之前（display 相同也能正确排序）
+    // 点击 Rating 表头 ASC：raw 927.4 排在 raw 927.8 之前
     const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
     await th.trigger('click')
     const firstRow = wrapper.findAll('tbody tr').at(0)
