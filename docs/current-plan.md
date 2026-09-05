@@ -2,7 +2,7 @@
 
 ## 状态
 
-IMPLEMENTED — REVIEW FIX IN PROGRESS
+IMPLEMENTED — REVIEW FIX COMPLETE — FINAL PR CI PENDING
 
 ## 范围
 
@@ -10,7 +10,8 @@ IMPLEMENTED — REVIEW FIX IN PROGRESS
 - HD 资源增加 deterministic gate：coverage、SHA-256、实际 WebP 尺寸、严格 2× frame、无 crop/aspect drift、mapImages import coverage、单图 5 MiB / 4× growth budget。
 - terrain attitude 继续复用 authoritative heightfield + canonical hull yaw + 真实车辆 footprint；不伪造 replay Z。
 - 新增 yaw=90°、反向 sign、45° diagonal 的局部轴回归测试。
-- 29/29 source ↔ HD 视觉几何仍需人工 QA；`geometryTransform=NONE` 不作为视觉真实性证明。
+- [x] 29/29 source ↔ HD 已完成 side-by-side + macro-edge overlay 人工 QA：未发现 crop/warp、道路/建筑整体位移、岸线或主要地形轮廓漂移。最低 diagnostic macro-edge F1 为 Faust 0.9312、Desert Sands 0.9318；人工对照确认差异来自纹理/锐化边缘密度，而非战术拓扑重排。`geometryTransform=NONE` 仍只描述 pipeline，不单独作为真实性证明。
+- [x] 资源预算验证：最大单图 Canyon 4,666,308 B < 5 MiB；最大 growth Faust 3.748× < 4×。
 
 ---
 # Battle Playback 2.5D Vehicle Terrain Attitude
