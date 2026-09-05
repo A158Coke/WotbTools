@@ -2,7 +2,10 @@ import { shallowRef } from 'vue'
 
 export const RELIEF_ELEVATION_DEG = 45
 export const RELIEF_Z_EXAGGERATION = 2.0
-export const RELIEF_PADDING = 0.035
+// 2.5D replaces the old 2D map presentation, so it must occupy the same map rect.
+// Do not inset the relief envelope: any positive padding makes the upgraded map
+// visibly shrink inside the BattleMap viewport.
+export const RELIEF_PADDING = 0
 
 export const activeTerrainRelief = shallowRef(null)
 
