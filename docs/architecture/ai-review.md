@@ -92,6 +92,8 @@ AI 提示词正文维护在 `java/wotb-web/src/main/resources/prompts/` 下的 `
 | prebattle/system | `prompts/prebattle/system.zh.md` | `PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT` |
 | prebattle/user-header | `prompts/prebattle/user-header.zh.md` | `PreBattlePromptBuilder.PRE_BATTLE_USER_HEADER`（含 `%s`/`%d` 占位，由 `.formatted()` 填充） |
 | prebattle/confidence-legend | `prompts/prebattle/confidence-legend.zh.md` | `PreBattlePromptBuilder.CONFIDENCE_LEGEND` |
+| tactical-skills/information-vision | `prompts/tactical-skills/information-vision.zh.md` | `TeamPromptLocalizer.INFORMATION_VISION_SKILL_RULE` |
+| tactical-skills/local-engagements | `prompts/tactical-skills/local-engagements.zh.md` | `TeamPromptLocalizer.LOCAL_ENGAGEMENTS_SKILL_RULE` |
 | tactical-skills/team-execution | `prompts/tactical-skills/team-execution.zh.md` | `TeamPromptLocalizer.TEAM_EXECUTION_SKILL_RULE` |
 | tactical-skills/position-tempo | `prompts/tactical-skills/position-tempo.zh.md` | `TeamPromptLocalizer.POSITION_TEMPO_SKILL_RULE` |
 | tactical-skills/hp-trades | `prompts/tactical-skills/hp-trades.zh.md` | `TeamPromptLocalizer.HP_TRADES_SKILL_RULE` |
@@ -103,13 +105,13 @@ AI 提示词正文维护在 `java/wotb-web/src/main/resources/prompts/` 下的 `
 - 文件是 ZH 完整 prompt；EN/RU 由 `PlayerPromptRules.localizePlayerSystemPrompt` / `TeamPromptLocalizer.localizeTeamSystemPrompt` 对 ZH 规则片段做字符串替换生成。**展开后 md 内中文规则片段必须与 Java 常量（`COMMON_*_RULE` / `TEAM_*_RULE` 等）逐字一致**，否则 EN/RU 替换失效（`PromptRuleContractTest` 强制）。
 - 多文件 AI 复盘已移除（2026-08-12）：`player/multi` / `team/multi` 提示词、`analyzeMulti`、`MULTI_*_BATTLE` AI 分支与团队多视角分区合并全部删除；AI 复盘仅单文件（`AiReplayBatchPolicy.MAX_FILES=1`），由 `AiReplayReviewService.analyzeResults` 直接按 `ReplayProcessingCapabilities.aiAnalyzable(scope)` 判定 eligibility（单一 SSOT；`BatchAnalyzer` 的 group/representative machinery 仅作为测试设置复用）。对应旧多文件批量分析的 `ReplayAnalysisMode.MULTI_*`、`DefaultReplayProcessingFacade.processBatch`/`buildBatchResult` 与 `ReplayBatchProcessingResult`/`ReplayBatchSummary` 已删除（无 current production consumer；legacy `/api/replay/process`、`/api/replay/reconstruct-batch`、multipart analyze 一律 410，已不存在多文件批量端点）。
 
-### Team Tactical Skill v0.1
+### Team Tactical Skill v0.2
 
-Team `Call #2` 在既有 `Canonical BattleTimeline → deterministic evidence → grounded JSON` 链路中，通过 `AiPromptLibrary` include 注入四个紧凑模块：团队执行、位置与节奏、HP/火力交换、模式与目标。模块只提供经验性决策考虑，不产生 `BAD_PUSH`、`HALF_COMMIT_ERROR`、`GOOD_TRADE` 等后端结论；`EpisodeDetector`、Focus Window 和现有 Team evidence 继续是唯一事实输入。
+Team `Call #2` 在既有 `Canonical BattleTimeline → deterministic evidence → grounded JSON` 链路中，通过 `AiPromptLibrary` include 按 INFORMATION/VISION → OBJECTIVES → LOCAL ENGAGEMENTS → POSITION/TEMPO → TEAM EXECUTION → HP/TRADES 注入六个紧凑模块。模块只提供经验性决策考虑，不产生 `BAD_PUSH`、`HALF_COMMIT_ERROR`、`GOOD_TRADE` 等后端结论；`EpisodeDetector`、Focus Window 和现有 Team evidence 继续是唯一事实输入。
 
-Team Review 不接受战术地图计划，也没有语音/通信证据。模型必须复盘可观察的执行：进入时序、局部兵力、commitment、信息更新、位置/轮转和交换结果；无法由证据支持的推断直接跳过。`primaryDiagnosis` 保留在 envelope 中，但表示本场最重要的结论，允许“没有明显确认错误”“关键成功因素”或“对手处理更好”。Strategic Prior 明确只是阵容与可能性的基线，不能作为实际队伍计划或单独的判错依据。
+Team Review 不接受战术地图计划，也没有语音/通信证据。模型先重建当时的信息状态（CURRENT/LAST_KNOWN/UNSEEN）、基地与点数义务、空间结构和局部有效兵力，再分析局部之间的信息/火力/空间传播、推进/等待/脱离/角色转换和交换结果；无法由证据支持的推断直接跳过。`primaryDiagnosis` 保留在 envelope 中，但表示本场最重要的结论，允许“没有明显确认错误”“关键成功因素”或“对手处理更好”。Strategic Prior 明确只是阵容与可能性的基线，不能作为实际队伍计划或单独的判错依据。
 
-模式模块中的 Supremacy +40 击杀价值、约 750–800/800+ 点数压力梯度，以及 Assault 约 100 秒完整捕获、70–80 秒警戒区，均是 LLM 的经验参考，不是精确阈值状态机；实时总分仍遵守现有未解码边界。Golden cases (`team-tactical-skill-v01-a` 至 `h`) 覆盖半途执行、commitment 后新情报、成功线路的二次进攻、无明显错误、通信归因禁用和两种模式目标排序。
+`TeamAiContextCompiler` 复用 canonical timeline 的已验证事件，额外输出 `OBJECTIVE_STATE_TIMELINE`：已解码的实时基地 owner/capturing/progress 与 Supremacy points。该段只输出中立事实；缺少状态不等于没有占点/没有点数，基地和点数的战术意义仍由 LLM 解释。模式模块中的 Supremacy +40 击杀价值、约 750–800/800+ 点数压力梯度，以及 Assault 约 100 秒完整捕获、70–80 秒警戒区，均是 LLM 的经验参考，不是精确阈值状态机。Golden cases (`team-tactical-skill-v01-a` 至 `h`) 扩展覆盖信息状态、局部传播、基地/点数主动权和反捷径约束。
 
 ### AI 复盘评估 harness（golden cases + lessons）
 

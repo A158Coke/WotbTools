@@ -9,6 +9,11 @@ import com.wotb.core.replay.timeline.FrameVehicle;
 import com.wotb.core.replay.timeline.TacticalEpisode;
 import com.wotb.core.replay.timeline.TimelineFocusWindowSelector;
 import com.wotb.core.replay.timeline.WorldSummary;
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.SupremacyBaseStateTransition;
+import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -162,6 +167,69 @@ public final class TeamAiContextCompiler {
             sb.append("- 当前证据无法证明具体原因（掩体使用/射界/视野/指挥沟通/个人操作），不得据此编造归因。\n");
         }
         return sb.toString();
+    }
+
+    /**
+     * Render the realtime objective facts carried by the canonical event stream.
+     * This is deliberately a neutral evidence section: ownership, capture progress,
+     * and points are facts for the LLM to interpret, not backend tactical verdicts.
+     */
+    static String renderObjectiveStateSection(final BattleTimeline timeline, final int perspectiveTeam) {
+        if (timeline == null || timeline.events() == null || timeline.events().isEmpty()) {
+            return "";
+        }
+        final List<ReplayEvent> objectiveEvents = timeline.events().stream()
+                .filter(event -> event instanceof SupremacyBaseStateTransition
+                        || event instanceof SupremacyPointsChangedEvent)
+                .filter(event -> event.confidence() == DecodeConfidence.EXACT)
+                .filter(event -> {
+                    final double time = battleRelativeSec(timeline, event.timestamp());
+                    return Double.isFinite(time) && time >= 0d && time <= timeline.durationSec() + 1e-6;
+                })
+                .sorted(Comparator.comparingDouble((ReplayEvent event) ->
+                                battleRelativeSec(timeline, event.timestamp()))
+                        .thenComparingInt(ReplayEvent::sequence))
+                .toList();
+        if (objectiveEvents.isEmpty()) {
+            return "";
+        }
+
+        final StringBuilder sb = new StringBuilder(1024);
+        sb.append("=== OBJECTIVE_STATE_TIMELINE（基地状态/实时点数·中立确定性事实） ===\n");
+        sb.append("仅记录已解码的实时广播；缺少某一时刻的状态不等于没有占点或没有点数。\n");
+        for (final ReplayEvent event : objectiveEvents) {
+            sb.append("[").append(PlayerAnalysisTerms.battleClock(
+                    (float) battleRelativeSec(timeline, event.timestamp()))).append("] ");
+            if (event instanceof SupremacyBaseStateTransition base) {
+                sb.append("BASE ").append(base.baseId().name())
+                        .append(" owner=").append(teamLabel(base.ownerTeam(), perspectiveTeam))
+                        .append(" capturing=").append(teamLabel(base.capturingTeam(), perspectiveTeam))
+                        .append(" captureProgress=")
+                        .append(base.captureProgress() == null ? "UNKNOWN" : base.captureProgress())
+                        .append("\n");
+            } else if (event instanceof SupremacyPointsChangedEvent points) {
+                sb.append("SUPREMACY_POINTS team=").append(teamLabel(points.team(), perspectiveTeam))
+                        .append(" points=").append(points.points()).append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    private static double battleRelativeSec(final BattleTimeline timeline, final ReplayTimestamp timestamp) {
+        if (timestamp == null) {
+            return Double.NaN;
+        }
+        if (timestamp.battleClockSec() != null) {
+            return timestamp.battleClockSec();
+        }
+        return timestamp.rawClockSec() - timeline.battleStartRawClockSec();
+    }
+
+    private static String teamLabel(final Integer team, final int perspectiveTeam) {
+        if (team == null || team == 0) {
+            return "NONE";
+        }
+        return team == perspectiveTeam ? "FRIENDLY" : "ENEMY";
     }
 
     private static void renderEpisode(
