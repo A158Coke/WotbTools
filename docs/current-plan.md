@@ -248,3 +248,19 @@ IMPLEMENTED IN WORKTREE — TARGETED TESTS PASS — LIVE PROVIDER NOT RUN
 - [x] 添加显式 opt-in real-replay benchmark、runs/report/baseline metadata 约定及 0-token isolation guard。
 - [x] 更新 AI 架构、Team review、evaluation operations 与 changelog 文档。
 - [x] targeted Maven tests 通过；未调用 DeepSeek / ai-live。
+
+---
+
+# Team AI Review v0.4：强化信息链、禁止魔法距离、重做个人复查逻辑
+
+## 状态
+
+COMPLETED — TARGETED TESTS PASS — LIVE PROVIDER NOT RUN
+
+## 执行记录
+
+- [x] 从合并 PR #258 后的 `origin/main` 创建独立 worktree 与 `feat/team-ai-review-v04-information-chain` 分支。
+- [x] 完成 Team prompt、三语 reasoning contract、quality shortcut validator 与既有 deterministic contract tests 的 delta audit。
+- [x] 完成 Information decision chain、supportability、state trigger、Objectives obligation 与 episode-bound individual review contract。
+- [x] 运行 targeted 0-token tests，完成 review-fix / review-with-docs / code-smell 闭环。
+- [x] 提交、push 并创建 PR：[#260](https://github.com/A158Coke/WotbTools/pull/260)。

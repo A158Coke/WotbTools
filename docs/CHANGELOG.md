@@ -12,6 +12,7 @@
 - **Team AI Review Quality Harness v1**：新增 `evidenceBasis` 结构化质量契约、推理顺序与反 settlement-shortcut deterministic checks；真实 `.wotbreplay` offline harness 复用生产解析/时间线/grounding 链并保持 0-token；新增显式 opt-in real-replay benchmark 与无 prompt/key 的 JSON/Markdown 报告。synthetic prompt PASS 与真实回放质量明确分层，默认 CI 不调用 provider。
 
 ### AI Review
+- **Team AI Review v0.4**：强化 Information → remaining uncertainty → decision impact 因果链，明确距离只是证据而非战术价值，并禁止无证据的通用距离/固定时刻/车种职责规则。重点复查、高贡献者与关键威胁必须绑定正文 tactical episode，不能从结算榜单重新选人；传播检查允许保持未知。未修改 parser、reconstruction、backend tactical evidence、输出长度或 token cap。
 - **Team AI Review v0.3**：将 Team Review 从过度压缩的 concise review 调整为 selective but complete tactical review；保留现有 A–H reasoning/evidence 边界，要求关键 episode 解释信息状态、参与车辆、重要性与下一阶段影响，并优先保留 Information、Objectives、局部交战和 cross-local propagation。`primaryDiagnosis` 仍只是摘要，重点复查/高贡献者改为有 structural evidence 时才输出的可选 section；Team Call #2 默认专用输出上限提升至 8192 tokens。未新增 backend tactical verdict、parser、SSE/API 或 frontend scope。
 
 ### League Rating V6 批次汇总
