@@ -1,4 +1,4 @@
-import blackGoldvilleImg from '../assets/maps/black-goldville.webp'
+import blackGoldvilleImg from '../assets/maps-hd/black-goldville.webp'
 import canalImg from '../assets/maps/canal.webp'
 import canyonImg from '../assets/maps/canyon.webp'
 import castillaImg from '../assets/maps/castilla.webp'
@@ -20,7 +20,7 @@ import navalFrontierImg from '../assets/maps/naval-frontier.webp'
 import newBayImg from '../assets/maps/new-bay.webp'
 import normandyImg from '../assets/maps/normandy.webp'
 import oasisPalmsImg from '../assets/maps/oasis-palms.webp'
-import portBayImg from '../assets/maps/port-bay.webp'
+import portBayImg from '../assets/maps-hd/port-bay.webp'
 import rockfieldImg from '../assets/maps/rockfield.webp'
 import vineyardsImg from '../assets/maps/vineyards.webp'
 import wastelandImg from '../assets/maps/wasteland.webp'
@@ -44,6 +44,9 @@ const WORLD_BOUNDS_300 = { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
  * 内部 code 与展示名的完整映射见 docs/reference/maps.md。
  * 新增素材流程：图片按英文展示名放入 assets/maps + 本文件加一行（含 coordinateBounds，
  * 来源见 docs/features/battle-playback.md）。未登记地图整块不渲染。
+ *
+ * AI-enhanced basemaps live under assets/maps-hd. The original assets/maps files
+ * remain untouched as the rollback source and are never overwritten by enhancement.
  */
 export const mapImages = {
   amigosville: { src: fallsCreekImg, width: 768, height: 765, coordinateBounds: WORLD_BOUNDS_300 },
