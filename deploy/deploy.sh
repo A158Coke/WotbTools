@@ -112,7 +112,7 @@ wait_healthy() {
     fi
     ok=true
     docker compose exec -T wotb-backend wget -qO- http://127.0.0.1:8087/api/health >/dev/null 2>&1 || ok=false
-    [ "$ok" = true ] && docker compose exec -T wotb-frontend wget -qO- http://127.0.0.1:80/api/health >/dev/null 2>&1 || ok=false
+    [ "$ok" = true ] && docker compose exec -T wotb-frontend wget --header='Host: wotbtools.com' -qO- http://127.0.0.1:80/api/health >/dev/null 2>&1 || ok=false
     [ "$ok" = true ] && docker compose exec -T wotb-backend wget -qO- http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration >/dev/null 2>&1 || ok=false
     if [ "$ok" = true ]; then return 0; fi
     [ "$i" -lt "$HEALTH_RETRIES" ] && sleep 2
@@ -138,7 +138,7 @@ report_health_status() {
     fi
   }
   probe backend wotb-backend wotb-backend wget -qO- http://127.0.0.1:8087/api/health
-  probe frontend wotb-frontend wotb-frontend wget -qO- http://127.0.0.1:80/api/health
+  probe frontend wotb-frontend wotb-frontend wget --header='Host: wotbtools.com' -qO- http://127.0.0.1:80/api/health
   probe keycloak keycloak wotb-backend wget -qO- http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration
 }
 
