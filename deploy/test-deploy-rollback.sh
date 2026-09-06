@@ -100,7 +100,7 @@ case "$cmd" in
           else
             loki_result="\"result\":[{\"line\":\"event=android_apk_download apk=${WOTB_FRONTEND_CANARY_APK:-stable.apk} status=404 bytes=42 ${WOTB_OBSERVABILITY_CANARY_MARKER:-stable-canary} ${WOTB_KEYCLOAK_CANARY_MARKER:-stable-keycloak}\"}],\"values\":[[0,\"${WOTB_OBSERVABILITY_CANARY_MARKER:-stable-canary}\"]]"
           fi
-          printf 'mock-pg-dump-data jvm_ process_ system_ http_server_requests wotb_replay_parse_active wotb_replay_parse_queue_depth wotb_ai_review_in_flight wotb_ai_review_queue_depth prometheus_ loki_ grafana_ "database":"ok" "status":"success" "job":"wotb-backend" "job":"keycloak" "job":"node-exporter" "job":"prometheus" "job":"loki" "job":"grafana" "value":[0,"%s"] "dashboard":"ok" wotbtools-production-overview wotbtools-backend-overview wotbtools-http-errors wotbtools-replay-parser wotbtools-ai-review wotbtools-keycloak wotbtools-error-explorer wotbtools-android-downloads wotbtools-usage %s\n' "$up" "$loki_result"
+          printf 'mock-pg-dump-data jvm_ process_ system_ http_server_requests wotb_replay_parse_active wotb_replay_parse_queue_depth wotb_ai_review_in_flight wotb_ai_review_queue_depth node_ prometheus_ loki_ grafana_ "database":"ok" "status":"success" "job":"wotb-backend" "job":"keycloak" "job":"node-exporter" "job":"prometheus" "job":"loki" "job":"grafana" "value":[0,"%s"] "dashboard":"ok" wotbtools-production-overview wotbtools-backend-overview wotbtools-http-errors wotbtools-replay-parser wotbtools-ai-review wotbtools-keycloak wotbtools-error-explorer wotbtools-android-downloads wotbtools-usage %s\n' "$up" "$loki_result"
           exit 0
         fi
         exit 1
