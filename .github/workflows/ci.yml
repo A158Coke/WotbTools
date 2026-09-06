@@ -253,7 +253,7 @@ jobs:
               "wotbtools-usage.json",
           }
           paths = glob.glob("deploy/observability/grafana/dashboards/*.json")
-          assert {p.rsplit("/", 1)[-1] for p in paths} == required, "dashboard inventory drift"
+          assert {p.replace("\\", "/").rsplit("/", 1)[-1] for p in paths} == required, "dashboard inventory drift"
           dashboard_uids = {}
           dashboard_link_uids = []
           production_health_contract = {
@@ -334,11 +334,15 @@ jobs:
                   ]
                   assert overall_exprs, "production overview overall health panel missing"
                   overall_expr = "".join(overall_exprs[0].split())
-                  assert "count(" in overall_expr and "min(" in overall_expr, \
-                      "production overview overall health must require target count and min up"
-                  for required_job in ("wotb-backend", "keycloak", "node-exporter", "prometheus", "loki", "grafana"):
-                      assert required_job in overall_expr, \
-                          "production overview overall health missing target " + required_job
+                  required_jobs = "wotb-backend|keycloak|node-exporter|prometheus|loki|grafana"
+                  expected_overall = (
+                      f'min(up{{job=~"{required_jobs}"}})and('
+                      f'count(up{{job=~"{required_jobs}"}})==6)'
+                  )
+                  assert overall_expr == expected_overall, \
+                      "production overview overall health must use min(up) as the value and count(up)==6 as the presence guard"
+                  assert "orvector(0)" not in overall_expr, \
+                      "production overview overall health must not mask no-data"
               for i, panel in enumerate(d.get("panels", [])):
                   walk_dashboard_panels(panel, f"{p}::panels[{i}]")
           uid_set = set(dashboard_uids.values())

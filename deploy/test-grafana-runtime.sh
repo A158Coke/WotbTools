@@ -10,10 +10,13 @@ LOKI="wotb-grafana-loki-${SUFFIX}"
 GRAFANA="wotb-grafana-${SUFFIX}"
 ADMIN_USER=ci-admin
 ADMIN_PASSWORD=ci-password
+TRACE_DIR="$(mktemp -d)"
+TRACE_FILE=/tmp/grafana-api-trace/request-url
 
 cleanup() {
   docker rm -f "$GRAFANA" "$LOKI" "$PROMETHEUS" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
+  rm -rf "$TRACE_DIR"
 }
 trap cleanup EXIT
 
@@ -41,13 +44,12 @@ wait_json_success() {
 alpine_grafana_api() {
   local user="$1" password="$2" path="$3"
   docker run --rm --network "$NETWORK" \
+    -v "$ROOT/deploy/grafana-api-request.sh:/usr/local/bin/grafana-api-request.sh:ro" \
+    -v "$TRACE_DIR:/tmp/grafana-api-trace" \
     -e GRAFANA_VERIFY_USER="$user" \
     -e GRAFANA_VERIFY_PASSWORD="$password" \
-    alpine:3.22 sh -c '
-      set -eu
-      token="$(printf "%s:%s" "$GRAFANA_VERIFY_USER" "$GRAFANA_VERIFY_PASSWORD" | base64 | tr -d "\\r\\n")"
-      wget --header="Authorization: Basic $token" -qO- "http://grafana:3000$1"
-    ' _ "$path"
+    -e GRAFANA_API_TRACE_FILE="$TRACE_FILE" \
+    alpine:3.22 sh /usr/local/bin/grafana-api-request.sh "$path"
 }
 
 docker network create "$NETWORK" >/dev/null
@@ -79,6 +81,12 @@ for datasource_uid in prometheus loki; do
     || fail "Alpine/BusyBox Grafana auth failed for datasource: $datasource_uid"
   grep -Eq '"status"[[:space:]]*:[[:space:]]*"OK"' <<<"$body" \
     || fail "Grafana datasource status is not exactly OK: $datasource_uid"
+  if [ "$datasource_uid" = prometheus ]; then
+    [ "$(cat "$TRACE_DIR/request-url")" = "http://grafana:3000/api/datasources/uid/prometheus/health" ] \
+      || fail "production Grafana API path handling changed the requested URL"
+    ! grep -Fq 'http://grafana:3000http://grafana:3000' "$TRACE_DIR/request-url" \
+      || fail "production Grafana API request contains a double URL prefix"
+  fi
 done
 dashboard_body="$(alpine_grafana_api "$ADMIN_USER" "$ADMIN_PASSWORD" "/api/dashboards/uid/wotbtools-production-overview")" \
   || fail "Alpine/BusyBox Grafana auth failed for dashboard API"
