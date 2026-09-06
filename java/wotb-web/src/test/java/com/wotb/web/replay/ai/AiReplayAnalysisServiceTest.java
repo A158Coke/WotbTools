@@ -463,7 +463,9 @@ class AiReplayAnalysisServiceTest {
         gateway.teamCompletionSequence.add("{\"summary\":{\"verdict\":\"v\",\"primaryDiagnosis\":\"d\"},"
                 + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],"
                 + "\"highContributors\":[],\"unknown\":true}");
-        gateway.teamCompletionSequence.add(structuredResult());
+        gateway.teamCompletionSequence.add("{\"summary\":{\"verdict\":\"v\",\"primaryDiagnosis\":\"d\"},"
+                + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],"
+                + "\"highContributors\":[]}");
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
                 teamResultWithRecon("repair.wotbreplay", "repair-arena", "Ally", 1001L, 1)));
