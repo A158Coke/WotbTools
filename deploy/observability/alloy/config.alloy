@@ -101,7 +101,7 @@ loki.process "android_download" {
 
 	// 仅保留真实 APK GET；下载页、version.json、普通前端流量全部丢弃。
 	stage.match {
-	selector            = "{container_name=\"wotb-frontend\"} !~ \"GET /download/android/[^ ]+[.]apk\""
+		selector            = "{container_name=\"wotb-frontend\"} !~ \"GET /download/android/[^ ]+[.]apk\""
 		action              = "drop"
 		drop_counter_reason = "not_android_apk_download"
 	}
