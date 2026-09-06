@@ -416,7 +416,7 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 | `team_review_completed` | validationAttempts, totalPromptTokens, totalCompletionTokens, durationMs, result | Team Call #2 阶段汇总 |
 | `team_review_schema_failure` | attempt, reason, pathClass | technical schema failure；pathClass 去除数组下标，禁止用户/玩家标识 |
 | `team_review_normalized` | normalizationCount, types | optional reference 的确定性清理 |
-| `team_review_repair_started` / `team_review_repair_completed` / `team_review_repair_failed` | failureCount / repairResult, durationMs | 最多一次紧凑 technical repair 生命周期 |
+| `team_review_repair_started` / `team_review_repair_completed` / `team_review_repair_failed` | failureCount / repairResult, durationMs | 最多一次紧凑 technical repair 生命周期；`failureCount/pathClass` 只表示 normalization 后仍待修复的 CORE_SCHEMA failures |
 
 #### parser 失败分类（低基数枚举）
 

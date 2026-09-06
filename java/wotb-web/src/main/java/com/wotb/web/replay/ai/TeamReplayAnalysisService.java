@@ -28,6 +28,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -62,6 +64,7 @@ import java.util.function.LongSupplier;
 public class TeamReplayAnalysisService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TeamReplayAnalysisService.class);
+    private static final ObjectMapper CANONICAL_RESULT_MAPPER = JsonMapper.builder().build();
 
     /** 团队复盘整体安全余量（秒）：后续调用保留，避免撞 endpoint deadline。 */
     static final int SAFETY_MARGIN_SEC = 10;
@@ -504,12 +507,12 @@ public class TeamReplayAnalysisService {
                 "SINGLE_TEAM_BATTLE", remainingBudget(startNanos), 1);
         final TeamAiReviewResultParser.ParseResult initial = TeamAiReviewResultParser.parse(
                 initialResponse.completionText(), rosterKeys);
+        if (!initial.normalizations().isEmpty()) {
+            logTeamReviewNormalized(correlationId, initial);
+        }
         if (initial.status() == TeamAiReviewResultParser.ParseStatus.VALID
                 || initial.normalized()) {
             countValidationAttempt(initial.normalized() ? "normalized" : "pass");
-            if (initial.normalized()) {
-                logTeamReviewNormalized(correlationId, initial);
-            }
             logTeamReviewCompleted(correlationId, 1, initialResponse.inputTokens(),
                     initialResponse.outputTokens(), initial.normalized() ? "NORMALIZED" : "PASS",
                     reviewStartNanos);
@@ -524,11 +527,14 @@ public class TeamReplayAnalysisService {
             throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
         }
 
+        final List<TeamAiReviewResultParser.ParseFailure> repairFailures = initial.failures().stream()
+                .filter(failure -> failure.category() == TeamAiReviewResultParser.FailureCategory.CORE_SCHEMA)
+                .toList();
         final String repairPrompt = buildTechnicalRepairPrompt(
-                initialResponse.completionText(), initial, rosterKeys);
+                initial.result(), repairFailures, rosterKeys);
         LOGGER.info(AiReviewEventLog.line("team_review_repair_started", correlationId,
-                "failureCount", initial.failures().size(),
-                "pathClass", initial.failures().stream().map(item -> pathClass(item.path()))
+                "failureCount", repairFailures.size(),
+                "pathClass", repairFailures.stream().map(item -> pathClass(item.path()))
                         .distinct().sorted().collect(java.util.stream.Collectors.joining(","))));
         countRepair("started");
         final AiChatResponse repairResponse = callRaw(
@@ -536,12 +542,12 @@ public class TeamReplayAnalysisService {
                 "SINGLE_TEAM_BATTLE_REPAIR", remainingBudget(startNanos), 2);
         final TeamAiReviewResultParser.ParseResult repaired = TeamAiReviewResultParser.parse(
                 repairResponse.completionText(), rosterKeys);
+        if (!repaired.normalizations().isEmpty()) {
+            logTeamReviewNormalized(correlationId, repaired);
+        }
         if ((repaired.status() == TeamAiReviewResultParser.ParseStatus.VALID
                 || repaired.normalized()) && preservesRepairSemantics(initial, repaired)) {
             countValidationAttempt(repaired.normalized() ? "normalized" : "pass");
-            if (repaired.normalized()) {
-                logTeamReviewNormalized(correlationId, repaired);
-            }
             LOGGER.info(AiReviewEventLog.line("team_review_repair_completed", correlationId,
                     "repairResult", repaired.normalized() ? "normalized_success" : "success",
                     "durationMs", elapsedMillis(reviewStartNanos)));
@@ -577,18 +583,20 @@ public class TeamReplayAnalysisService {
     }
 
     private static String buildTechnicalRepairPrompt(
-            final String generatedJson,
-            final TeamAiReviewResultParser.ParseResult parsed,
+            final TeamAiReviewResult canonicalResult,
+            final List<TeamAiReviewResultParser.ParseFailure> repairFailures,
             final Set<String> rosterKeys) {
         final StringBuilder prompt = new StringBuilder(4_000);
         prompt.append("TECHNICAL JSON REPAIR\n")
                 .append("只修复 JSON technical contract，不重新分析战局。\n")
+                .append("输入 JSON 已经过 backend deterministic normalization。\n")
+                .append("不得恢复、重建或重新添加已经被 normalization 删除的 optional item/reference。\n")
                 .append("不得改变已有战术判断、战术正文或新增事实/玩家/episode。\n")
-                .append("只能修字段类型、补 technical required field、删除 unsupported optional reference、"
-                        + "或使用 whitelist 中已有 reference。\n\n")
-                .append("ORIGINAL_GENERATED_JSON\n").append(generatedJson).append("\n\n")
-                .append("TECHNICAL_VALIDATION_FAILURES\n");
-        for (final TeamAiReviewResultParser.ParseFailure failure : parsed.failures()) {
+                .append("只能修字段类型、补 technical required field，或使用 whitelist 中已有 reference。\n\n")
+                .append("CANONICAL_NORMALIZED_JSON\n")
+                .append(canonicalJson(canonicalResult)).append("\n\n")
+                .append("REMAINING_CORE_SCHEMA_FAILURES\n");
+        for (final TeamAiReviewResultParser.ParseFailure failure : repairFailures) {
             prompt.append("code=").append(failure.code())
                     .append(" path=").append(failure.path())
                     .append(" constraint=").append(failure.constraint()).append('\n');
@@ -596,9 +604,19 @@ public class TeamReplayAnalysisService {
         prompt.append("\nAUTHORITATIVE_ROSTER_PLAYER_KEYS\n")
                 .append(rosterKeys.stream().sorted().collect(java.util.stream.Collectors.joining(",")))
                 .append("\nALLOWED_EPISODE_REFERENCES\n")
-                .append("Use only episode ids already present in ORIGINAL_GENERATED_JSON.\n\n")
+                .append(canonicalResult.episodes().stream().map(TeamAiReviewResult.Episode::id)
+                        .sorted().collect(java.util.stream.Collectors.joining(",")))
+                .append("\n\n")
                 .append("Return only the complete corrected TeamAiReviewResult JSON object.");
         return prompt.toString();
+    }
+
+    private static String canonicalJson(final TeamAiReviewResult result) {
+        try {
+            return CANONICAL_RESULT_MAPPER.writeValueAsString(result);
+        } catch (final Exception e) {
+            throw new IllegalStateException("canonical TeamAiReviewResult serialization failed", e);
+        }
     }
 
     private static String repairSystemPrompt(final AllowedLanguage language) {
