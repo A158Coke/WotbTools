@@ -154,7 +154,10 @@ case "$cmd" in
             fi
             exit 0
           fi
-          if [[ "$request" == *"8087/actuator/prometheus"* ]]; then
+          if [[ "$request" == *"wotb-frontend"*"/api/health"* ]]; then
+            [[ "$request" == *"--header=Host: wotbtools.com"* ]] || exit 1
+            printf '{"status":"UP"}\n'
+          elif [[ "$request" == *"8088/actuator/prometheus"* ]]; then
             printf 'jvm_ process_ system_ http_server_requests wotb_replay_parse_active wotb_replay_parse_queue_depth wotb_ai_review_in_flight wotb_ai_review_queue_depth hikaricp_connections_active\n'
           elif [[ "$request" == *"keycloak:9000/metrics"* ]]; then
             printf 'process_\n'

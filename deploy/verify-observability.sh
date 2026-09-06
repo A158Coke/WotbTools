@@ -92,11 +92,11 @@ wait_for_prometheus_target_up() {
 
 echo "== Verifying observability data path =="
 wait_for_http "backend metrics endpoint" \
-  "http://127.0.0.1:8087/actuator/prometheus" "jvm_" "process_" "system_" "http_server_requests"
+  "http://127.0.0.1:8088/actuator/prometheus" "jvm_" "process_" "system_" "http_server_requests"
 wait_for_http "backend replay and AI queue gauges" \
-  "http://127.0.0.1:8087/actuator/prometheus" "wotb_replay_parse_active" "wotb_replay_parse_queue_depth" "wotb_ai_review_in_flight" "wotb_ai_review_queue_depth"
+  "http://127.0.0.1:8088/actuator/prometheus" "wotb_replay_parse_active" "wotb_replay_parse_queue_depth" "wotb_ai_review_in_flight" "wotb_ai_review_queue_depth"
 wait_for_http "backend Hikari metrics" \
-  "http://127.0.0.1:8087/actuator/prometheus" "hikaricp_connections_active"
+  "http://127.0.0.1:8088/actuator/prometheus" "hikaricp_connections_active"
 wait_for_http "keycloak metrics endpoint" "http://keycloak:9000/metrics" "process_"
 wait_for_http "node exporter metrics endpoint" "http://node-exporter:9100/metrics" "node_"
 wait_for_http "prometheus metrics endpoint" "http://prometheus:9090/metrics" "prometheus_"
