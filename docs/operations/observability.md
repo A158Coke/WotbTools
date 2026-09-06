@@ -208,16 +208,18 @@ docker compose start prometheus loki alloy grafana node-exporter
 
 ### CI 实际验证项（PR 时自动执行，见 `.github/workflows/ci.yml` `observability-config` job）
 
-> **CI 验证边界**：仅验证「本地」`docker/online/docker-compose.yml` 与各组件**配置文件语法/结构**。
-> 不验证生产 `deploy.yml` heredoc 渲染结果，不验证指标名真实存在（只有生产实际采集后才知道），
-> 不运行任何完整组件。
+> **CI 验证边界**：静态检查覆盖「本地」`docker/online/docker-compose.yml`、生产观测配置语法/结构、
+> dashboard 合同与端口安全；runtime smoke 会实际启动最小 Prometheus/Loki/Grafana、Alpine emitter，
+> 并验证 Alloy→Loki ownership、Grafana provisioning/auth。CI 不替代生产 deploy gate：不验证生产 `deploy.yml`
+> heredoc 在真实主机上的渲染、真实 backend 指标采集或生产网络/DNS/TLS。
 
 | 验证项 | 命令 | 说明 |
 |---|---|---|
 | 本地 compose 语法 | `docker compose config --quiet` | 仅本地 compose，不含生产 heredoc |
 | Prometheus 配置 | `promtool check config` | 配置语法 |
 | Loki 配置 | `loki --verify-config` | 配置语法 |
-| Alloy 配置 | `alloy fmt -t` | **仅格式/语法检查**，非完整组件运行验证 |
+| Alloy 配置与日志链路 | `alloy fmt -t` + `test-observability-e2e.sh` | 格式检查，并在 CI 最小 runtime 中验证 emitter → Alloy → Loki |
+| Grafana runtime | `test-grafana-runtime.sh` | 启动最小 Prometheus/Loki/Grafana，验证 provisioning、默认首页与 Alpine/BusyBox auth |
 | Grafana provisioning + Dashboard JSON | `python` 解析全部 YAML/JSON | 结构校验 |
 | 端口安全 | `docker compose config --format json` 校验 prometheus/loki/alloy/grafana/node-exporter/wotb-backend 无宿主端口映射，并校验 Keycloak management `9000` 不外露 | frontend 8088:80、Keycloak 8080:8080 合法 |
 | Backend 测试 | `mvn test`（含 `RequestIdFilterTest`、`CustomTimerPrometheusTest`、`LogstashMdcTopLevelTest`、`AiReplayAnalysisServiceUpstreamMetricsTest`） | 单元/集成测试 |

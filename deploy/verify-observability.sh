@@ -169,9 +169,9 @@ docker run -d --network "${WOTB_OBSERVABILITY_NETWORK:-wotb_internal}" --name "$
 
 query_range_has_values() {
   local body="$1" marker="$2"
-  grep -Eq '"status"[[:space:]]*:[[:space:]]*"success"' <<<"$body" \
+    grep -Eq '"status"[[:space:]]*:[[:space:]]*"success"' <<<"$body" \
     && grep -Eq '"result"[[:space:]]*:[[:space:]]*\[[[:space:]]*\{' <<<"$body" \
-    && grep -Eq '"values"[[:space:]]*:[[:space:]]*\[[[:space:]]*\[' <<<"$body" \
+    && grep -Eq '"values"[[:space:]]*:[[:space:]]*\[[[:space:]]*\[[[:space:]]*"[^" ]+"[[:space:]]*,[[:space:]]*"[^"]+"' <<<"$body" \
     && grep -Fq "$marker" <<<"$body"
 }
 
