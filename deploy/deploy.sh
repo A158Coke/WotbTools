@@ -64,7 +64,7 @@ mkdir -p android-release
 if [ ! -e config/sponsor-config.json ] && [ ! -L config/sponsor-config.json ]; then
   install -m 644 deploy/sponsor-config.example.json config/sponsor-config.json
 fi
-chmod 700 deploy/postgres-backup.sh deploy/postgres-backup-inspect.sh deploy/postgres-restore.sh
+chmod 700 deploy/postgres-backup.sh deploy/postgres-backup-inspect.sh deploy/postgres-restore.sh deploy/verify-observability.sh
 if [ -f docker-compose.yml ]; then
   deploy/postgres-backup.sh --database wotb
   deploy/postgres-backup.sh --database keycloak
@@ -146,6 +146,10 @@ wait_healthy() {
   return 1
 }
 
+verify_observability() {
+  bash deploy/verify-observability.sh
+}
+
 report_health_status() {
   local running
   running="$(docker compose ps -a 2>/dev/null || true)"
@@ -170,8 +174,10 @@ report_health_status() {
 
 dump_logs() {
   docker compose ps -a || true
+  # Keep diagnostics useful without dumping container environment variables,
+  # which may contain database, Keycloak, AI, or Grafana credentials.
   echo "== container inspect =="
-  docker compose ps -aq | xargs -r docker inspect || true
+  docker compose config --services || true
   echo "== backend logs =="
   docker compose logs --tail 160 wotb-backend || true
   echo "== frontend logs =="
@@ -213,7 +219,7 @@ elif ! reload_alloy_config; then
   rollback_needed=true
 else
   docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
-  if wait_healthy; then
+  if wait_healthy && verify_observability; then
     echo "$TAG" > DEPLOYED_SHA
     docker image prune -af
     docker builder prune -af
@@ -232,7 +238,7 @@ if [ "$rollback_needed" = true ]; then
     cp -f docker-compose.prev.yml docker-compose.yml
     rm -f docker-compose.next.yml
     if pull_compose docker-compose.yml && docker compose up -d --remove-orphans; then
-      if wait_healthy; then
+      if wait_healthy && verify_observability; then
         if [ -n "$PREV_SHA" ]; then
           echo "$PREV_SHA" > DEPLOYED_SHA
           echo "== ROLLBACK OK: back to $PREV_SHA =="

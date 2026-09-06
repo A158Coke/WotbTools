@@ -38,6 +38,11 @@
 
    Targeted / Module / Full 的具体命令与分层见 `java/AGENTS.md` 与 `frontend/AGENTS.md`。
 
+   **PR 快速上线规范**：用户已明确给出实现计划并要求直接上线时，Agent 完成实现后默认直接
+   `commit → push → open PR`，由 PR CI 作为验证入口；不因等待本地全量测试而阻塞推送。只有用户明确
+   要求本地验证、CI 前必须复现/排查、或安全上无法通过静态检查确认时，才运行本地测试。推送前仍必须
+   做必要的 `git diff --check`、生成契约检查和安全/配置静态检查；CI 失败后只复现失败 job 的最小范围。
+
    选档决策树：
    ├─ 单一 class / function / component → Targeted tests
    ├─ 单一 feature 多文件 → feature test group

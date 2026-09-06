@@ -228,6 +228,8 @@ jobs:
           docker run --rm --entrypoint alloy
           -v "$PWD/deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro"
           grafana/alloy:v1.4.2 fmt -t /etc/alloy/config.alloy
+      - name: Runtime Docker emitter to Alloy to Loki smoke
+        run: bash deploy/test-observability-e2e.sh
       - name: Validate Grafana provisioning and dashboards
         run: |
           set -euo pipefail
@@ -256,6 +258,10 @@ jobs:
           for p in glob.glob("deploy/observability/grafana/dashboards/*.json"):
               d = json.load(open(p, encoding="utf-8"))
               assert d.get("panels"), "empty dashboard " + p
+              if p.endswith("wotbtools-production-overview.json"):
+                  raw = open(p, encoding="utf-8").read()
+                  assert "or vector(0)" not in raw, \
+                      "production overview must surface no-data instead of masking it with vector(0)"
               for i, panel in enumerate(d.get("panels", [])):
                   walk_dashboard_panels(panel, f"{p}::panels[{i}]")
           print("provisioning yml + dashboards json OK")
@@ -300,6 +306,8 @@ jobs:
         run: bash deploy/test-flyway-immutability.sh
       - name: bash -n deploy.sh
         run: bash -n deploy/deploy.sh
+      - name: bash -n observability verification scripts
+        run: bash -n deploy/verify-observability.sh deploy/test-observability-e2e.sh
       - name: Production compose config validation
         env:
           TAG: sha-ci

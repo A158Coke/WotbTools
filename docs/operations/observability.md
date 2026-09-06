@@ -5,6 +5,14 @@
 
 ---
 
+## Build-to-Learn：部署前配置核对记录
+
+2026-09-06 核对生产 Dockerfile/compose 与 Prometheus 配置时：预期 backend metrics target 与健康探针
+端口一致；实际 `Dockerfile.backend` 使用 Spring Boot 默认 `8087`，而 Prometheus 原配置抓取
+`wotb-backend:8088`。根因是 frontend 的 host port `8088:80` 与 backend application port 混淆。
+决策：Prometheus 改抓 `wotb-backend:8087/actuator/prometheus`，并由部署 gate 查询真实 target；完整
+Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 smoke，不在此记录静态推测。
+
 ## 1. 架构总览
 
 ```
