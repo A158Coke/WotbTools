@@ -162,6 +162,13 @@ class AiReplayAnalysisServiceTest {
                 .toList();
     }
 
+    private List<AiChatRequest> allTeamReviewRequests() {
+        return gateway.requests.stream()
+                .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode())
+                        || "SINGLE_TEAM_BATTLE_REPAIR".equals(r.analysisMode()))
+                .toList();
+    }
+
     private String teamLastBody() {
         return teamRequests().getLast().userPrompt();
     }
@@ -457,9 +464,9 @@ class AiReplayAnalysisServiceTest {
         final TeamAnalyzeResult result = service.analyzeTeamGroups(groups);
 
         assertNotNull(result.structuredResult());
-        assertEquals(2, teamRequests().size());
-        final String initialBody = teamRequests().getFirst().userPrompt();
-        final String repairBody = teamRequests().getLast().userPrompt();
+        assertEquals(2, allTeamReviewRequests().size());
+        final String initialBody = allTeamReviewRequests().getFirst().userPrompt();
+        final String repairBody = allTeamReviewRequests().getLast().userPrompt();
         assertTrue(repairBody.contains("TECHNICAL_VALIDATION_FAILURES"));
         assertTrue(repairBody.contains("path=root.unknown"));
         assertFalse(repairBody.contains("AUTHORITATIVE_TEAM_RESULT"));
@@ -481,7 +488,7 @@ class AiReplayAnalysisServiceTest {
                 () -> service.analyzeTeamGroups(groups));
 
         assertEquals("AI_REVIEW_SCHEMA_FAILED", error.code());
-        assertEquals(2, teamRequests().size());
+        assertEquals(2, allTeamReviewRequests().size());
     }
 
     @Test
