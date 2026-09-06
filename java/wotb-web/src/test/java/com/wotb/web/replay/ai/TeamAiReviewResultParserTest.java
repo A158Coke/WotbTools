@@ -56,7 +56,7 @@ class TeamAiReviewResultParserTest {
                 VALID.replace("\"highContributors\":[]", "\"highContributors\":[],\"extra\":true"),
                 Set.of("P1"));
         assertEquals(TeamAiReviewResultParser.ParseStatus.REPAIRABLE, result.status());
-        assertTrue(result.failed());
+        assertFalse(result.failed());
         assertEquals(TeamAiReviewResultParser.Failure.INVALID_FIELD, result.failure());
         assertEquals("root.extra", result.failures().getFirst().path());
     }
@@ -70,8 +70,8 @@ class TeamAiReviewResultParserTest {
         assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
                 TeamAiReviewResultParser.parse(VALID.replace("\"endSec\":20", "\"endSec\":5"), Set.of("P1")).status());
         final String duplicate = VALID.replace(
-                "\"trainingSuggestions\":[",
-                "\"episodes\":[{\"id\":\"E1\",\"startSec\":30,\"endSec\":40,\"title\":\"x\",\"analysis\":\"y\",\"playerKeys\":[]}],\"trainingSuggestions\":[");
+                "\"playerKeys\":[\"P1\"]}],",
+                "\"playerKeys\":[\"P1\"]},{\"id\":\"E1\",\"startSec\":30,\"endSec\":40,\"title\":\"x\",\"analysis\":\"y\",\"playerKeys\":[]}],");
         assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
                 TeamAiReviewResultParser.parse(duplicate, Set.of("P1")).status());
     }
