@@ -78,7 +78,7 @@ case "$cmd" in
       case "$1" in
         -f) COMPOSE_FILE="$2"; shift 2 ;;
         -d|--remove-orphans|-T) shift ;;
-        config|pull|up|ps|exec|logs) sub="$1"; shift ;;
+        config|pull|up|ps|exec|logs|kill|run) sub="$1"; shift ;;
         *) shift ;;
       esac
     done
@@ -88,16 +88,23 @@ case "$cmd" in
         ;;
       pull) exit 0 ;;
       up) exit 0 ;;
-      ps) printf 'wotb-backend Up\ntest Up\n' ;;
+      ps) printf 'wotb-backend Up\nprometheus Up\nalloy Up\ntest Up\n' ;;
       exec)
         if active_tag_healthy; then
           # Non-empty stdout keeps backup probes valid; stable observability
           # tokens satisfy the gate without exposing any secret.
-          printf 'mock-pg-dump-data jvm_ http_server_requests process_ node_ "database":"ok" "status":"success" "job":"wotb-backend" "job":"keycloak" "job":"node-exporter" "value" "result"\n'
+          up="${FAKE_PROMETHEUS_UP:-1}"
+          if [ "${FAKE_LOKI_EMPTY:-0}" = 1 ]; then
+            loki_result='"result":[]'
+          else
+            loki_result="\"result\":[{\"line\":\"${WOTB_OBSERVABILITY_CANARY_MARKER:-stable-canary}\"}]"
+          fi
+          printf 'mock-pg-dump-data jvm_ http_server_requests process_ node_ "database":"ok" "status":"success" "job":"wotb-backend" "job":"keycloak" "job":"node-exporter" "value":[0,"%s"] %s\n' "$up" "$loki_result"
           exit 0
         fi
         exit 1
         ;;
+      kill|run) exit 0 ;;
       logs) exit 0 ;;
       *) exit 0 ;;
     esac
@@ -149,6 +156,30 @@ bash "$WORK/deploy/deploy.sh"
 grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" || fail "formal compose does not pin sha-A images"
 grep -q '\${' "$WORK/docker-compose.yml" && fail "formal compose still contains unresolved \${...}"
 
+# ---- observability gates must fail closed on up=0 and an empty Loki result ----
+set +e
+up_zero_output="$(FAKE_PROMETHEUS_UP=0 WOTB_OBSERVABILITY_RETRIES=1 \
+  WOTB_OBSERVABILITY_INTERVAL_SEC=1 bash "$WORK/deploy/verify-observability.sh" 2>&1)"
+up_zero_rc=$?
+set -e
+[[ $up_zero_rc -ne 0 ]] || fail "Prometheus up=0 must fail the observability gate"
+grep -q "up != 1" <<<"$up_zero_output" || fail "up=0 failure must explain the unhealthy target"
+
+set +e
+empty_loki_output="$(FAKE_LOKI_EMPTY=1 WOTB_OBSERVABILITY_RETRIES=1 \
+  WOTB_OBSERVABILITY_INTERVAL_SEC=1 bash "$WORK/deploy/verify-observability.sh" 2>&1)"
+empty_loki_rc=$?
+set -e
+[[ $empty_loki_rc -ne 0 ]] || fail "empty Loki result must fail the observability gate"
+grep -q "deployment canary was not ingested" <<<"$empty_loki_output" \
+  || fail "empty Loki failure must identify the deployment canary"
+
+# The workflow snapshots the previous observability tree before SCP. Simulate
+# that ownership so rollback verifies config restoration, not only compose tags.
+mkdir -p "$WORK/.deploy-prev/observability/prometheus" "$WORK/.deploy-prev/observability/alloy"
+printf 'stable prometheus config\n' > "$WORK/.deploy-prev/observability/prometheus/prometheus.yml"
+printf 'stable alloy config\n' > "$WORK/.deploy-prev/observability/alloy/config.alloy"
+
 # ---- deploy B (health fails) -> must roll back to A ----
 export TAG=sha-B
 set +e
@@ -167,6 +198,10 @@ rollback_line="$(grep -n "== DEPLOY FAILED: rolling back to previous deployment 
 grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" || fail "after rollback compose must reference sha-A"
 grep -q 'wotbtools-backend:sha-B' "$WORK/docker-compose.yml" && fail "after rollback compose still references sha-B"
 [[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "DEPLOYED_SHA not restored to sha-A"
+grep -q 'stable prometheus config' "$WORK/deploy/observability/prometheus/prometheus.yml" \
+  || fail "rollback did not restore previous Prometheus config"
+grep -q 'stable alloy config' "$WORK/deploy/observability/alloy/config.alloy" \
+  || fail "rollback did not restore previous Alloy config"
 
 # ---- independent session: no GitHub Actions temporary env ----
 env -i PATH="$PATH" HOME="$WORK" bash -c 'cd "$1" && docker compose -f docker-compose.yml config >/dev/null' _ "$WORK" \
