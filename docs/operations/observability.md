@@ -222,7 +222,8 @@ docker compose start prometheus loki alloy grafana node-exporter
 | Grafana runtime | `test-grafana-runtime.sh` | 启动最小 Prometheus/Loki/Grafana，验证 provisioning、默认首页与 Alpine/BusyBox auth |
 | Grafana provisioning + Dashboard JSON | `python` 解析全部 YAML/JSON | 结构校验 |
 | 端口安全 | `docker compose config --format json` 校验 prometheus/loki/alloy/grafana/node-exporter/wotb-backend 无宿主端口映射，并校验 Keycloak management `9000` 不外露 | frontend 8088:80、Keycloak 8080:8080 合法 |
-| Backend 测试 | `mvn test`（含 `RequestIdFilterTest`、`CustomTimerPrometheusTest`、`LogstashMdcTopLevelTest`、`AiReplayAnalysisServiceUpstreamMetricsTest`） | 单元/集成测试 |
+
+Backend Maven 单元/集成测试属于独立的 `Backend tests` CI job，不属于 `observability-config` job；它们会在 PR gate 中单独执行。
 
 ### 手动验证命令（生产部署后执行）
 
