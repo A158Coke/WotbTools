@@ -318,7 +318,7 @@ jobs:
               assert isinstance(uid, str) and uid, "dashboard uid missing: " + p
               assert uid not in dashboard_uids.values(), "duplicate dashboard uid: " + uid
               dashboard_uids[p] = uid
-              if p.endswith("wotbtools-production-overview.json"):
+              if p.replace("\\", "/").endswith("wotbtools-production-overview.json"):
                   production_panels = {}
                   collect_production_panels(d, production_panels)
                   for title, expected_expr in production_health_contract.items():

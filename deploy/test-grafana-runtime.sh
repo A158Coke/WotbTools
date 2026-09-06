@@ -29,7 +29,7 @@ wait_http() {
   done
   fail "runtime endpoint unavailable: $url"
 }
-wait_json_success() {
+wait_grafana_datasource_ok() {
   local url="$1" body
   for attempt in $(seq 1 30); do
     if body="$(curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" "$url" 2>/dev/null)" \
@@ -38,7 +38,7 @@ wait_json_success() {
     fi
     sleep 2
   done
-  fail "Grafana datasource health is not successful: $url"
+  fail "Grafana datasource health is not OK: $url"
 }
 
 alpine_grafana_api() {
@@ -73,8 +73,8 @@ docker run -d --name "$GRAFANA" --network "$NETWORK" --network-alias grafana \
 PORT="$(docker port "$GRAFANA" 3000/tcp | sed -E 's/.*://')"
 [ -n "$PORT" ] || fail "Grafana port was not published"
 wait_http "http://127.0.0.1:${PORT}/api/health" curl -fsS
-wait_json_success "http://127.0.0.1:${PORT}/api/datasources/uid/prometheus/health"
-wait_json_success "http://127.0.0.1:${PORT}/api/datasources/uid/loki/health"
+wait_grafana_datasource_ok "http://127.0.0.1:${PORT}/api/datasources/uid/prometheus/health"
+wait_grafana_datasource_ok "http://127.0.0.1:${PORT}/api/datasources/uid/loki/health"
 
 for datasource_uid in prometheus loki; do
   body="$(alpine_grafana_api "$ADMIN_USER" "$ADMIN_PASSWORD" "/api/datasources/uid/${datasource_uid}/health")" \

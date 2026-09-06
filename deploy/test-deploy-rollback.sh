@@ -136,6 +136,14 @@ case "$cmd" in
             exit 0
           fi
           if [[ "$request" == *"/api/datasources"* || "$request" == *"/api/dashboards"* ]]; then
+            api_path=""
+            for arg in "${compose_args[@]}"; do
+              [[ "$arg" == /api/* ]] && api_path="$arg"
+            done
+            [ -n "$api_path" ] || exit 1
+            helper_script="$(cat)"
+            grep -Fq 'url="http://grafana:3000${path}"' <<<"$helper_script" || exit 1
+            grep -Fq 'wget --header="Authorization: Basic $token"' <<<"$helper_script" || exit 1
             [ "${FAKE_GRAFANA_AUTH:-1}" = 1 ] || exit 1
             if [[ "$request" == *"/api/datasources"* ]]; then
               printf '{"status":"OK"}\n'
