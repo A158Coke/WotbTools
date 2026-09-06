@@ -1517,6 +1517,7 @@
             "AI_REVIEW_GROUNDING_FAILED": "The AI review failed factual consistency checks. Please try again.",
             "AI_EMPTY_RESPONSE": "The AI provider returned an empty result. Please retry.",
             "AI_RESPONSE_INVALID": "The AI provider returned an invalid result. Please retry.",
+            "AI_REVIEW_SCHEMA_FAILED": "The AI review returned an invalid format and could not be completed. Please retry.",
             "AI_TIMELINE_UNUSABLE": "This replay lacks enough battle-timeline data for an AI review.",
             "NO_BATTLE_DATA": "No analyzable battle data was found in the replay.",
             "UNSUPPORTED_BATTLE_CATEGORY": "This battle category is not supported for AI review.",

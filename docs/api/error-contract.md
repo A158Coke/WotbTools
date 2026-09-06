@@ -54,6 +54,7 @@ Spring Security 不经过 MVC advice，因此 401/403 分别由 canonical `Authe
 | `PROCESSING_QUEUE_FULL` | 503 | true | capacity | Processing queue 已满 |
 | `EXPORT_QUEUE_FULL` | 503 | true | capacity | Export queue 已满 |
 | `AI_REVIEW_BUSY` | 503 | true | capacity | AI Review worker 暂时繁忙 |
+| `AI_REVIEW_SCHEMA_FAILED` | 502 | true | ai-schema | Team Review JSON technical schema 在初始 parse/一次定向 repair 后仍不可用 |
 | `INTERNAL_ERROR` | 500 | true | internal | 未分类服务端异常 |
 | `DATASET_REFERENCE_REQUIRED` | 400 | false | validation | Playback/AI Dataset reference 缺失 |
 
