@@ -78,15 +78,25 @@ query_range() {
     --data-urlencode "end=$(date +%s)000000000"
 }
 
+loki_response_has_sample() {
+  local body="$1"
+  grep -Eq '"status"[[:space:]]*:[[:space:]]*"success"' <<<"$body" \
+    && grep -Eq '"result"[[:space:]]*:[[:space:]]*\[[[:space:]]*\{' <<<"$body" \
+    && grep -Eq '"values"[[:space:]]*:[[:space:]]*\[[[:space:]]*\[[[:space:]]*"[^" ]+"[[:space:]]*,[[:space:]]*"[^"]+"' <<<"$body"
+}
+
 backend_query() {
-  query_range '{container_name="wotb-backend"}' | grep -Fq "$MARKER"
+  body="$(query_range '{container_name="wotb-backend"}')"
+  loki_response_has_sample "$body" && grep -Fq "$MARKER" <<<"$body"
 }
 keycloak_query() {
-  query_range '{container_name="keycloak"}' | grep -Fq "$KEYCLOAK_MARKER"
+  body="$(query_range '{container_name="keycloak"}')"
+  loki_response_has_sample "$body" && grep -Fq "$KEYCLOAK_MARKER" <<<"$body"
 }
 frontend_query() {
   body="$(query_range '{container_name="wotb-frontend",event="android_apk_download"}')"
-  grep -Fq 'event=android_apk_download' <<<"$body" \
+  loki_response_has_sample "$body" \
+    && grep -Fq 'event=android_apk_download' <<<"$body" \
     && grep -Fq "apk=$APK" <<<"$body" \
     && grep -Fq 'status=404' <<<"$body" \
     && grep -Fq 'bytes=' <<<"$body" \
