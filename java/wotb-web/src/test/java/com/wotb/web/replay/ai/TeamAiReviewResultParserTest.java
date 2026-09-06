@@ -19,51 +19,82 @@ class TeamAiReviewResultParserTest {
             + "\"highContributors\":[]}";
 
     @Test
-    void parsesValidResultAndReferences() {
+    void parsesValidResultWithoutNormalization() {
         final TeamAiReviewResultParser.ParseResult result =
                 TeamAiReviewResultParser.parse(VALID, Set.of("P1", "P2"));
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID, result.status());
         assertFalse(result.failed());
-        assertEquals("E1", result.result().episodes().get(0).id());
-        assertEquals("P1", result.result().reviewFocus().get(0).playerKey());
+        assertEquals("E1", result.result().episodes().getFirst().id());
+        assertEquals("P1", result.result().reviewFocus().getFirst().playerKey());
     }
 
     @Test
-    void requiresAllTopLevelArraysAndRejectsReferences() {
-        assertTrue(TeamAiReviewResultParser.parse(
-                "{\"summary\":{\"verdict\":\"v\",\"primaryDiagnosis\":\"d\"},"
-                        + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[]}", Set.of())
-                .failed());
-        assertEquals(TeamAiReviewResultParser.Failure.INVALID_REFERENCE,
-                TeamAiReviewResultParser.parse(VALID.replace("P1", "P9"), Set.of("P1")).failure());
+    void dropsInvalidOptionalReferencesAndKeepsTacticalText() {
+        final String output = VALID
+                .replace("\"P1\"]", "\"P1\",\"P9\"]")
+                .replace("\"playerKey\":\"P1\",\"episodeId\":\"E1\",\"reason\":\"复查\"",
+                        "\"playerKey\":\"P9\",\"episodeId\":\"E99\",\"reason\":\"复查\"")
+                .replace("\"highContributors\":[]",
+                        "\"highContributors\":[{\"playerKey\":\"P9\",\"episodeId\":\"E1\",\"reason\":\"贡献\"}]")
+                .replace("\"episodeId\":\"E1\"}]", "\"episodeId\":\"E99\"}]");
+        final TeamAiReviewResultParser.ParseResult result =
+                TeamAiReviewResultParser.parse(output, Set.of("P1"));
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION, result.status());
+        assertFalse(result.failed());
+        assertEquals("分析", result.result().episodes().getFirst().analysis());
+        assertEquals(0, result.result().reviewFocus().size());
+        assertEquals(0, result.result().highContributors().size());
+        assertEquals(null, result.result().trainingSuggestions().getFirst().episodeId());
+        assertTrue(result.normalizations().size() >= 4);
+        assertTrue(result.failures().stream().anyMatch(f ->
+                f.path().equals("highContributors[0].playerKey")));
     }
 
     @Test
-    void enforcesCardinality() {
+    void reportsRepairableUnknownFieldWithPrecisePath() {
+        final TeamAiReviewResultParser.ParseResult result = TeamAiReviewResultParser.parse(
+                VALID.replace("\"highContributors\":[]", "\"highContributors\":[],\"extra\":true"),
+                Set.of("P1"));
+        assertEquals(TeamAiReviewResultParser.ParseStatus.REPAIRABLE, result.status());
+        assertTrue(result.failed());
+        assertEquals(TeamAiReviewResultParser.Failure.INVALID_FIELD, result.failure());
+        assertEquals("root.extra", result.failures().getFirst().path());
+    }
+
+    @Test
+    void reportsFatalCoreFailures() {
+        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
+                TeamAiReviewResultParser.parse("{\"episodes\":[]}", Set.of()).status());
+        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
+                TeamAiReviewResultParser.parse(VALID.replace("\"startSec\":10,", ""), Set.of("P1")).status());
+        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
+                TeamAiReviewResultParser.parse(VALID.replace("\"endSec\":20", "\"endSec\":5"), Set.of("P1")).status());
+        final String duplicate = VALID.replace(
+                "\"trainingSuggestions\":[",
+                "\"episodes\":[{\"id\":\"E1\",\"startSec\":30,\"endSec\":40,\"title\":\"x\",\"analysis\":\"y\",\"playerKeys\":[]}],\"trainingSuggestions\":[");
+        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
+                TeamAiReviewResultParser.parse(duplicate, Set.of("P1")).status());
+    }
+
+    @Test
+    void reportsRepairableCardinality() {
         final String tooMany = VALID.replace(
                 "\"highContributors\":[]",
                 "\"highContributors\":[{\"playerKey\":\"P1\",\"episodeId\":\"E1\",\"reason\":\"r\"},"
                         + "{\"playerKey\":\"P1\",\"episodeId\":\"E1\",\"reason\":\"r\"},"
                         + "{\"playerKey\":\"P1\",\"episodeId\":\"E1\",\"reason\":\"r\"}]");
-        assertEquals(TeamAiReviewResultParser.Failure.CARDINALITY_EXCEEDED,
-                TeamAiReviewResultParser.parse(tooMany, Set.of("P1")).failure());
+        final TeamAiReviewResultParser.ParseResult result =
+                TeamAiReviewResultParser.parse(tooMany, Set.of("P1"));
+        assertEquals(TeamAiReviewResultParser.ParseStatus.REPAIRABLE, result.status());
+        assertEquals(TeamAiReviewResultParser.Failure.CARDINALITY_EXCEEDED, result.failure());
     }
 
     @Test
-    void requiresNullableFieldsToBePresentAndRejectsUnknownFields() {
-        assertEquals(TeamAiReviewResultParser.Failure.MISSING_REQUIRED_FIELD,
-                TeamAiReviewResultParser.parse(VALID.replace(
-                        "\"startSec\":10,", ""), Set.of("P1")).failure());
-        assertEquals(TeamAiReviewResultParser.Failure.MISSING_REQUIRED_FIELD,
-                TeamAiReviewResultParser.parse(VALID.replace(
-                        "\"trainingSuggestions\":[{\"title\":\"建议\",\"content\":\"内容\",\"episodeId\":\"E1\"}]",
-                        "\"trainingSuggestions\":[{\"title\":\"建议\",\"content\":\"内容\"}]"),
-                        Set.of("P1")).failure());
-        assertEquals(TeamAiReviewResultParser.Failure.INVALID_FIELD,
-                TeamAiReviewResultParser.parse(VALID.replace(
-                        "\"highContributors\":[]", "\"highContributors\":[],\"extra\":true"),
-                        Set.of("P1")).failure());
-        assertTrue(TeamAiReviewResultParser.parse(VALID.replace(
+    void rejectsUnknownIdentityFieldsInOptionalItemsByDroppingItem() {
+        final TeamAiReviewResultParser.ParseResult result = TeamAiReviewResultParser.parse(VALID.replace(
                 "\"reason\":\"复查\"", "\"reason\":\"复查\",\"nickname\":\"Alice\""),
-                Set.of("P1")).failed(), "LLM identity fields must not be accepted in structured review items");
+                Set.of("P1"));
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION, result.status());
+        assertTrue(result.result().reviewFocus().isEmpty());
     }
 }
