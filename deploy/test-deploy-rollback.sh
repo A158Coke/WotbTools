@@ -74,6 +74,7 @@ COMPOSE_FILE=""
 cmd="${1:-}"; shift || true
 case "$cmd" in
   compose)
+    compose_args=("$@")
     sub=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
@@ -92,26 +93,89 @@ case "$cmd" in
       ps) printf 'wotb-backend Up\nwotb-frontend Up\nkeycloak Up\nprometheus Up\nloki Up\nalloy Up\ngrafana Up\ntest Up\n' ;;
       exec)
         if active_tag_healthy; then
-          # Non-empty stdout keeps backup probes valid; stable observability
-          # tokens satisfy the gate without exposing any secret.
-          up="${FAKE_PROMETHEUS_UP:-1}"
-          if [ "${FAKE_LOKI_EMPTY:-0}" = 1 ]; then
-            loki_result='"result":[],"values":[]'
-          else
-            loki_result="\"result\":[{\"line\":\"event=android_apk_download apk=${WOTB_FRONTEND_CANARY_APK:-stable.apk} status=404 bytes=42 ${WOTB_OBSERVABILITY_CANARY_MARKER:-stable-canary} ${WOTB_KEYCLOAK_CANARY_MARKER:-stable-keycloak}\"}],\"values\":[[0,\"${WOTB_OBSERVABILITY_CANARY_MARKER:-stable-canary}\"]]"
+          request="${compose_args[*]}"
+          if [[ "$request" == *"/loki/api/v1/query_range"* ]]; then
+            query_log="${FAKE_QUERY_STARTS:-}"
+            if [ -n "$query_log" ]; then
+              start_value="${request#*start=}"
+              start_value="${start_value%%&*}"
+              printf '%s\n' "$start_value" >> "$query_log"
+            fi
+            query_count_file="${FAKE_QUERY_COUNT_FILE:-}"
+            query_count=0
+            if [ -n "$query_count_file" ]; then
+              query_count="$(cat "$query_count_file" 2>/dev/null || printf '0')"
+              query_count=$((query_count + 1))
+              printf '%s\n' "$query_count" > "$query_count_file"
+            fi
+            if [ "${FAKE_LOKI_EMPTY:-0}" = 1 ] || \
+               { [ "${FAKE_LOKI_DELAYED:-0}" = 1 ] && [ "$query_count" -le 2 ]; }; then
+              printf '{"status":"success","data":{"result":[]}}\n'
+            else
+              printf '{"status":"success","data":{"result":[{"stream":{},"values":[["0","event=android_apk_download apk=%s status=404 bytes=42 %s %s"]]}]}}\n' \
+                "${WOTB_FRONTEND_CANARY_APK:-stable.apk}" \
+                "${WOTB_OBSERVABILITY_CANARY_MARKER:-stable-canary}" \
+                "${WOTB_KEYCLOAK_CANARY_MARKER:-stable-keycloak}"
+            fi
+            exit 0
           fi
-          printf 'mock-pg-dump-data jvm_ process_ system_ http_server_requests wotb_replay_parse_active wotb_replay_parse_queue_depth wotb_ai_review_in_flight wotb_ai_review_queue_depth node_ prometheus_ loki_ grafana_ "database":"ok" "status":"success" "job":"wotb-backend" "job":"keycloak" "job":"node-exporter" "job":"prometheus" "job":"loki" "job":"grafana" "value":[0,"%s"] "dashboard":"ok" wotbtools-production-overview wotbtools-backend-overview wotbtools-http-errors wotbtools-replay-parser wotbtools-ai-review wotbtools-keycloak wotbtools-error-explorer wotbtools-android-downloads wotbtools-usage %s\n' "$up" "$loki_result"
+          if [[ "$request" == *"/api/v1/query?"* ]]; then
+            printf '{"status":"success","data":{"resultType":"vector","result":[{"value":[0,"%s"]}]}}\n' "${FAKE_PROMETHEUS_UP:-1}"
+            exit 0
+          fi
+          if [[ "$request" == *"/api/v1/targets"* ]]; then
+            printf '{"status":"success","data":{"activeTargets":[{"labels":{"job":"wotb-backend"}},{"labels":{"job":"keycloak"}},{"labels":{"job":"node-exporter"}},{"labels":{"job":"prometheus"}},{"labels":{"job":"loki"}},{"labels":{"job":"grafana"}}]}}\n'
+            exit 0
+          fi
+          if [[ "$request" == *"grafana:3000/api/datasources"* || "$request" == *"grafana:3000/api/dashboards"* ]]; then
+            [ "${FAKE_GRAFANA_AUTH:-1}" = 1 ] || exit 1
+            if [[ "$request" == *"/api/datasources"* ]]; then
+              printf '{"status":"OK"}\n'
+            else
+              printf '{"dashboard":{"uid":"wotbtools-production-overview wotbtools-backend-overview wotbtools-http-errors wotbtools-replay-parser wotbtools-ai-review wotbtools-keycloak wotbtools-error-explorer wotbtools-android-downloads wotbtools-usage"}}\n'
+            fi
+            exit 0
+          fi
+          if [[ "$request" == *"8087/actuator/prometheus"* ]]; then
+            printf 'jvm_ process_ system_ http_server_requests wotb_replay_parse_active wotb_replay_parse_queue_depth wotb_ai_review_in_flight wotb_ai_review_queue_depth hikaricp_connections_active\n'
+          elif [[ "$request" == *"keycloak:9000/metrics"* ]]; then
+            printf 'process_\n'
+          elif [[ "$request" == *"node-exporter:9100/metrics"* ]]; then
+            printf 'node_\n'
+          elif [[ "$request" == *"prometheus:9090/metrics"* ]]; then
+            printf 'prometheus_\n'
+          elif [[ "$request" == *"loki:3100/metrics"* ]]; then
+            printf 'loki_\n'
+          elif [[ "$request" == *"grafana:3000/metrics"* ]]; then
+            printf 'grafana_\n'
+          elif [[ "$request" == *"grafana:3000/api/health"* ]]; then
+            printf '{"database":"ok"}\n'
+          else
+            printf 'mock-pg-dump-data\n'
+          fi
           exit 0
         fi
         exit 1
         ;;
-      kill|run) exit 0 ;;
+      kill) exit 0 ;;
+      run)
+        if [ -n "${FAKE_DOCKER_RUN_LOG:-}" ]; then
+          printf 'compose %s\n' "${compose_args[*]}" >> "$FAKE_DOCKER_RUN_LOG"
+        fi
+        exit 0
+        ;;
       logs) exit 0 ;;
       *) exit 0 ;;
     esac
     ;;
   image) exit 0 ;;
   builder) exit 0 ;;
+  run)
+    if [ -n "${FAKE_DOCKER_RUN_LOG:-}" ]; then
+      printf '%s\n' "$*" >> "$FAKE_DOCKER_RUN_LOG"
+    fi
+    exit 0
+    ;;
   rm) exit 0 ;;
   *) exit 0 ;;
 esac
@@ -124,6 +188,7 @@ export WOTB_INCOMING_DIR="$WORK/deploy.incoming"
 export WOTB_COMPOSE_DIR="$WORK"
 export WOTB_BACKUP_ROOT="$WORK/backups"
 export WOTB_HEALTH_RETRIES=3
+export FAKE_DOCKER_RUN_LOG="$WORK/docker-run.log"
 export DB_PASSWORD=db-secret KC_ADMIN_PASSWORD=kc-secret WG_APPLICATION_ID=wg-id \
        KEYCLOAK_ADMIN_CLIENT_SECRET=kc-client-secret AI_API_KEY=ai-key \
        GRAFANA_ADMIN_USER=admin GRAFANA_ADMIN_PASSWORD=grafana-secret
@@ -157,6 +222,11 @@ bash "$WORK/deploy.incoming/deploy/deploy.sh"
 [[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "DEPLOYED_SHA != sha-A after deploy A"
 grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" || fail "formal compose does not pin sha-A images"
 grep -q '\${' "$WORK/docker-compose.yml" && fail "formal compose still contains unresolved \${...}"
+grep -Eq 'keycloak-observability-canary-.*alpine:3\.22' "$WORK/docker-run.log" \
+  || fail "Keycloak canary must use an independent Alpine 3.22 emitter"
+if grep -Eq 'compose.*run.*keycloak.*sh -c' "$WORK/docker-run.log"; then
+  fail "Keycloak canary must not invoke the Keycloak image entrypoint as a shell"
+fi
 
 # ---- observability gates must fail closed on up=0 and an empty Loki result ----
 set +e
@@ -175,6 +245,26 @@ set -e
 [[ $empty_loki_rc -ne 0 ]] || fail "empty Loki result must fail the observability gate"
 grep -q "backend or Keycloak canary was not ingested" <<<"$empty_loki_output" \
   || fail "empty Loki failure must identify the deployment canary"
+
+set +e
+wrong_grafana_output="$(FAKE_GRAFANA_AUTH=0 WOTB_OBSERVABILITY_RETRIES=1 \
+  WOTB_OBSERVABILITY_INTERVAL_SEC=1 bash "$WORK/deploy/verify-observability.sh" 2>&1)"
+wrong_grafana_rc=$?
+set -e
+[[ $wrong_grafana_rc -ne 0 ]] || fail "wrong Grafana credentials must fail the observability gate"
+grep -q "Grafana Prometheus datasource" <<<"$wrong_grafana_output" \
+  || fail "wrong Grafana credential failure must identify the datasource auth check"
+
+: > "$WORK/query-starts"
+: > "$WORK/query-count"
+delayed_loki_output="$(FAKE_LOKI_DELAYED=1 \
+  FAKE_QUERY_STARTS="$WORK/query-starts" \
+  FAKE_QUERY_COUNT_FILE="$WORK/query-count" \
+  WOTB_OBSERVABILITY_RETRIES=2 WOTB_OBSERVABILITY_INTERVAL_SEC=1 \
+  bash "$WORK/deploy/verify-observability.sh" 2>&1)" \
+  || fail "delayed Loki ingestion should pass after a later retry"
+[[ "$(head -4 "$WORK/query-starts" | sort -u | wc -l)" -eq 1 ]] \
+  || fail "backend/Keycloak Loki retries must keep a fixed query start"
 
 # The previous live tree owns rollback. Make it visibly stable, then stage a
 # second tree with different observability files before deploy B.

@@ -256,6 +256,14 @@ jobs:
           assert {p.rsplit("/", 1)[-1] for p in paths} == required, "dashboard inventory drift"
           dashboard_uids = {}
           dashboard_link_uids = []
+          production_health_contract = {
+              "后端服务": 'up{job="wotb-backend"}',
+              "认证服务": 'up{job="keycloak"}',
+              "主机": 'up{job="node-exporter"}',
+              "Prometheus": 'up{job="prometheus"}',
+              "Loki": 'up{job="loki"}',
+              "Grafana": 'up{job="grafana"}',
+          }
 
           def validate_datasource(value, where):
               if not isinstance(value, dict):
@@ -287,6 +295,20 @@ jobs:
                   for i, child in enumerate(node.get(key) or []):
                       walk_dashboard_panels(child, f"{where}.{key}[{i}]")
 
+          def collect_production_panels(node, found):
+              if not isinstance(node, dict):
+                  return
+              title = node.get("title")
+              if isinstance(title, str):
+                  found.setdefault(title, []).extend(
+                      target.get("expr", "")
+                      for target in node.get("targets") or []
+                      if isinstance(target, dict) and isinstance(target.get("expr"), str)
+                  )
+              for key in ("panels", "rows"):
+                  for child in node.get(key) or []:
+                      collect_production_panels(child, found)
+
           for p in glob.glob("deploy/observability/grafana/provisioning/**/*.yml", recursive=True):
               yaml.safe_load(open(p, encoding="utf-8"))
           for p in paths:
@@ -297,9 +319,26 @@ jobs:
               assert uid not in dashboard_uids.values(), "duplicate dashboard uid: " + uid
               dashboard_uids[p] = uid
               if p.endswith("wotbtools-production-overview.json"):
-                  state_expr = json.dumps(d, ensure_ascii=False)
+                  production_panels = {}
+                  collect_production_panels(d, production_panels)
+                  for title, expected_expr in production_health_contract.items():
+                      actual_exprs = {"".join(expr.split()) for expr in production_panels.get(title, [])}
+                      assert expected_expr in actual_exprs, \
+                          f"production overview health panel {title} must query {expected_expr}"
+                      assert all("orvector(0)" not in expr for expr in actual_exprs), \
+                          f"production overview health panel {title} must not mask no-data"
+                  overall_exprs = [
+                      expr for title, exprs in production_panels.items()
+                      if title.startswith("生产状态")
+                      for expr in exprs
+                  ]
+                  assert overall_exprs, "production overview overall health panel missing"
+                  overall_expr = "".join(overall_exprs[0].split())
+                  assert "count(" in overall_expr and "min(" in overall_expr, \
+                      "production overview overall health must require target count and min up"
                   for required_job in ("wotb-backend", "keycloak", "node-exporter", "prometheus", "loki", "grafana"):
-                      assert required_job in state_expr, "production overview missing state target " + required_job
+                      assert required_job in overall_expr, \
+                          "production overview overall health missing target " + required_job
               for i, panel in enumerate(d.get("panels", [])):
                   walk_dashboard_panels(panel, f"{p}::panels[{i}]")
           uid_set = set(dashboard_uids.values())
