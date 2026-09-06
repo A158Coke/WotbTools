@@ -172,7 +172,9 @@ docker compose ps prometheus loki alloy grafana node-exporter
 
 ### 生产（CI 自动）
 
-合并到 `main` 触发 `deploy.yml`：Actions 先把完整 `deploy/` 上传到 `/opt/wotb/deploy.incoming/deploy`，在 incoming project root 中执行 `docker compose config` 与 `pull`；成功后才将 incoming deploy tree 原子 promote 到 `/opt/wotb/deploy`，同时保存完整 `/opt/wotb/deploy.prev` 与 `docker-compose.prev.yml`。上线和回滚均显式 `--force-recreate prometheus loki alloy grafana`，确保 bind-mounted 配置、Grafana provisioning、dashboard 与默认首页真正重新应用，不依赖 HUP。观测 gate 会验证六类 Prometheus target `up == 1`、Grafana health/datasource/dashboard API，并分别启动 backend/Keycloak canary、触发真实 frontend nginx Android 路径（404 允许但不算成功下载）后精确查询 Loki。任一健康或数据链路失败会恢复上一整棵 deploy tree 并重新应用四个观测容器后复检；pull 失败不触碰 live tree。
+合并到 `main` 触发 `deploy.yml`：Actions 先把完整 `deploy/` 上传到 `/opt/wotb/deploy.incoming/deploy`，在 incoming project root 中执行 `docker compose config` 与 `pull`；成功后才将 incoming deploy tree 原子 promote 到 `/opt/wotb/deploy`。每次成功发布都会把已验证的完整部署树、compose 文件和 SHA 提升为 `/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml` 与 `DEPLOYED_SHA.lkg`（Last Known Good）；`deploy.prev` 仅作为故障取证快照，不是回滚权威。上线和回滚均显式 `--force-recreate prometheus loki alloy grafana`，确保 bind-mounted 配置、Grafana provisioning、dashboard 与默认首页真正重新应用，不依赖 HUP。观测 gate 会验证六类 Prometheus target `up == 1`、Grafana health/datasource/dashboard API，并分别启动 backend/Keycloak canary、触发真实 frontend nginx Android 路径（404 允许但不算成功下载）后精确查询 Loki。任一健康或数据链路失败会先保留新版本诊断，再从已验证 LKG 恢复整棵 deploy tree，并重新应用四个观测容器后复检；LKG 缺失或损坏时 fail-closed，不会先删除当前 live tree；pull 失败也不触碰 live tree。
+
+首次建立 LKG 是唯一例外：只有显式 `workflow_dispatch` 并勾选 `allow_bootstrap_without_lkg` 时，才允许在没有现存 LKG 的主机上完成一次人工复核后的 bootstrap。正常 push 部署和未勾选该输入的手工运行都会拒绝无 LKG 发布。
 
 > **新版本失败诊断（Health check 超时回滚前）**：健康检查最终失败时，`deploy.sh` 会先输出各服务状态（`report_health_status`：backend/frontend/keycloak 各 `PASS/FAILED/SKIPPED`），再 `dump_logs` 保留新版本 `docker compose ps -a`、容器 `docker inspect` 与 backend/frontend/keycloak 三服务 logs，最后才进入回滚。因此新版本启动异常不会再被 rollback 覆盖，可在 Actions 日志与 Loki 中定位。诊断命令均独立容错，若采集失败也不会阻断回滚。
 
@@ -191,7 +193,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 
 > **禁止**使用 `docker compose down -v` 作为普通停止/回滚命令——它会删除所有 volume（含 PostgreSQL 数据）。
 
-> **应用回滚**由 `deploy.yml` 自动处理（恢复 `docker-compose.prev.yml`），不会触碰 `postgres_data` 等 volume；数据库 schema 迁移随新版本启动执行，回滚策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
+> **应用回滚**由 `deploy.yml` 自动处理（恢复已验证的 `docker-compose.lkg.yml` 与对应 `/opt/wotb/deploy.lkg`），不会触碰 `postgres_data` 等 volume；数据库 schema 迁移随新版本启动执行，回滚策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。`deploy.prev` 和 `docker-compose.prev.yml` 只用于故障诊断，不能替代 LKG。
 
 ---
 
@@ -205,12 +207,15 @@ docker compose start prometheus loki alloy grafana node-exporter
 - Loki gate 必须同时确认 API `status=success`、`data.result` 非空、stream 的 `values` 非空以及 marker 在实际日志值中；空数组不能被“`values` 字段存在”误判为成功。
 - Production Overview 顶部将 Backend、Keycloak、Host、Prometheus、Loki、Grafana 分成六张独立健康卡；缺失数据显示“无数据 / 未知”且不映射为绿色。下方 Overall 查询同时要求六类 target 数量完整且 `min(up)==1`。
 - Backend production gate 还确认至少一个稳定的 Hikari 指标（`hikaricp_connections_active`），避免连接池遥测在 dashboard 中静默失效。
+- Keycloak production gate 同时确认应用 realm metadata、仅 Docker 内部可达的 `:9000/health/ready` 和 `:9000/metrics`；Keycloak 镜像在构建阶段启用 PostgreSQL、health、metrics 和 optimized runtime，避免启动时重新 augmentation。
 
 ### CI 实际验证项（PR 时自动执行，见 `.github/workflows/ci.yml` `observability-config` job）
 
 > **CI 验证边界**：静态检查覆盖「本地」`docker/online/docker-compose.yml`、生产观测配置语法/结构、
 > dashboard 合同与端口安全；runtime smoke 会实际启动最小 Prometheus/Loki/Grafana、Alpine emitter，
-> 并验证 Alloy→Loki ownership、Grafana provisioning/auth。CI 不替代生产 deploy gate：不验证生产 `deploy.yml`
+> 并验证 Alloy→Loki ownership、Grafana provisioning/auth；独立的 Keycloak runtime smoke 会真实构建并启动
+> optimized PostgreSQL Keycloak，确认应用 discovery、management readiness/metrics、无管理端口宿主机暴露和无启动时 augmentation。
+> CI 不替代生产 deploy gate：不验证生产 `deploy.yml`
 > heredoc 在真实主机上的渲染、真实 backend 指标采集或生产网络/DNS/TLS。
 
 | 验证项 | 命令 | 说明 |
