@@ -15,24 +15,24 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-mkdir -p "$WORK/deploy" "$WORK/bin"
-cp "$ROOT/deploy/docker-compose.prod.yml" "$WORK/deploy/docker-compose.prod.yml"
-cp "$ROOT/deploy/deploy.sh" "$WORK/deploy/deploy.sh"
-cp "$ROOT/deploy/verify-observability.sh" "$WORK/deploy/verify-observability.sh"
-cp "$ROOT/deploy/sponsor-config.example.json" "$WORK/deploy/sponsor-config.example.json"
-cp "$ROOT/deploy/postgres-backup.sh" "$WORK/deploy/postgres-backup.sh"
-cp "$ROOT/deploy/postgres-backup-inspect.sh" "$WORK/deploy/postgres-backup-inspect.sh"
-cp "$ROOT/deploy/postgres-restore.sh" "$WORK/deploy/postgres-restore.sh"
+mkdir -p "$WORK/deploy.incoming/deploy" "$WORK/bin"
+cp "$ROOT/deploy/docker-compose.prod.yml" "$WORK/deploy.incoming/deploy/docker-compose.prod.yml"
+cp "$ROOT/deploy/deploy.sh" "$WORK/deploy.incoming/deploy/deploy.sh"
+cp "$ROOT/deploy/verify-observability.sh" "$WORK/deploy.incoming/deploy/verify-observability.sh"
+cp "$ROOT/deploy/sponsor-config.example.json" "$WORK/deploy.incoming/deploy/sponsor-config.example.json"
+cp "$ROOT/deploy/postgres-backup.sh" "$WORK/deploy.incoming/deploy/postgres-backup.sh"
+cp "$ROOT/deploy/postgres-backup-inspect.sh" "$WORK/deploy.incoming/deploy/postgres-backup-inspect.sh"
+cp "$ROOT/deploy/postgres-restore.sh" "$WORK/deploy.incoming/deploy/postgres-restore.sh"
 # Normalize line endings so the sandbox runs identically on CRLF checkouts
 # (CI/ubuntu checkouts are LF; this keeps the smoke test portable).
   sed -i 's/\r$//' \
-  "$WORK/deploy/docker-compose.prod.yml" \
-  "$WORK/deploy/deploy.sh" \
-  "$WORK/deploy/verify-observability.sh" \
-  "$WORK/deploy/postgres-backup.sh" \
-  "$WORK/deploy/postgres-backup-inspect.sh" \
-  "$WORK/deploy/postgres-restore.sh" \
-  "$WORK/deploy/sponsor-config.example.json"
+  "$WORK/deploy.incoming/deploy/docker-compose.prod.yml" \
+  "$WORK/deploy.incoming/deploy/deploy.sh" \
+  "$WORK/deploy.incoming/deploy/verify-observability.sh" \
+  "$WORK/deploy.incoming/deploy/postgres-backup.sh" \
+  "$WORK/deploy.incoming/deploy/postgres-backup-inspect.sh" \
+  "$WORK/deploy.incoming/deploy/postgres-restore.sh" \
+  "$WORK/deploy.incoming/deploy/sponsor-config.example.json"
 
 cat > "$WORK/bin/docker" <<'FAKE_DOCKER'
 #!/usr/bin/env bash
@@ -88,18 +88,18 @@ case "$cmd" in
         ;;
       pull) exit 0 ;;
       up) exit 0 ;;
-      ps) printf 'wotb-backend Up\nprometheus Up\nalloy Up\ntest Up\n' ;;
+      ps) printf 'wotb-backend Up\nwotb-frontend Up\nkeycloak Up\nprometheus Up\nloki Up\nalloy Up\ngrafana Up\ntest Up\n' ;;
       exec)
         if active_tag_healthy; then
           # Non-empty stdout keeps backup probes valid; stable observability
           # tokens satisfy the gate without exposing any secret.
           up="${FAKE_PROMETHEUS_UP:-1}"
           if [ "${FAKE_LOKI_EMPTY:-0}" = 1 ]; then
-            loki_result='"result":[]'
+            loki_result='"result":[],"values":[]'
           else
-            loki_result="\"result\":[{\"line\":\"${WOTB_OBSERVABILITY_CANARY_MARKER:-stable-canary}\"}]"
+            loki_result="\"result\":[{\"line\":\"event=android_apk_download apk=${WOTB_FRONTEND_CANARY_APK:-stable.apk} status=404 bytes=42 ${WOTB_OBSERVABILITY_CANARY_MARKER:-stable-canary} ${WOTB_KEYCLOAK_CANARY_MARKER:-stable-keycloak}\"}],\"values\":[[0,\"${WOTB_OBSERVABILITY_CANARY_MARKER:-stable-canary}\"]]"
           fi
-          printf 'mock-pg-dump-data jvm_ http_server_requests process_ node_ "database":"ok" "status":"success" "job":"wotb-backend" "job":"keycloak" "job":"node-exporter" "value":[0,"%s"] %s\n' "$up" "$loki_result"
+          printf 'mock-pg-dump-data jvm_ process_ system_ http_server_requests wotb_replay_parse_active wotb_replay_parse_queue_depth wotb_ai_review_in_flight wotb_ai_review_queue_depth prometheus_ loki_ grafana_ "database":"ok" "status":"success" "job":"wotb-backend" "job":"keycloak" "job":"node-exporter" "job":"prometheus" "job":"loki" "job":"grafana" "value":[0,"%s"] "dashboard":"ok" wotbtools-production-overview wotbtools-backend-overview wotbtools-http-errors wotbtools-replay-parser wotbtools-ai-review wotbtools-keycloak wotbtools-error-explorer wotbtools-android-downloads wotbtools-usage %s\n' "$up" "$loki_result"
           exit 0
         fi
         exit 1
@@ -119,6 +119,7 @@ chmod +x "$WORK/bin/docker"
 
 export PATH="$WORK/bin:$PATH"
 export WOTB_DIR="$WORK"
+export WOTB_INCOMING_DIR="$WORK/deploy.incoming"
 export WOTB_COMPOSE_DIR="$WORK"
 export WOTB_BACKUP_ROOT="$WORK/backups"
 export WOTB_HEALTH_RETRIES=3
@@ -130,14 +131,14 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # WG application ID remains a Keycloak IdP setting; backend no longer calls WG stats.
 wg_application_id_injections="$(grep -Fc 'WG_APPLICATION_ID: ${WG_APPLICATION_ID:?WG_APPLICATION_ID is required}' \
-  "$WORK/deploy/docker-compose.prod.yml")"
+  "$WORK/deploy.incoming/deploy/docker-compose.prod.yml")"
 [[ "$wg_application_id_injections" == "1" ]] \
   || fail "production compose must inject WG_APPLICATION_ID into keycloak only"
 
 # ---- deadline alignment guard: 400 must fail fast with a clean error; 1100 must pass ----
 export TAG=sha-A
 set +e
-guard_output=$(AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=400 bash "$WORK/deploy/deploy.sh" 2>&1)
+guard_output=$(AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=400 bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)
 guard_rc=$?
 set -e
 [[ $guard_rc -ne 0 ]] || fail "deadline=400 must fail the alignment guard"
@@ -150,7 +151,7 @@ fi
 
 # ---- deploy A (success) ----
 export AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=1100
-bash "$WORK/deploy/deploy.sh"
+bash "$WORK/deploy.incoming/deploy/deploy.sh"
 [[ -f "$WORK/DEPLOYED_SHA" ]] || fail "DEPLOYED_SHA missing after deploy A"
 [[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "DEPLOYED_SHA != sha-A after deploy A"
 grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" || fail "formal compose does not pin sha-A images"
@@ -171,26 +172,29 @@ empty_loki_output="$(FAKE_LOKI_EMPTY=1 WOTB_OBSERVABILITY_RETRIES=1 \
 empty_loki_rc=$?
 set -e
 [[ $empty_loki_rc -ne 0 ]] || fail "empty Loki result must fail the observability gate"
-grep -q "deployment canary was not ingested" <<<"$empty_loki_output" \
+grep -q "backend or Keycloak canary was not ingested" <<<"$empty_loki_output" \
   || fail "empty Loki failure must identify the deployment canary"
 
-# The workflow snapshots the previous observability tree before SCP. Simulate
-# that ownership so rollback verifies config restoration, not only compose tags.
-mkdir -p "$WORK/.deploy-prev/observability/prometheus" "$WORK/.deploy-prev/observability/alloy"
-printf 'stable prometheus config\n' > "$WORK/.deploy-prev/observability/prometheus/prometheus.yml"
-printf 'stable alloy config\n' > "$WORK/.deploy-prev/observability/alloy/config.alloy"
+# The previous live tree owns rollback. Make it visibly stable, then stage a
+# second tree with different observability files before deploy B.
+printf 'stable prometheus config\n' > "$WORK/deploy/observability/prometheus/prometheus.yml"
+printf 'stable alloy config\n' > "$WORK/deploy/observability/alloy/config.alloy"
+mkdir -p "$WORK/deploy.incoming/deploy"
+cp -a "$WORK/deploy/." "$WORK/deploy.incoming/deploy/"
+printf 'new prometheus config\n' > "$WORK/deploy.incoming/deploy/observability/prometheus/prometheus.yml"
+printf 'new alloy config\n' > "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
 
 # ---- deploy B (health fails) -> must roll back to A ----
 export TAG=sha-B
 set +e
-deploy_b_output="$(bash "$WORK/deploy/deploy.sh" 2>&1)"
+deploy_b_output="$(bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
 rc=$?
 set -e
 [[ $rc -ne 0 ]] || fail "deploy B must fail (health check)"
 grep -q "== NEW DEPLOY HEALTH CHECK FAILED ==" <<<"$deploy_b_output" \
   || fail "new deployment diagnostics marker missing before rollback"
-grep -q "== container inspect ==" <<<"$deploy_b_output" \
-  || fail "container inspect diagnostics missing"
+grep -q "== service list (no container environment dump) ==" <<<"$deploy_b_output" \
+  || fail "service diagnostics missing"
 new_diag_line="$(grep -n "== NEW DEPLOY HEALTH CHECK FAILED ==" <<<"$deploy_b_output" | head -1 | cut -d: -f1)"
 rollback_line="$(grep -n "== DEPLOY FAILED: rolling back to previous deployment ==" <<<"$deploy_b_output" | head -1 | cut -d: -f1)"
 [[ "$new_diag_line" -lt "$rollback_line" ]] \
