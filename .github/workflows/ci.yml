@@ -241,43 +241,43 @@ jobs:
           # Panel links of type=dashboard + uid without a valid url crash the Grafana
           # frontend (TypeError: Cannot read properties of undefined (reading 'replace')).
           # Forbid this structure so the dashboard runtime stays stable.
-           required = {
-               "wotbtools-production-overview.json",
-               "wotbtools-backend-overview.json",
-               "wotbtools-http-errors.json",
-               "wotbtools-replay-parser.json",
-               "wotbtools-ai-review.json",
-               "wotbtools-keycloak.json",
-               "wotbtools-error-explorer.json",
-               "wotbtools-android-downloads.json",
-               "wotbtools-usage.json",
-           }
-           paths = glob.glob("deploy/observability/grafana/dashboards/*.json")
-           assert {p.rsplit("/", 1)[-1] for p in paths} == required, "dashboard inventory drift"
-           dashboard_uids = {}
-           dashboard_link_uids = []
+          required = {
+              "wotbtools-production-overview.json",
+              "wotbtools-backend-overview.json",
+              "wotbtools-http-errors.json",
+              "wotbtools-replay-parser.json",
+              "wotbtools-ai-review.json",
+              "wotbtools-keycloak.json",
+              "wotbtools-error-explorer.json",
+              "wotbtools-android-downloads.json",
+              "wotbtools-usage.json",
+          }
+          paths = glob.glob("deploy/observability/grafana/dashboards/*.json")
+          assert {p.rsplit("/", 1)[-1] for p in paths} == required, "dashboard inventory drift"
+          dashboard_uids = {}
+          dashboard_link_uids = []
 
-           def validate_datasource(value, where):
-               if not isinstance(value, dict):
-                   return
-               uid = value.get("uid")
-               if uid is not None:
-                   assert uid in {"prometheus", "loki"}, f"{where}: unknown datasource uid {uid}"
+          def validate_datasource(value, where):
+              if not isinstance(value, dict):
+                  return
+              uid = value.get("uid")
+              if uid is not None:
+                  assert uid in {"prometheus", "loki"}, f"{where}: unknown datasource uid {uid}"
 
-           def walk_dashboard_panels(node, where):
-               if not isinstance(node, dict):
-                   return
-               validate_datasource(node.get("datasource"), where)
-               for target_index, target in enumerate(node.get("targets") or []):
-                   if isinstance(target, dict):
-                       validate_datasource(target.get("datasource"), f"{where}.targets[{target_index}]")
-                       expr = target.get("expr") or target.get("query") or ""
-                       if "or vector(0)" in expr:
-                           assert not any(token in expr for token in ("up(", "queue_depth", "in_flight", "node_")), \
-                               f"{where}: health/gauge query must not mask no-data with vector(0): {expr}"
-               for link in node.get("links") or []:
-                   if isinstance(link, dict) and link.get("type") == "dashboard" and isinstance(link.get("uid"), str):
-                       dashboard_link_uids.append(link["uid"])
+          def walk_dashboard_panels(node, where):
+              if not isinstance(node, dict):
+                  return
+              validate_datasource(node.get("datasource"), where)
+              for target_index, target in enumerate(node.get("targets") or []):
+                  if isinstance(target, dict):
+                      validate_datasource(target.get("datasource"), f"{where}.targets[{target_index}]")
+                      expr = target.get("expr") or target.get("query") or ""
+                      if "or vector(0)" in expr:
+                          assert not any(token in expr for token in ("up(", "queue_depth", "in_flight", "node_")), \
+                              f"{where}: health/gauge query must not mask no-data with vector(0): {expr}"
+              for link in node.get("links") or []:
+                  if isinstance(link, dict) and link.get("type") == "dashboard" and isinstance(link.get("uid"), str):
+                      dashboard_link_uids.append(link["uid"])
                       url = link.get("url")
                       if not isinstance(url, str) or not url.strip():
                           raise SystemExit(
@@ -289,23 +289,23 @@ jobs:
 
           for p in glob.glob("deploy/observability/grafana/provisioning/**/*.yml", recursive=True):
               yaml.safe_load(open(p, encoding="utf-8"))
-           for p in paths:
-               d = json.load(open(p, encoding="utf-8"))
-               assert d.get("panels"), "empty dashboard " + p
-               uid = d.get("uid")
-               assert isinstance(uid, str) and uid, "dashboard uid missing: " + p
-               assert uid not in dashboard_uids.values(), "duplicate dashboard uid: " + uid
-               dashboard_uids[p] = uid
-               if p.endswith("wotbtools-production-overview.json"):
-                   state_expr = json.dumps(d, ensure_ascii=False)
-                   for required_job in ("wotb-backend", "keycloak", "node-exporter", "prometheus", "loki", "grafana"):
-                       assert required_job in state_expr, "production overview missing state target " + required_job
-               for i, panel in enumerate(d.get("panels", [])):
-                   walk_dashboard_panels(panel, f"{p}::panels[{i}]")
-           uid_set = set(dashboard_uids.values())
-           assert len(uid_set) == len(paths), "dashboard UIDs must be unique"
-           assert set(dashboard_link_uids) <= uid_set, "dashboard link points to an unknown uid"
-           print("provisioning yml + dashboards json OK")
+          for p in paths:
+              d = json.load(open(p, encoding="utf-8"))
+              assert d.get("panels"), "empty dashboard " + p
+              uid = d.get("uid")
+              assert isinstance(uid, str) and uid, "dashboard uid missing: " + p
+              assert uid not in dashboard_uids.values(), "duplicate dashboard uid: " + uid
+              dashboard_uids[p] = uid
+              if p.endswith("wotbtools-production-overview.json"):
+                  state_expr = json.dumps(d, ensure_ascii=False)
+                  for required_job in ("wotb-backend", "keycloak", "node-exporter", "prometheus", "loki", "grafana"):
+                      assert required_job in state_expr, "production overview missing state target " + required_job
+              for i, panel in enumerate(d.get("panels", [])):
+                  walk_dashboard_panels(panel, f"{p}::panels[{i}]")
+          uid_set = set(dashboard_uids.values())
+          assert len(uid_set) == len(paths), "dashboard UIDs must be unique"
+          assert set(dashboard_link_uids) <= uid_set, "dashboard link points to an unknown uid"
+          print("provisioning yml + dashboards json OK")
           PY
       - name: No host port mappings for observability/backend management
         working-directory: docker/online
