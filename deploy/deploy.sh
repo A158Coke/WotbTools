@@ -227,6 +227,15 @@ move_path() {
   mv -- "$source_path" "$destination_path"
 }
 
+retire_lkg_path() {
+  local source_path="$1" destination_path="$2" failure_flag="$3"
+  if [ "${!failure_flag:-0}" = 1 ]; then
+    echo "TEST INJECTION: refusing LKG retirement move." >&2
+    return 1
+  fi
+  mv -- "$source_path" "$destination_path"
+}
+
 lkg_bundle_present() {
   [ -e "$LKG_DEPLOY_DIR" ] || [ -e "$LKG_COMPOSE" ] || [ -e "$LKG_SHA" ]
 }
@@ -292,6 +301,8 @@ validate_lkg_candidate() {
 
 promote_lkg_candidate() {
   local restore_failed=false
+  local deploy_retired=false compose_retired=false sha_retired=false
+  local deploy_installed=false compose_installed=false sha_installed=false
   validate_lkg_candidate || return 1
   if [ -e "$LKG_DEPLOY_RETIRING_DIR" ] || [ -e "$LKG_COMPOSE_RETIRING" ] || [ -e "$LKG_SHA_RETIRING" ]; then
     echo "ERROR: incomplete prior LKG promotion found; refusing to overwrite it." >&2
@@ -299,19 +310,28 @@ promote_lkg_candidate() {
   fi
 
   restore_retired_lkg() {
-    if ! rm -rf -- "$LKG_DEPLOY_DIR"; then
+    if [ "$deploy_installed" = true ] && ! rm -rf -- "$LKG_DEPLOY_DIR"; then
       restore_failed=true
     fi
-    if ! rm -f -- "$LKG_COMPOSE" "$LKG_SHA" "$LKG_COMPOSE_INSTALLING"; then
+    if [ "$compose_installed" = true ] && ! rm -f -- "$LKG_COMPOSE"; then
       restore_failed=true
     fi
-    if [ -e "$LKG_DEPLOY_RETIRING_DIR" ] && ! mv -- "$LKG_DEPLOY_RETIRING_DIR" "$LKG_DEPLOY_DIR"; then
+    if [ "$sha_installed" = true ] && ! rm -f -- "$LKG_SHA"; then
       restore_failed=true
     fi
-    if [ -e "$LKG_COMPOSE_RETIRING" ] && ! mv -- "$LKG_COMPOSE_RETIRING" "$LKG_COMPOSE"; then
+    if ! rm -f -- "$LKG_COMPOSE_INSTALLING"; then
       restore_failed=true
     fi
-    if [ -e "$LKG_SHA_RETIRING" ] && ! mv -- "$LKG_SHA_RETIRING" "$LKG_SHA"; then
+    if [ "$deploy_retired" = true ] && [ -e "$LKG_DEPLOY_RETIRING_DIR" ] \
+        && ! mv -- "$LKG_DEPLOY_RETIRING_DIR" "$LKG_DEPLOY_DIR"; then
+      restore_failed=true
+    fi
+    if [ "$compose_retired" = true ] && [ -e "$LKG_COMPOSE_RETIRING" ] \
+        && ! mv -- "$LKG_COMPOSE_RETIRING" "$LKG_COMPOSE"; then
+      restore_failed=true
+    fi
+    if [ "$sha_retired" = true ] && [ -e "$LKG_SHA_RETIRING" ] \
+        && ! mv -- "$LKG_SHA_RETIRING" "$LKG_SHA"; then
       restore_failed=true
     fi
     if [ "$restore_failed" = true ]; then
@@ -321,20 +341,29 @@ promote_lkg_candidate() {
     return 0
   }
 
-  if [ -e "$LKG_DEPLOY_DIR" ] && ! mv -- "$LKG_DEPLOY_DIR" "$LKG_DEPLOY_RETIRING_DIR"; then
-    return 1
-  fi
-  if [ -e "$LKG_COMPOSE" ] && ! mv -- "$LKG_COMPOSE" "$LKG_COMPOSE_RETIRING"; then
-    if ! restore_retired_lkg; then
-      echo "ERROR: LKG rollback cleanup also failed." >&2
+  if [ -e "$LKG_DEPLOY_DIR" ]; then
+    if ! retire_lkg_path "$LKG_DEPLOY_DIR" "$LKG_DEPLOY_RETIRING_DIR" WOTB_TEST_FAIL_LKG_DEPLOY_RETIRE; then
+      return 1
     fi
-    return 1
+    deploy_retired=true
   fi
-  if [ -e "$LKG_SHA" ] && ! mv -- "$LKG_SHA" "$LKG_SHA_RETIRING"; then
-    if ! restore_retired_lkg; then
-      echo "ERROR: LKG rollback cleanup also failed." >&2
+  if [ -e "$LKG_COMPOSE" ]; then
+    if ! retire_lkg_path "$LKG_COMPOSE" "$LKG_COMPOSE_RETIRING" WOTB_TEST_FAIL_LKG_COMPOSE_RETIRE; then
+      if ! restore_retired_lkg; then
+        echo "ERROR: LKG rollback cleanup also failed." >&2
+      fi
+      return 1
     fi
-    return 1
+    compose_retired=true
+  fi
+  if [ -e "$LKG_SHA" ]; then
+    if ! retire_lkg_path "$LKG_SHA" "$LKG_SHA_RETIRING" WOTB_TEST_FAIL_LKG_SHA_RETIRE; then
+      if ! restore_retired_lkg; then
+        echo "ERROR: LKG rollback cleanup also failed." >&2
+      fi
+      return 1
+    fi
+    sha_retired=true
   fi
   if ! mv -- "$LKG_DEPLOY_NEXT_DIR" "$LKG_DEPLOY_DIR"; then
     if ! restore_retired_lkg; then
@@ -342,6 +371,7 @@ promote_lkg_candidate() {
     fi
     return 1
   fi
+  deploy_installed=true
   if ! sed 's|deploy\.lkg\.next/|deploy.lkg/|g' "$LKG_COMPOSE_NEXT" > "$LKG_COMPOSE_INSTALLING" \
       || ! chmod 600 "$LKG_COMPOSE_INSTALLING" \
       || ! mv -- "$LKG_COMPOSE_INSTALLING" "$LKG_COMPOSE"; then
@@ -350,12 +380,14 @@ promote_lkg_candidate() {
     fi
     return 1
   fi
+  compose_installed=true
   if ! mv -- "$LKG_SHA_NEXT" "$LKG_SHA"; then
     if ! restore_retired_lkg; then
       echo "ERROR: LKG rollback cleanup also failed." >&2
     fi
     return 1
   fi
+  sha_installed=true
   if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "Promoted LKG"; then
     if ! restore_retired_lkg; then
       echo "ERROR: LKG rollback cleanup also failed." >&2

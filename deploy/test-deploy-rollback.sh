@@ -252,6 +252,14 @@ stage_candidate_b() {
   printf '\n// new alloy config\n' >> "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
 }
 
+lkg_state_checksum() {
+  (
+    cd "$WORK"
+    find deploy.lkg -type f -print0 | sort -z | xargs -0 sha256sum
+    sha256sum docker-compose.lkg.yml DEPLOYED_SHA.lkg
+  )
+}
+
 # WG application ID remains a Keycloak IdP setting; backend no longer calls WG stats.
 wg_application_id_injections="$(grep -Fc 'WG_APPLICATION_ID: ${WG_APPLICATION_ID:?WG_APPLICATION_ID is required}' \
   "$WORK/deploy.incoming/deploy/docker-compose.prod.yml")"
@@ -333,7 +341,39 @@ delayed_loki_output="$(env FAKE_LOKI_DELAYED=1 \
 stage_candidate_b
 
 # ---- deploy B (health fails) -> must roll back to A ----
-export LKG_STATE_BEFORE="$(sha256sum "$WORK/deploy.lkg/observability/alloy/config.alloy" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg")"
+export LKG_STATE_BEFORE="$(lkg_state_checksum)"
+
+# ---- partial LKG retirement faults -> old bundle remains intact ----
+for fault in compose-retire sha-retire; do
+  stage_candidate_b
+  export TAG=sha-B FAKE_HEALTHY_BACKEND_TAG=sha-B WOTB_BACKUP_ROOT="$WORK/backups-$fault"
+  unset WOTB_TEST_FAIL_LKG_DEPLOY_RETIRE WOTB_TEST_FAIL_LKG_COMPOSE_RETIRE WOTB_TEST_FAIL_LKG_SHA_RETIRE
+  case "$fault" in
+    compose-retire) export WOTB_TEST_FAIL_LKG_COMPOSE_RETIRE=1 ;;
+    sha-retire) export WOTB_TEST_FAIL_LKG_SHA_RETIRE=1 ;;
+  esac
+  set +e
+  retirement_output="$(bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+  retirement_rc=$?
+  set -e
+  [[ $retirement_rc -ne 0 ]] || fail "$fault must fail closed"
+  grep -q "TEST INJECTION: refusing LKG retirement move" <<<"$retirement_output" \
+    || fail "$fault must report the injected retirement failure"
+  grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" \
+    || fail "$fault must not leave the candidate live"
+  [[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "$fault changed DEPLOYED_SHA"
+  [[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] || fail "$fault changed DEPLOYED_SHA.lkg"
+  [[ "$LKG_STATE_BEFORE" == "$(lkg_state_checksum)" ]] \
+    || fail "$fault deleted or changed canonical LKG artifacts"
+done
+unset FAKE_HEALTHY_BACKEND_TAG WOTB_TEST_FAIL_LKG_DEPLOY_RETIRE \
+  WOTB_TEST_FAIL_LKG_COMPOSE_RETIRE WOTB_TEST_FAIL_LKG_SHA_RETIRE
+export WOTB_BACKUP_ROOT="$WORK/backups"
+
+# The retirement fault cases consume the incoming candidate; recreate it for
+# the original health-failure rollback scenario below.
+stage_candidate_b
+
 export FAKE_PREV_ALLOY="$WORK/deploy.prev/observability/alloy/config.alloy"
 export FAKE_CORRUPT_PREV=1
 export TAG=sha-B
@@ -354,7 +394,7 @@ grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" || fail "after roll
 grep -q 'wotbtools-backend:sha-B' "$WORK/docker-compose.yml" && fail "after rollback compose still references sha-B"
 [[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "DEPLOYED_SHA not restored to sha-A"
 [[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] || fail "failed deployment changed DEPLOYED_SHA.lkg"
-[[ "$LKG_STATE_BEFORE" == "$(sha256sum "$WORK/deploy.lkg/observability/alloy/config.alloy" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg")" ]] \
+[[ "$LKG_STATE_BEFORE" == "$(lkg_state_checksum)" ]] \
   || fail "failed deployment changed the validated LKG bundle"
 grep -q 'stable prometheus config' "$WORK/deploy/observability/prometheus/prometheus.yml" \
   || fail "rollback did not restore previous Prometheus config"
@@ -387,7 +427,7 @@ for fault in copy live-switch compose-install; do
     || fail "$fault restore failure changed DEPLOYED_SHA"
   [[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] \
     || fail "$fault restore failure changed DEPLOYED_SHA.lkg"
-  [[ "$LKG_STATE_BEFORE" == "$(sha256sum "$WORK/deploy.lkg/observability/alloy/config.alloy" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg")" ]] \
+  [[ "$LKG_STATE_BEFORE" == "$(lkg_state_checksum)" ]] \
     || fail "$fault restore failure changed the validated LKG bundle"
   grep -q "ROLLBACK ABORTED: validated LKG could not be installed transactionally" <<<"$fault_output" \
     || fail "$fault restore failure must abort before compose recovery"
@@ -411,7 +451,7 @@ grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" \
 grep -q 'wotbtools-backend:sha-B' "$WORK/docker-compose.yml" && fail "LKG staging copy fault left B live"
 [[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] \
   || fail "LKG staging copy fault changed DEPLOYED_SHA.lkg"
-[[ "$LKG_STATE_BEFORE" == "$(sha256sum "$WORK/deploy.lkg/observability/alloy/config.alloy" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg")" ]] \
+[[ "$LKG_STATE_BEFORE" == "$(lkg_state_checksum)" ]] \
   || fail "LKG staging copy fault changed the validated LKG bundle"
 [[ -s "$FAKE_ROLLBACK_UP_LOG" ]] \
   || fail "LKG staging fault must perform rollback compose up"
