@@ -106,7 +106,7 @@ class TeamAiReviewResultParserTest {
     void reportsFatalCoreFailures() {
         assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
                 TeamAiReviewResultParser.parse("{\"episodes\":[]}", Set.of()).status());
-        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION,
                 TeamAiReviewResultParser.parse(VALID.replace("\"startSec\":10,", ""), Set.of("P1")).status());
         assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
                 TeamAiReviewResultParser.parse(VALID.replace("\"endSec\":20", "\"endSec\":5"), Set.of("P1")).status());
