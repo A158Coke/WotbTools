@@ -541,7 +541,11 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_team_review_validation_retry_total{stage=TEAM_CALL_2,rewrite=TARGETED|FULL|SAFE}` — validation retry 的低基数阶段与改写类型分布
   - `wotb_ai_team_review_schema_failure_total{reason,path_class}` — technical schema failure（低基数；不含 prompt/output）
   - `wotb_ai_team_review_normalization_total{type}` — optional reference 确定性清理次数
-  - `wotb_ai_team_review_repair_total{result=started|success|normalized_success|failed}` — 定向 repair 生命周期
+  - `wotb_ai_team_review_repair_total{result=started|success|normalized_success|failed|semantic_changed}` — 定向 repair 生命周期；`semantic_changed` 表示 repair 虽返回了合法 schema，但违反 semantic immutability invariant，backend fail-closed 并返回 `AI_REVIEW_SCHEMA_FAILED`
+
+  Dashboard 的最终 Repair Failure 统计使用 `failed|semantic_changed`；Repair Success Rate 的 numerator 使用
+  `success|normalized_success`，denominator 使用全部 terminal result（`success|normalized_success|failed|semantic_changed`），
+  不包含只表示开始生命周期的 `started`。
 - **AI upstream**（自定义，`SpringAiChatGateway.chat`，每次上游调用）：
   - `wotb_ai_upstream_requests_total{mode}` — 上游请求量（每个 attempt +1，含 retry 重试；token budget 拒绝不进入 gateway，不计）
   - `wotb_ai_upstream_success_total{mode}` — 成功调用数（一次逻辑调用 +1）

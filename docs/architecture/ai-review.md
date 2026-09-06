@@ -475,7 +475,9 @@ episode reference 约束，不携带完整战术输入。初始或 repair 后仍
 
 低基数指标为 `wotb_ai_team_review_schema_failure_total{reason,path_class}`、
 `wotb_ai_team_review_normalization_total{type}` 与
-`wotb_ai_team_review_repair_total{result}`。日志事件为
+`wotb_ai_team_review_repair_total{result=started|success|normalized_success|failed|semantic_changed}`。
+其中 `semantic_changed` 表示 repair 结果违反 semantic immutability invariant，backend
+fail-closed 并返回 `AI_REVIEW_SCHEMA_FAILED`。日志事件为
 `team_review_schema_failure`、`team_review_normalized`、`team_review_repair_started`、
 `team_review_repair_completed`、`team_review_repair_failed`；严禁记录 prompt、completion、
 回放内容或用户/玩家标识。

@@ -103,6 +103,47 @@ class TeamAiReviewResultParserTest {
     }
 
     @Test
+    void acceptsExplicitNullEpisodeTimesWithoutNormalization() {
+        final TeamAiReviewResultParser.ParseResult result = TeamAiReviewResultParser.parse(
+                VALID.replace("\"startSec\":10", "\"startSec\":null")
+                        .replace("\"endSec\":20", "\"endSec\":null"),
+                Set.of("P1"));
+
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID, result.status());
+        assertTrue(result.normalizations().isEmpty());
+        assertEquals(null, result.result().episodes().getFirst().startSec());
+        assertEquals(null, result.result().episodes().getFirst().endSec());
+    }
+
+    @Test
+    void normalizesEachMissingEpisodeTimeIndependently() {
+        final TeamAiReviewResultParser.ParseResult missingStart = TeamAiReviewResultParser.parse(
+                VALID.replace("\"startSec\":10,", ""), Set.of("P1"));
+        final TeamAiReviewResultParser.ParseResult missingEnd = TeamAiReviewResultParser.parse(
+                VALID.replace("\"endSec\":20,", ""), Set.of("P1"));
+
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION, missingStart.status());
+        assertEquals(null, missingStart.result().episodes().getFirst().startSec());
+        assertEquals(20, missingStart.result().episodes().getFirst().endSec());
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION, missingEnd.status());
+        assertEquals(10, missingEnd.result().episodes().getFirst().startSec());
+        assertEquals(null, missingEnd.result().episodes().getFirst().endSec());
+    }
+
+    @Test
+    void rejectsInvalidEpisodeTimeTypesAndValues() {
+        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
+                TeamAiReviewResultParser.parse(
+                        VALID.replace("\"startSec\":10", "\"startSec\":\"10\""), Set.of("P1")).status());
+        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
+                TeamAiReviewResultParser.parse(
+                        VALID.replace("\"endSec\":20", "\"endSec\":10.5"), Set.of("P1")).status());
+        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
+                TeamAiReviewResultParser.parse(
+                        VALID.replace("\"startSec\":10", "\"startSec\":-1"), Set.of("P1")).status());
+    }
+
+    @Test
     void reportsFatalCoreFailures() {
         assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
                 TeamAiReviewResultParser.parse("{\"episodes\":[]}", Set.of()).status());
