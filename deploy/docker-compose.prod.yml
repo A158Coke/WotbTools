@@ -162,6 +162,7 @@ services:
       GF_SERVER_ROOT_URL: "${GRAFANA_ROOT_URL:-https://monitor.wotbtools.com}"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/wotbtools-production-overview.json
       OBSERVABILITY_ENVIRONMENT: "${OBSERVABILITY_ENVIRONMENT:-production}"
     volumes:
       - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro

@@ -22,7 +22,7 @@
       "fieldConfig": {"defaults": {"unit": "none", "mappings": [{"type": "value", "options": {"0": {"text": "异常", "color": "red"}, "1": {"text": "正常", "color": "green"}}}]}, "overrides": []},
       "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0}, "id": 3,
       "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "min(up{job=~\"wotb-backend|keycloak\"})", "refId": "A"}], "title": "生产状态", "type": "stat"
+      "targets": [{"expr": "min(up{job=~\"wotb-backend|keycloak|node-exporter|prometheus|loki|grafana\"})", "refId": "A"}], "title": "生产状态（应用与观测栈）", "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},

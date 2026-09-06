@@ -16,6 +16,7 @@
 ## 运维（安全）
 
 - 备份：`postgres-backup.sh`/`postgres-restore.sh`/`postgres-backup-inspect.sh`（生产双库每日备份，7 天保留）；`init-db.sql` 为初始化。
-- 观测：`deploy/observability/`（alloy config + grafana dashboards/provisioning）；指标名被 dashboards 引用，改名需同步 JSON。生产上线后的 metrics endpoint、Prometheus target/query、Loki backend stream 由 `deploy/verify-observability.sh` 串行验证；CI 用 `deploy/test-observability-e2e.sh` 通过真实 Docker emitter → 生产 Alloy 配置 → Loki 查询验证。
+- 观测：`deploy/observability/`（Alloy config + Grafana dashboards/provisioning）；指标名被 dashboards 引用，改名需同步 JSON。Prometheus 必须验证 backend、Keycloak、node-exporter、Prometheus、Loki、Grafana 六类 target 为 `up == 1`；Grafana 必须验证 health、Prometheus/Loki datasource health、全部 dashboard UID API 与 Production Overview 默认首页。生产上线后的 metrics endpoint、Prometheus target/query、Loki backend/Keycloak/frontend canary stream 由 `deploy/verify-observability.sh` 串行验证；CI 用 `deploy/test-observability-e2e.sh` 验证真实 Docker emitter → 生产 Alloy → Loki 的三条 ownership path，并用 `deploy/test-grafana-runtime.sh` 验证最小 runtime provisioning。
+- 生产发布必须先由 Actions 上传到 `/opt/wotb/deploy.incoming`，在 incoming project root 中完成 compose config/pull，再以同文件系统目录 move promote 到 `/opt/wotb/deploy`；失败时恢复 `/opt/wotb/deploy.prev` 与 `docker-compose.prev.yml`，并 `--force-recreate` Prometheus/Loki/Alloy/Grafana 后重新跑完整 observability gate。禁止对 live `deploy/` 直接 SCP 覆盖，也禁止只发送 HUP 作为 Grafana/观测配置生效保证。
 - 排障：SSH VPS `ssh -i "$env:USERPROFILE\.ssh\wotb_vps_deploy" -o IdentitiesOnly=yes root@45.136.14.101 -p 58361`，`docker logs wotb-wotb-backend-1 --tail 100`；常见根因：循环依赖、Flyway 冲突、PG volume 不兼容。
 - secret 一律 GitHub Secrets / 运行时 env（仓库根 `.env.example` 只列变量名），禁止落库或写死；赞助/收款信息不硬编码进页面或仓库（运行时只读挂载）。
