@@ -157,6 +157,12 @@ if ! pull_compose "$STAGED_COMPOSE"; then
   exit 1
 fi
 
+if ! bash "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
+    "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy"; then
+  echo "ERROR: staged Alloy config validation failed; live deployment was not changed." >&2
+  exit 1
+fi
+
 rollback_needed=false
 # Same-filesystem moves make promotion and rollback cover the full deploy tree.
 if [ -d "$LIVE_DEPLOY_DIR" ]; then
