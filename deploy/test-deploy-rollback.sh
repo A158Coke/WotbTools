@@ -247,6 +247,8 @@ stage_candidate_b() {
   rm -rf "$WORK/deploy.incoming/deploy"
   mkdir -p "$WORK/deploy.incoming/deploy"
   cp -a "$WORK/deploy/." "$WORK/deploy.incoming/deploy/"
+  cp "$ROOT/deploy/validate-alloy-config.sh" "$WORK/deploy.incoming/deploy/validate-alloy-config.sh"
+  sed -i 's/\r$//' "$WORK/deploy.incoming/deploy/validate-alloy-config.sh"
   printf 'new prometheus config\n' > "$WORK/deploy.incoming/deploy/observability/prometheus/prometheus.yml"
   cp "$ROOT/deploy/observability/alloy/config.alloy" "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
   printf '\n// new alloy config\n' >> "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
@@ -508,6 +510,24 @@ bash "$WORK/deploy.incoming/deploy/deploy.sh"
 [[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "bootstrap deployment did not become live"
 [[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] || fail "bootstrap deployment did not create first LKG"
 [[ -d "$WORK/deploy.lkg" ]] || fail "bootstrap deployment LKG tree missing"
+
+# ---- legacy live tree without the new Alloy validator -> seed LKG from incoming validator ----
+rm -rf "$WORK/deploy.lkg" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg"
+rm -f "$WORK/deploy/validate-alloy-config.sh"
+stage_candidate_b
+export TAG=sha-A WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG=0 WOTB_BACKUP_ROOT="$WORK/backups-legacy-validator"
+set +e
+legacy_validator_output="$(bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+legacy_validator_rc=$?
+set -e
+[[ $legacy_validator_rc -eq 0 ]] || fail "legacy live tree without validator must still seed LKG: $legacy_validator_output"
+grep -q "Current deployment promoted as initial LKG" <<<"$legacy_validator_output" \
+  || fail "legacy validator compatibility path did not seed the initial LKG"
+[[ -f "$WORK/deploy.lkg/validate-alloy-config.sh" ]] \
+  || fail "initial LKG snapshot did not receive the current Alloy validator"
+[[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] \
+  || fail "legacy validator compatibility path changed the initial LKG SHA"
+export WOTB_BACKUP_ROOT="$WORK/backups"
 
 # ---- independent session: no GitHub Actions temporary env ----
 env -i PATH="$PATH" HOME="$WORK" bash -c 'cd "$1" && docker compose -f docker-compose.yml config >/dev/null' _ "$WORK" \
