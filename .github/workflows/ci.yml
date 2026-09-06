@@ -228,6 +228,8 @@ jobs:
           docker run --rm --entrypoint alloy
           -v "$PWD/deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro"
           grafana/alloy:v1.4.2 fmt -t /etc/alloy/config.alloy
+      - name: Alloy production selector contract
+        run: bash deploy/test-alloy-config.sh
       - name: Runtime Docker emitter to Alloy to Loki smoke
         run: bash deploy/test-observability-e2e.sh
       - name: Grafana runtime provisioning smoke
