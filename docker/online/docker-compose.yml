@@ -40,6 +40,7 @@ services:
       WG_APPLICATION_ID: ${WG_APPLICATION_ID:-}
       KC_HTTP_MANAGEMENT_PORT: "9000"
       KC_HTTP_MANAGEMENT_SCHEME: http
+      KC_HTTP_METRICS_HISTOGRAMS_ENABLED: "true"
     volumes:
       - ../keycloak/wotbtools-realm.json:/opt/keycloak/data/import/wotbtools-realm.json
     command: start --optimized --import-realm --hostname-strict=false --http-enabled=true --http-port=8080

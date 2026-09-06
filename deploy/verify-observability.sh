@@ -117,7 +117,8 @@ wait_for_http "KEYCLOAK_APPLICATION" "Keycloak application metadata" \
   "http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration"
 wait_for_http "KEYCLOAK_MANAGEMENT" "Keycloak management readiness" \
   "http://keycloak:9000/health/ready" '"status":"UP"'
-wait_for_http "KEYCLOAK_MANAGEMENT" "keycloak metrics endpoint" "http://keycloak:9000/metrics" "process_"
+wait_for_http "KEYCLOAK_MANAGEMENT" "Keycloak management metrics and HTTP histogram" \
+  "http://keycloak:9000/metrics" "process_" "http_server_requests_seconds_count" "http_server_requests_seconds_bucket"
 wait_for_http "PROMETHEUS_TARGET" "node exporter metrics endpoint" "http://node-exporter:9100/metrics" "node_"
 wait_for_http "PROMETHEUS_TARGET" "prometheus metrics endpoint" "http://prometheus:9090/metrics" "prometheus_"
 wait_for_http "PROMETHEUS_TARGET" "loki metrics endpoint" "http://loki:3100/metrics" "loki_"

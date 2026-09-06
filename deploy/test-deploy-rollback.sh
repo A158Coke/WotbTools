@@ -74,7 +74,8 @@ resolve_line() {
 active_tag_healthy() {
   local file="${COMPOSE_FILE:-docker-compose.yml}"
   [[ -f "$file" ]] || return 0
-  grep -q 'wotbtools-backend:sha-A' "$file"
+  grep -q 'wotbtools-backend:sha-A' "$file" \
+    || { [ -n "${FAKE_HEALTHY_BACKEND_TAG:-}" ] && grep -q "wotbtools-backend:${FAKE_HEALTHY_BACKEND_TAG}" "$file"; }
 }
 
 COMPOSE_FILE=""
@@ -97,6 +98,11 @@ case "$cmd" in
         ;;
       pull) exit 0 ;;
       up)
+        active_compose_file="${COMPOSE_FILE:-docker-compose.yml}"
+        if [ -n "${FAKE_ROLLBACK_UP_LOG:-}" ] \
+            && grep -q 'wotbtools-backend:sha-A' "$active_compose_file"; then
+          printf '%s\n' "$COMPOSE_FILE" >> "$FAKE_ROLLBACK_UP_LOG"
+        fi
         if [ "${FAKE_CORRUPT_PREV:-0}" = 1 ] && ! active_tag_healthy \
             && [ -n "${FAKE_PREV_ALLOY:-}" ]; then
           printf 'legacy known-bad selector [^ ]+\\.apk\n' > "$FAKE_PREV_ALLOY"
@@ -180,7 +186,7 @@ case "$cmd" in
           elif [[ "$request" == *"keycloak:9000/health/ready"* ]]; then
             printf '{"status":"UP"}\n'
           elif [[ "$request" == *"keycloak:9000/metrics"* ]]; then
-            printf 'process_\n'
+            printf 'process_\nhttp_server_requests_seconds_count\nhttp_server_requests_seconds_bucket\n'
           elif [[ "$request" == *"node-exporter:9100/metrics"* ]]; then
             printf 'node_\n'
           elif [[ "$request" == *"prometheus:9090/metrics"* ]]; then
@@ -236,6 +242,15 @@ export DB_PASSWORD=db-secret KC_ADMIN_PASSWORD=kc-secret WG_APPLICATION_ID=wg-id
        GRAFANA_ADMIN_USER=admin GRAFANA_ADMIN_PASSWORD=grafana-secret
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
+
+stage_candidate_b() {
+  rm -rf "$WORK/deploy.incoming/deploy"
+  mkdir -p "$WORK/deploy.incoming/deploy"
+  cp -a "$WORK/deploy/." "$WORK/deploy.incoming/deploy/"
+  printf 'new prometheus config\n' > "$WORK/deploy.incoming/deploy/observability/prometheus/prometheus.yml"
+  cp "$ROOT/deploy/observability/alloy/config.alloy" "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
+  printf '\n// new alloy config\n' >> "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
+}
 
 # WG application ID remains a Keycloak IdP setting; backend no longer calls WG stats.
 wg_application_id_injections="$(grep -Fc 'WG_APPLICATION_ID: ${WG_APPLICATION_ID:?WG_APPLICATION_ID is required}' \
@@ -315,11 +330,7 @@ delayed_loki_output="$(env FAKE_LOKI_DELAYED=1 \
 
 # The previous live tree owns rollback. Stage a second tree with different
 # observability files before deploy B.
-mkdir -p "$WORK/deploy.incoming/deploy"
-cp -a "$WORK/deploy/." "$WORK/deploy.incoming/deploy/"
-printf 'new prometheus config\n' > "$WORK/deploy.incoming/deploy/observability/prometheus/prometheus.yml"
-cp "$ROOT/deploy/observability/alloy/config.alloy" "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
-printf '\n// new alloy config\n' >> "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
+stage_candidate_b
 
 # ---- deploy B (health fails) -> must roll back to A ----
 export LKG_STATE_BEFORE="$(sha256sum "$WORK/deploy.lkg/observability/alloy/config.alloy" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg")"
@@ -351,6 +362,60 @@ grep -q 'stable alloy config' "$WORK/deploy/observability/alloy/config.alloy" \
   || fail "rollback did not restore previous Alloy config"
 grep -q 'known-bad selector' "$WORK/deploy.prev/observability/alloy/config.alloy" \
   || fail "deploy.prev corruption fixture was not installed"
+
+# ---- restore transaction fault injection: failed copy preserves B ----
+unset FAKE_CORRUPT_PREV FAKE_PREV_ALLOY
+for fault in copy live-switch compose-install; do
+  stage_candidate_b
+  export TAG=sha-B
+  unset WOTB_TEST_FAIL_LKG_RESTORE_COPY WOTB_TEST_FAIL_LKG_RESTORE_LIVE_SWITCH WOTB_TEST_FAIL_LKG_RESTORE_COMPOSE_INSTALL
+  case "$fault" in
+    copy) export WOTB_TEST_FAIL_LKG_RESTORE_COPY=1 ;;
+    live-switch) export WOTB_TEST_FAIL_LKG_RESTORE_LIVE_SWITCH=1 ;;
+    compose-install) export WOTB_TEST_FAIL_LKG_RESTORE_COMPOSE_INSTALL=1 ;;
+  esac
+  set +e
+  fault_output="$(bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+  fault_rc=$?
+  set -e
+  [[ $fault_rc -ne 0 ]] || fail "$fault restore fault must fail closed"
+  grep -q "transactionally\|TEST INJECTION" <<<"$fault_output" \
+    || fail "$fault restore fault must explain the injected failure"
+  grep -q 'wotbtools-backend:sha-B' "$WORK/docker-compose.yml" \
+    || fail "$fault restore failure must preserve the current live B compose"
+  [[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] \
+    || fail "$fault restore failure changed DEPLOYED_SHA"
+  [[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] \
+    || fail "$fault restore failure changed DEPLOYED_SHA.lkg"
+  [[ "$LKG_STATE_BEFORE" == "$(sha256sum "$WORK/deploy.lkg/observability/alloy/config.alloy" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg")" ]] \
+    || fail "$fault restore failure changed the validated LKG bundle"
+  grep -q "ROLLBACK ABORTED: validated LKG could not be installed transactionally" <<<"$fault_output" \
+    || fail "$fault restore failure must abort before compose recovery"
+done
+unset WOTB_TEST_FAIL_LKG_RESTORE_COPY WOTB_TEST_FAIL_LKG_RESTORE_LIVE_SWITCH WOTB_TEST_FAIL_LKG_RESTORE_COMPOSE_INSTALL FAKE_ROLLBACK_UP_LOG
+
+# ---- LKG staging copy fault: old LKG is still restored transactionally ----
+stage_candidate_b
+: > "$WORK/rollback-up.log"
+export FAKE_ROLLBACK_UP_LOG="$WORK/rollback-up.log"
+export TAG=sha-B FAKE_HEALTHY_BACKEND_TAG=sha-B WOTB_TEST_FAIL_LKG_STAGE_COPY=1
+set +e
+stage_fault_output="$(bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+stage_fault_rc=$?
+set -e
+[[ $stage_fault_rc -ne 0 ]] || fail "LKG staging copy fault must fail closed"
+grep -q "LKG staging failed" <<<"$stage_fault_output" \
+  || fail "LKG staging copy fault marker missing"
+grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" \
+  || fail "LKG staging copy fault must roll back to A"
+grep -q 'wotbtools-backend:sha-B' "$WORK/docker-compose.yml" && fail "LKG staging copy fault left B live"
+[[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] \
+  || fail "LKG staging copy fault changed DEPLOYED_SHA.lkg"
+[[ "$LKG_STATE_BEFORE" == "$(sha256sum "$WORK/deploy.lkg/observability/alloy/config.alloy" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg")" ]] \
+  || fail "LKG staging copy fault changed the validated LKG bundle"
+[[ -s "$FAKE_ROLLBACK_UP_LOG" ]] \
+  || fail "LKG staging fault must perform rollback compose up"
+unset FAKE_HEALTHY_BACKEND_TAG WOTB_TEST_FAIL_LKG_STAGE_COPY FAKE_ROLLBACK_UP_LOG
 
 # ---- deploy B2 (corrupted LKG) -> fail before destructive rollback ----
 rm -rf "$WORK/deploy.incoming/deploy"
