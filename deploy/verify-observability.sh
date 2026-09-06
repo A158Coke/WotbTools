@@ -58,6 +58,22 @@ query_prometheus() {
   compose_exec "http://prometheus:9090/api/v1/query?query=${encoded}"
 }
 
+prometheus_value_is_one() {
+  grep -Eq '"value"[[:space:]]*:[[:space:]]*\[[^]]*,[[:space:]]*"1"[[:space:]]*\]'
+}
+
+wait_for_prometheus_target_up() {
+  local job="$1" job_sample attempt
+  for attempt in $(seq 1 "$RETRIES"); do
+    if job_sample="$(query_prometheus "min(up{job=\"$job\"})" 2>/dev/null)" \
+      && prometheus_value_is_one <<<"$job_sample"; then
+      return 0
+    fi
+    [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
+  done
+  fail "Prometheus target is not healthy (up != 1) for job=$job"
+}
+
 echo "== Verifying observability data path =="
 wait_for_http "backend metrics endpoint" \
   "http://127.0.0.1:8087/actuator/prometheus" "jvm_" "http_server_requests"
@@ -73,28 +89,43 @@ targets="$(wait_for_http "prometheus target API" "http://prometheus:9090/api/v1/
 for job in wotb-backend keycloak node-exporter; do
   grep -Fq "\"job\":\"$job\"" <<<"$targets" \
     || fail "Prometheus target missing job=$job"
-  job_sample="$(query_prometheus "up{job=\"$job\"}")" \
-    || fail "Prometheus target query failed for job=$job"
-  grep -Fq '"value"' <<<"$job_sample" \
-    || fail "Prometheus has no healthy target sample for job=$job"
+  wait_for_prometheus_target_up "$job"
 done
 echo "PASS: Prometheus targets up (backend/keycloak/node-exporter)"
 
-prom_query="$(query_prometheus 'up{job="wotb-backend"}')" \
+prom_query="$(query_prometheus 'min(up{job="wotb-backend"})')" \
   || fail "Prometheus data query failed"
-grep -Fq '"value"' <<<"$prom_query" || fail "Prometheus backend up query returned no sample"
+prometheus_value_is_one <<<"$prom_query" \
+  || fail "Prometheus backend up query is not healthy (up != 1)"
 echo "PASS: Prometheus data query"
 
-now="$(date +%s)"
-start_ns="$((now - 900))000000000"
-end_ns="${now}000000000"
-loki_query="http://loki:3100/loki/api/v1/query_range?query=%7Bcontainer_name%3D%22wotb-backend%22%7D&start=${start_ns}&end=${end_ns}&limit=1"
-loki_body="$(compose_exec "$loki_query" 2>/dev/null)" \
-  || fail "Loki query API unavailable"
-grep -Fq '"status":"success"' <<<"$loki_body" \
-  || fail "Loki query API did not return success"
-grep -Fq '"result"' <<<"$loki_body" \
-  || fail "Loki query API returned no result field"
-echo "PASS: Loki backend stream query"
+canary_started_at="$(date +%s)"
+canary_name="wotb-backend-observability-canary-${canary_started_at}-$$"
+canary_marker="wotb-observability-canary-${canary_started_at}-$$"
+cleanup_canary() {
+  docker rm -f "$canary_name" >/dev/null 2>&1 || true
+}
+trap cleanup_canary EXIT
+export WOTB_OBSERVABILITY_CANARY_MARKER="$canary_marker"
+docker compose run -d --no-deps --name "$canary_name" wotb-backend \
+  sh -c "printf '%s\\n' '$canary_marker'; sleep $((RETRIES * INTERVAL_SEC + 30))" >/dev/null \
+  || fail "could not start deployment observability canary"
+
+for attempt in $(seq 1 "$RETRIES"); do
+  now="$(date +%s)"
+  start_ns="$((canary_started_at - 5))000000000"
+  end_ns="$((now + 1))000000000"
+  loki_query="http://loki:3100/loki/api/v1/query_range?query=%7Bcontainer_name%3D%22wotb-backend%22%7D%20%7C%3D%20%22${canary_marker}%22&start=${start_ns}&end=${end_ns}&limit=1"
+  if loki_body="$(compose_exec "$loki_query" 2>/dev/null)" \
+    && grep -Fq '"status":"success"' <<<"$loki_body" \
+    && grep -Fq "$canary_marker" <<<"$loki_body"; then
+    echo "PASS: Loki deployment canary ingestion"
+    break
+  fi
+  if [ "$attempt" -eq "$RETRIES" ]; then
+    fail "Loki deployment canary was not ingested"
+  fi
+  sleep "$INTERVAL_SEC"
+done
 
 echo "== Observability verification passed =="

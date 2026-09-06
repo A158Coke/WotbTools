@@ -41,13 +41,13 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 │ 指标抓取     │    │ 日志存储     │         │ 看板/查询    │
 └──────┬───────┘    └──────▲───────┘         └──────────────┘
        │                   │                       ▲
-       │ 抓取 :8088        │ 推送日志               │ Datasource (provisioning)
+       │ 抓取 :8087        │ 推送日志               │ Datasource (provisioning)
        │  /actuator/       │                       │
        ▼  prometheus       │                       │
 ┌──────────────────┐       │          ┌────────────┐
 │   wotb-backend   │◄──────┼──────────┤    Alloy   │
-│  :8087 业务       │       │          │    :12345  │
-│  :8088 管理端口   │       └──────────┘ 采集 docker │
+│  :8087 业务/Actuator│     │          │    :12345  │
+│                  │       └──────────┘ 采集 docker │
 └──────────────────┘                  sock 容器日志  │
                                                       │
                                                       ▼
@@ -58,7 +58,7 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 
 | 组件 | 版本（固定） | 职责 |
 |---|---|---|
-| `wotb-backend` Actuator | Spring Boot 4.1.0 自带 | 独立管理端口 `8088`，暴露 `/actuator/prometheus`、`/actuator/health` |
+| `wotb-backend` Actuator | Spring Boot 4.1.0 自带 | 容器内端口 `8087`，暴露 `/actuator/prometheus`、`/actuator/health` |
 | Prometheus | `prom/prometheus:v2.55.1` | 每 15s 抓取 Backend、Keycloak management `/metrics` 与 node-exporter，TSDB 保留 7 天 / 上限 2GiB |
 | Loki | `grafana/loki:3.3.2` | 接收 Alloy 推送的 Backend / Keycloak 容器日志，保留 7 天 |
 | Alloy | `grafana/alloy:v1.4.2` | 通过 docker.sock 采集 `wotb-backend` 与 `keycloak` 容器 stdout/stderr → Loki，使用低基数标签 |
@@ -68,7 +68,7 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 
 **关键安全边界**
 
-- Grafana `3000`、Prometheus `9090`、Loki `3100`、Alloy `12345`、Backend 管理端口 `8088`、Keycloak management `9000`、node-exporter `9100` **均不映射到宿主机端口**，只在 Docker 内部网络可达。
+- Grafana `3000`、Prometheus `9090`、Loki `3100`、Alloy `12345`、Backend `8087`、Keycloak management `9000`、node-exporter `9100` **均不映射到宿主机端口**，只在 Docker 内部网络可达；宿主机 `8088` 是 frontend 的 `8088:80` 映射。
 - 公网只能通过 `monitor.wotbtools.com`（host 层 TLS 反代 → frontend nginx → `grafana:3000`）访问 Grafana，且 Grafana 禁止匿名访问。
 - `/actuator/**` 不通过公网域名暴露（nginx 只代理 `/api/` 与 `monitor.*` 到 Grafana）。
 
@@ -172,7 +172,7 @@ docker compose ps prometheus loki alloy grafana node-exporter
 
 ### 生产（CI 自动）
 
-合并到 `main` 触发 `deploy.yml`：SSH 到 `/opt/wotb` 先写入 `docker-compose.next.yml`（含观测服务，三个 wotb 镜像钉住 `sha-<SHA>`）、`docker compose -f docker-compose.next.yml pull`；`pull` 成功后才备份 `docker-compose.prev.yml` 并替换正式 compose，再 `up -d --remove-orphans`。观测配置随 `deploy/` 一起 scp 到 `/opt/wotb/deploy/observability/`。部署后三端健康检查（backend `/api/health`、frontend 经 nginx E2E、Keycloak realm）失败会自动回滚到上一份 compose 并复检；pull 失败不触碰正式 compose 与回滚目标。回滚事件可从 Actions 日志与 Loki 中的容器日志追溯。
+合并到 `main` 触发 `deploy.yml`：SSH 到 `/opt/wotb` 后先把当前 `deploy/observability/` 快照到 `.deploy-prev/observability/`，再写入 `docker-compose.next.yml`（含观测服务，三个 wotb 镜像钉住 `sha-<SHA>`）并执行 `docker compose -f docker-compose.next.yml pull`；`pull` 成功后才备份 `docker-compose.prev.yml` 并替换正式 compose，再 `up -d --remove-orphans`。部署会显式向 Prometheus 和 Alloy 发送 `SIGHUP`，确保 bind-mounted 配置内容真正加载；观测 gate 还会启动带唯一 marker 的 backend canary，并在 Loki 中精确查询本次 ingestion。部署后三端健康检查（backend `/api/health`、frontend 经 nginx E2E、Keycloak realm）或观测 gate 失败会自动恢复上一份 compose 与 `.deploy-prev/observability/` 配置并复检；pull 失败不触碰正式 compose 与回滚目标。回滚事件可从 Actions 日志与 Loki 中的容器日志追溯。
 
 > **新版本失败诊断（Health check 超时回滚前）**：健康检查最终失败时，`deploy.sh` 会先输出各服务状态（`report_health_status`：backend/frontend/keycloak 各 `PASS/FAILED/SKIPPED`），再 `dump_logs` 保留新版本 `docker compose ps -a`、容器 `docker inspect` 与 backend/frontend/keycloak 三服务 logs，最后才进入回滚。因此新版本启动异常不会再被 rollback 覆盖，可在 Actions 日志与 Loki 中定位。诊断命令均独立容错，若采集失败也不会阻断回滚。
 

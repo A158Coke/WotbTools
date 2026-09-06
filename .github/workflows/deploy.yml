@@ -156,7 +156,17 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          script: mkdir -p /opt/wotb
+          script: |
+            set -eu
+            WOTB_DIR=/opt/wotb
+            mkdir -p "$WOTB_DIR"
+            if [ -d "$WOTB_DIR/deploy/observability" ]; then
+              rm -rf -- "$WOTB_DIR/.deploy-prev"
+              mkdir -p "$WOTB_DIR/.deploy-prev"
+              cp -a "$WOTB_DIR/deploy/observability" "$WOTB_DIR/.deploy-prev/observability"
+            else
+              rm -rf -- "$WOTB_DIR/.deploy-prev"
+            fi
       - name: Install deployment scripts
         uses: appleboy/scp-action@v1
         with:

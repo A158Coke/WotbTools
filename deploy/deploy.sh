@@ -6,7 +6,7 @@
 #   AI_API_KEY, GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD
 # Optional vars carry the same defaults as the previous inline workflow script.
 # Flow: pre-deploy backup -> write .env -> render docker-compose.prod.yml -> pull ->
-# promote to docker-compose.yml -> compose up -> reload Alloy -> health checks -> rollback.
+# promote to docker-compose.yml -> compose up -> reload observability -> health checks -> rollback.
 #
 # The formal docker-compose.yml is RENDERED (all ${...} resolved to concrete values)
 # so later independent SSH sessions (daily DB backup, diagnostics, manual ops) never
@@ -18,6 +18,7 @@ set -e
 
 readonly WOTB_DIR="${WOTB_DIR:-/opt/wotb}"
 readonly HEALTH_RETRIES="${WOTB_HEALTH_RETRIES:-60}"
+readonly PREV_OBSERVABILITY_DIR="${WOTB_PREV_OBSERVABILITY_DIR:-$WOTB_DIR/.deploy-prev/observability}"
 
 if [[ ! "$HEALTH_RETRIES" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: WOTB_HEALTH_RETRIES must be a positive integer." >&2
@@ -40,6 +41,21 @@ require_env KEYCLOAK_ADMIN_CLIENT_SECRET
 require_env AI_API_KEY
 require_env GRAFANA_ADMIN_USER
 require_env GRAFANA_ADMIN_PASSWORD
+
+restore_previous_observability_config() {
+  if [ ! -d "$PREV_OBSERVABILITY_DIR" ]; then
+    echo "ERROR: previous observability config snapshot is missing: $PREV_OBSERVABILITY_DIR" >&2
+    return 1
+  fi
+  if [ -z "$WOTB_DIR" ] || [ "$WOTB_DIR" = "/" ]; then
+    echo "ERROR: refusing to replace observability config with unsafe WOTB_DIR=$WOTB_DIR" >&2
+    return 1
+  fi
+  rm -rf -- "$WOTB_DIR/deploy/observability"
+  mkdir -p "$WOTB_DIR/deploy"
+  cp -a "$PREV_OBSERVABILITY_DIR" "$WOTB_DIR/deploy/observability"
+  echo "Previous observability config restored from $PREV_OBSERVABILITY_DIR."
+}
 
 # AI Review 整体 deadline 必须与前端(1100s)/nginx(1120s) 固定链路对齐：
 # 不允许通过环境变量把旧 400 静默带进生产（前端先掐断、后端继续计费）。
@@ -81,7 +97,11 @@ chmod 600 .env
 # 模板中的 ${TAG}/${DB_PASSWORD} 等通过 `docker compose config` 渲染为具体值：
 # 正式文件自包含，后续独立 SSH 会话与每日备份不依赖 GitHub Actions 临时环境变量。
 cp -f deploy/docker-compose.prod.yml docker-compose.next.yml
-docker compose -f docker-compose.next.yml config > docker-compose.next.resolved.yml
+if ! docker compose -f docker-compose.next.yml config > docker-compose.next.resolved.yml; then
+  echo "ERROR: next compose config is invalid; restoring previous observability config." >&2
+  restore_previous_observability_config || true
+  exit 1
+fi
 mv -f docker-compose.next.resolved.yml docker-compose.next.yml
 chmod 600 docker-compose.next.yml
 
@@ -108,11 +128,28 @@ reload_alloy_config() {
     return 1
   fi
   sleep 1
-  if docker compose ps -a alloy | grep -qE "Restarting|Exited"; then
-    echo "ERROR: Alloy is not running after config reload." >&2
+  assert_service_running alloy "Alloy"
+  echo "Alloy config reload requested."
+}
+
+assert_service_running() {
+  local service="$1" label="$2" status
+  status="$(docker compose ps -a "$service" 2>/dev/null || true)"
+  if ! grep -qE "Up|running" <<<"$status" || grep -qE "Restarting|Exited|Dead" <<<"$status"; then
+    echo "ERROR: ${label} is not running after config reload." >&2
     return 1
   fi
-  echo "Alloy config reload requested."
+}
+
+reload_prometheus_config() {
+  echo "== Reloading Prometheus config =="
+  if ! docker compose kill -s HUP prometheus; then
+    echo "ERROR: failed to send SIGHUP to Prometheus; observability config was not reloaded." >&2
+    return 1
+  fi
+  sleep 1
+  assert_service_running prometheus "Prometheus"
+  echo "Prometheus config reload requested."
 }
 
 # Health checks: backend /api/health, frontend nginx E2E, Keycloak realm availability,
@@ -191,6 +228,7 @@ dump_logs() {
 if ! pull_compose docker-compose.next.yml; then
   echo "ERROR: docker compose pull failed after 3 attempts (docker-compose.next.yml)." >&2
   echo "The running stack and docker-compose.yml are untouched; fix the images before the next deploy." >&2
+  restore_previous_observability_config || true
   exit 1
 fi
 
@@ -212,6 +250,10 @@ chmod 600 docker-compose.yml
 rollback_needed=false
 if ! docker compose up -d --remove-orphans; then
   echo "ERROR: docker compose up failed; attempting rollback." >&2
+  rollback_needed=true
+elif ! reload_prometheus_config; then
+  echo "ERROR: Prometheus config reload failed; attempting rollback." >&2
+  dump_logs
   rollback_needed=true
 elif ! reload_alloy_config; then
   echo "ERROR: Alloy config reload failed; attempting rollback." >&2
@@ -235,9 +277,17 @@ fi
 if [ "$rollback_needed" = true ]; then
   echo "== DEPLOY FAILED: rolling back to previous deployment =="
   if [ -f docker-compose.prev.yml ]; then
+    if ! restore_previous_observability_config; then
+      echo "== ROLLBACK FAILED: previous observability config unavailable; manual intervention required ==" >&2
+      dump_logs
+      exit 1
+    fi
     cp -f docker-compose.prev.yml docker-compose.yml
     rm -f docker-compose.next.yml
-    if pull_compose docker-compose.yml && docker compose up -d --remove-orphans; then
+    if pull_compose docker-compose.yml \
+      && docker compose up -d --remove-orphans \
+      && reload_prometheus_config \
+      && reload_alloy_config; then
       if wait_healthy && verify_observability; then
         if [ -n "$PREV_SHA" ]; then
           echo "$PREV_SHA" > DEPLOYED_SHA
