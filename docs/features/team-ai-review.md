@@ -299,7 +299,9 @@ parser 返回 `result/failures/normalizations/status`。不存在的 episode/pla
 定向 technical repair。repair 输入仅含生成 JSON、精确 failure path/code/constraint、权威 roster
 keys 与已有 episode reference 约束，不重复发送完整战术 context。repair 仍失败返回
 `AI_REVIEW_SCHEMA_FAILED`，前端三语文案和诊断 ID 与 `AI_REVIEW_GROUNDING_FAILED`、provider
-unavailable 分开。对应事件和低基数指标见 `docs/operations/observability.md`。
+unavailable 分开；repair 若违反 semantic immutability invariant 也会 fail-closed，计入
+`wotb_ai_team_review_repair_total{result="semantic_changed"}` 并返回同一错误码。对应事件和低基数
+指标见 `docs/operations/observability.md`。
 
 **DeepSeek 官方 JSON Output（2026-08，JSON 语法层加固）**：Team Call #2 已启用 provider
 `response_format=json_object`（`AiChatRequest.responseFormat=JSON_OBJECT`，仅此调用；Player /

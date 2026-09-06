@@ -118,10 +118,10 @@ public final class TeamAiReviewResultParser {
                 if (!node.has("endSec")) {
                     normalizations.add(new Normalization("episode_end_sec_defaulted", path + ".endSec"));
                 }
-                if ((node.has("startSec") && !validInteger(node, "startSec"))
-                        || (node.has("endSec") && !validInteger(node, "endSec"))) {
+                if ((node.has("startSec") && !validNullableNonNegativeInteger(node, "startSec"))
+                        || (node.has("endSec") && !validNullableNonNegativeInteger(node, "endSec"))) {
                     return fatal(Failure.INVALID_FIELD, path + ".time",
-                            "startSec and endSec must be non-negative integers");
+                            "startSec and endSec must be non-negative integers or null");
                 }
                 final Integer start = optionalInt(node, "startSec");
                 final Integer end = optionalInt(node, "endSec");
@@ -433,10 +433,11 @@ public final class TeamAiReviewResultParser {
         return value.asInt();
     }
 
-    private static boolean validInteger(final JsonNode parent, final String name) {
+    private static boolean validNullableNonNegativeInteger(final JsonNode parent, final String name) {
         final JsonNode value = parent.get(name);
-        return value != null && value.isIntegralNumber()
-                && value.asLong() >= 0 && value.asLong() <= Integer.MAX_VALUE;
+        return value != null && (value.isNull()
+                || (value.isIntegralNumber()
+                && value.asLong() >= 0 && value.asLong() <= Integer.MAX_VALUE));
     }
 
     private static boolean validSeconds(final Integer start, final Integer end) {
