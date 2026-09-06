@@ -18,6 +18,7 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/deploy.incoming/deploy" "$WORK/bin"
 cp "$ROOT/deploy/docker-compose.prod.yml" "$WORK/deploy.incoming/deploy/docker-compose.prod.yml"
 cp "$ROOT/deploy/deploy.sh" "$WORK/deploy.incoming/deploy/deploy.sh"
+cp "$ROOT/deploy/validate-alloy-config.sh" "$WORK/deploy.incoming/deploy/validate-alloy-config.sh"
 cp "$ROOT/deploy/verify-observability.sh" "$WORK/deploy.incoming/deploy/verify-observability.sh"
 cp "$ROOT/deploy/grafana-api-request.sh" "$WORK/deploy.incoming/deploy/grafana-api-request.sh"
 cp "$ROOT/deploy/sponsor-config.example.json" "$WORK/deploy.incoming/deploy/sponsor-config.example.json"
@@ -30,6 +31,7 @@ cp -a "$ROOT/deploy/observability" "$WORK/deploy.incoming/deploy/observability"
   sed -i 's/\r$//' \
   "$WORK/deploy.incoming/deploy/docker-compose.prod.yml" \
   "$WORK/deploy.incoming/deploy/deploy.sh" \
+  "$WORK/deploy.incoming/deploy/validate-alloy-config.sh" \
   "$WORK/deploy.incoming/deploy/verify-observability.sh" \
   "$WORK/deploy.incoming/deploy/grafana-api-request.sh" \
   "$WORK/deploy.incoming/deploy/postgres-backup.sh" \
@@ -285,11 +287,13 @@ delayed_loki_output="$(FAKE_LOKI_DELAYED=1 \
 # The previous live tree owns rollback. Make it visibly stable, then stage a
 # second tree with different observability files before deploy B.
 printf 'stable prometheus config\n' > "$WORK/deploy/observability/prometheus/prometheus.yml"
-printf 'stable alloy config\n' > "$WORK/deploy/observability/alloy/config.alloy"
+cp "$ROOT/deploy/observability/alloy/config.alloy" "$WORK/deploy/observability/alloy/config.alloy"
+printf '\n// stable alloy config\n' >> "$WORK/deploy/observability/alloy/config.alloy"
 mkdir -p "$WORK/deploy.incoming/deploy"
 cp -a "$WORK/deploy/." "$WORK/deploy.incoming/deploy/"
 printf 'new prometheus config\n' > "$WORK/deploy.incoming/deploy/observability/prometheus/prometheus.yml"
-printf 'new alloy config\n' > "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
+cp "$ROOT/deploy/observability/alloy/config.alloy" "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
+printf '\n// new alloy config\n' >> "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
 
 # ---- deploy B (health fails) -> must roll back to A ----
 export TAG=sha-B
