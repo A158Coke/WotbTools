@@ -4,14 +4,22 @@ set -euo pipefail
 
 readonly RETRIES="${WOTB_OBSERVABILITY_RETRIES:-20}"
 readonly INTERVAL_SEC="${WOTB_OBSERVABILITY_INTERVAL_SEC:-3}"
-readonly DASHBOARD_DIR="${WOTB_DASHBOARD_DIR:-deploy/observability/grafana/dashboards}"
-readonly GRAFANA_API_HELPER="${WOTB_GRAFANA_API_HELPER:-deploy/grafana-api-request.sh}"
+readonly DEPLOY_ROOT="${WOTB_DEPLOY_ROOT:-${WOTB_DIR:-.}}"
+readonly DASHBOARD_DIR="${WOTB_DASHBOARD_DIR:-$DEPLOY_ROOT/deploy/observability/grafana/dashboards}"
+readonly ALLOY_CONFIG="${WOTB_ALLOY_CONFIG:-$DEPLOY_ROOT/deploy/observability/alloy/config.alloy}"
+readonly ALLOY_VALIDATOR="${WOTB_ALLOY_VALIDATOR:-$DEPLOY_ROOT/deploy/validate-alloy-config.sh}"
+readonly GRAFANA_API_HELPER="${WOTB_GRAFANA_API_HELPER:-$DEPLOY_ROOT/deploy/grafana-api-request.sh}"
 if [[ ! "$RETRIES" =~ ^[1-9][0-9]*$ || ! "$INTERVAL_SEC" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: observability retry settings must be positive integers." >&2
   exit 2
 fi
 
-fail() { echo "OBSERVABILITY FAIL: $*" >&2; exit 1; }
+fail() {
+  local domain="$1"
+  shift
+  echo "OBSERVABILITY FAIL [$domain]: $*" >&2
+  exit 1
+}
 compose_exec() { docker compose exec -T wotb-backend wget -qO- "$1"; }
 frontend_exec() { docker compose exec -T wotb-frontend wget -qO- "$1"; }
 grafana_api() {
@@ -23,8 +31,8 @@ grafana_api() {
 }
 
 wait_for_http() {
-  local name="$1" url="$2" body="" attempt needle
-  shift 2
+  local domain="$1" name="$2" url="$3" body="" attempt needle
+  shift 3
   for attempt in $(seq 1 "$RETRIES"); do
     if body="$(compose_exec "$url" 2>/dev/null)" && [ -n "$body" ]; then
       if [ "$#" -eq 0 ]; then echo "PASS: $name"; return 0; fi
@@ -35,7 +43,7 @@ wait_for_http() {
     fi
     [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
   done
-  fail "$name did not return the expected response"
+  fail "$domain" "$name did not return the expected response"
 }
 
 wait_for_grafana_api() {
@@ -50,7 +58,7 @@ wait_for_grafana_api() {
     fi
     [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
   done
-  fail "$name did not return the expected response"
+  fail "GRAFANA" "$name did not return the expected response"
 }
 
 wait_for_grafana_datasource() {
@@ -63,7 +71,7 @@ wait_for_grafana_datasource() {
     fi
     [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
   done
-  fail "$name did not report a healthy datasource"
+  fail "GRAFANA" "$name did not report a healthy datasource"
 }
 
 query_prometheus() {
@@ -87,36 +95,49 @@ wait_for_prometheus_target_up() {
       && prometheus_value_is_one <<<"$sample"; then return 0; fi
     [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
   done
-  fail "Prometheus target is not healthy (up != 1) for job=$job"
+  fail "PROMETHEUS_TARGET" "Prometheus target is not healthy (up != 1) for job=$job"
+}
+
+validate_alloy() {
+  if ! bash "$ALLOY_VALIDATOR" "$ALLOY_CONFIG" >/dev/null 2>&1; then
+    fail "ALLOY" "Alloy config validation failed: $ALLOY_CONFIG"
+  fi
+  echo "PASS: Alloy config format and selector contract"
 }
 
 echo "== Verifying observability data path =="
-wait_for_http "backend metrics endpoint" \
+validate_alloy
+wait_for_http "BACKEND_METRICS" "backend metrics endpoint" \
   "http://127.0.0.1:8088/actuator/prometheus" "jvm_" "process_" "system_" "http_server_requests"
-wait_for_http "backend replay and AI queue gauges" \
+wait_for_http "BACKEND_METRICS" "backend replay and AI queue gauges" \
   "http://127.0.0.1:8088/actuator/prometheus" "wotb_replay_parse_active" "wotb_replay_parse_queue_depth" "wotb_ai_review_in_flight" "wotb_ai_review_queue_depth"
-wait_for_http "backend Hikari metrics" \
+wait_for_http "BACKEND_METRICS" "backend Hikari metrics" \
   "http://127.0.0.1:8088/actuator/prometheus" "hikaricp_connections_active"
-wait_for_http "keycloak metrics endpoint" "http://keycloak:9000/metrics" "process_"
-wait_for_http "node exporter metrics endpoint" "http://node-exporter:9100/metrics" "node_"
-wait_for_http "prometheus metrics endpoint" "http://prometheus:9090/metrics" "prometheus_"
-wait_for_http "loki metrics endpoint" "http://loki:3100/metrics" "loki_"
-wait_for_http "grafana metrics endpoint" "http://grafana:3000/metrics" "grafana_"
-wait_for_http "grafana health endpoint" "http://grafana:3000/api/health" '"database":"ok"'
+wait_for_http "KEYCLOAK_APPLICATION" "Keycloak application metadata" \
+  "http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration"
+wait_for_http "KEYCLOAK_MANAGEMENT" "Keycloak management readiness" \
+  "http://keycloak:9000/health/ready" '"status":"UP"'
+wait_for_http "KEYCLOAK_MANAGEMENT" "Keycloak management metrics and HTTP histogram" \
+  "http://keycloak:9000/metrics" "process_" "http_server_requests_seconds_count" "http_server_requests_seconds_bucket"
+wait_for_http "PROMETHEUS_TARGET" "node exporter metrics endpoint" "http://node-exporter:9100/metrics" "node_"
+wait_for_http "PROMETHEUS_TARGET" "prometheus metrics endpoint" "http://prometheus:9090/metrics" "prometheus_"
+wait_for_http "PROMETHEUS_TARGET" "loki metrics endpoint" "http://loki:3100/metrics" "loki_"
+wait_for_http "GRAFANA" "grafana metrics endpoint" "http://grafana:3000/metrics" "grafana_"
+wait_for_http "GRAFANA" "grafana health endpoint" "http://grafana:3000/api/health" '"database":"ok"'
 
-targets="$(wait_for_http "prometheus target API" "http://prometheus:9090/api/v1/targets" \
+targets="$(wait_for_http "PROMETHEUS_TARGET" "prometheus target API" "http://prometheus:9090/api/v1/targets" \
   '"status":"success"' '"job":"wotb-backend"' '"job":"keycloak"' '"job":"node-exporter"' \
   '"job":"prometheus"' '"job":"loki"' '"job":"grafana"' >/dev/null \
-  && compose_exec "http://prometheus:9090/api/v1/targets")" || fail "Prometheus target API unavailable"
+  && compose_exec "http://prometheus:9090/api/v1/targets")" || fail "PROMETHEUS_TARGET" "Prometheus target API unavailable"
 for job in wotb-backend keycloak node-exporter prometheus loki grafana; do
-  grep -Fq "\"job\":\"$job\"" <<<"$targets" || fail "Prometheus target missing job=$job"
+  grep -Fq "\"job\":\"$job\"" <<<"$targets" || fail "PROMETHEUS_TARGET" "Prometheus target missing job=$job"
   wait_for_prometheus_target_up "$job"
 done
 
 echo "PASS: Prometheus required targets up (backend/keycloak/node-exporter/prometheus/loki/grafana)"
 
-prom_query="$(query_prometheus 'min(up{job="wotb-backend"})')" || fail "Prometheus data query failed"
-prometheus_value_is_one <<<"$prom_query" || fail "Prometheus backend up query is not healthy (up != 1)"
+prom_query="$(query_prometheus 'min(up{job="wotb-backend"})')" || fail "PROMETHEUS_TARGET" "Prometheus data query failed"
+prometheus_value_is_one <<<"$prom_query" || fail "PROMETHEUS_TARGET" "Prometheus backend up query is not healthy (up != 1)"
 echo "PASS: Prometheus data query"
 
 wait_for_grafana_datasource "Grafana Prometheus datasource" \
@@ -129,17 +150,17 @@ for dashboard_file in "$DASHBOARD_DIR"/*.json; do
   [ -f "$dashboard_file" ] || continue
   uid="$(grep -m1 -oE '^[[:space:]]*"uid"[[:space:]]*:[[:space:]]*"[^" ]+"' "$dashboard_file" \
     | sed -E 's/.*"uid"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-  [ -n "$uid" ] || fail "dashboard has no uid: $dashboard_file"
+  [ -n "$uid" ] || fail "GRAFANA" "dashboard has no uid: $dashboard_file"
   [ "$(basename "$dashboard_file")" = "wotbtools-production-overview.json" ] && production_uid="$uid"
   wait_for_grafana_api "Grafana dashboard $(basename "$dashboard_file")" \
     "/api/dashboards/uid/$uid" '"dashboard"' "$uid"
 done
-[ -n "$production_uid" ] || fail "production overview dashboard file is missing"
+[ -n "$production_uid" ] || fail "GRAFANA" "production overview dashboard file is missing"
 wait_for_grafana_api "Grafana production overview home dashboard" \
   "/api/dashboards/uid/$production_uid" '"dashboard"' "$production_uid"
 if docker compose logs --no-color --tail 200 grafana 2>/dev/null \
     | grep -Eiq 'provisioning.*(error|fail)|((error|fail).*)provisioning'; then
-  fail "Grafana provisioning reported an error"
+  fail "GRAFANA" "Grafana provisioning reported an error"
 fi
 echo "PASS: Grafana datasources and all provisioned dashboards"
 
@@ -161,10 +182,10 @@ trap cleanup_canaries EXIT
 
 docker compose run -d --no-deps --name "$backend_name" wotb-backend \
   sh -c "printf '%s\\n' '$backend_marker'; sleep $((RETRIES * INTERVAL_SEC + 30))" >/dev/null \
-  || fail "could not start backend deployment canary"
+  || fail "LOKI_INGESTION" "could not start backend deployment canary"
 docker run -d --network "${WOTB_OBSERVABILITY_NETWORK:-wotb_internal}" --name "$keycloak_name" alpine:3.22 \
   sh -c "printf '%s\\n' '$keycloak_marker'; sleep $((RETRIES * INTERVAL_SEC + 30))" >/dev/null \
-  || fail "could not start Keycloak deployment canary"
+  || fail "LOKI_INGESTION" "could not start Keycloak deployment canary"
 
 query_range_has_values() {
   local body="$1" marker="$2"
@@ -186,7 +207,7 @@ for attempt in $(seq 1 "$RETRIES"); do
     break
   fi
   [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
-  [ "$attempt" -eq "$RETRIES" ] && fail "Loki backend or Keycloak canary was not ingested"
+    [ "$attempt" -eq "$RETRIES" ] && fail "LOKI_INGESTION" "Loki backend or Keycloak canary was not ingested"
 done
 
 # This request may return 404: it verifies the real nginx access-log path,
@@ -211,7 +232,7 @@ for attempt in $(seq 1 "$RETRIES"); do
     break
   fi
   [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
-  [ "$attempt" -eq "$RETRIES" ] && fail "sanitized frontend nginx canary was not ingested"
+    [ "$attempt" -eq "$RETRIES" ] && fail "LOKI_INGESTION" "sanitized frontend nginx canary was not ingested"
 done
 
 echo "== Observability verification passed =="

@@ -10,11 +10,18 @@ docker compose -f docker-compose.prod.yml ps
 docker compose -f docker-compose.prod.yml logs --tail=100 keycloak alloy prometheus
 ```
 
-在 Prometheus 页面确认以下 target 为 `UP`：
+在 Prometheus 页面确认以下 target 为 `UP`，并确认 Keycloak management 端点不是宿主机端口：
 
 - `wotb-backend` → `http://wotb-backend:8088/actuator/prometheus`
 - `keycloak` → `http://keycloak:9000/metrics`
 - `node-exporter` → `http://node-exporter:9100/metrics`
+
+从观测网络内验证 Keycloak：
+
+```bash
+docker compose exec -T wotb-backend wget -qO- http://keycloak:9000/health/ready
+docker compose exec -T wotb-backend wget -qO- http://keycloak:9000/metrics | grep -F 'process_'
+```
 
 管理端点只应在 Docker 内部网络可达，不应新增宿主机或公网端口映射。
 
@@ -52,4 +59,4 @@ docker compose -f docker-compose.prod.yml ps -a
 docker compose -f docker-compose.prod.yml logs --tail=300 keycloak wotb-backend alloy prometheus
 ```
 
-若部署健康检查失败，先保留上述输出和 Grafana 时间窗口，再按部署脚本的 rollback 流程恢复上一版 compose。回滚不应删除 PostgreSQL、Prometheus、Loki 或 Grafana volume。
+若部署健康检查失败，先保留上述输出和 Grafana 时间窗口，再按部署脚本的 rollback 流程恢复已验证的 LKG（`/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml` 和 `DEPLOYED_SHA.lkg`）。`deploy.prev` 只用于取证，不能作为回滚依据。若 LKG 缺失或校验失败，脚本会 fail-closed 并保留当前 live tree，需人工修复后再操作；回滚不应删除 PostgreSQL、Prometheus、Loki 或 Grafana volume。首次建立 LKG 只能通过显式的 `workflow_dispatch` `allow_bootstrap_without_lkg` 输入，并须先完成生产状态复核。
