@@ -108,14 +108,20 @@ case "$cmd" in
               query_count=$((query_count + 1))
               printf '%s\n' "$query_count" > "$query_count_file"
             fi
+            if [[ "$request" == *"container_name%3D%22wotb-backend%22"* && "$request" == *"${WOTB_OBSERVABILITY_CANARY_MARKER:-stable-canary}"* ]]; then
+              loki_line="backend-canary ${WOTB_OBSERVABILITY_CANARY_MARKER:-stable-canary}"
+            elif [[ "$request" == *"container_name%3D%22keycloak%22"* && "$request" == *"${WOTB_KEYCLOAK_CANARY_MARKER:-stable-keycloak}"* ]]; then
+              loki_line="keycloak-canary ${WOTB_KEYCLOAK_CANARY_MARKER:-stable-keycloak}"
+            elif [[ "$request" == *"container_name%3D%22wotb-frontend%22"* && "$request" == *"${WOTB_FRONTEND_CANARY_APK:-stable.apk}"* ]]; then
+              loki_line="event=android_apk_download apk=${WOTB_FRONTEND_CANARY_APK:-stable.apk} status=404 bytes=42"
+            else
+              exit 1
+            fi
             if [ "${FAKE_LOKI_EMPTY:-0}" = 1 ] || \
                { [ "${FAKE_LOKI_DELAYED:-0}" = 1 ] && [ "$query_count" -le 2 ]; }; then
               printf '{"status":"success","data":{"result":[]}}\n'
             else
-              printf '{"status":"success","data":{"result":[{"stream":{},"values":[["0","event=android_apk_download apk=%s status=404 bytes=42 %s %s"]]}]}}\n' \
-                "${WOTB_FRONTEND_CANARY_APK:-stable.apk}" \
-                "${WOTB_OBSERVABILITY_CANARY_MARKER:-stable-canary}" \
-                "${WOTB_KEYCLOAK_CANARY_MARKER:-stable-keycloak}"
+              printf '{"status":"success","data":{"result":[{"stream":{},"values":[["0","%s"]]}]}}\n' "$loki_line"
             fi
             exit 0
           fi
