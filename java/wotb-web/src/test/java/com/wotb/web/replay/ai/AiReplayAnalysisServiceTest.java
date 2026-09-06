@@ -476,7 +476,9 @@ class AiReplayAnalysisServiceTest {
         assertEquals(2, allTeamReviewRequests().size());
         final String initialBody = allTeamReviewRequests().getFirst().userPrompt();
         final String repairBody = allTeamReviewRequests().getLast().userPrompt();
-        assertTrue(repairBody.contains("TECHNICAL_VALIDATION_FAILURES"));
+        assertTrue(repairBody.contains("REMAINING_CORE_SCHEMA_FAILURES"));
+        assertTrue(repairBody.contains("CANONICAL_NORMALIZED_JSON"));
+        assertFalse(repairBody.contains("ORIGINAL_GENERATED_JSON"));
         assertTrue(repairBody.contains("path=root.unknown"));
         assertFalse(repairBody.contains("AUTHORITATIVE_TEAM_RESULT"));
         assertTrue(repairBody.length() < initialBody.length(),
@@ -491,7 +493,10 @@ class AiReplayAnalysisServiceTest {
                 + "\"trainingSuggestions\":[],\"reviewFocus\":[],"
                 + "\"highContributors\":[{\"playerKey\":\"UNKNOWN_PLAYER\","
                 + "\"episodeId\":\"E1\",\"reason\":\"reason\"}],\"unknown\":true}";
-        final String repaired = structuredResultWithEpisode();
+        final String repaired = "{\"summary\":{\"verdict\":\"v\",\"primaryDiagnosis\":\"d\"},"
+                + "\"episodes\":[{\"id\":\"E1\",\"startSec\":10,\"endSec\":20,"
+                + "\"title\":\"title\",\"analysis\":\"TACTICAL_TEXT\",\"playerKeys\":[]}],"
+                + "\"trainingSuggestions\":[],\"reviewFocus\":[],\"highContributors\":[]}";
         gateway.teamCompletionSequence.add(initial);
         gateway.teamCompletionSequence.add(repaired);
         final var service = startService();
@@ -502,6 +507,9 @@ class AiReplayAnalysisServiceTest {
 
         assertNotNull(result.structuredResult());
         assertEquals(2, allTeamReviewRequests().size());
+        assertEquals("v", result.structuredResult().summary().verdict());
+        assertEquals("d", result.structuredResult().summary().primaryDiagnosis());
+        assertEquals("title", result.structuredResult().episodes().getFirst().title());
         assertTrue(result.structuredResult().highContributors().isEmpty());
         assertEquals("TACTICAL_TEXT", result.structuredResult().episodes().getFirst().analysis());
         final String repairBody = allTeamReviewRequests().getLast().userPrompt();
