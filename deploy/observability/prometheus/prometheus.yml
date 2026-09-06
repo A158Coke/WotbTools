@@ -10,7 +10,7 @@ scrape_configs:
     metrics_path: /actuator/prometheus
     static_configs:
       - targets:
-          - wotb-backend:8087
+          - wotb-backend:8088
         labels:
           service: wotb-backend
 

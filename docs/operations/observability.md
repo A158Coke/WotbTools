@@ -7,10 +7,10 @@
 
 ## Build-to-Learn：部署前配置核对记录
 
-2026-09-06 核对生产 Dockerfile/compose 与 Prometheus 配置时：预期 backend metrics target 与健康探针
-端口一致；实际 `Dockerfile.backend` 使用 Spring Boot 默认 `8087`，而 Prometheus 原配置抓取
-`wotb-backend:8088`。根因是 frontend 的 host port `8088:80` 与 backend application port 混淆。
-决策：Prometheus 改抓 `wotb-backend:8087/actuator/prometheus`，并由部署 gate 查询真实 target；完整
+2026-09-06 核对生产 Dockerfile/compose 与 Prometheus 配置时：backend 业务端口为 `8087`，management
+端口为 `8088`；frontend 的 host port 也是 `8088:80`，因此不能把两者混用。Prometheus 与部署 gate
+统一抓取专用管理端点 `wotb-backend:8088/actuator/prometheus`，业务健康检查仍访问 backend 的
+`8087/api/health`。完整
 Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 smoke，不在此记录静态推测。
 
 ## 1. 架构总览
@@ -41,12 +41,12 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 │ 指标抓取     │    │ 日志存储     │         │ 看板/查询    │
 └──────┬───────┘    └──────▲───────┘         └──────────────┘
        │                   │                       ▲
-       │ 抓取 :8087        │ 推送日志               │ Datasource (provisioning)
+       │ 抓取 :8088        │ 推送日志               │ Datasource (provisioning)
        │  /actuator/       │                       │
        ▼  prometheus       │                       │
 ┌──────────────────┐       │          ┌────────────┐
 │   wotb-backend   │◄──────┼──────────┤    Alloy   │
-│  :8087 业务/Actuator│     │          │    :12345  │
+│  :8087 业务 / :8088 管理│  │          │    :12345  │
 │                  │       └──────────┘ 采集 docker │
 └──────────────────┘                  sock 容器日志  │
                                                       │
