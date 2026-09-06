@@ -16,4 +16,7 @@ COPY --from=build /build/keycloak-wargaming-provider/target/keycloak-wargaming-p
 # WotBTools custom login theme (V8 Unified Layout)
 COPY docker/keycloak/themes/wotbtools /opt/keycloak/themes/wotbtools
 
-RUN /opt/keycloak/bin/kc.sh build --health-enabled=true --metrics-enabled=true --http-metrics-histograms-enabled=true
+RUN /opt/keycloak/bin/kc.sh build \
+  --db=postgres \
+  --health-enabled=true \
+  --metrics-enabled=true

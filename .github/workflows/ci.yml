@@ -86,6 +86,15 @@ jobs:
         working-directory: keycloak-wargaming-provider
         run: mvn --batch-mode --no-transfer-progress -s ../java/settings.xml -Dmaven.repo.local=../java/.m2repo test
 
+  keycloak-runtime:
+    name: Keycloak production runtime contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+      - name: Real Keycloak image runtime smoke
+        run: bash deploy/test-keycloak-runtime.sh
+
   frontend:
     name: Frontend test, build, and Docker build
     runs-on: ubuntu-latest
@@ -393,7 +402,7 @@ jobs:
       - name: bash -n deploy.sh
         run: bash -n deploy/deploy.sh
       - name: bash -n observability verification scripts
-        run: bash -n deploy/deploy.sh deploy/verify-observability.sh deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh deploy/test-deploy-rollback.sh
+        run: bash -n deploy/deploy.sh deploy/verify-observability.sh deploy/test-keycloak-runtime.sh deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh deploy/test-deploy-rollback.sh
       - name: Production compose config validation
         env:
           TAG: sha-ci
