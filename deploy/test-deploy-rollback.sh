@@ -19,6 +19,7 @@ mkdir -p "$WORK/deploy.incoming/deploy" "$WORK/bin"
 cp "$ROOT/deploy/docker-compose.prod.yml" "$WORK/deploy.incoming/deploy/docker-compose.prod.yml"
 cp "$ROOT/deploy/deploy.sh" "$WORK/deploy.incoming/deploy/deploy.sh"
 cp "$ROOT/deploy/verify-observability.sh" "$WORK/deploy.incoming/deploy/verify-observability.sh"
+cp "$ROOT/deploy/grafana-api-request.sh" "$WORK/deploy.incoming/deploy/grafana-api-request.sh"
 cp "$ROOT/deploy/sponsor-config.example.json" "$WORK/deploy.incoming/deploy/sponsor-config.example.json"
 cp "$ROOT/deploy/postgres-backup.sh" "$WORK/deploy.incoming/deploy/postgres-backup.sh"
 cp "$ROOT/deploy/postgres-backup-inspect.sh" "$WORK/deploy.incoming/deploy/postgres-backup-inspect.sh"
@@ -30,6 +31,7 @@ cp -a "$ROOT/deploy/observability" "$WORK/deploy.incoming/deploy/observability"
   "$WORK/deploy.incoming/deploy/docker-compose.prod.yml" \
   "$WORK/deploy.incoming/deploy/deploy.sh" \
   "$WORK/deploy.incoming/deploy/verify-observability.sh" \
+  "$WORK/deploy.incoming/deploy/grafana-api-request.sh" \
   "$WORK/deploy.incoming/deploy/postgres-backup.sh" \
   "$WORK/deploy.incoming/deploy/postgres-backup-inspect.sh" \
   "$WORK/deploy.incoming/deploy/postgres-restore.sh" \
@@ -133,7 +135,7 @@ case "$cmd" in
             printf '{"status":"success","data":{"activeTargets":[{"labels":{"job":"wotb-backend"}},{"labels":{"job":"keycloak"}},{"labels":{"job":"node-exporter"}},{"labels":{"job":"prometheus"}},{"labels":{"job":"loki"}},{"labels":{"job":"grafana"}}]}}\n'
             exit 0
           fi
-          if [[ "$request" == *"grafana:3000/api/datasources"* || "$request" == *"grafana:3000/api/dashboards"* ]]; then
+          if [[ "$request" == *"/api/datasources"* || "$request" == *"/api/dashboards"* ]]; then
             [ "${FAKE_GRAFANA_AUTH:-1}" = 1 ] || exit 1
             if [[ "$request" == *"/api/datasources"* ]]; then
               printf '{"status":"OK"}\n'

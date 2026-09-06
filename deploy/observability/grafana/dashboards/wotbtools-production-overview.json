@@ -22,7 +22,7 @@
       "fieldConfig": {"defaults": {"unit": "none", "noValue": "无数据 / 未知", "mappings": [{"type": "value", "options": {"0": {"text": "异常", "color": "red"}, "1": {"text": "正常", "color": "green"}}}]}, "overrides": []},
       "gridPos": {"h": 4, "w": 6, "x": 0, "y": 4}, "id": 3,
       "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "(count(up{job=~\"wotb-backend|keycloak|node-exporter|prometheus|loki|grafana\"}) == 6) and (min(up{job=~\"wotb-backend|keycloak|node-exporter|prometheus|loki|grafana\"}) == 1)", "refId": "A"}], "title": "生产状态（全部六类 target）", "type": "stat"
+      "targets": [{"expr": "min(up{job=~\"wotb-backend|keycloak|node-exporter|prometheus|loki|grafana\"}) and (count(up{job=~\"wotb-backend|keycloak|node-exporter|prometheus|loki|grafana\"}) == 6)", "refId": "A"}], "title": "生产状态（全部六类 target）", "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},

@@ -199,7 +199,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 
 ### 5.0 生产 gate 的认证与日志 canary 契约
 
-- `verify-observability.sh` 通过现有 `wotb-backend` 容器执行 BusyBox 兼容的 `wget`，在容器内生成 Basic Authorization header；不会使用 GNU-only 的 `--user/--password`，也不会把 Grafana 密码放进 URL、命令行输出或诊断日志。
+- `verify-observability.sh` 通过现有 `wotb-backend` 容器执行共享的 `deploy/grafana-api-request.sh` 与 BusyBox 兼容 `wget`；调用方只传 `/api/...`，helper 唯一拼接 Grafana hostname 并在容器内生成 Basic Authorization header。不会使用 GNU-only 的 `--user/--password`，也不会把 Grafana 密码放进 URL、命令行输出或诊断日志。
 - Grafana Prometheus/Loki datasource health 只有 JSON `status: "OK"` 才算成功；其他值（包括旧版兼容的 `success`）一律失败。
 - backend/Keycloak canary 启动前记录固定 Loki `start`，每次重试只更新 `end`。Keycloak canary 使用加入 `wotb_internal` 的 Alpine 3.22 独立 emitter，容器名仍带 `keycloak-observability-canary-`，用于确认 Alloy ownership 规则，不启动第二个 Keycloak。
 - Loki gate 必须同时确认 API `status=success`、`data.result` 非空、stream 的 `values` 非空以及 marker 在实际日志值中；空数组不能被“`values` 字段存在”误判为成功。

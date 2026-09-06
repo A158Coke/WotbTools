@@ -5,6 +5,7 @@ set -euo pipefail
 readonly RETRIES="${WOTB_OBSERVABILITY_RETRIES:-20}"
 readonly INTERVAL_SEC="${WOTB_OBSERVABILITY_INTERVAL_SEC:-3}"
 readonly DASHBOARD_DIR="${WOTB_DASHBOARD_DIR:-deploy/observability/grafana/dashboards}"
+readonly GRAFANA_API_HELPER="${WOTB_GRAFANA_API_HELPER:-deploy/grafana-api-request.sh}"
 if [[ ! "$RETRIES" =~ ^[1-9][0-9]*$ || ! "$INTERVAL_SEC" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: observability retry settings must be positive integers." >&2
   exit 2
@@ -14,13 +15,11 @@ fail() { echo "OBSERVABILITY FAIL: $*" >&2; exit 1; }
 compose_exec() { docker compose exec -T wotb-backend wget -qO- "$1"; }
 frontend_exec() { docker compose exec -T wotb-frontend wget -qO- "$1"; }
 grafana_api() {
+  local path="$1"
   docker compose exec -T \
     -e GRAFANA_VERIFY_USER="$GRAFANA_ADMIN_USER" \
     -e GRAFANA_VERIFY_PASSWORD="$GRAFANA_ADMIN_PASSWORD" \
-    wotb-backend sh -c '
-      token="$(printf "%s:%s" "$GRAFANA_VERIFY_USER" "$GRAFANA_VERIFY_PASSWORD" | base64 | tr -d "\\r\\n")"
-      wget --header="Authorization: Basic $token" -qO- "http://grafana:3000$1"
-    ' _ "http://grafana:3000$1"
+    wotb-backend sh -s -- "$path" < "$GRAFANA_API_HELPER"
 }
 
 wait_for_http() {
