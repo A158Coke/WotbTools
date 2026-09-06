@@ -10,6 +10,8 @@
 - **Battle Playback HD 地图验证收口**：29 张 HD 底图增加 coverage/hash/真实尺寸/严格 2× frame/map import/5 MiB 单图预算的 deterministic gate；terrain attitude 补齐 yaw=90°、反向与 45° 局部轴测试。视觉几何仍要求人工 29/29 source↔HD QA，manifest 的 `geometryTransform=NONE` 仅描述生成流程，不作为视觉真实性证明。
 
 ### Production observability
+- **Keycloak production runtime hardening**：Keycloak 构建阶段固定 PostgreSQL、health、metrics 与 HTTP metrics histograms，生产/本地编排统一使用 `start --optimized`；新增真实 Docker runtime smoke，验证 discovery、management readiness/metrics、无宿主机管理端口暴露及无启动时 augmentation。
+- **Production deploy LKG rollback contract**：成功部署后保存完整、经 health/observability gate 验证的 Last Known Good 部署树；失败只从 LKG 回滚，损坏或缺失 LKG 时 fail-closed 并保留当前 live tree，`deploy.prev` 仅作取证。新增显式 workflow_dispatch bootstrap 输入，用于事故后的首次 LKG 建立，并补充 A/B、损坏 bundle 与 bootstrap 回归 smoke。
 - **Production deploy health-check contract**：前端容器内的部署探针显式发送 `Host: wotbtools.com`，避免误命中 Grafana virtual host；Prometheus 与 observability gate 统一使用 backend 专用 management `8088` 端口，并补充 rollback smoke regression。
 - **Production observability deploy gate fail-closed**：部署显式 reload Prometheus/Alloy，Prometheus target 必须满足 `up == 1`，Loki 必须收到本次部署唯一 canary；失败回滚同时恢复上一版 observability 配置，避免 bind-mounted 配置残留。
 - **AI Review 生产事故可追踪**：Team validator 冲突分类提升到 INFO 安全结构化日志；AI Review/Incident Explorer 看板增加 parse、validation、conflict、retry、upstream 与最终失败生命周期查询，SSE failure 复用 correlationId 作为 canonical error id，并由前端展示可复制的诊断 ID。Prometheus 仍只使用低基数统计，不记录 prompt、原始模型输出或用户级 token usage；部署后的真实数据验收保留为手工清单。
