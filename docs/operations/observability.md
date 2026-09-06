@@ -363,6 +363,11 @@ sum by (type) (rate(wotb_ai_review_errors_total[5m]))
 > 日志纪律：只记录低基数 metadata——严禁 prompt / completion / reviewMarkdown / API key /
 > Authorization / 回放原始内容 / 用户上传文件内容 / 明文昵称（身份用 account hash / vehicle id）。
 
+当前生产 Team Call #2 的 technical schema 链路是「一次初始 JSON + 最多一次定向 repair」：可确定修复的
+optional reference 会在 backend 确定性清理并继续完成；core schema failure 先记录精确 `code`、`path`、
+`pathClass`，仅对 `REPAIRABLE` 结果发送紧凑 repair prompt。repair 仍失败时返回独立的
+`AI_REVIEW_SCHEMA_FAILED`，不伪装成 `AI_REVIEW_GROUNDING_FAILED`，也不再执行四次完整上下文 schema retry。
+
 #### 追一单
 
 ```bash
@@ -417,11 +422,18 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 | `team_review_validation_conflict`（INFO） | attempt, check, reasonCode, severity | 冲突机器分类明细；INFO 是生产默认级别，便于 grounding failure 诊断 |
 | `ai_validation_retry` | stage, validationAttempt, rewrite=TARGETED/FULL/SAFE, reason | 业务返工重试；SAFE 是最终 bounded conservative recovery，之后必须再次完整校验 |
 | `team_review_completed` | validationAttempts, totalPromptTokens, totalCompletionTokens, durationMs, result | Team Call #2 阶段汇总 |
+| `team_review_schema_failure` | attempt, reason, pathClass | technical schema failure；pathClass 去除数组下标，禁止用户/玩家标识 |
+| `team_review_normalized` | normalizationCount, types | optional reference 的确定性清理 |
+| `team_review_repair_started` / `team_review_repair_completed` / `team_review_repair_failed` | failureCount / repairResult, durationMs | 最多一次紧凑 technical repair 生命周期；`failureCount/pathClass` 只表示 normalization 后仍待修复的 CORE_SCHEMA failures |
 
 #### parser 失败分类（低基数枚举）
 
 `EMPTY_OUTPUT` · `INVALID_JSON` · `MISSING_PRIMARY_DIAGNOSIS` · `MISSING_REVIEW_MARKDOWN` · `INVALID_CLAIMS` ·
 `UNKNOWN_CLAIM_TYPE` · `INVALID_MACHINE_FIELD_TYPE` · `MISSING_REQUIRED_MACHINE_FIELD` · `TOO_MANY_CLAIMS` · `TOO_MANY_EVIDENCE_IDS`
+
+TeamAiReviewResult v0.5 parser 另外使用 `MISSING_REQUIRED_FIELD`、`INVALID_FIELD`、`CARDINALITY_EXCEEDED`
+和 `INVALID_REFERENCE`，每条 failure 带稳定 `path` 与 `FailureCategory`；Prometheus 仅使用 `reason` /
+`path_class` 枚举，不写入用户或玩家标识。
 
 #### validator conflict reasonCode（机器分类）
 
@@ -435,6 +447,9 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
   查 `event=team_review_validation` 的 `checks` 与 `event=team_review_validation_conflict` 的 `reasonCode` 判断是哪个 check 反复失败；
   `event=team_review_validation_attempt_completed` 看 token 放大（`cumulativePromptTokens`）；若 SAFE 已通过，最终
   `team_review_validation attempt=4 result=PASS`，不会返回该错误。
+- **`AI_REVIEW_SCHEMA_FAILED`**（502）：初始 technical parse 为 fatal，或初始 repairable schema 在一次定向
+  repair 后仍失败。查 `team_review_schema_failure` 的 `reason/pathClass`，再看
+  `team_review_repair_started/completed/failed`；不要把该错误归入 provider unavailable。
 - **`AI_TIMEOUT`**：分 provider read timeout / 整体预算耗尽 / SSE timeout 三种；查 `event=ai_upstream_call_failed` 与调用耗时、remainingBudgetSec。
 - **`AI_UPSTREAM_UNAVAILABLE`**：上游 5xx / 连接失败；`event=ai_transport_retry` 记录退避重试。
 - **`AI_CANCELLED`**：客户端取消（cancel 端点 / SSE 断开）；查 `event=ai_review_cancelled` 的 `source`。
@@ -532,6 +547,13 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_review_queue_depth` — 当前等待执行的 AI Review worker 数（Gauge；不含正在执行与已拒绝请求）
   - `wotb_ai_team_review_validation_attempt_total{result=pass|parser_invalid|validation_failed|metadata_only_pass}` — Team Call #2 validation attempt 分类；`parser_invalid` 与 `validation_failed` 表示 rework/失败尝试
   - `wotb_ai_team_review_validation_retry_total{stage=TEAM_CALL_2,rewrite=TARGETED|FULL|SAFE}` — validation retry 的低基数阶段与改写类型分布
+  - `wotb_ai_team_review_schema_failure_total{reason,path_class}` — technical schema failure（低基数；不含 prompt/output）
+  - `wotb_ai_team_review_normalization_total{type}` — optional reference 确定性清理次数
+  - `wotb_ai_team_review_repair_total{result=started|success|normalized_success|failed|semantic_changed}` — 定向 repair 生命周期；`semantic_changed` 表示 repair 虽返回了合法 schema，但违反 semantic immutability invariant，backend fail-closed 并返回 `AI_REVIEW_SCHEMA_FAILED`
+
+  Dashboard 的最终 Repair Failure 统计使用 `failed|semantic_changed`；Repair Success Rate 的 numerator 使用
+  `success|normalized_success`，denominator 使用全部 terminal result（`success|normalized_success|failed|semantic_changed`），
+  不包含只表示开始生命周期的 `started`。
 - **AI upstream**（自定义，`SpringAiChatGateway.chat`，每次上游调用）：
   - `wotb_ai_upstream_requests_total{mode}` — 上游请求量（每个 attempt +1，含 retry 重试；token budget 拒绝不进入 gateway，不计）
   - `wotb_ai_upstream_success_total{mode}` — 成功调用数（一次逻辑调用 +1）
