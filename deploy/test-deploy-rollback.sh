@@ -23,6 +23,7 @@ cp "$ROOT/deploy/sponsor-config.example.json" "$WORK/deploy.incoming/deploy/spon
 cp "$ROOT/deploy/postgres-backup.sh" "$WORK/deploy.incoming/deploy/postgres-backup.sh"
 cp "$ROOT/deploy/postgres-backup-inspect.sh" "$WORK/deploy.incoming/deploy/postgres-backup-inspect.sh"
 cp "$ROOT/deploy/postgres-restore.sh" "$WORK/deploy.incoming/deploy/postgres-restore.sh"
+cp -a "$ROOT/deploy/observability" "$WORK/deploy.incoming/deploy/observability"
 # Normalize line endings so the sandbox runs identically on CRLF checkouts
 # (CI/ubuntu checkouts are LF; this keeps the smoke test portable).
   sed -i 's/\r$//' \
