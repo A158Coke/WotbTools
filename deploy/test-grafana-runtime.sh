@@ -30,12 +30,24 @@ wait_json_success() {
   local url="$1" body
   for attempt in $(seq 1 30); do
     if body="$(curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" "$url" 2>/dev/null)" \
-      && grep -Eq '"status"[[:space:]]*:[[:space:]]*"(success|OK)"' <<<"$body"; then
+      && grep -Eq '"status"[[:space:]]*:[[:space:]]*"OK"' <<<"$body"; then
       return 0
     fi
     sleep 2
   done
   fail "Grafana datasource health is not successful: $url"
+}
+
+alpine_grafana_api() {
+  local user="$1" password="$2" path="$3"
+  docker run --rm --network "$NETWORK" \
+    -e GRAFANA_VERIFY_USER="$user" \
+    -e GRAFANA_VERIFY_PASSWORD="$password" \
+    alpine:3.22 sh -c '
+      set -eu
+      token="$(printf "%s:%s" "$GRAFANA_VERIFY_USER" "$GRAFANA_VERIFY_PASSWORD" | base64 | tr -d "\\r\\n")"
+      wget --header="Authorization: Basic $token" -qO- "http://grafana:3000$1"
+    ' _ "$path"
 }
 
 docker network create "$NETWORK" >/dev/null
@@ -61,6 +73,20 @@ PORT="$(docker port "$GRAFANA" 3000/tcp | sed -E 's/.*://')"
 wait_http "http://127.0.0.1:${PORT}/api/health" curl -fsS
 wait_json_success "http://127.0.0.1:${PORT}/api/datasources/uid/prometheus/health"
 wait_json_success "http://127.0.0.1:${PORT}/api/datasources/uid/loki/health"
+
+for datasource_uid in prometheus loki; do
+  body="$(alpine_grafana_api "$ADMIN_USER" "$ADMIN_PASSWORD" "/api/datasources/uid/${datasource_uid}/health")" \
+    || fail "Alpine/BusyBox Grafana auth failed for datasource: $datasource_uid"
+  grep -Eq '"status"[[:space:]]*:[[:space:]]*"OK"' <<<"$body" \
+    || fail "Grafana datasource status is not exactly OK: $datasource_uid"
+done
+dashboard_body="$(alpine_grafana_api "$ADMIN_USER" "$ADMIN_PASSWORD" "/api/dashboards/uid/wotbtools-production-overview")" \
+  || fail "Alpine/BusyBox Grafana auth failed for dashboard API"
+grep -Fq '"dashboard"' <<<"$dashboard_body" \
+  || fail "Alpine/BusyBox dashboard API response was not valid"
+if alpine_grafana_api wrong-user wrong-password "/api/datasources/uid/prometheus/health" >/dev/null 2>&1; then
+  fail "Grafana accepted wrong credentials in Alpine/BusyBox auth path"
+fi
 
 production_uid=""
 for dashboard_file in "$ROOT"/deploy/observability/grafana/dashboards/*.json; do

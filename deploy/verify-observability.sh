@@ -17,7 +17,10 @@ grafana_api() {
   docker compose exec -T \
     -e GRAFANA_VERIFY_USER="$GRAFANA_ADMIN_USER" \
     -e GRAFANA_VERIFY_PASSWORD="$GRAFANA_ADMIN_PASSWORD" \
-    wotb-backend sh -c 'wget -qO- --user="$GRAFANA_VERIFY_USER" --password="$GRAFANA_VERIFY_PASSWORD" "$1"' _ "http://grafana:3000$1"
+    wotb-backend sh -c '
+      token="$(printf "%s:%s" "$GRAFANA_VERIFY_USER" "$GRAFANA_VERIFY_PASSWORD" | base64 | tr -d "\\r\\n")"
+      wget --header="Authorization: Basic $token" -qO- "http://grafana:3000$1"
+    ' _ "http://grafana:3000$1"
 }
 
 wait_for_http() {
@@ -55,7 +58,7 @@ wait_for_grafana_datasource() {
   local name="$1" path="$2" body="" attempt
   for attempt in $(seq 1 "$RETRIES"); do
     if body="$(grafana_api "$path" 2>/dev/null)" \
-      && grep -Eq '"status"[[:space:]]*:[[:space:]]*"(success|OK)"' <<<"$body"; then
+      && grep -Eq '"status"[[:space:]]*:[[:space:]]*"OK"' <<<"$body"; then
       echo "PASS: $name"
       return 0
     fi
@@ -93,6 +96,8 @@ wait_for_http "backend metrics endpoint" \
   "http://127.0.0.1:8087/actuator/prometheus" "jvm_" "process_" "system_" "http_server_requests"
 wait_for_http "backend replay and AI queue gauges" \
   "http://127.0.0.1:8087/actuator/prometheus" "wotb_replay_parse_active" "wotb_replay_parse_queue_depth" "wotb_ai_review_in_flight" "wotb_ai_review_queue_depth"
+wait_for_http "backend Hikari metrics" \
+  "http://127.0.0.1:8087/actuator/prometheus" "hikaricp_connections_active"
 wait_for_http "keycloak metrics endpoint" "http://keycloak:9000/metrics" "process_"
 wait_for_http "node exporter metrics endpoint" "http://node-exporter:9100/metrics" "node_"
 wait_for_http "prometheus metrics endpoint" "http://prometheus:9090/metrics" "prometheus_"
@@ -145,6 +150,8 @@ keycloak_name="keycloak-observability-canary-${canary_id}"
 backend_marker="wotb-backend-canary-${canary_id}"
 keycloak_marker="wotb-keycloak-canary-${canary_id}"
 frontend_apk="observability-canary-${canary_id}.apk"
+canary_start_epoch="$(date +%s)"
+canary_start_ns="${canary_start_epoch}000000000"
 export WOTB_OBSERVABILITY_CANARY_MARKER="$backend_marker"
 export WOTB_KEYCLOAK_CANARY_MARKER="$keycloak_marker"
 export WOTB_FRONTEND_CANARY_APK="$frontend_apk"
@@ -156,24 +163,26 @@ trap cleanup_canaries EXIT
 docker compose run -d --no-deps --name "$backend_name" wotb-backend \
   sh -c "printf '%s\\n' '$backend_marker'; sleep $((RETRIES * INTERVAL_SEC + 30))" >/dev/null \
   || fail "could not start backend deployment canary"
-docker compose run -d --no-deps --name "$keycloak_name" keycloak \
+docker run -d --network "${WOTB_OBSERVABILITY_NETWORK:-wotb_internal}" --name "$keycloak_name" alpine:3.22 \
   sh -c "printf '%s\\n' '$keycloak_marker'; sleep $((RETRIES * INTERVAL_SEC + 30))" >/dev/null \
   || fail "could not start Keycloak deployment canary"
 
+query_range_has_values() {
+  local body="$1" marker="$2"
+  grep -Eq '"status"[[:space:]]*:[[:space:]]*"success"' <<<"$body" \
+    && grep -Eq '"result"[[:space:]]*:[[:space:]]*\[[[:space:]]*\{' <<<"$body" \
+    && grep -Eq '"values"[[:space:]]*:[[:space:]]*\[[[:space:]]*\[' <<<"$body" \
+    && grep -Fq "$marker" <<<"$body"
+}
+
 for attempt in $(seq 1 "$RETRIES"); do
-  now="$(date +%s)"
-  start_ns="$((now - 10))000000000"
-  end_ns="$((now + 1))000000000"
-  backend_query="http://loki:3100/loki/api/v1/query_range?query=%7Bcontainer_name%3D%22wotb-backend%22%7D%20%7C%3D%20%22${backend_marker}%22&start=${start_ns}&end=${end_ns}&limit=1"
-  keycloak_query="http://loki:3100/loki/api/v1/query_range?query=%7Bcontainer_name%3D%22keycloak%22%7D%20%7C%3D%20%22${keycloak_marker}%22&start=${start_ns}&end=${end_ns}&limit=1"
+  end_ns="$(( $(date +%s) + 2 ))000000000"
+  backend_query="http://loki:3100/loki/api/v1/query_range?query=%7Bcontainer_name%3D%22wotb-backend%22%7D%20%7C%3D%20%22${backend_marker}%22&start=${canary_start_ns}&end=${end_ns}&limit=1"
+  keycloak_query="http://loki:3100/loki/api/v1/query_range?query=%7Bcontainer_name%3D%22keycloak%22%7D%20%7C%3D%20%22${keycloak_marker}%22&start=${canary_start_ns}&end=${end_ns}&limit=1"
   backend_body="$(compose_exec "$backend_query" 2>/dev/null || true)"
   keycloak_body="$(compose_exec "$keycloak_query" 2>/dev/null || true)"
-  if grep -Fq '"status":"success"' <<<"$backend_body" \
-    && grep -Fq '"values":[' <<<"$backend_body" \
-    && grep -Fq "$backend_marker" <<<"$backend_body" \
-    && grep -Fq '"status":"success"' <<<"$keycloak_body" \
-    && grep -Fq '"values":[' <<<"$keycloak_body" \
-    && grep -Fq "$keycloak_marker" <<<"$keycloak_body"; then
+  if query_range_has_values "$backend_body" "$backend_marker" \
+    && query_range_has_values "$keycloak_body" "$keycloak_marker"; then
     echo "PASS: Loki backend and Keycloak deployment canaries"
     break
   fi
@@ -183,15 +192,14 @@ done
 
 # This request may return 404: it verifies the real nginx access-log path,
 # while the Android dashboard counts only status=200.
+frontend_canary_start_epoch="$(date +%s)"
+frontend_canary_start_ns="${frontend_canary_start_epoch}000000000"
 frontend_exec "http://127.0.0.1:80/download/android/$frontend_apk" >/dev/null 2>&1 || true
 for attempt in $(seq 1 "$RETRIES"); do
-  now="$(date +%s)"
-  start_ns="$((now - 10))000000000"
-  end_ns="$((now + 1))000000000"
-  frontend_query="http://loki:3100/loki/api/v1/query_range?query=%7Bcontainer_name%3D%22wotb-frontend%22%2Cevent%3D%22android_apk_download%22%7D%20%7C%3D%20%22${frontend_apk}%22&start=${start_ns}&end=${end_ns}&limit=1"
+  end_ns="$(( $(date +%s) + 2 ))000000000"
+  frontend_query="http://loki:3100/loki/api/v1/query_range?query=%7Bcontainer_name%3D%22wotb-frontend%22%2Cevent%3D%22android_apk_download%22%7D%20%7C%3D%20%22${frontend_apk}%22&start=${frontend_canary_start_ns}&end=${end_ns}&limit=1"
   frontend_body="$(compose_exec "$frontend_query" 2>/dev/null || true)"
-  if grep -Fq '"status":"success"' <<<"$frontend_body" \
-    && grep -Fq '"values":[' <<<"$frontend_body" \
+  if query_range_has_values "$frontend_body" 'event=android_apk_download' \
     && grep -Fq 'event=android_apk_download' <<<"$frontend_body" \
     && grep -Fq "apk=$frontend_apk" <<<"$frontend_body" \
     && grep -Fq 'status=404' <<<"$frontend_body" \
