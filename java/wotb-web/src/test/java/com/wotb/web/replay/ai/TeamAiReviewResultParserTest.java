@@ -62,6 +62,47 @@ class TeamAiReviewResultParserTest {
     }
 
     @Test
+    void boundsMetricPathClassForRandomUnknownFields() {
+        final Set<String> pathClasses = Set.copyOf(java.util.stream.IntStream.range(0, 100)
+                .mapToObj(index -> {
+                    final TeamAiReviewResultParser.ParseResult parsed = TeamAiReviewResultParser.parse(
+                            VALID.replace("\"highContributors\":[]",
+                                    "\"highContributors\":[],\"generated_field_" + index + "\":true"),
+                            Set.of("P1"));
+                    return TeamReplayAnalysisService.pathClass(parsed.failures().getFirst().path());
+                })
+                .toList());
+        assertEquals(Set.of("root.unknown_field"), pathClasses);
+    }
+
+    @Test
+    void defaultsMissingEmptyCompatibleSectionsWithoutRepair() {
+        final String output = VALID
+                .replace("\"trainingSuggestions\":[{\"title\":\"建议\",\"content\":\"内容\",\"episodeId\":\"E1\"}],", "")
+                .replace("\"reviewFocus\":[{\"playerKey\":\"P1\",\"episodeId\":\"E1\",\"reason\":\"复查\"}],", "")
+                .replace(",\"highContributors\":[]", "");
+        final TeamAiReviewResultParser.ParseResult result =
+                TeamAiReviewResultParser.parse(output, Set.of("P1"));
+
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION, result.status());
+        assertTrue(result.result().trainingSuggestions().isEmpty());
+        assertTrue(result.result().reviewFocus().isEmpty());
+        assertTrue(result.result().highContributors().isEmpty());
+        assertTrue(result.failures().isEmpty());
+    }
+
+    @Test
+    void defaultsMissingEpisodeTimesToNull() {
+        final TeamAiReviewResultParser.ParseResult result = TeamAiReviewResultParser.parse(
+                VALID.replace("\"startSec\":10,", "").replace("\"endSec\":20,", ""),
+                Set.of("P1"));
+
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION, result.status());
+        assertEquals(null, result.result().episodes().getFirst().startSec());
+        assertEquals(null, result.result().episodes().getFirst().endSec());
+    }
+
+    @Test
     void reportsFatalCoreFailures() {
         assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
                 TeamAiReviewResultParser.parse("{\"episodes\":[]}", Set.of()).status());
