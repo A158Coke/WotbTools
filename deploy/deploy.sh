@@ -16,6 +16,12 @@ readonly LKG_COMPOSE_RETIRING="$WOTB_DIR/docker-compose.lkg.retiring.yml"
 readonly LKG_SHA="$WOTB_DIR/DEPLOYED_SHA.lkg"
 readonly LKG_SHA_NEXT="$WOTB_DIR/DEPLOYED_SHA.lkg.next"
 readonly LKG_SHA_RETIRING="$WOTB_DIR/DEPLOYED_SHA.lkg.retiring"
+readonly LIVE_COMPOSE="$WOTB_DIR/docker-compose.yml"
+readonly RESTORE_DEPLOY_NEXT_DIR="$WOTB_DIR/deploy.restore.next"
+readonly RESTORE_DEPLOY_FAILED_DIR="$WOTB_DIR/deploy.failed"
+readonly RESTORE_COMPOSE_NEXT="$WOTB_DIR/docker-compose.restore.next.yml"
+readonly RESTORE_COMPOSE_INSTALLING="$WOTB_DIR/docker-compose.restore.installing.yml"
+readonly RESTORE_COMPOSE_FAILED="$WOTB_DIR/docker-compose.failed.yml"
 readonly HEALTH_RETRIES="${WOTB_HEALTH_RETRIES:-60}"
 readonly BOOTSTRAP_ALLOWED="${WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG:-0}"
 
@@ -186,8 +192,39 @@ rewrite_compose_tree_path() {
   local source_file="$1" destination_file="$2" from_tree="$3" to_tree="$4"
   local from_path="${WOTB_DIR%/}/${from_tree}/"
   local to_path="${WOTB_DIR%/}/${to_tree}/"
-  sed "s|$from_path|$to_path|g; s|\./${from_tree}/|./${to_tree}/|g" \
-    "$source_file" > "$destination_file"
+  if ! sed "s|$from_path|$to_path|g; s|\./${from_tree}/|./${to_tree}/|g" \
+      "$source_file" > "$destination_file"; then
+    echo "ERROR: failed to rewrite compose paths from ${from_tree} to ${to_tree}." >&2
+    return 1
+  fi
+}
+
+copy_tree() {
+  local purpose="$1" source_dir="$2" destination_dir="$3"
+  if [ "$purpose" = lkg-stage ] && [ "${WOTB_TEST_FAIL_LKG_STAGE_COPY:-0}" = 1 ]; then
+    echo "TEST INJECTION: refusing LKG stage copy." >&2
+    return 1
+  fi
+  if [ "$purpose" = lkg-restore ] && [ "${WOTB_TEST_FAIL_LKG_RESTORE_COPY:-0}" = 1 ]; then
+    echo "TEST INJECTION: refusing LKG restore copy." >&2
+    return 1
+  fi
+  cp -a "$source_dir" "$destination_dir"
+}
+
+move_path() {
+  local purpose="$1" source_path="$2" destination_path="$3"
+  if [ "$purpose" = restore-live ] \
+      && [ "${WOTB_TEST_FAIL_LKG_RESTORE_LIVE_SWITCH:-0}" = 1 ]; then
+    echo "TEST INJECTION: refusing LKG live tree switch." >&2
+    return 1
+  fi
+  if [ "$purpose" = restore-compose ] \
+      && [ "${WOTB_TEST_FAIL_LKG_RESTORE_COMPOSE_INSTALL:-0}" = 1 ]; then
+    echo "TEST INJECTION: refusing LKG compose installation." >&2
+    return 1
+  fi
+  mv -- "$source_path" "$destination_path"
 }
 
 lkg_bundle_present() {
@@ -200,7 +237,10 @@ validate_lkg_bundle() {
     echo "${label}: LKG bundle is incomplete." >&2
     return 1
   fi
-  sha="$(tr -d '\r\n' < "$sha_file")"
+  if ! sha="$(tr -d '\r\n' < "$sha_file")"; then
+    echo "${label}: LKG SHA metadata could not be read." >&2
+    return 1
+  fi
   if [ -z "$sha" ] || [[ "$sha" =~ [[:space:]] ]]; then
     echo "${label}: LKG SHA metadata is invalid." >&2
     return 1
@@ -223,11 +263,25 @@ validate_lkg_bundle() {
 
 stage_lkg_snapshot() {
   local source_dir="$1" source_compose="$2" sha="$3"
-  rm -rf -- "$LKG_DEPLOY_NEXT_DIR" "$LKG_COMPOSE_NEXT" "$LKG_SHA_NEXT"
-  cp -a "$source_dir" "$LKG_DEPLOY_NEXT_DIR"
-  rewrite_compose_tree_path "$source_compose" "$LKG_COMPOSE_NEXT" deploy deploy.lkg.next
-  printf '%s\n' "$sha" > "$LKG_SHA_NEXT"
-  chmod 600 "$LKG_COMPOSE_NEXT" "$LKG_SHA_NEXT"
+  if ! rm -rf -- "$LKG_DEPLOY_NEXT_DIR" "$LKG_COMPOSE_NEXT" "$LKG_SHA_NEXT"; then
+    echo "ERROR: failed to clear the LKG staging paths." >&2
+    return 1
+  fi
+  if ! copy_tree lkg-stage "$source_dir" "$LKG_DEPLOY_NEXT_DIR"; then
+    echo "ERROR: failed to copy the deployment tree into the LKG staging path." >&2
+    return 1
+  fi
+  if ! rewrite_compose_tree_path "$source_compose" "$LKG_COMPOSE_NEXT" deploy deploy.lkg.next; then
+    return 1
+  fi
+  if ! printf '%s\n' "$sha" > "$LKG_SHA_NEXT"; then
+    echo "ERROR: failed to write the LKG SHA staging metadata." >&2
+    return 1
+  fi
+  if ! chmod 600 "$LKG_COMPOSE_NEXT" "$LKG_SHA_NEXT"; then
+    echo "ERROR: failed to protect the LKG staging metadata." >&2
+    return 1
+  fi
 }
 
 validate_lkg_candidate() {
@@ -245,8 +299,12 @@ promote_lkg_candidate() {
   fi
 
   restore_retired_lkg() {
-    rm -rf -- "$LKG_DEPLOY_DIR"
-    rm -f -- "$LKG_COMPOSE" "$LKG_SHA" "$LKG_COMPOSE_INSTALLING"
+    if ! rm -rf -- "$LKG_DEPLOY_DIR"; then
+      restore_failed=true
+    fi
+    if ! rm -f -- "$LKG_COMPOSE" "$LKG_SHA" "$LKG_COMPOSE_INSTALLING"; then
+      restore_failed=true
+    fi
     if [ -e "$LKG_DEPLOY_RETIRING_DIR" ] && ! mv -- "$LKG_DEPLOY_RETIRING_DIR" "$LKG_DEPLOY_DIR"; then
       restore_failed=true
     fi
@@ -267,33 +325,51 @@ promote_lkg_candidate() {
     return 1
   fi
   if [ -e "$LKG_COMPOSE" ] && ! mv -- "$LKG_COMPOSE" "$LKG_COMPOSE_RETIRING"; then
-    restore_retired_lkg || true
+    if ! restore_retired_lkg; then
+      echo "ERROR: LKG rollback cleanup also failed." >&2
+    fi
     return 1
   fi
   if [ -e "$LKG_SHA" ] && ! mv -- "$LKG_SHA" "$LKG_SHA_RETIRING"; then
-    restore_retired_lkg || true
+    if ! restore_retired_lkg; then
+      echo "ERROR: LKG rollback cleanup also failed." >&2
+    fi
     return 1
   fi
   if ! mv -- "$LKG_DEPLOY_NEXT_DIR" "$LKG_DEPLOY_DIR"; then
-    restore_retired_lkg || true
+    if ! restore_retired_lkg; then
+      echo "ERROR: LKG rollback cleanup also failed." >&2
+    fi
     return 1
   fi
   if ! sed 's|deploy\.lkg\.next/|deploy.lkg/|g' "$LKG_COMPOSE_NEXT" > "$LKG_COMPOSE_INSTALLING" \
       || ! chmod 600 "$LKG_COMPOSE_INSTALLING" \
       || ! mv -- "$LKG_COMPOSE_INSTALLING" "$LKG_COMPOSE"; then
-    restore_retired_lkg || true
+    if ! restore_retired_lkg; then
+      echo "ERROR: LKG rollback cleanup also failed." >&2
+    fi
     return 1
   fi
   if ! mv -- "$LKG_SHA_NEXT" "$LKG_SHA"; then
-    restore_retired_lkg || true
+    if ! restore_retired_lkg; then
+      echo "ERROR: LKG rollback cleanup also failed." >&2
+    fi
     return 1
   fi
   if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "Promoted LKG"; then
-    restore_retired_lkg || true
+    if ! restore_retired_lkg; then
+      echo "ERROR: LKG rollback cleanup also failed." >&2
+    fi
     return 1
   fi
-  rm -f -- "$LKG_COMPOSE_NEXT" "$LKG_COMPOSE_RETIRING" "$LKG_SHA_RETIRING"
-  rm -rf -- "$LKG_DEPLOY_RETIRING_DIR"
+  if ! rm -f -- "$LKG_COMPOSE_NEXT" "$LKG_COMPOSE_RETIRING" "$LKG_SHA_RETIRING"; then
+    echo "ERROR: failed to remove retired LKG metadata." >&2
+    return 1
+  fi
+  if ! rm -rf -- "$LKG_DEPLOY_RETIRING_DIR"; then
+    echo "ERROR: failed to remove the retired LKG tree." >&2
+    return 1
+  fi
   return 0
 }
 
@@ -307,15 +383,128 @@ seed_current_lkg() {
     "$LIVE_DEPLOY_DIR/observability/alloy/config.alloy" >/dev/null || return 1
   wait_healthy || return 1
   verify_observability || return 1
-  stage_lkg_snapshot "$LIVE_DEPLOY_DIR" docker-compose.yml "$PREV_SHA"
-  promote_lkg_candidate
+  stage_lkg_snapshot "$LIVE_DEPLOY_DIR" docker-compose.yml "$PREV_SHA" || return 1
+  promote_lkg_candidate || return 1
+}
+
+prepare_lkg_restore() {
+  if [ -e "$RESTORE_DEPLOY_FAILED_DIR" ] || [ -e "$RESTORE_COMPOSE_FAILED" ]; then
+    echo "ERROR: stale failed LKG restore paths exist; refusing to overwrite them." >&2
+    return 1
+  fi
+  if ! rm -rf -- "$RESTORE_DEPLOY_NEXT_DIR" "$RESTORE_COMPOSE_NEXT" "$RESTORE_COMPOSE_INSTALLING"; then
+    echo "ERROR: failed to clear the LKG restore staging paths." >&2
+    return 1
+  fi
+  if ! copy_tree lkg-restore "$LKG_DEPLOY_DIR" "$RESTORE_DEPLOY_NEXT_DIR"; then
+    echo "ERROR: failed to stage the validated LKG for restore; live was not changed." >&2
+    return 1
+  fi
+  if ! rewrite_compose_tree_path "$LKG_COMPOSE" "$RESTORE_COMPOSE_NEXT" deploy.lkg deploy.restore.next; then
+    return 1
+  fi
+  if ! chmod 600 "$RESTORE_COMPOSE_NEXT"; then
+    echo "ERROR: failed to protect the staged LKG restore compose." >&2
+    return 1
+  fi
+  if ! docker compose -f "$RESTORE_COMPOSE_NEXT" config >/dev/null; then
+    echo "ERROR: staged LKG restore compose validation failed; live was not changed." >&2
+    return 1
+  fi
+  if ! validate_lkg_bundle "$RESTORE_DEPLOY_NEXT_DIR" "$RESTORE_COMPOSE_NEXT" "$LKG_SHA" \
+      "LKG restore candidate"; then
+    echo "ERROR: staged LKG restore bundle validation failed; live was not changed." >&2
+    return 1
+  fi
+}
+
+restore_previous_live_after_failed_switch() {
+  local restore_failed=false
+  if [ -e "$LIVE_DEPLOY_DIR" ] && ! rm -rf -- "$LIVE_DEPLOY_DIR"; then
+    restore_failed=true
+  fi
+  if [ -e "$LIVE_COMPOSE" ] && [ -e "$RESTORE_COMPOSE_FAILED" ] \
+      && ! rm -f -- "$LIVE_COMPOSE"; then
+    restore_failed=true
+  fi
+  if [ -e "$RESTORE_DEPLOY_FAILED_DIR" ] \
+      && ! move_path restore-recover-live "$RESTORE_DEPLOY_FAILED_DIR" "$LIVE_DEPLOY_DIR"; then
+    restore_failed=true
+  fi
+  if [ -e "$RESTORE_COMPOSE_FAILED" ] \
+      && ! move_path restore-recover-compose "$RESTORE_COMPOSE_FAILED" "$LIVE_COMPOSE"; then
+    restore_failed=true
+  fi
+  if [ "$restore_failed" = true ]; then
+    echo "ERROR: failed to restore the pre-rollback live state after a switch failure." >&2
+    return 1
+  fi
+  return 0
 }
 
 restore_lkg_to_live() {
-  rm -rf -- "$LIVE_DEPLOY_DIR"
-  cp -a "$LKG_DEPLOY_DIR" "$LIVE_DEPLOY_DIR"
-  rewrite_compose_tree_path "$LKG_COMPOSE" docker-compose.yml deploy.lkg deploy
-  chmod 600 docker-compose.yml
+  prepare_lkg_restore || return 1
+  if [ -e "$LIVE_DEPLOY_DIR" ] \
+      && ! move_path restore-preserve-live "$LIVE_DEPLOY_DIR" "$RESTORE_DEPLOY_FAILED_DIR"; then
+    echo "ERROR: failed to preserve the current live deployment tree." >&2
+    return 1
+  fi
+  if [ -e "$LIVE_COMPOSE" ] \
+      && ! move_path restore-preserve-compose "$LIVE_COMPOSE" "$RESTORE_COMPOSE_FAILED"; then
+    echo "ERROR: failed to preserve the current live compose file." >&2
+    if ! restore_previous_live_after_failed_switch; then
+      echo "ERROR: current live tree may require manual recovery." >&2
+    fi
+    return 1
+  fi
+  if ! move_path restore-live "$RESTORE_DEPLOY_NEXT_DIR" "$LIVE_DEPLOY_DIR"; then
+    echo "ERROR: failed to switch the validated LKG tree into live." >&2
+    if ! restore_previous_live_after_failed_switch; then
+      echo "ERROR: current live tree may require manual recovery." >&2
+    fi
+    return 1
+  fi
+  if ! rewrite_compose_tree_path "$RESTORE_COMPOSE_NEXT" "$RESTORE_COMPOSE_INSTALLING" \
+      deploy.restore.next deploy; then
+    echo "ERROR: failed to prepare the live LKG compose file." >&2
+    if [ -e "$LIVE_DEPLOY_DIR" ] && [ -e "$RESTORE_DEPLOY_FAILED_DIR" ] \
+        && ! move_path restore-partial-live "$LIVE_DEPLOY_DIR" "$RESTORE_DEPLOY_NEXT_DIR"; then
+      echo "ERROR: failed to preserve the partially switched LKG tree." >&2
+    fi
+    if ! restore_previous_live_after_failed_switch; then
+      echo "ERROR: current live tree may require manual recovery." >&2
+    fi
+    return 1
+  fi
+  if ! chmod 600 "$RESTORE_COMPOSE_INSTALLING"; then
+    echo "ERROR: failed to protect the live LKG compose file." >&2
+    if [ -e "$LIVE_DEPLOY_DIR" ] && [ -e "$RESTORE_DEPLOY_FAILED_DIR" ] \
+        && ! move_path restore-partial-live "$LIVE_DEPLOY_DIR" "$RESTORE_DEPLOY_NEXT_DIR"; then
+      echo "ERROR: failed to preserve the partially switched LKG tree." >&2
+    fi
+    if ! restore_previous_live_after_failed_switch; then
+      echo "ERROR: current live tree may require manual recovery." >&2
+    fi
+    return 1
+  fi
+  if ! move_path restore-compose "$RESTORE_COMPOSE_INSTALLING" "$LIVE_COMPOSE"; then
+    echo "ERROR: failed to install the validated LKG compose file." >&2
+    if [ -e "$LIVE_DEPLOY_DIR" ] && [ -e "$RESTORE_DEPLOY_FAILED_DIR" ] \
+        && ! move_path restore-partial-live "$LIVE_DEPLOY_DIR" "$RESTORE_DEPLOY_NEXT_DIR"; then
+      echo "ERROR: failed to preserve the partially switched LKG tree." >&2
+    fi
+    if ! restore_previous_live_after_failed_switch; then
+      echo "ERROR: current live tree may require manual recovery." >&2
+    fi
+    return 1
+  fi
+  if ! rm -rf -- "$RESTORE_DEPLOY_FAILED_DIR"; then
+    echo "WARNING: restored LKG is live, but the retired live tree could not be removed." >&2
+  fi
+  if ! rm -f -- "$RESTORE_COMPOSE_FAILED"; then
+    echo "WARNING: restored LKG is live, but the retired compose file could not be removed." >&2
+  fi
+  return 0
 }
 
 rollback_to_lkg() {
@@ -325,8 +514,11 @@ rollback_to_lkg() {
     echo "manual intervention required; current live tree was not destroyed" >&2
     return 1
   fi
-  restore_lkg_to_live
-  if pull_compose docker-compose.yml \
+  if ! restore_lkg_to_live; then
+    echo "ROLLBACK ABORTED: validated LKG could not be installed transactionally." >&2
+    return 1
+  fi
+  if pull_compose "$LIVE_COMPOSE" \
       && docker compose up -d --remove-orphans \
       && apply_observability_services; then
     if wait_healthy && verify_observability; then
@@ -439,8 +631,10 @@ if [ "$rollback_needed" = false ]; then
     else
       docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
       if wait_healthy && verify_observability; then
-        stage_lkg_snapshot "$LIVE_DEPLOY_DIR" docker-compose.yml "$TAG"
-        if promote_lkg_candidate; then
+        if ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "$TAG"; then
+          echo "ERROR: LKG staging failed after the full deployment gate; attempting rollback." >&2
+          rollback_needed=true
+        elif promote_lkg_candidate; then
           echo "$TAG" > DEPLOYED_SHA
           docker image prune -af
           docker builder prune -af
@@ -460,9 +654,13 @@ fi
 
 if [ "$rollback_needed" = true ]; then
   if lkg_bundle_present; then
-    rollback_to_lkg || true
+    if ! rollback_to_lkg; then
+      echo "ROLLBACK FAILED: no validated LKG was restored." >&2
+    fi
   else
-    rollback_to_legacy_previous || true
+    if ! rollback_to_legacy_previous; then
+      echo "ROLLBACK FAILED: no legacy previous deployment was restored." >&2
+    fi
   fi
   exit 1
 fi

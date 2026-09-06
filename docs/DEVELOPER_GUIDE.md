@@ -365,7 +365,7 @@ API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲�
 6. 镜像 prune 只允许在成功部署或成功回滚后执行。
 7. 健康检查最终失败时，回滚前必须保留新版本诊断（`report_health_status` 各服务 PASS/FAILED/SKIPPED + `dump_logs` 的 `ps -a`/容器 inspect/三服务 logs）；诊断命令失败不得阻断回滚。
 8. 部署前保存 `deploy.prev` 取证快照；compose 切换后显式 reload Prometheus/Alloy，观测 gate 验证 Prometheus `up == 1` 与 deployment-specific Loki canary，失败时从 LKG 同时恢复 compose 和 observability 配置。没有经校验的 LKG 时禁止破坏当前 live tree；只有显式 `workflow_dispatch` bootstrap 输入允许首次建立 LKG。
-9. Keycloak 镜像构建阶段必须启用 PostgreSQL、health、metrics 和 HTTP metrics histograms，并以 `start --optimized` 启动；`:9000/health/ready` 与 `:9000/metrics` 只允许 Docker 内部网络访问。CI 的 `keycloak-runtime` job 必须真实构建并启动该运行时契约。
+9. Keycloak 镜像构建阶段必须启用 PostgreSQL、health、metrics；HTTP metrics histograms 必须由 production runtime env `KC_HTTP_METRICS_HISTOGRAMS_ENABLED=true` 开启，并以 `start --optimized` 启动；`:9000/health/ready` 与 `:9000/metrics` 只允许 Docker 内部网络访问。CI 的 `keycloak-runtime` job 必须真实构建并启动该运行时契约。
 
 **Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 

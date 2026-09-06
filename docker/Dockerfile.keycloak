@@ -19,5 +19,4 @@ COPY docker/keycloak/themes/wotbtools /opt/keycloak/themes/wotbtools
 RUN /opt/keycloak/bin/kc.sh build \
   --db=postgres \
   --health-enabled=true \
-  --metrics-enabled=true \
-  --http-metrics-histograms-enabled=true
+  --metrics-enabled=true
