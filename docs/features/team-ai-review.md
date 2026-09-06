@@ -293,6 +293,14 @@ content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另�
   前端保持「战术复盘生成中…」）。
 - 校验失败 → LLM 自修循环（targeted rewrite → full rewrite → fail-safe），Backend 绝不
   代改句子；重试耗尽 → `error` 事件 `AI_REVIEW_GROUNDING_FAILED`（HTTP 已 200）。
+**Technical schema resilience（当前生产行为）**：Team Call #2 保持 v0.5 JSON/API 契约，backend
+parser 返回 `result/failures/normalizations/status`。不存在的 episode/player reference 等 optional
+错误确定性清理并继续完成；core schema 的 fatal 错误 fail-closed，repairable 错误只允许一次紧凑、
+定向 technical repair。repair 输入仅含生成 JSON、精确 failure path/code/constraint、权威 roster
+keys 与已有 episode reference 约束，不重复发送完整战术 context。repair 仍失败返回
+`AI_REVIEW_SCHEMA_FAILED`，前端三语文案和诊断 ID 与 `AI_REVIEW_GROUNDING_FAILED`、provider
+unavailable 分开。对应事件和低基数指标见 `docs/operations/observability.md`。
+
 **DeepSeek 官方 JSON Output（2026-08，JSON 语法层加固）**：Team Call #2 已启用 provider
 `response_format=json_object`（`AiChatRequest.responseFormat=JSON_OBJECT`，仅此调用；Player /
 Pre-battle / Harness / Autopsy 保持 TEXT）。目的：消灭「非法 JSON / JSON 前后多余文本 → parser fail →

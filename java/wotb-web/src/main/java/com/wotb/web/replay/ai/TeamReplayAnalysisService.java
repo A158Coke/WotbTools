@@ -295,7 +295,7 @@ public class TeamReplayAnalysisService {
         return TeamContextBuilder.buildSingleTeamContext(group);
     }
 
-    /** Team Call #2 事实一致性校验的最大尝试次数（draft → targeted → full → safe → fail-safe）。 */
+    /** Legacy grounding facade 的历史重写预算；production structured Team Review 不使用它。 */
     static final int MAX_VALIDATION_ATTEMPTS = 4;
 
     /**
@@ -497,36 +497,148 @@ public class TeamReplayAnalysisService {
         final String baseUser = input.content()
                 + (groundingSection.isEmpty() ? "" : "\n" + groundingSection);
         final Set<String> rosterKeys = TeamRosterResolver.playerKeys(context);
-        String userContent = baseUser;
         final String correlationId = AiRequestContext.correlationId();
         final long reviewStartNanos = nanoTimeSource.getAsLong();
-        for (int attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
-            if (attempt > 1) {
-                userContent = baseUser + "\n\n=== JSON schema feedback ===\n"
-                        + "请修正上一轮输出的 JSON 类型、必填字段、数量上限或引用关系，"
-                        + "仍然输出完整 TeamAiReviewResult，不要增加第三次调用。";
+        final AiChatResponse initialResponse = callRaw(systemPrompt, baseUser,
+                "SINGLE_TEAM_BATTLE", remainingBudget(startNanos), 1);
+        final TeamAiReviewResultParser.ParseResult initial = TeamAiReviewResultParser.parse(
+                initialResponse.completionText(), rosterKeys);
+        if (initial.status() == TeamAiReviewResultParser.ParseStatus.VALID
+                || initial.normalized()) {
+            countValidationAttempt(initial.normalized() ? "normalized" : "pass");
+            if (initial.normalized()) {
+                logTeamReviewNormalized(correlationId, initial);
             }
-            final AiChatResponse response = callRaw(systemPrompt, userContent,
-                    "SINGLE_TEAM_BATTLE", remainingBudget(startNanos), attempt);
-            final TeamAiReviewResultParser.ParseResult parsed =
-                    TeamAiReviewResultParser.parse(response.completionText(), rosterKeys);
-            if (!parsed.failed()) {
-                countValidationAttempt("pass");
-                logTeamReviewCompleted(correlationId, attempt, response.inputTokens(),
-                        response.outputTokens(), "PASS", reviewStartNanos);
-                return parsed.result();
-            }
-            countValidationAttempt("schema_invalid");
-            LOGGER.info(AiReviewEventLog.line("team_review_schema_failure", correlationId,
-                    "attempt", attempt, "reason", parsed.failure()));
-            if (attempt == MAX_VALIDATION_ATTEMPTS) {
-                logTeamReviewCompleted(correlationId, attempt, response.inputTokens(),
-                        response.outputTokens(), "SCHEMA_FAILED", reviewStartNanos);
-                throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
-            }
-            countValidationRetry("TEAM_CALL_2", "SCHEMA");
+            logTeamReviewCompleted(correlationId, 1, initialResponse.inputTokens(),
+                    initialResponse.outputTokens(), initial.normalized() ? "NORMALIZED" : "PASS",
+                    reviewStartNanos);
+            return initial.result();
         }
+
+        countValidationAttempt("schema_invalid");
+        logSchemaFailure(correlationId, initial, 1);
+        if (!initial.repairable()) {
+            logTeamReviewCompleted(correlationId, 1, initialResponse.inputTokens(),
+                    initialResponse.outputTokens(), "SCHEMA_FAILED", reviewStartNanos);
+            throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
+        }
+
+        final String repairPrompt = buildTechnicalRepairPrompt(
+                initialResponse.completionText(), initial, rosterKeys);
+        LOGGER.info(AiReviewEventLog.line("team_review_repair_started", correlationId,
+                "failureCount", initial.failures().size(),
+                "pathClass", initial.failures().stream().map(item -> pathClass(item.path()))
+                        .distinct().sorted().collect(java.util.stream.Collectors.joining(","))));
+        countRepair("started");
+        final AiChatResponse repairResponse = callRaw(
+                repairSystemPrompt(language), repairPrompt,
+                "SINGLE_TEAM_BATTLE_REPAIR", remainingBudget(startNanos), 2);
+        final TeamAiReviewResultParser.ParseResult repaired = TeamAiReviewResultParser.parse(
+                repairResponse.completionText(), rosterKeys);
+        if (repaired.status() == TeamAiReviewResultParser.ParseStatus.VALID
+                || repaired.normalized()) {
+            countValidationAttempt(repaired.normalized() ? "normalized" : "pass");
+            if (repaired.normalized()) {
+                logTeamReviewNormalized(correlationId, repaired);
+            }
+            LOGGER.info(AiReviewEventLog.line("team_review_repair_completed", correlationId,
+                    "repairResult", repaired.normalized() ? "normalized_success" : "success",
+                    "durationMs", elapsedMillis(reviewStartNanos)));
+            countRepair(repaired.normalized() ? "normalized_success" : "success");
+            logTeamReviewCompleted(correlationId, 2, initialResponse.inputTokens()
+                            + repairResponse.inputTokens(), initialResponse.outputTokens()
+                            + repairResponse.outputTokens(),
+                    repaired.normalized() ? "REPAIR_NORMALIZED" : "REPAIR_SUCCESS", reviewStartNanos);
+            return repaired.result();
+        }
+
+        logSchemaFailure(correlationId, repaired, 2);
+        LOGGER.warn(AiReviewEventLog.line("team_review_repair_failed", correlationId,
+                "repairResult", "schema_failed",
+                "durationMs", elapsedMillis(reviewStartNanos)));
+        countRepair("failed");
+        logTeamReviewCompleted(correlationId, 2, initialResponse.inputTokens()
+                        + repairResponse.inputTokens(), initialResponse.outputTokens()
+                        + repairResponse.outputTokens(), "SCHEMA_FAILED", reviewStartNanos);
         throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
+    }
+
+    private static String buildTechnicalRepairPrompt(
+            final String generatedJson,
+            final TeamAiReviewResultParser.ParseResult parsed,
+            final Set<String> rosterKeys) {
+        final StringBuilder prompt = new StringBuilder(4_000);
+        prompt.append("TECHNICAL JSON REPAIR\n")
+                .append("只修复 JSON technical contract，不重新分析战局。\n")
+                .append("不得改变已有战术判断、战术正文或新增事实/玩家/episode。\n")
+                .append("只能修字段类型、补 technical required field、删除 unsupported optional reference、"
+                        + "或使用 whitelist 中已有 reference。\n\n")
+                .append("ORIGINAL_GENERATED_JSON\n").append(generatedJson).append("\n\n")
+                .append("TECHNICAL_VALIDATION_FAILURES\n");
+        for (final TeamAiReviewResultParser.ParseFailure failure : parsed.failures()) {
+            prompt.append("code=").append(failure.code())
+                    .append(" path=").append(failure.path())
+                    .append(" constraint=").append(failure.constraint()).append('\n');
+        }
+        prompt.append("\nAUTHORITATIVE_ROSTER_PLAYER_KEYS\n")
+                .append(rosterKeys.stream().sorted().collect(java.util.stream.Collectors.joining(",")))
+                .append("\nALLOWED_EPISODE_REFERENCES\n")
+                .append("Use only episode ids already present in ORIGINAL_GENERATED_JSON.\n\n")
+                .append("Return only the complete corrected TeamAiReviewResult JSON object.");
+        return prompt.toString();
+    }
+
+    private static String repairSystemPrompt(final AllowedLanguage language) {
+        return switch (language) {
+            case EN -> "You are a JSON contract repairer. Repair only technical JSON shape and references. "
+                    + "Do not change tactical conclusions or invent facts. Return JSON only.";
+            case RU -> "Исправляйте только технический JSON-контракт и ссылки. "
+                    + "Не меняйте тактические выводы и не придумывайте факты. Верните только JSON.";
+            case ZH -> "你是 JSON technical contract 修复器。只修复 JSON 结构、字段类型和权威引用；"
+                    + "不得改变战术结论、战术正文或发明事实。只返回 JSON。";
+        };
+    }
+
+    private void logSchemaFailure(final String correlationId,
+                                  final TeamAiReviewResultParser.ParseResult parsed,
+                                  final int attempt) {
+        LOGGER.info(AiReviewEventLog.line("team_review_schema_failure", correlationId,
+                "attempt", attempt,
+                "reason", parsed.failure() == null ? "UNKNOWN" : parsed.failure(),
+                "pathClass", parsed.failures().stream().map(item -> pathClass(item.path()))
+                        .distinct().sorted().collect(java.util.stream.Collectors.joining(","))));
+        if (meterRegistry != null) {
+            parsed.failures().forEach(failure -> meterRegistry.counter(
+                    "wotb_ai_team_review_schema_failure_total",
+                    "reason", failure.code().name(),
+                    "path_class", pathClass(failure.path())).increment());
+        }
+    }
+
+    private void logTeamReviewNormalized(final String correlationId,
+                                         final TeamAiReviewResultParser.ParseResult parsed) {
+        LOGGER.info(AiReviewEventLog.line("team_review_normalized", correlationId,
+                "normalizationCount", parsed.normalizations().size(),
+                "types", parsed.normalizations().stream().map(
+                                TeamAiReviewResultParser.Normalization::type)
+                        .distinct().sorted().collect(java.util.stream.Collectors.joining(","))));
+        if (meterRegistry != null) {
+            parsed.normalizations().forEach(normalization -> meterRegistry.counter(
+                    "wotb_ai_team_review_normalization_total", "type", normalization.type())
+                    .increment());
+        }
+    }
+
+    private void countRepair(final String result) {
+        if (meterRegistry != null) {
+            meterRegistry.counter("wotb_ai_team_review_repair_total", "result", result).increment();
+        }
+    }
+
+    private static String pathClass(final String path) {
+        if (path == null || path.isBlank()) return "root";
+        return path.replaceAll("\\[\\d+\\]", "")
+                .replaceAll("\\[\\d+\\]", "");
     }
 
     private record TeamCallResult(AnalyzeResult analysis, TeamAiReviewResult structuredResult) {
