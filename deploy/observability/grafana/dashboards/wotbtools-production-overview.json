@@ -29,7 +29,7 @@
       "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]}}, "overrides": []},
       "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0}, "id": 4,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "round(sum(increase(http_server_requests_seconds_count{job=\"wotb-backend\",status=~\"5..\"}[$__range]))) or vector(0)", "instant": true, "refId": "A"}], "title": "HTTP 5xx（时间范围）", "type": "stat"
+      "targets": [{"expr": "round(sum(increase(http_server_requests_seconds_count{job=\"wotb-backend\",status=~\"5..\"}[$__range])))", "instant": true, "refId": "A"}], "title": "HTTP 5xx（时间范围）", "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
@@ -43,7 +43,7 @@
       "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
       "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0}, "id": 6,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "sum(rate(http_server_requests_seconds_count{job=\"wotb-backend\"}[$__rate_interval])) or vector(0)", "instant": true, "refId": "A"}], "title": "HTTP 当前吞吐", "type": "stat"
+      "targets": [{"expr": "sum(rate(http_server_requests_seconds_count{job=\"wotb-backend\"}[$__rate_interval]))", "instant": true, "refId": "A"}], "title": "HTTP 当前吞吐", "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
@@ -64,49 +64,49 @@
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
       "gridPos": {"h": 4, "w": 4, "x": 8, "y": 4}, "id": 9,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "round(sum(increase(wotb_replay_processing_job_result_total{result=\"ready\"}[$__range]))) or vector(0)", "instant": true, "refId": "A"}], "title": "最近完成的回放作业", "type": "stat"
+      "targets": [{"expr": "round(sum(increase(wotb_replay_processing_job_result_total{result=\"ready\"}[$__range])))", "instant": true, "refId": "A"}], "title": "最近完成的回放作业", "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]}}, "overrides": []},
       "gridPos": {"h": 4, "w": 4, "x": 12, "y": 4}, "id": 10,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "round(sum(increase(wotb_replay_processing_job_result_total{result=\"failed\"}[$__range]))) or vector(0)", "instant": true, "refId": "A"}], "title": "最近失败的回放作业", "type": "stat"
+      "targets": [{"expr": "round(sum(increase(wotb_replay_processing_job_result_total{result=\"failed\"}[$__range])))", "instant": true, "refId": "A"}], "title": "最近失败的回放作业", "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
       "gridPos": {"h": 4, "w": 4, "x": 16, "y": 4}, "id": 11,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "wotb_ai_review_in_flight or vector(0)", "instant": true, "refId": "A"}], "title": "AI 当前并发", "type": "stat"
+      "targets": [{"expr": "wotb_ai_review_in_flight", "instant": true, "refId": "A"}], "title": "AI 当前并发", "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 2}, {"color": "red", "value": 4}]}}, "overrides": []},
       "gridPos": {"h": 4, "w": 4, "x": 20, "y": 4}, "id": 12,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "wotb_ai_review_queue_depth or vector(0)", "instant": true, "refId": "A"}], "title": "AI 等待队列", "type": "stat"
+      "targets": [{"expr": "wotb_ai_review_queue_depth", "instant": true, "refId": "A"}], "title": "AI 等待队列", "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
       "gridPos": {"h": 4, "w": 4, "x": 0, "y": 8}, "id": 13,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "round(sum(increase(wotb_ai_review_results_total{result=\"success\"}[$__range]))) or vector(0)", "instant": true, "refId": "A"}], "title": "AI 成功", "type": "stat"
+      "targets": [{"expr": "round(sum(increase(wotb_ai_review_results_total{result=\"success\"}[$__range])))", "instant": true, "refId": "A"}], "title": "AI 成功", "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]}}, "overrides": []},
       "gridPos": {"h": 4, "w": 4, "x": 4, "y": 8}, "id": 14,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "round(sum(increase(wotb_ai_review_results_total{result=\"failure\"}[$__range]))) or vector(0)", "instant": true, "refId": "A"}], "title": "AI 失败", "type": "stat"
+      "targets": [{"expr": "round(sum(increase(wotb_ai_review_results_total{result=\"failure\"}[$__range])))", "instant": true, "refId": "A"}], "title": "AI 失败", "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
       "gridPos": {"h": 4, "w": 4, "x": 8, "y": 8}, "id": 15,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "round(sum(increase(wotb_ai_review_results_total{result=\"rejected\"}[$__range]))) or vector(0)", "instant": true, "refId": "A"}], "title": "AI 事实校验退回", "type": "stat"
+      "targets": [{"expr": "round(sum(increase(wotb_ai_review_results_total{result=\"rejected\"}[$__range])))", "instant": true, "refId": "A"}], "title": "AI 事实校验退回", "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},

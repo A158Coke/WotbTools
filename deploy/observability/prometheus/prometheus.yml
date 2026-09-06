@@ -1,5 +1,5 @@
 # Prometheus 配置 — WotBTools 观测栈
-# 抓取 Backend 的 /actuator/prometheus、Keycloak 的管理端口 /metrics，以及 node-exporter。
+# 抓取 Backend 的 /actuator/prometheus（Spring Boot 默认 8087）、Keycloak 的管理端口 /metrics，以及 node-exporter。
 # 数据保留 7 天，磁盘上限 2GiB（见 docker-compose 的 storage.tsdb.* 参数）。
 global:
   scrape_interval: 15s
@@ -10,7 +10,7 @@ scrape_configs:
     metrics_path: /actuator/prometheus
     static_configs:
       - targets:
-          - wotb-backend:8088
+          - wotb-backend:8087
         labels:
           service: wotb-backend
 

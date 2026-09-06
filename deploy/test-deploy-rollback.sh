@@ -18,15 +18,17 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/deploy" "$WORK/bin"
 cp "$ROOT/deploy/docker-compose.prod.yml" "$WORK/deploy/docker-compose.prod.yml"
 cp "$ROOT/deploy/deploy.sh" "$WORK/deploy/deploy.sh"
+cp "$ROOT/deploy/verify-observability.sh" "$WORK/deploy/verify-observability.sh"
 cp "$ROOT/deploy/sponsor-config.example.json" "$WORK/deploy/sponsor-config.example.json"
 cp "$ROOT/deploy/postgres-backup.sh" "$WORK/deploy/postgres-backup.sh"
 cp "$ROOT/deploy/postgres-backup-inspect.sh" "$WORK/deploy/postgres-backup-inspect.sh"
 cp "$ROOT/deploy/postgres-restore.sh" "$WORK/deploy/postgres-restore.sh"
 # Normalize line endings so the sandbox runs identically on CRLF checkouts
 # (CI/ubuntu checkouts are LF; this keeps the smoke test portable).
-sed -i 's/\r$//' \
+  sed -i 's/\r$//' \
   "$WORK/deploy/docker-compose.prod.yml" \
   "$WORK/deploy/deploy.sh" \
+  "$WORK/deploy/verify-observability.sh" \
   "$WORK/deploy/postgres-backup.sh" \
   "$WORK/deploy/postgres-backup-inspect.sh" \
   "$WORK/deploy/postgres-restore.sh" \
@@ -89,8 +91,9 @@ case "$cmd" in
       ps) printf 'wotb-backend Up\ntest Up\n' ;;
       exec)
         if active_tag_healthy; then
-          # non-empty stdout so pg_dump / pg_restore validation passes
-          printf 'mock-pg-dump-data\n'
+          # Non-empty stdout keeps backup probes valid; stable observability
+          # tokens satisfy the gate without exposing any secret.
+          printf 'mock-pg-dump-data jvm_ http_server_requests process_ node_ "database":"ok" "status":"success" "job":"wotb-backend" "job":"keycloak" "job":"node-exporter" "value" "result"\n'
           exit 0
         fi
         exit 1

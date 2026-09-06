@@ -2,17 +2,15 @@
 // 采集 wotb-backend、keycloak，以及经过脱敏的 Android APK 下载日志，转发到 Loki。
 // 需要挂载 /var/run/docker.sock（见 docker-compose）。
 
-discovery.docker "backend" {
+// Discover all containers once. Docker discovery filter values are exact match
+// selectors in some Alloy versions; keeping the authoritative service match in
+// relabel rules avoids a version-dependent empty target set.
+discovery.docker "containers" {
 	host = "unix:///var/run/docker.sock"
-
-	filter {
-		name   = "name"
-		values = [".*wotb-backend.*"]
-	}
 }
 
 discovery.relabel "backend" {
-	targets = discovery.docker.backend.targets
+	targets = discovery.docker.containers.targets
 
 	rule {
 		source_labels = ["__meta_docker_container_name"]
@@ -35,17 +33,8 @@ loki.source.docker "backend" {
 	forward_to = [loki.write.default.receiver]
 }
 
-discovery.docker "keycloak" {
-	host = "unix:///var/run/docker.sock"
-
-	filter {
-		name   = "name"
-		values = [".*keycloak.*"]
-	}
-}
-
 discovery.relabel "keycloak" {
-	targets = discovery.docker.keycloak.targets
+	targets = discovery.docker.containers.targets
 
 	rule {
 		source_labels = ["__meta_docker_container_name"]
@@ -77,17 +66,8 @@ loki.source.docker "keycloak" {
 // Android APK 由 frontend nginx 直接静态托管，不经过 Spring Boot。
 // 这里只采集 GET /download/android/*.apk 的 access log，并在写入 Loki 前丢弃
 // 客户端 IP、Referer、User-Agent 等原始字段，只保留计数所需的文件名、状态码与字节数。
-discovery.docker "frontend" {
-	host = "unix:///var/run/docker.sock"
-
-	filter {
-		name   = "name"
-		values = [".*wotb-frontend.*"]
-	}
-}
-
 discovery.relabel "frontend" {
-	targets = discovery.docker.frontend.targets
+	targets = discovery.docker.containers.targets
 
 	rule {
 		source_labels = ["__meta_docker_container_name"]
