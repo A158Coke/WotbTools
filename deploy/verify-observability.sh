@@ -51,6 +51,19 @@ wait_for_grafana_api() {
   fail "$name did not return the expected response"
 }
 
+wait_for_grafana_datasource() {
+  local name="$1" path="$2" body="" attempt
+  for attempt in $(seq 1 "$RETRIES"); do
+    if body="$(grafana_api "$path" 2>/dev/null)" \
+      && grep -Eq '"status"[[:space:]]*:[[:space:]]*"(success|OK)"' <<<"$body"; then
+      echo "PASS: $name"
+      return 0
+    fi
+    [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
+  done
+  fail "$name did not report a healthy datasource"
+}
+
 query_prometheus() {
   local query="$1" encoded
   encoded="${query// /%20}"
@@ -102,10 +115,10 @@ prom_query="$(query_prometheus 'min(up{job="wotb-backend"})')" || fail "Promethe
 prometheus_value_is_one <<<"$prom_query" || fail "Prometheus backend up query is not healthy (up != 1)"
 echo "PASS: Prometheus data query"
 
-wait_for_grafana_api "Grafana Prometheus datasource" \
-  "/api/datasources/uid/prometheus/health" '"status":"success"'
-wait_for_grafana_api "Grafana Loki datasource" \
-  "/api/datasources/uid/loki/health" '"status":"success"'
+wait_for_grafana_datasource "Grafana Prometheus datasource" \
+  "/api/datasources/uid/prometheus/health"
+wait_for_grafana_datasource "Grafana Loki datasource" \
+  "/api/datasources/uid/loki/health"
 
 production_uid=""
 for dashboard_file in "$DASHBOARD_DIR"/*.json; do

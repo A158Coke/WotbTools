@@ -30,7 +30,7 @@ wait_json_success() {
   local url="$1" body
   for attempt in $(seq 1 30); do
     if body="$(curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" "$url" 2>/dev/null)" \
-      && grep -Fq '"status":"success"' <<<"$body"; then
+      && grep -Eq '"status"[[:space:]]*:[[:space:]]*"(success|OK)"' <<<"$body"; then
       return 0
     fi
     sleep 2
