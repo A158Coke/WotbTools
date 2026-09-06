@@ -71,20 +71,22 @@ public final class TeamAiReviewResultParser {
             }
 
             final List<JsonNode> episodeNodes = requiredArray(root, "episodes");
-            final List<JsonNode> suggestionNodes = requiredArray(root, "trainingSuggestions");
-            final List<JsonNode> focusNodes = requiredArray(root, "reviewFocus");
-            final List<JsonNode> contributorNodes = requiredArray(root, "highContributors");
+            final List<JsonNode> suggestionNodes = optionalArray(root, "trainingSuggestions",
+                    normalizations);
+            final List<JsonNode> focusNodes = optionalArray(root, "reviewFocus", normalizations);
+            final List<JsonNode> contributorNodes = optionalArray(root, "highContributors",
+                    normalizations);
             if (episodeNodes == null) {
                 return fatal(Failure.MISSING_REQUIRED_FIELD, "episodes", "array required");
             }
             if (suggestionNodes == null) {
-                return fatal(Failure.MISSING_REQUIRED_FIELD, "trainingSuggestions", "array required");
+                return fatal(Failure.INVALID_FIELD, "trainingSuggestions", "array required");
             }
             if (focusNodes == null) {
-                return fatal(Failure.MISSING_REQUIRED_FIELD, "reviewFocus", "array required");
+                return fatal(Failure.INVALID_FIELD, "reviewFocus", "array required");
             }
             if (contributorNodes == null) {
-                return fatal(Failure.MISSING_REQUIRED_FIELD, "highContributors", "array required");
+                return fatal(Failure.INVALID_FIELD, "highContributors", "array required");
             }
             collectCardinality(episodeNodes.size(), MAX_EPISODES, "episodes", failures);
             collectCardinality(suggestionNodes.size(), MAX_TRAINING_SUGGESTIONS,
@@ -92,10 +94,6 @@ public final class TeamAiReviewResultParser {
             collectCardinality(focusNodes.size(), MAX_REVIEW_FOCUS, "reviewFocus", failures);
             collectCardinality(contributorNodes.size(), MAX_HIGH_CONTRIBUTORS,
                     "highContributors", failures);
-            if (hasFailure(failures, Failure.CARDINALITY_EXCEEDED)) {
-                return repairable(null, failures, normalizations);
-            }
-
             final Set<String> roster = rosterPlayerKeys == null ? Set.of() : Set.copyOf(rosterPlayerKeys);
             final Set<String> episodeIds = new HashSet<>();
             final List<TeamAiReviewResult.Episode> episodes = new ArrayList<>();
@@ -114,11 +112,14 @@ public final class TeamAiReviewResultParser {
                     return fatal(Failure.MISSING_REQUIRED_FIELD, path,
                             "episode id, title and analysis must be non-empty strings");
                 }
-                if (!node.has("startSec") || !node.has("endSec")) {
-                    return fatal(Failure.MISSING_REQUIRED_FIELD, path,
-                            "startSec and endSec fields are required");
+                if (!node.has("startSec")) {
+                    normalizations.add(new Normalization("episode_start_sec_defaulted", path + ".startSec"));
                 }
-                if (!validInteger(node, "startSec") || !validInteger(node, "endSec")) {
+                if (!node.has("endSec")) {
+                    normalizations.add(new Normalization("episode_end_sec_defaulted", path + ".endSec"));
+                }
+                if ((node.has("startSec") && !validInteger(node, "startSec"))
+                        || (node.has("endSec") && !validInteger(node, "endSec"))) {
                     return fatal(Failure.INVALID_FIELD, path + ".time",
                             "startSec and endSec must be non-negative integers");
                 }
@@ -349,10 +350,6 @@ public final class TeamAiReviewResultParser {
         return new ParseFailure(code, path, category, constraint);
     }
 
-    private static boolean hasFailure(final List<ParseFailure> failures, final Failure code) {
-        return failures.stream().anyMatch(item -> item.code() == code);
-    }
-
     private static ParseResult valid(final TeamAiReviewResult result) {
         return new ParseResult(result, List.of(), List.of(), ParseStatus.VALID);
     }
@@ -385,6 +382,19 @@ public final class TeamAiReviewResultParser {
     private static List<JsonNode> requiredArray(final JsonNode parent, final String name) {
         final JsonNode value = parent.get(name);
         if (value == null || !value.isArray()) return null;
+        final List<JsonNode> result = new ArrayList<>();
+        value.forEach(result::add);
+        return result;
+    }
+
+    private static List<JsonNode> optionalArray(final JsonNode parent, final String name,
+                                                final List<Normalization> normalizations) {
+        final JsonNode value = parent.get(name);
+        if (value == null) {
+            normalizations.add(new Normalization(name + "_defaulted", name));
+            return List.of();
+        }
+        if (!value.isArray()) return null;
         final List<JsonNode> result = new ArrayList<>();
         value.forEach(result::add);
         return result;

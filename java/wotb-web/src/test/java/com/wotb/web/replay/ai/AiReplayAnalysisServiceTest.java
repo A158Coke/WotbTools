@@ -94,6 +94,13 @@ class AiReplayAnalysisServiceTest {
                 + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],\"highContributors\":[]}";
     }
 
+    private static String structuredResultWithEpisode() {
+        return "{\"summary\":{\"verdict\":\"team review\",\"primaryDiagnosis\":\"诊断\"},"
+                + "\"episodes\":[{\"id\":\"E1\",\"startSec\":10,\"endSec\":20,"
+                + "\"title\":\"关键回合\",\"analysis\":\"TACTICAL_TEXT\",\"playerKeys\":[]}],"
+                + "\"trainingSuggestions\":[],\"reviewFocus\":[],\"highContributors\":[]}";
+    }
+
     /**
      * 契约测试用 Gateway 替身：捕获传给 Gateway 的完整 {@link AiChatRequest}，
      * 返回可配置的 {@link AiChatResponse}；从不发起真实 HTTP。
@@ -483,6 +490,26 @@ class AiReplayAnalysisServiceTest {
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
                 teamResultWithRecon("repair-fail.wotbreplay", "repair-fail-arena", "Ally", 1001L, 1)));
+
+        final AiUpstreamException error = assertThrows(AiUpstreamException.class,
+                () -> service.analyzeTeamGroups(groups));
+
+        assertEquals("AI_REVIEW_SCHEMA_FAILED", error.code());
+        assertEquals(2, allTeamReviewRequests().size());
+    }
+
+    @Test
+    void rejectsRepairThatChangesTacticalSemantics() {
+        final String initial = structuredResultWithEpisode()
+                .replace("\"highContributors\":[]", "\"highContributors\":[],\"unknown\":true");
+        final String changed = structuredResultWithEpisode()
+                .replace("\"team review\"", "\"changed verdict\"")
+                .replace("TACTICAL_TEXT", "CHANGED_TACTICAL_TEXT");
+        gateway.teamCompletionSequence.add(initial);
+        gateway.teamCompletionSequence.add(changed);
+        final var service = startService();
+        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
+                teamResultWithRecon("semantic-repair.wotbreplay", "semantic-repair-arena", "Ally", 1001L, 1)));
 
         final AiUpstreamException error = assertThrows(AiUpstreamException.class,
                 () -> service.analyzeTeamGroups(groups));

@@ -34,6 +34,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.LongSupplier;
 
@@ -535,8 +536,8 @@ public class TeamReplayAnalysisService {
                 "SINGLE_TEAM_BATTLE_REPAIR", remainingBudget(startNanos), 2);
         final TeamAiReviewResultParser.ParseResult repaired = TeamAiReviewResultParser.parse(
                 repairResponse.completionText(), rosterKeys);
-        if (repaired.status() == TeamAiReviewResultParser.ParseStatus.VALID
-                || repaired.normalized()) {
+        if ((repaired.status() == TeamAiReviewResultParser.ParseStatus.VALID
+                || repaired.normalized()) && preservesRepairSemantics(initial, repaired)) {
             countValidationAttempt(repaired.normalized() ? "normalized" : "pass");
             if (repaired.normalized()) {
                 logTeamReviewNormalized(correlationId, repaired);
@@ -550,6 +551,18 @@ public class TeamReplayAnalysisService {
                             + repairResponse.outputTokens(),
                     repaired.normalized() ? "REPAIR_NORMALIZED" : "REPAIR_SUCCESS", reviewStartNanos);
             return repaired.result();
+        }
+
+        if (repaired.status() == TeamAiReviewResultParser.ParseStatus.VALID
+                || repaired.normalized()) {
+            LOGGER.warn(AiReviewEventLog.line("team_review_repair_failed", correlationId,
+                    "repairResult", "semantic_changed",
+                    "durationMs", elapsedMillis(reviewStartNanos)));
+            countRepair("semantic_changed");
+            logTeamReviewCompleted(correlationId, 2, initialResponse.inputTokens()
+                            + repairResponse.inputTokens(), initialResponse.outputTokens()
+                            + repairResponse.outputTokens(), "SEMANTIC_CHANGED", reviewStartNanos);
+            throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
         }
 
         logSchemaFailure(correlationId, repaired, 2);
@@ -607,7 +620,7 @@ public class TeamReplayAnalysisService {
                 "reason", parsed.failure() == null ? "UNKNOWN" : parsed.failure(),
                 "pathClass", parsed.failures().stream().map(item -> pathClass(item.path()))
                         .distinct().sorted().collect(java.util.stream.Collectors.joining(","))));
-        if (meterRegistry != null) {
+        if (meterRegistry != null && attempt == 1) {
             parsed.failures().forEach(failure -> meterRegistry.counter(
                     "wotb_ai_team_review_schema_failure_total",
                     "reason", failure.code().name(),
@@ -635,10 +648,197 @@ public class TeamReplayAnalysisService {
         }
     }
 
-    private static String pathClass(final String path) {
+    static String pathClass(final String path) {
         if (path == null || path.isBlank()) return "root";
-        return path.replaceAll("\\[\\d+\\]", "")
-                .replaceAll("\\[\\d+\\]", "");
+        final String normalized = path.replaceAll("\\[\\d+\\]", "");
+        if (normalized.startsWith("root.")) return "root.unknown_field";
+        if (normalized.startsWith("summary.")) return "summary.unknown_field";
+        if (normalized.startsWith("episodes.")) {
+            return switch (normalized) {
+                case "episodes.id" -> "episodes.id";
+                case "episodes.time" -> "episodes.time";
+                case "episodes.playerKeys" -> "episodes.playerKeys";
+                default -> "episodes.unknown_field";
+            };
+        }
+        if (normalized.startsWith("trainingSuggestions.")) {
+            return normalized.equals("trainingSuggestions.episodeId")
+                    ? "trainingSuggestions.episodeId" : "trainingSuggestions.unknown_field";
+        }
+        if (normalized.startsWith("reviewFocus.")) {
+            return switch (normalized) {
+                case "reviewFocus.playerKey" -> "reviewFocus.playerKey";
+                case "reviewFocus.episodeId" -> "reviewFocus.episodeId";
+                default -> "reviewFocus.unknown_field";
+            };
+        }
+        if (normalized.startsWith("highContributors.")) {
+            return switch (normalized) {
+                case "highContributors.playerKey" -> "highContributors.playerKey";
+                case "highContributors.episodeId" -> "highContributors.episodeId";
+                default -> "highContributors.unknown_field";
+            };
+        }
+        return switch (normalized) {
+            case "episodes", "trainingSuggestions", "reviewFocus", "highContributors" -> normalized;
+            default -> "root";
+        };
+    }
+
+    private static boolean preservesRepairSemantics(
+            final TeamAiReviewResultParser.ParseResult original,
+            final TeamAiReviewResultParser.ParseResult repaired) {
+        final TeamAiReviewResult before = original.result();
+        final TeamAiReviewResult after = repaired.result();
+        if (before == null || after == null || !Objects.equals(before.summary(), after.summary())) {
+            return false;
+        }
+        return preservesEpisodes(before.episodes(), after.episodes(), original)
+                && preservesSuggestions(before.trainingSuggestions(), after.trainingSuggestions(), original)
+                && preservesFocus(before.reviewFocus(), after.reviewFocus(), original)
+                && preservesContributors(before.highContributors(), after.highContributors(), original);
+    }
+
+    private static boolean hasCardinalityFailure(
+            final TeamAiReviewResultParser.ParseResult parsed, final String path) {
+        return parsed.failures().stream().anyMatch(failure ->
+                failure.code() == TeamAiReviewResultParser.Failure.CARDINALITY_EXCEEDED
+                        && path.equals(failure.path()));
+    }
+
+    private static boolean preservesEpisodes(final List<TeamAiReviewResult.Episode> before,
+                                             final List<TeamAiReviewResult.Episode> after,
+                                             final TeamAiReviewResultParser.ParseResult parsed) {
+        final boolean allowDrops = hasCardinalityFailure(parsed, "episodes");
+        if (after.size() > before.size() || (!allowDrops && after.size() != before.size())) {
+            return false;
+        }
+        final List<TeamAiReviewResult.Episode> remaining = new ArrayList<>(before);
+        for (final TeamAiReviewResult.Episode item : after) {
+            final int beforeIndex = indexOfEpisode(remaining, item.id());
+            if (beforeIndex < 0) return false;
+            final TeamAiReviewResult.Episode original = remaining.remove(beforeIndex);
+            final int originalIndex = before.indexOf(original);
+            if (!Objects.equals(original.title(), item.title())
+                    || !Objects.equals(original.analysis(), item.analysis())) {
+                return false;
+            }
+            if (!hasFailureUnder(parsed, "episodes[" + originalIndex + "].time")
+                    && (!Objects.equals(original.startSec(), item.startSec())
+                    || !Objects.equals(original.endSec(), item.endSec()))) {
+                return false;
+            }
+            if (!hasFailureUnder(parsed, "episodes[" + originalIndex + "].playerKeys")
+                    && !Objects.equals(original.playerKeys(), item.playerKeys())) {
+                return false;
+            }
+        }
+        return allowDrops || remaining.isEmpty();
+    }
+
+    private static int indexOfEpisode(final List<TeamAiReviewResult.Episode> episodes,
+                                      final String id) {
+        for (int index = 0; index < episodes.size(); index++) {
+            if (Objects.equals(episodes.get(index).id(), id)) return index;
+        }
+        return -1;
+    }
+
+    private static boolean preservesSuggestions(
+            final List<TeamAiReviewResult.TrainingSuggestion> before,
+            final List<TeamAiReviewResult.TrainingSuggestion> after,
+            final TeamAiReviewResultParser.ParseResult parsed) {
+        final boolean allowDrops = hasCardinalityFailure(parsed, "trainingSuggestions");
+        if (after.size() > before.size() || (!allowDrops && after.size() != before.size())) {
+            return false;
+        }
+        final List<TeamAiReviewResult.TrainingSuggestion> remaining = new ArrayList<>(before);
+        for (final TeamAiReviewResult.TrainingSuggestion item : after) {
+            int beforeIndex = indexOfSuggestion(remaining, item);
+            if (beforeIndex < 0) return false;
+            final TeamAiReviewResult.TrainingSuggestion original = remaining.remove(beforeIndex);
+            beforeIndex = before.indexOf(original);
+            if (!Objects.equals(original.title(), item.title())
+                    || !Objects.equals(original.content(), item.content())) {
+                return false;
+            }
+            if (!hasFailureUnder(parsed, "trainingSuggestions[" + beforeIndex + "].episodeId")
+                    && !Objects.equals(original.episodeId(), item.episodeId())) {
+                return false;
+            }
+        }
+        return allowDrops || remaining.isEmpty();
+    }
+
+    private static int indexOfSuggestion(
+            final List<TeamAiReviewResult.TrainingSuggestion> suggestions,
+            final TeamAiReviewResult.TrainingSuggestion candidate) {
+        for (int index = 0; index < suggestions.size(); index++) {
+            final TeamAiReviewResult.TrainingSuggestion item = suggestions.get(index);
+            if (Objects.equals(item.title(), candidate.title())
+                    && Objects.equals(item.content(), candidate.content())) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean preservesFocus(final List<TeamAiReviewResult.ReviewFocus> before,
+                                          final List<TeamAiReviewResult.ReviewFocus> after,
+                                          final TeamAiReviewResultParser.ParseResult parsed) {
+        return preservesReferenceItems(before, after, parsed, "reviewFocus",
+                TeamAiReviewResult.ReviewFocus::reason,
+                TeamAiReviewResult.ReviewFocus::playerKey,
+                TeamAiReviewResult.ReviewFocus::episodeId);
+    }
+
+    private static boolean preservesContributors(
+            final List<TeamAiReviewResult.HighContributor> before,
+            final List<TeamAiReviewResult.HighContributor> after,
+            final TeamAiReviewResultParser.ParseResult parsed) {
+        return preservesReferenceItems(before, after, parsed, "highContributors",
+                TeamAiReviewResult.HighContributor::reason,
+                TeamAiReviewResult.HighContributor::playerKey,
+                TeamAiReviewResult.HighContributor::episodeId);
+    }
+
+    private static <T> boolean preservesReferenceItems(final List<T> before, final List<T> after,
+                                                       final TeamAiReviewResultParser.ParseResult parsed,
+                                                       final String path,
+                                                       final java.util.function.Function<T, String> reason,
+                                                       final java.util.function.Function<T, String> playerKey,
+                                                       final java.util.function.Function<T, String> episodeId) {
+        final boolean allowDrops = hasCardinalityFailure(parsed, path);
+        if (after.size() > before.size() || (!allowDrops && after.size() != before.size())) {
+            return false;
+        }
+        final List<T> remaining = new ArrayList<>(before);
+        for (final T item : after) {
+            int index = -1;
+            for (int candidate = 0; candidate < remaining.size(); candidate++) {
+                if (Objects.equals(reason.apply(remaining.get(candidate)), reason.apply(item))) {
+                    index = candidate;
+                    break;
+                }
+            }
+            if (index < 0) return false;
+            final T original = remaining.remove(index);
+            final int originalIndex = before.indexOf(original);
+            if (!Objects.equals(reason.apply(original), reason.apply(item))) return false;
+            if (!hasFailureUnder(parsed, path + "[" + originalIndex + "]")
+                    && (!Objects.equals(playerKey.apply(original), playerKey.apply(item))
+                    || !Objects.equals(episodeId.apply(original), episodeId.apply(item)))) {
+                return false;
+            }
+        }
+        return allowDrops || remaining.isEmpty();
+    }
+
+    private static boolean hasFailureUnder(final TeamAiReviewResultParser.ParseResult parsed,
+                                           final String path) {
+        return parsed.failures().stream().anyMatch(failure ->
+                failure.path().equals(path) || failure.path().startsWith(path + ".")
+                        || failure.path().startsWith(path + "["));
     }
 
     private record TeamCallResult(AnalyzeResult analysis, TeamAiReviewResult structuredResult) {
