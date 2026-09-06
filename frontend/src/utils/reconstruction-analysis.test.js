@@ -15,6 +15,8 @@ describe('reconstruction analysis presentation', () => {
       .toBe('recon.errors.FILE_TOO_LARGE')
     expect(localizeAiError('AI_REVIEW_BUSY', 503, t))
       .toBe('recon.errors.AI_REVIEW_BUSY')
+    expect(localizeAiError('AI_REVIEW_SCHEMA_FAILED', 502, t))
+      .toBe('recon.errors.AI_REVIEW_SCHEMA_FAILED')
     expect(localizeAiError('AI_TIMELINE_UNUSABLE', 200, t))
       .toBe('recon.errors.AI_TIMELINE_UNUSABLE')
     // 防御性契约：后端一旦泄露 detail（内部 TIMELINE_* / NO_RECONSTRUCTION），
