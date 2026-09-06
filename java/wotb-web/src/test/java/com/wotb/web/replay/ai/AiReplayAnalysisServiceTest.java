@@ -484,6 +484,36 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
+    void mixedSchemaFailureRepairsFromCanonicalNormalizedBaseline() {
+        final String initial = "{\"summary\":{\"verdict\":\"v\",\"primaryDiagnosis\":\"d\"},"
+                + "\"episodes\":[{\"id\":\"E1\",\"startSec\":10,\"endSec\":20,"
+                + "\"title\":\"title\",\"analysis\":\"TACTICAL_TEXT\",\"playerKeys\":[]}],"
+                + "\"trainingSuggestions\":[],\"reviewFocus\":[],"
+                + "\"highContributors\":[{\"playerKey\":\"UNKNOWN_PLAYER\","
+                + "\"episodeId\":\"E1\",\"reason\":\"reason\"}],\"unknown\":true}";
+        final String repaired = structuredResultWithEpisode();
+        gateway.teamCompletionSequence.add(initial);
+        gateway.teamCompletionSequence.add(repaired);
+        final var service = startService();
+        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
+                teamResultWithRecon("mixed-repair.wotbreplay", "mixed-repair-arena", "Ally", 1001L, 1)));
+
+        final TeamAnalyzeResult result = service.analyzeTeamGroups(groups);
+
+        assertNotNull(result.structuredResult());
+        assertEquals(2, allTeamReviewRequests().size());
+        assertTrue(result.structuredResult().highContributors().isEmpty());
+        assertEquals("TACTICAL_TEXT", result.structuredResult().episodes().getFirst().analysis());
+        final String repairBody = allTeamReviewRequests().getLast().userPrompt();
+        assertTrue(repairBody.contains("CANONICAL_NORMALIZED_JSON"));
+        assertTrue(repairBody.contains("root.unknown"));
+        assertTrue(repairBody.contains("TACTICAL_TEXT"));
+        assertFalse(repairBody.contains("UNKNOWN_PLAYER"));
+        assertFalse(repairBody.contains("highContributors[0].playerKey"));
+        assertFalse(repairBody.contains("ORIGINAL_GENERATED_JSON"));
+    }
+
+    @Test
     void repairFailureStopsAfterExactlyTwoCallsWithSchemaError() {
         gateway.teamCompletionSequence.add("{\"summary\":{\"verdict\":\"v\",\"primaryDiagnosis\":\"d\"},"
                 + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],"
