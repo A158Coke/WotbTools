@@ -460,6 +460,28 @@ AI 复盘区分两种 scope，互不混用：
 - **Call #1 覆盖可观测性**：`PreBattleStrategicService` 每次调用前输出 `Pre-battle Call #1 input`（map、mapSemantics=found/UNKNOWN、verified、areas/relationships/spawnSemantics 数量、source、displayName、team1/team2 人数、curatedProfiles/fallbackProfiles 车辆 Profile 覆盖），成功后输出 `Pre-battle Call #1 success`（hypotheses/matchups/winConditions/双方 strengths·plans 数量）；`TacticalReviewHarness` 输出 `Harness prior obtained`（prior 已注入 Call #2）与 `Harness fell back to old path: <reason>`；Team Autopsy 不属于 v0.5 production chain。新增指标 `wotb_ai_review_map_semantics_total{status=found|unknown}`。按 requestId 可在 Loki 逐请求验证地图/车辆语义是否进入 Call #1 并注入 Call #2。
 - **回放解析覆盖率可观测**：`AiReplayReviewService` 对每个回放输出 `Replay event-stream parsed`（file/map/packets/decoded/partial/unknown/failed/decodedRatio），可在 Loki 按回放查看事件流解码覆盖率；真实样本 `decodedRatio≈0.31–0.35`，type 39/31/35/7 为主要未知/未解桶（逆向推进的量化基线）。
 - 测试不调用真实 AI API：`SpringAiChatGatewayTest`/`SpringAiChatGatewayMetricsTest` 使用 mock `ChatModel`。
+#### Current: TeamAiReviewResult technical schema resilience
+
+Team Call #2 的生产链路保持 v0.5 wire schema，但 technical parser 现在返回
+`result + failures + normalizations + status`。每条 failure 具备稳定 `code`、JSON `path`、
+`FailureCategory` 与 constraint：core schema 的 fatal failure 直接 fail-closed，repairable
+failure 最多触发一次定向 repair；不会再以完整 replay/tactical context 做四轮 schema lottery。
+
+可确定修复的 optional reference（不存在的 episode、非 roster playerKey、非法 focus/contributor
+item）会被 deterministic normalize，保留 tactical text，并记录 `team_review_normalized`。
+repair prompt 只包含原始生成 JSON、精确 technical failures、权威 roster keys 与原 JSON 已存在的
+episode reference 约束，不携带完整战术输入。初始或 repair 后仍失败时使用独立错误码
+`AI_REVIEW_SCHEMA_FAILED`；它与 provider unavailable 和 `AI_REVIEW_GROUNDING_FAILED` 保持不同语义。
+
+低基数指标为 `wotb_ai_team_review_schema_failure_total{reason,path_class}`、
+`wotb_ai_team_review_normalization_total{type}` 与
+`wotb_ai_team_review_repair_total{result=started|success|normalized_success|failed|semantic_changed}`。
+其中 `semantic_changed` 表示 repair 结果违反 semantic immutability invariant，backend
+fail-closed 并返回 `AI_REVIEW_SCHEMA_FAILED`。日志事件为
+`team_review_schema_failure`、`team_review_normalized`、`team_review_repair_started`、
+`team_review_repair_completed`、`team_review_repair_failed`；严禁记录 prompt、completion、
+回放内容或用户/玩家标识。
+
 #### Historical: DeepSeek 官方 JSON Output（旧 Team Envelope，legacy）
 
 > 本节记录 v0.5 之前的 `TeamReviewEnvelope` / `TeamFactualConsistencyValidator` 方案，

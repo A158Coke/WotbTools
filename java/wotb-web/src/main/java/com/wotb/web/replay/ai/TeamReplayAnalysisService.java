@@ -28,12 +28,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.LongSupplier;
 
@@ -61,6 +64,7 @@ import java.util.function.LongSupplier;
 public class TeamReplayAnalysisService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TeamReplayAnalysisService.class);
+    private static final ObjectMapper CANONICAL_RESULT_MAPPER = JsonMapper.builder().build();
 
     /** 团队复盘整体安全余量（秒）：后续调用保留，避免撞 endpoint deadline。 */
     static final int SAFETY_MARGIN_SEC = 10;
@@ -295,7 +299,7 @@ public class TeamReplayAnalysisService {
         return TeamContextBuilder.buildSingleTeamContext(group);
     }
 
-    /** Team Call #2 事实一致性校验的最大尝试次数（draft → targeted → full → safe → fail-safe）。 */
+    /** Legacy grounding facade 的历史重写预算；production structured Team Review 不使用它。 */
     static final int MAX_VALIDATION_ATTEMPTS = 4;
 
     /**
@@ -497,36 +501,362 @@ public class TeamReplayAnalysisService {
         final String baseUser = input.content()
                 + (groundingSection.isEmpty() ? "" : "\n" + groundingSection);
         final Set<String> rosterKeys = TeamRosterResolver.playerKeys(context);
-        String userContent = baseUser;
         final String correlationId = AiRequestContext.correlationId();
         final long reviewStartNanos = nanoTimeSource.getAsLong();
-        for (int attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
-            if (attempt > 1) {
-                userContent = baseUser + "\n\n=== JSON schema feedback ===\n"
-                        + "请修正上一轮输出的 JSON 类型、必填字段、数量上限或引用关系，"
-                        + "仍然输出完整 TeamAiReviewResult，不要增加第三次调用。";
-            }
-            final AiChatResponse response = callRaw(systemPrompt, userContent,
-                    "SINGLE_TEAM_BATTLE", remainingBudget(startNanos), attempt);
-            final TeamAiReviewResultParser.ParseResult parsed =
-                    TeamAiReviewResultParser.parse(response.completionText(), rosterKeys);
-            if (!parsed.failed()) {
-                countValidationAttempt("pass");
-                logTeamReviewCompleted(correlationId, attempt, response.inputTokens(),
-                        response.outputTokens(), "PASS", reviewStartNanos);
-                return parsed.result();
-            }
-            countValidationAttempt("schema_invalid");
-            LOGGER.info(AiReviewEventLog.line("team_review_schema_failure", correlationId,
-                    "attempt", attempt, "reason", parsed.failure()));
-            if (attempt == MAX_VALIDATION_ATTEMPTS) {
-                logTeamReviewCompleted(correlationId, attempt, response.inputTokens(),
-                        response.outputTokens(), "SCHEMA_FAILED", reviewStartNanos);
-                throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
-            }
-            countValidationRetry("TEAM_CALL_2", "SCHEMA");
+        final AiChatResponse initialResponse = callRaw(systemPrompt, baseUser,
+                "SINGLE_TEAM_BATTLE", remainingBudget(startNanos), 1);
+        final TeamAiReviewResultParser.ParseResult initial = TeamAiReviewResultParser.parse(
+                initialResponse.completionText(), rosterKeys);
+        if (!initial.normalizations().isEmpty()) {
+            logTeamReviewNormalized(correlationId, initial);
         }
+        if (initial.status() == TeamAiReviewResultParser.ParseStatus.VALID
+                || initial.normalized()) {
+            countValidationAttempt(initial.normalized() ? "normalized" : "pass");
+            logTeamReviewCompleted(correlationId, 1, initialResponse.inputTokens(),
+                    initialResponse.outputTokens(), initial.normalized() ? "NORMALIZED" : "PASS",
+                    reviewStartNanos);
+            return initial.result();
+        }
+
+        countValidationAttempt("schema_invalid");
+        logSchemaFailure(correlationId, initial, 1);
+        if (!initial.repairable()) {
+            logTeamReviewCompleted(correlationId, 1, initialResponse.inputTokens(),
+                    initialResponse.outputTokens(), "SCHEMA_FAILED", reviewStartNanos);
+            throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
+        }
+
+        final List<TeamAiReviewResultParser.ParseFailure> repairFailures = initial.failures().stream()
+                .filter(failure -> failure.category() == TeamAiReviewResultParser.FailureCategory.CORE_SCHEMA)
+                .toList();
+        final String repairPrompt = buildTechnicalRepairPrompt(
+                initial.result(), repairFailures, rosterKeys);
+        LOGGER.info(AiReviewEventLog.line("team_review_repair_started", correlationId,
+                "failureCount", repairFailures.size(),
+                "pathClass", repairFailures.stream().map(item -> pathClass(item.path()))
+                        .distinct().sorted().collect(java.util.stream.Collectors.joining(","))));
+        countRepair("started");
+        final AiChatResponse repairResponse = callRaw(
+                repairSystemPrompt(language), repairPrompt,
+                "SINGLE_TEAM_BATTLE_REPAIR", remainingBudget(startNanos), 2);
+        final TeamAiReviewResultParser.ParseResult repaired = TeamAiReviewResultParser.parse(
+                repairResponse.completionText(), rosterKeys);
+        if (!repaired.normalizations().isEmpty()) {
+            logTeamReviewNormalized(correlationId, repaired);
+        }
+        if ((repaired.status() == TeamAiReviewResultParser.ParseStatus.VALID
+                || repaired.normalized()) && preservesRepairSemantics(initial, repaired)) {
+            countValidationAttempt(repaired.normalized() ? "normalized" : "pass");
+            LOGGER.info(AiReviewEventLog.line("team_review_repair_completed", correlationId,
+                    "repairResult", repaired.normalized() ? "normalized_success" : "success",
+                    "durationMs", elapsedMillis(reviewStartNanos)));
+            countRepair(repaired.normalized() ? "normalized_success" : "success");
+            logTeamReviewCompleted(correlationId, 2, initialResponse.inputTokens()
+                            + repairResponse.inputTokens(), initialResponse.outputTokens()
+                            + repairResponse.outputTokens(),
+                    repaired.normalized() ? "REPAIR_NORMALIZED" : "REPAIR_SUCCESS", reviewStartNanos);
+            return repaired.result();
+        }
+
+        if (repaired.status() == TeamAiReviewResultParser.ParseStatus.VALID
+                || repaired.normalized()) {
+            LOGGER.warn(AiReviewEventLog.line("team_review_repair_failed", correlationId,
+                    "repairResult", "semantic_changed",
+                    "durationMs", elapsedMillis(reviewStartNanos)));
+            countRepair("semantic_changed");
+            logTeamReviewCompleted(correlationId, 2, initialResponse.inputTokens()
+                            + repairResponse.inputTokens(), initialResponse.outputTokens()
+                            + repairResponse.outputTokens(), "SEMANTIC_CHANGED", reviewStartNanos);
+            throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
+        }
+
+        logSchemaFailure(correlationId, repaired, 2);
+        LOGGER.warn(AiReviewEventLog.line("team_review_repair_failed", correlationId,
+                "repairResult", "schema_failed",
+                "durationMs", elapsedMillis(reviewStartNanos)));
+        countRepair("failed");
+        logTeamReviewCompleted(correlationId, 2, initialResponse.inputTokens()
+                        + repairResponse.inputTokens(), initialResponse.outputTokens()
+                        + repairResponse.outputTokens(), "SCHEMA_FAILED", reviewStartNanos);
         throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
+    }
+
+    private static String buildTechnicalRepairPrompt(
+            final TeamAiReviewResult canonicalResult,
+            final List<TeamAiReviewResultParser.ParseFailure> repairFailures,
+            final Set<String> rosterKeys) {
+        final StringBuilder prompt = new StringBuilder(4_000);
+        prompt.append("TECHNICAL JSON REPAIR\n")
+                .append("只修复 JSON technical contract，不重新分析战局。\n")
+                .append("输入 JSON 已经过 backend deterministic normalization。\n")
+                .append("不得恢复、重建或重新添加已经被 normalization 删除的 optional item/reference。\n")
+                .append("不得改变已有战术判断、战术正文或新增事实/玩家/episode。\n")
+                .append("只能修字段类型、补 technical required field，或使用 whitelist 中已有 reference。\n\n")
+                .append("CANONICAL_NORMALIZED_JSON\n")
+                .append(canonicalJson(canonicalResult)).append("\n\n")
+                .append("REMAINING_CORE_SCHEMA_FAILURES\n");
+        for (final TeamAiReviewResultParser.ParseFailure failure : repairFailures) {
+            prompt.append("code=").append(failure.code())
+                    .append(" path=").append(failure.path())
+                    .append(" constraint=").append(failure.constraint()).append('\n');
+        }
+        prompt.append("\nAUTHORITATIVE_ROSTER_PLAYER_KEYS\n")
+                .append(rosterKeys.stream().sorted().collect(java.util.stream.Collectors.joining(",")))
+                .append("\nALLOWED_EPISODE_REFERENCES\n")
+                .append(canonicalResult.episodes().stream().map(TeamAiReviewResult.Episode::id)
+                        .sorted().collect(java.util.stream.Collectors.joining(",")))
+                .append("\n\n")
+                .append("Return only the complete corrected TeamAiReviewResult JSON object.");
+        return prompt.toString();
+    }
+
+    private static String canonicalJson(final TeamAiReviewResult result) {
+        try {
+            return CANONICAL_RESULT_MAPPER.writeValueAsString(result);
+        } catch (final Exception e) {
+            throw new IllegalStateException("canonical TeamAiReviewResult serialization failed", e);
+        }
+    }
+
+    private static String repairSystemPrompt(final AllowedLanguage language) {
+        return switch (language) {
+            case EN -> "You are a JSON contract repairer. Repair only technical JSON shape and references. "
+                    + "Do not change tactical conclusions or invent facts. Return JSON only.";
+            case RU -> "Исправляйте только технический JSON-контракт и ссылки. "
+                    + "Не меняйте тактические выводы и не придумывайте факты. Верните только JSON.";
+            case ZH -> "你是 JSON technical contract 修复器。只修复 JSON 结构、字段类型和权威引用；"
+                    + "不得改变战术结论、战术正文或发明事实。只返回 JSON。";
+        };
+    }
+
+    private void logSchemaFailure(final String correlationId,
+                                  final TeamAiReviewResultParser.ParseResult parsed,
+                                  final int attempt) {
+        LOGGER.info(AiReviewEventLog.line("team_review_schema_failure", correlationId,
+                "attempt", attempt,
+                "reason", parsed.failure() == null ? "UNKNOWN" : parsed.failure(),
+                "pathClass", parsed.failures().stream().map(item -> pathClass(item.path()))
+                        .distinct().sorted().collect(java.util.stream.Collectors.joining(","))));
+        if (meterRegistry != null && attempt == 1) {
+            parsed.failures().forEach(failure -> meterRegistry.counter(
+                    "wotb_ai_team_review_schema_failure_total",
+                    "reason", failure.code().name(),
+                    "path_class", pathClass(failure.path())).increment());
+        }
+    }
+
+    private void logTeamReviewNormalized(final String correlationId,
+                                         final TeamAiReviewResultParser.ParseResult parsed) {
+        LOGGER.info(AiReviewEventLog.line("team_review_normalized", correlationId,
+                "normalizationCount", parsed.normalizations().size(),
+                "types", parsed.normalizations().stream().map(
+                                TeamAiReviewResultParser.Normalization::type)
+                        .distinct().sorted().collect(java.util.stream.Collectors.joining(","))));
+        if (meterRegistry != null) {
+            parsed.normalizations().forEach(normalization -> meterRegistry.counter(
+                    "wotb_ai_team_review_normalization_total", "type", normalization.type())
+                    .increment());
+        }
+    }
+
+    private void countRepair(final String result) {
+        if (meterRegistry != null) {
+            meterRegistry.counter("wotb_ai_team_review_repair_total", "result", result).increment();
+        }
+    }
+
+    static String pathClass(final String path) {
+        if (path == null || path.isBlank()) return "root";
+        final String normalized = path.replaceAll("\\[\\d+\\]", "");
+        if (normalized.startsWith("root.")) return "root.unknown_field";
+        if (normalized.startsWith("summary.")) return "summary.unknown_field";
+        if (normalized.startsWith("episodes.")) {
+            return switch (normalized) {
+                case "episodes.id" -> "episodes.id";
+                case "episodes.time" -> "episodes.time";
+                case "episodes.playerKeys" -> "episodes.playerKeys";
+                default -> "episodes.unknown_field";
+            };
+        }
+        if (normalized.startsWith("trainingSuggestions.")) {
+            return normalized.equals("trainingSuggestions.episodeId")
+                    ? "trainingSuggestions.episodeId" : "trainingSuggestions.unknown_field";
+        }
+        if (normalized.startsWith("reviewFocus.")) {
+            return switch (normalized) {
+                case "reviewFocus.playerKey" -> "reviewFocus.playerKey";
+                case "reviewFocus.episodeId" -> "reviewFocus.episodeId";
+                default -> "reviewFocus.unknown_field";
+            };
+        }
+        if (normalized.startsWith("highContributors.")) {
+            return switch (normalized) {
+                case "highContributors.playerKey" -> "highContributors.playerKey";
+                case "highContributors.episodeId" -> "highContributors.episodeId";
+                default -> "highContributors.unknown_field";
+            };
+        }
+        return switch (normalized) {
+            case "episodes", "trainingSuggestions", "reviewFocus", "highContributors" -> normalized;
+            default -> "root";
+        };
+    }
+
+    private static boolean preservesRepairSemantics(
+            final TeamAiReviewResultParser.ParseResult original,
+            final TeamAiReviewResultParser.ParseResult repaired) {
+        final TeamAiReviewResult before = original.result();
+        final TeamAiReviewResult after = repaired.result();
+        if (before == null || after == null || !Objects.equals(before.summary(), after.summary())) {
+            return false;
+        }
+        return preservesEpisodes(before.episodes(), after.episodes(), original)
+                && preservesSuggestions(before.trainingSuggestions(), after.trainingSuggestions(), original)
+                && preservesFocus(before.reviewFocus(), after.reviewFocus(), original)
+                && preservesContributors(before.highContributors(), after.highContributors(), original);
+    }
+
+    private static boolean hasCardinalityFailure(
+            final TeamAiReviewResultParser.ParseResult parsed, final String path) {
+        return parsed.failures().stream().anyMatch(failure ->
+                failure.code() == TeamAiReviewResultParser.Failure.CARDINALITY_EXCEEDED
+                        && path.equals(failure.path()));
+    }
+
+    private static boolean preservesEpisodes(final List<TeamAiReviewResult.Episode> before,
+                                             final List<TeamAiReviewResult.Episode> after,
+                                             final TeamAiReviewResultParser.ParseResult parsed) {
+        final boolean allowDrops = hasCardinalityFailure(parsed, "episodes");
+        if (after.size() > before.size() || (!allowDrops && after.size() != before.size())) {
+            return false;
+        }
+        final List<TeamAiReviewResult.Episode> remaining = new ArrayList<>(before);
+        for (final TeamAiReviewResult.Episode item : after) {
+            final int beforeIndex = indexOfEpisode(remaining, item.id());
+            if (beforeIndex < 0) return false;
+            final TeamAiReviewResult.Episode original = remaining.remove(beforeIndex);
+            final int originalIndex = before.indexOf(original);
+            if (!Objects.equals(original.title(), item.title())
+                    || !Objects.equals(original.analysis(), item.analysis())) {
+                return false;
+            }
+            if (!hasFailureUnder(parsed, "episodes[" + originalIndex + "].time")
+                    && (!Objects.equals(original.startSec(), item.startSec())
+                    || !Objects.equals(original.endSec(), item.endSec()))) {
+                return false;
+            }
+            if (!hasFailureUnder(parsed, "episodes[" + originalIndex + "].playerKeys")
+                    && !Objects.equals(original.playerKeys(), item.playerKeys())) {
+                return false;
+            }
+        }
+        return allowDrops || remaining.isEmpty();
+    }
+
+    private static int indexOfEpisode(final List<TeamAiReviewResult.Episode> episodes,
+                                      final String id) {
+        for (int index = 0; index < episodes.size(); index++) {
+            if (Objects.equals(episodes.get(index).id(), id)) return index;
+        }
+        return -1;
+    }
+
+    private static boolean preservesSuggestions(
+            final List<TeamAiReviewResult.TrainingSuggestion> before,
+            final List<TeamAiReviewResult.TrainingSuggestion> after,
+            final TeamAiReviewResultParser.ParseResult parsed) {
+        final boolean allowDrops = hasCardinalityFailure(parsed, "trainingSuggestions");
+        if (after.size() > before.size() || (!allowDrops && after.size() != before.size())) {
+            return false;
+        }
+        final List<TeamAiReviewResult.TrainingSuggestion> remaining = new ArrayList<>(before);
+        for (final TeamAiReviewResult.TrainingSuggestion item : after) {
+            int beforeIndex = indexOfSuggestion(remaining, item);
+            if (beforeIndex < 0) return false;
+            final TeamAiReviewResult.TrainingSuggestion original = remaining.remove(beforeIndex);
+            beforeIndex = before.indexOf(original);
+            if (!Objects.equals(original.title(), item.title())
+                    || !Objects.equals(original.content(), item.content())) {
+                return false;
+            }
+            if (!hasFailureUnder(parsed, "trainingSuggestions[" + beforeIndex + "].episodeId")
+                    && !Objects.equals(original.episodeId(), item.episodeId())) {
+                return false;
+            }
+        }
+        return allowDrops || remaining.isEmpty();
+    }
+
+    private static int indexOfSuggestion(
+            final List<TeamAiReviewResult.TrainingSuggestion> suggestions,
+            final TeamAiReviewResult.TrainingSuggestion candidate) {
+        for (int index = 0; index < suggestions.size(); index++) {
+            final TeamAiReviewResult.TrainingSuggestion item = suggestions.get(index);
+            if (Objects.equals(item.title(), candidate.title())
+                    && Objects.equals(item.content(), candidate.content())) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean preservesFocus(final List<TeamAiReviewResult.ReviewFocus> before,
+                                          final List<TeamAiReviewResult.ReviewFocus> after,
+                                          final TeamAiReviewResultParser.ParseResult parsed) {
+        return preservesReferenceItems(before, after, parsed, "reviewFocus",
+                TeamAiReviewResult.ReviewFocus::reason,
+                TeamAiReviewResult.ReviewFocus::playerKey,
+                TeamAiReviewResult.ReviewFocus::episodeId);
+    }
+
+    private static boolean preservesContributors(
+            final List<TeamAiReviewResult.HighContributor> before,
+            final List<TeamAiReviewResult.HighContributor> after,
+            final TeamAiReviewResultParser.ParseResult parsed) {
+        return preservesReferenceItems(before, after, parsed, "highContributors",
+                TeamAiReviewResult.HighContributor::reason,
+                TeamAiReviewResult.HighContributor::playerKey,
+                TeamAiReviewResult.HighContributor::episodeId);
+    }
+
+    private static <T> boolean preservesReferenceItems(final List<T> before, final List<T> after,
+                                                       final TeamAiReviewResultParser.ParseResult parsed,
+                                                       final String path,
+                                                       final java.util.function.Function<T, String> reason,
+                                                       final java.util.function.Function<T, String> playerKey,
+                                                       final java.util.function.Function<T, String> episodeId) {
+        final boolean allowDrops = hasCardinalityFailure(parsed, path);
+        if (after.size() > before.size() || (!allowDrops && after.size() != before.size())) {
+            return false;
+        }
+        final List<T> remaining = new ArrayList<>(before);
+        for (final T item : after) {
+            int index = -1;
+            for (int candidate = 0; candidate < remaining.size(); candidate++) {
+                if (Objects.equals(reason.apply(remaining.get(candidate)), reason.apply(item))) {
+                    index = candidate;
+                    break;
+                }
+            }
+            if (index < 0) return false;
+            final T original = remaining.remove(index);
+            final int originalIndex = before.indexOf(original);
+            if (!Objects.equals(reason.apply(original), reason.apply(item))) return false;
+            if (!hasFailureUnder(parsed, path + "[" + originalIndex + "]")
+                    && (!Objects.equals(playerKey.apply(original), playerKey.apply(item))
+                    || !Objects.equals(episodeId.apply(original), episodeId.apply(item)))) {
+                return false;
+            }
+        }
+        return allowDrops || remaining.isEmpty();
+    }
+
+    private static boolean hasFailureUnder(final TeamAiReviewResultParser.ParseResult parsed,
+                                           final String path) {
+        return parsed.failures().stream().anyMatch(failure ->
+                failure.path().equals(path) || failure.path().startsWith(path + ".")
+                        || failure.path().startsWith(path + "["));
     }
 
     private record TeamCallResult(AnalyzeResult analysis, TeamAiReviewResult structuredResult) {
