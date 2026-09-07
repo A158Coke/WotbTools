@@ -10,20 +10,19 @@ docker compose -f docker-compose.prod.yml ps
 docker compose -f docker-compose.prod.yml logs --tail=100 keycloak alloy prometheus
 ```
 
-在 Prometheus 页面确认以下 target 为 `UP`，并确认 Keycloak management 端点不是宿主机端口：
+在 Prometheus 页面确认以下 observability target 为 `UP`：
 
 - `wotb-backend` → `http://wotb-backend:8088/actuator/prometheus`
-- `keycloak` → `http://keycloak:9000/metrics`
 - `node-exporter` → `http://node-exporter:9100/metrics`
 
-从观测网络内验证 Keycloak：
+Keycloak 只验证应用 OIDC discovery；登录与 QQ callback 通过 Loki 日志排障：
 
 ```bash
-docker compose exec -T wotb-backend wget -qO- http://keycloak:9000/health/ready
-docker compose exec -T wotb-backend wget -qO- http://keycloak:9000/metrics | grep -F 'process_'
+docker compose exec -T wotb-backend wget -qO- http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration
+docker compose logs --tail=100 keycloak alloy
 ```
 
-管理端点只应在 Docker 内部网络可达，不应新增宿主机或公网端口映射。
+Keycloak 的应用 OIDC 与日志是生产排障依据，不应新增独立 management 端点或端口映射。
 
 ## 2. QQ / Keycloak callback 失败
 
@@ -59,4 +58,4 @@ docker compose -f docker-compose.prod.yml ps -a
 docker compose -f docker-compose.prod.yml logs --tail=300 keycloak wotb-backend alloy prometheus
 ```
 
-若部署健康检查失败，先保留上述输出和 Grafana 时间窗口，再按部署脚本的 rollback 流程恢复 LKG（`/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml`、`DEPLOYED_SHA.lkg` 与可选的 `DEPLOYED_CAPABILITIES.lkg`）。回滚 verifier 由当前 incoming release 持有；有 capability metadata 时执行对应 gate，历史 LKG 缺少 metadata 时只执行明确的 core rollback gate。`deploy.prev` 只用于取证，不能作为回滚依据。若 LKG 缺失或校验失败，脚本会 fail-closed 并保留当前 live tree，需人工修复后再操作；回滚不应删除 PostgreSQL、Prometheus、Loki 或 Grafana volume。首次建立 LKG 只能通过显式的 `workflow_dispatch` `allow_bootstrap_without_lkg` 输入，并须先完成生产状态复核；若现有观测不完整，初始 LKG 会记录为 `bootstrap-baseline`，不宣称 fully validated。
+若应用 gate 失败，先保留上述输出，再按部署脚本的 rollback 流程恢复 LKG（`/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml`、`DEPLOYED_SHA.lkg`）。回滚成功标准只有 backend、frontend 与 Keycloak OIDC 可用；Grafana/Prometheus/Loki/Alloy 失败只记录 `OBSERVABILITY DEGRADED`，不能把 `ROLLBACK OK` 改成 `ROLLBACK FAILED`。`deploy.prev` 只用于取证，不能作为回滚依据。若 LKG 缺失或校验失败，脚本会 fail-closed 并保留当前 live tree，需人工修复后再操作；回滚不应删除 PostgreSQL、Prometheus、Loki 或 Grafana volume。首次建立 LKG 只能通过显式的 `workflow_dispatch` `allow_bootstrap_without_lkg` 输入，并须先完成生产状态复核。

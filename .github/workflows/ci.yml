@@ -269,7 +269,6 @@ jobs:
           dashboard_link_uids = []
           production_health_contract = {
               "后端服务": 'up{job="wotb-backend"}',
-              "认证服务": 'up{job="keycloak"}',
               "主机": 'up{job="node-exporter"}',
               "Prometheus": 'up{job="prometheus"}',
               "Loki": 'up{job="loki"}',
@@ -345,13 +344,13 @@ jobs:
                   ]
                   assert overall_exprs, "production overview overall health panel missing"
                   overall_expr = "".join(overall_exprs[0].split())
-                  required_jobs = "wotb-backend|keycloak|node-exporter|prometheus|loki|grafana"
+                  required_jobs = "wotb-backend|node-exporter|prometheus|loki|grafana"
                   expected_overall = (
                       f'min(up{{job=~"{required_jobs}"}})and('
-                      f'count(up{{job=~"{required_jobs}"}})==6)'
+                      f'count(up{{job=~"{required_jobs}"}})==5)'
                   )
                   assert overall_expr == expected_overall, \
-                      "production overview overall health must use min(up) as the value and count(up)==6 as the presence guard"
+                      "production overview overall health must use min(up) as the value and count(up)==5 as the presence guard"
                   assert "orvector(0)" not in overall_expr, \
                       "production overview overall health must not mask no-data"
               for i, panel in enumerate(d.get("panels", [])):

@@ -27,9 +27,6 @@ services:
       KC_DB_USERNAME: wotb
       KC_DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       WG_APPLICATION_ID: ${WG_APPLICATION_ID:?WG_APPLICATION_ID is required}
-      KC_HTTP_MANAGEMENT_PORT: "9000"
-      KC_HTTP_MANAGEMENT_SCHEME: http
-      KC_HTTP_METRICS_HISTOGRAMS_ENABLED: "true"
     command: start --optimized --hostname=auth.wotbtools.com --hostname-strict=false --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
     ports:
       - "127.0.0.1:8080:8080"

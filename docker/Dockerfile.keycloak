@@ -17,6 +17,4 @@ COPY --from=build /build/keycloak-wargaming-provider/target/keycloak-wargaming-p
 COPY docker/keycloak/themes/wotbtools /opt/keycloak/themes/wotbtools
 
 RUN /opt/keycloak/bin/kc.sh build \
-  --db=postgres \
-  --health-enabled=true \
-  --metrics-enabled=true
+  --db=postgres
