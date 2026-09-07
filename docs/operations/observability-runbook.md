@@ -22,7 +22,7 @@ docker compose exec -T wotb-backend wget -qO- http://keycloak:8080/realms/wotbto
 docker compose logs --tail=100 keycloak alloy
 ```
 
-Keycloak management health/metrics 不是生产部署 contract，不应新增 `:9000` 配置或端口映射。
+Keycloak 的应用 OIDC 与日志是生产排障依据，不应新增独立 management 端点或端口映射。
 
 ## 2. QQ / Keycloak callback 失败
 
