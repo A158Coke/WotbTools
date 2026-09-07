@@ -99,6 +99,10 @@ case "$cmd" in
       pull) exit 0 ;;
       up)
         active_compose_file="${COMPOSE_FILE:-docker-compose.yml}"
+        if [ -n "${FAKE_LIVE_ALLOY_UNHEALTHY_FILE:-}" ] \
+            && [[ "${compose_args[*]}" != *"postgres"* ]]; then
+          rm -f "$FAKE_LIVE_ALLOY_UNHEALTHY_FILE"
+        fi
         if [ -n "${FAKE_ROLLBACK_UP_LOG:-}" ] \
             && grep -q 'wotbtools-backend:sha-A' "$active_compose_file"; then
           printf '%s\n' "$COMPOSE_FILE" >> "$FAKE_ROLLBACK_UP_LOG"
@@ -113,7 +117,16 @@ case "$cmd" in
         fi
         exit 0
         ;;
-      ps) printf 'wotb-backend Up\nwotb-frontend Up\nkeycloak Up\nprometheus Up\nloki Up\nalloy Up\ngrafana Up\ntest Up\n' ;;
+      ps)
+        printf 'wotb-backend Up\nwotb-frontend Up\nkeycloak Up\nprometheus Up\nloki Up\n'
+        if [ -n "${FAKE_LIVE_ALLOY_UNHEALTHY_FILE:-}" ] \
+            && [ -f "$FAKE_LIVE_ALLOY_UNHEALTHY_FILE" ]; then
+          printf 'alloy Restarting (1)\n'
+        else
+          printf 'alloy Up\n'
+        fi
+        printf 'grafana Up\ntest Up\n'
+        ;;
       exec)
         request="${compose_args[*]}"
         if [[ "$request" == *"pg_isready"* || "$request" == *"pg_dump"* || \
@@ -517,6 +530,8 @@ rm -f "$WORK/deploy/validate-alloy-config.sh"
 sed -i '0,/\[\.\]/s//\\\\./' "$WORK/deploy/observability/alloy/config.alloy"
 stage_candidate_b
 export TAG=sha-A WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG=0 WOTB_BACKUP_ROOT="$WORK/backups-legacy-validator"
+export FAKE_LIVE_ALLOY_UNHEALTHY_FILE="$WORK/fake-live-alloy-unhealthy"
+: > "$FAKE_LIVE_ALLOY_UNHEALTHY_FILE"
 set +e
 legacy_validator_output="$(bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
 legacy_validator_rc=$?
@@ -524,6 +539,8 @@ set -e
 [[ $legacy_validator_rc -eq 0 ]] || fail "legacy live tree without validator must still seed LKG: $legacy_validator_output"
 grep -q "Current deployment promoted as initial LKG" <<<"$legacy_validator_output" \
   || fail "legacy validator compatibility path did not seed the initial LKG"
+grep -q "existing observability services are unhealthy" <<<"$legacy_validator_output" \
+  || fail "legacy observability recovery path was not exercised: $legacy_validator_output"
 [[ -f "$WORK/deploy.lkg/validate-alloy-config.sh" ]] \
   || fail "initial LKG snapshot did not receive the current Alloy validator"
 grep -Fq '[.]' "$WORK/deploy.lkg/observability/alloy/config.alloy" \
@@ -533,6 +550,7 @@ if grep -Fq '\\\\.' "$WORK/deploy.lkg/observability/alloy/config.alloy"; then
 fi
 [[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] \
   || fail "legacy validator compatibility path changed the initial LKG SHA"
+unset FAKE_LIVE_ALLOY_UNHEALTHY_FILE
 export WOTB_BACKUP_ROOT="$WORK/backups"
 
 # ---- independent session: no GitHub Actions temporary env ----

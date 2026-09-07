@@ -136,10 +136,21 @@ apply_observability_services() {
   assert_service_running grafana Grafana
 }
 
+observability_services_running() {
+  assert_service_running prometheus Prometheus \
+    && assert_service_running loki Loki \
+    && assert_service_running alloy Alloy \
+    && assert_service_running grafana Grafana
+}
+
 wait_healthy() {
-  local i ok
+  local i ok require_observability="${1:-1}" service_pattern
+  service_pattern="wotb-backend|wotb-frontend|keycloak"
+  if [ "$require_observability" = 1 ]; then
+    service_pattern="$service_pattern|prometheus|loki|alloy|grafana"
+  fi
   for i in $(seq 1 "$HEALTH_RETRIES"); do
-    if docker compose ps -a | grep -E "wotb-backend|wotb-frontend|keycloak|prometheus|loki|alloy|grafana" | grep -qE "Restarting|Exited|Dead"; then
+    if docker compose ps -a | grep -E "$service_pattern" | grep -qE "Restarting|Exited|Dead"; then
       sleep 2
       continue
     fi
@@ -424,8 +435,12 @@ seed_current_lkg() {
   docker compose -f docker-compose.yml config >/dev/null 2>&1 || return 1
   bash "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
     "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" >/dev/null || return 1
-  wait_healthy || return 1
-  verify_current_live_observability || return 1
+  wait_healthy 0 || return 1
+  if observability_services_running; then
+    verify_current_live_observability || return 1
+  else
+    echo "WARNING: existing observability services are unhealthy; the staged observability gate will run after promotion." >&2
+  fi
   stage_lkg_snapshot "$LIVE_DEPLOY_DIR" docker-compose.yml "$PREV_SHA" || return 1
   if ! install -m 644 "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" \
       "$LKG_DEPLOY_NEXT_DIR/observability/alloy/config.alloy"; then
