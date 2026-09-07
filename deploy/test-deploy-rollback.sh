@@ -511,9 +511,10 @@ bash "$WORK/deploy.incoming/deploy/deploy.sh"
 [[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] || fail "bootstrap deployment did not create first LKG"
 [[ -d "$WORK/deploy.lkg" ]] || fail "bootstrap deployment LKG tree missing"
 
-# ---- legacy live tree without the new Alloy validator -> seed LKG from incoming validator ----
+# ---- legacy live tree without validator and with old selector -> seed LKG from incoming contracts ----
 rm -rf "$WORK/deploy.lkg" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg"
 rm -f "$WORK/deploy/validate-alloy-config.sh"
+sed -i '0,/\[\.\]/s//\\\\./' "$WORK/deploy/observability/alloy/config.alloy"
 stage_candidate_b
 export TAG=sha-A WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG=0 WOTB_BACKUP_ROOT="$WORK/backups-legacy-validator"
 set +e
@@ -525,6 +526,11 @@ grep -q "Current deployment promoted as initial LKG" <<<"$legacy_validator_outpu
   || fail "legacy validator compatibility path did not seed the initial LKG"
 [[ -f "$WORK/deploy.lkg/validate-alloy-config.sh" ]] \
   || fail "initial LKG snapshot did not receive the current Alloy validator"
+grep -Fq '[.]' "$WORK/deploy.lkg/observability/alloy/config.alloy" \
+  || fail "initial LKG snapshot did not receive the current Alloy selector contract"
+if grep -Fq '\\\\.' "$WORK/deploy.lkg/observability/alloy/config.alloy"; then
+  fail "initial LKG snapshot retained the legacy escaped-dot selector"
+fi
 [[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] \
   || fail "legacy validator compatibility path changed the initial LKG SHA"
 export WOTB_BACKUP_ROOT="$WORK/backups"
