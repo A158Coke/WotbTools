@@ -10,6 +10,7 @@
 - **Battle Playback HD 地图验证收口**：29 张 HD 底图增加 coverage/hash/真实尺寸/严格 2× frame/map import/5 MiB 单图预算的 deterministic gate；terrain attitude 补齐 yaw=90°、反向与 45° 局部轴测试。视觉几何仍要求人工 29/29 source↔HD QA，manifest 的 `geometryTransform=NONE` 仅描述生成流程，不作为视觉真实性证明。
 
 ### Production observability
+- **Production application gate simplified**：发布与回滚现在只由 backend、frontend/nginx（`Host: wotbtools.com`）和 Keycloak OIDC discovery 决定；Prometheus/Loki/Alloy/Grafana 故障只输出 `OBSERVABILITY DEGRADED`，不再触发 application rollback。移除 `KEYCLOAK_MANAGEMENT` capability、Keycloak `:9000` health/metrics contract 与 Prometheus Keycloak scrape，Keycloak dashboard 收缩为登录、QQ callback、broker/IdP 与 WARN/ERROR 日志；新增 Grafana/Prometheus/Loki/Alloy 非阻断和应用 gate/rollback smoke cases。
 - **Keycloak production runtime hardening**：Keycloak 构建阶段固定 PostgreSQL、health、metrics，生产/本地 runtime env 开启 HTTP metrics histograms，编排统一使用 `start --optimized`；新增真实 Docker runtime smoke，验证 discovery、management readiness/metrics、无宿主机管理端口暴露及无启动时 augmentation。
 - **Production deploy LKG rollback contract**：成功部署后保存完整、经 health/observability gate 验证的 Last Known Good 部署树；失败只从 LKG 回滚，损坏或缺失 LKG 时 fail-closed 并保留当前 live tree，`deploy.prev` 仅作取证。新增显式 workflow_dispatch bootstrap 输入，用于事故后的首次 LKG 建立，并补充 A/B、损坏 bundle 与 bootstrap 回归 smoke。
 - **Production deploy bootstrap recovery**：当历史 live Alloy 因旧 LogQL selector 进入重启循环且尚无 LKG 时，初始 LKG 使用已校验的 staged observability 配置建立；正常部署与回滚仍要求完整 health/observability gate。

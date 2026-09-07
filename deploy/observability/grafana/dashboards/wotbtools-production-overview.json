@@ -13,20 +13,14 @@
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "none", "noValue": "无数据 / 未知", "mappings": [{"type": "value", "options": {"0": {"text": "异常", "color": "red"}, "1": {"text": "正常", "color": "green"}}}]}, "overrides": []},
-      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0}, "id": 2,
-      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "up{job=\"keycloak\"}", "refId": "A"}], "title": "认证服务", "type": "stat"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "none", "noValue": "无数据 / 未知", "mappings": [{"type": "value", "options": {"0": {"text": "异常", "color": "red"}, "1": {"text": "正常", "color": "green"}}}]}, "overrides": []},
       "gridPos": {"h": 4, "w": 6, "x": 0, "y": 4}, "id": 3,
       "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "min(up{job=~\"wotb-backend|keycloak|node-exporter|prometheus|loki|grafana\"}) and (count(up{job=~\"wotb-backend|keycloak|node-exporter|prometheus|loki|grafana\"}) == 6)", "refId": "A"}], "title": "生产状态（全部六类 target）", "type": "stat"
+      "targets": [{"expr": "min(up{job=~\"wotb-backend|node-exporter|prometheus|loki|grafana\"}) and (count(up{job=~\"wotb-backend|node-exporter|prometheus|loki|grafana\"}) == 5)", "refId": "A"}], "title": "生产状态（全部五类 target）", "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": {"type": "loki", "uid": "loki"},
       "fieldConfig": {"defaults": {"unit": "none", "noValue": "无数据 / 未知", "mappings": [{"type": "value", "options": {"0": {"text": "异常", "color": "red"}, "1": {"text": "正常", "color": "green"}}}]}, "overrides": []},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
       "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0}, "id": 101,
       "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
       "targets": [{"expr": "up{job=\"node-exporter\"}", "refId": "A"}], "title": "主机", "type": "stat"
@@ -216,11 +210,8 @@
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32}, "id": 24,
       "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
-      "targets": [
-        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"2..\"}[$__rate_interval]))", "legendFormat": "认证成功 2xx", "refId": "A"},
-        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"4..\"}[$__rate_interval]))", "legendFormat": "认证客户端错误 4xx", "refId": "B"},
-        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",status=~\"5..\"}[$__rate_interval]))", "legendFormat": "认证服务端错误 5xx", "refId": "C"}
-      ], "title": "认证请求趋势", "type": "timeseries"
+      "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
+      "targets": [{"expr": "{container_name=\"keycloak\"} |~ \"(?i)LOGIN|LOGIN_ERROR|IDENTITY_PROVIDER|broker_authenticated\"", "queryType": "range", "refId": "A"}], "title": "认证登录日志", "type": "logs"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
