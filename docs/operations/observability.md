@@ -172,7 +172,7 @@ docker compose ps prometheus loki alloy grafana node-exporter
 
 ### 生产（CI 自动）
 
-合并到 `main` 触发 `deploy.yml`：Actions 先把完整 `deploy/` 上传到 `/opt/wotb/deploy.incoming/deploy`，在 incoming project root 中执行 `docker compose config` 与 `pull`；成功后才将 incoming deploy tree 原子 promote 到 `/opt/wotb/deploy`。每次成功发布都会把已验证的完整部署树、compose、SHA 与 `DEPLOYED_CAPABILITIES.lkg` 提升为 `/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml`、`DEPLOYED_SHA.lkg`（Last Known Good）；`deploy.prev` 仅作为故障取证快照，不是回滚权威。上线和回滚均显式 `--force-recreate prometheus loki alloy grafana`，确保 bind-mounted 配置、Grafana provisioning、dashboard 与默认首页真正重新应用，不依赖 HUP。观测 gate 会验证六类 Prometheus target `up == 1`、Grafana health/datasource/dashboard API，并分别启动 backend/Keycloak canary、触发真实 frontend nginx Android 路径（404 允许但不算成功下载）后精确查询 Loki。任一健康或数据链路失败会先保留新版本诊断，再从 LKG 恢复整棵 deploy tree，并由当前 incoming release 持有的 verifier 按 LKG capability 复检；历史 LKG 没有 capability metadata 时只执行明确的 core rollback gate，不会错误要求不存在的 Keycloak management capability。LKG 缺失或损坏时 fail-closed，不会先删除当前 live tree；pull 失败也不触碰 live tree。
+合并到 `main` 触发 `deploy.yml`：Actions 先把完整 `deploy/` 上传到 `/opt/wotb/deploy.incoming/deploy`，在 incoming project root 中执行 `docker compose config` 与 `pull`；成功后才将 incoming deploy tree 原子 promote 到 `/opt/wotb/deploy`。每次通过 backend、frontend、Keycloak OIDC application gate 的发布都会把部署树、compose 与 SHA 提升为 `/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml`、`DEPLOYED_SHA.lkg`（Last Known Good）；`deploy.prev` 仅作为故障取证快照，不是回滚权威。上线和回滚均显式 `--force-recreate prometheus loki alloy grafana`，确保 bind-mounted 配置、Grafana provisioning、dashboard 与默认首页真正重新应用，不依赖 HUP。观测 verifier 会继续验证 Prometheus targets、Grafana health/datasource/dashboard API，并分别启动 backend/Keycloak canary、触发真实 frontend nginx Android 路径（404 允许但不算成功下载）后精确查询 Loki。观测链路失败会先输出诊断并标记 `OBSERVABILITY DEGRADED`，但不会恢复 LKG；只有 application gate 失败才会从 LKG 恢复整棵 deploy tree。LKG 缺失或损坏时 fail-closed，不会先删除当前 live tree；pull 失败也不触碰 live tree。
 
 首次建立 LKG 是唯一例外：只有显式 `workflow_dispatch` 并勾选 `allow_bootstrap_without_lkg` 时，才允许在没有现存 LKG 的主机上完成一次人工复核后的 bootstrap。正常 push 部署和未勾选该输入的手工运行都会拒绝无 LKG 发布。
 
@@ -205,7 +205,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 - Grafana Prometheus/Loki datasource health 只有 JSON `status: "OK"` 才算成功；其他值（包括旧版兼容的 `success`）一律失败。
 - backend/Keycloak canary 启动前记录固定 Loki `start`，每次重试只更新 `end`。Keycloak canary 使用加入 `wotb_internal` 的 Alpine 3.22 独立 emitter，容器名仍带 `keycloak-observability-canary-`，用于确认 Alloy ownership 规则，不启动第二个 Keycloak。
 - Loki gate 必须同时确认 API `status=success`、`data.result` 非空、stream 的 `values` 非空以及 marker 在实际日志值中；空数组不能被“`values` 字段存在”误判为成功。
-- Production Overview 顶部将 Backend、Keycloak、Host、Prometheus、Loki、Grafana 分成六张独立健康卡；缺失数据显示“无数据 / 未知”且不映射为绿色。下方 Overall 查询同时要求六类 target 数量完整且 `min(up)==1`。
+- Production Overview 顶部将 Backend、Host、Prometheus、Loki、Grafana 分成五张独立观测健康卡；缺失数据显示“无数据 / 未知”且不映射为绿色。Keycloak 登录/IdP 状态通过日志面板观察。下方 Overall 查询同时要求五类 target 数量完整且 `min(up)==1`。
 - Backend production gate 还确认至少一个稳定的 Hikari 指标（`hikaricp_connections_active`），避免连接池遥测在 dashboard 中静默失效。
 - Keycloak production gate 同时确认应用 realm metadata、仅 Docker 内部可达的 `:9000/health/ready` 和 `:9000/metrics`；Keycloak 镜像在构建阶段启用 PostgreSQL、health、metrics 和 optimized runtime，避免启动时重新 augmentation。
 
@@ -214,7 +214,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 > **CI 验证边界**：静态检查覆盖「本地」`docker/online/docker-compose.yml`、生产观测配置语法/结构、
 > dashboard 合同与端口安全；runtime smoke 会实际启动最小 Prometheus/Loki/Grafana、Alpine emitter，
 > 并验证 Alloy→Loki ownership、Grafana provisioning/auth；独立的 Keycloak runtime smoke 会真实构建并启动
-> optimized PostgreSQL Keycloak，确认应用 discovery、management readiness/metrics、无管理端口宿主机暴露和无启动时 augmentation。
+> optimized PostgreSQL Keycloak，确认应用 OIDC discovery、无 management health/metrics 配置和无启动时 augmentation。
 > CI 不替代生产 deploy gate：不验证生产 `deploy.yml`
 > heredoc 在真实主机上的渲染、真实 backend 指标采集或生产网络/DNS/TLS。
 
@@ -254,7 +254,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 
 - 完整整栈启动（业务 + 观测 9 容器，含生产 `deploy.yml` heredoc 生成的 compose）
 - Alloy 实际采集 Backend / Keycloak 日志并推送到 Loki、`requestId` 与认证关键词可过滤
-- `/actuator/prometheus`、Keycloak `http://keycloak:9000/metrics` 与 node-exporter `:9100` 实际输出（**指标名真实存在**，与 Dashboard 面板匹配——CI 只检查配置结构，无法验证指标）
+- `/actuator/prometheus` 与 node-exporter `:9100` 实际输出（**指标名真实存在**，与 Dashboard 面板匹配——CI 只检查配置结构，无法验证指标）
 - Volume 重启后数据持久化（7 天保留）
 - `docker stats` 实际资源占用（空闲约 1GB 目标）
 - 公网无法访问 8088/9090/9100/3100/3000/9000/12345
@@ -274,7 +274,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
       - **WotBTools · 回放解析**（uid `wotbtools-replay-parser`）— 回放解析功能使用情况
       - **WotBTools 使用统计**（uid `wotbtools-usage`）— Replay Processing Job/files/已完成/失败与 AI Review 已启动/成功/失败/事实校验退回（均按 Grafana 所选时间范围估算增量，非永久累计）
       - **WotBTools · 生产总览**（uid `wotbtools-production-overview`）— 默认最近 15 分钟展示生产状态、HTTP、Replay、AI、认证与系统资源，以及 JVM/GC 与最近异常；所有 Panel 标题中文化
-      - **WotBTools · Keycloak**（uid `wotbtools-keycloak`）— Keycloak management metrics、HTTP 5xx/P95、JVM/GC 与认证/Identity Broker 日志；保留 Loki 关键词兜底
+      - **WotBTools · Keycloak 登录日志**（uid `wotbtools-keycloak`）— LOGIN/LOGIN_ERROR、QQ callback、broker authentication、IdP 故障与 WARN/ERROR 日志；不依赖 Keycloak management metrics。
       - **WotBTools · AI 复盘诊断**（uid `wotbtools-ai-review`）— AI 请求健康、Grounding/Parser/Validation/Retry 分解、耗时 P50/P95/P99、队列/上游 P95、校验冲突与 SSE 生命周期日志
       - **WotBTools · 错误检索**（uid `wotbtools-error-explorer`）— 按 service、correlationId、errorId、errorCode、jobId 检索 Loki 事故生命周期；同时覆盖 canonical `api_request_failed` ERROR、`api_request_rejected` INFO 与 AI/Replay 终态事件
 
@@ -596,7 +596,7 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
 
 **Keycloak / Host**：
 
-- Keycloak management interface：Prometheus job `keycloak` 抓取 `keycloak:9000/metrics`；Dashboard 仅使用 Keycloak 26.6.x 文档/发行版实际支持的 `http_server_*`、`jvm_*`、`system_load_average_1m` 与 Prometheus target `up`，不使用 `base_cpu_processCpuLoad` 或 `system_cpu_usage` 等未纳入该指标契约的名称；认证事件仍通过 Loki 关键词观察。
+- Keycloak observability：不再配置 Prometheus `keycloak` job 或 management `:9000` contract；认证事件、QQ callback、broker/IdP 错误与 WARN/ERROR 统一通过 Alloy → Loki，Dashboard 以日志 panels 为主。Keycloak OIDC discovery 只属于 application blocking gate。
 - Host：Prometheus job `node-exporter` 抓取 `node-exporter:9100`；生产首页使用 `node_cpu_seconds_total`、`node_memory_*`、`node_filesystem_*` 与 `node_load1` 展示 CPU/RAM/Disk/Load。
 
 **Label 约束**：不使用用户 ID、Replay ID、文件名、IP、correlation ID、Prompt、Completion、异常正文作为 label；URI 一律为 Spring MVC 模板（如 `/api/preview`）。Token Usage 仅以低基数 `mode`/`token_type` 统计。

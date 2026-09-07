@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Real Keycloak production runtime contract smoke.
-# Builds the repository image, runs it against PostgreSQL, and never publishes
-# the management port to the host.
+# Real Keycloak production runtime smoke.
+# Builds the repository image, runs it against PostgreSQL, and verifies that
+# the image exposes only the application/OIDC interface.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,11 +31,10 @@ fail() {
   exit 1
 }
 
-if grep -Fq -- '--http-metrics-histograms-enabled=true' "$ROOT/docker/Dockerfile.keycloak"; then
-  fail "HTTP histogram configuration must not be passed to kc.sh build"
+if grep -Eq -- '--(health-enabled|metrics-enabled)|KC_HTTP_(MANAGEMENT|METRICS)' \
+    "$ROOT/docker/Dockerfile.keycloak" "$ROOT/deploy/docker-compose.prod.yml"; then
+  fail "Keycloak management health/metrics configuration must be removed"
 fi
-grep -Fq 'KC_HTTP_METRICS_HISTOGRAMS_ENABLED: "true"' "$ROOT/deploy/docker-compose.prod.yml" \
-  || fail "production compose must own HTTP histogram configuration at runtime"
 
 if [ "${WOTB_KEYCLOAK_SKIP_BUILD:-0}" != "1" ]; then
   echo "== Building real Keycloak production image =="
@@ -65,9 +64,6 @@ docker run -d --name "$KC_NAME" --network "$NETWORK" \
   -e KC_DB_URL=jdbc:postgresql://$DB_NAME:5432/keycloak \
   -e KC_DB_USERNAME=wotb \
   -e KC_DB_PASSWORD=runtime-test-password \
-  -e KC_HTTP_MANAGEMENT_PORT=9000 \
-  -e KC_HTTP_MANAGEMENT_SCHEME=http \
-  -e KC_HTTP_METRICS_HISTOGRAMS_ENABLED=true \
   -e KC_HTTP_ENABLED=true \
   -e KC_HTTP_PORT=8080 \
   -e KC_HOSTNAME_STRICT=false \
@@ -114,11 +110,6 @@ wait_for_body() {
 
 wait_for_body "Keycloak application interface" \
   "http://$KC_NAME:8080/realms/master/.well-known/openid-configuration" '"issuer"'
-wait_for_body "Keycloak management metrics" \
-  "http://$KC_NAME:9000/metrics" \
-  'process_' 'http_server_requests_seconds_count' 'http_server_requests_seconds_bucket'
-wait_for_body "Keycloak management readiness" \
-  "http://$KC_NAME:9000/health/ready" '"status"[[:space:]]*:[[:space:]]*"UP"'
 
 if docker logs "$KC_NAME" 2>&1 | grep -Fq 'Changes detected in configuration. Updating the server image.'; then
   fail "runtime startup attempted a Keycloak image rebuild"
