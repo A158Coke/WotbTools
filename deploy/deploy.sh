@@ -16,6 +16,9 @@ readonly LKG_COMPOSE_RETIRING="$WOTB_DIR/docker-compose.lkg.retiring.yml"
 readonly LKG_SHA="$WOTB_DIR/DEPLOYED_SHA.lkg"
 readonly LKG_SHA_NEXT="$WOTB_DIR/DEPLOYED_SHA.lkg.next"
 readonly LKG_SHA_RETIRING="$WOTB_DIR/DEPLOYED_SHA.lkg.retiring"
+readonly LKG_CAPABILITIES="$WOTB_DIR/DEPLOYED_CAPABILITIES.lkg"
+readonly LKG_CAPABILITIES_NEXT="$WOTB_DIR/DEPLOYED_CAPABILITIES.lkg.next"
+readonly LKG_CAPABILITIES_RETIRING="$WOTB_DIR/DEPLOYED_CAPABILITIES.lkg.retiring"
 readonly LIVE_COMPOSE="$WOTB_DIR/docker-compose.yml"
 readonly RESTORE_DEPLOY_NEXT_DIR="$WOTB_DIR/deploy.restore.next"
 readonly RESTORE_DEPLOY_FAILED_DIR="$WOTB_DIR/deploy.failed"
@@ -70,6 +73,11 @@ cd "$WOTB_DIR"
 readonly STAGED_DEPLOY_DIR="$INCOMING_DIR/deploy"
 readonly STAGED_COMPOSE="$INCOMING_DIR/docker-compose.next.yml"
 readonly STAGED_RESOLVED_COMPOSE="$INCOMING_DIR/docker-compose.next.resolved.yml"
+readonly STAGED_CAPABILITIES="$STAGED_DEPLOY_DIR/deployment-capabilities.env"
+readonly RUNNER_DIR="$INCOMING_DIR/.runner"
+readonly RUNNER_VERIFIER="$RUNNER_DIR/verify-observability.sh"
+readonly RUNNER_VALIDATOR="$RUNNER_DIR/validate-alloy-config.sh"
+readonly RUNNER_GRAFANA_API_HELPER="$RUNNER_DIR/grafana-api-request.sh"
 if [ ! -f "$STAGED_DEPLOY_DIR/docker-compose.prod.yml" ]; then
   echo "ERROR: staged deployment tree is missing: $STAGED_DEPLOY_DIR/docker-compose.prod.yml" >&2
   exit 1
@@ -181,6 +189,101 @@ verify_current_live_observability() {
     bash "$STAGED_DEPLOY_DIR/verify-observability.sh"
 }
 
+prepare_runner_tools() {
+  if ! mkdir -m 700 -p "$RUNNER_DIR" \
+      || ! chmod 700 "$RUNNER_DIR" \
+      || ! install -m 755 "$STAGED_DEPLOY_DIR/verify-observability.sh" "$RUNNER_VERIFIER" \
+      || ! install -m 755 "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" "$RUNNER_VALIDATOR" \
+      || ! install -m 755 "$STAGED_DEPLOY_DIR/grafana-api-request.sh" "$RUNNER_GRAFANA_API_HELPER"; then
+    echo "ERROR: deployment-owned rollback verifier could not be staged." >&2
+    return 1
+  fi
+}
+
+validate_capability_manifest() {
+  local manifest="$1" keycloak_management
+  if [ ! -f "$manifest" ]; then
+    echo "ERROR: deployment capability manifest is missing: $manifest" >&2
+    return 1
+  fi
+  keycloak_management="$(awk -F= '$1 == "KEYCLOAK_MANAGEMENT" { gsub(/\r/, "", $2); print $2 }' "$manifest")"
+  if [ "$keycloak_management" != 1 ]; then
+    echo "ERROR: deployment capability manifest must declare KEYCLOAK_MANAGEMENT=1." >&2
+    return 1
+  fi
+}
+
+write_lkg_capabilities() {
+  local destination="$1" state="$2" manifest="$STAGED_CAPABILITIES"
+  if [ "$state" = validated ]; then
+    if [ ! -f "$manifest" ] && [ -f "$LIVE_DEPLOY_DIR/deployment-capabilities.env" ]; then
+      manifest="$LIVE_DEPLOY_DIR/deployment-capabilities.env"
+    fi
+    if ! validate_capability_manifest "$manifest"; then return 1; fi
+    {
+      printf 'STATE=validated\n'
+      tr -d '\r' < "$manifest"
+    } > "$destination"
+  elif [ "$state" = bootstrap-baseline ]; then
+    printf 'STATE=bootstrap-baseline\nKEYCLOAK_MANAGEMENT=0\n' > "$destination"
+  else
+    echo "ERROR: unsupported LKG capability state: $state" >&2
+    return 1
+  fi
+  chmod 600 "$destination"
+}
+
+validate_lkg_capabilities() {
+  local capabilities_file="$1" state keycloak_management
+  [ -f "$capabilities_file" ] || return 0
+  state="$(awk -F= '$1 == "STATE" { gsub(/\r/, "", $2); print $2 }' "$capabilities_file")"
+  keycloak_management="$(awk -F= '$1 == "KEYCLOAK_MANAGEMENT" { gsub(/\r/, "", $2); print $2 }' "$capabilities_file")"
+  if [ "$state" != validated ] && [ "$state" != bootstrap-baseline ]; then
+    echo "LKG capabilities: unsupported STATE=$state." >&2
+    return 1
+  fi
+  if [ "$state" = validated ] && [ "$keycloak_management" != 1 ]; then
+    echo "LKG capabilities: validated LKG must declare KEYCLOAK_MANAGEMENT=1." >&2
+    return 1
+  fi
+  if [ "$state" = bootstrap-baseline ] && [ "$keycloak_management" != 0 ]; then
+    echo "LKG capabilities: bootstrap baseline must not claim KEYCLOAK_MANAGEMENT." >&2
+    return 1
+  fi
+}
+
+lkg_capability_state() {
+  local capabilities_file="$1"
+  if [ ! -f "$capabilities_file" ]; then
+    printf 'legacy\n'
+    return 0
+  fi
+  awk -F= '$1 == "STATE" { gsub(/\r/, "", $2); print $2 }' "$capabilities_file"
+}
+
+lkg_capabilities_have_keycloak_management() {
+  local capabilities_file="$1" state keycloak_management
+  [ -f "$capabilities_file" ] || return 1
+  state="$(awk -F= '$1 == "STATE" { gsub(/\r/, "", $2); print $2 }' "$capabilities_file")"
+  keycloak_management="$(awk -F= '$1 == "KEYCLOAK_MANAGEMENT" { gsub(/\r/, "", $2); print $2 }' "$capabilities_file")"
+  [ "$state" = validated ] && [ "$keycloak_management" = 1 ]
+}
+
+lkg_has_keycloak_management() {
+  lkg_capabilities_have_keycloak_management "$LKG_CAPABILITIES"
+}
+
+verify_lkg_observability() {
+  local profile=rollback-core
+  if lkg_has_keycloak_management; then profile=full; fi
+  WOTB_OBSERVABILITY_PROFILE="$profile" \
+    WOTB_ALLOY_CONFIG="$LKG_DEPLOY_DIR/observability/alloy/config.alloy" \
+    WOTB_ALLOY_VALIDATOR="$RUNNER_VALIDATOR" \
+    WOTB_DASHBOARD_DIR="$LKG_DEPLOY_DIR/observability/grafana/dashboards" \
+    WOTB_GRAFANA_API_HELPER="$RUNNER_GRAFANA_API_HELPER" \
+    bash "$RUNNER_VERIFIER"
+}
+
 report_health_status() {
   local running
   running="$(docker compose ps -a 2>/dev/null || true)"
@@ -259,11 +362,11 @@ retire_lkg_path() {
 }
 
 lkg_bundle_present() {
-  [ -e "$LKG_DEPLOY_DIR" ] || [ -e "$LKG_COMPOSE" ] || [ -e "$LKG_SHA" ]
+  [ -e "$LKG_DEPLOY_DIR" ] || [ -e "$LKG_COMPOSE" ] || [ -e "$LKG_SHA" ] || [ -e "$LKG_CAPABILITIES" ]
 }
 
 validate_lkg_bundle() {
-  local deploy_dir="$1" compose_file="$2" sha_file="$3" label="$4" sha service
+  local deploy_dir="$1" compose_file="$2" sha_file="$3" label="$4" capabilities_file="${5:-}" sha service validator
   if [ ! -d "$deploy_dir" ] || [ ! -f "$compose_file" ] || [ ! -f "$sha_file" ]; then
     echo "${label}: LKG bundle is incomplete." >&2
     return 1
@@ -280,8 +383,16 @@ validate_lkg_bundle() {
     echo "${label}: LKG compose parse failed." >&2
     return 1
   fi
-  if ! bash "$deploy_dir/validate-alloy-config.sh" "$deploy_dir/observability/alloy/config.alloy" >/dev/null; then
-    echo "${label} [ALLOY]: LKG Alloy validation failed." >&2
+  if [ -z "$capabilities_file" ] || lkg_capabilities_have_keycloak_management "$capabilities_file"; then
+    validator="$RUNNER_VALIDATOR"
+    if [ ! -f "$validator" ]; then validator="$deploy_dir/validate-alloy-config.sh"; fi
+    if ! bash "$validator" "$deploy_dir/observability/alloy/config.alloy" >/dev/null; then
+      echo "${label} [ALLOY]: LKG Alloy validation failed." >&2
+      return 1
+    fi
+  fi
+  if [ -n "$capabilities_file" ] && ! validate_lkg_capabilities "$capabilities_file"; then
+    echo "${label}: capability metadata is invalid." >&2
     return 1
   fi
   for service in backend frontend keycloak; do
@@ -293,8 +404,8 @@ validate_lkg_bundle() {
 }
 
 stage_lkg_snapshot() {
-  local source_dir="$1" source_compose="$2" sha="$3"
-  if ! rm -rf -- "$LKG_DEPLOY_NEXT_DIR" "$LKG_COMPOSE_NEXT" "$LKG_SHA_NEXT"; then
+  local source_dir="$1" source_compose="$2" sha="$3" state="$4"
+  if ! rm -rf -- "$LKG_DEPLOY_NEXT_DIR" "$LKG_COMPOSE_NEXT" "$LKG_SHA_NEXT" "$LKG_CAPABILITIES_NEXT"; then
     echo "ERROR: failed to clear the LKG staging paths." >&2
     return 1
   fi
@@ -313,22 +424,35 @@ stage_lkg_snapshot() {
     echo "ERROR: failed to protect the LKG staging metadata." >&2
     return 1
   fi
+  if ! write_lkg_capabilities "$LKG_CAPABILITIES_NEXT" "$state"; then
+    echo "ERROR: failed to write LKG capability metadata." >&2
+    return 1
+  fi
 }
 
 validate_lkg_candidate() {
   validate_lkg_bundle \
     "$LKG_DEPLOY_NEXT_DIR" "$LKG_COMPOSE_NEXT" "$LKG_SHA_NEXT" \
-    "LKG candidate"
+    "LKG candidate" "$LKG_CAPABILITIES_NEXT"
 }
 
 promote_lkg_candidate() {
   local restore_failed=false
-  local deploy_retired=false compose_retired=false sha_retired=false
-  local deploy_installed=false compose_installed=false sha_installed=false
+  local deploy_retired=false compose_retired=false sha_retired=false capabilities_retired=false
+  local deploy_installed=false compose_installed=false sha_installed=false capabilities_installed=false
   validate_lkg_candidate || return 1
-  if [ -e "$LKG_DEPLOY_RETIRING_DIR" ] || [ -e "$LKG_COMPOSE_RETIRING" ] || [ -e "$LKG_SHA_RETIRING" ]; then
-    echo "ERROR: incomplete prior LKG promotion found; refusing to overwrite it." >&2
-    return 1
+  if [ -e "$LKG_DEPLOY_RETIRING_DIR" ] || [ -e "$LKG_COMPOSE_RETIRING" ] \
+      || [ -e "$LKG_SHA_RETIRING" ] || [ -e "$LKG_CAPABILITIES_RETIRING" ]; then
+    if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" \
+        "Existing LKG before stale-retirement cleanup" "$LKG_CAPABILITIES"; then
+      echo "ERROR: incomplete prior LKG promotion found; refusing to overwrite it." >&2
+      return 1
+    fi
+    if ! rm -rf -- "$LKG_DEPLOY_RETIRING_DIR" \
+        || ! rm -f -- "$LKG_COMPOSE_RETIRING" "$LKG_SHA_RETIRING" "$LKG_CAPABILITIES_RETIRING"; then
+      echo "ERROR: stale LKG retirement paths could not be recovered safely." >&2
+      return 1
+    fi
   fi
 
   restore_retired_lkg() {
@@ -339,6 +463,9 @@ promote_lkg_candidate() {
       restore_failed=true
     fi
     if [ "$sha_installed" = true ] && ! rm -f -- "$LKG_SHA"; then
+      restore_failed=true
+    fi
+    if [ "$capabilities_installed" = true ] && ! rm -f -- "$LKG_CAPABILITIES"; then
       restore_failed=true
     fi
     if ! rm -f -- "$LKG_COMPOSE_INSTALLING"; then
@@ -354,6 +481,10 @@ promote_lkg_candidate() {
     fi
     if [ "$sha_retired" = true ] && [ -e "$LKG_SHA_RETIRING" ] \
         && ! mv -- "$LKG_SHA_RETIRING" "$LKG_SHA"; then
+      restore_failed=true
+    fi
+    if [ "$capabilities_retired" = true ] && [ -e "$LKG_CAPABILITIES_RETIRING" ] \
+        && ! mv -- "$LKG_CAPABILITIES_RETIRING" "$LKG_CAPABILITIES"; then
       restore_failed=true
     fi
     if [ "$restore_failed" = true ]; then
@@ -387,6 +518,15 @@ promote_lkg_candidate() {
     fi
     sha_retired=true
   fi
+  if [ -e "$LKG_CAPABILITIES" ]; then
+    if ! retire_lkg_path "$LKG_CAPABILITIES" "$LKG_CAPABILITIES_RETIRING" WOTB_TEST_FAIL_LKG_CAPABILITIES_RETIRE; then
+      if ! restore_retired_lkg; then
+        echo "ERROR: LKG rollback cleanup also failed." >&2
+      fi
+      return 1
+    fi
+    capabilities_retired=true
+  fi
   if ! mv -- "$LKG_DEPLOY_NEXT_DIR" "$LKG_DEPLOY_DIR"; then
     if ! restore_retired_lkg; then
       echo "ERROR: LKG rollback cleanup also failed." >&2
@@ -410,24 +550,28 @@ promote_lkg_candidate() {
     return 1
   fi
   sha_installed=true
-  if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "Promoted LKG"; then
+  if ! mv -- "$LKG_CAPABILITIES_NEXT" "$LKG_CAPABILITIES"; then
     if ! restore_retired_lkg; then
       echo "ERROR: LKG rollback cleanup also failed." >&2
     fi
     return 1
   fi
-  if ! rm -f -- "$LKG_COMPOSE_NEXT" "$LKG_COMPOSE_RETIRING" "$LKG_SHA_RETIRING"; then
-    echo "ERROR: failed to remove retired LKG metadata." >&2
+  capabilities_installed=true
+  if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "Promoted LKG" "$LKG_CAPABILITIES"; then
+    if ! restore_retired_lkg; then
+      echo "ERROR: LKG rollback cleanup also failed." >&2
+    fi
     return 1
   fi
-  if ! rm -rf -- "$LKG_DEPLOY_RETIRING_DIR"; then
-    echo "ERROR: failed to remove the retired LKG tree." >&2
-    return 1
+  if ! rm -f -- "$LKG_COMPOSE_NEXT" "$LKG_COMPOSE_RETIRING" "$LKG_SHA_RETIRING" "$LKG_CAPABILITIES_RETIRING" \
+      || ! rm -rf -- "$LKG_DEPLOY_RETIRING_DIR"; then
+    echo "WARNING: new LKG is validated, but retired LKG cleanup was incomplete; next promotion will retry cleanup." >&2
   fi
   return 0
 }
 
 seed_current_lkg() {
+  local state=bootstrap-baseline
   [ -d "$LIVE_DEPLOY_DIR" ] || return 1
   [ -f docker-compose.yml ] || return 1
   [ -n "$PREV_SHA" ] || return 1
@@ -436,12 +580,12 @@ seed_current_lkg() {
   bash "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
     "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" >/dev/null || return 1
   wait_healthy 0 || return 1
-  if observability_services_running; then
-    verify_current_live_observability || return 1
+  if observability_services_running && verify_current_live_observability; then
+    state=validated
   else
-    echo "WARNING: existing observability services are unhealthy; the staged observability gate will run after promotion." >&2
+    echo "WARNING: existing deployment is not fully observable; storing a bootstrap baseline without current capabilities." >&2
   fi
-  stage_lkg_snapshot "$LIVE_DEPLOY_DIR" docker-compose.yml "$PREV_SHA" || return 1
+  stage_lkg_snapshot "$LIVE_DEPLOY_DIR" docker-compose.yml "$PREV_SHA" "$state" || return 1
   if ! install -m 644 "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" \
       "$LKG_DEPLOY_NEXT_DIR/observability/alloy/config.alloy"; then
     echo "ERROR: failed to add the current Alloy config to the initial LKG snapshot." >&2
@@ -482,7 +626,7 @@ prepare_lkg_restore() {
     return 1
   fi
   if ! validate_lkg_bundle "$RESTORE_DEPLOY_NEXT_DIR" "$RESTORE_COMPOSE_NEXT" "$LKG_SHA" \
-      "LKG restore candidate"; then
+      "LKG restore candidate" "$LKG_CAPABILITIES"; then
     echo "ERROR: staged LKG restore bundle validation failed; live was not changed." >&2
     return 1
   fi
@@ -578,26 +722,29 @@ restore_lkg_to_live() {
 }
 
 rollback_to_lkg() {
-  echo "== DEPLOY FAILED: rolling back to validated LKG =="
-  if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "ROLLBACK ABORTED"; then
-    echo "ROLLBACK ABORTED: validated LKG is unavailable or corrupted" >&2
+  local lkg_state
+  lkg_state="$(lkg_capability_state "$LKG_CAPABILITIES")"
+  echo "== DEPLOY FAILED: rolling back to LKG runtime (state=$lkg_state) =="
+  if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" \
+      "ROLLBACK ABORTED" "$LKG_CAPABILITIES"; then
+    echo "ROLLBACK ABORTED: LKG runtime is unavailable or corrupted" >&2
     echo "manual intervention required; current live tree was not destroyed" >&2
     return 1
   fi
   if ! restore_lkg_to_live; then
-    echo "ROLLBACK ABORTED: validated LKG could not be installed transactionally." >&2
+    echo "ROLLBACK ABORTED: LKG runtime could not be installed transactionally." >&2
     return 1
   fi
   if pull_compose "$LIVE_COMPOSE" \
       && docker compose up -d --remove-orphans \
       && apply_observability_services; then
-    if wait_healthy && verify_observability; then
+    if wait_healthy 0 && verify_lkg_observability; then
       cp -f "$LKG_SHA" DEPLOYED_SHA
-      echo "== ROLLBACK OK: validated LKG $(cat "$LKG_SHA") =="
+      echo "== ROLLBACK OK: $(cat "$LKG_SHA") (LKG_STATE=$(lkg_capability_state "$LKG_CAPABILITIES")) =="
       return 0
     fi
   fi
-  echo "== ROLLBACK FAILED: validated LKG could not pass the full gate; manual intervention required ==" >&2
+  echo "== ROLLBACK FAILED: LKG runtime could not pass its capability-aware gate; manual intervention required ==" >&2
   dump_logs
   return 1
 }
@@ -613,10 +760,10 @@ rollback_to_legacy_previous() {
     if pull_compose docker-compose.yml \
         && docker compose up -d --remove-orphans \
         && apply_observability_services; then
-      if wait_healthy; then
+      if wait_healthy 0; then
         if [ -n "$PREV_SHA" ]; then echo "$PREV_SHA" > DEPLOYED_SHA; fi
         echo "CORE ROLLBACK OK: restored legacy previous deployment"
-        if verify_observability; then
+        if verify_lkg_observability; then
           echo "OBSERVABILITY ROLLBACK DEGRADED: restored legacy previous without a validated LKG" >&2
         else
           echo "OBSERVABILITY ROLLBACK DEGRADED: legacy previous failed observability verification" >&2
@@ -647,15 +794,17 @@ if ! bash "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
   echo "ERROR [ALLOY]: staged Alloy config validation failed; live deployment was not changed." >&2
   exit 1
 fi
+validate_capability_manifest "$STAGED_CAPABILITIES"
+prepare_runner_tools
 
 if lkg_bundle_present; then
-  if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "Existing LKG"; then
+  if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "Existing LKG" "$LKG_CAPABILITIES"; then
     echo "ROLLBACK ABORTED: existing LKG is unavailable or corrupted; live deployment was not changed." >&2
     exit 1
   fi
 else
   if seed_current_lkg; then
-    echo "== Current deployment promoted as initial LKG =="
+    echo "== Current deployment promoted as initial LKG (state=$(lkg_capability_state "$LKG_CAPABILITIES")) =="
   elif [ "$BOOTSTRAP_ALLOWED" != "1" ]; then
     echo "ERROR: No validated LKG exists." >&2
     echo "Current deployment cannot be promoted to LKG." >&2
@@ -701,7 +850,7 @@ if [ "$rollback_needed" = false ]; then
     else
       docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
       if wait_healthy && verify_observability; then
-        if ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "$TAG"; then
+        if ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "$TAG" validated; then
           echo "ERROR: LKG staging failed after the full deployment gate; attempting rollback." >&2
           rollback_needed=true
         elif promote_lkg_candidate; then
@@ -725,7 +874,7 @@ fi
 if [ "$rollback_needed" = true ]; then
   if lkg_bundle_present; then
     if ! rollback_to_lkg; then
-      echo "ROLLBACK FAILED: no validated LKG was restored." >&2
+      echo "ROLLBACK FAILED: no usable LKG runtime was restored." >&2
     fi
   else
     if ! rollback_to_legacy_previous; then

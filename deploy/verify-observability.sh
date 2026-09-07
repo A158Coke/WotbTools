@@ -9,8 +9,13 @@ readonly DASHBOARD_DIR="${WOTB_DASHBOARD_DIR:-$DEPLOY_ROOT/deploy/observability/
 readonly ALLOY_CONFIG="${WOTB_ALLOY_CONFIG:-$DEPLOY_ROOT/deploy/observability/alloy/config.alloy}"
 readonly ALLOY_VALIDATOR="${WOTB_ALLOY_VALIDATOR:-$DEPLOY_ROOT/deploy/validate-alloy-config.sh}"
 readonly GRAFANA_API_HELPER="${WOTB_GRAFANA_API_HELPER:-$DEPLOY_ROOT/deploy/grafana-api-request.sh}"
+readonly OBSERVABILITY_PROFILE="${WOTB_OBSERVABILITY_PROFILE:-full}"
 if [[ ! "$RETRIES" =~ ^[1-9][0-9]*$ || ! "$INTERVAL_SEC" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: observability retry settings must be positive integers." >&2
+  exit 2
+fi
+if [ "$OBSERVABILITY_PROFILE" != full ] && [ "$OBSERVABILITY_PROFILE" != rollback-core ]; then
+  echo "ERROR: unsupported observability profile: $OBSERVABILITY_PROFILE" >&2
   exit 2
 fi
 
@@ -38,6 +43,22 @@ wait_for_http() {
       if [ "$#" -eq 0 ]; then echo "PASS: $name"; return 0; fi
       for needle in "$@"; do
         if ! grep -Fq "$needle" <<<"$body"; then body=""; break; fi
+      done
+      if [ -n "$body" ]; then echo "PASS: $name"; return 0; fi
+    fi
+    [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
+  done
+  fail "$domain" "$name did not return the expected response"
+}
+
+wait_for_http_regex() {
+  local domain="$1" name="$2" url="$3" body="" attempt needle
+  shift 3
+  for attempt in $(seq 1 "$RETRIES"); do
+    if body="$(compose_exec "$url" 2>/dev/null)" && [ -n "$body" ]; then
+      if [ "$#" -eq 0 ]; then echo "PASS: $name"; return 0; fi
+      for needle in "$@"; do
+        if ! grep -Eq "$needle" <<<"$body"; then body=""; break; fi
       done
       if [ -n "$body" ]; then echo "PASS: $name"; return 0; fi
     fi
@@ -106,6 +127,16 @@ validate_alloy() {
 }
 
 echo "== Verifying observability data path =="
+if [ "$OBSERVABILITY_PROFILE" = rollback-core ]; then
+  wait_for_http "ROLLBACK_CORE" "Keycloak application metadata" \
+    "http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration"
+  wait_for_http "ROLLBACK_CORE" "Prometheus readiness" "http://prometheus:9090/-/ready"
+  wait_for_http "ROLLBACK_CORE" "Loki readiness" "http://loki:3100/ready"
+  wait_for_http "ROLLBACK_CORE" "Grafana health" "http://grafana:3000/api/health" '"database":"ok"'
+  echo "== Core rollback verification passed =="
+  exit 0
+fi
+
 validate_alloy
 wait_for_http "BACKEND_METRICS" "backend metrics endpoint" \
   "http://127.0.0.1:8088/actuator/prometheus" "jvm_" "process_" "system_" "http_server_requests"
@@ -115,8 +146,8 @@ wait_for_http "BACKEND_METRICS" "backend Hikari metrics" \
   "http://127.0.0.1:8088/actuator/prometheus" "hikaricp_connections_active"
 wait_for_http "KEYCLOAK_APPLICATION" "Keycloak application metadata" \
   "http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration"
-wait_for_http "KEYCLOAK_MANAGEMENT" "Keycloak management readiness" \
-  "http://keycloak:9000/health/ready" '"status":"UP"'
+wait_for_http_regex "KEYCLOAK_MANAGEMENT" "Keycloak management readiness" \
+  "http://keycloak:9000/health/ready" '"status"[[:space:]]*:[[:space:]]*"UP"'
 wait_for_http "KEYCLOAK_MANAGEMENT" "Keycloak management metrics and HTTP histogram" \
   "http://keycloak:9000/metrics" "process_" "http_server_requests_seconds_count" "http_server_requests_seconds_bucket"
 wait_for_http "PROMETHEUS_TARGET" "node exporter metrics endpoint" "http://node-exporter:9100/metrics" "node_"

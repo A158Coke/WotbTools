@@ -21,6 +21,7 @@ cp "$ROOT/deploy/deploy.sh" "$WORK/deploy.incoming/deploy/deploy.sh"
 cp "$ROOT/deploy/validate-alloy-config.sh" "$WORK/deploy.incoming/deploy/validate-alloy-config.sh"
 cp "$ROOT/deploy/verify-observability.sh" "$WORK/deploy.incoming/deploy/verify-observability.sh"
 cp "$ROOT/deploy/grafana-api-request.sh" "$WORK/deploy.incoming/deploy/grafana-api-request.sh"
+cp "$ROOT/deploy/deployment-capabilities.env" "$WORK/deploy.incoming/deploy/deployment-capabilities.env"
 cp "$ROOT/deploy/sponsor-config.example.json" "$WORK/deploy.incoming/deploy/sponsor-config.example.json"
 cp "$ROOT/deploy/postgres-backup.sh" "$WORK/deploy.incoming/deploy/postgres-backup.sh"
 cp "$ROOT/deploy/postgres-backup-inspect.sh" "$WORK/deploy.incoming/deploy/postgres-backup-inspect.sh"
@@ -73,6 +74,7 @@ resolve_line() {
 
 active_tag_healthy() {
   local file="${COMPOSE_FILE:-docker-compose.yml}"
+  [ "${FAKE_FORCE_UNHEALTHY:-0}" = 1 ] && return 1
   [[ -f "$file" ]] || return 0
   grep -q 'wotbtools-backend:sha-A' "$file" \
     || { [ -n "${FAKE_HEALTHY_BACKEND_TAG:-}" ] && grep -q "wotbtools-backend:${FAKE_HEALTHY_BACKEND_TAG}" "$file"; }
@@ -197,7 +199,11 @@ case "$cmd" in
           elif [[ "$request" == *"8088/actuator/prometheus"* ]]; then
             printf 'jvm_ process_ system_ http_server_requests wotb_replay_parse_active wotb_replay_parse_queue_depth wotb_ai_review_in_flight wotb_ai_review_queue_depth hikaricp_connections_active\n'
           elif [[ "$request" == *"keycloak:9000/health/ready"* ]]; then
-            printf '{"status":"UP"}\n'
+            if [ "${FAKE_KEYCLOAK_MANAGEMENT_UNAVAILABLE:-0}" = 1 ] && active_tag_healthy; then
+              printf '{"status": "DOWN"}\n'
+              exit 1
+            fi
+            printf '{"status": "UP"}\n'
           elif [[ "$request" == *"keycloak:9000/metrics"* ]]; then
             printf 'process_\nhttp_server_requests_seconds_count\nhttp_server_requests_seconds_bucket\n'
           elif [[ "$request" == *"node-exporter:9100/metrics"* ]]; then
@@ -261,7 +267,13 @@ stage_candidate_b() {
   mkdir -p "$WORK/deploy.incoming/deploy"
   cp -a "$WORK/deploy/." "$WORK/deploy.incoming/deploy/"
   cp "$ROOT/deploy/validate-alloy-config.sh" "$WORK/deploy.incoming/deploy/validate-alloy-config.sh"
+  cp "$ROOT/deploy/verify-observability.sh" "$WORK/deploy.incoming/deploy/verify-observability.sh"
+  cp "$ROOT/deploy/grafana-api-request.sh" "$WORK/deploy.incoming/deploy/grafana-api-request.sh"
+  cp "$ROOT/deploy/deployment-capabilities.env" "$WORK/deploy.incoming/deploy/deployment-capabilities.env"
   sed -i 's/\r$//' "$WORK/deploy.incoming/deploy/validate-alloy-config.sh"
+  sed -i 's/\r$//' \
+    "$WORK/deploy.incoming/deploy/verify-observability.sh" \
+    "$WORK/deploy.incoming/deploy/grafana-api-request.sh"
   printf 'new prometheus config\n' > "$WORK/deploy.incoming/deploy/observability/prometheus/prometheus.yml"
   cp "$ROOT/deploy/observability/alloy/config.alloy" "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
   printf '\n// new alloy config\n' >> "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
@@ -272,6 +284,7 @@ lkg_state_checksum() {
     cd "$WORK"
     find deploy.lkg -type f -print0 | sort -z | xargs -0 sha256sum
     sha256sum docker-compose.lkg.yml DEPLOYED_SHA.lkg
+    if [ -f DEPLOYED_CAPABILITIES.lkg ]; then sha256sum DEPLOYED_CAPABILITIES.lkg; fi
   )
 }
 
@@ -295,6 +308,18 @@ if grep -q "command not found\|No such file or directory" <<<"$guard_output"; th
   fail "deadline=400 must not produce shell errors: $guard_output"
 fi
 
+# ---- candidate capability contract must fail closed ----
+printf 'KEYCLOAK_MANAGEMENT=0\n' > "$WORK/deploy.incoming/deploy/deployment-capabilities.env"
+set +e
+missing_capability_output=$(bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)
+missing_capability_rc=$?
+set -e
+[[ $missing_capability_rc -ne 0 ]] || fail "candidate without Keycloak management capability must fail"
+grep -q "deployment capability manifest must declare KEYCLOAK_MANAGEMENT=1" <<<"$missing_capability_output" \
+  || fail "missing candidate capability failure must explain the required contract"
+cp "$ROOT/deploy/deployment-capabilities.env" \
+  "$WORK/deploy.incoming/deploy/deployment-capabilities.env"
+
 # ---- deploy A (success) ----
 export AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=1100
 bash "$WORK/deploy.incoming/deploy/deploy.sh"
@@ -304,6 +329,8 @@ bash "$WORK/deploy.incoming/deploy/deploy.sh"
 [[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] || fail "DEPLOYED_SHA.lkg != sha-A after deploy A"
 [[ -d "$WORK/deploy.lkg" ]] || fail "deploy.lkg missing after deploy A"
 [[ -f "$WORK/docker-compose.lkg.yml" ]] || fail "docker-compose.lkg.yml missing after deploy A"
+grep -Fqx 'STATE=validated' "$WORK/DEPLOYED_CAPABILITIES.lkg" || fail "validated LKG state metadata missing"
+grep -Fqx 'KEYCLOAK_MANAGEMENT=1' "$WORK/DEPLOYED_CAPABILITIES.lkg" || fail "validated LKG capability metadata missing"
 grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" || fail "formal compose does not pin sha-A images"
 grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.lkg.yml" || fail "LKG compose does not pin sha-A images"
 grep -q '\${' "$WORK/docker-compose.yml" && fail "formal compose still contains unresolved \${...}"
@@ -321,6 +348,27 @@ up_zero_rc=$?
 set -e
 [[ $up_zero_rc -ne 0 ]] || fail "Prometheus up=0 must fail the observability gate"
 grep -q "up != 1" <<<"$up_zero_output" || fail "up=0 failure must explain the unhealthy target"
+
+set +e
+management_failure_output="$(env FAKE_KEYCLOAK_MANAGEMENT_UNAVAILABLE=1 WOTB_OBSERVABILITY_RETRIES=1 \
+  WOTB_OBSERVABILITY_INTERVAL_SEC=1 bash "$WORK/deploy/verify-observability.sh" 2>&1)"
+management_failure_rc=$?
+set -e
+[[ $management_failure_rc -ne 0 ]] || fail "Keycloak management failure must fail the full observability gate"
+grep -q "PASS: Keycloak application metadata" <<<"$management_failure_output" \
+  || fail "management failure test must keep application metadata distinction"
+grep -q "OBSERVABILITY FAIL \[KEYCLOAK_MANAGEMENT\]" <<<"$management_failure_output" \
+  || fail "management failure must identify KEYCLOAK_MANAGEMENT"
+
+set +e
+core_failure_output="$(env FAKE_FORCE_UNHEALTHY=1 WOTB_OBSERVABILITY_PROFILE=rollback-core \
+  WOTB_OBSERVABILITY_RETRIES=1 WOTB_OBSERVABILITY_INTERVAL_SEC=1 \
+  bash "$WORK/deploy/verify-observability.sh" 2>&1)"
+core_failure_rc=$?
+set -e
+[[ $core_failure_rc -ne 0 ]] || fail "rollback core health failure must fail closed"
+grep -q "OBSERVABILITY FAIL \[ROLLBACK_CORE\]" <<<"$core_failure_output" \
+  || fail "rollback core failure must identify the rollback core gate"
 
 set +e
 empty_loki_output="$(env FAKE_LOKI_EMPTY=1 WOTB_OBSERVABILITY_RETRIES=1 \
@@ -355,6 +403,16 @@ delayed_loki_output="$(env FAKE_LOKI_DELAYED=1 \
 # observability files before deploy B.
 stage_candidate_b
 
+# Simulate a historical LKG generated before the deployment-owned verifier and
+# Keycloak management capability existed.
+cp -a "$WORK/deploy.lkg" "$WORK/deploy.lkg.retiring"
+cp "$WORK/docker-compose.lkg.yml" "$WORK/docker-compose.lkg.retiring.yml"
+cp "$WORK/DEPLOYED_SHA.lkg" "$WORK/DEPLOYED_SHA.lkg.retiring"
+cp "$WORK/DEPLOYED_CAPABILITIES.lkg" "$WORK/DEPLOYED_CAPABILITIES.lkg.retiring"
+rm -f "$WORK/deploy.lkg/verify-observability.sh" "$WORK/deploy.lkg/validate-alloy-config.sh" \
+  "$WORK/deploy.lkg/grafana-api-request.sh" \
+  "$WORK/DEPLOYED_CAPABILITIES.lkg"
+
 # ---- deploy B (health fails) -> must roll back to A ----
 export LKG_STATE_BEFORE="$(lkg_state_checksum)"
 
@@ -381,6 +439,9 @@ for fault in compose-retire sha-retire; do
   [[ "$LKG_STATE_BEFORE" == "$(lkg_state_checksum)" ]] \
     || fail "$fault deleted or changed canonical LKG artifacts"
 done
+[[ ! -e "$WORK/deploy.lkg.retiring" && ! -e "$WORK/docker-compose.lkg.retiring.yml" \
+  && ! -e "$WORK/DEPLOYED_SHA.lkg.retiring" && ! -e "$WORK/DEPLOYED_CAPABILITIES.lkg.retiring" ]] \
+  || fail "stale LKG retirement artifacts were not recovered"
 unset FAKE_HEALTHY_BACKEND_TAG WOTB_TEST_FAIL_LKG_DEPLOY_RETIRE \
   WOTB_TEST_FAIL_LKG_COMPOSE_RETIRE WOTB_TEST_FAIL_LKG_SHA_RETIRE
 export WOTB_BACKUP_ROOT="$WORK/backups"
@@ -389,6 +450,7 @@ export WOTB_BACKUP_ROOT="$WORK/backups"
 # the original health-failure rollback scenario below.
 stage_candidate_b
 
+export FAKE_KEYCLOAK_MANAGEMENT_UNAVAILABLE=1
 export FAKE_PREV_ALLOY="$WORK/deploy.prev/observability/alloy/config.alloy"
 export FAKE_CORRUPT_PREV=1
 export TAG=sha-B
@@ -402,9 +464,14 @@ grep -q "== NEW DEPLOY HEALTH CHECK FAILED ==" <<<"$deploy_b_output" \
 grep -q "== service list (no container environment dump) ==" <<<"$deploy_b_output" \
   || fail "service diagnostics missing"
 new_diag_line="$(grep -n "== NEW DEPLOY HEALTH CHECK FAILED ==" <<<"$deploy_b_output" | head -1 | cut -d: -f1)"
-rollback_line="$(grep -n "== DEPLOY FAILED: rolling back to validated LKG ==" <<<"$deploy_b_output" | head -1 | cut -d: -f1)"
+rollback_line="$(grep -n "== DEPLOY FAILED: rolling back to LKG runtime (state=legacy) ==" <<<"$deploy_b_output" | head -1 | cut -d: -f1)"
 [[ "$new_diag_line" -lt "$rollback_line" ]] \
   || fail "new deployment diagnostics must precede rollback"
+grep -q "== ROLLBACK OK: sha-A (LKG_STATE=legacy) ==" <<<"$deploy_b_output" \
+  || fail "historical LKG rollback must pass with the deployment-owned core verifier"
+if grep -q "verify-observability.sh: No such file\|validate-alloy-config.sh: No such file" <<<"$deploy_b_output"; then
+  fail "rollback must not depend on historical LKG validation scripts"
+fi
 grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" || fail "after rollback compose must reference sha-A"
 grep -q 'wotbtools-backend:sha-B' "$WORK/docker-compose.yml" && fail "after rollback compose still references sha-B"
 [[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "DEPLOYED_SHA not restored to sha-A"
@@ -417,12 +484,13 @@ grep -q 'stable alloy config' "$WORK/deploy/observability/alloy/config.alloy" \
   || fail "rollback did not restore previous Alloy config"
 grep -q 'known-bad selector' "$WORK/deploy.prev/observability/alloy/config.alloy" \
   || fail "deploy.prev corruption fixture was not installed"
+unset FAKE_KEYCLOAK_MANAGEMENT_UNAVAILABLE
 
 # ---- restore transaction fault injection: failed copy preserves B ----
 unset FAKE_CORRUPT_PREV FAKE_PREV_ALLOY
 for fault in copy live-switch compose-install; do
   stage_candidate_b
-  export TAG=sha-B
+  export TAG=sha-B WOTB_BACKUP_ROOT="$WORK/backups-restore-$fault"
   unset WOTB_TEST_FAIL_LKG_RESTORE_COPY WOTB_TEST_FAIL_LKG_RESTORE_LIVE_SWITCH WOTB_TEST_FAIL_LKG_RESTORE_COMPOSE_INSTALL
   case "$fault" in
     copy) export WOTB_TEST_FAIL_LKG_RESTORE_COPY=1 ;;
@@ -444,10 +512,11 @@ for fault in copy live-switch compose-install; do
     || fail "$fault restore failure changed DEPLOYED_SHA.lkg"
   [[ "$LKG_STATE_BEFORE" == "$(lkg_state_checksum)" ]] \
     || fail "$fault restore failure changed the validated LKG bundle"
-  grep -q "ROLLBACK ABORTED: validated LKG could not be installed transactionally" <<<"$fault_output" \
+  grep -q "ROLLBACK ABORTED: LKG runtime could not be installed transactionally" <<<"$fault_output" \
     || fail "$fault restore failure must abort before compose recovery"
 done
 unset WOTB_TEST_FAIL_LKG_RESTORE_COPY WOTB_TEST_FAIL_LKG_RESTORE_LIVE_SWITCH WOTB_TEST_FAIL_LKG_RESTORE_COMPOSE_INSTALL FAKE_ROLLBACK_UP_LOG
+export WOTB_BACKUP_ROOT="$WORK/backups"
 
 # ---- LKG staging copy fault: old LKG is still restored transactionally ----
 stage_candidate_b
@@ -473,9 +542,11 @@ grep -q 'wotbtools-backend:sha-B' "$WORK/docker-compose.yml" && fail "LKG stagin
 unset FAKE_HEALTHY_BACKEND_TAG WOTB_TEST_FAIL_LKG_STAGE_COPY FAKE_ROLLBACK_UP_LOG
 
 # ---- deploy B2 (corrupted LKG) -> fail before destructive rollback ----
-rm -rf "$WORK/deploy.incoming/deploy"
-mkdir -p "$WORK/deploy.incoming/deploy"
-cp -a "$WORK/deploy/." "$WORK/deploy.incoming/deploy/"
+# Rehydrate capability metadata to exercise corruption protection for a current
+# fully validated LKG; the historical-LKG core path was covered above.
+cp "$ROOT/deploy/validate-alloy-config.sh" "$WORK/deploy.lkg/validate-alloy-config.sh"
+printf 'STATE=validated\nKEYCLOAK_MANAGEMENT=1\n' > "$WORK/DEPLOYED_CAPABILITIES.lkg"
+stage_candidate_b
 printf 'newer prometheus config\n' > "$WORK/deploy.incoming/deploy/observability/prometheus/prometheus.yml"
 printf '\n// newer alloy config\n' >> "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
 export FAKE_LKG_ALLOY="$WORK/deploy.lkg/observability/alloy/config.alloy"
@@ -500,7 +571,8 @@ printf '\n// stable alloy config\n' >> "$WORK/deploy.lkg/observability/alloy/con
 unset FAKE_LKG_ALLOY FAKE_CORRUPT_LKG
 
 # ---- no LKG + no bootstrap -> fail before promotion ----
-rm -rf "$WORK/deploy.lkg" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg"
+rm -rf "$WORK/deploy.lkg" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg" \
+  "$WORK/DEPLOYED_CAPABILITIES.lkg"
 rm -rf "$WORK/deploy.incoming/deploy"
 mkdir -p "$WORK/deploy.incoming/deploy"
 cp -a "$WORK/deploy/." "$WORK/deploy.incoming/deploy/"
@@ -525,7 +597,8 @@ bash "$WORK/deploy.incoming/deploy/deploy.sh"
 [[ -d "$WORK/deploy.lkg" ]] || fail "bootstrap deployment LKG tree missing"
 
 # ---- legacy live tree without validator and with old selector -> seed LKG from incoming contracts ----
-rm -rf "$WORK/deploy.lkg" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg"
+rm -rf "$WORK/deploy.lkg" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg" \
+  "$WORK/DEPLOYED_CAPABILITIES.lkg"
 rm -f "$WORK/deploy/validate-alloy-config.sh"
 sed -i '0,/\[\.\]/s//\\\\./' "$WORK/deploy/observability/alloy/config.alloy"
 stage_candidate_b
@@ -539,7 +612,7 @@ set -e
 [[ $legacy_validator_rc -eq 0 ]] || fail "legacy live tree without validator must still seed LKG: $legacy_validator_output"
 grep -q "Current deployment promoted as initial LKG" <<<"$legacy_validator_output" \
   || fail "legacy validator compatibility path did not seed the initial LKG"
-grep -q "existing observability services are unhealthy" <<<"$legacy_validator_output" \
+grep -q "existing deployment is not fully observable" <<<"$legacy_validator_output" \
   || fail "legacy observability recovery path was not exercised: $legacy_validator_output"
 [[ -f "$WORK/deploy.lkg/validate-alloy-config.sh" ]] \
   || fail "initial LKG snapshot did not receive the current Alloy validator"
@@ -550,6 +623,10 @@ if grep -Fq '\\\\.' "$WORK/deploy.lkg/observability/alloy/config.alloy"; then
 fi
 [[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] \
   || fail "legacy validator compatibility path changed the initial LKG SHA"
+grep -q "storing a bootstrap baseline without current capabilities" <<<"$legacy_validator_output" \
+  || fail "unhealthy initial LKG must be recorded as a bootstrap baseline"
+grep -Fqx 'STATE=validated' "$WORK/DEPLOYED_CAPABILITIES.lkg" \
+  || fail "successful candidate validation must promote the final LKG to validated"
 unset FAKE_LIVE_ALLOY_UNHEALTHY_FILE
 export WOTB_BACKUP_ROOT="$WORK/backups"
 
