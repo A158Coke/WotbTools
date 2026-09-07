@@ -160,7 +160,10 @@ verify_observability() {
 }
 
 verify_current_live_observability() {
-  WOTB_ALLOY_CONFIG="$LIVE_DEPLOY_DIR/observability/alloy/config.alloy" \
+  # The live tree may predate the current Alloy selector contract. The staged
+  # config is validated before this function runs, while the probes still
+  # verify the services currently serving production traffic.
+  WOTB_ALLOY_CONFIG="$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" \
     WOTB_ALLOY_VALIDATOR="$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
     WOTB_DASHBOARD_DIR="$STAGED_DEPLOY_DIR/observability/grafana/dashboards" \
     WOTB_GRAFANA_API_HELPER="$STAGED_DEPLOY_DIR/grafana-api-request.sh" \
@@ -420,10 +423,15 @@ seed_current_lkg() {
   echo "== Validating current deployment as a possible initial LKG =="
   docker compose -f docker-compose.yml config >/dev/null 2>&1 || return 1
   bash "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
-    "$LIVE_DEPLOY_DIR/observability/alloy/config.alloy" >/dev/null || return 1
+    "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" >/dev/null || return 1
   wait_healthy || return 1
   verify_current_live_observability || return 1
   stage_lkg_snapshot "$LIVE_DEPLOY_DIR" docker-compose.yml "$PREV_SHA" || return 1
+  if ! install -m 644 "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" \
+      "$LKG_DEPLOY_NEXT_DIR/observability/alloy/config.alloy"; then
+    echo "ERROR: failed to add the current Alloy config to the initial LKG snapshot." >&2
+    return 1
+  fi
   if [ ! -f "$LKG_DEPLOY_NEXT_DIR/validate-alloy-config.sh" ]; then
     if ! install -m 755 "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
         "$LKG_DEPLOY_NEXT_DIR/validate-alloy-config.sh"; then
