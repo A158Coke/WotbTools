@@ -9,13 +9,8 @@ readonly DASHBOARD_DIR="${WOTB_DASHBOARD_DIR:-$DEPLOY_ROOT/deploy/observability/
 readonly ALLOY_CONFIG="${WOTB_ALLOY_CONFIG:-$DEPLOY_ROOT/deploy/observability/alloy/config.alloy}"
 readonly ALLOY_VALIDATOR="${WOTB_ALLOY_VALIDATOR:-$DEPLOY_ROOT/deploy/validate-alloy-config.sh}"
 readonly GRAFANA_API_HELPER="${WOTB_GRAFANA_API_HELPER:-$DEPLOY_ROOT/deploy/grafana-api-request.sh}"
-readonly OBSERVABILITY_PROFILE="${WOTB_OBSERVABILITY_PROFILE:-full}"
 if [[ ! "$RETRIES" =~ ^[1-9][0-9]*$ || ! "$INTERVAL_SEC" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: observability retry settings must be positive integers." >&2
-  exit 2
-fi
-if [ "$OBSERVABILITY_PROFILE" != full ] && [ "$OBSERVABILITY_PROFILE" != rollback-core ]; then
-  echo "ERROR: unsupported observability profile: $OBSERVABILITY_PROFILE" >&2
   exit 2
 fi
 
@@ -127,16 +122,6 @@ validate_alloy() {
 }
 
 echo "== Verifying observability data path =="
-if [ "$OBSERVABILITY_PROFILE" = rollback-core ]; then
-  wait_for_http "ROLLBACK_CORE" "Keycloak application metadata" \
-    "http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration"
-  wait_for_http "ROLLBACK_CORE" "Prometheus readiness" "http://prometheus:9090/-/ready"
-  wait_for_http "ROLLBACK_CORE" "Loki readiness" "http://loki:3100/ready"
-  wait_for_http "ROLLBACK_CORE" "Grafana health" "http://grafana:3000/api/health" '"database":"ok"'
-  echo "== Core rollback verification passed =="
-  exit 0
-fi
-
 validate_alloy
 wait_for_http "BACKEND_METRICS" "backend metrics endpoint" \
   "http://127.0.0.1:8088/actuator/prometheus" "jvm_" "process_" "system_" "http_server_requests"
@@ -146,10 +131,6 @@ wait_for_http "BACKEND_METRICS" "backend Hikari metrics" \
   "http://127.0.0.1:8088/actuator/prometheus" "hikaricp_connections_active"
 wait_for_http "KEYCLOAK_APPLICATION" "Keycloak application metadata" \
   "http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration"
-wait_for_http_regex "KEYCLOAK_MANAGEMENT" "Keycloak management readiness" \
-  "http://keycloak:9000/health/ready" '"status"[[:space:]]*:[[:space:]]*"UP"'
-wait_for_http "KEYCLOAK_MANAGEMENT" "Keycloak management metrics and HTTP histogram" \
-  "http://keycloak:9000/metrics" "process_" "http_server_requests_seconds_count" "http_server_requests_seconds_bucket"
 wait_for_http "PROMETHEUS_TARGET" "node exporter metrics endpoint" "http://node-exporter:9100/metrics" "node_"
 wait_for_http "PROMETHEUS_TARGET" "prometheus metrics endpoint" "http://prometheus:9090/metrics" "prometheus_"
 wait_for_http "PROMETHEUS_TARGET" "loki metrics endpoint" "http://loki:3100/metrics" "loki_"
@@ -157,15 +138,15 @@ wait_for_http "GRAFANA" "grafana metrics endpoint" "http://grafana:3000/metrics"
 wait_for_http "GRAFANA" "grafana health endpoint" "http://grafana:3000/api/health" '"database":"ok"'
 
 targets="$(wait_for_http "PROMETHEUS_TARGET" "prometheus target API" "http://prometheus:9090/api/v1/targets" \
-  '"status":"success"' '"job":"wotb-backend"' '"job":"keycloak"' '"job":"node-exporter"' \
+  '"status":"success"' '"job":"wotb-backend"' '"job":"node-exporter"' \
   '"job":"prometheus"' '"job":"loki"' '"job":"grafana"' >/dev/null \
   && compose_exec "http://prometheus:9090/api/v1/targets")" || fail "PROMETHEUS_TARGET" "Prometheus target API unavailable"
-for job in wotb-backend keycloak node-exporter prometheus loki grafana; do
+for job in wotb-backend node-exporter prometheus loki grafana; do
   grep -Fq "\"job\":\"$job\"" <<<"$targets" || fail "PROMETHEUS_TARGET" "Prometheus target missing job=$job"
   wait_for_prometheus_target_up "$job"
 done
 
-echo "PASS: Prometheus required targets up (backend/keycloak/node-exporter/prometheus/loki/grafana)"
+echo "PASS: Prometheus required targets up (backend/node-exporter/prometheus/loki/grafana)"
 
 prom_query="$(query_prometheus 'min(up{job="wotb-backend"})')" || fail "PROMETHEUS_TARGET" "Prometheus data query failed"
 prometheus_value_is_one <<<"$prom_query" || fail "PROMETHEUS_TARGET" "Prometheus backend up query is not healthy (up != 1)"
