@@ -297,7 +297,7 @@ def top_turret(td):
     best_turret = None  # (tier, hp, turret_fields)
     for raw_turret in td.get(FIELD_TANK_TURRETS, []):
         turret = decode_protobuf(raw_turret)
-        turret_tier = as_int(f1(turret, FIELD_TANK_TIER, 0), 0)
+        turret_tier = as_int(f1(turret, FIELD_TURRET_TIER, 0), 0)
         turret_hp = as_int(f1(turret, FIELD_TURRET_HP))
         if (best_turret is None
                 or turret_tier > best_turret[0]
@@ -438,6 +438,7 @@ def filter_to_business_tiers(vehicles):
         tank_id: entry for tank_id, entry in vehicles.items()
         if isinstance(entry, dict) and entry.get("tier") in TIER_FILES
     }
+
 
 # ---- consumables.pb / provisions.pb -> 每车可用物资 ----
 
