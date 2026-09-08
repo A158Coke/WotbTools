@@ -294,26 +294,24 @@ content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另�
 - 校验失败 → LLM 自修循环（targeted rewrite → full rewrite → fail-safe），Backend 绝不
   代改句子；重试耗尽 → `error` 事件 `AI_REVIEW_GROUNDING_FAILED`（HTTP 已 200）。
 **Technical schema resilience（当前生产行为）**：Team Call #2 保持 v0.5 JSON/API 契约，backend
-parser 返回 `result/failures/normalizations/status`。不存在的 episode/player reference 等 optional
-错误确定性清理并继续完成；core schema 的 fatal 错误 fail-closed，repairable 错误只允许一次紧凑、
-定向 technical repair。repair 输入仅含生成 JSON、精确 failure path/code/constraint、权威 roster
-keys 与已有 episode reference 约束，不重复发送完整战术 context。repair 仍失败返回
-`AI_REVIEW_SCHEMA_FAILED`，前端三语文案和诊断 ID 与 `AI_REVIEW_GROUNDING_FAILED`、provider
-unavailable 分开；repair 若违反 semantic immutability invariant 也会 fail-closed，计入
-`wotb_ai_team_review_repair_total{result="semantic_changed"}` 并返回同一错误码。对应事件和低基数
-指标见 `docs/operations/observability.md`。
+parser 只接受完整且技术上有效的 `TeamAiReviewResult`。解析失败时最多执行一次基于 canonical
+battle context 的 `SINGLE_TEAM_BATTLE_RECOVERY`；不把失败 completion 传回模型，也不将 Markdown
+或部分 JSON 直接展示。recovery 仍失败时返回 `AI_REVIEW_SCHEMA_FAILED`。对应事件和低基数指标
+见 `docs/operations/observability.md`。
 
-**DeepSeek 官方 JSON Output（2026-08，JSON 语法层加固）**：Team Call #2 已启用 provider
-`response_format=json_object`（`AiChatRequest.responseFormat=JSON_OBJECT`，仅此调用；Player /
-Pre-battle / Harness / Autopsy 保持 TEXT）。目的：消灭「非法 JSON / JSON 前后多余文本 → parser fail →
-昂贵完整 LLM retry」这一类 syntax 层失败。**职责三层不混用**：provider JSON mode = syntax guarantee，
-`TeamReviewEnvelopeParser` = business schema guarantee（合法 JSON 但 schema 违反仍 FAIL），
-`TeamFactualConsistencyValidator` = truth guarantee。Parser 失败现在可按稳定枚举分类
-（`EMPTY_OUTPUT` / `INVALID_JSON` / `MISSING_PRIMARY_DIAGNOSIS` / `INVALID_CLAIMS` /
-`UNKNOWN_CLAIM_TYPE` / `INVALID_MACHINE_FIELD_TYPE` / `MISSING_REQUIRED_MACHINE_FIELD` 等，
-经 `event=team_review_parse_result` 记录）；每轮 attempt 的校验结果（`conflictCount` / `checks` /
-conflict `reasonCode`）经 `event=team_review_validation` 记录，Loki 按 correlationId 可重建完整时间线
-（见 `docs/operations/observability.md`）。
+**Team Call #2 严格 JSON contract（当前生产行为）**：Team Call #2 使用 provider
+`response_format=json_object`（`AiChatRequest.responseFormat=JSON_OBJECT`；Player /
+Pre-battle / Harness / Autopsy 保持 TEXT），并且 backend 只接受完整、技术上有效的
+`TeamAiReviewResult` JSON。provider 负责 JSON 语法层，`TeamAiReviewResultParser` 负责 DTO、
+字段类型、数量上限及 roster/episode 引用等技术 contract；后端不判断战术结论是否正确，也不
+改写或直接展示失败 completion。
+
+初始 completion 不满足 contract 时，记录低基数 WARN 并基于 canonical battle context 发起
+恰好一次新的 `SINGLE_TEAM_BATTLE_RECOVERY` JSON 调用；失败 completion 不会传回 recovery，
+也不会降级为 Markdown/纯文本。recovery 仍失败时返回 `AI_REVIEW_SCHEMA_FAILED`，provider
+错误继续沿用原始错误码。成功 recovery 的 Team Call #2 汇总日志和 token 指标包含 primary
+与 recovery 两次调用的累计值；日志不记录 prompt、completion 或 review 正文（见
+`docs/operations/observability.md`）。
 
 历史上响应的四类计数（`analysisUnitCount` / `analyzedUnitCount` /
 `omittedAnalysisUnitCount` / `unavailableAnalysisUnitCount`）、`files`、

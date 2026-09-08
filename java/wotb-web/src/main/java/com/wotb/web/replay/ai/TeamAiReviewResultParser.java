@@ -22,7 +22,8 @@ public final class TeamAiReviewResultParser {
     public static final int MAX_HIGH_CONTRIBUTORS = 2;
     public static final int MAX_TRAINING_SUGGESTIONS = 12;
 
-    private static final int MAX_OUTPUT_CHARS = 64_000;
+    /** Bounded UTF-16 envelope for one provider completion (8192 output tokens by default). */
+    private static final int MAX_PROVIDER_OUTPUT_CHARS = 256_000;
     private static final int MAX_ID_CHARS = 64;
     private static final int MAX_TITLE_CHARS = 240;
     private static final int MAX_REASON_CHARS = 2_000;
@@ -40,60 +41,46 @@ public final class TeamAiReviewResultParser {
         if (output == null || output.isBlank()) {
             return fatal(Failure.EMPTY_OUTPUT, "root", "non-empty JSON object required");
         }
-        if (output.length() > MAX_OUTPUT_CHARS) {
+        if (output.length() > MAX_PROVIDER_OUTPUT_CHARS) {
             return fatal(Failure.OUTPUT_TOO_LARGE, "root", "output exceeds safe character limit");
         }
         try {
-            final JsonNode root = MAPPER.readTree(extractJson(output));
+            final JsonNode root = MAPPER.readTree(output);
             if (root == null || !root.isObject()) {
                 return fatal(Failure.INVALID_JSON, "root", "JSON object required");
             }
             final List<ParseFailure> failures = new ArrayList<>();
             final List<Normalization> normalizations = new ArrayList<>();
             collectUnknownFields(root, Set.of("summary", "episodes", "trainingSuggestions",
-                    "reviewFocus", "highContributors"), "root", failures);
+                    "reviewFocus", "highContributors"), "root", failures, normalizations);
 
             final JsonNode summaryNode = object(root, "summary");
             if (summaryNode == null) {
-                return fatal(Failure.MISSING_REQUIRED_FIELD, "summary", "summary object required");
+                failures.add(failure(Failure.MISSING_REQUIRED_FIELD, "summary",
+                        FailureCategory.SALVAGEABLE, "summary object omitted"));
+                normalizations.add(new Normalization("summary_defaulted", "summary"));
             }
-            collectUnknownFields(summaryNode, Set.of("verdict", "primaryDiagnosis"),
-                    "summary", failures);
-            final String verdict = requiredText(summaryNode, "verdict", MAX_SUMMARY_CHARS);
-            final String diagnosis = requiredText(summaryNode, "primaryDiagnosis", MAX_SUMMARY_CHARS);
-            if (verdict == null) {
-                return fatal(Failure.MISSING_REQUIRED_FIELD, "summary.verdict",
-                        "non-empty string required");
+            if (summaryNode != null) {
+                collectUnknownFields(summaryNode, Set.of("verdict", "primaryDiagnosis"),
+                        "summary", failures, normalizations);
             }
-            if (diagnosis == null) {
-                return fatal(Failure.MISSING_REQUIRED_FIELD, "summary.primaryDiagnosis",
-                        "non-empty string required");
-            }
+            final String verdict = salvageText(summaryNode, "verdict", MAX_SUMMARY_CHARS,
+                    "summary_verdict_omitted", failures, normalizations);
+            final String diagnosis = salvageText(summaryNode, "primaryDiagnosis", MAX_SUMMARY_CHARS,
+                    "summary_primary_diagnosis_omitted", failures, normalizations);
 
-            final List<JsonNode> episodeNodes = requiredArray(root, "episodes");
-            final List<JsonNode> suggestionNodes = optionalArray(root, "trainingSuggestions",
-                    normalizations);
-            final List<JsonNode> focusNodes = optionalArray(root, "reviewFocus", normalizations);
-            final List<JsonNode> contributorNodes = optionalArray(root, "highContributors",
-                    normalizations);
-            if (episodeNodes == null) {
-                return fatal(Failure.MISSING_REQUIRED_FIELD, "episodes", "array required");
-            }
-            if (suggestionNodes == null) {
-                return fatal(Failure.INVALID_FIELD, "trainingSuggestions", "array required");
-            }
-            if (focusNodes == null) {
-                return fatal(Failure.INVALID_FIELD, "reviewFocus", "array required");
-            }
-            if (contributorNodes == null) {
-                return fatal(Failure.INVALID_FIELD, "highContributors", "array required");
-            }
-            collectCardinality(episodeNodes.size(), MAX_EPISODES, "episodes", failures);
-            collectCardinality(suggestionNodes.size(), MAX_TRAINING_SUGGESTIONS,
-                    "trainingSuggestions", failures);
-            collectCardinality(focusNodes.size(), MAX_REVIEW_FOCUS, "reviewFocus", failures);
-            collectCardinality(contributorNodes.size(), MAX_HIGH_CONTRIBUTORS,
-                    "highContributors", failures);
+            final List<JsonNode> episodeNodes = boundedNodes(arrayOrEmpty(root, "episodes",
+                            normalizations, failures, true), MAX_EPISODES, "episodes",
+                    failures, normalizations);
+            final List<JsonNode> suggestionNodes = boundedNodes(arrayOrEmpty(root,
+                            "trainingSuggestions", normalizations, failures, false),
+                    MAX_TRAINING_SUGGESTIONS, "trainingSuggestions", failures, normalizations);
+            final List<JsonNode> focusNodes = boundedNodes(arrayOrEmpty(root, "reviewFocus",
+                            normalizations, failures, false), MAX_REVIEW_FOCUS, "reviewFocus",
+                    failures, normalizations);
+            final List<JsonNode> contributorNodes = boundedNodes(arrayOrEmpty(root,
+                            "highContributors", normalizations, failures, false),
+                    MAX_HIGH_CONTRIBUTORS, "highContributors", failures, normalizations);
             final Set<String> roster = rosterPlayerKeys == null ? Set.of() : Set.copyOf(rosterPlayerKeys);
             final Set<String> episodeIds = new HashSet<>();
             final List<TeamAiReviewResult.Episode> episodes = new ArrayList<>();
@@ -101,16 +88,20 @@ public final class TeamAiReviewResultParser {
                 final JsonNode node = episodeNodes.get(index);
                 final String path = "episodes[" + index + "]";
                 if (node == null || !node.isObject()) {
-                    return fatal(Failure.INVALID_FIELD, path, "episode object required");
+                    dropOptional(Failure.INVALID_FIELD, path, "episode object required",
+                            failures, normalizations);
+                    continue;
                 }
                 collectUnknownFields(node, Set.of("id", "startSec", "endSec", "title", "analysis",
-                        "playerKeys"), path, failures);
-                final String id = requiredText(node, "id", MAX_ID_CHARS);
-                final String title = requiredText(node, "title", MAX_TITLE_CHARS);
-                final String analysis = requiredText(node, "analysis", MAX_ANALYSIS_CHARS);
+                        "playerKeys"), path, failures, normalizations);
+                final String id = optionalText(node, "id", MAX_ID_CHARS);
+                final String title = optionalText(node, "title", MAX_TITLE_CHARS);
+                final String analysis = optionalText(node, "analysis", MAX_ANALYSIS_CHARS);
                 if (id == null || title == null || analysis == null) {
-                    return fatal(Failure.MISSING_REQUIRED_FIELD, path,
-                            "episode id, title and analysis must be non-empty strings");
+                    dropOptional(Failure.MISSING_REQUIRED_FIELD, path,
+                            "episode id, title and analysis must be non-empty strings",
+                            failures, normalizations);
+                    continue;
                 }
                 if (!node.has("startSec")) {
                     normalizations.add(new Normalization("episode_start_sec_defaulted", path + ".startSec"));
@@ -118,26 +109,26 @@ public final class TeamAiReviewResultParser {
                 if (!node.has("endSec")) {
                     normalizations.add(new Normalization("episode_end_sec_defaulted", path + ".endSec"));
                 }
-                if ((node.has("startSec") && !validNullableNonNegativeInteger(node, "startSec"))
-                        || (node.has("endSec") && !validNullableNonNegativeInteger(node, "endSec"))) {
-                    return fatal(Failure.INVALID_FIELD, path + ".time",
-                            "startSec and endSec must be non-negative integers or null");
-                }
-                final Integer start = optionalInt(node, "startSec");
-                final Integer end = optionalInt(node, "endSec");
+                final Integer start = salvageInt(node, "startSec", path, failures, normalizations);
+                final Integer end = salvageInt(node, "endSec", path, failures, normalizations);
+                Integer normalizedStart = start;
+                Integer normalizedEnd = end;
                 if (!validSeconds(start, end)) {
-                    return fatal(Failure.INVALID_FIELD, path + ".time",
-                            "non-negative endSec must be greater than or equal to startSec");
+                    failures.add(failure(Failure.INVALID_FIELD, path + ".time",
+                            FailureCategory.SALVAGEABLE,
+                            "endSec must be greater than or equal to startSec"));
+                    normalizations.add(new Normalization("episode_time_cleared", path + ".time"));
+                    normalizedStart = null;
+                    normalizedEnd = null;
                 }
                 if (!episodeIds.add(id)) {
-                    return fatal(Failure.INVALID_FIELD, path + ".id", "episode id must be unique");
+                    dropOptional(Failure.INVALID_FIELD, path + ".id", "episode id must be unique",
+                            failures, normalizations);
+                    continue;
                 }
-                final List<String> players = stringArray(node, "playerKeys", MAX_PLAYER_KEYS_PER_EPISODE);
-                if (players == null) {
-                    return fatal(Failure.INVALID_FIELD, path + ".playerKeys",
-                            "array of non-empty playerKey strings required");
-                }
-                final List<String> validPlayers = new ArrayList<>();
+                final List<String> players = stringArray(node, "playerKeys", MAX_PLAYER_KEYS_PER_EPISODE,
+                        path, failures, normalizations);
+                final List<String> validPlayers = new ArrayList<>(players.size());
                 for (int playerIndex = 0; playerIndex < players.size(); playerIndex++) {
                     final String playerKey = players.get(playerIndex);
                     if (roster.contains(playerKey)) {
@@ -150,7 +141,8 @@ public final class TeamAiReviewResultParser {
                         normalizations.add(new Normalization("episode_player_key_dropped", playerPath));
                     }
                 }
-                episodes.add(new TeamAiReviewResult.Episode(id, start, end, title, analysis, validPlayers));
+                episodes.add(new TeamAiReviewResult.Episode(id, normalizedStart, normalizedEnd,
+                        title, analysis, validPlayers));
             }
 
             final List<TeamAiReviewResult.TrainingSuggestion> suggestions = new ArrayList<>();
@@ -224,10 +216,6 @@ public final class TeamAiReviewResultParser {
                     new TeamAiReviewResult.Summary(verdict, diagnosis),
                     List.copyOf(episodes), List.copyOf(suggestions), List.copyOf(focus),
                     List.copyOf(contributors));
-            if (!failures.isEmpty() && failures.stream()
-                    .anyMatch(item -> item.category() == FailureCategory.CORE_SCHEMA)) {
-                return repairable(result, failures, normalizations);
-            }
             return normalizations.isEmpty()
                     ? valid(result)
                     : normalized(result, failures, normalizations);
@@ -321,11 +309,17 @@ public final class TeamAiReviewResultParser {
     }
 
     private static void collectUnknownFields(final JsonNode node, final Set<String> allowed,
-                                             final String path, final List<ParseFailure> failures) {
+                                             final String path, final List<ParseFailure> failures,
+                                             final List<Normalization> normalizations) {
+        if (node == null) {
+            return;
+        }
         for (final var entry : node.properties()) {
             if (!allowed.contains(entry.getKey())) {
                 failures.add(failure(Failure.INVALID_FIELD, path + "." + entry.getKey(),
-                        FailureCategory.CORE_SCHEMA, "field is not part of TeamAiReviewResult"));
+                        FailureCategory.SALVAGEABLE, "field is not part of TeamAiReviewResult"));
+                normalizations.add(new Normalization("unknown_field_omitted",
+                        path + "." + entry.getKey()));
             }
         }
     }
@@ -337,12 +331,18 @@ public final class TeamAiReviewResultParser {
         return true;
     }
 
-    private static void collectCardinality(final int actual, final int max, final String path,
-                                           final List<ParseFailure> failures) {
-        if (actual > max) {
-            failures.add(failure(Failure.CARDINALITY_EXCEEDED, path, FailureCategory.CORE_SCHEMA,
-                    "array size must be <= " + max));
+    private static List<JsonNode> boundedNodes(final List<JsonNode> nodes, final int max,
+                                               final String path,
+                                               final List<ParseFailure> failures,
+                                               final List<Normalization> normalizations) {
+        if (nodes.size() <= max) {
+            return nodes;
         }
+        final int dropped = nodes.size() - max;
+        failures.add(failure(Failure.CARDINALITY_EXCEEDED, path, FailureCategory.SALVAGEABLE,
+                "array items beyond " + max + " were dropped"));
+        normalizations.add(new Normalization(path + "_truncated", path, dropped));
+        return List.copyOf(nodes.subList(0, max));
     }
 
     private static ParseFailure failure(final Failure code, final String path,
@@ -361,13 +361,6 @@ public final class TeamAiReviewResultParser {
                 ParseStatus.VALID_WITH_NORMALIZATION);
     }
 
-    private static ParseResult repairable(final TeamAiReviewResult result,
-                                          final List<ParseFailure> failures,
-                                          final List<Normalization> normalizations) {
-        return new ParseResult(result, List.copyOf(failures), List.copyOf(normalizations),
-                ParseStatus.REPAIRABLE);
-    }
-
     private static ParseResult fatal(final Failure code, final String path, final String constraint) {
         return new ParseResult(null,
                 List.of(failure(code, path, FailureCategory.CORE_SCHEMA, constraint)),
@@ -379,37 +372,98 @@ public final class TeamAiReviewResultParser {
         return value != null && value.isObject() ? value : null;
     }
 
-    private static List<JsonNode> requiredArray(final JsonNode parent, final String name) {
-        final JsonNode value = parent.get(name);
-        if (value == null || !value.isArray()) return null;
-        final List<JsonNode> result = new ArrayList<>();
-        value.forEach(result::add);
-        return result;
-    }
-
-    private static List<JsonNode> optionalArray(final JsonNode parent, final String name,
-                                                final List<Normalization> normalizations) {
+    private static List<JsonNode> arrayOrEmpty(final JsonNode parent, final String name,
+                                                final List<Normalization> normalizations,
+                                                final List<ParseFailure> failures,
+                                                final boolean preferred) {
         final JsonNode value = parent.get(name);
         if (value == null) {
             normalizations.add(new Normalization(name + "_defaulted", name));
+            if (preferred) {
+                failures.add(failure(Failure.MISSING_REQUIRED_FIELD, name,
+                        FailureCategory.SALVAGEABLE, "preferred array omitted"));
+            }
             return List.of();
         }
-        if (!value.isArray()) return null;
+        if (!value.isArray()) {
+            failures.add(failure(Failure.INVALID_FIELD, name, FailureCategory.SALVAGEABLE,
+                    "array expected; section omitted"));
+            normalizations.add(new Normalization(name + "_dropped", name));
+            return List.of();
+        }
         final List<JsonNode> result = new ArrayList<>();
         value.forEach(result::add);
         return result;
     }
 
-    private static List<String> stringArray(final JsonNode parent, final String name, final int max) {
+    private static List<String> stringArray(final JsonNode parent, final String name, final int max,
+                                            final String path,
+                                            final List<ParseFailure> failures,
+                                            final List<Normalization> normalizations) {
         final JsonNode value = parent.get(name);
-        if (value == null || !value.isArray() || value.size() > max) return null;
+        if (value == null || !value.isArray()) {
+            failures.add(failure(Failure.INVALID_FIELD, path + "." + name,
+                    FailureCategory.SALVAGEABLE, "playerKeys array omitted"));
+            normalizations.add(new Normalization("episode_player_keys_defaulted", path + "." + name));
+            return List.of();
+        }
         final List<String> result = new ArrayList<>();
-        for (final JsonNode item : value) {
+        final int limit = Math.min(value.size(), max);
+        if (value.size() > max) {
+            final int dropped = value.size() - max;
+            failures.add(failure(Failure.CARDINALITY_EXCEEDED, path + "." + name,
+                    FailureCategory.SALVAGEABLE, "playerKeys beyond " + max + " were dropped"));
+            normalizations.add(new Normalization("episode_player_keys_truncated",
+                    path + "." + name, dropped));
+        }
+        for (int index = 0; index < limit; index++) {
+            final JsonNode item = value.get(index);
             if (item == null || !item.isTextual() || item.asText().isBlank()
-                    || item.asText().length() > MAX_ID_CHARS) return null;
+                    || item.asText().length() > MAX_ID_CHARS) {
+                failures.add(failure(Failure.INVALID_FIELD, path + "." + name + "[" + index + "]",
+                        FailureCategory.SALVAGEABLE, "invalid playerKey dropped"));
+                normalizations.add(new Normalization("episode_player_key_dropped",
+                        path + "." + name + "[" + index + "]"));
+                continue;
+            }
             result.add(item.asText());
         }
         return result;
+    }
+
+    private static String salvageText(final JsonNode parent, final String name, final int max,
+                                      final String normalizationType,
+                                      final List<ParseFailure> failures,
+                                      final List<Normalization> normalizations) {
+        if (parent == null || !parent.has(name)) {
+            failures.add(failure(Failure.MISSING_REQUIRED_FIELD, "summary." + name,
+                    FailureCategory.SALVAGEABLE, "text omitted"));
+            normalizations.add(new Normalization(normalizationType, "summary." + name));
+            return null;
+        }
+        final String value = optionalText(parent, name, max);
+        if (value == null || value.isBlank()) {
+            failures.add(failure(Failure.INVALID_FIELD, "summary." + name,
+                    FailureCategory.SALVAGEABLE, "non-empty text omitted"));
+            normalizations.add(new Normalization(normalizationType, "summary." + name));
+            return null;
+        }
+        return value;
+    }
+
+    private static Integer salvageInt(final JsonNode parent, final String name, final String path,
+                                      final List<ParseFailure> failures,
+                                      final List<Normalization> normalizations) {
+        if (!parent.has(name)) {
+            return null;
+        }
+        if (!validNullableNonNegativeInteger(parent, name)) {
+            failures.add(failure(Failure.INVALID_FIELD, path + ".time",
+                    FailureCategory.SALVAGEABLE, name + " omitted because it is not a non-negative integer"));
+            normalizations.add(new Normalization("episode_time_field_cleared", path + "." + name));
+            return null;
+        }
+        return optionalInt(parent, name);
     }
 
     private static String requiredText(final JsonNode parent, final String name, final int max) {
@@ -444,13 +498,6 @@ public final class TeamAiReviewResultParser {
         return start == null || end == null || end >= start;
     }
 
-    private static String extractJson(final String output) {
-        final String trimmed = output.trim();
-        final int start = trimmed.indexOf('{');
-        final int end = trimmed.lastIndexOf('}');
-        return start >= 0 && end > start ? trimmed.substring(start, end + 1) : trimmed;
-    }
-
     public record ParseResult(TeamAiReviewResult result, List<ParseFailure> failures,
                               List<Normalization> normalizations, ParseStatus status) {
         public ParseResult {
@@ -471,10 +518,6 @@ public final class TeamAiReviewResultParser {
             return status == ParseStatus.FATAL;
         }
 
-        public boolean repairable() {
-            return status == ParseStatus.REPAIRABLE;
-        }
-
         public boolean normalized() {
             return status == ParseStatus.VALID_WITH_NORMALIZATION;
         }
@@ -483,15 +526,18 @@ public final class TeamAiReviewResultParser {
     public record ParseFailure(Failure code, String path, FailureCategory category, String constraint) {
     }
 
-    public record Normalization(String type, String path) {
+    public record Normalization(String type, String path, int count) {
+        public Normalization(final String type, final String path) {
+            this(type, path, 1);
+        }
     }
 
     public enum ParseStatus {
-        VALID, VALID_WITH_NORMALIZATION, REPAIRABLE, FATAL
+        VALID, VALID_WITH_NORMALIZATION, FATAL
     }
 
     public enum FailureCategory {
-        OPTIONAL_REFERENCE, CORE_SCHEMA
+        OPTIONAL_REFERENCE, SALVAGEABLE, CORE_SCHEMA
     }
 
     public enum Failure {

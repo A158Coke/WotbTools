@@ -29,6 +29,14 @@ class TeamAiReviewResultParserTest {
     }
 
     @Test
+    void rejectsJsonSurroundedByCommentaryAsNonValidContract() {
+        assertFalse(TeamAiReviewResultParser.parse("Here is the review:\n" + VALID, Set.of("P1"))
+                .status() == TeamAiReviewResultParser.ParseStatus.VALID);
+        assertFalse(TeamAiReviewResultParser.parse(VALID + "\nHope this helps.", Set.of("P1"))
+                .status() == TeamAiReviewResultParser.ParseStatus.VALID);
+    }
+
+    @Test
     void dropsInvalidOptionalReferencesAndKeepsTacticalText() {
         final String output = VALID
                 .replace("\"P1\"]", "\"P1\",\"P9\"]")
@@ -51,11 +59,11 @@ class TeamAiReviewResultParserTest {
     }
 
     @Test
-    void reportsRepairableUnknownFieldWithPrecisePath() {
+    void salvagesUnknownFieldWithPrecisePath() {
         final TeamAiReviewResultParser.ParseResult result = TeamAiReviewResultParser.parse(
                 VALID.replace("\"highContributors\":[]", "\"highContributors\":[],\"extra\":true"),
                 Set.of("P1"));
-        assertEquals(TeamAiReviewResultParser.ParseStatus.REPAIRABLE, result.status());
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION, result.status());
         assertFalse(result.failed());
         assertEquals(TeamAiReviewResultParser.Failure.INVALID_FIELD, result.failure());
         assertEquals("root.extra", result.failures().getFirst().path());
@@ -131,35 +139,35 @@ class TeamAiReviewResultParserTest {
     }
 
     @Test
-    void rejectsInvalidEpisodeTimeTypesAndValues() {
-        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
+    void salvagesInvalidEpisodeTimeTypesAndValues() {
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION,
                 TeamAiReviewResultParser.parse(
                         VALID.replace("\"startSec\":10", "\"startSec\":\"10\""), Set.of("P1")).status());
-        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION,
                 TeamAiReviewResultParser.parse(
                         VALID.replace("\"endSec\":20", "\"endSec\":10.5"), Set.of("P1")).status());
-        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION,
                 TeamAiReviewResultParser.parse(
                         VALID.replace("\"startSec\":10", "\"startSec\":-1"), Set.of("P1")).status());
     }
 
     @Test
-    void reportsFatalCoreFailures() {
-        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
-                TeamAiReviewResultParser.parse("{\"episodes\":[]}", Set.of()).status());
+    void reportsIncompleteCoreFailuresAsNonValid() {
+        assertFalse(TeamAiReviewResultParser.parse("{\"episodes\":[]}", Set.of()).status()
+                == TeamAiReviewResultParser.ParseStatus.VALID);
         assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION,
                 TeamAiReviewResultParser.parse(VALID.replace("\"startSec\":10,", ""), Set.of("P1")).status());
-        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION,
                 TeamAiReviewResultParser.parse(VALID.replace("\"endSec\":20", "\"endSec\":5"), Set.of("P1")).status());
         final String duplicate = VALID.replace(
                 "\"playerKeys\":[\"P1\"]}],",
                 "\"playerKeys\":[\"P1\"]},{\"id\":\"E1\",\"startSec\":30,\"endSec\":40,\"title\":\"x\",\"analysis\":\"y\",\"playerKeys\":[]}],");
-        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION,
                 TeamAiReviewResultParser.parse(duplicate, Set.of("P1")).status());
     }
 
     @Test
-    void reportsRepairableCardinality() {
+    void deterministicallyTruncatesCardinality() {
         final String tooMany = VALID.replace(
                 "\"highContributors\":[]",
                 "\"highContributors\":[{\"playerKey\":\"P1\",\"episodeId\":\"E1\",\"reason\":\"r\"},"
@@ -167,8 +175,9 @@ class TeamAiReviewResultParserTest {
                         + "{\"playerKey\":\"P1\",\"episodeId\":\"E1\",\"reason\":\"r\"}]");
         final TeamAiReviewResultParser.ParseResult result =
                 TeamAiReviewResultParser.parse(tooMany, Set.of("P1"));
-        assertEquals(TeamAiReviewResultParser.ParseStatus.REPAIRABLE, result.status());
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION, result.status());
         assertEquals(TeamAiReviewResultParser.Failure.CARDINALITY_EXCEEDED, result.failure());
+        assertEquals(2, result.result().highContributors().size());
     }
 
     @Test
@@ -179,4 +188,5 @@ class TeamAiReviewResultParserTest {
         assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION, result.status());
         assertTrue(result.result().reviewFocus().isEmpty());
     }
+
 }

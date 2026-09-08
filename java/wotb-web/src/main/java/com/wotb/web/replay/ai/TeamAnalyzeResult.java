@@ -38,4 +38,5 @@ public record TeamAnalyzeResult(
                              final TeamAiReviewResult structuredResult) {
         this(analysis, preBattleSection, structuredResult, List.of());
     }
+
 }
