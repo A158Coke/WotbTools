@@ -36,7 +36,7 @@ AI 只做 visual QA；发现错误 → 修 baker → 重新生成，禁止人工
 | 路径 | 职责 |
 |---|---|
 | `frontend/src/vehicle-models/types.js` | discriminated union 类型契约 + 统一 viewBox + metadata schema（Source-faithful PBR） |
-| `frontend/src/vehicle-models/mapping.js` | 集中静态 Tank ID → baseModelKey（82 组；confirmPending 已全部清零，2026-09-08） |
+| `frontend/src/vehicle-models/mapping.js` | 集中静态 Tank ID → baseModelKey（83 组；confirmPending 已全部清零，2026-09-08） |
 | `frontend/src/vehicle-models/assets/<modelKey>/` | **正式 WebP 资产**（hull.webp / turret.webp / metadata.json / bake-report.json，baker 生成） |
 | `frontend/src/vehicle-models/validate.js` | validator（CI 与 CLI 共用；正式资产强制 source.provider=blitzkit + method=texture-bake） |
 | `frontend/src/vehicle-models/coverage.test.js` | Tier X 100% 覆盖门禁（新增 Tier X 无 mapping → CI FAIL） |
@@ -93,9 +93,9 @@ production / Battle Playback / backend / CI 均不访问 BlitzKit（任务 17）
 
 85 辆完整清单（tankId / display name / baseModelKey / turreted|turretless / class / nation /
 kind 核验依据 / BlitzKit 参考链接）见 `tier-x-inventory.md`（脚本从 Tankopedia + mapping.js 生成，权威）。
-3 组合并（skin/特殊版本复用基础模型）：`sheridan` / `kpz-70` / `type-5-heavy`。
+2 组合并（skin/特殊版本复用基础模型）：`sheridan` / `kpz-70`。`type-5-heavy` 与 `type-5-h-zetsu` 使用不同真实 BlitzKit source asset。
 
-**kind 核验（全 82 modelKey 逐组完成）**：官方 tankopedia / fandom wiki / 结构知识；
+**kind 核验（全 83 modelKey 逐组完成）**：官方 tankopedia / fandom wiki / 结构知识；
 修正 3 项：minotauro → turreted、foch-155 → turretless、xm66f → turreted。每行依据见 inventory 表。
 
 **confirmPending 已全部清零（2026-08-19，contract 冻结）**：AC Teichos (22129)、NC 70
@@ -141,13 +141,14 @@ contract，turret.webp 画布 = turret+mantlet+完整 gun 的 logical bounds）�
 ### E. Mapping contract
 
 `types.js` discriminated union：`TurretedVehicleModelAsset { modelKey, kind:'turreted', hull, turret, turretPivot, turretRaster }` |
-`TurretlessVehicleModelAsset { modelKey, kind:'turretless', hull }`。mapping 已含 85 辆 → 82 组，**生成时不要改 mapping**。
+`TurretlessVehicleModelAsset { modelKey, kind:'turretless', hull }`。mapping 已含 85 辆 → 83 组，**生成时不要改 mapping**。
 
 ### F. BlitzKit data
 
 - 模型：`https://api.blitzkit.app/tanks/{tankId}/model.glb`（baker 下载缓存）。
 - 定义：`https://api.blitzkit.app/definitions/models.pb` + `tanks.pb`（缓存）。
 - 参考图：`https://api.blitzkit.app/tanks/{tankId}/icons/big.webp`（缓存已下载 85 张，QA 用）。
+- Type 5 变体证据：8033 使用 turret/gun/track `12641/12129/13921` 与 `J20_Type_2605_*`；9057 使用 `13921/13921/15457` 与 `J39_Type_5_Exp_*`，两者 turret raster 分别为 `185×466` 与 `210×488`，因此必须使用独立 modelKey/资产。
 
 Details Panel 的车型图由
 `node frontend/scripts/blitzkit-references.mjs --emit-portraits` 从同一 `big.webp` 端点确定性生成到
@@ -162,9 +163,9 @@ cd frontend && npm run build && node scripts/check-bundle-separation.mjs  # bund
 cd frontend && node scripts/check-webp-orientation.mjs                     # 真实 WebP 方向校验（developer-only）
 ```
 
-### H. 生成范围（82 个正式资产，confirmPending = 0）
+### H. 生成范围（83 个正式资产，confirmPending = 0）
 
-82 个 modelKey 已生成正式 WebP 资产（maus / leopard-1 / grille-15 / fv4005 / ho-ri / minotauro /
+83 个 modelKey 已生成正式 WebP 资产（maus / leopard-1 / grille-15 / fv4005 / ho-ri / minotauro /
 xm66f / sheridan 等结构差异最大化组 + 其余批量组；spht / ac-teichos / nc-70-blyskawica 于
 2026-08-19 BlitzKit 数据确认 turreted 后加入，无 pending）。
 

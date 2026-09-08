@@ -46,6 +46,16 @@ describe('Tier X coverage（common/tankopedia-tier10.json vs mapping）', () => 
     expect(errors).toContain('mapping modelKey missing-model（tankId=1）缺少 source asset 目录')
   })
 
+  it('Type 5 Heavy 与 Type 5 H Zetsu 必须使用不同的 dedicated source asset', () => {
+    expect(TANK_ID_TO_MODEL['8033']).toBe('type-5-heavy')
+    expect(TANK_ID_TO_MODEL['9057']).toBe('type-5-h-zetsu')
+    const oldMeta = JSON.parse(readModelDir('type-5-heavy').metadata)
+    const zetsuMeta = JSON.parse(readModelDir('type-5-h-zetsu').metadata)
+    expect(oldMeta.source.tankId).toBe(8033)
+    expect(zetsuMeta.source.tankId).toBe(9057)
+    expect(oldMeta.modelKey).not.toBe(zetsuMeta.modelKey)
+  })
+
   it('mapping 的 kind 声明与 class 常识不冲突（Tank destroyer 分组覆盖检查）', () => {
     // 防手误：所有 turretless 车型必须在 TD 中（tankopedia 无 turret 字段，
     // 该检查只验证 turretless 声明集中在 TD 类，作为最低防线）。

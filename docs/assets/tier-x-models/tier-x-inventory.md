@@ -1,10 +1,10 @@
-# Tier X Inventory（Tankopedia 权威，85 辆 → 82 baseModelKey）
+# Tier X Inventory（Tankopedia 权威，85 辆 → 83 baseModelKey）
 
 > 由 `node frontend/scripts/blitzkit-references.mjs --emit-docs` 从
 > `common/tankopedia-tier10.json` + `frontend/src/vehicle-models/mapping.js` 生成；
 > 覆盖完整性由 CI（coverage.test.js）强制。
 
-## kind 核验（2026-08-17 起，全 82 modelKey 逐组核验）
+## kind 核验（2026-08-17 起，全 83 modelKey 逐组核验）
 
 > 依据：官方 tankopedia 描述 / fandom wiki / 车辆实际俯视结构知识；
 > 不采用 BlitzKit TURRET module 或 turretRotationSpeed 字段（casemate 也有 turret module 且转速非零，不可判）。
@@ -38,7 +38,7 @@
 | fv4202 | turreted | — | 7249 | FV4202 | Medium tank | UK | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/7249/icons/big.webp) · [page](https://blitzkit.app/tanks/fv4202) |
 | 60tp-lewandowskiego | turreted | — | 7297 | 60TP Lewandowskiego | Heavy tank | European | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/7297/icons/big.webp) · [page](https://blitzkit.app/tanks/60tp-lewandowskiego) |
 | type-5-heavy | turreted | — | 8033 | Type 5 Heavy | Heavy tank | Japan | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/8033/icons/big.webp) · [page](https://blitzkit.app/tanks/type-5-heavy) |
-| type-5-heavy | turreted | — | 9057 | Type 5 H Zetsu | Heavy tank | Japan | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/9057/icons/big.webp) · [page](https://blitzkit.app/tanks/type-5-h-zetsu) |
+| type-5-h-zetsu | turreted | — | 9057 | Type 5 H Zetsu | Heavy tank | Japan | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/9057/icons/big.webp) · [page](https://blitzkit.app/tanks/type-5-h-zetsu) |
 | wz-111-5a | turreted | — | 8497 | WZ-111 5A | Heavy tank | China | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/8497/icons/big.webp) · [page](https://blitzkit.app/tanks/wz-111-5a) |
 | amx-30-b | turreted | — | 8513 | AMX 30 B | Medium tank | France | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/8513/icons/big.webp) · [page](https://blitzkit.app/tanks/amx-30-b) |
 | fv215b-183 | turreted | — | 9297 | FV215b 183 | Tank destroyer | UK | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/9297/icons/big.webp) · [page](https://blitzkit.app/tanks/fv215b-183) |
@@ -107,6 +107,6 @@
 ## 统计
 
 - Tankopedia Tier X 总数：85（meta.count=85，generated_at=2026-09-08T13:11:18.285575+00:00）
-- baseModelKey 数：82
-- turreted：73；turretless：9；confirmPending：0
+- baseModelKey 数：83
+- turreted：74；turretless：9；confirmPending：0
 

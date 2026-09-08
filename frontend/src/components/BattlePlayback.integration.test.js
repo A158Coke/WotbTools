@@ -513,6 +513,8 @@ describe('PR2 — Tier X dedicated models in Battle Playback', () => {
     ['e-100', 'E 100'],
     ['is-7', 'IS-7'],
     ['maus', 'Maus'],
+    ['type-5-heavy', 'Type 5 Heavy'],
+    ['type-5-h-zetsu', 'Type 5 H Zetsu'],
     ['zmije', 'Zmije'],
   ]
 
