@@ -1,8 +1,16 @@
 {
   "meta": {
-    "source": "blitzkit (assets.blitzkit.app/definitions/tanks.pb)",
+    "source": "blitzkit stable definitions",
+    "source_game_version": "11.19.0.834_7320229",
+    "source_hashes": {
+      "game": "2083fba42b10442992b6df61e224c0639253a76fc6a2809f1e0369c42b36715b",
+      "tanks": "eb98f7f5d9e1480f8dc7a679a0a87ddc0758fc099478afd1a32c3762b8bdcffc",
+      "consumables": "eac34192df85a316384240325b4c86586955a9247fd3a2b5cd301c1fa9e9de59",
+      "provisions": "cfcbebb7a1610f3a5f93c1fdaa0fc35b46bc5097ddc26f0a522e542813409f41",
+      "equipment": "036f2c0c7bb97a5f8678f04a5ed9d6809f02e4563ea952f109305f208560cd9c"
+    },
     "tier": 8,
-    "generated_at": "2026-08-08T17:28:26.017337+00:00",
+    "generated_at": "2026-09-08T13:05:15.222335+00:00",
     "count": 165
   },
   "vehicles": [
@@ -2549,7 +2557,6 @@
       ],
       "allowedEquipment": [
         "CALIBRATED_SHELLS",
-        "CAMOUFLAGE_NET",
         "CONSUMABLE_DELIVERY_SYSTEM",
         "DEFENSE_SYSTEM",
         "ENGINE_ACCELERATOR",
@@ -2561,11 +2568,12 @@
         "IMPROVED_ASSEMBLY",
         "IMPROVED_CONTROL",
         "IMPROVED_MODULES",
-        "IMPROVED_OPTICS",
         "IMPROVED_SUSPENSION",
         "IMPROVED_VERTICAL_STABILIZER",
+        "REFINED_GUN",
         "SUPERCHARGER",
-        "TOOLBOX"
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
       ],
       "extraInfo": ""
     },
@@ -3696,11 +3704,11 @@
         "IMPROVED_ASSEMBLY",
         "IMPROVED_CONTROL",
         "IMPROVED_MODULES",
-        "IMPROVED_OPTICS",
         "IMPROVED_SUSPENSION",
         "REFINED_GUN",
         "SUPERCHARGER",
-        "TOOLBOX"
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
       ],
       "extraInfo": ""
     },
@@ -13052,7 +13060,6 @@
       ],
       "allowedEquipment": [
         "CALIBRATED_SHELLS",
-        "CAMOUFLAGE_NET",
         "CONSUMABLE_DELIVERY_SYSTEM",
         "DEFENSE_SYSTEM",
         "ENGINE_ACCELERATOR",
@@ -13066,6 +13073,7 @@
         "IMPROVED_MODULES",
         "IMPROVED_OPTICS",
         "IMPROVED_SUSPENSION",
+        "REFINED_GUN",
         "SUPERCHARGER",
         "TOOLBOX",
         "VERTICAL_STABILIZER"
@@ -13848,7 +13856,6 @@
       ],
       "allowedEquipment": [
         "CALIBRATED_SHELLS",
-        "CAMOUFLAGE_NET",
         "CONSUMABLE_DELIVERY_SYSTEM",
         "DEFENSE_SYSTEM",
         "ENGINE_ACCELERATOR",
@@ -13860,11 +13867,12 @@
         "IMPROVED_ASSEMBLY",
         "IMPROVED_CONTROL",
         "IMPROVED_MODULES",
-        "IMPROVED_OPTICS",
         "IMPROVED_SUSPENSION",
         "IMPROVED_VERTICAL_STABILIZER",
+        "REFINED_GUN",
         "SUPERCHARGER",
-        "TOOLBOX"
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
       ],
       "extraInfo": ""
     },
