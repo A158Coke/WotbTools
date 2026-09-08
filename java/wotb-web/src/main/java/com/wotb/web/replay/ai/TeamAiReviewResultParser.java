@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Technical parser for Team AI Review v0.5.
@@ -22,7 +23,10 @@ public final class TeamAiReviewResultParser {
     public static final int MAX_HIGH_CONTRIBUTORS = 2;
     public static final int MAX_TRAINING_SUGGESTIONS = 12;
 
-    private static final int MAX_OUTPUT_CHARS = 64_000;
+    /** Bounded UTF-16 envelope for one provider completion (8192 output tokens by default). */
+    private static final int MAX_PROVIDER_OUTPUT_CHARS = 256_000;
+    /** HTTP/OpenAPI bound for the plain-text presentation field. */
+    private static final int MAX_PLAIN_TEXT_CHARS = 64_000;
     private static final int MAX_ID_CHARS = 64;
     private static final int MAX_TITLE_CHARS = 240;
     private static final int MAX_REASON_CHARS = 2_000;
@@ -30,6 +34,11 @@ public final class TeamAiReviewResultParser {
     private static final int MAX_ANALYSIS_CHARS = 8_000;
     private static final int MAX_SUGGESTION_CHARS = 6_000;
     private static final int MAX_PLAYER_KEYS_PER_EPISODE = 8;
+
+    private static final Pattern TEAM_REVIEW_JSON_FIELD = Pattern.compile(
+            "\\\"(?:summary|episodes|trainingSuggestions|reviewFocus|highContributors|"
+                    + "verdict|primaryDiagnosis|title|analysis|playerKeys|content|playerKey|"
+                    + "episodeId|reason)\\\"\\s*:");
 
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
@@ -40,7 +49,7 @@ public final class TeamAiReviewResultParser {
         if (output == null || output.isBlank()) {
             return fatal(Failure.EMPTY_OUTPUT, "root", "non-empty JSON object required");
         }
-        if (output.length() > MAX_OUTPUT_CHARS) {
+        if (output.length() > MAX_PROVIDER_OUTPUT_CHARS) {
             return fatal(Failure.OUTPUT_TOO_LARGE, "root", "output exceeds safe character limit");
         }
         try {
@@ -524,29 +533,59 @@ public final class TeamAiReviewResultParser {
             return false;
         }
         final String trimmed = output.trim();
-        if (trimmed.length() < 20 || trimmed.length() > MAX_OUTPUT_CHARS) {
+        if (trimmed.length() < 20 || trimmed.length() > MAX_PROVIDER_OUTPUT_CHARS) {
             return false;
         }
         final String withoutFence = trimmed.replace("```markdown", "")
-                .replace("```md", "").replace("```", "").trim();
+                .replace("```md", "").replace("```json", "")
+                .replace("```JSON", "").replace("```", "").trim();
         if (withoutFence.isBlank()) {
             return false;
         }
-        if ((withoutFence.startsWith("{") && withoutFence.endsWith("}"))
-                || (withoutFence.startsWith("[") && withoutFence.endsWith("]"))) {
-            try {
-                final JsonNode parsed = MAPPER.readTree(withoutFence);
-                if (parsed != null && (parsed.isObject() || parsed.isArray())) {
-                    return false;
-                }
-            } catch (final RuntimeException ignored) {
-                // Malformed JSON may still contain useful Markdown/plain text below.
-            }
+        if (looksLikeJsonContractFragment(withoutFence)) {
+            return false;
         }
         final long readableCharacters = withoutFence.codePoints()
                 .filter(character -> Character.isLetterOrDigit(character))
                 .count();
         return readableCharacters >= 8;
+    }
+
+    /**
+     * Keeps a displayable completion within the HTTP contract without rewriting its content.
+     * Callers must first verify {@link #isUsableDisplayText(String)}.
+     */
+    static String boundedDisplayText(final String output) {
+        final String trimmed = output.trim();
+        if (trimmed.length() <= MAX_PLAIN_TEXT_CHARS) {
+            return trimmed;
+        }
+        int end = MAX_PLAIN_TEXT_CHARS;
+        if (end < trimmed.length()
+                && Character.isHighSurrogate(trimmed.charAt(end - 1))
+                && Character.isLowSurrogate(trimmed.charAt(end))) {
+            end--;
+        }
+        return trimmed.substring(0, end);
+    }
+
+    private static boolean looksLikeJsonContractFragment(final String output) {
+        if (output.startsWith("{") || startsLikeJsonArray(output)) {
+            return true;
+        }
+        return TEAM_REVIEW_JSON_FIELD.matcher(output).find();
+    }
+
+    private static boolean startsLikeJsonArray(final String output) {
+        if (!output.startsWith("[")) {
+            return false;
+        }
+        if (output.length() == 1) {
+            return true;
+        }
+        final char next = output.charAt(1);
+        return next == '{' || next == '[' || next == '"' || next == ']'
+                || Character.isDigit(next) || next == '-';
     }
 
     private static boolean isNonBlank(final String value) {
