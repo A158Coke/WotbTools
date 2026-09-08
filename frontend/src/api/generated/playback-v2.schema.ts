@@ -645,13 +645,17 @@ export default {
       ],
       "properties": {
         "verdict": {
-          "type": "string",
-          "minLength": 1,
+          "type": [
+            "string",
+            "null"
+          ],
           "maxLength": 4000
         },
         "primaryDiagnosis": {
-          "type": "string",
-          "minLength": 1,
+          "type": [
+            "string",
+            "null"
+          ],
           "maxLength": 4000
         }
       }
@@ -856,6 +860,14 @@ export default {
         }
       }
     },
+    "AiReviewResultMode": {
+      "type": "string",
+      "enum": [
+        "STRUCTURED",
+        "SALVAGED",
+        "PLAIN_TEXT"
+      ]
+    },
     "AiReviewDonePayload": {
       "type": "object",
       "additionalProperties": false,
@@ -864,7 +876,9 @@ export default {
         "preBattleSection",
         "capability",
         "teamReview",
-        "teamPlayers"
+        "teamPlayers",
+        "resultMode",
+        "plainText"
       ],
       "properties": {
         "analysis": {
@@ -906,6 +920,25 @@ export default {
           "items": {
             "$ref": "#/$defs/TeamAiPlayerIdentity"
           }
+        },
+        "resultMode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "STRUCTURED",
+            "SALVAGED",
+            "PLAIN_TEXT",
+            null
+          ]
+        },
+        "plainText": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64000
         }
       }
     },
@@ -1757,6 +1790,7 @@ export default {
         "AI_EMPTY_RESPONSE",
         "AI_RESPONSE_INVALID",
         "AI_REVIEW_SCHEMA_FAILED",
+        "AI_REVIEW_NO_USABLE_RESULT",
         "AI_REVIEW_GROUNDING_FAILED",
         "AI_TIMELINE_UNUSABLE",
         "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE",

@@ -294,14 +294,13 @@ content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另�
 - 校验失败 → LLM 自修循环（targeted rewrite → full rewrite → fail-safe），Backend 绝不
   代改句子；重试耗尽 → `error` 事件 `AI_REVIEW_GROUNDING_FAILED`（HTTP 已 200）。
 **Technical schema resilience（当前生产行为）**：Team Call #2 保持 v0.5 JSON/API 契约，backend
-parser 返回 `result/failures/normalizations/status`。不存在的 episode/player reference 等 optional
-错误确定性清理并继续完成；core schema 的 fatal 错误 fail-closed，repairable 错误只允许一次紧凑、
-定向 technical repair。repair 输入仅含生成 JSON、精确 failure path/code/constraint、权威 roster
-keys 与已有 episode reference 约束，不重复发送完整战术 context。repair 仍失败返回
-`AI_REVIEW_SCHEMA_FAILED`，前端三语文案和诊断 ID 与 `AI_REVIEW_GROUNDING_FAILED`、provider
-unavailable 分开；repair 若违反 semantic immutability invariant 也会 fail-closed，计入
-`wotb_ai_team_review_repair_total{result="semantic_changed"}` 并返回同一错误码。对应事件和低基数
-指标见 `docs/operations/observability.md`。
+parser 返回 `result/failures/normalizations/status`。可展示正文优先完成复盘；不存在的
+episode/player reference、字段类型偏差、可选 section 损坏和超限数组由 parser 确定性省略、
+空值化、默认化或截断，不改变战术正文，也不触发 repair。结果明确标记为 `STRUCTURED` 或
+`SALVAGED`；不能解析为结构化结果但原始 completion 可读时标记为 `PLAIN_TEXT` 并直接安全渲染。
+只有初始结果没有任何可展示正文时才执行一次 recovery；仍无正文返回
+`AI_REVIEW_NO_USABLE_RESULT`。`AI_REVIEW_SCHEMA_FAILED` 作为旧客户端兼容码保留，不再描述
+当前 Team Call #2 的主要失败路径。对应事件和低基数指标见 `docs/operations/observability.md`。
 
 **DeepSeek 官方 JSON Output（2026-08，JSON 语法层加固）**：Team Call #2 已启用 provider
 `response_format=json_object`（`AiChatRequest.responseFormat=JSON_OBJECT`，仅此调用；Player /

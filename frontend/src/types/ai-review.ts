@@ -8,6 +8,7 @@ export type AiReviewCapability =
 
 export type TeamAiReviewResult = components['schemas']['TeamAiReviewResult']
 export type TeamAiPlayerIdentity = components['schemas']['TeamAiPlayerIdentity']
+export type AiReviewResultMode = components['schemas']['AiReviewResultMode']
 
 export interface AiReviewResult {
   /** Text path retained for player reviews and older deployed backends. */
@@ -20,6 +21,10 @@ export interface AiReviewResult {
   teamReview?: TeamAiReviewResult
   /** Authoritative playerKey → nickname/tank display mapping; absent only for safe fallback compatibility. */
   teamPlayers?: TeamAiPlayerIdentity[]
+  /** Explicit Team Review outcome; users see every mode as a normal successful review. */
+  resultMode?: AiReviewResultMode | null
+  /** Complete raw review text when structured output was not usable. */
+  plainText?: string | null
 }
 
 export interface AiReviewRunState {

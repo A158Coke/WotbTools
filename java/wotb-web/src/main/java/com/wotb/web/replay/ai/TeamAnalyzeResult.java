@@ -20,22 +20,34 @@ public record TeamAnalyzeResult(
         AnalyzeResult analysis,
         String preBattleSection,
         TeamAiReviewResult structuredResult,
-        List<AnalyzeResponse.TeamPlayer> teamPlayers
+        List<AnalyzeResponse.TeamPlayer> teamPlayers,
+        AnalyzeResponse.AiReviewResultMode resultMode,
+        String plainText
 ) {
     public TeamAnalyzeResult {
         teamPlayers = teamPlayers == null ? List.of() : List.copyOf(teamPlayers);
     }
 
     public TeamAnalyzeResult(final AnalyzeResult analysis) {
-        this(analysis, null, null, List.of());
+        this(analysis, null, null, List.of(), null, null);
     }
 
     public TeamAnalyzeResult(final AnalyzeResult analysis, final String preBattleSection) {
-        this(analysis, preBattleSection, null, List.of());
+        this(analysis, preBattleSection, null, List.of(), null, null);
     }
 
     public TeamAnalyzeResult(final AnalyzeResult analysis, final String preBattleSection,
                              final TeamAiReviewResult structuredResult) {
-        this(analysis, preBattleSection, structuredResult, List.of());
+        this(analysis, preBattleSection, structuredResult, List.of(),
+                structuredResult == null ? null : AnalyzeResponse.AiReviewResultMode.STRUCTURED,
+                null);
+    }
+
+    public TeamAnalyzeResult(final AnalyzeResult analysis, final String preBattleSection,
+                             final TeamAiReviewResult structuredResult,
+                             final List<AnalyzeResponse.TeamPlayer> teamPlayers) {
+        this(analysis, preBattleSection, structuredResult, teamPlayers,
+                structuredResult == null ? null : AnalyzeResponse.AiReviewResultMode.STRUCTURED,
+                null);
     }
 }

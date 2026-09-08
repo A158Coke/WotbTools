@@ -4,6 +4,7 @@ import type {
   AiReviewErrorEvent,
   AiReviewEvent,
   AiReviewResult,
+  AiReviewResultMode,
   AiReviewStageEvent,
   AiReviewTokenEvent,
   TeamAiPlayerIdentity,
@@ -44,6 +45,10 @@ function isBoundedNonEmptyString(value: unknown, maxLength: number): value is st
   return isNonEmptyString(value) && value.length <= maxLength
 }
 
+function isNullableBoundedString(value: unknown, maxLength: number): value is string | null {
+  return value === null || isBoundedNonEmptyString(value, maxLength)
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.length <= 8
     && value.every(item => isBoundedNonEmptyString(item, 64))
@@ -69,8 +74,8 @@ function isNullableNonnegativeInteger(value: unknown): value is number | null {
 
 function isTeamReviewResult(value: unknown): value is TeamAiReviewResult {
   if (!isRecord(value) || !isRecord(value.summary)
-    || !isBoundedNonEmptyString(value.summary.verdict, 4000)
-    || !isBoundedNonEmptyString(value.summary.primaryDiagnosis, 4000)) return false
+    || !isNullableBoundedString(value.summary.verdict, 4000)
+    || !isNullableBoundedString(value.summary.primaryDiagnosis, 4000)) return false
   if (!Array.isArray(value.episodes) || value.episodes.length > 6
     || !Array.isArray(value.trainingSuggestions)
     || !Array.isArray(value.reviewFocus) || value.reviewFocus.length > 2
@@ -116,9 +121,23 @@ function resultFromPayload(payload: unknown): AiReviewResult | null {
     && !isTeamPlayerMapping(payload.teamPlayers)) return null
   const hasTeam = isTeamReviewResult(payload.teamReview)
   const hasText = isNonEmptyString(payload.analysis)
-  if (!hasTeam && !hasText) {
+  if ('plainText' in payload && payload.plainText !== undefined
+    && payload.plainText !== null && !isBoundedNonEmptyString(payload.plainText, 64000)) return null
+  const hasPlainText = isNonEmptyString(payload.plainText)
+  if (!hasTeam && !hasText && !hasPlainText) {
     return null
   }
+
+  let resultMode: AiReviewResultMode | null | undefined
+  if ('resultMode' in payload) {
+    if (payload.resultMode !== null
+      && payload.resultMode !== 'STRUCTURED'
+      && payload.resultMode !== 'SALVAGED'
+      && payload.resultMode !== 'PLAIN_TEXT') return null
+    resultMode = payload.resultMode as AiReviewResultMode | null
+  }
+  if (resultMode === 'PLAIN_TEXT' && !hasPlainText) return null
+  if ((resultMode === 'STRUCTURED' || resultMode === 'SALVAGED') && !hasTeam) return null
 
   const preBattleSection = optionalString(payload, 'preBattleSection')
   // JSON cannot carry undefined; an explicitly malformed non-undefined value is rejected.
@@ -138,6 +157,9 @@ function resultFromPayload(payload: unknown): AiReviewResult | null {
     ...(hasTeam ? { teamReview: payload.teamReview as TeamAiReviewResult } : {}),
     ...(('teamPlayers' in payload && payload.teamPlayers !== undefined)
       ? { teamPlayers: payload.teamPlayers as TeamAiPlayerIdentity[] } : {}),
+    ...(('resultMode' in payload && resultMode !== undefined) ? { resultMode } : {}),
+    ...(('plainText' in payload && payload.plainText !== undefined)
+      ? { plainText: payload.plainText as string | null } : {}),
     ...(capability === undefined ? {} : { capability }),
   }
 }

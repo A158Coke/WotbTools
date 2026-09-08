@@ -43,6 +43,7 @@ import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
+import com.wotb.web.replay.dto.AnalyzeResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -135,7 +136,8 @@ class AiReplayAnalysisServiceTest {
                         0, 0, 0, 0, 0, 0, "stop");
             }
             if ("SINGLE_TEAM_BATTLE".equals(request.analysisMode())
-                    || "SINGLE_TEAM_BATTLE_REPAIR".equals(request.analysisMode())) {
+                    || "SINGLE_TEAM_BATTLE_REPAIR".equals(request.analysisMode())
+                    || "SINGLE_TEAM_BATTLE_RECOVERY".equals(request.analysisMode())) {
                 if (!teamCompletionSequence.isEmpty()) {
                     return new AiChatResponse(teamCompletionSequence.remove(0), "DeepSeek", "test-model",
                             0, 0, 0, 0, 0, 0, "stop");
@@ -172,7 +174,8 @@ class AiReplayAnalysisServiceTest {
     private List<AiChatRequest> allTeamReviewRequests() {
         return gateway.requests.stream()
                 .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode())
-                        || "SINGLE_TEAM_BATTLE_REPAIR".equals(r.analysisMode()))
+                        || "SINGLE_TEAM_BATTLE_REPAIR".equals(r.analysisMode())
+                        || "SINGLE_TEAM_BATTLE_RECOVERY".equals(r.analysisMode()))
                 .toList();
     }
 
@@ -459,13 +462,10 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
-    void repairableSchemaFailureUsesOneCompactTargetedRepair() {
+    void schemaDeviationIsSalvagedWithoutRepairCall() {
         gateway.teamCompletionSequence.add("{\"summary\":{\"verdict\":\"v\",\"primaryDiagnosis\":\"d\"},"
                 + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],"
                 + "\"highContributors\":[],\"unknown\":true}");
-        gateway.teamCompletionSequence.add("{\"summary\":{\"verdict\":\"v\",\"primaryDiagnosis\":\"d\"},"
-                + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],"
-                + "\"highContributors\":[]}");
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
                 teamResultWithRecon("repair.wotbreplay", "repair-arena", "Ally", 1001L, 1)));
@@ -473,32 +473,19 @@ class AiReplayAnalysisServiceTest {
         final TeamAnalyzeResult result = service.analyzeTeamGroups(groups);
 
         assertNotNull(result.structuredResult());
-        assertEquals(2, allTeamReviewRequests().size());
-        final String initialBody = allTeamReviewRequests().getFirst().userPrompt();
-        final String repairBody = allTeamReviewRequests().getLast().userPrompt();
-        assertTrue(repairBody.contains("REMAINING_CORE_SCHEMA_FAILURES"));
-        assertTrue(repairBody.contains("CANONICAL_NORMALIZED_JSON"));
-        assertFalse(repairBody.contains("ORIGINAL_GENERATED_JSON"));
-        assertTrue(repairBody.contains("path=root.unknown"));
-        assertFalse(repairBody.contains("AUTHORITATIVE_TEAM_RESULT"));
-        assertTrue(repairBody.length() < initialBody.length(),
-                "targeted repair must be materially smaller than the initial tactical prompt");
+        assertEquals(1, allTeamReviewRequests().size());
+        assertEquals(AnalyzeResponse.AiReviewResultMode.SALVAGED, result.resultMode());
     }
 
     @Test
-    void mixedSchemaFailureRepairsFromCanonicalNormalizedBaseline() {
+    void mixedSchemaDeviationPreservesTacticalTextAndDropsInvalidOptionalItems() {
         final String initial = "{\"summary\":{\"verdict\":\"v\",\"primaryDiagnosis\":\"d\"},"
                 + "\"episodes\":[{\"id\":\"E1\",\"startSec\":10,\"endSec\":20,"
                 + "\"title\":\"title\",\"analysis\":\"TACTICAL_TEXT\",\"playerKeys\":[]}],"
                 + "\"trainingSuggestions\":[],\"reviewFocus\":[],"
                 + "\"highContributors\":[{\"playerKey\":\"UNKNOWN_PLAYER\","
                 + "\"episodeId\":\"E1\",\"reason\":\"reason\"}],\"unknown\":true}";
-        final String repaired = "{\"summary\":{\"verdict\":\"v\",\"primaryDiagnosis\":\"d\"},"
-                + "\"episodes\":[{\"id\":\"E1\",\"startSec\":10,\"endSec\":20,"
-                + "\"title\":\"title\",\"analysis\":\"TACTICAL_TEXT\",\"playerKeys\":[]}],"
-                + "\"trainingSuggestions\":[],\"reviewFocus\":[],\"highContributors\":[]}";
         gateway.teamCompletionSequence.add(initial);
-        gateway.teamCompletionSequence.add(repaired);
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
                 teamResultWithRecon("mixed-repair.wotbreplay", "mixed-repair-arena", "Ally", 1001L, 1)));
@@ -506,26 +493,18 @@ class AiReplayAnalysisServiceTest {
         final TeamAnalyzeResult result = service.analyzeTeamGroups(groups);
 
         assertNotNull(result.structuredResult());
-        assertEquals(2, allTeamReviewRequests().size());
+        assertEquals(1, allTeamReviewRequests().size());
+        assertEquals(AnalyzeResponse.AiReviewResultMode.SALVAGED, result.resultMode());
         assertEquals("v", result.structuredResult().summary().verdict());
         assertEquals("d", result.structuredResult().summary().primaryDiagnosis());
         assertEquals("title", result.structuredResult().episodes().getFirst().title());
         assertTrue(result.structuredResult().highContributors().isEmpty());
         assertEquals("TACTICAL_TEXT", result.structuredResult().episodes().getFirst().analysis());
-        final String repairBody = allTeamReviewRequests().getLast().userPrompt();
-        assertTrue(repairBody.contains("CANONICAL_NORMALIZED_JSON"));
-        assertTrue(repairBody.contains("root.unknown"));
-        assertTrue(repairBody.contains("TACTICAL_TEXT"));
-        assertFalse(repairBody.contains("UNKNOWN_PLAYER"));
-        assertFalse(repairBody.contains("highContributors[0].playerKey"));
-        assertFalse(repairBody.contains("ORIGINAL_GENERATED_JSON"));
     }
 
     @Test
-    void repairFailureStopsAfterExactlyTwoCallsWithSchemaError() {
-        gateway.teamCompletionSequence.add("{\"summary\":{\"verdict\":\"v\",\"primaryDiagnosis\":\"d\"},"
-                + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],"
-                + "\"highContributors\":[],\"unknown\":true}");
+    void recoveryFailureStopsAfterExactlyTwoCallsWithNoUsableResult() {
+        gateway.teamCompletionSequence.add("{}");
         gateway.teamCompletionSequence.add("not json");
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
@@ -534,28 +513,53 @@ class AiReplayAnalysisServiceTest {
         final AiUpstreamException error = assertThrows(AiUpstreamException.class,
                 () -> service.analyzeTeamGroups(groups));
 
-        assertEquals("AI_REVIEW_SCHEMA_FAILED", error.code());
+        assertEquals("AI_REVIEW_NO_USABLE_RESULT", error.code());
         assertEquals(2, allTeamReviewRequests().size());
     }
 
     @Test
-    void rejectsRepairThatChangesTacticalSemantics() {
+    void salvageNeverRewritesTacticalSemantics() {
         final String initial = structuredResultWithEpisode()
                 .replace("\"highContributors\":[]", "\"highContributors\":[],\"unknown\":true");
-        final String changed = structuredResultWithEpisode()
-                .replace("\"team review\"", "\"changed verdict\"")
-                .replace("TACTICAL_TEXT", "CHANGED_TACTICAL_TEXT");
         gateway.teamCompletionSequence.add(initial);
-        gateway.teamCompletionSequence.add(changed);
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
                 teamResultWithRecon("semantic-repair.wotbreplay", "semantic-repair-arena", "Ally", 1001L, 1)));
 
-        final AiUpstreamException error = assertThrows(AiUpstreamException.class,
-                () -> service.analyzeTeamGroups(groups));
+        final TeamAnalyzeResult result = service.analyzeTeamGroups(groups);
 
-        assertEquals("AI_REVIEW_SCHEMA_FAILED", error.code());
+        assertEquals(AnalyzeResponse.AiReviewResultMode.SALVAGED, result.resultMode());
+        assertEquals("TACTICAL_TEXT", result.structuredResult().episodes().getFirst().analysis());
+        assertEquals(1, allTeamReviewRequests().size());
+    }
+
+    @Test
+    void readablePlainTextFallsBackWithoutRecoveryCall() {
+        gateway.teamCompletionSequence.add("## 团队复盘\n本局关键问题是开局过早分散，后续应保持集火并及时转场。");
+        final var service = startService();
+
+        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
+                teamResultWithRecon("plain.wotbreplay", "plain-arena", "Ally", 1001L, 1))));
+
+        assertNull(result.structuredResult());
+        assertEquals(AnalyzeResponse.AiReviewResultMode.PLAIN_TEXT, result.resultMode());
+        assertTrue(result.plainText().contains("开局过早分散"));
+        assertEquals(1, allTeamReviewRequests().size());
+        assertEquals("SINGLE_TEAM_BATTLE", allTeamReviewRequests().getFirst().analysisMode());
+    }
+
+    @Test
+    void recoveryRunsOnlyWhenPrimaryHasNoUsableContent() {
+        gateway.teamCompletionSequence.add("{}");
+        gateway.teamCompletionSequence.add(structuredResult());
+        final var service = startService();
+
+        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
+                teamResultWithRecon("recovery.wotbreplay", "recovery-arena", "Ally", 1001L, 1))));
+
+        assertEquals(AnalyzeResponse.AiReviewResultMode.STRUCTURED, result.resultMode());
         assertEquals(2, allTeamReviewRequests().size());
+        assertEquals("SINGLE_TEAM_BATTLE_RECOVERY", allTeamReviewRequests().getLast().analysisMode());
     }
 
     @Test

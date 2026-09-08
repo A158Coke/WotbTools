@@ -151,6 +151,7 @@ describe('AiReviewPanel dataset request', () => {
     [504, 'UPSTREAM_TIMEOUT', 'errors.upstream_timeout'],
     [500, 'INTERNAL_ERROR', 'errors.internal_error'],
     [502, 'AI_REVIEW_SCHEMA_FAILED', 'errors.ai_review_schema_failed'],
+    [502, 'AI_REVIEW_NO_USABLE_RESULT', 'errors.ai_review_no_usable_result'],
   ])('HTTP %s renders the canonical AI error category', async (status, code, messageKey) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
