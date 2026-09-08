@@ -599,6 +599,30 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
+    void recoveryPlainTextLogsCumulativeTokensAndUsesExactlyTwoCalls() {
+        gateway.teamResponseSequence.add(new AiChatResponse("{}", "DeepSeek", "test-model",
+                5, 7, 12, 0, 0, 0, "stop"));
+        gateway.teamResponseSequence.add(new AiChatResponse(
+                "## 团队复盘\n本次恢复调用返回一段可读的团队复盘文本，内容足够完整。", "DeepSeek", "test-model",
+                11, 13, 24, 0, 0, 0, "stop"));
+        final var service = startService();
+
+        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
+                teamResultWithRecon("recovery-plain-text.wotbreplay", "recovery-plain-text-arena", "Ally",
+                        1001L, 1))));
+
+        assertEquals(AnalyzeResponse.AiReviewResultMode.PLAIN_TEXT, result.resultMode());
+        assertEquals(2, allTeamReviewRequests().size());
+        assertEquals("SINGLE_TEAM_BATTLE_RECOVERY", allTeamReviewRequests().getLast().analysisMode());
+        assertTrue(teamReviewEvents("ai_review_plain_text_fallback").stream()
+                .anyMatch(message -> message.contains("repairAttempted=true")));
+        assertTrue(teamReviewEvents("team_review_completed").stream()
+                .anyMatch(message -> message.contains("result=RECOVERY_PLAIN_TEXT")
+                        && message.contains("totalPromptTokens=16")
+                        && message.contains("totalCompletionTokens=20")));
+    }
+
+    @Test
     void recoveryRunsOnlyWhenPrimaryHasNoUsableContent() {
         gateway.teamCompletionSequence.add("{}");
         gateway.teamCompletionSequence.add(structuredResult());
