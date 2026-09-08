@@ -105,6 +105,36 @@ describe('aiReviewSse runtime guards', () => {
     })).toBeNull()
   })
 
+  it('accepts salvaged nullable summary fields and explicit plain-text results', () => {
+    const salvaged = parseAiReviewEvent('done', {
+      analysis: null,
+      resultMode: 'SALVAGED',
+      teamReview: {
+        summary: { verdict: null, primaryDiagnosis: null },
+        episodes: [], trainingSuggestions: [], reviewFocus: [], highContributors: [],
+      },
+    })
+    expect(salvaged?.type).toBe('done')
+    expect(isAiReviewResult(salvaged?.type === 'done' ? salvaged.result : null)).toBe(true)
+
+    const plainText = parseAiReviewEvent('done', {
+      analysis: null,
+      resultMode: 'PLAIN_TEXT',
+      plainText: '## 团队复盘\n本局应保持集火并及时转场。',
+    })
+    expect(plainText).toEqual({
+      type: 'done',
+      result: {
+        preBattleSection: undefined,
+        resultMode: 'PLAIN_TEXT',
+        plainText: '## 团队复盘\n本局应保持集火并及时转场。',
+      },
+    })
+    expect(parseAiReviewEvent('done', {
+      analysis: null, resultMode: 'PLAIN_TEXT', plainText: null,
+    })).toBeNull()
+  })
+
   it('accepts stable uppercase future error codes and rejects malformed ones', () => {
     const event = parseAiReviewEventData('error', '{"code":"AI_REVIEW_GROUNDING_FAILED"}')
     expect(event).toEqual({ type: 'error', id: null, code: 'AI_REVIEW_GROUNDING_FAILED', errorMsg: null })

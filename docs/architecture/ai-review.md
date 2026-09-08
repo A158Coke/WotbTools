@@ -36,6 +36,26 @@ Backend 只负责 JSON、类型、数量上限、roster/episode 引用和字符�
 旧的 `TeamReviewEnvelope`、claims validator 与 Autopsy 类保留给历史测试/兼容读取，
 不属于 v0.5 production chain。
 
+## Team AI Review 稳定性契约：structured / salvaged / plain text
+
+Team Call #2 的返回结果有三种明确模式：
+
+- `STRUCTURED`：完整 JSON contract 解析成功。
+- `SALVAGED`：JSON 中存在可展示内容；解析器只做确定性的字段省略、空值化、截断、默认空数组和可选项丢弃，不改写任何战术正文。
+- `PLAIN_TEXT`：JSON contract 不可用，但原始 completion 是可读正文；前端直接使用既有安全 Markdown 渲染链路。
+
+`summary.verdict` 和 `summary.primaryDiagnosis` 可以为空；它们不是把 Markdown 塞回去的兜底字段。
+episodes、trainingSuggestions、reviewFocus 和 highContributors 按固定上限保留前 N 项，坏项丢弃后继续保留其它内容。
+解析器只判断“是否有可展示正文”，不判断战术结论是否正确。
+
+只有初始 completion 没有任何可展示内容时才触发一次 `SINGLE_TEAM_BATTLE_RECOVERY` recovery call。
+可读但不完全符合 JSON 的正文不会触发 recovery；初始和 recovery 都无可用内容时返回
+`AI_REVIEW_NO_USABLE_RESULT`。provider、超时、取消等上游错误继续使用各自原始错误码。
+
+每次降级都会写入不包含 prompt、原始 completion 或 review 正文的低基数 WARN 结构化日志，
+并分别统计 `structured`、`salvaged`、`plain_text`、`failed` 与 recovery 结果。SSE `done` 事件携带
+`resultMode` 和可选 `plainText`；成功降级仍是成功完成，不发送 error event。
+
 下方 v0.4/v0.3 章节和旧 JSON Output 章节保留为历史设计记录；其中的
 `reviewMarkdown`、claims、Team Autopsy 语义不覆盖 v0.5 当前生产契约。
 
@@ -460,12 +480,12 @@ AI 复盘区分两种 scope，互不混用：
 - **Call #1 覆盖可观测性**：`PreBattleStrategicService` 每次调用前输出 `Pre-battle Call #1 input`（map、mapSemantics=found/UNKNOWN、verified、areas/relationships/spawnSemantics 数量、source、displayName、team1/team2 人数、curatedProfiles/fallbackProfiles 车辆 Profile 覆盖），成功后输出 `Pre-battle Call #1 success`（hypotheses/matchups/winConditions/双方 strengths·plans 数量）；`TacticalReviewHarness` 输出 `Harness prior obtained`（prior 已注入 Call #2）与 `Harness fell back to old path: <reason>`；Team Autopsy 不属于 v0.5 production chain。新增指标 `wotb_ai_review_map_semantics_total{status=found|unknown}`。按 requestId 可在 Loki 逐请求验证地图/车辆语义是否进入 Call #1 并注入 Call #2。
 - **回放解析覆盖率可观测**：`AiReplayReviewService` 对每个回放输出 `Replay event-stream parsed`（file/map/packets/decoded/partial/unknown/failed/decodedRatio），可在 Loki 按回放查看事件流解码覆盖率；真实样本 `decodedRatio≈0.31–0.35`，type 39/31/35/7 为主要未知/未解桶（逆向推进的量化基线）。
 - 测试不调用真实 AI API：`SpringAiChatGatewayTest`/`SpringAiChatGatewayMetricsTest` 使用 mock `ChatModel`。
-#### Current: TeamAiReviewResult technical schema resilience
+#### Historical: TeamAiReviewResult technical schema resilience
 
 Team Call #2 的生产链路保持 v0.5 wire schema，但 technical parser 现在返回
 `result + failures + normalizations + status`。每条 failure 具备稳定 `code`、JSON `path`、
-`FailureCategory` 与 constraint：core schema 的 fatal failure 直接 fail-closed，repairable
-failure 最多触发一次定向 repair；不会再以完整 replay/tactical context 做四轮 schema lottery。
+`FailureCategory` 与 constraint：这是旧版“core fatal + repairable 定向 repair”设计的历史记录，
+不会覆盖上方当前的 structured / salvaged / plain-text 契约。
 
 可确定修复的 optional reference（不存在的 episode、非 roster playerKey、非法 focus/contributor
 item）会被 deterministic normalize，保留 tactical text，并记录 `team_review_normalized`。

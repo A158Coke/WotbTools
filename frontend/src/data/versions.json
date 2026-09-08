@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.77",
+    "date": "2026-09-08",
+    "tag": "fix",
+    "zh": "修复团队 AI 复盘对结构化响应偏差过于敏感的问题：可展示内容会稳定降级为结构化、清理后结构化或纯文本结果；仅在没有可用正文时执行一次恢复，并提供明确的失败提示。",
+    "en": "Improved Team AI review resilience: usable content now degrades predictably to structured, salvaged structured, or plain-text results; one recovery is attempted only when no usable body exists, with a clear final failure message.",
+    "ru": "Повышена устойчивость командного AI-разбора: пригодное содержимое теперь предсказуемо переводится в структурированный, очищенный структурированный или обычный текст; повторная генерация выполняется только при полном отсутствии пригодного текста, а окончательная ошибка показывается явно."
+  },
+  {
     "v": "2.12.76",
     "date": "2026-09-06",
     "tag": "fix",

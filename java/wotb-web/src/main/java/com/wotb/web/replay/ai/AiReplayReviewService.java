@@ -138,7 +138,7 @@ public class AiReplayReviewService {
         return base == null
                 ? new AnalyzeResponse(null, null, capabilityOf(facts), null)
                 : new AnalyzeResponse(base.analysis(), base.preBattleSection(), capabilityOf(facts),
-                        base.teamReview(), base.teamPlayers());
+                        base.teamReview(), base.teamPlayers(), base.resultMode(), base.plainText());
     }
 
     /**
@@ -290,7 +290,8 @@ public class AiReplayReviewService {
                         teamResult.preBattleSection(),
                         AnalyzeResponse.Capability.AVAILABLE,
                         teamResult.structuredResult(),
-                        teamResult.teamPlayers());
+                        teamResult.teamPlayers(),
+                        teamResult.resultMode(), teamResult.plainText());
             }
         };
     }
