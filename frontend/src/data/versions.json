@@ -3,9 +3,9 @@
     "v": "2.12.77",
     "date": "2026-09-08",
     "tag": "fix",
-    "zh": "修复团队 AI 复盘对结构化响应偏差过于敏感的问题：可展示内容会稳定降级为结构化、清理后结构化或纯文本结果；仅在没有可用正文时执行一次恢复，并提供明确的失败提示。",
-    "en": "Improved Team AI review resilience: usable content now degrades predictably to structured, salvaged structured, or plain-text results; one recovery is attempted only when no usable body exists, with a clear final failure message.",
-    "ru": "Повышена устойчивость командного AI-разбора: пригодное содержимое теперь предсказуемо переводится в структурированный, очищенный структурированный или обычный текст; повторная генерация выполняется только при полном отсутствии пригодного текста, а окончательная ошибка показывается явно."
+    "zh": "修复团队 AI 复盘的结构化响应稳定性：Team Call #2 只接受完整有效的 JSON；契约失败时基于同一战局上下文最多恢复一次，仍失败则明确提示结果不可用。",
+    "en": "Improved Team AI review contract resilience: Team Call #2 now accepts only complete valid JSON; a contract failure gets at most one fresh recovery from the same battle context, with a clear final error when both attempts fail.",
+    "ru": "Повышена устойчивость контракта командного AI-разбора: Team Call #2 принимает только полный корректный JSON; при нарушении контракта выполняется не более одной новой попытки по тому же контексту боя, после двух неудач показывается понятная ошибка."
   },
   {
     "v": "2.12.76",

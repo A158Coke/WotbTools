@@ -476,20 +476,13 @@ AI 复盘区分两种 scope，互不混用：
 - 测试不调用真实 AI API：`SpringAiChatGatewayTest`/`SpringAiChatGatewayMetricsTest` 使用 mock `ChatModel`。
 #### Historical: TeamAiReviewResult technical schema resilience
 
-Team Call #2 的生产链路保持 v0.5 wire schema，但 technical parser 现在返回
-`result + failures + normalizations + status`。每条 failure 具备稳定 `code`、JSON `path`、
-`FailureCategory` 与 constraint：这是旧版“core fatal + repairable 定向 repair”设计的历史记录，
-不会覆盖上方当前的 structured / salvaged / plain-text 契约。
+本节记录曾经评估过的 deterministic normalization / salvage / plain-text fallback 方案，
+不代表当前生产行为。当前 production chain 只接受完整有效的 `TeamAiReviewResult` JSON；
+contract 失败时最多执行一次 fresh recovery，两次均失败返回 `AI_REVIEW_SCHEMA_FAILED`。
 
-可确定修复的 optional reference（不存在的 episode、非 roster playerKey、非法 focus/contributor
-item）会被 deterministic normalize，保留 tactical text，并记录 `team_review_normalized`。
-repair prompt 只包含原始生成 JSON、精确 technical failures、权威 roster keys 与原 JSON 已存在的
-episode reference 约束，不携带完整战术输入。初始或 repair 后仍失败时使用独立错误码
-`AI_REVIEW_SCHEMA_FAILED`；它与 provider unavailable 和 `AI_REVIEW_GROUNDING_FAILED` 保持不同语义。
-
-低基数指标为 `wotb_ai_team_review_schema_failure_total{reason,path_class}` 与
-`wotb_ai_team_review_repair_total{result=triggered|started|success|failed}`；严禁记录
-prompt、completion、回放内容或用户/玩家标识。
+当前低基数指标为 `wotb_ai_team_review_schema_failure_total{reason,path_class}` 与
+`wotb_ai_team_review_repair_total{result=triggered|success|failed}`；严禁记录 prompt、
+completion、回放内容或用户/玩家标识。
 
 #### Historical: DeepSeek 官方 JSON Output（旧 Team Envelope，legacy）
 
