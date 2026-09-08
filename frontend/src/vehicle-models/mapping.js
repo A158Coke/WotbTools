@@ -1,22 +1,23 @@
 /**
  * Tier X 专属车型 — 集中静态 Tank ID → baseModelKey 映射。
  *
- * 权威来源：common/tankopedia-tier10.json（85 辆 → 82 个 baseModelKey）。
+ * 权威来源：common/tankopedia-tier10.json（85 辆 → 83 个 baseModelKey）。
  * 覆盖契约：Tier X 必须 100% 有 mapping；未来新增 Tier X 缺失 mapping → CI FAIL
  * （frontend/src/vehicle-models/coverage.test.js）。
  *
  * 分组规则（本阶段）：同一基础车型的不同 skin / 特殊版本 / 多 ID 复用同一模型；
- * 不扩展特殊版本专属模型。当前 3 组合并：
+ * 不扩展特殊版本专属模型。当前 2 组合并：
  * - sheridan:     Sheridan (20257) + Sheridan Missile (21793)
  * - kpz-70:       Kpz 70 (11281) + Kpz 70 Missile (30481)
- * - type-5-heavy: Type 5 Heavy (8033) + Type 5 H Zetsu (9057)
+ * - type-5-heavy: Type 5 Heavy (8033)
+ * - type-5-h-zetsu: Type 5 H Zetsu (9057)
  * 其余同名前缀（E 100 / Jg.Pz. E 100 等）为结构不同的独立车型，各自独立 modelKey。
  *
  * 本文件不存 display name（继续来自 Tankopedia/replay），不建立第二套
  * canonical tank database。kind（turreted/turretless）是 mapping 的事实声明，
  * 资产 metadata.json 必须与之一致（validator 校验）。
  *
- * kind 核验（2026-08-17 起，全 82 组）：基于官方 tankopedia 描述 / fandom wiki /
+ * kind 核验（2026-08-17 起，全 83 组）：基于官方 tankopedia 描述 / fandom wiki /
  * 车辆实际俯视结构核验，不采用 BlitzKit TURRET module 或 turretRotationSpeed
  * 字段（casemate 也有 turret module 且转速非零，不可判）。修正记录：
  * - minotauro: turretless → turreted（fandom：有炮塔，约 45° 限位）
@@ -53,7 +54,8 @@ export const MODEL_DEFINITIONS = Object.freeze({
   "is-7": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([7169]) }),
   "fv4202": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([7249]) }),
   "60tp-lewandowskiego": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([7297]) }),
-  "type-5-heavy": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([8033, 9057]) }),
+  "type-5-heavy": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([8033]) }),
+  "type-5-h-zetsu": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([9057]) }),
   "wz-111-5a": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([8497]) }),
   "amx-30-b": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([8513]) }),
   "fv215b-183": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([9297]) }),

@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Battle Playback
+- **Battle Playback Type 5 H Zetsu dedicated asset repair**：根据 8033 与 9057 的真实 BlitzKit bake 证据拆分 `type-5-heavy` 与 `type-5-h-zetsu`；两者模块、纹理和 turret raster 均不同，9057 不再复用旧 Type 5 Heavy 资产。
 - **Battle Playback Tier X 2D vehicle model fallback repair**：补齐 Zmije（tankId 23425）的 BlitzKit source-faithful turreted 模型、映射、战术 profile 与 inventory；runtime 为结构、图片和模块失败提供确定性 fallback reason，图片失败只做一次有界重试并保留成功/失败缓存与并发去重；Tier X coverage 现在贯通 mapping、metadata、source asset 与 production dist，避免缺目录静默漏检。
 - **Battle Playback HD basemap runtime sharpness**：2D fallback 使用与 overlay SVG、markers 共用 logical render frame 的 `.pb-basemap` `<img>`；2.5D 主路径的 WebGL canvas 现在按实际 layout-scaled CSS frame 配置 drawing buffer，并受 HD source 与 GPU renderbuffer 上限约束；同时修复碰撞 presentation offset 的 screen-pixel 单位回归。真实 Playback 的同地图/同位置/同缩放 A/B 对照显示 WebGL 与直接 HD raster 基本等价，剩余柔化归类为当前 4048×4048 source-detail ceiling；保留现有 mipmap 过滤策略，不修改 29 张原图或 HD 资源。
 - **Battle Playback strict tank marker collision**：密集车辆的可见 model box 现在会自适应扩张布局直到完全不重叠；被移开的 marker 通过 leader line 回指 canonical 位置，且不改变 hit/selection、伤害反馈或轨迹坐标。
