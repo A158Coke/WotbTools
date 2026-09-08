@@ -46,7 +46,7 @@ function isWebp(bytes) {
 }
 
 /**
- * kind 核验依据（2026-08-17，全 81 modelKey 逐组核验）。
+ * kind 核验依据（2026-08-17 起，全量 modelKey 逐组核验）。
  * 依据来源：官方 tankopedia 描述 / fandom wiki / 车辆实际俯视结构知识。
  * 注意：不采用 BlitzKit TURRET module 或 turretRotationSpeed 字段判定
  * （casemate 也有 turret module 且转速非零，不可判）。
@@ -74,6 +74,7 @@ const KIND_EVIDENCE = {
   'spht': '2026-08-19 BlitzKit 数据确认：GLB turret_01 + gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位 → 确认 turreted',
   'ac-teichos': '2026-08-19 BlitzKit 数据确认：GLB turret_01（631+1540 顶点）+ gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位 → 确认 turreted',
   'nc-70-blyskawica': '2026-08-19 BlitzKit 数据确认：GLB turret_01 为 1-triangle stub（casemate 主体在 hull_nc_01，属 hull 层；旋转层实际 = gun_01 + gun_01_mask）、models.pb turret 模块 yaw ±10°（limited-traverse，同 grille-15）→ 确认 turreted',
+  'zmije': '2026-09-08 BlitzKit 数据确认：GLB turret_01 + gun_01_mask + gun_01，tanks.pb 选定 turret=33409/gun=38785，models.pb turretOrigin 可解析 → 确认 turreted',
 }
 
 /** 尽力而为的 BlitzKit 页面 slug（非 ASCII 字母会被剥离，页面链接仅作辅助）。 */
@@ -116,13 +117,13 @@ function buildInventory() {
 
 function renderMarkdown(inv, groups) {
   const lines = []
-  lines.push('# Tier X Inventory（Tankopedia 权威，84 辆 → 81 baseModelKey）')
+  lines.push(`# Tier X Inventory（Tankopedia 权威，${tankopedia.vehicles.length} 辆 → ${groups.size} baseModelKey）`)
   lines.push('')
   lines.push('> 由 `node frontend/scripts/blitzkit-references.mjs --emit-docs` 从')
   lines.push('> `common/tankopedia-tier10.json` + `frontend/src/vehicle-models/mapping.js` 生成；')
   lines.push('> 覆盖完整性由 CI（coverage.test.js）强制。')
   lines.push('')
-  lines.push('## kind 核验（2026-08-17，全 81 modelKey 逐组核验）')
+  lines.push(`## kind 核验（2026-08-17 起，全 ${groups.size} modelKey 逐组核验）`)
   lines.push('')
   lines.push('> 依据：官方 tankopedia 描述 / fandom wiki / 车辆实际俯视结构知识；')
   lines.push('> 不采用 BlitzKit TURRET module 或 turretRotationSpeed 字段（casemate 也有 turret module 且转速非零，不可判）。')

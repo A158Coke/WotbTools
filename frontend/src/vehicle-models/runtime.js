@@ -13,8 +13,8 @@
  * 必须由调用方**动态 import**（BattlePlayback 在 preload 时 await import 本模块），
  * 保证主入口 bundle 不含车型资产标记（scripts/check-bundle-separation.mjs 门禁）。
  *
- * 失败语义：resolve 失败（缺 metadata / 未知 tankId）→ null（generic）；
- * preload 图片解码超时/失败 → 该 modelKey failed（generic fallback）。静默，console.error 记录。
+ * 失败语义：结构失败和图片失败都 fail closed（generic），但必须保留确定性的诊断原因；
+ * 图片错误/超时仅允许一次有界重试，结构失败不重试。
  */
 import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from './mapping.js'
 
@@ -25,6 +25,20 @@ const metadataMap = import.meta.glob('./assets/*/metadata.json', { import: 'defa
 
 /** 默认 preload 超时（3 秒）。 */
 export const PRELOAD_TIMEOUT_MS = 3000
+const TRANSIENT_IMAGE_ATTEMPTS = 2
+
+const FALLBACK_REASON = Object.freeze({
+  UNKNOWN_TANK_MAPPING: 'UNKNOWN_TANK_MAPPING',
+  MISSING_METADATA: 'MISSING_METADATA',
+  METADATA_MODEL_KEY_MISMATCH: 'METADATA_MODEL_KEY_MISMATCH',
+  INVALID_MODEL_KIND: 'INVALID_MODEL_KIND',
+  MISSING_HULL_ASSET: 'MISSING_HULL_ASSET',
+  MISSING_TURRET_ASSET: 'MISSING_TURRET_ASSET',
+  INVALID_TURRET_METADATA: 'INVALID_TURRET_METADATA',
+  IMAGE_LOAD_ERROR: 'IMAGE_LOAD_ERROR',
+  IMAGE_LOAD_TIMEOUT: 'IMAGE_LOAD_TIMEOUT',
+  MODULE_IMPORT_FAILURE: 'MODULE_IMPORT_FAILURE',
+})
 
 /**
  * 解析后的车型资产（dedicated runtime contract）。
@@ -49,17 +63,30 @@ export function modelKeyForTank(tankId) {
   return TANK_ID_TO_MODEL[String(tankId)] ?? null
 }
 
-/** modelKey → 正式资产；缺失/结构非法 → null（fallback generic）。 */
-export function resolveModel(modelKey) {
-  if (!modelKey) return null
+function invalidTurretMetadata(meta) {
+  const p = meta?.turretPivot
+  const r = meta?.turretRaster
+  return !p || !Number.isFinite(p.x) || !Number.isFinite(p.y)
+    || !r || !Number.isFinite(r.pixelWidth) || !Number.isFinite(r.pixelHeight)
+    || !Number.isFinite(r.pivotX) || !Number.isFinite(r.pivotY)
+}
+
+/** modelKey → 正式资产 + 明确失败原因；不导出，避免重复构造第二份 contract。 */
+function resolveModelResult(modelKey) {
+  if (!modelKey) return { ok: false, reason: FALLBACK_REASON.UNKNOWN_TANK_MAPPING }
   const def = MODEL_DEFINITIONS[modelKey]
-  if (!def) return null
+  if (!def) return { ok: false, reason: FALLBACK_REASON.UNKNOWN_TANK_MAPPING }
   const meta = metadataMap[`./assets/${modelKey}/metadata.json`]
-  if (!meta || meta.modelKey !== modelKey) return null
+  if (!meta) return { ok: false, reason: FALLBACK_REASON.MISSING_METADATA }
+  if (meta.modelKey !== modelKey) {
+    return { ok: false, reason: FALLBACK_REASON.METADATA_MODEL_KEY_MISMATCH }
+  }
   const hullSrc = hullUrls[`./assets/${modelKey}/hull.webp`]
-  if (!hullSrc) return null
+  if (!hullSrc) return { ok: false, reason: FALLBACK_REASON.MISSING_HULL_ASSET }
   const kind = meta.kind
-  if (kind !== 'turreted' && kind !== 'turretless') return null
+  if (kind !== 'turreted' && kind !== 'turretless') {
+    return { ok: false, reason: FALLBACK_REASON.INVALID_MODEL_KIND }
+  }
   const rawHullBounds = meta.generation?.hullBounds
   const hullBounds = rawHullBounds
     && Array.isArray(rawHullBounds.min) && Array.isArray(rawHullBounds.max)
@@ -75,11 +102,14 @@ export function resolveModel(modelKey) {
     })
     : null
   if (kind === 'turretless') {
-    return new VehicleModel({ modelKey, kind, hullSrc, turretSrc: null, turretPivot: null, turretRaster: null, hullBounds })
+    return { ok: true, model: new VehicleModel({ modelKey, kind, hullSrc, turretSrc: null, turretPivot: null, turretRaster: null, hullBounds }) }
   }
   const turretSrc = turretUrls[`./assets/${modelKey}/turret.webp`]
-  if (!turretSrc || !meta.turretPivot || !meta.turretRaster) return null
-  return new VehicleModel({
+  if (!turretSrc) return { ok: false, reason: FALLBACK_REASON.MISSING_TURRET_ASSET }
+  if (invalidTurretMetadata(meta)) {
+    return { ok: false, reason: FALLBACK_REASON.INVALID_TURRET_METADATA }
+  }
+  return { ok: true, model: new VehicleModel({
     modelKey,
     kind,
     hullSrc,
@@ -87,7 +117,13 @@ export function resolveModel(modelKey) {
     turretPivot: meta.turretPivot,
     turretRaster: meta.turretRaster,
     hullBounds,
-  })
+  }) }
+}
+
+/** modelKey → 正式资产；缺失/结构非法 → null（fallback generic）。 */
+export function resolveModel(modelKey) {
+  const result = resolveModelResult(modelKey)
+  return result.ok ? result.model : null
 }
 
 /** 单图预加载：onload/onerror 或超时（不抛错——超时按失败处理）。 */
@@ -95,18 +131,18 @@ function loadImage(url, timeoutMs) {
   return new Promise((resolve) => {
     let settled = false
     let timer = null
-    const finish = (ok) => {
+    const finish = (result) => {
       if (settled) return
       settled = true
       if (timer) clearTimeout(timer)
       img.onload = null
       img.onerror = null
-      resolve(ok)
+      resolve(result)
     }
     const img = new Image()
-    timer = setTimeout(() => finish(false), timeoutMs)
-    img.onload = () => finish(true)
-    img.onerror = () => finish(false)
+    timer = setTimeout(() => finish({ ok: false, reason: FALLBACK_REASON.IMAGE_LOAD_TIMEOUT }), timeoutMs)
+    img.onload = () => finish({ ok: true })
+    img.onerror = () => finish({ ok: false, reason: FALLBACK_REASON.IMAGE_LOAD_ERROR })
     img.src = url
   })
 }
@@ -120,38 +156,60 @@ function loadImage(url, timeoutMs) {
  * - Promise           in-flight（并发去重：同一 modelKey 的并发请求共享同一个 Promise，
  *                     实际只加载一次；两个 BattlePlayback 实例/快速切换不会重复 preload）；
  * - { ok: true, model } 已成功——后续 battle 直接复用，不再调用 imageLoader；
- * - { ok: false }     已失败（resolve 失败 / 图片加载或超时失败）——页面生命周期内
- *                     不再重试：失败原因通常稳定（缺资产/网络），避免切换 replay 时
- *                     反复等待 3s timeout；单车 generic fallback 语义不变。
+ * - { ok: false, reason } 已失败——结构性失败不重试；图片错误/超时只在首次请求内
+ *                     进行一次 bounded retry，最终结果仍按 modelKey 负缓存。
  */
 const preloadCache = new Map()
 
 /**
  * 单个 modelKey 的 preload（带 cache + in-flight 去重）。
- * 返回 { ok: true, model } | { ok: false }。
+ * 返回 { ok: true, model } | { ok: false, reason }。
  */
 async function preloadModel(modelKey, { timeoutMs, imageLoader }) {
   const existing = preloadCache.get(modelKey)
   if (existing) return existing // in-flight Promise 或已固化结果（await 非 thenable 直接返回）
   const task = (async () => {
     try {
-      const model = resolveModel(modelKey)
-      if (!model) {
-        console.error(`[vehicle-models] resolve 失败 modelKey=${modelKey} → generic fallback`)
-        return { ok: false }
+      const resolved = resolveModelResult(modelKey)
+      if (!resolved.ok) {
+        console.error(`[vehicle-models] fallback reason=${resolved.reason} modelKey=${modelKey}`)
+        return resolved
       }
+      const model = resolved.model
       const urls = [model.hullSrc]
       if (model.turretSrc) urls.push(model.turretSrc)
-      const loaded = await Promise.all(urls.map((u) => imageLoader(u, timeoutMs))).then((r) => r.every(Boolean))
-      if (!loaded) {
-        console.error(`[vehicle-models] preload 超时/失败 modelKey=${modelKey} → generic fallback`)
-        return { ok: false }
+      const loaded = await Promise.all(urls.map(async (url) => {
+        let last = { ok: false, reason: FALLBACK_REASON.IMAGE_LOAD_ERROR }
+        for (let attempt = 0; attempt < TRANSIENT_IMAGE_ATTEMPTS; attempt += 1) {
+          try {
+            const value = await imageLoader(url, timeoutMs)
+            if (value === true || (value && typeof value === 'object' && value.ok === true)) {
+              last = { ok: true }
+            } else {
+              last = {
+                ok: false,
+                reason: value?.reason === FALLBACK_REASON.IMAGE_LOAD_TIMEOUT
+                  ? FALLBACK_REASON.IMAGE_LOAD_TIMEOUT
+                  : FALLBACK_REASON.IMAGE_LOAD_ERROR,
+              }
+            }
+            if (last?.ok) return last
+          } catch {
+            last = { ok: false, reason: FALLBACK_REASON.IMAGE_LOAD_ERROR }
+          }
+        }
+        return last
+      }))
+      const failedLoad = loaded.find((item) => !item?.ok)
+      if (failedLoad) {
+        console.error(`[vehicle-models] fallback reason=${failedLoad.reason} modelKey=${modelKey}`)
+        return { ok: false, reason: failedLoad.reason || FALLBACK_REASON.IMAGE_LOAD_ERROR }
       }
       return { ok: true, model }
-    } catch (e) {
-      // imageLoader 异常也按失败缓存——cache 永不留 rejected promise（避免悬挂/未处理 rejection）
-      console.error(`[vehicle-models] preload 异常 modelKey=${modelKey} → generic fallback`, e)
-      return { ok: false }
+    } catch {
+      // 兜底保证 cache 永不留 rejected promise（避免悬挂/未处理 rejection）。
+      console.error(`[vehicle-models] fallback reason=${FALLBACK_REASON.IMAGE_LOAD_ERROR} modelKey=${modelKey}`)
+      return { ok: false, reason: FALLBACK_REASON.IMAGE_LOAD_ERROR }
     }
   })()
   preloadCache.set(modelKey, task) // 先存 in-flight，去重并发
@@ -167,19 +225,22 @@ async function preloadModel(modelKey, { timeoutMs, imageLoader }) {
  * - 并发请求同一 modelKey 共享 in-flight Promise（实际只加载一次）；
  * - 单个 modelKey 失败 → failed（该车型 fallback generic，不整场 fallback）；
  * - 返回 { resolved: Map<modelKey, VehicleModel>, failed: Set<modelKey>,
- *   byTank: Map<tankId, modelKey|null> }（byTank 供渲染侧直接查单车决策）。
+ *   failureReasons: Map<tankId|modelKey, string>, byTank: Map<tankId, modelKey|null> }
+ *   （byTank 供渲染侧直接查单车决策）。
  * @param {number[]|string[]} tankIds
- * @param {{timeoutMs?:number, imageLoader?:(url:string, timeoutMs:number)=>Promise<boolean>}} [opts] 测试注入
+ * @param {{timeoutMs?:number, imageLoader?:(url:string, timeoutMs:number)=>Promise<boolean|{ok:boolean,reason?:string}>}} [opts] 测试注入
  */
 export async function preloadBattleModels(tankIds, opts = {}) {
   const timeoutMs = opts.timeoutMs ?? PRELOAD_TIMEOUT_MS
   const imageLoader = opts.imageLoader ?? loadImage
   const modelKeys = new Set()
   const byTank = new Map()
+  const failureReasons = new Map()
   for (const id of tankIds || []) {
     const key = modelKeyForTank(id)
     byTank.set(String(id), key)
     if (key) modelKeys.add(key)
+    else failureReasons.set(String(id), FALLBACK_REASON.UNKNOWN_TANK_MAPPING)
   }
   const resolved = new Map()
   const failed = new Set()
@@ -187,8 +248,11 @@ export async function preloadBattleModels(tankIds, opts = {}) {
     [...modelKeys].map(async (modelKey) => {
       const result = await preloadModel(modelKey, { timeoutMs, imageLoader })
       if (result.ok) resolved.set(modelKey, result.model)
-      else failed.add(modelKey)
+      else {
+        failed.add(modelKey)
+        failureReasons.set(modelKey, result.reason || FALLBACK_REASON.IMAGE_LOAD_ERROR)
+      }
     }),
   )
-  return { resolved, failed, byTank }
+  return { resolved, failed, failureReasons, byTank }
 }

@@ -88,6 +88,10 @@ export default defineConfig(({ command, mode }) => {
     publicDir: '../common/assets',
     build: {
       outDir: 'dist',
+      // 让 CI 将 mapping 期望的 source asset 与实际 emitted dist 文件逐项对照。
+      manifest: true,
+      // 车型 WebP 必须保持独立生产文件，避免小型 turret 被内联后绕过 HTTP/dist 门禁。
+      assetsInlineLimit: 0,
       rollupOptions: {
         input: {
           main: resolve(configDirectory, 'index.html')

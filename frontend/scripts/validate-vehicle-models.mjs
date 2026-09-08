@@ -28,6 +28,7 @@ function main() {
     tankopedia,
     tankIdToModel: TANK_ID_TO_MODEL,
     modelDefinitions: MODEL_DEFINITIONS,
+    assetKeys: new Set(listModelKeys()),
   })
   console.log('== Tier X coverage ==')
   console.log(`  tanks=${stats.tankCount} mapped=${stats.mappedCount} modelKeys=${stats.modelKeyCount}`)
@@ -37,7 +38,10 @@ function main() {
   }
   if (covErrors.length === 0) console.log('  PASS')
 
-  const modelKeys = listModelKeys()
+  const modelKeys = [...new Set([
+    ...Object.values(TANK_ID_TO_MODEL),
+    ...listModelKeys(),
+  ])]
   console.log('== assets/ 目录 ==')
   if (modelKeys.length === 0) {
     console.log('  （无资产目录；正式 SVG 由 ChatGPT 生成后放回）')

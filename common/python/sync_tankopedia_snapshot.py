@@ -139,7 +139,7 @@ def main(argv=None):
             new_data[str(vehicle["id"])] = vehicle
         ut.write_json(os.path.join(args.output_dir, ut.TIER_FILES[tier]), {
             "meta": {
-                "source": "blitzkit stable definitions",
+                "source": "blitzkit production definitions",
                 "source_game_version": game_version,
                 "source_hashes": hashes,
                 "tier": tier,
