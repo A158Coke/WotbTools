@@ -445,12 +445,11 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 
 #### parser 失败分类（低基数枚举）
 
-`EMPTY_OUTPUT` · `INVALID_JSON` · `NO_USABLE_CONTENT` · `MISSING_PRIMARY_DIAGNOSIS` · `MISSING_REVIEW_MARKDOWN` · `INVALID_CLAIMS` ·
-`UNKNOWN_CLAIM_TYPE` · `INVALID_MACHINE_FIELD_TYPE` · `MISSING_REQUIRED_MACHINE_FIELD` · `TOO_MANY_CLAIMS` · `TOO_MANY_EVIDENCE_IDS`
+`EMPTY_OUTPUT` · `INVALID_JSON` · `OUTPUT_TOO_LARGE` · `MISSING_REQUIRED_FIELD` · `INVALID_FIELD` ·
+`CARDINALITY_EXCEEDED` · `INVALID_REFERENCE`
 
-TeamAiReviewResult v0.5 parser 另外使用 `MISSING_REQUIRED_FIELD`、`INVALID_FIELD`、`CARDINALITY_EXCEEDED`
-和 `INVALID_REFERENCE`，每条 failure 带稳定 `path` 与 `FailureCategory`；Prometheus 仅使用 `reason` /
-`path_class` 枚举，不写入用户或玩家标识。
+每条 failure 带稳定 `path` 与 `FailureCategory`；Prometheus 仅使用 `reason` / `path_class` 枚举，
+不写入用户或玩家标识。解析器不再把 normalization/salvage 结果作为生产成功模式。
 
 #### validator conflict reasonCode（机器分类）
 
@@ -563,9 +562,8 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_review_queue_depth` — 当前等待执行的 AI Review worker 数（Gauge；不含正在执行与已拒绝请求）
   - `wotb_ai_team_review_validation_attempt_total{result=pass|parser_invalid|validation_failed|metadata_only_pass}` — Team Call #2 validation attempt 分类；`parser_invalid` 与 `validation_failed` 表示 rework/失败尝试
   - `wotb_ai_team_review_validation_retry_total{stage=TEAM_CALL_2,rewrite=TARGETED|FULL|SAFE}` — validation retry 的低基数阶段与改写类型分布
-  - `wotb_ai_team_review_normalization_total{type}` — parser 确定性清理、默认化、截断或丢弃次数
   - `wotb_ai_team_review_schema_failure_total{failurePath}` — Team Call #2 JSON/schema contract 失败；不记录 prompt/output
-  - `wotb_ai_team_review_repair_total{result=triggered|started|success|failed}` — recovery 生命周期；不记录 prompt/output
+  - `wotb_ai_team_review_repair_total{result=triggered|success|failed}` — recovery 生命周期；不记录 prompt/output
 - **AI upstream**（自定义，`SpringAiChatGateway.chat`，每次上游调用）：
   - `wotb_ai_upstream_requests_total{mode}` — 上游请求量（每个 attempt +1，含 retry 重试；token budget 拒绝不进入 gateway，不计）
   - `wotb_ai_upstream_success_total{mode}` — 成功调用数（一次逻辑调用 +1）
