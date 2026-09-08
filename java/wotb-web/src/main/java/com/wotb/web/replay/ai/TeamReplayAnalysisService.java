@@ -600,6 +600,10 @@ public class TeamReplayAnalysisService {
                     "primaryParseStatus", parsed.status(),
                     "rawResponseLength", response.completionText().length(),
                     "repairAttempted", true));
+            logTeamReviewCompleted(correlationId, 2,
+                    primaryAttempt.inputTokens() + response.inputTokens(),
+                    primaryAttempt.outputTokens() + response.outputTokens(),
+                    "RECOVERY_PLAIN_TEXT", reviewStartNanos);
             return new TeamReviewPresentation(null,
                     AnalyzeResponse.AiReviewResultMode.PLAIN_TEXT,
                     response.completionText().trim());
