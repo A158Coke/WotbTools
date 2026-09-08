@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
 
       - name: Sync and validate Tankopedia from one BlitzKit snapshot
@@ -65,6 +65,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: automation/update-tankopedia
+          SOURCE_REF: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           if git diff --quiet -- common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json; then
@@ -74,10 +75,19 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -C "$BRANCH"
+
+          if [[ "$SOURCE_REF" != "$BRANCH" ]]; then
+            git switch -C "$BRANCH"
+          fi
+
           git add common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json
           git commit -m "chore(data): sync BlitzKit Tankopedia"
-          git push --force-with-lease origin "HEAD:$BRANCH"
+
+          if [[ "$SOURCE_REF" == "$BRANCH" ]]; then
+            git push origin "HEAD:$BRANCH"
+          else
+            git push --force-with-lease origin "HEAD:$BRANCH"
+          fi
 
           pr_number="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
           if [[ -z "$pr_number" ]]; then
