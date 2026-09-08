@@ -1851,5 +1851,26 @@
     "sustainedDpm": "HIGH",
     "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
+  },
+  "Zmije": {
+    "tier": 10,
+    "vehicleClass": "TANK_DESTROYER",
+    "roles": [
+      "armored_td",
+      "flexible_support"
+    ],
+    "strengths": [
+      "alpha",
+      "mobility"
+    ],
+    "weaknesses": [
+      "turret_weakspot",
+      "poor_gun_depression"
+    ],
+    "mobility": "HIGH",
+    "burstPotential": "HIGH",
+    "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "MEDIUM",
+    "armorReliability": "MEDIUM"
   }
 }
