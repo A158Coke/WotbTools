@@ -180,4 +180,13 @@ class TeamAiReviewResultParserTest {
         assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION, result.status());
         assertTrue(result.result().reviewFocus().isEmpty());
     }
+
+    @Test
+    void rejectsTruncatedJsonWithReadableTacticalTextAsPlainText() {
+        final String truncated = "{\"summary\":{\"verdict\":\"本局开局过度分散，中期应该保持集火并尽快转场";
+
+        assertFalse(TeamAiReviewResultParser.isUsableDisplayText(truncated));
+        assertFalse(TeamAiReviewResultParser.isUsableDisplayText(
+                "\"summary\":{\"verdict\":\"本局开局过度分散，中期应该保持集火并尽快转场"));
+    }
 }

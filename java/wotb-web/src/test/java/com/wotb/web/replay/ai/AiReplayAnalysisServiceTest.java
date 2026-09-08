@@ -578,6 +578,57 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
+    void truncatedJsonWithReadableStringsTriggersOnlyOneRecovery() {
+        gateway.teamCompletionSequence.add(
+                "{\"summary\":{\"verdict\":\"本局开局过度分散，中期应该保持集火并尽快转场");
+        gateway.teamCompletionSequence.add(structuredResult());
+        final var service = startService();
+
+        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
+                teamResultWithRecon("truncated-json.wotbreplay", "truncated-json-arena", "Ally",
+                        1001L, 1))));
+
+        assertEquals(AnalyzeResponse.AiReviewResultMode.STRUCTURED, result.resultMode());
+        assertEquals(2, allTeamReviewRequests().size());
+        assertEquals("SINGLE_TEAM_BATTLE_RECOVERY", allTeamReviewRequests().getLast().analysisMode());
+    }
+
+    @Test
+    void longReadablePlainTextIsBoundedWithoutRecovery() {
+        final String longPlainText = "## 团队复盘\n"
+                + "本局应保持集火并及时转场。".repeat(7_000);
+        assertTrue(longPlainText.length() > 64_000);
+        gateway.teamCompletionSequence.add(longPlainText);
+        final var service = startService();
+
+        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
+                teamResultWithRecon("long-plain.wotbreplay", "long-plain-arena", "Ally", 1001L, 1))));
+
+        assertEquals(AnalyzeResponse.AiReviewResultMode.PLAIN_TEXT, result.resultMode());
+        assertEquals(1, allTeamReviewRequests().size());
+        assertTrue(result.plainText().length() <= 64_000);
+        assertTrue(result.plainText().startsWith("## 团队复盘"));
+        assertTrue(teamReviewEvents("ai_review_recovery_triggered").isEmpty());
+    }
+
+    @Test
+    void largeStructuredJsonWithinProviderBoundStillSalvagesWithoutRecovery() {
+        final String largeStructured = structuredResult().replace(
+                "\"highContributors\":[]",
+                "\"highContributors\":[],\"padding\":\"" + "x".repeat(65_000) + "\"");
+        gateway.teamCompletionSequence.add(largeStructured);
+        final var service = startService();
+
+        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
+                teamResultWithRecon("large-structured.wotbreplay", "large-structured-arena", "Ally",
+                        1001L, 1))));
+
+        assertEquals(AnalyzeResponse.AiReviewResultMode.SALVAGED, result.resultMode());
+        assertEquals(1, allTeamReviewRequests().size());
+        assertTrue(teamReviewEvents("ai_review_recovery_triggered").isEmpty());
+    }
+
+    @Test
     void recoveryLogsPrimaryCompletionLengthAndCumulativeTokens() {
         final String primaryCompletion = "{}";
         gateway.teamResponseSequence.add(new AiChatResponse(primaryCompletion, "DeepSeek", "test-model",

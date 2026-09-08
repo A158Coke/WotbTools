@@ -542,7 +542,7 @@ public class TeamReplayAnalysisService {
                     "repairAttempted", false));
             return new TeamReviewPresentation(null,
                     AnalyzeResponse.AiReviewResultMode.PLAIN_TEXT,
-                    initialResponse.completionText().trim());
+                    TeamAiReviewResultParser.boundedDisplayText(initialResponse.completionText()));
         }
 
         return recoverTeamReview(baseUser, language, startNanos,
@@ -606,7 +606,7 @@ public class TeamReplayAnalysisService {
                     "RECOVERY_PLAIN_TEXT", reviewStartNanos);
             return new TeamReviewPresentation(null,
                     AnalyzeResponse.AiReviewResultMode.PLAIN_TEXT,
-                    response.completionText().trim());
+                    TeamAiReviewResultParser.boundedDisplayText(response.completionText()));
         }
         logRecoveryFailed(correlationId, "NO_USABLE_CONTENT");
         countRepair("failed");
