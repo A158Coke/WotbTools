@@ -1,17 +1,17 @@
 {
   "meta": {
-    "source": "blitzkit stable definitions",
-    "source_game_version": "11.19.0.834_7320229",
+    "source": "blitzkit production definitions",
+    "source_game_version": "11.20.0.887_7344903",
     "source_hashes": {
-      "game": "2083fba42b10442992b6df61e224c0639253a76fc6a2809f1e0369c42b36715b",
-      "tanks": "eb98f7f5d9e1480f8dc7a679a0a87ddc0758fc099478afd1a32c3762b8bdcffc",
-      "consumables": "eac34192df85a316384240325b4c86586955a9247fd3a2b5cd301c1fa9e9de59",
-      "provisions": "cfcbebb7a1610f3a5f93c1fdaa0fc35b46bc5097ddc26f0a522e542813409f41",
-      "equipment": "036f2c0c7bb97a5f8678f04a5ed9d6809f02e4563ea952f109305f208560cd9c"
+      "game": "a582d25841b85450cd65be23677d6319fc3c966cf1c1c3c52b035fe441481471",
+      "tanks": "334003ee11c0eeea563f490b12b912f4ef38572170ed24f55baf9715697e6427",
+      "consumables": "74f816ab2eb9ac420f7034cb0735ac5cf2913126d34acf2a22e26196f616f7c1",
+      "provisions": "34b575b05651762f2ffa1965bea7794fa65d499228ecb1a3d276692024183d61",
+      "equipment": "bc09afd2a2f50500bc2e620fd5d057eaf1f89d2ecaa499926f5790ea2ba35546"
     },
     "tier": 10,
-    "generated_at": "2026-09-08T13:05:15.222335+00:00",
-    "count": 84
+    "generated_at": "2026-09-08T13:11:18.285575+00:00",
+    "count": 85
   },
   "vehicles": [
     {
@@ -1740,8 +1740,8 @@
       "forwardSpeed": 30,
       "reverseSpeed": 12,
       "turretRotationSpeed": 16.0,
-      "hullRotationSpeed": 23.0,
-      "powerToWeightRatio": 20.0,
+      "hullRotationSpeed": 19.0,
+      "powerToWeightRatio": 18.1,
       "guns": [
         {
           "gunId": 13921,
@@ -1761,7 +1761,7 @@
             {
               "type": "he",
               "damage": 660,
-              "penetration": 62
+              "penetration": 77
             }
           ]
         }
@@ -5703,6 +5703,83 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT",
         "TUNGSTEN_SHELLS"
+      ],
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
+    },
+    {
+      "name": "Zmije",
+      "id": 23425,
+      "tier": 10,
+      "class": "Tank destroyer",
+      "nation": "European",
+      "hp": 1775,
+      "forwardSpeed": 52,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 36.0,
+      "powerToWeightRatio": 43.0,
+      "guns": [
+        {
+          "gunId": 38785,
+          "isDefault": true,
+          "alphaDamage": 480,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 480,
+              "penetration": 297
+            },
+            {
+              "type": "heat",
+              "damage": 410,
+              "penetration": 367
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 75
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 480,
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "IMPROVED_ENGINE_POWER_BOOST",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
       ],
       "allowedEquipment": [
         "CALIBRATED_SHELLS",
