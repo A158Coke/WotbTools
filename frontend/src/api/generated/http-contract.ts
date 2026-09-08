@@ -384,8 +384,8 @@ export interface components {
             correlationId: string;
         };
         TeamAiReviewSummary: {
-            verdict: string | null;
-            primaryDiagnosis: string | null;
+            verdict: string;
+            primaryDiagnosis: string;
         };
         TeamAiReviewEpisode: {
             id: string;

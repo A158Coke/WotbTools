@@ -393,8 +393,8 @@ components:
       additionalProperties: false
       required: [verdict, primaryDiagnosis]
       properties:
-        verdict: { type: [string, 'null'], maxLength: 4000 }
-        primaryDiagnosis: { type: [string, 'null'], maxLength: 4000 }
+        verdict: { type: string, minLength: 1, maxLength: 4000 }
+        primaryDiagnosis: { type: string, minLength: 1, maxLength: 4000 }
     TeamAiReviewEpisode:
       type: object
       additionalProperties: false
