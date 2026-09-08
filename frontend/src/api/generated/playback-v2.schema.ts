@@ -645,17 +645,13 @@ export default {
       ],
       "properties": {
         "verdict": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
+          "minLength": 1,
           "maxLength": 4000
         },
         "primaryDiagnosis": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
+          "minLength": 1,
           "maxLength": 4000
         }
       }
