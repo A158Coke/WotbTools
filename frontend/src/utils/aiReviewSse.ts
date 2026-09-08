@@ -44,6 +44,10 @@ function isBoundedNonEmptyString(value: unknown, maxLength: number): value is st
   return isNonEmptyString(value) && value.length <= maxLength
 }
 
+function isNullableBoundedString(value: unknown, maxLength: number): value is string | null {
+  return value === null || isBoundedNonEmptyString(value, maxLength)
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.length <= 8
     && value.every(item => isBoundedNonEmptyString(item, 64))
@@ -69,8 +73,8 @@ function isNullableNonnegativeInteger(value: unknown): value is number | null {
 
 function isTeamReviewResult(value: unknown): value is TeamAiReviewResult {
   if (!isRecord(value) || !isRecord(value.summary)
-    || !isBoundedNonEmptyString(value.summary.verdict, 4000)
-    || !isBoundedNonEmptyString(value.summary.primaryDiagnosis, 4000)) return false
+    || !isNullableBoundedString(value.summary.verdict, 4000)
+    || !isNullableBoundedString(value.summary.primaryDiagnosis, 4000)) return false
   if (!Array.isArray(value.episodes) || value.episodes.length > 6
     || !Array.isArray(value.trainingSuggestions)
     || !Array.isArray(value.reviewFocus) || value.reviewFocus.length > 2

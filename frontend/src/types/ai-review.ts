@@ -16,9 +16,9 @@ export interface AiReviewResult {
   preBattleSection?: string | null
   /** The current SSE writer may omit capability; the AnalyzeResponse still owns its contract. */
   capability?: AiReviewCapability
-  /** Structured Team Review v0.5; mutually exclusive with the text-only production path. */
+  /** Structured Team Review v0.5. */
   teamReview?: TeamAiReviewResult
-  /** Authoritative playerKey → nickname/tank display mapping; absent only for safe fallback compatibility. */
+  /** Authoritative playerKey → nickname/tank display mapping. */
   teamPlayers?: TeamAiPlayerIdentity[]
 }
 
