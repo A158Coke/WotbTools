@@ -44,8 +44,8 @@
     }
 
 设计约定：
-- 数据源为 blitzkit（tanks.pb + consumables.pb + provisions.pb + equipment.pb，游戏客户端直出，
-  含最新车辆如 11.19 的 SPHT / AC Atlas；WG 百科滞后游戏版本，故不依赖 WG API）。
+- 数据源为 blitzkit production definitions（tanks.pb + consumables.pb + provisions.pb + equipment.pb，
+  游戏客户端直出并随 production 数据更新；WG 百科可能滞后游戏版本，故不依赖 WG API）。
 - 每辆车一条记录，guns 数组含顶配炮塔上的全部炮；isDefault 标记权威默认炮：
   - 7-9 级：顶配炮 = 最高 tier，同 tier 取最高 alpha（已用 origin/main 全量 454/457 验证；
     T-34-2 取 122mm 400，不能用数组顺序猜）。
@@ -68,10 +68,12 @@ import sys
 import urllib.request
 from datetime import datetime, timezone
 
-PB_URL = "https://assets.blitzkit.app/definitions/tanks.pb"
-CONSUMABLES_URL = "https://assets.blitzkit.app/definitions/consumables.pb"
-PROVISIONS_URL = "https://assets.blitzkit.app/definitions/provisions.pb"
-EQUIPMENT_URL = "https://assets.blitzkit.app/definitions/equipment.pb"
+from blitzkit_snapshot import BLITZKIT_API_BASE
+
+PB_URL = f"{BLITZKIT_API_BASE}/definitions/tanks.pb"
+CONSUMABLES_URL = f"{BLITZKIT_API_BASE}/definitions/consumables.pb"
+PROVISIONS_URL = f"{BLITZKIT_API_BASE}/definitions/provisions.pb"
+EQUIPMENT_URL = f"{BLITZKIT_API_BASE}/definitions/equipment.pb"
 
 REPO_COMMON_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -835,7 +837,7 @@ def main(argv=None):
             new_data[str(vehicle["id"])] = vehicle
         write_json(os.path.join(args.output_dir, TIER_FILES[tier]), {
             "meta": {
-                "source": "blitzkit (assets.blitzkit.app/definitions/tanks.pb)",
+                "source": "blitzkit production definitions",
                 "tier": tier,
                 "generated_at": generated_at,
                 "count": len(tier_vehicles),

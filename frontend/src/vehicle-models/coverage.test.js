@@ -4,7 +4,7 @@
  * 强制契约：
  * - Tankopedia 中所有 Tier X 必须 100% 有 baseModelKey mapping；
  * - mapping 不得指向不存在的 modelKey、不得含 Tankopedia 之外的 tankId；
- * - assets/ 下每个已就位目录（含 metadata.json）必须资产完整（hull + turret 按 kind）；
+ * - mapping 期望的每个 modelKey 都必须有完整 source asset（hull + turret 按 kind）；
  * - 未来新增 Tier X → 缺失 mapping → CI FAIL（禁止 silent fallback）。
  */
 import { describe, expect, it } from 'vitest'
@@ -29,10 +29,31 @@ describe('Tier X coverage（common/tankopedia-tier10.json vs mapping）', () => 
       tankopedia,
       tankIdToModel: TANK_ID_TO_MODEL,
       modelDefinitions: MODEL_DEFINITIONS,
+      assetKeys: new Set(listModelKeys()),
     })
     expect(errors).toEqual([])
     expect(stats.tankCount).toBe(stats.mappedCount)
     expect(stats.mappedCount).toBe(tankopedia.vehicles.length)
+  })
+
+  it('mapping 指向缺失 source asset 目录时必须 FAIL（不能只遍历现有目录）', () => {
+    const { errors } = validateCoverage({
+      tankopedia: { vehicles: [{ id: 1, name: 'Synthetic Tier X' }] },
+      tankIdToModel: { '1': 'missing-model' },
+      modelDefinitions: { 'missing-model': { kind: 'turretless', tankIds: [1] } },
+      assetKeys: new Set(),
+    })
+    expect(errors).toContain('mapping modelKey missing-model（tankId=1）缺少 source asset 目录')
+  })
+
+  it('Type 5 Heavy 与 Type 5 H Zetsu 必须使用不同的 dedicated source asset', () => {
+    expect(TANK_ID_TO_MODEL['8033']).toBe('type-5-heavy')
+    expect(TANK_ID_TO_MODEL['9057']).toBe('type-5-h-zetsu')
+    const oldMeta = JSON.parse(readModelDir('type-5-heavy').metadata)
+    const zetsuMeta = JSON.parse(readModelDir('type-5-h-zetsu').metadata)
+    expect(oldMeta.source.tankId).toBe(8033)
+    expect(zetsuMeta.source.tankId).toBe(9057)
+    expect(oldMeta.modelKey).not.toBe(zetsuMeta.modelKey)
   })
 
   it('mapping 的 kind 声明与 class 常识不冲突（Tank destroyer 分组覆盖检查）', () => {
@@ -51,9 +72,9 @@ describe('Tier X coverage（common/tankopedia-tier10.json vs mapping）', () => 
   })
 })
 
-describe('assets/ 目录完整性（当前仅 sample 契约样例）', () => {
-  it('每个已就位目录通过 validateModelEntry（含 metadata.json 契约）', () => {
-    const modelKeys = listModelKeys()
+describe('assets/ 目录完整性（映射期望集合 + sample 契约）', () => {
+  it('每个映射 modelKey 通过 validateModelEntry（含 metadata.json 契约）', () => {
+    const modelKeys = [...new Set(Object.values(TANK_ID_TO_MODEL))]
     expect(modelKeys.length).toBeGreaterThan(0)
     for (const modelKey of modelKeys) {
       const def = MODEL_DEFINITIONS[modelKey]
@@ -68,7 +89,7 @@ describe('assets/ 目录完整性（当前仅 sample 契约样例）', () => {
     }
   })
 
-  it('已就位目录（有 metadata.json）不得缺 hull/turret webp（半成品 FAIL）', () => {
+  it('额外已就位目录（有 metadata.json）不得缺 hull/turret webp（半成品 FAIL）', () => {
     for (const modelKey of listModelKeys()) {
       const files = readModelDir(modelKey)
       if (!files.metadata) continue

@@ -141,17 +141,17 @@ const friendlyTeam = computed(() => pbOverview.value.friendlyTeam)
 // runtime.js 含全部车型资产引用（import.meta.glob），必须动态 import 保持主 bundle 分离
 // （scripts/check-bundle-separation.mjs 门禁：主入口不得含 'vehicle-models/assets'）。
 // preload 完成前不渲染车辆（asset decision 先于渲染，禁止 generic 闪现后替换）。
-const preload = ref({ phase: 'idle', resolved: new Map(), failed: new Set(), byTank: new Map() })
+const preload = ref({ phase: 'idle', resolved: new Map(), failed: new Set(), failureReasons: new Map(), byTank: new Map() })
 // 竞态令牌：快速切换战局时，过期 preload 完成不得覆盖新战局结果
 let preloadToken = 0
 watch(
   () => [props.overview, props.playbackV2],
   async () => {
     const token = ++preloadToken
-    preload.value = { phase: 'loading', resolved: new Map(), failed: new Set(), byTank: new Map() }
+    preload.value = { phase: 'loading', resolved: new Map(), failed: new Set(), failureReasons: new Map(), byTank: new Map() }
     const vehicles = props.playbackV2?.vehicles || []
     if (vehicles.length === 0) {
-      preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), byTank: new Map() }
+      preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), failureReasons: new Map(), byTank: new Map() }
       return
     }
     try {
@@ -159,11 +159,12 @@ watch(
       const result = await preloadBattleModels(vehicles.map((v) => v.tankId))
       if (token !== preloadToken) return // 过期结果丢弃
       preload.value = { phase: 'ready', ...result }
-    } catch (e) {
-      // 模块加载异常 → 整场 generic fallback（静默，不弹 warning）
-      console.error('[vehicle-models] preload 模块加载失败 → 整场 generic fallback', e)
+    } catch {
+      // 模块加载异常 → 保持单场 generic fallback，但保留稳定诊断原因。
+      console.error('[vehicle-models] fallback reason=MODULE_IMPORT_FAILURE')
       if (token !== preloadToken) return
-      preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), byTank: new Map() }
+      const failureReasons = new Map((vehicles || []).map((v) => [String(v.tankId), 'MODULE_IMPORT_FAILURE']))
+      preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), failureReasons, byTank: new Map() }
     }
   },
   { immediate: true },
@@ -1441,8 +1442,7 @@ function vehicleColor(vehicle) {
  */
 /**
  * PR2：该车辆的 dedicated model 决策（preload 结果）——
- * 非 Tier X / preload 失败 / 模块加载失败 → null（generic marker 单车 fallback，
- *不做整场 fallback）。
+ * 非 Tier X / preload 失败 / 模块加载失败 → null（generic marker 单车 fallback）。
  */
 function vehicleModel(vehicle) {
   const p = preload.value
