@@ -2,7 +2,7 @@
 name: prompt-repair-executor
 description: >
   基于现成修复提示词执行增量代码修复（REPAIR EXECUTOR）：解析 blockers → Delta Discovery
-  （diff / symbol / direct dependency）→ 立即修改 → targeted test → full verify。
+  （diff / symbol / direct dependency）→ 立即修改 → changed-file tests。
   禁止默认重新阅读整个 repository、禁止重新设计需求。
   Trigger: 用户提供 repair prompt / review 修复意见 / PR review blockers / cleanup prompt /
   bug fix prompt / hotfix instructions / follow-up review findings，需要快速进入修复时。
@@ -30,7 +30,7 @@ SYMBOL BEFORE DIRECTORY.
 BLOCKER BEFORE ARCHITECTURE.
 DIRECT DEPENDENCY BEFORE REPOSITORY.
 FIX BEFORE FULL REVIEW.
-TARGETED TEST BEFORE FULL SUITE.
+CHANGED-FILE TESTS ONLY.
 PASSED + UNTOUCHED = LOCKED.
 EXPAND DISCOVERY ONLY WITH EVIDENCE.
 REPAIR PROMPT IS NOT A REQUEST TO REDISCOVER THE PROJECT.
@@ -164,18 +164,19 @@ Fix → Targeted Test → Fix Remaining Failure → Targeted Test Green
 
 例：`PlayerRatingRadar.test.js` / `ReplayPage.test.js` / 对应 service 的单测。
 
-### PHASE 5 — FULL VERIFY
+### PHASE 5 — CHANGED-FILE VERIFY
 
-本轮所有 blockers 修改完成 **且** targeted green 之后才运行，按项目实际 stack：
+本轮所有 blockers 修改完成后，只运行本轮实际修改文件对应的最小测试集：
 
-```text
-frontend full tests / backend full tests / build / lint / static checks
-```
+- 修改 production file：运行覆盖该文件行为的直接相关测试；
+- 修改 test file：运行该测试文件；
+- 修改多个文件：合并这些文件对应的直接相关测试，去重后运行；
+- 没有对应测试：明确报告未找到，不用无关的全量测试替代。
 
-**省时优化（已存在 PR branch 时）**：业务代码 compile/build 通过后即可 commit + push
-到当前 PR branch，让 GitHub CI 与本地 full verify 并行，不必等本地 full suite 全绿才推。
-后续 test 发现新问题 → 追加修复 commit 再 push（禁止 force push）。最终报告仍以
-**最新 HEAD 的 CI + 本地测试**为准（旧 HEAD CI 不算 merge proof，见"CI / merge readiness"）。
+禁止在本技能中主动运行 repository-level full test、完整 backend suite 或完整 frontend
+suite。PR CI 是完整验证入口；已有 PR branch 可在 changed-file tests 通过后 commit + push，
+由 CI 继续验证。后续 CI 失败时，只复现失败 job 涉及的最小测试范围；修复后追加测试并 push，
+禁止 force push / 改写已公开历史。
 
 ### PHASE 6 — FINAL CLEANUP
 
@@ -218,8 +219,8 @@ frontend full tests / backend full tests / build / lint / static checks
   3. expected fix contract 明确
   4. direct regression tests 已定位
 - **LOCKED PASSED AREAS**：已通过 且 当前 repair diff 未触碰 ⇒ 不重新审计 / 不重新设计 /
-  不重新实现 / 不主动重构。本轮没触碰的 regression 区域不重新阅读实现，由最终 full tests
-  覆盖；只有本轮 diff 触碰其 shared dependency 才专项检查。
+  不重新实现 / 不主动重构。本轮没触碰的 regression 区域不重新阅读实现，也不为其运行测试；
+  只有本轮 diff 触碰其 shared dependency 才运行对应的 changed-file tests。
 - **不创建 TODO / FIXME / follow-up**。能解决现在解决；确实无法解决则明确：
 
   ```text
@@ -233,9 +234,9 @@ frontend full tests / backend full tests / build / lint / static checks
   保护用户未提交修改：禁止 `git reset --hard` / `git checkout .` / `git clean -fd`。
   是否自动 commit/push 遵循现有 DSH workflow 约定（repo 默认：review-with-docs 零 blocker
   后可提交开 PR；见 `.agents/AGENTS.md`）。
-  **省时优化**：处于已存在 PR branch 的 repair 流程中，业务代码 compile/build 通过即可
-  commit + push（让 CI 与本地测试并行），无需等本地 full verify 全绿；push 后照常完成
-  targeted/full verify，发现新问题追加 commit 再 push——禁止 force push / 改写已公开历史，
+  **省时优化**：处于已存在 PR branch 的 repair 流程中，changed-file tests 通过即可
+  commit + push（让 CI 与本地测试并行）；push 后由 CI 完成 repository validation，发现
+  新问题追加 commit 再 push——禁止 force push / 改写已公开历史，
   推送前按仓库约定确认 remote。
 - **Build-to-Learn 兼容**：若当前流程有 build-to-learn，Repair 模式下保持简短，只解释
   本次涉及的关键机制 / 旧实现为何错 / 新实现为何对；不为教学扩大 Discovery。
@@ -301,11 +302,11 @@ ALREADY RESOLVED
 FILES MODIFIED
 - ...
 
-TARGETED TESTS
+CHANGED-FILE TESTS
 - ...
 
-FULL VERIFY
-- ...
+CI HANDOFF
+- PR CI validates the repository-level suite
 
 DEBT SWEEP
 - ...
@@ -330,8 +331,8 @@ IMPLEMENTATION
 - files modified: N
 
 VERIFY
-- targeted tests: ...
-- full tests: ...
+- changed-file tests: ...
+- repository full tests: not run locally; delegated to PR CI
 ```
 
 能可靠获取 phase duration 则加（Discovery/Implementation/Verification duration）；
