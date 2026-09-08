@@ -3,7 +3,8 @@
 
 import hashlib
 
-GAME_URL = "https://assets.blitzkit.app/definitions/game.pb"
+BLITZKIT_API_BASE = "https://api.blitzkit.app"
+GAME_URL = f"{BLITZKIT_API_BASE}/definitions/game.pb"
 
 
 def sha256_bytes(value):
