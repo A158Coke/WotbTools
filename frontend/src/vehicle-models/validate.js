@@ -330,10 +330,11 @@ export function listModelKeys() {
 }
 
 /**
- * Tier X 覆盖校验：tankopedia 全量 vs mapping。
+ * Tier X 覆盖校验：tankopedia 全量 vs mapping；传入 assetKeys 时继续校验
+ * mapping → source asset 目录，避免只从现有目录反向遍历而漏掉整组缺失资产。
  * 返回 { errors, stats }；errors 为空即通过。
  */
-export function validateCoverage({ tankopedia, tankIdToModel, modelDefinitions }) {
+export function validateCoverage({ tankopedia, tankIdToModel, modelDefinitions, assetKeys = null }) {
   const errors = []
   const stats = { tankCount: 0, mappedCount: 0, modelKeyCount: Object.keys(modelDefinitions).length }
   if (!tankopedia || !Array.isArray(tankopedia.vehicles)) {
@@ -355,6 +356,18 @@ export function validateCoverage({ tankopedia, tankIdToModel, modelDefinitions }
     }
     if (!tankopediaIds.has(tankId)) {
       errors.push(`mapping 含 Tankopedia 之外的 tankId：${tankId}`)
+    }
+  }
+  if (assetKeys) {
+    const mappedModelKeys = new Set(Object.values(tankIdToModel))
+    for (const modelKey of mappedModelKeys) {
+      if (!assetKeys.has(modelKey)) {
+        const tankIds = Object.entries(tankIdToModel)
+          .filter(([, key]) => key === modelKey)
+          .map(([id]) => id)
+          .join(',')
+        errors.push(`mapping modelKey ${modelKey}（tankId=${tankIds}）缺少 source asset 目录`)
+      }
     }
   }
   for (const [modelKey, def] of Object.entries(modelDefinitions)) {

@@ -22,7 +22,7 @@ describe('modelKeyForTank（tankId → modelKey）', () => {
     expect(modelKeyForTank(999999)).toBeNull()
     expect(modelKeyForTank(null)).toBeNull()
   })
-  it('全部 81 组已确认 kind（confirmPending 清零，2026-08-19 BlitzKit 数据逐车确认）', () => {
+  it('代表性 modelKey 已确认 kind（confirmPending 清零）', () => {
     expect(modelKeyForTank(29985)).toBe('spht')
     expect(modelKeyForTank(22129)).toBe('ac-teichos')
     expect(modelKeyForTank(19585)).toBe('nc-70-blyskawica')
@@ -89,7 +89,16 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
     const r = await runtime.preloadBattleModels([6929, 3937], { imageLoader: failLoader })
     expect(r.resolved.size).toBe(0)
     expect([...r.failed].sort()).toEqual(['ho-ri', 'maus'])
+    expect(r.failureReasons.get('maus')).toBe('IMAGE_LOAD_ERROR')
     expect(r.byTank.get('6929')).toBe('maus')
+  })
+
+  it('imageLoader 非法返回值 → fail closed 并按图片错误缓存', async () => {
+    const loader = vi.fn().mockResolvedValue(undefined)
+    const r = await runtime.preloadBattleModels([6929], { imageLoader: loader })
+    expect(r.failed.has('maus')).toBe(true)
+    expect(r.failureReasons.get('maus')).toBe('IMAGE_LOAD_ERROR')
+    expect(loader).toHaveBeenCalledTimes(4)
   })
 
   it('未知 tankId 不进入 preload（byTank null；不触发 loader）', async () => {
@@ -97,6 +106,15 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
     expect(r.resolved.size).toBe(0)
     expect(r.failed.size).toBe(0)
     expect(r.byTank.get('999999')).toBeNull()
+    expect(r.failureReasons.get('999999')).toBe('UNKNOWN_TANK_MAPPING')
+  })
+
+  it('瞬态图片失败在单次请求内 bounded retry 一次后成功', async () => {
+    const loader = vi.fn().mockImplementationOnce(async () => false).mockResolvedValue(true)
+    const r = await runtime.preloadBattleModels([6929], { imageLoader: loader })
+    expect(loader).toHaveBeenCalledTimes(3)
+    expect(r.resolved.has('maus')).toBe(true)
+    expect(r.failed.size).toBe(0)
   })
 
   it('整场无 Tier X → 直接 ready（resolved/failed 空；渲染走 generic）', async () => {
@@ -162,12 +180,12 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
     expect(m.turretSrc).toMatch(/turret\.webp$/)
   })
 
-  it('cache 5：failed 缓存——失败车型不重试（避免每次 replay 重等 3s timeout）', async () => {
+  it('cache 5：failed 缓存——单次请求只做一次 bounded retry，后续不重试', async () => {
     const loader = vi.fn(failLoader)
     const first = await runtime.preloadBattleModels([6929], { imageLoader: loader })
     expect(first.failed.has('maus')).toBe(true)
     const second = await runtime.preloadBattleModels([6929], { imageLoader: loader })
-    expect(loader).toHaveBeenCalledTimes(2) // 第一次 2 URL；第二次 0 新调用
+    expect(loader).toHaveBeenCalledTimes(4) // 第一次 2 URL，各 bounded retry 一次；第二次 0 新调用
     expect(second.failed.has('maus')).toBe(true)
     // 失败缓存不扩散：其他 modelKey 照常
     const third = await runtime.preloadBattleModels([6929, 3937], { imageLoader: okLoader })
@@ -200,7 +218,7 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
     expect(first.failed.has('maus')).toBe(true)
     // 第二次不再调用 loader（失败已缓存）
     const second = await runtime.preloadBattleModels([6929], { imageLoader: loader })
-    expect(loader).toHaveBeenCalledTimes(2) // 仅第一次 2 URL
+    expect(loader).toHaveBeenCalledTimes(4) // 仅第一次 2 URL，各 bounded retry 一次
     expect(second.failed.has('maus')).toBe(true)
   })
 })

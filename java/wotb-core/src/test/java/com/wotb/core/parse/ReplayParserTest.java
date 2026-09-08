@@ -124,6 +124,8 @@ class ReplayParserTest {
 
         assertEquals("A158布丁", battle.recorder);
         assertNotNull(battle.recorderResult());
+        assertEquals(4481L, battle.players.getFirst().tankId,
+                "settlement field 103 must remain the canonical Tankopedia tankId");
     }
 
     /** roster #201（nickname=A158布丁 / clan=CHRD）+ 成绩 #301（account=1001, team=1）的 protobuf 根消息。 */

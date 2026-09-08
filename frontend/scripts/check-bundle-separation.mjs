@@ -20,6 +20,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { MODEL_DEFINITIONS } from '../src/vehicle-models/mapping.js'
 
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist')
 const ASSET_MARK = 'vehicle-models/assets'
@@ -64,6 +65,33 @@ function collectReachable(entryAbs) {
   return seen
 }
 
+function checkMappedVehicleAssets() {
+  const manifestPath = path.join(DIST, '.vite', 'manifest.json')
+  if (!fs.existsSync(manifestPath)) {
+    console.error('[FAIL] dist/.vite/manifest.json 不存在——无法证明 Tier X source asset 已 emitted')
+    return 1
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+  const entries = Object.entries(manifest)
+  const failures = []
+  for (const [modelKey, def] of Object.entries(MODEL_DEFINITIONS)) {
+    for (const filename of def.kind === 'turreted' ? ['hull.webp', 'turret.webp'] : ['hull.webp']) {
+      const suffix = `src/vehicle-models/assets/${modelKey}/${filename}`
+      const entry = entries.find(([source]) => source.endsWith(suffix))?.[1]
+      const emitted = entry?.file ? path.join(DIST, entry.file) : null
+      if (!emitted || !fs.existsSync(emitted)) {
+        failures.push(`${modelKey}/${filename}`)
+      }
+    }
+  }
+  if (failures.length > 0) {
+    console.error(`[FAIL] ${failures.length} 个 Tier X source asset 未在 production dist emitted：${failures.join(', ')}`)
+    return 1
+  }
+  console.log(`[PASS] ${Object.keys(MODEL_DEFINITIONS).length} 个 Tier X modelKey 的 source asset 全部 emitted 且可解析`)
+  return 0
+}
+
 function main() {
   const indexHtml = path.join(DIST, 'index.html')
   if (!fs.existsSync(indexHtml)) {
@@ -87,6 +115,7 @@ function main() {
 
   const reachable = collectReachable(entryAbs)
   let failures = 0
+  failures += checkMappedVehicleAssets()
 
   // 1) 初始静态可达 chunk 不得包含车型/坦克贴图资产标记
   const badReach = [...reachable].filter((f) => {
