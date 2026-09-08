@@ -44,6 +44,11 @@ import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -109,6 +114,7 @@ class AiReplayAnalysisServiceTest {
     static final class FakeAiChatGateway implements AiChatGateway {
         final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
         final List<String> teamCompletionSequence = new CopyOnWriteArrayList<>();
+        final List<AiChatResponse> teamResponseSequence = new CopyOnWriteArrayList<>();
         volatile String nextCompletionText = envelope("team review");
         volatile String preBattleCompletionText;
         volatile String autopsyCompletionText;
@@ -138,6 +144,9 @@ class AiReplayAnalysisServiceTest {
             if ("SINGLE_TEAM_BATTLE".equals(request.analysisMode())
                     || "SINGLE_TEAM_BATTLE_REPAIR".equals(request.analysisMode())
                     || "SINGLE_TEAM_BATTLE_RECOVERY".equals(request.analysisMode())) {
+                if (!teamResponseSequence.isEmpty()) {
+                    return teamResponseSequence.remove(0);
+                }
                 if (!teamCompletionSequence.isEmpty()) {
                     return new AiChatResponse(teamCompletionSequence.remove(0), "DeepSeek", "test-model",
                             0, 0, 0, 0, 0, 0, "stop");
@@ -149,10 +158,28 @@ class AiReplayAnalysisServiceTest {
     }
 
     private FakeAiChatGateway gateway;
+    private Logger teamReviewLogger;
+    private ListAppender<ILoggingEvent> teamReviewAppender;
 
     @BeforeEach
     void setUp() {
         gateway = new FakeAiChatGateway();
+        teamReviewLogger = (Logger) LoggerFactory.getLogger(TeamReplayAnalysisService.class);
+        teamReviewAppender = new ListAppender<>();
+        teamReviewAppender.start();
+        teamReviewLogger.addAppender(teamReviewAppender);
+    }
+
+    @AfterEach
+    void tearDown() {
+        teamReviewLogger.detachAppender(teamReviewAppender);
+    }
+
+    private List<String> teamReviewEvents(final String eventName) {
+        return teamReviewAppender.list.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .filter(message -> message != null && message.contains("event=" + eventName))
+                .toList();
     }
 
     private AiReplayAnalysisService startService() {
@@ -475,6 +502,7 @@ class AiReplayAnalysisServiceTest {
         assertNotNull(result.structuredResult());
         assertEquals(1, allTeamReviewRequests().size());
         assertEquals(AnalyzeResponse.AiReviewResultMode.SALVAGED, result.resultMode());
+        assertTrue(teamReviewEvents("ai_review_recovery_triggered").isEmpty());
     }
 
     @Test
@@ -546,6 +574,28 @@ class AiReplayAnalysisServiceTest {
         assertTrue(result.plainText().contains("开局过早分散"));
         assertEquals(1, allTeamReviewRequests().size());
         assertEquals("SINGLE_TEAM_BATTLE", allTeamReviewRequests().getFirst().analysisMode());
+        assertTrue(teamReviewEvents("ai_review_recovery_triggered").isEmpty());
+    }
+
+    @Test
+    void recoveryLogsPrimaryCompletionLengthAndCumulativeTokens() {
+        final String primaryCompletion = "{}";
+        gateway.teamResponseSequence.add(new AiChatResponse(primaryCompletion, "DeepSeek", "test-model",
+                11, 13, 24, 0, 0, 0, "stop"));
+        gateway.teamResponseSequence.add(new AiChatResponse(structuredResult(), "DeepSeek", "test-model",
+                17, 19, 36, 0, 0, 0, "stop"));
+        final var service = startService();
+
+        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
+                teamResultWithRecon("recovery-metadata.wotbreplay", "recovery-metadata-arena", "Ally", 1001L, 1))));
+
+        assertEquals(AnalyzeResponse.AiReviewResultMode.STRUCTURED, result.resultMode());
+        assertTrue(teamReviewEvents("ai_review_recovery_triggered").stream()
+                .anyMatch(message -> message.contains("primaryResponseLength=2")));
+        assertTrue(teamReviewEvents("team_review_completed").stream()
+                .anyMatch(message -> message.contains("result=RECOVERY_SUCCESS")
+                        && message.contains("totalPromptTokens=28")
+                        && message.contains("totalCompletionTokens=32")));
     }
 
     @Test

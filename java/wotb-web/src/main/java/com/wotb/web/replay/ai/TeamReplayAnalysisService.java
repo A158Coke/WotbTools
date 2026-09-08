@@ -515,7 +515,7 @@ public class TeamReplayAnalysisService {
                 throw e;
             }
             return recoverTeamReview(baseUser, language, startNanos,
-                    rosterKeys, correlationId, reviewStartNanos);
+                    rosterKeys, correlationId, reviewStartNanos, PrimaryAttemptMetadata.unavailable());
         }
         final TeamAiReviewResultParser.ParseResult initial = TeamAiReviewResultParser.parse(
                 initialResponse.completionText(), rosterKeys);
@@ -546,7 +546,7 @@ public class TeamReplayAnalysisService {
         }
 
         return recoverTeamReview(baseUser, language, startNanos,
-                rosterKeys, correlationId, reviewStartNanos);
+                rosterKeys, correlationId, reviewStartNanos, PrimaryAttemptMetadata.from(initialResponse));
     }
 
     private TeamReviewPresentation recoverTeamReview(final String baseUser,
@@ -554,8 +554,9 @@ public class TeamReplayAnalysisService {
                                                      final long startNanos,
                                                      final Set<String> rosterKeys,
                                                      final String correlationId,
-                                                     final long reviewStartNanos) {
-        logRecoveryTriggered(correlationId, baseUser.length(), "NO_USABLE_CONTENT");
+                                                     final long reviewStartNanos,
+                                                     final PrimaryAttemptMetadata primaryAttempt) {
+        logRecoveryTriggered(correlationId, primaryAttempt.responseLength(), "NO_USABLE_CONTENT");
         countRepair("started");
         final String recoveryPrompt = baseUser
                 + "\n\nRECOVERY REQUEST\n"
@@ -586,7 +587,9 @@ public class TeamReplayAnalysisService {
                     : AnalyzeResponse.AiReviewResultMode.STRUCTURED;
             countResult(mode);
             countRepair(parsed.normalized() ? "normalized_success" : "success");
-            logTeamReviewCompleted(correlationId, 2, response.inputTokens(), response.outputTokens(),
+            logTeamReviewCompleted(correlationId, 2,
+                    primaryAttempt.inputTokens() + response.inputTokens(),
+                    primaryAttempt.outputTokens() + response.outputTokens(),
                     parsed.normalized() ? "RECOVERY_SALVAGED" : "RECOVERY_SUCCESS", reviewStartNanos);
             return new TeamReviewPresentation(parsed.result(), mode, null);
         }
@@ -653,6 +656,18 @@ public class TeamReplayAnalysisService {
                 "reason", reason));
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_team_review_result_total", "mode", "failed").increment();
+        }
+    }
+
+    private record PrimaryAttemptMetadata(int responseLength, long inputTokens, long outputTokens) {
+
+        private static PrimaryAttemptMetadata unavailable() {
+            return new PrimaryAttemptMetadata(0, 0, 0);
+        }
+
+        private static PrimaryAttemptMetadata from(final AiChatResponse response) {
+            return new PrimaryAttemptMetadata(response.completionText().length(),
+                    response.inputTokens(), response.outputTokens());
         }
     }
 
