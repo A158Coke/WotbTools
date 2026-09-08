@@ -580,10 +580,14 @@ public final class TeamAiReviewResultParser {
         if (!output.startsWith("[")) {
             return false;
         }
-        if (output.length() == 1) {
+        int nextIndex = 1;
+        while (nextIndex < output.length() && Character.isWhitespace(output.charAt(nextIndex))) {
+            nextIndex++;
+        }
+        if (nextIndex == output.length()) {
             return true;
         }
-        final char next = output.charAt(1);
+        final char next = output.charAt(nextIndex);
         return next == '{' || next == '[' || next == '"' || next == ']'
                 || Character.isDigit(next) || next == '-';
     }
