@@ -8,12 +8,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 import update_tankopedia as ut
-from blitzkit_snapshot import (
-    BLITZKIT_API_BASE,
-    GAME_URL,
-    fetch_stable_snapshot,
-    parse_game_version,
-)
+from blitzkit_snapshot import GAME_URL, fetch_stable_snapshot, parse_game_version
 from validate_tankopedia_equipment import validate_vehicle_equipment_coverage
 
 
@@ -83,10 +78,10 @@ def main(argv=None):
 
     resources = {
         "game": GAME_URL,
-        "tanks": f"{BLITZKIT_API_BASE}/definitions/tanks.pb",
-        "consumables": f"{BLITZKIT_API_BASE}/definitions/consumables.pb",
-        "provisions": f"{BLITZKIT_API_BASE}/definitions/provisions.pb",
-        "equipment": f"{BLITZKIT_API_BASE}/definitions/equipment.pb",
+        "tanks": ut.PB_URL,
+        "consumables": ut.CONSUMABLES_URL,
+        "provisions": ut.PROVISIONS_URL,
+        "equipment": ut.EQUIPMENT_URL,
     }
     snapshots, hashes = fetch_stable_snapshot(resources, fetch_bytes)
     game_version = parse_game_version(
