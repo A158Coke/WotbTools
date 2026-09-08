@@ -16,6 +16,7 @@ import BattlePlayback from './BattlePlayback.vue'
 import { makeOverview, makePlaybackV2 } from './playbackTestHarness.js'
 import { preloadBattleModels } from '../vehicle-models/runtime.js'
 import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'
+import { TANK_ID_TO_MODEL } from '../vehicle-models/mapping.js'
 
 const i18n = vi.hoisted(() => ({
   t: vi.fn(key => key)
@@ -506,6 +507,14 @@ describe('PR2 — Tier X dedicated models in Battle Playback', () => {
     turretPivot: { x: 160, y: 193.23 }, turretRaster: mausRaster,
   }
   const hoRiModel = { kind: 'turretless', hullSrc: '/vm/ho-ri/hull.webp', turretSrc: null, turretPivot: null, turretRaster: null }
+  const representativeTurretedModels = [
+    ['spht', 'SPHT'],
+    ['kranvagn', 'Kranvagn'],
+    ['e-100', 'E 100'],
+    ['is-7', 'IS-7'],
+    ['maus', 'Maus'],
+    ['zmije', 'Zmije'],
+  ]
 
   function overviewWithTank(tankId, tankName) {
     const overview = makeOverview()
@@ -551,6 +560,36 @@ describe('PR2 — Tier X dedicated models in Battle Playback', () => {
     expect(marker.find('.pb-hull.pb-hull-dedicated').exists()).toBe(true)
     expect(marker.find('.pb-hull:not(.pb-hull-dedicated)').exists()).toBe(false) // 无 generic 层
   })
+
+  for (const [modelKey, tankName] of representativeTurretedModels) {
+    it(`${tankName}：DOM 实际消费 dedicated ${modelKey} hull/turret asset`, async () => {
+      stubRaf()
+      const tankIdEntry = Object.entries(TANK_ID_TO_MODEL).find(([, mappedModelKey]) => mappedModelKey === modelKey)
+      expect(tankIdEntry, `${modelKey} must have a canonical tankId mapping`).toBeDefined()
+      const tankId = Number(tankIdEntry[0])
+      const { overview, ds } = overviewWithTank(tankId, tankName)
+      const model = {
+        kind: 'turreted',
+        modelKey,
+        hullSrc: `/vm/${modelKey}/hull.webp`,
+        turretSrc: `/vm/${modelKey}/turret.webp`,
+        turretPivot: { x: 160, y: 160 },
+        turretRaster: mausRaster,
+      }
+      vi.mocked(preloadBattleModels).mockResolvedValue({
+        resolved: new Map([[modelKey, model]]),
+        failed: new Set(),
+        byTank: new Map([[String(tankId), modelKey]]),
+      })
+      const wrapper = mountPlayback(overview, 12, ds)
+      await flushPromises()
+      const marker = wrapper.find('[data-test="pb-marker-1001"]')
+      expect(marker.find('.pb-hull-dedicated').attributes('src')).toBe(`/vm/${modelKey}/hull.webp`)
+      expect(marker.find('.pb-turret-dedicated').attributes('src')).toBe(`/vm/${modelKey}/turret.webp`)
+      expect(marker.find('.pb-hull:not(.pb-hull-dedicated)').exists()).toBe(false)
+      expect(marker.find('.pb-turret:not(.pb-turret-dedicated)').exists()).toBe(false)
+    })
+  }
 
   it('preload 失败 modelKey → 单车 generic fallback（不整场 fallback）', async () => {
     stubRaf()

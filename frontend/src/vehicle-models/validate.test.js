@@ -263,6 +263,6 @@ describe('validateCoverage', () => {
     const { MODEL_DEFINITIONS: defs, TANK_ID_TO_MODEL: map } = await import('./mapping.js')
     const { errors, stats } = validateCoverage({ tankopedia: realTp, tankIdToModel: map, modelDefinitions: defs })
     expect(errors).toEqual([])
-    expect(stats.tankCount).toBe(84)
+    expect(stats.tankCount).toBe(85)
   })
 })

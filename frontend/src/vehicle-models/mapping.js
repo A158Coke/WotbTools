@@ -1,7 +1,7 @@
 /**
  * Tier X 专属车型 — 集中静态 Tank ID → baseModelKey 映射。
  *
- * 权威来源：common/tankopedia-tier10.json（84 辆 → 81 个 baseModelKey）。
+ * 权威来源：common/tankopedia-tier10.json（85 辆 → 82 个 baseModelKey）。
  * 覆盖契约：Tier X 必须 100% 有 mapping；未来新增 Tier X 缺失 mapping → CI FAIL
  * （frontend/src/vehicle-models/coverage.test.js）。
  *
@@ -16,7 +16,7 @@
  * canonical tank database。kind（turreted/turretless）是 mapping 的事实声明，
  * 资产 metadata.json 必须与之一致（validator 校验）。
  *
- * kind 核验（2026-08-17，全 81 组）：基于官方 tankopedia 描述 / fandom wiki /
+ * kind 核验（2026-08-17 起，全 82 组）：基于官方 tankopedia 描述 / fandom wiki /
  * 车辆实际俯视结构核验，不采用 BlitzKit TURRET module 或 turretRotationSpeed
  * 字段（casemate 也有 turret module 且转速非零，不可判）。修正记录：
  * - minotauro: turretless → turreted（fandom：有炮塔，约 45° 限位）
@@ -114,7 +114,8 @@ export const MODEL_DEFINITIONS = Object.freeze({
   "xm66f": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([28705]) }),
   "waffen-f1-0": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([28945]) }),
   "spht": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([29985]) }), // 2026-08-19 BlitzKit 数据确认 turreted（GLB turret_01 + gun_01 + gun_01_mask；models.pb turret 模块无 yaw 限位）
-  "vk-72-01-k": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([58641]) })
+  "vk-72-01-k": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([58641]) }),
+  "zmije": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([23425]) })
 })
 
 /** tankId → modelKey（字符串键，mapping 查找统一走 String(tankId)）。 */

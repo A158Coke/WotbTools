@@ -24,13 +24,13 @@ LOCKED_DESCRIPTION_SHA256 = {
     "IMPROVED_MODULES_PLUS": "86dcf2c81775ad8c6c6c54a0f5076e58c6ebc3f9d8ccc79bf95f5139f3159ff1",
     "DEFENSE_SYSTEM": "66170c6b2d7dbf32dd30c74b49cde61541a6eb471787f74671e43ca279d39dc2",
     "ENHANCED_TRACKS": "afd8eaa78b9325fd0b1d7d85717305fc64cf30d663f345d16779d5b9c7f06486",
-    "TOOLBOX": "7a7c914b72b1fd0701c87fa52ea90933dc9b9bc98d94f5770f92cc751dd919e1",
+    "TOOLBOX": "7dc7fb2ebabfd21327db4fab0b12c41aaafb855921b311215944a219735cbf52",
     "CONSUMABLE_DELIVERY_SYSTEM": "388a9a50bed0d24c46128af2e6665555260dc4e9fdd4e1d7ff80a72690e6efdf",
     "HIGH_END_CONSUMABLES": "95ce345dddfd159bfe5234bc475a861e55480e738379bde0c43f28b792d53107",
 }
 
 # SHA-256 of each locked item's complete Equipment protobuf value from the live
-# 11.19 data reviewed for this PR. Unlike a whole equipment.pb lock, these hashes
+# 11.20 data reviewed for this PR. Unlike a whole equipment.pb lock, these hashes
 # allow unrelated upstream data to evolve while still catching hidden numeric or
 # structural changes inside a partially modeled item even when its description
 # template stays unchanged.
@@ -44,7 +44,7 @@ LOCKED_DEFINITION_SHA256 = {
     "IMPROVED_SUSPENSION": "bd079b80a695176b605cbb3b73bf0788486af7b9d709dcbce15032492030e6f0",
     "IMPROVED_VERTICAL_STABILIZER": "24b63d5f388efc99656b8cfb49e28a11392f0e09cccc94ede987ba0270e29e2c",
     "SUPERCHARGER": "0f2e9f23464d2c40946f7aa7e9298de68c952c0e88aea4eb447c2009868b5ae3",
-    "TOOLBOX": "52fee812f9b6f29421a8f55eaa0f0f5634ac8e7f9a69796a5cd9d7f30c451322",
+    "TOOLBOX": "efc5bd257ca8799bb780ae06417fd038d9030cca31248ab24fe52252d77bb749",
 }
 
 
