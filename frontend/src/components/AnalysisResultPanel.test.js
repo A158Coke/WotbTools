@@ -256,17 +256,6 @@ describe('AnalysisResultPanel preBattleSection', () => {
 })
 
 describe('AnalysisResultPanel structured Team review', () => {
-  it('renders plain-text fallback through the existing safe Markdown component', () => {
-    const wrapper = mountPanel({
-      analysis: null,
-      resultMode: 'PLAIN_TEXT',
-      plainText: '## 团队复盘\n\n本局应保持集火并及时转场。'
-    })
-
-    expect(wrapper.find('.markdown-content').exists()).toBe(true)
-    expect(wrapper.text()).toContain('本局应保持集火并及时转场。')
-  })
-
   it('renders structured fields and hides empty optional sections', () => {
     const wrapper = mountPanel({
       analysis: null,

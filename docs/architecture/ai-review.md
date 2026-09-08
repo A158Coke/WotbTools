@@ -36,25 +36,19 @@ Backend 只负责 JSON、类型、数量上限、roster/episode 引用和字符�
 旧的 `TeamReviewEnvelope`、claims validator 与 Autopsy 类保留给历史测试/兼容读取，
 不属于 v0.5 production chain。
 
-## Team AI Review 稳定性契约：structured / salvaged / plain text
+## Team AI Review 稳定性契约：structured JSON + single recovery
 
-Team Call #2 的返回结果有三种明确模式：
+Team Call #2 只接受完整、技术上有效的 `TeamAiReviewResult` JSON。解析器只判断 JSON、类型、
+数量上限和 roster/episode 引用，不判断战术结论是否正确，也不把部分 JSON 或 Markdown 暴露给用户。
 
-- `STRUCTURED`：完整 JSON contract 解析成功。
-- `SALVAGED`：JSON 中存在可展示内容；解析器只做确定性的字段省略、空值化、截断、默认空数组和可选项丢弃，不改写任何战术正文。
-- `PLAIN_TEXT`：JSON contract 不可用，但原始 completion 是可读正文；前端直接使用既有安全 Markdown 渲染链路。
+初始 completion 不是有效 contract 时，使用 canonical battle context 执行恰好一次
+`SINGLE_TEAM_BATTLE_RECOVERY` JSON 调用；不会把失败 completion 传回 recovery，也不会进行多轮重试。
+recovery 成功则返回结构化结果；两次均不满足 contract 时返回 `AI_REVIEW_SCHEMA_FAILED`。
+provider、超时、取消等上游错误继续使用各自原始错误码。
 
-`summary.verdict` 和 `summary.primaryDiagnosis` 可以为空；它们不是把 Markdown 塞回去的兜底字段。
-episodes、trainingSuggestions、reviewFocus 和 highContributors 按固定上限保留前 N 项，坏项丢弃后继续保留其它内容。
-解析器只判断“是否有可展示正文”，不判断战术结论是否正确。
-
-只有初始 completion 没有任何可展示内容时才触发一次 `SINGLE_TEAM_BATTLE_RECOVERY` recovery call。
-可读但不完全符合 JSON 的正文不会触发 recovery；初始和 recovery 都无可用内容时返回
-`AI_REVIEW_NO_USABLE_RESULT`。provider、超时、取消等上游错误继续使用各自原始错误码。
-
-每次降级都会写入不包含 prompt、原始 completion 或 review 正文的低基数 WARN 结构化日志，
-并分别统计 `structured`、`salvaged`、`plain_text`、`failed` 与 recovery 结果。SSE `done` 事件携带
-`resultMode` 和可选 `plainText`；成功降级仍是成功完成，不发送 error event。
+初始失败、recovery 触发/失败和最终完成均写入不包含 prompt、原始 completion 或 review 正文的
+低基数 WARN/INFO 结构化日志，并记录可用的累计 token metadata。SSE `done` 事件只携带结构化
+`teamReview`（个人复盘仍沿用 `analysis`）。
 
 下方 v0.4/v0.3 章节和旧 JSON Output 章节保留为历史设计记录；其中的
 `reviewMarkdown`、claims、Team Autopsy 语义不覆盖 v0.5 当前生产契约。
@@ -493,14 +487,9 @@ repair prompt 只包含原始生成 JSON、精确 technical failures、权威 ro
 episode reference 约束，不携带完整战术输入。初始或 repair 后仍失败时使用独立错误码
 `AI_REVIEW_SCHEMA_FAILED`；它与 provider unavailable 和 `AI_REVIEW_GROUNDING_FAILED` 保持不同语义。
 
-低基数指标为 `wotb_ai_team_review_schema_failure_total{reason,path_class}`、
-`wotb_ai_team_review_normalization_total{type}` 与
-`wotb_ai_team_review_repair_total{result=started|success|normalized_success|failed|semantic_changed}`。
-其中 `semantic_changed` 表示 repair 结果违反 semantic immutability invariant，backend
-fail-closed 并返回 `AI_REVIEW_SCHEMA_FAILED`。日志事件为
-`team_review_schema_failure`、`team_review_normalized`、`team_review_repair_started`、
-`team_review_repair_completed`、`team_review_repair_failed`；严禁记录 prompt、completion、
-回放内容或用户/玩家标识。
+低基数指标为 `wotb_ai_team_review_schema_failure_total{reason,path_class}` 与
+`wotb_ai_team_review_repair_total{result=triggered|started|success|failed}`；严禁记录
+prompt、completion、回放内容或用户/玩家标识。
 
 #### Historical: DeepSeek 官方 JSON Output（旧 Team Envelope，legacy）
 

@@ -55,7 +55,7 @@ async function copyAnalysis() {
         ...team.reviewFocus.map((item) => `${teamIdentityLabel(item.playerKey)}: ${item.reason}`),
         ...team.highContributors.map((item) => `${teamIdentityLabel(item.playerKey)}: ${item.reason}`)
       ].filter(Boolean).join('\n\n')
-    : props.result.plainText || props.result.analysis
+    : props.result.analysis
   if (!text) return
   const withFooter = text + '\n' + t('recon.copy_footer')
   if (!(await copyTextWithFallback(withFooter))) return
@@ -150,9 +150,9 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
       />
     </div>
     <MarkdownContent
-      v-if="analysisOpen && !result.teamReview && (result.plainText || result.analysis)"
+      v-if="analysisOpen && !result.teamReview && result.analysis"
       class="analysis-text"
-      :content="result.plainText || result.analysis"
+      :content="result.analysis"
       @seek="$emit('seek', $event)"
     />
     <div v-if="analysisOpen && result.teamReview" class="team-review-content">

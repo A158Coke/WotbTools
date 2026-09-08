@@ -4,7 +4,6 @@ import type {
   AiReviewErrorEvent,
   AiReviewEvent,
   AiReviewResult,
-  AiReviewResultMode,
   AiReviewStageEvent,
   AiReviewTokenEvent,
   TeamAiPlayerIdentity,
@@ -121,23 +120,9 @@ function resultFromPayload(payload: unknown): AiReviewResult | null {
     && !isTeamPlayerMapping(payload.teamPlayers)) return null
   const hasTeam = isTeamReviewResult(payload.teamReview)
   const hasText = isNonEmptyString(payload.analysis)
-  if ('plainText' in payload && payload.plainText !== undefined
-    && payload.plainText !== null && !isBoundedNonEmptyString(payload.plainText, 64000)) return null
-  const hasPlainText = isNonEmptyString(payload.plainText)
-  if (!hasTeam && !hasText && !hasPlainText) {
+  if (!hasTeam && !hasText) {
     return null
   }
-
-  let resultMode: AiReviewResultMode | null | undefined
-  if ('resultMode' in payload) {
-    if (payload.resultMode !== null
-      && payload.resultMode !== 'STRUCTURED'
-      && payload.resultMode !== 'SALVAGED'
-      && payload.resultMode !== 'PLAIN_TEXT') return null
-    resultMode = payload.resultMode as AiReviewResultMode | null
-  }
-  if (resultMode === 'PLAIN_TEXT' && !hasPlainText) return null
-  if ((resultMode === 'STRUCTURED' || resultMode === 'SALVAGED') && !hasTeam) return null
 
   const preBattleSection = optionalString(payload, 'preBattleSection')
   // JSON cannot carry undefined; an explicitly malformed non-undefined value is rejected.
@@ -157,9 +142,6 @@ function resultFromPayload(payload: unknown): AiReviewResult | null {
     ...(hasTeam ? { teamReview: payload.teamReview as TeamAiReviewResult } : {}),
     ...(('teamPlayers' in payload && payload.teamPlayers !== undefined)
       ? { teamPlayers: payload.teamPlayers as TeamAiPlayerIdentity[] } : {}),
-    ...(('resultMode' in payload && resultMode !== undefined) ? { resultMode } : {}),
-    ...(('plainText' in payload && payload.plainText !== undefined)
-      ? { plainText: payload.plainText as string | null } : {}),
     ...(capability === undefined ? {} : { capability }),
   }
 }
