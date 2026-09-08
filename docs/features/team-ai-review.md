@@ -294,13 +294,10 @@ content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另�
 - 校验失败 → LLM 自修循环（targeted rewrite → full rewrite → fail-safe），Backend 绝不
   代改句子；重试耗尽 → `error` 事件 `AI_REVIEW_GROUNDING_FAILED`（HTTP 已 200）。
 **Technical schema resilience（当前生产行为）**：Team Call #2 保持 v0.5 JSON/API 契约，backend
-parser 返回 `result/failures/normalizations/status`。可展示正文优先完成复盘；不存在的
-episode/player reference、字段类型偏差、可选 section 损坏和超限数组由 parser 确定性省略、
-空值化、默认化或截断，不改变战术正文，也不触发 repair。结果明确标记为 `STRUCTURED` 或
-`SALVAGED`；不能解析为结构化结果但原始 completion 可读时标记为 `PLAIN_TEXT` 并直接安全渲染。
-只有初始结果没有任何可展示正文时才执行一次 recovery；仍无正文返回
-`AI_REVIEW_NO_USABLE_RESULT`。`AI_REVIEW_SCHEMA_FAILED` 作为旧客户端兼容码保留，不再描述
-当前 Team Call #2 的主要失败路径。对应事件和低基数指标见 `docs/operations/observability.md`。
+parser 只接受完整且技术上有效的 `TeamAiReviewResult`。解析失败时最多执行一次基于 canonical
+battle context 的 `SINGLE_TEAM_BATTLE_RECOVERY`；不把失败 completion 传回模型，也不将 Markdown
+或部分 JSON 直接展示。recovery 仍失败时返回 `AI_REVIEW_SCHEMA_FAILED`。对应事件和低基数指标
+见 `docs/operations/observability.md`。
 
 **DeepSeek 官方 JSON Output（2026-08，JSON 语法层加固）**：Team Call #2 已启用 provider
 `response_format=json_object`（`AiChatRequest.responseFormat=JSON_OBJECT`，仅此调用；Player /

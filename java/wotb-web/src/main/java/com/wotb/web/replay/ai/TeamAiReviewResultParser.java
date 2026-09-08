@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
  * Technical parser for Team AI Review v0.5.
@@ -25,8 +24,6 @@ public final class TeamAiReviewResultParser {
 
     /** Bounded UTF-16 envelope for one provider completion (8192 output tokens by default). */
     private static final int MAX_PROVIDER_OUTPUT_CHARS = 256_000;
-    /** HTTP/OpenAPI bound for the plain-text presentation field. */
-    private static final int MAX_PLAIN_TEXT_CHARS = 64_000;
     private static final int MAX_ID_CHARS = 64;
     private static final int MAX_TITLE_CHARS = 240;
     private static final int MAX_REASON_CHARS = 2_000;
@@ -34,11 +31,6 @@ public final class TeamAiReviewResultParser {
     private static final int MAX_ANALYSIS_CHARS = 8_000;
     private static final int MAX_SUGGESTION_CHARS = 6_000;
     private static final int MAX_PLAYER_KEYS_PER_EPISODE = 8;
-
-    private static final Pattern TEAM_REVIEW_JSON_FIELD = Pattern.compile(
-            "\\\"(?:summary|episodes|trainingSuggestions|reviewFocus|highContributors|"
-                    + "verdict|primaryDiagnosis|title|analysis|playerKeys|content|playerKey|"
-                    + "episodeId|reason)\\\"\\s*:");
 
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
@@ -53,7 +45,7 @@ public final class TeamAiReviewResultParser {
             return fatal(Failure.OUTPUT_TOO_LARGE, "root", "output exceeds safe character limit");
         }
         try {
-            final JsonNode root = MAPPER.readTree(extractJson(output));
+            final JsonNode root = MAPPER.readTree(output);
             if (root == null || !root.isObject()) {
                 return fatal(Failure.INVALID_JSON, "root", "JSON object required");
             }
@@ -224,10 +216,6 @@ public final class TeamAiReviewResultParser {
                     new TeamAiReviewResult.Summary(verdict, diagnosis),
                     List.copyOf(episodes), List.copyOf(suggestions), List.copyOf(focus),
                     List.copyOf(contributors));
-            if (!hasDisplayContent(result)) {
-                return fatal(Failure.NO_USABLE_CONTENT, "root",
-                        "structured result contains no usable display content");
-            }
             return normalizations.isEmpty()
                     ? valid(result)
                     : normalized(result, failures, normalizations);
@@ -510,99 +498,6 @@ public final class TeamAiReviewResultParser {
         return start == null || end == null || end >= start;
     }
 
-    /** Structured output is usable when at least one retained user-facing text survives salvage. */
-    public static boolean hasDisplayContent(final TeamAiReviewResult result) {
-        if (result == null) {
-            return false;
-        }
-        if (isNonBlank(result.summary() == null ? null : result.summary().verdict())
-                || isNonBlank(result.summary() == null ? null : result.summary().primaryDiagnosis())) {
-            return true;
-        }
-        return result.episodes().stream().anyMatch(item ->
-                        isNonBlank(item.title()) || isNonBlank(item.analysis()))
-                || result.trainingSuggestions().stream().anyMatch(item ->
-                        isNonBlank(item.title()) || isNonBlank(item.content()))
-                || result.reviewFocus().stream().anyMatch(item -> isNonBlank(item.reason()))
-                || result.highContributors().stream().anyMatch(item -> isNonBlank(item.reason()));
-    }
-
-    /** Conservative display-only check; it never judges tactical correctness or factual accuracy. */
-    public static boolean isUsableDisplayText(final String output) {
-        if (output == null) {
-            return false;
-        }
-        final String trimmed = output.trim();
-        if (trimmed.length() < 20 || trimmed.length() > MAX_PROVIDER_OUTPUT_CHARS) {
-            return false;
-        }
-        final String withoutFence = trimmed.replace("```markdown", "")
-                .replace("```md", "").replace("```json", "")
-                .replace("```JSON", "").replace("```", "").trim();
-        if (withoutFence.isBlank()) {
-            return false;
-        }
-        if (looksLikeJsonContractFragment(withoutFence)) {
-            return false;
-        }
-        final long readableCharacters = withoutFence.codePoints()
-                .filter(character -> Character.isLetterOrDigit(character))
-                .count();
-        return readableCharacters >= 8;
-    }
-
-    /**
-     * Keeps a displayable completion within the HTTP contract without rewriting its content.
-     * Callers must first verify {@link #isUsableDisplayText(String)}.
-     */
-    static String boundedDisplayText(final String output) {
-        final String trimmed = output.trim();
-        if (trimmed.length() <= MAX_PLAIN_TEXT_CHARS) {
-            return trimmed;
-        }
-        int end = MAX_PLAIN_TEXT_CHARS;
-        if (end < trimmed.length()
-                && Character.isHighSurrogate(trimmed.charAt(end - 1))
-                && Character.isLowSurrogate(trimmed.charAt(end))) {
-            end--;
-        }
-        return trimmed.substring(0, end);
-    }
-
-    private static boolean looksLikeJsonContractFragment(final String output) {
-        if (output.startsWith("{") || startsLikeJsonArray(output)) {
-            return true;
-        }
-        return TEAM_REVIEW_JSON_FIELD.matcher(output).find();
-    }
-
-    private static boolean startsLikeJsonArray(final String output) {
-        if (!output.startsWith("[")) {
-            return false;
-        }
-        int nextIndex = 1;
-        while (nextIndex < output.length() && Character.isWhitespace(output.charAt(nextIndex))) {
-            nextIndex++;
-        }
-        if (nextIndex == output.length()) {
-            return true;
-        }
-        final char next = output.charAt(nextIndex);
-        return next == '{' || next == '[' || next == '"' || next == ']'
-                || Character.isDigit(next) || next == '-';
-    }
-
-    private static boolean isNonBlank(final String value) {
-        return value != null && !value.isBlank();
-    }
-
-    private static String extractJson(final String output) {
-        final String trimmed = output.trim();
-        final int start = trimmed.indexOf('{');
-        final int end = trimmed.lastIndexOf('}');
-        return start >= 0 && end > start ? trimmed.substring(start, end + 1) : trimmed;
-    }
-
     public record ParseResult(TeamAiReviewResult result, List<ParseFailure> failures,
                               List<Normalization> normalizations, ParseStatus status) {
         public ParseResult {
@@ -647,6 +542,6 @@ public final class TeamAiReviewResultParser {
 
     public enum Failure {
         EMPTY_OUTPUT, INVALID_JSON, OUTPUT_TOO_LARGE, MISSING_REQUIRED_FIELD,
-        INVALID_FIELD, CARDINALITY_EXCEEDED, INVALID_REFERENCE, NO_USABLE_CONTENT
+        INVALID_FIELD, CARDINALITY_EXCEEDED, INVALID_REFERENCE
     }
 }

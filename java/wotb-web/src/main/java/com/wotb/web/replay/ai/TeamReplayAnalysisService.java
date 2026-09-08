@@ -48,8 +48,8 @@ import java.util.function.LongSupplier;
  * {@code analysisUnitId} 由 {@link AnalysisUnitAssembler} 提供稳定实现。</p>
  * <p>团队复盘与随机战一样先执行 Call #1（Pre-Battle Strategic Prior：基于地图与双方阵容的赛前先验，
  * 含开局/分路假设），按视角队伍重标 TEAM_A 后注入团队 Prompt；Call #1 失败不阻断团队复盘（仅缺 prior 段）。
- * Call #2 优先返回 Team AI Review 结构化结果；后端只做 JSON/schema/引用的技术解析，
- * 可展示正文会降级为确定性的 salvaged 或 plain-text 结果，不判断战术结论。</p>
+ * Call #2 只接受 Team AI Review 结构化 JSON；后端只做 JSON/schema/引用的技术解析，
+ * 不判断战术结论。</p>
  * <p><b>Canonical Timeline hard gate（PR #102 ）</b>：{@code analyzeTeamGroups}
  * 是 Team AI 的<b>唯一 production 编排入口</b>（由 {@code AiReplayReviewService} 调用）。
  * 它在<b>任何 LLM 调用之前</b>（Call #1 prior / Call #2）为每个 context 构建并
@@ -143,9 +143,8 @@ public class TeamReplayAnalysisService {
     }
 
     /**
-     * 单团队 Call #2（Team production v0.5 唯一入口）：优先请求 JSON_OBJECT，解析并
-     * 确定性降级 {@link TeamAiReviewResult}；没有可展示正文时最多执行一次 recovery，
-     * 然后把结构化或 plain-text 结果交给 SSE done 事件。
+     * 单团队 Call #2（Team production v0.5 唯一入口）：请求 JSON_OBJECT，解析并
+     * 校验 {@link TeamAiReviewResult}，然后把结构化结果交给 SSE done 事件。
      */
     private TeamCallResult callSingleTeamContext(
             final SingleTeamBattleAnalysisContext context,
@@ -154,12 +153,9 @@ public class TeamReplayAnalysisService {
             final long startNanos,
             final BattleTimeline timeline
     ) {
-        final TeamReviewPresentation result = callStructuredTeamReview(
+        final TeamAiReviewResult result = callStructuredTeamReview(
                 context, input, language, startNanos, timeline);
-        final String text = result.plainText() != null
-                ? result.plainText() : result.structuredResult().summary().verdict();
-        return new TeamCallResult(new AnalyzeResult(text), result.structuredResult(),
-                result.resultMode(), result.plainText());
+        return new TeamCallResult(new AnalyzeResult(result.summary().verdict()), result);
     }
 
     /**
@@ -251,8 +247,7 @@ public class TeamReplayAnalysisService {
                         language,
                         firstContext.battle() == null ? null : firstContext.battle().mapName);
         return new TeamAnalyzeResult(firstAnalysis.analysis(), preBattleSection,
-                firstAnalysis.structuredResult(), TeamRosterResolver.playerIdentities(firstContext),
-                firstAnalysis.resultMode(), firstAnalysis.plainText());
+                firstAnalysis.structuredResult(), TeamRosterResolver.playerIdentities(firstContext));
     }
 
     /**
@@ -479,12 +474,8 @@ public class TeamReplayAnalysisService {
         throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, correlationId);
     }
 
-    /**
-     * Call #2：structured output is preferred, but only usable-content absence permits
-     * the single recovery call. Technical deviations are salvaged locally and never
-     * turned into an upstream failure.
-     */
-    private TeamReviewPresentation callStructuredTeamReview(
+    /** Call #2：严格解析结构化 JSON；技术 contract 失败时最多 fresh retry 一次。 */
+    private TeamAiReviewResult callStructuredTeamReview(
             final SingleTeamBattleAnalysisContext context,
             final TeamAiPromptBuilder.PromptInput input,
             final AllowedLanguage language,
@@ -505,51 +496,34 @@ public class TeamReplayAnalysisService {
         final Set<String> rosterKeys = TeamRosterResolver.playerKeys(context);
         final String correlationId = AiRequestContext.correlationId();
         final long reviewStartNanos = nanoTimeSource.getAsLong();
-        final AiChatResponse initialResponse;
+        final AiChatResponse primaryResponse;
         try {
-            initialResponse = callRaw(systemPrompt, baseUser,
-                    "SINGLE_TEAM_BATTLE", remainingBudget(startNanos), 1,
-                    AiResponseFormat.JSON_OBJECT);
+            primaryResponse = callRaw(systemPrompt, baseUser,
+                    "SINGLE_TEAM_BATTLE", remainingBudget(startNanos), 1);
         } catch (final AiUpstreamException e) {
             if (!"AI_EMPTY_RESPONSE".equals(e.code())) {
                 throw e;
             }
             return recoverTeamReview(baseUser, language, startNanos,
-                    rosterKeys, correlationId, reviewStartNanos, PrimaryAttemptMetadata.unavailable());
+                    rosterKeys, correlationId, reviewStartNanos,
+                    PrimaryAttemptMetadata.unavailable());
         }
-        final TeamAiReviewResultParser.ParseResult initial = TeamAiReviewResultParser.parse(
-                initialResponse.completionText(), rosterKeys);
-        if (!initial.normalizations().isEmpty()) {
-            logTeamReviewNormalized(correlationId, initial);
+        final TeamAiReviewResultParser.ParseResult primary = TeamAiReviewResultParser.parse(
+                primaryResponse.completionText(), rosterKeys);
+        if (primary.status() == TeamAiReviewResultParser.ParseStatus.VALID) {
+            countValidationAttempt("pass");
+            logTeamReviewCompleted(correlationId, 1, primaryResponse.inputTokens(),
+                    primaryResponse.outputTokens(), "PASS", reviewStartNanos);
+            return primary.result();
         }
-        if (!initial.failed() && TeamAiReviewResultParser.hasDisplayContent(initial.result())) {
-            countValidationAttempt(initial.normalized() ? "normalized" : "pass");
-            final AnalyzeResponse.AiReviewResultMode mode = initial.normalized()
-                    ? AnalyzeResponse.AiReviewResultMode.SALVAGED
-                    : AnalyzeResponse.AiReviewResultMode.STRUCTURED;
-            countResult(mode);
-            logTeamReviewCompleted(correlationId, 1, initialResponse.inputTokens(),
-                    initialResponse.outputTokens(), initial.normalized() ? "NORMALIZED" : "PASS",
-                    reviewStartNanos);
-            return new TeamReviewPresentation(initial.result(), mode, null);
-        }
-
-        if (TeamAiReviewResultParser.isUsableDisplayText(initialResponse.completionText())) {
-            countResult(AnalyzeResponse.AiReviewResultMode.PLAIN_TEXT);
-            LOGGER.warn(AiReviewEventLog.line("ai_review_plain_text_fallback", correlationId,
-                    "primaryParseStatus", initial.status(),
-                    "rawResponseLength", initialResponse.completionText().length(),
-                    "repairAttempted", false));
-            return new TeamReviewPresentation(null,
-                    AnalyzeResponse.AiReviewResultMode.PLAIN_TEXT,
-                    TeamAiReviewResultParser.boundedDisplayText(initialResponse.completionText()));
-        }
-
+        countValidationAttempt("schema_invalid");
+        logContractFailure(correlationId, primary, 1);
         return recoverTeamReview(baseUser, language, startNanos,
-                rosterKeys, correlationId, reviewStartNanos, PrimaryAttemptMetadata.from(initialResponse));
+                rosterKeys, correlationId, reviewStartNanos,
+                PrimaryAttemptMetadata.from(primaryResponse));
     }
 
-    private TeamReviewPresentation recoverTeamReview(final String baseUser,
+    private TeamAiReviewResult recoverTeamReview(final String baseUser,
                                                      final AllowedLanguage language,
                                                      final long startNanos,
                                                      final Set<String> rosterKeys,
@@ -560,89 +534,67 @@ public class TeamReplayAnalysisService {
         countRepair("started");
         final String recoveryPrompt = baseUser
                 + "\n\nRECOVERY REQUEST\n"
-                + "上一次输出没有可展示正文。请基于同一战局上下文重新生成完整团队复盘。"
-                + "优先返回完整 TeamAiReviewResult JSON；如果无法满足 JSON contract，必须返回完整可读的 Markdown/plain text 复盘。"
-                + "不得输出空白、JSON 标点垃圾、战术结论之外的新事实。";
+                + "请基于同一战局上下文重新生成完整团队复盘。"
+                + "只输出完整 TeamAiReviewResult JSON object；不要输出 Markdown、解释或 JSON 之外的 commentary。"
+                + "保持相同战术任务和权威战局上下文，不要发明新事实。";
         final AiChatResponse response;
         try {
             response = callRaw(recoverySystemPrompt(language), recoveryPrompt,
-                    "SINGLE_TEAM_BATTLE_RECOVERY", remainingBudget(startNanos), 2,
-                    AiResponseFormat.TEXT);
+                    "SINGLE_TEAM_BATTLE_RECOVERY", remainingBudget(startNanos), 2);
         } catch (final AiUpstreamException e) {
             if (!"AI_EMPTY_RESPONSE".equals(e.code())) {
                 throw e;
             }
-            logRecoveryFailed(correlationId, "NO_USABLE_CONTENT");
+            logRecoveryFailed(correlationId, "SCHEMA_FAILED");
             countRepair("failed");
-            throw new AiUpstreamException("AI_REVIEW_NO_USABLE_RESULT", 502, correlationId);
+            throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
         }
-        final TeamAiReviewResultParser.ParseResult parsed = TeamAiReviewResultParser.parse(
+        final TeamAiReviewResultParser.ParseResult recovery = TeamAiReviewResultParser.parse(
                 response.completionText(), rosterKeys);
-        if (!parsed.normalizations().isEmpty()) {
-            logTeamReviewNormalized(correlationId, parsed);
-        }
-        if (!parsed.failed() && TeamAiReviewResultParser.hasDisplayContent(parsed.result())) {
-            final AnalyzeResponse.AiReviewResultMode mode = parsed.normalized()
-                    ? AnalyzeResponse.AiReviewResultMode.SALVAGED
-                    : AnalyzeResponse.AiReviewResultMode.STRUCTURED;
-            countResult(mode);
-            countRepair(parsed.normalized() ? "normalized_success" : "success");
+        if (recovery.status() == TeamAiReviewResultParser.ParseStatus.VALID) {
+            countValidationAttempt("pass");
+            countRepair("success");
             logTeamReviewCompleted(correlationId, 2,
                     primaryAttempt.inputTokens() + response.inputTokens(),
                     primaryAttempt.outputTokens() + response.outputTokens(),
-                    parsed.normalized() ? "RECOVERY_SALVAGED" : "RECOVERY_SUCCESS", reviewStartNanos);
-            return new TeamReviewPresentation(parsed.result(), mode, null);
+                    "RECOVERY_SUCCESS", reviewStartNanos);
+            return recovery.result();
         }
-        if (TeamAiReviewResultParser.isUsableDisplayText(response.completionText())) {
-            countResult(AnalyzeResponse.AiReviewResultMode.PLAIN_TEXT);
-            countRepair("plain_text_success");
-            LOGGER.warn(AiReviewEventLog.line("ai_review_plain_text_fallback", correlationId,
-                    "primaryParseStatus", parsed.status(),
-                    "rawResponseLength", response.completionText().length(),
-                    "repairAttempted", true));
-            logTeamReviewCompleted(correlationId, 2,
-                    primaryAttempt.inputTokens() + response.inputTokens(),
-                    primaryAttempt.outputTokens() + response.outputTokens(),
-                    "RECOVERY_PLAIN_TEXT", reviewStartNanos);
-            return new TeamReviewPresentation(null,
-                    AnalyzeResponse.AiReviewResultMode.PLAIN_TEXT,
-                    TeamAiReviewResultParser.boundedDisplayText(response.completionText()));
-        }
-        logRecoveryFailed(correlationId, "NO_USABLE_CONTENT");
+        countValidationAttempt("schema_invalid");
+        logContractFailure(correlationId, recovery, 2);
+        logRecoveryFailed(correlationId, "SCHEMA_FAILED");
         countRepair("failed");
-        throw new AiUpstreamException("AI_REVIEW_NO_USABLE_RESULT", 502, correlationId);
+        logTeamReviewCompleted(correlationId, 2,
+                primaryAttempt.inputTokens() + response.inputTokens(),
+                primaryAttempt.outputTokens() + response.outputTokens(),
+                "SCHEMA_FAILED", reviewStartNanos);
+        throw new AiUpstreamException("AI_REVIEW_SCHEMA_FAILED", 502, correlationId);
     }
 
     private static String recoverySystemPrompt(final AllowedLanguage language) {
         return switch (language) {
-            case EN -> "Generate a complete team replay review from the supplied battle context. "
-                    + "Prefer the TeamAiReviewResult JSON contract, but return readable Markdown/plain text if JSON is not possible. "
-                    + "Do not invent facts or change tactical meaning.";
-            case RU -> "Сформируйте полный командный разбор по контексту боя. "
-                    + "Предпочтителен JSON TeamAiReviewResult, но при невозможности верните читаемый Markdown/plain text. "
-                    + "Не придумывайте факты и не меняйте тактический смысл.";
-            case ZH -> "请根据给定战局上下文重新生成完整团队复盘。优先返回 TeamAiReviewResult JSON；"
-                    + "如果无法满足 JSON contract，返回完整可读的 Markdown/plain text。不得发明事实或改变战术含义。";
+            case EN -> "Generate the complete TeamAiReviewResult JSON object from the supplied battle context. "
+                    + "Return JSON only, with no Markdown or commentary outside JSON. Do not invent facts.";
+            case RU -> "Сформируйте полный JSON-объект TeamAiReviewResult по контексту боя. "
+                    + "Верните только JSON, без Markdown и комментариев вне JSON. Не придумывайте факты.";
+            case ZH -> "请根据给定战局上下文重新生成完整 TeamAiReviewResult JSON object。"
+                    + "只返回 JSON，不要输出 Markdown 或 JSON 外的说明，不得发明事实。";
         };
     }
 
-    private void logTeamReviewNormalized(final String correlationId,
-                                         final TeamAiReviewResultParser.ParseResult parsed) {
-        final int normalizationCount = parsed.normalizations().stream()
-                .mapToInt(TeamAiReviewResultParser.Normalization::count).sum();
-        LOGGER.warn(AiReviewEventLog.line("ai_review_contract_degraded", correlationId,
-                "resultMode", "SALVAGED",
-                "failureCategory", parsed.failure() == null ? "NONE" : parsed.failure(),
+    private void logContractFailure(final String correlationId,
+                                    final TeamAiReviewResultParser.ParseResult parsed,
+                                    final int attempt) {
+        LOGGER.warn(AiReviewEventLog.line("ai_review_contract_failed", correlationId,
+                "attempt", attempt,
+                "failureCategory", parsed.failure() == null ? "UNKNOWN" : parsed.failure(),
                 "failurePath", parsed.failures().stream().map(item -> pathClass(item.path()))
-                        .distinct().sorted().collect(java.util.stream.Collectors.joining(",")),
-                "normalizationCount", normalizationCount,
-                "types", parsed.normalizations().stream().map(
-                                TeamAiReviewResultParser.Normalization::type)
                         .distinct().sorted().collect(java.util.stream.Collectors.joining(","))));
-        if (meterRegistry != null) {
-            parsed.normalizations().forEach(normalization -> meterRegistry.counter(
-                    "wotb_ai_team_review_normalization_total", "type", normalization.type())
-                    .increment(normalization.count()));
+        if (meterRegistry != null && attempt == 1) {
+            parsed.failures().forEach(failure -> meterRegistry.counter(
+                    "wotb_ai_team_review_schema_failure_total",
+                    "reason", failure.code().name(),
+                    "path_class", pathClass(failure.path())).increment());
         }
     }
 
@@ -658,9 +610,6 @@ public class TeamReplayAnalysisService {
     private void logRecoveryFailed(final String correlationId, final String reason) {
         LOGGER.warn(AiReviewEventLog.line("ai_review_recovery_failed", correlationId,
                 "reason", reason));
-        if (meterRegistry != null) {
-            meterRegistry.counter("wotb_ai_team_review_result_total", "mode", "failed").increment();
-        }
     }
 
     private record PrimaryAttemptMetadata(int responseLength, long inputTokens, long outputTokens) {
@@ -678,13 +627,6 @@ public class TeamReplayAnalysisService {
     private void countRepair(final String result) {
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_team_review_repair_total", "result", result).increment();
-        }
-    }
-
-    private void countResult(final AnalyzeResponse.AiReviewResultMode mode) {
-        if (meterRegistry != null) {
-            meterRegistry.counter("wotb_ai_team_review_result_total", "mode",
-                    mode.name().toLowerCase(java.util.Locale.ROOT)).increment();
         }
     }
 
@@ -725,15 +667,7 @@ public class TeamReplayAnalysisService {
         };
     }
 
-    private record TeamCallResult(AnalyzeResult analysis,
-                                  TeamAiReviewResult structuredResult,
-                                  AnalyzeResponse.AiReviewResultMode resultMode,
-                                  String plainText) {
-    }
-
-    private record TeamReviewPresentation(TeamAiReviewResult structuredResult,
-                                          AnalyzeResponse.AiReviewResultMode resultMode,
-                                          String plainText) {
+    private record TeamCallResult(AnalyzeResult analysis, TeamAiReviewResult structuredResult) {
     }
 
     private static String rewriteStage(final int attempt) {
@@ -827,18 +761,6 @@ public class TeamReplayAnalysisService {
             final long callTimeoutSec,
             final int attempt
     ) {
-        return callRaw(systemPrompt, userContent, analysisMode, callTimeoutSec, attempt,
-                AiResponseFormat.JSON_OBJECT);
-    }
-
-    private AiChatResponse callRaw(
-            final String systemPrompt,
-            final String userContent,
-            final String analysisMode,
-            final long callTimeoutSec,
-            final int attempt,
-            final AiResponseFormat responseFormat
-    ) {
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", userContent));
@@ -873,7 +795,7 @@ public class TeamReplayAnalysisService {
                 null,
                 analysisMode,
                 (int) Math.min(Math.max(1L, callTimeoutSec), Integer.MAX_VALUE),
-                responseFormat);
+                AiResponseFormat.JSON_OBJECT);
         return gateway.stream(request, IGNORED_STREAM);
     }
 

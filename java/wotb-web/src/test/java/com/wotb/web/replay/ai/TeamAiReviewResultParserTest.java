@@ -29,6 +29,14 @@ class TeamAiReviewResultParserTest {
     }
 
     @Test
+    void rejectsJsonSurroundedByCommentaryAsNonValidContract() {
+        assertFalse(TeamAiReviewResultParser.parse("Here is the review:\n" + VALID, Set.of("P1"))
+                .status() == TeamAiReviewResultParser.ParseStatus.VALID);
+        assertFalse(TeamAiReviewResultParser.parse(VALID + "\nHope this helps.", Set.of("P1"))
+                .status() == TeamAiReviewResultParser.ParseStatus.VALID);
+    }
+
+    @Test
     void dropsInvalidOptionalReferencesAndKeepsTacticalText() {
         final String output = VALID
                 .replace("\"P1\"]", "\"P1\",\"P9\"]")
@@ -144,9 +152,9 @@ class TeamAiReviewResultParserTest {
     }
 
     @Test
-    void reportsFatalCoreFailures() {
-        assertEquals(TeamAiReviewResultParser.ParseStatus.FATAL,
-                TeamAiReviewResultParser.parse("{\"episodes\":[]}", Set.of()).status());
+    void reportsIncompleteCoreFailuresAsNonValid() {
+        assertFalse(TeamAiReviewResultParser.parse("{\"episodes\":[]}", Set.of()).status()
+                == TeamAiReviewResultParser.ParseStatus.VALID);
         assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION,
                 TeamAiReviewResultParser.parse(VALID.replace("\"startSec\":10,", ""), Set.of("P1")).status());
         assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION,
@@ -181,20 +189,4 @@ class TeamAiReviewResultParserTest {
         assertTrue(result.result().reviewFocus().isEmpty());
     }
 
-    @Test
-    void rejectsTruncatedJsonWithReadableTacticalTextAsPlainText() {
-        final String truncated = "{\"summary\":{\"verdict\":\"本局开局过度分散，中期应该保持集火并尽快转场";
-
-        assertFalse(TeamAiReviewResultParser.isUsableDisplayText(truncated));
-        assertFalse(TeamAiReviewResultParser.isUsableDisplayText(
-                "\"summary\":{\"verdict\":\"本局开局过度分散，中期应该保持集火并尽快转场"));
-    }
-
-    @Test
-    void rejectsWhitespaceFormattedJsonStringArraysAsPlainText() {
-        assertFalse(TeamAiReviewResultParser.isUsableDisplayText(
-                "[\n  \"本局开局过度分散，中期应该保持集火并尽快转场\"\n]"));
-        assertFalse(TeamAiReviewResultParser.isUsableDisplayText(
-                "[ \"本局主要问题是转场过晚，应该及时转移火力\" ]"));
-    }
 }

@@ -26,9 +26,7 @@ public record AnalyzeResponse(
         String preBattleSection,
         Capability capability,
         TeamAiReviewResult teamReview,
-        List<TeamPlayer> teamPlayers,
-        AiReviewResultMode resultMode,
-        String plainText
+        List<TeamPlayer> teamPlayers
 ) {
     public AnalyzeResponse {
         teamPlayers = teamPlayers == null ? List.of() : List.copyOf(teamPlayers);
@@ -42,36 +40,21 @@ public record AnalyzeResponse(
     }
 
     public AnalyzeResponse(final String analysis) {
-        this(analysis, null, Capability.AVAILABLE, null, List.of(), null, null);
+        this(analysis, null, Capability.AVAILABLE, null, List.of());
     }
 
     public AnalyzeResponse(final String analysis, final String preBattleSection) {
-        this(analysis, preBattleSection, Capability.AVAILABLE, null, List.of(), null, null);
+        this(analysis, preBattleSection, Capability.AVAILABLE, null, List.of());
     }
 
     public AnalyzeResponse(final String analysis, final String preBattleSection,
                            final Capability capability) {
-        this(analysis, preBattleSection, capability, null, List.of(), null, null);
+        this(analysis, preBattleSection, capability, null, List.of());
     }
 
     public AnalyzeResponse(final String analysis, final String preBattleSection,
                            final Capability capability, final TeamAiReviewResult teamReview) {
-        this(analysis, preBattleSection, capability, teamReview, List.of(),
-                teamReview == null ? null : AiReviewResultMode.STRUCTURED, null);
-    }
-
-    public AnalyzeResponse(final String analysis, final String preBattleSection,
-                           final Capability capability, final TeamAiReviewResult teamReview,
-                           final List<TeamPlayer> teamPlayers) {
-        this(analysis, preBattleSection, capability, teamReview, teamPlayers,
-                teamReview == null ? null : AiReviewResultMode.STRUCTURED, null);
-    }
-
-    /** Explicit result mode for Team Review; plain text is a normal success payload. */
-    public enum AiReviewResultMode {
-        STRUCTURED,
-        SALVAGED,
-        PLAIN_TEXT
+        this(analysis, preBattleSection, capability, teamReview, List.of());
     }
 
     public record TeamPlayer(String playerKey, String displayName, String tankName) {
