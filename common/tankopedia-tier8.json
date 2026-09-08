@@ -1,9 +1,17 @@
 {
   "meta": {
-    "source": "blitzkit (assets.blitzkit.app/definitions/tanks.pb)",
+    "source": "blitzkit production definitions",
+    "source_game_version": "11.20.0.887_7344903",
+    "source_hashes": {
+      "game": "a582d25841b85450cd65be23677d6319fc3c966cf1c1c3c52b035fe441481471",
+      "tanks": "334003ee11c0eeea563f490b12b912f4ef38572170ed24f55baf9715697e6427",
+      "consumables": "74f816ab2eb9ac420f7034cb0735ac5cf2913126d34acf2a22e26196f616f7c1",
+      "provisions": "34b575b05651762f2ffa1965bea7794fa65d499228ecb1a3d276692024183d61",
+      "equipment": "bc09afd2a2f50500bc2e620fd5d057eaf1f89d2ecaa499926f5790ea2ba35546"
+    },
     "tier": 8,
-    "generated_at": "2026-08-08T17:28:26.017337+00:00",
-    "count": 165
+    "generated_at": "2026-09-08T13:11:18.285575+00:00",
+    "count": 169
   },
   "vehicles": [
     {
@@ -2549,7 +2557,6 @@
       ],
       "allowedEquipment": [
         "CALIBRATED_SHELLS",
-        "CAMOUFLAGE_NET",
         "CONSUMABLE_DELIVERY_SYSTEM",
         "DEFENSE_SYSTEM",
         "ENGINE_ACCELERATOR",
@@ -2561,11 +2568,12 @@
         "IMPROVED_ASSEMBLY",
         "IMPROVED_CONTROL",
         "IMPROVED_MODULES",
-        "IMPROVED_OPTICS",
         "IMPROVED_SUSPENSION",
         "IMPROVED_VERTICAL_STABILIZER",
+        "REFINED_GUN",
         "SUPERCHARGER",
-        "TOOLBOX"
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
       ],
       "extraInfo": ""
     },
@@ -3696,11 +3704,11 @@
         "IMPROVED_ASSEMBLY",
         "IMPROVED_CONTROL",
         "IMPROVED_MODULES",
-        "IMPROVED_OPTICS",
         "IMPROVED_SUSPENSION",
         "REFINED_GUN",
         "SUPERCHARGER",
-        "TOOLBOX"
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
       ],
       "extraInfo": ""
     },
@@ -4359,6 +4367,81 @@
         "IMPROVED_CONTROL",
         "IMPROVED_MODULES",
         "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
+    },
+    {
+      "name": "O-Ho",
+      "id": 9825,
+      "tier": 8,
+      "class": "Heavy tank",
+      "nation": "Japan",
+      "hp": 1870,
+      "forwardSpeed": 27,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 21.0,
+      "powerToWeightRatio": 18.4,
+      "guns": [
+        {
+          "gunId": 15969,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 208
+            },
+            {
+              "type": "ap",
+              "damage": 360,
+              "penetration": 136
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 63
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 310,
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_SUSPENSION",
+        "IMPROVED_VERTICAL_STABILIZER",
         "REFINED_GUN",
         "SUPERCHARGER",
         "TOOLBOX",
@@ -6575,6 +6658,81 @@
         }
       ],
       "alphaDamage": 200,
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
+    },
+    {
+      "name": "ZQ-90",
+      "id": 15409,
+      "tier": 8,
+      "class": "Medium tank",
+      "nation": "China",
+      "hp": 1400,
+      "forwardSpeed": 50,
+      "reverseSpeed": 18,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 42.0,
+      "powerToWeightRatio": 33.0,
+      "guns": [
+        {
+          "gunId": 23089,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 190
+            },
+            {
+              "type": "he",
+              "damage": 280,
+              "penetration": 155
+            },
+            {
+              "type": "he",
+              "damage": 320,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 225,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -10991,11 +11149,11 @@
       "class": "Medium tank",
       "nation": "European",
       "hp": 1400,
-      "forwardSpeed": 47,
+      "forwardSpeed": 50,
       "reverseSpeed": 17,
       "turretRotationSpeed": 28.0,
       "hullRotationSpeed": 45.0,
-      "powerToWeightRatio": 38.3,
+      "powerToWeightRatio": 39.9,
       "guns": [
         {
           "gunId": 37249,
@@ -11005,17 +11163,17 @@
             {
               "type": "ap",
               "damage": 300,
-              "penetration": 188
+              "penetration": 182
             },
             {
               "type": "apcr",
               "damage": 260,
-              "penetration": 265
+              "penetration": 254
             },
             {
               "type": "he",
               "damage": 380,
-              "penetration": 48
+              "penetration": 45
             }
           ]
         }
@@ -11930,6 +12088,81 @@
       "extraInfo": ""
     },
     {
+      "name": "LEY-1 Defender",
+      "id": 24177,
+      "tier": 8,
+      "class": "Light tank",
+      "nation": "Other",
+      "hp": 1250,
+      "forwardSpeed": 64,
+      "reverseSpeed": 25,
+      "turretRotationSpeed": 48.0,
+      "hullRotationSpeed": 50.0,
+      "powerToWeightRatio": 31.9,
+      "guns": [
+        {
+          "gunId": 55409,
+          "isDefault": true,
+          "alphaDamage": 50,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 50,
+              "penetration": 180
+            },
+            {
+              "type": "heat",
+              "damage": 40,
+              "penetration": 253
+            },
+            {
+              "type": "he",
+              "damage": 60,
+              "penetration": 40
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 50,
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
+    },
+    {
       "name": "M48A2 Räumpanzer",
       "id": 24337,
       "tier": 8,
@@ -12229,7 +12462,7 @@
       "extraInfo": ""
     },
     {
-      "name": "AMX 50 100 Titan",
+      "name": "Titan AMX",
       "id": 24945,
       "tier": 8,
       "class": "Heavy tank",
@@ -12264,7 +12497,7 @@
           ]
         },
         {
-          "gunId": 56433,
+          "gunId": 56689,
           "isDefault": false,
           "alphaDamage": 330,
           "shells": [
@@ -13052,7 +13285,6 @@
       ],
       "allowedEquipment": [
         "CALIBRATED_SHELLS",
-        "CAMOUFLAGE_NET",
         "CONSUMABLE_DELIVERY_SYSTEM",
         "DEFENSE_SYSTEM",
         "ENGINE_ACCELERATOR",
@@ -13066,6 +13298,7 @@
         "IMPROVED_MODULES",
         "IMPROVED_OPTICS",
         "IMPROVED_SUSPENSION",
+        "REFINED_GUN",
         "SUPERCHARGER",
         "TOOLBOX",
         "VERTICAL_STABILIZER"
@@ -13331,6 +13564,81 @@
         }
       ],
       "alphaDamage": 560,
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
+    },
+    {
+      "name": "KV-4 KTTS",
+      "id": 28417,
+      "tier": 8,
+      "class": "Tank destroyer",
+      "nation": "USSR",
+      "hp": 1450,
+      "forwardSpeed": 32,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 12.0,
+      "hullRotationSpeed": 18.0,
+      "powerToWeightRatio": 16.4,
+      "guns": [
+        {
+          "gunId": 270593,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 310,
+              "penetration": 255
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 315
+            },
+            {
+              "type": "he",
+              "damage": 520,
+              "penetration": 62
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 310,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -13848,7 +14156,6 @@
       ],
       "allowedEquipment": [
         "CALIBRATED_SHELLS",
-        "CAMOUFLAGE_NET",
         "CONSUMABLE_DELIVERY_SYSTEM",
         "DEFENSE_SYSTEM",
         "ENGINE_ACCELERATOR",
@@ -13860,11 +14167,12 @@
         "IMPROVED_ASSEMBLY",
         "IMPROVED_CONTROL",
         "IMPROVED_MODULES",
-        "IMPROVED_OPTICS",
         "IMPROVED_SUSPENSION",
         "IMPROVED_VERTICAL_STABILIZER",
+        "REFINED_GUN",
         "SUPERCHARGER",
-        "TOOLBOX"
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
       ],
       "extraInfo": ""
     },

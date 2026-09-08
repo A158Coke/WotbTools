@@ -1,0 +1,85 @@
+{
+  "modelKey": "type-5-h-zetsu",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 9057,
+    "modelGlb": "https://api.blitzkit.app/tanks/9057/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 159.91,
+    "y": 169.87
+  },
+  "turretRaster": {
+    "logicalMinX": 107.5,
+    "logicalMinY": -1.12,
+    "logicalMaxX": 212.5,
+    "logicalMaxY": 242.77,
+    "pixelWidth": 210,
+    "pixelHeight": 488,
+    "pivotX": 52.41,
+    "pivotY": 170.99
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -2.2442920207977295,
+        -5.394969940185547
+      ],
+      "max": [
+        2.2442920207977295,
+        4.818037509918213
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.9041529893875122,
+        -2.713244915008545
+      ],
+      "max": [
+        1.9041550159454346,
+        1.988286018371582
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.22869180142879486,
+        1.7393200397491455
+      ],
+      "max": [
+        0.2286907285451889,
+        6.131918907165527
+      ]
+    },
+    "selectedModules": {
+      "turretId": 13921,
+      "gunId": 13921,
+      "trackId": 15457,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "J39_Type_5_Exp_mtr",
+      "J39_Type_5_Exp_mtr",
+      "J39_Type_5_Exp_mtr",
+      "J39_Type_5_Exp_track_mtr",
+      "J39_Type_5_Exp_track_mtr",
+      "J39_Type_5_Exp_track_mtr",
+      "J39_Type_5_Exp_grill_mtr",
+      "J39_Type_5_Exp_grill_mtr",
+      "J39_Type_5_Exp_grill_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

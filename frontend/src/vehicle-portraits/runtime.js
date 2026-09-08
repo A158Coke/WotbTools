@@ -2,7 +2,7 @@
  * Battle Playback Details Panel 车型图运行时。
  *
  * 图片由开发者脚本从 BlitzKit 公开 CDN 下载后随前端静态发布；生产环境不访问 BlitzKit。
- * import.meta.glob 保持按 tankId 懒加载，进入战局回放不会一次下载全部 84 张 Tier X 图片。
+ * import.meta.glob 保持按 tankId 懒加载，进入战局回放不会一次下载全部 85 张 Tier X 图片。
  */
 const portraitModules = import.meta.glob('../assets/tank-portraits/tier-x/*.webp', {
   query: '?url',

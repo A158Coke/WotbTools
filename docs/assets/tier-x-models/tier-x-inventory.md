@@ -1,10 +1,10 @@
-# Tier X Inventory（Tankopedia 权威，84 辆 → 81 baseModelKey）
+# Tier X Inventory（Tankopedia 权威，85 辆 → 83 baseModelKey）
 
 > 由 `node frontend/scripts/blitzkit-references.mjs --emit-docs` 从
 > `common/tankopedia-tier10.json` + `frontend/src/vehicle-models/mapping.js` 生成；
 > 覆盖完整性由 CI（coverage.test.js）强制。
 
-## kind 核验（2026-08-17，全 81 modelKey 逐组核验）
+## kind 核验（2026-08-17 起，全 83 modelKey 逐组核验）
 
 > 依据：官方 tankopedia 描述 / fandom wiki / 车辆实际俯视结构知识；
 > 不采用 BlitzKit TURRET module 或 turretRotationSpeed 字段（casemate 也有 turret module 且转速非零，不可判）。
@@ -38,7 +38,7 @@
 | fv4202 | turreted | — | 7249 | FV4202 | Medium tank | UK | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/7249/icons/big.webp) · [page](https://blitzkit.app/tanks/fv4202) |
 | 60tp-lewandowskiego | turreted | — | 7297 | 60TP Lewandowskiego | Heavy tank | European | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/7297/icons/big.webp) · [page](https://blitzkit.app/tanks/60tp-lewandowskiego) |
 | type-5-heavy | turreted | — | 8033 | Type 5 Heavy | Heavy tank | Japan | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/8033/icons/big.webp) · [page](https://blitzkit.app/tanks/type-5-heavy) |
-| type-5-heavy | turreted | — | 9057 | Type 5 H Zetsu | Heavy tank | Japan | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/9057/icons/big.webp) · [page](https://blitzkit.app/tanks/type-5-h-zetsu) |
+| type-5-h-zetsu | turreted | — | 9057 | Type 5 H Zetsu | Heavy tank | Japan | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/9057/icons/big.webp) · [page](https://blitzkit.app/tanks/type-5-h-zetsu) |
 | wz-111-5a | turreted | — | 8497 | WZ-111 5A | Heavy tank | China | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/8497/icons/big.webp) · [page](https://blitzkit.app/tanks/wz-111-5a) |
 | amx-30-b | turreted | — | 8513 | AMX 30 B | Medium tank | France | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/8513/icons/big.webp) · [page](https://blitzkit.app/tanks/amx-30-b) |
 | fv215b-183 | turreted | — | 9297 | FV215b 183 | Tank destroyer | UK | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/9297/icons/big.webp) · [page](https://blitzkit.app/tanks/fv215b-183) |
@@ -102,10 +102,11 @@
 | waffen-f1-0 | turreted | — | 28945 | Waffen F1.0 | Tank destroyer | Germany | fandom：huge turret + 极慢炮塔旋转 | [icon](https://api.blitzkit.app/tanks/28945/icons/big.webp) · [page](https://blitzkit.app/tanks/waffen-f1-0) |
 | spht | turreted | — | 29985 | SPHT | Heavy tank | USA | 2026-08-19 BlitzKit 数据确认：GLB turret_01 + gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位 → 确认 turreted | [icon](https://api.blitzkit.app/tanks/29985/icons/big.webp) · [page](https://blitzkit.app/tanks/spht) |
 | vk-72-01-k | turreted | — | 58641 | VK 72.01 K | Heavy tank | Germany | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/58641/icons/big.webp) · [page](https://blitzkit.app/tanks/vk-72-01-k) |
+| zmije | turreted | — | 23425 | Zmije | Tank destroyer | European | 2026-09-08 BlitzKit 数据确认：GLB turret_01 + gun_01_mask + gun_01，tanks.pb 选定 turret=33409/gun=38785，models.pb turretOrigin 可解析 → 确认 turreted | [icon](https://api.blitzkit.app/tanks/23425/icons/big.webp) · [page](https://blitzkit.app/tanks/zmije) |
 
 ## 统计
 
-- Tankopedia Tier X 总数：84（meta.count=84，generated_at=2026-08-08T17:28:26.017337+00:00）
-- baseModelKey 数：81
-- turreted：72；turretless：9；confirmPending：0
+- Tankopedia Tier X 总数：85（meta.count=85，generated_at=2026-09-08T13:11:18.285575+00:00）
+- baseModelKey 数：83
+- turreted：74；turretless：9；confirmPending：0
 

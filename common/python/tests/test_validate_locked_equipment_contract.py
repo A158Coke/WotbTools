@@ -19,7 +19,7 @@ REVIEWED_DESCRIPTIONS = {
     "IMPROVED_MODULES_PLUS": "increases the durability of modules and reduces damage from ramming. %(maxhealthpercentagebonus) to track durability. %(rammingabsorptionpercent) damage when rammed. reduces damage by 10% from high-explosive shells with a caliber larger than 130 mm.",
     "DEFENSE_SYSTEM": "decreases the enemy's chances of dealing damage to your tank's modules and crew. %(engineevasionpercentagebonus) to the chance of engine damage. %(crewevasionpercentagebonus) to the chance of crew injury. %(ammoevasionpercentagebonus) to the chance of ammo rack explosion.",
     "ENHANCED_TRACKS": "makes the tracks more durable to withstand more damage. also, fully repairs the tracks automatically if they're destroyed.",
-    "TOOLBOX": "%(repairspeedfactor) to module repair speed.",
+    "TOOLBOX": "%(repairSpeedFactor) to repair speed for all modules (including the following).",
     "CONSUMABLE_DELIVERY_SYSTEM": "allows consumables and abilities in modes to be used more often. %(equipmentreloadboost) to cooldown speed of consumables and abilities.",
     "HIGH_END_CONSUMABLES": "allows bonuses from consumables and bonuses from abilities in modes to last longer. %(equipmentdurationfactor) to the duration of consumables and abilities.",
 }
