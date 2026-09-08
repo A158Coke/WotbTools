@@ -189,4 +189,12 @@ class TeamAiReviewResultParserTest {
         assertFalse(TeamAiReviewResultParser.isUsableDisplayText(
                 "\"summary\":{\"verdict\":\"本局开局过度分散，中期应该保持集火并尽快转场"));
     }
+
+    @Test
+    void rejectsWhitespaceFormattedJsonStringArraysAsPlainText() {
+        assertFalse(TeamAiReviewResultParser.isUsableDisplayText(
+                "[\n  \"本局开局过度分散，中期应该保持集火并尽快转场\"\n]"));
+        assertFalse(TeamAiReviewResultParser.isUsableDisplayText(
+                "[ \"本局主要问题是转场过晚，应该及时转移火力\" ]"));
+    }
 }
