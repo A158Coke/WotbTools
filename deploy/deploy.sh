@@ -6,6 +6,9 @@ readonly WOTB_DIR="${WOTB_DIR:-/opt/wotb}"
 readonly INCOMING_DIR="${WOTB_INCOMING_DIR:-$WOTB_DIR/deploy.incoming}"
 readonly LIVE_DEPLOY_DIR="$WOTB_DIR/deploy"
 readonly PREV_DEPLOY_DIR="$WOTB_DIR/deploy.prev"
+readonly PREV_COMPOSE="$WOTB_DIR/docker-compose.prev.yml"
+readonly TARGETED_FAILED_DEPLOY_DIR="$WOTB_DIR/deploy.targeted.failed"
+readonly TARGETED_FAILED_COMPOSE="$WOTB_DIR/docker-compose.targeted.failed.yml"
 readonly LKG_DEPLOY_DIR="$WOTB_DIR/deploy.lkg"
 readonly LKG_DEPLOY_NEXT_DIR="$WOTB_DIR/deploy.lkg.next"
 readonly LKG_DEPLOY_RETIRING_DIR="$WOTB_DIR/deploy.lkg.retiring"
@@ -23,21 +26,32 @@ readonly RESTORE_COMPOSE_NEXT="$WOTB_DIR/docker-compose.restore.next.yml"
 readonly RESTORE_COMPOSE_INSTALLING="$WOTB_DIR/docker-compose.restore.installing.yml"
 readonly RESTORE_COMPOSE_FAILED="$WOTB_DIR/docker-compose.failed.yml"
 readonly HEALTH_RETRIES="${WOTB_HEALTH_RETRIES:-60}"
-readonly BOOTSTRAP_ALLOWED="${WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG:-0}"
+readonly GRAFANA_READINESS_RETRIES="${WOTB_GRAFANA_READINESS_RETRIES:-20}"
+readonly GRAFANA_READINESS_INTERVAL_SEC="${WOTB_GRAFANA_READINESS_INTERVAL_SEC:-1}"
+readonly DEPLOY_SERVICE="${WOTB_DEPLOY_SERVICE:-all}"
+
+case "$DEPLOY_SERVICE" in
+  all|postgres|node-exporter|prometheus|loki|alloy|grafana|keycloak|wotb-backend|wotb-frontend)
+    ;;
+  *)
+    echo "ERROR: unsupported WOTB_DEPLOY_SERVICE: $DEPLOY_SERVICE" >&2
+    exit 1
+    ;;
+esac
 
 if [[ ! "$HEALTH_RETRIES" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: WOTB_HEALTH_RETRIES must be a positive integer." >&2
+  exit 1
+fi
+if [[ ! "$GRAFANA_READINESS_RETRIES" =~ ^[1-9][0-9]*$ \
+    || ! "$GRAFANA_READINESS_INTERVAL_SEC" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: Grafana readiness retry settings must be positive integers." >&2
   exit 1
 fi
 if [ -z "$WOTB_DIR" ] || [ "$WOTB_DIR" = "/" ] || [ -z "$INCOMING_DIR" ] || [ "$INCOMING_DIR" = "/" ]; then
   echo "ERROR: refusing to operate on an unsafe deployment path." >&2
   exit 1
 fi
-if [ "$BOOTSTRAP_ALLOWED" != "0" ] && [ "$BOOTSTRAP_ALLOWED" != "1" ]; then
-  echo "ERROR: WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG must be 0 or 1." >&2
-  exit 1
-fi
-
 require_env() {
   local name="$1"
   if [ -z "${!name:-}" ]; then
@@ -48,6 +62,11 @@ require_env() {
 for required in TAG DB_PASSWORD KC_ADMIN_PASSWORD WG_APPLICATION_ID KEYCLOAK_ADMIN_CLIENT_SECRET AI_API_KEY GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD; do
   require_env "$required"
 done
+
+if [[ "$AI_API_KEY" =~ [[:cntrl:]] ]]; then
+  echo "ERROR: AI_API_KEY contains invalid control characters." >&2
+  exit 1
+fi
 
 if [ -n "${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-}" ] \
     && [ "$AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC" != "1100" ]; then
@@ -74,6 +93,7 @@ readonly RUNNER_DIR="$INCOMING_DIR/.runner"
 readonly RUNNER_VERIFIER="$RUNNER_DIR/verify-observability.sh"
 readonly RUNNER_VALIDATOR="$RUNNER_DIR/validate-alloy-config.sh"
 readonly RUNNER_GRAFANA_API_HELPER="$RUNNER_DIR/grafana-api-request.sh"
+readonly STAGED_SERVICE_OVERRIDE="$INCOMING_DIR/docker-compose.service.override.yml"
 if [ ! -f "$STAGED_DEPLOY_DIR/docker-compose.prod.yml" ]; then
   echo "ERROR: staged deployment tree is missing: $STAGED_DEPLOY_DIR/docker-compose.prod.yml" >&2
   exit 1
@@ -91,6 +111,51 @@ fi
 PREV_SHA=""
 if [ -f DEPLOYED_SHA ]; then PREV_SHA=$(tr -d '\r\n' < DEPLOYED_SHA); fi
 
+current_image_tag() {
+  local service="$1" tag
+  tag="$(awk -v prefix="ghcr.io/a158coke/wotbtools-${service}:" \
+    '$1 == "image:" && index($2, prefix) == 1 { sub(prefix, "", $2); print $2; exit }' \
+    "$LIVE_COMPOSE")"
+  if [ -z "$tag" ] || [[ "$tag" =~ [[:space:]] ]]; then
+    echo "ERROR: could not resolve the current immutable ${service} image tag." >&2
+    return 1
+  fi
+  printf '%s\n' "$tag"
+}
+
+prepare_service_override() {
+  rm -f -- "$STAGED_SERVICE_OVERRIDE"
+  if [ "$DEPLOY_SERVICE" = all ]; then
+    return 0
+  fi
+  if [ ! -f "$LIVE_COMPOSE" ]; then
+    echo "ERROR: targeted deployment requires an existing live compose file." >&2
+    return 1
+  fi
+
+  local backend_tag frontend_tag keycloak_tag
+  backend_tag="$(current_image_tag backend)"
+  frontend_tag="$(current_image_tag frontend)"
+  keycloak_tag="$(current_image_tag keycloak)"
+  case "$DEPLOY_SERVICE" in
+    wotb-backend) backend_tag="$TAG" ;;
+    wotb-frontend) frontend_tag="$TAG" ;;
+    keycloak) keycloak_tag="$TAG" ;;
+  esac
+
+  umask 177
+  cat > "$STAGED_SERVICE_OVERRIDE" <<EOF
+services:
+  keycloak:
+    image: ghcr.io/a158coke/wotbtools-keycloak:${keycloak_tag}
+  wotb-backend:
+    image: ghcr.io/a158coke/wotbtools-backend:${backend_tag}
+  wotb-frontend:
+    image: ghcr.io/a158coke/wotbtools-frontend:${frontend_tag}
+EOF
+  chmod 600 "$STAGED_SERVICE_OVERRIDE"
+}
+
 if [ -f docker-compose.yml ] && [ -x "$LIVE_DEPLOY_DIR/postgres-backup.sh" ]; then
   "$LIVE_DEPLOY_DIR/postgres-backup.sh" --database wotb
   "$LIVE_DEPLOY_DIR/postgres-backup.sh" --database keycloak
@@ -103,17 +168,28 @@ printf 'GRAFANA_ADMIN_USER=%s\nGRAFANA_ADMIN_PASSWORD=%s\n' \
   "$GRAFANA_ADMIN_USER" "$GRAFANA_ADMIN_PASSWORD" > .env
 chmod 600 .env
 
+prepare_service_override
+STAGED_COMPOSE_ARGS=(-f "$STAGED_COMPOSE")
+if [ -f "$STAGED_SERVICE_OVERRIDE" ]; then
+  STAGED_COMPOSE_ARGS+=(-f "$STAGED_SERVICE_OVERRIDE")
+fi
 cp -f "$STAGED_DEPLOY_DIR/docker-compose.prod.yml" "$STAGED_COMPOSE"
-if ! docker compose -f "$STAGED_COMPOSE" config > "$STAGED_RESOLVED_COMPOSE"; then
+if ! docker compose "${STAGED_COMPOSE_ARGS[@]}" config > "$STAGED_RESOLVED_COMPOSE"; then
   echo "ERROR: staged compose config is invalid; live deployment was not changed." >&2
   exit 1
 fi
 chmod 600 "$STAGED_RESOLVED_COMPOSE"
 
 pull_compose() {
-  local compose_file="$1" attempt
+  local compose_file="$1" service="${2:-}" attempt
+  local -a compose_args=(-f "$compose_file")
+  if [ "$compose_file" = "$STAGED_COMPOSE" ] && [ -f "$STAGED_SERVICE_OVERRIDE" ]; then
+    compose_args+=(-f "$STAGED_SERVICE_OVERRIDE")
+  fi
+  local -a pull_args=()
+  [ -n "$service" ] && pull_args+=("$service")
   for attempt in 1 2 3; do
-    if docker compose -f "$compose_file" pull; then return 0; fi
+    if docker compose "${compose_args[@]}" pull "${pull_args[@]}"; then return 0; fi
     if [ "$attempt" -lt 3 ]; then
       echo "docker compose pull failed (${compose_file}, attempt $attempt), retrying in 10s..."
       sleep 10
@@ -134,10 +210,34 @@ assert_service_running() {
 apply_observability_services() {
   echo "== Applying Prometheus/Loki/Alloy/Grafana configuration =="
   docker compose up -d --force-recreate prometheus loki alloy grafana
-  assert_service_running prometheus Prometheus
-  assert_service_running loki Loki
-  assert_service_running alloy Alloy
-  assert_service_running grafana Grafana
+  assert_service_running prometheus Prometheus || return 1
+  assert_service_running loki Loki || return 1
+  assert_service_running alloy Alloy || return 1
+  assert_service_running grafana Grafana || return 1
+}
+
+verify_grafana_from_frontend_network() {
+  echo "== Verifying frontend can resolve Grafana through runtime Docker DNS =="
+  local attempt
+  for attempt in $(seq 1 "$GRAFANA_READINESS_RETRIES"); do
+    if docker compose exec -T wotb-frontend wget -qO- http://grafana:3000/api/health >/dev/null 2>&1; then
+      return 0
+    fi
+    [ "$attempt" -lt "$GRAFANA_READINESS_RETRIES" ] \
+      && sleep "$GRAFANA_READINESS_INTERVAL_SEC"
+  done
+  echo "ERROR: Grafana did not become ready from the frontend network after ${GRAFANA_READINESS_RETRIES} attempts." >&2
+  return 1
+}
+
+deploy_selected_service() {
+  if [ "$DEPLOY_SERVICE" = all ]; then
+    docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend
+  else
+    echo "== Deploying selected service: $DEPLOY_SERVICE =="
+    docker compose up -d --no-deps --force-recreate --remove-orphans "$DEPLOY_SERVICE"
+    assert_service_running "$DEPLOY_SERVICE" "$DEPLOY_SERVICE" || return 1
+  fi
 }
 
 wait_healthy() {
@@ -439,7 +539,7 @@ seed_current_lkg() {
   [ -d "$LIVE_DEPLOY_DIR" ] || return 1
   [ -f docker-compose.yml ] || return 1
   [ -n "$PREV_SHA" ] || return 1
-  echo "== Validating current deployment as a possible initial LKG =="
+  echo "== Validating current deployment for LKG seeding =="
   docker compose -f docker-compose.yml config >/dev/null 2>&1 || return 1
   bash "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
     "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" >/dev/null || return 1
@@ -447,13 +547,13 @@ seed_current_lkg() {
   stage_lkg_snapshot "$LIVE_DEPLOY_DIR" docker-compose.yml "$PREV_SHA" || return 1
   if ! install -m 644 "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" \
       "$LKG_DEPLOY_NEXT_DIR/observability/alloy/config.alloy"; then
-    echo "ERROR: failed to add the current Alloy config to the initial LKG snapshot." >&2
+    echo "ERROR: failed to add the current Alloy config to the LKG snapshot." >&2
     return 1
   fi
   if [ ! -f "$LKG_DEPLOY_NEXT_DIR/validate-alloy-config.sh" ]; then
     if ! install -m 755 "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
         "$LKG_DEPLOY_NEXT_DIR/validate-alloy-config.sh"; then
-      echo "ERROR: failed to add the current Alloy validator to the initial LKG snapshot." >&2
+      echo "ERROR: failed to add the current Alloy validator to the LKG snapshot." >&2
       return 1
     fi
   fi
@@ -594,7 +694,11 @@ rollback_to_lkg() {
   fi
   if pull_compose "$LIVE_COMPOSE" \
       && docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend; then
-    apply_observability_services || echo "OBSERVABILITY DEGRADED: observability services could not be recreated during rollback" >&2
+    if apply_observability_services && verify_grafana_from_frontend_network; then
+      :
+    else
+      echo "OBSERVABILITY DEGRADED: observability services or Grafana frontend-network readiness failed during rollback" >&2
+    fi
     if wait_healthy; then
       cp -f "$LKG_SHA" DEPLOYED_SHA
       echo "== ROLLBACK OK: $(cat "$LKG_SHA") =="
@@ -607,38 +711,94 @@ rollback_to_lkg() {
   return 1
 }
 
-rollback_to_legacy_previous() {
-  # This best-effort path is only reachable after explicit bootstrap mode;
-  # normal no-LKG deployments exit before moving the live tree.
-  echo "== DEPLOY FAILED: no validated LKG; attempting legacy previous recovery =="
-  if [ -f docker-compose.prev.yml ] && [ -d "$PREV_DEPLOY_DIR" ]; then
-    rm -rf -- "$LIVE_DEPLOY_DIR"
-    mv -- "$PREV_DEPLOY_DIR" "$LIVE_DEPLOY_DIR"
-    cp -f docker-compose.prev.yml docker-compose.yml
-    if pull_compose docker-compose.yml \
-        && docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend; then
-      apply_observability_services || echo "OBSERVABILITY DEGRADED: observability services could not be recreated during rollback" >&2
-      if wait_healthy; then
-        if [ -n "$PREV_SHA" ]; then echo "$PREV_SHA" > DEPLOYED_SHA; fi
-        echo "ROLLBACK OK: restored legacy previous deployment"
-        report_observability_status || true
-        return 0
-      else
-        echo "CORE ROLLBACK FAILED: legacy previous is not healthy" >&2
-        dump_logs
-      fi
-    else
-      echo "CORE ROLLBACK FAILED: could not recreate legacy previous deployment" >&2
-      dump_logs
+rollback_targeted_to_previous() {
+  local preserved_live=false preserved_compose=false
+  local snapshot_installed=false snapshot_compose_installed=false
+
+  restore_targeted_candidate_after_failed_switch() {
+    local recovery_failed=false
+    if [ "$snapshot_installed" = true ] && [ -e "$LIVE_DEPLOY_DIR" ] \
+        && ! move_path targeted-recover-previous-live "$LIVE_DEPLOY_DIR" "$PREV_DEPLOY_DIR"; then
+      recovery_failed=true
     fi
-  else
-    echo "CORE ROLLBACK UNAVAILABLE: no legacy previous deployment tree found" >&2
-    dump_logs
+    if [ "$snapshot_compose_installed" = true ] && [ -e "$LIVE_COMPOSE" ] \
+        && ! move_path targeted-recover-previous-compose "$LIVE_COMPOSE" "$PREV_COMPOSE"; then
+      recovery_failed=true
+    fi
+    if [ "$preserved_live" = true ] && [ -e "$TARGETED_FAILED_DEPLOY_DIR" ] \
+        && ! move_path targeted-recover-candidate-live "$TARGETED_FAILED_DEPLOY_DIR" "$LIVE_DEPLOY_DIR"; then
+      recovery_failed=true
+    fi
+    if [ "$preserved_compose" = true ] && [ -e "$TARGETED_FAILED_COMPOSE" ] \
+        && ! move_path targeted-recover-candidate-compose "$TARGETED_FAILED_COMPOSE" "$LIVE_COMPOSE"; then
+      recovery_failed=true
+    fi
+    if [ "$recovery_failed" = true ]; then
+      echo "ERROR: failed to restore the candidate after a targeted rollback switch failure." >&2
+      return 1
+    fi
+  }
+
+  echo "== TARGETED DEPLOY FAILED: restoring pre-deploy ${DEPLOY_SERVICE} runtime =="
+  if [ ! -d "$PREV_DEPLOY_DIR" ] || [ ! -f "$PREV_COMPOSE" ]; then
+    echo "TARGETED ROLLBACK ABORTED: pre-deploy snapshot is unavailable." >&2
+    return 1
   fi
+  if [ -e "$TARGETED_FAILED_DEPLOY_DIR" ] || [ -e "$TARGETED_FAILED_COMPOSE" ]; then
+    echo "TARGETED ROLLBACK ABORTED: stale failed-target snapshot exists; refusing to overwrite it." >&2
+    return 1
+  fi
+  if ! docker compose -f "$PREV_COMPOSE" config >/dev/null; then
+    echo "TARGETED ROLLBACK ABORTED: pre-deploy compose snapshot is invalid." >&2
+    return 1
+  fi
+
+  if ! move_path targeted-preserve-candidate-live "$LIVE_DEPLOY_DIR" "$TARGETED_FAILED_DEPLOY_DIR"; then
+    echo "TARGETED ROLLBACK ABORTED: failed to preserve the failed candidate tree." >&2
+    return 1
+  fi
+  preserved_live=true
+  if ! move_path targeted-preserve-candidate-compose "$LIVE_COMPOSE" "$TARGETED_FAILED_COMPOSE"; then
+    echo "TARGETED ROLLBACK ABORTED: failed to preserve the failed candidate compose." >&2
+    restore_targeted_candidate_after_failed_switch || true
+    return 1
+  fi
+  preserved_compose=true
+  if ! move_path targeted-restore-previous-live "$PREV_DEPLOY_DIR" "$LIVE_DEPLOY_DIR"; then
+    echo "TARGETED ROLLBACK ABORTED: failed to restore the pre-deploy tree." >&2
+    restore_targeted_candidate_after_failed_switch || true
+    return 1
+  fi
+  snapshot_installed=true
+  if ! move_path targeted-restore-previous-compose "$PREV_COMPOSE" "$LIVE_COMPOSE"; then
+    echo "TARGETED ROLLBACK ABORTED: failed to restore the pre-deploy compose." >&2
+    restore_targeted_candidate_after_failed_switch || true
+    return 1
+  fi
+  snapshot_compose_installed=true
+
+  if pull_compose "$LIVE_COMPOSE" "$DEPLOY_SERVICE" \
+      && docker compose up -d --no-deps --force-recreate --remove-orphans "$DEPLOY_SERVICE" \
+      && assert_service_running "$DEPLOY_SERVICE" "$DEPLOY_SERVICE" \
+      && wait_healthy; then
+    if ! rm -rf -- "$TARGETED_FAILED_DEPLOY_DIR" "$TARGETED_FAILED_COMPOSE"; then
+      echo "WARNING: targeted rollback restored a healthy ${DEPLOY_SERVICE}, but failed-target forensic snapshot cleanup failed." >&2
+    fi
+    echo "== TARGETED ROLLBACK OK: $DEPLOY_SERVICE =="
+    report_observability_status || true
+    return 0
+  fi
+
+  echo "TARGETED ROLLBACK FAILED: pre-deploy ${DEPLOY_SERVICE} runtime could not be restored; manual intervention required." >&2
+  dump_logs
   return 1
 }
 
-if ! pull_compose "$STAGED_COMPOSE"; then
+staged_pull_service=()
+if [ "$DEPLOY_SERVICE" != all ]; then
+  staged_pull_service=("$DEPLOY_SERVICE")
+fi
+if ! pull_compose "$STAGED_COMPOSE" "${staged_pull_service[@]}"; then
   echo "ERROR: staged docker compose pull failed after 3 attempts; live deployment was not changed." >&2
   exit 1
 fi
@@ -657,31 +817,30 @@ if lkg_bundle_present; then
   fi
 else
   if seed_current_lkg; then
-    echo "== Current application-healthy deployment promoted as initial LKG =="
-  elif [ "$BOOTSTRAP_ALLOWED" != "1" ]; then
+    echo "== Current application-healthy deployment promoted as LKG =="
+  else
     echo "ERROR: No application-validated LKG exists." >&2
     echo "Current deployment cannot be promoted to LKG." >&2
-    echo "Use explicit workflow_dispatch bootstrap only after reviewing production state." >&2
     echo "NO_VALIDATED_LKG: live deployment was not changed." >&2
     exit 1
-  else
-    echo "WARNING: BOOTSTRAP MODE" >&2
-    echo "WARNING: No validated LKG exists." >&2
-    echo "WARNING: This deployment has no guaranteed application rollback target." >&2
   fi
 fi
 
 rollback_needed=false
 # Same-filesystem moves make promotion preserve the previous tree for forensics.
 if [ -d "$LIVE_DEPLOY_DIR" ]; then
-  if [ -f docker-compose.yml ]; then cp -f docker-compose.yml docker-compose.prev.yml; fi
+  if [ -f "$LIVE_COMPOSE" ]; then cp -f "$LIVE_COMPOSE" "$PREV_COMPOSE"; fi
   rm -rf -- "$PREV_DEPLOY_DIR"
   mv -- "$LIVE_DEPLOY_DIR" "$PREV_DEPLOY_DIR"
   echo "Previous deployment tree saved (PREV_SHA=${PREV_SHA:-unknown})."
 fi
 mv -- "$STAGED_DEPLOY_DIR" "$LIVE_DEPLOY_DIR"
 cp -f "$LIVE_DEPLOY_DIR/docker-compose.prod.yml" docker-compose.next.yml
-if ! docker compose -f docker-compose.next.yml config > docker-compose.next.resolved.yml; then
+PROMOTED_COMPOSE_ARGS=(-f docker-compose.next.yml)
+if [ -f "$STAGED_SERVICE_OVERRIDE" ]; then
+  PROMOTED_COMPOSE_ARGS+=(-f "$STAGED_SERVICE_OVERRIDE")
+fi
+if ! docker compose "${PROMOTED_COMPOSE_ARGS[@]}" config > docker-compose.next.resolved.yml; then
   echo "ERROR: promoted compose render failed; attempting rollback." >&2
   rollback_needed=true
 else
@@ -690,14 +849,37 @@ else
 fi
 
 if [ "$rollback_needed" = false ]; then
-  if ! docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend; then
+  if ! deploy_selected_service; then
     echo "ERROR: docker compose up failed; attempting rollback." >&2
     rollback_needed=true
   else
-    apply_observability_services || echo "OBSERVABILITY DEGRADED: observability services could not be recreated" >&2
-    docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
-    if wait_healthy; then
-      if ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "$TAG"; then
+    if [ "$DEPLOY_SERVICE" = all ]; then
+      if apply_observability_services && verify_grafana_from_frontend_network; then
+        :
+      else
+        echo "OBSERVABILITY DEGRADED: Grafana is not ready through runtime Docker DNS" >&2
+      fi
+    elif [ "$DEPLOY_SERVICE" = grafana ]; then
+      if verify_grafana_from_frontend_network; then
+        :
+      else
+        echo "OBSERVABILITY DEGRADED: Grafana is not ready through runtime Docker DNS" >&2
+      fi
+    elif [ "$DEPLOY_SERVICE" = prometheus ] || [ "$DEPLOY_SERVICE" = loki ] \
+        || [ "$DEPLOY_SERVICE" = alloy ] || [ "$DEPLOY_SERVICE" = node-exporter ]; then
+      :
+    fi
+    if [ "$rollback_needed" = false ]; then
+      if [ "$DEPLOY_SERVICE" = all ]; then
+        docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
+      fi
+    fi
+    if [ "$rollback_needed" = false ] && wait_healthy; then
+      if [ "$DEPLOY_SERVICE" != all ]; then
+        echo "== TARGETED DEPLOY OK: $DEPLOY_SERVICE =="
+        report_observability_status || true
+        exit 0
+      elif ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "$TAG"; then
         echo "ERROR: LKG staging failed after the application health gate; attempting rollback." >&2
         rollback_needed=true
       elif promote_lkg_candidate; then
@@ -720,14 +902,16 @@ if [ "$rollback_needed" = false ]; then
 fi
 
 if [ "$rollback_needed" = true ]; then
-  if lkg_bundle_present; then
+  if [ "$DEPLOY_SERVICE" != all ]; then
+    if ! rollback_targeted_to_previous; then
+      echo "TARGETED ROLLBACK FAILED: no usable pre-deploy runtime was restored." >&2
+    fi
+  elif lkg_bundle_present; then
     if ! rollback_to_lkg; then
       echo "ROLLBACK FAILED: no usable LKG runtime was restored." >&2
     fi
   else
-    if ! rollback_to_legacy_previous; then
-      echo "ROLLBACK FAILED: no legacy previous deployment was restored." >&2
-    fi
+    echo "ROLLBACK FAILED: no validated LKG runtime is available; manual intervention required." >&2
   fi
   exit 1
 fi

@@ -294,23 +294,28 @@ content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另�
 - 校验失败 → LLM 自修循环（targeted rewrite → full rewrite → fail-safe），Backend 绝不
   代改句子；重试耗尽 → `error` 事件 `AI_REVIEW_GROUNDING_FAILED`（HTTP 已 200）。
 **Technical schema resilience（当前生产行为）**：Team Call #2 保持 v0.5 JSON/API 契约，backend
-parser 只接受完整且技术上有效的 `TeamAiReviewResult`。解析失败时最多执行一次基于 canonical
-battle context 的 `SINGLE_TEAM_BATTLE_RECOVERY`；不把失败 completion 传回模型，也不将 Markdown
-或部分 JSON 直接展示。recovery 仍失败时返回 `AI_REVIEW_SCHEMA_FAILED`。对应事件和低基数指标
-见 `docs/operations/observability.md`。
+parser 对局部 optional reference/field 做确定性过滤或规范化，并在形成最低可用 contract 时直接
+返回结果；不会因为 `INVALID_REFERENCE` 触发额外模型调用。空响应、不可解析 JSON、非 object 或
+规范化后仍缺少 summary/episodes 最低结构时，最多执行一次基于 canonical battle context 的
+`SINGLE_TEAM_BATTLE_RECOVERY`；不把失败 completion 传回模型，也不将 Markdown 或部分 JSON 直接展示。
+episodes 数量超限、optional reference 无效或 optional array 被截断时会确定性 salvage，仍保留可用结果，
+不会触发 recovery。recovery 指令跟随允许语言（中文、English、Русский），但复用同一 canonical contract。
+recovery 仍失败时返回 `AI_REVIEW_SCHEMA_FAILED`。对应事件和低基数指标见
+`docs/operations/observability.md`。
 
 **Team Call #2 严格 JSON contract（当前生产行为）**：Team Call #2 使用 provider
 `response_format=json_object`（`AiChatRequest.responseFormat=JSON_OBJECT`；Player /
-Pre-battle / Harness / Autopsy 保持 TEXT），并且 backend 只接受完整、技术上有效的
+Pre-battle / Harness / Autopsy 保持 TEXT），并且 backend 只接受严格、技术上有效的
 `TeamAiReviewResult` JSON。provider 负责 JSON 语法层，`TeamAiReviewResultParser` 负责 DTO、
-字段类型、数量上限及 roster/episode 引用等技术 contract；后端不判断战术结论是否正确，也不
+字段类型、数量上限及 roster/episode 引用等技术 contract；局部可安全修复的 reference 由 backend
+确定性 salvage，root/nested unknown field 不进入最终 DTO；后端不判断战术结论是否正确，也不
 改写或直接展示失败 completion。
 
-初始 completion 不满足 contract 时，记录低基数 WARN 并基于 canonical battle context 发起
-恰好一次新的 `SINGLE_TEAM_BATTLE_RECOVERY` JSON 调用；失败 completion 不会传回 recovery，
-也不会降级为 Markdown/纯文本。recovery 仍失败时返回 `AI_REVIEW_SCHEMA_FAILED`，provider
-错误继续沿用原始错误码。成功 recovery 的 Team Call #2 汇总日志和 token 指标包含 primary
-与 recovery 两次调用的累计值；日志不记录 prompt、completion 或 review 正文（见
+只有 primary 完全不可用或规范化后仍缺少最低 contract 时，记录低基数 WARN 并基于 canonical
+battle context 发起恰好一次新的 `SINGLE_TEAM_BATTLE_RECOVERY` JSON 调用；失败 completion 不会
+传回 recovery，也不会降级为 Markdown/纯文本。recovery 仍失败时返回 `AI_REVIEW_SCHEMA_FAILED`，
+provider 错误继续沿用原始错误码。成功 recovery 的 Team Call #2 汇总日志和 token 指标包含
+primary 与 recovery 两次调用的累计值；日志不记录 prompt、completion 或 review 正文（见
 `docs/operations/observability.md`）。
 
 历史上响应的四类计数（`analysisUnitCount` / `analyzedUnitCount` /
