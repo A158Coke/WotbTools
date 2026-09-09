@@ -1,4 +1,4 @@
-name: OpenTofu COS Validate
+name: OpenTofu COS Plan
 
 on:
   pull_request:
@@ -9,6 +9,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: opentofu-prod
+  cancel-in-progress: false
 
 defaults:
   run:
@@ -21,6 +25,7 @@ jobs:
     env:
       TF_IN_AUTOMATION: "true"
       CHECKPOINT_DISABLE: "1"
+      TRUSTED_PRODUCTION_RUN: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -34,8 +39,40 @@ jobs:
       - name: Check formatting
         run: tofu fmt -check -recursive
 
-      - name: Initialize OpenTofu
-        run: tofu init -input=false
+      - name: Initialize OpenTofu without production backend
+        if: env.TRUSTED_PRODUCTION_RUN != 'true'
+        run: tofu init -backend=false -input=false
+
+      - name: Initialize OpenTofu with production backend
+        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+        run: tofu init -reconfigure -input=false
 
       - name: Validate configuration
         run: tofu validate
+
+      - name: Create authenticated plan
+        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+        run: tofu plan -input=false -no-color -out=plan.tfplan
+
+      - name: Reject artifact bucket destruction or replacement
+        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+        shell: bash
+        run: |
+          if tofu show -json plan.tfplan | jq -e '
+            any(.resource_changes[]?;
+              (.address == "tencentcloud_cos_bucket.production_artifacts" and
+                ((.change.actions // []) | index("delete") != null)))
+          ' >/dev/null; then
+            echo "The production artifact bucket has a delete action in the plan."
+            exit 1
+          fi
