@@ -47,10 +47,21 @@ tofu import 'grafana_dashboard.managed["wotbtools_replay_parser"]' wotbtools-rep
 tofu import 'grafana_dashboard.managed["wotbtools_usage"]' wotbtools-usage
 ```
 
-CI never runs import or apply. Trusted runs use the repository Actions secret
-`GRAFANA_PAT` only for an authenticated plan; fork runs never receive it.
-The token must be a dedicated least-privilege service-account token and must
-not be printed, committed, or placed in dashboard JSON/state artifacts.
+CI never runs import. Pull requests use `GRAFANA_PAT` only for an authenticated
+plan; fork runs never receive it. Merges to `main` run the separate
+`grafana-tofu-apply.yml` workflow, which plans, blocks dashboard deletes, applies
+the exact saved plan, and verifies all managed dashboard UIDs.
+
+The current `GRAFANA_PAT` is the existing `wotbtool` service-account token with
+the Grafana organization `Admin` role. The owner explicitly approved this
+temporary credential exception for automatic apply; it is not a dedicated
+least-privilege token. The practical minimum for the adopted dashboard set is
+an organization `Editor` service-account role: Grafana documents that Editor
+can view and add/edit/delete dashboards and folders, while Viewer cannot write
+dashboards. Replacing the current Admin token with a dedicated Editor service
+account/token remains a follow-up hardening action. No token, prefix, length,
+hash, Authorization header, dashboard JSON, or state artifact is printed or
+committed.
 
 ## Runtime validation
 
@@ -60,6 +71,8 @@ dashboard UIDs, dashboard links, the Production Overview five-target health
 contract, and authentication failure behavior. This validates the API boundary
 used by the provider without restoring the removed dashboard file controller.
 
-The provider workflow blocks deletion/replacement of critical datasources and
-the Production Overview dashboard. Other dashboard deletes remain visible in
-the reviewed plan rather than being hidden by a global permanent guard.
+Both the PR plan workflow and the main apply workflow block any delete action
+for any `grafana_dashboard`; replacement is also blocked because its action set
+contains `delete`. The same gate covers any future provider-managed
+`grafana_data_source`. Intentional dashboard deletion is not supported by
+automatic main apply and requires a separately reviewed manual process.

@@ -1,14 +1,12 @@
-name: OpenTofu Grafana Plan
+name: OpenTofu Grafana Apply
 
 on:
-  pull_request:
+  push:
+    branches:
+      - main
     paths:
       - "infra/tofu/grafana/**"
-      - "deploy/observability/grafana/**"
-      - "deploy/docker-compose.prod.yml"
-      - "docker/online/docker-compose.yml"
-      - "deploy/test-grafana-runtime.sh"
-      - ".github/workflows/grafana-tofu-plan.yml"
+      - "deploy/observability/grafana/dashboards/**"
       - ".github/workflows/grafana-tofu-apply.yml"
   workflow_dispatch:
 
@@ -24,17 +22,20 @@ defaults:
     working-directory: infra/tofu/grafana
 
 jobs:
-  plan:
+  apply:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       TF_IN_AUTOMATION: "true"
       CHECKPOINT_DISABLE: "1"
-      TRUSTED_PRODUCTION_RUN: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+      GRAFANA_URL: https://monitor.wotbtools.com
 
     steps:
-      - name: Check out repository
+      - name: Check out exact main commit
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
 
       - name: Set up OpenTofu
         uses: opentofu/setup-opentofu@v2
@@ -45,12 +46,7 @@ jobs:
       - name: Check formatting
         run: tofu fmt -check -recursive
 
-      - name: Initialize without production backend
-        if: env.TRUSTED_PRODUCTION_RUN != 'true'
-        run: tofu init -backend=false -input=false
-
-      - name: Initialize with production backend
-        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+      - name: Initialize production backend
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
@@ -61,18 +57,16 @@ jobs:
       - name: Validate configuration
         run: tofu validate
 
-      - name: Create authenticated Grafana plan
-        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+      - name: Create exact Grafana apply plan
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
           TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
           TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
           TF_VAR_grafana_auth: ${{ secrets.GRAFANA_PAT }}
-        run: tofu plan -input=false -no-color -out plan.tfplan
+        run: tofu plan -input=false -no-color -out=plan.tfplan
 
       - name: Reject Grafana dashboard or datasource deletion
-        if: env.TRUSTED_PRODUCTION_RUN == 'true'
         shell: bash
         run: |
           if tofu show -json plan.tfplan | jq -e '
@@ -83,3 +77,36 @@ jobs:
             echo "A Grafana dashboard or provider-managed datasource has a delete action in the plan."
             exit 1
           fi
+
+      - name: Apply exact approved plan
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          TF_VAR_grafana_auth: ${{ secrets.GRAFANA_PAT }}
+        run: tofu apply -input=false -auto-approve plan.tfplan
+
+      - name: Verify managed dashboard UIDs
+        shell: bash
+        env:
+          GRAFANA_AUTH: ${{ secrets.GRAFANA_PAT }}
+        run: |
+          set -euo pipefail
+
+          verify_dashboard() {
+            local uid="$1"
+            curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \
+              -H "Authorization: Bearer ${GRAFANA_AUTH}" \
+              "${GRAFANA_URL}/api/dashboards/uid/${uid}" \
+              | jq -e --arg uid "$uid" '.dashboard.uid == $uid' >/dev/null
+          }
+
+          curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \
+            "${GRAFANA_URL}/api/health" \
+            | jq -e '.database == "ok"' >/dev/null
+
+          for dashboard_file in "$GITHUB_WORKSPACE"/deploy/observability/grafana/dashboards/*.json; do
+            uid="$(jq -er '.uid // empty' "$dashboard_file")"
+            verify_dashboard "$uid"
+          done

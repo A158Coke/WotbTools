@@ -227,6 +227,16 @@ binary plan is job-local, is ignored by Git, and is not uploaded as an artifact,
 cache entry, PR comment, or repository file. Authoritative state is never
 uploaded to GitHub.
 
+This no-apply rule applies to the Tencent production root above. Grafana is a
+separate, explicitly approved exception: pull requests remain plan-only, while
+`.github/workflows/grafana-tofu-apply.yml` runs only for `main` changes under
+the Grafana root or canonical dashboard JSON. It creates one saved plan,
+blocks any dashboard/provider-datasource delete action, applies that exact plan,
+and verifies the managed dashboard UIDs. The Grafana workflow shares its
+`opentofu-grafana-prod` concurrency group with the plan workflow; this is a
+GitHub Actions serialization guard, not a distributed COS lock and not a guard
+against manual owner OpenTofu operations.
+
 ## State and file safety
 
 The root `.gitignore` keeps `.terraform/`, state snapshots and backups, binary
