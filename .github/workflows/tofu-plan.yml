@@ -39,6 +39,46 @@ jobs:
       - name: Check formatting
         run: tofu fmt -check -recursive
 
+      - name: Verify Tencent credential wiring
+        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+        env:
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+        shell: bash
+        run: |
+          test -n "$TENCENTCLOUD_SECRET_ID"
+          test -n "$TENCENTCLOUD_SECRET_KEY"
+
+          echo "SecretId length: ${#TENCENTCLOUD_SECRET_ID}"
+          echo "SecretId prefix: ${TENCENTCLOUD_SECRET_ID:0:4}"
+          echo "SecretKey length: ${#TENCENTCLOUD_SECRET_KEY}"
+
+      - name: Probe Tencent provider authentication
+        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+        continue-on-error: true
+        env:
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+        shell: bash
+        run: |
+          probe_file=".tencent-credential-probe.auto.tf"
+          probe_log="${RUNNER_TEMP}/tencent-provider-probe.log"
+          cleanup() {
+            rm -f "$probe_file" "$probe_log"
+          }
+          trap cleanup EXIT
+
+          printf '%s\n' 'data "tencentcloud_user_info" "credential_probe" {}' > "$probe_file"
+          tofu init -backend=false -input=false -no-color
+
+          if tofu plan -backend=false -input=false -no-color -target=data.tencentcloud_user_info.credential_probe >"$probe_log" 2>&1; then
+            echo "Tencent provider probe: authentication request succeeded"
+          else
+            echo "Tencent provider probe: failed; inspect this separately from the S3 backend result"
+            grep -E 'Error:|StatusCode|AccessDenied|InvalidAccessKeyId|Unauthorized' "$probe_log" | head -n 8 || true
+            exit 1
+          fi
+
       - name: Initialize OpenTofu without production backend
         if: env.TRUSTED_PRODUCTION_RUN != 'true'
         run: tofu init -backend=false -input=false

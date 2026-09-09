@@ -7,6 +7,7 @@
 ### Operations
 - 运维基础设施新增现有生产 COS bucket 的 OpenTofu 基线；本次不改变线上业务行为、不执行自动 apply。
 - OpenTofu production state 与 CI plan 路径接入独立 COS remote state；本次不改变线上产品行为，不执行自动 import 或 apply。
+- OpenTofu CI 增加安全的凭据诊断步骤；不改变线上产品行为或生产资源。
 
 ### Changed
 - **团队 AI 复盘结果更清晰**：团队复盘现在按关键战术 episode、训练建议、重点复查和高贡献者分区展示；没有足够依据的可选区块会自动隐藏，复盘内容更容易直接对应到具体战术阶段。
