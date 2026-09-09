@@ -33,6 +33,7 @@ start_grafana_stub() {
 
 start_grafana_stub "$OLD_GRAFANA" 172.29.0.10 old
 docker run -d --name "$NGINX" --network "$NETWORK" -p "127.0.0.1:${PORT}:80" \
+  --add-host wotb-backend:172.29.0.10 --add-host keycloak:172.29.0.10 \
   -v "$CFG:/etc/nginx/conf.d/default.conf:ro" nginx:alpine >/dev/null
 
 for i in $(seq 1 30); do
