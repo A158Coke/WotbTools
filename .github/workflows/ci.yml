@@ -403,7 +403,9 @@ jobs:
       - name: bash -n deploy.sh
         run: bash -n deploy/deploy.sh
       - name: bash -n observability verification scripts
-        run: bash -n deploy/deploy.sh deploy/verify-observability.sh deploy/test-keycloak-runtime.sh deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh deploy/test-deploy-rollback.sh deploy/test-nginx-grafana-recreate.sh
+        run: bash -n deploy/deploy.sh deploy/verify-observability.sh deploy/test-keycloak-runtime.sh deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh deploy/test-deploy-rollback.sh deploy/test-nginx-grafana-recreate.sh deploy/test-build-workflow.sh
+      - name: Build workflow frozen-commit contract
+        run: bash deploy/test-build-workflow.sh
       - name: Production compose config validation
         env:
           TAG: sha-ci

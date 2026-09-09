@@ -399,8 +399,8 @@ root 管理，也不能使用带一天 expiration 的 artifact bucket 承载 sta
 Compose service。纯 `deploy/observability/grafana/dashboards/**` 只触发 Grafana
 OpenTofu API reconciliation，不触发应用 Build。生产发布原则：
 
-1. 代码质量验证（后端 Maven / 前端 Vitest + Vite build）由 PR CI 作为 merge gate 承担；Build/Deploy 不重复运行测试套件，Build 只负责 Docker 镜像构建推送，Deploy 只负责部署与健康检查。无论 main push 或 `workflow_dispatch`，production Build 都固定 checkout `main`，不能从 feature ref 推送 SHA 或 `latest`。
-2. Build 构建 main 的 backend/frontend/keycloak `sha-<SHA>` 镜像；生产 compose 钉 SHA，不依赖 `latest`。Deploy 的 targeted service 入口只更新所选 service，非目标应用继续使用当前 live compose 中的 immutable tag；`all` 和应用 targeted deploy 必须显式使用 Build 已产出的 tag。
+1. 代码质量验证（后端 Maven / 前端 Vitest + Vite build）由 PR CI 作为 merge gate 承担；Build/Deploy 不重复运行测试套件，Build 只负责 Docker 镜像构建推送，Deploy 只负责部署与健康检查。无论 main push 或 `workflow_dispatch`，`changes` job 只解析一次 `main` 的 full commit SHA，production builders 全部 checkout 该冻结 SHA，不能从 feature ref 或移动的 main 推送 SHA / `latest`。
+2. Build 构建同一 frozen main commit 的 backend/frontend/keycloak `sha-<SHA>` 镜像；生产 compose 钉 SHA，不依赖 `latest`。Deploy 的 targeted service 入口只更新所选 service，非目标应用继续使用当前 live compose 中的 immutable tag；`all` 和应用 targeted deploy 必须显式使用 Build 已产出的 tag。
 3. 新 compose 先写 `docker-compose.next.yml` 并 pull；成功后才替换正式 compose。
 4. 部署后检查 backend `/api/health`、前端 nginx E2E、Keycloak realm。
 5. 每次成功的完整 `all` 部署先把完整已验证部署树提升为 `/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml` 与 `DEPLOYED_SHA.lkg`；targeted service deploy 不提升 LKG。完整 `all` 健康检查失败只从该 LKG 恢复；targeted failure 只恢复失败 service 的 `deploy.prev` / `docker-compose.prev.yml` pre-deploy snapshot，保留其它独立 targeted release。
