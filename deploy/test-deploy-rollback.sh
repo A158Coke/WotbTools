@@ -11,7 +11,11 @@
 #      script still parse the formal deployment.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -n "${WOTB_TEST_ROOT:-}" ]; then
+  ROOT="$WOTB_TEST_ROOT"
+else
+  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -95,8 +99,8 @@ case "$cmd" in
     while [[ $# -gt 0 ]]; do
       case "$1" in
         -f) COMPOSE_FILE="$2"; shift 2 ;;
-        -d|--remove-orphans|-T) shift ;;
-        config|pull|up|ps|exec|logs|kill|run) sub="$1"; shift ;;
+        -d|--no-deps|--remove-orphans|-T) shift ;;
+        config|pull|up|ps|exec|logs|kill|restart|run) sub="$1"; shift ;;
         *) shift ;;
       esac
     done
@@ -104,9 +108,21 @@ case "$cmd" in
       config)
         while IFS= read -r line || [[ -n "$line" ]]; do resolve_line "$line"; done < "$COMPOSE_FILE"
         ;;
-      pull) exit 0 ;;
+      pull)
+        if [[ " ${compose_args[*]} " == *" pull all "* ]]; then
+          printf 'FAIL: docker compose pull must omit a service to pull all, never use service=all\n' >&2
+          exit 64
+        fi
+        if [ -n "${FAKE_DOCKER_PULL_LOG:-}" ]; then
+          printf 'compose %s\n' "${compose_args[*]}" >> "$FAKE_DOCKER_PULL_LOG"
+        fi
+        exit 0
+        ;;
       up)
         active_compose_file="${COMPOSE_FILE:-docker-compose.yml}"
+        if [ -n "${FAKE_DOCKER_UP_LOG:-}" ]; then
+          printf 'compose %s\n' "${compose_args[*]}" >> "$FAKE_DOCKER_UP_LOG"
+        fi
         if [ -n "${FAKE_LIVE_ALLOY_UNHEALTHY_FILE:-}" ] \
             && [[ "${compose_args[*]}" != *"postgres"* ]]; then
           rm -f "$FAKE_LIVE_ALLOY_UNHEALTHY_FILE"
@@ -133,7 +149,12 @@ case "$cmd" in
         else
           printf 'alloy Up\n'
         fi
-        printf 'grafana Up\ntest Up\n'
+         if [ "${FAKE_GRAFANA_UNHEALTHY:-0}" = 1 ]; then
+           printf 'grafana Exited (1)\n'
+         else
+           printf 'grafana Up\n'
+         fi
+         printf 'test Up\n'
         ;;
       exec)
         request="${compose_args[*]}"
@@ -203,10 +224,27 @@ case "$cmd" in
             fi
             exit 0
           fi
-          if [[ "$request" == *"wotb-frontend"*"/api/health"* ]]; then
-            [[ "$request" == *"--header=Host: wotbtools.com"* ]] || exit 1
-            app_tag_unhealthy frontend && exit 1
-            printf '{"status":"UP"}\n'
+           if [[ "$request" == *"wotb-frontend"* && "$request" == *"grafana:3000/api/health"* ]]; then
+             if [ "${FAKE_GRAFANA_NEVER_READY:-0}" = 1 ]; then
+               exit 1
+             fi
+             if [ -n "${FAKE_GRAFANA_PROBE_FILE:-}" ]; then
+               probe_count="$(cat "$FAKE_GRAFANA_PROBE_FILE" 2>/dev/null || printf '0')"
+               probe_count=$((probe_count + 1))
+               printf '%s\n' "$probe_count" > "$FAKE_GRAFANA_PROBE_FILE"
+               if [ "$probe_count" -lt "${FAKE_GRAFANA_READY_AFTER:-1}" ]; then
+                 exit 1
+               fi
+             fi
+             printf '{"database":"ok"}\n'
+           elif [[ "$request" == *"wotb-frontend"*"/api/health"* ]]; then
+            if [[ "$request" == *"--header=Host: monitor.wotbtools.com"* ]]; then
+              printf '{"database":"ok"}\n'
+            else
+              [[ "$request" == *"--header=Host: wotbtools.com"* ]] || exit 1
+              app_tag_unhealthy frontend && exit 1
+              printf '{"status":"UP"}\n'
+            fi
           elif [[ "$request" == *"8088/actuator/prometheus"* ]]; then
             printf 'jvm_ process_ system_ http_server_requests wotb_replay_parse_active wotb_replay_parse_queue_depth wotb_ai_review_in_flight wotb_ai_review_queue_depth hikaricp_connections_active\n'
           elif [[ "$request" == *"keycloak:8080/realms/wotbtools/.well-known/openid-configuration"* ]]; then
@@ -241,6 +279,12 @@ case "$cmd" in
         fi
         exit 0
         ;;
+      restart)
+        if [ -n "${FAKE_DOCKER_RESTART_LOG:-}" ]; then
+          printf 'compose %s\n' "${compose_args[*]}" >> "$FAKE_DOCKER_RESTART_LOG"
+        fi
+        exit 0
+        ;;
       logs) exit 0 ;;
       *) exit 0 ;;
     esac
@@ -266,7 +310,7 @@ export WOTB_COMPOSE_DIR="$WORK"
 export WOTB_BACKUP_ROOT="$WORK/backups"
 export WOTB_HEALTH_RETRIES="${WOTB_HEALTH_RETRIES:-3}"
 export FAKE_DOCKER_RUN_LOG="$WORK/docker-run.log"
-export WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG=1
+export FAKE_DOCKER_RESTART_LOG="$WORK/docker-restart.log"
 export DB_PASSWORD=db-secret KC_ADMIN_PASSWORD=kc-secret WG_APPLICATION_ID=wg-id \
        KEYCLOAK_ADMIN_CLIENT_SECRET=kc-client-secret AI_API_KEY=ai-key \
        GRAFANA_ADMIN_USER=admin GRAFANA_ADMIN_PASSWORD=grafana-secret
@@ -288,6 +332,13 @@ stage_candidate_b() {
   cp "$ROOT/deploy/observability/alloy/config.alloy" "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
   printf '\n// new alloy config\n' >> "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
 }
+
+# A healthy existing deployment is the normal first-LKG path. The deployment
+# under test can then proceed without an emergency bypass or legacy rollback.
+mkdir -p "$WORK/deploy"
+cp -a "$WORK/deploy.incoming/deploy/." "$WORK/deploy/"
+TAG=sha-A docker compose -f "$WORK/deploy/docker-compose.prod.yml" config > "$WORK/docker-compose.yml"
+printf 'sha-A\n' > "$WORK/DEPLOYED_SHA"
 
 lkg_state_checksum() {
   (
@@ -317,8 +368,22 @@ if grep -q "command not found\|No such file or directory" <<<"$guard_output"; th
   fail "deadline=400 must not produce shell errors: $guard_output"
 fi
 
+# AI_API_KEY must be rejected before any deployment work when it contains an
+# HTTP-header control character; the value itself must never appear in output.
+set +e
+guard_output=$(AI_API_KEY=$'ai-key\n' bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)
+guard_rc=$?
+set -e
+[[ $guard_rc -ne 0 ]] || fail "AI_API_KEY containing LF must fail the deployment guard"
+grep -q "AI_API_KEY contains invalid control characters" <<<"$guard_output" \
+  || fail "AI_API_KEY control-character error message missing: $guard_output"
+! grep -q "ai-key" <<<"$guard_output" \
+  || fail "AI_API_KEY value must not be printed by the validation guard"
+
 # ---- deploy A (success) ----
 export AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=1100
+: > "$WORK/docker-pull.log"
+export FAKE_DOCKER_PULL_LOG="$WORK/docker-pull.log"
 bash "$WORK/deploy.incoming/deploy/deploy.sh"
 [[ -f "$WORK/DEPLOYED_SHA" ]] || fail "DEPLOYED_SHA missing after deploy A"
 [[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "DEPLOYED_SHA != sha-A after deploy A"
@@ -329,10 +394,18 @@ bash "$WORK/deploy.incoming/deploy/deploy.sh"
 grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" || fail "formal compose does not pin sha-A images"
 grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.lkg.yml" || fail "LKG compose does not pin sha-A images"
 grep -q '\${' "$WORK/docker-compose.yml" && fail "formal compose still contains unresolved \${...}"
+grep -Eq 'compose .* pull$' "$WORK/docker-pull.log" \
+  || fail "full deployment must pull all services by omitting the service argument"
+! grep -q ' pull all' "$WORK/docker-pull.log" \
+  || fail "full deployment must never invoke docker compose pull all"
 grep -Eq 'keycloak-observability-canary-.*alpine:3\.22' "$WORK/docker-run.log" \
   || fail "Keycloak canary must use an independent Alpine 3.22 emitter"
 if grep -Eq 'compose.*run.*keycloak.*sh -c' "$WORK/docker-run.log"; then
   fail "Keycloak canary must not invoke the Keycloak image entrypoint as a shell"
+fi
+if [ -f "$WORK/docker-restart.log" ]; then
+  ! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
+    || fail "successful deployment must not restart frontend nginx for Grafana recreation"
 fi
 
 # ---- observability gates must fail closed on up=0 and an empty Loki result ----
@@ -523,51 +596,54 @@ grep -q 'wotbtools-backend:sha-B' "$WORK/docker-compose.yml" && fail "LKG stagin
   || fail "LKG staging fault must perform rollback compose up"
 unset FAKE_HEALTHY_BACKEND_TAG WOTB_TEST_FAIL_LKG_STAGE_COPY FAKE_ROLLBACK_UP_LOG
 
-# ---- no LKG + no bootstrap -> fail before promotion ----
-rm -rf "$WORK/deploy.lkg" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg"
-stage_candidate_b
-export WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG=0
-export TAG=sha-C
-export FAKE_FORCE_UNHEALTHY=1
-export WOTB_BACKUP_ROOT="$WORK/backups-no-lkg"
-set +e
-no_lkg_output="$(bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
-no_lkg_rc=$?
-set -e
-[[ $no_lkg_rc -ne 0 ]] || fail "no-LKG deployment without bootstrap must fail"
-grep -q "NO_VALIDATED_LKG" <<<"$no_lkg_output" || fail "no-LKG failure marker missing: $no_lkg_output"
-grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" \
-  || fail "no-LKG failure must not change the current live compose"
-[[ ! -e "$WORK/deploy.lkg" ]] || fail "no-LKG failure must not create an LKG"
-unset FAKE_FORCE_UNHEALTHY
-
-# ---- no LKG + explicit bootstrap -> first successful deployment becomes LKG ----
-export WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG=1
-export TAG=sha-A
-bash "$WORK/deploy.incoming/deploy/deploy.sh"
-[[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "bootstrap deployment did not become live"
-[[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] || fail "bootstrap deployment did not create first LKG"
-[[ -d "$WORK/deploy.lkg" ]] || fail "bootstrap deployment LKG tree missing"
-
-
 # ---- healthy application + broken observability remains a successful deploy ----
 run_observability_case() {
   local case_name="$1" tag="$2" assignment="$3" output rc
+  local -a env_args=() extra_env=()
   stage_candidate_b
+  if [[ "$case_name" == grafana-* ]]; then
+    : > "$WORK/docker-restart.log"
+  fi
+  if [ "$case_name" = "grafana-delayed-readiness" ]; then
+    : > "$WORK/grafana-probes"
+    extra_env+=("FAKE_GRAFANA_READY_AFTER=3" "FAKE_GRAFANA_PROBE_FILE=$WORK/grafana-probes"
+      "WOTB_GRAFANA_READINESS_RETRIES=5" "WOTB_GRAFANA_READINESS_INTERVAL_SEC=1")
+  elif [ "$case_name" = "grafana-readiness-timeout" ]; then
+    extra_env+=("WOTB_GRAFANA_READINESS_RETRIES=3" "WOTB_GRAFANA_READINESS_INTERVAL_SEC=1")
+  fi
+  [ -n "$assignment" ] && env_args+=("$assignment")
   set +e
   output="$(env TAG="$tag" FAKE_HEALTHY_BACKEND_TAG="$tag" \
     WOTB_OBSERVABILITY_RETRIES=1 WOTB_OBSERVABILITY_INTERVAL_SEC=1 \
-    WOTB_BACKUP_ROOT="$WORK/backups-$case_name" "$assignment" \
+    WOTB_BACKUP_ROOT="$WORK/backups-$case_name" \
+    "${env_args[@]}" "${extra_env[@]}" \
     bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
   rc=$?
   set -e
   [[ $rc -eq 0 ]] || fail "$case_name must keep the deployment successful: $output"
   grep -q "== DEPLOY OK: $tag ==" <<<"$output" || fail "$case_name missing DEPLOY OK"
-  grep -q "OBSERVABILITY DEGRADED" <<<"$output" || fail "$case_name missing OBSERVABILITY DEGRADED"
+  if [ "$case_name" != "grafana-delayed-readiness" ]; then
+    grep -q "OBSERVABILITY DEGRADED" <<<"$output" || fail "$case_name missing OBSERVABILITY DEGRADED"
+  else
+    ! grep -q "OBSERVABILITY DEGRADED" <<<"$output" \
+      || fail "$case_name unexpectedly reported OBSERVABILITY DEGRADED"
+  fi
   ! grep -q "ROLLBACK" <<<"$output" || fail "$case_name unexpectedly rolled back"
+  if [ "$case_name" = "grafana-delayed-readiness" ]; then
+    [[ "$(cat "$WORK/grafana-probes")" -eq 3 ]] \
+      || fail "$case_name must perform two failed probes before the successful probe"
+  elif [ "$case_name" = "grafana-readiness-timeout" ]; then
+    if [ -f "$WORK/docker-restart.log" ]; then
+      ! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
+        || fail "$case_name must never restart frontend nginx after readiness timeout"
+    fi
+  fi
 }
 
 run_observability_case grafana-broken sha-GRAFANA 'FAKE_GRAFANA_AUTH=0'
+run_observability_case grafana-recreate-failed sha-GRAFANA-RECREATE 'FAKE_GRAFANA_UNHEALTHY=1'
+run_observability_case grafana-delayed-readiness sha-GRAFANA-DELAYED ''
+run_observability_case grafana-readiness-timeout sha-GRAFANA-TIMEOUT 'FAKE_GRAFANA_NEVER_READY=1'
 run_observability_case prometheus-broken sha-PROM 'FAKE_PROMETHEUS_UP=0'
 run_observability_case loki-broken sha-LOKI 'FAKE_LOKI_EMPTY=1'
 run_observability_case alloy-broken sha-ALLOY 'FAKE_ALLOY_UNHEALTHY=1'
@@ -592,12 +668,109 @@ run_application_failure_case backend-unhealthy sha-BACKEND backend
 run_application_failure_case frontend-unhealthy sha-FRONTEND frontend
 run_application_failure_case keycloak-unhealthy sha-KEYCLOAK keycloak
 
+# ---- targeted deployment recreates only the selected service and never dependencies ----
+run_targeted_deploy_case() {
+  local service="$1" tag="$2" output rc other_service targeted_up_line healthy_backend_tag
+  local log="$WORK/docker-up-targeted-$service.log"
+  stage_candidate_b
+  healthy_backend_tag="$(sed -nE 's#.*wotbtools-backend:([^[:space:]]+).*#\1#p' "$WORK/docker-compose.yml" | head -n 1)"
+  [ -n "$healthy_backend_tag" ] || fail "targeted $service test could not determine the current backend image tag"
+  [ "$service" = wotb-backend ] && healthy_backend_tag="$tag"
+  : > "$log"
+  set +e
+  output="$(env TAG="$tag" WOTB_DEPLOY_SERVICE="$service" \
+    FAKE_HEALTHY_BACKEND_TAG="$healthy_backend_tag" FAKE_DOCKER_UP_LOG="$log" \
+    WOTB_BACKUP_ROOT="$WORK/backups-targeted-$service" \
+    bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+  rc=$?
+  set -e
+  [[ $rc -eq 0 ]] || fail "targeted $service deployment must succeed: $output"
+  targeted_up_line="$(grep -E "compose up .*--no-deps.* $service$" "$log" || true)"
+  if [ -z "$targeted_up_line" ] || \
+      [ "$(grep -Ec "compose up .*--no-deps.* $service$" "$log")" -ne 1 ]; then
+    fail "targeted $service deployment must use --no-deps; log: $(cat "$log" 2>/dev/null || true)"
+  fi
+  for other_service in postgres node-exporter prometheus loki alloy grafana keycloak wotb-backend wotb-frontend; do
+    [ "$other_service" = "$service" ] && continue
+    ! grep -Eq " $other_service( |$)" <<<"$targeted_up_line" \
+      || fail "targeted $service deployment must not explicitly start $other_service"
+  done
+  grep -q "== TARGETED DEPLOY OK: $service ==" <<<"$output" \
+    || fail "targeted $service deployment success marker missing"
+}
+
+run_targeted_deploy_case grafana sha-TARGETED-GRAFANA
+run_targeted_deploy_case wotb-backend sha-TARGETED-BACKEND
+run_targeted_deploy_case wotb-frontend sha-TARGETED-FRONTEND
+
+# ---- a targeted failure restores only its own pre-deploy runtime ----
+targeted_pre_failure_backend_tag="$(sed -nE 's#.*wotbtools-backend:([^[:space:]]+).*#\1#p' "$WORK/docker-compose.yml" | head -n 1)"
+[ -n "$targeted_pre_failure_backend_tag" ] \
+  || fail "targeted rollback test could not determine the current backend image tag"
+grep -q 'wotbtools-frontend:sha-TARGETED-FRONTEND' "$WORK/docker-compose.yml" \
+  || fail "targeted frontend success must be present before the next targeted failure"
+stage_candidate_b
+: > "$WORK/docker-up-targeted-rollback.log"
+set +e
+targeted_rollback_output="$(env TAG=sha-TARGETED-BACKEND-FAIL WOTB_DEPLOY_SERVICE=wotb-backend \
+  FAKE_HEALTHY_BACKEND_TAG="$targeted_pre_failure_backend_tag" \
+  FAKE_APP_UNHEALTHY_TAG=sha-TARGETED-BACKEND-FAIL FAKE_APP_UNHEALTHY_SERVICE=backend \
+  FAKE_DOCKER_UP_LOG="$WORK/docker-up-targeted-rollback.log" \
+  WOTB_BACKUP_ROOT="$WORK/backups-targeted-rollback" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+targeted_rollback_rc=$?
+set -e
+[[ $targeted_rollback_rc -ne 0 ]] \
+  || fail "targeted backend failure must reject the candidate"
+grep -q '== TARGETED ROLLBACK OK: wotb-backend ==' <<<"$targeted_rollback_output" \
+  || fail "targeted backend failure must restore its pre-deploy runtime"
+! grep -q '== ROLLBACK OK:' <<<"$targeted_rollback_output" \
+  || fail "targeted backend failure must not restore the full LKG"
+grep -q 'wotbtools-frontend:sha-TARGETED-FRONTEND' "$WORK/docker-compose.yml" \
+  || fail "targeted backend rollback must preserve the independently deployed frontend"
+grep -q "wotbtools-backend:${targeted_pre_failure_backend_tag}" "$WORK/docker-compose.yml" \
+  || fail "targeted backend rollback must restore the previous backend image tag"
+! grep -Eq 'compose up .*postgres .*keycloak .*wotb-backend .*wotb-frontend' "$WORK/docker-up-targeted-rollback.log" \
+  || fail "targeted backend rollback must not restart the full application stack"
+[ ! -e "$WORK/deploy.targeted.failed" ] \
+  || fail "successful targeted rollback must remove the failed candidate tree"
+[ ! -e "$WORK/docker-compose.targeted.failed.yml" ] \
+  || fail "successful targeted rollback must remove the failed candidate compose"
+
+# A second targeted failure must be recoverable after the first forensic cleanup.
+stage_candidate_b
+: > "$WORK/docker-up-targeted-rollback-second.log"
+set +e
+second_targeted_rollback_output="$(env TAG=sha-TARGETED-BACKEND-FAIL-2 WOTB_DEPLOY_SERVICE=wotb-backend \
+  FAKE_HEALTHY_BACKEND_TAG="$targeted_pre_failure_backend_tag" \
+  FAKE_APP_UNHEALTHY_TAG=sha-TARGETED-BACKEND-FAIL-2 FAKE_APP_UNHEALTHY_SERVICE=backend \
+  FAKE_DOCKER_UP_LOG="$WORK/docker-up-targeted-rollback-second.log" \
+  WOTB_BACKUP_ROOT="$WORK/backups-targeted-rollback-second" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+second_targeted_rollback_rc=$?
+set -e
+[[ $second_targeted_rollback_rc -ne 0 ]] \
+  || fail "second targeted backend failure must reject the candidate"
+grep -q '== TARGETED ROLLBACK OK: wotb-backend ==' <<<"$second_targeted_rollback_output" \
+  || fail "second targeted backend failure must restore its pre-deploy runtime"
+! grep -q '== ROLLBACK OK:' <<<"$second_targeted_rollback_output" \
+  || fail "second targeted backend failure must not restore the full LKG"
+grep -q 'wotbtools-frontend:sha-TARGETED-FRONTEND' "$WORK/docker-compose.yml" \
+  || fail "second targeted backend rollback must preserve the independently deployed frontend"
+! grep -Eq 'compose up .*postgres .*keycloak .*wotb-backend .*wotb-frontend' "$WORK/docker-up-targeted-rollback-second.log" \
+  || fail "second targeted backend rollback must not restart the full application stack"
+[ ! -e "$WORK/deploy.targeted.failed" ] \
+  || fail "second successful targeted rollback must remove the failed candidate tree"
+[ ! -e "$WORK/docker-compose.targeted.failed.yml" ] \
+  || fail "second successful targeted rollback must remove the failed candidate compose"
+
 # ---- rollback application healthy + Grafana broken remains ROLLBACK OK ----
 stage_candidate_b
+: > "$WORK/docker-restart.log"
 set +e
 rollback_observability_output="$(env TAG=sha-ROLLBACK-GRAFANA \
   FAKE_HEALTHY_BACKEND_TAG=sha-ROLLBACK-GRAFANA \
-  FAKE_APP_UNHEALTHY_TAG=sha-ROLLBACK-GRAFANA FAKE_GRAFANA_AUTH=0 \
+  FAKE_APP_UNHEALTHY_TAG=sha-ROLLBACK-GRAFANA FAKE_GRAFANA_UNHEALTHY=1 \
   WOTB_OBSERVABILITY_RETRIES=1 WOTB_OBSERVABILITY_INTERVAL_SEC=1 \
   WOTB_BACKUP_ROOT="$WORK/backups-rollback-grafana" \
   bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
@@ -610,6 +783,10 @@ grep -q "OBSERVABILITY DEGRADED" <<<"$rollback_observability_output" \
   || fail "rollback Grafana case must report degraded observability"
 ! grep -q "== ROLLBACK FAILED:" <<<"$rollback_observability_output" \
   || fail "Grafana failure must not make an application-healthy rollback fail"
+if [ -f "$WORK/docker-restart.log" ]; then
+  ! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
+    || fail "Grafana failure during rollback must not refresh frontend nginx"
+fi
 
 # ---- rollback application failure remains a real rollback failure ----
 stage_candidate_b
@@ -632,4 +809,20 @@ env -i PATH="$PATH" HOME="$WORK" WOTB_COMPOSE_DIR="$WORK" WOTB_BACKUP_ROOT="$WOR
   bash "$WORK/deploy/postgres-backup.sh" --database wotb --skip-retention \
   || fail "postgres-backup.sh fails without deploy env"
 
-echo "OK: application/observability gates, LKG promotion, failed-candidate isolation, bootstrap, compose + backup contracts passed"
+# ---- no LKG + no current deployment -> fail closed before promotion ----
+stage_candidate_b
+rm -rf "$WORK/deploy" "$WORK/docker-compose.yml" "$WORK/DEPLOYED_SHA" \
+  "$WORK/deploy.lkg" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg"
+export TAG=sha-C FAKE_HEALTHY_BACKEND_TAG=sha-C
+export WOTB_BACKUP_ROOT="$WORK/backups-no-lkg"
+set +e
+no_lkg_output="$(bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+no_lkg_rc=$?
+set -e
+[[ $no_lkg_rc -ne 0 ]] || fail "no-LKG deployment must fail closed"
+grep -q "NO_VALIDATED_LKG" <<<"$no_lkg_output" || fail "no-LKG failure marker missing: $no_lkg_output"
+[[ ! -e "$WORK/deploy" ]] || fail "no-LKG failure must not promote the candidate"
+[[ ! -e "$WORK/deploy.lkg" ]] || fail "no-LKG failure must not create an LKG"
+unset FAKE_HEALTHY_BACKEND_TAG
+
+echo "OK: application/observability gates, LKG promotion, failed-candidate isolation, no-LKG fail-closed, compose + backup contracts passed"

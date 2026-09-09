@@ -6,8 +6,8 @@
 
 ```bash
 cd /opt/wotb
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs --tail=100 keycloak alloy prometheus
+docker compose -f /opt/wotb/docker-compose.yml ps
+docker compose -f /opt/wotb/docker-compose.yml logs --tail=100 keycloak alloy prometheus
 ```
 
 在 Prometheus 页面确认以下 observability target 为 `UP`：
@@ -53,9 +53,11 @@ Keycloak 的应用 OIDC 与日志是生产排障依据，不应新增独立 mana
 
 ## 5. 证据采集与回滚
 
+部署脚本在任何容器变更前会拒绝包含 HTTP 控制字符（包括 CR/LF）的 `AI_API_KEY`；不会 trim、打印或输出该 secret 的任何片段。若该校验失败，先在 secret 管理侧重新录入干净值，再重新部署。
+
 ```bash
-docker compose -f docker-compose.prod.yml ps -a
-docker compose -f docker-compose.prod.yml logs --tail=300 keycloak wotb-backend alloy prometheus
+docker compose -f /opt/wotb/docker-compose.yml ps -a
+docker compose -f /opt/wotb/docker-compose.yml logs --tail=300 keycloak wotb-backend alloy prometheus
 ```
 
-若应用 gate 失败，先保留上述输出，再按部署脚本的 rollback 流程恢复 LKG（`/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml`、`DEPLOYED_SHA.lkg`）。回滚成功标准只有 backend、frontend 与 Keycloak OIDC 可用；Grafana/Prometheus/Loki/Alloy 失败只记录 `OBSERVABILITY DEGRADED`，不能把 `ROLLBACK OK` 改成 `ROLLBACK FAILED`。`deploy.prev` 只用于取证，不能作为回滚依据。若 LKG 缺失或校验失败，脚本会 fail-closed 并保留当前 live tree，需人工修复后再操作；回滚不应删除 PostgreSQL、Prometheus、Loki 或 Grafana volume。首次建立 LKG 只能通过显式的 `workflow_dispatch` `allow_bootstrap_without_lkg` 输入，并须先完成生产状态复核。
+若应用 gate 失败，完整 `all` 发布按部署脚本的 rollback 流程恢复 LKG（`/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml`、`DEPLOYED_SHA.lkg`）；targeted 发布失败只恢复该次部署前的 `deploy.prev` / `docker-compose.prev.yml` 并只重建失败 service，不回滚其他独立 targeted release。完整回滚成功标准只有 backend、frontend 与 Keycloak OIDC 可用；Grafana/Prometheus/Loki/Alloy 失败只记录 `OBSERVABILITY DEGRADED`，不能把 `ROLLBACK OK` 改成 `ROLLBACK FAILED`。失败候选快照只用于取证，不能作为回滚依据。若 LKG 缺失或校验失败，脚本会 fail-closed 并保留当前 live tree，需人工修复后再操作；回滚不应删除 PostgreSQL、Prometheus、Loki 或 Grafana volume。若已有健康 live deployment，正常发布流程会先验证并建立缺失的初始 LKG；否则必须人工处理，不能回退到未经验证的 previous deployment。

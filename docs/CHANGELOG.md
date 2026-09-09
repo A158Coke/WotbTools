@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### CI/CD
+- **Build / Deploy workflow split**：将生产镜像构建拆到独立的 `build.yml`，Build 与 Deploy 均可通过 `workflow_dispatch` 独立选择目标；Build 的 `changes` job 只解析一次 `main` 的 full SHA，backend/frontend/keycloak 使用同一个冻结 commit 构建 production SHA/`latest`，不能由 feature ref 或移动的 main 绕过 PR merge gate。Deploy 支持任意 production Compose service，应用/all 要求独立 Build 产出的 immutable tag，运行时 observability service 可直接 dispatch。纯 Grafana dashboard JSON 只进入 OpenTofu API reconciliation，不触发应用 Build；targeted deploy 不提升 LKG，失败时只恢复目标 service 的 pre-deploy snapshot，完整 `all` 发布继续执行应用健康 gate、LKG promotion 与 fail-closed rollback。Grafana upstream 改为 Docker embedded DNS 运行时解析，Grafana 暂时不可用不再阻止 frontend nginx 启动。
+
 ### OpenTofu
 - 新增独立 Grafana OpenTofu root，纳管现有 9 个 dashboard 并保留 dashboard JSON 为 canonical source；Prometheus/Loki datasource 因 Grafana read-only 限制继续由 file provisioning 管理。PR 使用 `GRAFANA_PAT` 做 plan，合并到 main 后自动 apply 精确 saved plan；任意 dashboard delete/replacement fail-closed，apply 后只读校验全部 dashboard UID。
 - 扩展 production root 纳管已发现的 Tencent Lighthouse 上海生产节点及其现有四条 firewall 规则；owner 手工 import 后 authenticated plan 为 `No changes`，不纳管未完成读取证据的 VPC、subnet、security-group 或 disk，并新增 Lighthouse delete/replacement safety gate。
@@ -19,10 +22,12 @@
 - **Battle Playback HD 地图验证收口**：29 张 HD 底图增加 coverage/hash/真实尺寸/严格 2× frame/map import/5 MiB 单图预算的 deterministic gate；terrain attitude 补齐 yaw=90°、反向与 45° 局部轴测试。视觉几何仍要求人工 29/29 source↔HD QA，manifest 的 `geometryTransform=NONE` 仅描述生成流程，不作为视觉真实性证明。
 
 ### Production observability
+- **Production deploy bootstrap cleanup**：移除事故恢复遗留的无 LKG 部署 bypass、workflow_dispatch 选项与 legacy previous 回滚；已有健康 live deployment 仍可在正常发布流程中建立初始 LKG，没有可验证 LKG 时统一 fail-closed。
 - **Production application gate simplified**：发布与回滚现在只由 backend、frontend/nginx（`Host: wotbtools.com`）和 Keycloak OIDC discovery 决定；Prometheus/Loki/Alloy/Grafana 故障只输出 `OBSERVABILITY DEGRADED`，不再触发 application rollback。移除 `KEYCLOAK_MANAGEMENT` capability、Keycloak `:9000` health/metrics contract 与 Prometheus Keycloak scrape，Keycloak dashboard 收缩为登录、QQ callback、broker/IdP 与 WARN/ERROR 日志；新增 Grafana/Prometheus/Loki/Alloy 非阻断和应用 gate/rollback smoke cases。
+- **Production observability refresh isolation**：Grafana force-recreate 后仅在 Grafana 从 frontend 网络可解析且健康时刷新 frontend nginx；Grafana 重建失败跳过 refresh 并保留应用成功/健康 rollback。monitor proxy 使用 `Host: monitor.wotbtools.com`，Android canary 使用 `Host: wotbtools.com`。
 - **Keycloak production runtime hardening**：Keycloak 构建阶段固定 PostgreSQL、health、metrics，生产/本地 runtime env 开启 HTTP metrics histograms，编排统一使用 `start --optimized`；新增真实 Docker runtime smoke，验证 discovery、management readiness/metrics、无宿主机管理端口暴露及无启动时 augmentation。
-- **Production deploy LKG rollback contract**：成功部署后保存完整、经 health/observability gate 验证的 Last Known Good 部署树；失败只从 LKG 回滚，损坏或缺失 LKG 时 fail-closed 并保留当前 live tree，`deploy.prev` 仅作取证。新增显式 workflow_dispatch bootstrap 输入，用于事故后的首次 LKG 建立，并补充 A/B、损坏 bundle 与 bootstrap 回归 smoke。
-- **Production deploy bootstrap recovery**：当历史 live Alloy 因旧 LogQL selector 进入重启循环且尚无 LKG 时，初始 LKG 使用已校验的 staged observability 配置建立；正常部署与回滚仍要求完整 health/observability gate。
+- **Production deploy LKG rollback contract**：成功部署后保存完整、经 health/observability gate 验证的 Last Known Good 部署树；失败只从 LKG 回滚，损坏或缺失 LKG 时 fail-closed 并保留当前 live tree，`deploy.prev` 仅作取证；补充 A/B、损坏 bundle、健康 live 初始 LKG seeding 与无 LKG fail-closed 回归 smoke。
+- **Production deploy initial LKG seeding**：当已有 live deployment 但尚无 LKG 时，先完成应用健康检查并使用已校验的 staged observability 配置建立初始 LKG；没有可验证 live deployment 时保持 fail-closed，正常部署与回滚仍要求完整 health/observability gate。
 - **Production deploy capability-aware rollback**：Keycloak management readiness 从 Docker 内部网络执行并接受实际 JSON whitespace；rollback verifier 固定由当前 deployment runner 持有，历史 LKG 通过 capability metadata 执行 core rollback gate，不再因缺少新版本 management capability 或 verifier 文件而二次失败。
 - **Production deploy health-check contract**：前端容器内的部署探针显式发送 `Host: wotbtools.com`，避免误命中 Grafana virtual host；Prometheus 与 observability gate 统一使用 backend 专用 management `8088` 端口，并补充 rollback smoke regression。
 - **Production observability deploy gate fail-closed**：部署显式 reload Prometheus/Alloy，Prometheus target 必须满足 `up == 1`，Loki 必须收到本次部署唯一 canary；失败回滚同时恢复上一版 observability 配置，避免 bind-mounted 配置残留。
@@ -30,8 +35,9 @@
 - **Team AI Review Quality Harness v1**：新增 `evidenceBasis` 结构化质量契约、推理顺序与反 settlement-shortcut deterministic checks；真实 `.wotbreplay` offline harness 复用生产解析/时间线/grounding 链并保持 0-token；新增显式 opt-in real-replay benchmark 与无 prompt/key 的 JSON/Markdown 报告。synthetic prompt PASS 与真实回放质量明确分层，默认 CI 不调用 provider。
 
 ### AI Review
-- **Team AI Review contract resilience**：Team Call #2 现在只接受完整有效的 `TeamAiReviewResult` JSON；初始 contract 失败时基于 canonical battle context 最多执行一次 fresh JSON recovery，失败 completion 不会回传给模型或直接展示。两次均失败返回 `AI_REVIEW_SCHEMA_FAILED`，SSE/OpenAPI/前端与低基数日志、累计 token 指标保持一致。
-- **Team AI Review technical schema resilience（历史基线）**：该历史条目仅用于说明契约演进；当前生产行为以本节的严格 JSON + single recovery 契约为准，不提供 salvaged 或 plain-text 结果模式。
+- **Team AI Review contract resilience**：Team Call #2 最终只接受严格有效的 `TeamAiReviewResult` JSON；局部可安全规范化的问题会保留可用内容，真正不可用时基于 canonical battle context 最多执行一次 fresh JSON recovery，失败 completion 不会回传给模型或直接展示。两次均失败返回 `AI_REVIEW_SCHEMA_FAILED`，SSE/OpenAPI/前端与低基数日志、累计 token 指标保持一致。
+- **Team AI Review technical schema resilience**：primary response 的局部 optional reference/field 缺陷现在由 backend 确定性 salvage；形成最低 contract 时不触发 recovery。真正不可用时仍严格执行至多一次 recovery，unknown field 不会进入最终 DTO，plain-text 结果仍不会放行。
+- **Team AI Review bounded salvage and localized recovery**：episodes 超限会截断到上限但保持 primary 结果可用；summary/episodes 真正缺失或类型错误才触发一次 recovery，recovery 指令跟随允许语言生成。
 - **Team AI Review v0.6**：升级 Team Call #2 的战术因果推理顺序，补强 Information/Remaining uncertainty/Decision impact、objective obligation、effective local participation、episode propagation、HP 下游验证与状态触发训练建议；保持 v0.5 JSON/API/前端契约不变，不新增模型调用或后端战术语义裁判，默认 CI 仍为 0 provider token。
 - **Team AI Review v0.5**：Team Call #2 改为结构化 `teamReview` 结果，增加 episode/训练建议/重点复查/高贡献者契约与运行时校验；移除生产 Team Autopsy 追加、第三次模型调用及 settlement-only tactical validator，SSE `done` 与前端三语渲染同步升级。
 - **Team AI Review v0.4**：强化 Information → remaining uncertainty → decision impact 因果链，明确距离只是证据而非战术价值，并禁止无证据的通用距离/固定时刻/车种职责规则。重点复查、高贡献者与关键威胁必须绑定正文 tactical episode，不能从结算榜单重新选人；传播检查允许保持未知。未修改 parser、reconstruction、backend tactical evidence、输出长度或 token cap。
