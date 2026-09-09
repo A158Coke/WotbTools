@@ -41,8 +41,8 @@ docker network create --driver bridge --subnet 172.29.0.0/16 --gateway 172.29.0.
 
 start_grafana_stub() {
   local name="$1" ip="$2" marker="$3"
-  docker create --name "$name" alpine:3.22 sh -c \
-    "mkdir -p /www/api; printf '{\"database\":\"ok\",\"marker\":\"$marker\"}\\n' > /www/api/health; exec /bin/busybox httpd -f -p 3000 -h /www" \
+  docker create --name "$name" python:3.12-alpine sh -c \
+    "mkdir -p /www/api; printf '{\"database\":\"ok\",\"marker\":\"$marker\"}\\n' > /www/api/health; exec python -m http.server 3000 --directory /www" \
     >/dev/null
   docker network connect --ip "$ip" --alias grafana --alias wotb-backend --alias keycloak \
     "$NETWORK" "$name"
@@ -59,7 +59,7 @@ wait_for_grafana_dns() {
     [ "$i" -lt 30 ] && sleep 1
   done
   grafana_diagnostics
-  echo "FAIL: Docker DNS did not publish the grafana alias" >&2
+  echo "FAIL: Grafana alias did not resolve to a healthy HTTP stub" >&2
   return 1
 }
 
