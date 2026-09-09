@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### OpenTofu
+- 新增最小 COS-only OpenTofu production baseline：声明现有生产 COS bucket、手工 import 流程、状态安全规则与不注入生产凭据的 GitHub Actions validation workflow；不包含自动 plan、import 或 apply。
+
 ### Battle Playback
 - **Battle Playback Type 5 H Zetsu dedicated asset repair**：根据 8033 与 9057 的真实 BlitzKit bake 证据拆分 `type-5-heavy` 与 `type-5-h-zetsu`；两者模块、纹理和 turret raster 均不同，9057 不再复用旧 Type 5 Heavy 资产。
 - **Battle Playback Tier X 2D vehicle model fallback repair**：补齐 Zmije（tankId 23425）的 BlitzKit source-faithful turreted 模型、映射、战术 profile 与 inventory；runtime 为结构、图片和模块失败提供确定性 fallback reason，图片失败只做一次有界重试并保留成功/失败缓存与并发去重；Tier X coverage 现在贯通 mapping、metadata、source asset 与 production dist，避免缺目录静默漏检。
