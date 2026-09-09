@@ -781,6 +781,9 @@ rollback_targeted_to_previous() {
       && docker compose up -d --no-deps --force-recreate --remove-orphans "$DEPLOY_SERVICE" \
       && assert_service_running "$DEPLOY_SERVICE" "$DEPLOY_SERVICE" \
       && wait_healthy; then
+    if ! rm -rf -- "$TARGETED_FAILED_DEPLOY_DIR" "$TARGETED_FAILED_COMPOSE"; then
+      echo "WARNING: targeted rollback restored a healthy ${DEPLOY_SERVICE}, but failed-target forensic snapshot cleanup failed." >&2
+    fi
     echo "== TARGETED ROLLBACK OK: $DEPLOY_SERVICE =="
     report_observability_status || true
     return 0

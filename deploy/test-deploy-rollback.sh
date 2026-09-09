@@ -732,6 +732,37 @@ grep -q "wotbtools-backend:${targeted_pre_failure_backend_tag}" "$WORK/docker-co
   || fail "targeted backend rollback must restore the previous backend image tag"
 ! grep -Eq 'compose up .*postgres .*keycloak .*wotb-backend .*wotb-frontend' "$WORK/docker-up-targeted-rollback.log" \
   || fail "targeted backend rollback must not restart the full application stack"
+[ ! -e "$WORK/deploy.targeted.failed" ] \
+  || fail "successful targeted rollback must remove the failed candidate tree"
+[ ! -e "$WORK/docker-compose.targeted.failed.yml" ] \
+  || fail "successful targeted rollback must remove the failed candidate compose"
+
+# A second targeted failure must be recoverable after the first forensic cleanup.
+stage_candidate_b
+: > "$WORK/docker-up-targeted-rollback-second.log"
+set +e
+second_targeted_rollback_output="$(env TAG=sha-TARGETED-BACKEND-FAIL-2 WOTB_DEPLOY_SERVICE=wotb-backend \
+  FAKE_HEALTHY_BACKEND_TAG="$targeted_pre_failure_backend_tag" \
+  FAKE_APP_UNHEALTHY_TAG=sha-TARGETED-BACKEND-FAIL-2 FAKE_APP_UNHEALTHY_SERVICE=backend \
+  FAKE_DOCKER_UP_LOG="$WORK/docker-up-targeted-rollback-second.log" \
+  WOTB_BACKUP_ROOT="$WORK/backups-targeted-rollback-second" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+second_targeted_rollback_rc=$?
+set -e
+[[ $second_targeted_rollback_rc -ne 0 ]] \
+  || fail "second targeted backend failure must reject the candidate"
+grep -q '== TARGETED ROLLBACK OK: wotb-backend ==' <<<"$second_targeted_rollback_output" \
+  || fail "second targeted backend failure must restore its pre-deploy runtime"
+! grep -q '== ROLLBACK OK:' <<<"$second_targeted_rollback_output" \
+  || fail "second targeted backend failure must not restore the full LKG"
+grep -q 'wotbtools-frontend:sha-TARGETED-FRONTEND' "$WORK/docker-compose.yml" \
+  || fail "second targeted backend rollback must preserve the independently deployed frontend"
+! grep -Eq 'compose up .*postgres .*keycloak .*wotb-backend .*wotb-frontend' "$WORK/docker-up-targeted-rollback-second.log" \
+  || fail "second targeted backend rollback must not restart the full application stack"
+[ ! -e "$WORK/deploy.targeted.failed" ] \
+  || fail "second successful targeted rollback must remove the failed candidate tree"
+[ ! -e "$WORK/docker-compose.targeted.failed.yml" ] \
+  || fail "second successful targeted rollback must remove the failed candidate compose"
 
 # ---- rollback application healthy + Grafana broken remains ROLLBACK OK ----
 stage_candidate_b
