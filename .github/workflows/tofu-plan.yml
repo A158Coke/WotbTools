@@ -76,3 +76,17 @@ jobs:
             echo "The production artifact bucket has a delete action in the plan."
             exit 1
           fi
+
+      - name: Reject production Lighthouse destruction or replacement
+        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+        shell: bash
+        run: |
+          if tofu show -json plan.tfplan | jq -e '
+            any(.resource_changes[]?;
+              ((.address == "tencentcloud_lighthouse_instance.production" or
+                .address == "tencentcloud_lighthouse_firewall_rule.production") and
+                ((.change.actions // []) | index("delete") != null)))
+          ' >/dev/null; then
+            echo "The production Lighthouse instance or firewall has a delete action in the plan."
+            exit 1
+          fi

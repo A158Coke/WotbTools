@@ -5,6 +5,8 @@
 ## [Unreleased]
 
 ### OpenTofu
+- 新增独立 Grafana OpenTofu root，纳管现有 9 个 dashboard 并保留 dashboard JSON 为 canonical source；Prometheus/Loki datasource 因 Grafana read-only 限制继续由 file provisioning 管理。PR 使用 `GRAFANA_PAT` 做 plan，合并到 main 后自动 apply 精确 saved plan；任意 dashboard delete/replacement fail-closed，apply 后只读校验全部 dashboard UID。
+- 扩展 production root 纳管已发现的 Tencent Lighthouse 上海生产节点及其现有四条 firewall 规则；owner 手工 import 后 authenticated plan 为 `No changes`，不纳管未完成读取证据的 VPC、subnet、security-group 或 disk，并新增 Lighthouse delete/replacement safety gate。
 - 新增最小 COS-only OpenTofu production baseline：声明现有生产 COS bucket、手工 import 流程、状态安全规则与不注入生产凭据的 GitHub Actions validation workflow；不包含自动 plan、import 或 apply。
 - 将 production root 切换到 Tencent COS S3-compatible remote state；新增 trusted same-repo authenticated plan、fork PR 无凭据路径、workflow concurrency 与 artifact bucket delete/replace safety gate；state bucket 保持 owner-managed bootstrap boundary，不自动 import/apply。
 - 完成现有 production artifact bucket 的 owner-managed remote-state bootstrap；import 后 authenticated plan 为 `No changes`，并移除仅用于排查凭据的临时 workflow diagnostics。
