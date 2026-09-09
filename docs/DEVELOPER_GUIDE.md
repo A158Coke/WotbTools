@@ -355,6 +355,15 @@ API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲�
 
 ## CI/CD 与生产部署
 
+### OpenTofu production baseline
+
+现有生产 COS bucket 的最小 OpenTofu 配置位于
+`infra/tofu/environments/prod`，说明与一次性 import 流程见
+`docs/architecture/opentofu-production-baseline.md`。OpenTofu workflow 只执行
+fmt/init/validate，不注入 Tencent production secrets，不运行 plan、import 或
+apply。local state、计划文件和真实 tfvars 禁止提交，后续 remote backend 需要单独
+评审 dedicated state bucket、锁与保留策略。
+
 主流水线在 `.github/workflows/deploy.yml`。生产发布原则：
 
 1. 代码质量验证（后端 Maven / 前端 Vitest + Vite build）由 PR CI 作为 merge gate 承担；部署流水线不再重复运行测试套件，只负责 production build、Docker 三镜像构建推送、部署与健康检查。
