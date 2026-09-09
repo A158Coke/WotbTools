@@ -61,17 +61,33 @@ jobs:
           TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
         shell: bash
         run: |
-          probe_file=".tencent-credential-probe.auto.tf"
+          probe_dir="$(mktemp -d "${RUNNER_TEMP}/tencent-provider-probe.XXXXXX")"
           probe_log="${RUNNER_TEMP}/tencent-provider-probe.log"
           cleanup() {
-            rm -f "$probe_file" "$probe_log"
+            rm -rf "$probe_dir" "$probe_log"
           }
           trap cleanup EXIT
 
-          printf '%s\n' 'data "tencentcloud_user_info" "credential_probe" {}' > "$probe_file"
-          tofu init -backend=false -input=false -no-color
+          cat > "$probe_dir/main.tf" <<'EOF'
+          terraform {
+            required_providers {
+              tencentcloud = {
+                source  = "tencentcloudstack/tencentcloud"
+                version = "1.83.26"
+              }
+            }
+          }
 
-          if tofu plan -backend=false -input=false -no-color -target=data.tencentcloud_user_info.credential_probe >"$probe_log" 2>&1; then
+          provider "tencentcloud" {
+            region = "ap-shanghai"
+          }
+
+          data "tencentcloud_user_info" "credential_probe" {}
+          EOF
+
+          tofu -chdir="$probe_dir" init -backend=false -input=false -no-color
+
+          if tofu -chdir="$probe_dir" plan -input=false -no-color -target=data.tencentcloud_user_info.credential_probe >"$probe_log" 2>&1; then
             echo "Tencent provider probe: authentication request succeeded"
           else
             echo "Tencent provider probe: failed; inspect this separately from the S3 backend result"

@@ -178,14 +178,15 @@ authenticated-plan steps and runs:
 
 The credential wiring check prints only the SecretId length/prefix and SecretKey
 length; it never prints secret values. The provider probe creates a temporary
-untracked data-source file, calls the locked Tencent provider's
-`tencentcloud_user_info` data source with the Tencent environment variables,
-and removes the file on exit. Its result is diagnostic and does not grant extra
-permissions or replace the backend check. A provider probe failure points to
-credential validity or Tencent API authorization; a provider probe success
-followed by S3 `InvalidAccessKeyId` points to the S3-compatible credential,
-endpoint, or signing path. The probe is non-blocking so a missing permission
-for that diagnostic API does not hide the backend result.
+backend-free OpenTofu root under the runner temp directory, calls the locked
+Tencent provider's `tencentcloud_user_info` data source with the Tencent
+environment variables, and removes the directory on exit. Its result is
+diagnostic and does not grant extra permissions or replace the backend check. A
+provider probe failure points to credential validity or Tencent API
+authorization; a provider probe success followed by S3 `InvalidAccessKeyId`
+points to the S3-compatible credential, endpoint, or signing path. The probe is
+non-blocking so a missing permission for that diagnostic API does not hide the
+backend result.
 
 ```text
 tofu plan -input=false -no-color -out=plan.tfplan
