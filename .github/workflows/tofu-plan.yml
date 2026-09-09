@@ -52,6 +52,7 @@ jobs:
           echo "SecretId length: ${#TENCENTCLOUD_SECRET_ID}"
           echo "SecretId prefix: ${TENCENTCLOUD_SECRET_ID:0:4}"
           echo "SecretKey length: ${#TENCENTCLOUD_SECRET_KEY}"
+          printf '%s' "$TENCENTCLOUD_SECRET_ID" | sha256sum
 
       - name: Probe Tencent provider authentication
         if: env.TRUSTED_PRODUCTION_RUN == 'true'
