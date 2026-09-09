@@ -367,7 +367,9 @@ credentials；trusted same-repo PR / owner 手工触发才在 backend init 与
 authenticated plan 两个步骤注入 scoped secrets。所有运行继续执行
 `fmt/init/validate`，trusted run 额外执行只读 `tofu plan`，永不执行
 `import` 或 `apply`。CI concurrency 只串行 GitHub workflow，不等价于
-backend distributed lock。
+backend distributed lock。trusted run 在 backend init 前还会执行不泄密的
+credential wiring check 与临时 Tencent provider authentication probe；探针
+失败会记录诊断并继续 backend 检查，不扩大 CAM policy。
 
 local state、计划文件和真实 tfvars 禁止提交；`.terraform.lock.hcl` 必须继续
 提交。state bucket 是当前 owner-managed bootstrap boundary，不由 production
