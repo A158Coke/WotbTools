@@ -174,7 +174,7 @@ docker compose ps prometheus loki alloy grafana node-exporter
 
 合并到 `main` 触发 `deploy.yml`：Actions 先把完整 `deploy/` 上传到 `/opt/wotb/deploy.incoming/deploy`，在 incoming project root 中执行 `docker compose config` 与 `pull`；成功后才将 incoming deploy tree 原子 promote 到 `/opt/wotb/deploy`。每次通过 backend、frontend、Keycloak OIDC application gate 的发布都会把部署树、compose 与 SHA 提升为 `/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml`、`DEPLOYED_SHA.lkg`（Last Known Good）；`deploy.prev` 仅作为故障取证快照，不是回滚权威。上线和回滚均显式 `--force-recreate prometheus loki alloy grafana`，确保 bind-mounted 配置、Grafana provisioning、dashboard 与默认首页真正重新应用，不依赖 HUP。观测 verifier 会继续验证 Prometheus targets、Grafana health/datasource/dashboard API，并分别启动 backend/Keycloak canary、触发真实 frontend nginx Android 路径（404 允许但不算成功下载）后精确查询 Loki。观测链路失败会先输出诊断并标记 `OBSERVABILITY DEGRADED`，但不会恢复 LKG；只有 application gate 失败才会从 LKG 恢复整棵 deploy tree。LKG 缺失或损坏时 fail-closed，不会先删除当前 live tree；pull 失败也不触碰 live tree。
 
-首次建立 LKG 是唯一例外：只有显式 `workflow_dispatch` 并勾选 `allow_bootstrap_without_lkg` 时，才允许在没有现存 LKG 的主机上完成一次人工复核后的 bootstrap。正常 push 部署和未勾选该输入的手工运行都会拒绝无 LKG 发布。
+若主机已有健康的 live deployment，正常发布流程会先完成应用健康检查并建立缺失的初始 LKG；若没有可验证的 live deployment 或现有 LKG，发布会 fail-closed，保留当前 live tree 并要求人工处理。
 
 > **新版本失败诊断（Health check 超时回滚前）**：健康检查最终失败时，`deploy.sh` 会先输出各服务状态（`report_health_status`：backend/frontend/keycloak 各 `PASS/FAILED/SKIPPED`），再 `dump_logs` 保留新版本 `docker compose ps -a`、容器 `docker inspect` 与 backend/frontend/keycloak 三服务 logs，最后才进入回滚。因此新版本启动异常不会再被 rollback 覆盖，可在 Actions 日志与 Loki 中定位。诊断命令均独立容错，若采集失败也不会阻断回滚。
 

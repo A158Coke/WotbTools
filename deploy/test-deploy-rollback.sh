@@ -266,7 +266,6 @@ export WOTB_COMPOSE_DIR="$WORK"
 export WOTB_BACKUP_ROOT="$WORK/backups"
 export WOTB_HEALTH_RETRIES="${WOTB_HEALTH_RETRIES:-3}"
 export FAKE_DOCKER_RUN_LOG="$WORK/docker-run.log"
-export WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG=1
 export DB_PASSWORD=db-secret KC_ADMIN_PASSWORD=kc-secret WG_APPLICATION_ID=wg-id \
        KEYCLOAK_ADMIN_CLIENT_SECRET=kc-client-secret AI_API_KEY=ai-key \
        GRAFANA_ADMIN_USER=admin GRAFANA_ADMIN_PASSWORD=grafana-secret
@@ -288,6 +287,13 @@ stage_candidate_b() {
   cp "$ROOT/deploy/observability/alloy/config.alloy" "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
   printf '\n// new alloy config\n' >> "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
 }
+
+# A healthy existing deployment is the normal first-LKG path. The deployment
+# under test can then proceed without an emergency bypass or legacy rollback.
+mkdir -p "$WORK/deploy"
+cp -a "$WORK/deploy.incoming/deploy/." "$WORK/deploy/"
+TAG=sha-A docker compose -f "$WORK/deploy/docker-compose.prod.yml" config > "$WORK/docker-compose.yml"
+printf 'sha-A\n' > "$WORK/DEPLOYED_SHA"
 
 lkg_state_checksum() {
   (
@@ -523,33 +529,6 @@ grep -q 'wotbtools-backend:sha-B' "$WORK/docker-compose.yml" && fail "LKG stagin
   || fail "LKG staging fault must perform rollback compose up"
 unset FAKE_HEALTHY_BACKEND_TAG WOTB_TEST_FAIL_LKG_STAGE_COPY FAKE_ROLLBACK_UP_LOG
 
-# ---- no LKG + no bootstrap -> fail before promotion ----
-rm -rf "$WORK/deploy.lkg" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg"
-stage_candidate_b
-export WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG=0
-export TAG=sha-C
-export FAKE_FORCE_UNHEALTHY=1
-export WOTB_BACKUP_ROOT="$WORK/backups-no-lkg"
-set +e
-no_lkg_output="$(bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
-no_lkg_rc=$?
-set -e
-[[ $no_lkg_rc -ne 0 ]] || fail "no-LKG deployment without bootstrap must fail"
-grep -q "NO_VALIDATED_LKG" <<<"$no_lkg_output" || fail "no-LKG failure marker missing: $no_lkg_output"
-grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" \
-  || fail "no-LKG failure must not change the current live compose"
-[[ ! -e "$WORK/deploy.lkg" ]] || fail "no-LKG failure must not create an LKG"
-unset FAKE_FORCE_UNHEALTHY
-
-# ---- no LKG + explicit bootstrap -> first successful deployment becomes LKG ----
-export WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG=1
-export TAG=sha-A
-bash "$WORK/deploy.incoming/deploy/deploy.sh"
-[[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "bootstrap deployment did not become live"
-[[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] || fail "bootstrap deployment did not create first LKG"
-[[ -d "$WORK/deploy.lkg" ]] || fail "bootstrap deployment LKG tree missing"
-
-
 # ---- healthy application + broken observability remains a successful deploy ----
 run_observability_case() {
   local case_name="$1" tag="$2" assignment="$3" output rc
@@ -632,4 +611,20 @@ env -i PATH="$PATH" HOME="$WORK" WOTB_COMPOSE_DIR="$WORK" WOTB_BACKUP_ROOT="$WOR
   bash "$WORK/deploy/postgres-backup.sh" --database wotb --skip-retention \
   || fail "postgres-backup.sh fails without deploy env"
 
-echo "OK: application/observability gates, LKG promotion, failed-candidate isolation, bootstrap, compose + backup contracts passed"
+# ---- no LKG + no current deployment -> fail closed before promotion ----
+stage_candidate_b
+rm -rf "$WORK/deploy" "$WORK/docker-compose.yml" "$WORK/DEPLOYED_SHA" \
+  "$WORK/deploy.lkg" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg"
+export TAG=sha-C FAKE_HEALTHY_BACKEND_TAG=sha-C
+export WOTB_BACKUP_ROOT="$WORK/backups-no-lkg"
+set +e
+no_lkg_output="$(bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+no_lkg_rc=$?
+set -e
+[[ $no_lkg_rc -ne 0 ]] || fail "no-LKG deployment must fail closed"
+grep -q "NO_VALIDATED_LKG" <<<"$no_lkg_output" || fail "no-LKG failure marker missing: $no_lkg_output"
+[[ ! -e "$WORK/deploy" ]] || fail "no-LKG failure must not promote the candidate"
+[[ ! -e "$WORK/deploy.lkg" ]] || fail "no-LKG failure must not create an LKG"
+unset FAKE_HEALTHY_BACKEND_TAG
+
+echo "OK: application/observability gates, LKG promotion, failed-candidate isolation, no-LKG fail-closed, compose + backup contracts passed"
