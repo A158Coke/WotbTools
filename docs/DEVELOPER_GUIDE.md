@@ -357,12 +357,21 @@ API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲�
 
 ### OpenTofu production baseline
 
-现有生产 COS bucket 的最小 OpenTofu 配置位于
-`infra/tofu/environments/prod`，说明与一次性 import 流程见
-`docs/architecture/opentofu-production-baseline.md`。OpenTofu workflow 只执行
-fmt/init/validate，不注入 Tencent production secrets，不运行 plan、import 或
-apply。local state、计划文件和真实 tfvars 禁止提交，后续 remote backend 需要单独
-评审 dedicated state bucket、锁与保留策略。
+现有生产 COS artifact bucket 的 OpenTofu 配置位于
+`infra/tofu/environments/prod`，权威 state 存放在独立的 Tencent COS state
+bucket；设计、一次性 import、locking 边界与 owner 命令见
+`docs/architecture/opentofu-production-baseline.md`。
+
+OpenTofu workflow 对 fork PR 使用 `tofu init -backend=false`，不获得生产
+credentials；trusted same-repo PR / owner 手工触发才在 backend init 与
+authenticated plan 两个步骤注入 scoped secrets。所有运行继续执行
+`fmt/init/validate`，trusted run 额外执行只读 `tofu plan`，永不执行
+`import` 或 `apply`。CI concurrency 只串行 GitHub workflow，不等价于
+backend distributed lock。
+
+local state、计划文件和真实 tfvars 禁止提交；`.terraform.lock.hcl` 必须继续
+提交。state bucket 是当前 owner-managed bootstrap boundary，不由 production
+root 管理，也不能使用带一天 expiration 的 artifact bucket 承载 state。
 
 主流水线在 `.github/workflows/deploy.yml`。生产发布原则：
 
