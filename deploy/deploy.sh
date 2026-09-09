@@ -232,7 +232,7 @@ deploy_selected_service() {
     docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend
   else
     echo "== Deploying selected service: $DEPLOY_SERVICE =="
-    docker compose up -d --force-recreate --remove-orphans "$DEPLOY_SERVICE"
+    docker compose up -d --no-deps --force-recreate --remove-orphans "$DEPLOY_SERVICE"
     assert_service_running "$DEPLOY_SERVICE" "$DEPLOY_SERVICE" || return 1
   fi
 }
@@ -708,7 +708,11 @@ rollback_to_lkg() {
   return 1
 }
 
-if ! pull_compose "$STAGED_COMPOSE" "$DEPLOY_SERVICE"; then
+staged_pull_service=()
+if [ "$DEPLOY_SERVICE" != all ]; then
+  staged_pull_service=("$DEPLOY_SERVICE")
+fi
+if ! pull_compose "$STAGED_COMPOSE" "${staged_pull_service[@]}"; then
   echo "ERROR: staged docker compose pull failed after 3 attempts; live deployment was not changed." >&2
   exit 1
 fi

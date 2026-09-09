@@ -99,7 +99,7 @@ case "$cmd" in
     while [[ $# -gt 0 ]]; do
       case "$1" in
         -f) COMPOSE_FILE="$2"; shift 2 ;;
-        -d|--remove-orphans|-T) shift ;;
+        -d|--no-deps|--remove-orphans|-T) shift ;;
         config|pull|up|ps|exec|logs|kill|restart|run) sub="$1"; shift ;;
         *) shift ;;
       esac
@@ -108,7 +108,16 @@ case "$cmd" in
       config)
         while IFS= read -r line || [[ -n "$line" ]]; do resolve_line "$line"; done < "$COMPOSE_FILE"
         ;;
-      pull) exit 0 ;;
+      pull)
+        if [[ " ${compose_args[*]} " == *" pull all "* ]]; then
+          printf 'FAIL: docker compose pull must omit a service to pull all, never use service=all\n' >&2
+          exit 64
+        fi
+        if [ -n "${FAKE_DOCKER_PULL_LOG:-}" ]; then
+          printf 'compose %s\n' "${compose_args[*]}" >> "$FAKE_DOCKER_PULL_LOG"
+        fi
+        exit 0
+        ;;
       up)
         active_compose_file="${COMPOSE_FILE:-docker-compose.yml}"
         if [ -n "${FAKE_DOCKER_UP_LOG:-}" ]; then
@@ -373,6 +382,8 @@ grep -q "AI_API_KEY contains invalid control characters" <<<"$guard_output" \
 
 # ---- deploy A (success) ----
 export AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=1100
+: > "$WORK/docker-pull.log"
+export FAKE_DOCKER_PULL_LOG="$WORK/docker-pull.log"
 bash "$WORK/deploy.incoming/deploy/deploy.sh"
 [[ -f "$WORK/DEPLOYED_SHA" ]] || fail "DEPLOYED_SHA missing after deploy A"
 [[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "DEPLOYED_SHA != sha-A after deploy A"
@@ -383,6 +394,10 @@ bash "$WORK/deploy.incoming/deploy/deploy.sh"
 grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" || fail "formal compose does not pin sha-A images"
 grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.lkg.yml" || fail "LKG compose does not pin sha-A images"
 grep -q '\${' "$WORK/docker-compose.yml" && fail "formal compose still contains unresolved \${...}"
+grep -Eq 'compose .* pull$' "$WORK/docker-pull.log" \
+  || fail "full deployment must pull all services by omitting the service argument"
+! grep -q ' pull all' "$WORK/docker-pull.log" \
+  || fail "full deployment must never invoke docker compose pull all"
 grep -Eq 'keycloak-observability-canary-.*alpine:3\.22' "$WORK/docker-run.log" \
   || fail "Keycloak canary must use an independent Alpine 3.22 emitter"
 if grep -Eq 'compose.*run.*keycloak.*sh -c' "$WORK/docker-run.log"; then
@@ -653,23 +668,40 @@ run_application_failure_case backend-unhealthy sha-BACKEND backend
 run_application_failure_case frontend-unhealthy sha-FRONTEND frontend
 run_application_failure_case keycloak-unhealthy sha-KEYCLOAK keycloak
 
-# ---- targeted service deployment only recreates the selected service ----
-stage_candidate_b
-: > "$WORK/docker-up-targeted.log"
-set +e
-targeted_output="$(env TAG=sha-TARGETED WOTB_DEPLOY_SERVICE=grafana \
-  FAKE_HEALTHY_BACKEND_TAG=sha-TARGETED FAKE_DOCKER_UP_LOG="$WORK/docker-up-targeted.log" \
-  WOTB_BACKUP_ROOT="$WORK/backups-targeted" \
-  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
-targeted_rc=$?
-set -e
-[[ $targeted_rc -eq 0 ]] || fail "targeted Grafana deployment must succeed: $targeted_output"
-grep -Eq 'compose up .*grafana' "$WORK/docker-up-targeted.log" \
-  || fail "targeted deployment must start the selected Grafana service; log: $(cat "$WORK/docker-up-targeted.log" 2>/dev/null || true)"
-! grep -Eq 'compose up .*wotb-backend|compose up .*wotb-frontend' "$WORK/docker-up-targeted.log" \
-  || fail "targeted Grafana deployment must not explicitly start application services"
-grep -q "== TARGETED DEPLOY OK: grafana ==" <<<"$targeted_output" \
-  || fail "targeted deployment success marker missing"
+# ---- targeted deployment recreates only the selected service and never dependencies ----
+run_targeted_deploy_case() {
+  local service="$1" tag="$2" output rc other_service targeted_up_line healthy_backend_tag
+  local log="$WORK/docker-up-targeted-$service.log"
+  stage_candidate_b
+  healthy_backend_tag="$(sed -nE 's#.*wotbtools-backend:([^[:space:]]+).*#\1#p' "$WORK/docker-compose.yml" | head -n 1)"
+  [ -n "$healthy_backend_tag" ] || fail "targeted $service test could not determine the current backend image tag"
+  [ "$service" = wotb-backend ] && healthy_backend_tag="$tag"
+  : > "$log"
+  set +e
+  output="$(env TAG="$tag" WOTB_DEPLOY_SERVICE="$service" \
+    FAKE_HEALTHY_BACKEND_TAG="$healthy_backend_tag" FAKE_DOCKER_UP_LOG="$log" \
+    WOTB_BACKUP_ROOT="$WORK/backups-targeted-$service" \
+    bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+  rc=$?
+  set -e
+  [[ $rc -eq 0 ]] || fail "targeted $service deployment must succeed: $output"
+  targeted_up_line="$(grep -E "compose up .*--no-deps.* $service$" "$log" || true)"
+  if [ -z "$targeted_up_line" ] || \
+      [ "$(grep -Ec "compose up .*--no-deps.* $service$" "$log")" -ne 1 ]; then
+    fail "targeted $service deployment must use --no-deps; log: $(cat "$log" 2>/dev/null || true)"
+  fi
+  for other_service in postgres node-exporter prometheus loki alloy grafana keycloak wotb-backend wotb-frontend; do
+    [ "$other_service" = "$service" ] && continue
+    ! grep -Eq " $other_service( |$)" <<<"$targeted_up_line" \
+      || fail "targeted $service deployment must not explicitly start $other_service"
+  done
+  grep -q "== TARGETED DEPLOY OK: $service ==" <<<"$output" \
+    || fail "targeted $service deployment success marker missing"
+}
+
+run_targeted_deploy_case grafana sha-TARGETED-GRAFANA
+run_targeted_deploy_case wotb-backend sha-TARGETED-BACKEND
+run_targeted_deploy_case wotb-frontend sha-TARGETED-FRONTEND
 
 # ---- rollback application healthy + Grafana broken remains ROLLBACK OK ----
 stage_candidate_b
