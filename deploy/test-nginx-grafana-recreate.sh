@@ -71,14 +71,14 @@ docker run -d --name "$NGINX" --network "$NETWORK" -p "127.0.0.1:${PORT}:80" \
 
 for i in $(seq 1 30); do
   if docker exec "$NGINX" nginx -t >/dev/null 2>&1 \
-      && curl -fsS -H 'Host: monitor.wotbtools.com' \
+      && curl --connect-timeout 2 --max-time 5 -fsS -H 'Host: monitor.wotbtools.com' \
       "http://127.0.0.1:${PORT}/api/health" | grep -Fq '"marker":"old"'; then
     break
   fi
   [ "$i" -lt 30 ] && sleep 1
 done
 
-curl -fsS -H 'Host: monitor.wotbtools.com' "http://127.0.0.1:${PORT}/api/health" \
+curl --connect-timeout 2 --max-time 5 -fsS -H 'Host: monitor.wotbtools.com' "http://127.0.0.1:${PORT}/api/health" \
   | grep -Fq '"marker":"old"' \
   || { nginx_diagnostics; echo "FAIL: frontend nginx did not reach the initial Grafana stub" >&2; exit 1; }
 
@@ -87,7 +87,7 @@ curl -fsS -H 'Host: monitor.wotbtools.com' "http://127.0.0.1:${PORT}/api/health"
 docker rm -f "$OLD_GRAFANA" >/dev/null
 start_grafana_stub "$NEW_GRAFANA" 172.29.0.11 new
 wait_for_grafana_dns
-if curl -fsS -H 'Host: monitor.wotbtools.com' "http://127.0.0.1:${PORT}/api/health" \
+if curl --connect-timeout 2 --max-time 5 -fsS -H 'Host: monitor.wotbtools.com' "http://127.0.0.1:${PORT}/api/health" \
     | grep -Fq '"marker":"new"'; then
   echo "FAIL: nginx followed a recreated Grafana without the required refresh" >&2
   exit 1
@@ -95,14 +95,14 @@ fi
 
 docker restart "$NGINX" >/dev/null
 for i in $(seq 1 30); do
-  if curl -fsS -H 'Host: monitor.wotbtools.com' \
+  if curl --connect-timeout 2 --max-time 5 -fsS -H 'Host: monitor.wotbtools.com' \
       "http://127.0.0.1:${PORT}/api/health" | grep -Fq '"marker":"new"'; then
     break
   fi
   [ "$i" -lt 30 ] && sleep 1
 done
 
-curl -fsS -H 'Host: monitor.wotbtools.com' "http://127.0.0.1:${PORT}/api/health" \
+curl --connect-timeout 2 --max-time 5 -fsS -H 'Host: monitor.wotbtools.com' "http://127.0.0.1:${PORT}/api/health" \
   | grep -Fq '"marker":"new"' \
   || { echo "FAIL: refreshed frontend nginx did not reach recreated Grafana" >&2; exit 1; }
 
