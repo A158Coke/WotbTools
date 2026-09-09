@@ -9,6 +9,7 @@ on:
       - "docker/online/docker-compose.yml"
       - "deploy/test-grafana-runtime.sh"
       - ".github/workflows/grafana-tofu-plan.yml"
+      - ".github/workflows/grafana-tofu-apply.yml"
   workflow_dispatch:
 
 permissions:
@@ -70,16 +71,15 @@ jobs:
           TF_VAR_grafana_auth: ${{ secrets.GRAFANA_PAT }}
         run: tofu plan -input=false -no-color -out plan.tfplan
 
-      - name: Reject critical Grafana deletion or replacement
+      - name: Reject Grafana dashboard or datasource deletion
         if: env.TRUSTED_PRODUCTION_RUN == 'true'
         shell: bash
         run: |
           if tofu show -json plan.tfplan | jq -e '
             any(.resource_changes[]?;
-              (((.type == "grafana_data_source") or
-                (.address == "grafana_dashboard.managed[\"wotbtools_production_overview\"]")) and
+              (((.type == "grafana_dashboard") or (.type == "grafana_data_source")) and
                 ((.change.actions // []) | index("delete") != null)))
           ' >/dev/null; then
-            echo "A critical Grafana datasource or production dashboard has a delete action in the plan."
+            echo "A Grafana dashboard or provider-managed datasource has a delete action in the plan."
             exit 1
           fi
