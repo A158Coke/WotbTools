@@ -22,6 +22,10 @@ is removed so there is only one dashboard owner. Compose still mounts these
 canonical files read-only for Grafana's default-home dashboard path; that mount
 does not provision or reconcile dashboard API objects.
 
+The provisioning mount keeps an empty `dashboards/` directory only so Grafana
+does not report a missing provisioning path at startup; it contains no
+dashboard controller or dashboard payload.
+
 Prometheus and Loki remain file-provisioned. Grafana reports those datasources
 as read-only and the provider rejects importing them as resources. The
 datasource provisioning YAML remains the sole datasource controller.
