@@ -1,0 +1,85 @@
+name: OpenTofu Grafana Plan
+
+on:
+  pull_request:
+    paths:
+      - "infra/tofu/grafana/**"
+      - "deploy/observability/grafana/**"
+      - "deploy/docker-compose.prod.yml"
+      - "docker/online/docker-compose.yml"
+      - "deploy/test-grafana-runtime.sh"
+      - ".github/workflows/grafana-tofu-plan.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opentofu-grafana-prod
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: infra/tofu/grafana
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TF_IN_AUTOMATION: "true"
+      CHECKPOINT_DISABLE: "1"
+      TRUSTED_PRODUCTION_RUN: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.6
+          tofu_wrapper: false
+
+      - name: Check formatting
+        run: tofu fmt -check -recursive
+
+      - name: Initialize without production backend
+        if: env.TRUSTED_PRODUCTION_RUN != 'true'
+        run: tofu init -backend=false -input=false
+
+      - name: Initialize with production backend
+        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+        run: tofu init -reconfigure -input=false
+
+      - name: Validate configuration
+        run: tofu validate
+
+      - name: Create authenticated Grafana plan
+        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          TF_VAR_grafana_auth: ${{ secrets.GRAFANA_PAT }}
+        run: tofu plan -input=false -no-color -out plan.tfplan
+
+      - name: Reject critical Grafana deletion or replacement
+        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+        shell: bash
+        run: |
+          if tofu show -json plan.tfplan | jq -e '
+            any(.resource_changes[]?;
+              (((.type == "grafana_data_source") or
+                (.address == "grafana_dashboard.managed[\"wotbtools_production_overview\"]")) and
+                ((.change.actions // []) | index("delete") != null)))
+          ' >/dev/null; then
+            echo "A critical Grafana datasource or production dashboard has a delete action in the plan."
+            exit 1
+          fi

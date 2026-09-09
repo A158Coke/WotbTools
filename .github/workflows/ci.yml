@@ -247,7 +247,7 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import glob, json, yaml
+          import glob, json, os, yaml
 
           # Panel links of type=dashboard + uid without a valid url crash the Grafana
           # frontend (TypeError: Cannot read properties of undefined (reading 'replace')).
@@ -321,6 +321,8 @@ jobs:
 
           for p in glob.glob("deploy/observability/grafana/provisioning/**/*.yml", recursive=True):
               yaml.safe_load(open(p, encoding="utf-8"))
+          assert not os.path.exists("deploy/observability/grafana/provisioning/dashboards/dashboards.yml"), \
+              "dashboard file-provisioning controller must remain disabled after OpenTofu adoption"
           for p in paths:
               d = json.load(open(p, encoding="utf-8"))
               assert d.get("panels"), "empty dashboard " + p

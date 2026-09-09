@@ -376,6 +376,15 @@ import 的 Lighthouse 实例 `lhins-97n0wmx6` 及其四条现有 firewall 规则
 情况下猜测纳管。新增资源前必须先完成 owner discovery、provider schema
 核对、manual import 与 authenticated `No changes` plan。
 
+Grafana API configuration 的独立 OpenTofu root 位于
+`infra/tofu/grafana`，使用同一 COS state bucket 的独立 key
+`wotbtools/prod/grafana.tfstate`，provider 固定为 `grafana/grafana 4.45.2`。
+9 个 dashboard 由 provider 管理，canonical JSON 仍来自
+`deploy/observability/grafana/dashboards`；Prometheus/Loki datasource 因
+Grafana `readOnly` 继续由 file provisioning 管理。Docker Compose 仍管理
+Grafana runtime，CI 只做 trusted authenticated plan，不执行 import/apply，
+认证只从 GitHub Actions secret `GRAFANA_PAT` 注入。
+
 local state、计划文件和真实 tfvars 禁止提交；`.terraform.lock.hcl` 必须继续
 提交。state bucket 是当前 owner-managed bootstrap boundary，不由 production
 root 管理，也不能使用带一天 expiration 的 artifact bucket 承载 state。

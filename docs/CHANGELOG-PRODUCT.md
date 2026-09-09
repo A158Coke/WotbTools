@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Operations
+- Grafana 监控看板的配置现在纳入独立 OpenTofu plan 审查；不迁移 Grafana runtime，不改变 Prometheus/Loki datasource provisioning，也不执行自动 apply。
 - 生产 OpenTofu 基线现在记录并审查现有 Tencent Lighthouse 节点及 firewall 边界；不迁移节点、不执行自动 apply，也不改变现有防火墙规则。
 - 运维基础设施新增现有生产 COS bucket 的 OpenTofu 基线；本次不改变线上业务行为、不执行自动 apply。
 - OpenTofu production state 与 CI plan 路径接入独立 COS remote state；本次不改变线上产品行为，不执行自动 import 或 apply。
