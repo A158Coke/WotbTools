@@ -39,7 +39,8 @@ start_grafana_stub() {
 
 wait_for_grafana_dns() {
   for i in $(seq 1 30); do
-    if docker run --rm --network "$NETWORK" alpine:3.22 nslookup grafana \
+    if docker run --rm --network "$NETWORK" alpine:3.22 \
+        wget -qO- http://grafana:3000/api/health \
         >/dev/null 2>&1; then
       return 0
     fi
