@@ -1,31 +1,37 @@
-name: OpenTofu COS Plan
+name: OpenTofu Grafana Plan
 
 on:
   pull_request:
     paths:
-      - "infra/tofu/**"
-      - ".github/workflows/tofu-plan.yml"
+      - "infra/tofu/grafana/**"
+      - "deploy/observability/grafana/**"
+      - "deploy/docker-compose.prod.yml"
+      - "docker/online/docker-compose.yml"
+      - "deploy/test-grafana-runtime.sh"
+      - ".github/workflows/grafana-tofu-plan.yml"
+      - ".github/workflows/grafana-tofu-apply.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: opentofu-prod
+  group: opentofu-grafana-prod
   cancel-in-progress: false
 
 defaults:
   run:
-    working-directory: infra/tofu/environments/prod
+    working-directory: infra/tofu/grafana
 
 jobs:
-  validate:
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       TF_IN_AUTOMATION: "true"
       CHECKPOINT_DISABLE: "1"
       TRUSTED_PRODUCTION_RUN: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -39,11 +45,11 @@ jobs:
       - name: Check formatting
         run: tofu fmt -check -recursive
 
-      - name: Initialize OpenTofu without production backend
+      - name: Initialize without production backend
         if: env.TRUSTED_PRODUCTION_RUN != 'true'
         run: tofu init -backend=false -input=false
 
-      - name: Initialize OpenTofu with production backend
+      - name: Initialize with production backend
         if: env.TRUSTED_PRODUCTION_RUN == 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
@@ -55,38 +61,25 @@ jobs:
       - name: Validate configuration
         run: tofu validate
 
-      - name: Create authenticated plan
+      - name: Create authenticated Grafana plan
         if: env.TRUSTED_PRODUCTION_RUN == 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
           TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
           TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
-        run: tofu plan -input=false -no-color -out=plan.tfplan
+          TF_VAR_grafana_auth: ${{ secrets.GRAFANA_PAT }}
+        run: tofu plan -input=false -no-color -out plan.tfplan
 
-      - name: Reject artifact bucket destruction or replacement
+      - name: Reject Grafana dashboard or datasource deletion
         if: env.TRUSTED_PRODUCTION_RUN == 'true'
         shell: bash
         run: |
           if tofu show -json plan.tfplan | jq -e '
             any(.resource_changes[]?;
-              (.address == "tencentcloud_cos_bucket.production_artifacts" and
+              (((.type == "grafana_dashboard") or (.type == "grafana_data_source")) and
                 ((.change.actions // []) | index("delete") != null)))
           ' >/dev/null; then
-            echo "The production artifact bucket has a delete action in the plan."
-            exit 1
-          fi
-
-      - name: Reject production Lighthouse destruction or replacement
-        if: env.TRUSTED_PRODUCTION_RUN == 'true'
-        shell: bash
-        run: |
-          if tofu show -json plan.tfplan | jq -e '
-            any(.resource_changes[]?;
-              ((.address == "tencentcloud_lighthouse_instance.production" or
-                .address == "tencentcloud_lighthouse_firewall_rule.production") and
-                ((.change.actions // []) | index("delete") != null)))
-          ' >/dev/null; then
-            echo "The production Lighthouse instance or firewall has a delete action in the plan."
+            echo "A Grafana dashboard or provider-managed datasource has a delete action in the plan."
             exit 1
           fi

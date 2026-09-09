@@ -367,7 +367,27 @@ credentials；trusted same-repo PR / owner 手工触发才在 backend init 与
 authenticated plan 两个步骤注入 scoped secrets。所有运行继续执行
 `fmt/init/validate`，trusted run 额外执行只读 `tofu plan`，永不执行
 `import` 或 `apply`。CI concurrency 只串行 GitHub workflow，不等价于
-backend distributed lock。
+backend distributed lock。trusted plan 还会阻断 artifact bucket、生产
+Lighthouse instance 或 firewall collection 的 delete/replacement action。
+
+当前 production root 除 COS artifact bucket 外，仅纳管已发现并手工
+import 的 Lighthouse 实例 `lhins-97n0wmx6` 及其四条现有 firewall 规则。
+它不是 CVM；VPC/subnet/security-group/disk 未在本次缺少完整读取权限的
+情况下猜测纳管。新增资源前必须先完成 owner discovery、provider schema
+核对、manual import 与 authenticated `No changes` plan。
+
+Grafana API configuration 的独立 OpenTofu root 位于
+`infra/tofu/grafana`，使用同一 COS state bucket 的独立 key
+`wotbtools/prod/grafana.tfstate`，provider 固定为 `grafana/grafana 4.45.2`。
+9 个 dashboard 由 provider 管理，canonical JSON 仍来自
+`deploy/observability/grafana/dashboards`；Prometheus/Loki datasource 因
+Grafana `readOnly` 继续由 file provisioning 管理。Docker Compose 仍管理
+Grafana runtime。PR workflow 只做 trusted authenticated plan；合并到
+`main` 后由 `.github/workflows/grafana-tofu-apply.yml` 重新 plan、执行
+dashboard delete safety gate、apply 同一个 saved plan，并只读验证全部
+dashboard UID。认证只从 GitHub Actions secret `GRAFANA_PAT` 注入；当前
+secret 是 owner 批准的既有 Admin service-account token，最小权限 Editor
+token 是后续 hardening，不得把当前 token 描述成 least privilege。
 
 local state、计划文件和真实 tfvars 禁止提交；`.terraform.lock.hcl` 必须继续
 提交。state bucket 是当前 owner-managed bootstrap boundary，不由 production
