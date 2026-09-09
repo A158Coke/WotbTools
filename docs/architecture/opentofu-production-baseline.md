@@ -2,9 +2,10 @@
 
 This root module deliberately manages one existing production artifact bucket
 and stores its authoritative OpenTofu state in a separate Tencent COS bucket.
-It does not create or manage CVMs, networks, DNS, CDN, Keycloak, PostgreSQL,
-application workloads, runtime identities, or the bucket that carries its own
-state.
+It does not create or manage CVMs, VPC/subnet/security-group resources that are
+not proven present and importable in the discovered production account, DNS, CDN, Keycloak,
+PostgreSQL, application workloads, runtime identities, or the bucket that
+carries its own state.
 
 ## Managed production resource
 
@@ -27,6 +28,34 @@ must not be applied. The workflow also rejects such a plan from its JSON form.
 The Tencent provider schema models the bucket settings through
 `tencentcloud_cos_bucket`, not an AWS-specific resource. See the [provider
 resource documentation](https://registry.terraform.io/providers/tencentcloudstack/tencentcloud/latest/docs/resources/cos_bucket).
+
+## Managed production Lighthouse boundary
+
+The same root also manages the existing Shanghai Lighthouse production node
+after owner-controlled import:
+
+- instance: `lhins-97n0wmx6`
+- zone: `ap-shanghai-4`
+- blueprint: `lhbp-2cacsycc`
+- bundle: `bundle_starter_mc_promo_med2_02`
+- firewall resource: the four existing rules attached to that instance
+
+The node is represented by `tencentcloud_lighthouse_instance`, not a CVM
+resource. Its current public/private addresses, Ubuntu 24.04 image, 2 vCPU / 2
+GiB shape, 50 GiB system disk, and prepaid/manual-renewal facts were read from
+the Lighthouse API. The current firewall collection is represented by
+`tencentcloud_lighthouse_firewall_rule` without changing its rules.
+
+The Lighthouse instance has `prevent_destroy = true`. The trusted workflow also
+rejects plan delete/replacement actions for the production Lighthouse instance
+or firewall collection. This does not protect against out-of-band API changes
+or state/configuration removal.
+
+The API discovery returned no VPC or subnet objects for this account/region;
+the account did not authorize the Lighthouse disk listing or CVM security-group
+read path during this adoption. Those boundaries remain external until a later
+owner-approved discovery proves a provider-supported, no-drift import. No
+guessed VPC, subnet, security-group, or disk resource is declared here.
 
 ## Remote state design
 
@@ -131,6 +160,8 @@ $env:AWS_SECRET_ACCESS_KEY = $env:TENCENTCLOUD_SECRET_KEY
 Set-Location infra/tofu/environments/prod
 tofu init -reconfigure
 tofu import tencentcloud_cos_bucket.production_artifacts wotbtools-prod-artifacts-1478073677
+tofu import tencentcloud_lighthouse_instance.production lhins-97n0wmx6
+tofu import tencentcloud_lighthouse_firewall_rule.production lhins-97n0wmx6
 tofu plan -input=false
 ```
 
@@ -145,6 +176,8 @@ export AWS_SECRET_ACCESS_KEY="$TENCENTCLOUD_SECRET_KEY"
 cd infra/tofu/environments/prod
 tofu init -reconfigure
 tofu import tencentcloud_cos_bucket.production_artifacts wotbtools-prod-artifacts-1478073677
+tofu import tencentcloud_lighthouse_instance.production lhins-97n0wmx6
+tofu import tencentcloud_lighthouse_firewall_rule.production lhins-97n0wmx6
 tofu plan -input=false
 ```
 
