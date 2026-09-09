@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Regression test for the production Grafana upstream refresh contract.
 #
-# A frontend nginx process resolves the literal grafana service name when it
-# starts. Recreating Grafana must therefore be followed by a frontend restart
-# (or equivalent reload) before the public monitor route is considered healthy.
+# A frontend nginx process must not require Grafana to exist while nginx starts.
+# The monitor upstream is resolved through Docker embedded DNS at request time,
+# so Grafana failure remains isolated to monitor traffic.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -n "${WOTB_TEST_ROOT:-}" ]; then
+  ROOT="$WOTB_TEST_ROOT"
+else
+  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
 CFG="$ROOT/deploy/nginx/nginx.conf"
 NETWORK="wotb-nginx-grafana-recreate-${RANDOM}-$$"
 NGINX="wotb-nginx-grafana-nginx-${RANDOM}-$$"
@@ -63,49 +67,71 @@ wait_for_grafana_dns() {
   return 1
 }
 
-start_grafana_stub "$OLD_GRAFANA" 172.29.0.10 old
-wait_for_grafana_dns
+assert_monitor_health() {
+  local marker="$1" body_file status
+  body_file="$(mktemp)"
+  if ! status="$(curl --connect-timeout 2 --max-time 5 -sS \
+      -H 'Host: monitor.wotbtools.com' \
+      -o "$body_file" -w '%{http_code}' \
+      "http://127.0.0.1:${PORT}/api/health")"; then
+    rm -f -- "$body_file"
+    return 1
+  fi
+  if [ "$status" != 200 ] \
+      || ! grep -Fq '"database":"ok"' "$body_file" \
+      || ! grep -Fq "\"marker\":\"$marker\"" "$body_file"; then
+    rm -f -- "$body_file"
+    return 1
+  fi
+  rm -f -- "$body_file"
+}
+
 docker run -d --name "$NGINX" --network "$NETWORK" -p "127.0.0.1:${PORT}:80" \
   --add-host wotb-backend:172.29.0.10 --add-host keycloak:172.29.0.10 \
   -v "$CFG:/etc/nginx/conf.d/default.conf:ro" nginx:alpine >/dev/null
 
+# The frontend nginx must start successfully while Grafana is absent. A
+# request to the monitor host is allowed to be a temporary 502 at this point.
+docker exec "$NGINX" nginx -t >/dev/null 2>&1 \
+  || { nginx_diagnostics; echo "FAIL: nginx could not start without Grafana" >&2; exit 1; }
+docker inspect "$NGINX" --format '{{.State.Status}}' | grep -Fxq running \
+  || { nginx_diagnostics; echo "FAIL: nginx is not running without Grafana" >&2; exit 1; }
+
+start_grafana_stub "$OLD_GRAFANA" 172.29.0.10 old
+wait_for_grafana_dns
+
 for i in $(seq 1 30); do
   if docker exec "$NGINX" nginx -t >/dev/null 2>&1 \
-      && curl --connect-timeout 2 --max-time 5 -fsS -H 'Host: monitor.wotbtools.com' \
-      "http://127.0.0.1:${PORT}/api/health" | grep -Fq '"marker":"old"'; then
+      && assert_monitor_health old; then
     break
   fi
   [ "$i" -lt 30 ] && sleep 1
 done
 
-curl --connect-timeout 2 --max-time 5 -fsS -H 'Host: monitor.wotbtools.com' "http://127.0.0.1:${PORT}/api/health" \
-  | grep -Fq '"marker":"old"' \
-  || { nginx_diagnostics; echo "FAIL: frontend nginx did not reach the initial Grafana stub" >&2; exit 1; }
+assert_monitor_health old \
+  || { nginx_diagnostics; echo "FAIL: monitor proxy did not return HTTP 200/database=ok for the initial Grafana container" >&2; exit 1; }
 
 # Recreate Grafana at a different address. The still-running nginx process must
-# not be considered healthy until its upstream resolution is refreshed.
+# discover the new address through runtime Docker DNS without a restart.
 docker rm -f "$OLD_GRAFANA" >/dev/null
 start_grafana_stub "$NEW_GRAFANA" 172.29.0.11 new
 wait_for_grafana_dns
-if curl --connect-timeout 2 --max-time 5 -fsS -H 'Host: monitor.wotbtools.com' "http://127.0.0.1:${PORT}/api/health" \
-    | grep -Fq '"marker":"new"'; then
-  echo "FAIL: nginx followed a recreated Grafana without the required refresh" >&2
-  exit 1
-fi
-
-docker restart "$NGINX" >/dev/null
 for i in $(seq 1 30); do
-  if curl --connect-timeout 2 --max-time 5 -fsS -H 'Host: monitor.wotbtools.com' \
-      "http://127.0.0.1:${PORT}/api/health" | grep -Fq '"marker":"new"'; then
+  if assert_monitor_health new; then
     break
   fi
   [ "$i" -lt 30 ] && sleep 1
 done
 
-curl --connect-timeout 2 --max-time 5 -fsS -H 'Host: monitor.wotbtools.com' "http://127.0.0.1:${PORT}/api/health" \
-  | grep -Fq '"marker":"new"' \
-  || { echo "FAIL: refreshed frontend nginx did not reach recreated Grafana" >&2; exit 1; }
+assert_monitor_health new \
+  || { echo "FAIL: recreated Grafana monitor proxy did not return HTTP 200/database=ok without frontend restart" >&2; exit 1; }
 
+grep -q 'resolver 127.0.0.11 valid=1s ipv6=off;' "$CFG" \
+  || { echo "FAIL: Grafana proxy must use Docker runtime DNS" >&2; exit 1; }
+grep -q 'set \$grafana_upstream grafana:3000;' "$CFG" \
+  || { echo "FAIL: Grafana proxy must use a runtime upstream variable" >&2; exit 1; }
+grep -q 'proxy_pass http://\$grafana_upstream;' "$CFG" \
+  || { echo "FAIL: Grafana proxy must not resolve the upstream at nginx startup" >&2; exit 1; }
 grep -q 'proxy_http_version 1.1;' "$CFG" \
   || { echo "FAIL: Grafana proxy must keep HTTP/1.1 for Live WebSocket" >&2; exit 1; }
 grep -q 'proxy_set_header Upgrade \$http_upgrade;' "$CFG" \
@@ -113,4 +139,4 @@ grep -q 'proxy_set_header Upgrade \$http_upgrade;' "$CFG" \
 grep -q 'proxy_set_header Connection "upgrade";' "$CFG" \
   || { echo "FAIL: Grafana proxy must preserve WebSocket Connection" >&2; exit 1; }
 
-echo "OK: Grafana recreate requires and passes frontend nginx refresh; monitor proxy and WebSocket directives remain intact"
+echo "OK: nginx starts without Grafana and follows recreated Grafana through runtime DNS; WebSocket directives remain intact"

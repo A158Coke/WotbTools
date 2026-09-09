@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: opentofu-grafana-prod
+  group: production-maintenance
   cancel-in-progress: false
 
 defaults:
