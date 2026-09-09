@@ -62,7 +62,7 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 | Prometheus | `prom/prometheus:v2.55.1` | 每 15s 抓取 Backend、Keycloak management `/metrics`、node-exporter 以及 Prometheus/Loki/Grafana 自身，TSDB 保留 7 天 / 上限 2GiB |
 | Loki | `grafana/loki:3.3.2` | 接收 Alloy 推送的 Backend / Keycloak 容器日志，保留 7 天 |
 | Alloy | `grafana/alloy:v1.4.2` | 通过 docker.sock 采集 `wotb-backend` 与 `keycloak` 容器 stdout/stderr → Loki，使用低基数标签 |
-| Grafana | `grafana/grafana:11.6.16` | 可视化，provisioning 自动配置 Datasource + Dashboard |
+| Grafana | `grafana/grafana:11.6.16` | 可视化；Datasource 由 file provisioning 配置，Dashboard API 对象由 OpenTofu 管理 |
 | node-exporter | `prom/node-exporter:v1.12.1` | 仅 Docker 内部网络提供 CPU、RAM、Disk、Load 主机指标；不映射宿主机端口 |
 | Grafana MCP server（已下线） | 已移除 | 2026-08-11 因公网匿名访问风险（MCP 缺少调用者认证）且使用频率低，已从生产与本地 compose 移除；宿主 Caddy `/mcp*` 路由与 Grafana MCP Service Account 由人工清理 |
 
@@ -97,7 +97,7 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 
 仓库内已完成的部分：
 
-- `deploy/nginx/nginx.conf`：新增 `server_name monitor.wotbtools.com` 的 server 块，将请求反代到 Docker 网络内的 `grafana:3000`，并透传 `X-Forwarded-*`、支持 WebSocket（Grafana Live）。
+- `deploy/nginx/nginx.conf`：新增 `server_name monitor.wotbtools.com` 的 server 块，使用 Docker embedded DNS `127.0.0.11` 在请求运行时解析 `grafana:3000`，并透传 `X-Forwarded-*`、支持 WebSocket（Grafana Live）。
 - Grafana 环境变量 `GF_SERVER_ROOT_URL=https://monitor.wotbtools.com`（`GRAFANA_ROOT_URL`，见 `.env.example` / `docker-compose`）。
 
 **仍需管理员在生产服务器手动完成**（仓库外）：
@@ -172,7 +172,7 @@ docker compose ps prometheus loki alloy grafana node-exporter
 
 ### 生产（CI 自动）
 
-合并到 `main` 触发 `deploy.yml`：Actions 先把完整 `deploy/` 上传到 `/opt/wotb/deploy.incoming/deploy`，在 incoming project root 中执行 `docker compose config` 与 `pull`；成功后才将 incoming deploy tree 原子 promote 到 `/opt/wotb/deploy`。每次通过 backend、frontend、Keycloak OIDC application gate 的发布都会把部署树、compose 与 SHA 提升为 `/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml`、`DEPLOYED_SHA.lkg`（Last Known Good）；`deploy.prev` 仅作为故障取证快照，不是回滚权威。上线和回滚均显式 `--force-recreate prometheus loki alloy grafana`；frontend nginx refresh 前，`deploy.sh` 会从同一 frontend 网络对 Grafana `/api/health` 做 bounded readiness retry（默认最多 20 次、间隔 1 秒），只有探测成功时才执行 `docker compose restart wotb-frontend` 刷新 nginx 对 `grafana` 的 upstream 解析。Grafana 重建/解析失败或 readiness window 超时均跳过 frontend refresh，仅标记 `OBSERVABILITY DEGRADED`，保留健康应用，不触发应用回滚；随后仍进入应用健康 gate。观测 verifier 会继续验证 Prometheus targets、Grafana direct health/datasource/dashboard API，并用 `Host: monitor.wotbtools.com` 经 frontend nginx 验证同一 Grafana health endpoint；Android 下载 canary 使用 `Host: wotbtools.com`，随后分别启动 backend/Keycloak canary、触发真实 frontend nginx Android 路径（404 允许但不算成功下载）后精确查询 Loki。观测链路失败会先输出诊断并标记 `OBSERVABILITY DEGRADED`，但不会恢复 LKG；只有 application gate 失败才会从 LKG 恢复整棵 deploy tree。LKG 缺失或损坏时 fail-closed，不会先删除当前 live tree；pull 失败也不触碰 live tree。
+生产 Build 与 Deploy 通过 `workflow_dispatch` 独立运行：Build 可选择 `all` 或单个 backend/frontend/keycloak 镜像，Deploy 可选择任意 production Compose service；Deploy 不自动等待或触发 Build，应用服务/all 必须填入独立 Build 已产出的 immutable `sha-...` tag，运行时 observability service 可直接 dispatch。Build 的 push path filter 明确包含 compose、nginx、Prometheus、Loki、Alloy、Grafana provisioning 与部署验证脚本，但不包含 `deploy/observability/grafana/dashboards/**`；纯 dashboard JSON 只触发 Grafana OpenTofu API reconciliation，不触发应用 Build。Actions 先把完整 `deploy/` 上传到 `/opt/wotb/deploy.incoming/deploy`，在 incoming project root 中执行 `docker compose config` 与目标 service 的 `pull`；成功后才将 incoming deploy tree 原子 promote 到 `/opt/wotb/deploy`。完整 `all` 发布通过 backend、frontend、Keycloak OIDC application gate 后才会把部署树、compose 与 SHA 提升为 `/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml`、`DEPLOYED_SHA.lkg`（Last Known Good）；targeted service deploy 不提升 LKG，`deploy.prev` 仅作为故障取证快照，不是回滚权威。完整上线和回滚仍显式 `--force-recreate prometheus loki alloy grafana`，因为这是 runtime observability compose 配置的部署边界；dashboard JSON 变更不会进入这条路径。nginx 的 Grafana upstream 使用 Docker embedded DNS 的运行时解析，因此 Grafana 暂时不存在时 frontend nginx 仍能启动，只有 `monitor.wotbtools.com` 返回 502。`deploy.sh` 仍从 frontend 网络对 Grafana `/api/health` 做 bounded readiness retry（默认最多 20 次、间隔 1 秒），readiness window 超时仅标记 `OBSERVABILITY DEGRADED`，不刷新或重启 frontend，也不触发应用回滚；随后仍进入应用健康 gate。观测 verifier 会继续验证 Prometheus targets、Grafana direct health/datasource/dashboard API，并用 `Host: monitor.wotbtools.com` 经 frontend nginx 验证同一 Grafana health endpoint；Android 下载 canary 使用 `Host: wotbtools.com`，随后分别启动 backend/Keycloak canary、触发真实 frontend nginx Android 路径（404 允许但不算成功下载）后精确查询 Loki。观测链路失败会先输出诊断并标记 `OBSERVABILITY DEGRADED`，但不会恢复 LKG；只有 application gate 失败才会从 LKG 恢复整棵 deploy tree。LKG 缺失或损坏时 fail-closed，不会先删除当前 live tree；pull 失败也不触碰 live tree。
 
 若主机已有健康的 live deployment，正常发布流程会先完成应用健康检查并建立缺失的初始 LKG；若没有可验证的 live deployment 或现有 LKG，发布会 fail-closed，保留当前 live tree 并要求人工处理。
 
@@ -319,7 +319,7 @@ Processing Job 终态口径：`ready` 表示 Processing Job 已正常完成 fina
 5. CPU、内存、磁盘、负载、Backend JVM/GC 摘要
 6. Recent Backend / Keycloak errors（Loki）
 
-> Dashboard JSON 提交在 `deploy/observability/grafana/dashboards/`，volume 丢失后随 provisioning 自动重建。
+> Dashboard JSON 提交在 `deploy/observability/grafana/dashboards/`，由 Grafana OpenTofu API reconciliation 写入 Grafana；该目录不再由 dashboard file provisioning controller 自动重建。
 > 面板查询基于上述指标名编写；**每个面板是否有真实数据支撑，需在生产实际产生流量后确认**（CI 仅校验 JSON 结构与指标名存在，无法验证面板有数据）。
 
 ---

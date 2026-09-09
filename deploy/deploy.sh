@@ -25,6 +25,16 @@ readonly RESTORE_COMPOSE_FAILED="$WOTB_DIR/docker-compose.failed.yml"
 readonly HEALTH_RETRIES="${WOTB_HEALTH_RETRIES:-60}"
 readonly GRAFANA_READINESS_RETRIES="${WOTB_GRAFANA_READINESS_RETRIES:-20}"
 readonly GRAFANA_READINESS_INTERVAL_SEC="${WOTB_GRAFANA_READINESS_INTERVAL_SEC:-1}"
+readonly DEPLOY_SERVICE="${WOTB_DEPLOY_SERVICE:-all}"
+
+case "$DEPLOY_SERVICE" in
+  all|postgres|node-exporter|prometheus|loki|alloy|grafana|keycloak|wotb-backend|wotb-frontend)
+    ;;
+  *)
+    echo "ERROR: unsupported WOTB_DEPLOY_SERVICE: $DEPLOY_SERVICE" >&2
+    exit 1
+    ;;
+esac
 
 if [[ ! "$HEALTH_RETRIES" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: WOTB_HEALTH_RETRIES must be a positive integer." >&2
@@ -80,6 +90,7 @@ readonly RUNNER_DIR="$INCOMING_DIR/.runner"
 readonly RUNNER_VERIFIER="$RUNNER_DIR/verify-observability.sh"
 readonly RUNNER_VALIDATOR="$RUNNER_DIR/validate-alloy-config.sh"
 readonly RUNNER_GRAFANA_API_HELPER="$RUNNER_DIR/grafana-api-request.sh"
+readonly STAGED_SERVICE_OVERRIDE="$INCOMING_DIR/docker-compose.service.override.yml"
 if [ ! -f "$STAGED_DEPLOY_DIR/docker-compose.prod.yml" ]; then
   echo "ERROR: staged deployment tree is missing: $STAGED_DEPLOY_DIR/docker-compose.prod.yml" >&2
   exit 1
@@ -97,6 +108,51 @@ fi
 PREV_SHA=""
 if [ -f DEPLOYED_SHA ]; then PREV_SHA=$(tr -d '\r\n' < DEPLOYED_SHA); fi
 
+current_image_tag() {
+  local service="$1" tag
+  tag="$(awk -v prefix="ghcr.io/a158coke/wotbtools-${service}:" \
+    '$1 == "image:" && index($2, prefix) == 1 { sub(prefix, "", $2); print $2; exit }' \
+    "$LIVE_COMPOSE")"
+  if [ -z "$tag" ] || [[ "$tag" =~ [[:space:]] ]]; then
+    echo "ERROR: could not resolve the current immutable ${service} image tag." >&2
+    return 1
+  fi
+  printf '%s\n' "$tag"
+}
+
+prepare_service_override() {
+  rm -f -- "$STAGED_SERVICE_OVERRIDE"
+  if [ "$DEPLOY_SERVICE" = all ]; then
+    return 0
+  fi
+  if [ ! -f "$LIVE_COMPOSE" ]; then
+    echo "ERROR: targeted deployment requires an existing live compose file." >&2
+    return 1
+  fi
+
+  local backend_tag frontend_tag keycloak_tag
+  backend_tag="$(current_image_tag backend)"
+  frontend_tag="$(current_image_tag frontend)"
+  keycloak_tag="$(current_image_tag keycloak)"
+  case "$DEPLOY_SERVICE" in
+    wotb-backend) backend_tag="$TAG" ;;
+    wotb-frontend) frontend_tag="$TAG" ;;
+    keycloak) keycloak_tag="$TAG" ;;
+  esac
+
+  umask 177
+  cat > "$STAGED_SERVICE_OVERRIDE" <<EOF
+services:
+  keycloak:
+    image: ghcr.io/a158coke/wotbtools-keycloak:${keycloak_tag}
+  wotb-backend:
+    image: ghcr.io/a158coke/wotbtools-backend:${backend_tag}
+  wotb-frontend:
+    image: ghcr.io/a158coke/wotbtools-frontend:${frontend_tag}
+EOF
+  chmod 600 "$STAGED_SERVICE_OVERRIDE"
+}
+
 if [ -f docker-compose.yml ] && [ -x "$LIVE_DEPLOY_DIR/postgres-backup.sh" ]; then
   "$LIVE_DEPLOY_DIR/postgres-backup.sh" --database wotb
   "$LIVE_DEPLOY_DIR/postgres-backup.sh" --database keycloak
@@ -109,17 +165,28 @@ printf 'GRAFANA_ADMIN_USER=%s\nGRAFANA_ADMIN_PASSWORD=%s\n' \
   "$GRAFANA_ADMIN_USER" "$GRAFANA_ADMIN_PASSWORD" > .env
 chmod 600 .env
 
+prepare_service_override
+STAGED_COMPOSE_ARGS=(-f "$STAGED_COMPOSE")
+if [ -f "$STAGED_SERVICE_OVERRIDE" ]; then
+  STAGED_COMPOSE_ARGS+=(-f "$STAGED_SERVICE_OVERRIDE")
+fi
 cp -f "$STAGED_DEPLOY_DIR/docker-compose.prod.yml" "$STAGED_COMPOSE"
-if ! docker compose -f "$STAGED_COMPOSE" config > "$STAGED_RESOLVED_COMPOSE"; then
+if ! docker compose "${STAGED_COMPOSE_ARGS[@]}" config > "$STAGED_RESOLVED_COMPOSE"; then
   echo "ERROR: staged compose config is invalid; live deployment was not changed." >&2
   exit 1
 fi
 chmod 600 "$STAGED_RESOLVED_COMPOSE"
 
 pull_compose() {
-  local compose_file="$1" attempt
+  local compose_file="$1" service="${2:-}" attempt
+  local -a compose_args=(-f "$compose_file")
+  if [ "$compose_file" = "$STAGED_COMPOSE" ] && [ -f "$STAGED_SERVICE_OVERRIDE" ]; then
+    compose_args+=(-f "$STAGED_SERVICE_OVERRIDE")
+  fi
+  local -a pull_args=()
+  [ -n "$service" ] && pull_args+=("$service")
   for attempt in 1 2 3; do
-    if docker compose -f "$compose_file" pull; then return 0; fi
+    if docker compose "${compose_args[@]}" pull "${pull_args[@]}"; then return 0; fi
     if [ "$attempt" -lt 3 ]; then
       echo "docker compose pull failed (${compose_file}, attempt $attempt), retrying in 10s..."
       sleep 10
@@ -140,14 +207,14 @@ assert_service_running() {
 apply_observability_services() {
   echo "== Applying Prometheus/Loki/Alloy/Grafana configuration =="
   docker compose up -d --force-recreate prometheus loki alloy grafana
-  assert_service_running prometheus Prometheus
-  assert_service_running loki Loki
-  assert_service_running alloy Alloy
-  assert_service_running grafana Grafana
+  assert_service_running prometheus Prometheus || return 1
+  assert_service_running loki Loki || return 1
+  assert_service_running alloy Alloy || return 1
+  assert_service_running grafana Grafana || return 1
 }
 
 verify_grafana_from_frontend_network() {
-  echo "== Verifying frontend can resolve Grafana before nginx refresh =="
+  echo "== Verifying frontend can resolve Grafana through runtime Docker DNS =="
   local attempt
   for attempt in $(seq 1 "$GRAFANA_READINESS_RETRIES"); do
     if docker compose exec -T wotb-frontend wget -qO- http://grafana:3000/api/health >/dev/null 2>&1; then
@@ -160,9 +227,14 @@ verify_grafana_from_frontend_network() {
   return 1
 }
 
-refresh_frontend_nginx() {
-  echo "== Refreshing frontend nginx upstream resolution after observability =="
-  docker compose restart wotb-frontend
+deploy_selected_service() {
+  if [ "$DEPLOY_SERVICE" = all ]; then
+    docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend
+  else
+    echo "== Deploying selected service: $DEPLOY_SERVICE =="
+    docker compose up -d --force-recreate --remove-orphans "$DEPLOY_SERVICE"
+    assert_service_running "$DEPLOY_SERVICE" "$DEPLOY_SERVICE" || return 1
+  fi
 }
 
 wait_healthy() {
@@ -619,17 +691,12 @@ rollback_to_lkg() {
   fi
   if pull_compose "$LIVE_COMPOSE" \
       && docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend; then
-    observability_ready=false
     if apply_observability_services && verify_grafana_from_frontend_network; then
-      observability_ready=true
+      :
     else
       echo "OBSERVABILITY DEGRADED: observability services or Grafana frontend-network readiness failed during rollback" >&2
     fi
-    rollback_refresh_ok=true
-    if [ "$observability_ready" = true ] && ! refresh_frontend_nginx; then
-      rollback_refresh_ok=false
-    fi
-    if [ "$rollback_refresh_ok" = true ] && wait_healthy; then
+    if wait_healthy; then
       cp -f "$LKG_SHA" DEPLOYED_SHA
       echo "== ROLLBACK OK: $(cat "$LKG_SHA") =="
       report_observability_status || true
@@ -641,7 +708,7 @@ rollback_to_lkg() {
   return 1
 }
 
-if ! pull_compose "$STAGED_COMPOSE"; then
+if ! pull_compose "$STAGED_COMPOSE" "$DEPLOY_SERVICE"; then
   echo "ERROR: staged docker compose pull failed after 3 attempts; live deployment was not changed." >&2
   exit 1
 fi
@@ -679,7 +746,11 @@ if [ -d "$LIVE_DEPLOY_DIR" ]; then
 fi
 mv -- "$STAGED_DEPLOY_DIR" "$LIVE_DEPLOY_DIR"
 cp -f "$LIVE_DEPLOY_DIR/docker-compose.prod.yml" docker-compose.next.yml
-if ! docker compose -f docker-compose.next.yml config > docker-compose.next.resolved.yml; then
+PROMOTED_COMPOSE_ARGS=(-f docker-compose.next.yml)
+if [ -f "$STAGED_SERVICE_OVERRIDE" ]; then
+  PROMOTED_COMPOSE_ARGS+=(-f "$STAGED_SERVICE_OVERRIDE")
+fi
+if ! docker compose "${PROMOTED_COMPOSE_ARGS[@]}" config > docker-compose.next.resolved.yml; then
   echo "ERROR: promoted compose render failed; attempting rollback." >&2
   rollback_needed=true
 else
@@ -688,25 +759,37 @@ else
 fi
 
 if [ "$rollback_needed" = false ]; then
-  if ! docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend; then
+  if ! deploy_selected_service; then
     echo "ERROR: docker compose up failed; attempting rollback." >&2
     rollback_needed=true
   else
-    observability_ready=false
-    if apply_observability_services && verify_grafana_from_frontend_network; then
-      observability_ready=true
-      if ! refresh_frontend_nginx; then
-        echo "ERROR: frontend nginx upstream refresh failed; attempting rollback." >&2
-        rollback_needed=true
+    if [ "$DEPLOY_SERVICE" = all ]; then
+      if apply_observability_services && verify_grafana_from_frontend_network; then
+        :
+      else
+        echo "OBSERVABILITY DEGRADED: Grafana is not ready through runtime Docker DNS" >&2
       fi
-    else
-      echo "OBSERVABILITY DEGRADED: observability services or Grafana frontend-network readiness failed" >&2
+    elif [ "$DEPLOY_SERVICE" = grafana ]; then
+      if verify_grafana_from_frontend_network; then
+        :
+      else
+        echo "OBSERVABILITY DEGRADED: Grafana is not ready through runtime Docker DNS" >&2
+      fi
+    elif [ "$DEPLOY_SERVICE" = prometheus ] || [ "$DEPLOY_SERVICE" = loki ] \
+        || [ "$DEPLOY_SERVICE" = alloy ] || [ "$DEPLOY_SERVICE" = node-exporter ]; then
+      :
     fi
     if [ "$rollback_needed" = false ]; then
-      docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
+      if [ "$DEPLOY_SERVICE" = all ]; then
+        docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
+      fi
     fi
     if [ "$rollback_needed" = false ] && wait_healthy; then
-      if ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "$TAG"; then
+      if [ "$DEPLOY_SERVICE" != all ]; then
+        echo "== TARGETED DEPLOY OK: $DEPLOY_SERVICE =="
+        report_observability_status || true
+        exit 0
+      elif ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "$TAG"; then
         echo "ERROR: LKG staging failed after the application health gate; attempting rollback." >&2
         rollback_needed=true
       elif promote_lkg_candidate; then

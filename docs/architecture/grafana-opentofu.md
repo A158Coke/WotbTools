@@ -24,7 +24,9 @@ does not provision or reconcile dashboard API objects.
 
 The provisioning mount keeps an empty `dashboards/` directory only so Grafana
 does not report a missing provisioning path at startup; it contains no
-dashboard controller or dashboard payload.
+dashboard controller or dashboard payload. Changes under the canonical
+dashboard JSON path therefore reconcile through OpenTofu and do not require an
+application image Build or production runtime deployment.
 
 Prometheus and Loki remain file-provisioned. Grafana reports those datasources
 as read-only and the provider rejects importing them as resources. The

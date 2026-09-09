@@ -11,7 +11,11 @@
 #      script still parse the formal deployment.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -n "${WOTB_TEST_ROOT:-}" ]; then
+  ROOT="$WOTB_TEST_ROOT"
+else
+  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -107,6 +111,9 @@ case "$cmd" in
       pull) exit 0 ;;
       up)
         active_compose_file="${COMPOSE_FILE:-docker-compose.yml}"
+        if [ -n "${FAKE_DOCKER_UP_LOG:-}" ]; then
+          printf 'compose %s\n' "${compose_args[*]}" >> "$FAKE_DOCKER_UP_LOG"
+        fi
         if [ -n "${FAKE_LIVE_ALLOY_UNHEALTHY_FILE:-}" ] \
             && [[ "${compose_args[*]}" != *"postgres"* ]]; then
           rm -f "$FAKE_LIVE_ALLOY_UNHEALTHY_FILE"
@@ -381,8 +388,10 @@ grep -Eq 'keycloak-observability-canary-.*alpine:3\.22' "$WORK/docker-run.log" \
 if grep -Eq 'compose.*run.*keycloak.*sh -c' "$WORK/docker-run.log"; then
   fail "Keycloak canary must not invoke the Keycloak image entrypoint as a shell"
 fi
-grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
-  || fail "successful deployment must refresh frontend nginx after Grafana recreation"
+if [ -f "$WORK/docker-restart.log" ]; then
+  ! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
+    || fail "successful deployment must not restart frontend nginx for Grafana recreation"
+fi
 
 # ---- observability gates must fail closed on up=0 and an empty Loki result ----
 set +e
@@ -605,17 +614,14 @@ run_observability_case() {
       || fail "$case_name unexpectedly reported OBSERVABILITY DEGRADED"
   fi
   ! grep -q "ROLLBACK" <<<"$output" || fail "$case_name unexpectedly rolled back"
-  if [ "$case_name" = "grafana-recreate-failed" ]; then
-    ! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
-      || fail "$case_name must not refresh frontend nginx after Grafana recreation failure"
-  elif [ "$case_name" = "grafana-delayed-readiness" ]; then
+  if [ "$case_name" = "grafana-delayed-readiness" ]; then
     [[ "$(cat "$WORK/grafana-probes")" -eq 3 ]] \
       || fail "$case_name must perform two failed probes before the successful probe"
-    [[ "$(grep -Fc 'compose restart wotb-frontend' "$WORK/docker-restart.log")" -eq 1 ]] \
-      || fail "$case_name must refresh frontend nginx exactly once"
   elif [ "$case_name" = "grafana-readiness-timeout" ]; then
-    ! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
-      || fail "$case_name must not refresh frontend nginx after readiness timeout"
+    if [ -f "$WORK/docker-restart.log" ]; then
+      ! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
+        || fail "$case_name must never restart frontend nginx after readiness timeout"
+    fi
   fi
 }
 
@@ -647,6 +653,24 @@ run_application_failure_case backend-unhealthy sha-BACKEND backend
 run_application_failure_case frontend-unhealthy sha-FRONTEND frontend
 run_application_failure_case keycloak-unhealthy sha-KEYCLOAK keycloak
 
+# ---- targeted service deployment only recreates the selected service ----
+stage_candidate_b
+: > "$WORK/docker-up-targeted.log"
+set +e
+targeted_output="$(env TAG=sha-TARGETED WOTB_DEPLOY_SERVICE=grafana \
+  FAKE_HEALTHY_BACKEND_TAG=sha-TARGETED FAKE_DOCKER_UP_LOG="$WORK/docker-up-targeted.log" \
+  WOTB_BACKUP_ROOT="$WORK/backups-targeted" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+targeted_rc=$?
+set -e
+[[ $targeted_rc -eq 0 ]] || fail "targeted Grafana deployment must succeed: $targeted_output"
+grep -Eq 'compose up .*grafana' "$WORK/docker-up-targeted.log" \
+  || fail "targeted deployment must start the selected Grafana service; log: $(cat "$WORK/docker-up-targeted.log" 2>/dev/null || true)"
+! grep -Eq 'compose up .*wotb-backend|compose up .*wotb-frontend' "$WORK/docker-up-targeted.log" \
+  || fail "targeted Grafana deployment must not explicitly start application services"
+grep -q "== TARGETED DEPLOY OK: grafana ==" <<<"$targeted_output" \
+  || fail "targeted deployment success marker missing"
+
 # ---- rollback application healthy + Grafana broken remains ROLLBACK OK ----
 stage_candidate_b
 : > "$WORK/docker-restart.log"
@@ -666,8 +690,10 @@ grep -q "OBSERVABILITY DEGRADED" <<<"$rollback_observability_output" \
   || fail "rollback Grafana case must report degraded observability"
 ! grep -q "== ROLLBACK FAILED:" <<<"$rollback_observability_output" \
   || fail "Grafana failure must not make an application-healthy rollback fail"
-! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
-  || fail "Grafana failure during rollback must not refresh frontend nginx"
+if [ -f "$WORK/docker-restart.log" ]; then
+  ! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
+    || fail "Grafana failure during rollback must not refresh frontend nginx"
+fi
 
 # ---- rollback application failure remains a real rollback failure ----
 stage_candidate_b

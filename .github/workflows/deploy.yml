@@ -1,25 +1,31 @@
-name: Build & Deploy
+name: Deploy
 # 生产 Grafana MCP 已下线（2026-08-11）：不再传递 GRAFANA_MCP_TOKEN，
 # 宿主 Caddy /mcp 路由与 Grafana MCP Service Account 由人工清理。
-run-name: Deploy ${{ github.ref_name }} by @${{ github.actor }} to Production
+run-name: Deploy ${{ inputs.service || 'all' }} from ${{ github.ref_name }} by @${{ github.actor }}
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "java/**"
-      - "frontend/**"
-      - "common/**"
-      - ".dockerignore"
-      - "docker/Dockerfile.backend"
-      - "docker/Dockerfile.frontend"
-      - "docker/Dockerfile.keycloak"
-      - "docker/keycloak/**"
-      - "keycloak-juhe-qq-provider/**"
-      - "keycloak-wargaming-provider/**"
-      - "deploy/**"
-      - ".github/workflows/deploy.yml"
   workflow_dispatch:
+    inputs:
+      service:
+        description: Compose service to deploy; all performs the full validated release
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - postgres
+          - node-exporter
+          - prometheus
+          - loki
+          - alloy
+          - grafana
+          - keycloak
+          - wotb-backend
+          - wotb-frontend
+      image_tag:
+        description: Immutable sha-... image tag from an independent Build run; required for all/application services
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -28,127 +34,57 @@ concurrency:
   group: production-maintenance
   cancel-in-progress: false
 
-env:
-  GHCR_IMAGE_PREFIX: ghcr.io/a158coke/wotbtools
-
 jobs:
-  # 生产部署始终统一构建三件套镜像；tag 基于 main 提交哈希确定性计算。
-  # 代码质量验证由 PR CI 承担（merge gate），deploy 不再重复执行测试套件。
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      service: ${{ steps.service.outputs.service }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Compute image tag
+          ref: main
+      - name: Compute deployment identity
         id: tag
-        run: echo "tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-
-  build-backend:
-    needs: [changes]
-    if: needs.changes.result == 'success'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v5
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: docker/Dockerfile.backend
-          push: true
-          tags: |
-            ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
-            ${{ env.GHCR_IMAGE_PREFIX }}-backend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: false
-          sbom: false
-
-  build-frontend:
-    needs: [changes]
-    if: needs.changes.result == 'success'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v5
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: docker/Dockerfile.frontend
-          push: true
-          tags: |
-            ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
-            ${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest
-          build-args: |
-            BUILD_COMMIT=${{ needs.changes.outputs.tag }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: false
-          sbom: false
-
-  build-keycloak:
-    needs: changes
-    if: needs.changes.result == 'success'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v5
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: docker/Dockerfile.keycloak
-          push: true
-          tags: |
-            ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ needs.changes.outputs.tag }}
-            ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: false
-          sbom: false
         env:
-          KEYCLOAK_BUILD_FILE: ${{ github.workspace }}/keycloak-juhe-qq-provider
+          REQUESTED_TAG: ${{ inputs.image_tag }}
+          REQUESTED_SERVICE: ${{ inputs.service }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$REQUESTED_SERVICE" in
+            all|keycloak|wotb-backend|wotb-frontend)
+              [[ "$REQUESTED_TAG" =~ ^sha-[0-9a-f]{7,40}$ ]] || {
+                echo "image_tag must be an immutable sha-<commit> tag for $REQUESTED_SERVICE" >&2
+                exit 1
+              }
+              ;;
+            *)
+              if [ -n "$REQUESTED_TAG" ] && [[ ! "$REQUESTED_TAG" =~ ^sha-[0-9a-f]{7,40}$ ]]; then
+                echo "image_tag must be an immutable sha-<commit> tag when provided" >&2
+                exit 1
+              fi
+              ;;
+          esac
+          tag="${REQUESTED_TAG:-sha-dispatch}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Resolve deployment service
+        id: service
+        env:
+          REQUESTED_SERVICE: ${{ inputs.service }}
+        run: echo "service=$REQUESTED_SERVICE" >> "$GITHUB_OUTPUT"
 
   deploy:
-    needs: [changes, build-backend, build-frontend, build-keycloak]
-    if: >-
-      always() &&
-      needs.changes.result == 'success' &&
-      !contains(needs.*.result, 'failure') &&
-      !contains(needs.*.result, 'cancelled')
+    needs: [changes]
+    if: needs.changes.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: main
       - name: Prepare deployment directory
         uses: appleboy/ssh-action@v1
         with:
@@ -172,7 +108,7 @@ jobs:
           source: deploy
           target: /opt/wotb/deploy.incoming
           overwrite: true
-      - name: Deploy via SSH
+      - name: Deploy selected service via SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -180,10 +116,11 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: TAG,DB_PASSWORD,KC_ADMIN_PASSWORD,WG_APPLICATION_ID,KEYCLOAK_ADMIN_CLIENT_SECRET,AI_API_KEY,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS,AI_BASE_URL,AI_MODEL,AI_CONNECT_TIMEOUT_SEC,AI_TIMEOUT_SEC,AI_CALL_TIMEOUT_SEC,AI_RETRY_MAX_ATTEMPTS,AI_RETRY_INITIAL_BACKOFF_MS,AI_RETRY_MAX_BACKOFF_MS,AI_RETRY_BACKOFF_MULTIPLIER,AI_CONTEXT_WINDOW_TOKENS,AI_SINGLE_REPLAY_MAX_INPUT_TOKENS,AI_MAX_OUTPUT_TOKENS,AI_PROMPT_SAFETY_MARGIN_TOKENS,AI_THINKING_ENABLED,AI_THINKING_ENABLED_CALL2,AI_REASONING_EFFORT,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY,AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT
+          envs: TAG,WOTB_DEPLOY_SERVICE,DB_PASSWORD,KC_ADMIN_PASSWORD,WG_APPLICATION_ID,KEYCLOAK_ADMIN_CLIENT_SECRET,AI_API_KEY,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS,AI_BASE_URL,AI_MODEL,AI_CONNECT_TIMEOUT_SEC,AI_TIMEOUT_SEC,AI_CALL_TIMEOUT_SEC,AI_RETRY_MAX_ATTEMPTS,AI_RETRY_INITIAL_BACKOFF_MS,AI_RETRY_MAX_BACKOFF_MS,AI_RETRY_BACKOFF_MULTIPLIER,AI_CONTEXT_WINDOW_TOKENS,AI_SINGLE_REPLAY_MAX_INPUT_TOKENS,AI_MAX_OUTPUT_TOKENS,AI_PROMPT_SAFETY_MARGIN_TOKENS,AI_THINKING_ENABLED,AI_THINKING_ENABLED_CALL2,AI_REASONING_EFFORT,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY,AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT
           script: bash /opt/wotb/deploy.incoming/deploy/deploy.sh
         env:
           TAG: ${{ needs.changes.outputs.tag }}
+          WOTB_DEPLOY_SERVICE: ${{ needs.changes.outputs.service }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           KC_ADMIN_PASSWORD: ${{ secrets.KC_ADMIN_PASSWORD }}
           WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
