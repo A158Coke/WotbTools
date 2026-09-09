@@ -7,8 +7,7 @@
 ### OpenTofu
 - 新增最小 COS-only OpenTofu production baseline：声明现有生产 COS bucket、手工 import 流程、状态安全规则与不注入生产凭据的 GitHub Actions validation workflow；不包含自动 plan、import 或 apply。
 - 将 production root 切换到 Tencent COS S3-compatible remote state；新增 trusted same-repo authenticated plan、fork PR 无凭据路径、workflow concurrency 与 artifact bucket delete/replace safety gate；state bucket 保持 owner-managed bootstrap boundary，不自动 import/apply。
-- 为 trusted OpenTofu run 增加不泄密的 Tencent secret wiring 检查与 provider authentication probe，用于区分凭据问题和 COS S3 backend 兼容问题；不扩大 CAM policy。
-- 为同一 trusted run 增加 AWS CLI COS S3 `ListObjectsV2` 对照探针，进一步区分 Tencent credentials、COS S3 signing 与 OpenTofu backend 请求路径；保持只读且不扩大 CAM policy。
+- 完成现有 production artifact bucket 的 owner-managed remote-state bootstrap；import 后 authenticated plan 为 `No changes`，并移除仅用于排查凭据的临时 workflow diagnostics。
 
 ### Battle Playback
 - **Battle Playback Type 5 H Zetsu dedicated asset repair**：根据 8033 与 9057 的真实 BlitzKit bake 证据拆分 `type-5-heavy` 与 `type-5-h-zetsu`；两者模块、纹理和 turret raster 均不同，9057 不再复用旧 Type 5 Heavy 资产。

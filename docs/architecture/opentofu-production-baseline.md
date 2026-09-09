@@ -173,33 +173,9 @@ manually. Every run performs:
 For a fork pull request, init uses `-backend=false`, no production secrets are
 available to any step, and no authenticated plan runs. A same-repository pull
 request (or an owner-triggered manual run) receives credentials only on the
-credential wiring check, Tencent provider probe, backend-init and
-authenticated-plan steps and runs:
-
-The credential wiring check prints only the SecretId length/prefix and SecretKey
-length; it never prints secret values. The provider probe creates a temporary
-backend-free OpenTofu root under the runner temp directory, calls the locked
-Tencent provider's `tencentcloud_user_info` data source with the Tencent
-environment variables, and removes the directory on exit. Its result is
-diagnostic and does not grant extra permissions or replace the backend check. A
-provider probe failure points to credential validity or Tencent API
-authorization; a provider probe success followed by S3 `InvalidAccessKeyId`
-points to the S3-compatible credential, endpoint, or signing path. The probe is
-non-blocking so a missing permission for that diagnostic API does not hide the
-backend result.
-
-The following AWS CLI probe uses the same mapped
-`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` values and performs one read-only
-`ListObjectsV2` request against the state bucket with the COS endpoint and
-`--max-keys 1`. It explicitly sets AWS CLI S3 `addressing_style = virtual`,
-because COS rejects path-style requests for this bucket. It never prints object
-contents or credentials. If the Tencent provider probe succeeds but this AWS
-CLI request also returns
-`InvalidAccessKeyId` or a signature error, the remaining suspect is the
-S3-compatible credential/signing path. If the AWS CLI request succeeds while
-OpenTofu backend initialization fails, investigate OpenTofu's backend request
-shape or endpoint configuration. This probe is diagnostic and non-blocking;
-the backend/plan result remains authoritative.
+backend-init and authenticated-plan steps. The trusted path initializes the COS
+backend, validates the configuration, creates an authenticated plan, and rejects
+artifact-bucket delete or replacement actions.
 
 ```text
 tofu plan -input=false -no-color -out=plan.tfplan
