@@ -23,9 +23,16 @@ readonly RESTORE_COMPOSE_NEXT="$WOTB_DIR/docker-compose.restore.next.yml"
 readonly RESTORE_COMPOSE_INSTALLING="$WOTB_DIR/docker-compose.restore.installing.yml"
 readonly RESTORE_COMPOSE_FAILED="$WOTB_DIR/docker-compose.failed.yml"
 readonly HEALTH_RETRIES="${WOTB_HEALTH_RETRIES:-60}"
+readonly GRAFANA_READINESS_RETRIES="${WOTB_GRAFANA_READINESS_RETRIES:-20}"
+readonly GRAFANA_READINESS_INTERVAL_SEC="${WOTB_GRAFANA_READINESS_INTERVAL_SEC:-1}"
 
 if [[ ! "$HEALTH_RETRIES" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: WOTB_HEALTH_RETRIES must be a positive integer." >&2
+  exit 1
+fi
+if [[ ! "$GRAFANA_READINESS_RETRIES" =~ ^[1-9][0-9]*$ \
+    || ! "$GRAFANA_READINESS_INTERVAL_SEC" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: Grafana readiness retry settings must be positive integers." >&2
   exit 1
 fi
 if [ -z "$WOTB_DIR" ] || [ "$WOTB_DIR" = "/" ] || [ -z "$INCOMING_DIR" ] || [ "$INCOMING_DIR" = "/" ]; then
@@ -141,7 +148,16 @@ apply_observability_services() {
 
 verify_grafana_from_frontend_network() {
   echo "== Verifying frontend can resolve Grafana before nginx refresh =="
-  docker compose exec -T wotb-frontend wget -qO- http://grafana:3000/api/health >/dev/null 2>&1
+  local attempt
+  for attempt in $(seq 1 "$GRAFANA_READINESS_RETRIES"); do
+    if docker compose exec -T wotb-frontend wget -qO- http://grafana:3000/api/health >/dev/null 2>&1; then
+      return 0
+    fi
+    [ "$attempt" -lt "$GRAFANA_READINESS_RETRIES" ] \
+      && sleep "$GRAFANA_READINESS_INTERVAL_SEC"
+  done
+  echo "ERROR: Grafana did not become ready from the frontend network after ${GRAFANA_READINESS_RETRIES} attempts." >&2
+  return 1
 }
 
 refresh_frontend_nginx() {
