@@ -209,6 +209,17 @@ case "$cmd" in
             exit 0
           fi
            if [[ "$request" == *"wotb-frontend"* && "$request" == *"grafana:3000/api/health"* ]]; then
+             if [ "${FAKE_GRAFANA_NEVER_READY:-0}" = 1 ]; then
+               exit 1
+             fi
+             if [ -n "${FAKE_GRAFANA_PROBE_FILE:-}" ]; then
+               probe_count="$(cat "$FAKE_GRAFANA_PROBE_FILE" 2>/dev/null || printf '0')"
+               probe_count=$((probe_count + 1))
+               printf '%s\n' "$probe_count" > "$FAKE_GRAFANA_PROBE_FILE"
+               if [ "$probe_count" -lt "${FAKE_GRAFANA_READY_AFTER:-1}" ]; then
+                 exit 1
+               fi
+             fi
              printf '{"database":"ok"}\n'
            elif [[ "$request" == *"wotb-frontend"*"/api/health"* ]]; then
             if [[ "$request" == *"--header=Host: monitor.wotbtools.com"* ]]; then
@@ -564,29 +575,54 @@ unset FAKE_HEALTHY_BACKEND_TAG WOTB_TEST_FAIL_LKG_STAGE_COPY FAKE_ROLLBACK_UP_LO
 # ---- healthy application + broken observability remains a successful deploy ----
 run_observability_case() {
   local case_name="$1" tag="$2" assignment="$3" output rc
+  local -a env_args=() extra_env=()
   stage_candidate_b
-  if [ "$case_name" = "grafana-recreate-failed" ]; then
+  if [[ "$case_name" == grafana-* ]]; then
     : > "$WORK/docker-restart.log"
   fi
+  if [ "$case_name" = "grafana-delayed-readiness" ]; then
+    : > "$WORK/grafana-probes"
+    extra_env+=("FAKE_GRAFANA_READY_AFTER=3" "FAKE_GRAFANA_PROBE_FILE=$WORK/grafana-probes"
+      "WOTB_GRAFANA_READINESS_RETRIES=5" "WOTB_GRAFANA_READINESS_INTERVAL_SEC=1")
+  elif [ "$case_name" = "grafana-readiness-timeout" ]; then
+    extra_env+=("WOTB_GRAFANA_READINESS_RETRIES=3" "WOTB_GRAFANA_READINESS_INTERVAL_SEC=1")
+  fi
+  [ -n "$assignment" ] && env_args+=("$assignment")
   set +e
   output="$(env TAG="$tag" FAKE_HEALTHY_BACKEND_TAG="$tag" \
     WOTB_OBSERVABILITY_RETRIES=1 WOTB_OBSERVABILITY_INTERVAL_SEC=1 \
-    WOTB_BACKUP_ROOT="$WORK/backups-$case_name" "$assignment" \
+    WOTB_BACKUP_ROOT="$WORK/backups-$case_name" \
+    "${env_args[@]}" "${extra_env[@]}" \
     bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
   rc=$?
   set -e
   [[ $rc -eq 0 ]] || fail "$case_name must keep the deployment successful: $output"
   grep -q "== DEPLOY OK: $tag ==" <<<"$output" || fail "$case_name missing DEPLOY OK"
-  grep -q "OBSERVABILITY DEGRADED" <<<"$output" || fail "$case_name missing OBSERVABILITY DEGRADED"
+  if [ "$case_name" != "grafana-delayed-readiness" ]; then
+    grep -q "OBSERVABILITY DEGRADED" <<<"$output" || fail "$case_name missing OBSERVABILITY DEGRADED"
+  else
+    ! grep -q "OBSERVABILITY DEGRADED" <<<"$output" \
+      || fail "$case_name unexpectedly reported OBSERVABILITY DEGRADED"
+  fi
   ! grep -q "ROLLBACK" <<<"$output" || fail "$case_name unexpectedly rolled back"
   if [ "$case_name" = "grafana-recreate-failed" ]; then
     ! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
       || fail "$case_name must not refresh frontend nginx after Grafana recreation failure"
+  elif [ "$case_name" = "grafana-delayed-readiness" ]; then
+    [[ "$(cat "$WORK/grafana-probes")" -eq 3 ]] \
+      || fail "$case_name must perform two failed probes before the successful probe"
+    [[ "$(grep -Fc 'compose restart wotb-frontend' "$WORK/docker-restart.log")" -eq 1 ]] \
+      || fail "$case_name must refresh frontend nginx exactly once"
+  elif [ "$case_name" = "grafana-readiness-timeout" ]; then
+    ! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
+      || fail "$case_name must not refresh frontend nginx after readiness timeout"
   fi
 }
 
 run_observability_case grafana-broken sha-GRAFANA 'FAKE_GRAFANA_AUTH=0'
 run_observability_case grafana-recreate-failed sha-GRAFANA-RECREATE 'FAKE_GRAFANA_UNHEALTHY=1'
+run_observability_case grafana-delayed-readiness sha-GRAFANA-DELAYED ''
+run_observability_case grafana-readiness-timeout sha-GRAFANA-TIMEOUT 'FAKE_GRAFANA_NEVER_READY=1'
 run_observability_case prometheus-broken sha-PROM 'FAKE_PROMETHEUS_UP=0'
 run_observability_case loki-broken sha-LOKI 'FAKE_LOKI_EMPTY=1'
 run_observability_case alloy-broken sha-ALLOY 'FAKE_ALLOY_UNHEALTHY=1'
