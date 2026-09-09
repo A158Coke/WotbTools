@@ -37,7 +37,20 @@ start_grafana_stub() {
     >/dev/null
 }
 
+wait_for_grafana_dns() {
+  for i in $(seq 1 30); do
+    if docker run --rm --network "$NETWORK" alpine:3.22 nslookup grafana \
+        >/dev/null 2>&1; then
+      return 0
+    fi
+    [ "$i" -lt 30 ] && sleep 1
+  done
+  echo "FAIL: Docker DNS did not publish the grafana alias" >&2
+  return 1
+}
+
 start_grafana_stub "$OLD_GRAFANA" 172.29.0.10 old
+wait_for_grafana_dns
 docker run -d --name "$NGINX" --network "$NETWORK" -p "127.0.0.1:${PORT}:80" \
   --add-host wotb-backend:172.29.0.10 --add-host keycloak:172.29.0.10 \
   -v "$CFG:/etc/nginx/conf.d/default.conf:ro" nginx:alpine >/dev/null
@@ -59,6 +72,7 @@ curl -fsS -H 'Host: monitor.wotbtools.com' "http://127.0.0.1:${PORT}/api/health"
 # not be considered healthy until its upstream resolution is refreshed.
 docker rm -f "$OLD_GRAFANA" >/dev/null
 start_grafana_stub "$NEW_GRAFANA" 172.29.0.11 new
+wait_for_grafana_dns
 if curl -fsS -H 'Host: monitor.wotbtools.com' "http://127.0.0.1:${PORT}/api/health" \
     | grep -Fq '"marker":"new"'; then
   echo "FAIL: nginx followed a recreated Grafana without the required refresh" >&2
