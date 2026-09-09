@@ -21,7 +21,7 @@ fail() {
   exit 1
 }
 compose_exec() { docker compose exec -T wotb-backend wget -qO- "$1"; }
-frontend_exec() { docker compose exec -T wotb-frontend wget -qO- "$1"; }
+frontend_exec() { docker compose exec -T wotb-frontend wget --header='Host: monitor.wotbtools.com' -qO- "$1"; }
 grafana_api() {
   local path="$1"
   docker compose exec -T \
@@ -54,6 +54,21 @@ wait_for_http_regex() {
       if [ "$#" -eq 0 ]; then echo "PASS: $name"; return 0; fi
       for needle in "$@"; do
         if ! grep -Eq "$needle" <<<"$body"; then body=""; break; fi
+      done
+      if [ -n "$body" ]; then echo "PASS: $name"; return 0; fi
+    fi
+    [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
+  done
+  fail "$domain" "$name did not return the expected response"
+}
+
+wait_for_frontend_http() {
+  local domain="$1" name="$2" url="$3" body="" attempt needle
+  shift 3
+  for attempt in $(seq 1 "$RETRIES"); do
+    if body="$(frontend_exec "$url" 2>/dev/null)" && [ -n "$body" ]; then
+      for needle in "$@"; do
+        if ! grep -Fq "$needle" <<<"$body"; then body=""; break; fi
       done
       if [ -n "$body" ]; then echo "PASS: $name"; return 0; fi
     fi
@@ -136,6 +151,8 @@ wait_for_http "PROMETHEUS_TARGET" "prometheus metrics endpoint" "http://promethe
 wait_for_http "PROMETHEUS_TARGET" "loki metrics endpoint" "http://loki:3100/metrics" "loki_"
 wait_for_http "GRAFANA" "grafana metrics endpoint" "http://grafana:3000/metrics" "grafana_"
 wait_for_http "GRAFANA" "grafana health endpoint" "http://grafana:3000/api/health" '"database":"ok"'
+wait_for_frontend_http "GRAFANA_PROXY" "monitor reverse-proxy health endpoint" \
+  "http://127.0.0.1:80/api/health" '"database":"ok"'
 
 targets="$(wait_for_http "PROMETHEUS_TARGET" "prometheus target API" "http://prometheus:9090/api/v1/targets" \
   '"status":"success"' '"job":"wotb-backend"' '"job":"node-exporter"' \

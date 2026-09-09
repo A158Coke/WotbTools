@@ -49,6 +49,7 @@ class TeamAiReviewResultParserTest {
                 TeamAiReviewResultParser.parse(output, Set.of("P1"));
         assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION, result.status());
         assertFalse(result.failed());
+        assertTrue(result.usable());
         assertEquals("分析", result.result().episodes().getFirst().analysis());
         assertEquals(0, result.result().reviewFocus().size());
         assertEquals(0, result.result().highContributors().size());
@@ -67,6 +68,7 @@ class TeamAiReviewResultParserTest {
         assertFalse(result.failed());
         assertEquals(TeamAiReviewResultParser.Failure.INVALID_FIELD, result.failure());
         assertEquals("root.extra", result.failures().getFirst().path());
+        assertTrue(result.usable());
     }
 
     @Test
@@ -153,8 +155,10 @@ class TeamAiReviewResultParserTest {
 
     @Test
     void reportsIncompleteCoreFailuresAsNonValid() {
-        assertFalse(TeamAiReviewResultParser.parse("{\"episodes\":[]}", Set.of()).status()
-                == TeamAiReviewResultParser.ParseStatus.VALID);
+        final TeamAiReviewResultParser.ParseResult emptyCore =
+                TeamAiReviewResultParser.parse("{\"episodes\":[]}", Set.of());
+        assertFalse(emptyCore.status() == TeamAiReviewResultParser.ParseStatus.VALID);
+        assertFalse(emptyCore.usable());
         assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION,
                 TeamAiReviewResultParser.parse(VALID.replace("\"startSec\":10,", ""), Set.of("P1")).status());
         assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION,

@@ -29,8 +29,8 @@
 - **Team AI Review Quality Harness v1**：新增 `evidenceBasis` 结构化质量契约、推理顺序与反 settlement-shortcut deterministic checks；真实 `.wotbreplay` offline harness 复用生产解析/时间线/grounding 链并保持 0-token；新增显式 opt-in real-replay benchmark 与无 prompt/key 的 JSON/Markdown 报告。synthetic prompt PASS 与真实回放质量明确分层，默认 CI 不调用 provider。
 
 ### AI Review
-- **Team AI Review contract resilience**：Team Call #2 现在只接受完整有效的 `TeamAiReviewResult` JSON；初始 contract 失败时基于 canonical battle context 最多执行一次 fresh JSON recovery，失败 completion 不会回传给模型或直接展示。两次均失败返回 `AI_REVIEW_SCHEMA_FAILED`，SSE/OpenAPI/前端与低基数日志、累计 token 指标保持一致。
-- **Team AI Review technical schema resilience（历史基线）**：该历史条目仅用于说明契约演进；当前生产行为以本节的严格 JSON + single recovery 契约为准，不提供 salvaged 或 plain-text 结果模式。
+- **Team AI Review contract resilience**：Team Call #2 最终只接受严格有效的 `TeamAiReviewResult` JSON；局部可安全规范化的问题会保留可用内容，真正不可用时基于 canonical battle context 最多执行一次 fresh JSON recovery，失败 completion 不会回传给模型或直接展示。两次均失败返回 `AI_REVIEW_SCHEMA_FAILED`，SSE/OpenAPI/前端与低基数日志、累计 token 指标保持一致。
+- **Team AI Review technical schema resilience**：primary response 的局部 optional reference/field 缺陷现在由 backend 确定性 salvage；形成最低 contract 时不触发 recovery。真正不可用时仍严格执行至多一次 recovery，unknown field 不会进入最终 DTO，plain-text 结果仍不会放行。
 - **Team AI Review v0.6**：升级 Team Call #2 的战术因果推理顺序，补强 Information/Remaining uncertainty/Decision impact、objective obligation、effective local participation、episode propagation、HP 下游验证与状态触发训练建议；保持 v0.5 JSON/API/前端契约不变，不新增模型调用或后端战术语义裁判，默认 CI 仍为 0 provider token。
 - **Team AI Review v0.5**：Team Call #2 改为结构化 `teamReview` 结果，增加 episode/训练建议/重点复查/高贡献者契约与运行时校验；移除生产 Team Autopsy 追加、第三次模型调用及 settlement-only tactical validator，SSE `done` 与前端三语渲染同步升级。
 - **Team AI Review v0.4**：强化 Information → remaining uncertainty → decision impact 因果链，明确距离只是证据而非战术价值，并禁止无证据的通用距离/固定时刻/车种职责规则。重点复查、高贡献者与关键威胁必须绑定正文 tactical episode，不能从结算榜单重新选人；传播检查允许保持未知。未修改 parser、reconstruction、backend tactical evidence、输出长度或 token cap。

@@ -43,6 +43,11 @@ for required in TAG DB_PASSWORD KC_ADMIN_PASSWORD WG_APPLICATION_ID KEYCLOAK_ADM
   require_env "$required"
 done
 
+if [[ "$AI_API_KEY" =~ [[:cntrl:]] ]]; then
+  echo "ERROR: AI_API_KEY contains invalid control characters." >&2
+  exit 1
+fi
+
 if [ -n "${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-}" ] \
     && [ "$AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC" != "1100" ]; then
   printf 'ERROR: AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC must be 1100 to stay aligned with frontend(1100s)/nginx(1120s); got %s\n' \
@@ -132,6 +137,11 @@ apply_observability_services() {
   assert_service_running loki Loki
   assert_service_running alloy Alloy
   assert_service_running grafana Grafana
+}
+
+refresh_frontend_nginx() {
+  echo "== Refreshing frontend nginx upstream resolution after observability =="
+  docker compose restart wotb-frontend
 }
 
 wait_healthy() {
@@ -589,7 +599,7 @@ rollback_to_lkg() {
   if pull_compose "$LIVE_COMPOSE" \
       && docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend; then
     apply_observability_services || echo "OBSERVABILITY DEGRADED: observability services could not be recreated during rollback" >&2
-    if wait_healthy; then
+    if refresh_frontend_nginx && wait_healthy; then
       cp -f "$LKG_SHA" DEPLOYED_SHA
       echo "== ROLLBACK OK: $(cat "$LKG_SHA") =="
       report_observability_status || true
@@ -653,8 +663,13 @@ if [ "$rollback_needed" = false ]; then
     rollback_needed=true
   else
     apply_observability_services || echo "OBSERVABILITY DEGRADED: observability services could not be recreated" >&2
-    docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
-    if wait_healthy; then
+    if refresh_frontend_nginx; then
+      docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
+    else
+      echo "ERROR: frontend nginx upstream refresh failed; attempting rollback." >&2
+      rollback_needed=true
+    fi
+    if [ "$rollback_needed" = false ] && wait_healthy; then
       if ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "$TAG"; then
         echo "ERROR: LKG staging failed after the application health gate; attempting rollback." >&2
         rollback_needed=true
