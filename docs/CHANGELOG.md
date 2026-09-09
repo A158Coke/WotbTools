@@ -19,6 +19,7 @@
 ### Production observability
 - **Production deploy bootstrap cleanup**：移除事故恢复遗留的无 LKG 部署 bypass、workflow_dispatch 选项与 legacy previous 回滚；已有健康 live deployment 仍可在正常发布流程中建立初始 LKG，没有可验证 LKG 时统一 fail-closed。
 - **Production application gate simplified**：发布与回滚现在只由 backend、frontend/nginx（`Host: wotbtools.com`）和 Keycloak OIDC discovery 决定；Prometheus/Loki/Alloy/Grafana 故障只输出 `OBSERVABILITY DEGRADED`，不再触发 application rollback。移除 `KEYCLOAK_MANAGEMENT` capability、Keycloak `:9000` health/metrics contract 与 Prometheus Keycloak scrape，Keycloak dashboard 收缩为登录、QQ callback、broker/IdP 与 WARN/ERROR 日志；新增 Grafana/Prometheus/Loki/Alloy 非阻断和应用 gate/rollback smoke cases。
+- **Production observability refresh isolation**：Grafana force-recreate 后仅在 Grafana 从 frontend 网络可解析且健康时刷新 frontend nginx；Grafana 重建失败跳过 refresh 并保留应用成功/健康 rollback。monitor proxy 使用 `Host: monitor.wotbtools.com`，Android canary 使用 `Host: wotbtools.com`。
 - **Keycloak production runtime hardening**：Keycloak 构建阶段固定 PostgreSQL、health、metrics，生产/本地 runtime env 开启 HTTP metrics histograms，编排统一使用 `start --optimized`；新增真实 Docker runtime smoke，验证 discovery、management readiness/metrics、无宿主机管理端口暴露及无启动时 augmentation。
 - **Production deploy LKG rollback contract**：成功部署后保存完整、经 health/observability gate 验证的 Last Known Good 部署树；失败只从 LKG 回滚，损坏或缺失 LKG 时 fail-closed 并保留当前 live tree，`deploy.prev` 仅作取证；补充 A/B、损坏 bundle、健康 live 初始 LKG seeding 与无 LKG fail-closed 回归 smoke。
 - **Production deploy initial LKG seeding**：当已有 live deployment 但尚无 LKG 时，先完成应用健康检查并使用已校验的 staged observability 配置建立初始 LKG；没有可验证 live deployment 时保持 fail-closed，正常部署与回滚仍要求完整 health/observability gate。
@@ -31,6 +32,7 @@
 ### AI Review
 - **Team AI Review contract resilience**：Team Call #2 最终只接受严格有效的 `TeamAiReviewResult` JSON；局部可安全规范化的问题会保留可用内容，真正不可用时基于 canonical battle context 最多执行一次 fresh JSON recovery，失败 completion 不会回传给模型或直接展示。两次均失败返回 `AI_REVIEW_SCHEMA_FAILED`，SSE/OpenAPI/前端与低基数日志、累计 token 指标保持一致。
 - **Team AI Review technical schema resilience**：primary response 的局部 optional reference/field 缺陷现在由 backend 确定性 salvage；形成最低 contract 时不触发 recovery。真正不可用时仍严格执行至多一次 recovery，unknown field 不会进入最终 DTO，plain-text 结果仍不会放行。
+- **Team AI Review bounded salvage and localized recovery**：episodes 超限会截断到上限但保持 primary 结果可用；summary/episodes 真正缺失或类型错误才触发一次 recovery，recovery 指令跟随允许语言生成。
 - **Team AI Review v0.6**：升级 Team Call #2 的战术因果推理顺序，补强 Information/Remaining uncertainty/Decision impact、objective obligation、effective local participation、episode propagation、HP 下游验证与状态触发训练建议；保持 v0.5 JSON/API/前端契约不变，不新增模型调用或后端战术语义裁判，默认 CI 仍为 0 provider token。
 - **Team AI Review v0.5**：Team Call #2 改为结构化 `teamReview` 结果，增加 episode/训练建议/重点复查/高贡献者契约与运行时校验；移除生产 Team Autopsy 追加、第三次模型调用及 settlement-only tactical validator，SSE `done` 与前端三语渲染同步升级。
 - **Team AI Review v0.4**：强化 Information → remaining uncertainty → decision impact 因果链，明确距离只是证据而非战术价值，并禁止无证据的通用距离/固定时刻/车种职责规则。重点复查、高贡献者与关键威胁必须绑定正文 tactical episode，不能从结算榜单重新选人；传播检查允许保持未知。未修改 parser、reconstruction、backend tactical evidence、输出长度或 token cap。

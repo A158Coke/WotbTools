@@ -139,6 +139,11 @@ apply_observability_services() {
   assert_service_running grafana Grafana
 }
 
+verify_grafana_from_frontend_network() {
+  echo "== Verifying frontend can resolve Grafana before nginx refresh =="
+  docker compose exec -T wotb-frontend wget -qO- http://grafana:3000/api/health >/dev/null 2>&1
+}
+
 refresh_frontend_nginx() {
   echo "== Refreshing frontend nginx upstream resolution after observability =="
   docker compose restart wotb-frontend
@@ -598,8 +603,17 @@ rollback_to_lkg() {
   fi
   if pull_compose "$LIVE_COMPOSE" \
       && docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend; then
-    apply_observability_services || echo "OBSERVABILITY DEGRADED: observability services could not be recreated during rollback" >&2
-    if refresh_frontend_nginx && wait_healthy; then
+    observability_ready=false
+    if apply_observability_services && verify_grafana_from_frontend_network; then
+      observability_ready=true
+    else
+      echo "OBSERVABILITY DEGRADED: observability services or Grafana frontend-network readiness failed during rollback" >&2
+    fi
+    rollback_refresh_ok=true
+    if [ "$observability_ready" = true ] && ! refresh_frontend_nginx; then
+      rollback_refresh_ok=false
+    fi
+    if [ "$rollback_refresh_ok" = true ] && wait_healthy; then
       cp -f "$LKG_SHA" DEPLOYED_SHA
       echo "== ROLLBACK OK: $(cat "$LKG_SHA") =="
       report_observability_status || true
@@ -662,12 +676,18 @@ if [ "$rollback_needed" = false ]; then
     echo "ERROR: docker compose up failed; attempting rollback." >&2
     rollback_needed=true
   else
-    apply_observability_services || echo "OBSERVABILITY DEGRADED: observability services could not be recreated" >&2
-    if refresh_frontend_nginx; then
-      docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
+    observability_ready=false
+    if apply_observability_services && verify_grafana_from_frontend_network; then
+      observability_ready=true
+      if ! refresh_frontend_nginx; then
+        echo "ERROR: frontend nginx upstream refresh failed; attempting rollback." >&2
+        rollback_needed=true
+      fi
     else
-      echo "ERROR: frontend nginx upstream refresh failed; attempting rollback." >&2
-      rollback_needed=true
+      echo "OBSERVABILITY DEGRADED: observability services or Grafana frontend-network readiness failed" >&2
+    fi
+    if [ "$rollback_needed" = false ]; then
+      docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
     fi
     if [ "$rollback_needed" = false ] && wait_healthy; then
       if ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "$TAG"; then

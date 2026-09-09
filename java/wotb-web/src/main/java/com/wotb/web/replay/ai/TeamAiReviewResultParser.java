@@ -543,11 +543,11 @@ public final class TeamAiReviewResultParser {
         if (failure.category() == FailureCategory.CORE_SCHEMA) {
             return true;
         }
-        if (failure.path().equals("summary") || failure.path().equals("episodes")) {
-            return true;
-        }
-        return failure.path().equals("summary.verdict")
-                || failure.path().equals("summary.primaryDiagnosis");
+        return switch (failure.path()) {
+            case "summary", "episodes", "summary.verdict", "summary.primaryDiagnosis" ->
+                    failure.code() == Failure.MISSING_REQUIRED_FIELD || failure.code() == Failure.INVALID_FIELD;
+            default -> false;
+        };
     }
 
     public record ParseFailure(Failure code, String path, FailureCategory category, String constraint) {

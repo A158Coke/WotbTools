@@ -27,10 +27,13 @@ nginx_diagnostics() {
 }
 
 grafana_diagnostics() {
-  docker inspect "$OLD_GRAFANA" "$NEW_GRAFANA" \
-    --format '{{.Name}} status={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}' \
-    2>/dev/null || true
-  docker logs "$OLD_GRAFANA" "$NEW_GRAFANA" 2>&1 || true
+  local container
+  for container in "$OLD_GRAFANA" "$NEW_GRAFANA"; do
+    docker inspect "$container" \
+      --format '{{.Name}} status={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}' \
+      2>/dev/null || true
+    docker logs "$container" 2>&1 || true
+  done
   docker network inspect "$NETWORK" 2>&1 || true
 }
 
@@ -38,12 +41,12 @@ docker network create --driver bridge --subnet 172.29.0.0/16 --gateway 172.29.0.
 
 start_grafana_stub() {
   local name="$1" ip="$2" marker="$3"
-  docker run -d --name "$name" --network bridge \
-    alpine:3.22 sh -c \
-    "mkdir -p /www/api; printf '{\"database\":\"ok\",\"marker\":\"$marker\"}\\n' > /www/api/health; exec busybox httpd -f -p 3000 -h /www" \
+  docker create --name "$name" alpine:3.22 sh -c \
+    "mkdir -p /www/api; printf '{\"database\":\"ok\",\"marker\":\"$marker\"}\\n' > /www/api/health; exec /bin/busybox httpd -f -p 3000 -h /www" \
     >/dev/null
   docker network connect --ip "$ip" --alias grafana --alias wotb-backend --alias keycloak \
     "$NETWORK" "$name"
+  docker start "$name" >/dev/null
 }
 
 wait_for_grafana_dns() {

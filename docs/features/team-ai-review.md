@@ -298,6 +298,8 @@ parser 对局部 optional reference/field 做确定性过滤或规范化，并�
 返回结果；不会因为 `INVALID_REFERENCE` 触发额外模型调用。空响应、不可解析 JSON、非 object 或
 规范化后仍缺少 summary/episodes 最低结构时，最多执行一次基于 canonical battle context 的
 `SINGLE_TEAM_BATTLE_RECOVERY`；不把失败 completion 传回模型，也不将 Markdown 或部分 JSON 直接展示。
+episodes 数量超限、optional reference 无效或 optional array 被截断时会确定性 salvage，仍保留可用结果，
+不会触发 recovery。recovery 指令跟随允许语言（中文、English、Русский），但复用同一 canonical contract。
 recovery 仍失败时返回 `AI_REVIEW_SCHEMA_FAILED`。对应事件和低基数指标见
 `docs/operations/observability.md`。
 

@@ -107,6 +107,17 @@ class AiReplayAnalysisServiceTest {
                 + "\"trainingSuggestions\":[],\"reviewFocus\":[],\"highContributors\":[]}";
     }
 
+    private static String structuredResultWithEpisodes(final int count) {
+        final String episodes = IntStream.range(0, count)
+                .mapToObj(index -> "{\"id\":\"E" + (index + 1)
+                        + "\",\"startSec\":10,\"endSec\":20,\"title\":\"episode\","
+                        + "\"analysis\":\"TACTICAL_TEXT\",\"playerKeys\":[]}")
+                .collect(java.util.stream.Collectors.joining(","));
+        return "{\"summary\":{\"verdict\":\"team review\",\"primaryDiagnosis\":\"诊断\"},"
+                + "\"episodes\":[" + episodes + "],\"trainingSuggestions\":[],"
+                + "\"reviewFocus\":[],\"highContributors\":[]}";
+    }
+
     /**
      * 契约测试用 Gateway 替身：捕获传给 Gateway 的完整 {@link AiChatRequest}，
      * 返回可配置的 {@link AiChatResponse}；从不发起真实 HTTP。
@@ -679,6 +690,55 @@ class AiReplayAnalysisServiceTest {
         assertEquals("SINGLE_TEAM_BATTLE_RECOVERY", allTeamReviewRequests().getLast().analysisMode());
         assertTrue(teamReviewEvents("ai_review_recovery_triggered").stream()
                 .anyMatch(message -> message.contains("reason=MINIMUM_CONTRACT_UNRECOVERABLE")));
+    }
+
+    @Test
+    void episodeCardinalitySalvageUsesOnlyPrimaryCall() {
+        gateway.teamCompletionSequence.add(structuredResultWithEpisodes(
+                TeamAiReviewResultParser.MAX_EPISODES + 1));
+        final var service = startService();
+
+        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
+                teamResultWithRecon("cardinality.wotbreplay", "cardinality-arena", "Ally", 1001L, 1))));
+
+        assertNotNull(result.structuredResult());
+        assertEquals(TeamAiReviewResultParser.MAX_EPISODES, result.structuredResult().episodes().size());
+        assertEquals(1, allTeamReviewRequests().size(), "cardinality salvage must not trigger recovery");
+    }
+
+    @Test
+    void wrongEpisodesTypeTriggersExactlyOneRecovery() {
+        gateway.teamCompletionSequence.add("{\"summary\":{\"verdict\":\"v\",\"primaryDiagnosis\":\"d\"},"
+                + "\"episodes\":\"wrong-type\",\"trainingSuggestions\":[],\"reviewFocus\":[],"
+                + "\"highContributors\":[]}");
+        gateway.teamCompletionSequence.add(structuredResult());
+        final var service = startService();
+
+        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
+                teamResultWithRecon("wrong-type.wotbreplay", "wrong-type-arena", "Ally", 1001L, 1))));
+
+        assertNotNull(result.structuredResult());
+        assertEquals(2, allTeamReviewRequests().size());
+        assertEquals("SINGLE_TEAM_BATTLE_RECOVERY", allTeamReviewRequests().getLast().analysisMode());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"EN", "RU"})
+    void recoveryUserInstructionFollowsAllowedLanguage(final String languageName) {
+        gateway.teamCompletionSequence.add("{}");
+        gateway.teamCompletionSequence.add(structuredResult());
+        final AllowedLanguage language = AllowedLanguage.valueOf(languageName);
+        final var service = startService();
+
+        service.analyzeTeamGroups(teamGroups(List.of(
+                teamResultWithRecon("localized-recovery.wotbreplay", "localized-recovery-arena",
+                        "Ally", 1001L, 1))), language);
+
+        final String prompt = allTeamReviewRequests().getLast().userPrompt();
+        assertFalse(prompt.contains("这是唯一一次 recovery"));
+        assertTrue(prompt.contains(language == AllowedLanguage.EN
+                ? "This is the only recovery attempt"
+                : "Это единственная попытка recovery"));
     }
 
     @Test

@@ -133,7 +133,12 @@ case "$cmd" in
         else
           printf 'alloy Up\n'
         fi
-        printf 'grafana Up\ntest Up\n'
+         if [ "${FAKE_GRAFANA_UNHEALTHY:-0}" = 1 ]; then
+           printf 'grafana Exited (1)\n'
+         else
+           printf 'grafana Up\n'
+         fi
+         printf 'test Up\n'
         ;;
       exec)
         request="${compose_args[*]}"
@@ -203,7 +208,9 @@ case "$cmd" in
             fi
             exit 0
           fi
-          if [[ "$request" == *"wotb-frontend"*"/api/health"* ]]; then
+           if [[ "$request" == *"wotb-frontend"* && "$request" == *"grafana:3000/api/health"* ]]; then
+             printf '{"database":"ok"}\n'
+           elif [[ "$request" == *"wotb-frontend"*"/api/health"* ]]; then
             if [[ "$request" == *"--header=Host: monitor.wotbtools.com"* ]]; then
               printf '{"database":"ok"}\n'
             else
@@ -558,6 +565,9 @@ unset FAKE_HEALTHY_BACKEND_TAG WOTB_TEST_FAIL_LKG_STAGE_COPY FAKE_ROLLBACK_UP_LO
 run_observability_case() {
   local case_name="$1" tag="$2" assignment="$3" output rc
   stage_candidate_b
+  if [ "$case_name" = "grafana-recreate-failed" ]; then
+    : > "$WORK/docker-restart.log"
+  fi
   set +e
   output="$(env TAG="$tag" FAKE_HEALTHY_BACKEND_TAG="$tag" \
     WOTB_OBSERVABILITY_RETRIES=1 WOTB_OBSERVABILITY_INTERVAL_SEC=1 \
@@ -569,9 +579,14 @@ run_observability_case() {
   grep -q "== DEPLOY OK: $tag ==" <<<"$output" || fail "$case_name missing DEPLOY OK"
   grep -q "OBSERVABILITY DEGRADED" <<<"$output" || fail "$case_name missing OBSERVABILITY DEGRADED"
   ! grep -q "ROLLBACK" <<<"$output" || fail "$case_name unexpectedly rolled back"
+  if [ "$case_name" = "grafana-recreate-failed" ]; then
+    ! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
+      || fail "$case_name must not refresh frontend nginx after Grafana recreation failure"
+  fi
 }
 
 run_observability_case grafana-broken sha-GRAFANA 'FAKE_GRAFANA_AUTH=0'
+run_observability_case grafana-recreate-failed sha-GRAFANA-RECREATE 'FAKE_GRAFANA_UNHEALTHY=1'
 run_observability_case prometheus-broken sha-PROM 'FAKE_PROMETHEUS_UP=0'
 run_observability_case loki-broken sha-LOKI 'FAKE_LOKI_EMPTY=1'
 run_observability_case alloy-broken sha-ALLOY 'FAKE_ALLOY_UNHEALTHY=1'
@@ -598,10 +613,11 @@ run_application_failure_case keycloak-unhealthy sha-KEYCLOAK keycloak
 
 # ---- rollback application healthy + Grafana broken remains ROLLBACK OK ----
 stage_candidate_b
+: > "$WORK/docker-restart.log"
 set +e
 rollback_observability_output="$(env TAG=sha-ROLLBACK-GRAFANA \
   FAKE_HEALTHY_BACKEND_TAG=sha-ROLLBACK-GRAFANA \
-  FAKE_APP_UNHEALTHY_TAG=sha-ROLLBACK-GRAFANA FAKE_GRAFANA_AUTH=0 \
+  FAKE_APP_UNHEALTHY_TAG=sha-ROLLBACK-GRAFANA FAKE_GRAFANA_UNHEALTHY=1 \
   WOTB_OBSERVABILITY_RETRIES=1 WOTB_OBSERVABILITY_INTERVAL_SEC=1 \
   WOTB_BACKUP_ROOT="$WORK/backups-rollback-grafana" \
   bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
@@ -614,6 +630,8 @@ grep -q "OBSERVABILITY DEGRADED" <<<"$rollback_observability_output" \
   || fail "rollback Grafana case must report degraded observability"
 ! grep -q "== ROLLBACK FAILED:" <<<"$rollback_observability_output" \
   || fail "Grafana failure must not make an application-healthy rollback fail"
+! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
+  || fail "Grafana failure during rollback must not refresh frontend nginx"
 
 # ---- rollback application failure remains a real rollback failure ----
 stage_candidate_b

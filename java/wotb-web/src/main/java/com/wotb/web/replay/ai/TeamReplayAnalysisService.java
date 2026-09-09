@@ -538,16 +538,7 @@ public class TeamReplayAnalysisService {
                                                      final String reason) {
         logRecoveryTriggered(correlationId, primaryAttempt.responseLength(), reason);
         countRepair("started");
-        final String recoveryPrompt = baseUser
-                + "\n\n=== RECOVERY REQUEST ===\n"
-                + "这是唯一一次 recovery。请基于同一战局上下文重新生成完整团队复盘。"
-                + "严格复用系统消息中的 TeamAiReviewResult v0.5 contract：root 和 nested object 都禁止 extra field，"
-                + "禁止 unknown_field、repair instructions、schema/error metadata；只输出最终 JSON object，"
-                + "不要输出 Markdown fence、解释或 JSON 外 commentary。"
-                + "playerKey 只能逐字取自 authoritative roster key set；无法确认的 optional reference 直接省略，"
-                + "不得猜测或发明 playerKey。authoritative roster key set=["
-                + rosterKeys.stream().sorted().collect(java.util.stream.Collectors.joining(", ")) + "]。"
-                + "保持相同战术任务和权威战局上下文，不要发明新事实。";
+        final String recoveryPrompt = baseUser + "\n\n" + recoveryUserInstruction(language, rosterKeys);
         final AiChatResponse response;
         try {
             response = callRaw(recoverySystemPrompt(language), recoveryPrompt,
@@ -598,6 +589,37 @@ public class TeamReplayAnalysisService {
                             + "root 与所有 nested object 都拒绝额外字段；禁止输出 unknown_field、repair instructions、schema metadata 或解释性文本。"
                             + "playerKey 只能使用 user context 提供的 authoritative roster key；无法确认的 optional reference 直接省略。";
                 };
+    }
+
+    private static String recoveryUserInstruction(final AllowedLanguage language,
+                                                   final Set<String> rosterKeys) {
+        final String roster = rosterKeys.stream().sorted().collect(java.util.stream.Collectors.joining(", "));
+        return switch (language) {
+            case EN -> "=== RECOVERY REQUEST ===\n"
+                    + "This is the only recovery attempt. Regenerate the complete team review from the same battle context. "
+                    + "Reuse the TeamAiReviewResult v0.5 contract from the system message strictly: root and nested objects "
+                    + "must not contain extra fields; never emit unknown_field, repair instructions, or schema/error metadata. "
+                    + "Output only the final JSON object, with no Markdown fence, explanation, or commentary outside JSON. "
+                    + "playerKey values must be copied verbatim from the authoritative roster key set; omit uncertain optional "
+                    + "references and never guess or invent playerKey. authoritative roster key set=[" + roster + "]. "
+                    + "Keep the same tactical task and authoritative battle context; do not invent new facts.";
+            case RU -> "=== RECOVERY REQUEST ===\n"
+                    + "Это единственная попытка recovery. Повторно сформируйте полный командный разбор на основе того же контекста боя. "
+                    + "Строго используйте контракт TeamAiReviewResult v0.5 из системного сообщения: в root и вложенных объектах "
+                    + "запрещены дополнительные поля; не выводите unknown_field, инструкции repair или schema/error metadata. "
+                    + "Выводите только итоговый JSON object без Markdown fence, объяснений и комментариев вне JSON. "
+                    + "Значения playerKey должны дословно соответствовать authoritative roster key set; сомнительные optional "
+                    + "references опускайте и никогда не угадывайте или не изобретайте playerKey. authoritative roster key set=[" + roster + "]. "
+                    + "Сохраните ту же тактическую задачу и authoritative battle context; не добавляйте новые факты.";
+            case ZH -> "=== RECOVERY REQUEST ===\n"
+                    + "这是唯一一次 recovery。请基于同一战局上下文重新生成完整团队复盘。"
+                    + "严格复用系统消息中的 TeamAiReviewResult v0.5 contract：root 和 nested object 都禁止 extra field，"
+                    + "禁止 unknown_field、repair instructions、schema/error metadata；只输出最终 JSON object，"
+                    + "不要输出 Markdown fence、解释或 JSON 外 commentary。"
+                    + "playerKey 只能逐字取自 authoritative roster key set；无法确认的 optional reference 直接省略，"
+                    + "不得猜测或发明 playerKey。authoritative roster key set=[" + roster + "]."
+                    + "保持相同战术任务和权威战局上下文，不要发明新事实。";
+        };
     }
 
     private void logContractFailure(final String correlationId,
