@@ -95,6 +95,34 @@ jobs:
             exit 1
           fi
 
+      - name: Probe COS S3 authentication with AWS CLI
+        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+        shell: bash
+        run: |
+          probe_log="${RUNNER_TEMP}/cos-s3-probe.log"
+          cleanup() {
+            rm -f "$probe_log"
+          }
+          trap cleanup EXIT
+
+          if aws s3api list-objects-v2 \
+            --bucket wotbtools-prod-tofu-state-1478073677 \
+            --endpoint-url https://cos.ap-shanghai.myqcloud.com \
+            --region ap-shanghai \
+            --max-keys 1 \
+            --no-paginate >"$probe_log" 2>&1; then
+            echo "AWS CLI COS S3 probe: ListObjectsV2 succeeded"
+          else
+            echo "AWS CLI COS S3 probe: failed; compare this with the OpenTofu backend result"
+            grep -E 'An error occurred|InvalidAccessKeyId|SignatureDoesNotMatch|AccessDenied|AuthorizationHeaderMalformed|PermanentRedirect|403' "$probe_log" | head -n 8 || true
+            exit 1
+          fi
+
       - name: Initialize OpenTofu without production backend
         if: env.TRUSTED_PRODUCTION_RUN != 'true'
         run: tofu init -backend=false -input=false
