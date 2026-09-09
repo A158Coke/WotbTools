@@ -399,11 +399,11 @@ root 管理，也不能使用带一天 expiration 的 artifact bucket 承载 sta
 Compose service。纯 `deploy/observability/grafana/dashboards/**` 只触发 Grafana
 OpenTofu API reconciliation，不触发应用 Build。生产发布原则：
 
-1. 代码质量验证（后端 Maven / 前端 Vitest + Vite build）由 PR CI 作为 merge gate 承担；Build/Deploy 不重复运行测试套件，Build 只负责 Docker 镜像构建推送，Deploy 只负责部署与健康检查。
-2. Build 构建 backend/frontend/keycloak 的 `sha-<SHA>` 镜像；生产 compose 钉 SHA，不依赖 `latest`。Deploy 的 targeted service 入口只更新所选 service，非目标应用继续使用当前 live compose 中的 immutable tag；`all` 和应用 targeted deploy 必须显式使用 Build 已产出的 tag。
+1. 代码质量验证（后端 Maven / 前端 Vitest + Vite build）由 PR CI 作为 merge gate 承担；Build/Deploy 不重复运行测试套件，Build 只负责 Docker 镜像构建推送，Deploy 只负责部署与健康检查。无论 main push 或 `workflow_dispatch`，production Build 都固定 checkout `main`，不能从 feature ref 推送 SHA 或 `latest`。
+2. Build 构建 main 的 backend/frontend/keycloak `sha-<SHA>` 镜像；生产 compose 钉 SHA，不依赖 `latest`。Deploy 的 targeted service 入口只更新所选 service，非目标应用继续使用当前 live compose 中的 immutable tag；`all` 和应用 targeted deploy 必须显式使用 Build 已产出的 tag。
 3. 新 compose 先写 `docker-compose.next.yml` 并 pull；成功后才替换正式 compose。
 4. 部署后检查 backend `/api/health`、前端 nginx E2E、Keycloak realm。
-5. 每次成功的完整 `all` 部署先把完整已验证部署树提升为 `/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml` 与 `DEPLOYED_SHA.lkg`；targeted service deploy 不提升 LKG。健康检查失败只从该 LKG 恢复并再次验证，`deploy.prev` 仅供取证。
+5. 每次成功的完整 `all` 部署先把完整已验证部署树提升为 `/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml` 与 `DEPLOYED_SHA.lkg`；targeted service deploy 不提升 LKG。完整 `all` 健康检查失败只从该 LKG 恢复；targeted failure 只恢复失败 service 的 `deploy.prev` / `docker-compose.prev.yml` pre-deploy snapshot，保留其它独立 targeted release。
 6. 镜像 prune 只允许在成功部署或成功回滚后执行。
 7. 健康检查最终失败时，回滚前必须保留新版本诊断（`report_health_status` 各服务 PASS/FAILED/SKIPPED + `dump_logs` 的 `ps -a`/容器 inspect/三服务 logs）；诊断命令失败不得阻断回滚。
 8. 部署前保存 `deploy.prev` 取证快照；compose 切换后显式应用观测配置。阻塞 gate 只验证 backend `/api/health`、frontend/nginx `Host: wotbtools.com` `/api/health` 与 Keycloak OIDC discovery；通过后立即把应用可用部署树提升为 LKG。Prometheus/Loki/Alloy/Grafana、datasource/dashboard、metrics 与 log ingestion 由 `verify-observability.sh` 继续严格验证，但失败只记录 `OBSERVABILITY DEGRADED`，不得触发 application rollback。没有经校验的 LKG 时禁止破坏当前 live tree；若已有健康 live deployment，正常发布流程会先验证并建立 LKG，否则必须 fail-closed 并人工处理。回滚成功标准同样只有三项应用可用性检查。

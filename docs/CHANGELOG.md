@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 ### CI/CD
-- **Build / Deploy workflow split**：将生产镜像构建拆到独立的 `build.yml`，Build 与 Deploy 均可通过 `workflow_dispatch` 独立选择目标；Deploy 支持任意 production Compose service，应用/all 要求独立 Build 产出的 immutable tag，运行时 observability service 可直接 dispatch。纯 Grafana dashboard JSON 只进入 OpenTofu API reconciliation，不触发应用 Build；targeted deploy 不提升 LKG，完整 `all` 发布继续执行应用健康 gate、LKG promotion 与 fail-closed rollback。Grafana upstream 改为 Docker embedded DNS 运行时解析，Grafana 暂时不可用不再阻止 frontend nginx 启动。
+- **Build / Deploy workflow split**：将生产镜像构建拆到独立的 `build.yml`，Build 与 Deploy 均可通过 `workflow_dispatch` 独立选择目标；Build 无论触发 ref 都固定从 `main` 构建 production SHA/`latest`，不能由 feature ref 绕过 PR merge gate。Deploy 支持任意 production Compose service，应用/all 要求独立 Build 产出的 immutable tag，运行时 observability service 可直接 dispatch。纯 Grafana dashboard JSON 只进入 OpenTofu API reconciliation，不触发应用 Build；targeted deploy 不提升 LKG，失败时只恢复目标 service 的 pre-deploy snapshot，完整 `all` 发布继续执行应用健康 gate、LKG promotion 与 fail-closed rollback。Grafana upstream 改为 Docker embedded DNS 运行时解析，Grafana 暂时不可用不再阻止 frontend nginx 启动。
 
 ### OpenTofu
 - 新增独立 Grafana OpenTofu root，纳管现有 9 个 dashboard 并保留 dashboard JSON 为 canonical source；Prometheus/Loki datasource 因 Grafana read-only 限制继续由 file provisioning 管理。PR 使用 `GRAFANA_PAT` 做 plan，合并到 main 后自动 apply 精确 saved plan；任意 dashboard delete/replacement fail-closed，apply 后只读校验全部 dashboard UID。
