@@ -191,8 +191,10 @@ backend result.
 The following AWS CLI probe uses the same mapped
 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` values and performs one read-only
 `ListObjectsV2` request against the state bucket with the COS endpoint and
-`--max-keys 1`. It never prints object contents or credentials. If the Tencent
-provider probe succeeds but this AWS CLI request also returns
+`--max-keys 1`. It explicitly sets AWS CLI S3 `addressing_style = virtual`,
+because COS rejects path-style requests for this bucket. It never prints object
+contents or credentials. If the Tencent provider probe succeeds but this AWS
+CLI request also returns
 `InvalidAccessKeyId` or a signature error, the remaining suspect is the
 S3-compatible credential/signing path. If the AWS CLI request succeeds while
 OpenTofu backend initialization fails, investigate OpenTofu's backend request

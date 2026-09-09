@@ -104,11 +104,19 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
         shell: bash
         run: |
+          aws_config="${RUNNER_TEMP}/cos-s3-probe-aws-config"
           probe_log="${RUNNER_TEMP}/cos-s3-probe.log"
           cleanup() {
-            rm -f "$probe_log"
+            rm -f "$aws_config" "$probe_log"
           }
           trap cleanup EXIT
+
+          cat >"$aws_config" <<'EOF'
+          [default]
+          s3 =
+              addressing_style = virtual
+          EOF
+          export AWS_CONFIG_FILE="$aws_config"
 
           if aws s3api list-objects-v2 \
             --bucket wotbtools-prod-tofu-state-1478073677 \
