@@ -188,6 +188,17 @@ points to the S3-compatible credential, endpoint, or signing path. The probe is
 non-blocking so a missing permission for that diagnostic API does not hide the
 backend result.
 
+The following AWS CLI probe uses the same mapped
+`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` values and performs one read-only
+`ListObjectsV2` request against the state bucket with the COS endpoint and
+`--max-keys 1`. It never prints object contents or credentials. If the Tencent
+provider probe succeeds but this AWS CLI request also returns
+`InvalidAccessKeyId` or a signature error, the remaining suspect is the
+S3-compatible credential/signing path. If the AWS CLI request succeeds while
+OpenTofu backend initialization fails, investigate OpenTofu's backend request
+shape or endpoint configuration. This probe is diagnostic and non-blocking;
+the backend/plan result remains authoritative.
+
 ```text
 tofu plan -input=false -no-color -out=plan.tfplan
 ```
