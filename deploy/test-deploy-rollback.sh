@@ -96,7 +96,7 @@ case "$cmd" in
       case "$1" in
         -f) COMPOSE_FILE="$2"; shift 2 ;;
         -d|--remove-orphans|-T) shift ;;
-        config|pull|up|ps|exec|logs|kill|run) sub="$1"; shift ;;
+        config|pull|up|ps|exec|logs|kill|restart|run) sub="$1"; shift ;;
         *) shift ;;
       esac
     done
@@ -204,9 +204,13 @@ case "$cmd" in
             exit 0
           fi
           if [[ "$request" == *"wotb-frontend"*"/api/health"* ]]; then
-            [[ "$request" == *"--header=Host: wotbtools.com"* ]] || exit 1
-            app_tag_unhealthy frontend && exit 1
-            printf '{"status":"UP"}\n'
+            if [[ "$request" == *"--header=Host: monitor.wotbtools.com"* ]]; then
+              printf '{"database":"ok"}\n'
+            else
+              [[ "$request" == *"--header=Host: wotbtools.com"* ]] || exit 1
+              app_tag_unhealthy frontend && exit 1
+              printf '{"status":"UP"}\n'
+            fi
           elif [[ "$request" == *"8088/actuator/prometheus"* ]]; then
             printf 'jvm_ process_ system_ http_server_requests wotb_replay_parse_active wotb_replay_parse_queue_depth wotb_ai_review_in_flight wotb_ai_review_queue_depth hikaricp_connections_active\n'
           elif [[ "$request" == *"keycloak:8080/realms/wotbtools/.well-known/openid-configuration"* ]]; then
@@ -241,6 +245,12 @@ case "$cmd" in
         fi
         exit 0
         ;;
+      restart)
+        if [ -n "${FAKE_DOCKER_RESTART_LOG:-}" ]; then
+          printf 'compose %s\n' "${compose_args[*]}" >> "$FAKE_DOCKER_RESTART_LOG"
+        fi
+        exit 0
+        ;;
       logs) exit 0 ;;
       *) exit 0 ;;
     esac
@@ -266,6 +276,7 @@ export WOTB_COMPOSE_DIR="$WORK"
 export WOTB_BACKUP_ROOT="$WORK/backups"
 export WOTB_HEALTH_RETRIES="${WOTB_HEALTH_RETRIES:-3}"
 export FAKE_DOCKER_RUN_LOG="$WORK/docker-run.log"
+export FAKE_DOCKER_RESTART_LOG="$WORK/docker-restart.log"
 export DB_PASSWORD=db-secret KC_ADMIN_PASSWORD=kc-secret WG_APPLICATION_ID=wg-id \
        KEYCLOAK_ADMIN_CLIENT_SECRET=kc-client-secret AI_API_KEY=ai-key \
        GRAFANA_ADMIN_USER=admin GRAFANA_ADMIN_PASSWORD=grafana-secret
@@ -323,6 +334,18 @@ if grep -q "command not found\|No such file or directory" <<<"$guard_output"; th
   fail "deadline=400 must not produce shell errors: $guard_output"
 fi
 
+# AI_API_KEY must be rejected before any deployment work when it contains an
+# HTTP-header control character; the value itself must never appear in output.
+set +e
+guard_output=$(AI_API_KEY=$'ai-key\n' bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)
+guard_rc=$?
+set -e
+[[ $guard_rc -ne 0 ]] || fail "AI_API_KEY containing LF must fail the deployment guard"
+grep -q "AI_API_KEY contains invalid control characters" <<<"$guard_output" \
+  || fail "AI_API_KEY control-character error message missing: $guard_output"
+! grep -q "ai-key" <<<"$guard_output" \
+  || fail "AI_API_KEY value must not be printed by the validation guard"
+
 # ---- deploy A (success) ----
 export AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=1100
 bash "$WORK/deploy.incoming/deploy/deploy.sh"
@@ -340,6 +363,8 @@ grep -Eq 'keycloak-observability-canary-.*alpine:3\.22' "$WORK/docker-run.log" \
 if grep -Eq 'compose.*run.*keycloak.*sh -c' "$WORK/docker-run.log"; then
   fail "Keycloak canary must not invoke the Keycloak image entrypoint as a shell"
 fi
+grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
+  || fail "successful deployment must refresh frontend nginx after Grafana recreation"
 
 # ---- observability gates must fail closed on up=0 and an empty Loki result ----
 set +e

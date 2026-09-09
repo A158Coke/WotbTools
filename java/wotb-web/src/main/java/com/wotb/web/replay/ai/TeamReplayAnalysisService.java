@@ -506,21 +506,26 @@ public class TeamReplayAnalysisService {
             }
             return recoverTeamReview(baseUser, language, startNanos,
                     rosterKeys, correlationId, reviewStartNanos,
-                    PrimaryAttemptMetadata.unavailable());
+                    PrimaryAttemptMetadata.unavailable(), "EMPTY_RESPONSE");
         }
         final TeamAiReviewResultParser.ParseResult primary = TeamAiReviewResultParser.parse(
                 primaryResponse.completionText(), rosterKeys);
-        if (primary.status() == TeamAiReviewResultParser.ParseStatus.VALID) {
-            countValidationAttempt("pass");
+        if (primary.usable()) {
+            final boolean salvaged = primary.normalized();
+            if (salvaged) {
+                logContractFailure(correlationId, primary, 1, false);
+                logContractSalvage(correlationId, primary);
+            }
+            countValidationAttempt(salvaged ? "salvaged" : "pass");
             logTeamReviewCompleted(correlationId, 1, primaryResponse.inputTokens(),
-                    primaryResponse.outputTokens(), "PASS", reviewStartNanos);
+                    primaryResponse.outputTokens(), salvaged ? "SALVAGED" : "PASS", reviewStartNanos);
             return primary.result();
         }
         countValidationAttempt("schema_invalid");
-        logContractFailure(correlationId, primary, 1);
+        logContractFailure(correlationId, primary, 1, true);
         return recoverTeamReview(baseUser, language, startNanos,
                 rosterKeys, correlationId, reviewStartNanos,
-                PrimaryAttemptMetadata.from(primaryResponse));
+                PrimaryAttemptMetadata.from(primaryResponse), recoveryReason(primary));
     }
 
     private TeamAiReviewResult recoverTeamReview(final String baseUser,
@@ -529,13 +534,19 @@ public class TeamReplayAnalysisService {
                                                      final Set<String> rosterKeys,
                                                      final String correlationId,
                                                      final long reviewStartNanos,
-                                                     final PrimaryAttemptMetadata primaryAttempt) {
-        logRecoveryTriggered(correlationId, primaryAttempt.responseLength(), "NO_USABLE_CONTENT");
+                                                     final PrimaryAttemptMetadata primaryAttempt,
+                                                     final String reason) {
+        logRecoveryTriggered(correlationId, primaryAttempt.responseLength(), reason);
         countRepair("started");
         final String recoveryPrompt = baseUser
-                + "\n\nRECOVERY REQUEST\n"
-                + "请基于同一战局上下文重新生成完整团队复盘。"
-                + "只输出完整 TeamAiReviewResult JSON object；不要输出 Markdown、解释或 JSON 之外的 commentary。"
+                + "\n\n=== RECOVERY REQUEST ===\n"
+                + "这是唯一一次 recovery。请基于同一战局上下文重新生成完整团队复盘。"
+                + "严格复用系统消息中的 TeamAiReviewResult v0.5 contract：root 和 nested object 都禁止 extra field，"
+                + "禁止 unknown_field、repair instructions、schema/error metadata；只输出最终 JSON object，"
+                + "不要输出 Markdown fence、解释或 JSON 外 commentary。"
+                + "playerKey 只能逐字取自 authoritative roster key set；无法确认的 optional reference 直接省略，"
+                + "不得猜测或发明 playerKey。authoritative roster key set=["
+                + rosterKeys.stream().sorted().collect(java.util.stream.Collectors.joining(", ")) + "]。"
                 + "保持相同战术任务和权威战局上下文，不要发明新事实。";
         final AiChatResponse response;
         try {
@@ -551,7 +562,7 @@ public class TeamReplayAnalysisService {
         }
         final TeamAiReviewResultParser.ParseResult recovery = TeamAiReviewResultParser.parse(
                 response.completionText(), rosterKeys);
-        if (recovery.status() == TeamAiReviewResultParser.ParseStatus.VALID) {
+        if (recovery.status() == TeamAiReviewResultParser.ParseStatus.VALID && recovery.usable()) {
             countValidationAttempt("pass");
             countRepair("success");
             logTeamReviewCompleted(correlationId, 2,
@@ -561,7 +572,7 @@ public class TeamReplayAnalysisService {
             return recovery.result();
         }
         countValidationAttempt("schema_invalid");
-        logContractFailure(correlationId, recovery, 2);
+        logContractFailure(correlationId, recovery, 2, false);
         logRecoveryFailed(correlationId, "SCHEMA_FAILED");
         countRepair("failed");
         logTeamReviewCompleted(correlationId, 2,
@@ -572,30 +583,86 @@ public class TeamReplayAnalysisService {
     }
 
     private static String recoverySystemPrompt(final AllowedLanguage language) {
-        return switch (language) {
-            case EN -> "Generate the complete TeamAiReviewResult JSON object from the supplied battle context. "
-                    + "Return JSON only, with no Markdown or commentary outside JSON. Do not invent facts.";
-            case RU -> "Сформируйте полный JSON-объект TeamAiReviewResult по контексту боя. "
-                    + "Верните только JSON, без Markdown и комментариев вне JSON. Не придумывайте факты.";
-            case ZH -> "请根据给定战局上下文重新生成完整 TeamAiReviewResult JSON object。"
-                    + "只返回 JSON，不要输出 Markdown 或 JSON 外的说明，不得发明事实。";
-        };
+        return TeamPromptLocalizer.localizeTeamSystemPrompt(
+                        TeamPromptLocalizer.SINGLE_TEAM_PROMPT, language)
+                + switch (language) {
+                    case EN -> "\n\nRECOVERY STRICTNESS: output only the canonical v0.5 TeamAiReviewResult object "
+                            + "described above. Root and nested objects reject extra fields; never emit unknown_field, "
+                            + "repair instructions, schema metadata, or explanatory prose. Use only authoritative roster "
+                            + "playerKey values supplied in the user context; omit uncertain optional references.";
+                    case RU -> "\n\nСТРОГИЙ RECOVERY-КОНТРАКТ: выводите только описанный выше канонический "
+                            + "объект TeamAiReviewResult v0.5. Дополнительные поля в root и вложенных объектах запрещены; "
+                            + "не выводите unknown_field, инструкции repair, метаданные schema или поясняющий текст. "
+                            + "Используйте только authoritative roster playerKey из контекста; сомнительные optional references опускайте.";
+                    case ZH -> "\n\nRECOVERY 严格约束：只输出上方 canonical v0.5 TeamAiReviewResult object。"
+                            + "root 与所有 nested object 都拒绝额外字段；禁止输出 unknown_field、repair instructions、schema metadata 或解释性文本。"
+                            + "playerKey 只能使用 user context 提供的 authoritative roster key；无法确认的 optional reference 直接省略。";
+                };
     }
 
     private void logContractFailure(final String correlationId,
                                     final TeamAiReviewResultParser.ParseResult parsed,
-                                    final int attempt) {
+                                    final int attempt,
+                                    final boolean countAsSchemaFailure) {
         LOGGER.warn(AiReviewEventLog.line("ai_review_contract_failed", correlationId,
                 "attempt", attempt,
-                "failureCategory", parsed.failure() == null ? "UNKNOWN" : parsed.failure(),
-                "failurePath", parsed.failures().stream().map(item -> pathClass(item.path()))
-                        .distinct().sorted().collect(java.util.stream.Collectors.joining(","))));
-        if (meterRegistry != null && attempt == 1) {
+                "failureCategory", failureCategories(parsed),
+                "failureCode", parsed.failure() == null ? "UNKNOWN" : parsed.failure(),
+                "failurePath", failurePaths(parsed)));
+        if (meterRegistry != null && attempt == 1 && countAsSchemaFailure) {
             parsed.failures().forEach(failure -> meterRegistry.counter(
                     "wotb_ai_team_review_schema_failure_total",
                     "reason", failure.code().name(),
                     "path_class", pathClass(failure.path())).increment());
         }
+    }
+
+    private void logContractSalvage(final String correlationId,
+                                    final TeamAiReviewResultParser.ParseResult parsed) {
+        final String failurePaths = failurePaths(parsed);
+        LOGGER.info(AiReviewEventLog.line("ai_review_contract_salvage_started", correlationId,
+                "failureCategory", failureCategories(parsed),
+                "failureCode", parsed.failure() == null ? "UNKNOWN" : parsed.failure(),
+                "failurePath", failurePaths));
+        final int removedReferences = (int) parsed.failures().stream()
+                .filter(failure -> failure.code() == TeamAiReviewResultParser.Failure.INVALID_REFERENCE)
+                .count();
+        final int removedEntries = parsed.normalizations().stream()
+                .filter(normalization -> normalization.type().endsWith("_item_dropped")
+                        || normalization.type().equals("training_suggestion_dropped"))
+                .mapToInt(TeamAiReviewResultParser.Normalization::count)
+                .sum();
+        LOGGER.info(AiReviewEventLog.line("ai_review_contract_salvage_completed", correlationId,
+                "failureCategory", failureCategories(parsed),
+                "failureCode", parsed.failure() == null ? "UNKNOWN" : parsed.failure(),
+                "failurePath", failurePaths,
+                "removedReferences", removedReferences,
+                "removedEntries", removedEntries,
+                "normalizationCount", parsed.normalizations().size(),
+                "result", parsed.usable() ? "SUCCESS" : "STILL_INVALID"));
+    }
+
+    private static String failurePaths(final TeamAiReviewResultParser.ParseResult parsed) {
+        return parsed.failures().stream().map(item -> pathClass(item.path()))
+                .distinct().sorted().collect(java.util.stream.Collectors.joining(","));
+    }
+
+    private static String failureCategories(final TeamAiReviewResultParser.ParseResult parsed) {
+        return parsed.failures().stream().map(TeamAiReviewResultParser.ParseFailure::category)
+                .distinct().sorted().map(Enum::name)
+                .collect(java.util.stream.Collectors.joining(","));
+    }
+
+    private static String recoveryReason(final TeamAiReviewResultParser.ParseResult parsed) {
+        if (parsed.fatal()) {
+            return switch (parsed.failure()) {
+                case TeamAiReviewResultParser.Failure.EMPTY_OUTPUT -> "EMPTY_RESPONSE";
+                case TeamAiReviewResultParser.Failure.INVALID_JSON,
+                        TeamAiReviewResultParser.Failure.OUTPUT_TOO_LARGE -> "UNPARSEABLE_RESPONSE";
+                default -> "UNPARSEABLE_RESPONSE";
+            };
+        }
+        return "MINIMUM_CONTRACT_UNRECOVERABLE";
     }
 
     private void logRecoveryTriggered(final String correlationId, final int primaryResponseLength,

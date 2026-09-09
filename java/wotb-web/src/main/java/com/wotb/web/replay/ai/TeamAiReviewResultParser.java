@@ -521,6 +521,33 @@ public final class TeamAiReviewResultParser {
         public boolean normalized() {
             return status == ParseStatus.VALID_WITH_NORMALIZATION;
         }
+
+        /**
+         * Returns whether deterministic normalization still produced the minimum
+         * structured result needed by the Team Call #2 consumer.
+         *
+         * <p>Optional sections and optional references may be dropped. The summary
+         * and the preferred episodes root sections are the minimum contract; a
+         * response missing either cannot be made useful locally and must use the
+         * bounded recovery path.</p>
+         */
+        public boolean usable() {
+            if (result == null) {
+                return false;
+            }
+            return failures.stream().noneMatch(TeamAiReviewResultParser::isMinimumContractFailure);
+        }
+    }
+
+    private static boolean isMinimumContractFailure(final ParseFailure failure) {
+        if (failure.category() == FailureCategory.CORE_SCHEMA) {
+            return true;
+        }
+        if (failure.path().equals("summary") || failure.path().equals("episodes")) {
+            return true;
+        }
+        return failure.path().equals("summary.verdict")
+                || failure.path().equals("summary.primaryDiagnosis");
     }
 
     public record ParseFailure(Failure code, String path, FailureCategory category, String constraint) {
