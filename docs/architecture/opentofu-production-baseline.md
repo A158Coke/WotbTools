@@ -2,9 +2,10 @@
 
 This root module deliberately manages one existing production artifact bucket
 and stores its authoritative OpenTofu state in a separate Tencent COS bucket.
-It does not create or manage CVMs, networks, DNS, CDN, Keycloak, PostgreSQL,
-application workloads, runtime identities, or the bucket that carries its own
-state.
+It does not create or manage CVMs, VPC/subnet/security-group resources that are
+not proven present and importable in the discovered production account, DNS, CDN, Keycloak,
+PostgreSQL, application workloads, runtime identities, or the bucket that
+carries its own state.
 
 ## Managed production resource
 
@@ -28,6 +29,34 @@ The Tencent provider schema models the bucket settings through
 `tencentcloud_cos_bucket`, not an AWS-specific resource. See the [provider
 resource documentation](https://registry.terraform.io/providers/tencentcloudstack/tencentcloud/latest/docs/resources/cos_bucket).
 
+## Managed production Lighthouse boundary
+
+The same root also manages the existing Shanghai Lighthouse production node
+after owner-controlled import:
+
+- instance: `lhins-97n0wmx6`
+- zone: `ap-shanghai-4`
+- blueprint: `lhbp-2cacsycc`
+- bundle: `bundle_starter_mc_promo_med2_02`
+- firewall resource: the four existing rules attached to that instance
+
+The node is represented by `tencentcloud_lighthouse_instance`, not a CVM
+resource. Its current public/private addresses, Ubuntu 24.04 image, 2 vCPU / 2
+GiB shape, 50 GiB system disk, and prepaid/manual-renewal facts were read from
+the Lighthouse API. The current firewall collection is represented by
+`tencentcloud_lighthouse_firewall_rule` without changing its rules.
+
+The Lighthouse instance has `prevent_destroy = true`. The trusted workflow also
+rejects plan delete/replacement actions for the production Lighthouse instance
+or firewall collection. This does not protect against out-of-band API changes
+or state/configuration removal.
+
+The API discovery returned no VPC or subnet objects for this account/region;
+the account did not authorize the Lighthouse disk listing or CVM security-group
+read path during this adoption. Those boundaries remain external until a later
+owner-approved discovery proves a provider-supported, no-drift import. No
+guessed VPC, subnet, security-group, or disk resource is declared here.
+
 ## Remote state design
 
 The production root uses the OpenTofu S3 backend with this stable state key:
@@ -44,6 +73,12 @@ The endpoint is configured with the current OpenTofu `endpoints.s3` schema.
 `use_path_style = false` is explicit because Tencent recommends virtual-hosted
 style and newer COS buckets can reject path-style requests. No workspace path
 is used in this phase.
+
+Grafana uses the same owner-managed COS state bucket through a separate root
+and key, `infra/tofu/grafana` / `wotbtools/prod/grafana.tfstate`. Its provider
+state is never mixed with this Tencent resource root. Grafana ownership and
+runtime boundaries are documented in
+`docs/architecture/grafana-opentofu.md`.
 
 The state bucket is bootstrap infrastructure created and owned manually outside
 this production root. Its current properties are private access, versioning
@@ -131,6 +166,8 @@ $env:AWS_SECRET_ACCESS_KEY = $env:TENCENTCLOUD_SECRET_KEY
 Set-Location infra/tofu/environments/prod
 tofu init -reconfigure
 tofu import tencentcloud_cos_bucket.production_artifacts wotbtools-prod-artifacts-1478073677
+tofu import tencentcloud_lighthouse_instance.production lhins-97n0wmx6
+tofu import tencentcloud_lighthouse_firewall_rule.production lhins-97n0wmx6
 tofu plan -input=false
 ```
 
@@ -145,6 +182,8 @@ export AWS_SECRET_ACCESS_KEY="$TENCENTCLOUD_SECRET_KEY"
 cd infra/tofu/environments/prod
 tofu init -reconfigure
 tofu import tencentcloud_cos_bucket.production_artifacts wotbtools-prod-artifacts-1478073677
+tofu import tencentcloud_lighthouse_instance.production lhins-97n0wmx6
+tofu import tencentcloud_lighthouse_firewall_rule.production lhins-97n0wmx6
 tofu plan -input=false
 ```
 
@@ -187,6 +226,16 @@ workflow never runs `tofu apply`, `terraform apply`, or `tofu import`. The
 binary plan is job-local, is ignored by Git, and is not uploaded as an artifact,
 cache entry, PR comment, or repository file. Authoritative state is never
 uploaded to GitHub.
+
+This no-apply rule applies to the Tencent production root above. Grafana is a
+separate, explicitly approved exception: pull requests remain plan-only, while
+`.github/workflows/grafana-tofu-apply.yml` runs only for `main` changes under
+the Grafana root or canonical dashboard JSON. It creates one saved plan,
+blocks any dashboard/provider-datasource delete action, applies that exact plan,
+and verifies the managed dashboard UIDs. The Grafana workflow shares its
+`opentofu-grafana-prod` concurrency group with the plan workflow; this is a
+GitHub Actions serialization guard, not a distributed COS lock and not a guard
+against manual owner OpenTofu operations.
 
 ## State and file safety
 

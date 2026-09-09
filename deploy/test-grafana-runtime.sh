@@ -41,6 +41,17 @@ wait_grafana_datasource_ok() {
   fail "Grafana datasource health is not OK: $url"
 }
 
+seed_dashboard_via_api() {
+  local dashboard_file="$1" payload
+  payload="$(jq -c '{dashboard: ., folderId: 0, overwrite: true}' "$dashboard_file")" \
+    || fail "dashboard JSON could not be wrapped for API adoption: $dashboard_file"
+  curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" \
+    -H 'Content-Type: application/json' \
+    -X POST "http://127.0.0.1:${PORT}/api/dashboards/db" \
+    --data "$payload" >/dev/null \
+    || fail "Grafana dashboard API adoption failed: $dashboard_file"
+}
+
 alpine_grafana_api() {
   local user="$1" password="$2" path="$3"
   docker run --rm --network "$NETWORK" \
@@ -88,6 +99,14 @@ for datasource_uid in prometheus loki; do
       || fail "production Grafana API request contains a double URL prefix"
   fi
 done
+
+# Datasources remain file-provisioned, while dashboards are adopted through the
+# same Grafana API contract used by the OpenTofu provider. This keeps the smoke
+# test from silently validating the removed dashboard file controller.
+for dashboard_file in "$ROOT"/deploy/observability/grafana/dashboards/*.json; do
+  seed_dashboard_via_api "$dashboard_file"
+done
+
 dashboard_body="$(alpine_grafana_api "$ADMIN_USER" "$ADMIN_PASSWORD" "/api/dashboards/uid/wotbtools-production-overview")" \
   || fail "Alpine/BusyBox Grafana auth failed for dashboard API"
 grep -Fq '"dashboard"' <<<"$dashboard_body" \
