@@ -6,6 +6,9 @@ readonly WOTB_DIR="${WOTB_DIR:-/opt/wotb}"
 readonly INCOMING_DIR="${WOTB_INCOMING_DIR:-$WOTB_DIR/deploy.incoming}"
 readonly LIVE_DEPLOY_DIR="$WOTB_DIR/deploy"
 readonly PREV_DEPLOY_DIR="$WOTB_DIR/deploy.prev"
+readonly PREV_COMPOSE="$WOTB_DIR/docker-compose.prev.yml"
+readonly TARGETED_FAILED_DEPLOY_DIR="$WOTB_DIR/deploy.targeted.failed"
+readonly TARGETED_FAILED_COMPOSE="$WOTB_DIR/docker-compose.targeted.failed.yml"
 readonly LKG_DEPLOY_DIR="$WOTB_DIR/deploy.lkg"
 readonly LKG_DEPLOY_NEXT_DIR="$WOTB_DIR/deploy.lkg.next"
 readonly LKG_DEPLOY_RETIRING_DIR="$WOTB_DIR/deploy.lkg.retiring"
@@ -708,6 +711,86 @@ rollback_to_lkg() {
   return 1
 }
 
+rollback_targeted_to_previous() {
+  local preserved_live=false preserved_compose=false
+  local snapshot_installed=false snapshot_compose_installed=false
+
+  restore_targeted_candidate_after_failed_switch() {
+    local recovery_failed=false
+    if [ "$snapshot_installed" = true ] && [ -e "$LIVE_DEPLOY_DIR" ] \
+        && ! move_path targeted-recover-previous-live "$LIVE_DEPLOY_DIR" "$PREV_DEPLOY_DIR"; then
+      recovery_failed=true
+    fi
+    if [ "$snapshot_compose_installed" = true ] && [ -e "$LIVE_COMPOSE" ] \
+        && ! move_path targeted-recover-previous-compose "$LIVE_COMPOSE" "$PREV_COMPOSE"; then
+      recovery_failed=true
+    fi
+    if [ "$preserved_live" = true ] && [ -e "$TARGETED_FAILED_DEPLOY_DIR" ] \
+        && ! move_path targeted-recover-candidate-live "$TARGETED_FAILED_DEPLOY_DIR" "$LIVE_DEPLOY_DIR"; then
+      recovery_failed=true
+    fi
+    if [ "$preserved_compose" = true ] && [ -e "$TARGETED_FAILED_COMPOSE" ] \
+        && ! move_path targeted-recover-candidate-compose "$TARGETED_FAILED_COMPOSE" "$LIVE_COMPOSE"; then
+      recovery_failed=true
+    fi
+    if [ "$recovery_failed" = true ]; then
+      echo "ERROR: failed to restore the candidate after a targeted rollback switch failure." >&2
+      return 1
+    fi
+  }
+
+  echo "== TARGETED DEPLOY FAILED: restoring pre-deploy ${DEPLOY_SERVICE} runtime =="
+  if [ ! -d "$PREV_DEPLOY_DIR" ] || [ ! -f "$PREV_COMPOSE" ]; then
+    echo "TARGETED ROLLBACK ABORTED: pre-deploy snapshot is unavailable." >&2
+    return 1
+  fi
+  if [ -e "$TARGETED_FAILED_DEPLOY_DIR" ] || [ -e "$TARGETED_FAILED_COMPOSE" ]; then
+    echo "TARGETED ROLLBACK ABORTED: stale failed-target snapshot exists; refusing to overwrite it." >&2
+    return 1
+  fi
+  if ! docker compose -f "$PREV_COMPOSE" config >/dev/null; then
+    echo "TARGETED ROLLBACK ABORTED: pre-deploy compose snapshot is invalid." >&2
+    return 1
+  fi
+
+  if ! move_path targeted-preserve-candidate-live "$LIVE_DEPLOY_DIR" "$TARGETED_FAILED_DEPLOY_DIR"; then
+    echo "TARGETED ROLLBACK ABORTED: failed to preserve the failed candidate tree." >&2
+    return 1
+  fi
+  preserved_live=true
+  if ! move_path targeted-preserve-candidate-compose "$LIVE_COMPOSE" "$TARGETED_FAILED_COMPOSE"; then
+    echo "TARGETED ROLLBACK ABORTED: failed to preserve the failed candidate compose." >&2
+    restore_targeted_candidate_after_failed_switch || true
+    return 1
+  fi
+  preserved_compose=true
+  if ! move_path targeted-restore-previous-live "$PREV_DEPLOY_DIR" "$LIVE_DEPLOY_DIR"; then
+    echo "TARGETED ROLLBACK ABORTED: failed to restore the pre-deploy tree." >&2
+    restore_targeted_candidate_after_failed_switch || true
+    return 1
+  fi
+  snapshot_installed=true
+  if ! move_path targeted-restore-previous-compose "$PREV_COMPOSE" "$LIVE_COMPOSE"; then
+    echo "TARGETED ROLLBACK ABORTED: failed to restore the pre-deploy compose." >&2
+    restore_targeted_candidate_after_failed_switch || true
+    return 1
+  fi
+  snapshot_compose_installed=true
+
+  if pull_compose "$LIVE_COMPOSE" "$DEPLOY_SERVICE" \
+      && docker compose up -d --no-deps --force-recreate --remove-orphans "$DEPLOY_SERVICE" \
+      && assert_service_running "$DEPLOY_SERVICE" "$DEPLOY_SERVICE" \
+      && wait_healthy; then
+    echo "== TARGETED ROLLBACK OK: $DEPLOY_SERVICE =="
+    report_observability_status || true
+    return 0
+  fi
+
+  echo "TARGETED ROLLBACK FAILED: pre-deploy ${DEPLOY_SERVICE} runtime could not be restored; manual intervention required." >&2
+  dump_logs
+  return 1
+}
+
 staged_pull_service=()
 if [ "$DEPLOY_SERVICE" != all ]; then
   staged_pull_service=("$DEPLOY_SERVICE")
@@ -743,7 +826,7 @@ fi
 rollback_needed=false
 # Same-filesystem moves make promotion preserve the previous tree for forensics.
 if [ -d "$LIVE_DEPLOY_DIR" ]; then
-  if [ -f docker-compose.yml ]; then cp -f docker-compose.yml docker-compose.prev.yml; fi
+  if [ -f "$LIVE_COMPOSE" ]; then cp -f "$LIVE_COMPOSE" "$PREV_COMPOSE"; fi
   rm -rf -- "$PREV_DEPLOY_DIR"
   mv -- "$LIVE_DEPLOY_DIR" "$PREV_DEPLOY_DIR"
   echo "Previous deployment tree saved (PREV_SHA=${PREV_SHA:-unknown})."
@@ -816,7 +899,11 @@ if [ "$rollback_needed" = false ]; then
 fi
 
 if [ "$rollback_needed" = true ]; then
-  if lkg_bundle_present; then
+  if [ "$DEPLOY_SERVICE" != all ]; then
+    if ! rollback_targeted_to_previous; then
+      echo "TARGETED ROLLBACK FAILED: no usable pre-deploy runtime was restored." >&2
+    fi
+  elif lkg_bundle_present; then
     if ! rollback_to_lkg; then
       echo "ROLLBACK FAILED: no usable LKG runtime was restored." >&2
     fi

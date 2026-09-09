@@ -703,6 +703,36 @@ run_targeted_deploy_case grafana sha-TARGETED-GRAFANA
 run_targeted_deploy_case wotb-backend sha-TARGETED-BACKEND
 run_targeted_deploy_case wotb-frontend sha-TARGETED-FRONTEND
 
+# ---- a targeted failure restores only its own pre-deploy runtime ----
+targeted_pre_failure_backend_tag="$(sed -nE 's#.*wotbtools-backend:([^[:space:]]+).*#\1#p' "$WORK/docker-compose.yml" | head -n 1)"
+[ -n "$targeted_pre_failure_backend_tag" ] \
+  || fail "targeted rollback test could not determine the current backend image tag"
+grep -q 'wotbtools-frontend:sha-TARGETED-FRONTEND' "$WORK/docker-compose.yml" \
+  || fail "targeted frontend success must be present before the next targeted failure"
+stage_candidate_b
+: > "$WORK/docker-up-targeted-rollback.log"
+set +e
+targeted_rollback_output="$(env TAG=sha-TARGETED-BACKEND-FAIL WOTB_DEPLOY_SERVICE=wotb-backend \
+  FAKE_HEALTHY_BACKEND_TAG="$targeted_pre_failure_backend_tag" \
+  FAKE_APP_UNHEALTHY_TAG=sha-TARGETED-BACKEND-FAIL FAKE_APP_UNHEALTHY_SERVICE=backend \
+  FAKE_DOCKER_UP_LOG="$WORK/docker-up-targeted-rollback.log" \
+  WOTB_BACKUP_ROOT="$WORK/backups-targeted-rollback" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+targeted_rollback_rc=$?
+set -e
+[[ $targeted_rollback_rc -ne 0 ]] \
+  || fail "targeted backend failure must reject the candidate"
+grep -q '== TARGETED ROLLBACK OK: wotb-backend ==' <<<"$targeted_rollback_output" \
+  || fail "targeted backend failure must restore its pre-deploy runtime"
+! grep -q '== ROLLBACK OK:' <<<"$targeted_rollback_output" \
+  || fail "targeted backend failure must not restore the full LKG"
+grep -q 'wotbtools-frontend:sha-TARGETED-FRONTEND' "$WORK/docker-compose.yml" \
+  || fail "targeted backend rollback must preserve the independently deployed frontend"
+grep -q "wotbtools-backend:${targeted_pre_failure_backend_tag}" "$WORK/docker-compose.yml" \
+  || fail "targeted backend rollback must restore the previous backend image tag"
+! grep -Eq 'compose up .*postgres .*keycloak .*wotb-backend .*wotb-frontend' "$WORK/docker-up-targeted-rollback.log" \
+  || fail "targeted backend rollback must not restart the full application stack"
+
 # ---- rollback application healthy + Grafana broken remains ROLLBACK OK ----
 stage_candidate_b
 : > "$WORK/docker-restart.log"
