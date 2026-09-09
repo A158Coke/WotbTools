@@ -30,11 +30,12 @@ docker network create --driver bridge --subnet 172.29.0.0/16 --gateway 172.29.0.
 
 start_grafana_stub() {
   local name="$1" ip="$2" marker="$3"
-  docker run -d --name "$name" --network "$NETWORK" --ip "$ip" \
-    --network-alias grafana --network-alias wotb-backend --network-alias keycloak \
+  docker run -d --name "$name" --network none \
     alpine:3.22 sh -c \
     "mkdir -p /www/api; printf '{\"database\":\"ok\",\"marker\":\"$marker\"}\\n' > /www/api/health; exec busybox httpd -f -p 3000 -h /www" \
     >/dev/null
+  docker network connect --ip "$ip" --alias grafana --alias wotb-backend --alias keycloak \
+    "$NETWORK" "$name"
 }
 
 wait_for_grafana_dns() {
