@@ -26,6 +26,14 @@ nginx_diagnostics() {
   docker logs "$NGINX" 2>&1 || true
 }
 
+grafana_diagnostics() {
+  docker inspect "$OLD_GRAFANA" "$NEW_GRAFANA" \
+    --format '{{.Name}} status={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}' \
+    2>/dev/null || true
+  docker logs "$OLD_GRAFANA" "$NEW_GRAFANA" 2>&1 || true
+  docker network inspect "$NETWORK" 2>&1 || true
+}
+
 docker network create --driver bridge --subnet 172.29.0.0/16 --gateway 172.29.0.1 "$NETWORK" >/dev/null
 
 start_grafana_stub() {
@@ -47,6 +55,7 @@ wait_for_grafana_dns() {
     fi
     [ "$i" -lt 30 ] && sleep 1
   done
+  grafana_diagnostics
   echo "FAIL: Docker DNS did not publish the grafana alias" >&2
   return 1
 }
