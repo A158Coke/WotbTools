@@ -18,6 +18,11 @@ class TeamAiReviewResultParserTest {
             + "\"reviewFocus\":[{\"playerKey\":\"P1\",\"episodeId\":\"E1\",\"reason\":\"复查\"}],"
             + "\"highContributors\":[]}";
 
+    private static String episode(final String id) {
+        return "{\"id\":\"" + id + "\",\"startSec\":10,\"endSec\":20,"
+                + "\"title\":\"关键回合\",\"analysis\":\"分析\",\"playerKeys\":[\"P1\"]}";
+    }
+
     @Test
     void parsesValidResultWithoutNormalization() {
         final TeamAiReviewResultParser.ParseResult result =
@@ -151,6 +156,36 @@ class TeamAiReviewResultParserTest {
         assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION,
                 TeamAiReviewResultParser.parse(
                         VALID.replace("\"startSec\":10", "\"startSec\":-1"), Set.of("P1")).status());
+    }
+
+    @Test
+    void truncatesEpisodeCardinalityWithoutTriggeringRecovery() {
+        final String episodes = "[" + String.join(",", episode("E1"), episode("E2"), episode("E3"),
+                episode("E4"), episode("E5"), episode("E6"), episode("E7")) + "]";
+        final TeamAiReviewResultParser.ParseResult result = TeamAiReviewResultParser.parse(
+                VALID.replace(VALID.substring(VALID.indexOf("\"episodes\":"),
+                        VALID.indexOf("\"trainingSuggestions\":")),
+                        "\"episodes\":" + episodes + ","),
+                Set.of("P1"));
+
+        assertEquals(TeamAiReviewResultParser.ParseStatus.VALID_WITH_NORMALIZATION, result.status());
+        assertTrue(result.usable());
+        assertEquals(TeamAiReviewResultParser.MAX_EPISODES, result.result().episodes().size());
+        assertTrue(result.failures().stream().anyMatch(f ->
+                f.code() == TeamAiReviewResultParser.Failure.CARDINALITY_EXCEEDED));
+    }
+
+    @Test
+    void rejectsWrongEpisodesTypeAsMinimumContractFailure() {
+        final TeamAiReviewResultParser.ParseResult result = TeamAiReviewResultParser.parse(
+                VALID.replace("\"episodes\":[{" + "\"id\":\"E1\",\"startSec\":10,\"endSec\":20,"
+                                + "\"title\":\"关键回合\",\"analysis\":\"分析\",\"playerKeys\":[\"P1\"]}],",
+                        "\"episodes\":\"wrong-type\",") ,
+                Set.of("P1"));
+
+        assertFalse(result.usable());
+        assertTrue(result.failures().stream().anyMatch(f -> f.path().equals("episodes")
+                && f.code() == TeamAiReviewResultParser.Failure.INVALID_FIELD));
     }
 
     @Test
