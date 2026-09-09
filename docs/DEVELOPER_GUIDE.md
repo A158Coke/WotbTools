@@ -360,7 +360,7 @@ API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲�
 现有生产 COS bucket 的最小 OpenTofu 配置位于
 `infra/tofu/environments/prod`，说明与一次性 import 流程见
 `docs/architecture/opentofu-production-baseline.md`。OpenTofu workflow 只执行
-fmt/init/validate，并在 runner 有 imported state 时执行 plan；不自动 import 或
+fmt/init/validate，不注入 Tencent production secrets，不运行 plan、import 或
 apply。local state、计划文件和真实 tfvars 禁止提交，后续 remote backend 需要单独
 评审 dedicated state bucket、锁与保留策略。
 

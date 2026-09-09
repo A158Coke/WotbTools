@@ -1,4 +1,4 @@
-name: OpenTofu COS Plan
+name: OpenTofu COS Validate
 
 on:
   pull_request:
@@ -15,12 +15,10 @@ defaults:
     working-directory: infra/tofu/environments/prod
 
 jobs:
-  plan:
+  validate:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
-      TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
       TF_IN_AUTOMATION: "true"
       CHECKPOINT_DISABLE: "1"
     steps:
@@ -41,12 +39,3 @@ jobs:
 
       - name: Validate configuration
         run: tofu validate
-
-      - name: Plan imported state
-        shell: bash
-        run: |
-          if [[ ! -f terraform.tfstate ]]; then
-            echo "::warning::No imported local state is present on this ephemeral runner; authoritative plan is deferred until remote state is configured."
-            exit 0
-          fi
-          tofu plan -input=false -no-color

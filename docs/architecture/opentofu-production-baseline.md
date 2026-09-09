@@ -19,10 +19,11 @@ the official `tencentcloudstack/tencentcloud` provider. It does not create or
 manage CVMs, networks, DNS, CDN, Keycloak, PostgreSQL, application workloads, or
 runtime identities.
 
-The bucket has `prevent_destroy = true`. This is a second safety boundary in
-addition to the review requirement: an accidental destroy must fail instead of
-deleting the production bucket. A plan showing `-/+`, destroy, or replacement
-must be treated as a blocker and must not be applied.
+The bucket has `prevent_destroy = true`. This adds an OpenTofu plan-time guard
+while the resource remains in configuration; it does not protect against
+out-of-band deletion, direct cloud-console/API actions, state manipulation, or
+removing the resource from configuration. A plan showing `-/+`, destroy, or
+replacement must still be treated as a blocker and must not be applied.
 
 The Tencent provider schema models ACL, encryption, versioning, multi-AZ, and
 lifecycle rules on `tencentcloud_cos_bucket`; they are not represented with an
@@ -30,10 +31,12 @@ AWS-specific S3 resource. See the [provider resource documentation](https://regi
 
 ## Identity and secrets
 
-GitHub Actions uses the existing CAM user `wotbtools-opentofu` through the
-repository secrets `TENCENTCLOUD_SECRET_ID` and `TENCENTCLOUD_SECRET_KEY`.
-The provider reads those values from environment variables. They are never
-written to HCL, tfvars, state committed to Git, workflow output, or logs.
+Manual import and any future authenticated plan use the existing CAM user
+`wotbtools-opentofu` through the repository secrets
+`TENCENTCLOUD_SECRET_ID` and `TENCENTCLOUD_SECRET_KEY`. The provider reads
+those values from environment variables. The current GitHub Actions validation
+workflow does not inject or access Tencent production secrets. Credentials are
+never written to HCL, tfvars, state committed to Git, workflow output, or logs.
 
 This identity is infrastructure management only. A future
 `wotbtools-runtime` identity for Control API / Worker object Put/Get/Head access
@@ -71,10 +74,10 @@ configuration.
 
 This phase uses the default local backend for the one-time bootstrap only. The
 state file is ignored and must not be committed. GitHub-hosted runners are
-ephemeral, so a local import cannot be seen by a later Actions run. The workflow
-therefore runs formatting, initialization, and validation on every applicable
-PR, but skips the authoritative plan with a warning when no imported state is
-present on the runner.
+ephemeral, so a local import cannot be seen by a later Actions run. The current
+workflow therefore runs formatting, initialization, and validation only. An
+authoritative plan is deferred until a dedicated remote-state design exists and
+the owner performs the authenticated bootstrap.
 
 Recommendation: **DEFER** a remote backend until a separate state-storage
 decision is approved. The production artifact bucket has a one-day object
@@ -95,11 +98,11 @@ configuration or this workflow, and can be started manually. It runs only:
 1. `tofu fmt -check -recursive`
 2. `tofu init`
 3. `tofu validate`
-4. `tofu plan` only when imported state is available to the runner
 
-There is no import step and no `tofu apply`/`terraform apply` path. Merging this
-PR does not change production. A human owner must perform the one-time import
-and review the resulting plan before any future apply is considered.
+It does not inject Tencent production credentials, import state, or run plan.
+There is no `tofu apply`/`terraform apply` path. Merging this PR does not change
+production. A human owner must perform the one-time import and review the
+resulting plan before any future apply is considered.
 
 ## State and file safety
 
