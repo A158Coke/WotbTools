@@ -20,6 +20,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
+nginx_diagnostics() {
+  docker inspect "$NGINX" --format 'nginx status={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}' \
+    2>/dev/null || true
+  docker logs "$NGINX" 2>&1 || true
+}
+
 docker network create --driver bridge --subnet 172.29.0.0/16 --gateway 172.29.0.1 "$NETWORK" >/dev/null
 
 start_grafana_stub() {
@@ -47,7 +53,7 @@ done
 
 curl -fsS -H 'Host: monitor.wotbtools.com' "http://127.0.0.1:${PORT}/api/health" \
   | grep -Fq '"marker":"old"' \
-  || { echo "FAIL: frontend nginx did not reach the initial Grafana stub" >&2; exit 1; }
+  || { nginx_diagnostics; echo "FAIL: frontend nginx did not reach the initial Grafana stub" >&2; exit 1; }
 
 # Recreate Grafana at a different address. The still-running nginx process must
 # not be considered healthy until its upstream resolution is refreshed.
