@@ -47,5 +47,15 @@ node_modules/
 
 docs/current-plan.md
 
+# OpenTofu local state, plans, provider cache, and variable files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+*.tfvars
+!terraform.tfvars.example
+
 # AI 会话 scratch（一次性脚本/草稿/日志，不入库）
 tmp/
