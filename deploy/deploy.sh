@@ -23,7 +23,6 @@ readonly RESTORE_COMPOSE_NEXT="$WOTB_DIR/docker-compose.restore.next.yml"
 readonly RESTORE_COMPOSE_INSTALLING="$WOTB_DIR/docker-compose.restore.installing.yml"
 readonly RESTORE_COMPOSE_FAILED="$WOTB_DIR/docker-compose.failed.yml"
 readonly HEALTH_RETRIES="${WOTB_HEALTH_RETRIES:-60}"
-readonly BOOTSTRAP_ALLOWED="${WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG:-0}"
 
 if [[ ! "$HEALTH_RETRIES" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: WOTB_HEALTH_RETRIES must be a positive integer." >&2
@@ -33,11 +32,6 @@ if [ -z "$WOTB_DIR" ] || [ "$WOTB_DIR" = "/" ] || [ -z "$INCOMING_DIR" ] || [ "$
   echo "ERROR: refusing to operate on an unsafe deployment path." >&2
   exit 1
 fi
-if [ "$BOOTSTRAP_ALLOWED" != "0" ] && [ "$BOOTSTRAP_ALLOWED" != "1" ]; then
-  echo "ERROR: WOTB_ALLOW_BOOTSTRAP_WITHOUT_LKG must be 0 or 1." >&2
-  exit 1
-fi
-
 require_env() {
   local name="$1"
   if [ -z "${!name:-}" ]; then
@@ -439,7 +433,7 @@ seed_current_lkg() {
   [ -d "$LIVE_DEPLOY_DIR" ] || return 1
   [ -f docker-compose.yml ] || return 1
   [ -n "$PREV_SHA" ] || return 1
-  echo "== Validating current deployment as a possible initial LKG =="
+  echo "== Validating current deployment for LKG seeding =="
   docker compose -f docker-compose.yml config >/dev/null 2>&1 || return 1
   bash "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
     "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" >/dev/null || return 1
@@ -447,13 +441,13 @@ seed_current_lkg() {
   stage_lkg_snapshot "$LIVE_DEPLOY_DIR" docker-compose.yml "$PREV_SHA" || return 1
   if ! install -m 644 "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" \
       "$LKG_DEPLOY_NEXT_DIR/observability/alloy/config.alloy"; then
-    echo "ERROR: failed to add the current Alloy config to the initial LKG snapshot." >&2
+    echo "ERROR: failed to add the current Alloy config to the LKG snapshot." >&2
     return 1
   fi
   if [ ! -f "$LKG_DEPLOY_NEXT_DIR/validate-alloy-config.sh" ]; then
     if ! install -m 755 "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
         "$LKG_DEPLOY_NEXT_DIR/validate-alloy-config.sh"; then
-      echo "ERROR: failed to add the current Alloy validator to the initial LKG snapshot." >&2
+      echo "ERROR: failed to add the current Alloy validator to the LKG snapshot." >&2
       return 1
     fi
   fi
@@ -607,37 +601,6 @@ rollback_to_lkg() {
   return 1
 }
 
-rollback_to_legacy_previous() {
-  # This best-effort path is only reachable after explicit bootstrap mode;
-  # normal no-LKG deployments exit before moving the live tree.
-  echo "== DEPLOY FAILED: no validated LKG; attempting legacy previous recovery =="
-  if [ -f docker-compose.prev.yml ] && [ -d "$PREV_DEPLOY_DIR" ]; then
-    rm -rf -- "$LIVE_DEPLOY_DIR"
-    mv -- "$PREV_DEPLOY_DIR" "$LIVE_DEPLOY_DIR"
-    cp -f docker-compose.prev.yml docker-compose.yml
-    if pull_compose docker-compose.yml \
-        && docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend; then
-      apply_observability_services || echo "OBSERVABILITY DEGRADED: observability services could not be recreated during rollback" >&2
-      if wait_healthy; then
-        if [ -n "$PREV_SHA" ]; then echo "$PREV_SHA" > DEPLOYED_SHA; fi
-        echo "ROLLBACK OK: restored legacy previous deployment"
-        report_observability_status || true
-        return 0
-      else
-        echo "CORE ROLLBACK FAILED: legacy previous is not healthy" >&2
-        dump_logs
-      fi
-    else
-      echo "CORE ROLLBACK FAILED: could not recreate legacy previous deployment" >&2
-      dump_logs
-    fi
-  else
-    echo "CORE ROLLBACK UNAVAILABLE: no legacy previous deployment tree found" >&2
-    dump_logs
-  fi
-  return 1
-}
-
 if ! pull_compose "$STAGED_COMPOSE"; then
   echo "ERROR: staged docker compose pull failed after 3 attempts; live deployment was not changed." >&2
   exit 1
@@ -657,17 +620,12 @@ if lkg_bundle_present; then
   fi
 else
   if seed_current_lkg; then
-    echo "== Current application-healthy deployment promoted as initial LKG =="
-  elif [ "$BOOTSTRAP_ALLOWED" != "1" ]; then
+    echo "== Current application-healthy deployment promoted as LKG =="
+  else
     echo "ERROR: No application-validated LKG exists." >&2
     echo "Current deployment cannot be promoted to LKG." >&2
-    echo "Use explicit workflow_dispatch bootstrap only after reviewing production state." >&2
     echo "NO_VALIDATED_LKG: live deployment was not changed." >&2
     exit 1
-  else
-    echo "WARNING: BOOTSTRAP MODE" >&2
-    echo "WARNING: No validated LKG exists." >&2
-    echo "WARNING: This deployment has no guaranteed application rollback target." >&2
   fi
 fi
 
@@ -725,9 +683,7 @@ if [ "$rollback_needed" = true ]; then
       echo "ROLLBACK FAILED: no usable LKG runtime was restored." >&2
     fi
   else
-    if ! rollback_to_legacy_previous; then
-      echo "ROLLBACK FAILED: no legacy previous deployment was restored." >&2
-    fi
+    echo "ROLLBACK FAILED: no validated LKG runtime is available; manual intervention required." >&2
   fi
   exit 1
 fi

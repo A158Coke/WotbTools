@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Operations
+- 生产部署移除事故恢复遗留的无 LKG bypass；已有健康 live deployment 仍由正常发布流程建立初始 LKG，没有可验证 LKG 时安全失败，不再提供永久性的手工 checkbox。
 - 运维基础设施新增现有生产 COS bucket 的 OpenTofu 基线；本次不改变线上业务行为、不执行自动 apply。
 - OpenTofu production state 与 CI plan 路径接入独立 COS remote state；本次不改变线上产品行为，不执行自动 import 或 apply。
 - 现有 production artifact bucket 已完成一次性 owner-managed OpenTofu state bootstrap；不改变线上产品行为或生产资源。
