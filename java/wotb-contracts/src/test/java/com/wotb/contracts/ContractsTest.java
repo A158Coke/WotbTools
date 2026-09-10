@@ -6,6 +6,8 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -54,5 +56,21 @@ class ContractsTest {
         assertEquals(request, mapper.readValue(mapper.writeValueAsString(request), JobRequestedEvent.class));
         assertEquals(succeeded, mapper.readValue(mapper.writeValueAsString(succeeded), JobSucceeded.class));
         assertEquals(failed, mapper.readValue(mapper.writeValueAsString(failed), JobFailed.class));
+    }
+
+    @Test
+    void replayProcessingRequestIsImmutableValueOnlySourceMetadata() {
+        final List<ReplayProcessingSource> original = new ArrayList<>(List.of(
+                new ReplayProcessingSource(2, "two.wotbreplay"),
+                new ReplayProcessingSource(0, "zero.wotbreplay")));
+        final ReplayProcessingRequest request = new ReplayProcessingRequest("job-1", original);
+        original.clear();
+
+        assertEquals(List.of(2, 0), request.sources().stream().map(ReplayProcessingSource::sourceIndex).toList());
+        assertThrows(UnsupportedOperationException.class,
+                () -> request.sources().add(new ReplayProcessingSource(1, "one.wotbreplay")));
+        assertThrows(IllegalArgumentException.class, () -> new ReplayProcessingRequest("job-1",
+                List.of(new ReplayProcessingSource(0, "a.wotbreplay"),
+                        new ReplayProcessingSource(0, "b.wotbreplay"))));
     }
 }

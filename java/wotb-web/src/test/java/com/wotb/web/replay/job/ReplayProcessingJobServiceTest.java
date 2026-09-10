@@ -805,8 +805,8 @@ class ReplayProcessingJobServiceTest {
             ps.when(() -> com.wotb.web.replay.ai.BattlePlaybackProjector.project(
                             any(), any(), any(), any()))
                     .thenThrow(new RuntimeException("projector boom"));
-            final ReplayProcessingJobService.V2BuildOutcome outcome =
-                    service.buildBattlePlaybackV2(result.battle(), result);
+            final LocalReplayProcessingExecutor.V2BuildOutcome outcome =
+                    LocalReplayProcessingExecutor.buildBattlePlaybackV2(result.battle(), result);
             assertEquals("PROJECTOR_ERROR", outcome.reason());
             assertNull(outcome.dataset(), "projector 异常不得产出 dataset");
             assertNotNull(outcome.failure(), "必须携带 exception 供调用层记录 stacktrace，禁止 silent null");
@@ -818,7 +818,7 @@ class ReplayProcessingJobServiceTest {
     void v2MissingReconstructionIsExplicitUnavailable() throws Exception {
         // reconstruction 缺失属于合法不可用（canonical event 流不可构建），不是运行时故障：
         // reason=NO_RECONSTRUCTION，failure=null（UNAVAILABLE 不再与 null 混为一个结果）。
-        final ReplayProcessingJobService.V2BuildOutcome outcome = service.buildBattlePlaybackV2(
+        final LocalReplayProcessingExecutor.V2BuildOutcome outcome = LocalReplayProcessingExecutor.buildBattlePlaybackV2(
                 new Battle(), new ReplayProcessingResult("x.wotbreplay",
                         ReplayProcessingStatus.SUCCESS, null, new Battle(), null,
                         null, ReplayProcessingCapabilities.summaryOnly(false), null, null));
@@ -1115,10 +1115,9 @@ class ReplayProcessingJobServiceTest {
 
     private ReplayProcessingJobService localService(final DefaultReplayProcessingFacade facade,
                                                      final MeterRegistry meterRegistry) {
-        return new ReplayProcessingJobService(
-                store,
-                new LocalReplayProcessingDispatcher(parseScheduler),
-                new LocalReplayProcessingExecutor(facade),
-                meterRegistry);
+        final ReplayProcessingJobService local = new ReplayProcessingJobService(
+                store, new LocalReplayProcessingDispatcher(parseScheduler), meterRegistry);
+        parseScheduler.configureWorker(new LocalReplayProcessingExecutor(facade, tmpDir, local, meterRegistry), local);
+        return local;
     }
 }

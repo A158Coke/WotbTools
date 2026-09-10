@@ -144,7 +144,8 @@ existing `com.wotb.web...` Java namespace during the migration, so HTTP/security
 component scanning stay stable. `wotb-web` remains the only container/JVM/Boot root. It may
 depend on `wotb-result`, `wotb-playback`, `wotb-replay-coordinator`,
 `wotb-replay-processing`, and `wotb-ai`; none of those feature modules may depend on
-`wotb-web`. The coordinator owns lifecycle/state and the `ReplayProcessingDispatcher` port;
+`wotb-web`. The coordinator owns lifecycle/state and consumes the value-only
+`ReplayProcessingDispatcher` port declared in `wotb-contracts`;
 the processing module owns the current `LocalReplayProcessingDispatcher`, scheduler and local
 full-processing executor. This is an in-process seam only: no MQ, worker executable, object
 storage or cross-process callback is part of the current runtime.
