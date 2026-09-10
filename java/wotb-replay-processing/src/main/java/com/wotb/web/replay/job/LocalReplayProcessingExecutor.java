@@ -19,7 +19,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -36,15 +35,17 @@ public class LocalReplayProcessingExecutor {
     private final Path processingJobRoot;
     private final ReplayProcessingLifecycle lifecycle;
     private final MeterRegistry meterRegistry;
+    private final ReplayProcessingCancellationRegistry cancellationRegistry;
 
     @Autowired
     public LocalReplayProcessingExecutor(
             final DefaultReplayProcessingFacade processingFacade,
             @Value("${wotb.replay.processing-job.dir:${java.io.tmpdir}/wotb-replay-processing-jobs}")
             final String processingJobDir,
-            @Lazy final ReplayProcessingLifecycle lifecycle,
-            @Autowired(required = false) final MeterRegistry meterRegistry) {
-        this(processingFacade, Path.of(processingJobDir), lifecycle, meterRegistry);
+            final ReplayProcessingLifecycle lifecycle,
+            @Autowired(required = false) final MeterRegistry meterRegistry,
+            final ReplayProcessingCancellationRegistry cancellationRegistry) {
+        this(processingFacade, Path.of(processingJobDir), lifecycle, meterRegistry, cancellationRegistry);
     }
 
     /** Test constructor. */
@@ -52,17 +53,27 @@ public class LocalReplayProcessingExecutor {
                                          final Path processingJobRoot,
                                          final ReplayProcessingLifecycle lifecycle,
                                          final MeterRegistry meterRegistry) {
+        this(processingFacade, processingJobRoot, lifecycle, meterRegistry,
+                new ReplayProcessingCancellationRegistry());
+    }
+
+    LocalReplayProcessingExecutor(final DefaultReplayProcessingFacade processingFacade,
+                                  final Path processingJobRoot,
+                                  final ReplayProcessingLifecycle lifecycle,
+                                  final MeterRegistry meterRegistry,
+                                  final ReplayProcessingCancellationRegistry cancellationRegistry) {
         this.processingFacade = processingFacade;
         this.processingJobRoot = processingJobRoot;
         this.lifecycle = lifecycle;
         this.meterRegistry = meterRegistry;
+        this.cancellationRegistry = cancellationRegistry;
     }
 
     public void process(final ReplayProcessingRequest request, final int sourceIndex) {
         final ReplayProcessingSource source = request.sources().stream()
                 .filter(candidate -> candidate.sourceIndex() == sourceIndex)
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("SOURCE_NOT_FOUND"));
-        if (lifecycle.isCancelled(request.jobId())) {
+        if (cancellationRegistry.isCancelled(request.jobId())) {
             return;
         }
         lifecycle.sourceStarted(request.jobId(), sourceIndex, source.sourceName());

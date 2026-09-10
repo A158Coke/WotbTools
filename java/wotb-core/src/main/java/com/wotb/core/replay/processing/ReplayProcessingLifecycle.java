@@ -1,12 +1,12 @@
 package com.wotb.core.replay.processing;
 
 /**
- * Value-event sink consumed by the coordinator. Local processing invokes it in-process; a remote
- * worker can publish the same events as completion messages without changing the command contract.
+ * Local in-process lifecycle bridge consumed by the coordinator.
+ *
+ * <p>A remote worker must publish value events through its wire contract instead of implementing
+ * this JVM interface.
  */
 public interface ReplayProcessingLifecycle {
-
-    boolean isCancelled(String jobId);
 
     void jobStarted(String jobId);
 

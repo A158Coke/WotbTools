@@ -12,7 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayDeque;
@@ -107,6 +106,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
     private boolean closed;
     private final ThreadPoolExecutor workers;
     private final MeterRegistry meterRegistry;
+    private final ReplayProcessingCancellationRegistry cancellationRegistry;
     private LocalReplayProcessingExecutor sourceExecutor;
     private ReplayProcessingLifecycle lifecycle;
     /** 测试专用：completion 记账后、pump 前同步钩子（确定性复现 取消竞态窗口）。 */
@@ -118,7 +118,8 @@ public final class ReplayParseScheduler implements AutoCloseable {
             @Value("${wotb.replay.parse.queue-capacity:200}") final int maxQueuedSources,
             @Autowired(required = false) final MeterRegistry meterRegistry,
             final LocalReplayProcessingExecutor sourceExecutor,
-            @Lazy final ReplayProcessingLifecycle lifecycle) {
+            final ReplayProcessingLifecycle lifecycle,
+            final ReplayProcessingCancellationRegistry cancellationRegistry) {
         if (maxConcurrent < 1) {
             throw new IllegalArgumentException("replay parse max-concurrent must be >= 1: " + maxConcurrent);
         }
@@ -128,6 +129,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
         this.maxConcurrent = maxConcurrent;
         this.maxQueuedSources = maxQueuedSources;
         this.meterRegistry = meterRegistry;
+        this.cancellationRegistry = cancellationRegistry;
         this.sourceExecutor = sourceExecutor;
         this.lifecycle = lifecycle;
         this.workers = new ThreadPoolExecutor(
@@ -148,6 +150,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
         this.maxConcurrent = maxConcurrent;
         this.maxQueuedSources = maxQueuedSources;
         this.meterRegistry = meterRegistry;
+        this.cancellationRegistry = new ReplayProcessingCancellationRegistry();
         this.sourceExecutor = null;
         this.lifecycle = null;
         this.workers = new ThreadPoolExecutor(
@@ -183,6 +186,10 @@ public final class ReplayParseScheduler implements AutoCloseable {
                          final ReplayProcessingLifecycle lifecycle) {
         this.sourceExecutor = sourceExecutor;
         this.lifecycle = lifecycle;
+    }
+
+    ReplayProcessingCancellationRegistry cancellationRegistry() {
+        return cancellationRegistry;
     }
 
     /** 低基数 scheduler metrics（无高基数 tag）。 */
@@ -248,6 +255,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
             if (entry == null) {
                 return CancellationResult.NO_COMPLETION_PENDING;
             }
+            cancellationRegistry.cancel(jobId);
             int drained = 0;
             while (!entry.pending.isEmpty()) {
                 entry.pending.poll();
@@ -263,6 +271,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
                     // 已派发过（activeJobs 已 +1）但全部 source 已结束/取消 → 释放 job 计数。
                     activeJobs--;
                 }
+                cancellationRegistry.complete(jobId);
             }
             return activeRemaining ? CancellationResult.ACTIVE_COMPLETION_PENDING
                     : CancellationResult.NO_COMPLETION_PENDING;
@@ -353,6 +362,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
                     jobs.remove(entry.jobId, entry);
                     readyJobs.remove(entry.jobId);
                     entry.ready = false;
+                    cancellationRegistry.complete(entry.jobId);
                 } else if (!entry.ready && !entry.pending.isEmpty()) {
                     offerReady(entry);
                 }
