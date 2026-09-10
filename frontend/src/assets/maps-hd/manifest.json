@@ -169,7 +169,7 @@
     {
       "source": "frontend/src/assets/maps/fort-despair.webp",
       "enhanced": "frontend/src/assets/maps-hd/fort-despair.webp",
-      "method": "USER_PROVIDED_HD_PNG_LANCZOS_TO_WEBP",
+      "method": "REAL_ESRGAN_GENERAL_X4V3_X2_PLUS_LOCAL_DETAIL",
       "sourcePixels": [
         2024,
         2024
@@ -179,7 +179,7 @@
         4048
       ],
       "sourceSha256": "cd2825dad49d43d3d6616a45fcb2463875f23bfcb873df35c0540999b40f016f",
-      "enhancedSha256": "ee9baf4933e714b11c1cfce292e6ee93a06a26ad14287121591b591083fed380",
+      "enhancedSha256": "40aa997c7b43a28a7eb0a723295169f99878505542b38a68b0bf52b981692282",
       "webpQuality": 96,
       "sourceOfTruth": "ORIGINAL_ONLY",
       "geometryTransform": "NONE"
@@ -532,4 +532,4 @@
     "maxGrowthRatio": 4.0,
     "rationale": "Single-map Playback delivery budget for mobile/mainland links; one map is loaded at a time."
   }
-}
+}\n
