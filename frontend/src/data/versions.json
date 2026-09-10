@@ -3,9 +3,9 @@
     "v": "2.12.78",
     "date": "2026-09-10",
     "tag": "chg",
-    "zh": "名人堂成绩改为按 WotB 游戏账号归属：更换登录方式（例如旧 QQ 用户被删除后改用新的 QQ 身份）后，只要重新绑定同一个 WotB 账号，单场、百场与三环成绩会自动回到你的个人中心；管理员现在也可以批量删除用户与名人堂记录。",
-    "en": "Hall of Fame results are now tied to your WotB game account: after changing how you sign in, rebinding the same WotB account brings your single-battle, Hundred and Mark 3 results back to your profile automatically. Admins can now also delete users and Hall of Fame records in batches.",
-    "ru": "Результаты Зала славы теперь привязаны к игровому аккаунту WotB: после смены способа входа достаточно снова привязать тот же аккаунт WotB, и результаты одиночных боёв, «Ста боёв» и «Трёх отметок» автоматически вернутся в профиль. Администраторы также могут пакетно удалять пользователей и записи Зала славы."
+    "zh": "百场与三环成绩改为按「区服 + WotB 游戏账号」归属：更换登录方式后，只要重新绑定同一区服下的同一个 WotB 账号，这些成绩会自动回到你的个人中心；单场记录仍只按账号 ID 归属。管理后台现在同时显示区服与账号，并支持批量删除用户与名人堂记录。",
+    "en": "Hundred and Mark 3 results are now tied to your server plus WotB game account: after changing how you sign in, rebinding the same WotB account on the same server brings those results back to your profile automatically, while single-battle records are still matched by account ID only. The admin console now shows server and account together and can delete users and Hall of Fame records in batches.",
+    "ru": "Результаты «Ста боёв» и «Трёх отметок» теперь привязаны к серверу и игровому аккаунту WotB: после смены способа входа достаточно снова привязать тот же аккаунт WotB на том же сервере, и результаты автоматически вернутся в профиль; записи одиночных боёв по-прежнему сопоставляются только по ID аккаунта. В админ-панели сервер и аккаунт теперь показываются вместе, а также доступно пакетное удаление пользователей и записей Зала славы."
   },
   {
     "v": "2.12.77",
