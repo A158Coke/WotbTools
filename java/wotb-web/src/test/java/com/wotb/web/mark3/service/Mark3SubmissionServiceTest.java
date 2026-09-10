@@ -17,9 +17,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -123,7 +125,8 @@ class Mark3SubmissionServiceTest {
     @Test
     void currentRecordBlocksNewSubmissionBeforeReplayParsing() {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
-        when(repository.existsByUserKeycloakIdAndVehicleIdAndStatus(USER, TIER10_VEHICLE, "CURRENT"))
+        // ownership/canonical owner 改为 WotB 账号：预检按 profile.getWotbAccountId() 查询
+        when(repository.existsByWotbAccountIdAndVehicleIdAndStatus(GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(true);
 
         assertThatThrownBy(() -> service.createSubmission(
@@ -140,7 +143,7 @@ class Mark3SubmissionServiceTest {
     void approveCopiesFrozenClaimsAndNeverAcceptsReplacementScores() {
         final Mark3Submission pending = pendingSubmission();
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(pending));
-        when(repository.findCurrentForUpdate(USER, TIER10_VEHICLE)).thenReturn(Optional.empty());
+        when(repository.findCurrentForUpdate(GAME_ID, TIER10_VEHICLE)).thenReturn(Optional.empty());
 
         final var result = service.approve(ADMIN, 10L);
 
@@ -161,7 +164,7 @@ class Mark3SubmissionServiceTest {
         current.setStatus("CURRENT");
         current.setApprovedBattleCount(100);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(pending));
-        when(repository.findCurrentForUpdate(USER, TIER10_VEHICLE)).thenReturn(Optional.of(current));
+        when(repository.findCurrentForUpdate(GAME_ID, TIER10_VEHICLE)).thenReturn(Optional.of(current));
 
         assertThatThrownBy(() -> service.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalStateException.class)
@@ -262,7 +265,7 @@ class Mark3SubmissionServiceTest {
     @Test
     void rechecksActiveSubmissionInsideCapacityBeforeParsing() {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
-        when(repository.existsByUserKeycloakIdAndVehicleIdAndStatus(USER, TIER10_VEHICLE, "CURRENT"))
+        when(repository.existsByWotbAccountIdAndVehicleIdAndStatus(GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(false, true);
 
         try (final var parser = mockStatic(ReplayParser.class)) {
@@ -314,6 +317,112 @@ class Mark3SubmissionServiceTest {
         verify(repository, never()).findByIdForUpdate(anyLong());
     }
 
+    // ── CANCEL：ownership 按当前绑定的 WotB 账号判定 ──────────────────────
+
+    @Test
+    void cancelByOwnerMovesPendingToCancelledAndClearsEvidence() {
+        final Mark3Submission pending = pendingSubmission();
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(pending));
+        // userId 只用于解析 profile；比较的是 profile.getWotbAccountId() 与记录的 canonical owner
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+
+        final var result = service.cancelSubmission(USER, 10L);
+
+        assertThat(result.status()).isEqualTo("CANCELLED");
+        assertThat(pending.getCancelledAt()).isNotNull();
+        assertThat(pending.getProofScreenshotFirst()).isNull();
+        assertThat(pending.getProofScreenshotSecond()).isNull();
+        verify(evidenceService).discardForSubmission(10L);
+    }
+
+    @Test
+    void cancelForbiddenWhenCallerBoundToAnotherWotbAccount() {
+        final Mark3Submission pending = pendingSubmission(); // owner = GAME_ID
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(pending));
+        // Keycloak 用户改绑到另一个 WotB 账号 → 记录仍属原账号，不可取消
+        final UserProfile rebound = profile();
+        rebound.setKeycloakUserId("kc-other");
+        rebound.setWotbAccountId(GAME_ID + 1);
+        when(userProfileService.findEntityByKeycloakUserId("kc-other")).thenReturn(Optional.of(rebound));
+
+        assertThatThrownBy(() -> service.cancelSubmission("kc-other", 10L))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(error -> {
+                    assertThat(((ResponseStatusException) error).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+                    assertThat(((ResponseStatusException) error).getReason()).contains("MARK3_FORBIDDEN");
+                });
+
+        assertThat(pending.getStatus()).isEqualTo("PENDING");
+        assertThat(pending.getProofScreenshotFirst()).isNotNull();
+        verify(evidenceService, never()).discardForSubmission(anyLong());
+    }
+
+    @Test
+    void cancelForbiddenWhenCallerHasNoBoundWotbAccount() {
+        final Mark3Submission pending = pendingSubmission();
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(pending));
+        // 未绑定账号的两种形态都必须是 403：profile 不存在，或 profile 存在但 wotbAccountId 为 null
+        when(userProfileService.findEntityByKeycloakUserId("kc-unknown")).thenReturn(Optional.empty());
+        final UserProfile unbound = profile();
+        unbound.setWotbAccountId(null);
+        when(userProfileService.findEntityByKeycloakUserId("kc-unbound")).thenReturn(Optional.of(unbound));
+
+        for (final String caller : List.of("kc-unknown", "kc-unbound")) {
+            assertThatThrownBy(() -> service.cancelSubmission(caller, 10L))
+                    .as("caller %s", caller)
+                    .isInstanceOf(ResponseStatusException.class)
+                    .satisfies(error -> {
+                        assertThat(((ResponseStatusException) error).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+                        assertThat(((ResponseStatusException) error).getReason()).contains("MARK3_FORBIDDEN");
+                    });
+        }
+
+        assertThat(pending.getStatus()).isEqualTo("PENDING");
+        assertThat(pending.getProofScreenshotFirst()).isNotNull();
+        verify(evidenceService, never()).discardForSubmission(anyLong());
+    }
+
+    // ── userStatus：ownership = 当前绑定的 WotB 账号 ──────────────────────
+
+    @Test
+    void userStatusReturnsEmptyListsWhenNoBoundWotbAccount() {
+        // profile 不存在或未绑定账号 → 三个空列表；不再抛错，也不回退到 Keycloak id 查询
+        when(userProfileService.findEntityByKeycloakUserId("kc-unknown")).thenReturn(Optional.empty());
+        final UserProfile unbound = profile();
+        unbound.setWotbAccountId(null);
+        when(userProfileService.findEntityByKeycloakUserId("kc-unbound")).thenReturn(Optional.of(unbound));
+
+        for (final String caller : List.of("kc-unknown", "kc-unbound")) {
+            final var status = service.userStatus(caller);
+            assertThat(status.current()).as("caller %s", caller).isEmpty();
+            assertThat(status.pending()).isEmpty();
+            assertThat(status.rejected()).isEmpty();
+        }
+
+        verify(repository, never()).findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(anyLong(), any());
+    }
+
+    @Test
+    void userStatusQueriesByBoundWotbAccountId() {
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        final Mark3Submission current = currentSubmission(123);
+        final Mark3Submission pending = pendingSubmission();
+        final Mark3Submission rejected = pendingSubmission();
+        rejected.setStatus("REJECTED");
+        when(repository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(GAME_ID, List.of("CURRENT")))
+                .thenReturn(List.of(current));
+        when(repository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(GAME_ID, List.of("PENDING")))
+                .thenReturn(List.of(pending));
+        when(repository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(GAME_ID, List.of("REJECTED")))
+                .thenReturn(List.of(rejected));
+
+        final var status = service.userStatus(USER);
+
+        assertThat(status.current()).extracting("status").containsExactly("CURRENT");
+        assertThat(status.pending()).extracting("status").containsExactly("PENDING");
+        assertThat(status.rejected()).extracting("status").containsExactly("REJECTED");
+    }
+
     private Mark3SubmissionService newService(final ReplayCapacityLimiter limiter) {
         return new Mark3SubmissionService(
                 repository, new Mark3Mapper(), userProfileService, limiter,
@@ -332,10 +441,10 @@ class Mark3SubmissionServiceTest {
     private static Mark3Submission pendingSubmission() {
         final Mark3Submission submission = new Mark3Submission();
         submission.setId(10L);
-        submission.setUserKeycloakId(USER);
         submission.setVehicleId(TIER10_VEHICLE);
         submission.setVehicleName("Progetto 65");
-        submission.setGameAccountIdSnapshot(GAME_ID);
+        // canonical owner：WotB 游戏账号（Keycloak 身份不再落在 submission 上）
+        submission.setWotbAccountId(GAME_ID);
         submission.setNicknameSnapshot("PlayerOne");
         submission.setClaimedBattleCount(123);
         submission.setClaimedAverageDamage(3_456);

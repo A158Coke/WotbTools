@@ -12,6 +12,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.Optional;
 
@@ -129,12 +130,14 @@ class AdminUserServiceTest {
             final AdminUserLogPersister logPersister,
             final KeycloakAdminUserService keycloakService,
             final BoosterService boosterService) {
+        // 第 6 参数（PlatformTransactionManager）只被 bulkDeleteUsers 使用；单用户删除路径不触碰它。
         return new AdminUserService(
                 userProfileService,
                 new AdminUserMapper(),
                 logPersister,
                 keycloakService,
-                boosterService
+                boosterService,
+                mock(PlatformTransactionManager.class)
         );
     }
 

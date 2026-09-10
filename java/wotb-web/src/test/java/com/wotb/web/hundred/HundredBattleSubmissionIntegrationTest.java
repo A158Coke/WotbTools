@@ -38,12 +38,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 百场 APPROVE 的 CURRENT replacement 真实 PostgreSQL 集成测试。
- * 必须经过 V18 partial unique index（user_keycloak_id, vehicle_id) where status='CURRENT'：
+ * 必须经过 V18/V22 partial unique index（wotb_account_id, vehicle_id) where status='CURRENT'：
  * 旧 CURRENT 先显式 flush 为 SUPERSEDED，再提升 PENDING 为 CURRENT；单事务内后半段失败整体回滚。
  */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class HundredBattleSubmissionIntegrationTest {
+
+    /** HoF ownership 的 canonical owner：两人同车不冲突，同账号同车才唯一。 */
+    private static final long WOTB_ACCOUNT_ID = 111L;
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18-alpine")
@@ -87,10 +90,9 @@ class HundredBattleSubmissionIntegrationTest {
 
     private HundredBattleSubmission insertRow(final String status, final int damage, final int battles) {
         final HundredBattleSubmission s = new HundredBattleSubmission();
-        s.setUserKeycloakId("kc-user");
         s.setVehicleId(385L); // Progetto 65 (Tier X)
         s.setVehicleName("Progetto 65");
-        s.setGameAccountIdSnapshot(111L);
+        s.setWotbAccountId(WOTB_ACCOUNT_ID);
         s.setNicknameSnapshot("PlayerOne");
         s.setClaimedAverageDamage(damage);
         s.setClaimedBattleCount(battles);
@@ -106,7 +108,8 @@ class HundredBattleSubmissionIntegrationTest {
     }
 
     private long currentCount() {
-        return repository.findByUserKeycloakIdAndStatusInOrderBySubmittedAtDesc("kc-user", List.of("CURRENT")).size();
+        return repository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
+                WOTB_ACCOUNT_ID, List.of("CURRENT")).size();
     }
 
     /** 场景 A：existing CURRENT(4000) + PENDING(4200) → approve 成功 → 恰好一个 CURRENT、旧行 SUPERSEDED。 */
@@ -124,9 +127,10 @@ class HundredBattleSubmissionIntegrationTest {
         final HundredBattleSubmission newRow = repository.findById(pending.getId()).orElseThrow();
         assertEquals("SUPERSEDED", oldRow.getStatus());
         assertEquals("CURRENT", newRow.getStatus());
-        assertEquals(1, currentCount(), "user+vehicle 必须恰好一个 CURRENT（V18 partial unique index 语义）");
+        assertEquals(1, currentCount(), "账号+vehicle 必须恰好一个 CURRENT（V18 partial unique index 语义）");
         assertEquals(pending.getId(), repository
-                .findByUserKeycloakIdAndVehicleIdAndStatus("kc-user", 385L, "CURRENT").orElseThrow().getId());
+                .findByWotbAccountIdAndVehicleIdAndStatus(WOTB_ACCOUNT_ID, 385L, "CURRENT")
+                .orElseThrow().getId());
     }
 
     /**
