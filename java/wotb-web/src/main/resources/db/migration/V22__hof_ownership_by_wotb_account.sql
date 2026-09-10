@@ -109,7 +109,7 @@ begin
                    'count(*) from hundred_battle_submission s '
                    'left join user_profile p on p.keycloak_user_id = s.user_keycloak_id '
                    'and p.wotb_account_id = s.game_account_id_snapshot '
-                   "where s.status in ('PENDING', 'CURRENT') group by 1, 2, 3, 4 having count(*) > 1; "
+                   'where s.status in (''PENDING'', ''CURRENT'') group by 1, 2, 3, 4 having count(*) > 1; '
                    'This migration never guesses a server, never changes status, never deletes evidence and '
                    'never clears screenshots. Resolve the rows above intentionally, then rerun the deployment. '
                    'Removal tooling: the currently runnable (pre-upgrade) application exposes '
@@ -222,7 +222,7 @@ begin
                    'from mark3_submission s '
                    'left join user_profile p on p.keycloak_user_id = s.user_keycloak_id '
                    'and p.wotb_account_id = s.game_account_id_snapshot '
-                   "where s.status in ('PENDING', 'CURRENT') group by 1, 2, 3 having count(*) > 1; "
+                   'where s.status in (''PENDING'', ''CURRENT'') group by 1, 2, 3 having count(*) > 1; '
                    'This migration never guesses a server, never changes status, never deletes evidence and '
                    'never clears screenshots. A CURRENT cannot be replaced by a pending application, so keep the '
                    'CURRENT and remove the others, then rerun the deployment. Removal tooling: the currently '
