@@ -45,6 +45,7 @@ Authentication 是 Replay Workspace 的**真实 UI gate**，不是 mount 时的 
   `finally` 释放；不存在 component-lifetime 一次性锁，因此取消/失败后 tabs、登录按钮与 UserMenu
   都能重新发起新的 login transaction。
 - 未登录 mount 仍自动发起一次 login（保留既有 UX），失败或取消后停留在 `ws-auth-required` 可重试状态。
+- Android pending 字节通过固定同源 HTTPS Native resource 读取；header 校验 pending identity，响应不缓存。fetch/blob 失败复用 Replay 错误区与重试，不启动 Job、不 ACK。
 - Android pending replay 只在 `authReady && authenticated` 时消费；未登录期间 Native pending 原样保留
   （见 [`docs/android/replay-intent.md`](../android/replay-intent.md)）。
 - **Processing 传输边界**（`src/api/replay.ts`）四条端点全部要求 auth session：`createProcessingJob`

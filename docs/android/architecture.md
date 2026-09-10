@@ -129,7 +129,7 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
 - **认证是唯一 navigation authority**：`inAuthFlow=true` 期间到达的 replay intent 只入队
   （`ReplayDispatchPolicy` → `NONE`），不 `loadUrl`、不 `evaluateJavascript`，当前 Keycloak/QQ
   authentication transaction 不被 replay 打断；verified auth return 恒为最高优先级。
-- **单一 ingress**：只有 Intent → private cache → Native Bridge → Web `fetch(content://)` 一条路径；
+- **单一 ingress**：只有 Intent → private cache → Native Bridge → Web fetch 固定同源 HTTPS synthetic resource 一条路径；
   已删除 `onShowFileChooser` 对 pending replay 的注入分支。
 - **跨 process death 存活**：pending metadata 落在 app private storage（24h TTL），启动时先恢复
   active pending、再按引用清理 orphan cache。

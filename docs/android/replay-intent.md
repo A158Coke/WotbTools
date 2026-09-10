@@ -12,14 +12,36 @@
 
 ## 单一交接通道（唯一 ingress，不依赖 Base64，规格 §38/§39）
 
+### HTTPS pending resource（2026-09-10 hotfix）
+
+旧链路在 `allowContentAccess=false` 的 WebView 中 `fetch(content://...)`，登录成功后可能无法读取字节，
+因此无法创建 Processing Job。修复保留 `allowFileAccess=false` / `allowContentAccess=false`。
+
+- Bridge 的 `uri` 固定为 `https://wotbtools.com/__native/replay-pending`；这是 Native resource，不是后端 API。
+  App canonical origin 是 `https://wotbtools.com`；URL 不含 query、pendingId、文件名、本地路径或凭据。
+- Web 用 `X-Wotb-Pending-Id` request header 传 metadata identity；Native 比较当前 snapshot 的 identity，
+  再打开同一 snapshot 的 backing file，防止新 replay B 替换 A 后，B 的内容被关联到 A 的 operationId。
+- Exact URL 始终 Native-owned：文件存在返回 200 octet-stream + FileInputStream；无 pending/文件返回 404；
+  identity 缺失或不匹配返回 409；打开文件异常返回 500。错误不能 return null 或落到真实网络。
+- 所有响应 `Cache-Control: no-store`；Web fetch 使用 `cache: no-store`，防固定 URL 复用旧内容。
+- fetch/blob 失败复用 Replay 错误区和重试按钮，不启动 Job、不 ACK、不删除 metadata。
+  接受后的 compare-and-clear ACK、operationId 幂等和 deferred drain 保持原有顺序。
+- 阶段日志只允许 event/status/已有 short ref；禁止 full ID、文件名、路径、异常原文、OAuth code/state、token/cookie。
+- 必须发布更新 APK 和 Web；仅部署 Web 无法修复旧 APK 的 content transport。
+
+真机发布验收（不能用 JVM/Vitest 代替）：未登录打开 replay → QQ 登录 → 自动 POST processing-jobs 202 → Data；
+已有 SSO 直接导入；取消登录零请求且 pending 保留，重登后自动导入；登录期间 process death 后 callback 冷启动恢复，
+同一 pending 恰好一个 Job。记录低敏 `replay-pending stream requested/served`、auth-return、processing accepted；
+勿保存完整请求头、OAuth URL 或 pending identity。清 App 数据须由测试者明确同意。
+
 ```text
 ACTION_SEND / ACTION_VIEW
   → external content URI（ContentResolver 读取，不依赖真实路径）
   → 最小验证(.wotbreplay) + 复制到 app private cache
-  → app-owned FileProvider URI + pendingId（完整 UUID，authoritative identity）+ createdAt
+  → private cache backing file + pendingId（完整 UUID，authoritative identity）+ createdAt
   → pending slot（single slot：最新 replay 取代旧 pending）+ SharedPreferences metadata
   → Web 已登录时经 NativeBridge getPendingReplay() 取回 pendingId/name/size/uri
-  → Web fetch(content://) 读字节构造 File → 现有 FileUploader/validate 管线
+  → Web fetch 固定同源 HTTPS synthetic resource 读字节构造 File → 现有 FileUploader/validate 管线
   → POST /api/replay/processing-jobs（需登录；Bearer；operationId = pendingId，可重放安全）
   → server 接受（202 + jobId）后 Web 调 consumePendingReplay(pendingId) ACK（compare-and-clear）
 ```
@@ -70,18 +92,18 @@ Web，不依赖 WebView 直接读取 external content URI，也不放宽 WebView
   过期 pending 在下次启动被丢弃并清理。
 - ACK 后（`consumePendingReplay(pendingId)`）：清 pending slot + 清持久 metadata（exactly-once），
   下次启动不再恢复该 replay。backing file 不立即删除（Chromium 可能仍在读取 Web
-  `fetch(content://)` 的响应流），留到下一次启动 orphan cleanup 安全清理。
+  synthetic HTTPS resource 的响应流），留到下一次启动 orphan cleanup 安全清理。
 
 ## ACK 语义（identity-aware exactly-once）
 
 Web 侧 `useNativeReplayImport` 的顺序固定为：
 
 ```text
-getPendingReplay → fetch(content://) → await onPendingFile(file, pending) → 受理成功
+getPendingReplay → fetch(synthetic HTTPS resource) → await onPendingFile(file, pending) → 受理成功
   → consumePendingReplay(pending.pendingId)
 ```
 
-- **ACK 必须携带 exact pending identity**（`pendingId`，完整 UUID；不是 `content://` URI 字符串）。
+- **ACK 必须携带 exact pending identity**（`pendingId`，完整 UUID；不是资源 URI 字符串）。
   Native 执行 **compare-and-clear**（纯策略 `PendingReplayAckPolicy`）：
   - `expected == current` → 清 pending slot + metadata，返回 `true`（`ack success ref=<short>`）；
   - `expected != current`（处理期间已被更新的 replay 取代）→ **绝不清掉当前 pending**，返回 `false`
