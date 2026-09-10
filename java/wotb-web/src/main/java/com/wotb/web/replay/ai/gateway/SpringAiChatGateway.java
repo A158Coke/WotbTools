@@ -623,6 +623,8 @@ public class SpringAiChatGateway implements AiChatGateway {
     }
 
     private ScheduledExecutorService budgetWatchdog() {
+        // Timer-only watchdog: keep a single platform scheduler; the blocking
+        // provider call itself runs in the bounded AI worker executor.
         ScheduledExecutorService current = budgetWatchdog;
         if (current == null) {
             synchronized (this) {

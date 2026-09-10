@@ -107,7 +107,8 @@ concurrency, and fingerprint verification counts.
 ## JFR analysis
 
 The `-DjfrFile` option records the benchmark process using the JDK `profile`
-configuration. Inspect it with the JDK 21 `jfr` command:
+configuration. Inspect it with the JDK 25 `jfr` command from the same runtime
+used by the benchmark:
 
 ```powershell
 jfr summary build/performance/replay-full-c1.jfr
@@ -122,6 +123,11 @@ Record the top CPU methods, allocation classes/stacks, GC pauses and time,
 monitor contention, thread states, file I/O, and socket I/O in the benchmark
 report. JFR evidence decides whether any optimization experiment is justified;
 do not optimize the listed hypotheses by assumption.
+
+The replay benchmark intentionally keeps its bounded CPU worker executor on
+platform threads; Virtual Threads are not a substitute for the replay CPU
+concurrency gate. The web application's blocking AI review executor may use
+bounded virtual workers, but its worker and queue limits remain unchanged.
 
 The current harness uses separate executor lifecycles for warmup and
 measurement, so worker-thread initialization can still occur after

@@ -254,6 +254,21 @@ class AiReviewWorkerSaturationTest {
         executor.close();
     }
 
+    @Test
+    void defaultAiWorkerUsesVirtualThreadsWithoutChangingAdmissionLimits() throws Exception {
+        workerExecutor = new AiReviewWorkerExecutor(1, 1);
+        final CountDownLatch started = new CountDownLatch(1);
+        final AtomicReference<Boolean> virtual = new AtomicReference<>();
+
+        workerExecutor.execute(() -> {
+            virtual.set(Thread.currentThread().isVirtual());
+            started.countDown();
+        });
+
+        assertTrue(started.await(5, TimeUnit.SECONDS), "AI worker must start");
+        assertEquals(Boolean.TRUE, virtual.get(), "AI worker should run on a virtual thread");
+    }
+
     // ---- helpers ----
 
     private static ReconstructionController.AnalyzeDatasetRequest datasetRequest(final String correlationId) {

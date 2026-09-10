@@ -23,6 +23,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * （无 replay processing），不再获取全局 replay 容量许可——解析 CPU 预算唯一权威是
  * {@code ReplayParseScheduler}。</p>
  *
+ * <p>Export is mixed CPU/filesystem work and remains a bounded platform-thread
+ * pool; it does not inherit the AI worker's virtual-thread policy.</p>
+ *
  * <p><b>QUEUED 取消（PR #118 Blocker A）</b>：{@link #submit(String, Runnable)} 保存
  * jobId → 实际提交的 Runnable 句柄；{@link #removeQueued(String)} 用
  * {@link ThreadPoolExecutor#remove(Runnable)} 把尚未开始执行的 FutureTask 从有界队列

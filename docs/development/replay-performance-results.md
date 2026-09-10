@@ -7,13 +7,17 @@ accessed.
 ## Environment and corpus
 
 - Worktree: isolated replay-performance worktree; no architecture split was made.
-- Baseline matrix tree: `0db88597fe25706c2bf80f433f59ab9be15b2be8`.
-- Candidate quick/JFR/parity artifacts were generated from the dirty candidate
-  tree based on that baseline (`commit=0db88597...`, `dirty=true`). The same
-  candidate source is now reproducible from the rebased PR head
-  `9e4adb598309d35d5ec80546c50cb14a855d2b06`; after this review repair commit,
-  the current worktree will be clean.
-- Java: Oracle JDK 21.0.1.
+- Historical baseline matrix tree: `0db88597fe25706c2bf80f433f59ab9be15b2be8`.
+- Historical PositionDecoder quick/JFR artifacts were generated from the dirty
+  pre-review candidate tree; they are not measurements of the final Java25
+  candidate tree.
+- Final candidate source tree: PR #284 worktree based on `678d83e5` plus the
+  Java25, Spring Boot 4.1.1, bounded AI virtual-worker and benchmark changes in
+  this round. The c1 artifact was generated before commit from that source
+  content and records `dirty=true`; the clean source commit and later
+  documentation-only evidence commit are recorded in the final PR history.
+- Java: Eclipse Temurin OpenJDK 25.0.4.1 (LTS).
+- Spring Boot: 4.1.1.
 - Benchmark JVM: `-XX:ActiveProcessorCount=2 -Xms4g -Xmx4g`.
 - Corpus: 40 replay files recursively discovered under the real
   `common/data/` directory in the main checkout.
@@ -25,7 +29,7 @@ accessed.
   serialization to keep candidate screening bounded; canonical validation still
   computed the 40 fingerprints.
 
-## Existing baseline matrix
+## Historical Java21 baseline matrix
 
 The baseline-quality matrix used warmup 5, measurement 20, full-stage
 fingerprint verification, and the same 2C/4GiB JVM. No c4 run was made.
@@ -36,8 +40,9 @@ fingerprint verification, and the same 2C/4GiB JVM. No c4 run was made.
 | c2 | 35.209 | 56.504 | 53.426 | 69.909 | 91.759 | 185.771 | 71 / 2,537 ms |
 | c3 | 36.972 | 80.161 | 71.642 | 106.471 | 197.408 | 285.461 | 65 / 3,425 ms |
 
-c2 remains the best balanced local point. This round did not change
-`REPLAY_PARSE_MAX_CONCURRENT=2` and did not claim a production capacity change.
+c2 remains the best balanced local point in this historical Java21 matrix. The
+final Java25 run below did not change `REPLAY_PARSE_MAX_CONCURRENT=2` and did
+not claim a production capacity change.
 
 ## Benchmark workflow change
 
@@ -256,33 +261,98 @@ It does not block the higher-value investigation above.
 |---|---|---:|---|---|
 | PositionDecoder no-copy | 40/40 parity; known payload copy and temporary varargs array removed; offset regression covered; quick throughput noisy | Lower packet-copy/temporary-array allocation | Low | KEEP |
 | String replace hotspot | 26.34% is JFR instrumentation; no production caller in matching stack | None established | N/A | Defer |
-| Duplicate `ReplayHpTimeline.build` in `ObservedMaxHp.populate` | Same event list is scanned twice; eventTime is 10.98% CPU hotspot | Avoid one HP timeline time pass per populate | Low/medium | NEXT |
+| Duplicate `ReplayHpTimeline.build` in `ObservedMaxHp.populate` | Same event list was scanned twice; eventTime was 10.98% CPU hotspot | Avoid one HP timeline time pass per populate | Low/medium | DONE |
 | HashMap cleanup | No completed clean A/B | Unproven | Low | Cleanup/defer |
 
-`NEXT OPTIMIZATION CANDIDATE: reuse one ReplayHpTimeline build inside ObservedMaxHp.populate`
+`NEXT OPTIMIZATION CANDIDATE: none for #284; speculative follow-up work is deferred`
 
-This candidate is proposed only. It is not implemented in this round.
+The duplicate timeline build is implemented in the final candidate tree. No
+additional optimization was selected merely to improve the final number.
 
 ## GC baseline and constraints
 
-The extended c1 JFR baseline recorded 257 GC pauses totaling 24.5 seconds:
+The historical extended c1 JFR baseline recorded 257 GC pauses totaling 24.5
+seconds:
 median 60.2 ms, p95 276 ms, p99 464 ms, maximum 583 ms. The allocation-heavy
 classes were `byte[]` (35.36%), `String` (27.20%), `Object[]` (6.96%),
 `RawReplayPacket` (4.56%), `float[]` (2.94%), and `PositionChangedEvent`
-(2.34%).
+(2.34%). These values predate the final Java25 tree and are not a final-tree
+allocation claim.
 
 This round did not tune G1/ZGC/Shenandoah, change heap size, change concurrency,
 or add caches/pools. Avoidable allocation reduction remains the first action.
 
 ## Validation and production status
 
-The candidate parity smoke passed all 40 real replays with deterministic
-fingerprints. The targeted regression set was run after restoring the candidate
-source variant; malformed packet handling and non-zero payload-offset decoding
-are covered by `PositionDecoderTest`.
+Java25 validation completed:
 
-Not run in production. No endpoint, production job, AI call, persistence write,
-network call, service restart, MQ/COS/Grafana change, or production
-configuration change was made. The review repair was committed and pushed to
-PR #284 after rebasing the branch onto current `main`; the benchmark artifacts
-remain ignored.
+- `AiReviewWorkerSaturationTest`: 5/5 passed.
+- `ObservedMaxHpTest` + `ReplayHpTimelineTest`: 11/11 passed.
+- Explicit real-corpus discovery/parity: 40/40 accepted, 0 rejected.
+- Final c1 full confirmation: 40/40 corpus parity and 800/800 measurement
+  fingerprints. Its JSON metadata records commit `678d83e5` and `dirty=true`
+  because the source candidate had not yet been committed when it ran; no
+  source changes were made after that run.
+- c2 full confirmation: incomplete because the bounded observation window was
+  exceeded; failure was caused by safe test-process termination.
+
+No production endpoint, production job, persistence write, service restart,
+MQ/COS/Grafana change, or production configuration change was made. The replay
+benchmark and the AI blocking-call benchmark remain separate evidence sets.
+
+## Final PR #284 tree validation
+
+### ObservedMaxHp / ReplayHpTimeline
+
+- `ObservedMaxHp.populate` invokes `ReplayHpTimeline.build` once.
+- The same immutable timeline supplies both `account → max HP` and
+  `account → List<HpObservation>` reductions.
+- Ordering, filtering, null events, unknown accounts and `UNKNOWN_FFFF` handling
+  remain covered by `ObservedMaxHpTest` and `ReplayHpTimelineTest`.
+- Targeted result: 11 tests passed (9 `ObservedMaxHpTest`, 2
+  `ReplayHpTimelineTest`).
+- Real corpus parity: 40/40 accepted, 0 rejected in Java25 discovery and in
+  the c1 full confirmation; c1 verified 800/800 measurement fingerprints.
+
+### Final Java25 full confirmation
+
+The final replay confirmation used Eclipse Temurin OpenJDK 25.0.4.1,
+`-XX:ActiveProcessorCount=2 -Xms4g -Xmx4g`, an explicit real corpus path,
+`stage=full`, warmup 5, measurement 20, and fingerprint verification enabled.
+
+| Run | Status | Replays/s | Mean ms | P50 ms | P95 ms | P99 ms | GC count/time | Fingerprints |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| c1 | completed | 15.455 | 64.656 | 58.726 | 99.260 | 328.611 | 51 / 5,317 ms | 800/800 |
+| c2 | stopped after >2 h with no artifact | — | — | — | — | — | — | incomplete |
+
+c1 artifact:
+`build/performance/final-confirmation/java25-final-c1/replay-performance-full-20260910-103616-438.{json,csv,md}`.
+
+The c2 JVM remained CPU-active but did not finish within the observation
+window; it was then terminated safely. The Maven result is a Surefire fork
+termination failure, not a performance result. Therefore this round makes no
+c2 throughput or latency claim. The c1 result is evidence for the final
+candidate source content and one constrained-node performance point, not a
+proof of a production capacity increase.
+
+### AI Platform vs Virtual Thread benchmark
+
+The separate real-provider benchmark is implemented as an opt-in `ai-live`
+test with identical Platform/Virtual settings, fixed prompt
+`Return exactly: OK`, matrix `1,2,5,10`, warmup 2 and measurement 10 per
+variant, bounded worker admission, and optional measurement-only JFR. It does
+not change replay concurrency or production AI admission limits. It was not
+executed in this environment because `AI_API_KEY` was not present; no provider
+request or token cost was incurred. Consequently there is no VT latency,
+error-rate, provider-status, or `VirtualThreadPinned` result to report.
+
+### Java25 test/build status
+
+- `mvn -o -s settings.xml -pl wotb-web -am test`: passed; `wotb-core` had
+  1,255 tests with 0 failures/errors and `wotb-web` had 1,336 tests with 0
+  failures/errors (skips are reported by Maven).
+- Full reactor `mvn ... test` reached `wotb-control`, but its Docker-backed
+  integration test could not start because no local Docker daemon was
+  available. This remains a CI validation requirement.
+- The backend image build was not run locally for the same Docker-daemon
+  limitation; CI must validate the Temurin OpenJDK 25 build/runtime images.
