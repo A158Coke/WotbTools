@@ -14,6 +14,8 @@ import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
 import com.wotb.web.hundred.dto.HundredUserStatusDto;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
 import com.wotb.web.hundred.enums.HundredBattleStatus;
+import com.wotb.web.hof.dto.BulkDeleteItemResult;
+import com.wotb.web.hof.dto.BulkDeleteResultDto;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replayfile.ReplayFileNames;
@@ -489,10 +491,52 @@ public class HundredBattleSubmissionService {
                                                      final long submissionId,
                                                      final String deleteReason,
                                                      final String deleteReasonText) {
+        return deleteCurrentInternal(adminUserId, submissionId,
+                requireDeleteReason(deleteReason, deleteReasonText), deleteReasonText);
+    }
+
+    /**
+     * 批量删除 CURRENT：逐条复用 {@link #deleteCurrent} 的语义（每条独立事务 + 终态证据清理），
+     * 允许 partial success。删除原因是批次级参数，先整体校验一次——参数错误不应表现为逐条失败。
+     *
+     * @param ids 已由请求 DTO 去重并校验过上限的目标 ID
+     */
+    public BulkDeleteResultDto bulkDeleteCurrent(final String adminUserId,
+                                                 final List<Long> ids,
+                                                 final String deleteReason,
+                                                 final String deleteReasonText) {
+        final String reason = requireDeleteReason(deleteReason, deleteReasonText);
+        final List<BulkDeleteItemResult> results = new ArrayList<>(ids.size());
+        int deleted = 0;
+        for (final long id : ids) {
+            try {
+                transactionTemplate.executeWithoutResult(status ->
+                        deleteCurrentInternal(adminUserId, id, reason, deleteReasonText));
+                results.add(new BulkDeleteItemResult(id, true, null));
+                deleted++;
+            } catch (final ResponseStatusException e) {
+                results.add(new BulkDeleteItemResult(id, false, e.getReason()));
+            } catch (final IllegalStateException e) {
+                results.add(new BulkDeleteItemResult(id, false, e.getMessage()));
+            }
+        }
+        return new BulkDeleteResultDto(ids.size(), deleted, ids.size() - deleted, results);
+    }
+
+    /** 强制删除原因规则：单条与批量共用一处，避免出现第二套规则。 */
+    private static String requireDeleteReason(final String deleteReason, final String deleteReasonText) {
         final String reason = requireCategory(deleteReason, "HUNDRED_DELETE_REASON_REQUIRED", DELETE_CATEGORIES);
         if ("OTHER".equals(reason) && !StringUtils.hasText(deleteReasonText)) {
             throw new IllegalArgumentException("HUNDRED_DELETE_REASON_TEXT_REQUIRED");
         }
+        return reason;
+    }
+
+    /** 单条删除的唯一实现：单条端点与批量端点共用（批量侧由 TransactionTemplate 提供独立事务）。 */
+    private HundredSubmissionSummaryDto deleteCurrentInternal(final String adminUserId,
+                                                              final long submissionId,
+                                                              final String reason,
+                                                              final String deleteReasonText) {
         final HundredBattleSubmission submission = repository.findByIdForUpdate(submissionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "HUNDRED_SUBMISSION_NOT_FOUND"));
         if (!"CURRENT".equals(submission.getStatus())) {

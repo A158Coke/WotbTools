@@ -191,6 +191,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/hof/hundred/submissions/bulk-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete several current Hundred submissions in one request
+         * @description Each id repeats the authoritative single-record delete semantics in its own transaction, so the batch allows partial success. Ids that are not CURRENT fail individually with HUNDRED_NOT_CURRENT / HUNDRED_SUBMISSION_NOT_FOUND and never block the others. More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+         */
+        post: operations["bulkDeleteHundredSubmissions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/replay/battle-playback-v2": {
         parameters: {
             query?: never;
@@ -291,7 +311,7 @@ export interface components {
             vehicleId: number;
             vehicleName: string;
             /** Format: int64 */
-            gameAccountIdSnapshot: number;
+            wotbAccountId: number;
             nicknameSnapshot: string;
             approvedAverageDamage?: number | null;
             approvedBattleCount?: number | null;
@@ -323,7 +343,7 @@ export interface components {
             vehicleId: number;
             vehicleName: string;
             /** Format: int64 */
-            gameAccountIdSnapshot: number;
+            wotbAccountId: number;
             nicknameSnapshot: string;
             claimedAverageDamage: number;
             claimedBattleCount: number;
@@ -371,6 +391,23 @@ export interface components {
         HundredDeleteRequest: {
             deleteReason: string;
             deleteReasonText?: string | null;
+        };
+        BulkDeleteModerationRequest: {
+            ids: number[];
+            reason: string;
+            reasonText?: string | null;
+        };
+        BulkDeleteItemResult: {
+            /** Format: int64 */
+            id: number;
+            deleted: boolean;
+            errorCode?: string | null;
+        };
+        BulkDeleteResult: {
+            requested: number;
+            deleted: number;
+            failed: number;
+            results: components["schemas"]["BulkDeleteItemResult"][];
         };
         DatasetReference: {
             processingJobId: string;
@@ -904,6 +941,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HundredSubmissionSummary"];
+                };
+            };
+        };
+    };
+    bulkDeleteHundredSubmissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkDeleteModerationRequest"];
+            };
+        };
+        responses: {
+            /** @description Per-id bulk delete result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkDeleteResult"];
+                };
+            };
+            /** @description Invalid reason or too many ids */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };

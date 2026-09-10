@@ -1,5 +1,7 @@
 package com.wotb.web.hof.service;
 
+import com.wotb.web.hof.dto.BulkDeleteItemResult;
+import com.wotb.web.hof.dto.BulkDeleteResultDto;
 import com.wotb.web.hof.dto.HofAdminAuditPageDto;
 import com.wotb.web.hof.dto.HofAdminPageDto;
 import com.wotb.web.hof.entity.HallOfFameAdminLog;
@@ -23,6 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -135,8 +138,34 @@ public class HallOfFameAdminService {
      * 「DB 引用 H ⇒ 物理 H 文件存在」不变量。
      */
     public void deleteEntry(final long id) {
+        deleteEntryInternal(id, JwtUtil.requireUserId(), JwtUtil.currentUsername());
+    }
+
+    /**
+     * 批量 hard delete：逐条复用单条删除语义——每个目标一个独立事务，加锁与 commit 后文件清理
+     * 与单条完全一致，允许 partial success（单条失败不回滚其他记录已完成的删除）。
+     *
+     * @param ids 已由请求 DTO 去重并校验过上限的目标 ID
+     */
+    public BulkDeleteResultDto bulkDelete(final List<Long> ids) {
         final String adminSub = JwtUtil.requireUserId();
         final String adminUsername = JwtUtil.currentUsername();
+        final List<BulkDeleteItemResult> results = new ArrayList<>(ids.size());
+        int deleted = 0;
+        for (final long id : ids) {
+            try {
+                deleteEntryInternal(id, adminSub, adminUsername);
+                results.add(new BulkDeleteItemResult(id, true, null));
+                deleted++;
+            } catch (final ResponseStatusException e) {
+                results.add(new BulkDeleteItemResult(id, false, e.getReason()));
+            }
+        }
+        return new BulkDeleteResultDto(ids.size(), deleted, ids.size() - deleted, results);
+    }
+
+    /** 单条删除的唯一实现：单条端点与批量端点共用。 */
+    private void deleteEntryInternal(final long id, final String adminSub, final String adminUsername) {
         // 预读 hash 用于 advisory lock key（权威读取/删除在事务内）。
         final String hash = repository.findById(id)
                 .map(HallOfFameRecord::getReplayHash).orElse(null);

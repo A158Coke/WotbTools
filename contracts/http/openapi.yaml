@@ -124,6 +124,20 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/HundredDeleteRequest' } } } }
       responses:
         '200': { description: Deleted submission, content: { application/json: { schema: { $ref: '#/components/schemas/HundredSubmissionSummary' } } } }
+  /api/admin/hof/hundred/submissions/bulk-delete:
+    post:
+      operationId: bulkDeleteHundredSubmissions
+      summary: Delete several current Hundred submissions in one request
+      description: >-
+        Each id repeats the authoritative single-record delete semantics in its own transaction,
+        so the batch allows partial success. Ids that are not CURRENT fail individually with
+        HUNDRED_NOT_CURRENT / HUNDRED_SUBMISSION_NOT_FOUND and never block the others.
+        More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BulkDeleteModerationRequest' } } } }
+      responses:
+        '200': { description: Per-id bulk delete result, content: { application/json: { schema: { $ref: '#/components/schemas/BulkDeleteResult' } } } }
+        '400': { description: Invalid reason or too many ids, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/replay/battle-playback-v2:
     post:
       operationId: getBattlePlaybackV2
@@ -280,13 +294,13 @@ components:
     HundredAdminListItem:
       type: object
       additionalProperties: false
-      required: [id, status, vehicleId, vehicleName, gameAccountIdSnapshot, nicknameSnapshot]
+      required: [id, status, vehicleId, vehicleName, wotbAccountId, nicknameSnapshot]
       properties:
         id: { type: integer, format: int64 }
         status: { type: string }
         vehicleId: { type: integer, format: int64 }
         vehicleName: { type: string }
-        gameAccountIdSnapshot: { type: integer, format: int64 }
+        wotbAccountId: { type: integer, format: int64 }
         nicknameSnapshot: { type: string }
         approvedAverageDamage: { type: [integer, 'null'] }
         approvedBattleCount: { type: [integer, 'null'] }
@@ -311,7 +325,7 @@ components:
     HundredAdminDetail:
       type: object
       additionalProperties: false
-      required: [id, status, vehicleId, vehicleName, gameAccountIdSnapshot, nicknameSnapshot,
+      required: [id, status, vehicleId, vehicleName, wotbAccountId, nicknameSnapshot,
                  claimedAverageDamage, claimedBattleCount, replayParseOk, replayGameIdMatch,
                  replayVehicleMatch, replayDistinctBattles]
       properties:
@@ -319,7 +333,7 @@ components:
         status: { type: string, enum: [PENDING, CURRENT, SUPERSEDED, REJECTED, CANCELLED, DELETED] }
         vehicleId: { type: integer, format: int64 }
         vehicleName: { type: string }
-        gameAccountIdSnapshot: { type: integer, format: int64 }
+        wotbAccountId: { type: integer, format: int64 }
         nicknameSnapshot: { type: string }
         claimedAverageDamage: { type: integer }
         claimedBattleCount: { type: integer }
@@ -368,6 +382,31 @@ components:
       properties:
         deleteReason: { type: string }
         deleteReasonText: { type: [string, 'null'] }
+    BulkDeleteModerationRequest:
+      type: object
+      additionalProperties: false
+      required: [ids, reason]
+      properties:
+        ids: { type: array, items: { type: integer, format: int64 }, maxItems: 100 }
+        reason: { type: string }
+        reasonText: { type: [string, 'null'] }
+    BulkDeleteItemResult:
+      type: object
+      additionalProperties: false
+      required: [id, deleted]
+      properties:
+        id: { type: integer, format: int64 }
+        deleted: { type: boolean }
+        errorCode: { type: [string, 'null'] }
+    BulkDeleteResult:
+      type: object
+      additionalProperties: false
+      required: [requested, deleted, failed, results]
+      properties:
+        requested: { type: integer }
+        deleted: { type: integer }
+        failed: { type: integer }
+        results: { type: array, items: { $ref: '#/components/schemas/BulkDeleteItemResult' } }
     DatasetReference:
       type: object
       additionalProperties: false
