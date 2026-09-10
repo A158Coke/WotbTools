@@ -12,9 +12,9 @@
 --   1) 新增 wotb_server 快照列（先可空）
 --   2) 从 user_profile 回填：仅当旧 user_keycloak_id 对应的 profile **当前仍绑定同一账号**时
 --      取其所服——这是唯一有证据支持的来源
---   3) PREFLIGHT（fail fast，不做任何自动消解）：
---        a. 存在无法解析区服的历史行 → 抛出可操作诊断
---        b. 新 ownership 键下存在重复 active 记录 → 抛出可操作诊断（列出冲突键）
+--   3) PREFLIGHT（fail fast，不做任何自动消解）：把该表所有问题一次性聚合报出
+--        a. UNRESOLVED SERVER —— 存在无法解析区服的历史行
+--        b. DUPLICATE ACTIVE ROWS —— 新 ownership 键下存在重复 active 记录
 --   4) 收紧 NOT NULL + 区服 CHECK
 --   5) 重建唯一性与查询索引为 (wotb_server, wotb_account_id, vehicle_id)
 --   6) 删除 user_keycloak_id
@@ -24,9 +24,8 @@
 --   * 不为了「让新唯一索引能建起来」而改动业务历史。
 --   * 不为无法解析区服的历史行猜一个区服（例如默认 CN）。
 --
--- 冲突必须由管理员有意处理（Admin bulk-delete 已提供批量删除）后再重跑本迁移。
--- Flyway 在 PostgreSQL 上把每个迁移包在单一事务里，因此 preflight 失败时本迁移的全部
--- DDL/DML 都会回滚，数据库停留在 V21 状态。
+-- 冲突必须由管理员有意处理后再重跑本迁移。Flyway 在 PostgreSQL 上把每个迁移包在单一事务里，
+-- 因此 preflight 失败时本迁移的全部 DDL/DML 都会回滚，数据库停留在 V21 状态。
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 百场 hundred_battle_submission
@@ -47,9 +46,10 @@ update hundred_battle_submission s
 
 do $$
 declare
-    unresolved_rows bigint;
-    sample_ids      text;
-    conflicts       text;
+    unresolved_rows   bigint;
+    unresolved_sample text;
+    conflicts         text;
+    problems          text;
 begin
     -- (a) 区服可解析性
     select count(*) into unresolved_rows
@@ -57,21 +57,12 @@ begin
      where wotb_server is null;
 
     if unresolved_rows > 0 then
-        select string_agg(id::text, ', ' order by id) into sample_ids
+        select string_agg(id::text, ', ' order by id) into unresolved_sample
           from (select id from hundred_battle_submission where wotb_server is null order by id limit 20) t;
 
-        raise exception using
-            errcode = 'raise_exception',
-            message = format(
-                'V22 preflight failed: %s hundred_battle_submission row(s) have no resolvable WotB server',
-                unresolved_rows),
-            detail = format(
-                'wotb_server can only be derived from a user_profile that STILL binds the same WotB account; '
-                'these rows have no such profile. sample id(s): %s', sample_ids),
-            hint = 'Inspect with: select id, user_keycloak_id, wotb_account_id, status from hundred_battle_submission '
-                   'where wotb_server is null; Then either restore/rebind the owning profile, or delete those rows '
-                   'intentionally through POST /api/admin/hof/hundred/submissions/{id}/delete (or the bulk-delete '
-                   'endpoint) and rerun this migration. This migration never guesses a server.';
+        problems := format(
+            'UNRESOLVED SERVER: %s row(s) have no user_profile that still binds the same WotB account; sample id(s): %s',
+            unresolved_rows, unresolved_sample);
     end if;
 
     -- (b) ownership 冲突：百场的新唯一索引是两个独立的 partial index（PENDING 一个、CURRENT 一个），
@@ -90,15 +81,25 @@ begin
       ) t;
 
     if conflicts is not null then
+        problems := concat_ws(E'\n', problems, 'DUPLICATE ACTIVE ROWS: ' || conflicts);
+    end if;
+
+    if problems is not null then
         raise exception using
             errcode = 'raise_exception',
-            message = 'V22 preflight failed: duplicate active Hundred submissions for the same WotB account and vehicle',
-            detail = conflicts,
-            hint = 'These rows were legal under the old (user_keycloak_id, vehicle_id) uniqueness because they came '
-                   'from different Keycloak identities that were bound to the same WotB account at different times. '
-                   'This migration does not pick a winner. Review each group (compare approved_average_damage and '
-                   'submitted_at), then intentionally keep the right one and delete the others through the admin '
-                   'bulk-delete endpoint, and rerun this migration.';
+            message = 'V22 preflight failed for hundred_battle_submission: ownership data must be resolved before this migration can run',
+            detail = problems,
+            hint = 'This migration never guesses a server and never mutates HoF history '
+                   '(no status change, no evidence deletion, no screenshot clearing). Resolve the rows above '
+                   'intentionally and rerun. Inspect the named rows with: '
+                   'select id, user_keycloak_id, wotb_account_id, status, approved_average_damage, submitted_at '
+                   'from hundred_battle_submission where wotb_server is null; '
+                   'For duplicate groups decide which row must remain (compare approved_average_damage and '
+                   'submitted_at) and remove the others. CURRENT rows can be removed through '
+                   'POST /api/admin/hof/hundred/submissions/{id}/delete or the bulk-delete endpoint; '
+                   'rows that are not CURRENT have no admin delete path yet and need an explicit operator action. '
+                   'hundred_battle_replay_evidence references submissions with ON DELETE RESTRICT, so remove that '
+                   'evidence first when you remove a submission.';
     end if;
 end $$;
 
@@ -145,30 +146,22 @@ update mark3_submission s
 
 do $$
 declare
-    unresolved_rows bigint;
-    sample_ids      text;
-    conflicts       text;
+    unresolved_rows   bigint;
+    unresolved_sample text;
+    conflicts         text;
+    problems          text;
 begin
     select count(*) into unresolved_rows
       from mark3_submission
      where wotb_server is null;
 
     if unresolved_rows > 0 then
-        select string_agg(id::text, ', ' order by id) into sample_ids
+        select string_agg(id::text, ', ' order by id) into unresolved_sample
           from (select id from mark3_submission where wotb_server is null order by id limit 20) t;
 
-        raise exception using
-            errcode = 'raise_exception',
-            message = format(
-                'V22 preflight failed: %s mark3_submission row(s) have no resolvable WotB server',
-                unresolved_rows),
-            detail = format(
-                'wotb_server can only be derived from a user_profile that STILL binds the same WotB account; '
-                'these rows have no such profile. sample id(s): %s', sample_ids),
-            hint = 'Inspect with: select id, user_keycloak_id, wotb_account_id, status from mark3_submission '
-                   'where wotb_server is null; Then either restore/rebind the owning profile, or delete those rows '
-                   'intentionally through POST /api/admin/hof/mark3/submissions/{id}/delete (or the bulk-delete '
-                   'endpoint) and rerun this migration. This migration never guesses a server.';
+        problems := format(
+            'UNRESOLVED SERVER: %s row(s) have no user_profile that still binds the same WotB account; sample id(s): %s',
+            unresolved_rows, unresolved_sample);
     end if;
 
     -- 三环的新唯一索引是单个组合 partial index，覆盖 status in (PENDING, CURRENT) 两个状态，
@@ -187,14 +180,25 @@ begin
       ) t;
 
     if conflicts is not null then
+        problems := concat_ws(E'\n', problems, 'DUPLICATE ACTIVE ROWS: ' || conflicts);
+    end if;
+
+    if problems is not null then
         raise exception using
             errcode = 'raise_exception',
-            message = 'V22 preflight failed: duplicate active Mark3 submissions for the same WotB account and vehicle',
-            detail = conflicts,
-            hint = 'Mark3 keeps a single active row per (server, account, vehicle) across PENDING and CURRENT. '
-                   'This migration does not pick a winner. Review each group, then intentionally keep the right one '
-                   '(a CURRENT cannot be replaced by a pending application) and delete the others through the admin '
-                   'bulk-delete endpoint, and rerun this migration.';
+            message = 'V22 preflight failed for mark3_submission: ownership data must be resolved before this migration can run',
+            detail = problems,
+            hint = 'Mark3 keeps a single active row per (server, account, vehicle) spanning PENDING and CURRENT, so '
+                   'a CURRENT and a PENDING for the same account/vehicle are also a conflict. '
+                   'This migration never guesses a server and never mutates HoF history. Resolve the rows above '
+                   'intentionally and rerun. Inspect with: '
+                   'select id, user_keycloak_id, wotb_account_id, status, submitted_at from mark3_submission; '
+                   'A CURRENT cannot be replaced by a pending application, so keep the CURRENT and remove the '
+                   'others. CURRENT rows can be removed through '
+                   'POST /api/admin/hof/mark3/submissions/{id}/delete or the bulk-delete endpoint; '
+                   'rows that are not CURRENT have no admin delete path yet and need an explicit operator action. '
+                   'mark3_replay_evidence references submissions with a foreign key, so remove that evidence first '
+                   'when you remove a submission.';
     end if;
 end $$;
 
