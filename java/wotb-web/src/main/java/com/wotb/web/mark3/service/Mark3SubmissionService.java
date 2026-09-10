@@ -14,6 +14,8 @@ import com.wotb.web.mark3.dto.Mark3SubmissionSummaryDto;
 import com.wotb.web.mark3.dto.Mark3UserStatusDto;
 import com.wotb.web.mark3.entity.Mark3Submission;
 import com.wotb.web.mark3.enums.Mark3Status;
+import com.wotb.web.hof.dto.BulkDeleteItemResult;
+import com.wotb.web.hof.dto.BulkDeleteResultDto;
 import com.wotb.web.mark3.repository.Mark3SubmissionRepository;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
@@ -453,10 +455,53 @@ public class Mark3SubmissionService {
             final long submissionId,
             final String deleteReason,
             final String deleteReasonText) {
+        return deleteCurrentInternal(adminUserId, submissionId,
+                requireDeleteReason(deleteReason, deleteReasonText), deleteReasonText);
+    }
+
+    /**
+     * 批量删除 CURRENT：逐条复用 {@link #deleteCurrent} 的语义（每条独立事务 + 终态证据清理），
+     * 允许 partial success。删除原因是批次级参数，先整体校验一次——参数错误不应表现为逐条失败。
+     *
+     * @param ids 已由请求 DTO 去重并校验过上限的目标 ID
+     */
+    public BulkDeleteResultDto bulkDeleteCurrent(final String adminUserId,
+                                                 final List<Long> ids,
+                                                 final String deleteReason,
+                                                 final String deleteReasonText) {
+        final String reason = requireDeleteReason(deleteReason, deleteReasonText);
+        final List<BulkDeleteItemResult> results = new ArrayList<>(ids.size());
+        int deleted = 0;
+        for (final long id : ids) {
+            try {
+                transactionTemplate.executeWithoutResult(status ->
+                        deleteCurrentInternal(adminUserId, id, reason, deleteReasonText));
+                results.add(new BulkDeleteItemResult(id, true, null));
+                deleted++;
+            } catch (final ResponseStatusException e) {
+                results.add(new BulkDeleteItemResult(id, false, e.getReason()));
+            } catch (final IllegalStateException e) {
+                results.add(new BulkDeleteItemResult(id, false, e.getMessage()));
+            }
+        }
+        return new BulkDeleteResultDto(ids.size(), deleted, ids.size() - deleted, results);
+    }
+
+    /** 强制删除原因规则：单条与批量共用一处，避免出现第二套规则。 */
+    private static String requireDeleteReason(final String deleteReason, final String deleteReasonText) {
         final String reason = requireCategory(deleteReason, "MARK3_DELETE_REASON_REQUIRED", DELETE_CATEGORIES);
         if ("OTHER".equals(reason) && !StringUtils.hasText(deleteReasonText)) {
             throw new IllegalArgumentException("MARK3_DELETE_REASON_TEXT_REQUIRED");
         }
+        return reason;
+    }
+
+    /** 单条删除的唯一实现：单条端点与批量端点共用（批量侧由 TransactionTemplate 提供独立事务）。 */
+    private Mark3SubmissionSummaryDto deleteCurrentInternal(
+            final String adminUserId,
+            final long submissionId,
+            final String reason,
+            final String deleteReasonText) {
         final String normalizedReasonText = normalizeReasonText(
                 deleteReasonText, "MARK3_DELETE_REASON_TEXT_TOO_LONG");
         final Mark3Submission submission = repository.findByIdForUpdate(submissionId)

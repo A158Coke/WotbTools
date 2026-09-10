@@ -233,7 +233,7 @@ export default {
         "status",
         "vehicleId",
         "vehicleName",
-        "gameAccountIdSnapshot",
+        "wotbAccountId",
         "nicknameSnapshot"
       ],
       "properties": {
@@ -251,7 +251,7 @@ export default {
         "vehicleName": {
           "type": "string"
         },
-        "gameAccountIdSnapshot": {
+        "wotbAccountId": {
           "type": "integer",
           "format": "int64"
         },
@@ -350,7 +350,7 @@ export default {
         "status",
         "vehicleId",
         "vehicleName",
-        "gameAccountIdSnapshot",
+        "wotbAccountId",
         "nicknameSnapshot",
         "claimedAverageDamage",
         "claimedBattleCount",
@@ -382,7 +382,7 @@ export default {
         "vehicleName": {
           "type": "string"
         },
-        "gameAccountIdSnapshot": {
+        "wotbAccountId": {
           "type": "integer",
           "format": "int64"
         },
@@ -582,6 +582,83 @@ export default {
             "string",
             "null"
           ]
+        }
+      }
+    },
+    "BulkDeleteModerationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ids",
+        "reason"
+      ],
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 100
+        },
+        "reason": {
+          "type": "string"
+        },
+        "reasonText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "BulkDeleteItemResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "deleted"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "BulkDeleteResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requested",
+        "deleted",
+        "failed",
+        "results"
+      ],
+      "properties": {
+        "requested": {
+          "type": "integer"
+        },
+        "deleted": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BulkDeleteItemResult"
+          }
         }
       }
     },
