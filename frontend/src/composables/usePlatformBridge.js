@@ -56,6 +56,7 @@ export async function supports(capability) {
   return (await getCapabilities()).includes(capability)
 }
 
+/** Result: { pendingId, name, size, uri }; uri is a fixed same-origin HTTPS Native resource. */
 export async function getPendingReplay() {
   return await call('getPendingReplay')
 }

@@ -1,11 +1,19 @@
 [
   {
-    "v": "2.12.78",
+    "v": "2.12.79",
     "date": "2026-09-10",
     "tag": "chg",
     "zh": "百场与三环成绩改为按「区服 + WotB 游戏账号」归属：更换登录方式后，只要重新绑定同一区服下的同一个 WotB 账号，这些成绩会自动回到你的个人中心；单场记录仍只按账号 ID 归属。登录成功后账号资料会自动准备好，不必再先进一次个人中心，老账号重新登录也会自动补上。管理后台现在同时显示区服与账号，并支持批量删除用户与名人堂记录。",
     "en": "Hundred and Mark 3 results are now tied to your server plus WotB game account: after changing how you sign in, rebinding the same WotB account on the same server brings those results back to your profile automatically, while single-battle records are still matched by account ID only. Your account profile is now prepared automatically right after sign-in, so you no longer have to open your profile page first, and returning accounts are filled in automatically. The admin console now shows server and account together and can delete users and Hall of Fame records in batches.",
     "ru": "Результаты «Ста боёв» и «Трёх отметок» теперь привязаны к серверу и игровому аккаунту WotB: после смены способа входа достаточно снова привязать тот же аккаунт WotB на том же сервере, и результаты автоматически вернутся в профиль; записи одиночных боёв по-прежнему сопоставляются только по ID аккаунта. Профиль аккаунта теперь создаётся автоматически сразу после входа — открывать страницу профиля заранее не нужно, а старые аккаунты дополняются при следующем входе. В админ-панели сервер и аккаунт теперь показываются вместе, а также доступно пакетное удаление пользователей и записей Зала славы."
+  },
+  {
+    "v": "2.12.78",
+    "date": "2026-09-10",
+    "tag": "fix",
+    "zh": "修复 Android 从文件管理器打开回放并登录后未自动上传的问题；读取失败时提供错误提示和重试。需更新 Android App。",
+    "en": "Fixed automatic replay upload after opening a file and signing in on Android. Read failures now show a message with a retry action. Requires the updated Android app.",
+    "ru": "Исправлена автоматическая загрузка повтора после открытия файла и входа в Android. При ошибке чтения доступны сообщение и повторная попытка. Требуется обновление приложения Android."
   },
   {
     "v": "2.12.77",

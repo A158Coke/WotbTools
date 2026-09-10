@@ -3,8 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useNativeReplayImport } from './useNativeReplayImport.js'
 
-const PENDING_A = { pendingId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', name: 'a.wotbreplay', uri: 'content://pending-replay', size: 5 }
-const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.wotbreplay', uri: 'content://pending-replay', size: 5 }
+const PENDING_A = { pendingId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', name: 'a.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 5 }
+const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 5 }
 
 /**
  * Native 侧替身：`consumePendingReplay` 实现 **compare-and-clear**
@@ -55,10 +55,10 @@ function stubNative(pending, consumeResult = true) {
   }
 }
 
-/** 模拟 Native shouldInterceptRequest 以 content:// 安全 URI 返回缓存文件字节。 */
+/** 模拟 Native shouldInterceptRequest 以 synthetic HTTPS resource 返回缓存文件字节。 */
 function stubFetchBlob() {
   vi.stubGlobal('fetch', vi.fn(async (uri) => {
-    if (uri === 'content://pending-replay') {
+    if (uri === 'https://wotbtools.com/__native/replay-pending') {
       return { ok: true, blob: async () => new Blob(['replay-bytes'], { type: 'application/octet-stream' }) }
     }
     return { ok: false, status: 404 }
@@ -66,6 +66,50 @@ function stubFetchBlob() {
 }
 
 describe('useNativeReplayImport', () => {
+
+  it.each(['http', 'network', 'body'])('retains pending on %s read failure and succeeds on retry', async (failure) => {
+    const native = stubNative(PENDING_A)
+    const onPendingFile = vi.fn(async () => true)
+    const onReadError = vi.fn()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      if (failure === 'network') throw new Error('secret-file-name token secret')
+      if (failure === 'body') return { ok: true, blob: async () => { throw new Error('secret-file-name') } }
+      return { ok: false, status: 404 }
+    }))
+    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile, onReadError })
+    await expect(consumePendingWhenReady()).resolves.toBe(false)
+    expect(onReadError).toHaveBeenCalledTimes(1)
+    expect(onPendingFile).not.toHaveBeenCalled()
+    expect(native.consumeRequests).toEqual([])
+    expect(native.getCurrent()).toEqual(PENDING_A)
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/secret|aaaaaaaa|a\.wotbreplay/)
+    stubFetchBlob()
+    await expect(consumePendingWhenReady()).resolves.toBe(true)
+    expect(native.consumeRequests).toEqual([{ expectedPendingId: PENDING_A.pendingId }])
+  })
+
+  it('drains the replacement when metadata A becomes stale before stream fetch', async () => {
+    const native = stubNative(PENDING_A)
+    const onPendingFile = vi.fn(async () => true)
+    const onReadError = vi.fn()
+    vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
+      if (options.headers['X-Wotb-Pending-Id'] === PENDING_A.pendingId) {
+        native.setPending(PENDING_B)
+        window.wotbtoolsOnReplay()
+        return { ok: false, status: 409 }
+      }
+      return { ok: true, blob: async () => new Blob(['bytes-B']) }
+    }))
+    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile, onReadError })
+    await expect(consumePendingWhenReady()).resolves.toBe(true)
+    expect(onPendingFile).toHaveBeenCalledTimes(1)
+    const [file, pending] = onPendingFile.mock.calls[0]
+    expect(pending.pendingId).toBe(PENDING_B.pendingId)
+    expect(await file.text()).toBe('bytes-B')
+    expect(native.consumeRequests).toEqual([{ expectedPendingId: PENDING_B.pendingId }])
+  })
+
   beforeEach(() => {
     vi.restoreAllMocks()
   })
@@ -82,7 +126,7 @@ describe('useNativeReplayImport', () => {
     await expect(consumePendingWhenReady()).resolves.toBe(false)
   })
 
-  it('reads pending replay bytes via fetch(content://uri) and injects a File into selection', async () => {
+  it('reads pending replay bytes via fetch(synthetic HTTPS resource) and injects a File into selection', async () => {
     stubNative(PENDING_A)
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => true)
@@ -92,6 +136,7 @@ describe('useNativeReplayImport', () => {
     })
     const consumed = await consumePendingWhenReady()
     expect(consumed).toBe(true)
+    expect(fetch).toHaveBeenCalledWith(PENDING_A.uri, { headers: { 'X-Wotb-Pending-Id': PENDING_A.pendingId }, cache: 'no-store' })
     expect(onPendingFile).toHaveBeenCalledTimes(1)
     const file = onPendingFile.mock.calls[0][0]
     expect(file.name).toBe('a.wotbreplay')
@@ -113,7 +158,7 @@ describe('useNativeReplayImport', () => {
   })
 
   it('missing identity：没有 pendingId 的 pending 绝不消费、绝不 ACK', async () => {
-    const native = stubNative({ name: 'legacy.wotbreplay', uri: 'content://pending-replay', size: 5 })
+    const native = stubNative({ name: 'legacy.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 5 })
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => true)
     const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile })

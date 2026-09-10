@@ -88,6 +88,7 @@
 - 修复 frontend Alpine Docker 构建：放行/复制 V6 算法文档，Docker build identity 不再调用不存在的 git，并确保 `dist/version.json` 始终可写；V6 summary Rating 通过 DTO/API 保留完整精度，前端仅在展示层保留 1 位小数。
 
 ### Fixed
+- **Android pending replay transport（2.12.78）**：固定同源 HTTPS synthetic resource 替换 Web `content://` fetch，保留 WebView file/content access 禁用。Native 流式读取且失败不 fallback 网络；header identity 校验防 pending 替换串包、no-store 防缓存复用。读取失败复用 Replay 错误区与重试，补充低敏阶段日志；server accepted 后 ACK、operationId 幂等及 auth gate 不变。需更新 APK 与 Web。
 - **Battle Playback 全屏 HUD / 安全区布局修复**：PC、平板和手机全屏下双方 HP / 点数 / 基地状态固定归属地图顶部 HUD，不再被通用 `pb-side-slots` 优化搬到侧栏；camera fit 按真实 HUD 与可见移动端底部控制条动态保留 safe inset，side-slot 仅作用于非移动端 controls，并按实际 map workspace 宽度判定，避免把 Details 列误算为 gutter；`test:browser-layout` 新增 fullscreen + side-slot 的真实 Chrome 几何回归。
 - **Android QQ 登录返回原 WebView（Verified App Link，CODE READY / PRODUCTION VALIDATION REQUIRED）**：QQ App 完成授权后
   会把 `auth.wotbtools.com/.../broker/juhe-qq/endpoint` callback 打开到系统浏览器，导致 Browser B != 原 WebView A、
