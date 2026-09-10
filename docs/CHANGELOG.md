@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### Architecture
+- **Replay backend modularization**：在保持单一 `wotb-web` Spring Boot/JVM/container
+  的前提下，将 Result、Playback、AI、Processing Job lifecycle/artifact state 与当前本地
+  processing executor 拆为 Maven feature modules。Coordinator 只通过
+  `ReplayProcessingDispatcher` 请求执行；`wotb-replay-processing` 保留既有
+  `ReplayParseScheduler` 的默认并发 2、公平排队与取消语义。未引入 MQ、独立 worker、对象存储
+  或跨进程回调，HTTP 路由、认证、错误 envelope 和指标契约不变。
+
 ### CI/CD
 - **Build / Deploy workflow split**：将生产镜像构建拆到独立的 `build.yml`，Build 与 Deploy 均可通过 `workflow_dispatch` 独立选择目标；Build 的 `changes` job 只解析一次 `main` 的 full SHA，backend/frontend/keycloak 使用同一个冻结 commit 构建 production SHA/`latest`，不能由 feature ref 或移动的 main 绕过 PR merge gate。Deploy 支持任意 production Compose service，应用/all 要求独立 Build 产出的 immutable tag，运行时 observability service 可直接 dispatch。纯 Grafana dashboard JSON 只进入 OpenTofu API reconciliation，不触发应用 Build；targeted deploy 不提升 LKG，失败时只恢复目标 service 的 pre-deploy snapshot，完整 `all` 发布继续执行应用健康 gate、LKG promotion 与 fail-closed rollback。Grafana upstream 改为 Docker embedded DNS 运行时解析，Grafana 暂时不可用不再阻止 frontend nginx 启动。
  
