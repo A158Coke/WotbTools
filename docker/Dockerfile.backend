@@ -10,6 +10,11 @@ COPY common/map-semantics common/map-semantics
 COPY java/pom.xml java/settings-docker.xml java/
 COPY java/wotb-contracts/pom.xml java/wotb-contracts/pom.xml
 COPY java/wotb-core/pom.xml java/wotb-core/pom.xml
+COPY java/wotb-result/pom.xml java/wotb-result/pom.xml
+COPY java/wotb-playback/pom.xml java/wotb-playback/pom.xml
+COPY java/wotb-replay-coordinator/pom.xml java/wotb-replay-coordinator/pom.xml
+COPY java/wotb-replay-processing/pom.xml java/wotb-replay-processing/pom.xml
+COPY java/wotb-ai/pom.xml java/wotb-ai/pom.xml
 COPY java/wotb-control/pom.xml java/wotb-control/pom.xml
 COPY java/wotb-web/pom.xml java/wotb-web/pom.xml
 WORKDIR /build/java
@@ -17,6 +22,11 @@ RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests dependency
 WORKDIR /build
 COPY java/wotb-contracts/src java/wotb-contracts/src
 COPY java/wotb-core/src java/wotb-core/src
+COPY java/wotb-result/src java/wotb-result/src
+COPY java/wotb-playback/src java/wotb-playback/src
+COPY java/wotb-replay-coordinator/src java/wotb-replay-coordinator/src
+COPY java/wotb-replay-processing/src java/wotb-replay-processing/src
+COPY java/wotb-ai/src java/wotb-ai/src
 COPY java/wotb-web/src java/wotb-web/src
 WORKDIR /build/java
 RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests clean package -q
