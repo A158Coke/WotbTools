@@ -324,9 +324,12 @@ Source panel、上传器与任何 capability 面板，因此未登录无法发�
 时间点联动 / 跨 capability 状态 handoff。tab 切换经 pushState + popstate 形成可 Back/Forward 的 history，
 返回时 selection / Processing Job 不丢，只恢复 activeCapability。
 **Android 外部 replay 完整自动解析**：仅 Android external intent 触发——Native `shouldInterceptRequest` 以
-app-owned content:// 安全 URI serve 缓存文件字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection →
+固定同源 `https://wotbtools.com/__native/replay-pending` stream 缓存字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection →
 自动 `startProcessingJob` exactly once（READY 后 data tab 展示结果，绝不自动启动 AI，失败走现有
 Processing error/retry，不无限重试）；普通 Web/FileUploader 手动选文件不经过此路径，保持现有 UX。
+读取使用 `X-Wotb-Pending-Id` header 校验 metadata 与文件 identity，避免 pending 替换时串包；
+Native 无 pending/文件返回 404、identity 不匹配返回 409、读取失败返回 500，禁止网络 fallback，响应 no-store。
+读取失败复用 Replay 错误区与重试，不 ACK；WebView file/content access 保持禁用。
 `getPendingReplay()==null` 不清零 eligible（warm resume 后 Native 新增 pending 仍可消费）。
 Pending replay 只在已登录时消费，ACK 边界是「server 已接受 processing request」
 （`startProcessingJob()` 返回 `accepted: true` + `jobId`）而不是 job READY；未登录/未受理/失败一律不 ACK，

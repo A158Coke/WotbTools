@@ -269,32 +269,31 @@ class MainActivity : Activity() {
 
             /**
              * Android 外部 replay handoff：Web 侧 readPendingFile 用 fetch(pending.uri) 读取字节。
-             * 该 content:// URI 指向 app private cache（FileProvider），这里拦截并返回文件流，
-             * 让字节「app-owned 安全路径」进入现有上传管线。绝不 Base64 / file:// / 放宽 WebView 边界。
+             * 固定 same-origin HTTPS resource 始终由 Native 返回文件流或明确错误，不能落到真实网络。
              */
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest
             ): WebResourceResponse? {
-                val pending = pendingReplay ?: return null
-                if (pending.uri.toString() != request.url.toString()) return null
-                val file = pending.file
-                return try {
-                    if (!file.exists()) {
-                        WebResourceResponse("application/octet-stream", "utf-8", 404, "Not Found", null, null)
-                    } else {
-                        WebResourceResponse(
-                            "application/octet-stream",
-                            "utf-8",
-                            200,
-                            "OK",
-                            mapOf("Access-Control-Allow-Origin" to "*"),
-                            file.inputStream()
-                        )
-                    }
-                } catch (_: Exception) {
-                    null
+                if (request.url.toString() != ReplayIntentHandler.STREAM_URL) return null
+                Log.d(TAG, "replay-pending stream requested")
+                val pending = pendingReplay?.takeIf { pendingReplayEligible }
+                val expectedId = request.requestHeaders.entries.firstOrNull {
+                    it.key.equals(ReplayIntentHandler.IDENTITY_HEADER, ignoreCase = true)
+                }?.value
+                val response = ReplayIntentHandler.interceptPendingResource(
+                    request.url.toString(), pending?.file, pending?.pendingId, expectedId
+                ) ?: error("Synthetic replay resource must be Native-owned")
+                val event = when (response.status) {
+                    200 -> "served"
+                    404 -> "missing"
+                    else -> "failed"
                 }
+                Log.d(TAG, "replay-pending stream $event status=${response.status} ref=${pendingLogRef(pending?.pendingId)}")
+                return WebResourceResponse(
+                    "application/octet-stream", null, response.status, response.reason,
+                    mapOf("Cache-Control" to "no-store"), response.data
+                )
             }
 
             override fun onReceivedError(
@@ -688,7 +687,7 @@ class MainActivity : Activity() {
     /**
      * pending replay 的 wire contract（`getPendingReplay` 的 result）：`pendingId` 是这份 pending 的
      * authoritative identity，Web 必须在 server 接受后原样回传给 `consumePendingReplay`；其余字段与
-     * 既有语义一致（`name` 仅显示名、`size` 仅提示、`uri` 为 app-owned FileProvider URI）。
+     * 既有语义一致（`name` 仅显示名、`size` 仅提示、`uri` 为固定 same-origin HTTPS resource）。
      */
     fun bridgePendingReplayJson(): Any {
         val pending = pendingReplay?.takeIf { pendingReplayEligible } ?: return org.json.JSONObject.NULL
@@ -696,7 +695,7 @@ class MainActivity : Activity() {
             .put("pendingId", pending.pendingId)
             .put("name", pending.name)
             .put("size", pending.size)
-            .put("uri", pending.uri.toString())
+            .put("uri", ReplayIntentHandler.STREAM_URL)
     }
 
     /**
