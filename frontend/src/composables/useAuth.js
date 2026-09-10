@@ -9,6 +9,13 @@ const authenticated = ref(false)
 const tokenParsed = ref(null)
 const initError = ref(null)
 
+/**
+ * 只表示「此刻正有一个 login redirect 正在发起」的短生命周期状态。
+ * 绝不用它推断「历史上是否 login 过」——取消 / provider 失败 / WebView 中断后
+ * 必须始终能重新发起 login（见 ReplayWorkspace auth gate）。
+ */
+const loginInFlight = ref(false)
+
 function ensureKeycloak() {
   if (!keycloak) {
     keycloak = new Keycloak({
@@ -63,7 +70,20 @@ async function initAuth() {
 async function login(view = 'profile') {
   const kc = ensureKeycloak()
   await initAuth()
-  return kc.login({ redirectUri: loginRedirectUri(view) })
+  // 并发去重：只阻止「同一个进行中的 redirect」重复发起，绝不锁死后续 retry。
+  if (loginInFlight.value) {
+    console.debug(`[auth] login deduplicated view=${view} reason=redirect-in-flight`)
+    return false
+  }
+  loginInFlight.value = true
+  // 诊断（低敏，仅 view 名）：用于排查「点了登录却毫无反应」一类故障。
+  console.debug(`[auth] login requested view=${view}`)
+  try {
+    return await kc.login({ redirectUri: loginRedirectUri(view) })
+  } finally {
+    // 成功发起即离开本页面；失败或未发生导航时立刻释放，保证下次点击仍能重新登录。
+    loginInFlight.value = false
+  }
 }
 
 async function logout() {
@@ -114,6 +134,7 @@ export function useAuth() {
     initAuth,
     initPromise: initAuth(),
     login,
+    loginInFlight,
     logout,
     isAuthenticated,
     hasRole,

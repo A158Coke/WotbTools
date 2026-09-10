@@ -7,10 +7,13 @@ import org.json.JSONObject
  * origin-scoped bridge：经 WebView WebMessageListener，仅 wotbtools.com/www 可调。
  * 只暴露：capability/version discovery、pending replay handoff、app update 触发。
  * 禁止 arbitrary file/http/command/intent API（规格 §27）。
+ *
+ * 消息形状 `{id, method, params}`；只有 `consumePendingReplay` 使用 params —— 它必须携带
+ * `pendingId` 作为 ACK 的 identity，缺失 / 空白一律走 `MISSING_IDENTITY`（绝不清理 pending）。
  */
 class NativeBridge(private val host: MainActivity) {
 
-    /** 处理来自页面的 JSON {id, method}，返回 JSON {id, result}。运行于 WebView 线程。 */
+    /** 处理来自页面的 JSON {id, method, params}，返回 JSON {id, result}。运行于 WebView 线程。 */
     fun handleMessage(json: String): String {
         val reply = JSONObject()
         var id: Any? = JSONObject.NULL
@@ -18,10 +21,12 @@ class NativeBridge(private val host: MainActivity) {
         try {
             val msg = JSONObject(json)
             id = msg.opt("id")
+            val params = msg.optJSONObject("params")
             when (msg.optString("method")) {
                 "getCapabilities" -> result = JSONArray(host.bridgeCapabilities())
                 "getPendingReplay" -> result = host.bridgePendingReplayJson()
-                "consumePendingReplay" -> result = host.bridgeConsumePendingReplay()
+                "consumePendingReplay" ->
+                    result = host.bridgeConsumePendingReplay(params?.optString("expectedPendingId"))
                 "checkForUpdate" -> result = host.bridgeCheckForUpdate()
                 "startUpdate" -> {
                     host.bridgeStartUpdate()
