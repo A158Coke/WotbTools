@@ -12,9 +12,13 @@ accessed.
   pre-review candidate tree; they are not measurements of the final Java25
   candidate tree.
 - Pre-follow-up candidate source tree: commit `68c8a581` plus evidence-only
-  commit `a4c4c461`. The review follow-up adds one-task-per-VT AI admission,
-  scheduler metrics, round progress logging and the final c2 rerun below; its
-  clean source commit is recorded after this follow-up commit.
+  commit `a4c4c461`.
+- Final follow-up source tree: repair commit
+  `2d4112baf49300747fdfaa973cb45a83ec2e34cc`, which adds one-task-per-VT AI
+  admission, scheduler metrics, round progress logging and the final c2 rerun
+  evidence below. The final c2 artifact was generated from the same source
+  content before that commit, with metadata `commit=a4c4c461` and
+  `dirty=true`; no source changes followed that run before the repair commit.
 - Java: Eclipse Temurin OpenJDK 25.0.4.1 (LTS).
 - Spring Boot: 4.1.1.
 - Benchmark JVM: `-XX:ActiveProcessorCount=2 -Xms4g -Xmx4g`.
@@ -285,7 +289,7 @@ or add caches/pools. Avoidable allocation reduction remains the first action.
 
 Java25 validation completed:
 
-- `AiReviewWorkerSaturationTest`: 5/5 passed.
+- `AiReviewWorkerSaturationTest`: 8/8 passed.
 - `ObservedMaxHpTest` + `ReplayHpTimelineTest`: 11/11 passed.
 - Explicit real-corpus discovery/parity: 40/40 accepted, 0 rejected.
 - Final c1 full confirmation: 40/40 corpus parity and 800/800 measurement
