@@ -38,13 +38,20 @@ import java.util.concurrent.Executors
  *
  * 职责：网络/版本门禁（fail-closed）→ 远程加载 https://wotbtools.com（有 pending replay 时加载
  * ?view=replay）；Replay 意图（ACTION_SEND/ACTION_VIEW）经安全 ingress 复制到 app cache 后交给
- * 现有 Web upload pipeline；origin-scoped Native Bridge（仅 wotbtools.com/www 可用）。
+ * 现有 Web upload pipeline（**唯一** ingress：Native Bridge）；origin-scoped Native Bridge
+ * （仅 wotbtools.com/www 可用）。
+ *
+ * Navigation ownership（RC5）：verified auth return 恒为最高优先级；`inAuthFlow == true` 期间新来的
+ * replay intent 只入队，绝不改变 WebView navigation（分发决策见纯策略 `ReplayDispatchPolicy`）。
+ * Pending replay 跨 process death 由 metadata 恢复（RC7）：冷启动先恢复 active pending，再清理 orphan。
  */
 class MainActivity : Activity() {
 
     companion object {
         private const val BASE_URL = "https://wotbtools.com"
-        private const val REPLAY_URL = BASE_URL + "?view=replay"
+        // replay canonical view 的 marker 由 ReplayDispatchPolicy 拥有：分发决策所判断的 URL 与这里导航到的
+        // URL 共用同一常量，避免两处字面量漂移。
+        private const val REPLAY_URL = BASE_URL + "?" + ReplayDispatchPolicy.REPLAY_VIEW_MARKER
         private const val FILE_CHOOSER_REQUEST = 1001
         private const val BRIDGE_NAME = "WotbNative"
 
@@ -120,8 +127,15 @@ class MainActivity : Activity() {
         versionLaterButton.setOnClickListener { loadWeb() }
 
         val webViewOk = configureWebView()
-        // startup 清理 orphan replay cache，再处理冷启动 intent（可能新增一份）。
-        ReplayIntentHandler.cleanupOrphans(this)
+        // 冷启动顺序（RC7）：先恢复 active pending（跨 QQ 登录期间 process death 存活），再清理不再被它
+        // 引用的 orphan replay cache —— active backing file 绝不能删除。
+        val restoredReplay = ReplayIntentHandler.restorePending(this)
+        if (restoredReplay != null) {
+            pendingReplay = restoredReplay
+            pendingReplayEligible = true
+            Log.d(TAG, "replay-pending restored id=${restoredReplay.pendingId}")
+        }
+        ReplayIntentHandler.cleanupOrphans(this, restoredReplay?.file)
         // 冷启动 intent 分类：verified auth return（QQ broker callback）优先于 replay ingress。
         if (intent != null && handleAuthReturnColdStart(intent)) {
             // pendingAuthReturn 已记录；startup gate 通过后作为 entry URL 加载。
@@ -180,15 +194,9 @@ class MainActivity : Activity() {
                 callback: ValueCallback<Array<Uri>>,
                 params: WebChromeClient.FileChooserParams
             ): Boolean {
-                val pending = pendingReplay
-                if (pending != null && pendingReplayEligible) {
-                    // 分享/打开导入：回传 app-owned FileProvider URI（已复制到 private cache），
-                    // 复用现有 FileUploader/validate/upload pipeline（规格 §39）。
-                    pendingReplayEligible = false
-                    callback.onReceiveValue(arrayOf(pending.uri))
-                    clearPendingReplay()
-                    return true
-                }
+                // 普通 Web file chooser：始终交给 Android 系统 picker（既有 UX 不变）。
+                // Android external replay 绝不在这里注入：唯一 ingress 是 Intent → pending cache →
+                // Native Bridge（getPendingReplay / fetch(content://) / consumePendingReplay）→ 上传管线。
                 val intent = try {
                     params.createIntent()
                 } catch (_: Exception) {
@@ -555,35 +563,70 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // 热启动返回：verified auth return（QQ broker callback）优先于 replay ingress。
+        // 热启动返回：verified auth return（QQ broker callback）恒为最高优先级，归 auth 所有，
+        // 绝不进入 replay ingress / 分发（handleAuthReturnHot 语义未变）。
         if (handleAuthReturnHot(intent)) return
-        handleIncomingIntent(intent)
-        val replayPending = pendingReplay != null
-        if (replayPending && webViewContainer.visibility == View.VISIBLE) {
-            val current = webView.url
-            if (current != null && current.contains("view=replay")) {
-                // 已在 replay workspace：直接通知导入（exactly-once 由 pending 被消费清空保证）。
-                webView.post {
-                    webView.evaluateJavascript("window.wotbtoolsOnReplay && window.wotbtoolsOnReplay()", null)
-                }
+        val storedReplay = handleIncomingIntent(intent)
+        if (storedReplay && inAuthFlow) {
+            // RC5 navigation ownership：auth flow 期间 replay 只入队，绝不 loadUrl / evaluateJavascript。
+            Log.d(TAG, "replay-pending deferred reason=auth-flow")
+        }
+        dispatchPendingReplayIfAllowed()
+    }
+
+    /**
+     * pending replay 的唯一分发点。
+     *
+     * 「是否分发 / 怎么分发」完全由纯策略 [ReplayDispatchPolicy] 决定（JVM 单测覆盖），这里只执行动作：
+     * 无 pending / auth flow 内 / WebView 容器不可见 → 不分发；已在 replay workspace → 通知 Web；否则切到
+     * replay canonical view。auth 结束后刻意不新增「重新导航 replay」的第二套来源：登录完成后 Web 应用会
+     * 重新加载并经 Native Bridge 自行消费 pending。
+     */
+    private fun dispatchPendingReplayIfAllowed() {
+        val action = ReplayDispatchPolicy.decide(
+            hasPendingReplay = pendingReplay != null,
+            inAuthFlow = inAuthFlow,
+            webViewVisible = webViewContainer.visibility == View.VISIBLE,
+            currentUrl = webView.url
+        )
+        if (action == ReplayDispatchAction.NONE) return
+        Log.d(TAG, "replay-pending dispatched")
+        val notifyWeb = action == ReplayDispatchAction.NOTIFY_WEB
+        webView.post {
+            if (notifyWeb) {
+                // 已在 replay workspace：直接通知导入（exactly-once 由 pending 被 consume 清空保证）。
+                webView.evaluateJavascript("window.wotbtoolsOnReplay && window.wotbtoolsOnReplay()", null)
             } else {
                 // 切到 replay canonical view；ReplayPage 就绪后消费。
-                webView.post { webView.loadUrl(REPLAY_URL) }
+                webView.loadUrl(REPLAY_URL)
             }
         }
     }
 
-    private fun handleIncomingIntent(intent: Intent?) {
-        val pending = ReplayIntentHandler.fromIntent(this, intent)
+    /**
+     * replay ingress：存入新 pending（single pending slot，最新 replay 取代旧 pending）并落盘 metadata。
+     *
+     * 非 replay intent 不清空既有 pending：pending 只由 Web consume、TTL/损坏判断或更新的一份取代 —— 否则
+     * 登录期间被杀后恢复出来的 replay 会被一个无关 intent（如 launcher ACTION_MAIN）立刻丢掉。
+     *
+     * @return true 表示本次 intent 确实存入了新的 pending replay。
+     */
+    private fun handleIncomingIntent(intent: Intent?): Boolean {
+        val pending = ReplayIntentHandler.fromIntent(this, intent) ?: return false
+        // 旧 backing file 不立即删除（Chromium 可能仍在读取），交给下一次 startup orphan cleanup。
         pendingReplay = pending
-        pendingReplayEligible = pending != null
+        pendingReplayEligible = true
+        ReplayIntentHandler.savePendingMetadata(this, pending)
+        Log.d(TAG, "replay-pending stored id=${pending.pendingId}")
+        return true
     }
 
     private fun clearPendingReplay() {
-        // 重要：chooser 返回 URI 后 WebView/Chromium 仍可能读取该文件，不能立即删除 backing file。
-        // 只标记已消费、不可再次注入；文件保留到下一次 app startup cleanupOrphans() 安全清理。
+        // 重要：Web `fetch(content://)` 返回后 WebView/Chromium 仍可能读取该文件，不能立即删除 backing file。
+        // 只清 pending slot + 持久 metadata（exactly-once），文件保留到下一次 app startup cleanupOrphans() 清理。
         pendingReplay = null
         pendingReplayEligible = false
+        ReplayIntentHandler.clearPendingMetadata(this)
     }
 
     // ── Auth return（QQ native 登录 → verified App Link → 原 WebView）──
@@ -644,6 +687,10 @@ class MainActivity : Activity() {
 
     fun bridgeConsumePendingReplay(): Boolean {
         val had = pendingReplay != null
+        if (had) {
+            // Web 已确认消费：清 pending slot + 持久 metadata，下次 startup 绝不再恢复这份 replay。
+            Log.d(TAG, "replay-pending acknowledged")
+        }
         clearPendingReplay()
         return had
     }

@@ -5,12 +5,21 @@ import { displayName, fileKey } from '../utils/helpers.js'
 import { normalizeApiError, normalizeJobError } from '../utils/http.js'
 import type { ProcessingJob, UploadPhase, UploadProgressEvent } from '../types/jobs.js'
 import type { ProcessingJobId, SourceId } from '../types/replay.js'
+import type { ReplayAuthSession } from '../api/replay-capabilities.js'
 import type { useReplaySession } from './useReplaySession.js'
 import * as api from '../utils/api.js'
 
 type I18nContext = Pick<Composer, 't' | 'te'>
 type ReplaySession = ReturnType<typeof useReplaySession>
 type ProcessingCreateResult = { jobId: ProcessingJobId; stale: boolean }
+
+/**
+ * `startProcessingJob` 的可判定结果：调用方（Android pending replay 的 exactly-once ACK）
+ * 必须能区分「server 已接受该 processing request」与「没有真正创建 job」。
+ */
+type StartProcessingResult =
+  | { accepted: true; jobId: ProcessingJobId }
+  | { accepted: false; reason: 'EMPTY_SELECTION' | 'ALREADY_ACTIVE' | 'SUPERSEDED' | 'ABORTED' | 'REQUEST_FAILED' }
 type ProcessingStart = {
   revision: number
   prioritySourceIndex?: number
@@ -42,7 +51,7 @@ function assertSourceAvailable(source: ProcessingJob['sources'][number] | undefi
  * The session supplies all shared refs; this composable owns upload/create,
  * polling, source readiness, single-flight and cancellation side effects.
  */
-export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext) {
+export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext, auth: ReplayAuthSession) {
   const {
     files, selectionRevision, loading, error, resp,
     processingJob, processingError, uploadState, processingJobId,
@@ -91,14 +100,14 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext)
     const pollRevision = selectionRevision.value
     if (!pollJobId) return
     try {
-      const data = await api.getProcessingJob(pollJobId)
+      const data = await api.getProcessingJob(auth, pollJobId)
       if (processingPollJobId !== pollJobId || selectionRevision.value !== pollRevision) return
       processingJob.value = data
       if (data.status === 'READY') {
         const readyJobId = pollJobId
         const revisionAtReady = selectionRevision.value
         stopProcessingPolling()
-        const result = await api.getProcessingJobResult(readyJobId)
+        const result = await api.getProcessingJobResult(auth, readyJobId)
         if (selectionRevision.value !== revisionAtReady || processingPollJobId != null) return
         commitReadyResult(result, readyJobId)
         loading.value = false
@@ -155,7 +164,7 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext)
     processingError.value = ''
     uploadState.value = { phase: 'UPLOADING', loaded: 0, total: 0, percent: 0 }
     try {
-      const created = await api.createProcessingJob(buildFormData(start.prioritySourceIndex), {
+      const created = await api.createProcessingJob(auth, buildFormData(start.prioritySourceIndex), {
         onProgress: ({ loaded, total, percent }: UploadProgressEvent) => {
           if (!isCurrentCreate(start)) return
           start.phase = percent >= 100 ? 'REGISTERING' : 'UPLOADING'
@@ -164,7 +173,7 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext)
         signal: controller.signal,
       })
       if (start.cancelRequested) {
-        await api.cancelProcessingJob(created.jobId).catch(() => {})
+        await api.cancelProcessingJob(auth, created.jobId).catch(() => {})
         if (isCurrentCreate(start)) {
           processingStart = null
           uploadState.value = null
@@ -173,7 +182,7 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext)
         return { jobId: created.jobId, stale: true }
       }
       if (selectionRevision.value !== revision || !isCurrentCreate(start)) {
-        api.cancelProcessingJob(created.jobId).catch(() => {})
+        api.cancelProcessingJob(auth, created.jobId).catch(() => {})
         if (isCurrentCreate(start)) {
           processingStart = null
           uploadState.value = null
@@ -232,24 +241,27 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext)
     } else {
       loading.value = false
     }
-    if (job && JOB_ACTIVE.has(job.status)) api.cancelProcessingJob(job.jobId).catch(() => {})
+    if (job && JOB_ACTIVE.has(job.status)) api.cancelProcessingJob(auth, job.jobId).catch(() => {})
   }
 
-  async function startProcessingJob({ prioritySourceIndex }: { prioritySourceIndex?: number } = {}): Promise<void> {
-    if (!files.value.length) { error.value = t('replay.no_files'); return }
-    if (processingActive.value) return
+  async function startProcessingJob({ prioritySourceIndex }: { prioritySourceIndex?: number } = {}): Promise<StartProcessingResult> {
+    if (!files.value.length) { error.value = t('replay.no_files'); return { accepted: false, reason: 'EMPTY_SELECTION' } }
+    if (processingActive.value) return { accepted: false, reason: 'ALREADY_ACTIVE' }
     if (processingJobId.value && resp.value) {
-      return
+      return { accepted: false, reason: 'ALREADY_ACTIVE' }
     }
     const revisionAtStart = selectionRevision.value
     try {
       const result = await ensureProcessingCreate(prioritySourceIndex)
-      if (!result || result.stale) return
+      if (!result) return { accepted: false, reason: 'REQUEST_FAILED' }
+      if (result.stale) return { accepted: false, reason: 'SUPERSEDED' }
+      return { accepted: true, jobId: result.jobId }
     } catch (e) {
-      if (normalizeApiError(e).code === 'REQUEST_ABORTED') return
-      if (selectionRevision.value !== revisionAtStart) return
+      if (normalizeApiError(e).code === 'REQUEST_ABORTED') return { accepted: false, reason: 'ABORTED' }
+      if (selectionRevision.value !== revisionAtStart) return { accepted: false, reason: 'SUPERSEDED' }
       loading.value = false
       processingError.value = `${t('replay.preview_failed')}: ${apiErrorLabel(t, te, e)}`
+      return { accepted: false, reason: 'REQUEST_FAILED' }
     }
   }
 
@@ -291,7 +303,7 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext)
         }
         let data: ProcessingJob
         try {
-          data = await api.getProcessingJob(jobId)
+          data = await api.getProcessingJob(auth, jobId)
         } catch (e) {
           if (entry.controller.signal.aborted) rejectOnce(new Error('SOURCE_POLL_CANCELLED'))
           else rejectOnce(e)
@@ -327,7 +339,7 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext)
     const datasetJobId = processingJobId.value
     if (datasetJobId) {
       try {
-        const data = await api.getProcessingJob(datasetJobId)
+        const data = await api.getProcessingJob(auth, datasetJobId)
         const source = (data.sources || []).find(x => x.sourceId === sourceId)
         if (source && source.status === 'READY') {
           if (processingJobId.value === datasetJobId) return { processingJobId: datasetJobId, sourceId }
@@ -373,7 +385,7 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext)
     const job = processingJob.value
     if (!job || !JOB_ACTIVE.has(job.status)) return
     try {
-      await api.cancelProcessingJob(job.jobId)
+      await api.cancelProcessingJob(auth, job.jobId)
       stopProcessingPolling()
       stopAllSourcePolls()
       processingJob.value = { ...job, status: 'CANCELLED' }
@@ -408,7 +420,7 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext)
     stopProcessingPolling()
     stopAllSourcePolls()
     const job = processingJob.value
-    if (job && JOB_ACTIVE.has(job.status)) api.cancelProcessingJob(job.jobId).catch(() => {})
+    if (job && JOB_ACTIVE.has(job.status)) api.cancelProcessingJob(auth, job.jobId).catch(() => {})
     if (processingStart) {
       if (processingStart.phase === 'REGISTERING') processingStart.cancelRequested = true
       else {

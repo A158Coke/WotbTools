@@ -19,7 +19,12 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.Map;
 
 /**
- * Replay Processing Job REST API（匿名公开，与 /api/preview 权限一致）。
+ * Replay Processing Job REST API（需登录：wotbtools-user / wotbtools-admin）。
+ *
+ * <p>真实契约与 /api/preview、/api/export 无关：本 API 由 {@code SecurityConfig} 的
+ * {@code REPLAY_PROCESSING_JOBS_PATTERN} 角色门保护，下列四条端点（POST 创建 / GET 状态 /
+ * GET result / DELETE 取消）全部必须携带有效 Bearer token——匿名 → 401
+ * AUTH_UNAUTHENTICATED，已登录但无 wotbtools-user / wotbtools-admin 角色 → 403 AUTH_FORBIDDEN。</p>
  *
  * <pre>
  * POST   /api/replay/processing-jobs            → 202 {jobId, status, total}（创建；HTTP request 不等待解析）

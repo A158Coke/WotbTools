@@ -30,7 +30,8 @@ android/
         StartupGate.kt        # 网络 + version.json（fail-closed）
         VersionManifest.kt    # version.json 解析
         ApkUpdater.kt         # 下载 / SHA-256 / installer
-        ReplayIntentHandler.kt# ACTION_SEND/ACTION_VIEW → PendingReplay
+        ReplayIntentHandler.kt# ACTION_SEND/ACTION_VIEW → PendingReplay（+ metadata 持久化/恢复）
+        ReplayDispatchPolicy.kt # pending replay 分发决策（纯逻辑，JVM 单测）
         NativeBridge.kt       # getCapabilities / getPendingReplay / ...（白名单）
       res/
         layout/activity_main.xml         # webView + networkGate + versionGate + webError
@@ -67,7 +68,8 @@ Android 不在 Native 层重写 AI Review / Battle Reconstruction / capability �
   仅 `https://wotbtools.com` / `https://www.wotbtools.com` 可调，不暴露给 Keycloak / IdP /
   任意第三方 frame（替代 `addJavascriptInterface` 的全 frame 暴露）
 - APK 下载、SHA-256 校验、installer、未知来源授权
-- 复用现有 Web upload transport（`/api/replay/processing-jobs`）
+- 复用现有 Web upload transport（`/api/replay/processing-jobs`，后端要求已登录的
+  `wotbtools-user` / `wotbtools-admin`；Android 不实现第二套上传/解析，也不携带任何自有凭据）
 
 Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`/`replay-open`/
 `app-update`），不涉及 replay 业务 capability 判断（FULL/DEGRADED/PERFORMANCE 等由 Web 端接入）。
@@ -118,6 +120,23 @@ Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`
   `https://wotbtools.com` 与 `https://www.wotbtools.com`，不暴露给 Keycloak、QQ/IdP 或第三方 frame。
 - 禁止在 WebView 与系统 browser 之间同步 Cookie。真机发现新 provider hostname 时，只记录不含
   query/code/Cookie/token 的 host evidence，判断其是否属于实际认证链后最小追加 allowlist。
+
+## Replay 意图与认证的导航边界
+
+外部 replay 是一个 **pending action**，不是特殊应用模式：Android 只负责安全接收、持久化与通知
+Web，绝不自行决定「是否解析」「是否绕过登录」。
+
+- **认证是唯一 navigation authority**：`inAuthFlow=true` 期间到达的 replay intent 只入队
+  （`ReplayDispatchPolicy` → `NONE`），不 `loadUrl`、不 `evaluateJavascript`，当前 Keycloak/QQ
+  authentication transaction 不被 replay 打断；verified auth return 恒为最高优先级。
+- **单一 ingress**：只有 Intent → private cache → Native Bridge → Web `fetch(content://)` 一条路径；
+  已删除 `onShowFileChooser` 对 pending replay 的注入分支。
+- **跨 process death 存活**：pending metadata 落在 app private storage（24h TTL），启动时先恢复
+  active pending、再按引用清理 orphan cache；`consumePendingReplay`（Web 在 server 接受 processing
+  request 之后调用）才清 metadata，保证 exactly-once。
+- **未登录不解析**：未登录时 pending 原样保留且不消费，登录完成前不会发出 processing 请求。
+
+细节契约与日志白名单见 [`replay-intent.md`](replay-intent.md)。
 
 ## WebView 安全（规格 §28–§29 / §86–§88）
 

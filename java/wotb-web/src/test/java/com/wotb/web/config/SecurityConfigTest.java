@@ -13,6 +13,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,6 +27,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -287,6 +289,103 @@ class SecurityConfigTest {
                 .andExpect(status().isOk());
     }
 
+    /**
+     * Replay Processing Job（POST 创建）收紧为 authenticated + wotbtools-user/wotbtools-admin。
+     * probe handler 无参：真实创建端点的 multipart 解析不属于安全门测试范围。
+     */
+    @Test
+    void replayProcessingJobCreateRequiresAuthenticationAndReplayRole() throws Exception {
+        final String path = "/api/replay/processing-jobs";
+
+        // 匿名 → 401 canonical error envelope
+        mvc.perform(post(path))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith("application/json"))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_UNAUTHENTICATED"))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.retryable").value(false))
+                .andExpect(jsonPath("$.details").isMap())
+                .andExpect(jsonPath("$.timestamp").isNotEmpty());
+        // X-Request-ID 透传到 error envelope 的 id
+        mvc.perform(post(path).header("X-Request-ID", "trace-processing-create-401"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("X-Request-ID", "trace-processing-create-401"))
+                .andExpect(jsonPath("$.id").value("trace-processing-create-401"));
+
+        // 已登录但无角色 → 403
+        mvc.perform(post(path).with(jwt()))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith("application/json"))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_FORBIDDEN"));
+
+        // wotbtools-user / wotbtools-admin → 2xx（probe 返回 200；真实端点返回 202）
+        mvc.perform(post(path).with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
+                .andExpect(status().is2xxSuccessful());
+        mvc.perform(post(path).with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                .andExpect(status().is2xxSuccessful());
+
+        // boost-manager 不在这道门的角色集合内 → 403
+        mvc.perform(post(path).with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_boost-manager"))))
+                .andExpect(status().isForbidden());
+    }
+
+    /** GET 状态 / GET result / DELETE 取消三条端点与 POST 创建共用同一道角色门。 */
+    @Test
+    void replayProcessingJobStatusResultAndCancelShareTheSameRoleGate() throws Exception {
+        final String statusPath = "/api/replay/processing-jobs/job-1";
+        final String resultPath = "/api/replay/processing-jobs/job-1/result";
+
+        // 匿名 → 401
+        mvc.perform(get(statusPath))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get(resultPath))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(delete(statusPath))
+                .andExpect(status().isUnauthorized());
+
+        // 已登录但无角色 → 403（canonical body 在 GET 状态上校验一次即可）
+        mvc.perform(get(statusPath).with(jwt()))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith("application/json"))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_FORBIDDEN"))
+                .andExpect(jsonPath("$.status").value(403));
+        mvc.perform(get(resultPath).with(jwt()))
+                .andExpect(status().isForbidden());
+        mvc.perform(delete(statusPath).with(jwt()))
+                .andExpect(status().isForbidden());
+
+        // wotbtools-user → 2xx
+        mvc.perform(get(statusPath).with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
+                .andExpect(status().is2xxSuccessful());
+        mvc.perform(get(resultPath).with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
+                .andExpect(status().is2xxSuccessful());
+        mvc.perform(delete(statusPath).with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
+                .andExpect(status().is2xxSuccessful());
+
+        // wotbtools-admin → 2xx
+        mvc.perform(get(statusPath).with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                .andExpect(status().is2xxSuccessful());
+        mvc.perform(delete(statusPath).with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                .andExpect(status().is2xxSuccessful());
+    }
+
+    /** /api/preview 保持公开（独立 legacy contract）；processing-jobs 不再随它放行，防止再次漂移。 */
+    @Test
+    void previewStaysPublicWhileProcessingJobsRequireLogin() throws Exception {
+        mvc.perform(get("/api/preview"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/replay/processing-jobs"))
+                .andExpect(status().isUnauthorized());
+    }
+
     @Configuration
     @EnableWebMvc
     @Import({SecurityConfig.class, ApiErrorTestConfig.class})
@@ -315,6 +414,9 @@ class SecurityConfigTest {
                 "/api/users/probe",
                 "/api/replay/analyze",
                 "/api/replay/analyze/cancel",
+                "/api/replay/processing-jobs/{jobId}",
+                "/api/replay/processing-jobs/{jobId}/result",
+                "/api/preview",
                 "/api/hof/upload",
                 "/api/hof/1/replay",
                 "/api/hof",
@@ -330,6 +432,20 @@ class SecurityConfigTest {
 
         @PostMapping("/api/replay/battle-playback-v2")
         String battlePlaybackV2() {
+            return "ok";
+        }
+
+        /**
+         * Replay Processing Job 创建探针：不声明参数，避免测试依赖真实 multipart 解析
+         * （真实端点返回 202 + {jobId, status, total}；此处只验证安全角色门）。
+         */
+        @PostMapping("/api/replay/processing-jobs")
+        String replayProcessingJobCreate() {
+            return "ok";
+        }
+
+        @DeleteMapping("/api/replay/processing-jobs/{jobId}")
+        String replayProcessingJobCancel() {
             return "ok";
         }
     }

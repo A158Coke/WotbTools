@@ -65,4 +65,29 @@ describe('useAuth', () => {
 
     auth.tokenParsed.value = null
   })
+
+  it('login() 只对「同一进行中的 redirect」去重，失败/取消后必须能重新发起', async () => {
+    const auth = useAuth()
+    await auth.initPromise
+
+    let rejectFirst
+    kcLogin.mockImplementationOnce(() => new Promise((_, reject) => { rejectFirst = reject }))
+    const first = auth.login('replay')
+    await vi.waitFor(() => expect(auth.loginInFlight.value).toBe(true))
+
+    // 同一个进行中的 redirect：不重复发起（不产生第二次导航）
+    await expect(auth.login('replay')).resolves.toBe(false)
+
+    rejectFirst(new Error('AUTH_NAVIGATION_FAILED'))
+    await expect(first).rejects.toThrow('AUTH_NAVIGATION_FAILED')
+    // 不是 component-lifetime 锁：失败后必须回到可重试状态
+    expect(auth.loginInFlight.value).toBe(false)
+
+    kcLogin.mockImplementationOnce(() => Promise.resolve(true))
+    await expect(auth.login('ai-review')).resolves.toBe(true)
+    expect(kcLogin).toHaveBeenLastCalledWith(expect.objectContaining({
+      redirectUri: expect.stringContaining('view=ai-review'),
+    }))
+    expect(auth.loginInFlight.value).toBe(false)
+  })
 })
