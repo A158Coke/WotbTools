@@ -6,7 +6,7 @@
 
 ## ✦ 给接手的一句话
 
-这是一个单人维护的 WoT Blitz 回放分析 Web 工具：Java 21 core + Spring Boot 4 + Vue 3 + Keycloak + PostgreSQL。
+这是一个单人维护的 WoT Blitz 回放分析 Web 工具：Java 25 core + Spring Boot 4 + Vue 3 + Keycloak + PostgreSQL。
 
 动手前读 `.agents/AGENTS.md`、当前目录的 `AGENTS.md` 和本文件；跨层改动按 `.agents/skills/wotb-sync/SKILL.md`。真实代码始终是 source of truth，发现文档漂移时必须在同一次改动里修正文档。
 
@@ -27,7 +27,7 @@
 
 ## 环境与工具链
 
-- **JDK 21** 必需。Maven 必须带 `-s java/settings.xml`；容器构建使用 `java/settings-docker.xml`。
+- **JDK 25** 必需。Maven 必须带 `-s java/settings.xml`；容器构建使用 `java/settings-docker.xml`。
 - **Node 24**：`frontend/.nvmrc` 固定版本；安装依赖用 `npm ci`。前端使用 TypeScript 与
   `vue-tsc` 做独立类型检查；JavaScript 与 TypeScript 可共存，迁移期间不要求一次性改写旧代码。
 - **Python 3**：`common/python/update_tankopedia.py` 使用标准库从 BlitzKit 客户端定义同步车辆数据。

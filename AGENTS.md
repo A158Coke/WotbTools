@@ -1,6 +1,6 @@
 # WotBTools Agent Instructions
 
-WoT Blitz（坦克世界闪击战）回放工具集：Java 21 + Spring Boot 后端、Vue 3 前端、Keycloak 认证。
+WoT Blitz（坦克世界闪击战）回放工具集：Java 25 + Spring Boot 后端、Vue 3 前端、Keycloak 认证。
 入口 https://wotbtools.com · 仓库 https://github.com/A158Coke/WotbTools
 
 ## 必读

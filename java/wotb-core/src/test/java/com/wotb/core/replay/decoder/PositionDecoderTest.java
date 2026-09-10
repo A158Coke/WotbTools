@@ -6,6 +6,9 @@ import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,6 +31,32 @@ class PositionDecoderTest {
         assertEquals(DecodeStatus.SUCCESS, r.status());
         final PositionChangedEvent e = assertInstanceOf(PositionChangedEvent.class, r.events().getFirst());
         assertEquals(DecodeConfidence.EXACT, e.confidence());
+    }
+
+    @Test
+    void readsPayloadFromSharedSourceAtNonZeroOffset() {
+        final int payloadOffset = 3;
+        final byte[] source = new byte[payloadOffset + 49 + 2];
+        final ByteBuffer buffer = ByteBuffer.wrap(source).order(ByteOrder.LITTLE_ENDIAN);
+        buffer.putInt(payloadOffset, 1234);
+        buffer.putInt(payloadOffset + 4, 56);
+        buffer.putInt(payloadOffset + 8, 0);
+        buffer.putFloat(payloadOffset + 12, 10.5f);
+        buffer.putFloat(payloadOffset + 16, 20.5f);
+        buffer.putFloat(payloadOffset + 20, 30.5f);
+        source[payloadOffset + 48] = 7;
+
+        final RawReplayPacket packet = new RawReplayPacket(
+                0, 0, 49, 10, 1.0f, source, payloadOffset);
+        final ReplayDecodeResult r = decoder.decode(ctx, packet);
+
+        final PositionChangedEvent event = assertInstanceOf(PositionChangedEvent.class, r.events().getFirst());
+        assertEquals(1234, event.entityId());
+        assertEquals(56, event.spaceId());
+        assertEquals(10.5f, event.x());
+        assertEquals(20.5f, event.y());
+        assertEquals(30.5f, event.z());
+        assertEquals(7, event.trailingStateRaw());
     }
 
     @Test

@@ -111,8 +111,8 @@ public class ReplayReconstructionService {
         for (final RawReplayPacket rawPacket : streamResult.packets()) {
             final ReplayDecodeResult result = decoderRegistry.decode(decodeContext, rawPacket);
 
-            typeDecodeStats.computeIfAbsent(rawPacket.type(), k -> new TypeDecodeStats());
-            final TypeDecodeStats stats = typeDecodeStats.get(rawPacket.type());
+            final TypeDecodeStats stats = typeDecodeStats.computeIfAbsent(
+                    rawPacket.type(), ignored -> new TypeDecodeStats());
             stats.total++;
 
             switch (result.status()) {
