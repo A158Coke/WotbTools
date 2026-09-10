@@ -81,7 +81,7 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 .
 ├── common/                     # 共享车辆/地图/资产/回放 fixture
 ├── contracts/                  # FE ↔ BE HTTP OpenAPI wire contract
-├── java/                       # Java Maven 根：wotb-contracts + wotb-core + wotb-control + wotb-web
+├── java/                       # Java Maven 根：contracts/core、Replay feature modules、control、web composition root
 ├── frontend/                   # Vue 3 SPA + 独立 Sponsor 页
 │   ├── index.html
 │   ├── src/
@@ -122,8 +122,12 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
   ├─ parse / model / ref / stats / export
   └─ replay/{stream,decoder,event,reconstruction,feature,evidence,map,processing}
        ↓
- wotb-web
- controller → service → mapper → dto
+ wotb-result / wotb-playback / wotb-ai / wotb-replay-coordinator
+       ↓
+ wotb-replay-processing           # current local scheduler and full-processing executor
+       ↓
+ wotb-web                          # single Spring Boot composition root
+ controller → feature service → mapper → dto
        ↓
  Vue SPA
 
@@ -134,6 +138,16 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 ```
 
 核心原则：Preview、Export、League、AI/重建消费同一套权威 replay facts，禁止为了某个 UI/导出再造第二套解析/评分公式。
+
+Replay backend uses Maven feature artifacts as dependency boundaries while retaining the
+existing `com.wotb.web...` Java namespace during the migration, so HTTP/security wiring and
+component scanning stay stable. `wotb-web` remains the only container/JVM/Boot root. It may
+depend on `wotb-result`, `wotb-playback`, `wotb-replay-coordinator`,
+`wotb-replay-processing`, and `wotb-ai`; none of those feature modules may depend on
+`wotb-web`. The coordinator owns lifecycle/state and the `ReplayProcessingDispatcher` port;
+the processing module owns the current `LocalReplayProcessingDispatcher`, scheduler and local
+full-processing executor. This is an in-process seam only: no MQ, worker executable, object
+storage or cross-process callback is part of the current runtime.
 
 API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/access-denied handler 汇合到同一 envelope。新后端异常使用 `ApiException(id, ApiErrorCode enum, errorMsg)`；响应携带唯一错误 `id`（写入安全日志，可用 `id=<value>` 检索到同一异常/请求），可选 `errorMsg` 为安全诊断；不再对客户端暴露请求级 `traceId`（改用 body `id`）。前端 transport 统一经 `ApiError` parser，`errorCode -> i18n` 本地展示错误并显示 `id` 诊断 ID，Retry 由 `retryable` 决定。新增码必须同步 `docs/api/error-contract.md`、后端测试与 zh/en/ru locale。
 
@@ -149,7 +163,8 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 ### Replay Processing
 
-Processing Job 创建后持久化输入，source 任务提交给全局 `ReplayParseScheduler`
+Processing Job 创建后持久化输入，协调器经 `ReplayProcessingDispatcher` 将 source 任务提交给
+`wotb-replay-processing` 中的全局 `ReplayParseScheduler`
 （Replay Full Processing 唯一 CPU 预算：默认并发 2、job-aware 公平轮转、queued
 cancellation、有界 pending）；每个 source 独立 `processFull` 后写 derived artifact
 （`ai-facts.json` / `map-overview.json`，原子写、先写后 READY），全部完成后单线程

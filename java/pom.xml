@@ -13,6 +13,11 @@
     <modules>
         <module>wotb-contracts</module>
         <module>wotb-core</module>
+        <module>wotb-result</module>
+        <module>wotb-playback</module>
+        <module>wotb-replay-coordinator</module>
+        <module>wotb-replay-processing</module>
+        <module>wotb-ai</module>
         <module>wotb-control</module>
         <module>wotb-web</module>
     </modules>
@@ -37,6 +42,31 @@
             <dependency>
                 <groupId>com.wotb</groupId>
                 <artifactId>wotb-core</artifactId>
+                <version>1.0.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.wotb</groupId>
+                <artifactId>wotb-result</artifactId>
+                <version>1.0.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.wotb</groupId>
+                <artifactId>wotb-playback</artifactId>
+                <version>1.0.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.wotb</groupId>
+                <artifactId>wotb-replay-coordinator</artifactId>
+                <version>1.0.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.wotb</groupId>
+                <artifactId>wotb-replay-processing</artifactId>
+                <version>1.0.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.wotb</groupId>
+                <artifactId>wotb-ai</artifactId>
                 <version>1.0.0</version>
             </dependency>
             <dependency>
