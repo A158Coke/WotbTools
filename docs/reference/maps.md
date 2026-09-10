@@ -92,13 +92,14 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
 - 每张 HD 图必须对应一张原图，实际 WebP 画布严格为原图 2×（宽高均 2×），不允许 crop 或 aspect-ratio drift。
 - `frontend/src/data/mapHdAssets.test.js` 校验 29/29 coverage、manifest SHA-256、实际 WebP 尺寸、`mapImages.js` HD import coverage，以及 delivery budget。
 - 单张 HD 图预算：不超过 5 MiB，且不超过对应原图 4× 文件大小；这是面向 Android/移动端与大陆链路的硬上限，不代表必须用满。
-- `geometryTransform=NONE` 只说明生成 pipeline 未显式执行 warp/crop；它**不能证明** AI restoration 没有改变局部道路边缘、建筑轮廓、岸线或掩体边界。HD 资源合并前仍需 29/29 source ↔ HD overlay/side-by-side 人工视觉 QA。
+- `geometryTransform=NONE` 只说明生成 pipeline 未显式执行 warp/crop；它**不能证明** AI restoration 没有改变局部道路边缘、建筑轮廓、岸线或掩体边界。HD 资源合并前仍需 28 张现役地图逐张完成 source ↔ HD overlay/side-by-side 人工视觉 QA；废弃地图 `wasteland` 保留现有 V1 HD，不纳入替换。
 
-### PR #256 视觉 QA 记录
+### PR #288 视觉 QA 记录
 
-- 29/29 地图已逐张查看 source / HD side-by-side 与 macro-edge overlay（source=red、HD=cyan、重合=white）。
-- 未发现画布 crop/warp、主道路/建筑整体位移、岸线重绘或主要地形轮廓漂移。
-- diagnostic macro-edge F1 最低为 Faust `0.9312`、Desert Sands `0.9318`；人工对照未见战术拓扑变化，主要差异为 AI restoration 带来的纹理/锐化边缘密度变化。
-- 当前 29 张全部满足 deterministic delivery budget；最大单图 Canyon `4,666,308 B`，最大增长 Faust `3.748×`。
-- macro-edge 指标仅用于发现可疑图，不替代人工视觉判断。
+- 28/28 张现役地图均由项目 owner 逐张完成 source / HD 对照审核后导入 PR。
+- 审核中发现颜色或 palette 漂移、植被缺失或凭空新增、水体/河流错误、过度增强、地形细节改变的候选均已拒绝并重新生成。
+- `wasteland` 是废弃地图，保持原有 HD 资源，不参与本次替换。
+- 所有替换图保持 4048×4048 WebP；`dead-rail` 与 `faust` 使用 quality 80 以满足单图 5 MiB 与原图 4×增长预算，最终视觉效果已包含在人工审核中。
+- manifest 顶层使用 `generationRule=PER_ENTRY_METHOD`；每个 entry 的 `method` 记录真实资源来源。
+- runtime 坐标、投影和 overlay 逻辑未修改；宏边缘指标只能用于发现可疑图，不能替代人工视觉判断。
 
