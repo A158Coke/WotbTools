@@ -532,4 +532,5 @@
     "maxGrowthRatio": 4.0,
     "rationale": "Single-map Playback delivery budget for mobile/mainland links; one map is loaded at a time."
   }
-}\n
+}
+
