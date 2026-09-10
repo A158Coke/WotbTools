@@ -38,22 +38,6 @@ public class ReplayProcessingJobStore {
 
     private final ConcurrentHashMap<String, ReplayProcessingJob> jobs = new ConcurrentHashMap<>();
     /**
-     * Processing create idempotency 索引：{@code ownerSubject + '\u0000' + operationId} → processingJobId。
-     *
-     * <p>只服务 Android external replay 的可重放安全路径（server 已接受但 Native ACK 前进程被杀 →
-     * 冷启动后同一份 pending replay 重新提交必须拿回同一个 job）。按 authenticated subject 分域：
-     * 同一 operationId 在不同 subject 下必须是不同 job，绝不跨用户复用。</p>
-     */
-    private final ConcurrentHashMap<String, String> operationIndex = new ConcurrentHashMap<>();
-    /** 反向索引：processingJobId → operationIndex key（job 被移除时同步清理，不留悬挂 identity）。 */
-    private final ConcurrentHashMap<String, String> jobOperationKeys = new ConcurrentHashMap<>();
-    /**
-     * In-flight operation 协调：identity key → creator 的 future（creator 完成后 complete(jobId)，
-     * 失败则 completeExceptionally）。duplicate caller 等待同一个 future，因此绝不会在
-     * `dispatcher.submit` 成功之前拿到 jobId，也不会各自 submit 出两个 job。
-     */
-    private final ConcurrentHashMap<String, CompletableFuture<String>> inFlightOperations = new ConcurrentHashMap<>();
-    /**
      * processingJobId → 活跃 Dataset Lease 数（AI / Playback / Export 共享，
      * acquire/release 配对；语义命名，不再叫 export refs）。
      */
@@ -66,6 +50,177 @@ public class ReplayProcessingJobStore {
     private final Object lifecycleLock = new Object();
     private final ReplayJobStorage storage;
     private final long ttlMinutes;
+
+    /**
+     * Processing create idempotency 的**单一权威状态机**：{@code ownerSubject + '\u0000' + operationId}
+     * → {@link OperationState}。只服务 Android external replay 的可重放安全路径（server 已接受但 Native
+     * ACK 前进程被杀 → 冷启动后同一份 pending replay 重新提交必须拿回同一个 job）。按 authenticated
+     * subject 分域：同一 operationId 在不同 subject 下必须是不同 job，绝不跨用户复用。
+     *
+     * <p>状态只有三种：{@code ABSENT}（无条目）/ {@code IN_FLIGHT(future)} / {@code COMMITTED(jobId)}；
+     * 全部转换都在 {@link #claimOperation} / {@link #commitOperation} / {@link #abandonOperation} /
+     * {@link #dropOperationIndex} 的 {@code ConcurrentHashMap#compute} 线性化边界内完成，因此
+     * 「committed 检查」与「reservation claim」不是两次独立读取——不存在「lookup 得到 null →
+     * 期间 creator 已提交并释放 reservation → 本调用错误地成为第二个 creator」的 TOCTOU 窗口。</p>
+     */
+    private final ConcurrentHashMap<String, OperationState> operations = new ConcurrentHashMap<>();
+    /** 反向索引：processingJobId → operation key（job 被移除时同步清理，不留悬挂 COMMITTED 状态）。 */
+    private final ConcurrentHashMap<String, String> jobOperationKeys = new ConcurrentHashMap<>();
+
+    // ---- Processing create idempotency 状态机（Android external replay 可重放安全）----
+
+    /**
+     * 单一 operation 状态值：{@code inFlight != null} → IN_FLIGHT（creator 正在创建/提交）；
+     * 否则 {@code committedJobId != null} → COMMITTED（已成功提交调度器的 job）。
+     */
+    private record OperationState(CompletableFuture<String> inFlight, String committedJobId) {
+
+        static OperationState inFlight(final CompletableFuture<String> future) {
+            return new OperationState(future, null);
+        }
+
+        static OperationState committed(final String jobId) {
+            return new OperationState(null, jobId);
+        }
+    }
+
+    /**
+     * {@link #claimOperation} 的结果：COMMITTED（已提交 → 复用 jobId）/ JOIN（已有 creator →
+     * 等待其结果）/ CREATOR（本调用成为唯一 creator）。
+     */
+    public record OperationClaim(Kind kind, String jobId, CompletableFuture<String> inFlight) {
+
+        public enum Kind {
+            COMMITTED,
+            JOIN,
+            CREATOR
+        }
+
+        static OperationClaim committed(final String jobId) {
+            return new OperationClaim(Kind.COMMITTED, jobId, null);
+        }
+
+        static OperationClaim join(final CompletableFuture<String> future) {
+            return new OperationClaim(Kind.JOIN, null, future);
+        }
+
+        static OperationClaim creator() {
+            return new OperationClaim(Kind.CREATOR, null, null);
+        }
+    }
+
+    /**
+     * Processing create idempotency 索引（只读 introspection：诊断与测试断言使用）。
+     *
+     * <p>Service 侧决策**不**走这里——它通过 {@link #claimOperation} 做单点线性化决策；
+     * 本方法只回答「当前是否已有 COMMITTED job」。job 已消失时顺手清理状态（懒失效）。</p>
+     */
+    public String jobIdForOperation(final String ownerSubject, final String operationId) {
+        if (!hasOperationIdentity(ownerSubject, operationId)) {
+            return null;
+        }
+        final String key = operationKey(ownerSubject, operationId);
+        final OperationState state = operations.get(key);
+        if (state == null || state.committedJobId() == null) {
+            return null;
+        }
+        if (jobs.get(state.committedJobId()) == null) {
+            operations.computeIfPresent(key, (k, current) ->
+                    current.committedJobId() != null ? null : current);
+            jobOperationKeys.remove(state.committedJobId(), key);
+            return null;
+        }
+        return state.committedJobId();
+    }
+
+    /**
+     * **单一线性化点**：解析 (subject, operationId) 的权威状态并完成状态转换。
+     *
+     * <p>三种返回：{@code COMMITTED(jobId)}（已提交，直接复用）/ {@code JOIN(future)}（有 creator
+     * 正在创建/提交，等待同一个 future）/ {@code CREATOR}（本调用成为唯一 creator：负责 create +
+     * {@code dispatcher.submit}，成功后 {@link #commitOperation}，失败时 {@link #abandonOperation}）。</p>
+     *
+     * <p>committed 判定与 reservation 领取在同一个 {@code compute} 内完成，因此同一 identity 在任意
+     * 并发 interleaving 下最多只有一个 creator。</p>
+     */
+    public OperationClaim claimOperation(final String ownerSubject, final String operationId,
+                                        final CompletableFuture<String> mine) {
+        if (!hasOperationIdentity(ownerSubject, operationId)) {
+            return OperationClaim.creator();
+        }
+        final String key = operationKey(ownerSubject, operationId);
+        final OperationClaim[] decided = new OperationClaim[1];
+        operations.compute(key, (k, state) -> {
+            if (state == null) {
+                decided[0] = OperationClaim.creator();
+                return OperationState.inFlight(mine);
+            }
+            if (state.committedJobId() != null && jobs.get(state.committedJobId()) != null) {
+                decided[0] = OperationClaim.committed(state.committedJobId());
+                return state;
+            }
+            if (state.committedJobId() != null) {
+                // COMMITTED 但 job 已不在 registry（TTL/显式清理后的残留）：视为 ABSENT，本次成为 creator。
+                decided[0] = OperationClaim.creator();
+                return OperationState.inFlight(mine);
+            }
+            decided[0] = OperationClaim.join(state.inFlight());
+            return state;
+        });
+        return decided[0];
+    }
+
+    /**
+     * creator 成功把 job 交给调度器之后 publish COMMITTED：此后所有 caller 都命中同一个 jobId。
+     * 只允许 {@code IN_FLIGHT(mine) → COMMITTED(jobId)}；其它状态保守不动（理论不可达）。
+     */
+    public void commitOperation(final String ownerSubject, final String operationId,
+                                final CompletableFuture<String> mine, final String jobId) {
+        if (!hasOperationIdentity(ownerSubject, operationId)) {
+            return;
+        }
+        final String key = operationKey(ownerSubject, operationId);
+        jobOperationKeys.put(jobId, key);
+        operations.computeIfPresent(key, (k, state) ->
+                state.inFlight() == mine ? OperationState.committed(jobId) : state);
+    }
+
+    /**
+     * creator 失败（QUEUE_FULL / 存储失败 / 其它异常）：{@code IN_FLIGHT(mine) → ABSENT}，使同一
+     * operationId 的后续请求可以重新创建有效 job。等待中的 duplicate 由 creator 侧
+     * {@code completeExceptionally} 一起失败。
+     */
+    public void abandonOperation(final String ownerSubject, final String operationId,
+                                 final CompletableFuture<String> mine) {
+        if (!hasOperationIdentity(ownerSubject, operationId)) {
+            return;
+        }
+        operations.computeIfPresent(operationKey(ownerSubject, operationId),
+                (k, state) -> state.inFlight() == mine ? null : state);
+    }
+
+    /** identity 合法性（service 与 store 共用同一判定，避免两处规则漂移）。 */
+    public static boolean hasOperationIdentity(final String ownerSubject, final String operationId) {
+        return ownerSubject != null && !ownerSubject.isBlank()
+                && operationId != null && !operationId.isBlank();
+    }
+
+    /** identity 分域 key：subject 与 operationId 用 NUL 分隔，避免拼接歧义。 */
+    private static String operationKey(final String ownerSubject, final String operationId) {
+        return ownerSubject + '\u0000' + operationId;
+    }
+
+    /**
+     * job 被移除（显式清理 / TTL sweep）时同步清理 idempotency 状态：{@code COMMITTED(jobId) → ABSENT}。
+     * 绝不误删其它 job 的 identity，也不动正在 IN_FLIGHT 的状态。
+     */
+    private void dropOperationIndex(final String jobId) {
+        final String key = jobOperationKeys.remove(jobId);
+        if (key != null) {
+            operations.computeIfPresent(key, (k, state) ->
+                    jobId.equals(state.committedJobId()) ? null : state);
+        }
+    }
 
     @Autowired
     public ReplayProcessingJobStore(
@@ -101,93 +256,6 @@ public class ReplayProcessingJobStore {
 
     public ReplayProcessingJob get(final String jobId) {
         return jobs.get(jobId);
-    }
-
-    // ---- Processing create idempotency（Android external replay 可重放安全）----
-
-    /**
-     * 解析 operation identity 对应的 jobId；没有登记、identity 缺失或 job 已被清理时返回 null。
-     * job 已消失时顺手清理索引项（懒失效），绝不返回已被清理的 jobId。
-     */
-    public String jobIdForOperation(final String ownerSubject, final String operationId) {
-        if (!hasOperationIdentity(ownerSubject, operationId)) {
-            return null;
-        }
-        final String key = operationKey(ownerSubject, operationId);
-        final String jobId = operationIndex.get(key);
-        if (jobId == null) {
-            return null;
-        }
-        if (jobs.get(jobId) == null) {
-            operationIndex.remove(key, jobId);
-            jobOperationKeys.remove(jobId, key);
-            return null;
-        }
-        return jobId;
-    }
-
-    /**
-     * 尝试成为该 operation identity 的 **creator**（in-flight 协调，取代「submit 前 publish」的错误 commit point）。
-     *
-     * @return {@code null} = 本次调用是 creator：必须完成 create + `dispatcher.submit`，成功后
-     *         {@link #commitOperation} 再 {@code mine.complete(jobId)}，失败则 {@link #abandonOperation}
-     *         并 {@code mine.completeExceptionally(...)}；
-     *         非 null = 已有 creator 在跑，调用方必须等待这个 future（绝不自行创建第二个 job，
-     *         也绝不读到一个「尚未提交调度器、随后可能被 QUEUE_FULL 清理」的 jobId）。
-     */
-    public CompletableFuture<String> startOperation(final String ownerSubject, final String operationId,
-                                                    final CompletableFuture<String> mine) {
-        if (!hasOperationIdentity(ownerSubject, operationId)) {
-            return null;
-        }
-        return inFlightOperations.putIfAbsent(operationKey(ownerSubject, operationId), mine);
-    }
-
-    /**
-     * creator 成功把 job 交给调度器之后 publish committed identity：此后 {@link #jobIdForOperation}
-     * 可直接命中；同时撤销 reservation。
-     */
-    public void commitOperation(final String ownerSubject, final String operationId,
-                                final CompletableFuture<String> mine, final String jobId) {
-        if (!hasOperationIdentity(ownerSubject, operationId)) {
-            return;
-        }
-        final String key = operationKey(ownerSubject, operationId);
-        operationIndex.put(key, jobId);
-        jobOperationKeys.put(jobId, key);
-        inFlightOperations.remove(key, mine);
-    }
-
-    /**
-     * creator 失败（QUEUE_FULL / 存储失败 / 其它异常）：撤销 reservation，绝不留下 committed identity，
-     * 使同一 operationId 的后续请求可以重新创建一个有效 job。等待中的 duplicate 由 creator 侧
-     * {@code completeExceptionally} 一起失败。
-     */
-    public void abandonOperation(final String ownerSubject, final String operationId,
-                                 final CompletableFuture<String> mine) {
-        if (!hasOperationIdentity(ownerSubject, operationId)) {
-            return;
-        }
-        inFlightOperations.remove(operationKey(ownerSubject, operationId), mine);
-    }
-
-    /** identity 合法性（service 与 store 共用同一判定，避免两处规则漂移）。 */
-    public static boolean hasOperationIdentity(final String ownerSubject, final String operationId) {
-        return ownerSubject != null && !ownerSubject.isBlank()
-                && operationId != null && !operationId.isBlank();
-    }
-
-    /** identity 分域 key：subject 与 operationId 用 NUL 分隔，避免拼接歧义。 */
-    private static String operationKey(final String ownerSubject, final String operationId) {
-        return ownerSubject + '\u0000' + operationId;
-    }
-
-    /** job 被移除时同步清理 idempotency 索引（反向索引定位；绝不误删其它 job 的 identity）。 */
-    private void dropOperationIndex(final String jobId) {
-        final String key = jobOperationKeys.remove(jobId);
-        if (key != null) {
-            operationIndex.remove(key, jobId);
-        }
     }
 
     /**
