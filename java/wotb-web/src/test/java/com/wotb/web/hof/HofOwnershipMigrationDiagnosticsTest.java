@@ -38,6 +38,7 @@ class HofOwnershipMigrationDiagnosticsTest {
         final List<String> hints = hintSections(script());
         assertEquals(2, hints.size(), "百场与三环各应有一份面向运维的 hint");
 
+        assertHintFragmentsAreProperlyEscaped(hints);
         assertHundredHint(hints.get(0));
         assertMark3Hint(hints.get(1));
     }
@@ -58,6 +59,32 @@ class HofOwnershipMigrationDiagnosticsTest {
                 "三环必须以 候选区服 + game_account_id_snapshot + vehicle_id 跨状态分组: " + hint);
         assertTrue(hint.contains("spanning PENDING and CURRENT"),
                 "三环诊断必须说明 CURRENT 与 PENDING 并存也是冲突: " + hint);
+    }
+
+    /**
+     * hint 由多行相邻字符串字面量拼成，每行形如 {@code 'text',}。
+     * 片段内部的单引号必须写成 {@code ''}，否则会提前终止 SQL 字面量、让 DO 块语法错误 ——
+     * 这类错误在空库上就会触发，会让所有依赖 Flyway 的集成测试一起失败，必须在这里拦住。
+     */
+    private static void assertHintFragmentsAreProperlyEscaped(final List<String> hints) {
+        final char quote = (char) 39;
+        for (final String hint : hints) {
+            for (final String line : hint.split("\n")) {
+                final int first = line.indexOf(quote);
+                final int last = line.lastIndexOf(quote);
+                if (first < 0 || last <= first) {
+                    continue;
+                }
+                final String body = line.substring(first + 1, last);
+                for (int i = 0; i < body.length(); i++) {
+                    if (body.charAt(i) == quote) {
+                        assertTrue(i + 1 < body.length() && body.charAt(i + 1) == quote,
+                                "hint 片段内的单引号必须转义为两个单引号: " + line);
+                        i++;
+                    }
+                }
+            }
+        }
     }
 
     private static void assertCommonV21Compatibility(final String domain, final String hint) {
