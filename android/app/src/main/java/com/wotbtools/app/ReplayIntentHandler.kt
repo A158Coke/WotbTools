@@ -11,6 +11,7 @@ import android.provider.OpenableColumns
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.util.UUID
 
 /**
@@ -62,17 +63,42 @@ internal data class ReplayPendingMetadata(
 /**
  * Replay 入口意图 → 安全 ingress（规格 §6 原始计划）：
  * external content URI → ContentResolver → 最小验证(.wotbreplay) → stream copy 到 app private cache
- * → app-owned FileProvider URI → Native Bridge 交给 Web。不 Base64、不取真实路径、不解析 replay、
+ * → Native Bridge 提供固定 HTTPS resource → Native stream。不 Base64、不取真实路径、不解析 replay、
  * 不复制 20 MiB/100/200 MiB 业务 contract（只保留一个 infra 单文件硬上限）。
  * 非 replay intent 安全忽略（返回 null，绝不把任意 binary 交给 Web upload pipeline）。
  *
  * Android external replay 只有这一条 ingress（Intent → pending cache → Native Bridge →
- * Web `fetch(content://)` → 上传管线），没有 file chooser 注入路径。
+ * Web `fetch(HTTPS synthetic resource)` → 上传管线），没有 file chooser 注入路径。
  *
  * 跨 process death（RC7）：pending 的 metadata 落盘在 app private SharedPreferences；冷启动先恢复
  * active pending，再清理不再被引用的 orphan，避免 QQ 登录期间进程被杀后 replay 永久丢失。
  */
 object ReplayIntentHandler {
+    internal const val STREAM_URL = "https://wotbtools.com/__native/replay-pending"
+    internal const val IDENTITY_HEADER = "X-Wotb-Pending-Id"
+
+    /** Native response decision + open stream; independent of Android's WebResourceResponse stub. */
+    internal data class StreamResponse(val status: Int, val reason: String, val data: InputStream? = null)
+
+    /** Only unrelated URLs may fall through to the network. Never buffer the replay in memory. */
+    internal fun interceptPendingResource(
+        url: String, file: File?, currentId: String?, expectedId: String?
+    ): StreamResponse? {
+        if (url != STREAM_URL) return null
+        return try {
+            if (file == null || !file.isFile) {
+                StreamResponse(404, "Not Found")
+            } else if (expectedId.isNullOrBlank() || expectedId != currentId) {
+                // The fixed URL may now refer to B while Web still holds A's metadata.
+                StreamResponse(409, "Conflict")
+            } else {
+                StreamResponse(200, "OK", file.inputStream())
+            }
+        } catch (_: Exception) {
+            StreamResponse(500, "Internal Server Error")
+        }
+    }
+
     private const val CACHE_DIR = "replay"
     private const val BUFFER = 8192
     // infra safety hard ceiling（单文件），高于业务 20 MiB；不是业务 validator。

@@ -65,11 +65,12 @@ vi.mock('./FileUploader.vue', () => ({
 vi.mock('./ReplayProcessingPanel.vue', () => ({ default: { template: '<div data-test="processing" />' } }))
 vi.mock('./ReplayTaskCard.vue', () => ({ default: { template: '<div data-test="task" />' } }))
 vi.mock('./RemoveConfirmModal.vue', () => ({ default: { template: '<div data-test="modal" />' } }))
-const nativeImportState = vi.hoisted(() => ({ onPendingFile: null }))
+const nativeImportState = vi.hoisted(() => ({ onPendingFile: null, onReadError: null, retry: vi.fn() }))
 vi.mock('../composables/useNativeReplayImport.js', () => ({
   useNativeReplayImport: (opts) => {
     nativeImportState.onPendingFile = opts?.onPendingFile ?? null
-    return { consumePendingWhenReady: vi.fn(() => Promise.resolve(false)) }
+    nativeImportState.onReadError = opts?.onReadError ?? null
+    return { consumePendingWhenReady: nativeImportState.retry }
   },
 }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k, te: () => true }) }))
@@ -83,7 +84,10 @@ function buildState() {
     updateFiles: vi.fn((next) => {
       session.replaceSelection(next)
     }),
-    startProcessingJob: vi.fn(() => Promise.resolve({ accepted: true, jobId: 'job-1' })),
+    startProcessingJob: vi.fn(() => {
+      session.error.value = ''
+      return Promise.resolve({ accepted: true, jobId: 'job-1' })
+    }),
     cancelProcessing: vi.fn(),
     dismissProcessingJob: vi.fn(),
     requestDirectAction: vi.fn(() => Promise.resolve({ processingJobId: 'job-1', sourceId: 'r0' })),
@@ -113,6 +117,22 @@ function mountWorkspace(capability = 'data', { authenticated = true, login = vi.
 }
 
 describe('ReplayWorkspace', () => {
+  it('shows native read failures in the replay error surface and retries without starting processing', async () => {
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+    nativeImportState.retry.mockClear()
+    nativeImportState.onReadError()
+    await flushPromises()
+    expect(wrapper.find('.error').text()).toBe('workspace.native_replay_read_failed')
+    await wrapper.get('[data-testid="ws-native-retry"]').trigger('click')
+    expect(nativeImportState.retry).toHaveBeenCalledTimes(1)
+    expect(replayState.startProcessingJob).not.toHaveBeenCalled()
+    await nativeImportState.onPendingFile(new File(['replay'], 'a.wotbreplay'), { pendingId: 'pending-a' })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="ws-native-retry"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     replayState = buildState()
     hold.state = replayState
