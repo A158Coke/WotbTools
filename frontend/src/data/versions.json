@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.78",
+    "date": "2026-09-10",
+    "tag": "fix",
+    "zh": "修复 Android 从文件管理器打开回放并登录后未自动上传的问题；读取失败时提供错误提示和重试。需更新 Android App。",
+    "en": "Fixed automatic replay upload after opening a file and signing in on Android. Read failures now show a message with a retry action. Requires the updated Android app.",
+    "ru": "Исправлена автоматическая загрузка повтора после открытия файла и входа в Android. При ошибке чтения доступны сообщение и повторная попытка. Требуется обновление приложения Android."
+  },
+  {
     "v": "2.12.77",
     "date": "2026-09-08",
     "tag": "fix",
