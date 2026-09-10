@@ -58,6 +58,38 @@ paths:
       responses:
         '200': { description: User Hundred status, content: { application/json: { schema: { $ref: '#/components/schemas/HundredUserStatus' } } } }
         '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/users/profile:
+    get:
+      operationId: getCurrentUserProfile
+      summary: Read the authenticated user's WotBTools business profile
+      description: >-
+        user_profile is the WotBTools business-user projection of the Keycloak identity. Every
+        authenticated user that reaches the SPA is provisioned by the global business bootstrap,
+        so 404 PROFILE_NOT_FOUND now only means provisioning has not succeeded yet.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Current user profile, content: { application/json: { schema: { $ref: '#/components/schemas/UserProfile' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '404': { description: Profile not provisioned yet, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    put:
+      operationId: ensureCurrentUserProfile
+      summary: Idempotently ensure the authenticated user's WotBTools business profile
+      description: >-
+        This is ensure, not create. An existing profile is returned unchanged: wotbServer,
+        wotbAccountId, wotbNickname, wotbAccountSource and wotbAccountVerifiedAt are never
+        overwritten. A missing profile is created with the canonical provisioning semantics
+        (trusted Wargaming claims create that region with source WARGAMING; otherwise CN with
+        source MANUAL). Concurrent calls for the same subject both succeed and leave exactly one
+        row: the loser of the keycloak_user_id unique race reloads the winner's profile instead of
+        reporting an already-exists conflict. A real WotB ownership collision is never swallowed
+        and still returns 409 WOTB_ACCOUNT_ALREADY_USED. Identity comes solely from the bearer
+        token and no request body is accepted, so a caller cannot impersonate another user.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Existing or newly provisioned profile, content: { application/json: { schema: { $ref: '#/components/schemas/UserProfile' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '409': { description: The WotB account is already bound to another user, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '500': { description: Profile bootstrap invariant violated, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/admin/hof/hundred/submissions:
     get:
       operationId: listHundredAdminSubmissions
@@ -484,6 +516,20 @@ components:
         deleted: { type: integer }
         failed: { type: integer }
         results: { type: array, items: { $ref: '#/components/schemas/BulkDeleteItemResult' } }
+    UserProfile:
+      type: object
+      additionalProperties: false
+      required: [id, keycloakUserId, username, wotbServer, wotbAccountSource]
+      properties:
+        id: { type: integer, format: int64 }
+        keycloakUserId: { type: string }
+        displayName: { type: [string, 'null'] }
+        username: { type: string }
+        wotbAccountId: { type: [integer, 'null'], format: int64 }
+        wotbNickname: { type: [string, 'null'] }
+        wotbServer: { type: string, enum: [CN, ASIA, EU, NA] }
+        wotbAccountSource: { type: string, enum: [MANUAL, WARGAMING] }
+        wotbAccountVerifiedAt: { type: [string, 'null'], format: date-time }
     AdminUserListItem:
       type: object
       additionalProperties: false

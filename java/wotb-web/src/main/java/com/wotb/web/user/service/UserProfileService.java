@@ -3,6 +3,7 @@ package com.wotb.web.user.service;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
+import com.wotb.web.util.ConstraintViolations;
 import com.wotb.web.util.JwtUtil;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -23,6 +24,13 @@ public class UserProfileService {
 
     /** WG Provider 支持的区服（与 Keycloak {@code WargamingRegion} 枚举一致）。 */
     private static final Set<String> WG_REGIONS = Set.of("ASIA", "EU", "NA");
+
+    /**
+     * {@code keycloak_user_id} 上的唯一约束。V5 用内联 {@code NOT NULL UNIQUE} 声明，
+     * PostgreSQL 的自动命名规则是 {@code <table>_<column>_key}。
+     * 该冲突只意味着「同一 Keycloak sub 被并发创建」，可以幂等收敛。
+     */
+    private static final String UK_KEYCLOAK_USER_ID = "user_profile_keycloak_user_id_key";
 
     private final UserProfileRepository repository;
     private final UserProfileMapper mapper;
@@ -96,13 +104,41 @@ public class UserProfileService {
         repository.flush();
     }
 
-    /** 创建用户资料（首次登录时由前端 POST /profile 触发）。 */
-    @Transactional
-    public UserProfileDto create(final String keycloakUserId, final String username, final String displayName) {
-        if (repository.findByKeycloakUserId(keycloakUserId).isPresent()) {
-            throw new IllegalArgumentException("PROFILE_ALREADY_EXISTS");
-        }
+    /**
+     * 幂等的「确保当前用户存在业务资料」（account bootstrap 的唯一入口）。
+     *
+     * <p>语义是 <em>ensure</em>，不是 create：</p>
+     * <ul>
+     *   <li>已有 profile → 原样返回，<strong>不修改任何业务绑定</strong>
+     *       （{@code wotb_server} / {@code wotb_account_id} / {@code wotb_nickname} /
+     *       {@code wotb_account_source} / {@code wotb_account_verified_at} 全部保持）。</li>
+     *   <li>没有 profile → 按 {@link #newProfile} 的 canonical provisioning 语义创建
+     *       （可信 WG claims → 对应区服 + {@code WARGAMING}；否则 → {@code CN} + {@code MANUAL}）。</li>
+     * </ul>
+     *
+     * <p><strong>刻意不加外层 {@code @Transactional}</strong>：两个并发 ensure 的败者会在
+     * {@code keycloak_user_id} 唯一约束上失败，而 PostgreSQL 会把该事务标记为 aborted
+     * （后续任何语句都报 25P02）。只有让「插入」与「冲突后重读」落在各自独立的短事务里
+     * （{@code saveAndFlush} 与派生查询各自持有自己的事务），败者才能读到胜者已提交的 profile
+     * 并幂等成功——这正是「1 个 KC sub 恰好 1 条 profile，两个调用方都成功」的实现方式。
+     * 若在这里加上 {@code @Transactional}，冲突会污染唯一的事务，败者将无法完成重读。</p>
+     */
+    public UserProfileDto ensureCurrentProfile(final String keycloakUserId,
+                                               final String username,
+                                               final String displayName) {
+        final Optional<UserProfile> existing = repository.findByKeycloakUserId(keycloakUserId);
+        return existing.isPresent()
+                ? mapper.toDto(existing.get())
+                : provision(keycloakUserId, username, displayName);
+    }
 
+    /**
+     * canonical profile creation：唯一的「首次创建业务资料」实现，ensure 与
+     * {@link #syncFromLogin} 共用，禁止各自再写一份 CN 默认 / 可信 WG 判定。
+     */
+    private static UserProfile newProfile(final String keycloakUserId,
+                                          final String username,
+                                          final String displayName) {
         final UserProfile profile = new UserProfile();
         profile.setKeycloakUserId(keycloakUserId);
         profile.setUsername(username);
@@ -120,10 +156,35 @@ public class UserProfileService {
             profile.setWotbAccountSource("MANUAL");
         }
         profile.setUpdatedAt(OffsetDateTime.now());
+        return profile;
+    }
+
+    /**
+     * 插入 canonical profile，并按<strong>约束名</strong>区分两类唯一冲突。
+     *
+     * <p>这正是「不要把真实身份冲突吞成幂等成功」的落点：</p>
+     * <ul>
+     *   <li>{@code keycloak_user_id} 冲突 = 并发的同 sub ensure，另一个请求已经建好 →
+     *       重读并返回既有 profile（两个调用方都成功）。</li>
+     *   <li>{@code (wotb_server, wotb_account_id)} 冲突 = 该 WotB 账号已属于别人 →
+     *       保持 canonical {@code WOTB_ACCOUNT_ALREADY_USED}，绝不返回他人的 profile，
+     *       也绝不写入被抢走的绑定。</li>
+     * </ul>
+     */
+    private UserProfileDto provision(final String keycloakUserId,
+                                     final String username,
+                                     final String displayName) {
+        final UserProfile profile = newProfile(keycloakUserId, username, displayName);
         try {
-            return mapper.toDto(repository.save(profile));
+            // saveAndFlush：让约束冲突在本方法内、该语句自己的事务回滚之后暴露，而不是拖到外层提交点。
+            return mapper.toDto(repository.saveAndFlush(profile));
         } catch (final DataIntegrityViolationException e) {
-            throw new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED");
+            if (ConstraintViolations.causedByConstraint(e, UK_KEYCLOAK_USER_ID)) {
+                return repository.findByKeycloakUserId(keycloakUserId)
+                        .map(mapper::toDto)
+                        .orElseThrow(() -> new IllegalStateException("PROFILE_BOOTSTRAP_FAILED"));
+            }
+            throw new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED", e);
         }
     }
 
@@ -152,17 +213,9 @@ public class UserProfileService {
             final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
                     .orElse(null);
             if (profile == null) {
-                // Profile 不存在：原子创建 WARGAMING Profile。
-                final UserProfile created = new UserProfile();
-                created.setKeycloakUserId(keycloakUserId);
-                created.setUsername(JwtUtil.currentUsername());
-                created.setDisplayName(JwtUtil.currentDisplayName());
-                created.setWotbServer(trustedRegion);
-                created.setWotbAccountId(accountId);
-                created.setWotbNickname(nickname);
-                created.setWotbAccountSource("WARGAMING");
-                created.setWotbAccountVerifiedAt(OffsetDateTime.now());
-                created.setUpdatedAt(OffsetDateTime.now());
+                // Profile 不存在：原子创建 WARGAMING Profile（与 ensure 共用同一 canonical 语义）。
+                final UserProfile created = newProfile(
+                        keycloakUserId, JwtUtil.currentUsername(), JwtUtil.currentDisplayName());
                 return mapper.toDto(repository.save(created));
             }
             if (profile.getWotbAccountId() == null) {

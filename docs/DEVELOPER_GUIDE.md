@@ -441,6 +441,32 @@ JWT mapper 提供 `wotb_region / wotb_account_id / wotb_nickname / wotb_verified
 
 IdP 部署步骤见 `docs/auth/wargaming-asia-deployment.md`。
 
+### 身份两层与 profile self-heal
+
+```text
+Keycloak User  = 认证 / IAM 身份（谁登录了）
+user_profile   = WotBTools 业务用户投影（这个人在业务上是谁）
+```
+
+稳态不变量：**每个活跃、已认证并成功进入 WotBTools 的用户都拥有 `user_profile`。**
+
+实现方式是 **eventual self-healing**，不是跨系统强事务：
+
+```text
+Keycloak 认证成功
+  → 进入 SPA（任意 view：home / replay / battle-playback / AI Review / HoF / admin / profile / boost）
+  → AppShell 触发 useBusinessUserBootstrap()
+  → PUT /api/users/profile（幂等 ensure）
+  → 已有 profile 原样返回；没有则按 canonical provisioning 创建
+```
+
+- **canonical owner 只有全局 bootstrap**（`frontend/src/composables/useBusinessUserBootstrap.js`）。页面只等待其结果，不得各自实现「读不到资料 → 自己创建」。
+- **KC-only 是允许的临时/历史状态**：broker 刚注册但浏览器还没回站、用户回站前关掉浏览器、bootstrap 暂时失败、历史 legacy 数据、管理员手工建 KC user。任何 KC-only 用户下一次成功进入 WotBTools 都会被自动补齐。
+- **不做强一致声明**：Keycloak 与业务 DB 之间没有分布式事务，也不在 Keycloak First Broker Login 里写业务库；provisioning 失败**不删除 Keycloak 用户**、**不回退认证状态**、**不永久缓存失败**（刷新 / 重新 bootstrap / 页面上的重试入口都会重新 ensure）。
+- **`PUT /api/users/profile` 是 ensure 而非 create**：已存在时不改写 `wotb_server` / `wotb_account_id` / `wotb_nickname` / `wotb_account_source` / `wotb_account_verified_at`。并发 ensure 靠唯一约束**按约束名**区分：`keycloak_user_id` 冲突（同一 sub 的并发创建）重读胜者并幂等成功；`(wotb_server, wotb_account_id)` 冲突是真实账号占用，仍返回 409 `WOTB_ACCOUNT_ALREADY_USED`，绝不吞掉。
+- **Admin Users 仍以 KC 为权威**（`segment=keycloak` 默认）并显式暴露 `hasLocalProfile=false`，作为 IAM 清点与 legacy/不完整状态的观测能力；self-heal 不改变这一点。
+- **Boost 打手选择器显式用 `segment=local`** 并排除 `keycloakUserMissing=true` 的孤儿绑定（那是管理员清理对象，不是有效打手候选）。
+
 Keycloak 登录页为 V8 Unified Theme（深色=Battlefield/浅色=Minimal、深色登录卡局部毛玻璃 dark-only、浅色无 blur、IdP 动态渲染、`registrationAllowed:false`）；主题文件在 `docker/keycloak/themes/wotbtools/login/`，仅覆盖 `template.ftl`（其余认证页经 `registrationLayout` 共享），生产 realm 需手动设 `loginTheme=wotbtools` 并关闭 Registration（见 `docs/auth/keycloak-login-theme.md`）。
 
 ---

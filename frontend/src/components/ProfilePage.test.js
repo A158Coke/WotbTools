@@ -27,7 +27,8 @@ vi.mock('../composables/useAuth.js', () => ({
 
 vi.mock('../utils/api-boost.js', () => ({
   getUserProfile: () => Promise.resolve(currentProfile),
-  createUserProfile: () => Promise.resolve(currentProfile),
+  // 全局 bootstrap 才是 profile ensure 的 owner；页面只等待其结果。
+  ensureUserProfile: () => Promise.resolve(currentProfile),
   syncUserWotbAccountFromLogin: () => syncImpl(),
   updateUserWotbAccount: () => Promise.resolve(currentProfile),
   deleteUserWotbAccount: () => Promise.resolve(currentProfile),

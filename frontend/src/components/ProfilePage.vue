@@ -2,8 +2,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
+import { whenBusinessUserSettled } from '../composables/useBusinessUserBootstrap.js'
 import {
-  createUserProfile,
   deleteUserWotbAccount,
   getMyBoosterAssignments,
   getMyBoosterProfile,
@@ -82,16 +82,15 @@ onMounted(async () => {
 })
 
 async function loadProfile() {
+  // 等待全局 business bootstrap 完成 ensure；页面不再自己「读不到就创建」。
+  // ensure 失败时 profile 仍可能缺失，此时按错误态展示（可刷新重试），不静默吞掉。
+  await whenBusinessUserSettled()
   try {
     profile.value = await getUserProfile()
   } catch {
-    try {
-      profile.value = await createUserProfile()
-    } catch {
-      profile.value = null
-      phase.value = 'error'
-      return
-    }
+    profile.value = null
+    phase.value = 'error'
+    return
   }
   await syncFromLogin()
   if (profile.value?.wotbAccountId) {
