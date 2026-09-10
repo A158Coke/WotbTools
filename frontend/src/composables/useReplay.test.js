@@ -14,6 +14,11 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ locale: { value: 'en' }, t: i18n.t, te: i18n.te })
 }))
 
+// useReplay 为 Processing Job 解析一次 authenticated session；测试里 mock 掉，避免实例化 Keycloak。
+vi.mock('./useAuth.js', () => ({
+  useAuth: () => ({ ensureToken: async () => true, token: () => 'test-token' }),
+}))
+
 const api = vi.hoisted(() => ({
   createExportJob: vi.fn(),
   getExportJob: vi.fn(),
@@ -107,7 +112,7 @@ describe('useReplay export job flow', () => {
 
     await replay.startExportJob('aggregate')
     await replay.cancelExportJob()
-    expect(api.cancelExportJob).toHaveBeenCalledWith('j1')
+    expect(api.cancelExportJob).toHaveBeenCalledWith(expect.anything(), 'j1')
     expect(replay.exportJob.value.status).toBe('CANCELLED')
     const calls = api.getExportJob.mock.calls.length
     await vi.advanceTimersByTimeAsync(3000)
@@ -124,7 +129,7 @@ describe('useReplay export job flow', () => {
 
     replay.exportJob.value = job({ status: 'READY', filename: 'x.zip', contentType: 'application/zip' })
     await replay.downloadExportResult()
-    expect(api.downloadExportJob).toHaveBeenCalledWith('j1', 'x.zip')
+    expect(api.downloadExportJob).toHaveBeenCalledWith(expect.anything(), 'j1', 'x.zip')
   })
 
   it('poll failure clears job and surfaces error', async () => {
@@ -164,7 +169,7 @@ describe('useReplay export job flow', () => {
     await vi.advanceTimersByTimeAsync(0)
 
     expect(replay.exportJob.value).toBeNull()
-    expect(api.cancelExportJob).toHaveBeenCalledWith('j1')
+    expect(api.cancelExportJob).toHaveBeenCalledWith(expect.anything(), 'j1')
     expect(api.getExportJob).not.toHaveBeenCalled()
   })
 
@@ -259,7 +264,7 @@ describe('useReplay Processing Dataset lifecycle', () => {
   it('REGISTERING cancel：不 abort request、标记取消；202 返回后 cancel 且永不绑定（无 orphan）', async () => {
     const dCreate = deferred()
     let capturedOpts
-    api.createProcessingJob.mockImplementation((body, opts) => {
+    api.createProcessingJob.mockImplementation((auth, body, opts) => {
       capturedOpts = opts
       opts.onProgress({ loaded: 100, total: 100, percent: 100 }) // REGISTERING
       return dCreate.promise
@@ -274,17 +279,17 @@ describe('useReplay Processing Dataset lifecycle', () => {
     dCreate.resolve({ jobId: 'p1', status: 'QUEUED', total: 1 })
     await pStart
     expect(api.cancelProcessingJob).toHaveBeenCalledTimes(1)
-    expect(api.cancelProcessingJob).toHaveBeenCalledWith('p1')
+    expect(api.cancelProcessingJob).toHaveBeenCalledWith(expect.anything(), 'p1')
     expect(replay.processingJob.value).toBeNull('p1 不得绑定 processingJob')
     expect(replay.processingJobId.value).toBeNull('p1 不得成为当前 Dataset')
-    expect(api.getProcessingJob.mock.calls.some(([id]) => id === 'p1')).toBe(false, 'p1 无主 poll')
+    expect(api.getProcessingJob.mock.calls.some(([, id]) => id === 'p1')).toBe(false, 'p1 无主 poll')
     expect(replay.uploadState.value).toBeNull()
   })
 
   it('REGISTERING cancel + 立即重试：旧 create settle 前 create 只调 1 次，settle 后才允许 p2', async () => {
     const dP1 = deferred()
     let capturedOpts
-    api.createProcessingJob.mockImplementation((body, opts) => {
+    api.createProcessingJob.mockImplementation((auth, body, opts) => {
       capturedOpts = opts
       opts.onProgress({ loaded: 100, total: 100, percent: 100 })
       return dP1.promise
@@ -298,7 +303,7 @@ describe('useReplay Processing Dataset lifecycle', () => {
 
     dP1.resolve({ jobId: 'p1', status: 'QUEUED', total: 1 })
     await pOld
-    expect(api.cancelProcessingJob).toHaveBeenCalledWith('p1')
+    expect(api.cancelProcessingJob).toHaveBeenCalledWith(expect.anything(), 'p1')
     await vi.advanceTimersByTimeAsync(0)
     expect(api.createProcessingJob).toHaveBeenCalledTimes(2, 'p1 lifecycle 结束后才允许 p2')
     expect(capturedOpts.signal.aborted).toBe(false)
@@ -314,7 +319,7 @@ describe('useReplay Processing Dataset lifecycle', () => {
     await mountedReplay.startProcessingJob()
     expect(mountedReplay.processingJob.value?.jobId).toBe('p1')
     wrapper.unmount()
-    expect(api.cancelProcessingJob).toHaveBeenCalledWith('p1')
+    expect(api.cancelProcessingJob).toHaveBeenCalledWith(expect.anything(), 'p1')
   })
 
   it('REGISTERING unmount：不 abort，202 返回后 cancel（绝不 orphan）', async () => {
@@ -322,7 +327,7 @@ describe('useReplay Processing Dataset lifecycle', () => {
     mountedReplay.files.value = [new File(['a'], 'a.wotbreplay')]
     const dCreate = deferred()
     let capturedOpts
-    api.createProcessingJob.mockImplementation((body, opts) => {
+    api.createProcessingJob.mockImplementation((auth, body, opts) => {
       capturedOpts = opts
       opts.onProgress({ loaded: 100, total: 100, percent: 100 })
       return dCreate.promise
@@ -335,7 +340,7 @@ describe('useReplay Processing Dataset lifecycle', () => {
 
     dCreate.resolve({ jobId: 'p1', status: 'QUEUED', total: 1 })
     await pStart
-    expect(api.cancelProcessingJob).toHaveBeenCalledWith('p1')
+    expect(api.cancelProcessingJob).toHaveBeenCalledWith(expect.anything(), 'p1')
   })
 
   it('stale status resolve：A poll 迟到 resolve 不得写 B 的 loading/job/error（零写入）', async () => {
@@ -923,7 +928,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     expect(replay.processingJobId.value).toBe('p2')
     expect(replay.processingJob.value?.jobId).toBe('p2')
     expect(api.getProcessingJob).toHaveBeenCalledTimes(2)
-    expect(api.getProcessingJob.mock.calls[1][0]).toBe('p2')
+    expect(api.getProcessingJob.mock.calls[1][1]).toBe('p2')
   })
 
   it('source polling remains owned by the job that started it', async () => {
@@ -941,7 +946,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     await vi.advanceTimersByTimeAsync(0)
 
     expect(api.getProcessingJob).toHaveBeenCalledTimes(2)
-    expect(api.getProcessingJob.mock.calls[1][0]).toBe('p1') // poll 绑定 p1（不是 p2）
+    expect(api.getProcessingJob.mock.calls[1][1]).toBe('p1') // poll 绑定 p1（不是 p2）
     expect(replay.processingJobId.value).toBe('p2') // current gen p2 不被 p1 poll 影响
     expect(replay.processingJob.value?.jobId).toBe('p2')
     pDirect.catch(() => {}) // 忽略 afterEach abort 的 rejection（poll 仍 pending）
@@ -1036,11 +1041,11 @@ describe('useReplay Processing create single-flight', () => {
 
     dCreate.resolve({ jobId: 'pA', status: 'QUEUED', total: 1 }) // server 已接受 → stale 返回
     await pStart
-    expect(api.cancelProcessingJob).toHaveBeenCalledWith('pA')
+    expect(api.cancelProcessingJob).toHaveBeenCalledWith(expect.anything(), 'pA')
     expect(replay.processingJob.value).toBeNull()
     expect(replay.processingJobId.value).toBeNull()
     expect(replay.uploadState.value).toBeNull()
-    expect(api.getProcessingJob.mock.calls.some(([id]) => id === 'pA')).toBe(false)
+    expect(api.getProcessingJob.mock.calls.some(([, id]) => id === 'pA')).toBe(false)
   })
 
   it('stale create 迟到 resolve 不清当前 B 的 uploadState/loading（cancel 后不绑定）', async () => {
@@ -1059,7 +1064,7 @@ describe('useReplay Processing create single-flight', () => {
 
     dA.resolve({ jobId: 'pA', status: 'QUEUED', total: 1 }) // A 迟到成功（server 已接受）
     await pOld
-    expect(api.cancelProcessingJob).toHaveBeenCalledWith('pA')
+    expect(api.cancelProcessingJob).toHaveBeenCalledWith(expect.anything(), 'pA')
     expect(replay.uploadState.value?.phase).toBe('UPLOADING', 'A 的迟到 resolve 不得清 B uploadState')
     expect(replay.loading.value).toBe(true, 'A 的迟到 resolve 不得清 B loading')
     expect(replay.processingJob.value).toBeNull()
@@ -1221,7 +1226,7 @@ describe('useReplay processing job flow', () => {
 
     await replay.startProcessingJob()
     await replay.cancelProcessingJob()
-    expect(api.cancelProcessingJob).toHaveBeenCalledWith('p1')
+    expect(api.cancelProcessingJob).toHaveBeenCalledWith(expect.anything(), 'p1')
     expect(replay.processingJob.value.status).toBe('CANCELLED')
     expect(replay.loading.value).toBe(false)
     const calls = api.getProcessingJob.mock.calls.length
@@ -1244,7 +1249,7 @@ describe('useReplay processing job flow', () => {
     let resolveCreate
     const pending = new Promise(r => { resolveCreate = r })
     api.getProcessingJob.mockReturnValue(new Promise(() => {})) // 轮询挂起，避免 READY 覆盖断言
-    api.createProcessingJob.mockImplementation((body, { onProgress }) => {
+    api.createProcessingJob.mockImplementation((auth, body, { onProgress }) => {
       onProgress({ loaded: 33_554_432, total: 67_108_864, percent: 50 })
       return pending
     })
@@ -1254,7 +1259,7 @@ describe('useReplay processing job flow', () => {
     expect(replay.uploadState.value.percent).toBe(50)
 
     // 上传体已发完、202 未返回 → REGISTERING
-    const opts = api.createProcessingJob.mock.calls[0][1]
+    const opts = api.createProcessingJob.mock.calls[0][2]
     opts.onProgress({ loaded: 67_108_864, total: 67_108_864, percent: 100 })
     expect(replay.processingUiState.value).toBe('REGISTERING')
 
@@ -1266,7 +1271,7 @@ describe('useReplay processing job flow', () => {
 
   it('cancelProcessing aborts active upload without ghost job state', async () => {
     api.getProcessingJob.mockReturnValue(new Promise(() => {}))
-    api.createProcessingJob.mockImplementation((body, { onProgress, signal }) =>
+    api.createProcessingJob.mockImplementation((auth, body, { onProgress, signal }) =>
       new Promise((_, reject) => {
         signal.addEventListener('abort', () => {
           const err = new Error('UPLOAD_ABORTED')
@@ -1296,8 +1301,23 @@ describe('useReplay processing job flow', () => {
     const ref = await replay.requestDirectAction(replay.files.value[1])
 
     expect(ref).toEqual({ processingJobId: 'p1', sourceId: 'r1' })
-    const fd = api.createProcessingJob.mock.calls[0][0]
+    const fd = api.createProcessingJob.mock.calls[0][1]
     expect(fd.get('prioritySourceIndex')).toBe('1')
+  })
+
+  it('Android external replay：operationId 进入 create multipart（可重放安全 identity）；手工上传不带', async () => {
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 1 })
+    api.getProcessingJob.mockReturnValue(new Promise(() => {})) // 轮询挂起，避免影响断言
+
+    await replay.startProcessingJob({ operationId: 'pending-uuid-a' })
+    const fd = api.createProcessingJob.mock.calls[0][1]
+    expect(fd.get('operationId')).toBe('pending-uuid-a')
+
+    // 普通手工解析（无 pending identity）绝不携带 operationId：后端不进入幂等路径。
+    replay.dismissProcessingJob()
+    api.createProcessingJob.mockClear()
+    await replay.startProcessingJob()
+    expect(api.createProcessingJob.mock.calls[0][1].get('operationId')).toBeNull()
   })
 
   it('export after READY reuses processingJobId without re-uploading', async () => {
@@ -1310,7 +1330,7 @@ describe('useReplay processing job flow', () => {
     api.getExportJob.mockResolvedValue({ jobId: 'e1', status: 'READY', phase: null, total: 2, processed: 2, duplicates: 0, failures: 0, filename: 'x.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     await replay.startExportJob('aggregate')
     // 关键：不重新上传（body=null）、带 processingJobId；无覆盖时 teamNamesJson=null
-    expect(api.createExportJob).toHaveBeenCalledWith('aggregate', 'p1', null)
+    expect(api.createExportJob).toHaveBeenCalledWith(expect.anything(), 'aggregate', 'p1', null)
     await vi.advanceTimersByTimeAsync(0)
     expect(replay.exportJob.value.status).toBe('READY')
   })
@@ -1326,7 +1346,7 @@ describe('useReplay processing job flow', () => {
       summary: { 'clan:CHRD': 'CHRD A队' }
     })
     expect(api.createExportJob).toHaveBeenCalledTimes(1)
-    const [mode, jobId, teamNamesJson] = api.createExportJob.mock.calls[0]
+    const [, mode, jobId, teamNamesJson] = api.createExportJob.mock.calls[0]
     expect(mode).toBe('aggregate')
     expect(jobId).toBe('p1')
     expect(JSON.parse(teamNamesJson)).toEqual({
@@ -1410,7 +1430,7 @@ describe('useReplay file-selection invalidation', () => {
     // files 改变 → 停止轮询 + 后台取消旧 job + 结果失效
     replay.updateFiles([new File(['y'], 'b.wotbreplay')])
     expect(replay.processingJob.value).toBeNull()
-    expect(api.cancelProcessingJob).toHaveBeenCalledWith('p1')
+    expect(api.cancelProcessingJob).toHaveBeenCalledWith(expect.anything(), 'p1')
 
     // P1 迟到 READY（轮询响应在 stop 之后才 resolve）→ 必须被丢弃
     api.getProcessingJobResult.mockResolvedValue({ battles: [], aggregate: [], duplicates: [], failures: [], playerColumns: [], aggregateColumns: [] })

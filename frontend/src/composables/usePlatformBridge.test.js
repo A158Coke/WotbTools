@@ -11,18 +11,20 @@ import {
 } from './usePlatformBridge.js'
 
 /** 模拟 origin-scoped bridge：postMessage → native reply → 'message' 事件。 */
-function stubNative(capabilities, pending) {
+function stubNative(capabilities, pending, consumeResult = true) {
   const listeners = []
+  const calls = []
   const results = {
     getCapabilities: capabilities,
     getPendingReplay: pending ?? null,
-    consumePendingReplay: true,
+    consumePendingReplay: consumeResult,
     checkForUpdate: true,
     startUpdate: true,
   }
   window.WotbNative = {
     postMessage: vi.fn((json) => {
       const msg = JSON.parse(json)
+      calls.push({ method: msg.method, params: msg.params })
       listeners.forEach(cb =>
         cb({ data: JSON.stringify({ id: msg.id, result: results[msg.method] ?? null }) })
       )
@@ -33,6 +35,7 @@ function stubNative(capabilities, pending) {
       if (i >= 0) listeners.splice(i, 1)
     }),
   }
+  return { calls }
 }
 
 describe('usePlatformBridge', () => {
@@ -62,5 +65,19 @@ describe('usePlatformBridge', () => {
     const p = usePlatformBridge()
     expect(p.isAndroidApp()).toBe(false)
     await expect(p.supports('app-update')).resolves.toBe(false)
+  })
+
+  it('consumePendingReplay 携带 expectedPendingId（identity-aware ACK 的 wire 边界）', async () => {
+    const native = stubNative(['replay-share'], { pendingId: 'pid-1', name: 'a.wotbreplay', uri: 'content://x', size: 1 })
+    await expect(consumePendingReplay('pid-1')).resolves.toBe(true)
+    expect(native.calls.at(-1)).toEqual({
+      method: 'consumePendingReplay',
+      params: { expectedPendingId: 'pid-1' },
+    })
+  })
+
+  it('Native compare-and-clear 返回 false（identity 不匹配）时如实透传 false', async () => {
+    stubNative(['replay-share'], { pendingId: 'pid-2', name: 'a.wotbreplay', uri: 'content://x', size: 1 }, false)
+    await expect(consumePendingReplay('pid-1')).resolves.toBe(false)
   })
 })

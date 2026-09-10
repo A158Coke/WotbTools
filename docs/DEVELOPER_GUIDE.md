@@ -313,8 +313,13 @@ Workspace 的标题/清空、能力 tabs、批次与当前回放 selector 分别
 `ReplayPage` 作为 data 结果 tab 嵌入（`embedded` prop），在 Workspace 内只渲染结果 / 列系统 / Export /
 Drawer。**登录门禁**：整个 Replay Workspace 全部要求登录——未登录进入任意 replay capability
 （data / ai / playback）自动跳 Keycloak/OIDC 并按 redirectUri 回原 capability，不再有「data 匿名解析」；
-判断前先等 Keycloak init 完成（auth init race safe），已有 SSO/session 用户不被无谓 `kc.login()` 打断，
-确认未登录时仅 login 一次。
+判断前先等 Keycloak init 完成（auth init race safe），已有 SSO/session 用户不被无谓 `kc.login()` 打断。
+Workspace 是三态 UI gate（检查登录态 / Login Required + 可重试登录 / 工作台）：未登录时不渲染
+Source panel、上传器与任何 capability 面板，因此未登录无法发出 processing 请求；`useAuth.login()` 只对
+「同一个进行中的 redirect」去重（`loginInFlight` 在 `finally` 释放，无 component-lifetime 一次性锁），
+失败或取消后 capability tabs、登录按钮与 UserMenu 都能重新发起新的 login transaction。后端同样把
+`/api/replay/processing-jobs/**`（创建/状态/result/取消）收紧为 `wotbtools-user`/`wotbtools-admin`，
+前端 gate 只是 UX，后端才是 authorization authority。
 **能力解耦**：AI 与 Playback 仅共享 replay/source/processing dataset，不做 `AI@seek → Playback`
 时间点联动 / 跨 capability 状态 handoff。tab 切换经 pushState + popstate 形成可 Back/Forward 的 history，
 返回时 selection / Processing Job 不丢，只恢复 activeCapability。
@@ -322,7 +327,11 @@ Drawer。**登录门禁**：整个 Replay Workspace 全部要求登录——未�
 app-owned content:// 安全 URI serve 缓存文件字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection →
 自动 `startProcessingJob` exactly once（READY 后 data tab 展示结果，绝不自动启动 AI，失败走现有
 Processing error/retry，不无限重试）；普通 Web/FileUploader 手动选文件不经过此路径，保持现有 UX。
-`getPendingReplay()==null` 不清零 eligible（warm resume 后 Native 新增 pending 仍可消费）。核心实现仍由
+`getPendingReplay()==null` 不清零 eligible（warm resume 后 Native 新增 pending 仍可消费）。
+Pending replay 只在已登录时消费，ACK 边界是「server 已接受 processing request」
+（`startProcessingJob()` 返回 `accepted: true` + `jobId`）而不是 job READY；未登录/未受理/失败一律不 ACK，
+Native pending 原样保留。auth flow 进行中的 replay intent 只入队、绝不抢 WebView navigation；pending
+metadata（24h TTL）持久化在 app private storage，可跨 QQ 登录期间的 process death 恢复。核心实现仍由
 `AiReviewPanel`（SSE 分析流 + 结果）与 `BattlePlaybackPanel`
 （cached map-overview + MapOverview）提供。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，
 由 BlitzKit 确定性生成，production 不访问 BlitzKit。

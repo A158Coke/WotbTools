@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -49,6 +50,177 @@ public class ReplayProcessingJobStore {
     private final Object lifecycleLock = new Object();
     private final ReplayJobStorage storage;
     private final long ttlMinutes;
+
+    /**
+     * Processing create idempotency 的**单一权威状态机**：{@code ownerSubject + '\u0000' + operationId}
+     * → {@link OperationState}。只服务 Android external replay 的可重放安全路径（server 已接受但 Native
+     * ACK 前进程被杀 → 冷启动后同一份 pending replay 重新提交必须拿回同一个 job）。按 authenticated
+     * subject 分域：同一 operationId 在不同 subject 下必须是不同 job，绝不跨用户复用。
+     *
+     * <p>状态只有三种：{@code ABSENT}（无条目）/ {@code IN_FLIGHT(future)} / {@code COMMITTED(jobId)}；
+     * 全部转换都在 {@link #claimOperation} / {@link #commitOperation} / {@link #abandonOperation} /
+     * {@link #dropOperationIndex} 的 {@code ConcurrentHashMap#compute} 线性化边界内完成，因此
+     * 「committed 检查」与「reservation claim」不是两次独立读取——不存在「lookup 得到 null →
+     * 期间 creator 已提交并释放 reservation → 本调用错误地成为第二个 creator」的 TOCTOU 窗口。</p>
+     */
+    private final ConcurrentHashMap<String, OperationState> operations = new ConcurrentHashMap<>();
+    /** 反向索引：processingJobId → operation key（job 被移除时同步清理，不留悬挂 COMMITTED 状态）。 */
+    private final ConcurrentHashMap<String, String> jobOperationKeys = new ConcurrentHashMap<>();
+
+    // ---- Processing create idempotency 状态机（Android external replay 可重放安全）----
+
+    /**
+     * 单一 operation 状态值：{@code inFlight != null} → IN_FLIGHT（creator 正在创建/提交）；
+     * 否则 {@code committedJobId != null} → COMMITTED（已成功提交调度器的 job）。
+     */
+    private record OperationState(CompletableFuture<String> inFlight, String committedJobId) {
+
+        static OperationState inFlight(final CompletableFuture<String> future) {
+            return new OperationState(future, null);
+        }
+
+        static OperationState committed(final String jobId) {
+            return new OperationState(null, jobId);
+        }
+    }
+
+    /**
+     * {@link #claimOperation} 的结果：COMMITTED（已提交 → 复用 jobId）/ JOIN（已有 creator →
+     * 等待其结果）/ CREATOR（本调用成为唯一 creator）。
+     */
+    public record OperationClaim(Kind kind, String jobId, CompletableFuture<String> inFlight) {
+
+        public enum Kind {
+            COMMITTED,
+            JOIN,
+            CREATOR
+        }
+
+        static OperationClaim committed(final String jobId) {
+            return new OperationClaim(Kind.COMMITTED, jobId, null);
+        }
+
+        static OperationClaim join(final CompletableFuture<String> future) {
+            return new OperationClaim(Kind.JOIN, null, future);
+        }
+
+        static OperationClaim creator() {
+            return new OperationClaim(Kind.CREATOR, null, null);
+        }
+    }
+
+    /**
+     * Processing create idempotency 索引（只读 introspection：诊断与测试断言使用）。
+     *
+     * <p>Service 侧决策**不**走这里——它通过 {@link #claimOperation} 做单点线性化决策；
+     * 本方法只回答「当前是否已有 COMMITTED job」。job 已消失时顺手清理状态（懒失效）。</p>
+     */
+    public String jobIdForOperation(final String ownerSubject, final String operationId) {
+        if (!hasOperationIdentity(ownerSubject, operationId)) {
+            return null;
+        }
+        final String key = operationKey(ownerSubject, operationId);
+        final OperationState state = operations.get(key);
+        if (state == null || state.committedJobId() == null) {
+            return null;
+        }
+        if (jobs.get(state.committedJobId()) == null) {
+            operations.computeIfPresent(key, (k, current) ->
+                    current.committedJobId() != null ? null : current);
+            jobOperationKeys.remove(state.committedJobId(), key);
+            return null;
+        }
+        return state.committedJobId();
+    }
+
+    /**
+     * **单一线性化点**：解析 (subject, operationId) 的权威状态并完成状态转换。
+     *
+     * <p>三种返回：{@code COMMITTED(jobId)}（已提交，直接复用）/ {@code JOIN(future)}（有 creator
+     * 正在创建/提交，等待同一个 future）/ {@code CREATOR}（本调用成为唯一 creator：负责 create +
+     * {@code dispatcher.submit}，成功后 {@link #commitOperation}，失败时 {@link #abandonOperation}）。</p>
+     *
+     * <p>committed 判定与 reservation 领取在同一个 {@code compute} 内完成，因此同一 identity 在任意
+     * 并发 interleaving 下最多只有一个 creator。</p>
+     */
+    public OperationClaim claimOperation(final String ownerSubject, final String operationId,
+                                        final CompletableFuture<String> mine) {
+        if (!hasOperationIdentity(ownerSubject, operationId)) {
+            return OperationClaim.creator();
+        }
+        final String key = operationKey(ownerSubject, operationId);
+        final OperationClaim[] decided = new OperationClaim[1];
+        operations.compute(key, (k, state) -> {
+            if (state == null) {
+                decided[0] = OperationClaim.creator();
+                return OperationState.inFlight(mine);
+            }
+            if (state.committedJobId() != null && jobs.get(state.committedJobId()) != null) {
+                decided[0] = OperationClaim.committed(state.committedJobId());
+                return state;
+            }
+            if (state.committedJobId() != null) {
+                // COMMITTED 但 job 已不在 registry（TTL/显式清理后的残留）：视为 ABSENT，本次成为 creator。
+                decided[0] = OperationClaim.creator();
+                return OperationState.inFlight(mine);
+            }
+            decided[0] = OperationClaim.join(state.inFlight());
+            return state;
+        });
+        return decided[0];
+    }
+
+    /**
+     * creator 成功把 job 交给调度器之后 publish COMMITTED：此后所有 caller 都命中同一个 jobId。
+     * 只允许 {@code IN_FLIGHT(mine) → COMMITTED(jobId)}；其它状态保守不动（理论不可达）。
+     */
+    public void commitOperation(final String ownerSubject, final String operationId,
+                                final CompletableFuture<String> mine, final String jobId) {
+        if (!hasOperationIdentity(ownerSubject, operationId)) {
+            return;
+        }
+        final String key = operationKey(ownerSubject, operationId);
+        jobOperationKeys.put(jobId, key);
+        operations.computeIfPresent(key, (k, state) ->
+                state.inFlight() == mine ? OperationState.committed(jobId) : state);
+    }
+
+    /**
+     * creator 失败（QUEUE_FULL / 存储失败 / 其它异常）：{@code IN_FLIGHT(mine) → ABSENT}，使同一
+     * operationId 的后续请求可以重新创建有效 job。等待中的 duplicate 由 creator 侧
+     * {@code completeExceptionally} 一起失败。
+     */
+    public void abandonOperation(final String ownerSubject, final String operationId,
+                                 final CompletableFuture<String> mine) {
+        if (!hasOperationIdentity(ownerSubject, operationId)) {
+            return;
+        }
+        operations.computeIfPresent(operationKey(ownerSubject, operationId),
+                (k, state) -> state.inFlight() == mine ? null : state);
+    }
+
+    /** identity 合法性（service 与 store 共用同一判定，避免两处规则漂移）。 */
+    public static boolean hasOperationIdentity(final String ownerSubject, final String operationId) {
+        return ownerSubject != null && !ownerSubject.isBlank()
+                && operationId != null && !operationId.isBlank();
+    }
+
+    /** identity 分域 key：subject 与 operationId 用 NUL 分隔，避免拼接歧义。 */
+    private static String operationKey(final String ownerSubject, final String operationId) {
+        return ownerSubject + '\u0000' + operationId;
+    }
+
+    /**
+     * job 被移除（显式清理 / TTL sweep）时同步清理 idempotency 状态：{@code COMMITTED(jobId) → ABSENT}。
+     * 绝不误删其它 job 的 identity，也不动正在 IN_FLIGHT 的状态。
+     */
+    private void dropOperationIndex(final String jobId) {
+        final String key = jobOperationKeys.remove(jobId);
+        if (key != null) {
+            operations.computeIfPresent(key, (k, state) ->
+                    jobId.equals(state.committedJobId()) ? null : state);
+        }
+    }
 
     @Autowired
     public ReplayProcessingJobStore(
@@ -136,6 +308,7 @@ public class ReplayProcessingJobStore {
         synchronized (lifecycleLock) {
             jobs.remove(jobId);
             datasetLeaseRefs.remove(jobId);
+            dropOperationIndex(jobId);
         }
         storage.removeAndCleanup(jobId);
     }
@@ -169,6 +342,7 @@ public class ReplayProcessingJobStore {
                         job.jobId(), snap.status());
                 jobs.remove(job.jobId());
                 datasetLeaseRefs.remove(job.jobId());
+                dropOperationIndex(job.jobId());
                 toClean.add(job.jobId());
             }
         }

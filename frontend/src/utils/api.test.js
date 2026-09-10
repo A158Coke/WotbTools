@@ -208,6 +208,10 @@ class FakeXhr {
     this.url = url
   }
 
+  setRequestHeader(name, value) {
+    this.headers[name] = value
+  }
+
   send(body) {
     this.body = body
   }
@@ -250,9 +254,11 @@ describe('createProcessingJob XHR upload progress', () => {
   it('reports real upload progress 0→100 and resolves on 202', async () => {
     const progressCalls = []
     const fd = new FormData()
-    const promise = createProcessingJob(fd, {
+    const promise = createProcessingJob(auth, fd, {
       onProgress: (p) => progressCalls.push(p)
     })
+    // token 校验是异步的：XHR 只在认证边界通过后才建立。
+    await vi.waitFor(() => expect(xhr).not.toBeNull())
     expect(xhr.method).toBe('POST')
     expect(xhr.url).toBe('/api/replay/processing-jobs')
 
@@ -268,19 +274,49 @@ describe('createProcessingJob XHR upload progress', () => {
     expect(xhr.body).toBe(fd)
   })
 
+  it('carries the Bearer token and never overrides the multipart Content-Type', async () => {
+    const promise = createProcessingJob(auth, new FormData())
+    await vi.waitFor(() => expect(xhr).not.toBeNull())
+    expect(auth.ensureToken).toHaveBeenCalledWith(30)
+    expect(xhr.headers.Authorization).toBe('Bearer test-token')
+    // multipart boundary 必须由浏览器负责：手工设置 Content-Type 会破坏上传。
+    expect(xhr.headers['Content-Type']).toBeUndefined()
+    xhr.respond(202, JSON.stringify({ jobId: 'p2', status: 'QUEUED', total: 1 }))
+    await expect(promise).resolves.toMatchObject({ jobId: 'p2' })
+  })
+
+  it('未登录（ensureToken=false）时抛 canonical AUTH_UNAUTHENTICATED 且不发请求', async () => {
+    auth.ensureToken.mockResolvedValueOnce(false)
+    await expect(createProcessingJob(auth, new FormData())).rejects.toMatchObject({
+      name: 'ApiError', errorCode: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false,
+    })
+    expect(xhr).toBeNull()
+  })
+
   it('rejects with stable ApiError code on non-2xx', async () => {
-    const promise = createProcessingJob(new FormData())
+    const promise = createProcessingJob(auth, new FormData())
+    await vi.waitFor(() => expect(xhr).not.toBeNull())
     xhr.respond(503, JSON.stringify({ code: 'PROCESSING_QUEUE_FULL' }))
     await expect(promise).rejects.toMatchObject({ code: 'PROCESSING_QUEUE_FULL', status: 503 })
   })
 
   it('aborts the XHR when signal fires and rejects with canonical ApiError', async () => {
     const controller = new AbortController()
-    const promise = createProcessingJob(new FormData(), { signal: controller.signal })
+    const promise = createProcessingJob(auth, new FormData(), { signal: controller.signal })
+    await vi.waitFor(() => expect(xhr.method).toBe('POST'))
     controller.abort()
     expect(xhr.aborted).toBe(true)
     await expect(promise).rejects.toMatchObject({
       name: 'ApiError', code: 'REQUEST_ABORTED', status: null, retryable: false
     })
+  })
+
+  it('已取消的 signal 不会发出 XHR', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    await expect(createProcessingJob(auth, new FormData(), { signal: controller.signal })).rejects.toMatchObject({
+      name: 'ApiError', code: 'REQUEST_ABORTED', status: null, retryable: false
+    })
+    expect(xhr).toBeNull()
   })
 })
