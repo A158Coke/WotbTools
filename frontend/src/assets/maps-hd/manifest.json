@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "policy": "ORIGINALS_PRESERVED_IN_ASSETS_MAPS",
-  "generationRule": "USER_PROVIDED_HD_ASSETS_CONVERTED_TO_WEBP",
+  "generationRule": "PER_ENTRY_METHOD",
   "expectedMapCount": 29,
   "entries": [
     {
@@ -533,3 +533,4 @@
     "rationale": "Single-map Playback delivery budget for mobile/mainland links; one map is loaded at a time."
   }
 }
+
