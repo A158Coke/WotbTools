@@ -265,27 +265,11 @@ export interface paths {
         get: operations["searchAdminUsers"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/users/bulk-delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
         /**
-         * Delete several users in one request
-         * @description Each user repeats the authoritative single-user delete semantics in its own transaction, so the batch allows partial success and reports a per-user errorCode. confirm mirrors the single-user ?confirm=true rule: a missing or false confirm rejects the whole batch with 400 CONFIRMATION_REQUIRED before anything is deleted. More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+         * Delete users by an id list
+         * @description The request body is a JSON array of Keycloak subs; deleting a single user is simply an array of length one, so there is no separate single-user endpoint and no bulk-delete endpoint. Each id repeats the authoritative delete semantics in its own transaction, so the call allows partial success and reports a per-user errorCode. confirm is required (missing or false rejects the whole request with 400 CONFIRMATION_REQUIRED before anything is deleted). More than 100 ids is rejected with 400 BULK_LIMIT_EXCEEDED.
          */
-        post: operations["bulkDeleteAdminUsers"];
-        delete?: never;
+        delete: operations["deleteAdminUsers"];
         options?: never;
         head?: never;
         patch?: never;
@@ -521,20 +505,16 @@ export interface components {
             totalItems: number;
             totalPages: number;
         };
-        BulkDeleteUsersRequest: {
-            userIds: string[];
-            confirm: boolean;
-        };
-        BulkDeleteUserResult: {
+        DeleteUserResult: {
             userId: string;
             deleted: boolean;
             errorCode?: string | null;
         };
-        BulkDeleteUsersResponse: {
+        DeleteUsersResponse: {
             requested: number;
             deleted: number;
             failed: number;
-            results: components["schemas"]["BulkDeleteUserResult"][];
+            results: components["schemas"]["DeleteUserResult"][];
         };
         DatasetReference: {
             processingJobId: string;
@@ -1206,26 +1186,28 @@ export interface operations {
             };
         };
     };
-    bulkDeleteAdminUsers: {
+    deleteAdminUsers: {
         parameters: {
-            query?: never;
+            query?: {
+                confirm?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BulkDeleteUsersRequest"];
+                "application/json": string[];
             };
         };
         responses: {
-            /** @description Per-user bulk delete result */
+            /** @description Per-user delete result */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BulkDeleteUsersResponse"];
+                    "application/json": components["schemas"]["DeleteUsersResponse"];
                 };
             };
             /** @description Missing confirmation or too many ids */

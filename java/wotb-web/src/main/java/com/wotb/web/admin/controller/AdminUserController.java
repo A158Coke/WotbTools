@@ -1,10 +1,8 @@
 package com.wotb.web.admin.controller;
 
-import com.wotb.web.admin.dto.AdminDeleteUserResponse;
 import com.wotb.web.admin.dto.AdminUserDetailDto;
 import com.wotb.web.admin.dto.AdminUserPageDto;
-import com.wotb.web.admin.dto.BulkDeleteUsersRequest;
-import com.wotb.web.admin.dto.BulkDeleteUsersResponse;
+import com.wotb.web.admin.dto.DeleteUsersResponse;
 import com.wotb.web.admin.service.AdminUserService;
 import com.wotb.web.config.ApiPaths;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -12,11 +10,12 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /** 管理员用户管理 API。需要 wotbtools-admin 角色。 */
 @RestController
@@ -51,18 +50,17 @@ public class AdminUserController {
         return adminUserService.getUser(keycloakUserId);
     }
 
-    /** 批量删除用户：逐用户复用单用户删除的全部业务保护，允许 partial success。 */
-    @PostMapping("/bulk-delete")
-    public BulkDeleteUsersResponse bulkDeleteUsers(@RequestBody final BulkDeleteUsersRequest request,
-                                                   @AuthenticationPrincipal final Jwt jwt) {
-        return adminUserService.bulkDeleteUsers(request, jwt);
-    }
-
-    @DeleteMapping("/{keycloakUserId}")
-    public AdminDeleteUserResponse deleteUser(
-            @PathVariable final String keycloakUserId,
+    /**
+     * 删除用户：请求体是 Keycloak sub 的 JSON 数组——删除单个用户就是长度为 1 的数组，
+     * 因此没有单独的「批量删除」端点，也没有单条 {@code /{keycloakUserId}} 删除端点。
+     *
+     * <p>逐用户复用删除业务保护并允许 partial success，响应始终是逐用户结果。</p>
+     */
+    @DeleteMapping
+    public DeleteUsersResponse deleteUsers(
+            @RequestBody final List<String> keycloakUserIds,
             @RequestParam(name = "confirm", defaultValue = "false") final boolean confirm,
             @AuthenticationPrincipal final Jwt jwt) {
-        return adminUserService.deleteUser(keycloakUserId, confirm, jwt);
+        return adminUserService.deleteUsers(keycloakUserIds, confirm, jwt);
     }
 }

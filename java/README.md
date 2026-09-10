@@ -224,8 +224,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
   - 列表行 DTO（`AdminUserListItemDto`，旧 `AdminUserDto` 已删除）：`keycloakUserId, keycloakUsername, keycloakEmail, keycloakEnabled, profileId, displayName, wotbAccountId, wotbNickname, wotbServer, profileCreatedAt, hasLocalProfile, keycloakUserMissing`。
   - 能力边界（Keycloak 无按 ids 批量查询用户的能力、admin-client 26.0.9 的 IdP 过滤重载缺口）见 [docs/auth/keycloak-admin-user-search.md](../docs/auth/keycloak-admin-user-search.md)。
 - `GET /api/admin/users/{keycloakUserId}` — 用户详情（本地 profile + Keycloak 信息）；Keycloak 用户不存在时返回 `KEYCLOAK_USER_NOT_FOUND` warning。
-- `DELETE /api/admin/users/{keycloakUserId}?confirm=true` — 删除用户：先删本地 profile 再删 Keycloak 用户（`confirm` 缺失/false → 400 `CONFIRMATION_REQUIRED`；不能删除自己 → `CANNOT_DELETE_SELF`；有依赖 → `USER_HAS_DEPENDENCIES` / `BOOSTER_HAS_DEPENDENCIES`）。**删除用户必须走本 API**：绕过它直连 Keycloak 会留下孤儿 profile 并阻塞后续重绑（HoF 数据本身不会被连带删除，见下）。
-- `POST /api/admin/users/bulk-delete` — 批量删除用户，body `{userIds, confirm}`（`confirm` 缺失/false → 整批 400 `CONFIRMATION_REQUIRED`；去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`）。**每个用户独立事务**，逐用户复用单用户删除的全部业务保护，允许 **partial success**；返回 `{requested, deleted, failed, results:[{userId, deleted, errorCode}]}`。
+- `DELETE /api/admin/users?confirm=true` — 删除用户：**请求体是 Keycloak sub 的 JSON 数组**（删除单个用户就是长度为 1 的数组，因此没有单独的批量端点，也没有单条 `/{keycloakUserId}` 删除端点）。每个 id 都先删本地 profile 再删 Keycloak 用户（`confirm` 缺失/false → 整个请求 400 `CONFIRMATION_REQUIRED`；不能删除自己 → `CANNOT_DELETE_SELF`；有依赖 → `USER_HAS_DEPENDENCIES` / `BOOSTER_HAS_DEPENDENCIES`）。去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`；**每个用户独立事务**，允许 **partial success**，返回 `{requested, deleted, failed, results:[{userId, deleted, errorCode}]}`。**删除用户必须走本 API**：绕过它直连 Keycloak 会留下孤儿 profile 并阻塞后续重绑（HoF 数据本身不会被连带删除，见下）。
 
 **删除用户 ≠ 删除 HoF 记录**：HoF 数据属于 WotB 游戏账号，仓库中没有任何 FK 指向 `user_profile`（全仓唯一的 `on delete cascade` 在 `V3__create_boosting_tables.sql`，boost 域内部），因此删除 Keycloak 用户不会连带删除任何 HoF 行。
 

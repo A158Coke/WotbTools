@@ -808,27 +808,7 @@ export default {
         }
       }
     },
-    "BulkDeleteUsersRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "userIds",
-        "confirm"
-      ],
-      "properties": {
-        "userIds": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "maxItems": 100
-        },
-        "confirm": {
-          "type": "boolean"
-        }
-      }
-    },
-    "BulkDeleteUserResult": {
+    "DeleteUserResult": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -850,7 +830,7 @@ export default {
         }
       }
     },
-    "BulkDeleteUsersResponse": {
+    "DeleteUsersResponse": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -872,7 +852,7 @@ export default {
         "results": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/BulkDeleteUserResult"
+            "$ref": "#/$defs/DeleteUserResult"
           }
         }
       }
