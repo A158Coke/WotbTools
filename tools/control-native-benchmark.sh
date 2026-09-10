@@ -181,7 +181,7 @@ mkdir -p "$(dirname "$REPORT_PATH")"
     echo
     echo 'The script builds both images with `--no-cache`, starts the same Control API against a real PostgreSQL 18 container, waits for the independent management health endpoint, then sends the health workload. The health workload exercises Spring Boot Actuator and the JDBC-backed health indicator; the PR E integration test separately covers the protected `JdbcClient SELECT 1` endpoint and security roles.'
     echo
-    echo "The POC build images use JDK 25 because this Spring Boot Native Build Tools path requires it; Maven still compiles the Control API with the repository's Java 21 release target. This isolated POC build choice does not change the project's Java 21 baseline or production runtime."
+    echo "The POC build images use JDK 25, matching the repository's Java 25 release target and production JVM baseline."
     echo
     echo "The default 0.02-second inter-request pause keeps the workload long enough for in-flight Docker stats sampling; per-request latency excludes this pause. Override it with CONTROL_POC_WORKLOAD_PAUSE_SEC when reproducing the benchmark."
     echo

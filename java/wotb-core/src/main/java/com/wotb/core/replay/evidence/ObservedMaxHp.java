@@ -58,11 +58,15 @@ public final class ObservedMaxHp {
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping
     ) {
-        final Map<Long, Integer> observed = new HashMap<>();
         if (events == null) {
-            return observed;
+            return new HashMap<>();
         }
-        for (final HpObservation hp : ReplayHpTimeline.build(events, mapping, null)) {
+        return observedByAccount(ReplayHpTimeline.build(events, mapping, null));
+    }
+
+    private static Map<Long, Integer> observedByAccount(final List<HpObservation> observations) {
+        final Map<Long, Integer> observed = new HashMap<>();
+        for (final HpObservation hp : observations) {
             if (!hp.plausible()) {
                 continue;
             }
@@ -80,9 +84,10 @@ public final class ObservedMaxHp {
         if (battle == null || battle.players == null || events == null || mapping == null) {
             return;
         }
-        final Map<Long, Integer> observed = byAccount(events, mapping);
+        final List<HpObservation> observations = ReplayHpTimeline.build(events, mapping, null);
+        final Map<Long, Integer> observed = observedByAccount(observations);
         final Map<Long, List<HpObservation>> hpTimeline =
-                hpTimelineByAccount(events, mapping);
+                hpTimelineByAccount(observations);
         final Map<Long, Double> firstDamageSec = firstDamageSecByAccount(events, mapping);
         final Map<Long, Integer> observedReceived = observedReceivedByAccount(events, mapping);
         final Long recorderAccountId = PlayerResultFormat.recorderAccountId(battle);
@@ -236,14 +241,10 @@ public final class ObservedMaxHp {
 
     /** 每账号 HP 观测时间线（统一 surface；battle-relative 秒升序；re-entry 跨实体合并）。 */
     private static Map<Long, List<HpObservation>> hpTimelineByAccount(
-            final List<ReplayEvent> events,
-            final TeamEntityMapping mapping
+            final List<HpObservation> observations
     ) {
         final Map<Long, List<HpObservation>> out = new HashMap<>();
-        if (events == null) {
-            return out;
-        }
-        for (final HpObservation hp : ReplayHpTimeline.build(events, mapping, null)) {
+        for (final HpObservation hp : observations) {
             if (hp.accountId() <= 0) {
                 continue;
             }

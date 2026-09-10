@@ -59,3 +59,6 @@ crash.*.log
 
 # AI 会话 scratch（一次性脚本/草稿/日志，不入库）
 tmp/
+
+# Opt-in replay performance benchmark results and JFR recordings
+build/performance/

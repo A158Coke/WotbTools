@@ -53,7 +53,7 @@ docker compose up -d --build
 
 ## 本地开发
 
-后端需要 JDK 21；完整运行使用九服务开发环境，确保 PostgreSQL、Keycloak 与必要环境变量同时存在。
+后端需要 JDK 25；完整运行使用九服务开发环境，确保 PostgreSQL、Keycloak 与必要环境变量同时存在。
 
 ```bash
 cd java

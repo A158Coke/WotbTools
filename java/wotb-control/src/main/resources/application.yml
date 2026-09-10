@@ -3,7 +3,7 @@ server:
 
 spring:
   threads:
-    # Spring Boot 4.1 supports this property on Java 21+; keep it overrideable for environment comparison.
+    # Spring Boot 4.1 supports this property on Java 25+; keep it overrideable for environment comparison.
     virtual:
       enabled: ${CONTROL_VIRTUAL_THREADS_ENABLED:true}
   datasource:

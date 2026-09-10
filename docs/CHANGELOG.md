@@ -14,6 +14,11 @@
 
 ### CI/CD
 - **Build / Deploy workflow split**：将生产镜像构建拆到独立的 `build.yml`，Build 与 Deploy 均可通过 `workflow_dispatch` 独立选择目标；Build 的 `changes` job 只解析一次 `main` 的 full SHA，backend/frontend/keycloak 使用同一个冻结 commit 构建 production SHA/`latest`，不能由 feature ref 或移动的 main 绕过 PR merge gate。Deploy 支持任意 production Compose service，应用/all 要求独立 Build 产出的 immutable tag，运行时 observability service 可直接 dispatch。纯 Grafana dashboard JSON 只进入 OpenTofu API reconciliation，不触发应用 Build；targeted deploy 不提升 LKG，失败时只恢复目标 service 的 pre-deploy snapshot，完整 `all` 发布继续执行应用健康 gate、LKG promotion 与 fail-closed rollback。Grafana upstream 改为 Docker embedded DNS 运行时解析，Grafana 暂时不可用不再阻止 frontend nginx 启动。
+ 
+### Replay processing
+- 新增默认跳过、显式 `-Dperformance=true` 才运行的 replay core 性能基准：递归发现 `common/data`，仅在未设置 `corpusPath` 且无数据时回退到三份 committed fixtures；显式 corpus 路径无效时 fail-closed；按 archive/parser/reconstruction/full 分阶段测量，支持并发矩阵、确定性 SHA-256 facts fingerprint、JSON/CSV/Markdown 报告与 JFR。
+- 基于本地 extended JFR 的证据，将 reconstruction 中每个 packet type 的统计更新从重复 HashMap lookup 合并为单次 `computeIfAbsent`；保留现有 production facade、reconstruction facts 与 parity contract。
+- PR #284 收口候选：`ObservedMaxHp.populate` 复用单次 `ReplayHpTimeline.build` 结果完成 max-HP 与 timeline 两条 reduction；backend 迁移至 Java 25 / Spring Boot 4.1.1，Spring web 启用可覆盖的 Virtual Threads，AI blocking worker 使用有界 virtual-thread workers；replay CPU scheduler、export worker、watchdog 与业务 admission/queue 约束保持不变。新增显式 real-provider Platform-vs-Virtual benchmark（默认关闭，固定短 prompt，不进 CI）。
 
 ### OpenTofu
 - 新增独立 Grafana OpenTofu root，纳管现有 9 个 dashboard 并保留 dashboard JSON 为 canonical source；Prometheus/Loki datasource 因 Grafana read-only 限制继续由 file provisioning 管理。PR 使用 `GRAFANA_PAT` 做 plan，合并到 main 后自动 apply 精确 saved plan；任意 dashboard delete/replacement fail-closed，apply 后只读校验全部 dashboard UID。
