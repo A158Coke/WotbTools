@@ -89,41 +89,51 @@ GC count/time, but c2 tail latency is not consistently better.
 ### Allocation/JFR comparison
 
 A short c1 JFR was recorded for each variant with the same 2C/4GiB JVM and
-quick workload:
+quick workload. These recordings were captured before the measurement-only
+JFR boundary repair, when `Recording.start()` preceded both warmup and
+measurement:
 
 - B: `build/performance/position-b-quick-c1.jfr`
 - C: `build/performance/position-c-quick-c1.jfr`
 
-The harness now executes all configured warmup rounds before starting each JFR
-recording; the recording contains measurement rounds only. JFR start and class
-retransformation samples can still occur near the recording boundary, so the
-site shares below are directional evidence rather than an exact cross-recording
-allocation proof.
+The current harness now executes all configured warmup rounds before starting
+each JFR recording; its recording contains measurement rounds only. The B/C
+files and percentages below predate that repair and therefore include the old
+warmup, JVM/JFR startup, and class-instrumentation/retransformation noise.
+They are retained only as historical investigation data. They are not output
+from the current measurement-only harness, are not a precise B/C allocation
+comparison, and must not be used to claim an allocation percentage
+improvement. Even with the repaired boundary, JFR start and class
+retransformation samples can occur near the recording boundary.
 
 `jfr view allocation-by-site` reported:
 
 | Site | B | C | Interpretation |
 |---|---:|---:|---|
-| `Arrays.copyOf(byte[], int)` | 10.35% | 8.48% | Directionally lower with C |
-| `RawReplayPacket.payload()` | 3.38% | 2.34% | Directionally lower with C |
-| `PositionDecoder.decode` | 1.54% | 2.37% | Site share is not lower; not every JFR percentage moved in C's favour |
+| `Arrays.copyOf(byte[], int)` | 10.35% | 8.48% | Historical site share only; not an allocation improvement claim |
+| `RawReplayPacket.payload()` | 3.38% | 2.34% | Historical site share only; not an allocation improvement claim |
+| `PositionDecoder.decode` | 1.54% | 2.37% | Historical site share only; not a current-harness comparison |
 
 Allocation-by-class totals are not suitable for a direct B/C claim in this
-short recording: the B recording was dominated by JFR/JVM startup
+short historical recording: the B recording was dominated by JFR/JVM startup
 `ConcurrentHashMap` instrumentation and the C recording by ASM class-rewrite
-allocation. The targeted allocation-site direction is useful corroboration,
-not a byte-accurate total-allocation proof.
+allocation. These historical allocation-site shares are not a byte-accurate
+total-allocation proof and are not evidence produced by the repaired harness.
 
 ### Decision
 
 `PositionDecoder` = **KEEP** in this worktree.
 
-Reason: the candidate has deterministic semantic parity on the 40-replay
-corpus, targeted copy/allocation sites move in the expected direction, and the
-implementation is a small local change that removes a known packet copy and a
-temporary varargs array. The quick screen does not justify a throughput claim,
-and no full confirmation run is being started because the screen is noisy and
-the allocation evidence is sufficient for retaining this low-risk cleanup.
+Reason: the candidate has deterministic semantic parity on all 40 real
+replays; the original `packet.payload()` implementation allocates a new
+`byte[payloadLength]` and performs `System.arraycopy`, while the candidate
+reads directly from the shared `source` with `payloadOffset` and
+`payloadLength`; and removing the `float...` finite helper removes its
+temporary `float[]`. The change is local and readable, `PositionDecoderTest`
+covers a non-zero payload offset, and the production packet reader validates
+payload framing and bounds before constructing `RawReplayPacket`. The quick
+screen is noisy and does not justify a throughput claim. The historical JFR
+percentages above are not part of the KEEP evidence.
 
 Required semantic checks remain mandatory before merge: targeted regression
 tests, malformed packet behavior, and a full 40-replay fingerprint parity run.
@@ -244,7 +254,7 @@ It does not block the higher-value investigation above.
 
 | Candidate | Evidence | Expected benefit | Risk | Decision |
 |---|---|---:|---|---|
-| PositionDecoder no-copy | 40/40 parity; targeted JFR sites lower; quick throughput noisy | Lower packet-copy/temporary-array allocation | Low | KEEP |
+| PositionDecoder no-copy | 40/40 parity; known payload copy and temporary varargs array removed; offset regression covered; quick throughput noisy | Lower packet-copy/temporary-array allocation | Low | KEEP |
 | String replace hotspot | 26.34% is JFR instrumentation; no production caller in matching stack | None established | N/A | Defer |
 | Duplicate `ReplayHpTimeline.build` in `ObservedMaxHp.populate` | Same event list is scanned twice; eventTime is 10.98% CPU hotspot | Avoid one HP timeline time pass per populate | Low/medium | NEXT |
 | HashMap cleanup | No completed clean A/B | Unproven | Low | Cleanup/defer |
