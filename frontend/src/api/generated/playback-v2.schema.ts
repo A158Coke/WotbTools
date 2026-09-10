@@ -233,6 +233,7 @@ export default {
         "status",
         "vehicleId",
         "vehicleName",
+        "wotbServer",
         "wotbAccountId",
         "nicknameSnapshot"
       ],
@@ -250,6 +251,15 @@ export default {
         },
         "vehicleName": {
           "type": "string"
+        },
+        "wotbServer": {
+          "type": "string",
+          "enum": [
+            "CN",
+            "ASIA",
+            "EU",
+            "NA"
+          ]
         },
         "wotbAccountId": {
           "type": "integer",
@@ -350,6 +360,7 @@ export default {
         "status",
         "vehicleId",
         "vehicleName",
+        "wotbServer",
         "wotbAccountId",
         "nicknameSnapshot",
         "claimedAverageDamage",
@@ -381,6 +392,15 @@ export default {
         },
         "vehicleName": {
           "type": "string"
+        },
+        "wotbServer": {
+          "type": "string",
+          "enum": [
+            "CN",
+            "ASIA",
+            "EU",
+            "NA"
+          ]
         },
         "wotbAccountId": {
           "type": "integer",
@@ -612,6 +632,23 @@ export default {
         }
       }
     },
+    "BulkDeleteRecordsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ids"
+      ],
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 100
+        }
+      }
+    },
     "BulkDeleteItemResult": {
       "type": "object",
       "additionalProperties": false,
@@ -658,6 +695,184 @@ export default {
           "type": "array",
           "items": {
             "$ref": "#/$defs/BulkDeleteItemResult"
+          }
+        }
+      }
+    },
+    "AdminUserListItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keycloakUserId",
+        "hasLocalProfile",
+        "keycloakUserMissing"
+      ],
+      "properties": {
+        "keycloakUserId": {
+          "type": "string"
+        },
+        "keycloakUsername": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "keycloakEmail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "keycloakEnabled": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "profileId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wotbAccountId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "wotbNickname": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wotbServer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "profileCreatedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "hasLocalProfile": {
+          "type": "boolean"
+        },
+        "keycloakUserMissing": {
+          "type": "boolean"
+        }
+      }
+    },
+    "AdminUserPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "totalPages"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AdminUserListItem"
+          }
+        },
+        "page": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "totalItems": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "totalPages": {
+          "type": "integer"
+        }
+      }
+    },
+    "BulkDeleteUsersRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "userIds",
+        "confirm"
+      ],
+      "properties": {
+        "userIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100
+        },
+        "confirm": {
+          "type": "boolean"
+        }
+      }
+    },
+    "BulkDeleteUserResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "deleted"
+      ],
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "BulkDeleteUsersResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requested",
+        "deleted",
+        "failed",
+        "results"
+      ],
+      "properties": {
+        "requested": {
+          "type": "integer"
+        },
+        "deleted": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BulkDeleteUserResult"
           }
         }
       }

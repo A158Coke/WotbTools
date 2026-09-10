@@ -211,6 +211,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/hof/records/bulk-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete several Hall of Fame records in one request
+         * @description Single-record deletion in this domain is a hard delete without delete-reason semantics, so this request deliberately carries no reason field. Each id repeats the authoritative single-record delete semantics in its own transaction, so the batch allows partial success: an unknown id fails individually with HOF_ENTRY_NOT_FOUND and never blocks the others. More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+         */
+        post: operations["bulkDeleteHofRecords"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/mark3/submissions/bulk-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete several current Mark3 submissions in one request
+         * @description Each id repeats the authoritative single-record delete semantics in its own transaction, so the batch allows partial success. Ids that are not CURRENT fail individually with MARK3_NOT_CURRENT / MARK3_SUBMISSION_NOT_FOUND and never block the others. More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+         */
+        post: operations["bulkDeleteMark3Submissions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Keycloak and local-profile users for the admin console
+         * @description Server-side pagination over a merged view, never a fetched page filtered in memory. segment=keycloak (default) reads realm users and can surface Keycloak-only users; segment=local reads local user_profile rows and exposes orphan bindings whose Keycloak user no longer exists (keycloakUserMissing=true).
+         */
+        get: operations["searchAdminUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/bulk-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete several users in one request
+         * @description Each user repeats the authoritative single-user delete semantics in its own transaction, so the batch allows partial success and reports a per-user errorCode. confirm mirrors the single-user ?confirm=true rule: a missing or false confirm rejects the whole batch with 400 CONFIRMATION_REQUIRED before anything is deleted. More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+         */
+        post: operations["bulkDeleteAdminUsers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/replay/battle-playback-v2": {
         parameters: {
             query?: never;
@@ -310,6 +390,8 @@ export interface components {
             /** Format: int64 */
             vehicleId: number;
             vehicleName: string;
+            /** @enum {string} */
+            wotbServer: "CN" | "ASIA" | "EU" | "NA";
             /** Format: int64 */
             wotbAccountId: number;
             nicknameSnapshot: string;
@@ -342,6 +424,8 @@ export interface components {
             /** Format: int64 */
             vehicleId: number;
             vehicleName: string;
+            /** @enum {string} */
+            wotbServer: "CN" | "ASIA" | "EU" | "NA";
             /** Format: int64 */
             wotbAccountId: number;
             nicknameSnapshot: string;
@@ -397,6 +481,9 @@ export interface components {
             reason: string;
             reasonText?: string | null;
         };
+        BulkDeleteRecordsRequest: {
+            ids: number[];
+        };
         BulkDeleteItemResult: {
             /** Format: int64 */
             id: number;
@@ -408,6 +495,46 @@ export interface components {
             deleted: number;
             failed: number;
             results: components["schemas"]["BulkDeleteItemResult"][];
+        };
+        AdminUserListItem: {
+            keycloakUserId: string;
+            keycloakUsername?: string | null;
+            keycloakEmail?: string | null;
+            keycloakEnabled?: boolean | null;
+            /** Format: int64 */
+            profileId?: number | null;
+            displayName?: string | null;
+            /** Format: int64 */
+            wotbAccountId?: number | null;
+            wotbNickname?: string | null;
+            wotbServer?: string | null;
+            /** Format: date-time */
+            profileCreatedAt?: string | null;
+            hasLocalProfile: boolean;
+            keycloakUserMissing: boolean;
+        };
+        AdminUserPage: {
+            items: components["schemas"]["AdminUserListItem"][];
+            page: number;
+            size: number;
+            /** Format: int64 */
+            totalItems: number;
+            totalPages: number;
+        };
+        BulkDeleteUsersRequest: {
+            userIds: string[];
+            confirm: boolean;
+        };
+        BulkDeleteUserResult: {
+            userId: string;
+            deleted: boolean;
+            errorCode?: string | null;
+        };
+        BulkDeleteUsersResponse: {
+            requested: number;
+            deleted: number;
+            failed: number;
+            results: components["schemas"]["BulkDeleteUserResult"][];
         };
         DatasetReference: {
             processingJobId: string;
@@ -968,6 +1095,140 @@ export interface operations {
                 };
             };
             /** @description Invalid reason or too many ids */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    bulkDeleteHofRecords: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkDeleteRecordsRequest"];
+            };
+        };
+        responses: {
+            /** @description Per-id bulk delete result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkDeleteResult"];
+                };
+            };
+            /** @description Too many ids */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    bulkDeleteMark3Submissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkDeleteModerationRequest"];
+            };
+        };
+        responses: {
+            /** @description Per-id bulk delete result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkDeleteResult"];
+                };
+            };
+            /** @description Invalid reason or too many ids */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    searchAdminUsers: {
+        parameters: {
+            query?: {
+                query?: string;
+                segment?: "keycloak" | "local";
+                idpAlias?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paged merged user list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserPage"];
+                };
+            };
+            /** @description Unknown segment */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    bulkDeleteAdminUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkDeleteUsersRequest"];
+            };
+        };
+        responses: {
+            /** @description Per-user bulk delete result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkDeleteUsersResponse"];
+                };
+            };
+            /** @description Missing confirmation or too many ids */
             400: {
                 headers: {
                     [name: string]: unknown;
