@@ -2,6 +2,7 @@
 import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
+import { whenBusinessUserSettled } from '../composables/useBusinessUserBootstrap.js'
 import { apiCodeLabel, apiErrorLabel, enumLabel } from '../utils/display.js'
 import { normalizeSpringPage } from '../utils/page.js'
 import { createLatestDebounce } from '../utils/latest-debounce.js'
@@ -30,7 +31,6 @@ import {
   boostListMyBoosterApplications,
   boostListMyRequests,
   boostOptions,
-  createUserProfile,
   declineMyBoosterAssignment,
   getMyBoosterAssignments,
   getMyBoosterProfile,
@@ -167,12 +167,25 @@ function apiCode(code, fallbackKey) {
 async function loadAllUsers() {
   loadError.value = ''
   try {
+    // Booster 的业务前提是本地 user_profile 存在（后端 findEntityByKeycloakUserIdForUpdate
+    // 找不到就 USER_PROFILE_NOT_FOUND），因此 picker 必须显式使用 local segment，
+    // 绝不查询整个 Keycloak realm（那是 Admin Users 的 keycloak inventory）。
     // 服务端分页契约：返回 { items, page, size, totalItems, totalPages }（size 上限 100）。
-    const res = await adminSearchUsers('', { size: 100 })
-    allUsers.value = res?.items || []
+    const res = await adminSearchUsers('', { segment: 'local', size: 100 })
+    allUsers.value = selectableBoosterUsers(res?.items)
   } catch (error) {
     loadError.value = apiError(error)
   }
+}
+
+/**
+ * 只有「本地资料存在 且 Keycloak 用户仍存在」的行才是有效 Booster 候选。
+ * local segment 的 keycloakUserMissing=true 行是孤儿绑定——那是管理员清理对象
+ * （用于释放 (wotb_server, wotb_account_id) 唯一槽位），不能选为打手。
+ * 该过滤只属于 picker，不放进通用 Admin Users API，以免破坏孤儿管理能力。
+ */
+function selectableBoosterUsers(items) {
+  return (items || []).filter(user => !user.keycloakUserMissing)
 }
 
 function searchUsers() {
@@ -185,9 +198,9 @@ function searchUsers() {
     return
   }
   latestUserSearch.schedule(
-    async () => adminSearchUsers(query, { size: 10 }),
+    async () => adminSearchUsers(query, { segment: 'local', size: 10 }),
     res => {
-      userSearchResults.value = (res?.items || []).slice(0, 10)
+      userSearchResults.value = selectableBoosterUsers(res?.items).slice(0, 10)
       showUserSearch.value = true
     },
     error => {
@@ -268,11 +281,9 @@ async function loadMyRequests() {
 }
 
 async function loadApplicantState() {
-  try {
-    profile.value = await getUserProfile()
-  } catch {
-    try { profile.value = await createUserProfile() } catch { profile.value = null }
-  }
+  // 等待全局 business bootstrap 完成 ensure；页面不再自己「读不到就创建」。
+  await whenBusinessUserSettled()
+  try { profile.value = await getUserProfile() } catch { profile.value = null }
   applyBoundAccount()
   try { myBooster.value = await getMyBoosterProfile() } catch { myBooster.value = null }
   if (isBooster.value && tab.value === 'apply') tab.value = 'request'

@@ -699,6 +699,71 @@ export default {
         }
       }
     },
+    "UserProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "keycloakUserId",
+        "username",
+        "wotbServer",
+        "wotbAccountSource"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "keycloakUserId": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "username": {
+          "type": "string"
+        },
+        "wotbAccountId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "wotbNickname": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wotbServer": {
+          "type": "string",
+          "enum": [
+            "CN",
+            "ASIA",
+            "EU",
+            "NA"
+          ]
+        },
+        "wotbAccountSource": {
+          "type": "string",
+          "enum": [
+            "MANUAL",
+            "WARGAMING"
+          ]
+        },
+        "wotbAccountVerifiedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
     "AdminUserListItem": {
       "type": "object",
       "additionalProperties": false,

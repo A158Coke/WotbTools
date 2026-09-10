@@ -29,6 +29,8 @@ vi.mock('../utils/api-boost.js', async () => {
     boostOptions: () => Promise.resolve({ regions: [], requestTypes: [], contactTypes: [], warningCode: '' }),
     boostListMyRequests: () => Promise.resolve([]),
     getUserProfile: () => Promise.resolve({ wotbServer: 'CN' }),
+    // 全局 bootstrap 才是 profile ensure 的 owner；页面只等待其结果。
+    ensureUserProfile: () => Promise.resolve({ wotbServer: 'CN' }),
     getMyBoosterProfile: () => Promise.reject(new Error('not-a-booster')),
     boostListMyBoosterApplications: () => Promise.resolve([]),
     boostCreateBoosterApplication: api.createBoosterApplication,
@@ -177,7 +179,9 @@ describe('BoostPage', () => {
     await flushPromises()
     await wrapper.findAll('.boost-tabs button').find(button => button.text() === 'boost.boostersTab').trigger('click')
     await flushPromises()
-    expect(api.searchUsers).toHaveBeenCalledWith('', { size: 100 })
+    // Booster 的业务前提是本地 user_profile 存在，因此必须显式要 local segment，
+    // 绝不查询整个 Keycloak realm（默认 segment=keycloak 是 Admin inventory 的语义）。
+    expect(api.searchUsers).toHaveBeenCalledWith('', { segment: 'local', size: 100 })
 
     await wrapper.find('.flex-between .btn-primary').trigger('click')
     await flushPromises()
@@ -191,16 +195,77 @@ describe('BoostPage', () => {
     expect([...dialog.querySelectorAll('.user-search-item')].map(item => item.textContent))
       .toEqual(['Admin PickedPickedNick'])
 
-    // 有查询：debounce 后走服务端搜索，同样只消费 items。
+    // 有查询：debounce 后走服务端搜索，同样只消费 items，且同样限定 local segment。
     searchInput.value = 'Adm'
     searchInput.dispatchEvent(new Event('input'))
     await vi.waitFor(() => {
-      expect(api.searchUsers).toHaveBeenLastCalledWith('Adm', { size: 10 })
+      expect(api.searchUsers).toHaveBeenLastCalledWith('Adm', { segment: 'local', size: 10 })
     })
     await vi.waitFor(() => {
       expect(dialog.querySelectorAll('.user-search-item')).toHaveLength(1)
     })
     expect(dialog.textContent).toContain('Admin Picked')
+  })
+
+  it('excludes orphan local profiles (keycloakUserMissing) from the booster picker', async () => {
+    // local segment 的孤儿行（user_profile 在、Keycloak 用户已不存在）是管理员清理对象，
+    // 不是有效 Booster 候选。
+    const orphan = {
+      keycloakUserId: 'kc-orphan',
+      keycloakUsername: null,
+      displayName: 'Orphan Profile',
+      wotbServer: 'CN',
+      hasLocalProfile: true,
+      keycloakUserMissing: true
+    }
+    const valid = {
+      keycloakUserId: 'kc-valid',
+      keycloakUsername: 'valid-user',
+      displayName: 'Valid Local User',
+      wotbNickname: 'ValidNick',
+      wotbServer: 'CN',
+      hasLocalProfile: true,
+      keycloakUserMissing: false
+    }
+    api.searchUsers.mockResolvedValue({ items: [orphan, valid], page: 0, size: 100, totalItems: 2, totalPages: 1 })
+    wrapper = mountPage()
+    await flushPromises()
+    await wrapper.findAll('.boost-tabs button').find(button => button.text() === 'boost.boostersTab').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.flex-between .btn-primary').trigger('click')
+    await flushPromises()
+    const dialog = document.body.querySelector('.booster-editor-overlay')
+    const searchInput = dialog.querySelector('.user-search-row input')
+    searchInput.value = 'O'
+    searchInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    const rendered = [...dialog.querySelectorAll('.user-search-item')].map(item => item.textContent)
+    expect(rendered.join(' ')).toContain('Valid Local User')
+    expect(rendered.join(' ')).not.toContain('Orphan Profile')
+  })
+
+  it('excludes orphans returned by a typed server search too', async () => {
+    const orphan = { keycloakUserId: 'kc-orphan', displayName: 'Orphan Typed', hasLocalProfile: true, keycloakUserMissing: true }
+    const ok = { keycloakUserId: 'kc-ok', displayName: 'Typed Ok', hasLocalProfile: true, keycloakUserMissing: false }
+    api.searchUsers.mockResolvedValue({ items: [orphan, ok], page: 0, size: 100, totalItems: 2, totalPages: 1 })
+    wrapper = mountPage()
+    await flushPromises()
+    await wrapper.findAll('.boost-tabs button').find(button => button.text() === 'boost.boostersTab').trigger('click')
+    await flushPromises()
+    await wrapper.find('.flex-between .btn-primary').trigger('click')
+    await flushPromises()
+    const dialog = document.body.querySelector('.booster-editor-overlay')
+    const searchInput = dialog.querySelector('.user-search-row input')
+
+    api.searchUsers.mockResolvedValue({ items: [orphan, ok], page: 0, size: 10, totalItems: 2, totalPages: 1 })
+    searchInput.value = 'Typed'
+    searchInput.dispatchEvent(new Event('input'))
+    await vi.waitFor(() => {
+      expect(dialog.querySelectorAll('.user-search-item')).toHaveLength(1)
+    })
+    expect(dialog.querySelector('.user-search-item').textContent).toContain('Typed Ok')
   })
 
   it('does not resubmit an untouched legacy note', async () => {

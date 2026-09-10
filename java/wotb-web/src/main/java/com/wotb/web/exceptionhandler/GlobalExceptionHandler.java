@@ -117,7 +117,7 @@ public class GlobalExceptionHandler {
             final IllegalArgumentException exception, final HttpServletRequest request) {
         final String code = errorCode(exception.getMessage(), "INVALID_ARGUMENT");
         final HttpStatus status = switch (code) {
-            case "PROFILE_ALREADY_EXISTS", "WOTB_ACCOUNT_ALREADY_USED", "ALREADY_BOOSTER",
+            case "WOTB_ACCOUNT_ALREADY_USED", "ALREADY_BOOSTER",
                  "BOOSTER_APPLICATION_ALREADY_OPEN", "AVERAGE_GOD_ALREADY_EXISTS", "PROFILE_REGION_MISMATCH",
                  "WOTB_ACCOUNT_MISMATCH" -> HttpStatus.CONFLICT;
             case "PROFILE_NOT_FOUND", "USER_PROFILE_NOT_FOUND", "BOOSTER_NOT_FOUND",
@@ -133,8 +133,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ApiErrorResponse> handleIllegalState(
             final IllegalStateException exception, final HttpServletRequest request) {
-        return response(errorCode(exception.getMessage(), "INVALID_STATE"),
-                HttpStatus.CONFLICT, exception, request);
+        final String code = errorCode(exception.getMessage(), "INVALID_STATE");
+        // Profile bootstrap 在唯一冲突后重读不到自身 profile：这是服务端不变量被破坏，
+        // 不是调用方的请求冲突，必须区别于 409 的业务冲突。
+        if ("PROFILE_BOOTSTRAP_FAILED".equals(code)) {
+            return response(code, HttpStatus.INTERNAL_SERVER_ERROR, exception, request);
+        }
+        return response(code, HttpStatus.CONFLICT, exception, request);
     }
 
     @ExceptionHandler(ReplayBusyException.class)

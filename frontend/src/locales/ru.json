@@ -1091,7 +1091,6 @@
         "FORBIDDEN": "Доступ запрещен",
         "PROFILE_NOT_FOUND": "Профиль пользователя не найден",
         "USER_PROFILE_NOT_FOUND": "Профиль пользователя не найден",
-        "PROFILE_ALREADY_EXISTS": "Профиль пользователя уже существует",
         "WOTB_ACCOUNT_ALREADY_USED": "Игровой аккаунт уже привязан",
         "INVALID_WOTB_ACCOUNT_ID": "Некорректный ID игрового аккаунта",
         "UNSUPPORTED_WOTB_SERVER": "Этот сервер не поддерживается",

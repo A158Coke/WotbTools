@@ -207,8 +207,14 @@ export async function getUserProfile() {
   return boostHandle(await apiFetch('/api/users/profile', { headers: await boostHeaders() }))
 }
 
-export async function createUserProfile() {
-  return boostHandle(await apiFetch('/api/users/profile', { method: 'POST', headers: await boostHeaders() }))
+/**
+ * 幂等 ensure 当前用户的业务资料（PUT 语义，不是 create）：
+ * 已存在 → 200 原样返回且不改任何绑定；不存在 → 按 canonical provisioning 创建。
+ * 身份只取自当前 JWT，请求不发 body，因此无法冒充他人。
+ * canonical owner 是全局 business bootstrap（useBusinessUserBootstrap），页面不自行调用。
+ */
+export async function ensureUserProfile() {
+  return boostHandle(await apiFetch('/api/users/profile', { method: 'PUT', headers: await boostHeaders() }))
 }
 
 export async function updateUserWotbAccount(body) {

@@ -1091,7 +1091,6 @@
         "FORBIDDEN": "无权执行此操作",
         "PROFILE_NOT_FOUND": "用户资料不存在",
         "USER_PROFILE_NOT_FOUND": "用户资料不存在",
-        "PROFILE_ALREADY_EXISTS": "用户资料已存在",
         "WOTB_ACCOUNT_ALREADY_USED": "该游戏账号已被绑定",
         "INVALID_WOTB_ACCOUNT_ID": "游戏账号 ID 无效",
         "UNSUPPORTED_WOTB_SERVER": "暂不支持该服务器",

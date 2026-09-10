@@ -72,6 +72,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/users/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the authenticated user's WotBTools business profile
+         * @description user_profile is the WotBTools business-user projection of the Keycloak identity. Every authenticated user that reaches the SPA is provisioned by the global business bootstrap, so 404 PROFILE_NOT_FOUND now only means provisioning has not succeeded yet.
+         */
+        get: operations["getCurrentUserProfile"];
+        /**
+         * Idempotently ensure the authenticated user's WotBTools business profile
+         * @description This is ensure, not create. An existing profile is returned unchanged: wotbServer, wotbAccountId, wotbNickname, wotbAccountSource and wotbAccountVerifiedAt are never overwritten. A missing profile is created with the canonical provisioning semantics (trusted Wargaming claims create that region with source WARGAMING; otherwise CN with source MANUAL). Concurrent calls for the same subject both succeed and leave exactly one row: the loser of the keycloak_user_id unique race reloads the winner's profile instead of reporting an already-exists conflict. A real WotB ownership collision is never swallowed and still returns 409 WOTB_ACCOUNT_ALREADY_USED. Identity comes solely from the bearer token and no request body is accepted, so a caller cannot impersonate another user.
+         */
+        put: operations["ensureCurrentUserProfile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/hof/hundred/submissions": {
         parameters: {
             query?: never;
@@ -480,6 +504,22 @@ export interface components {
             failed: number;
             results: components["schemas"]["BulkDeleteItemResult"][];
         };
+        UserProfile: {
+            /** Format: int64 */
+            id: number;
+            keycloakUserId: string;
+            displayName?: string | null;
+            username: string;
+            /** Format: int64 */
+            wotbAccountId?: number | null;
+            wotbNickname?: string | null;
+            /** @enum {string} */
+            wotbServer: "CN" | "ASIA" | "EU" | "NA";
+            /** @enum {string} */
+            wotbAccountSource: "MANUAL" | "WARGAMING";
+            /** Format: date-time */
+            wotbAccountVerifiedAt?: string | null;
+        };
         AdminUserListItem: {
             keycloakUserId: string;
             keycloakUsername?: string | null;
@@ -875,6 +915,91 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getCurrentUserProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current user profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfile"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Profile not provisioned yet */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ensureCurrentUserProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Existing or newly provisioned profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfile"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The WotB account is already bound to another user */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Profile bootstrap invariant violated */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

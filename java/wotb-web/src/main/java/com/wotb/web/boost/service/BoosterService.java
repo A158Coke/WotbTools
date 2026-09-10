@@ -12,6 +12,7 @@ import com.wotb.web.boost.repository.BoosterProfileRepository;
 import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.util.ConstraintViolations;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -189,7 +190,7 @@ public class BoosterService {
             return mapper.toDto(persisted);
         } catch (final DataIntegrityViolationException e) {
             compensations.reversed().forEach(compensation -> compensation.afterFailure(e));
-            final String errorCode = causedByConstraint(e, AVERAGE_GOD_UNIQUE_INDEX)
+            final String errorCode = ConstraintViolations.causedByConstraint(e, AVERAGE_GOD_UNIQUE_INDEX)
                     ? "AVERAGE_GOD_ALREADY_EXISTS"
                     : "ALREADY_BOOSTER";
             throw new IllegalArgumentException(errorCode, e);
@@ -319,17 +320,6 @@ public class BoosterService {
             case "CN", "ASIA", "EU", "NA" -> normalized;
             default -> throw new IllegalArgumentException("UNSUPPORTED_WOTB_SERVER");
         };
-    }
-
-    private static boolean causedByConstraint(final Throwable failure, final String constraintName) {
-        Throwable current = failure;
-        while (current != null) {
-            if (current.getMessage() != null && current.getMessage().contains(constraintName)) {
-                return true;
-            }
-            current = current.getCause();
-        }
-        return false;
     }
 
     private RollbackCompensation addRoleIfMissing(final String keycloakUserId) {

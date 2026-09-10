@@ -51,6 +51,32 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
   white-space: normal;
 }
 .dev-environment-label { font-weight: 800; white-space: nowrap; }
+/* 业务用户 bootstrap（profile ensure）失败提示：非阻塞，可手动重试，不影响已认证状态。 */
+.business-bootstrap-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-warn);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: .8rem;
+  line-height: 1.4;
+}
+.business-bootstrap-retry {
+  padding: 3px 10px;
+  border: 1px solid var(--border-warn);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--warn-text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: .78rem;
+  white-space: nowrap;
+}
+.business-bootstrap-retry:hover { background: var(--bg-card-hover); }
 .tb-spacer { flex: 1; }
 .auth-btn { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px;
   background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-size: .82rem; font-family: inherit; white-space: nowrap; }

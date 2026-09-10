@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory } from 'vue-router'
 import { nextTick, inject } from 'vue'
@@ -7,6 +7,7 @@ import App from './App.vue'
 import { NAVIGATE_VIEW_KEY } from './shared/navigation.js'
 import { createAppRouter } from './app/router.js'
 import { setUiProfile } from './composables/useUiProfile.js'
+import { resetBusinessUserBootstrap } from './composables/useBusinessUserBootstrap.js'
 
 const mountedWrappers = []
 
@@ -36,6 +37,12 @@ vi.mock('./composables/useAuth.js', () => ({
     userName: () => authState.username,
     hasRole: authState.hasRole,
   }),
+}))
+
+// 只保留 bootstrap 需要的 ensure；真实 composable 仍被执行（去重/重试/状态机都是被测行为）。
+const bootstrapApi = vi.hoisted(() => ({ ensureUserProfile: vi.fn() }))
+vi.mock('./utils/api-boost.js', () => ({
+  ensureUserProfile: bootstrapApi.ensureUserProfile,
 }))
 
 async function mountApp(path = '/') {
@@ -126,6 +133,102 @@ describe('App routing', () => {
     document.documentElement.removeAttribute('data-ui-profile')
     document.documentElement.removeAttribute('data-theme')
     window.localStorage.removeItem('wotb-ui-profile')
+  })
+})
+
+describe('Business user bootstrap', () => {
+  beforeEach(() => {
+    // bootstrap 状态是模块级的（一个 SPA 一份），必须逐用例重置，否则前一个用例的 ready
+    // 会让后一个用例短路。
+    resetBusinessUserBootstrap()
+    bootstrapApi.ensureUserProfile.mockReset()
+  })
+
+  afterEach(() => {
+    mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount())
+    authState.authenticated = false
+    bootstrapApi.ensureUserProfile.mockReset()
+    resetBusinessUserBootstrap()
+    document.querySelectorAll('.user-menu-panel').forEach(element => element.remove())
+  })
+
+  it('ensures the profile once the user is authenticated', async () => {
+    authState.authenticated = true
+    bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1, keycloakUserId: 'kc-1' })
+
+    const { wrapper } = await mountApp('/?view=replay')
+    await flushPromises()
+
+    expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="business-bootstrap-notice"]').exists()).toBe(false)
+  })
+
+  it.each([
+    ['home', '/?view=home', 'view-home'],
+    ['replay', '/?view=replay', 'view-replay'],
+    ['hof', '/?view=hof', 'view-hof'],
+  ])('self-heals on direct entry to %s without visiting Profile or Boost', async (_name, path, testId) => {
+    authState.authenticated = true
+    bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
+
+    const { wrapper } = await mountApp(path)
+
+    expect(wrapper.find(`[data-test="${testId}"]`).exists()).toBe(true)
+    // 页面级 provisioning 已收敛：即便没挂载 ProfilePage / BoostPage 也必须 ensure。
+    expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not call ensure while unauthenticated', async () => {
+    bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
+
+    await mountApp('/?view=replay')
+    await flushPromises()
+
+    expect(bootstrapApi.ensureUserProfile).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a retryable failure instead of swallowing it', async () => {
+    authState.authenticated = true
+    bootstrapApi.ensureUserProfile.mockRejectedValueOnce(new Error('502'))
+
+    const { wrapper } = await mountApp('/?view=replay')
+    await flushPromises()
+
+    const notice = wrapper.find('[data-testid="business-bootstrap-notice"]')
+    expect(notice.exists()).toBe(true)
+    // 失败不改变认证状态：用户仍然处于已登录的 SPA 中。
+    expect(authState.authenticated).toBe(true)
+  })
+
+  it('allows a later bootstrap to succeed after a transient failure', async () => {
+    authState.authenticated = true
+    // 第一次 bootstrap：transient 5xx。
+    bootstrapApi.ensureUserProfile.mockRejectedValueOnce(new Error('502'))
+    const first = await mountApp('/?view=replay')
+    await flushPromises()
+    expect(first.wrapper.find('[data-testid="business-bootstrap-notice"]').exists()).toBe(true)
+
+    // 用户刷新 / 重新挂载：同一个 rejected Promise 绝不能锁死后续 ensure。
+    bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
+    const second = await mountApp('/?view=replay')
+    await flushPromises()
+
+    expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(2)
+    expect(second.wrapper.find('[data-testid="business-bootstrap-notice"]').exists()).toBe(false)
+  })
+
+  it('retries from the failure notice without a page refresh', async () => {
+    authState.authenticated = true
+    bootstrapApi.ensureUserProfile.mockRejectedValueOnce(new Error('502'))
+    const { wrapper } = await mountApp('/?view=replay')
+    await flushPromises()
+
+    bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
+    await wrapper.get('.business-bootstrap-retry').trigger('click')
+    await flushPromises()
+
+    expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-testid="business-bootstrap-notice"]').exists()).toBe(false)
   })
 })
 
