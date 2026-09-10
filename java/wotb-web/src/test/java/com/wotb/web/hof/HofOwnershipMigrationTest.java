@@ -103,25 +103,34 @@ class HofOwnershipMigrationTest {
             assertEquals(2, count(s, "select count(*) from mark3_replay_evidence"));
             assertEquals(5, count(s,
                     "select count(*) from hundred_battle_submission where proof_screenshot is not null"));
-            assertEquals(2, count(s,
+            assertEquals(3, count(s,
                     "select count(*) from mark3_submission where proof_screenshot_first is not null"));
         }
     }
 
+    /**
+     * 现网路径下两个 Keycloak 身份无法同时绑定同一账号（{@code user_profile} 有
+     * {@code UNIQUE (wotb_server, wotb_account_id)}），因此「两行都能解析出区服、且构成重复」
+     * 只可能来自历史/异常数据。为了真实覆盖 V22 的重复检查（而不是只覆盖区服不可解析检查），
+     * 本用例显式放开该唯一约束来构造这种数据。
+     */
     @Test
     void failsFastWhenHundredHasDuplicateActiveRowsForTheSameAccount() throws Exception {
         try (Connection c = connection(); Statement s = c.createStatement()) {
             seedProfiles(s);
-            // 旧 (user_keycloak_id, vehicle_id) 唯一性允许：同账号、同车、同为 CURRENT，但来自两个 Keycloak 身份
+            s.executeUpdate("alter table user_profile drop constraint uk_user_profile_wotb_account");
+            insertProfile(s, "kc-x", 100, "CN");
+            // 旧 (user_keycloak_id, vehicle_id) 唯一性允许：同 (区服, 账号, 车辆, 状态)，但来自两个 Keycloak 身份
             insertHundred(s, 1, "kc-a", 1001, 100, "CURRENT", "2026-01-01T00:00:00Z");
-            insertHundred(s, 2, "kc-b", 1001, 100, "CURRENT", "2026-01-02T00:00:00Z");
+            insertHundred(s, 2, "kc-x", 1001, 100, "CURRENT", "2026-01-02T00:00:00Z");
             s.executeUpdate(evidenceSql("hundred_battle_replay_evidence", 1));
         }
 
         final FlywayException failure = assertThrows(FlywayException.class, this::migrateToLatest);
         final String message = fullMessage(failure);
         assertTrue(message.contains("V22 preflight failed"), message);
-        assertTrue(message.contains("Hundred"), message);
+        assertTrue(message.contains("DUPLICATE ACTIVE ROWS"), message);
+        assertTrue(message.contains("vehicle=1001"), message);
 
         assertV21StateUntouched(2, 1);
     }
@@ -130,20 +139,26 @@ class HofOwnershipMigrationTest {
     void failsFastWhenMark3HasDuplicateActiveRowsForTheSameAccount() throws Exception {
         try (Connection c = connection(); Statement s = c.createStatement()) {
             seedProfiles(s);
-            // 同账号同车两条 CURRENT（不同 Keycloak 身份）
-            insertMark3(s, 11, "kc-a", 3003, 900, "CURRENT", "2026-01-01T00:00:00Z");
-            insertMark3(s, 12, "kc-b", 3003, 900, "CURRENT", "2026-01-02T00:00:00Z");
+            s.executeUpdate("alter table user_profile drop constraint uk_user_profile_wotb_account");
+            insertProfile(s, "kc-x", 900, "ASIA");
+            insertProfile(s, "kc-y", 950, "CN");
+            // 同 (区服, 账号, 车辆) 两条 CURRENT（不同 Keycloak 身份）
+            insertMark3(s, 11, "kc-c", 3003, 900, "CURRENT", "2026-01-01T00:00:00Z");
+            insertMark3(s, 12, "kc-x", 3003, 900, "CURRENT", "2026-01-02T00:00:00Z");
             // 以及「同账号同车同时存在 CURRENT 与 PENDING」的跨状态形态：
             // 三环新唯一索引是单个组合 partial index，覆盖两个状态，因此这同样是冲突
-            insertMark3(s, 13, "kc-c", 4004, 950, "CURRENT", "2026-01-03T00:00:00Z");
-            insertMark3(s, 14, "kc-d", 4004, 950, "PENDING", "2026-01-04T00:00:00Z");
+            insertMark3(s, 13, "kc-d", 4004, 950, "CURRENT", "2026-01-03T00:00:00Z");
+            insertMark3(s, 14, "kc-y", 4004, 950, "PENDING", "2026-01-04T00:00:00Z");
             s.executeUpdate(evidenceSql("mark3_replay_evidence", 11));
         }
 
         final FlywayException failure = assertThrows(FlywayException.class, this::migrateToLatest);
         final String message = fullMessage(failure);
         assertTrue(message.contains("V22 preflight failed"), message);
-        assertTrue(message.contains("Mark3"), message);
+        assertTrue(message.contains("DUPLICATE ACTIVE ROWS"), message);
+        assertTrue(message.contains("vehicle=3003"), message);
+        assertTrue(message.contains("vehicle=4004"),
+                "跨状态（CURRENT + PENDING）冲突必须一并报出: " + message);
 
         try (Connection c = connection(); Statement s = c.createStatement()) {
             assertEquals(4, count(s, "select count(*) from mark3_submission"),
@@ -170,7 +185,7 @@ class HofOwnershipMigrationTest {
 
         final FlywayException failure = assertThrows(FlywayException.class, this::migrateToLatest);
         final String message = fullMessage(failure);
-        assertTrue(message.contains("no resolvable WotB server"), message);
+        assertTrue(message.contains("UNRESOLVED SERVER"), message);
 
         try (Connection c = connection(); Statement s = c.createStatement()) {
             assertEquals(1, count(s, "select count(*) from hundred_battle_submission"));
