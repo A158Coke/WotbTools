@@ -93,8 +93,11 @@ public class AdminUserService {
      * @param idpAlias 仅 {@link #SEGMENT_KEYCLOAK} 支持；本地 segment 传值 → 400
      * @param page     0-based 页码
      * @param size     每页条数（1..100）
+     *
+     * <p>刻意不使用 {@code @Transactional}：本方法要把外部 Keycloak Admin 调用与数据库读取混在
+     * 一起（local segment 每页更是 N 次调用），用一个外层事务包住会把 DB 连接一直握在手里，
+     * 在高并发管理操作下耗尽连接池。每次 DB 访问各自走自己的只读事务。</p>
      */
-    @Transactional(readOnly = true)
     public AdminUserPageDto searchUsers(final String query,
                                         final String segment,
                                         final String idpAlias,
