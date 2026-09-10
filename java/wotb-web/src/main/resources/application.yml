@@ -127,8 +127,8 @@ wotb:
       # the 9th request is rejected with 503 AI_REVIEW_BUSY.
       max-concurrent: ${AI_REVIEW_WORKER_MAX_CONCURRENT:4}
       queue-capacity: ${AI_REVIEW_WORKER_QUEUE_CAPACITY:4}
-      # Blocking upstream calls run on bounded virtual workers; queue and
-      # max-concurrent remain the authoritative admission control.
+      # Each admitted blocking call gets its own VT; independent permits keep
+      # active work and active+parked admission bounded.
       virtual-threads: ${AI_REVIEW_WORKER_VIRTUAL_THREADS:true}
       # Request overall deadline (queue wait included): 1100s covers the team
       # flow (Call #1 + Call #2 + Autopsy, each <=315s) plus margin; aligns with

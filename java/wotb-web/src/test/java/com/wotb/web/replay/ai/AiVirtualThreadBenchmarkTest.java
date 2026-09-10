@@ -27,11 +27,13 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
 import jdk.jfr.Configuration;
 import jdk.jfr.Recording;
+import jdk.management.VirtualThreadSchedulerMXBean;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -60,6 +62,8 @@ class AiVirtualThreadBenchmarkTest {
     private static final String SYSTEM_PROMPT = "You are a latency benchmark endpoint. Follow the user exactly.";
     private static final int CALL_TIMEOUT_SEC = 75;
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
+    private static final VirtualThreadSchedulerMXBean VIRTUAL_SCHEDULER =
+            ManagementFactory.getPlatformMXBean(VirtualThreadSchedulerMXBean.class);
 
     @Test
     void comparePlatformAndVirtualWorkers() throws Exception {
@@ -110,6 +114,10 @@ class AiVirtualThreadBenchmarkTest {
                                           final int requestCount,
                                           final boolean measured) throws InterruptedException {
         final ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
+        threadBean.resetPeakThreadCount();
+        final int platformThreadCountBefore = threadBean.getThreadCount();
+        final SchedulerPeaks schedulerPeaks = new SchedulerPeaks(VIRTUAL_SCHEDULER);
+        schedulerPeaks.sample();
         final MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
         final ProcessCpu processCpu = ProcessCpu.capture();
         final GcSnapshot gcBefore = GcSnapshot.capture();
@@ -127,6 +135,9 @@ class AiVirtualThreadBenchmarkTest {
         final Map<String, AtomicInteger> failures = new java.util.concurrent.ConcurrentHashMap<>();
         final Map<String, AtomicInteger> providerStatuses = new java.util.concurrent.ConcurrentHashMap<>();
         final CountDownLatch done = new CountDownLatch(requestCount);
+        final AtomicBoolean sampling = new AtomicBoolean(true);
+        final Thread schedulerSampler = Thread.startVirtualThread(() ->
+                sampleSchedulerUntil(sampling, schedulerPeaks));
         final AiReviewWorkerExecutor executor = new AiReviewWorkerExecutor(
                 concurrency, requestCount, CALL_TIMEOUT_SEC, virtualThreads, null);
         try {
@@ -195,7 +206,13 @@ class AiVirtualThreadBenchmarkTest {
                     "AI VT benchmark timed out: variant=" + (virtualThreads ? "VT" : "PT")
                             + " concurrency=" + concurrency);
         } finally {
+            sampling.set(false);
+            schedulerSampler.interrupt();
+            schedulerSampler.join(1_000L);
             executor.close();
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("AI VT benchmark executor did not terminate");
+            }
         }
         if (!measured) {
             return null;
@@ -204,14 +221,19 @@ class AiVirtualThreadBenchmarkTest {
         final long heapAfter = memoryBean.getHeapMemoryUsage().getUsed();
         final GcSnapshot gcAfter = GcSnapshot.capture();
         final ProcessCpu processCpuAfter = ProcessCpu.capture();
+        schedulerPeaks.sample();
+        final SchedulerSnapshot schedulerAfter = SchedulerSnapshot.capture(VIRTUAL_SCHEDULER);
+        final int platformThreadCount = threadBean.getThreadCount();
+        final int peakPlatformThreadCount = threadBean.getPeakThreadCount();
         final Map<String, Integer> failureCounts = failures.entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().get(),
                         Integer::sum, LinkedHashMap::new));
         return new VariantResult(
                 virtualThreads ? "virtual" : "platform", concurrency, requestCount,
                 completed.get(), successes.get(), unexpectedResponses.get(), peakActive.get(),
-                virtualTasks.get(), platformTasks.get(), threadBean.getPeakThreadCount(),
-                threadBean.getThreadCount(), wallNanos, processCpu.cpuNanos(),
+                virtualTasks.get(), platformTasks.get(), platformThreadCountBefore,
+                platformThreadCount, peakPlatformThreadCount, schedulerAfter,
+                schedulerPeaks.snapshot(), wallNanos, processCpu.cpuNanos(),
                 processCpuAfter.cpuNanos() - processCpu.cpuNanos(), heapBefore, heapAfter,
                 gcAfter.count() - gcBefore.count(), gcAfter.timeMillis() - gcBefore.timeMillis(),
                 failureCounts, firstFailure.get(), percentiles(samples, Sample::totalNanos),
@@ -291,6 +313,19 @@ class AiVirtualThreadBenchmarkTest {
         }
     }
 
+    private static void sampleSchedulerUntil(final AtomicBoolean sampling,
+                                              final SchedulerPeaks peaks) {
+        while (sampling.get()) {
+            peaks.sample();
+            try {
+                Thread.sleep(100L);
+            } catch (final InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
     private static void writeReport(final String model, final int warmupRequests,
                                     final int measurementRequests,
                                     final List<Integer> concurrencies,
@@ -314,8 +349,8 @@ class AiVirtualThreadBenchmarkTest {
                 .append("\nModel: ").append(model)
                 .append("\nPrompt: `").append(PROMPT).append("`\n\n")
                 .append("This is a real-provider blocking-call benchmark, not a replay throughput claim.\n\n")
-                .append("| variant | concurrency | completed | wall ms | total p50/p95/p99 ms | provider p50/p95/p99 ms | queue p50/p95/p99 ms | peak active | virtual tasks | platform tasks | CPU ms | GC ms | failures | statuses |\n")
-                .append("|---|---:|---:|---:|---|---|---|---:|---:|---:|---:|---:|---|---|\n");
+                .append("| variant | concurrency | completed | wall ms | total p50/p95/p99 ms | provider p50/p95/p99 ms | queue p50/p95/p99 ms | peak active | virtual tasks | platform tasks | platform count/peak | VT scheduler peak pool/mounted/queued | CPU ms | GC ms | failures | statuses |\n")
+                .append("|---|---:|---:|---:|---|---|---|---:|---:|---:|---|---|---:|---:|---|---|\n");
         for (final VariantResult result : results) {
             markdown.append('|').append(result.variant()).append('|').append(result.concurrency())
                     .append('|').append(result.completed()).append('|')
@@ -325,6 +360,11 @@ class AiVirtualThreadBenchmarkTest {
                     .append(formatPercentiles(result.queueWaitMs())).append('|')
                     .append(result.peakActive()).append('|').append(result.virtualTasks()).append('|')
                     .append(result.platformTasks()).append('|')
+                    .append(result.platformThreadCount()).append('/')
+                    .append(result.peakPlatformThreadCount()).append('|')
+                    .append(result.schedulerPeak().poolSize()).append('/')
+                    .append(result.schedulerPeak().mountedVirtualThreads()).append('/')
+                    .append(result.schedulerPeak().queuedVirtualThreads()).append('|')
                     .append(result.cpuDeltaNanos() / 1_000_000.0).append('|')
                     .append(result.gcTimeMillis()).append('|').append(result.failures()).append('|')
                     .append(result.providerStatuses()).append("|\n");
@@ -345,7 +385,9 @@ class AiVirtualThreadBenchmarkTest {
     private record VariantResult(String variant, int concurrency, int requestCount,
                                  int completed, int successes, int unexpectedResponses,
                                  int peakActive, int virtualTasks, int platformTasks,
-                                 int peakLiveThreads, int endingLiveThreads,
+                                 int platformThreadCountBefore, int platformThreadCount,
+                                 int peakPlatformThreadCount,
+                                 SchedulerSnapshot schedulerAfter, SchedulerSnapshot schedulerPeak,
                                  long wallNanos, long processCpuNanos,
                                  long cpuDeltaNanos, long heapBefore, long heapAfter,
                                  long gcCount, long gcTimeMillis,
@@ -364,8 +406,11 @@ class AiVirtualThreadBenchmarkTest {
             result.put("peakActive", peakActive);
             result.put("virtualTasks", virtualTasks);
             result.put("platformTasks", platformTasks);
-            result.put("peakLiveThreads", peakLiveThreads);
-            result.put("endingLiveThreads", endingLiveThreads);
+            result.put("platformThreadCountBefore", platformThreadCountBefore);
+            result.put("platformThreadCount", platformThreadCount);
+            result.put("peakPlatformThreadCount", peakPlatformThreadCount);
+            result.put("schedulerAfter", schedulerAfter.asMap());
+            result.put("schedulerPeak", schedulerPeak.asMap());
             result.put("wallMs", wallNanos / 1_000_000.0);
             result.put("processCpuMs", processCpuNanos / 1_000_000.0);
             result.put("cpuDeltaMs", cpuDeltaNanos / 1_000_000.0);
@@ -380,6 +425,57 @@ class AiVirtualThreadBenchmarkTest {
             result.put("providerMs", providerMs);
             result.put("queueWaitMs", queueWaitMs);
             return result;
+        }
+    }
+
+    private record SchedulerSnapshot(int parallelism, int poolSize,
+                                     int mountedVirtualThreads, long queuedVirtualThreads) {
+        static SchedulerSnapshot capture(final VirtualThreadSchedulerMXBean scheduler) {
+            if (scheduler == null) {
+                return new SchedulerSnapshot(-1, -1, -1, -1L);
+            }
+            try {
+                return new SchedulerSnapshot(scheduler.getParallelism(), scheduler.getPoolSize(),
+                        scheduler.getMountedVirtualThreadCount(), scheduler.getQueuedVirtualThreadCount());
+            } catch (final RuntimeException unavailable) {
+                return new SchedulerSnapshot(-1, -1, -1, -1L);
+            }
+        }
+
+        Map<String, Object> asMap() {
+            final Map<String, Object> result = new LinkedHashMap<>();
+            result.put("parallelism", parallelism);
+            result.put("poolSize", poolSize);
+            result.put("mountedVirtualThreads", mountedVirtualThreads);
+            result.put("queuedVirtualThreads", queuedVirtualThreads);
+            return result;
+        }
+    }
+
+    private static final class SchedulerPeaks {
+        private final VirtualThreadSchedulerMXBean scheduler;
+        private int parallelism = -1;
+        private int poolSize = -1;
+        private int mountedVirtualThreads = -1;
+        private long queuedVirtualThreads = -1L;
+
+        private SchedulerPeaks(final VirtualThreadSchedulerMXBean scheduler) {
+            this.scheduler = scheduler;
+        }
+
+        synchronized void sample() {
+            final SchedulerSnapshot snapshot = SchedulerSnapshot.capture(scheduler);
+            parallelism = snapshot.parallelism();
+            poolSize = Math.max(poolSize, snapshot.poolSize());
+            mountedVirtualThreads = Math.max(mountedVirtualThreads,
+                    snapshot.mountedVirtualThreads());
+            queuedVirtualThreads = Math.max(queuedVirtualThreads,
+                    snapshot.queuedVirtualThreads());
+        }
+
+        synchronized SchedulerSnapshot snapshot() {
+            return new SchedulerSnapshot(parallelism, poolSize, mountedVirtualThreads,
+                    queuedVirtualThreads);
         }
     }
 

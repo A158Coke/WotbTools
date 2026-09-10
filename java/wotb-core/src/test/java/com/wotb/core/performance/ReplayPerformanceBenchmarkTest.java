@@ -67,6 +67,8 @@ class ReplayPerformanceBenchmarkTest {
     private static final DateTimeFormatter FILE_TIMESTAMP =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS").withZone(ZoneOffset.UTC);
     private static final double BYTES_PER_MIB = 1024.0 * 1024.0;
+    private static final boolean PROGRESS_LOGGING =
+            Boolean.getBoolean("performance.progress");
 
     private final DefaultReplayProcessingFacade facade = new DefaultReplayProcessingFacade();
     private final ReplayReconstructionService reconstructionService = new ReplayReconstructionService();
@@ -212,10 +214,14 @@ class ReplayPerformanceBenchmarkTest {
             final ExecutorService executor = newExecutor(concurrency, samples.size());
             try {
                 for (int round = 0; round < warmupRounds; round++) {
+                    logRound("START", stage, "warmup", round + 1, warmupRounds, concurrency);
+                    final long roundStart = System.nanoTime();
                     final Round roundResult = executeRound(executor, stage, samples);
                     if (verifyParity) {
                         verifyRound(stage, roundResult.invocations(), fingerprints);
                     }
+                    logRoundDone(stage, "warmup", round + 1, warmupRounds, concurrency,
+                            roundStart);
                 }
             } finally {
                 executor.shutdownNow();
@@ -271,6 +277,8 @@ class ReplayPerformanceBenchmarkTest {
             int fingerprintCount = 0;
 
             for (int round = 0; round < measurementRounds; round++) {
+                logRound("START", stage, "measurement", round + 1, measurementRounds, concurrency);
+                final long roundStart = System.nanoTime();
                 final GcSnapshot beforeGc = GcSnapshot.capture();
                 HeapSnapshot.resetPeaks();
                 final HeapSnapshot beforeHeap = HeapSnapshot.capture();
@@ -303,6 +311,8 @@ class ReplayPerformanceBenchmarkTest {
                 if (verifyParity) {
                     fingerprintCount += verifyRound(stage, roundResult.invocations(), fingerprints);
                 }
+                logRoundDone(stage, "measurement", round + 1, measurementRounds, concurrency,
+                        roundStart);
             }
 
             final long operations = (long) samples.size() * measurementRounds;
@@ -329,6 +339,24 @@ class ReplayPerformanceBenchmarkTest {
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(Math.max(1, sampleCount)),
                 new ThreadPoolExecutor.AbortPolicy());
+    }
+
+    private static void logRound(final String event, final Stage stage, final String phase,
+                                 final int round, final int total, final int concurrency) {
+        if (PROGRESS_LOGGING) {
+            System.out.printf("BENCHMARK_ROUND_%s stage=%s phase=%s round=%d/%d concurrency=%d%n",
+                    event, stage.label, phase, round, total, concurrency);
+        }
+    }
+
+    private static void logRoundDone(final Stage stage, final String phase,
+                                     final int round, final int total, final int concurrency,
+                                     final long roundStart) {
+        if (PROGRESS_LOGGING) {
+            System.out.printf("BENCHMARK_ROUND_DONE stage=%s phase=%s round=%d/%d concurrency=%d elapsedMs=%.3f%n",
+                    stage.label, phase, round, total, concurrency,
+                    (System.nanoTime() - roundStart) / 1_000_000.0);
+        }
     }
 
     private Round executeRound(final ExecutorService executor, final Stage stage,

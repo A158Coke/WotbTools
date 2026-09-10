@@ -12,9 +12,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -26,8 +31,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 最多 8 active/pending，第 9 个请求立即拒绝（{@code AI_REVIEW_BUSY} / 503）。
  * 可通过环境变量 {@code AI_REVIEW_WORKER_MAX_CONCURRENT} /
  * {@code AI_REVIEW_WORKER_QUEUE_CAPACITY} 调整（3/4/6 等无需 rebuild）。
- * 线程数固定（core = max），有界队列；默认使用虚拟线程承载阻塞的上游
- * AI 调用，但并发数和队列容量仍由本 executor 严格限制。</p>
+ * 平台线程模式使用固定 worker + 有界队列；虚拟线程模式则为每个已接纳的
+ * task 创建一个虚拟线程，并用独立 admission/active permits 保留相同的
+ * {@code maxConcurrent + queueCapacity} backpressure。</p>
  *
  * <p><b>拒绝策略</b>：{@link ThreadPoolExecutor.AbortPolicy}——满载时抛
  * {@code RejectedExecutionException}，由 Controller 捕获后返回 503
@@ -48,7 +54,13 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
     static final int DEFAULT_QUEUE_CAPACITY = 4;
     static final long DEFAULT_OVERALL_DEADLINE_SEC = 1100;
 
-    private final ThreadPoolExecutor executor;
+    private final ExecutorService executor;
+    private final ThreadPoolExecutor platformExecutor;
+    private final Semaphore activePermits;
+    private final Semaphore admissionPermits;
+    private final AtomicInteger virtualQueueDepth;
+    private final AtomicBoolean closed = new AtomicBoolean();
+    private final boolean virtualThreads;
     private final long overallDeadlineNanos;
     private final MeterRegistry meterRegistry;
 
@@ -59,7 +71,7 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
      * {@code wotb.ai.review-worker.virtual-threads} 读取配置（默认 4/4/1100/true）。
      * 测试可直接传字面值调用（{@code @Value} 仅 Spring 容器处理）。
      *
-     * @param maxConcurrent    worker 线程数（core = max，固定不弹性伸缩），必须 ≥ 1
+     * @param maxConcurrent    active upstream-call limit; platform mode uses this as worker count
      * @param queueCapacity    有界队列容量，必须 ≥ 1
      * @param overallDeadlineSec  请求整体 deadline（秒），必须 ≥ 1
      * @param virtualThreads   是否使用虚拟线程执行阻塞的上游 AI 调用
@@ -85,14 +97,28 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
                     "overallDeadlineSec must be >= 1: " + overallDeadlineSec);
         }
         this.overallDeadlineNanos = TimeUnit.SECONDS.toNanos(overallDeadlineSec);
-        this.executor = new ThreadPoolExecutor(
-                maxConcurrent,
-                maxConcurrent,
-                0L,
-                TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(queueCapacity),
-                workerThreadFactory(virtualThreads),
-                new ThreadPoolExecutor.AbortPolicy());
+        this.virtualThreads = virtualThreads;
+        if (virtualThreads) {
+            this.platformExecutor = null;
+            this.executor = Executors.newThreadPerTaskExecutor(
+                    Thread.ofVirtual().name("wotb-ai-review-vt-", 1).factory());
+            this.activePermits = new Semaphore(maxConcurrent, true);
+            this.admissionPermits = new Semaphore(Math.addExact(maxConcurrent, queueCapacity), true);
+            this.virtualQueueDepth = new AtomicInteger();
+        } else {
+            this.platformExecutor = new ThreadPoolExecutor(
+                    maxConcurrent,
+                    maxConcurrent,
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<>(queueCapacity),
+                    new NamedPlatformThreadFactory(),
+                    new ThreadPoolExecutor.AbortPolicy());
+            this.executor = platformExecutor;
+            this.activePermits = null;
+            this.admissionPermits = null;
+            this.virtualQueueDepth = null;
+        }
         this.meterRegistry = meterRegistry;
         if (meterRegistry != null) {
             Gauge.builder("wotb_ai_review_queue_depth", this, AiReviewWorkerExecutor::queueDepth)
@@ -129,50 +155,93 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
      */
     public void execute(final Runnable task) {
         final long submittedNanos = System.nanoTime();
-        executor.execute(() -> {
-            final long startNanos = System.nanoTime();
-            final long queueWaitMillis = (startNanos - submittedNanos) / 1_000_000L;
-            if (queueWaitMillis > 0) {
-                LOGGER.debug("AI review worker queue wait {} ms (overall deadline {} s)",
-                        queueWaitMillis, TimeUnit.NANOSECONDS.toSeconds(overallDeadlineNanos));
-                if (meterRegistry != null) {
-                    Timer.builder("wotb_ai_review_queue_wait")
-                            .publishPercentileHistogram()
-                            .register(meterRegistry)
-                            .record(startNanos - submittedNanos, TimeUnit.NANOSECONDS);
-                }
-            }
-            AiRequestContext.setOverallDeadline(submittedNanos + overallDeadlineNanos);
-            try {
-                task.run();
-            } finally {
-                AiRequestContext.clearOverallDeadline();
-            }
-        });
+        if (closed.get()) {
+            throw new RejectedExecutionException("AI review worker is shut down");
+        }
+        if (!virtualThreads) {
+            executor.execute(() -> runTask(task, submittedNanos));
+            return;
+        }
+
+        if (!admissionPermits.tryAcquire()) {
+            throw new RejectedExecutionException("AI review worker admission is full or shut down");
+        }
+        if (closed.get()) {
+            admissionPermits.release();
+            throw new RejectedExecutionException("AI review worker is shut down");
+        }
+        virtualQueueDepth.incrementAndGet();
+        try {
+            executor.execute(() -> runVirtualTask(task, submittedNanos));
+        } catch (final RejectedExecutionException error) {
+            virtualQueueDepth.decrementAndGet();
+            admissionPermits.release();
+            throw error;
+        }
     }
 
     @PreDestroy
     @Override
     public void close() {
-        executor.shutdown();
+        if (closed.compareAndSet(false, true)) {
+            executor.shutdown();
+        }
+    }
+
+    /** Waits for already admitted work to finish; useful for deterministic benchmark teardown. */
+    public boolean awaitTermination(final long timeout, final TimeUnit unit)
+            throws InterruptedException {
+        return executor.awaitTermination(timeout, unit);
     }
 
     private int queueDepth() {
-        return executor.getQueue().size();
+        return virtualThreads ? virtualQueueDepth.get() : platformExecutor.getQueue().size();
     }
 
-    private static ThreadFactory workerThreadFactory(final boolean virtualThreads) {
-        return virtualThreads
-                ? Thread.ofVirtual().name("wotb-ai-review-worker-", 1).factory()
-                : new NamedDaemonThreadFactory();
+    private void runVirtualTask(final Runnable task, final long submittedNanos) {
+        boolean active = false;
+        try {
+            activePermits.acquireUninterruptibly();
+            active = true;
+            virtualQueueDepth.decrementAndGet();
+            runTask(task, submittedNanos);
+        } finally {
+            if (!active) {
+                virtualQueueDepth.decrementAndGet();
+            } else {
+                activePermits.release();
+            }
+            admissionPermits.release();
+        }
     }
 
-    private static final class NamedDaemonThreadFactory implements ThreadFactory {
+    private void runTask(final Runnable task, final long submittedNanos) {
+        final long startNanos = System.nanoTime();
+        final long queueWaitMillis = (startNanos - submittedNanos) / 1_000_000L;
+        if (queueWaitMillis > 0) {
+            LOGGER.debug("AI review worker queue wait {} ms (overall deadline {} s)",
+                    queueWaitMillis, TimeUnit.NANOSECONDS.toSeconds(overallDeadlineNanos));
+            if (meterRegistry != null) {
+                Timer.builder("wotb_ai_review_queue_wait")
+                        .publishPercentileHistogram()
+                        .register(meterRegistry)
+                        .record(startNanos - submittedNanos, TimeUnit.NANOSECONDS);
+            }
+        }
+        AiRequestContext.setOverallDeadline(submittedNanos + overallDeadlineNanos);
+        try {
+            task.run();
+        } finally {
+            AiRequestContext.clearOverallDeadline();
+        }
+    }
+
+    private static final class NamedPlatformThreadFactory implements ThreadFactory {
         private final AtomicInteger counter = new AtomicInteger();
 
         @Override
         public Thread newThread(final Runnable runnable) {
-            final Thread thread = new Thread(runnable, "wotb-ai-review-worker-" + counter.incrementAndGet());
+            final Thread thread = new Thread(runnable, "wotb-ai-review-pt-" + counter.incrementAndGet());
             thread.setDaemon(true);
             return thread;
         }
