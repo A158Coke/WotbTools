@@ -186,20 +186,26 @@ paths:
       responses:
         '200': { description: Paged merged user list, content: { application/json: { schema: { $ref: '#/components/schemas/AdminUserPage' } } } }
         '400': { description: Unknown segment, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-  /api/admin/users/bulk-delete:
-    post:
-      operationId: bulkDeleteAdminUsers
-      summary: Delete several users in one request
+    delete:
+      operationId: deleteAdminUsers
+      summary: Delete users by an id list
       description: >-
-        Each user repeats the authoritative single-user delete semantics in its own transaction,
-        so the batch allows partial success and reports a per-user errorCode. confirm mirrors the
-        single-user ?confirm=true rule: a missing or false confirm rejects the whole batch with
-        400 CONFIRMATION_REQUIRED before anything is deleted. More than 100 ids in one request is
-        rejected with 400 BULK_LIMIT_EXCEEDED.
+        The request body is a JSON array of Keycloak subs; deleting a single user is simply an
+        array of length one, so there is no separate single-user endpoint and no bulk-delete
+        endpoint. Each id repeats the authoritative delete semantics in its own transaction, so
+        the call allows partial success and reports a per-user errorCode. confirm is required
+        (missing or false rejects the whole request with 400 CONFIRMATION_REQUIRED before
+        anything is deleted). More than 100 ids is rejected with 400 BULK_LIMIT_EXCEEDED.
       security: [{ bearerAuth: [] }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BulkDeleteUsersRequest' } } } }
+      parameters:
+        - { name: confirm, in: query, required: false, schema: { type: boolean, default: false } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: array, items: { type: string }, maxItems: 100 }
       responses:
-        '200': { description: Per-user bulk delete result, content: { application/json: { schema: { $ref: '#/components/schemas/BulkDeleteUsersResponse' } } } }
+        '200': { description: Per-user delete result, content: { application/json: { schema: { $ref: '#/components/schemas/DeleteUsersResponse' } } } }
         '400': { description: Missing confirmation or too many ids, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/replay/battle-playback-v2:
     post:
@@ -505,14 +511,7 @@ components:
         size: { type: integer }
         totalItems: { type: integer, format: int64 }
         totalPages: { type: integer }
-    BulkDeleteUsersRequest:
-      type: object
-      additionalProperties: false
-      required: [userIds, confirm]
-      properties:
-        userIds: { type: array, items: { type: string }, maxItems: 100 }
-        confirm: { type: boolean }
-    BulkDeleteUserResult:
+    DeleteUserResult:
       type: object
       additionalProperties: false
       required: [userId, deleted]
@@ -520,7 +519,7 @@ components:
         userId: { type: string }
         deleted: { type: boolean }
         errorCode: { type: [string, 'null'] }
-    BulkDeleteUsersResponse:
+    DeleteUsersResponse:
       type: object
       additionalProperties: false
       required: [requested, deleted, failed, results]
@@ -528,7 +527,7 @@ components:
         requested: { type: integer }
         deleted: { type: integer }
         failed: { type: integer }
-        results: { type: array, items: { $ref: '#/components/schemas/BulkDeleteUserResult' } }
+        results: { type: array, items: { $ref: '#/components/schemas/DeleteUserResult' } }
     DatasetReference:
       type: object
       additionalProperties: false

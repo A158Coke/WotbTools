@@ -1,8 +1,7 @@
 package com.wotb.web.admin.service;
 
-import com.wotb.web.admin.dto.BulkDeleteUserResult;
-import com.wotb.web.admin.dto.BulkDeleteUsersRequest;
-import com.wotb.web.admin.dto.BulkDeleteUsersResponse;
+import com.wotb.web.admin.dto.DeleteUserResult;
+import com.wotb.web.admin.dto.DeleteUsersResponse;
 import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.boost.service.BoosterService;
@@ -22,6 +21,7 @@ import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -36,19 +36,21 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 批量删除用户单元测试（mock，无 DB）。
+ * 删除用户单元测试（mock，无 DB）。
  *
- * <p>核心契约：逐用户复用单用户删除的全部业务保护，并且</p>
+ * <p>删除用户只有一个端点形态：请求体是 Keycloak sub 列表，删除单个用户就是长度为 1 的列表。
+ * 核心契约：</p>
  * <ul>
+ *   <li>逐用户复用删除的全部业务保护（self-delete 保护、打手依赖、本地资料清理、Keycloak 删除）；</li>
  *   <li>partial success —— 某个用户失败不回滚其他用户已完成的删除；</li>
  *   <li>失败用户不得被部分删除（本地资料删除失败时绝不继续删 Keycloak 用户）；</li>
- *   <li>self-delete 只让该条失败，不让整个批次失败；</li>
- *   <li>缺少 confirm 时整批拒绝，不做任何删除。</li>
+ *   <li>self-delete 只让该条失败，不让整个请求失败；</li>
+ *   <li>缺少 confirm 时整个请求被拒绝，不做任何删除。</li>
  * </ul>
  */
-class AdminUserBulkDeleteTest {
+class AdminUserDeleteTest {
 
-    private static final int MAX_BULK_SIZE = 100;
+    private static final int MAX_DELETE_BATCH = 100;
 
     private final UserProfileService userProfileService = mock(UserProfileService.class);
     private final AdminUserMapper mapper = mock(AdminUserMapper.class);
@@ -69,6 +71,20 @@ class AdminUserBulkDeleteTest {
     }
 
     @Test
+    void deletingASingleUserIsJustAListOfSizeOne() {
+        when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.empty());
+
+        final DeleteUsersResponse response = service().deleteUsers(List.of("kc-a"), true, adminJwt());
+
+        assertEquals(1, response.requested());
+        assertEquals(1, response.deleted());
+        assertEquals(0, response.failed());
+        assertEquals(List.of("kc-a"), response.results().stream().map(DeleteUserResult::userId).toList());
+        assertTrue(response.results().getFirst().deleted());
+        verify(keycloakAdminUserService).deleteUser("kc-a");
+    }
+
+    @Test
     void reportsPerUserResultAndNeverPartiallyDeletesTheFailedUser() {
         final UserProfile profileA = profile("kc-a");
         final UserProfile profileB = profile("kc-b");
@@ -79,20 +95,20 @@ class AdminUserBulkDeleteTest {
         doThrow(new DataIntegrityViolationException("fk"))
                 .when(userProfileService).deleteForAdministration(profileB);
 
-        final BulkDeleteUsersResponse response = service().bulkDeleteUsers(
-                new BulkDeleteUsersRequest(List.of("kc-a", "kc-b", "kc-c"), true), adminJwt());
+        final DeleteUsersResponse response = service().deleteUsers(
+                List.of("kc-a", "kc-b", "kc-c"), true, adminJwt());
 
         assertEquals(3, response.requested());
         assertEquals(2, response.deleted());
         assertEquals(1, response.failed());
         assertEquals(List.of("kc-a", "kc-b", "kc-c"),
-                response.results().stream().map(BulkDeleteUserResult::userId).toList());
+                response.results().stream().map(DeleteUserResult::userId).toList());
 
         assertTrue(response.results().get(0).deleted());
         assertFalse(response.results().get(1).deleted());
         assertEquals("USER_HAS_DEPENDENCIES", response.results().get(1).errorCode());
         assertTrue(response.results().get(2).deleted());
-        assertEquals(null, response.results().get(0).errorCode());
+        assertNull(response.results().get(0).errorCode());
 
         // 失败用户没有被部分删除：本地删除失败后绝不继续删 Keycloak 用户
         verify(keycloakAdminUserService, never()).deleteUser("kc-b");
@@ -104,11 +120,11 @@ class AdminUserBulkDeleteTest {
     }
 
     @Test
-    void rejectsSelfDeleteForThatEntryOnlyWithoutFailingTheBatch() {
+    void rejectsSelfDeleteForThatEntryOnlyWithoutFailingTheRequest() {
         when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.empty());
 
-        final BulkDeleteUsersResponse response = service().bulkDeleteUsers(
-                new BulkDeleteUsersRequest(List.of("admin-sub", "kc-a"), true), adminJwt());
+        final DeleteUsersResponse response = service().deleteUsers(
+                List.of("admin-sub", "kc-a"), true, adminJwt());
 
         assertEquals(2, response.requested());
         assertEquals(1, response.deleted());
@@ -120,20 +136,20 @@ class AdminUserBulkDeleteTest {
     }
 
     @Test
-    void requiresExplicitConfirmationForTheWholeBatch() {
+    void requiresExplicitConfirmationForTheWholeRequest() {
         final AdminBadRequestException exception = assertThrows(AdminBadRequestException.class,
-                () -> service().bulkDeleteUsers(new BulkDeleteUsersRequest(List.of("kc-a"), false), adminJwt()));
+                () -> service().deleteUsers(List.of("kc-a"), false, adminJwt()));
         assertEquals("CONFIRMATION_REQUIRED", exception.getErrorCode());
         verify(keycloakAdminUserService, never()).deleteUser(anyString());
     }
 
     @Test
-    void enforcesBulkSizeLimit() {
-        final List<String> tooMany = IntStream.rangeClosed(0, MAX_BULK_SIZE)
+    void enforcesThePerRequestIdLimit() {
+        final List<String> tooMany = IntStream.rangeClosed(0, MAX_DELETE_BATCH)
                 .mapToObj(index -> "kc-" + index)
                 .toList();
         final AdminBadRequestException exception = assertThrows(AdminBadRequestException.class,
-                () -> service().bulkDeleteUsers(new BulkDeleteUsersRequest(tooMany, true), adminJwt()));
+                () -> service().deleteUsers(tooMany, true, adminJwt()));
         assertEquals("BULK_LIMIT_EXCEEDED", exception.getErrorCode());
         verify(keycloakAdminUserService, never()).deleteUser(anyString());
     }
@@ -142,8 +158,8 @@ class AdminUserBulkDeleteTest {
     void deduplicatesIdsSoTheSameUserIsNotDeletedTwice() {
         when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.empty());
 
-        final BulkDeleteUsersResponse response = service().bulkDeleteUsers(
-                new BulkDeleteUsersRequest(List.of("kc-a", " kc-a ", "kc-a"), true), adminJwt());
+        final DeleteUsersResponse response = service().deleteUsers(
+                List.of("kc-a", " kc-a ", "kc-a"), true, adminJwt());
 
         assertEquals(1, response.requested());
         assertEquals(1, response.deleted());

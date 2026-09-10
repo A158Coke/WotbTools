@@ -1,6 +1,7 @@
 package com.wotb.web;
 
-import com.wotb.web.admin.dto.AdminDeleteUserResponse;
+import com.wotb.web.admin.dto.DeleteUserResult;
+import com.wotb.web.admin.dto.DeleteUsersResponse;
 import com.wotb.web.boost.dto.BoostAssignmentDto;
 import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.dto.BoosterDto;
@@ -20,6 +21,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -164,7 +166,7 @@ class ApiContractTest {
     @Test
     void adminDeleteResponseShouldNotExposeUnusedMessageFields() {
         final String json = objectMapper.writeValueAsString(
-                new AdminDeleteUserResponse("kc-user")
+                new DeleteUsersResponse(1, 1, 0, List.of(new DeleteUserResult("kc-user", true, null)))
         );
 
         assertThat(json)

@@ -187,8 +187,11 @@ async function confirmDelete() {
   deleting.value = true
   deleteResult.value = ''
   try {
-    const res = await api.adminDeleteUser(deleteUserId.value)
-    deleteResult.value = res.deleted ? 'DELETED' : apiError({ code: 'UNKNOWN_ERROR' })
+    const target = deleteUserId.value
+    // 单条删除就是长度为 1 的列表：与多选删除走同一个端点。
+    const res = await api.adminDeleteUsers([target], true)
+    const item = (res?.results || []).find(r => r.userId === target)
+    deleteResult.value = item?.deleted ? 'DELETED' : apiError({ code: item?.errorCode || 'UNKNOWN_ERROR' })
     setTimeout(() => { cancelDelete(); loadUsers() }, 1200)
   } catch (e) {
     deleteResult.value = apiError(e)
@@ -216,7 +219,7 @@ async function confirmBulkDelete() {
   if (!ids.length || bulkConfirmText.value !== 'DELETE') return
   bulkDeleting.value = true
   try {
-    const res = await api.adminBulkDeleteUsers(ids, true)
+    const res = await api.adminDeleteUsers(ids, true)
     bulkResult.value = res
     // partial success：只有失败项留在选择集里，成功的整批（无论成功与否）都已被后端处理过。
     const failed = new Set((res?.results || []).filter(r => !r.deleted).map(r => r.userId))

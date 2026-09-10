@@ -188,16 +188,17 @@ export async function adminGetUser(keycloakUserId) {
   return adminHandle(await apiFetch(`/api/admin/users/${encodeURIComponent(keycloakUserId)}`, { headers: await boostHeaders() }))
 }
 
-export async function adminDeleteUser(keycloakUserId) {
-  return adminHandle(await apiFetch(`/api/admin/users/${encodeURIComponent(keycloakUserId)}?confirm=true`, { method: 'DELETE', headers: await boostHeaders() }))
-}
-
-/** 批量删除用户：confirm 必须为 true，否则整批 400 CONFIRMATION_REQUIRED；单批上限 100。 */
-export async function adminBulkDeleteUsers(userIds, confirm) {
-  return adminHandle(await apiFetch('/api/admin/users/bulk-delete', {
-    method: 'POST',
+/**
+ * 删除用户：请求体是 Keycloak sub 数组——删除单个用户就是长度为 1 的数组，
+ * 因此没有单独的「批量删除」端点，也没有单条 /{keycloakUserId} 删除端点。
+ * confirm 必须为 true，否则整个请求 400 CONFIRMATION_REQUIRED；单次上限 100。
+ * 返回 { requested, deleted, failed, results: [{ userId, deleted, errorCode }] }。
+ */
+export async function adminDeleteUsers(userIds, confirm) {
+  return adminHandle(await apiFetch(`/api/admin/users?confirm=${confirm === true}`, {
+    method: 'DELETE',
     headers: await boostHeaders(),
-    body: JSON.stringify({ userIds, confirm: confirm === true }),
+    body: JSON.stringify(userIds),
   }))
 }
 

@@ -1,12 +1,10 @@
 package com.wotb.web.admin.service;
 
-import com.wotb.web.admin.dto.AdminDeleteUserResponse;
 import com.wotb.web.admin.dto.AdminUserDetailDto;
 import com.wotb.web.admin.dto.AdminUserListItemDto;
 import com.wotb.web.admin.dto.AdminUserPageDto;
-import com.wotb.web.admin.dto.BulkDeleteUserResult;
-import com.wotb.web.admin.dto.BulkDeleteUsersRequest;
-import com.wotb.web.admin.dto.BulkDeleteUsersResponse;
+import com.wotb.web.admin.dto.DeleteUserResult;
+import com.wotb.web.admin.dto.DeleteUsersResponse;
 import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
@@ -59,8 +57,8 @@ public class AdminUserService {
 
     /** 单页上限；默认页大小由 controller 的 {@code size} 默认值决定。 */
     private static final int MAX_PAGE_SIZE = 100;
-    /** 单次批量删除上限：为无界的外部（Keycloak Admin API）调用设硬边界。 */
-    private static final int MAX_BULK_SIZE = 100;
+    /** 单次删除请求的 id 数上限：为无界的外部（Keycloak Admin API）调用设硬边界。 */
+    private static final int MAX_DELETE_BATCH = 100;
 
     private final UserProfileService userProfileService;
     private final AdminUserMapper mapper;
@@ -206,51 +204,49 @@ public class AdminUserService {
 
     // ── 删除 ─────────────────────────────────────────────────────────────
 
-    /** 删除用户：先 flush 本地删除，再删 Keycloak；外部调用失败会回滚本地事务。 */
-    @Transactional
-    public AdminDeleteUserResponse deleteUser(final String targetKeycloakUserId,
-                                              final boolean confirm,
-                                              final Jwt adminJwt) {
-        requireConfirmation(confirm);
-        deleteOneInternal(targetKeycloakUserId, adminJwt);
-        return new AdminDeleteUserResponse(targetKeycloakUserId);
-    }
-
     /**
-     * 批量删除用户：逐用户复用 {@link #deleteOneInternal} 的全部业务保护
-     * （self-delete 保护、打手依赖、本地资料清理、Keycloak 删除、审计日志、统一 error contract）。
+     * 删除用户。请求体就是 Keycloak sub 列表——删除单个用户即长度为 1 的列表，
+     * 因此不存在单独的「批量删除」形态。
+     *
+     * <p>逐用户复用 {@link #deleteOneInternal} 的全部业务保护（self-delete 保护、打手依赖、
+     * 本地资料清理、Keycloak 删除、审计日志、统一 error contract）。</p>
      *
      * <p>每个用户跑在<strong>独立事务</strong>中，因此允许 partial success：某个用户失败不会
-     * 回滚其他用户已完成的删除。直接自调用 {@link #deleteUser} 会绕过 Spring 事务代理而失去
-     * 这一语义，故显式使用 {@link TransactionTemplate}。</p>
+     * 回滚其他用户已完成的删除。自调用带 {@code @Transactional} 的方法会绕过 Spring 事务代理
+     * 而失去这一语义，故显式使用 {@link TransactionTemplate}。</p>
+     *
+     * @param requestedUserIds 目标 Keycloak sub 列表（去重、剔除空值后处理）
+     * @param confirm          与删除同一业务规则的显式确认位；false 时整批拒绝
      */
-    public BulkDeleteUsersResponse bulkDeleteUsers(final BulkDeleteUsersRequest request, final Jwt adminJwt) {
-        requireConfirmation(request != null && request.confirm());
-        final List<String> userIds = distinctUserIds(request);
+    public DeleteUsersResponse deleteUsers(final List<String> requestedUserIds,
+                                           final boolean confirm,
+                                           final Jwt adminJwt) {
+        requireConfirmation(confirm);
+        final List<String> userIds = distinctUserIds(requestedUserIds);
         if (userIds.isEmpty()) {
-            return new BulkDeleteUsersResponse(0, 0, 0, List.of());
+            return new DeleteUsersResponse(0, 0, 0, List.of());
         }
-        if (userIds.size() > MAX_BULK_SIZE) {
+        if (userIds.size() > MAX_DELETE_BATCH) {
             throw new AdminBadRequestException(ErrorCode.BULK_LIMIT_EXCEEDED.name(),
                     ErrorCode.BULK_LIMIT_EXCEEDED.getDefaultMessage());
         }
 
-        final List<BulkDeleteUserResult> results = new ArrayList<>(userIds.size());
+        final List<DeleteUserResult> results = new ArrayList<>(userIds.size());
         int deleted = 0;
         for (final String userId : userIds) {
             try {
                 transactionTemplate.executeWithoutResult(status -> deleteOneInternal(userId, adminJwt));
-                results.add(new BulkDeleteUserResult(userId, true, null));
+                results.add(new DeleteUserResult(userId, true, null));
                 deleted++;
             } catch (final AdminConflictException e) {
-                results.add(new BulkDeleteUserResult(userId, false, e.getErrorCode()));
+                results.add(new DeleteUserResult(userId, false, e.getErrorCode()));
             } catch (final AdminBadRequestException e) {
-                results.add(new BulkDeleteUserResult(userId, false, e.getErrorCode()));
+                results.add(new DeleteUserResult(userId, false, e.getErrorCode()));
             } catch (final AdminInternalException e) {
-                results.add(new BulkDeleteUserResult(userId, false, e.getErrorCode()));
+                results.add(new DeleteUserResult(userId, false, e.getErrorCode()));
             }
         }
-        return new BulkDeleteUsersResponse(userIds.size(), deleted, userIds.size() - deleted, results);
+        return new DeleteUsersResponse(userIds.size(), deleted, userIds.size() - deleted, results);
     }
 
     private static void requireConfirmation(final boolean confirm) {
@@ -260,11 +256,11 @@ public class AdminUserService {
         }
     }
 
-    private static List<String> distinctUserIds(final BulkDeleteUsersRequest request) {
-        if (request == null || request.userIds() == null) {
+    private static List<String> distinctUserIds(final List<String> requestedUserIds) {
+        if (requestedUserIds == null) {
             return List.of();
         }
-        return request.userIds().stream()
+        return requestedUserIds.stream()
                 .filter(StringUtils::hasText)
                 .map(String::trim)
                 .distinct()
@@ -272,7 +268,7 @@ public class AdminUserService {
     }
 
     /**
-     * 单用户删除的唯一实现：单用户端点与批量端点共用。
+     * 删除的唯一实现：请求体里的每个 id 都走这里（单条删除就是长度为 1 的列表）。
      * 禁止任何绕过路径（直接 SQL DELETE 或裸 Keycloak Admin 调用），否则会丢掉 self-delete 保护、
      * 打手依赖处理、本地资料清理与审计日志。
      */

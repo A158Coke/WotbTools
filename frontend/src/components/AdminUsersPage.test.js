@@ -7,8 +7,7 @@ import AdminUsersPage from './AdminUsersPage.vue'
 const api = vi.hoisted(() => ({
   searchUsers: vi.fn(),
   getUser: vi.fn(),
-  deleteUser: vi.fn(),
-  bulkDeleteUsers: vi.fn()
+  deleteUsers: vi.fn()
 }))
 
 vi.mock('../composables/useAuth.js', () => ({
@@ -21,8 +20,7 @@ vi.mock('../composables/useAuth.js', () => ({
 vi.mock('../utils/api-boost.js', () => ({
   adminSearchUsers: api.searchUsers,
   adminGetUser: api.getUser,
-  adminDeleteUser: api.deleteUser,
-  adminBulkDeleteUsers: api.bulkDeleteUsers
+  adminDeleteUsers: api.deleteUsers
 }))
 
 vi.mock('../composables/useError.js', () => ({ useError: () => ({ show: vi.fn() }) }))
@@ -73,7 +71,7 @@ describe('AdminUsersPage', () => {
     api.searchUsers.mockImplementation((_query, options) => Promise.resolve(
       pageResult([kcUser('kc-a'), kcUser('kc-b')], options.page, options.size, 2, 1)
     ))
-    api.bulkDeleteUsers.mockResolvedValue({ requested: 2, deleted: 2, failed: 0, results: [] })
+    api.deleteUsers.mockResolvedValue({ requested: 2, deleted: 2, failed: 0, results: [] })
   })
 
   afterEach(() => {
@@ -163,7 +161,7 @@ describe('AdminUsersPage', () => {
     expect(headCheckbox.element.checked).toBe(false)
 
     await wrapper.find('.admin-bulk-bar .btn-danger').trigger('click')
-    expect(api.bulkDeleteUsers).not.toHaveBeenCalled()
+    expect(api.deleteUsers).not.toHaveBeenCalled()
     const modal = wrapper.find('.bulk-confirm-modal')
     expect(modal.exists()).toBe(true)
     expect(modal.text()).toContain('admin.bulkConfirmText(count=1)')
@@ -178,15 +176,15 @@ describe('AdminUsersPage', () => {
 
     await confirmButton.trigger('click')
     await flushPromises()
-    expect(api.bulkDeleteUsers).toHaveBeenCalledTimes(1)
-    expect(api.bulkDeleteUsers.mock.calls[0][1]).toBe(true)
-    expect(api.bulkDeleteUsers.mock.calls[0][0]).toEqual(['kc-a'])
+    expect(api.deleteUsers).toHaveBeenCalledTimes(1)
+    expect(api.deleteUsers.mock.calls[0][1]).toBe(true)
+    expect(api.deleteUsers.mock.calls[0][0]).toEqual(['kc-a'])
     // 删除完成后 reload 当前页。
     expect(api.searchUsers).toHaveBeenCalledTimes(2)
   })
 
   it('reports per-user results and keeps failed rows selected', async () => {
-    api.bulkDeleteUsers.mockResolvedValue({
+    api.deleteUsers.mockResolvedValue({
       requested: 2,
       deleted: 1,
       failed: 1,
