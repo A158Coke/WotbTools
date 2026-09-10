@@ -44,7 +44,8 @@ class Mark3SubmissionIntegrationTest {
 
     private static final Path REPLAY_ROOT = Path.of("data/replays-mark3-it");
     private static final long VEHICLE = 385L;
-    private static final String USER = "mark3-kc-user";
+    /** HoF ownership 的 canonical owner：active 唯一性按该账号判定（V21 partial unique index）。 */
+    private static final long WOTB_ACCOUNT_ID = 111L;
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18-alpine")
@@ -128,10 +129,9 @@ class Mark3SubmissionIntegrationTest {
 
     private Mark3Submission insert(final String status) {
         final Mark3Submission submission = new Mark3Submission();
-        submission.setUserKeycloakId(USER);
         submission.setVehicleId(VEHICLE);
         submission.setVehicleName("Progetto 65");
-        submission.setGameAccountIdSnapshot(111L);
+        submission.setWotbAccountId(WOTB_ACCOUNT_ID);
         submission.setNicknameSnapshot("PlayerOne");
         submission.setClaimedBattleCount(123);
         submission.setClaimedAverageDamage(3_456);

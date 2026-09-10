@@ -161,10 +161,10 @@ class HundredBattleSubmissionServiceTest {
     private static HundredBattleSubmission pendingSubmission() {
         final HundredBattleSubmission s = new HundredBattleSubmission();
         s.setId(10L);
-        s.setUserKeycloakId(USER);
         s.setVehicleId(TIER10_VEHICLE);
         s.setVehicleName("Progetto 65");
-        s.setGameAccountIdSnapshot(GAME_ID);
+        // canonical owner：WotB 游戏账号（Keycloak 身份不再落在 submission 上）
+        s.setWotbAccountId(GAME_ID);
         s.setNicknameSnapshot("PlayerOne");
         s.setClaimedAverageDamage(4200);
         s.setClaimedBattleCount(136);
@@ -204,11 +204,11 @@ class HundredBattleSubmissionServiceTest {
         verify(repository).saveAndFlush(captor.capture());
         final HundredBattleSubmission s = captor.getValue();
         assertThat(s.getStatus()).isEqualTo("PENDING");
-        assertThat(s.getUserKeycloakId()).isEqualTo(USER);
+        // ownership 重构：记录只冻结 canonical owner（WotB 账号），不再保存 Keycloak 身份
+        assertThat(s.getWotbAccountId()).isEqualTo(GAME_ID);
         assertThat(s.getVehicleId()).isEqualTo(TIER10_VEHICLE);
         assertThat(s.getVehicleName()).isEqualTo("Progetto 65");
-        // snapshot 冻结：创建瞬间的 gameId / nickname，与之后 Profile 修改无关
-        assertThat(s.getGameAccountIdSnapshot()).isEqualTo(GAME_ID);
+        // 身份快照冻结：创建瞬间的 nickname，与之后 Profile 修改无关
         assertThat(s.getNicknameSnapshot()).isEqualTo("PlayerOne");
         assertThat(s.getClaimedAverageDamage()).isEqualTo(4200);
         assertThat(s.getClaimedBattleCount()).isEqualTo(136);
@@ -432,8 +432,9 @@ class HundredBattleSubmissionServiceTest {
     @Test
     void rejectsWhenSameUserSameVehicleAlreadyPending() {
         // PENDING cheap check 在 replay parse 之前：不解析任何 replay 即拒绝。
+        // ownership 已改为 canonical owner（profile.getWotbAccountId()），不再按 Keycloak id 查询。
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
-        when(repository.existsByUserKeycloakIdAndVehicleIdAndStatus(USER, TIER10_VEHICLE, "PENDING"))
+        when(repository.existsByWotbAccountIdAndVehicleIdAndStatus(GAME_ID, TIER10_VEHICLE, "PENDING"))
                 .thenReturn(true);
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
@@ -448,7 +449,7 @@ class HundredBattleSubmissionServiceTest {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         // IS-7 (385) 已有 PENDING（本次提交的是另一辆车，该 stub 只表达「另一辆车已有 PENDING」的场景前提）
         org.mockito.Mockito.lenient()
-                .when(repository.existsByUserKeycloakIdAndVehicleIdAndStatus(USER, TIER10_VEHICLE, "PENDING"))
+                .when(repository.existsByWotbAccountIdAndVehicleIdAndStatus(GAME_ID, TIER10_VEHICLE, "PENDING"))
                 .thenReturn(true);
 
         try (final var mocked = mockStatic(ReplayParser.class)) {
@@ -493,7 +494,7 @@ class HundredBattleSubmissionServiceTest {
     @Test
     void currentGateAllowsStrictlyHigherScore() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
-        when(repository.findByUserKeycloakIdAndVehicleIdAndStatus(USER, TIER10_VEHICLE, "CURRENT"))
+        when(repository.findByWotbAccountIdAndVehicleIdAndStatus(GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(Optional.of(currentSubmission(4000)));
 
         try (final var mocked = mockStatic(ReplayParser.class)) {
@@ -508,7 +509,7 @@ class HundredBattleSubmissionServiceTest {
     @Test
     void currentGateRejectsEqualScore() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
-        when(repository.findByUserKeycloakIdAndVehicleIdAndStatus(USER, TIER10_VEHICLE, "CURRENT"))
+        when(repository.findByWotbAccountIdAndVehicleIdAndStatus(GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(Optional.of(currentSubmission(4000)));
 
         try (final var mocked = mockStatic(ReplayParser.class)) {
@@ -526,7 +527,7 @@ class HundredBattleSubmissionServiceTest {
     @Test
     void currentGateRejectsLowerScore() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
-        when(repository.findByUserKeycloakIdAndVehicleIdAndStatus(USER, TIER10_VEHICLE, "CURRENT"))
+        when(repository.findByWotbAccountIdAndVehicleIdAndStatus(GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(Optional.of(currentSubmission(4000)));
 
         try (final var mocked = mockStatic(ReplayParser.class)) {
@@ -580,7 +581,7 @@ class HundredBattleSubmissionServiceTest {
         final HundredBattleSubmission s = pendingSubmission();
         final HundredBattleSubmission current = currentSubmission(4100);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
-        when(repository.findCurrentForUpdate(USER, TIER10_VEHICLE)).thenReturn(Optional.of(current));
+        when(repository.findCurrentForUpdate(GAME_ID, TIER10_VEHICLE)).thenReturn(Optional.of(current));
 
         final HundredSubmissionSummaryDto result = service.approve(ADMIN, 10L);
 
@@ -597,7 +598,7 @@ class HundredBattleSubmissionServiceTest {
         final HundredBattleSubmission s = pendingSubmission();
         final HundredBattleSubmission current = currentSubmission(4200);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
-        when(repository.findCurrentForUpdate(USER, TIER10_VEHICLE)).thenReturn(Optional.of(current));
+        when(repository.findCurrentForUpdate(GAME_ID, TIER10_VEHICLE)).thenReturn(Optional.of(current));
 
         // MANUAL 的创建时申报场均=4200，与 CURRENT 相同，管理员不能改分绕过严格递增。
         assertThatThrownBy(() -> service.approve(ADMIN, 10L))
@@ -621,7 +622,7 @@ class HundredBattleSubmissionServiceTest {
                 .hasMessage("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE");
 
         // 未触碰 CURRENT 读取/变更：无 supersede，PENDING 与证据保持
-        verify(repository, never()).findCurrentForUpdate(anyString(), anyLong());
+        verify(repository, never()).findCurrentForUpdate(anyLong(), anyLong());
         assertThat(s.getStatus()).isEqualTo("PENDING");
     }
 
@@ -630,7 +631,7 @@ class HundredBattleSubmissionServiceTest {
         final HundredBattleSubmission s = pendingSubmission();
         final HundredBattleSubmission current = currentSubmission(4300);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
-        when(repository.findCurrentForUpdate(USER, TIER10_VEHICLE)).thenReturn(Optional.of(current));
+        when(repository.findCurrentForUpdate(GAME_ID, TIER10_VEHICLE)).thenReturn(Optional.of(current));
 
         assertThatThrownBy(() -> service.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalStateException.class)
@@ -737,6 +738,8 @@ class HundredBattleSubmissionServiceTest {
     void cancelByOwnerMovesPendingToCancelledAndClearsEvidence() {
         final HundredBattleSubmission s = pendingSubmission();
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
+        // ownership 按当前绑定的 WotB 账号判定：userId 只用于解析 profile，比较的是 profile.getWotbAccountId()
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         final HundredSubmissionSummaryDto result = service.cancelSubmission(USER, 10L);
 
@@ -747,9 +750,14 @@ class HundredBattleSubmissionServiceTest {
     }
 
     @Test
-    void cancelByNonOwnerForbidden() {
-        final HundredBattleSubmission s = pendingSubmission();
+    void cancelForbiddenWhenCallerBoundToAnotherWotbAccount() {
+        final HundredBattleSubmission s = pendingSubmission(); // owner = GAME_ID
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
+        // 同一 Keycloak 用户改绑到另一个 WotB 账号 → 记录仍属原账号，不可取消
+        final UserProfile rebound = profile();
+        rebound.setKeycloakUserId("kc-other");
+        rebound.setWotbAccountId(GAME_ID + 1);
+        when(userProfileService.findEntityByKeycloakUserId("kc-other")).thenReturn(Optional.of(rebound));
 
         assertThatThrownBy(() -> service.cancelSubmission("kc-other", 10L))
                 .isInstanceOf(ResponseStatusException.class)
@@ -757,12 +765,41 @@ class HundredBattleSubmissionServiceTest {
                     assertThat(((ResponseStatusException) e).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
                     assertThat(((ResponseStatusException) e).getReason()).contains("HUNDRED_FORBIDDEN");
                 });
+
+        assertThat(s.getStatus()).isEqualTo("PENDING");
+        assertThat(s.getProofScreenshot()).isNotNull();
+        verify(evidenceService, never()).discardForSubmission(anyLong());
+    }
+
+    @Test
+    void cancelForbiddenWhenCallerHasNoBoundWotbAccount() {
+        final HundredBattleSubmission s = pendingSubmission();
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
+        // 未绑定账号的两种形态都必须是 403：profile 不存在，或 profile 存在但 wotbAccountId 为 null
+        when(userProfileService.findEntityByKeycloakUserId("kc-unknown")).thenReturn(Optional.empty());
+        when(userProfileService.findEntityByKeycloakUserId("kc-unbound"))
+                .thenReturn(Optional.of(profileWithoutGameId()));
+
+        for (final String caller : List.of("kc-unknown", "kc-unbound")) {
+            assertThatThrownBy(() -> service.cancelSubmission(caller, 10L))
+                    .as("caller %s", caller)
+                    .isInstanceOf(ResponseStatusException.class)
+                    .satisfies(e -> {
+                        assertThat(((ResponseStatusException) e).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+                        assertThat(((ResponseStatusException) e).getReason()).contains("HUNDRED_FORBIDDEN");
+                    });
+        }
+
+        assertThat(s.getStatus()).isEqualTo("PENDING");
+        assertThat(s.getProofScreenshot()).isNotNull();
+        verify(evidenceService, never()).discardForSubmission(anyLong());
     }
 
     @Test
     void cancelCannotTransitionAlreadyApproved() {
         final HundredBattleSubmission s = currentSubmission(4100);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.cancelSubmission(USER, 10L))
                 .isInstanceOf(IllegalStateException.class)
@@ -819,6 +856,46 @@ class HundredBattleSubmissionServiceTest {
         verify(repository).save(s);
         verify(repository, never()).save(superseded);
         assertThat(superseded.getStatus()).isEqualTo("SUPERSEDED");
+    }
+
+    // ── Profile：userStatus（ownership = 当前绑定的 WotB 账号） ────────────
+
+    @Test
+    void userStatusReturnsEmptyListsWhenNoBoundWotbAccount() {
+        // profile 不存在或未绑定账号 → 三个空列表；不再抛错，也不回退到 Keycloak id 查询
+        when(userProfileService.findEntityByKeycloakUserId("kc-unknown")).thenReturn(Optional.empty());
+        when(userProfileService.findEntityByKeycloakUserId("kc-unbound"))
+                .thenReturn(Optional.of(profileWithoutGameId()));
+
+        for (final String caller : List.of("kc-unknown", "kc-unbound")) {
+            final var status = service.userStatus(caller);
+            assertThat(status.current()).as("caller %s", caller).isEmpty();
+            assertThat(status.pending()).isEmpty();
+            assertThat(status.rejected()).isEmpty();
+        }
+
+        verify(repository, never()).findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(anyLong(), any());
+    }
+
+    @Test
+    void userStatusQueriesByBoundWotbAccountId() {
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        final HundredBattleSubmission current = currentSubmission(4200);
+        final HundredBattleSubmission pending = pendingSubmission();
+        final HundredBattleSubmission rejected = pendingSubmission();
+        rejected.setStatus("REJECTED");
+        when(repository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(GAME_ID, List.of("CURRENT")))
+                .thenReturn(List.of(current));
+        when(repository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(GAME_ID, List.of("PENDING")))
+                .thenReturn(List.of(pending));
+        when(repository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(GAME_ID, List.of("REJECTED")))
+                .thenReturn(List.of(rejected));
+
+        final var status = service.userStatus(USER);
+
+        assertThat(status.current()).extracting("status").containsExactly("CURRENT");
+        assertThat(status.pending()).extracting("status").containsExactly("PENDING");
+        assertThat(status.rejected()).extracting("status").containsExactly("REJECTED");
     }
 
     // ── Rank：competition ranking ────────────────────────────────────────

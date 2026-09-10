@@ -196,10 +196,9 @@ class HundredEvidenceConcurrencyIntegrationTest {
 
     private HundredBattleSubmission pendingRow() {
         final HundredBattleSubmission s = new HundredBattleSubmission();
-        s.setUserKeycloakId(USER);
         s.setVehicleId(VEHICLE);
         s.setVehicleName("Progetto 65");
-        s.setGameAccountIdSnapshot(GAME_ID);
+        s.setWotbAccountId(GAME_ID);
         s.setNicknameSnapshot("PlayerOne");
         s.setClaimedAverageDamage(4200);
         s.setClaimedBattleCount(136);
@@ -373,7 +372,7 @@ class HundredEvidenceConcurrencyIntegrationTest {
 
             // Hundred submission 成功 → evidence 行存在 → 物理 H 必须存在且可下载（不变量「DB 引用 H ⇒ H 存在」）
             final HundredBattleSubmission sub = submissionRepository
-                    .findByUserKeycloakIdAndVehicleIdAndStatus(USER, VEHICLE, "PENDING").orElseThrow();
+                    .findByWotbAccountIdAndVehicleIdAndStatus(GAME_ID, VEHICLE, "PENDING").orElseThrow();
             final List<HundredBattleReplayEvidence> rows = evidenceRepository.findBySubmissionIdOrderBySlotAsc(sub.getId());
             assertEquals(5, rows.size());
             final HundredBattleReplayEvidence hRow = rows.stream()
@@ -437,7 +436,8 @@ class HundredEvidenceConcurrencyIntegrationTest {
 
             // 恰好一个 PENDING + 恰好 5 行 evidence（winner 的，无 partial）
             final List<HundredBattleSubmission> pendings =
-                    submissionRepository.findByUserKeycloakIdAndStatusInOrderBySubmittedAtDesc(USER, List.of("PENDING"));
+                    submissionRepository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
+                            GAME_ID, List.of("PENDING"));
             assertEquals(1, pendings.size(), "必须恰好一个 PENDING");
             final List<HundredBattleReplayEvidence> rows =
                     evidenceRepository.findBySubmissionId(pendings.get(0).getId());
