@@ -123,6 +123,12 @@ monitor contention, thread states, file I/O, and socket I/O in the benchmark
 report. JFR evidence decides whether any optimization experiment is justified;
 do not optimize the listed hypotheses by assumption.
 
+The current harness uses separate executor lifecycles for warmup and
+measurement, so worker-thread initialization can still occur after
+`Recording.start()`. Future exact allocation A/B work may reuse one executor
+across `warmup -> Recording.start() -> measurement`; this round does not change
+that lifecycle.
+
 Fingerprint parity is enabled by default. For a lower-overhead CPU/allocation
 profile, run the JFR pass with `-DskipFingerprintVerification=true`; this keeps
 the Jackson fingerprint codec out of the recording, but does not make the
