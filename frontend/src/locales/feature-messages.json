@@ -14,6 +14,11 @@
       "productionRemote": "API → 生产后端；请勿上传测试或敏感数据"
     },
 
+    "bootstrap": {
+      "profileFailed": "账号资料初始化失败，部分功能暂不可用。稍后重试或刷新页面即可。",
+      "retry": "重试"
+    },
+
     "android": {
       "nav": "下载 Android 版",
       "kicker": "WotBTools Android",
@@ -172,6 +177,11 @@
       "productionRemote": "API → production backend; do not upload test or sensitive data"
     },
 
+    "bootstrap": {
+      "profileFailed": "Account profile setup failed, so some features are unavailable. Retry or refresh the page.",
+      "retry": "Retry"
+    },
+
     "android": {
       "nav": "Download Android",
       "kicker": "WotBTools Android",
@@ -328,6 +338,11 @@
       "label": "Режим разработки",
       "local": "API → локальный backend",
       "productionRemote": "API → production backend; не загружайте тестовые или чувствительные данные"
+    },
+
+    "bootstrap": {
+      "profileFailed": "Не удалось подготовить профиль аккаунта, поэтому часть функций недоступна. Повторите попытку или обновите страницу.",
+      "retry": "Повторить"
     },
 
     "android": {

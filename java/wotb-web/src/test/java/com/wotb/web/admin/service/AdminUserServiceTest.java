@@ -1,8 +1,7 @@
 package com.wotb.web.admin.service;
 
+import com.wotb.web.admin.dto.DeleteUsersResponse;
 import com.wotb.web.admin.entity.AdminUserLog;
-import com.wotb.web.admin.exception.AdminConflictException;
-import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.boost.service.BoosterService;
 import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.user.entity.UserProfile;
@@ -12,11 +11,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.transaction.PlatformTransactionManager;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
@@ -41,9 +41,11 @@ class AdminUserServiceTest {
                 .when(userProfileService).deleteForAdministration(profile);
         final AdminUserService service = service(userProfileService, logPersister, keycloakService, boosterService);
 
-        assertThrows(AdminConflictException.class,
-                () -> service.deleteUser("target", true, adminJwt()));
+        final DeleteUsersResponse response = service.deleteUsers(List.of("target"), true, adminJwt());
 
+        // 列表端点逐条捕获失败并写进 results（partial success），因此不抛异常
+        assertEquals(1, response.failed());
+        assertEquals("USER_HAS_DEPENDENCIES", response.results().getFirst().errorCode());
         verifyNoInteractions(keycloakService);
     }
 
@@ -58,7 +60,7 @@ class AdminUserServiceTest {
                 .thenReturn(Optional.of(profile));
         final AdminUserService service = service(userProfileService, logPersister, keycloakService, boosterService);
 
-        service.deleteUser("target", true, adminJwt());
+        service.deleteUsers(List.of("target"), true, adminJwt());
 
         final InOrder order = inOrder(boosterService, userProfileService, keycloakService);
         order.verify(boosterService).deleteByKeycloakUserId("target");
@@ -79,10 +81,10 @@ class AdminUserServiceTest {
                 .when(boosterService).deleteByKeycloakUserId("target");
         final AdminUserService service = service(userProfileService, logPersister, keycloakService, boosterService);
 
-        final AdminConflictException error = assertThrows(AdminConflictException.class,
-                () -> service.deleteUser("target", true, adminJwt()));
+        final DeleteUsersResponse response = service.deleteUsers(List.of("target"), true, adminJwt());
 
-        assertEquals("BOOSTER_HAS_DEPENDENCIES", error.getErrorCode());
+        assertEquals(1, response.failed());
+        assertEquals("BOOSTER_HAS_DEPENDENCIES", response.results().getFirst().errorCode());
         verify(userProfileService, never()).deleteForAdministration(any());
         verifyNoInteractions(keycloakService);
         final ArgumentCaptor<AdminUserLog> logCaptor = ArgumentCaptor.forClass(AdminUserLog.class);
@@ -108,10 +110,10 @@ class AdminUserServiceTest {
                 .when(boosterService).deleteByKeycloakUserId("target");
         final AdminUserService service = service(userProfileService, logPersister, keycloakService, boosterService);
 
-        final AdminInternalException error = assertThrows(AdminInternalException.class,
-                () -> service.deleteUser("target", true, adminJwt()));
+        final DeleteUsersResponse response = service.deleteUsers(List.of("target"), true, adminJwt());
 
-        assertEquals("FAILED_LOCAL_DELETE", error.getErrorCode());
+        assertEquals(1, response.failed());
+        assertEquals("FAILED_LOCAL_DELETE", response.results().getFirst().errorCode());
         verify(userProfileService, never()).deleteForAdministration(any());
         verifyNoInteractions(keycloakService);
         final ArgumentCaptor<AdminUserLog> logCaptor = ArgumentCaptor.forClass(AdminUserLog.class);
@@ -129,12 +131,14 @@ class AdminUserServiceTest {
             final AdminUserLogPersister logPersister,
             final KeycloakAdminUserService keycloakService,
             final BoosterService boosterService) {
+        // 第 6 参数（PlatformTransactionManager）只被 deleteUsers 使用；本用例走的删除路径不触碰它。
         return new AdminUserService(
                 userProfileService,
                 new AdminUserMapper(),
                 logPersister,
                 keycloakService,
-                boosterService
+                boosterService,
+                mock(PlatformTransactionManager.class)
         );
     }
 

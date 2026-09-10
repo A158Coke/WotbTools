@@ -1,6 +1,8 @@
 package com.wotb.web.hundred.controller;
 
 import com.wotb.web.config.ApiPaths;
+import com.wotb.web.hof.dto.BulkDeleteModerationRequest;
+import com.wotb.web.hof.dto.BulkDeleteResultDto;
 import com.wotb.web.hundred.dto.HundredAdminDetailDto;
 import com.wotb.web.hundred.dto.HundredAdminPageDto;
 import com.wotb.web.hundred.dto.HundredDeleteRequest;
@@ -110,5 +112,15 @@ public class HundredBattleAdminController {
                                               @RequestBody final HundredDeleteRequest body) {
         return service.deleteCurrent(JwtUtil.requireUserId(), id,
                 body.deleteReason(), body.deleteReasonText());
+    }
+
+    /**
+     * 批量删除 CURRENT：逐条复用单条删除语义（每条独立事务 + 终态证据清理），允许 partial success。
+     * 非 CURRENT 的记录逐条返回既有错误码（HUNDRED_NOT_CURRENT），不影响其他记录。
+     */
+    @PostMapping("/submissions/bulk-delete")
+    public BulkDeleteResultDto bulkDelete(@RequestBody final BulkDeleteModerationRequest body) {
+        return service.bulkDeleteCurrent(JwtUtil.requireUserId(), body.normalizedIds(),
+                body.reason(), body.reasonText());
     }
 }

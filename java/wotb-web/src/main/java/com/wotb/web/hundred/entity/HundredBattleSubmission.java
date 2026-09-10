@@ -15,8 +15,9 @@ import java.time.OffsetDateTime;
  * CANCELLED/DELETED），创建瞬间冻结身份与成绩快照；claimed 与 approved 两套数据同时保留，
  * 排行榜只读取 approved*。
  *
- * <p>列结构与 Flyway V18 + V20 逐列对齐（ddl-auto=validate，改任一列必须同步迁移）。
- * user + vehicle 的 PENDING/CURRENT 唯一性由 partial unique index 在数据库层强制
+ * <p>列结构与 Flyway V18 + V20 + V22 逐列对齐（ddl-auto=validate，改任一列必须同步迁移）。
+ * 成绩归属 WotB 游戏账号（canonical owner = {@code (wotb_server, wotb_account_id)}），与 Keycloak 身份解耦：
+ * (区服, 账号) + vehicle 的 PENDING/CURRENT 唯一性由 partial unique index 在数据库层强制
  * （本实体不声明 @UniqueConstraint，避免 Hibernate validate 与 partial index 冲突）。</p>
  */
 @Entity
@@ -27,10 +28,6 @@ public class HundredBattleSubmission {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** WotBTools 用户（Keycloak sub）。 */
-    @Column(name = "user_keycloak_id", nullable = false, length = 64)
-    private String userKeycloakId;
-
     /** authoritative vehicleId（Tier X）。 */
     @Column(name = "vehicle_id", nullable = false)
     private long vehicleId;
@@ -39,9 +36,13 @@ public class HundredBattleSubmission {
     @Column(name = "vehicle_name", nullable = false, length = 100)
     private String vehicleName;
 
-    /** 创建瞬间冻结的 gameId（Profile 后续修改不影响本快照）。 */
-    @Column(name = "game_account_id_snapshot", nullable = false)
-    private long gameAccountIdSnapshot;
+    /** canonical owner 的区服维度：创建瞬间冻结（CN / ASIA / EU / NA，与 user_profile 同域）。 */
+    @Column(name = "wotb_server", nullable = false, length = 16)
+    private String wotbServer;
+
+    /** canonical owner：创建瞬间冻结的 WotB 游戏账号 ID（Profile 后续改绑不影响本记录归属）。 */
+    @Column(name = "wotb_account_id", nullable = false)
+    private long wotbAccountId;
 
     /** 创建瞬间冻结的昵称快照（排行榜展示审核通过时的 nickname snapshot）。 */
     @Column(name = "nickname_snapshot", nullable = false, length = 100)
@@ -123,14 +124,14 @@ public class HundredBattleSubmission {
 
     public Long getId() { return id; }
     public void setId(final Long id) { this.id = id; }
-    public String getUserKeycloakId() { return userKeycloakId; }
-    public void setUserKeycloakId(final String userKeycloakId) { this.userKeycloakId = userKeycloakId; }
     public long getVehicleId() { return vehicleId; }
     public void setVehicleId(final long vehicleId) { this.vehicleId = vehicleId; }
     public String getVehicleName() { return vehicleName; }
     public void setVehicleName(final String vehicleName) { this.vehicleName = vehicleName; }
-    public long getGameAccountIdSnapshot() { return gameAccountIdSnapshot; }
-    public void setGameAccountIdSnapshot(final long gameAccountIdSnapshot) { this.gameAccountIdSnapshot = gameAccountIdSnapshot; }
+    public String getWotbServer() { return wotbServer; }
+    public void setWotbServer(final String wotbServer) { this.wotbServer = wotbServer; }
+    public long getWotbAccountId() { return wotbAccountId; }
+    public void setWotbAccountId(final long wotbAccountId) { this.wotbAccountId = wotbAccountId; }
     public String getNicknameSnapshot() { return nicknameSnapshot; }
     public void setNicknameSnapshot(final String nicknameSnapshot) { this.nicknameSnapshot = nicknameSnapshot; }
     public int getClaimedAverageDamage() { return claimedAverageDamage; }

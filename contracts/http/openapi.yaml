@@ -58,6 +58,38 @@ paths:
       responses:
         '200': { description: User Hundred status, content: { application/json: { schema: { $ref: '#/components/schemas/HundredUserStatus' } } } }
         '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/users/profile:
+    get:
+      operationId: getCurrentUserProfile
+      summary: Read the authenticated user's WotBTools business profile
+      description: >-
+        user_profile is the WotBTools business-user projection of the Keycloak identity. Every
+        authenticated user that reaches the SPA is provisioned by the global business bootstrap,
+        so 404 PROFILE_NOT_FOUND now only means provisioning has not succeeded yet.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Current user profile, content: { application/json: { schema: { $ref: '#/components/schemas/UserProfile' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '404': { description: Profile not provisioned yet, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    put:
+      operationId: ensureCurrentUserProfile
+      summary: Idempotently ensure the authenticated user's WotBTools business profile
+      description: >-
+        This is ensure, not create. An existing profile is returned unchanged: wotbServer,
+        wotbAccountId, wotbNickname, wotbAccountSource and wotbAccountVerifiedAt are never
+        overwritten. A missing profile is created with the canonical provisioning semantics
+        (trusted Wargaming claims create that region with source WARGAMING; otherwise CN with
+        source MANUAL). Concurrent calls for the same subject both succeed and leave exactly one
+        row: the loser of the keycloak_user_id unique race reloads the winner's profile instead of
+        reporting an already-exists conflict. A real WotB ownership collision is never swallowed
+        and still returns 409 WOTB_ACCOUNT_ALREADY_USED. Identity comes solely from the bearer
+        token and no request body is accepted, so a caller cannot impersonate another user.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Existing or newly provisioned profile, content: { application/json: { schema: { $ref: '#/components/schemas/UserProfile' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '409': { description: The WotB account is already bound to another user, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '500': { description: Profile bootstrap invariant violated, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/admin/hof/hundred/submissions:
     get:
       operationId: listHundredAdminSubmissions
@@ -124,6 +156,89 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/HundredDeleteRequest' } } } }
       responses:
         '200': { description: Deleted submission, content: { application/json: { schema: { $ref: '#/components/schemas/HundredSubmissionSummary' } } } }
+  /api/admin/hof/hundred/submissions/bulk-delete:
+    post:
+      operationId: bulkDeleteHundredSubmissions
+      summary: Delete several current Hundred submissions in one request
+      description: >-
+        Each id repeats the authoritative single-record delete semantics in its own transaction,
+        so the batch allows partial success. Ids that are not CURRENT fail individually with
+        HUNDRED_NOT_CURRENT / HUNDRED_SUBMISSION_NOT_FOUND and never block the others.
+        More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BulkDeleteModerationRequest' } } } }
+      responses:
+        '200': { description: Per-id bulk delete result, content: { application/json: { schema: { $ref: '#/components/schemas/BulkDeleteResult' } } } }
+        '400': { description: Invalid reason or too many ids, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/admin/hof/records/bulk-delete:
+    post:
+      operationId: bulkDeleteHofRecords
+      summary: Delete several Hall of Fame records in one request
+      description: >-
+        Single-record deletion in this domain is a hard delete without delete-reason semantics,
+        so this request deliberately carries no reason field. Each id repeats the authoritative
+        single-record delete semantics in its own transaction, so the batch allows partial
+        success: an unknown id fails individually with HOF_ENTRY_NOT_FOUND and never blocks the
+        others. More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BulkDeleteRecordsRequest' } } } }
+      responses:
+        '200': { description: Per-id bulk delete result, content: { application/json: { schema: { $ref: '#/components/schemas/BulkDeleteResult' } } } }
+        '400': { description: Too many ids, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/admin/hof/mark3/submissions/bulk-delete:
+    post:
+      operationId: bulkDeleteMark3Submissions
+      summary: Delete several current Mark3 submissions in one request
+      description: >-
+        Each id repeats the authoritative single-record delete semantics in its own transaction,
+        so the batch allows partial success. Ids that are not CURRENT fail individually with
+        MARK3_NOT_CURRENT / MARK3_SUBMISSION_NOT_FOUND and never block the others.
+        More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BulkDeleteModerationRequest' } } } }
+      responses:
+        '200': { description: Per-id bulk delete result, content: { application/json: { schema: { $ref: '#/components/schemas/BulkDeleteResult' } } } }
+        '400': { description: Invalid reason or too many ids, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/admin/users:
+    get:
+      operationId: searchAdminUsers
+      summary: Search Keycloak and local-profile users for the admin console
+      description: >-
+        Server-side pagination over a merged view, never a fetched page filtered in memory.
+        segment=keycloak (default) reads realm users and can surface Keycloak-only users;
+        segment=local reads local user_profile rows and exposes orphan bindings whose Keycloak
+        user no longer exists (keycloakUserMissing=true).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: query, in: query, required: false, schema: { type: string } }
+        - { name: segment, in: query, required: false, schema: { type: string, enum: [keycloak, local] } }
+        - { name: idpAlias, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, default: 0, minimum: 0 } }
+        - { name: size, in: query, required: false, schema: { type: integer, default: 25, minimum: 1, maximum: 100 } }
+      responses:
+        '200': { description: Paged merged user list, content: { application/json: { schema: { $ref: '#/components/schemas/AdminUserPage' } } } }
+        '400': { description: Unknown segment, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    delete:
+      operationId: deleteAdminUsers
+      summary: Delete users by an id list
+      description: >-
+        The request body is a JSON array of Keycloak subs; deleting a single user is simply an
+        array of length one, so there is no separate single-user endpoint and no bulk-delete
+        endpoint. Each id repeats the authoritative delete semantics in its own transaction, so
+        the call allows partial success and reports a per-user errorCode. confirm is required
+        (missing or false rejects the whole request with 400 CONFIRMATION_REQUIRED before
+        anything is deleted). More than 100 ids is rejected with 400 BULK_LIMIT_EXCEEDED.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: confirm, in: query, required: false, schema: { type: boolean, default: false } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: array, items: { type: string }, maxItems: 100 }
+      responses:
+        '200': { description: Per-user delete result, content: { application/json: { schema: { $ref: '#/components/schemas/DeleteUsersResponse' } } } }
+        '400': { description: Missing confirmation or too many ids, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/replay/battle-playback-v2:
     post:
       operationId: getBattlePlaybackV2
@@ -280,13 +395,14 @@ components:
     HundredAdminListItem:
       type: object
       additionalProperties: false
-      required: [id, status, vehicleId, vehicleName, gameAccountIdSnapshot, nicknameSnapshot]
+      required: [id, status, vehicleId, vehicleName, wotbServer, wotbAccountId, nicknameSnapshot]
       properties:
         id: { type: integer, format: int64 }
         status: { type: string }
         vehicleId: { type: integer, format: int64 }
         vehicleName: { type: string }
-        gameAccountIdSnapshot: { type: integer, format: int64 }
+        wotbServer: { type: string, enum: [CN, ASIA, EU, NA] }
+        wotbAccountId: { type: integer, format: int64 }
         nicknameSnapshot: { type: string }
         approvedAverageDamage: { type: [integer, 'null'] }
         approvedBattleCount: { type: [integer, 'null'] }
@@ -311,7 +427,7 @@ components:
     HundredAdminDetail:
       type: object
       additionalProperties: false
-      required: [id, status, vehicleId, vehicleName, gameAccountIdSnapshot, nicknameSnapshot,
+      required: [id, status, vehicleId, vehicleName, wotbServer, wotbAccountId, nicknameSnapshot,
                  claimedAverageDamage, claimedBattleCount, replayParseOk, replayGameIdMatch,
                  replayVehicleMatch, replayDistinctBattles]
       properties:
@@ -319,7 +435,8 @@ components:
         status: { type: string, enum: [PENDING, CURRENT, SUPERSEDED, REJECTED, CANCELLED, DELETED] }
         vehicleId: { type: integer, format: int64 }
         vehicleName: { type: string }
-        gameAccountIdSnapshot: { type: integer, format: int64 }
+        wotbServer: { type: string, enum: [CN, ASIA, EU, NA] }
+        wotbAccountId: { type: integer, format: int64 }
         nicknameSnapshot: { type: string }
         claimedAverageDamage: { type: integer }
         claimedBattleCount: { type: integer }
@@ -368,6 +485,95 @@ components:
       properties:
         deleteReason: { type: string }
         deleteReasonText: { type: [string, 'null'] }
+    BulkDeleteModerationRequest:
+      type: object
+      additionalProperties: false
+      required: [ids, reason]
+      properties:
+        ids: { type: array, items: { type: integer, format: int64 }, maxItems: 100 }
+        reason: { type: string }
+        reasonText: { type: [string, 'null'] }
+    BulkDeleteRecordsRequest:
+      type: object
+      additionalProperties: false
+      required: [ids]
+      properties:
+        ids: { type: array, items: { type: integer, format: int64 }, maxItems: 100 }
+    BulkDeleteItemResult:
+      type: object
+      additionalProperties: false
+      required: [id, deleted]
+      properties:
+        id: { type: integer, format: int64 }
+        deleted: { type: boolean }
+        errorCode: { type: [string, 'null'] }
+    BulkDeleteResult:
+      type: object
+      additionalProperties: false
+      required: [requested, deleted, failed, results]
+      properties:
+        requested: { type: integer }
+        deleted: { type: integer }
+        failed: { type: integer }
+        results: { type: array, items: { $ref: '#/components/schemas/BulkDeleteItemResult' } }
+    UserProfile:
+      type: object
+      additionalProperties: false
+      required: [id, keycloakUserId, username, wotbServer, wotbAccountSource]
+      properties:
+        id: { type: integer, format: int64 }
+        keycloakUserId: { type: string }
+        displayName: { type: [string, 'null'] }
+        username: { type: string }
+        wotbAccountId: { type: [integer, 'null'], format: int64 }
+        wotbNickname: { type: [string, 'null'] }
+        wotbServer: { type: string, enum: [CN, ASIA, EU, NA] }
+        wotbAccountSource: { type: string, enum: [MANUAL, WARGAMING] }
+        wotbAccountVerifiedAt: { type: [string, 'null'], format: date-time }
+    AdminUserListItem:
+      type: object
+      additionalProperties: false
+      required: [keycloakUserId, hasLocalProfile, keycloakUserMissing]
+      properties:
+        keycloakUserId: { type: string }
+        keycloakUsername: { type: [string, 'null'] }
+        keycloakEmail: { type: [string, 'null'] }
+        keycloakEnabled: { type: [boolean, 'null'] }
+        profileId: { type: [integer, 'null'], format: int64 }
+        displayName: { type: [string, 'null'] }
+        wotbAccountId: { type: [integer, 'null'], format: int64 }
+        wotbNickname: { type: [string, 'null'] }
+        wotbServer: { type: [string, 'null'] }
+        profileCreatedAt: { type: [string, 'null'], format: date-time }
+        hasLocalProfile: { type: boolean }
+        keycloakUserMissing: { type: boolean }
+    AdminUserPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalItems, totalPages]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AdminUserListItem' } }
+        page: { type: integer }
+        size: { type: integer }
+        totalItems: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    DeleteUserResult:
+      type: object
+      additionalProperties: false
+      required: [userId, deleted]
+      properties:
+        userId: { type: string }
+        deleted: { type: boolean }
+        errorCode: { type: [string, 'null'] }
+    DeleteUsersResponse:
+      type: object
+      additionalProperties: false
+      required: [requested, deleted, failed, results]
+      properties:
+        requested: { type: integer }
+        deleted: { type: integer }
+        failed: { type: integer }
+        results: { type: array, items: { $ref: '#/components/schemas/DeleteUserResult' } }
     DatasetReference:
       type: object
       additionalProperties: false

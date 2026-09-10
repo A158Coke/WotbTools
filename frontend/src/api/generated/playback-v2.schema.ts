@@ -233,7 +233,8 @@ export default {
         "status",
         "vehicleId",
         "vehicleName",
-        "gameAccountIdSnapshot",
+        "wotbServer",
+        "wotbAccountId",
         "nicknameSnapshot"
       ],
       "properties": {
@@ -251,7 +252,16 @@ export default {
         "vehicleName": {
           "type": "string"
         },
-        "gameAccountIdSnapshot": {
+        "wotbServer": {
+          "type": "string",
+          "enum": [
+            "CN",
+            "ASIA",
+            "EU",
+            "NA"
+          ]
+        },
+        "wotbAccountId": {
           "type": "integer",
           "format": "int64"
         },
@@ -350,7 +360,8 @@ export default {
         "status",
         "vehicleId",
         "vehicleName",
-        "gameAccountIdSnapshot",
+        "wotbServer",
+        "wotbAccountId",
         "nicknameSnapshot",
         "claimedAverageDamage",
         "claimedBattleCount",
@@ -382,7 +393,16 @@ export default {
         "vehicleName": {
           "type": "string"
         },
-        "gameAccountIdSnapshot": {
+        "wotbServer": {
+          "type": "string",
+          "enum": [
+            "CN",
+            "ASIA",
+            "EU",
+            "NA"
+          ]
+        },
+        "wotbAccountId": {
           "type": "integer",
           "format": "int64"
         },
@@ -582,6 +602,323 @@ export default {
             "string",
             "null"
           ]
+        }
+      }
+    },
+    "BulkDeleteModerationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ids",
+        "reason"
+      ],
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 100
+        },
+        "reason": {
+          "type": "string"
+        },
+        "reasonText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "BulkDeleteRecordsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ids"
+      ],
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 100
+        }
+      }
+    },
+    "BulkDeleteItemResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "deleted"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "BulkDeleteResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requested",
+        "deleted",
+        "failed",
+        "results"
+      ],
+      "properties": {
+        "requested": {
+          "type": "integer"
+        },
+        "deleted": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BulkDeleteItemResult"
+          }
+        }
+      }
+    },
+    "UserProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "keycloakUserId",
+        "username",
+        "wotbServer",
+        "wotbAccountSource"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "keycloakUserId": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "username": {
+          "type": "string"
+        },
+        "wotbAccountId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "wotbNickname": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wotbServer": {
+          "type": "string",
+          "enum": [
+            "CN",
+            "ASIA",
+            "EU",
+            "NA"
+          ]
+        },
+        "wotbAccountSource": {
+          "type": "string",
+          "enum": [
+            "MANUAL",
+            "WARGAMING"
+          ]
+        },
+        "wotbAccountVerifiedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "AdminUserListItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keycloakUserId",
+        "hasLocalProfile",
+        "keycloakUserMissing"
+      ],
+      "properties": {
+        "keycloakUserId": {
+          "type": "string"
+        },
+        "keycloakUsername": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "keycloakEmail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "keycloakEnabled": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "profileId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wotbAccountId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "wotbNickname": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wotbServer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "profileCreatedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "hasLocalProfile": {
+          "type": "boolean"
+        },
+        "keycloakUserMissing": {
+          "type": "boolean"
+        }
+      }
+    },
+    "AdminUserPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "totalPages"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AdminUserListItem"
+          }
+        },
+        "page": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "totalItems": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "totalPages": {
+          "type": "integer"
+        }
+      }
+    },
+    "DeleteUserResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "deleted"
+      ],
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "DeleteUsersResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requested",
+        "deleted",
+        "failed",
+        "results"
+      ],
+      "properties": {
+        "requested": {
+          "type": "integer"
+        },
+        "deleted": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DeleteUserResult"
+          }
         }
       }
     },

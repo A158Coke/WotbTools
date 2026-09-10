@@ -207,7 +207,81 @@ Battle 直接取该场 `tank_id`/`tank_name`（来源 `PlayerResult.tankId`）�
 
 三环域只走人工审核：1–2 张截图、5 个已验证 replay，按 approved battleCount 升序 competition rank；CURRENT 不可替换，REJECTED/CANCELLED/DELETED 可重提。三环 replay 解析通过共享 `ReplayCapacityLimiter`，容量满沿用 `REPLAY_BUSY`。
 
-详细契约见 `docs/features/hall-of-fame.md`。
+**HoF ownership 的 canonical identity 是 `(区服, WotB 游戏账号)`，不是 Keycloak 用户**（Flyway `V22__hof_ownership_by_wotb_account.sql`）：百场/三环 submission 的 owner 为 `(wotb_server, wotb_account_id)`（`wotb_account_id` 在 V22 前名为 `game_account_id_snapshot`，`wotb_server` 为 V22 新增的 `varchar(16) NOT NULL` 快照列，CHECK 取值 `CN|ASIA|EU|NA`），`user_keycloak_id` 已删除，partial unique index 与查询索引改按 `(wotb_server, wotb_account_id, vehicle_id)`；单场 `hall_of_fame_record` 从一开始就按 `account_id` 归属（**无区服维度**，`GET /api/users/profile/records` 也只按账号 ID 匹配——已知遗留，见 [`docs/features/hall-of-fame.md`](features/hall-of-fame.md)）。区服不是可省略的展示字段：`(CN, 123456)` 与 `(EU, 123456)` 是两个不同账号，该组合与 `user_profile` 的 `UNIQUE (wotb_server, wotb_account_id)` 一致。归属解析的唯一入口是 `UserProfileService.currentWotbIdentity(keycloakUserId)` → `Optional<WotbAccountIdentity(server, accountId)>`；`cancelSubmission` / `userStatus` 同时比较**区服与账号**（任一不符或未绑定 → 403 `HUNDRED_FORBIDDEN` / `MARK3_FORBIDDEN`；未绑定账号时 status 返回三个空列表）。
+
+**V22 是 fail-fast preflight，不含任何自动消解**：执行顺序为「加 `wotb_server`（先可空）→ 从 `user_profile` 回填（仅当旧 `user_keycloak_id` 对应的 profile 当前仍绑定同一账号时取其所服）→ preflight（区服无法解析 / 新 ownership 键下重复 active 记录均抛错并给出诊断）→ 收紧 NOT NULL 与 CHECK → 重建索引 → 删 `user_keycloak_id`」。迁移**不选 winner、不改任何 `status`、不删任何 replay evidence、不清空任何截图、不为无法解析的历史行猜区服**；Flyway 在 PostgreSQL 上把迁移包在单一事务里，因此 preflight 失败时全部 DDL/DML 回滚，数据库停留在 V21。冲突判定口径两域不同：百场是两个独立 partial index（按 `(区服, 账号, 车辆, 状态)`），三环是单个跨状态组合索引（按 `(区服, 账号, 车辆)` 跨 `PENDING`/`CURRENT`）。冲突只能由管理员**有意**处置后重跑迁移（见下方 runbook 与缺口说明）。
+
+**迁移 runbook（V22 preflight 失败）**：
+
+**前提**：preflight 失败时 V22 已整体回滚，schema 停留在 V21，因此检查命令只能用 V21 列
+（`user_keycloak_id` / `game_account_id_snapshot`）；`wotb_account_id` / `wotb_server` 此刻不存在，
+候选区服通过 `LEFT JOIN user_profile` 反推。
+
+```text
+1) 读 Flyway 报错的 message / detail / hint：detail 直接列出前 20 个样例 id 或全部冲突键
+2) 区服无法解析（百场；三环把表名与列换成 mark3_submission）：
+     select s.id, s.user_keycloak_id, s.game_account_id_snapshot, s.status,
+            p.wotb_server as candidate_server
+       from hundred_battle_submission s
+       left join user_profile p
+         on p.keycloak_user_id = s.user_keycloak_id
+        and p.wotb_account_id = s.game_account_id_snapshot
+      where p.wotb_server is null;
+   → 恢复 / 重绑该行所属 profile（让回填能取到区服），或有意删除这些行
+3) ownership 冲突：按 候选区服 + game_account_id_snapshot + vehicle_id [+ status] 自行分组后
+   人工比对 approved_average_damage / submitted_at 等，由人决定保留哪一条
+4) 有意清理其余记录，然后重跑迁移（Flyway 重新执行 V22）
+```
+
+**失败时刻的处置工具可用性**：新版本起不来，本次新增的 bulk-delete 端点不可用；只有旧版本提供的
+`POST /api/admin/hof/{hundred,mark3}/submissions/{id}/delete` 可用，且只接受 `CURRENT`。非 `CURRENT` 的行
+（如被点名的 `PENDING`）需要运维显式 DB 动作，且 evidence 外键为 `RESTRICT`，删 submission 前先删证据行。
+
+> 已知缺口（待产品决策，非本 PR 范围）：被 preflight 点名的 `PENDING` 行目前没有受支持的 admin 处置路径。
+
+详细契约见 `docs/features/hall-of-fame.md`（含三个域的删除语义对照与 IAM≠HoF 不变量）。
+
+### Admin（Admin Users / Admin HoF 治理）
+
+**删除用户 ≠ 删除 HoF 记录**：HoF 数据属于 WotB 游戏账号（百场/三环为 `(区服, 账号)`，单场为 `account_id`），仓库中没有任何 FK 指向 `user_profile`（全仓唯一的 `on delete cascade` 在 `V3__create_boosting_tables.sql`，boost 域内部）。因此**删除 Keycloak 用户必须走 WotBTools admin API**（`AdminUserService` 先删本地 profile 再删 Keycloak 用户）；绕过它直连 Keycloak 会留下孤儿 profile 并阻塞后续重绑，需用 Admin Users 的 `segment=local` 清理。
+
+**Admin Users 列表（服务端分页 + 合并数据源）**：`GET /api/admin/users?query=&segment=&idpAlias=&page=0&size=25` 返回 `{items, page, size, totalItems, totalPages}`；**旧的 `?limit=` 参数已移除**（不再有 `limit=200` 的假分页），`size` 会被 clamp 到 1..100，`page` 为 0-based。
+
+| 参数 | 语义 |
+|---|---|
+| `segment=keycloak`（默认） | 权威源是 Keycloak realm users（Keycloak Admin API `first/max` 分页 + 权威 count），本地 profile 只按当前页做一次 IN 查询增强。**没有任何本地 profile 的 Keycloak-only 用户也能被找到并删除**（旧 Juhe QQ cleanup 的前提）；支持 `idpAlias` 过滤 |
+| `segment=local` | 权威源是本地 `user_profile`（DB 分页 + 权威总数），用于暴露 Keycloak 侧已不存在的**孤儿绑定**（行上 `keycloakUserMissing=true`），删除它可释放 `(wotb_server, wotb_account_id)` 唯一槽位。传 `idpAlias` → 400 `IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT`；未知 segment → 400 `INVALID_USER_SEGMENT` |
+
+列表行 DTO（`AdminUserListItemDto`，旧的 `AdminUserDto` 已删除）：`keycloakUserId, keycloakUsername, keycloakEmail, keycloakEnabled, profileId, displayName, wotbAccountId, wotbNickname, wotbServer, profileCreatedAt, hasLocalProfile, keycloakUserMissing`。两个 segment 都不做「拉一页再在内存里筛」的伪造分页。`segment=local` 的代价是每页产生 N（≤ size）次 Keycloak Admin 调用——**Keycloak 没有按 ids 批量查询用户的能力**，这是客户端/服务端的能力事实，见 [`docs/auth/keycloak-admin-user-search.md`](auth/keycloak-admin-user-search.md)（该文档同时记录 admin-client 26.0.9 的重载缺口与「IdP 过滤在 CI 端到端验证前不得宣称生产可用」的局限）。
+
+**Admin DTO 的 WotB 身份字段（本轮同步）**：百场/三环的 admin DTO 现在都携带 `wotbServer`，与 `wotbAccountId` 一起表示归属身份，避免管理页只显示账号 ID 时把跨服同号看成同一个账号。
+
+| DTO | 身份字段 | 前端渲染 |
+|---|---|---|
+| `AdminUserListItemDto`（user 域） | `wotbServer` + `wotbAccountId` | 用户列表 |
+| `HundredAdminListItemDto` / `HundredAdminDetailDto` | `wotbServer` + `wotbAccountId` | 百场审核列表 + 详情（`{{ wotbServer }}·{{ wotbAccountId }}`） |
+| `Mark3AdminListItemDto` / `Mark3AdminDetailDto` | `wotbServer` + `wotbAccountId` | 三环审核列表 + 详情（同上） |
+
+`HoFAdminPage.vue` 在百场/三环的列表与详情共 4 处使用 `{{ wotbServer }}·{{ wotbAccountId }}`；`wotbServer` 的取值域是 `CN|ASIA|EU|NA`（DB CHECK 约束）。
+
+**批量删除契约（三个域共用形状，partial success）**：
+
+| 端点 | 请求体 | 响应 |
+|---|---|---|
+| `DELETE /api/admin/users?confirm=true` | body 为 Keycloak sub 数组（单条 = 长度 1） | `{requested, deleted, failed, results:[{userId, deleted, errorCode}]}` |
+| `POST /api/admin/hof/records/bulk-delete` | `{ids}`（单场无 reason） | `{requested, deleted, failed, results:[{id, deleted, errorCode}]}` |
+| `POST /api/admin/hof/hundred/submissions/bulk-delete` | `{ids, reason, reasonText}` | 同上 |
+| `POST /api/admin/hof/mark3/submissions/bulk-delete` | `{ids, reason, reasonText}` | 同上 |
+
+共同语义：每个目标跑在**独立事务**中（`TransactionTemplate`，禁止 `this.method()` 自调用绕过 Spring 代理），因此允许 partial success；单批去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`。用户批量删除的 `confirm` 缺失/false → 整批 400 `CONFIRMATION_REQUIRED`，且逐用户复用 `deleteOneInternal` 的全部业务保护（self-delete 保护、打手依赖阻断、先删本地 profile 再删 Keycloak、审计日志）。HoF 批量删除**逐条复用权威单条删除语义**：单场仍是 hard delete（audit 快照 + 真删行 + commit 后引用计数清理物理文件），百场/三环仍是 soft delete（仅 CURRENT 可删，`CURRENT` → `DELETED`）；非 CURRENT 逐条失败于 `HUNDRED_NOT_CURRENT` / `MARK3_NOT_CURRENT` 而不阻塞其他记录。百场/三环的 reason 是批次级参数，先整体校验一次（参数错误整批 400，不表现为逐条失败）。
+
+新增错误码（`util/ErrorCode.java`）：`BULK_LIMIT_EXCEEDED`、`INVALID_USER_SEGMENT`、`IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT`。
+
+**契约覆盖范围（本轮更新）**：`contracts/http/openapi.yaml` 本轮新增 `GET /api/admin/users`（服务端分页）、`DELETE /api/admin/users`（body 为 Keycloak sub 数组，单条即长度 1）、`POST /api/admin/hof/records/bulk-delete`（单场，无 reason）、`POST /api/admin/hof/mark3/submissions/bulk-delete`，以及 6 个 schema（`AdminUserListItem`、`AdminUserPage`、`DeleteUserResult`、`DeleteUsersResponse`、`BulkDeleteModerationRequest`、`BulkDeleteRecordsRequest`）；百场 admin 的 `gameAccountIdSnapshot` 已改名为 `wotbAccountId` 并新增 `wotbServer`，`HundredAdminListItem` / `HundredAdminDetail` 两个 schema 覆盖该字段。
+
+**既有缺口（如实记录，本轮未补全）**：mark3 的 admin GET 家族（`Mark3AdminListItemDto` / `Mark3AdminDetailDto`）**从未进入 OpenAPI**——即便 Java 侧两个 DTO 本轮同样新增了 `wotbServer`，`openapi.yaml` 里也不存在对应的 mark3 admin schema；单场 HoF admin 列表/详情的完整字段同样未覆盖。补全它们超出本次改动范围。生成产物 `frontend/src/api/generated/*` 由 `npm run api:generate` 重建，禁止手改。
+
+**Admin HoF 治理边界**：admin 是 governance，不是数据编辑器——`/api/admin/hof/**` 只做查看 / 搜索 / 筛选 / 下载 / 删除 / 审计，禁止人工修改 replay-derived authoritative facts。
 
 ---
 
@@ -369,6 +443,32 @@ JWT mapper 提供 `wotb_region / wotb_account_id / wotb_nickname / wotb_verified
 `WG_APPLICATION_ID` 仅注入 Keycloak，用于 WG IdP；backend 不再需要该配置。
 
 IdP 部署步骤见 `docs/auth/wargaming-asia-deployment.md`。
+
+### 身份两层与 profile self-heal
+
+```text
+Keycloak User  = 认证 / IAM 身份（谁登录了）
+user_profile   = WotBTools 业务用户投影（这个人在业务上是谁）
+```
+
+稳态不变量：**每个活跃、已认证并成功进入 WotBTools 的用户都拥有 `user_profile`。**
+
+实现方式是 **eventual self-healing**，不是跨系统强事务：
+
+```text
+Keycloak 认证成功
+  → 进入 SPA（任意 view：home / replay / battle-playback / AI Review / HoF / admin / profile / boost）
+  → AppShell 触发 useBusinessUserBootstrap()
+  → PUT /api/users/profile（幂等 ensure）
+  → 已有 profile 原样返回；没有则按 canonical provisioning 创建
+```
+
+- **canonical owner 只有全局 bootstrap**（`frontend/src/composables/useBusinessUserBootstrap.js`）。页面只等待其结果，不得各自实现「读不到资料 → 自己创建」。
+- **KC-only 是允许的临时/历史状态**：broker 刚注册但浏览器还没回站、用户回站前关掉浏览器、bootstrap 暂时失败、历史 legacy 数据、管理员手工建 KC user。任何 KC-only 用户下一次成功进入 WotBTools 都会被自动补齐。
+- **不做强一致声明**：Keycloak 与业务 DB 之间没有分布式事务，也不在 Keycloak First Broker Login 里写业务库；provisioning 失败**不删除 Keycloak 用户**、**不回退认证状态**、**不永久缓存失败**（刷新 / 重新 bootstrap / 页面上的重试入口都会重新 ensure）。
+- **`PUT /api/users/profile` 是 ensure 而非 create**：已存在时不改写 `wotb_server` / `wotb_account_id` / `wotb_nickname` / `wotb_account_source` / `wotb_account_verified_at`。并发 ensure 靠唯一约束**按约束名**区分：`keycloak_user_id` 冲突（同一 sub 的并发创建）重读胜者并幂等成功；`(wotb_server, wotb_account_id)` 冲突是真实账号占用，仍返回 409 `WOTB_ACCOUNT_ALREADY_USED`，绝不吞掉。
+- **Admin Users 仍以 KC 为权威**（`segment=keycloak` 默认）并显式暴露 `hasLocalProfile=false`，作为 IAM 清点与 legacy/不完整状态的观测能力；self-heal 不改变这一点。
+- **Boost 打手选择器显式用 `segment=local`** 并排除 `keycloakUserMissing=true` 的孤儿绑定（那是管理员清理对象，不是有效打手候选）。
 
 Keycloak 登录页为 V8 Unified Theme（深色=Battlefield/浅色=Minimal、深色登录卡局部毛玻璃 dark-only、浅色无 blur、IdP 动态渲染、`registrationAllowed:false`）；主题文件在 `docker/keycloak/themes/wotbtools/login/`，仅覆盖 `template.ftl`（其余认证页经 `registrationLayout` 共享），生产 realm 需手动设 `loginTheme=wotbtools` 并关闭 Registration（见 `docs/auth/keycloak-login-theme.md`）。
 
