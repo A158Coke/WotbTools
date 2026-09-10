@@ -7,8 +7,12 @@ accessed.
 ## Environment and corpus
 
 - Worktree: isolated replay-performance worktree; no architecture split was made.
-- Commit under test: `0db88597fe25706c2bf80f433f59ab9be15b2be8` plus the
-  uncommitted PositionDecoder/benchmark-harness changes in this worktree.
+- Baseline matrix tree: `0db88597fe25706c2bf80f433f59ab9be15b2be8`.
+- Candidate quick/JFR/parity artifacts were generated from the dirty candidate
+  tree based on that baseline (`commit=0db88597...`, `dirty=true`). The same
+  candidate source is now reproducible from the rebased PR head
+  `9e4adb598309d35d5ec80546c50cb14a855d2b06`; after this review repair commit,
+  the current worktree will be clean.
 - Java: Oracle JDK 21.0.1.
 - Benchmark JVM: `-XX:ActiveProcessorCount=2 -Xms4g -Xmx4g`.
 - Corpus: 40 replay files recursively discovered under the real
@@ -47,8 +51,9 @@ The harness now has two explicit modes:
 Both modes perform the same canonical corpus validation. The quick PositionDecoder
 screen used `-DskipFingerprintVerification=true` because serializing the full
 fingerprint projection made a single screening run unreasonably expensive.
-That choice is recorded in each JSON artifact and does not replace the separate
-40/40 deterministic parity validation.
+That choice is recorded in each JSON artifact, removes only the per-measurement
+Jackson fingerprint work, and does not replace the separate 40/40 deterministic
+parity validation or make JFR startup-free.
 
 ## PositionDecoder A/B quick screen
 
@@ -88,6 +93,12 @@ quick workload:
 
 - B: `build/performance/position-b-quick-c1.jfr`
 - C: `build/performance/position-c-quick-c1.jfr`
+
+The harness now executes all configured warmup rounds before starting each JFR
+recording; the recording contains measurement rounds only. JFR start and class
+retransformation samples can still occur near the recording boundary, so the
+site shares below are directional evidence rather than an exact cross-recording
+allocation proof.
 
 `jfr view allocation-by-site` reported:
 
@@ -262,5 +273,6 @@ are covered by `PositionDecoderTest`.
 
 Not run in production. No endpoint, production job, AI call, persistence write,
 network call, service restart, MQ/COS/Grafana change, or production
-configuration change was made. This round intentionally has no commit, push, or
-PR update.
+configuration change was made. The review repair was committed and pushed to
+PR #284 after rebasing the branch onto current `main`; the benchmark artifacts
+remain ignored.
