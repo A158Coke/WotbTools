@@ -5,7 +5,7 @@
 名人堂只接受**随机战斗（RANDOM）**与**评级战斗（RATING）**回放；训练房 / 联赛 / 锦标赛 / 娱乐 / 未知模式一律拒绝（上传 → HTTP 400 `UNSUPPORTED_BATTLE_TYPE`，零持久化）。Replay 文件是 authoritative source：`.wotbreplay` → `ReplayParser` → authoritative battle facts → battle-type policy → 名人堂；**禁止人工修改 replay-derived authoritative facts**（admin 是 governance，不是数据编辑器）。
 
 - **数据库配置**：`application.yml` 始终启用 DataSource/JPA/Flyway，`ddl-auto: validate`；本地开发需提供 PostgreSQL 与 `POSTGRES_PASSWORD`。
-- **Schema 来源**：Flyway 迁移 `V1__init_leaderboard.sql` → `V15__add_leaderboard_replay_file.sql`（历史 immutable），`V16__rename_leaderboard_to_hall_of_fame.sql`（表/约束/索引 rename-in-place + battle_type/arena_bonus_type + backfill），`V17__create_hall_of_fame_admin_log.sql`（admin 审计表），`V18`–`V20`（百场申请、回放证据、WG 审核快照）以及 `V21__create_mark3_submission.sql`（三环申请与回放证据）。**改表结构必须新增迁移**，不要改已应用的版本；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
+- **Schema 来源**：Flyway 迁移 `V1__init_leaderboard.sql` → `V15__add_leaderboard_replay_file.sql`（历史 immutable），`V16__rename_leaderboard_to_hall_of_fame.sql`（表/约束/索引 rename-in-place + battle_type/arena_bonus_type + backfill），`V17__create_hall_of_fame_admin_log.sql`（admin 审计表），`V18`–`V20`（百场申请、回放证据、WG 审核快照）、`V21__create_mark3_submission.sql`（三环申请与回放证据）以及 `V22__hof_ownership_by_wotb_account.sql`（百场/三环 ownership 由 Keycloak 身份切换为 WotB 游戏账号：`game_account_id_snapshot` → `wotb_account_id`、删除 `user_keycloak_id`、唯一索引与查询索引改按账号、重复 active 记录幂等自愈）。**改表结构必须新增迁移**，不要改已应用的版本；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
 - **战斗模式数据模型**：`hall_of_fame_record` 同时保存 `battle_type varchar(16) NOT NULL`（业务归一值 `RANDOM`/`RATING`，CHECK 约束，非 PG ENUM）与 `arena_bonus_type integer NOT NULL`（replay 解析出的 authoritative raw integer，protocol provenance / 调试 / 未来扩展）。历史数据 backfill 为 `RANDOM/1`（旧系统 PR #97 前只允许 Random；PR #97 起允许 Rating，历史行无法逐行推导，统一按 `RANDOM/1`，带 replay_hash 的行未来可重解析修正）。
 - **支持的战斗模式**：判断集中在 `HallOfFameBattleTypePolicy`（`HallOfFameBattleType` 单一事实源，禁止散落两处漂移）。证据等级明确区分「本项目真实回放证据」与「外部 replay tooling 证据」：
 
@@ -36,10 +36,11 @@
   - `GET /api/admin/hof/audit`（admin 操作日志，只读）
   - `GET /api/admin/hof/{id}/replay`（admin 下载，复用统一机制）
   - `DELETE /api/admin/hof/{id}`（hard delete，需二次确认）
+  - `POST /api/admin/hof/records/bulk-delete`（批量 hard delete，body `{ids}`，**无 reason**——单场删除本就是 hard delete 且没有 reason 语义；逐条复用单条语义）
   - 旧 `/api/leaderboard/**` 全部移除；前端 `?view=leaderboard` → canonicalize 为 `?view=hof`。
 - **Admin 安全**：`/api/admin/hof/**` 要求 `HoF-admin` 或 `wotbtools-admin`（`SecurityConfig` 中置于 `ADMIN_PATTERN` 之前；HoF-admin 只管理名人堂，不能访问 `/api/admin/users/**`、`/api/admin/boost/**` 等其他 admin 域）。角色由 Keycloak Admin Console 授予（本仓库仅 realm JSON provision，无授予 UI）。wotbtools-admin 自动拥有全部 HoF admin 权限。
 - **单场车辆筛选**：`arena_id` 与 raw `arena_bonus_type` 继续保留在记录和审计快照中，供去重与追溯，但不作为业务页面的展示或筛选项。管理页与公开页共用当前名人堂实际车辆选项；国家/系别、车种、等级是三个无序可选条件，所有非空条件既对车辆名称候选取交集，也作为真实榜单查询条件独立生效；选中具体车辆时再与 `tankId` 继续取交集。
-- **Admin hard delete**：真实 hard delete（无 soft delete / tombstone / blocklist）。**audit + record delete 单事务**（`BEGIN → validate → audit snapshot(DELETE_ENTRY) → delete record → COMMIT`；audit 失败 → 记录不删；删除失败 → 无假审计）。commit 后：`replay_hash` 非空且无其他记录引用 → 删除 `{sha256}.wotbreplay`；仍有引用 → 保留；清理失败 → 仅 WARN（orphan 保留，不回滚已 commit 的删除）。删除后同一回放未来可重新上传（正常校验后重新 SAVED）。审计快照保存 timestamp / admin sub+username / action / recordId / arenaId / accountId / nickname / tankId / tankName / damage / battleType / arenaBonusType / replayHash（record 删除后原记录已不存在，不能只存 record_id FK）。第一版无 audit retention / cleanup scheduler。
+- **Admin hard delete**：真实 hard delete（无 soft delete / tombstone / blocklist）。**audit + record delete 单事务**（`BEGIN → validate → audit snapshot(DELETE_ENTRY) → delete record → COMMIT`；audit 失败 → 记录不删；删除失败 → 无假审计）。commit 后：`replay_hash` 非空且无其他记录引用 → 删除 `{sha256}.wotbreplay`；仍有引用 → 保留；清理失败 → 仅 WARN（orphan 保留，不回滚已 commit 的删除）。删除后同一回放未来可重新上传（正常校验后重新 SAVED）。审计快照保存 timestamp / admin sub+username / action / recordId / arenaId / accountId / nickname / tankId / tankName / damage / battleType / arenaBonusType / replayHash（record 删除后原记录已不存在，不能只存 record_id FK）。第一版无 audit retention / cleanup scheduler。批量删除（`POST /api/admin/hof/records/bulk-delete`）**逐条复用同一语义**：每条独立事务（`TransactionTemplate`）+ commit 后跨域引用计数清理物理文件，允许 partial success；不存在的 id 以 `HOF_ENTRY_NOT_FOUND` 逐条失败，其余继续；单批去重后上限 100，超出整批 400 `BULK_LIMIT_EXCEEDED`。
 - **备份决策**：回放文件为 **best-effort 可丢数据**——数据库备份（`postgres-backup.sh`）只备份 metadata，不备份文件；VPS 损坏/迁移后可能出现下载 404（tolerance 设计）。
 - **解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务。容量满返回 503 `REPLAY_BUSY`。
 
@@ -53,9 +54,10 @@
 ## 业务模型
 
 - **单表生命周期**：`hundred_battle_submission` 承载完整生命周期（PENDING / CURRENT / SUPERSEDED / REJECTED / CANCELLED / DELETED，VARCHAR+CHECK）。一条 submission 审核通过即成为 CURRENT；被更高纪录替代 → SUPERSEDED；管理员删除 → DELETED。
-- **数据库不变量**（Flyway `V18__create_hundred_battle_submission.sql`，partial unique index）：user+vehicle **最多一个 active PENDING**、**最多一个 CURRENT**；rank 永不落库。
-- **快照冻结**：创建瞬间冻结 `game_account_id_snapshot` / `nickname_snapshot`（Profile 后续修改 gameId/nickname 不影响历史 submission）；排行榜只读取审核通过的 `approvedAverageDamage` / `approvedBattleCount`。APPROVE 不接收成绩，只使用创建时冻结的 MANUAL `claimed*`，管理员不能改写成绩。
-- **gameId 唯一**：复用 `user_profile` 已有 `uk_user_profile_wotb_account (wotb_server, wotb_account_id)`，不新建约束。
+- **数据库不变量**（Flyway `V18__create_hundred_battle_submission.sql` 建立、`V22` 改界，partial unique index）：**WotB 账号 + vehicle** 最多一个 active PENDING（`uk_hundred_battle_pending_account_vehicle`，`status='PENDING'`）、最多一个 CURRENT（`uk_hundred_battle_current_account_vehicle`，`status='CURRENT'`）；查询索引 `idx_hundred_battle_submission_account (wotb_account_id, status, submitted_at desc)`；rank 永不落库。
+- **ownership（V22 起）**：百场 submission 的 canonical owner 是创建瞬间绑定的 **WotB 游戏账号 ID**（`wotb_account_id`），不是 Keycloak 用户身份。`cancelSubmission` 先由 `user_profile` 解析当前登录用户绑定的账号再按账号判定归属：账号不匹配或未绑定账号 → 403 `HUNDRED_FORBIDDEN`。`GET /api/users/hundred/status` 同样按账号查询，未绑定账号时三个列表均为空。记录创建后用户改绑到别的 WotB 账号时，记录仍属于原账号，因此不可再取消。
+- **快照冻结**：创建瞬间冻结 canonical owner `wotb_account_id` 与 `nickname_snapshot`（`wotb_account_id` 在 V22 前列名为 `game_account_id_snapshot`；Profile 后续修改 gameId/nickname 不影响历史 submission）；排行榜只读取审核通过的 `approvedAverageDamage` / `approvedBattleCount`。APPROVE 不接收成绩，只使用创建时冻结的 MANUAL `claimed*`，管理员不能改写成绩。
+- **gameId 唯一**：复用 `user_profile` 已有 `uk_user_profile_wotb_account (wotb_server, wotb_account_id)`，不新建约束。HoF 归属只以账号 ID 为界（V22 的唯一索引不含 `wotb_server`）。
 
 ## 人工审核链路硬门禁（创建失败整单拒绝，不进入 PENDING）
 
@@ -63,7 +65,7 @@
 2. 车辆必须为 authoritative Tier X（`Tankopedia.info(vehicleId).tier()==10`，`HUNDRED_NON_TIER_X`）。
 3. 固定 1 张成绩截图（base64 data URL，复用 Boost Apply 校验模式：`data:image/` 前缀 + 550 万字符上限）。
 4. 正好 5 个 `.wotbreplay`（复用 `ReplayUploadValidator` 大小/类型校验 + `HUNDRED_REPLAY_COUNT`）。
-5. 5 个回放**全部解析成功**，且每个回放内存在 accountId == snapshot gameId 的玩家（`HUNDRED_REPLAY_GAME_ID_MISMATCH`）、其 tankId == 所选 vehicleId（`HUNDRED_REPLAY_VEHICLE_MISMATCH`）、5 个 `arenaId` 互不相同（`HUNDRED_REPLAY_DUPLICATE_BATTLE`）。不校验 server/region。
+5. 5 个回放**全部解析成功**，且每个回放内存在 accountId == 冻结的 `wotb_account_id` 的玩家（`HUNDRED_REPLAY_GAME_ID_MISMATCH`）、其 tankId == 所选 vehicleId（`HUNDRED_REPLAY_VEHICLE_MISMATCH`）、5 个 `arenaId` 互不相同（`HUNDRED_REPLAY_DUPLICATE_BATTLE`）。不校验 server/region。
 6. 新成绩必须严格高于当前 CURRENT（`HUNDRED_NOT_HIGHER`）；无 CURRENT 时历史 SUPERSEDED/DELETED 不限制重新提交。
 
 ## WG 登录与百场边界
@@ -92,8 +94,8 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 |---|---|---|
 | `GET /api/hof/hundred?nation=&vehicleType=&vehicleId=&page=&size=` | 匿名 | 三项取交集：全空为全站 CURRENT Top 10；仅分类时为分类交集 Top 10；选择车辆后为该车独立分页排行，competition rank 始终基于相同筛选上下文 |
 | `POST /api/hof/hundred/submissions` | 登录 | multipart 提交（vehicleId/averageDamage/battleCount/screenshot/replays×5） |
-| `POST /api/hof/hundred/submissions/{id}/cancel` | 登录（本人） | 用户撤销 PENDING |
-| `GET /api/users/hundred/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝 |
+| `POST /api/hof/hundred/submissions/{id}/cancel` | 登录（本人账号） | 撤销 PENDING；归属按当前绑定的 WotB 账号判定，账号不匹配或未绑定账号 → 403 `HUNDRED_FORBIDDEN` |
+| `GET /api/users/hundred/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝；按当前绑定的 WotB 账号查询，未绑定账号时三个列表均为空 |
 | `GET /api/admin/hof/hundred/submissions?status=&nation=&vehicleType=&vehicleId=&page=&size=` | HoF-admin/wotbtools-admin | 审核列表；状态、国家/系别、车种、车辆均可独立使用并取交集 |
 | `GET /api/admin/hof/hundred/submissions/{id}` | 同上 | 所有状态详情；PENDING 可返回 MANUAL proof，终态保留结果/原因文字 |
 | `GET /api/admin/hof/hundred/submissions/{id}/replays` | 同上 | PENDING 回放证据 metadata；终态或旧记录为空 |
@@ -101,6 +103,7 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 | `POST /api/admin/hof/hundred/submissions/{id}/approve` | 同上 | 通过；无请求体，使用原申报值 |
 | `POST /api/admin/hof/hundred/submissions/{id}/reject` | 同上 | 拒绝（原因强制） |
 | `POST /api/admin/hof/hundred/submissions/{id}/delete` | 同上 | 删除 CURRENT（原因强制，不恢复 SUPERSEDED） |
+| `POST /api/admin/hof/hundred/submissions/bulk-delete` | 同上 | 批量删除 CURRENT（body `{ids, reason, reasonText}`）；逐条复用单条删除语义、每条独立事务，单批去重后上限 100（超出 400 `BULK_LIMIT_EXCEEDED`），非 CURRENT / 不存在逐条以 `HUNDRED_NOT_CURRENT` / `HUNDRED_SUBMISSION_NOT_FOUND` 失败且不阻塞其他记录 |
 
 ## 页面交互约定
 
@@ -116,9 +119,10 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 
 ## 业务模型
 
-- **状态机**：`mark3_submission` 只使用 PENDING / CURRENT / REJECTED / CANCELLED / DELETED（VARCHAR + CHECK）；**没有 SUPERSEDED**。通过申请成为 CURRENT 后，即为同一玩家同一车辆唯一且不可替换的三环记录。
-- **数据库不变量**：Flyway `V21__create_mark3_submission.sql` 的 partial unique index 保证同用户同车最多一条 active PENDING/CURRENT；服务层在已有 CURRENT 时拒绝新提交，并在 APPROVE 时再次检查，绝不替代 CURRENT。REJECTED / CANCELLED / DELETED 后允许重新提交。
-- **冻结值**：提交时冻结 Profile 的账号 ID 与昵称快照；审核通过后冻结申报的 `battleCount`、`averageDamage`、`winRate` 为 approved 值。管理员审批不接收也不能改写任何成绩数据。
+- **状态机**：`mark3_submission` 只使用 PENDING / CURRENT / REJECTED / CANCELLED / DELETED（VARCHAR + CHECK）；**没有 SUPERSEDED**。通过申请成为 CURRENT 后，即为同一 WotB 账号同一车辆唯一且不可替换的三环记录。
+- **数据库不变量**：Flyway `V21__create_mark3_submission.sql` 的 partial unique index 保证同 **WotB 账号**同车最多一条 active PENDING/CURRENT（`uk_mark3_submission_active_account_vehicle`，`status in ('PENDING','CURRENT')`；V21 建立、`V22` 由 Keycloak 身份改界为账号，查询索引 `idx_mark3_submission_account (wotb_account_id, status, submitted_at desc)`）；服务层在已有 CURRENT 时拒绝新提交，并在 APPROVE 时再次检查，绝不替代 CURRENT。REJECTED / CANCELLED / DELETED 后允许重新提交。
+- **ownership（V22 起）**：与百场同构——canonical owner 是创建瞬间绑定的 `wotb_account_id`，不是 Keycloak 用户身份。`cancelSubmission` 先由 `user_profile` 解析当前登录用户绑定的账号再按账号判定归属：账号不匹配或未绑定账号 → 403 `MARK3_FORBIDDEN`。`GET /api/users/mark3/status` 同样按账号查询，未绑定账号时三个列表均为空。记录创建后用户改绑到别的 WotB 账号时，记录仍属于原账号，因此不可再取消。
+- **冻结值**：提交时冻结 Profile 的 **WotB 账号 ID**（`wotb_account_id`，即 canonical owner；V22 前列名为 `game_account_id_snapshot`）与昵称快照；审核通过后冻结申报的 `battleCount`、`averageDamage`、`winRate` 为 approved 值。管理员审批不接收也不能改写任何成绩数据。
 - **排名**：只读取 CURRENT，按 `approvedBattleCount ASC` 排序；相同三环场数为 competition ranking（名次跳号），`approvedAt ASC, id ASC` 只用于稳定展示，不以场均或胜率打破并列。
 - **筛选**：公开榜和管理列表都使用与百场相同的国家/系别、车种、车辆交集筛选；全空或仅分类时显示 CURRENT Top 10，选择具体车辆后为该车独立分页。当前只允许 Tier X，不另设等级筛选。
 
@@ -129,12 +133,12 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 3. 需提交 `battleCount`、`averageDamage` 与 `winRate`；`winRate` 为 0–100 的百分数，最多两位小数。
 4. 截图只能为 1–2 张有效图片，单张不超过 4 MiB。新车从 0 场开始打三环可以只提供一张；其余申请应提供记录开始与结束的 0% 和 95% 截图。后端只校验数量与图片格式，证据内容由管理员人工判断。
 5. 正好 5 个 `.wotbreplay`；全部解析成功，均匹配提交时的账号和车辆，且 5 个 `arenaId` 互不相同。
-6. 同一用户同一车辆已有 CURRENT 时永远不能再创建或通过新申请；PENDING 已存在时也不能重复提交。
+6. 同一 WotB 账号同一车辆已有 CURRENT 时永远不能再创建或通过新申请；PENDING 已存在时也不能重复提交。
 
 ## 审核、证据与并发
 
 - 创建时的 replay 校验、读入五个 byte[]、解析、hash 锁、落盘和事务共用全局 `ReplayCapacityLimiter`；容量已满时在解析前返回 503 `REPLAY_BUSY`，任何 success、校验失败、解析失败、存储失败或 DB 失败都会释放许可。
-- `findByIdForUpdate`（PESSIMISTIC_WRITE）使 APPROVE / REJECT / CANCEL 从 PENDING 到终态只成功一次；APPROVE 事务内重查该用户该车的 CURRENT，存在即拒绝，绝不产生替代记录。
+- `findByIdForUpdate`（PESSIMISTIC_WRITE）使 APPROVE / REJECT / CANCEL 从 PENDING 到终态只成功一次；APPROVE 事务内重查该 WotB 账号该车的 CURRENT，存在即拒绝，绝不产生替代记录。
 - 管理员只能在详情中通过、拒绝或删除：通过无请求体，直接冻结原申报数值；拒绝与删除均要求原因。没有任何修改场数、场均或胜率的接口或控件。
 - 1–2 张截图和 5 个 replay evidence 只在 PENDING 期间对 HoF-admin / wotbtools-admin 可见。回放以 SHA-256 内容寻址保存在隔离的 `${wotb.hof.replay-dir}/mark3` 子目录（默认 `data/replays/mark3`），沿用 ownership 校验但不与单场/百场共用 hash 引用计数；APPROVE / REJECT / CANCEL / DELETE 到终态后清空截图、删除 evidence，随后 best-effort 清理该目录中无引用的物理文件。
 
@@ -144,8 +148,8 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 |---|---|---|
 | `GET /api/hof/mark3?nation=&vehicleType=&vehicleId=&page=&size=` | 匿名 | Tier X 三环公开榜；国家/系别、车种和车辆取交集，按三环场数升序 competition rank |
 | `POST /api/hof/mark3/submissions` | 登录 | multipart 提交：vehicleId、battleCount、averageDamage、winRate、1–2 张 base64 `data:image/` proofScreenshots、5 个 replays；全局 replay 容量满时 503 `REPLAY_BUSY` |
-| `POST /api/hof/mark3/submissions/{id}/cancel` | 登录（本人） | 撤销自己的 PENDING |
-| `GET /api/users/mark3/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝 |
+| `POST /api/hof/mark3/submissions/{id}/cancel` | 登录（本人账号） | 撤销自己的 PENDING；归属按当前绑定的 WotB 账号判定，账号不匹配或未绑定账号 → 403 `MARK3_FORBIDDEN` |
+| `GET /api/users/mark3/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝；按当前绑定的 WotB 账号查询，未绑定账号时三个列表均为空 |
 | `GET /api/admin/hof/mark3/submissions?status=&nation=&vehicleType=&vehicleId=&page=&size=` | HoF-admin/wotbtools-admin | 审核列表；状态、国家/系别、车种、车辆独立筛选并取交集 |
 | `GET /api/admin/hof/mark3/submissions/{id}` | 同上 | 所有状态详情；PENDING 返回 proof，终态保留结果与原因文字 |
 | `GET /api/admin/hof/mark3/submissions/{id}/replays` | 同上 | PENDING 回放证据 metadata |
@@ -153,9 +157,47 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 | `POST /api/admin/hof/mark3/submissions/{id}/approve` | 同上 | 通过；无请求体，冻结原申报值，不能替代 CURRENT |
 | `POST /api/admin/hof/mark3/submissions/{id}/reject` | 同上 | 拒绝（原因强制） |
 | `POST /api/admin/hof/mark3/submissions/{id}/delete` | 同上 | 删除 CURRENT（原因强制） |
+| `POST /api/admin/hof/mark3/submissions/bulk-delete` | 同上 | 批量删除 CURRENT（body `{ids, reason, reasonText}`）；逐条复用单条删除语义、每条独立事务，单批去重后上限 100（超出 400 `BULK_LIMIT_EXCEEDED`），非 CURRENT / 不存在逐条以 `MARK3_NOT_CURRENT` / `MARK3_SUBMISSION_NOT_FOUND` 失败且不阻塞其他记录 |
 
 ## 页面交互约定
 
 - 公开「三环」页复用百场的筛选与分页体验，展示三环场数、过程场均、过程胜率；三环场数越少越靠前。
 - 提交弹窗只提供人工审核，要求填写三环场数、过程场均、过程胜率、1–2 张截图与 5 个回放；明确显示 0 场新车可只传一张、其余应提供 0% 和 95% 截图的提示。
 - 管理后台提供三环审核 tab；列表和详情不显示成绩编辑输入。PENDING 详情可查看截图和下载 5 个回放，终态仅保留审核结果及原因文字。
+
+---
+
+# 删除语义与 IAM / HoF 不变量（跨单场 / 百场 / 三环）
+
+## 三个域的权威删除语义
+
+| 域 | 语义 | 结果 | 请求体 | 证据 / 物理文件处理 |
+|---|---|---|---|---|
+| 单场 `hall_of_fame_record` | **hard delete**（真删行，无 tombstone / blocklist） | 行消失，同一回放日后可重新上传 | 无 reason | 单事务 audit snapshot(`DELETE_ENTRY`) + 删行；commit 后**跨域引用计数为 0** 才删 `{sha256}.wotbreplay`，清理失败仅 WARN（orphan 保留） |
+| 百场 `hundred_battle_submission` | **soft delete**，仅 CURRENT 可删 | `CURRENT` → `DELETED` | `reason` 强制，`OTHER` 必填 `reasonText` | 终态事务内清空 proof 截图、删除 replay evidence 行；commit 后 best-effort 清理无引用物理文件 |
+| 三环 `mark3_submission` | **soft delete**，仅 CURRENT 可删 | `CURRENT` → `DELETED` | 同上 | 同上（三环 evidence 在独立命名空间，不与单场/百场共用引用计数） |
+
+**bulk delete == 逐条重复权威单条删除语义**，没有第二套删除规则、状态机或 tombstone：
+
+| 端点 | 请求体 | 单批上限 |
+|---|---|---|
+| `POST /api/admin/hof/records/bulk-delete` | `{ids}`（单场**没有** reason，因为它本来就是 hard delete 且无 reason 语义） | 去重后 100 |
+| `POST /api/admin/hof/hundred/submissions/bulk-delete` | `{ids, reason, reasonText}` | 去重后 100 |
+| `POST /api/admin/hof/mark3/submissions/bulk-delete` | `{ids, reason, reasonText}` | 去重后 100 |
+
+共同契约：每条目标跑在**独立事务**中（`TransactionTemplate`，避免 `@Transactional` 自调用被 Spring 代理绕过），因此允许 **partial success**——某个 id 失败不回滚其他 id 已完成的删除；响应为 `{requested, deleted, failed, results:[{id, deleted, errorCode}]}`。去重后超过 100 个 id → 整批 400 `BULK_LIMIT_EXCEEDED`。百场/三环的 reason 是**批次级参数**，先整体校验一次（参数错误整批 400，不表现为「每条都失败」）；非 CURRENT 的记录逐条失败于既有错误码（`HUNDRED_NOT_CURRENT` / `MARK3_NOT_CURRENT`）而不阻塞其他记录。单场批量中不存在的 id 以 `HOF_ENTRY_NOT_FOUND` 逐条失败，其余继续。
+
+## IAM ≠ HoF 不变量
+
+```text
+删除 Keycloak 用户  ≠  删除 HoF 业务记录
+```
+
+- HoF 数据属于 **WotB 游戏账号**，不属于 Keycloak 用户：V22 后百场/三环的 canonical owner 是 `wotb_account_id`，单场 `hall_of_fame_record` 从一开始就按 `account_id` 归属。
+- 仓库中**没有任何 FK 指向 `user_profile`**；全仓唯一的 `on delete cascade` 在 `V3__create_boosting_tables.sql`（boost 域内部）。因此删除 Keycloak 用户不会连带删除任何 HoF 行。
+- **删除用户必须走 WotBTools admin API**：`AdminUserService` 会先删本地 profile 再删 Keycloak 用户。绕过它直连 Keycloak 删除会留下**孤儿 profile**并阻塞后续重绑（`(wotb_server, wotb_account_id)` 唯一槽位仍被占用）；此时用 Admin Users 的 `segment=local` 找到这些孤儿绑定（行上 `keycloakUserMissing=true`）并删除以释放槽位。
+- 用户以全新 Keycloak 身份（例如旧 Juhe QQ 用户被删除后改用 Official QQ 重建）重新绑定**同一个 WotB 账号**后，其 HoF 数据自然重新关联，不需要任何数据修复。
+
+## V22 冲突自愈（幂等）
+
+旧的 `(user_keycloak_id, vehicle_id)` 唯一性不蕴含 `(wotb_account_id, vehicle_id)` 唯一性：同一 WotB 账号被两个 Keycloak 身份先后绑定过、各自提交过同车 active 记录时会产生重复。V22 在重建唯一索引前做确定性消解：同 `(账号, vehicle, status)` 保留 `submitted_at` 最新的一条（并列取 `id` 最大），其余转终态——百场 `CURRENT` → `SUPERSEDED`、百场 `PENDING` → `DELETED`（`deleted_by='V22_OWNERSHIP_MIGRATION'`、`delete_reason='ADMIN_CORRECTION'`）、三环 active → `DELETED`；被转终态的行在**同一事务内**删除其 replay evidence 行并清空 proof 截图。**无冲突时影响 0 行**，与干净迁移完全等价。迁移不触碰文件系统，因此极少数被自愈的行可能留下无引用的物理回放文件——与既有 admin 删除「cleanup failed, orphan retained」的容忍度一致。

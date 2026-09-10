@@ -207,7 +207,39 @@ Battle 直接取该场 `tank_id`/`tank_name`（来源 `PlayerResult.tankId`）�
 
 三环域只走人工审核：1–2 张截图、5 个已验证 replay，按 approved battleCount 升序 competition rank；CURRENT 不可替换，REJECTED/CANCELLED/DELETED 可重提。三环 replay 解析通过共享 `ReplayCapacityLimiter`，容量满沿用 `REPLAY_BUSY`。
 
-详细契约见 `docs/features/hall-of-fame.md`。
+**HoF ownership 的 canonical identity 是 WotB 游戏账号，不是 Keycloak 用户**（Flyway `V22__hof_ownership_by_wotb_account.sql`）：百场/三环 submission 的 owner 为 `wotb_account_id`（V22 前名为 `game_account_id_snapshot`），`user_keycloak_id` 已删除，partial unique index 与查询索引改按 `(wotb_account_id, vehicle_id)`；单场 `hall_of_fame_record` 从一开始就按 `account_id` 归属。`cancelSubmission` / `userStatus` 先由 `user_profile` 解析当前登录用户绑定的账号再按账号判定（不匹配或未绑定 → 403 `HUNDRED_FORBIDDEN` / `MARK3_FORBIDDEN`；未绑定账号时 status 返回三个空列表）。V22 内含幂等冲突自愈（同账号同车多条 active 记录只保留 `submitted_at` 最新一条，其余转终态并清理证据）。
+
+详细契约见 `docs/features/hall-of-fame.md`（含三个域的删除语义对照与 IAM≠HoF 不变量）。
+
+### Admin（Admin Users / Admin HoF 治理）
+
+**删除用户 ≠ 删除 HoF 记录**：HoF 数据属于 WotB 游戏账号，仓库中没有任何 FK 指向 `user_profile`（全仓唯一的 `on delete cascade` 在 `V3__create_boosting_tables.sql`，boost 域内部）。因此**删除 Keycloak 用户必须走 WotBTools admin API**（`AdminUserService` 先删本地 profile 再删 Keycloak 用户）；绕过它直连 Keycloak 会留下孤儿 profile 并阻塞后续重绑，需用 Admin Users 的 `segment=local` 清理。
+
+**Admin Users 列表（服务端分页 + 合并数据源）**：`GET /api/admin/users?query=&segment=&idpAlias=&page=0&size=25` 返回 `{items, page, size, totalItems, totalPages}`；**旧的 `?limit=` 参数已移除**（不再有 `limit=200` 的假分页），`size` 会被 clamp 到 1..100，`page` 为 0-based。
+
+| 参数 | 语义 |
+|---|---|
+| `segment=keycloak`（默认） | 权威源是 Keycloak realm users（Keycloak Admin API `first/max` 分页 + 权威 count），本地 profile 只按当前页做一次 IN 查询增强。**没有任何本地 profile 的 Keycloak-only 用户也能被找到并删除**（旧 Juhe QQ cleanup 的前提）；支持 `idpAlias` 过滤 |
+| `segment=local` | 权威源是本地 `user_profile`（DB 分页 + 权威总数），用于暴露 Keycloak 侧已不存在的**孤儿绑定**（行上 `keycloakUserMissing=true`），删除它可释放 `(wotb_server, wotb_account_id)` 唯一槽位。传 `idpAlias` → 400 `IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT`；未知 segment → 400 `INVALID_USER_SEGMENT` |
+
+列表行 DTO（`AdminUserListItemDto`，旧的 `AdminUserDto` 已删除）：`keycloakUserId, keycloakUsername, keycloakEmail, keycloakEnabled, profileId, displayName, wotbAccountId, wotbNickname, wotbServer, profileCreatedAt, hasLocalProfile, keycloakUserMissing`。两个 segment 都不做「拉一页再在内存里筛」的伪造分页。`segment=local` 的代价是每页产生 N（≤ size）次 Keycloak Admin 调用——**Keycloak 没有按 ids 批量查询用户的能力**，这是客户端/服务端的能力事实，见 [`docs/auth/keycloak-admin-user-search.md`](auth/keycloak-admin-user-search.md)（该文档同时记录 admin-client 26.0.9 的重载缺口与「IdP 过滤在 CI 端到端验证前不得宣称生产可用」的局限）。
+
+**批量删除契约（三个域共用形状，partial success）**：
+
+| 端点 | 请求体 | 响应 |
+|---|---|---|
+| `POST /api/admin/users/bulk-delete` | `{userIds, confirm}` | `{requested, deleted, failed, results:[{userId, deleted, errorCode}]}` |
+| `POST /api/admin/hof/records/bulk-delete` | `{ids}`（单场无 reason） | `{requested, deleted, failed, results:[{id, deleted, errorCode}]}` |
+| `POST /api/admin/hof/hundred/submissions/bulk-delete` | `{ids, reason, reasonText}` | 同上 |
+| `POST /api/admin/hof/mark3/submissions/bulk-delete` | `{ids, reason, reasonText}` | 同上 |
+
+共同语义：每个目标跑在**独立事务**中（`TransactionTemplate`，禁止 `this.method()` 自调用绕过 Spring 代理），因此允许 partial success；单批去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`。用户批量删除的 `confirm` 缺失/false → 整批 400 `CONFIRMATION_REQUIRED`，且逐用户复用 `deleteOneInternal` 的全部业务保护（self-delete 保护、打手依赖阻断、先删本地 profile 再删 Keycloak、审计日志）。HoF 批量删除**逐条复用权威单条删除语义**：单场仍是 hard delete（audit 快照 + 真删行 + commit 后引用计数清理物理文件），百场/三环仍是 soft delete（仅 CURRENT 可删，`CURRENT` → `DELETED`）；非 CURRENT 逐条失败于 `HUNDRED_NOT_CURRENT` / `MARK3_NOT_CURRENT` 而不阻塞其他记录。百场/三环的 reason 是批次级参数，先整体校验一次（参数错误整批 400，不表现为逐条失败）。
+
+新增错误码（`util/ErrorCode.java`）：`BULK_LIMIT_EXCEEDED`、`INVALID_USER_SEGMENT`、`IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT`。
+
+**契约覆盖范围（既有状况）**：`contracts/http/openapi.yaml` 覆盖百场 admin 家族（`gameAccountIdSnapshot` 字段已改名为 `wotbAccountId`，并新增 `POST /api/admin/hof/hundred/submissions/bulk-delete` 与 `BulkDeleteModerationRequest` / `BulkDeleteItemResult` / `BulkDeleteResult` schema）；**mark3 / 单场 / admin-users 三个家族本来就不在 openapi.yaml 覆盖范围内**，补全它们超出本次改动范围。生成产物 `frontend/src/api/generated/*` 由 `npm run api:generate` 重建，禁止手改。
+
+**Admin HoF 治理边界**：admin 是 governance，不是数据编辑器——`/api/admin/hof/**` 只做查看 / 搜索 / 筛选 / 下载 / 删除 / 审计，禁止人工修改 replay-derived authoritative facts。
 
 ---
 

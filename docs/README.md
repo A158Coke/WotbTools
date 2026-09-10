@@ -96,6 +96,7 @@
 | `auth/wargaming-asia-deployment.md` | 上线 / 排障 WG 登录时 |
 | `auth/keycloak-mapper-guide.md` | JWT 缺 claim / 改 claims 时 |
 | `auth/keycloak-qq-only.md` | QQ 登录部署参考时 |
+| `auth/keycloak-admin-user-search.md` | 改 Keycloak Admin 用户检索 / Admin Users 分页与 IdP 过滤时 |
 
 ## Test（测试）
 
