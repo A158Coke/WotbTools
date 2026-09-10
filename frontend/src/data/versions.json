@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.78",
+    "date": "2026-09-10",
+    "tag": "chg",
+    "zh": "名人堂成绩改为按 WotB 游戏账号归属：更换登录方式（例如旧 QQ 用户被删除后改用新的 QQ 身份）后，只要重新绑定同一个 WotB 账号，单场、百场与三环成绩会自动回到你的个人中心；管理员现在也可以批量删除用户与名人堂记录。",
+    "en": "Hall of Fame results are now tied to your WotB game account: after changing how you sign in, rebinding the same WotB account brings your single-battle, Hundred and Mark 3 results back to your profile automatically. Admins can now also delete users and Hall of Fame records in batches.",
+    "ru": "Результаты Зала славы теперь привязаны к игровому аккаунту WotB: после смены способа входа достаточно снова привязать тот же аккаунт WotB, и результаты одиночных боёв, «Ста боёв» и «Трёх отметок» автоматически вернутся в профиль. Администраторы также могут пакетно удалять пользователей и записи Зала славы."
+  },
+  {
     "v": "2.12.77",
     "date": "2026-09-08",
     "tag": "fix",
