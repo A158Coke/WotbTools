@@ -84,7 +84,7 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: translate, te: () => true, tm:
 
 const pendingItem = {
   id: 11, status: 'PENDING', vehicleId: 6481, vehicleName: 'FV4005',
-  wotbAccountId: 'game-123', nicknameSnapshot: 'SnapUser',
+  wotbServer: 'CN', wotbAccountId: 'game-123', nicknameSnapshot: 'SnapUser',
   claimedAverageDamage: 4200, claimedBattleCount: 100,
   approvedAverageDamage: null, approvedBattleCount: null,
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
@@ -93,7 +93,7 @@ const pendingItem = {
 
 const currentItem = {
   id: 12, status: 'CURRENT', vehicleId: 6491, vehicleName: 'E 100',
-  wotbAccountId: 'game-456', nicknameSnapshot: 'CurUser',
+  wotbServer: 'CN', wotbAccountId: 'game-456', nicknameSnapshot: 'CurUser',
   claimedAverageDamage: 3800, claimedBattleCount: 120,
   approvedAverageDamage: 3800, approvedBattleCount: 120,
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
@@ -102,7 +102,7 @@ const currentItem = {
 
 const rejectedItem = {
   id: 13, status: 'REJECTED', vehicleId: 113, vehicleName: 'Vindicator UM',
-  wotbAccountId: 'game-789', nicknameSnapshot: 'RejectedUser',
+  wotbServer: 'CN', wotbAccountId: 'game-789', nicknameSnapshot: 'RejectedUser',
   claimedAverageDamage: 3600, claimedBattleCount: 100,
   approvedAverageDamage: null, approvedBattleCount: null,
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
@@ -142,7 +142,7 @@ const rejectedDetail = {
 
 const mark3PendingItem = {
   id: 31, status: 'PENDING', vehicleId: 385, vehicleName: 'Progetto 65',
-  wotbAccountId: 'game-333', nicknameSnapshot: 'ThreeMarkPlayer',
+  wotbServer: 'EU', wotbAccountId: 'game-333', nicknameSnapshot: 'ThreeMarkPlayer',
   claimedBattleCount: 76, claimedAverageDamage: 4210, claimedWinRate: 67.25,
   approvedBattleCount: null, approvedAverageDamage: null, approvedWinRate: null,
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
@@ -879,7 +879,7 @@ describe('HoFAdminPage', () => {
     expect(hofAdminApi.hofAdminMark3List).toHaveBeenCalledTimes(2)
   })
 
-  it('renders the renamed wotbAccountId ownership field in the Hundred and Mark 3 tables', async () => {
+  it('renders the WotB server together with the account id in the Hundred and Mark 3 tables and details', async () => {
     hofAdminApi.hofAdminHundredList.mockResolvedValue({
       items: [currentItem], page: 1, size: 50, totalItems: 1, totalPages: 1
     })
@@ -892,17 +892,17 @@ describe('HoFAdminPage', () => {
     await flushPromises()
 
     await switchToHundred(wrapper)
-    expect(wrapper.find('.hof-hundred .hof-admin-table').text()).toContain('game-456')
+    expect(wrapper.find('.hof-hundred .hof-admin-table').text()).toContain('CN·game-456')
     await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.hof-review-modal').text()).toContain('game-456')
+    expect(wrapper.find('.hof-review-modal').text()).toContain('CN·game-456')
     wrapper.find('.hof-review-modal').findAll('button').find(button => button.text() === 'hundredAdmin.close').trigger('click')
     await flushPromises()
 
     await switchToMark3(wrapper)
-    expect(wrapper.find('.hof-mark3 .hof-admin-table').text()).toContain('game-333')
+    expect(wrapper.find('.hof-mark3 .hof-admin-table').text()).toContain('EU·game-333')
     await wrapper.find('.hof-mark3 .actions .btn-sm').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.hof-review-modal').text()).toContain('game-333')
+    expect(wrapper.find('.hof-review-modal').text()).toContain('EU·game-333')
   })
 })

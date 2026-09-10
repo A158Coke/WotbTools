@@ -1236,7 +1236,7 @@ function battleTypeLabel(tp) {
                 <td class="muted">{{ r.id }}</td>
                 <td>{{ r.vehicleName }}</td>
                 <td>{{ r.nicknameSnapshot }}</td>
-                <td class="muted">{{ r.wotbAccountId }}</td>
+                <td class="muted">{{ r.wotbServer }}·{{ r.wotbAccountId }}</td>
                 <td class="dmg">{{ r.approvedAverageDamage ?? '-' }}</td>
                 <td>{{ r.approvedBattleCount ?? '-' }}</td>
                 <td><span class="hundred-status" :class="'hundred-status-' + String(r.status).toLowerCase()">{{ hundredStatusLabel(r.status) }}</span></td>
@@ -1332,7 +1332,7 @@ function battleTypeLabel(tp) {
                 <td class="muted">{{ row.id }}</td>
                 <td>{{ row.vehicleName }}</td>
                 <td>{{ row.nicknameSnapshot }}</td>
-                <td class="muted">{{ row.wotbAccountId }}</td>
+                <td class="muted">{{ row.wotbServer }}·{{ row.wotbAccountId }}</td>
                 <td class="dmg">{{ formatNumber(row.claimedBattleCount) }}</td>
                 <td>{{ formatNumber(row.claimedAverageDamage) }}</td>
                 <td>{{ formatMark3WinRate(row.claimedWinRate) }}</td>
@@ -1366,7 +1366,7 @@ function battleTypeLabel(tp) {
             <table class="hof-delete-table">
               <tbody>
                 <tr><th>{{ $t('hundredAdmin.user') }}</th><td>{{ reviewDetail.nicknameSnapshot }}</td></tr>
-                <tr><th>{{ $t('hundredAdmin.gameId') }}</th><td class="muted">{{ reviewDetail.wotbAccountId }}</td></tr>
+                <tr><th>{{ $t('hundredAdmin.gameId') }}</th><td class="muted">{{ reviewDetail.wotbServer }}·{{ reviewDetail.wotbAccountId }}</td></tr>
                 <tr><th>{{ $t('hundredAdmin.vehicle') }}</th><td>{{ reviewDetail.vehicleName }}</td></tr>
                 <tr><th>{{ $t('hundredAdmin.claimedDamage') }}</th><td class="dmg">{{ reviewDetail.claimedAverageDamage }}</td></tr>
                 <tr><th>{{ $t('hundredAdmin.claimedBattles') }}</th><td>{{ reviewDetail.claimedBattleCount }}</td></tr>
@@ -1514,7 +1514,7 @@ function battleTypeLabel(tp) {
             <table class="hof-delete-table">
               <tbody>
                 <tr><th>{{ $t('mark3Admin.user') }}</th><td>{{ mark3ReviewDetail.nicknameSnapshot }}</td></tr>
-                <tr><th>{{ $t('mark3Admin.gameId') }}</th><td class="muted">{{ mark3ReviewDetail.wotbAccountId }}</td></tr>
+                <tr><th>{{ $t('mark3Admin.gameId') }}</th><td class="muted">{{ mark3ReviewDetail.wotbServer }}·{{ mark3ReviewDetail.wotbAccountId }}</td></tr>
                 <tr><th>{{ $t('mark3Admin.vehicle') }}</th><td>{{ mark3ReviewDetail.vehicleName }}</td></tr>
                 <tr><th>{{ $t('mark3Admin.claimedBattles') }}</th><td class="dmg">{{ formatNumber(mark3ReviewDetail.claimedBattleCount) }}</td></tr>
                 <tr><th>{{ $t('mark3Admin.claimedDamage') }}</th><td>{{ formatNumber(mark3ReviewDetail.claimedAverageDamage) }}</td></tr>
