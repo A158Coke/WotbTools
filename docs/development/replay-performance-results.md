@@ -11,11 +11,11 @@ accessed.
 - Historical PositionDecoder quick/JFR artifacts were generated from the dirty
   pre-review candidate tree; they are not measurements of the final Java25
   candidate tree.
-- Final candidate source tree: PR #284 worktree based on `678d83e5` plus the
-  Java25, Spring Boot 4.1.1, bounded AI virtual-worker and benchmark changes in
-  this round. The c1 artifact was generated before commit from that source
-  content and records `dirty=true`; the clean source commit and later
-  documentation-only evidence commit are recorded in the final PR history.
+- Final candidate source tree: commit `68c8a581` (PR #284 worktree based on
+  `678d83e5` plus the Java25, Spring Boot 4.1.1, bounded AI virtual-worker and
+  benchmark changes in this round). The c1 artifact was generated before that
+  commit from the same source content and records `dirty=true`; the final HEAD
+  adds only this evidence-record correction.
 - Java: Eclipse Temurin OpenJDK 25.0.4.1 (LTS).
 - Spring Boot: 4.1.1.
 - Benchmark JVM: `-XX:ActiveProcessorCount=2 -Xms4g -Xmx4g`.
