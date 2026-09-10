@@ -9,7 +9,8 @@ import ReplayWorkspace from './ReplayWorkspace.vue'
 // useReplay mock 返回的可变 state 占位：每次 beforeEach 用 buildState() 以真实 Vue ref 重建。
 const hold = vi.hoisted(() => ({ state: null }))
 const authState = vi.hoisted(() => ({
-  authenticated: true,
+  authenticated: null,
+  loginInFlight: null,
   login: vi.fn(),
   initPromise: Promise.resolve(true),
 }))
@@ -18,13 +19,19 @@ vi.mock('../composables/useReplay.js', () => ({
   useReplay: () => hold.state,
   chooseInitialResultTab: () => 'aggregate',
 }))
-vi.mock('../composables/useAuth.js', () => ({
-  useAuth: () => ({
-    initPromise: authState.initPromise,
-    isAuthenticated: () => authState.authenticated,
-    login: (...args) => authState.login(...args),
-  }),
-}))
+vi.mock('../composables/useAuth.js', async () => {
+  const { ref } = await import('vue')
+  authState.authenticated = ref(true)
+  authState.loginInFlight = ref(false)
+  return {
+    useAuth: () => ({
+      initPromise: authState.initPromise,
+      authenticated: authState.authenticated,
+      loginInFlight: authState.loginInFlight,
+      login: (...args) => authState.login(...args),
+    }),
+  }
+})
 vi.mock('./ReplayPage.vue', () => ({
   default: {
     name: 'ReplayPageMock',
@@ -76,7 +83,7 @@ function buildState() {
     updateFiles: vi.fn((next) => {
       session.replaceSelection(next)
     }),
-    startProcessingJob: vi.fn(),
+    startProcessingJob: vi.fn(() => Promise.resolve({ accepted: true, jobId: 'job-1' })),
     cancelProcessing: vi.fn(),
     dismissProcessingJob: vi.fn(),
     requestDirectAction: vi.fn(() => Promise.resolve({ processingJobId: 'job-1', sourceId: 'r0' })),
@@ -91,8 +98,9 @@ function buildState() {
 
 let replayState = null
 
-function mountWorkspace(capability = 'data', { authenticated = true, login = vi.fn(), authInit } = {}) {
-  authState.authenticated = authenticated
+function mountWorkspace(capability = 'data', { authenticated = true, login = vi.fn(() => Promise.resolve()), authInit } = {}) {
+  authState.authenticated.value = authenticated
+  authState.loginInFlight.value = false
   authState.login = login
   authState.initPromise = authInit || Promise.resolve(authenticated)
   return mount(ReplayWorkspace, {
@@ -108,14 +116,16 @@ describe('ReplayWorkspace', () => {
   beforeEach(() => {
     replayState = buildState()
     hold.state = replayState
-    authState.authenticated = true
-    authState.login = vi.fn()
+    authState.authenticated.value = true
+    authState.loginInFlight.value = false
+    authState.login = vi.fn(() => Promise.resolve())
     authState.initPromise = Promise.resolve(true)
     vi.clearAllMocks()
   })
 
-  it('始终渲染三个 capability tabs（不因 capability 不可用而消失）', () => {
+  it('始终渲染三个 capability tabs（不因 capability 不可用而消失）', async () => {
     const wrapper = mountWorkspace('data')
+    await flushPromises()
     const tabs = wrapper.findAll('[data-testid="ws-tab"]')
     expect(tabs).toHaveLength(3)
     expect(tabs.map(t => t.attributes('data-cap'))).toEqual(['data', 'ai', 'playback'])
@@ -124,8 +134,9 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.find('[data-test="playback-pane"]').exists()).toBe(true)
   })
 
-  it('Data page 通过显式 props 消费 Workspace 唯一 replay/session owner', () => {
+  it('Data page 通过显式 props 消费 Workspace 唯一 replay/session owner', async () => {
     const wrapper = mountWorkspace('data')
+    await flushPromises()
     const dataVm = wrapper.findComponent({ name: 'ReplayPageMock' })
     expect(dataVm.props('embedded')).toBe(true)
     expect(dataVm.props('replayContext')).toBe(replayState)
@@ -154,26 +165,12 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.find('[data-test="playback-pane"]').text()).not.toContain('AI_TIMELINE_UNUSABLE')
   })
 
-  it('传入 initialCapability=playback 时初始聚焦 Playback', () => {
+  it('传入 initialCapability=playback 时初始聚焦 Playback', async () => {
     const wrapper = mountWorkspace('playback')
+    await flushPromises()
     const playback = wrapper.find('[data-test="playback-pane"]')
     expect(playback.exists()).toBe(true)
     expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
-  })
-
-  it('未登录进入任意 replay capability（data/ai/playback）都自动跳 Keycloak 并回原 capability', async () => {
-    const cases = [
-      { cap: 'data', view: 'replay' },
-      { cap: 'ai', view: 'ai-review' },
-      { cap: 'playback', view: 'battle-playback' },
-    ]
-    for (const c of cases) {
-      const login = vi.fn()
-      const wrapper = mountWorkspace(c.cap, { authenticated: false, login })
-      await flushPromises()
-      expect(login).toHaveBeenCalledWith(c.view)
-      wrapper.unmount()
-    }
   })
 
   it('AI 与 Playback 无业务耦合：AI seek 事件不影响 capability（不切到 Playback）', async () => {
@@ -200,10 +197,14 @@ describe('ReplayWorkspace', () => {
     resolveInit()
     await flushPromises()
     expect(login).not.toHaveBeenCalled()
+    // Case D：已认证 → 不发起登录重定向，直接渲染 replay workspace
+    expect(wrapper.find('[data-testid="ws-auth-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="ws-auth-required"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="uploader"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('auth init 完成后 authenticated=false 时仅调用一次 login', async () => {
+  it('auth init 完成后 authenticated=false 时只自动发起一次 login（同一 redirect 不重复）', async () => {
     let resolveInit
     const authInit = new Promise((r) => { resolveInit = r })
     const login = vi.fn()
@@ -217,6 +218,72 @@ describe('ReplayWorkspace', () => {
     wrapper.unmount()
   })
 
+  it('Case E：auth init 未完成时 replay 业务 UI 不可用，也不能发起 processing', async () => {
+    let resolveInit
+    const authInit = new Promise((r) => { resolveInit = r })
+    const wrapper = mountWorkspace('data', { authenticated: false, login: vi.fn(), authInit })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="ws-auth-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="uploader"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="ws-data"]').exists()).toBe(false)
+    expect(replayState.startProcessingJob).not.toHaveBeenCalled()
+    resolveInit()
+    await flushPromises()
+    wrapper.unmount()
+  })
+
+  it('Case F：未登录时 FileUploader / processing / capability 面板都不可用', async () => {
+    const wrapper = mountWorkspace('data', { authenticated: false, login: vi.fn() })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="ws-auth-required"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="uploader"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="processing"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="ws-data"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="ws-ai"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="ws-playback"]').exists()).toBe(false)
+    expect(replayState.startProcessingJob).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('Case A：未登录进入 workspace → 请求登录并回到当前 capability view', async () => {
+    const cases = [
+      { cap: 'data', view: 'replay' },
+      { cap: 'ai', view: 'ai-review' },
+      { cap: 'playback', view: 'battle-playback' },
+    ]
+    for (const c of cases) {
+      const login = vi.fn()
+      const wrapper = mountWorkspace(c.cap, { authenticated: false, login })
+      await flushPromises()
+      expect(login).toHaveBeenCalledWith(c.view)
+      wrapper.unmount()
+    }
+  })
+
+  it('Case B/C：login 失败或取消后，点击 AI / Playback 仍能重新发起 login（不 silent no-op）', async () => {
+    const login = vi.fn(() => Promise.reject(new Error('AUTH_NAVIGATION_FAILED')))
+    const wrapper = mountWorkspace('data', { authenticated: false, login })
+    await flushPromises()
+    expect(login).toHaveBeenCalledTimes(1)
+    expect(login).toHaveBeenCalledWith('replay')
+
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
+    await flushPromises()
+    expect(login).toHaveBeenCalledTimes(2)
+    expect(login).toHaveBeenLastCalledWith('ai-review')
+
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
+    await flushPromises()
+    expect(login).toHaveBeenCalledTimes(3)
+    expect(login).toHaveBeenLastCalledWith('battle-playback')
+
+    // 登录按钮同样可以重试
+    await wrapper.find('[data-testid="ws-login"]').trigger('click')
+    await flushPromises()
+    expect(login).toHaveBeenCalledTimes(4)
+    wrapper.unmount()
+  })
+
   it('Android pending File 导入后自动 startProcessingJob exactly once（不重复建 Job）', async () => {
     nativeImportState.onPendingFile = null
     mountWorkspace('data', { authenticated: true })
@@ -225,10 +292,18 @@ describe('ReplayWorkspace', () => {
     expect(onPendingFile).toBeTypeOf('function')
     const file = new File(['x'], 'a.wotbreplay')
     expect(replayState.startProcessingJob).not.toHaveBeenCalled()
-    await onPendingFile(file)
+    await expect(onPendingFile(file)).resolves.toBe(true)
     await flushPromises()
     expect(replayState.updateFiles).toHaveBeenCalledWith([file])
     expect(replayState.startProcessingJob).toHaveBeenCalledTimes(1)
+  })
+
+  it('Android pending replay 未被 server 受理时不 ACK（回调返回 false）', async () => {
+    replayState.startProcessingJob.mockResolvedValueOnce({ accepted: false, reason: 'REQUEST_FAILED' })
+    mountWorkspace('data', { authenticated: true })
+    await flushPromises()
+    const file = new File(['x'], 'a.wotbreplay')
+    await expect(nativeImportState.onPendingFile(file)).resolves.toBe(false)
   })
 
   it('回归：选 #8（header selector）→ 切 AI / Playback 均消费 #8（选中单场持久，不随视图切换丢失）', async () => {

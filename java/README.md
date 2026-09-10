@@ -124,7 +124,7 @@ multipart `POST /api/replay/map-overview`、`POST /api/replay/process`、
 
 容量：内存态 job store（单实例部署）+ 有界 worker 池（`REPLAY_EXPORT_JOB_MAX_CONCURRENT=2` / `REPLAY_EXPORT_JOB_QUEUE_CAPACITY=4`，满载 503 `EXPORT_QUEUE_FULL`）；Export 只消费已解析 result，**不执行 replay 解析，故不获取全局 `ReplayCapacityLimiter` 许可**。终态 job 与临时目录由 TTL（`REPLAY_EXPORT_JOB_TTL_MINUTES=30`）清理，启动清理孤儿目录。旧同步 `POST /api/export` 已随 V2 废弃（410）；当前只保留 `/api/replay/export-jobs`。
 
-### Replay Processing Job（匿名公开，解析预览异步化）
+### Replay Processing Job（需登录：wotbtools-user / wotbtools-admin，解析预览异步化）
 
 「上传多个回放 → 解析预览」从长同步 HTTP 改为异步 Processing Job：HTTP request 立即返回 202 + jobId，source 任务提交给**全局 `ReplayParseScheduler`**（默认并发 2，job-aware 公平轮转 + queued cancellation + 有界 pending），每个 replay 恰好 `processFull` 一次，产出**共享的 ProcessedDataset** 供 Preview / Export / AI / 战局回放复用（同一批 34 个回放不再 Preview ×34 / AI ×34 / Playback ×34，总 `processFull` 调用数 = 文件数）。**READY 后消费者只读**：facts 层 enrich（populateBattle）只在 dataset 创建时执行一次，Preview result / from-result Export 不再二次 mutate 共享 Battle（并发 Preview / aggregate / each Export 同一 dataset 无 shared mutable write）；`validCount() > 0` 即允许 from-result 导出（failures 只用于进度/统计，不与有效场数相减）。
 
@@ -132,6 +132,7 @@ multipart `POST /api/replay/map-overview`、`POST /api/replay/process`、
 - `GET /api/replay/processing-jobs/{jobId}` — 轮询真实进度：`{jobId, status, phase, total, processed, valid, duplicates, failures, errorCode, currentFile, parseCompleted, parseSucceeded, parseFailed, sources[], activeSources[]}`。`status` ∈ QUEUED / PROCESSING / READY / FAILED / CANCELLED（终态 exactly once）；`phase` ∈ WAITING_FOR_WORKER / PROCESSING_REPLAYS / FINALIZING_BATCH（parse 进度 = `parseCompleted/total`，与 dedupe/finalize 解耦；`valid/duplicates/failures` 只在 FINALIZING 后确定）；`sources[]` 为轻量 per-source 状态（`sourceId`（`r{index}`）/`sourceIndex`/`displayName`/`status`/`errorCode`），`activeSources[]` 为当前并行处理中的 source（≤2）。0 场有效 → FAILED `NO_VALID_REPLAYS`。
 - `DELETE /api/replay/processing-jobs/{jobId}` — 取消（QUEUED 立即终态并释放 scheduler pending 容量；PROCESSING 置协作取消标志，已派发 source 完成安全 unit 后终态；FINALIZING 阶段间 checkpoint）。
 - `GET /api/replay/processing-jobs/{jobId}/result` — READY 后返回 Preview 数据（battles / aggregate / duplicates / failures / playerColumns / aggregateColumns；**不再重新 process replay**）；未 READY → 409 `JOB_NOT_READY`。
+- **权限**：以上四条端点（创建 / 状态 / result / 取消）统一要求 `wotbtools-user` 或 `wotbtools-admin`——匿名 → 401 `AUTH_UNAUTHENTICATED`，已登录但无角色 → 403 `AUTH_FORBIDDEN`。前端 Replay Workspace 的登录门禁只是 UX，后端才是 authorization authority；`/api/preview` 与 `/api/export` 是独立 legacy 公共端点，其匿名契约不受影响。
 
 容量与生命周期：Replay Full Processing 的唯一 CPU 预算为 `ReplayParseScheduler`
 （`REPLAY_PARSE_MAX_CONCURRENT`，默认 2；`REPLAY_PARSE_QUEUE_CAPACITY` 默认 200，

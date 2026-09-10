@@ -6,6 +6,7 @@ import type {
   UploadProgressEvent,
 } from '../types/jobs.js'
 import type { ReplayResult } from '../types/replay.js'
+import type { ReplayAuthSession } from './replay-capabilities.js'
 import {
   isExportJob,
   isExportJobCreateResponse,
@@ -21,6 +22,18 @@ import {
 } from '../utils/http.js'
 
 export type ExportMode = 'aggregate' | 'each' | (string & {})
+
+/**
+ * Processing Job 的认证边界（与 `replay-capabilities.ts` 同一 contract）：
+ * 先确保 token 有效再返回 Bearer header；未登录抛 canonical AUTH_UNAUTHENTICATED，
+ * 由统一 error infrastructure 处理，不新增特殊 auth code。
+ */
+async function authHeaders(auth: ReplayAuthSession): Promise<Record<string, string>> {
+  const valid = await auth.ensureToken(30)
+  if (!valid) throw new ApiError({ code: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false })
+  const accessToken = auth.token()
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+}
 
 function invalidResponse(message: string, status: number | null = null): ApiError {
   return new ApiError({ errorCode: 'INVALID_RESPONSE', status, retryable: false, errorMsg: message })
@@ -50,16 +63,23 @@ async function downloadResponse(response: Response, fallbackName: string): Promi
   URL.revokeObjectURL(url)
 }
 
-/** Create an asynchronous processing job from replay files. */
-export function createProcessingJob(
+/** Create an asynchronous processing job from replay files. Requires an authenticated session. */
+export async function createProcessingJob(
+  auth: ReplayAuthSession,
   body: FormData,
   options: { onProgress?: (progress: UploadProgressEvent) => void; signal?: AbortSignal } = {},
 ): Promise<ProcessingJobCreateResponse> {
+  const headers = await authHeaders(auth)
+  const signal = options.signal
+  // ensureToken 是异步的：等待期间可能已被取消，先给出 canonical abort，避免发出无谓请求。
+  if (signal?.aborted) throw new ApiError({ code: 'REQUEST_ABORTED', status: null, retryable: false })
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', '/api/replay/processing-jobs')
+    // 只设置 Authorization：multipart Content-Type 必须由浏览器负责（含 boundary）。
+    for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value)
     const abort = () => xhr.abort()
-    options.signal?.addEventListener('abort', abort, { once: true })
+    signal?.addEventListener('abort', abort, { once: true })
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && options.onProgress) {
         options.onProgress({
@@ -70,7 +90,7 @@ export function createProcessingJob(
       }
     }
     xhr.onload = () => {
-      options.signal?.removeEventListener('abort', abort)
+      signal?.removeEventListener('abort', abort)
       if (xhr.status >= 200 && xhr.status < 300) {
         let bodyValue: unknown
         try {
@@ -89,28 +109,34 @@ export function createProcessingJob(
       reject(apiErrorFromXhr(xhr))
     }
     xhr.onerror = () => {
-      options.signal?.removeEventListener('abort', abort)
+      signal?.removeEventListener('abort', abort)
       reject(new ApiError({ code: 'NETWORK_ERROR', status: null, retryable: true }))
     }
     xhr.onabort = () => {
-      options.signal?.removeEventListener('abort', abort)
+      signal?.removeEventListener('abort', abort)
       reject(new ApiError({ code: 'REQUEST_ABORTED', status: null, retryable: false }))
     }
     xhr.send(body)
   })
 }
 
-export async function getProcessingJob(jobId: string): Promise<ProcessingJob> {
-  const response = await requireOk(await apiFetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}`))
+export async function getProcessingJob(auth: ReplayAuthSession, jobId: string): Promise<ProcessingJob> {
+  const headers = await authHeaders(auth)
+  const response = await requireOk(await apiFetch(
+    `/api/replay/processing-jobs/${encodeURIComponent(jobId)}`, { headers }))
   return readJson(response, isProcessingJob, 'Processing job status')
 }
 
-export async function cancelProcessingJob(jobId: string): Promise<void> {
-  await requireOk(await apiFetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
+export async function cancelProcessingJob(auth: ReplayAuthSession, jobId: string): Promise<void> {
+  const headers = await authHeaders(auth)
+  await requireOk(await apiFetch(
+    `/api/replay/processing-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE', headers }))
 }
 
-export async function getProcessingJobResult(jobId: string): Promise<ReplayResult> {
-  const response = await requireOk(await apiFetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}/result`))
+export async function getProcessingJobResult(auth: ReplayAuthSession, jobId: string): Promise<ReplayResult> {
+  const headers = await authHeaders(auth)
+  const response = await requireOk(await apiFetch(
+    `/api/replay/processing-jobs/${encodeURIComponent(jobId)}/result`, { headers }))
   return readJson(response, isReplayResult, 'Processing job result')
 }
 

@@ -12,6 +12,12 @@
   `ReplayParseScheduler` 的默认并发 2、公平排队与取消语义。未引入 MQ、独立 worker、对象存储
   或跨进程回调，HTTP 路由、认证、错误 envelope 和指标契约不变。
 
+### Replay / Auth
+- **Replay Workspace retryable auth gate**：删除 `ReplayWorkspace` 的 component-lifetime `loginAttempted` 一次性锁，Workspace 改为三态 UI gate（auth 检查中 / Login Required + 可重试登录 / 工作台）：未登录不再渲染 Source panel、上传器与任何 capability 面板，`useAuth.login()` 只对「同一个进行中的 redirect」去重（`loginInFlight` 短生命周期 ref，`finally` 释放），登录失败或取消后可从 capability tabs、登录按钮或 UserMenu 重新发起，不再出现点击 tab 静默 no-op。
+- **Processing Job 授权收紧（前后端同一 PR）**：`/api/replay/processing-jobs/**`（POST 创建 / GET 状态 / GET result / DELETE 取消）由 `permitAll()` 改为要求 `wotbtools-user` 或 `wotbtools-admin`（匿名 401 `AUTH_UNAUTHENTICATED`、已登录无角色 403 `AUTH_FORBIDDEN`）；前端 `src/api/replay.ts` 四条端点统一 `ensureToken(30)` + `Authorization: Bearer`（XHR 上传进度保留，不覆盖 multipart `Content-Type`/boundary），401/403 继续走统一 error contract。`/api/preview`、`/api/export` 与 `/api/replay/export-jobs/**` 的公开契约不变。
+- **Android 外部 replay auth 状态机修复**：pending replay 增加 `pendingId`/`createdAt` 与 app private storage metadata（24h TTL），启动时先恢复 active pending、再只清理不再被它引用的 orphan cache，QQ 登录期间 process death 后 replay 不再丢失；日志补齐 `replay-pending stored/restored/deferred/dispatched/acknowledged`（不记录路径、内容、code、state、token）。新增纯策略 `ReplayDispatchPolicy`（JVM 单测）：auth flow 期间 replay intent 只入队，绝不 `loadUrl`/`evaluateJavascript` 抢占认证导航；删除 `onShowFileChooser` 的 pending replay 注入分支，external replay 只剩 Native Bridge 单一 ingress。
+- **Android pending replay exactly-once ACK**：`useNativeReplayImport` 改为 `await onPendingFile(file)`，只有 `startProcessingJob()` 返回 `{accepted:true, jobId}`（server 已接受 processing request，不等待 READY）才调用 Native `consumePendingReplay()`；未登录、未受理或抛错一律不 ACK，pending 保留可重试，登录前不发出任何 processing 请求。
+
 ### CI/CD
 - **Build / Deploy workflow split**：将生产镜像构建拆到独立的 `build.yml`，Build 与 Deploy 均可通过 `workflow_dispatch` 独立选择目标；Build 的 `changes` job 只解析一次 `main` 的 full SHA，backend/frontend/keycloak 使用同一个冻结 commit 构建 production SHA/`latest`，不能由 feature ref 或移动的 main 绕过 PR merge gate。Deploy 支持任意 production Compose service，应用/all 要求独立 Build 产出的 immutable tag，运行时 observability service 可直接 dispatch。纯 Grafana dashboard JSON 只进入 OpenTofu API reconciliation，不触发应用 Build；targeted deploy 不提升 LKG，失败时只恢复目标 service 的 pre-deploy snapshot，完整 `all` 发布继续执行应用健康 gate、LKG promotion 与 fail-closed rollback。Grafana upstream 改为 Docker embedded DNS 运行时解析，Grafana 暂时不可用不再阻止 frontend nginx 启动。
  
