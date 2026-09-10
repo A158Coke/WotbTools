@@ -38,15 +38,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 百场 APPROVE 的 CURRENT replacement 真实 PostgreSQL 集成测试。
- * 必须经过 V18/V22 partial unique index（wotb_account_id, vehicle_id) where status='CURRENT'：
+ * 必须经过 V22 partial unique index（wotb_server, wotb_account_id, vehicle_id) where status='CURRENT'：
  * 旧 CURRENT 先显式 flush 为 SUPERSEDED，再提升 PENDING 为 CURRENT；单事务内后半段失败整体回滚。
  */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class HundredBattleSubmissionIntegrationTest {
 
-    /** HoF ownership 的 canonical owner：两人同车不冲突，同账号同车才唯一。 */
+    /** HoF ownership 的 canonical owner：两人同车不冲突，同 (区服, 账号) 同车才唯一。 */
     private static final long WOTB_ACCOUNT_ID = 111L;
+    private static final String WOTB_SERVER = "CN";
+    /** 同一账号 ID 在另一区服 = 另一个账号。 */
+    private static final String OTHER_SERVER = "EU";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18-alpine")
@@ -88,10 +91,19 @@ class HundredBattleSubmissionIntegrationTest {
         repository.flush();
     }
 
+    /** 插入一条归属 (WOTB_SERVER, WOTB_ACCOUNT_ID) 的记录。 */
     private HundredBattleSubmission insertRow(final String status, final int damage, final int battles) {
+        return insertRow(WOTB_SERVER, status, damage, battles);
+    }
+
+    private HundredBattleSubmission insertRow(final String server,
+                                              final String status,
+                                              final int damage,
+                                              final int battles) {
         final HundredBattleSubmission s = new HundredBattleSubmission();
         s.setVehicleId(385L); // Progetto 65 (Tier X)
         s.setVehicleName("Progetto 65");
+        s.setWotbServer(server);
         s.setWotbAccountId(WOTB_ACCOUNT_ID);
         s.setNicknameSnapshot("PlayerOne");
         s.setClaimedAverageDamage(damage);
@@ -108,8 +120,12 @@ class HundredBattleSubmissionIntegrationTest {
     }
 
     private long currentCount() {
-        return repository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
-                WOTB_ACCOUNT_ID, List.of("CURRENT")).size();
+        return currentCount(WOTB_SERVER);
+    }
+
+    private long currentCount(final String server) {
+        return repository.findByWotbServerAndWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
+                server, WOTB_ACCOUNT_ID, List.of("CURRENT")).size();
     }
 
     /** 场景 A：existing CURRENT(4000) + PENDING(4200) → approve 成功 → 恰好一个 CURRENT、旧行 SUPERSEDED。 */
@@ -127,10 +143,34 @@ class HundredBattleSubmissionIntegrationTest {
         final HundredBattleSubmission newRow = repository.findById(pending.getId()).orElseThrow();
         assertEquals("SUPERSEDED", oldRow.getStatus());
         assertEquals("CURRENT", newRow.getStatus());
-        assertEquals(1, currentCount(), "账号+vehicle 必须恰好一个 CURRENT（V18 partial unique index 语义）");
+        assertEquals(1, currentCount(), "(区服, 账号)+vehicle 必须恰好一个 CURRENT（V22 partial unique index 语义）");
         assertEquals(pending.getId(), repository
-                .findByWotbAccountIdAndVehicleIdAndStatus(WOTB_ACCOUNT_ID, 385L, "CURRENT")
+                .findByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
+                        WOTB_SERVER, WOTB_ACCOUNT_ID, 385L, "CURRENT")
                 .orElseThrow().getId());
+    }
+
+    /**
+     * 场景 A2：区服是 canonical owner 的一半。(CN, 111) 已有 CURRENT 时，
+     * (EU, 111) 同车必须能各自持有自己的 CURRENT——partial unique index 不得把跨服同号视为冲突，
+     * approve 也不得把另一区服的 CURRENT 顶成 SUPERSEDED。
+     */
+    @Test
+    void sameAccountOnAnotherServerKeepsItsOwnCurrentRow() throws Exception {
+        final HundredBattleSubmission cnCurrent = insertRow(WOTB_SERVER, "CURRENT", 4000, 150);
+        final HundredBattleSubmission euPending = insertRow(OTHER_SERVER, "PENDING", 4200, 150);
+        euPending.setProofScreenshot("data:image/png;base64,AAAA");
+        repository.saveAndFlush(euPending);
+        attachCompleteEvidence(euPending.getId());
+
+        service.approve("admin-sub", euPending.getId());
+
+        assertEquals("CURRENT", repository.findById(cnCurrent.getId()).orElseThrow().getStatus(),
+                "(CN, 111) 的 CURRENT 不得被 (EU, 111) 的 approve 影响");
+        assertEquals("CURRENT", repository.findById(euPending.getId()).orElseThrow().getStatus());
+        assertEquals(1, currentCount(WOTB_SERVER), "(CN, 111) 恰好一个 CURRENT");
+        assertEquals(1, currentCount(OTHER_SERVER), "(EU, 111) 恰好一个 CURRENT");
+        assertEquals(2, repository.count(), "跨服同号必须是两条互不覆盖的记录");
     }
 
     /**

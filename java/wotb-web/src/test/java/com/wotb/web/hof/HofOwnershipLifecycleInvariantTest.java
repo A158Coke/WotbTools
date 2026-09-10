@@ -38,10 +38,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   删除 Keycloak 用户  ≠  删除 HoF 业务记录
  * </pre>
  *
- * <p>完整链路：KC user A 绑定 WotB account 100 并留下单场 / 百场 / 三环记录 →
+ * <p>完整链路：KC user A 绑定 (区服, WotB 账号) 并留下单场 / 百场 / 三环记录 →
  * 删除 A 的 IAM 侧资料（{@code AdminUserService} 删除用户时的本地步骤）→
- * 三张 HoF 表数据必须原封不动 → 新 KC user B 重新绑定同一 WotB account 100 →
- * B 通过 account-based 查询重新看到原记录。</p>
+ * 三张 HoF 表数据必须原封不动 → 新 KC user B 重新绑定同一 (区服, 账号) →
+ * B 通过 canonical ownership 查询重新看到原记录。</p>
+ *
+ * <p>同时锁死 canonical owner 的区服维度：{@code (CN, 100)} 与 {@code (ASIA, 100)} 是两个不同账号，
+ * 跨服同号不得互相看见。注意：单场 {@code hall_of_fame_record} 目前仍只按 {@code account_id} 归属，
+ * 不具备区服维度——这是已知的遗留限制，见 docs/features/hall-of-fame.md。</p>
  */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
@@ -68,6 +72,7 @@ class HofOwnershipLifecycleInvariantTest {
     }
 
     private static final long WOTB_ACCOUNT_ID = 100L;
+    private static final String CN = "CN";
 
     @Autowired
     UserProfileRepository userProfileRepository;
@@ -104,11 +109,11 @@ class HofOwnershipLifecycleInvariantTest {
 
     @Test
     void deletingTheKeycloakUserKeepsHofRowsAndLetsANewUserRebindTheSameWotbAccount() {
-        // 1) KC user A 绑定 WotB account 100，并留下三类 HoF 记录
-        userProfileRepository.saveAndFlush(profile("kc-user-a", WOTB_ACCOUNT_ID));
+        // 1) KC user A 绑定 (CN, 100)，并留下三类 HoF 记录
+        userProfileRepository.saveAndFlush(profile("kc-user-a", CN, WOTB_ACCOUNT_ID));
         recordRepository.saveAndFlush(singleRecord());
-        hundredRepository.saveAndFlush(hundredSubmission());
-        mark3Repository.saveAndFlush(mark3Submission());
+        hundredRepository.saveAndFlush(hundredSubmission(CN, WOTB_ACCOUNT_ID));
+        mark3Repository.saveAndFlush(mark3Submission(CN, WOTB_ACCOUNT_ID));
 
         // 2) 删除 A 的 IAM 侧资料 —— AdminUserService.deleteOneInternal 的本地步骤，
         //    也是「删除 Keycloak 用户」唯一会触达 HoF 的路径
@@ -120,14 +125,16 @@ class HofOwnershipLifecycleInvariantTest {
         assertEquals(1, hundredRepository.count(), "删除 Keycloak 用户不得删除百场 submission");
         assertEquals(1, mark3Repository.count(), "删除 Keycloak 用户不得删除三环 submission");
 
-        // 4) 唯一槽位被释放：新 KC user B 可以绑定同一个 WotB account 100
-        userProfileRepository.saveAndFlush(profile("kc-user-b", WOTB_ACCOUNT_ID));
+        // 4) 唯一槽位被释放：新 KC user B 可以绑定同一个 (区服, WotB 账号)
+        userProfileRepository.saveAndFlush(profile("kc-user-b", CN, WOTB_ACCOUNT_ID));
         assertEquals(WOTB_ACCOUNT_ID,
                 userProfileRepository.findByKeycloakUserId("kc-user-b").orElseThrow().getWotbAccountId());
 
-        // 5) 唯一性依然被强制：第三个用户不能同时占用同一账号
+        // 5) 唯一性依然被强制：第三个用户不能同时占用同一 (区服, 账号)
         assertThrows(DataIntegrityViolationException.class,
-                () -> userProfileRepository.saveAndFlush(profile("kc-user-c", WOTB_ACCOUNT_ID)));
+                () -> userProfileRepository.saveAndFlush(profile("kc-user-c", CN, WOTB_ACCOUNT_ID)));
+        // 同一数字 ID 在别的区服是另一个账号，必须允许共存
+        userProfileRepository.saveAndFlush(profile("kc-user-asia", "ASIA", WOTB_ACCOUNT_ID));
 
         // 6) B 重新看到 account-based HoF 记录（ownership 与 Keycloak 身份无关）
         assertEquals(1, hallOfFameService.recordsByAccountId(WOTB_ACCOUNT_ID, 50).size(),
@@ -138,16 +145,37 @@ class HofOwnershipLifecycleInvariantTest {
                 "新用户绑定同一 WotB 账号后应重新看到三环 CURRENT");
 
         // 7) 未绑定任何账号的用户看不到任何 HoF 记录（不得按 Keycloak 身份兜底）
-        userProfileRepository.saveAndFlush(profile("kc-user-d", null));
+        userProfileRepository.saveAndFlush(profile("kc-user-d", CN, null));
         assertTrue(hundredService.userStatus("kc-user-d").current().isEmpty());
         assertTrue(mark3Service.userStatus("kc-user-d").current().isEmpty());
     }
 
-    private static UserProfile profile(final String keycloakUserId, final Long wotbAccountId) {
+    @Test
+    void crossRegionAccountsSharingTheSameNumericIdNeverSeeEachOther() {
+        // (CN, 100) 与 (ASIA, 100) 是两个不同账号：只按账号 ID 归属会造成跨服串号。
+        userProfileRepository.saveAndFlush(profile("kc-cn", CN, WOTB_ACCOUNT_ID));
+        userProfileRepository.saveAndFlush(profile("kc-asia", "ASIA", WOTB_ACCOUNT_ID));
+        hundredRepository.saveAndFlush(hundredSubmission(CN, WOTB_ACCOUNT_ID));
+        mark3Repository.saveAndFlush(mark3Submission("ASIA", WOTB_ACCOUNT_ID));
+
+        assertEquals(1, hundredService.userStatus("kc-cn").current().size());
+        assertTrue(hundredService.userStatus("kc-asia").current().isEmpty(),
+                "跨服同号不得看见 CN 账号的百场记录");
+        assertTrue(mark3Service.userStatus("kc-cn").current().isEmpty(),
+                "跨服同号不得看见 ASIA 账号的三环记录");
+        assertEquals(1, mark3Service.userStatus("kc-asia").current().size());
+
+        // 同区服同账号仍可并存两条不同状态的记录（新唯一索引按状态分离）
+        hundredRepository.saveAndFlush(hundredSubmissionWithStatus(CN, WOTB_ACCOUNT_ID, "PENDING", 2L));
+        assertEquals(1, hundredService.userStatus("kc-cn").current().size());
+        assertEquals(1, hundredService.userStatus("kc-cn").pending().size());
+    }
+
+    private static UserProfile profile(final String keycloakUserId, final String server, final Long wotbAccountId) {
         final UserProfile profile = new UserProfile();
         profile.setKeycloakUserId(keycloakUserId);
         profile.setUsername(keycloakUserId);
-        profile.setWotbServer("CN");
+        profile.setWotbServer(server);
         profile.setWotbAccountId(wotbAccountId);
         profile.setWotbNickname(wotbAccountId == null ? null : "Player" + wotbAccountId);
         profile.setUpdatedAt(OffsetDateTime.now());
@@ -167,27 +195,36 @@ class HofOwnershipLifecycleInvariantTest {
         return record;
     }
 
-    private static HundredBattleSubmission hundredSubmission() {
+    private static HundredBattleSubmission hundredSubmission(final String server, final long accountId) {
+        return hundredSubmissionWithStatus(server, accountId, "CURRENT", 1L);
+    }
+
+    private static HundredBattleSubmission hundredSubmissionWithStatus(final String server, final long accountId,
+                                                                      final String status, final long vehicleId) {
         final HundredBattleSubmission submission = new HundredBattleSubmission();
-        submission.setVehicleId(6481L);
+        submission.setVehicleId(vehicleId);
         submission.setVehicleName("FV4005");
-        submission.setWotbAccountId(WOTB_ACCOUNT_ID);
-        submission.setNicknameSnapshot("Player100");
+        submission.setWotbServer(server);
+        submission.setWotbAccountId(accountId);
+        submission.setNicknameSnapshot("Player" + accountId);
         submission.setClaimedAverageDamage(3000);
         submission.setClaimedBattleCount(120);
-        submission.setApprovedAverageDamage(3000);
-        submission.setApprovedBattleCount(120);
-        submission.setApprovedAt(OffsetDateTime.now());
-        submission.setStatus("CURRENT");
+        if ("CURRENT".equals(status)) {
+            submission.setApprovedAverageDamage(3000);
+            submission.setApprovedBattleCount(120);
+            submission.setApprovedAt(OffsetDateTime.now());
+        }
+        submission.setStatus(status);
         return submission;
     }
 
-    private static Mark3Submission mark3Submission() {
+    private static Mark3Submission mark3Submission(final String server, final long accountId) {
         final Mark3Submission submission = new Mark3Submission();
         submission.setVehicleId(6481L);
         submission.setVehicleName("FV4005");
-        submission.setWotbAccountId(WOTB_ACCOUNT_ID);
-        submission.setNicknameSnapshot("Player100");
+        submission.setWotbServer(server);
+        submission.setWotbAccountId(accountId);
+        submission.setNicknameSnapshot("Player" + accountId);
         submission.setClaimedBattleCount(60);
         submission.setClaimedAverageDamage(3000);
         submission.setClaimedWinRate(new BigDecimal("65.50"));

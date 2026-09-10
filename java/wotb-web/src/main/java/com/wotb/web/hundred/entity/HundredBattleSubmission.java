@@ -16,8 +16,8 @@ import java.time.OffsetDateTime;
  * 排行榜只读取 approved*。
  *
  * <p>列结构与 Flyway V18 + V20 + V22 逐列对齐（ddl-auto=validate，改任一列必须同步迁移）。
- * 成绩归属 WotB 游戏账号（canonical owner = {@code wotb_account_id}），与 Keycloak 身份解耦：
- * 账号 + vehicle 的 PENDING/CURRENT 唯一性由 partial unique index 在数据库层强制
+ * 成绩归属 WotB 游戏账号（canonical owner = {@code (wotb_server, wotb_account_id)}），与 Keycloak 身份解耦：
+ * (区服, 账号) + vehicle 的 PENDING/CURRENT 唯一性由 partial unique index 在数据库层强制
  * （本实体不声明 @UniqueConstraint，避免 Hibernate validate 与 partial index 冲突）。</p>
  */
 @Entity
@@ -35,6 +35,10 @@ public class HundredBattleSubmission {
     /** 车辆显示名快照（仅展示，不参与业务匹配）。 */
     @Column(name = "vehicle_name", nullable = false, length = 100)
     private String vehicleName;
+
+    /** canonical owner 的区服维度：创建瞬间冻结（CN / ASIA / EU / NA，与 user_profile 同域）。 */
+    @Column(name = "wotb_server", nullable = false, length = 16)
+    private String wotbServer;
 
     /** canonical owner：创建瞬间冻结的 WotB 游戏账号 ID（Profile 后续改绑不影响本记录归属）。 */
     @Column(name = "wotb_account_id", nullable = false)
@@ -124,6 +128,8 @@ public class HundredBattleSubmission {
     public void setVehicleId(final long vehicleId) { this.vehicleId = vehicleId; }
     public String getVehicleName() { return vehicleName; }
     public void setVehicleName(final String vehicleName) { this.vehicleName = vehicleName; }
+    public String getWotbServer() { return wotbServer; }
+    public void setWotbServer(final String wotbServer) { this.wotbServer = wotbServer; }
     public long getWotbAccountId() { return wotbAccountId; }
     public void setWotbAccountId(final long wotbAccountId) { this.wotbAccountId = wotbAccountId; }
     public String getNicknameSnapshot() { return nicknameSnapshot; }

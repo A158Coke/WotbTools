@@ -8,6 +8,7 @@ public record HundredAdminListItemDto(
     String status,
     long vehicleId,
     String vehicleName,
+    String wotbServer,
     long wotbAccountId,
     String nicknameSnapshot,
     Integer approvedAverageDamage,

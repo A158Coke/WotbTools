@@ -99,6 +99,8 @@ class HundredEvidenceConcurrencyIntegrationTest {
     private static final Path REPLAY_DIR = Path.of("data/replays-concurrency-it");
     private static final long VEHICLE = 385L; // Progetto 65 (Tier X)
     private static final long GAME_ID = 111L;
+    /** canonical owner 的区服维度：与 profile / submission 上的 wotb_server 同域。 */
+    private static final String WOTB_SERVER = "CN";
     private static final String USER = "kc-user";
 
     @Autowired
@@ -172,7 +174,7 @@ class HundredEvidenceConcurrencyIntegrationTest {
         p.setUsername("user-" + UUID.randomUUID());
         p.setWotbAccountId(GAME_ID);
         p.setWotbNickname("PlayerOne");
-        p.setWotbServer("CN");
+        p.setWotbServer(WOTB_SERVER);
         p.setWotbAccountSource("MANUAL");
         p.setUpdatedAt(OffsetDateTime.now());
         userProfileRepository.saveAndFlush(p);
@@ -198,6 +200,7 @@ class HundredEvidenceConcurrencyIntegrationTest {
         final HundredBattleSubmission s = new HundredBattleSubmission();
         s.setVehicleId(VEHICLE);
         s.setVehicleName("Progetto 65");
+        s.setWotbServer(WOTB_SERVER);
         s.setWotbAccountId(GAME_ID);
         s.setNicknameSnapshot("PlayerOne");
         s.setClaimedAverageDamage(4200);
@@ -372,7 +375,8 @@ class HundredEvidenceConcurrencyIntegrationTest {
 
             // Hundred submission 成功 → evidence 行存在 → 物理 H 必须存在且可下载（不变量「DB 引用 H ⇒ H 存在」）
             final HundredBattleSubmission sub = submissionRepository
-                    .findByWotbAccountIdAndVehicleIdAndStatus(GAME_ID, VEHICLE, "PENDING").orElseThrow();
+                    .findByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
+                            WOTB_SERVER, GAME_ID, VEHICLE, "PENDING").orElseThrow();
             final List<HundredBattleReplayEvidence> rows = evidenceRepository.findBySubmissionIdOrderBySlotAsc(sub.getId());
             assertEquals(5, rows.size());
             final HundredBattleReplayEvidence hRow = rows.stream()
@@ -436,8 +440,8 @@ class HundredEvidenceConcurrencyIntegrationTest {
 
             // 恰好一个 PENDING + 恰好 5 行 evidence（winner 的，无 partial）
             final List<HundredBattleSubmission> pendings =
-                    submissionRepository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
-                            GAME_ID, List.of("PENDING"));
+                    submissionRepository.findByWotbServerAndWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
+                            WOTB_SERVER, GAME_ID, List.of("PENDING"));
             assertEquals(1, pendings.size(), "必须恰好一个 PENDING");
             final List<HundredBattleReplayEvidence> rows =
                     evidenceRepository.findBySubmissionId(pendings.get(0).getId());

@@ -16,8 +16,8 @@ import java.time.OffsetDateTime;
  * approve 将 claimed 快照原样冻结为 approved，绝不接收改分数据。
  *
  * <p>列结构与 Flyway V21 + V22 逐列对齐。成绩归属 WotB 游戏账号（canonical owner =
- * {@code wotb_account_id}），与 Keycloak 身份解耦。partial unique index 在数据库层保证同一
- * WotB 账号 + vehicle 最多一个 active PENDING/CURRENT，CURRENT 因而不可被后续申请替代。</p>
+ * {@code (wotb_server, wotb_account_id)}），与 Keycloak 身份解耦。partial unique index 在数据库层保证
+ * 同一 (区服, WotB 账号) + vehicle 最多一个 active PENDING/CURRENT，CURRENT 因而不可被后续申请替代。</p>
  */
 @Entity
 @Table(name = "mark3_submission")
@@ -32,6 +32,10 @@ public class Mark3Submission {
 
     @Column(name = "vehicle_name", nullable = false, length = 100)
     private String vehicleName;
+
+    /** canonical owner 的区服维度：创建瞬间冻结（CN / ASIA / EU / NA，与 user_profile 同域）。 */
+    @Column(name = "wotb_server", nullable = false, length = 16)
+    private String wotbServer;
 
     /** canonical owner：创建瞬间冻结的 WotB 游戏账号 ID（Profile 后续改绑不影响本记录归属）。 */
     @Column(name = "wotb_account_id", nullable = false)
@@ -126,6 +130,8 @@ public class Mark3Submission {
     public void setVehicleId(final long value) { this.vehicleId = value; }
     public String getVehicleName() { return vehicleName; }
     public void setVehicleName(final String value) { this.vehicleName = value; }
+    public String getWotbServer() { return wotbServer; }
+    public void setWotbServer(final String value) { this.wotbServer = value; }
     public long getWotbAccountId() { return wotbAccountId; }
     public void setWotbAccountId(final long value) { this.wotbAccountId = value; }
     public String getNicknameSnapshot() { return nicknameSnapshot; }

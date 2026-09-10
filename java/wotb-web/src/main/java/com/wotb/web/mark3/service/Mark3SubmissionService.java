@@ -23,6 +23,7 @@ import com.wotb.web.replayfile.ReplayFileNames;
 import com.wotb.web.replayfile.ReplayHashLock;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.user.service.WotbAccountIdentity;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -120,6 +121,8 @@ public class Mark3SubmissionService {
         if (!StringUtils.hasText(profile.getWotbNickname())) {
             throw new IllegalArgumentException("MARK3_PROFILE_NICKNAME_REQUIRED");
         }
+        // canonical owner 含区服：(CN, 123456) 与 (EU, 123456) 是两个不同账号。
+        final String wotbServer = profile.getWotbServer();
         requireClaimedValues(claimedBattleCount, claimedAverageDamage, claimedWinRate);
         final BigDecimal normalizedWinRate = normalizeWinRate(claimedWinRate, "MARK3_INVALID_WIN_RATE");
         final TankInfo vehicle = requireTierTenVehicle(vehicleId);
@@ -127,11 +130,11 @@ public class Mark3SubmissionService {
         if (replays == null || replays.size() != REPLAY_COUNT) {
             throw new IllegalArgumentException("MARK3_REPLAY_COUNT");
         }
-        requireNoActiveSubmission(gameId, vehicleId);
+        requireNoActiveSubmission(wotbServer, gameId, vehicleId);
 
         try {
             return capacityLimiter.execute(() -> createSubmissionWithinReplayCapacity(
-                    vehicleId, gameId, vehicle.name(), profile.getWotbNickname().trim(),
+                    vehicleId, gameId, wotbServer, vehicle.name(), profile.getWotbNickname().trim(),
                     claimedBattleCount, claimedAverageDamage, normalizedWinRate,
                     normalizedScreenshots, replays));
         } catch (final RuntimeException e) {
@@ -148,6 +151,7 @@ public class Mark3SubmissionService {
     private Mark3CreateResult createSubmissionWithinReplayCapacity(
             final long vehicleId,
             final long gameId,
+            final String wotbServer,
             final String vehicleName,
             final String nickname,
             final int claimedBattleCount,
@@ -155,7 +159,7 @@ public class Mark3SubmissionService {
             final BigDecimal claimedWinRate,
             final List<String> normalizedScreenshots,
             final List<MultipartFile> replays) {
-        requireNoActiveSubmission(gameId, vehicleId);
+        requireNoActiveSubmission(wotbServer, gameId, vehicleId);
         ReplayUploadValidator.validate(replays.toArray(new MultipartFile[0]));
 
         final Set<String> arenaIds = new HashSet<>();
@@ -192,7 +196,7 @@ public class Mark3SubmissionService {
                 .sorted()
                 .toList();
         return replayHashLock.runWithLocksResult(hashes, () -> createLocked(
-                vehicleId, gameId, vehicleName, nickname,
+                vehicleId, gameId, wotbServer, vehicleName, nickname,
                 claimedBattleCount, claimedAverageDamage, claimedWinRate,
                 normalizedScreenshots, pendingReplays, hashes));
     }
@@ -201,6 +205,7 @@ public class Mark3SubmissionService {
     private Mark3CreateResult createLocked(
             final long vehicleId,
             final long gameId,
+            final String wotbServer,
             final String vehicleName,
             final String nickname,
             final int claimedBattleCount,
@@ -216,6 +221,7 @@ public class Mark3SubmissionService {
                 final Mark3Submission submission = new Mark3Submission();
                 submission.setVehicleId(vehicleId);
                 submission.setVehicleName(vehicleName);
+                submission.setWotbServer(wotbServer);
                 submission.setWotbAccountId(gameId);
                 submission.setNicknameSnapshot(nickname);
                 submission.setClaimedBattleCount(claimedBattleCount);
@@ -240,15 +246,16 @@ public class Mark3SubmissionService {
     }
 
     /**
-     * 用户取消自己尚未审核的申请。ownership 以当前绑定的 WotB 账号判定：未绑定账号、
-     * 或记录归属其他账号 → 403。记录创建后用户改绑到别的 WotB 账号时记录仍属原账号，不可再取消。
+     * 用户取消自己尚未审核的申请。ownership 以当前绑定的 canonical 身份 {@code (区服, WotB 账号)} 判定：
+     * 未绑定账号、或记录归属其他 (区服, 账号) → 403。
+     * 记录创建后用户改绑到别的账号时记录仍属原 (区服, 账号)，不可再取消。
      */
     @Transactional
     public Mark3SubmissionSummaryDto cancelSubmission(final String userId, final long submissionId) {
         final Mark3Submission submission = repository.findByIdForUpdate(submissionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "MARK3_SUBMISSION_NOT_FOUND"));
-        final Long accountId = boundWotbAccountId(userId);
-        if (accountId == null || submission.getWotbAccountId() != accountId) {
+        final WotbAccountIdentity owner = userProfileService.currentWotbIdentity(userId).orElse(null);
+        if (!owns(owner, submission)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "MARK3_FORBIDDEN");
         }
         requirePending(submission);
@@ -334,24 +341,25 @@ public class Mark3SubmissionService {
 
     /**
      * 当前用户三环状态：CURRENT、PENDING 与最近十条 REJECTED。
-     * 归属按当前绑定的 WotB 账号查询；未绑定账号时没有任何属于该账号的记录，三个列表均为空。
+     * 归属按当前绑定的 {@code (区服, WotB 账号)} 查询；未绑定账号时没有任何属于该身份的记录，三个列表均为空。
      */
     @Transactional(readOnly = true)
     public Mark3UserStatusDto userStatus(final String userId) {
-        final Long accountId = boundWotbAccountId(userId);
-        if (accountId == null) {
+        final WotbAccountIdentity owner = userProfileService.currentWotbIdentity(userId).orElse(null);
+        if (owner == null) {
             return new Mark3UserStatusDto(List.of(), List.of(), List.of());
         }
         return new Mark3UserStatusDto(
-                toSummaries(accountId, Mark3Status.CURRENT.name()),
-                toSummaries(accountId, Mark3Status.PENDING.name()),
-                repository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
-                                accountId, List.of(Mark3Status.REJECTED.name()))
+                toSummaries(owner, Mark3Status.CURRENT.name()),
+                toSummaries(owner, Mark3Status.PENDING.name()),
+                repository.findByWotbServerAndWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
+                                owner.server(), owner.accountId(), List.of(Mark3Status.REJECTED.name()))
                         .stream().limit(10).map(mapper::toSummary).toList());
     }
 
-    private List<Mark3SubmissionSummaryDto> toSummaries(final long accountId, final String status) {
-        return repository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(accountId, List.of(status))
+    private List<Mark3SubmissionSummaryDto> toSummaries(final WotbAccountIdentity owner, final String status) {
+        return repository.findByWotbServerAndWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
+                        owner.server(), owner.accountId(), List.of(status))
                 .stream().map(mapper::toSummary).toList();
     }
 
@@ -404,7 +412,8 @@ public class Mark3SubmissionService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "MARK3_SUBMISSION_NOT_FOUND"));
         requirePending(submission);
         evidenceService.requireCompleteEvidenceForApproval(submission.getId(), mapper.proofScreenshots(submission));
-        if (repository.findCurrentForUpdate(submission.getWotbAccountId(), submission.getVehicleId()).isPresent()) {
+        if (repository.findCurrentForUpdate(submission.getWotbServer(), submission.getWotbAccountId(),
+                submission.getVehicleId()).isPresent()) {
             throw new IllegalStateException("MARK3_CURRENT_EXISTS");
         }
         requireApprovedValues(
@@ -521,14 +530,13 @@ public class Mark3SubmissionService {
     }
 
     /**
-     * 当前登录用户绑定的 WotB 游戏账号；profile 不存在或未绑定账号 → null。
-     * HoF ownership 的 canonical identity 是 WotB 账号，不是 Keycloak sub。
+     * 记录是否属于当前绑定身份。canonical owner 是 {@code (区服, WotB 账号)}，
+     * 不是 Keycloak sub；只比账号 ID 会让跨服同号互相看见。
      */
-    private Long boundWotbAccountId(final String userId) {
-        return userProfileService.findEntityByKeycloakUserId(userId)
-                .map(UserProfile::getWotbAccountId)
-                .filter(id -> id != null && id > 0)
-                .orElse(null);
+    private static boolean owns(final WotbAccountIdentity owner, final Mark3Submission submission) {
+        return owner != null
+                && owner.accountId() == submission.getWotbAccountId()
+                && owner.server().equals(submission.getWotbServer());
     }
 
     private static void requirePending(final Mark3Submission submission) {
@@ -545,11 +553,13 @@ public class Mark3SubmissionService {
         return vehicle;
     }
 
-    private void requireNoActiveSubmission(final long wotbAccountId, final long vehicleId) {
-        if (repository.existsByWotbAccountIdAndVehicleIdAndStatus(wotbAccountId, vehicleId, Mark3Status.CURRENT.name())) {
+    private void requireNoActiveSubmission(final String wotbServer, final long wotbAccountId, final long vehicleId) {
+        if (repository.existsByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
+                wotbServer, wotbAccountId, vehicleId, Mark3Status.CURRENT.name())) {
             throw new IllegalStateException("MARK3_CURRENT_EXISTS");
         }
-        if (repository.existsByWotbAccountIdAndVehicleIdAndStatus(wotbAccountId, vehicleId, Mark3Status.PENDING.name())) {
+        if (repository.existsByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
+                wotbServer, wotbAccountId, vehicleId, Mark3Status.PENDING.name())) {
             throw new IllegalStateException("MARK3_PENDING_EXISTS");
         }
     }

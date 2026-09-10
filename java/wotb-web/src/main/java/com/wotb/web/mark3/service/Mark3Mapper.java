@@ -47,7 +47,7 @@ public class Mark3Mapper implements Mapper<Mark3Submission, Mark3SubmissionSumma
     public Mark3AdminListItemDto toAdminListItem(final Mark3Submission submission) {
         return new Mark3AdminListItemDto(
                 submission.getId(), submission.getStatus(), submission.getVehicleId(), submission.getVehicleName(),
-                submission.getWotbAccountId(), submission.getNicknameSnapshot(),
+                submission.getWotbServer(), submission.getWotbAccountId(), submission.getNicknameSnapshot(),
                 submission.getClaimedBattleCount(), submission.getClaimedAverageDamage(), submission.getClaimedWinRate(),
                 submission.getApprovedBattleCount(), submission.getApprovedAverageDamage(), submission.getApprovedWinRate(),
                 submission.isReplayParseOk(), submission.isReplayGameIdMatch(),
@@ -61,7 +61,7 @@ public class Mark3Mapper implements Mapper<Mark3Submission, Mark3SubmissionSumma
                 ? proofScreenshots(submission) : List.of();
         return new Mark3AdminDetailDto(
                 submission.getId(), submission.getStatus(), submission.getVehicleId(), submission.getVehicleName(),
-                submission.getWotbAccountId(), submission.getNicknameSnapshot(),
+                submission.getWotbServer(), submission.getWotbAccountId(), submission.getNicknameSnapshot(),
                 submission.getClaimedBattleCount(), submission.getClaimedAverageDamage(), submission.getClaimedWinRate(),
                 submission.getApprovedBattleCount(), submission.getApprovedAverageDamage(), submission.getApprovedWinRate(),
                 screenshots,

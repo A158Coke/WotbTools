@@ -11,6 +11,7 @@ public record HundredAdminDetailDto(
     String status,
     long vehicleId,
     String vehicleName,
+    String wotbServer,
     long wotbAccountId,
     String nicknameSnapshot,
     int claimedAverageDamage,
