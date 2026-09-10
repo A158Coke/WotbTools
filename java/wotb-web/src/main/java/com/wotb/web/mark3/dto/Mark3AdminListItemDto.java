@@ -9,7 +9,7 @@ public record Mark3AdminListItemDto(
         String status,
         long vehicleId,
         String vehicleName,
-        long gameAccountIdSnapshot,
+        long wotbAccountId,
         String nicknameSnapshot,
         int claimedBattleCount,
         int claimedAverageDamage,
