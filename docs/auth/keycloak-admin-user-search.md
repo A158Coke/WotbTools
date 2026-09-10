@@ -11,7 +11,7 @@
 | `keycloak-admin-client` | `26.0.9` | `java/wotb-web/pom.xml:123` |
 | `keycloak-core` | `26.6.4` | `java/wotb-web/pom.xml:128` |
 
-## 2. 现状缺口
+## 2. Step 0 时点的缺口（本 PR 已补齐）
 
 `java/wotb-web/src/main/java/com/wotb/web/config/KeycloakAdminUserService.java` 当前**没有任何用户检索能力**，只有：
 
@@ -24,6 +24,12 @@ deleteUser(String)               :82   删除单个用户
 
 因此 `AdminUserService.searchUsers:52` 的数据源 100% 是本地 `user_profile`
 （`UserProfileRepository.searchAdminUsers(query, Pageable)`），**Keycloak-only 用户不可见**。
+
+> 上述是本文件写作时（Step 0）的缺口描述，保留作为能力评估依据。
+> 本 PR 已据此补齐实现：`KeycloakAdminUserService` 新增 `searchUsers` / `countUsers` /
+> `searchUsersByIdpAlias` / `countUsersByIdpAlias`；`GET /api/admin/users` 改为
+> `segment=keycloak`（权威源 Keycloak，可发现 Keycloak-only 用户）与 `segment=local`
+> （权威源本地 profile，标记 `keycloakUserMissing` 孤儿绑定）两个 segment 的服务端分页。
 
 ## 3. 结论
 
@@ -110,8 +116,8 @@ admin-client 26.0.9 的列表查询重载中，不存在同时带 search(自由�
 - 详情增强：federated identities 仍只在详情页逐用户拉取（既有能力，非列表路径）。
 - 孤儿 profile 判定需要知道「某 keycloak_user_id 在 Keycloak 是否还存在」，
   Keycloak 无批量按 id 查询 → 只能对【当页】的候选做逐个 getUser，
-  因此 orphan segment 的分页权威必须放在本地 DB（user_profile），
-  而不是 Keycloak。
+  因此 `segment=local` 的分页权威必须放在本地 DB（user_profile），而不是 Keycloak；
+  该 segment 每页因此产生 N（≤ size）次 Keycloak Admin 调用，代价由默认页大小界定。
 ```
 
 ## 7. 引用
