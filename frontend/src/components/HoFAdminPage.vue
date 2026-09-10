@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { mapLabel } from '../utils/helpers.js'
-import { apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/display.js'
+import { apiErrorCodeLabel, apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/display.js'
 import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import * as api from '../utils/api.js'
 
@@ -210,6 +210,7 @@ async function loadRecords() {
     rows.value = res.items || []
     totalPages.value = res.totalPages || 0
     totalItems.value = res.totalItems || 0
+    recordsSelection.prune()
   } catch (e) {
     if (g === gen) error.value = apiErrorLabel(t, te, e)
   } finally {
@@ -335,6 +336,145 @@ async function confirmDelete() {
   }
 }
 
+// ── 批量删除（单场 / 百场 / 三环各自一次确认）──────────────────────────
+
+/**
+ * 每个表格自己的「全选当前页」选择集；三个表共用同一份规则，只有 owner（rows ref）不同。
+ * 「全选当前页」= 只作用于当前页可见行；每次加载后用 prune() 收敛，不留不可见的选择项。
+ */
+function createSelection(rowsRef) {
+  const selected = ref([])
+  const selectedSet = computed(() => new Set(selected.value))
+  return {
+    selected,
+    count: () => selected.value.length,
+    isSelected: row => selectedSet.value.has(row.id),
+    allSelected: () => rowsRef.value.length > 0 && rowsRef.value.every(row => selectedSet.value.has(row.id)),
+    toggle(row, checked) {
+      const next = new Set(selected.value)
+      if (checked) next.add(row.id)
+      else next.delete(row.id)
+      selected.value = [...next]
+    },
+    toggleAll(checked) {
+      const next = new Set(selected.value)
+      for (const row of rowsRef.value) {
+        if (checked) next.add(row.id)
+        else next.delete(row.id)
+      }
+      selected.value = [...next]
+    },
+    /** 每次加载后把选择集收敛到当前列表：翻页/换筛选条件不会留下不可见的选择项。 */
+    prune() {
+      if (!selected.value.length) return
+      selected.value = selected.value.filter(id => rowsRef.value.some(row => row.id === id))
+    },
+    clear() { selected.value = [] },
+  }
+}
+
+const recordsSelection = createSelection(rows)
+const hundredSelection = createSelection(hundredRows)
+const mark3Selection = createSelection(mark3Rows)
+
+const bulkDomain = ref('') // '' | records | hundred | mark3
+const bulkConfirmText = ref('')
+const bulkDeleting = ref(false)
+const bulkResult = ref(null)
+const bulkMsg = ref('')
+// 百场/三环批量删除复用既有单条删除的同一组 reason 选项与校验规则（不新造第二套）。
+const bulkReason = ref('')
+const bulkReasonText = ref('')
+
+const reasonPrefix = computed(() => (bulkDomain.value === 'mark3' ? 'mark3Admin' : 'hundredAdmin'))
+const bulkIds = computed(() => selectionFor(bulkDomain.value)?.selected.value || [])
+
+function selectionFor(domain) {
+  if (domain === 'records') return recordsSelection
+  if (domain === 'hundred') return hundredSelection
+  if (domain === 'mark3') return mark3Selection
+  return null
+}
+
+/** 与既有单条删除完全相同的规则：reason 必填，选择「其他」时必须带补充说明。 */
+function deleteReasonError(prefix) {
+  if (!bulkReason.value) return t(`${prefix}.deleteReasonRequired`)
+  if (bulkReason.value === 'OTHER' && !bulkReasonText.value.trim()) return t(`${prefix}.deleteReasonText`)
+  return ''
+}
+
+function startBulkDelete(domain) {
+  const selection = selectionFor(domain)
+  if (!selection?.count()) return
+  bulkDomain.value = domain
+  bulkConfirmText.value = ''
+  bulkResult.value = null
+  bulkMsg.value = ''
+  bulkDeleting.value = false
+  bulkReason.value = ''
+  bulkReasonText.value = ''
+}
+
+function cancelBulkDelete() {
+  bulkDomain.value = ''
+  bulkConfirmText.value = ''
+  bulkResult.value = null
+  bulkMsg.value = ''
+  bulkDeleting.value = false
+  bulkReason.value = ''
+  bulkReasonText.value = ''
+}
+
+async function confirmBulkDelete() {
+  const domain = bulkDomain.value
+  const selection = selectionFor(domain)
+  const ids = [...(selection?.selected.value || [])]
+  if (!domain || !ids.length || bulkDeleting.value || bulkConfirmText.value !== 'DELETE') return
+  const text = bulkReasonText.value.trim()
+  if (domain !== 'records') {
+    const invalid = deleteReasonError(reasonPrefix.value)
+    if (invalid) {
+      bulkMsg.value = invalid
+      return
+    }
+  }
+  bulkDeleting.value = true
+  bulkMsg.value = ''
+  try {
+    if (domain === 'records') {
+      // 单场删除语义不带 reason。
+      bulkResult.value = await api.hofAdminBulkDeleteRecords(ids)
+    } else if (domain === 'hundred') {
+      bulkResult.value = await api.hofAdminBulkDeleteHundred(ids, {
+        reason: bulkReason.value,
+        ...(text ? { reasonText: text } : {}),
+      })
+    } else {
+      bulkResult.value = await api.hofAdminBulkDeleteMark3(ids, {
+        reason: bulkReason.value,
+        ...(text ? { reasonText: text } : {}),
+      })
+    }
+  } catch (e) {
+    bulkMsg.value = apiErrorLabel(t, te, e)
+    return
+  } finally {
+    bulkDeleting.value = false
+  }
+  // partial success：失败项留在选择集里便于重试，已被处理的项移出。
+  const failed = new Set((bulkResult.value?.results || []).filter(item => !item.deleted).map(item => item.id))
+  selection.selected.value = ids.filter(id => failed.has(id))
+  bulkConfirmText.value = ''
+  await reloadDomain(domain)
+}
+
+function reloadDomain(domain) {
+  if (domain === 'records') return loadRecords()
+  if (domain === 'hundred') return loadHundred()
+  if (domain === 'mark3') return loadMark3()
+  return undefined
+}
+
 // ── 百场审核 ──────────────────────────────────────────────────
 
 async function loadHundred() {
@@ -355,6 +495,7 @@ async function loadHundred() {
     hundredRows.value = res.items || []
     hundredTotalPages.value = res.totalPages || 0
     hundredTotalItems.value = res.totalItems || 0
+    hundredSelection.prune()
   } catch (e) {
     if (g === hundredGen) error.value = apiErrorLabel(t, te, e)
   } finally {
@@ -406,6 +547,7 @@ async function loadMark3() {
     mark3Rows.value = res.items || []
     mark3TotalPages.value = res.totalPages || 0
     mark3TotalItems.value = res.totalItems || 0
+    mark3Selection.prune()
   } catch (e) {
     if (generation === mark3Gen) error.value = apiErrorLabel(t, te, e)
   } finally {
@@ -899,12 +1041,25 @@ function battleTypeLabel(tp) {
         </div>
 
         <p v-if="error" class="error">{{ error }}</p>
+        <div v-if="recordsSelection.count()" class="hof-bulk-bar">
+          <span class="hof-bulk-count">{{ $t('hofAdmin.selectedCount', { count: recordsSelection.count() }) }}</span>
+          <button class="btn-sm danger" @click="startBulkDelete('records')">{{ $t('hofAdmin.bulkDelete') }}</button>
+          <button class="btn-sm" @click="recordsSelection.clear()">{{ $t('hofAdmin.clearSelection') }}</button>
+        </div>
         <p v-if="loading" class="muted">{{ $t('hofAdmin.loading') }}</p>
         <p v-else-if="!rows.length" class="muted">{{ $t('hofAdmin.empty') }}</p>
         <div v-else class="tablewrap">
           <table class="hof-admin-table">
             <thead>
               <tr>
+                <th class="hof-check">
+                  <input
+                    type="checkbox"
+                    :checked="recordsSelection.allSelected()"
+                    :aria-label="$t('hofAdmin.selectAllPage')"
+                    @change="recordsSelection.toggleAll($event.target.checked)"
+                  />
+                </th>
                 <th>ID</th>
                 <th>{{ $t('hofAdmin.player') }}</th>
                 <th>{{ $t('hofAdmin.accountId') }}</th>
@@ -924,6 +1079,14 @@ function battleTypeLabel(tp) {
             </thead>
             <tbody>
               <tr v-for="r in rows" :key="r.id">
+                <td class="hof-check">
+                  <input
+                    type="checkbox"
+                    :checked="recordsSelection.isSelected(r)"
+                    :aria-label="$t('hofAdmin.selectRow', { id: r.id })"
+                    @change="recordsSelection.toggle(r, $event.target.checked)"
+                  />
+                </td>
                 <td class="muted">{{ r.id }}</td>
                 <td>{{ r.nickname }}</td>
                 <td class="muted">{{ r.accountId }}</td>
@@ -1030,12 +1193,25 @@ function battleTypeLabel(tp) {
         </div>
 
         <p v-if="error" class="error">{{ error }}</p>
+        <div v-if="hundredSelection.count()" class="hof-bulk-bar">
+          <span class="hof-bulk-count">{{ $t('hofAdmin.selectedCount', { count: hundredSelection.count() }) }}</span>
+          <button class="btn-sm danger" @click="startBulkDelete('hundred')">{{ $t('hofAdmin.bulkDelete') }}</button>
+          <button class="btn-sm" @click="hundredSelection.clear()">{{ $t('hofAdmin.clearSelection') }}</button>
+        </div>
         <p v-if="hundredLoading" class="muted">{{ $t('hundredAdmin.loading') }}</p>
         <p v-else-if="!hundredRows.length" class="muted">{{ $t('hundredAdmin.empty') }}</p>
         <div v-else class="tablewrap">
           <table class="hof-admin-table">
             <thead>
               <tr>
+                <th class="hof-check">
+                  <input
+                    type="checkbox"
+                    :checked="hundredSelection.allSelected()"
+                    :aria-label="$t('hofAdmin.selectAllPage')"
+                    @change="hundredSelection.toggleAll($event.target.checked)"
+                  />
+                </th>
                 <th>ID</th>
                 <th>{{ $t('hundredAdmin.vehicle') }}</th>
                 <th>{{ $t('hundredAdmin.nicknameSnapshot') }}</th>
@@ -1049,10 +1225,18 @@ function battleTypeLabel(tp) {
             </thead>
             <tbody>
               <tr v-for="r in hundredRows" :key="r.id">
+                <td class="hof-check">
+                  <input
+                    type="checkbox"
+                    :checked="hundredSelection.isSelected(r)"
+                    :aria-label="$t('hofAdmin.selectRow', { id: r.id })"
+                    @change="hundredSelection.toggle(r, $event.target.checked)"
+                  />
+                </td>
                 <td class="muted">{{ r.id }}</td>
                 <td>{{ r.vehicleName }}</td>
                 <td>{{ r.nicknameSnapshot }}</td>
-                <td class="muted">{{ r.gameAccountIdSnapshot }}</td>
+                <td class="muted">{{ r.wotbAccountId }}</td>
                 <td class="dmg">{{ r.approvedAverageDamage ?? '-' }}</td>
                 <td>{{ r.approvedBattleCount ?? '-' }}</td>
                 <td><span class="hundred-status" :class="'hundred-status-' + String(r.status).toLowerCase()">{{ hundredStatusLabel(r.status) }}</span></td>
@@ -1104,12 +1288,25 @@ function battleTypeLabel(tp) {
         </div>
 
         <p v-if="error" class="error">{{ error }}</p>
+        <div v-if="mark3Selection.count()" class="hof-bulk-bar">
+          <span class="hof-bulk-count">{{ $t('hofAdmin.selectedCount', { count: mark3Selection.count() }) }}</span>
+          <button class="btn-sm danger" @click="startBulkDelete('mark3')">{{ $t('hofAdmin.bulkDelete') }}</button>
+          <button class="btn-sm" @click="mark3Selection.clear()">{{ $t('hofAdmin.clearSelection') }}</button>
+        </div>
         <p v-if="mark3Loading" class="muted">{{ $t('mark3Admin.loading') }}</p>
         <p v-else-if="!mark3Rows.length" class="muted">{{ $t('mark3Admin.empty') }}</p>
         <div v-else class="tablewrap">
           <table class="hof-admin-table">
             <thead>
               <tr>
+                <th class="hof-check">
+                  <input
+                    type="checkbox"
+                    :checked="mark3Selection.allSelected()"
+                    :aria-label="$t('hofAdmin.selectAllPage')"
+                    @change="mark3Selection.toggleAll($event.target.checked)"
+                  />
+                </th>
                 <th>ID</th>
                 <th>{{ $t('mark3Admin.vehicle') }}</th>
                 <th>{{ $t('mark3Admin.nicknameSnapshot') }}</th>
@@ -1124,10 +1321,18 @@ function battleTypeLabel(tp) {
             </thead>
             <tbody>
               <tr v-for="row in mark3Rows" :key="row.id">
+                <td class="hof-check">
+                  <input
+                    type="checkbox"
+                    :checked="mark3Selection.isSelected(row)"
+                    :aria-label="$t('hofAdmin.selectRow', { id: row.id })"
+                    @change="mark3Selection.toggle(row, $event.target.checked)"
+                  />
+                </td>
                 <td class="muted">{{ row.id }}</td>
                 <td>{{ row.vehicleName }}</td>
                 <td>{{ row.nicknameSnapshot }}</td>
-                <td class="muted">{{ row.gameAccountIdSnapshot }}</td>
+                <td class="muted">{{ row.wotbAccountId }}</td>
                 <td class="dmg">{{ formatNumber(row.claimedBattleCount) }}</td>
                 <td>{{ formatNumber(row.claimedAverageDamage) }}</td>
                 <td>{{ formatMark3WinRate(row.claimedWinRate) }}</td>
@@ -1161,7 +1366,7 @@ function battleTypeLabel(tp) {
             <table class="hof-delete-table">
               <tbody>
                 <tr><th>{{ $t('hundredAdmin.user') }}</th><td>{{ reviewDetail.nicknameSnapshot }}</td></tr>
-                <tr><th>{{ $t('hundredAdmin.gameId') }}</th><td class="muted">{{ reviewDetail.gameAccountIdSnapshot }}</td></tr>
+                <tr><th>{{ $t('hundredAdmin.gameId') }}</th><td class="muted">{{ reviewDetail.wotbAccountId }}</td></tr>
                 <tr><th>{{ $t('hundredAdmin.vehicle') }}</th><td>{{ reviewDetail.vehicleName }}</td></tr>
                 <tr><th>{{ $t('hundredAdmin.claimedDamage') }}</th><td class="dmg">{{ reviewDetail.claimedAverageDamage }}</td></tr>
                 <tr><th>{{ $t('hundredAdmin.claimedBattles') }}</th><td>{{ reviewDetail.claimedBattleCount }}</td></tr>
@@ -1309,7 +1514,7 @@ function battleTypeLabel(tp) {
             <table class="hof-delete-table">
               <tbody>
                 <tr><th>{{ $t('mark3Admin.user') }}</th><td>{{ mark3ReviewDetail.nicknameSnapshot }}</td></tr>
-                <tr><th>{{ $t('mark3Admin.gameId') }}</th><td class="muted">{{ mark3ReviewDetail.gameAccountIdSnapshot }}</td></tr>
+                <tr><th>{{ $t('mark3Admin.gameId') }}</th><td class="muted">{{ mark3ReviewDetail.wotbAccountId }}</td></tr>
                 <tr><th>{{ $t('mark3Admin.vehicle') }}</th><td>{{ mark3ReviewDetail.vehicleName }}</td></tr>
                 <tr><th>{{ $t('mark3Admin.claimedBattles') }}</th><td class="dmg">{{ formatNumber(mark3ReviewDetail.claimedBattleCount) }}</td></tr>
                 <tr><th>{{ $t('mark3Admin.claimedDamage') }}</th><td>{{ formatNumber(mark3ReviewDetail.claimedAverageDamage) }}</td></tr>
@@ -1445,6 +1650,55 @@ function battleTypeLabel(tp) {
         </div>
       </div>
 
+      <!-- ── 批量删除二次确认（三个域各自一次；整批只弹一次）── -->
+      <div v-if="bulkDomain" class="modal-overlay" @click.self="cancelBulkDelete">
+        <div class="modal hof-delete-modal bulk-delete-modal">
+          <h3>{{ $t('hofAdmin.bulkDeleteTitle') }}</h3>
+          <p class="hof-delete-msg">
+            {{ bulkDomain === 'records'
+              ? $t('hofAdmin.bulkDeleteHint', { count: bulkIds.length })
+              : $t('hofAdmin.bulkDeleteHintModeration', { count: bulkIds.length }) }}
+          </p>
+          <template v-if="bulkDomain !== 'records'">
+            <label class="hundred-reason-label">{{ $t(`${reasonPrefix}.deleteReason`) }}</label>
+            <select v-model="bulkReason">
+              <option value="">{{ $t(`${reasonPrefix}.deleteReasonRequired`) }}</option>
+              <option v-for="(label, key) in $tm(`${reasonPrefix}.deleteReasonOptions`)" :key="key" :value="key">{{ label }}</option>
+            </select>
+            <textarea v-model="bulkReasonText" rows="2" :placeholder="$t(`${reasonPrefix}.deleteReasonPlaceholder`)"></textarea>
+          </template>
+          <template v-if="bulkResult">
+            <p class="hof-bulk-summary">{{ $t('hofAdmin.bulkSummary', { requested: bulkResult.requested, deleted: bulkResult.deleted, failed: bulkResult.failed }) }}</p>
+            <div v-if="bulkResult.results?.some(item => !item.deleted)" class="hof-bulk-failures">
+              <p class="hof-delete-msg">{{ $t('hofAdmin.bulkFailures') }}</p>
+              <ul>
+                <li v-for="item in bulkResult.results.filter(entry => !entry.deleted)" :key="item.id">
+                  #{{ item.id }} — {{ apiErrorCodeLabel(t, te, item.errorCode) }}
+                </li>
+              </ul>
+            </div>
+          </template>
+          <template v-else>
+            <p v-if="bulkMsg" class="error">{{ bulkMsg }}</p>
+            <label>{{ $t('hofAdmin.bulkDeleteConfirmInput') }}</label>
+            <input v-model="bulkConfirmText" class="admin-confirm-input" placeholder="DELETE" />
+          </template>
+          <div class="modal-actions">
+            <button class="btn-sm" :disabled="bulkDeleting" @click="cancelBulkDelete">
+              {{ bulkResult ? $t('hofAdmin.close') : $t('hofAdmin.cancel') }}
+            </button>
+            <button
+              v-if="!bulkResult"
+              class="btn-sm danger"
+              :disabled="bulkDeleting || bulkConfirmText !== 'DELETE'"
+              @click="confirmBulkDelete"
+            >
+              {{ bulkDeleting ? $t('hofAdmin.bulkDeleting') : $t('hofAdmin.bulkDelete') }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- ── 删除二次确认 ── -->
       <div v-if="deleteTarget" class="modal-overlay" @click.self="cancelDelete">
         <div class="modal hof-delete-modal">
@@ -1490,6 +1744,13 @@ function battleTypeLabel(tp) {
 .hof-admin-table .muted { color: var(--text-muted); }
 .hof-admin-table .hash { font-family: monospace; font-size: .75rem; }
 .hof-admin-table .actions { white-space: nowrap; }
+.hof-check { width: 34px; text-align: center; }
+.hof-check input { cursor: pointer; }
+.hof-bulk-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin: 8px 0; border: 1px solid var(--border-ghost); border-radius: 8px; background: var(--bg-card2); }
+.hof-bulk-count { font-size: .82rem; font-weight: 600; color: var(--text-label); }
+.hof-bulk-summary { font-size: .85rem; font-weight: 600; color: var(--text-label); }
+.hof-bulk-failures ul { margin: 6px 0 0; padding-left: 18px; font-size: .8rem; color: var(--text-label); }
+.admin-confirm-input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; border: 1px solid var(--border-ghost); border-radius: 6px; background: var(--bg-card2); color: var(--text-label); font-family: inherit; }
 .bt-badge { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .bt-random { background: var(--rating-good-bg); color: var(--rating-good-fg); }
 .bt-rating { background: var(--rating-great-bg); color: var(--rating-great-fg); }
@@ -1547,6 +1808,9 @@ function battleTypeLabel(tp) {
 .val-bad { color: var(--error); }
 .hundred-action-area { margin-top: 12px; }
 .hundred-action-area select, .hundred-action-area textarea {
+  width: 100%; border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label);
+  padding: 6px 10px; border-radius: 7px; font-size: 13px; font-family: inherit; margin: 4px 0 8px; }
+.hof-delete-modal select, .hof-delete-modal textarea {
   width: 100%; border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label);
   padding: 6px 10px; border-radius: 7px; font-size: 13px; font-family: inherit; margin: 4px 0 8px; }
 .hundred-reason-label { display: block; font-size: .85rem; color: var(--text-muted); font-weight: 600; margin-top: 8px; }

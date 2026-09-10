@@ -145,6 +145,17 @@ export async function hofAdminDelete(id) {
   await hofAdminRequest(`/api/admin/hof/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
+/**
+ * 批量 hard delete 记录：单场删除语义不涉及 reason，只提交 ids。
+ * 逐条独立事务 → 允许 partial success（{requested,deleted,failed,results:[{id,deleted,errorCode}]}）。
+ */
+export async function hofAdminBulkDeleteRecords(ids) {
+  const r = await hofAdminRequest('/api/admin/hof/records/bulk-delete', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }),
+  })
+  return r.json()
+}
+
 /** 管理后台下载 replay（复用统一下载机制）。 */
 export async function hofAdminDownload(id) {
   const r = await hofAdminRequest(`/api/admin/hof/${encodeURIComponent(id)}/replay`)
@@ -275,6 +286,14 @@ export async function hofAdminHundredDelete(id, body) {
   return r.json()
 }
 
+/** 批量删除 CURRENT：{ids, reason, reasonText?}；非 CURRENT 逐条失败于 HUNDRED_NOT_CURRENT。 */
+export async function hofAdminBulkDeleteHundred(ids, body) {
+  const r = await hofAdminRequest('/api/admin/hof/hundred/submissions/bulk-delete', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, ...body }),
+  })
+  return r.json()
+}
+
 // ── 名人堂「三环」（/api/hof/mark3，人工审核）────────────────────────────
 
 /** 三环公开排行榜（匿名）：nation / vehicleType / vehicleId 可选并取交集。 */
@@ -353,6 +372,14 @@ export async function hofAdminMark3Reject(id, body) {
 export async function hofAdminMark3Delete(id, body) {
   const r = await hofAdminRequest(`/api/admin/hof/mark3/submissions/${encodeURIComponent(id)}/delete`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })
+  return r.json()
+}
+
+/** 批量删除 CURRENT：{ids, reason, reasonText?}；非 CURRENT 逐条失败于 MARK3_NOT_CURRENT。 */
+export async function hofAdminBulkDeleteMark3(ids, body) {
+  const r = await hofAdminRequest('/api/admin/hof/mark3/submissions/bulk-delete', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, ...body }),
   })
   return r.json()
 }

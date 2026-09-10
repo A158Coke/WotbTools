@@ -160,6 +160,49 @@ describe('BoostPage', () => {
     expect(api.updateBooster.mock.calls[0][1]).not.toHaveProperty('nickname')
   })
 
+  it('reads the booster user picker from the paginated admin user page shape', async () => {
+    // 新契约：{ items, page, size, totalItems, totalPages }（旧代码读 res.content || res）。
+    const adminUser = {
+      keycloakUserId: 'kc-picked',
+      keycloakUsername: 'admin-picked',
+      keycloakEmail: 'picked@example.com',
+      displayName: 'Admin Picked',
+      wotbNickname: 'PickedNick',
+      wotbServer: 'CN',
+      hasLocalProfile: true,
+      keycloakUserMissing: false
+    }
+    api.searchUsers.mockResolvedValue({ items: [adminUser], page: 0, size: 100, totalItems: 1, totalPages: 1 })
+    wrapper = mountPage()
+    await flushPromises()
+    await wrapper.findAll('.boost-tabs button').find(button => button.text() === 'boost.boostersTab').trigger('click')
+    await flushPromises()
+    expect(api.searchUsers).toHaveBeenCalledWith('', { size: 100 })
+
+    await wrapper.find('.flex-between .btn-primary').trigger('click')
+    await flushPromises()
+    const dialog = document.body.querySelector('.booster-editor-overlay')
+    const searchInput = dialog.querySelector('.user-search-row input')
+
+    // 空查询：直接列出已加载的 items（不再出现 "content 缺失 → 空列表"）。
+    searchInput.value = 'Admin'
+    searchInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+    expect([...dialog.querySelectorAll('.user-search-item')].map(item => item.textContent))
+      .toEqual(['Admin PickedPickedNick'])
+
+    // 有查询：debounce 后走服务端搜索，同样只消费 items。
+    searchInput.value = 'Adm'
+    searchInput.dispatchEvent(new Event('input'))
+    await vi.waitFor(() => {
+      expect(api.searchUsers).toHaveBeenLastCalledWith('Adm', { size: 10 })
+    })
+    await vi.waitFor(() => {
+      expect(dialog.querySelectorAll('.user-search-item')).toHaveLength(1)
+    })
+    expect(dialog.textContent).toContain('Admin Picked')
+  })
+
   it('does not resubmit an untouched legacy note', async () => {
     api.listBoosters.mockResolvedValue({
       content: [{ ...booster, description: 'application_id=22\nwotb_account_id=2043138182' }],

@@ -168,10 +168,19 @@ async function adminHandle(r) {
   return r.json()
 }
 
-export async function adminSearchUsers(query = '', limit = 50) {
+/**
+ * 管理端用户搜索（服务端分页，0-based page）。
+ * segment=keycloak（默认）行来自 Keycloak；segment=local 行来自本地 user_profile。
+ * idpAlias 仅 keycloak segment 支持（local 传它后端 400 IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT）。
+ * 返回 { items, page, size, totalItems, totalPages }。
+ */
+export async function adminSearchUsers(query = '', { segment = 'keycloak', idpAlias = '', page = 0, size = 25 } = {}) {
   const params = new URLSearchParams()
   if (query) params.set('query', query)
-  params.set('limit', String(limit))
+  if (segment) params.set('segment', segment)
+  if (idpAlias && segment === 'keycloak') params.set('idpAlias', idpAlias)
+  params.set('page', String(page))
+  params.set('size', String(size))
   return adminHandle(await apiFetch(`/api/admin/users?${params}`, { headers: await boostHeaders() }))
 }
 
@@ -181,6 +190,15 @@ export async function adminGetUser(keycloakUserId) {
 
 export async function adminDeleteUser(keycloakUserId) {
   return adminHandle(await apiFetch(`/api/admin/users/${encodeURIComponent(keycloakUserId)}?confirm=true`, { method: 'DELETE', headers: await boostHeaders() }))
+}
+
+/** 批量删除用户：confirm 必须为 true，否则整批 400 CONFIRMATION_REQUIRED；单批上限 100。 */
+export async function adminBulkDeleteUsers(userIds, confirm) {
+  return adminHandle(await apiFetch('/api/admin/users/bulk-delete', {
+    method: 'POST',
+    headers: await boostHeaders(),
+    body: JSON.stringify({ userIds, confirm: confirm === true }),
+  }))
 }
 
 // ========== User Profile ==========
