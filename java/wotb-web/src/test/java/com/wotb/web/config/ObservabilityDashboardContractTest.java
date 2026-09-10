@@ -70,7 +70,8 @@ class ObservabilityDashboardContractTest {
     void prometheusQueriesReferenceMetricsDeclaredByBackend() throws Exception {
         final JsonNode dashboard = readDashboard("wotbtools-ai-review.json");
         final StringBuilder backendSources = new StringBuilder();
-        try (Stream<Path> files = Files.walk(resolve("java", "wotb-web", "src", "main", "java"))) {
+        // Metrics are declared by feature modules after the replay backend split, not only wotb-web.
+        try (Stream<Path> files = Files.walk(resolve("java"))) {
             for (final Path file : files.filter(path -> path.toString().endsWith(".java")).toList()) {
                 backendSources.append(Files.readString(file));
             }
@@ -131,7 +132,7 @@ class ObservabilityDashboardContractTest {
 
     @Test
     void teamReviewLoggingContractIsInfoLevelAndDoesNotLogRawAiContent() throws Exception {
-        final String source = Files.readString(resolve("java", "wotb-web", "src", "main", "java",
+        final String source = Files.readString(resolve("java", "wotb-ai", "src", "main", "java",
                 "com", "wotb", "web", "replay", "ai", "TeamReplayAnalysisService.java"));
         assertTrue(source.contains("LOGGER.info(AiReviewEventLog.line(\"team_review_validation_conflict\""));
         assertFalse(source.contains("LOGGER.debug(AiReviewEventLog.line(\"team_review_validation_conflict\""));

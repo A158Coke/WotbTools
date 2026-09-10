@@ -19,11 +19,11 @@
         </dependency>
         <dependency>
             <groupId>com.wotb</groupId>
-            <artifactId>wotb-result</artifactId>
+            <artifactId>wotb-contracts</artifactId>
         </dependency>
         <dependency>
             <groupId>com.wotb</groupId>
-            <artifactId>wotb-playback</artifactId>
+            <artifactId>wotb-result</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework</groupId>

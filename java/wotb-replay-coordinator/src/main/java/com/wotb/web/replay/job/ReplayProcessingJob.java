@@ -1,5 +1,7 @@
 package com.wotb.web.replay.job;
 
+import com.wotb.core.parse.Replays;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -60,8 +62,11 @@ public final class ReplayProcessingJob {
     }
 
     private final ReplayJobState state;
+    private final long submittedNanos = System.nanoTime();
     /** 固定大小的 per-source 状态（AtomicReferenceArray：worker 线程写、status 轮询线程读）。 */
     private final AtomicReferenceArray<SourceState> sources;
+    /** Worker outcomes are stored by source index; batch finalization reads the complete immutable set. */
+    private final AtomicReferenceArray<Replays.ParsedEntry> entries;
     /** 终态 observability（日志/指标）exactly-once 记账（QUEUED 取消与 worker 双路径防重）。 */
     private final AtomicBoolean terminalRecorded = new AtomicBoolean();
     /** READY 后设置（exactly once 由状态机保证；volatile 供 status 轮询线程读取）。 */
@@ -88,6 +93,7 @@ public final class ReplayProcessingJob {
     public ReplayProcessingJob(final String jobId, final List<String> sourceNames) {
         this.state = new ReplayJobState(jobId, sourceNames.size(), PHASE_WAITING_FOR_WORKER);
         this.sources = new AtomicReferenceArray<>(sourceNames.size());
+        this.entries = new AtomicReferenceArray<>(sourceNames.size());
         for (int i = 0; i < sourceNames.size(); i++) {
             final String name = sourceNames.get(i) == null || sourceNames.get(i).isBlank()
                     ? "replay.wotbreplay" : sourceNames.get(i);
@@ -173,6 +179,18 @@ public final class ReplayProcessingJob {
         }
     }
 
+    public void recordEntry(final int sourceIndex, final Replays.ParsedEntry entry) {
+        entries.set(sourceIndex, entry);
+    }
+
+    public List<Replays.ParsedEntry> entriesInOrder() {
+        final List<Replays.ParsedEntry> out = new ArrayList<>(entries.length());
+        for (int i = 0; i < entries.length(); i++) {
+            out.add(entries.get(i));
+        }
+        return out;
+    }
+
     /** 线程安全 per-source 快照（按 sourceIndex 顺序，不暴露内部数组）。 */
     public List<SourceState> sourceStates() {
         final List<SourceState> out = new ArrayList<>(sources.length());
@@ -241,6 +259,10 @@ public final class ReplayProcessingJob {
     /** 创建时间（QUEUED 取消的终态 duration 按「创建 → 取消」计，无 worker 运行时长）。 */
     public long createdAtMillis() {
         return state.createdAtMillis();
+    }
+
+    public long submittedNanos() {
+        return submittedNanos;
     }
 
     public long finishedAtMillis() {

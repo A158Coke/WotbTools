@@ -1,5 +1,9 @@
 package com.wotb.web.replay.job;
 
+import com.wotb.contracts.ReplayProcessingRequest;
+import com.wotb.contracts.ReplayProcessingQueueFullException;
+import com.wotb.contracts.ReplayProcessingSource;
+import com.wotb.core.replay.processing.ReplayProcessingLifecycle;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
@@ -102,6 +106,8 @@ public final class ReplayParseScheduler implements AutoCloseable {
     private boolean closed;
     private final ThreadPoolExecutor workers;
     private final MeterRegistry meterRegistry;
+    private LocalReplayProcessingExecutor sourceExecutor;
+    private ReplayProcessingLifecycle lifecycle;
     /** 测试专用：completion 记账后、pump 前同步钩子（确定性复现 取消竞态窗口）。 */
     Runnable beforePumpHook;
 
@@ -109,7 +115,9 @@ public final class ReplayParseScheduler implements AutoCloseable {
     public ReplayParseScheduler(
             @Value("${wotb.replay.parse.max-concurrent:2}") final int maxConcurrent,
             @Value("${wotb.replay.parse.queue-capacity:200}") final int maxQueuedSources,
-            @Autowired(required = false) final MeterRegistry meterRegistry) {
+            @Autowired(required = false) final MeterRegistry meterRegistry,
+            final LocalReplayProcessingExecutor sourceExecutor,
+            final ReplayProcessingLifecycle lifecycle) {
         if (maxConcurrent < 1) {
             throw new IllegalArgumentException("replay parse max-concurrent must be >= 1: " + maxConcurrent);
         }
@@ -119,6 +127,28 @@ public final class ReplayParseScheduler implements AutoCloseable {
         this.maxConcurrent = maxConcurrent;
         this.maxQueuedSources = maxQueuedSources;
         this.meterRegistry = meterRegistry;
+        this.sourceExecutor = sourceExecutor;
+        this.lifecycle = lifecycle;
+        this.workers = new ThreadPoolExecutor(
+                maxConcurrent, maxConcurrent, 0L, TimeUnit.MILLISECONDS,
+                new java.util.concurrent.LinkedBlockingQueue<>(),
+                new NamedDaemonThreadFactory(),
+                new ThreadPoolExecutor.AbortPolicy());
+    }
+
+    private ReplayParseScheduler(final int maxConcurrent, final int maxQueuedSources,
+                                 final MeterRegistry meterRegistry) {
+        if (maxConcurrent < 1) {
+            throw new IllegalArgumentException("replay parse max-concurrent must be >= 1: " + maxConcurrent);
+        }
+        if (maxQueuedSources < 1) {
+            throw new IllegalArgumentException("replay parse queue-capacity must be >= 1: " + maxQueuedSources);
+        }
+        this.maxConcurrent = maxConcurrent;
+        this.maxQueuedSources = maxQueuedSources;
+        this.meterRegistry = meterRegistry;
+        this.sourceExecutor = null;
+        this.lifecycle = null;
         this.workers = new ThreadPoolExecutor(
                 maxConcurrent, maxConcurrent, 0L, TimeUnit.MILLISECONDS,
                 new java.util.concurrent.LinkedBlockingQueue<>(),
@@ -134,6 +164,24 @@ public final class ReplayParseScheduler implements AutoCloseable {
     /** 测试便利构造器。 */
     public ReplayParseScheduler(final int maxConcurrent, final int maxQueuedSources) {
         this(maxConcurrent, maxQueuedSources, null);
+    }
+
+    /** Value-only command entry point used by the dispatcher port. */
+    public void submit(final ReplayProcessingRequest request) {
+        if (sourceExecutor == null || lifecycle == null) {
+            throw new IllegalStateException("replay processing worker is not configured");
+        }
+        submit(request.jobId(), request.sources().stream().map(ReplayProcessingSource::sourceIndex).toList(),
+                index -> sourceExecutor.process(request, index),
+                () -> lifecycle.jobStarted(request.jobId()),
+                () -> lifecycle.jobCompleted(request.jobId()));
+    }
+
+    /** Test-only assembly seam; production wiring uses the constructor-injected worker. */
+    void configureWorker(final LocalReplayProcessingExecutor sourceExecutor,
+                         final ReplayProcessingLifecycle lifecycle) {
+        this.sourceExecutor = sourceExecutor;
+        this.lifecycle = lifecycle;
     }
 
     /** 低基数 scheduler metrics（无高基数 tag）。 */
@@ -176,7 +224,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
             }
             // 有界排队：锁内校验 + 占额，失败不占用。
             if (queuedSources + sourceIndexes.size() > maxQueuedSources) {
-                throw new ProcessingQueueFullException();
+                throw new ReplayProcessingQueueFullException();
             }
             queuedSources += sourceIndexes.size();
             jobs.put(jobId, entry);
