@@ -85,20 +85,30 @@ class ReplayPerformanceBenchmarkTest {
                     + String.join("; ", validation.rejections()));
         }
 
-        final Map<String, String> fingerprints = establishFingerprints(validSamples);
-        final int warmupRounds = positiveIntProperty("warmupRounds", 5);
-        final int measurementRounds = positiveIntProperty("measurementRounds", 20);
+        final Map<String, String> fingerprints = validation.fingerprints();
+        final String requestedMode = benchmarkMode();
+        final int defaultWarmupRounds = requestedMode.equals("quick") ? 3 : 5;
+        final int defaultMeasurementRounds = requestedMode.equals("quick") ? 5 : 20;
+        final int warmupRounds = positiveIntProperty("warmupRounds", defaultWarmupRounds);
+        final int measurementRounds = positiveIntProperty("measurementRounds", defaultMeasurementRounds);
+        validateRounds(requestedMode, warmupRounds, measurementRounds);
         final int concurrency = positiveIntProperty("concurrency", 1);
         final String requestedStage = System.getProperty("stage", "all").trim().toLowerCase();
         final List<Stage> stages = stages(requestedStage);
         final boolean verifyParity = !Boolean.getBoolean("skipFingerprintVerification");
+        final boolean discoveryOnly = Boolean.getBoolean("discoveryOnly");
         final Path outputDirectory = resolvePath(repoRoot,
                 System.getProperty("performance.output", "build/performance"));
         Files.createDirectories(outputDirectory);
 
         final Path jfrPath = configuredJfrPath(repoRoot);
+        if (discoveryOnly && jfrPath != null) {
+            throw new IllegalArgumentException("-DdiscoveryOnly=true cannot be combined with -DjfrFile");
+        }
         final List<BenchmarkResult> benchmarkResults;
-        if (jfrPath == null) {
+        if (discoveryOnly) {
+            benchmarkResults = List.of();
+        } else if (jfrPath == null) {
             benchmarkResults = runStages(validSamples, fingerprints, stages,
                     warmupRounds, measurementRounds, concurrency, verifyParity);
         } else {
@@ -107,26 +117,36 @@ class ReplayPerformanceBenchmarkTest {
         }
 
         final Metadata metadata = Metadata.capture(repoRoot, validSamples, warmupRounds,
-                measurementRounds, concurrency, requestedStage, jfrPath);
+                measurementRounds, concurrency, discoveryOnly ? "discovery" : requestedStage,
+                discoveryOnly ? "discovery" : requestedMode,
+                verifyParity, jfrPath);
         final Path resultBase = outputDirectory.resolve(
-                "replay-performance-" + FILE_TIMESTAMP.format(Instant.now()));
+                (discoveryOnly ? "replay-corpus-discovery-" : "replay-performance-" + requestedMode + "-")
+                        + FILE_TIMESTAMP.format(Instant.now()));
         writeJson(resultBase.resolveSibling(resultBase.getFileName() + ".json"),
                 metadata, discovery, validation, fingerprints, benchmarkResults);
         writeCsv(resultBase.resolveSibling(resultBase.getFileName() + ".csv"), benchmarkResults);
         writeMarkdown(resultBase.resolveSibling(resultBase.getFileName() + ".md"),
                 metadata, discovery, validation, benchmarkResults);
 
-        System.out.println("Replay performance benchmark complete");
-        System.out.println("  corpus=" + validSamples.size() + " files, stage=" + requestedStage
-                + ", concurrency=" + concurrency);
+        System.out.println(discoveryOnly ? "Replay corpus discovery complete"
+                : "Replay performance benchmark complete");
+        System.out.println("  corpus=" + validSamples.size() + " accepted files, "
+                + validation.rejections().size() + " rejected files");
+        if (!discoveryOnly) {
+            System.out.println("  mode=" + requestedMode + ", stage=" + requestedStage
+                    + ", concurrency=" + concurrency);
+        }
         System.out.println("  results=" + resultBase + ".{json,csv,md}");
         if (jfrPath != null) {
             System.out.println("  jfr=" + jfrPath);
         }
-        benchmarkResults.forEach(result -> System.out.printf(
-                "  %s: %.3f replays/s, p50=%.3f ms, p95=%.3f ms, gc=%d/%d ms%n",
-                result.stage().label, result.replaysPerSecond(), result.p50Ms(), result.p95Ms(),
-                result.gcCollections(), result.gcTimeMs()));
+        if (!discoveryOnly) {
+            benchmarkResults.forEach(result -> System.out.printf(
+                    "  %s: %.3f replays/s, p50=%.3f ms, p95=%.3f ms, gc=%d/%d ms%n",
+                    result.stage().label, result.replaysPerSecond(), result.p50Ms(), result.p95Ms(),
+                    result.gcCollections(), result.gcTimeMs()));
+        }
     }
 
     private List<BenchmarkResult> runStages(final List<ReplaySample> samples,
@@ -325,29 +345,20 @@ class ReplayPerformanceBenchmarkTest {
         return verified;
     }
 
-    private Map<String, String> establishFingerprints(final List<ReplaySample> samples) {
-        final Map<String, String> fingerprints = new LinkedHashMap<>();
-        for (final ReplaySample sample : samples) {
-            final ReplayProcessingResult result = facade.process(
-                    new Source(sample.name(), sample.bytes()), ReplayProcessingOptions.full());
-            if (result.status() != ReplayProcessingStatus.SUCCESS || result.reconstruction() == null) {
-                throw new IllegalStateException("Correctness pass failed for " + sample.name()
-                        + ": " + failureReason(result));
-            }
-            fingerprints.put(sample.path().toString(), fingerprint(result));
-        }
-        return fingerprints;
-    }
-
     private CorpusValidation validateCorpus(final List<ReplaySample> samples) {
         final List<ReplaySample> valid = new ArrayList<>();
         final List<String> rejections = new ArrayList<>();
+        final Map<String, String> fingerprints = new LinkedHashMap<>();
         for (final ReplaySample sample : samples) {
             try {
                 final ReplayProcessingResult result = facade.process(
                         new Source(sample.name(), sample.bytes()), ReplayProcessingOptions.full());
                 if (result.status() == ReplayProcessingStatus.SUCCESS && result.reconstruction() != null) {
                     valid.add(sample);
+                    final String fingerprint = fingerprint(result);
+                    fingerprints.put(sample.path().toString(), fingerprint);
+                    System.out.println("CORPUS_ACCEPTED file=" + sample.path()
+                            + " | stage=full | fingerprint=" + fingerprint);
                 } else {
                     final String rejection = sample.path() + " | stage=full | " + failureReason(result);
                     rejections.add(rejection);
@@ -360,7 +371,7 @@ class ReplayPerformanceBenchmarkTest {
                 System.out.println("CORPUS_REJECTED file=" + rejection);
             }
         }
-        return new CorpusValidation(List.copyOf(valid), List.copyOf(rejections));
+        return new CorpusValidation(List.copyOf(valid), List.copyOf(rejections), Map.copyOf(fingerprints));
     }
 
     private Discovery discover(final Path repoRoot) throws IOException {
@@ -445,6 +456,26 @@ class ReplayPerformanceBenchmarkTest {
         return value;
     }
 
+    private static String benchmarkMode() {
+        final String mode = System.getProperty("benchmarkMode", "full").trim().toLowerCase();
+        if (!mode.equals("quick") && !mode.equals("full")) {
+            throw new IllegalArgumentException("-DbenchmarkMode must be quick or full: " + mode);
+        }
+        return mode;
+    }
+
+    private static void validateRounds(final String mode, final int warmupRounds,
+                                       final int measurementRounds) {
+        if (mode.equals("full") && (warmupRounds < 5 || measurementRounds < 20)) {
+            throw new IllegalArgumentException(
+                    "full mode requires warmupRounds >= 5 and measurementRounds >= 20");
+        }
+        if (mode.equals("quick") && measurementRounds > 10) {
+            throw new IllegalArgumentException(
+                    "quick mode requires measurementRounds <= 10; use full mode for confirmation");
+        }
+    }
+
     private static Path findRepositoryRoot() {
         Path current = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
         while (current != null) {
@@ -504,6 +535,8 @@ class ReplayPerformanceBenchmarkTest {
                 .append("\"root\":").append(json(discovery.root().toString())).append(",")
                 .append("\"discovered\":").append(discovery.samples().size()).append(",")
                 .append("\"accepted\":").append(validation.validSamples().size()).append(",")
+                .append("\"acceptedFiles\":").append(json(validation.validSamples().stream()
+                        .map(sample -> sample.path().toString()).toList())).append(",")
                 .append("\"rejected\":").append(json(combinedRejections(discovery, validation))).append(",")
                 .append("\"totalBytes\":").append(discovery.samples().stream()
                         .mapToLong(ReplaySample::size).sum()).append(",")
@@ -545,6 +578,8 @@ class ReplayPerformanceBenchmarkTest {
                 .append("- accepted full-pipeline corpus: ").append(validation.validSamples().size()).append("\n")
                 .append("- total compressed bytes: ").append(discovery.samples().stream()
                         .mapToLong(ReplaySample::size).sum()).append("\n");
+        out.append("- accepted files:\n");
+        validation.validSamples().forEach(sample -> out.append("  - ").append(sample.path()).append('\n'));
         if (!combinedRejections(discovery, validation).isEmpty()) {
             out.append("- corpus rejections:\n");
             combinedRejections(discovery, validation)
@@ -560,8 +595,10 @@ class ReplayPerformanceBenchmarkTest {
                 .append("- available processors: ").append(metadata.availableProcessors()).append("\n")
                 .append("- heap max/initial: ").append(metadata.heapMaxBytes()).append(" / ")
                 .append(metadata.heapInitialBytes()).append(" bytes\n")
+                .append("- benchmark mode: `").append(metadata.benchmarkMode()).append("`\n")
                 .append("- warmup/measurement rounds: ").append(metadata.warmupRounds()).append(" / ")
                 .append(metadata.measurementRounds()).append("\n")
+                .append("- fingerprint parity enabled: ").append(metadata.fingerprintVerification()).append("\n")
                 .append("- JFR: `").append(metadata.jfrFile()).append("`\n\n")
                 .append("## Measurements\n\n")
                 .append("| Stage | C | Replays/s | MB/s | Mean ms | P50 ms | P95 ms | P99 ms | GC count/time ms | Peak heap |\n")
@@ -647,7 +684,8 @@ class ReplayPerformanceBenchmarkTest {
     private record Discovery(Path root, List<ReplaySample> samples, List<String> rejections) {
     }
 
-    private record CorpusValidation(List<ReplaySample> validSamples, List<String> rejections) {
+    private record CorpusValidation(List<ReplaySample> validSamples, List<String> rejections,
+                                    Map<String, String> fingerprints) {
     }
 
     private record Round(List<TimedInvocation> invocations) {
@@ -805,10 +843,13 @@ class ReplayPerformanceBenchmarkTest {
                             String jvmVendor, String os, String cpuModel, int availableProcessors,
                             long heapInitialBytes, long heapMaxBytes, long physicalMemoryBytes,
                             int corpusFileCount, long corpusBytes, int warmupRounds,
-                            int measurementRounds, int concurrency, String stage, String jfrFile) {
+                            int measurementRounds, int concurrency, String stage, String benchmarkMode,
+                            boolean fingerprintVerification, String jfrFile) {
         private static Metadata capture(final Path repoRoot, final List<ReplaySample> samples,
                                         final int warmupRounds, final int measurementRounds,
-                                        final int concurrency, final String stage, final Path jfrFile) {
+                                        final int concurrency, final String stage,
+                                        final String benchmarkMode,
+                                        final boolean fingerprintVerification, final Path jfrFile) {
             final java.lang.management.OperatingSystemMXBean bean =
                     ManagementFactory.getOperatingSystemMXBean();
             final long physicalMemory = bean instanceof OperatingSystemMXBean os
@@ -822,7 +863,8 @@ class ReplayPerformanceBenchmarkTest {
                     System.getenv().getOrDefault("PROCESSOR_IDENTIFIER", System.getProperty("os.arch")),
                     runtime.availableProcessors(), heapInitial, runtime.maxMemory(),
                     physicalMemory, samples.size(), samples.stream().mapToLong(ReplaySample::size).sum(),
-                    warmupRounds, measurementRounds, concurrency, stage,
+                    warmupRounds, measurementRounds, concurrency, stage, benchmarkMode,
+                    fingerprintVerification,
                     jfrFile == null ? "" : jfrFile.toString());
         }
 
@@ -836,7 +878,10 @@ class ReplayPerformanceBenchmarkTest {
                     + physicalMemoryBytes + ",\"corpusFileCount\":" + corpusFileCount
                     + ",\"corpusBytes\":" + corpusBytes + ",\"warmupRounds\":" + warmupRounds
                     + ",\"measurementRounds\":" + measurementRounds + ",\"concurrency\":"
-                    + concurrency + ",\"stage\":" + json(stage) + ",\"jfrFile\":" + json(jfrFile) + "}";
+                    + concurrency + ",\"stage\":" + json(stage)
+                    + ",\"benchmarkMode\":" + json(benchmarkMode)
+                    + ",\"fingerprintVerification\":" + fingerprintVerification
+                    + ",\"jfrFile\":" + json(jfrFile) + "}";
         }
     }
 

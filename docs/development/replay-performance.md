@@ -27,15 +27,39 @@ invocations must reproduce that fingerprint.
 
 ## Local run
 
+The harness has two explicit modes. `quick` defaults to warmup 3 and
+measurement 5 (and permits at most 10 measurement rounds); it is for repeated
+candidate screening, not final performance claims. `full` defaults to warmup 5
+and measurement 20 and rejects smaller settings; it is the confirmation mode.
+Both modes use the same corpus validation and fingerprint parity by default.
+
 From the repository root:
 
 ```powershell
 cd java
 mvn -s settings.xml -pl wotb-core -Dtest=ReplayPerformanceBenchmarkTest `
-  -Dperformance=true -Dstage=full -Dconcurrency=1 `
-  -DwarmupRounds=5 -DmeasurementRounds=20 `
+  -Dperformance=true -DbenchmarkMode=quick -Dstage=full -Dconcurrency=1 `
+  -DargLine="-XX:ActiveProcessorCount=2 -Xms4g -Xmx4g" `
+  -DwarmupRounds=3 -DmeasurementRounds=5 `
   -DjfrFile=build/performance/replay-full-c1.jfr test
 ```
+
+Use `-DbenchmarkMode=full -DwarmupRounds=5 -DmeasurementRounds=20` for
+confirmation. Do not compare a quick-screen result directly with a full-mode
+result as proof of a performance change.
+
+For the real 40-replay corpus, pass its absolute path explicitly and verify
+the corpus without running the timed matrix first:
+
+```powershell
+mvn -s settings.xml -pl wotb-core -Dtest=ReplayPerformanceBenchmarkTest `
+  -Dperformance=true -DdiscoveryOnly=true `
+  -DcorpusPath=C:/path/to/WotbTools/common/data `
+  -DargLine="-XX:ActiveProcessorCount=2 -Xms4g -Xmx4g" test
+```
+
+`discoveryOnly=true` reports accepted/rejected files and establishes the
+canonical full-pipeline fingerprints without producing throughput numbers.
 
 The default corpus search is recursive:
 
@@ -50,6 +74,8 @@ common/fixtures/replays/**/*.wotbreplay
 ```
 
 Override the corpus with `-DcorpusPath=<absolute-or-repository-relative-path>`.
+Use `-DargLine="-XX:ActiveProcessorCount=2 -Xms4g -Xmx4g"` when the result must
+be comparable to the 2C/4GiB constrained-node baseline.
 Use `-Dstage=all` to run archive, parser, reconstruction, and full stages in one
 invocation. Use `-Dconcurrency=1`, then `2`, `3`, and `4` with the same corpus and
 round settings for the local concurrency matrix. The executor is a bounded fixed
