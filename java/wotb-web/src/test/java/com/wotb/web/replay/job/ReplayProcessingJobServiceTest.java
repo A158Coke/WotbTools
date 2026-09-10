@@ -1,5 +1,6 @@
 package com.wotb.web.replay.job;
 
+import com.wotb.contracts.ReplayProcessingDispatcher;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
@@ -32,6 +33,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -1011,6 +1013,62 @@ class ReplayProcessingJobServiceTest {
     private static ReplayProcessingResult leagueProcessingResult(final Battle battle, final String name) {
         return new ReplayProcessingResult(name, ReplayProcessingStatus.SUCCESS, null, battle,
                 null, null, ReplayProcessingCapabilities.summaryOnly(false), null, null);
+    }
+
+    /**
+     * Processing create idempotency（Android external replay 可重放安全）：同一 subject + 同一 operationId
+     * 重放（典型场景：server 已接受但 Native ACK 前进程被杀 → 冷启动重新导入）返回同一个 jobId，
+     * 不重复上传、不重复登记、不重复提交调度器。
+     */
+    @Test
+    void createJobIsIdempotentForSameSubjectAndOperation() throws Exception {
+        final ReplayProcessingDispatcher dispatcher = mock(ReplayProcessingDispatcher.class);
+        final ReplayProcessingJobService idempotent = new ReplayProcessingJobService(store, dispatcher, meterRegistry);
+
+        final String first = idempotent.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-1");
+        final String retry = idempotent.createJob(new MultipartFile[]{file("a.wotbreplay")}, 0, "user-1", "op-1");
+
+        assertEquals(first, retry, "同一 operationId 重放必须拿回同一个 jobId，绝不创建第二个 job");
+        verify(dispatcher, times(1)).submit(any());
+        assertTrue(Files.exists(store.inputDir(first).resolve("0__a.wotbreplay")), "输入只落盘一次");
+        assertEquals(retry, store.jobIdForOperation("user-1", "op-1"));
+    }
+
+    /** identity 分域：不同 operation / 不同 subject / 无 identity（手工上传）都必须创建独立 job。 */
+    @Test
+    void differentOperationsOrSubjectsCreateDistinctJobs() {
+        final ReplayProcessingDispatcher dispatcher = mock(ReplayProcessingDispatcher.class);
+        final ReplayProcessingJobService idempotent = new ReplayProcessingJobService(store, dispatcher, meterRegistry);
+
+        final String opOne = idempotent.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-1");
+        final String opTwo = idempotent.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-2");
+        final String otherUser = idempotent.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-2", "op-1");
+        final String manual = idempotent.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, null, null);
+
+        assertEquals(4, Stream.of(opOne, opTwo, otherUser, manual).distinct().count());
+        verify(dispatcher, times(4)).submit(any());
+        assertNull(store.jobIdForOperation("user-1", null), "缺 identity 不进入索引");
+        assertNull(store.jobIdForOperation(null, "op-1"), "缺 subject 不进入索引");
+    }
+
+    /**
+     * idempotency 索引跟随 Job 生命周期：job 被移除（显式清理 / TTL sweep）后同一 operationId 重新创建新 job
+     * ——此时旧 dataset 已不可读，重建是唯一可用语义；索引绝不留悬挂项。
+     */
+    @Test
+    void idempotencyIndexIsDroppedWithTheJob() {
+        final ReplayProcessingDispatcher dispatcher = mock(ReplayProcessingDispatcher.class);
+        final ReplayProcessingJobService idempotent = new ReplayProcessingJobService(store, dispatcher, meterRegistry);
+
+        final String first = idempotent.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-1");
+        assertEquals(first, idempotent.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-1"));
+
+        store.removeAndCleanup(first);
+        assertNull(store.jobIdForOperation("user-1", "op-1"), "job 清理后索引必须同步失效");
+
+        final String recreated = idempotent.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-1");
+        assertNotEquals(first, recreated, "dataset 已清理 → 同一 operationId 允许重建");
+        verify(dispatcher, times(2)).submit(any());
     }
 
     private static MultipartFile file(final String name) {

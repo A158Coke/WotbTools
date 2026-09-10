@@ -16,8 +16,10 @@ import java.util.UUID
 /**
  * 待处理 replay：已复制到 app private cache，uri 为 app-owned FileProvider URI。
  *
- * `pendingId` 只是短 id（低敏日志 / metadata 关联用，不携带来源信息）；`createdAt` 是本地 ingress
- * 时刻，供 24h 本地 cache TTL 判断（与 Keycloak / QQ 的认证超时无关）。
+ * `pendingId` 是这份 pending 的 **authoritative identity**（完整 UUID）：Web ACK 必须原样回传它，
+ * 由 `PendingReplayAckPolicy` 做 compare-and-clear —— 没有任何「无 identity 清当前 pending」的路径。
+ * 日志一律只允许用 short ref（[logRef]），绝不落完整 id。
+ * `createdAt` 是本地 ingress 时刻，供 24h 本地 cache TTL 判断（与 Keycloak / QQ 的认证超时无关）。
  */
 data class PendingReplay(
     val pendingId: String,
@@ -28,10 +30,24 @@ data class PendingReplay(
     val createdAt: Long
 )
 
+/** 日志 short ref 长度。**只**决定日志可读性，不参与任何 identity 判断。 */
+private const val LOG_REF_LENGTH = 8
+
+/**
+ * 日志用 short ref（不足 8 位原样返回，null 记为 `none`）。
+ *
+ * 这是「short ref 只配做日志」这条规则在 JVM 单测里可覆盖的唯一入口 —— [PendingReplay] 带 Android 的
+ * `Uri`，纯 JVM 测试无法构造实例。**禁止**用它的返回值做比较 / 清理决策：identity 永远是完整 pendingId。
+ */
+internal fun pendingLogRef(pendingId: String?): String = pendingId?.take(LOG_REF_LENGTH) ?: "none"
+
+/** [PendingReplay] 的日志 short ref 便捷访问（等价于 `pendingLogRef(pendingId)`）。 */
+internal val PendingReplay.logRef: String get() = pendingLogRef(pendingId)
+
 /**
  * 持久化的 pending replay metadata（跨 process death 恢复用）。
  *
- * 只存恢复所需的最小信息：短 id、cache 文件名、原始显示名、size、createdAt。
+ * 只存恢复所需的最小信息：完整 pendingId、cache 文件名、原始显示名、size、createdAt。
  * **不存** replay 内容、不 Base64、不存 external 绝对路径、不存 token/cookie/凭据 —— 内容始终只存在于
  * app private cache 的 backing file，恢复时用同一 file path 重建 FileProvider URI。
  */
@@ -66,8 +82,12 @@ object ReplayIntentHandler {
     private const val PREFS_NAME = "replay_pending"
     private const val KEY_METADATA = "metadata"
 
-    /** 短 id 长度（hex 字符）。 */
-    private const val ID_LENGTH = 8
+    /**
+     * pendingId 的合法长度边界。完整 UUID 为 36 字符；下限 8 保留对升级前写入的短 id metadata 的
+     * 向后兼容（否则一次 app update 就会把未消费的 pending 判成损坏而丢掉），上限 64 拒绝畸形 / 超长注入值。
+     */
+    internal const val PENDING_ID_MIN_LENGTH = 8
+    internal const val PENDING_ID_MAX_LENGTH = 64
 
     /**
      * 本地 cache hygiene TTL：24h。这是本地 pending 生命周期，**不**与 Keycloak session / QQ 登录
@@ -175,7 +195,7 @@ object ReplayIntentHandler {
 
     /**
      * 解码 metadata。null / 空 / 畸形（缺字段、重复 key、畸形行、版本不符、数字不可解析、负 size、
-     * 非正 createdAt、不安全的 cache 文件名）一律返回 null —— 调用方据此清 metadata。
+     * 非正 createdAt、不安全的 cache 文件名、空白或越界的 pendingId）一律返回 null —— 调用方据此清 metadata。
      * 未知的额外 key 被忽略（为将来追加字段留出前向兼容）。
      */
     internal fun decodeMetadata(raw: String?): ReplayPendingMetadata? {
@@ -193,7 +213,9 @@ object ReplayIntentHandler {
         val originalName = fields["originalName"] ?: return null
         val size = fields["size"]?.toLongOrNull() ?: return null
         val createdAt = fields["createdAt"]?.toLongOrNull() ?: return null
+        // identity 边界：非空白且长度在 8..64 —— 全空白的 8 位值同样不是 identity，必须单独拒绝。
         if (pendingId.isBlank()) return null
+        if (pendingId.length !in PENDING_ID_MIN_LENGTH..PENDING_ID_MAX_LENGTH) return null
         if (!isSafeCacheFilename(cacheFilename)) return null
         if (size < 0L) return null
         if (createdAt <= 0L) return null
@@ -327,5 +349,11 @@ object ReplayIntentHandler {
 
     private fun fileProviderAuthority(context: Context): String = "${context.packageName}.fileprovider"
 
-    private fun newPendingId(): String = UUID.randomUUID().toString().substring(0, ID_LENGTH)
+    /**
+     * pending identity：完整 UUID（36 字符）。
+     *
+     * 刻意不用短 id：short ref 只配做日志（[logRef] / [pendingLogRef]），identity 必须全局唯一，否则
+     * 「ACK 的那一份」与「当前 pending」无法可靠比较（PR review Blocker 2）。
+     */
+    internal fun newPendingId(): String = UUID.randomUUID().toString()
 }

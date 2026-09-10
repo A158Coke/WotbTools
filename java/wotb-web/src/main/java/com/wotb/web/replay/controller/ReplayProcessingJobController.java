@@ -7,6 +7,8 @@ import com.wotb.web.replay.job.ReplayProcessingJob;
 import com.wotb.web.replay.job.ReplayProcessingJobService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,6 +36,11 @@ import java.util.Map;
  * </pre>
  * 错误码：PROCESSING_QUEUE_FULL(503) / JOB_NOT_FOUND(404) / JOB_NOT_READY(409)，
  * job 内失败经 status.errorCode 返回（如 NO_VALID_REPLAYS）。
+ *
+ * <p><b>Idempotency</b>：创建端点接受可选 multipart 字段 {@code operationId}（Android external replay
+ * 传入其 pending identity）。同一已认证 subject 用同一 {@code operationId} 重复提交返回同一个
+ * {@code jobId}，用于覆盖「server 已接受但 Native ACK 前进程被杀 → 冷启动重新导入同一份 replay」的
+ * exactly-once 语义。字段缺失时保持「每次提交都是新 job」的既有语义。</p>
  */
 @RestController
 @CrossOrigin(origins = "*")
@@ -48,13 +55,20 @@ public class ReplayProcessingJobController {
     @PostMapping(value = ApiPaths.REPLAY_PROCESSING_JOBS, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Map<String, Object>> create(
             @RequestParam("files") final MultipartFile[] files,
-            @RequestParam(name = "prioritySourceIndex", required = false) final Integer prioritySourceIndex) {
-        final String jobId = service.createJob(files, prioritySourceIndex);
+            @RequestParam(name = "prioritySourceIndex", required = false) final Integer prioritySourceIndex,
+            @RequestParam(name = "operationId", required = false) final String operationId,
+            @AuthenticationPrincipal final Jwt jwt) {
+        final String jobId = service.createJob(files, prioritySourceIndex, subjectOf(jwt), operationId);
         final ReplayProcessingJob.Snapshot snap = service.status(jobId);
         return ResponseEntity.accepted().body(Map.of(
                 "jobId", snap.jobId(),
                 "status", snap.status().name(),
                 "total", snap.total()));
+    }
+
+    /** JWT subject：idempotency identity 按 authenticated subject 分域（绝不跨用户复用）。 */
+    private static String subjectOf(final Jwt jwt) {
+        return jwt == null ? null : jwt.getSubject();
     }
 
     @GetMapping(ApiPaths.REPLAY_PROCESSING_JOB_STATUS)

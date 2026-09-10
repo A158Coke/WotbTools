@@ -22,7 +22,7 @@ export function useReplay(initialCapability: ReplayCapability = 'data') {
   const auth = useAuth()
   const session = useReplaySession(initialCapability)
   const processingController = useProcessingJob(session, { t, te }, auth)
-  const exportController = useExportJob(session)
+  const exportController = useExportJob(session, auth)
   const {
     files, loading, error, resp, playerCols, aggCols, aggStats, activeTab, pendingRemove,
     selectionRevision, processingJob, processingError, processingActive, processingJobId,

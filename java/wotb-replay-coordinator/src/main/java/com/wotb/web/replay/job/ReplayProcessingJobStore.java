@@ -37,6 +37,16 @@ public class ReplayProcessingJobStore {
 
     private final ConcurrentHashMap<String, ReplayProcessingJob> jobs = new ConcurrentHashMap<>();
     /**
+     * Processing create idempotency 索引：{@code ownerSubject + '\u0000' + operationId} → processingJobId。
+     *
+     * <p>只服务 Android external replay 的可重放安全路径（server 已接受但 Native ACK 前进程被杀 →
+     * 冷启动后同一份 pending replay 重新提交必须拿回同一个 job）。按 authenticated subject 分域：
+     * 同一 operationId 在不同 subject 下必须是不同 job，绝不跨用户复用。</p>
+     */
+    private final ConcurrentHashMap<String, String> operationIndex = new ConcurrentHashMap<>();
+    /** 反向索引：processingJobId → operationIndex key（job 被移除时同步清理，不留悬挂 identity）。 */
+    private final ConcurrentHashMap<String, String> jobOperationKeys = new ConcurrentHashMap<>();
+    /**
      * processingJobId → 活跃 Dataset Lease 数（AI / Playback / Export 共享，
      * acquire/release 配对；语义命名，不再叫 export refs）。
      */
@@ -84,6 +94,66 @@ public class ReplayProcessingJobStore {
 
     public ReplayProcessingJob get(final String jobId) {
         return jobs.get(jobId);
+    }
+
+    // ---- Processing create idempotency（Android external replay 可重放安全）----
+
+    /**
+     * 解析 operation identity 对应的 jobId；没有登记、identity 缺失或 job 已被清理时返回 null。
+     * job 已消失时顺手清理索引项（懒失效），绝不返回已被清理的 jobId。
+     */
+    public String jobIdForOperation(final String ownerSubject, final String operationId) {
+        if (!hasOperationIdentity(ownerSubject, operationId)) {
+            return null;
+        }
+        final String key = operationKey(ownerSubject, operationId);
+        final String jobId = operationIndex.get(key);
+        if (jobId == null) {
+            return null;
+        }
+        if (jobs.get(jobId) == null) {
+            operationIndex.remove(key, jobId);
+            jobOperationKeys.remove(jobId, key);
+            return null;
+        }
+        return jobId;
+    }
+
+    /**
+     * 原子登记 operation identity → jobId。
+     *
+     * @return {@code null} 表示登记成功（本 job 拥有该 identity）；否则返回**已存在**的 jobId——
+     *         并发同 key 时先到者胜出，调用方必须放弃自己刚创建、尚未提交调度器的那个 job。
+     */
+    public String registerOperation(final String ownerSubject, final String operationId, final String jobId) {
+        if (!hasOperationIdentity(ownerSubject, operationId)) {
+            return null;
+        }
+        final String key = operationKey(ownerSubject, operationId);
+        final String existing = operationIndex.putIfAbsent(key, jobId);
+        if (existing != null) {
+            return existing;
+        }
+        jobOperationKeys.put(jobId, key);
+        return null;
+    }
+
+    private static boolean hasOperationIdentity(final String ownerSubject, final String operationId) {
+        return ownerSubject != null && !ownerSubject.isBlank()
+                && operationId != null && !operationId.isBlank();
+    }
+
+    /** identity 分域 key：subject 与 operationId 用 NUL 分隔，避免拼接歧义。 */
+    private static String operationKey(final String ownerSubject, final String operationId) {
+        return ownerSubject + '\u0000' + operationId;
+    }
+
+    /** job 被移除时同步清理 idempotency 索引（反向索引定位；绝不误删其它 job 的 identity）。 */
+    private void dropOperationIndex(final String jobId) {
+        final String key = jobOperationKeys.remove(jobId);
+        if (key != null) {
+            operationIndex.remove(key, jobId);
+        }
     }
 
     /**
@@ -136,6 +206,7 @@ public class ReplayProcessingJobStore {
         synchronized (lifecycleLock) {
             jobs.remove(jobId);
             datasetLeaseRefs.remove(jobId);
+            dropOperationIndex(jobId);
         }
         storage.removeAndCleanup(jobId);
     }
@@ -169,6 +240,7 @@ public class ReplayProcessingJobStore {
                         job.jobId(), snap.status());
                 jobs.remove(job.jobId());
                 datasetLeaseRefs.remove(job.jobId());
+                dropOperationIndex(job.jobId());
                 toClean.add(job.jobId());
             }
         }

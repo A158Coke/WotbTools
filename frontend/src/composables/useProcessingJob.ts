@@ -23,6 +23,8 @@ type StartProcessingResult =
 type ProcessingStart = {
   revision: number
   prioritySourceIndex?: number
+  /** Android external replay 的 pending identity（可重放安全）；手工上传为 undefined。 */
+  operationId?: string | null
   controller: AbortController
   phase: UploadPhase
   cancelRequested: boolean
@@ -63,12 +65,15 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext,
   let processingPollTimer: ReturnType<typeof setInterval> | null = null
   let processingPollJobId: ProcessingJobId | null = null
 
-  function buildFormData(prioritySourceIndex?: number) {
+  function buildFormData(prioritySourceIndex?: number, operationId?: string | null) {
     const fd = new FormData()
     files.value.forEach(f => fd.append('files', f, displayName(f)))
     if (prioritySourceIndex !== undefined && prioritySourceIndex !== null) {
       fd.append('prioritySourceIndex', String(prioritySourceIndex))
     }
+    // Android external replay 的 pending identity：server 端同一 subject + 同一 operationId 幂等返回同一 job，
+    // 覆盖「server 已接受但 Native ACK 前进程被杀 → 冷启动重新导入」的 exactly-once。手工上传不带该字段。
+    if (operationId) fd.append('operationId', operationId)
     return fd
   }
 
@@ -131,14 +136,14 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext,
     return processingStart === start
   }
 
-  async function ensureProcessingCreate(prioritySourceIndex?: number): Promise<ProcessingCreateResult> {
+  async function ensureProcessingCreate(prioritySourceIndex?: number, operationId?: string | null): Promise<ProcessingCreateResult> {
     const job = processingJob.value
     if (job && JOB_ACTIVE.has(job.status)) return { jobId: job.jobId, stale: false }
     if (processingStart && processingStart.cancelRequested) {
       if (processingStart.promise) {
         try { await processingStart.promise } catch { /* cancellation/rejection is terminal */ }
       }
-      return ensureProcessingCreate(prioritySourceIndex)
+      return ensureProcessingCreate(prioritySourceIndex, operationId)
     }
     if (processingStart && processingStart.revision === selectionRevision.value && processingStart.promise) {
       return processingStart.promise
@@ -146,6 +151,7 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext,
     const start: ProcessingStart = {
       revision: selectionRevision.value,
       prioritySourceIndex,
+      operationId,
       controller: new AbortController(),
       phase: 'UPLOADING',
       cancelRequested: false,
@@ -164,7 +170,7 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext,
     processingError.value = ''
     uploadState.value = { phase: 'UPLOADING', loaded: 0, total: 0, percent: 0 }
     try {
-      const created = await api.createProcessingJob(auth, buildFormData(start.prioritySourceIndex), {
+      const created = await api.createProcessingJob(auth, buildFormData(start.prioritySourceIndex, start.operationId), {
         onProgress: ({ loaded, total, percent }: UploadProgressEvent) => {
           if (!isCurrentCreate(start)) return
           start.phase = percent >= 100 ? 'REGISTERING' : 'UPLOADING'
@@ -244,7 +250,9 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext,
     if (job && JOB_ACTIVE.has(job.status)) api.cancelProcessingJob(auth, job.jobId).catch(() => {})
   }
 
-  async function startProcessingJob({ prioritySourceIndex }: { prioritySourceIndex?: number } = {}): Promise<StartProcessingResult> {
+  async function startProcessingJob(
+    { prioritySourceIndex, operationId }: { prioritySourceIndex?: number; operationId?: string | null } = {},
+  ): Promise<StartProcessingResult> {
     if (!files.value.length) { error.value = t('replay.no_files'); return { accepted: false, reason: 'EMPTY_SELECTION' } }
     if (processingActive.value) return { accepted: false, reason: 'ALREADY_ACTIVE' }
     if (processingJobId.value && resp.value) {
@@ -252,7 +260,7 @@ export function useProcessingJob(session: ReplaySession, { t, te }: I18nContext,
     }
     const revisionAtStart = selectionRevision.value
     try {
-      const result = await ensureProcessingCreate(prioritySourceIndex)
+      const result = await ensureProcessingCreate(prioritySourceIndex, operationId)
       if (!result) return { accepted: false, reason: 'REQUEST_FAILED' }
       if (result.stale) return { accepted: false, reason: 'SUPERSEDED' }
       return { accepted: true, jobId: result.jobId }

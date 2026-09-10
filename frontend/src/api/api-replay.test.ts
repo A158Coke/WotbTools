@@ -22,7 +22,7 @@ describe('typed Replay API contracts', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 'READY' }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     })))
-    await expect(getExportJob('e1')).rejects.toMatchObject({
+    await expect(getExportJob(auth, 'e1')).rejects.toMatchObject({
       name: 'ApiError', errorCode: 'INVALID_RESPONSE',
     })
 

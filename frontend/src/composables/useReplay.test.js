@@ -112,7 +112,7 @@ describe('useReplay export job flow', () => {
 
     await replay.startExportJob('aggregate')
     await replay.cancelExportJob()
-    expect(api.cancelExportJob).toHaveBeenCalledWith('j1')
+    expect(api.cancelExportJob).toHaveBeenCalledWith(expect.anything(), 'j1')
     expect(replay.exportJob.value.status).toBe('CANCELLED')
     const calls = api.getExportJob.mock.calls.length
     await vi.advanceTimersByTimeAsync(3000)
@@ -129,7 +129,7 @@ describe('useReplay export job flow', () => {
 
     replay.exportJob.value = job({ status: 'READY', filename: 'x.zip', contentType: 'application/zip' })
     await replay.downloadExportResult()
-    expect(api.downloadExportJob).toHaveBeenCalledWith('j1', 'x.zip')
+    expect(api.downloadExportJob).toHaveBeenCalledWith(expect.anything(), 'j1', 'x.zip')
   })
 
   it('poll failure clears job and surfaces error', async () => {
@@ -169,7 +169,7 @@ describe('useReplay export job flow', () => {
     await vi.advanceTimersByTimeAsync(0)
 
     expect(replay.exportJob.value).toBeNull()
-    expect(api.cancelExportJob).toHaveBeenCalledWith('j1')
+    expect(api.cancelExportJob).toHaveBeenCalledWith(expect.anything(), 'j1')
     expect(api.getExportJob).not.toHaveBeenCalled()
   })
 
@@ -1305,6 +1305,21 @@ describe('useReplay processing job flow', () => {
     expect(fd.get('prioritySourceIndex')).toBe('1')
   })
 
+  it('Android external replay：operationId 进入 create multipart（可重放安全 identity）；手工上传不带', async () => {
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 1 })
+    api.getProcessingJob.mockReturnValue(new Promise(() => {})) // 轮询挂起，避免影响断言
+
+    await replay.startProcessingJob({ operationId: 'pending-uuid-a' })
+    const fd = api.createProcessingJob.mock.calls[0][1]
+    expect(fd.get('operationId')).toBe('pending-uuid-a')
+
+    // 普通手工解析（无 pending identity）绝不携带 operationId：后端不进入幂等路径。
+    replay.dismissProcessingJob()
+    api.createProcessingJob.mockClear()
+    await replay.startProcessingJob()
+    expect(api.createProcessingJob.mock.calls[0][1].get('operationId')).toBeNull()
+  })
+
   it('export after READY reuses processingJobId without re-uploading', async () => {
     // 模拟已 READY（轮询 → READY → processingJobId 完整链路由上一用例覆盖）；
     // resultMatchesSelection 要求 resp 与 processingJobId 成对存在。
@@ -1315,7 +1330,7 @@ describe('useReplay processing job flow', () => {
     api.getExportJob.mockResolvedValue({ jobId: 'e1', status: 'READY', phase: null, total: 2, processed: 2, duplicates: 0, failures: 0, filename: 'x.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     await replay.startExportJob('aggregate')
     // 关键：不重新上传（body=null）、带 processingJobId；无覆盖时 teamNamesJson=null
-    expect(api.createExportJob).toHaveBeenCalledWith('aggregate', 'p1', null)
+    expect(api.createExportJob).toHaveBeenCalledWith(expect.anything(), 'aggregate', 'p1', null)
     await vi.advanceTimersByTimeAsync(0)
     expect(replay.exportJob.value.status).toBe('READY')
   })
@@ -1331,7 +1346,7 @@ describe('useReplay processing job flow', () => {
       summary: { 'clan:CHRD': 'CHRD A队' }
     })
     expect(api.createExportJob).toHaveBeenCalledTimes(1)
-    const [mode, jobId, teamNamesJson] = api.createExportJob.mock.calls[0]
+    const [, mode, jobId, teamNamesJson] = api.createExportJob.mock.calls[0]
     expect(mode).toBe('aggregate')
     expect(jobId).toBe('p1')
     expect(JSON.parse(teamNamesJson)).toEqual({

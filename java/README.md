@@ -113,7 +113,7 @@ multipart `POST /api/replay/map-overview`、`POST /api/replay/process`、
 `docs/CHANGELOG.md` 与 git history（当前 README 只描述 current state）。
 
 
-### Replay Export Job（匿名公开，长任务导出）
+### Replay Export Job（需登录：wotbtools-user / wotbtools-admin，长任务导出）
 
 大文件量导出（如 34+ 个回放）走异步 Job，页面不再阻塞等待同步 HTTP 响应：
 
@@ -121,6 +121,7 @@ multipart `POST /api/replay/map-overview`、`POST /api/replay/process`、
 - `GET /api/replay/export-jobs/{jobId}` — 轮询真实进度：`{jobId, status, phase, total, processed, duplicates, failures, errorCode, filename, contentType}`。`status` ∈ QUEUED / PROCESSING / READY / FAILED / CANCELLED（终态 exactly once）；`phase` ∈ PROCESSING_REPLAYS / BUILDING_EXCEL / BUILDING_ARCHIVE。0 场有效 → FAILED `NO_VALID_REPLAYS`（不生成空 Excel）。
 - `DELETE /api/replay/export-jobs/{jobId}` — 取消（QUEUED 立即终态；PROCESSING 协作取消，安全 checkpoint 后终态）。
 - `GET /api/replay/export-jobs/{jobId}/download` — READY 后流式下载 artifact（单场/汇总 xlsx 或 each zip；`FileSystemResource` streaming，不 `readAllBytes`）。
+- **权限**：以上四条端点（create / status / cancel / download）统一要求 `wotbtools-user` 或 `wotbtools-admin`——Export 消费的是 Processing Job 的 `ProcessedDataset`，匿名可调用等于绕过 `GET /api/replay/processing-jobs/{jobId}/result` 的认证保护。legacy 同步导出 `POST /api/export` 是独立 public contract，与本节无关（现已废弃返回 410）。
 
 容量：内存态 job store（单实例部署）+ 有界 worker 池（`REPLAY_EXPORT_JOB_MAX_CONCURRENT=2` / `REPLAY_EXPORT_JOB_QUEUE_CAPACITY=4`，满载 503 `EXPORT_QUEUE_FULL`）；Export 只消费已解析 result，**不执行 replay 解析，故不获取全局 `ReplayCapacityLimiter` 许可**。终态 job 与临时目录由 TTL（`REPLAY_EXPORT_JOB_TTL_MINUTES=30`）清理，启动清理孤儿目录。旧同步 `POST /api/export` 已随 V2 废弃（410）；当前只保留 `/api/replay/export-jobs`。
 
@@ -128,7 +129,8 @@ multipart `POST /api/replay/map-overview`、`POST /api/replay/process`、
 
 「上传多个回放 → 解析预览」从长同步 HTTP 改为异步 Processing Job：HTTP request 立即返回 202 + jobId，source 任务提交给**全局 `ReplayParseScheduler`**（默认并发 2，job-aware 公平轮转 + queued cancellation + 有界 pending），每个 replay 恰好 `processFull` 一次，产出**共享的 ProcessedDataset** 供 Preview / Export / AI / 战局回放复用（同一批 34 个回放不再 Preview ×34 / AI ×34 / Playback ×34，总 `processFull` 调用数 = 文件数）。**READY 后消费者只读**：facts 层 enrich（populateBattle）只在 dataset 创建时执行一次，Preview result / from-result Export 不再二次 mutate 共享 Battle（并发 Preview / aggregate / each Export 同一 dataset 无 shared mutable write）；`validCount() > 0` 即允许 from-result 导出（failures 只用于进度/统计，不与有效场数相减）。
 
-- `POST /api/replay/processing-jobs`（multipart `files`，可选表单字段 `prioritySourceIndex` 指定直接进入 AI/Playback 的目标 source）— 校验并立即持久化上传输入，返回 `202 {jobId, status, total}`。
+- `POST /api/replay/processing-jobs`（multipart `files`，可选表单字段 `prioritySourceIndex` 指定直接进入 AI/Playback 的目标 source，可选表单字段 `operationId` 用于幂等）— 校验并立即持久化上传输入，返回 `202 {jobId, status, total}`。
+- **Idempotency**：同一已认证 subject 用同一 `operationId` 重复提交返回**同一个** `jobId`（不重复上传 / 不重复登记 / 不重复提交调度器），用于覆盖「server 已接受但客户端 ACK 前进程被杀 → 重新导入同一份回放」的 exactly-once。identity 按 subject 分域（绝不跨用户复用），索引为内存态、生命周期跟随 Job（TTL 清理后同一 `operationId` 会创建新 job——此时旧 dataset 已不可读）。字段缺失（普通 Web 手工上传）时保持「每次提交都是新 job」语义。
 - `GET /api/replay/processing-jobs/{jobId}` — 轮询真实进度：`{jobId, status, phase, total, processed, valid, duplicates, failures, errorCode, currentFile, parseCompleted, parseSucceeded, parseFailed, sources[], activeSources[]}`。`status` ∈ QUEUED / PROCESSING / READY / FAILED / CANCELLED（终态 exactly once）；`phase` ∈ WAITING_FOR_WORKER / PROCESSING_REPLAYS / FINALIZING_BATCH（parse 进度 = `parseCompleted/total`，与 dedupe/finalize 解耦；`valid/duplicates/failures` 只在 FINALIZING 后确定）；`sources[]` 为轻量 per-source 状态（`sourceId`（`r{index}`）/`sourceIndex`/`displayName`/`status`/`errorCode`），`activeSources[]` 为当前并行处理中的 source（≤2）。0 场有效 → FAILED `NO_VALID_REPLAYS`。
 - `DELETE /api/replay/processing-jobs/{jobId}` — 取消（QUEUED 立即终态并释放 scheduler pending 容量；PROCESSING 置协作取消标志，已派发 source 完成安全 unit 后终态；FINALIZING 阶段间 checkpoint）。
 - `GET /api/replay/processing-jobs/{jobId}/result` — READY 后返回 Preview 数据（battles / aggregate / duplicates / failures / playerColumns / aggregateColumns；**不再重新 process replay**）；未 READY → 409 `JOB_NOT_READY`。

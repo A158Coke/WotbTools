@@ -132,8 +132,13 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
 - **单一 ingress**：只有 Intent → private cache → Native Bridge → Web `fetch(content://)` 一条路径；
   已删除 `onShowFileChooser` 对 pending replay 的注入分支。
 - **跨 process death 存活**：pending metadata 落在 app private storage（24h TTL），启动时先恢复
-  active pending、再按引用清理 orphan cache；`consumePendingReplay`（Web 在 server 接受 processing
-  request 之后调用）才清 metadata，保证 exactly-once。
+  active pending、再按引用清理 orphan cache。
+- **identity-aware ACK**：pending identity 是完整 UUID（`pendingId`）。Web 在 server 接受 processing
+  request 之后调用 `consumePendingReplay(pendingId)`，Native 执行 compare-and-clear（纯策略
+  `PendingReplayAckPolicy`）：只有 identity 与当前 pending 完全一致才清 slot + metadata；identity
+  缺失或已被更新的 replay 取代（stale）一律不清理，保证 exactly-once 且绝不误清新 pending。Web 同时把
+  `pendingId` 作为 processing create 的 `operationId`，使「server 已接受但 ACK 前 process death」的
+  重放拿回同一个 job（不产生 duplicate Processing Job）。
 - **未登录不解析**：未登录时 pending 原样保留且不消费，登录完成前不会发出 processing 请求。
 
 细节契约与日志白名单见 [`replay-intent.md`](replay-intent.md)。

@@ -44,6 +44,8 @@ import java.util.concurrent.Executors
  * Navigation ownership（RC5）：verified auth return 恒为最高优先级；`inAuthFlow == true` 期间新来的
  * replay intent 只入队，绝不改变 WebView navigation（分发决策见纯策略 `ReplayDispatchPolicy`）。
  * Pending replay 跨 process death 由 metadata 恢复（RC7）：冷启动先恢复 active pending，再清理 orphan。
+ * Pending replay 的 ACK 是 identity-matched 的 compare-and-clear（决策见纯策略 `PendingReplayAckPolicy`）：
+ * 只有命名了当前 pending 的 ACK 才清，绝不接受无 identity 的 ACK。
  */
 class MainActivity : Activity() {
 
@@ -133,7 +135,7 @@ class MainActivity : Activity() {
         if (restoredReplay != null) {
             pendingReplay = restoredReplay
             pendingReplayEligible = true
-            Log.d(TAG, "replay-pending restored id=${restoredReplay.pendingId}")
+            Log.d(TAG, "replay-pending restored ref=${restoredReplay.logRef}")
         }
         ReplayIntentHandler.cleanupOrphans(this, restoredReplay?.file)
         // 冷启动 intent 分类：verified auth return（QQ broker callback）优先于 replay ingress。
@@ -617,10 +619,16 @@ class MainActivity : Activity() {
         pendingReplay = pending
         pendingReplayEligible = true
         ReplayIntentHandler.savePendingMetadata(this, pending)
-        Log.d(TAG, "replay-pending stored id=${pending.pendingId}")
+        Log.d(TAG, "replay-pending stored ref=${pending.logRef}")
         return true
     }
 
+    /**
+     * 清 pending slot + 持久 metadata（exactly-once）。
+     *
+     * 唯一调用方是 [bridgeConsumePendingReplay] 的 `SUCCESS` 分支 —— 即 ACK 的 identity 与当前 pending
+     * 逐字符相等之后。这里刻意保持无参：identity 判断归 [PendingReplayAckPolicy]，清理点不复制第二份规则。
+     */
     private fun clearPendingReplay() {
         // 重要：Web `fetch(content://)` 返回后 WebView/Chromium 仍可能读取该文件，不能立即删除 backing file。
         // 只清 pending slot + 持久 metadata（exactly-once），文件保留到下一次 app startup cleanupOrphans() 清理。
@@ -677,22 +685,52 @@ class MainActivity : Activity() {
 
     fun bridgeCapabilities(): List<String> = listOf("replay-share", "replay-open", "app-update")
 
+    /**
+     * pending replay 的 wire contract（`getPendingReplay` 的 result）：`pendingId` 是这份 pending 的
+     * authoritative identity，Web 必须在 server 接受后原样回传给 `consumePendingReplay`；其余字段与
+     * 既有语义一致（`name` 仅显示名、`size` 仅提示、`uri` 为 app-owned FileProvider URI）。
+     */
     fun bridgePendingReplayJson(): Any {
         val pending = pendingReplay?.takeIf { pendingReplayEligible } ?: return org.json.JSONObject.NULL
         return org.json.JSONObject()
+            .put("pendingId", pending.pendingId)
             .put("name", pending.name)
             .put("size", pending.size)
             .put("uri", pending.uri.toString())
     }
 
-    fun bridgeConsumePendingReplay(): Boolean {
-        val had = pendingReplay != null
-        if (had) {
-            // Web 已确认消费：清 pending slot + 持久 metadata，下次 startup 绝不再恢复这份 replay。
-            Log.d(TAG, "replay-pending acknowledged")
+    /**
+     * Web ACK：compare-and-clear。
+     *
+     * 只有 Web 明确 ACK 的那份 pending（identity = 完整 pendingId）**仍是**当前 pending 时才清理；
+     * identity 缺失或已被更新的 replay 取代一律**不清理**（见 [PendingReplayAckPolicy]）—— 否则
+     * 「A 被 server 接受后才发出的 ACK」会误清处理 A 期间新到的 B。刻意不存在无 identity 的 ACK 重载。
+     *
+     * @return true 仅表示本次 ACK 真的清掉了它命名的那份 pending。
+     */
+    fun bridgeConsumePendingReplay(expectedPendingId: String?): Boolean {
+        val current = pendingReplay?.takeIf { pendingReplayEligible }
+        return when (PendingReplayAckPolicy.decide(current?.pendingId, expectedPendingId)) {
+            PendingReplayAckResult.MISSING_IDENTITY -> {
+                // 无 identity 的 ACK 一律拒绝：绝不退化成「清掉当前 pending」。
+                Log.d(TAG, "replay-pending ack rejected reason=missing-identity")
+                false
+            }
+            PendingReplayAckResult.STALE -> {
+                // 当前 pending 不是这份 ACK 命名的那一份（已被更新的 replay 取代 / 已无 pending）：保留。
+                Log.d(
+                    TAG,
+                    "replay-pending ack mismatch expected=${pendingLogRef(expectedPendingId)} " +
+                        "current=${pendingLogRef(current?.pendingId)}"
+                )
+                false
+            }
+            PendingReplayAckResult.SUCCESS -> {
+                clearPendingReplay()
+                Log.d(TAG, "replay-pending ack success ref=${pendingLogRef(expectedPendingId)}")
+                true
+            }
         }
-        clearPendingReplay()
-        return had
     }
 
     fun bridgeCheckForUpdate(): Boolean {

@@ -98,8 +98,14 @@ public class SecurityConfig {
                 .requestMatchers(HOF_MARK3_SUBMISSIONS_PATTERN).authenticated()
                 .requestMatchers(HOF_PATTERN).permitAll()
 
-                // --- Replay Export Job（匿名公开，与 /api/export 权限一致；含 status/cancel/download） ---
-                .requestMatchers(REPLAY_EXPORT_JOBS_PATTERN).permitAll()
+                // --- Replay Export Job（需登录：wotbtools-user / wotbtools-admin；含 status/cancel/download） ---
+                // Export 已收口为 Dataset-only：消费的是 Processing Job 的 ProcessedDataset，因此必须与
+                // processing-jobs 同级鉴权——否则匿名调用只要知道 processingJobId 就能绕过
+                // GET /api/replay/processing-jobs/{jobId}/result 的认证，直接生成并下载同一份受保护数据。
+                // 覆盖：POST 创建 / GET 状态 / DELETE 取消 / GET download 四条端点。
+                // /api/export（EXPORT，legacy 同步导出）是独立 public contract，保持 permitAll，不与本 pattern 绑定。
+                .requestMatchers(REPLAY_EXPORT_JOBS_PATTERN)
+                    .hasAnyRole("wotbtools-user", "wotbtools-admin")
 
                 // --- Replay Processing Job（需登录：wotbtools-user / wotbtools-admin） ---
                 // 该 pattern 覆盖四条端点：POST 创建 / GET 状态 / GET result / DELETE 取消，四条都必须 authenticated。

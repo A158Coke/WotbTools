@@ -142,10 +142,12 @@ export async function getProcessingJobResult(auth: ReplayAuthSession, jobId: str
 
 /** Create a Dataset-only export job. Replay files are never uploaded on this path. */
 export async function createExportJob(
+  auth: ReplayAuthSession,
   mode: ExportMode,
   processingJobId: string,
   teamNamesJson: string | null = null,
 ): Promise<ExportJobCreateResponse> {
+  const headers = await authHeaders(auth)
   const query = new URLSearchParams({ mode, processingJobId })
   let body: FormData | undefined
   if (teamNamesJson) {
@@ -154,22 +156,33 @@ export async function createExportJob(
   }
   const response = await requireOk(await apiFetch(`/api/replay/export-jobs?${query.toString()}`, {
     method: 'POST',
+    headers,
     body,
   }))
   return readJson(response, isExportJobCreateResponse, 'Export job creation')
 }
 
-export async function getExportJob(jobId: string): Promise<ExportJob> {
-  const response = await requireOk(await apiFetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}`))
+export async function getExportJob(auth: ReplayAuthSession, jobId: string): Promise<ExportJob> {
+  const headers = await authHeaders(auth)
+  const response = await requireOk(await apiFetch(
+    `/api/replay/export-jobs/${encodeURIComponent(jobId)}`, { headers }))
   return readJson(response, isExportJob, 'Export job status')
 }
 
-export async function cancelExportJob(jobId: string): Promise<void> {
-  await requireOk(await apiFetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
+export async function cancelExportJob(auth: ReplayAuthSession, jobId: string): Promise<void> {
+  const headers = await authHeaders(auth)
+  await requireOk(await apiFetch(
+    `/api/replay/export-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE', headers }))
 }
 
-export async function downloadExportJob(jobId: string, fallbackName: string): Promise<void> {
-  const response = await requireOk(await apiFetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}/download`))
+/**
+ * Export artifact 下载：必须走 authenticated fetch（不能是 `<a href>` 裸链，否则不会附带 Bearer），
+ * 读取 blob 后再触发下载。
+ */
+export async function downloadExportJob(auth: ReplayAuthSession, jobId: string, fallbackName: string): Promise<void> {
+  const headers = await authHeaders(auth)
+  const response = await requireOk(await apiFetch(
+    `/api/replay/export-jobs/${encodeURIComponent(jobId)}/download`, { headers }))
   await downloadResponse(response, fallbackName)
 }
 

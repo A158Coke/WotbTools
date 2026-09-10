@@ -2,12 +2,14 @@ package com.wotbtools.app
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
+import java.util.UUID
 
 /**
  * pending replay metadata（跨 process death 恢复）/ TTL / orphan 清理的纯 JVM 测试。
@@ -17,11 +19,14 @@ import java.nio.file.Files
  */
 class ReplayIntentHandlerTest {
 
+    /** authoritative identity：完整 UUID（Blocker 2），ACK 的 compare-and-clear 逐字符依赖它。 */
+    private val fullPendingId = "3f2b9c1e-7d4a-4b8e-9f01-2c6d5a7e8b90"
+
     @Test
     fun metadataRoundTripsThroughDeterministicLineEncoding() {
         val metadata = ReplayPendingMetadata(
-            pendingId = "a1b2c3d4",
-            cacheFilename = "replay-a1b2c3d4.wotbreplay",
+            pendingId = fullPendingId,
+            cacheFilename = "replay-$fullPendingId.wotbreplay",
             originalName = "2024-05-01 battle.wotbreplay",
             size = 12_345L,
             createdAt = 1_700_000_000_000L
@@ -30,6 +35,9 @@ class ReplayIntentHandlerTest {
         val encoded = ReplayIntentHandler.encodeMetadata(metadata)
 
         assertEquals(metadata, ReplayIntentHandler.decodeMetadata(encoded))
+        // 完整 UUID identity 逐字符保真（36 字符）：Web 原样回传它做 compare-and-clear，一位都不能变。
+        assertEquals(36, fullPendingId.length)
+        assertEquals(fullPendingId, ReplayIntentHandler.decodeMetadata(encoded)!!.pendingId)
         // 确定性：同一输入重复编码逐字节一致（无时间戳、随机值或平台换行）。
         assertEquals(encoded, ReplayIntentHandler.encodeMetadata(metadata))
         assertFalse(encoded.contains("\r"))
@@ -109,6 +117,48 @@ class ReplayIntentHandlerTest {
         assertNull(ReplayIntentHandler.decodeMetadata(validRaw(cacheFilename = "sub\\replay.wotbreplay")))
         assertNull(ReplayIntentHandler.decodeMetadata(validRaw(cacheFilename = "   ")))
         assertNull(ReplayIntentHandler.decodeMetadata(validRaw(cacheFilename = "a".repeat(200))))
+    }
+
+    @Test
+    fun pendingIdMustBeNonBlankAndWithinLengthBounds() {
+        // 冻结的边界：非空白 且 长度 8..64。完整 UUID（36）是常态；下限 8 保留升级前写入的短 id metadata
+        // 的向后兼容（一次 app update 不会把未消费的 pending 判成损坏丢掉），上限 64 拒绝超长注入值。
+        assertEquals(8, ReplayIntentHandler.PENDING_ID_MIN_LENGTH)
+        assertEquals(64, ReplayIntentHandler.PENDING_ID_MAX_LENGTH)
+
+        assertNotNull(ReplayIntentHandler.decodeMetadata(validRaw(pendingId = fullPendingId)))
+        assertNotNull(
+            "边界下限 8 必须仍可恢复（升级前写入的短 id）",
+            ReplayIntentHandler.decodeMetadata(validRaw(pendingId = "a".repeat(8)))
+        )
+        assertNotNull(
+            "边界上限 64 必须仍可恢复",
+            ReplayIntentHandler.decodeMetadata(validRaw(pendingId = "a".repeat(64)))
+        )
+
+        assertNull("过短（<8）不得恢复", ReplayIntentHandler.decodeMetadata(validRaw(pendingId = "a".repeat(7))))
+        assertNull("过短（<8）不得恢复", ReplayIntentHandler.decodeMetadata(validRaw(pendingId = "x")))
+        assertNull("超长（>64）不得恢复", ReplayIntentHandler.decodeMetadata(validRaw(pendingId = "a".repeat(65))))
+        // 长度合法但全空白：仍然不是 identity，必须被空白检查单独挡住。
+        assertNull(ReplayIntentHandler.decodeMetadata(validRaw(pendingId = " ".repeat(8))))
+    }
+
+    @Test
+    fun generatedPendingIdIsAFullUuidAndItsLogRefStaysShort() {
+        val first = ReplayIntentHandler.newPendingId()
+        val second = ReplayIntentHandler.newPendingId()
+
+        // identity 必须是完整 UUID（36 字符），不再是 8 位短 id（Blocker 2）；畸形串会让 fromString 抛异常。
+        assertEquals(first, UUID.fromString(first).toString())
+        assertEquals(36, first.length)
+        assertNotEquals(first, second)
+
+        // 日志只允许 short ref：完整 id 的 8 位前缀，且绝不等于完整 id（short ref 不是 identity）。
+        assertEquals(first.take(8), pendingLogRef(first))
+        assertEquals(8, pendingLogRef(first).length)
+        assertNotEquals(first, pendingLogRef(first))
+        // 没有 pending 时用固定占位符，绝不用空串冒充 identity。
+        assertEquals("none", pendingLogRef(null))
     }
 
     @Test
@@ -228,8 +278,9 @@ class ReplayIntentHandlerTest {
 
     @Test
     fun consumedPendingLeavesNothingRestorable() {
-        // consume 链路：Web consumePendingReplay → MainActivity.bridgeConsumePendingReplay →
-        // clearPendingReplay() → ReplayIntentHandler.clearPendingMetadata()（清掉这唯一的 metadata 值）。
+        // consume 链路：Web 带 identity 调 consumePendingReplay(expectedPendingId) →
+        // PendingReplayAckPolicy 判定与当前 pending 完全一致（SUCCESS）→ MainActivity.bridgeConsumePendingReplay
+        // → clearPendingReplay() → ReplayIntentHandler.clearPendingMetadata()（清掉这唯一的 metadata 值）。
         // SharedPreferences 访问依赖 Context，而 app 只依赖 junit（无 Robolectric），所以这里覆盖纯编码层的
         // 「无 pending」契约：null / 空 raw 一律解码为 null —— 下次 startup 的 restorePending() 因此直接
         // 返回 null，绝不恢复一份已被 Web 消费的 replay。
@@ -238,11 +289,11 @@ class ReplayIntentHandlerTest {
 
         // 反证：只要 metadata 还在（没被清），同一 backing file 就会被恢复 —— 所以 consume 必须清 metadata。
         withTempCacheDir { dir ->
-            val backing = File(dir, "replay-9999aaaa.wotbreplay").apply { writeText("consumed") }
+            val backing = File(dir, "replay-$fullPendingId.wotbreplay").apply { writeText("consumed") }
             val metadata = ReplayIntentHandler.decodeMetadata(
                 ReplayIntentHandler.encodeMetadata(
                     ReplayPendingMetadata(
-                        pendingId = "9999aaaa",
+                        pendingId = fullPendingId,
                         cacheFilename = backing.name,
                         originalName = "consumed.wotbreplay",
                         size = 8L,

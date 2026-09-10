@@ -49,12 +49,14 @@ const {
  * 仅在 Android external intent 触发（isAndroidApp()); 普通 Web/FileUploader 手动选文件不经过此回调，
  * 保持现有手动 UX。绝不自动启动 AI Review。
  *
+ * `pending.pendingId` 作为 processing create 的 operationId 传给后端：同一 subject + 同一 operationId
+ * 幂等返回同一个 job，覆盖「server 已接受但 Native ACK 前进程被杀 → 冷启动重新导入」的 exactly-once。
  * 返回值是 Native pending 的 ACK 唯一依据：只有 server 已接受该 processing request 才返回 true。
  */
-async function importPendingFile(file) {
+async function importPendingFile(file, pending) {
   workspace.setWorkspaceTab('data')
   updateFiles([file])
-  const result = await startProcessingJob()
+  const result = await startProcessingJob({ operationId: pending?.pendingId })
   return result?.accepted === true
 }
 
