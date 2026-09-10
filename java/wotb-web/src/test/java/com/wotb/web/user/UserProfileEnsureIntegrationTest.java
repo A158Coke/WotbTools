@@ -187,6 +187,70 @@ class UserProfileEnsureIntegrationTest {
         }
     }
 
+    /**
+     * trusted WG 新用户的并发收敛：这是「不能把 PostgreSQL 先报哪个约束当成业务正确性基础」的回归。
+     *
+     * <p>WG 新用户会同时携带 {@code keycloak_user_id} 与 {@code (wotb_server, wotb_account_id)}
+     * 两个唯一键，因此同 sub 的并发插入，败者可能撞上其中任意一个约束，取决于数据库先检查哪一个。
+     * 收敛判定必须是「重读自己的 sub」这一数据库事实，而不是约束名。</p>
+     */
+    @Test
+    void concurrentTrustedWgEnsureLeavesExactlyOneProfileAndBothCallersSucceed() throws Exception {
+        final int callers = 4;
+        final ExecutorService pool = Executors.newFixedThreadPool(callers);
+        final CountDownLatch start = new CountDownLatch(1);
+
+        final Callable<UserProfileDto> ensure = () -> {
+            // SecurityContext 是 thread-local：每个调用线程都要有自己的可信 WG 登录态。
+            loginAs("kc-wg-race", "512345678", "PlayerOne", "EU", true, 100L);
+            try {
+                start.await();
+                return userProfileService.ensureCurrentProfile("kc-wg-race", "512345678", "PlayerOne");
+            } finally {
+                SecurityContextHolder.clearContext();
+            }
+        };
+
+        try {
+            final List<Future<UserProfileDto>> futures = new java.util.ArrayList<>();
+            for (int i = 0; i < callers; i++) {
+                futures.add(pool.submit(ensure));
+            }
+            start.countDown();
+
+            final List<UserProfileDto> results = new java.util.ArrayList<>();
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            for (final Future<UserProfileDto> future : futures) {
+                try {
+                    results.add(future.get(30, TimeUnit.SECONDS));
+                } catch (final Exception e) {
+                    failure.compareAndSet(null, e);
+                }
+            }
+            if (failure.get() != null) {
+                throw new AssertionError("并发 trusted WG ensure 的调用方不得失败", failure.get());
+            }
+
+            // all callers succeed / exactly one row / same profile id
+            assertEquals(callers, results.size());
+            assertEquals(1, userProfileRepository.count(),
+                    "并发 trusted WG ensure 不得产生重复 profile 行");
+            final Long expectedId = results.get(0).id();
+            for (final UserProfileDto dto : results) {
+                assertNotNull(dto, "每个调用方都必须拿到 profile");
+                assertEquals(expectedId, dto.id(), "所有调用方必须收敛到同一条 profile");
+                // canonical WG 语义在并发下也不能退化。
+                assertEquals("EU", dto.wotbServer());
+                assertEquals(100L, dto.wotbAccountId());
+                assertEquals("PlayerOne", dto.wotbNickname());
+                assertEquals("WARGAMING", dto.wotbAccountSource());
+                assertNotNull(dto.wotbAccountVerifiedAt());
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     // ── D：真实 WotB 账号冲突不得被吞掉 ─────────────────────────────────
 
     @Test

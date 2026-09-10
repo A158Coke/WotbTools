@@ -25,12 +25,8 @@ public class UserProfileService {
     /** WG Provider 支持的区服（与 Keycloak {@code WargamingRegion} 枚举一致）。 */
     private static final Set<String> WG_REGIONS = Set.of("ASIA", "EU", "NA");
 
-    /**
-     * {@code keycloak_user_id} 上的唯一约束。V5 用内联 {@code NOT NULL UNIQUE} 声明，
-     * PostgreSQL 的自动命名规则是 {@code <table>_<column>_key}。
-     * 该冲突只意味着「同一 Keycloak sub 被并发创建」，可以幂等收敛。
-     */
-    private static final String UK_KEYCLOAK_USER_ID = "user_profile_keycloak_user_id_key";
+    /** {@code (wotb_server, wotb_account_id)} 唯一约束：该 WotB 账号已属于其他用户。 */
+    private static final String UK_WOTB_ACCOUNT = "uk_user_profile_wotb_account";
 
     private final UserProfileRepository repository;
     private final UserProfileMapper mapper;
@@ -160,16 +156,20 @@ public class UserProfileService {
     }
 
     /**
-     * 插入 canonical profile，并按<strong>约束名</strong>区分两类唯一冲突。
+     * 插入 canonical profile，冲突时按<strong>重读优先</strong>判别成因。
      *
-     * <p>这正是「不要把真实身份冲突吞成幂等成功」的落点：</p>
-     * <ul>
-     *   <li>{@code keycloak_user_id} 冲突 = 并发的同 sub ensure，另一个请求已经建好 →
-     *       重读并返回既有 profile（两个调用方都成功）。</li>
-     *   <li>{@code (wotb_server, wotb_account_id)} 冲突 = 该 WotB 账号已属于别人 →
+     * <p>「不要把真实身份冲突吞成幂等成功」的落点，判定顺序刻意是先看事实、再看约束名：</p>
+     * <ol>
+     *   <li><strong>重读优先</strong>：该 sub 已经有 profile ⇒ 这次冲突只可能是「同一 Keycloak sub
+     *       被并发创建」的败者路径，直接幂等返回胜者。这条判定只看数据库事实，**不依赖** PostgreSQL
+     *       自动生成的约束名字符串，因此即使约束名与预期不同也不会把并发收敛误报成业务冲突。</li>
+     *   <li>该 sub 仍然不存在 ⇒ 不是并发收敛路径，此时才按约束名判定：
+     *       {@code (wotb_server, wotb_account_id)} 冲突 = 该 WotB 账号已属于别人 →
      *       保持 canonical {@code WOTB_ACCOUNT_ALREADY_USED}，绝不返回他人的 profile，
      *       也绝不写入被抢走的绑定。</li>
-     * </ul>
+     *   <li>其余完整性冲突（CHECK / NOT NULL / 值超长 / 将来的新约束）不得伪装成业务冲突，
+     *       按服务端不变量问题上报 {@code PROFILE_BOOTSTRAP_FAILED}。</li>
+     * </ol>
      */
     private UserProfileDto provision(final String keycloakUserId,
                                      final String username,
@@ -179,12 +179,17 @@ public class UserProfileService {
             // saveAndFlush：让约束冲突在本方法内、该语句自己的事务回滚之后暴露，而不是拖到外层提交点。
             return mapper.toDto(repository.saveAndFlush(profile));
         } catch (final DataIntegrityViolationException e) {
-            if (ConstraintViolations.causedByConstraint(e, UK_KEYCLOAK_USER_ID)) {
-                return repository.findByKeycloakUserId(keycloakUserId)
-                        .map(mapper::toDto)
-                        .orElseThrow(() -> new IllegalStateException("PROFILE_BOOTSTRAP_FAILED"));
+            // 1) 重读优先：读到胜者即收敛，不需要也不依赖约束名。
+            final Optional<UserProfile> concurrent = repository.findByKeycloakUserId(keycloakUserId);
+            if (concurrent.isPresent()) {
+                return mapper.toDto(concurrent.get());
             }
-            throw new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED", e);
+            // 2) 该 sub 仍不存在：只有确实是 WotB 账号占用才是业务冲突。
+            if (ConstraintViolations.causedByConstraint(e, UK_WOTB_ACCOUNT)) {
+                throw new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED", e);
+            }
+            // 3) 其余完整性冲突是服务端问题，不得伪装成 409 业务冲突。
+            throw new IllegalStateException("PROFILE_BOOTSTRAP_FAILED", e);
         }
     }
 
