@@ -38,6 +38,20 @@ public class UserProfileService {
         return repository.findByKeycloakUserId(keycloakUserId).map(mapper::toDto);
     }
 
+    /**
+     * 当前登录用户绑定的 canonical WotB 业务身份 {@code (区服, 账号)}；
+     * profile 不存在或未绑定账号 → empty。
+     *
+     * <p>这是 HoF 等业务域解析 ownership 的唯一入口，避免各域各写一份「解析当前绑定账号」的规则。</p>
+     */
+    @Transactional(readOnly = true)
+    public Optional<WotbAccountIdentity> currentWotbIdentity(final String keycloakUserId) {
+        return repository.findByKeycloakUserId(keycloakUserId)
+                .map(profile -> profile.getWotbAccountId() == null || profile.getWotbAccountId() <= 0
+                        ? null
+                        : new WotbAccountIdentity(profile.getWotbServer(), profile.getWotbAccountId()));
+    }
+
     /** 供其他业务域编排使用的内部实体查询。 */
     @Transactional(readOnly = true)
     public Optional<UserProfile> findEntityByKeycloakUserId(final String keycloakUserId) {

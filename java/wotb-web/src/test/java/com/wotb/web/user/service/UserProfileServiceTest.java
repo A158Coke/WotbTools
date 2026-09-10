@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -36,6 +37,37 @@ class UserProfileServiceTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void currentWotbIdentityReturnsTheBoundServerAndAccount() {
+        when(repository.findByKeycloakUserId("kc-user"))
+                .thenReturn(Optional.of(wgProfile("ASIA", 123456L, "PlayerOne", null)));
+
+        final WotbAccountIdentity identity = service.currentWotbIdentity("kc-user").orElseThrow();
+
+        // 区服是业务身份的一部分：只返回账号 ID 会让 (CN, 123456) 与 (ASIA, 123456) 串号
+        assertEquals("ASIA", identity.server());
+        assertEquals(123456L, identity.accountId());
+    }
+
+    @Test
+    void currentWotbIdentityIsEmptyWithoutAProfile() {
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.empty());
+
+        assertTrue(service.currentWotbIdentity("kc-user").isEmpty());
+    }
+
+    @Test
+    void currentWotbIdentityIsEmptyWhenNoAccountIsBound() {
+        when(repository.findByKeycloakUserId("kc-user"))
+                .thenReturn(Optional.of(wgProfile("CN", null, null, null)));
+        assertTrue(service.currentWotbIdentity("kc-user").isEmpty(),
+                "未绑定账号不得解析出 canonical 身份，否则会按 0 号账号归属");
+
+        when(repository.findByKeycloakUserId("kc-user"))
+                .thenReturn(Optional.of(wgProfile("CN", 0L, null, null)));
+        assertTrue(service.currentWotbIdentity("kc-user").isEmpty());
     }
 
     private static void loginWithWgClaims(final String region, final boolean verified,

@@ -44,8 +44,11 @@ class Mark3SubmissionIntegrationTest {
 
     private static final Path REPLAY_ROOT = Path.of("data/replays-mark3-it");
     private static final long VEHICLE = 385L;
-    /** HoF ownership 的 canonical owner：active 唯一性按该账号判定（V21 partial unique index）。 */
+    /** HoF ownership 的 canonical owner：active 唯一性按 (区服, 账号) 判定（V22 partial unique index）。 */
     private static final long WOTB_ACCOUNT_ID = 111L;
+    private static final String WOTB_SERVER = "CN";
+    /** 同一账号 ID 在另一区服 = 另一个账号。 */
+    private static final String OTHER_SERVER = "EU";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18-alpine")
@@ -104,6 +107,24 @@ class Mark3SubmissionIntegrationTest {
         assertEquals("PENDING", retry.getStatus());
     }
 
+    /**
+     * 区服是 canonical owner 的一半：同号跨服是两个账号，(EU, 111) 的 active 记录不得撞
+     * (CN, 111) 的 partial unique index，但同一 (区服, 账号) 的第二个 active 记录仍必须被 DB 拒绝。
+     */
+    @Test
+    void activeUniquenessIsScopedToServerAndAccountPair() {
+        final Mark3Submission cnCurrent = insert(WOTB_SERVER, "CURRENT");
+
+        final Mark3Submission euPending = insert(OTHER_SERVER, "PENDING");
+        assertEquals("PENDING", euPending.getStatus(), "(EU, 111) 必须能与 (CN, 111) 的 CURRENT 并存");
+
+        assertThrows(DataIntegrityViolationException.class, () -> insert(OTHER_SERVER, "PENDING"),
+                "同一 (区服, 账号) 的第二个 active 记录必须被 DB 拒绝");
+
+        assertEquals("CURRENT", submissionRepository.findById(cnCurrent.getId()).orElseThrow().getStatus(),
+                "(CN, 111) 的 CURRENT 不受另一区服影响");
+    }
+
     @Test
     void approveFreezesClaimsAndCleansDedicatedEvidence() throws Exception {
         final Mark3Submission pending = insert("PENDING");
@@ -128,9 +149,14 @@ class Mark3SubmissionIntegrationTest {
     }
 
     private Mark3Submission insert(final String status) {
+        return insert(WOTB_SERVER, status);
+    }
+
+    private Mark3Submission insert(final String server, final String status) {
         final Mark3Submission submission = new Mark3Submission();
         submission.setVehicleId(VEHICLE);
         submission.setVehicleName("Progetto 65");
+        submission.setWotbServer(server);
         submission.setWotbAccountId(WOTB_ACCOUNT_ID);
         submission.setNicknameSnapshot("PlayerOne");
         submission.setClaimedBattleCount(123);

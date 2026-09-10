@@ -1,45 +1,32 @@
--- V22: 名人堂百场 / 三环 submission 的 ownership 从 Keycloak 身份解耦为 WotB 游戏账号。
+-- V22: 名人堂百场 / 三环 submission 的 ownership 从 Keycloak 身份解耦为 WotB 游戏账号（含区服）。
 --
--- 领域模型（本次迁移后）：
---   Keycloak User / QQ / Local Login  仅负责 authentication / authorization
---        └─▶ user_profile（唯一 binding authority：keycloak_user_id UNIQUE、
---            (wotb_server, wotb_account_id) UNIQUE）
---              └─▶ WotB Account ID = canonical business identity
---                    ├─ hall_of_fame_record.account_id（V1/V16 起即按账号归属，本迁移不改）
---                    ├─ hundred_battle_submission.wotb_account_id
---                    └─ mark3_submission.wotb_account_id
+-- canonical owner = (wotb_server, wotb_account_id)，与 user_profile 的
+-- UNIQUE (wotb_server, wotb_account_id) 保持一致。
+-- 只按 account_id 归属是不完整的业务身份：CN 123456 与 EU 123456 是两个不同账号，
+-- 只按账号 ID 归属会造成跨服 ownership / authorization 串号。
 --
 -- 目标：即使旧 Juhe QQ Keycloak user 被删除、用户以全新 Official QQ 身份重建 Keycloak 用户
--- （sub 完全变化），只要重新绑定同一个 WotB Account，其 HoF 数据即自然重新关联。
+-- （sub 完全变化），只要重新绑定同一个 (区服, WotB 账号)，其 HoF 数据即自然重新关联。
 --
--- 账号列直接复用既有 game_account_id_snapshot：
---   该列在创建瞬间由 profile.getWotbAccountId() 写入且 NOT NULL，语义上已经是冻结的 WotB 账号 ID，
---   因此重命名为 wotb_account_id 即成为 canonical owner，无需任何回填或 join。
+-- ═══ 本迁移的执行顺序 ═══════════════════════════════════════════════════════
+--   1) 新增 wotb_server 快照列（先可空）
+--   2) 从 user_profile 回填：仅当旧 user_keycloak_id 对应的 profile **当前仍绑定同一账号**时
+--      取其所服——这是唯一有证据支持的来源
+--   3) PREFLIGHT（fail fast，不做任何自动消解）：
+--        a. 存在无法解析区服的历史行 → 抛出可操作诊断
+--        b. 新 ownership 键下存在重复 active 记录 → 抛出可操作诊断（列出冲突键）
+--   4) 收紧 NOT NULL + 区服 CHECK
+--   5) 重建唯一性与查询索引为 (wotb_server, wotb_account_id, vehicle_id)
+--   6) 删除 user_keycloak_id
 --
--- user_keycloak_id 直接删除：
---   Keycloak user 被删除后该值不再指向任何可解析身份，保留只会诱导后续代码继续按 IAM 归属 HoF。
+-- ═══ 本迁移明确不做的事 ═════════════════════════════════════════════════════
+--   * 不自动选择 winner、不修改任何 status、不删除任何 replay evidence、不清空任何截图。
+--   * 不为了「让新唯一索引能建起来」而改动业务历史。
+--   * 不为无法解析区服的历史行猜一个区服（例如默认 CN）。
 --
--- 冲突自愈（幂等：无冲突时影响 0 行，与「干净迁移」完全等价）：
---   旧的 (user_keycloak_id, vehicle_id) 唯一性不蕴含 (wotb_account_id, vehicle_id) 唯一性——
---   同一 WotB 账号被两个 Keycloak 身份先后绑定过（user_profile 换绑/删除后重新绑定），
---   各自提交过同车 active 记录时会产生重复。
---   确定性规则（百场按状态、三环跨状态，见下）：
---     百场：新唯一索引是两个独立的 partial index（PENDING 一个、CURRENT 一个），
---           因此按 (账号, 车辆, 状态) 去重——同 (账号,车辆) 同时存在 PENDING 与 CURRENT 是正常状态。
---           同 (账号, 车辆, 状态) 保留 submitted_at 最新的一条（并列取 id 最大）；
---           CURRENT → SUPERSEDED，PENDING → DELETED（delete_reason=ADMIN_CORRECTION）。
---     三环：新唯一索引是单个组合 partial index，覆盖 status in (PENDING, CURRENT) 两个状态，
---           因此必须【跨状态】按 (账号, 车辆) 去重：同 (账号,车辆) 只能留一条 active。
---           规则是 CURRENT 优先（三环 CURRENT 是最终记录、不可被后续申请替代），
---           即先保留最新的 CURRENT，其余 active 行（更旧的 CURRENT 与全部 PENDING）→ DELETED；
---           没有 CURRENT 时才保留最新的 PENDING。
---   与服务层终态语义对齐：同事务删除对应 replay evidence 行并清空 proof 截图。
---   物理回放文件的清理仍是 commit 后的 best-effort 语义（迁移不触碰文件系统），
---   因此极少数被自愈的行会留下无引用 orphan 文件——与既有 HallOfFameAdminService 的
---   「cleanup failed, orphan retained」容忍度一致。
---
--- 说明：刻意不使用临时表——`CREATE TEMP TABLE ... ON COMMIT DROP` 的正确性依赖 Flyway 的
--- 事务模式，改为每条语句自包含的 CTE，对 autocommit / 单事务两种执行方式都成立。
+-- 冲突必须由管理员有意处理（Admin bulk-delete 已提供批量删除）后再重跑本迁移。
+-- Flyway 在 PostgreSQL 上把每个迁移包在单一事务里，因此 preflight 失败时本迁移的全部
+-- DDL/DML 都会回滚，数据库停留在 V21 状态。
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 百场 hundred_battle_submission
@@ -47,118 +34,186 @@
 alter table hundred_battle_submission
     rename column game_account_id_snapshot to wotb_account_id;
 
--- 冲突自愈（必须在重建唯一索引之前）：先删将被转终态的 submission 的证据行，
--- 此时状态尚未改变，active 排名仍然可见。
-with ranked as (
-    select id,
-           row_number() over (
-               partition by wotb_account_id, vehicle_id, status
-               order by submitted_at desc, id desc
-           ) as rn
-      from hundred_battle_submission
-     where status in ('PENDING', 'CURRENT')
-)
-delete from hundred_battle_replay_evidence e
- using ranked r
- where e.submission_id = r.id
-   and r.rn > 1;
+alter table hundred_battle_submission
+    add column wotb_server varchar(16);
 
--- 再把它们转入终态。
-with ranked as (
-    select id,
-           row_number() over (
-               partition by wotb_account_id, vehicle_id, status
-               order by submitted_at desc, id desc
-           ) as rn
-      from hundred_battle_submission
-     where status in ('PENDING', 'CURRENT')
-)
+-- 回填：只有「旧 Keycloak 身份当前仍绑定同一账号」的 profile 才能作为区服的权威来源。
+-- 用户已改绑到别的账号（或 profile 已被删除）的行不会被猜值，留给下面的 preflight 报错。
 update hundred_battle_submission s
-   set status             = case when s.status = 'CURRENT' then 'SUPERSEDED' else 'DELETED' end,
-       proof_screenshot   = null,
-       deleted_at         = case when s.status = 'PENDING' then now() else s.deleted_at end,
-       deleted_by         = case when s.status = 'PENDING' then 'V22_OWNERSHIP_MIGRATION' else s.deleted_by end,
-       delete_reason      = case when s.status = 'PENDING' then 'ADMIN_CORRECTION' else s.delete_reason end,
-       delete_reason_text = case when s.status = 'PENDING'
-                                 then 'V22 ownership migration: duplicate active record for the same WotB account and vehicle'
-                                 else s.delete_reason_text end
-  from ranked r
- where s.id = r.id
-   and r.rn > 1;
+   set wotb_server = p.wotb_server
+  from user_profile p
+ where p.keycloak_user_id = s.user_keycloak_id
+   and p.wotb_account_id = s.wotb_account_id;
 
--- 唯一性 / 索引改为以 WotB 账号为界
+do $$
+declare
+    unresolved_rows bigint;
+    sample_ids      text;
+    conflicts       text;
+begin
+    -- (a) 区服可解析性
+    select count(*) into unresolved_rows
+      from hundred_battle_submission
+     where wotb_server is null;
+
+    if unresolved_rows > 0 then
+        select string_agg(id::text, ', ' order by id) into sample_ids
+          from (select id from hundred_battle_submission where wotb_server is null order by id limit 20) t;
+
+        raise exception using
+            errcode = 'raise_exception',
+            message = format(
+                'V22 preflight failed: %s hundred_battle_submission row(s) have no resolvable WotB server',
+                unresolved_rows),
+            detail = format(
+                'wotb_server can only be derived from a user_profile that STILL binds the same WotB account; '
+                'these rows have no such profile. sample id(s): %s', sample_ids),
+            hint = 'Inspect with: select id, user_keycloak_id, wotb_account_id, status from hundred_battle_submission '
+                   'where wotb_server is null; Then either restore/rebind the owning profile, or delete those rows '
+                   'intentionally through POST /api/admin/hof/hundred/submissions/{id}/delete (or the bulk-delete '
+                   'endpoint) and rerun this migration. This migration never guesses a server.';
+    end if;
+
+    -- (b) ownership 冲突：百场的新唯一索引是两个独立的 partial index（PENDING 一个、CURRENT 一个），
+    --     因此按 (区服, 账号, 车辆, 状态) 检查。
+    select string_agg(
+               format('(server=%s, account=%s, vehicle=%s, status=%s, rows=%s)',
+                      wotb_server, wotb_account_id, vehicle_id, status, cnt),
+               '; ' order by wotb_server, wotb_account_id, vehicle_id, status)
+      into conflicts
+      from (
+          select wotb_server, wotb_account_id, vehicle_id, status, count(*) as cnt
+            from hundred_battle_submission
+           where status in ('PENDING', 'CURRENT')
+           group by wotb_server, wotb_account_id, vehicle_id, status
+          having count(*) > 1
+      ) t;
+
+    if conflicts is not null then
+        raise exception using
+            errcode = 'raise_exception',
+            message = 'V22 preflight failed: duplicate active Hundred submissions for the same WotB account and vehicle',
+            detail = conflicts,
+            hint = 'These rows were legal under the old (user_keycloak_id, vehicle_id) uniqueness because they came '
+                   'from different Keycloak identities that were bound to the same WotB account at different times. '
+                   'This migration does not pick a winner. Review each group (compare approved_average_damage and '
+                   'submitted_at), then intentionally keep the right one and delete the others through the admin '
+                   'bulk-delete endpoint, and rerun this migration.';
+    end if;
+end $$;
+
+alter table hundred_battle_submission
+    alter column wotb_server set not null;
+
+alter table hundred_battle_submission
+    add constraint ck_hundred_wotb_server
+        check (wotb_server in ('CN', 'ASIA', 'EU', 'NA'));
+
+-- 唯一性 / 索引改为以 (区服, WotB 账号) 为界
 drop index uk_hundred_battle_pending_user_vehicle;
 drop index uk_hundred_battle_current_user_vehicle;
 drop index idx_hundred_battle_submission_user;
 
 create unique index uk_hundred_battle_pending_account_vehicle
-    on hundred_battle_submission (wotb_account_id, vehicle_id)
+    on hundred_battle_submission (wotb_server, wotb_account_id, vehicle_id)
     where status = 'PENDING';
 
 create unique index uk_hundred_battle_current_account_vehicle
-    on hundred_battle_submission (wotb_account_id, vehicle_id)
+    on hundred_battle_submission (wotb_server, wotb_account_id, vehicle_id)
     where status = 'CURRENT';
 
 create index idx_hundred_battle_submission_account
-    on hundred_battle_submission (wotb_account_id, status, submitted_at desc);
+    on hundred_battle_submission (wotb_server, wotb_account_id, status, submitted_at desc);
 
 alter table hundred_battle_submission
     drop column user_keycloak_id;
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 三环 mark3_submission
+-- 三环 mark3_submission（无 SUPERSEDED，CURRENT 即最终记录）
 -- ═══════════════════════════════════════════════════════════════════════════
 alter table mark3_submission
     rename column game_account_id_snapshot to wotb_account_id;
 
-with ranked as (
-    select id,
-           row_number() over (
-               partition by wotb_account_id, vehicle_id
-               order by case when status = 'CURRENT' then 0 else 1 end,
-                        submitted_at desc,
-                        id desc
-           ) as rn
-      from mark3_submission
-     where status in ('PENDING', 'CURRENT')
-)
-delete from mark3_replay_evidence e
- using ranked r
- where e.submission_id = r.id
-   and r.rn > 1;
+alter table mark3_submission
+    add column wotb_server varchar(16);
 
-with ranked as (
-    select id,
-           row_number() over (
-               partition by wotb_account_id, vehicle_id
-               order by case when status = 'CURRENT' then 0 else 1 end,
-                        submitted_at desc,
-                        id desc
-           ) as rn
-      from mark3_submission
-     where status in ('PENDING', 'CURRENT')
-)
 update mark3_submission s
-   set status                  = 'DELETED',
-       proof_screenshot_first  = null,
-       proof_screenshot_second = null,
-       deleted_at              = now(),
-       deleted_by              = 'V22_OWNERSHIP_MIGRATION',
-       delete_reason           = 'ADMIN_CORRECTION',
-       delete_reason_text      = 'V22 ownership migration: duplicate active record for the same WotB account and vehicle'
-  from ranked r
- where s.id = r.id
-   and r.rn > 1;
+   set wotb_server = p.wotb_server
+  from user_profile p
+ where p.keycloak_user_id = s.user_keycloak_id
+   and p.wotb_account_id = s.wotb_account_id;
+
+do $$
+declare
+    unresolved_rows bigint;
+    sample_ids      text;
+    conflicts       text;
+begin
+    select count(*) into unresolved_rows
+      from mark3_submission
+     where wotb_server is null;
+
+    if unresolved_rows > 0 then
+        select string_agg(id::text, ', ' order by id) into sample_ids
+          from (select id from mark3_submission where wotb_server is null order by id limit 20) t;
+
+        raise exception using
+            errcode = 'raise_exception',
+            message = format(
+                'V22 preflight failed: %s mark3_submission row(s) have no resolvable WotB server',
+                unresolved_rows),
+            detail = format(
+                'wotb_server can only be derived from a user_profile that STILL binds the same WotB account; '
+                'these rows have no such profile. sample id(s): %s', sample_ids),
+            hint = 'Inspect with: select id, user_keycloak_id, wotb_account_id, status from mark3_submission '
+                   'where wotb_server is null; Then either restore/rebind the owning profile, or delete those rows '
+                   'intentionally through POST /api/admin/hof/mark3/submissions/{id}/delete (or the bulk-delete '
+                   'endpoint) and rerun this migration. This migration never guesses a server.';
+    end if;
+
+    -- 三环的新唯一索引是单个组合 partial index，覆盖 status in (PENDING, CURRENT) 两个状态，
+    -- 因此必须【跨状态】按 (区服, 账号, 车辆) 检查冲突。
+    select string_agg(
+               format('(server=%s, account=%s, vehicle=%s, rows=%s)',
+                      wotb_server, wotb_account_id, vehicle_id, cnt),
+               '; ' order by wotb_server, wotb_account_id, vehicle_id)
+      into conflicts
+      from (
+          select wotb_server, wotb_account_id, vehicle_id, count(*) as cnt
+            from mark3_submission
+           where status in ('PENDING', 'CURRENT')
+           group by wotb_server, wotb_account_id, vehicle_id
+          having count(*) > 1
+      ) t;
+
+    if conflicts is not null then
+        raise exception using
+            errcode = 'raise_exception',
+            message = 'V22 preflight failed: duplicate active Mark3 submissions for the same WotB account and vehicle',
+            detail = conflicts,
+            hint = 'Mark3 keeps a single active row per (server, account, vehicle) across PENDING and CURRENT. '
+                   'This migration does not pick a winner. Review each group, then intentionally keep the right one '
+                   '(a CURRENT cannot be replaced by a pending application) and delete the others through the admin '
+                   'bulk-delete endpoint, and rerun this migration.';
+    end if;
+end $$;
+
+alter table mark3_submission
+    alter column wotb_server set not null;
+
+alter table mark3_submission
+    add constraint ck_mark3_wotb_server
+        check (wotb_server in ('CN', 'ASIA', 'EU', 'NA'));
 
 drop index uk_mark3_submission_active_user_vehicle;
 drop index idx_mark3_submission_user;
 
 create unique index uk_mark3_submission_active_account_vehicle
-    on mark3_submission (wotb_account_id, vehicle_id)
+    on mark3_submission (wotb_server, wotb_account_id, vehicle_id)
     where status in ('PENDING', 'CURRENT');
 
 create index idx_mark3_submission_account
-    on mark3_submission (wotb_account_id, status, submitted_at desc);
+    on mark3_submission (wotb_server, wotb_account_id, status, submitted_at desc);
 
 alter table mark3_submission
     drop column user_keycloak_id;

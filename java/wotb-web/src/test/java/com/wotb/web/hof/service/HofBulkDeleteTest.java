@@ -53,6 +53,8 @@ import static org.mockito.Mockito.when;
 class HofBulkDeleteTest {
 
     private static final String ADMIN_SUB = "admin-sub";
+    /** canonical owner 的区服维度：与 profile / submission 上的 wotb_server 同域。 */
+    private static final String WOTB_SERVER = "CN";
 
     private final HundredBattleSubmissionRepository hundredRepository =
             mock(HundredBattleSubmissionRepository.class);
@@ -179,6 +181,7 @@ class HofBulkDeleteTest {
         submission.setId(id);
         submission.setStatus(status);
         submission.setVehicleId(6481L);
+        submission.setWotbServer(WOTB_SERVER);
         submission.setWotbAccountId(100L);
         submission.setNicknameSnapshot("Snap");
         return submission;
@@ -189,6 +192,7 @@ class HofBulkDeleteTest {
         submission.setId(id);
         submission.setStatus(status);
         submission.setVehicleId(6481L);
+        submission.setWotbServer(WOTB_SERVER);
         submission.setWotbAccountId(100L);
         submission.setNicknameSnapshot("Snap");
         return submission;

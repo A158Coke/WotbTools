@@ -13,7 +13,11 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-/** 三环 submission 仓库；终态迁移采用行锁，active 唯一性由 V21/V22 partial unique index 保证。 */
+/**
+ * 三环 submission 仓库；终态迁移采用行锁。
+ * canonical owner = (wotb_server, wotb_account_id)；V22 的单个组合 partial unique index 保证
+ * 同一 (区服, 账号) + vehicle 在 PENDING/CURRENT 中最多一条 active 记录。
+ */
 public interface Mark3SubmissionRepository extends JpaRepository<Mark3Submission, Long> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -23,13 +27,16 @@ public interface Mark3SubmissionRepository extends JpaRepository<Mark3Submission
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select s from Mark3Submission s
-            where s.wotbAccountId = :wotbAccountId and s.vehicleId = :vehicleId and s.status = 'CURRENT'
+            where s.wotbServer = :wotbServer and s.wotbAccountId = :wotbAccountId
+              and s.vehicleId = :vehicleId and s.status = 'CURRENT'
             """)
     Optional<Mark3Submission> findCurrentForUpdate(
-            @Param("wotbAccountId") long wotbAccountId, @Param("vehicleId") long vehicleId);
+            @Param("wotbServer") String wotbServer,
+            @Param("wotbAccountId") long wotbAccountId,
+            @Param("vehicleId") long vehicleId);
 
-    boolean existsByWotbAccountIdAndVehicleIdAndStatus(
-            long wotbAccountId, long vehicleId, String status);
+    boolean existsByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
+            String wotbServer, long wotbAccountId, long vehicleId, String status);
 
     Page<Mark3Submission> findByVehicleIdAndStatusOrderByApprovedBattleCountAscApprovedAtAscIdAsc(
             long vehicleId, String status, Pageable pageable);
@@ -96,6 +103,6 @@ public interface Mark3SubmissionRepository extends JpaRepository<Mark3Submission
             @Param("vehicleIds") Collection<Long> vehicleIds,
             Pageable pageable);
 
-    List<Mark3Submission> findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
-            long wotbAccountId, Collection<String> statuses);
+    List<Mark3Submission> findByWotbServerAndWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
+            String wotbServer, long wotbAccountId, Collection<String> statuses);
 }
