@@ -65,10 +65,11 @@ vi.mock('./FileUploader.vue', () => ({
 vi.mock('./ReplayProcessingPanel.vue', () => ({ default: { template: '<div data-test="processing" />' } }))
 vi.mock('./ReplayTaskCard.vue', () => ({ default: { template: '<div data-test="task" />' } }))
 vi.mock('./RemoveConfirmModal.vue', () => ({ default: { template: '<div data-test="modal" />' } }))
-const nativeImportState = vi.hoisted(() => ({ onPendingFile: null }))
+const nativeImportState = vi.hoisted(() => ({ onPendingFile: null, onPendingFileError: null }))
 vi.mock('../composables/useNativeReplayImport.js', () => ({
   useNativeReplayImport: (opts) => {
     nativeImportState.onPendingFile = opts?.onPendingFile ?? null
+    nativeImportState.onPendingFileError = opts?.onPendingFileError ?? null
     return { consumePendingWhenReady: vi.fn(() => Promise.resolve(false)) }
   },
 }))
@@ -307,6 +308,22 @@ describe('ReplayWorkspace', () => {
     await flushPromises()
     const file = new File(['x'], 'a.wotbreplay')
     await expect(nativeImportState.onPendingFile(file)).resolves.toBe(false)
+  })
+
+  it('Native pending 读取失败走现有 replay error surface（可见，且不启动 Processing）', async () => {
+    nativeImportState.onPendingFileError = null
+    mountWorkspace('data', { authenticated: true })
+    await flushPromises()
+    // 读取 pending 字节失败（synthetic 资源 404 / 网络错误）必须对用户可见。
+    expect(nativeImportState.onPendingFileError).toBeTypeOf('function')
+    expect(replayState.processingError.value).toBe('')
+
+    nativeImportState.onPendingFileError({ stage: 'read', pendingId: 'pending-uuid-1', cause: new Error('404') })
+    await flushPromises()
+
+    expect(replayState.processingError.value).toBe('workspace.native_pending_read_failed')
+    // 读取失败不启动 Processing、不 ACK。
+    expect(replayState.startProcessingJob).not.toHaveBeenCalled()
   })
 
   it('回归：选 #8（header selector）→ 切 AI / Playback 均消费 #8（选中单场持久，不随视图切换丢失）', async () => {

@@ -8,13 +8,14 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
-import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 
 /**
- * 待处理 replay：已复制到 app private cache，uri 为 app-owned FileProvider URI。
+ * 待处理 replay：已复制到 app private cache；Web 只经同源 synthetic HTTPS 资源
+ * （[PendingReplayResourcePolicy.SYNTHETIC_URL]）读它的字节，因此这里**不再持有任何 URI**
+ * —— 没有 FileProvider `content://` 传给 Web，也就没有本地路径泄漏面。
  *
  * `pendingId` 是这份 pending 的 **authoritative identity**（完整 UUID）：Web ACK 必须原样回传它，
  * 由 `PendingReplayAckPolicy` 做 compare-and-clear —— 没有任何「无 identity 清当前 pending」的路径。
@@ -25,7 +26,6 @@ data class PendingReplay(
     val pendingId: String,
     val name: String,
     val file: File,
-    val uri: Uri,
     val size: Long,
     val createdAt: Long
 )
@@ -36,8 +36,7 @@ private const val LOG_REF_LENGTH = 8
 /**
  * 日志用 short ref（不足 8 位原样返回，null 记为 `none`）。
  *
- * 这是「short ref 只配做日志」这条规则在 JVM 单测里可覆盖的唯一入口 —— [PendingReplay] 带 Android 的
- * `Uri`，纯 JVM 测试无法构造实例。**禁止**用它的返回值做比较 / 清理决策：identity 永远是完整 pendingId。
+ * **禁止**用它的返回值做比较 / 清理决策：identity 永远是完整 pendingId。
  */
 internal fun pendingLogRef(pendingId: String?): String = pendingId?.take(LOG_REF_LENGTH) ?: "none"
 
@@ -49,7 +48,7 @@ internal val PendingReplay.logRef: String get() = pendingLogRef(pendingId)
  *
  * 只存恢复所需的最小信息：完整 pendingId、cache 文件名、原始显示名、size、createdAt。
  * **不存** replay 内容、不 Base64、不存 external 绝对路径、不存 token/cookie/凭据 —— 内容始终只存在于
- * app private cache 的 backing file，恢复时用同一 file path 重建 FileProvider URI。
+ * app private cache 的 backing file，恢复时用同一 file path 重建 pending。
  */
 internal data class ReplayPendingMetadata(
     val pendingId: String,
@@ -62,12 +61,13 @@ internal data class ReplayPendingMetadata(
 /**
  * Replay 入口意图 → 安全 ingress（规格 §6 原始计划）：
  * external content URI → ContentResolver → 最小验证(.wotbreplay) → stream copy 到 app private cache
- * → app-owned FileProvider URI → Native Bridge 交给 Web。不 Base64、不取真实路径、不解析 replay、
+ * → Native Bridge 只交出 metadata + 同源 synthetic 资源 URL，Web 用 `fetch()` 由
+ * `shouldInterceptRequest` 流式读回字节。不 Base64、不取真实路径、不把本地路径交给 Web、不解析 replay、
  * 不复制 20 MiB/100/200 MiB 业务 contract（只保留一个 infra 单文件硬上限）。
  * 非 replay intent 安全忽略（返回 null，绝不把任意 binary 交给 Web upload pipeline）。
  *
  * Android external replay 只有这一条 ingress（Intent → pending cache → Native Bridge →
- * Web `fetch(content://)` → 上传管线），没有 file chooser 注入路径。
+ * Web `fetch(https://wotbtools.com/__native/replay-pending)` → 上传管线），没有 file chooser 注入路径。
  *
  * 跨 process death（RC7）：pending 的 metadata 落盘在 app private SharedPreferences；冷启动先恢复
  * active pending，再清理不再被引用的 orphan，避免 QQ 登录期间进程被杀后 replay 永久丢失。
@@ -122,8 +122,7 @@ object ReplayIntentHandler {
         val pendingId = newPendingId()
         val createdAt = System.currentTimeMillis()
         val file = copyToCache(context, resolver, uri, pendingId) ?: return null
-        val fileUri = FileProvider.getUriForFile(context, fileProviderAuthority(context), file)
-        return PendingReplay(pendingId, displayName, file, fileUri, size, createdAt)
+        return PendingReplay(pendingId, displayName, file, size, createdAt)
     }
 
     // ── 跨 process death 持久化（metadata only）──
@@ -156,8 +155,8 @@ object ReplayIntentHandler {
     }
 
     /**
-     * 启动恢复（必须在 orphan cleanup 之前调用）：metadata 完整、未过期且 backing file 存在时，用同一
-     * file path 重建 FileProvider URI 并返回 pending；过期 / 损坏 / 文件缺失一律清 metadata 且不恢复。
+     * 启动恢复（必须在 orphan cleanup 之前调用）：metadata 完整、未过期且 backing file 存在时，
+     * 用同一 file path 重建 pending；过期 / 损坏 / 文件缺失一律清 metadata 且不恢复。
      */
     fun restorePending(context: Context): PendingReplay? {
         val raw = metadataPrefs(context).getString(KEY_METADATA, null) ?: return null
@@ -167,12 +166,10 @@ object ReplayIntentHandler {
             clearPendingMetadata(context)
             return null
         }
-        val uri = FileProvider.getUriForFile(context, fileProviderAuthority(context), file)
         return PendingReplay(
             metadata.pendingId,
             metadata.originalName,
             file,
-            uri,
             metadata.size,
             metadata.createdAt
         )
@@ -229,7 +226,7 @@ object ReplayIntentHandler {
 
     /**
      * 启动恢复决策（纯逻辑，无 Android 类型）：metadata 有效、未过期且 backing file 存在时才可恢复。
-     * 返回应当保留（并作为 FileProvider URI 重建来源）的 backing file；null 表示不恢复 —— 调用方必须清
+     * 返回应当保留（并作为恢复来源）的 backing file；null 表示不恢复 —— 调用方必须清
      * metadata，并让 startup orphan cleanup 以 active=null 运行（过期文件因此被安全清掉）。
      */
     internal fun resolveRestorableBackingFile(
@@ -346,8 +343,6 @@ object ReplayIntentHandler {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private fun cacheDir(context: Context): File = File(context.cacheDir, CACHE_DIR)
-
-    private fun fileProviderAuthority(context: Context): String = "${context.packageName}.fileprovider"
 
     /**
      * pending identity：完整 UUID（36 字符）。

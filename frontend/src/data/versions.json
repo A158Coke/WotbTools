@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.78",
+    "date": "2026-09-10",
+    "tag": "fix",
+    "zh": "修复 Android 版从文件管理器打开回放后不自动解析：登录成功后待处理的回放现在会自动读取并开始解析，不再需要重新打开一次文件。",
+    "en": "Fixed the Android app not auto-parsing a replay opened from the file manager: after a successful sign-in the pending replay is now read and parsed automatically, with no need to open the file again.",
+    "ru": "Исправлено: в Android-приложении повтор, открытый из файлового менеджера, не начинал разбираться автоматически. Теперь после успешного входа ожидающий повтор читается и разбирается сам — повторно открывать файл не нужно."
+  },
+  {
     "v": "2.12.77",
     "date": "2026-09-08",
     "tag": "fix",

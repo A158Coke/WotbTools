@@ -198,7 +198,8 @@ class MainActivity : Activity() {
             ): Boolean {
                 // 普通 Web file chooser：始终交给 Android 系统 picker（既有 UX 不变）。
                 // Android external replay 绝不在这里注入：唯一 ingress 是 Intent → pending cache →
-                // Native Bridge（getPendingReplay / fetch(content://) / consumePendingReplay）→ 上传管线。
+                // Native Bridge（getPendingReplay / fetch(synthetic replay resource) / consumePendingReplay）
+                // → 上传管线。
                 val intent = try {
                     params.createIntent()
                 } catch (_: Exception) {
@@ -268,33 +269,22 @@ class MainActivity : Activity() {
             }
 
             /**
-             * Android 外部 replay handoff：Web 侧 readPendingFile 用 fetch(pending.uri) 读取字节。
-             * 该 content:// URI 指向 app private cache（FileProvider），这里拦截并返回文件流，
-             * 让字节「app-owned 安全路径」进入现有上传管线。绝不 Base64 / file:// / 放宽 WebView 边界。
+             * Android 外部 replay handoff：Web 侧 `fetch(pending.uri)` 读取字节。
+             *
+             * Web 侧 `fetch(pending.uri)` 读取字节；该 wire 字段不再是 FileProvider `content://`
+             * （`allowContentAccess=false` 下 Web 读不到），而是 [PendingReplayResourcePolicy.SYNTHETIC_URL]
+             * 这个同源 synthetic HTTPS 资源；这里命中后流式返回 app private cache 里的字节。
+             * 绝不 Base64 / file:// / 放宽 WebView 边界。
+             *
+             * fail-closed：命中该 URL 时响应**永远由 Native 拥有**——pending 缺失、backing file 不存在、
+             * 读取异常一律返回明确的 404/500，**绝不 return null** 放行到真实 nginx/backend。
              */
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest
             ): WebResourceResponse? {
-                val pending = pendingReplay ?: return null
-                if (pending.uri.toString() != request.url.toString()) return null
-                val file = pending.file
-                return try {
-                    if (!file.exists()) {
-                        WebResourceResponse("application/octet-stream", "utf-8", 404, "Not Found", null, null)
-                    } else {
-                        WebResourceResponse(
-                            "application/octet-stream",
-                            "utf-8",
-                            200,
-                            "OK",
-                            mapOf("Access-Control-Allow-Origin" to "*"),
-                            file.inputStream()
-                        )
-                    }
-                } catch (_: Exception) {
-                    null
-                }
+                if (!PendingReplayResourcePolicy.matchesUrl(request.url.toString())) return null
+                return servePendingReplayStream()
             }
 
             override fun onReceivedError(
@@ -630,12 +620,58 @@ class MainActivity : Activity() {
      * 逐字符相等之后。这里刻意保持无参：identity 判断归 [PendingReplayAckPolicy]，清理点不复制第二份规则。
      */
     private fun clearPendingReplay() {
-        // 重要：Web `fetch(content://)` 返回后 WebView/Chromium 仍可能读取该文件，不能立即删除 backing file。
+        // 重要：Web `fetch()` 返回后 WebView/Chromium 仍可能读取该文件，不能立即删除 backing file。
         // 只清 pending slot + 持久 metadata（exactly-once），文件保留到下一次 app startup cleanupOrphans() 清理。
         pendingReplay = null
         pendingReplayEligible = false
         ReplayIntentHandler.clearPendingMetadata(this)
     }
+
+    /**
+     * 应答 [PendingReplayResourcePolicy.SYNTHETIC_URL]：把当前 pending 的 backing file 以 stream
+     * 形式交给 WebView。**绝不**读成 ByteArray / Base64 —— 回放文件可能很大，必须保持 streaming。
+     *
+     * fail-closed：任何「没有 pending / 文件不在 / 读失败」都返回 Native 生成的 404/500，
+     * **绝不返回 null**（null 会让该请求继续走向真实 https://wotbtools.com/__native/replay-pending）。
+     *
+     * 日志只写低敏信息：阶段 + 短引用（`logRef`，前 8 位），绝不写完整 pendingId / 文件名 / 本地路径。
+     */
+    private fun servePendingReplayStream(): WebResourceResponse {
+        val pending = pendingReplay?.takeIf { pendingReplayEligible }
+        if (pending == null) {
+            Log.d(TAG, "replay-pending stream missing reason=no-pending")
+            return pendingReplayErrorResponse(404, "Not Found")
+        }
+        val file = pending.file
+        if (!file.exists()) {
+            Log.d(TAG, "replay-pending stream missing ref=${pending.logRef} reason=file-absent")
+            return pendingReplayErrorResponse(404, "Not Found")
+        }
+        return try {
+            val stream = file.inputStream()
+            Log.d(TAG, "replay-pending stream requested ref=${pending.logRef}")
+            Log.d(TAG, "replay-pending stream served ref=${pending.logRef}")
+            WebResourceResponse(
+                "application/octet-stream",
+                // 二进制流不给 charset：非 null encoding 会让 WebView 做字符集转换，可能损坏字节。
+                null,
+                200,
+                "OK",
+                mapOf(
+                    "Access-Control-Allow-Origin" to "*",
+                    "Cache-Control" to "no-store",
+                ),
+                stream
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "replay-pending stream failed ref=${pending.logRef} cause=${e.javaClass.simpleName}")
+            pendingReplayErrorResponse(500, "Internal Error")
+        }
+    }
+
+    /** synthetic replay 资源的错误响应：始终 Native-owned，绝不放行到真实网络。 */
+    private fun pendingReplayErrorResponse(status: Int, reason: String): WebResourceResponse =
+        WebResourceResponse("application/octet-stream", "utf-8", status, reason, null, null)
 
     // ── Auth return（QQ native 登录 → verified App Link → 原 WebView）──
 
@@ -687,8 +723,12 @@ class MainActivity : Activity() {
 
     /**
      * pending replay 的 wire contract（`getPendingReplay` 的 result）：`pendingId` 是这份 pending 的
-     * authoritative identity，Web 必须在 server 接受后原样回传给 `consumePendingReplay`；其余字段与
-     * 既有语义一致（`name` 仅显示名、`size` 仅提示、`uri` 为 app-owned FileProvider URI）。
+     * authoritative identity，Web 必须在 server 接受后原样回传给 `consumePendingReplay`；
+     * 其余字段与既有语义一致（`name` 仅显示名、`size` 仅提示）。
+     *
+     * `uri` 不再是 FileProvider `content://`，而是 [PendingReplayResourcePolicy.SYNTHETIC_URL]：
+     * WebView `allowContentAccess=false` 时 Web 无法 `fetch(content://…)`，只保留同源 synthetic
+     * HTTPS 资源作为唯一字节 transport；真实本地路径与 pendingId 都不进 URL。
      */
     fun bridgePendingReplayJson(): Any {
         val pending = pendingReplay?.takeIf { pendingReplayEligible } ?: return org.json.JSONObject.NULL
@@ -696,7 +736,7 @@ class MainActivity : Activity() {
             .put("pendingId", pending.pendingId)
             .put("name", pending.name)
             .put("size", pending.size)
-            .put("uri", pending.uri.toString())
+            .put("uri", PendingReplayResourcePolicy.SYNTHETIC_URL)
     }
 
     /**

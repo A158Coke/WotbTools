@@ -1,5 +1,6 @@
 <script setup>
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { displayName } from '../utils/helpers.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -25,6 +26,7 @@ const props = defineProps({
 })
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
+const { t } = useI18n()
 const { initPromise: authInit, authenticated, login, loginInFlight } = useAuth()
 
 /** auth init 是否已结束（结束前不得渲染/执行任何 replay 业务动作）。 */
@@ -60,9 +62,20 @@ async function importPendingFile(file, pending) {
   return result?.accepted === true
 }
 
+/**
+ * Native pending 读取失败（同源 synthetic 资源 404/500 或网络失败）必须有**可见**反馈：
+ * 复用现有 replay processing error surface（`processingError`），不新建 toast/error 体系。
+ * 此时不 ACK、不启动 Processing、pending 保留可重试，因此文案引导用户重新打开该回放即可。
+ */
+function handlePendingImportError() {
+  workspace.setWorkspaceTab('data')
+  processingError.value = t('workspace.native_pending_read_failed')
+}
+
 const { consumePendingWhenReady } = useNativeReplayImport({
   isAuthenticated: () => authenticated.value,
   onPendingFile: importPendingFile,
+  onPendingFileError: handlePendingImportError,
 })
 
 const capabilityOptions = [

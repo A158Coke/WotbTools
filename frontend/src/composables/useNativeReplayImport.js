@@ -1,13 +1,22 @@
 import { consumePendingReplay, getPendingReplay, isAndroidApp } from './usePlatformBridge.js'
 
+/** 日志用 short ref（前 8 位）：完整 pendingId / operationId 绝不进日志。 */
+function shortRef(pendingId) {
+  return typeof pendingId === 'string' ? pendingId.slice(0, 8) : 'none'
+}
+
 /**
  * 端侧 Replay 导入钩子：把 Native 收到（并已复制到 app cache）的 share/open replay
  * 注入现有 Web 上传管线，并**自动触发解析**。
  *
  * 机制（不再依赖 synthetic input.click()）：Native 经 WebView `shouldInterceptRequest`
- * 以「app-owned 安全 content:// 缓存文件」serve 字节；Web 侧 `fetch(pending.uri)` 读字节构造
- * `File`，再交给 `onPendingFile(file, pending)` → 现存 upload pipeline
- * （`updateFiles` → `startProcessingJob`）。无需 Base64、不取真实路径、不放宽 WebView 安全边界。
+ * 以**同源 synthetic HTTPS 资源**（`https://wotbtools.com/__native/replay-pending`）serve 字节；
+ * Web 侧 `fetch(pending.uri)` 读字节构造 `File`，再交给 `onPendingFile(file, pending)` → 现存 upload
+ * pipeline（`updateFiles` → `startProcessingJob`）。
+ *
+ * 该 URL 是固定常量：不含 pendingId、文件名、本地路径、token/state/code，因此即便某次未被拦截而落到
+ * 真实 nginx/backend access log 也不泄漏身份；Android 侧对它的应答永远 Native-owned（绝不 fallback
+ * 到真实网络）。不使用 Base64、不取真实路径、不放宽 WebView 安全边界（`allowContentAccess=false` 保持不变）。
  *
  * exactly-once 语义（针对「一个具体 pending replay」）：
  * - **identity-aware**：pending identity 是 Native 提供的 `pendingId`（完整 UUID，不是 URI 字符串）。
@@ -32,18 +41,38 @@ import { consumePendingReplay, getPendingReplay, isAndroidApp } from './usePlatf
  *
  * @param onPendingFile async (file, pending) => boolean
  *        业务受理结果：`true` = server 已创建 Processing Job（可 ACK Native），否则不得 ACK。
+ * @param onPendingFileError (info) => void
+ *        在**读取 pending 字节**阶段失败时回调（`{stage:'read', pendingId, cause}`）。
+ *        只用于给出用户可见反馈：不 ACK、不启动 Processing、不清 metadata，pending 仍可重试。
  */
-export function useNativeReplayImport({ isAuthenticated = () => false, onPendingFile } = {}) {
+export function useNativeReplayImport({
+  isAuthenticated = () => false,
+  onPendingFile,
+  onPendingFileError,
+} = {}) {
   let inflight = false
   let rerunRequested = false
   const consumedIds = new Set()
 
-  /** 从 Native serve 的 content:// 安全 URI 读取字节并构造 File。 */
+  /** 从 Native serve 的同源 synthetic HTTPS 资源读取字节并构造 File。 */
   async function readPendingFile(pending) {
-    const resp = await fetch(pending.uri)
-    if (!resp.ok) throw new Error(`PendingReplay fetch failed: ${resp.status}`)
+    console.debug('[replay-native] pending stream fetch start')
+    let resp
+    try {
+      resp = await fetch(pending.uri)
+    } catch (e) {
+      // 网络层失败（含 WebView 拒绝该请求）：绝不静默，交由调用方给出可见错误。
+      console.debug('[replay-native] pending stream fetch failed reason=network')
+      throw e
+    }
+    if (!resp.ok) {
+      console.debug(`[replay-native] pending stream fetch failed status=${resp.status}`)
+      throw new Error(`PendingReplay fetch failed: ${resp.status}`)
+    }
     const blob = await resp.blob()
-    return new File([blob], pending.name || 'replay.wotbreplay', { type: 'application/octet-stream' })
+    const file = new File([blob], pending.name || 'replay.wotbreplay', { type: 'application/octet-stream' })
+    console.debug('[replay-native] pending file constructed')
+    return file
   }
 
   /** 单轮 drain：消费当前 Native pending（若有且未消费过）。返回本次是否真正受理了一份 replay。 */
@@ -65,22 +94,36 @@ export function useNativeReplayImport({ isAuthenticated = () => false, onPending
     // 这份 pending 已在本会话消费并成功注入 → 不再重复（exactly-once for this replay）。
     if (consumedIds.has(pending.pendingId)) return false
 
+    console.debug(`[replay-native] pending discovered ref=${shortRef(pending.pendingId)}`)
+    let file
     try {
-      const file = await readPendingFile(pending)
+      file = await readPendingFile(pending)
+    } catch (e) {
+      // 读取阶段失败：不 ACK、不启动 Processing、不记录 consumed → pending 保留可重试。
+      // 这条路径必须对用户可见，否则会退化成「登录成功但什么都没发生」。
+      console.debug(`[replay-native] pending rejected stage=read ref=${shortRef(pending.pendingId)}`)
+      onPendingFileError?.({ stage: 'read', pendingId: pending.pendingId, cause: e })
+      return false
+    }
+
+    try {
       // ACK 顺序：先让业务受理（upload + create processing job），成功后才清 Native pending。
       const accepted = await onPendingFile?.(file, pending)
       if (accepted !== true) return false
+      console.debug(`[replay-native] processing accepted ref=${shortRef(pending.pendingId)}`)
       const acked = await consumePendingReplay(pending.pendingId)
       consumedIds.add(pending.pendingId)
       if (!acked) {
         // 正常竞态：处理期间新 replay 已取代它 → 新 pending 保留，绝不被这次 ACK 清掉。
-        console.debug('[replay-native] pending ack stale (replaced by newer replay)')
+        console.debug(`[replay-native] pending ack stale ref=${shortRef(pending.pendingId)}`)
+      } else {
+        console.debug(`[replay-native] pending ack success ref=${shortRef(pending.pendingId)}`)
       }
       console.debug('[replay-native] pending accepted')
       return true
     } catch (e) {
-      // read/受理失败：不记录 consumed、不 ACK Native，允许下一次 ready 重试。
-      console.debug('[replay-native] pending rejected', e?.message || e)
+      // 受理阶段失败：不记录 consumed、不 ACK Native，允许下一次 ready 重试。
+      console.debug(`[replay-native] pending rejected stage=accept ref=${shortRef(pending.pendingId)}`)
       return false
     }
   }

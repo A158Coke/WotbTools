@@ -3,8 +3,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useNativeReplayImport } from './useNativeReplayImport.js'
 
-const PENDING_A = { pendingId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', name: 'a.wotbreplay', uri: 'content://pending-replay', size: 5 }
-const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.wotbreplay', uri: 'content://pending-replay', size: 5 }
+/**
+ * Native serve 字节的**同源 synthetic HTTPS 资源**（`PendingReplayResourcePolicy.SYNTHETIC_URL`）。
+ * `allowContentAccess=false` 下 Web 不能 `fetch(content://…)`，因此 wire 上的 `uri` 恒为该固定 URL：
+ * 不含 pendingId / 文件名 / 本地路径。
+ */
+const SYNTHETIC_REPLAY_URL = 'https://wotbtools.com/__native/replay-pending'
+
+const PENDING_A = { pendingId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', name: 'a.wotbreplay', uri: SYNTHETIC_REPLAY_URL, size: 5 }
+const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.wotbreplay', uri: SYNTHETIC_REPLAY_URL, size: 5 }
 
 /**
  * Native 侧替身：`consumePendingReplay` 实现 **compare-and-clear**
@@ -55,11 +62,14 @@ function stubNative(pending, consumeResult = true) {
   }
 }
 
-/** 模拟 Native shouldInterceptRequest 以 content:// 安全 URI 返回缓存文件字节。 */
+/**
+ * 模拟 Native `shouldInterceptRequest` 对 synthetic HTTPS replay 资源流式返回缓存文件字节。
+ * 任何**不是**该 synthetic URL 的请求都 404 —— 与 Android 侧「exact match 才由 Native 应答」一致。
+ */
 function stubFetchBlob() {
   vi.stubGlobal('fetch', vi.fn(async (uri) => {
-    if (uri === 'content://pending-replay') {
-      return { ok: true, blob: async () => new Blob(['replay-bytes'], { type: 'application/octet-stream' }) }
+    if (uri === SYNTHETIC_REPLAY_URL) {
+      return { ok: true, status: 200, blob: async () => new Blob(['replay-bytes'], { type: 'application/octet-stream' }) }
     }
     return { ok: false, status: 404 }
   }))
@@ -82,7 +92,7 @@ describe('useNativeReplayImport', () => {
     await expect(consumePendingWhenReady()).resolves.toBe(false)
   })
 
-  it('reads pending replay bytes via fetch(content://uri) and injects a File into selection', async () => {
+  it('reads pending replay bytes via fetch(synthetic HTTPS url) and injects a File into selection', async () => {
     stubNative(PENDING_A)
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => true)
@@ -92,6 +102,8 @@ describe('useNativeReplayImport', () => {
     })
     const consumed = await consumePendingWhenReady()
     expect(consumed).toBe(true)
+    // fetch 必须打到同源 synthetic 资源，绝不出现 content:// transport。
+    expect(fetch).toHaveBeenCalledWith(SYNTHETIC_REPLAY_URL)
     expect(onPendingFile).toHaveBeenCalledTimes(1)
     const file = onPendingFile.mock.calls[0][0]
     expect(file.name).toBe('a.wotbreplay')
@@ -99,6 +111,51 @@ describe('useNativeReplayImport', () => {
     expect(await file.text()).toBe('replay-bytes')
     // identity 一并交给业务（作为 processing create 的 operationId）
     expect(onPendingFile.mock.calls[0][1]).toMatchObject({ pendingId: PENDING_A.pendingId })
+  })
+
+  it('synthetic resource 404：不注入、不 ACK、pending 保持可重试，并给出可见错误', async () => {
+    const native = stubNative(PENDING_A)
+    // Native fail-closed：没有 pending / backing file 缺失 → 404（绝不 fallback 到真实网络）。
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })))
+    const onPendingFile = vi.fn(async () => true)
+    const onPendingFileError = vi.fn()
+    const { consumePendingWhenReady } = useNativeReplayImport({
+      isAuthenticated: () => true,
+      onPendingFile,
+      onPendingFileError,
+    })
+
+    await expect(consumePendingWhenReady()).resolves.toBe(false)
+    expect(onPendingFile).not.toHaveBeenCalled()
+    expect(native.consumeRequests).toEqual([])
+    expect(native.getCurrent()).not.toBeNull()
+    // 读取失败必须对用户可见（否则就是「登录成功但什么都没发生」）。
+    expect(onPendingFileError).toHaveBeenCalledTimes(1)
+    expect(onPendingFileError.mock.calls[0][0]).toMatchObject({ stage: 'read' })
+
+    // 下一次 ready 仍可重试同一份 pending（没有被 consumed 记账，也没有被 ACK 清掉）。
+    stubFetchBlob()
+    await expect(consumePendingWhenReady()).resolves.toBe(true)
+    expect(onPendingFile).toHaveBeenCalledTimes(1)
+    expect(native.consumeRequests).toEqual([{ expectedPendingId: PENDING_A.pendingId }])
+  })
+
+  it('fetch 抛网络错误：不启动 Processing、不 ACK、不丢 pending', async () => {
+    const native = stubNative(PENDING_A)
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+    const onPendingFile = vi.fn(async () => true)
+    const onPendingFileError = vi.fn()
+    const { consumePendingWhenReady } = useNativeReplayImport({
+      isAuthenticated: () => true,
+      onPendingFile,
+      onPendingFileError,
+    })
+
+    await expect(consumePendingWhenReady()).resolves.toBe(false)
+    expect(onPendingFile).not.toHaveBeenCalled()
+    expect(native.consumeRequests).toEqual([])
+    expect(native.getCurrent()).not.toBeNull()
+    expect(onPendingFileError).toHaveBeenCalledTimes(1)
   })
 
   it('ACK 携带 exact pending identity（不是 URI）', async () => {

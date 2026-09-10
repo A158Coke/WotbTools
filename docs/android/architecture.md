@@ -129,8 +129,13 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
 - **认证是唯一 navigation authority**：`inAuthFlow=true` 期间到达的 replay intent 只入队
   （`ReplayDispatchPolicy` → `NONE`），不 `loadUrl`、不 `evaluateJavascript`，当前 Keycloak/QQ
   authentication transaction 不被 replay 打断；verified auth return 恒为最高优先级。
-- **单一 ingress**：只有 Intent → private cache → Native Bridge → Web `fetch(content://)` 一条路径；
+- **单一 ingress**：只有 Intent → private cache → Native Bridge → Web `fetch()` 一条路径；
   已删除 `onShowFileChooser` 对 pending replay 的注入分支。
+- **字节 transport 是同源 synthetic HTTPS 资源**：Web 不 `fetch(content://…)`（`allowContentAccess=false`
+  下不可能成功），而是 fetch 固定常量 `https://wotbtools.com/__native/replay-pending`，由
+  `shouldInterceptRequest` 流式返回 private cache 里的字节。该 URL 不含 pendingId / 文件名 / 本地路径；
+  命中的请求**永远 Native-owned**（无 pending / 文件缺失 → 404，读失败 → 500），**绝不 `return null`**
+  放行到真实 nginx/backend。判定与响应分支见纯策略 `PendingReplayResourcePolicy`。
 - **跨 process death 存活**：pending metadata 落在 app private storage（24h TTL），启动时先恢复
   active pending、再按引用清理 orphan cache。
 - **identity-aware ACK**：pending identity 是完整 UUID（`pendingId`）。Web 在 server 接受 processing
@@ -154,5 +159,5 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
 
 ## 权限（least privilege，规格 §69）
 
-`INTERNET`、`ACCESS_NETWORK_STATE`、`REQUEST_INSTALL_PACKAGES` + FileProvider URI grant。
+`INTERNET`、`ACCESS_NETWORK_STATE`、`REQUEST_INSTALL_PACKAGES` + FileProvider URI grant（仅用于 APK 更新）。
 不申请 `READ_EXTERNAL_STORAGE` / `MANAGE_EXTERNAL_STORAGE` / Contacts / Location / Camera / Microphone。
