@@ -11,11 +11,10 @@ accessed.
 - Historical PositionDecoder quick/JFR artifacts were generated from the dirty
   pre-review candidate tree; they are not measurements of the final Java25
   candidate tree.
-- Final candidate source tree: commit `68c8a581` (PR #284 worktree based on
-  `678d83e5` plus the Java25, Spring Boot 4.1.1, bounded AI virtual-worker and
-  benchmark changes in this round). The c1 artifact was generated before that
-  commit from the same source content and records `dirty=true`; the final HEAD
-  adds only this evidence-record correction.
+- Pre-follow-up candidate source tree: commit `68c8a581` plus evidence-only
+  commit `a4c4c461`. The review follow-up adds one-task-per-VT AI admission,
+  scheduler metrics, round progress logging and the final c2 rerun below; its
+  clean source commit is recorded after this follow-up commit.
 - Java: Eclipse Temurin OpenJDK 25.0.4.1 (LTS).
 - Spring Boot: 4.1.1.
 - Benchmark JVM: `-XX:ActiveProcessorCount=2 -Xms4g -Xmx4g`.
@@ -293,8 +292,11 @@ Java25 validation completed:
   fingerprints. Its JSON metadata records commit `678d83e5` and `dirty=true`
   because the source candidate had not yet been committed when it ran; no
   source changes were made after that run.
-- c2 full confirmation: incomplete because the bounded observation window was
-  exceeded; failure was caused by safe test-process termination.
+- The earlier c2 attempt exceeded two hours without progress output and was
+  safely terminated. A subsequent quick c2 reproduced normal progress, then a
+  full c2 rerun completed with 40/40 parity and 800/800 fingerprints; the
+  earlier attempt is therefore superseded rather than treated as a final c2
+  result.
 
 No production endpoint, production job, persistence write, service restart,
 MQ/COS/Grafana change, or production configuration change was made. The replay
@@ -322,29 +324,47 @@ The final replay confirmation used Eclipse Temurin OpenJDK 25.0.4.1,
 
 | Run | Status | Replays/s | Mean ms | P50 ms | P95 ms | P99 ms | GC count/time | Fingerprints |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| c1 | completed | 15.455 | 64.656 | 58.726 | 99.260 | 328.611 | 51 / 5,317 ms | 800/800 |
-| c2 | stopped after >2 h with no artifact | — | — | — | — | — | — | incomplete |
+| c1 pre-follow-up | completed | 15.455 | 64.656 | 58.726 | 99.260 | 328.611 | 51 / 5,317 ms | 800/800 |
+| c2 final follow-up | completed | 30.981 | 64.221 | 61.812 | 99.716 | 185.532 | 27 / 1,273 ms | 800/800 |
 
-c1 artifact:
+c1 pre-follow-up artifact:
 `build/performance/final-confirmation/java25-final-c1/replay-performance-full-20260910-103616-438.{json,csv,md}`.
 
-The c2 JVM remained CPU-active but did not finish within the observation
-window; it was then terminated safely. The Maven result is a Surefire fork
-termination failure, not a performance result. Therefore this round makes no
-c2 throughput or latency claim. The c1 result is evidence for the final
-candidate source content and one constrained-node performance point, not a
-proof of a production capacity increase.
+Final c2 rerun artifact:
+`build/performance/final-confirmation/java25-final-c2-rerun/replay-performance-full-20260910-133326-062.{json,csv,md}`.
+
+The c2 rerun used Java25, 2C/4GiB, the explicit 40-replay corpus, full stage,
+warmup 5, measurement 20 and fingerprint verification. Round progress showed
+all 20 measurement rounds completing in roughly 82–158 seconds. The earlier
+no-progress attempt is not reproducible under the same bounded observation
+workflow; no deadlock, executor wait, or GC-thrash root cause was found.
+These are separate constrained-node observations, not a claim that VT or the
+follow-up changed replay throughput.
 
 ### AI Platform vs Virtual Thread benchmark
 
-The separate real-provider benchmark is implemented as an opt-in `ai-live`
-test with identical Platform/Virtual settings, fixed prompt
-`Return exactly: OK`, matrix `1,2,5,10`, warmup 2 and measurement 10 per
-variant, bounded worker admission, and optional measurement-only JFR. It does
-not change replay concurrency or production AI admission limits. It was not
-executed in this environment because `AI_API_KEY` was not present; no provider
-request or token cost was incurred. Consequently there is no VT latency,
-error-rate, provider-status, or `VirtualThreadPinned` result to report.
+The separate real-provider benchmark was executed with Java 25, model
+`deepseek-v4-flash`, fixed prompt `Return exactly: OK`, warmup 1, measurement 5,
+and paired concurrencies `1,2,4`. Every request completed successfully with
+the expected `OK` response and no provider errors/status failures. The JFR
+contained zero `jdk.VirtualThreadPinned` events; blocking HTTPS calls parked
+virtual threads without verified pinning.
+
+| Concurrency | Variant | Wall ms | Total p50/p95/p99 ms | Provider p50/p95/p99 ms | Platform count / peak | VT scheduler peak pool/mounted/queued |
+|---:|---|---:|---|---|---:|---|
+| 1 | Platform | 3,846.6 | 2,228.9 / 3,845.0 / 3,845.0 | 776.1 / 939.5 / 939.5 | 24 / 25 | 2 / 1 / 0 |
+| 1 | Virtual | 5,294.2 | 3,363.5 / 5,293.6 / 5,293.6 | 990.5 / 1,367.5 / 1,367.5 | 24 / 24 | 2 / 2 / 1 |
+| 2 | Platform | 2,365.6 | 1,377.2 / 2,364.0 / 2,364.0 | 867.3 / 1,444.2 / 1,444.2 | 24 / 26 | 2 / 1 / 0 |
+| 2 | Virtual | 2,469.2 | 1,650.0 / 2,468.8 / 2,468.8 | 830.5 / 986.0 / 986.0 | 24 / 24 | 2 / 2 / 4 |
+| 4 | Platform | 1,726.6 | 1,237.9 / 1,725.7 / 1,725.7 | 1,007.3 / 1,723.8 / 1,723.8 | 24 / 28 | 2 / 1 / 0 |
+| 4 | Virtual | 1,504.5 | 1,163.5 / 1,504.0 / 1,504.0 | 938.6 / 1,329.6 / 1,329.6 | 24 / 24 | 2 / 2 / 1 |
+
+The small provider sample is noisy and is not a DeepSeek speedup claim. The
+reliable result for this run is resource behavior: platform mode created no
+virtual tasks and increased the reset per-variant platform peak by up to four;
+virtual mode created one VT per request, held active work at the requested
+concurrency, and kept platform-thread count at the 24-thread baseline. The
+benchmark did not change production admission values or replay concurrency.
 
 ### Java25 test/build status
 

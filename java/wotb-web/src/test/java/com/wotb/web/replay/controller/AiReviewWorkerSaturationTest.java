@@ -14,7 +14,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -267,6 +269,82 @@ class AiReviewWorkerSaturationTest {
 
         assertTrue(started.await(5, TimeUnit.SECONDS), "AI worker must start");
         assertEquals(Boolean.TRUE, virtual.get(), "AI worker should run on a virtual thread");
+    }
+
+    @Test
+    void platformModeUsesPlatformThreads() throws Exception {
+        try (AiReviewWorkerExecutor executor = new AiReviewWorkerExecutor(
+                1, 1, 5, false, null)) {
+            final CountDownLatch started = new CountDownLatch(1);
+            final AtomicReference<Boolean> virtual = new AtomicReference<>();
+            executor.execute(() -> {
+                virtual.set(Thread.currentThread().isVirtual());
+                started.countDown();
+            });
+            assertTrue(started.await(5, TimeUnit.SECONDS), "platform task must start");
+            assertEquals(Boolean.FALSE, virtual.get(), "platform mode must use a platform thread");
+        }
+    }
+
+    @Test
+    void virtualModeUsesOneThreadPerTaskButKeepsActiveAndAdmissionBounds() throws Exception {
+        try (AiReviewWorkerExecutor executor = new AiReviewWorkerExecutor(
+                2, 1, 5, true, null)) {
+            final CountDownLatch firstTwoStarted = new CountDownLatch(2);
+            final CountDownLatch release = new CountDownLatch(1);
+            final CountDownLatch allDone = new CountDownLatch(3);
+            final AtomicInteger active = new AtomicInteger();
+            final AtomicInteger peakActive = new AtomicInteger();
+            final AtomicInteger nonVirtual = new AtomicInteger();
+            final Runnable task = () -> {
+                if (!Thread.currentThread().isVirtual()) {
+                    nonVirtual.incrementAndGet();
+                }
+                final int current = active.incrementAndGet();
+                peakActive.accumulateAndGet(current, Math::max);
+                firstTwoStarted.countDown();
+                try {
+                    release.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    active.decrementAndGet();
+                    allDone.countDown();
+                }
+            };
+            executor.execute(task);
+            executor.execute(task);
+            assertTrue(firstTwoStarted.await(5, TimeUnit.SECONDS),
+                    "two active virtual tasks must start");
+            executor.execute(task); // the one bounded parked VT
+            assertThrows(RejectedExecutionException.class, () -> executor.execute(task),
+                    "maxConcurrent + queueCapacity must reject synchronously");
+            release.countDown();
+            assertTrue(allDone.await(5, TimeUnit.SECONDS), "all admitted tasks must finish");
+            assertTrue(peakActive.get() <= 2, "active upstream work must stay bounded");
+            assertEquals(0, nonVirtual.get(), "virtual mode must run every task on a VT");
+        }
+    }
+
+    @Test
+    void virtualModeReleasesPermitAfterFailureAndRejectsAfterShutdown() throws Exception {
+        try (AiReviewWorkerExecutor executor = new AiReviewWorkerExecutor(
+                1, 1, 5, true, null)) {
+            final CountDownLatch failed = new CountDownLatch(1);
+            executor.execute(() -> {
+                failed.countDown();
+                throw new IllegalStateException("test failure");
+            });
+            assertTrue(failed.await(5, TimeUnit.SECONDS), "failing task must start");
+
+            final CountDownLatch recovered = new CountDownLatch(1);
+            executor.execute(recovered::countDown);
+            assertTrue(recovered.await(5, TimeUnit.SECONDS),
+                    "failure must not leak the active/admission permit");
+            executor.close();
+            assertThrows(RejectedExecutionException.class, () -> executor.execute(() -> { }),
+                    "shutdown must reject new work");
+        }
     }
 
     // ---- helpers ----

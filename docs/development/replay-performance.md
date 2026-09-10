@@ -126,8 +126,11 @@ do not optimize the listed hypotheses by assumption.
 
 The replay benchmark intentionally keeps its bounded CPU worker executor on
 platform threads; Virtual Threads are not a substitute for the replay CPU
-concurrency gate. The web application's blocking AI review executor may use
-bounded virtual workers, but its worker and queue limits remain unchanged.
+concurrency gate. The Spring Boot global virtual-thread policy applies to
+Spring-managed request/task infrastructure, while the explicit blocking AI
+review executor uses one virtual thread per admitted task plus independent
+bounded admission/active permits. Replay parsing and export remain bounded
+platform pools, and the AI watchdog remains a platform scheduled executor.
 
 The current harness uses separate executor lifecycles for warmup and
 measurement, so worker-thread initialization can still occur after

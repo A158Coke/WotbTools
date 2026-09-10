@@ -20,9 +20,11 @@ this benchmark executor. It does not change `REPLAY_PARSE_MAX_CONCURRENT`,
 `max-concurrent-jobs`, AI production admission, queue capacity or token policy.
 
 The report records end-to-end latency and provider-call latency at p50/p95/p99,
-wall time, active/peak active requests, queue wait, task thread kind, live/peak
-JVM thread counts, process CPU, heap, GC, failures, provider statuses and
-unexpected response counts. `target/ai-vt-benchmark/` is ignored build output.
+wall time, active/peak active requests, queue wait, task thread kind,
+platform-thread count and reset per-variant platform peak, Java 25 virtual
+thread scheduler parallelism/pool/mounted/queued counts and sampled peaks,
+process CPU, heap, GC, failures, provider statuses and unexpected response
+counts. `target/ai-vt-benchmark/` is ignored build output.
 
 ## Run
 
@@ -40,12 +42,21 @@ mvn -s settings.xml -pl wotb-web -am test `
   "-DargLine=-XX:ActiveProcessorCount=2 -Xms4g -Xmx4g"
 ```
 
-The benchmark uses a bounded worker executor in both variants. Platform mode
-uses fixed platform workers; Virtual mode uses the same fixed worker/queue
-limits with virtual worker threads. It does not run full replay analysis and
-does not invoke the production controller. Warmup batches for every matrix
-point complete before the optional JFR recording starts; the recording covers
+The benchmark uses the same business admission limits in both variants. Platform
+mode uses fixed platform workers. Virtual mode creates one virtual thread per
+admitted task; a semaphore limits active upstream calls to `maxConcurrent` and
+the admission semaphore limits active plus parked tasks to
+`maxConcurrent + queueCapacity`. It does not run full replay analysis and does
+not invoke the production controller. Warmup batches for every matrix point
+complete before the optional JFR recording starts; the recording covers
 measurement batches only.
+
+The Spring Boot global setting `spring.threads.virtual.enabled` is a separate
+policy for Spring-managed request/task infrastructure. Replay parsing remains
+on bounded platform workers, replay export remains on bounded platform workers,
+and the AI watchdog remains a platform scheduled executor. The explicit AI
+worker admission gate is still bounded and is not the same as enabling global
+Spring virtual threads.
 
 ## JFR interpretation
 
