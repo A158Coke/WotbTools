@@ -6,6 +6,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.HpRawState;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
@@ -81,6 +82,42 @@ class ObservedMaxHpTest {
         // 样本 2000 < base 3400 且无受击前证明 → 进场满血无法证明 → BASE_FALLBACK，entryHp=null
         assertEquals(EntryHpSource.BASE_FALLBACK, battle.players.getFirst().entryHpSource);
         assertNull(battle.players.getFirst().entryHp);
+    }
+
+    @Test
+    void populatePreservesMaxAndTimelineReductionSemantics() {
+        final Battle battle = battle();
+        battle.players.getFirst().damageReceived = 400;
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(5f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        // Deliberately out of event-list order: ReplayHpTimeline owns chronological ordering.
+        events.add(new HealthChangedEvent(2, new ReplayTimestamp(20f, null), 7,
+                DecodeConfidence.EXACT, 10, 3200, null, true));
+        events.add(new HealthChangedEvent(3, new ReplayTimestamp(10f, null), 7,
+                DecodeConfidence.EXACT, 10, 3600, null, true));
+        events.add(new HealthChangedEvent(4, new ReplayTimestamp(5f, null), 7,
+                DecodeConfidence.EXACT, 10, null, null, false, 0xFFFF, HpRawState.UNKNOWN_FFFF));
+        // No participant mapping: this remains account 0 and must not affect player 1001.
+        events.add(new HealthChangedEvent(5, new ReplayTimestamp(1f, null), 7,
+                DecodeConfidence.EXACT, 99, 9999, null, true));
+        events.add(new DamageEvent(6, new ReplayTimestamp(30f, null), 8,
+                DecodeConfidence.EXACT, 20, 10, null, null, 400, false));
+
+        final TeamEntityMapping mapping = TeamEntityMapper.resolve(battle, recon(events));
+        assertEquals(9999, ObservedMaxHp.byAccount(events, mapping).get(0L),
+                "public max reduction keeps plausible unknown-account observations under account 0");
+
+        ObservedMaxHp.populate(battle, events, mapping);
+
+        final PlayerResult player = battle.players.getFirst();
+        assertEquals(3600, player.observedMaxHp,
+                "account max reduction ignores unknown sentinel and other accounts");
+        assertEquals(EntryHpSource.OBSERVED_EXACT, player.entryHpSource,
+                "timeline reduction must retain chronological first plausible sample");
+        assertEquals(3600, player.entryHp);
+        assertTrue(ObservedMaxHp.byAccount(null, mapping).isEmpty(),
+                "null event input remains an empty max reduction");
     }
 
     @Test
