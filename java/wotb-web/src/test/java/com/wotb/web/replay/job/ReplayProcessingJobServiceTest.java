@@ -1,6 +1,7 @@
 package com.wotb.web.replay.job;
 
 import com.wotb.contracts.ReplayProcessingDispatcher;
+import com.wotb.contracts.ReplayProcessingQueueFullException;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
@@ -28,7 +29,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -40,6 +46,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
@@ -1069,6 +1077,108 @@ class ReplayProcessingJobServiceTest {
         final String recreated = idempotent.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-1");
         assertNotEquals(first, recreated, "dataset 已清理 → 同一 operationId 允许重建");
         verify(dispatcher, times(2)).submit(any());
+    }
+
+    /**
+     * 同 identity 并发成功竞态：creator 仍阻塞在 `dispatcher.submit` 时 duplicate 进入 →
+     * 只允许一次 submit，两个 caller 拿到**同一个** jobId（identity 只在 submit 成功后才 publish）。
+     */
+    @Test
+    void sameOperationConcurrentRequestsShareOneJobAndOneSubmit() throws Exception {
+        final CountDownLatch submitEntered = new CountDownLatch(1);
+        final CountDownLatch releaseSubmit = new CountDownLatch(1);
+        final AtomicInteger submits = new AtomicInteger();
+        final ReplayProcessingDispatcher dispatcher = mock(ReplayProcessingDispatcher.class);
+        doAnswer(invocation -> {
+            submits.incrementAndGet();
+            submitEntered.countDown();
+            releaseSubmit.await(10, TimeUnit.SECONDS);
+            return null;
+        }).when(dispatcher).submit(any());
+        final ReplayProcessingJobService service = new ReplayProcessingJobService(store, dispatcher, meterRegistry);
+
+        final ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            final Future<String> creator = pool.submit(() ->
+                    service.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-race"));
+            assertTrue(submitEntered.await(10, TimeUnit.SECONDS), "creator 必须进入 dispatcher.submit");
+
+            // duplicate 在 creator 尚未提交完成（仍被 latch 挡住）时进入 → 只能等待同一个 future
+            final CountDownLatch duplicateEntered = new CountDownLatch(1);
+            final Future<String> duplicate = pool.submit(() -> {
+                duplicateEntered.countDown();
+                return service.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-race");
+            });
+            assertTrue(duplicateEntered.await(10, TimeUnit.SECONDS));
+            releaseSubmit.countDown();
+
+            final String creatorJobId = creator.get(10, TimeUnit.SECONDS);
+            final String duplicateJobId = duplicate.get(10, TimeUnit.SECONDS);
+            assertEquals(creatorJobId, duplicateJobId, "并发同 identity 必须返回同一个 jobId");
+            assertEquals(1, submits.get(), "同一 identity 只允许一次 dispatcher.submit");
+            assertEquals(creatorJobId, store.jobIdForOperation("user-1", "op-race"));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /**
+     * 同 identity 并发队列满竞态：creator 的 submit 抛 QUEUE_FULL → 两个 caller 都必须失败，
+     * 绝不产生「成功返回但随后消失」的 jobId；reservation / committed identity / doomed job 与存储全部清理；
+     * 之后同 identity 的请求在调度器可用时能重新创建有效 job。
+     */
+    @Test
+    void sameOperationConcurrentQueueFullFailsBothCallersAndAllowsRetry() throws Exception {
+        final CountDownLatch submitEntered = new CountDownLatch(1);
+        final CountDownLatch releaseSubmit = new CountDownLatch(1);
+        final ReplayProcessingDispatcher dispatcher = mock(ReplayProcessingDispatcher.class);
+        doAnswer(invocation -> {
+            submitEntered.countDown();
+            releaseSubmit.await(10, TimeUnit.SECONDS);
+            throw new ReplayProcessingQueueFullException();
+        }).when(dispatcher).submit(any());
+        final ReplayProcessingJobService service = new ReplayProcessingJobService(store, dispatcher, meterRegistry);
+
+        final ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            final Future<String> creator = pool.submit(() ->
+                    service.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-reject"));
+            assertTrue(submitEntered.await(10, TimeUnit.SECONDS), "creator 必须进入 dispatcher.submit");
+
+            final CountDownLatch duplicateEntered = new CountDownLatch(1);
+            final Future<String> duplicate = pool.submit(() -> {
+                duplicateEntered.countDown();
+                return service.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-reject");
+            });
+            assertTrue(duplicateEntered.await(10, TimeUnit.SECONDS));
+            releaseSubmit.countDown();
+
+            // 两个 caller 都必须失败（Future.get 包装成 ExecutionException，cause 是 QUEUE_FULL）
+            final ExecutionException creatorFailure =
+                    assertThrows(ExecutionException.class, () -> creator.get(10, TimeUnit.SECONDS));
+            assertTrue(creatorFailure.getCause() instanceof ProcessingQueueFullException,
+                    "creator 必须失败于 PROCESSING_QUEUE_FULL，实际: " + creatorFailure.getCause());
+            final ExecutionException duplicateFailure =
+                    assertThrows(ExecutionException.class, () -> duplicate.get(10, TimeUnit.SECONDS));
+            assertTrue(duplicateFailure.getCause() instanceof ProcessingQueueFullException,
+                    "duplicate 必须与 creator 同样失败，实际: " + duplicateFailure.getCause());
+            // 没有留下任何 committed identity / doomed job / 临时存储
+            assertNull(store.jobIdForOperation("user-1", "op-reject"),
+                    "失败后绝不留下 committed identity");
+            try (Stream<Path> entries = Files.list(tmpDir)) {
+                assertEquals(0, entries.count(), "失败 create 的 job 目录必须被清理");
+            }
+
+            // 后续同 identity 请求：调度器可用 → 可以创建新的有效 job
+            doNothing().when(dispatcher).submit(any());
+            final String retryJobId = service.createJob(
+                    new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-reject");
+            assertNotNull(store.jobIdForOperation("user-1", "op-reject"), "retry 必须重新 publish identity");
+            assertEquals(retryJobId, store.jobIdForOperation("user-1", "op-reject"));
+            assertTrue(Files.exists(store.inputDir(retryJobId).resolve("0__a.wotbreplay")));
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     private static MultipartFile file(final String name) {

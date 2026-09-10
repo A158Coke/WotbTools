@@ -124,7 +124,7 @@ describe('useNativeReplayImport', () => {
     expect(native.getCurrent()).not.toBeNull()
   })
 
-  it('Blocker regression：A 处理中 B 到达 → ACK(A) 是 stale，B 必须保留且之后仍可处理', async () => {
+  it('Blocker regression：A 处理中 B 到达（Native 只通知一次）→ A 完成后自动 drain B，无需第二次触发', async () => {
     const native = stubNative(PENDING_A)
     stubFetchBlob()
     let releaseA
@@ -133,29 +133,52 @@ describe('useNativeReplayImport', () => {
       if (file.name === 'a.wotbreplay') await gateA
       return true
     })
-    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile })
+    const { consumePendingWhenReady, registerGlobalHandler } = useNativeReplayImport({
+      isAuthenticated: () => true,
+      onPendingFile,
+    })
+    registerGlobalHandler()
 
     const inflightA = consumePendingWhenReady()
     await vi.waitFor(() => expect(onPendingFile).toHaveBeenCalledTimes(1))
 
-    // 处理 A 期间 Android 收到新 replay B（single slot latest-wins）
+    // 处理 A 期间 Android 收到新 replay B（single slot latest-wins），Native 只调用一次全局通知
     native.setPending(PENDING_B)
+    await expect(window.wotbtoolsOnReplay()).resolves.toBe(false) // inflight：coalesce，绝不丢弃
 
     releaseA()
+    // 关键：此后没有任何第二次手工触发；A 结束后必须自动 drain 到 B
     await expect(inflightA).resolves.toBe(true)
-    // A 的 ACK 是 stale（B 已成为当前 pending）——绝不误清 B
-    expect(native.consumeRequests).toEqual([{ expectedPendingId: PENDING_A.pendingId }])
-    expect(native.getCurrent()).toMatchObject({ pendingId: PENDING_B.pendingId })
+    await vi.waitFor(() => expect(onPendingFile).toHaveBeenCalledTimes(2))
 
-    // B 之后仍可处理（同一份 A 不会被重复处理）
-    await expect(consumePendingWhenReady()).resolves.toBe(true)
-    expect(onPendingFile).toHaveBeenCalledTimes(2)
+    expect(onPendingFile.mock.calls[0][0].name).toBe('a.wotbreplay')
     expect(onPendingFile.mock.calls[1][0].name).toBe('b.wotbreplay')
     expect(native.consumeRequests).toEqual([
       { expectedPendingId: PENDING_A.pendingId },
       { expectedPendingId: PENDING_B.pendingId },
     ])
     expect(native.getCurrent()).toBeNull()
+  })
+
+  it('deferred drain 在没有新 pending 时安全结束（不空转、不重复消费）', async () => {
+    const native = stubNative(PENDING_A)
+    stubFetchBlob()
+    let release
+    const gate = new Promise((res) => { release = res })
+    const onPendingFile = vi.fn(async () => { await gate; return true })
+    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile })
+
+    const first = consumePendingWhenReady()
+    await vi.waitFor(() => expect(onPendingFile).toHaveBeenCalledTimes(1))
+    // inflight 期间连发多次通知 → coalesce 成一次 rerun
+    consumePendingWhenReady()
+    consumePendingWhenReady()
+    consumePendingWhenReady()
+    release()
+
+    await expect(first).resolves.toBe(true)
+    expect(onPendingFile).toHaveBeenCalledTimes(1)
+    expect(native.consumeRequests).toHaveLength(1)
   })
 
   it('does not consume pending replay before login (cross-auth retention)', async () => {
