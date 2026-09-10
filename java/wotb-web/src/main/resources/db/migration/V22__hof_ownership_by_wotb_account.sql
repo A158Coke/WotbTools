@@ -26,6 +26,12 @@
 --
 -- 冲突必须由管理员有意处理后再重跑本迁移。Flyway 在 PostgreSQL 上把每个迁移包在单一事务里，
 -- 因此 preflight 失败时本迁移的全部 DDL/DML 都会回滚，数据库停留在 V21 状态。
+--
+-- [重要] 诊断文本的可执行性约束：preflight 失败后 schema 是 V21，wotb_account_id / wotb_server
+--   这两列并不存在。因此所有给运维看的检查 SQL 一律只使用 V21 列
+--   （user_keycloak_id / game_account_id_snapshot），候选区服通过 LEFT JOIN user_profile 反推。
+--   同时不得指引运维使用本次新增的 bulk-delete 端点——迁移失败时新版本起不来，那些端点不可用。
+--   修改 hint 文本时必须保持这一约束（HofOwnershipMigrationTest 会断言）。
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 百场 hundred_battle_submission
@@ -68,7 +74,7 @@ begin
     -- (b) ownership 冲突：百场的新唯一索引是两个独立的 partial index（PENDING 一个、CURRENT 一个），
     --     因此按 (区服, 账号, 车辆, 状态) 检查。
     select string_agg(
-               format('(server=%s, account=%s, vehicle=%s, status=%s, rows=%s)',
+               format('(candidate_server=%s, game_account_id_snapshot=%s, vehicle_id=%s, status=%s, rows=%s)',
                       wotb_server, wotb_account_id, vehicle_id, status, cnt),
                '; ' order by wotb_server, wotb_account_id, vehicle_id, status)
       into conflicts
@@ -89,15 +95,27 @@ begin
             errcode = 'raise_exception',
             message = 'V22 preflight failed for hundred_battle_submission: ownership data must be resolved before this migration can run',
             detail = problems,
-            hint = 'This migration never guesses a server and never mutates HoF history '
-                   '(no status change, no evidence deletion, no screenshot clearing). Resolve the rows above '
-                   'intentionally and rerun. Inspect the named rows with: '
-                   'select id, user_keycloak_id, wotb_account_id, status, approved_average_damage, submitted_at '
-                   'from hundred_battle_submission where wotb_server is null; '
-                   'For duplicate groups decide which row must remain (compare approved_average_damage and '
-                   'submitted_at) and remove the others. CURRENT rows can be removed through '
-                   'POST /api/admin/hof/hundred/submissions/{id}/delete or the bulk-delete endpoint; '
-                   'rows that are not CURRENT have no admin delete path yet and need an explicit operator action. '
+            hint = 'The schema is still V21 after this failure, so inspect with V21 columns only '
+                   '(hundred_battle_submission has user_keycloak_id and game_account_id_snapshot, NOT the '
+                   'wotb_* columns). Candidate server: '
+                   'select s.id, s.user_keycloak_id, s.game_account_id_snapshot, s.status, '
+                   'p.wotb_server as candidate_server '
+                   'from hundred_battle_submission s '
+                   'left join user_profile p on p.keycloak_user_id = s.user_keycloak_id '
+                   'and p.wotb_account_id = s.game_account_id_snapshot '
+                   'where p.wotb_server is null; '
+                   'Duplicate active rows: '
+                   'select p.wotb_server as candidate_server, s.game_account_id_snapshot, s.vehicle_id, s.status, '
+                   'count(*) from hundred_battle_submission s '
+                   'left join user_profile p on p.keycloak_user_id = s.user_keycloak_id '
+                   'and p.wotb_account_id = s.game_account_id_snapshot '
+                   "where s.status in ('PENDING', 'CURRENT') group by 1, 2, 3, 4 having count(*) > 1; "
+                   'This migration never guesses a server, never changes status, never deletes evidence and '
+                   'never clears screenshots. Resolve the rows above intentionally, then rerun the deployment. '
+                   'Removal tooling: the currently runnable (pre-upgrade) application exposes '
+                   'POST /api/admin/hof/hundred/submissions/{id}/delete, which removes CURRENT submissions only; '
+                   'the bulk-delete endpoints belong to this change and are NOT available while this migration '
+                   'keeps failing. Rows that are not CURRENT need an explicit operator action either way. '
                    'hundred_battle_replay_evidence references submissions with ON DELETE RESTRICT, so remove that '
                    'evidence first when you remove a submission.';
     end if;
@@ -167,7 +185,7 @@ begin
     -- 三环的新唯一索引是单个组合 partial index，覆盖 status in (PENDING, CURRENT) 两个状态，
     -- 因此必须【跨状态】按 (区服, 账号, 车辆) 检查冲突。
     select string_agg(
-               format('(server=%s, account=%s, vehicle=%s, rows=%s)',
+               format('(candidate_server=%s, game_account_id_snapshot=%s, vehicle_id=%s, rows=%s)',
                       wotb_server, wotb_account_id, vehicle_id, cnt),
                '; ' order by wotb_server, wotb_account_id, vehicle_id)
       into conflicts
@@ -188,17 +206,32 @@ begin
             errcode = 'raise_exception',
             message = 'V22 preflight failed for mark3_submission: ownership data must be resolved before this migration can run',
             detail = problems,
-            hint = 'Mark3 keeps a single active row per (server, account, vehicle) spanning PENDING and CURRENT, so '
-                   'a CURRENT and a PENDING for the same account/vehicle are also a conflict. '
-                   'This migration never guesses a server and never mutates HoF history. Resolve the rows above '
-                   'intentionally and rerun. Inspect with: '
-                   'select id, user_keycloak_id, wotb_account_id, status, submitted_at from mark3_submission; '
-                   'A CURRENT cannot be replaced by a pending application, so keep the CURRENT and remove the '
-                   'others. CURRENT rows can be removed through '
-                   'POST /api/admin/hof/mark3/submissions/{id}/delete or the bulk-delete endpoint; '
-                   'rows that are not CURRENT have no admin delete path yet and need an explicit operator action. '
-                   'mark3_replay_evidence references submissions with a foreign key, so remove that evidence first '
-                   'when you remove a submission.';
+            hint = 'The schema is still V21 after this failure, so inspect with V21 columns only '
+                   '(mark3_submission has user_keycloak_id and game_account_id_snapshot, NOT the wotb_* columns). '
+                   'Mark3 keeps a single active row per (candidate server, game_account_id_snapshot, vehicle_id) '
+                   'spanning PENDING and CURRENT, so a CURRENT and a PENDING for the same account/vehicle are also '
+                   'a conflict. Candidate server: '
+                   'select s.id, s.user_keycloak_id, s.game_account_id_snapshot, s.status, '
+                   'p.wotb_server as candidate_server '
+                   'from mark3_submission s '
+                   'left join user_profile p on p.keycloak_user_id = s.user_keycloak_id '
+                   'and p.wotb_account_id = s.game_account_id_snapshot '
+                   'where p.wotb_server is null; '
+                   'Duplicate active rows: '
+                   'select p.wotb_server as candidate_server, s.game_account_id_snapshot, s.vehicle_id, count(*) '
+                   'from mark3_submission s '
+                   'left join user_profile p on p.keycloak_user_id = s.user_keycloak_id '
+                   'and p.wotb_account_id = s.game_account_id_snapshot '
+                   "where s.status in ('PENDING', 'CURRENT') group by 1, 2, 3 having count(*) > 1; "
+                   'This migration never guesses a server, never changes status, never deletes evidence and '
+                   'never clears screenshots. A CURRENT cannot be replaced by a pending application, so keep the '
+                   'CURRENT and remove the others, then rerun the deployment. Removal tooling: the currently '
+                   'runnable (pre-upgrade) application exposes '
+                   'POST /api/admin/hof/mark3/submissions/{id}/delete, which removes CURRENT submissions only; '
+                   'the bulk-delete endpoints belong to this change and are NOT available while this migration '
+                   'keeps failing. Rows that are not CURRENT need an explicit operator action either way. '
+                   'mark3_replay_evidence references submissions with a foreign key, so remove that evidence '
+                   'first when you remove a submission.';
     end if;
 end $$;
 

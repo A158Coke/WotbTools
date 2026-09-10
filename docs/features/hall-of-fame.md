@@ -239,23 +239,38 @@ V22 的执行顺序（`V22__hof_ownership_by_wotb_account.sql`，百场与三环
 
 ### 迁移失败后的管理员 runbook
 
+**前提**：preflight 失败时 V22 已整体回滚，schema **停留在 V21**。因此下面的检查命令一律只用 V21 列
+（`user_keycloak_id` / `game_account_id_snapshot`）；`wotb_account_id` / `wotb_server` 这两列此刻**并不存在**。
+候选区服只能通过 `user_profile` 反推。
+
 ```text
 1) 读 Flyway 报错的 message / detail / hint：detail 已直接列出前 20 个样例 id 或全部冲突键
-2) 区服无法解析时自查：
-     百场 select id, user_keycloak_id, wotb_account_id, status
-            from hundred_battle_submission where wotb_server is null;
-     三环 select id, user_keycloak_id, wotb_account_id, status
-            from mark3_submission where wotb_server is null;
+2) 区服无法解析时自查（LEFT JOIN user_profile 反推候选区服）：
+     百场 select s.id, s.user_keycloak_id, s.game_account_id_snapshot, s.status,
+                 p.wotb_server as candidate_server
+            from hundred_battle_submission s
+            left join user_profile p
+              on p.keycloak_user_id = s.user_keycloak_id
+             and p.wotb_account_id = s.game_account_id_snapshot
+           where p.wotb_server is null;
+     三环 同形，表名换 mark3_submission
    → 要么恢复 / 重新绑定该行所属的 profile（让回填能取到区服），要么有意删除这些行
-3) ownership 冲突时按上表口径人工比对（approved_average_damage / submitted_at 等），
-   由人决定保留哪一条——迁移不替你选 winner
-4) 用 Admin bulk-delete（或单条 delete）清理其余记录：
-     POST /api/admin/hof/hundred/submissions/bulk-delete
-     POST /api/admin/hof/mark3/submissions/bulk-delete
-5) 重跑迁移（Flyway 会重新执行 V22）
+3) ownership 冲突时按上表口径自查（候选区服 + game_account_id_snapshot + vehicle_id [+ status]）
+   再人工比对 approved_average_damage / submitted_at 等，由人决定保留哪一条——迁移不替你选 winner
+4) 有意清理其余记录，然后重跑迁移（Flyway 会重新执行 V22）
 ```
 
-> **待确认（既有缺口，需要本轮 review 决定）**：百场/三环的单条 delete 与 bulk-delete 都**只接受 CURRENT**（非 CURRENT 逐条以 `HUNDRED_NOT_CURRENT` / `MARK3_NOT_CURRENT` 失败），而无法解析区服或参与冲突的行有可能是 `PENDING`。也就是说存在「preflight 报错点名了某条 PENDING，但 admin API 删不掉它」的组合。上面的 runbook 对这类行目前没有受支持的处置路径，需要人工 DB 操作或补充产品决策。
+**处置工具在失败时刻的可用性**（不要照抄「用 bulk-delete 清理」）：
+
+- 迁移失败意味着新版本起不来，**本次变更新增的 bulk-delete 端点不可用**。
+- 仍可用的只有「当前已部署 / 已回滚到的旧版本」提供的端点：
+  `POST /api/admin/hof/hundred/submissions/{id}/delete` 与 `POST /api/admin/hof/mark3/submissions/{id}/delete`，
+  且它们**只接受 `CURRENT`**。
+- 非 `CURRENT` 的行（例如被 diagnostic 点名的 `PENDING`）在两个版本里都没有受支持的 admin 删除路径，
+  需要运维显式动作（DB 级）；`hundred_battle_replay_evidence` / `mark3_replay_evidence` 对 submission
+  的外键是 `RESTRICT`，删 submission 前必须先删对应证据行。
+
+> **已知缺口（待产品决策，非本 PR 范围）**：preflight 点名的行若是 `PENDING`，现有 admin API 无受支持处置路径。
 
 ## 单场 HoF 的区服限制（已知遗留 / follow-up debt）
 
