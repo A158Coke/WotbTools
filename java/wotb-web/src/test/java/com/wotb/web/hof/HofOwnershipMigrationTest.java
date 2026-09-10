@@ -112,11 +112,13 @@ class HofOwnershipMigrationTest {
             assertRow(s, "hundred_battle_submission", 5, "CURRENT", 700);
             assertRow(s, "hundred_battle_submission", 6, "DELETED", 700);
 
-            // 三环：账号 900 + 车辆 3003 的 active 冲突全部转 DELETED（三环无 SUPERSEDED）
-            assertRow(s, "mark3_submission", 11, "DELETED", 900);
-            assertRow(s, "mark3_submission", 12, "CURRENT", 900);
-            assertRow(s, "mark3_submission", 13, "DELETED", 900);
-            assertRow(s, "mark3_submission", 14, "PENDING", 900);
+            // 三环：新唯一索引跨 PENDING/CURRENT 两个状态，因此必须跨状态去重且 CURRENT 优先
+            assertRow(s, "mark3_submission", 12, "CURRENT", 900);   // 最新的 CURRENT 保留
+            assertRow(s, "mark3_submission", 11, "DELETED", 900);   // 更旧的 CURRENT → DELETED
+            assertRow(s, "mark3_submission", 14, "DELETED", 900);   // 与 CURRENT 并存的 PENDING → DELETED
+            // 没有 CURRENT 时只保留最新的 PENDING
+            assertRow(s, "mark3_submission", 17, "PENDING", 960);
+            assertRow(s, "mark3_submission", 16, "DELETED", 960);
             // 无冲突行原样保留
             assertRow(s, "mark3_submission", 15, "CURRENT", 950);
 
@@ -128,8 +130,14 @@ class HofOwnershipMigrationTest {
                     "select count(*) from hundred_battle_replay_evidence where submission_id = 2"),
                     "仍为 CURRENT 的 submission 证据必须保留");
             assertEquals(0, count(s,
-                    "select count(*) from mark3_replay_evidence where submission_id = 13"),
-                    "被自愈的三环 PENDING 证据必须删除");
+                    "select count(*) from mark3_replay_evidence where submission_id = 11"),
+                    "被自愈的三环 CURRENT 证据必须删除");
+            assertEquals(0, count(s,
+                    "select count(*) from mark3_replay_evidence where submission_id = 14"),
+                    "被自愈的并存 PENDING 证据必须删除");
+            assertEquals(0, count(s,
+                    "select count(*) from mark3_replay_evidence where submission_id = 16"),
+                    "被自愈的旧 PENDING 证据必须删除");
             assertEquals(1, count(s,
                     "select count(*) from mark3_replay_evidence where submission_id = 12"),
                     "仍为 CURRENT 的三环证据必须保留");
@@ -170,20 +178,37 @@ class HofOwnershipMigrationTest {
                 + "3000, 120, '" + status + "', 'data:image/png;base64,AAAA', '" + submittedAt + "')");
     }
 
-    /** 三环种子：id 11/12 是 CURRENT 冲突，13/14 是 PENDING 冲突，15 无冲突。 */
+    /**
+     * 三环种子。
+     *
+     * <p>V21 的 active 唯一索引是 (user_keycloak_id, vehicle_id) where status in (PENDING, CURRENT)
+     * —— 一个组合索引，比 V18 百场的两个独立 partial index 更严。因此旧 schema 下唯一能并存、
+     * 也正是 V22 需要自愈的冲突形态是「同 WotB 账号 + 同车 + 同状态 + 不同 Keycloak 身份」。</p>
+     *
+     * <p>id 11/12 是 CURRENT 冲突（账号 900 + 车辆 3003，两个不同 Keycloak 身份），
+     * id 14 是唯一一条 PENDING，id 15 是完全无关的记录。</p>
+     */
     private static void seedMark3(final Statement s) throws Exception {
         insertMark3(s, 11, "kc-a", 3003, 900, "CURRENT", "2026-01-01T00:00:00Z");
         insertMark3(s, 12, "kc-b", 3003, 900, "CURRENT", "2026-01-02T00:00:00Z");
-        insertMark3(s, 13, "kc-a", 3003, 900, "PENDING", "2026-01-03T00:00:00Z");
-        insertMark3(s, 14, "kc-b", 3003, 900, "PENDING", "2026-01-04T00:00:00Z");
+        insertMark3(s, 14, "kc-c", 3003, 900, "PENDING", "2026-01-04T00:00:00Z");
         insertMark3(s, 15, "kc-c", 4004, 950, "CURRENT", "2026-01-05T00:00:00Z");
+        // 没有 CURRENT 时只保留最新 PENDING（账号 960 + 车辆 5005）
+        insertMark3(s, 16, "kc-d", 5005, 960, "PENDING", "2026-01-06T00:00:00Z");
+        insertMark3(s, 17, "kc-e", 5005, 960, "PENDING", "2026-01-07T00:00:00Z");
 
         s.executeUpdate("insert into mark3_replay_evidence "
                 + "(submission_id, slot, original_filename, sha256, file_size, arena_id) values "
-                + "(13, 1, 'c.wotbreplay', '" + "3".repeat(64) + "', 10, 'arena-c')");
+                + "(11, 1, 'c.wotbreplay', '" + "3".repeat(64) + "', 10, 'arena-c')");
         s.executeUpdate("insert into mark3_replay_evidence "
                 + "(submission_id, slot, original_filename, sha256, file_size, arena_id) values "
                 + "(12, 1, 'd.wotbreplay', '" + "4".repeat(64) + "', 10, 'arena-d')");
+        s.executeUpdate("insert into mark3_replay_evidence "
+                + "(submission_id, slot, original_filename, sha256, file_size, arena_id) values "
+                + "(14, 1, 'e.wotbreplay', '" + "5".repeat(64) + "', 10, 'arena-e')");
+        s.executeUpdate("insert into mark3_replay_evidence "
+                + "(submission_id, slot, original_filename, sha256, file_size, arena_id) values "
+                + "(16, 1, 'f.wotbreplay', '" + "6".repeat(64) + "', 10, 'arena-f')");
     }
 
     private static void insertMark3(final Statement s, final long id, final String keycloakUserId,
