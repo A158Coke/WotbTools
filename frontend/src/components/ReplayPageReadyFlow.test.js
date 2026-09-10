@@ -33,6 +33,11 @@ const api = vi.hoisted(() => ({
 
 vi.mock('../utils/api.js', () => api)
 
+// ReplayPage 会实例化真实 useReplay（→ useAuth）：只 mock auth 边界，避免 Keycloak init。
+vi.mock('../composables/useAuth.js', () => ({
+  useAuth: () => ({ ensureToken: async () => true, token: () => 'test-token' }),
+}))
+
 function pJob(overrides = {}) {
   return { jobId: 'p1', status: 'QUEUED', phase: null, total: 2, processed: 0, valid: 0,
     duplicates: 0, failures: 0, errorCode: null, currentFile: null, ...overrides }

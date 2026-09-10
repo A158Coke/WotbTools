@@ -37,6 +37,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -88,6 +90,32 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
      * （不突破全局并发=2），实现「目标 replay 优先解析、batch 其余继续后台解析」。
      */
     public String createJob(final MultipartFile[] files, final Integer prioritySourceIndex) {
+        return createJob(files, prioritySourceIndex, null, null);
+    }
+
+    /**
+     * 创建 Replay Processing Job（可重放安全路径：Android external replay）。
+     *
+     * <p>{@code ownerSubject} + {@code operationId} 构成 processing create 的 idempotency identity：
+     * 同一已认证 subject 用同一 operationId 重复提交（典型场景：server 已接受并返回 jobId，但 Native
+     * pending ACK 之前进程被杀；冷启动后 Web 重新导入同一份 pending replay）返回**同一个 jobId**，
+     * 不再上传输入、不再登记第二个 job、不再重复提交调度器。identity 缺失时保持原有
+     * 「每次提交都是新 job」语义——普通 Web 手工上传不经过这条路径。</p>
+     *
+     * <p>identity 是内存态，生命周期跟随 Job registry / TTL（与 ProcessedDataset 一致）：job 被 TTL
+     * 清理后同一 operationId 会创建新 job——此时旧 dataset 已不可读，重建是唯一可用语义。</p>
+     *
+     * <p><b>并发语义（单一线性化点）</b>：同一 identity 的并发请求里只有一个 creator 会真正创建并提交
+     * job，其余 duplicate 等待同一个 future——creator 成功则全部拿到同一个 jobId，creator 失败（含
+     * {@code PROCESSING_QUEUE_FULL}）则同样失败。committed 判定与 creator 领取由 Store 的
+     * {@link ReplayProcessingJobStore#claimOperation} 在**同一个原子步骤**内完成（不是「先查 committed
+     * 再领取 reservation」的两阶段决策），因此不存在 lookup 与 claim 之间的 TOCTOU 窗口；identity 只在
+     * {@code dispatcher.submit} 成功之后才进入 COMMITTED，绝不出现「duplicate 拿到随后被清理的 doomed
+     * jobId」或「同一 identity 提交出两个 job」。后续同 identity 请求在 creator 失败清理后可以重新创建
+     * 有效 job。不使用全局锁（仅 ConcurrentHashMap 原子操作 + future 等待）。</p>
+     */
+    public String createJob(final MultipartFile[] files, final Integer prioritySourceIndex,
+                            final String ownerSubject, final String operationId) {
         ReplayUploadValidator.validate(files);
         if (files.length > ReplayService.MAX_REPLAY_FILES) {
             throw new IllegalArgumentException("TOO_MANY_REPLAY_FILES");
@@ -96,6 +124,54 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
                 && (prioritySourceIndex < 0 || prioritySourceIndex >= files.length)) {
             throw new IllegalArgumentException("SOURCE_NOT_FOUND");
         }
+        if (!ReplayProcessingJobStore.hasOperationIdentity(ownerSubject, operationId)) {
+            // 普通 Web 手工上传：每次提交都是新 job（既有语义不变）。
+            return createAndSubmit(files, prioritySourceIndex);
+        }
+        final CompletableFuture<String> mine = new CompletableFuture<>();
+        final ReplayProcessingJobStore.OperationClaim claim =
+                store.claimOperation(ownerSubject, operationId, mine);
+        if (claim.kind() == ReplayProcessingJobStore.OperationClaim.Kind.COMMITTED) {
+            LOGGER.info("processing_job_idempotent_hit ref={} jobId={}", shortRef(operationId), claim.jobId());
+            return claim.jobId();
+        }
+        if (claim.kind() == ReplayProcessingJobStore.OperationClaim.Kind.JOIN) {
+            // duplicate caller：等待同一个 creator。成功 → 同一个 jobId；失败 → 同样失败。
+            return awaitOperation(operationId, claim.inFlight());
+        }
+        // CREATOR：本调用是唯一 creator。
+        try {
+            final String jobId = createAndSubmit(files, prioritySourceIndex);
+            // commit point：只有 dispatcher.submit 成功之后才把状态推进到 COMMITTED。
+            store.commitOperation(ownerSubject, operationId, mine, jobId);
+            mine.complete(jobId);
+            LOGGER.info("processing_job_idempotency_create ref={} jobId={}", shortRef(operationId), jobId);
+            return jobId;
+        } catch (final RuntimeException e) {
+            store.abandonOperation(ownerSubject, operationId, mine);
+            mine.completeExceptionally(e);
+            throw e;
+        }
+    }
+
+    /** 等待同 identity 的 creator 结果；失败时把 creator 的异常原样抛给 duplicate。 */
+    private static String awaitOperation(final String operationId, final CompletableFuture<String> inFlight) {
+        try {
+            return inFlight.get();
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("PROCESSING_CREATE_INTERRUPTED ref=" + shortRef(operationId), e);
+        } catch (final ExecutionException e) {
+            final Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw new IllegalStateException("PROCESSING_CREATE_FAILED ref=" + shortRef(operationId), cause);
+        }
+    }
+
+    /** 创建 job（持久化输入 + 登记 + 提交调度器）；失败时清理自己创建的一切（绝不留下 doomed job）。 */
+    private String createAndSubmit(final MultipartFile[] files, final Integer prioritySourceIndex) {
         final String jobId = UUID.randomUUID().toString();
         final Path inputDir = store.inputDir(jobId);
         final List<String> sourceNames = new ArrayList<>(files.length);
@@ -124,6 +200,11 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         recordCreated(files.length);
         LOGGER.info(logLine("processing_job_created", jobId, "files", files.length));
         return jobId;
+    }
+
+    /** 低敏 identity 引用：只取前 8 个字符，绝不把完整 operationId 写进日志。 */
+    private static String shortRef(final String operationId) {
+        return operationId == null || operationId.isBlank() ? "none" : operationId.substring(0, Math.min(8, operationId.length()));
     }
 
     /** 调度顺序：priority source 先于其余（其余保持上传顺序）。 */

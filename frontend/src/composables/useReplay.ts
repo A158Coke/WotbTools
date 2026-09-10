@@ -1,6 +1,7 @@
 import { onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { displayName, mapLabel, fileKey } from '../utils/helpers.js'
+import { useAuth } from './useAuth.js'
 import { useReplaySession, chooseInitialResultTab } from './useReplaySession.js'
 import { useProcessingJob } from './useProcessingJob.js'
 import { useExportJob } from './useExportJob.js'
@@ -17,9 +18,11 @@ export { chooseInitialResultTab }
  */
 export function useReplay(initialCapability: ReplayCapability = 'data') {
   const { locale, t, te } = useI18n()
+  // Processing Job 需要 authenticated session：composition root 只解析一次，显式传给 transport 边界。
+  const auth = useAuth()
   const session = useReplaySession(initialCapability)
-  const processingController = useProcessingJob(session, { t, te })
-  const exportController = useExportJob(session)
+  const processingController = useProcessingJob(session, { t, te }, auth)
+  const exportController = useExportJob(session, auth)
   const {
     files, loading, error, resp, playerCols, aggCols, aggStats, activeTab, pendingRemove,
     selectionRevision, processingJob, processingError, processingActive, processingJobId,
