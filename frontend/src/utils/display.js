@@ -41,6 +41,16 @@ export function apiCodeLabel(t, te, code, fallbackKey) {
   return fallbackKey ? t(fallbackKey) : (code || '')
 }
 
+/**
+ * 只做错误码本地化（无诊断 ID、无 status 兜底）：
+ * 批量删除的逐条结果只带 errorCode，找不到映射时直接显示原始 code。
+ */
+export function apiErrorCodeLabel(t, te, code) {
+  if (!code) return ''
+  const key = `api_errors.${code}`
+  return te(key) ? t(key) : String(code)
+}
+
 export function replayValueLabel(t, te, value, fallback = '--') {
   if (value == null || value === '') return fallback
   const key = `replay_values.${value}`

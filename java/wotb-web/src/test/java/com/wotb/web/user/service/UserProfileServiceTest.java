@@ -6,6 +6,7 @@ import com.wotb.web.user.repository.UserProfileRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -17,8 +18,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class UserProfileServiceTest {
@@ -30,12 +34,44 @@ class UserProfileServiceTest {
     void setUp() {
         repository = mock(UserProfileRepository.class);
         when(repository.save(any(UserProfile.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.saveAndFlush(any(UserProfile.class))).thenAnswer(inv -> inv.getArgument(0));
         service = new UserProfileService(repository, new UserProfileMapper());
     }
 
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void currentWotbIdentityReturnsTheBoundServerAndAccount() {
+        when(repository.findByKeycloakUserId("kc-user"))
+                .thenReturn(Optional.of(wgProfile("ASIA", 123456L, "PlayerOne", null)));
+
+        final WotbAccountIdentity identity = service.currentWotbIdentity("kc-user").orElseThrow();
+
+        // 区服是业务身份的一部分：只返回账号 ID 会让 (CN, 123456) 与 (ASIA, 123456) 串号
+        assertEquals("ASIA", identity.server());
+        assertEquals(123456L, identity.accountId());
+    }
+
+    @Test
+    void currentWotbIdentityIsEmptyWithoutAProfile() {
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.empty());
+
+        assertTrue(service.currentWotbIdentity("kc-user").isEmpty());
+    }
+
+    @Test
+    void currentWotbIdentityIsEmptyWhenNoAccountIsBound() {
+        when(repository.findByKeycloakUserId("kc-user"))
+                .thenReturn(Optional.of(wgProfile("CN", null, null, null)));
+        assertTrue(service.currentWotbIdentity("kc-user").isEmpty(),
+                "未绑定账号不得解析出 canonical 身份，否则会按 0 号账号归属");
+
+        when(repository.findByKeycloakUserId("kc-user"))
+                .thenReturn(Optional.of(wgProfile("CN", 0L, null, null)));
+        assertTrue(service.currentWotbIdentity("kc-user").isEmpty());
     }
 
     private static void loginWithWgClaims(final String region, final boolean verified,
@@ -68,11 +104,13 @@ class UserProfileServiceTest {
         return profile;
     }
 
+    // ── ensure：canonical provisioning（无 profile 时创建） ────────────────
+
     @Test
-    void createWithoutClaimsStaysCnManual() {
+    void ensureWithoutClaimsStaysCnManual() {
         when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.empty());
 
-        final UserProfileDto dto = service.create("kc-user", "cn-user", "CN Player");
+        final UserProfileDto dto = service.ensureCurrentProfile("kc-user", "cn-user", "CN Player");
 
         assertEquals("CN", dto.wotbServer());
         assertEquals("MANUAL", dto.wotbAccountSource());
@@ -80,11 +118,11 @@ class UserProfileServiceTest {
     }
 
     @Test
-    void createWithTrustedClaimsCreatesAsiaWargaming() {
+    void ensureWithTrustedClaimsCreatesAsiaWargaming() {
         loginWithWgClaims("ASIA", true, 512345678L);
         when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.empty());
 
-        final UserProfileDto dto = service.create("kc-user", "512345678", "PlayerOne");
+        final UserProfileDto dto = service.ensureCurrentProfile("kc-user", "512345678", "PlayerOne");
 
         assertEquals("ASIA", dto.wotbServer());
         assertEquals(512345678L, dto.wotbAccountId());
@@ -94,11 +132,11 @@ class UserProfileServiceTest {
     }
 
     @Test
-    void createWithTrustedEuClaimsCreatesEuWargaming() {
+    void ensureWithTrustedEuClaimsCreatesEuWargaming() {
         loginWithWgClaims("EU", true, 512345678L);
         when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.empty());
 
-        final UserProfileDto dto = service.create("kc-user", "512345678", "PlayerOne");
+        final UserProfileDto dto = service.ensureCurrentProfile("kc-user", "512345678", "PlayerOne");
 
         assertEquals("EU", dto.wotbServer());
         assertEquals("WARGAMING", dto.wotbAccountSource());
@@ -106,11 +144,11 @@ class UserProfileServiceTest {
     }
 
     @Test
-    void createWithTrustedNaClaimsCreatesNaWargaming() {
+    void ensureWithTrustedNaClaimsCreatesNaWargaming() {
         loginWithWgClaims("NA", true, 512345678L);
         when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.empty());
 
-        final UserProfileDto dto = service.create("kc-user", "512345678", "PlayerOne");
+        final UserProfileDto dto = service.ensureCurrentProfile("kc-user", "512345678", "PlayerOne");
 
         assertEquals("NA", dto.wotbServer());
         assertEquals("WARGAMING", dto.wotbAccountSource());
@@ -118,15 +156,93 @@ class UserProfileServiceTest {
     }
 
     @Test
-    void createWithMissingVerifiedFallsBackToCn() {
+    void ensureWithMissingVerifiedFallsBackToCn() {
         loginWithWgClaims("ASIA", false, 512345678L);
         when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.empty());
 
-        final UserProfileDto dto = service.create("kc-user", "cn-user", "CN Player");
+        final UserProfileDto dto = service.ensureCurrentProfile("kc-user", "cn-user", "CN Player");
 
         assertEquals("CN", dto.wotbServer());
         assertEquals("MANUAL", dto.wotbAccountSource());
         assertNull(dto.wotbAccountVerifiedAt());
+    }
+
+    // ── ensure：真正幂等（已存在 → 原样返回，不改绑定） ──────────────────
+
+    @Test
+    void ensureReturnsExistingProfileWithoutTouchingBindings() {
+        final OffsetDateTime verifiedAt = OffsetDateTime.parse("2026-01-01T00:00:00Z");
+        when(repository.findByKeycloakUserId("kc-user"))
+                .thenReturn(Optional.of(wgProfile("ASIA", 123456L, "PlayerOne", verifiedAt)));
+        // 即使当前 JWT 的可信 claims 指向另一个区服/账号，也不得覆盖既有绑定。
+        loginWithWgClaims("EU", true, 999L);
+
+        final UserProfileDto dto = service.ensureCurrentProfile("kc-user", "other", "Other");
+
+        assertEquals("ASIA", dto.wotbServer());
+        assertEquals(123456L, dto.wotbAccountId());
+        assertEquals("PlayerOne", dto.wotbNickname());
+        assertEquals("WARGAMING", dto.wotbAccountSource());
+        assertEquals(verifiedAt, dto.wotbAccountVerifiedAt());
+        verify(repository, never()).saveAndFlush(any(UserProfile.class));
+    }
+
+    @Test
+    void ensureIsIdempotentAcrossRepeatedCalls() {
+        when(repository.findByKeycloakUserId("kc-user"))
+                .thenReturn(Optional.of(wgProfile("CN", 7L, null, null)));
+
+        assertEquals(7L, service.ensureCurrentProfile("kc-user", "u", "U").wotbAccountId());
+        assertEquals(7L, service.ensureCurrentProfile("kc-user", "u", "U").wotbAccountId());
+        verify(repository, never()).saveAndFlush(any(UserProfile.class));
+    }
+
+    // ── ensure：并发与身份冲突的区分 ────────────────────────────────────
+
+    @Test
+    void ensureReloadsExistingProfileWhenAnotherRequestWonTheKeycloakUserRace() {
+        // 并发败者路径：find → 不存在；插入冲突；胜者已提交。
+        // 刻意用一个**不含任何已知约束名**的冲突消息：收敛判定必须来自「重读自己的 sub」这一
+        // 数据库事实，而不是 PostgreSQL 先报告了哪个约束。
+        when(repository.findByKeycloakUserId("kc-user"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(wgProfile("CN", 7L, null, null)));
+        when(repository.saveAndFlush(any(UserProfile.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key value violates unique constraint"));
+
+        final UserProfileDto dto = service.ensureCurrentProfile("kc-user", "u", "U");
+
+        // 同一 KC sub 的并发 ensure 必须两个调用方都成功，而不是返回 PROFILE_ALREADY_EXISTS。
+        assertEquals(7L, dto.wotbAccountId());
+        assertEquals("kc-user", dto.keycloakUserId());
+    }
+
+    @Test
+    void ensureKeepsWotbAccountCollisionAsRealConflict() {
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.empty());
+        when(repository.saveAndFlush(any(UserProfile.class)))
+                .thenThrow(new DataIntegrityViolationException(
+                        "duplicate key value violates unique constraint \"uk_user_profile_wotb_account\""));
+
+        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.ensureCurrentProfile("kc-user", "u", "U"));
+
+        // 真实 WotB 账号占用绝不能被幂等逻辑吞掉，也绝不返回他人的 profile。
+        assertEquals("WOTB_ACCOUNT_ALREADY_USED", error.getMessage());
+    }
+
+    @Test
+    void ensureReportsUnknownIntegrityViolationAsBootstrapFailure() {
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.empty());
+        // 自己的 sub 不存在，且冲突不是 WotB 账号占用 → 不得伪装成 409 业务冲突。
+        when(repository.saveAndFlush(any(UserProfile.class)))
+                .thenThrow(new DataIntegrityViolationException(
+                        "new row for relation \"user_profile\" violates check constraint \"ck_user_profile_wotb_server\""));
+
+        final IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.ensureCurrentProfile("kc-user", "u", "U"));
+
+        assertEquals("PROFILE_BOOTSTRAP_FAILED", error.getMessage());
     }
 
     @Test

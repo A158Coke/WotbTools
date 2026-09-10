@@ -46,7 +46,7 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
     public HundredAdminListItemDto toAdminListItem(final HundredBattleSubmission s) {
         return new HundredAdminListItemDto(
                 s.getId(), s.getStatus(), s.getVehicleId(), s.getVehicleName(),
-                s.getGameAccountIdSnapshot(), s.getNicknameSnapshot(),
+                s.getWotbServer(), s.getWotbAccountId(), s.getNicknameSnapshot(),
                 s.getApprovedAverageDamage(), s.getApprovedBattleCount() == null
                         ? null : s.getApprovedBattleCount().longValue(),
                 s.isReplayParseOk(), s.isReplayGameIdMatch(),
@@ -66,7 +66,7 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
         final boolean pending = "PENDING".equals(s.getStatus());
         return new HundredAdminDetailDto(
                 s.getId(), s.getStatus(), s.getVehicleId(), s.getVehicleName(),
-                s.getGameAccountIdSnapshot(), s.getNicknameSnapshot(),
+                s.getWotbServer(), s.getWotbAccountId(), s.getNicknameSnapshot(),
                 s.getClaimedAverageDamage(), s.getClaimedBattleCount(),
                 s.getApprovedAverageDamage(), s.getApprovedBattleCount(),
                 pending ? s.getProofScreenshot() : null,

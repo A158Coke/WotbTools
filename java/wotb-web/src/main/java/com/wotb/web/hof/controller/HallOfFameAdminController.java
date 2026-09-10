@@ -1,6 +1,8 @@
 package com.wotb.web.hof.controller;
 
 import com.wotb.web.config.ApiPaths;
+import com.wotb.web.hof.dto.BulkDeleteRecordsRequest;
+import com.wotb.web.hof.dto.BulkDeleteResultDto;
 import com.wotb.web.hof.dto.HofAdminAuditPageDto;
 import com.wotb.web.hof.dto.HofAdminPageDto;
 import com.wotb.web.hof.dto.HofVehicleOptionDto;
@@ -16,6 +18,8 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -86,6 +90,17 @@ public class HallOfFameAdminController {
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment().filename(fileName, StandardCharsets.UTF_8).build().toString())
                 .body(download.data());
+    }
+
+    /**
+     * 批量 hard delete：逐条复用单条删除语义（每条独立事务 + commit 后引用计数清理物理文件），
+     * 允许 partial success——单条失败不影响其他记录已完成的删除。
+     *
+     * <p>单场删除没有 delete reason 语义，因此请求体不带 reason。</p>
+     */
+    @PostMapping("/records/bulk-delete")
+    public BulkDeleteResultDto bulkDelete(@RequestBody final BulkDeleteRecordsRequest body) {
+        return adminService.bulkDelete(body.normalizedIds());
     }
 
     /** Hard delete（二次确认在前端；audit + delete 单事务；最后引用清理物理文件；删除后可重新上传）。 */
