@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.wotb</groupId>
+        <artifactId>wotb-parent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>wotb-ai</artifactId>
+    <name>WotBTools Replay AI</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-result</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-playback</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-replay-coordinator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-replay-processing</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.annotation</groupId>
+            <artifactId>jakarta.annotation-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+    </dependencies>
+</project>

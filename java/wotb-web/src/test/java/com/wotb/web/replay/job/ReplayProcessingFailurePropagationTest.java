@@ -40,7 +40,9 @@ class ReplayProcessingFailurePropagationTest {
         store = new ReplayProcessingJobStore(tmpDir, 60);
         scheduler = new ReplayParseScheduler(1, 20);
         facade = mock(DefaultReplayProcessingFacade.class);
-        service = new ReplayProcessingJobService(facade, store, scheduler, null);
+        service = new ReplayProcessingJobService(store, new LocalReplayProcessingDispatcher(scheduler), null);
+        scheduler.configureWorker(new LocalReplayProcessingExecutor(
+                facade, tmpDir, service, null, scheduler.cancellationRegistry()), service);
     }
 
     @AfterEach

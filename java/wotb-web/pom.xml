@@ -24,6 +24,26 @@
         </dependency>
         <dependency>
             <groupId>com.wotb</groupId>
+            <artifactId>wotb-result</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-playback</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-replay-coordinator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-replay-processing</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-ai</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
             <artifactId>wotb-contracts</artifactId>
         </dependency>
         <dependency>

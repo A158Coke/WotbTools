@@ -9,6 +9,7 @@ import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.web.replay.dto.PreviewResponse;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,7 +61,7 @@ class ReplayProcessingJobServiceTest {
         facade = mock(DefaultReplayProcessingFacade.class);
         parseScheduler = new ReplayParseScheduler(2, 200);
         meterRegistry = new SimpleMeterRegistry();
-        service = new ReplayProcessingJobService(facade, store, parseScheduler, meterRegistry);
+        service = localService(facade, meterRegistry);
     }
 
     @AfterEach
@@ -306,7 +307,7 @@ class ReplayProcessingJobServiceTest {
     void cancelledQueuedJobFreesSchedulerCapacity() throws Exception {
         parseScheduler.close();
         parseScheduler = new ReplayParseScheduler(1, 2); // 1 worker + 2 pending 上限
-        service = new ReplayProcessingJobService(facade, store, parseScheduler, null);
+        service = localService(facade, null);
 
         final CountDownLatch started = new CountDownLatch(1);
         final CountDownLatch releaseA = new CountDownLatch(1);
@@ -341,7 +342,7 @@ class ReplayProcessingJobServiceTest {
     void cancelledQueuedJobNeverProcessesReplay() throws Exception {
         parseScheduler.close();
         parseScheduler = new ReplayParseScheduler(1, 200); // 唯一 worker：B 必然排队
-        service = new ReplayProcessingJobService(facade, store, parseScheduler, null);
+        service = localService(facade, null);
 
         final CountDownLatch started = new CountDownLatch(1);
         final CountDownLatch releaseA = new CountDownLatch(1);
@@ -379,7 +380,7 @@ class ReplayProcessingJobServiceTest {
     void processCancelRaceWithNoCompletionPendingTerminatesCancelled() throws Exception {
         parseScheduler.close();
         parseScheduler = new ReplayParseScheduler(1, 200);
-        service = new ReplayProcessingJobService(facade, store, parseScheduler, meterRegistry);
+        service = localService(facade, meterRegistry);
         final List<String> processedNames = new CopyOnWriteArrayList<>();
         when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
             final Source s = inv.getArgument(0);
@@ -582,7 +583,7 @@ class ReplayProcessingJobServiceTest {
     void inputStorageReadFailureProducesFailedParsedEntryAndConsistentDataset() throws Exception {
         parseScheduler.close();
         parseScheduler = new ReplayParseScheduler(1, 200); // 唯一 worker：可确定性破坏输入后再派发
-        service = new ReplayProcessingJobService(facade, store, parseScheduler, null);
+        service = localService(facade, null);
         final CountDownLatch blockerStarted = new CountDownLatch(1);
         final CountDownLatch releaseBlocker = new CountDownLatch(1);
         when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
@@ -629,7 +630,7 @@ class ReplayProcessingJobServiceTest {
     void artifactWriteFailureProducesFailedParsedEntryAndConsistentDataset() throws Exception {
         parseScheduler.close();
         parseScheduler = new ReplayParseScheduler(1, 200);
-        service = new ReplayProcessingJobService(facade, store, parseScheduler, null);
+        service = localService(facade, null);
         final CountDownLatch blockerStarted = new CountDownLatch(1);
         final CountDownLatch releaseBlocker = new CountDownLatch(1);
         when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
@@ -772,8 +773,7 @@ class ReplayProcessingJobServiceTest {
         // 真实 fixture → canonical timeline 可用 → 必须产出 V2 artifact，且携带权威 arenaBonusType。
         final Path fixture = randomBattleFixture();
         final byte[] bytes = Files.readAllBytes(fixture);
-        service = new ReplayProcessingJobService(new DefaultReplayProcessingFacade(), store,
-                parseScheduler, meterRegistry);
+        service = localService(new DefaultReplayProcessingFacade(), meterRegistry);
         final String jobId = service.createJob(new MultipartFile[]{
                 new MockMultipartFile("files", fixture.getFileName().toString(),
                         "application/octet-stream", bytes)});
@@ -805,8 +805,8 @@ class ReplayProcessingJobServiceTest {
             ps.when(() -> com.wotb.web.replay.ai.BattlePlaybackProjector.project(
                             any(), any(), any(), any()))
                     .thenThrow(new RuntimeException("projector boom"));
-            final ReplayProcessingJobService.V2BuildOutcome outcome =
-                    service.buildBattlePlaybackV2(result.battle(), result);
+            final LocalReplayProcessingExecutor.V2BuildOutcome outcome =
+                    LocalReplayProcessingExecutor.buildBattlePlaybackV2(result.battle(), result);
             assertEquals("PROJECTOR_ERROR", outcome.reason());
             assertNull(outcome.dataset(), "projector 异常不得产出 dataset");
             assertNotNull(outcome.failure(), "必须携带 exception 供调用层记录 stacktrace，禁止 silent null");
@@ -818,7 +818,7 @@ class ReplayProcessingJobServiceTest {
     void v2MissingReconstructionIsExplicitUnavailable() throws Exception {
         // reconstruction 缺失属于合法不可用（canonical event 流不可构建），不是运行时故障：
         // reason=NO_RECONSTRUCTION，failure=null（UNAVAILABLE 不再与 null 混为一个结果）。
-        final ReplayProcessingJobService.V2BuildOutcome outcome = service.buildBattlePlaybackV2(
+        final LocalReplayProcessingExecutor.V2BuildOutcome outcome = LocalReplayProcessingExecutor.buildBattlePlaybackV2(
                 new Battle(), new ReplayProcessingResult("x.wotbreplay",
                         ReplayProcessingStatus.SUCCESS, null, new Battle(), null,
                         null, ReplayProcessingCapabilities.summaryOnly(false), null, null));
@@ -842,7 +842,7 @@ class ReplayProcessingJobServiceTest {
     void prioritySourceIndexSchedulesTargetFirst() throws Exception {
         parseScheduler.close();
         parseScheduler = new ReplayParseScheduler(1, 200); // 串行 worker：可观察执行顺序
-        service = new ReplayProcessingJobService(facade, store, parseScheduler, null);
+        service = localService(facade, null);
         final List<String> order = new CopyOnWriteArrayList<>();
         when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
             final Source s = inv.getArgument(0);
@@ -1111,5 +1111,14 @@ class ReplayProcessingJobServiceTest {
         } catch (final Exception ignored) {
             // best-effort test cleanup
         }
+    }
+
+    private ReplayProcessingJobService localService(final DefaultReplayProcessingFacade facade,
+                                                     final MeterRegistry meterRegistry) {
+        final ReplayProcessingJobService local = new ReplayProcessingJobService(
+                store, new LocalReplayProcessingDispatcher(parseScheduler), meterRegistry);
+        parseScheduler.configureWorker(new LocalReplayProcessingExecutor(
+                facade, tmpDir, local, meterRegistry, parseScheduler.cancellationRegistry()), local);
+        return local;
     }
 }
