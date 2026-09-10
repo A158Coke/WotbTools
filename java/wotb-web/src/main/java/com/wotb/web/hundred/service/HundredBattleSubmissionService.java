@@ -51,7 +51,7 @@ import java.util.Set;
  *
  * <p>核心不变量（全部由 DB + 行锁保证，非前端保证）：</p>
  * <ul>
- *   <li>user + vehicle 最多一个 active PENDING / CURRENT（V18 partial unique index）</li>
+ *   <li>WotB 账号 + vehicle 最多一个 active PENDING / CURRENT（V18/V22 partial unique index）</li>
  *   <li>APPROVE/REJECT/CANCEL 只能从 PENDING 成功一次（{@link #findByIdForUpdate} 行锁 + 状态复核）</li>
  *   <li>APPROVE 只使用创建时冻结的 MANUAL 申报值，并按其场均严格比较</li>
  *   <li>身份/成绩快照创建瞬间冻结；排行榜只读 approved*</li>
@@ -149,7 +149,7 @@ public class HundredBattleSubmissionService {
 
         // PENDING 唯一性 cheap check：明知已有同车 PENDING 时不再解析 5 个 replay；
         // 并发竞态仍由 DB partial unique index 兜底（见 createLocked 内 saveAndFlush 的 catch）。
-        requireNoPending(userId, vehicleId);
+        requireNoPending(gameId, vehicleId);
 
         // 硬门禁：5 个 replay 全部解析成功 + gameId/vehicleId 匹配 + 5 场不同 battle。
         // 解析循环同时收集证据持久化所需数据（每文件只读一次字节；originalFilename 仅用于展示）。
@@ -183,7 +183,7 @@ public class HundredBattleSubmissionService {
 
         // CURRENT 门槛：新成绩必须严格高于当前 CURRENT（无 CURRENT 时允许重新开始）。
         final HundredBattleSubmission current = repository
-                .findByUserKeycloakIdAndVehicleIdAndStatus(userId, vehicleId, "CURRENT").orElse(null);
+                .findByWotbAccountIdAndVehicleIdAndStatus(gameId, vehicleId, "CURRENT").orElse(null);
         if (current != null && current.getApprovedAverageDamage() != null
                 && claimedAverageDamage <= current.getApprovedAverageDamage()) {
             throw new IllegalStateException("HUNDRED_NOT_HIGHER");
@@ -196,7 +196,7 @@ public class HundredBattleSubmissionService {
                 .sorted()
                 .toList();
         return replayHashLock.runWithLocksResult(hashes, () -> createLocked(
-                userId, vehicleId, gameId, claimedAverageDamage, claimedBattleCount,
+                vehicleId, gameId, claimedAverageDamage, claimedBattleCount,
                 proofScreenshot, vehicle.name(), profile.getWotbNickname().trim(), pendingReplays, hashes));
     }
 
@@ -219,8 +219,7 @@ public class HundredBattleSubmissionService {
      * DB 失败（含 unique index 竞态）→ TransactionTemplate 已 rollback 完成 → 锁内
      * 引用计数保护清理已存文件 → 映射错误码。绝不产生「只保存 3/5 个 replay 的合法 PENDING」。
      */
-    private HundredCreateResult createLocked(final String userId,
-                                             final long vehicleId,
+    private HundredCreateResult createLocked(final long vehicleId,
                                              final long gameId,
                                              final int claimedAverageDamage,
                                              final int claimedBattleCount,
@@ -237,10 +236,9 @@ public class HundredBattleSubmissionService {
         try {
             submissionId = transactionTemplate.execute(status -> {
                 final HundredBattleSubmission submission = new HundredBattleSubmission();
-                submission.setUserKeycloakId(userId);
                 submission.setVehicleId(vehicleId);
                 submission.setVehicleName(vehicleName);
-                submission.setGameAccountIdSnapshot(gameId);
+                submission.setWotbAccountId(gameId);
                 submission.setNicknameSnapshot(nickname);
                 submission.setClaimedAverageDamage(claimedAverageDamage);
                 submission.setClaimedBattleCount(claimedBattleCount);
@@ -264,12 +262,17 @@ public class HundredBattleSubmissionService {
         return new HundredCreateResult(submissionId, HundredBattleStatus.PENDING.name());
     }
 
-    /** 用户取消自己的 PENDING（不影响 CURRENT；终态清理截图与回放证据）。 */
+    /**
+     * 用户取消自己的 PENDING（不影响 CURRENT；终态清理截图与回放证据）。
+     * ownership 以当前绑定的 WotB 账号判定：未绑定账号、或记录归属其他账号 → 403。
+     * 记录创建后用户改绑到别的 WotB 账号时，记录仍属于原账号，因此不可再取消。
+     */
     @Transactional
     public HundredSubmissionSummaryDto cancelSubmission(final String userId, final long submissionId) {
         final HundredBattleSubmission submission = repository.findByIdForUpdate(submissionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "HUNDRED_SUBMISSION_NOT_FOUND"));
-        if (!submission.getUserKeycloakId().equals(userId)) {
+        final Long accountId = boundWotbAccountId(userId);
+        if (accountId == null || submission.getWotbAccountId() != accountId) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "HUNDRED_FORBIDDEN");
         }
         requirePending(submission);
@@ -362,18 +365,25 @@ public class HundredBattleSubmissionService {
 
     // ── Phase 6：Profile ──────────────────────────────────────────────────
 
-    /** 个人中心百场状态：CURRENT 纪录 + PENDING 申请 + 最近拒绝反馈。 */
+    /**
+     * 个人中心百场状态：CURRENT 纪录 + PENDING 申请 + 最近拒绝反馈。
+     * 归属按当前绑定的 WotB 账号查询；未绑定账号时没有任何属于该账号的记录，三个列表均为空。
+     */
     @Transactional(readOnly = true)
     public HundredUserStatusDto userStatus(final String userId) {
+        final Long accountId = boundWotbAccountId(userId);
+        if (accountId == null) {
+            return new HundredUserStatusDto(List.of(), List.of(), List.of());
+        }
         return new HundredUserStatusDto(
-                toSummaries(userId, "CURRENT"),
-                toSummaries(userId, "PENDING"),
-                repository.findByUserKeycloakIdAndStatusInOrderBySubmittedAtDesc(userId, List.of("REJECTED"))
+                toSummaries(accountId, "CURRENT"),
+                toSummaries(accountId, "PENDING"),
+                repository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(accountId, List.of("REJECTED"))
                         .stream().limit(10).map(mapper::toSummary).toList());
     }
 
-    private List<HundredSubmissionSummaryDto> toSummaries(final String userId, final String status) {
-        return repository.findByUserKeycloakIdAndStatusInOrderBySubmittedAtDesc(userId, List.of(status))
+    private List<HundredSubmissionSummaryDto> toSummaries(final long accountId, final String status) {
+        return repository.findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(accountId, List.of(status))
                 .stream().map(mapper::toSummary).toList();
     }
 
@@ -501,6 +511,17 @@ public class HundredBattleSubmissionService {
 
     // ── 辅助 ──────────────────────────────────────────────────────────────
 
+    /**
+     * 当前登录用户绑定的 WotB 游戏账号；profile 不存在或未绑定账号 → null。
+     * HoF ownership 的 canonical identity 是 WotB 账号，不是 Keycloak sub。
+     */
+    private Long boundWotbAccountId(final String userId) {
+        return userProfileService.findEntityByKeycloakUserId(userId)
+                .map(UserProfile::getWotbAccountId)
+                .filter(id -> id != null && id > 0)
+                .orElse(null);
+    }
+
     private static void requirePending(final HundredBattleSubmission submission) {
         if (!"PENDING".equals(submission.getStatus())) {
             throw new IllegalStateException("HUNDRED_SUBMISSION_NOT_PENDING");
@@ -515,8 +536,8 @@ public class HundredBattleSubmissionService {
         return vehicle;
     }
 
-    private void requireNoPending(final String userId, final long vehicleId) {
-        if (repository.existsByUserKeycloakIdAndVehicleIdAndStatus(userId, vehicleId, "PENDING")) {
+    private void requireNoPending(final long wotbAccountId, final long vehicleId) {
+        if (repository.existsByWotbAccountIdAndVehicleIdAndStatus(wotbAccountId, vehicleId, "PENDING")) {
             throw new IllegalStateException("HUNDRED_PENDING_EXISTS");
         }
     }
@@ -568,7 +589,7 @@ public class HundredBattleSubmissionService {
             final int averageDamage,
             final String staleError) {
         final HundredBattleSubmission current = repository.findCurrentForUpdate(
-                submission.getUserKeycloakId(), submission.getVehicleId()).orElse(null);
+                submission.getWotbAccountId(), submission.getVehicleId()).orElse(null);
         if (current != null && current.getApprovedAverageDamage() != null
                 && averageDamage <= current.getApprovedAverageDamage()) {
             throw new IllegalStateException(staleError);

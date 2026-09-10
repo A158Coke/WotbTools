@@ -15,7 +15,7 @@ import java.util.Optional;
 
 /**
  * 名人堂「百场」submission 仓库。
- * user + vehicle 的 PENDING / CURRENT 唯一性由 V18 的 partial unique index 在 DB 层强制；
+ * WotB 账号 + vehicle 的 PENDING / CURRENT 唯一性由 V18/V22 的 partial unique index 在 DB 层强制；
  * 终态迁移（APPROVE/REJECT/CANCEL/DELETE）通过 {@link #findByIdForUpdate} 行锁 + 状态复核串行化。
  */
 public interface HundredBattleSubmissionRepository extends JpaRepository<HundredBattleSubmission, Long> {
@@ -29,16 +29,16 @@ public interface HundredBattleSubmissionRepository extends JpaRepository<Hundred
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select s from HundredBattleSubmission s
-            where s.userKeycloakId = :userId and s.vehicleId = :vehicleId and s.status = 'CURRENT'
+            where s.wotbAccountId = :wotbAccountId and s.vehicleId = :vehicleId and s.status = 'CURRENT'
             """)
     Optional<HundredBattleSubmission> findCurrentForUpdate(
-            @Param("userId") String userId, @Param("vehicleId") long vehicleId);
+            @Param("wotbAccountId") long wotbAccountId, @Param("vehicleId") long vehicleId);
 
-    Optional<HundredBattleSubmission> findByUserKeycloakIdAndVehicleIdAndStatus(
-            String userKeycloakId, long vehicleId, String status);
+    Optional<HundredBattleSubmission> findByWotbAccountIdAndVehicleIdAndStatus(
+            long wotbAccountId, long vehicleId, String status);
 
-    boolean existsByUserKeycloakIdAndVehicleIdAndStatus(
-            String userKeycloakId, long vehicleId, String status);
+    boolean existsByWotbAccountIdAndVehicleIdAndStatus(
+            long wotbAccountId, long vehicleId, String status);
 
     /** 公开排行榜：vehicle 独立排行，competition ranking 的稳定排序。 */
     Page<HundredBattleSubmission> findByVehicleIdAndStatusOrderByApprovedAverageDamageDescApprovedAtAscIdAsc(
@@ -116,6 +116,6 @@ public interface HundredBattleSubmissionRepository extends JpaRepository<Hundred
             Pageable pageable);
 
     /** 个人中心：指定状态集合（CURRENT / PENDING / REJECTED 等）。 */
-    List<HundredBattleSubmission> findByUserKeycloakIdAndStatusInOrderBySubmittedAtDesc(
-            String userKeycloakId, Collection<String> statuses);
+    List<HundredBattleSubmission> findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
+            long wotbAccountId, Collection<String> statuses);
 }

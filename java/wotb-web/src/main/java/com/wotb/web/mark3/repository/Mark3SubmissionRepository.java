@@ -13,7 +13,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-/** 三环 submission 仓库；终态迁移采用行锁，active 唯一性由 V21 partial unique index 保证。 */
+/** 三环 submission 仓库；终态迁移采用行锁，active 唯一性由 V21/V22 partial unique index 保证。 */
 public interface Mark3SubmissionRepository extends JpaRepository<Mark3Submission, Long> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -23,13 +23,13 @@ public interface Mark3SubmissionRepository extends JpaRepository<Mark3Submission
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select s from Mark3Submission s
-            where s.userKeycloakId = :userId and s.vehicleId = :vehicleId and s.status = 'CURRENT'
+            where s.wotbAccountId = :wotbAccountId and s.vehicleId = :vehicleId and s.status = 'CURRENT'
             """)
     Optional<Mark3Submission> findCurrentForUpdate(
-            @Param("userId") String userId, @Param("vehicleId") long vehicleId);
+            @Param("wotbAccountId") long wotbAccountId, @Param("vehicleId") long vehicleId);
 
-    boolean existsByUserKeycloakIdAndVehicleIdAndStatus(
-            String userKeycloakId, long vehicleId, String status);
+    boolean existsByWotbAccountIdAndVehicleIdAndStatus(
+            long wotbAccountId, long vehicleId, String status);
 
     Page<Mark3Submission> findByVehicleIdAndStatusOrderByApprovedBattleCountAscApprovedAtAscIdAsc(
             long vehicleId, String status, Pageable pageable);
@@ -96,6 +96,6 @@ public interface Mark3SubmissionRepository extends JpaRepository<Mark3Submission
             @Param("vehicleIds") Collection<Long> vehicleIds,
             Pageable pageable);
 
-    List<Mark3Submission> findByUserKeycloakIdAndStatusInOrderBySubmittedAtDesc(
-            String userKeycloakId, Collection<String> statuses);
+    List<Mark3Submission> findByWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
+            long wotbAccountId, Collection<String> statuses);
 }
