@@ -23,9 +23,16 @@
 --   旧的 (user_keycloak_id, vehicle_id) 唯一性不蕴含 (wotb_account_id, vehicle_id) 唯一性——
 --   同一 WotB 账号被两个 Keycloak 身份先后绑定过（user_profile 换绑/删除后重新绑定），
 --   各自提交过同车 active 记录时会产生重复。
---   确定性规则：同 (账号, 车辆, 状态) 保留 submitted_at 最新的一条（并列取 id 最大），其余转终态：
---     百场 CURRENT → SUPERSEDED；百场 PENDING → DELETED（delete_reason=ADMIN_CORRECTION）
---     三环 CURRENT / PENDING → DELETED（三环无 SUPERSEDED，CURRENT 即最终记录）
+--   确定性规则（百场按状态、三环跨状态，见下）：
+--     百场：新唯一索引是两个独立的 partial index（PENDING 一个、CURRENT 一个），
+--           因此按 (账号, 车辆, 状态) 去重——同 (账号,车辆) 同时存在 PENDING 与 CURRENT 是正常状态。
+--           同 (账号, 车辆, 状态) 保留 submitted_at 最新的一条（并列取 id 最大）；
+--           CURRENT → SUPERSEDED，PENDING → DELETED（delete_reason=ADMIN_CORRECTION）。
+--     三环：新唯一索引是单个组合 partial index，覆盖 status in (PENDING, CURRENT) 两个状态，
+--           因此必须【跨状态】按 (账号, 车辆) 去重：同 (账号,车辆) 只能留一条 active。
+--           规则是 CURRENT 优先（三环 CURRENT 是最终记录、不可被后续申请替代），
+--           即先保留最新的 CURRENT，其余 active 行（更旧的 CURRENT 与全部 PENDING）→ DELETED；
+--           没有 CURRENT 时才保留最新的 PENDING。
 --   与服务层终态语义对齐：同事务删除对应 replay evidence 行并清空 proof 截图。
 --   物理回放文件的清理仍是 commit 后的 best-effort 语义（迁移不触碰文件系统），
 --   因此极少数被自愈的行会留下无引用 orphan 文件——与既有 HallOfFameAdminService 的
@@ -107,8 +114,10 @@ alter table mark3_submission
 with ranked as (
     select id,
            row_number() over (
-               partition by wotb_account_id, vehicle_id, status
-               order by submitted_at desc, id desc
+               partition by wotb_account_id, vehicle_id
+               order by case when status = 'CURRENT' then 0 else 1 end,
+                        submitted_at desc,
+                        id desc
            ) as rn
       from mark3_submission
      where status in ('PENDING', 'CURRENT')
@@ -121,8 +130,10 @@ delete from mark3_replay_evidence e
 with ranked as (
     select id,
            row_number() over (
-               partition by wotb_account_id, vehicle_id, status
-               order by submitted_at desc, id desc
+               partition by wotb_account_id, vehicle_id
+               order by case when status = 'CURRENT' then 0 else 1 end,
+                        submitted_at desc,
+                        id desc
            ) as rn
       from mark3_submission
      where status in ('PENDING', 'CURRENT')
