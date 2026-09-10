@@ -2,7 +2,11 @@ package com.wotb.web.admin.service;
 
 import com.wotb.web.admin.dto.AdminDeleteUserResponse;
 import com.wotb.web.admin.dto.AdminUserDetailDto;
-import com.wotb.web.admin.dto.AdminUserDto;
+import com.wotb.web.admin.dto.AdminUserListItemDto;
+import com.wotb.web.admin.dto.AdminUserPageDto;
+import com.wotb.web.admin.dto.BulkDeleteUserResult;
+import com.wotb.web.admin.dto.BulkDeleteUsersRequest;
+import com.wotb.web.admin.dto.BulkDeleteUsersResponse;
 import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
@@ -12,48 +16,162 @@ import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.util.ErrorCode;
+import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * 管理员用户管理核心逻辑。
+ *
+ * <p>列表是 Keycloak realm users 与本地 user_profile 的合并视图，分两个 segment：</p>
+ * <ul>
+ *   <li>{@link #SEGMENT_KEYCLOAK}（默认）：权威源是 Keycloak，因此没有任何本地 profile 的
+ *       Keycloak-only 用户也能被找到并删除（旧 Juhe QQ cleanup 的前提）。</li>
+ *   <li>{@link #SEGMENT_LOCAL}：权威源是本地 user_profile，用于暴露 Keycloak 侧已不存在
+ *       的孤儿绑定，管理员可批量删除其资料以释放 {@code (wotb_server, wotb_account_id)} 唯一槽位。</li>
+ * </ul>
+ *
+ * <p>两个 segment 都使用各自的权威分页与权威总数，不做「拉一页再在内存里筛」的伪造分页。</p>
  */
 @Service
 public class AdminUserService {
+
+    /** Keycloak-driven segment：以 Keycloak realm users 为权威用户列表。 */
+    public static final String SEGMENT_KEYCLOAK = "keycloak";
+    /** Local-profile-driven segment：以本地 user_profile 为权威用户列表。 */
+    public static final String SEGMENT_LOCAL = "local";
+
+    /** 单页上限；默认页大小由 controller 的 {@code size} 默认值决定。 */
+    private static final int MAX_PAGE_SIZE = 100;
+    /** 单次批量删除上限：为无界的外部（Keycloak Admin API）调用设硬边界。 */
+    private static final int MAX_BULK_SIZE = 100;
 
     private final UserProfileService userProfileService;
     private final AdminUserMapper mapper;
     private final AdminUserLogPersister logPersister;
     private final KeycloakAdminUserService keycloakAdminUserService;
     private final BoosterService boosterService;
+    private final TransactionTemplate transactionTemplate;
 
     public AdminUserService(final UserProfileService userProfileService,
                             final AdminUserMapper mapper,
                             final AdminUserLogPersister logPersister,
                             final KeycloakAdminUserService keycloakAdminUserService,
-                            final BoosterService boosterService) {
+                            final BoosterService boosterService,
+                            final PlatformTransactionManager transactionManager) {
         this.userProfileService = userProfileService;
         this.mapper = mapper;
         this.logPersister = logPersister;
         this.keycloakAdminUserService = keycloakAdminUserService;
         this.boosterService = boosterService;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+    }
+
+    // ── 列表（合并视图） ──────────────────────────────────────────────────
+
+    /**
+     * 分页搜索用户。
+     *
+     * @param query    自由文本过滤；空串按无过滤处理
+     * @param segment  {@link #SEGMENT_KEYCLOAK} 或 {@link #SEGMENT_LOCAL}；空值取前者
+     * @param idpAlias 仅 {@link #SEGMENT_KEYCLOAK} 支持；本地 segment 传值 → 400
+     * @param page     0-based 页码
+     * @param size     每页条数（1..100）
+     */
+    @Transactional(readOnly = true)
+    public AdminUserPageDto searchUsers(final String query,
+                                        final String segment,
+                                        final String idpAlias,
+                                        final int page,
+                                        final int size) {
+        final String normalizedSegment = normalizeSegment(segment);
+        final int effectivePage = Math.max(0, page);
+        final int effectiveSize = Math.clamp(size, 1, MAX_PAGE_SIZE);
+        if (SEGMENT_LOCAL.equals(normalizedSegment) && StringUtils.hasText(idpAlias)) {
+            throw new AdminBadRequestException(ErrorCode.IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT.name(),
+                    ErrorCode.IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT.getDefaultMessage());
+        }
+        return SEGMENT_LOCAL.equals(normalizedSegment)
+                ? localSegment(query, effectivePage, effectiveSize)
+                : keycloakSegment(query, idpAlias, effectivePage, effectiveSize);
+    }
+
+    /** Keycloak 权威分页 + 本地资料批量增强（单次 IN 查询，禁止逐用户查询）。 */
+    private AdminUserPageDto keycloakSegment(final String query,
+                                             final String idpAlias,
+                                             final int page,
+                                             final int size) {
+        final boolean byIdentityProvider = StringUtils.hasText(idpAlias);
+        final int first = page * size;
+        final List<UserRepresentation> keycloakUsers = byIdentityProvider
+                ? keycloakAdminUserService.searchUsersByIdpAlias(idpAlias.trim(), query, first, size)
+                : keycloakAdminUserService.searchUsers(query, first, size);
+        final long total = byIdentityProvider
+                ? keycloakAdminUserService.countUsersByIdpAlias(idpAlias.trim(), query)
+                : keycloakAdminUserService.countUsers(query);
+        final Map<String, UserProfile> profiles = profilesByKeycloakId(
+                keycloakUsers.stream().map(UserRepresentation::getId).toList());
+        final List<AdminUserListItemDto> items = keycloakUsers.stream()
+                .map(keycloakUser -> mapper.toListItem(keycloakUser, profiles.get(keycloakUser.getId())))
+                .toList();
+        return new AdminUserPageDto(items, page, size, total, totalPages(total, size));
     }
 
     /**
-     * 搜索用户（本地 user_profile）。
+     * 本地 profile 权威分页；当页每个 profile 逐个确认 Keycloak 用户是否仍存在，以标记孤儿绑定。
+     *
+     * <p>代价：该 segment 每页会产生 N（≤ size）次 Keycloak Admin 调用——Keycloak 没有按 id
+     * 批量查询的能力（见 docs/auth/keycloak-admin-user-search.md）。默认页大小使该代价有界。</p>
      */
-    @Transactional(readOnly = true)
-    public List<AdminUserDto> searchUsers(final String query, final int limit) {
-        return userProfileService.searchForAdministration(query, limit).stream()
-                .map(mapper::toDto)
+    private AdminUserPageDto localSegment(final String query, final int page, final int size) {
+        final Page<UserProfile> rows = userProfileService.searchForAdministration(
+                query, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
+        final List<AdminUserListItemDto> items = rows.getContent().stream()
+                .map(profile -> mapper.toListItem(
+                        keycloakAdminUserService.getUser(profile.getKeycloakUserId()), profile))
                 .toList();
+        return new AdminUserPageDto(items, page, size, rows.getTotalElements(), rows.getTotalPages());
     }
+
+    private Map<String, UserProfile> profilesByKeycloakId(final List<String> keycloakUserIds) {
+        return userProfileService.findByKeycloakUserIdIn(keycloakUserIds).stream()
+                .collect(Collectors.toMap(
+                        UserProfile::getKeycloakUserId, Function.identity(), (first, second) -> first));
+    }
+
+    private static String normalizeSegment(final String segment) {
+        if (!StringUtils.hasText(segment)) {
+            return SEGMENT_KEYCLOAK;
+        }
+        final String normalized = segment.trim().toLowerCase(Locale.ROOT);
+        if (!SEGMENT_KEYCLOAK.equals(normalized) && !SEGMENT_LOCAL.equals(normalized)) {
+            throw new AdminBadRequestException(ErrorCode.INVALID_USER_SEGMENT.name(),
+                    ErrorCode.INVALID_USER_SEGMENT.getDefaultMessage());
+        }
+        return normalized;
+    }
+
+    private static int totalPages(final long total, final int size) {
+        return size <= 0 ? 0 : (int) ((total + size - 1) / size);
+    }
+
+    // ── 详情 ─────────────────────────────────────────────────────────────
 
     /**
      * 获取用户详情（本地 profile + Keycloak 信息）。
@@ -83,16 +201,79 @@ public class AdminUserService {
         return mapper.toDetailDto(keycloakUserId, profileDto, keycloakDto, warnings);
     }
 
+    // ── 删除 ─────────────────────────────────────────────────────────────
+
     /** 删除用户：先 flush 本地删除，再删 Keycloak；外部调用失败会回滚本地事务。 */
     @Transactional
     public AdminDeleteUserResponse deleteUser(final String targetKeycloakUserId,
                                               final boolean confirm,
                                               final Jwt adminJwt) {
+        requireConfirmation(confirm);
+        deleteOneInternal(targetKeycloakUserId, adminJwt);
+        return new AdminDeleteUserResponse(targetKeycloakUserId);
+    }
+
+    /**
+     * 批量删除用户：逐用户复用 {@link #deleteOneInternal} 的全部业务保护
+     * （self-delete 保护、打手依赖、本地资料清理、Keycloak 删除、审计日志、统一 error contract）。
+     *
+     * <p>每个用户跑在<strong>独立事务</strong>中，因此允许 partial success：某个用户失败不会
+     * 回滚其他用户已完成的删除。直接自调用 {@link #deleteUser} 会绕过 Spring 事务代理而失去
+     * 这一语义，故显式使用 {@link TransactionTemplate}。</p>
+     */
+    public BulkDeleteUsersResponse bulkDeleteUsers(final BulkDeleteUsersRequest request, final Jwt adminJwt) {
+        requireConfirmation(request != null && request.confirm());
+        final List<String> userIds = distinctUserIds(request);
+        if (userIds.isEmpty()) {
+            return new BulkDeleteUsersResponse(0, 0, 0, List.of());
+        }
+        if (userIds.size() > MAX_BULK_SIZE) {
+            throw new AdminBadRequestException(ErrorCode.BULK_LIMIT_EXCEEDED.name(),
+                    ErrorCode.BULK_LIMIT_EXCEEDED.getDefaultMessage());
+        }
+
+        final List<BulkDeleteUserResult> results = new ArrayList<>(userIds.size());
+        int deleted = 0;
+        for (final String userId : userIds) {
+            try {
+                transactionTemplate.executeWithoutResult(status -> deleteOneInternal(userId, adminJwt));
+                results.add(new BulkDeleteUserResult(userId, true, null));
+                deleted++;
+            } catch (final AdminConflictException e) {
+                results.add(new BulkDeleteUserResult(userId, false, e.getErrorCode()));
+            } catch (final AdminBadRequestException e) {
+                results.add(new BulkDeleteUserResult(userId, false, e.getErrorCode()));
+            } catch (final AdminInternalException e) {
+                results.add(new BulkDeleteUserResult(userId, false, e.getErrorCode()));
+            }
+        }
+        return new BulkDeleteUsersResponse(userIds.size(), deleted, userIds.size() - deleted, results);
+    }
+
+    private static void requireConfirmation(final boolean confirm) {
         if (!confirm) {
             throw new AdminBadRequestException(ErrorCode.CONFIRMATION_REQUIRED.name(),
                     ErrorCode.CONFIRMATION_REQUIRED.getDefaultMessage());
         }
+    }
 
+    private static List<String> distinctUserIds(final BulkDeleteUsersRequest request) {
+        if (request == null || request.userIds() == null) {
+            return List.of();
+        }
+        return request.userIds().stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * 单用户删除的唯一实现：单用户端点与批量端点共用。
+     * 禁止任何绕过路径（直接 SQL DELETE 或裸 Keycloak Admin 调用），否则会丢掉 self-delete 保护、
+     * 打手依赖处理、本地资料清理与审计日志。
+     */
+    private void deleteOneInternal(final String targetKeycloakUserId, final Jwt adminJwt) {
         final String adminKeycloakUserId = adminJwt.getSubject();
         final String adminUsername = adminJwt.getClaimAsString("preferred_username");
 
@@ -156,7 +337,5 @@ public class AdminUserService {
 
         log.markSuccess(localDeleted, true);
         logPersister.save(log);
-
-        return new AdminDeleteUserResponse(targetKeycloakUserId);
     }
 }

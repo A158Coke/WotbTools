@@ -5,13 +5,14 @@ import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
 import com.wotb.web.util.JwtUtil;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -54,16 +55,24 @@ public class UserProfileService {
         return repository.findByKeycloakUserIdForUpdate(keycloakUserId);
     }
 
-    /** 管理端用户检索，Repository 保持封装在 user 域内。 */
+    /**
+     * 管理端用户分页检索，Repository 保持封装在 user 域内。
+     * 返回 {@link Page} 以便调用方拿到权威 totalElements/totalPages，不做内存伪造分页。
+     */
     @Transactional(readOnly = true)
-    public List<UserProfile> searchForAdministration(final String query, final int limit) {
-        final int effectiveLimit = Math.clamp(limit, 1, 100);
-        if (!StringUtils.hasText(query)) {
-            return repository.findAll(
-                    PageRequest.of(0, effectiveLimit, Sort.by(Sort.Direction.DESC, "createdAt")))
-                    .getContent();
+    public Page<UserProfile> searchForAdministration(final String query, final Pageable pageable) {
+        return StringUtils.hasText(query)
+                ? repository.searchAdminUsers(query.trim(), pageable)
+                : repository.findAll(pageable);
+    }
+
+    /** 按 Keycloak sub 批量取本地资料；跨域编排（admin）用，禁止逐用户查询。 */
+    @Transactional(readOnly = true)
+    public List<UserProfile> findByKeycloakUserIdIn(final Collection<String> keycloakUserIds) {
+        if (keycloakUserIds == null || keycloakUserIds.isEmpty()) {
+            return List.of();
         }
-        return repository.searchAdminUsers(query.trim(), PageRequest.of(0, effectiveLimit));
+        return repository.findByKeycloakUserIdIn(keycloakUserIds);
     }
 
     /** 管理端删除入口；flush 让约束异常在调用方补偿范围内暴露。 */
