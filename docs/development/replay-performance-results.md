@@ -19,6 +19,10 @@ accessed.
   evidence below. The final c2 artifact was generated from the same source
   content before that commit, with metadata `commit=a4c4c461` and
   `dirty=true`; no source changes followed that run before the repair commit.
+- The PR branch later merged the then-current `origin/main` at merge commit
+  `316fe807`. Per the follow-up decision, the completed pre-merge benchmark
+  evidence below is reused; the interrupted post-merge rerun is not a result
+  and must not be treated as one.
 - Java: Eclipse Temurin OpenJDK 25.0.4.1 (LTS).
 - Spring Boot: 4.1.1.
 - Benchmark JVM: `-XX:ActiveProcessorCount=2 -Xms4g -Xmx4g`.
