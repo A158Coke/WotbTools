@@ -78,6 +78,8 @@ class ReplayPerformanceBenchmarkTest {
 
         final Path repoRoot = findRepositoryRoot();
         final Discovery discovery = discover(repoRoot);
+        System.out.printf("CORPUS_RESOLVED root=%s explicit=%s replayFiles=%d%n",
+                discovery.root(), discovery.explicitPath(), discovery.samples().size());
         final CorpusValidation validation = validateCorpus(discovery.samples());
         final List<ReplaySample> validSamples = validation.validSamples();
         if (validSamples.isEmpty()) {
@@ -156,10 +158,22 @@ class ReplayPerformanceBenchmarkTest {
                                             final int measurementRounds,
                                             final int concurrency,
                                             final boolean verifyParity) throws Exception {
+        return runStages(samples, fingerprints, stages, warmupRounds, measurementRounds,
+                concurrency, verifyParity, true);
+    }
+
+    private List<BenchmarkResult> runStages(final List<ReplaySample> samples,
+                                            final Map<String, String> fingerprints,
+                                            final List<Stage> stages,
+                                            final int warmupRounds,
+                                            final int measurementRounds,
+                                            final int concurrency,
+                                            final boolean verifyParity,
+                                            final boolean executeWarmup) throws Exception {
         final List<BenchmarkResult> results = new ArrayList<>();
         for (final Stage stage : stages) {
             results.add(benchmark(stage, samples, fingerprints, warmupRounds,
-                    measurementRounds, concurrency, verifyParity));
+                    measurementRounds, concurrency, verifyParity, executeWarmup));
         }
         return results;
     }
@@ -173,6 +187,7 @@ class ReplayPerformanceBenchmarkTest {
                                              final int concurrency,
                                              final boolean verifyParity) throws Exception {
         Files.createDirectories(Objects.requireNonNull(jfrPath.getParent()));
+        runWarmupStages(samples, fingerprints, stages, warmupRounds, concurrency, verifyParity);
         try (Recording recording = new Recording(Configuration.getConfiguration("profile"))) {
             recording.setName("wotb-replay-performance");
             recording.setToDisk(true);
@@ -180,9 +195,33 @@ class ReplayPerformanceBenchmarkTest {
             recording.start();
             try {
                 return runStages(samples, fingerprints, stages, warmupRounds,
-                        measurementRounds, concurrency, verifyParity);
+                        measurementRounds, concurrency, verifyParity, false);
             } finally {
                 recording.stop();
+            }
+        }
+    }
+
+    private void runWarmupStages(final List<ReplaySample> samples,
+                                 final Map<String, String> fingerprints,
+                                 final List<Stage> stages,
+                                 final int warmupRounds,
+                                 final int concurrency,
+                                 final boolean verifyParity) throws Exception {
+        for (final Stage stage : stages) {
+            final ExecutorService executor = newExecutor(concurrency, samples.size());
+            try {
+                for (int round = 0; round < warmupRounds; round++) {
+                    final Round roundResult = executeRound(executor, stage, samples);
+                    if (verifyParity) {
+                        verifyRound(stage, roundResult.invocations(), fingerprints);
+                    }
+                }
+            } finally {
+                executor.shutdownNow();
+                if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Benchmark warmup executor did not terminate");
+                }
             }
         }
     }
@@ -194,18 +233,26 @@ class ReplayPerformanceBenchmarkTest {
                                       final int measurementRounds,
                                       final int concurrency,
                                       final boolean verifyParity) throws Exception {
-        final ExecutorService executor = new ThreadPoolExecutor(
-                concurrency,
-                concurrency,
-                0L,
-                TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(Math.max(1, samples.size())),
-                new ThreadPoolExecutor.AbortPolicy());
+        return benchmark(stage, samples, fingerprints, warmupRounds, measurementRounds,
+                concurrency, verifyParity, true);
+    }
+
+    private BenchmarkResult benchmark(final Stage stage,
+                                      final List<ReplaySample> samples,
+                                      final Map<String, String> fingerprints,
+                                      final int warmupRounds,
+                                      final int measurementRounds,
+                                      final int concurrency,
+                                      final boolean verifyParity,
+                                      final boolean executeWarmup) throws Exception {
+        final ExecutorService executor = newExecutor(concurrency, samples.size());
         try {
-            for (int round = 0; round < warmupRounds; round++) {
-                final Round roundResult = executeRound(executor, stage, samples);
-                if (verifyParity) {
-                    verifyRound(stage, roundResult.invocations(), fingerprints);
+            if (executeWarmup) {
+                for (int round = 0; round < warmupRounds; round++) {
+                    final Round roundResult = executeRound(executor, stage, samples);
+                    if (verifyParity) {
+                        verifyRound(stage, roundResult.invocations(), fingerprints);
+                    }
                 }
             }
 
@@ -272,6 +319,16 @@ class ReplayPerformanceBenchmarkTest {
                 throw new IllegalStateException("Benchmark executor did not terminate");
             }
         }
+    }
+
+    private static ExecutorService newExecutor(final int concurrency, final int sampleCount) {
+        return new ThreadPoolExecutor(
+                concurrency,
+                concurrency,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(Math.max(1, sampleCount)),
+                new ThreadPoolExecutor.AbortPolicy());
     }
 
     private Round executeRound(final ExecutorService executor, final Stage stage,
@@ -376,16 +433,25 @@ class ReplayPerformanceBenchmarkTest {
 
     private Discovery discover(final Path repoRoot) throws IOException {
         final String configured = System.getProperty("corpusPath");
-        final Path requested = configured == null || configured.isBlank()
-                ? repoRoot.resolve("common/data") : resolvePath(repoRoot, configured);
+        if (configured != null && configured.isBlank()) {
+            throw new IllegalArgumentException("Configured -DcorpusPath must not be blank");
+        }
+        final boolean explicitPath = configured != null;
+        final Path requested = explicitPath ? resolvePath(repoRoot, configured)
+                : repoRoot.resolve("common/data");
         final Path corpusRoot;
         if (Files.isDirectory(requested) && hasReplayFile(requested)) {
             corpusRoot = requested;
+        } else if (explicitPath) {
+            throw new IllegalArgumentException(
+                    "Configured -DcorpusPath does not exist or contains no .wotbreplay files: "
+                            + requested);
         } else {
             corpusRoot = repoRoot.resolve("common/fixtures/replays");
         }
         if (!Files.isDirectory(corpusRoot)) {
-            return new Discovery(corpusRoot, List.of(), List.of("missing corpus directory: " + corpusRoot));
+            return new Discovery(corpusRoot, List.of(),
+                    List.of("missing corpus directory: " + corpusRoot), explicitPath);
         }
         final List<ReplaySample> samples = new ArrayList<>();
         final List<String> rejections = new ArrayList<>();
@@ -403,7 +469,7 @@ class ReplayPerformanceBenchmarkTest {
                 }
             }
         }
-        return new Discovery(corpusRoot, List.copyOf(samples), List.copyOf(rejections));
+        return new Discovery(corpusRoot, List.copyOf(samples), List.copyOf(rejections), explicitPath);
     }
 
     private static boolean hasReplayFile(final Path root) throws IOException {
@@ -533,6 +599,7 @@ class ReplayPerformanceBenchmarkTest {
         out.append("{\n  \"metadata\":").append(metadata.toJson()).append(",\n");
         out.append("  \"discovery\":{")
                 .append("\"root\":").append(json(discovery.root().toString())).append(",")
+                .append("\"explicitCorpusPath\":").append(discovery.explicitPath()).append(",")
                 .append("\"discovered\":").append(discovery.samples().size()).append(",")
                 .append("\"accepted\":").append(validation.validSamples().size()).append(",")
                 .append("\"acceptedFiles\":").append(json(validation.validSamples().stream()
@@ -574,6 +641,7 @@ class ReplayPerformanceBenchmarkTest {
                 .append("This is an opt-in local macro benchmark. Raw results are ignored by Git.\n\n")
                 .append("## Corpus\n\n")
                 .append("- root: `").append(discovery.root()).append("`\n")
+                .append("- explicit corpus path: ").append(discovery.explicitPath()).append("\n")
                 .append("- discovered: ").append(discovery.samples().size()).append("\n")
                 .append("- accepted full-pipeline corpus: ").append(validation.validSamples().size()).append("\n")
                 .append("- total compressed bytes: ").append(discovery.samples().stream()
@@ -681,7 +749,8 @@ class ReplayPerformanceBenchmarkTest {
         }
     }
 
-    private record Discovery(Path root, List<ReplaySample> samples, List<String> rejections) {
+    private record Discovery(Path root, List<ReplaySample> samples, List<String> rejections,
+                             boolean explicitPath) {
     }
 
     private record CorpusValidation(List<ReplaySample> validSamples, List<String> rejections,
