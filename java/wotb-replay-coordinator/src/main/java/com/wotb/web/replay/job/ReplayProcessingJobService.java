@@ -105,12 +105,14 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
      * <p>identity 是内存态，生命周期跟随 Job registry / TTL（与 ProcessedDataset 一致）：job 被 TTL
      * 清理后同一 operationId 会创建新 job——此时旧 dataset 已不可读，重建是唯一可用语义。</p>
      *
-     * <p><b>并发语义（per-operation in-flight coordination）</b>：同一 identity 的并发请求里只有一个
-     * creator 会真正创建并提交 job，其余 duplicate 等待同一个 future——creator 成功则全部拿到同一个
-     * jobId，creator 失败（含 {@code PROCESSING_QUEUE_FULL}）则同样失败。identity 只在
-     * {@code dispatcher.submit} 成功之后才 publish，因此绝不出现「duplicate 拿到一个随后被清理的
-     * doomed jobId」或「同一 identity 提交出两个 job」。后续同 identity 请求在 creator 失败清理后可以
-     * 重新创建一个有效 job。不使用全局锁（仅 ConcurrentHashMap 原子操作 + future 等待）。</p>
+     * <p><b>并发语义（单一线性化点）</b>：同一 identity 的并发请求里只有一个 creator 会真正创建并提交
+     * job，其余 duplicate 等待同一个 future——creator 成功则全部拿到同一个 jobId，creator 失败（含
+     * {@code PROCESSING_QUEUE_FULL}）则同样失败。committed 判定与 creator 领取由 Store 的
+     * {@link ReplayProcessingJobStore#claimOperation} 在**同一个原子步骤**内完成（不是「先查 committed
+     * 再领取 reservation」的两阶段决策），因此不存在 lookup 与 claim 之间的 TOCTOU 窗口；identity 只在
+     * {@code dispatcher.submit} 成功之后才进入 COMMITTED，绝不出现「duplicate 拿到随后被清理的 doomed
+     * jobId」或「同一 identity 提交出两个 job」。后续同 identity 请求在 creator 失败清理后可以重新创建
+     * 有效 job。不使用全局锁（仅 ConcurrentHashMap 原子操作 + future 等待）。</p>
      */
     public String createJob(final MultipartFile[] files, final Integer prioritySourceIndex,
                             final String ownerSubject, final String operationId) {
@@ -126,20 +128,21 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
             // 普通 Web 手工上传：每次提交都是新 job（既有语义不变）。
             return createAndSubmit(files, prioritySourceIndex);
         }
-        final String committedJobId = store.jobIdForOperation(ownerSubject, operationId);
-        if (committedJobId != null) {
-            LOGGER.info("processing_job_idempotent_hit ref={} jobId={}", shortRef(operationId), committedJobId);
-            return committedJobId;
-        }
         final CompletableFuture<String> mine = new CompletableFuture<>();
-        final CompletableFuture<String> inFlight = store.startOperation(ownerSubject, operationId, mine);
-        if (inFlight != null) {
-            // duplicate caller：等待同一个 creator。成功 → 同一个 jobId；失败 → 同样失败。
-            return awaitOperation(operationId, inFlight);
+        final ReplayProcessingJobStore.OperationClaim claim =
+                store.claimOperation(ownerSubject, operationId, mine);
+        if (claim.kind() == ReplayProcessingJobStore.OperationClaim.Kind.COMMITTED) {
+            LOGGER.info("processing_job_idempotent_hit ref={} jobId={}", shortRef(operationId), claim.jobId());
+            return claim.jobId();
         }
+        if (claim.kind() == ReplayProcessingJobStore.OperationClaim.Kind.JOIN) {
+            // duplicate caller：等待同一个 creator。成功 → 同一个 jobId；失败 → 同样失败。
+            return awaitOperation(operationId, claim.inFlight());
+        }
+        // CREATOR：本调用是唯一 creator。
         try {
             final String jobId = createAndSubmit(files, prioritySourceIndex);
-            // commit point：只有 dispatcher.submit 成功之后才 publish identity。
+            // commit point：只有 dispatcher.submit 成功之后才把状态推进到 COMMITTED。
             store.commitOperation(ownerSubject, operationId, mine, jobId);
             mine.complete(jobId);
             LOGGER.info("processing_job_idempotency_create ref={} jobId={}", shortRef(operationId), jobId);

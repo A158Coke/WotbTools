@@ -27,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -1080,8 +1081,48 @@ class ReplayProcessingJobServiceTest {
     }
 
     /**
-     * 同 identity 并发成功竞态：creator 仍阻塞在 `dispatcher.submit` 时 duplicate 进入 →
-     * 只允许一次 submit，两个 caller 拿到**同一个** jobId（identity 只在 submit 成功后才 publish）。
+     * TOCTOU 回归（deterministic，无 sleep）：复现 review 指出的 handoff window——
+     * 「T2 先做 committed 读取得到 null」→「T1 完成 submit、状态推进到 COMMITTED 并释放 reservation」
+     * →「T2 才执行 claim」。
+     *
+     * <p>旧实现（Service 侧 `jobIdForOperation()` + `startOperation()` 两阶段决策）在这个 interleaving 下
+     * 会让 T2 错误地成为第二个 creator 并 submit 出第二个 job。现在 claim 与 committed 判定在
+     * {@code claimOperation} 的同一个 {@code compute} 内完成，T2 必须观察到 COMMITTED 并拿回同一个 jobId。</p>
+     */
+    @Test
+    void claimAfterCommitHandoffNeverBecomesSecondCreator() {
+        final CompletableFuture<String> creatorReservation = new CompletableFuture<>();
+        final ReplayProcessingJobStore.OperationClaim creatorClaim =
+                store.claimOperation("user-1", "op-handoff", creatorReservation);
+        assertEquals(ReplayProcessingJobStore.OperationClaim.Kind.CREATOR, creatorClaim.kind());
+
+        // T2 的「committed 读取」发生在 T1 提交之前 → null（旧 race 的起点）
+        assertNull(store.jobIdForOperation("user-1", "op-handoff"),
+                "creator 尚未提交时 committed 必须为 null（旧 race 的起点）");
+
+        // T1 完成：job 已 register + submit 成功 → COMMITTED + 释放 reservation
+        final ReplayProcessingJob job = new ReplayProcessingJob("job-handoff", 1);
+        store.register(job);
+        store.commitOperation("user-1", "op-handoff", creatorReservation, "job-handoff");
+        creatorReservation.complete("job-handoff");
+
+        // T2 现在才 claim：必须是 COMMITTED(job-handoff)，绝不成为第二个 creator
+        final ReplayProcessingJobStore.OperationClaim lateClaim =
+                store.claimOperation("user-1", "op-handoff", new CompletableFuture<>());
+        assertEquals(ReplayProcessingJobStore.OperationClaim.Kind.COMMITTED, lateClaim.kind(),
+                "handoff 之后 claim 必须命中 COMMITTED，不得重新成为 creator");
+        assertEquals("job-handoff", lateClaim.jobId());
+
+        // 第三个 caller 同样命中同一个 jobId
+        final ReplayProcessingJobStore.OperationClaim thirdClaim =
+                store.claimOperation("user-1", "op-handoff", new CompletableFuture<>());
+        assertEquals(ReplayProcessingJobStore.OperationClaim.Kind.COMMITTED, thirdClaim.kind());
+        assertEquals("job-handoff", thirdClaim.jobId());
+    }
+
+    /**
+     * 同 identity 并发成功竞态（三个 caller）：creator 仍阻塞在 `dispatcher.submit` 时 duplicate 进入 →
+     * 只允许一次 submit，三个 caller 拿到**同一个** jobId。
      */
     @Test
     void sameOperationConcurrentRequestsShareOneJobAndOneSubmit() throws Exception {
@@ -1097,24 +1138,28 @@ class ReplayProcessingJobServiceTest {
         }).when(dispatcher).submit(any());
         final ReplayProcessingJobService service = new ReplayProcessingJobService(store, dispatcher, meterRegistry);
 
-        final ExecutorService pool = Executors.newFixedThreadPool(2);
+        final ExecutorService pool = Executors.newFixedThreadPool(3);
         try {
             final Future<String> creator = pool.submit(() ->
                     service.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-race"));
             assertTrue(submitEntered.await(10, TimeUnit.SECONDS), "creator 必须进入 dispatcher.submit");
 
-            // duplicate 在 creator 尚未提交完成（仍被 latch 挡住）时进入 → 只能等待同一个 future
-            final CountDownLatch duplicateEntered = new CountDownLatch(1);
-            final Future<String> duplicate = pool.submit(() -> {
-                duplicateEntered.countDown();
+            // 两个 duplicate 在 creator 尚未提交完成（仍被 latch 挡住）时进入 → 只能等待同一个 future
+            final CountDownLatch duplicatesEntered = new CountDownLatch(2);
+            final Future<String> duplicateA = pool.submit(() -> {
+                duplicatesEntered.countDown();
                 return service.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-race");
             });
-            assertTrue(duplicateEntered.await(10, TimeUnit.SECONDS));
+            final Future<String> duplicateB = pool.submit(() -> {
+                duplicatesEntered.countDown();
+                return service.createJob(new MultipartFile[]{file("a.wotbreplay")}, null, "user-1", "op-race");
+            });
+            assertTrue(duplicatesEntered.await(10, TimeUnit.SECONDS));
             releaseSubmit.countDown();
 
             final String creatorJobId = creator.get(10, TimeUnit.SECONDS);
-            final String duplicateJobId = duplicate.get(10, TimeUnit.SECONDS);
-            assertEquals(creatorJobId, duplicateJobId, "并发同 identity 必须返回同一个 jobId");
+            assertEquals(creatorJobId, duplicateA.get(10, TimeUnit.SECONDS), "duplicate A 必须拿到同一个 jobId");
+            assertEquals(creatorJobId, duplicateB.get(10, TimeUnit.SECONDS), "duplicate B 必须拿到同一个 jobId");
             assertEquals(1, submits.get(), "同一 identity 只允许一次 dispatcher.submit");
             assertEquals(creatorJobId, store.jobIdForOperation("user-1", "op-race"));
         } finally {
