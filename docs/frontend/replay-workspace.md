@@ -52,9 +52,18 @@ Authentication 是 Replay Workspace 的**真实 UI gate**，不是 mount 时的 
   仍由浏览器生成），`ensureToken(30)` 失败抛 canonical `AUTH_UNAUTHENTICATED`；`getProcessingJob` /
   `getProcessingJobResult` / `cancelProcessingJob` 同样带 Bearer。这些端点的 401/403 继续走统一
   error contract（`AUTH_UNAUTHENTICATED` / `AUTH_FORBIDDEN`），不新增特殊 auth code。
-- **后端授权**：`/api/replay/processing-jobs/**`（POST 创建 / GET 状态 / GET result / DELETE 取消）要求
-  `wotbtools-user` 或 `wotbtools-admin`；匿名 401、已登录无角色 403。`/api/preview` 与
-  `/api/replay/export-jobs/**` 的公开契约保持不变。前端 gate 只是 UX，后端才是 authorization authority。
+- **Export 传输边界**：`createExportJob` / `getExportJob` / `cancelExportJob` / `downloadExportJob`
+  与 Processing 使用同一 `authHeaders()`（`ensureToken(30)` + Bearer）。download 必须走 authenticated
+  fetch（blob → object URL），**不得**使用无法附带 Authorization 的 `<a href>` 裸链。
+- **后端授权**：`/api/replay/processing-jobs/**`（POST 创建 / GET 状态 / GET result / DELETE 取消）与
+  `/api/replay/export-jobs/**`（创建 / 状态 / 取消 / download）都要求 `wotbtools-user` 或
+  `wotbtools-admin`；匿名 401、已登录无角色 403。Export 是 Dataset-only，消费 Processing Job 的
+  `ProcessedDataset`，因此必须与 Processing 同级——否则知道 `processingJobId` 就能绕过 result 的认证。
+  `/api/preview` 与 legacy `/api/export` 的公开契约保持不变。前端 gate 只是 UX，后端才是 authorization
+  authority。
 - `startProcessingJob()` 返回 `{ accepted: true, jobId }` 或 `{ accepted: false, reason }`
   （`EMPTY_SELECTION` / `ALREADY_ACTIVE` / `SUPERSEDED` / `ABORTED` / `REQUEST_FAILED`），该结果同时是
   Android pending replay 是否 ACK 的唯一判定依据。
+- **Android pending 的 create 幂等**：`startProcessingJob({ operationId })` 会把 pending identity
+  作为 multipart 字段 `operationId` 交给后端；同一 subject + 同一 `operationId` 幂等返回同一个 job，
+  覆盖「server 已接受但 Native ACK 前进程被杀 → 冷启动重新导入」。普通手工上传不带该字段。

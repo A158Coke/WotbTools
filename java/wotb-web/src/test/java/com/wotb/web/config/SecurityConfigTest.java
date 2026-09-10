@@ -386,6 +386,60 @@ class SecurityConfigTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    /**
+     * Replay Export Job 与 Processing Dataset 同级鉴权（auth bypass 回归）：Export 消费的是 Processing
+     * Job 的 {@code ProcessedDataset}，匿名可调用就等于绕过 {@code GET .../result} 的认证保护。
+     */
+    @Test
+    void replayExportJobEndpointsRequireTheSameReplayRoleGate() throws Exception {
+        final String create = "/api/replay/export-jobs";
+        final String status = "/api/replay/export-jobs/job-1";
+        final String download = "/api/replay/export-jobs/job-1/download";
+
+        // 匿名 → 401 canonical envelope（覆盖 create / status / cancel / download 四条端点）
+        mvc.perform(post(create))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith("application/json"))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_UNAUTHENTICATED"))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.retryable").value(false))
+                .andExpect(jsonPath("$.details").isMap());
+        mvc.perform(get(status)).andExpect(status().isUnauthorized());
+        mvc.perform(delete(status)).andExpect(status().isUnauthorized());
+        mvc.perform(get(download)).andExpect(status().isUnauthorized());
+
+        // 已登录但无角色 → 403
+        mvc.perform(post(create).with(jwt()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.errorCode").value("AUTH_FORBIDDEN"));
+        mvc.perform(get(status).with(jwt())).andExpect(status().isForbidden());
+        mvc.perform(delete(status).with(jwt())).andExpect(status().isForbidden());
+        mvc.perform(get(download).with(jwt())).andExpect(status().isForbidden());
+
+        // wotbtools-user / wotbtools-admin → 2xx
+        for (final String role : List.of("ROLE_wotbtools-user", "ROLE_wotbtools-admin")) {
+            final SimpleGrantedAuthority authority = new SimpleGrantedAuthority(role);
+            mvc.perform(post(create).with(jwt().authorities(authority))).andExpect(status().is2xxSuccessful());
+            mvc.perform(get(status).with(jwt().authorities(authority))).andExpect(status().is2xxSuccessful());
+            mvc.perform(delete(status).with(jwt().authorities(authority))).andExpect(status().is2xxSuccessful());
+            mvc.perform(get(download).with(jwt().authorities(authority))).andExpect(status().is2xxSuccessful());
+        }
+
+        // boost-manager 不在这道门的角色集合内 → 403
+        mvc.perform(get(status).with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_boost-manager"))))
+                .andExpect(status().isForbidden());
+    }
+
+    /** legacy /api/export 是独立 public contract：export-jobs 收紧不得把它一起绑成需登录。 */
+    @Test
+    void legacyExportEndpointStaysPublicWhileExportJobsRequireLogin() throws Exception {
+        mvc.perform(get("/api/export"))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/replay/export-jobs/job-1"))
+                .andExpect(status().isUnauthorized());
+    }
+
     @Configuration
     @EnableWebMvc
     @Import({SecurityConfig.class, ApiErrorTestConfig.class})
@@ -416,7 +470,10 @@ class SecurityConfigTest {
                 "/api/replay/analyze/cancel",
                 "/api/replay/processing-jobs/{jobId}",
                 "/api/replay/processing-jobs/{jobId}/result",
+                "/api/replay/export-jobs/{jobId}",
+                "/api/replay/export-jobs/{jobId}/download",
                 "/api/preview",
+                "/api/export",
                 "/api/hof/upload",
                 "/api/hof/1/replay",
                 "/api/hof",
@@ -446,6 +503,17 @@ class SecurityConfigTest {
 
         @DeleteMapping("/api/replay/processing-jobs/{jobId}")
         String replayProcessingJobCancel() {
+            return "ok";
+        }
+
+        /** Replay Export Job 创建探针（Dataset-only；此处只验证角色门）。 */
+        @PostMapping("/api/replay/export-jobs")
+        String replayExportJobCreate() {
+            return "ok";
+        }
+
+        @DeleteMapping("/api/replay/export-jobs/{jobId}")
+        String replayExportJobCancel() {
             return "ok";
         }
     }

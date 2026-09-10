@@ -291,11 +291,14 @@ describe('ReplayWorkspace', () => {
     const onPendingFile = nativeImportState.onPendingFile
     expect(onPendingFile).toBeTypeOf('function')
     const file = new File(['x'], 'a.wotbreplay')
+    const pending = { pendingId: 'pending-uuid-1', name: 'a.wotbreplay', uri: 'content://p', size: 1 }
     expect(replayState.startProcessingJob).not.toHaveBeenCalled()
-    await expect(onPendingFile(file)).resolves.toBe(true)
+    await expect(onPendingFile(file, pending)).resolves.toBe(true)
     await flushPromises()
     expect(replayState.updateFiles).toHaveBeenCalledWith([file])
     expect(replayState.startProcessingJob).toHaveBeenCalledTimes(1)
+    // pending identity 必须作为 operationId 传给 server（跨 process death 重放拿回同一个 job）
+    expect(replayState.startProcessingJob).toHaveBeenCalledWith({ operationId: 'pending-uuid-1' })
   })
 
   it('Android pending replay 未被 server 受理时不 ACK（回调返回 false）', async () => {

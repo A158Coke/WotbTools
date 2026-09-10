@@ -21,7 +21,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
- * Replay Export Job REST API（匿名公开，与既有 /api/export 权限一致）。
+ * Replay Export Job REST API（需登录：wotbtools-user / wotbtools-admin）。
+ *
+ * <p>与 {@code /api/replay/processing-jobs/**} 同级鉴权：Export 消费的是 Processing Job 的
+ * {@code ProcessedDataset}，匿名可调用就等于绕过 {@code GET .../result} 的认证保护。四条端点
+ * （POST 创建 / GET 状态 / DELETE 取消 / GET download）全部必须携带有效 Bearer token——匿名 → 401
+ * AUTH_UNAUTHENTICATED，已登录但无 wotbtools-user / wotbtools-admin 角色 → 403 AUTH_FORBIDDEN。
+ * legacy 同步导出 {@code /api/export} 是独立 public contract，不受此处影响。</p>
  *
  * <pre>
  * POST   /api/replay/export-jobs            → 202 {jobId, status, total}（创建）

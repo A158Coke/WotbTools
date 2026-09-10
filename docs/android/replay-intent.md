@@ -16,12 +16,12 @@
 ACTION_SEND / ACTION_VIEW
   → external content URI（ContentResolver 读取，不依赖真实路径）
   → 最小验证(.wotbreplay) + 复制到 app private cache
-  → app-owned FileProvider URI + pendingId + createdAt
+  → app-owned FileProvider URI + pendingId（完整 UUID，authoritative identity）+ createdAt
   → pending slot（single slot：最新 replay 取代旧 pending）+ SharedPreferences metadata
-  → Web 已登录时经 NativeBridge getPendingReplay() 取回 name/size/uri
+  → Web 已登录时经 NativeBridge getPendingReplay() 取回 pendingId/name/size/uri
   → Web fetch(content://) 读字节构造 File → 现有 FileUploader/validate 管线
-  → POST /api/replay/processing-jobs（需登录；Bearer）
-  → server 接受（202 + jobId）后 Web 调 consumePendingReplay() ACK
+  → POST /api/replay/processing-jobs（需登录；Bearer；operationId = pendingId，可重放安全）
+  → server 接受（202 + jobId）后 Web 调 consumePendingReplay(pendingId) ACK（compare-and-clear）
 ```
 
 Android 外部 replay **只有这一条** ingress。曾经的第二条路径——WebView `onShowFileChooser`
@@ -58,7 +58,8 @@ Web，不依赖 WebView 直接读取 external content URI，也不放宽 WebView
 ## 跨 process death 的 pending durability
 
 - metadata 持久化在 app private storage（SharedPreferences `replay_pending`）：
-  `pendingId` / `cacheFilename` / `originalName` / `size` / `createdAt`；行式 `key=value` 编码。
+  `pendingId`（完整 UUID，authoritative identity）/ `cacheFilename` / `originalName` / `size` /
+  `createdAt`；行式 `key=value` 编码，`pendingId` 需通过长度与非空校验。
   **不保存** replay 内容、不 Base64、不保存 external 绝对路径、不保存 token/cookie/QQ 凭据。
 - replay 字节仍放在 app private `cache/replay/`（FileProvider `cache-path`）。
 - 启动顺序：`ReplayIntentHandler.restorePending()` 先尝试恢复 active pending（metadata 可解码、
@@ -67,23 +68,34 @@ Web，不依赖 WebView 直接读取 external content URI，也不放宽 WebView
   active backing file 绝不删除。不再无条件清空整个 replay cache。
 - TTL 24 小时（`PENDING_TTL_MS`）：本地 cache hygiene，与 Keycloak/client login timeout 无关；
   过期 pending 在下次启动被丢弃并清理。
-- ACK 后（`consumePendingReplay`）：清 pending slot + 清持久 metadata（exactly-once），下次启动不再
-  恢复该 replay。backing file 不立即删除（Chromium 可能仍在读取 Web `fetch(content://)` 的响应流），
-  留到下一次启动 orphan cleanup 安全清理。
+- ACK 后（`consumePendingReplay(pendingId)`）：清 pending slot + 清持久 metadata（exactly-once），
+  下次启动不再恢复该 replay。backing file 不立即删除（Chromium 可能仍在读取 Web
+  `fetch(content://)` 的响应流），留到下一次启动 orphan cleanup 安全清理。
 
-## ACK 语义（exactly-once）
+## ACK 语义（identity-aware exactly-once）
 
 Web 侧 `useNativeReplayImport` 的顺序固定为：
 
 ```text
-getPendingReplay → fetch(content://) → await onPendingFile(file) → 受理成功 → consumePendingReplay()
+getPendingReplay → fetch(content://) → await onPendingFile(file, pending) → 受理成功
+  → consumePendingReplay(pending.pendingId)
 ```
 
+- **ACK 必须携带 exact pending identity**（`pendingId`，完整 UUID；不是 `content://` URI 字符串）。
+  Native 执行 **compare-and-clear**（纯策略 `PendingReplayAckPolicy`）：
+  - `expected == current` → 清 pending slot + metadata，返回 `true`（`ack success ref=<short>`）；
+  - `expected != current`（处理期间已被更新的 replay 取代）→ **绝不清掉当前 pending**，返回 `false`
+    （`ack mismatch expected=<short> current=<short>`）；已受理的那个 job 仍然有效；
+  - `expected` 缺失/空白 → 拒绝且不清理（`ack rejected reason=missing-identity`）。
+  严禁「无参数清掉当前 pending」的路径存在。
 - `onPendingFile` 返回 `true` 的唯一条件：`POST /api/replay/processing-jobs` 已返回 `jobId`
   （server accepted）——ACK 边界**不是** job READY：字节一旦进入后端 Processing Job lifecycle，
   Native 不再负责重试。
+- **可重放安全**：Web 把 `pendingId` 作为 create 的 multipart 字段 `operationId` 传给后端；同一已认证
+  subject + 同一 `operationId` 幂等返回同一个 job。因此「server 已接受 → ACK 前 process death →
+  冷启动重新导入同一份 pending」不会创建第二个 Processing Job。
 - 未登录、未受理、读取失败或抛错：**不 ACK**，Native pending 原样保留供重试；Web 侧以 `inflight`
-  防并发、以 `consumedUris` 防同一份 pending 重复注入。同一 pending 的重复回调只允许一次
+  防并发、以 `pendingId` 集合防同一份 pending 重复注入。同一 pending 的重复回调只允许一次
   in-flight processing create。
 - 未登录期间 pending 既不消费也不丢失：登录成功后页面重新加载，由 Replay Workspace 再次触发消费，
   因此登录前不会发出任何 `POST /api/replay/processing-jobs`。
@@ -99,13 +111,19 @@ getPendingReplay → fetch(content://) → await onPendingFile(file) → 受理�
 
 ## 日志白名单
 
-允许（低敏感、低噪音）：`replay-pending stored id=<short-id>`、
-`replay-pending restored id=<short-id>`、`replay-pending deferred reason=auth-flow`、
-`replay-pending dispatched`、`replay-pending acknowledged`、
+允许（低敏感、低噪音）：`replay-pending stored ref=<short>`、
+`replay-pending restored ref=<short>`、`replay-pending deferred reason=auth-flow`、
+`replay-pending dispatched`、`replay-pending ack success ref=<short>`、
+`replay-pending ack mismatch expected=<short> current=<short|none>`、
+`replay-pending ack rejected reason=missing-identity`、
 `auth-return action=ALLOW_AUTH_RETURN source=app-link cold=true|false`，以及既有的
 `nav scheme/host/action/source` 认证导航 trace。
 
-绝不记录：原文件完整路径、replay 内容、QQ code、OIDC state、token、完整 callback URI。
+`<short>` 一律是完整 `pendingId` 的前 8 位（`pendingLogRef` / `PendingReplay.logRef`）；后端幂等日志同理只打
+`operationId` 前 8 位。
+
+绝不记录：完整 pendingId / operationId、原文件完整路径、文件名、replay 内容、QQ code、OIDC state、token、
+完整 callback URI。
 
 ## 待真机验证（规格 §35 / §84）
 

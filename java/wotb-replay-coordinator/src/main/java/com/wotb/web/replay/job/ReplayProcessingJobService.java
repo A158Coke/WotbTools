@@ -88,6 +88,23 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
      * （不突破全局并发=2），实现「目标 replay 优先解析、batch 其余继续后台解析」。
      */
     public String createJob(final MultipartFile[] files, final Integer prioritySourceIndex) {
+        return createJob(files, prioritySourceIndex, null, null);
+    }
+
+    /**
+     * 创建 Replay Processing Job（可重放安全路径：Android external replay）。
+     *
+     * <p>{@code ownerSubject} + {@code operationId} 构成 processing create 的 idempotency identity：
+     * 同一已认证 subject 用同一 operationId 重复提交（典型场景：server 已接受并返回 jobId，但 Native
+     * pending ACK 之前进程被杀；冷启动后 Web 重新导入同一份 pending replay）返回**同一个 jobId**，
+     * 不再上传输入、不再登记第二个 job、不再重复提交调度器。identity 缺失时保持原有
+     * 「每次提交都是新 job」语义——普通 Web 手工上传不经过这条路径。</p>
+     *
+     * <p>identity 是内存态，生命周期跟随 Job registry / TTL（与 ProcessedDataset 一致）：job 被 TTL
+     * 清理后同一 operationId 会创建新 job——此时旧 dataset 已不可读，重建是唯一可用语义。</p>
+     */
+    public String createJob(final MultipartFile[] files, final Integer prioritySourceIndex,
+                            final String ownerSubject, final String operationId) {
         ReplayUploadValidator.validate(files);
         if (files.length > ReplayService.MAX_REPLAY_FILES) {
             throw new IllegalArgumentException("TOO_MANY_REPLAY_FILES");
@@ -95,6 +112,11 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         if (prioritySourceIndex != null
                 && (prioritySourceIndex < 0 || prioritySourceIndex >= files.length)) {
             throw new IllegalArgumentException("SOURCE_NOT_FOUND");
+        }
+        final String existingJobId = store.jobIdForOperation(ownerSubject, operationId);
+        if (existingJobId != null) {
+            LOGGER.info("processing_job_idempotent_hit ref={} jobId={}", shortRef(operationId), existingJobId);
+            return existingJobId;
         }
         final String jobId = UUID.randomUUID().toString();
         final Path inputDir = store.inputDir(jobId);
@@ -115,6 +137,14 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         }
         final ReplayProcessingJob job = new ReplayProcessingJob(jobId, sourceNames);
         store.register(job);
+        // 先原子登记 identity 再提交调度器：并发同 key 时先到者胜出，败者放弃自己刚建的 job
+        // （尚未 submit，没有 worker 参与，可安全清理）。
+        final String winnerJobId = store.registerOperation(ownerSubject, operationId, jobId);
+        if (winnerJobId != null) {
+            store.removeAndCleanup(jobId);
+            LOGGER.info("processing_job_idempotent_hit ref={} jobId={}", shortRef(operationId), winnerJobId);
+            return winnerJobId;
+        }
         try {
             dispatcher.submit(new ReplayProcessingRequest(jobId, sourceOrder(prioritySourceIndex, sourceNames)));
         } catch (final ReplayProcessingQueueFullException e) {
@@ -123,7 +153,15 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         }
         recordCreated(files.length);
         LOGGER.info(logLine("processing_job_created", jobId, "files", files.length));
+        if (operationId != null && !operationId.isBlank()) {
+            LOGGER.info("processing_job_idempotency_create ref={} jobId={}", shortRef(operationId), jobId);
+        }
         return jobId;
+    }
+
+    /** 低敏 identity 引用：只取前 8 个字符，绝不把完整 operationId 写进日志。 */
+    private static String shortRef(final String operationId) {
+        return operationId == null || operationId.isBlank() ? "none" : operationId.substring(0, Math.min(8, operationId.length()));
     }
 
     /** 调度顺序：priority source 先于其余（其余保持上传顺序）。 */

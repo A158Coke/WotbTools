@@ -60,8 +60,13 @@ export async function getPendingReplay() {
   return await call('getPendingReplay')
 }
 
-export async function consumePendingReplay() {
-  return (await call('consumePendingReplay')) === true
+/**
+ * ACK 当前 pending replay —— 必须携带 exact pending identity（`pendingId`）。
+ * Native 执行 compare-and-clear：只有 identity 与当前 pending 完全一致才清理；
+ * 不传 / 不匹配一律返回 false 且**绝不清掉当前 pending**（避免清掉后来取代它的新 replay）。
+ */
+export async function consumePendingReplay(expectedPendingId) {
+  return (await call('consumePendingReplay', { expectedPendingId })) === true
 }
 
 export async function checkForUpdate() {
