@@ -4,8 +4,8 @@
 
 ## 构建（全部经 ci.yml / settings.xml 核对）
 
-- JDK 21（CI `java-version: "21"`）；Maven 必须 `-s java/settings.xml`（aliyun 镜像 + 独立 `java/.m2repo`；CI 等价 `-Dmaven.repo.local=.m2repo`）。容器构建用 `java/settings-docker.xml`。
-- 全量测试：`cd java && mvn -s settings.xml test`（JAVA_HOME 指向 JDK 21）——**CI authoritative validation**，
+- JDK 25（CI `java-version: "25"`）；Maven 必须 `-s java/settings.xml`（aliyun 镜像 + 独立 `java/.m2repo`；CI 等价 `-Dmaven.repo.local=.m2repo`）。容器构建用 `java/settings-docker.xml`。
+- 全量测试：`cd java && mvn -s settings.xml test`（JAVA_HOME 指向 JDK 25）——**CI authoritative validation**，
   不是每次提交前必跑（见下「测试策略」）。
 
 ## 测试策略（Agent 即时验证，Fast Feedback First）

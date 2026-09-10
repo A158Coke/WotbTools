@@ -26,7 +26,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 最多 8 active/pending，第 9 个请求立即拒绝（{@code AI_REVIEW_BUSY} / 503）。
  * 可通过环境变量 {@code AI_REVIEW_WORKER_MAX_CONCURRENT} /
  * {@code AI_REVIEW_WORKER_QUEUE_CAPACITY} 调整（3/4/6 等无需 rebuild）。
- * 线程数固定（core = max），daemon，有界队列。</p>
+ * 线程数固定（core = max），有界队列；默认使用虚拟线程承载阻塞的上游
+ * AI 调用，但并发数和队列容量仍由本 executor 严格限制。</p>
  *
  * <p><b>拒绝策略</b>：{@link ThreadPoolExecutor.AbortPolicy}——满载时抛
  * {@code RejectedExecutionException}，由 Controller 捕获后返回 503
@@ -47,19 +48,21 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
     static final int DEFAULT_QUEUE_CAPACITY = 4;
     static final long DEFAULT_OVERALL_DEADLINE_SEC = 1100;
 
-private final ThreadPoolExecutor executor;
+    private final ThreadPoolExecutor executor;
     private final long overallDeadlineNanos;
     private final MeterRegistry meterRegistry;
 
     /**
      * Spring 构造器：从 {@code wotb.ai.review-worker.max-concurrent} /
      * {@code wotb.ai.review-worker.queue-capacity} /
-     * {@code wotb.ai.review-worker.overall-deadline-sec} 读取配置（默认 4/4/1100）。
+     * {@code wotb.ai.review-worker.overall-deadline-sec} /
+     * {@code wotb.ai.review-worker.virtual-threads} 读取配置（默认 4/4/1100/true）。
      * 测试可直接传字面值调用（{@code @Value} 仅 Spring 容器处理）。
      *
      * @param maxConcurrent    worker 线程数（core = max，固定不弹性伸缩），必须 ≥ 1
      * @param queueCapacity    有界队列容量，必须 ≥ 1
      * @param overallDeadlineSec  请求整体 deadline（秒），必须 ≥ 1
+     * @param virtualThreads   是否使用虚拟线程执行阻塞的上游 AI 调用
      * @param meterRegistry    可选 Micrometer 注册表（运行时缺失时为 {@code null}，跳过指标记录）
      */
     @Autowired
@@ -67,6 +70,7 @@ private final ThreadPoolExecutor executor;
             @Value("${wotb.ai.review-worker.max-concurrent:4}") final int maxConcurrent,
             @Value("${wotb.ai.review-worker.queue-capacity:4}") final int queueCapacity,
             @Value("${wotb.ai.review-worker.overall-deadline-sec:1100}") final long overallDeadlineSec,
+            @Value("${wotb.ai.review-worker.virtual-threads:true}") final boolean virtualThreads,
             @Autowired(required = false) final MeterRegistry meterRegistry) {
         if (maxConcurrent < 1) {
             throw new IllegalArgumentException(
@@ -87,7 +91,7 @@ private final ThreadPoolExecutor executor;
                 0L,
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(queueCapacity),
-                new NamedDaemonThreadFactory(),
+                workerThreadFactory(virtualThreads),
                 new ThreadPoolExecutor.AbortPolicy());
         this.meterRegistry = meterRegistry;
         if (meterRegistry != null) {
@@ -99,12 +103,20 @@ private final ThreadPoolExecutor executor;
 
     /** 测试便利构造器：使用默认 4/4/1100。 */
     public AiReviewWorkerExecutor() {
-        this(DEFAULT_MAX_CONCURRENT, DEFAULT_QUEUE_CAPACITY, DEFAULT_OVERALL_DEADLINE_SEC, null);
+        this(DEFAULT_MAX_CONCURRENT, DEFAULT_QUEUE_CAPACITY, DEFAULT_OVERALL_DEADLINE_SEC,
+                true, null);
     }
 
     /** 测试便利构造器：指定 workers/queue，整体 deadline 用默认 1100s。 */
     public AiReviewWorkerExecutor(final int maxConcurrent, final int queueCapacity) {
-        this(maxConcurrent, queueCapacity, DEFAULT_OVERALL_DEADLINE_SEC, null);
+        this(maxConcurrent, queueCapacity, DEFAULT_OVERALL_DEADLINE_SEC, true, null);
+    }
+
+    /** 测试/显式装配便利构造器：可选择平台线程或虚拟线程。 */
+    public AiReviewWorkerExecutor(final int maxConcurrent, final int queueCapacity,
+                                  final long overallDeadlineSec,
+                                  final MeterRegistry meterRegistry) {
+        this(maxConcurrent, queueCapacity, overallDeadlineSec, true, meterRegistry);
     }
 
     /**
@@ -147,6 +159,12 @@ private final ThreadPoolExecutor executor;
 
     private int queueDepth() {
         return executor.getQueue().size();
+    }
+
+    private static ThreadFactory workerThreadFactory(final boolean virtualThreads) {
+        return virtualThreads
+                ? Thread.ofVirtual().name("wotb-ai-review-worker-", 1).factory()
+                : new NamedDaemonThreadFactory();
     }
 
     private static final class NamedDaemonThreadFactory implements ThreadFactory {

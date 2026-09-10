@@ -33,6 +33,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  *       不泄漏 queue 容量；正在执行的 source 由调用方协作取消。</li>
  *   <li>有界排队：{@code queue-capacity} 限制全部 job 的 pending source 总数，
  *       满载 submit 抛 {@link ProcessingQueueFullException}（503 PROCESSING_QUEUE_FULL）。</li>
+ *   <li>CPU-bound replay full processing 保持固定 platform worker；Virtual Threads
+ *       不会绕过 {@code max-concurrent} CPU gate。</li>
  *   <li>shutdown 无残留线程（daemon worker + shutdown）。</li>
  * </ul>
  *

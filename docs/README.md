@@ -17,6 +17,7 @@
 |---|---|
 | `development/replay-performance.md` | 运行 replay core 本地性能基准、JFR 或规划生产 one-shot 测量时 |
 | `development/replay-performance-results.md` | 查看最近一次本地性能基线、JFR 证据与优化决策时 |
+| `development/ai-virtual-thread-benchmark.md` | 运行真实 provider 的 Platform vs Virtual blocking-call A/B 时 |
 
 ## Architecture（架构）
 

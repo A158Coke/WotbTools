@@ -2,6 +2,11 @@ server:
   port: 8087
 
 spring:
+  main:
+    keep-alive: true
+  threads:
+    virtual:
+      enabled: ${WOTB_VIRTUAL_THREADS_ENABLED:true}
   autoconfigure:
     exclude:
       # Spring AI OpenAI auto-configurations create SDK model beans even without
@@ -122,6 +127,9 @@ wotb:
       # the 9th request is rejected with 503 AI_REVIEW_BUSY.
       max-concurrent: ${AI_REVIEW_WORKER_MAX_CONCURRENT:4}
       queue-capacity: ${AI_REVIEW_WORKER_QUEUE_CAPACITY:4}
+      # Blocking upstream calls run on bounded virtual workers; queue and
+      # max-concurrent remain the authoritative admission control.
+      virtual-threads: ${AI_REVIEW_WORKER_VIRTUAL_THREADS:true}
       # Request overall deadline (queue wait included): 1100s covers the team
       # flow (Call #1 + Call #2 + Autopsy, each <=315s) plus margin; aligns with
       # the frontend timeout; nginx keeps a 1120s proxy margin.

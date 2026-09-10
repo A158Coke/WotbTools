@@ -57,7 +57,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: "25"
       - uses: actions/cache@v4
         with:
           path: java/.m2repo
@@ -156,7 +156,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: "25"
       - name: Backend Playback serialization contract tests
         working-directory: java
         run: |
