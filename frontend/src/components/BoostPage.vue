@@ -167,8 +167,9 @@ function apiCode(code, fallbackKey) {
 async function loadAllUsers() {
   loadError.value = ''
   try {
-    const res = await adminSearchUsers('', 200)
-    allUsers.value = res.content || res || []
+    // 服务端分页契约：返回 { items, page, size, totalItems, totalPages }（size 上限 100）。
+    const res = await adminSearchUsers('', { size: 100 })
+    allUsers.value = res?.items || []
   } catch (error) {
     loadError.value = apiError(error)
   }
@@ -184,9 +185,9 @@ function searchUsers() {
     return
   }
   latestUserSearch.schedule(
-    async () => adminSearchUsers(query, 10),
+    async () => adminSearchUsers(query, { size: 10 }),
     res => {
-      userSearchResults.value = (res.content || res).slice(0, 10)
+      userSearchResults.value = (res?.items || []).slice(0, 10)
       showUserSearch.value = true
     },
     error => {

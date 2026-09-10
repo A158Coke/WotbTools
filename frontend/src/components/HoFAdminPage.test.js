@@ -15,11 +15,13 @@ const hofAdminApi = vi.hoisted(() => ({
   hofAdminAudit: vi.fn(() => Promise.resolve({ items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })),
   hofAdminDelete: vi.fn(() => Promise.resolve(undefined)),
   hofAdminDownload: vi.fn(() => Promise.resolve(undefined)),
+  hofAdminBulkDeleteRecords: vi.fn(() => Promise.resolve({ requested: 0, deleted: 0, failed: 0, results: [] })),
   hofAdminHundredList: vi.fn(() => Promise.resolve({ items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })),
   hofAdminHundredDetail: vi.fn(() => Promise.resolve({})),
   hofAdminHundredApprove: vi.fn(() => Promise.resolve({ status: 'CURRENT' })),
   hofAdminHundredReject: vi.fn(() => Promise.resolve({ status: 'REJECTED' })),
   hofAdminHundredDelete: vi.fn(() => Promise.resolve(undefined)),
+  hofAdminBulkDeleteHundred: vi.fn(() => Promise.resolve({ requested: 0, deleted: 0, failed: 0, results: [] })),
   hofAdminHundredReplays: vi.fn(() => Promise.resolve([])),
   hofAdminHundredReplayDownload: vi.fn(() => Promise.resolve(undefined)),
   hofAdminMark3List: vi.fn(() => Promise.resolve({ items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })),
@@ -27,6 +29,7 @@ const hofAdminApi = vi.hoisted(() => ({
   hofAdminMark3Approve: vi.fn(() => Promise.resolve({ status: 'CURRENT' })),
   hofAdminMark3Reject: vi.fn(() => Promise.resolve({ status: 'REJECTED' })),
   hofAdminMark3Delete: vi.fn(() => Promise.resolve(undefined)),
+  hofAdminBulkDeleteMark3: vi.fn(() => Promise.resolve({ requested: 0, deleted: 0, failed: 0, results: [] })),
   hofAdminMark3Replays: vi.fn(() => Promise.resolve([])),
   hofAdminMark3ReplayDownload: vi.fn(() => Promise.resolve(undefined))
 }))
@@ -46,6 +49,7 @@ vi.mock('../utils/api.js', () => hofAdminApi)
 vi.mock('../utils/helpers.js', () => ({ mapLabel: () => '' }))
 vi.mock('../utils/display.js', () => ({
   apiErrorLabel: (t, te, e) => (e?.code ? 'err:' + e.code : 'api-error'),
+  apiErrorCodeLabel: (t, te, code) => (code ? 'code:' + code : ''),
   replayValueLabel: (t, te, value) => value,
   formatDateTimeMinute: value => value || ''
 }))
@@ -72,11 +76,15 @@ const optionMessages = (key) => {
   if (key === 'mark3Admin.deleteReasonOptions') return DELETE_OPTIONS
   return {}
 }
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: k => k, te: () => true, tm: optionMessages, locale: ref('zh') }) }))
+// t(key, params) → "key(k=v,...)"：断言同时锁定 key 与插值参数。
+const translate = vi.hoisted(() => (key, params) => (params
+  ? `${key}(${Object.entries(params).map(([k, v]) => `${k}=${v}`).join(',')})`
+  : key))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: translate, te: () => true, tm: optionMessages, locale: ref('zh') }) }))
 
 const pendingItem = {
   id: 11, status: 'PENDING', vehicleId: 6481, vehicleName: 'FV4005',
-  gameAccountIdSnapshot: 'game-123', nicknameSnapshot: 'SnapUser',
+  wotbAccountId: 'game-123', nicknameSnapshot: 'SnapUser',
   claimedAverageDamage: 4200, claimedBattleCount: 100,
   approvedAverageDamage: null, approvedBattleCount: null,
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
@@ -85,7 +93,7 @@ const pendingItem = {
 
 const currentItem = {
   id: 12, status: 'CURRENT', vehicleId: 6491, vehicleName: 'E 100',
-  gameAccountIdSnapshot: 'game-456', nicknameSnapshot: 'CurUser',
+  wotbAccountId: 'game-456', nicknameSnapshot: 'CurUser',
   claimedAverageDamage: 3800, claimedBattleCount: 120,
   approvedAverageDamage: 3800, approvedBattleCount: 120,
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
@@ -94,7 +102,7 @@ const currentItem = {
 
 const rejectedItem = {
   id: 13, status: 'REJECTED', vehicleId: 113, vehicleName: 'Vindicator UM',
-  gameAccountIdSnapshot: 'game-789', nicknameSnapshot: 'RejectedUser',
+  wotbAccountId: 'game-789', nicknameSnapshot: 'RejectedUser',
   claimedAverageDamage: 3600, claimedBattleCount: 100,
   approvedAverageDamage: null, approvedBattleCount: null,
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
@@ -134,7 +142,7 @@ const rejectedDetail = {
 
 const mark3PendingItem = {
   id: 31, status: 'PENDING', vehicleId: 385, vehicleName: 'Progetto 65',
-  gameAccountIdSnapshot: 'game-333', nicknameSnapshot: 'ThreeMarkPlayer',
+  wotbAccountId: 'game-333', nicknameSnapshot: 'ThreeMarkPlayer',
   claimedBattleCount: 76, claimedAverageDamage: 4210, claimedWinRate: 67.25,
   approvedBattleCount: null, approvedAverageDamage: null, approvedWinRate: null,
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
@@ -159,7 +167,7 @@ describe('HoFAdminPage', () => {
   })
 
   function mountPage() {
-    return mount(HoFAdminPage, { global: { mocks: { $t: k => k, $tm: optionMessages } } })
+    return mount(HoFAdminPage, { global: { mocks: { $t: translate, $tm: optionMessages } } })
   }
 
   async function switchToHundred(wrapper) {
@@ -723,5 +731,178 @@ describe('HoFAdminPage', () => {
     const modal = wrapper.find('.hof-review-modal')
     await modal.findAll('button').find(button => button.text() === 'mark3Admin.reject').trigger('click')
     expect(modal.find('textarea').attributes('maxlength')).toBe('500')
+  })
+
+  // ── 三域批量删除：一次确认 + 逐条结果 ──────────────────────────────
+
+  const recordsPage = {
+    items: [
+      {
+        id: 7, arenaId: 'a1', accountId: 111, nickname: 'Player1', tankId: 6481, tankName: 'FV4005',
+        battleType: 'RANDOM', arenaBonusType: 1, damageDealt: 5000, mapName: 'rockfield',
+        version: '11.18.0', battleTime: null, createdAt: '2024-01-01T00:00:00Z',
+        replayHash: 'h', replayFileName: 'x.wotbreplay', replaySize: 100,
+        replayUploadedBy: 'up-sub', replayAvailable: true
+      },
+      {
+        id: 8, arenaId: 'a2', accountId: 222, nickname: 'Player2', tankId: 113, tankName: 'Vindicator UM',
+        battleType: 'RATING', arenaBonusType: 2, damageDealt: 4200, mapName: 'himmelsdorf',
+        version: '11.18.0', battleTime: null, createdAt: '2024-01-02T00:00:00Z',
+        replayHash: 'h2', replayFileName: 'y.wotbreplay', replaySize: 200,
+        replayUploadedBy: 'up-sub', replayAvailable: false
+      }
+    ],
+    page: 1, size: 50, totalItems: 2, totalPages: 1
+  }
+
+  /** 批量确认 ：未输入 DELETE 时按钮禁用。 */
+  async function confirmBulk(wrapper, keyword = 'DELETE') {
+    const modal = wrapper.find('.bulk-delete-modal')
+    const confirm = modal.findAll('button').find(button => button.text() === 'hofAdmin.bulkDelete')
+    expect(confirm.attributes('disabled')).toBeDefined()
+    await modal.find('.admin-confirm-input').setValue(keyword)
+    await confirm.trigger('click')
+    await flushPromises()
+    return modal
+  }
+
+  it('bulk deletes Hall of Fame records behind one DELETE confirmation and lists per-record failures', async () => {
+    hofAdminApi.hofAdminList.mockResolvedValue(recordsPage)
+    hofAdminApi.hofAdminBulkDeleteRecords.mockResolvedValue({
+      requested: 2,
+      deleted: 1,
+      failed: 1,
+      results: [
+        { id: 7, deleted: true },
+        { id: 8, deleted: false, errorCode: 'HOF_RECORD_NOT_FOUND' }
+      ]
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.find('.hof-bulk-bar').exists()).toBe(false)
+    await wrapper.find('.hof-admin-table thead input[type="checkbox"]').setValue(true)
+    expect(wrapper.find('.hof-bulk-count').text()).toBe('hofAdmin.selectedCount(count=2)')
+
+    await wrapper.findAll('.hof-bulk-bar button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
+    const modal = wrapper.find('.bulk-delete-modal')
+    expect(modal.text()).toContain('hofAdmin.bulkDeleteHint(count=2)')
+    // 单场删除语义不带 reason：批量确认里没有原因选择控件，只有 DELETE 关键字。
+    expect(modal.find('select').exists()).toBe(false)
+    expect(hofAdminApi.hofAdminBulkDeleteRecords).not.toHaveBeenCalled()
+
+    await confirmBulk(wrapper)
+    expect(hofAdminApi.hofAdminBulkDeleteRecords).toHaveBeenCalledTimes(1)
+    expect(hofAdminApi.hofAdminBulkDeleteRecords).toHaveBeenCalledWith([7, 8])
+    expect(modal.text()).toContain('hofAdmin.bulkSummary(requested=2,deleted=1,failed=1)')
+    expect(modal.text()).toContain('#8')
+    expect(modal.text()).toContain('code:HOF_RECORD_NOT_FOUND')
+    // 删除后 reload 当前页。
+    expect(hofAdminApi.hofAdminList).toHaveBeenCalledTimes(2)
+    // 失败记录保留选择，成功记录移出。
+    expect(wrapper.find('.hof-bulk-count').text()).toBe('hofAdmin.selectedCount(count=1)')
+  })
+
+  it('reuses the existing Hundred delete-reason rule for bulk deletion', async () => {
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [pendingItem, currentItem], page: 1, size: 50, totalItems: 2, totalPages: 1
+    })
+    hofAdminApi.hofAdminBulkDeleteHundred.mockResolvedValue({
+      requested: 2,
+      deleted: 1,
+      failed: 1,
+      results: [
+        { id: 12, deleted: true },
+        { id: 11, deleted: false, errorCode: 'HUNDRED_NOT_CURRENT' }
+      ]
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToHundred(wrapper)
+    await wrapper.find('.hof-hundred .hof-admin-table thead input[type="checkbox"]').setValue(true)
+
+    await wrapper.findAll('.hof-hundred .hof-bulk-bar button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
+    const modal = wrapper.find('.bulk-delete-modal')
+    expect(modal.text()).toContain('hofAdmin.bulkDeleteHintModeration(count=2)')
+    // 复用既有单条删除的 reason 选项（同一组 6 类 + 占位项）。
+    expect(modal.find('select').findAll('option').map(option => option.attributes('value')))
+      .toEqual(['', 'CHEATING_FORGERY', 'WRONG_REVIEW', 'PLAYER_IDENTITY_ISSUE', 'DATA_ERROR', 'ADMIN_CORRECTION', 'OTHER'])
+
+    // 未选原因 → 复用既有校验文案，且不发请求。
+    await confirmBulk(wrapper)
+    expect(hofAdminApi.hofAdminBulkDeleteHundred).not.toHaveBeenCalled()
+    expect(modal.text()).toContain('hundredAdmin.deleteReasonRequired')
+
+    // OTHER 必须带补充说明。
+    await modal.find('select').setValue('OTHER')
+    await modal.find('.admin-confirm-input').setValue('DELETE')
+    await modal.findAll('button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminBulkDeleteHundred).not.toHaveBeenCalled()
+    expect(modal.text()).toContain('hundredAdmin.deleteReasonText')
+
+    await modal.find('select').setValue('ADMIN_CORRECTION')
+    await modal.find('textarea').setValue('cleanup')
+    await modal.find('.admin-confirm-input').setValue('DELETE')
+    await modal.findAll('button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminBulkDeleteHundred).toHaveBeenCalledWith([11, 12], { reason: 'ADMIN_CORRECTION', reasonText: 'cleanup' })
+    expect(modal.text()).toContain('code:HUNDRED_NOT_CURRENT')
+    expect(hofAdminApi.hofAdminHundredList).toHaveBeenCalledTimes(2)
+  })
+
+  it('bulk deletes Mark 3 submissions with the same moderation payload shape', async () => {
+    hofAdminApi.hofAdminMark3List.mockResolvedValue({
+      items: [mark3PendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    hofAdminApi.hofAdminBulkDeleteMark3.mockResolvedValue({
+      requested: 1, deleted: 1, failed: 0, results: [{ id: 31, deleted: true }]
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToMark3(wrapper)
+    await wrapper.find('.hof-mark3 .hof-admin-table thead input[type="checkbox"]').setValue(true)
+    expect(wrapper.find('.hof-mark3 .hof-bulk-count').text()).toBe('hofAdmin.selectedCount(count=1)')
+
+    await wrapper.findAll('.hof-mark3 .hof-bulk-bar button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
+    const modal = wrapper.find('.bulk-delete-modal')
+    // 三环复用自己命名空间的 reason 选项。
+    expect(modal.find('select').findAll('option').map(option => option.attributes('value')))
+      .toEqual(['', 'CHEATING_FORGERY', 'WRONG_REVIEW', 'PLAYER_IDENTITY_ISSUE', 'DATA_ERROR', 'ADMIN_CORRECTION', 'OTHER'])
+    await modal.find('select').setValue('DATA_ERROR')
+    await modal.find('.admin-confirm-input').setValue('DELETE')
+    await modal.findAll('button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
+    await flushPromises()
+
+    expect(hofAdminApi.hofAdminBulkDeleteMark3).toHaveBeenCalledWith([31], { reason: 'DATA_ERROR' })
+    expect(modal.text()).toContain('hofAdmin.bulkSummary(requested=1,deleted=1,failed=0)')
+    expect(hofAdminApi.hofAdminMark3List).toHaveBeenCalledTimes(2)
+  })
+
+  it('renders the renamed wotbAccountId ownership field in the Hundred and Mark 3 tables', async () => {
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [currentItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    hofAdminApi.hofAdminMark3List.mockResolvedValue({
+      items: [mark3PendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(currentDetail)
+    hofAdminApi.hofAdminMark3Detail.mockResolvedValue(mark3PendingDetail)
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await switchToHundred(wrapper)
+    expect(wrapper.find('.hof-hundred .hof-admin-table').text()).toContain('game-456')
+    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.hof-review-modal').text()).toContain('game-456')
+    wrapper.find('.hof-review-modal').findAll('button').find(button => button.text() === 'hundredAdmin.close').trigger('click')
+    await flushPromises()
+
+    await switchToMark3(wrapper)
+    expect(wrapper.find('.hof-mark3 .hof-admin-table').text()).toContain('game-333')
+    await wrapper.find('.hof-mark3 .actions .btn-sm').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.hof-review-modal').text()).toContain('game-333')
   })
 })

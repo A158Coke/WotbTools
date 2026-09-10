@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { apiCodeLabel, apiErrorLabel, enumLabel, formatDateTimeMinute, replayValueLabel } from './display.js'
+import { apiCodeLabel, apiErrorCodeLabel, apiErrorLabel, enumLabel, formatDateTimeMinute, replayValueLabel } from './display.js'
 
 const values = {
   'boost.level.ELITE': 'Elite',
@@ -47,6 +47,12 @@ describe('display helpers', () => {
       .toBe('Server failed')
     expect(apiErrorLabel(t, te, { code: 'FUTURE_UNKNOWN_FAILURE' }))
       .toBe('Something went wrong')
+  })
+
+  it('localizes a bare bulk-delete errorCode and keeps unmapped codes readable', () => {
+    expect(apiErrorCodeLabel(t, te, 'PROFILE_NOT_FOUND')).toBe('Profile missing')
+    expect(apiErrorCodeLabel(t, te, 'BULK_LIMIT_EXCEEDED')).toBe('BULK_LIMIT_EXCEEDED')
+    expect(apiErrorCodeLabel(t, te, null)).toBe('')
   })
 
   it('formats local date-time to minutes and rejects invalid or pre-boundary values', () => {
