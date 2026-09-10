@@ -33,6 +33,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>三环 ownership 冲突（含「同账号同车同时存在 CURRENT 与 PENDING」的跨状态形态）→ 迁移失败；</li>
  *   <li>历史行区服无法从 user_profile 解析 → 迁移失败，**不猜区服**（尤其不默认 CN）。</li>
  * </ul>
+ *
+ * <p>失败后 schema 停留在 V21，因此诊断文本只能用 V21 列；该约束由
+ * {@link HofOwnershipMigrationDiagnosticsTest} 在无数据库环境下持续校验。</p>
  */
 @Testcontainers(disabledWithoutDocker = true)
 class HofOwnershipMigrationTest {
@@ -83,11 +86,9 @@ class HofOwnershipMigrationTest {
             assertFalse(indexExists(s, "uk_hundred_battle_pending_user_vehicle"));
             assertFalse(indexExists(s, "uk_hundred_battle_current_user_vehicle"));
             assertFalse(indexExists(s, "uk_mark3_submission_active_user_vehicle"));
-            assertTrue(indexDefinition(s, "uk_hundred_battle_current_account_vehicle")
-                            .contains("wotb_server"),
+            assertTrue(indexDefinition(s, "uk_hundred_battle_current_account_vehicle").contains("wotb_server"),
                     "唯一索引必须包含区服维度，否则跨服同号会互相顶掉");
-            assertTrue(indexDefinition(s, "uk_mark3_submission_active_account_vehicle")
-                            .contains("wotb_server"));
+            assertTrue(indexDefinition(s, "uk_mark3_submission_active_account_vehicle").contains("wotb_server"));
 
             // 关键：迁移不得改变任何业务状态
             assertEquals("CURRENT", scalar(s, "select status from hundred_battle_submission where id = 1"));
@@ -130,7 +131,8 @@ class HofOwnershipMigrationTest {
         final String message = fullMessage(failure);
         assertTrue(message.contains("V22 preflight failed"), message);
         assertTrue(message.contains("DUPLICATE ACTIVE ROWS"), message);
-        assertTrue(message.contains("vehicle=1001"), message);
+        assertTrue(message.contains("vehicle_id=1001"), message);
+        assertNoMisleadingBulkDeleteGuidance(message);
 
         assertV21StateUntouched(2, 1);
     }
@@ -156,9 +158,10 @@ class HofOwnershipMigrationTest {
         final String message = fullMessage(failure);
         assertTrue(message.contains("V22 preflight failed"), message);
         assertTrue(message.contains("DUPLICATE ACTIVE ROWS"), message);
-        assertTrue(message.contains("vehicle=3003"), message);
-        assertTrue(message.contains("vehicle=4004"),
+        assertTrue(message.contains("vehicle_id=3003"), message);
+        assertTrue(message.contains("vehicle_id=4004"),
                 "跨状态（CURRENT + PENDING）冲突必须一并报出: " + message);
+        assertNoMisleadingBulkDeleteGuidance(message);
 
         try (Connection c = connection(); Statement s = c.createStatement()) {
             assertEquals(4, count(s, "select count(*) from mark3_submission"),
@@ -186,6 +189,7 @@ class HofOwnershipMigrationTest {
         final FlywayException failure = assertThrows(FlywayException.class, this::migrateToLatest);
         final String message = fullMessage(failure);
         assertTrue(message.contains("UNRESOLVED SERVER"), message);
+        assertNoMisleadingBulkDeleteGuidance(message);
 
         try (Connection c = connection(); Statement s = c.createStatement()) {
             assertEquals(1, count(s, "select count(*) from hundred_battle_submission"));
@@ -301,6 +305,17 @@ class HofOwnershipMigrationTest {
 
     private void migrateToLatest() {
         flyway().migrate();
+    }
+
+    /**
+     * 诊断里提到本次新增的 bulk-delete 端点是允许的，但必须同时说明它在迁移失败时不可用，
+     * 否则会误导运维去找一个起不来的版本上的端点。
+     */
+    private static void assertNoMisleadingBulkDeleteGuidance(final String text) {
+        if (text.contains("bulk-delete")) {
+            assertTrue(text.contains("NOT available"),
+                    "提到 bulk-delete 时必须说明其在迁移失败时不可用: " + text);
+        }
     }
 
     private static String fullMessage(final Throwable throwable) {

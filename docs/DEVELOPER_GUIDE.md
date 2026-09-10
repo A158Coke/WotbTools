@@ -213,19 +213,31 @@ Battle 直接取该场 `tank_id`/`tank_name`（来源 `PlayerResult.tankId`）�
 
 **迁移 runbook（V22 preflight 失败）**：
 
+**前提**：preflight 失败时 V22 已整体回滚，schema 停留在 V21，因此检查命令只能用 V21 列
+（`user_keycloak_id` / `game_account_id_snapshot`）；`wotb_account_id` / `wotb_server` 此刻不存在，
+候选区服通过 `LEFT JOIN user_profile` 反推。
+
 ```text
 1) 读 Flyway 报错的 message / detail / hint：detail 直接列出前 20 个样例 id 或全部冲突键
-2) 区服无法解析：select id, user_keycloak_id, wotb_account_id, status
-                  from hundred_battle_submission where wotb_server is null;   -- 三环查 mark3_submission
+2) 区服无法解析（百场；三环把表名与列换成 mark3_submission）：
+     select s.id, s.user_keycloak_id, s.game_account_id_snapshot, s.status,
+            p.wotb_server as candidate_server
+       from hundred_battle_submission s
+       left join user_profile p
+         on p.keycloak_user_id = s.user_keycloak_id
+        and p.wotb_account_id = s.game_account_id_snapshot
+      where p.wotb_server is null;
    → 恢复 / 重绑该行所属 profile（让回填能取到区服），或有意删除这些行
-3) ownership 冲突：人工比对 approved_average_damage / submitted_at 等，由人决定保留哪一条
-4) 用 Admin bulk-delete 或单条 delete 清理其余记录
-     POST /api/admin/hof/hundred/submissions/bulk-delete
-     POST /api/admin/hof/mark3/submissions/bulk-delete
-5) 重跑迁移（Flyway 重新执行 V22）
+3) ownership 冲突：按 候选区服 + game_account_id_snapshot + vehicle_id [+ status] 自行分组后
+   人工比对 approved_average_damage / submitted_at 等，由人决定保留哪一条
+4) 有意清理其余记录，然后重跑迁移（Flyway 重新执行 V22）
 ```
 
-> 已知缺口（待产品决策，非本 PR 范围）：两个域的 delete / bulk-delete 都只接受 `CURRENT`，被 preflight 点名的 `PENDING` 行目前没有受支持的 admin 处置路径。
+**失败时刻的处置工具可用性**：新版本起不来，本次新增的 bulk-delete 端点不可用；只有旧版本提供的
+`POST /api/admin/hof/{hundred,mark3}/submissions/{id}/delete` 可用，且只接受 `CURRENT`。非 `CURRENT` 的行
+（如被点名的 `PENDING`）需要运维显式 DB 动作，且 evidence 外键为 `RESTRICT`，删 submission 前先删证据行。
+
+> 已知缺口（待产品决策，非本 PR 范围）：被 preflight 点名的 `PENDING` 行目前没有受支持的 admin 处置路径。
 
 详细契约见 `docs/features/hall-of-fame.md`（含三个域的删除语义对照与 IAM≠HoF 不变量）。
 
