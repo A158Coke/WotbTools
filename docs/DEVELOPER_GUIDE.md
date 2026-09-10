@@ -145,7 +145,8 @@ component scanning stay stable. `wotb-web` remains the only container/JVM/Boot r
 depend on `wotb-result`, `wotb-playback`, `wotb-replay-coordinator`,
 `wotb-replay-processing`, and `wotb-ai`; none of those feature modules may depend on
 `wotb-web`. The coordinator owns lifecycle/state and consumes the value-only
-`ReplayProcessingDispatcher` port declared in `wotb-contracts`;
+`ReplayProcessingDispatcher` port declared in `wotb-contracts`; local execution publishes
+in-process lifecycle value events, which are not a future RabbitMQ wire contract.
 the processing module owns the current `LocalReplayProcessingDispatcher`, scheduler and local
 full-processing executor. This is an in-process seam only: no MQ, worker executable, object
 storage or cross-process callback is part of the current runtime.

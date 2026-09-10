@@ -6,7 +6,10 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.parse.Replays;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.replay.processing.ReplayProcessingLifecycle;
+import com.wotb.core.replay.processing.ReplayProcessingJobCompleted;
+import com.wotb.core.replay.processing.ReplayProcessingJobStarted;
 import com.wotb.core.replay.processing.ReplayProcessingSourceOutcome;
+import com.wotb.core.replay.processing.ReplayProcessingSourceStarted;
 import com.wotb.contracts.ReplayProcessingDispatcher;
 import com.wotb.contracts.ReplayProcessingRequest;
 import com.wotb.contracts.ReplayProcessingSource;
@@ -21,6 +24,7 @@ import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -196,10 +200,9 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         return job;
     }
 
-    @Override
-    public boolean isCancelled(final String jobId) {
-        final ReplayProcessingJob job = store.get(jobId);
-        return job == null || job.isCancelled();
+    @EventListener
+    void onJobStarted(final ReplayProcessingJobStarted event) {
+        jobStarted(event.jobId());
     }
 
     @Override
@@ -217,6 +220,11 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         if (job != null && !job.isCancelled()) job.markSourceProcessing(sourceIndex, sourceName);
     }
 
+    @EventListener
+    void onSourceStarted(final ReplayProcessingSourceStarted event) {
+        sourceStarted(event.jobId(), event.sourceIndex(), event.sourceName());
+    }
+
     @Override
     public void sourceCompleted(final ReplayProcessingSourceOutcome outcome) {
         final ReplayProcessingJob job = store.get(outcome.jobId());
@@ -231,10 +239,20 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         }
     }
 
+    @EventListener
+    void onSourceCompleted(final ReplayProcessingSourceOutcome outcome) {
+        sourceCompleted(outcome);
+    }
+
     @Override
     public void jobCompleted(final String jobId) {
         final ReplayProcessingJob job = store.get(jobId);
         if (job != null) finalizeJob(job, job.entriesInOrder());
+    }
+
+    @EventListener
+    void onJobCompleted(final ReplayProcessingJobCompleted event) {
+        jobCompleted(event.jobId());
     }
 
     /**

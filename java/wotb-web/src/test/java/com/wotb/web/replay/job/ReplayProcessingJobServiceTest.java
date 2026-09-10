@@ -1117,7 +1117,8 @@ class ReplayProcessingJobServiceTest {
                                                      final MeterRegistry meterRegistry) {
         final ReplayProcessingJobService local = new ReplayProcessingJobService(
                 store, new LocalReplayProcessingDispatcher(parseScheduler), meterRegistry);
-        parseScheduler.configureWorker(new LocalReplayProcessingExecutor(facade, tmpDir, local, meterRegistry), local);
+        parseScheduler.configureWorker(new LocalReplayProcessingExecutor(
+                facade, tmpDir, local, meterRegistry, parseScheduler.cancellationRegistry()), local);
         return local;
     }
 }
