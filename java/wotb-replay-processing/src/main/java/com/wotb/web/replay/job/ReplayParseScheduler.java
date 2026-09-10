@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayDeque;
@@ -117,7 +118,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
             @Value("${wotb.replay.parse.queue-capacity:200}") final int maxQueuedSources,
             @Autowired(required = false) final MeterRegistry meterRegistry,
             final LocalReplayProcessingExecutor sourceExecutor,
-            final ReplayProcessingLifecycle lifecycle) {
+            @Lazy final ReplayProcessingLifecycle lifecycle) {
         if (maxConcurrent < 1) {
             throw new IllegalArgumentException("replay parse max-concurrent must be >= 1: " + maxConcurrent);
         }
