@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -46,6 +47,12 @@ public class ReplayProcessingJobStore {
     private final ConcurrentHashMap<String, String> operationIndex = new ConcurrentHashMap<>();
     /** 反向索引：processingJobId → operationIndex key（job 被移除时同步清理，不留悬挂 identity）。 */
     private final ConcurrentHashMap<String, String> jobOperationKeys = new ConcurrentHashMap<>();
+    /**
+     * In-flight operation 协调：identity key → creator 的 future（creator 完成后 complete(jobId)，
+     * 失败则 completeExceptionally）。duplicate caller 等待同一个 future，因此绝不会在
+     * `dispatcher.submit` 成功之前拿到 jobId，也不会各自 submit 出两个 job。
+     */
+    private final ConcurrentHashMap<String, CompletableFuture<String>> inFlightOperations = new ConcurrentHashMap<>();
     /**
      * processingJobId → 活跃 Dataset Lease 数（AI / Playback / Export 共享，
      * acquire/release 配对；语义命名，不再叫 export refs）。
@@ -120,25 +127,52 @@ public class ReplayProcessingJobStore {
     }
 
     /**
-     * 原子登记 operation identity → jobId。
+     * 尝试成为该 operation identity 的 **creator**（in-flight 协调，取代「submit 前 publish」的错误 commit point）。
      *
-     * @return {@code null} 表示登记成功（本 job 拥有该 identity）；否则返回**已存在**的 jobId——
-     *         并发同 key 时先到者胜出，调用方必须放弃自己刚创建、尚未提交调度器的那个 job。
+     * @return {@code null} = 本次调用是 creator：必须完成 create + `dispatcher.submit`，成功后
+     *         {@link #commitOperation} 再 {@code mine.complete(jobId)}，失败则 {@link #abandonOperation}
+     *         并 {@code mine.completeExceptionally(...)}；
+     *         非 null = 已有 creator 在跑，调用方必须等待这个 future（绝不自行创建第二个 job，
+     *         也绝不读到一个「尚未提交调度器、随后可能被 QUEUE_FULL 清理」的 jobId）。
      */
-    public String registerOperation(final String ownerSubject, final String operationId, final String jobId) {
+    public CompletableFuture<String> startOperation(final String ownerSubject, final String operationId,
+                                                    final CompletableFuture<String> mine) {
         if (!hasOperationIdentity(ownerSubject, operationId)) {
             return null;
         }
-        final String key = operationKey(ownerSubject, operationId);
-        final String existing = operationIndex.putIfAbsent(key, jobId);
-        if (existing != null) {
-            return existing;
-        }
-        jobOperationKeys.put(jobId, key);
-        return null;
+        return inFlightOperations.putIfAbsent(operationKey(ownerSubject, operationId), mine);
     }
 
-    private static boolean hasOperationIdentity(final String ownerSubject, final String operationId) {
+    /**
+     * creator 成功把 job 交给调度器之后 publish committed identity：此后 {@link #jobIdForOperation}
+     * 可直接命中；同时撤销 reservation。
+     */
+    public void commitOperation(final String ownerSubject, final String operationId,
+                                final CompletableFuture<String> mine, final String jobId) {
+        if (!hasOperationIdentity(ownerSubject, operationId)) {
+            return;
+        }
+        final String key = operationKey(ownerSubject, operationId);
+        operationIndex.put(key, jobId);
+        jobOperationKeys.put(jobId, key);
+        inFlightOperations.remove(key, mine);
+    }
+
+    /**
+     * creator 失败（QUEUE_FULL / 存储失败 / 其它异常）：撤销 reservation，绝不留下 committed identity，
+     * 使同一 operationId 的后续请求可以重新创建一个有效 job。等待中的 duplicate 由 creator 侧
+     * {@code completeExceptionally} 一起失败。
+     */
+    public void abandonOperation(final String ownerSubject, final String operationId,
+                                 final CompletableFuture<String> mine) {
+        if (!hasOperationIdentity(ownerSubject, operationId)) {
+            return;
+        }
+        inFlightOperations.remove(operationKey(ownerSubject, operationId), mine);
+    }
+
+    /** identity 合法性（service 与 store 共用同一判定，避免两处规则漂移）。 */
+    public static boolean hasOperationIdentity(final String ownerSubject, final String operationId) {
         return ownerSubject != null && !ownerSubject.isBlank()
                 && operationId != null && !operationId.isBlank();
     }

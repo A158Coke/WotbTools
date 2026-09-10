@@ -93,7 +93,14 @@ getPendingReplay → fetch(content://) → await onPendingFile(file, pending) �
   Native 不再负责重试。
 - **可重放安全**：Web 把 `pendingId` 作为 create 的 multipart 字段 `operationId` 传给后端；同一已认证
   subject + 同一 `operationId` 幂等返回同一个 job。因此「server 已接受 → ACK 前 process death →
-  冷启动重新导入同一份 pending」不会创建第二个 Processing Job。
+  冷启动重新导入同一份 pending」不会创建第二个 Processing Job。后端 identity 只在调度器接受
+  （`dispatcher.submit` 成功）之后才 publish：并发同 identity 时唯一 creator 负责创建并提交、其余
+  duplicate 等待同一 future，creator 失败（如 `PROCESSING_QUEUE_FULL`）时两个 caller 一起失败，
+  绝不返回随后被清理的 jobId，也不产生两个 job。
+- **单飞 + deferred drain**：Web 同时最多跑一个 import；import 进行中到达的 Native 通知
+  （`window.wotbtoolsOnReplay()`）绝不被丢弃——只 coalesce 成一次 rerun，当前 import 结束后立即再
+  drain 一次 Native pending。因此「A 处理中 Android 又收到 replay B，Native 只通知一次」时，B 会在 A
+  完成后自动被处理：不需要用户再打开一次文件，也不需要外部第二次触发。
 - 未登录、未受理、读取失败或抛错：**不 ACK**，Native pending 原样保留供重试；Web 侧以 `inflight`
   防并发、以 `pendingId` 集合防同一份 pending 重复注入。同一 pending 的重复回调只允许一次
   in-flight processing create。
