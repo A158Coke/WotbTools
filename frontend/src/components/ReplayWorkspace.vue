@@ -1,5 +1,6 @@
 <script setup>
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { displayName } from '../utils/helpers.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -25,6 +26,7 @@ const props = defineProps({
 })
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
+const { t } = useI18n()
 const { initPromise: authInit, authenticated, login, loginInFlight } = useAuth()
 
 /** auth init 是否已结束（结束前不得渲染/执行任何 replay 业务动作）。 */
@@ -63,6 +65,7 @@ async function importPendingFile(file, pending) {
 const { consumePendingWhenReady } = useNativeReplayImport({
   isAuthenticated: () => authenticated.value,
   onPendingFile: importPendingFile,
+  onReadError: () => { error.value = t('workspace.native_replay_read_failed') },
 })
 
 const capabilityOptions = [
@@ -248,6 +251,13 @@ watch(() => props.initialCapability, (val) => {
         @dismiss="dismissProcessingJob"
       />
       <p v-if="error" class="error">{{ error }}</p>
+      <button
+        v-if="error === t('workspace.native_replay_read_failed')"
+        type="button"
+        class="auth-gate-action"
+        data-testid="ws-native-retry"
+        @click="consumePendingWhenReady"
+      >{{ $t('workspace.native_replay_retry') }}</button>
 
       <div class="workspace-content">
         <ReplayPage
