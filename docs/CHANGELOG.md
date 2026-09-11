@@ -13,6 +13,14 @@
   或跨进程回调，HTTP 路由、认证、错误 envelope 和指标契约不变。
 
 ### Replay / Auth
+- **Auth bootstrap watchdog and generation recovery**：`useAuth` now exposes an explicit init state
+  (`idle` / `initializing` / `authenticated` / `unauthenticated` / `failed`) with a 12-second
+  app-level watchdog. A timed-out or rejected bootstrap leaves a visible recovery state instead of
+  treating failure as anonymous access; retry and login recovery create a fresh Keycloak adapter
+  generation, while stale late completions are ignored. Normal Web/Android `check-sso` and QQ
+  native return navigation remain unchanged; only the recovery transaction omits the silent iframe.
+  Diagnostics record phase, generation, platform and elapsed time only, never auth credentials or
+  replay contents.
 - **登录发起失败不再被静默吞掉**：`ReplayWorkspace.requestLogin` 由 `Promise.resolve().then(login).catch(() => {})` 改为把失败交回项目统一错误 UI（`useError` → AppShell 的 `GlobalErrorDialog`）。用户主动发起（点 capability tab / 点登录按钮）失败时可见并有明确文案（三语）；挂载时的自动登录失败不弹窗（auth gate 本身已是确定且可重试的可见表面）。仍只释放 in-flight、不写任何 component-lifetime 状态，因此失败/取消后随时可再次点击重试；`useAuth.login()` 的同一个进行中 redirect 去重语义不变。PR286/290 的 Android external replay auth/pending 状态机未改动。
 - **Replay Workspace retryable auth gate**：删除 `ReplayWorkspace` 的 component-lifetime `loginAttempted` 一次性锁，Workspace 改为三态 UI gate（auth 检查中 / Login Required + 可重试登录 / 工作台）：未登录不再渲染 Source panel、上传器与任何 capability 面板，`useAuth.login()` 只对「同一个进行中的 redirect」去重（`loginInFlight` 短生命周期 ref，`finally` 释放），登录失败或取消后可从 capability tabs、登录按钮或 UserMenu 重新发起，不再出现点击 tab 静默 no-op。
 - **Processing Job 授权收紧（前后端同一 PR）**：`/api/replay/processing-jobs/**`（POST 创建 / GET 状态 / GET result / DELETE 取消）由 `permitAll()` 改为要求 `wotbtools-user` 或 `wotbtools-admin`（匿名 401 `AUTH_UNAUTHENTICATED`、已登录无角色 403 `AUTH_FORBIDDEN`）；前端 `src/api/replay.ts` 四条端点统一 `ensureToken(30)` + `Authorization: Bearer`（XHR 上传进度保留，不覆盖 multipart `Content-Type`/boundary），401/403 继续走统一 error contract。`/api/preview` 与 `/api/export`（legacy）的公开契约不变；`/api/replay/export-jobs/**` 随后与 Processing 同级收紧（见下）。

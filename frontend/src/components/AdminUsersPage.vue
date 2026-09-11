@@ -41,7 +41,7 @@ const bulkResult = ref(null)
 let userLoadGeneration = 0
 let detailLoadGeneration = 0
 
-const { initPromise, keycloak } = useAuth()
+const { initPromise, ensureToken: ensureAuthToken, login } = useAuth()
 
 function apiError(error) {
   return apiErrorLabel(t, te, error)
@@ -53,10 +53,8 @@ function errorCodeLabel(code) {
 
 async function ensureToken() {
   await initPromise
-  try {
-    await keycloak.updateToken(5)
-  } catch {
-    keycloak.login()
+  if (!(await ensureAuthToken(5))) {
+    login()
     throw new ApiError({ code: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false })
   }
 }
