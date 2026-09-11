@@ -8,7 +8,14 @@
  * 本模块是异步 RPC（postMessage → reply 'message' 事件），只做能力查询与 pending replay 交接，
  * 绝不借此调用任何系统能力（readFile / http / execute / launch）。Vue 业务用 supports() 能力探测。
  */
+import {
+  LEGACY_NATIVE_BRIDGE_REQUIRED_CAPABILITIES,
+  LEGACY_PR290_REPLAY_RESOURCE_URL,
+  SUPPORTED_NATIVE_BRIDGE_VERSIONS,
+} from '../platform/nativeBridgeContract.js'
+
 const BRIDGE_KEY = 'WotbNative'
+const BRIDGE_RPC_TIMEOUT_MS = 5000
 
 let seq = 0
 
@@ -29,7 +36,12 @@ function call(method, params = {}) {
       resolve(null)
       return
     }
+    if (typeof b.addEventListener !== 'function') {
+      resolve(null)
+      return
+    }
     const id = ++seq
+    let timeoutId
     const handler = (e) => {
       let data = e.data
       if (typeof data === 'string') {
@@ -39,17 +51,43 @@ function call(method, params = {}) {
         if (typeof b.removeEventListener === 'function') {
           b.removeEventListener('message', handler)
         }
+        clearTimeout(timeoutId)
         resolve(data.result)
       }
     }
     b.addEventListener('message', handler)
     b.postMessage(JSON.stringify({ id, method, params }))
+    timeoutId = setTimeout(() => {
+      if (typeof b.removeEventListener === 'function') {
+        b.removeEventListener('message', handler)
+      }
+      resolve(null)
+    }, BRIDGE_RPC_TIMEOUT_MS)
   })
 }
 
 export async function getCapabilities() {
   const c = await call('getCapabilities')
   return Array.isArray(c) ? c : []
+}
+
+export async function getNativeBridgeVersion() {
+  const version = await call('getBridgeVersion')
+  return Number.isInteger(version) ? version : null
+}
+
+export function isNativeBridgeCompatible(version) {
+  return SUPPORTED_NATIVE_BRIDGE_VERSIONS.includes(version)
+}
+
+export function isLegacyNativeReplayContractCompatible({
+  bridgeVersion,
+  capabilities = [],
+  pending,
+}) {
+  return bridgeVersion === null
+    && LEGACY_NATIVE_BRIDGE_REQUIRED_CAPABILITIES.every(capability => capabilities.includes(capability))
+    && pending?.uri === LEGACY_PR290_REPLAY_RESOURCE_URL
 }
 
 export async function supports(capability) {
@@ -82,6 +120,9 @@ export function usePlatformBridge() {
   return {
     isAndroidApp,
     getCapabilities,
+    getNativeBridgeVersion,
+    isNativeBridgeCompatible,
+    isLegacyNativeReplayContractCompatible,
     supports,
     getPendingReplay,
     consumePendingReplay,

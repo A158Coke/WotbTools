@@ -682,6 +682,8 @@ class MainActivity : Activity() {
 
     // ── Native Bridge 白名单能力（供 Vue 端；origin-scoped）──
 
+    fun bridgeVersion(): Int = BuildConfig.NATIVE_BRIDGE_VERSION
+
     fun bridgeCapabilities(): List<String> = listOf("replay-share", "replay-open", "app-update")
 
     /**

@@ -10,7 +10,12 @@ const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.
  * Native 侧替身：`consumePendingReplay` 实现 **compare-and-clear**
  * （只有 expected pendingId 与当前 pending 完全一致才清理），与 Android 侧一致。
  */
-function stubNative(pending, consumeResult = true) {
+function stubNative(
+  pending,
+  consumeResult = true,
+  bridgeVersion = 1,
+  capabilities = bridgeVersion === null ? ['replay-open', 'replay-share'] : [],
+) {
   const listeners = []
   const methods = []
   const consumeRequests = []
@@ -22,7 +27,9 @@ function stubNative(pending, consumeResult = true) {
       methods.push(msg.method)
       listeners.forEach(cb => {
         let result
-        if (msg.method === 'getPendingReplay') {
+        if (msg.method === 'getBridgeVersion') {
+          result = bridgeVersion
+        } else if (msg.method === 'getPendingReplay') {
           result = cleared ? null : current
         } else if (msg.method === 'consumePendingReplay') {
           consumeRequests.push(msg.params || {})
@@ -35,6 +42,8 @@ function stubNative(pending, consumeResult = true) {
           } else {
             result = false
           }
+        } else if (msg.method === 'getCapabilities') {
+          result = capabilities
         } else {
           result = null
         }
@@ -66,6 +75,83 @@ function stubFetchBlob() {
 }
 
 describe('useNativeReplayImport', () => {
+
+  it('supports production legacy 1.4.2 Native via its known replay capabilities', async () => {
+    const native = stubNative(PENDING_A, true, null)
+    stubFetchBlob()
+    const onPendingFile = vi.fn(async () => true)
+    const onReadError = vi.fn()
+    const { consumePendingWhenReady } = useNativeReplayImport({
+      isAuthenticated: () => true,
+      onPendingFile,
+      onReadError,
+    })
+
+    await expect(consumePendingWhenReady()).resolves.toBe(true)
+    expect(onPendingFile).toHaveBeenCalledTimes(1)
+    expect(native.consumeRequests).toEqual([{ expectedPendingId: PENDING_A.pendingId }])
+    expect(onReadError).not.toHaveBeenCalledWith('native-client-upgrade-required')
+  })
+
+  it('fails safely when Native Bridge version is incompatible', async () => {
+    const native = stubNative(PENDING_A, true, 2)
+    const onPendingFile = vi.fn(async () => true)
+    const onReadError = vi.fn()
+    const { consumePendingWhenReady } = useNativeReplayImport({
+      isAuthenticated: () => true,
+      onPendingFile,
+      onReadError,
+    })
+
+    await expect(consumePendingWhenReady()).resolves.toBe(false)
+    expect(onPendingFile).not.toHaveBeenCalled()
+    expect(onReadError).toHaveBeenCalledWith('native-client-upgrade-required')
+    expect(native.methods).not.toContain('getPendingReplay')
+    expect(native.getCurrent()).toEqual(PENDING_A)
+  })
+
+  it('rejects legacy content URI without fetch, import, or ACK', async () => {
+    const pending = {
+      pendingId: 'legacy-141-pending',
+      name: 'legacy.wotbreplay',
+      size: 5,
+      uri: 'content://com.wotbtools/replay/legacy.wotbreplay',
+    }
+    const native = stubNative(pending, true, null, ['replay-open', 'replay-share', 'app-update'])
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const onPendingFile = vi.fn(async () => true)
+    const onReadError = vi.fn()
+    const { consumePendingWhenReady } = useNativeReplayImport({
+      isAuthenticated: () => true,
+      onPendingFile,
+      onReadError,
+    })
+
+    await expect(consumePendingWhenReady()).resolves.toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(onPendingFile).not.toHaveBeenCalled()
+    expect(native.consumeRequests).toEqual([])
+    expect(native.getCurrent()).toEqual(pending)
+    expect(onReadError).toHaveBeenCalledWith('native-client-upgrade-required')
+  })
+
+  it('defers a legacy client with no pending replay without upgrade error', async () => {
+    const native = stubNative(null, true, null, ['replay-open', 'replay-share', 'app-update'])
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const onReadError = vi.fn()
+    const { consumePendingWhenReady } = useNativeReplayImport({
+      isAuthenticated: () => true,
+      onReadError,
+    })
+
+    await expect(consumePendingWhenReady()).resolves.toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(native.consumeRequests).toEqual([])
+    expect(onReadError).not.toHaveBeenCalledWith('native-client-upgrade-required')
+    expect(native.getCurrent()).toBeNull()
+  })
 
   it.each(['http', 'network', 'body'])('retains pending on %s read failure and succeeds on retry', async (failure) => {
     const native = stubNative(PENDING_A)

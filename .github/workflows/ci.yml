@@ -213,6 +213,69 @@ jobs:
       - name: Release helper unit tests
         run: bash scripts/android-release/test-release.sh
 
+  android-contract:
+    name: Android Contract (version, bridge, breaking-change gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Validate committed Android contract
+        run: |
+          set -euo pipefail
+          python3 scripts/android-release/android_contract.py validate \
+            --contract contracts/android-native-bridge.json \
+            --gradle-properties android/gradle.properties \
+            --frontend frontend/src/platform/nativeBridgeContract.js \
+            --native-source android/app/src/main/java/com/wotbtools/app/NativeBridge.kt \
+            --native-source android/app/src/main/java/com/wotbtools/app/MainActivity.kt \
+            --native-source android/app/src/main/java/com/wotbtools/app/ReplayIntentHandler.kt
+          bash scripts/android-release/test-android-contract.sh
+      - name: Enforce version and bridge compatibility against base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git show "$BASE_SHA:android/gradle.properties" > /tmp/base-gradle.properties
+          if git cat-file -e "$BASE_SHA:contracts/android-native-bridge.json" 2>/dev/null; then
+            git show "$BASE_SHA:contracts/android-native-bridge.json" > /tmp/base-android-native-bridge.json
+          else
+            # First introduction of the contract has no historical JSON baseline;
+            # validate the committed head contract now and start breaking diffs
+            # from this SSOT on the next PR.
+            cp contracts/android-native-bridge.json /tmp/base-android-native-bridge.json
+          fi
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > /tmp/android-changed-paths.txt
+          BASE_VERSION="$(sed -n 's/^wotbVersion=//p' /tmp/base-gradle.properties | head -n1)"
+          HEAD_VERSION="$(sed -n 's/^wotbVersion=//p' android/gradle.properties | head -n1)"
+          INITIAL_VERSION_BASELINE=false
+          if [ -z "$BASE_VERSION" ]; then
+            # First introduction of Version-as-Code has no historical version;
+            # use the committed head as the initial baseline.
+            BASE_VERSION="$HEAD_VERSION"
+            INITIAL_VERSION_BASELINE=true
+          fi
+          FE_VERSIONS="$(python3 - <<'PY'
+          import re
+          text = open('frontend/src/platform/nativeBridgeContract.js', encoding='utf-8').read()
+          match = re.search(r'SUPPORTED_NATIVE_BRIDGE_VERSIONS\s*=\s*Object\.freeze\(\[([^\]]*)\]\)', text)
+          if not match:
+              raise SystemExit('frontend supported Native Bridge versions declaration is missing')
+          print(','.join(re.findall(r'\b[0-9]+\b', match.group(1))))
+          PY
+          )"
+          python3 scripts/android-release/android_contract.py gate \
+            --base-contract /tmp/base-android-native-bridge.json \
+            --head-contract contracts/android-native-bridge.json \
+            --base-version "$BASE_VERSION" \
+            --head-version "$HEAD_VERSION" \
+            --paths /tmp/android-changed-paths.txt \
+            --frontend-versions "$FE_VERSIONS" \
+            $([ "$INITIAL_VERSION_BASELINE" = true ] && echo --initial-version-baseline)
+
   observability-config:
     name: Observability config validation
     runs-on: ubuntu-latest
@@ -406,9 +469,11 @@ jobs:
       - name: bash -n deploy.sh
         run: bash -n deploy/deploy.sh
       - name: bash -n observability verification scripts
-        run: bash -n deploy/deploy.sh deploy/verify-observability.sh deploy/test-keycloak-runtime.sh deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh deploy/test-deploy-rollback.sh deploy/test-nginx-grafana-recreate.sh deploy/test-build-workflow.sh
+        run: bash -n deploy/deploy.sh deploy/verify-observability.sh deploy/test-keycloak-runtime.sh deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh deploy/test-deploy-rollback.sh deploy/test-nginx-grafana-recreate.sh deploy/test-build-workflow.sh deploy/test-release-plan.sh
       - name: Build workflow frozen-commit contract
         run: bash deploy/test-build-workflow.sh
+      - name: Build/Deploy changed-target and manifest contract
+        run: bash deploy/test-release-plan.sh
       - name: Production compose config validation
         env:
           TAG: sha-ci
