@@ -33,6 +33,7 @@ else:
 
 assert runtime_path("android/app/src/main/java/com/wotbtools/app/MainActivity.kt")
 assert runtime_path("android/app/build.gradle.kts")
+assert not runtime_path("android/gradle.properties")
 assert not runtime_path("android/app/src/test/java/com/wotbtools/app/MainActivityTest.kt")
 assert not runtime_path("docs/android/release-process.md")
 validate_native_sources(base := json.loads((root / "contracts/android-native-bridge.json").read_text()), [
@@ -67,24 +68,24 @@ with tempfile.TemporaryDirectory() as temp:
     base_path.write_text(json.dumps(base))
     head_path.write_text(json.dumps(additive))
 
-    def run_gate(head, version, paths, frontend_version=1):
+    def run_gate(head, version, paths, frontend_versions="1"):
         head_path.write_text(json.dumps(head))
         paths_path.write_text("\n".join(paths) + "\n")
         return subprocess.run([
             sys.executable, str(root / "scripts/android-release/android_contract.py"), "gate",
             "--base-contract", str(base_path), "--head-contract", str(head_path),
             "--base-version", "1.4.2", "--head-version", version, "--paths", str(paths_path),
-            "--frontend-version", str(frontend_version),
+            "--frontend-versions", frontend_versions,
         ]).returncode
 
     assert run_gate(additive, "1.4.2", ["docs/android/release-process.md"]) == 0
     assert run_gate(additive, "1.4.2", ["android/app/src/main/MainActivity.kt"]) != 0
     assert run_gate(additive, "1.4.3", ["android/app/src/main/MainActivity.kt"]) == 0
-    assert run_gate(additive, "1.4.2", ["docs/android/release-process.md"], frontend_version=2) != 0
+    assert run_gate(additive, "1.4.2", ["docs/android/release-process.md"], frontend_versions="2") != 0
     assert run_gate(breaking, "1.4.2", ["docs/android/release-process.md"]) != 0
     breaking_bumped = json.loads(json.dumps(breaking))
     breaking_bumped["bridgeVersion"] = 2
-    assert run_gate(breaking_bumped, "1.4.2", ["docs/android/release-process.md"], frontend_version=2) == 0
+    assert run_gate(breaking_bumped, "1.4.2", ["docs/android/release-process.md"], frontend_versions="1,2") == 0
 
 print("Android contract tests passed")
 PY

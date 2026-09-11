@@ -37,6 +37,8 @@ function stubNative(pending, consumeResult = true, bridgeVersion = 1) {
           } else {
             result = false
           }
+        } else if (msg.method === 'getCapabilities') {
+          result = bridgeVersion === null ? ['replay-open', 'replay-share'] : []
         } else {
           result = null
         }
@@ -69,8 +71,25 @@ function stubFetchBlob() {
 
 describe('useNativeReplayImport', () => {
 
+  it('supports production legacy 1.4.2 Native via its known replay capabilities', async () => {
+    const native = stubNative(PENDING_A, true, null)
+    stubFetchBlob()
+    const onPendingFile = vi.fn(async () => true)
+    const onReadError = vi.fn()
+    const { consumePendingWhenReady } = useNativeReplayImport({
+      isAuthenticated: () => true,
+      onPendingFile,
+      onReadError,
+    })
+
+    await expect(consumePendingWhenReady()).resolves.toBe(true)
+    expect(onPendingFile).toHaveBeenCalledTimes(1)
+    expect(native.consumeRequests).toEqual([{ expectedPendingId: PENDING_A.pendingId }])
+    expect(onReadError).not.toHaveBeenCalledWith('native-client-upgrade-required')
+  })
+
   it('fails safely when Native Bridge version is incompatible', async () => {
-    stubNative(PENDING_A, true, 2)
+    const native = stubNative(PENDING_A, true, 2)
     const onPendingFile = vi.fn(async () => true)
     const onReadError = vi.fn()
     const { consumePendingWhenReady } = useNativeReplayImport({
@@ -82,6 +101,7 @@ describe('useNativeReplayImport', () => {
     await expect(consumePendingWhenReady()).resolves.toBe(false)
     expect(onPendingFile).not.toHaveBeenCalled()
     expect(onReadError).toHaveBeenCalledWith('native-client-upgrade-required')
+    expect(native.getCurrent()).toEqual(PENDING_A)
   })
 
   it.each(['http', 'network', 'body'])('retains pending on %s read failure and succeeds on retry', async (failure) => {

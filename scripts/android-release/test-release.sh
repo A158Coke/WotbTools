@@ -11,14 +11,25 @@ trap 'rm -rf "$TMP"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
+import sys
+import yaml
+
+workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+trigger = workflow.get(True, workflow.get("on", {}))
+push = trigger["push"]
+assert "android/gradle.properties" in push["paths"], "Android release must be version-triggered"
+assert "android-v*" in push["tags"], "Android tag recovery trigger is missing"
+PY
+
 resolve() {
   WOTB_ROOT="$ROOT" WOTB_TRIGGER="$1" WOTB_TAG_NAME="${2:-}" WOTB_COMMIT="deadbeef" bash "$RESOLVE"
 }
 
-resolve workflow_dispatch | grep -q '^versionName=1.4.2$' || fail "committed version authority"
-resolve workflow_dispatch | grep -q '^versionCode=1004002$' || fail "versionCode formula"
+resolve workflow_dispatch | grep -q '^versionName=1.4.3$' || fail "committed version authority"
+resolve workflow_dispatch | grep -q '^versionCode=1004003$' || fail "versionCode formula"
 resolve workflow_dispatch | grep -q '^nativeBridgeVersion=1$' || fail "bridge version from contract"
-resolve push android-v1.4.2 | grep -q '^tagName=android-v1.4.2$' || fail "compatible tag"
+resolve push android-v1.4.3 | grep -q '^tagName=android-v1.4.3$' || fail "compatible tag"
 if resolve push android-v9.9.9 >/dev/null 2>&1; then fail "mismatched tag must fail"; fi
 
 python3 "$ROOT/scripts/android-release/android_contract.py" version 1.0.2 | grep -q '1000002' || fail "version parser"

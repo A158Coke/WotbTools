@@ -75,6 +75,7 @@ OBSERVABILITY_DEPLOY_PATTERNS = {
     "grafana": ("deploy/observability/grafana/provisioning/**",),
 }
 COMMON_BUILD_PATTERNS = (".dockerignore",)
+IMAGE_TAG_SHA_LENGTH = 12
 
 
 def _matches(path: str, pattern: str) -> bool:
@@ -204,13 +205,13 @@ def validate_manifest(manifest: dict[str, object], expected_sha: str | None = No
     if manifest["schemaVersion"] != 1:
         raise ValueError("unsupported manifest schemaVersion")
     commit_sha = manifest["commitSha"]
-    image_tag = manifest["imageTag"]
+    manifest_image_tag = manifest["imageTag"]
     if not isinstance(commit_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", commit_sha):
         raise ValueError("manifest commitSha must be a full lowercase commit SHA")
     if expected_sha is not None and commit_sha != expected_sha:
         raise ValueError(f"manifest commitSha {commit_sha} does not match release SHA {expected_sha}")
-    expected_tag = f"sha-{commit_sha[:7]}"
-    if image_tag != expected_tag:
+    expected_tag = image_tag(commit_sha)
+    if manifest_image_tag != expected_tag:
         raise ValueError(f"manifest imageTag must be {expected_tag}")
     if not isinstance(manifest["buildRunNumber"], int) or manifest["buildRunNumber"] < 1:
         raise ValueError("manifest buildRunNumber must be a positive integer")
@@ -232,6 +233,10 @@ def validate_manifest(manifest: dict[str, object], expected_sha: str | None = No
         if service in IMAGE_SERVICE_BY_DEPLOY_SERVICE and service not in image_services:
             raise ValueError(f"deploy service {service} has no corresponding built image")
     return manifest
+
+
+def image_tag(commit_sha: str) -> str:
+    return f"sha-{commit_sha[:IMAGE_TAG_SHA_LENGTH]}"
 
 
 def _valid_service_list(value: object) -> bool:

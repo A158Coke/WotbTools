@@ -8,6 +8,8 @@ on:
   push:
     branches:
       - main
+    paths:
+      - android/gradle.properties
     tags:
       - "android-v*"
   workflow_dispatch:

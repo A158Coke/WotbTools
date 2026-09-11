@@ -21,6 +21,8 @@ changes = build_jobs["changes"]
 checkout = next(step for step in changes["steps"] if step.get("uses") == "actions/checkout@v5")
 assert checkout["with"]["ref"] == "${{ github.sha }}", "Build must freeze the triggering commit"
 assert "paths:" not in build_text, "Build must create a no-op manifest for docs-only pushes"
+assert 'short_sha="${commit_sha:0:12}"' in build_text, "Build must use the deterministic 12-char SHA tag"
+assert "rev-parse --short" not in build_text, "Build must not use git's nondeterministic abbreviation"
 for output in ("commit_sha", "tag", "backend", "frontend", "keycloak", "deploy_services", "image_services"):
     assert output in changes["outputs"], f"Build changes output missing: {output}"
 
@@ -47,6 +49,11 @@ assert any("deployment-manifest.json" in str(step) for step in manifest_job["ste
 assert "workflow_run:" in deploy_text, "Deploy must subscribe to Build workflow completion"
 assert "conclusion == 'success'" in deploy_text, "Deploy must ignore failed Build runs"
 assert "actions/download-artifact@v5" in deploy_text
+deploy_changes = deploy["jobs"]["changes"]
+assert deploy_changes["permissions"]["actions"] == "read", "Deploy artifact downloader requires actions: read"
+assert "git merge-base --is-ancestor" in deploy_text, "Manual Deploy must require main ancestry"
+assert "git merge-base --is-ancestor" in build_text, "Manual Build must require main ancestry"
+assert "sha-[0-9a-f]{12}" in deploy_text, "Manual Deploy must validate 12-char tags"
 assert "workflow_run.head_sha" in deploy_text
 assert "ref: main" not in deploy_text, "Deploy must not checkout floating main"
 assert "release_plan.py validate" in deploy_text

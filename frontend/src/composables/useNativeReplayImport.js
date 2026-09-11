@@ -1,9 +1,11 @@
 import {
   consumePendingReplay,
+  getCapabilities,
   getNativeBridgeVersion,
   getPendingReplay,
   isAndroidApp,
   isNativeBridgeCompatible,
+  isLegacyNativeBridgeCompatible,
 } from './usePlatformBridge.js'
 
 /**
@@ -70,7 +72,11 @@ export function useNativeReplayImport({ isAuthenticated = () => false, onPending
       return false
     }
     const nativeBridgeVersion = await getNativeBridgeVersion()
-    if (!isNativeBridgeCompatible(nativeBridgeVersion)) {
+    const nativeCapabilities = isNativeBridgeCompatible(nativeBridgeVersion)
+      ? []
+      : await getCapabilities()
+    if (!isNativeBridgeCompatible(nativeBridgeVersion)
+        && !isLegacyNativeBridgeCompatible(nativeBridgeVersion, nativeCapabilities)) {
       console.warn('[replay-native] pending skipped reason=bridge-version-mismatch')
       onReadError?.('native-client-upgrade-required')
       return false

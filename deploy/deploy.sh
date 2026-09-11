@@ -41,6 +41,8 @@ esac
 readonly STALE_RELEASE_GUARD
 readonly DEPLOYED_SHA_FILE="$WOTB_DIR/DEPLOYED_SHA"
 readonly DEPLOYED_RUN_NUMBER_FILE="$WOTB_DIR/DEPLOYED_RUN_NUMBER"
+readonly DEPLOYED_STATE_DIR="$WOTB_DIR/deployed-state"
+readonly DEPLOYED_STATE_MIGRATION_MARKER="$DEPLOYED_STATE_DIR/.legacy-migrated"
 
 declare -a DEPLOY_SERVICES=()
 declare -a DEPLOY_IMAGE_SERVICES=()
@@ -110,6 +112,72 @@ is_full_deploy() {
   [ "${#DEPLOY_SERVICES[@]}" -eq 1 ] && [ "${DEPLOY_SERVICES[0]}" = all ]
 }
 
+state_services() {
+  if is_full_deploy; then
+    printf '%s\n' wotb-backend wotb-frontend keycloak
+    return 0
+  fi
+  local service
+  for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
+    case "$service" in
+      wotb-backend|wotb-frontend|keycloak) printf '%s\n' "$service" ;;
+    esac
+  done
+}
+
+state_file() {
+  local service="$1" kind="$2"
+  printf '%s/%s.%s\n' "$DEPLOYED_STATE_DIR" "$service" "$kind"
+}
+
+write_atomic_value() {
+  local target="$1" value="$2" temporary
+  temporary="${target}.next.$$"
+  umask 177
+  printf '%s\n' "$value" > "$temporary"
+  chmod 600 "$temporary"
+  mv -f -- "$temporary" "$target"
+}
+
+migrate_legacy_state() {
+  [ -e "$DEPLOYED_STATE_MIGRATION_MARKER" ] && return 0
+  mkdir -p "$DEPLOYED_STATE_DIR"
+  if [ -f "$DEPLOYED_RUN_NUMBER_FILE" ] && [ -f "$DEPLOYED_SHA_FILE" ]; then
+    local legacy_run legacy_sha service
+    legacy_run="$(tr -d '\r\n' < "$DEPLOYED_RUN_NUMBER_FILE")"
+    legacy_sha="$(tr -d '\r\n' < "$DEPLOYED_SHA_FILE")"
+    [[ "$legacy_run" =~ ^[1-9][0-9]*$ ]] || {
+      echo "ERROR: existing DEPLOYED_RUN_NUMBER is invalid; refusing state migration." >&2
+      return 1
+    }
+    for service in wotb-backend wotb-frontend keycloak; do
+      write_atomic_value "$(state_file "$service" run)" "$legacy_run"
+      write_atomic_value "$(state_file "$service" sha)" "$legacy_sha"
+    done
+  fi
+  write_atomic_value "$DEPLOYED_STATE_MIGRATION_MARKER" "schema=1"
+}
+
+update_deployed_state() {
+  local deployment_id="$1" service run_file sha_file
+  mkdir -p "$DEPLOYED_STATE_DIR"
+  while IFS= read -r service; do
+    [ -n "$service" ] || continue
+    sha_file="$(state_file "$service" sha)"
+    write_atomic_value "$sha_file" "$deployment_id"
+    if [ -n "$RELEASE_RUN_NUMBER_VALUE" ]; then
+      run_file="$(state_file "$service" run)"
+      write_atomic_value "$run_file" "$RELEASE_RUN_NUMBER_VALUE"
+    fi
+  done < <(state_services)
+  if is_full_deploy; then
+    write_atomic_value "$DEPLOYED_SHA_FILE" "$deployment_id"
+    if [ -n "$RELEASE_RUN_NUMBER_VALUE" ]; then
+      write_atomic_value "$DEPLOYED_RUN_NUMBER_FILE" "$RELEASE_RUN_NUMBER_VALUE"
+    fi
+  fi
+}
+
 if [ "$STALE_RELEASE_GUARD" = 1 ]; then
   [[ "$RELEASE_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]] || {
     echo "ERROR: automatic deployment requires a full RELEASE_SHA." >&2
@@ -119,7 +187,7 @@ if [ "$STALE_RELEASE_GUARD" = 1 ]; then
     echo "ERROR: automatic deployment requires a positive RELEASE_RUN_NUMBER." >&2
     exit 1
   }
-  [ "$TAG" = "sha-${RELEASE_SHA_VALUE:0:7}" ] || {
+  [ "$TAG" = "sha-${RELEASE_SHA_VALUE:0:12}" ] || {
     echo "ERROR: TAG does not match RELEASE_SHA." >&2
     exit 1
   }
@@ -161,7 +229,7 @@ if [ -n "${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-}" ] \
   exit 3
 fi
 
-mkdir -p "$WOTB_DIR"
+mkdir -p "$WOTB_DIR" "$DEPLOYED_STATE_DIR"
 if ! command -v flock >/dev/null 2>&1; then
   echo "ERROR: flock is required to serialize production deployments." >&2
   exit 1
@@ -172,6 +240,7 @@ if ! flock -n 9; then
   exit 1
 fi
 cd "$WOTB_DIR"
+migrate_legacy_state
 readonly STAGED_DEPLOY_DIR="$INCOMING_DIR/deploy"
 readonly STAGED_COMPOSE="$INCOMING_DIR/docker-compose.next.yml"
 readonly STAGED_RESOLVED_COMPOSE="$INCOMING_DIR/docker-compose.next.resolved.yml"
@@ -198,23 +267,28 @@ PREV_SHA=""
 if [ -f "$DEPLOYED_SHA_FILE" ]; then PREV_SHA=$(tr -d '\r\n' < "$DEPLOYED_SHA_FILE"); fi
 
 if [ "$STALE_RELEASE_GUARD" = 1 ]; then
-  current_run_number=""
-  if [ -f "$DEPLOYED_RUN_NUMBER_FILE" ]; then
-    current_run_number=$(tr -d '\r\n' < "$DEPLOYED_RUN_NUMBER_FILE")
-  fi
-  if [ -n "$current_run_number" ] && [[ ! "$current_run_number" =~ ^[1-9][0-9]*$ ]]; then
-    echo "ERROR: existing DEPLOYED_RUN_NUMBER is invalid; refusing automatic deployment." >&2
-    exit 1
-  fi
-  if [ -n "$current_run_number" ] && [ "$RELEASE_RUN_NUMBER_VALUE" -lt "$current_run_number" ]; then
-    echo "ERROR: stale release run $RELEASE_RUN_NUMBER_VALUE cannot overwrite deployed run $current_run_number." >&2
-    exit 1
-  fi
-  if [ -n "$current_run_number" ] && [ "$RELEASE_RUN_NUMBER_VALUE" -eq "$current_run_number" ] \
-      && [ -n "$PREV_SHA" ] && [ "$PREV_SHA" != "$RELEASE_SHA_VALUE" ]; then
-    echo "ERROR: release run number is reused for a different commit." >&2
-    exit 1
-  fi
+  while IFS= read -r service; do
+    [ -n "$service" ] || continue
+    current_run_number=""
+    current_sha=""
+    run_file="$(state_file "$service" run)"
+    sha_file="$(state_file "$service" sha)"
+    [ -f "$run_file" ] && current_run_number="$(tr -d '\r\n' < "$run_file")"
+    [ -f "$sha_file" ] && current_sha="$(tr -d '\r\n' < "$sha_file")"
+    if [ -n "$current_run_number" ] && [[ ! "$current_run_number" =~ ^[1-9][0-9]*$ ]]; then
+      echo "ERROR: existing deployed run for $service is invalid; refusing automatic deployment." >&2
+      exit 1
+    fi
+    if [ -n "$current_run_number" ] && [ "$RELEASE_RUN_NUMBER_VALUE" -lt "$current_run_number" ]; then
+      echo "ERROR: stale release run $RELEASE_RUN_NUMBER_VALUE cannot overwrite deployed $service run $current_run_number." >&2
+      exit 1
+    fi
+    if [ -n "$current_run_number" ] && [ "$RELEASE_RUN_NUMBER_VALUE" -eq "$current_run_number" ] \
+        && [ -n "$current_sha" ] && [ "$current_sha" != "$RELEASE_SHA_VALUE" ]; then
+      echo "ERROR: release run number is reused for a different $service commit." >&2
+      exit 1
+    fi
+  done < <(state_services)
 fi
 
 current_image_tag() {
@@ -1047,29 +1121,29 @@ if [ "$rollback_needed" = false ]; then
     if [ "$rollback_needed" = false ] && wait_healthy; then
       if ! is_full_deploy; then
         deployment_id="${RELEASE_SHA_VALUE:-$TAG}"
-        printf '%s\n' "$deployment_id" > "$DEPLOYED_SHA_FILE"
-        if [ -n "$RELEASE_RUN_NUMBER_VALUE" ]; then
-          printf '%s\n' "$RELEASE_RUN_NUMBER_VALUE" > "$DEPLOYED_RUN_NUMBER_FILE"
-          chmod 600 "$DEPLOYED_RUN_NUMBER_FILE"
+        if ! update_deployed_state "$deployment_id"; then
+          echo "ERROR: per-service deployed state update failed; attempting rollback." >&2
+          rollback_needed=true
+        else
+          echo "== TARGETED DEPLOY OK: $(deploy_service_label) =="
+          report_observability_status || true
+          exit 0
         fi
-        echo "== TARGETED DEPLOY OK: $(deploy_service_label) =="
-        report_observability_status || true
-        exit 0
       elif ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "${RELEASE_SHA_VALUE:-$TAG}"; then
         echo "ERROR: LKG staging failed after the application health gate; attempting rollback." >&2
         rollback_needed=true
       elif promote_lkg_candidate; then
         deployment_id="${RELEASE_SHA_VALUE:-$TAG}"
-        echo "$deployment_id" > "$DEPLOYED_SHA_FILE"
-        if [ -n "$RELEASE_RUN_NUMBER_VALUE" ]; then
-          printf '%s\n' "$RELEASE_RUN_NUMBER_VALUE" > "$DEPLOYED_RUN_NUMBER_FILE"
-          chmod 600 "$DEPLOYED_RUN_NUMBER_FILE"
+        if ! update_deployed_state "$deployment_id"; then
+          echo "ERROR: per-service deployed state update failed; attempting rollback." >&2
+          rollback_needed=true
+        else
+          docker image prune -af
+          docker builder prune -af
+          echo "== DEPLOY OK: $TAG =="
+          report_observability_status || true
+          exit 0
         fi
-        docker image prune -af
-        docker builder prune -af
-        echo "== DEPLOY OK: $TAG =="
-        report_observability_status || true
-        exit 0
       else
         echo "ERROR: LKG promotion failed after the application health gate; attempting rollback." >&2
         rollback_needed=true

@@ -408,6 +408,98 @@ if [ -f "$WORK/docker-restart.log" ]; then
     || fail "successful deployment must not restart frontend nginx for Grafana recreation"
 fi
 
+# ---- per-service release generations: failure and retry are independent ----
+mkdir -p "$WORK/deployed-state"
+printf '90\n' > "$WORK/deployed-state/wotb-backend.run"
+printf 'sha-backend-90\n' > "$WORK/deployed-state/wotb-backend.sha"
+printf '90\n' > "$WORK/deployed-state/wotb-frontend.run"
+printf 'sha-frontend-90\n' > "$WORK/deployed-state/wotb-frontend.sha"
+printf '90\n' > "$WORK/deployed-state/keycloak.run"
+printf 'sha-keycloak-90\n' > "$WORK/deployed-state/keycloak.sha"
+
+run_generation_case() {
+  local service="$1" run_number="$2" commit_sha="$3" unhealthy_tag="${4:-}" output rc
+  stage_candidate_b
+  export TAG="sha-${commit_sha:0:12}" RELEASE_SHA="$commit_sha" RELEASE_RUN_NUMBER="$run_number"
+  export WOTB_STALE_RELEASE_GUARD=1 WOTB_DEPLOY_SERVICE="$service"
+  unset WOTB_DEPLOY_SERVICES WOTB_DEPLOY_IMAGE_SERVICES
+  if [ -n "$unhealthy_tag" ]; then
+    export FAKE_APP_UNHEALTHY_TAG="$TAG" FAKE_APP_UNHEALTHY_SERVICE=backend
+    unset FAKE_HEALTHY_BACKEND_TAG
+  else
+    unset FAKE_APP_UNHEALTHY_TAG FAKE_APP_UNHEALTHY_SERVICE
+    export FAKE_HEALTHY_BACKEND_TAG="$TAG"
+  fi
+  set +e
+  output="$(WOTB_BACKUP_ROOT="$WORK/backups-generation-$service-$run_number" \
+    bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+  rc=$?
+  set -e
+  if [ -n "$unhealthy_tag" ]; then
+    [[ $rc -ne 0 ]] || fail "failed $service generation must reject the candidate"
+    grep -q 'TARGETED ROLLBACK OK' <<<"$output" || fail "failed generation must roll back"
+  else
+    [[ $rc -eq 0 ]] || fail "successful $service generation failed: $output"
+  fi
+}
+
+backend_run_100='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+frontend_run_101='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+run_generation_case wotb-backend 100 "$backend_run_100" failed
+run_generation_case wotb-frontend 101 "$frontend_run_101"
+run_generation_case wotb-backend 100 "$backend_run_100"
+[[ "$(cat "$WORK/deployed-state/wotb-backend.run")" == 100 ]] \
+  || fail "backend retry must update only backend generation"
+[[ "$(cat "$WORK/deployed-state/wotb-frontend.run")" == 101 ]] \
+  || fail "frontend generation must remain independently newer"
+
+# Same-service stale release is rejected before any production mutation.
+stage_candidate_b
+before_stale_compose="$(sha256sum "$WORK/docker-compose.yml")"
+: > "$WORK/docker-up-generation-stale.log"
+set +e
+stale_output="$(env TAG=sha-cccccccccccc \
+  RELEASE_SHA=cccccccccccccccccccccccccccccccccccccccc \
+  RELEASE_RUN_NUMBER=99 WOTB_STALE_RELEASE_GUARD=1 WOTB_DEPLOY_SERVICE=wotb-backend \
+  FAKE_DOCKER_UP_LOG="$WORK/docker-up-generation-stale.log" \
+  WOTB_BACKUP_ROOT="$WORK/backups-generation-stale" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+stale_rc=$?
+set -e
+[[ $stale_rc -ne 0 ]] || fail "same-service stale generation must reject"
+grep -q 'stale release run 99 cannot overwrite deployed wotb-backend run 100' <<<"$stale_output" \
+  || fail "same-service stale error missing: $stale_output"
+[[ "$(sha256sum "$WORK/docker-compose.yml")" == "$before_stale_compose" ]] \
+  || fail "same-service stale precheck mutated production compose"
+[[ ! -s "$WORK/docker-up-generation-stale.log" ]] \
+  || fail "same-service stale precheck reached docker compose up"
+
+# Multi-service stale precheck is atomic: neither target may mutate first.
+printf '90\n' > "$WORK/deployed-state/wotb-backend.run"
+stage_candidate_b
+before_multi_compose="$(sha256sum "$WORK/docker-compose.yml")"
+: > "$WORK/docker-up-generation-multi.log"
+set +e
+multi_output="$(env TAG=sha-dddddddddddd \
+  RELEASE_SHA=dddddddddddddddddddddddddddddddddddddddd \
+  RELEASE_RUN_NUMBER=99 WOTB_STALE_RELEASE_GUARD=1 \
+  WOTB_DEPLOY_SERVICES=wotb-backend,wotb-frontend \
+  WOTB_DEPLOY_IMAGE_SERVICES=wotb-backend,wotb-frontend \
+  FAKE_DOCKER_UP_LOG="$WORK/docker-up-generation-multi.log" \
+  WOTB_BACKUP_ROOT="$WORK/backups-generation-multi" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+multi_rc=$?
+set -e
+[[ $multi_rc -ne 0 ]] || fail "multi-service stale generation must reject"
+grep -q 'stale release run 99 cannot overwrite deployed wotb-frontend run 101' <<<"$multi_output" \
+  || fail "multi-service stale error missing"
+[[ "$(sha256sum "$WORK/docker-compose.yml")" == "$before_multi_compose" ]] \
+  || fail "multi-service stale precheck mutated production compose"
+[[ ! -s "$WORK/docker-up-generation-multi.log" ]] \
+  || fail "multi-service stale precheck reached docker compose up"
+unset WOTB_STALE_RELEASE_GUARD WOTB_DEPLOY_SERVICE WOTB_DEPLOY_SERVICES WOTB_DEPLOY_IMAGE_SERVICES
+unset RELEASE_SHA RELEASE_RUN_NUMBER TAG
+
 # ---- observability gates must fail closed on up=0 and an empty Loki result ----
 set +e
 up_zero_output="$(env FAKE_PROMETHEUS_UP=0 WOTB_OBSERVABILITY_RETRIES=1 \
