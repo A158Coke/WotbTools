@@ -1585,6 +1585,12 @@
         }
     },
     "workspace": {
+        "auth_checking": "Checking sign-in status…",
+        "auth_required": "Sign-in required",
+        "auth_required_hint": "Sign in to open the replay workspace.",
+        "auth_init_failed": "Unable to check sign-in status",
+        "auth_init_failed_hint": "The sign-in component did not finish initializing on this device. Try checking again or start sign-in directly.",
+        "auth_retry": "Check again",
         "tab_results": "Parse Results",
         "results_hint": "Run 'Parse & Preview' to see the parsed results here",
         "ai_empty": "Select a replay to start AI review",
