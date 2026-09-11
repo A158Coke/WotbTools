@@ -206,7 +206,7 @@ def command_gate(args: argparse.Namespace) -> None:
     runtime_changed = any(runtime_path(path) for path in paths)
     if version_code(head_version) < version_code(base_version):
         fail("Android committed version cannot decrease")
-    if runtime_changed and version_code(head_version) <= version_code(base_version):
+    if runtime_changed and version_code(head_version) <= version_code(base_version) and not args.initial_version_baseline:
         fail("Android runtime changed but committed version did not increase")
     if result["breaking"] and int(result["headBridgeVersion"] or 0) <= int(result["baseBridgeVersion"] or 0):
         fail("Breaking Native Bridge changes require bridgeVersion to increase")
@@ -222,7 +222,7 @@ def main() -> None:
     p = sub.add_parser("version"); p.add_argument("version"); p.set_defaults(func=command_version)
     p = sub.add_parser("validate"); p.add_argument("--contract", required=True); p.add_argument("--gradle-properties", required=True); p.add_argument("--frontend", required=True); p.add_argument("--native-source", action="append", default=[]); p.set_defaults(func=command_validate)
     p = sub.add_parser("version-bump"); p.add_argument("--base-version", required=True); p.add_argument("--head-version", required=True); p.add_argument("--paths", required=True); p.set_defaults(func=command_bump)
-    p = sub.add_parser("gate"); p.add_argument("--base-contract", required=True); p.add_argument("--head-contract", required=True); p.add_argument("--base-version", required=True); p.add_argument("--head-version", required=True); p.add_argument("--paths", required=True); p.add_argument("--frontend-version", required=True, type=int); p.set_defaults(func=command_gate)
+    p = sub.add_parser("gate"); p.add_argument("--base-contract", required=True); p.add_argument("--head-contract", required=True); p.add_argument("--base-version", required=True); p.add_argument("--head-version", required=True); p.add_argument("--paths", required=True); p.add_argument("--frontend-version", required=True, type=int); p.add_argument("--initial-version-baseline", action="store_true"); p.set_defaults(func=command_gate)
     args = parser.parse_args()
     args.func(args)
 
