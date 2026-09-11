@@ -7,6 +7,18 @@
 
 项目：WoT Blitz `.wotbreplay` 回放工具集（解析/Excel/排行榜/评分/AI 复盘/Keycloak）。入口 wotbtools.com。
 
+## 接手与调整方法（固定流程）
+
+每次新任务先按这条路径接手；除非用户明确要求只做单个命令或只回答问题，否则默认执行到可交接状态。
+
+1. **入口阅读** — 先读根 `AGENTS.md`、本文件、`docs/DEVELOPER_GUIDE.md`；进入具体目录再读该目录 `AGENTS.md`；改专项能力时读 `docs/README.md` 指向的对应专题文档。
+2. **现实审计** — 先确认 `git status --short --branch`、`git remote -v`、当前分支/HEAD 与已有未提交改动；再用 `rg` 追真实调用链、配置、测试与文档。真实代码是 source of truth，文档只作为待校验线索。
+3. **任务分类** — 判定是问答/排障、文档、小修、feature、大范围重构、跨层改动、数据/导出/API/部署/Android runtime。跨层改动加载 `wotb-sync`；增删列加载 `column-sync`；feature/大范围改动走 Feature 流程。
+4. **计划契约** — 需要 Plan-First 时，计划必须写清范围、非目标、影响面、SSOT、风险、验证档位、回滚/失败处理；feature 类计划写入 `docs/current-plan.md` 并等批准。
+5. **Reuse / SSOT 执行** — 新增 production abstraction 前先做 Reuse Audit；优先复用/扩展现有结构，避免第二份事实源。改动影响界面、导出、数据、构建、用法或运维时，同步更新文档。
+6. **分层验证** — 先 targeted，再 module/feature，只有触发 Full-test 例外才跑 repository-level full validation；每次说明 Affected scope / Selected validation / Why，避免重复跑已失效范围外的测试。
+7. **收尾交接** — 执行 Review-Fix；需要时走 review-with-docs；最终说明改了什么、验证了什么、未验证什么、剩余风险和下一步。
+
 ## 规则
 
 1. **Plan-First** — 代码改动前先出 plan（范围/影响/风险），待用户批准后执行。小修小补（bug fix、CSS、i18n 缺漏）可跳过。
