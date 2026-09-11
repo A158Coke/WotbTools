@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.81",
+    "date": "2026-09-11",
+    "tag": "fix",
+    "zh": "修复部分 Android 设备登录检查一直停留在加载中的问题；现在可以重新检查或直接重新发起登录，正常登录和回放工作区流程保持不变。",
+    "en": "Fixed sign-in checks staying on loading forever on some Android devices; you can now check again or start sign-in directly, while normal sign-in and the replay workspace flow remain unchanged.",
+    "ru": "Исправлена бесконечная загрузка проверки входа на некоторых устройствах Android: теперь можно повторить проверку или сразу начать вход, при этом обычный вход и рабочее пространство повторов работают по-прежнему."
+  },
+  {
     "v": "2.12.80",
     "date": "2026-09-11",
     "tag": "fix",

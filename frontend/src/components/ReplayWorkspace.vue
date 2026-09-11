@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { displayName } from '../utils/helpers.js'
@@ -28,12 +28,9 @@ const props = defineProps({
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const { t } = useI18n()
-const { initPromise: authInit, authenticated, login, loginInFlight } = useAuth()
+const { authInitState, authenticated, login, loginInFlight, retryAuth } = useAuth()
 /** 项目统一错误 UI（AppShell 的 GlobalErrorDialog）——不新造 toast/error system。 */
 const { show: showGlobalError } = useError()
-
-/** auth init 是否已结束（结束前不得渲染/执行任何 replay 业务动作）。 */
-const authReady = ref(false)
 
 /**
  * Workspace 持有唯一一份 replay selection / Processing Job。
@@ -197,23 +194,22 @@ function clearSelection() {
   playbackReplay.reset()
 }
 
-onMounted(() => {
-  // auth init 失败视作未登录：仍要退出 loading，让用户看到可重试的登录入口。
-  authInit.catch(() => {}).finally(() => {
-    authReady.value = true
-    // 诊断（低敏）：排查「外部 replay 打开后没有停在登录流程」一类生产反馈。
-    console.debug(`[auth] replay gate initialized authenticated=${authenticated.value}`)
-    // 未登录 → 进入正常登录流程；失败/取消后由 tabs 或登录按钮重新发起（不锁死）。
-    if (!authenticated.value) requestLogin(viewFor(activeCapability.value))
-  })
-})
+// 只有正常完成且确认未登录时才自动发起登录。failed 是明确的恢复态，不能自动循环。
+watch(authInitState, (state) => {
+  if (state !== 'unauthenticated') return
+  nextTick(() => requestLogin(viewFor(activeCapability.value)))
+}, { immediate: true })
+
+function retryAuthCheck() {
+  return retryAuth()
+}
 
 /**
  * 只有「auth init 完成 且 authenticated」时才允许消费 Android pending replay；
  * 未登录期间 Native pending 原样保留（跨 auth 保留）。
  */
-watch([authReady, authenticated], ([ready, authed]) => {
-  if (!ready || !authed) return
+watch([authInitState, authenticated], ([state, authed]) => {
+  if (state !== 'authenticated' || !authed) return
   nextTick(() => consumePendingWhenReady())
 }, { immediate: true })
 
@@ -228,12 +224,37 @@ watch(() => props.initialCapability, (val) => {
     <ReplayWorkspaceHeader :has-files="!!files.length" @clear="clearSelection" />
     <ReplayCapabilityTabs :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
 
-    <section v-if="!authReady" class="workspace-auth-gate" data-testid="ws-auth-loading" aria-live="polite">
+    <section
+      v-if="authInitState === 'idle' || authInitState === 'initializing'"
+      class="workspace-auth-gate"
+      data-testid="ws-auth-loading"
+      aria-live="polite"
+    >
       <p class="workspace-auth-title">{{ $t('workspace.auth_checking') }}</p>
     </section>
 
+    <section v-else-if="authInitState === 'failed'" class="workspace-auth-gate" data-testid="ws-auth-failed" role="alert">
+      <p class="workspace-auth-title">{{ $t('workspace.auth_init_failed') }}</p>
+      <p class="workspace-auth-hint">{{ $t('workspace.auth_init_failed_hint') }}</p>
+      <div class="auth-gate-actions">
+        <button
+          type="button"
+          class="auth-gate-action"
+          data-testid="ws-auth-retry"
+          @click="retryAuthCheck"
+        >{{ $t('workspace.auth_retry') }}</button>
+        <button
+          type="button"
+          class="auth-gate-action"
+          data-testid="ws-login-recovery"
+          :disabled="loginInFlight"
+          @click="requestLogin(viewFor(activeCapability), { userInitiated: true })"
+        >{{ $t('app.login') }}</button>
+      </div>
+    </section>
+
     <!-- 未登录：只提供登录入口，replay 业务动作（上传 / 解析 / capability 面板）一律不可执行 -->
-    <section v-else-if="!authenticated" class="workspace-auth-gate" data-testid="ws-auth-required">
+    <section v-else-if="authInitState === 'unauthenticated'" class="workspace-auth-gate" data-testid="ws-auth-required">
       <p class="workspace-auth-title">{{ $t('workspace.auth_required') }}</p>
       <p class="workspace-auth-hint">{{ $t('workspace.auth_required_hint') }}</p>
       <button
@@ -331,5 +352,6 @@ watch(() => props.initialCapability, (val) => {
 }
 .workspace-auth-title { font-weight: 600; }
 .workspace-auth-hint { opacity: 0.8; }
+.auth-gate-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
 .auth-gate-action { padding: 8px 20px; cursor: pointer; }
 </style>

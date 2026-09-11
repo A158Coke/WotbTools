@@ -131,6 +131,13 @@ function capabilityStateProbe() {
   }
 }
 
+function authRecoveryButtonProbe() {
+  const button = document.querySelector('[data-testid="ws-login-recovery"]')
+  if (!button) return null
+  const rect = button.getBoundingClientRect()
+  return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }
+}
+
 function playbackControlProbe() {
   const play = document.querySelector('[data-test="pb-play"]')
   const root = document.querySelector('[data-test="battle-playback"]')
@@ -386,6 +393,8 @@ const APP_SCENARIOS = [
   { name: 'capability-1024x768-tablet', width: 1024, height: 768, touch: false, authenticated: true, login: 'resolve' },
   { name: 'capability-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve' },
   { name: 'login-retry-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'reject' },
+  { name: 'auth-init-pending-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'pending', authTimeout: 300 },
+  { name: 'auth-init-reject-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'reject', authTimeout: 300 },
 ]
 
 const PLAYBACK_SCENARIOS = [
@@ -412,9 +421,40 @@ async function runAppScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
 
-  const url = `${env.origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-login=${scenario.login}`
+  const authParams = scenario.authInit
+    ? `&ws-auth-init=${scenario.authInit}&ws-auth-timeout-ms=${scenario.authTimeout ?? 12_000}`
+    : ''
+  const url = `${env.origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-login=${scenario.login}${authParams}`
   await page.goto(url)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="playback"]'), { label: 'capability tabs' })
+
+  if (scenario.authInit === 'pending' || scenario.authInit === 'reject') {
+    const timeout = (scenario.authTimeout ?? 12_000) + 2_000
+    await page.waitFor(() => !!document.querySelector('[data-testid="ws-auth-failed"]'), {
+      timeout,
+      label: 'auth init recovery state',
+    })
+    const recoveryState = await page.evaluate(`({
+      loading: !!document.querySelector('[data-testid="ws-auth-loading"]'),
+      data: !!document.querySelector('[data-testid="ws-data"]'),
+    })`)
+    check(failures, !recoveryState.loading, 'auth init failure remained in checking state')
+    check(failures, !recoveryState.data, 'auth init failure exposed replay workspace without authentication')
+    const before = await page.evaluate('window.__wsAuth.loginCalls.length')
+    const recovery = await page.probe(authRecoveryButtonProbe)
+    check(failures, !!recovery, 'auth init failure has no direct login recovery button')
+    if (recovery) {
+      await page.tap({ ...recovery, touch: scenario.touch })
+      await page.waitFor(() => !!document.querySelector('[data-testid="ws-auth-required"]'), { label: 'auth recovery login gate' })
+      const after = await page.evaluate('window.__wsAuth.loginCalls.length')
+      check(failures, after > before, `recovery login did not issue a new transaction (before=${before} after=${after})`)
+    }
+    check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+    results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+    return
+  }
+
   await page.waitFor(
     scenario.authenticated
       ? () => !!document.querySelector('[data-testid="ws-data"]')
