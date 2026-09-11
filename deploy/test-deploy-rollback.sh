@@ -220,7 +220,7 @@ case "$cmd" in
             if [[ "$request" == *"/api/datasources"* ]]; then
               printf '{"status":"OK"}\n'
             else
-              printf '{"dashboard":{"uid":"wotbtools-production-overview wotbtools-backend-overview wotbtools-http-errors wotbtools-replay-parser wotbtools-ai-review wotbtools-keycloak wotbtools-error-explorer wotbtools-android-downloads wotbtools-usage"}}\n'
+              printf '{"dashboard":{"uid":"wotbtools-production-overview wotbtools-backend-overview wotbtools-error-explorer wotbtools-ai-review wotbtools-keycloak wotbtools-usage"}}\n'
             fi
             exit 0
           fi

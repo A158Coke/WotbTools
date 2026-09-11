@@ -47,7 +47,7 @@
 - PR #284 收口候选：`ObservedMaxHp.populate` 复用单次 `ReplayHpTimeline.build` 结果完成 max-HP 与 timeline 两条 reduction；backend 迁移至 Java 25 / Spring Boot 4.1.1，Spring web 启用可覆盖的 Virtual Threads，AI blocking worker 使用有界 virtual-thread workers；replay CPU scheduler、export worker、watchdog 与业务 admission/queue 约束保持不变。新增显式 real-provider Platform-vs-Virtual benchmark（默认关闭，固定短 prompt，不进 CI）。
 
 ### OpenTofu
-- 新增独立 Grafana OpenTofu root，纳管现有 9 个 dashboard 并保留 dashboard JSON 为 canonical source；Prometheus/Loki datasource 因 Grafana read-only 限制继续由 file provisioning 管理。PR 使用 `GRAFANA_PAT` 做 plan，合并到 main 后自动 apply 精确 saved plan；任意 dashboard delete/replacement fail-closed，apply 后只读校验全部 dashboard UID。
+- 新增独立 Grafana OpenTofu root，收口为 6 个 dashboard 并保留 dashboard JSON 为 canonical source；Prometheus/Loki datasource 因 Grafana read-only 限制继续由 file provisioning 管理。PR 使用 `GRAFANA_PAT` 做 plan，合并到 main 后自动 apply 精确 saved plan；仅允许 3 个已批准旧 dashboard 的纯 delete，replacement、datasource delete 与其他 dashboard delete 均 fail-closed，apply 后只读校验 6 个保留 UID 与 3 个移除 UID 的 404。
 - 扩展 production root 纳管已发现的 Tencent Lighthouse 上海生产节点及其现有四条 firewall 规则；owner 手工 import 后 authenticated plan 为 `No changes`，不纳管未完成读取证据的 VPC、subnet、security-group 或 disk，并新增 Lighthouse delete/replacement safety gate。
 - 新增最小 COS-only OpenTofu production baseline：声明现有生产 COS bucket、手工 import 流程、状态安全规则与不注入生产凭据的 GitHub Actions validation workflow；不包含自动 plan、import 或 apply。
 - 将 production root 切换到 Tencent COS S3-compatible remote state；新增 trusted same-repo authenticated plan、fork PR 无凭据路径、workflow concurrency 与 artifact bucket delete/replace safety gate；state bucket 保持 owner-managed bootstrap boundary，不自动 import/apply。
@@ -66,6 +66,7 @@
 - **Battle Playback HD 地图验证收口**：29 张 HD 底图增加 coverage/hash/真实尺寸/严格 2× frame/map import/5 MiB 单图预算的 deterministic gate；terrain attitude 补齐 yaw=90°、反向与 45° 局部轴测试。视觉几何仍要求人工 29/29 source↔HD QA，manifest 的 `geometryTransform=NONE` 仅描述生成流程，不作为视觉真实性证明。
 
 ### Production observability
+- **Grafana dashboard consolidation**：将 9 个看板一次性收口为 6 个：生产总览、JVM 与基础设施、HTTP 与事故诊断、回放与 AI 诊断、使用统计与 Android、Keycloak；HTTP 性能与 Android 统计迁入对应最终看板，移除三份旧看板，并为 AI Schema Failure 保留分类、按 correlationId 的正序 trace 与 Validator diagnostics。OpenTofu 仅允许三项精确纯删除，replacement、datasource delete 与其他删除 fail-closed，apply 后同时验证保留 UID 与移除 UID 的 404。
 - **Production deploy bootstrap cleanup**：移除事故恢复遗留的无 LKG 部署 bypass、workflow_dispatch 选项与 legacy previous 回滚；已有健康 live deployment 仍可在正常发布流程中建立初始 LKG，没有可验证 LKG 时统一 fail-closed。
 - **Production application gate simplified**：发布与回滚现在只由 backend、frontend/nginx（`Host: wotbtools.com`）和 Keycloak OIDC discovery 决定；Prometheus/Loki/Alloy/Grafana 故障只输出 `OBSERVABILITY DEGRADED`，不再触发 application rollback。移除 `KEYCLOAK_MANAGEMENT` capability、Keycloak `:9000` health/metrics contract 与 Prometheus Keycloak scrape，Keycloak dashboard 收缩为登录、QQ callback、broker/IdP 与 WARN/ERROR 日志；新增 Grafana/Prometheus/Loki/Alloy 非阻断和应用 gate/rollback smoke cases。
 - **Production observability refresh isolation**：Grafana force-recreate 后仅在 Grafana 从 frontend 网络可解析且健康时刷新 frontend nginx；Grafana 重建失败跳过 refresh 并保留应用成功/健康 rollback。monitor proxy 使用 `Host: monitor.wotbtools.com`，Android canary 使用 `Host: wotbtools.com`。
