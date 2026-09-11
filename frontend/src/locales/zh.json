@@ -1585,6 +1585,12 @@
         }
     },
     "workspace": {
+        "auth_checking": "正在检查登录状态…",
+        "auth_required": "需要登录",
+        "auth_required_hint": "登录后才能打开回放工作区。",
+        "auth_init_failed": "无法检查登录状态",
+        "auth_init_failed_hint": "当前设备的登录组件没有正常完成初始化。你可以重新检查或直接发起登录。",
+        "auth_retry": "重新检查",
         "tab_results": "解析结果",
         "results_hint": "点击「解析预览」后，解析结果将显示在这里",
         "ai_empty": "选择一场回放后开始 AI 复盘",

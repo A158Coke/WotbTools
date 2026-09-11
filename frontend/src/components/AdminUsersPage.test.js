@@ -13,7 +13,8 @@ const api = vi.hoisted(() => ({
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({
     initPromise: Promise.resolve(true),
-    keycloak: { updateToken: () => Promise.resolve(), login: vi.fn() }
+    ensureToken: vi.fn().mockResolvedValue(true),
+    login: vi.fn(),
   })
 }))
 

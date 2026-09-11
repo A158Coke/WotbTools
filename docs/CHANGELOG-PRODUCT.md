@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Authentication
+- Android/Web 登录初始化现在有明确的超时恢复界面；设备上的登录检查不会无限停留在加载状态。用户可以重新检查或直接重新发起登录，正常 SSO、QQ 登录回调和回放工作区认证门禁保持不变。
+
 ### Operations
 - 生产部署移除事故恢复遗留的无 LKG bypass；已有健康 live deployment 仍由正常发布流程建立初始 LKG，没有可验证 LKG 时安全失败，不再提供永久性的手工 checkbox。
 - Grafana 监控看板的配置现在纳入独立 OpenTofu plan 审查；合并到 main 后由 OpenTofu 自动 apply，任意 dashboard 删除仍被阻断；不迁移 Grafana runtime，也不改变 Prometheus/Loki datasource provisioning。
