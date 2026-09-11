@@ -146,7 +146,9 @@ function viewFor(cap) {
  * 绝不存在「这个组件已尝试过登录 → 后续点击静默 no-op」的 component-lifetime 状态。
  */
 function requestLogin(view) {
-  // 登录失败（provider 取消 / 导航失败 / WebView 中断）不得阻塞 UI：必须能再次点击重试。
+  // 这里只覆盖当前页面生命周期内 login() 的发起/导航 Promise rejection；
+  // 不能把跳转后的 provider cancellation 或 WebView process death 归因于此处。
+  // 前者由 auth/init 流程处理，后者由 Android pending/auth return 恢复；当前页面失败仍必须可重试。
   Promise.resolve().then(() => login(view || 'replay')).catch(() => {})
 }
 
