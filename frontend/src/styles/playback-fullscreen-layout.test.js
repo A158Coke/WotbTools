@@ -447,6 +447,20 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     }
   })
 
+  // 同一处修复的另一半：wrapper 变成 auto 还不够。组件 scoped 的 legacy @media(width<768px)
+  // 仍把 .pb-mobile-overlay-content 设成 pointer-events:none，而 pointer-events 是继承属性——
+  // 于是流内控件成了只吃不透的洞：看得见、点不到，play / ±5 / 进度条全部 silent no-op。
+  it('restores pointer-events on the in-flow controller content', () => {
+    for (const sel of [
+      '.battle-playback:not(:fullscreen).pb-form-mobile .pb-mobile-overlay-content',
+      '.battle-playback.pb-form-tablet:not(:fullscreen) .pb-mobile-overlay-content',
+    ]) {
+      const body = ruleBody(sel)
+      expect(body).not.toBeNull()
+      expect(body).toContain('pointer-events: auto')
+    }
+  })
+
   // 同一选择器写两遍时，后一条静默赢过前一条——本文件的 ruleBody 只取第一条，
   // 于是「测试断言的」和「浏览器生效的」可以完全不同。这里守住关键选择器不重复。
   it('does not declare the same layout selector twice at the top level', () => {

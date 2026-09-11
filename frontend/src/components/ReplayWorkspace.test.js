@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { useError } from '../composables/useError.js'
 import { useReplaySession } from '../composables/useReplaySession.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import ReplayWorkspace from './ReplayWorkspace.vue'
@@ -140,6 +141,9 @@ describe('ReplayWorkspace', () => {
     authState.loginInFlight.value = false
     authState.login = vi.fn(() => Promise.resolve())
     authState.initPromise = Promise.resolve(true)
+    const { error: globalError, showError } = useError()
+    showError.value = false
+    globalError.value = ''
     vi.clearAllMocks()
   })
 
@@ -301,6 +305,38 @@ describe('ReplayWorkspace', () => {
     await wrapper.find('[data-testid="ws-login"]').trigger('click')
     await flushPromises()
     expect(login).toHaveBeenCalledTimes(4)
+    wrapper.unmount()
+  })
+
+  // 用户主动发起的登录失败必须可观测：以前 requestLogin 用 `.catch(() => {})` 全吞，
+  // 用户点了「战局回放」页面什么都没变，只能反复点——这正是「点了完全没反应」的来源。
+  it('用户主动点击 capability 且 login 失败 → 走统一 GlobalErrorDialog（不再 silent swallow）', async () => {
+    const { error: globalError, showError } = useError()
+    const login = vi.fn(() => Promise.reject(new Error('AUTH_NAVIGATION_FAILED')))
+    const wrapper = mountWorkspace('data', { authenticated: false, login })
+    await flushPromises()
+    // 挂载时的自动登录失败不弹窗：auth gate 本身已是确定的、可重试的可见表面。
+    expect(showError.value).toBe(false)
+
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
+    await flushPromises()
+    expect(login).toHaveBeenLastCalledWith('battle-playback')
+    expect(showError.value).toBe(true)
+    expect(globalError.value).toBe('workspace.login_failed')
+    wrapper.unmount()
+  })
+
+  it('login 正常发起时不显示任何错误（redirect 流程不受影响）', async () => {
+    const { showError } = useError()
+    const login = vi.fn(() => Promise.resolve())
+    const wrapper = mountWorkspace('data', { authenticated: false, login })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="ws-login"]').trigger('click')
+    await flushPromises()
+
+    expect(login).toHaveBeenCalledTimes(2)
+    expect(showError.value).toBe(false)
     wrapper.unmount()
   })
 
