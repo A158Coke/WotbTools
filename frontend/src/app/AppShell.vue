@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, provide } from 'vue'
+import { provide, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { useBusinessUserBootstrap } from '../composables/useBusinessUserBootstrap.js'
@@ -20,15 +20,14 @@ const { error: globalError, showError: showGlobalError, close: closeGlobalError 
  *
  * 这里也是唯一触发点：页面不再各自负责「读不到资料 → 自己创建」。
  */
-const { initPromise, isAuthenticated } = useAuth()
+const { authInitState, authenticated } = useAuth()
 const { failed, ensure, retry } = useBusinessUserBootstrap()
 
-onMounted(async () => {
-  // 先等 Keycloak 初始化，再决定是否需要业务补全；失败不回退认证状态。
-  // ensure 只在 ready 时短路，因此失败后的重新挂载会自然重试（不做自动循环）。
-  await initPromise
-  if (isAuthenticated()) await ensure()
-})
+watch([authInitState, authenticated], ([state, isLoggedIn]) => {
+  if (state !== 'authenticated' || !isLoggedIn) return
+  // Auth generation changes are authoritative; ensure itself deduplicates ready/in-flight work.
+  void ensure()
+}, { immediate: true })
 
 function navigate(view) {
   const destination = router.resolve(locationForView(view, route))

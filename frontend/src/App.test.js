@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory } from 'vue-router'
-import { nextTick, inject } from 'vue'
+import { nextTick, inject, ref } from 'vue'
 import App from './App.vue'
 import { NAVIGATE_VIEW_KEY } from './shared/navigation.js'
 import { createAppRouter } from './app/router.js'
@@ -25,19 +25,34 @@ vi.mock('./components/AndroidDownloadPage.vue', () => ({ default: { template: '<
 
 const authState = vi.hoisted(() => ({
   authenticated: false,
+  authenticatedRef: null,
+  authInitState: null,
+  initPromise: Promise.resolve(false),
   username: '',
   login: vi.fn(),
   logout: vi.fn(),
   hasRole: vi.fn(() => false),
 }))
+authState.authenticatedRef = ref(false)
+authState.authInitState = ref('unauthenticated')
 vi.mock('./composables/useAuth.js', () => ({
   useAuth: () => ({
-    initPromise: Promise.resolve(authState.authenticated), tokenParsed: { value: null },
+    initPromise: authState.initPromise,
+    authenticated: authState.authenticatedRef,
+    authInitState: authState.authInitState,
+    tokenParsed: { value: null },
     login: authState.login, logout: authState.logout, isAuthenticated: () => authState.authenticated,
     userName: () => authState.username,
     hasRole: authState.hasRole,
   }),
 }))
+
+function setAuthState(state, isAuthenticated = state === 'authenticated', initPromise = Promise.resolve(isAuthenticated)) {
+  authState.authInitState.value = state
+  authState.authenticated = isAuthenticated
+  authState.authenticatedRef.value = isAuthenticated
+  authState.initPromise = initPromise
+}
 
 // 只保留 bootstrap 需要的 ensure；真实 composable 仍被执行（去重/重试/状态机都是被测行为）。
 const bootstrapApi = vi.hoisted(() => ({ ensureUserProfile: vi.fn() }))
@@ -93,7 +108,7 @@ describe('App routing', () => {
   })
 
   it('drops the current view query when navigating to Android', async () => {
-    authState.authenticated = true
+    setAuthState('authenticated', true)
     const { wrapper, router } = await mountApp('/?view=replay')
     await wrapper.get('.user-menu-trigger').trigger('click')
     const androidItem = [...document.body.querySelectorAll('.user-menu-item')]
@@ -146,14 +161,14 @@ describe('Business user bootstrap', () => {
 
   afterEach(() => {
     mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount())
-    authState.authenticated = false
+    setAuthState('unauthenticated', false)
     bootstrapApi.ensureUserProfile.mockReset()
     resetBusinessUserBootstrap()
     document.querySelectorAll('.user-menu-panel').forEach(element => element.remove())
   })
 
   it('ensures the profile once the user is authenticated', async () => {
-    authState.authenticated = true
+    setAuthState('authenticated', true)
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1, keycloakUserId: 'kc-1' })
 
     const { wrapper } = await mountApp('/?view=replay')
@@ -168,7 +183,7 @@ describe('Business user bootstrap', () => {
     ['replay', '/?view=replay', 'view-replay'],
     ['hof', '/?view=hof', 'view-hof'],
   ])('self-heals on direct entry to %s without visiting Profile or Boost', async (_name, path, testId) => {
-    authState.authenticated = true
+    setAuthState('authenticated', true)
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
 
     const { wrapper } = await mountApp(path)
@@ -179,6 +194,7 @@ describe('Business user bootstrap', () => {
   })
 
   it('does not call ensure while unauthenticated', async () => {
+    setAuthState('unauthenticated', false)
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
 
     await mountApp('/?view=replay')
@@ -187,8 +203,51 @@ describe('Business user bootstrap', () => {
     expect(bootstrapApi.ensureUserProfile).not.toHaveBeenCalled()
   })
 
+  it.each(['failed', 'initializing'])('does not call ensure while auth state is %s', async state => {
+    setAuthState(state, false, Promise.resolve(false))
+    bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
+
+    await mountApp('/?view=replay')
+    await flushPromises()
+
+    expect(bootstrapApi.ensureUserProfile).not.toHaveBeenCalled()
+  })
+
+  it('re-runs the canonical ensure after a watchdog-failed generation recovers as authenticated', async () => {
+    // Generation 1's watchdog has already settled the public init promise as failed.
+    setAuthState('failed', false, Promise.resolve(false))
+    bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
+
+    await mountApp('/?view=replay')
+    await flushPromises()
+    expect(bootstrapApi.ensureUserProfile).not.toHaveBeenCalled()
+
+    setAuthState('authenticated', true, Promise.resolve(true))
+    await nextTick()
+    await flushPromises()
+
+    expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not provision again when authenticated is re-emitted by a later generation', async () => {
+    setAuthState('authenticated', true)
+    bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
+
+    await mountApp('/?view=replay')
+    await flushPromises()
+    expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(1)
+
+    setAuthState('initializing', false, Promise.resolve(false))
+    await nextTick()
+    setAuthState('authenticated', true, Promise.resolve(true))
+    await nextTick()
+    await flushPromises()
+
+    expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(1)
+  })
+
   it('surfaces a retryable failure instead of swallowing it', async () => {
-    authState.authenticated = true
+    setAuthState('authenticated', true)
     bootstrapApi.ensureUserProfile.mockRejectedValueOnce(new Error('502'))
 
     const { wrapper } = await mountApp('/?view=replay')
@@ -201,7 +260,7 @@ describe('Business user bootstrap', () => {
   })
 
   it('allows a later bootstrap to succeed after a transient failure', async () => {
-    authState.authenticated = true
+    setAuthState('authenticated', true)
     // 第一次 bootstrap：transient 5xx。
     bootstrapApi.ensureUserProfile.mockRejectedValueOnce(new Error('502'))
     const first = await mountApp('/?view=replay')
@@ -218,7 +277,7 @@ describe('Business user bootstrap', () => {
   })
 
   it('retries from the failure notice without a page refresh', async () => {
-    authState.authenticated = true
+    setAuthState('authenticated', true)
     bootstrapApi.ensureUserProfile.mockRejectedValueOnce(new Error('502'))
     const { wrapper } = await mountApp('/?view=replay')
     await flushPromises()
@@ -235,7 +294,7 @@ describe('Business user bootstrap', () => {
 describe('User menu', () => {
   afterEach(() => {
     mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount())
-    authState.authenticated = false
+    setAuthState('unauthenticated', false)
     authState.username = ''
     authState.login.mockClear()
     authState.logout.mockClear()
@@ -252,7 +311,7 @@ describe('User menu', () => {
   })
 
   it('shows the authenticated username', async () => {
-    authState.authenticated = true
+    setAuthState('authenticated', true)
     authState.username = '158布丁'
     const { wrapper } = await mountApp()
     expect(wrapper.get('.user-menu-trigger').text()).toContain('158布丁')
