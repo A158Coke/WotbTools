@@ -75,7 +75,10 @@ class ObservabilityDashboardContractTest {
 
         final Set<String> actualUids = new HashSet<>();
         for (final String file : actualFiles) {
-            actualUids.add(readDashboard(file).path("uid").asText());
+            final String uid = readDashboard(file).path("uid").asText();
+            actualUids.add(uid);
+            assertEquals(file.substring(0, file.length() - ".json".length()), uid,
+                    "dashboard filename stem must equal its JSON uid: " + file);
         }
         assertEquals(REQUIRED_DASHBOARD_UIDS, actualUids);
 
@@ -143,6 +146,14 @@ class ObservabilityDashboardContractTest {
         final JsonNode compact = OBJECT_MAPPER.readTree("{\"title\":\"Compact\",\"uid\":\"compact-uid\",\"version\":1}");
         assertEquals("pretty-uid", pretty.path("uid").asText());
         assertEquals("compact-uid", compact.path("uid").asText());
+    }
+
+    @Test
+    void productionDashboardVerificationUsesCanonicalFilenamesWithoutJq() throws Exception {
+        final String verifier = Files.readString(resolve("deploy", "verify-observability.sh"));
+        assertFalse(verifier.contains("jq"), "production verifier must not require jq");
+        assertTrue(verifier.contains("${dashboard_file##*/}"),
+                "production verifier must derive dashboard UIDs from canonical filenames");
     }
 
     @Test
