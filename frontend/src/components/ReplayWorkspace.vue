@@ -68,7 +68,11 @@ async function importPendingFile(file, pending) {
 const { consumePendingWhenReady } = useNativeReplayImport({
   isAuthenticated: () => authenticated.value,
   onPendingFile: importPendingFile,
-  onReadError: () => { error.value = t('workspace.native_replay_read_failed') },
+  onReadError: (reason) => {
+    error.value = reason === 'native-client-upgrade-required'
+      ? t('workspace.native_client_upgrade_required')
+      : t('workspace.native_replay_read_failed')
+  },
 })
 
 const capabilityOptions = [
@@ -144,9 +148,10 @@ function viewFor(cap) {
  * 去重只发生在 useAuth.login() 内部（同一个进行中的 redirect），
  * 绝不存在「这个组件已尝试过登录 → 后续点击静默 no-op」的 component-lifetime 状态。
  *
- * 失败必须可观测：以前这里 `.catch(() => {})` 把 provider 取消 / 导航失败 /
- * WebView 中断全部吞掉，用户点了「战局回放」之后页面什么都不变，只能重新点——
- * 这正是「点了完全没反应」这一类反馈。现在改为：
+ * 失败必须可观测：这里的 catch 只覆盖当前页面生命周期内 login() 的发起/导航
+ * Promise rejection，不能严格等价于跳转后的 provider cancellation 或 WebView
+ * process death；后两者分别由 auth/init 与 Android pending/auth-return 生命周期负责恢复。
+ * 对当前页面能观测到的 immediate failure，现在改为：
  *   - 用户主动发起（点 capability tab / 点登录按钮）失败 → 走统一 GlobalErrorDialog；
  *   - 挂载时的自动登录失败不弹窗（auth gate 本身已是确定的、可重试的可见表面）。
  * 无论哪种情况都只释放 in-flight，不写任何 component-lifetime 状态：

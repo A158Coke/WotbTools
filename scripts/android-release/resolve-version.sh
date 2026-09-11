@@ -1,64 +1,51 @@
 #!/usr/bin/env bash
-# Resolve Android release metadata from either a workflow_dispatch input or a
-# android-vX.Y.Z tag. Pure logic (no secrets). Emits key=value lines on stdout,
-# suitable for appending to $GITHUB_OUTPUT.
-#
-# Env inputs:
-#   WOTB_TRIGGER        github.event_name ('workflow_dispatch' or 'push')
-#   WOTB_INPUT_VERSION  dispatch -> 'X.Y.Z'; tag push -> github.ref_name 'android-vX.Y.Z'
-#   WOTB_COMMIT         (optional) commit SHA to attach to the tag
+# Resolve Android release metadata from committed repository files.
+# The workflow has no version input: android/gradle.properties is authoritative.
+# A pushed android-vX.Y.Z tag remains a compatibility entry point and must match it.
 set -euo pipefail
 
 TRIGGER="${WOTB_TRIGGER:-}"
-INPUT="${WOTB_INPUT_VERSION:-}"
-
-die() { echo "::error::$*" >&2; exit 1; }
+ROOT="${WOTB_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+TAG_NAME="${WOTB_TAG_NAME:-}"
 
 if [ -z "$TRIGGER" ]; then
-  die "WOTB_TRIGGER is required"
+  echo "::error::WOTB_TRIGGER is required" >&2
+  exit 1
 fi
 
-if [ "$TRIGGER" = "workflow_dispatch" ]; then
-  VERSION="$INPUT"
-elif [ "$TRIGGER" = "push" ]; then
-  case "$INPUT" in
-    android-v*) VERSION="${INPUT#android-v}" ;;
-    *) die "Invalid Android release tag: expected android-vX.Y.Z, got '$INPUT'" ;;
-  esac
-else
-  die "Unsupported trigger: $TRIGGER"
-fi
+python3 - "$ROOT" "$TRIGGER" "$TAG_NAME" "${WOTB_COMMIT:-}" <<'PY'
+import sys
+from pathlib import Path
 
-# Strict canonical form: each segment is 0 or a non-zero-prefixed integer.
-# Rejects 1, 1.0, v1.0.2, 1.0.2-rc1, 1.0.02, 01.0.2, 1.0.2.3.
-if ! printf '%s' "$VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
-  die "Invalid Android version: expected X.Y.Z (got '$VERSION')"
-fi
+root = Path(sys.argv[1])
+trigger = sys.argv[2]
+tag = sys.argv[3]
+commit = sys.argv[4]
+sys.path.insert(0, str(root / "scripts" / "android-release"))
+from android_contract import load_json, parse_version, properties, version_code
 
-# No leading zeros by construction, so arithmetic is decimal (never octal).
-IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
+props = properties((root / "android" / "gradle.properties").read_text(encoding="utf-8"))
+version = props.get("wotbVersion", "")
+parts = parse_version(version)
+contract = load_json(root / "contracts" / "android-native-bridge.json")
+bridge = contract.get("bridgeVersion")
+if props.get("wotbNativeBridgeVersion") != str(bridge):
+    raise SystemExit("android/gradle.properties bridge version does not match the JSON contract")
+if trigger not in {"workflow_dispatch", "push"}:
+    raise SystemExit(f"Unsupported trigger: {trigger}")
+if trigger == "push" and tag:
+    expected = f"android-v{version}"
+    if tag != expected:
+        raise SystemExit(f"Release tag {tag!r} does not match committed version {expected!r}")
 
-# versionCode = major*1_000_000 + minor*1_000 + patch.
-# Keep the mapping injective (no collisions) by bounding minor/patch to one 3-digit
-# slot each, and keep the final versionCode inside the Android/Play Store range.
-# Bound segment widths first so bash integer compare never overflows for absurd input.
-if [ "${#MAJOR}" -gt 4 ] || [ "${#MINOR}" -gt 3 ] || [ "${#PATCH}" -gt 3 ]; then
-  die "Invalid Android version: major<=4 digits, minor/patch<=3 digits (got '$VERSION')"
-fi
-if [ "$MINOR" -gt 999 ] || [ "$PATCH" -gt 999 ]; then
-  die "Invalid Android version: minor and patch must be 0..999 (got '$VERSION')"
-fi
-
-VERSION_CODE=$(( MAJOR * 1000000 + MINOR * 1000 + PATCH ))
-if [ "$VERSION_CODE" -lt 1 ] || [ "$VERSION_CODE" -gt 2100000000 ]; then
-  die "Invalid Android version: versionCode $VERSION_CODE out of range [1, 2100000000] (got '$VERSION')"
-fi
-
-TAG_NAME="android-v${VERSION}"
-APK_NAME="wotbtools-android-v${VERSION}.apk"
-
-echo "versionName=$VERSION"
-echo "versionCode=$VERSION_CODE"
-echo "tagName=$TAG_NAME"
-echo "apkName=$APK_NAME"
-printf 'commit=%s\n' "${WOTB_COMMIT:-}"
+metadata = {
+    "versionName": version,
+    "versionCode": version_code(parts),
+    "tagName": f"android-v{version}",
+    "apkName": f"wotbtools-android-v{version}.apk",
+    "nativeBridgeVersion": bridge,
+    "commit": commit,
+}
+for key, value in metadata.items():
+    print(f"{key}={value}")
+PY

@@ -408,6 +408,98 @@ if [ -f "$WORK/docker-restart.log" ]; then
     || fail "successful deployment must not restart frontend nginx for Grafana recreation"
 fi
 
+# ---- per-service release generations: failure and retry are independent ----
+mkdir -p "$WORK/deployed-state"
+printf '90\n' > "$WORK/deployed-state/wotb-backend.run"
+printf 'sha-backend-90\n' > "$WORK/deployed-state/wotb-backend.sha"
+printf '90\n' > "$WORK/deployed-state/wotb-frontend.run"
+printf 'sha-frontend-90\n' > "$WORK/deployed-state/wotb-frontend.sha"
+printf '90\n' > "$WORK/deployed-state/keycloak.run"
+printf 'sha-keycloak-90\n' > "$WORK/deployed-state/keycloak.sha"
+
+run_generation_case() {
+  local service="$1" run_number="$2" commit_sha="$3" unhealthy_tag="${4:-}" output rc
+  stage_candidate_b
+  export TAG="sha-${commit_sha:0:12}" RELEASE_SHA="$commit_sha" RELEASE_RUN_NUMBER="$run_number"
+  export WOTB_STALE_RELEASE_GUARD=1 WOTB_DEPLOY_SERVICE="$service"
+  unset WOTB_DEPLOY_SERVICES WOTB_DEPLOY_IMAGE_SERVICES
+  if [ -n "$unhealthy_tag" ]; then
+    export FAKE_APP_UNHEALTHY_TAG="$TAG" FAKE_APP_UNHEALTHY_SERVICE=backend
+    unset FAKE_HEALTHY_BACKEND_TAG
+  else
+    unset FAKE_APP_UNHEALTHY_TAG FAKE_APP_UNHEALTHY_SERVICE
+    export FAKE_HEALTHY_BACKEND_TAG="$TAG"
+  fi
+  set +e
+  output="$(WOTB_BACKUP_ROOT="$WORK/backups-generation-$service-$run_number" \
+    bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+  rc=$?
+  set -e
+  if [ -n "$unhealthy_tag" ]; then
+    [[ $rc -ne 0 ]] || fail "failed $service generation must reject the candidate"
+    grep -q 'TARGETED ROLLBACK OK' <<<"$output" || fail "failed generation must roll back"
+  else
+    [[ $rc -eq 0 ]] || fail "successful $service generation failed: $output"
+  fi
+}
+
+backend_run_100='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+frontend_run_101='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+run_generation_case wotb-backend 100 "$backend_run_100" failed
+run_generation_case wotb-frontend 101 "$frontend_run_101"
+run_generation_case wotb-backend 100 "$backend_run_100"
+[[ "$(cat "$WORK/deployed-state/wotb-backend.run")" == 100 ]] \
+  || fail "backend retry must update only backend generation"
+[[ "$(cat "$WORK/deployed-state/wotb-frontend.run")" == 101 ]] \
+  || fail "frontend generation must remain independently newer"
+
+# Same-service stale release is rejected before any production mutation.
+stage_candidate_b
+before_stale_compose="$(sha256sum "$WORK/docker-compose.yml")"
+: > "$WORK/docker-up-generation-stale.log"
+set +e
+stale_output="$(env TAG=sha-cccccccccccc \
+  RELEASE_SHA=cccccccccccccccccccccccccccccccccccccccc \
+  RELEASE_RUN_NUMBER=99 WOTB_STALE_RELEASE_GUARD=1 WOTB_DEPLOY_SERVICE=wotb-backend \
+  FAKE_DOCKER_UP_LOG="$WORK/docker-up-generation-stale.log" \
+  WOTB_BACKUP_ROOT="$WORK/backups-generation-stale" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+stale_rc=$?
+set -e
+[[ $stale_rc -ne 0 ]] || fail "same-service stale generation must reject"
+grep -q 'stale release run 99 cannot overwrite deployed wotb-backend run 100' <<<"$stale_output" \
+  || fail "same-service stale error missing: $stale_output"
+[[ "$(sha256sum "$WORK/docker-compose.yml")" == "$before_stale_compose" ]] \
+  || fail "same-service stale precheck mutated production compose"
+[[ ! -s "$WORK/docker-up-generation-stale.log" ]] \
+  || fail "same-service stale precheck reached docker compose up"
+
+# Multi-service stale precheck is atomic: neither target may mutate first.
+printf '90\n' > "$WORK/deployed-state/wotb-backend.run"
+stage_candidate_b
+before_multi_compose="$(sha256sum "$WORK/docker-compose.yml")"
+: > "$WORK/docker-up-generation-multi.log"
+set +e
+multi_output="$(env TAG=sha-dddddddddddd \
+  RELEASE_SHA=dddddddddddddddddddddddddddddddddddddddd \
+  RELEASE_RUN_NUMBER=99 WOTB_STALE_RELEASE_GUARD=1 \
+  WOTB_DEPLOY_SERVICES=wotb-backend,wotb-frontend \
+  WOTB_DEPLOY_IMAGE_SERVICES=wotb-backend,wotb-frontend \
+  FAKE_DOCKER_UP_LOG="$WORK/docker-up-generation-multi.log" \
+  WOTB_BACKUP_ROOT="$WORK/backups-generation-multi" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+multi_rc=$?
+set -e
+[[ $multi_rc -ne 0 ]] || fail "multi-service stale generation must reject"
+grep -q 'stale release run 99 cannot overwrite deployed wotb-frontend run 101' <<<"$multi_output" \
+  || fail "multi-service stale error missing"
+[[ "$(sha256sum "$WORK/docker-compose.yml")" == "$before_multi_compose" ]] \
+  || fail "multi-service stale precheck mutated production compose"
+[[ ! -s "$WORK/docker-up-generation-multi.log" ]] \
+  || fail "multi-service stale precheck reached docker compose up"
+unset WOTB_STALE_RELEASE_GUARD WOTB_DEPLOY_SERVICE WOTB_DEPLOY_SERVICES WOTB_DEPLOY_IMAGE_SERVICES
+unset RELEASE_SHA RELEASE_RUN_NUMBER TAG
+
 # ---- observability gates must fail closed on up=0 and an empty Loki result ----
 set +e
 up_zero_output="$(env FAKE_PROMETHEUS_UP=0 WOTB_OBSERVABILITY_RETRIES=1 \
@@ -808,6 +900,82 @@ env -i PATH="$PATH" HOME="$WORK" bash -c 'cd "$1" && docker compose -f docker-co
 env -i PATH="$PATH" HOME="$WORK" WOTB_COMPOSE_DIR="$WORK" WOTB_BACKUP_ROOT="$WORK/backups" \
   bash "$WORK/deploy/postgres-backup.sh" --database wotb --skip-retention \
   || fail "postgres-backup.sh fails without deploy env"
+
+# ---- full deploy state targets follow image services, not deploy scope ----
+set_generation_state() {
+  local run_number="$1" sha="$2" service
+  mkdir -p "$WORK/deployed-state"
+  for service in wotb-backend wotb-frontend keycloak; do
+    printf '%s\n' "$run_number" > "$WORK/deployed-state/$service.run"
+    printf '%s\n' "$sha" > "$WORK/deployed-state/$service.sha"
+  done
+}
+
+run_full_generation_case() {
+  local image_services="$1" run_number="$2" commit_sha="$3" output healthy_backend_tag
+  stage_candidate_b
+  export TAG="sha-${commit_sha:0:12}" RELEASE_SHA="$commit_sha" RELEASE_RUN_NUMBER="$run_number"
+  export WOTB_STALE_RELEASE_GUARD=1 WOTB_DEPLOY_SERVICES=all
+  export WOTB_DEPLOY_IMAGE_SERVICES="$image_services"
+  unset WOTB_DEPLOY_SERVICE FAKE_APP_UNHEALTHY_TAG FAKE_APP_UNHEALTHY_SERVICE
+  if [[ ",${image_services}," == *,wotb-backend,* ]]; then
+    healthy_backend_tag="$TAG"
+  else
+    healthy_backend_tag="$(awk -F: '/wotbtools-backend:/ { print $NF; exit }' "$WORK/docker-compose.yml")"
+  fi
+  export FAKE_HEALTHY_BACKEND_TAG="$healthy_backend_tag"
+  output="$(WOTB_BACKUP_ROOT="$WORK/backups-generation-all-$run_number" \
+    bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)" \
+    || fail "full generation $run_number failed: $output"
+}
+
+# all + frontend image only: frontend advances, backend/keycloak remain at 90.
+state_sha_90='9090909090909090909090909090909090909090'
+set_generation_state 90 "$state_sha_90"
+full_frontend_sha='cccccccccccccccccccccccccccccccccccccccc'
+backend_run_100_after_full='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+run_generation_case wotb-backend 100 "$backend_run_100_after_full" failed
+run_full_generation_case wotb-frontend 101 "$full_frontend_sha"
+[[ "$(cat "$WORK/deployed-state/wotb-frontend.run")" == 101 ]] \
+  || fail "all + frontend image must advance frontend generation"
+[[ "$(cat "$WORK/deployed-state/wotb-backend.run")" == 90 ]] \
+  || fail "all + frontend image must not advance backend generation"
+[[ "$(cat "$WORK/deployed-state/keycloak.run")" == 90 ]] \
+  || fail "all + frontend image must not advance keycloak generation"
+[[ "$(cat "$WORK/deployed-state/wotb-frontend.sha")" == "$full_frontend_sha" ]] \
+  || fail "all + frontend image must write frontend commit state"
+
+# A failed backend run 100 followed by all + frontend run 101 must still allow
+# the backend run 100 retry: the full deploy did not claim backend generation.
+run_generation_case wotb-backend 100 "$backend_run_100_after_full"
+[[ "$(cat "$WORK/deployed-state/wotb-backend.run")" == 100 ]] \
+  || fail "backend retry after partial full deploy must remain allowed"
+[[ "$(cat "$WORK/deployed-state/wotb-frontend.run")" == 101 ]] \
+  || fail "backend retry must preserve frontend generation"
+
+# all + no image services is config-only and must not change application state.
+config_only_sha='dddddddddddddddddddddddddddddddddddddddd'
+set_generation_state 110 "$config_only_sha"
+run_full_generation_case '' 111 "$config_only_sha"
+for service in wotb-backend wotb-frontend keycloak; do
+  [[ "$(cat "$WORK/deployed-state/$service.run")" == 110 ]] \
+    || fail "config-only all must not advance $service generation"
+  [[ "$(cat "$WORK/deployed-state/$service.sha")" == "$config_only_sha" ]] \
+    || fail "config-only all must not change $service commit state"
+done
+
+# all + all images updates every application service.
+all_images_sha='eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+set_generation_state 120 "$config_only_sha"
+run_full_generation_case wotb-backend,wotb-frontend,keycloak 121 "$all_images_sha"
+for service in wotb-backend wotb-frontend keycloak; do
+  [[ "$(cat "$WORK/deployed-state/$service.run")" == 121 ]] \
+    || fail "all images must advance $service generation"
+  [[ "$(cat "$WORK/deployed-state/$service.sha")" == "$all_images_sha" ]] \
+    || fail "all images must write $service commit state"
+done
+unset FAKE_HEALTHY_BACKEND_TAG WOTB_STALE_RELEASE_GUARD WOTB_DEPLOY_SERVICES WOTB_DEPLOY_IMAGE_SERVICES
+unset RELEASE_SHA RELEASE_RUN_NUMBER TAG
 
 # ---- no LKG + no current deployment -> fail closed before promotion ----
 stage_candidate_b

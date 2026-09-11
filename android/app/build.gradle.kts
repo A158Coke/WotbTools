@@ -1,6 +1,35 @@
+import groovy.json.JsonSlurper
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+private val committedWotbVersion = (project.findProperty("wotbVersion") as String?)
+    ?: error("android/gradle.properties must define wotbVersion")
+private val versionPattern = Regex("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
+versionPattern.matchEntire(committedWotbVersion)
+    ?: error("wotbVersion must be strict X.Y.Z: $committedWotbVersion")
+private val resolvedWotbVersion = (project.findProperty("wotbVersionOverride") as String?)
+    ?.also { versionPattern.matchEntire(it) ?: error("wotbVersionOverride must be strict X.Y.Z: $it") }
+    ?: committedWotbVersion
+private val resolvedVersionParts = resolvedWotbVersion.split('.').map(String::toInt)
+private val resolvedVersionCode = resolvedVersionParts[0] * 1_000_000 +
+    resolvedVersionParts[1] * 1_000 + resolvedVersionParts[2]
+require(resolvedVersionParts[0].toString().length <= 4 && resolvedVersionParts[1] <= 999 && resolvedVersionParts[2] <= 999) {
+    "Android version segments exceed the versionCode allocation: $resolvedWotbVersion"
+}
+require(resolvedVersionCode in 1..2_100_000_000) {
+    "Android versionCode is outside the supported range: $resolvedVersionCode"
+}
+private val bridgeContractFile = rootProject.file("../contracts/android-native-bridge.json")
+check(bridgeContractFile.isFile) { "Missing contracts/android-native-bridge.json" }
+private val bridgeContract = (JsonSlurper().parse(bridgeContractFile) as Map<*, *>)
+private val contractBridgeVersion = (bridgeContract["bridgeVersion"] as Number).toInt()
+private val propertyBridgeVersion = (project.findProperty("wotbNativeBridgeVersion") as String?)?.toIntOrNull()
+    ?: error("android/gradle.properties must define wotbNativeBridgeVersion")
+check(propertyBridgeVersion == contractBridgeVersion) {
+    "wotbNativeBridgeVersion=$propertyBridgeVersion must match contracts/android-native-bridge.json bridgeVersion=$contractBridgeVersion"
 }
 
 // 签名参由 CI（android-release.yml）经 -PwotbKeystore* 注入；本地无 key 时不配置 release 签名。
@@ -20,10 +49,12 @@ android {
         applicationId = "com.wotbtools.app"
         minSdk = 26
         targetSdk = 34
-        // CI 通过 -PwotbVersionCode / -PwotbVersionName 注入真实版本，单一来源（见 docs/android/release-process）。
-        versionCode = (project.findProperty("wotbVersionCode") as String?)?.toIntOrNull() ?: 1
-        versionName = (project.findProperty("wotbVersionName") as String?) ?: "0.1.0"
+        versionCode = resolvedVersionCode
+        versionName = resolvedWotbVersion
+        buildConfigField("int", "NATIVE_BRIDGE_VERSION", contractBridgeVersion.toString())
     }
+
+    buildFeatures { buildConfig = true }
 
     signingConfigs {
         if (keystorePath != null) {
