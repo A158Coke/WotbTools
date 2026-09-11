@@ -1,4 +1,10 @@
-import { consumePendingReplay, getPendingReplay, isAndroidApp } from './usePlatformBridge.js'
+import {
+  consumePendingReplay,
+  getNativeBridgeVersion,
+  getPendingReplay,
+  isAndroidApp,
+  isNativeBridgeCompatible,
+} from './usePlatformBridge.js'
 
 /**
  * 端侧 Replay 导入钩子：把 Native 收到（并已复制到 app cache）的 share/open replay
@@ -61,6 +67,12 @@ export function useNativeReplayImport({ isAuthenticated = () => false, onPending
     if (!isAuthenticated()) {
       // 未登录：pending 原样留在 Native，登录成功（页面重新挂载）后再消费。
       console.debug('[replay-native] pending deferred reason=unauthenticated')
+      return false
+    }
+    const nativeBridgeVersion = await getNativeBridgeVersion()
+    if (!isNativeBridgeCompatible(nativeBridgeVersion)) {
+      console.warn('[replay-native] pending skipped reason=bridge-version-mismatch')
+      onReadError?.('native-client-upgrade-required')
       return false
     }
     const pending = await getPendingReplay()

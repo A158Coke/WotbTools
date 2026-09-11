@@ -1,9 +1,13 @@
 name: Deploy
-# 生产 Grafana MCP 已下线（2026-08-11）：不再传递 GRAFANA_MCP_TOKEN，
-# 宿主 Caddy /mcp 路由与 Grafana MCP Service Account 由人工清理。
-run-name: Deploy ${{ inputs.service || 'all' }} from ${{ github.ref_name }} by @${{ github.actor }}
+# 生产 Grafana MCP 已下线（2026-08-11）：不再传递 GRAFANA_MCP_TOKEN。
+run-name: Deploy release by @${{ github.actor }}
 
 on:
+  workflow_run:
+    workflows:
+      - Build
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       service:
@@ -23,7 +27,7 @@ on:
           - wotb-backend
           - wotb-frontend
       image_tag:
-        description: Immutable sha-... image tag from an independent Build run; required for all/application services
+        description: Immutable sha-... image tag from an independent Build run; required for application services
         required: false
         type: string
 
@@ -36,56 +40,154 @@ concurrency:
 
 jobs:
   changes:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-      service: ${{ steps.service.outputs.service }}
+      release_sha: ${{ steps.manifest.outputs.release_sha }}
+      release_tag: ${{ steps.manifest.outputs.release_tag }}
+      build_run_number: ${{ steps.manifest.outputs.build_run_number }}
+      deploy_services: ${{ steps.manifest.outputs.deploy_services }}
+      image_services: ${{ steps.manifest.outputs.image_services }}
+      stale_release_guard: ${{ steps.manifest.outputs.stale_release_guard }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          ref: main
-      - name: Compute deployment identity
-        id: tag
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      - name: Download triggering Build manifest
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v5
+        with:
+          name: deployment-manifest
+          path: release-artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Resolve manual release identity
+        if: github.event_name == 'workflow_dispatch'
+        id: manual_identity
         env:
-          REQUESTED_TAG: ${{ inputs.image_tag }}
           REQUESTED_SERVICE: ${{ inputs.service }}
+          REQUESTED_TAG: ${{ inputs.image_tag }}
+          WORKFLOW_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          case "$REQUESTED_SERVICE" in
-            all|keycloak|wotb-backend|wotb-frontend)
-              [[ "$REQUESTED_TAG" =~ ^sha-[0-9a-f]{7,40}$ ]] || {
-                echo "image_tag must be an immutable sha-<commit> tag for $REQUESTED_SERVICE" >&2
-                exit 1
-              }
-              ;;
-            *)
-              if [ -n "$REQUESTED_TAG" ] && [[ ! "$REQUESTED_TAG" =~ ^sha-[0-9a-f]{7,40}$ ]]; then
-                echo "image_tag must be an immutable sha-<commit> tag when provided" >&2
-                exit 1
-              fi
-              ;;
-          esac
-          tag="${REQUESTED_TAG:-sha-dispatch}"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - name: Resolve deployment service
-        id: service
+          if [ -n "$REQUESTED_TAG" ]; then
+            [[ "$REQUESTED_TAG" =~ ^sha-[0-9a-f]{7}$ ]] || {
+              echo "image_tag must be an immutable sha-<7-char-commit> tag when provided" >&2
+              exit 1
+            }
+            candidate="${REQUESTED_TAG#sha-}"
+          else
+            candidate="$WORKFLOW_SHA"
+          fi
+          release_sha="$(git rev-parse "$candidate^{commit}")"
+          release_tag="${REQUESTED_TAG:-sha-$(git rev-parse --short=7 "$release_sha")}"
+          {
+            echo "release_sha=$release_sha"
+            echo "release_tag=$release_tag"
+          } >> "$GITHUB_OUTPUT"
+      - name: Validate deployment manifest
+        id: manifest
         env:
-          REQUESTED_SERVICE: ${{ inputs.service }}
-        run: echo "service=$REQUESTED_SERVICE" >> "$GITHUB_OUTPUT"
+          EVENT_NAME: ${{ github.event_name }}
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha || steps.manual_identity.outputs.release_sha }}
+          MANUAL_SERVICE: ${{ inputs.service || '' }}
+          MANUAL_SHA: ${{ steps.manual_identity.outputs.release_sha || '' }}
+          MANUAL_TAG: ${{ steps.manual_identity.outputs.release_tag || '' }}
+          BUILD_RUN_ID: ${{ github.event.workflow_run.id || 'manual' }}
+          BUILD_RUN_NUMBER: ${{ github.event.workflow_run.run_number || '1' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = workflow_run ]; then
+            manifest_path=release-artifact/deployment-manifest.json
+            [ -f "$manifest_path" ] || {
+              echo "deployment manifest artifact is missing" >&2
+              exit 1
+            }
+            metadata="$(python3 deploy/release_plan.py validate \
+              --manifest "$manifest_path" --expected-sha "$EXPECTED_SHA")"
+            stale_release_guard=1
+          else
+            python3 deploy/release_plan.py manual \
+              --service "$MANUAL_SERVICE" \
+              --commit-sha "$MANUAL_SHA" \
+              --image-tag "$MANUAL_TAG" \
+              --build-run-id "$BUILD_RUN_ID" \
+              --build-run-number "$BUILD_RUN_NUMBER" > deployment-manifest.json
+            metadata="$(python3 deploy/release_plan.py validate \
+              --manifest deployment-manifest.json --expected-sha "$MANUAL_SHA")"
+            stale_release_guard=0
+          fi
+          python3 - "$metadata" "$stale_release_guard" <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import sys
+
+          manifest = json.loads(sys.argv[1])
+          print(f"release_sha={manifest['commitSha']}")
+          print(f"release_tag={manifest['imageTag']}")
+          print(f"build_run_number={manifest['buildRunNumber']}")
+          print(f"deploy_services={','.join(manifest['deployServices'])}")
+          print(f"image_services={','.join(manifest['imageServices'])}")
+          print(f"stale_release_guard={sys.argv[2]}")
+          PY
+
+  image_existence:
+    needs: [changes]
+    if: needs.changes.result == 'success' && needs.changes.outputs.image_services != ''
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify immutable images exist
+        env:
+          IMAGE_SERVICES: ${{ needs.changes.outputs.image_services }}
+          RELEASE_TAG: ${{ needs.changes.outputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          IFS=',' read -r -a services <<< "$IMAGE_SERVICES"
+          for service in "${services[@]}"; do
+            case "$service" in
+              wotb-backend) image=ghcr.io/a158coke/wotbtools-backend ;;
+              wotb-frontend) image=ghcr.io/a158coke/wotbtools-frontend ;;
+              keycloak) image=ghcr.io/a158coke/wotbtools-keycloak ;;
+              *) echo "unsupported image service: $service" >&2; exit 1 ;;
+            esac
+            docker manifest inspect "$image:$RELEASE_TAG" >/dev/null
+          done
 
   deploy:
-    needs: [changes]
-    if: needs.changes.result == 'success'
+    needs: [changes, image_existence]
+    if: >-
+      always() &&
+      needs.changes.result == 'success' &&
+      (needs.image_existence.result == 'success' ||
+       (needs.changes.outputs.image_services == '' && needs.image_existence.result == 'skipped'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: No-op release
+        if: needs.changes.outputs.deploy_services == ''
+        run: echo "No deployable runtime changes in ${{ needs.changes.outputs.release_sha }}"
       - uses: actions/checkout@v5
+        if: needs.changes.outputs.deploy_services != ''
         with:
-          ref: main
+          ref: ${{ needs.changes.outputs.release_sha }}
       - name: Prepare deployment directory
+        if: needs.changes.outputs.deploy_services != ''
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -99,6 +201,7 @@ jobs:
             rm -rf -- "$WOTB_DIR/deploy.incoming"
             mkdir -p "$WOTB_DIR/deploy.incoming"
       - name: Install deployment scripts
+        if: needs.changes.outputs.deploy_services != ''
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -108,7 +211,8 @@ jobs:
           source: deploy
           target: /opt/wotb/deploy.incoming
           overwrite: true
-      - name: Deploy selected service via SSH
+      - name: Deploy exact release services via SSH
+        if: needs.changes.outputs.deploy_services != ''
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -116,11 +220,15 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: TAG,WOTB_DEPLOY_SERVICE,DB_PASSWORD,KC_ADMIN_PASSWORD,WG_APPLICATION_ID,KEYCLOAK_ADMIN_CLIENT_SECRET,AI_API_KEY,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS,AI_BASE_URL,AI_MODEL,AI_CONNECT_TIMEOUT_SEC,AI_TIMEOUT_SEC,AI_CALL_TIMEOUT_SEC,AI_RETRY_MAX_ATTEMPTS,AI_RETRY_INITIAL_BACKOFF_MS,AI_RETRY_MAX_BACKOFF_MS,AI_RETRY_BACKOFF_MULTIPLIER,AI_CONTEXT_WINDOW_TOKENS,AI_SINGLE_REPLAY_MAX_INPUT_TOKENS,AI_MAX_OUTPUT_TOKENS,AI_PROMPT_SAFETY_MARGIN_TOKENS,AI_THINKING_ENABLED,AI_THINKING_ENABLED_CALL2,AI_REASONING_EFFORT,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY,AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT
+          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_STALE_RELEASE_GUARD,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,DB_PASSWORD,KC_ADMIN_PASSWORD,WG_APPLICATION_ID,KEYCLOAK_ADMIN_CLIENT_SECRET,AI_API_KEY,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS,AI_BASE_URL,AI_MODEL,AI_CONNECT_TIMEOUT_SEC,AI_TIMEOUT_SEC,AI_CALL_TIMEOUT_SEC,AI_RETRY_MAX_ATTEMPTS,AI_RETRY_INITIAL_BACKOFF_MS,AI_RETRY_MAX_BACKOFF_MS,AI_RETRY_BACKOFF_MULTIPLIER,AI_CONTEXT_WINDOW_TOKENS,AI_SINGLE_REPLAY_MAX_INPUT_TOKENS,AI_MAX_OUTPUT_TOKENS,AI_PROMPT_SAFETY_MARGIN_TOKENS,AI_THINKING_ENABLED,AI_THINKING_ENABLED_CALL2,AI_REASONING_EFFORT,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY,AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT
           script: bash /opt/wotb/deploy.incoming/deploy/deploy.sh
         env:
-          TAG: ${{ needs.changes.outputs.tag }}
-          WOTB_DEPLOY_SERVICE: ${{ needs.changes.outputs.service }}
+          TAG: ${{ needs.changes.outputs.release_tag }}
+          RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
+          RELEASE_RUN_NUMBER: ${{ needs.changes.outputs.build_run_number }}
+          WOTB_STALE_RELEASE_GUARD: ${{ needs.changes.outputs.stale_release_guard }}
+          WOTB_DEPLOY_SERVICES: ${{ needs.changes.outputs.deploy_services }}
+          WOTB_DEPLOY_IMAGE_SERVICES: ${{ needs.changes.outputs.image_services }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           KC_ADMIN_PASSWORD: ${{ secrets.KC_ADMIN_PASSWORD }}
           WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}

@@ -1,22 +1,19 @@
 name: Android Release
-# 一键发布（推荐）: Actions -> Android Release -> Run workflow -> 输入 X.Y.Z。
-# 兼容入口: `android-v*` tag push（自动发布，逻辑与 workflow_dispatch 完全一致）。
-# 两条入口统一走同一套 Resolve release metadata / fail-fast guards / 发布协议。
+# 自动发布：main 合并后由 committed android/gradle.properties 决定是否有新版本。
+# 手工入口只用于重跑/恢复，不能输入或修改版本；`android-v*` tag push 保留兼容入口。
+# 三条入口统一走同一套 committed version / contract / fail-fast guards / 发布协议。
 # 发布全程 fail-closed + 幂等：APK/tag/version.json 任一步失败后重跑同一版本都安全，
 # 不会双写、不会覆盖 immutable APK、不会 repoint tag。
 on:
   push:
+    branches:
+      - main
     tags:
       - "android-v*"
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Android version, e.g. 1.0.2"
-        required: true
-        type: string
 
 permissions:
-  # 需要 contents: write 以便 workflow_dispatch 自动创建 release tag (GITHUB_TOKEN)。
+  # 需要 contents: write 以便 main push/手工重跑自动创建 release tag (GITHUB_TOKEN)。
   # 不增加无关权限（不创建 GitHub Release）。
   contents: write
 
@@ -40,8 +37,8 @@ jobs:
       - name: Checkout release source
         uses: actions/checkout@v5
         with:
-          # 手工发布固定 main；tag push 固定在触发 tag 对应 commit。
-          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          # 每个入口都固定到事件携带的 immutable commit SHA；dispatch 随后验证它是 origin/main HEAD。
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Resolve release metadata
@@ -49,11 +46,23 @@ jobs:
         shell: bash
         env:
           WOTB_TRIGGER: ${{ github.event_name }}
-          WOTB_INPUT_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+          WOTB_TAG_NAME: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: |
           set -euo pipefail
           export WOTB_COMMIT="$(git rev-parse HEAD)"
           bash scripts/android-release/resolve-version.sh >> "$GITHUB_OUTPUT"
+
+      - name: Android Contract and committed version gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/android-release/android_contract.py validate \
+            --contract contracts/android-native-bridge.json \
+            --gradle-properties android/gradle.properties \
+            --frontend frontend/src/platform/nativeBridgeContract.js \
+            --native-source android/app/src/main/java/com/wotbtools/app/NativeBridge.kt \
+            --native-source android/app/src/main/java/com/wotbtools/app/MainActivity.kt \
+            --native-source android/app/src/main/java/com/wotbtools/app/ReplayIntentHandler.kt
 
       - name: Validate source is main (workflow_dispatch)
         if: github.event_name == 'workflow_dispatch'
@@ -93,7 +102,7 @@ jobs:
               PROD_STATE="prod_absent"
               ;;
             200)
-              classify_prod "$PROD_JSON" "$VERSION_CODE" "$VERSION_NAME" "$APK_NAME" "$ANDROID_MIN_SUPPORTED_VERSION_CODE"
+              classify_prod "$PROD_JSON" "$VERSION_CODE" "$VERSION_NAME" "$APK_NAME" "$ANDROID_MIN_SUPPORTED_VERSION_CODE" "${{ steps.version.outputs.nativeBridgeVersion }}" "${{ steps.version.outputs.commit }}"
               ;;
             *)
               echo "::error::Unexpected HTTP $CODE fetching production version.json" >&2
@@ -134,17 +143,15 @@ jobs:
                   exit 1
                   ;;
               esac
-              if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-                TAG="${{ steps.version.outputs.tagName }}"
-                COMMIT_SHA="${{ steps.version.outputs.commit }}"
-                REFS="$(git ls-remote --tags origin "refs/tags/$TAG")"
-                classify_tag "$REFS" "$TAG" "$COMMIT_SHA"
-                if [ "$TAG_STATE" != "tag_equal" ]; then
-                  echo "::error::Existing release tag must exist and point to expected commit (got $TAG_STATE); refusing already-published." >&2
-                  exit 1
-                fi
-                echo "Existing release tag verified (points to expected commit)."
+              TAG="${{ steps.version.outputs.tagName }}"
+              COMMIT_SHA="${{ steps.version.outputs.commit }}"
+              REFS="$(git ls-remote --tags origin "refs/tags/$TAG")"
+              classify_tag "$REFS" "$TAG" "$COMMIT_SHA"
+              if [ "$TAG_STATE" != "tag_equal" ]; then
+                echo "::error::Existing release tag must exist and point to expected commit (got $TAG_STATE); refusing already-published." >&2
+                exit 1
               fi
+              echo "Existing release tag verified (points to expected commit)."
               echo "Existing release fully verified; safe success (no-op)."
               echo "releaseAction=already-published" >> "$GITHUB_OUTPUT"
               ;;
@@ -226,13 +233,8 @@ jobs:
         if: steps.preflight.outputs.releaseAction == 'publish'
         working-directory: android
         shell: bash
-        env:
-          WOTB_VERSION_CODE: ${{ steps.version.outputs.versionCode }}
-          WOTB_VERSION_NAME: ${{ steps.version.outputs.versionName }}
         run: |
           gradle assembleRelease \
-            -PwotbVersionCode="$WOTB_VERSION_CODE" \
-            -PwotbVersionName="$WOTB_VERSION_NAME" \
             -PwotbKeystorePath="$RUNNER_TEMP/keystore.jks" \
             -PwotbKeystoreStorePass="$ANDROID_KEYSTORE_PASSWORD" \
             -PwotbKeyAlias="$ANDROID_KEY_ALIAS" \
@@ -353,8 +355,8 @@ jobs:
           fi
           echo "Production APK verified: HTTP 200, $SIZE bytes, SHA-256 $PROD_SHA"
 
-      - name: Ensure release tag (workflow_dispatch, idempotent)
-        if: github.event_name == 'workflow_dispatch' && steps.preflight.outputs.releaseAction == 'publish'
+      - name: Ensure release tag (idempotent)
+        if: github.ref_type != 'tag' && steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
           set -euo pipefail
@@ -390,8 +392,10 @@ jobs:
           APK_NAME="${{ steps.artifact.outputs.apkName }}"
           PUBLISHED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           MIN_SUPPORTED="$ANDROID_MIN_SUPPORTED_VERSION_CODE"
-          printf '{\n  "schemaVersion": 1,\n  "latestVersionCode": %s,\n  "latestVersionName": "%s",\n  "minSupportedVersionCode": %s,\n  "nativeBridgeVersion": 1,\n  "apkUrl": "https://wotbtools.com/download/android/%s",\n  "sha256": "%s",\n  "publishedAt": "%s",\n  "releaseNotes": ""\n}\n' \
-            "$VERSION_CODE" "$VERSION_NAME" "$MIN_SUPPORTED" "$APK_NAME" "$VERSION_SHA" "$PUBLISHED" > "release-staging/version.json"
+          BRIDGE_VERSION="${{ steps.version.outputs.nativeBridgeVersion }}"
+          SOURCE_SHA="${{ steps.version.outputs.commit }}"
+          printf '{\n  "schemaVersion": 1,\n  "latestVersionCode": %s,\n  "latestVersionName": "%s",\n  "minSupportedVersionCode": %s,\n  "nativeBridgeVersion": %s,\n  "sourceSha": "%s",\n  "apkUrl": "https://wotbtools.com/download/android/%s",\n  "sha256": "%s",\n  "publishedAt": "%s",\n  "releaseNotes": ""\n}\n' \
+            "$VERSION_CODE" "$VERSION_NAME" "$MIN_SUPPORTED" "$BRIDGE_VERSION" "$SOURCE_SHA" "$APK_NAME" "$VERSION_SHA" "$PUBLISHED" > "release-staging/version.json"
           cat "release-staging/version.json"
 
       - name: Upload version.json to VPS (LAST)
@@ -419,9 +423,11 @@ jobs:
                 --argjson min "$ANDROID_MIN_SUPPORTED_VERSION_CODE" \
                 --arg url "https://wotbtools.com/download/android/${{ steps.artifact.outputs.apkName }}" \
                 --arg sha "${{ steps.artifact.outputs.sha256 }}" \
-            '.schemaVersion == 1 and .latestVersionCode == $code and .latestVersionName == $name and .minSupportedVersionCode == $min and .apkUrl == $url and .sha256 == $sha' "$TMP_JSON" \
+                --argjson bridge "${{ steps.version.outputs.nativeBridgeVersion }}" \
+                --arg source "${{ steps.version.outputs.commit }}" \
+            '.schemaVersion == 1 and .latestVersionCode == $code and .latestVersionName == $name and .minSupportedVersionCode == $min and .nativeBridgeVersion == $bridge and .sourceSha == $source and .apkUrl == $url and .sha256 == $sha' "$TMP_JSON" \
             || { echo "::error::Production version.json content does not match release metadata" >&2; exit 1; }
-          echo "Production version.json verified (schema/latest/minSupported/apkUrl/sha256)."
+          echo "Production version.json verified (schema/version/bridge/source/apkUrl/sha256)."
 
       - name: Write release summary
         if: always()

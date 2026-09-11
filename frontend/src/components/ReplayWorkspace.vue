@@ -65,7 +65,11 @@ async function importPendingFile(file, pending) {
 const { consumePendingWhenReady } = useNativeReplayImport({
   isAuthenticated: () => authenticated.value,
   onPendingFile: importPendingFile,
-  onReadError: () => { error.value = t('workspace.native_replay_read_failed') },
+  onReadError: (reason) => {
+    error.value = reason === 'native-client-upgrade-required'
+      ? t('workspace.native_client_upgrade_required')
+      : t('workspace.native_replay_read_failed')
+  },
 })
 
 const capabilityOptions = [
