@@ -40,6 +40,8 @@
 | `frontend/ui-system.md` | 改 UI Profile、token、layout primitive 或响应式规则时 |
 | `architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt / 双 Call / Team Autopsy 时 |
 | `architecture/replay-pipeline.md` | 改回放重建 / decoder / 事件流时 |
+| `architecture/battle-timeline.md` | 改 battle timeline 事件模型 / 时间轴聚合时 |
+| `architecture/http-contracts.md` | 改 HTTP OpenAPI 契约、生成 transport 或 runtime schema 时 |
 | `architecture/async-contracts.md` | 改异步 Control / Worker 契约或 future async foundation 时 |
 | `architecture/control-api.md` | 改 Control API 管理面契约时 |
 | `architecture/control-api-native-benchmark.md` | 查 Control API native benchmark 设计 / 结果时 |
@@ -98,6 +100,7 @@
 | `reference/replay-parsed-fields.md` | 查已确认字段含义时 |
 | `reference/maps.md` | 加地图素材 / 查内部 code ↔ 展示名映射时 |
 | `assets/tier-x-models/README.md` | 改 Tier X 专属车型系统 / 资产交接 / 生成资产时 |
+| `assets/tier-x-models/information-loss-audit.md` | 审查 Tier X 资产生成信息损失或渲染保真时 |
 | `assets/tier-x-models/svg-generation-spec.md` | 生成/修复车型资产（WebP bake）时（唯一全局规则） |
 | `assets/tier-x-models/tier-x-inventory.md` | 查 Tier X 清单 / baseModelKey / 参考链接时 |
 
@@ -127,6 +130,7 @@
 |---|---|
 | `auth/wargaming-asia-login.md` | 改 WG 登录需求 / 实现时 |
 | `auth/wargaming-asia-deployment.md` | 上线 / 排障 WG 登录时 |
+| `auth/keycloak-login-theme.md` | 改 Keycloak 登录页主题或 realm theme 配置时 |
 | `auth/keycloak-mapper-guide.md` | JWT 缺 claim / 改 claims 时 |
 | `auth/keycloak-qq-only.md` | QQ 登录部署参考时 |
 | `auth/keycloak-admin-user-search.md` | 改 Keycloak Admin 用户检索 / Admin Users 分页与 IdP 过滤时 |
