@@ -1,7 +1,7 @@
 # WotBTools 观测系统（Observability）运维文档
 
 > 可观测系统：**Backend 结构化日志 + requestId、HTTP/AI/Replay 指标、Prometheus + Loki + Grafana + Alloy**。
-> 当前实现包含八个 Dashboard（生产总览 / Keycloak / JVM 与基础设施 / HTTP 与错误 / 回放解析 / 使用统计 / AI 复盘 / 错误检索）、AI 指标在服务边界统计、日志安全与保留策略。
+> 当前实现包含 6 个 Dashboard（生产总览 / JVM 与基础设施 / HTTP 与事故诊断 / 回放与 AI 诊断 / 使用统计与 Android / Keycloak）、AI 指标在服务边界统计、日志安全与保留策略。
 
 ---
 
@@ -268,17 +268,24 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 3. 首次启动后，provisioning 自动创建：
    - Datasource：`Prometheus`（uid `prometheus`，`http://prometheus:9090`）、`Loki`（uid `loki`，`http://loki:3100`）；部署 gate 会调用两个 datasource health API。
    - 默认首页：`GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH` 指向 `wotbtools-production-overview.json`，并通过 Production Overview UID API fetch 验证 provisioning 已加载。
-   - Dashboard：
-      - **WotBTools · JVM 与基础设施**（uid `wotbtools-backend-overview`）— process/system CPU、heap、memory pool、GC、线程、Hikari、磁盘与诊断日志；保留原 UID 兼容已有链接
-      - **WotBTools · HTTP 与错误**（uid `wotbtools-http-errors`）— 请求/状态码次数、URI Top 10、过滤低样本慢 URI 的 P95、P50/P95/P99 趋势与 Loki errorCode 分布
-      - **WotBTools · 回放解析**（uid `wotbtools-replay-parser`）— 回放解析功能使用情况
-      - **WotBTools 使用统计**（uid `wotbtools-usage`）— Replay Processing Job/files/已完成/失败与 AI Review 已启动/成功/失败/事实校验退回（均按 Grafana 所选时间范围估算增量，非永久累计）
-      - **WotBTools · 生产总览**（uid `wotbtools-production-overview`）— 默认最近 15 分钟展示生产状态、HTTP、Replay、AI、认证与系统资源，以及 JVM/GC 与最近异常；所有 Panel 标题中文化
-      - **WotBTools · Keycloak 登录日志**（uid `wotbtools-keycloak`）— LOGIN/LOGIN_ERROR、QQ callback、broker authentication、IdP 故障与 WARN/ERROR 日志；不依赖 Keycloak management metrics。
-      - **WotBTools · AI 复盘诊断**（uid `wotbtools-ai-review`）— AI 请求健康、Grounding/Parser/Validation/Retry 分解、耗时 P50/P95/P99、队列/上游 P95、校验冲突与 SSE 生命周期日志
-      - **WotBTools · 错误检索**（uid `wotbtools-error-explorer`）— 按 service、correlationId、errorId、errorCode、jobId 检索 Loki 事故生命周期；同时覆盖 canonical `api_request_failed` ERROR、`api_request_rejected` INFO 与 AI/Replay 终态事件
+    - Dashboard（最终固定为 6 个）：
+       - **WotBTools · 生产总览**（uid `wotbtools-production-overview`）— 最近 1 小时的生产健康、HTTP 摘要、回放/AI 状态与主机资源摘要。
+       - **WotBTools · JVM 与基础设施**（uid `wotbtools-backend-overview`）— CPU、heap、memory pool、GC、线程、Hikari、磁盘、进程与主机运行时细节。
+       - **WotBTools · HTTP 与事故诊断**（uid `wotbtools-error-explorer`）— HTTP 状态/性能、URI 与错误码分布，以及按 service、correlationId、errorId、errorCode、jobId 检索 Incident 生命周期。
+       - **WotBTools · 回放与 AI 诊断**（uid `wotbtools-ai-review`）— 回放处理、AI 结果与延迟、Schema 失败分类、Recovery、Validator Breakdown 和按 correlationId 的深度诊断。
+       - **WotBTools · 使用统计与 Android**（uid `wotbtools-usage`）— 最近 24 小时的回放/AI 使用量与 Android APK 200/206/失败下载统计。
+       - **WotBTools · Keycloak**（uid `wotbtools-keycloak`）— LOGIN/LOGIN_ERROR、QQ callback、broker authentication、IdP 故障与 WARN/ERROR 日志。
 
-看板使用现有 Prometheus/Loki 数据源，并仅增加两项最小观测能力：Keycloak management `/metrics` 与低基数 node-exporter。Production Overview 聚合 Backend、Keycloak、Host、Replay、AI 和最近异常；JVM、HTTP、Replay、AI、错误检索仍保留为独立下钻看板。未引入 cAdvisor、Postgres exporter 或 Alertmanager。
+| UID | 标题 | 职责 |
+|---|---|---|
+| `wotbtools-production-overview` | WotBTools · 生产总览 | 生产健康、HTTP 摘要、回放/AI 状态与资源摘要 |
+| `wotbtools-backend-overview` | WotBTools · JVM 与基础设施 | JVM、连接池、磁盘、进程与主机运行时 |
+| `wotbtools-error-explorer` | WotBTools · HTTP 与事故诊断 | HTTP 性能、错误码与 Incident 检索 |
+| `wotbtools-ai-review` | WotBTools · 回放与 AI 诊断 | 回放、AI、Schema/Validator 与 correlation trace |
+| `wotbtools-usage` | WotBTools · 使用统计与 Android | 回放/AI 使用量与 APK 下载统计 |
+| `wotbtools-keycloak` | WotBTools · Keycloak | 登录、QQ callback、IdP 与 Keycloak 日志 |
+
+看板使用现有 Prometheus/Loki 数据源，并仅增加两项最小观测能力：Keycloak management `/metrics` 与低基数 node-exporter。生产总览只放摘要，HTTP 与事故诊断、回放与 AI 诊断、JVM 与基础设施、使用统计与 Android 分别承接下钻职责。未引入 cAdvisor、Postgres exporter 或 Alertmanager。
 
 Error Explorer 的 `service` 变量映射 Loki 的 `container_name` 标签；`errorId` 对 AI SSE 映射为 `correlationId`，对普通 HTTP 错误映射为 canonical error 的 `id`，其余变量作为日志内容中的 regex token 搜索，用于关联结构化日志里的 `errorCode` 与 `jobId`。当前没有 authoritative deployment/build version 字段，因此不提供 `version` filter。
 
@@ -288,7 +295,7 @@ Production Overview 的 Replay 统计使用线上实际暴露的 `wotb_replay_pr
 
 Processing Job 终态口径：`ready` 表示 Processing Job 已正常完成 finalization；一个 `ready` Job 仍可能包含 source-level replay failures，因此“已完成”不等于所有 replay 解析成功。`failed` 表示 Job 未完成正常 finalization，也不等于 replay 文件解析失败数。当前没有 authoritative 的 per-source success/failure Prometheus metric，Dashboard 与告警不得把 Job 终态描述成 replay parse success / failure。
 
-**统计口径说明（WotBTools 使用统计 / Replay Parser）**
+**统计口径说明（WotBTools 使用统计与回放/AI 诊断）**
 
 - Prometheus Counter 会在 Backend 重启或重新部署后归零，Dashboard 中的"次数"均为 **Grafana 所选时间范围内的估算增量**（`increase()` + `round()`），不是历史累计。
 - **Replay jobs / files**：当前 V2 使用 `wotb_replay_processing_job_total`、`wotb_replay_processing_job_files_total` 与 `wotb_replay_full_processing_total`；其中 `processing_job_files_total` 表示提交到 Job 的输入文件数（Replay files submitted），`full_processing_total` 表示实际执行 full processing 的文件数（Replay files processed），不再把 legacy operation 请求误当作当前处理入口。
@@ -297,27 +304,15 @@ Processing Job 终态口径：`ready` 表示 Processing Job 已正常完成 fina
 - **AI 平均每次调用 Token**：`wotb_ai_upstream_tokens_total{token_type="total"}` 增量 ÷ `wotb_ai_upstream_requests_total` 增量（分母含失败调用，失败计 0 token），即「平均每次发起的 AI 上游调用消耗的 token」；按模式面板可区分单机复盘（`PRE_BATTLE_STRATEGIC_PRIOR` + `TACTICAL_REVIEW_HARNESS`）与团队复盘（`SINGLE_TEAM_BATTLE` + `TEAM_AUTOPSY`）各阶段消耗。
 - **数据保留**：Prometheus 仅保留约 7 天，不提供网站历史永久累计；如未来需要永久累计，应写入 PostgreSQL（当前不引入），而非依赖 Counter。
 
-**WotBTools Replay Parser 面板清单**（uid `wotbtools-replay-parser`）
-
-1. Backend Up
-2. Processing Job started（`wotb_replay_processing_job_total`，所选区间）
-3. Replay files processed（`wotb_replay_full_processing_total`，所选区间）
-4. 已完成 / 失败作业（`wotb_replay_processing_job_result_total`，Job 终态）
-5. 当前 parse active / queue depth / jobs active / queued
-6. 解析耗时 P50/P95/P99（`wotb_replay_processing_file_duration_seconds_*`）
-7. Processing Job outcome trend 与最近 Replay 错误日志
-
 > Processing Job 的成功/失败使用 `wotb_replay_processing_job_result_total` 终态计数；不再统计 legacy `wotb_replay_results_total`，
 > 因为它无法可靠区分解析失败与异常路径（见指标清单）。
 
-**旧 Backend Overview 已迁移为 JVM / Infrastructure；生产首页面板清单**
+**生产总览面板清单**
 
-1. 生产状态、HTTP、认证与 CPU/内存/磁盘/主机负载（首屏）
-2. Replay 处理中、等待中、最近完成与最近失败
-3. AI 当前并发、等待队列、成功、失败与事实校验退回
-4. HTTP、Replay、AI、Keycloak 的趋势与 P50/P95/P99
-5. CPU、内存、磁盘、负载、Backend JVM/GC 摘要
-6. Recent Backend / Keycloak errors（Loki）
+1. 生产状态、HTTP 5xx/P95/吞吐与主机/依赖健康
+2. Replay 处理中、等待中、完成与失败
+3. AI 执行中、等待队列、成功与失败
+4. CPU、内存、磁盘与主机负载
 
 > Dashboard JSON 提交在 `deploy/observability/grafana/dashboards/`，由 Grafana OpenTofu API reconciliation 写入 Grafana；该目录不再由 dashboard file provisioning controller 自动重建。
 > 面板查询基于上述指标名编写；**每个面板是否有真实数据支撑，需在生产实际产生流量后确认**（CI 仅校验 JSON 结构与指标名存在，无法验证面板有数据）。
@@ -440,7 +435,7 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 | `team_review_validation_conflict`（INFO） | attempt, check, reasonCode, severity | 冲突机器分类明细；INFO 是生产默认级别，便于 grounding failure 诊断 |
 | `ai_validation_retry` | stage, validationAttempt, rewrite=TARGETED/FULL/SAFE, reason | 业务返工重试；SAFE 是最终 bounded conservative recovery，之后必须再次完整校验 |
 | `team_review_completed` | validationAttempts, totalPromptTokens, totalCompletionTokens, durationMs, result | Team Call #2 阶段汇总 |
-| `ai_review_contract_failed`（WARN） | attempt, failureCategory, failurePath | JSON/schema contract 失败；不含 prompt/completion/正文 |
+| `ai_review_contract_failed`（WARN） | attempt, failureCategory, failureCode, failurePath | JSON/schema contract 失败；不含 prompt/completion/正文 |
 | `ai_review_recovery_triggered` / `ai_review_recovery_failed`（WARN） | reason, primaryResponseLength | 无可展示正文时最多一次 recovery 的生命周期；不记录正文 |
 
 #### parser 失败分类（低基数枚举）
@@ -464,15 +459,33 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
   `event=team_review_validation_attempt_completed` 看 token 放大（`cumulativePromptTokens`）；若 SAFE 已通过，最终
   `team_review_validation attempt=4 result=PASS`，不会返回该错误。
 - **`AI_REVIEW_SCHEMA_FAILED`**（502）：初始结果和最多一次 recovery 都不是有效 TeamAiReviewResult。
-  查 `ai_review_contract_failed`、`ai_review_recovery_triggered` / `ai_review_recovery_failed`；不要把该错误归入 provider unavailable。
+  这表示模型有响应，但最终 structured contract 无法形成可消费的 `TeamAiReviewResult`；它不是
+  `AI_UPSTREAM_UNAVAILABLE`（后者表示 transport/provider availability failure）。按下方 runbook
+  使用 AI Review dashboard 的 correlation trace 还原两次 contract attempt 与最终终态。
 - **`AI_TIMEOUT`**：分 provider read timeout / 整体预算耗尽 / SSE timeout 三种；查 `event=ai_upstream_call_failed` 与调用耗时、remainingBudgetSec。
 - **`AI_UPSTREAM_UNAVAILABLE`**：上游 5xx / 连接失败；`event=ai_transport_retry` 记录退避重试。
 - **`AI_CANCELLED`**：客户端取消（cancel 端点 / SSE 断开）；查 `event=ai_review_cancelled` 的 `source`。
 
+#### `AI_REVIEW_SCHEMA_FAILED` runbook
+
+1. 在 AI Review dashboard 中找到失败请求。
+2. 从失败日志或 SSE error 的 `id` 获取 `correlationId`。
+3. 在 dashboard 的 `correlationId` textbox 中输入该 ID（默认值 `.*`，只用于 Loki 文本过滤）。
+4. 打开「Schema Failure Request Trace」，确认日志按时间正序展示同一单请求。
+5. 先查看 `ai_review_contract_failed attempt=1`，读取 `failureCategory`、`failureCode` 和 `failurePath`。
+6. 查看 `ai_review_recovery_triggered` 的 `reason`，确认是否启动了唯一一次 fresh recovery。
+7. 查看 recovery 后的 `ai_review_contract_failed attempt=2`，对比两次的 category/code/path。
+8. 查看 `ai_review_recovery_failed` 与 `team_review_completed`，确认 recovery 和 Team Call #2 汇总结果。
+9. 最后查看 `ai_review_failed` 与 `ai_review_finished` 的 `errorCode=AI_REVIEW_SCHEMA_FAILED`，确认最终失败终态。
+
+`AI_REVIEW_SCHEMA_FAILED` != `AI_UPSTREAM_UNAVAILABLE`：前者是模型有响应但无法形成可消费的 structured
+`TeamAiReviewResult`；后者是 transport/provider availability failure。不要用上游可用性告警替代 schema
+failure 的 contract diagnosis，也不要在日志中寻找 raw completion、prompt 或回放内容。
+
 ### 生产事故排查（Error ID → lifecycle）
 
 1. 用户提供错误 UI 中的 `errorId`（AI SSE 中为 `id`，值与 `correlationId` 相同；普通 HTTP 错误使用 canonical `error.id`）。
-2. 打开 `WotBTools · 事故检索`，填入 `errorId`；必要时同时填写 `service`、`errorCode` 或 Replay `jobId`。
+2. 打开 `WotBTools · HTTP 与事故诊断`，填入 `errorId`；必要时同时填写 `service`、`errorCode` 或 Replay `jobId`。
 3. 先看「近期事故」确认服务、事件、错误码和阶段，再看「单次 Incident 生命周期」的时间顺序。
 4. 若为 `AI_REVIEW_GROUNDING_FAILED`，依次检查 `team_review_parse_result`、`team_review_validation`、`team_review_validation_conflict`、`ai_validation_retry` 与 `team_review_validation_attempt_completed`，即可定位 parse、check/reasonCode、TARGETED/FULL/SAFE rewrite 和最终失败；若 SAFE 成功，则最后一次 validation 为 PASS 且不会返回该错误。
 
@@ -562,7 +575,7 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_review_queue_depth` — 当前等待执行的 AI Review worker 数（Gauge；不含正在执行与已拒绝请求）
   - `wotb_ai_team_review_validation_attempt_total{result=pass|parser_invalid|validation_failed|metadata_only_pass}` — Team Call #2 validation attempt 分类；`parser_invalid` 与 `validation_failed` 表示 rework/失败尝试
   - `wotb_ai_team_review_validation_retry_total{stage=TEAM_CALL_2,rewrite=TARGETED|FULL|SAFE}` — validation retry 的低基数阶段与改写类型分布
-  - `wotb_ai_team_review_schema_failure_total{failurePath}` — Team Call #2 JSON/schema contract 失败；不记录 prompt/output
+  - `wotb_ai_team_review_schema_failure_total{reason,path_class}` — Team Call #2 JSON/schema contract 失败；仅使用低基数失败原因和路径类别，不记录 prompt/output
   - `wotb_ai_team_review_repair_total{result=triggered|success|failed}` — recovery 生命周期；不记录 prompt/output
 - **AI upstream**（自定义，`SpringAiChatGateway.chat`，每次上游调用）：
   - `wotb_ai_upstream_requests_total{mode}` — 上游请求量（每个 attempt +1，含 retry 重试；token budget 拒绝不进入 gateway，不计）

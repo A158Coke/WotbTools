@@ -11,8 +11,10 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,7 +22,35 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ObservabilityDashboardContractTest {
 
     private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builder().build();
-    private static final Set<String> REQUIRED_TEAM_EVENTS = Set.of(
+    private static final Set<String> REQUIRED_DASHBOARD_FILES = Set.of(
+            "wotbtools-production-overview.json",
+            "wotbtools-backend-overview.json",
+            "wotbtools-error-explorer.json",
+            "wotbtools-ai-review.json",
+            "wotbtools-usage.json",
+            "wotbtools-keycloak.json");
+    private static final Set<String> REQUIRED_DASHBOARD_UIDS = Set.of(
+            "wotbtools-production-overview",
+            "wotbtools-backend-overview",
+            "wotbtools-error-explorer",
+            "wotbtools-ai-review",
+            "wotbtools-usage",
+            "wotbtools-keycloak");
+    private static final Set<String> REMOVED_DASHBOARD_FILES = Set.of(
+            "wotbtools-http-errors.json",
+            "wotbtools-replay-parser.json",
+            "wotbtools-android-downloads.json");
+    private static final Set<String> REMOVED_TOFU_KEYS = Set.of(
+            "wotbtools_http_errors",
+            "wotbtools_replay_parser",
+            "wotbtools_android_downloads");
+    private static final Set<String> REQUIRED_AI_REVIEW_EVENTS = Set.of(
+            "ai_review_contract_failed",
+            "ai_review_recovery_triggered",
+            "ai_review_recovery_failed",
+            "team_review_completed",
+            "ai_review_failed",
+            "ai_review_finished",
             "team_review_parse_result",
             "team_review_validation",
             "team_review_validation_conflict",
@@ -33,11 +63,37 @@ class ObservabilityDashboardContractTest {
             "wotb_ai_review_queue_wait_seconds");
 
     @Test
+    void dashboardInventoryIsExactlyTheSixApprovedDashboards() throws Exception {
+        final Path dashboardDirectory = resolve("deploy", "observability", "grafana", "dashboards");
+        final Set<String> actualFiles;
+        try (Stream<Path> files = Files.list(dashboardDirectory)) {
+            actualFiles = files.filter(path -> path.toString().endsWith(".json"))
+                    .map(path -> path.getFileName().toString())
+                    .collect(Collectors.toSet());
+        }
+        assertEquals(REQUIRED_DASHBOARD_FILES, actualFiles);
+
+        final Set<String> actualUids = new HashSet<>();
+        for (final String file : actualFiles) {
+            actualUids.add(readDashboard(file).path("uid").asText());
+        }
+        assertEquals(REQUIRED_DASHBOARD_UIDS, actualUids);
+
+        for (final String file : REMOVED_DASHBOARD_FILES) {
+            assertFalse(Files.exists(dashboardDirectory.resolve(file)), "removed dashboard still exists: " + file);
+        }
+        final String tofu = Files.readString(resolve("infra", "tofu", "grafana", "dashboards.tf"));
+        for (final String key : REMOVED_TOFU_KEYS) {
+            assertFalse(tofu.contains(key), "removed OpenTofu dashboard key still exists: " + key);
+        }
+    }
+
+    @Test
     void aiDashboardKeepsLifecycleQueriesAndLowCardinalityMetricBoundary() throws Exception {
         final JsonNode dashboard = readDashboard("wotbtools-ai-review.json");
         final String serialized = dashboard.toString();
 
-        for (final String event : REQUIRED_TEAM_EVENTS) {
+        for (final String event : REQUIRED_AI_REVIEW_EVENTS) {
             assertTrue(serialized.contains(event), "AI Dashboard must cover " + event);
         }
         for (final String event : Set.of("ai_prompt_budget", "ai_review_failed", "ai_review_cancelled",
@@ -64,6 +120,52 @@ class ObservabilityDashboardContractTest {
                 }
             }
         }
+    }
+
+    @Test
+    void schemaFailureBreakdownAggregatesExistingLowCardinalityMetric() throws Exception {
+        final JsonNode panel = panel(readDashboard("wotbtools-ai-review.json"), "Schema 失败分类");
+        assertTrue("table".equals(panel.path("type").asText()));
+        assertTrue("prometheus".equals(panel.path("datasource").path("uid").asText()));
+        final JsonNode target = panel.path("targets").path(0);
+        final String expression = target.path("expr").asText();
+        assertTrue(Boolean.TRUE.equals(target.path("instant").asBoolean()));
+        assertTrue("table".equals(target.path("format").asText()));
+        assertTrue(expression.contains("wotb_ai_team_review_schema_failure_total"));
+        assertTrue(expression.contains("sum by (reason,path_class)"));
+        assertTrue(expression.contains("reason"));
+        assertTrue(expression.contains("path_class"));
+    }
+
+    @Test
+    void schemaFailureRequestTraceIsChronologicalAndCorrelationScoped() throws Exception {
+        final JsonNode dashboard = readDashboard("wotbtools-ai-review.json");
+        final JsonNode panel = panel(dashboard, "Schema Failure Request Trace");
+        assertTrue("logs".equals(panel.path("type").asText()));
+        assertTrue("loki".equals(panel.path("datasource").path("uid").asText()));
+        assertTrue("Ascending".equals(panel.path("options").path("sortOrder").asText()));
+        final String query = panel.path("targets").path(0).path("expr").asText();
+        assertTrue(query.contains("${correlationId:raw}"));
+        for (final String event : Set.of("ai_review_contract_failed", "ai_review_recovery_triggered",
+                "ai_review_recovery_failed", "team_review_completed", "ai_review_failed",
+                "ai_review_finished")) {
+            assertTrue(query.contains(event), "Request trace must cover " + event);
+        }
+    }
+
+    @Test
+    void validationDiagnosticsRetainsBroadParserValidatorAndUpstreamCoverage() throws Exception {
+        final JsonNode dashboard = readDashboard("wotbtools-ai-review.json");
+        final String query = panelQuery(dashboard, "AI Validation Diagnostics（按 correlationId）");
+        for (final String event : Set.of("team_review_parse_result", "team_review_validation",
+                "team_review_validation_conflict", "ai_validation_retry",
+                "team_review_validation_attempt_completed", "ai_prompt_budget",
+                "ai_upstream_call_failed", "ai_review_cancelled", "ai_review_contract_failed",
+                "ai_review_recovery_triggered", "ai_review_recovery_failed", "team_review_completed",
+                "ai_review_failed", "ai_review_finished")) {
+            assertTrue(query.contains(event), "AI Validation Diagnostics must cover " + event);
+        }
+        assertTrue(query.contains("${correlationId:raw}"));
     }
 
     @Test
@@ -100,8 +202,48 @@ class ObservabilityDashboardContractTest {
         assertTrue(serialized.contains("ai_review_failed"));
         assertTrue(serialized.contains("team_review_validation_conflict"));
         assertTrue(serialized.contains("processing_job_failed"));
+        for (final String event : Set.of(
+                "ai_review_started", "ai_upstream_call_started", "ai_upstream_call_completed",
+                "ai_upstream_call_failed", "team_review_parse_result", "team_review_validation",
+                "team_review_validation_conflict", "team_review_validation_attempt_completed",
+                "ai_validation_retry", "ai_review_contract_failed", "ai_review_recovery_triggered",
+                "ai_review_recovery_failed", "team_review_completed", "ai_review_failed",
+                "ai_review_finished", "ai_review_cancelled", "api_request_failed",
+                "api_request_rejected", "processing_job_created", "processing_job_started",
+                "processing_job_parse_done", "processing_job_source_failed", "processing_job_v2_error",
+                "processing_job_ready", "processing_job_failed")) {
+            assertTrue(serialized.contains(event), "Incident lifecycle must cover " + event);
+        }
         assertTrue(serialized.contains("\"sortOrder\":\"Ascending\""),
                 "single incident lifecycle must be chronological");
+    }
+
+    @Test
+    void genericBackendLogsLiveOnlyInErrorExplorer() throws Exception {
+        final Path dashboardDirectory = resolve("deploy", "observability", "grafana", "dashboards");
+        for (final String file : REQUIRED_DASHBOARD_FILES) {
+            if (file.equals("wotbtools-error-explorer.json")) {
+                continue;
+            }
+            final String serialized = Files.readString(dashboardDirectory.resolve(file));
+            assertFalse(serialized.contains("{container_name=\"wotb-backend\"} | json"),
+                    "generic backend logs leaked into " + file);
+            assertFalse(serialized.contains("level=~\"ERROR|WARN\""),
+                    "generic level filter leaked into " + file);
+        }
+    }
+
+    @Test
+    void finalDashboardsHaveApprovedTitlesAndTimeRanges() throws Exception {
+        assertEquals("WotBTools · 生产总览", readDashboard("wotbtools-production-overview.json").path("title").asText());
+        assertEquals("now-1h", readDashboard("wotbtools-production-overview.json").path("time").path("from").asText());
+        assertEquals("WotBTools · JVM 与基础设施", readDashboard("wotbtools-backend-overview.json").path("title").asText());
+        assertEquals("WotBTools · HTTP 与事故诊断", readDashboard("wotbtools-error-explorer.json").path("title").asText());
+        assertEquals("WotBTools · 回放与 AI 诊断", readDashboard("wotbtools-ai-review.json").path("title").asText());
+        assertEquals("WotBTools · 使用统计与 Android", readDashboard("wotbtools-usage.json").path("title").asText());
+        assertEquals("now-24h", readDashboard("wotbtools-usage.json").path("time").path("from").asText());
+        assertEquals("WotBTools · Keycloak", readDashboard("wotbtools-keycloak.json").path("title").asText());
+        assertFalse(readDashboard("wotbtools-ai-review.json").toString().contains("近期失败复盘"));
     }
 
     @Test
@@ -160,9 +302,13 @@ class ObservabilityDashboardContractTest {
     }
 
     private static String panelQuery(final JsonNode dashboard, final String title) {
+        return panel(dashboard, title).path("targets").path(0).path("expr").asText();
+    }
+
+    private static JsonNode panel(final JsonNode dashboard, final String title) {
         for (final JsonNode panel : dashboard.path("panels")) {
             if (title.equals(panel.path("title").asText())) {
-                return panel.path("targets").path(0).path("expr").asText();
+                return panel;
             }
         }
         throw new AssertionError("Panel is missing: " + title);

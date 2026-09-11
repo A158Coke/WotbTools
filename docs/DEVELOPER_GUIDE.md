@@ -510,13 +510,14 @@ import 的 Lighthouse 实例 `lhins-97n0wmx6` 及其四条现有 firewall 规则
 Grafana API configuration 的独立 OpenTofu root 位于
 `infra/tofu/grafana`，使用同一 COS state bucket 的独立 key
 `wotbtools/prod/grafana.tfstate`，provider 固定为 `grafana/grafana 4.45.2`。
-9 个 dashboard 由 provider 管理，canonical JSON 仍来自
+6 个 dashboard 由 provider 管理，canonical JSON 仍来自
 `deploy/observability/grafana/dashboards`；Prometheus/Loki datasource 因
 Grafana `readOnly` 继续由 file provisioning 管理。Docker Compose 仍管理
 Grafana runtime。PR workflow 只做 trusted authenticated plan；合并到
 `main` 后由 `.github/workflows/grafana-tofu-apply.yml` 重新 plan、执行
-dashboard delete safety gate、apply 同一个 saved plan，并只读验证全部
-dashboard UID。认证只从 GitHub Actions secret `GRAFANA_PAT` 注入；当前
+三项旧 dashboard 的精确 delete allowlist safety gate、apply 同一个 saved
+plan，并只读验证 6 个保留 UID 与 3 个移除 UID 的 404。认证只从 GitHub
+Actions secret `GRAFANA_PAT` 注入；当前
 secret 是 owner 批准的既有 Admin service-account token，最小权限 Editor
 token 是后续 hardening，不得把当前 token 描述成 least privilege。
 
