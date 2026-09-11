@@ -295,17 +295,13 @@ Production Overview 的 Replay 统计使用线上实际暴露的 `wotb_replay_pr
 
 Processing Job 终态口径：`ready` 表示 Processing Job 已正常完成 finalization；一个 `ready` Job 仍可能包含 source-level replay failures，因此“已完成”不等于所有 replay 解析成功。`failed` 表示 Job 未完成正常 finalization，也不等于 replay 文件解析失败数。当前没有 authoritative 的 per-source success/failure Prometheus metric，Dashboard 与告警不得把 Job 终态描述成 replay parse success / failure。
 
-**统计口径说明（WotBTools 使用统计与回放/AI 诊断）**
+**统计口径说明（WotBTools 使用统计与 Android）**
 
 - Prometheus Counter 会在 Backend 重启或重新部署后归零，Dashboard 中的"次数"均为 **Grafana 所选时间范围内的估算增量**（`increase()` + `round()`），不是历史累计。
 - **Replay jobs / files**：当前 V2 使用 `wotb_replay_processing_job_total`、`wotb_replay_processing_job_files_total` 与 `wotb_replay_full_processing_total`；其中 `processing_job_files_total` 表示提交到 Job 的输入文件数（Replay files submitted），`full_processing_total` 表示实际执行 full processing 的文件数（Replay files processed），不再把 legacy operation 请求误当作当前处理入口。
-- **AI Review 请求次数**：统计所有请求尝试，包括成功、失败、超时和事实校验退回，不等同于成功次数。
-- **AI Review 成功次数**：仅统计 `wotb_ai_review_results_total{result="success"}`；**未成功次数**保留 `failure` 与 `rejected` 独立标签，不混为同一结果，`rejected` 在 Dashboard 中显示为“事实校验退回”。
+- **AI Review 启动数**：使用 `wotb_ai_review_requests_total` 统计进入 Review 处理边界的请求次数。
 - **AI 平均每次调用 Token**：`wotb_ai_upstream_tokens_total{token_type="total"}` 增量 ÷ `wotb_ai_upstream_requests_total` 增量（分母含失败调用，失败计 0 token），即「平均每次发起的 AI 上游调用消耗的 token」；按模式面板可区分单机复盘（`PRE_BATTLE_STRATEGIC_PRIOR` + `TACTICAL_REVIEW_HARNESS`）与团队复盘（`SINGLE_TEAM_BATTLE` + `TEAM_AUTOPSY`）各阶段消耗。
 - **数据保留**：Prometheus 仅保留约 7 天，不提供网站历史永久累计；如未来需要永久累计，应写入 PostgreSQL（当前不引入），而非依赖 Counter。
-
-> Processing Job 的成功/失败使用 `wotb_replay_processing_job_result_total` 终态计数；不再统计 legacy `wotb_replay_results_total`，
-> 因为它无法可靠区分解析失败与异常路径（见指标清单）。
 
 **生产总览面板清单**
 
