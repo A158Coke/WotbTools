@@ -23,6 +23,7 @@ class NativeBridge(private val host: MainActivity) {
             id = msg.opt("id")
             val params = msg.optJSONObject("params")
             when (msg.optString("method")) {
+                "getBridgeVersion" -> result = host.bridgeVersion()
                 "getCapabilities" -> result = JSONArray(host.bridgeCapabilities())
                 "getPendingReplay" -> result = host.bridgePendingReplayJson()
                 "consumePendingReplay" ->

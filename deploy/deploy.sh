@@ -28,16 +28,102 @@ readonly RESTORE_COMPOSE_FAILED="$WOTB_DIR/docker-compose.failed.yml"
 readonly HEALTH_RETRIES="${WOTB_HEALTH_RETRIES:-60}"
 readonly GRAFANA_READINESS_RETRIES="${WOTB_GRAFANA_READINESS_RETRIES:-20}"
 readonly GRAFANA_READINESS_INTERVAL_SEC="${WOTB_GRAFANA_READINESS_INTERVAL_SEC:-1}"
-readonly DEPLOY_SERVICE="${WOTB_DEPLOY_SERVICE:-all}"
-
-case "$DEPLOY_SERVICE" in
-  all|postgres|node-exporter|prometheus|loki|alloy|grafana|keycloak|wotb-backend|wotb-frontend)
-    ;;
-  *)
-    echo "ERROR: unsupported WOTB_DEPLOY_SERVICE: $DEPLOY_SERVICE" >&2
-    exit 1
-    ;;
+readonly DEPLOY_SERVICES_RAW="${WOTB_DEPLOY_SERVICES:-${WOTB_DEPLOY_SERVICE:-all}}"
+DEPLOY_IMAGE_SERVICES_RAW="${WOTB_DEPLOY_IMAGE_SERVICES:-}"
+readonly RELEASE_SHA_VALUE="${RELEASE_SHA:-}"
+readonly RELEASE_RUN_NUMBER_VALUE="${RELEASE_RUN_NUMBER:-}"
+STALE_RELEASE_GUARD="${WOTB_STALE_RELEASE_GUARD:-0}"
+case "$STALE_RELEASE_GUARD" in
+  1|true|TRUE) STALE_RELEASE_GUARD=1 ;;
+  0|false|FALSE|'') STALE_RELEASE_GUARD=0 ;;
+  *) echo "ERROR: WOTB_STALE_RELEASE_GUARD must be 0/1 or false/true." >&2; exit 1 ;;
 esac
+readonly STALE_RELEASE_GUARD
+readonly DEPLOYED_SHA_FILE="$WOTB_DIR/DEPLOYED_SHA"
+readonly DEPLOYED_RUN_NUMBER_FILE="$WOTB_DIR/DEPLOYED_RUN_NUMBER"
+
+declare -a DEPLOY_SERVICES=()
+declare -a DEPLOY_IMAGE_SERVICES=()
+IFS=',' read -r -a DEPLOY_SERVICES <<< "$DEPLOY_SERVICES_RAW"
+if [ -z "$DEPLOY_IMAGE_SERVICES_RAW" ] && [ -n "${WOTB_DEPLOY_SERVICE:-}" ]; then
+  case "$DEPLOY_SERVICES_RAW" in
+    keycloak|wotb-backend|wotb-frontend) DEPLOY_IMAGE_SERVICES_RAW="$DEPLOY_SERVICES_RAW" ;;
+  esac
+fi
+if [ -z "$DEPLOY_IMAGE_SERVICES_RAW" ] \
+    && [ "$STALE_RELEASE_GUARD" != 1 ] \
+    && [ "$DEPLOY_SERVICES_RAW" = all ]; then
+  # Legacy/manual callers that only supplied TAG=... and full deploy semantics
+  # historically updated all application images. Automatic manifest-driven
+  # deploys always set STALE_RELEASE_GUARD=1, so config-only all remains no-op
+  # for application images and preserves the live immutable tags.
+  DEPLOY_IMAGE_SERVICES_RAW="wotb-backend,wotb-frontend,keycloak"
+fi
+IFS=',' read -r -a DEPLOY_IMAGE_SERVICES <<< "$DEPLOY_IMAGE_SERVICES_RAW"
+
+if [ "${#DEPLOY_SERVICES[@]}" -eq 0 ] || [ -z "${DEPLOY_SERVICES[0]}" ]; then
+  echo "ERROR: WOTB_DEPLOY_SERVICES must contain at least one service." >&2
+  exit 1
+fi
+if [ "${DEPLOY_SERVICES[0]}" = all ] && [ "${#DEPLOY_SERVICES[@]}" -ne 1 ]; then
+  echo "ERROR: all cannot be combined with other deployment services." >&2
+  exit 1
+fi
+for service in "${DEPLOY_SERVICES[@]}"; do
+  case "$service" in
+    all|postgres|node-exporter|prometheus|loki|alloy|grafana|keycloak|wotb-backend|wotb-frontend)
+      ;;
+    *)
+      echo "ERROR: unsupported deployment service: $service" >&2
+      exit 1
+      ;;
+  esac
+done
+for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
+  case "$service" in
+    "") ;;
+    keycloak|wotb-backend|wotb-frontend) ;;
+    *)
+      echo "ERROR: unsupported WOTB_DEPLOY_IMAGE_SERVICES entry: $service" >&2
+      exit 1
+      ;;
+  esac
+done
+
+has_deploy_service() {
+  local wanted="$1" service
+  for service in "${DEPLOY_SERVICES[@]}"; do
+    [ "$service" = "$wanted" ] && return 0
+  done
+  return 1
+}
+
+has_image_service() {
+  local wanted="$1" service
+  for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
+    [ "$service" = "$wanted" ] && return 0
+  done
+  return 1
+}
+
+is_full_deploy() {
+  [ "${#DEPLOY_SERVICES[@]}" -eq 1 ] && [ "${DEPLOY_SERVICES[0]}" = all ]
+}
+
+if [ "$STALE_RELEASE_GUARD" = 1 ]; then
+  [[ "$RELEASE_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "ERROR: automatic deployment requires a full RELEASE_SHA." >&2
+    exit 1
+  }
+  [[ "$RELEASE_RUN_NUMBER_VALUE" =~ ^[1-9][0-9]*$ ]] || {
+    echo "ERROR: automatic deployment requires a positive RELEASE_RUN_NUMBER." >&2
+    exit 1
+  }
+  [ "$TAG" = "sha-${RELEASE_SHA_VALUE:0:7}" ] || {
+    echo "ERROR: TAG does not match RELEASE_SHA." >&2
+    exit 1
+  }
+fi
 
 if [[ ! "$HEALTH_RETRIES" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: WOTB_HEALTH_RETRIES must be a positive integer." >&2
@@ -109,7 +195,27 @@ if [ ! -e "$WOTB_DIR/config/sponsor-config.json" ] && [ -f "$STAGED_DEPLOY_DIR/s
 fi
 
 PREV_SHA=""
-if [ -f DEPLOYED_SHA ]; then PREV_SHA=$(tr -d '\r\n' < DEPLOYED_SHA); fi
+if [ -f "$DEPLOYED_SHA_FILE" ]; then PREV_SHA=$(tr -d '\r\n' < "$DEPLOYED_SHA_FILE"); fi
+
+if [ "$STALE_RELEASE_GUARD" = 1 ]; then
+  current_run_number=""
+  if [ -f "$DEPLOYED_RUN_NUMBER_FILE" ]; then
+    current_run_number=$(tr -d '\r\n' < "$DEPLOYED_RUN_NUMBER_FILE")
+  fi
+  if [ -n "$current_run_number" ] && [[ ! "$current_run_number" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: existing DEPLOYED_RUN_NUMBER is invalid; refusing automatic deployment." >&2
+    exit 1
+  fi
+  if [ -n "$current_run_number" ] && [ "$RELEASE_RUN_NUMBER_VALUE" -lt "$current_run_number" ]; then
+    echo "ERROR: stale release run $RELEASE_RUN_NUMBER_VALUE cannot overwrite deployed run $current_run_number." >&2
+    exit 1
+  fi
+  if [ -n "$current_run_number" ] && [ "$RELEASE_RUN_NUMBER_VALUE" -eq "$current_run_number" ] \
+      && [ -n "$PREV_SHA" ] && [ "$PREV_SHA" != "$RELEASE_SHA_VALUE" ]; then
+    echo "ERROR: release run number is reused for a different commit." >&2
+    exit 1
+  fi
+fi
 
 current_image_tag() {
   local service="$1" tag
@@ -125,11 +231,11 @@ current_image_tag() {
 
 prepare_service_override() {
   rm -f -- "$STAGED_SERVICE_OVERRIDE"
-  if [ "$DEPLOY_SERVICE" = all ]; then
+  if is_full_deploy && [ "${#DEPLOY_IMAGE_SERVICES[@]}" -eq 3 ]; then
     return 0
   fi
   if [ ! -f "$LIVE_COMPOSE" ]; then
-    echo "ERROR: targeted deployment requires an existing live compose file." >&2
+    echo "ERROR: deployment requires an existing live compose file to preserve non-target application images." >&2
     return 1
   fi
 
@@ -137,11 +243,9 @@ prepare_service_override() {
   backend_tag="$(current_image_tag backend)"
   frontend_tag="$(current_image_tag frontend)"
   keycloak_tag="$(current_image_tag keycloak)"
-  case "$DEPLOY_SERVICE" in
-    wotb-backend) backend_tag="$TAG" ;;
-    wotb-frontend) frontend_tag="$TAG" ;;
-    keycloak) keycloak_tag="$TAG" ;;
-  esac
+  has_image_service wotb-backend && backend_tag="$TAG"
+  has_image_service wotb-frontend && frontend_tag="$TAG"
+  has_image_service keycloak && keycloak_tag="$TAG"
 
   umask 177
   cat > "$STAGED_SERVICE_OVERRIDE" <<EOF
@@ -181,13 +285,16 @@ fi
 chmod 600 "$STAGED_RESOLVED_COMPOSE"
 
 pull_compose() {
-  local compose_file="$1" service="${2:-}" attempt
+  local compose_file="$1" attempt service
+  shift
   local -a compose_args=(-f "$compose_file")
   if [ "$compose_file" = "$STAGED_COMPOSE" ] && [ -f "$STAGED_SERVICE_OVERRIDE" ]; then
     compose_args+=(-f "$STAGED_SERVICE_OVERRIDE")
   fi
   local -a pull_args=()
-  [ -n "$service" ] && pull_args+=("$service")
+  for service in "$@"; do
+    [ -n "$service" ] && pull_args+=("$service")
+  done
   for attempt in 1 2 3; do
     if docker compose "${compose_args[@]}" pull "${pull_args[@]}"; then return 0; fi
     if [ "$attempt" -lt 3 ]; then
@@ -231,16 +338,39 @@ verify_grafana_from_frontend_network() {
 }
 
 deploy_selected_service() {
-  if [ "$DEPLOY_SERVICE" = all ]; then
+  if is_full_deploy; then
     docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend
+    return 0
+  fi
+  echo "== Deploying selected services: ${DEPLOY_SERVICES[*]} =="
+  docker compose up -d --no-deps --force-recreate --remove-orphans "${DEPLOY_SERVICES[@]}"
+  local service
+  for service in "${DEPLOY_SERVICES[@]}"; do
+    assert_service_running "$service" "$service" || return 1
+  done
+}
+
+deploy_service_label() {
+  if is_full_deploy; then
+    printf 'all\n'
   else
-    echo "== Deploying selected service: $DEPLOY_SERVICE =="
-    docker compose up -d --no-deps --force-recreate --remove-orphans "$DEPLOY_SERVICE"
-    assert_service_running "$DEPLOY_SERVICE" "$DEPLOY_SERVICE" || return 1
+    local joined="" service
+    for service in "${DEPLOY_SERVICES[@]}"; do
+      [ -n "$joined" ] && joined+=,
+      joined+="$service"
+    done
+    printf '%s\n' "$joined"
   fi
 }
 
-wait_healthy() {
+assert_services_running() {
+  local service
+  for service in "$@"; do
+    assert_service_running "$service" "$service" || return 1
+  done
+}
+
+wait_application_healthy() {
   local i ok service_pattern="wotb-backend|wotb-frontend|keycloak"
   for i in $(seq 1 "$HEALTH_RETRIES"); do
     if docker compose ps -a | grep -E "$service_pattern" | grep -qE "Restarting|Exited|Dead"; then
@@ -255,6 +385,44 @@ wait_healthy() {
     [ "$i" -lt "$HEALTH_RETRIES" ] && sleep 2
   done
   echo "Health check failed:" >&2
+  report_health_status
+  return 1
+}
+
+wait_healthy() {
+  if is_full_deploy; then
+    wait_application_healthy
+    return
+  fi
+  local i ok service
+  local has_probe=false
+  for service in "${DEPLOY_SERVICES[@]}"; do
+    case "$service" in
+      wotb-backend|wotb-frontend|keycloak) has_probe=true ;;
+    esac
+  done
+  if [ "$has_probe" = false ]; then
+    return 0
+  fi
+  for i in $(seq 1 "$HEALTH_RETRIES"); do
+    ok=true
+    for service in "${DEPLOY_SERVICES[@]}"; do
+      case "$service" in
+        wotb-backend)
+          docker compose exec -T wotb-backend wget -qO- http://127.0.0.1:8087/api/health >/dev/null 2>&1 || ok=false
+          ;;
+        wotb-frontend)
+          [ "$ok" = true ] && docker compose exec -T wotb-frontend wget --header='Host: wotbtools.com' -qO- http://127.0.0.1:80/api/health >/dev/null 2>&1 || ok=false
+          ;;
+        keycloak)
+          [ "$ok" = true ] && docker compose exec -T wotb-backend wget -qO- http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration >/dev/null 2>&1 || ok=false
+          ;;
+      esac
+    done
+    if [ "$ok" = true ]; then return 0; fi
+    [ "$i" -lt "$HEALTH_RETRIES" ] && sleep 2
+  done
+  echo "Targeted health check failed for: ${DEPLOY_SERVICES[*]}" >&2
   report_health_status
   return 1
 }
@@ -388,8 +556,8 @@ validate_lkg_bundle() {
     return 1
   fi
   for service in backend frontend keycloak; do
-    if ! grep -Eq "wotbtools-${service}:${sha}([[:space:]]|$)" "$compose_file"; then
-      echo "${label}: LKG tag mismatch for ${service}." >&2
+    if ! grep -Eq "wotbtools-${service}:sha-[^[:space:]]+([[:space:]]|$)" "$compose_file"; then
+      echo "${label}: LKG immutable tag missing for ${service}." >&2
       return 1
     fi
   done
@@ -543,7 +711,7 @@ seed_current_lkg() {
   docker compose -f docker-compose.yml config >/dev/null 2>&1 || return 1
   bash "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
     "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" >/dev/null || return 1
-  wait_healthy || return 1
+  wait_application_healthy || return 1
   stage_lkg_snapshot "$LIVE_DEPLOY_DIR" docker-compose.yml "$PREV_SHA" || return 1
   if ! install -m 644 "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" \
       "$LKG_DEPLOY_NEXT_DIR/observability/alloy/config.alloy"; then
@@ -700,7 +868,7 @@ rollback_to_lkg() {
       echo "OBSERVABILITY DEGRADED: observability services or Grafana frontend-network readiness failed during rollback" >&2
     fi
     if wait_healthy; then
-      cp -f "$LKG_SHA" DEPLOYED_SHA
+      cp -f "$LKG_SHA" "$DEPLOYED_SHA_FILE"
       echo "== ROLLBACK OK: $(cat "$LKG_SHA") =="
       report_observability_status || true
       return 0
@@ -739,7 +907,9 @@ rollback_targeted_to_previous() {
     fi
   }
 
-  echo "== TARGETED DEPLOY FAILED: restoring pre-deploy ${DEPLOY_SERVICE} runtime =="
+  local target_label
+  target_label="$(deploy_service_label)"
+  echo "== TARGETED DEPLOY FAILED: restoring pre-deploy ${target_label} runtime =="
   if [ ! -d "$PREV_DEPLOY_DIR" ] || [ ! -f "$PREV_COMPOSE" ]; then
     echo "TARGETED ROLLBACK ABORTED: pre-deploy snapshot is unavailable." >&2
     return 1
@@ -777,28 +947,28 @@ rollback_targeted_to_previous() {
   fi
   snapshot_compose_installed=true
 
-  if pull_compose "$LIVE_COMPOSE" "$DEPLOY_SERVICE" \
-      && docker compose up -d --no-deps --force-recreate --remove-orphans "$DEPLOY_SERVICE" \
-      && assert_service_running "$DEPLOY_SERVICE" "$DEPLOY_SERVICE" \
+  if pull_compose "$LIVE_COMPOSE" "${DEPLOY_SERVICES[@]}" \
+      && docker compose up -d --no-deps --force-recreate --remove-orphans "${DEPLOY_SERVICES[@]}" \
+      && assert_services_running "${DEPLOY_SERVICES[@]}" \
       && wait_healthy; then
     if ! rm -rf -- "$TARGETED_FAILED_DEPLOY_DIR" "$TARGETED_FAILED_COMPOSE"; then
-      echo "WARNING: targeted rollback restored a healthy ${DEPLOY_SERVICE}, but failed-target forensic snapshot cleanup failed." >&2
+    echo "WARNING: targeted rollback restored a healthy ${target_label}, but failed-target forensic snapshot cleanup failed." >&2
     fi
-    echo "== TARGETED ROLLBACK OK: $DEPLOY_SERVICE =="
+    echo "== TARGETED ROLLBACK OK: $target_label =="
     report_observability_status || true
     return 0
   fi
 
-  echo "TARGETED ROLLBACK FAILED: pre-deploy ${DEPLOY_SERVICE} runtime could not be restored; manual intervention required." >&2
+  echo "TARGETED ROLLBACK FAILED: pre-deploy ${target_label} runtime could not be restored; manual intervention required." >&2
   dump_logs
   return 1
 }
 
-staged_pull_service=()
-if [ "$DEPLOY_SERVICE" != all ]; then
-  staged_pull_service=("$DEPLOY_SERVICE")
+staged_pull_services=()
+if ! is_full_deploy; then
+  staged_pull_services=("${DEPLOY_SERVICES[@]}")
 fi
-if ! pull_compose "$STAGED_COMPOSE" "${staged_pull_service[@]}"; then
+if ! pull_compose "$STAGED_COMPOSE" "${staged_pull_services[@]}"; then
   echo "ERROR: staged docker compose pull failed after 3 attempts; live deployment was not changed." >&2
   exit 1
 fi
@@ -853,37 +1023,48 @@ if [ "$rollback_needed" = false ]; then
     echo "ERROR: docker compose up failed; attempting rollback." >&2
     rollback_needed=true
   else
-    if [ "$DEPLOY_SERVICE" = all ]; then
+    if is_full_deploy; then
       if apply_observability_services && verify_grafana_from_frontend_network; then
         :
       else
         echo "OBSERVABILITY DEGRADED: Grafana is not ready through runtime Docker DNS" >&2
       fi
-    elif [ "$DEPLOY_SERVICE" = grafana ]; then
+    elif has_deploy_service grafana; then
       if verify_grafana_from_frontend_network; then
         :
       else
         echo "OBSERVABILITY DEGRADED: Grafana is not ready through runtime Docker DNS" >&2
       fi
-    elif [ "$DEPLOY_SERVICE" = prometheus ] || [ "$DEPLOY_SERVICE" = loki ] \
-        || [ "$DEPLOY_SERVICE" = alloy ] || [ "$DEPLOY_SERVICE" = node-exporter ]; then
+    elif has_deploy_service prometheus || has_deploy_service loki \
+        || has_deploy_service alloy || has_deploy_service node-exporter; then
       :
     fi
     if [ "$rollback_needed" = false ]; then
-      if [ "$DEPLOY_SERVICE" = all ]; then
+      if is_full_deploy; then
         docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
       fi
     fi
     if [ "$rollback_needed" = false ] && wait_healthy; then
-      if [ "$DEPLOY_SERVICE" != all ]; then
-        echo "== TARGETED DEPLOY OK: $DEPLOY_SERVICE =="
+      if ! is_full_deploy; then
+        deployment_id="${RELEASE_SHA_VALUE:-$TAG}"
+        printf '%s\n' "$deployment_id" > "$DEPLOYED_SHA_FILE"
+        if [ -n "$RELEASE_RUN_NUMBER_VALUE" ]; then
+          printf '%s\n' "$RELEASE_RUN_NUMBER_VALUE" > "$DEPLOYED_RUN_NUMBER_FILE"
+          chmod 600 "$DEPLOYED_RUN_NUMBER_FILE"
+        fi
+        echo "== TARGETED DEPLOY OK: $(deploy_service_label) =="
         report_observability_status || true
         exit 0
-      elif ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "$TAG"; then
+      elif ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "${RELEASE_SHA_VALUE:-$TAG}"; then
         echo "ERROR: LKG staging failed after the application health gate; attempting rollback." >&2
         rollback_needed=true
       elif promote_lkg_candidate; then
-        echo "$TAG" > DEPLOYED_SHA
+        deployment_id="${RELEASE_SHA_VALUE:-$TAG}"
+        echo "$deployment_id" > "$DEPLOYED_SHA_FILE"
+        if [ -n "$RELEASE_RUN_NUMBER_VALUE" ]; then
+          printf '%s\n' "$RELEASE_RUN_NUMBER_VALUE" > "$DEPLOYED_RUN_NUMBER_FILE"
+          chmod 600 "$DEPLOYED_RUN_NUMBER_FILE"
+        fi
         docker image prune -af
         docker builder prune -af
         echo "== DEPLOY OK: $TAG =="
@@ -902,7 +1083,7 @@ if [ "$rollback_needed" = false ]; then
 fi
 
 if [ "$rollback_needed" = true ]; then
-  if [ "$DEPLOY_SERVICE" != all ]; then
+  if ! is_full_deploy; then
     if ! rollback_targeted_to_previous; then
       echo "TARGETED ROLLBACK FAILED: no usable pre-deploy runtime was restored." >&2
     fi

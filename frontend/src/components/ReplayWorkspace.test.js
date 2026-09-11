@@ -130,6 +130,10 @@ describe('ReplayWorkspace', () => {
     await nativeImportState.onPendingFile(new File(['replay'], 'a.wotbreplay'), { pendingId: 'pending-a' })
     await flushPromises()
     expect(wrapper.find('[data-testid="ws-native-retry"]').exists()).toBe(false)
+    nativeImportState.onReadError('native-client-upgrade-required')
+    await flushPromises()
+    expect(wrapper.find('.error').text()).toBe('workspace.native_client_upgrade_required')
+    expect(wrapper.find('[data-testid="ws-native-retry"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

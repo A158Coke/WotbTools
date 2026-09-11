@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "bridgeVersion": 1,
+  "origin": "https://wotbtools.com",
+  "allowedOrigins": [
+    "https://wotbtools.com",
+    "https://www.wotbtools.com"
+  ],
+  "rpc": {
+    "request": {
+      "id": "string|number",
+      "method": "string",
+      "params": "object|null"
+    },
+    "response": {
+      "id": "string|number|null",
+      "result": "unknown"
+    }
+  },
+  "methods": {
+    "getBridgeVersion": {
+      "request": { "fields": {} },
+      "response": { "type": "integer" }
+    },
+    "getCapabilities": {
+      "request": { "fields": {} },
+      "response": { "type": "string[]" }
+    },
+    "getPendingReplay": {
+      "request": { "fields": {} },
+      "response": {
+        "type": "object",
+        "nullable": true,
+        "fields": {
+          "pendingId": { "type": "string", "required": true },
+          "name": { "type": "string", "required": true },
+          "size": { "type": "integer", "required": true },
+          "uri": { "type": "string", "required": true }
+        }
+      }
+    },
+    "consumePendingReplay": {
+      "request": {
+        "fields": {
+          "expectedPendingId": { "type": "string", "required": true }
+        }
+      },
+      "response": { "type": "boolean" }
+    },
+    "checkForUpdate": {
+      "request": { "fields": {} },
+      "response": { "type": "boolean" }
+    },
+    "startUpdate": {
+      "request": { "fields": {} },
+      "response": { "type": "boolean" }
+    }
+  },
+  "syntheticResources": {
+    "pendingReplay": {
+      "method": "GET",
+      "url": "https://wotbtools.com/__native/replay-pending",
+      "requiredHeaders": ["X-Wotb-Pending-Id"],
+      "failure": "never-fallback-to-network"
+    }
+  }
+}

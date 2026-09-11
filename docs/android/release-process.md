@@ -1,103 +1,47 @@
 # Android 发布
 
-## 一键发布（推荐入口）
+## 版本与 Bridge 契约
 
-维护者只需在 GitHub Actions 页面操作：
+Android 生产版本只从已提交文件读取：`android/gradle.properties` 的
+`wotbVersion=X.Y.Z` 计算 `versionName` 与
+`versionCode=major*1_000_000+minor*1_000+patch`。正常构建禁止依赖
+`-PwotbVersionCode` / `-PwotbVersionName`；仅保留 `-PwotbVersionOverride` 作为本地开发
+实验参数，生产 workflow 不传入任何版本覆盖参数。
 
-1. 确认 `main` 分支 CI green。
-2. `Actions` → **Android Release** → `Run workflow`。
-3. 输入版本号（`版本` 字段），例如 `1.0.2`。
-4. 点 `Run workflow`，等待绿色。
-5. 在真机上做 smoke。
+`contracts/android-native-bridge.json` 是 Native Bridge 的机器可读唯一协议来源。
+`wotbNativeBridgeVersion` 必须与它一致，前端 `nativeBridgeContract.js` 声明支持的版本也由
+CI 精确校验。Native 运行时通过 `getBridgeVersion` 暴露实际版本；版本不兼容时前端停止
+replay 导入并提示需要升级 Native client，不静默把协议错误当成普通导入失败。
 
-Workflow 自动完成（按真实执行顺序）：版本格式 fail-fast（含 minor/patch 0..999 与
-versionCode 范围校验）→ 固定使用 `main` HEAD → **preflight 幂等分类**（生产最新版本
-> 本次 → 回滚拒绝；== 本次且 metadata 一致 → **进入既有发布核验**（apkUrl 可达、APK 非空、
-实际 APK SHA-256 == production version.json.sha256；dispatch 下 release tag 存在且指向
-expected commit），全部一致才 `already-published` no-op 成功，APK 缺失 / SHA 不匹配 /
-tag 冲突一律 fail-closed；== 但 metadata 不一致 → 拒绝；< 本次 → 进入发布）+
-`minSupportedVersionCode` 校验 →
-frontend 校验 → signing secret/keystore/alias fail-fast → `gradle assembleRelease` →
-`apksigner verify` + 签名证书 SHA-256 固定校验 → SHA-256 单源 → **生产 APK 幂等分类**
-（不存在 → 上传；存在且 SHA == 本次 → 复用不覆盖；存在但 SHA 不同 → immutable 冲突拒绝）
-→ scp 上传 `/opt/wotb/android-release` → `chmod 644` → 生产 APK HTTP 200 + 非空 + SHA 比对
-→ **tag 幂等**（仅 dispatch：不存在 → 创建；已存在且指向本次 commit → 复用；指向其它 commit
-→ 拒绝 repoint）→ **最后写 `version.json`** → 生产 `version.json` jq 内容比对 →
-`$GITHUB_STEP_SUMMARY`。任一关键校验失败即终态失败，fail-closed，不自动覆盖/不降级。
+协议的 breaking inspector 会比较 PR base 与 HEAD：删除/重命名 method、删除或改变字段类型、
+新增必填参数/请求头、改变 synthetic resource URL/方法/失败语义都要求递增
+`bridgeVersion`。独立新增 method 或新增 optional 字段不要求递增。Android Native、FE
+兼容声明与 contract 必须在同一个 PR 中完成。
 
-### 失败重跑 / 幂等语义
+## 自动发布与恢复
 
-- 已完全发布：preflight 判定 `already-published` → 需通过既有发布核验（APK 可达/非空/
-  SHA == version.json.sha256 + dispatch 下 tag 指向 expected commit）后才 no-op 成功；
-  核验失败即 fail-closed（APK 缺失 / SHA 不匹配 / tag 冲突）。
-- APK 上传后失败：重跑同一版本，生产 APK 已存在；若重构建 SHA 与原 APK 相同 → 复用；
-  若不同 → 按 immutable 规则失败（不会覆盖、不会双写）。
-- tag 后失败：重跑时 tag 已存在且指向本次 commit → 复用；指向其它 commit → 失败。
-- version.json 前失败：APK/tag 已就位，重跑只补写 `version.json`（LAST/最后发布）。
+`.github/workflows/android-release.yml` 监听 `main` push；`workflow_dispatch` 只用于重跑/恢复，
+没有版本输入，`android-vX.Y.Z` tag push 保留为兼容入口。所有入口 checkout 固定 source SHA，
+版本来自 committed properties，tag 必须与该版本一致。生产比较规则为：仓库版本较新则发布，
+相同则验证不可变 APK 后安全 no-op，仓库版本较旧则 fail-closed；`ANDROID_MIN_SUPPORTED_VERSION_CODE`
+仍独立控制强制更新门槛。
 
-## 兼容入口：`android-v*` tag push
+发布顺序是：source/contract/version gate → production preflight → FE test/build → signed APK
+build → certificate/SHA 校验 → immutable APK 上传 → tag → 最后写 `version.json`，再做线上内容
+核验。`version.json` 的 `nativeBridgeVersion` 从 contract 读取，并记录 `sourceSha`；它不会由
+workflow 中的硬编码覆盖。任何 APK、tag、版本元数据冲突都拒绝覆盖或降级。
 
-仍支持 `git tag android-vX.Y.Z && git push origin android-vX.Y.Z` 直接触发发布，逻辑与
-一键入口完全一致（走同一套 metadata / guards / 发布协议），二者不会维护两份发布实现。
-建议日常使用一键入口。
+## PR 门禁与 rollout
 
-## 版本模型
+CI 的 Android Contract job 校验严格 semver、版本 code 公式、runtime change 必须递增版本、
+bridge breaking change 必须递增 bridgeVersion、Gradle/contract/FE 三方一致，并覆盖 test-only、
+docs-only、optional additive、breaking header/field、生产版本 older/equal/newer 分类。
 
-`versionCode` / `versionName` / `nativeBridgeVersion` 单一来源：CI 统一解析并写入
-`version.json`；`app/build.gradle.kts` 只读 `-PwotbVersionCode` / `-PwotbVersionName`
-。版本不散落，禁止手工多处修改。
+兼容 rollout 顺序：先发布同时支持旧版和新版 Bridge 的 FE，再发布 Native Android；不能兼容时
+先提高 `minSupportedVersionCode`，不得让线上旧 App 静默请求新协议。
 
-- 版本号必须是 `X.Y.Z`，每段为 `0` 或非零开头的整数（拒绝 `1.0.02` / `01.0.2` 等前导零，
-  避免同一 versionCode 对应多个 versionName）。
-- `minor` / `patch` 必须在 `0..999`，最终 versionCode 必须在 `1..2_100_000_000`（Android /
-  Play Store 合法范围）；越界即 fail-fast。
-- tag：`android-vX.Y.Z`（如 `android-v1.2.0`）。
-- versionCode = `major*1_000_000 + minor*1_000 + patch`（单调递增）。
-- 普通 Web deploy 不触发 APK 构建。
+## 签名与前置条件
 
-## 签名（BLOCKER）
-
-所有正式版本用**同一把 signing key**；换 key 无法覆盖升级。key（`.jks`）与口令**不进 Git**。
-CI 临时从 GitHub Secret 还原：
-
-```
-ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
-```
-
-`ANDROID_SIGNING_CERT_SHA256` 是 GitHub Actions **Variable**（public 证书指纹，不是 secret）。
-首次配置需从已知生产签名证书提取。Workflow 在 build 后比对 APK signer 证书 SHA-256 与该
-Variable，未配置或指纹不匹配即刻失败，不允许 fallback/skip。
-
-> **警告**：丢失 keystore = 永远无法覆盖升级，只能发更高 versionCode 让用户卸载重装。
-> 请把 keystore 备份到安全、非 Git 且可恢复的位置（密码管理器/离线/云盘）。
-
-## 流程（.github/workflows/android-release.yml）
-
-`workflow_dispatch`（或 `android-v*` tag）→ checkout `main`（dispatch）/tag commit（push）→
-解析 + 严格校验版本（格式 + minor/patch 0..999 + versionCode 范围）→ 校验 source 为
-`main` HEAD → **preflight 幂等分类**（见上，决定 `publish` 或 `already-published`）→
-frontend `npm ci/test/build` → JDK 21 + Gradle 8.7 → 校验并还原 signing keystore
-（fail-fast：4 个 secret 非空 → `printf '%s'` 解码 Base64 → keystore 非空 →
-`keytool -list` 命中 alias；全程不打印 secret/密码/Base64/私钥）→ `gradle assembleRelease`
-（注入 `-PwotbKeystore*`）→ `apksigner verify --verbose --print-certs` + 证书指纹比对 →
-`sha256sum` 单源 → **生产 APK 幂等分类**（不存在/同 SHA/异 SHA 三分支）→ scp 上传
-`/opt/wotb/android-release`（仅不存在时）→ `chmod 644` → 生产 APK HTTP 200 + 非空 + SHA 比对
-→ **tag 幂等**（仅 dispatch）→ **写 `version.json`（LAST）** → scp 上传 → 生产
-`version.json` jq 内容比对 → 汇总。
-
-原子发布顺序：APK 可访问且内容校验通过后才更新 `version.json`，避免「强制更新但 APK 404 /
-内容不一致」。
-
-## 回滚 / 紧急封禁
-
-- 回滚代码：重新发布**更高** versionCode 的修复 APK；禁止自动 downgrade（Android 不会）。
-- 紧急封禁某版本：把 `minSupportedVersionCode` 上调（如 `1000000 → 1001000`），旧版本启动即
-  进入强制更新无法进业务。
-
-## 前置依赖
-
-- `deploy`（nginx `location /download/android/` + compose bind-mount + `android-release`
-  宿主目录）必须已上线，否则 `/download/android/*` 会被 SPA fallback 返回 HTML（危险）。
-  该部署随 `deploy.yml`（main 变更）下发。
-- 发布前必须配置 GitHub Variable `ANDROID_SIGNING_CERT_SHA256`（否则新 workflow 首跑按
-  fail-closed 失败）。请在公共证书信息允许范围内从生产 APK 或已知 keystore 提取该指纹。
+正式版本使用同一 signing key。keystore 与口令只来自 GitHub Secrets，证书 SHA-256 来自
+GitHub Variable；缺失或不匹配均 fail-closed。`deploy` 必须先把 nginx 的
+`/download/android/` 与宿主 bind mount 正确上线，否则版本 manifest 不能安全发布。

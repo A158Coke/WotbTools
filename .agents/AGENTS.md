@@ -76,6 +76,7 @@
    具体执行点：`.agents/skills/plan-executer/SKILL.md`（Reuse Audit）与
    `.agents/skills/review-with-docs/SKILL.md`（新增 abstraction 审查 gate）。
 13. **外部数据生命周期** — 持久化外部 API 返回的个人或统计数据时，必须同时提供明确的 retention/deletion path；删除流程需限定数据来源、遵守真实 FK 顺序，并保护仍被其他业务引用的共享文件或记录。
+14. **Android Version-as-Code** — Android production runtime 改动必须递增 committed `android/gradle.properties:wotbVersion`；不得手工编辑 `versionCode` 或依赖 release workflow 版本参数。Native Bridge wire breaking change 必须同时更新 `contracts/android-native-bridge.json`、递增 `bridgeVersion`、更新 Native/FE，并在同一 PR 通过 deterministic compatibility tests；先让 FE 兼容旧/新协议，再发布 Native。
 
 ## 禁止
 

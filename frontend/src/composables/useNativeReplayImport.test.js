@@ -10,7 +10,7 @@ const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.
  * Native 侧替身：`consumePendingReplay` 实现 **compare-and-clear**
  * （只有 expected pendingId 与当前 pending 完全一致才清理），与 Android 侧一致。
  */
-function stubNative(pending, consumeResult = true) {
+function stubNative(pending, consumeResult = true, bridgeVersion = 1) {
   const listeners = []
   const methods = []
   const consumeRequests = []
@@ -22,7 +22,9 @@ function stubNative(pending, consumeResult = true) {
       methods.push(msg.method)
       listeners.forEach(cb => {
         let result
-        if (msg.method === 'getPendingReplay') {
+        if (msg.method === 'getBridgeVersion') {
+          result = bridgeVersion
+        } else if (msg.method === 'getPendingReplay') {
           result = cleared ? null : current
         } else if (msg.method === 'consumePendingReplay') {
           consumeRequests.push(msg.params || {})
@@ -66,6 +68,21 @@ function stubFetchBlob() {
 }
 
 describe('useNativeReplayImport', () => {
+
+  it('fails safely when Native Bridge version is incompatible', async () => {
+    stubNative(PENDING_A, true, 2)
+    const onPendingFile = vi.fn(async () => true)
+    const onReadError = vi.fn()
+    const { consumePendingWhenReady } = useNativeReplayImport({
+      isAuthenticated: () => true,
+      onPendingFile,
+      onReadError,
+    })
+
+    await expect(consumePendingWhenReady()).resolves.toBe(false)
+    expect(onPendingFile).not.toHaveBeenCalled()
+    expect(onReadError).toHaveBeenCalledWith('native-client-upgrade-required')
+  })
 
   it.each(['http', 'network', 'body'])('retains pending on %s read failure and succeeds on retry', async (failure) => {
     const native = stubNative(PENDING_A)

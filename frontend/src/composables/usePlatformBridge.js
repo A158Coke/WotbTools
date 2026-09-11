@@ -8,7 +8,10 @@
  * 本模块是异步 RPC（postMessage → reply 'message' 事件），只做能力查询与 pending replay 交接，
  * 绝不借此调用任何系统能力（readFile / http / execute / launch）。Vue 业务用 supports() 能力探测。
  */
+import { SUPPORTED_NATIVE_BRIDGE_VERSION } from '../platform/nativeBridgeContract.js'
+
 const BRIDGE_KEY = 'WotbNative'
+const BRIDGE_RPC_TIMEOUT_MS = 5000
 
 let seq = 0
 
@@ -29,7 +32,12 @@ function call(method, params = {}) {
       resolve(null)
       return
     }
+    if (typeof b.addEventListener !== 'function') {
+      resolve(null)
+      return
+    }
     const id = ++seq
+    let timeoutId
     const handler = (e) => {
       let data = e.data
       if (typeof data === 'string') {
@@ -39,17 +47,33 @@ function call(method, params = {}) {
         if (typeof b.removeEventListener === 'function') {
           b.removeEventListener('message', handler)
         }
+        clearTimeout(timeoutId)
         resolve(data.result)
       }
     }
     b.addEventListener('message', handler)
     b.postMessage(JSON.stringify({ id, method, params }))
+    timeoutId = setTimeout(() => {
+      if (typeof b.removeEventListener === 'function') {
+        b.removeEventListener('message', handler)
+      }
+      resolve(null)
+    }, BRIDGE_RPC_TIMEOUT_MS)
   })
 }
 
 export async function getCapabilities() {
   const c = await call('getCapabilities')
   return Array.isArray(c) ? c : []
+}
+
+export async function getNativeBridgeVersion() {
+  const version = await call('getBridgeVersion')
+  return Number.isInteger(version) ? version : null
+}
+
+export function isNativeBridgeCompatible(version) {
+  return version === SUPPORTED_NATIVE_BRIDGE_VERSION
 }
 
 export async function supports(capability) {
@@ -82,6 +106,8 @@ export function usePlatformBridge() {
   return {
     isAndroidApp,
     getCapabilities,
+    getNativeBridgeVersion,
+    isNativeBridgeCompatible,
     supports,
     getPendingReplay,
     consumePendingReplay,
