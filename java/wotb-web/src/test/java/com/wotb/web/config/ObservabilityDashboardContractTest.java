@@ -138,6 +138,39 @@ class ObservabilityDashboardContractTest {
     }
 
     @Test
+    void dashboardUidParsingContractIsIndependentOfJsonFormatting() throws Exception {
+        final JsonNode pretty = OBJECT_MAPPER.readTree("{\n  \"title\": \"Pretty\",\n  \"uid\": \"pretty-uid\",\n  \"version\": 1\n}");
+        final JsonNode compact = OBJECT_MAPPER.readTree("{\"title\":\"Compact\",\"uid\":\"compact-uid\",\"version\":1}");
+        assertEquals("pretty-uid", pretty.path("uid").asText());
+        assertEquals("compact-uid", compact.path("uid").asText());
+    }
+
+    @Test
+    void selectedRangeLokiAggregatesUseInstantQueries() throws Exception {
+        final JsonNode errorCode = panel(readDashboard("wotbtools-error-explorer.json"), "错误码分布 · Loki");
+        assertEquals("table", errorCode.path("type").asText());
+        final JsonNode errorCodeTarget = errorCode.path("targets").path(0);
+        assertEquals("instant", errorCodeTarget.path("queryType").asText());
+        assertTrue(errorCodeTarget.path("expr").asText().contains("[$__range]"));
+
+        final JsonNode usage = readDashboard("wotbtools-usage.json");
+        for (final String title : Set.of("APK 下载次数（完整 200）", "续传 / Range 请求（206）",
+                "APK 下载失败（4xx / 5xx）", "按 APK 版本统计（完整 200）")) {
+            final JsonNode panel = panel(usage, title);
+            assertEquals("instant", panel.path("targets").path(0).path("queryType").asText(), title);
+            assertTrue(panel.path("targets").path(0).path("expr").asText().contains("[$__range]"), title);
+        }
+
+        final JsonNode trend = panel(usage, "APK 下载趋势");
+        assertEquals("timeseries", trend.path("type").asText());
+        assertEquals("short", trend.path("fieldConfig").path("defaults").path("unit").asText());
+        for (final JsonNode target : trend.path("targets")) {
+            assertEquals("range", target.path("queryType").asText());
+            assertTrue(target.path("expr").asText().contains("count_over_time"));
+        }
+    }
+
+    @Test
     void schemaFailureRequestTraceIsChronologicalAndCorrelationScoped() throws Exception {
         final JsonNode dashboard = readDashboard("wotbtools-ai-review.json");
         final JsonNode panel = panel(dashboard, "Schema Failure Request Trace");
