@@ -20,6 +20,9 @@ fail() {
   echo "OBSERVABILITY FAIL [$domain]: $*" >&2
   exit 1
 }
+dashboard_uid() {
+  jq -er 'if (.uid | type) == "string" and (.uid | length) > 0 then .uid else empty end' "$1"
+}
 compose_exec() { docker compose exec -T wotb-backend wget -qO- "$1"; }
 frontend_main_exec() {
   docker compose exec -T wotb-frontend wget --header='Host: wotbtools.com' -qO- "$1"
@@ -182,9 +185,8 @@ wait_for_grafana_datasource "Grafana Loki datasource" \
 production_uid=""
 for dashboard_file in "$DASHBOARD_DIR"/*.json; do
   [ -f "$dashboard_file" ] || continue
-  uid="$(grep -m1 -oE '^[[:space:]]*"uid"[[:space:]]*:[[:space:]]*"[^" ]+"' "$dashboard_file" \
-    | sed -E 's/.*"uid"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-  [ -n "$uid" ] || fail "GRAFANA" "dashboard has no uid: $dashboard_file"
+  uid="$(dashboard_uid "$dashboard_file")" \
+    || fail "GRAFANA" "dashboard has no valid uid: $dashboard_file"
   [ "$(basename "$dashboard_file")" = "wotbtools-production-overview.json" ] && production_uid="$uid"
   wait_for_grafana_api "Grafana dashboard $(basename "$dashboard_file")" \
     "/api/dashboards/uid/$uid" '"dashboard"' "$uid"
