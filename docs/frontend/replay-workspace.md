@@ -33,11 +33,12 @@ Authentication 是 Replay Workspace 的**真实 UI gate**，不是 mount 时的 
 
 | 状态 | 渲染 |
 |---|---|
-| auth init 未完成（`authReady=false`） | `data-testid="ws-auth-loading"`（检查登录态） |
-| init 完成且未登录 | `data-testid="ws-auth-required"` + 登录按钮 `data-testid="ws-login"` |
+| auth init 未完成（`idle` / `initializing`） | `data-testid="ws-auth-loading"`（检查登录态） |
+| init 失败或 watchdog 超时（`failed`） | `data-testid="ws-auth-failed"` + 重新检查 `data-testid="ws-auth-retry"` / 直接登录 `data-testid="ws-login-recovery"` |
+| init 完成且未登录（`unauthenticated`） | `data-testid="ws-auth-required"` + 登录按钮 `data-testid="ws-login"` |
 | 已登录 | 完整工作台（Source panel / FileUploader / Processing 面板 / data·AI·Playback 面板 / Export 卡片 / 确认弹窗） |
 
-- header 与 capability tabs 在三种状态都渲染：它们既是导航入口，也是「登录失败/取消后重新发起」的
+- header 与 capability tabs 在四种状态都渲染：它们既是导航入口，也是「登录失败/取消后重新发起」的
   重试入口；`setCapability()` 未登录时发起 login，不再静默 return。
 - 未登录时 `ReplaySourcePanel`、`FileUploader`、`ReplayProcessingPanel`、`ReplayPage`、AI / Playback
   面板、`ReplayTaskCard` 与 `RemoveConfirmModal` 全部不渲染——未登录无法触发上传或解析。
@@ -46,7 +47,7 @@ Authentication 是 Replay Workspace 的**真实 UI gate**，不是 mount 时的 
   都能重新发起新的 login transaction。
 - 未登录 mount 仍自动发起一次 login（保留既有 UX），失败或取消后停留在 `ws-auth-required` 可重试状态。
 - Android pending 字节通过固定同源 HTTPS Native resource 读取；header 校验 pending identity，响应不缓存。fetch/blob 失败复用 Replay 错误区与重试，不启动 Job、不 ACK。
-- Android pending replay 只在 `authReady && authenticated` 时消费；未登录期间 Native pending 原样保留
+- Android pending replay 只在 `authInitState === 'authenticated' && authenticated` 时消费；未登录或 init 失败期间 Native pending 原样保留
   （见 [`docs/android/replay-intent.md`](../android/replay-intent.md)）。
 - **Processing 传输边界**（`src/api/replay.ts`）四条端点全部要求 auth session：`createProcessingJob`
   保留 XHR 上传进度、只追加 `Authorization: Bearer`（绝不手工设置 multipart `Content-Type`，boundary

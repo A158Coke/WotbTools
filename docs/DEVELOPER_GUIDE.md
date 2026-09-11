@@ -390,7 +390,12 @@ Workspace 的标题/清空、能力 tabs、批次与当前回放 selector 分别
 Drawer。**登录门禁**：整个 Replay Workspace 全部要求登录——未登录进入任意 replay capability
 （data / ai / playback）自动跳 Keycloak/OIDC 并按 redirectUri 回原 capability，不再有「data 匿名解析」；
 判断前先等 Keycloak init 完成（auth init race safe），已有 SSO/session 用户不被无谓 `kc.login()` 打断。
-Workspace 是三态 UI gate（检查登录态 / Login Required + 可重试登录 / 工作台）：未登录时不渲染
+`useAuth` 将状态明确表示为 `idle` / `initializing` / `authenticated` / `unauthenticated` /
+`failed`；12 秒 app-level watchdog 到期后进入可恢复失败态，不把失败伪装成匿名。retry 与
+login recovery 会创建新的 Keycloak adapter generation，旧 init 的迟到结果不能写回；正常 Web/Android
+仍使用 `check-sso`，只有 direct login recovery 不重复 silent iframe bootstrap。
+Workspace 是四态 UI gate（检查登录态 / Login Required + 可重试登录 / auth init failed + 恢复操作 /
+工作台）：未登录时不渲染
 Source panel、上传器与任何 capability 面板，因此未登录无法发出 processing 请求；`useAuth.login()` 只对
 「同一个进行中的 redirect」去重（`loginInFlight` 在 `finally` 释放，无 component-lifetime 一次性锁），
 失败或取消后 capability tabs、登录按钮与 UserMenu 都能重新发起新的 login transaction。后端同样把
