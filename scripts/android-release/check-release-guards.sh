@@ -16,7 +16,7 @@ guard_min_supported() {
   return 1
 }
 
-# classify_prod <path_to_prod_version.json> <version_code> <version_name> <apk_name> <min_supported>
+# classify_prod <path_to_prod_version.json> <version_code> <version_name> <apk_name> <min_supported> [bridge_version] [source_sha]
 # Sets PROD_STATE:
 #   prod_older            prod latestVersionCode < new    -> proceed to publish
 #   prod_equal_ok         prod latest == new AND full metadata coherent -> already published (safe success)
@@ -25,8 +25,8 @@ guard_min_supported() {
 # Also sets PROD_PUBLISHED_SHA to the sha256 recorded in production version.json
 # (used later to verify the already-published APK still matches).
 classify_prod() {
-  local json="$1" code="$2" name="$3" apk="$4" min="$5"
-  local latest latest_name apk_url sha min_pub schema
+  local json="$1" code="$2" name="$3" apk="$4" min="$5" expected_bridge="${6:-}" expected_source="${7:-}"
+  local latest latest_name apk_url sha min_pub schema published_bridge published_source
   PROD_STATE=""
   PROD_PUBLISHED_SHA=""
   latest="$(jq -r '.latestVersionCode // empty' "$json" 2>/dev/null)" \
@@ -48,12 +48,16 @@ classify_prod() {
   PROD_PUBLISHED_SHA="$sha"
   min_pub="$(jq -r '.minSupportedVersionCode // empty' "$json" 2>/dev/null)"
   schema="$(jq -r '.schemaVersion // empty' "$json" 2>/dev/null)"
+  published_bridge="$(jq -r '.nativeBridgeVersion // empty' "$json" 2>/dev/null)"
+  published_source="$(jq -r '.sourceSha // empty' "$json" 2>/dev/null)"
   local expected_url="https://wotbtools.com/download/android/$apk"
   if [ "$latest_name" = "$name" ] \
      && [ "$apk_url" = "$expected_url" ] \
      && [ -n "$sha" ] \
      && [ "$min_pub" = "$min" ] \
-     && [ "$schema" = "1" ]; then
+     && [ "$schema" = "1" ] \
+     && { [ -z "$expected_bridge" ] || [ "$published_bridge" = "$expected_bridge" ]; } \
+     && { [ -z "$expected_source" ] || [ "$published_source" = "$expected_source" ]; }; then
     PROD_STATE="prod_equal_ok"
   else
     PROD_STATE="prod_equal_conflict"

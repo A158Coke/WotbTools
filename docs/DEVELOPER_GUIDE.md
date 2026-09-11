@@ -526,13 +526,15 @@ local state、计划文件和真实 tfvars 禁止提交；`.terraform.lock.hcl` 
 root 管理，也不能使用带一天 expiration 的 artifact bucket 承载 state。
 
 生产 Build 与 Deploy 分为 `.github/workflows/build.yml` 和
-`.github/workflows/deploy.yml`，两者通过 `workflow_dispatch` 独立运行，不自动
-串接。Build 可选择 `all` 或单个应用镜像；Deploy 可选择任意 production
-Compose service。纯 `deploy/observability/grafana/dashboards/**` 只触发 Grafana
-OpenTofu API reconciliation，不触发应用 Build。生产发布原则：
+`.github/workflows/deploy.yml`。Build 在 `main` 成功 push 后构建 immutable
+`sha-<SHA>` 镜像并上传唯一 `deployment-manifest`；Deploy 由成功的 Build
+`workflow_run` 自动接力，也保留 `workflow_dispatch` 手动入口。Build 可选择
+`all` 或单个应用镜像；Deploy 只部署 manifest 中的 production Compose service。
+纯 `deploy/observability/grafana/dashboards/**` 只触发 Grafana OpenTofu API
+reconciliation，不触发应用 Build。生产发布原则：
 
 1. 代码质量验证（后端 Maven / 前端 Vitest + Vite build）由 PR CI 作为 merge gate 承担；Build/Deploy 不重复运行测试套件，Build 只负责 Docker 镜像构建推送，Deploy 只负责部署与健康检查。无论 main push 或 `workflow_dispatch`，`changes` job 只解析一次 `main` 的 full commit SHA，production builders 全部 checkout 该冻结 SHA，不能从 feature ref 或移动的 main 推送 SHA / `latest`。
-2. Build 构建同一 frozen main commit 的 backend/frontend/keycloak `sha-<SHA>` 镜像；生产 compose 钉 SHA，不依赖 `latest`。Deploy 的 targeted service 入口只更新所选 service，非目标应用继续使用当前 live compose 中的 immutable tag；`all` 和应用 targeted deploy 必须显式使用 Build 已产出的 tag。
+2. Build 构建同一 frozen main commit 的 backend/frontend/keycloak `sha-<SHA>` 镜像，并把 commit SHA、Build run number、镜像 tag、需要部署的 service 与需要更新的 image service 写入权威 manifest；生产 compose 钉 SHA，不依赖 `latest`。Deploy 只消费并校验该 manifest，不重新计算变更、不重新 build、不重复跑测试；targeted service 只更新所选 service，非目标应用继续使用当前 live compose 中的 immutable tag。
 3. 新 compose 先写 `docker-compose.next.yml` 并 pull；成功后才替换正式 compose。
 4. 部署后检查 backend `/api/health`、前端 nginx E2E、Keycloak realm。
 5. 每次成功的完整 `all` 部署先把完整已验证部署树提升为 `/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml` 与 `DEPLOYED_SHA.lkg`；targeted service deploy 不提升 LKG。完整 `all` 健康检查失败只从该 LKG 恢复；targeted failure 只恢复失败 service 的 `deploy.prev` / `docker-compose.prev.yml` pre-deploy snapshot，保留其它独立 targeted release。
@@ -540,6 +542,14 @@ OpenTofu API reconciliation，不触发应用 Build。生产发布原则：
 7. 健康检查最终失败时，回滚前必须保留新版本诊断（`report_health_status` 各服务 PASS/FAILED/SKIPPED + `dump_logs` 的 `ps -a`/容器 inspect/三服务 logs）；诊断命令失败不得阻断回滚。
 8. 部署前保存 `deploy.prev` 取证快照；compose 切换后显式应用观测配置。阻塞 gate 只验证 backend `/api/health`、frontend/nginx `Host: wotbtools.com` `/api/health` 与 Keycloak OIDC discovery；通过后立即把应用可用部署树提升为 LKG。Prometheus/Loki/Alloy/Grafana、datasource/dashboard、metrics 与 log ingestion 由 `verify-observability.sh` 继续严格验证，但失败只记录 `OBSERVABILITY DEGRADED`，不得触发 application rollback。没有经校验的 LKG 时禁止破坏当前 live tree；若已有健康 live deployment，正常发布流程会先验证并建立 LKG，否则必须 fail-closed 并人工处理。回滚成功标准同样只有三项应用可用性检查。
 9. Keycloak 镜像以 `start --optimized` 启动并保留 PostgreSQL 与应用 OIDC discovery；不再启用或暴露 management health/metrics 端口。Keycloak 观测只保留 Docker 日志经 Alloy → Loki → Grafana 的链路，CI 的 `keycloak-runtime` job 必须真实构建并启动该应用运行时契约。
+
+Android 发布同样采用仓库内 Version-as-Code：`android/gradle.properties` 的
+`wotbVersion` 是唯一版本来源，`versionCode` 由 SemVer 确定性计算；发布工作流
+禁止通过输入参数覆盖版本，并把版本、bridge version、源 commit SHA 写入
+`version.json`。`contracts/android-native-bridge.json` 是 Native/Web bridge
+契约 SSOT；运行时变更必须 bump Android 版本，breaking bridge 变更必须同步 bump
+bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 的版本与契约，
+生产发布前还会校验 APK、manifest 和 `version.json` 的 SHA/版本一致性。
 
 **Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 

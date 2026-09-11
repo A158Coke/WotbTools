@@ -1,4 +1,12 @@
-import { consumePendingReplay, getPendingReplay, isAndroidApp } from './usePlatformBridge.js'
+import {
+  consumePendingReplay,
+  getCapabilities,
+  getNativeBridgeVersion,
+  getPendingReplay,
+  isAndroidApp,
+  isNativeBridgeCompatible,
+  isLegacyNativeReplayContractCompatible,
+} from './usePlatformBridge.js'
 
 /**
  * 端侧 Replay 导入钩子：把 Native 收到（并已复制到 app cache）的 share/open replay
@@ -63,7 +71,31 @@ export function useNativeReplayImport({ isAuthenticated = () => false, onPending
       console.debug('[replay-native] pending deferred reason=unauthenticated')
       return false
     }
-    const pending = await getPendingReplay()
+    const nativeBridgeVersion = await getNativeBridgeVersion()
+    let pending
+    if (isNativeBridgeCompatible(nativeBridgeVersion)) {
+      pending = await getPendingReplay()
+    } else if (nativeBridgeVersion !== null) {
+      // Explicit versions are authoritative: reject before touching pending.
+      console.warn('[replay-native] pending skipped reason=bridge-version-mismatch')
+      onReadError?.('native-client-upgrade-required')
+      return false
+    } else {
+      const nativeCapabilities = await getCapabilities()
+      pending = await getPendingReplay()
+      // A legacy client without a pending replay is simply deferred; it is not
+      // an upgrade failure and must not trigger fetch or ACK activity.
+      if (!pending) return false
+      if (!isLegacyNativeReplayContractCompatible({
+        bridgeVersion: nativeBridgeVersion,
+        capabilities: nativeCapabilities,
+        pending,
+      })) {
+        console.warn('[replay-native] pending skipped reason=bridge-version-mismatch')
+        onReadError?.('native-client-upgrade-required')
+        return false
+      }
+    }
     // 当前没有 pending（可能从未有，也可能 Native 尚未产生）→ 不清零 eligible，留待 warm resume。
     if (!pending) return false
     // 没有 identity 就无法 ACK（也绝不消费）：旧 Native 或畸形 payload 一律跳过。

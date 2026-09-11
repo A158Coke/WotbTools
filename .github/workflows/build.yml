@@ -1,33 +1,9 @@
 name: Build
-run-name: Build main by @${{ github.actor }}
+run-name: Build ${{ github.sha }} by @${{ github.actor }}
 
 on:
   push:
     branches: [main]
-    paths:
-      - "java/**"
-      - "frontend/**"
-      - "common/**"
-      - ".dockerignore"
-      - "docker/Dockerfile.backend"
-      - "docker/Dockerfile.frontend"
-      - "docker/Dockerfile.keycloak"
-      - "docker/keycloak/**"
-      - "keycloak-juhe-qq-provider/**"
-      - "keycloak-wargaming-provider/**"
-      - "deploy/docker-compose.prod.yml"
-      - "deploy/nginx/**"
-      - "deploy/observability/prometheus/**"
-      - "deploy/observability/loki/**"
-      - "deploy/observability/alloy/**"
-      # Grafana dashboard JSON is reconciled by OpenTofu; runtime provisioning
-      # remains a production deploy concern, so the dashboard path is omitted.
-      - "deploy/observability/grafana/provisioning/**"
-      - "deploy/deploy.sh"
-      - "deploy/verify-observability.sh"
-      - "deploy/validate-alloy-config.sh"
-      - "deploy/grafana-api-request.sh"
-      - ".github/workflows/build.yml"
   workflow_dispatch:
     inputs:
       service:
@@ -55,37 +31,78 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     outputs:
-      commit_sha: ${{ steps.tag.outputs.commit_sha }}
-      tag: ${{ steps.tag.outputs.tag }}
-      service: ${{ steps.service.outputs.service }}
+      commit_sha: ${{ steps.identity.outputs.commit_sha }}
+      tag: ${{ steps.identity.outputs.tag }}
+      backend: ${{ steps.plan.outputs.backend }}
+      frontend: ${{ steps.plan.outputs.frontend }}
+      keycloak: ${{ steps.plan.outputs.keycloak }}
+      deploy_config: ${{ steps.plan.outputs.deploy_config }}
+      deploy_services: ${{ steps.plan.outputs.deploy_services }}
+      image_services: ${{ steps.plan.outputs.image_services }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          ref: main
-      - name: Freeze main build identity
-        id: tag
+          ref: ${{ github.sha }}
+      - name: Freeze release identity
+        id: identity
         shell: bash
         run: |
           set -euo pipefail
           commit_sha="$(git rev-parse HEAD)"
-          short_sha="$(git rev-parse --short "$commit_sha")"
+          short_sha="${commit_sha:0:12}"
           {
             echo "commit_sha=$commit_sha"
             echo "tag=sha-$short_sha"
           } >> "$GITHUB_OUTPUT"
-      - name: Resolve build service
-        id: service
+      - name: Detect changed release targets
+        id: plan
         env:
-          REQUESTED_SERVICE: ${{ github.event_name == 'workflow_dispatch' && inputs.service || 'all' }}
-        run: echo "service=$REQUESTED_SERVICE" >> "$GITHUB_OUTPUT"
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_SERVICE: ${{ inputs.service || '' }}
+          BEFORE_SHA: ${{ github.event.before || '' }}
+          HEAD_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            python3 deploy/release_plan.py detect --manual-service "$REQUESTED_SERVICE" > release-plan.json
+          else
+            if [ -n "$BEFORE_SHA" ] && [[ ! "$BEFORE_SHA" =~ ^0+$ ]]; then
+              git diff --name-only "$BEFORE_SHA" "$HEAD_SHA" > changed-files.txt
+            else
+              git diff-tree --root --no-commit-id --name-only -r "$HEAD_SHA" > changed-files.txt
+            fi
+            python3 deploy/release_plan.py detect --paths-file changed-files.txt > release-plan.json
+          fi
+          python3 - release-plan.json <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import sys
 
-  build-backend:
+          plan = json.load(open(sys.argv[1], encoding="utf-8"))
+          for image in ("backend", "frontend", "keycloak"):
+              print(f"{image}={str(plan['images'][image]).lower()}")
+          print(f"deploy_config={str(plan['deployConfig']).lower()}")
+          print(f"deploy_services={','.join(plan['deployServices'])}")
+          print(f"image_services={','.join(plan['imageServices'])}")
+          PY
+      - name: Validate manual source is already in main history
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
+            echo "::error::Manual Build source must be an existing commit in origin/main history." >&2
+            exit 1
+          fi
+
+  build_backend:
     needs: [changes]
-    if: >-
-      needs.changes.result == 'success' &&
-      (needs.changes.outputs.service == 'all' || needs.changes.outputs.service == 'backend')
+    if: needs.changes.result == 'success' && needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -106,19 +123,15 @@ jobs:
           context: .
           file: docker/Dockerfile.backend
           push: true
-          tags: |
-            ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
-            ${{ env.GHCR_IMAGE_PREFIX }}-backend:latest
+          tags: ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
 
-  build-frontend:
+  build_frontend:
     needs: [changes]
-    if: >-
-      needs.changes.result == 'success' &&
-      (needs.changes.outputs.service == 'all' || needs.changes.outputs.service == 'frontend')
+    if: needs.changes.result == 'success' && needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -139,21 +152,16 @@ jobs:
           context: .
           file: docker/Dockerfile.frontend
           push: true
-          tags: |
-            ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
-            ${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest
-          build-args: |
-            BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
+          tags: ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
+          build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
 
-  build-keycloak:
+  build_keycloak:
     needs: [changes]
-    if: >-
-      needs.changes.result == 'success' &&
-      (needs.changes.outputs.service == 'all' || needs.changes.outputs.service == 'keycloak')
+    if: needs.changes.result == 'success' && needs.changes.outputs.keycloak == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -174,12 +182,70 @@ jobs:
           context: .
           file: docker/Dockerfile.keycloak
           push: true
-          tags: |
-            ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ needs.changes.outputs.tag }}
-            ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest
+          tags: ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ needs.changes.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
         env:
           KEYCLOAK_BUILD_FILE: ${{ github.workspace }}/keycloak-juhe-qq-provider
+
+  manifest:
+    needs: [changes, build_backend, build_frontend, build_keycloak]
+    if: >-
+      always() &&
+      needs.changes.result == 'success' &&
+      (needs.changes.outputs.backend != 'true' || needs.build_backend.result == 'success') &&
+      (needs.changes.outputs.frontend != 'true' || needs.build_frontend.result == 'success') &&
+      (needs.changes.outputs.keycloak != 'true' || needs.build_keycloak.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.changes.outputs.commit_sha }}
+      - name: Create authoritative deployment manifest
+        env:
+          COMMIT_SHA: ${{ needs.changes.outputs.commit_sha }}
+          IMAGE_TAG: ${{ needs.changes.outputs.tag }}
+          BUILD_RUN_ID: ${{ github.run_id }}
+          BUILD_RUN_NUMBER: ${{ github.run_number }}
+          BACKEND: ${{ needs.changes.outputs.backend }}
+          FRONTEND: ${{ needs.changes.outputs.frontend }}
+          KEYCLOAK: ${{ needs.changes.outputs.keycloak }}
+          DEPLOY_SERVICES: ${{ needs.changes.outputs.deploy_services }}
+          IMAGE_SERVICES: ${{ needs.changes.outputs.image_services }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - deploy/release_plan.py <<'PY' > plan.json
+          import json
+          import os
+          import sys
+
+          images = {
+              "backend": os.environ["BACKEND"] == "true",
+              "frontend": os.environ["FRONTEND"] == "true",
+              "keycloak": os.environ["KEYCLOAK"] == "true",
+          }
+          json.dump({
+              "images": images,
+              "imageServices": [s for s in os.environ["IMAGE_SERVICES"].split(",") if s],
+              "deployConfig": False,
+              "deployServices": [s for s in os.environ["DEPLOY_SERVICES"].split(",") if s],
+          }, sys.stdout)
+          PY
+          python3 deploy/release_plan.py manifest \
+            --commit-sha "$COMMIT_SHA" \
+            --image-tag "$IMAGE_TAG" \
+            --build-run-id "$BUILD_RUN_ID" \
+            --build-run-number "$BUILD_RUN_NUMBER" \
+            --plan plan.json > deployment-manifest.json
+          python3 deploy/release_plan.py validate --manifest deployment-manifest.json --expected-sha "$COMMIT_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deployment-manifest
+          path: deployment-manifest.json
+          if-no-files-found: error
