@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.80",
+    "date": "2026-09-11",
+    "tag": "fix",
+    "zh": "修复手机与平板战局回放的播放控件点不动的问题（播放、±5 秒、进度条此前看得见但没反应）；当一条回放没有可播放的时间线时，播放控件会明确置灰并说明原因，而不是点了没反应。修复点「战局回放」而登录没能发起时页面毫无提示的问题，现在会给出错误提示且可以再次点击重试；同时修复 1024 宽平板上整页可左右轻微拖动的问题。",
+    "en": "Fixed playback controls in Battle Playback being unresponsive on phones and tablets (play, ±5 s and the timeline were visible but did nothing). When a replay has no playable timeline, the transport controls are now clearly disabled with an explanation instead of doing nothing. Also fixed the missing feedback when tapping Battle Playback fails to start sign-in — you now get an error message and can tap again to retry — and the slight sideways page scroll on 1024-wide tablets.",
+    "ru": "Исправлены элементы управления воспроизведением в повторе боя на телефонах и планшетах: кнопки воспроизведения, ±5 с и шкала времени были видны, но не реагировали. Если у повтора нет воспроизводимой шкалы времени, элементы управления теперь явно отключены с пояснением. Также исправлено отсутствие реакции при нажатии «Повтор боя», если вход не удалось начать: теперь показывается сообщение об ошибке и можно нажать ещё раз; устранён небольшой горизонтальный сдвиг страницы на планшетах шириной 1024."
+  },
+  {
     "v": "2.12.79",
     "date": "2026-09-10",
     "tag": "chg",
