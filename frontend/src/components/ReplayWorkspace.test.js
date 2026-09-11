@@ -12,7 +12,9 @@ const hold = vi.hoisted(() => ({ state: null }))
 const authState = vi.hoisted(() => ({
   authenticated: null,
   loginInFlight: null,
+  authInitState: null,
   login: vi.fn(),
+  retryAuth: vi.fn(),
   initPromise: Promise.resolve(true),
 }))
 
@@ -24,12 +26,15 @@ vi.mock('../composables/useAuth.js', async () => {
   const { ref } = await import('vue')
   authState.authenticated = ref(true)
   authState.loginInFlight = ref(false)
+  authState.authInitState = ref('authenticated')
   return {
     useAuth: () => ({
       initPromise: authState.initPromise,
       authenticated: authState.authenticated,
       loginInFlight: authState.loginInFlight,
-      login: (...args) => authState.login(...args),
+      authInitState: authState.authInitState,
+      login: authState.login,
+      retryAuth: authState.retryAuth,
     }),
   }
 })
@@ -102,12 +107,39 @@ function buildState() {
 }
 
 let replayState = null
+let mountGeneration = 0
 
 function mountWorkspace(capability = 'data', { authenticated = true, login = vi.fn(() => Promise.resolve()), authInit } = {}) {
+  const currentMount = ++mountGeneration
   authState.authenticated.value = authenticated
   authState.loginInFlight.value = false
   authState.login = login
   authState.initPromise = authInit || Promise.resolve(authenticated)
+  authState.authInitState.value = authInit
+    ? 'initializing'
+    : (authenticated ? 'authenticated' : 'unauthenticated')
+  authState.retryAuth = vi.fn(() => {
+    authState.authInitState.value = 'initializing'
+    authState.authenticated.value = false
+    const retry = Promise.resolve(authenticated)
+    retry.then((result) => {
+      if (currentMount !== mountGeneration) return
+      authState.authenticated.value = result
+      authState.authInitState.value = result ? 'authenticated' : 'unauthenticated'
+    })
+    return retry
+  })
+  if (authInit) {
+    Promise.resolve(authInit).then((result) => {
+      if (currentMount !== mountGeneration) return
+      const nextAuthenticated = typeof result === 'boolean' ? result : authenticated
+      authState.authenticated.value = nextAuthenticated
+      authState.authInitState.value = nextAuthenticated ? 'authenticated' : 'unauthenticated'
+    }).catch(() => {
+      if (currentMount !== mountGeneration) return
+      authState.authInitState.value = 'failed'
+    })
+  }
   return mount(ReplayWorkspace, {
     props: { initialCapability: capability },
     global: {
@@ -257,6 +289,40 @@ describe('ReplayWorkspace', () => {
     expect(replayState.startProcessingJob).not.toHaveBeenCalled()
     resolveInit()
     await flushPromises()
+    wrapper.unmount()
+  })
+
+  it('Case G：auth init reject exits checking and exposes retry/login recovery actions', async () => {
+    const authInit = Promise.reject(new Error('AUTH_INIT_FAILED'))
+    const login = vi.fn(() => Promise.resolve())
+    const wrapper = mountWorkspace('data', { authenticated: false, login, authInit })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="ws-auth-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="ws-auth-failed"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ws-auth-retry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ws-login-recovery"]').exists()).toBe(true)
+    expect(login).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-testid="ws-login-recovery"]').trigger('click')
+    await flushPromises()
+    expect(login).toHaveBeenCalledWith('replay')
+    wrapper.unmount()
+  })
+
+  it('Case H：watchdog failure recovery retries auth without exposing replay UI', async () => {
+    let rejectInit
+    const authInit = new Promise((_, reject) => { rejectInit = reject })
+    const wrapper = mountWorkspace('data', { authenticated: false, authInit })
+    rejectInit(new Error('AUTH_INIT_WATCHDOG_TIMEOUT'))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="ws-auth-failed"]').exists()).toBe(true)
+    await wrapper.find('[data-testid="ws-auth-retry"]').trigger('click')
+    await flushPromises()
+    expect(authState.retryAuth).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="ws-auth-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="ws-auth-required"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
