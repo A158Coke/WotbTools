@@ -7,7 +7,7 @@ Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://gi
 ## What it does
 
 - **Replay parsing & Excel export**: upload a `.wotbreplay` in the browser, extract authoritative settlement (damage / received / assisted / blocked / kills / death times) plus event-stream features (movement / engagements / 3x3 grid regions).
-- **Hall of Fame**: per-battle damage ranking for Random and Rating battles, plus Tier X career-average leaderboards with either screenshot + 5-replay manual review or official Wargaming ASIA / EU / NA verification.
+- **Hall of Fame**: per-battle damage ranking for Random and Rating battles, plus Tier X career-average leaderboards through screenshot + 5-replay manual review.
 - **Battle performance**: derived metrics computed from a single authoritative replay-facts source (contribution, KAST, Impact, potential damage, assist, kills, multi-damage rate, survival rate, trades) — no composite rating anymore.
 - **AI tactical review**: pre-battle prediction + evidence-chain review + liabilities / MVP, streamed token-by-token over SSE; the review keeps running while you switch pages or background the tab (including long team reviews with an ~1100s budget, with results or progress ready on return); points victories state how they ended (time expired / reached 1000 points early) and HP-loss descriptions include time ranges with resolved attacker counts (a single attacker is never called focus fire; only 2+ resolved attackers within a short window (total span ≤ 15s) may be cited as multi-vehicle focus fire); results include a "Map Overview" (friendly/enemy heatmaps + routes + battle playback with progress bar / event jumps / clickable AI-report times / two-layer hull-turret markers rotating by heading and gun direction + brightness-adaptive colors, 28 maps with assets) and a one-click "Copy" button for the final review body (excluding the pre-battle prediction and map overview).
 - **Auth & business**: Keycloak (QQ + Wargaming.net ASIA / EU / NA), booster & pilot management.
@@ -16,19 +16,13 @@ Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://gi
 
 ```mermaid
 flowchart LR
-    A["Upload .wotbreplay"] --> B["ReplayParser · meta.json + battle_results.dat"]
-    A --> C["ReplayReconstruction · data.wotreplay event stream"]
-    B --> D["Team / Player Feature Extractors"]
-    C --> D
-    D --> E["Deterministic features · phases / formations / engagements / death timeline / grid"]
-    B --> F["Authoritative settlement (single trusted source)"]
-    C --> G["Observed event subset (suppressed when coverage is partial)"]
-    E --> H["AI Prompt Builder (backend evidence only)"]
-    F --> H
-    G --> H
-    H --> I["Call #1 pre-battle → Call #2 review → Team Autopsy"]
-    I --> J["SSE stream text/event-stream"]
-    J --> K["Frontend AnalysisResultPanel"]
+    A["Upload .wotbreplay"] --> B["POST /api/replay/processing-jobs (exactly one Processing Job per selection)"]
+    B --> C["ReplayParseScheduler (exactly one processFull per source: parse + reconstruction + enrich)"]
+    C --> D["Derived Dataset (ProcessedDataset + ai-facts.json + map-overview.json)"]
+    D --> E["Preview result (GET processing-jobs/{jobId}/result)"]
+    D --> F["Export Job (reuse result; no re-upload / no second processFull)"]
+    D --> G["AI review (SSE text/event-stream, reads ai-facts.json)"]
+    D --> H["Battle playback (cached map-overview.json)"]
 ```
 
 ## AI evidence chain
@@ -37,6 +31,7 @@ Replay → **authoritative settlement** (`battle_results.dat`: damage / received
 
 ## Key engineering trade-offs
 
+0. **Parse once / consume many**: upload `.wotbreplay` → `POST /api/replay/processing-jobs` (exactly one Processing Job per selection) → `ReplayParseScheduler` performs exactly one `processFull` per source → shared Derived Dataset (`ProcessedDataset` + `ai-facts.json` + `map-overview.json`); Preview / Export / AI review / Battle Playback all read the same dataset. There is no multipart AI or Playback fallback path that reprocesses the replay.
 1. **Authoritative settlement > observed event stream**: damage / deaths come from `battle_results`; the event stream is only an observed subset, and its numbers are suppressed when coverage is partial (`OBSERVED_DAMAGE_IS_PARTIAL`).
 2. **SSE streaming, single attempt**: `/api/replay/analyze` is `text/event-stream`; no in-stream retry; a bounded worker pool (4+4) prevents blocking and returns 503 on saturation.
 3. **3x3 grid + map semantics**: canonical 500×500 grid regions 1-9; AREA semantics are decoded from client SC2 / heightmap and are not treated as verified facts before manual review.
