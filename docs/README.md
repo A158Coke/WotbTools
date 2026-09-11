@@ -4,7 +4,7 @@
 
 固定接手方法以 `../.agents/AGENTS.md` 的「接手与调整方法（固定流程）」为准：入口阅读 → 现实审计 → 任务分类 → 计划契约 → Reuse / SSOT 执行 → 分层验证 → 收尾交接。
 
-## Language map（中英分类）
+## Language map（中英分类与未来拆分）
 
 | 分类 | 范围 | 维护规则 |
 |---|---|---|
@@ -12,6 +12,18 @@
 | English primary | 大部分 `research/replay/*.md`、`research/maps/*.md`、部分 architecture/development benchmark 文档 | 作为逆向研究、实验、benchmark 原始记录；除结论已收敛的入口外，不要求逐篇翻译 |
 | Bilingual canonical | `research/replay/WOTB_REPLAY_PROTOCOL_11_19_BILINGUAL_COMPLETE_REFERENCE.md` | Replay protocol 顶层权威参考；与英文旧综合参考冲突时优先读它 |
 | Localized prompt docs | `java/wotb-ai/src/main/resources/prompts/**/*.zh.md` | 不是 `docs/` 索引文档；按 prompt 资源随代码维护 |
+
+### `docs/cn` / `docs/en` 迁移准备
+
+本次整理只固定分类与同步规则，不在同一 PR 内批量移动历史路径。后续如拆目录，应使用单独文档迁移 PR，先保留或修复相对链接，再调整本索引。
+
+| 目标目录 | 预期内容 | 迁移规则 |
+|---|---|---|
+| `docs/cn/` | 中文或 mixed primary 的接手、功能、运维、Auth、Android、前端契约文档 | 作为维护者入口；产品/运维/契约类文档发生语义变更时，应同步对应英文翻译或在索引标记 translation pending |
+| `docs/en/` | 英文翻译、English primary 的 benchmark / research 入口与对外说明 | 作为英文阅读入口；如果中文 canonical 先更新，应在同一 PR 更新已有英文对应文档 |
+| `docs/research/` | 大体量逆向研究原始记录与 replay protocol 证据链 | 暂不强制迁入 `cn` / `en`；以子目录索引和 bilingual canonical 文件决定阅读顺序 |
+
+翻译同步遵循“先定 canonical，再同步 counterpart”：每个迁移后的文档应在索引里标明主维护语言。已有对应翻译时，同一功能/契约/运维改动必须同步更新；没有对应翻译时，不静默漂移，应在索引或文档头部标记待翻译。
 
 ## Start here（入口）
 
@@ -27,6 +39,7 @@
 
 | 文档 | 何时读 |
 |---|---|
+| `development/contribution-map.md` | 想加新功能、找后端/前端/契约入口或判断贡献点归属时 |
 | `development/replay-performance.md` | 运行 replay core 本地性能基准、JFR 或规划生产 one-shot 测量时 |
 | `development/replay-performance-results.md` | 查看最近一次本地性能基线、JFR 证据与优化决策时 |
 | `development/ai-virtual-thread-benchmark.md` | 运行真实 provider 的 Platform vs Virtual blocking-call A/B 时 |
