@@ -118,6 +118,9 @@ jobs:
       - name: Real-browser Playback layout regression
         working-directory: frontend
         run: npm run test:browser-layout
+      - name: Real-browser Playback/Workspace interaction regression
+        working-directory: frontend
+        run: npm run test:browser-interaction
       - name: Build
         working-directory: frontend
         run: npm run build

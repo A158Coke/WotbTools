@@ -45,6 +45,8 @@
 # 前端分层测试
 # Targeted：cd frontend && npx vitest run <related-test-files>
 # Type check：cd frontend && npm run typecheck
+# Browser geometry gate（Playback 布局/形态）：cd frontend && npm run test:browser-layout
+# Browser interaction gate（Playback / Replay Workspace 交互）：cd frontend && npm run test:browser-interaction
 # Build（仅当改动涉及 build 范围）：cd frontend && npm run build
 # Local Frontend → Production Backend / Keycloak（开发代理，谨慎使用真实数据）
 # cd frontend && npm run dev:production-remote

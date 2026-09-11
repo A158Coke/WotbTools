@@ -94,6 +94,9 @@
       position: static;
       inset: auto;
       margin-top: 8px;
+      /* §hit-target：同 playback-mobile.css —— 组件 scoped 的 legacy @media(width<768px)
+         仍声明 pointer-events:none，流内控件会变成「看得见点不到」。 */
+      pointer-events: auto;
     }
 }
 
