@@ -27,7 +27,7 @@ on:
           - wotb-backend
           - wotb-frontend
       image_tag:
-        description: Immutable sha-... image tag from an independent Build run; required for application services
+        description: Immutable sha-<first-12-sha> image tag from an independent Build run; required for application services
         required: false
         type: string
 
@@ -47,6 +47,9 @@ jobs:
        github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
     outputs:
       release_sha: ${{ steps.manifest.outputs.release_sha }}
       release_tag: ${{ steps.manifest.outputs.release_tag }}
@@ -78,9 +81,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git fetch origin main
           if [ -n "$REQUESTED_TAG" ]; then
-            [[ "$REQUESTED_TAG" =~ ^sha-[0-9a-f]{7}$ ]] || {
-              echo "image_tag must be an immutable sha-<7-char-commit> tag when provided" >&2
+            [[ "$REQUESTED_TAG" =~ ^sha-[0-9a-f]{12}$ ]] || {
+              echo "image_tag must be an immutable sha-<12-char-commit> tag when provided" >&2
               exit 1
             }
             candidate="${REQUESTED_TAG#sha-}"
@@ -88,7 +92,11 @@ jobs:
             candidate="$WORKFLOW_SHA"
           fi
           release_sha="$(git rev-parse "$candidate^{commit}")"
-          release_tag="${REQUESTED_TAG:-sha-$(git rev-parse --short=7 "$release_sha")}"
+          if ! git merge-base --is-ancestor "$release_sha" origin/main; then
+            echo "::error::Manual Deploy source must be an existing commit in origin/main history." >&2
+            exit 1
+          fi
+          release_tag="${REQUESTED_TAG:-sha-${release_sha:0:12}}"
           {
             echo "release_sha=$release_sha"
             echo "release_tag=$release_tag"

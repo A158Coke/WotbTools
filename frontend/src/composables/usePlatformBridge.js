@@ -8,7 +8,10 @@
  * 本模块是异步 RPC（postMessage → reply 'message' 事件），只做能力查询与 pending replay 交接，
  * 绝不借此调用任何系统能力（readFile / http / execute / launch）。Vue 业务用 supports() 能力探测。
  */
-import { SUPPORTED_NATIVE_BRIDGE_VERSION } from '../platform/nativeBridgeContract.js'
+import {
+  LEGACY_NATIVE_BRIDGE_REQUIRED_CAPABILITIES,
+  SUPPORTED_NATIVE_BRIDGE_VERSIONS,
+} from '../platform/nativeBridgeContract.js'
 
 const BRIDGE_KEY = 'WotbNative'
 const BRIDGE_RPC_TIMEOUT_MS = 5000
@@ -73,7 +76,11 @@ export async function getNativeBridgeVersion() {
 }
 
 export function isNativeBridgeCompatible(version) {
-  return version === SUPPORTED_NATIVE_BRIDGE_VERSION
+  return SUPPORTED_NATIVE_BRIDGE_VERSIONS.includes(version)
+}
+
+export function isLegacyNativeBridgeCompatible(version, capabilities = []) {
+  return version === null && LEGACY_NATIVE_BRIDGE_REQUIRED_CAPABILITIES.every(capability => capabilities.includes(capability))
 }
 
 export async function supports(capability) {
@@ -108,6 +115,7 @@ export function usePlatformBridge() {
     getCapabilities,
     getNativeBridgeVersion,
     isNativeBridgeCompatible,
+    isLegacyNativeBridgeCompatible,
     supports,
     getPendingReplay,
     consumePendingReplay,

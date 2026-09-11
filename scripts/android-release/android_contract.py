@@ -50,6 +50,17 @@ def load_json(path: str | Path) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+def frontend_bridge_versions(source: str) -> list[int]:
+    array_match = re.search(
+        r"SUPPORTED_NATIVE_BRIDGE_VERSIONS\s*=\s*Object\.freeze\(\[([^\]]*)\]\)",
+        source,
+    )
+    if array_match:
+        return [int(value) for value in re.findall(r"\b[0-9]+\b", array_match.group(1))]
+    legacy_match = re.search(r"SUPPORTED_NATIVE_BRIDGE_VERSION\s*=\s*(\d+)", source)
+    return [int(legacy_match.group(1))] if legacy_match else []
+
+
 def runtime_path(path: str) -> bool:
     path = path.replace("\\", "/")
     if not path.startswith("android/"):
@@ -61,7 +72,6 @@ def runtime_path(path: str) -> bool:
     if path in {
         "android/build.gradle.kts",
         "android/settings.gradle.kts",
-        "android/gradle.properties",
         "android/gradle/libs.versions.toml",
     }:
         return True
@@ -178,9 +188,9 @@ def command_validate(args: argparse.Namespace) -> None:
     if props.get("wotbNativeBridgeVersion") != str(bridge):
         fail("gradle.properties bridge version does not match the JSON contract")
     source = Path(args.frontend).read_text(encoding="utf-8")
-    match = re.search(r"SUPPORTED_NATIVE_BRIDGE_VERSION\s*=\s*(\d+)", source)
-    if not match or int(match.group(1)) != bridge:
-        fail("frontend supported Native Bridge version does not match the JSON contract")
+    supported_versions = frontend_bridge_versions(source)
+    if bridge not in supported_versions:
+        fail("frontend supported Native Bridge versions do not include the JSON contract")
     if args.native_source:
         validate_native_sources(contract, args.native_source)
     print(json.dumps({"versionName": props["wotbVersion"], "versionCode": version_code(parts), "bridgeVersion": bridge}))
@@ -210,9 +220,15 @@ def command_gate(args: argparse.Namespace) -> None:
         fail("Android runtime changed but committed version did not increase")
     if result["breaking"] and int(result["headBridgeVersion"] or 0) <= int(result["baseBridgeVersion"] or 0):
         fail("Breaking Native Bridge changes require bridgeVersion to increase")
-    if int(result["headBridgeVersion"] or 0) != int(args.frontend_version):
-        fail("Frontend supported Native Bridge version does not match the head contract")
-    result.update({"runtimeChanged": runtime_changed, "baseVersion": ".".join(map(str, base_version)), "headVersion": ".".join(map(str, head_version))})
+    frontend_versions = {int(value) for value in args.frontend_versions.split(",") if value}
+    if int(result["headBridgeVersion"] or 0) not in frontend_versions:
+        fail("Frontend supported Native Bridge versions do not include the head contract")
+    result.update({
+        "runtimeChanged": runtime_changed,
+        "baseVersion": ".".join(map(str, base_version)),
+        "headVersion": ".".join(map(str, head_version)),
+        "frontendBridgeVersions": sorted(frontend_versions),
+    })
     print(json.dumps(result, sort_keys=True))
 
 
@@ -222,7 +238,7 @@ def main() -> None:
     p = sub.add_parser("version"); p.add_argument("version"); p.set_defaults(func=command_version)
     p = sub.add_parser("validate"); p.add_argument("--contract", required=True); p.add_argument("--gradle-properties", required=True); p.add_argument("--frontend", required=True); p.add_argument("--native-source", action="append", default=[]); p.set_defaults(func=command_validate)
     p = sub.add_parser("version-bump"); p.add_argument("--base-version", required=True); p.add_argument("--head-version", required=True); p.add_argument("--paths", required=True); p.set_defaults(func=command_bump)
-    p = sub.add_parser("gate"); p.add_argument("--base-contract", required=True); p.add_argument("--head-contract", required=True); p.add_argument("--base-version", required=True); p.add_argument("--head-version", required=True); p.add_argument("--paths", required=True); p.add_argument("--frontend-version", required=True, type=int); p.add_argument("--initial-version-baseline", action="store_true"); p.set_defaults(func=command_gate)
+    p = sub.add_parser("gate"); p.add_argument("--base-contract", required=True); p.add_argument("--head-contract", required=True); p.add_argument("--base-version", required=True); p.add_argument("--head-version", required=True); p.add_argument("--paths", required=True); p.add_argument("--frontend-versions", required=True); p.add_argument("--initial-version-baseline", action="store_true"); p.set_defaults(func=command_gate)
     args = parser.parse_args()
     args.func(args)
 

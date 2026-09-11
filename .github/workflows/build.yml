@@ -31,6 +31,8 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     outputs:
       commit_sha: ${{ steps.identity.outputs.commit_sha }}
       tag: ${{ steps.identity.outputs.tag }}
@@ -51,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           commit_sha="$(git rev-parse HEAD)"
-          short_sha="$(git rev-parse --short=7 "$commit_sha")"
+          short_sha="${commit_sha:0:12}"
           {
             echo "commit_sha=$commit_sha"
             echo "tag=sha-$short_sha"
@@ -87,6 +89,16 @@ jobs:
           print(f"deploy_services={','.join(plan['deployServices'])}")
           print(f"image_services={','.join(plan['imageServices'])}")
           PY
+      - name: Validate manual source is already in main history
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
+            echo "::error::Manual Build source must be an existing commit in origin/main history." >&2
+            exit 1
+          fi
 
   build_backend:
     needs: [changes]

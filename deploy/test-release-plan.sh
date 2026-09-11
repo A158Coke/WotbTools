@@ -47,7 +47,7 @@ manifest_path = work / "manifest.json"
 manifest = {
     "schemaVersion": 1,
     "commitSha": commit,
-    "imageTag": "sha-0123456",
+    "imageTag": "sha-0123456789ab",
     "buildRunId": "42",
     "buildRunNumber": 42,
     "images": plan["images"],
