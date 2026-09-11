@@ -49,8 +49,8 @@
   "tags": ["wotbtools", "keycloak", "production", "logs"],
   "time": { "from": "now-15m", "to": "now" },
   "timezone": "browser",
-  "title": "WotBTools · Keycloak 登录日志",
+  "title": "WotBTools · Keycloak",
   "uid": "wotbtools-keycloak",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
