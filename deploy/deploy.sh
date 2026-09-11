@@ -113,10 +113,6 @@ is_full_deploy() {
 }
 
 state_services() {
-  if is_full_deploy; then
-    printf '%s\n' wotb-backend wotb-frontend keycloak
-    return 0
-  fi
   local service
   for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
     case "$service" in

@@ -6,7 +6,7 @@ import {
   getCapabilities,
   getNativeBridgeVersion,
   getPendingReplay,
-  isLegacyNativeBridgeCompatible,
+  isLegacyNativeReplayContractCompatible,
   isAndroidApp,
   isNativeBridgeCompatible,
   supports,
@@ -64,8 +64,21 @@ describe('usePlatformBridge', () => {
     await expect(getNativeBridgeVersion()).resolves.toBe(1)
     expect(isNativeBridgeCompatible(1)).toBe(true)
     expect(isNativeBridgeCompatible(2)).toBe(false)
-    expect(isLegacyNativeBridgeCompatible(null, ['replay-open', 'replay-share'])).toBe(true)
-    expect(isLegacyNativeBridgeCompatible(null, ['replay-open'])).toBe(false)
+    expect(isLegacyNativeReplayContractCompatible({
+      bridgeVersion: null,
+      capabilities: ['replay-open', 'replay-share'],
+      pending: { uri: 'https://wotbtools.com/__native/replay-pending' },
+    })).toBe(true)
+    expect(isLegacyNativeReplayContractCompatible({
+      bridgeVersion: null,
+      capabilities: ['replay-open'],
+      pending: { uri: 'https://wotbtools.com/__native/replay-pending' },
+    })).toBe(false)
+    expect(isLegacyNativeReplayContractCompatible({
+      bridgeVersion: null,
+      capabilities: ['replay-open', 'replay-share'],
+      pending: { uri: 'content://legacy/replay' },
+    })).toBe(false)
     await expect(getPendingReplay()).resolves.toEqual({ name: 'a.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 1 })
     await expect(consumePendingReplay()).resolves.toBe(true)
   })
