@@ -38,8 +38,9 @@ recovery generation 中跳过 silent bootstrap，未把设备问题未经证据�
 | 7 login semantics | 完成 | `loginInFlight` 仅表示当前 redirect；失败/取消后可重试 |
 | 8 observability | 完成 | init start/pending/timeout/abandoned/retry/completed/failed 与低敏 login diagnostics |
 | 9 Android validation | 部分完成 | policy/manifest/config 静态核对；本环境无 Android Gradle wrapper/gradle 命令，Owner/异常真机复测待外部设备 |
-| 10 automated tests | 部分完成 | targeted/full Vitest、真实 Chrome interaction、typecheck/build 已通过；Android JVM/debug build 因仓库缺少 Gradle wrapper 且环境无 gradle 命令未执行 |
-| review/docs/PR | 完成（PR #294，CI pending） | 两轮 review-fix 零新问题；OCR preview/rule 完成；docs/i18n/version history 已同步；PR 已创建，CI 结果待 GitHub 返回 |
+| 10 automated tests | 部分完成 | AppShell/auth bootstrap targeted tests、full Vitest（117 files / 1688 passed / 37 skipped）、typecheck、build 与真实 Chrome interaction（14 scenarios）已通过；PR head `01b87f4c` 的 GitHub CI 已确认包含 Android assembleDebug、Android JVM tests、Frontend tests/build/browser interaction 全部成功 |
+| AppShell generation-aware bootstrap | 完成 | AppShell 改为监听权威 `authInitState`/`authenticated`；每个 generation 真正 authenticated 时调用唯一 canonical `ensure()`，由现有 ready/inFlight 语义去重 |
+| review/docs/PR | 完成（PR #294，repair CI pending） | AppShell/auth bootstrap 回归覆盖 generation 1 failed/timeout settled → generation 2 authenticated、unauthenticated/failed/initializing 不 provisioning、steady authenticated 不重复 provisioning；修复已准备推送并等待 GitHub CI 重跑 |
 
 ## 状态与安全不变量
 
@@ -51,6 +52,7 @@ recovery generation 中跳过 silent bootstrap，未把设备问题未经证据�
 ## 验证限制
 
 - Owner device: pending confirmation（当前执行环境无该真机连接）。
-- Reported affected device: pending confirmation。
+- Reported affected device: vivo Y30 — pending confirmation。
+- PR validation: prior head `01b87f4c` GitHub CI green；本次 AppShell 修复推送后的 PR head CI 需重新确认 green。
 - Android JVM/assembleDebug 只能证明 native policy/构建，不替代真实设备矩阵。
 - Android build limitation: `android/` 当前没有 `gradlew`/`gradlew.bat`，执行环境也没有 `gradle` 命令，因此本次不能把 JVM/assembleDebug 说成通过。
