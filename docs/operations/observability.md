@@ -58,7 +58,7 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 
 | 组件 | 版本（固定） | 职责 |
 |---|---|---|
-| `wotb-backend` Actuator | Spring Boot 4.1.1 自带 | 容器内端口 `8087`，暴露 `/actuator/prometheus`、`/actuator/health` |
+| `wotb-backend` Actuator | Spring Boot 4.1.1 自带 | 业务 HTTP 使用容器端口 `8087`；dedicated management / Actuator 使用容器端口 `8088`，暴露 `/actuator/prometheus`、`/actuator/health` |
 | Prometheus | `prom/prometheus:v2.55.1` | 每 15s 抓取 Backend、node-exporter 以及 Prometheus/Loki/Grafana 自身，TSDB 保留 7 天 / 上限 2GiB |
 | Loki | `grafana/loki:3.3.2` | 接收 Alloy 推送的 Backend / Keycloak 容器日志，保留 7 天 |
 | Alloy | `grafana/alloy:v1.4.2` | 通过 docker.sock 采集 `wotb-backend` 与 `keycloak` 容器 stdout/stderr → Loki，使用低基数标签 |
