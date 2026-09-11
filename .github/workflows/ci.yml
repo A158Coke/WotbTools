@@ -248,6 +248,11 @@ jobs:
           git diff --name-only "$BASE_SHA" "$HEAD_SHA" > /tmp/android-changed-paths.txt
           BASE_VERSION="$(sed -n 's/^wotbVersion=//p' /tmp/base-gradle.properties | head -n1)"
           HEAD_VERSION="$(sed -n 's/^wotbVersion=//p' android/gradle.properties | head -n1)"
+          if [ -z "$BASE_VERSION" ]; then
+            # First introduction of Version-as-Code has no historical version;
+            # use the committed head as the initial baseline.
+            BASE_VERSION="$HEAD_VERSION"
+          fi
           FE_VERSION="$(sed -n 's/.*SUPPORTED_NATIVE_BRIDGE_VERSION = \([0-9][0-9]*\).*/\1/p' frontend/src/platform/nativeBridgeContract.js | head -n1)"
           python3 scripts/android-release/android_contract.py gate \
             --base-contract /tmp/base-android-native-bridge.json \
