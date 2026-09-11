@@ -5,50 +5,35 @@
 ```json
 {
   "schemaVersion": 1,
-  "latestVersionCode": 12,
-  "latestVersionName": "1.2.0",
-  "minSupportedVersionCode": 10,
+  "latestVersionCode": 1004002,
+  "latestVersionName": "1.4.2",
+  "minSupportedVersionCode": 1000000,
   "nativeBridgeVersion": 1,
-  "apkUrl": "https://wotbtools.com/download/android/wotbtools-android-v1.2.0.apk",
-  "sha256": "<hex>",
-  "publishedAt": "2026-08-28T00:00:00Z",
-  "releaseNotes": "修复 Android 回放导入问题"
+  "sourceSha": "<40-char commit sha>",
+  "apkUrl": "https://wotbtools.com/download/android/wotbtools-android-v1.4.2.apk",
+  "sha256": "<64-char lowercase hex>",
+  "publishedAt": "2026-09-11T00:00:00Z",
+  "releaseNotes": ""
 }
 ```
 
-## 字段
+`latestVersionCode`、`latestVersionName` 来自 committed `android/gradle.properties`；
+`nativeBridgeVersion` 来自 `contracts/android-native-bridge.json`；`sourceSha` 是生成 APK
+所 checkout 的精确 commit。workflow 只有在 APK 可访问且 SHA 校验通过后才写入 manifest。
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `schemaVersion` | ✓ | 固定 `1` |
-| `latestVersionCode` | ✓ | 最新 versionCode（单调递增） |
-| `latestVersionName` | ✓ | 最新 versionName（如 `1.2.0`） |
-| `minSupportedVersionCode` | ✓ | 低于该值 → 强制更新 |
-| `nativeBridgeVersion` | ✓ | Native Bridge 版本（capability 探测用） |
+| `latestVersionCode` | ✓ | 由 committed semver 确定，单调递增 |
+| `latestVersionName` | ✓ | committed `wotbVersion` |
+| `minSupportedVersionCode` | ✓ | 低于该值触发强制更新，与发布版本独立 |
+| `nativeBridgeVersion` | ✓ | JSON Bridge contract 版本 |
+| `sourceSha` | ✓ | APK source/tag target 的完整 SHA |
 | `apkUrl` | ✓ | APK 同源地址 |
-| `sha256` | ✓ | APK 完整性 sha256 小写 hex |
+| `sha256` | ✓ | APK 完整性校验值 |
 | `publishedAt` | ✓ | ISO-8601 UTC |
-| `releaseNotes` | ✗ | 发布说明（下载页展示） |
+| `releaseNotes` | ✗ | 展示用发布说明 |
 
-不做 `forceUpdate` 这类重复状态（规格 §13）；强制更新由
-`installed < minSupportedVersionCode` 派生。
-
-## 来源
-
-下载页与 App updater 共用同一份 `version.json`（规格 §91）。由
-`android-release.yml` 在 APK 上传且可访问后再生成/发布（原子发布，规格 §60）。手工/回滚调整也只改
-`latestVersionCode` / `minSupportedVersionCode` / `apkUrl`，不得引入 `forceUpdate`。
-
-发布前 `minSupportedVersionCode` 会经过 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 校验
-（`min_supported <= new_versionCode`，否则拒绝发布），确保新版本不会被客户端判为
-「低于最低支持」而直接触发强制更新。
-
-## nginx 托管
-
-`deploy/nginx/nginx.conf`：
-
-- `location = /download/android/version.json` → `no-store`（App 每次启动拉最新）
-- `location /download/android/` → `try_files $uri =404`（不 fallback 到 SPA index.html）
-
-compose 把宿主 `/opt/wotb/android-release` bind-mount 到容器
-`/usr/share/nginx/html/download/android`（read-only）。
+production 比较为：仓库版本大于 manifest 才发布；相同版本验证不可变 APK 后 no-op；仓库版本
+小于 production 直接拒绝。`forceUpdate` 不属于契约，强制更新由
+`installedVersionCode < minSupportedVersionCode` 派生。

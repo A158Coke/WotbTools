@@ -2,12 +2,12 @@
 
 > 仓库级硬约定见 `.agents/AGENTS.md`。
 
-## 现有 workflow 职责（经真实文件核对）
+## 现有 workflow 职责
 
-- `ci.yml`：**仓库级 authoritative full-validation gate（merge gate）**——PR 分支上跑全部测试与构建：Python（tankopedia 生成器/快照契约单测）、Backend（wotb-core+wotb-web 全量 `mvn test`，JDK 25，`-s settings.xml -Dmaven.repo.local=.m2repo`）、Keycloak providers ×2（`-s ../java/settings.xml -Dmaven.repo.local=../java/.m2repo`）、Frontend（Node 24 + `npm ci` + vitest + vite build + bundle separation + Docker build）、Android debug build、Observability config validation（compose/promtool/loki/alloy/grafana/no-host-port）、Deploy/rollback & nginx smoke（含 Flyway immutability guard）。Agent 不重复执行这些 full validation。
-- `ci.yml` 的 `http-contract` job：独立执行 OpenAPI parse/ref、FE generated drift、生产形状 fixture、Ajv runtime test 及 Playback 相关后端 serialization/projector tests；它是快速合同门禁，不替代仓库级 full-validation job。
-- `build.yml`：在 main 的应用或运行时 observability 变更后构建并推送 SHA 镜像，也支持 `workflow_dispatch` 单独选择 backend/frontend/keycloak/all；`changes` job 只解析一次 `main` 的 full commit SHA，所有实际 builder checkout 该冻结 SHA，不能从 feature ref 或移动的 main 写入 GHCR / `latest`。纯 `deploy/observability/grafana/dashboards/**` 只走 Grafana OpenTofu，不触发 Build。**不运行 backend/frontend/integration 测试套件**（测试与 merge 验证由 PR CI 承担）。
-- `deploy.yml`：只通过 `workflow_dispatch` 独立选择任意 production compose service；应用服务/all 必须提供独立 Build 产出的 immutable `sha-...` tag，运行时 observability service 可直接 dispatch；只负责配置校验、部署、健康检查、smoke 与回滚安全，不隐式重建镜像，也不自动串接 Build。
+- `ci.yml`：仓库级 authoritative full-validation gate（PR merge gate），覆盖 Python、Backend、Keycloak providers/runtime、Frontend、Android、HTTP contract、Observability 与 Deploy smoke。
+- `build.yml`：main push 或手工选择目标时，从冻结触发 SHA 只构建受影响 backend/frontend/keycloak 镜像，发布 immutable `sha-<first-12-sha>` tag，并上传 authoritative `deployment-manifest`。手工 Build 只接受已在 `origin/main` 历史中的 commit；docs-only push 仍产出 no-op manifest；不运行测试套件。
+- `deploy.yml`：成功 Build `workflow_run` 自动接力，也支持手工选择任意 production Compose service；自动路径只下载并校验对应 manifest，checkout 精确 source SHA，按 manifest 发布，不重新计算 diff、不构建、不跑测试。应用服务/all 必须使用 manifest 指定的 immutable image tag；run-number stale guard fail-closed。
+- `android-release.yml`：版本来自 committed `android/gradle.properties`，Native Bridge 协议来自 `contracts/android-native-bridge.json`；workflow 不接受手工版本输入。Android Contract CI 校验 Gradle/Native/FE/manifest 一致、runtime 改动递增版本、breaking bridge 改动递增 bridgeVersion。
 - `update-tankopedia.yml`：手动触发，从 blitzkit 同步并提交 `common/tankopedia-tier{7,8,9,10}.json` 到当前分支。
 - `database-backup.yml` / `prod-diagnostics.yml` / `cleanup-images.yml`：生产备份、线上诊断、镜像清理。
 
@@ -15,5 +15,5 @@
 
 - 新增/修改 workflow 前先读对应脚本真实实现；CI 命令必须与本地命令一致（settings.xml 路径、Node/JDK 版本）。
 - 不把 secret 写进 workflow 文件；用 `secrets.*` / `vars.*` 或环境变量。
-- 不要给 CI 塞非门禁性的重活（探针测试不进 CI，靠 Assumptions 跳过无样本场景）。
-- **职责分层**：Agent = fast feedback + targeted correctness + affected regression；PR CI = authoritative full validation（唯一 full-test gate）；Deploy = production verification。Deploy 不重复跑测试套件；CI 覆盖不因 Agent 提速被削弱。
+- 不要给 CI 塞非门禁性的重活；Deploy 不重复跑测试套件。
+- 职责分层：Agent 做 targeted correctness，PR CI 是唯一 authoritative full-test gate，Deploy 做 production verification。
