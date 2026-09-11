@@ -58,8 +58,8 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 
 | 组件 | 版本（固定） | 职责 |
 |---|---|---|
-| `wotb-backend` Actuator | Spring Boot 4.1.0 自带 | 容器内端口 `8087`，暴露 `/actuator/prometheus`、`/actuator/health` |
-| Prometheus | `prom/prometheus:v2.55.1` | 每 15s 抓取 Backend、Keycloak management `/metrics`、node-exporter 以及 Prometheus/Loki/Grafana 自身，TSDB 保留 7 天 / 上限 2GiB |
+| `wotb-backend` Actuator | Spring Boot 4.1.1 自带 | 容器内端口 `8087`，暴露 `/actuator/prometheus`、`/actuator/health` |
+| Prometheus | `prom/prometheus:v2.55.1` | 每 15s 抓取 Backend、node-exporter 以及 Prometheus/Loki/Grafana 自身，TSDB 保留 7 天 / 上限 2GiB |
 | Loki | `grafana/loki:3.3.2` | 接收 Alloy 推送的 Backend / Keycloak 容器日志，保留 7 天 |
 | Alloy | `grafana/alloy:v1.4.2` | 通过 docker.sock 采集 `wotb-backend` 与 `keycloak` 容器 stdout/stderr → Loki，使用低基数标签 |
 | Grafana | `grafana/grafana:11.6.16` | 可视化；Datasource 由 file provisioning 配置，Dashboard API 对象由 OpenTofu 管理 |
@@ -68,7 +68,7 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 
 **关键安全边界**
 
-- Grafana `3000`、Prometheus `9090`、Loki `3100`、Alloy `12345`、Backend `8087`、Keycloak management `9000`、node-exporter `9100` **均不映射到宿主机端口**，只在 Docker 内部网络可达；宿主机 `8088` 是 frontend 的 `8088:80` 映射。
+- Grafana `3000`、Prometheus `9090`、Loki `3100`、Alloy `12345`、Backend `8087`、node-exporter `9100` **均不映射到宿主机端口**，只在 Docker 内部网络可达；Keycloak 应用端口 `8080` 仅绑定到宿主机 loopback；宿主机 `8088` 是 frontend 的 `8088:80` 映射。生产观测不配置或依赖独立的 Keycloak management 端点。
 - 公网只能通过 `monitor.wotbtools.com`（host 层 TLS 反代 → frontend nginx → `grafana:3000`）访问 Grafana，且 Grafana 禁止匿名访问。
 - `/actuator/**` 不通过公网域名暴露（nginx 只代理 `/api/` 与 `monitor.*` 到 Grafana）。
 
@@ -207,7 +207,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 - Loki gate 必须同时确认 API `status=success`、`data.result` 非空、stream 的 `values` 非空以及 marker 在实际日志值中；空数组不能被“`values` 字段存在”误判为成功。
 - Production Overview 顶部将 Backend、Host、Prometheus、Loki、Grafana 分成五张独立观测健康卡；缺失数据显示“无数据 / 未知”且不映射为绿色。Keycloak 登录/IdP 状态通过日志面板观察。下方 Overall 查询同时要求五类 target 数量完整且 `min(up)==1`。
 - Backend production gate 还确认至少一个稳定的 Hikari 指标（`hikaricp_connections_active`），避免连接池遥测在 dashboard 中静默失效。
-- Keycloak production gate 同时确认应用 realm metadata、仅 Docker 内部可达的 `:9000/health/ready` 和 `:9000/metrics`；Keycloak 镜像在构建阶段启用 PostgreSQL、health、metrics 和 optimized runtime，避免启动时重新 augmentation。
+- Keycloak production gate 确认应用 realm metadata / OIDC discovery；Keycloak 镜像使用 PostgreSQL 与 `start --optimized` runtime，且不启用或暴露 management health/metrics 端点。登录、QQ callback、broker/IdP 错误与 WARN/ERROR 事件通过 Alloy → Loki 观测。
 
 ### CI 实际验证项（PR 时自动执行，见 `.github/workflows/ci.yml` `observability-config` job）
 
@@ -226,7 +226,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 | Alloy 配置与日志链路 | `alloy fmt -t` + `test-observability-e2e.sh` | 格式检查，并在 CI 最小 runtime 中验证 emitter → Alloy → Loki |
 | Grafana runtime | `test-grafana-runtime.sh` | 启动最小 Prometheus/Loki/Grafana，验证 provisioning、默认首页与 Alpine/BusyBox auth |
 | Grafana provisioning + Dashboard JSON | `python` 解析全部 YAML/JSON | 结构校验 |
-| 端口安全 | `docker compose config --format json` 校验 prometheus/loki/alloy/grafana/node-exporter/wotb-backend 无宿主端口映射，并校验 Keycloak management `9000` 不外露 | frontend 8088:80、Keycloak 8080:8080 合法 |
+| 端口安全 | `docker compose config --format json` 校验 prometheus/loki/alloy/grafana/node-exporter/wotb-backend 无宿主端口映射；Keycloak 仅保留应用 `8080` loopback 绑定，不配置 management contract | frontend 8088:80、Keycloak 127.0.0.1:8080:8080 合法 |
 
 Backend Maven 单元/集成测试属于独立的 `Backend tests` CI job，不属于 `observability-config` job；它们会在 PR gate 中单独执行。
 
@@ -257,7 +257,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 - `/actuator/prometheus` 与 node-exporter `:9100` 实际输出（**指标名真实存在**，与 Dashboard 面板匹配——CI 只检查配置结构，无法验证指标）
 - Volume 重启后数据持久化（7 天保留）
 - `docker stats` 实际资源占用（空闲约 1GB 目标）
-- 公网无法访问 8088/9090/9100/3100/3000/9000/12345
+- 公网无法访问 8088/9090/9100/3100/3000/12345；Keycloak 应用 `8080` 也只绑定宿主机 loopback
 
 ---
 
@@ -285,7 +285,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 | `wotbtools-usage` | WotBTools · 使用统计与 Android | 回放/AI 使用量与 APK 下载统计 |
 | `wotbtools-keycloak` | WotBTools · Keycloak | 登录、QQ callback、IdP 与 Keycloak 日志 |
 
-看板使用现有 Prometheus/Loki 数据源，并仅增加两项最小观测能力：Keycloak management `/metrics` 与低基数 node-exporter。生产总览只放摘要，HTTP 与事故诊断、回放与 AI 诊断、JVM 与基础设施、使用统计与 Android 分别承接下钻职责。未引入 cAdvisor、Postgres exporter 或 Alertmanager。
+看板使用现有 Prometheus/Loki 数据源，并增加低基数 node-exporter 主机指标；Keycloak 观测保持 Alloy → Loki 日志链路，不增加或依赖 management metrics。生产总览只放摘要，HTTP 与事故诊断、回放与 AI 诊断、JVM 与基础设施、使用统计与 Android 分别承接下钻职责。未引入 cAdvisor、Postgres exporter 或 Alertmanager。
 
 Error Explorer 的 `service` 变量映射 Loki 的 `container_name` 标签；`errorId` 对 AI SSE 映射为 `correlationId`，对普通 HTTP 错误映射为 canonical error 的 `id`，其余变量作为日志内容中的 regex token 搜索，用于关联结构化日志里的 `errorCode` 与 `jobId`。当前没有 authoritative deployment/build version 字段，因此不提供 `version` filter。
 
@@ -539,7 +539,7 @@ docker exec loki du -sh /loki/chunks
 
 ### 认证故障快速排查
 
-参见 [`docs/operations/observability-runbook.md`](observability-runbook.md)，其中包含 Keycloak management endpoint、Prometheus target、Loki 关键词和 QQ callback 复现后的证据采集顺序。
+参见 [`docs/operations/observability-runbook.md`](observability-runbook.md)，其中包含 Keycloak OIDC discovery、Prometheus target、Loki 关键词和 QQ callback 复现后的证据采集顺序。
 
 ---
 
@@ -601,7 +601,7 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
 
 **Keycloak / Host**：
 
-- Keycloak observability：不再配置 Prometheus `keycloak` job 或 management `:9000` contract；认证事件、QQ callback、broker/IdP 错误与 WARN/ERROR 统一通过 Alloy → Loki，Dashboard 以日志 panels 为主。Keycloak OIDC discovery 只属于 application blocking gate。
+- Keycloak observability：不再配置 Prometheus `keycloak` job 或独立 management contract；认证事件、QQ callback、broker/IdP 错误与 WARN/ERROR 统一通过 Alloy → Loki，Dashboard 以日志 panels 为主。Keycloak OIDC discovery 只属于 application blocking gate。
 - Host：Prometheus job `node-exporter` 抓取 `node-exporter:9100`；生产首页使用 `node_cpu_seconds_total`、`node_memory_*`、`node_filesystem_*` 与 `node_load1` 展示 CPU/RAM/Disk/Load。
 
 **Label 约束**：不使用用户 ID、Replay ID、文件名、IP、correlation ID、Prompt、Completion、异常正文作为 label；URI 一律为 Spring MVC 模板（如 `/api/preview`）。Token Usage 仅以低基数 `mode`/`token_type` 统计。
