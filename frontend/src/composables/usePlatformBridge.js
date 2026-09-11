@@ -10,6 +10,7 @@
  */
 import {
   LEGACY_NATIVE_BRIDGE_REQUIRED_CAPABILITIES,
+  LEGACY_PR290_REPLAY_RESOURCE_URL,
   SUPPORTED_NATIVE_BRIDGE_VERSIONS,
 } from '../platform/nativeBridgeContract.js'
 
@@ -79,8 +80,14 @@ export function isNativeBridgeCompatible(version) {
   return SUPPORTED_NATIVE_BRIDGE_VERSIONS.includes(version)
 }
 
-export function isLegacyNativeBridgeCompatible(version, capabilities = []) {
-  return version === null && LEGACY_NATIVE_BRIDGE_REQUIRED_CAPABILITIES.every(capability => capabilities.includes(capability))
+export function isLegacyNativeReplayContractCompatible({
+  bridgeVersion,
+  capabilities = [],
+  pending,
+}) {
+  return bridgeVersion === null
+    && LEGACY_NATIVE_BRIDGE_REQUIRED_CAPABILITIES.every(capability => capabilities.includes(capability))
+    && pending?.uri === LEGACY_PR290_REPLAY_RESOURCE_URL
 }
 
 export async function supports(capability) {
@@ -115,7 +122,7 @@ export function usePlatformBridge() {
     getCapabilities,
     getNativeBridgeVersion,
     isNativeBridgeCompatible,
-    isLegacyNativeBridgeCompatible,
+    isLegacyNativeReplayContractCompatible,
     supports,
     getPendingReplay,
     consumePendingReplay,
