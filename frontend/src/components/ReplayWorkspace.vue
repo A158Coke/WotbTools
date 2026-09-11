@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { displayName } from '../utils/helpers.js'
 import { useAuth } from '../composables/useAuth.js'
+import { useError } from '../composables/useError.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
@@ -28,6 +29,8 @@ const props = defineProps({
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const { t } = useI18n()
 const { initPromise: authInit, authenticated, login, loginInFlight } = useAuth()
+/** 项目统一错误 UI（AppShell 的 GlobalErrorDialog）——不新造 toast/error system。 */
+const { show: showGlobalError } = useError()
 
 /** auth init 是否已结束（结束前不得渲染/执行任何 replay 业务动作）。 */
 const authReady = ref(false)
@@ -140,16 +143,31 @@ function viewFor(cap) {
  * 登录门禁：未登录时始终可以发起（或重新发起）login transaction。
  * 去重只发生在 useAuth.login() 内部（同一个进行中的 redirect），
  * 绝不存在「这个组件已尝试过登录 → 后续点击静默 no-op」的 component-lifetime 状态。
+ *
+ * 失败必须可观测：以前这里 `.catch(() => {})` 把 provider 取消 / 导航失败 /
+ * WebView 中断全部吞掉，用户点了「战局回放」之后页面什么都不变，只能重新点——
+ * 这正是「点了完全没反应」这一类反馈。现在改为：
+ *   - 用户主动发起（点 capability tab / 点登录按钮）失败 → 走统一 GlobalErrorDialog；
+ *   - 挂载时的自动登录失败不弹窗（auth gate 本身已是确定的、可重试的可见表面）。
+ * 无论哪种情况都只释放 in-flight，不写任何 component-lifetime 状态：
+ * 后续点击仍会重新发起登录。
  */
-function requestLogin(view) {
-  // 登录失败（provider 取消 / 导航失败 / WebView 中断）不得阻塞 UI：必须能再次点击重试。
-  Promise.resolve().then(() => login(view || 'replay')).catch(() => {})
+function requestLogin(view, { userInitiated = false } = {}) {
+  const target = view || 'replay'
+  return Promise.resolve()
+    .then(() => login(target))
+    .catch(() => {
+      // 低敏诊断：只记 view 名，不记 token / redirect URL / replay 内容。
+      console.warn(`[workspace-auth] login failed view=${target}`)
+      if (userInitiated) showGlobalError(t('workspace.login_failed'))
+      return false
+    })
 }
 
 async function setCapability(key) {
   if (key === activeCapability.value) return
   if (!authenticated.value) {
-    requestLogin(viewFor(key))
+    requestLogin(viewFor(key), { userInitiated: true })
     return
   }
   workspace.setWorkspaceTab(key)
@@ -218,7 +236,7 @@ watch(() => props.initialCapability, (val) => {
         class="auth-gate-action"
         data-testid="ws-login"
         :disabled="loginInFlight"
-        @click="requestLogin(viewFor(activeCapability))"
+        @click="requestLogin(viewFor(activeCapability), { userInitiated: true })"
       >{{ $t('app.login') }}</button>
     </section>
 

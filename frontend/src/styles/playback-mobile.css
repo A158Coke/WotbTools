@@ -208,6 +208,11 @@
   border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--bg-card2) 78%, transparent);
+  /* §hit-target：组件 scoped 的 legacy @media(width<768px) 仍把 content 设成
+     pointer-events:none（那是为旧的「浮层未唤起」形态写的）。流内形态下 wrapper 已经是
+     auto，content 于是变成只吃不透的洞：控件看得见、点不到，play/±5 全部 silent no-op。
+     pointer-events 是继承属性，必须在这里显式恢复，子控件才重新可命中。 */
+  pointer-events: auto;
 }
 .battle-playback:fullscreen.pb-form-mobile .pb-mobile-overlay-content {
   display: grid;

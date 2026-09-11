@@ -1,26 +1,12 @@
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { findChrome } from './browser-chrome.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const frontendRoot = resolve(here, '..')
-
-function findChrome() {
-  const candidates = [
-    process.env.CHROME_BIN,
-    'google-chrome',
-    'google-chrome-stable',
-    'chromium',
-    'chromium-browser',
-  ].filter(Boolean)
-  for (const candidate of candidates) {
-    const probe = spawnSync(candidate, ['--version'], { stdio: 'ignore' })
-    if (probe.status === 0) return candidate
-  }
-  throw new Error(`Chrome/Chromium executable not found; tried: ${candidates.join(', ')}`)
-}
 
 const chrome = findChrome()
 const cssPaths = [
