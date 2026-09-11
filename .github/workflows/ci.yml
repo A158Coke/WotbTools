@@ -237,7 +237,14 @@ jobs:
         run: |
           set -euo pipefail
           git show "$BASE_SHA:android/gradle.properties" > /tmp/base-gradle.properties
-          git show "$BASE_SHA:contracts/android-native-bridge.json" > /tmp/base-android-native-bridge.json
+          if git cat-file -e "$BASE_SHA:contracts/android-native-bridge.json" 2>/dev/null; then
+            git show "$BASE_SHA:contracts/android-native-bridge.json" > /tmp/base-android-native-bridge.json
+          else
+            # First introduction of the contract has no historical JSON baseline;
+            # validate the committed head contract now and start breaking diffs
+            # from this SSOT on the next PR.
+            cp contracts/android-native-bridge.json /tmp/base-android-native-bridge.json
+          fi
           git diff --name-only "$BASE_SHA" "$HEAD_SHA" > /tmp/android-changed-paths.txt
           BASE_VERSION="$(sed -n 's/^wotbVersion=//p' /tmp/base-gradle.properties | head -n1)"
           HEAD_VERSION="$(sed -n 's/^wotbVersion=//p' android/gradle.properties | head -n1)"
