@@ -11,6 +11,7 @@
     "dev:production-remote": "vite --mode production-remote",
     "test": "vitest run",
     "test:browser-layout": "node scripts/browser-playback-layout.mjs",
+    "test:browser-interaction": "node scripts/browser-workspace-interaction.mjs",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
     "build": "vite build",
     "preview": "vite preview",

@@ -1408,6 +1408,7 @@
             "playback": {
     "play": "播放",
     "pause": "暂停",
+    "timeline_unavailable": "这条回放没有可播放的时间线（时长 0 秒），播放控件已禁用。",
     "speed": "播放速度",
     "events": "事件",
     "no_events": "暂无事件",
