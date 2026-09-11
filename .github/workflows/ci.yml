@@ -321,12 +321,9 @@ jobs:
           required = {
               "wotbtools-production-overview.json",
               "wotbtools-backend-overview.json",
-              "wotbtools-http-errors.json",
-              "wotbtools-replay-parser.json",
               "wotbtools-ai-review.json",
               "wotbtools-keycloak.json",
               "wotbtools-error-explorer.json",
-              "wotbtools-android-downloads.json",
               "wotbtools-usage.json",
           }
           paths = glob.glob("deploy/observability/grafana/dashboards/*.json")

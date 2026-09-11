@@ -41,6 +41,39 @@ wait_grafana_datasource_ok() {
   fail "Grafana datasource health is not OK: $url"
 }
 
+dashboard_uid() {
+  jq -er 'if (.uid | type) == "string" and (.uid | length) > 0 then .uid else empty end' "$1"
+}
+
+dashboard_uid_parser_regression() {
+  local fixture_dir pretty compact invalid missing empty result
+  fixture_dir="$(mktemp -d)"
+  pretty="$fixture_dir/pretty.json"
+  compact="$fixture_dir/compact.json"
+  invalid="$fixture_dir/invalid.json"
+  missing="$fixture_dir/missing.json"
+  empty="$fixture_dir/empty.json"
+  printf '{\n  "title": "Pretty",\n  "uid": "pretty-uid",\n  "version": 1\n}\n' > "$pretty"
+  printf '{"title":"Compact","uid":"compact-uid","version":1}\n' > "$compact"
+  printf '{"title":"Missing UID","uid":null}\n' > "$invalid"
+  printf '{"title":"Missing UID"}\n' > "$missing"
+  printf '{"title":"Empty UID","uid":""}\n' > "$empty"
+  result="$(dashboard_uid "$pretty")"
+  [ "$result" = "pretty-uid" ] || { rm -rf "$fixture_dir"; return 1; }
+  result="$(dashboard_uid "$compact")"
+  [ "$result" = "compact-uid" ] || { rm -rf "$fixture_dir"; return 1; }
+  if dashboard_uid "$invalid" >/dev/null 2>&1 \
+      || dashboard_uid "$missing" >/dev/null 2>&1 \
+      || dashboard_uid "$empty" >/dev/null 2>&1; then
+    rm -rf "$fixture_dir"
+    return 1
+  fi
+  rm -rf "$fixture_dir"
+  echo "PASS: dashboard UID JSON parser handles pretty, compact, and invalid UID values"
+}
+
+dashboard_uid_parser_regression
+
 seed_dashboard_via_api() {
   local dashboard_file="$1" payload
   payload="$(jq -c '{dashboard: ., folderId: 0, overwrite: true}' "$dashboard_file")" \
@@ -117,9 +150,8 @@ fi
 
 production_uid=""
 for dashboard_file in "$ROOT"/deploy/observability/grafana/dashboards/*.json; do
-  uid="$(grep -m1 -oE '^[[:space:]]*"uid"[[:space:]]*:[[:space:]]*"[^" ]+"' "$dashboard_file" \
-    | sed -E 's/.*"uid"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-  [ -n "$uid" ] || fail "dashboard has no uid: $dashboard_file"
+  uid="$(dashboard_uid "$dashboard_file")" \
+    || fail "dashboard has no valid uid: $dashboard_file"
   [ "$(basename "$dashboard_file")" = "wotbtools-production-overview.json" ] && production_uid="$uid"
   response="$(curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" \
     "http://127.0.0.1:${PORT}/api/dashboards/uid/${uid}")" || fail "dashboard API fetch failed: $uid"
