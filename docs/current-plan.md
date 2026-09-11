@@ -39,7 +39,7 @@ recovery generation 中跳过 silent bootstrap，未把设备问题未经证据�
 | 8 observability | 完成 | init start/pending/timeout/abandoned/retry/completed/failed 与低敏 login diagnostics |
 | 9 Android validation | 部分完成 | policy/manifest/config 静态核对；本环境无 Android Gradle wrapper/gradle 命令，Owner/异常真机复测待外部设备 |
 | 10 automated tests | 部分完成 | targeted/full Vitest、真实 Chrome interaction、typecheck/build 已通过；Android JVM/debug build 因仓库缺少 Gradle wrapper 且环境无 gradle 命令未执行 |
-| review/docs/PR | review/docs 完成，PR 待创建 | 两轮 review-fix 零新问题；OCR preview/rule 完成；docs/i18n/version history 已同步；待提交并创建 PR |
+| review/docs/PR | 完成（PR #294，CI pending） | 两轮 review-fix 零新问题；OCR preview/rule 完成；docs/i18n/version history 已同步；PR 已创建，CI 结果待 GitHub 返回 |
 
 ## 状态与安全不变量
 
