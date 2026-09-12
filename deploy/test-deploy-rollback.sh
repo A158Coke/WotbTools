@@ -334,7 +334,15 @@ stage_candidate_b() {
 }
 
 run_manual_latest_case() {
-  local rejected_output rejected_rc
+  local rejected_output rejected_rc manual_backend_output stale_output stale_rc
+  local automatic_output automatic_backend_sha manual_latest_output manual_latest_up_line
+
+  mkdir -p "$WORK/deployed-state"
+  for service in wotb-backend wotb-frontend keycloak; do
+    printf '600\n' > "$WORK/deployed-state/$service.run"
+    printf 'sha-automatic-600\n' > "$WORK/deployed-state/$service.sha"
+  done
+
   set +e
   rejected_output="$(env TAG=latest WOTB_DEPLOY_SERVICE=postgres \
     FAKE_HEALTHY_BACKEND_TAG=latest \
@@ -346,6 +354,59 @@ run_manual_latest_case() {
     || fail "manual latest must reject a low-level Compose service"
   grep -q "manual latest deployment only supports application services" <<<"$rejected_output" \
     || fail "manual latest low-level service rejection marker missing: $rejected_output"
+
+  stage_candidate_b
+  : > "$WORK/docker-pull-manual-backend.log"
+  : > "$WORK/docker-up-manual-backend.log"
+  manual_backend_output="$(env TAG=latest WOTB_DEPLOY_SERVICES=wotb-backend \
+    WOTB_DEPLOY_IMAGE_SERVICES=wotb-backend \
+    FAKE_HEALTHY_BACKEND_TAG=latest \
+    FAKE_DOCKER_PULL_LOG="$WORK/docker-pull-manual-backend.log" \
+    FAKE_DOCKER_UP_LOG="$WORK/docker-up-manual-backend.log" \
+    WOTB_BACKUP_ROOT="$WORK/backups-manual-backend" \
+    bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)" \
+    || fail "manual latest backend deploy must succeed: $manual_backend_output"
+  grep -Eq ' pull .*wotb-backend$' "$WORK/docker-pull-manual-backend.log" \
+    || fail "manual latest backend deploy must pull only the backend image"
+  [[ "$(cat "$WORK/deployed-state/wotb-backend.run")" == 600 ]] \
+    || fail "manual latest backend deploy must preserve backend automatic run generation"
+  [[ "$(cat "$WORK/deployed-state/wotb-backend.sha")" == sha-automatic-600 ]] \
+    || fail "manual latest backend deploy must preserve backend automatic identity"
+  for service in wotb-frontend keycloak; do
+    [[ "$(cat "$WORK/deployed-state/$service.run")" == 600 ]] \
+      || fail "manual latest backend deploy must preserve $service automatic run generation"
+    [[ "$(cat "$WORK/deployed-state/$service.sha")" == sha-automatic-600 ]] \
+      || fail "manual latest backend deploy must preserve $service automatic identity"
+  done
+
+  stage_candidate_b
+  : > "$WORK/docker-up-manual-stale.log"
+  set +e
+  stale_output="$(env TAG=sha-cccccccccccc \
+    RELEASE_SHA=cccccccccccccccccccccccccccccccccccccccc \
+    RELEASE_RUN_NUMBER=500 WOTB_STALE_RELEASE_GUARD=1 WOTB_DEPLOY_SERVICE=wotb-backend \
+    FAKE_DOCKER_UP_LOG="$WORK/docker-up-manual-stale.log" \
+    WOTB_BACKUP_ROOT="$WORK/backups-manual-stale" \
+    bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+  stale_rc=$?
+  set -e
+  [[ $stale_rc -ne 0 ]] || fail "automatic run 500 must remain stale after manual latest backend deploy"
+  grep -q 'stale release run 500 cannot overwrite deployed wotb-backend run 600' <<<"$stale_output" \
+    || fail "manual latest must preserve the automatic stale guard: $stale_output"
+  [[ ! -s "$WORK/docker-up-manual-stale.log" ]] \
+    || fail "stale automatic run must be rejected before compose up"
+
+  stage_candidate_b
+  automatic_output="$(env TAG=sha-aaaaaaaaaaaa \
+    RELEASE_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+    RELEASE_RUN_NUMBER=601 WOTB_STALE_RELEASE_GUARD=1 WOTB_DEPLOY_SERVICE=wotb-backend \
+    WOTB_DEPLOY_IMAGE_SERVICES=wotb-backend FAKE_HEALTHY_BACKEND_TAG=sha-aaaaaaaaaaaa \
+    WOTB_BACKUP_ROOT="$WORK/backups-manual-generation-601" \
+    bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)" \
+    || fail "automatic run 601 must remain deployable after manual latest backend deploy: $automatic_output"
+  [[ "$(cat "$WORK/deployed-state/wotb-backend.run")" == 601 ]] \
+    || fail "automatic run 601 must advance backend generation"
+  automatic_backend_sha="$(cat "$WORK/deployed-state/wotb-backend.sha")"
 
   stage_candidate_b
   : > "$WORK/docker-pull-manual-latest.log"
@@ -369,6 +430,16 @@ run_manual_latest_case() {
   done
   ! grep -q 'OBSERVABILITY DEGRADED' <<<"$manual_latest_output" \
     || fail "manual latest full deploy must not run the automatic observability maintenance path"
+  [[ "$(cat "$WORK/deployed-state/wotb-backend.run")" == 601 ]] \
+    || fail "manual latest Deploy All must preserve backend automatic run generation"
+  [[ "$(cat "$WORK/deployed-state/wotb-backend.sha")" == "$automatic_backend_sha" ]] \
+    || fail "manual latest Deploy All must preserve backend automatic identity"
+  for service in wotb-frontend keycloak; do
+    [[ "$(cat "$WORK/deployed-state/$service.run")" == 600 ]] \
+      || fail "manual latest Deploy All must preserve $service automatic run generation"
+    [[ "$(cat "$WORK/deployed-state/$service.sha")" == sha-automatic-600 ]] \
+      || fail "manual latest Deploy All must preserve $service automatic identity"
+  done
 }
 
 # A healthy existing deployment is the normal first-LKG path. The deployment

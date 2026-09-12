@@ -183,6 +183,12 @@ migrate_legacy_state() {
 
 update_deployed_state() {
   local deployment_id="$1" service run_file sha_file
+  if is_manual_latest_deploy; then
+    # Manual latest is outside the automatic release-generation stream. Keep
+    # automatic run/SHA state intact so delayed immutable releases remain
+    # subject to the stale guard.
+    return 0
+  fi
   mkdir -p "$DEPLOYED_STATE_DIR"
   while IFS= read -r service; do
     [ -n "$service" ] || continue
