@@ -182,9 +182,9 @@ wait_for_grafana_datasource "Grafana Loki datasource" \
 production_uid=""
 for dashboard_file in "$DASHBOARD_DIR"/*.json; do
   [ -f "$dashboard_file" ] || continue
-  uid="$(grep -m1 -oE '^[[:space:]]*"uid"[[:space:]]*:[[:space:]]*"[^" ]+"' "$dashboard_file" \
-    | sed -E 's/.*"uid"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-  [ -n "$uid" ] || fail "GRAFANA" "dashboard has no uid: $dashboard_file"
+  uid="${dashboard_file##*/}"
+  uid="${uid%.json}"
+  [ -n "$uid" ] || fail "GRAFANA" "dashboard has no valid canonical filename: $dashboard_file"
   [ "$(basename "$dashboard_file")" = "wotbtools-production-overview.json" ] && production_uid="$uid"
   wait_for_grafana_api "Grafana dashboard $(basename "$dashboard_file")" \
     "/api/dashboards/uid/$uid" '"dashboard"' "$uid"
