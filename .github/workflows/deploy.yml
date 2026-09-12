@@ -62,22 +62,22 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
           run-id: ${{ github.event.workflow_run.id }}
-      - name: Resolve manual release identity
+      - name: Validate manual source is current main HEAD
         if: github.event_name == 'workflow_dispatch'
         id: manual_identity
         env:
           REQUESTED_SERVICE: ${{ inputs.service }}
-          WORKFLOW_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
           git fetch origin main
-          release_sha="$(git rev-parse "$WORKFLOW_SHA^{commit}")"
-          if ! git merge-base --is-ancestor "$release_sha" origin/main; then
-            echo "::error::Manual Deploy source must be an existing commit in origin/main history." >&2
+          source_sha="$(git rev-parse HEAD)"
+          main_sha="$(git rev-parse origin/main)"
+          if [ "$source_sha" != "$main_sha" ]; then
+            echo "::error::Manual Deploy must run from the current main HEAD." >&2
             exit 1
           fi
-          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$source_sha" >> "$GITHUB_OUTPUT"
       - name: Validate deployment manifest
         id: manifest
         env:

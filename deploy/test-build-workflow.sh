@@ -69,8 +69,18 @@ assert deploy["jobs"]["deploy"]["name"] == "Deploy ${{ needs.changes.outputs.dep
 for label in ("Backend", "Frontend", "Keycloak", "Observability", "All"):
     assert f'"{label}"' in deploy_text, f"Deploy display mapping missing {label}"
 assert "' + '.join(labels)" in deploy_text, "Deploy display name must preserve module combinations"
-assert "git merge-base --is-ancestor" in deploy_text, "Manual Deploy must require main ancestry"
-assert "git merge-base --is-ancestor" in build_text, "Manual Build must require main ancestry"
+for workflow_text, workflow_name in ((deploy_text, "Manual Deploy"), (build_text, "Manual Build")):
+    assert "git fetch origin main" in workflow_text, f"{workflow_name} must refresh origin/main"
+    assert 'source_sha="$(git rev-parse HEAD)"' in workflow_text, \
+        f"{workflow_name} must resolve the checked out source SHA"
+    assert 'main_sha="$(git rev-parse origin/main)"' in workflow_text, \
+        f"{workflow_name} must resolve the current main HEAD"
+    assert 'if [ "$source_sha" != "$main_sha" ]; then' in workflow_text, \
+        f"{workflow_name} must require the current main HEAD"
+    assert "git merge-base --is-ancestor" not in workflow_text, \
+        f"{workflow_name} must not accept an ancestor-only source"
+assert "::error::Manual Deploy must run from the current main HEAD." in deploy_text
+assert "::error::Manual Build must run from the current main HEAD." in build_text
 assert "--allow-latest" in deploy_text, "Manual Deploy must explicitly allow only its latest manifest path"
 assert "image_tag" not in deploy_text, "Manual Deploy must not expose image_tag input"
 for service in ("postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana", "wotb-backend", "wotb-frontend"):

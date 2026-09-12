@@ -124,7 +124,7 @@
 改动要点：
 
 - 每个 `docker/build-push-action@v7` 同时写入该组件的 `${{ needs.changes.outputs.tag }}` 与 `latest`；不得共享或覆盖其他组件 tag。
-- 保留 `changes` 的冻结 SHA、manual main ancestry、affected image selection、manifest 结构和 no-op manifest 行为。
+- 保留 `changes` 的冻结 SHA、manual current-main HEAD guard、affected image selection、manifest 结构和 no-op manifest 行为。
 - 更新测试为：backend-only 只声明 backend SHA/latest；frontend-only/keycloak-only 同理；all 声明三组件两类 tag；禁止 Build 触及 postgres/Prometheus/Loki/Alloy/Grafana/node-exporter。
 - 不给 Build 增加测试套件；CI validation 继续由 PR gate 承担。
 
@@ -158,7 +158,7 @@
 改动要点：
 
 - `workflow_dispatch` 只保留 `service: all/backend/frontend/keycloak`，UI description 使用应用名称，不显示底层 Compose service；删除 `image_tag` input。
-- Manual Deploy checkout 当前 main 的精确 workflow SHA 作为 deployment config source，但不再将其转换成 image tag；manual release metadata 固定 `release_tag=latest`、`stale_release_guard=0`，并保留 current-main ancestry gate。
+- Manual Deploy checkout 当前 main 的精确 workflow SHA 作为 deployment config source，但不再将其转换成 image tag；manual release metadata 固定 `release_tag=latest`、`stale_release_guard=0`，并要求 source 精确等于当前 `origin/main` HEAD。
 - `image_existence` 根据 manual/automatic 语义选择 tag：manual 使用 latest，automatic 使用 manifest SHA；每个 service 只检查其实际 application image。
 - `docker manifest inspect` 失败时包装为可行动错误：完整 image ref、具体组件、提示先运行对应 Build；失败发生在 SSH 前。
 - display mapping 只输出 `Deploy All`、`Deploy Backend`、`Deploy Frontend`、`Deploy Keycloak`；automatic 多应用 manifest 继续输出组合名，例如 `Deploy Backend + Frontend`，不使用动态顶层 run-name hack。
