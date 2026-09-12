@@ -15,7 +15,7 @@ key:    wotbtools/prod/grafana.tfstate
 
 ## Ownership
 
-The nine existing dashboards are provider-managed. Their canonical JSON stays
+The six approved dashboards are provider-managed. Their canonical JSON stays
 in `deploy/observability/grafana/dashboards` and is read by
 `grafana_dashboard.managed`; the dashboard file-provisioning YAML controller
 is removed so there is only one dashboard owner. Compose still mounts these
@@ -43,20 +43,17 @@ dashboard import IDs are their Grafana UIDs:
 
 ```powershell
 tofu import 'grafana_dashboard.managed["wotbtools_ai_review"]' wotbtools-ai-review
-tofu import 'grafana_dashboard.managed["wotbtools_android_downloads"]' wotbtools-android-downloads
 tofu import 'grafana_dashboard.managed["wotbtools_backend_overview"]' wotbtools-backend-overview
 tofu import 'grafana_dashboard.managed["wotbtools_error_explorer"]' wotbtools-error-explorer
-tofu import 'grafana_dashboard.managed["wotbtools_http_errors"]' wotbtools-http-errors
 tofu import 'grafana_dashboard.managed["wotbtools_keycloak"]' wotbtools-keycloak
 tofu import 'grafana_dashboard.managed["wotbtools_production_overview"]' wotbtools-production-overview
-tofu import 'grafana_dashboard.managed["wotbtools_replay_parser"]' wotbtools-replay-parser
 tofu import 'grafana_dashboard.managed["wotbtools_usage"]' wotbtools-usage
 ```
 
 CI never runs import. Pull requests use `GRAFANA_PAT` only for an authenticated
 plan; fork runs never receive it. Merges to `main` run the separate
-`grafana-tofu-apply.yml` workflow, which plans, blocks dashboard deletes, applies
-the exact saved plan, and verifies all managed dashboard UIDs.
+`grafana-tofu-apply.yml` workflow, which plans, applies the exact saved plan, and
+verifies all six keeper UIDs plus 404 for the three retired UIDs.
 
 The current `GRAFANA_PAT` is the existing `wotbtool` service-account token with
 the Grafana organization `Admin` role. The owner explicitly approved this
@@ -77,8 +74,11 @@ dashboard UIDs, dashboard links, the Production Overview five-target health
 contract, and authentication failure behavior. This validates the API boundary
 used by the provider without restoring the removed dashboard file controller.
 
-Both the PR plan workflow and the main apply workflow block any delete action
-for any `grafana_dashboard`; replacement is also blocked because its action set
-contains `delete`. The same gate covers any future provider-managed
-`grafana_data_source`. Intentional dashboard deletion is not supported by
-automatic main apply and requires a separately reviewed manual process.
+The PR plan and main apply workflow use the same fail-closed migration gate:
+datasource deletes always fail; dashboard deletes are accepted only for the
+three exact retired addresses (`wotbtools_http_errors`,
+`wotbtools_replay_parser`, `wotbtools_android_downloads`) and only when the
+action set is exactly `["delete"]`; replacements and every other delete fail.
+The plan step reports expected deletes, unexpected deletes, replacements, and
+datasource deletes. After the one-shot migration, future dashboard deletes
+remain fail-closed.

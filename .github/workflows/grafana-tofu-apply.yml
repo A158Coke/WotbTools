@@ -66,15 +66,41 @@ jobs:
           TF_VAR_grafana_auth: ${{ secrets.GRAFANA_PAT }}
         run: tofu plan -input=false -no-color -out=plan.tfplan
 
-      - name: Reject Grafana dashboard or datasource deletion
+      - name: Validate exact Grafana migration delete allowlist
         shell: bash
         run: |
+          plan_json="$(tofu show -json plan.tfplan)"
+          echo "$plan_json" | jq -r '
+            [ .resource_changes[]? ] as $changes |
+            [ $changes[] | select(.type == "grafana_dashboard" and (.change.actions // []) == ["delete"] and
+              (.address == "grafana_dashboard.managed[\"wotbtools_http_errors\"]" or
+               .address == "grafana_dashboard.managed[\"wotbtools_replay_parser\"]" or
+               .address == "grafana_dashboard.managed[\"wotbtools_android_downloads\"]")) ] as $expected |
+            [ $changes[] | select(.type == "grafana_dashboard" and ((.change.actions // []) | index("delete") != null) and
+              ((.change.actions // []) != ["delete"] or
+               (.address != "grafana_dashboard.managed[\"wotbtools_http_errors\"]" and
+                .address != "grafana_dashboard.managed[\"wotbtools_replay_parser\"]" and
+                .address != "grafana_dashboard.managed[\"wotbtools_android_downloads\"]"))) ] as $unexpected |
+            [ $changes[] | select(.type == "grafana_dashboard" and (((.change.actions // []) | index("delete")) != null) and (((.change.actions // []) | index("create")) != null)) ] as $replacements |
+            [ $changes[] | select(.type == "grafana_data_source" and ((.change.actions // []) | index("delete") != null)) ] as $datasources |
+            "expected dashboard deletes: \($expected | length)",
+            "unexpected dashboard deletes: \($unexpected | length)",
+            "replacements: \($replacements | length)",
+            "datasource deletes: \($datasources | length)"
+          '
           if tofu show -json plan.tfplan | jq -e '
+            def is_delete: ((.change.actions // []) | index("delete") != null);
+            def is_approved:
+              .address == "grafana_dashboard.managed[\"wotbtools_http_errors\"]" or
+              .address == "grafana_dashboard.managed[\"wotbtools_replay_parser\"]" or
+              .address == "grafana_dashboard.managed[\"wotbtools_android_downloads\"]";
             any(.resource_changes[]?;
-              (((.type == "grafana_dashboard") or (.type == "grafana_data_source")) and
-                ((.change.actions // []) | index("delete") != null)))
+              (.type == "grafana_data_source" and is_delete) or
+              (.type == "grafana_dashboard" and is_delete and
+                ((is_approved | not) or (.change.actions // []) != ["delete"]))
+            )
           ' >/dev/null; then
-            echo "A Grafana dashboard or provider-managed datasource has a delete action in the plan."
+            echo "Grafana migration plan contains an unexpected delete or dashboard replacement."
             exit 1
           fi
 
@@ -87,12 +113,26 @@ jobs:
           TF_VAR_grafana_auth: ${{ secrets.GRAFANA_PAT }}
         run: tofu apply -input=false -auto-approve plan.tfplan
 
-      - name: Verify managed dashboard UIDs
+      - name: Verify managed and removed dashboard UIDs
         shell: bash
         env:
           GRAFANA_AUTH: ${{ secrets.GRAFANA_PAT }}
         run: |
           set -euo pipefail
+
+          keeper_uids=(
+            wotbtools-production-overview
+            wotbtools-backend-overview
+            wotbtools-error-explorer
+            wotbtools-ai-review
+            wotbtools-usage
+            wotbtools-keycloak
+          )
+          removed_uids=(
+            wotbtools-http-errors
+            wotbtools-replay-parser
+            wotbtools-android-downloads
+          )
 
           verify_dashboard() {
             local uid="$1"
@@ -102,11 +142,27 @@ jobs:
               | jq -e --arg uid "$uid" '.dashboard.uid == $uid' >/dev/null
           }
 
+          verify_dashboard_absent() {
+            local uid="$1"
+            local status
+            status="$(curl --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \
+              -H "Authorization: Bearer ${GRAFANA_AUTH}" \
+              -o /dev/null -w '%{http_code}' \
+              "${GRAFANA_URL}/api/dashboards/uid/${uid}")"
+            [[ "$status" == "404" ]] || {
+              echo "Removed dashboard UID ${uid} returned HTTP ${status}, expected 404."
+              return 1
+            }
+          }
+
           curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \
             "${GRAFANA_URL}/api/health" \
             | jq -e '.database == "ok"' >/dev/null
 
-          for dashboard_file in "$GITHUB_WORKSPACE"/deploy/observability/grafana/dashboards/*.json; do
-            uid="$(jq -er '.uid // empty' "$dashboard_file")"
+          for uid in "${keeper_uids[@]}"; do
             verify_dashboard "$uid"
+          done
+
+          for uid in "${removed_uids[@]}"; do
+            verify_dashboard_absent "$uid"
           done
