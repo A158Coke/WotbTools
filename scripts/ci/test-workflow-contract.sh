@@ -15,9 +15,14 @@ deploy = (root / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
 assert "name: CI / PR" in ci
 assert "name: CI / Required Gate" in ci
 assert "if: always()" in ci
-assert "name: Release / Build" in build
-assert "name: Release / Deploy" in deploy
-assert "      - Release / Build" in deploy
+assert re.search(r"^name: Build$", build, re.MULTILINE)
+assert re.search(r"^name: Deploy$", deploy, re.MULTILINE)
+assert "      - Build" in deploy
+assert "Release / Build" not in build and "Release / Deploy" not in deploy
+assert "name: Build Backend" in build
+assert "name: Build Frontend" in build
+assert "name: Build Keycloak" in build
+assert "name: Deploy ${{ needs.changes.outputs.deploy_display_name }}" in deploy
 
 expected_jobs = {
     "python_unit": "data",
@@ -43,6 +48,6 @@ for job_id, output in expected_jobs.items():
 
 for job_id in ("changes", *expected_jobs):
     assert f"      - {job_id}" in ci, job_id
-assert "      - Release / Build" in deploy
+assert "      - Build" in deploy
 print("CI workflow conditional and aggregation contract OK")
 PY

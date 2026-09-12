@@ -21,6 +21,11 @@ changes = build_jobs["changes"]
 checkout = next(step for step in changes["steps"] if step.get("uses") == "actions/checkout@v5")
 assert checkout["with"]["ref"] == "${{ github.sha }}", "Build must freeze the triggering commit"
 assert "paths:" not in build_text, "Build must create a no-op manifest for docs-only pushes"
+assert build["name"] == "Build"
+assert deploy["name"] == "Deploy"
+assert build_jobs["build_backend"]["name"] == "Build Backend"
+assert build_jobs["build_frontend"]["name"] == "Build Frontend"
+assert build_jobs["build_keycloak"]["name"] == "Build Keycloak"
 assert 'short_sha="${commit_sha:0:12}"' in build_text, "Build must use the deterministic 12-char SHA tag"
 assert "rev-parse --short" not in build_text, "Build must not use git's nondeterministic abbreviation"
 for output in ("commit_sha", "tag", "backend", "frontend", "keycloak", "deploy_services", "image_services"):
@@ -47,14 +52,22 @@ assert any(step.get("uses") == "actions/upload-artifact@v4" for step in manifest
 assert any("deployment-manifest.json" in str(step) for step in manifest_job["steps"])
 
 assert "workflow_run:" in deploy_text, "Deploy must subscribe to Build workflow completion"
+assert "      - Build" in deploy_text, "Deploy must subscribe to the Build workflow by its fixed name"
 assert "conclusion == 'success'" in deploy_text, "Deploy must ignore failed Build runs"
 assert "actions/download-artifact@v5" in deploy_text
 deploy_changes = deploy["jobs"]["changes"]
 assert deploy_changes["permissions"]["actions"] == "read", "Deploy artifact downloader requires actions: read"
+assert "deploy_display_name" in deploy_changes["outputs"]
+assert deploy["jobs"]["deploy"]["name"] == "Deploy ${{ needs.changes.outputs.deploy_display_name }}"
+for label in ("Backend", "Frontend", "Keycloak", "Observability", "All"):
+    assert f'"{label}"' in deploy_text, f"Deploy display mapping missing {label}"
+assert "' + '.join(labels)" in deploy_text, "Deploy display name must preserve module combinations"
 assert "git merge-base --is-ancestor" in deploy_text, "Manual Deploy must require main ancestry"
 assert "git merge-base --is-ancestor" in build_text, "Manual Build must require main ancestry"
 assert "sha-[0-9a-f]{12}" in deploy_text, "Manual Deploy must validate 12-char tags"
 assert "workflow_run.head_sha" in deploy_text
+assert "      - Build" in deploy_text
+assert "Release / Build" not in deploy_text and "Release / Deploy" not in deploy_text
 assert "ref: main" not in deploy_text, "Deploy must not checkout floating main"
 assert "release_plan.py validate" in deploy_text
 assert "docker manifest inspect" in deploy_text
