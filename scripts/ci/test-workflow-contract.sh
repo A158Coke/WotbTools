@@ -25,6 +25,13 @@ assert "Release / Build" not in build and "Release / Deploy" not in deploy
 assert "name: Build Backend" in build
 assert "name: Build Frontend" in build
 assert "name: Build Keycloak" in build
+assert "${{ env.GHCR_IMAGE_PREFIX }}-backend:latest" in build
+assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest" in build
+assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest" in build
+assert "image_tag:" not in deploy
+assert "Required deploy image does not exist" in deploy
+for service in ("postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana", "wotb-backend", "wotb-frontend"):
+    assert f"          - {service}" not in deploy
 assert "name: Deploy ${{ needs.changes.outputs.deploy_display_name }}" in deploy
 
 expected_jobs = {

@@ -36,6 +36,12 @@ DEPLOYABLE_SERVICES = {
 IMAGE_SERVICE_BY_DEPLOY_SERVICE = {
     value: key for key, value in APPLICATION_SERVICES.items()
 }
+MANUAL_SERVICE_ALIASES = {
+    "backend": "backend",
+    "frontend": "frontend",
+    "keycloak": "keycloak",
+}
+MANUAL_SERVICES = {"all", *MANUAL_SERVICE_ALIASES}
 
 FRONTEND_PATTERNS = (
     "frontend/**",
@@ -100,24 +106,15 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
     deploy_config = False
 
     if manual_service is not None:
-        manual_aliases = {
-            "backend": "backend",
-            "frontend": "frontend",
-            "keycloak": "keycloak",
-            "wotb-backend": "backend",
-            "wotb-frontend": "frontend",
-        }
-        if manual_service not in DEPLOYABLE_SERVICES | set(manual_aliases):
+        if manual_service not in MANUAL_SERVICES:
             raise ValueError(f"unsupported manual service: {manual_service}")
         if manual_service == "all":
             images = {name: True for name in IMAGE_NAMES}
             deploy_services = ["all"]
-        elif manual_service in manual_aliases:
-            image_name = manual_aliases[manual_service]
+        elif manual_service in MANUAL_SERVICE_ALIASES:
+            image_name = MANUAL_SERVICE_ALIASES[manual_service]
             images[image_name] = True
             deploy_services = [APPLICATION_SERVICES[image_name]]
-        else:
-            deploy_services = [manual_service]
         return _result(images, deploy_services, deploy_config)
 
     normalized_paths = sorted({
@@ -188,7 +185,11 @@ def make_manifest(
     }
 
 
-def validate_manifest(manifest: dict[str, object], expected_sha: str | None = None) -> dict[str, object]:
+def validate_manifest(
+    manifest: dict[str, object],
+    expected_sha: str | None = None,
+    allow_latest: bool = False,
+) -> dict[str, object]:
     required = {
         "schemaVersion",
         "commitSha",
@@ -211,7 +212,10 @@ def validate_manifest(manifest: dict[str, object], expected_sha: str | None = No
     if expected_sha is not None and commit_sha != expected_sha:
         raise ValueError(f"manifest commitSha {commit_sha} does not match release SHA {expected_sha}")
     expected_tag = image_tag(commit_sha)
-    if manifest_image_tag != expected_tag:
+    valid_tags = {expected_tag}
+    if allow_latest:
+        valid_tags.add("latest")
+    if manifest_image_tag not in valid_tags:
         raise ValueError(f"manifest imageTag must be {expected_tag}")
     if not isinstance(manifest["buildRunNumber"], int) or manifest["buildRunNumber"] < 1:
         raise ValueError("manifest buildRunNumber must be a positive integer")
@@ -265,13 +269,13 @@ def _parser() -> argparse.ArgumentParser:
     manual_parser = subparsers.add_parser("manual")
     manual_parser.add_argument("--service", required=True)
     manual_parser.add_argument("--commit-sha", required=True)
-    manual_parser.add_argument("--image-tag", required=True)
     manual_parser.add_argument("--build-run-id", default="manual")
     manual_parser.add_argument("--build-run-number", default="1")
 
     validate_parser = subparsers.add_parser("validate")
     validate_parser.add_argument("--manifest", required=True)
     validate_parser.add_argument("--expected-sha")
+    validate_parser.add_argument("--allow-latest", action="store_true")
     return parser
 
 
@@ -300,15 +304,17 @@ def main() -> int:
             plan = detect([], args.service)
             result = make_manifest(
                 args.commit_sha,
-                args.image_tag,
+                "latest",
                 args.build_run_id,
                 args.build_run_number,
                 plan,
             )
-            validate_manifest(result, args.commit_sha)
+            validate_manifest(result, args.commit_sha, allow_latest=True)
         else:
             result = validate_manifest(
-                json.loads(open(args.manifest, encoding="utf-8").read()), args.expected_sha
+                json.loads(open(args.manifest, encoding="utf-8").read()),
+                args.expected_sha,
+                allow_latest=args.allow_latest,
             )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"release plan error: {error}", file=sys.stderr)
