@@ -1,11 +1,11 @@
-name: Deploy
+name: Release / Deploy
 # 生产 Grafana MCP 已下线（2026-08-11）：不再传递 GRAFANA_MCP_TOKEN。
-run-name: Deploy release by @${{ github.actor }}
+run-name: Release / Deploy release by @${{ github.actor }}
 
 on:
   workflow_run:
     workflows:
-      - Build
+      - Release / Build
     types:
       - completed
   workflow_dispatch:

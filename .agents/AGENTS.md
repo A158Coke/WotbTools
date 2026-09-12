@@ -20,9 +20,12 @@
    1. **Targeted**：修改后运行与改动直接相关的最小测试集（单个测试类 / 单个组件测试）；
    2. **Module / Feature**：一个实现阶段完成后运行 affected module / feature 测试，捕获本次改动影响范围内的回归；
    3. **Regression**：review/fix 后运行相关 regression tests；
-   4. **Repository full validation 由 PR CI 统一执行**（唯一 authoritative full-validation gate）。
+   4. **Repository validation 由 PR CI 统一执行**（唯一 authoritative gate）；CI 按 changed-path
+      选择受影响 jobs，docs-only 不运行 validation jobs，跨层/build/test-infrastructure
+      变更才触发 full validation，最终以稳定的 `CI / Required Gate` 作为 merge gate。
    Agent 开 PR 前不默认重新运行 java 全量 `mvn test`、frontend 全量 `npm test`、frontend `npm run build`；
-   只有改动影响跨模块 / build / test infrastructure（无法可靠限定影响范围）时才允许 full validation。
+   只有改动影响跨模块 / build / test infrastructure（无法可靠限定影响范围）时才允许本地 full
+   validation；PR CI 的 `full` selector 对全局配置、公共构建契约和 CI 自身变更运行完整 gate。
 
    **Full-test 例外（仅以下情形允许 Agent 主动运行 repository-level full validation）**：
    1. 用户明确要求 full test；

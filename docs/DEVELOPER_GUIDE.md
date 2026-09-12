@@ -110,6 +110,16 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 
 HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/serialization → runtime validation → contract tests → affected tests → PR CI`。在 `frontend/` 使用 `npm run api:lint`、`npm run api:generate`、`npm run api:check`、`npm run api:fixture`；生成文件位于 `frontend/src/api/generated/`，不可手改。Playback 旧 artifact 的兼容处理只能放在读取边界；`204` capability unavailable 与 `200` schema violation 必须保持不同语义。完整边界与兼容规则见 [`docs/architecture/http-contracts.md`](architecture/http-contracts.md)。
 
+### PR CI path-aware gate
+
+`.github/workflows/ci.yml` 始终创建 `changes` 与 `CI / Required Gate`。selector 按 PR base SHA →
+head SHA 分类 docs、backend、frontend、HTTP contract、Android、Keycloak、data、deploy、
+observability 和 full 影响域；只有相关 heavyweight jobs 执行，合法 skipped job 不阻塞最终 gate。
+docs-only 变更不运行 validation job（仅保留 selector 与 Required Gate）；CI workflow、全局 Maven/Node/Gradle 配置、共享构建
+脚本等跨切面变更触发 full CI。Branch protection / Ruleset 应长期只要求 `CI / Required Gate`，
+不应把可按路径 skipped 的单项 job 设为 required。Build / Deploy 仍是独立的 immutable-manifest
+发布链，Deploy 不重复执行 PR 测试。
+
 ---
 
 ## 后端架构速览
