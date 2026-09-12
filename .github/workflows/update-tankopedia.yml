@@ -1,4 +1,4 @@
-name: Update Tankopedia
+name: Data / Tankopedia Update
 run-name: Sync Tankopedia from BlitzKit by @${{ github.actor }}
 
 on:

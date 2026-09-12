@@ -1,4 +1,4 @@
-name: OpenTofu Grafana Plan
+name: Infra / Grafana Plan
 
 on:
   pull_request:

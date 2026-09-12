@@ -1,5 +1,5 @@
-name: Build
-run-name: Build ${{ github.sha }} by @${{ github.actor }}
+name: Release / Build
+run-name: Release / Build ${{ github.sha }} by @${{ github.actor }}
 
 on:
   push:

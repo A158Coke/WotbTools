@@ -1,4 +1,4 @@
-name: Android Release
+name: Release / Android
 # 自动发布：main 合并后由 committed android/gradle.properties 决定是否有新版本。
 # 手工入口只用于重跑/恢复，不能输入或修改版本；`android-v*` tag push 保留兼容入口。
 # 三条入口统一走同一套 committed version / contract / fail-fast guards / 发布协议。

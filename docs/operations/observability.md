@@ -209,7 +209,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 - Backend production gate 还确认至少一个稳定的 Hikari 指标（`hikaricp_connections_active`），避免连接池遥测在 dashboard 中静默失效。
 - Keycloak production gate 确认应用 realm metadata / OIDC discovery；Keycloak 镜像使用 PostgreSQL 与 `start --optimized` runtime，且不启用或暴露 management health/metrics 端点。登录、QQ callback、broker/IdP 错误与 WARN/ERROR 事件通过 Alloy → Loki 观测。
 
-### CI 实际验证项（PR 时自动执行，见 `.github/workflows/ci.yml` `observability-config` job）
+### CI 实际验证项（PR 时自动执行，见 `.github/workflows/ci.yml` `observability_config` job）
 
 > **CI 验证边界**：静态检查覆盖「本地」`docker/online/docker-compose.yml`、生产观测配置语法/结构、
 > dashboard 合同与端口安全；runtime smoke 会实际启动最小 Prometheus/Loki/Grafana、Alpine emitter，
@@ -228,7 +228,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 | Grafana provisioning + Dashboard JSON | `python` 解析全部 YAML/JSON | 结构校验 |
 | 端口安全 | `docker compose config --format json` 校验 prometheus/loki/alloy/grafana/node-exporter/wotb-backend 无宿主端口映射；Keycloak 仅保留应用 `8080` loopback 绑定，不配置 management contract | frontend 8088:80、Keycloak 127.0.0.1:8080:8080 合法 |
 
-Backend Maven 单元/集成测试属于独立的 `Backend tests` CI job，不属于 `observability-config` job；它们会在 PR gate 中单独执行。
+Backend Maven 单元/集成测试属于独立的 `Backend` CI job，不属于 `observability_config` job；它们会在 PR gate 中单独执行。
 
 ### 手动验证命令（生产部署后执行）
 

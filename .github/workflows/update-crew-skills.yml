@@ -1,4 +1,4 @@
-name: Update Crew Skills
+name: Data / Crew Skills Update
 run-name: Sync Crew Skills from BlitzKit by @${{ github.actor }}
 
 on:

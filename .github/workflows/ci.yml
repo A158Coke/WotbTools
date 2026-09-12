@@ -1,5 +1,5 @@
-name: CI
-run-name: "CI for ${{ github.ref_name }}"
+name: CI / PR
+run-name: "CI / PR for ${{ github.ref_name }}"
 
 on:
   pull_request:
@@ -14,14 +14,159 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  python:
-    name: Python data generator tests
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      backend: ${{ steps.plan.outputs.backend }}
+      frontend: ${{ steps.plan.outputs.frontend }}
+      http_contract: ${{ steps.plan.outputs.http_contract }}
+      keycloak: ${{ steps.plan.outputs.keycloak }}
+      keycloak_provider: ${{ steps.plan.outputs.keycloak_provider }}
+      keycloak_runtime: ${{ steps.plan.outputs.keycloak_runtime }}
+      data: ${{ steps.plan.outputs.data }}
+      android: ${{ steps.plan.outputs.android }}
+      deploy: ${{ steps.plan.outputs.deploy }}
+      observability: ${{ steps.plan.outputs.observability }}
+      full: ${{ steps.plan.outputs.full }}
+    steps:
+      - name: Detect changed paths
+        if: github.event_name == 'pull_request'
+        id: path_filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'java/**'
+              - 'docker/Dockerfile.backend'
+              - 'docker/online/docker-compose.yml'
+              - 'java/settings-docker.xml'
+              - 'common/**'
+              - '!common/python/**'
+              - 'contracts/http/**'
+            frontend:
+              - 'frontend/**'
+              - 'docker/Dockerfile.frontend'
+              - 'docker/online/docker-compose.yml'
+              - 'common/**'
+              - '!common/python/**'
+              - 'contracts/http/**'
+              - 'contracts/android-native-bridge.json'
+              - 'docs/WotBTools_League_Rating_V6.md'
+            http_contract:
+              - 'contracts/http/**'
+              - 'frontend/src/api/**'
+              - 'frontend/scripts/*contract*'
+              - 'java/wotb-web/**'
+            android:
+              - 'android/**'
+              - 'contracts/android-native-bridge.json'
+              - 'frontend/src/platform/nativeBridgeContract.js'
+              - 'scripts/android-release/**'
+            keycloak:
+              - 'keycloak-wargaming-provider/**'
+              - 'keycloak-juhe-qq-provider/**'
+              - 'deploy/keycloak/**'
+              - 'docker/Dockerfile.keycloak'
+              - 'docker/keycloak/**'
+              - 'docker/online/docker-compose.yml'
+              - 'java/settings-docker.xml'
+            keycloak_provider:
+              - 'keycloak-wargaming-provider/src/main/java/**'
+              - 'keycloak-wargaming-provider/src/test/**'
+              - 'keycloak-juhe-qq-provider/src/main/java/**'
+              - 'keycloak-juhe-qq-provider/src/test/**'
+            keycloak_runtime:
+              - 'keycloak-wargaming-provider/pom.xml'
+              - 'keycloak-wargaming-provider/src/main/resources/**'
+              - 'keycloak-juhe-qq-provider/pom.xml'
+              - 'keycloak-juhe-qq-provider/src/main/resources/**'
+              - 'deploy/keycloak/**'
+              - 'docker/Dockerfile.keycloak'
+              - 'docker/keycloak/**'
+              - 'docker/online/docker-compose.yml'
+              - 'java/settings-docker.xml'
+            data:
+              - 'common/**'
+              - 'map-semanticizer/**'
+            deploy:
+              - 'deploy/**'
+              - '!deploy/observability/**'
+              - 'docker/**'
+              - '.github/workflows/deploy*.yml'
+              - 'java/wotb-web/src/main/resources/db/migration/**'
+              - 'java/settings-docker.xml'
+            observability:
+              - 'deploy/observability/**'
+              - 'infra/tofu/grafana/**'
+              - 'docker/online/docker-compose.yml'
+              - 'deploy/nginx/**'
+            full:
+              - '.github/workflows/**'
+              - 'java/pom.xml'
+              - 'java/**/pom.xml'
+              - 'frontend/package.json'
+              - 'frontend/package-lock.json'
+              - 'frontend/vite.config.js'
+              - 'frontend/vitest.config.js'
+              - 'frontend/tsconfig.json'
+              - 'frontend/tsconfig.app.json'
+              - 'android/build.gradle.kts'
+              - 'android/settings.gradle.kts'
+              - 'android/gradle.properties'
+              - '.dockerignore'
+              - 'Makefile'
+              - 'scripts/build/**'
+      - name: Export affected CI surfaces
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FILTER_BACKEND: ${{ steps.path_filter.outputs.backend }}
+          FILTER_FRONTEND: ${{ steps.path_filter.outputs.frontend }}
+          FILTER_HTTP_CONTRACT: ${{ steps.path_filter.outputs.http_contract }}
+          FILTER_ANDROID: ${{ steps.path_filter.outputs.android }}
+          FILTER_KEYCLOAK: ${{ steps.path_filter.outputs.keycloak }}
+          FILTER_KEYCLOAK_PROVIDER: ${{ steps.path_filter.outputs.keycloak_provider }}
+          FILTER_KEYCLOAK_RUNTIME: ${{ steps.path_filter.outputs.keycloak_runtime }}
+          FILTER_DATA: ${{ steps.path_filter.outputs.data }}
+          FILTER_DEPLOY: ${{ steps.path_filter.outputs.deploy }}
+          FILTER_OBSERVABILITY: ${{ steps.path_filter.outputs.observability }}
+          FILTER_FULL: ${{ steps.path_filter.outputs.full }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            for name in backend frontend http_contract android keycloak keycloak_provider keycloak_runtime data deploy observability full; do
+              echo "$name=true" >> "$GITHUB_OUTPUT"
+            done
+          else
+            for name in backend frontend http_contract android keycloak keycloak_provider keycloak_runtime data deploy observability full; do
+              env_name="FILTER_$(echo "$name" | tr '[:lower:]' '[:upper:]')"
+              value="${!env_name:-false}"
+              echo "$name=${value:-false}" >> "$GITHUB_OUTPUT"
+            done
+          fi
+
+  python_unit:
+    needs: [changes]
+    if: needs.changes.outputs.data == 'true' || needs.changes.outputs.full == 'true'
+    name: Python unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Python unit tests
         run: python3 -m unittest discover -s common/python/tests -p 'test_*.py'
+
+  live_data_contracts:
+    needs: [changes]
+    if: needs.changes.outputs.data == 'true' || needs.changes.outputs.full == 'true'
+    name: Live data contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
       - name: Validate live BlitzKit equipment contract
         run: |
           set -euo pipefail
@@ -49,7 +194,9 @@ jobs:
           diff -u common/crew-skills.json /tmp/crew-skills.json
 
   backend:
-    name: Backend tests
+    needs: [changes]
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.full == 'true'
+    name: Backend
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -69,8 +216,10 @@ jobs:
       - name: Production backend Docker build
         run: docker build -f docker/Dockerfile.backend -t wotbtools-backend:pr .
 
-  keycloak-providers:
-    name: Keycloak provider tests
+  keycloak_providers:
+    needs: [changes]
+    if: needs.changes.outputs.keycloak_provider == 'true' || needs.changes.outputs.full == 'true'
+    name: Keycloak providers
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -86,8 +235,10 @@ jobs:
         working-directory: keycloak-wargaming-provider
         run: mvn --batch-mode --no-transfer-progress -s ../java/settings.xml -Dmaven.repo.local=../java/.m2repo test
 
-  keycloak-runtime:
-    name: Keycloak production runtime contract
+  keycloak_runtime:
+    needs: [changes]
+    if: needs.changes.outputs.keycloak_runtime == 'true' || needs.changes.outputs.full == 'true'
+    name: Keycloak runtime
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -96,7 +247,9 @@ jobs:
         run: bash deploy/test-keycloak-runtime.sh
 
   frontend:
-    name: Frontend test, build, and Docker build
+    needs: [changes]
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.full == 'true'
+    name: Frontend
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -130,8 +283,10 @@ jobs:
       - name: Alpine Docker build
         run: docker build --build-arg BUILD_COMMIT=ci-${{ github.sha }} -f docker/Dockerfile.frontend -t wotbtools-frontend:pr .
 
-  http-contract:
-    name: HTTP contract gate
+  http_contract:
+    needs: [changes]
+    if: needs.changes.outputs.http_contract == 'true' || needs.changes.outputs.full == 'true'
+    name: HTTP contract
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -168,7 +323,9 @@ jobs:
           mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo -pl wotb-web -Dtest=BattlePlaybackDatasetTest,BattlePlaybackProjectorTest,ReplayArtifactWriterTest -Dsurefire.failIfNoSpecifiedTests=true test
 
   android:
-    name: Android debug build (PR gate)
+    needs: [changes]
+    if: needs.changes.outputs.android == 'true' || needs.changes.outputs.full == 'true'
+    name: Android
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -198,8 +355,10 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-  android-release-helpers:
-    name: Android release helpers (pure logic, no secrets)
+  android_release_helpers:
+    needs: [changes]
+    if: needs.changes.outputs.android == 'true' || needs.changes.outputs.full == 'true'
+    name: Android release helpers
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -213,8 +372,10 @@ jobs:
       - name: Release helper unit tests
         run: bash scripts/android-release/test-release.sh
 
-  android-contract:
-    name: Android Contract (version, bridge, breaking-change gate)
+  android_contract:
+    needs: [changes]
+    if: needs.changes.outputs.android == 'true' || needs.changes.outputs.full == 'true'
+    name: Android contract
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -276,8 +437,10 @@ jobs:
             --frontend-versions "$FE_VERSIONS" \
             $([ "$INITIAL_VERSION_BASELINE" = true ] && echo --initial-version-baseline)
 
-  observability-config:
-    name: Observability config validation
+  observability_config:
+    needs: [changes]
+    if: needs.changes.outputs.observability == 'true' || needs.changes.outputs.full == 'true'
+    name: Observability
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -449,8 +612,10 @@ jobs:
           print("no host exposure of observability/backend-management ports")
           PY
 
-  deploy-smoke:
-    name: Deploy/rollback and nginx smoke
+  deploy_smoke:
+    needs: [changes]
+    if: needs.changes.outputs.deploy == 'true' || needs.changes.outputs.full == 'true'
+    name: Deploy smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -471,6 +636,10 @@ jobs:
         run: bash deploy/test-build-workflow.sh
       - name: Build/Deploy changed-target and manifest contract
         run: bash deploy/test-release-plan.sh
+      - name: CI path filter contract
+        run: python3 scripts/ci/test-path-filters.py
+      - name: CI workflow aggregation contract
+        run: bash scripts/ci/test-workflow-contract.sh
       - name: Production compose config validation
         env:
           TAG: sha-ci
@@ -517,3 +686,75 @@ jobs:
         run: bash deploy/test-nginx-android-route.sh
       - name: nginx Grafana recreate smoke
         run: bash deploy/test-nginx-grafana-recreate.sh
+
+  required:
+    needs:
+      - changes
+      - python_unit
+      - live_data_contracts
+      - backend
+      - keycloak_providers
+      - keycloak_runtime
+      - frontend
+      - http_contract
+      - android
+      - android_release_helpers
+      - android_contract
+      - observability_config
+      - deploy_smoke
+    if: always()
+    name: CI / Required Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every selected job to pass
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          FULL: ${{ needs.changes.outputs.full }}
+          PYTHON_UNIT: ${{ needs.python_unit.result }}
+          DATA_CHANGED: ${{ needs.changes.outputs.data }}
+          LIVE_DATA_CONTRACTS: ${{ needs.live_data_contracts.result }}
+          BACKEND: ${{ needs.backend.result }}
+          BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
+          KEYCLOAK_PROVIDERS: ${{ needs.keycloak_providers.result }}
+          KEYCLOAK_PROVIDER_CHANGED: ${{ needs.changes.outputs.keycloak_provider }}
+          KEYCLOAK_RUNTIME: ${{ needs.keycloak_runtime.result }}
+          KEYCLOAK_RUNTIME_CHANGED: ${{ needs.changes.outputs.keycloak_runtime }}
+          FRONTEND: ${{ needs.frontend.result }}
+          FRONTEND_CHANGED: ${{ needs.changes.outputs.frontend }}
+          HTTP_CONTRACT: ${{ needs.http_contract.result }}
+          HTTP_CONTRACT_CHANGED: ${{ needs.changes.outputs.http_contract }}
+          ANDROID: ${{ needs.android.result }}
+          ANDROID_CHANGED: ${{ needs.changes.outputs.android }}
+          ANDROID_RELEASE_HELPERS: ${{ needs.android_release_helpers.result }}
+          ANDROID_CONTRACT: ${{ needs.android_contract.result }}
+          OBSERVABILITY: ${{ needs.observability_config.result }}
+          OBSERVABILITY_CHANGED: ${{ needs.changes.outputs.observability }}
+          DEPLOY_SMOKE: ${{ needs.deploy_smoke.result }}
+          DEPLOY_CHANGED: ${{ needs.changes.outputs.deploy }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS='|' read -r job expected result; do
+            case "$expected:$result" in
+              true:success) ;;
+              false:skipped) ;;
+              *) echo "::error::$job expected=$expected ended with $result"; failed=1 ;;
+            esac
+          done <<EOF
+          changes|true|$CHANGES
+          python_unit|$([ "$DATA_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$PYTHON_UNIT
+          live_data_contracts|$([ "$DATA_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$LIVE_DATA_CONTRACTS
+          backend|$([ "$BACKEND_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$BACKEND
+          keycloak_providers|$([ "$KEYCLOAK_PROVIDER_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$KEYCLOAK_PROVIDERS
+          keycloak_runtime|$([ "$KEYCLOAK_RUNTIME_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$KEYCLOAK_RUNTIME
+          frontend|$([ "$FRONTEND_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$FRONTEND
+          http_contract|$([ "$HTTP_CONTRACT_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$HTTP_CONTRACT
+          android|$([ "$ANDROID_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$ANDROID
+          android_release_helpers|$([ "$ANDROID_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$ANDROID_RELEASE_HELPERS
+          android_contract|$([ "$ANDROID_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$ANDROID_CONTRACT
+          observability|$([ "$OBSERVABILITY_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$OBSERVABILITY
+          deploy_smoke|$([ "$DEPLOY_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$DEPLOY_SMOKE
+          EOF
+          [ "$failed" -eq 0 ]

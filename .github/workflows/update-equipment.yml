@@ -1,4 +1,4 @@
-name: Update Equipment
+name: Data / Equipment Update
 run-name: Sync equipment from BlitzKit by @${{ github.actor }}
 
 on:
