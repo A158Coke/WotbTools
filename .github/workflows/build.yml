@@ -1,5 +1,5 @@
 name: Build
-run-name: Build ${{ github.sha }} by @${{ github.actor }}
+run-name: Build ${{ inputs.service || github.sha }} by @${{ github.actor }}
 
 on:
   push:
@@ -103,6 +103,7 @@ jobs:
   build_backend:
     needs: [changes]
     if: needs.changes.result == 'success' && needs.changes.outputs.backend == 'true'
+    name: Build Backend
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -132,6 +133,7 @@ jobs:
   build_frontend:
     needs: [changes]
     if: needs.changes.result == 'success' && needs.changes.outputs.frontend == 'true'
+    name: Build Frontend
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -162,6 +164,7 @@ jobs:
   build_keycloak:
     needs: [changes]
     if: needs.changes.result == 'success' && needs.changes.outputs.keycloak == 'true'
+    name: Build Keycloak
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -198,6 +201,7 @@ jobs:
       (needs.changes.outputs.backend != 'true' || needs.build_backend.result == 'success') &&
       (needs.changes.outputs.frontend != 'true' || needs.build_frontend.result == 'success') &&
       (needs.changes.outputs.keycloak != 'true' || needs.build_keycloak.result == 'success')
+    name: Build deployment manifest
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

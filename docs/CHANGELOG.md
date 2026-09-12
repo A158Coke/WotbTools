@@ -31,6 +31,12 @@
 - **Replay Export Job 授权收紧**：`/api/replay/export-jobs/**`（创建 / 状态 / 取消 / download）由 `permitAll()` 改为要求 `wotbtools-user` 或 `wotbtools-admin`——Export 是 Dataset-only，消费 Processing Job 的 `ProcessedDataset`，匿名可调用等于绕过 `GET /api/replay/processing-jobs/{jobId}/result` 的认证保护（auth bypass）。前端四条端点统一 `ensureToken(30)` + `Authorization: Bearer`，download 走 authenticated fetch（blob → object URL），不使用无法附带 header 的 `<a href>` 裸链。`/api/export`（legacy，已废弃 410）与 `/api/preview` 的公开契约不变。
 
 ### CI/CD
+- **Path-aware PR CI gate**：PR 仍统一经过 authoritative `CI / Required Gate`，但 `ci.yml` 先按
+  PR base SHA → head SHA 分类 docs、backend、frontend、HTTP contract、Android、Keycloak、data、
+  deploy、observability 与 full 影响域；docs-only 不运行 validation job（仅保留 selector 与 Required Gate），普通单层改动只执行相关
+  heavyweight jobs，CI/全局构建配置/跨层契约变更才运行完整 CI。Python 本地测试与 live data
+  contracts 分离，Keycloak provider/runtime 分级，合法 skipped job 不阻塞 merge；Build / Deploy
+  immutable handoff 与现有测试内容保持不变。
 - **Build / Deploy immutable handoff**：Build 与 Deploy 保持独立；Build 从冻结 SHA 只构建受影响镜像并上传 `deployment-manifest`，Deploy 仅消费成功 Build 的精确 artifact、校验 SHA/镜像存在性后按 manifest 目标发布，不重新计算 diff、不在 Deploy 构建或测试。应用镜像只使用 immutable `sha-<first-12-sha>` tag，配置-only 与 targeted deploy 保留未变更应用 tag，按 service 记录的旧 release generation 通过 stale guard 拒绝。
 - **Android Version-as-Code + Native Bridge gate**：Android 版本从 committed `android/gradle.properties` 确定，Bridge 以 `contracts/android-native-bridge.json` 为唯一协议来源；Gradle、Native runtime、FE compatibility、`version.json` 与 release workflow 均消费或校验同一版本。PR CI 新增 runtime version bump、strict semver、breaking bridge diff、Native source/FE compatibility 与 production older/equal/newer gate；release workflow 移除手工版本输入并固定 source SHA。
 - **Build / Deploy workflow split**：将生产镜像构建拆到独立的 `build.yml`，Build 成功后由 `workflow_run` 自动接力 Deploy，同时保留手动入口；Build 的 `changes` job 只解析一次事件携带的 full SHA，backend/frontend/keycloak 使用同一个冻结 commit 构建 production SHA 镜像并生成权威 manifest，不依赖 `latest`，不能由 feature ref 或移动的 main 绕过 PR merge gate。Deploy 只消费并校验 manifest，不重新计算变更、不重新 build、不重复跑测试；targeted deploy 不提升 LKG，失败时只恢复目标 service 的 pre-deploy snapshot，完整 `all` 发布继续执行应用健康 gate、LKG promotion 与 fail-closed rollback。
