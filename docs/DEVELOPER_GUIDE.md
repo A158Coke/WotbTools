@@ -10,6 +10,8 @@
 
 动手前读 `.agents/AGENTS.md`、当前目录的 `AGENTS.md` 和本文件；跨层改动按 `.agents/skills/wotb-sync/SKILL.md`。真实代码始终是 source of truth，发现文档漂移时必须在同一次改动里修正文档。
 
+固定接手方法：入口阅读 → 现实审计 → 任务分类 → 计划契约 → Reuse / SSOT 执行 → 分层验证 → 收尾交接。完整流程以 `.agents/AGENTS.md` 的「接手与调整方法（固定流程）」为准。
+
 ---
 
 ## 文档地图
@@ -17,7 +19,7 @@
 | 文档 | 作用 | 何时读 |
 |---|---|---|
 | `docs/DEVELOPER_GUIDE.md` | 开发入口、环境、结构、架构约束 | 最先 |
-| `.agents/AGENTS.md` | 仓库级硬约定 | 动手前必读 |
+| `.agents/AGENTS.md` | 仓库级硬约定、接手与调整固定流程 | 动手前必读 |
 | `frontend/AGENTS.md` / `java/AGENTS.md` 等 | 目录级约束 | 进入对应目录时 |
 | `.agents/skills/wotb-sync/SKILL.md` | 跨层改动检查单 | 增删列、改解析、导出、前端时 |
 | `java/README.md` | Java/Web 运行、接口、构建 | 跑后端时 |
