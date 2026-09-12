@@ -79,9 +79,26 @@ class CiPathFilterTest(unittest.TestCase):
         self.assert_domains([".github/workflows/ci.yml"], ["full"])
         self.assertTrue(changed(".github/workflows/build.yml", "full"))
 
-    def test_provider_source_does_not_run_runtime_smoke(self):
-        self.assertTrue(changed("keycloak-wargaming-provider/src/main/java/Provider.java", "keycloak_provider"))
-        self.assertFalse(changed("keycloak-wargaming-provider/src/main/java/Provider.java", "keycloak_runtime"))
+    def test_provider_source_runs_provider_and_runtime_smoke(self):
+        for provider in ("keycloak-wargaming-provider", "keycloak-juhe-qq-provider"):
+            source = f"{provider}/src/main/java/Provider.java"
+            self.assertTrue(changed(source, "keycloak_provider"))
+            self.assertTrue(changed(source, "keycloak_runtime"))
+
+    def test_provider_tests_only_run_provider_tests(self):
+        for provider in ("keycloak-wargaming-provider", "keycloak-juhe-qq-provider"):
+            test = f"{provider}/src/test/java/ProviderTest.java"
+            self.assertTrue(changed(test, "keycloak_provider"))
+            self.assertFalse(changed(test, "keycloak_runtime"))
+
+    def test_provider_build_inputs_run_provider_and_runtime(self):
+        for provider in ("keycloak-wargaming-provider", "keycloak-juhe-qq-provider"):
+            pom = f"{provider}/pom.xml"
+            resources = f"{provider}/src/main/resources/META-INF/services/provider"
+            self.assertTrue(changed(pom, "keycloak_provider"))
+            self.assertTrue(changed(pom, "keycloak_runtime"))
+            self.assertFalse(changed(resources, "keycloak_provider"))
+            self.assertTrue(changed(resources, "keycloak_runtime"))
 
 
 if __name__ == "__main__":

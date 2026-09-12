@@ -75,11 +75,15 @@ jobs:
             keycloak_provider:
               - 'keycloak-wargaming-provider/src/main/java/**'
               - 'keycloak-wargaming-provider/src/test/**'
+              - 'keycloak-wargaming-provider/pom.xml'
               - 'keycloak-juhe-qq-provider/src/main/java/**'
               - 'keycloak-juhe-qq-provider/src/test/**'
+              - 'keycloak-juhe-qq-provider/pom.xml'
             keycloak_runtime:
+              - 'keycloak-wargaming-provider/src/main/java/**'
               - 'keycloak-wargaming-provider/pom.xml'
               - 'keycloak-wargaming-provider/src/main/resources/**'
+              - 'keycloak-juhe-qq-provider/src/main/java/**'
               - 'keycloak-juhe-qq-provider/pom.xml'
               - 'keycloak-juhe-qq-provider/src/main/resources/**'
               - 'deploy/keycloak/**'
