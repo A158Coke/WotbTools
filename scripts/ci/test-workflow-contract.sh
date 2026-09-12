@@ -17,6 +17,9 @@ assert "name: CI / Required Gate" in ci
 assert "if: always()" in ci
 assert re.search(r"^name: Build$", build, re.MULTILINE)
 assert re.search(r"^name: Deploy$", deploy, re.MULTILINE)
+assert "run-name: Build ${{ inputs.service || github.sha }} by @${{ github.actor }}" in build
+assert "run-name: Deploy ${{ inputs.service || github.event.workflow_run.head_sha || github.sha }} by @${{ github.actor }}" in deploy
+assert "inputs.service || 'release'" not in build and "inputs.service || 'release'" not in deploy
 assert "      - Build" in deploy
 assert "Release / Build" not in build and "Release / Deploy" not in deploy
 assert "name: Build Backend" in build
