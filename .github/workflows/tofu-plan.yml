@@ -1,4 +1,4 @@
-name: OpenTofu COS Plan
+name: Infra / COS Plan
 
 on:
   pull_request:
