@@ -1,5 +1,5 @@
-name: Cleanup GHCR Images
-run-name: Cleanup GHCR (keep ${{ inputs.keep || '10' }} versions per package)
+name: Ops / Cleanup Images
+run-name: Ops / Cleanup GHCR (keep ${{ inputs.keep || '10' }} versions per package)
 
 on:
   workflow_dispatch:

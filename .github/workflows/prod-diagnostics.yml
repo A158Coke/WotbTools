@@ -1,5 +1,5 @@
-name: Production Diagnostics
-run-name: Production diagnostics by @${{ github.actor }}
+name: Ops / Production Diagnostics
+run-name: Ops / Production diagnostics by @${{ github.actor }}
 
 on:
   workflow_dispatch:

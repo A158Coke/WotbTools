@@ -33,6 +33,9 @@ assert set(detect("frontend/src/App.vue", "java/wotb-core/src/Main.java")["deplo
     "wotb-frontend", "wotb-backend"
 }
 assert detect("README.md")["deployServices"] == []
+assert detect("docs/CHANGELOG.md")["imageServices"] == []
+assert detect("docs/CHANGELOG.md")["deployServices"] == []
+assert detect("docs/WotBTools_League_Rating_V6.md")["imageServices"] == ["wotb-frontend"]
 assert detect("deploy/observability/prometheus/prometheus.yml")["deployServices"] == ["prometheus"]
 assert detect("deploy/observability/grafana/dashboards/home.json")["deployServices"] == []
 assert set(detect(".dockerignore")["imageServices"]) == {

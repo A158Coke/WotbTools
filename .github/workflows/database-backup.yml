@@ -1,5 +1,5 @@
-name: Production Database Backup
-run-name: Backup production PostgreSQL by @${{ github.actor }}
+name: Ops / Database Backup
+run-name: Ops / Backup production PostgreSQL by @${{ github.actor }}
 
 on:
   schedule:
