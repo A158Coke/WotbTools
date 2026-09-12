@@ -202,8 +202,8 @@ or unsupported settings.
 
 ## GitHub Actions policy
 
-`.github/workflows/tofu-plan.yml` runs on OpenTofu changes and can be started
-manually. Every run performs:
+`.github/workflows/tofu-plan.yml` runs on changes under the production root
+`infra/tofu/environments/prod/**` and can be started manually. Every run performs:
 
 1. `tofu fmt -check -recursive`
 2. `tofu init`
@@ -214,7 +214,9 @@ available to any step, and no authenticated plan runs. A same-repository pull
 request (or an owner-triggered manual run) receives credentials only on the
 backend-init and authenticated-plan steps. The trusted path initializes the COS
 backend, validates the configuration, creates an authenticated plan, and rejects
-artifact-bucket delete or replacement actions.
+artifact-bucket, Lighthouse instance, or Lighthouse firewall delete or
+replacement actions. The shared guard is
+`scripts/ci/validate-tofu-prod-plan.sh`.
 
 ```text
 tofu plan -input=false -no-color -out=plan.tfplan
@@ -222,13 +224,18 @@ tofu plan -input=false -no-color -out=plan.tfplan
 
 The plan may contain normal add/change/destroy differences; it does not need to
 be a no-op. Success means the plan completed and its diff is reviewable. The
-workflow never runs `tofu apply`, `terraform apply`, or `tofu import`. The
-binary plan is job-local, is ignored by Git, and is not uploaded as an artifact,
+Plan workflow never runs `tofu apply`, `terraform apply`, or `tofu import`. The
+separate `.github/workflows/tofu-apply.yml` runs only for `main` pushes under
+the same production root (or an explicit manual dispatch whose job still
+requires `refs/heads/main`). It checks out the exact `github.sha`, runs the same
+format/init/validate/plan sequence, applies the shared guard, and applies that
+exact saved `plan.tfplan`; it never imports or uploads state/plan artifacts.
+The binary plan is job-local, is ignored by Git, and is not uploaded as an artifact,
 cache entry, PR comment, or repository file. Authoritative state is never
 uploaded to GitHub.
 
-This no-apply rule applies to the Tencent production root above. Grafana is a
-separate, explicitly approved exception: pull requests remain plan-only, while
+Grafana is a separate root and state key with its own explicitly approved apply
+workflow: pull requests remain plan-only, while
 `.github/workflows/grafana-tofu-apply.yml` runs only for `main` changes under
 the Grafana root or canonical dashboard JSON. It creates one saved plan,
 blocks any dashboard/provider-datasource delete action, applies that exact plan,

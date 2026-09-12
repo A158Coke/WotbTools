@@ -112,6 +112,33 @@ is_full_deploy() {
   [ "${#DEPLOY_SERVICES[@]}" -eq 1 ] && [ "${DEPLOY_SERVICES[0]}" = all ]
 }
 
+is_manual_latest_deploy() {
+  [ "$STALE_RELEASE_GUARD" = 0 ] && [ "$TAG" = latest ]
+}
+
+if is_manual_latest_deploy; then
+  for service in "${DEPLOY_SERVICES[@]}"; do
+    case "$service" in
+      all|keycloak|wotb-backend|wotb-frontend) ;;
+      *)
+        echo "ERROR: manual latest deployment only supports application services: all, backend, frontend, keycloak." >&2
+        exit 1
+        ;;
+    esac
+  done
+  if is_full_deploy; then
+    for service in keycloak wotb-backend wotb-frontend; do
+      has_image_service "$service" || {
+        echo "ERROR: manual latest Deploy All must include image service $service." >&2
+        exit 1
+      }
+    done
+  elif [ "${#DEPLOY_SERVICES[@]}" -ne 1 ] || [ "${#DEPLOY_IMAGE_SERVICES[@]}" -ne 1 ]; then
+    echo "ERROR: manual latest targeted deployment must select exactly one application image service." >&2
+    exit 1
+  fi
+fi
+
 state_services() {
   local service
   for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
@@ -409,7 +436,11 @@ verify_grafana_from_frontend_network() {
 
 deploy_selected_service() {
   if is_full_deploy; then
-    docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend
+    if is_manual_latest_deploy; then
+      docker compose up -d --remove-orphans keycloak wotb-backend wotb-frontend
+    else
+      docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend
+    fi
     return 0
   fi
   echo "== Deploying selected services: ${DEPLOY_SERVICES[*]} =="
@@ -1037,6 +1068,8 @@ rollback_targeted_to_previous() {
 staged_pull_services=()
 if ! is_full_deploy; then
   staged_pull_services=("${DEPLOY_SERVICES[@]}")
+elif is_manual_latest_deploy; then
+  staged_pull_services=("${DEPLOY_IMAGE_SERVICES[@]}")
 fi
 if ! pull_compose "$STAGED_COMPOSE" "${staged_pull_services[@]}"; then
   echo "ERROR: staged docker compose pull failed after 3 attempts; live deployment was not changed." >&2
@@ -1093,7 +1126,7 @@ if [ "$rollback_needed" = false ]; then
     echo "ERROR: docker compose up failed; attempting rollback." >&2
     rollback_needed=true
   else
-    if is_full_deploy; then
+    if is_full_deploy && ! is_manual_latest_deploy; then
       if apply_observability_services && verify_grafana_from_frontend_network; then
         :
       else
@@ -1123,6 +1156,17 @@ if [ "$rollback_needed" = false ]; then
         else
           echo "== TARGETED DEPLOY OK: $(deploy_service_label) =="
           report_observability_status || true
+          exit 0
+        fi
+      elif is_manual_latest_deploy; then
+        deployment_id="${RELEASE_SHA_VALUE:-$TAG}"
+        if ! update_deployed_state "$deployment_id"; then
+          echo "ERROR: per-service deployed state update failed; attempting rollback." >&2
+          rollback_needed=true
+        else
+          docker image prune -af
+          docker builder prune -af
+          echo "== DEPLOY OK: $TAG =="
           exit 0
         fi
       elif ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "${RELEASE_SHA_VALUE:-$TAG}"; then

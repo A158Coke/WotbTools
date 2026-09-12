@@ -333,6 +333,44 @@ stage_candidate_b() {
   printf '\n// new alloy config\n' >> "$WORK/deploy.incoming/deploy/observability/alloy/config.alloy"
 }
 
+run_manual_latest_case() {
+  local rejected_output rejected_rc
+  set +e
+  rejected_output="$(env TAG=latest WOTB_DEPLOY_SERVICE=postgres \
+    FAKE_HEALTHY_BACKEND_TAG=latest \
+    WOTB_BACKUP_ROOT="$WORK/backups-manual-latest-rejected" \
+    bash "$WORK/deploy/deploy.sh" 2>&1)"
+  rejected_rc=$?
+  set -e
+  [[ $rejected_rc -ne 0 ]] \
+    || fail "manual latest must reject a low-level Compose service"
+  grep -q "manual latest deployment only supports application services" <<<"$rejected_output" \
+    || fail "manual latest low-level service rejection marker missing: $rejected_output"
+
+  stage_candidate_b
+  : > "$WORK/docker-pull-manual-latest.log"
+  : > "$WORK/docker-up-manual-latest.log"
+  manual_latest_output="$(env TAG=latest WOTB_DEPLOY_SERVICES=all \
+    WOTB_DEPLOY_IMAGE_SERVICES=wotb-backend,wotb-frontend,keycloak \
+    FAKE_HEALTHY_BACKEND_TAG=latest \
+    FAKE_DOCKER_PULL_LOG="$WORK/docker-pull-manual-latest.log" \
+    FAKE_DOCKER_UP_LOG="$WORK/docker-up-manual-latest.log" \
+    WOTB_BACKUP_ROOT="$WORK/backups-manual-latest" \
+    bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)" \
+    || fail "manual latest full deploy must succeed: $manual_latest_output"
+  grep -Eq ' pull .*wotb-backend wotb-frontend keycloak$' "$WORK/docker-pull-manual-latest.log" \
+    || fail "manual latest full deploy must pull all application images only"
+  manual_latest_up_line="$(grep -E 'compose up .*keycloak wotb-backend wotb-frontend$' "$WORK/docker-up-manual-latest.log" | head -n 1)"
+  [ -n "$manual_latest_up_line" ] \
+    || fail "manual latest full deploy must explicitly start only application services"
+  for forbidden_service in postgres node-exporter prometheus loki alloy grafana; do
+    ! grep -Eq " $forbidden_service( |$)" <<<"$manual_latest_up_line" \
+      || fail "manual latest full deploy must not explicitly start $forbidden_service"
+  done
+  ! grep -q 'OBSERVABILITY DEGRADED' <<<"$manual_latest_output" \
+    || fail "manual latest full deploy must not run the automatic observability maintenance path"
+}
+
 # A healthy existing deployment is the normal first-LKG path. The deployment
 # under test can then proceed without an emergency bypass or legacy rollback.
 mkdir -p "$WORK/deploy"
@@ -406,6 +444,12 @@ fi
 if [ -f "$WORK/docker-restart.log" ]; then
   ! grep -q 'compose restart wotb-frontend' "$WORK/docker-restart.log" \
     || fail "successful deployment must not restart frontend nginx for Grafana recreation"
+fi
+
+if [ "${WOTB_TEST_MANUAL_LATEST_ONLY:-0}" = 1 ]; then
+  run_manual_latest_case
+  echo "manual latest full deployment contract OK"
+  exit 0
 fi
 
 # ---- per-service release generations: failure and retry are independent ----
@@ -794,6 +838,13 @@ run_targeted_deploy_case() {
 run_targeted_deploy_case grafana sha-TARGETED-GRAFANA
 run_targeted_deploy_case wotb-backend sha-TARGETED-BACKEND
 run_targeted_deploy_case wotb-frontend sha-TARGETED-FRONTEND
+
+# ---- manual latest full deploy pulls and starts application services only ----
+manual_latest_output="$(env WOTB_TEST_MANUAL_LATEST_ONLY=1 WOTB_TEST_ROOT="$ROOT" \
+  bash "${WOTB_TEST_SCRIPT_PATH:-$ROOT/deploy/test-deploy-rollback.sh}" 2>&1)" \
+  || fail "manual latest isolated deployment contract must pass: $manual_latest_output"
+grep -q 'manual latest full deployment contract OK' <<<"$manual_latest_output" \
+  || fail "manual latest isolated deployment contract marker missing"
 
 # ---- a targeted failure restores only its own pre-deploy runtime ----
 targeted_pre_failure_backend_tag="$(sed -nE 's#.*wotbtools-backend:([^[:space:]]+).*#\1#p' "$WORK/docker-compose.yml" | head -n 1)"

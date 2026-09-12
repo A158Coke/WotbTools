@@ -45,8 +45,12 @@ for job_name, output_name in (
     assert checkout["with"]["ref"] == "${{ needs.changes.outputs.commit_sha }}"
     build_step = next(step for step in job["steps"] if step.get("uses") == "docker/build-push-action@v7")
     tags = str(build_step["with"]["tags"])
-    assert "latest" not in tags, f"{job_name} must publish only immutable tags"
-    assert "${{ needs.changes.outputs.tag }}" in tags
+    image_prefix = {"backend": "backend", "frontend": "frontend", "keycloak": "keycloak"}[output_name]
+    assert "${{ env.GHCR_IMAGE_PREFIX }}-" + image_prefix + ":${{ needs.changes.outputs.tag }}" in tags
+    assert "${{ env.GHCR_IMAGE_PREFIX }}-" + image_prefix + ":latest" in tags
+    for other in {"backend", "frontend", "keycloak"} - {image_prefix}:
+        assert "${{ env.GHCR_IMAGE_PREFIX }}-" + other + ":latest" not in tags, \
+            f"{job_name} must not publish another component latest tag"
 
 manifest_job = build_jobs["manifest"]
 assert "always()" in manifest_job["if"]
@@ -67,7 +71,16 @@ for label in ("Backend", "Frontend", "Keycloak", "Observability", "All"):
 assert "' + '.join(labels)" in deploy_text, "Deploy display name must preserve module combinations"
 assert "git merge-base --is-ancestor" in deploy_text, "Manual Deploy must require main ancestry"
 assert "git merge-base --is-ancestor" in build_text, "Manual Build must require main ancestry"
-assert "sha-[0-9a-f]{12}" in deploy_text, "Manual Deploy must validate 12-char tags"
+assert "--allow-latest" in deploy_text, "Manual Deploy must explicitly allow only its latest manifest path"
+assert "image_tag" not in deploy_text, "Manual Deploy must not expose image_tag input"
+for service in ("postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana", "wotb-backend", "wotb-frontend"):
+    assert f"          - {service}" not in deploy_text, f"Deploy UI must not expose {service}"
+assert "Required deploy image does not exist" in deploy_text
+image_job = deploy["jobs"]["image_existence"]
+assert image_job["needs"] == ["changes"]
+assert "image_services" in image_job["if"]
+assert "RELEASE_TAG" in image_job["steps"][-1]["env"]
+assert "docker manifest inspect" in image_job["steps"][-1]["run"]
 assert "workflow_run.head_sha" in deploy_text
 assert "      - Build" in deploy_text
 assert "Release / Build" not in deploy_text and "Release / Deploy" not in deploy_text
