@@ -23,6 +23,9 @@ assert checkout["with"]["ref"] == "${{ github.sha }}", "Build must freeze the tr
 assert "paths:" not in build_text, "Build must create a no-op manifest for docs-only pushes"
 assert build["name"] == "Build"
 assert deploy["name"] == "Deploy"
+assert build["run-name"] == "Build ${{ inputs.service || github.sha }} by @${{ github.actor }}"
+assert deploy["run-name"] == "Deploy ${{ inputs.service || github.event.workflow_run.head_sha || github.sha }} by @${{ github.actor }}"
+assert "inputs.service || 'release'" not in build_text and "inputs.service || 'release'" not in deploy_text
 assert build_jobs["build_backend"]["name"] == "Build Backend"
 assert build_jobs["build_frontend"]["name"] == "Build Frontend"
 assert build_jobs["build_keycloak"]["name"] == "Build Keycloak"

@@ -1,6 +1,6 @@
 name: Deploy
 # 生产 Grafana MCP 已下线（2026-08-11）：不再传递 GRAFANA_MCP_TOKEN。
-run-name: Deploy ${{ inputs.service || 'release' }} by @${{ github.actor }}
+run-name: Deploy ${{ inputs.service || github.event.workflow_run.head_sha || github.sha }} by @${{ github.actor }}
 
 on:
   workflow_run:
