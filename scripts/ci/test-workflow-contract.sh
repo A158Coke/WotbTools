@@ -28,6 +28,18 @@ assert "name: Build Keycloak" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-backend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest" in build
+for workflow_text, workflow_name in ((build, "Manual Build"), (deploy, "Manual Deploy")):
+    assert "git fetch origin main" in workflow_text, f"{workflow_name} must refresh origin/main"
+    assert 'source_sha="$(git rev-parse HEAD)"' in workflow_text, \
+        f"{workflow_name} must resolve the checked out source SHA"
+    assert 'main_sha="$(git rev-parse origin/main)"' in workflow_text, \
+        f"{workflow_name} must resolve the current main HEAD"
+    assert 'if [ "$source_sha" != "$main_sha" ]; then' in workflow_text, \
+        f"{workflow_name} must require the current main HEAD"
+    assert "git merge-base --is-ancestor" not in workflow_text, \
+        f"{workflow_name} must not accept an ancestor-only source"
+assert "::error::Manual Build must run from the current main HEAD." in build
+assert "::error::Manual Deploy must run from the current main HEAD." in deploy
 assert "image_tag:" not in deploy
 assert "Required deploy image does not exist" in deploy
 for service in ("postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana", "wotb-backend", "wotb-frontend"):

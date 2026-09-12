@@ -89,14 +89,16 @@ jobs:
           print(f"deploy_services={','.join(plan['deployServices'])}")
           print(f"image_services={','.join(plan['imageServices'])}")
           PY
-      - name: Validate manual source is already in main history
+      - name: Validate manual source is current main HEAD
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
           git fetch origin main
-          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
-            echo "::error::Manual Build source must be an existing commit in origin/main history." >&2
+          source_sha="$(git rev-parse HEAD)"
+          main_sha="$(git rev-parse origin/main)"
+          if [ "$source_sha" != "$main_sha" ]; then
+            echo "::error::Manual Build must run from the current main HEAD." >&2
             exit 1
           fi
 
