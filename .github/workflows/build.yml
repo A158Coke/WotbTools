@@ -89,14 +89,16 @@ jobs:
           print(f"deploy_services={','.join(plan['deployServices'])}")
           print(f"image_services={','.join(plan['imageServices'])}")
           PY
-      - name: Validate manual source is already in main history
+      - name: Validate manual source is current main HEAD
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
           git fetch origin main
-          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
-            echo "::error::Manual Build source must be an existing commit in origin/main history." >&2
+          source_sha="$(git rev-parse HEAD)"
+          main_sha="$(git rev-parse origin/main)"
+          if [ "$source_sha" != "$main_sha" ]; then
+            echo "::error::Manual Build must run from the current main HEAD." >&2
             exit 1
           fi
 
@@ -124,7 +126,9 @@ jobs:
           context: .
           file: docker/Dockerfile.backend
           push: true
-          tags: ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
+          tags: |
+            ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
+            ${{ env.GHCR_IMAGE_PREFIX }}-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
@@ -154,7 +158,9 @@ jobs:
           context: .
           file: docker/Dockerfile.frontend
           push: true
-          tags: ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
+          tags: |
+            ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
+            ${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -185,7 +191,9 @@ jobs:
           context: .
           file: docker/Dockerfile.keycloak
           push: true
-          tags: ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ needs.changes.outputs.tag }}
+          tags: |
+            ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ needs.changes.outputs.tag }}
+            ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false

@@ -3,8 +3,10 @@ name: Infra / COS Plan
 on:
   pull_request:
     paths:
-      - "infra/tofu/**"
+      - "infra/tofu/environments/prod/**"
       - ".github/workflows/tofu-plan.yml"
+      - ".github/workflows/tofu-apply.yml"
+      - "scripts/ci/validate-tofu-prod-plan.sh"
   workflow_dispatch:
 
 permissions:
@@ -64,29 +66,7 @@ jobs:
           TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
         run: tofu plan -input=false -no-color -out=plan.tfplan
 
-      - name: Reject artifact bucket destruction or replacement
+      - name: Reject protected production resource destruction or replacement
         if: env.TRUSTED_PRODUCTION_RUN == 'true'
         shell: bash
-        run: |
-          if tofu show -json plan.tfplan | jq -e '
-            any(.resource_changes[]?;
-              (.address == "tencentcloud_cos_bucket.production_artifacts" and
-                ((.change.actions // []) | index("delete") != null)))
-          ' >/dev/null; then
-            echo "The production artifact bucket has a delete action in the plan."
-            exit 1
-          fi
-
-      - name: Reject production Lighthouse destruction or replacement
-        if: env.TRUSTED_PRODUCTION_RUN == 'true'
-        shell: bash
-        run: |
-          if tofu show -json plan.tfplan | jq -e '
-            any(.resource_changes[]?;
-              ((.address == "tencentcloud_lighthouse_instance.production" or
-                .address == "tencentcloud_lighthouse_firewall_rule.production") and
-                ((.change.actions // []) | index("delete") != null)))
-          ' >/dev/null; then
-            echo "The production Lighthouse instance or firewall has a delete action in the plan."
-            exit 1
-          fi
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/validate-tofu-prod-plan.sh" plan.tfplan

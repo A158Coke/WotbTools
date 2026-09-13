@@ -510,13 +510,17 @@ API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲�
 bucket；设计、一次性 import、locking 边界与 owner 命令见
 `docs/architecture/opentofu-production-baseline.md`。
 
-OpenTofu workflow 对 fork PR 使用 `tofu init -backend=false`，不获得生产
+COS Plan workflow 对 fork PR 使用 `tofu init -backend=false`，不获得生产
 credentials；trusted same-repo PR / owner 手工触发才在 backend init 与
 authenticated plan 两个步骤注入 scoped secrets。所有运行继续执行
-`fmt/init/validate`，trusted run 额外执行只读 `tofu plan`，永不执行
-`import` 或 `apply`。CI concurrency 只串行 GitHub workflow，不等价于
-backend distributed lock。trusted plan 还会阻断 artifact bucket、生产
-Lighthouse instance 或 firewall collection 的 delete/replacement action。
+`fmt/init/validate`，trusted Plan 额外执行只读 `tofu plan`；Plan 永不执行
+`import` 或 `apply`。main-only 的 `tofu-apply.yml` 重新 checkout exact
+`github.sha`、生成并复用同一个经 safety guard 校验的 saved plan 后才 apply，
+不接受任意 branch apply。Plan/Apply 的 GitHub concurrency 只串行 workflow，
+不等价于 backend distributed lock。两条 COS workflow 共用 production root
+path、OpenTofu 版本、backend/state key 和 artifact/Lighthouse
+delete/replacement safety guard。trusted plan/apply 都会阻断 artifact bucket、
+生产 Lighthouse instance 或 firewall collection 的 delete/replacement action。
 
 当前 production root 除 COS artifact bucket 外，仅纳管已发现并手工
 import 的 Lighthouse 实例 `lhins-97n0wmx6` 及其四条现有 firewall 规则。
@@ -543,18 +547,20 @@ local state、计划文件和真实 tfvars 禁止提交；`.terraform.lock.hcl` 
 root 管理，也不能使用带一天 expiration 的 artifact bucket 承载 state。
 
 生产 Build 与 Deploy 分为 `.github/workflows/build.yml` 和
-`.github/workflows/deploy.yml`。Build 在 `main` 成功 push 后构建 immutable
-`sha-<SHA>` 镜像并上传唯一 `deployment-manifest`；Deploy 由成功的 Build
-`workflow_run` 自动接力，也保留 `workflow_dispatch` 手动入口。Build 可选择
-`all` 或单个应用镜像；Deploy 只部署 manifest 中的 production Compose service。
+`.github/workflows/deploy.yml`。Build 在 `main` 成功 push 后为每个应用构建
+component-local 的 immutable `sha-<SHA>` 与 `latest` 镜像 tag，并上传唯一
+`deployment-manifest`；自动 Deploy 由成功的 Build `workflow_run` 接力，也保留
+`workflow_dispatch` 手动入口。Build 可选择 `all` 或单个应用镜像；Deploy 自动
+路径只部署 manifest 中的 production Compose service，手动路径只接受
+`all/backend/frontend/keycloak` 应用入口并使用对应 `latest` 镜像。
 纯 `deploy/observability/grafana/dashboards/**` 只触发 Grafana OpenTofu API
 reconciliation，不触发应用 Build。生产发布原则：
 
-1. 代码质量验证（后端 Maven / 前端 Vitest + Vite build）由 PR CI 作为 merge gate 承担；Build/Deploy 不重复运行测试套件，Build 只负责 Docker 镜像构建推送，Deploy 只负责部署与健康检查。无论 main push 或 `workflow_dispatch`，`changes` job 只解析一次 `main` 的 full commit SHA，production builders 全部 checkout 该冻结 SHA，不能从 feature ref 或移动的 main 推送 SHA / `latest`。
-2. Build 构建同一 frozen main commit 的 backend/frontend/keycloak `sha-<SHA>` 镜像，并把 commit SHA、Build run number、镜像 tag、需要部署的 service 与需要更新的 image service 写入权威 manifest；生产 compose 钉 SHA，不依赖 `latest`。Deploy 只消费并校验该 manifest，不重新计算变更、不重新 build、不重复跑测试；targeted service 只更新所选 service，非目标应用继续使用当前 live compose 中的 immutable tag。
+1. 代码质量验证（后端 Maven / 前端 Vitest + Vite build）由 PR CI 作为 merge gate 承担；Build/Deploy 不重复运行测试套件，Build 只负责 Docker 镜像构建推送，Deploy 只负责部署与健康检查。无论 main push 或 `workflow_dispatch`，`changes` job 只解析一次 `main` 的 full commit SHA，production builders 全部 checkout 该冻结 SHA；自动 manifest 不能从 feature ref 或移动的 main 推送/消费错误的 SHA，component-local `latest` 只属于手动应用发布路径。
+2. Build 构建同一 frozen main commit 的 backend/frontend/keycloak `sha-<SHA>` 镜像，并把 commit SHA、Build run number、镜像 tag、需要部署的 service 与需要更新的 image service 写入权威 manifest；自动生产 compose 钉 SHA，不依赖 `latest`。手动 Deploy 在进入 SSH 前按目标应用检查 `latest` 镜像存在，并只把目标应用映射到 `latest`；Deploy 自动路径只消费并校验该 manifest，不重新计算变更、不重新 build、不重复跑测试；targeted service 只更新所选 service，非目标应用继续使用当前 live compose 中的 immutable tag。
 3. 新 compose 先写 `docker-compose.next.yml` 并 pull；成功后才替换正式 compose。
 4. 部署后检查 backend `/api/health`、前端 nginx E2E、Keycloak realm。
-5. 每次成功的完整 `all` 部署先把完整已验证部署树提升为 `/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml` 与 `DEPLOYED_SHA.lkg`；targeted service deploy 不提升 LKG。完整 `all` 健康检查失败只从该 LKG 恢复；targeted failure 只恢复失败 service 的 `deploy.prev` / `docker-compose.prev.yml` pre-deploy snapshot，保留其它独立 targeted release。
+5. 每次成功的完整自动 `all` 部署先把完整已验证部署树提升为 `/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml` 与 `DEPLOYED_SHA.lkg`；手动 `latest` 应用发布和 targeted service deploy 都不提升 LKG。完整自动 `all` 健康检查失败只从该 LKG 恢复；targeted failure 只恢复失败 service 的 `deploy.prev` / `docker-compose.prev.yml` pre-deploy snapshot，保留其它独立 targeted release。
 6. 镜像 prune 只允许在成功部署或成功回滚后执行。
 7. 健康检查最终失败时，回滚前必须保留新版本诊断（`report_health_status` 各服务 PASS/FAILED/SKIPPED + `dump_logs` 的 `ps -a`/容器 inspect/三服务 logs）；诊断命令失败不得阻断回滚。
 8. 部署前保存 `deploy.prev` 取证快照；compose 切换后显式应用观测配置。阻塞 gate 只验证 backend `/api/health`、frontend/nginx `Host: wotbtools.com` `/api/health` 与 Keycloak OIDC discovery；通过后立即把应用可用部署树提升为 LKG。Prometheus/Loki/Alloy/Grafana、datasource/dashboard、metrics 与 log ingestion 由 `verify-observability.sh` 继续严格验证，但失败只记录 `OBSERVABILITY DEGRADED`，不得触发 application rollback。没有经校验的 LKG 时禁止破坏当前 live tree；若已有健康 live deployment，正常发布流程会先验证并建立 LKG，否则必须 fail-closed 并人工处理。回滚成功标准同样只有三项应用可用性检查。
