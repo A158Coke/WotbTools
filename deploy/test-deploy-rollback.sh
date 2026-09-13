@@ -28,6 +28,9 @@ cp "$ROOT/deploy/verify-observability.sh" "$WORK/deploy.incoming/deploy/verify-o
 cp "$ROOT/deploy/grafana-api-request.sh" "$WORK/deploy.incoming/deploy/grafana-api-request.sh"
 cp "$ROOT/deploy/sponsor-config.example.json" "$WORK/deploy.incoming/deploy/sponsor-config.example.json"
 cp "$ROOT/deploy/postgres-backup.sh" "$WORK/deploy.incoming/deploy/postgres-backup.sh"
+# The production upload/install step makes the backup helper executable; keep
+# that permission in the incoming tree as well as in the live fixture.
+chmod 700 "$WORK/deploy.incoming/deploy/postgres-backup.sh"
 cp "$ROOT/deploy/postgres-backup-inspect.sh" "$WORK/deploy.incoming/deploy/postgres-backup-inspect.sh"
 cp "$ROOT/deploy/postgres-restore.sh" "$WORK/deploy.incoming/deploy/postgres-restore.sh"
 cp -a "$ROOT/deploy/observability" "$WORK/deploy.incoming/deploy/observability"
@@ -387,6 +390,11 @@ stage_candidate_b() {
   rm -rf "$WORK/deploy.incoming/deploy"
   mkdir -p "$WORK/deploy.incoming/deploy"
   cp -a "$WORK/deploy/." "$WORK/deploy.incoming/deploy/"
+  # A missing helper is intentional in one fail-closed case, so preserve that
+  # fixture while modeling the executable helper installed in production.
+  if [ -f "$WORK/deploy.incoming/deploy/postgres-backup.sh" ]; then
+    chmod 700 "$WORK/deploy.incoming/deploy/postgres-backup.sh"
+  fi
   cp "$ROOT/deploy/validate-alloy-config.sh" "$WORK/deploy.incoming/deploy/validate-alloy-config.sh"
   cp "$ROOT/deploy/verify-observability.sh" "$WORK/deploy.incoming/deploy/verify-observability.sh"
   cp "$ROOT/deploy/grafana-api-request.sh" "$WORK/deploy.incoming/deploy/grafana-api-request.sh"
