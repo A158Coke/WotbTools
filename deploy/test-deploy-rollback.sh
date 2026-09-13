@@ -627,7 +627,8 @@ run_generation_case() {
   set -e
   if [ -n "$unhealthy_tag" ]; then
     [[ $rc -ne 0 ]] || fail "failed $service generation must reject the candidate"
-    grep -q 'TARGETED ROLLBACK OK' <<<"$output" || fail "failed generation must roll back"
+    grep -q 'TARGETED ROLLBACK OK' <<<"$output" \
+      || fail "failed generation must roll back; deploy output: $output"
   else
     [[ $rc -eq 0 ]] || fail "successful $service generation failed: $output"
   fi
