@@ -11,25 +11,15 @@ on:
   workflow_dispatch:
     inputs:
       service:
-        description: Compose service to deploy; all performs the full validated release
+        description: Application to deploy; All republishes Backend, Frontend and Keycloak
         required: true
         type: choice
         default: all
         options:
           - all
-          - postgres
-          - node-exporter
-          - prometheus
-          - loki
-          - alloy
-          - grafana
+          - backend
+          - frontend
           - keycloak
-          - wotb-backend
-          - wotb-frontend
-      image_tag:
-        description: Immutable sha-<first-12-sha> image tag from an independent Build run; required for application services
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -72,36 +62,22 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
           run-id: ${{ github.event.workflow_run.id }}
-      - name: Resolve manual release identity
+      - name: Validate manual source is current main HEAD
         if: github.event_name == 'workflow_dispatch'
         id: manual_identity
         env:
           REQUESTED_SERVICE: ${{ inputs.service }}
-          REQUESTED_TAG: ${{ inputs.image_tag }}
-          WORKFLOW_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
           git fetch origin main
-          if [ -n "$REQUESTED_TAG" ]; then
-            [[ "$REQUESTED_TAG" =~ ^sha-[0-9a-f]{12}$ ]] || {
-              echo "image_tag must be an immutable sha-<12-char-commit> tag when provided" >&2
-              exit 1
-            }
-            candidate="${REQUESTED_TAG#sha-}"
-          else
-            candidate="$WORKFLOW_SHA"
-          fi
-          release_sha="$(git rev-parse "$candidate^{commit}")"
-          if ! git merge-base --is-ancestor "$release_sha" origin/main; then
-            echo "::error::Manual Deploy source must be an existing commit in origin/main history." >&2
+          source_sha="$(git rev-parse HEAD)"
+          main_sha="$(git rev-parse origin/main)"
+          if [ "$source_sha" != "$main_sha" ]; then
+            echo "::error::Manual Deploy must run from the current main HEAD." >&2
             exit 1
           fi
-          release_tag="${REQUESTED_TAG:-sha-${release_sha:0:12}}"
-          {
-            echo "release_sha=$release_sha"
-            echo "release_tag=$release_tag"
-          } >> "$GITHUB_OUTPUT"
+          echo "release_sha=$source_sha" >> "$GITHUB_OUTPUT"
       - name: Validate deployment manifest
         id: manifest
         env:
@@ -109,7 +85,6 @@ jobs:
           EXPECTED_SHA: ${{ github.event.workflow_run.head_sha || steps.manual_identity.outputs.release_sha }}
           MANUAL_SERVICE: ${{ inputs.service || '' }}
           MANUAL_SHA: ${{ steps.manual_identity.outputs.release_sha || '' }}
-          MANUAL_TAG: ${{ steps.manual_identity.outputs.release_tag || '' }}
           BUILD_RUN_ID: ${{ github.event.workflow_run.id || 'manual' }}
           BUILD_RUN_NUMBER: ${{ github.event.workflow_run.run_number || '1' }}
         shell: bash
@@ -128,11 +103,10 @@ jobs:
             python3 deploy/release_plan.py manual \
               --service "$MANUAL_SERVICE" \
               --commit-sha "$MANUAL_SHA" \
-              --image-tag "$MANUAL_TAG" \
               --build-run-id "$BUILD_RUN_ID" \
               --build-run-number "$BUILD_RUN_NUMBER" > deployment-manifest.json
             metadata="$(python3 deploy/release_plan.py validate \
-              --manifest deployment-manifest.json --expected-sha "$MANUAL_SHA")"
+              --manifest deployment-manifest.json --expected-sha "$MANUAL_SHA" --allow-latest)"
             stale_release_guard=0
           fi
           python3 - "$metadata" "$stale_release_guard" <<'PY' >> "$GITHUB_OUTPUT"
@@ -174,7 +148,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Verify immutable images exist
+      - name: Verify required application images exist
         env:
           IMAGE_SERVICES: ${{ needs.changes.outputs.image_services }}
           RELEASE_TAG: ${{ needs.changes.outputs.release_tag }}
@@ -189,7 +163,11 @@ jobs:
               keycloak) image=ghcr.io/a158coke/wotbtools-keycloak ;;
               *) echo "unsupported image service: $service" >&2; exit 1 ;;
             esac
-            docker manifest inspect "$image:$RELEASE_TAG" >/dev/null
+            if ! docker manifest inspect "$image:$RELEASE_TAG" >/dev/null 2>&1; then
+              echo "::error::Required deploy image does not exist for $service: $image:$RELEASE_TAG" >&2
+              echo "Build the corresponding application image first, then rerun Deploy." >&2
+              exit 1
+            fi
           done
 
   deploy:

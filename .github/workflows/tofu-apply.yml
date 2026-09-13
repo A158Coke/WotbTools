@@ -1,10 +1,11 @@
-name: Infra / COS Plan
+name: Infra / COS Apply
 
 on:
-  pull_request:
+  push:
+    branches:
+      - main
     paths:
       - "infra/tofu/environments/prod/**"
-      - ".github/workflows/tofu-plan.yml"
       - ".github/workflows/tofu-apply.yml"
       - "scripts/ci/validate-tofu-prod-plan.sh"
   workflow_dispatch:
@@ -13,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: opentofu-prod
+  group: production-maintenance
   cancel-in-progress: false
 
 defaults:
@@ -21,16 +22,18 @@ defaults:
     working-directory: infra/tofu/environments/prod
 
 jobs:
-  validate:
+  apply:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       TF_IN_AUTOMATION: "true"
       CHECKPOINT_DISABLE: "1"
-      TRUSTED_PRODUCTION_RUN: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
-      - name: Check out repository
+      - name: Check out exact main commit
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
 
       - name: Set up OpenTofu
         uses: opentofu/setup-opentofu@v2
@@ -41,12 +44,7 @@ jobs:
       - name: Check formatting
         run: tofu fmt -check -recursive
 
-      - name: Initialize OpenTofu without production backend
-        if: env.TRUSTED_PRODUCTION_RUN != 'true'
-        run: tofu init -backend=false -input=false
-
-      - name: Initialize OpenTofu with production backend
-        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+      - name: Initialize production backend
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
@@ -57,8 +55,7 @@ jobs:
       - name: Validate configuration
         run: tofu validate
 
-      - name: Create authenticated plan
-        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+      - name: Create exact COS apply plan
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
@@ -66,7 +63,14 @@ jobs:
           TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
         run: tofu plan -input=false -no-color -out=plan.tfplan
 
-      - name: Reject protected production resource destruction or replacement
-        if: env.TRUSTED_PRODUCTION_RUN == 'true'
+      - name: Validate protected production resource safety
         shell: bash
         run: bash "$GITHUB_WORKSPACE/scripts/ci/validate-tofu-prod-plan.sh" plan.tfplan
+
+      - name: Apply exact approved plan
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+        run: tofu apply -input=false -auto-approve plan.tfplan

@@ -31,6 +31,7 @@
 - **Replay Export Job 授权收紧**：`/api/replay/export-jobs/**`（创建 / 状态 / 取消 / download）由 `permitAll()` 改为要求 `wotbtools-user` 或 `wotbtools-admin`——Export 是 Dataset-only，消费 Processing Job 的 `ProcessedDataset`，匿名可调用等于绕过 `GET /api/replay/processing-jobs/{jobId}/result` 的认证保护（auth bypass）。前端四条端点统一 `ensureToken(30)` + `Authorization: Bearer`，download 走 authenticated fetch（blob → object URL），不使用无法附带 header 的 `<a href>` 裸链。`/api/export`（legacy，已废弃 410）与 `/api/preview` 的公开契约不变。
 
 ### CI/CD
+- **CI/CD 职责收口**：Build 为 backend/frontend/keycloak 分别发布 component-local 的 immutable SHA 与 `latest` tag；自动 Deploy 继续只消费 SHA manifest，手动 Deploy 收窄为 `all/backend/frontend/keycloak` 应用入口，并在 SSH 前校验对应 `latest` 镜像。手动 `all` 只 pull/up 三个应用服务，不把可变 tag 写入 LKG；自动配置驱动的 observability 维护链、stale guard、应用健康门禁与回滚保持不变。production COS OpenTofu 新增 main-only exact saved-plan Apply，与 Plan 共用 production root、delete/replacement safety guard 和 `production-maintenance` concurrency；Grafana root/state 仍独立。验证：workflow/release contract、COS safety fixtures、normalized deploy rollback smoke 全部通过；未宣称真实生产 Apply 或 CI 已成功。
 - **Path-aware PR CI gate**：PR 仍统一经过 authoritative `CI / Required Gate`，但 `ci.yml` 先按
   PR base SHA → head SHA 分类 docs、backend、frontend、HTTP contract、Android、Keycloak、data、
   deploy、observability 与 full 影响域；docs-only 不运行 validation job（仅保留 selector 与 Required Gate），普通单层改动只执行相关
