@@ -788,6 +788,45 @@ validate_lkg_bundle() {
   fi
 }
 
+legacy_lkg_schema_bootstrap_requested() {
+  [ -n "${WOTB_LEGACY_LKG_SCHEMA_VERSION:-}" ] \
+    || [ -n "${WOTB_LEGACY_LKG_RECOVERY_CONFIRM:-}" ]
+}
+
+bootstrap_legacy_lkg_schema_from_operator() {
+  local schema_version="${WOTB_LEGACY_LKG_SCHEMA_VERSION:-}"
+  local confirmation="${WOTB_LEGACY_LKG_RECOVERY_CONFIRM:-}"
+
+  if [ -z "$schema_version" ] || [ -z "$confirmation" ]; then
+    echo "ERROR: legacy LKG schema metadata is missing; provide WOTB_LEGACY_LKG_SCHEMA_VERSION and WOTB_LEGACY_LKG_RECOVERY_CONFIRM=V<version> for the one-time recovery." >&2
+    return 1
+  fi
+  if [[ ! "$schema_version" =~ ^(0|[1-9][0-9]*)$ ]]; then
+    echo "ERROR: WOTB_LEGACY_LKG_SCHEMA_VERSION must be a non-negative integer; refusing legacy LKG recovery." >&2
+    return 1
+  fi
+  if [ "$confirmation" != "V$schema_version" ]; then
+    echo "ERROR: WOTB_LEGACY_LKG_RECOVERY_CONFIRM must exactly match V$schema_version; refusing legacy LKG recovery." >&2
+    return 1
+  fi
+  if [ -e "$LKG_SCHEMA" ]; then
+    echo "ERROR: legacy LKG schema bootstrap is one-time and DB_SCHEMA_VERSION.lkg already exists; refusing overwrite." >&2
+    return 1
+  fi
+  if ! validate_lkg_artifacts "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "Legacy LKG"; then
+    return 1
+  fi
+  if ! write_atomic_value "$LKG_SCHEMA" "$schema_version"; then
+    echo "ERROR: failed to write the operator-confirmed legacy LKG schema metadata." >&2
+    return 1
+  fi
+  if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "$LKG_SCHEMA" "Bootstrapped legacy LKG"; then
+    rm -f -- "$LKG_SCHEMA"
+    return 1
+  fi
+  echo "== Legacy LKG schema bootstrapped from explicit operator confirmation: V$schema_version (current database schema was not used) =="
+}
+
 stage_lkg_snapshot() {
   local source_dir="$1" source_compose="$2" sha="$3" schema_version="$4"
   if [[ ! "$schema_version" =~ ^(0|[1-9][0-9]*)$ ]]; then
@@ -1275,9 +1314,18 @@ if lkg_bundle_present; then
   if validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "$LKG_SCHEMA" "Existing LKG"; then
     :
   elif [ ! -f "$LKG_SCHEMA" ] \
-      && validate_lkg_artifacts "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "Legacy LKG" \
-      && seed_current_lkg; then
-    echo "== Legacy LKG safely bootstrapped with current healthy deployment schema metadata =="
+      && validate_lkg_artifacts "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "Legacy LKG"; then
+    if legacy_lkg_schema_bootstrap_requested; then
+      if ! bootstrap_legacy_lkg_schema_from_operator; then
+        echo "ROLLBACK ABORTED: explicit legacy LKG schema recovery was not accepted; live deployment was not changed." >&2
+        exit 1
+      fi
+    elif seed_current_lkg; then
+      echo "== Legacy LKG safely bootstrapped with current healthy deployment schema metadata =="
+    else
+      echo "ROLLBACK ABORTED: legacy LKG has no schema metadata and current live deployment could not be safely bootstrapped; operator confirmation is required for controlled recovery." >&2
+      exit 1
+    fi
   else
     echo "ROLLBACK ABORTED: existing LKG is unavailable or corrupted; live deployment was not changed." >&2
     exit 1

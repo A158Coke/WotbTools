@@ -512,6 +512,11 @@ run_manual_latest_case() {
 # under test can then proceed without an emergency bypass or legacy rollback.
 mkdir -p "$WORK/deploy"
 cp -a "$WORK/deploy.incoming/deploy/." "$WORK/deploy/"
+# The repository helper is tracked as data, while production installs it as a
+# live executable (the backup workflow applies chmod 700). Existing-production
+# fixtures must model that installed helper; first-install fixtures remove the
+# whole live deployment below and still take the explicit skip path.
+chmod 700 "$WORK/deploy/postgres-backup.sh"
 TAG=sha-A docker compose -f "$WORK/deploy/docker-compose.prod.yml" config > "$WORK/docker-compose.yml"
 printf 'sha-A\n' > "$WORK/DEPLOYED_SHA"
 
@@ -1264,6 +1269,74 @@ grep -q 'Legacy LKG safely bootstrapped' <<<"$legacy_bootstrap_output" \
   || fail "legacy LKG bootstrap marker missing"
 [[ "$(cat "$WORK/DB_SCHEMA_VERSION.lkg")" == 22 ]] \
   || fail "legacy LKG bootstrap must restore schema metadata"
+
+# ---- incident recovery: unhealthy V21 live + legacy V21 LKG on a V22 DB ----
+# The operator must confirm the old LKG compatibility explicitly. The current
+# DB schema is deliberately supplied separately and must never become the
+# bootstrap value by inference.
+sed -Ei 's/(wotbtools-backend:)sha-[^[:space:]]+/\1sha-LEGACY-V21/g' \
+  "$WORK/docker-compose.yml" "$WORK/docker-compose.lkg.yml"
+printf 'sha-LEGACY-V21\n' > "$WORK/DEPLOYED_SHA"
+printf 'sha-LEGACY-V21\n' > "$WORK/DEPLOYED_SHA.lkg"
+rm -f "$WORK/DB_SCHEMA_VERSION.lkg"
+
+# Without an operator-provided compatibility value, the unhealthy legacy live
+# deployment must remain fail-closed and must not infer V22 from the database.
+stage_candidate_b
+set +e
+legacy_missing_confirmation_output="$(env TAG=sha-RECOVERY-NO-CONFIRM \
+  FAKE_DB_SCHEMA_VERSION=22 FAKE_CANDIDATE_TAG=sha-RECOVERY-NO-CONFIRM \
+  FAKE_CANDIDATE_SCHEMA_VERSION=22 \
+  FAKE_APP_UNHEALTHY_TAG=sha-LEGACY-V21 FAKE_APP_UNHEALTHY_SERVICE=backend \
+  WOTB_BACKUP_ROOT="$WORK/backups-legacy-missing-confirmation" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+legacy_missing_confirmation_rc=$?
+set -e
+[[ $legacy_missing_confirmation_rc -ne 0 ]] \
+  || fail "unconfirmed unhealthy legacy LKG must fail closed"
+grep -q 'operator confirmation is required' <<<"$legacy_missing_confirmation_output" \
+  || fail "missing legacy recovery confirmation diagnostic missing: $legacy_missing_confirmation_output"
+[[ ! -e "$WORK/DB_SCHEMA_VERSION.lkg" ]] \
+  || fail "unconfirmed legacy recovery must not create schema metadata"
+
+stage_candidate_b
+set +e
+legacy_incident_output="$(env TAG=sha-RECOVERY-V22-FAIL \
+  FAKE_DB_SCHEMA_VERSION=22 FAKE_CANDIDATE_TAG=sha-RECOVERY-V22-FAIL \
+  FAKE_CANDIDATE_SCHEMA_VERSION=22 \
+  FAKE_APP_UNHEALTHY_TAG=sha-RECOVERY-V22-FAIL FAKE_APP_UNHEALTHY_SERVICE=backend \
+  WOTB_LEGACY_LKG_SCHEMA_VERSION=21 WOTB_LEGACY_LKG_RECOVERY_CONFIRM=V21 \
+  WOTB_BACKUP_ROOT="$WORK/backups-legacy-incident" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+legacy_incident_rc=$?
+set -e
+[[ $legacy_incident_rc -ne 0 ]] || fail "V22 candidate failure must not report success during legacy recovery"
+grep -q 'Legacy LKG schema bootstrapped from explicit operator confirmation: V21' <<<"$legacy_incident_output" \
+  || fail "explicit legacy LKG schema bootstrap marker missing: $legacy_incident_output"
+grep -q 'current database schema was not used' <<<"$legacy_incident_output" \
+  || fail "legacy recovery must state that current DB schema was not used: $legacy_incident_output"
+! grep -q 'Validating current deployment for LKG seeding' <<<"$legacy_incident_output" \
+  || fail "unhealthy legacy live must not enter healthy-live LKG seeding"
+grep -q 'ROLLBACK UNSAFE: database schema advanced from V21 to V22' <<<"$legacy_incident_output" \
+  || fail "legacy incident rollback guard diagnostic missing: $legacy_incident_output"
+[[ "$(cat "$WORK/DB_SCHEMA_VERSION.lkg")" == 21 ]] \
+  || fail "legacy operator bootstrap must record V21, not current DB V22"
+grep -q 'wotbtools-backend:sha-RECOVERY-V22-FAIL' "$WORK/docker-compose.yml" \
+  || fail "schema-incompatible legacy incident must retain candidate runtime"
+
+# Once the metadata exists, recovery is one-time; a subsequent compatible V22
+# candidate can start without invoking the bootstrap or guessing a version.
+stage_candidate_b
+legacy_incident_retry_output="$(env TAG=sha-RECOVERY-V22 \
+  FAKE_DB_SCHEMA_VERSION=22 FAKE_CANDIDATE_TAG=sha-RECOVERY-V22 \
+  FAKE_CANDIDATE_SCHEMA_VERSION=22 FAKE_HEALTHY_BACKEND_TAG=sha-RECOVERY-V22 \
+  WOTB_BACKUP_ROOT="$WORK/backups-legacy-incident-retry" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)" \
+  || fail "candidate V22 must start after explicit legacy recovery: $legacy_incident_retry_output"
+! grep -q 'Legacy LKG schema bootstrapped from explicit operator confirmation' <<<"$legacy_incident_retry_output" \
+  || fail "legacy schema bootstrap must not repeat after metadata exists"
+[[ "$(cat "$WORK/DB_SCHEMA_VERSION.lkg")" == 22 ]] \
+  || fail "successful V22 retry must promote V22 LKG metadata"
 
 # Existing production state with a missing backup helper must fail before compose switch.
 backup_previous_backend_tag="$(awk -F: '/wotbtools-backend:/ { print $NF; exit }' "$WORK/docker-compose.yml")"

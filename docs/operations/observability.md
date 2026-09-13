@@ -180,7 +180,7 @@ docker compose ps prometheus loki alloy grafana node-exporter
 
 application gate 由 production compose 中的 deployment-owned `health-probe` curl service 执行，加入 `wotb_internal` 网络后独立访问 backend `wotb-backend:8087/api/health`、带 `Host: wotbtools.com` 的 frontend `/api/health` 与 Keycloak OIDC discovery；不依赖 backend/frontend/Keycloak 镜像内的 `wget/curl`。回滚到没有该 service 的 legacy LKG 时，探针定义由当前 staged deployment compose overlay 提供，仍访问 live runtime。失败诊断会区分 DNS resolution、connection refused、timeout 与 non-2xx HTTP status，并在 Actions 日志保留 `backend/frontend/keycloak: PASS/FAILED/SKIPPED` 摘要。
 
-完整自动部署成功后，LKG 除了 deploy tree、compose 与 SHA，还保存 `DB_SCHEMA_VERSION.lkg`，内容是部署后从 `flyway_schema_history` 读取的最新成功 migration version。回滚前读取当前数据库 schema 并与 LKG version 比较；相同版本允许回滚，数据库已前进到更高版本时输出 `ROLLBACK UNSAFE`、保留 candidate tree/compose，不切换旧 backend，也不执行 Flyway downgrade。没有该 metadata 的 legacy LKG 只有在当前 live application gate 已通过且 schema 可读时才会安全 bootstrap；否则 fail-closed。
+完整自动部署成功后，LKG 除了 deploy tree、compose 与 SHA，还保存 `DB_SCHEMA_VERSION.lkg`，内容是部署后从 `flyway_schema_history` 读取的最新成功 migration version。回滚前读取当前数据库 schema 并与 LKG version 比较；相同版本允许回滚，数据库已前进到更高版本时输出 `ROLLBACK UNSAFE`、保留 candidate tree/compose，不切换旧 backend，也不执行 Flyway downgrade。没有该 metadata 的 legacy LKG 正常情况下只有在当前 live application gate 已通过且 schema 可读时才会安全 bootstrap；若当前 live 是因旧 V21 image 无法启动的事故状态，operator 必须显式提供并确认旧兼容版本（例如 `WOTB_LEGACY_LKG_SCHEMA_VERSION=21 WOTB_LEGACY_LKG_RECOVERY_CONFIRM=V21`）。该一次性 recovery 只写入 operator 提供的 `DB_SCHEMA_VERSION.lkg`，不把当前 DB V22 当作旧 LKG 兼容版本；若 candidate 失败且 DB 已高于 LKG，仍输出 `ROLLBACK UNSAFE`、保留 candidate 并 fail-closed。
 
 部署在可能触发 Flyway 前会分别备份 `wotb` 与 `keycloak`。已有 production state 时 live compose 缺失、backup helper 缺失/不可执行或任一 backup 失败都会在 compose 切换前终止；只有真实 first-install 才能带明确原因跳过 pre-deploy backup。
 
