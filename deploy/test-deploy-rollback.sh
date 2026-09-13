@@ -16,6 +16,7 @@ if [ -n "${WOTB_TEST_ROOT:-}" ]; then
 else
   ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
+TEST_SCRIPT_PATH="${WOTB_TEST_SCRIPT_PATH:-${BASH_SOURCE[0]}}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -51,8 +52,9 @@ cat > "$WORK/bin/docker" <<'FAKE_DOCKER'
 # Fake docker shim for the deploy rollback smoke test.
 # - `compose config` resolves ${VAR} / ${VAR:?msg} / ${VAR:-default} from env,
 #   mirroring what `docker compose config` does during the real deploy.
-# - health checks (`compose exec ... wget`) succeed only when the active compose
-#   file references the sha-A backend image, so deploy B fails and rolls back to A.
+# - application health checks run through the deployment-owned curl probe
+#   service; backend candidate failures drive full rollback while targeted
+#   service probes remain independent.
 set -euo pipefail
 
 resolve_line() {
@@ -80,7 +82,8 @@ active_tag_healthy() {
   [ "${FAKE_FORCE_UNHEALTHY:-0}" = 1 ] && return 1
   [[ -f "$file" ]] || return 0
   grep -q 'wotbtools-backend:sha-A' "$file" \
-    || { [ -n "${FAKE_HEALTHY_BACKEND_TAG:-}" ] && grep -q "wotbtools-backend:${FAKE_HEALTHY_BACKEND_TAG}" "$file"; }
+    || { [ -n "${FAKE_HEALTHY_BACKEND_TAG:-}" ] && grep -q "wotbtools-backend:${FAKE_HEALTHY_BACKEND_TAG}" "$file"; } \
+    || { [ -n "${FAKE_CURRENT_HEALTHY_BACKEND_TAG:-}" ] && grep -q "wotbtools-backend:${FAKE_CURRENT_HEALTHY_BACKEND_TAG}" "$file"; }
 }
 
 app_tag_unhealthy() {
@@ -88,6 +91,11 @@ app_tag_unhealthy() {
   [ -n "${FAKE_APP_UNHEALTHY_TAG:-}" ] \
     && grep -q "wotbtools-backend:${FAKE_APP_UNHEALTHY_TAG}" "$file" \
     && { [ -z "${FAKE_APP_UNHEALTHY_SERVICE:-}" ] || [ "$FAKE_APP_UNHEALTHY_SERVICE" = "$service" ]; }
+}
+
+probe_failure_active() {
+  local file="${COMPOSE_FILE:-docker-compose.yml}" tag="${FAKE_PROBE_FAILURE_TAG:-}"
+  [ -z "$tag" ] || grep -q "$tag" "$file"
 }
 
 COMPOSE_FILE=""
@@ -98,7 +106,7 @@ case "$cmd" in
     sub=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
-        -f) COMPOSE_FILE="$2"; shift 2 ;;
+        -f) [ -n "$COMPOSE_FILE" ] || COMPOSE_FILE="$2"; shift 2 ;;
         -d|--no-deps|--remove-orphans|-T) shift ;;
         config|pull|up|ps|exec|logs|kill|restart|run) sub="$1"; shift ;;
         *) shift ;;
@@ -160,6 +168,23 @@ case "$cmd" in
         request="${compose_args[*]}"
         if [[ "$request" == *"pg_isready"* || "$request" == *"pg_dump"* || \
               "$request" == *"pg_restore"* || "$request" == *"psql"* ]]; then
+          if [[ "$request" == *"pg_dump"* ]] \
+              && [ -n "${FAKE_BACKUP_FAIL_DATABASE:-}" ] \
+              && [[ "$request" == *"-d ${FAKE_BACKUP_FAIL_DATABASE}"* ]]; then
+            printf 'mock pg_dump failure for %s\n' "$FAKE_BACKUP_FAIL_DATABASE" >&2
+            exit 1
+          fi
+          if [[ "$request" == *"installed_rank"* ]]; then
+            schema_version="${FAKE_DB_SCHEMA_VERSION:-21}"
+            active_compose_file="${COMPOSE_FILE:-docker-compose.yml}"
+            if [ -n "${FAKE_CANDIDATE_SCHEMA_VERSION:-}" ] \
+                && [ -n "${FAKE_CANDIDATE_TAG:-}" ] \
+                && grep -q "wotbtools-backend:${FAKE_CANDIDATE_TAG}" "$active_compose_file"; then
+              schema_version="$FAKE_CANDIDATE_SCHEMA_VERSION"
+            fi
+            printf '%s\n' "$schema_version"
+            exit 0
+          fi
           printf 'mock-pg-dump-data\n'
           exit 0
         fi
@@ -274,6 +299,40 @@ case "$cmd" in
         ;;
       kill) exit 0 ;;
       run)
+        request="${compose_args[*]}"
+        if [[ "$request" == *"health-probe"* ]]; then
+          if [ "${FAKE_REQUIRE_HEALTH_PROBE_SERVICE:-0}" = 1 ] \
+              && ! grep -q 'health-probe:' "${COMPOSE_FILE:-docker-compose.yml}"; then
+            if [[ "$request" != *"docker-compose.next.yml"* ]] \
+                || ! grep -q 'health-probe:' "$WOTB_INCOMING_DIR/docker-compose.next.yml"; then
+              printf 'compose: health-probe service missing\n' >&2
+              exit 1
+            fi
+          fi
+          if [[ "$request" == *"wotb-backend:8087/api/health"* ]]; then
+            probe_failure_active backend && [ "${FAKE_PROBE_BACKEND:-healthy}" = refused ] && { printf 'curl: (7) Connection refused\n' >&2; exit 7; }
+            probe_failure_active backend && [ "${FAKE_PROBE_BACKEND:-healthy}" = timeout ] && { printf 'curl: (28) Operation timed out\n' >&2; exit 28; }
+            [ -z "${WOTB_DEPLOY_SERVICE:-}" ] && [ "${WOTB_DEPLOY_SERVICES:-all}" = all ] \
+              && [ -z "${FAKE_HEALTHY_BACKEND_TAG:-}" ] && ! active_tag_healthy \
+              && { printf 'curl: (7) Connection refused\n' >&2; exit 7; }
+            app_tag_unhealthy backend && { printf 'curl: (7) Connection refused\n' >&2; exit 7; }
+            printf '200\n'
+            exit 0
+          fi
+          if [[ "$request" == *"wotb-frontend/api/health"* ]]; then
+            probe_failure_active frontend && [ "${FAKE_PROBE_FRONTEND:-healthy}" = 502 ] && { printf '502\n'; exit 0; }
+            app_tag_unhealthy frontend && { printf '502\n'; exit 0; }
+            [[ "$request" == *"wotbtools.com"* ]] || { printf 'curl: invalid host header\n' >&2; exit 2; }
+            printf '200\n'
+            exit 0
+          fi
+          if [[ "$request" == *"keycloak:8080/realms/wotbtools/.well-known/openid-configuration"* ]]; then
+            probe_failure_active keycloak && [ "${FAKE_PROBE_KEYCLOAK:-healthy}" = unavailable ] && { printf 'curl: (6) Could not resolve host: keycloak\n' >&2; exit 6; }
+            app_tag_unhealthy keycloak && { printf 'curl: (7) Connection refused\n' >&2; exit 7; }
+            printf '200\n'
+            exit 0
+          fi
+        fi
         if [ -n "${FAKE_DOCKER_RUN_LOG:-}" ]; then
           printf 'compose %s\n' "${compose_args[*]}" >> "$FAKE_DOCKER_RUN_LOG"
         fi
@@ -303,10 +362,17 @@ esac
 FAKE_DOCKER
 chmod +x "$WORK/bin/docker"
 
+! grep -Eq 'docker compose exec[^\n]*wget' "$WORK/deploy.incoming/deploy/deploy.sh" \
+  || fail "application health probes must not depend on backend/frontend image wget"
+grep -q 'HEALTH_PROBE_SERVICE="health-probe"' "$WORK/deploy.incoming/deploy/deploy.sh" \
+  || fail "deployment-owned health probe service is missing"
+
 export PATH="$WORK/bin:$PATH"
 export WOTB_DIR="$WORK"
 export WOTB_INCOMING_DIR="$WORK/deploy.incoming"
-export WOTB_COMPOSE_DIR="$WORK"
+# Deliberately point the inherited helper default elsewhere; deploy.sh must
+# bind the live compose root explicitly when invoking the backup helper.
+export WOTB_COMPOSE_DIR="/tmp/wotb-backup-compose-must-not-be-used"
 export WOTB_BACKUP_ROOT="$WORK/backups"
 export WOTB_HEALTH_RETRIES="${WOTB_HEALTH_RETRIES:-3}"
 export FAKE_DOCKER_RUN_LOG="$WORK/docker-run.log"
@@ -453,7 +519,7 @@ lkg_state_checksum() {
   (
     cd "$WORK"
     find deploy.lkg -type f -print0 | sort -z | xargs -0 sha256sum
-    sha256sum docker-compose.lkg.yml DEPLOYED_SHA.lkg
+    sha256sum docker-compose.lkg.yml DEPLOYED_SHA.lkg DB_SCHEMA_VERSION.lkg
   )
 }
 
@@ -498,6 +564,8 @@ bash "$WORK/deploy.incoming/deploy/deploy.sh"
 [[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "DEPLOYED_SHA != sha-A after deploy A"
 [[ -f "$WORK/DEPLOYED_SHA.lkg" ]] || fail "DEPLOYED_SHA.lkg missing after deploy A"
 [[ "$(cat "$WORK/DEPLOYED_SHA.lkg")" == "sha-A" ]] || fail "DEPLOYED_SHA.lkg != sha-A after deploy A"
+[[ -f "$WORK/DB_SCHEMA_VERSION.lkg" ]] || fail "DB_SCHEMA_VERSION.lkg missing after deploy A"
+[[ "$(cat "$WORK/DB_SCHEMA_VERSION.lkg")" == 21 ]] || fail "LKG schema metadata != 21 after deploy A"
 [[ -d "$WORK/deploy.lkg" ]] || fail "deploy.lkg missing after deploy A"
 [[ -f "$WORK/docker-compose.lkg.yml" ]] || fail "docker-compose.lkg.yml missing after deploy A"
 grep -q 'wotbtools-backend:sha-A' "$WORK/docker-compose.yml" || fail "formal compose does not pin sha-A images"
@@ -532,8 +600,10 @@ printf 'sha-frontend-90\n' > "$WORK/deployed-state/wotb-frontend.sha"
 printf '90\n' > "$WORK/deployed-state/keycloak.run"
 printf 'sha-keycloak-90\n' > "$WORK/deployed-state/keycloak.sha"
 
+generation_case_counter=0
 run_generation_case() {
   local service="$1" run_number="$2" commit_sha="$3" unhealthy_tag="${4:-}" output rc
+  generation_case_counter=$((generation_case_counter + 1))
   stage_candidate_b
   export TAG="sha-${commit_sha:0:12}" RELEASE_SHA="$commit_sha" RELEASE_RUN_NUMBER="$run_number"
   export WOTB_STALE_RELEASE_GUARD=1 WOTB_DEPLOY_SERVICE="$service"
@@ -546,7 +616,7 @@ run_generation_case() {
     export FAKE_HEALTHY_BACKEND_TAG="$TAG"
   fi
   set +e
-  output="$(WOTB_BACKUP_ROOT="$WORK/backups-generation-$service-$run_number" \
+  output="$(WOTB_BACKUP_ROOT="$WORK/backups-generation-$service-$run_number-$generation_case_counter" \
     bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
   rc=$?
   set -e
@@ -875,6 +945,28 @@ run_application_failure_case backend-unhealthy sha-BACKEND backend
 run_application_failure_case frontend-unhealthy sha-FRONTEND frontend
 run_application_failure_case keycloak-unhealthy sha-KEYCLOAK keycloak
 
+# ---- deployment-owned application probes expose actionable diagnostics ----
+run_probe_failure_case() {
+  local case_name="$1" tag="$2" failure_env="$3" expected="$4" output rc
+  stage_candidate_b
+  set +e
+  output="$(env TAG="$tag" FAKE_HEALTHY_BACKEND_TAG="$tag" FAKE_PROBE_FAILURE_TAG="$tag" "$failure_env" \
+    WOTB_BACKUP_ROOT="$WORK/backups-$case_name" \
+    bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+  rc=$?
+  set -e
+  [[ $rc -ne 0 ]] || fail "$case_name must reject the candidate: $output"
+  grep -q "$expected" <<<"$output" || fail "$case_name diagnostic missing: $output"
+  grep -q "== ROLLBACK OK:" <<<"$output" || fail "$case_name must retain compatible rollback"
+}
+
+run_probe_failure_case backend-probe-refused sha-PROBE-BACKEND \
+  FAKE_PROBE_BACKEND=refused 'backend: FAILED: connection refused'
+run_probe_failure_case frontend-probe-502 sha-PROBE-FRONTEND \
+  FAKE_PROBE_FRONTEND=502 'frontend: FAILED: non-2xx HTTP status 502'
+run_probe_failure_case keycloak-probe-unavailable sha-PROBE-KEYCLOAK \
+  FAKE_PROBE_KEYCLOAK=unavailable 'keycloak: FAILED: DNS resolution failed'
+
 # ---- targeted deployment recreates only the selected service and never dependencies ----
 run_targeted_deploy_case() {
   local service="$1" tag="$2" output rc other_service targeted_up_line healthy_backend_tag
@@ -912,7 +1004,7 @@ run_targeted_deploy_case wotb-frontend sha-TARGETED-FRONTEND
 
 # ---- manual latest full deploy pulls and starts application services only ----
 manual_latest_output="$(env WOTB_TEST_MANUAL_LATEST_ONLY=1 WOTB_TEST_ROOT="$ROOT" \
-  bash "${WOTB_TEST_SCRIPT_PATH:-$ROOT/deploy/test-deploy-rollback.sh}" 2>&1)" \
+  WOTB_TEST_SCRIPT_PATH="$TEST_SCRIPT_PATH" bash "$TEST_SCRIPT_PATH" 2>&1)" \
   || fail "manual latest isolated deployment contract must pass: $manual_latest_output"
 grep -q 'manual latest full deployment contract OK' <<<"$manual_latest_output" \
   || fail "manual latest isolated deployment contract marker missing"
@@ -1099,10 +1191,155 @@ done
 unset FAKE_HEALTHY_BACKEND_TAG WOTB_STALE_RELEASE_GUARD WOTB_DEPLOY_SERVICES WOTB_DEPLOY_IMAGE_SERVICES
 unset RELEASE_SHA RELEASE_RUN_NUMBER TAG
 
+# ---- schema-aware rollback: V21-compatible failure is allowed, V22-incompatible failure is not ----
+stage_candidate_b
+: > "$WORK/docker-up-schema-unsafe.log"
+set +e
+schema_unsafe_output="$(env TAG=sha-SCHEMA22 FAKE_HEALTHY_BACKEND_TAG=sha-SCHEMA22 \
+  FAKE_CANDIDATE_TAG=sha-SCHEMA22 FAKE_CANDIDATE_SCHEMA_VERSION=22 \
+  FAKE_APP_UNHEALTHY_TAG=sha-SCHEMA22 FAKE_APP_UNHEALTHY_SERVICE=backend \
+  FAKE_DOCKER_UP_LOG="$WORK/docker-up-schema-unsafe.log" \
+  WOTB_BACKUP_ROOT="$WORK/backups-schema-unsafe" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+schema_unsafe_rc=$?
+set -e
+[[ $schema_unsafe_rc -ne 0 ]] || fail "schema-incompatible rollback must fail closed"
+grep -q 'ROLLBACK UNSAFE: database schema advanced from V21 to V22' <<<"$schema_unsafe_output" \
+  || fail "schema-incompatible rollback diagnostic missing: $schema_unsafe_output"
+! grep -q '== ROLLBACK OK:' <<<"$schema_unsafe_output" \
+  || fail "schema-incompatible rollback must not report success"
+grep -q 'wotbtools-backend:sha-SCHEMA22' "$WORK/docker-compose.yml" \
+  || fail "schema-incompatible rollback must preserve the candidate runtime for recovery"
+
+# ---- healthy V22 promotes an LKG carrying schema V22 ----
+stage_candidate_b
+v22_output="$(env TAG=sha-V22 FAKE_HEALTHY_BACKEND_TAG=sha-V22 \
+  FAKE_CANDIDATE_TAG=sha-V22 FAKE_CANDIDATE_SCHEMA_VERSION=22 \
+  WOTB_BACKUP_ROOT="$WORK/backups-v22" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)" \
+  || fail "healthy V22 deploy must succeed: $v22_output"
+[[ "$(cat "$WORK/DB_SCHEMA_VERSION.lkg")" == 22 ]] \
+  || fail "healthy V22 deploy must promote schema V22 metadata"
+grep -q 'wotbtools-backend:sha-V22' "$WORK/docker-compose.lkg.yml" \
+  || fail "healthy V22 deploy must promote the V22 backend to LKG"
+
+# A later failure with the same V22 schema remains rollback-compatible.
+stage_candidate_b
+v22_rollback_output="$(env TAG=sha-V22-FAIL FAKE_HEALTHY_BACKEND_TAG=sha-V22 \
+  FAKE_CANDIDATE_TAG=sha-V22-FAIL FAKE_CANDIDATE_SCHEMA_VERSION=22 \
+  FAKE_APP_UNHEALTHY_TAG=sha-V22-FAIL FAKE_APP_UNHEALTHY_SERVICE=backend \
+  WOTB_BACKUP_ROOT="$WORK/backups-v22-rollback" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)" \
+  || true
+grep -q '== ROLLBACK OK: sha-V22 ==' <<<"$v22_rollback_output" \
+  || fail "V22-compatible rollback must restore the V22 LKG: $v22_rollback_output"
+
+# A legacy LKG compose may predate health-probe; rollback must overlay the
+# current deployment-owned probe definition instead of failing its own gate.
+legacy_probe_compose="$(mktemp)"
+sed '/^  health-probe:/,/^  postgres:/ { /^  postgres:/!d; }' \
+  "$WORK/docker-compose.lkg.yml" > "$legacy_probe_compose"
+mv "$legacy_probe_compose" "$WORK/docker-compose.lkg.yml"
+stage_candidate_b
+legacy_probe_output="$(env TAG=sha-LEGACY-PROBE FAKE_HEALTHY_BACKEND_TAG=sha-V22 \
+  FAKE_CURRENT_HEALTHY_BACKEND_TAG=sha-V22 FAKE_DB_SCHEMA_VERSION=22 \
+  FAKE_REQUIRE_HEALTH_PROBE_SERVICE=1 \
+  FAKE_CANDIDATE_TAG=sha-LEGACY-PROBE FAKE_APP_UNHEALTHY_TAG=sha-LEGACY-PROBE \
+  FAKE_APP_UNHEALTHY_SERVICE=backend WOTB_BACKUP_ROOT="$WORK/backups-legacy-probe" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)" \
+  || true
+grep -q '== ROLLBACK OK: sha-V22 ==' <<<"$legacy_probe_output" \
+  || fail "legacy LKG without health-probe must still rollback: $legacy_probe_output"
+
+# Legacy LKGs without schema metadata may only bootstrap from a healthy live deployment.
+rm -f "$WORK/DB_SCHEMA_VERSION.lkg"
+stage_candidate_b
+legacy_bootstrap_output="$(env TAG=sha-LEGACY-BOOTSTRAP FAKE_HEALTHY_BACKEND_TAG=sha-LEGACY-BOOTSTRAP \
+  FAKE_CURRENT_HEALTHY_BACKEND_TAG=sha-V22 \
+  FAKE_CANDIDATE_TAG=sha-LEGACY-BOOTSTRAP FAKE_CANDIDATE_SCHEMA_VERSION=22 \
+  WOTB_BACKUP_ROOT="$WORK/backups-legacy-bootstrap" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)" \
+  || fail "legacy LKG bootstrap from healthy live deployment must succeed: $legacy_bootstrap_output"
+grep -q 'Legacy LKG safely bootstrapped' <<<"$legacy_bootstrap_output" \
+  || fail "legacy LKG bootstrap marker missing"
+[[ "$(cat "$WORK/DB_SCHEMA_VERSION.lkg")" == 22 ]] \
+  || fail "legacy LKG bootstrap must restore schema metadata"
+
+# Existing production state with a missing backup helper must fail before compose switch.
+backup_previous_backend_tag="$(awk -F: '/wotbtools-backend:/ { print $NF; exit }' "$WORK/docker-compose.yml")"
+mv "$WORK/deploy/postgres-backup.sh" "$WORK/postgres-backup.sh.saved"
+stage_candidate_b
+set +e
+backup_missing_output="$(env TAG=sha-BACKUP-MISSING FAKE_HEALTHY_BACKEND_TAG=sha-BACKUP-MISSING \
+  WOTB_BACKUP_ROOT="$WORK/backups-backup-missing" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+backup_missing_rc=$?
+set -e
+[[ $backup_missing_rc -ne 0 ]] || fail "missing production backup helper must fail closed"
+grep -q 'postgres-backup.sh missing/not executable' <<<"$backup_missing_output" \
+  || fail "missing backup helper diagnostic missing: $backup_missing_output"
+grep -q "wotbtools-backend:$backup_previous_backend_tag" "$WORK/docker-compose.yml" \
+  || fail "backup failure must occur before compose switch"
+mv "$WORK/postgres-backup.sh.saved" "$WORK/deploy/postgres-backup.sh"
+
+# A failure in either database backup must also stop before compose switch.
+for backup_database in wotb keycloak; do
+  stage_candidate_b
+  set +e
+  backup_failed_output="$(env TAG="sha-BACKUP-${backup_database^^}-FAIL" \
+    FAKE_HEALTHY_BACKEND_TAG="sha-BACKUP-${backup_database^^}-FAIL" \
+    FAKE_BACKUP_FAIL_DATABASE="$backup_database" \
+    WOTB_BACKUP_ROOT="$WORK/backups-backup-${backup_database}-fail" \
+    bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+  backup_failed_rc=$?
+  set -e
+  [[ $backup_failed_rc -ne 0 ]] || fail "$backup_database backup failure must fail closed"
+  grep -q "pre-deploy $backup_database database backup failed" <<<"$backup_failed_output" \
+    || fail "$backup_database backup failure diagnostic missing: $backup_failed_output"
+  grep -q "wotbtools-backend:$backup_previous_backend_tag" "$WORK/docker-compose.yml" \
+    || fail "$backup_database backup failure must occur before compose switch"
+done
+
+# A missing live compose is not treated as first install while production state remains.
+mv "$WORK/docker-compose.yml" "$WORK/docker-compose.yml.saved"
+stage_candidate_b
+set +e
+live_compose_missing_output="$(env TAG=sha-LIVE-COMPOSE-MISSING FAKE_HEALTHY_BACKEND_TAG=sha-LIVE-COMPOSE-MISSING \
+  WOTB_BACKUP_ROOT="$WORK/backups-live-compose-missing" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+live_compose_missing_rc=$?
+set -e
+[[ $live_compose_missing_rc -ne 0 ]] || fail "missing live compose with production state must fail closed"
+grep -q 'LIVE_COMPOSE missing' <<<"$live_compose_missing_output" \
+  || fail "missing live compose diagnostic missing: $live_compose_missing_output"
+mv "$WORK/docker-compose.yml.saved" "$WORK/docker-compose.yml"
+
+# Targeted backend rollback must also refuse an old backend after a migration
+# advances the database schema.
+stage_candidate_b
+set +e
+targeted_schema_unsafe_output="$(env TAG=sha-TARGETED-SCHEMA23 WOTB_DEPLOY_SERVICE=wotb-backend \
+  FAKE_HEALTHY_BACKEND_TAG=sha-TARGETED-SCHEMA23 \
+  FAKE_CANDIDATE_TAG=sha-TARGETED-SCHEMA23 FAKE_CANDIDATE_SCHEMA_VERSION=23 \
+  FAKE_APP_UNHEALTHY_TAG=sha-TARGETED-SCHEMA23 FAKE_APP_UNHEALTHY_SERVICE=backend \
+  WOTB_BACKUP_ROOT="$WORK/backups-targeted-schema-unsafe" \
+  bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
+targeted_schema_unsafe_rc=$?
+set -e
+[[ $targeted_schema_unsafe_rc -ne 0 ]] \
+  || fail "schema-incompatible targeted rollback must fail closed"
+grep -q 'TARGETED ROLLBACK UNSAFE: database schema changed' <<<"$targeted_schema_unsafe_output" \
+  || fail "schema-incompatible targeted rollback diagnostic missing: $targeted_schema_unsafe_output"
+! grep -q '== TARGETED ROLLBACK OK:' <<<"$targeted_schema_unsafe_output" \
+  || fail "schema-incompatible targeted rollback must not report success"
+grep -q 'wotbtools-backend:sha-TARGETED-SCHEMA23' "$WORK/docker-compose.yml" \
+  || fail "schema-incompatible targeted rollback must preserve candidate runtime"
+
 # ---- no LKG + no current deployment -> fail closed before promotion ----
 stage_candidate_b
 rm -rf "$WORK/deploy" "$WORK/docker-compose.yml" "$WORK/DEPLOYED_SHA" \
-  "$WORK/deploy.lkg" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg"
+  "$WORK/deploy.lkg" "$WORK/docker-compose.lkg.yml" "$WORK/DEPLOYED_SHA.lkg" \
+  "$WORK/DB_SCHEMA_VERSION.lkg"
 export TAG=sha-C FAKE_HEALTHY_BACKEND_TAG=sha-C
 export WOTB_BACKUP_ROOT="$WORK/backups-no-lkg"
 set +e
@@ -1110,6 +1347,8 @@ no_lkg_output="$(bash "$WORK/deploy.incoming/deploy/deploy.sh" 2>&1)"
 no_lkg_rc=$?
 set -e
 [[ $no_lkg_rc -ne 0 ]] || fail "no-LKG deployment must fail closed"
+grep -q 'Pre-deploy backup skipped: FIRST_INSTALL' <<<"$no_lkg_output" \
+  || fail "first-install backup skip reason missing: $no_lkg_output"
 grep -q "NO_VALIDATED_LKG" <<<"$no_lkg_output" || fail "no-LKG failure marker missing: $no_lkg_output"
 [[ ! -e "$WORK/deploy" ]] || fail "no-LKG failure must not promote the candidate"
 [[ ! -e "$WORK/deploy.lkg" ]] || fail "no-LKG failure must not create an LKG"

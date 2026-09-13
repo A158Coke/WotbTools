@@ -4,6 +4,11 @@ x-logging: &default-logging
     max-size: "20m"
     max-file: "3"
 services:
+  health-probe:
+    image: curlimages/curl:8.12.1
+    entrypoint: ["curl"]
+    restart: "no"
+    logging: *default-logging
   postgres:
     image: postgres:18-alpine
     ports:
