@@ -29,7 +29,7 @@ import { messages } from './locales/messages.js'
 import router from './app/router.js'
 
 // Build identity（vite define 注入）：生产环境可立即确认实际运行的 bundle 版本，
-// 避免"我刚部署了"式猜测（对应 /version.json 与 /?view=version 可查）。
+// 避免"我刚部署了"式猜测（对应同源 /version.json 可查）。
 console.info('[build] commit=' + __BUILD_COMMIT__ + ' time=' + __BUILD_TIME__)
 
 const previewHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'

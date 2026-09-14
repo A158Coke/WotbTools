@@ -29,6 +29,18 @@ def manual(service):
 assert detect("frontend/src/App.vue")["deployServices"] == ["wotb-frontend"]
 assert detect("java/wotb-core/src/Main.java")["deployServices"] == ["wotb-backend"]
 assert detect("keycloak-wargaming-provider/src/Main.java")["deployServices"] == ["keycloak"]
+frontend_diagnostics = detect("frontend/vite.config.js")
+assert frontend_diagnostics["images"] == {"backend": False, "frontend": True, "keycloak": False}
+assert frontend_diagnostics["buildServices"] == ["wotb-frontend"]
+assert frontend_diagnostics["deployServices"] == ["wotb-frontend"]
+keycloak_diagnostics = detect("docker/keycloak/wotbtools-entrypoint.sh")
+assert keycloak_diagnostics["images"] == {"backend": False, "frontend": False, "keycloak": True}
+assert keycloak_diagnostics["buildServices"] == ["keycloak"]
+assert keycloak_diagnostics["deployServices"] == ["keycloak"]
+bootstrap_diagnostics = detect("frontend/vite.config.js", "docker/keycloak/wotbtools-entrypoint.sh")
+assert bootstrap_diagnostics["images"] == {"backend": False, "frontend": True, "keycloak": True}
+assert bootstrap_diagnostics["buildServices"] == ["wotb-frontend", "keycloak"]
+assert bootstrap_diagnostics["deployServices"] == ["wotb-frontend", "keycloak"]
 assert set(detect("frontend/src/App.vue", "java/wotb-core/src/Main.java")["deployServices"]) == {
     "wotb-frontend", "wotb-backend"
 }
