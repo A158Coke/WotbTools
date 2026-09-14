@@ -1342,7 +1342,8 @@
         "sponsorTitle": "支持项目",
         "sponsorDesc": "自愿赞助，用于服务器和维护成本。",
         "sponsorTag": "赞助",
-        "footer": "WoTBTools - 社区工具，非 Wargaming 官方产品"
+        "footer": "WoTBTools - 社区工具，非 Wargaming 官方产品",
+        "icpFiling": "闽ICP备2026036303号-1"
     },
     "recon": {
         "nav": "AI 复盘",
