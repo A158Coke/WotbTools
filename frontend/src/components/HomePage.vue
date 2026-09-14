@@ -93,7 +93,6 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
       </div>
       <div class="bottom-panel quick-panel"><h2>{{ $t('app.title') }}</h2><a href="/?view=version">{{ $t('version.btn') }} <span>→</span></a><a href="/?view=contact">{{ $t('contact.nav') }} <span>→</span></a><a v-if="!isAndroidApp()" href="/download/android">{{ $t('android.nav') }} <span>→</span></a><a href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }} <span>→</span></a><a href="/sponsor.html">{{ $t('home.sponsorTitle') }} <span>→</span></a></div>
     </section>
-    <footer class="home-footer">{{ $t('home.footer') }}</footer>
   </main>
 </template>
 
@@ -262,15 +261,6 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
 }
 .quick-panel a:hover { color: #f0a42b; text-decoration: none; }
 .quick-panel a span { margin-left: auto; }
-.home-footer {
-  margin-top: 24px;
-  padding: 14px 0 0;
-  border-top: 1px solid rgba(66, 77, 84, .45);
-  text-align: center;
-  font-size: .72rem;
-  color: var(--showcase-tactical-muted);
-}
-
 @media (max-width: 1199px) {
   .homepage-showcase { width: calc(100vw - 28px); }
   .showcase-hero { min-height: 400px; }

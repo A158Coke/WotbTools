@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.82",
+    "date": "2026-09-14",
+    "tag": "add",
+    "zh": "网站主要页面的公共底部新增可点击的中国大陆 ICP 服务备案号「闽ICP备2026036303号-1」，暂不展示公安联网备案号。",
+    "en": "Added the mainland China ICP filing number 闽ICP备2026036303号-1 to the shared footer on the main website pages; the public-security filing number is not shown yet.",
+    "ru": "В общий нижний колонтитул основных страниц сайта добавлен номер ICP для материкового Китая 闽ICP备2026036303号-1; номер регистрации в системе общественной безопасности пока не показывается."
+  },
+  {
     "v": "2.12.81",
     "date": "2026-09-11",
     "tag": "fix",

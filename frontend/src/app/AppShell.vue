@@ -44,5 +44,14 @@ provide(NAVIGATE_VIEW_KEY, navigate)
     <span>{{ $t('bootstrap.profileFailed') }}</span>
     <button type="button" class="business-bootstrap-retry" @click="retry">{{ $t('bootstrap.retry') }}</button>
   </div>
+  <footer class="app-footer" data-testid="app-footer">
+    <span>{{ $t('home.footer') }}</span>
+    <a
+      href="https://beian.miit.gov.cn/"
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid="icp-filing-link"
+    >{{ $t('home.icpFiling') }}</a>
+  </footer>
   <GlobalErrorDialog :error="globalError" :visible="showGlobalError" @close="closeGlobalError" />
 </template>
