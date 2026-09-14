@@ -62,7 +62,24 @@ class CiPathFilterTest(unittest.TestCase):
         )
 
     def test_ci_workflow_is_full(self):
+        plan = detect(".github/workflows/ci.yml")
         self.assert_surfaces([".github/workflows/ci.yml"], ["full"])
+        self.assertFalse(plan["ciSurfaces"]["liveData"])
+
+    def test_deploy_workflow_does_not_trigger_live_data_contracts(self):
+        plan = detect(".github/workflows/deploy.yml")
+        self.assertFalse(plan["ciSurfaces"]["liveData"])
+
+    def test_deploy_script_does_not_trigger_live_data_contracts(self):
+        plan = detect("deploy/deploy.sh")
+        self.assert_surfaces(["deploy/deploy.sh"], ["deploy"])
+        self.assertFalse(plan["ciSurfaces"]["liveData"])
+
+    def test_live_data_inputs_trigger_live_data_contracts(self):
+        equipment_sync = detect("common/python/sync_equipment_snapshot.py")
+        self.assertTrue(equipment_sync["ciSurfaces"]["liveData"])
+        tankopedia_snapshot = detect("common/tankopedia-tier10.json")
+        self.assertTrue(tankopedia_snapshot["ciSurfaces"]["liveData"])
 
     def test_runtime_compose_is_deploy_all(self):
         plan = detect("deploy/docker-compose.prod.yml")

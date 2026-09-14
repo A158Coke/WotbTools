@@ -26,6 +26,7 @@ jobs:
       keycloak_provider: ${{ steps.plan.outputs.keycloak_provider }}
       keycloak_runtime: ${{ steps.plan.outputs.keycloak_runtime }}
       data: ${{ steps.plan.outputs.data }}
+      live_data: ${{ steps.plan.outputs.live_data }}
       android: ${{ steps.plan.outputs.android }}
       deploy: ${{ steps.plan.outputs.deploy }}
       observability: ${{ steps.plan.outputs.observability }}
@@ -47,6 +48,7 @@ jobs:
             for name in backend frontend http_contract android keycloak keycloak_provider keycloak_runtime data deploy observability full; do
               echo "$name=true" >> "$GITHUB_OUTPUT"
             done
+            echo "live_data=false" >> "$GITHUB_OUTPUT"
           else
             git diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed-files.txt
             python3 deploy/release_plan.py detect --paths-file changed-files.txt > release-plan.json
@@ -64,6 +66,7 @@ jobs:
               "keycloak_provider": "keycloakProvider",
               "keycloak_runtime": "keycloakRuntime",
               "data": "data",
+              "live_data": "liveData",
               "deploy": "deploy",
               "observability": "observability",
               "full": "full",
@@ -86,7 +89,7 @@ jobs:
 
   live_data_contracts:
     needs: [changes]
-    if: needs.changes.outputs.data == 'true' || needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.live_data == 'true'
     name: Live data contracts
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -641,6 +644,7 @@ jobs:
           PYTHON_UNIT: ${{ needs.python_unit.result }}
           DATA_CHANGED: ${{ needs.changes.outputs.data }}
           LIVE_DATA_CONTRACTS: ${{ needs.live_data_contracts.result }}
+          LIVE_DATA_CHANGED: ${{ needs.changes.outputs.live_data }}
           BACKEND: ${{ needs.backend.result }}
           BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
           KEYCLOAK_PROVIDERS: ${{ needs.keycloak_providers.result }}
@@ -672,7 +676,7 @@ jobs:
           done <<EOF
           changes|true|$CHANGES
           python_unit|$([ "$DATA_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$PYTHON_UNIT
-          live_data_contracts|$([ "$DATA_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$LIVE_DATA_CONTRACTS
+          live_data_contracts|$([ "$LIVE_DATA_CHANGED" = true ] && echo true || echo false)|$LIVE_DATA_CONTRACTS
           backend|$([ "$BACKEND_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$BACKEND
           keycloak_providers|$([ "$KEYCLOAK_PROVIDER_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$KEYCLOAK_PROVIDERS
           keycloak_runtime|$([ "$KEYCLOAK_RUNTIME_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$KEYCLOAK_RUNTIME
