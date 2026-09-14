@@ -345,7 +345,7 @@ probe_http() {
     return 1
   }
   case "$output" in
-    2[0-9][0-9]|3[0-9][0-9]) return 0 ;;
+    2[0-9][0-9]) return 0 ;;
     *) FAILED_SERVICE="$service"; return 1 ;;
   esac
 }
@@ -390,13 +390,23 @@ blocking_health() {
 
 observability_health() {
   local service
+  while IFS= read -r service; do
+    docker compose -f "$LIVE_COMPOSE" ps -a "$service" | grep -Eq 'Up|running' || return 1
+  done < <(observability_service_list)
+  return 0
+}
+
+observability_service_list() {
+  local service
+  if is_selected all; then
+    printf '%s\n' node-exporter prometheus loki alloy grafana
+    return 0
+  fi
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      all|node-exporter|prometheus|loki|alloy|grafana)
-        docker compose -f "$LIVE_COMPOSE" ps -a "$service" | grep -Eq 'Up|running' || return 1 ;;
+      node-exporter|prometheus|loki|alloy|grafana) printf '%s\n' "$service" ;;
     esac
   done
-  return 0
 }
 
 verify_observability() {
@@ -411,13 +421,7 @@ verify_observability() {
 }
 
 run_observability_checks() {
-  local selected=false service
-  for service in "${DEPLOY_SERVICES[@]}"; do
-    case "$service" in
-      all|node-exporter|prometheus|loki|alloy|grafana) selected=true ;;
-    esac
-  done
-  [ "$selected" = true ] || return 0
+  [ -n "$(observability_service_list)" ] || return 0
   if ! observability_health; then
     echo "OBSERVABILITY DEGRADED: selected container is not running." >&2
     return 0
@@ -434,7 +438,20 @@ diagnostics() {
   echo "deployServices=$DEPLOY_SERVICES_RAW"
   echo "imageServices=$DEPLOY_IMAGE_SERVICES_RAW"
   docker compose -f "$LIVE_COMPOSE" ps -a || true
-  for service in "${APPLY_SERVICES[@]}"; do
+  local -a diagnostic_services=("${APPLY_SERVICES[@]}")
+  local failed_service="$FAILED_SERVICE" service already_present=false
+  case "$failed_service" in
+    backend) failed_service=wotb-backend ;;
+    frontend) failed_service=wotb-frontend ;;
+  esac
+  for service in "${diagnostic_services[@]}"; do
+    [ "$service" = "$failed_service" ] && already_present=true
+  done
+  if [ -n "$failed_service" ] && [ "$already_present" = false ]; then
+    diagnostic_services+=("$failed_service")
+  fi
+  for service in "${diagnostic_services[@]}"; do
+    [ -n "$service" ] || continue
     echo "== $service inspect =="
     docker compose -f "$LIVE_COMPOSE" ps -a "$service" || true
     docker compose -f "$LIVE_COMPOSE" logs --tail 120 "$service" || true
@@ -448,14 +465,26 @@ diagnostics() {
 }
 
 stop_failed_service() {
-  [ -n "$FAILED_SERVICE" ] || return 0
-  case "$FAILED_SERVICE" in
-    backend) FAILED_SERVICE=wotb-backend ;;
-    frontend) FAILED_SERVICE=wotb-frontend ;;
-    keycloak) FAILED_SERVICE=keycloak ;;
+  local service="$FAILED_SERVICE"
+  [ -n "$service" ] || return 0
+  case "$service" in
+    backend) service=wotb-backend ;;
+    frontend) service=wotb-frontend ;;
+    keycloak) service=keycloak ;;
   esac
-  echo "Stopping failed affected service: $FAILED_SERVICE"
-  docker compose -f "$LIVE_COMPOSE" stop "$FAILED_SERVICE" || true
+  case "$service" in
+    wotb-backend|wotb-frontend|keycloak) ;;
+    *)
+      echo "Not stopping non-application health dependency: $service" >&2
+      return 0
+      ;;
+  esac
+  if ! is_selected "$service"; then
+    echo "Not stopping unaffected application service: $service" >&2
+    return 0
+  fi
+  echo "Stopping failed affected service: $service"
+  docker compose -f "$LIVE_COMPOSE" stop "$service" || true
 }
 
 update_metadata() {

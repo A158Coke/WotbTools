@@ -5,9 +5,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-mkdir -p "$WORK/incoming/deploy" "$WORK/bin" "$WORK/config" "$WORK/android-release"
+mkdir -p "$WORK/incoming/deploy/observability/alloy" "$WORK/bin" "$WORK/config" "$WORK/android-release"
 cp "$ROOT/deploy/deploy.sh" "$WORK/incoming/deploy/deploy.sh"
 cp "$ROOT/deploy/docker-compose.prod.yml" "$WORK/incoming/deploy/docker-compose.prod.yml"
+cp "$ROOT/deploy/validate-alloy-config.sh" "$WORK/incoming/deploy/validate-alloy-config.sh"
+cp "$ROOT/deploy/observability/alloy/config.alloy" "$WORK/incoming/deploy/observability/alloy/config.alloy"
 chmod 700 "$WORK/incoming/deploy/deploy.sh"
 
 cat > "$WORK/production-release.json" <<'JSON'
@@ -39,13 +41,25 @@ case "$command" in
     ;;
   stop) printf 'stop %s\n' "$*" >> "$log" ;;
   run)
-    if [ "${FAKE_HEALTH_FAILURE:-0}" = 1 ] && [[ "$*" == *wotb-frontend* ]]; then printf '503\n'; else printf '200\n'; fi
+    if [ -n "${FAKE_HEALTH_FAILURE_SERVICE:-}" ] && [[ "$*" == *"$FAKE_HEALTH_FAILURE_SERVICE"* ]]; then
+      printf '503\n'
+    elif [ -n "${FAKE_HEALTH_REDIRECT_SERVICE:-}" ] && [[ "$*" == *"$FAKE_HEALTH_REDIRECT_SERVICE"* ]]; then
+      printf '302\n'
+    else
+      printf '200\n'
+    fi
     ;;
   exec)
-    if [[ "$*" == *pg_isready* ]]; then exit 0; fi
+    if [[ "$*" == *pg_isready* ]]; then [ "${FAKE_POSTGRES_FAILURE:-0}" = 1 ] && exit 1; exit 0; fi
     if [[ "$*" == *psql* ]]; then printf '22\n'; fi
     ;;
-  ps) printf 'service Up\n' ;;
+  ps)
+    if [ "${1:-}" = -a ] && [ "${2:-}" = all ]; then
+      printf 'invalid-ps-all\n' >> "$log"
+      exit 1
+    fi
+    printf 'service Up\n'
+    ;;
   logs) : ;;
   *) : ;;
 esac
@@ -63,7 +77,9 @@ run_deploy() {
     DB_PASSWORD=not-real KC_ADMIN_PASSWORD=not-real WG_APPLICATION_ID=not-real \
     KEYCLOAK_ADMIN_CLIENT_SECRET=not-real AI_API_KEY=not-real \
     GRAFANA_ADMIN_USER=not-real GRAFANA_ADMIN_PASSWORD=not-real \
-    FAKE_DOCKER_LOG="$log" FAKE_HEALTH_FAILURE="${FAKE_HEALTH_FAILURE:-0}" \
+    FAKE_DOCKER_LOG="$log" FAKE_HEALTH_FAILURE_SERVICE="${FAKE_HEALTH_FAILURE_SERVICE:-}" \
+    FAKE_HEALTH_REDIRECT_SERVICE="${FAKE_HEALTH_REDIRECT_SERVICE:-}" \
+    FAKE_POSTGRES_FAILURE="${FAKE_POSTGRES_FAILURE:-0}" \
     FAKE_UP_FAILURE="${FAKE_UP_FAILURE:-0}" \
     bash "$WORK/incoming/deploy/deploy.sh"
 }
@@ -80,22 +96,55 @@ fi
 ! grep -Eq 'pg_dump|LKG|candidate|rollback|RESTORE' "$WORK/incoming/deploy/deploy.sh"
 
 before_metadata="$(sha256sum "$WORK/production-release.json")"
-failure_log="$WORK/failure.log"
+backend_unhealthy_log="$WORK/backend-unhealthy.log"
 set +e
-FAKE_HEALTH_FAILURE=1 run_deploy cccccccccccccccccccccccccccccccccccccccc sha-cccccccccccc wotb-frontend wotb-frontend "$failure_log"
-failure_rc=$?
+backend_unhealthy_output="$(FAKE_HEALTH_FAILURE_SERVICE=wotb-backend run_deploy cccccccccccccccccccccccccccccccccccccccc sha-cccccccccccc wotb-frontend wotb-frontend "$backend_unhealthy_log" 2>&1)"
+backend_unhealthy_rc=$?
 set -e
-[ "$failure_rc" -ne 0 ]
-grep -q '^stop .*wotb-frontend' "$failure_log"
-! grep -Eq '^up .*wotb-backend|^up .*keycloak|^up .*postgres' "$failure_log"
+[ "$backend_unhealthy_rc" -ne 0 ]
+grep -q 'backend: FAIL' <<< "$backend_unhealthy_output"
+grep -q '== wotb-backend inspect ==' <<< "$backend_unhealthy_output"
+! grep -q '^stop .*wotb-backend' "$backend_unhealthy_log"
+[ "$before_metadata" = "$(sha256sum "$WORK/production-release.json")" ]
+
+postgres_unhealthy_log="$WORK/postgres-unhealthy.log"
+set +e
+postgres_unhealthy_output="$(FAKE_POSTGRES_FAILURE=1 run_deploy dddddddddddddddddddddddddddddddddddddddd sha-dddddddddddd wotb-frontend wotb-frontend "$postgres_unhealthy_log" 2>&1)"
+postgres_unhealthy_rc=$?
+set -e
+[ "$postgres_unhealthy_rc" -ne 0 ]
+grep -q 'postgres: FAIL' <<< "$postgres_unhealthy_output"
+grep -q '== postgres inspect ==' <<< "$postgres_unhealthy_output"
+! grep -q '^stop .*postgres' "$postgres_unhealthy_log"
+[ "$before_metadata" = "$(sha256sum "$WORK/production-release.json")" ]
+
+backend_candidate_log="$WORK/backend-candidate.log"
+set +e
+FAKE_HEALTH_FAILURE_SERVICE=wotb-backend run_deploy eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee sha-eeeeeeeeeeee wotb-backend wotb-backend "$backend_candidate_log"
+backend_candidate_rc=$?
+set -e
+[ "$backend_candidate_rc" -ne 0 ]
+grep -q '^stop .*wotb-backend' "$backend_candidate_log"
+[ "$before_metadata" = "$(sha256sum "$WORK/production-release.json")" ]
+
+redirect_log="$WORK/redirect.log"
+set +e
+FAKE_HEALTH_REDIRECT_SERVICE=wotb-frontend run_deploy ffffffffffffffffffffffffffffffffffffffff sha-ffffffffffff wotb-frontend wotb-frontend "$redirect_log"
+redirect_rc=$?
+set -e
+[ "$redirect_rc" -ne 0 ]
+grep -q '^stop .*wotb-frontend' "$redirect_log"
 [ "$before_metadata" = "$(sha256sum "$WORK/production-release.json")" ]
 
 up_failure_log="$WORK/up-failure.log"
 set +e
-FAKE_HEALTH_FAILURE=0 FAKE_UP_FAILURE=1 run_deploy dddddddddddddddddddddddddddddddddddddddd sha-dddddddddddd wotb-frontend wotb-frontend "$up_failure_log"
+FAKE_UP_FAILURE=1 run_deploy 9999999999999999999999999999999999999999 sha-999999999999 wotb-frontend wotb-frontend "$up_failure_log"
 up_failure_rc=$?
 set -e
 [ "$up_failure_rc" -ne 0 ]
 grep -q '^stop .*wotb-frontend' "$up_failure_log"
+all_observability_log="$WORK/all-observability.log"
+run_deploy 8888888888888888888888888888888888888888 sha-888888888888 all wotb-backend,wotb-frontend,keycloak "$all_observability_log"
+! grep -q 'invalid-ps-all' "$all_observability_log"
 echo "compose up failure stops only the failed service"
-echo "selective deploy and no-auto-recovery contract OK"
+echo "selective deploy, global health, and no-auto-recovery contract OK"

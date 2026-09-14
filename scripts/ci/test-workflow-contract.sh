@@ -53,6 +53,11 @@ assert "- all" not in ops_recovery
 assert "recover-current" not in ops_recovery
 assert "recover-specific-sha" not in ops_recovery
 assert "ops-recovery.sh" in ops_recovery
+assert "ref: ${{ inputs.target_sha || github.sha }}" not in ops_recovery
+assert "ref: ${{ needs.prepare.outputs.target_sha }}" not in ops_recovery
+assert ops_recovery.count("ref: ${{ github.sha }}") >= 2
+assert 'git ls-tree -r --name-only "$target_sha"' in ops_recovery
+assert "source: deploy" in ops_recovery
 
 expected_jobs = {
     "python_unit": "data",
