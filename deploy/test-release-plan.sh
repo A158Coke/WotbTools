@@ -69,6 +69,21 @@ assert detect("contracts/android-native-bridge.json")["ciSurfaces"]["android"]
 assert not detect("contracts/android-native-bridge.json")["imageServices"]
 assert detect("deploy/deploy.sh")["deployConfig"]
 assert detect("deploy/deploy.sh")["deployServices"] == []
+
+backend_health_probe_fix = detect(
+    "deploy/deploy.sh",
+    "deploy/test-deploy-contract.sh",
+    "deploy/test-release-plan.sh",
+    "deploy/AGENTS.md",
+    "docs/CHANGELOG.md",
+    "docs/DEVELOPER_GUIDE.md",
+    "java/wotb-web/src/test/java/com/wotb/web/config/BackendManagementHealthContractTest.java",
+)
+assert backend_health_probe_fix["images"] == {"backend": True, "frontend": False, "keycloak": False}
+assert backend_health_probe_fix["buildServices"] == ["wotb-backend"]
+assert backend_health_probe_fix["imageServices"] == ["wotb-backend"]
+assert backend_health_probe_fix["deployServices"] == ["wotb-backend"]
+assert backend_health_probe_fix["deployConfig"]
 assert detect("deploy/docker-compose.prod.yml")["deployServices"] == ["all"]
 assert detect("deploy/docker-compose.prod.yml")["ciSurfaces"]["deploy"]
 assert detect(".github/workflows/ci.yml")["ciSurfaces"]["full"]
