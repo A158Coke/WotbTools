@@ -35,7 +35,7 @@ export function assertLocal3dDistributionBoundary(command, localAssetsExist) {
 /** Build identity：生产 bundle 可精确对应 git commit + 构建时间（见 /version.json 与 console 输出）。
  * 优先取 Docker 构建参数 BUILD_COMMIT（CI 传入，Docker 上下文无 .git 无法自行 rev-parse），
  * 本地构建再 fallback 到 git rev-parse；两者皆无时降级 unknown，不阻断构建。 */
-function buildIdentity() {
+export function buildIdentity() {
   const fromEnv = process.env.BUILD_COMMIT
   let commit = fromEnv?.trim() || ''
   if (!commit) {
@@ -46,7 +46,7 @@ function buildIdentity() {
     }
   }
   return {
-    commit: commit || 'unknown',
+    buildCommit: commit || 'unknown',
     buildTime: new Date().toISOString(),
   }
 }
@@ -65,12 +65,12 @@ export default defineConfig(({ command, mode }) => {
           const outDir = resolve(configDirectory, 'dist')
           mkdirSync(outDir, { recursive: true })
           writeFileSync(resolve(outDir, 'version.json'),
-            JSON.stringify({ commit: identity.commit, buildTime: identity.buildTime }, null, 2) + '\n')
+            JSON.stringify({ buildCommit: identity.buildCommit, buildTime: identity.buildTime }, null, 2) + '\n')
         },
       },
     ],
     define: {
-      __BUILD_COMMIT__: JSON.stringify(identity.commit),
+      __BUILD_COMMIT__: JSON.stringify(identity.buildCommit),
       __BUILD_TIME__: JSON.stringify(identity.buildTime),
     },
     server: {

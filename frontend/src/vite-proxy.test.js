@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import config, { assertLocal3dDistributionBoundary, devProxyTarget } from '../vite.config.js'
+import config, { assertLocal3dDistributionBoundary, buildIdentity, devProxyTarget } from '../vite.config.js'
 
 function proxyFor(mode) {
   return config({ command: 'serve', mode }).server.proxy['/api']
@@ -37,5 +37,20 @@ describe('local 3D distribution boundary', () => {
   it('fails closed before a production build can copy local client-derived assets', () => {
     expect(() => assertLocal3dDistributionBoundary('build', true)).toThrow(/Production build blocked/)
     expect(() => assertLocal3dDistributionBoundary('build', false)).not.toThrow()
+  })
+})
+
+describe('frontend build identity', () => {
+  it('uses the Docker-injected release SHA as the canonical build commit', () => {
+    const previous = process.env.BUILD_COMMIT
+    process.env.BUILD_COMMIT = '0123456789abcdef0123456789abcdef01234567'
+    try {
+      expect(buildIdentity()).toMatchObject({
+        buildCommit: '0123456789abcdef0123456789abcdef01234567',
+      })
+    } finally {
+      if (previous === undefined) delete process.env.BUILD_COMMIT
+      else process.env.BUILD_COMMIT = previous
+    }
   })
 })

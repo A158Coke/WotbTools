@@ -51,6 +51,9 @@ for job_name, output_name in (
     for other in {"backend", "frontend", "keycloak"} - {image_prefix}:
         assert "${{ env.GHCR_IMAGE_PREFIX }}-" + other + ":latest" not in tags, \
             f"{job_name} must not publish another component latest tag"
+    build_args = str(build_step["with"].get("build-args", ""))
+    assert "BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}" in build_args, \
+        f"{job_name} must inject the frozen release SHA into the image"
 
 manifest_job = build_jobs["manifest"]
 assert "always()" in manifest_job["if"]
