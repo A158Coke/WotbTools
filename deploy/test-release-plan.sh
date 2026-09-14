@@ -38,6 +38,22 @@ assert detect("docs/CHANGELOG.md")["deployServices"] == []
 assert detect("docs/WotBTools_League_Rating_V6.md")["imageServices"] == ["wotb-frontend"]
 assert detect("deploy/observability/prometheus/prometheus.yml")["deployServices"] == ["prometheus"]
 assert detect("deploy/observability/grafana/dashboards/home.json")["deployServices"] == []
+assert detect("deploy/observability/grafana/dashboards/home.json")["ciSurfaces"] == {
+    "backend": False, "frontend": False, "keycloak": False, "httpContract": False,
+    "data": False, "liveData": False, "deploy": True, "observability": True, "android": False,
+    "keycloakProvider": False, "keycloakRuntime": False, "full": False,
+}
+assert detect("contracts/http/openapi.yaml")["ciSurfaces"]["httpContract"]
+assert detect("contracts/http/openapi.yaml")["buildServices"] == ["wotb-backend", "wotb-frontend"]
+assert detect("contracts/android-native-bridge.json")["ciSurfaces"]["android"]
+assert not detect("contracts/android-native-bridge.json")["imageServices"]
+assert detect("deploy/deploy.sh")["deployConfig"]
+assert detect("deploy/deploy.sh")["deployServices"] == []
+assert detect("deploy/docker-compose.prod.yml")["deployServices"] == ["all"]
+assert detect("deploy/docker-compose.prod.yml")["ciSurfaces"]["deploy"]
+assert detect(".github/workflows/ci.yml")["ciSurfaces"]["full"]
+assert detect("common/unrelated-fixture.json")["ciSurfaces"]["data"]
+assert not detect("common/unrelated-fixture.json")["imageServices"]
 assert set(detect(".dockerignore")["imageServices"]) == {
     "wotb-backend", "wotb-frontend", "keycloak"
 }
@@ -75,7 +91,9 @@ manifest = {
     "imageTag": "sha-0123456789ab",
     "buildRunId": "42",
     "buildRunNumber": 42,
+    "backendMigrationMaxVersion": 22,
     "images": plan["images"],
+    "buildServices": plan["imageServices"],
     "imageServices": plan["imageServices"],
     "deployServices": plan["deployServices"],
 }
@@ -92,6 +110,12 @@ subprocess.check_call([
     "python3", str(tool), "validate", "--manifest", str(manifest_path),
     "--expected-sha", commit, "--allow-latest",
 ])
+manifest["buildServices"] = []
+manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+assert subprocess.run(
+    ["python3", str(tool), "validate", "--manifest", str(manifest_path), "--expected-sha", commit,
+     "--allow-latest"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+).returncode != 0
 
 print("release plan detection and manifest contract OK")
 PY

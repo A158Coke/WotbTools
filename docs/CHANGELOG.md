@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Architecture
+- **CI/CD architecture v2**：CI、Build、Deploy 共用 `deploy/release_plan.py` 的 affected-surface 模型；Build manifest 显式记录 immutable image/build/deploy services。普通 Deploy 改为成功 Build `workflow_run` 自动接力，按 service staged promote 并执行全局 core health gate；失败只诊断并停止失败 affected service，不自动恢复旧 application image。
+- **Production metadata and Ops Recovery**：成功验证的应用 identity 原子写入 `/opt/wotb/production-release.json`；事故恢复改由仅手工触发、单 service、immutable SHA 的 `Ops Recovery` 承担，backend recovery 先执行目标 migration ceiling 与 live Flyway schema 的 fail-closed guard。
+- **Database backup boundary**：normal Deploy 不再调用本地 PostgreSQL backup；现有 `database-backup.yml` 保持独立本地备份边界。COS 上传、对象验证与 retention 明确留给后续独立 PR，本次不宣称已完成。
 - **Replay backend modularization**：在保持单一 `wotb-web` Spring Boot/JVM/container
   的前提下，将 Result、Playback、AI、Processing Job lifecycle/artifact state 与当前本地
   processing executor 拆为 Maven feature modules。Coordinator 只通过
@@ -43,7 +46,7 @@
   heavyweight jobs，CI/全局构建配置/跨层契约变更才运行完整 CI。Python 本地测试与 live data
   contracts 分离，Keycloak provider/runtime 分级，合法 skipped job 不阻塞 merge；Build / Deploy
   immutable handoff 与现有测试内容保持不变。
-- **Build / Deploy immutable handoff**：Build 与 Deploy 保持独立；Build 从冻结 SHA 只构建受影响镜像并上传 `deployment-manifest`，Deploy 仅消费成功 Build 的精确 artifact、校验 SHA/镜像存在性后按 manifest 目标发布，不重新计算 diff、不在 Deploy 构建或测试。应用镜像只使用 immutable `sha-<first-12-sha>` tag，配置-only 与 targeted deploy 保留未变更应用 tag，按 service 记录的旧 release generation 通过 stale guard 拒绝。
+- **Build / Deploy immutable handoff**：Build 与 Deploy 保持独立；Build 从冻结 SHA 只构建受影响镜像并上传 `deployment-manifest`，Deploy 仅消费成功 Build 的精确 artifact、校验 SHA/镜像存在性后按 manifest 目标发布，不重新计算 diff、不在 Deploy 构建或测试。应用镜像只使用 immutable `sha-<first-12-sha>` tag，配置-only 与 targeted deploy 从 production metadata 或 live compose 保留未变更应用 tag，并只更新 manifest 指定的 service。
 - **Android Version-as-Code + Native Bridge gate**：Android 版本从 committed `android/gradle.properties` 确定，Bridge 以 `contracts/android-native-bridge.json` 为唯一协议来源；Gradle、Native runtime、FE compatibility、`version.json` 与 release workflow 均消费或校验同一版本。PR CI 新增 runtime version bump、strict semver、breaking bridge diff、Native source/FE compatibility 与 production older/equal/newer gate；release workflow 移除手工版本输入并固定 source SHA。
 - **Build / Deploy workflow split**：将生产镜像构建拆到独立的 `build.yml`，Build 成功后由 `workflow_run` 自动接力 Deploy，同时保留手动入口；Build 的 `changes` job 只解析一次事件携带的 full SHA，backend/frontend/keycloak 使用同一个冻结 commit 构建 production SHA 镜像并生成权威 manifest，不依赖 `latest`，不能由 feature ref 或移动的 main 绕过 PR merge gate。Deploy 只消费并校验 manifest，不重新计算变更、不重新 build、不重复跑测试；targeted deploy 不提升 LKG，失败时只恢复目标 service 的 pre-deploy snapshot，完整 `all` 发布继续执行应用健康 gate、LKG promotion 与 fail-closed rollback。
  

@@ -18,7 +18,7 @@ assert "if: always()" in ci
 assert re.search(r"^name: Build$", build, re.MULTILINE)
 assert re.search(r"^name: Deploy$", deploy, re.MULTILINE)
 assert "run-name: Build ${{ inputs.service || github.sha }} by @${{ github.actor }}" in build
-assert "run-name: Deploy ${{ inputs.service || github.event.workflow_run.head_sha || github.sha }} by @${{ github.actor }}" in deploy
+assert "run-name: Deploy ${{ github.event.workflow_run.head_sha }} by @${{ github.actor }}" in deploy
 assert "inputs.service || 'release'" not in build and "inputs.service || 'release'" not in deploy
 assert "      - Build" in deploy
 assert "Release / Build" not in build and "Release / Deploy" not in deploy
@@ -28,7 +28,11 @@ assert "name: Build Keycloak" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-backend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest" in build
-for workflow_text, workflow_name in ((build, "Manual Build"), (deploy, "Manual Deploy")):
+assert "workflow_dispatch:" not in deploy, "production Deploy must be workflow_run-only"
+assert "inputs.service" not in deploy
+assert "stale_release_guard" not in deploy
+assert "WOTB_STALE_RELEASE_GUARD" not in deploy
+for workflow_text, workflow_name in ((build, "Manual Build"),):
     assert "git fetch origin main" in workflow_text, f"{workflow_name} must refresh origin/main"
     assert 'source_sha="$(git rev-parse HEAD)"' in workflow_text, \
         f"{workflow_name} must resolve the checked out source SHA"
@@ -39,16 +43,38 @@ for workflow_text, workflow_name in ((build, "Manual Build"), (deploy, "Manual D
     assert "git merge-base --is-ancestor" not in workflow_text, \
         f"{workflow_name} must not accept an ancestor-only source"
 assert "::error::Manual Build must run from the current main HEAD." in build
-assert "::error::Manual Deploy must run from the current main HEAD." in deploy
-assert "image_tag:" not in deploy
-assert "Required deploy image does not exist" in deploy
-for service in ("postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana", "wotb-backend", "wotb-frontend"):
-    assert f"          - {service}" not in deploy
+assert "Required immutable deploy image does not exist" in deploy
 assert "name: Deploy ${{ needs.changes.outputs.deploy_display_name }}" in deploy
+assert "WOTB_BACKEND_MIGRATION_MAX_VERSION" in deploy
+ops_recovery = (root / ".github/workflows/ops-recovery.yml").read_text(encoding="utf-8")
+assert re.search(r"^name: Ops Recovery$", ops_recovery, re.MULTILINE)
+assert "workflow_dispatch:" in ops_recovery
+assert "- all" not in ops_recovery
+assert "recover-current" not in ops_recovery
+assert "recover-specific-sha" not in ops_recovery
+assert "ops-recovery.sh" in ops_recovery
+assert "ref: ${{ inputs.target_sha || github.sha }}" not in ops_recovery
+assert "ref: ${{ needs.prepare.outputs.target_sha }}" not in ops_recovery
+assert "git fetch origin main" in ops_recovery
+assert 'control_plane_sha="$(git rev-parse origin/main)"' in ops_recovery
+assert 'if [ "$source_sha" != "$control_plane_sha" ]; then' in ops_recovery
+assert "Ops Recovery must be dispatched from the current origin/main HEAD." in ops_recovery
+assert "control_plane_sha: ${{ steps.target.outputs.control_plane_sha }}" in ops_recovery
+assert "ref: ${{ needs.prepare.outputs.control_plane_sha }}" in ops_recovery
+assert 'git ls-tree -r --name-only "$target_sha"' in ops_recovery
+assert "source: deploy" in ops_recovery
+assert "live_data: ${{ steps.plan.outputs.live_data }}" in ci
+assert '"live_data": "liveData"' in ci
+assert 'if: needs.changes.outputs.live_data == \'true\'' in ci
+blocks = re.split(r"\n(?=  [A-Za-z0-9_]+:\n)", ci)
+live_data_block = next(block for block in blocks if block.startswith("  live_data_contracts:\n"))
+assert "needs.changes.outputs.data == 'true' || needs.changes.outputs.full == 'true'" not in live_data_block
+assert "LIVE_DATA_CHANGED: ${{ needs.changes.outputs.live_data }}" in ci
+assert 'live_data_contracts|$([ "$LIVE_DATA_CHANGED" = true ] && echo true || echo false)|$LIVE_DATA_CONTRACTS' in ci
 
 expected_jobs = {
     "python_unit": "data",
-    "live_data_contracts": "data",
+    "live_data_contracts": "live_data",
     "backend": "backend",
     "frontend": "frontend",
     "http_contract": "http_contract",
@@ -61,7 +87,6 @@ expected_jobs = {
     "deploy_smoke": "deploy",
 }
 for job_id, output in expected_jobs.items():
-    blocks = re.split(r"\n(?=  [A-Za-z0-9_]+:\n)", ci)
     block = next(block for block in blocks if block.startswith(f"  {job_id}:\n"))
     assert (
         f"needs.changes.outputs.{output} == 'true'" in block
