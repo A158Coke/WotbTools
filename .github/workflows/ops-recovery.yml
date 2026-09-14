@@ -44,7 +44,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          ref: ${{ inputs.target_sha || github.sha }}
+          ref: ${{ github.sha }}
       - name: Validate target and calculate migration ceiling
         id: target
         env:
@@ -60,26 +60,27 @@ jobs:
               exit 1
             }
             target_sha="$TARGET_SHA"
+            if ! git cat-file -e "$target_sha^{commit}" 2>/dev/null; then
+              git fetch --no-tags origin "$target_sha"
+            fi
+            git cat-file -e "$target_sha^{commit}" 2>/dev/null || {
+              echo "specific recovery target commit is unavailable" >&2
+              exit 1
+            }
+            target_schema_max=0
+            while IFS= read -r migration_path; do
+              migration_name="${migration_path##*/}"
+              if [[ "$migration_name" =~ ^V([0-9]+)__.*[.]sql$ ]]; then
+                version="${BASH_REMATCH[1]}"
+                [ "$version" -gt "$target_schema_max" ] && target_schema_max="$version"
+              fi
+            done < <(git ls-tree -r --name-only "$target_sha" -- java/wotb-web/src/main/resources/db/migration)
           else
             [ -z "$TARGET_SHA" ] || {
               echo "target_sha is only valid for specific recovery" >&2
               exit 1
             }
             target_sha="$CHECKED_OUT_SHA"
-          fi
-          target_schema_max="$(python3 - <<'PY'
-          import re
-          from pathlib import Path
-
-          versions = []
-          for path in Path("java/wotb-web/src/main/resources/db/migration").glob("V*.sql"):
-              match = re.fullmatch(r"V([0-9]+)__.*[.]sql", path.name)
-              if match:
-                  versions.append(int(match.group(1)))
-          print(max(versions, default=0))
-          PY
-          )"
-          if [ "$OPERATION" != specific ]; then
             target_schema_max=""
           fi
           echo "target_sha=$target_sha" >> "$GITHUB_OUTPUT"
@@ -92,7 +93,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.prepare.outputs.target_sha }}
+          ref: ${{ github.sha }}
       - name: Verify immutable recovery image exists
         if: inputs.operation == 'specific'
         env:
@@ -143,7 +144,7 @@ jobs:
         env:
           WOTB_RECOVERY_SERVICE: ${{ inputs.service }}
           WOTB_RECOVERY_MODE: ${{ inputs.operation }}
-          WOTB_RECOVERY_SHA: ${{ inputs.target_sha }}
+          WOTB_RECOVERY_SHA: ${{ inputs.operation == 'specific' && needs.prepare.outputs.target_sha || '' }}
           WOTB_TARGET_SCHEMA_MAX: ${{ needs.prepare.outputs.target_schema_max }}
           WOTB_RECOVERY_RUN_NUMBER: ${{ github.run_number }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
