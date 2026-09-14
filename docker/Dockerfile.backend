@@ -1,3 +1,6 @@
+# Docker 构建上下文排除了 .git；CI 必须把冻结的 release SHA 显式注入镜像。
+ARG BUILD_COMMIT=unknown
+
 FROM maven:3.9.11-eclipse-temurin-25 AS build
 WORKDIR /build
 COPY common/tankopedia-tier7.json common/tankopedia-tier7.json
@@ -32,6 +35,8 @@ WORKDIR /build/java
 RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests clean package -q
 
 FROM eclipse-temurin:25-jre
+ARG BUILD_COMMIT
+ENV BUILD_COMMIT=${BUILD_COMMIT}
 COPY --from=build /build/java/wotb-web/target/wotb-web.jar /app/app.jar
 EXPOSE 8087
 CMD ["java", "-jar", "/app/app.jar"]
