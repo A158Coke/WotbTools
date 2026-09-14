@@ -172,19 +172,42 @@ docker compose ps prometheus loki alloy grafana node-exporter
 
 ### 生产（CI 自动）
 
-生产 Build 与 Deploy 通过 immutable manifest 接力：Build 可选择 `all` 或单个 backend/frontend/keycloak 镜像，成功的 main Build 由 `workflow_run` 自动触发 Deploy；Deploy 的手工入口只接受 `all/backend/frontend/keycloak` 应用选择。production Build 无论入口都固定 checkout 事件携带的 commit SHA；自动 Deploy 不重新计算变更、不 build、不跑测试，应用服务/all 只消费对应 Build 已产出的 immutable `sha-<first-12-sha>` tag，手工应用 Deploy 在 SSH 前检查对应 component-local `latest` 镜像。Build 的 push path filter 明确包含 compose、nginx、Prometheus、Loki、Alloy、Grafana provisioning 与部署验证脚本，但不包含 `deploy/observability/grafana/dashboards/**`；纯 dashboard JSON 只触发 Grafana OpenTofu API reconciliation，不触发应用 Build。Actions 先把完整 `deploy/` 上传到 `/opt/wotb/deploy.incoming/deploy`，在 incoming project root 中执行 `docker compose config` 与目标 service 的 `pull`；成功后才将 incoming deploy tree 原子 promote 到 `/opt/wotb/deploy`。完整自动 `all` 发布通过 backend、frontend、Keycloak OIDC application gate 后才会把部署树、compose 与 SHA 提升为 `/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml`、`DEPLOYED_SHA.lkg`（Last Known Good）；手工 `latest` 应用发布和 targeted service deploy 不提升 LKG，失败时恢复该次部署前的相应 snapshot，失败候选快照另行保留供取证。完整自动上线和回滚仍显式 `--force-recreate prometheus loki alloy grafana`，因为这是 runtime observability compose 配置的部署边界；手工 `latest` 应用上线只显式启动三个应用服务，dashboard JSON 变更不会进入应用 Build 路径。nginx 的 Grafana upstream 使用 Docker embedded DNS 的运行时解析，因此 Grafana 暂时不存在时 frontend nginx 仍能启动，只有 `monitor.wotbtools.com` 返回 502。`deploy.sh` 仍从 frontend 网络对 Grafana `/api/health` 做 bounded readiness retry（默认最多 20 次、间隔 1 秒），readiness window 超时仅标记 `OBSERVABILITY DEGRADED`，不刷新或重启 frontend，也不触发应用回滚；随后完整自动 `all` 仍进入应用健康 gate，targeted deploy 只检查所选应用 service。观测 verifier 会继续验证 Prometheus targets、Grafana direct health/datasource/dashboard API，并用 `Host: monitor.wotbtools.com` 经 frontend nginx 验证同一 Grafana health endpoint；Android 下载 canary 使用 `Host: wotbtools.com`，随后分别启动 backend/Keycloak canary、触发真实 frontend nginx Android 路径（404 允许但不算成功下载）后精确查询 Loki。观测链路失败会先输出诊断并标记 `OBSERVABILITY DEGRADED`，但不会恢复 LKG；只有完整自动 `all` 的 application gate 失败才会从 LKG 恢复整棵 deploy tree，targeted application failure 只恢复失败 service 的 pre-deploy snapshot。LKG 缺失或损坏时 fail-closed，不会先删除当前 live tree；pull 失败也不触碰 live tree。
+生产 Build 与 Deploy 通过 immutable manifest 接力：Build 使用 `release_plan.py` 产生
+affected CI/build/deploy surfaces，成功的 main Build 由 `workflow_run` 自动触发 Deploy。
+普通 Deploy 没有应用 service 的手工入口；事故操作进入仅 `workflow_dispatch` 的
+`Ops Recovery`。自动 Deploy 不重新计算变更、不 build、不跑测试，只消费对应 Build
+已产出的 `sha-<12 位 SHA>` manifest。纯 dashboard JSON 仍只触发 Grafana OpenTofu
+reconciliation，不触发应用 Build。
 
-若主机已有健康的 live deployment，正常发布流程会先完成应用健康检查并建立缺失的初始 LKG；若没有可验证的 live deployment 或现有 LKG，发布会 fail-closed，保留当前 live tree 并要求人工处理。
+Actions 先把完整 `deploy/` 上传到 `/opt/wotb/deploy.incoming/deploy`，在 incoming
+project root 中执行 `docker compose config` 与目标 image pull；成功后才 promote 到
+`/opt/wotb/deploy` 与正式 compose。targeted deploy 只执行
+`docker compose up -d --no-deps --force-recreate <affected>`；共享 production Compose
+变化视为全部 runtime service affected。正式发布不执行 database backup、自动恢复旧
+application image 或 database restore。
 
-### Application gate 与 schema-aware rollback
+### Application gate 与 production metadata
 
-application gate 由 production compose 中的 deployment-owned `health-probe` curl service 执行，加入 `wotb_internal` 网络后独立访问 backend `wotb-backend:8087/api/health`、带 `Host: wotbtools.com` 的 frontend `/api/health` 与 Keycloak OIDC discovery；不依赖 backend/frontend/Keycloak 镜像内的 `wget/curl`。回滚到没有该 service 的 legacy LKG 时，探针定义由当前 staged deployment compose overlay 提供，仍访问 live runtime。失败诊断会区分 DNS resolution、connection refused、timeout 与 non-2xx HTTP status，并在 Actions 日志保留 `backend/frontend/keycloak: PASS/FAILED/SKIPPED` 摘要。
+application gate 由 production compose 中的 deployment-owned `health-probe` curl service
+执行，加入 `wotb_internal` 网络后独立访问 backend、带 `Host: wotbtools.com` 的 frontend
+与 Keycloak OIDC discovery，并通过 `pg_isready` 检查 backend 数据库依赖；不依赖应用镜像
+内的 `wget/curl`。失败诊断包含 release/affected/image/status/log/Flyway schema，随后只
+停止确认失败的 affected service，workflow FAIL，metadata 不更新；不自动恢复旧 application image。
 
-完整自动部署成功后，LKG 除了 deploy tree、compose 与 SHA，还保存 `DB_SCHEMA_VERSION.lkg`，内容是部署后从 `flyway_schema_history` 读取的最新成功 migration version。回滚前读取当前数据库 schema 并与 LKG version 比较；相同版本允许回滚，数据库已前进到更高版本时输出 `ROLLBACK UNSAFE`、保留 candidate tree/compose，不切换旧 backend，也不执行 Flyway downgrade。没有该 metadata 的 legacy LKG 正常情况下只有在当前 live application gate 已通过且 schema 可读时才会安全 bootstrap；若当前 live 是因旧 V21 image 无法启动的事故状态，operator 必须显式提供并确认旧兼容版本（例如 `WOTB_LEGACY_LKG_SCHEMA_VERSION=21 WOTB_LEGACY_LKG_RECOVERY_CONFIRM=V21`）。该一次性 recovery 只写入 operator 提供的 `DB_SCHEMA_VERSION.lkg`，不把当前 DB V22 当作旧 LKG 兼容版本；若 candidate 失败且 DB 已高于 LKG，仍输出 `ROLLBACK UNSAFE`、保留 candidate 并 fail-closed。
+成功的 affected application 通过全局 core health gate 后，才原子更新
+`/opt/wotb/production-release.json`（0600）；文件记录各应用 commit SHA、immutable
+image tag、部署时间，backend 记录 schema 与 migration ceiling，其它 service metadata
+不变。Prometheus/Loki/Alloy/Grafana、datasource/dashboard、metrics 与 log ingestion
+失败只记录 `OBSERVABILITY DEGRADED`，不影响健康应用。
 
-部署在可能触发 Flyway 前会分别备份 `wotb` 与 `keycloak`。已有 production state 时 live compose 缺失、backup helper 缺失/不可执行或任一 backup 失败都会在 compose 切换前终止；只有真实 first-install 才能带明确原因跳过 pre-deploy backup。
+### Ops Recovery 与数据库边界
 
-> **新版本失败诊断（Health check 超时回滚前）**：健康检查最终失败时，`deploy.sh` 会先输出各服务状态（`report_health_status`：backend/frontend/keycloak 各 `PASS/FAILED/SKIPPED`），再 `dump_logs` 保留新版本 `docker compose ps -a`、容器 `docker inspect` 与 backend/frontend/keycloak 三服务 logs，最后才进入回滚。因此新版本启动异常不会再被 rollback 覆盖，可在 Actions 日志与 Loki 中定位。诊断命令均独立容错，若采集失败也不会阻断回滚。
+`Ops Recovery` 必须明确选择一个 backend/frontend/keycloak，并选择 production metadata
+的 current identity 或 full SHA；Recovery 不隐式选择 `all`，不依赖 `latest`，不执行
+database restore。backend target 的 migration ceiling 低于 live Flyway schema、schema
+无法读取、metadata 不完整或 immutable image 不存在时拒绝。数据库灾难恢复仍只通过人工
+确认的 `deploy/postgres-restore.sh` 执行。`database-backup.yml` 目前保持 VPS 本地双库
+备份边界；COS 上传、对象验证与 retention 属于后续独立 PR。
 
 ### 停止观测系统（不影响主业务）
 
@@ -201,7 +224,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 
 > **禁止**使用 `docker compose down -v` 作为普通停止/回滚命令——它会删除所有 volume（含 PostgreSQL 数据）。
 
-> **应用回滚**由 `deploy.yml` 自动处理：完整 `all` 发布恢复已验证的 `docker-compose.lkg.yml` 与对应 `/opt/wotb/deploy.lkg`，targeted 发布失败则恢复该次部署前保存的 `deploy.prev` / `docker-compose.prev.yml` 并只重建失败 service；两者都不会触碰 `postgres_data` 等 volume。数据库 schema 迁移随新版本启动执行，回滚策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。targeted 失败后保留失败候选快照供诊断，不能把它当作回滚依据。
+> **应用失败处理**不由 `deploy.yml` 自动切换旧版本：normal Deploy 先输出 release/affected/image/status/log/schema 诊断并停止确认失败的 affected service，随后 workflow FAIL。operator 通过 `Ops Recovery` 明确选择一个应用和 immutable SHA；它不触碰 `postgres_data` 等 volume，也不执行数据库 restore/downgrade。数据库 schema 迁移随新版本启动执行，恢复策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
 
 ---
 

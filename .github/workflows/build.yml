@@ -232,6 +232,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          backend_migration_max_version="$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          versions = []
+          root = Path("java/wotb-web/src/main/resources/db/migration")
+          for path in root.glob("V*.sql"):
+              match = re.fullmatch(r"V([0-9]+)__.*[.]sql", path.name)
+              if match:
+                  versions.append(int(match.group(1)))
+          print(max(versions, default=0))
+          PY
+          )"
+          export BACKEND_MIGRATION_MAX_VERSION="$backend_migration_max_version"
           python3 - deploy/release_plan.py <<'PY' > plan.json
           import json
           import os
@@ -242,9 +256,12 @@ jobs:
               "frontend": os.environ["FRONTEND"] == "true",
               "keycloak": os.environ["KEYCLOAK"] == "true",
           }
+          backend_migration_max_version = int(os.environ.get("BACKEND_MIGRATION_MAX_VERSION", "0"))
           json.dump({
               "images": images,
+              "buildServices": [s for s in os.environ["IMAGE_SERVICES"].split(",") if s],
               "imageServices": [s for s in os.environ["IMAGE_SERVICES"].split(",") if s],
+              "backendMigrationMaxVersion": backend_migration_max_version,
               "deployConfig": False,
               "deployServices": [s for s in os.environ["DEPLOY_SERVICES"].split(",") if s],
           }, sys.stdout)

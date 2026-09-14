@@ -51,7 +51,7 @@ Keycloak 的应用 OIDC 与日志是生产排障依据，不应新增独立 mana
 
 确认磁盘问题时同时查看 `docker system df -v`、Prometheus TSDB 和 Loki volume；禁止使用 `docker compose down -v`。
 
-## 5. 证据采集与回滚
+## 5. 证据采集与失败发布处理
 
 部署脚本在任何容器变更前会拒绝包含 HTTP 控制字符（包括 CR/LF）的 `AI_API_KEY`；不会 trim、打印或输出该 secret 的任何片段。若该校验失败，先在 secret 管理侧重新录入干净值，再重新部署。
 
@@ -60,4 +60,20 @@ docker compose -f /opt/wotb/docker-compose.yml ps -a
 docker compose -f /opt/wotb/docker-compose.yml logs --tail=300 keycloak wotb-backend alloy prometheus
 ```
 
-若应用 gate 失败，完整 `all` 发布按部署脚本的 rollback 流程恢复 LKG（`/opt/wotb/deploy.lkg`、`docker-compose.lkg.yml`、`DEPLOYED_SHA.lkg`）；targeted 发布失败只恢复该次部署前的 `deploy.prev` / `docker-compose.prev.yml` 并只重建失败 service，不回滚其他独立 targeted release。完整回滚成功标准只有 backend、frontend 与 Keycloak OIDC 可用；Grafana/Prometheus/Loki/Alloy 失败只记录 `OBSERVABILITY DEGRADED`，不能把 `ROLLBACK OK` 改成 `ROLLBACK FAILED`。失败候选快照只用于取证，不能作为回滚依据。若 LKG 缺失或校验失败，脚本会 fail-closed 并保留当前 live tree，需人工修复后再操作；回滚不应删除 PostgreSQL、Prometheus、Loki 或 Grafana volume。若已有健康 live deployment，正常发布流程会先验证并建立缺失的初始 LKG；否则必须人工处理，不能回退到未经验证的 previous deployment。
+normal Deploy 失败不会自动恢复旧 application image。脚本会先输出 release SHA/tag、affected/image services、Compose 状态、容器日志和可读取的 Flyway schema，再停止确认失败的 affected service；随后由 operator 使用 `Ops Recovery` 选择单个应用 service。Prometheus/Loki/Alloy/Grafana 失败只记录 `OBSERVABILITY DEGRADED`，不改变已健康的应用服务。
+
+```bash
+docker compose -f /opt/wotb/docker-compose.yml ps -a
+docker compose -f /opt/wotb/docker-compose.yml logs --tail=300 keycloak wotb-backend wotb-frontend alloy prometheus
+stat -c '%a %n' /opt/wotb/production-release.json
+```
+
+`/opt/wotb/production-release.json` 只记录最近一次通过全局 core health gate 的应用 identity。它不是自动恢复引擎；缺失、损坏或 image 不存在时，Recovery 必须拒绝执行。
+
+## 6. Ops Recovery 与数据库边界
+
+在 Actions 中手工触发 `Ops Recovery`，明确选择 `backend`、`frontend` 或 `keycloak`，并选择 `current` metadata 或 `specific` full SHA。Recovery 只 pull/recreate 一个目标应用 service，不隐式选择 `all`，也不执行数据库 restore。
+
+backend recovery 先比较目标 source SHA 的最大 Flyway migration version 与 live `flyway_schema_history`：目标版本低于 live、schema 无法读取、metadata 不完整或 immutable image 不存在时拒绝。数据库灾难恢复仍只通过人工确认的 `deploy/postgres-restore.sh` 执行，并与应用 Recovery 分离。
+
+本仓库当前的 `database-backup.yml` 保持 VPS 本地双库备份边界。COS 上传、对象存在/大小验证和 retention 仍是后续独立 PR；本 runbook 不把本地归档描述为 COS 已完成。

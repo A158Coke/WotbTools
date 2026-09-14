@@ -1,105 +1,59 @@
 #!/usr/bin/env bash
-# Production deployment with staged validation, validated LKG promotion and fail-closed rollback.
-set -euo pipefail
+# Staged selective production deployment. Failure is fail-closed and operator-led.
+set -Eeuo pipefail
 
 readonly WOTB_DIR="${WOTB_DIR:-/opt/wotb}"
 readonly INCOMING_DIR="${WOTB_INCOMING_DIR:-$WOTB_DIR/deploy.incoming}"
 readonly LIVE_DEPLOY_DIR="$WOTB_DIR/deploy"
-readonly PREV_DEPLOY_DIR="$WOTB_DIR/deploy.prev"
-readonly PREV_COMPOSE="$WOTB_DIR/docker-compose.prev.yml"
-readonly TARGETED_FAILED_DEPLOY_DIR="$WOTB_DIR/deploy.targeted.failed"
-readonly TARGETED_FAILED_COMPOSE="$WOTB_DIR/docker-compose.targeted.failed.yml"
-readonly LKG_DEPLOY_DIR="$WOTB_DIR/deploy.lkg"
-readonly LKG_DEPLOY_NEXT_DIR="$WOTB_DIR/deploy.lkg.next"
-readonly LKG_DEPLOY_RETIRING_DIR="$WOTB_DIR/deploy.lkg.retiring"
-readonly LKG_COMPOSE="$WOTB_DIR/docker-compose.lkg.yml"
-readonly LKG_COMPOSE_NEXT="$WOTB_DIR/docker-compose.lkg.next.yml"
-readonly LKG_COMPOSE_INSTALLING="$WOTB_DIR/docker-compose.lkg.installing.yml"
-readonly LKG_COMPOSE_RETIRING="$WOTB_DIR/docker-compose.lkg.retiring.yml"
-readonly LKG_SHA="$WOTB_DIR/DEPLOYED_SHA.lkg"
-readonly LKG_SHA_NEXT="$WOTB_DIR/DEPLOYED_SHA.lkg.next"
-readonly LKG_SHA_RETIRING="$WOTB_DIR/DEPLOYED_SHA.lkg.retiring"
-readonly LKG_SCHEMA="$WOTB_DIR/DB_SCHEMA_VERSION.lkg"
-readonly LKG_SCHEMA_NEXT="$WOTB_DIR/DB_SCHEMA_VERSION.lkg.next"
-readonly LKG_SCHEMA_RETIRING="$WOTB_DIR/DB_SCHEMA_VERSION.lkg.retiring"
 readonly LIVE_COMPOSE="$WOTB_DIR/docker-compose.yml"
-readonly RESTORE_DEPLOY_NEXT_DIR="$WOTB_DIR/deploy.restore.next"
-readonly RESTORE_DEPLOY_FAILED_DIR="$WOTB_DIR/deploy.failed"
-readonly RESTORE_COMPOSE_NEXT="$WOTB_DIR/docker-compose.restore.next.yml"
-readonly RESTORE_COMPOSE_INSTALLING="$WOTB_DIR/docker-compose.restore.installing.yml"
-readonly RESTORE_COMPOSE_FAILED="$WOTB_DIR/docker-compose.failed.yml"
-readonly HEALTH_RETRIES="${WOTB_HEALTH_RETRIES:-60}"
-readonly GRAFANA_READINESS_RETRIES="${WOTB_GRAFANA_READINESS_RETRIES:-20}"
-readonly GRAFANA_READINESS_INTERVAL_SEC="${WOTB_GRAFANA_READINESS_INTERVAL_SEC:-1}"
+readonly METADATA_FILE="$WOTB_DIR/production-release.json"
+readonly HEALTH_ATTEMPTS="${WOTB_HEALTH_ATTEMPTS:-60}"
+readonly HEALTH_INTERVAL_SEC="${WOTB_HEALTH_INTERVAL_SEC:-2}"
+readonly PROBE_CONNECT_TIMEOUT_SEC="${WOTB_PROBE_CONNECT_TIMEOUT_SEC:-3}"
+readonly PROBE_MAX_TIME_SEC="${WOTB_PROBE_MAX_TIME_SEC:-10}"
+readonly PULL_ATTEMPTS="${WOTB_PULL_ATTEMPTS:-3}"
 readonly HEALTH_PROBE_SERVICE="health-probe"
-readonly DEPLOY_SERVICES_RAW="${WOTB_DEPLOY_SERVICES:-${WOTB_DEPLOY_SERVICE:-all}}"
-DEPLOY_IMAGE_SERVICES_RAW="${WOTB_DEPLOY_IMAGE_SERVICES:-}"
+readonly DEPLOY_SERVICES_RAW="${WOTB_DEPLOY_SERVICES:-}"
+readonly DEPLOY_IMAGE_SERVICES_RAW="${WOTB_DEPLOY_IMAGE_SERVICES:-}"
 readonly RELEASE_SHA_VALUE="${RELEASE_SHA:-}"
 readonly RELEASE_RUN_NUMBER_VALUE="${RELEASE_RUN_NUMBER:-}"
-STALE_RELEASE_GUARD="${WOTB_STALE_RELEASE_GUARD:-0}"
-case "$STALE_RELEASE_GUARD" in
-  1|true|TRUE) STALE_RELEASE_GUARD=1 ;;
-  0|false|FALSE|'') STALE_RELEASE_GUARD=0 ;;
-  *) echo "ERROR: WOTB_STALE_RELEASE_GUARD must be 0/1 or false/true." >&2; exit 1 ;;
-esac
-readonly STALE_RELEASE_GUARD
-readonly DEPLOYED_SHA_FILE="$WOTB_DIR/DEPLOYED_SHA"
-readonly DEPLOYED_RUN_NUMBER_FILE="$WOTB_DIR/DEPLOYED_RUN_NUMBER"
-readonly DEPLOYED_STATE_DIR="$WOTB_DIR/deployed-state"
-readonly DEPLOYED_STATE_MIGRATION_MARKER="$DEPLOYED_STATE_DIR/.legacy-migrated"
+readonly TAG_VALUE="${TAG:-}"
+readonly BACKEND_MIGRATION_MAX_VALUE="${WOTB_BACKEND_MIGRATION_MAX_VERSION:-}"
 
 declare -a DEPLOY_SERVICES=()
 declare -a DEPLOY_IMAGE_SERVICES=()
-IFS=',' read -r -a DEPLOY_SERVICES <<< "$DEPLOY_SERVICES_RAW"
-if [ -z "$DEPLOY_IMAGE_SERVICES_RAW" ] && [ -n "${WOTB_DEPLOY_SERVICE:-}" ]; then
-  case "$DEPLOY_SERVICES_RAW" in
-    keycloak|wotb-backend|wotb-frontend) DEPLOY_IMAGE_SERVICES_RAW="$DEPLOY_SERVICES_RAW" ;;
-  esac
-fi
-if [ -z "$DEPLOY_IMAGE_SERVICES_RAW" ] \
-    && [ "$STALE_RELEASE_GUARD" != 1 ] \
-    && [ "$DEPLOY_SERVICES_RAW" = all ]; then
-  # Legacy/manual callers that only supplied TAG=... and full deploy semantics
-  # historically updated all application images. Automatic manifest-driven
-  # deploys always set STALE_RELEASE_GUARD=1, so config-only all remains no-op
-  # for application images and preserves the live immutable tags.
-  DEPLOY_IMAGE_SERVICES_RAW="wotb-backend,wotb-frontend,keycloak"
-fi
-IFS=',' read -r -a DEPLOY_IMAGE_SERVICES <<< "$DEPLOY_IMAGE_SERVICES_RAW"
+declare -a APPLY_SERVICES=()
+FAILED_SERVICE=""
 
-if [ "${#DEPLOY_SERVICES[@]}" -eq 0 ] || [ -z "${DEPLOY_SERVICES[0]}" ]; then
-  echo "ERROR: WOTB_DEPLOY_SERVICES must contain at least one service." >&2
+die() {
+  echo "ERROR: $*" >&2
   exit 1
-fi
-if [ "${DEPLOY_SERVICES[0]}" = all ] && [ "${#DEPLOY_SERVICES[@]}" -ne 1 ]; then
-  echo "ERROR: all cannot be combined with other deployment services." >&2
-  exit 1
-fi
-for service in "${DEPLOY_SERVICES[@]}"; do
-  case "$service" in
-    all|postgres|node-exporter|prometheus|loki|alloy|grafana|keycloak|wotb-backend|wotb-frontend)
-      ;;
-    *)
-      echo "ERROR: unsupported deployment service: $service" >&2
-      exit 1
-      ;;
-  esac
-done
-for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
-  case "$service" in
-    "") ;;
-    keycloak|wotb-backend|wotb-frontend) ;;
-    *)
-      echo "ERROR: unsupported WOTB_DEPLOY_IMAGE_SERVICES entry: $service" >&2
-      exit 1
-      ;;
-  esac
-done
+}
 
-has_deploy_service() {
+is_safe_path() {
+  local path="$1"
+  [ -n "$path" ] && [ "$path" != "/" ] && [ "$path" != "." ] && [[ "$path" != *$'\n'* ]]
+}
+
+is_positive_integer() {
+  [[ "$1" =~ ^[1-9][0-9]*$ ]]
+}
+
+is_non_negative_integer() {
+  [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]]
+}
+
+require_env() {
+  local name="$1"
+  [ -n "${!name:-}" ] || die "$name secret is not configured."
+}
+
+is_selected() {
   local wanted="$1" service
   for service in "${DEPLOY_SERVICES[@]}"; do
-    [ "$service" = "$wanted" ] && return 0
+    if [ "$service" = all ] || [ "$service" = "$wanted" ]; then
+      return 0
+    fi
   done
   return 1
 }
@@ -112,1355 +66,490 @@ has_image_service() {
   return 1
 }
 
-is_full_deploy() {
-  [ "${#DEPLOY_SERVICES[@]}" -eq 1 ] && [ "${DEPLOY_SERVICES[0]}" = all ]
-}
+validate_inputs() {
+  is_safe_path "$WOTB_DIR" || die "unsafe WOTB_DIR."
+  is_safe_path "$INCOMING_DIR" || die "unsafe WOTB_INCOMING_DIR."
+  [ "$INCOMING_DIR" != "$WOTB_DIR" ] || die "incoming directory must differ from live directory."
+  [[ "$TAG_VALUE" =~ ^sha-[0-9a-f]{12}$ ]] || die "TAG must be an immutable sha-<12 lowercase hex> tag."
+  [[ "$RELEASE_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]] || die "RELEASE_SHA must be a full lowercase commit SHA."
+  is_positive_integer "$RELEASE_RUN_NUMBER_VALUE" || die "RELEASE_RUN_NUMBER must be a positive integer."
+  is_non_negative_integer "$BACKEND_MIGRATION_MAX_VALUE" || die "WOTB_BACKEND_MIGRATION_MAX_VERSION must be a non-negative integer."
+  is_positive_integer "$HEALTH_ATTEMPTS" || die "WOTB_HEALTH_ATTEMPTS must be a positive integer."
+  is_positive_integer "$HEALTH_INTERVAL_SEC" || die "WOTB_HEALTH_INTERVAL_SEC must be a positive integer."
+  is_positive_integer "$PROBE_CONNECT_TIMEOUT_SEC" || die "WOTB_PROBE_CONNECT_TIMEOUT_SEC must be a positive integer."
+  is_positive_integer "$PROBE_MAX_TIME_SEC" || die "WOTB_PROBE_MAX_TIME_SEC must be a positive integer."
+  is_positive_integer "$PULL_ATTEMPTS" || die "WOTB_PULL_ATTEMPTS must be a positive integer."
+  [ -n "$DEPLOY_SERVICES_RAW" ] || die "WOTB_DEPLOY_SERVICES is required."
 
-is_manual_latest_deploy() {
-  [ "$STALE_RELEASE_GUARD" = 0 ] && [ "$TAG" = latest ]
-}
-
-if is_manual_latest_deploy; then
+  IFS=',' read -r -a DEPLOY_SERVICES <<< "$DEPLOY_SERVICES_RAW"
+  IFS=',' read -r -a DEPLOY_IMAGE_SERVICES <<< "$DEPLOY_IMAGE_SERVICES_RAW"
+  [ "${#DEPLOY_SERVICES[@]}" -gt 0 ] && [ -n "${DEPLOY_SERVICES[0]}" ] \
+    || die "WOTB_DEPLOY_SERVICES must contain at least one service."
+  if [ "${DEPLOY_SERVICES[0]}" = all ] && [ "${#DEPLOY_SERVICES[@]}" -ne 1 ]; then
+    die "all cannot be combined with other deployment services."
+  fi
+  local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      all|keycloak|wotb-backend|wotb-frontend) ;;
-      *)
-        echo "ERROR: manual latest deployment only supports application services: all, backend, frontend, keycloak." >&2
-        exit 1
-        ;;
+      all|postgres|node-exporter|prometheus|loki|alloy|grafana|keycloak|wotb-backend|wotb-frontend) ;;
+      *) die "unsupported deployment service: $service" ;;
     esac
   done
-  if is_full_deploy; then
-    for service in keycloak wotb-backend wotb-frontend; do
-      has_image_service "$service" || {
-        echo "ERROR: manual latest Deploy All must include image service $service." >&2
-        exit 1
-      }
-    done
-  elif [ "${#DEPLOY_SERVICES[@]}" -ne 1 ] || [ "${#DEPLOY_IMAGE_SERVICES[@]}" -ne 1 ]; then
-    echo "ERROR: manual latest targeted deployment must select exactly one application image service." >&2
-    exit 1
-  fi
-fi
-
-state_services() {
-  local service
   for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
     case "$service" in
-      wotb-backend|wotb-frontend|keycloak) printf '%s\n' "$service" ;;
+      "") ;;
+      keycloak|wotb-backend|wotb-frontend) ;;
+      *) die "unsupported WOTB_DEPLOY_IMAGE_SERVICES entry: $service" ;;
     esac
   done
-}
+  for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
+    [ -z "$service" ] || is_selected "$service" || die "image service is not in deploy service set: $service"
+  done
 
-state_file() {
-  local service="$1" kind="$2"
-  printf '%s/%s.%s\n' "$DEPLOYED_STATE_DIR" "$service" "$kind"
-}
-
-write_atomic_value() {
-  local target="$1" value="$2" temporary
-  temporary="${target}.next.$$"
-  umask 177
-  printf '%s\n' "$value" > "$temporary"
-  chmod 600 "$temporary"
-  mv -f -- "$temporary" "$target"
-}
-
-migrate_legacy_state() {
-  [ -e "$DEPLOYED_STATE_MIGRATION_MARKER" ] && return 0
-  mkdir -p "$DEPLOYED_STATE_DIR"
-  if [ -f "$DEPLOYED_RUN_NUMBER_FILE" ] && [ -f "$DEPLOYED_SHA_FILE" ]; then
-    local legacy_run legacy_sha service
-    legacy_run="$(tr -d '\r\n' < "$DEPLOYED_RUN_NUMBER_FILE")"
-    legacy_sha="$(tr -d '\r\n' < "$DEPLOYED_SHA_FILE")"
-    [[ "$legacy_run" =~ ^[1-9][0-9]*$ ]] || {
-      echo "ERROR: existing DEPLOYED_RUN_NUMBER is invalid; refusing state migration." >&2
-      return 1
-    }
-    for service in wotb-backend wotb-frontend keycloak; do
-      write_atomic_value "$(state_file "$service" run)" "$legacy_run"
-      write_atomic_value "$(state_file "$service" sha)" "$legacy_sha"
-    done
-  fi
-  write_atomic_value "$DEPLOYED_STATE_MIGRATION_MARKER" "schema=1"
-}
-
-update_deployed_state() {
-  local deployment_id="$1" service run_file sha_file
-  if is_manual_latest_deploy; then
-    # Manual latest is outside the automatic release-generation stream. Keep
-    # automatic run/SHA state intact so delayed immutable releases remain
-    # subject to the stale guard.
-    return 0
-  fi
-  mkdir -p "$DEPLOYED_STATE_DIR"
-  while IFS= read -r service; do
-    [ -n "$service" ] || continue
-    sha_file="$(state_file "$service" sha)"
-    write_atomic_value "$sha_file" "$deployment_id"
-    if [ -n "$RELEASE_RUN_NUMBER_VALUE" ]; then
-      run_file="$(state_file "$service" run)"
-      write_atomic_value "$run_file" "$RELEASE_RUN_NUMBER_VALUE"
-    fi
-  done < <(state_services)
-  if is_full_deploy; then
-    write_atomic_value "$DEPLOYED_SHA_FILE" "$deployment_id"
-    if [ -n "$RELEASE_RUN_NUMBER_VALUE" ]; then
-      write_atomic_value "$DEPLOYED_RUN_NUMBER_FILE" "$RELEASE_RUN_NUMBER_VALUE"
-    fi
-  fi
-}
-
-if [ "$STALE_RELEASE_GUARD" = 1 ]; then
-  [[ "$RELEASE_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]] || {
-    echo "ERROR: automatic deployment requires a full RELEASE_SHA." >&2
-    exit 1
-  }
-  [[ "$RELEASE_RUN_NUMBER_VALUE" =~ ^[1-9][0-9]*$ ]] || {
-    echo "ERROR: automatic deployment requires a positive RELEASE_RUN_NUMBER." >&2
-    exit 1
-  }
-  [ "$TAG" = "sha-${RELEASE_SHA_VALUE:0:12}" ] || {
-    echo "ERROR: TAG does not match RELEASE_SHA." >&2
-    exit 1
-  }
-fi
-
-if [[ ! "$HEALTH_RETRIES" =~ ^[1-9][0-9]*$ ]]; then
-  echo "ERROR: WOTB_HEALTH_RETRIES must be a positive integer." >&2
-  exit 1
-fi
-if [[ ! "$GRAFANA_READINESS_RETRIES" =~ ^[1-9][0-9]*$ \
-    || ! "$GRAFANA_READINESS_INTERVAL_SEC" =~ ^[1-9][0-9]*$ ]]; then
-  echo "ERROR: Grafana readiness retry settings must be positive integers." >&2
-  exit 1
-fi
-if [ -z "$WOTB_DIR" ] || [ "$WOTB_DIR" = "/" ] || [ -z "$INCOMING_DIR" ] || [ "$INCOMING_DIR" = "/" ]; then
-  echo "ERROR: refusing to operate on an unsafe deployment path." >&2
-  exit 1
-fi
-require_env() {
-  local name="$1"
-  if [ -z "${!name:-}" ]; then
-    echo "ERROR: $name secret is not configured." >&2
-    exit 1
-  fi
-}
-for required in TAG DB_PASSWORD KC_ADMIN_PASSWORD WG_APPLICATION_ID KEYCLOAK_ADMIN_CLIENT_SECRET AI_API_KEY GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD; do
-  require_env "$required"
-done
-
-if [[ "$AI_API_KEY" =~ [[:cntrl:]] ]]; then
-  echo "ERROR: AI_API_KEY contains invalid control characters." >&2
-  exit 1
-fi
-
-if [ -n "${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-}" ] \
+  for required in TAG DB_PASSWORD KC_ADMIN_PASSWORD WG_APPLICATION_ID \
+    KEYCLOAK_ADMIN_CLIENT_SECRET AI_API_KEY GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD; do
+    require_env "$required"
+  done
+  [[ "$AI_API_KEY" != *$'\n'* && "$AI_API_KEY" != *$'\r'* ]] \
+    || die "AI_API_KEY contains invalid control characters."
+  if [ -n "${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-}" ] \
     && [ "$AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC" != "1100" ]; then
-  printf 'ERROR: AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC must be 1100 to stay aligned with frontend(1100s)/nginx(1120s); got %s\n' \
-    "$AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC" >&2
-  exit 3
-fi
-
-mkdir -p "$WOTB_DIR" "$DEPLOYED_STATE_DIR"
-if ! command -v flock >/dev/null 2>&1; then
-  echo "ERROR: flock is required to serialize production deployments." >&2
-  exit 1
-fi
-exec 9>"$WOTB_DIR/.deploy.lock"
-if ! flock -n 9; then
-  echo "ERROR: another production deployment is already running." >&2
-  exit 1
-fi
-cd "$WOTB_DIR"
-migrate_legacy_state
-readonly STAGED_DEPLOY_DIR="$INCOMING_DIR/deploy"
-readonly STAGED_COMPOSE="$INCOMING_DIR/docker-compose.next.yml"
-readonly STAGED_RESOLVED_COMPOSE="$INCOMING_DIR/docker-compose.next.resolved.yml"
-readonly RUNNER_DIR="$INCOMING_DIR/.runner"
-readonly RUNNER_VERIFIER="$RUNNER_DIR/verify-observability.sh"
-readonly RUNNER_VALIDATOR="$RUNNER_DIR/validate-alloy-config.sh"
-readonly RUNNER_GRAFANA_API_HELPER="$RUNNER_DIR/grafana-api-request.sh"
-readonly STAGED_SERVICE_OVERRIDE="$INCOMING_DIR/docker-compose.service.override.yml"
-if [ ! -f "$STAGED_DEPLOY_DIR/docker-compose.prod.yml" ]; then
-  echo "ERROR: staged deployment tree is missing: $STAGED_DEPLOY_DIR/docker-compose.prod.yml" >&2
-  exit 1
-fi
-
-# Compose paths are relative to the incoming project root. Application data is
-# shared explicitly; deployment/config files remain inside the staged tree.
-mkdir -p "$INCOMING_DIR" "$WOTB_DIR/config/sponsor" "$WOTB_DIR/android-release"
-ln -sfn "$WOTB_DIR/config" "$INCOMING_DIR/config"
-ln -sfn "$WOTB_DIR/android-release" "$INCOMING_DIR/android-release"
-if [ ! -e "$WOTB_DIR/config/sponsor-config.json" ] && [ -f "$STAGED_DEPLOY_DIR/sponsor-config.example.json" ]; then
-  install -m 644 "$STAGED_DEPLOY_DIR/sponsor-config.example.json" "$WOTB_DIR/config/sponsor-config.json"
-fi
-
-PREV_SHA=""
-if [ -f "$DEPLOYED_SHA_FILE" ]; then PREV_SHA=$(tr -d '\r\n' < "$DEPLOYED_SHA_FILE"); fi
-
-if [ "$STALE_RELEASE_GUARD" = 1 ]; then
-  while IFS= read -r service; do
-    [ -n "$service" ] || continue
-    current_run_number=""
-    current_sha=""
-    run_file="$(state_file "$service" run)"
-    sha_file="$(state_file "$service" sha)"
-    [ -f "$run_file" ] && current_run_number="$(tr -d '\r\n' < "$run_file")"
-    [ -f "$sha_file" ] && current_sha="$(tr -d '\r\n' < "$sha_file")"
-    if [ -n "$current_run_number" ] && [[ ! "$current_run_number" =~ ^[1-9][0-9]*$ ]]; then
-      echo "ERROR: existing deployed run for $service is invalid; refusing automatic deployment." >&2
-      exit 1
-    fi
-    if [ -n "$current_run_number" ] && [ "$RELEASE_RUN_NUMBER_VALUE" -lt "$current_run_number" ]; then
-      echo "ERROR: stale release run $RELEASE_RUN_NUMBER_VALUE cannot overwrite deployed $service run $current_run_number." >&2
-      exit 1
-    fi
-    if [ -n "$current_run_number" ] && [ "$RELEASE_RUN_NUMBER_VALUE" -eq "$current_run_number" ] \
-        && [ -n "$current_sha" ] && [ "$current_sha" != "$RELEASE_SHA_VALUE" ]; then
-      echo "ERROR: release run number is reused for a different $service commit." >&2
-      exit 1
-    fi
-  done < <(state_services)
-fi
-
-current_image_tag() {
-  local service="$1" tag
-  tag="$(awk -v prefix="ghcr.io/a158coke/wotbtools-${service}:" \
-    '$1 == "image:" && index($2, prefix) == 1 { sub(prefix, "", $2); print $2; exit }' \
-    "$LIVE_COMPOSE")"
-  if [ -z "$tag" ] || [[ "$tag" =~ [[:space:]] ]]; then
-    echo "ERROR: could not resolve the current immutable ${service} image tag." >&2
-    return 1
+    die "AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC must remain 1100."
   fi
+}
+
+metadata_tag() {
+  local service="$1"
+  [ -f "$METADATA_FILE" ] || return 0
+  python3 - "$METADATA_FILE" "$service" <<'PY'
+import json
+import re
+import sys
+
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+    tag = data.get("services", {}).get(sys.argv[2], {}).get("imageTag", "")
+except (OSError, ValueError, TypeError):
+    raise SystemExit(0)
+if re.fullmatch(r"sha-[0-9a-f]{12}", tag):
+    print(tag)
+PY
+}
+
+validate_metadata_file() {
+  [ -f "$METADATA_FILE" ] || return 0
+  python3 - "$METADATA_FILE" <<'PY'
+import json
+import re
+import sys
+
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+if not isinstance(data, dict) or not isinstance(data.get("services", {}), dict):
+    raise SystemExit("production metadata must contain an object-valued services field")
+for service, entry in data["services"].items():
+    if not isinstance(entry, dict):
+        raise SystemExit(f"production metadata entry is invalid: {service}")
+    if "commitSha" in entry and not re.fullmatch(r"[0-9a-f]{40}", entry["commitSha"]):
+        raise SystemExit(f"production metadata commitSha is invalid: {service}")
+    if "imageTag" in entry and not re.fullmatch(r"sha-[0-9a-f]{12}", entry["imageTag"]):
+        raise SystemExit(f"production metadata imageTag is invalid: {service}")
+    if "migrationMaxVersion" in entry and (
+        not isinstance(entry["migrationMaxVersion"], int) or entry["migrationMaxVersion"] < 0
+    ):
+        raise SystemExit(f"production metadata migration ceiling is invalid: {service}")
+PY
+}
+
+compose_tag() {
+  local service="$1"
+  [ -f "$LIVE_COMPOSE" ] || return 0
+  python3 - "$LIVE_COMPOSE" "$service" <<'PY'
+import re
+import sys
+
+service = sys.argv[2]
+current = ""
+for line in open(sys.argv[1], encoding="utf-8"):
+    match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+    if match:
+        current = match.group(1)
+        continue
+    if current != service:
+        continue
+    match = re.match(r"^\s+image:\s+ghcr\.io/a158coke/wotbtools-[^:]+:(sha-[0-9a-f]{12})\s*$", line)
+    if match:
+        print(match.group(1))
+        break
+PY
+}
+
+current_or_target_tag() {
+  local service="$1" tag=""
+  case "$service" in
+    wotb-backend) has_image_service "$service" && { printf '%s\n' "$TAG_VALUE"; return; } ;;
+    wotb-frontend) has_image_service "$service" && { printf '%s\n' "$TAG_VALUE"; return; } ;;
+    keycloak) has_image_service "$service" && { printf '%s\n' "$TAG_VALUE"; return; } ;;
+    *) die "unsupported application service: $service" ;;
+  esac
+  tag="$(metadata_tag "$service")"
+  [ -n "$tag" ] || tag="$(compose_tag "$service")"
+  [[ "$tag" =~ ^sha-[0-9a-f]{12}$ ]] || die "current immutable image identity is unavailable for $service."
   printf '%s\n' "$tag"
 }
 
-prepare_service_override() {
-  rm -f -- "$STAGED_SERVICE_OVERRIDE"
-  if is_full_deploy && [ "${#DEPLOY_IMAGE_SERVICES[@]}" -eq 3 ]; then
-    return 0
-  fi
-  if [ ! -f "$LIVE_COMPOSE" ]; then
-    echo "ERROR: deployment requires an existing live compose file to preserve non-target application images." >&2
-    return 1
-  fi
+render_effective_compose() {
+  local source="$1" target="$2" backend_tag="$3" frontend_tag="$4" keycloak_tag="$5"
+  BACKEND_TAG="$backend_tag" FRONTEND_TAG="$frontend_tag" KEYCLOAK_TAG="$keycloak_tag" \
+    python3 - "$source" "$target" <<'PY'
+import os
+import re
+import sys
 
+source, target = sys.argv[1:3]
+tags = {
+    "wotb-backend": os.environ["BACKEND_TAG"],
+    "wotb-frontend": os.environ["FRONTEND_TAG"],
+    "keycloak": os.environ["KEYCLOAK_TAG"],
+}
+current = ""
+seen = set()
+output = []
+for line in open(source, encoding="utf-8"):
+    match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+    if match:
+        current = match.group(1)
+    if current in tags and re.match(r"^\s+image:\s+ghcr\.io/a158coke/wotbtools-[^:]+:", line):
+        image = "ghcr.io/a158coke/wotbtools-" + current.removeprefix("wotb-")
+        if current == "keycloak":
+            image = "ghcr.io/a158coke/wotbtools-keycloak"
+        line = f"    image: {image}:{tags[current]}\n"
+        seen.add(current)
+    output.append(line)
+missing = set(tags) - seen
+if missing:
+    raise SystemExit("compose is missing application image definitions: " + ", ".join(sorted(missing)))
+with open(target, "w", encoding="utf-8") as handle:
+    handle.writelines(output)
+PY
+  chmod 600 "$target"
+}
+
+stage_and_validate() {
+  local staged_source="$INCOMING_DIR/deploy/docker-compose.prod.yml"
+  readonly EFFECTIVE_COMPOSE="$INCOMING_DIR/docker-compose.effective.yml"
+  [ -f "$staged_source" ] || die "staged deployment tree is missing docker-compose.prod.yml."
+  mkdir -p "$WOTB_DIR/config/sponsor" "$WOTB_DIR/android-release" "$INCOMING_DIR"
+  ln -sfn "$WOTB_DIR/config" "$INCOMING_DIR/config"
+  ln -sfn "$WOTB_DIR/android-release" "$INCOMING_DIR/android-release"
+  if [ ! -e "$WOTB_DIR/config/sponsor-config.json" ] && [ -f "$INCOMING_DIR/deploy/sponsor-config.example.json" ]; then
+    install -m 644 "$INCOMING_DIR/deploy/sponsor-config.example.json" "$WOTB_DIR/config/sponsor-config.json"
+  fi
   local backend_tag frontend_tag keycloak_tag
-  backend_tag="$(current_image_tag backend)"
-  frontend_tag="$(current_image_tag frontend)"
-  keycloak_tag="$(current_image_tag keycloak)"
-  has_image_service wotb-backend && backend_tag="$TAG"
-  has_image_service wotb-frontend && frontend_tag="$TAG"
-  has_image_service keycloak && keycloak_tag="$TAG"
-
-  umask 177
-  cat > "$STAGED_SERVICE_OVERRIDE" <<EOF
-services:
-  keycloak:
-    image: ghcr.io/a158coke/wotbtools-keycloak:${keycloak_tag}
-  wotb-backend:
-    image: ghcr.io/a158coke/wotbtools-backend:${backend_tag}
-  wotb-frontend:
-    image: ghcr.io/a158coke/wotbtools-frontend:${frontend_tag}
-EOF
-  chmod 600 "$STAGED_SERVICE_OVERRIDE"
-}
-
-read_db_schema_version() {
-  local compose_file="$1" schema_version
-  schema_version="$(docker compose -f "$compose_file" exec -T postgres \
-    psql -U wotb -d wotb -Atqc \
-    "select coalesce((select version from flyway_schema_history where success = true order by installed_rank desc limit 1), '0');" \
-    2>/dev/null)" || {
-    echo "ERROR: could not read Flyway schema version from $compose_file." >&2
-    return 1
-  }
-  schema_version="$(tr -d '[:space:]' <<<"$schema_version")"
-  if [[ ! "$schema_version" =~ ^(0|[1-9][0-9]*)$ ]]; then
-    echo "ERROR: Flyway schema version is invalid: ${schema_version:-<empty>}." >&2
-    return 1
+  backend_tag="$(current_or_target_tag wotb-backend)"
+  frontend_tag="$(current_or_target_tag wotb-frontend)"
+  keycloak_tag="$(current_or_target_tag keycloak)"
+  render_effective_compose "$staged_source" "$EFFECTIVE_COMPOSE" \
+    "$backend_tag" "$frontend_tag" "$keycloak_tag"
+  if ! docker compose -f "$EFFECTIVE_COMPOSE" config >/dev/null; then
+    die "staged compose config is invalid; live deployment was not changed."
   fi
-  printf '%s\n' "$schema_version"
-}
-
-production_database_exists() {
-  [ -f "$LIVE_COMPOSE" ] || [ -d "$LIVE_DEPLOY_DIR" ] \
-    || [ -e "$LKG_DEPLOY_DIR" ] || [ -e "$LKG_COMPOSE" ] || [ -e "$LKG_SHA" ] \
-    || [ -e "$LKG_SCHEMA" ] \
-    || [ -n "$(docker ps -a --filter label=com.docker.compose.service=postgres --format '{{.ID}}' 2>/dev/null || true)" ] \
-    || [ -n "$(docker volume ls -q --filter label=com.docker.compose.volume=postgres_data 2>/dev/null || true)" ]
-}
-
-backup_pre_deploy_databases() {
-  if ! production_database_exists; then
-    echo "Pre-deploy backup skipped: FIRST_INSTALL (no live deployment or production database detected)."
-    return 0
-  fi
-  if [ ! -f "$LIVE_COMPOSE" ]; then
-    echo "ERROR: Pre-deploy backup unavailable: LIVE_COMPOSE missing; refusing deployment before Flyway or application mutation." >&2
-    return 1
-  fi
-  if [ ! -x "$LIVE_DEPLOY_DIR/postgres-backup.sh" ]; then
-    echo "ERROR: Pre-deploy backup unavailable: postgres-backup.sh missing/not executable; refusing deployment before Flyway or application mutation." >&2
-    return 1
-  fi
-  if ! WOTB_COMPOSE_DIR="$WOTB_DIR" "$LIVE_DEPLOY_DIR/postgres-backup.sh" --database wotb; then
-    echo "ERROR: pre-deploy wotb database backup failed; refusing deployment before Flyway or application mutation." >&2
-    return 1
-  fi
-  if ! WOTB_COMPOSE_DIR="$WOTB_DIR" "$LIVE_DEPLOY_DIR/postgres-backup.sh" --database keycloak; then
-    echo "ERROR: pre-deploy keycloak database backup failed; refusing deployment before Flyway or application mutation." >&2
-    return 1
-  fi
-}
-
-backup_pre_deploy_databases
-
-PRE_DEPLOY_DB_SCHEMA_VERSION=""
-POST_DEPLOY_DB_SCHEMA_VERSION=""
-if [ -f "$LIVE_COMPOSE" ]; then
-  if ! PRE_DEPLOY_DB_SCHEMA_VERSION="$(read_db_schema_version "$LIVE_COMPOSE")"; then
-    echo "ERROR: refusing deployment because the current database schema cannot be established." >&2
-    exit 1
-  fi
-  echo "Pre-deploy database schema version: $PRE_DEPLOY_DB_SCHEMA_VERSION"
-fi
-
-umask 177
-printf 'GRAFANA_ADMIN_USER=%s\nGRAFANA_ADMIN_PASSWORD=%s\n' \
-  "$GRAFANA_ADMIN_USER" "$GRAFANA_ADMIN_PASSWORD" > .env
-chmod 600 .env
-
-prepare_service_override
-STAGED_COMPOSE_ARGS=(-f "$STAGED_COMPOSE")
-if [ -f "$STAGED_SERVICE_OVERRIDE" ]; then
-  STAGED_COMPOSE_ARGS+=(-f "$STAGED_SERVICE_OVERRIDE")
-fi
-cp -f "$STAGED_DEPLOY_DIR/docker-compose.prod.yml" "$STAGED_COMPOSE"
-if ! docker compose "${STAGED_COMPOSE_ARGS[@]}" config > "$STAGED_RESOLVED_COMPOSE"; then
-  echo "ERROR: staged compose config is invalid; live deployment was not changed." >&2
-  exit 1
-fi
-chmod 600 "$STAGED_RESOLVED_COMPOSE"
-
-pull_compose() {
-  local compose_file="$1" attempt service
-  shift
-  local -a compose_args=(-f "$compose_file")
-  if [ "$compose_file" = "$STAGED_COMPOSE" ] && [ -f "$STAGED_SERVICE_OVERRIDE" ]; then
-    compose_args+=(-f "$STAGED_SERVICE_OVERRIDE")
-  fi
-  local -a pull_args=()
-  for service in "$@"; do
-    [ -n "$service" ] && pull_args+=("$service")
+  local observability_selected=false service
+  for service in "${DEPLOY_SERVICES[@]}"; do
+    case "$service" in
+      all|prometheus|loki|alloy|grafana|node-exporter) observability_selected=true ;;
+    esac
   done
-  for attempt in 1 2 3; do
-    if docker compose "${compose_args[@]}" pull "${pull_args[@]}"; then return 0; fi
-    if [ "$attempt" -lt 3 ]; then
-      echo "docker compose pull failed (${compose_file}, attempt $attempt), retrying in 10s..."
+  if [ "$observability_selected" = true ]; then
+    [ -f "$INCOMING_DIR/deploy/validate-alloy-config.sh" ] || die "staged Alloy validator is missing."
+    bash "$INCOMING_DIR/deploy/validate-alloy-config.sh" \
+      "$INCOMING_DIR/deploy/observability/alloy/config.alloy" \
+      || die "staged Alloy config validation failed; live deployment was not changed."
+  fi
+}
+
+pull_images() {
+  local attempt service
+  [ "${#DEPLOY_IMAGE_SERVICES[@]}" -gt 0 ] || return 0
+  for attempt in $(seq 1 "$PULL_ATTEMPTS"); do
+    if docker compose -f "$EFFECTIVE_COMPOSE" pull "${DEPLOY_IMAGE_SERVICES[@]}"; then
+      return 0
+    fi
+    if [ "$attempt" -lt "$PULL_ATTEMPTS" ]; then
+      echo "image pull failed (attempt $attempt), retrying in 10s..."
       sleep 10
     fi
   done
   return 1
 }
 
-assert_service_running() {
-  local service="$1" label="$2" status
-  status="$(docker compose ps -a "$service" 2>/dev/null || true)"
-  if ! grep -qE "Up|running" <<<"$status" || grep -qE "Restarting|Exited|Dead" <<<"$status"; then
-    echo "ERROR: ${label} is not running." >&2
+promote_files() {
+  local next_deploy="$WOTB_DIR/deploy.next.$$" next_compose="$WOTB_DIR/docker-compose.next.$$"
+  local old_deploy="$WOTB_DIR/deploy.old.$$" old_compose="$WOTB_DIR/docker-compose.old.$$"
+  rm -rf -- "$next_deploy"
+  rm -f -- "$next_compose"
+  cp -a "$INCOMING_DIR/deploy/." "$next_deploy/"
+  cp -f "$EFFECTIVE_COMPOSE" "$next_compose"
+  chmod 600 "$next_compose"
+  if [ -e "$LIVE_DEPLOY_DIR" ]; then
+    mv -- "$LIVE_DEPLOY_DIR" "$old_deploy" || return 1
+  fi
+  if [ -e "$LIVE_COMPOSE" ]; then
+    if ! mv -- "$LIVE_COMPOSE" "$old_compose"; then
+      [ -e "$old_deploy" ] && mv -- "$old_deploy" "$LIVE_DEPLOY_DIR"
+      return 1
+    fi
+  fi
+  if ! mv -- "$next_deploy" "$LIVE_DEPLOY_DIR"; then
+    [ -e "$old_compose" ] && mv -- "$old_compose" "$LIVE_COMPOSE"
+    [ -e "$old_deploy" ] && mv -- "$old_deploy" "$LIVE_DEPLOY_DIR"
     return 1
+  fi
+  if ! mv -- "$next_compose" "$LIVE_COMPOSE"; then
+    rm -rf -- "$LIVE_DEPLOY_DIR"
+    [ -e "$old_deploy" ] && mv -- "$old_deploy" "$LIVE_DEPLOY_DIR"
+    [ -e "$old_compose" ] && mv -- "$old_compose" "$LIVE_COMPOSE"
+    return 1
+  fi
+  rm -rf -- "$old_deploy"
+  rm -f -- "$old_compose"
+}
+
+compose_service_list() {
+  if is_selected all; then
+    printf '%s\n' postgres keycloak wotb-backend wotb-frontend node-exporter prometheus loki alloy grafana
+  else
+    printf '%s\n' "${DEPLOY_SERVICES[@]}"
   fi
 }
 
-apply_observability_services() {
-  echo "== Applying Prometheus/Loki/Alloy/Grafana configuration =="
-  docker compose up -d --force-recreate prometheus loki alloy grafana
-  assert_service_running prometheus Prometheus || return 1
-  assert_service_running loki Loki || return 1
-  assert_service_running alloy Alloy || return 1
-  assert_service_running grafana Grafana || return 1
-}
-
-verify_grafana_from_frontend_network() {
-  echo "== Verifying frontend can resolve Grafana through runtime Docker DNS =="
-  local attempt
-  for attempt in $(seq 1 "$GRAFANA_READINESS_RETRIES"); do
-    if docker compose exec -T wotb-frontend wget -qO- http://grafana:3000/api/health >/dev/null 2>&1; then
-      return 0
+apply_services() {
+  mapfile -t APPLY_SERVICES < <(compose_service_list | awk 'NF && !seen[$0]++')
+  [ "${#APPLY_SERVICES[@]}" -gt 0 ] || die "no runtime service selected."
+  local service
+  for service in "${APPLY_SERVICES[@]}"; do
+    if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate "$service"; then
+      FAILED_SERVICE="$service"
+      return 1
     fi
-    [ "$attempt" -lt "$GRAFANA_READINESS_RETRIES" ] \
-      && sleep "$GRAFANA_READINESS_INTERVAL_SEC"
   done
-  echo "ERROR: Grafana did not become ready from the frontend network after ${GRAFANA_READINESS_RETRIES} attempts." >&2
-  return 1
 }
 
 probe_http() {
-  local label="$1" url="$2" host_header="${3:-}" status output detail reason
-  local -a probe_args=(--silent --show-error --connect-timeout 3 --max-time 10 --output /dev/null --write-out '%{http_code}')
-  local -a probe_compose_args=(-f "$LIVE_COMPOSE")
-  [ -n "$host_header" ] && probe_args+=(--header "$host_header")
-  probe_args+=("$url")
-  if [ -f "$STAGED_COMPOSE" ]; then
-    # Keep the live compose first so the probe reaches the current runtime;
-    # overlay the current deployment-owned probe definition for legacy LKGs
-    # whose compose snapshot predates the health-probe service.
-    probe_compose_args+=(-f "$STAGED_COMPOSE")
-  fi
+  local service="$1" url="$2" host_header="${3:-}" output
+  local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
+    --max-time "$PROBE_MAX_TIME_SEC" --output /dev/null --write-out '%{http_code}')
+  [ -n "$host_header" ] && args+=(--header "$host_header")
+  args+=("$url")
+  output="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps "$HEALTH_PROBE_SERVICE" "${args[@]}" 2>&1)" || {
+    FAILED_SERVICE="$service"
+    return 1
+  }
+  case "$output" in
+    2[0-9][0-9]|3[0-9][0-9]) return 0 ;;
+    *) FAILED_SERVICE="$service"; return 1 ;;
+  esac
+}
 
-  if output="$(docker compose "${probe_compose_args[@]}" run --rm --no-deps "$HEALTH_PROBE_SERVICE" "${probe_args[@]}" 2>&1)"; then
-    status="$(grep -oE '[1-5][0-9]{2}' <<<"$output" | tail -n 1 || true)"
-    if [[ "$status" =~ ^2[0-9][0-9]$ ]]; then
+wait_for_probe() {
+  local service="$1" url="$2" host_header="${3:-}" attempt
+  for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
+    if probe_http "$service" "$url" "$host_header"; then
+      echo "$service: PASS"
       return 0
     fi
-    reason="non-2xx HTTP status ${status:-<empty>}"
-    detail="${output//$'\n'/ }"
-  else
-    detail="${output//$'\n'/ }"
-    case "$detail" in
-      *[Cc]ould\ not\ resolve\ host*|*Name\ or\ service\ not\ known*) reason="DNS resolution failed" ;;
-      *[Cc]onnection\ refused*|*Failed\ to\ connect*) reason="connection refused" ;;
-      *[Oo]peration\ timed\ out*|*[Tt]imed\ out*) reason="timeout" ;;
-      *) reason="probe execution failed" ;;
-    esac
-  fi
-
-  if [ "${PROBE_DIAGNOSTICS:-0}" = 1 ]; then
-    if [ -n "$detail" ]; then
-      echo "$label: FAILED: $reason ($detail)" >&2
-    else
-      echo "$label: FAILED: $reason" >&2
-    fi
-  fi
+    [ "$attempt" -lt "$HEALTH_ATTEMPTS" ] && sleep "$HEALTH_INTERVAL_SEC"
+  done
+  echo "$service: FAIL" >&2
   return 1
 }
 
-deploy_selected_service() {
-  if is_full_deploy; then
-    if is_manual_latest_deploy; then
-      docker compose up -d --remove-orphans keycloak wotb-backend wotb-frontend
-    else
-      docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend
+wait_for_database() {
+  local attempt
+  for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
+    if docker compose -f "$LIVE_COMPOSE" exec -T postgres pg_isready -U wotb -d wotb >/dev/null 2>&1; then
+      echo "postgres: PASS"
+      return 0
     fi
-    return 0
-  fi
-  echo "== Deploying selected services: ${DEPLOY_SERVICES[*]} =="
-  docker compose up -d --no-deps --force-recreate --remove-orphans "${DEPLOY_SERVICES[@]}"
-  local service
-  for service in "${DEPLOY_SERVICES[@]}"; do
-    assert_service_running "$service" "$service" || return 1
+    FAILED_SERVICE=postgres
+    [ "$attempt" -lt "$HEALTH_ATTEMPTS" ] && sleep "$HEALTH_INTERVAL_SEC"
   done
-}
-
-deploy_service_label() {
-  if is_full_deploy; then
-    printf 'all\n'
-  else
-    local joined="" service
-    for service in "${DEPLOY_SERVICES[@]}"; do
-      [ -n "$joined" ] && joined+=,
-      joined+="$service"
-    done
-    printf '%s\n' "$joined"
-  fi
-}
-
-assert_services_running() {
-  local service
-  for service in "$@"; do
-    assert_service_running "$service" "$service" || return 1
-  done
-}
-
-wait_application_healthy() {
-  local i ok service_pattern="wotb-backend|wotb-frontend|keycloak"
-  for i in $(seq 1 "$HEALTH_RETRIES"); do
-    if docker compose ps -a | grep -E "$service_pattern" | grep -qE "Restarting|Exited|Dead"; then
-      sleep 2
-      continue
-    fi
-    ok=true
-    probe_http backend http://wotb-backend:8087/api/health || ok=false
-    [ "$ok" = true ] && probe_http frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || ok=false
-    [ "$ok" = true ] && probe_http keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || ok=false
-    if [ "$ok" = true ]; then return 0; fi
-    [ "$i" -lt "$HEALTH_RETRIES" ] && sleep 2
-  done
-  echo "Health check failed:" >&2
-  report_health_status
+  echo "postgres: FAIL" >&2
   return 1
 }
 
-wait_healthy() {
-  if is_full_deploy; then
-    wait_application_healthy
-    return
-  fi
-  local i ok service
-  local has_probe=false
+blocking_health() {
+  local app_selected=false
+  is_selected wotb-backend || is_selected wotb-frontend || is_selected keycloak || is_selected all \
+    && app_selected=true
+  [ "$app_selected" = true ] || return 0
+  wait_for_database || return 1
+  wait_for_probe backend http://wotb-backend:8087/api/health || return 1
+  wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || return 1
+  wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || return 1
+}
+
+observability_health() {
+  local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      wotb-backend|wotb-frontend|keycloak) has_probe=true ;;
+      all|node-exporter|prometheus|loki|alloy|grafana)
+        docker compose -f "$LIVE_COMPOSE" ps -a "$service" | grep -Eq 'Up|running' || return 1 ;;
     esac
   done
-  if [ "$has_probe" = false ]; then
-    return 0
-  fi
-  for i in $(seq 1 "$HEALTH_RETRIES"); do
-    ok=true
-    for service in "${DEPLOY_SERVICES[@]}"; do
-      case "$service" in
-        wotb-backend)
-          probe_http backend http://wotb-backend:8087/api/health || ok=false
-          ;;
-        wotb-frontend)
-          [ "$ok" = true ] && probe_http frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || ok=false
-          ;;
-        keycloak)
-          [ "$ok" = true ] && probe_http keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || ok=false
-          ;;
-      esac
-    done
-    if [ "$ok" = true ]; then return 0; fi
-    [ "$i" -lt "$HEALTH_RETRIES" ] && sleep 2
-  done
-  echo "Targeted health check failed for: ${DEPLOY_SERVICES[*]}" >&2
-  report_health_status
-  return 1
+  return 0
 }
 
 verify_observability() {
+  [ -f "$LIVE_DEPLOY_DIR/verify-observability.sh" ] || return 1
+  WOTB_DIR="$WOTB_DIR" \
+  WOTB_DEPLOY_ROOT="$WOTB_DIR" \
   WOTB_ALLOY_CONFIG="$LIVE_DEPLOY_DIR/observability/alloy/config.alloy" \
-    WOTB_ALLOY_VALIDATOR="$RUNNER_VALIDATOR" \
-    WOTB_DASHBOARD_DIR="$LIVE_DEPLOY_DIR/observability/grafana/dashboards" \
-    WOTB_GRAFANA_API_HELPER="$RUNNER_GRAFANA_API_HELPER" \
-    bash "$RUNNER_VERIFIER"
+  WOTB_ALLOY_VALIDATOR="$LIVE_DEPLOY_DIR/validate-alloy-config.sh" \
+  WOTB_DASHBOARD_DIR="$LIVE_DEPLOY_DIR/observability/grafana/dashboards" \
+  WOTB_GRAFANA_API_HELPER="$LIVE_DEPLOY_DIR/grafana-api-request.sh" \
+    bash "$LIVE_DEPLOY_DIR/verify-observability.sh"
 }
 
-report_observability_status() {
-  if verify_observability; then
-    echo "OBSERVABILITY HEALTHY"
-    return 0
-  fi
-  echo "OBSERVABILITY DEGRADED" >&2
-  dump_logs
-  return 1
-}
-
-prepare_runner_tools() {
-  if ! mkdir -m 700 -p "$RUNNER_DIR" \
-      || ! chmod 700 "$RUNNER_DIR" \
-      || ! install -m 755 "$STAGED_DEPLOY_DIR/verify-observability.sh" "$RUNNER_VERIFIER" \
-      || ! install -m 755 "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" "$RUNNER_VALIDATOR" \
-      || ! install -m 755 "$STAGED_DEPLOY_DIR/grafana-api-request.sh" "$RUNNER_GRAFANA_API_HELPER"; then
-    echo "ERROR: deployment-owned rollback verifier could not be staged." >&2
-    return 1
-  fi
-}
-
-report_health_status() {
-  local running
-  running="$(docker compose ps -a 2>/dev/null || true)"
-  local previous_diagnostics="${PROBE_DIAGNOSTICS:-0}"
-  PROBE_DIAGNOSTICS=1
-  if grep -qE 'wotb-backend' <<<"$running"; then
-    if probe_http backend http://wotb-backend:8087/api/health; then echo "backend: PASS"; fi
-  else
-    echo "backend: SKIPPED (wotb-backend container absent)"
-  fi
-  if grep -qE 'wotb-frontend' <<<"$running"; then
-    if probe_http frontend http://wotb-frontend/api/health 'Host: wotbtools.com'; then echo "frontend: PASS"; fi
-  else
-    echo "frontend: SKIPPED (wotb-frontend container absent)"
-  fi
-  if grep -qE 'keycloak' <<<"$running"; then
-    if probe_http keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration; then echo "keycloak: PASS"; fi
-  else
-    echo "keycloak: SKIPPED (keycloak container absent)"
-  fi
-  PROBE_DIAGNOSTICS="$previous_diagnostics"
-}
-
-dump_logs() {
-  docker compose ps -a || true
-  echo "== service list (no container environment dump) =="
-  docker compose config --services || true
-  for service in wotb-backend wotb-frontend keycloak prometheus loki alloy grafana; do
-    echo "== ${service} logs =="
-    docker compose logs --tail 120 "$service" || true
+run_observability_checks() {
+  local selected=false service
+  for service in "${DEPLOY_SERVICES[@]}"; do
+    case "$service" in
+      all|node-exporter|prometheus|loki|alloy|grafana) selected=true ;;
+    esac
   done
-}
-
-rewrite_compose_tree_path() {
-  local source_file="$1" destination_file="$2" from_tree="$3" to_tree="$4"
-  local from_path="${WOTB_DIR%/}/${from_tree}/"
-  local to_path="${WOTB_DIR%/}/${to_tree}/"
-  if ! sed "s|$from_path|$to_path|g; s|\./${from_tree}/|./${to_tree}/|g" \
-      "$source_file" > "$destination_file"; then
-    echo "ERROR: failed to rewrite compose paths from ${from_tree} to ${to_tree}." >&2
-    return 1
+  [ "$selected" = true ] || return 0
+  if ! observability_health; then
+    echo "OBSERVABILITY DEGRADED: selected container is not running." >&2
+    return 0
+  fi
+  if ! verify_observability; then
+    echo "OBSERVABILITY DEGRADED: data-path verification failed." >&2
   fi
 }
 
-copy_tree() {
-  local purpose="$1" source_dir="$2" destination_dir="$3"
-  if [ "$purpose" = lkg-stage ] && [ "${WOTB_TEST_FAIL_LKG_STAGE_COPY:-0}" = 1 ]; then
-    echo "TEST INJECTION: refusing LKG stage copy." >&2
-    return 1
-  fi
-  if [ "$purpose" = lkg-restore ] && [ "${WOTB_TEST_FAIL_LKG_RESTORE_COPY:-0}" = 1 ]; then
-    echo "TEST INJECTION: refusing LKG restore copy." >&2
-    return 1
-  fi
-  cp -a "$source_dir" "$destination_dir"
-}
-
-move_path() {
-  local purpose="$1" source_path="$2" destination_path="$3"
-  if [ "$purpose" = restore-live ] \
-      && [ "${WOTB_TEST_FAIL_LKG_RESTORE_LIVE_SWITCH:-0}" = 1 ]; then
-    echo "TEST INJECTION: refusing LKG live tree switch." >&2
-    return 1
-  fi
-  if [ "$purpose" = restore-compose ] \
-      && [ "${WOTB_TEST_FAIL_LKG_RESTORE_COMPOSE_INSTALL:-0}" = 1 ]; then
-    echo "TEST INJECTION: refusing LKG compose installation." >&2
-    return 1
-  fi
-  mv -- "$source_path" "$destination_path"
-}
-
-retire_lkg_path() {
-  local source_path="$1" destination_path="$2" failure_flag="$3"
-  if [ "${!failure_flag:-0}" = 1 ]; then
-    echo "TEST INJECTION: refusing LKG retirement move." >&2
-    return 1
-  fi
-  mv -- "$source_path" "$destination_path"
-}
-
-lkg_bundle_present() {
-  [ -e "$LKG_DEPLOY_DIR" ] || [ -e "$LKG_COMPOSE" ] || [ -e "$LKG_SHA" ] || [ -e "$LKG_SCHEMA" ]
-}
-
-validate_lkg_artifacts() {
-  local deploy_dir="$1" compose_file="$2" sha_file="$3" label="$4" sha service
-  if [ ! -d "$deploy_dir" ] || [ ! -f "$compose_file" ] || [ ! -f "$sha_file" ]; then
-    echo "${label}: LKG bundle is incomplete." >&2
-    return 1
-  fi
-  if ! sha="$(tr -d '\r\n' < "$sha_file")"; then
-    echo "${label}: LKG SHA metadata could not be read." >&2
-    return 1
-  fi
-  if [ -z "$sha" ] || [[ "$sha" =~ [[:space:]] ]]; then
-    echo "${label}: LKG SHA metadata is invalid." >&2
-    return 1
-  fi
-  if ! docker compose -f "$compose_file" config >/dev/null 2>&1; then
-    echo "${label}: LKG compose parse failed." >&2
-    return 1
-  fi
-  for service in backend frontend keycloak; do
-    if ! grep -Eq "wotbtools-${service}:sha-[^[:space:]]+([[:space:]]|$)" "$compose_file"; then
-      echo "${label}: LKG immutable tag missing for ${service}." >&2
-      return 1
-    fi
+diagnostics() {
+  echo "== DEPLOY DIAGNOSTICS =="
+  echo "releaseSha=$RELEASE_SHA_VALUE"
+  echo "releaseTag=$TAG_VALUE"
+  echo "deployServices=$DEPLOY_SERVICES_RAW"
+  echo "imageServices=$DEPLOY_IMAGE_SERVICES_RAW"
+  docker compose -f "$LIVE_COMPOSE" ps -a || true
+  for service in "${APPLY_SERVICES[@]}"; do
+    echo "== $service inspect =="
+    docker compose -f "$LIVE_COMPOSE" ps -a "$service" || true
+    docker compose -f "$LIVE_COMPOSE" logs --tail 120 "$service" || true
   done
+  local schema
+  schema="$(docker compose -f "$LIVE_COMPOSE" exec -T postgres psql -U wotb -d wotb -Atqc \
+    "select coalesce((select version from flyway_schema_history where success = true order by installed_rank desc limit 1), '0');" \
+    2>/dev/null || true)"
+  schema="$(tr -d '[:space:]' <<< "$schema")"
+  echo "flywaySchemaVersion=${schema:-unavailable}"
 }
 
-validate_lkg_bundle() {
-  local deploy_dir="$1" compose_file="$2" sha_file="$3" schema_file="$4" label="$5" schema_version
-  validate_lkg_artifacts "$deploy_dir" "$compose_file" "$sha_file" "$label" || return 1
-  if [ ! -f "$schema_file" ]; then
-    echo "${label}: LKG schema compatibility metadata is missing; refusing rollback." >&2
-    return 1
-  fi
-  if ! schema_version="$(tr -d '[:space:]' < "$schema_file")"; then
-    echo "${label}: LKG schema compatibility metadata could not be read." >&2
-    return 1
-  fi
-  if [[ ! "$schema_version" =~ ^(0|[1-9][0-9]*)$ ]]; then
-    echo "${label}: LKG schema compatibility metadata is invalid." >&2
-    return 1
-  fi
+stop_failed_service() {
+  [ -n "$FAILED_SERVICE" ] || return 0
+  case "$FAILED_SERVICE" in
+    backend) FAILED_SERVICE=wotb-backend ;;
+    frontend) FAILED_SERVICE=wotb-frontend ;;
+    keycloak) FAILED_SERVICE=keycloak ;;
+  esac
+  echo "Stopping failed affected service: $FAILED_SERVICE"
+  docker compose -f "$LIVE_COMPOSE" stop "$FAILED_SERVICE" || true
 }
 
-legacy_lkg_schema_bootstrap_requested() {
-  [ -n "${WOTB_LEGACY_LKG_SCHEMA_VERSION:-}" ] \
-    || [ -n "${WOTB_LEGACY_LKG_RECOVERY_CONFIRM:-}" ]
+update_metadata() {
+  local backend_schema=""
+  if has_image_service wotb-backend; then
+    backend_schema="$(docker compose -f "$LIVE_COMPOSE" exec -T postgres psql -U wotb -d wotb -Atqc \
+      "select coalesce((select version from flyway_schema_history where success = true order by installed_rank desc limit 1), '0');")" \
+      || die "metadata update cannot establish backend Flyway schema version."
+    backend_schema="$(tr -d '[:space:]' <<< "$backend_schema")"
+    [[ "$backend_schema" =~ ^(0|[1-9][0-9]*)$ ]] || die "metadata update received an invalid backend schema version."
+  fi
+  local now metadata_tmp
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  metadata_tmp="${METADATA_FILE}.next.$$"
+  umask 177
+  BACKEND_SCHEMA="$backend_schema" BACKEND_MIGRATION_MAX="$BACKEND_MIGRATION_MAX_VALUE" NOW="$now" \
+    python3 - "$METADATA_FILE" "$metadata_tmp" \
+    "$RELEASE_SHA_VALUE" "$TAG_VALUE" "$DEPLOY_IMAGE_SERVICES_RAW" <<'PY'
+import json
+import os
+import sys
+
+source, target, commit_sha, image_tag, services_raw = sys.argv[1:]
+try:
+    data = json.load(open(source, encoding="utf-8")) if os.path.exists(source) else {}
+except (OSError, ValueError):
+    raise SystemExit("existing production metadata is invalid")
+if not isinstance(data, dict):
+    raise SystemExit("existing production metadata must be an object")
+services = data.get("services", {})
+if not isinstance(services, dict):
+    raise SystemExit("existing production metadata services must be an object")
+data["schemaVersion"] = 1
+data["services"] = services
+for service in filter(None, services_raw.split(",")):
+    entry = services.get(service, {})
+    if not isinstance(entry, dict):
+        raise SystemExit(f"metadata entry is not an object: {service}")
+    entry.update({"commitSha": commit_sha, "imageTag": image_tag, "deployedAt": os.environ["NOW"]})
+    if service == "wotb-backend":
+        entry["schemaVersion"] = int(os.environ["BACKEND_SCHEMA"])
+        entry["migrationMaxVersion"] = int(os.environ["BACKEND_MIGRATION_MAX"])
+    services[service] = entry
+data["deploymentConfigSha"] = commit_sha
+data["updatedAt"] = os.environ["NOW"]
+with open(target, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+PY
+  chmod 600 "$metadata_tmp"
+  mv -f -- "$metadata_tmp" "$METADATA_FILE"
 }
 
-bootstrap_legacy_lkg_schema_from_operator() {
-  local schema_version="${WOTB_LEGACY_LKG_SCHEMA_VERSION:-}"
-  local confirmation="${WOTB_LEGACY_LKG_RECOVERY_CONFIRM:-}"
-
-  if [ -z "$schema_version" ] || [ -z "$confirmation" ]; then
-    echo "ERROR: legacy LKG schema metadata is missing; provide WOTB_LEGACY_LKG_SCHEMA_VERSION and WOTB_LEGACY_LKG_RECOVERY_CONFIRM=V<version> for the one-time recovery." >&2
-    return 1
-  fi
-  if [[ ! "$schema_version" =~ ^(0|[1-9][0-9]*)$ ]]; then
-    echo "ERROR: WOTB_LEGACY_LKG_SCHEMA_VERSION must be a non-negative integer; refusing legacy LKG recovery." >&2
-    return 1
-  fi
-  if [ "$confirmation" != "V$schema_version" ]; then
-    echo "ERROR: WOTB_LEGACY_LKG_RECOVERY_CONFIRM must exactly match V$schema_version; refusing legacy LKG recovery." >&2
-    return 1
-  fi
-  if [ -e "$LKG_SCHEMA" ]; then
-    echo "ERROR: legacy LKG schema bootstrap is one-time and DB_SCHEMA_VERSION.lkg already exists; refusing overwrite." >&2
-    return 1
-  fi
-  if ! validate_lkg_artifacts "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "Legacy LKG"; then
-    return 1
-  fi
-  if ! write_atomic_value "$LKG_SCHEMA" "$schema_version"; then
-    echo "ERROR: failed to write the operator-confirmed legacy LKG schema metadata." >&2
-    return 1
-  fi
-  if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "$LKG_SCHEMA" "Bootstrapped legacy LKG"; then
-    rm -f -- "$LKG_SCHEMA"
-    return 1
-  fi
-  echo "== Legacy LKG schema bootstrapped from explicit operator confirmation: V$schema_version (current database schema was not used) =="
-}
-
-stage_lkg_snapshot() {
-  local source_dir="$1" source_compose="$2" sha="$3" schema_version="$4"
-  if [[ ! "$schema_version" =~ ^(0|[1-9][0-9]*)$ ]]; then
-    echo "ERROR: cannot stage LKG without a valid database schema version." >&2
-    return 1
-  fi
-  if ! rm -rf -- "$LKG_DEPLOY_NEXT_DIR" "$LKG_COMPOSE_NEXT" "$LKG_SHA_NEXT" "$LKG_SCHEMA_NEXT"; then
-    echo "ERROR: failed to clear the LKG staging paths." >&2
-    return 1
-  fi
-  if ! copy_tree lkg-stage "$source_dir" "$LKG_DEPLOY_NEXT_DIR"; then
-    echo "ERROR: failed to copy the deployment tree into the LKG staging path." >&2
-    return 1
-  fi
-  if ! rewrite_compose_tree_path "$source_compose" "$LKG_COMPOSE_NEXT" deploy deploy.lkg.next; then
-    return 1
-  fi
-  if ! printf '%s\n' "$sha" > "$LKG_SHA_NEXT"; then
-    echo "ERROR: failed to write the LKG SHA staging metadata." >&2
-    return 1
-  fi
-  if ! printf '%s\n' "$schema_version" > "$LKG_SCHEMA_NEXT"; then
-    echo "ERROR: failed to write the LKG schema compatibility metadata." >&2
-    return 1
-  fi
-  if ! chmod 600 "$LKG_COMPOSE_NEXT" "$LKG_SHA_NEXT" "$LKG_SCHEMA_NEXT"; then
-    echo "ERROR: failed to protect the LKG staging metadata." >&2
-    return 1
-  fi
-}
-
-validate_lkg_candidate() {
-  validate_lkg_bundle \
-    "$LKG_DEPLOY_NEXT_DIR" "$LKG_COMPOSE_NEXT" "$LKG_SHA_NEXT" "$LKG_SCHEMA_NEXT" \
-    "LKG candidate"
-}
-
-promote_lkg_candidate() {
-  local restore_failed=false
-  local deploy_retired=false compose_retired=false sha_retired=false schema_retired=false
-  local deploy_installed=false compose_installed=false sha_installed=false schema_installed=false
-  validate_lkg_candidate || return 1
-  if [ -e "$LKG_DEPLOY_RETIRING_DIR" ] || [ -e "$LKG_COMPOSE_RETIRING" ] \
-      || [ -e "$LKG_SHA_RETIRING" ] || [ -e "$LKG_SCHEMA_RETIRING" ]; then
-    if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" \
-        "$LKG_SCHEMA" "Existing LKG before stale-retirement cleanup"; then
-      echo "ERROR: incomplete prior LKG promotion found; refusing to overwrite it." >&2
-      return 1
-    fi
-    if ! rm -rf -- "$LKG_DEPLOY_RETIRING_DIR" \
-        || ! rm -f -- "$LKG_COMPOSE_RETIRING" "$LKG_SHA_RETIRING" "$LKG_SCHEMA_RETIRING"; then
-      echo "ERROR: stale LKG retirement paths could not be recovered safely." >&2
-      return 1
-    fi
-  fi
-
-  restore_retired_lkg() {
-    if [ "$deploy_installed" = true ] && ! rm -rf -- "$LKG_DEPLOY_DIR"; then
-      restore_failed=true
-    fi
-    if [ "$compose_installed" = true ] && ! rm -f -- "$LKG_COMPOSE"; then
-      restore_failed=true
-    fi
-    if [ "$sha_installed" = true ] && ! rm -f -- "$LKG_SHA"; then
-      restore_failed=true
-    fi
-    if [ "$schema_installed" = true ] && ! rm -f -- "$LKG_SCHEMA"; then
-      restore_failed=true
-    fi
-    if ! rm -f -- "$LKG_COMPOSE_INSTALLING"; then
-      restore_failed=true
-    fi
-    if [ "$deploy_retired" = true ] && [ -e "$LKG_DEPLOY_RETIRING_DIR" ] \
-        && ! mv -- "$LKG_DEPLOY_RETIRING_DIR" "$LKG_DEPLOY_DIR"; then
-      restore_failed=true
-    fi
-    if [ "$compose_retired" = true ] && [ -e "$LKG_COMPOSE_RETIRING" ] \
-        && ! mv -- "$LKG_COMPOSE_RETIRING" "$LKG_COMPOSE"; then
-      restore_failed=true
-    fi
-    if [ "$sha_retired" = true ] && [ -e "$LKG_SHA_RETIRING" ] \
-        && ! mv -- "$LKG_SHA_RETIRING" "$LKG_SHA"; then
-      restore_failed=true
-    fi
-    if [ "$schema_retired" = true ] && [ -e "$LKG_SCHEMA_RETIRING" ] \
-        && ! mv -- "$LKG_SCHEMA_RETIRING" "$LKG_SCHEMA"; then
-      restore_failed=true
-    fi
-    if [ "$restore_failed" = true ]; then
-      echo "ERROR: failed to restore the previous validated LKG after promotion failure." >&2
-      return 1
-    fi
-    return 0
-  }
-
-  if [ -e "$LKG_DEPLOY_DIR" ]; then
-    if ! retire_lkg_path "$LKG_DEPLOY_DIR" "$LKG_DEPLOY_RETIRING_DIR" WOTB_TEST_FAIL_LKG_DEPLOY_RETIRE; then
-      return 1
-    fi
-    deploy_retired=true
-  fi
-  if [ -e "$LKG_COMPOSE" ]; then
-    if ! retire_lkg_path "$LKG_COMPOSE" "$LKG_COMPOSE_RETIRING" WOTB_TEST_FAIL_LKG_COMPOSE_RETIRE; then
-      if ! restore_retired_lkg; then
-        echo "ERROR: LKG rollback cleanup also failed." >&2
-      fi
-      return 1
-    fi
-    compose_retired=true
-  fi
-  if [ -e "$LKG_SHA" ]; then
-    if ! retire_lkg_path "$LKG_SHA" "$LKG_SHA_RETIRING" WOTB_TEST_FAIL_LKG_SHA_RETIRE; then
-      if ! restore_retired_lkg; then
-        echo "ERROR: LKG rollback cleanup also failed." >&2
-      fi
-      return 1
-    fi
-    sha_retired=true
-  fi
-  if [ -e "$LKG_SCHEMA" ]; then
-    if ! retire_lkg_path "$LKG_SCHEMA" "$LKG_SCHEMA_RETIRING" WOTB_TEST_FAIL_LKG_SCHEMA_RETIRE; then
-      if ! restore_retired_lkg; then
-        echo "ERROR: LKG rollback cleanup also failed." >&2
-      fi
-      return 1
-    fi
-    schema_retired=true
-  fi
-  if ! mv -- "$LKG_DEPLOY_NEXT_DIR" "$LKG_DEPLOY_DIR"; then
-    if ! restore_retired_lkg; then
-      echo "ERROR: LKG rollback cleanup also failed." >&2
-    fi
-    return 1
-  fi
-  deploy_installed=true
-  if ! sed 's|deploy\.lkg\.next/|deploy.lkg/|g' "$LKG_COMPOSE_NEXT" > "$LKG_COMPOSE_INSTALLING" \
-      || ! chmod 600 "$LKG_COMPOSE_INSTALLING" \
-      || ! mv -- "$LKG_COMPOSE_INSTALLING" "$LKG_COMPOSE"; then
-    if ! restore_retired_lkg; then
-      echo "ERROR: LKG rollback cleanup also failed." >&2
-    fi
-    return 1
-  fi
-  compose_installed=true
-  if ! mv -- "$LKG_SHA_NEXT" "$LKG_SHA"; then
-    if ! restore_retired_lkg; then
-      echo "ERROR: LKG rollback cleanup also failed." >&2
-    fi
-    return 1
-  fi
-  sha_installed=true
-  if ! mv -- "$LKG_SCHEMA_NEXT" "$LKG_SCHEMA"; then
-    if ! restore_retired_lkg; then
-      echo "ERROR: LKG rollback cleanup also failed." >&2
-    fi
-    return 1
-  fi
-  schema_installed=true
-  if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "$LKG_SCHEMA" "Promoted LKG"; then
-    if ! restore_retired_lkg; then
-      echo "ERROR: LKG rollback cleanup also failed." >&2
-    fi
-    return 1
-  fi
-  if ! rm -f -- "$LKG_COMPOSE_NEXT" "$LKG_COMPOSE_RETIRING" "$LKG_SHA_RETIRING" "$LKG_SCHEMA_RETIRING" \
-      || ! rm -rf -- "$LKG_DEPLOY_RETIRING_DIR"; then
-    echo "WARNING: new LKG is validated, but retired LKG cleanup was incomplete; next promotion will retry cleanup." >&2
-  fi
-  return 0
-}
-
-seed_current_lkg() {
-  local current_schema
-  [ -d "$LIVE_DEPLOY_DIR" ] || return 1
-  [ -f docker-compose.yml ] || return 1
-  [ -n "$PREV_SHA" ] || return 1
-  echo "== Validating current deployment for LKG seeding =="
-  docker compose -f docker-compose.yml config >/dev/null 2>&1 || return 1
-  bash "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
-    "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" >/dev/null || return 1
-  wait_application_healthy || return 1
-  current_schema="$(read_db_schema_version docker-compose.yml)" || return 1
-  echo "Seeding LKG with current database schema version: $current_schema"
-  stage_lkg_snapshot "$LIVE_DEPLOY_DIR" docker-compose.yml "$PREV_SHA" "$current_schema" || return 1
-  if ! install -m 644 "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy" \
-      "$LKG_DEPLOY_NEXT_DIR/observability/alloy/config.alloy"; then
-    echo "ERROR: failed to add the current Alloy config to the LKG snapshot." >&2
-    return 1
-  fi
-  if [ ! -f "$LKG_DEPLOY_NEXT_DIR/validate-alloy-config.sh" ]; then
-    if ! install -m 755 "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
-        "$LKG_DEPLOY_NEXT_DIR/validate-alloy-config.sh"; then
-      echo "ERROR: failed to add the current Alloy validator to the LKG snapshot." >&2
-      return 1
-    fi
-  fi
-  promote_lkg_candidate || return 1
-}
-
-prepare_lkg_restore() {
-  if [ -e "$RESTORE_DEPLOY_FAILED_DIR" ] || [ -e "$RESTORE_COMPOSE_FAILED" ]; then
-    echo "ERROR: stale failed LKG restore paths exist; refusing to overwrite them." >&2
-    return 1
-  fi
-  if ! rm -rf -- "$RESTORE_DEPLOY_NEXT_DIR" "$RESTORE_COMPOSE_NEXT" "$RESTORE_COMPOSE_INSTALLING"; then
-    echo "ERROR: failed to clear the LKG restore staging paths." >&2
-    return 1
-  fi
-  if ! copy_tree lkg-restore "$LKG_DEPLOY_DIR" "$RESTORE_DEPLOY_NEXT_DIR"; then
-    echo "ERROR: failed to stage the validated LKG for restore; live was not changed." >&2
-    return 1
-  fi
-  if ! rewrite_compose_tree_path "$LKG_COMPOSE" "$RESTORE_COMPOSE_NEXT" deploy.lkg deploy.restore.next; then
-    return 1
-  fi
-  if ! chmod 600 "$RESTORE_COMPOSE_NEXT"; then
-    echo "ERROR: failed to protect the staged LKG restore compose." >&2
-    return 1
-  fi
-  if ! docker compose -f "$RESTORE_COMPOSE_NEXT" config >/dev/null; then
-    echo "ERROR: staged LKG restore compose validation failed; live was not changed." >&2
-    return 1
-  fi
-  if ! validate_lkg_bundle "$RESTORE_DEPLOY_NEXT_DIR" "$RESTORE_COMPOSE_NEXT" "$LKG_SHA" "$LKG_SCHEMA" \
-      "LKG restore candidate"; then
-    echo "ERROR: staged LKG restore bundle validation failed; live was not changed." >&2
-    return 1
-  fi
-}
-
-restore_previous_live_after_failed_switch() {
-  local restore_failed=false
-  if [ -e "$LIVE_DEPLOY_DIR" ] && ! rm -rf -- "$LIVE_DEPLOY_DIR"; then
-    restore_failed=true
-  fi
-  if [ -e "$LIVE_COMPOSE" ] && [ -e "$RESTORE_COMPOSE_FAILED" ] \
-      && ! rm -f -- "$LIVE_COMPOSE"; then
-    restore_failed=true
-  fi
-  if [ -e "$RESTORE_DEPLOY_FAILED_DIR" ] \
-      && ! move_path restore-recover-live "$RESTORE_DEPLOY_FAILED_DIR" "$LIVE_DEPLOY_DIR"; then
-    restore_failed=true
-  fi
-  if [ -e "$RESTORE_COMPOSE_FAILED" ] \
-      && ! move_path restore-recover-compose "$RESTORE_COMPOSE_FAILED" "$LIVE_COMPOSE"; then
-    restore_failed=true
-  fi
-  if [ "$restore_failed" = true ]; then
-    echo "ERROR: failed to restore the pre-rollback live state after a switch failure." >&2
-    return 1
-  fi
-  return 0
-}
-
-restore_lkg_to_live() {
-  prepare_lkg_restore || return 1
-  if [ -e "$LIVE_DEPLOY_DIR" ] \
-      && ! move_path restore-preserve-live "$LIVE_DEPLOY_DIR" "$RESTORE_DEPLOY_FAILED_DIR"; then
-    echo "ERROR: failed to preserve the current live deployment tree." >&2
-    return 1
-  fi
-  if [ -e "$LIVE_COMPOSE" ] \
-      && ! move_path restore-preserve-compose "$LIVE_COMPOSE" "$RESTORE_COMPOSE_FAILED"; then
-    echo "ERROR: failed to preserve the current live compose file." >&2
-    if ! restore_previous_live_after_failed_switch; then
-      echo "ERROR: current live tree may require manual recovery." >&2
-    fi
-    return 1
-  fi
-  if ! move_path restore-live "$RESTORE_DEPLOY_NEXT_DIR" "$LIVE_DEPLOY_DIR"; then
-    echo "ERROR: failed to switch the validated LKG tree into live." >&2
-    if ! restore_previous_live_after_failed_switch; then
-      echo "ERROR: current live tree may require manual recovery." >&2
-    fi
-    return 1
-  fi
-  if ! rewrite_compose_tree_path "$RESTORE_COMPOSE_NEXT" "$RESTORE_COMPOSE_INSTALLING" \
-      deploy.restore.next deploy; then
-    echo "ERROR: failed to prepare the live LKG compose file." >&2
-    if [ -e "$LIVE_DEPLOY_DIR" ] && [ -e "$RESTORE_DEPLOY_FAILED_DIR" ] \
-        && ! move_path restore-partial-live "$LIVE_DEPLOY_DIR" "$RESTORE_DEPLOY_NEXT_DIR"; then
-      echo "ERROR: failed to preserve the partially switched LKG tree." >&2
-    fi
-    if ! restore_previous_live_after_failed_switch; then
-      echo "ERROR: current live tree may require manual recovery." >&2
-    fi
-    return 1
-  fi
-  if ! chmod 600 "$RESTORE_COMPOSE_INSTALLING"; then
-    echo "ERROR: failed to protect the live LKG compose file." >&2
-    if [ -e "$LIVE_DEPLOY_DIR" ] && [ -e "$RESTORE_DEPLOY_FAILED_DIR" ] \
-        && ! move_path restore-partial-live "$LIVE_DEPLOY_DIR" "$RESTORE_DEPLOY_NEXT_DIR"; then
-      echo "ERROR: failed to preserve the partially switched LKG tree." >&2
-    fi
-    if ! restore_previous_live_after_failed_switch; then
-      echo "ERROR: current live tree may require manual recovery." >&2
-    fi
-    return 1
-  fi
-  if ! move_path restore-compose "$RESTORE_COMPOSE_INSTALLING" "$LIVE_COMPOSE"; then
-    echo "ERROR: failed to install the validated LKG compose file." >&2
-    if [ -e "$LIVE_DEPLOY_DIR" ] && [ -e "$RESTORE_DEPLOY_FAILED_DIR" ] \
-        && ! move_path restore-partial-live "$LIVE_DEPLOY_DIR" "$RESTORE_DEPLOY_NEXT_DIR"; then
-      echo "ERROR: failed to preserve the partially switched LKG tree." >&2
-    fi
-    if ! restore_previous_live_after_failed_switch; then
-      echo "ERROR: current live tree may require manual recovery." >&2
-    fi
-    return 1
-  fi
-  if ! rm -rf -- "$RESTORE_DEPLOY_FAILED_DIR"; then
-    echo "WARNING: restored LKG is live, but the retired live tree could not be removed." >&2
-  fi
-  if ! rm -f -- "$RESTORE_COMPOSE_FAILED"; then
-    echo "WARNING: restored LKG is live, but the retired compose file could not be removed." >&2
-  fi
-  return 0
-}
-
-rollback_to_lkg() {
-  local current_schema lkg_schema
-  echo "== DEPLOY FAILED: rolling back to LKG runtime =="
-  if ! validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "$LKG_SCHEMA" \
-      "ROLLBACK ABORTED"; then
-    echo "ROLLBACK ABORTED: LKG runtime is unavailable or corrupted" >&2
-    echo "manual intervention required; current live tree was not destroyed" >&2
-    return 1
-  fi
-  if ! current_schema="$(read_db_schema_version "$LIVE_COMPOSE")"; then
-    echo "ROLLBACK UNSAFE: current database schema could not be established; automatic application rollback aborted." >&2
-    echo "manual intervention required; database was not downgraded." >&2
-    return 1
-  fi
-  lkg_schema="$(tr -d '[:space:]' < "$LKG_SCHEMA")"
-  echo "Rollback schema check: database=$current_schema LKG-supported=$lkg_schema"
-  if [ "$current_schema" -gt "$lkg_schema" ]; then
-    echo "ROLLBACK UNSAFE: database schema advanced from V$lkg_schema to V$current_schema" >&2
-    echo "LKG backend supports schema V$lkg_schema; automatic application rollback aborted." >&2
-    echo "manual intervention required; database was not downgraded." >&2
-    return 1
-  fi
-  if [ "$current_schema" -lt "$lkg_schema" ]; then
-    echo "ROLLBACK UNSAFE: database schema V$current_schema is older than LKG-supported schema V$lkg_schema" >&2
-    echo "automatic application rollback aborted; database was not downgraded." >&2
-    return 1
-  fi
-  if ! restore_lkg_to_live; then
-    echo "ROLLBACK ABORTED: LKG runtime could not be installed transactionally." >&2
-    return 1
-  fi
-  if pull_compose "$LIVE_COMPOSE" \
-      && docker compose up -d --remove-orphans postgres keycloak wotb-backend wotb-frontend; then
-    if apply_observability_services && verify_grafana_from_frontend_network; then
-      :
-    else
-      echo "OBSERVABILITY DEGRADED: observability services or Grafana frontend-network readiness failed during rollback" >&2
-    fi
-    if wait_healthy; then
-      cp -f "$LKG_SHA" "$DEPLOYED_SHA_FILE"
-      echo "== ROLLBACK OK: $(cat "$LKG_SHA") =="
-      report_observability_status || true
-      return 0
-    fi
-  fi
-  echo "== ROLLBACK FAILED: LKG application health gate failed; manual intervention required ==" >&2
-  dump_logs
-  return 1
-}
-
-rollback_targeted_to_previous() {
-  local current_schema preserved_live=false preserved_compose=false
-  local snapshot_installed=false snapshot_compose_installed=false
-
-  if ! current_schema="$(read_db_schema_version "$LIVE_COMPOSE")"; then
-    echo "TARGETED ROLLBACK UNSAFE: current database schema could not be established; automatic application rollback aborted." >&2
-    echo "manual intervention required; database was not downgraded." >&2
-    return 1
-  fi
-  if [ "$current_schema" -ne "$PRE_DEPLOY_DB_SCHEMA_VERSION" ]; then
-    echo "TARGETED ROLLBACK UNSAFE: database schema changed from V$PRE_DEPLOY_DB_SCHEMA_VERSION to V$current_schema" >&2
-    echo "automatic targeted application rollback aborted; database was not downgraded." >&2
-    return 1
-  fi
-
-  restore_targeted_candidate_after_failed_switch() {
-    local recovery_failed=false
-    if [ "$snapshot_installed" = true ] && [ -e "$LIVE_DEPLOY_DIR" ] \
-        && ! move_path targeted-recover-previous-live "$LIVE_DEPLOY_DIR" "$PREV_DEPLOY_DIR"; then
-      recovery_failed=true
-    fi
-    if [ "$snapshot_compose_installed" = true ] && [ -e "$LIVE_COMPOSE" ] \
-        && ! move_path targeted-recover-previous-compose "$LIVE_COMPOSE" "$PREV_COMPOSE"; then
-      recovery_failed=true
-    fi
-    if [ "$preserved_live" = true ] && [ -e "$TARGETED_FAILED_DEPLOY_DIR" ] \
-        && ! move_path targeted-recover-candidate-live "$TARGETED_FAILED_DEPLOY_DIR" "$LIVE_DEPLOY_DIR"; then
-      recovery_failed=true
-    fi
-    if [ "$preserved_compose" = true ] && [ -e "$TARGETED_FAILED_COMPOSE" ] \
-        && ! move_path targeted-recover-candidate-compose "$TARGETED_FAILED_COMPOSE" "$LIVE_COMPOSE"; then
-      recovery_failed=true
-    fi
-    if [ "$recovery_failed" = true ]; then
-      echo "ERROR: failed to restore the candidate after a targeted rollback switch failure." >&2
-      return 1
-    fi
-  }
-
-  local target_label
-  target_label="$(deploy_service_label)"
-  echo "== TARGETED DEPLOY FAILED: restoring pre-deploy ${target_label} runtime =="
-  if [ ! -d "$PREV_DEPLOY_DIR" ] || [ ! -f "$PREV_COMPOSE" ]; then
-    echo "TARGETED ROLLBACK ABORTED: pre-deploy snapshot is unavailable." >&2
-    return 1
-  fi
-  if [ -e "$TARGETED_FAILED_DEPLOY_DIR" ] || [ -e "$TARGETED_FAILED_COMPOSE" ]; then
-    echo "TARGETED ROLLBACK ABORTED: stale failed-target snapshot exists; refusing to overwrite it." >&2
-    return 1
-  fi
-  if ! docker compose -f "$PREV_COMPOSE" config >/dev/null; then
-    echo "TARGETED ROLLBACK ABORTED: pre-deploy compose snapshot is invalid." >&2
-    return 1
-  fi
-
-  if ! move_path targeted-preserve-candidate-live "$LIVE_DEPLOY_DIR" "$TARGETED_FAILED_DEPLOY_DIR"; then
-    echo "TARGETED ROLLBACK ABORTED: failed to preserve the failed candidate tree." >&2
-    return 1
-  fi
-  preserved_live=true
-  if ! move_path targeted-preserve-candidate-compose "$LIVE_COMPOSE" "$TARGETED_FAILED_COMPOSE"; then
-    echo "TARGETED ROLLBACK ABORTED: failed to preserve the failed candidate compose." >&2
-    restore_targeted_candidate_after_failed_switch || true
-    return 1
-  fi
-  preserved_compose=true
-  if ! move_path targeted-restore-previous-live "$PREV_DEPLOY_DIR" "$LIVE_DEPLOY_DIR"; then
-    echo "TARGETED ROLLBACK ABORTED: failed to restore the pre-deploy tree." >&2
-    restore_targeted_candidate_after_failed_switch || true
-    return 1
-  fi
-  snapshot_installed=true
-  if ! move_path targeted-restore-previous-compose "$PREV_COMPOSE" "$LIVE_COMPOSE"; then
-    echo "TARGETED ROLLBACK ABORTED: failed to restore the pre-deploy compose." >&2
-    restore_targeted_candidate_after_failed_switch || true
-    return 1
-  fi
-  snapshot_compose_installed=true
-
-  if pull_compose "$LIVE_COMPOSE" "${DEPLOY_SERVICES[@]}" \
-      && docker compose up -d --no-deps --force-recreate --remove-orphans "${DEPLOY_SERVICES[@]}" \
-      && assert_services_running "${DEPLOY_SERVICES[@]}" \
-      && wait_healthy; then
-    if ! rm -rf -- "$TARGETED_FAILED_DEPLOY_DIR" "$TARGETED_FAILED_COMPOSE"; then
-    echo "WARNING: targeted rollback restored a healthy ${target_label}, but failed-target forensic snapshot cleanup failed." >&2
-    fi
-    echo "== TARGETED ROLLBACK OK: $target_label =="
-    report_observability_status || true
-    return 0
-  fi
-
-  echo "TARGETED ROLLBACK FAILED: pre-deploy ${target_label} runtime could not be restored; manual intervention required." >&2
-  dump_logs
-  return 1
-}
-
-staged_pull_services=()
-if ! is_full_deploy; then
-  staged_pull_services=("${DEPLOY_SERVICES[@]}")
-elif is_manual_latest_deploy; then
-  staged_pull_services=("${DEPLOY_IMAGE_SERVICES[@]}")
-fi
-if ! pull_compose "$STAGED_COMPOSE" "${staged_pull_services[@]}"; then
-  echo "ERROR: staged docker compose pull failed after 3 attempts; live deployment was not changed." >&2
-  exit 1
-fi
-
-if ! bash "$STAGED_DEPLOY_DIR/validate-alloy-config.sh" \
-    "$STAGED_DEPLOY_DIR/observability/alloy/config.alloy"; then
-  echo "ERROR [ALLOY]: staged Alloy config validation failed; live deployment was not changed." >&2
-  exit 1
-fi
-prepare_runner_tools
-
-if lkg_bundle_present; then
-  if validate_lkg_bundle "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "$LKG_SCHEMA" "Existing LKG"; then
-    :
-  elif [ ! -f "$LKG_SCHEMA" ] \
-      && validate_lkg_artifacts "$LKG_DEPLOY_DIR" "$LKG_COMPOSE" "$LKG_SHA" "Legacy LKG"; then
-    if legacy_lkg_schema_bootstrap_requested; then
-      if ! bootstrap_legacy_lkg_schema_from_operator; then
-        echo "ROLLBACK ABORTED: explicit legacy LKG schema recovery was not accepted; live deployment was not changed." >&2
-        exit 1
-      fi
-    elif seed_current_lkg; then
-      echo "== Legacy LKG safely bootstrapped with current healthy deployment schema metadata =="
-    else
-      echo "ROLLBACK ABORTED: legacy LKG has no schema metadata and current live deployment could not be safely bootstrapped; operator confirmation is required for controlled recovery." >&2
-      exit 1
-    fi
+main() {
+  validate_inputs
+  mkdir -p "$WOTB_DIR" "$INCOMING_DIR"
+  command -v docker >/dev/null 2>&1 || die "docker is required."
+  command -v flock >/dev/null 2>&1 || die "flock is required to serialize production deployments."
+  command -v python3 >/dev/null 2>&1 || die "python3 is required for release metadata and compose identity handling."
+  validate_metadata_file || die "production metadata is invalid; refusing deployment."
+  if [ -n "${WOTB_DEPLOY_LOCK_FD:-}" ]; then
+    [ "$WOTB_DEPLOY_LOCK_FD" = 9 ] || die "unsupported inherited deployment lock descriptor."
+    { true >&9; } 2>/dev/null || die "inherited deployment lock descriptor is unavailable."
+    flock -n 9 || die "another production deployment is already running."
   else
-    echo "ROLLBACK ABORTED: existing LKG is unavailable or corrupted; live deployment was not changed." >&2
+    exec 9>"$WOTB_DIR/.deploy.lock"
+    flock -n 9 || die "another production deployment is already running."
+  fi
+  cd "$WOTB_DIR"
+
+  stage_and_validate
+  pull_images || {
+    echo "ERROR: target image pull failed; live deployment was not changed." >&2
+    exit 1
+  }
+  promote_files || {
+    echo "ERROR: live deployment file promotion failed; live deployment was restored when possible." >&2
+    exit 1
+  }
+  if ! apply_services; then
+    diagnostics
+    stop_failed_service
     exit 1
   fi
-else
-  if seed_current_lkg; then
-    echo "== Current application-healthy deployment promoted as LKG =="
-  else
-    echo "ERROR: No application-validated LKG exists." >&2
-    echo "Current deployment cannot be promoted to LKG." >&2
-    echo "NO_VALIDATED_LKG: live deployment was not changed." >&2
+  if ! blocking_health; then
+    diagnostics
+    stop_failed_service
+    echo "ERROR: blocking core health failed; no automatic application recovery was attempted." >&2
     exit 1
   fi
-fi
+  run_observability_checks
+  update_metadata
+  rm -f -- "$INCOMING_DIR/docker-compose.effective.yml"
+  echo "Deployment completed: $RELEASE_SHA_VALUE ($TAG_VALUE)"
+}
 
-rollback_needed=false
-# Same-filesystem moves make promotion preserve the previous tree for forensics.
-if [ -d "$LIVE_DEPLOY_DIR" ]; then
-  if [ -f "$LIVE_COMPOSE" ]; then cp -f "$LIVE_COMPOSE" "$PREV_COMPOSE"; fi
-  rm -rf -- "$PREV_DEPLOY_DIR"
-  mv -- "$LIVE_DEPLOY_DIR" "$PREV_DEPLOY_DIR"
-  echo "Previous deployment tree saved (PREV_SHA=${PREV_SHA:-unknown})."
-fi
-mv -- "$STAGED_DEPLOY_DIR" "$LIVE_DEPLOY_DIR"
-cp -f "$LIVE_DEPLOY_DIR/docker-compose.prod.yml" docker-compose.next.yml
-PROMOTED_COMPOSE_ARGS=(-f docker-compose.next.yml)
-if [ -f "$STAGED_SERVICE_OVERRIDE" ]; then
-  PROMOTED_COMPOSE_ARGS+=(-f "$STAGED_SERVICE_OVERRIDE")
-fi
-if ! docker compose "${PROMOTED_COMPOSE_ARGS[@]}" config > docker-compose.next.resolved.yml; then
-  echo "ERROR: promoted compose render failed; attempting rollback." >&2
-  rollback_needed=true
-else
-  mv -f docker-compose.next.resolved.yml docker-compose.yml
-  chmod 600 docker-compose.yml
-fi
-
-if [ "$rollback_needed" = false ]; then
-  if ! deploy_selected_service; then
-    echo "ERROR: docker compose up failed; attempting rollback." >&2
-    rollback_needed=true
-  else
-    if is_full_deploy && ! is_manual_latest_deploy; then
-      if apply_observability_services && verify_grafana_from_frontend_network; then
-        :
-      else
-        echo "OBSERVABILITY DEGRADED: Grafana is not ready through runtime Docker DNS" >&2
-      fi
-    elif has_deploy_service grafana; then
-      if verify_grafana_from_frontend_network; then
-        :
-      else
-        echo "OBSERVABILITY DEGRADED: Grafana is not ready through runtime Docker DNS" >&2
-      fi
-    elif has_deploy_service prometheus || has_deploy_service loki \
-        || has_deploy_service alloy || has_deploy_service node-exporter; then
-      :
-    fi
-    if [ "$rollback_needed" = false ]; then
-      if is_full_deploy; then
-        docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
-      fi
-    fi
-    health_gate_passed=false
-    if [ "$rollback_needed" = false ] && wait_healthy; then
-      health_gate_passed=true
-      if is_full_deploy; then
-        if ! POST_DEPLOY_DB_SCHEMA_VERSION="$(read_db_schema_version "$LIVE_COMPOSE")"; then
-          echo "ERROR: application is healthy but candidate database schema could not be established; attempting rollback." >&2
-          rollback_needed=true
-        else
-          echo "Post-deploy database schema version: $POST_DEPLOY_DB_SCHEMA_VERSION"
-        fi
-      fi
-    fi
-    if [ "$rollback_needed" = false ] && [ "$health_gate_passed" = true ]; then
-      if ! is_full_deploy; then
-        deployment_id="${RELEASE_SHA_VALUE:-$TAG}"
-        if ! update_deployed_state "$deployment_id"; then
-          echo "ERROR: per-service deployed state update failed; attempting rollback." >&2
-          rollback_needed=true
-        else
-          echo "== TARGETED DEPLOY OK: $(deploy_service_label) =="
-          report_observability_status || true
-          exit 0
-        fi
-      elif is_manual_latest_deploy; then
-        deployment_id="${RELEASE_SHA_VALUE:-$TAG}"
-        if ! update_deployed_state "$deployment_id"; then
-          echo "ERROR: per-service deployed state update failed; attempting rollback." >&2
-          rollback_needed=true
-        else
-          docker image prune -af
-          docker builder prune -af
-          echo "== DEPLOY OK: $TAG =="
-          exit 0
-        fi
-      elif ! stage_lkg_snapshot "$LIVE_DEPLOY_DIR" "$LIVE_COMPOSE" "${RELEASE_SHA_VALUE:-$TAG}" "$POST_DEPLOY_DB_SCHEMA_VERSION"; then
-        echo "ERROR: LKG staging failed after the application health gate; attempting rollback." >&2
-        rollback_needed=true
-      elif promote_lkg_candidate; then
-        deployment_id="${RELEASE_SHA_VALUE:-$TAG}"
-        if ! update_deployed_state "$deployment_id"; then
-          echo "ERROR: per-service deployed state update failed; attempting rollback." >&2
-          rollback_needed=true
-        else
-          docker image prune -af
-          docker builder prune -af
-          echo "== DEPLOY OK: $TAG =="
-          report_observability_status || true
-          exit 0
-        fi
-      else
-        echo "ERROR: LKG promotion failed after the application health gate; attempting rollback." >&2
-        rollback_needed=true
-      fi
-    else
-      echo "== APPLICATION GATE FAILED =="
-      dump_logs
-      rollback_needed=true
-    fi
-  fi
-fi
-
-if [ "$rollback_needed" = true ]; then
-  if ! is_full_deploy; then
-    if ! rollback_targeted_to_previous; then
-      echo "TARGETED ROLLBACK FAILED: no usable pre-deploy runtime was restored." >&2
-    fi
-  elif lkg_bundle_present; then
-    if ! rollback_to_lkg; then
-      echo "ROLLBACK FAILED: no usable LKG runtime was restored." >&2
-    fi
-  else
-    echo "ROLLBACK FAILED: no validated LKG runtime is available; manual intervention required." >&2
-  fi
-  exit 1
-fi
+main "$@"

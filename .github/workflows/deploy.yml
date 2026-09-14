@@ -1,6 +1,6 @@
 name: Deploy
 # 生产 Grafana MCP 已下线（2026-08-11）：不再传递 GRAFANA_MCP_TOKEN。
-run-name: Deploy ${{ inputs.service || github.event.workflow_run.head_sha || github.sha }} by @${{ github.actor }}
+run-name: Deploy ${{ github.event.workflow_run.head_sha }} by @${{ github.actor }}
 
 on:
   workflow_run:
@@ -8,18 +8,6 @@ on:
       - Build
     types:
       - completed
-  workflow_dispatch:
-    inputs:
-      service:
-        description: Application to deploy; All republishes Backend, Frontend and Keycloak
-        required: true
-        type: choice
-        default: all
-        options:
-          - all
-          - backend
-          - frontend
-          - keycloak
 
 permissions:
   contents: read
@@ -31,10 +19,8 @@ concurrency:
 jobs:
   changes:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main')
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -44,17 +30,16 @@ jobs:
       release_sha: ${{ steps.manifest.outputs.release_sha }}
       release_tag: ${{ steps.manifest.outputs.release_tag }}
       build_run_number: ${{ steps.manifest.outputs.build_run_number }}
+      backend_migration_max_version: ${{ steps.manifest.outputs.backend_migration_max_version }}
       deploy_services: ${{ steps.manifest.outputs.deploy_services }}
       image_services: ${{ steps.manifest.outputs.image_services }}
       deploy_display_name: ${{ steps.manifest.outputs.deploy_display_name }}
-      stale_release_guard: ${{ steps.manifest.outputs.stale_release_guard }}
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 1
+          ref: ${{ github.event.workflow_run.head_sha }}
       - name: Download triggering Build manifest
-        if: github.event_name == 'workflow_run'
         uses: actions/download-artifact@v5
         with:
           name: deployment-manifest
@@ -62,54 +47,21 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
           run-id: ${{ github.event.workflow_run.id }}
-      - name: Validate manual source is current main HEAD
-        if: github.event_name == 'workflow_dispatch'
-        id: manual_identity
-        env:
-          REQUESTED_SERVICE: ${{ inputs.service }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          source_sha="$(git rev-parse HEAD)"
-          main_sha="$(git rev-parse origin/main)"
-          if [ "$source_sha" != "$main_sha" ]; then
-            echo "::error::Manual Deploy must run from the current main HEAD." >&2
-            exit 1
-          fi
-          echo "release_sha=$source_sha" >> "$GITHUB_OUTPUT"
       - name: Validate deployment manifest
         id: manifest
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha || steps.manual_identity.outputs.release_sha }}
-          MANUAL_SERVICE: ${{ inputs.service || '' }}
-          MANUAL_SHA: ${{ steps.manual_identity.outputs.release_sha || '' }}
-          BUILD_RUN_ID: ${{ github.event.workflow_run.id || 'manual' }}
-          BUILD_RUN_NUMBER: ${{ github.event.workflow_run.run_number || '1' }}
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = workflow_run ]; then
-            manifest_path=release-artifact/deployment-manifest.json
-            [ -f "$manifest_path" ] || {
-              echo "deployment manifest artifact is missing" >&2
-              exit 1
-            }
-            metadata="$(python3 deploy/release_plan.py validate \
-              --manifest "$manifest_path" --expected-sha "$EXPECTED_SHA")"
-            stale_release_guard=1
-          else
-            python3 deploy/release_plan.py manual \
-              --service "$MANUAL_SERVICE" \
-              --commit-sha "$MANUAL_SHA" \
-              --build-run-id "$BUILD_RUN_ID" \
-              --build-run-number "$BUILD_RUN_NUMBER" > deployment-manifest.json
-            metadata="$(python3 deploy/release_plan.py validate \
-              --manifest deployment-manifest.json --expected-sha "$MANUAL_SHA" --allow-latest)"
-            stale_release_guard=0
-          fi
-          python3 - "$metadata" "$stale_release_guard" <<'PY' >> "$GITHUB_OUTPUT"
+          manifest_path=release-artifact/deployment-manifest.json
+          [ -f "$manifest_path" ] || {
+            echo "deployment manifest artifact is missing" >&2
+            exit 1
+          }
+          metadata="$(python3 deploy/release_plan.py validate \
+            --manifest "$manifest_path" --expected-sha "$EXPECTED_SHA")"
+          python3 - "$metadata" <<'PY' >> "$GITHUB_OUTPUT"
           import json
           import sys
 
@@ -117,6 +69,7 @@ jobs:
           print(f"release_sha={manifest['commitSha']}")
           print(f"release_tag={manifest['imageTag']}")
           print(f"build_run_number={manifest['buildRunNumber']}")
+          print(f"backend_migration_max_version={manifest['backendMigrationMaxVersion']}")
           print(f"deploy_services={','.join(manifest['deployServices'])}")
           print(f"image_services={','.join(manifest['imageServices'])}")
           labels = []
@@ -133,7 +86,6 @@ jobs:
                      for service in manifest["deployServices"]):
                   labels.append("Observability")
           print(f"deploy_display_name={' + '.join(labels) or 'No-op'}")
-          print(f"stale_release_guard={sys.argv[2]}")
           PY
 
   image_existence:
@@ -163,11 +115,10 @@ jobs:
               keycloak) image=ghcr.io/a158coke/wotbtools-keycloak ;;
               *) echo "unsupported image service: $service" >&2; exit 1 ;;
             esac
-            if ! docker manifest inspect "$image:$RELEASE_TAG" >/dev/null 2>&1; then
-              echo "::error::Required deploy image does not exist for $service: $image:$RELEASE_TAG" >&2
-              echo "Build the corresponding application image first, then rerun Deploy." >&2
+            docker manifest inspect "$image:$RELEASE_TAG" >/dev/null || {
+              echo "::error::Required immutable deploy image does not exist for $service: $image:$RELEASE_TAG" >&2
               exit 1
-            fi
+            }
           done
 
   deploy:
@@ -222,13 +173,13 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_STALE_RELEASE_GUARD,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,DB_PASSWORD,KC_ADMIN_PASSWORD,WG_APPLICATION_ID,KEYCLOAK_ADMIN_CLIENT_SECRET,AI_API_KEY,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS,AI_BASE_URL,AI_MODEL,AI_CONNECT_TIMEOUT_SEC,AI_TIMEOUT_SEC,AI_CALL_TIMEOUT_SEC,AI_RETRY_MAX_ATTEMPTS,AI_RETRY_INITIAL_BACKOFF_MS,AI_RETRY_MAX_BACKOFF_MS,AI_RETRY_BACKOFF_MULTIPLIER,AI_CONTEXT_WINDOW_TOKENS,AI_SINGLE_REPLAY_MAX_INPUT_TOKENS,AI_MAX_OUTPUT_TOKENS,AI_PROMPT_SAFETY_MARGIN_TOKENS,AI_THINKING_ENABLED,AI_THINKING_ENABLED_CALL2,AI_REASONING_EFFORT,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY,AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT
+          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_BACKEND_MIGRATION_MAX_VERSION,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,DB_PASSWORD,KC_ADMIN_PASSWORD,WG_APPLICATION_ID,KEYCLOAK_ADMIN_CLIENT_SECRET,AI_API_KEY,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS,AI_BASE_URL,AI_MODEL,AI_CONNECT_TIMEOUT_SEC,AI_TIMEOUT_SEC,AI_CALL_TIMEOUT_SEC,AI_RETRY_MAX_ATTEMPTS,AI_RETRY_INITIAL_BACKOFF_MS,AI_RETRY_MAX_BACKOFF_MS,AI_RETRY_BACKOFF_MULTIPLIER,AI_CONTEXT_WINDOW_TOKENS,AI_SINGLE_REPLAY_MAX_INPUT_TOKENS,AI_MAX_OUTPUT_TOKENS,AI_PROMPT_SAFETY_MARGIN_TOKENS,AI_THINKING_ENABLED,AI_THINKING_ENABLED_CALL2,AI_REASONING_EFFORT,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY,AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT
           script: bash /opt/wotb/deploy.incoming/deploy/deploy.sh
         env:
           TAG: ${{ needs.changes.outputs.release_tag }}
           RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
           RELEASE_RUN_NUMBER: ${{ needs.changes.outputs.build_run_number }}
-          WOTB_STALE_RELEASE_GUARD: ${{ needs.changes.outputs.stale_release_guard }}
+          WOTB_BACKEND_MIGRATION_MAX_VERSION: ${{ needs.changes.outputs.backend_migration_max_version }}
           WOTB_DEPLOY_SERVICES: ${{ needs.changes.outputs.deploy_services }}
           WOTB_DEPLOY_IMAGE_SERVICES: ${{ needs.changes.outputs.image_services }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}

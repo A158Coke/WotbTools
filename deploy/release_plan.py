@@ -12,7 +12,6 @@ import fnmatch
 import json
 import re
 import sys
-from pathlib import PurePosixPath
 
 
 IMAGE_NAMES = ("backend", "frontend", "keycloak")
@@ -51,11 +50,19 @@ FRONTEND_PATTERNS = (
     "common/assets/**",
     "docs/WotBTools_League_Rating_V6.md",
     "deploy/nginx/**",
+    "contracts/http/**",
 )
 BACKEND_PATTERNS = (
     "java/**",
     "docker/Dockerfile.backend",
-    "common/**",
+    "common/tankopedia-tier7.json",
+    "common/tankopedia-tier8.json",
+    "common/tankopedia-tier9.json",
+    "common/tankopedia-tier10.json",
+    "common/map_names.json",
+    "common/tank_tactical_profiles.json",
+    "common/map-semantics/**",
+    "contracts/http/**",
 )
 KEYCLOAK_PATTERNS = (
     "keycloak-juhe-qq-provider/**",
@@ -70,9 +77,79 @@ ALL_DEPLOY_PATTERNS = (
     "deploy/verify-observability.sh",
     "deploy/validate-alloy-config.sh",
     "deploy/grafana-api-request.sh",
-    "deploy/postgres-backup.sh",
-    "deploy/postgres-backup-inspect.sh",
-    "deploy/postgres-restore.sh",
+)
+RUNTIME_CONFIG_PATTERNS = ("deploy/docker-compose.prod.yml",)
+CI_SURFACE_PATTERNS = {
+    "backend": BACKEND_PATTERNS,
+    "frontend": FRONTEND_PATTERNS,
+    "keycloak": KEYCLOAK_PATTERNS,
+    "httpContract": (
+        "contracts/http/**",
+        "frontend/src/api/**",
+        "frontend/scripts/*contract*",
+        "java/wotb-web/**",
+    ),
+    "data": (
+        "common/**",
+        "map-semanticizer/**",
+        "common/python/**",
+    ),
+    "deploy": (
+        "deploy/**",
+        "docker/**",
+        ".github/workflows/deploy*.yml",
+        "java/wotb-web/src/main/resources/db/migration/**",
+        "java/settings-docker.xml",
+    ),
+    "observability": (
+        "deploy/observability/**",
+        "infra/tofu/grafana/**",
+        "docker/online/docker-compose.yml",
+        "deploy/nginx/**",
+    ),
+    "android": (
+        "android/**",
+        "contracts/android-native-bridge.json",
+        "frontend/src/platform/nativeBridgeContract.js",
+        "scripts/android-release/**",
+    ),
+    "keycloakProvider": (
+        "keycloak-wargaming-provider/src/main/java/**",
+        "keycloak-wargaming-provider/src/test/**",
+        "keycloak-wargaming-provider/pom.xml",
+        "keycloak-juhe-qq-provider/src/main/java/**",
+        "keycloak-juhe-qq-provider/src/test/**",
+        "keycloak-juhe-qq-provider/pom.xml",
+    ),
+    "keycloakRuntime": (
+        "keycloak-wargaming-provider/src/main/java/**",
+        "keycloak-wargaming-provider/pom.xml",
+        "keycloak-wargaming-provider/src/main/resources/**",
+        "keycloak-juhe-qq-provider/src/main/java/**",
+        "keycloak-juhe-qq-provider/pom.xml",
+        "keycloak-juhe-qq-provider/src/main/resources/**",
+        "docker/Dockerfile.keycloak",
+        "docker/keycloak/**",
+        "docker/online/docker-compose.yml",
+        "java/settings-docker.xml",
+    ),
+}
+FULL_PATTERNS = (
+    ".github/workflows/**",
+    "java/pom.xml",
+    "java/**/pom.xml",
+    "frontend/package.json",
+    "frontend/package-lock.json",
+    "frontend/vite.config.js",
+    "frontend/vitest.config.js",
+    "frontend/tsconfig.json",
+    "frontend/tsconfig.app.json",
+    "android/build.gradle.kts",
+    "android/settings.gradle.kts",
+    "android/gradle.properties",
+    ".dockerignore",
+    "Makefile",
+    "scripts/build/**",
 )
 OBSERVABILITY_DEPLOY_PATTERNS = {
     "prometheus": ("deploy/observability/prometheus/**",),
@@ -91,9 +168,10 @@ def _matches(path: str, pattern: str) -> bool:
     pattern = pattern.replace("\\", "/")
     if fnmatch.fnmatchcase(path, pattern):
         return True
-    # fnmatch treats ** like *, while pathlib gives the expected recursive
-    # semantics for the repository patterns used here.
-    return PurePosixPath(path).match(pattern)
+    if pattern.endswith("/**"):
+        prefix = pattern[:-3].rstrip("/")
+        return path == prefix or path.startswith(prefix + "/")
+    return False
 
 
 def _matches_any(path: str, patterns: tuple[str, ...]) -> bool:
@@ -104,6 +182,10 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
     images = {name: False for name in IMAGE_NAMES}
     deploy_services: list[str] = []
     deploy_config = False
+    ci_surfaces = {name: False for name in (
+        "backend", "frontend", "keycloak", "httpContract", "data", "deploy",
+        "observability", "android", "keycloakProvider", "keycloakRuntime", "full",
+    )}
 
     if manual_service is not None:
         if manual_service not in MANUAL_SERVICES:
@@ -115,7 +197,7 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
             image_name = MANUAL_SERVICE_ALIASES[manual_service]
             images[image_name] = True
             deploy_services = [APPLICATION_SERVICES[image_name]]
-        return _result(images, deploy_services, deploy_config)
+        return _result(images, deploy_services, deploy_config, ci_surfaces)
 
     normalized_paths = sorted({
         (path.replace("\\", "/")[2:] if path.replace("\\", "/").startswith("./") else path.replace("\\", "/"))
@@ -132,11 +214,17 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
             images["keycloak"] = True
         if _matches_any(path, ALL_DEPLOY_PATTERNS):
             deploy_config = True
+        for surface, patterns in CI_SURFACE_PATTERNS.items():
+            if _matches_any(path, patterns):
+                ci_surfaces[surface] = True
+        if _matches_any(path, FULL_PATTERNS):
+            ci_surfaces["full"] = True
         for service, patterns in OBSERVABILITY_DEPLOY_PATTERNS.items():
             if _matches_any(path, patterns):
                 deploy_services.append(service)
 
-    if deploy_config:
+    if any(_matches_any(path, RUNTIME_CONFIG_PATTERNS) for path in normalized_paths):
+        deploy_config = True
         deploy_services = ["all"]
     else:
         deploy_services.extend(
@@ -145,18 +233,23 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
             if images[name]
         )
 
-    return _result(images, _dedupe(deploy_services), deploy_config)
+    return _result(images, _dedupe(deploy_services), deploy_config, ci_surfaces)
 
 
 def _result(
-    images: dict[str, bool], deploy_services: list[str], deploy_config: bool
+    images: dict[str, bool],
+    deploy_services: list[str],
+    deploy_config: bool,
+    ci_surfaces: dict[str, bool],
 ) -> dict[str, object]:
     image_services = [
         APPLICATION_SERVICES[name] for name in ("backend", "frontend", "keycloak") if images[name]
     ]
     return {
         "images": images,
+        "buildServices": image_services,
         "imageServices": image_services,
+        "ciSurfaces": ci_surfaces,
         "deployConfig": deploy_config,
         "deployServices": _dedupe(deploy_services),
     }
@@ -179,7 +272,9 @@ def make_manifest(
         "imageTag": image_tag,
         "buildRunId": build_run_id,
         "buildRunNumber": int(build_run_number),
+        "backendMigrationMaxVersion": int(plan.get("backendMigrationMaxVersion", 0)),
         "images": plan["images"],
+        "buildServices": plan["buildServices"],
         "imageServices": plan["imageServices"],
         "deployServices": plan["deployServices"],
     }
@@ -196,7 +291,9 @@ def validate_manifest(
         "imageTag",
         "buildRunId",
         "buildRunNumber",
+        "backendMigrationMaxVersion",
         "images",
+        "buildServices",
         "imageServices",
         "deployServices",
     }
@@ -219,20 +316,32 @@ def validate_manifest(
         raise ValueError(f"manifest imageTag must be {expected_tag}")
     if not isinstance(manifest["buildRunNumber"], int) or manifest["buildRunNumber"] < 1:
         raise ValueError("manifest buildRunNumber must be a positive integer")
+    if (
+        not isinstance(manifest["backendMigrationMaxVersion"], int)
+        or manifest["backendMigrationMaxVersion"] < 0
+    ):
+        raise ValueError("manifest backendMigrationMaxVersion must be a non-negative integer")
     images = manifest["images"]
     if not isinstance(images, dict) or set(images) != set(IMAGE_NAMES) or any(
         not isinstance(images[name], bool) for name in IMAGE_NAMES
     ):
         raise ValueError("manifest images must contain boolean backend/frontend/keycloak values")
+    build_services = manifest["buildServices"]
     image_services = manifest["imageServices"]
     deploy_services = manifest["deployServices"]
-    if not _valid_service_list(image_services) or not _valid_service_list(deploy_services):
+    if (
+        not _valid_service_list(build_services)
+        or not _valid_service_list(image_services)
+        or not _valid_service_list(deploy_services)
+    ):
         raise ValueError("manifest contains an unsupported or duplicate service")
     expected_image_services = {
         APPLICATION_SERVICES[name] for name in IMAGE_NAMES if images[name]
     }
     if set(image_services) != expected_image_services:
         raise ValueError("manifest imageServices does not match images")
+    if build_services != image_services:
+        raise ValueError("manifest buildServices must match imageServices")
     for service in deploy_services:
         if service in IMAGE_SERVICE_BY_DEPLOY_SERVICE and service not in image_services:
             raise ValueError(f"deploy service {service} has no corresponding built image")
@@ -244,11 +353,9 @@ def image_tag(commit_sha: str) -> str:
 
 
 def _valid_service_list(value: object) -> bool:
-    return (
-        isinstance(value, list)
-        and len(value) == len(set(value))
-        and all(isinstance(item, str) and item in DEPLOYABLE_SERVICES for item in value)
-    )
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return False
+    return len(value) == len(set(value)) and all(item in DEPLOYABLE_SERVICES for item in value)
 
 
 def _parser() -> argparse.ArgumentParser:
