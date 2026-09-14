@@ -24,7 +24,7 @@ assert "paths:" not in build_text, "Build must create a no-op manifest for docs-
 assert build["name"] == "Build"
 assert deploy["name"] == "Deploy"
 assert build["run-name"] == "Build ${{ inputs.service || github.sha }} by @${{ github.actor }}"
-assert deploy["run-name"] == "Deploy ${{ inputs.service || github.event.workflow_run.head_sha || github.sha }} by @${{ github.actor }}"
+assert deploy["run-name"] == "Deploy ${{ github.event.workflow_run.head_sha }} by @${{ github.actor }}"
 assert "inputs.service || 'release'" not in build_text and "inputs.service || 'release'" not in deploy_text
 assert build_jobs["build_backend"]["name"] == "Build Backend"
 assert build_jobs["build_frontend"]["name"] == "Build Frontend"
@@ -69,7 +69,13 @@ assert deploy["jobs"]["deploy"]["name"] == "Deploy ${{ needs.changes.outputs.dep
 for label in ("Backend", "Frontend", "Keycloak", "Observability", "All"):
     assert f'"{label}"' in deploy_text, f"Deploy display mapping missing {label}"
 assert "' + '.join(labels)" in deploy_text, "Deploy display name must preserve module combinations"
-for workflow_text, workflow_name in ((deploy_text, "Manual Deploy"), (build_text, "Manual Build")):
+assert "workflow_dispatch:" not in deploy_text, "production Deploy must be workflow_run-only"
+assert "stale_release_guard" not in deploy_text
+assert "WOTB_STALE_RELEASE_GUARD" not in deploy_text
+assert "--allow-latest" not in deploy_text
+assert "inputs.service" not in deploy_text
+assert "image_tag" not in deploy_text, "Deploy must not expose image_tag input"
+for workflow_text, workflow_name in ((build_text, "Manual Build"),):
     assert "git fetch origin main" in workflow_text, f"{workflow_name} must refresh origin/main"
     assert 'source_sha="$(git rev-parse HEAD)"' in workflow_text, \
         f"{workflow_name} must resolve the checked out source SHA"
@@ -79,13 +85,8 @@ for workflow_text, workflow_name in ((deploy_text, "Manual Deploy"), (build_text
         f"{workflow_name} must require the current main HEAD"
     assert "git merge-base --is-ancestor" not in workflow_text, \
         f"{workflow_name} must not accept an ancestor-only source"
-assert "::error::Manual Deploy must run from the current main HEAD." in deploy_text
 assert "::error::Manual Build must run from the current main HEAD." in build_text
-assert "--allow-latest" in deploy_text, "Manual Deploy must explicitly allow only its latest manifest path"
-assert "image_tag" not in deploy_text, "Manual Deploy must not expose image_tag input"
-for service in ("postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana", "wotb-backend", "wotb-frontend"):
-    assert f"          - {service}" not in deploy_text, f"Deploy UI must not expose {service}"
-assert "Required deploy image does not exist" in deploy_text
+assert "Required immutable deploy image does not exist" in deploy_text
 image_job = deploy["jobs"]["image_existence"]
 assert image_job["needs"] == ["changes"]
 assert "image_services" in image_job["if"]
@@ -99,6 +100,7 @@ assert "release_plan.py validate" in deploy_text
 assert "docker manifest inspect" in deploy_text
 assert "WOTB_DEPLOY_SERVICES" in deploy_text
 assert "WOTB_DEPLOY_IMAGE_SERVICES" in deploy_text
+assert "WOTB_BACKEND_MIGRATION_MAX_VERSION" in deploy_text
 assert "docker/build" not in deploy_text and "mvn test" not in deploy_text and "npm test" not in deploy_text
 assert "cancel-in-progress: false" in deploy_text
 

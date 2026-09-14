@@ -8,6 +8,7 @@
 - Android/Web 登录初始化现在有明确的超时恢复界面；设备上的登录检查不会无限停留在加载状态。用户可以重新检查或直接重新发起登录，正常 SSO、QQ 登录回调和回放工作区认证门禁保持不变。
 
 ### Operations
+- **生产发布链路收敛**：普通应用发布现在由成功 Build 自动接力，按 affected service 使用 immutable SHA 镜像并通过 backend/frontend/Keycloak 核心健康门禁；失败不会自动切换旧版本。事故操作改为明确选择单个应用的 `Ops Recovery`，数据库备份与应用恢复保持分离。
 - 生产部署移除事故恢复遗留的无 LKG bypass；已有健康 live deployment 仍由正常发布流程建立初始 LKG，没有可验证 LKG 时安全失败，不再提供永久性的手工 checkbox。
 - Grafana 监控看板的配置现在纳入独立 OpenTofu plan 审查；合并到 main 后由 OpenTofu 自动 apply，任意 dashboard 删除仍被阻断；不迁移 Grafana runtime，也不改变 Prometheus/Loki datasource provisioning。
 - 生产 OpenTofu 基线现在记录并审查现有 Tencent Lighthouse 节点及 firewall 边界；不迁移节点、不执行自动 apply，也不改变现有防火墙规则。
