@@ -21,6 +21,8 @@ class StartupReleaseDiagnostics {
     private static final Logger log = LoggerFactory.getLogger(StartupReleaseDiagnostics.class);
     private static final String MIGRATION_PATTERN = "classpath*:db/migration/V*__*.sql";
     private static final Pattern MIGRATION_FILENAME = Pattern.compile("V(\\d+)__.*\\.sql");
+    private static final Pattern FULL_COMMIT_SHA = Pattern.compile("[0-9a-f]{40}");
+    private static final int IMMUTABLE_TAG_SHA_LENGTH = 12;
 
     private final String buildCommit;
     private final ResourcePatternResolver resourcePatternResolver = new PathMatchingResourcePatternResolver();
@@ -31,7 +33,15 @@ class StartupReleaseDiagnostics {
 
     @EventListener(ApplicationReadyEvent.class)
     void logReleaseIdentity() {
-        log.info("WotBTools backend build={} Flyway migration ceiling={}", buildCommit, migrationCeiling());
+        log.info("WotBTools backend build={} imageTag={} Flyway migration ceiling={}",
+                buildCommit, immutableImageTag(), migrationCeiling());
+    }
+
+    private String immutableImageTag() {
+        if (!FULL_COMMIT_SHA.matcher(buildCommit).matches()) {
+            return "unavailable";
+        }
+        return "sha-" + buildCommit.substring(0, IMMUTABLE_TAG_SHA_LENGTH);
     }
 
     private String migrationCeiling() {

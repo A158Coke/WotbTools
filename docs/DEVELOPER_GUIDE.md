@@ -550,7 +550,7 @@ root 管理，也不能使用带一天 expiration 的 artifact bucket 承载 sta
 `.github/workflows/deploy.yml`，路径选择由 `deploy/release_plan.py` 统一产生。
 Build 在 `main` 成功 push 后只为 affected application 构建 component-local 的
 immutable `sha-<12 位 SHA>` 与 `latest` 镜像 tag，并把冻结的完整 SHA 注入
-Frontend `dist/version.json` 的 `buildCommit` 与 Keycloak 启动日志，上传唯一
+Backend `StartupReleaseDiagnostics`、Frontend `dist/version.json` 的 `buildCommit` 与 Keycloak 启动日志；backend diagnostics 同时输出由完整 SHA 推导的 immutable image tag，上传唯一
 `deployment-manifest`；自动 Deploy 只由成功的 Build `workflow_run` 接力，
 不再提供普通应用 Deploy 的手工入口。事故操作使用仅
 `workflow_dispatch` 的 `.github/workflows/ops-recovery.yml`。纯
