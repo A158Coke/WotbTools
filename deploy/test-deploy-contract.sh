@@ -5,6 +5,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+BACKEND_CONFIG="$ROOT/java/wotb-web/src/main/resources/application.yml"
+grep -q '^    port: 8088$' "$BACKEND_CONFIG"
+grep -q '^        include: health,info,metrics,prometheus$' "$BACKEND_CONFIG"
+! grep -q 'base-path:' "$BACKEND_CONFIG"
+grep -q 'wait_for_probe backend http://wotb-backend:8088/actuator/health' "$ROOT/deploy/deploy.sh"
+! grep -q 'wotb-backend:8087/api/health' "$ROOT/deploy/deploy.sh"
+
 mkdir -p "$WORK/incoming/deploy/observability/alloy" "$WORK/bin" "$WORK/config" "$WORK/android-release"
 cp "$ROOT/deploy/deploy.sh" "$WORK/incoming/deploy/deploy.sh"
 cp "$ROOT/deploy/docker-compose.prod.yml" "$WORK/incoming/deploy/docker-compose.prod.yml"
@@ -41,6 +48,7 @@ case "$command" in
     ;;
   stop) printf 'stop %s\n' "$*" >> "$log" ;;
   run)
+    printf 'run %s\n' "$*" >> "$log"
     if [ -n "${FAKE_HEALTH_FAILURE_SERVICE:-}" ] && [[ "$*" == *"$FAKE_HEALTH_FAILURE_SERVICE"* ]]; then
       printf '503\n'
     elif [ -n "${FAKE_HEALTH_REDIRECT_SERVICE:-}" ] && [[ "$*" == *"$FAKE_HEALTH_REDIRECT_SERVICE"* ]]; then
@@ -88,6 +96,10 @@ first_log="$WORK/first.log"
 run_deploy bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sha-bbbbbbbbbbbb wotb-backend wotb-backend "$first_log"
 grep -q '^up .*wotb-backend' "$first_log"
 ! grep -Eq '^up .*wotb-frontend|^up .*keycloak|^up .*postgres' "$first_log"
+grep -q '^run .*http://wotb-backend:8088/actuator/health' "$first_log"
+! grep -q 'wotb-backend:8087/api/health' "$first_log"
+grep -q '^run .*--header Host: wotbtools.com .*http://wotb-frontend/api/health' "$first_log"
+grep -q '^run .*http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration' "$first_log"
 grep -q '"imageTag": "sha-bbbbbbbbbbbb"' "$WORK/production-release.json"
 grep -q '"imageTag": "sha-aaaaaaaaaaaa"' "$WORK/production-release.json"
 if command -v stat >/dev/null 2>&1 && stat -c %a "$WORK/production-release.json" >/dev/null 2>&1; then
