@@ -63,10 +63,18 @@ assert "control_plane_sha: ${{ steps.target.outputs.control_plane_sha }}" in ops
 assert "ref: ${{ needs.prepare.outputs.control_plane_sha }}" in ops_recovery
 assert 'git ls-tree -r --name-only "$target_sha"' in ops_recovery
 assert "source: deploy" in ops_recovery
+assert "live_data: ${{ steps.plan.outputs.live_data }}" in ci
+assert '"live_data": "liveData"' in ci
+assert 'if: needs.changes.outputs.live_data == \'true\'' in ci
+blocks = re.split(r"\n(?=  [A-Za-z0-9_]+:\n)", ci)
+live_data_block = next(block for block in blocks if block.startswith("  live_data_contracts:\n"))
+assert "needs.changes.outputs.data == 'true' || needs.changes.outputs.full == 'true'" not in live_data_block
+assert "LIVE_DATA_CHANGED: ${{ needs.changes.outputs.live_data }}" in ci
+assert 'live_data_contracts|$([ "$LIVE_DATA_CHANGED" = true ] && echo true || echo false)|$LIVE_DATA_CONTRACTS' in ci
 
 expected_jobs = {
     "python_unit": "data",
-    "live_data_contracts": "data",
+    "live_data_contracts": "live_data",
     "backend": "backend",
     "frontend": "frontend",
     "http_contract": "http_contract",
@@ -79,7 +87,6 @@ expected_jobs = {
     "deploy_smoke": "deploy",
 }
 for job_id, output in expected_jobs.items():
-    blocks = re.split(r"\n(?=  [A-Za-z0-9_]+:\n)", ci)
     block = next(block for block in blocks if block.startswith(f"  {job_id}:\n"))
     assert (
         f"needs.changes.outputs.{output} == 'true'" in block

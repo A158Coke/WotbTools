@@ -40,7 +40,7 @@ assert detect("deploy/observability/prometheus/prometheus.yml")["deployServices"
 assert detect("deploy/observability/grafana/dashboards/home.json")["deployServices"] == []
 assert detect("deploy/observability/grafana/dashboards/home.json")["ciSurfaces"] == {
     "backend": False, "frontend": False, "keycloak": False, "httpContract": False,
-    "data": False, "deploy": True, "observability": True, "android": False,
+    "data": False, "liveData": False, "deploy": True, "observability": True, "android": False,
     "keycloakProvider": False, "keycloakRuntime": False, "full": False,
 }
 assert detect("contracts/http/openapi.yaml")["ciSurfaces"]["httpContract"]

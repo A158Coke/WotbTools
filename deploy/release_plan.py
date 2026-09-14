@@ -94,6 +94,19 @@ CI_SURFACE_PATTERNS = {
         "map-semanticizer/**",
         "common/python/**",
     ),
+    "liveData": (
+        "common/wotb-item-catalog-json/**",
+        "common/tankopedia-*.json",
+        "common/crew-skills.json",
+        "common/python/blitzkit_snapshot.py",
+        "common/python/sync_equipment_snapshot.py",
+        "common/python/sync_tankopedia_snapshot.py",
+        "common/python/update_equipment.py",
+        "common/python/update_crew_skills.py",
+        "common/python/update_tankopedia.py",
+        "common/python/validate_locked_equipment_contract.py",
+        "common/python/validate_tankopedia_equipment.py",
+    ),
     "deploy": (
         "deploy/**",
         "docker/**",
@@ -183,7 +196,7 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
     deploy_services: list[str] = []
     deploy_config = False
     ci_surfaces = {name: False for name in (
-        "backend", "frontend", "keycloak", "httpContract", "data", "deploy",
+        "backend", "frontend", "keycloak", "httpContract", "data", "liveData", "deploy",
         "observability", "android", "keycloakProvider", "keycloakRuntime", "full",
     )}
 
