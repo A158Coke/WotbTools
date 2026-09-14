@@ -20,6 +20,7 @@
   或跨进程回调，HTTP 路由、认证、错误 envelope 和指标契约不变。
 
 ### Frontend
+- **Showcase Footer 对比度修复**：沉浸界面的 Footer 普通文案、ICP 备案链接与顶部边线改用现有 Showcase 视觉 token，备案号在地图背景上保持可读；Classic 界面样式不变。
 - **中国大陆 ICP 备案展示**：将现有首页 Footer 提升为 AppShell 共享 Footer，并同步扩展独立赞助页已有 Footer，在主要页面统一展示可点击的 `闽ICP备2026036303号-1`，不添加公安联网备案号。
 
 ### Replay / Auth

@@ -38,6 +38,13 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+html[data-ui-profile="showcase"] .app-footer {
+  border-top-color: var(--showcase-tactical-border);
+  color: var(--showcase-tactical-muted);
+}
+html[data-ui-profile="showcase"] .app-footer a {
+  color: var(--showcase-tactical-text);
+}
 .app-footer a:hover { color: var(--accent); }
 .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: var(--topbar-h);
   display: flex; align-items: center; gap: 8px; padding: 8px 16px;
