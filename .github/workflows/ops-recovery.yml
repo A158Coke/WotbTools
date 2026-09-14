@@ -38,6 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
+      control_plane_sha: ${{ steps.target.outputs.control_plane_sha }}
       target_sha: ${{ steps.target.outputs.target_sha }}
       target_schema_max: ${{ steps.target.outputs.target_schema_max }}
     steps:
@@ -50,10 +51,16 @@ jobs:
         env:
           OPERATION: ${{ inputs.operation }}
           TARGET_SHA: ${{ inputs.target_sha }}
-          CHECKED_OUT_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
+          source_sha="$(git rev-parse HEAD)"
+          git fetch origin main
+          control_plane_sha="$(git rev-parse origin/main)"
+          if [ "$source_sha" != "$control_plane_sha" ]; then
+            echo "Ops Recovery must be dispatched from the current origin/main HEAD." >&2
+            exit 1
+          fi
           if [ "$OPERATION" = specific ]; then
             [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || {
               echo "specific recovery requires a full lowercase target SHA" >&2
@@ -80,9 +87,10 @@ jobs:
               echo "target_sha is only valid for specific recovery" >&2
               exit 1
             }
-            target_sha="$CHECKED_OUT_SHA"
+            target_sha="$control_plane_sha"
             target_schema_max=""
           fi
+          echo "control_plane_sha=$control_plane_sha" >> "$GITHUB_OUTPUT"
           echo "target_sha=$target_sha" >> "$GITHUB_OUTPUT"
           echo "target_schema_max=$target_schema_max" >> "$GITHUB_OUTPUT"
 
@@ -93,7 +101,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.prepare.outputs.control_plane_sha }}
       - name: Verify immutable recovery image exists
         if: inputs.operation == 'specific'
         env:

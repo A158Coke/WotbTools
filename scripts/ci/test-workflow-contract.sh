@@ -55,7 +55,12 @@ assert "recover-specific-sha" not in ops_recovery
 assert "ops-recovery.sh" in ops_recovery
 assert "ref: ${{ inputs.target_sha || github.sha }}" not in ops_recovery
 assert "ref: ${{ needs.prepare.outputs.target_sha }}" not in ops_recovery
-assert ops_recovery.count("ref: ${{ github.sha }}") >= 2
+assert "git fetch origin main" in ops_recovery
+assert 'control_plane_sha="$(git rev-parse origin/main)"' in ops_recovery
+assert 'if [ "$source_sha" != "$control_plane_sha" ]; then' in ops_recovery
+assert "Ops Recovery must be dispatched from the current origin/main HEAD." in ops_recovery
+assert "control_plane_sha: ${{ steps.target.outputs.control_plane_sha }}" in ops_recovery
+assert "ref: ${{ needs.prepare.outputs.control_plane_sha }}" in ops_recovery
 assert 'git ls-tree -r --name-only "$target_sha"' in ops_recovery
 assert "source: deploy" in ops_recovery
 
