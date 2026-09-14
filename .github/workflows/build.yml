@@ -134,8 +134,6 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
-        env:
-          KEYCLOAK_BUILD_FILE: ${{ github.workspace }}/keycloak-juhe-qq-provider
 
   build_frontend:
     needs: [changes]
