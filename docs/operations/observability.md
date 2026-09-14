@@ -200,6 +200,10 @@ image tag、部署时间，backend 记录 schema 与 migration ceiling，其它 
 不变。Prometheus/Loki/Alloy/Grafana、datasource/dashboard、metrics 与 log ingestion
 失败只记录 `OBSERVABILITY DEGRADED`，不影响健康应用。
 
+backend 在 `ApplicationReadyEvent` 后还会记录 `WotBTools backend build=<commit> Flyway
+migration ceiling=<version>`。排查 schema/image 不匹配时，先在 Loki 或 `docker compose logs
+wotb-backend` 中核对这条镜像内的 release identity，再与 production metadata 的 schema 对照。
+
 ### Ops Recovery 与数据库边界
 
 `Ops Recovery` 必须明确选择一个 backend/frontend/keycloak，并选择 production metadata
