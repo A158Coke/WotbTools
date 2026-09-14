@@ -142,7 +142,7 @@ jobs:
         working-directory: java
         run: mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo test
       - name: Production backend Docker build
-        run: docker build -f docker/Dockerfile.backend -t wotbtools-backend:pr .
+        run: docker build --build-arg BUILD_COMMIT=ci-${{ github.sha }} -f docker/Dockerfile.backend -t wotbtools-backend:pr .
 
   keycloak_providers:
     needs: [changes]

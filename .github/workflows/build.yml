@@ -129,6 +129,7 @@ jobs:
           tags: |
             ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-backend:latest
+          build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
