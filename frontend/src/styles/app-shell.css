@@ -19,6 +19,26 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 20px 64px; }
 h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
 .tb-content { padding-top: var(--topbar-h); }
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 24px auto 0;
+  padding: 14px max(20px, 4vw) calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: .72rem;
+  line-height: 1.5;
+  text-align: center;
+}
+.app-footer a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.app-footer a:hover { color: var(--accent); }
 .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: var(--topbar-h);
   display: flex; align-items: center; gap: 8px; padding: 8px 16px;
   /* Android edge-to-edge 预备：env() 今日解析为 0（非 edge-to-edge），视觉零变化 */

@@ -65,7 +65,13 @@ async function mountApp(path = '/') {
   await router.push(path)
   await router.isReady()
   const wrapper = mount(App, {
-    global: { plugins: [router], mocks: { $t: key => key, $i18n: { locale: { value: 'zh' } } } },
+    global: {
+      plugins: [router],
+      mocks: {
+        $t: key => key === 'home.icpFiling' ? '闽ICP备2026036303号-1' : key,
+        $i18n: { locale: { value: 'zh' } },
+      },
+    },
   })
   mountedWrappers.push(wrapper)
   await flushPromises()
@@ -105,6 +111,23 @@ describe('App routing', () => {
       expect(wrapper.find('[data-test="view-android"]').exists()).toBe(true)
       wrapper.unmount()
     }
+  })
+
+  it.each([
+    ['home', '/?view=home'],
+    ['replay', '/?view=replay'],
+    ['hall of fame', '/?view=hof'],
+    ['android download', '/download/android'],
+  ])('renders one shared footer with the ICP link on %s', async (_name, path) => {
+    const { wrapper } = await mountApp(path)
+    const footer = wrapper.get('[data-testid="app-footer"]')
+    const icpLink = footer.get('[data-testid="icp-filing-link"]')
+
+    expect(footer.findAll('[data-testid="icp-filing-link"]')).toHaveLength(1)
+    expect(icpLink.text()).toBe('闽ICP备2026036303号-1')
+    expect(icpLink.attributes('href')).toBe('https://beian.miit.gov.cn/')
+    expect(icpLink.attributes('target')).toBe('_blank')
+    expect(icpLink.attributes('rel')).toBe('noopener noreferrer')
   })
 
   it('drops the current view query when navigating to Android', async () => {
