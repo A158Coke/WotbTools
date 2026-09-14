@@ -82,7 +82,7 @@ grep -q 'target_sha' "$workflow"
 grep -q 'migration ceiling' "$workflow"
 ! grep -q 'ref: \${{ inputs.target_sha || github.sha }}' "$workflow"
 ! grep -q 'ref: \${{ needs.prepare.outputs.target_sha }}' "$workflow"
-[ "$(grep -Fc 'ref: \${{ github.sha }}' "$workflow")" -ge 2 ]
+[ "$(grep -Fc 'ref: ${{ github.sha }}' "$workflow")" -ge 2 ]
 grep -q 'git ls-tree -r --name-only "\$target_sha"' "$workflow"
 grep -q 'source: deploy' "$workflow"
 echo "specific SHA uses historical source only for identity/migration lookup; control-plane stays trusted"
