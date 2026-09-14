@@ -29,15 +29,29 @@ class StartupReleaseDiagnosticsTest {
     }
 
     @Test
-    void logsBuildCommitAndCurrentFlywayMigrationCeiling() {
-        final StartupReleaseDiagnostics diagnostics = new StartupReleaseDiagnostics("abc123");
+    void logsBuildCommitImmutableImageTagAndCurrentFlywayMigrationCeiling() {
+        final StartupReleaseDiagnostics diagnostics = new StartupReleaseDiagnostics(
+                "0123456789abcdef0123456789abcdef01234567");
 
         diagnostics.logReleaseIdentity();
 
         assertTrue(appender.list.stream()
                         .map(ILoggingEvent::getFormattedMessage)
                         .anyMatch(message -> message.equals(
-                                "WotBTools backend build=abc123 Flyway migration ceiling=22")),
-                "启动诊断必须打印 build commit 与当前 migration ceiling");
+                                "WotBTools backend build=0123456789abcdef0123456789abcdef01234567 "
+                                        + "imageTag=sha-0123456789ab Flyway migration ceiling=22")),
+                "启动诊断必须打印 build commit、immutable image tag 与当前 migration ceiling");
+    }
+
+    @Test
+    void marksNonReleaseBuildCommitImageTagAsUnavailable() {
+        final StartupReleaseDiagnostics diagnostics = new StartupReleaseDiagnostics("local-dev");
+
+        diagnostics.logReleaseIdentity();
+
+        assertTrue(appender.list.stream()
+                        .map(ILoggingEvent::getFormattedMessage)
+                        .anyMatch(message -> message.contains("build=local-dev imageTag=unavailable")),
+                "非完整 release SHA 不得伪装成 immutable image tag");
     }
 }

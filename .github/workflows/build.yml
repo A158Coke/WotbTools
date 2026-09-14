@@ -197,10 +197,9 @@ jobs:
             ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           provenance: false
           sbom: false
-        env:
-          KEYCLOAK_BUILD_FILE: ${{ github.workspace }}/keycloak-juhe-qq-provider
 
   manifest:
     needs: [changes, build_backend, build_frontend, build_keycloak]

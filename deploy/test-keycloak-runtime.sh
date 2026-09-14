@@ -38,7 +38,7 @@ fi
 
 if [ "${WOTB_KEYCLOAK_SKIP_BUILD:-0}" != "1" ]; then
   echo "== Building real Keycloak production image =="
-  docker build -f "$ROOT/docker/Dockerfile.keycloak" -t "$IMAGE" "$ROOT" >/dev/null
+  docker build --build-arg BUILD_COMMIT=runtime-contract -f "$ROOT/docker/Dockerfile.keycloak" -t "$IMAGE" "$ROOT" >/dev/null
 fi
 
 docker network create "$NETWORK" >/dev/null
@@ -116,5 +116,8 @@ if docker logs "$KC_NAME" 2>&1 | grep -Fq 'Changes detected in configuration. Up
 fi
 if docker logs "$KC_NAME" 2>&1 | grep -Eiq 'Quarkus augmentation'; then
   fail "runtime startup performed Quarkus augmentation"
+fi
+if ! docker logs "$KC_NAME" 2>&1 | grep -Fq 'WotBTools Keycloak build=runtime-contract'; then
+  fail "runtime startup did not report the injected build commit"
 fi
 echo "PASS: Keycloak optimized runtime did not rebuild or augment"

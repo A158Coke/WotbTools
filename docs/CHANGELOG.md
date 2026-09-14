@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Architecture
+- **Three-service immutable release identity bootstrap**：Frontend 现有 build metadata 的 canonical 字段明确为 `buildCommit`；Keycloak 镜像通过 frozen release SHA 构建参数注入 `WOTBTOOLS_BUILD_COMMIT`，启动时输出该 identity；Backend `StartupReleaseDiagnostics` 现输出 full build commit 及其对应 immutable `sha-<12>` image tag。本次路径组合会选择 backend/frontend/keycloak 三个 application images，使用同一 frozen release SHA 构建并写入 manifest；未修改认证行为、Deploy fail-closed、数据库或备份链路。
 - **CI/CD architecture v2**：CI、Build、Deploy 共用 `deploy/release_plan.py` 的 affected-surface 模型；Build manifest 显式记录 immutable image/build/deploy services。普通 Deploy 改为成功 Build `workflow_run` 自动接力，按 service staged promote 并执行全局 core health gate；失败只诊断并停止失败 affected service，不自动恢复旧 application image。
 - **Production metadata and Ops Recovery**：成功验证的应用 identity 原子写入 `/opt/wotb/production-release.json`；事故恢复改由仅手工触发、单 service、immutable SHA 的 `Ops Recovery` 承担，backend recovery 先执行目标 migration ceiling 与 live Flyway schema 的 fail-closed guard。
 - **Database backup boundary**：normal Deploy 不再调用本地 PostgreSQL backup；现有 `database-backup.yml` 保持独立本地备份边界。COS 上传、对象验证与 retention 明确留给后续独立 PR，本次不宣称已完成。
