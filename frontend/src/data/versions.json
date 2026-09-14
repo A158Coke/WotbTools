@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.83",
+    "date": "2026-09-15",
+    "tag": "fix",
+    "zh": "修复沉浸界面深色地图背景下 Footer 和 ICP 备案号对比度过低的问题；简约界面与页面布局不变。",
+    "en": "Fixed low-contrast footer text and ICP filing link on dark map backgrounds in the immersive Showcase profile; the Classic profile and page layout are unchanged.",
+    "ru": "Исправлена низкая контрастность текста нижнего колонтитула и ссылки на номер ICP на тёмном фоне карты в иммерсивном профиле Showcase; профиль Classic и макет страниц не изменились."
+  },
+  {
     "v": "2.12.82",
     "date": "2026-09-14",
     "tag": "add",
