@@ -383,7 +383,7 @@ blocking_health() {
     && app_selected=true
   [ "$app_selected" = true ] || return 0
   wait_for_database || return 1
-  wait_for_probe backend http://wotb-backend:8087/api/health || return 1
+  wait_for_probe backend http://wotb-backend:8088/actuator/health || return 1
   wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || return 1
   wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || return 1
 }
