@@ -547,23 +547,20 @@ local state、计划文件和真实 tfvars 禁止提交；`.terraform.lock.hcl` 
 root 管理，也不能使用带一天 expiration 的 artifact bucket 承载 state。
 
 生产 Build 与 Deploy 分为 `.github/workflows/build.yml` 和
-`.github/workflows/deploy.yml`。Build 在 `main` 成功 push 后为每个应用构建
-component-local 的 immutable `sha-<SHA>` 与 `latest` 镜像 tag，并上传唯一
-`deployment-manifest`；自动 Deploy 由成功的 Build `workflow_run` 接力，也保留
-`workflow_dispatch` 手动入口。Build 可选择 `all` 或单个应用镜像；Deploy 自动
-路径只部署 manifest 中的 production Compose service，手动路径只接受
-`all/backend/frontend/keycloak` 应用入口并使用对应 `latest` 镜像。
-纯 `deploy/observability/grafana/dashboards/**` 只触发 Grafana OpenTofu API
+`.github/workflows/deploy.yml`，路径选择由 `deploy/release_plan.py` 统一产生。
+Build 在 `main` 成功 push 后只为 affected application 构建 component-local 的
+immutable `sha-<12 位 SHA>` 与 `latest` 镜像 tag，并上传唯一
+`deployment-manifest`；自动 Deploy 只由成功的 Build `workflow_run` 接力，
+不再提供普通应用 Deploy 的手工入口。事故操作使用仅
+`workflow_dispatch` 的 `.github/workflows/ops-recovery.yml`。纯
+`deploy/observability/grafana/dashboards/**` 只触发 Grafana OpenTofu API
 reconciliation，不触发应用 Build。生产发布原则：
 
-1. 代码质量验证（后端 Maven / 前端 Vitest + Vite build）由 PR CI 作为 merge gate 承担；Build/Deploy 不重复运行测试套件，Build 只负责 Docker 镜像构建推送，Deploy 只负责部署与健康检查。无论 main push 或 `workflow_dispatch`，`changes` job 只解析一次 `main` 的 full commit SHA，production builders 全部 checkout 该冻结 SHA；自动 manifest 不能从 feature ref 或移动的 main 推送/消费错误的 SHA，component-local `latest` 只属于手动应用发布路径。
-2. Build 构建同一 frozen main commit 的 backend/frontend/keycloak `sha-<SHA>` 镜像，并把 commit SHA、Build run number、镜像 tag、需要部署的 service 与需要更新的 image service 写入权威 manifest；自动生产 compose 钉 SHA，不依赖 `latest`。手动 Deploy 在进入 SSH 前按目标应用检查 `latest` 镜像存在，并只把目标应用映射到 `latest`；Deploy 自动路径只消费并校验该 manifest，不重新计算变更、不重新 build、不重复跑测试；targeted service 只更新所选 service，非目标应用继续使用当前 live compose 中的 immutable tag。
-3. 新 compose 先写 `docker-compose.next.yml` 并 pull；成功后才替换正式 compose。
-4. 部署后通过同一 production Docker network 中 deployment-owned `health-probe` curl service 检查 backend `wotb-backend:8087/api/health`、带 `Host: wotbtools.com` 的 frontend `/api/health` 与 Keycloak OIDC discovery；probe 不依赖 application image 内的 `wget/curl`，回滚旧 LKG 时由当前 staged probe 定义 overlay 没有该 service 的 legacy compose，失败日志必须给出 DNS、connection refused、timeout 或 non-2xx 等原因。
-5. 每次成功的完整自动 `all` 部署先把完整已验证部署树、compose、SHA 与 `DB_SCHEMA_VERSION.lkg`（当前 Flyway version）提升为 LKG；手动 `latest` 应用发布和 targeted service deploy 都不提升 LKG。完整自动 `all` 健康检查失败只在 live schema 与 LKG metadata compatible 时恢复该 LKG；schema 已前进而 LKG 不支持时输出 `ROLLBACK UNSAFE`，保留 candidate tree/compose，不执行旧 backend 或 Flyway downgrade。legacy LKG 缺 metadata 的正常路径只可从健康 live deployment 安全 bootstrap；若当前 live 不健康，production recovery 必须显式提供并二次确认旧 LKG 兼容版本（`WOTB_LEGACY_LKG_SCHEMA_VERSION=21 WOTB_LEGACY_LKG_RECOVERY_CONFIRM=V21`），脚本一次性写入该 operator-provided metadata，不读取当前 DB 作为 bootstrap 值，随后 candidate 才可启动；否则 fail-closed。targeted failure 只恢复失败 service 的 `deploy.prev` / `docker-compose.prev.yml` pre-deploy snapshot，保留其它独立 targeted release。
-6. 镜像 prune 只允许在成功部署或成功回滚后执行。
-7. 健康检查最终失败时，回滚前必须保留新版本诊断（`report_health_status` 各服务 PASS/FAILED/SKIPPED + `dump_logs` 的 `ps -a`/容器 inspect/三服务 logs）；诊断命令失败不得阻断回滚。
-8. 部署前先识别真实 first-install 状态并完成 `wotb`/`keycloak` 双库 backup；已有 production state 时 live compose 或 backup helper 缺失、或 backup 失败，必须在 Flyway/compose mutation 前 fail-closed。真正首次安装可以输出明确 skip reason。部署前保存 `deploy.prev` 取证快照；compose 切换后显式应用观测配置。阻塞 gate 只验证三项 application probe；Prometheus/Loki/Alloy/Grafana、datasource/dashboard、metrics 与 log ingestion 由 `verify-observability.sh` 继续严格验证，但失败只记录 `OBSERVABILITY DEGRADED`，不得触发 application rollback。没有经校验的 LKG 时禁止破坏当前 live tree；若已有健康 live deployment，正常发布流程会先验证并建立 LKG，否则必须 fail-closed 并人工处理。回滚成功标准同样只有三项应用可用性检查。
+1. 代码质量验证（后端 Maven / 前端 Vitest + Vite build）由 PR CI 作为 merge gate 承担；Build/Deploy 不重复运行测试套件。Build 的 builders 全部 checkout 同一个冻结 SHA，manifest 记录 commit SHA、Build run number、immutable image tag、`buildServices` 与 `deployServices`。
+2. 新 compose 先在 incoming project root 中完成 `docker compose config` 与目标 image pull；成功后才 promote 到 `/opt/wotb/deploy` 和正式 compose。targeted deploy 使用 `docker compose up -d --no-deps --force-recreate <affected>`，不执行全栈无参数 `up`，非目标应用继续使用 production metadata/live compose 中的 immutable tag。
+3. 部署后通过同一 production Docker network 中 deployment-owned `health-probe` curl service 检查 backend、带 `Host: wotbtools.com` 的 frontend、Keycloak OIDC discovery 与 backend 数据库连通性；probe 不依赖 application image 内的 `wget/curl`。每个 probe 有 bounded timeout/retry，失败先输出 release、affected service、image、status、logs 与 Flyway schema 诊断，再停止确认失败的 affected service；不自动恢复旧 application image。
+4. 只有 affected application 已通过全局 core health gate 后，才原子更新 `/opt/wotb/production-release.json`（0600）；metadata 记录每个应用的 commit SHA、immutable image tag、部署时间，backend 记录 schema 与 migration ceiling，其它 service metadata 不变。Prometheus/Loki/Alloy/Grafana 与 metrics/log ingestion 失败只输出 `OBSERVABILITY DEGRADED`。
+5. 事故恢复只使用 `Ops Recovery`：明确选择一个 backend/frontend/keycloak，使用 production metadata 的 current identity 或 full SHA；backend target 的最大 migration version 低于 live Flyway schema、schema 无法读取或 immutable image 不存在时拒绝。Recovery 不做 database restore/downgrade，不隐式选择 all。
 9. Keycloak 镜像以 `start --optimized` 启动并保留 PostgreSQL 与应用 OIDC discovery；不再启用或暴露 management health/metrics 端口。Keycloak 观测只保留 Docker 日志经 Alloy → Loki → Grafana 的链路，CI 的 `keycloak-runtime` job 必须真实构建并启动该应用运行时契约。
 
 Android 发布同样采用仓库内 Version-as-Code：`android/gradle.properties` 的
@@ -576,9 +573,9 @@ bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 
 
 **Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 
-Deploy、Grafana OpenTofu apply 与 database backup 共用 `production-maintenance` concurrency，`cancel-in-progress: false`；这是 GitHub Actions 调度串行化，不等价于服务器端 distributed lock。
+Deploy、Ops Recovery、Grafana OpenTofu apply 与 database backup 共用 `production-maintenance` concurrency，`cancel-in-progress: false`；服务器脚本另用 `flock` 串行化 production mutation。这不是 distributed lock。
 
-生产数据库每日香港时间 03:15 备份 `wotb` 和 `keycloak`，保留 7 天；恢复只允许手工使用 `deploy/postgres-restore.sh` 并显式确认。
+生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 备份 `wotb` 和 `keycloak`，保留现有本地边界；恢复只允许手工使用 `deploy/postgres-restore.sh` 并显式确认。COS 上传、对象验证与 retention 属于后续独立 PR，本 PR 不宣称已完成。
 
 Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb/config/sponsor-config.json` 与 `/opt/wotb/config/sponsor/{alipay,wechat}.png` 只读挂载。二维码加载失败时页面必须隐藏失败方式并回退到“暂未配置”，不得显示 broken image。
 

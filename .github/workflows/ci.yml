@@ -26,117 +26,21 @@ jobs:
       keycloak_provider: ${{ steps.plan.outputs.keycloak_provider }}
       keycloak_runtime: ${{ steps.plan.outputs.keycloak_runtime }}
       data: ${{ steps.plan.outputs.data }}
+      live_data: ${{ steps.plan.outputs.live_data }}
       android: ${{ steps.plan.outputs.android }}
       deploy: ${{ steps.plan.outputs.deploy }}
       observability: ${{ steps.plan.outputs.observability }}
       full: ${{ steps.plan.outputs.full }}
     steps:
-      - name: Detect changed paths
-        if: github.event_name == 'pull_request'
-        id: path_filter
-        uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v5
         with:
-          filters: |
-            backend:
-              - 'java/**'
-              - 'docker/Dockerfile.backend'
-              - 'docker/online/docker-compose.yml'
-              - 'java/settings-docker.xml'
-              - 'common/**'
-              - '!common/python/**'
-              - 'contracts/http/**'
-            frontend:
-              - 'frontend/**'
-              - 'docker/Dockerfile.frontend'
-              - 'docker/online/docker-compose.yml'
-              - 'common/**'
-              - '!common/python/**'
-              - 'contracts/http/**'
-              - 'contracts/android-native-bridge.json'
-              - 'docs/WotBTools_League_Rating_V6.md'
-            http_contract:
-              - 'contracts/http/**'
-              - 'frontend/src/api/**'
-              - 'frontend/scripts/*contract*'
-              - 'java/wotb-web/**'
-            android:
-              - 'android/**'
-              - 'contracts/android-native-bridge.json'
-              - 'frontend/src/platform/nativeBridgeContract.js'
-              - 'scripts/android-release/**'
-            keycloak:
-              - 'keycloak-wargaming-provider/**'
-              - 'keycloak-juhe-qq-provider/**'
-              - 'deploy/keycloak/**'
-              - 'docker/Dockerfile.keycloak'
-              - 'docker/keycloak/**'
-              - 'docker/online/docker-compose.yml'
-              - 'java/settings-docker.xml'
-            keycloak_provider:
-              - 'keycloak-wargaming-provider/src/main/java/**'
-              - 'keycloak-wargaming-provider/src/test/**'
-              - 'keycloak-wargaming-provider/pom.xml'
-              - 'keycloak-juhe-qq-provider/src/main/java/**'
-              - 'keycloak-juhe-qq-provider/src/test/**'
-              - 'keycloak-juhe-qq-provider/pom.xml'
-            keycloak_runtime:
-              - 'keycloak-wargaming-provider/src/main/java/**'
-              - 'keycloak-wargaming-provider/pom.xml'
-              - 'keycloak-wargaming-provider/src/main/resources/**'
-              - 'keycloak-juhe-qq-provider/src/main/java/**'
-              - 'keycloak-juhe-qq-provider/pom.xml'
-              - 'keycloak-juhe-qq-provider/src/main/resources/**'
-              - 'deploy/keycloak/**'
-              - 'docker/Dockerfile.keycloak'
-              - 'docker/keycloak/**'
-              - 'docker/online/docker-compose.yml'
-              - 'java/settings-docker.xml'
-            data:
-              - 'common/**'
-              - 'map-semanticizer/**'
-            deploy:
-              - 'deploy/**'
-              - '!deploy/observability/**'
-              - 'docker/**'
-              - '.github/workflows/deploy*.yml'
-              - 'java/wotb-web/src/main/resources/db/migration/**'
-              - 'java/settings-docker.xml'
-            observability:
-              - 'deploy/observability/**'
-              - 'infra/tofu/grafana/**'
-              - 'docker/online/docker-compose.yml'
-              - 'deploy/nginx/**'
-            full:
-              - '.github/workflows/**'
-              - 'java/pom.xml'
-              - 'java/**/pom.xml'
-              - 'frontend/package.json'
-              - 'frontend/package-lock.json'
-              - 'frontend/vite.config.js'
-              - 'frontend/vitest.config.js'
-              - 'frontend/tsconfig.json'
-              - 'frontend/tsconfig.app.json'
-              - 'android/build.gradle.kts'
-              - 'android/settings.gradle.kts'
-              - 'android/gradle.properties'
-              - '.dockerignore'
-              - 'Makefile'
-              - 'scripts/build/**'
-      - name: Export affected CI surfaces
+          fetch-depth: 0
+      - name: Detect affected CI/build/deploy surfaces from shared model
         id: plan
         env:
           EVENT_NAME: ${{ github.event_name }}
-          FILTER_BACKEND: ${{ steps.path_filter.outputs.backend }}
-          FILTER_FRONTEND: ${{ steps.path_filter.outputs.frontend }}
-          FILTER_HTTP_CONTRACT: ${{ steps.path_filter.outputs.http_contract }}
-          FILTER_ANDROID: ${{ steps.path_filter.outputs.android }}
-          FILTER_KEYCLOAK: ${{ steps.path_filter.outputs.keycloak }}
-          FILTER_KEYCLOAK_PROVIDER: ${{ steps.path_filter.outputs.keycloak_provider }}
-          FILTER_KEYCLOAK_RUNTIME: ${{ steps.path_filter.outputs.keycloak_runtime }}
-          FILTER_DATA: ${{ steps.path_filter.outputs.data }}
-          FILTER_DEPLOY: ${{ steps.path_filter.outputs.deploy }}
-          FILTER_OBSERVABILITY: ${{ steps.path_filter.outputs.observability }}
-          FILTER_FULL: ${{ steps.path_filter.outputs.full }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -144,12 +48,32 @@ jobs:
             for name in backend frontend http_contract android keycloak keycloak_provider keycloak_runtime data deploy observability full; do
               echo "$name=true" >> "$GITHUB_OUTPUT"
             done
+            echo "live_data=false" >> "$GITHUB_OUTPUT"
           else
-            for name in backend frontend http_contract android keycloak keycloak_provider keycloak_runtime data deploy observability full; do
-              env_name="FILTER_$(echo "$name" | tr '[:lower:]' '[:upper:]')"
-              value="${!env_name:-false}"
-              echo "$name=${value:-false}" >> "$GITHUB_OUTPUT"
-            done
+            git diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed-files.txt
+            python3 deploy/release_plan.py detect --paths-file changed-files.txt > release-plan.json
+            python3 - release-plan.json <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import sys
+
+          surfaces = json.load(open(sys.argv[1], encoding="utf-8"))["ciSurfaces"]
+          names = {
+              "backend": "backend",
+              "frontend": "frontend",
+              "http_contract": "httpContract",
+              "android": "android",
+              "keycloak": "keycloak",
+              "keycloak_provider": "keycloakProvider",
+              "keycloak_runtime": "keycloakRuntime",
+              "data": "data",
+              "live_data": "liveData",
+              "deploy": "deploy",
+              "observability": "observability",
+              "full": "full",
+          }
+          for output_name, surface_name in names.items():
+              print(f"{output_name}={str(surfaces[surface_name]).lower()}")
+          PY
           fi
 
   python_unit:
@@ -165,7 +89,7 @@ jobs:
 
   live_data_contracts:
     needs: [changes]
-    if: needs.changes.outputs.data == 'true' || needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.live_data == 'true'
     name: Live data contracts
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -634,8 +558,8 @@ jobs:
         run: bash deploy/test-flyway-immutability.sh
       - name: bash -n deploy.sh
         run: bash -n deploy/deploy.sh
-      - name: bash -n observability verification scripts
-        run: bash -n deploy/deploy.sh deploy/verify-observability.sh deploy/test-keycloak-runtime.sh deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh deploy/test-deploy-rollback.sh deploy/test-nginx-grafana-recreate.sh deploy/test-build-workflow.sh deploy/test-release-plan.sh
+      - name: bash -n deployment verification scripts
+        run: bash -n deploy/deploy.sh deploy/ops-recovery.sh deploy/verify-observability.sh deploy/test-keycloak-runtime.sh deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh deploy/test-build-workflow.sh deploy/test-release-plan.sh
       - name: Build workflow frozen-commit contract
         run: bash deploy/test-build-workflow.sh
       - name: Build/Deploy changed-target and manifest contract
@@ -682,8 +606,10 @@ jobs:
                   assert "8000" not in str(p), f"service {name} must not publish port 8000: {p}"
           print("no Grafana MCP service / port 8000 in production compose")
           PY
-      - name: Deploy/rollback smoke
-        run: bash deploy/test-deploy-rollback.sh
+      - name: Selective Deploy/no-auto-recovery smoke
+        run: bash deploy/test-deploy-contract.sh
+      - name: Ops Recovery schema guard and workflow contract
+        run: bash deploy/test-ops-recovery.sh
       - name: nginx rate-limit real-IP smoke
         run: bash deploy/test-nginx-ratelimit.sh
       - name: nginx Android download route smoke (SPA/version.json/APK/404)
@@ -718,6 +644,7 @@ jobs:
           PYTHON_UNIT: ${{ needs.python_unit.result }}
           DATA_CHANGED: ${{ needs.changes.outputs.data }}
           LIVE_DATA_CONTRACTS: ${{ needs.live_data_contracts.result }}
+          LIVE_DATA_CHANGED: ${{ needs.changes.outputs.live_data }}
           BACKEND: ${{ needs.backend.result }}
           BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
           KEYCLOAK_PROVIDERS: ${{ needs.keycloak_providers.result }}
@@ -749,7 +676,7 @@ jobs:
           done <<EOF
           changes|true|$CHANGES
           python_unit|$([ "$DATA_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$PYTHON_UNIT
-          live_data_contracts|$([ "$DATA_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$LIVE_DATA_CONTRACTS
+          live_data_contracts|$([ "$LIVE_DATA_CHANGED" = true ] && echo true || echo false)|$LIVE_DATA_CONTRACTS
           backend|$([ "$BACKEND_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$BACKEND
           keycloak_providers|$([ "$KEYCLOAK_PROVIDER_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$KEYCLOAK_PROVIDERS
           keycloak_runtime|$([ "$KEYCLOAK_RUNTIME_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$KEYCLOAK_RUNTIME
