@@ -40,11 +40,15 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
 }
 html[data-ui-profile="showcase"] .app-footer {
   border-top-color: var(--showcase-tactical-border);
-  color: var(--showcase-tactical-muted);
+  background: color-mix(in srgb, var(--bg-card) 82%, transparent);
+  color: var(--showcase-tactical-text);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 html[data-ui-profile="showcase"] .app-footer a {
-  color: var(--showcase-tactical-text);
+  color: var(--text-heading);
 }
+html[data-ui-profile="showcase"] .app-footer a:hover { color: var(--accent-hover); }
 .app-footer a:hover { color: var(--accent); }
 .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: var(--topbar-h);
   display: flex; align-items: center; gap: 8px; padding: 8px 16px;
