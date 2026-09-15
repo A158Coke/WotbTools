@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.84",
+    "date": "2026-09-15",
+    "tag": "fix",
+    "zh": "为沉浸界面的 Footer 增加半透明暗色底板和轻微模糊效果，让 Footer 文案与 ICP 备案号在复杂战场背景上也稳定清晰；简约界面和页面布局不变。",
+    "en": "Added a translucent dark footer surface with subtle blur in the immersive Showcase profile, keeping footer text and the ICP filing number readable over complex battlefield backgrounds; the Classic profile and page layout are unchanged.",
+    "ru": "В иммерсивном профиле Showcase нижний колонтитул получил полупрозрачную тёмную подложку с лёгким размытием, поэтому текст и номер ICP остаются читаемыми на сложном фоне поля боя; профиль Classic и макет страниц не изменились."
+  },
+  {
     "v": "2.12.83",
     "date": "2026-09-15",
     "tag": "fix",
