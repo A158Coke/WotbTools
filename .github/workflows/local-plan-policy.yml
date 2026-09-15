@@ -1,0 +1,31 @@
+name: Local plan policy
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reject-tracked-local-plan:
+    name: Reject tracked local development plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Keep the local development plan out of Git
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files --error-unmatch -- docs/current-plan.md >/dev/null 2>&1; then
+            echo "::error::docs/current-plan.md is a local-only planning artifact and must not be tracked." >&2
+            exit 1
+          fi
+          git check-ignore -q --no-index -- docs/current-plan.md || {
+            echo "::error::docs/current-plan.md must remain ignored." >&2
+            exit 1
+          }
