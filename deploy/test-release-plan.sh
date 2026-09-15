@@ -68,7 +68,11 @@ assert detect("contracts/http/openapi.yaml")["buildServices"] == ["wotb-backend"
 assert detect("contracts/android-native-bridge.json")["ciSurfaces"]["android"]
 assert not detect("contracts/android-native-bridge.json")["imageServices"]
 assert detect("deploy/deploy.sh")["deployConfig"]
-assert detect("deploy/deploy.sh")["deployServices"] == []
+deploy_script_plan = detect("deploy/deploy.sh")
+assert deploy_script_plan["images"] == {"backend": True, "frontend": False, "keycloak": False}
+assert deploy_script_plan["buildServices"] == ["wotb-backend"]
+assert deploy_script_plan["imageServices"] == ["wotb-backend"]
+assert deploy_script_plan["deployServices"] == ["wotb-backend"]
 
 backend_health_probe_fix = detect(
     "deploy/deploy.sh",

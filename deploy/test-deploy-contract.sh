@@ -49,13 +49,19 @@ case "$command" in
   stop) printf 'stop %s\n' "$*" >> "$log" ;;
   run)
     printf 'run %s\n' "$*" >> "$log"
-    if [ -n "${FAKE_HEALTH_FAILURE_SERVICE:-}" ] && [[ "$*" == *"$FAKE_HEALTH_FAILURE_SERVICE"* ]]; then
-      printf '503\n'
-    elif [ -n "${FAKE_HEALTH_REDIRECT_SERVICE:-}" ] && [[ "$*" == *"$FAKE_HEALTH_REDIRECT_SERVICE"* ]]; then
-      printf '302\n'
-    else
-      printf '200\n'
+    status="${FAKE_HEALTH_STATUS:-}"
+    if [ -z "$status" ]; then
+      if [ -n "${FAKE_HEALTH_FAILURE_SERVICE:-}" ] && [[ "$*" == *"$FAKE_HEALTH_FAILURE_SERVICE"* ]]; then
+        status=503
+      elif [ -n "${FAKE_HEALTH_REDIRECT_SERVICE:-}" ] && [[ "$*" == *"$FAKE_HEALTH_REDIRECT_SERVICE"* ]]; then
+        status=302
+      else
+        status=200
+      fi
     fi
+    [ -z "${FAKE_HEALTH_STDERR:-}" ] || printf '%s\n' "$FAKE_HEALTH_STDERR" >&2
+    printf '%s\n' "$status"
+    exit "${FAKE_HEALTH_EXIT_CODE:-0}"
     ;;
   exec)
     if [[ "$*" == *pg_isready* ]]; then [ "${FAKE_POSTGRES_FAILURE:-0}" = 1 ] && exit 1; exit 0; fi
@@ -87,13 +93,18 @@ run_deploy() {
     GRAFANA_ADMIN_USER=not-real GRAFANA_ADMIN_PASSWORD=not-real \
     FAKE_DOCKER_LOG="$log" FAKE_HEALTH_FAILURE_SERVICE="${FAKE_HEALTH_FAILURE_SERVICE:-}" \
     FAKE_HEALTH_REDIRECT_SERVICE="${FAKE_HEALTH_REDIRECT_SERVICE:-}" \
+    FAKE_HEALTH_STATUS="${FAKE_HEALTH_STATUS:-}" \
+    FAKE_HEALTH_STDERR="${FAKE_HEALTH_STDERR:-}" \
+    FAKE_HEALTH_EXIT_CODE="${FAKE_HEALTH_EXIT_CODE:-0}" \
     FAKE_POSTGRES_FAILURE="${FAKE_POSTGRES_FAILURE:-0}" \
     FAKE_UP_FAILURE="${FAKE_UP_FAILURE:-0}" \
     bash "$WORK/incoming/deploy/deploy.sh"
 }
 
 first_log="$WORK/first.log"
-run_deploy bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sha-bbbbbbbbbbbb wotb-backend wotb-backend "$first_log"
+first_output="$(FAKE_HEALTH_STATUS=200 FAKE_HEALTH_STDERR=$'Container health-probe Creating\nContainer health-probe Created' \
+  run_deploy bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sha-bbbbbbbbbbbb wotb-backend wotb-backend "$first_log" 2>&1)"
+grep -q 'backend: PASS' <<< "$first_output"
 grep -q '^up .*wotb-backend' "$first_log"
 ! grep -Eq '^up .*wotb-frontend|^up .*keycloak|^up .*postgres' "$first_log"
 grep -q '^run .*http://wotb-backend:8088/actuator/health' "$first_log"
@@ -106,6 +117,55 @@ if command -v stat >/dev/null 2>&1 && stat -c %a "$WORK/production-release.json"
   [ "$(stat -c %a "$WORK/production-release.json")" = 600 ]
 fi
 ! grep -Eq 'pg_dump|LKG|candidate|rollback|RESTORE' "$WORK/incoming/deploy/deploy.sh"
+
+status_204_log="$WORK/status-204.log"
+status_204_output="$(FAKE_HEALTH_STATUS=204 run_deploy 1212121212121212121212121212121212121212 sha-121212121212 wotb-backend wotb-backend "$status_204_log" 2>&1)"
+grep -q 'backend: PASS' <<< "$status_204_output"
+
+assert_probe_failure() {
+  local status="$1" log output rc
+  log="$WORK/status-$status.log"
+  set +e
+  output="$(FAKE_HEALTH_STATUS="$status" run_deploy 1313131313131313131313131313131313131313 sha-131313131313 wotb-backend wotb-backend "$log" 2>&1)"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ]
+  grep -q 'backend: FAIL' <<< "$output"
+  grep -q 'probeService=backend' <<< "$output"
+  grep -q 'probeTargetUrl=http://wotb-backend:8088/actuator/health' <<< "$output"
+  grep -q "probeHttpStatus=$status" <<< "$output"
+  grep -q "probeError=HTTP status $status is not 2xx" <<< "$output"
+  grep -q '^stop .*wotb-backend' "$log"
+}
+
+assert_probe_failure 301
+assert_probe_failure 401
+assert_probe_failure 503
+
+invalid_stdout_log="$WORK/invalid-stdout.log"
+set +e
+invalid_stdout_output="$(FAKE_HEALTH_STATUS=$'200\nunexpected-output' \
+  run_deploy 1515151515151515151515151515151515151515 sha-151515151515 wotb-backend wotb-backend "$invalid_stdout_log" 2>&1)"
+invalid_stdout_rc=$?
+set -e
+[ "$invalid_stdout_rc" -ne 0 ]
+grep -q 'probeHttpStatus=unavailable' <<< "$invalid_stdout_output"
+grep -q 'probeError=curl stdout did not contain exactly one three-digit HTTP status' <<< "$invalid_stdout_output"
+grep -q '^stop .*wotb-backend' "$invalid_stdout_log"
+
+curl_exit_log="$WORK/curl-exit.log"
+set +e
+curl_exit_output="$(FAKE_HEALTH_STATUS=000 FAKE_HEALTH_EXIT_CODE=7 \
+  FAKE_HEALTH_STDERR=$'Container health-probe Creating\ncurl: (7) Authorization: Bearer should-not-leak' \
+  run_deploy 1414141414141414141414141414141414141414 sha-141414141414 wotb-backend wotb-backend "$curl_exit_log" 2>&1)"
+curl_exit_rc=$?
+set -e
+[ "$curl_exit_rc" -ne 0 ]
+grep -q 'probeHttpStatus=000' <<< "$curl_exit_output"
+grep -q 'probeError=compose/curl exited with status 7:' <<< "$curl_exit_output"
+grep -q 'Authorization: REDACTED' <<< "$curl_exit_output"
+! grep -q 'should-not-leak' <<< "$curl_exit_output"
+grep -q '^stop .*wotb-backend' "$curl_exit_log"
 
 before_metadata="$(sha256sum "$WORK/production-release.json")"
 backend_unhealthy_log="$WORK/backend-unhealthy.log"

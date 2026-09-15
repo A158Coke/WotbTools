@@ -55,6 +55,7 @@ FRONTEND_PATTERNS = (
 BACKEND_PATTERNS = (
     "java/**",
     "docker/Dockerfile.backend",
+    "deploy/deploy.sh",
     "common/tankopedia-tier7.json",
     "common/tankopedia-tier8.json",
     "common/tankopedia-tier9.json",
