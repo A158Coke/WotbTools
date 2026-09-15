@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class BackendManagementHealthContractTest {
 
     @Test
-    void applicationYmlExposesHealthOnTheDedicatedActuatorPort() throws Exception {
+    void applicationYmlExposesMinimalHealthOnTheDedicatedActuatorPort() throws Exception {
         List<PropertySource<?>> propertySources = new YamlPropertySourceLoader()
                 .load("application", new ClassPathResource("application.yml"));
         PropertySource<?> application = propertySources.getFirst();
@@ -23,5 +23,7 @@ class BackendManagementHealthContractTest {
                 application.getProperty("management.endpoints.web.exposure.include"));
         assertNull(application.getProperty("management.endpoints.web.base-path"),
                 "an unset base path preserves Spring Boot's default /actuator path");
+        assertEquals(true, application.getProperty("management.endpoint.health.probes.enabled"));
+        assertEquals("never", application.getProperty("management.endpoint.health.show-details"));
     }
 }

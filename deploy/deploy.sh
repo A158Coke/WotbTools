@@ -24,6 +24,10 @@ declare -a DEPLOY_SERVICES=()
 declare -a DEPLOY_IMAGE_SERVICES=()
 declare -a APPLY_SERVICES=()
 FAILED_SERVICE=""
+PROBE_LAST_SERVICE=""
+PROBE_LAST_URL=""
+PROBE_LAST_HTTP_STATUS="unavailable"
+PROBE_LAST_ERROR=""
 
 die() {
   echo "ERROR: $*" >&2
@@ -334,20 +338,61 @@ apply_services() {
   done
 }
 
+sanitize_probe_error() {
+  local error_file="$1" sanitized
+  sanitized="$(LC_ALL=C tr '\r\n' ' ' < "$error_file" | LC_ALL=C tr -cd '[:print:][:space:]' | \
+    sed -E \
+      -e 's/[[:space:]]+/ /g' \
+      -e 's#(https?://)[^/@[:space:]]+@#\1REDACTED@#g' \
+      -e 's/([Aa]uthorization:[[:space:]]*)([Bb]earer[[:space:]]+)?[^[:space:]]+/\1REDACTED/g' \
+      -e 's/([Tt]oken|[Ss]ecret|[Pp]assword|[Aa][Pp][Ii][-_]?[Kk]ey)[=:][^[:space:]]*/\1=REDACTED/g')"
+  sanitized="${sanitized# }"
+  sanitized="${sanitized% }"
+  printf '%.500s' "${sanitized:-no stderr output}"
+}
+
 probe_http() {
-  local service="$1" url="$2" host_header="${3:-}" output
+  local service="$1" url="$2" host_header="${3:-}" output stderr_file exit_code stderr_output
   local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
     --max-time "$PROBE_MAX_TIME_SEC" --output /dev/null --write-out '%{http_code}')
+  PROBE_LAST_SERVICE="$service"
+  PROBE_LAST_URL="$url"
+  PROBE_LAST_HTTP_STATUS="unavailable"
+  PROBE_LAST_ERROR=""
   [ -n "$host_header" ] && args+=(--header "$host_header")
   args+=("$url")
-  output="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps "$HEALTH_PROBE_SERVICE" "${args[@]}" 2>&1)" || {
+  if ! stderr_file="$(mktemp)"; then
+    PROBE_LAST_ERROR="unable to allocate probe stderr capture"
     FAILED_SERVICE="$service"
     return 1
-  }
-  case "$output" in
-    2[0-9][0-9]) return 0 ;;
-    *) FAILED_SERVICE="$service"; return 1 ;;
-  esac
+  fi
+  if output="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps "$HEALTH_PROBE_SERVICE" "${args[@]}" 2>"$stderr_file")"; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
+  stderr_output="$(sanitize_probe_error "$stderr_file")"
+  rm -f -- "$stderr_file"
+
+  if [[ "$output" =~ ^[0-9]{3}$ ]]; then
+    PROBE_LAST_HTTP_STATUS="$output"
+  fi
+  if [ "$exit_code" -ne 0 ]; then
+    PROBE_LAST_ERROR="compose/curl exited with status $exit_code: $stderr_output"
+    FAILED_SERVICE="$service"
+    return 1
+  fi
+  if [ "$PROBE_LAST_HTTP_STATUS" = unavailable ]; then
+    PROBE_LAST_ERROR="curl stdout did not contain exactly one three-digit HTTP status: $stderr_output"
+    FAILED_SERVICE="$service"
+    return 1
+  fi
+  if [[ "$PROBE_LAST_HTTP_STATUS" =~ ^2[0-9]{2}$ ]]; then
+    return 0
+  fi
+  PROBE_LAST_ERROR="HTTP status $PROBE_LAST_HTTP_STATUS is not 2xx: $stderr_output"
+  FAILED_SERVICE="$service"
+  return 1
 }
 
 wait_for_probe() {
@@ -437,6 +482,12 @@ diagnostics() {
   echo "releaseTag=$TAG_VALUE"
   echo "deployServices=$DEPLOY_SERVICES_RAW"
   echo "imageServices=$DEPLOY_IMAGE_SERVICES_RAW"
+  if [ -n "$PROBE_LAST_SERVICE" ]; then
+    echo "probeService=$PROBE_LAST_SERVICE"
+    echo "probeTargetUrl=$PROBE_LAST_URL"
+    echo "probeHttpStatus=$PROBE_LAST_HTTP_STATUS"
+    echo "probeError=$PROBE_LAST_ERROR"
+  fi
   docker compose -f "$LIVE_COMPOSE" ps -a || true
   local -a diagnostic_services=("${APPLY_SERVICES[@]}")
   local failed_service="$FAILED_SERVICE" service already_present=false
