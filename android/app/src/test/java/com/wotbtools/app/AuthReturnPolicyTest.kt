@@ -6,120 +6,93 @@ import org.junit.Test
 
 class AuthReturnPolicyTest {
 
+    private val supportedPaths = listOf(
+        "/realms/wotbtools/broker/idp-qq/endpoint",
+        "/realms/wotbtools/broker/juhe-qq/endpoint"
+    )
+
     @Test
-    fun validExactCallbackAccepted() {
-        assertTrue(
-            AuthReturnPolicy.isVerifiedBrokerReturn(
-                scheme = "https", host = "auth.wotbtools.com",
-                path = "/realms/wotbtools/broker/qq/endpoint",
-                type = "qq", hasState = true, hasCode = true
-            )
-        )
+    fun bothSupportedAliasesAcceptSuccessfulCallback() {
+        supportedPaths.forEach { path ->
+            assertTrue(AuthReturnPolicy.isVerifiedBrokerReturn(
+                "https", "auth.wotbtools.com", path, hasState = true, hasCode = true
+            ))
+        }
     }
 
     @Test
-    fun wrongSchemeRejected() {
-        assertFalse(
-            AuthReturnPolicy.isVerifiedBrokerReturn(
-                scheme = "http", host = "auth.wotbtools.com",
-                path = "/realms/wotbtools/broker/qq/endpoint",
-                type = "qq", hasState = true, hasCode = true
-            )
-        )
+    fun legacyAliasAcceptsOAuthErrorCallbackWithState() {
+        assertTrue(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", supportedPaths[1],
+            hasState = true, hasCode = false, hasError = true
+        ))
     }
 
     @Test
-    fun wrongHostRejected() {
-        assertFalse(
-            AuthReturnPolicy.isVerifiedBrokerReturn(
-                scheme = "https", host = "evil.example",
-                path = "/realms/wotbtools/broker/qq/endpoint",
-                type = "qq", hasState = true, hasCode = true
-            )
-        )
+    fun wrongSchemeHostRealmProviderAndAliasRejected() {
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "http", "auth.wotbtools.com", supportedPaths[0], true, true
+        ))
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "evil.example", supportedPaths[0], true, true
+        ))
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", "/realms/evil/broker/idp-qq/endpoint", true, true
+        ))
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", "/realms/wotbtools/broker/qq/endpoint", true, true
+        ))
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", "/realms/wotbtools/broker/other/endpoint", true, true
+        ))
     }
 
     @Test
-    fun wrongRealmRejected() {
-        assertFalse(
-            AuthReturnPolicy.isVerifiedBrokerReturn(
-                scheme = "https", host = "auth.wotbtools.com",
-                path = "/realms/evil/broker/qq/endpoint",
-                type = "qq", hasState = true, hasCode = true
-            )
-        )
+    fun prefixAndSuffixConfusionRejected() {
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", supportedPaths[0] + "/", true, true
+        ))
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", supportedPaths[0] + "-evil", true, true
+        ))
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", "/x${supportedPaths[0]}", true, true
+        ))
     }
 
     @Test
-    fun wrongProviderRejected() {
-        assertFalse(
-            AuthReturnPolicy.isVerifiedBrokerReturn(
-                scheme = "https", host = "auth.wotbtools.com",
-                path = "/realms/wotbtools/broker/other/endpoint",
-                type = "qq", hasState = true, hasCode = true
-            )
-        )
+    fun stateIsRequiredAndSuccessNeedsCode() {
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", supportedPaths[0], false, true
+        ))
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", supportedPaths[0], true, false
+        ))
     }
 
     @Test
-    fun missingStateRejected() {
-        assertFalse(
-            AuthReturnPolicy.isVerifiedBrokerReturn(
-                scheme = "https", host = "auth.wotbtools.com",
-                path = "/realms/wotbtools/broker/qq/endpoint",
-                type = "qq", hasState = false, hasCode = true
-            )
-        )
+    fun errorCallbackNeedsStateAndCodeAndErrorCannotBeCombined() {
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", supportedPaths[1], false, false, true
+        ))
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", supportedPaths[1], true, true, true
+        ))
     }
 
     @Test
-    fun missingCodeRejected() {
-        assertFalse(
-            AuthReturnPolicy.isVerifiedBrokerReturn(
-                scheme = "https", host = "auth.wotbtools.com",
-                path = "/realms/wotbtools/broker/qq/endpoint",
-                type = "qq", hasState = true, hasCode = false
-            )
-        )
-    }
-
-    @Test
-    fun wrongTypeRejected() {
-        assertFalse(
-            AuthReturnPolicy.isVerifiedBrokerReturn(
-                scheme = "https", host = "auth.wotbtools.com",
-                path = "/realms/wotbtools/broker/qq/endpoint",
-                type = "wx", hasState = true, hasCode = true
-            )
-        )
-    }
-
-    @Test
-    fun pathConfusionRejected() {
-        // 尾部斜杠、后缀、/login 等都必须 reject（精确 path，无 prefix/suffix 匹配）。
-        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn("https", "auth.wotbtools.com",
-                "/realms/wotbtools/broker/qq/endpoint/", "qq", true, true))
-        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn("https", "auth.wotbtools.com",
-                "/realms/wotbtools/broker/qq/endpoint-evil", "qq", true, true))
-        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn("https", "auth.wotbtools.com",
-                "/realms/wotbtools/broker/qq/login", "qq", true, true))
-    }
-
-    @Test
-    fun hostCaseInsensitive() {
-        assertTrue(AuthReturnPolicy.isVerifiedBrokerReturn("HTTPS", "AUTH.WOTBTOOLS.COM",
-                "/realms/wotbtools/broker/qq/endpoint", "qq", true, true))
-    }
-
-    @Test
-    fun nullAndBlankFieldsRejected() {
-        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(null, "auth.wotbtools.com",
-                "/realms/wotbtools/broker/qq/endpoint", "qq", true, true))
-        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn("https", null,
-                "/realms/wotbtools/broker/qq/endpoint", "qq", true, true))
-        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn("https", "auth.wotbtools.com",
-                null, "qq", true, true))
-        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn("https", "auth.wotbtools.com",
-                "/realms/wotbtools/broker/qq/endpoint", null, true, true))
+    fun hostAndSchemeAreCaseInsensitiveButPathIsExact() {
+        assertTrue(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "HTTPS", "AUTH.WOTBTOOLS.COM", supportedPaths[0], true, true
+        ))
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            null, "auth.wotbtools.com", supportedPaths[0], true, true
+        ))
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", null, supportedPaths[0], true, true
+        ))
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", null, true, true
+        ))
     }
 }

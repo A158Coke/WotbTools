@@ -20,6 +20,12 @@ The GitHub workflow is deliberately split:
    COS backend, creates one saved plan against its local loopback PostgreSQL
    port, rejects destructive changes, and applies that exact plan.
 
+Both the normal deployment workflow and the manual postgres-keycloak workflow
+use the same GitHub Actions `production-maintenance` concurrency group. This
+is the required serialization boundary for the shared
+`wotbtools/prod/postgres-keycloak.tfstate`; operator coordination is not a
+substitute for the workflow-level lock.
+
 The TX environment file is root-only and carries the COS backend credentials,
 the provider administrator password, the Keycloak role password, and a
 non-secret role-password rotation version. It is never sent from GitHub,

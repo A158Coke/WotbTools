@@ -19,7 +19,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: tx-postgres-keycloak
+  # Shared with deploy.yml: both workflows can mutate the same remote state.
+  group: production-maintenance
   cancel-in-progress: false
 
 defaults:

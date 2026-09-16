@@ -13,6 +13,7 @@ permissions:
   contents: read
 
 concurrency:
+  # Shared with postgres-keycloak-tofu.yml: deploy.yml can apply the same TX state.
   group: production-maintenance
   cancel-in-progress: false
 

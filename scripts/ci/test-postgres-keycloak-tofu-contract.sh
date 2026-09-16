@@ -15,6 +15,8 @@ root = Path(sys.argv[1])
 tofu_root = root / "infra/tofu/postgres-keycloak"
 workflow_path = root / ".github/workflows/postgres-keycloak-tofu.yml"
 workflow_text = workflow_path.read_text(encoding="utf-8")
+deploy_path = root / ".github/workflows/deploy.yml"
+deploy_text = deploy_path.read_text(encoding="utf-8")
 root_text = "\n".join(path.read_text(encoding="utf-8") for path in tofu_root.glob("*.tf"))
 workflow = yaml.safe_load(workflow_text)
 triggers = workflow.get("on", workflow.get(True))
@@ -23,7 +25,23 @@ assert workflow["name"] == "Infra / TX Keycloak PostgreSQL"
 assert "infra/tofu/postgres-keycloak/**" in triggers["pull_request"]["paths"]
 assert triggers["push"]["branches"] == ["main"]
 assert "infra/tofu/postgres-keycloak/**" in triggers["push"]["paths"]
-assert workflow["concurrency"] == {"group": "tx-postgres-keycloak", "cancel-in-progress": False}
+assert workflow["concurrency"] == {"group": "production-maintenance", "cancel-in-progress": False}
+deploy = yaml.safe_load(deploy_text)
+assert deploy["concurrency"] == workflow["concurrency"], (
+    "all postgres-keycloak apply paths must share one GitHub Actions concurrency boundary"
+)
+assert "tofu apply -input=false -auto-approve plan.tfplan" in deploy_text
+assert "infra/tofu/postgres-keycloak" in deploy_text
+
+expected_concurrency = workflow["concurrency"]
+for candidate in (root / ".github/workflows").glob("*.y*ml"):
+    candidate_text = candidate.read_text(encoding="utf-8")
+    if "infra/tofu/postgres-keycloak" not in candidate_text or "tofu apply" not in candidate_text:
+        continue
+    candidate_workflow = yaml.safe_load(candidate_text)
+    assert candidate_workflow.get("concurrency") == expected_concurrency, (
+        f"{candidate.name} can mutate postgres-keycloak state without the shared serialization boundary"
+    )
 assert "tofu init -backend=false -input=false" in workflow_text
 assert "TX_VPS_HOST" in workflow_text
 assert "postgres-keycloak-tofu.env" in workflow_text
