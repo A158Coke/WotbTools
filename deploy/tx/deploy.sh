@@ -407,7 +407,12 @@ blocking_health() {
   fi
   if is_selected all || is_selected wotb-frontend; then
     wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || return 1
-    wait_for_probe caddy http://caddy/ 'Host: wotbtools.com' || return 1
+    # The formal site address intentionally redirects HTTP to HTTPS. Probe
+    # Caddy's TX-local readiness surface instead: it is 2xx-only, DNS/ACME
+    # independent, and exercises the frontend and Keycloak proxy contracts.
+    wait_for_probe caddy-ready http://172.29.0.2/_wotb/ready || return 1
+    wait_for_probe caddy-frontend http://172.29.0.2/_wotb/frontend/api/health || return 1
+    wait_for_probe caddy-keycloak http://172.29.0.2/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || return 1
   fi
 }
 

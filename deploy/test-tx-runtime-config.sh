@@ -33,6 +33,8 @@ grep -Fq '${CADDY_HTTPS_BIND:-127.0.0.1}:443:443' "$COMPOSE" \
   || fail "Stage I Caddy HTTPS must remain loopback-only by default"
 ! grep -Eq '\b(nsupdate|route53|cloudflare|gcloud dns|az network dns)\b' "$TX_DIR/deploy.sh" \
   || fail "TX deploy script must not contain DNS control commands"
+! grep -Fq "wait_for_probe caddy http://caddy/" "$TX_DIR/deploy.sh" \
+  || fail "Caddy readiness must not use the formal HTTP-to-HTTPS site"
 
 for route in \
   'proxy_pass ${BACKEND_UPSTREAM};' \
@@ -47,6 +49,21 @@ grep -Fq 'set_real_ip_from 172.29.0.2;' "$TEMPLATE" \
   || fail "frontend nginx must not own the Keycloak public route"
 grep -Fq 'handle /.well-known/assetlinks.json' "$TX_DIR/Caddyfile" \
   || fail "TX Caddy must serve the Android App Link association before Keycloak"
+grep -Fq 'http://172.29.0.2 {' "$TX_DIR/Caddyfile" \
+  || fail "TX Caddy must expose readiness only on its fixed internal address"
+grep -Fq 'handle /_wotb/ready' "$TX_DIR/Caddyfile" \
+  || fail "TX Caddy must expose an explicit internal readiness endpoint"
+grep -Fq 'handle_path /_wotb/frontend/*' "$TX_DIR/Caddyfile" \
+  || fail "TX Caddy readiness must exercise the frontend routing contract"
+grep -Fq 'handle_path /_wotb/keycloak/*' "$TX_DIR/Caddyfile" \
+  || fail "TX Caddy readiness must exercise the Keycloak routing contract"
+for probe in \
+  'http://172.29.0.2/_wotb/ready' \
+  'http://172.29.0.2/_wotb/frontend/api/health' \
+  'http://172.29.0.2/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration'; do
+  grep -Fq "$probe" "$TX_DIR/deploy.sh" \
+    || fail "TX deploy must probe the Caddy internal readiness route: $probe"
+done
 grep -Fq './assets/auth/.well-known/assetlinks.json:/srv/.well-known/assetlinks.json:ro' "$COMPOSE" \
   || fail "TX Caddy must mount the Android App Link association payload"
 
@@ -84,6 +101,8 @@ grep -Fq 'keycloak:8080' "$WORK/caddy.json" \
   || fail "Caddy must forward auth traffic to Keycloak"
 grep -Fq 'assetlinks.json' "$WORK/caddy.json" \
   || fail "Caddy must retain the Android App Link association route"
+grep -Fq '_wotb/ready' "$WORK/caddy.json" \
+  || fail "Caddy adapt output must retain the internal readiness route"
 
 docker run --rm \
   -e BACKEND_UPSTREAM=http://10.20.0.2:8087 \
