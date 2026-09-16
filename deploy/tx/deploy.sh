@@ -406,6 +406,9 @@ blocking_health() {
     wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || return 1
   fi
   if is_selected all || is_selected wotb-frontend; then
+    # This direct probe proves TX -> WireGuard -> Yecao's published backend
+    # path independently of frontend nginx and Caddy routing.
+    wait_for_probe wireguard-backend http://10.20.0.2:8087/api/health || return 1
     wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || return 1
     # The formal site address intentionally redirects HTTP to HTTPS. Probe
     # Caddy's TX-local readiness surface instead: it is 2xx-only, DNS/ACME
@@ -414,6 +417,122 @@ blocking_health() {
     wait_for_probe caddy-frontend http://172.29.0.2/_wotb/frontend/api/health || return 1
     wait_for_probe caddy-keycloak http://172.29.0.2/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || return 1
   fi
+}
+
+probe_body_contains() {
+  local service="$1" url="$2" needle="$3" host_header="${4:-}" body
+  local -a args=(--silent --show-error --fail --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
+    --max-time "$PROBE_MAX_TIME_SEC")
+  [ -n "$host_header" ] && args+=(--header "$host_header")
+  args+=("$url")
+  if ! body="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
+    echo "$service: FAIL (probe command failed)" >&2
+    return 1
+  fi
+  if ! grep -Fq "$needle" <<< "$body"; then
+    echo "$service: FAIL (response missing expected contract)" >&2
+    return 1
+  fi
+  echo "$service: PASS"
+}
+
+pre_cutover_check() {
+  local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health
+  local failures=0 provider
+  DEPLOY_SERVICES=(all)
+
+  command -v docker >/dev/null 2>&1 || { echo "docker: FAIL (docker is required)" >&2; return 1; }
+  command -v python3 >/dev/null 2>&1 || { echo "python3: FAIL (python3 is required)" >&2; return 1; }
+  load_runtime_environment || return 1
+  [ -f "$LIVE_COMPOSE" ] || { echo "tx-compose: FAIL (missing $LIVE_COMPOSE)" >&2; return 1; }
+
+  if compose_json="$(docker compose -f "$LIVE_COMPOSE" config --format json 2>&1)"; then
+    echo "tx-compose: PASS"
+  else
+    echo "tx-compose: FAIL ($compose_json)" >&2
+    return 1
+  fi
+
+  if python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+ports = data["services"]["keycloak-postgres"].get("ports", [])
+values = [str(p) for p in ports]
+assert any("127.0.0.1" in p and "15432" in p and "5432" in p for p in values), values
+assert not any("0.0.0.0" in p or p.startswith("5432:") or "::" in p for p in values), values
+' <<< "$compose_json"; then
+    echo "postgres-loopback: PASS"
+  else
+    echo "postgres-loopback: FAIL (management port must be 127.0.0.1:15432:5432 only)" >&2
+    failures=1
+  fi
+
+  health="$(docker compose -f "$LIVE_COMPOSE" ps --format '{{.Health}}' keycloak-postgres 2>/dev/null || true)"
+  if [ "$health" = healthy ] && docker compose -f "$LIVE_COMPOSE" exec -T keycloak-postgres \
+      pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
+    echo "keycloak-postgres: PASS"
+  else
+    echo "keycloak-postgres: FAIL (container is not healthy)" >&2
+    failures=1
+  fi
+
+  wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || failures=1
+  wait_for_probe wireguard-backend http://10.20.0.2:8087/api/health || failures=1
+  wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || failures=1
+  wait_for_probe caddy-ready http://172.29.0.2/_wotb/ready || failures=1
+  wait_for_probe caddy-frontend http://172.29.0.2/_wotb/frontend/api/health || failures=1
+  wait_for_probe caddy-keycloak http://172.29.0.2/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || failures=1
+  probe_body_contains assetlinks http://172.29.0.2/.well-known/assetlinks.json 'com.wotbtools.app' || failures=1
+
+  for provider in keycloak-juhe-qq-provider.jar keycloak-qq-provider.jar keycloak-wargaming-provider.jar; do
+    if docker compose -f "$LIVE_COMPOSE" exec -T keycloak test -f "/opt/keycloak/providers/$provider"; then
+      echo "keycloak-provider-$provider: PASS"
+    else
+      echo "keycloak-provider-$provider: FAIL" >&2
+      failures=1
+    fi
+  done
+
+  if docker compose -f "$LIVE_COMPOSE" exec -T keycloak sh -c \
+      'grep -Fq '"'"'"realm": "wotbtools"'"'"' /opt/keycloak/data/import/wotbtools-realm.json && grep -Fq '"'"'"clientId": "wotbtools-web"'"'"' /opt/keycloak/data/import/wotbtools-realm.json'; then
+    echo "wotbtools-web-baseline: PASS"
+  else
+    echo "wotbtools-web-baseline: FAIL" >&2
+    failures=1
+  fi
+
+  if [ -n "$source_root" ] && [ -f "$source_root/deploy/docker-compose.prod.yml" ]; then
+    if grep -Fq '"10.20.0.2:8087:8087"' "$source_root/deploy/docker-compose.prod.yml" \
+      && ! grep -Eq '(^|["[:space:]-])(0\.0\.0\.0:)?8087:8087(["[:space:]]|$)' "$source_root/deploy/docker-compose.prod.yml"; then
+      echo "yecao-backend-wireguard-bind: PASS"
+    else
+      echo "yecao-backend-wireguard-bind: FAIL" >&2
+      failures=1
+    fi
+    if grep -Fq '"realm": "wotbtools"' "$source_root/docker/keycloak/wotbtools-realm.json" \
+      && grep -Fq '"clientId": "wotbtools-web"' "$source_root/docker/keycloak/wotbtools-realm.json"; then
+      echo "realm-client-source-baseline: PASS"
+    else
+      echo "realm-client-source-baseline: FAIL" >&2
+      failures=1
+    fi
+    # The TX deploy helper has no DNS or Yecao retirement command; this is also
+    # enforced by the static TX runtime and pre-cutover contract tests.
+    echo "cutover-safety-boundary: PASS"
+  else
+    echo "yecao-backend-wireguard-bind: FAIL (WOTB_SOURCE_ROOT does not expose Yecao compose)" >&2
+    failures=1
+  fi
+
+  echo "QQ_IDP_STATUS=idp-qq=WAITING_EXTERNAL"
+  echo "QQ_FALLBACK_STATUS=juhe-qq=PRODUCTION_REQUIRED"
+  if [ "$failures" -ne 0 ]; then
+    echo "PRE_CUTOVER_NOT_READY" >&2
+    return 1
+  fi
+  echo "PRE_CUTOVER_READY"
+  echo "DNS_CUTOVER_NOT_PERFORMED"
+  echo "WAITING_FOR_OPERATOR_APPROVAL"
 }
 
 diagnostics() {
@@ -510,4 +629,6 @@ main() {
   echo "TX deployment completed: $RELEASE_SHA_VALUE ($TAG_VALUE); DNS cutover remains an explicit operator action."
 }
 
-main "$@"
+if [ "${TX_DEPLOY_LIBRARY_ONLY:-0}" != 1 ]; then
+  main "$@"
+fi

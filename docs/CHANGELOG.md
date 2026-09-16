@@ -6,6 +6,7 @@
 
 ### Architecture
 - **TX Frontend + Keycloak predeployment control plane**：release manifest 现按 `yecao` / `tx` 明确服务目标；TX 仅通过其 SSH runtime 执行 Compose 与本地 OpenTofu，Keycloak PostgreSQL 管理端口固定 loopback。正常发布不会切换 DNS、停止或删除 Yecao Frontend/Keycloak。TX 应用服务必须在本地 OpenTofu 成功写入 provision marker 后才会启动；`user_profile` 只新增只读影响审计，任何业务依赖发现均要求独立人工批准。
+- **TX pre-cutover runtime gate**：Yecao backend 业务端口仅绑定 `10.20.0.2:8087:8087`；TX deployment-owned health-probe 独立验证 WireGuard backend、frontend、Caddy 与 Keycloak。新增只读 `PRE_CUTOVER_READY` 门禁，允许 official QQ `idp-qq=WAITING_EXTERNAL`，并明确 DNS/Yecao retirement 仍需后续人工批准。
 - **Three-service immutable release identity bootstrap**：Frontend 现有 build metadata 的 canonical 字段明确为 `buildCommit`；Keycloak 镜像通过 frozen release SHA 构建参数注入 `WOTBTOOLS_BUILD_COMMIT`，启动时输出该 identity；Backend `StartupReleaseDiagnostics` 现输出 full build commit 及其对应 immutable `sha-<12>` image tag。本次路径组合会选择 backend/frontend/keycloak 三个 application images，使用同一 frozen release SHA 构建并写入 manifest；未修改认证行为、Deploy fail-closed、数据库或备份链路。
 
 ### Fixed

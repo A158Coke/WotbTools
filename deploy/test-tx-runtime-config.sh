@@ -57,6 +57,8 @@ grep -Fq 'handle_path /_wotb/frontend/*' "$TX_DIR/Caddyfile" \
   || fail "TX Caddy readiness must exercise the frontend routing contract"
 grep -Fq 'handle_path /_wotb/keycloak/*' "$TX_DIR/Caddyfile" \
   || fail "TX Caddy readiness must exercise the Keycloak routing contract"
+grep -Fq 'wait_for_probe wireguard-backend http://10.20.0.2:8087/api/health' "$TX_DIR/deploy.sh" \
+  || fail "TX deploy must directly probe the WireGuard backend path"
 for probe in \
   'http://172.29.0.2/_wotb/ready' \
   'http://172.29.0.2/_wotb/frontend/api/health' \
@@ -203,6 +205,12 @@ deploy_output="$(env -i \
   bash "$WORK/incoming/deploy.sh" 2>&1)"
 grep -Fq 'DNS cutover remains an explicit operator action' <<< "$deploy_output" \
   || fail "TX deploy must report that cutover remains manual"
+grep -Fq 'wireguard-backend: PASS' <<< "$deploy_output" \
+  || fail "TX deploy must report the direct WireGuard backend probe"
+grep -Fq 'run --rm --no-deps health-probe --silent --show-error --connect-timeout' "$WORK/docker.log" \
+  || fail "TX deploy must run backend probes from the deployment-owned health-probe"
+grep -Fq 'http://10.20.0.2:8087/api/health' "$WORK/docker.log" \
+  || fail "TX deploy must probe the WireGuard backend URL directly"
 grep -Fq 'up -d --no-deps --force-recreate keycloak-postgres' "$WORK/docker.log" \
   || fail "TX deploy must start selected Keycloak PostgreSQL locally"
 grep -Fq 'up -d --no-deps --force-recreate caddy' "$WORK/docker.log" \

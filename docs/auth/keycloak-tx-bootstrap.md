@@ -34,3 +34,24 @@
 - OIDC discovery、三个 Wargaming 登录、前端 public client redirect URI 均可验证；
 - QQ Connect 凭据缺失时标记为 `BLOCKED_QQ_IDP_CREDENTIALS`，不通过猜测配置绕过。
 - Android 只接受两个 exact callback path：`juhe-qq` 回调保持 Juhe contract，`idp-qq` 回调使用官方 OAuth contract；不得以新 provider 存在为由删除 Juhe fallback。
+
+## PRE_CUTOVER_READY 只读门禁
+
+在申请 DNS cutover 前，在 TX runtime 上执行 `deploy/tx/pre-cutover-check.sh`。该入口只复用
+`deploy/tx/deploy.sh` 的现有 health-probe/Compose 配置读取逻辑，不执行 staging、promote、
+recreate、stop、删除或 DNS 操作。`WOTB_SOURCE_ROOT` 应指向包含 Yecao
+`deploy/docker-compose.prod.yml` 与 realm baseline 的受控 checkout；缺少该路径时，门禁会拒绝
+宣称 ready，而不是猜测 backend bind。
+
+全部检查通过时输出：
+
+```text
+PRE_CUTOVER_READY
+DNS_CUTOVER_NOT_PERFORMED
+WAITING_FOR_OPERATOR_APPROVAL
+```
+
+`idp-qq=WAITING_EXTERNAL`（官方 QQ Open Platform 审核 pending）是允许状态，不阻断门禁；
+`juhe-qq=PRODUCTION_REQUIRED` 仍是当前生产 fallback。门禁中的独立
+`wireguard-backend` probe 必须从 TX `health-probe` 访问
+`http://10.20.0.2:8087/api/health`，以区分 WG/backend 链路与 frontend/Caddy 路由故障。
