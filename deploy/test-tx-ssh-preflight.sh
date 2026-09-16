@@ -9,6 +9,8 @@ trap 'rm -rf "$WORK"' EXIT
 grep -Fq 'TX_PREFLIGHT_OK' "$SCRIPT"
 grep -Fq 'TX_KC_POSTGRES_ADMIN_PASSWORD' "$ROOT/.github/workflows/tx-ssh-smoke.yml"
 grep -Fq 'CADDY_ACME_EMAIL' "$ROOT/.github/workflows/tx-ssh-smoke.yml"
+! grep -Fq '10.20.0.2:8087' "$SCRIPT"
+! grep -Fq '/dev/tcp/10.20.0.2/8087' "$ROOT/.github/workflows/tx-ssh-smoke.yml"
 ! grep -Fq 'tx-runtime.env' "$ROOT/.github/workflows/tx-ssh-smoke.yml"
 ! grep -Fq 'postgres-keycloak-tofu.env' "$ROOT/.github/workflows/tx-ssh-smoke.yml"
 ! grep -Eq 'echo .*TX_KC_|>.*TX_KC_|printf .*TX_KC_' "$ROOT/.github/workflows/tx-ssh-smoke.yml"
@@ -31,23 +33,16 @@ case "${1:-}" in
   *) exit 1 ;;
 esac
 EOF
-cat > "$WORK/bin/timeout" <<'EOF'
-#!/usr/bin/env bash
-[ "${PREFLIGHT_BACKEND_UNREACHABLE:-0}" != 1 ]
-EOF
 chmod 700 "$WORK/bin"/*
 
 run_preflight() {
   env -i PATH="$WORK/bin:$PATH" PREFLIGHT_WG_MISSING="${PREFLIGHT_WG_MISSING:-0}" \
-    PREFLIGHT_BACKEND_UNREACHABLE="${PREFLIGHT_BACKEND_UNREACHABLE:-0}" \
     bash "$SCRIPT"
 }
 
 grep -Fq TX_PREFLIGHT_OK <<< "$(run_preflight)"
 set +e
 PREFLIGHT_WG_MISSING=1 run_preflight >/dev/null 2>&1
-[ $? -ne 0 ]
-PREFLIGHT_WG_MISSING=0 PREFLIGHT_BACKEND_UNREACHABLE=1 run_preflight >/dev/null 2>&1
 [ $? -ne 0 ]
 set -e
 

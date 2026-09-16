@@ -19,6 +19,12 @@ fail() {
   || fail "TX deploy must not depend on a local runtime env file"
 ! grep -Fq 'load_runtime_environment' "$TX_DIR/deploy.sh" \
   || fail "TX deploy must read runtime variables from the process environment"
+! grep -Fq 'TX sponsor config is missing' "$TX_DIR/deploy.sh" \
+  || fail "TX sponsor content must remain optional"
+! grep -Fq 'TX sponsor asset directory is missing' "$TX_DIR/deploy.sh" \
+  || fail "TX sponsor assets must remain optional"
+! grep -Fq 'TX Android release directory is missing' "$TX_DIR/deploy.sh" \
+  || fail "TX Android release content must not become a sponsor hard requirement"
 
 grep -Fq '127.0.0.1:15432:5432' "$COMPOSE" \
   || fail "Keycloak PostgreSQL must bind its administration port to TX loopback"
@@ -84,7 +90,6 @@ export WG_APPLICATION_ID=not-real
 export CADDY_ACME_EMAIL=ops@example.test
 export TX_RUNTIME_ROOT="$WORK/runtime"
 mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
-printf '{}\n' > "$TX_RUNTIME_ROOT/config/sponsor-config.json"
 
 docker compose -f "$COMPOSE" config > "$WORK/compose.yml"
 grep -Fq 'host_ip: 127.0.0.1' "$WORK/compose.yml" \
@@ -128,7 +133,6 @@ grep -Fq 'proxy_pass http://10.20.0.2:8087/api/;' "$WORK/nginx.conf" \
 # network/DNS action in CI.
 mkdir -p "$WORK/incoming" "$WORK/bin" "$WORK/live/config/sponsor" "$WORK/live/android-release"
 cp -a "$TX_DIR/." "$WORK/incoming/"
-printf '{}\n' > "$WORK/live/config/sponsor-config.json"
 cat > "$WORK/bin/docker" <<'FAKE_DOCKER'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -145,9 +149,8 @@ esac
 FAKE_DOCKER
 chmod 700 "$WORK/bin/docker"
 
-mkdir -p "$WORK/bootstrap/config/sponsor" "$WORK/bootstrap/android-release" "$WORK/bootstrap-incoming"
+mkdir -p "$WORK/bootstrap" "$WORK/bootstrap-incoming"
 cp -a "$TX_DIR/." "$WORK/bootstrap-incoming/"
-printf '{}\n' > "$WORK/bootstrap/config/sponsor-config.json"
 printf 'tx-local-opentofu\n' > "$WORK/bootstrap/keycloak-postgres.tofu-provisioned"
 set +e
 bootstrap_output="$(env -i \

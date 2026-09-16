@@ -236,9 +236,10 @@ stage_and_validate() {
   [ -f "$source" ] || die "staged TX deployment tree is missing docker-compose.yml."
   [ -f "$INCOMING_DIR/Caddyfile" ] || die "staged TX deployment tree is missing Caddyfile."
   [ -f "$INCOMING_DIR/nginx/frontend.conf.template" ] || die "staged TX deployment tree is missing frontend nginx template."
-  mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
-  if [ ! -e "$TX_RUNTIME_ROOT/config/sponsor-config.json" ]; then
-    die "TX sponsor config is missing: $TX_RUNTIME_ROOT/config/sponsor-config.json."
+  if is_selected all || is_selected wotb-frontend; then
+    # Sponsor and Android files are optional runtime content. Creating their
+    # directories keeps Compose bind mounts valid without inventing config.
+    mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
   fi
   local frontend_tag keycloak_tag
   frontend_tag="$(current_or_target_tag wotb-frontend)"

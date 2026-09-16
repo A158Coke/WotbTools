@@ -67,3 +67,7 @@ WAITING_FOR_OPERATOR_APPROVAL
 `juhe-qq=PRODUCTION_REQUIRED` 仍是当前生产 fallback。门禁中的独立
 `wireguard-backend` probe 必须从 TX `health-probe` 访问
 `http://10.20.0.2:8087/api/health`，以区分 WG/backend 链路与 frontend/Caddy 路由故障。
+
+PR 级 `TX SSH Smoke` 只执行 SSH、Docker/Compose、OpenTofu、`wg0` 地址与到
+`10.20.0.2` 的路由 preflight；它不要求尚未发布的 Yecao backend `8087` 端口可达。
+`10.20.0.2:8087/api/health` 仅由 TX deploy 与本只读门禁在 runtime 已部署后验证。
