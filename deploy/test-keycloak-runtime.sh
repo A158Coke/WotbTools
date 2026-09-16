@@ -159,7 +159,15 @@ fi
 if docker logs "$KC_NAME" 2>&1 | grep -Eiq 'Quarkus augmentation'; then
   fail "runtime startup performed Quarkus augmentation"
 fi
-if ! docker logs "$KC_NAME" 2>&1 | grep -Fq 'WotBTools Keycloak build=runtime-contract'; then
+build_identity_seen=false
+for attempt in $(seq 1 "$RETRIES"); do
+  if docker logs "$KC_NAME" 2>&1 | grep -Fq 'WotBTools Keycloak build=runtime-contract'; then
+    build_identity_seen=true
+    break
+  fi
+  [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
+done
+if [ "$build_identity_seen" != true ]; then
   fail "runtime startup did not report the injected build commit"
 fi
 echo "PASS: Keycloak optimized runtime did not rebuild or augment"
