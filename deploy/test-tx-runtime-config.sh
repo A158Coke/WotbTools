@@ -25,6 +25,9 @@ fail() {
   || fail "TX sponsor assets must remain optional"
 ! grep -Fq 'TX Android release directory is missing' "$TX_DIR/deploy.sh" \
   || fail "TX Android release content must not become a sponsor hard requirement"
+preflight_host_block="$(sed -n '/^preflight_host()/,/^}/p' "$TX_DIR/deploy.sh")"
+! grep -Fq '10.20.0.2:8087' <<< "$preflight_host_block" \
+  || fail "host prerequisite must not probe the unpublished backend port"
 
 grep -Fq '127.0.0.1:15432:5432' "$COMPOSE" \
   || fail "Keycloak PostgreSQL must bind its administration port to TX loopback"
@@ -140,6 +143,10 @@ printf '%s\n' "$*" >> "${FAKE_DOCKER_LOG:?}"
 [ "${1:-}" = compose ] || exit 0
 shift
 while [ "${1:-}" = -f ]; do shift 2; done
+if [ "${1:-}" = version ]; then
+  [ "${FAKE_COMPOSE_FAIL:-0}" != 1 ]
+  exit
+fi
 case "${1:-}" in
   config|pull|up|stop|ps|logs) exit 0 ;;
   exec) exit 0 ;;
@@ -148,6 +155,50 @@ case "${1:-}" in
 esac
 FAKE_DOCKER
 chmod 700 "$WORK/bin/docker"
+cat > "$WORK/bin/ip" <<'FAKE_IP'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+case "${1:-}" in
+  link) [ "${FAKE_WG_MISSING:-0}" != 1 ] ;;
+  -4)
+    [ "${FAKE_WG_MISSING:-0}" != 1 ] || exit 1
+    if [ "${FAKE_WG_ADDRESS_INVALID:-0}" = 1 ]; then
+      printf '    inet 10.20.0.9/24\n'
+    else
+      printf '    inet 10.20.0.1/24\n'
+    fi
+    ;;
+  route) [ "${FAKE_ROUTE_MISSING:-0}" != 1 ] ;;
+  *) exit 1 ;;
+esac
+FAKE_IP
+chmod 700 "$WORK/bin/ip"
+
+run_prerequisite_failure() {
+  local label="$1" expected="$2" path output rc
+  shift 2
+  path="$1"
+  shift
+  set +e
+  output="$(env -i PATH="$path" HOME="$WORK" \
+    WOTB_TX_DIR="$WORK/prereq-$label" WOTB_TX_INCOMING_DIR="$WORK/incoming" TX_RUNTIME_ROOT="$WORK/prereq-$label" \
+    KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+    KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
+    WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+    WOTB_DEPLOY_SERVICES=keycloak-postgres FAKE_DOCKER_LOG="$WORK/prereq-$label.log" \
+    "$@" /bin/bash "$WORK/incoming/deploy.sh" 2>&1)"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "$label prerequisite must fail"
+  grep -Fq "$expected" <<< "$output" || fail "$label prerequisite must report $expected"
+}
+
+run_prerequisite_failure docker-missing "docker is required" "$WORK/empty-path"
+run_prerequisite_failure compose-missing "docker compose is required" "$WORK/bin:$PATH" env FAKE_COMPOSE_FAIL=1
+run_prerequisite_failure wg-missing "wg0 is required" "$WORK/bin:$PATH" env FAKE_WG_MISSING=1
+run_prerequisite_failure wg-address-invalid "wg0 must have 10.20.0.1/24" "$WORK/bin:$PATH" env FAKE_WG_ADDRESS_INVALID=1
+run_prerequisite_failure route-missing "a route to 10.20.0.2 is required" "$WORK/bin:$PATH" env FAKE_ROUTE_MISSING=1
 
 mkdir -p "$WORK/bootstrap" "$WORK/bootstrap-incoming"
 cp -a "$TX_DIR/." "$WORK/bootstrap-incoming/"

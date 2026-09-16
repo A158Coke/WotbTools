@@ -425,6 +425,17 @@ probe_body_contains() {
   echo "$service: PASS"
 }
 
+preflight_host() {
+  command -v docker >/dev/null 2>&1 || die "docker is required."
+  docker compose version >/dev/null 2>&1 || die "docker compose is required."
+  command -v ip >/dev/null 2>&1 || die "ip is required for WireGuard checks."
+  ip link show wg0 >/dev/null 2>&1 || die "wg0 is required."
+  ip -4 addr show dev wg0 | grep -Eq 'inet 10\.20\.0\.1/24([[:space:]]|$)' \
+    || die "wg0 must have 10.20.0.1/24."
+  ip route get 10.20.0.2 >/dev/null 2>&1 \
+    || die "a route to 10.20.0.2 is required."
+}
+
 pre_cutover_check() {
   local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health
   local yecao_compose="$source_root/deploy/docker-compose.prod.yml"
@@ -628,9 +639,9 @@ PY
 
 main() {
   validate_inputs
-  invalidate_tofu_provisioning_for_bootstrap
   require_tofu_provisioning
-  command -v docker >/dev/null 2>&1 || die "docker is required."
+  preflight_host
+  invalidate_tofu_provisioning_for_bootstrap
   command -v flock >/dev/null 2>&1 || die "flock is required to serialize TX deployments."
   command -v python3 >/dev/null 2>&1 || die "python3 is required for immutable image handling."
   mkdir -p "$WOTB_DIR" "$INCOMING_DIR"
