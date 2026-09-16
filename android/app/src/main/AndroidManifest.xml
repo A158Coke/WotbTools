@@ -37,7 +37,7 @@
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
             <!-- 仅接管两个 QQ broker callback 的 verified App Link（QQ native 登录返回原 WebView）。
-                 idp-qq 是 TX 首选 alias，juhe-qq 仅保留 legacy callback 兼容；绝不接管其它 IdP。 -->
+                 idp-qq 是 TX 首选 alias，juhe-qq 保留现有生产 Juhe callback；绝不接管其它 IdP。 -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
