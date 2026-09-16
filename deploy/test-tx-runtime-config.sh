@@ -163,7 +163,7 @@ bootstrap_output="$(env -i \
 grep -Fq 'keycloak-postgres: PASS' <<< "$bootstrap_output" \
   || fail "first TX bootstrap must permit PostgreSQL before Keycloak image metadata exists"
 [ ! -e "$WORK/bootstrap/keycloak-postgres.tofu-provisioned" ] \
-  || fail "PostgreSQL-only bootstrap must invalidate a stale OpenTofu marker"
+  || fail "PostgreSQL-only bootstrap must invalidate stale marker at $WORK/bootstrap/keycloak-postgres.tofu-provisioned (output: $bootstrap_output)"
 grep -Fq 'pull keycloak-postgres' "$WORK/bootstrap-docker.log" \
   || fail "PostgreSQL bootstrap must pull only its selected runtime image"
 ! grep -Fq 'pull keycloak-postgres keycloak' "$WORK/bootstrap-docker.log" \
