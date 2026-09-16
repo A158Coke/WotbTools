@@ -23,7 +23,7 @@ variable "postgresql_port" {
 variable "postgresql_admin_username" {
   description = "PostgreSQL administrator role used only by the provider at TX runtime."
   type        = string
-  default     = "postgres"
+  default     = "kc_admin"
 }
 
 variable "postgresql_admin_password" {

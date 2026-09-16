@@ -30,15 +30,6 @@ mkdir -p "$WORK/deploy" "$WORK/bin" "$WORK/runtime/config/sponsor" "$WORK/runtim
 cp "$ROOT/deploy/tx/docker-compose.yml" "$WORK/deploy/docker-compose.yml"
 cp "$ROOT/deploy/tx/yecao-backend-contract.json" "$WORK/deploy/yecao-backend-contract.json"
 printf '{}\n' > "$WORK/runtime/config/sponsor-config.json"
-cat > "$WORK/runtime.env" <<'ENV'
-KC_POSTGRES_ADMIN_USER=kc_admin
-KC_POSTGRES_ADMIN_PASSWORD=not-real
-KC_BOOTSTRAP_ADMIN_PASSWORD=not-real
-KC_DB_USERNAME=keycloak
-KC_DB_PASSWORD=not-real
-WG_APPLICATION_ID=not-real
-CADDY_ACME_EMAIL=ops@example.test
-ENV
 cat > "$WORK/bin/docker" <<'FAKE_DOCKER'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -66,7 +57,9 @@ FAKE_DOCKER
 chmod 700 "$WORK/bin/docker"
 
 ready_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
-  WOTB_TX_DIR="$WORK" TX_RUNTIME_ENV_FILE="$WORK/runtime.env" \
+  WOTB_TX_DIR="$WORK" KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
+  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
   WOTB_SOURCE_ROOT="$ROOT" WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   bash "$CHECK" 2>&1)"
 grep -Fq 'PRE_CUTOVER_READY' <<< "$ready_output"
@@ -85,14 +78,19 @@ cp "$ROOT/deploy/tx/yecao-backend-contract.json" "$RELOCATED_ROOT/deploy/yecao-b
 printf '{}\n' > "$RELOCATED_ROOT/config/sponsor-config.json"
 
 relocated_ready_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
-  TX_RUNTIME_ENV_FILE="$WORK/runtime.env" WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+  KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
+  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+  WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   bash "$RELOCATED_ROOT/deploy/pre-cutover-check.sh" 2>&1)"
 grep -Fq 'PRE_CUTOVER_READY' <<< "$relocated_ready_output"
 grep -Fq 'yecao-backend-wireguard-bind: PASS (deployed contract)' <<< "$relocated_ready_output"
 
 set +e
 blocked_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
-  WOTB_TX_DIR="$WORK" TX_RUNTIME_ENV_FILE="$WORK/runtime.env" \
+  WOTB_TX_DIR="$WORK" KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
+  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
   WOTB_SOURCE_ROOT="$ROOT" WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   FAKE_WG_FAIL=1 bash "$CHECK" 2>&1)"
 blocked_rc=$?
@@ -103,7 +101,10 @@ grep -Fq 'wireguard-backend: FAIL' <<< "$blocked_output"
 
 set +e
 relocated_blocked_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
-  TX_RUNTIME_ENV_FILE="$WORK/runtime.env" WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+  KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
+  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+  WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   FAKE_WG_FAIL=1 bash "$RELOCATED_ROOT/deploy/pre-cutover-check.sh" 2>&1)"
 relocated_blocked_rc=$?
 set -e

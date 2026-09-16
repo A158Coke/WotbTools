@@ -29,4 +29,4 @@
 - Non-blocking observability：Prometheus、Loki、Alloy、Grafana、datasources、dashboards、metrics 与 log ingestion。
 - `verify-observability.sh` 必须保持 fail-closed；deploy orchestration 负责把失败记录为 degraded，而不是用 `|| true` 改写 verifier 语义。
 - 排障：SSH VPS `ssh -i "$env:USERPROFILE\.ssh\wotb_vps_deploy" -o IdentitiesOnly=yes root@45.136.14.101 -p 58361`，`docker logs wotb-wotb-backend-1 --tail 100`；常见根因：循环依赖、Flyway 冲突、PG volume 不兼容。
-- secret 一律 GitHub Secrets / 运行时 env（仓库根 `.env.example` 只列变量名），禁止落库或写死；赞助/收款信息不硬编码进页面或仓库（运行时只读挂载）。
+- secret 一律 GitHub Secrets / Variables → SSH 运行时 env（仓库根 `.env.example` 只列变量名）；TX 不维护本地 secret env 文件，禁止落库或写死。赞助/收款信息不硬编码进页面或仓库（运行时只读挂载）。

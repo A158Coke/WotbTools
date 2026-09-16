@@ -9,7 +9,6 @@ readonly LIVE_DEPLOY_DIR="$WOTB_DIR/deploy"
 readonly LIVE_COMPOSE="$LIVE_DEPLOY_DIR/docker-compose.yml"
 readonly METADATA_FILE="$WOTB_DIR/tx-production-release.json"
 readonly TX_RUNTIME_ROOT="${TX_RUNTIME_ROOT:-$WOTB_DIR}"
-readonly TX_RUNTIME_ENV_FILE="${TX_RUNTIME_ENV_FILE:-/etc/wotb/tx-runtime.env}"
 readonly TOFU_PROVISION_MARKER="${WOTB_TX_TOFU_PROVISION_MARKER:-$WOTB_DIR/keycloak-postgres.tofu-provisioned}"
 readonly BACKEND_UPSTREAM_VALUE="${TX_BACKEND_UPSTREAM:-http://10.20.0.2:8087}"
 readonly DEPLOY_SERVICES_RAW="${WOTB_DEPLOY_SERVICES:-}"
@@ -47,17 +46,6 @@ is_positive_integer() {
 require_env() {
   local name="$1"
   [ -n "${!name:-}" ] || die "$name is required."
-}
-
-load_runtime_environment() {
-  [ -r "$TX_RUNTIME_ENV_FILE" ] \
-    || die "TX runtime environment file is not readable: $TX_RUNTIME_ENV_FILE."
-  # This file is provisioned on TX with mode 0600. It is deliberately loaded
-  # only on TX; GitHub Actions receives neither its contents nor DB secrets.
-  set -a
-  # shellcheck disable=SC1090
-  . "$TX_RUNTIME_ENV_FILE"
-  set +a
 }
 
 require_tofu_provisioning() {
@@ -445,7 +433,11 @@ pre_cutover_check() {
 
   command -v docker >/dev/null 2>&1 || { echo "docker: FAIL (docker is required)" >&2; return 1; }
   command -v python3 >/dev/null 2>&1 || { echo "python3: FAIL (python3 is required)" >&2; return 1; }
-  load_runtime_environment || return 1
+  for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
+    KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
+    WG_APPLICATION_ID CADDY_ACME_EMAIL; do
+    require_env "$required"
+  done
   [ -f "$LIVE_COMPOSE" ] || { echo "tx-compose: FAIL (missing $LIVE_COMPOSE)" >&2; return 1; }
 
   if compose_json="$(docker compose -f "$LIVE_COMPOSE" config --format json 2>&1)"; then
@@ -634,7 +626,6 @@ PY
 }
 
 main() {
-  load_runtime_environment
   validate_inputs
   invalidate_tofu_provisioning_for_bootstrap
   require_tofu_provisioning

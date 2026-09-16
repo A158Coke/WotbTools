@@ -10,12 +10,23 @@
 
 ## 运行时配置与凭据边界
 
-以下信息只在 TX 的受控运行时环境或 Secret store 中提供，禁止写进 Git、realm JSON、Tofu variables/state 或日志：
+GitHub Actions Secrets / Variables 是 TX runtime 与 TX-local OpenTofu 的唯一配置入口。
+工作流通过 SSH `envs` 注入变量；服务器不再维护 `/etc/wotb/tx-runtime.env` 或
+`/etc/wotb/postgres-keycloak-tofu.env`。以下信息禁止写进 Git、realm JSON、tfvars、Tofu
+state 或日志：
 
 - `KC_BOOTSTRAP_ADMIN_PASSWORD`；
+- `KC_POSTGRES_ADMIN_PASSWORD`；
+- `KC_DB_PASSWORD`；
 - `KEYCLOAK_ADMIN_CLIENT_SECRET`（`wotbtools-admin-api` 的 service account）；
 - `WG_APPLICATION_ID`；
 - QQ Connect application id/secret，以及 QQ provider 所需的回调配置。
+
+TX workflow secrets：`TX_KC_POSTGRES_ADMIN_PASSWORD`、`TX_KC_DB_PASSWORD`、
+`TX_KC_BOOTSTRAP_ADMIN_PASSWORD`、`WG_APPLICATION_ID`、`TENCENTCLOUD_SECRET_ID`、
+`TENCENTCLOUD_SECRET_KEY`。非敏感固定值 `KC_POSTGRES_ADMIN_USER=kc_admin`、
+`KC_DB_USERNAME=keycloak` 由 workflow 提供；`CADDY_ACME_EMAIL` 使用
+`vars.CADDY_ACME_EMAIL`，为空时 fail-closed。
 
 `wotbtools-admin-api` 是机密 client：在导入后由受控 Admin API/console 创建，生成 secret 后直接写入运行时 secret store。不要把生成后的 realm export 提交回仓库。
 

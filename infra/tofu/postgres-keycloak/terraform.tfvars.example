@@ -1,8 +1,8 @@
-# Non-secret TX-local endpoint contract. Keep real passwords in
-# /etc/wotb/postgres-keycloak-tofu.env on TX, never in a tfvars file.
+# Non-secret TX-local endpoint contract. Real values are injected by GitHub
+# Actions over SSH; never put secrets in tfvars.
 postgresql_host                 = "127.0.0.1"
 postgresql_port                 = 15432
-postgresql_admin_username       = "postgres"
+postgresql_admin_username       = "kc_admin"
 keycloak_database_name          = "keycloak"
 keycloak_role_name              = "keycloak"
 keycloak_role_password_version  = "1"
