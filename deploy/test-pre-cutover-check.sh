@@ -7,7 +7,8 @@ CHECK="$ROOT/deploy/tx/pre-cutover-check.sh"
 DEPLOY="$ROOT/deploy/tx/deploy.sh"
 
 grep -Fq 'TX_DEPLOY_LIBRARY_ONLY=1' "$CHECK"
-grep -Fq 'source "$ROOT/deploy/tx/deploy.sh"' "$CHECK"
+grep -Fq 'DEPLOY_SH="$SCRIPT_DIR/deploy.sh"' "$CHECK"
+grep -Fq 'source "$DEPLOY_SH"' "$CHECK"
 grep -Fq 'pre_cutover_check' "$CHECK"
 grep -Fq 'PRE_CUTOVER_READY' "$DEPLOY"
 grep -Fq 'DNS_CUTOVER_NOT_PERFORMED' "$DEPLOY"
@@ -73,6 +74,22 @@ grep -Fq 'DNS_CUTOVER_NOT_PERFORMED' <<< "$ready_output"
 grep -Fq 'WAITING_FOR_OPERATOR_APPROVAL' <<< "$ready_output"
 grep -Fq 'QQ_IDP_STATUS=idp-qq=WAITING_EXTERNAL' <<< "$ready_output"
 
+# Exercise the actual promoted TX layout: the wrapper and deploy helper are
+# siblings under runtime/deploy, with no repository checkout or source root.
+RELOCATED_ROOT="$WORK/relocated-root"
+mkdir -p "$RELOCATED_ROOT/deploy" "$RELOCATED_ROOT/config/sponsor" "$RELOCATED_ROOT/android-release"
+cp "$ROOT/deploy/tx/pre-cutover-check.sh" "$RELOCATED_ROOT/deploy/pre-cutover-check.sh"
+cp "$ROOT/deploy/tx/deploy.sh" "$RELOCATED_ROOT/deploy/deploy.sh"
+cp "$ROOT/deploy/tx/docker-compose.yml" "$RELOCATED_ROOT/deploy/docker-compose.yml"
+cp "$ROOT/deploy/tx/yecao-backend-contract.json" "$RELOCATED_ROOT/deploy/yecao-backend-contract.json"
+printf '{}\n' > "$RELOCATED_ROOT/config/sponsor-config.json"
+
+relocated_ready_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
+  TX_RUNTIME_ENV_FILE="$WORK/runtime.env" WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+  bash "$RELOCATED_ROOT/deploy/pre-cutover-check.sh" 2>&1)"
+grep -Fq 'PRE_CUTOVER_READY' <<< "$relocated_ready_output"
+grep -Fq 'yecao-backend-wireguard-bind: PASS (deployed contract)' <<< "$relocated_ready_output"
+
 set +e
 blocked_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK" TX_RUNTIME_ENV_FILE="$WORK/runtime.env" \
@@ -83,5 +100,15 @@ set -e
 [ "$blocked_rc" -ne 0 ]
 ! grep -Fq 'PRE_CUTOVER_READY' <<< "$blocked_output"
 grep -Fq 'wireguard-backend: FAIL' <<< "$blocked_output"
+
+set +e
+relocated_blocked_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
+  TX_RUNTIME_ENV_FILE="$WORK/runtime.env" WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+  FAKE_WG_FAIL=1 bash "$RELOCATED_ROOT/deploy/pre-cutover-check.sh" 2>&1)"
+relocated_blocked_rc=$?
+set -e
+[ "$relocated_blocked_rc" -ne 0 ]
+! grep -Fq 'PRE_CUTOVER_READY' <<< "$relocated_blocked_output"
+grep -Fq 'wireguard-backend: FAIL' <<< "$relocated_blocked_output"
 
 echo "PRE_CUTOVER_READY gate contract OK"
