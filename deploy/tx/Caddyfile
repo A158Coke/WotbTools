@@ -8,6 +8,11 @@
 # address, so Stage I can validate the loaded config and both upstream routes
 # without production DNS, public HTTP redirects, or ACME certificates.
 http://172.29.0.2 {
+	handle /.well-known/assetlinks.json {
+		root * /srv
+		file_server
+	}
+
 	handle /_wotb/ready {
 		respond "ready" 200
 	}

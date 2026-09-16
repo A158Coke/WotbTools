@@ -68,7 +68,7 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 
 **关键安全边界**
 
-- Grafana `3000`、Prometheus `9090`、Loki `3100`、Alloy `12345`、Backend `8087`、node-exporter `9100` **均不映射到宿主机端口**，只在 Docker 内部网络可达；Keycloak 应用端口 `8080` 仅绑定到宿主机 loopback；宿主机 `8088` 是 frontend 的 `8088:80` 映射。生产观测不配置或依赖独立的 Keycloak management 端点。
+- Grafana `3000`、Prometheus `9090`、Loki `3100`、Alloy `12345`、node-exporter `9100` **均不映射到宿主机端口**；Backend 业务端口只通过 `10.20.0.2:8087:8087` 绑定 Yecao 的 WireGuard 接口，禁止公网或 wildcard 绑定。Keycloak 应用端口 `8080` 仅绑定到宿主机 loopback；宿主机 `8088` 是 frontend 的 `8088:80` 映射。生产观测不配置或依赖独立的 Keycloak management 端点。
 - 公网只能通过 `monitor.wotbtools.com`（host 层 TLS 反代 → frontend nginx → `grafana:3000`）访问 Grafana，且 Grafana 禁止匿名访问。
 - `/actuator/**` 不通过公网域名暴露（nginx 只代理 `/api/` 与 `monitor.*` 到 Grafana）。
 
@@ -261,7 +261,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 | Alloy 配置与日志链路 | `alloy fmt -t` + `test-observability-e2e.sh` | 格式检查，并在 CI 最小 runtime 中验证 emitter → Alloy → Loki |
 | Grafana runtime | `test-grafana-runtime.sh` | 启动最小 Prometheus/Loki/Grafana，验证 provisioning、默认首页与 Alpine/BusyBox auth |
 | Grafana provisioning + Dashboard JSON | `python` 解析全部 YAML/JSON | 结构校验 |
-| 端口安全 | `docker compose config --format json` 校验 prometheus/loki/alloy/grafana/node-exporter/wotb-backend 无宿主端口映射；Keycloak 仅保留应用 `8080` loopback 绑定，不配置 management contract | frontend 8088:80、Keycloak 127.0.0.1:8080:8080 合法 |
+| 端口安全 | `docker compose config --format json` 校验 prometheus/loki/alloy/grafana/node-exporter 无宿主端口映射；Backend 仅允许 `10.20.0.2:8087:8087`；Keycloak 仅保留应用 `8080` loopback 绑定，不配置 management contract | frontend 8088:80、Keycloak 127.0.0.1:8080:8080 合法 |
 
 Backend Maven 单元/集成测试属于独立的 `Backend` CI job，不属于 `observability_config` job；它们会在 PR gate 中单独执行。
 
