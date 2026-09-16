@@ -36,10 +36,51 @@ if grep -Eq -- '--(health-enabled|metrics-enabled)|KC_HTTP_(MANAGEMENT|METRICS)'
   fail "Keycloak management health/metrics configuration must be removed"
 fi
 
+if grep -Eiq 'juhe|open[.]juhedenglu' "$ROOT/docker/Dockerfile.keycloak"; then
+  fail "Keycloak image must not build or include the retired Juhe QQ provider"
+fi
+
+python3 - "$ROOT/docker/keycloak/wotbtools-realm.json" <<'PY'
+import json
+import re
+import sys
+
+realm_path = sys.argv[1]
+with open(realm_path, encoding="utf-8") as source:
+    realm = json.load(source)
+
+if realm.get("identityProviders") != []:
+    raise SystemExit("realm import must not contain IdP configuration or credentials")
+
+secret_key = re.compile(r"^(?:secret|client[_-]?secret|password|token)$", re.IGNORECASE)
+
+def verify(value, path="$"):
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if secret_key.search(key):
+                raise SystemExit(f"realm import contains a credential-like key at {path}.{key}")
+            verify(nested, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, nested in enumerate(value):
+            verify(nested, f"{path}[{index}]")
+
+verify(realm)
+clients = [client for client in realm.get("clients", []) if client.get("clientId") == "wotbtools-web"]
+if len(clients) != 1 or clients[0].get("publicClient") is not True:
+    raise SystemExit("realm import must contain exactly one public wotbtools-web client")
+PY
+
 if [ "${WOTB_KEYCLOAK_SKIP_BUILD:-0}" != "1" ]; then
   echo "== Building real Keycloak production image =="
   docker build --build-arg BUILD_COMMIT=runtime-contract -f "$ROOT/docker/Dockerfile.keycloak" -t "$IMAGE" "$ROOT" >/dev/null
 fi
+
+docker run --rm --entrypoint /bin/sh "$IMAGE" -ec '
+  test -f /opt/keycloak/providers/keycloak-qq-provider.jar
+  test -f /opt/keycloak/providers/keycloak-wargaming-provider.jar
+  test -f /opt/keycloak/data/import/wotbtools-realm.json
+  ! find /opt/keycloak/providers -maxdepth 1 -type f -iname "*juhe*" | grep -q .
+' || fail "Keycloak provider image contents do not match the approved provider set"
 
 docker network create "$NETWORK" >/dev/null
 docker run -d --name "$DB_NAME" --network "$NETWORK" \

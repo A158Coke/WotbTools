@@ -168,8 +168,8 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - name: Juhe QQ provider
-        working-directory: keycloak-juhe-qq-provider
+      - name: Official QQ provider
+        working-directory: keycloak-qq-provider
         run: mvn --batch-mode --no-transfer-progress -s ../java/settings.xml -Dmaven.repo.local=../java/.m2repo test
       - name: Wargaming provider
         working-directory: keycloak-wargaming-provider
@@ -571,11 +571,16 @@ jobs:
       - name: bash -n deploy.sh
         run: bash -n deploy/deploy.sh
       - name: bash -n deployment verification scripts
-        run: bash -n deploy/deploy.sh deploy/ops-recovery.sh deploy/verify-observability.sh deploy/test-keycloak-runtime.sh deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh deploy/test-build-workflow.sh deploy/test-release-plan.sh
+        run: bash -n deploy/deploy.sh deploy/ops-recovery.sh deploy/verify-observability.sh deploy/test-keycloak-runtime.sh deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh deploy/test-build-workflow.sh deploy/test-release-plan.sh deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh scripts/ci/test-postgres-keycloak-tofu-contract.sh
       - name: Build workflow frozen-commit contract
         run: bash deploy/test-build-workflow.sh
       - name: Build/Deploy changed-target and manifest contract
         run: bash deploy/test-release-plan.sh
+      - name: TX runtime and user-profile reset safety contracts
+        run: |
+          bash deploy/test-tx-runtime-config.sh
+          bash deploy/test-user-profile-reset-audit.sh
+          bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
       - name: CI path filter contract
         run: python3 scripts/ci/test-path-filters.py
       - name: CI workflow aggregation contract

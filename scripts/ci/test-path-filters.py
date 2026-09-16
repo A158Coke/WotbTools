@@ -81,23 +81,26 @@ class CiPathFilterTest(unittest.TestCase):
         tankopedia_snapshot = detect("common/tankopedia-tier10.json")
         self.assertTrue(tankopedia_snapshot["ciSurfaces"]["liveData"])
 
-    def test_runtime_compose_is_deploy_all(self):
+    def test_yecao_runtime_compose_does_not_refresh_tx_services(self):
         plan = detect("deploy/docker-compose.prod.yml")
-        self.assertEqual(plan["deployServices"], ["all"])
+        self.assertEqual(plan["deployServices"], [
+            "postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana", "wotb-backend"
+        ])
+        self.assertEqual(plan["targetServices"], {"yecao": plan["deployServices"]})
         self.assert_surfaces(["deploy/docker-compose.prod.yml"], ["deploy"])
 
     def test_provider_source_runs_provider_and_runtime_smoke(self):
-        for provider in ("keycloak-wargaming-provider", "keycloak-juhe-qq-provider"):
+        for provider in ("keycloak-wargaming-provider", "keycloak-qq-provider"):
             source = f"{provider}/src/main/java/Provider.java"
             self.assert_surfaces([source], ["keycloak", "keycloakProvider", "keycloakRuntime"])
 
     def test_provider_tests_only_run_provider_tests(self):
-        for provider in ("keycloak-wargaming-provider", "keycloak-juhe-qq-provider"):
+        for provider in ("keycloak-wargaming-provider", "keycloak-qq-provider"):
             test = f"{provider}/src/test/java/ProviderTest.java"
             self.assert_surfaces([test], ["keycloak", "keycloakProvider"])
 
     def test_provider_build_inputs_run_provider_and_runtime(self):
-        for provider in ("keycloak-wargaming-provider", "keycloak-juhe-qq-provider"):
+        for provider in ("keycloak-wargaming-provider", "keycloak-qq-provider"):
             pom = f"{provider}/pom.xml"
             resources = f"{provider}/src/main/resources/META-INF/services/provider"
             self.assert_surfaces([pom], ["keycloak", "keycloakProvider", "keycloakRuntime"])

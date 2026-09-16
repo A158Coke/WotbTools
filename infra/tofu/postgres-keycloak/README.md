@@ -1,0 +1,65 @@
+# TX Keycloak PostgreSQL OpenTofu root
+
+This root owns only the Keycloak PostgreSQL application role, its dedicated
+database, and the database-level grant. Docker Compose owns the
+`keycloak-postgres` runtime container and must publish its administration port
+only as `127.0.0.1:15432:5432` on TX.
+
+## Execution boundary
+
+OpenTofu plans and applies execute on TX, never on a GitHub-hosted runner.
+The workflow checks formatting and configuration without a backend on GitHub,
+copies this root to an immutable TX staging directory, then invokes `tofu` over
+SSH. The provider is constrained to `127.0.0.1:15432`; it cannot use a public
+address or the WireGuard network. This root contains no `remote-exec`, SSH
+tunnel, or provisioner.
+
+The remote state key is deliberately separate from the existing production and
+Grafana roots:
+
+```text
+wotbtools/prod/postgres-keycloak.tfstate
+```
+
+## TX runtime secret file
+
+Before the main-branch workflow can apply, an operator must install a root-only
+file at `/etc/wotb/postgres-keycloak-tofu.env` on TX (mode `0600`). It is an
+environment file, not a repository artifact, and must provide:
+
+```text
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+TF_VAR_postgresql_admin_password=...
+TF_VAR_keycloak_role_password=...
+TF_VAR_keycloak_role_password_version=1
+```
+
+The first two values authenticate the existing COS remote state backend. The
+PostgreSQL administrator password is consumed only by provider configuration.
+The application role password uses the provider's `password_wo` field, so it is
+not persisted in OpenTofu state. Password rotation changes the password and
+increments `TF_VAR_keycloak_role_password_version` in this TX-only file.
+
+Do not put either password in `terraform.tfvars`, GitHub workflow input,
+GitHub Actions environment, OpenTofu state, or a plan artifact. The remote
+workflow deletes its local binary plan on exit.
+
+## Safety behavior
+
+`prevent_destroy` protects the managed role, database, and grant while they
+remain declared. `validate-plan.sh` additionally rejects every delete or
+replacement of those addresses before an apply. Removing an address from this
+root is therefore not a supported retirement process; make a separately
+approved, audited migration instead.
+
+The root assumes the Compose runtime is already healthy and has bound the
+loopback port. A missing environment file, unavailable local port, invalid
+backend authentication, or unsafe plan fails closed; the workflow does not
+fall back to a runner-side database connection.
+
+After a successful TX-local apply, either workflow writes the root-only
+`/opt/wotb-tx/keycloak-postgres.tofu-provisioned` marker. The TX application
+deployment refuses to start Keycloak or the frontend without that exact marker.
+If an operator intentionally resets the Keycloak PostgreSQL volume, they must
+remove the marker as part of that separately approved bootstrap procedure.

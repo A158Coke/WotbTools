@@ -31,6 +31,20 @@ DEPLOYABLE_SERVICES = {
     "keycloak",
     "wotb-backend",
     "wotb-frontend",
+    "keycloak-postgres",
+}
+DEPLOY_TARGETS = ("tx", "yecao")
+TARGET_BY_SERVICE = {
+    "keycloak": "tx",
+    "keycloak-postgres": "tx",
+    "wotb-frontend": "tx",
+    "wotb-backend": "yecao",
+    "postgres": "yecao",
+    "node-exporter": "yecao",
+    "prometheus": "yecao",
+    "loki": "yecao",
+    "alloy": "yecao",
+    "grafana": "yecao",
 }
 IMAGE_SERVICE_BY_DEPLOY_SERVICE = {
     value: key for key, value in APPLICATION_SERVICES.items()
@@ -65,7 +79,7 @@ BACKEND_PATTERNS = (
     "contracts/http/**",
 )
 KEYCLOAK_PATTERNS = (
-    "keycloak-juhe-qq-provider/**",
+    "keycloak-qq-provider/**",
     "keycloak-wargaming-provider/**",
     "docker/keycloak/**",
     "docker/Dockerfile.keycloak",
@@ -78,7 +92,8 @@ ALL_DEPLOY_PATTERNS = (
     "deploy/validate-alloy-config.sh",
     "deploy/grafana-api-request.sh",
 )
-RUNTIME_CONFIG_PATTERNS = ("deploy/docker-compose.prod.yml",)
+TX_DEPLOY_PATTERNS = ("deploy/tx/**",)
+RUNTIME_CONFIG_PATTERNS = ("deploy/docker-compose.prod.yml", *TX_DEPLOY_PATTERNS)
 CI_SURFACE_PATTERNS = {
     "backend": BACKEND_PATTERNS,
     "frontend": FRONTEND_PATTERNS,
@@ -130,17 +145,17 @@ CI_SURFACE_PATTERNS = {
         "keycloak-wargaming-provider/src/main/java/**",
         "keycloak-wargaming-provider/src/test/**",
         "keycloak-wargaming-provider/pom.xml",
-        "keycloak-juhe-qq-provider/src/main/java/**",
-        "keycloak-juhe-qq-provider/src/test/**",
-        "keycloak-juhe-qq-provider/pom.xml",
+        "keycloak-qq-provider/src/main/java/**",
+        "keycloak-qq-provider/src/test/**",
+        "keycloak-qq-provider/pom.xml",
     ),
     "keycloakRuntime": (
         "keycloak-wargaming-provider/src/main/java/**",
         "keycloak-wargaming-provider/pom.xml",
         "keycloak-wargaming-provider/src/main/resources/**",
-        "keycloak-juhe-qq-provider/src/main/java/**",
-        "keycloak-juhe-qq-provider/pom.xml",
-        "keycloak-juhe-qq-provider/src/main/resources/**",
+        "keycloak-qq-provider/src/main/java/**",
+        "keycloak-qq-provider/pom.xml",
+        "keycloak-qq-provider/src/main/resources/**",
         "docker/Dockerfile.keycloak",
         "docker/keycloak/**",
         "docker/online/docker-compose.yml",
@@ -205,7 +220,7 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
             raise ValueError(f"unsupported manual service: {manual_service}")
         if manual_service == "all":
             images = {name: True for name in IMAGE_NAMES}
-            deploy_services = ["all"]
+            deploy_services = [APPLICATION_SERVICES[name] for name in IMAGE_NAMES]
         elif manual_service in MANUAL_SERVICE_ALIASES:
             image_name = MANUAL_SERVICE_ALIASES[manual_service]
             images[image_name] = True
@@ -238,7 +253,21 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
 
     if any(_matches_any(path, RUNTIME_CONFIG_PATTERNS) for path in normalized_paths):
         deploy_config = True
-        deploy_services = ["all"]
+        deploy_services = []
+        if any(_matches(path, "deploy/docker-compose.prod.yml") for path in normalized_paths):
+            # Yecao remains backend/business-data/observability only during
+            # Phase 1. Its legacy frontend/Keycloak must not be refreshed by a
+            # generic Compose-config release after those images move to TX.
+            deploy_services.extend([
+                "postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana", "wotb-backend"
+            ])
+        if any(_matches_any(path, TX_DEPLOY_PATTERNS) for path in normalized_paths):
+            # A TX topology bootstrap cannot safely infer an application image
+            # identity from prior metadata. Rebuild both TX application images
+            # from the frozen commit and deploy that exact pair after Tofu.
+            images["frontend"] = True
+            images["keycloak"] = True
+            deploy_services.extend(["keycloak-postgres", "keycloak", "wotb-frontend"])
     else:
         deploy_services.extend(
             APPLICATION_SERVICES[name]
@@ -265,7 +294,22 @@ def _result(
         "ciSurfaces": ci_surfaces,
         "deployConfig": deploy_config,
         "deployServices": _dedupe(deploy_services),
+        "targetServices": _target_services(_dedupe(deploy_services)),
     }
+
+
+def _target_services(services: list[str]) -> dict[str, list[str]]:
+    """Route each deploy service to one explicit host target.
+
+    ``all`` remains the legacy Yecao composition selector and is deliberately
+    never expanded to TX services. This prevents an ordinary Yecao config
+    release from touching the new TX stack.
+    """
+    result = {target: [] for target in DEPLOY_TARGETS}
+    for service in services:
+        target = "yecao" if service == "all" else TARGET_BY_SERVICE[service]
+        result[target].append(service)
+    return {target: values for target, values in result.items() if values}
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -280,7 +324,7 @@ def make_manifest(
     plan: dict[str, object],
 ) -> dict[str, object]:
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "commitSha": commit_sha,
         "imageTag": image_tag,
         "buildRunId": build_run_id,
@@ -290,6 +334,7 @@ def make_manifest(
         "buildServices": plan["buildServices"],
         "imageServices": plan["imageServices"],
         "deployServices": plan["deployServices"],
+        "targetServices": plan["targetServices"],
     }
 
 
@@ -309,11 +354,12 @@ def validate_manifest(
         "buildServices",
         "imageServices",
         "deployServices",
+        "targetServices",
     }
     missing = sorted(required - manifest.keys())
     if missing:
         raise ValueError(f"manifest missing fields: {', '.join(missing)}")
-    if manifest["schemaVersion"] != 1:
+    if manifest["schemaVersion"] != 2:
         raise ValueError("unsupported manifest schemaVersion")
     commit_sha = manifest["commitSha"]
     manifest_image_tag = manifest["imageTag"]
@@ -342,6 +388,7 @@ def validate_manifest(
     build_services = manifest["buildServices"]
     image_services = manifest["imageServices"]
     deploy_services = manifest["deployServices"]
+    target_services = manifest["targetServices"]
     if (
         not _valid_service_list(build_services)
         or not _valid_service_list(image_services)
@@ -358,6 +405,25 @@ def validate_manifest(
     for service in deploy_services:
         if service in IMAGE_SERVICE_BY_DEPLOY_SERVICE and service not in image_services:
             raise ValueError(f"deploy service {service} has no corresponding built image")
+    if not isinstance(target_services, dict):
+        raise ValueError("manifest targetServices must be an object")
+    if not deploy_services and target_services:
+        raise ValueError("manifest targetServices must be empty for a no-op release")
+    if deploy_services and not target_services:
+        raise ValueError("manifest targetServices must be non-empty when services deploy")
+    if set(target_services) - set(DEPLOY_TARGETS):
+        raise ValueError("manifest targetServices contains an unsupported target")
+    flattened: list[str] = []
+    for target, services in target_services.items():
+        if not _valid_service_list(services):
+            raise ValueError(f"manifest targetServices[{target}] is invalid")
+        for service in services:
+            expected_target = "yecao" if service == "all" else TARGET_BY_SERVICE[service]
+            if target != expected_target:
+                raise ValueError(f"deploy service {service} is routed to {target}, expected {expected_target}")
+        flattened.extend(services)
+    if len(flattened) != len(set(flattened)) or set(flattened) != set(deploy_services):
+        raise ValueError("manifest targetServices must contain each deploy service exactly once")
     return manifest
 
 

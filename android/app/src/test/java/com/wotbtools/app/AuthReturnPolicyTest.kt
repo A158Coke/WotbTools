@@ -11,7 +11,7 @@ class AuthReturnPolicyTest {
         assertTrue(
             AuthReturnPolicy.isVerifiedBrokerReturn(
                 scheme = "https", host = "auth.wotbtools.com",
-                path = "/realms/wotbtools/broker/juhe-qq/endpoint",
+                path = "/realms/wotbtools/broker/qq/endpoint",
                 type = "qq", hasState = true, hasCode = true
             )
         )
@@ -22,7 +22,7 @@ class AuthReturnPolicyTest {
         assertFalse(
             AuthReturnPolicy.isVerifiedBrokerReturn(
                 scheme = "http", host = "auth.wotbtools.com",
-                path = "/realms/wotbtools/broker/juhe-qq/endpoint",
+                path = "/realms/wotbtools/broker/qq/endpoint",
                 type = "qq", hasState = true, hasCode = true
             )
         )
@@ -33,7 +33,7 @@ class AuthReturnPolicyTest {
         assertFalse(
             AuthReturnPolicy.isVerifiedBrokerReturn(
                 scheme = "https", host = "evil.example",
-                path = "/realms/wotbtools/broker/juhe-qq/endpoint",
+                path = "/realms/wotbtools/broker/qq/endpoint",
                 type = "qq", hasState = true, hasCode = true
             )
         )
@@ -44,7 +44,7 @@ class AuthReturnPolicyTest {
         assertFalse(
             AuthReturnPolicy.isVerifiedBrokerReturn(
                 scheme = "https", host = "auth.wotbtools.com",
-                path = "/realms/evil/broker/juhe-qq/endpoint",
+                path = "/realms/evil/broker/qq/endpoint",
                 type = "qq", hasState = true, hasCode = true
             )
         )
@@ -66,7 +66,7 @@ class AuthReturnPolicyTest {
         assertFalse(
             AuthReturnPolicy.isVerifiedBrokerReturn(
                 scheme = "https", host = "auth.wotbtools.com",
-                path = "/realms/wotbtools/broker/juhe-qq/endpoint",
+                path = "/realms/wotbtools/broker/qq/endpoint",
                 type = "qq", hasState = false, hasCode = true
             )
         )
@@ -77,7 +77,7 @@ class AuthReturnPolicyTest {
         assertFalse(
             AuthReturnPolicy.isVerifiedBrokerReturn(
                 scheme = "https", host = "auth.wotbtools.com",
-                path = "/realms/wotbtools/broker/juhe-qq/endpoint",
+                path = "/realms/wotbtools/broker/qq/endpoint",
                 type = "qq", hasState = true, hasCode = false
             )
         )
@@ -88,7 +88,7 @@ class AuthReturnPolicyTest {
         assertFalse(
             AuthReturnPolicy.isVerifiedBrokerReturn(
                 scheme = "https", host = "auth.wotbtools.com",
-                path = "/realms/wotbtools/broker/juhe-qq/endpoint",
+                path = "/realms/wotbtools/broker/qq/endpoint",
                 type = "wx", hasState = true, hasCode = true
             )
         )
@@ -98,28 +98,28 @@ class AuthReturnPolicyTest {
     fun pathConfusionRejected() {
         // 尾部斜杠、后缀、/login 等都必须 reject（精确 path，无 prefix/suffix 匹配）。
         assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn("https", "auth.wotbtools.com",
-                "/realms/wotbtools/broker/juhe-qq/endpoint/", "qq", true, true))
+                "/realms/wotbtools/broker/qq/endpoint/", "qq", true, true))
         assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn("https", "auth.wotbtools.com",
-                "/realms/wotbtools/broker/juhe-qq/endpoint-evil", "qq", true, true))
+                "/realms/wotbtools/broker/qq/endpoint-evil", "qq", true, true))
         assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn("https", "auth.wotbtools.com",
-                "/realms/wotbtools/broker/juhe-qq/login", "qq", true, true))
+                "/realms/wotbtools/broker/qq/login", "qq", true, true))
     }
 
     @Test
     fun hostCaseInsensitive() {
         assertTrue(AuthReturnPolicy.isVerifiedBrokerReturn("HTTPS", "AUTH.WOTBTOOLS.COM",
-                "/realms/wotbtools/broker/juhe-qq/endpoint", "qq", true, true))
+                "/realms/wotbtools/broker/qq/endpoint", "qq", true, true))
     }
 
     @Test
     fun nullAndBlankFieldsRejected() {
         assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(null, "auth.wotbtools.com",
-                "/realms/wotbtools/broker/juhe-qq/endpoint", "qq", true, true))
+                "/realms/wotbtools/broker/qq/endpoint", "qq", true, true))
         assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn("https", null,
-                "/realms/wotbtools/broker/juhe-qq/endpoint", "qq", true, true))
+                "/realms/wotbtools/broker/qq/endpoint", "qq", true, true))
         assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn("https", "auth.wotbtools.com",
                 null, "qq", true, true))
         assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn("https", "auth.wotbtools.com",
-                "/realms/wotbtools/broker/juhe-qq/endpoint", null, true, true))
+                "/realms/wotbtools/broker/qq/endpoint", null, true, true))
     }
 }
