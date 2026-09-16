@@ -36,7 +36,8 @@ assert "infra/tofu/postgres-keycloak" in deploy_text
 assert deploy_text.count('command -v tofu >/dev/null 2>&1') >= 1
 assert "TX_RUNTIME_ENV_FILE" not in deploy_text
 assert "postgres-keycloak-tofu.env" not in deploy_text
-assert deploy_text.count("script: bash /opt/wotb-tx/deploy.incoming/tx/deploy.sh") == 2
+assert deploy_text.count("script: bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh") == 2
+assert "/opt/wotb-tx/deploy.incoming/tx/deploy.sh" not in deploy_text
 for name in (
     "KC_POSTGRES_ADMIN_USER",
     "KC_POSTGRES_ADMIN_PASSWORD",

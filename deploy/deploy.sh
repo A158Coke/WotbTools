@@ -456,12 +456,13 @@ observability_service_list() {
 
 verify_observability() {
   [ -f "$LIVE_DEPLOY_DIR/verify-observability.sh" ] || return 1
-  WOTB_DIR="$WOTB_DIR" \
-  WOTB_DEPLOY_ROOT="$WOTB_DIR" \
-  WOTB_ALLOY_CONFIG="$LIVE_DEPLOY_DIR/observability/alloy/config.alloy" \
-  WOTB_ALLOY_VALIDATOR="$LIVE_DEPLOY_DIR/validate-alloy-config.sh" \
-  WOTB_DASHBOARD_DIR="$LIVE_DEPLOY_DIR/observability/grafana/dashboards" \
-  WOTB_GRAFANA_API_HELPER="$LIVE_DEPLOY_DIR/grafana-api-request.sh" \
+  env \
+    WOTB_DIR="$WOTB_DIR" \
+    WOTB_DEPLOY_ROOT="$WOTB_DIR" \
+    WOTB_ALLOY_CONFIG="$LIVE_DEPLOY_DIR/observability/alloy/config.alloy" \
+    WOTB_ALLOY_VALIDATOR="$LIVE_DEPLOY_DIR/validate-alloy-config.sh" \
+    WOTB_DASHBOARD_DIR="$LIVE_DEPLOY_DIR/observability/grafana/dashboards" \
+    WOTB_GRAFANA_API_HELPER="$LIVE_DEPLOY_DIR/grafana-api-request.sh" \
     bash "$LIVE_DEPLOY_DIR/verify-observability.sh"
 }
 
