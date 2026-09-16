@@ -17,7 +17,21 @@ cp "$ROOT/deploy/deploy.sh" "$WORK/incoming/deploy/deploy.sh"
 cp "$ROOT/deploy/docker-compose.prod.yml" "$WORK/incoming/deploy/docker-compose.prod.yml"
 cp "$ROOT/deploy/validate-alloy-config.sh" "$WORK/incoming/deploy/validate-alloy-config.sh"
 cp "$ROOT/deploy/observability/alloy/config.alloy" "$WORK/incoming/deploy/observability/alloy/config.alloy"
+cat > "$WORK/incoming/deploy/verify-observability.sh" <<'FAKE_OBSERVABILITY'
+#!/usr/bin/env bash
+set -euo pipefail
+: "${WOTB_DIR:?}"
+: "${WOTB_DEPLOY_ROOT:?}"
+: "${WOTB_ALLOY_CONFIG:?}"
+: "${WOTB_ALLOY_VALIDATOR:?}"
+: "${WOTB_DASHBOARD_DIR:?}"
+: "${WOTB_GRAFANA_API_HELPER:?}"
+printf 'WOTB_DIR=%s\nWOTB_DEPLOY_ROOT=%s\nWOTB_ALLOY_CONFIG=%s\nWOTB_ALLOY_VALIDATOR=%s\nWOTB_DASHBOARD_DIR=%s\nWOTB_GRAFANA_API_HELPER=%s\n' \
+  "$WOTB_DIR" "$WOTB_DEPLOY_ROOT" "$WOTB_ALLOY_CONFIG" "$WOTB_ALLOY_VALIDATOR" \
+  "$WOTB_DASHBOARD_DIR" "$WOTB_GRAFANA_API_HELPER" > "$WOTB_DIR/verify-observability-env"
+FAKE_OBSERVABILITY
 chmod 700 "$WORK/incoming/deploy/deploy.sh"
+chmod 700 "$WORK/incoming/deploy/verify-observability.sh"
 
 cat > "$WORK/production-release.json" <<'JSON'
 {
@@ -218,5 +232,11 @@ grep -q '^stop .*wotb-frontend' "$up_failure_log"
 all_observability_log="$WORK/all-observability.log"
 run_deploy 8888888888888888888888888888888888888888 sha-888888888888 all wotb-backend,wotb-frontend,keycloak "$all_observability_log"
 ! grep -q 'invalid-ps-all' "$all_observability_log"
+grep -Fxq "WOTB_DIR=$WORK" "$WORK/verify-observability-env"
+grep -Fxq "WOTB_DEPLOY_ROOT=$WORK" "$WORK/verify-observability-env"
+grep -Fxq "WOTB_ALLOY_CONFIG=$WORK/deploy/observability/alloy/config.alloy" "$WORK/verify-observability-env"
+grep -Fxq "WOTB_ALLOY_VALIDATOR=$WORK/deploy/validate-alloy-config.sh" "$WORK/verify-observability-env"
+grep -Fxq "WOTB_DASHBOARD_DIR=$WORK/deploy/observability/grafana/dashboards" "$WORK/verify-observability-env"
+grep -Fxq "WOTB_GRAFANA_API_HELPER=$WORK/deploy/grafana-api-request.sh" "$WORK/verify-observability-env"
 echo "compose up failure stops only the failed service"
 echo "selective deploy, global health, and no-auto-recovery contract OK"
