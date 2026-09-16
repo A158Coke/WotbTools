@@ -13,17 +13,34 @@ class AuthReturnPolicyTest {
 
     @Test
     fun bothSupportedAliasesAcceptSuccessfulCallback() {
-        supportedPaths.forEach { path ->
-            assertTrue(AuthReturnPolicy.isVerifiedBrokerReturn(
-                "https", "auth.wotbtools.com", path, hasState = true, hasCode = true
-            ))
-        }
+        assertTrue(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", supportedPaths[0], hasState = true, hasCode = true
+        ))
+        assertTrue(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", supportedPaths[1], hasState = true, hasCode = true,
+            type = "qq", hasTicket = true
+        ))
     }
 
     @Test
-    fun legacyAliasAcceptsOAuthErrorCallbackWithState() {
+    fun juheAliasRequiresLegacyBridgeParameters() {
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", supportedPaths[1], true, true
+        ))
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", supportedPaths[1], true, true,
+            type = "wx", hasTicket = true
+        ))
+        assertFalse(AuthReturnPolicy.isVerifiedBrokerReturn(
+            "https", "auth.wotbtools.com", supportedPaths[1], true, true,
+            type = "qq", hasTicket = false
+        ))
+    }
+
+    @Test
+    fun officialAliasAcceptsOAuthErrorCallbackWithState() {
         assertTrue(AuthReturnPolicy.isVerifiedBrokerReturn(
-            "https", "auth.wotbtools.com", supportedPaths[1],
+            "https", "auth.wotbtools.com", supportedPaths[0],
             hasState = true, hasCode = false, hasError = true
         ))
     }

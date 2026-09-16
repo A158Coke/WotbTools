@@ -168,6 +168,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - name: Juhe QQ provider
+        working-directory: keycloak-juhe-qq-provider
+        run: mvn --batch-mode --no-transfer-progress -s ../java/settings.xml -Dmaven.repo.local=../java/.m2repo test
       - name: Official QQ provider
         working-directory: keycloak-qq-provider
         run: mvn --batch-mode --no-transfer-progress -s ../java/settings.xml -Dmaven.repo.local=../java/.m2repo test

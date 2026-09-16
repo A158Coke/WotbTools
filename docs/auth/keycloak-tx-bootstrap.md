@@ -23,15 +23,14 @@
 
 1. 导入空 IdP 列表的 realm，确认 `wotbtools-web`、角色与 JWT mapper 已存在。
 2. 以现有 [Wargaming 部署手册](wargaming-asia-deployment.md) 创建 `wargaming-asia`、`wargaming-eu`、`wargaming-na` 三个实例，并只在 Keycloak runtime 注入 `WG_APPLICATION_ID`。
-3. 使用 `keycloak-qq-provider` 构建官方 QQ OAuth provider。它是 `trashblazer/keycloak-social-provider-china` commit `45ffa0ec47f6dbdfc43c6c0b87856943256ff43c` 的 Apache-2.0 vendor，来源和本地安全修正见 [UPSTREAM.md](../../keycloak-qq-provider/UPSTREAM.md)。上游以 Keycloak 26.5.4 编译；本仓固定以 26.6.4 构建，必须先通过 `deploy/test-keycloak-runtime.sh` 的真实 image build + `start --optimized` smoke，不能把上游“26.x”说明当作兼容性证据。禁止构建或运行时下载 provider；Juhe provider、Juhe API 与 Juhe-specific auth backend 均已退役。
-4. 在 Admin Console/API 创建 QQ IdP（provider id `qq`）时，TX 新部署首选 alias `idp-qq`；同时可将历史 realm 的 alias `juhe-qq` 作为 legacy callback compatibility 保留。两个 alias 都使用同一个官方 QQ provider implementation，不代表恢复 Juhe。QQ Connect App ID/Secret 仅保存在 runtime secret store；alias 变更必须同步 Android exact callback allowlist 与回归测试。
+3. 同时构建三个 vendored provider：生产过渡期仍需要的 `keycloak-juhe-qq-provider`（真实 Juhe API 链路）、待官方 QQ Open Platform 审核的 `keycloak-qq-provider`（来源和本地安全修正见 [UPSTREAM.md](../../keycloak-qq-provider/UPSTREAM.md)），以及 `keycloak-wargaming-provider`。三者均固定以当前 Keycloak `26.6.4` 构建；禁止构建或运行时下载 provider。
+4. 在 Admin Console/API 创建 QQ IdP（provider id `qq`）时，生产 alias `juhe-qq` 继续绑定 `keycloak-juhe-qq-provider`，作为当前必需的 production fallback；新 TX 官方 QQ 预备 alias `idp-qq` 绑定 `keycloak-qq-provider`，其 QQ Open Platform App approval 仍 pending。两个 alias 的实现不同，不能互换。QQ Connect App ID/Secret 与 Juhe runtime credentials 仅保存在 runtime secret store；alias 变更必须同步 Android exact callback allowlist 与回归测试。
 
 ## 导入后的验收
 
 - Keycloak 使用 `start --optimized`，启动时没有 augmentation；
-- image 包含 `keycloak-qq-provider.jar` 与 `keycloak-wargaming-provider.jar`，不得包含 Juhe provider；
+- image 同时包含 `keycloak-juhe-qq-provider.jar`、`keycloak-qq-provider.jar` 与 `keycloak-wargaming-provider.jar`；
 - realm import 没有 credential-like key，IdP 配置留空；
 - OIDC discovery、三个 Wargaming 登录、前端 public client redirect URI 均可验证；
 - QQ Connect 凭据缺失时标记为 `BLOCKED_QQ_IDP_CREDENTIALS`，不通过猜测配置绕过。
-- Android 只接受 `https://auth.wotbtools.com/realms/wotbtools/broker/idp-qq/endpoint` 与
-  `https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint` 两个 exact callback path；不要求旧 `type=qq`。
+- Android 只接受两个 exact callback path：`juhe-qq` 回调保持 Juhe contract，`idp-qq` 回调使用官方 OAuth contract；不得以新 provider 存在为由删除 Juhe fallback。

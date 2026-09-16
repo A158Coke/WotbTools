@@ -79,6 +79,7 @@ BACKEND_PATTERNS = (
     "contracts/http/**",
 )
 KEYCLOAK_PATTERNS = (
+    "keycloak-juhe-qq-provider/**",
     "keycloak-qq-provider/**",
     "keycloak-wargaming-provider/**",
     "docker/keycloak/**",
@@ -142,6 +143,9 @@ CI_SURFACE_PATTERNS = {
         "scripts/android-release/**",
     ),
     "keycloakProvider": (
+        "keycloak-juhe-qq-provider/src/main/java/**",
+        "keycloak-juhe-qq-provider/src/test/**",
+        "keycloak-juhe-qq-provider/pom.xml",
         "keycloak-wargaming-provider/src/main/java/**",
         "keycloak-wargaming-provider/src/test/**",
         "keycloak-wargaming-provider/pom.xml",
@@ -150,6 +154,9 @@ CI_SURFACE_PATTERNS = {
         "keycloak-qq-provider/pom.xml",
     ),
     "keycloakRuntime": (
+        "keycloak-juhe-qq-provider/src/main/java/**",
+        "keycloak-juhe-qq-provider/pom.xml",
+        "keycloak-juhe-qq-provider/src/main/resources/**",
         "keycloak-wargaming-provider/src/main/java/**",
         "keycloak-wargaming-provider/pom.xml",
         "keycloak-wargaming-provider/src/main/resources/**",
