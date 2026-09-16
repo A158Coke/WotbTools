@@ -1,0 +1,38 @@
+name: TX SSH Smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: TX SSH Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify GitHub Actions can reach TX over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 2m
+          script: |
+            set -eu
+            echo "== whoami =="
+            whoami
+            echo "== hostname =="
+            hostname
+            echo "== docker =="
+            docker --version
+            echo "== docker compose =="
+            docker compose version
+            echo "== tofu =="
+            tofu version
+            echo "== wg0 =="
+            ip addr show wg0
+            echo "TX_SSH_SMOKE_OK"
