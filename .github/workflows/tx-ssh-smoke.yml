@@ -1,6 +1,8 @@
 name: TX SSH Smoke
 
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -9,6 +11,7 @@ permissions:
 jobs:
   smoke:
     name: TX SSH Smoke
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 308
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
