@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 ### Authentication
-- Android App 现仅接管官方 QQ provider 的两个 exact 回调路径（TX 首选 `idp-qq`，`juhe-qq` 仅为 legacy alias 兼容）；安装 1.4.4 或更高版本后，QQ 登录会安全返回原来的 App 内 WebView。Juhe backend/API 不再存在。
+- Android App 现仅接管两个 exact QQ 回调路径（生产 `juhe-qq` 仍走 Juhe provider，`idp-qq` 预留给待审核的官方 QQ provider）；安装 1.4.4 或更高版本后，QQ 登录会安全返回原来的 App 内 WebView。
 - Android/Web 登录初始化现在有明确的超时恢复界面；设备上的登录检查不会无限停留在加载状态。用户可以重新检查或直接重新发起登录，正常 SSO、QQ 登录回调和回放工作区认证门禁保持不变。
 
 ### Operations

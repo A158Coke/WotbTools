@@ -28,7 +28,8 @@ internal object AuthReturnPolicy {
      *  - host == auth.wotbtools.com
      *  - path is one of the two supported aliases (exact, no prefix / suffix)
      *  - state present (non-blank)
-     *  - either a successful OAuth code or a provider error is present
+     *  - idp-qq: either a successful OAuth code or a provider error is present
+     *  - juhe-qq: the existing `type=qq` + one-time `ticket` bridge contract is present
      *
      * state / code contents are never interpreted here; Keycloak validates them.
      */
@@ -38,13 +39,29 @@ internal object AuthReturnPolicy {
         path: String?,
         hasState: Boolean,
         hasCode: Boolean,
-        hasError: Boolean = false
+        hasError: Boolean = false,
+        type: String? = null,
+        hasTicket: Boolean = false
     ): Boolean {
         if (EXPECTED_SCHEME != scheme?.lowercase(Locale.ROOT)) return false
         if (EXPECTED_HOST != host?.lowercase(Locale.ROOT)) return false
         if (path == null || path !in EXPECTED_PATHS) return false
         if (!hasState) return false
+        if (path.endsWith("/juhe-qq/endpoint")) {
+            return type == "qq" && hasTicket && hasCode && !hasError
+        }
         // OAuth success and error callbacks are mutually exclusive; both carry state.
         return hasCode xor hasError
     }
+
+    /** Compatibility overload for callers that still pass the legacy type before state/code. */
+    @Suppress("UNUSED_PARAMETER")
+    fun isVerifiedBrokerReturn(
+        scheme: String?,
+        host: String?,
+        path: String?,
+        type: String?,
+        hasState: Boolean,
+        hasCode: Boolean
+    ): Boolean = isVerifiedBrokerReturn(scheme, host, path, hasState, hasCode, type = type, hasTicket = true)
 }

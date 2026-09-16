@@ -130,14 +130,15 @@
 - **Android pending replay transport（2.12.78）**：固定同源 HTTPS synthetic resource 替换 Web `content://` fetch，保留 WebView file/content access 禁用。Native 流式读取且失败不 fallback 网络；header identity 校验防 pending 替换串包、no-store 防缓存复用。读取失败复用 Replay 错误区与重试，补充低敏阶段日志；server accepted 后 ACK、operationId 幂等及 auth gate 不变。需更新 APK 与 Web。
 - **Battle Playback 全屏 HUD / 安全区布局修复**：PC、平板和手机全屏下双方 HP / 点数 / 基地状态固定归属地图顶部 HUD，不再被通用 `pb-side-slots` 优化搬到侧栏；camera fit 按真实 HUD 与可见移动端底部控制条动态保留 safe inset，side-slot 仅作用于非移动端 controls，并按实际 map workspace 宽度判定，避免把 Details 列误算为 gutter；`test:browser-layout` 新增 fullscreen + side-slot 的真实 Chrome 几何回归。
 - **Android QQ 登录返回原 WebView（Verified App Link，CODE READY / PRODUCTION VALIDATION REQUIRED）**：QQ App 完成授权后
-  会把 Keycloak 官方 QQ provider 的 callback 打开到系统浏览器，导致 Browser B != 原 WebView A、
+  会把 Keycloak QQ broker callback 打开到系统浏览器，导致 Browser B != 原 WebView A、
   AuthenticationSession continuity 被破坏 → `already_logged_in`。现用 **Verified App Link** 把两个 exact callback
-  （首选 alias `idp-qq`，legacy alias `juhe-qq`）路由回原 WotBTools App（same MainActivity / same WebView /
+  （生产 alias `juhe-qq` 继续走 Juhe provider，预备 alias `idp-qq` 走待审核官方 QQ provider）路由回原 WotBTools App（same MainActivity / same WebView /
   same cookie jar，inAuthFlow 保持 true），复用同一次 auth transaction。App Link 只接管
   `https://auth.wotbtools.com/realms/wotbtools/broker/idp-qq/endpoint` 与
   `https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint`，不接管整个
   `auth.wotbtools.com` / 其它 realm / 其它 IdP provider；`AuthReturnPolicy` 严格校验 scheme/host/path/state，
-  成功回调要求 code，OAuth error 回调要求 error，不再要求旧 `type=qq`；`auth.wotbtools.com/.well-known/assetlinks.json`
+  `idp-qq` 成功回调要求 code、OAuth error 回调要求 error，`juhe-qq` 保留其现有 Juhe-specific callback contract；
+  `auth.wotbtools.com/.well-known/assetlinks.json`
   由 nginx 直接返回 `application/json`（非代理 Keycloak）。热返回走 `onNewIntent`，冷返回（进程被杀）走
   `pendingAuthReturn` + startup gate，不绕过强制更新。日志只记录 `auth-return action=... source=app-link`，
   不记录完整 callback URI/query/state/code。同步 `AuthReturnPolicyTest` 与 `docs/android/architecture.md`。

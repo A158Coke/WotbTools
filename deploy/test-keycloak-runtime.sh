@@ -36,9 +36,10 @@ if grep -Eq -- '--(health-enabled|metrics-enabled)|KC_HTTP_(MANAGEMENT|METRICS)'
   fail "Keycloak management health/metrics configuration must be removed"
 fi
 
-if grep -Eiq 'juhe|open[.]juhedenglu' "$ROOT/docker/Dockerfile.keycloak"; then
-  fail "Keycloak image must not build or include the retired Juhe QQ provider"
-fi
+grep -Fq 'keycloak-juhe-qq-provider/pom.xml' "$ROOT/docker/Dockerfile.keycloak" \
+  || fail "Keycloak image must build the production Juhe QQ provider during the transition"
+grep -Fq 'keycloak-juhe-qq-provider.jar' "$ROOT/docker/Dockerfile.keycloak" \
+  || fail "Keycloak image must copy the production Juhe QQ provider"
 
 python3 - "$ROOT/docker/keycloak/wotbtools-realm.json" <<'PY'
 import json
@@ -77,9 +78,9 @@ fi
 
 docker run --rm --entrypoint /bin/sh "$IMAGE" -ec '
   test -f /opt/keycloak/providers/keycloak-qq-provider.jar
+  test -f /opt/keycloak/providers/keycloak-juhe-qq-provider.jar
   test -f /opt/keycloak/providers/keycloak-wargaming-provider.jar
   test -f /opt/keycloak/data/import/wotbtools-realm.json
-  ! find /opt/keycloak/providers -maxdepth 1 -type f -iname "*juhe*" | grep -q .
 ' || fail "Keycloak provider image contents do not match the approved provider set"
 
 docker network create "$NETWORK" >/dev/null

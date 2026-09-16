@@ -676,7 +676,9 @@ class MainActivity : Activity() {
             path = uri.path,
             hasState = !uri.getQueryParameter("state").isNullOrBlank(),
             hasCode = !uri.getQueryParameter("code").isNullOrBlank(),
-            hasError = !uri.getQueryParameter("error").isNullOrBlank()
+            hasError = !uri.getQueryParameter("error").isNullOrBlank(),
+            type = uri.getQueryParameter("type"),
+            hasTicket = !uri.getQueryParameter("ticket").isNullOrBlank()
         )
     }
 
