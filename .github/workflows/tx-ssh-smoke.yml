@@ -16,17 +16,6 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - uses: actions/checkout@v5
-      - name: Install TX preflight helper
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx
-          target: /opt/wotb-tx/deploy.incoming
-          overwrite: true
       - name: Validate TX preflight inputs
         env:
           TX_KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
@@ -57,4 +46,12 @@ jobs:
           command_timeout: 2m
           script: |
             set -eu
-            bash /opt/wotb-tx/deploy.incoming/tx/preflight.sh
+            # Mirrors deploy/tx/preflight.sh; keep this SSH-only check read-only.
+            command -v docker >/dev/null
+            docker compose version >/dev/null
+            command -v tofu >/dev/null
+            ip link show wg0 >/dev/null
+            ip -4 addr show dev wg0 | grep -Eq 'inet 10\.20\.0\.1/24([[:space:]]|$)'
+            ip route get 10.20.0.2 >/dev/null
+            timeout 3 bash -c 'cat </dev/null >/dev/tcp/10.20.0.2/8087'
+            echo TX_PREFLIGHT_OK
