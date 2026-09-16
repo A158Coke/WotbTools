@@ -15,6 +15,11 @@ fail() {
   exit 1
 }
 
+! grep -Fq 'TX_RUNTIME_ENV_FILE' "$TX_DIR/deploy.sh" \
+  || fail "TX deploy must not depend on a local runtime env file"
+! grep -Fq 'load_runtime_environment' "$TX_DIR/deploy.sh" \
+  || fail "TX deploy must read runtime variables from the process environment"
+
 grep -Fq '127.0.0.1:15432:5432' "$COMPOSE" \
   || fail "Keycloak PostgreSQL must bind its administration port to TX loopback"
 ! grep -Eq '(^|[^0-9])5432:5432' "$COMPOSE" \
@@ -124,16 +129,6 @@ grep -Fq 'proxy_pass http://10.20.0.2:8087/api/;' "$WORK/nginx.conf" \
 mkdir -p "$WORK/incoming" "$WORK/bin" "$WORK/live/config/sponsor" "$WORK/live/android-release"
 cp -a "$TX_DIR/." "$WORK/incoming/"
 printf '{}\n' > "$WORK/live/config/sponsor-config.json"
-cat > "$WORK/tx-runtime.env" <<'RUNTIME_ENV'
-KC_POSTGRES_ADMIN_USER=kc_admin
-KC_POSTGRES_ADMIN_PASSWORD=not-real
-KC_BOOTSTRAP_ADMIN_PASSWORD=not-real
-KC_DB_USERNAME=keycloak
-KC_DB_PASSWORD=not-real
-WG_APPLICATION_ID=not-real
-CADDY_ACME_EMAIL=ops@example.test
-RUNTIME_ENV
-chmod 600 "$WORK/tx-runtime.env"
 cat > "$WORK/bin/docker" <<'FAKE_DOCKER'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -158,7 +153,9 @@ set +e
 bootstrap_output="$(env -i \
   PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/bootstrap" WOTB_TX_INCOMING_DIR="$WORK/bootstrap-incoming" TX_RUNTIME_ROOT="$WORK/bootstrap" \
-  TX_RUNTIME_ENV_FILE="$WORK/tx-runtime.env" \
+  KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
+  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_DEPLOY_SERVICES=keycloak-postgres WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   FAKE_DOCKER_LOG="$WORK/bootstrap-docker.log" \
@@ -182,7 +179,9 @@ set +e
 unprovisioned_output="$(env -i \
   PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/live" WOTB_TX_INCOMING_DIR="$WORK/incoming" TX_RUNTIME_ROOT="$WORK/live" \
-  TX_RUNTIME_ENV_FILE="$WORK/tx-runtime.env" \
+  KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
+  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_DEPLOY_SERVICES=all FAKE_DOCKER_LOG="$WORK/unprovisioned.log" \
   bash "$WORK/incoming/deploy.sh" 2>&1)"
@@ -198,7 +197,9 @@ chmod 600 "$WORK/live/keycloak-postgres.tofu-provisioned"
 deploy_output="$(env -i \
   PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/live" WOTB_TX_INCOMING_DIR="$WORK/incoming" TX_RUNTIME_ROOT="$WORK/live" \
-  TX_RUNTIME_ENV_FILE="$WORK/tx-runtime.env" \
+  KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
+  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_DEPLOY_SERVICES=all WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   FAKE_DOCKER_LOG="$WORK/docker.log" \
@@ -224,7 +225,9 @@ set +e
 invalid_upstream_output="$(env -i \
   PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/invalid-upstream" WOTB_TX_INCOMING_DIR="$WORK/incoming" TX_RUNTIME_ROOT="$WORK/invalid-upstream" \
-  TX_RUNTIME_ENV_FILE="$WORK/tx-runtime.env" TX_BACKEND_UPSTREAM=https://example.test \
+  KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
+  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test TX_BACKEND_UPSTREAM=https://example.test \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_DEPLOY_SERVICES=keycloak-postgres FAKE_DOCKER_LOG="$WORK/invalid-upstream.log" \
   bash "$WORK/incoming/deploy.sh" 2>&1)"
@@ -233,5 +236,22 @@ set -e
 [ "$invalid_upstream_rc" -ne 0 ] || fail "TX deploy must reject a non-WireGuard API upstream"
 grep -Fq 'WireGuard-only backend URL' <<< "$invalid_upstream_output" \
   || fail "TX deploy must explain a rejected non-WireGuard API upstream"
+
+set +e
+missing_secret_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
+  WOTB_TX_DIR="$WORK/missing-secret" WOTB_TX_INCOMING_DIR="$WORK/incoming" TX_RUNTIME_ROOT="$WORK/missing-secret" \
+  KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak \
+  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+  TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  WOTB_DEPLOY_SERVICES=keycloak-postgres FAKE_DOCKER_LOG="$WORK/missing-secret.log" \
+  bash "$WORK/incoming/deploy.sh" 2>&1)"
+missing_secret_rc=$?
+set -e
+[ "$missing_secret_rc" -ne 0 ] || fail "TX deploy must fail closed when a required runtime secret is missing"
+grep -Fq 'KC_DB_PASSWORD is required' <<< "$missing_secret_output" \
+  || fail "missing runtime secret error must name the variable without exposing a value"
+! grep -Fq 'not-real' <<< "$missing_secret_output" \
+  || fail "missing runtime secret diagnostics must not print secret values"
 
 echo "OK: TX Compose/Caddy/nginx/deploy contracts are deterministic and DNS-free"

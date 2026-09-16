@@ -14,6 +14,7 @@ import yaml
 root = Path(sys.argv[1])
 tofu_root = root / "infra/tofu/postgres-keycloak"
 workflow_path = root / ".github/workflows/postgres-keycloak-tofu.yml"
+tx_compose = (root / "deploy/tx/docker-compose.yml").read_text(encoding="utf-8")
 workflow_text = workflow_path.read_text(encoding="utf-8")
 deploy_path = root / ".github/workflows/deploy.yml"
 deploy_text = deploy_path.read_text(encoding="utf-8")
@@ -32,6 +33,19 @@ assert deploy["concurrency"] == workflow["concurrency"], (
 )
 assert "tofu apply -input=false -auto-approve plan.tfplan" in deploy_text
 assert "infra/tofu/postgres-keycloak" in deploy_text
+assert "TX_RUNTIME_ENV_FILE" not in deploy_text
+assert "postgres-keycloak-tofu.env" not in deploy_text
+assert deploy_text.count("script: bash /opt/wotb-tx/deploy.incoming/tx/deploy.sh") == 2
+for name in (
+    "KC_POSTGRES_ADMIN_USER",
+    "KC_POSTGRES_ADMIN_PASSWORD",
+    "KC_BOOTSTRAP_ADMIN_PASSWORD",
+    "KC_DB_USERNAME",
+    "KC_DB_PASSWORD",
+    "WG_APPLICATION_ID",
+    "CADDY_ACME_EMAIL",
+):
+    assert deploy_text.count(f"{name}:") >= 2, f"TX deploy must inject {name} into both SSH deploy steps"
 
 expected_concurrency = workflow["concurrency"]
 for candidate in (root / ".github/workflows").glob("*.y*ml"):
@@ -44,16 +58,24 @@ for candidate in (root / ".github/workflows").glob("*.y*ml"):
     )
 assert "tofu init -backend=false -input=false" in workflow_text
 assert "TX_VPS_HOST" in workflow_text
-assert "postgres-keycloak-tofu.env" in workflow_text
+assert "TF_VAR_postgresql_admin_password" in workflow_text
+assert "TF_VAR_keycloak_role_password" in workflow_text
+assert "AWS_ACCESS_KEY_ID" in workflow_text
+assert "AWS_SECRET_ACCESS_KEY" in workflow_text
+assert "postgres-keycloak-tofu.env" not in workflow_text
 assert "/opt/wotb-tx/tofu.incoming/" in workflow_text
 assert "keycloak-postgres.tofu-provisioned" in workflow_text
 assert "tx-local-opentofu" in workflow_text
-assert "TF_VAR_postgresql_admin_password" not in workflow_text
-assert "TF_VAR_keycloak_role_password" not in workflow_text
+assert 'TF_VAR_postgresql_admin_username: kc_admin' in deploy_text
+assert 'TF_VAR_postgresql_admin_username: kc_admin' in workflow_text
+assert 'TF_VAR_keycloak_role_password_version' in deploy_text
+assert 'TF_VAR_keycloak_role_password_version' in workflow_text
 assert "remote-exec" not in workflow_text
 assert "ssh -L" not in workflow_text
 
 assert 'key    = "wotbtools/prod/postgres-keycloak.tfstate"' in root_text
+assert 'default     = "kc_admin"' in root_text
+assert 'POSTGRES_USER: ${KC_POSTGRES_ADMIN_USER:?KC_POSTGRES_ADMIN_USER is required}' in tx_compose
 assert 'source  = "cyrilgdn/postgresql"' in root_text
 assert 'version = "1.27.0"' in root_text
 assert 'default     = "127.0.0.1"' in root_text

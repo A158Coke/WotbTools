@@ -21,15 +21,16 @@ Grafana roots:
 wotbtools/prod/postgres-keycloak.tfstate
 ```
 
-## TX runtime secret file
+## GitHub Actions secret injection
 
-Before the main-branch workflow can apply, an operator must install a root-only
-file at `/etc/wotb/postgres-keycloak-tofu.env` on TX (mode `0600`). It is an
-environment file, not a repository artifact, and must provide:
+The main-branch and manual workflows inject the following environment variables
+over the SSH session that runs OpenTofu on TX. No operator-maintained TX env file
+is required:
 
 ```text
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
+TF_VAR_postgresql_admin_username=kc_admin
 TF_VAR_postgresql_admin_password=...
 TF_VAR_keycloak_role_password=...
 TF_VAR_keycloak_role_password_version=1
@@ -39,7 +40,8 @@ The first two values authenticate the existing COS remote state backend. The
 PostgreSQL administrator password is consumed only by provider configuration.
 The application role password uses the provider's `password_wo` field, so it is
 not persisted in OpenTofu state. Password rotation changes the password and
-increments `TF_VAR_keycloak_role_password_version` in this TX-only file.
+increments `TF_VAR_keycloak_role_password_version` as a non-secret GitHub
+Actions variable.
 
 Do not put either password in `terraform.tfvars`, GitHub workflow input,
 GitHub Actions environment, OpenTofu state, or a plan artifact. The remote
@@ -54,9 +56,9 @@ root is therefore not a supported retirement process; make a separately
 approved, audited migration instead.
 
 The root assumes the Compose runtime is already healthy and has bound the
-loopback port. A missing environment file, unavailable local port, invalid
-backend authentication, or unsafe plan fails closed; the workflow does not
-fall back to a runner-side database connection.
+loopback port. Missing injected variables, unavailable local port, invalid
+backend authentication, or unsafe plan fails closed; the workflow does not fall
+back to a runner-side database connection.
 
 After a successful TX-local apply, either workflow writes the root-only
 `/opt/wotb-tx/keycloak-postgres.tofu-provisioned` marker. The TX application

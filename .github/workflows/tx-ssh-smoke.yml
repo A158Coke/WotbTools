@@ -16,6 +16,37 @@ jobs:
     timeout-minutes: 5
 
     steps:
+      - uses: actions/checkout@v5
+      - name: Install TX preflight helper
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/tx
+          target: /opt/wotb-tx/deploy.incoming
+          overwrite: true
+      - name: Validate TX preflight inputs
+        env:
+          TX_KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
+          TX_KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
+          TX_KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
+          WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for required in TX_KC_POSTGRES_ADMIN_PASSWORD TX_KC_DB_PASSWORD \
+            TX_KC_BOOTSTRAP_ADMIN_PASSWORD WG_APPLICATION_ID \
+            TENCENTCLOUD_SECRET_ID TENCENTCLOUD_SECRET_KEY CADDY_ACME_EMAIL; do
+            [ -n "${!required:-}" ] || {
+              echo "$required is required for TX preflight" >&2
+              exit 1
+            }
+          done
       - name: Verify GitHub Actions can reach TX over SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -26,16 +57,4 @@ jobs:
           command_timeout: 2m
           script: |
             set -eu
-            echo "== whoami =="
-            whoami
-            echo "== hostname =="
-            hostname
-            echo "== docker =="
-            docker --version
-            echo "== docker compose =="
-            docker compose version
-            echo "== tofu =="
-            tofu version
-            echo "== wg0 =="
-            ip addr show wg0
-            echo "TX_SSH_SMOKE_OK"
+            bash /opt/wotb-tx/deploy.incoming/tx/preflight.sh
