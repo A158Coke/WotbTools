@@ -450,9 +450,14 @@ stop_failed_service() {
 }
 
 update_metadata() {
-  local now metadata_tmp selected
+  local now metadata_tmp selected service
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  selected="$(for service in keycloak wotb-frontend; do is_selected all || is_selected "$service" && printf '%s,' "$service"; done)"
+  selected=""
+  for service in keycloak wotb-frontend; do
+    if is_selected all || is_selected "$service"; then
+      selected+="$service,"
+    fi
+  done
   metadata_tmp="$METADATA_FILE.next.$$"
   umask 177
   NOW="$now" python3 - "$METADATA_FILE" "$metadata_tmp" "$RELEASE_SHA_VALUE" "$TAG_VALUE" "$selected" <<'PY'

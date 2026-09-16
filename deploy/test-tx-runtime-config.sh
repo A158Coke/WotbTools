@@ -167,6 +167,8 @@ set -e
   || fail "PostgreSQL-only bootstrap failed (rc=$bootstrap_rc; output: $bootstrap_output)"
 grep -Fq 'keycloak-postgres: PASS' <<< "$bootstrap_output" \
   || fail "first TX bootstrap must permit PostgreSQL before Keycloak image metadata exists"
+grep -Fq 'TX deployment completed:' <<< "$bootstrap_output" \
+  || fail "PostgreSQL-only bootstrap must complete after its health check"
 [ ! -e "$WORK/bootstrap/keycloak-postgres.tofu-provisioned" ] \
   || fail "PostgreSQL-only bootstrap must invalidate stale marker at $WORK/bootstrap/keycloak-postgres.tofu-provisioned (output: $bootstrap_output)"
 grep -Fq 'pull keycloak-postgres' "$WORK/bootstrap-docker.log" \
