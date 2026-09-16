@@ -104,11 +104,13 @@ grep -Fq 'assetlinks.json' "$WORK/caddy.json" \
 grep -Fq '_wotb/ready' "$WORK/caddy.json" \
   || fail "Caddy adapt output must retain the internal readiness route"
 
+# Invoke envsubst explicitly: overriding the nginx image entrypoint with
+# `nginx -T` would inspect the stock config and never render this template.
 docker run --rm \
   -e BACKEND_UPSTREAM=http://10.20.0.2:8087 \
-  -e 'NGINX_ENVSUBST_FILTER=^BACKEND_UPSTREAM$' \
   -v "$TEMPLATE:/etc/nginx/templates/default.conf.template:ro" \
-  nginx:alpine nginx -T > "$WORK/nginx.conf"
+  nginx:alpine sh -ec "envsubst '\${BACKEND_UPSTREAM}' < /etc/nginx/templates/default.conf.template" \
+  > "$WORK/nginx.conf"
 grep -Fq 'proxy_pass http://10.20.0.2:8087/api/;' "$WORK/nginx.conf" \
   || fail "nginx template did not render the configured WireGuard API upstream"
 ! grep -Fq '${BACKEND_UPSTREAM}' "$WORK/nginx.conf" \
