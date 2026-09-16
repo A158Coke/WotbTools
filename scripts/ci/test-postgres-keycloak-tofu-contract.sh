@@ -33,6 +33,7 @@ assert deploy["concurrency"] == workflow["concurrency"], (
 )
 assert "tofu apply -input=false -auto-approve plan.tfplan" in deploy_text
 assert "infra/tofu/postgres-keycloak" in deploy_text
+assert deploy_text.count('command -v tofu >/dev/null 2>&1') >= 1
 assert "TX_RUNTIME_ENV_FILE" not in deploy_text
 assert "postgres-keycloak-tofu.env" not in deploy_text
 assert deploy_text.count("script: bash /opt/wotb-tx/deploy.incoming/tx/deploy.sh") == 2
@@ -57,19 +58,13 @@ for candidate in (root / ".github/workflows").glob("*.y*ml"):
         f"{candidate.name} can mutate postgres-keycloak state without the shared serialization boundary"
     )
 assert "tofu init -backend=false -input=false" in workflow_text
-assert "TX_VPS_HOST" in workflow_text
-assert "TF_VAR_postgresql_admin_password" in workflow_text
-assert "TF_VAR_keycloak_role_password" in workflow_text
-assert "AWS_ACCESS_KEY_ID" in workflow_text
-assert "AWS_SECRET_ACCESS_KEY" in workflow_text
+assert "apply_on_tx" not in workflow_text
+assert "tofu apply" not in workflow_text
 assert "postgres-keycloak-tofu.env" not in workflow_text
-assert "/opt/wotb-tx/tofu.incoming/" in workflow_text
-assert "keycloak-postgres.tofu-provisioned" in workflow_text
-assert "tx-local-opentofu" in workflow_text
+assert "command -v tofu >/dev/null 2>&1" in deploy_text
+assert deploy_text.count("tofu apply -input=false -auto-approve plan.tfplan") == 1
 assert 'TF_VAR_postgresql_admin_username: kc_admin' in deploy_text
-assert 'TF_VAR_postgresql_admin_username: kc_admin' in workflow_text
 assert 'TF_VAR_keycloak_role_password_version' in deploy_text
-assert 'TF_VAR_keycloak_role_password_version' in workflow_text
 assert "remote-exec" not in workflow_text
 assert "ssh -L" not in workflow_text
 

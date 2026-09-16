@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  # Shared with postgres-keycloak-tofu.yml: deploy.yml can apply the same TX state.
+  # Deploy is the sole TX postgres-keycloak apply path.
   group: production-maintenance
   cancel-in-progress: false
 
@@ -311,6 +311,7 @@ jobs:
           envs: TF_VAR_postgresql_admin_username,TF_VAR_postgresql_admin_password,TF_VAR_keycloak_role_password,TF_VAR_keycloak_role_password_version,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
           script: |
             set -euo pipefail
+            command -v tofu >/dev/null 2>&1 || { echo "tofu is required on TX" >&2; exit 1; }
             root="/opt/wotb-tx/tofu.incoming/${{ needs.changes.outputs.release_sha }}/infra/tofu/postgres-keycloak"
             test -d "$root"
             cd "$root"
