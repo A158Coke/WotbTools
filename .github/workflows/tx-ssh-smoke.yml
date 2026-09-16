@@ -46,12 +46,11 @@ jobs:
           command_timeout: 2m
           script: |
             set -eu
-            # Mirrors deploy/tx/preflight.sh; keep this SSH-only check read-only.
-            command -v docker >/dev/null
-            docker compose version >/dev/null
-            command -v tofu >/dev/null
-            ip link show wg0 >/dev/null
-            ip -4 addr show dev wg0 | grep -Eq 'inet 10\.20\.0\.1/24([[:space:]]|$)'
-            ip route get 10.20.0.2 >/dev/null
-            timeout 3 bash -c 'cat </dev/null >/dev/tcp/10.20.0.2/8087'
-            echo TX_PREFLIGHT_OK
+            PREFLIGHT=/opt/wotb-tx/deploy/preflight.sh
+            if [ ! -f "$PREFLIGHT" ]; then
+              PREFLIGHT=/opt/wotb-tx/deploy.incoming/tx/preflight.sh
+            fi
+            [ -f "$PREFLIGHT" ] || { echo "TX preflight script is missing" >&2; exit 1; }
+            # Backend TCP/API readiness is intentionally deferred to TX deploy
+            # and PRE_CUTOVER_READY after the Yecao publication is deployed.
+            bash "$PREFLIGHT"
