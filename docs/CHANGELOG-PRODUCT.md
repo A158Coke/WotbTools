@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Authentication
+- Android App 现仅接管新的 QQ 登录回调路径；安装 1.4.4 或更高版本后，QQ 登录会安全返回原来的 App 内 WebView。旧 Juhe 登录路径不会继续被接管。
 - Android/Web 登录初始化现在有明确的超时恢复界面；设备上的登录检查不会无限停留在加载状态。用户可以重新检查或直接重新发起登录，正常 SSO、QQ 登录回调和回放工作区认证门禁保持不变。
 
 ### Operations

@@ -1,0 +1,126 @@
+# TX frontend nginx: public traffic reaches this container only through the
+# fixed-IP Caddy peer on wotb_tx_internal. API traffic stays on WireGuard.
+limit_req_zone $binary_remote_addr zone=replay_api:10m rate=1r/s;
+limit_conn_zone $binary_remote_addr zone=replay_api_conn:10m;
+
+server {
+    listen 80;
+    server_name wotbtools.com;
+    client_max_body_size 200m;
+    charset utf-8;
+
+    # Caddy is the only public ingress and has a static Compose IP. Do not
+    # trust X-Forwarded-For from arbitrary containers or public clients.
+    set_real_ip_from 172.29.0.2;
+    real_ip_header X-Forwarded-For;
+    real_ip_recursive on;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location = /sponsor-config.json {
+        default_type application/json;
+        add_header Cache-Control "no-store, max-age=0" always;
+        try_files $uri =404;
+    }
+
+    location ^~ /sponsor-assets/ {
+        add_header Cache-Control "no-store, max-age=0" always;
+        try_files $uri =404;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        try_files $uri =404;
+    }
+
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    location = /download/android {
+        try_files /index.html =404;
+    }
+
+    location = /download/android/ {
+        try_files /index.html =404;
+    }
+
+    location = /download/android/version.json {
+        add_header Cache-Control "no-store, max-age=0" always;
+        try_files $uri =404;
+    }
+
+    location /download/android/ {
+        add_header Cache-Control "public, max-age=3600" always;
+        try_files $uri =404;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location ^~ /api/replay/analyze {
+        proxy_pass ${BACKEND_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header X-Request-ID $http_x_request_id;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        add_header X-Accel-Buffering no always;
+        proxy_read_timeout 1120s;
+        proxy_send_timeout 1120s;
+    }
+
+    location = /api/preview {
+        limit_req zone=replay_api burst=10 nodelay;
+        limit_conn replay_api_conn 5;
+        limit_req_status 429;
+        limit_conn_status 503;
+        proxy_pass ${BACKEND_UPSTREAM}/api/preview;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_read_timeout 120s;
+    }
+
+    location = /api/export {
+        limit_req zone=replay_api burst=10 nodelay;
+        limit_conn replay_api_conn 5;
+        limit_req_status 429;
+        limit_conn_status 503;
+        proxy_pass ${BACKEND_UPSTREAM}/api/export;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_read_timeout 120s;
+    }
+
+    location = /api/performance {
+        limit_req zone=replay_api burst=10 nodelay;
+        limit_conn replay_api_conn 5;
+        limit_req_status 429;
+        limit_conn_status 503;
+        proxy_pass ${BACKEND_UPSTREAM}/api/performance;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_read_timeout 120s;
+    }
+
+    location /api/ {
+        proxy_pass ${BACKEND_UPSTREAM}/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_read_timeout 120s;
+    }
+}

@@ -667,7 +667,7 @@ class MainActivity : Activity() {
         return true
     }
 
-    /** defense-in-depth 路由边界：仅接受验证的 Juhe QQ broker callback；不解释 state/code 载荷。 */
+    /** defense-in-depth 路由边界：仅接受验证的 QQ broker callback；不解释 state/code 载荷。 */
     private fun verifyAuthReturn(intent: Intent, uri: Uri): Boolean {
         if (intent.action != Intent.ACTION_VIEW) return false
         return AuthReturnPolicy.isVerifiedBrokerReturn(

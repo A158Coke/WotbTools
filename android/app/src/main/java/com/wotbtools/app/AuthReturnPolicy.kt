@@ -3,10 +3,10 @@ package com.wotbtools.app
 import java.util.Locale
 
 /**
- * Verified Juhe QQ broker return classification — a narrow routing boundary only.
+ * Verified QQ broker return classification — a narrow routing boundary only.
  *
  * Purpose: hand the Keycloak broker callback that QQ native login must return to back into the
- * original WebView (via Verified App Link). This object accepts ONLY the exact Juhe QQ broker
+ * original WebView (via Verified App Link). This object accepts ONLY the exact QQ broker
  * callback path, and does NOT validate the state / code payloads (Keycloak is the auth authority).
  *
  * Kept free of Android framework types so it stays a plain JVM unit test (runs under
@@ -17,13 +17,13 @@ internal object AuthReturnPolicy {
 
     private const val EXPECTED_SCHEME = "https"
     private const val EXPECTED_HOST = "auth.wotbtools.com"
-    private const val EXPECTED_PATH = "/realms/wotbtools/broker/juhe-qq/endpoint"
+    private const val EXPECTED_PATH = "/realms/wotbtools/broker/qq/endpoint"
 
     /**
      * Returns true only when ALL hold:
      *  - scheme == https
      *  - host == auth.wotbtools.com
-     *  - path == /realms/wotbtools/broker/juhe-qq/endpoint   (exact, no prefix / suffix)
+     *  - path == /realms/wotbtools/broker/qq/endpoint   (exact, no prefix / suffix)
      *  - type == qq
      *  - state present (non-blank)
      *  - code present (non-blank)

@@ -1,0 +1,28 @@
+{
+	# The address is supplied only at TX runtime; no account material belongs in
+	# this repository or in the Compose file.
+	email {$CADDY_ACME_EMAIL}
+}
+
+www.wotbtools.com {
+	redir https://wotbtools.com{uri} permanent
+}
+
+wotbtools.com {
+	reverse_proxy wotb-frontend:80 {
+		header_up Host {host}
+	}
+}
+
+auth.wotbtools.com {
+	handle /.well-known/assetlinks.json {
+		root * /srv
+		file_server
+	}
+
+	handle {
+		reverse_proxy keycloak:8080 {
+			header_up Host {host}
+		}
+	}
+}

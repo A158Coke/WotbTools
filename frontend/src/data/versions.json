@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.85",
+    "date": "2026-09-16",
+    "tag": "chg",
+    "zh": "QQ 登录将迁移到新的认证服务；Android App 更新到 1.4.4 后，QQ 授权会安全返回 App 内的原登录页面。网站切换将在完成独立审核后进行。",
+    "en": "QQ sign-in is moving to the new authentication service. After updating the Android app to 1.4.4, QQ authorization returns safely to the original in-app sign-in page. The website switch happens only after separate approval.",
+    "ru": "Вход через QQ переносится на новую службу аутентификации. После обновления приложения Android до 1.4.4 авторизация QQ безопасно возвращается на исходную страницу входа внутри приложения. Переключение сайта произойдёт только после отдельного одобрения."
+  },
+  {
     "v": "2.12.84",
     "date": "2026-09-15",
     "tag": "fix",

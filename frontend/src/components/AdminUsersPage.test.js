@@ -250,11 +250,11 @@ describe('AdminUsersPage', () => {
 
     const idpInput = wrapper.find('.admin-filters input')
     expect(idpInput.attributes('disabled')).toBeUndefined()
-    await idpInput.setValue('juhe-qq')
+    await idpInput.setValue('qq')
     await idpInput.trigger('keyup.enter')
     await flushPromises()
     expect(api.searchUsers).toHaveBeenLastCalledWith('', {
-      segment: 'keycloak', idpAlias: 'juhe-qq', page: 0, size: 25
+      segment: 'keycloak', idpAlias: 'qq', page: 0, size: 25
     })
 
     await wrapper.find('.admin-filters select').setValue('local')

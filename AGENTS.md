@@ -17,7 +17,7 @@ WoT Blitz（坦克世界闪击战）回放工具集：Java 25 + Spring Boot 后�
 | `common/` | 单一来源数据（tankopedia tier 文件/rating/map_names/map-semantics）、更新链、fixtures vs data 边界 |
 | `deploy/` | 三镜像构建、deploy.sh 契约校验、nginx/超时链、备份、生产排障 |
 | `.github/` | CI/部署/数据同步 workflow 职责 |
-| `keycloak-wargaming-provider/` `keycloak-juhe-qq-provider/` | Keycloak SPI provider 构建与注册 |
+| `keycloak-wargaming-provider/` `keycloak-qq-provider/` | Keycloak SPI provider 构建与注册 |
 | `map-semanticizer/` | 地图语义化独立工具（覆盖式生成，核验后勿重跑） |
 
 ## 技能库（按需显式加载）

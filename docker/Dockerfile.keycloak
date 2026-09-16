@@ -1,22 +1,27 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 COPY java/settings-docker.xml settings.xml
-# Keycloak 自定义 Identity Providers：QQ（聚合登录）与 Wargaming.net ASIA 各构建一个 JAR
-COPY keycloak-juhe-qq-provider/pom.xml keycloak-juhe-qq-provider/pom.xml
-COPY keycloak-juhe-qq-provider/src keycloak-juhe-qq-provider/src
+# Keycloak custom Identity Providers: Wargaming.net and the pinned QQ provider.
+# All provider sources are vendored; builds and runtime never download provider code.
+COPY keycloak-qq-provider/pom.xml keycloak-qq-provider/pom.xml
+COPY keycloak-qq-provider/src keycloak-qq-provider/src
 COPY keycloak-wargaming-provider/pom.xml keycloak-wargaming-provider/pom.xml
 COPY keycloak-wargaming-provider/src keycloak-wargaming-provider/src
-RUN mvn -s settings.xml -f keycloak-juhe-qq-provider/pom.xml -DskipTests clean package -q
+RUN mvn -s settings.xml -f keycloak-qq-provider/pom.xml -DskipTests clean package -q
 RUN mvn -s settings.xml -f keycloak-wargaming-provider/pom.xml -DskipTests clean package -q
 
 FROM quay.io/keycloak/keycloak:26.6.4
 ARG BUILD_COMMIT=unknown
 ENV WOTBTOOLS_BUILD_COMMIT=${BUILD_COMMIT}
-COPY --from=build /build/keycloak-juhe-qq-provider/target/keycloak-juhe-qq-provider.jar /opt/keycloak/providers/
+COPY --from=build /build/keycloak-qq-provider/target/keycloak-qq-provider.jar /opt/keycloak/providers/
 COPY --from=build /build/keycloak-wargaming-provider/target/keycloak-wargaming-provider.jar /opt/keycloak/providers/
 
 # WotBTools custom login theme (V8 Unified Layout)
 COPY docker/keycloak/themes/wotbtools /opt/keycloak/themes/wotbtools
+# The TX runtime imports this non-secret baseline only on first realm creation.
+# Identity-provider credentials are deliberately configured from TX runtime
+# secrets after the exported production IdP diff has been approved.
+COPY docker/keycloak/wotbtools-realm.json /opt/keycloak/data/import/wotbtools-realm.json
 
 RUN /opt/keycloak/bin/kc.sh build \
   --db=postgres
