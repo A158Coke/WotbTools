@@ -23,7 +23,7 @@
 
 1. 导入空 IdP 列表的 realm，确认 `wotbtools-web`、角色与 JWT mapper 已存在。
 2. 以现有 [Wargaming 部署手册](wargaming-asia-deployment.md) 创建 `wargaming-asia`、`wargaming-eu`、`wargaming-na` 三个实例，并只在 Keycloak runtime 注入 `WG_APPLICATION_ID`。
-3. 使用 `keycloak-qq-provider` 构建 QQ provider。它是 `trashblazer/keycloak-social-provider-china` commit `45ffa0ec47f6dbdfc43c6c0b87856943256ff43c` 的 Apache-2.0 vendor，来源和本地安全修正见 [UPSTREAM.md](../../keycloak-qq-provider/UPSTREAM.md)。禁止构建或运行时下载 provider。
+3. 使用 `keycloak-qq-provider` 构建 QQ provider。它是 `trashblazer/keycloak-social-provider-china` commit `45ffa0ec47f6dbdfc43c6c0b87856943256ff43c` 的 Apache-2.0 vendor，来源和本地安全修正见 [UPSTREAM.md](../../keycloak-qq-provider/UPSTREAM.md)。上游以 Keycloak 26.5.4 编译；本仓固定以 26.6.4 构建，必须先通过 `deploy/test-keycloak-runtime.sh` 的真实 image build + `start --optimized` smoke，不能把上游“26.x”说明当作兼容性证据。禁止构建或运行时下载 provider。
 4. 在 Admin Console/API 创建 QQ IdP（provider id `qq`），将 QQ Connect App ID/Secret 仅保存在 runtime secret store。IdP alias 变更必须同步 Android exact callback allowlist 与回归测试。
 
 ## 导入后的验收
