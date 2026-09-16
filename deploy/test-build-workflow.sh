@@ -107,6 +107,13 @@ assert "targetServices" in deploy_text
 assert "deploy_tx" in deploy["jobs"]
 assert "TX_VPS_HOST" in deploy_text
 assert "WOTB_BACKEND_MIGRATION_MAX_VERSION" in deploy_text
+tx_job = deploy["jobs"]["deploy_tx"]
+tx_scp = next(step for step in tx_job["steps"] if step.get("name") == "Install TX deployment configuration")
+assert tx_scp["with"]["source"] == "deploy/tx"
+assert tx_scp["with"]["target"] == "/opt/wotb-tx/deploy.incoming"
+assert 'rm -rf -- "$WOTB_DIR/deploy.incoming/deploy/tx"' in deploy_text
+assert deploy_text.count("script: bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh") == 2
+assert "/opt/wotb-tx/deploy.incoming/tx/deploy.sh" not in deploy_text
 assert "docker/build" not in deploy_text and "mvn test" not in deploy_text and "npm test" not in deploy_text
 assert "cancel-in-progress: false" in deploy_text
 

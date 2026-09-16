@@ -25,6 +25,8 @@ fail() {
   || fail "TX sponsor assets must remain optional"
 ! grep -Fq 'TX Android release directory is missing' "$TX_DIR/deploy.sh" \
   || fail "TX Android release content must not become a sponsor hard requirement"
+grep -Fq 'deploy.incoming/deploy/tx' "$TX_DIR/deploy.sh" \
+  || fail "TX deploy default incoming path must preserve the SCP source directory prefix"
 preflight_host_block="$(sed -n '/^preflight_host()/,/^}/p' "$TX_DIR/deploy.sh")"
 ! grep -Fq '10.20.0.2:8087' <<< "$preflight_host_block" \
   || fail "host prerequisite must not probe the unpublished backend port"
