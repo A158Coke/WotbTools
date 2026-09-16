@@ -1,0 +1,58 @@
+{
+	# The address is supplied only at TX runtime; no account material belongs in
+	# this repository or in the Compose file.
+	email {$CADDY_ACME_EMAIL}
+}
+
+# TX-local readiness surface. It is bound to Caddy's fixed Docker-network
+# address, so Stage I can validate the loaded config and both upstream routes
+# without production DNS, public HTTP redirects, or ACME certificates.
+http://172.29.0.2 {
+	handle /.well-known/assetlinks.json {
+		root * /srv
+		file_server
+	}
+
+	handle /_wotb/ready {
+		respond "ready" 200
+	}
+
+	handle_path /_wotb/frontend/* {
+		reverse_proxy wotb-frontend:80 {
+			header_up Host wotbtools.com
+		}
+	}
+
+	handle_path /_wotb/keycloak/* {
+		reverse_proxy keycloak:8080 {
+			header_up Host auth.wotbtools.com
+		}
+	}
+
+	handle {
+		respond "not found" 404
+	}
+}
+
+www.wotbtools.com {
+	redir https://wotbtools.com{uri} permanent
+}
+
+wotbtools.com {
+	reverse_proxy wotb-frontend:80 {
+		header_up Host {host}
+	}
+}
+
+auth.wotbtools.com {
+	handle /.well-known/assetlinks.json {
+		root * /srv
+		file_server
+	}
+
+	handle {
+		reverse_proxy keycloak:8080 {
+			header_up Host {host}
+		}
+	}
+}

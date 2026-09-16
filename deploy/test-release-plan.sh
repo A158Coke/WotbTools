@@ -27,7 +27,9 @@ def manual(service):
 
 
 assert detect("frontend/src/App.vue")["deployServices"] == ["wotb-frontend"]
+assert detect("frontend/src/App.vue")["targetServices"] == {"tx": ["wotb-frontend"]}
 assert detect("java/wotb-core/src/Main.java")["deployServices"] == ["wotb-backend"]
+assert detect("java/wotb-core/src/Main.java")["targetServices"] == {"yecao": ["wotb-backend"]}
 assert detect("keycloak-wargaming-provider/src/Main.java")["deployServices"] == ["keycloak"]
 frontend_diagnostics = detect("frontend/vite.config.js")
 assert frontend_diagnostics["images"] == {"backend": False, "frontend": True, "keycloak": False}
@@ -88,7 +90,19 @@ assert backend_health_probe_fix["buildServices"] == ["wotb-backend"]
 assert backend_health_probe_fix["imageServices"] == ["wotb-backend"]
 assert backend_health_probe_fix["deployServices"] == ["wotb-backend"]
 assert backend_health_probe_fix["deployConfig"]
-assert detect("deploy/docker-compose.prod.yml")["deployServices"] == ["all"]
+assert detect("deploy/docker-compose.prod.yml")["deployServices"] == [
+    "postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana", "wotb-backend"
+]
+assert detect("deploy/docker-compose.prod.yml")["targetServices"] == {"yecao": [
+    "postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana", "wotb-backend"
+]}
+assert detect("deploy/tx/docker-compose.prod.yml")["deployServices"] == ["keycloak-postgres", "keycloak", "wotb-frontend"]
+assert detect("deploy/tx/docker-compose.prod.yml")["images"] == {
+    "backend": False, "frontend": True, "keycloak": True
+}
+assert detect("deploy/tx/docker-compose.prod.yml")["targetServices"] == {
+    "tx": ["keycloak-postgres", "keycloak", "wotb-frontend"]
+}
 assert detect("deploy/docker-compose.prod.yml")["ciSurfaces"]["deploy"]
 assert detect(".github/workflows/ci.yml")["ciSurfaces"]["full"]
 assert detect("common/unrelated-fixture.json")["ciSurfaces"]["data"]
@@ -96,7 +110,10 @@ assert not detect("common/unrelated-fixture.json")["imageServices"]
 assert set(detect(".dockerignore")["imageServices"]) == {
     "wotb-backend", "wotb-frontend", "keycloak"
 }
-assert manual("all")["deployServices"] == ["all"]
+assert manual("all")["deployServices"] == ["wotb-backend", "wotb-frontend", "keycloak"]
+assert manual("all")["targetServices"] == {
+    "tx": ["wotb-frontend", "keycloak"], "yecao": ["wotb-backend"]
+}
 assert set(manual("all")["imageServices"]) == {
     "wotb-backend", "wotb-frontend", "keycloak"
 }
@@ -125,7 +142,7 @@ assert subprocess.run(
 ).returncode != 0
 manifest_path = work / "manifest.json"
 manifest = {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "commitSha": commit,
     "imageTag": "sha-0123456789ab",
     "buildRunId": "42",
@@ -135,6 +152,7 @@ manifest = {
     "buildServices": plan["imageServices"],
     "imageServices": plan["imageServices"],
     "deployServices": plan["deployServices"],
+    "targetServices": plan["targetServices"],
 }
 manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 subprocess.check_call(["python3", str(tool), "validate", "--manifest", str(manifest_path), "--expected-sha", commit])

@@ -13,6 +13,7 @@ permissions:
   contents: read
 
 concurrency:
+  # Deploy is the sole TX postgres-keycloak apply path.
   group: production-maintenance
   cancel-in-progress: false
 
@@ -33,6 +34,10 @@ jobs:
       backend_migration_max_version: ${{ steps.manifest.outputs.backend_migration_max_version }}
       deploy_services: ${{ steps.manifest.outputs.deploy_services }}
       image_services: ${{ steps.manifest.outputs.image_services }}
+      yecao_services: ${{ steps.manifest.outputs.yecao_services }}
+      tx_services: ${{ steps.manifest.outputs.tx_services }}
+      yecao_image_services: ${{ steps.manifest.outputs.yecao_image_services }}
+      tx_image_services: ${{ steps.manifest.outputs.tx_image_services }}
       deploy_display_name: ${{ steps.manifest.outputs.deploy_display_name }}
     steps:
       - uses: actions/checkout@v5
@@ -72,6 +77,12 @@ jobs:
           print(f"backend_migration_max_version={manifest['backendMigrationMaxVersion']}")
           print(f"deploy_services={','.join(manifest['deployServices'])}")
           print(f"image_services={','.join(manifest['imageServices'])}")
+          targets = manifest["targetServices"]
+          print(f"yecao_services={','.join(targets.get('yecao', []))}")
+          print(f"tx_services={','.join(targets.get('tx', []))}")
+          images = set(manifest["imageServices"])
+          print(f"yecao_image_services={','.join(s for s in targets.get('yecao', []) if s in images)}")
+          print(f"tx_image_services={','.join(s for s in targets.get('tx', []) if s in images)}")
           labels = []
           if "all" in manifest["deployServices"]:
               labels.append("All")
@@ -136,11 +147,11 @@ jobs:
         if: needs.changes.outputs.deploy_services == ''
         run: echo "No deployable runtime changes in ${{ needs.changes.outputs.release_sha }}"
       - uses: actions/checkout@v5
-        if: needs.changes.outputs.deploy_services != ''
+        if: needs.changes.outputs.yecao_services != ''
         with:
           ref: ${{ needs.changes.outputs.release_sha }}
       - name: Prepare deployment directory
-        if: needs.changes.outputs.deploy_services != ''
+        if: needs.changes.outputs.yecao_services != ''
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -154,7 +165,7 @@ jobs:
             rm -rf -- "$WOTB_DIR/deploy.incoming"
             mkdir -p "$WOTB_DIR/deploy.incoming"
       - name: Install deployment scripts
-        if: needs.changes.outputs.deploy_services != ''
+        if: needs.changes.outputs.yecao_services != ''
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -165,7 +176,7 @@ jobs:
           target: /opt/wotb/deploy.incoming
           overwrite: true
       - name: Deploy exact release services via SSH
-        if: needs.changes.outputs.deploy_services != ''
+        if: needs.changes.outputs.yecao_services != ''
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -180,8 +191,8 @@ jobs:
           RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
           RELEASE_RUN_NUMBER: ${{ needs.changes.outputs.build_run_number }}
           WOTB_BACKEND_MIGRATION_MAX_VERSION: ${{ needs.changes.outputs.backend_migration_max_version }}
-          WOTB_DEPLOY_SERVICES: ${{ needs.changes.outputs.deploy_services }}
-          WOTB_DEPLOY_IMAGE_SERVICES: ${{ needs.changes.outputs.image_services }}
+          WOTB_DEPLOY_SERVICES: ${{ needs.changes.outputs.yecao_services }}
+          WOTB_DEPLOY_IMAGE_SERVICES: ${{ needs.changes.outputs.yecao_image_services }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           KC_ADMIN_PASSWORD: ${{ secrets.KC_ADMIN_PASSWORD }}
           WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
@@ -214,3 +225,132 @@ jobs:
           REPLAY_COORDINATE_CLAMP_TOLERANCE: ${{ vars.REPLAY_COORDINATE_CLAMP_TOLERANCE || '12.5' }}
           GRAFANA_ROOT_URL: ${{ vars.GRAFANA_ROOT_URL || 'https://monitor.wotbtools.com' }}
           OBSERVABILITY_ENVIRONMENT: ${{ vars.OBSERVABILITY_ENVIRONMENT || 'production' }}
+
+  deploy_tx:
+    needs: [changes, image_existence]
+    if: >-
+      always() &&
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.tx_services != '' &&
+      (needs.image_existence.result == 'success' ||
+       (needs.changes.outputs.image_services == '' && needs.image_existence.result == 'skipped'))
+    name: Deploy TX Frontend + Keycloak
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: tx-production
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.changes.outputs.release_sha }}
+      - name: Prepare TX deployment directory
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          script: |
+            set -eu
+            WOTB_DIR=/opt/wotb-tx
+            mkdir -p "$WOTB_DIR/deploy.incoming"
+            rm -rf -- "$WOTB_DIR/deploy.incoming/tx"
+      - name: Install TX deployment configuration
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/tx
+          target: /opt/wotb-tx/deploy.incoming
+          overwrite: true
+      - name: Bootstrap TX Keycloak PostgreSQL before OpenTofu
+        if: contains(needs.changes.outputs.tx_services, 'keycloak-postgres')
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 15m
+          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL
+          script: bash /opt/wotb-tx/deploy.incoming/tx/deploy.sh
+        env:
+          TAG: ${{ needs.changes.outputs.release_tag }}
+          RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
+          RELEASE_RUN_NUMBER: ${{ needs.changes.outputs.build_run_number }}
+          WOTB_DEPLOY_SERVICES: keycloak-postgres
+          WOTB_DEPLOY_IMAGE_SERVICES: ''
+          KC_POSTGRES_ADMIN_USER: kc_admin
+          KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
+          KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
+          KC_DB_USERNAME: keycloak
+          KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
+          WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
+          CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
+      - name: Install Keycloak PostgreSQL OpenTofu root on TX
+        if: contains(needs.changes.outputs.tx_services, 'keycloak-postgres')
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: infra/tofu/postgres-keycloak
+          target: /opt/wotb-tx/tofu.incoming/${{ needs.changes.outputs.release_sha }}
+          overwrite: true
+      - name: Apply Keycloak PostgreSQL OpenTofu on TX localhost
+        if: contains(needs.changes.outputs.tx_services, 'keycloak-postgres')
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 15m
+          envs: TF_VAR_postgresql_admin_username,TF_VAR_postgresql_admin_password,TF_VAR_keycloak_role_password,TF_VAR_keycloak_role_password_version,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
+          script: |
+            set -euo pipefail
+            command -v tofu >/dev/null 2>&1 || { echo "tofu is required on TX" >&2; exit 1; }
+            root="/opt/wotb-tx/tofu.incoming/${{ needs.changes.outputs.release_sha }}/infra/tofu/postgres-keycloak"
+            test -d "$root"
+            cd "$root"
+            trap 'rm -f plan.tfplan' EXIT
+            tofu init -reconfigure -input=false
+            tofu validate
+            tofu plan -input=false -no-color -out=plan.tfplan
+            bash ./validate-plan.sh plan.tfplan
+            tofu apply -input=false -auto-approve plan.tfplan
+            install -d -m 700 /opt/wotb-tx
+            printf '%s\n' tx-local-opentofu > /opt/wotb-tx/keycloak-postgres.tofu-provisioned
+            chmod 600 /opt/wotb-tx/keycloak-postgres.tofu-provisioned
+        env:
+          TF_VAR_postgresql_admin_username: kc_admin
+          TF_VAR_postgresql_admin_password: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
+          TF_VAR_keycloak_role_password: ${{ secrets.TX_KC_DB_PASSWORD }}
+          TF_VAR_keycloak_role_password_version: ${{ vars.TX_KC_DB_PASSWORD_VERSION || '1' }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+      - name: Deploy exact TX services via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 35m
+          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL
+          script: bash /opt/wotb-tx/deploy.incoming/tx/deploy.sh
+        env:
+          TAG: ${{ needs.changes.outputs.release_tag }}
+          RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
+          RELEASE_RUN_NUMBER: ${{ needs.changes.outputs.build_run_number }}
+          WOTB_DEPLOY_SERVICES: ${{ needs.changes.outputs.tx_services }}
+          WOTB_DEPLOY_IMAGE_SERVICES: ${{ needs.changes.outputs.tx_image_services }}
+          KC_POSTGRES_ADMIN_USER: kc_admin
+          KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
+          KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
+          KC_DB_USERNAME: keycloak
+          KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
+          WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
+          CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}

@@ -42,6 +42,7 @@ jobs:
       deploy_config: ${{ steps.plan.outputs.deploy_config }}
       deploy_services: ${{ steps.plan.outputs.deploy_services }}
       image_services: ${{ steps.plan.outputs.image_services }}
+      target_services: ${{ steps.plan.outputs.target_services }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -88,6 +89,7 @@ jobs:
           print(f"deploy_config={str(plan['deployConfig']).lower()}")
           print(f"deploy_services={','.join(plan['deployServices'])}")
           print(f"image_services={','.join(plan['imageServices'])}")
+          print(f"target_services={json.dumps(plan['targetServices'], separators=(',', ':'))}")
           PY
       - name: Validate manual source is current main HEAD
         if: github.event_name == 'workflow_dispatch'
@@ -229,6 +231,7 @@ jobs:
           KEYCLOAK: ${{ needs.changes.outputs.keycloak }}
           DEPLOY_SERVICES: ${{ needs.changes.outputs.deploy_services }}
           IMAGE_SERVICES: ${{ needs.changes.outputs.image_services }}
+          TARGET_SERVICES: ${{ needs.changes.outputs.target_services }}
         shell: bash
         run: |
           set -euo pipefail
@@ -264,6 +267,7 @@ jobs:
               "backendMigrationMaxVersion": backend_migration_max_version,
               "deployConfig": False,
               "deployServices": [s for s in os.environ["DEPLOY_SERVICES"].split(",") if s],
+              "targetServices": json.loads(os.environ["TARGET_SERVICES"]),
           }, sys.stdout)
           PY
           python3 deploy/release_plan.py manifest \

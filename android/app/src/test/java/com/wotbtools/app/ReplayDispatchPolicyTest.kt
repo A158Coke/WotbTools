@@ -145,8 +145,7 @@ class ReplayDispatchPolicyTest {
             AuthReturnPolicy.isVerifiedBrokerReturn(
                 scheme = "https",
                 host = "auth.wotbtools.com",
-                path = "/realms/wotbtools/broker/juhe-qq/endpoint",
-                type = "qq",
+                path = "/realms/wotbtools/broker/idp-qq/endpoint",
                 hasState = true,
                 hasCode = true
             )

@@ -31,7 +31,7 @@ assert build_jobs["build_frontend"]["name"] == "Build Frontend"
 assert build_jobs["build_keycloak"]["name"] == "Build Keycloak"
 assert 'short_sha="${commit_sha:0:12}"' in build_text, "Build must use the deterministic 12-char SHA tag"
 assert "rev-parse --short" not in build_text, "Build must not use git's nondeterministic abbreviation"
-for output in ("commit_sha", "tag", "backend", "frontend", "keycloak", "deploy_services", "image_services"):
+for output in ("commit_sha", "tag", "backend", "frontend", "keycloak", "deploy_services", "image_services", "target_services"):
     assert output in changes["outputs"], f"Build changes output missing: {output}"
 
 for job_name, output_name in (
@@ -103,6 +103,9 @@ assert "release_plan.py validate" in deploy_text
 assert "docker manifest inspect" in deploy_text
 assert "WOTB_DEPLOY_SERVICES" in deploy_text
 assert "WOTB_DEPLOY_IMAGE_SERVICES" in deploy_text
+assert "targetServices" in deploy_text
+assert "deploy_tx" in deploy["jobs"]
+assert "TX_VPS_HOST" in deploy_text
 assert "WOTB_BACKEND_MIGRATION_MAX_VERSION" in deploy_text
 assert "docker/build" not in deploy_text and "mvn test" not in deploy_text and "npm test" not in deploy_text
 assert "cancel-in-progress: false" in deploy_text

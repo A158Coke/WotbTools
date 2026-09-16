@@ -546,6 +546,22 @@ local state、计划文件和真实 tfvars 禁止提交；`.terraform.lock.hcl` 
 提交。state bucket 是当前 owner-managed bootstrap boundary，不由 production
 root 管理，也不能使用带一天 expiration 的 artifact bucket 承载 state。
 
+### TX Frontend + Keycloak predeployment boundary
+
+Phase 1 将 `wotb-frontend`、`keycloak` 与其专用 `keycloak-postgres` 路由到
+TX；Yecao 在正式 cutover 前仍只承载 backend、业务 PostgreSQL 与观测服务。release
+manifest 的 `targetServices` 是这两个 host 的唯一发布路由来源，普通 Yecao compose
+配置变更不得刷新 legacy frontend/Keycloak。TX PostgreSQL 只发布
+`127.0.0.1:15432:5432` 给 TX-local OpenTofu；GitHub runner 只 SSH 触发，绝不
+直连数据库、建立 SSH tunnel 或使用 Terraform `remote-exec`。详见
+`docs/architecture/opentofu-postgres-keycloak.md`。
+
+TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/grant；
+只有成功 apply 写入 provision marker 后才允许 Keycloak/frontend 启动。Stage I 的
+Caddy 默认只监听 loopback，不会改 DNS，也不会停止或删除 Yecao 服务。IdP 配置、
+`user_profile` dependency audit、DNS cutover 与旧服务退役均是受控的外部操作，分别
+需要相应人工批准；启动细节见 `docs/auth/keycloak-tx-bootstrap.md`。
+
 生产 Build 与 Deploy 分为 `.github/workflows/build.yml` 和
 `.github/workflows/deploy.yml`，路径选择由 `deploy/release_plan.py` 统一产生。
 Build 在 `main` 成功 push 后只为 affected application 构建 component-local 的
@@ -562,7 +578,7 @@ reconciliation，不触发应用 Build。生产发布原则：
 3. 部署后通过同一 production Docker network 中 deployment-owned `health-probe` curl service 检查 backend `http://wotb-backend:8088/actuator/health`、带 `Host: wotbtools.com` 的 frontend、Keycloak OIDC discovery 与 backend 数据库连通性；backend 使用 Spring dedicated management port 与默认 actuator base path，probe 仅接受 2xx，且不依赖 application image 内的 `wget/curl`。每个 probe 有 bounded timeout/retry，失败先输出 release、affected service、image、status、logs 与 Flyway schema 诊断，再停止确认失败的 affected service；不自动恢复旧 application image。
 4. 只有 affected application 已通过全局 core health gate 后，才原子更新 `/opt/wotb/production-release.json`（0600）；metadata 记录每个应用的 commit SHA、immutable image tag、部署时间，backend 记录 schema 与 migration ceiling，其它 service metadata 不变。Prometheus/Loki/Alloy/Grafana 与 metrics/log ingestion 失败只输出 `OBSERVABILITY DEGRADED`。
 5. 事故恢复只使用 `Ops Recovery`：明确选择一个 backend/frontend/keycloak，使用 production metadata 的 current identity 或 full SHA；backend target 的最大 migration version 低于 live Flyway schema、schema 无法读取或 immutable image 不存在时拒绝。Recovery 不做 database restore/downgrade，不隐式选择 all。
-9. Keycloak 镜像以 `start --optimized` 启动并保留 PostgreSQL 与应用 OIDC discovery；不再启用或暴露 management health/metrics 端口。Keycloak 观测只保留 Docker 日志经 Alloy → Loki → Grafana 的链路，CI 的 `keycloak-runtime` job 必须真实构建并启动该应用运行时契约。
+6. Keycloak 镜像以 `start --optimized` 启动并保留 PostgreSQL 与应用 OIDC discovery；不再启用或暴露 management health/metrics 端口。Keycloak 观测只保留 Docker 日志经 Alloy → Loki → Grafana 的链路，CI 的 `keycloak-runtime` job 必须真实构建并启动该应用运行时契约。
 
 Android 发布同样采用仓库内 Version-as-Code：`android/gradle.properties` 的
 `wotbVersion` 是唯一版本来源，`versionCode` 由 SemVer 确定性计算；发布工作流

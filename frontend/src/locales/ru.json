@@ -1296,7 +1296,7 @@
         "segmentKeycloak": "Пользователи Keycloak",
         "segmentLocal": "Локальные профили",
         "idpAlias": "Псевдоним IdP",
-        "idpAliasPlaceholder": "напр. juhe-qq",
+        "idpAliasPlaceholder": "напр. qq",
         "idpAliasKeycloakOnly": "Фильтр по псевдониму IdP доступен только для источника Keycloak.",
         "colKcUser": "Имя / эл. почта Keycloak",
         "colState": "Состояние",

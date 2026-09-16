@@ -85,7 +85,7 @@ Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`
   证据的 QQ host 是 `graph.qq.com` 与 `xui.ptlogin2.qq.com`（后者基于 Android 1.0.8 真机 ADB
   生产链 evidence：Keycloak → graph.qq.com → xui.ptlogin2.qq.com → callback，见
   `AuthNavigationPolicyTest.productionQqAuthChainStaysInWebViewUntilAppCallback`）。
-  `ssl.ptlogin2.qq.com`、`ptlogin2.qq.com`、`open.juhedenglu.cn` 等只有在真实 top-level
+  `ssl.ptlogin2.qq.com`、`ptlogin2.qq.com` 等只有在真实 top-level
   navigation evidence 确认后才可逐个加入，并必须同步 regression test；禁止 `*.qq.com` 或整个
   `qq.com` 通配。
 - **Native auth handoff**：Android 1.0.9 真机 ADB 证据显示 `xui.ptlogin2.qq.com` 之后 QQ 登录会发起
@@ -102,14 +102,17 @@ Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`
   scheme/host（含 host=null 的未知 custom scheme）在 auth flow 内仍 `AUTH_FAILURE` 且不退出 auth flow
   （fail closed）。日志只记录 `scheme`/`host`/`source`，不记录
   完整 URI/query/token/code/state（见 `AuthNavigationPolicyTest.verifiedNativeQqHandoffOnlyDuringAuthFlow`）。
-- **QQ native login return bridge（Verified App Link）**：QQ App 完成授权后，把 Keycloak Juhe QQ broker
+- **QQ native login return bridge（Verified App Link）**：QQ App 完成授权后，把 Keycloak QQ broker
   callback 经 **Verified App Link** 路由回原 WotBTools App，复用同一 WebView / cookie jar / `inAuthFlow`，
   保持 AuthenticationSession continuity；绝不打开系统浏览器处理 broker callback（否则 Browser B != 原
   WebView A，getAndVerifyAuthenticationSession 无法恢复原 auth transaction → already_logged_in）。链路：
    `WebView → native QQ → verified HTTPS App Link → 同一 MainActivity（singleTask）→ 原 WebView.loadUrl(callback)`。
-  App Link 只接管 exact `https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint`，不接管整个
-  `auth.wotbtools.com` / 其它 realm / 其它 IdP provider。`AuthReturnPolicy` 仅做路由边界（scheme/host/path/
-  type=qq/state/code presence），不解释 state/code 载荷（Keycloak 仍是认证 authority）；
+  App Link 只接管以下两个 exact callback（过渡期 `juhe-qq` 仍是生产 Juhe provider，`idp-qq` 是待审核官方 QQ provider）：
+  `https://auth.wotbtools.com/realms/wotbtools/broker/idp-qq/endpoint` 与
+  `https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint`，不接管整个
+  `auth.wotbtools.com` / 其它 realm / 其它 IdP provider。`AuthReturnPolicy` 严格校验 scheme/host/path、
+  `state`。`idp-qq` 成功回调要求 `code`（OAuth error 回调则有 `error`）；`juhe-qq` 按现有 Juhe
+  callback contract 保留必要的 Juhe-specific 参数校验，不把两个 provider 的参数强行统一；
   `auth.wotbtools.com/.well-known/assetlinks.json` 由 nginx 直接返回 application/json（非代理 Keycloak）。
   热返回走 `onNewIntent`（`handleAuthReturnHot`），冷返回（进程被杀）走 `pendingAuthReturn` + startup gate
   后加载（`handleAuthReturnColdStart`），不绕过网络/版本/强制更新门禁。日志只记录
