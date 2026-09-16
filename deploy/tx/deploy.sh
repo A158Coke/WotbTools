@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 
 readonly WOTB_DIR="${WOTB_TX_DIR:-/opt/wotb-tx}"
-readonly INCOMING_DIR="${WOTB_TX_INCOMING_DIR:-$WOTB_DIR/deploy.incoming/tx}"
+readonly INCOMING_DIR="${WOTB_TX_INCOMING_DIR:-$WOTB_DIR/deploy.incoming/deploy/tx}"
 readonly LIVE_DEPLOY_DIR="$WOTB_DIR/deploy"
 readonly LIVE_COMPOSE="$LIVE_DEPLOY_DIR/docker-compose.yml"
 readonly METADATA_FILE="$WOTB_DIR/tx-production-release.json"

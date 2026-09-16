@@ -253,7 +253,7 @@ jobs:
             set -eu
             WOTB_DIR=/opt/wotb-tx
             mkdir -p "$WOTB_DIR/deploy.incoming"
-            rm -rf -- "$WOTB_DIR/deploy.incoming/tx"
+            rm -rf -- "$WOTB_DIR/deploy.incoming/deploy/tx"
       - name: Install TX deployment configuration
         uses: appleboy/scp-action@v1
         with:
@@ -274,7 +274,7 @@ jobs:
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 15m
           envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL
-          script: bash /opt/wotb-tx/deploy.incoming/tx/deploy.sh
+          script: bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
         env:
           TAG: ${{ needs.changes.outputs.release_tag }}
           RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
@@ -340,7 +340,7 @@ jobs:
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 35m
           envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL
-          script: bash /opt/wotb-tx/deploy.incoming/tx/deploy.sh
+          script: bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
         env:
           TAG: ${{ needs.changes.outputs.release_tag }}
           RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
