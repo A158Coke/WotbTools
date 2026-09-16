@@ -438,6 +438,8 @@ probe_body_contains() {
 
 pre_cutover_check() {
   local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health
+  local yecao_compose="$source_root/deploy/docker-compose.prod.yml"
+  local yecao_contract="$LIVE_DEPLOY_DIR/yecao-backend-contract.json"
   local failures=0 provider
   DEPLOY_SERVICES=(all)
 
@@ -501,14 +503,43 @@ assert not any("0.0.0.0" in p or p.startswith("5432:") or "::" in p for p in val
     failures=1
   fi
 
-  if [ -n "$source_root" ] && [ -f "$source_root/deploy/docker-compose.prod.yml" ]; then
-    if grep -Fq '"10.20.0.2:8087:8087"' "$source_root/deploy/docker-compose.prod.yml" \
-      && ! grep -Eq '(^|["[:space:]-])(0\.0\.0\.0:)?8087:8087(["[:space:]]|$)' "$source_root/deploy/docker-compose.prod.yml"; then
+  if [ -f "$yecao_compose" ]; then
+    if python3 - "$yecao_compose" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+match = re.search(r"(?ms)^  wotb-backend:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", text)
+if not match:
+    raise SystemExit(1)
+ports = re.findall(r'^\s*-\s*"([^"]+)"\s*$', match.group(1), flags=re.MULTILINE)
+raise SystemExit(0 if ports == ["10.20.0.2:8087:8087"] else 1)
+PY
+    then
       echo "yecao-backend-wireguard-bind: PASS"
     else
       echo "yecao-backend-wireguard-bind: FAIL" >&2
       failures=1
     fi
+  elif [ -f "$yecao_contract" ] && python3 - "$yecao_contract" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+raise SystemExit(0 if data == {
+    "service": "wotb-backend",
+    "ports": ["10.20.0.2:8087:8087"],
+} else 1)
+PY
+  then
+    echo "yecao-backend-wireguard-bind: PASS (deployed contract)"
+  else
+    echo "yecao-backend-wireguard-bind: FAIL (Yecao compose or deployed contract is unavailable)" >&2
+    failures=1
+  fi
+  if [ -n "$source_root" ] && [ -f "$source_root/docker/keycloak/wotbtools-realm.json" ]; then
     if grep -Fq '"realm": "wotbtools"' "$source_root/docker/keycloak/wotbtools-realm.json" \
       && grep -Fq '"clientId": "wotbtools-web"' "$source_root/docker/keycloak/wotbtools-realm.json"; then
       echo "realm-client-source-baseline: PASS"
@@ -516,13 +547,10 @@ assert not any("0.0.0.0" in p or p.startswith("5432:") or "::" in p for p in val
       echo "realm-client-source-baseline: FAIL" >&2
       failures=1
     fi
-    # The TX deploy helper has no DNS or Yecao retirement command; this is also
-    # enforced by the static TX runtime and pre-cutover contract tests.
-    echo "cutover-safety-boundary: PASS"
-  else
-    echo "yecao-backend-wireguard-bind: FAIL (WOTB_SOURCE_ROOT does not expose Yecao compose)" >&2
-    failures=1
   fi
+  # The TX deploy helper has no DNS or Yecao retirement command; this is also
+  # enforced by the static TX runtime and pre-cutover contract tests.
+  echo "cutover-safety-boundary: PASS"
 
   echo "QQ_IDP_STATUS=idp-qq=WAITING_EXTERNAL"
   echo "QQ_FALLBACK_STATUS=juhe-qq=PRODUCTION_REQUIRED"

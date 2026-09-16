@@ -27,6 +27,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/deploy" "$WORK/bin" "$WORK/runtime/config/sponsor" "$WORK/runtime/android-release"
 cp "$ROOT/deploy/tx/docker-compose.yml" "$WORK/deploy/docker-compose.yml"
+cp "$ROOT/deploy/tx/yecao-backend-contract.json" "$WORK/deploy/yecao-backend-contract.json"
 printf '{}\n' > "$WORK/runtime/config/sponsor-config.json"
 cat > "$WORK/runtime.env" <<'ENV'
 KC_POSTGRES_ADMIN_USER=kc_admin
