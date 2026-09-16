@@ -152,6 +152,7 @@ mkdir -p "$WORK/bootstrap/config/sponsor" "$WORK/bootstrap/android-release" "$WO
 cp -a "$TX_DIR/." "$WORK/bootstrap-incoming/"
 printf '{}\n' > "$WORK/bootstrap/config/sponsor-config.json"
 printf 'tx-local-opentofu\n' > "$WORK/bootstrap/keycloak-postgres.tofu-provisioned"
+set +e
 bootstrap_output="$(env -i \
   PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/bootstrap" WOTB_TX_INCOMING_DIR="$WORK/bootstrap-incoming" TX_RUNTIME_ROOT="$WORK/bootstrap" \
@@ -160,6 +161,10 @@ bootstrap_output="$(env -i \
   WOTB_DEPLOY_SERVICES=keycloak-postgres WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   FAKE_DOCKER_LOG="$WORK/bootstrap-docker.log" \
   bash "$WORK/bootstrap-incoming/deploy.sh" 2>&1)"
+bootstrap_rc=$?
+set -e
+[ "$bootstrap_rc" -eq 0 ] \
+  || fail "PostgreSQL-only bootstrap failed (rc=$bootstrap_rc; output: $bootstrap_output)"
 grep -Fq 'keycloak-postgres: PASS' <<< "$bootstrap_output" \
   || fail "first TX bootstrap must permit PostgreSQL before Keycloak image metadata exists"
 [ ! -e "$WORK/bootstrap/keycloak-postgres.tofu-provisioned" ] \
