@@ -96,14 +96,14 @@ class AdminUserPaginationTest {
 
     @Test
     void idpFilterUsesTheIdentityProviderSearchPath() {
-        when(keycloakAdminUserService.searchUsersByIdpAlias("juhe-qq", "old", 0, 25))
+        when(keycloakAdminUserService.searchUsersByIdpAlias("qq", "old", 0, 25))
                 .thenReturn(List.of());
-        when(keycloakAdminUserService.countUsersByIdpAlias("juhe-qq", "old")).thenReturn(0);
+        when(keycloakAdminUserService.countUsersByIdpAlias("qq", "old")).thenReturn(0);
 
-        service().searchUsers("old", "keycloak", "juhe-qq", 0, 25);
+        service().searchUsers("old", "keycloak", "qq", 0, 25);
 
-        verify(keycloakAdminUserService).searchUsersByIdpAlias("juhe-qq", "old", 0, 25);
-        verify(keycloakAdminUserService).countUsersByIdpAlias("juhe-qq", "old");
+        verify(keycloakAdminUserService).searchUsersByIdpAlias("qq", "old", 0, 25);
+        verify(keycloakAdminUserService).countUsersByIdpAlias("qq", "old");
         verify(keycloakAdminUserService, never()).searchUsers(nullable(String.class), anyInt(), anyInt());
     }
 
@@ -117,7 +117,7 @@ class AdminUserPaginationTest {
     @Test
     void rejectsIdpFilterOnTheLocalSegment() {
         final AdminBadRequestException exception = assertThrows(AdminBadRequestException.class,
-                () -> service().searchUsers(null, "local", "juhe-qq", 0, 25));
+                () -> service().searchUsers(null, "local", "qq", 0, 25));
         assertEquals("IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT", exception.getErrorCode());
     }
 

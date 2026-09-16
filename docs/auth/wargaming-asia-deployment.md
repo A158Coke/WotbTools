@@ -55,7 +55,7 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 - **只使用一个 Keycloak Client：`wotbtools-web`**。不要创建 `wotbtools-asia` / `wotbtools-eu` / `wotbtools-na`。
 - 自定义 Provider **不使用** Client ID / Client Secret / Authorization URL / Token URL；出现这些字段即配置错了类型。
 
-> QQ IdP（`juhe-qq`）与 `wotbtools-admin-api` client 若尚未配置，同样在 Admin Console 手工维护，本仓库 realm JSON 不声明任何带密钥的 IdP。
+> QQ IdP 与 `wotbtools-admin-api` client 同样是新 realm 的运行时配置；凭据不进入 realm JSON。QQ provider 的已批准源码、版本与配置前置条件见 [keycloak-tx-bootstrap.md](keycloak-tx-bootstrap.md)。
 
 ## 3. 核对 realm 默认角色
 

@@ -23,6 +23,7 @@
     ]
   },
   "defaultRoles": ["wotbtools-user"],
+  "identityProviders": [],
   "clients": [
     {
       "clientId": "wotbtools-web",

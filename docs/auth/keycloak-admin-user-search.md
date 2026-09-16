@@ -1,6 +1,6 @@
 # Keycloak Admin REST 用户检索能力（Admin Users 分页 / IdP 过滤前提）
 
-> 本文是 Admin Users 服务端分页与 Juhe QQ cleanup 的**能力事实源**。
+> 本文是 Admin Users 服务端分页与遗留 IdP 用户清理的**能力事实源**。
 > 结论只声明已被证据支持的部分；未被证据支持的写入「局限」，不猜。
 
 ## 1. 版本矩阵

@@ -1296,7 +1296,7 @@
         "segmentKeycloak": "Keycloak users",
         "segmentLocal": "Local profiles",
         "idpAlias": "IdP alias",
-        "idpAliasPlaceholder": "e.g. juhe-qq",
+        "idpAliasPlaceholder": "e.g. qq",
         "idpAliasKeycloakOnly": "IdP alias filtering is available for the Keycloak source only.",
         "colKcUser": "Keycloak username / email",
         "colState": "State",

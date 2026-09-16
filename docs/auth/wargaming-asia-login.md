@@ -46,9 +46,8 @@
 
 先检查当前分支的真实实现，包括但不限于：
 
-- `keycloak-juhe-qq-provider`（Keycloak 26.6.4，Java 21）
-- `docker/Dockerfile.keycloak`（构建两个 Provider 的镜像）
-- `docker/keycloak/wotbtools-realm.json`（当前只有 roles + `wotbtools-web` client + display-name mapper；**没有** identityProviders）
+- `docker/Dockerfile.keycloak`（构建已批准 Provider 的镜像）
+- `docker/keycloak/wotbtools-realm.json`（roles + `wotbtools-web` client + mapper；`identityProviders` 必须保持空列表）
 - Keycloak 生产部署配置（生产 realm 为 Admin Console 手工配置，不使用 `--import-realm`）
 - `frontend/src/composables/useAuth.js`（登录统一走 `kc.login` 跳转 Keycloak 托管登录页，无 idpHint 白名单）
 - 登录页与个人资料页（当前**没有**前端登录页，`ProfilePage` 未登录时直接跳 Keycloak）
@@ -117,7 +116,7 @@ QQ 登录 → Keycloak 创建或找到用户 → WotBTools 懒创建 user_profil
 
 ### 4. 新 CN/QQ 用户
 
-`keycloak-juhe-qq-provider` 的 `JuheQqEndpoint` 在认证成功时增加写入 user attribute：
+QQ provider 在认证成功时必须写入 user attribute：
 
 ```text
 region = CN
@@ -129,7 +128,7 @@ region = CN
 
 ## 五、新建 Keycloak Wargaming Provider 模块
 
-新增独立模块 `keycloak-wargaming-provider`，实现适配 Keycloak 26.6.4 的自定义 Identity Provider SPI。不要把 WG 登录逻辑塞进 `keycloak-juhe-qq-provider`。
+新增独立模块 `keycloak-wargaming-provider`，实现适配 Keycloak 26.6.4 的自定义 Identity Provider SPI。WG 登录逻辑必须与 QQ provider 保持独立。
 
 ### 1. 实例配置（区服参数化）
 
@@ -436,7 +435,7 @@ wotb_account_verified_at TIMESTAMPTZ
 
 不自定义前端登录页。未登录用户访问需鉴权页面（`ProfilePage` / `ReconstructionPage` 等）时，前端直接调用 `kc.login({ redirectUri })` 跳转 Keycloak 托管登录页：
 
-- Keycloak 登录页自动列出所有 **Enabled** 的 IdP：QQ（`juhe-qq`）+ Wargaming ASIA / EU / NA（`wargaming-asia` / `wargaming-eu` / `wargaming-na`），按钮文案取各 IdP 的 Display name；
+- Keycloak 登录页自动列出所有 **Enabled** 的 IdP：QQ（由 realm 中已批准的 provider alias 决定）+ Wargaming ASIA / EU / NA（`wargaming-asia` / `wargaming-eu` / `wargaming-na`），按钮文案取各 IdP 的 Display name；
 - 前端**不再硬编码** idpHint / alias 白名单；alias 只由 Keycloak 实例决定（决定回调路径），与部署文档保持一致；
 - 不改 Keycloak 主题，不新增前端登录路由（`view=login` 已移除）。
 
@@ -494,11 +493,13 @@ wotb_account_verified_at TIMESTAMPTZ
 
 ### 1. Keycloak 镜像
 
-修改 `docker/Dockerfile.keycloak`，同时构建并复制两个 JAR 到 `/opt/keycloak/providers/`，然后 `kc.sh build`：
+修改 `docker/Dockerfile.keycloak`，构建并复制已批准的 provider JAR 到 `/opt/keycloak/providers/`，然后 `kc.sh build`：
 
 ```text
-keycloak-juhe-qq-provider
 keycloak-wargaming-provider
+keycloak-qq-provider
+
+（QQ provider 为已审计、固定版本的 vendor；禁止构建或运行时下载。）
 ```
 
 ### 2. 部署路径检测

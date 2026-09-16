@@ -60,6 +60,7 @@
 | `architecture/control-api-native-benchmark.md` | 查 Control API native benchmark 设计 / 结果时 |
 | `architecture/grafana-opentofu.md` | 改 Grafana OpenTofu API 管理方式时 |
 | `architecture/opentofu-production-baseline.md` | 改生产 OpenTofu baseline / import / state 边界时 |
+| `architecture/opentofu-postgres-keycloak.md` | 改 TX Keycloak PostgreSQL OpenTofu root、state 或本地执行边界时 |
 | `architecture/tankopedia-reference-data.md` | 改 Tankopedia reference data 同步 / 单一来源时 |
 | `api/error-contract.md` | 新增/修改 API error code、Security 401/403、前端错误展示或 traceId 时 |
 
@@ -145,7 +146,7 @@
 | `auth/wargaming-asia-deployment.md` | 上线 / 排障 WG 登录时 |
 | `auth/keycloak-login-theme.md` | 改 Keycloak 登录页主题或 realm theme 配置时 |
 | `auth/keycloak-mapper-guide.md` | JWT 缺 claim / 改 claims 时 |
-| `auth/keycloak-qq-only.md` | QQ 登录部署参考时 |
+| `auth/keycloak-tx-bootstrap.md` | TX 新 Keycloak realm / IdP 启动与凭据交接时 |
 | `auth/keycloak-admin-user-search.md` | 改 Keycloak Admin 用户检索 / Admin Users 分页与 IdP 过滤时 |
 
 ## Test（测试）

@@ -1296,7 +1296,7 @@
         "segmentKeycloak": "Keycloak 用户",
         "segmentLocal": "本地资料",
         "idpAlias": "IdP 别名",
-        "idpAliasPlaceholder": "如 juhe-qq",
+        "idpAliasPlaceholder": "如 qq",
         "idpAliasKeycloakOnly": "IdP 别名筛选仅在 Keycloak 数据源下可用。",
         "colKcUser": "Keycloak 用户名 / 邮箱",
         "colState": "状态",

@@ -1,0 +1,105 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+# TX public edge only.  The existing deploy/docker-compose.prod.yml remains the
+# Yecao runtime and must not be used to deploy this target.
+services:
+  health-probe:
+    image: curlimages/curl:8.12.1
+    entrypoint: ["curl"]
+    restart: "no"
+    logging: *default-logging
+
+  keycloak-postgres:
+    image: postgres:18-alpine
+    environment:
+      # OpenTofu, running locally on TX, owns the application database, role,
+      # and grants after this PostgreSQL runtime is available.
+      POSTGRES_USER: ${KC_POSTGRES_ADMIN_USER:?KC_POSTGRES_ADMIN_USER is required}
+      POSTGRES_PASSWORD: ${KC_POSTGRES_ADMIN_PASSWORD:?KC_POSTGRES_ADMIN_PASSWORD is required}
+    ports:
+      # TX-local OpenTofu administration only. Never publish PostgreSQL to a
+      # public or WireGuard interface.
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - keycloak_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    logging: *default-logging
+
+  keycloak:
+    image: ghcr.io/a158coke/wotbtools-keycloak:${TAG:?TAG is required}
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD is required}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-postgres:5432/${KC_DB_NAME:-keycloak}
+      KC_DB_USERNAME: ${KC_DB_USERNAME:?KC_DB_USERNAME is required}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD is required}
+      WG_APPLICATION_ID: ${WG_APPLICATION_ID:?WG_APPLICATION_ID is required}
+    command: start --optimized --import-realm --hostname=auth.wotbtools.com --hostname-strict=false --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+
+  wotb-frontend:
+    image: ghcr.io/a158coke/wotbtools-frontend:${TAG:?TAG is required}
+    environment:
+      # nginx's official template entrypoint expands this value before nginx
+      # starts. It is intentionally a WireGuard-only backend address.
+      BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://10.20.0.2:8087}
+      NGINX_ENVSUBST_FILTER: ^BACKEND_UPSTREAM$$
+    volumes:
+      - ./nginx/frontend.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${TX_RUNTIME_ROOT:?TX_RUNTIME_ROOT is required}/config/sponsor-config.json:/usr/share/nginx/html/sponsor-config.json:ro
+      - ${TX_RUNTIME_ROOT:?TX_RUNTIME_ROOT is required}/config/sponsor:/usr/share/nginx/html/sponsor-assets:ro
+      - ${TX_RUNTIME_ROOT:?TX_RUNTIME_ROOT is required}/android-release:/usr/share/nginx/html/download/android:ro
+    depends_on:
+      - keycloak
+    restart: unless-stopped
+    logging: *default-logging
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    ports:
+      # Stage I is loopback-only. An operator changes these runtime values only
+      # after the separately approved DNS cutover; the repository never does it.
+      - "${CADDY_HTTP_BIND:-127.0.0.1}:80:80"
+      - "${CADDY_HTTPS_BIND:-127.0.0.1}:443:443"
+      - "${CADDY_HTTPS_BIND:-127.0.0.1}:443:443/udp"
+    environment:
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?CADDY_ACME_EMAIL is required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./assets/auth/.well-known/assetlinks.json:/srv/.well-known/assetlinks.json:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - wotb-frontend
+      - keycloak
+    networks:
+      default:
+        ipv4_address: 172.29.0.2
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  keycloak_postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  default:
+    name: wotb_tx_internal
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16

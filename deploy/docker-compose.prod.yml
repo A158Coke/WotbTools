@@ -41,6 +41,10 @@ services:
     logging: *default-logging
   wotb-backend:
     image: ghcr.io/a158coke/wotbtools-backend:${TAG:?TAG is required}
+    ports:
+      # TX reaches the Yecao backend only over the WireGuard interface.
+      # Never replace this with a wildcard or public-interface binding.
+      - "10.20.0.2:8087:8087"
     depends_on:
       - postgres
       - keycloak
