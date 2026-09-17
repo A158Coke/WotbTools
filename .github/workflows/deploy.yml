@@ -308,7 +308,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 15m
-          envs: TF_VAR_postgresql_admin_username,TF_VAR_postgresql_admin_password,TF_VAR_keycloak_role_password,TF_VAR_keycloak_role_password_version,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
+          envs: KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_DB_PASSWORD,KC_DB_PASSWORD_VERSION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
           script: |
             set -euo pipefail
             command -v tofu >/dev/null 2>&1 || { echo "tofu is required on TX" >&2; exit 1; }
@@ -316,6 +316,10 @@ jobs:
             test -d "$root"
             cd "$root"
             trap 'rm -f plan.tfplan' EXIT
+            export TF_VAR_postgresql_admin_username="$KC_POSTGRES_ADMIN_USER"
+            export TF_VAR_postgresql_admin_password="$KC_POSTGRES_ADMIN_PASSWORD"
+            export TF_VAR_keycloak_role_password="$KC_DB_PASSWORD"
+            export TF_VAR_keycloak_role_password_version="$KC_DB_PASSWORD_VERSION"
             tofu init -reconfigure -input=false
             tofu validate
             tofu plan -input=false -no-color -out=plan.tfplan
@@ -325,10 +329,10 @@ jobs:
             printf '%s\n' tx-local-opentofu > /opt/wotb-tx/keycloak-postgres.tofu-provisioned
             chmod 600 /opt/wotb-tx/keycloak-postgres.tofu-provisioned
         env:
-          TF_VAR_postgresql_admin_username: kc_admin
-          TF_VAR_postgresql_admin_password: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
-          TF_VAR_keycloak_role_password: ${{ secrets.TX_KC_DB_PASSWORD }}
-          TF_VAR_keycloak_role_password_version: ${{ vars.TX_KC_DB_PASSWORD_VERSION || '1' }}
+          KC_POSTGRES_ADMIN_USER: kc_admin
+          KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
+          KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
+          KC_DB_PASSWORD_VERSION: ${{ vars.TX_KC_DB_PASSWORD_VERSION || '1' }}
           AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
       - name: Deploy exact TX services via SSH
