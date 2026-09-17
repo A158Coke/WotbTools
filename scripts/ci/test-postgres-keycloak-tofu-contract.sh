@@ -38,6 +38,37 @@ assert "TX_RUNTIME_ENV_FILE" not in deploy_text
 assert "postgres-keycloak-tofu.env" not in deploy_text
 assert deploy_text.count("script: bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh") == 2
 assert "/opt/wotb-tx/deploy.incoming/tx/deploy.sh" not in deploy_text
+apply_step = next(
+    step for step in deploy["jobs"]["deploy_tx"]["steps"]
+    if step.get("name") == "Apply Keycloak PostgreSQL OpenTofu on TX localhost"
+)
+apply_envs = apply_step["with"]["envs"]
+assert "TF_VAR_" not in apply_envs, "SSH envs must carry ordinary runtime names, not TF_VAR names"
+for runtime_name in (
+    "KC_POSTGRES_ADMIN_USER",
+    "KC_POSTGRES_ADMIN_PASSWORD",
+    "KC_DB_PASSWORD",
+    "KC_DB_PASSWORD_VERSION",
+):
+    assert runtime_name in apply_envs, f"OpenTofu SSH step must forward {runtime_name}"
+apply_script = apply_step["with"]["script"]
+for export_line in (
+    'export TF_VAR_postgresql_admin_username="$KC_POSTGRES_ADMIN_USER"',
+    'export TF_VAR_postgresql_admin_password="$KC_POSTGRES_ADMIN_PASSWORD"',
+    'export TF_VAR_keycloak_role_password="$KC_DB_PASSWORD"',
+    'export TF_VAR_keycloak_role_password_version="$KC_DB_PASSWORD_VERSION"',
+):
+    assert export_line in apply_script, f"OpenTofu SSH script must export {export_line}"
+    assert apply_script.index(export_line) < apply_script.index("tofu init -reconfigure -input=false"), (
+        f"OpenTofu SSH script must export {export_line} before tofu starts"
+    )
+for secret_name in ("KC_POSTGRES_ADMIN_PASSWORD", "KC_DB_PASSWORD"):
+    assert all(
+        secret_name not in line
+        for line in apply_script.splitlines()
+        if "echo" in line or "printf" in line
+    ), f"OpenTofu SSH script must not print {secret_name}"
+assert "tfvars" not in deploy_text.lower(), "OpenTofu deploy must not create or reference tfvars files"
 for name in (
     "KC_POSTGRES_ADMIN_USER",
     "KC_POSTGRES_ADMIN_PASSWORD",
@@ -64,8 +95,10 @@ assert "tofu apply" not in workflow_text
 assert "postgres-keycloak-tofu.env" not in workflow_text
 assert "command -v tofu >/dev/null 2>&1" in deploy_text
 assert deploy_text.count("tofu apply -input=false -auto-approve plan.tfplan") == 1
-assert 'TF_VAR_postgresql_admin_username: kc_admin' in deploy_text
-assert 'TF_VAR_keycloak_role_password_version' in deploy_text
+assert apply_step["env"]["KC_POSTGRES_ADMIN_USER"] == "kc_admin"
+assert apply_step["env"]["KC_POSTGRES_ADMIN_PASSWORD"] == "${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}"
+assert apply_step["env"]["KC_DB_PASSWORD"] == "${{ secrets.TX_KC_DB_PASSWORD }}"
+assert apply_step["env"]["KC_DB_PASSWORD_VERSION"] == "${{ vars.TX_KC_DB_PASSWORD_VERSION || '1' }}"
 assert "remote-exec" not in workflow_text
 assert "ssh -L" not in workflow_text
 
