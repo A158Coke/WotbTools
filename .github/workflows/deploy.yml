@@ -1,6 +1,6 @@
 name: Deploy
 # 生产 Grafana MCP 已下线（2026-08-11）：不再传递 GRAFANA_MCP_TOKEN。
-run-name: Deploy ${{ github.event.workflow_run.head_sha }} by @${{ github.actor }}
+run-name: Deploy ${{ github.event_name == 'workflow_dispatch' && format('manual TX {0}', github.run_number) || github.event.workflow_run.head_sha }} by @${{ github.actor }}
 
 on:
   workflow_run:
@@ -8,6 +8,13 @@ on:
       - Build
     types:
       - completed
+  workflow_dispatch:
+    inputs:
+      tx_services:
+        description: Comma-separated TX services to deploy
+        required: true
+        default: keycloak-postgres,keycloak,wotb-frontend,caddy
+        type: string
 
 permissions:
   contents: read
@@ -20,8 +27,9 @@ concurrency:
 jobs:
   changes:
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main'
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -43,8 +51,9 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.event.workflow_run.head_sha }}
       - name: Download triggering Build manifest
+        if: github.event_name == 'workflow_run'
         uses: actions/download-artifact@v5
         with:
           name: deployment-manifest
@@ -56,9 +65,51 @@ jobs:
         id: manifest
         env:
           EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          TX_SERVICES_INPUT: ${{ inputs.tx_services }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            if [ "${GITHUB_REF:-}" != refs/heads/main ]; then
+              echo "::error::Manual TX deploy must be dispatched from the main branch." >&2
+              exit 1
+            fi
+            git fetch origin main --depth=1
+            source_sha="$(git rev-parse HEAD)"
+            main_sha="$(git rev-parse origin/main)"
+            if [ "$source_sha" != "$main_sha" ]; then
+              echo "::error::Manual TX deploy must run from the current main HEAD." >&2
+              exit 1
+            fi
+            python3 - "$TX_SERVICES_INPUT" "$main_sha" "$GITHUB_RUN_NUMBER" <<'PY' >> "$GITHUB_OUTPUT"
+            import sys
+
+            requested = [service.strip() for service in sys.argv[1].split(",")]
+            allowed = {"keycloak-postgres", "keycloak", "wotb-frontend", "caddy"}
+            if not requested or any(not service or service not in allowed for service in requested):
+                raise SystemExit("tx_services must contain only supported TX services")
+            if len(requested) != len(set(requested)):
+                raise SystemExit("tx_services must not contain duplicate services")
+            requested = [
+                service
+                for service in ("keycloak-postgres", "keycloak", "wotb-frontend", "caddy")
+                if service in requested
+            ]
+            commit_sha = sys.argv[2]
+            print(f"release_sha={commit_sha}")
+            print(f"release_tag=sha-{commit_sha[:12]}")
+            print(f"build_run_number={sys.argv[3]}")
+            print("backend_migration_max_version=")
+            print(f"deploy_services={','.join(requested)}")
+            image_services = [service for service in requested if service in {"keycloak", "wotb-frontend"}]
+            print(f"image_services={','.join(image_services)}")
+            print("yecao_services=")
+            print(f"tx_services={','.join(requested)}")
+            print("yecao_image_services=")
+            print(f"tx_image_services={','.join(image_services)}")
+            print("deploy_display_name=Manual TX")
+            PY
+            exit 0
           manifest_path=release-artifact/deployment-manifest.json
           [ -f "$manifest_path" ] || {
             echo "deployment manifest artifact is missing" >&2
