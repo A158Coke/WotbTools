@@ -34,7 +34,7 @@ description: >
 ### Phase 0 — 盘点现状（只读）
 
 1. 运行 `python .agents/skills/keycloak-upgrade/scripts/check_versions.py` 列出所有版本引用并确认同步。
-2. 记录：镜像 tag、两个 pom 的 `keycloak.version`、frontend `keycloak-js`（`package.json` + `package-lock.json`）、后端 admin REST 调用点、`docker/keycloak/wotbtools-realm.json`。
+2. 记录：镜像 tag、两个 pom 的 `keycloak.version`、frontend `keycloak-js`（`package.json` + `package-lock.json`）、后端 admin REST 调用点、`infra/tofu/keycloak/` 的 realm 声明。
 3. 确认目标版本与升级路径（patch/minor/major），必要时查官方 [endoflife / release info](https://endoflife.date/keycloak)。
 
 ### Phase 1 — 官方资料审查
@@ -58,12 +58,12 @@ description: >
 - `docker/Dockerfile.keycloak`：FROM tag 与 pom 对齐（镜像 tag 用固定版本，不用 `latest`）。
 - frontend：`keycloak-js` 26.2+ 独立发版、向后兼容；major 升级时同步 `package.json` + `package-lock.json`（`npm install`）。
 - 后端：`KeycloakAdminUserService` 等调用 Admin REST API 的位置，核对目标版本响应结构与弃用端点。
-- realm：`wotbtools-realm.json` 字段兼容性；dev 用 `--import-realm` 启动验证，注意启动日志里的 import warning。
+- realm：`infra/tofu/keycloak/` resource schema 兼容性；realm 通过 OpenTofu reconciliation 验证，不恢复 JSON import 路径。
 - 环境变量不丢：`WG_APPLICATION_ID`、`KC_*`、`KEYCLOAK_*`（生产走 GitHub Secrets → deploy.yml）。
 
 ### Phase 4 — 本地构建与冒烟
 
-1. `docker compose build keycloak`（或全栈 `docker/online` 八服务 up），确认 `kc.sh build` 成功、两个 jar 进 `/opt/keycloak/providers`。
+1. 运行 `deploy/test-keycloak-runtime.sh` 确认 `kc.sh build` 成功、两个 jar 进 `/opt/keycloak/providers/`；需要 realm 集成验证时运行 `deploy/test-keycloak-tofu.sh`。
 2. 冒烟：`/realms/wotbtools/.well-known/openid-configuration` 正常；登录页出现 QQ + 三个 Wargaming IdP 按钮；三区服登录闭环；JWT 含 `wotb_region` / `wotb_account_id` / `wotb_nickname` / `wotb_verified`。
 3. 回归后端：`mvn -s settings.xml test`；前端 `npm run build`（若 keycloak-js 变化）。
 
@@ -71,7 +71,7 @@ description: >
 
 - 备份：先跑 `deploy` 的 wotb + keycloak 数据库备份，确认备份可读。
 - 固定镜像 tag（SHA 或精确版本）；单实例部署先起新容器验证 health 再停旧容器。
-- 升级后核对 Admin Console：三个 WG IdP 实例（alias `wargaming-asia/eu/na`、region、enabled）与 QQ IdP、4 个 protocol mapper、defaultRoles。
+- 升级后核对 OpenTofu plan/apply：三个 WG IdP 实例（alias `wargaming-asia/eu/na`、region、enabled）与 QQ IdP、5 个 protocol mapper、defaultRoles。
 - 保留回滚预案（见 [references/edge-cases.md](references/edge-cases.md) 的「回滚」节）。
 
 ### Phase 6 — 收尾
@@ -87,7 +87,7 @@ description: >
 - [ ] major 升级的官方支持路径与逐步升级需求
 - [ ] 数据库自动迁移 + 不支持降级 + 备份/恢复脚本可用
 - [ ] 重启导致内存会话丢失 → 用户需重新登录
-- [ ] `--import-realm` 在新版本上的 warning/失败；生产 realm 为手工配置，IdP 实例与 mapper 需人工核对
+- [ ] OpenTofu realm reconciliation 与 provider schema 的兼容性；禁止恢复 realm JSON 或 `--import-realm`
 - [ ] redirect URI 通配符收紧（26.6.3+ hostname 通配符不再接受）
 - [ ] outgoing HTTP 默认不再跟随重定向（26.6.1+）对 WG/QQ API 调用是否成立
 - [ ] 扩展事务约束（26.6.3+ 事务只能 start 一次）与 provider 代码

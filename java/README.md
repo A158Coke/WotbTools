@@ -16,7 +16,7 @@
 | `wotb-web`  | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087`（管理端口 `8088`，Actuator/Prometheus） |
 | `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
 | `keycloak-wargaming-provider` | Keycloak 26 自定义 Identity Provider：Wargaming.net 登录 SPI（Provider ID `wargaming`，region 配置 ASIA/EU/NA → 官方 host 白名单：认证 `api.worldoftanks.*/wot/auth/`、账号 `api.wotblitz.*/wotb/account/`；ASIA/EU/NA 三个实例） |
-| `docker/online/` | `docker-compose.yml`：`build:` 从源码编译运行九服务（postgres + keycloak + backend + frontend + prometheus + loki + alloy + grafana + node-exporter） |
+| `deploy/test-keycloak-tofu.sh` | 独立 disposable PostgreSQL + Keycloak + local OpenTofu state 的 Keycloak realm 集成 smoke |
 
 > 车辆库 `common/tankopedia-tier{7,8,9,10}.json` 与地图名映射 `common/map_names.json`（仓库根的共享目录）都会在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放副本。
 
@@ -24,16 +24,12 @@
 
 随机战个人复盘（ZH）在重建与特征可用时走 `TacticalReviewHarness`（双 Call）：Call #1 用双方阵容 + `common/tank_tactical_profiles.json` + 地图语义（`common/map-semantics/*.semantic.json`，由 `map-semanticizer` 从 Wot Blitz 客户端 SC2 + heightmap 解码生成）建立赛前战略基线（不含任何战斗结果），Backend Evidence Skills（HpMomentum / EngagementTrade / LocalSupport / DeathCascade / Route / CriticalWindow）输出确定性战术证据，Call #2 按 Priority Bookends 对照「预期 vs 实际」输出复盘，输入含走位/区域时间线、逐次对炮明细、≤8 个关键决策窗口完整证据与口语化语气约束；随机战斗不评判 MVP/战犯。任何前提不满足自动降级旧单 Call 路径；EN/RU 保持旧路径。地图战术语义层（`MapTacticalSemanticsRegistry`）：按 `mapCodes` / `mapId` / token 边界别名查询，未收录地图明确 UNKNOWN（禁止编造区域语义）；语义数据 `displayName` 用 `map_names.json` 的 en 名（未收录回退 mapId），Call #1 语义段显示可读地图名 + 内部 code；语义 AREA 标注 `gridRegions`（GRID_REGION_1~9），与 `MapRegionResolver` 同一坐标约定（±250 m → 500×500 → 3×3），回放定位与地图语义共用同一九宫格；Call #1 有独立 45s stage 预算，Call #2 使用剩余预算并留安全余量，整体不超过 `AI_CALL_TIMEOUT_SEC`。**结构化 JSON 小调用关闭 thinking**：Call #1 与团队 Call #2 在请求层按各自 JSON contract 发送（Call #2 使用 `TeamAiReviewResult`；`TeamAutopsyService` 仅为 legacy compatibility path，不属于 production Team Review）；Call #2 生产结果在 SSE `done.teamReview` 一次性传输，前端负责标题和可选区块渲染。团队复盘（训练房/联赛，`TeamReplayAnalysisService`）与随机战一样**先执行 Call #1**（地图 + 双方阵容赛前先验，按视角队伍重标 TEAM_A=你的队伍 / TEAM_B=对方队伍 后注入团队 Prompt）；该 prior 只是战略基线/可能性空间，不是队伍实际计划，Call #2 只按可观察执行与确定性证据判断，Call #1 失败仅缺 prior 段不阻断复盘。团队输入含每名成员整场路线序列（九宫格）；production Team Review 不调用或追加 settlement-only Autopsy，Call #2 technical parser 只校验 JSON/schema/roster/episode references。
 
-## Web 版（Docker + PostgreSQL）
+## Web 版（本地开发）
 
-```bash
-cd ..\docker\online
-docker compose up -d --build
-```
-
-访问 http://localhost:8088 （健康检查 `http://localhost:8088/api/health`）。
-
-`docker/online/docker-compose.yml` 启动**九服务**（`postgres:18` + `keycloak` + `wotb-backend` + `wotb-frontend` + `prometheus` + `loki` + `alloy` + `grafana` + `node-exporter`），后端与前端分别构建 `docker/Dockerfile.backend` 和 `docker/Dockerfile.frontend`，观测五件套使用固定版本镜像。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端连接 PostgreSQL 并由 Flyway 管理 schema。本地启动观测栈需在环境变量或 `docker/online/.env` 提供 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`（compose required 语法校验）。
+仓库不再提供本地完整 Docker Compose 开发入口。后端和前端分别按本 README 的 Java
+与 Node 说明启动；Keycloak realm 的完整配置链由
+`deploy/test-keycloak-tofu.sh` 在 disposable PostgreSQL、Keycloak 与 local OpenTofu
+state 中独立验证，不访问 production state。
 
 赞助页从 `/sponsor-config.json` 读取运行时配置。生产配置保存在 `/opt/wotb/config/sponsor-config.json`，二维码保存在 `/opt/wotb/config/sponsor/`，以只读方式挂载到前端容器；仓库仅提供 disabled 示例配置，不包含个人收款二维码。
 
@@ -53,14 +49,14 @@ docker compose up -d --build
 
 ## 本地开发
 
-后端需要 JDK 25；完整运行使用九服务开发环境，确保 PostgreSQL、Keycloak 与必要环境变量同时存在。
+后端需要 JDK 25；本地完整 Docker Compose 入口已退役。需要验证 Keycloak realm 时运行
+`deploy/test-keycloak-tofu.sh`，它自己启动 disposable PostgreSQL/Keycloak 并使用 local
+OpenTofu state；不需要 production secrets。
 
 ```bash
 cd java
 set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1
 mvn -s settings.xml test
-cd ../docker/online
-docker compose up -d --build
 ```
 
 前端：
@@ -214,7 +210,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 - `PUT /api/users/wotb-account/from-login` — WG 登录后的幂等同步（无 body，只读 JWT）；Profile 不存在时原子创建 WARGAMING、空 Profile 升级为 WARGAMING、同 (region, account_id) 刷新官方昵称（不刷新 verified_at）。已绑定 CN 覆盖或跨区服返回 409 `PROFILE_REGION_MISMATCH`、换账号返回 409 `WOTB_ACCOUNT_MISMATCH`、账号被他人占用返回 409 `WOTB_ACCOUNT_ALREADY_USED`、Claims 缺失返回 400 `WOTB_CLAIMS_INVALID`。
 - `DELETE /api/users/wotb-account` — 解绑；WARGAMING source 资料返回只读错误（ASIA 为 400 `ASIA_PROFILE_READONLY`，EU/NA 为 400 `WARGAMING_PROFILE_READONLY`）。
 
-资料 DTO 含 `wotbAccountSource`（MANUAL/WARGAMING）与 `wotbAccountVerifiedAt`（ISO 时间或 null）。JWT claims 由 Keycloak realm 的 4 个 protocol mapper 提供（`region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified(boolean)`）；WG 登录所需 `WG_APPLICATION_ID` 仅注入 Keycloak，backend 不再调用 WG stats。详见 [docs/auth/wargaming-asia-login.md](../docs/auth/wargaming-asia-login.md) 与部署手册 [docs/auth/wargaming-asia-deployment.md](../docs/auth/wargaming-asia-deployment.md)。
+资料 DTO 含 `wotbAccountSource`（MANUAL/WARGAMING）与 `wotbAccountVerifiedAt`（ISO 时间或 null）。JWT claims 由 Keycloak realm 的 5 个 protocol mapper 提供（另含 `displayName→displayName`；业务 claims 为 `region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified(boolean)`）；WG 登录所需 `WG_APPLICATION_ID` 仅注入 Keycloak，backend 不再调用 WG stats。详见 [docs/auth/wargaming-asia-login.md](../docs/auth/wargaming-asia-login.md) 与部署手册 [docs/auth/wargaming-asia-deployment.md](../docs/auth/wargaming-asia-deployment.md)。
 
 ### 管理后台：用户管理（`/api/admin/users/**`，需 `wotbtools-admin`）
 

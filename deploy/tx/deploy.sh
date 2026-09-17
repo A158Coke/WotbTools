@@ -9,7 +9,8 @@ readonly LIVE_DEPLOY_DIR="$WOTB_DIR/deploy"
 readonly LIVE_COMPOSE="$LIVE_DEPLOY_DIR/docker-compose.yml"
 readonly METADATA_FILE="$WOTB_DIR/tx-production-release.json"
 readonly TX_RUNTIME_ROOT="${TX_RUNTIME_ROOT:-$WOTB_DIR}"
-readonly TOFU_PROVISION_MARKER="${WOTB_TX_TOFU_PROVISION_MARKER:-$WOTB_DIR/keycloak-postgres.tofu-provisioned}"
+readonly TOFU_PROVISION_MARKER="${WOTB_TX_TOFU_PROVISION_MARKER:-$WOTB_DIR/keycloak.tofu-provisioned}"
+readonly BOOTSTRAP_KEYCLOAK="${WOTB_TX_BOOTSTRAP_KEYCLOAK:-0}"
 readonly BACKEND_UPSTREAM_VALUE="${TX_BACKEND_UPSTREAM:-http://10.20.0.2:8087}"
 readonly DEPLOY_SERVICES_RAW="${WOTB_DEPLOY_SERVICES:-}"
 readonly DEPLOY_IMAGE_SERVICES_RAW="${WOTB_DEPLOY_IMAGE_SERVICES:-}"
@@ -52,9 +53,13 @@ require_tofu_provisioning() {
   if ! is_selected all && ! is_selected keycloak && ! is_selected wotb-frontend; then
     return
   fi
+  if [ "$BOOTSTRAP_KEYCLOAK" = 1 ] && is_selected keycloak && ! is_selected wotb-frontend \
+    && [ "${#DEPLOY_SERVICES[@]}" -eq 1 ]; then
+    return
+  fi
   [ -f "$TOFU_PROVISION_MARKER" ] \
     || die "TX Keycloak database is not provisioned; run TX-local OpenTofu after the PostgreSQL bootstrap before starting Keycloak or frontend."
-  grep -Fxq 'tx-local-opentofu' "$TOFU_PROVISION_MARKER" \
+  grep -Fxq 'tx-local-opentofu-keycloak' "$TOFU_PROVISION_MARKER" \
     || die "TX Keycloak OpenTofu provision marker is invalid; refusing to start application services."
 }
 
@@ -121,6 +126,10 @@ validate_inputs() {
       *) die "unsupported TX deployment service: $service" ;;
     esac
   done
+  case "$BOOTSTRAP_KEYCLOAK" in
+    0|1) ;;
+    *) die "WOTB_TX_BOOTSTRAP_KEYCLOAK must be 0 or 1." ;;
+  esac
   for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
     case "$service" in
       "") ;;
@@ -262,7 +271,8 @@ pull_images() {
   if is_selected all || is_selected wotb-frontend; then
     services+=(wotb-frontend)
   fi
-  if is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected caddy; then
+  if [ "$BOOTSTRAP_KEYCLOAK" != 1 ] && \
+    (is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected caddy); then
     services+=(caddy)
   fi
   docker compose -f "$EFFECTIVE_COMPOSE" pull "${services[@]}"
@@ -391,7 +401,11 @@ wait_for_database() {
 blocking_health() {
   wait_for_database || return 1
   if is_selected all || is_selected keycloak || is_selected wotb-frontend; then
-    wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || return 1
+    if [ "$BOOTSTRAP_KEYCLOAK" = 1 ] && is_selected keycloak && ! is_selected wotb-frontend; then
+      wait_for_probe keycloak http://keycloak:8080/realms/master/.well-known/openid-configuration || return 1
+    else
+      wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || return 1
+    fi
   fi
   if is_selected all || is_selected wotb-frontend; then
     # This direct probe proves TX -> WireGuard -> Yecao's published backend
@@ -472,6 +486,19 @@ assert not any("0.0.0.0" in p or p.startswith("5432:") or "::" in p for p in val
     failures=1
   fi
 
+  if python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+ports = [str(p) for p in data["services"]["keycloak"].get("ports", [])]
+assert any("127.0.0.1" in p and "18080" in p and "8080" in p for p in ports), ports
+assert not any("0.0.0.0" in p or p.startswith("8080:") or "::" in p for p in ports)
+' <<< "$compose_json"; then
+    echo "keycloak-admin-loopback: PASS"
+  else
+    echo "keycloak-admin-loopback: FAIL (Admin API must bind to 127.0.0.1:18080:8080 only)" >&2
+    failures=1
+  fi
+
   health="$(docker compose -f "$LIVE_COMPOSE" ps --format '{{.Health}}' keycloak-postgres 2>/dev/null || true)"
   if [ "$health" = healthy ] && docker compose -f "$LIVE_COMPOSE" exec -T keycloak-postgres \
       pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
@@ -498,11 +525,10 @@ assert not any("0.0.0.0" in p or p.startswith("5432:") or "::" in p for p in val
     fi
   done
 
-  if docker compose -f "$LIVE_COMPOSE" exec -T keycloak sh -c \
-      'grep -Fq '"'"'"realm": "wotbtools"'"'"' /opt/keycloak/data/import/wotbtools-realm.json && grep -Fq '"'"'"clientId": "wotbtools-web"'"'"' /opt/keycloak/data/import/wotbtools-realm.json'; then
-    echo "wotbtools-web-baseline: PASS"
+  if docker compose -f "$LIVE_COMPOSE" exec -T keycloak test ! -e /opt/keycloak/data/import/wotbtools-realm.json; then
+    echo "keycloak-realm-import: PASS (OpenTofu owns realm configuration)"
   else
-    echo "wotbtools-web-baseline: FAIL" >&2
+    echo "keycloak-realm-import: FAIL (legacy realm import must be absent)" >&2
     failures=1
   fi
 
@@ -542,21 +568,15 @@ PY
     echo "yecao-backend-wireguard-bind: FAIL (Yecao compose or deployed contract is unavailable)" >&2
     failures=1
   fi
-  if [ -n "$source_root" ] && [ -f "$source_root/docker/keycloak/wotbtools-realm.json" ]; then
-    if grep -Fq '"realm": "wotbtools"' "$source_root/docker/keycloak/wotbtools-realm.json" \
-      && grep -Fq '"clientId": "wotbtools-web"' "$source_root/docker/keycloak/wotbtools-realm.json"; then
-      echo "realm-client-source-baseline: PASS"
-    else
-      echo "realm-client-source-baseline: FAIL" >&2
-      failures=1
-    fi
+  if [ -n "$source_root" ] && [ -f "$source_root/infra/tofu/keycloak/realm.tf" ]; then
+    echo "realm-client-source-of-truth: PASS (Keycloak OpenTofu root present)"
   fi
   # The TX deploy helper has no DNS or Yecao retirement command; this is also
   # enforced by the static TX runtime and pre-cutover contract tests.
   echo "cutover-safety-boundary: PASS"
 
   echo "QQ_IDP_STATUS=idp-qq=WAITING_EXTERNAL"
-  echo "QQ_FALLBACK_STATUS=juhe-qq=PRODUCTION_REQUIRED"
+  echo "QQ_FALLBACK_STATUS=juhe-qq=NOT_CONFIGURED_IN_TX"
   if [ "$failures" -ne 0 ]; then
     echo "PRE_CUTOVER_NOT_READY" >&2
     return 1

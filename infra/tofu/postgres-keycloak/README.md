@@ -60,8 +60,8 @@ loopback port. Missing injected variables, unavailable local port, invalid
 backend authentication, or unsafe plan fails closed; the workflow does not fall
 back to a runner-side database connection.
 
-After the successful TX-local apply in `deploy.yml`, the deployment writes the root-only
-`/opt/wotb-tx/keycloak-postgres.tofu-provisioned` marker. The TX application
+After the successful TX-local Keycloak OpenTofu apply in `deploy.yml`, the deployment
+writes the root-only `/opt/wotb-tx/keycloak.tofu-provisioned` marker. The TX application
 deployment refuses to start Keycloak or the frontend without that exact marker.
 If an operator intentionally resets the Keycloak PostgreSQL volume, they must
 remove the marker as part of that separately approved bootstrap procedure.

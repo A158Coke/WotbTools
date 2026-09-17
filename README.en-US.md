@@ -46,7 +46,7 @@ Replay → **authoritative settlement** (`battle_results.dat`: damage / received
 
 ## Quick Start
 
-- Local run / build: see [java/README.md](java/README.md) (local eight-service stack via `docker/online/`)
+- Local run / build: see [java/README.md](java/README.md); Keycloak realm configuration is verified by the disposable smoke test
 - Testing and quality gates: see [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
 - Updating the tank database: `cd common/python && python update_tankopedia.py` — generates the four per-tier files (see DEVELOPER_GUIDE)
 

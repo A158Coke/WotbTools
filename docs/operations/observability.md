@@ -146,29 +146,17 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 | `GRAFANA_ROOT_URL` | 否，默认 `https://monitor.wotbtools.com` | Grafana 对外根地址 |
 | `OBSERVABILITY_ENVIRONMENT` | 否，默认 `production` | 环境标记 |
 
-本地启动观测栈时在 `docker/online/.env`（或环境变量）提供前两项；否则 `docker compose up` 会因 required 语法直接报错（符合"必填 Secret 用 required 语法"要求）。密码通过环境变量注入 Grafana 容器，**不出现在命令行参数**中。
+生产观测栈在部署环境中提供前两项；密码通过环境变量注入 Grafana 容器，**不出现在命令行参数**中。
 
 ---
 
 ## 4. 启动 / 停止
 
-### 本地（docker/online）
+### 本地验证
 
-```powershell
-# 先设置必填变量（或用 docker/online/.env）
-$env:GRAFANA_ADMIN_USER="admin"
-$env:GRAFANA_ADMIN_PASSWORD="<强密码>"
-
-# 启动（含观测栈）
-cd docker/online
-docker compose up -d --build
-
-# 校验渲染后的配置
-docker compose config --quiet
-
-# 单独查看观测栈状态
-docker compose ps prometheus loki alloy grafana node-exporter
-```
+仓库不再提供本地完整 Docker Compose 观测环境。Prometheus/Loki/Alloy/Grafana 的配置、
+dashboard 与运行时链路由 CI 的独立 runtime smoke 验证；生产运行按下方 production
+流程执行。
 
 ### 生产（CI 自动）
 
@@ -216,7 +204,7 @@ database restore。backend target 的 migration ceiling 低于 live Flyway schem
 ### 停止观测系统（不影响主业务）
 
 ```bash
-cd /opt/wotb   # 或本地 docker/online
+cd /opt/wotb
 docker compose stop prometheus loki alloy grafana node-exporter
 ```
 
@@ -246,7 +234,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 
 ### CI 实际验证项（PR 时自动执行，见 `.github/workflows/ci.yml` `observability_config` job）
 
-> **CI 验证边界**：静态检查覆盖「本地」`docker/online/docker-compose.yml`、生产观测配置语法/结构、
+> **CI 验证边界**：静态检查覆盖生产观测配置语法/结构、
 > dashboard 合同与端口安全；runtime smoke 会实际启动最小 Prometheus/Loki/Grafana、Alpine emitter，
 > 并验证 Alloy→Loki ownership、Grafana provisioning/auth；独立的 Keycloak runtime smoke 会真实构建并启动
 > optimized PostgreSQL Keycloak，确认应用 OIDC discovery、无 management health/metrics 配置和无启动时 augmentation。
@@ -287,7 +275,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 
 ### 需生产环境手动验证（CI 无法覆盖）
 
-- 完整整栈启动（业务 + 观测 9 容器，含生产 `deploy.yml` heredoc 生成的 compose）
+- 生产完整整栈启动（业务 + 观测容器，含 `deploy.yml` heredoc 生成的 production Compose）
 - Alloy 实际采集 Backend / Keycloak 日志并推送到 Loki、`requestId` 与认证关键词可过滤
 - `/actuator/prometheus` 与 node-exporter `:9100` 实际输出（**指标名真实存在**，与 Dashboard 面板匹配——CI 只检查配置结构，无法验证指标）
 - Volume 重启后数据持久化（7 天保留）
