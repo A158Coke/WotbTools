@@ -29,7 +29,6 @@ root_text = "\n".join(path.read_text(encoding="utf-8") for path in tofu_root.glo
 deploy_text = (root / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
 tx_compose = (root / "deploy/tx/docker-compose.yml").read_text(encoding="utf-8")
 keycloak_dockerfile = (root / "docker/Dockerfile.keycloak").read_text(encoding="utf-8")
-online_compose = (root / "docker/online/docker-compose.yml").read_text(encoding="utf-8")
 tx_deploy = (root / "deploy/tx/deploy.sh").read_text(encoding="utf-8")
 tofu_script = (root / "deploy/tx/keycloak-tofu.sh").read_text(encoding="utf-8")
 workflow = yaml.safe_load(deploy_text)
@@ -70,7 +69,7 @@ assert 'alias        = "wargaming-na"' in root_text
 assert 'alias                    = "qq"' not in root_text
 assert 'alias                    = "juhe-qq"' not in root_text
 
-for path_text in (keycloak_dockerfile, tx_compose, online_compose):
+for path_text in (keycloak_dockerfile, tx_compose):
     assert "--import-realm" not in path_text
     assert "wotbtools-realm.json" not in path_text
 assert '"127.0.0.1:18080:8080"' in tx_compose

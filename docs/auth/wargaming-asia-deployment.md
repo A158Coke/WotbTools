@@ -16,7 +16,7 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 - 获取：Wargaming.net Developer Portal → My Applications → 选择 WoT Blitz 应用 → Application ID。
 - 注入：仅 Keycloak 容器环境变量 `WG_APPLICATION_ID`（只维护一个 secret）。Keycloak 用于 WG 登录；backend 不调用 WG stats，也不需要该变量。
   - 生产：GitHub Secrets `WG_APPLICATION_ID`（`deploy.yml` 传给部署脚本，production compose 写入 keycloak service environment）。
-  - 本地：`docker/online/.env` 设置 `WG_APPLICATION_ID=...`。
+  - 本地完整 Compose 入口已退役；本地 Keycloak 行为由独立 disposable smoke 覆盖，不要求真实 Wargaming application ID。
 - 禁止把 application ID 写进 realm JSON、Git、前端、IdP alias 或浏览器参数。
 - 缺失行为（决策 D14）：容器正常启动；玩家点击 Wargaming 登录时 provider 返回"Wargaming login not configured"；百场统一人工审核链路不受影响。
 
@@ -27,8 +27,11 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 步骤（对 ASIA / EU / NA 各执行一次）：
 
 1. 在 fresh realm 的 OpenTofu apply 后，进入 `auth.wotbtools.com/admin` → Realm `wotbtools` → Identity Providers **只读核对**结果。
-2. Provider type 应为 **`Wargaming.net`**（自定义 SPI，Provider ID `wargaming`）。
-   > ⚠️ 如果配置界面出现 Client ID / Client Secret / Authorization URL / Token URL 字段，说明选成了标准 OIDC Provider，而不是本项目的自定义 Wargaming.net Provider。不要在 Console 手工创建或保存 IdP。
+2. Provider type 应为 **`Wargaming.net`**（自定义 SPI，Provider ID `wargaming`）。由于资源由
+   Terraform 的 OIDC resource adapter 管理，representation 中出现 Client ID / Client Secret /
+   Authorization URL / Token URL 等 placeholder OIDC fields 是预期的 schema 适配结果，**不代表**
+   provider 类型配置错误。真正的类型判断以 `provider_id=wargaming` custom SPI adapter 为准；
+   不要把它替换成标准 OIDC provider，也不要在 Console 手工创建或保存 IdP。
 3. 按下方表格核对 OpenTofu 已声明的 representation；发现漂移时回到 `infra/tofu/keycloak/identity-providers.tf` 修复并重新 apply。
 
 | 配置项 | ASIA | EU | NA |
@@ -53,7 +56,10 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 - 三个 alias 决定各自的回调路径；前端未登录时直接跳转 Keycloak 登录页，由 Keycloak 按 IdP Display name 显示按钮（`Wargaming.net Asia` / `Europe` / `North America` + QQ），前端不再硬编码 alias。
 - 重复登录刷新由 Provider 的 `updateBrokeredUser` 直接实现（决策 D11），与 Sync Mode 无关；Sync mode 仍按表格设 FORCE。
 - **只使用一个 Keycloak Client：`wotbtools-web`**。不要创建 `wotbtools-asia` / `wotbtools-eu` / `wotbtools-na`。
-- 自定义 Provider **不使用** Client ID / Client Secret / Authorization URL / Token URL；这些是 OIDC adapter 为满足 provider schema 而写入的非运行时占位字段，实际 Wargaming 凭据仍只由 `WG_APPLICATION_ID` runtime 注入。出现可编辑的标准 OIDC 配置流程即表示配置错了类型。
+- 自定义 Provider 的真实运行类型是 `provider_id=wargaming` custom SPI adapter。Client ID / Client Secret /
+  Authorization URL / Token URL 是 OIDC adapter 为满足 Terraform resource schema 而写入的非运行时
+  placeholder fields；它们不表示标准 OIDC 配置错误，实际 Wargaming 凭据仍只由 `WG_APPLICATION_ID`
+  runtime 注入。
 
 > QQ IdP 与 `wotbtools-admin-api` client 同样是新 realm 的运行时配置；凭据不进入 realm JSON。QQ provider 的已批准源码、版本与配置前置条件见 [keycloak-tx-bootstrap.md](keycloak-tx-bootstrap.md)。
 

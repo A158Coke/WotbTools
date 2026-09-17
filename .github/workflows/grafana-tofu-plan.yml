@@ -6,7 +6,6 @@ on:
       - "infra/tofu/grafana/**"
       - "deploy/observability/grafana/**"
       - "deploy/docker-compose.prod.yml"
-      - "docker/online/docker-compose.yml"
       - "deploy/test-grafana-runtime.sh"
       - ".github/workflows/grafana-tofu-plan.yml"
       - ".github/workflows/grafana-tofu-apply.yml"

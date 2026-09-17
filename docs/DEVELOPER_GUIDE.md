@@ -54,11 +54,12 @@
 # cd frontend && npm run dev:production-remote
 # 说明与验收边界见 docs/frontend/local-production-dev.md；普通 npm run dev 仍代理 localhost:8087。
 
-# 本地完整开发环境
-cd docker/online && docker compose up -d --build
+# Keycloak realm 集成验证（独立 disposable PostgreSQL + Keycloak + local OpenTofu state）
+bash deploy/test-keycloak-tofu.sh
 ```
 
 后端没有“无数据库” profile。测试 Keycloak Admin 写操作时需要 `wotbtools-admin-api` 服务账号与 `KEYCLOAK_ADMIN_CLIENT_SECRET`。
+仓库不再提供本地完整 Docker Compose 开发环境；上述 smoke 不访问 production COS state，也不要求 production secrets。
 
 Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backend 不再调用 WG stats，也不再接收百场 WG 自动认证；百场统一使用截图 + 5 replay 人工流程。
 
@@ -100,7 +101,7 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 │   └── homepage/
 │       ├── sponsor.html
 │       └── sponsor-config.js
-├── docker/                     # backend/frontend/keycloak 镜像 + online compose
+├── docker/                     # backend/frontend/keycloak 镜像与 Keycloak 主题
 ├── deploy/                     # production compose/nginx/备份与回滚
 ├── docs/                       # 架构、功能、参考、运维文档
 └── .agents/                    # Agent 规则与 skills
