@@ -13,6 +13,7 @@ build_path = Path(sys.argv[1])
 deploy_path = Path(sys.argv[2])
 build_text = build_path.read_text(encoding="utf-8")
 deploy_text = deploy_path.read_text(encoding="utf-8")
+tx_deploy_text = (deploy_path.parent.parent.parent / "deploy/tx/deploy.sh").read_text(encoding="utf-8")
 build = yaml.safe_load(build_text)
 deploy = yaml.safe_load(deploy_text)
 
@@ -24,7 +25,7 @@ assert "paths:" not in build_text, "Build must create a no-op manifest for docs-
 assert build["name"] == "Build"
 assert deploy["name"] == "Deploy"
 assert build["run-name"] == "Build ${{ inputs.service || github.sha }} by @${{ github.actor }}"
-assert deploy["run-name"] == "Deploy ${{ github.event.workflow_run.head_sha }} by @${{ github.actor }}"
+assert "github.event.workflow_run.head_sha" in deploy["run-name"]
 assert "inputs.service || 'release'" not in build_text and "inputs.service || 'release'" not in deploy_text
 assert build_jobs["build_backend"]["name"] == "Build Backend"
 assert build_jobs["build_frontend"]["name"] == "Build Frontend"
@@ -72,7 +73,39 @@ assert deploy["jobs"]["deploy"]["name"] == "Deploy ${{ needs.changes.outputs.dep
 for label in ("Backend", "Frontend", "Keycloak", "Observability", "All"):
     assert f'"{label}"' in deploy_text, f"Deploy display mapping missing {label}"
 assert "' + '.join(labels)" in deploy_text, "Deploy display name must preserve module combinations"
-assert "workflow_dispatch:" not in deploy_text, "production Deploy must be workflow_run-only"
+deploy_on = deploy.get("on", deploy.get(True, {}))
+assert "workflow_run" in deploy_on, "Deploy must retain the automatic workflow_run trigger"
+assert "workflow_dispatch" in deploy_on, "Deploy must expose a manual trigger"
+manual_inputs = deploy_on["workflow_dispatch"]["inputs"]
+assert set(manual_inputs) == {"tx_services"}, "Manual deploy must not accept an arbitrary SHA"
+assert manual_inputs["tx_services"]["required"] is True
+assert manual_inputs["tx_services"]["type"] == "string"
+assert manual_inputs["tx_services"]["default"] == "keycloak-postgres,keycloak,wotb-frontend,caddy"
+manifest_step = next(step for step in deploy_changes["steps"] if step.get("id") == "manifest")
+manual_run = manifest_step["run"]
+assert "GITHUB_EVENT_NAME" in manual_run and "workflow_dispatch" in manual_run
+assert 'GITHUB_REF:-}" != refs/heads/main' in manual_run
+assert "git fetch origin main --depth=1" in manual_run
+assert 'source_sha="$(git rev-parse HEAD)"' in manual_run
+assert 'main_sha="$(git rev-parse origin/main)"' in manual_run
+assert 'if [ "$source_sha" != "$main_sha" ]; then' in manual_run
+assert "Manual TX deploy must run from the current main HEAD." in manual_run
+assert 'release_tag=sha-{commit_sha[:12]}' in manual_run
+assert 'yecao_services=' in manual_run and 'yecao_image_services=' in manual_run
+assert 'allowed = {"keycloak-postgres", "keycloak", "wotb-frontend", "caddy"}' in manual_run
+assert "all|keycloak-postgres|keycloak|wotb-frontend|caddy" in tx_deploy_text
+assert "is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected caddy" in tx_deploy_text
+assert "latest" not in manual_run.lower(), "Manual TX deploy must never use latest"
+assert "KC_POSTGRES_ADMIN_PASSWORD" not in manual_run and "KC_DB_PASSWORD" not in manual_run
+assert "github.event.inputs.release_sha" not in deploy_text
+assert "github.event.inputs.image_tag" not in deploy_text
+assert "yecao_services" in deploy_text
+assert "compose down" not in deploy_text.lower()
+assert not any(token in manual_run.lower() for token in ("nsupdate", "route53", "cloudflare", "dns cutover"))
+assert "export TF_VAR_postgresql_admin_username=\"$KC_POSTGRES_ADMIN_USER\"" in deploy_text
+assert "export TF_VAR_postgresql_admin_password=\"$KC_POSTGRES_ADMIN_PASSWORD\"" in deploy_text
+assert "export TF_VAR_keycloak_role_password=\"$KC_DB_PASSWORD\"" in deploy_text
+assert "export TF_VAR_keycloak_role_password_version=\"$KC_DB_PASSWORD_VERSION\"" in deploy_text
 assert "stale_release_guard" not in deploy_text
 assert "WOTB_STALE_RELEASE_GUARD" not in deploy_text
 assert "--allow-latest" not in deploy_text
@@ -116,6 +149,12 @@ assert deploy_text.count("script: bash /opt/wotb-tx/deploy.incoming/deploy/tx/de
 assert "/opt/wotb-tx/deploy.incoming/tx/deploy.sh" not in deploy_text
 assert "docker/build" not in deploy_text and "mvn test" not in deploy_text and "npm test" not in deploy_text
 assert "cancel-in-progress: false" in deploy_text
+tx_step_names = [step.get("name", "") for step in tx_job["steps"]]
+assert tx_step_names.index("Prepare TX deployment directory") < tx_step_names.index("Install TX deployment configuration")
+assert tx_step_names.index("Install TX deployment configuration") < tx_step_names.index("Bootstrap TX Keycloak PostgreSQL before OpenTofu")
+assert tx_step_names.index("Bootstrap TX Keycloak PostgreSQL before OpenTofu") < tx_step_names.index("Install Keycloak PostgreSQL OpenTofu root on TX")
+assert tx_step_names.index("Install Keycloak PostgreSQL OpenTofu root on TX") < tx_step_names.index("Apply Keycloak PostgreSQL OpenTofu on TX localhost")
+assert tx_step_names.index("Apply Keycloak PostgreSQL OpenTofu on TX localhost") < tx_step_names.index("Deploy exact TX services via SSH")
 
 print("Build/Deploy workflow release contract OK")
 PY

@@ -18,7 +18,7 @@ assert "if: always()" in ci
 assert re.search(r"^name: Build$", build, re.MULTILINE)
 assert re.search(r"^name: Deploy$", deploy, re.MULTILINE)
 assert "run-name: Build ${{ inputs.service || github.sha }} by @${{ github.actor }}" in build
-assert "run-name: Deploy ${{ github.event.workflow_run.head_sha }} by @${{ github.actor }}" in deploy
+assert "run-name: Deploy ${{ github.event_name == 'workflow_dispatch'" in deploy
 assert "inputs.service || 'release'" not in build and "inputs.service || 'release'" not in deploy
 assert "      - Build" in deploy
 assert "Release / Build" not in build and "Release / Deploy" not in deploy
@@ -28,7 +28,10 @@ assert "name: Build Keycloak" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-backend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest" in build
-assert "workflow_dispatch:" not in deploy, "production Deploy must be workflow_run-only"
+assert "workflow_run:" in deploy and "workflow_dispatch:" in deploy
+assert "tx_services:" in deploy
+assert "default: keycloak-postgres,keycloak,wotb-frontend,caddy" in deploy
+assert "github.event.inputs.release_sha" not in deploy
 assert "inputs.service" not in deploy
 assert "stale_release_guard" not in deploy
 assert "WOTB_STALE_RELEASE_GUARD" not in deploy
