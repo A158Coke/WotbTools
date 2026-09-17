@@ -108,8 +108,9 @@ jobs:
             print("yecao_image_services=")
             print(f"tx_image_services={','.join(image_services)}")
             print("deploy_display_name=Manual TX")
-            PY
+          PY
             exit 0
+          fi
           manifest_path=release-artifact/deployment-manifest.json
           [ -f "$manifest_path" ] || {
             echo "deployment manifest artifact is missing" >&2
