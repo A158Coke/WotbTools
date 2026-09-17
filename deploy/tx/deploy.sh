@@ -117,7 +117,7 @@ validate_inputs() {
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      all|keycloak-postgres|keycloak|wotb-frontend) ;;
+      all|keycloak-postgres|keycloak|wotb-frontend|caddy) ;;
       *) die "unsupported TX deployment service: $service" ;;
     esac
   done
@@ -262,7 +262,7 @@ pull_images() {
   if is_selected all || is_selected wotb-frontend; then
     services+=(wotb-frontend)
   fi
-  if is_selected all || is_selected keycloak || is_selected wotb-frontend; then
+  if is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected caddy; then
     services+=(caddy)
   fi
   docker compose -f "$EFFECTIVE_COMPOSE" pull "${services[@]}"
@@ -303,9 +303,8 @@ apply_services() {
       return 1
     fi
   done
-  # Caddy is not an independently selectable release service: it is recreated
-  # only when a proxied application changes, so its staged config becomes live.
-  if is_selected all || is_selected keycloak || is_selected wotb-frontend; then
+  # Recreate Caddy when its staged configuration or a proxied application changes.
+  if is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected caddy; then
     if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate caddy; then
       FAILED_SERVICE="caddy"
       return 1
