@@ -12,6 +12,7 @@
 - **Three-service immutable release identity bootstrap**：Frontend 现有 build metadata 的 canonical 字段明确为 `buildCommit`；Keycloak 镜像通过 frozen release SHA 构建参数注入 `WOTBTOOLS_BUILD_COMMIT`，启动时输出该 identity；Backend `StartupReleaseDiagnostics` 现输出 full build commit 及其对应 immutable `sha-<12>` image tag。本次路径组合会选择 backend/frontend/keycloak 三个 application images，使用同一 frozen release SHA 构建并写入 manifest；未修改认证行为、Deploy fail-closed、数据库或备份链路。
 
 ### Fixed
+- **TX OpenTofu secret environment forwarding**：TX OpenTofu apply 通过 SSH 传递普通运行时环境变量，并在远端 tofu 执行前显式导出 required `TF_VAR_*`；密码不写入 tfvars、state 或日志。
 - **Production deploy staging regressions**：修正 TX SCP 保留 `deploy/tx` 前缀后的清理与执行路径，并让 Yecao observability verifier 通过 child-process 环境传递变量，避免给 readonly `WOTB_DIR` 重新赋值。
 - **Health-probe stdout/stderr isolation**：normal Deploy 只将 deployment-owned curl 的 stdout 作为严格单一三位 HTTP status 解析；Docker Compose/curl stderr 独立捕获，用于失败时经脱敏后的 probe diagnostics。2xx 才通过，非 2xx、非严格状态输出或 compose/curl 退出失败均 fail-closed，并保持停止失败 affected application service 的既有策略。backend management-health configuration regression test keeps this repair on the backend selective-release path without redefining deploy control-plane changes as backend image inputs。
 - **Backend production health probe**：normal Deploy 的 backend core-health target 改为 dedicated management endpoint `http://wotb-backend:8088/actuator/health`，与 Spring `management.server.port` 和默认 actuator base path 一致；保持 deployment-owned probe、2xx-only 判定、fail-closed 与 failed-service stop 行为不变。
