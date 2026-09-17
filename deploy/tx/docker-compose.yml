@@ -44,7 +44,10 @@ services:
       KC_DB_USERNAME: ${KC_DB_USERNAME:?KC_DB_USERNAME is required}
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD is required}
       WG_APPLICATION_ID: ${WG_APPLICATION_ID:?WG_APPLICATION_ID is required}
-    command: start --optimized --import-realm --hostname=auth.wotbtools.com --hostname-strict=false --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
+    command: start --optimized --hostname=auth.wotbtools.com --hostname-strict=false --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
+    ports:
+      # OpenTofu runs on TX and manages Keycloak through this loopback-only port.
+      - "127.0.0.1:18080:8080"
     depends_on:
       keycloak-postgres:
         condition: service_healthy

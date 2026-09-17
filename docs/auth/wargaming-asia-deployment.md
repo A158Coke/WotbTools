@@ -1,6 +1,6 @@
 # Wargaming.net ASIA / EU / NA 登录 — 部署与手工配置（运维手册）
 
-本文档对应 [wargaming-asia-login.md](wargaming-asia-login.md) 第十八节的"仍需在 Keycloak Admin Console 或生产环境手工完成的配置"。代码提交后，以下步骤仍需人工在开发/生产环境执行一次。
+本文档对应 [wargaming-asia-login.md](wargaming-asia-login.md) 第十八节的配置说明。TX realm 的 IdP、client、mapper、role 由 `infra/tofu/keycloak` 在 TX localhost 受控执行；本文保留运行时凭据、回调与人工登录验收说明。
 
 ## 1. 准备 `WG_APPLICATION_ID`
 
@@ -16,20 +16,23 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 - 获取：Wargaming.net Developer Portal → My Applications → 选择 WoT Blitz 应用 → Application ID。
 - 注入：仅 Keycloak 容器环境变量 `WG_APPLICATION_ID`（只维护一个 secret）。Keycloak 用于 WG 登录；backend 不调用 WG stats，也不需要该变量。
   - 生产：GitHub Secrets `WG_APPLICATION_ID`（`deploy.yml` 传给部署脚本，production compose 写入 keycloak service environment）。
-  - 本地：`docker/online/.env` 设置 `WG_APPLICATION_ID=...`。
+  - 本地完整 Compose 入口已退役；本地 Keycloak 行为由独立 disposable smoke 覆盖，不要求真实 Wargaming application ID。
 - 禁止把 application ID 写进 realm JSON、Git、前端、IdP alias 或浏览器参数。
 - 缺失行为（决策 D14）：容器正常启动；玩家点击 Wargaming 登录时 provider 返回"Wargaming login not configured"；百场统一人工审核链路不受影响。
 
-## 2. 在 Keycloak Admin Console 创建三个 IdP 实例
+## 2. 验证 OpenTofu 创建的三个 IdP 实例
 
-生产 realm 不使用 `--import-realm`，WG IdP 不进 realm JSON（决策 D18）。**一个自定义 Provider 类型 `wargaming`，三个不同实例**（不同 alias、不同 Region、不同回调地址），共用同一个 `WG_APPLICATION_ID`。
+生产 realm 不使用 `--import-realm`，WG IdP 不进 realm JSON。**一个自定义 Provider 类型 `wargaming`，三个不同实例**（不同 alias、不同 Region、不同回调地址），由 OpenTofu 创建并共用同一个 `WG_APPLICATION_ID`。
 
 步骤（对 ASIA / EU / NA 各执行一次）：
 
-1. 进入 `auth.wotbtools.com/admin` → Realm `wotbtools` → Identity Providers → Add provider。
-2. Provider type 选择 **`Wargaming.net`**（自定义 SPI，Provider ID `wargaming`）。
-   > ⚠️ 如果配置界面出现 Client ID / Client Secret / Authorization URL / Token URL 字段，说明选成了标准 OIDC Provider，而不是本项目的自定义 Wargaming.net Provider。
-3. 按下方表格填写并 Save。
+1. 在 fresh realm 的 OpenTofu apply 后，进入 `auth.wotbtools.com/admin` → Realm `wotbtools` → Identity Providers **只读核对**结果。
+2. Provider type 应为 **`Wargaming.net`**（自定义 SPI，Provider ID `wargaming`）。由于资源由
+   Terraform 的 OIDC resource adapter 管理，representation 中出现 Client ID / Client Secret /
+   Authorization URL / Token URL 等 placeholder OIDC fields 是预期的 schema 适配结果，**不代表**
+   provider 类型配置错误。真正的类型判断以 `provider_id=wargaming` custom SPI adapter 为准；
+   不要把它替换成标准 OIDC provider，也不要在 Console 手工创建或保存 IdP。
+3. 按下方表格核对 OpenTofu 已声明的 representation；发现漂移时回到 `infra/tofu/keycloak/identity-providers.tf` 修复并重新 apply。
 
 | 配置项 | ASIA | EU | NA |
 |---|---|---|---|
@@ -49,11 +52,14 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 说明：
 
 - API host 由服务端 Region 白名单决定，无需在 Admin Console 填 URL：认证 ASIA→`api.worldoftanks.asia/wot/auth/`（EU/NA 同理）；账号 ASIA→`api.wotblitz.asia/wotb/account/`（EU/NA 同理）。
-- **本次修复无需删除/重建 IdP**：三个 IdP 实例的 Alias 与 Region 配置保持不变，部署时只重新构建并发布 Keycloak 镜像即可。
+- **本次修复无需删除/重建 IdP**：三个 IdP 实例的 Alias 与 Region 配置由 OpenTofu 声明；部署时由 TX-local OpenTofu apply reconciliation，不能只重新构建 Keycloak 镜像来替代配置 apply。
 - 三个 alias 决定各自的回调路径；前端未登录时直接跳转 Keycloak 登录页，由 Keycloak 按 IdP Display name 显示按钮（`Wargaming.net Asia` / `Europe` / `North America` + QQ），前端不再硬编码 alias。
 - 重复登录刷新由 Provider 的 `updateBrokeredUser` 直接实现（决策 D11），与 Sync Mode 无关；Sync mode 仍按表格设 FORCE。
 - **只使用一个 Keycloak Client：`wotbtools-web`**。不要创建 `wotbtools-asia` / `wotbtools-eu` / `wotbtools-na`。
-- 自定义 Provider **不使用** Client ID / Client Secret / Authorization URL / Token URL；出现这些字段即配置错了类型。
+- 自定义 Provider 的真实运行类型是 `provider_id=wargaming` custom SPI adapter。Client ID / Client Secret /
+  Authorization URL / Token URL 是 OIDC adapter 为满足 Terraform resource schema 而写入的非运行时
+  placeholder fields；它们不表示标准 OIDC 配置错误，实际 Wargaming 凭据仍只由 `WG_APPLICATION_ID`
+  runtime 注入。
 
 > QQ IdP 与 `wotbtools-admin-api` client 同样是新 realm 的运行时配置；凭据不进入 realm JSON。QQ provider 的已批准源码、版本与配置前置条件见 [keycloak-tx-bootstrap.md](keycloak-tx-bootstrap.md)。
 
@@ -61,12 +67,12 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 
 三个区服首次登录都必须获得 `wotbtools-user`，依赖 realm `defaultRoles`（决策 D10）；**不要为不同区服创建不同业务角色**：
 
-- dev：realm JSON 已加 `"defaultRoles": ["wotbtools-user"]`，`--import-realm` 导入即生效。
-- 生产：Admin Console → Realm Settings → General → Default Role 确认为 `wotbtools-user`；若不是，手工设为该角色。
+- TX：OpenTofu `keycloak_default_roles` 已声明 `wotbtools-user`。
+- 生产：若迁移既有 realm，Admin Console 只用于核对，不应绕过 OpenTofu 写入漂移配置。
 
 ## 4. 核对 JWT Protocol Mapper
 
-生产 realm 若没有随 realm JSON 导入（生产使用 Admin Console 手工配置、不使用 `--import-realm`），需在 Admin Console 为 `wotbtools-web` client 核对/添加 4 个 mapper（与 `docker/keycloak/wotbtools-realm.json` 一致，ID/Access/UserInfo 三个 token 均启用）。**该步骤可重复执行**：realm JSON 只对全新 realm 生效，已有生产 realm 不会自动获得 mapper，每次核对以本表为准：
+OpenTofu 为 `wotbtools-web` 声明 5 个 mapper（ID/Access/UserInfo 三个 token 均启用）。**该步骤可重复执行**：apply 后可在 Admin Console 只读核对，实际变更必须回到 `infra/tofu/keycloak/protocol-mappers.tf`：
 
 | Mapper 名 | User Attribute | Claim | JSON 类型 |
 |---|---|---|---|

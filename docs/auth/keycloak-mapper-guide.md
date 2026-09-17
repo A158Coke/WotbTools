@@ -32,7 +32,7 @@ WG 登录成功
 
 ## 3. 一个 Mapper 的字段含义
 
-仓库 [wotbtools-realm.json](../../docker/keycloak/wotbtools-realm.json) 中的真实例子：
+仓库 `infra/tofu/keycloak/protocol-mappers.tf` 中的真实例子：
 
 ```json
 {
@@ -87,44 +87,24 @@ Client Scope 级：
 | 适合场景 | 只有 1 个 client，或某 client 独有 claims | 多个 client 需要同一组 claims |
 | 冲突 | 不冲突 | 若 client 同时挂 scope 与同名 mapper，claim 会互相覆盖 |
 
-**WotBTools 现状**：目前只有 `wotbtools-web` 一个前端 client 需要 WG claims，直接挂在 client 上（realm JSON 与生产均如此）。
+**WotBTools 现状**：目前只有 `wotbtools-web` 一个前端 client 需要 WG claims，直接挂在 client 上，由 TX-local OpenTofu 管理。
 
 **何时迁到 Client Scope**：以后加管理端、移动端等也要 `wotb_*` claims 时，把 4 个 mapper 挪进一个 `wotb-claims` client scope，让各 client 关联它；默认 scope 可做到自动应用。
 
 > 注：Keycloak 自带默认 scopes（`profile` / `email` / `roles`…），你常见的 `preferred_username`、`realm_access.roles` 就来自它们——这也是为什么没配 mapper 也能看到这些 claim。
 
-## 5. 生产 realm 手工补 mapper（标准做法）
+## 5. OpenTofu 管理 mapper（标准做法）
 
-realm JSON 只对**新建/导入 realm** 生效；已有生产 realm 不会自动获得 mapper。用 kcadm 补齐（与仓库 realm JSON 保持一致）：
+`infra/tofu/keycloak/protocol-mappers.tf` 是 mapper 的唯一声明来源。不要用 realm JSON
+或手工 `kcadm` 创建配置；apply 后可用 Admin Console 只读核对：
 
 ```bash
-# 1. 进入 Keycloak 容器并认证（凭据取容器环境变量，勿打印）
+# 只读验证（OpenTofu apply 后执行，勿手工 create/update）
 docker exec wotb-keycloak-1 /opt/keycloak/bin/kcadm.sh config credentials \
   --server http://localhost:8080 --realm master \
   --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD"
-
-# 2. 取 client 内部 uuid
 CID=$(docker exec wotb-keycloak-1 /opt/keycloak/bin/kcadm.sh get clients -r wotbtools \
   -q clientId=wotbtools-web --fields id | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')
-
-# 3. 逐个创建 mapper（示例：region → wotb_region）
-docker exec wotb-keycloak-1 /opt/keycloak/bin/kcadm.sh create \
-  "clients/$CID/protocol-mappers/models" -r wotbtools -b '{
-    "name": "wotb-region-mapper",
-    "protocol": "openid-connect",
-    "protocolMapper": "oidc-usermodel-attribute-mapper",
-    "config": {
-      "user.attribute": "region",
-      "claim.name": "wotb_region",
-      "claim.value": "attribute_value",
-      "jsonType.label": "String",
-      "id.token.claim": "true",
-      "access.token.claim": "true",
-      "userinfo.token.claim": "true"
-    }
-  }'
-
-# 4. 验证
 docker exec wotb-keycloak-1 /opt/keycloak/bin/kcadm.sh get \
   "clients/$CID/protocol-mappers/models" -r wotbtools
 ```

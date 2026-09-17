@@ -103,6 +103,12 @@ assert detect("deploy/tx/docker-compose.prod.yml")["images"] == {
 assert detect("deploy/tx/docker-compose.prod.yml")["targetServices"] == {
     "tx": ["keycloak-postgres", "keycloak", "wotb-frontend"]
 }
+keycloak_tofu = detect("infra/tofu/keycloak/realm.tf")
+assert keycloak_tofu["images"] == {"backend": False, "frontend": True, "keycloak": True}
+assert keycloak_tofu["deployServices"] == ["keycloak-postgres", "keycloak", "wotb-frontend"]
+assert keycloak_tofu["targetServices"] == {
+    "tx": ["keycloak-postgres", "keycloak", "wotb-frontend"]
+}
 assert detect("deploy/docker-compose.prod.yml")["ciSurfaces"]["deploy"]
 assert detect(".github/workflows/ci.yml")["ciSurfaces"]["full"]
 assert detect("common/unrelated-fixture.json")["ciSurfaces"]["data"]

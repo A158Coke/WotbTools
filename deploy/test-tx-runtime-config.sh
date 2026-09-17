@@ -204,7 +204,7 @@ run_prerequisite_failure route-missing "a route to 10.20.0.2 is required" "$WORK
 
 mkdir -p "$WORK/bootstrap" "$WORK/bootstrap-incoming"
 cp -a "$TX_DIR/." "$WORK/bootstrap-incoming/"
-printf 'tx-local-opentofu\n' > "$WORK/bootstrap/keycloak-postgres.tofu-provisioned"
+printf 'tx-local-opentofu-keycloak\n' > "$WORK/bootstrap/keycloak.tofu-provisioned"
 set +e
 bootstrap_output="$(env -i \
   PATH="$WORK/bin:$PATH" HOME="$WORK" \
@@ -224,8 +224,8 @@ grep -Fq 'keycloak-postgres: PASS' <<< "$bootstrap_output" \
   || fail "first TX bootstrap must permit PostgreSQL before Keycloak image metadata exists"
 grep -Fq 'TX deployment completed:' <<< "$bootstrap_output" \
   || fail "PostgreSQL-only bootstrap must complete after its health check"
-[ ! -e "$WORK/bootstrap/keycloak-postgres.tofu-provisioned" ] \
-  || fail "PostgreSQL-only bootstrap must invalidate stale marker at $WORK/bootstrap/keycloak-postgres.tofu-provisioned (output: $bootstrap_output)"
+[ ! -e "$WORK/bootstrap/keycloak.tofu-provisioned" ] \
+  || fail "PostgreSQL-only bootstrap must invalidate stale marker at $WORK/bootstrap/keycloak.tofu-provisioned (output: $bootstrap_output)"
 grep -Fq 'pull keycloak-postgres' "$WORK/bootstrap-docker.log" \
   || fail "PostgreSQL bootstrap must pull only its selected runtime image"
 ! grep -Fq 'pull keycloak-postgres keycloak' "$WORK/bootstrap-docker.log" \
@@ -247,8 +247,8 @@ set -e
 grep -Fq 'run TX-local OpenTofu' <<< "$unprovisioned_output" \
   || fail "TX app deployment must explain the required PostgreSQL-to-OpenTofu boundary"
 [ ! -f "$WORK/unprovisioned.log" ] || fail "unprovisioned TX app deployment must not invoke Docker"
-printf 'tx-local-opentofu\n' > "$WORK/live/keycloak-postgres.tofu-provisioned"
-chmod 600 "$WORK/live/keycloak-postgres.tofu-provisioned"
+printf 'tx-local-opentofu-keycloak\n' > "$WORK/live/keycloak.tofu-provisioned"
+chmod 600 "$WORK/live/keycloak.tofu-provisioned"
 
 deploy_output="$(env -i \
   PATH="$WORK/bin:$PATH" HOME="$WORK" \

@@ -23,11 +23,6 @@ COPY --from=build /build/keycloak-wargaming-provider/target/keycloak-wargaming-p
 
 # WotBTools custom login theme (V8 Unified Layout)
 COPY docker/keycloak/themes/wotbtools /opt/keycloak/themes/wotbtools
-# The TX runtime imports this non-secret baseline only on first realm creation.
-# Identity-provider credentials are deliberately configured from TX runtime
-# secrets after the exported production IdP diff has been approved.
-COPY docker/keycloak/wotbtools-realm.json /opt/keycloak/data/import/wotbtools-realm.json
-
 RUN /opt/keycloak/bin/kc.sh build \
   --db=postgres
 

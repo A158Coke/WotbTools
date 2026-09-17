@@ -163,6 +163,10 @@ assert tx_step_names.index("Prepare TX deployment directory") < tx_step_names.in
 assert tx_step_names.index("Install TX deployment configuration") < tx_step_names.index("Bootstrap TX Keycloak PostgreSQL before OpenTofu")
 assert tx_step_names.index("Bootstrap TX Keycloak PostgreSQL before OpenTofu") < tx_step_names.index("Install Keycloak PostgreSQL OpenTofu root on TX")
 assert tx_step_names.index("Install Keycloak PostgreSQL OpenTofu root on TX") < tx_step_names.index("Apply Keycloak PostgreSQL OpenTofu on TX localhost")
+assert tx_step_names.index("Apply Keycloak PostgreSQL OpenTofu on TX localhost") < tx_step_names.index("Install Keycloak OpenTofu root on TX")
+assert tx_step_names.index("Install Keycloak OpenTofu root on TX") < tx_step_names.index("Start empty TX Keycloak for OpenTofu bootstrap")
+assert tx_step_names.index("Start empty TX Keycloak for OpenTofu bootstrap") < tx_step_names.index("Apply Keycloak OpenTofu on TX localhost")
+assert tx_step_names.index("Apply Keycloak OpenTofu on TX localhost") < tx_step_names.index("Deploy exact TX services via SSH")
 assert tx_step_names.index("Apply Keycloak PostgreSQL OpenTofu on TX localhost") < tx_step_names.index("Deploy exact TX services via SSH")
 
 print("Build/Deploy workflow release contract OK")

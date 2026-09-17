@@ -55,9 +55,6 @@ class AiTimeoutChainContractTest {
         assertFileContains("docker-compose.prod.yml",
                 repoPath("deploy", "docker-compose.prod.yml"),
                 "${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-1100}");
-        assertFileContains("docker-compose online",
-                repoPath("docker", "online", "docker-compose.yml"),
-                "${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-1100}");
         assertFileContains(".env.example",
                 repoPath(".env.example"),
                 "AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=1100");
@@ -78,9 +75,6 @@ class AiTimeoutChainContractTest {
         assertFileContains("docker-compose.prod.yml",
                 repoPath("deploy", "docker-compose.prod.yml"),
                 "AI_MODEL: \"${AI_MODEL:-deepseek-v4-flash}\"");
-        assertFileContains("docker-compose online",
-                repoPath("docker", "online", "docker-compose.yml"),
-                "AI_MODEL: ${AI_MODEL:-deepseek-v4-flash}");
         assertFileContains("deploy.yml",
                 repoPath(".github", "workflows", "deploy.yml"),
                 "AI_MODEL: ${{ vars.AI_MODEL || 'deepseek-v4-flash' }}");

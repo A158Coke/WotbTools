@@ -15,7 +15,7 @@ grep -Fq 'DNS_CUTOVER_NOT_PERFORMED' "$DEPLOY"
 grep -Fq 'WAITING_FOR_OPERATOR_APPROVAL' "$DEPLOY"
 grep -Fq 'PRE_CUTOVER_NOT_READY' "$DEPLOY"
 grep -Fq 'QQ_IDP_STATUS=idp-qq=WAITING_EXTERNAL' "$DEPLOY"
-grep -Fq 'QQ_FALLBACK_STATUS=juhe-qq=PRODUCTION_REQUIRED' "$DEPLOY"
+grep -Fq 'QQ_FALLBACK_STATUS=juhe-qq=NOT_CONFIGURED_IN_TX' "$DEPLOY"
 grep -Fq 'wireguard-backend' "$DEPLOY"
 grep -Fq 'keycloak-juhe-qq-provider.jar' "$DEPLOY"
 grep -Fq 'keycloak-qq-provider.jar' "$DEPLOY"
@@ -38,7 +38,7 @@ shift
 while [ "${1:-}" = -f ]; do shift 2; done
 case "${1:-}" in
   config)
-    printf '%s\n' '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]}}}'
+    printf '%s\n' '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]}}}'
     ;;
   ps) printf 'healthy\n' ;;
   exec) exit 0 ;;

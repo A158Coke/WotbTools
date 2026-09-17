@@ -4,9 +4,10 @@
 
 ## Git 中可导入的静态配置
 
-`docker/keycloak/wotbtools-realm.json` 只包含无密钥的 realm 基线：角色、`wotbtools-web` public client、redirect URI、protocol mapper、登录主题和空的 `identityProviders` 列表。该文件不得包含 client secret、IdP secret、密码、token，亦不得声明具体 IdP。
-
-首次创建新数据库时，以 `start --optimized --import-realm` 导入该文件。导入只针对空 realm；既有 realm 的修改必须通过受控的 Admin API/console 步骤完成，不应靠重复 import 覆盖。
+Keycloak 镜像只包含自定义 provider。`infra/tofu/keycloak` 是 TX realm、角色、client、mapper
+和 IdP 的唯一声明来源；镜像启动不使用 `--import-realm`。OpenTofu 在 TX localhost
+`127.0.0.1:18080` 上以 bootstrap admin 建立 fresh realm，并在 apply 后执行第二次 plan
+确认无 drift。
 
 ## 运行时配置与凭据边界
 
@@ -28,23 +29,26 @@ TX workflow secrets：`TX_KC_POSTGRES_ADMIN_PASSWORD`、`TX_KC_DB_PASSWORD`、
 `KC_DB_USERNAME=keycloak` 由 workflow 提供；`CADDY_ACME_EMAIL` 使用
 `vars.CADDY_ACME_EMAIL`，为空时 fail-closed。
 
-`wotbtools-admin-api` 是机密 client：在导入后由受控 Admin API/console 创建，生成 secret 后直接写入运行时 secret store。不要把生成后的 realm export 提交回仓库。
+`wotbtools-admin-api` 是由 OpenTofu 创建的 confidential service-account client。它只获得
+`realm-management` 的 `manage-users`、`query-users`、`view-realm`；secret 通过 write-only
+runtime 变量注入，禁止写入 HCL、tfvars、plan 或普通 state attribute。backend 继续使用
+`KEYCLOAK_ADMIN_CLIENT_ID=wotbtools-admin-api` 与 `KEYCLOAK_ADMIN_CLIENT_SECRET`。
 
 ## Identity Provider 启动顺序
 
-1. 导入空 IdP 列表的 realm，确认 `wotbtools-web`、角色与 JWT mapper 已存在。
-2. 以现有 [Wargaming 部署手册](wargaming-asia-deployment.md) 创建 `wargaming-asia`、`wargaming-eu`、`wargaming-na` 三个实例，并只在 Keycloak runtime 注入 `WG_APPLICATION_ID`。
+1. 让 OpenTofu 创建 fresh realm，确认 `wotbtools-web`、`wotbtools-admin-api`、角色与 JWT mapper 已存在。
+2. 由 OpenTofu 创建 `wargaming-asia`、`wargaming-eu`、`wargaming-na` 三个实例，并只在 Keycloak runtime 注入 `WG_APPLICATION_ID`。
 3. 同时构建三个 vendored provider：生产过渡期仍需要的 `keycloak-juhe-qq-provider`（真实 Juhe API 链路）、待官方 QQ Open Platform 审核的 `keycloak-qq-provider`（来源和本地安全修正见 [UPSTREAM.md](../../keycloak-qq-provider/UPSTREAM.md)），以及 `keycloak-wargaming-provider`。三者均固定以当前 Keycloak `26.6.4` 构建；禁止构建或运行时下载 provider。
-4. 在 Admin Console/API 创建 QQ IdP（provider id `qq`）时，生产 alias `juhe-qq` 继续绑定 `keycloak-juhe-qq-provider`，作为当前必需的 production fallback；新 TX 官方 QQ 预备 alias `idp-qq` 绑定 `keycloak-qq-provider`，其 QQ Open Platform App approval 仍 pending。两个 alias 的实现不同，不能互换。QQ Connect App ID/Secret 与 Juhe runtime credentials 仅保存在 runtime secret store；alias 变更必须同步 Android exact callback allowlist 与回归测试。
+4. OpenTofu 创建官方 QQ alias `idp-qq`（provider id `qq`）；TX 不创建 `juhe-qq` fallback，也不创建裸 alias `qq`。QQ Connect App ID/Secret 仅由 runtime secret 注入；alias 变更必须同步 Android exact callback allowlist 与回归测试。
 
 ## 导入后的验收
 
 - Keycloak 使用 `start --optimized`，启动时没有 augmentation；
 - image 同时包含 `keycloak-juhe-qq-provider.jar`、`keycloak-qq-provider.jar` 与 `keycloak-wargaming-provider.jar`；
-- realm import 没有 credential-like key，IdP 配置留空；
+- OpenTofu fresh realm 的 Admin API 验收通过，且二次 plan 为 no-op；
 - OIDC discovery、三个 Wargaming 登录、前端 public client redirect URI 均可验证；
-- QQ Connect 凭据缺失时标记为 `BLOCKED_QQ_IDP_CREDENTIALS`，不通过猜测配置绕过。
-- Android 只接受两个 exact callback path：`juhe-qq` 回调保持 Juhe contract，`idp-qq` 回调使用官方 OAuth contract；不得以新 provider 存在为由删除 Juhe fallback。
+- QQ Connect 凭据缺失时 fail-closed，不通过猜测配置绕过。
+- Android 使用 `idp-qq` 官方 OAuth callback contract；本 TX realm 不引入 Juhe fallback。
 
 ## PRE_CUTOVER_READY 只读门禁
 
@@ -52,7 +56,7 @@ TX workflow secrets：`TX_KC_POSTGRES_ADMIN_PASSWORD`、`TX_KC_DB_PASSWORD`、
 `deploy/tx/deploy.sh` 的现有 health-probe/Compose 配置读取逻辑，不执行 staging、promote、
 recreate、stop、删除或 DNS 操作。TX 包内的 `yecao-backend-contract.json` 是由 Yecao
 Compose contract test 校验的非机密 bind 基线；若 TX 上另有受控 checkout，可设置
-`WOTB_SOURCE_ROOT` 让门禁直接复核完整 Compose。两者都不可用时，门禁会拒绝宣称 ready，
+`WOTB_SOURCE_ROOT` 让门禁直接复核 production Compose。两者都不可用时，门禁会拒绝宣称 ready，
 而不是猜测 backend bind。
 
 全部检查通过时输出：
@@ -64,7 +68,8 @@ WAITING_FOR_OPERATOR_APPROVAL
 ```
 
 `idp-qq=WAITING_EXTERNAL`（官方 QQ Open Platform 审核 pending）是允许状态，不阻断门禁；
-`juhe-qq=PRODUCTION_REQUIRED` 仍是当前生产 fallback。门禁中的独立
+TX 明确不配置 `juhe-qq` fallback，门禁输出 `juhe-qq=NOT_CONFIGURED_IN_TX` 仅用于说明该
+旧 provider 不属于本 realm 的声明状态。门禁中的独立
 `wireguard-backend` probe 必须从 TX `health-probe` 访问
 `http://10.20.0.2:8087/api/health`，以区分 WG/backend 链路与 frontend/Caddy 路由故障。
 

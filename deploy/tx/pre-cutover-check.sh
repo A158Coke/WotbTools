@@ -11,13 +11,13 @@ DEPLOY_SH="$SCRIPT_DIR/deploy.sh"
 }
 
 # Keep an explicitly supplied source root. Otherwise only infer the repository
-# root when its Yecao compose and realm files prove that this is a checkout;
-# promoted TX runtime layouts intentionally leave the source root unset and use
-# the deployed Yecao bind contract next to docker-compose.yml.
+# root when its deployment and Keycloak OpenTofu roots prove that this is a
+# checkout; promoted TX runtime layouts intentionally leave the source root
+# unset and use the deployed Yecao bind contract next to docker-compose.yml.
 if [ -z "${WOTB_SOURCE_ROOT:-}" ]; then
   REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
   if [ -f "$REPO_ROOT/deploy/docker-compose.prod.yml" ] \
-    && [ -f "$REPO_ROOT/docker/keycloak/wotbtools-realm.json" ]; then
+    && [ -f "$REPO_ROOT/infra/tofu/keycloak/realm.tf" ]; then
     export WOTB_SOURCE_ROOT="$REPO_ROOT"
   else
     unset WOTB_SOURCE_ROOT
