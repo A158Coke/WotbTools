@@ -45,11 +45,11 @@ docker/keycloak/themes/wotbtools/login/
 当前 3 张：`battlefield`（src `frontend/src/assets/showcase/home/hero-v4.png`）、`wtc-overlook`、`summit-station`。后两张按 1672×941 原生分辨率转码，不上采样到 1920×1080——源就是 1672 宽，放大只增体积不增细节；竖版由横版按 9:16 裁切后缩放到 900×1600，因此比横版略软。
 ## 生产部署注意
 
-生产 realm 在 Admin Console 手工配置（非 `--import-realm`），因此 **realm JSON 改动只作用于导入/CI**。上线需人工同步：
+生产/TX realm 由 TX-local OpenTofu 管理（非 `--import-realm`）。主题仍由镜像发布；上线需通过 OpenTofu 同步：
 
 1. Keycloak realm → Login → **Registration = Off**（对应 `registrationAllowed:false`）。
 2. Realm → **Login theme = `wotbtools`**（对应 `loginTheme:"wotbtools"`）。
-3. 其余（IdP、region、client、mapper、roles）不动。
+3. 其余（IdP、region、client、mapper、roles）由 `infra/tofu/keycloak` 声明，禁止改回手工或 realm JSON 导入。
 
 ## 验证
 

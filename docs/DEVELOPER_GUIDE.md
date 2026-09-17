@@ -557,8 +557,14 @@ manifest 的 `targetServices` 是这两个 host 的唯一发布路由来源，�
 `docs/architecture/opentofu-postgres-keycloak.md`。
 
 TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/grant；
-只有成功 apply 写入 provision marker 后才允许 Keycloak/frontend 启动。Stage I 的
-Caddy 默认只监听 loopback，不会改 DNS，也不会停止或删除 Yecao 服务。IdP 配置、
+随后 `infra/tofu/keycloak` 在 `127.0.0.1:18080` 声明 fresh realm、`wotbtools-web`、
+`wotbtools-admin-api`、realm role、mapper 和 IdP。backend 使用
+`KEYCLOAK_ADMIN_CLIENT_ID=wotbtools-admin-api` 与 runtime-only
+`KEYCLOAK_ADMIN_CLIENT_SECRET`，service account 只授予
+`manage-users`、`query-users`、`view-realm`；secret 通过 write-only OpenTofu 输入传递，
+不写入 HCL/tfvars/log 或普通 state attribute。只有成功 apply 写入 provision marker
+后才允许 Keycloak/frontend 启动。Stage I 的 Caddy 默认只监听 loopback，不会改 DNS，
+也不会停止或删除 Yecao 服务。IdP 配置、
 `user_profile` dependency audit、DNS cutover 与旧服务退役均是受控的外部操作，分别
 需要相应人工批准；启动细节见 `docs/auth/keycloak-tx-bootstrap.md`。
 

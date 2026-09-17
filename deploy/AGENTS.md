@@ -4,7 +4,7 @@
 
 ## 镜像与产物（经 deploy.yml / Dockerfile×3 核对）
 
-- 三镜像推 GHCR（`ghcr.io/a158coke/wotbtools`）：`docker/Dockerfile.backend`（Maven→JRE，:8087）、`docker/Dockerfile.frontend`（Node→nginx，:80）、`docker/Dockerfile.keycloak`（含 `docker/keycloak/wotbtools-realm.json` realm 导入）。
+- 三镜像推 GHCR（`ghcr.io/a158coke/wotbtools`）：`docker/Dockerfile.backend`（Maven→JRE，:8087）、`docker/Dockerfile.frontend`（Node→nginx，:80）、`docker/Dockerfile.keycloak`（只包含自定义 provider；realm/client/IdP 由 TX-local `infra/tofu/keycloak` 管理）。
 - **Build / Deploy 分离**：`.github/workflows/build.yml` 在 main 的应用或运行时 observability 变更后构建 component-local 的 SHA 与 `latest` 镜像 tag，也支持 `workflow_dispatch` 单独构建 `backend` / `frontend` / `keycloak` / `all`；`changes` job 只解析一次事件携带的 full commit SHA，三个 builder checkout 同一个冻结 SHA，禁止 feature ref 或移动的 main 写入自动 production manifest，手工 Build 还必须验证 commit 已在 `origin/main` 历史中。纯 `deploy/observability/grafana/dashboards/**` 由 Grafana OpenTofu 管理，不触发应用 Build。成功的 main Build 通过 `workflow_run` 自动接力 `.github/workflows/deploy.yml`；Deploy 只消费对应 Build 的 immutable manifest，按 manifest 只更新受影响 service。生产事故操作进入仅手工触发的 `Ops Recovery`，不得把可变 `latest` 用于生产恢复。代码质量验证由 PR CI（merge gate）承担，Build/Deploy 不重复运行测试套件。生产 Compose 配置变化视为全部 runtime service 受影响；普通 targeted deploy 不重启其它应用 service。
 - **PR 快速上线**：计划已明确且用户要求直接上线时，完成实现后直接提交、推送并开 PR，由 PR CI 验证；本地测试不是推送前阻塞条件。部署脚本仍必须保留静态配置校验、`verify-observability.sh` 数据链路 gate、失败诊断与无自动恢复路径。
 - 生产编排 `deploy/docker-compose.prod.yml` + `deploy/deploy.sh`（fail-fast 校验，含 `AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=1100` 等契约；Yecao backend 业务端口只绑定 `10.20.0.2:8087:8087` 供 TX 经 WireGuard 访问；改动后端超时/编排变量必须同步 `AiTimeoutChainContractTest`、仓库根 `.env.example` 与本文件）。
