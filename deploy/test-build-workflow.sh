@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 python3 - "$ROOT/.github/workflows/build.yml" "$ROOT/.github/workflows/deploy.yml" <<'PY'
+import subprocess
 import sys
 from pathlib import Path
 
@@ -83,6 +84,14 @@ assert manual_inputs["tx_services"]["type"] == "string"
 assert manual_inputs["tx_services"]["default"] == "keycloak-postgres,keycloak,wotb-frontend,caddy"
 manifest_step = next(step for step in deploy_changes["steps"] if step.get("id") == "manifest")
 manual_run = manifest_step["run"]
+manual_path, workflow_run_path = manual_run.split("manifest_path=release-artifact/deployment-manifest.json", 1)
+workflow_run_path = "manifest_path=release-artifact/deployment-manifest.json" + workflow_run_path
+assert manual_run.count("<<'PY'") == 2, \
+    "Validate deployment manifest must syntax-check both manual and workflow-run Python heredocs"
+for path_name, shell_path in (("workflow_dispatch", manual_path), ("workflow_run", workflow_run_path)):
+    syntax = subprocess.run(["bash", "-n"], input=shell_path.encode("utf-8"), capture_output=True)
+    assert syntax.returncode == 0, \
+        f"Validate deployment manifest {path_name} Bash syntax failed:\n{syntax.stderr.decode('utf-8', errors='replace')}"
 assert "GITHUB_EVENT_NAME" in manual_run and "workflow_dispatch" in manual_run
 assert 'GITHUB_REF:-}" != refs/heads/main' in manual_run
 assert "git fetch origin main --depth=1" in manual_run
