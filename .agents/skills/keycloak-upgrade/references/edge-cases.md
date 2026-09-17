@@ -28,14 +28,15 @@
 - Keycloak 重启默认清内存会话（默认存储不持久化 session），升级即全员掉线。
 - 处置：提前在版本说明/公告中声明；升级窗口选低峰；验证升级后新登录正常。
 
-## 5. Realm 导入与生产手工配置
+## 5. Realm OpenTofu reconciliation
 
-- dev 用 `--import-realm` 导入 `docker/keycloak/wotbtools-realm.json`；新版本字段/默认值变化会产生
-  import warning 或覆盖差异，看启动日志。
-- 生产 realm 是 Admin Console 手工维护（决定 D18）：WG IdP 不在 realm JSON 里。
-- 处置：升级后逐项核对——三个 WG IdP（alias `wargaming-asia/eu/na`、region、enabled、Sync mode FORCE、
-  回调 URL）、QQ IdP（`juhe-qq`）、`wotbtools-web` client 的 4 个 protocol mapper、defaultRoles
-  `wotbtools-user`。任何一项缺失 = 登录/claims 回归，先补配置再宣布完成。
+- realm 不再通过 JSON import 创建；production/TX 由 `infra/tofu/keycloak` 声明并在 TX-local
+  OpenTofu apply 中 reconciliation。独立 `deploy/test-keycloak-tofu.sh` 使用 disposable
+  PostgreSQL、Keycloak 与 local state 验证 fresh realm。
+- 处置：升级后逐项核对 OpenTofu plan/apply——三个 WG IdP（alias `wargaming-asia/eu/na`、
+  region、enabled、Sync mode FORCE、回调 URL）、QQ IdP（`idp-qq`）、`wotbtools-web` client
+  的 5 个 protocol mapper、defaultRoles `wotbtools-user`。任何一项缺失 = 登录/claims 回归，
+  先修复声明再宣布完成。
 
 ## 6. Redirect URI 通配符（26.6.3+ 收紧）
 
@@ -73,7 +74,8 @@
 ## 11. 环境变量与密钥
 
 - 升级不得丢 `WG_APPLICATION_ID`（生产在 GitHub Secrets → deploy.yml → keycloak service env；
-  本地在 `docker/online/.env`）。缺失时 WG 登录返回 "Wargaming login not configured"。
+  本地独立 smoke 使用 fake runtime 值；生产通过 Keycloak runtime env 注入。缺失时 WG 登录返回
+  "Wargaming login not configured"。
 - realm keys 存在 DB，升级后旧 access token 在过期前仍有效（issuer 与签名不变）；
   不要重建 realm、不要手动轮换 keys，除非另行计划。
 - 不要在日志/Caddy 访问日志中暴露回调 URL 的 `access_token`（已知 WG 回调会把 token 带在地址栏）。

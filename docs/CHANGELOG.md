@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Architecture
+- **Local full-stack Compose retirement**：删除旧的本地完整 Docker Compose 开发入口及其 CI/path-filter 依赖；Keycloak realm 集成验证统一使用独立 disposable PostgreSQL、Keycloak 与 local OpenTofu state，不访问 production state。生产 TX 继续只由 `infra/tofu/keycloak` 管理，不恢复 realm JSON import。
 - **TX Frontend + Keycloak predeployment control plane**：release manifest 现按 `yecao` / `tx` 明确服务目标；TX 仅通过其 SSH runtime 执行 Compose 与本地 OpenTofu，Keycloak PostgreSQL 管理端口固定 loopback。正常发布不会切换 DNS、停止或删除 Yecao Frontend/Keycloak。TX 应用服务必须在本地 OpenTofu 成功写入 provision marker 后才会启动；`user_profile` 只新增只读影响审计，任何业务依赖发现均要求独立人工批准。
 - **TX pre-cutover runtime gate**：Yecao backend 业务端口仅绑定 `10.20.0.2:8087:8087`；TX deployment-owned health-probe 独立验证 WireGuard backend、frontend、Caddy 与 Keycloak。新增只读 `PRE_CUTOVER_READY` 门禁，允许 official QQ `idp-qq=WAITING_EXTERNAL`，并明确 DNS/Yecao retirement 仍需后续人工批准。
 - **TX secret injection boundary**：TX Compose 与 TX-local OpenTofu 仅接收 GitHub Actions Secrets/Variables 通过 SSH 注入的进程环境；不再依赖服务器 `/etc/wotb/*.env` 文件。TX deploy 在修改 runtime 前 fail-closed 检查 Docker/Compose、`wg0` 地址与 WireGuard 路由；backend `8087` 动态可达性只在 application deploy/PRE_CUTOVER_READY runtime gate 验证。

@@ -135,7 +135,6 @@ CI_SURFACE_PATTERNS = {
     "observability": (
         "deploy/observability/**",
         "infra/tofu/grafana/**",
-        "docker/online/docker-compose.yml",
         "deploy/nginx/**",
     ),
     "android": (
@@ -167,7 +166,6 @@ CI_SURFACE_PATTERNS = {
         "keycloak-qq-provider/src/main/resources/**",
         "docker/Dockerfile.keycloak",
         "docker/keycloak/**",
-        "docker/online/docker-compose.yml",
         "infra/tofu/keycloak/**",
         "java/settings-docker.xml",
     ),

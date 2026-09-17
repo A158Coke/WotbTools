@@ -397,12 +397,6 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
-      - name: docker compose config
-        working-directory: docker/online
-        env:
-          GRAFANA_ADMIN_USER: ci-test-user
-          GRAFANA_ADMIN_PASSWORD: ci-test-password
-        run: docker compose config --quiet
       - name: Prometheus config validation
         run: >-
           docker run --rm --entrypoint promtool
@@ -540,30 +534,6 @@ jobs:
           assert set(dashboard_link_uids) <= uid_set, "dashboard link points to an unknown uid"
           print("provisioning yml + dashboards json OK")
           PY
-      - name: No host port mappings for observability/backend management
-        working-directory: docker/online
-        env:
-          GRAFANA_ADMIN_USER: ci-test-user
-          GRAFANA_ADMIN_PASSWORD: ci-test-password
-        run: |
-          set -euo pipefail
-          docker compose config --format json > /tmp/compose.json
-          python - <<'PY'
-          import json
-          with open('/tmp/compose.json', encoding='utf-8') as f:
-              svc = json.load(f)["services"]
-          no_host_ports = {"prometheus", "loki", "alloy", "grafana", "node-exporter", "wotb-backend"}
-          for name, s in svc.items():
-              if name in no_host_ports:
-                  assert not s.get("ports"), f"service {name} must not expose host ports: {s.get('ports')}"
-          keycloak_ports = [str(p) for p in svc["keycloak"].get("ports", [])]
-          assert not any(":9000" in p or p.endswith("9000") for p in keycloak_ports), \
-              f"Keycloak management port must stay internal: {keycloak_ports}"
-          assert not svc["node-exporter"].get("ports"), \
-              f"node-exporter must stay internal: {svc['node-exporter'].get('ports')}"
-          print("no host exposure of observability/backend-management ports")
-          PY
-
   deploy_smoke:
     needs: [changes]
     if: needs.changes.outputs.deploy == 'true' || needs.changes.outputs.full == 'true'

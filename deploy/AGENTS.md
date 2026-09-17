@@ -11,7 +11,7 @@
 - 反向代理 `deploy/nginx/nginx.conf`：`/api/replay/analyze` 固定 `proxy_read/send_timeout 1120s` + `proxy_buffering off`（SSE 流式）；其余 120s。
 - **SPA 缓存策略（frontend 部署即生效的关键）**：`location = /index.html` 固定 `Cache-Control: no-cache, no-store, must-revalidate`（禁止浏览器缓存入口页，新 bundle hash 部署后立即生效）；`location /assets/`（Vite 内容 hash 产物）固定 `Cache-Control: public, max-age=31536000, immutable`，且 404 不 fallback 到 index.html。改缓存头会影响用户能否看到新前端版本，改动需在 `?view=hof-admin` 等页验证。
 - **Build identity（防猜版本）**：Build 的 `changes` job 只在 `main` 上解析一次 full commit SHA，并由 backend/frontend/keycloak 三个 job checkout 同一个 SHA；三个镜像均注入该 SHA 的 `BUILD_COMMIT` build-arg。Backend 的 `StartupReleaseDiagnostics` 在启动时输出 full build commit、对应的 `sha-<12>` immutable image tag 与 Flyway migration ceiling；Frontend 的 `vite.config.js` 据此生成 `dist/version.json`（`buildCommit`）并在启动 console 输出 `[build] commit=... time=...`；Keycloak 通过 `WOTBTOOLS_BUILD_COMMIT` 在启动时输出 `WotBTools Keycloak build=...`（Docker 上下文无 `.git`，必须经 build-arg 注入，本地前端构建才 fallback `git rev-parse`）。生产异常时先核对三个运行服务的 release diagnostics 与 immutable image identity。
-- 本地八服务开发环境在 `docker/online/docker-compose.yml`（postgres/keycloak/wotb-backend/wotb-frontend + prometheus/loki/alloy/grafana），**不是四容器**。
+- 本地完整 Docker Compose 开发环境已退役；Keycloak realm 集成验证仅使用 `deploy/test-keycloak-tofu.sh` 的 disposable PostgreSQL、Keycloak 与 local OpenTofu state。
 
 ## 运维（安全）
 

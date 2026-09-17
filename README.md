@@ -48,7 +48,7 @@ flowchart LR
 
 ## 快速开始
 
-- 本地运行 / 构建：见 [java/README.md](java/README.md)（本地八服务 `docker/online/`）
+- 本地运行 / 构建：见 [java/README.md](java/README.md)；Keycloak realm 配置验证使用独立 disposable smoke
 - 测试与质量门禁：见 [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
 - 更新车辆库：手动触发 GitHub Actions `Update Tankopedia`；本地跑 `cd common/python && python update_tankopedia.py`（详见 DEVELOPER_GUIDE）
 
