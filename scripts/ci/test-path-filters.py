@@ -106,6 +106,12 @@ class CiPathFilterTest(unittest.TestCase):
             self.assert_surfaces([pom], ["keycloak", "keycloakProvider", "keycloakRuntime"])
             self.assert_surfaces([resources], ["keycloak", "keycloakRuntime"])
 
+    def test_keycloak_opentofu_root_runs_tx_deploy_and_runtime_contracts(self):
+        self.assert_surfaces(
+            ["infra/tofu/keycloak/realm.tf"],
+            ["keycloak", "keycloakRuntime", "deploy"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -84,6 +84,7 @@ KEYCLOAK_PATTERNS = (
     "keycloak-wargaming-provider/**",
     "docker/keycloak/**",
     "docker/Dockerfile.keycloak",
+    "infra/tofu/keycloak/**",
     "java/settings-docker.xml",
 )
 ALL_DEPLOY_PATTERNS = (
@@ -93,7 +94,7 @@ ALL_DEPLOY_PATTERNS = (
     "deploy/validate-alloy-config.sh",
     "deploy/grafana-api-request.sh",
 )
-TX_DEPLOY_PATTERNS = ("deploy/tx/**",)
+TX_DEPLOY_PATTERNS = ("deploy/tx/**", "infra/tofu/keycloak/**")
 RUNTIME_CONFIG_PATTERNS = ("deploy/docker-compose.prod.yml", *TX_DEPLOY_PATTERNS)
 CI_SURFACE_PATTERNS = {
     "backend": BACKEND_PATTERNS,
@@ -126,6 +127,7 @@ CI_SURFACE_PATTERNS = {
     "deploy": (
         "deploy/**",
         "docker/**",
+        "infra/tofu/keycloak/**",
         ".github/workflows/deploy*.yml",
         "java/wotb-web/src/main/resources/db/migration/**",
         "java/settings-docker.xml",
@@ -166,6 +168,7 @@ CI_SURFACE_PATTERNS = {
         "docker/Dockerfile.keycloak",
         "docker/keycloak/**",
         "docker/online/docker-compose.yml",
+        "infra/tofu/keycloak/**",
         "java/settings-docker.xml",
     ),
 }

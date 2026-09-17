@@ -15,7 +15,7 @@
 | D7 | WG 用户解绑 | 本期不允许：WG profile（ASIA/EU/NA）的 server / account_id / source / verified 不可编辑，也不提供解绑/删除入口（后端拒绝 PATCH/DELETE on WARGAMING source profile） |
 | D8 | `wotb_account_verified_at` | 定义为"后端首次可信同步时间"：首次创建 WG profile 时写 now，后续昵称刷新不更新。不新增 Keycloak claim |
 | D9 | 登录入口 | 不自定义前端登录页：未登录访问需鉴权页面时直接跳转 Keycloak 托管登录页，页面列出所有启用的 IdP（QQ + Wargaming ASIA / EU / NA），按 IdP Display name 显示；不改 Keycloak 主题 |
-| D10 | 角色授予 | realm JSON 增加 `defaultRoles: ["wotbtools-user"]`；生产先核对现有 default role 是否已是 `wotbtools-user`（是则无需操作）。Provider 不写授角色代码 |
+| D10 | 角色授予 | OpenTofu `keycloak_default_roles` 声明 `wotbtools-user`；Provider 不写授角色代码 |
 | D11 | 重复登录属性刷新 | WG 改名后再次登录，Provider 必须显式更新 `displayName` / `wotb.nickname`（QQ Provider 无此逻辑，不可照抄） |
 | D12 | 冲突可见性 | 不做自定义 Keycloak 错误页。broker 层默认拦截；后端 `from-login` 冲突检查作兜底，返回 `WOTB_ACCOUNT_ALREADY_USED` |
 | D13 | Provider 测试基建 | JUnit 5 + JDK 内置 `HttpServer` 做 WG API stub，不引入 Keycloak Testcontainers |
@@ -23,7 +23,7 @@
 | D15 | `wotb_verified` claim 类型 | Protocol Mapper 配置 `jsonType=boolean`，JWT 输出真布尔；后端按 `Boolean` 解析；region / verified 缺失一律按 CN 兜底 |
 | D16 | 日志脱敏 | Keycloak 保持默认（不开启请求 URI 访问日志）；host 级 Caddy 访问日志脱敏为仓库外运维项，写入部署文档；已知限制：WG token 会短暂出现在浏览器地址栏（WG 回调机制固有） |
 | D17 | 存量 region 迁移 | 一次性脚本执行（dry-run 默认、只补缺失值、幂等），已于 2026-08-06 在生产执行完毕（138/138）后删除 |
-| D18 | IdP 配置载体 | 跟随 QQ 现状：`wargaming` 类型 IdP 的 ASIA / EU / NA 三个实例（alias 固定 `wargaming-asia` / `wargaming-eu` / `wargaming-na`，区服在 Admin Console 下拉选择）不进 realm JSON（避免硬编码密钥），dev/prod 均在 Admin Console 手工配置，步骤写进交付文档 |
+| D18 | IdP 配置载体 | `wargaming` 类型 IdP 的 ASIA / EU / NA 三个实例由 TX-local OpenTofu 声明；不使用 realm JSON，Admin Console 仅作只读核对 |
 
 ---
 
@@ -47,8 +47,8 @@
 先检查当前分支的真实实现，包括但不限于：
 
 - `docker/Dockerfile.keycloak`（构建已批准 Provider 的镜像）
-- `docker/keycloak/wotbtools-realm.json`（roles + `wotbtools-web` client + mapper；`identityProviders` 必须保持空列表）
-- Keycloak 生产部署配置（生产 realm 为 Admin Console 手工配置，不使用 `--import-realm`）
+- `infra/tofu/keycloak/`（roles + clients + mapper + IdP 的 TX-local OpenTofu 唯一声明）
+- Keycloak 生产部署配置（生产 realm 不使用 `--import-realm`）
 - `frontend/src/composables/useAuth.js`（登录统一走 `kc.login` 跳转 Keycloak 托管登录页，无 idpHint 白名单）
 - 登录页与个人资料页（当前**没有**前端登录页，`ProfilePage` 未登录时直接跳 Keycloak）
 - `UserProfileController` / `UserProfileService` / `UserProfile` Entity、Repository、DTO（`create()` 当前硬编码 `wotbServer=CN`）
@@ -158,7 +158,7 @@ NA     https://api.worldoftanks.com/wot/auth/    https://api.wotblitz.com/wotb/a
 - 环境变量：`WG_APPLICATION_ID`（Keycloak 容器 env 注入）。
 - Provider 在配置层通过 `System.getenv("WG_APPLICATION_ID")` 读取；缺失时 `performLogin` 返回明确错误（对齐 QQ Provider 的"未配置返回错误"模式），不导致 Keycloak 启动失败。
 - 禁止硬编码进源码、Realm JSON 或前端代码。
-- `wargaming` 类型 IdP 的 ASIA / EU / NA 三个实例不在 realm JSON 中声明（避免密钥进导入配置），dev/prod 均在 Admin Console 手工创建，步骤写入交付文档（决策 D18）。
+- `wargaming` 类型 IdP 的 ASIA / EU / NA 三个实例不在 realm JSON 中声明；TX 由 OpenTofu 创建，Admin Console 仅用于只读核对。
 
 ---
 
@@ -292,7 +292,7 @@ wotb.verified    = true
 
 WG 首次登录创建用户后自动获得 `wotbtools-user`：
 
-- realm JSON 增加 `defaultRoles: ["wotbtools-user"]`（dev 导入即生效）；
+- OpenTofu `keycloak_default_roles` 声明 `wotbtools-user`；
 - 生产核对现有 default role 是否已是 `wotbtools-user`，是则无需操作；
 - Provider 内不写授角色代码，避免两套实现。
 
@@ -519,8 +519,7 @@ keycloak-qq-provider
 
 ### 4. Realm 配置载体（决策 D18）
 
-- realm JSON：增加 4 个 Protocol Mapper（第八节）与 `defaultRoles`（第七节第 7 条）；不声明 IdP；
-- `wargaming` 类型 IdP 的 ASIA / EU / NA 三个实例（alias `wargaming-asia` / `wargaming-eu` / `wargaming-na`、region 对应选择）与 `wotbtools-admin-api` 等：dev/prod 均在 Admin Console 手工配置，步骤写入交付文档。
+- `infra/tofu/keycloak`：声明 Protocol Mapper、`defaultRoles`、三个 Wargaming IdP 与 `wotbtools-admin-api`；TX 由 OpenTofu apply，凭据使用 write-only runtime 变量。
 
 ---
 

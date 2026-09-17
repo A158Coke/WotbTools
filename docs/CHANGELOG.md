@@ -12,6 +12,7 @@
 - **Three-service immutable release identity bootstrap**：Frontend 现有 build metadata 的 canonical 字段明确为 `buildCommit`；Keycloak 镜像通过 frozen release SHA 构建参数注入 `WOTBTOOLS_BUILD_COMMIT`，启动时输出该 identity；Backend `StartupReleaseDiagnostics` 现输出 full build commit 及其对应 immutable `sha-<12>` image tag。本次路径组合会选择 backend/frontend/keycloak 三个 application images，使用同一 frozen release SHA 构建并写入 manifest；未修改认证行为、Deploy fail-closed、数据库或备份链路。
 
 ### Fixed
+- **TX Keycloak OpenTofu ownership and backend Admin API client**：fresh TX realm 由独立 OpenTofu root 接管，创建 `wotbtools-admin-api` confidential service-account client；其 runtime secret 使用 write-only 输入，service account 仅获得 `manage-users`、`query-users`、`view-realm`，并以 fresh realm positive/negative Admin API smoke 与 second-plan no-op 作为验收。TX 不再导入 realm JSON 或声明 `juhe-qq` alias。
 - **TX OpenTofu secret environment forwarding**：TX OpenTofu apply 通过 SSH 传递普通运行时环境变量，并在远端 tofu 执行前显式导出 required `TF_VAR_*`；密码不写入 tfvars、state 或日志。
 - **Manual TX deployment entry**：Deploy 保留 Build `workflow_run` 自动接力，并新增仅面向当前 `main` HEAD 的 `workflow_dispatch` TX 重试入口；服务输入限制为 TX 白名单，沿用 immutable `sha-<12>` 镜像、preflight、TX-local OpenTofu 与 health gate，不触发 DNS/Yecao retirement。
 - **Production deploy staging regressions**：修正 TX SCP 保留 `deploy/tx` 前缀后的清理与执行路径，并让 Yecao observability verifier 通过 child-process 环境传递变量，避免给 readonly `WOTB_DIR` 重新赋值。
