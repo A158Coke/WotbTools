@@ -42,6 +42,13 @@ export TF_VAR_qq_client_secret_version="$QQ_CLIENT_SECRET_VERSION"
 export TF_VAR_wargaming_placeholder_secret="$WARGAMING_PLACEHOLDER_SECRET"
 export TF_VAR_wargaming_placeholder_secret_version="$WARGAMING_PLACEHOLDER_SECRET_VERSION"
 
+TOFU_CLI_CONFIG="${TF_CLI_CONFIG_FILE:-/opt/wotb-tx/tofurc}"
+[ -f "$TOFU_CLI_CONFIG" ] || {
+  echo "ERROR: OpenTofu CLI config not found: $TOFU_CLI_CONFIG" >&2
+  exit 2
+}
+export TF_CLI_CONFIG_FILE="$TOFU_CLI_CONFIG"
+
 trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT
 tofu init -reconfigure -input=false
 tofu validate

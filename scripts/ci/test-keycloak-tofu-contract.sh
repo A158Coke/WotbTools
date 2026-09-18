@@ -84,6 +84,20 @@ assert 'TF_VAR_qq_client_secret' in tofu_script
 assert 'TF_VAR_wargaming_placeholder_secret' in tofu_script
 assert 'echo "$KEYCLOAK_ADMIN_CLIENT_SECRET"' not in tofu_script
 assert 'printf' in tofu_script
+assert 'TOFU_CLI_CONFIG="${TF_CLI_CONFIG_FILE:-/opt/wotb-tx/tofurc}"' in tofu_script
+assert '[ -f "$TOFU_CLI_CONFIG" ] || {' in tofu_script
+assert 'echo "ERROR: OpenTofu CLI config not found: $TOFU_CLI_CONFIG" >&2' in tofu_script
+assert 'export TF_CLI_CONFIG_FILE="$TOFU_CLI_CONFIG"' in tofu_script
+assert tofu_script.index('TOFU_CLI_CONFIG="${TF_CLI_CONFIG_FILE:-/opt/wotb-tx/tofurc}"') < tofu_script.index('tofu init -reconfigure -input=false')
+assert tofu_script.index('export TF_CLI_CONFIG_FILE="$TOFU_CLI_CONFIG"') < tofu_script.index('tofu init -reconfigure -input=false')
+assert 'bash ./validate-plan.sh plan.tfplan' in tofu_script
+assert 'bash ./validate-plan.sh second-plan.tfplan' in tofu_script
+assert 'tofu apply -input=false -auto-approve plan.tfplan' in tofu_script
+assert 'second-plan.tfplan' in tofu_script
+assert "if jq -e 'any(.resource_changes[]?; ((.change.actions // []) | any(. != \"no-op\")))'" in tofu_script
+assert 'echo "ERROR: Keycloak OpenTofu second plan is not No changes." >&2' in tofu_script
+assert 'install -d -m 700 /opt/wotb-tx' in tofu_script
+assert 'tx-local-opentofu-keycloak' in tofu_script
 
 steps = workflow["jobs"]["deploy_tx"]["steps"]
 names = [step.get("name", "") for step in steps]
