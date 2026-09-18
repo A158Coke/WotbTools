@@ -152,7 +152,7 @@ jobs:
           restore-keys: ${{ runner.os }}-maven-
       - name: Maven test
         working-directory: java
-        run: mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo test
+        run: mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo test
       - name: Production backend Docker build
         run: docker build --build-arg BUILD_COMMIT=ci-${{ github.sha }} -f docker/Dockerfile.backend -t wotbtools-backend:pr .
 
@@ -170,13 +170,13 @@ jobs:
           java-version: "21"
       - name: Juhe QQ provider
         working-directory: keycloak-juhe-qq-provider
-        run: mvn --batch-mode --no-transfer-progress -s ../java/settings.xml -Dmaven.repo.local=../java/.m2repo test
+        run: mvn --batch-mode --no-transfer-progress -s ../java/settings-ci.xml -Dmaven.repo.local=../java/.m2repo test
       - name: Official QQ provider
         working-directory: keycloak-qq-provider
-        run: mvn --batch-mode --no-transfer-progress -s ../java/settings.xml -Dmaven.repo.local=../java/.m2repo test
+        run: mvn --batch-mode --no-transfer-progress -s ../java/settings-ci.xml -Dmaven.repo.local=../java/.m2repo test
       - name: Wargaming provider
         working-directory: keycloak-wargaming-provider
-        run: mvn --batch-mode --no-transfer-progress -s ../java/settings.xml -Dmaven.repo.local=../java/.m2repo test
+        run: mvn --batch-mode --no-transfer-progress -s ../java/settings-ci.xml -Dmaven.repo.local=../java/.m2repo test
 
   keycloak_runtime:
     needs: [changes]
@@ -271,8 +271,8 @@ jobs:
         working-directory: java
         run: |
           set -euo pipefail
-          mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo -pl wotb-web -am -DskipTests install
-          mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo -pl wotb-web -Dtest=BattlePlaybackDatasetTest,BattlePlaybackProjectorTest,ReplayArtifactWriterTest -Dsurefire.failIfNoSpecifiedTests=true test
+          mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl wotb-web -am -DskipTests install
+          mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl wotb-web -Dtest=BattlePlaybackDatasetTest,BattlePlaybackProjectorTest,ReplayArtifactWriterTest -Dsurefire.failIfNoSpecifiedTests=true test
 
   android:
     needs: [changes]
@@ -289,17 +289,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
+      - name: Test bounded CI network retry helper
+        run: bash scripts/ci/test-network-retry.sh
       - name: Accept Android SDK licenses (best-effort)
         run: |
           if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
             yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
           fi
-      - name: Assemble debug APK
+      - name: Assemble debug APK and run Android JVM unit tests
         working-directory: android
-        run: gradle :app:assembleDebug --no-daemon
-      - name: Run Android JVM unit tests (AuthNavigationPolicy)
-        working-directory: android
-        run: gradle :app:testDebugUnitTest --no-daemon
+        run: bash ../scripts/ci/run-with-network-retry.sh "Android Gradle dependency resolution" gradle :app:assembleDebug :app:testDebugUnitTest --no-daemon
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -397,6 +396,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+      - name: Pull Prometheus image with bounded network retry
+        run: bash scripts/ci/run-with-network-retry.sh "Pull Prometheus image" docker pull prom/prometheus:v2.55.1
+      - name: Pull Loki image with bounded network retry
+        run: bash scripts/ci/run-with-network-retry.sh "Pull Loki image" docker pull grafana/loki:3.3.2
+      - name: Pull Alloy image with bounded network retry
+        run: bash scripts/ci/run-with-network-retry.sh "Pull Alloy image" docker pull grafana/alloy:v1.4.2
       - name: Prometheus config validation
         run: >-
           docker run --rm --entrypoint promtool

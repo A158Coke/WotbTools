@@ -364,6 +364,11 @@ jobs:
           script: |
             set -euo pipefail
             command -v tofu >/dev/null 2>&1 || { echo "tofu is required on TX" >&2; exit 1; }
+            test -f /opt/wotb-tx/tofurc || {
+              echo "ERROR: /opt/wotb-tx/tofurc is missing" >&2
+              exit 2
+            }
+            export TF_CLI_CONFIG_FILE=/opt/wotb-tx/tofurc
             root="/opt/wotb-tx/tofu.incoming/${{ needs.changes.outputs.release_sha }}/infra/tofu/postgres-keycloak"
             test -d "$root"
             cd "$root"

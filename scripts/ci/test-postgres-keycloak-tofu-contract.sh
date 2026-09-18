@@ -52,6 +52,11 @@ for runtime_name in (
 ):
     assert runtime_name in apply_envs, f"OpenTofu SSH step must forward {runtime_name}"
 apply_script = apply_step["with"]["script"]
+assert "test -f /opt/wotb-tx/tofurc || {" in apply_script
+assert 'echo "ERROR: /opt/wotb-tx/tofurc is missing" >&2' in apply_script
+assert "export TF_CLI_CONFIG_FILE=/opt/wotb-tx/tofurc" in apply_script
+assert apply_script.index("test -f /opt/wotb-tx/tofurc || {") < apply_script.index("tofu init -reconfigure -input=false")
+assert apply_script.index("export TF_CLI_CONFIG_FILE=/opt/wotb-tx/tofurc") < apply_script.index("tofu init -reconfigure -input=false")
 for export_line in (
     'export TF_VAR_postgresql_admin_username="$KC_POSTGRES_ADMIN_USER"',
     'export TF_VAR_postgresql_admin_password="$KC_POSTGRES_ADMIN_PASSWORD"',
