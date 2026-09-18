@@ -5,12 +5,16 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python3 - "$ROOT" <<'PY'
 import re
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 root = Path(sys.argv[1])
 ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 build = (root / ".github/workflows/build.yml").read_text(encoding="utf-8")
 deploy = (root / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+ci_settings_path = root / "java/settings-ci.xml"
+ci_settings_text = ci_settings_path.read_text(encoding="utf-8")
+local_settings_text = (root / "java/settings.xml").read_text(encoding="utf-8")
 
 assert "name: CI / PR" in ci
 assert "name: CI / Required Gate" in ci
@@ -74,6 +78,17 @@ live_data_block = next(block for block in blocks if block.startswith("  live_dat
 assert "needs.changes.outputs.data == 'true' || needs.changes.outputs.full == 'true'" not in live_data_block
 assert "LIVE_DATA_CHANGED: ${{ needs.changes.outputs.live_data }}" in ci
 assert 'live_data_contracts|$([ "$LIVE_DATA_CHANGED" = true ] && echo true || echo false)|$LIVE_DATA_CONTRACTS' in ci
+
+ET.parse(ci_settings_path)
+assert "maven.aliyun.com" not in ci_settings_text
+assert "<mirrors>" not in ci_settings_text
+assert "<mirrorOf>" not in ci_settings_text
+assert "maven.aliyun.com" in local_settings_text
+assert "<mirrorOf>*</mirrorOf>" in local_settings_text
+assert "settings.xml" not in re.sub(r"settings-ci\.xml", "", ci)
+assert ci.count("-s settings-ci.xml") == 3
+assert ci.count("-s ../java/settings-ci.xml") == 3
+assert "-s settings.xml" not in ci
 
 expected_jobs = {
     "python_unit": "data",
