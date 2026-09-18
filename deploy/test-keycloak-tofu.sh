@@ -16,9 +16,6 @@ RETRIES="${WOTB_KEYCLOAK_TOFU_RETRIES:-90}"
 INTERVAL_SEC="${WOTB_KEYCLOAK_TOFU_INTERVAL_SEC:-2}"
 BOOTSTRAP_PASSWORD="tofu-bootstrap-test-password"
 ADMIN_API_SECRET="tofu-admin-api-test-secret"
-QQ_CLIENT_ID="tofu-qq-client-id"
-QQ_CLIENT_SECRET="tofu-qq-test-secret"
-WG_PLACEHOLDER_SECRET="tofu-wargaming-placeholder"
 TEST_USERNAME="tofu-admin-api-test-user"
 
 fail() {
@@ -105,11 +102,6 @@ export TF_VAR_keycloak_admin_username=admin
 export TF_VAR_keycloak_admin_password="$BOOTSTRAP_PASSWORD"
 export TF_VAR_keycloak_admin_client_secret="$ADMIN_API_SECRET"
 export TF_VAR_keycloak_admin_client_secret_version=1
-export TF_VAR_qq_client_id="$QQ_CLIENT_ID"
-export TF_VAR_qq_client_secret="$QQ_CLIENT_SECRET"
-export TF_VAR_qq_client_secret_version=1
-export TF_VAR_wargaming_placeholder_secret="$WG_PLACEHOLDER_SECRET"
-export TF_VAR_wargaming_placeholder_secret_version=1
 
 cd "$TOFU_ROOT"
 TOFU_WORK_ROOT="$WORK/tofu-root"
@@ -277,14 +269,52 @@ jq -e '([.[].alias] | sort) == ["idp-qq", "wargaming-asia", "wargaming-eu", "war
   || fail "fresh realm IdP aliases are not the approved TX set"
 jq -e 'all(.[]; .alias != "qq" and .alias != "juhe-qq")' "$WORK/idps.json" >/dev/null \
   || fail "fresh TX realm must not create legacy QQ aliases"
-jq -e 'any(.[]; .alias == "idp-qq" and .providerId == "qq") and all(.[] | select(.providerId == "wargaming"); .config.region != null)' \
+jq -e 'any(.[]; .alias == "idp-qq" and .providerId == "qq" and .enabled == false) and all(.[] | select(.providerId == "wargaming"); .enabled == false and .config.region != null)' \
   "$WORK/idps.json" >/dev/null || fail "QQ/Wargaming provider representation is incomplete"
 for alias in idp-qq wargaming-asia wargaming-eu wargaming-na; do
   broker_status="$(curl -sS -o "$WORK/broker-$alias.json" -w '%{http_code}' \
     "$KEYCLOAK_URL/realms/wotbtools/broker/$alias/endpoint")"
   [ "$broker_status" != 404 ] || fail "broker endpoint is missing for $alias"
 done
-echo "PASS: realm, client, mapper, default-role, IdP, and broker resources"
+echo "PASS: realm, client, mapper, default-role, disabled IdP, and broker resources"
+
+api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances/idp-qq" \
+  "$BOOTSTRAP_TOKEN" "$WORK/qq-before-operator.json"
+jq -e '.enabled == false and .config.clientId == "bootstrap-not-configured"' \
+  "$WORK/qq-before-operator.json" >/dev/null \
+  || fail "fresh QQ IdP was not created with the disabled bootstrap state"
+jq --arg client_id "operator-qq-client-id" --arg client_secret "operator-qq-client-secret" \
+  '.enabled = true | .config.clientId = $client_id | .config.clientSecret = $client_secret' \
+  "$WORK/qq-before-operator.json" > "$WORK/qq-operator-update.json"
+api 204 PUT "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances/idp-qq" \
+  "$BOOTSTRAP_TOKEN" "$WORK/qq-operator-response.json" \
+  --data-binary "@$WORK/qq-operator-update.json"
+api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances/idp-qq" \
+  "$BOOTSTRAP_TOKEN" "$WORK/qq-after-operator.json"
+jq -e '.enabled == true and .config.clientId == "operator-qq-client-id"' \
+  "$WORK/qq-after-operator.json" >/dev/null \
+  || fail "Keycloak Admin API did not apply operator-owned QQ fields"
+echo "PASS: operator enabled QQ and configured client_id (client_secret is write-only and not read back)"
+
+"$TOFU" plan -input=false -no-color -out="$WORK/operator-plan.tfplan"
+bash ./validate-plan.sh "$WORK/operator-plan.tfplan"
+if jq -e 'any(.resource_changes[]?; .address == "keycloak_oidc_identity_provider.qq" and ((.change.actions // []) | any(. != "no-op")))' \
+    < <("$TOFU" show -json "$WORK/operator-plan.tfplan") >/dev/null; then
+  fail "operator-owned QQ fields are still managed by the OpenTofu plan"
+fi
+"$TOFU" apply -input=false -auto-approve "$WORK/operator-plan.tfplan"
+api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances/idp-qq" \
+  "$BOOTSTRAP_TOKEN" "$WORK/qq-after-operator-apply.json"
+jq -e '.enabled == true and .config.clientId == "operator-qq-client-id"' \
+  "$WORK/qq-after-operator-apply.json" >/dev/null \
+  || fail "OpenTofu apply overwrote operator-owned QQ fields"
+"$TOFU" plan -input=false -no-color -out="$WORK/operator-second-plan.tfplan"
+bash ./validate-plan.sh "$WORK/operator-second-plan.tfplan"
+if jq -e 'any(.resource_changes[]?; ((.change.actions // []) | any(. != "no-op")))' \
+    < <("$TOFU" show -json "$WORK/operator-second-plan.tfplan") >/dev/null; then
+  fail "operator-owned QQ second plan is not a no-op"
+fi
+echo "PASS: operator-owned QQ fields survive OpenTofu plan/apply and second plan is no-op"
 
 expect_forbidden() {
   local method="$1" url="$2" output="$3"

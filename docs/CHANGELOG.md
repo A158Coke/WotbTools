@@ -13,6 +13,7 @@
 - **Three-service immutable release identity bootstrap**：Frontend 现有 build metadata 的 canonical 字段明确为 `buildCommit`；Keycloak 镜像通过 frozen release SHA 构建参数注入 `WOTBTOOLS_BUILD_COMMIT`，启动时输出该 identity；Backend `StartupReleaseDiagnostics` 现输出 full build commit 及其对应 immutable `sha-<12>` image tag。本次路径组合会选择 backend/frontend/keycloak 三个 application images，使用同一 frozen release SHA 构建并写入 manifest；未修改认证行为、Deploy fail-closed、数据库或备份链路。
 
 ### Fixed
+- **TX Keycloak IdP bootstrap ownership**：QQ 现在以 disabled skeleton bootstrap，`client_id`、write-only secret 与 `enabled` 转为 operator-owned 并由精确 lifecycle ignore 保护；Wargaming 三个 IdP 保留为 disabled resource，OIDC adapter placeholder 固定在仓库内，不再制造 TX production secret dependency。
 - **TX Keycloak OpenTofu ownership and backend Admin API client**：fresh TX realm 由独立 OpenTofu root 接管，创建 `wotbtools-admin-api` confidential service-account client；其 runtime secret 使用 write-only 输入，service account 仅获得 `manage-users`、`query-users`、`view-realm`，并以 fresh realm positive/negative Admin API smoke 与 second-plan no-op 作为验收。TX 不再导入 realm JSON 或声明 `juhe-qq` alias。
 - **TX OpenTofu secret environment forwarding**：TX OpenTofu apply 通过 SSH 传递普通运行时环境变量，并在远端 tofu 执行前显式导出 required `TF_VAR_*`；密码不写入 tfvars、state 或日志。
 - **TX OpenTofu provider mirror enforcement**：TX PostgreSQL 与 Keycloak OpenTofu 执行前均 fail-closed 检查并使用 `/opt/wotb-tx/tofurc`，避免从 TX 直接访问 GitHub Releases；既有 plan safety、apply、second-plan no-op 与 provision marker gates 保持不变。
