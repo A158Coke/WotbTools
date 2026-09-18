@@ -277,6 +277,84 @@ grep -Fq 'run --rm --no-deps health-probe' "$WORK/docker.log" \
 grep -Fq 'imageTag' "$WORK/live/tx-production-release.json" \
   || fail "TX deploy must record immutable image identity after health succeeds"
 
+run_live_service_deploy() {
+  local services="$1" image_services="$2" log="$3"
+  env -i \
+    PATH="$WORK/bin:$PATH" HOME="$WORK" \
+    WOTB_TX_DIR="$WORK/live" WOTB_TX_INCOMING_DIR="$WORK/incoming" TX_RUNTIME_ROOT="$WORK/live" \
+    KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+    KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
+    WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+    WOTB_DEPLOY_SERVICES="$services" WOTB_DEPLOY_IMAGE_SERVICES="$image_services" \
+    WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+    FAKE_DOCKER_LOG="$log" \
+    bash "$WORK/incoming/deploy.sh"
+}
+
+frontend_log="$WORK/frontend.log"
+frontend_output="$(run_live_service_deploy wotb-frontend wotb-frontend "$frontend_log" 2>&1)"
+grep -Fq 'TX deployment completed:' <<< "$frontend_output" \
+  || fail "Normal frontend deployment must complete"
+grep -Fq 'up -d --no-deps --force-recreate wotb-frontend' "$frontend_log" \
+  || fail "Normal frontend deployment must start the frontend"
+grep -Fq 'up -d --no-deps --force-recreate caddy' "$frontend_log" \
+  || fail "Normal frontend deployment must preserve Caddy recreation"
+
+caddy_log="$WORK/caddy.log"
+caddy_output="$(run_live_service_deploy caddy '' "$caddy_log" 2>&1)"
+grep -Fq 'TX deployment completed:' <<< "$caddy_output" \
+  || fail "Explicit Caddy deployment must complete"
+[ "$(grep -Fc 'up -d --no-deps --force-recreate caddy' "$caddy_log")" -ge 2 ] \
+  || fail "Explicit Caddy deployment must preserve its selected start and recreate behavior"
+
+mkdir -p "$WORK/keycloak-bootstrap" "$WORK/keycloak-bootstrap-incoming"
+cp -a "$TX_DIR/." "$WORK/keycloak-bootstrap-incoming/"
+printf '%s\n' '{"schemaVersion":1,"services":{"wotb-frontend":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"}}}' \
+  > "$WORK/keycloak-bootstrap/tx-production-release.json"
+bootstrap_keycloak_log="$WORK/keycloak-bootstrap.log"
+bootstrap_keycloak_output="$(env -i \
+  PATH="$WORK/bin:$PATH" HOME="$WORK" \
+  WOTB_TX_DIR="$WORK/keycloak-bootstrap" WOTB_TX_INCOMING_DIR="$WORK/keycloak-bootstrap-incoming" TX_RUNTIME_ROOT="$WORK/keycloak-bootstrap" \
+  KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
+  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+  TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  WOTB_TX_BOOTSTRAP_KEYCLOAK=1 WOTB_DEPLOY_SERVICES=keycloak WOTB_DEPLOY_IMAGE_SERVICES=keycloak \
+  WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+  FAKE_DOCKER_LOG="$bootstrap_keycloak_log" \
+  bash "$WORK/keycloak-bootstrap-incoming/deploy.sh" 2>&1)"
+grep -Fq 'TX deployment completed:' <<< "$bootstrap_keycloak_output" \
+  || fail "Keycloak bootstrap must complete after its master realm health check"
+grep -Fq 'up -d --no-deps --force-recreate keycloak' "$bootstrap_keycloak_log" \
+  || fail "Keycloak bootstrap must start Keycloak"
+! grep -Fq 'caddy' "$bootstrap_keycloak_log" \
+  || fail "Keycloak bootstrap must not pull, recreate, health-check, restart, or stop Caddy"
+
+mkdir -p "$WORK/keycloak-normal" "$WORK/keycloak-normal-incoming"
+cp -a "$TX_DIR/." "$WORK/keycloak-normal-incoming/"
+printf 'tx-local-opentofu-keycloak\n' > "$WORK/keycloak-normal/keycloak.tofu-provisioned"
+printf '%s\n' '{"schemaVersion":1,"services":{"wotb-frontend":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"}}}' \
+  > "$WORK/keycloak-normal/tx-production-release.json"
+normal_keycloak_log="$WORK/keycloak-normal.log"
+normal_keycloak_output="$(env -i \
+  PATH="$WORK/bin:$PATH" HOME="$WORK" \
+  WOTB_TX_DIR="$WORK/keycloak-normal" WOTB_TX_INCOMING_DIR="$WORK/keycloak-normal-incoming" TX_RUNTIME_ROOT="$WORK/keycloak-normal" \
+  KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
+  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+  TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  WOTB_TX_BOOTSTRAP_KEYCLOAK=0 WOTB_DEPLOY_SERVICES=keycloak WOTB_DEPLOY_IMAGE_SERVICES=keycloak \
+  WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+  FAKE_DOCKER_LOG="$normal_keycloak_log" \
+  bash "$WORK/keycloak-normal-incoming/deploy.sh" 2>&1)"
+grep -Fq 'TX deployment completed:' <<< "$normal_keycloak_output" \
+  || fail "Normal Keycloak deployment must complete"
+grep -Fq 'up -d --no-deps --force-recreate keycloak' "$normal_keycloak_log" \
+  || fail "Normal Keycloak deployment must start Keycloak"
+grep -Fq 'up -d --no-deps --force-recreate caddy' "$normal_keycloak_log" \
+  || fail "Normal Keycloak deployment must preserve Caddy recreation"
+
 set +e
 invalid_upstream_output="$(env -i \
   PATH="$WORK/bin:$PATH" HOME="$WORK" \

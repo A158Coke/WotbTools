@@ -314,7 +314,8 @@ apply_services() {
     fi
   done
   # Recreate Caddy when its staged configuration or a proxied application changes.
-  if is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected caddy; then
+  if [ "$BOOTSTRAP_KEYCLOAK" != 1 ] && \
+    (is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected caddy); then
     if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate caddy; then
       FAILED_SERVICE="caddy"
       return 1
