@@ -152,7 +152,7 @@ jobs:
           restore-keys: ${{ runner.os }}-maven-
       - name: Maven test
         working-directory: java
-        run: mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo test
+        run: mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo test
       - name: Production backend Docker build
         run: docker build --build-arg BUILD_COMMIT=ci-${{ github.sha }} -f docker/Dockerfile.backend -t wotbtools-backend:pr .
 
@@ -170,13 +170,13 @@ jobs:
           java-version: "21"
       - name: Juhe QQ provider
         working-directory: keycloak-juhe-qq-provider
-        run: mvn --batch-mode --no-transfer-progress -s ../java/settings.xml -Dmaven.repo.local=../java/.m2repo test
+        run: mvn --batch-mode --no-transfer-progress -s ../java/settings-ci.xml -Dmaven.repo.local=../java/.m2repo test
       - name: Official QQ provider
         working-directory: keycloak-qq-provider
-        run: mvn --batch-mode --no-transfer-progress -s ../java/settings.xml -Dmaven.repo.local=../java/.m2repo test
+        run: mvn --batch-mode --no-transfer-progress -s ../java/settings-ci.xml -Dmaven.repo.local=../java/.m2repo test
       - name: Wargaming provider
         working-directory: keycloak-wargaming-provider
-        run: mvn --batch-mode --no-transfer-progress -s ../java/settings.xml -Dmaven.repo.local=../java/.m2repo test
+        run: mvn --batch-mode --no-transfer-progress -s ../java/settings-ci.xml -Dmaven.repo.local=../java/.m2repo test
 
   keycloak_runtime:
     needs: [changes]
@@ -271,8 +271,8 @@ jobs:
         working-directory: java
         run: |
           set -euo pipefail
-          mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo -pl wotb-web -am -DskipTests install
-          mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo -pl wotb-web -Dtest=BattlePlaybackDatasetTest,BattlePlaybackProjectorTest,ReplayArtifactWriterTest -Dsurefire.failIfNoSpecifiedTests=true test
+          mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl wotb-web -am -DskipTests install
+          mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl wotb-web -Dtest=BattlePlaybackDatasetTest,BattlePlaybackProjectorTest,ReplayArtifactWriterTest -Dsurefire.failIfNoSpecifiedTests=true test
 
   android:
     needs: [changes]

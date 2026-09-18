@@ -261,6 +261,7 @@ npm run build
 项目使用独立 Maven 配置，避免污染或依赖用户全局 Maven 设置：
 
 - `java/settings.xml`：仓库跟踪的可移植本地 Maven settings；在 `java/` 目录执行时使用独立仓库 `java/.m2repo`，干净 clone 无需生成。
+- `java/settings-ci.xml`：GitHub Actions 专用 Maven settings，不配置 mirror，让 CI 按 Maven 默认 repository 规则解析；本地开发仍使用 `settings.xml`。
 - `java/settings-docker.xml`：Docker 构建用 Maven settings。
 - `frontend/package-lock.json`：固定前端依赖版本。
 
