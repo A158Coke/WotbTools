@@ -289,6 +289,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
+      - name: Test bounded CI network retry helper
+        run: bash scripts/ci/test-network-retry.sh
       - name: Accept Android SDK licenses (best-effort)
         run: |
           if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
@@ -296,7 +298,7 @@ jobs:
           fi
       - name: Assemble debug APK and run Android JVM unit tests
         working-directory: android
-        run: gradle :app:assembleDebug :app:testDebugUnitTest --no-daemon
+        run: bash ../scripts/ci/run-with-network-retry.sh "Android Gradle dependency resolution" gradle :app:assembleDebug :app:testDebugUnitTest --no-daemon
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -394,6 +396,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+      - name: Pull Prometheus image with bounded network retry
+        run: bash scripts/ci/run-with-network-retry.sh "Pull Prometheus image" docker pull prom/prometheus:v2.55.1
+      - name: Pull Loki image with bounded network retry
+        run: bash scripts/ci/run-with-network-retry.sh "Pull Loki image" docker pull grafana/loki:3.3.2
+      - name: Pull Alloy image with bounded network retry
+        run: bash scripts/ci/run-with-network-retry.sh "Pull Alloy image" docker pull grafana/alloy:v1.4.2
       - name: Prometheus config validation
         run: >-
           docker run --rm --entrypoint promtool
