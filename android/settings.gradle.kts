@@ -13,6 +13,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven {
+            name = "AliyunPublicFallback"
+            url = uri("https://maven.aliyun.com/repository/public")
+        }
     }
 }
 
