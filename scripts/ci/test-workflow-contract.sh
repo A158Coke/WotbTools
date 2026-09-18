@@ -15,6 +15,7 @@ deploy = (root / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
 ci_settings_path = root / "java/settings-ci.xml"
 ci_settings_text = ci_settings_path.read_text(encoding="utf-8")
 local_settings_text = (root / "java/settings.xml").read_text(encoding="utf-8")
+android_settings_text = (root / "android/settings.gradle.kts").read_text(encoding="utf-8")
 
 assert "name: CI / PR" in ci
 assert "name: CI / Required Gate" in ci
@@ -89,6 +90,35 @@ assert "settings.xml" not in re.sub(r"settings-ci\.xml", "", ci)
 assert ci.count("-s settings-ci.xml") == 3
 assert ci.count("-s ../java/settings-ci.xml") == 3
 assert "-s settings.xml" not in ci
+
+android_dependency_resolution = android_settings_text.split("dependencyResolutionManagement", 1)[1].split("rootProject.name", 1)[0]
+android_plugin_management = android_settings_text.split("pluginManagement", 1)[1].split("dependencyResolutionManagement", 1)[0]
+assert "google()" in android_dependency_resolution
+assert "mavenCentral()" in android_dependency_resolution
+assert 'name = "AliyunPublicFallback"' in android_dependency_resolution
+assert 'https://maven.aliyun.com/repository/public' in android_dependency_resolution
+assert "maven.aliyun.com" not in android_plugin_management
+assert android_dependency_resolution.count("google()") == 1
+assert android_dependency_resolution.count("mavenCentral()") == 1
+assert android_dependency_resolution.index("google()") < android_dependency_resolution.index("mavenCentral()")
+assert android_dependency_resolution.index("mavenCentral()") < android_dependency_resolution.index("AliyunPublicFallback")
+assert "repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)" in android_dependency_resolution
+
+android_ci_match = re.search(
+    r"- name: Assemble debug APK and run Android JVM unit tests.*?\n"
+    r"\s+working-directory: android\n"
+    r"\s+run: (?P<command>[^\n]+)",
+    ci,
+    re.DOTALL,
+)
+assert android_ci_match
+android_command = android_ci_match.group("command")
+assert ":app:assembleDebug" in android_command
+assert ":app:testDebugUnitTest" in android_command
+assert "--no-daemon" in android_command
+assert ci.count("gradle :app:assembleDebug :app:testDebugUnitTest --no-daemon") == 1
+assert "cache-read-only: false" not in ci
+assert "path: android/app/build/outputs/apk/debug/app-debug.apk" in ci
 
 expected_jobs = {
     "python_unit": "data",

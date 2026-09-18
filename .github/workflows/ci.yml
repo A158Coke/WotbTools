@@ -294,12 +294,9 @@ jobs:
           if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
             yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
           fi
-      - name: Assemble debug APK
+      - name: Assemble debug APK and run Android JVM unit tests
         working-directory: android
-        run: gradle :app:assembleDebug --no-daemon
-      - name: Run Android JVM unit tests (AuthNavigationPolicy)
-        working-directory: android
-        run: gradle :app:testDebugUnitTest --no-daemon
+        run: gradle :app:assembleDebug :app:testDebugUnitTest --no-daemon
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
