@@ -665,7 +665,7 @@ preflight_host() {
 }
 
 pre_cutover_check() {
-  local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health
+  local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health business_container
   local yecao_compose="$source_root/deploy/docker-compose.prod.yml"
   local yecao_contract="$LIVE_DEPLOY_DIR/yecao-backend-contract.json"
   local failures=0 provider
@@ -675,7 +675,8 @@ pre_cutover_check() {
   command -v python3 >/dev/null 2>&1 || { echo "python3: FAIL (python3 is required)" >&2; return 1; }
   for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
     KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
-    WG_APPLICATION_ID CADDY_ACME_EMAIL; do
+    WG_APPLICATION_ID CADDY_ACME_EMAIL \
+    TX_BUSINESS_POSTGRES_ADMIN_USER TX_BUSINESS_POSTGRES_ADMIN_PASSWORD; do
     require_env "$required"
   done
   [ -f "$LIVE_COMPOSE" ] || { echo "tx-compose: FAIL (missing $LIVE_COMPOSE)" >&2; return 1; }
@@ -698,6 +699,21 @@ assert not any("0.0.0.0" in p or p.startswith("5432:") or "::" in p for p in val
     echo "postgres-loopback: PASS"
   else
     echo "postgres-loopback: FAIL (management port must be 127.0.0.1:15432:5432 only)" >&2
+    failures=1
+  fi
+
+  if python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+ports = [str(p) for p in data["services"]["business-postgres"].get("ports", [])]
+assert any("127.0.0.1" in p and "25432" in p and "5432" in p for p in ports), ports
+assert not any(
+    "0.0.0.0" in p or "::" in p or "10.20.0.1" in p or p.startswith("25432:") for p in ports
+), ports
+' <<< "$compose_json"; then
+    echo "business-postgres-loopback: PASS"
+  else
+    echo "business-postgres-loopback: FAIL (management port must be 127.0.0.1:25432:5432 only)" >&2
     failures=1
   fi
 
@@ -751,6 +767,29 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
     echo "keycloak-postgres: PASS"
   else
     echo "keycloak-postgres: FAIL (container is not healthy)" >&2
+    failures=1
+  fi
+
+  # Business PostgreSQL is authoritative business state, so PRE_CUTOVER_READY
+  # must not be emitted until its runtime, loopback administration port, and
+  # TX-local OpenTofu provisioning marker are all proven. These checks are
+  # read-only: they never create, modify, or delete any database or row.
+  business_container="$(docker compose -f "$LIVE_COMPOSE" ps -q business-postgres 2>/dev/null || true)"
+  health="$(docker compose -f "$LIVE_COMPOSE" ps --format '{{.Health}}' business-postgres 2>/dev/null || true)"
+  if [ -n "$business_container" ] && [ "$health" = healthy ] \
+    && docker compose -f "$LIVE_COMPOSE" exec -T business-postgres \
+      pg_isready -U "$TX_BUSINESS_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
+    echo "business-postgres: PASS"
+  else
+    echo "business-postgres: FAIL (container is missing or not healthy)" >&2
+    failures=1
+  fi
+
+  if [ -f "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER" ] \
+      && grep -Fxq 'tx-local-opentofu-business-postgres' "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER"; then
+    echo "business-postgres-provisioning: PASS"
+  else
+    echo "business-postgres-provisioning: FAIL (TX-local OpenTofu marker is missing or invalid)" >&2
     failures=1
   fi
 

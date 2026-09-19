@@ -67,6 +67,14 @@ DNS_CUTOVER_NOT_PERFORMED
 WAITING_FOR_OPERATOR_APPROVAL
 ```
 
+Business PostgreSQL 是权威业务状态，因此门禁同样要求它完全就绪才允许 `PRE_CUTOVER_READY`：
+`business-postgres` 容器存在且 healthy、`pg_isready` 成功、发布端口严格为
+`127.0.0.1:25432:5432`（出现 `0.0.0.0`、`::` 或 WireGuard 地址即失败）、
+`/opt/wotb-tx/business-postgres.tofu-provisioned` 存在且内容精确为
+`tx-local-opentofu-business-postgres`。任一检查失败即输出 `PRE_CUTOVER_NOT_READY`；
+这些检查全部只读，不创建、修改或删除任何数据库或数据行。详见
+`docs/operations/business-postgres.md`。
+
 `idp-qq=WAITING_EXTERNAL`（官方 QQ Open Platform 审核 pending）是允许状态，不阻断门禁；
 TX 明确不配置 `juhe-qq` fallback，门禁输出 `juhe-qq=NOT_CONFIGURED_IN_TX` 仅用于说明该
 旧 provider 不属于本 realm 的声明状态。门禁中的独立

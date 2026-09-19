@@ -94,6 +94,21 @@ The deploy helper chains each provisioning step explicitly and never invokes the
 provisioning helpers from an `||` list, because bash disables `errexit` inside a
 function called that way and a dirty plan would otherwise be ignored.
 
+## Pre-cutover gate
+
+`deploy/tx/pre-cutover-check.sh` reads `TX_BUSINESS_POSTGRES_ADMIN_USER` and
+refuses `PRE_CUTOVER_READY` until Business PostgreSQL is fully ready:
+
+- the `business-postgres` container exists and reports `healthy`;
+- `pg_isready -U "$TX_BUSINESS_POSTGRES_ADMIN_USER" -d postgres` succeeds;
+- the published administration port is exactly `127.0.0.1:25432:5432` - a
+  `0.0.0.0`, `::`, bare `25432:5432`, or WireGuard address fails the gate;
+- `/opt/wotb-tx/business-postgres.tofu-provisioned` exists and contains exactly
+  `tx-local-opentofu-business-postgres`.
+
+Any failure emits `PRE_CUTOVER_NOT_READY`. These checks are read-only: they
+never create, modify, or delete a database, table, or row.
+
 ## Provider mirror
 
 Production provider installation is mirror-based and fail-closed. An operator
