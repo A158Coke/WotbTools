@@ -550,7 +550,9 @@ root 管理，也不能使用带一天 expiration 的 artifact bucket 承载 sta
 ### TX Frontend + Keycloak predeployment boundary
 
 Phase 1 将 `wotb-frontend`、`keycloak` 与其专用 `keycloak-postgres` 路由到
-TX；Yecao 在正式 cutover 前仍只承载 backend、业务 PostgreSQL 与观测服务。release
+TX；Yecao 在正式 cutover 前仍只承载 backend、业务 PostgreSQL 与观测服务。Yecao 的
+MinIO 临时工作区是独立、显式手动的 Compose/OpenTofu deployment，绝不随普通 release
+启动或要求其 secrets；详见 `docs/operations/minio.md`。release
 manifest 的 `targetServices` 是这两个 host 的唯一发布路由来源，普通 Yecao compose
 配置变更不得刷新 legacy frontend/Keycloak。TX PostgreSQL 只发布
 `127.0.0.1:15432:5432` 给 TX-local OpenTofu；GitHub runner 只 SSH 触发，绝不
@@ -574,7 +576,8 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 Build 在 `main` 成功 push 后只为 affected application 构建 component-local 的
 immutable `sha-<12 位 SHA>` 与 `latest` 镜像 tag，并把冻结的完整 SHA 注入
 Backend `StartupReleaseDiagnostics`、Frontend `dist/version.json` 的 `buildCommit` 与 Keycloak 启动日志；backend diagnostics 同时输出由完整 SHA 推导的 immutable image tag，上传唯一
-`deployment-manifest`；自动 Deploy 只由成功的 Build `workflow_run` 接力，
+`deployment-manifest`；MinIO Dockerfile 改动还会构建同样 immutable tag 的源码固定
+MinIO 镜像，但没有 runtime deploy service。自动 Deploy 只由成功的 Build `workflow_run` 接力，
 不再提供普通应用 Deploy 的手工入口。事故操作使用仅
 `workflow_dispatch` 的 `.github/workflows/ops-recovery.yml`。纯
 `deploy/observability/grafana/dashboards/**` 只触发 Grafana OpenTofu API
