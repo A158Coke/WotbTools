@@ -212,6 +212,7 @@ jq -e '
   .implicitFlowEnabled == false and
   .directAccessGrantsEnabled == false and
   .consentRequired == false and
+  .alwaysDisplayInConsole == true and
   .frontchannelLogout == true and
   .attributes.login_theme == "wotbtools" and
   .attributes["frontchannel.logout.session.required"] == "true" and
@@ -230,7 +231,7 @@ jq -e '
   ]
 ' "$WORK/web-client.json" >/dev/null \
   || fail "wotbtools-web runtime representation changed its browser client contract"
-echo "PASS: wotbtools-web redirect, browser-flow, theme, front-channel logout, PKCE and consent contract"
+echo "PASS: wotbtools-web redirect, browser-flow, theme, always-display, front-channel logout, PKCE and consent contract"
 
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/clients/$ADMIN_API_CLIENT_ID" \
   "$BOOTSTRAP_TOKEN" "$WORK/admin-api-client.json"

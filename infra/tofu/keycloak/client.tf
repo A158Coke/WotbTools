@@ -10,10 +10,12 @@ resource "keycloak_openid_client" "web" {
   direct_access_grants_enabled = false
   service_accounts_enabled     = false
   # Browser client parity with the current production client: the realm login
-  # theme applies, front-channel logout is on, consent is off, and PKCE is not
-  # required ("" is the provider's "no code challenge method" value).
+  # theme applies, the client is always listed in the Account/Admin UI,
+  # front-channel logout is on, consent is off, and PKCE is not required
+  # ("" is the provider's "no code challenge method" value).
   consent_required            = false
   login_theme                 = "wotbtools"
+  always_display_in_console   = true
   frontchannel_logout_enabled = true
   pkce_code_challenge_method  = ""
   # keycloak/keycloak 5.9.0 has no typed field for the Keycloak client attribute
