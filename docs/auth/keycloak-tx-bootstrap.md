@@ -41,6 +41,40 @@ runtime 变量注入，禁止写入 HCL、tfvars、plan 或普通 state attribut
 3. 同时构建三个 vendored provider：生产过渡期仍需要的 `keycloak-juhe-qq-provider`（真实 Juhe API 链路）、待官方 QQ Open Platform 审核的 `keycloak-qq-provider`（来源和本地安全修正见 [UPSTREAM.md](../../keycloak-qq-provider/UPSTREAM.md)），以及 `keycloak-wargaming-provider`。三者均固定以当前 Keycloak `26.6.4` 构建；禁止构建或运行时下载 provider。
 4. OpenTofu 创建官方 QQ alias `idp-qq`（provider id `qq`）；TX 不创建 `juhe-qq` fallback，也不创建裸 alias `qq`。QQ Connect App ID/Secret 仅由 runtime secret 注入；alias 变更必须同步 Android exact callback allowlist 与回归测试。
 
+## wotbtools-web 浏览器客户端生产对齐
+
+`infra/tofu/keycloak/client.tf` 的 `keycloak_openid_client.web` 显式声明当前生产
+`wotbtools-web` 行为。字段名全部来自 pinned provider `keycloak/keycloak 5.9.0` 的
+resource schema，不按 Admin Console 标签推断：
+
+| 生产行为 | OpenTofu 声明 |
+|---|---|
+| client type: OpenID Connect | 资源类型 `keycloak_openid_client`（protocol 固定 `openid-connect`） |
+| enabled: true | `enabled = true` |
+| always display in UI: on | `always_display_in_console = true`（representation `alwaysDisplayInConsole`） |
+| client authentication: off | `access_type = "PUBLIC"` |
+| standard flow: on | `standard_flow_enabled = true` |
+| direct access grants: off | `direct_access_grants_enabled = false` |
+| implicit flow: off | `implicit_flow_enabled = false` |
+| service account roles: off | `service_accounts_enabled = false` |
+| PKCE required: off | `pkce_code_challenge_method = ""`（provider 允许的“无 code challenge method”取值） |
+| login theme: wotbtools | `login_theme = "wotbtools"`（Keycloak client attribute `login_theme`） |
+| front-channel logout: on | `frontchannel_logout_enabled = true`（representation `frontchannelLogout`） |
+| front-channel logout session required: on | `extra_config` 的 `frontchannel.logout.session.required = "true"`（见下） |
+| consent required: off | `consent_required = false` |
+
+`frontchannel.logout.session.required` 是唯一没有 provider typed field 的生产设置：
+provider 5.9.0 只有 `frontchannel_logout_enabled` 与 `frontchannel_logout_url`
+（`backchannel_logout_session_required` 只覆盖 back-channel）。因此按 provider 官方支持的
+声明方式，用其 `extra_config` map 声明，attribute key 取 Keycloak 26.6.4
+`OIDCConfigAttributes.FRONT_CHANNEL_LOGOUT_SESSION_REQUIRED` 的字面值；不使用 `local-exec`、
+provisioner 或 Admin Console 手工步骤。Keycloak 自身对该 attribute 的默认值也是 `true`
+（`OIDCAdvancedConfigWrapper#isFrontChannelLogoutSessionRequired`），所以显式声明与
+Keycloak 默认值一致，不会产生漂移。
+
+`wotbtools-admin-api` 是 confidential service-account client，不声明任何浏览器流、theme
+或 consent 设置；`security-admin-console` 等内置 client 由 Keycloak 自己拥有，OpenTofu 不管理。
+
 ## 导入后的验收
 
 - Keycloak 使用 `start --optimized`，启动时没有 augmentation；
@@ -66,6 +100,14 @@ PRE_CUTOVER_READY
 DNS_CUTOVER_NOT_PERFORMED
 WAITING_FOR_OPERATOR_APPROVAL
 ```
+
+Business PostgreSQL 是权威业务状态，因此门禁同样要求它完全就绪才允许 `PRE_CUTOVER_READY`：
+`business-postgres` 容器存在且 healthy、`pg_isready` 成功、发布端口严格为
+`127.0.0.1:25432:5432`（出现 `0.0.0.0`、`::` 或 WireGuard 地址即失败）、
+`/opt/wotb-tx/business-postgres.tofu-provisioned` 存在且内容精确为
+`tx-local-opentofu-business-postgres`。任一检查失败即输出 `PRE_CUTOVER_NOT_READY`；
+这些检查全部只读，不创建、修改或删除任何数据库或数据行。详见
+`docs/operations/business-postgres.md`。
 
 `idp-qq=WAITING_EXTERNAL`（官方 QQ Open Platform 审核 pending）是允许状态，不阻断门禁；
 TX 明确不配置 `juhe-qq` fallback，门禁输出 `juhe-qq=NOT_CONFIGURED_IN_TX` 仅用于说明该

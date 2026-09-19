@@ -113,6 +113,14 @@ rabbitmq_tofu = detect("infra/tofu/rabbitmq/rabbitmq.tf")
 assert rabbitmq_tofu["images"] == {"backend": False, "frontend": False, "keycloak": False, "minio": False}
 assert rabbitmq_tofu["deployServices"] == ["rabbitmq"]
 assert rabbitmq_tofu["targetServices"] == {"tx": ["rabbitmq"]}
+business_postgres_tofu = detect("infra/tofu/postgres-business/business.tf")
+assert business_postgres_tofu["images"] == {"backend": False, "frontend": False, "keycloak": False, "minio": False}
+assert business_postgres_tofu["buildServices"] == []
+assert business_postgres_tofu["deployServices"] == ["business-postgres"]
+assert business_postgres_tofu["targetServices"] == {"tx": ["business-postgres"]}
+assert detect("infra/tofu/postgres-business/.terraform.lock.hcl")["deployServices"] == ["business-postgres"]
+assert detect("deploy/tx/docker-compose.yml")["deployServices"] == ["keycloak-postgres", "keycloak", "wotb-frontend"]
+assert "business-postgres" not in detect("deploy/tx/docker-compose.yml")["deployServices"]
 assert detect("deploy/docker-compose.prod.yml")["ciSurfaces"]["deploy"]
 minio_image = detect("docker/Dockerfile.minio")
 assert minio_image["images"] == {"backend": False, "frontend": False, "keycloak": False, "minio": True}
