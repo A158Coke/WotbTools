@@ -112,14 +112,14 @@ jobs:
                 raise SystemExit(0)
             if target != "tx":
                 raise SystemExit("target must be tx or minio")
-            allowed = {"keycloak-postgres", "keycloak", "wotb-frontend", "caddy"}
+            allowed = {"keycloak-postgres", "rabbitmq", "keycloak", "wotb-frontend", "caddy"}
             if not requested or any(not service or service not in allowed for service in requested):
                 raise SystemExit("tx_services must contain only supported TX services")
             if len(requested) != len(set(requested)):
                 raise SystemExit("tx_services must not contain duplicate services")
             requested = [
                 service
-                for service in ("keycloak-postgres", "keycloak", "wotb-frontend", "caddy")
+                for service in ("keycloak-postgres", "rabbitmq", "keycloak", "wotb-frontend", "caddy")
                 if service in requested
             ]
             print(f"release_sha={commit_sha}")
@@ -369,7 +369,7 @@ jobs:
       needs.changes.outputs.tx_services != '' &&
       (needs.image_existence.result == 'success' ||
        (needs.changes.outputs.image_services == '' && needs.image_existence.result == 'skipped'))
-    name: Deploy TX Frontend + Keycloak
+    name: Deploy TX
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: tx-production
@@ -483,6 +483,17 @@ jobs:
           source: infra/tofu/keycloak
           target: /opt/wotb-tx/tofu.incoming/${{ needs.changes.outputs.release_sha }}
           overwrite: true
+      - name: Install RabbitMQ OpenTofu root on TX
+        if: contains(needs.changes.outputs.tx_services, 'rabbitmq')
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: infra/tofu/rabbitmq
+          target: /opt/wotb-tx/tofu.incoming/${{ needs.changes.outputs.release_sha }}
+          overwrite: true
       - name: Start empty TX Keycloak for OpenTofu bootstrap
         if: contains(needs.changes.outputs.tx_services, 'keycloak')
         uses: appleboy/ssh-action@v1
@@ -540,7 +551,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL
+          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL,TX_RABBITMQ_ADMIN_USER,TX_RABBITMQ_ADMIN_PASSWORD,TX_RABBITMQ_CONTROL_API_PASSWORD,TX_RABBITMQ_PARSER_WORKER_PASSWORD
           script: bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
         env:
           TAG: ${{ needs.changes.outputs.release_tag }}
@@ -555,3 +566,7 @@ jobs:
           KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
           WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
           CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
+          TX_RABBITMQ_ADMIN_USER: ${{ vars.TX_RABBITMQ_ADMIN_USER }}
+          TX_RABBITMQ_ADMIN_PASSWORD: ${{ secrets.TX_RABBITMQ_ADMIN_PASSWORD }}
+          TX_RABBITMQ_CONTROL_API_PASSWORD: ${{ secrets.TX_RABBITMQ_CONTROL_API_PASSWORD }}
+          TX_RABBITMQ_PARSER_WORKER_PASSWORD: ${{ secrets.TX_RABBITMQ_PARSER_WORKER_PASSWORD }}

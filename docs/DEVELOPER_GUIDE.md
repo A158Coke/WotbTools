@@ -559,6 +559,13 @@ manifest 的 `targetServices` 是这两个 host 的唯一发布路由来源，�
 直连数据库、建立 SSH tunnel 或使用 Terraform `remote-exec`。详见
 `docs/architecture/opentofu-postgres-keycloak.md`。
 
+TX RabbitMQ 也保持独立 ownership：Compose 只运行 broker，`infra/tofu/rabbitmq`
+只管理 `/wotbtools` vhost、application users 与 permissions，队列/交换机/binding
+由未来应用 adapter 单独拥有。provider 只可连接 TX loopback
+`http://127.0.0.1:15672`，经 filesystem mirror 安装且 plan/apply/second-plan 和
+root-only marker 全部在 TX 发生；GitHub runner 不直连 Management API。完整凭据和
+部署边界见 `docs/operations/rabbitmq.md`。
+
 TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/grant；
 随后 `infra/tofu/keycloak` 在 `127.0.0.1:18080` 声明 fresh realm、`wotbtools-web`、
 `wotbtools-admin-api`、realm role、mapper 和 IdP。backend 使用

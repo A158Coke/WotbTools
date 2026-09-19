@@ -30,6 +30,7 @@ mkdir -p "$WORK/deploy" "$WORK/bin" "$WORK/runtime/config/sponsor" "$WORK/runtim
 cp "$ROOT/deploy/tx/docker-compose.yml" "$WORK/deploy/docker-compose.yml"
 cp "$ROOT/deploy/tx/yecao-backend-contract.json" "$WORK/deploy/yecao-backend-contract.json"
 printf '{}\n' > "$WORK/runtime/config/sponsor-config.json"
+printf 'tx-local-opentofu-rabbitmq\n' > "$WORK/rabbitmq.tofu-provisioned"
 cat > "$WORK/bin/docker" <<'FAKE_DOCKER'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -38,7 +39,7 @@ shift
 while [ "${1:-}" = -f ]; do shift 2; done
 case "${1:-}" in
   config)
-    printf '%s\n' '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]}}}'
+    printf '%s\n' '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]}}}'
     ;;
   ps) printf 'healthy\n' ;;
   exec) exit 0 ;;
@@ -66,6 +67,7 @@ grep -Fq 'PRE_CUTOVER_READY' <<< "$ready_output"
 grep -Fq 'DNS_CUTOVER_NOT_PERFORMED' <<< "$ready_output"
 grep -Fq 'WAITING_FOR_OPERATOR_APPROVAL' <<< "$ready_output"
 grep -Fq 'QQ_IDP_STATUS=idp-qq=WAITING_EXTERNAL' <<< "$ready_output"
+grep -Fq 'rabbitmq-provisioning: PASS' <<< "$ready_output"
 
 # Exercise the actual promoted TX layout: the wrapper and deploy helper are
 # siblings under runtime/deploy, with no repository checkout or source root.
@@ -76,6 +78,7 @@ cp "$ROOT/deploy/tx/deploy.sh" "$RELOCATED_ROOT/deploy/deploy.sh"
 cp "$ROOT/deploy/tx/docker-compose.yml" "$RELOCATED_ROOT/deploy/docker-compose.yml"
 cp "$ROOT/deploy/tx/yecao-backend-contract.json" "$RELOCATED_ROOT/deploy/yecao-backend-contract.json"
 printf '{}\n' > "$RELOCATED_ROOT/config/sponsor-config.json"
+printf 'tx-local-opentofu-rabbitmq\n' > "$RELOCATED_ROOT/rabbitmq.tofu-provisioned"
 
 relocated_ready_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \

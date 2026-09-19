@@ -34,12 +34,14 @@ DEPLOYABLE_SERVICES = {
     "wotb-backend",
     "wotb-frontend",
     "keycloak-postgres",
+    "rabbitmq",
     "minio",
 }
 DEPLOY_TARGETS = ("tx", "yecao")
 TARGET_BY_SERVICE = {
     "keycloak": "tx",
     "keycloak-postgres": "tx",
+    "rabbitmq": "tx",
     "wotb-frontend": "tx",
     "wotb-backend": "yecao",
     "postgres": "yecao",
@@ -101,7 +103,12 @@ ALL_DEPLOY_PATTERNS = (
     "deploy/grafana-api-request.sh",
 )
 TX_DEPLOY_PATTERNS = ("deploy/tx/**", "infra/tofu/keycloak/**")
-RUNTIME_CONFIG_PATTERNS = ("deploy/docker-compose.prod.yml", *TX_DEPLOY_PATTERNS)
+RABBITMQ_TX_DEPLOY_PATTERNS = ("infra/tofu/rabbitmq/**",)
+RUNTIME_CONFIG_PATTERNS = (
+    "deploy/docker-compose.prod.yml",
+    *TX_DEPLOY_PATTERNS,
+    *RABBITMQ_TX_DEPLOY_PATTERNS,
+)
 CI_SURFACE_PATTERNS = {
     "backend": BACKEND_PATTERNS,
     "frontend": FRONTEND_PATTERNS,
@@ -134,6 +141,7 @@ CI_SURFACE_PATTERNS = {
         "deploy/**",
         "docker/**",
         "infra/tofu/keycloak/**",
+        "infra/tofu/rabbitmq/**",
         ".github/workflows/deploy*.yml",
         "java/wotb-web/src/main/resources/db/migration/**",
         "java/settings-docker.xml",
@@ -288,6 +296,11 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
             images["frontend"] = True
             images["keycloak"] = True
             deploy_services.extend(["keycloak-postgres", "keycloak", "wotb-frontend"])
+        if any(_matches_any(path, RABBITMQ_TX_DEPLOY_PATTERNS) for path in normalized_paths):
+            # RabbitMQ's runtime image is upstream-pinned in Compose. Its
+            # isolated provider root must not rebuild or restart Keycloak,
+            # PostgreSQL, or the frontend.
+            deploy_services.append("rabbitmq")
     else:
         deploy_services.extend(
             APPLICATION_SERVICES[name]

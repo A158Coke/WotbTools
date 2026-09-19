@@ -9,10 +9,22 @@ COMPOSE="$TX_DIR/docker-compose.yml"
 TEMPLATE="$TX_DIR/nginx/frontend.conf.template"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+readonly NGINX_TEST_IMAGE="nginx@sha256:62ff2089abf5a9ed33bd232895bef5e22f7bb4b200675cec49a5ebc48e3d4ac8"
 
 fail() {
   echo "FAIL: $*" >&2
   exit 1
+}
+
+run_fixture() {
+  local label="$1" output_file="$2" error_file="$3"
+  shift 3
+  if "$@" > "$output_file" 2> "$error_file"; then
+    return 0
+  fi
+  local diagnostics
+  diagnostics="$(tr '\r\n' ' ' < "$error_file" | sed -E 's/[[:space:]]+/ /g')"
+  fail "$label failed (stderr: ${diagnostics:-no stderr output})"
 }
 
 ! grep -Fq 'TX_RUNTIME_ENV_FILE' "$TX_DIR/deploy.sh" \
@@ -33,6 +45,12 @@ preflight_host_block="$(sed -n '/^preflight_host()/,/^}/p' "$TX_DIR/deploy.sh")"
 
 grep -Fq '127.0.0.1:15432:5432' "$COMPOSE" \
   || fail "Keycloak PostgreSQL must bind its administration port to TX loopback"
+grep -Fq '10.20.0.1:5672:5672' "$COMPOSE" \
+  || fail "RabbitMQ AMQP must bind only to the TX WireGuard address"
+grep -Fq '127.0.0.1:15672:15672' "$COMPOSE" \
+  || fail "RabbitMQ management must remain TX-loopback only"
+grep -Fq 'rabbitmq:4.3.6-management-alpine' "$COMPOSE" \
+  || fail "RabbitMQ runtime image must stay explicitly pinned"
 ! grep -Eq '(^|[^0-9])5432:5432' "$COMPOSE" \
   || fail "Keycloak PostgreSQL must not publish 5432 on all interfaces"
 grep -Fq 'BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://10.20.0.2:8087}' "$COMPOSE" \
@@ -93,6 +111,10 @@ export KC_DB_USERNAME=keycloak
 export KC_DB_PASSWORD=not-real
 export WG_APPLICATION_ID=not-real
 export CADDY_ACME_EMAIL=ops@example.test
+export TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin
+export TX_RABBITMQ_ADMIN_PASSWORD=not-real
+export TX_RABBITMQ_CONTROL_API_PASSWORD=not-real-control-api
+export TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real-parser-worker
 export TX_RUNTIME_ROOT="$WORK/runtime"
 mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
 
@@ -108,10 +130,10 @@ grep -Fq 'BACKEND_UPSTREAM: http://10.20.0.2:8087' "$WORK/compose.yml" \
 grep -Fq 'target: /etc/nginx/templates/default.conf.template' "$WORK/compose.yml" \
   || fail "frontend must mount its target-scoped nginx template"
 
-docker run --rm -e CADDY_ACME_EMAIL \
+run_fixture "Caddy adapt fixture" "$WORK/caddy.json" "$WORK/caddy.stderr" \
+  docker run --rm -e CADDY_ACME_EMAIL \
   -v "$TX_DIR/Caddyfile:/etc/caddy/Caddyfile:ro" \
-  caddy:2.10.2-alpine caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile \
-  > "$WORK/caddy.json"
+  caddy:2.10.2-alpine caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile
 grep -Fq 'wotb-frontend:80' "$WORK/caddy.json" \
   || fail "Caddy must forward the public application host to the frontend"
 grep -Fq 'keycloak:8080' "$WORK/caddy.json" \
@@ -120,18 +142,20 @@ grep -Fq 'assetlinks.json' "$WORK/caddy.json" \
   || fail "Caddy must retain the Android App Link association route"
 grep -Fq '_wotb/ready' "$WORK/caddy.json" \
   || fail "Caddy adapt output must retain the internal readiness route"
+echo "OK: Caddy fixture contract"
 
 # Invoke envsubst explicitly: overriding the nginx image entrypoint with
 # `nginx -T` would inspect the stock config and never render this template.
-docker run --rm \
+run_fixture "nginx template fixture" "$WORK/nginx.conf" "$WORK/nginx.stderr" \
+  docker run --rm \
   -e BACKEND_UPSTREAM=http://10.20.0.2:8087 \
   -v "$TEMPLATE:/etc/nginx/templates/default.conf.template:ro" \
-  nginx:alpine sh -ec "envsubst '\${BACKEND_UPSTREAM}' < /etc/nginx/templates/default.conf.template" \
-  > "$WORK/nginx.conf"
+  "$NGINX_TEST_IMAGE" sh -ec "envsubst '\${BACKEND_UPSTREAM}' < /etc/nginx/templates/default.conf.template"
 grep -Fq 'proxy_pass http://10.20.0.2:8087/api/;' "$WORK/nginx.conf" \
   || fail "nginx template did not render the configured WireGuard API upstream"
 ! grep -Fq '${BACKEND_UPSTREAM}' "$WORK/nginx.conf" \
   || fail "nginx left an unresolved backend template expression"
+echo "OK: nginx fixture contract"
 
 # Exercise staging/promotion with a fake local Docker CLI: this proves the TX
 # script uses only its staged tree and performs internal probes, without any
@@ -176,6 +200,23 @@ esac
 FAKE_IP
 chmod 700 "$WORK/bin/ip"
 
+set +e
+rabbit_only_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
+  TX_DEPLOY_LIBRARY_ONLY=1 WOTB_TX_DIR="$WORK/rabbit-only" WOTB_TX_INCOMING_DIR="$WORK/incoming" \
+  TX_RUNTIME_ROOT="$WORK/rabbit-only" TAG=sha-0123456789ab \
+  RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  WOTB_DEPLOY_SERVICES=rabbitmq WOTB_DEPLOY_IMAGE_SERVICES='' \
+  TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
+  TX_RABBITMQ_CONTROL_API_PASSWORD=not-real-control-api \
+  TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real-parser-worker \
+  bash -c 'source "$1"; validate_inputs; set_nonselected_compose_placeholders; test "$(current_or_target_tag keycloak)" = sha-0123456789ab; test "$KC_DB_PASSWORD" = not-configured; echo rabbitmq-only-inputs-pass' _ "$WORK/incoming/deploy.sh")"
+rabbit_only_rc=$?
+set -e
+[ "$rabbit_only_rc" -eq 0 ] \
+  || fail "RabbitMQ-only input contract failed (rc=$rabbit_only_rc; output: $(tr '\r\n' ' ' <<< "$rabbit_only_output" | sed -E 's/[[:space:]]+/ /g'))"
+grep -Fq 'rabbitmq-only-inputs-pass' <<< "$rabbit_only_output" \
+  || fail "RabbitMQ-only deployment must not require Keycloak/PostgreSQL/Caddy inputs or image metadata"
+
 run_prerequisite_failure() {
   local label="$1" expected="$2" path output rc
   shift 2
@@ -187,6 +228,7 @@ run_prerequisite_failure() {
     KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
     KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
     WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
     TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
     WOTB_DEPLOY_SERVICES=keycloak-postgres FAKE_DOCKER_LOG="$WORK/prereq-$label.log" \
     "$@" /bin/bash "$WORK/incoming/deploy.sh" 2>&1)"
@@ -212,6 +254,7 @@ bootstrap_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_DEPLOY_SERVICES=keycloak-postgres WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   FAKE_DOCKER_LOG="$WORK/bootstrap-docker.log" \
@@ -238,8 +281,9 @@ unprovisioned_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
-  WOTB_DEPLOY_SERVICES=all FAKE_DOCKER_LOG="$WORK/unprovisioned.log" \
+  WOTB_DEPLOY_SERVICES=keycloak-postgres,keycloak,wotb-frontend FAKE_DOCKER_LOG="$WORK/unprovisioned.log" \
   bash "$WORK/incoming/deploy.sh" 2>&1)"
 unprovisioned_rc=$?
 set -e
@@ -249,17 +293,25 @@ grep -Fq 'run TX-local OpenTofu' <<< "$unprovisioned_output" \
 [ ! -f "$WORK/unprovisioned.log" ] || fail "unprovisioned TX app deployment must not invoke Docker"
 printf 'tx-local-opentofu-keycloak\n' > "$WORK/live/keycloak.tofu-provisioned"
 chmod 600 "$WORK/live/keycloak.tofu-provisioned"
+printf '%s\n' '{"schemaVersion":1,"services":{"keycloak":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"},"wotb-frontend":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"}}}' \
+  > "$WORK/live/tx-production-release.json"
 
+set +e
 deploy_output="$(env -i \
   PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/live" WOTB_TX_INCOMING_DIR="$WORK/incoming" TX_RUNTIME_ROOT="$WORK/live" \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
-  WOTB_DEPLOY_SERVICES=all WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+  WOTB_DEPLOY_SERVICES=keycloak-postgres,keycloak,wotb-frontend WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   FAKE_DOCKER_LOG="$WORK/docker.log" \
   bash "$WORK/incoming/deploy.sh" 2>&1)"
+deploy_rc=$?
+set -e
+[ "$deploy_rc" -eq 0 ] \
+  || fail "TX app deployment failed (rc=$deploy_rc; output: $(tr '\r\n' ' ' <<< "$deploy_output" | sed -E 's/[[:space:]]+/ /g'))"
 grep -Fq 'DNS cutover remains an explicit operator action' <<< "$deploy_output" \
   || fail "TX deploy must report that cutover remains manual"
 grep -Fq 'wireguard-backend: PASS' <<< "$deploy_output" \
@@ -270,6 +322,8 @@ grep -Fq 'http://10.20.0.2:8087/api/health' "$WORK/docker.log" \
   || fail "TX deploy must probe the WireGuard backend URL directly"
 grep -Fq 'up -d --no-deps --force-recreate keycloak-postgres' "$WORK/docker.log" \
   || fail "TX deploy must start selected Keycloak PostgreSQL locally"
+! grep -Fq 'rabbitmq' "$WORK/docker.log" \
+  || fail "non-RabbitMQ TX deployment must not start or health-check RabbitMQ"
 grep -Fq 'up -d --no-deps --force-recreate caddy' "$WORK/docker.log" \
   || fail "TX deploy must apply Caddy only through the staged TX runtime"
 grep -Fq 'run --rm --no-deps health-probe' "$WORK/docker.log" \
@@ -285,6 +339,7 @@ run_live_service_deploy() {
     KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
     KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
     WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
     TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
     WOTB_DEPLOY_SERVICES="$services" WOTB_DEPLOY_IMAGE_SERVICES="$image_services" \
     WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
@@ -319,6 +374,7 @@ bootstrap_keycloak_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_TX_BOOTSTRAP_KEYCLOAK=1 WOTB_DEPLOY_SERVICES=keycloak WOTB_DEPLOY_IMAGE_SERVICES=keycloak \
   WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
@@ -343,6 +399,7 @@ normal_keycloak_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_TX_BOOTSTRAP_KEYCLOAK=0 WOTB_DEPLOY_SERVICES=keycloak WOTB_DEPLOY_IMAGE_SERVICES=keycloak \
   WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
@@ -377,6 +434,7 @@ missing_secret_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_DEPLOY_SERVICES=keycloak-postgres FAKE_DOCKER_LOG="$WORK/missing-secret.log" \
   bash "$WORK/incoming/deploy.sh" 2>&1)"
