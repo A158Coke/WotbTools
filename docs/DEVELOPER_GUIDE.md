@@ -580,7 +580,9 @@ state `/opt/wotb-tx/postgres-business-tofu-state`，provider 经
 
 TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/grant；
 随后 `infra/tofu/keycloak` 在 `127.0.0.1:18080` 声明 fresh realm、`wotbtools-web`、
-`wotbtools-admin-api`、realm role、mapper 和 IdP。backend 使用
+`wotbtools-admin-api`、realm role、mapper 和 IdP；`wotbtools-web` 的浏览器客户端契约
+（login theme、front-channel logout、PKCE、consent）也在该 root 显式声明，字段映射见
+`docs/auth/keycloak-tx-bootstrap.md`。backend 使用
 `KEYCLOAK_ADMIN_CLIENT_ID=wotbtools-admin-api` 与 runtime-only
 `KEYCLOAK_ADMIN_CLIENT_SECRET`，service account 只授予
 `manage-users`、`query-users`、`view-realm`；secret 通过 write-only OpenTofu 输入传递，
