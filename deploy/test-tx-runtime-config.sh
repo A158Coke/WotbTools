@@ -142,6 +142,7 @@ grep -Fq 'assetlinks.json' "$WORK/caddy.json" \
   || fail "Caddy must retain the Android App Link association route"
 grep -Fq '_wotb/ready' "$WORK/caddy.json" \
   || fail "Caddy adapt output must retain the internal readiness route"
+echo "OK: Caddy fixture contract"
 
 # Invoke envsubst explicitly: overriding the nginx image entrypoint with
 # `nginx -T` would inspect the stock config and never render this template.
@@ -154,6 +155,7 @@ grep -Fq 'proxy_pass http://10.20.0.2:8087/api/;' "$WORK/nginx.conf" \
   || fail "nginx template did not render the configured WireGuard API upstream"
 ! grep -Fq '${BACKEND_UPSTREAM}' "$WORK/nginx.conf" \
   || fail "nginx left an unresolved backend template expression"
+echo "OK: nginx fixture contract"
 
 # Exercise staging/promotion with a fake local Docker CLI: this proves the TX
 # script uses only its staged tree and performs internal probes, without any
@@ -198,6 +200,7 @@ esac
 FAKE_IP
 chmod 700 "$WORK/bin/ip"
 
+set +e
 rabbit_only_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   TX_DEPLOY_LIBRARY_ONLY=1 WOTB_TX_DIR="$WORK/rabbit-only" WOTB_TX_INCOMING_DIR="$WORK/incoming" \
   TX_RUNTIME_ROOT="$WORK/rabbit-only" TAG=sha-0123456789ab \
@@ -207,6 +210,10 @@ rabbit_only_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   TX_RABBITMQ_CONTROL_API_PASSWORD=not-real-control-api \
   TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real-parser-worker \
   bash -c 'source "$1"; validate_inputs; set_nonselected_compose_placeholders; test "$(current_or_target_tag keycloak)" = sha-0123456789ab; test "$KC_DB_PASSWORD" = not-configured; echo rabbitmq-only-inputs-pass' _ "$WORK/incoming/deploy.sh")"
+rabbit_only_rc=$?
+set -e
+[ "$rabbit_only_rc" -eq 0 ] \
+  || fail "RabbitMQ-only input contract failed (rc=$rabbit_only_rc; output: $(tr '\r\n' ' ' <<< "$rabbit_only_output" | sed -E 's/[[:space:]]+/ /g'))"
 grep -Fq 'rabbitmq-only-inputs-pass' <<< "$rabbit_only_output" \
   || fail "RabbitMQ-only deployment must not require Keycloak/PostgreSQL/Caddy inputs or image metadata"
 
@@ -286,7 +293,10 @@ grep -Fq 'run TX-local OpenTofu' <<< "$unprovisioned_output" \
 [ ! -f "$WORK/unprovisioned.log" ] || fail "unprovisioned TX app deployment must not invoke Docker"
 printf 'tx-local-opentofu-keycloak\n' > "$WORK/live/keycloak.tofu-provisioned"
 chmod 600 "$WORK/live/keycloak.tofu-provisioned"
+printf '%s\n' '{"schemaVersion":1,"services":{"keycloak":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"},"wotb-frontend":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"}}}' \
+  > "$WORK/live/tx-production-release.json"
 
+set +e
 deploy_output="$(env -i \
   PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/live" WOTB_TX_INCOMING_DIR="$WORK/incoming" TX_RUNTIME_ROOT="$WORK/live" \
@@ -298,6 +308,10 @@ deploy_output="$(env -i \
   WOTB_DEPLOY_SERVICES=keycloak-postgres,keycloak,wotb-frontend WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   FAKE_DOCKER_LOG="$WORK/docker.log" \
   bash "$WORK/incoming/deploy.sh" 2>&1)"
+deploy_rc=$?
+set -e
+[ "$deploy_rc" -eq 0 ] \
+  || fail "TX app deployment failed (rc=$deploy_rc; output: $(tr '\r\n' ' ' <<< "$deploy_output" | sed -E 's/[[:space:]]+/ /g'))"
 grep -Fq 'DNS cutover remains an explicit operator action' <<< "$deploy_output" \
   || fail "TX deploy must report that cutover remains manual"
 grep -Fq 'wireguard-backend: PASS' <<< "$deploy_output" \
