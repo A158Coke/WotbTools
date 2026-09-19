@@ -69,7 +69,6 @@ assert 'alias        = "wargaming-eu"' in root_text
 assert 'alias        = "wargaming-na"' in root_text
 assert 'alias                    = "qq"' not in root_text
 assert 'alias                    = "juhe-qq"' not in root_text
-assert 'enabled                  = false' in identity_text
 assert 'client_id                = "bootstrap-not-configured"' in identity_text
 assert 'client_secret_wo         = "bootstrap-not-configured"' in identity_text
 assert 'client_secret_wo_version = "1"' in identity_text
@@ -81,6 +80,12 @@ assert '''lifecycle {
       enabled,
     ]
   }''' in identity_text
+qq_block = identity_text.split('resource "keycloak_oidc_identity_provider" "qq"', 1)[1].split("\n}\n\nlocals", 1)[0]
+wargaming_block = identity_text.split('resource "keycloak_oidc_identity_provider" "wargaming"', 1)[1]
+assert 'enabled                  =' not in qq_block
+assert 'enabled      =' not in wargaming_block
+assert wargaming_block.count('ignore_changes') == 1
+assert 'ignore_changes = [\n      enabled,\n    ]' in wargaming_block
 assert 'client_id    = "not-used"' in identity_text
 assert 'client_secret_wo         = "not-used"' in identity_text
 assert 'client_secret_wo_version = "1"' in identity_text

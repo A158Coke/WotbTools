@@ -2,10 +2,10 @@ resource "keycloak_oidc_identity_provider" "qq" {
   realm        = keycloak_realm.wotbtools.id
   alias        = "idp-qq"
   display_name = "QQ"
-  # QQ is bootstrapped before the Open Platform review is complete. The
-  # initial disabled value is deliberately ignored after creation so an
-  # operator can configure and activate the provider in Keycloak later.
-  enabled                  = false
+  # enabled is intentionally omitted: provider schema 5.9.0 marks it
+  # optional without a Terraform default, so the provider/Keycloak bootstrap
+  # behavior supplies the initial value while lifecycle ownership below
+  # belongs to the operator.
   provider_id              = "qq"
   client_id                = "bootstrap-not-configured"
   client_secret_wo         = "bootstrap-not-configured"
@@ -61,7 +61,6 @@ resource "keycloak_oidc_identity_provider" "wargaming" {
   realm        = keycloak_realm.wotbtools.id
   alias        = each.value.alias
   display_name = each.value.display_name
-  enabled      = false
   provider_id  = "wargaming"
   client_id    = "not-used"
   # Wargaming is a custom SPI provider. These fixed values only satisfy the
@@ -73,5 +72,13 @@ resource "keycloak_oidc_identity_provider" "wargaming" {
 
   extra_config = {
     region = each.value.region
+  }
+
+  # Wargaming activation is also operator-owned; OpenTofu must not enforce a
+  # repository-selected enabled/disabled state after bootstrap.
+  lifecycle {
+    ignore_changes = [
+      enabled,
+    ]
   }
 }
