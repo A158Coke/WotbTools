@@ -645,8 +645,6 @@ jobs:
           export TF_VAR_worker_secret_key=ci-worker-secret-key
           tofu -chdir=infra/tofu/minio init -reconfigure -input=false -lockfile=readonly \
             -backend-config=path=/tmp/minio-ci.tfstate >/dev/null
-          tofu -chdir=infra/tofu/minio init -reconfigure -input=false -lockfile=readonly \
-            -backend-config=path=/tmp/minio-ci.tfstate >/dev/null
           tofu -chdir=infra/tofu/minio validate >/dev/null
           tofu -chdir=infra/tofu/minio plan -input=false -out=plan.tfplan >/dev/null
           bash infra/tofu/minio/validate-plan.sh infra/tofu/minio/plan.tfplan

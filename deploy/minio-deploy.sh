@@ -59,9 +59,6 @@ docker compose -f "$COMPOSE_FILE" up -d --wait minio
   cd "$TOFU_ROOT"
   trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT
   tofu init -reconfigure -input=false -lockfile=readonly
-  # A fresh OpenTofu workspace can report a provider as unavailable immediately
-  # after its first successful init; the second idempotent init loads it reliably.
-  tofu init -reconfigure -input=false -lockfile=readonly
   tofu validate
   tofu plan -input=false -no-color -out=plan.tfplan
   bash ./validate-plan.sh plan.tfplan

@@ -1,22 +1,11 @@
 # This file is maintained automatically by "tofu init".
 # Manual edits may be lost in future updates.
 
-provider "registry.opentofu.org/aminueza/minio" {
+provider "registry.terraform.io/aminueza/minio" {
   version     = "3.40.1"
   constraints = "3.40.1"
   hashes = [
-    "h1:/r2iMp7eAHXQXxerk3fc1BiSwX25HuPe46i6JVbMJp4=",
-    "h1:4EhdkhErr5xQnD3V2SE4R59Vr6htL1usPVH16Ij7HLk=",
-    "h1:6fJK4KPLEbR8kESCveYzw5L+BKxMVjIYaWaxZVpntTY=",
-    "h1:EijL214brx518Mk0DXwJM4cWr33XEYGoTjm6X12VCnI=",
-    "h1:IK8Ly7cWiFpDwgITtnCc5TbDXqG+KpMnXWXBJLQ+p1o=",
     "h1:JY6ik5jgSD1xNN3MZ2bfc2sv+m27hmToaro7wN+uxM0=",
-    "h1:OnH0hQ8BbH22L4hdnfZazJKt0SNvicM5lBhcU6sk2lo=",
-    "h1:TBMX8nZgEAbIguGMH+NIoaO32bRmbviF35oCXcOn8LE=",
-    "h1:dEkk1DWlstf1/4zb0ZXBApo69SlLEE7XLnKRqDYnbZI=",
-    "h1:gAYXlTTj2MpNZYPIKP5iSsH0zDLzcIwRFANKgHu16/4=",
-    "h1:mNepAd0TfaCE/46MjSa/hw/0+Vyl5B9HyMrmsnhYg9M=",
-    "h1:wu1A2PEMEkCmA9a9kJkn8lIXFMZw4cdQSUPcd7CmYs8=",
     "h1:xIVVpnSETectIMghvPzq+iJlHeFZ18rCh+MAwY4zYoI=",
     "zh:03d25258c03e2317ae727fd9dd1a68797863a08d6856ef3236e6358c09b4d972",
     "zh:2324bf868eaaa93de57e2132a611a744d308db0aa697cb9ffa8986beec87e91d",
