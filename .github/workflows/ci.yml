@@ -549,16 +549,21 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.6
+          tofu_wrapper: false
       - name: Flyway migration immutability guard
         env:
           FLYWAY_BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/main' }}
         run: bash deploy/check-flyway-immutability.sh "$FLYWAY_BASE_REF"
       - name: Flyway migration guard fixture
         run: bash deploy/test-flyway-immutability.sh
-      - name: bash -n deploy.sh
-        run: bash -n deploy/deploy.sh
+      - name: bash -n deployment scripts
+        run: bash -n deploy/deploy.sh deploy/minio-deploy.sh infra/tofu/minio/validate-plan.sh
       - name: bash -n deployment verification scripts
-        run: bash -n deploy/deploy.sh deploy/ops-recovery.sh deploy/verify-observability.sh deploy/test-keycloak-runtime.sh deploy/test-keycloak-tofu.sh deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh deploy/test-build-workflow.sh deploy/test-release-plan.sh deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh scripts/ci/test-postgres-keycloak-tofu-contract.sh scripts/ci/test-keycloak-tofu-contract.sh
+        run: bash -n deploy/deploy.sh deploy/minio-deploy.sh deploy/ops-recovery.sh deploy/verify-observability.sh deploy/test-keycloak-runtime.sh deploy/test-keycloak-tofu.sh deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh deploy/test-build-workflow.sh deploy/test-release-plan.sh deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh infra/tofu/minio/validate-plan.sh scripts/ci/test-postgres-keycloak-tofu-contract.sh scripts/ci/test-keycloak-tofu-contract.sh
       - name: Build workflow frozen-commit contract
         run: bash deploy/test-build-workflow.sh
       - name: bash -n TX pre-cutover contracts
@@ -588,6 +593,71 @@ jobs:
           GRAFANA_ADMIN_USER: ci
           GRAFANA_ADMIN_PASSWORD: ci
         run: docker compose -f deploy/docker-compose.prod.yml config --quiet
+      - name: MinIO compose and source-image contract
+        env:
+          TAG: sha-ci
+          YECAO_MINIO_ROOT_USER: ci-root-user
+          YECAO_MINIO_ROOT_PASSWORD: ci-root-password
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/docker-compose.minio.yml config --format json > /tmp/minio-compose.json
+          python3 - <<'PY'
+          import json
+          with open('/tmp/minio-compose.json', encoding='utf-8') as f:
+              compose = json.load(f)
+          assert set(compose['services']) == {'minio'}
+          service = compose['services']['minio']
+          assert service['image'] == 'ghcr.io/a158coke/wotbtools-minio:sha-ci'
+          ports = [str(port) for port in service.get('ports', [])]
+          assert any('10.20.0.2' in port and '9000' in port for port in ports), ports
+          assert any('127.0.0.1' in port and '9001' in port for port in ports), ports
+          assert not any('0.0.0.0' in port for port in ports), ports
+          assert service.get('healthcheck'), 'MinIO healthcheck is required'
+          assert compose['volumes']['minio_data']['name'] == 'wotb_yecao_minio_data'
+          assert compose['networks']['default']['external'] is True
+          print('MinIO compose network and persistence contract OK')
+          PY
+          docker build --build-arg BUILD_COMMIT=ci-${{ github.sha }} -f docker/Dockerfile.minio -t wotbtools-minio:pr .
+          docker run --rm wotbtools-minio:pr --version | grep -F 'RELEASE.2025-10-15T17-29-55Z'
+          name=wotbtools-minio-ci
+          docker rm -f "$name" >/dev/null 2>&1 || true
+          trap 'docker rm -f "$name" >/dev/null 2>&1 || true' EXIT
+          docker run -d --rm --name "$name" \
+            -e MINIO_ROOT_USER=ci-root-user \
+            -e MINIO_ROOT_PASSWORD=ci-root-password \
+            -p 127.0.0.1:19000:9000 \
+            wotbtools-minio:pr server --console-address :9001 /data
+          for _ in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:19000/minio/health/live >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          [ "${ready:-false}" = true ] || {
+            docker logs "$name"
+            exit 1
+          }
+          export TF_VAR_minio_server=127.0.0.1:19000
+          export TF_VAR_minio_root_user=ci-root-user
+          export TF_VAR_minio_root_password=ci-root-password
+          export TF_VAR_worker_access_key=ci-worker-access-key
+          export TF_VAR_worker_secret_key=ci-worker-secret-key
+          export MINIO_PROVIDER_MIRROR=/tmp/minio-provider-mirror
+          mkdir -p "$MINIO_PROVIDER_MIRROR"
+          tofu -chdir=infra/tofu/minio providers mirror "$MINIO_PROVIDER_MIRROR" >/dev/null
+          sed "s|/opt/wotb/tofu-provider-mirror|$MINIO_PROVIDER_MIRROR|" deploy/minio/tofurc \
+            > /tmp/minio-ci.tfrc
+          export TF_CLI_CONFIG_FILE=/tmp/minio-ci.tfrc
+          export TF_DATA_DIR=/tmp/minio-ci-tofu-data
+          tofu -chdir=infra/tofu/minio init -reconfigure -input=false -lockfile=readonly \
+            -backend-config=path=/tmp/minio-ci.tfstate >/dev/null
+          tofu -chdir=infra/tofu/minio validate >/dev/null
+          tofu -chdir=infra/tofu/minio plan -input=false -out=plan.tfplan >/dev/null
+          ( cd infra/tofu/minio && bash validate-plan.sh plan.tfplan )
+          tofu -chdir=infra/tofu/minio apply -input=false -auto-approve plan.tfplan >/dev/null
+          tofu -chdir=infra/tofu/minio plan -input=false -out=second-plan.tfplan >/dev/null
+          ( cd infra/tofu/minio && bash validate-plan.sh second-plan.tfplan --require-no-changes )
       - name: Production compose must not expose Grafana MCP
         env:
           TAG: sha-ci

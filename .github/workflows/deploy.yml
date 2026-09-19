@@ -1,6 +1,6 @@
 name: Deploy
 # 生产 Grafana MCP 已下线（2026-08-11）：不再传递 GRAFANA_MCP_TOKEN。
-run-name: Deploy ${{ github.event_name == 'workflow_dispatch' && format('manual TX {0}', github.run_number) || github.event.workflow_run.head_sha }} by @${{ github.actor }}
+run-name: Deploy ${{ github.event_name == 'workflow_dispatch' && format('manual {0} {1}', inputs.target, github.run_number) || github.event.workflow_run.head_sha }} by @${{ github.actor }}
 
 on:
   workflow_run:
@@ -10,6 +10,14 @@ on:
       - completed
   workflow_dispatch:
     inputs:
+      target:
+        description: Explicit production deployment target
+        required: true
+        default: tx
+        type: choice
+        options:
+          - tx
+          - minio
       tx_services:
         description: Comma-separated TX services to deploy
         required: true
@@ -20,7 +28,7 @@ permissions:
   contents: read
 
 concurrency:
-  # Deploy is the sole TX postgres-keycloak apply path.
+  # Serialize every production Compose/OpenTofu mutation, including MinIO.
   group: production-maintenance
   cancel-in-progress: false
 
@@ -65,6 +73,7 @@ jobs:
         id: manifest
         env:
           EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          MANUAL_TARGET: ${{ inputs.target }}
           TX_SERVICES_INPUT: ${{ inputs.tx_services }}
         shell: bash
         run: |
@@ -81,10 +90,28 @@ jobs:
               echo "::error::Manual TX deploy must run from the current main HEAD." >&2
               exit 1
             fi
-            python3 - "$TX_SERVICES_INPUT" "$main_sha" "$GITHUB_RUN_NUMBER" <<'PY' >> "$GITHUB_OUTPUT"
+            python3 - "$MANUAL_TARGET" "$TX_SERVICES_INPUT" "$main_sha" "$GITHUB_RUN_NUMBER" <<'PY' >> "$GITHUB_OUTPUT"
             import sys
 
-            requested = [service.strip() for service in sys.argv[1].split(",")]
+            target = sys.argv[1]
+            requested = [service.strip() for service in sys.argv[2].split(",")]
+            commit_sha = sys.argv[3]
+            run_number = sys.argv[4]
+            if target == "minio":
+                print(f"release_sha={commit_sha}")
+                print(f"release_tag=sha-{commit_sha[:12]}")
+                print(f"build_run_number={run_number}")
+                print("backend_migration_max_version=")
+                print("deploy_services=minio")
+                print("image_services=minio")
+                print("yecao_services=minio")
+                print("tx_services=")
+                print("yecao_image_services=minio")
+                print("tx_image_services=")
+                print("deploy_display_name=Manual MinIO")
+                raise SystemExit(0)
+            if target != "tx":
+                raise SystemExit("target must be tx or minio")
             allowed = {"keycloak-postgres", "keycloak", "wotb-frontend", "caddy"}
             if not requested or any(not service or service not in allowed for service in requested):
                 raise SystemExit("tx_services must contain only supported TX services")
@@ -95,10 +122,9 @@ jobs:
                 for service in ("keycloak-postgres", "keycloak", "wotb-frontend", "caddy")
                 if service in requested
             ]
-            commit_sha = sys.argv[2]
             print(f"release_sha={commit_sha}")
             print(f"release_tag=sha-{commit_sha[:12]}")
-            print(f"build_run_number={sys.argv[3]}")
+            print(f"build_run_number={run_number}")
             print("backend_migration_max_version=")
             print(f"deploy_services={','.join(requested)}")
             image_services = [service for service in requested if service in {"keycloak", "wotb-frontend"}]
@@ -176,6 +202,7 @@ jobs:
               wotb-backend) image=ghcr.io/a158coke/wotbtools-backend ;;
               wotb-frontend) image=ghcr.io/a158coke/wotbtools-frontend ;;
               keycloak) image=ghcr.io/a158coke/wotbtools-keycloak ;;
+              minio) image=ghcr.io/a158coke/wotbtools-minio ;;
               *) echo "unsupported image service: $service" >&2; exit 1 ;;
             esac
             docker manifest inspect "$image:$RELEASE_TAG" >/dev/null || {
@@ -188,8 +215,9 @@ jobs:
     needs: [changes, image_existence]
     if: >-
       always() &&
-      needs.changes.result == 'success' &&
-      (needs.image_existence.result == 'success' ||
+       needs.changes.result == 'success' &&
+       needs.changes.outputs.yecao_services != 'minio' &&
+       (needs.image_existence.result == 'success' ||
        (needs.changes.outputs.image_services == '' && needs.image_existence.result == 'skipped'))
     name: Deploy ${{ needs.changes.outputs.deploy_display_name }}
     runs-on: ubuntu-latest
@@ -277,6 +305,61 @@ jobs:
           REPLAY_COORDINATE_CLAMP_TOLERANCE: ${{ vars.REPLAY_COORDINATE_CLAMP_TOLERANCE || '12.5' }}
           GRAFANA_ROOT_URL: ${{ vars.GRAFANA_ROOT_URL || 'https://monitor.wotbtools.com' }}
           OBSERVABILITY_ENVIRONMENT: ${{ vars.OBSERVABILITY_ENVIRONMENT || 'production' }}
+
+  deploy_minio:
+    needs: [changes, image_existence]
+    if: >-
+      always() &&
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.yecao_services == 'minio' &&
+      needs.image_existence.result == 'success'
+    name: Deploy MinIO
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.changes.outputs.release_sha }}
+      - name: Prepare explicit MinIO deployment directory
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -eu
+            root="/opt/wotb/minio.incoming/${{ needs.changes.outputs.release_sha }}"
+            rm -rf -- "$root"
+            mkdir -p "$root"
+      - name: Install explicit MinIO deployment files
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: deploy/docker-compose.minio.yml,deploy/minio-deploy.sh,deploy/minio,infra/tofu/minio
+          target: /opt/wotb/minio.incoming/${{ needs.changes.outputs.release_sha }}
+          overwrite: true
+      - name: Deploy and provision MinIO via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 35m
+          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,YECAO_MINIO_ROOT_USER,YECAO_MINIO_ROOT_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY
+          script: bash /opt/wotb/minio.incoming/${{ needs.changes.outputs.release_sha }}/deploy/minio-deploy.sh /opt/wotb/minio.incoming/${{ needs.changes.outputs.release_sha }}
+        env:
+          TAG: ${{ needs.changes.outputs.release_tag }}
+          RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
+          RELEASE_RUN_NUMBER: ${{ needs.changes.outputs.build_run_number }}
+          YECAO_MINIO_ROOT_USER: ${{ secrets.YECAO_MINIO_ROOT_USER }}
+          YECAO_MINIO_ROOT_PASSWORD: ${{ secrets.YECAO_MINIO_ROOT_PASSWORD }}
+          YECAO_MINIO_WORKER_ACCESS_KEY: ${{ secrets.YECAO_MINIO_WORKER_ACCESS_KEY }}
+          YECAO_MINIO_WORKER_SECRET_KEY: ${{ secrets.YECAO_MINIO_WORKER_SECRET_KEY }}
 
   deploy_tx:
     needs: [changes, image_existence]

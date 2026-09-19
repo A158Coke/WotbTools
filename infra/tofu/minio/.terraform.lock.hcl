@@ -1,0 +1,24 @@
+# This file is maintained automatically by "tofu init".
+# Manual edits may be lost in future updates.
+
+provider "registry.terraform.io/aminueza/minio" {
+  version     = "3.40.1"
+  constraints = "3.40.1"
+  hashes = [
+    "h1:JY6ik5jgSD1xNN3MZ2bfc2sv+m27hmToaro7wN+uxM0=",
+    "h1:xIVVpnSETectIMghvPzq+iJlHeFZ18rCh+MAwY4zYoI=",
+    "zh:03d25258c03e2317ae727fd9dd1a68797863a08d6856ef3236e6358c09b4d972",
+    "zh:2324bf868eaaa93de57e2132a611a744d308db0aa697cb9ffa8986beec87e91d",
+    "zh:29be0f5b58a6823a47c9a2fbbe0c3cee37c7aecd2288e0f40c0ab00fac5c655a",
+    "zh:43f63518100468b23bdbdada699afa5b61e466e828dcf58306acf10326c7f95a",
+    "zh:61e2d2d0ce819be121df634166a897f3cfd806d138631c129e374460f40fd797",
+    "zh:8aefe97ac5ce097fe75c1309cadea746d74fb6720e4c2efdd39db00d0e7054ea",
+    "zh:8ba6796cc59acc198dd237c7f2566779b59a4aa443777d9a6de696f6b234c276",
+    "zh:a07bdf38eddc0e71744b7f2043c43b9dfbe709be79c6c27457e74ee575cb7573",
+    "zh:bede2f970529baa1419dc3324f0efba488fb219369121fe7fe017f2f5f54ccfe",
+    "zh:c67df110dd9099871fe8b2771edf932520d2a277522c2dcdf6de97b0d7e752f4",
+    "zh:d1cf6e55e2b97ccbbcd2d56b4690915373636bb3c05a20d3d4d6d1d685ad3cd0",
+    "zh:e102ac50de2b1a06f558a8dd04adc71e017a3d53a072e92acc91d295d5d05919",
+    "zh:ffc3d2e225744f378d00dd260059548e493e9091fd78c5674d711ba801d1b663",
+  ]
+}
