@@ -26,6 +26,7 @@ required_files = {
 }
 assert {path.name for path in tofu_root.iterdir()} >= required_files
 root_text = "\n".join(path.read_text(encoding="utf-8") for path in tofu_root.glob("*.tf"))
+identity_text = (tofu_root / "identity-providers.tf").read_text(encoding="utf-8")
 deploy_text = (root / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
 tx_compose = (root / "deploy/tx/docker-compose.yml").read_text(encoding="utf-8")
 keycloak_dockerfile = (root / "docker/Dockerfile.keycloak").read_text(encoding="utf-8")
@@ -62,12 +63,40 @@ for forbidden_construct in ("remote-exec", "local-exec", "null_resource"):
 assert 'default_roles = [keycloak_role.realm["wotbtools-user"].name]' in root_text
 assert root_text.count('keycloak_openid_user_attribute_protocol_mapper') == 1
 assert 'for_each = local.wargaming_identity_providers' in root_text
-assert 'alias                    = "idp-qq"' in root_text
+assert 'alias        = "idp-qq"' in identity_text
 assert 'alias        = "wargaming-asia"' in root_text
 assert 'alias        = "wargaming-eu"' in root_text
 assert 'alias        = "wargaming-na"' in root_text
 assert 'alias                    = "qq"' not in root_text
 assert 'alias                    = "juhe-qq"' not in root_text
+assert 'client_id                = "bootstrap-not-configured"' in identity_text
+assert 'client_secret_wo         = "bootstrap-not-configured"' in identity_text
+assert 'client_secret_wo_version = "1"' in identity_text
+assert '''lifecycle {
+    ignore_changes = [
+      client_id,
+      client_secret_wo,
+      client_secret_wo_version,
+      enabled,
+    ]
+  }''' in identity_text
+qq_block = identity_text.split('resource "keycloak_oidc_identity_provider" "qq"', 1)[1].split("\n}\n\nlocals", 1)[0]
+wargaming_block = identity_text.split('resource "keycloak_oidc_identity_provider" "wargaming"', 1)[1]
+assert 'enabled                  =' not in qq_block
+assert 'enabled      =' not in wargaming_block
+assert wargaming_block.count('ignore_changes') == 1
+assert 'ignore_changes = [\n      enabled,\n    ]' in wargaming_block
+assert 'client_id    = "not-used"' in identity_text
+assert 'client_secret_wo         = "not-used"' in identity_text
+assert 'client_secret_wo_version = "1"' in identity_text
+assert not any(
+    forbidden in root_text
+    for forbidden in (
+        "qq_client_id",
+        "qq_client_secret",
+        "wargaming_placeholder_secret",
+    )
+)
 
 for path_text in (keycloak_dockerfile, tx_compose):
     assert "--import-realm" not in path_text
@@ -80,8 +109,16 @@ assert 'validate-plan.sh' in tofu_script
 assert 'tofu apply -input=false -auto-approve plan.tfplan' in tofu_script
 assert 'second-plan.tfplan' in tofu_script
 assert 'TF_VAR_keycloak_admin_client_secret' in tofu_script
-assert 'TF_VAR_qq_client_secret' in tofu_script
-assert 'TF_VAR_wargaming_placeholder_secret' in tofu_script
+for forbidden in (
+    "QQ_CLIENT_ID",
+    "QQ_CLIENT_SECRET",
+    "QQ_CLIENT_SECRET_VERSION",
+    "WARGAMING_PLACEHOLDER_SECRET",
+    "WARGAMING_PLACEHOLDER_SECRET_VERSION",
+    "TF_VAR_qq_client",
+    "TF_VAR_wargaming_placeholder",
+):
+    assert forbidden not in tofu_script
 assert 'echo "$KEYCLOAK_ADMIN_CLIENT_SECRET"' not in tofu_script
 assert 'printf' in tofu_script
 assert 'TOFU_CLI_CONFIG="${TF_CLI_CONFIG_FILE:-/opt/wotb-tx/tofurc}"' in tofu_script
@@ -110,23 +147,25 @@ for name in (
 assert names.index("Bootstrap TX Keycloak PostgreSQL before OpenTofu") < names.index("Start empty TX Keycloak for OpenTofu bootstrap")
 assert names.index("Start empty TX Keycloak for OpenTofu bootstrap") < names.index("Apply Keycloak OpenTofu on TX localhost")
 apply_step = next(step for step in steps if step.get("name") == "Apply Keycloak OpenTofu on TX localhost")
-apply_envs = apply_step["with"]["envs"]
-for runtime_name in (
+apply_envs = set(apply_step["with"]["envs"].split(","))
+assert apply_envs == {
     "KEYCLOAK_ADMIN_USERNAME",
     "KEYCLOAK_ADMIN_PASSWORD",
     "KEYCLOAK_ADMIN_CLIENT_SECRET",
     "KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION",
-    "QQ_CLIENT_ID",
-    "QQ_CLIENT_SECRET",
-    "QQ_CLIENT_SECRET_VERSION",
-    "WARGAMING_PLACEHOLDER_SECRET",
-    "WARGAMING_PLACEHOLDER_SECRET_VERSION",
-):
-    assert runtime_name in apply_envs
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+}
 assert apply_step["env"]["KEYCLOAK_ADMIN_PASSWORD"] == "${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}"
 assert apply_step["env"]["KEYCLOAK_ADMIN_CLIENT_SECRET"] == "${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}"
-assert apply_step["env"]["QQ_CLIENT_SECRET"] == "${{ secrets.TX_QQ_CLIENT_SECRET }}"
-assert apply_step["env"]["WARGAMING_PLACEHOLDER_SECRET"] == "${{ secrets.TX_WARGAMING_PLACEHOLDER_SECRET }}"
+for forbidden in (
+    "TX_QQ_CLIENT_ID",
+    "TX_QQ_CLIENT_SECRET",
+    "TX_QQ_CLIENT_SECRET_VERSION",
+    "TX_WARGAMING_PLACEHOLDER_SECRET",
+    "TX_WARGAMING_PLACEHOLDER_SECRET_VERSION",
+):
+    assert forbidden not in deploy_text
 assert "tfvars" not in deploy_text.lower()
 assert "KEYCLOAK_ADMIN_CLIENT_SECRET" not in apply_step["with"]["script"]
 

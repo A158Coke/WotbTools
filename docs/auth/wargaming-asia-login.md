@@ -518,7 +518,7 @@ keycloak-qq-provider
 
 ### 4. Realm 配置载体（决策 D18）
 
-- `infra/tofu/keycloak`：声明 Protocol Mapper、`defaultRoles`、三个 Wargaming IdP 与 `wotbtools-admin-api`；TX 由 OpenTofu apply，凭据使用 write-only runtime 变量。
+- `infra/tofu/keycloak`：声明 Protocol Mapper、`defaultRoles`、三个 Wargaming IdP 与 `wotbtools-admin-api`；TX 由 OpenTofu apply，Wargaming 的 OIDC 字段只使用固定 non-sensitive schema adapter 值，真实登录配置仍由自定义 SPI 读取 `WG_APPLICATION_ID`。
 
 ---
 
