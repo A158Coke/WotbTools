@@ -31,7 +31,8 @@ credential.
 
 MinIO Community Edition no longer publishes a usable maintained container
 image. `docker/Dockerfile.minio` builds the final maintained community source
-release, `RELEASE.2025-10-15T17-29-55Z`, into the immutable
+release, `RELEASE.2025-10-15T17-29-55Z`, at the verified upstream commit
+`9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a`, into the immutable
 `ghcr.io/a158coke/wotbtools-minio:sha-<12>` image. This is a source build, not
 a runtime download. The upstream source is AGPLv3; operators must keep the
 deployment's licensing obligations under review before production use.
