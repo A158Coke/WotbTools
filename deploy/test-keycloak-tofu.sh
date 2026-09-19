@@ -16,9 +16,6 @@ RETRIES="${WOTB_KEYCLOAK_TOFU_RETRIES:-90}"
 INTERVAL_SEC="${WOTB_KEYCLOAK_TOFU_INTERVAL_SEC:-2}"
 BOOTSTRAP_PASSWORD="tofu-bootstrap-test-password"
 ADMIN_API_SECRET="tofu-admin-api-test-secret"
-QQ_CLIENT_ID="tofu-qq-client-id"
-QQ_CLIENT_SECRET="tofu-qq-test-secret"
-WG_PLACEHOLDER_SECRET="tofu-wargaming-placeholder"
 TEST_USERNAME="tofu-admin-api-test-user"
 
 fail() {
@@ -105,11 +102,6 @@ export TF_VAR_keycloak_admin_username=admin
 export TF_VAR_keycloak_admin_password="$BOOTSTRAP_PASSWORD"
 export TF_VAR_keycloak_admin_client_secret="$ADMIN_API_SECRET"
 export TF_VAR_keycloak_admin_client_secret_version=1
-export TF_VAR_qq_client_id="$QQ_CLIENT_ID"
-export TF_VAR_qq_client_secret="$QQ_CLIENT_SECRET"
-export TF_VAR_qq_client_secret_version=1
-export TF_VAR_wargaming_placeholder_secret="$WG_PLACEHOLDER_SECRET"
-export TF_VAR_wargaming_placeholder_secret_version=1
 
 cd "$TOFU_ROOT"
 TOFU_WORK_ROOT="$WORK/tofu-root"
@@ -277,14 +269,17 @@ jq -e '([.[].alias] | sort) == ["idp-qq", "wargaming-asia", "wargaming-eu", "war
   || fail "fresh realm IdP aliases are not the approved TX set"
 jq -e 'all(.[]; .alias != "qq" and .alias != "juhe-qq")' "$WORK/idps.json" >/dev/null \
   || fail "fresh TX realm must not create legacy QQ aliases"
-jq -e 'any(.[]; .alias == "idp-qq" and .providerId == "qq") and all(.[] | select(.providerId == "wargaming"); .config.region != null)' \
+jq -e 'any(.[]; .alias == "idp-qq" and .providerId == "qq" and .config.clientAuthMethod == "client_secret_post") and all(.[] | select(.providerId == "wargaming"); .config.region != null)' \
   "$WORK/idps.json" >/dev/null || fail "QQ/Wargaming provider representation is incomplete"
-for alias in idp-qq wargaming-asia wargaming-eu wargaming-na; do
+echo "PASS: realm, client, mapper, default-role, IdP resources, and structural config"
+
+while IFS= read -r alias; do
+  [ -n "$alias" ] || continue
   broker_status="$(curl -sS -o "$WORK/broker-$alias.json" -w '%{http_code}' \
     "$KEYCLOAK_URL/realms/wotbtools/broker/$alias/endpoint")"
-  [ "$broker_status" != 404 ] || fail "broker endpoint is missing for $alias"
-done
-echo "PASS: realm, client, mapper, default-role, IdP, and broker resources"
+  [ "$broker_status" != 404 ] || fail "enabled IdP broker endpoint is missing for $alias"
+done < <(jq -r '.[] | select(.enabled == true) | .alias' "$WORK/idps.json")
+echo "PASS: enabled IdP broker endpoints are exposed; disabled IdPs remain operator-controlled"
 
 expect_forbidden() {
   local method="$1" url="$2" output="$3"

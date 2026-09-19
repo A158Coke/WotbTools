@@ -16,9 +16,7 @@ require_env() {
 }
 
 for name in KEYCLOAK_ADMIN_USERNAME KEYCLOAK_ADMIN_PASSWORD \
-  KEYCLOAK_ADMIN_CLIENT_SECRET KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION \
-  QQ_CLIENT_ID QQ_CLIENT_SECRET QQ_CLIENT_SECRET_VERSION \
-  WARGAMING_PLACEHOLDER_SECRET WARGAMING_PLACEHOLDER_SECRET_VERSION; do
+  KEYCLOAK_ADMIN_CLIENT_SECRET KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION; do
   require_env "$name"
 done
 
@@ -36,11 +34,6 @@ export TF_VAR_keycloak_admin_username="$KEYCLOAK_ADMIN_USERNAME"
 export TF_VAR_keycloak_admin_password="$KEYCLOAK_ADMIN_PASSWORD"
 export TF_VAR_keycloak_admin_client_secret="$KEYCLOAK_ADMIN_CLIENT_SECRET"
 export TF_VAR_keycloak_admin_client_secret_version="$KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION"
-export TF_VAR_qq_client_id="$QQ_CLIENT_ID"
-export TF_VAR_qq_client_secret="$QQ_CLIENT_SECRET"
-export TF_VAR_qq_client_secret_version="$QQ_CLIENT_SECRET_VERSION"
-export TF_VAR_wargaming_placeholder_secret="$WARGAMING_PLACEHOLDER_SECRET"
-export TF_VAR_wargaming_placeholder_secret_version="$WARGAMING_PLACEHOLDER_SECRET_VERSION"
 
 TOFU_CLI_CONFIG="${TF_CLI_CONFIG_FILE:-/opt/wotb-tx/tofurc}"
 [ -f "$TOFU_CLI_CONFIG" ] || {
