@@ -56,6 +56,17 @@ class CiPathFilterTest(unittest.TestCase):
     def test_backend_dockerfile(self):
         self.assert_surfaces(["docker/Dockerfile.backend"], ["backend", "deploy"])
 
+    def test_minio_image_build_never_selects_a_runtime_deployment(self):
+        plan = detect("docker/Dockerfile.minio")
+        self.assert_surfaces(["docker/Dockerfile.minio"], ["deploy"])
+        self.assertEqual(plan["buildServices"], ["minio"])
+        self.assertEqual(plan["deployServices"], [])
+
+    def test_minio_compose_never_selects_a_runtime_deployment(self):
+        plan = detect("deploy/docker-compose.minio.yml")
+        self.assert_surfaces(["deploy/docker-compose.minio.yml"], ["deploy"])
+        self.assertEqual(plan["deployServices"], [])
+
     def test_grafana_dashboard(self):
         self.assert_surfaces(
             ["deploy/observability/grafana/dashboards/home.json"], ["deploy", "observability"]

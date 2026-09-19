@@ -1,0 +1,12 @@
+# This runtime is deliberately mirror-only. Do not add a direct fallback: Yecao
+# must never fetch a provider during a production MinIO provisioning run.
+provider_installation {
+  filesystem_mirror {
+    path    = "/opt/wotb/tofu-provider-mirror"
+    include = ["registry.opentofu.org/aminueza/minio"]
+  }
+
+  direct {
+    exclude = ["registry.opentofu.org/aminueza/minio"]
+  }
+}

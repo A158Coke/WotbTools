@@ -32,15 +32,15 @@ assert detect("java/wotb-core/src/Main.java")["deployServices"] == ["wotb-backen
 assert detect("java/wotb-core/src/Main.java")["targetServices"] == {"yecao": ["wotb-backend"]}
 assert detect("keycloak-wargaming-provider/src/Main.java")["deployServices"] == ["keycloak"]
 frontend_diagnostics = detect("frontend/vite.config.js")
-assert frontend_diagnostics["images"] == {"backend": False, "frontend": True, "keycloak": False}
+assert frontend_diagnostics["images"] == {"backend": False, "frontend": True, "keycloak": False, "minio": False}
 assert frontend_diagnostics["buildServices"] == ["wotb-frontend"]
 assert frontend_diagnostics["deployServices"] == ["wotb-frontend"]
 keycloak_diagnostics = detect("docker/keycloak/wotbtools-entrypoint.sh")
-assert keycloak_diagnostics["images"] == {"backend": False, "frontend": False, "keycloak": True}
+assert keycloak_diagnostics["images"] == {"backend": False, "frontend": False, "keycloak": True, "minio": False}
 assert keycloak_diagnostics["buildServices"] == ["keycloak"]
 assert keycloak_diagnostics["deployServices"] == ["keycloak"]
 backend_diagnostics = detect("java/wotb-web/src/main/java/com/wotb/web/config/StartupReleaseDiagnostics.java")
-assert backend_diagnostics["images"] == {"backend": True, "frontend": False, "keycloak": False}
+assert backend_diagnostics["images"] == {"backend": True, "frontend": False, "keycloak": False, "minio": False}
 assert backend_diagnostics["buildServices"] == ["wotb-backend"]
 assert backend_diagnostics["deployServices"] == ["wotb-backend"]
 bootstrap_diagnostics = detect(
@@ -48,7 +48,7 @@ bootstrap_diagnostics = detect(
     "frontend/vite.config.js",
     "docker/keycloak/wotbtools-entrypoint.sh",
 )
-assert bootstrap_diagnostics["images"] == {"backend": True, "frontend": True, "keycloak": True}
+assert bootstrap_diagnostics["images"] == {"backend": True, "frontend": True, "keycloak": True, "minio": False}
 assert bootstrap_diagnostics["buildServices"] == ["wotb-backend", "wotb-frontend", "keycloak"]
 assert bootstrap_diagnostics["deployServices"] == ["wotb-backend", "wotb-frontend", "keycloak"]
 assert set(detect("frontend/src/App.vue", "java/wotb-core/src/Main.java")["deployServices"]) == {
@@ -71,7 +71,7 @@ assert detect("contracts/android-native-bridge.json")["ciSurfaces"]["android"]
 assert not detect("contracts/android-native-bridge.json")["imageServices"]
 deploy_script_plan = detect("deploy/deploy.sh")
 assert deploy_script_plan["deployConfig"]
-assert deploy_script_plan["images"] == {"backend": False, "frontend": False, "keycloak": False}
+assert deploy_script_plan["images"] == {"backend": False, "frontend": False, "keycloak": False, "minio": False}
 assert deploy_script_plan["buildServices"] == []
 assert deploy_script_plan["imageServices"] == []
 assert deploy_script_plan["deployServices"] == []
@@ -85,7 +85,7 @@ backend_health_probe_fix = detect(
     "docs/DEVELOPER_GUIDE.md",
     "java/wotb-web/src/test/java/com/wotb/web/config/BackendManagementHealthContractTest.java",
 )
-assert backend_health_probe_fix["images"] == {"backend": True, "frontend": False, "keycloak": False}
+assert backend_health_probe_fix["images"] == {"backend": True, "frontend": False, "keycloak": False, "minio": False}
 assert backend_health_probe_fix["buildServices"] == ["wotb-backend"]
 assert backend_health_probe_fix["imageServices"] == ["wotb-backend"]
 assert backend_health_probe_fix["deployServices"] == ["wotb-backend"]
@@ -98,18 +98,23 @@ assert detect("deploy/docker-compose.prod.yml")["targetServices"] == {"yecao": [
 ]}
 assert detect("deploy/tx/docker-compose.prod.yml")["deployServices"] == ["keycloak-postgres", "keycloak", "wotb-frontend"]
 assert detect("deploy/tx/docker-compose.prod.yml")["images"] == {
-    "backend": False, "frontend": True, "keycloak": True
+    "backend": False, "frontend": True, "keycloak": True, "minio": False
 }
 assert detect("deploy/tx/docker-compose.prod.yml")["targetServices"] == {
     "tx": ["keycloak-postgres", "keycloak", "wotb-frontend"]
 }
 keycloak_tofu = detect("infra/tofu/keycloak/realm.tf")
-assert keycloak_tofu["images"] == {"backend": False, "frontend": True, "keycloak": True}
+assert keycloak_tofu["images"] == {"backend": False, "frontend": True, "keycloak": True, "minio": False}
 assert keycloak_tofu["deployServices"] == ["keycloak-postgres", "keycloak", "wotb-frontend"]
 assert keycloak_tofu["targetServices"] == {
     "tx": ["keycloak-postgres", "keycloak", "wotb-frontend"]
 }
 assert detect("deploy/docker-compose.prod.yml")["ciSurfaces"]["deploy"]
+minio_image = detect("docker/Dockerfile.minio")
+assert minio_image["images"] == {"backend": False, "frontend": False, "keycloak": False, "minio": True}
+assert minio_image["buildServices"] == ["minio"]
+assert minio_image["deployServices"] == []
+assert detect("deploy/docker-compose.minio.yml")["deployServices"] == []
 assert detect(".github/workflows/ci.yml")["ciSurfaces"]["full"]
 assert detect("common/unrelated-fixture.json")["ciSurfaces"]["data"]
 assert not detect("common/unrelated-fixture.json")["imageServices"]
@@ -126,6 +131,8 @@ assert set(manual("all")["imageServices"]) == {
 assert manual("backend")["deployServices"] == ["wotb-backend"]
 assert manual("frontend")["deployServices"] == ["wotb-frontend"]
 assert manual("keycloak")["deployServices"] == ["keycloak"]
+assert manual("minio")["deployServices"] == ["minio"]
+assert manual("minio")["targetServices"] == {"yecao": ["minio"]}
 for unsupported in ("postgres", "grafana", "wotb-backend", "wotb-frontend"):
     assert subprocess.run(
         ["python3", str(tool), "detect", "--manual-service", unsupported],

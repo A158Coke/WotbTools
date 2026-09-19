@@ -1,0 +1,25 @@
+# MinIO Community Edition is source-only as of 2026. Build the final maintained
+# upstream release ourselves so the production runtime never downloads it.
+ARG MINIO_RELEASE=RELEASE.2025-10-15T17-29-55Z
+ARG BUILD_COMMIT
+
+FROM golang:1.24-bookworm AS build
+ARG MINIO_RELEASE
+RUN git clone --depth 1 --branch "$MINIO_RELEASE" https://github.com/minio/minio.git /src
+WORKDIR /src
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags "$(go run buildscripts/gen-ldflags.go) -s -w" \
+    -o /out/minio .
+
+FROM debian:bookworm-slim
+ARG MINIO_RELEASE
+ARG BUILD_COMMIT
+LABEL org.opencontainers.image.title="WotbTools MinIO" \
+      org.opencontainers.image.version="${MINIO_RELEASE}" \
+      org.opencontainers.image.revision="${BUILD_COMMIT}" \
+      org.opencontainers.image.source="https://github.com/minio/minio"
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /out/minio /usr/local/bin/minio
+ENTRYPOINT ["minio"]
