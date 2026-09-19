@@ -9,10 +9,22 @@ COMPOSE="$TX_DIR/docker-compose.yml"
 TEMPLATE="$TX_DIR/nginx/frontend.conf.template"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+readonly NGINX_TEST_IMAGE="nginx@sha256:62ff2089abf5a9ed33bd232895bef5e22f7bb4b200675cec49a5ebc48e3d4ac8"
 
 fail() {
   echo "FAIL: $*" >&2
   exit 1
+}
+
+run_fixture() {
+  local label="$1" output_file="$2" error_file="$3"
+  shift 3
+  if "$@" > "$output_file" 2> "$error_file"; then
+    return 0
+  fi
+  local diagnostics
+  diagnostics="$(tr '\r\n' ' ' < "$error_file" | sed -E 's/[[:space:]]+/ /g')"
+  fail "$label failed (stderr: ${diagnostics:-no stderr output})"
 }
 
 ! grep -Fq 'TX_RUNTIME_ENV_FILE' "$TX_DIR/deploy.sh" \
@@ -118,10 +130,10 @@ grep -Fq 'BACKEND_UPSTREAM: http://10.20.0.2:8087' "$WORK/compose.yml" \
 grep -Fq 'target: /etc/nginx/templates/default.conf.template' "$WORK/compose.yml" \
   || fail "frontend must mount its target-scoped nginx template"
 
-docker run --rm -e CADDY_ACME_EMAIL \
+run_fixture "Caddy adapt fixture" "$WORK/caddy.json" "$WORK/caddy.stderr" \
+  docker run --rm -e CADDY_ACME_EMAIL \
   -v "$TX_DIR/Caddyfile:/etc/caddy/Caddyfile:ro" \
-  caddy:2.10.2-alpine caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile \
-  > "$WORK/caddy.json"
+  caddy:2.10.2-alpine caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile
 grep -Fq 'wotb-frontend:80' "$WORK/caddy.json" \
   || fail "Caddy must forward the public application host to the frontend"
 grep -Fq 'keycloak:8080' "$WORK/caddy.json" \
@@ -133,11 +145,11 @@ grep -Fq '_wotb/ready' "$WORK/caddy.json" \
 
 # Invoke envsubst explicitly: overriding the nginx image entrypoint with
 # `nginx -T` would inspect the stock config and never render this template.
-docker run --rm \
+run_fixture "nginx template fixture" "$WORK/nginx.conf" "$WORK/nginx.stderr" \
+  docker run --rm \
   -e BACKEND_UPSTREAM=http://10.20.0.2:8087 \
   -v "$TEMPLATE:/etc/nginx/templates/default.conf.template:ro" \
-  nginx:alpine sh -ec "envsubst '\${BACKEND_UPSTREAM}' < /etc/nginx/templates/default.conf.template" \
-  > "$WORK/nginx.conf"
+  "$NGINX_TEST_IMAGE" sh -ec "envsubst '\${BACKEND_UPSTREAM}' < /etc/nginx/templates/default.conf.template"
 grep -Fq 'proxy_pass http://10.20.0.2:8087/api/;' "$WORK/nginx.conf" \
   || fail "nginx template did not render the configured WireGuard API upstream"
 ! grep -Fq '${BACKEND_UPSTREAM}' "$WORK/nginx.conf" \
