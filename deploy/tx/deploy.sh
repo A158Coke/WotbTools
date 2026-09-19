@@ -10,12 +10,16 @@ readonly LIVE_COMPOSE="$LIVE_DEPLOY_DIR/docker-compose.yml"
 readonly METADATA_FILE="$WOTB_DIR/tx-production-release.json"
 readonly TX_RUNTIME_ROOT="${TX_RUNTIME_ROOT:-$WOTB_DIR}"
 readonly TOFU_PROVISION_MARKER="${WOTB_TX_TOFU_PROVISION_MARKER:-$WOTB_DIR/keycloak.tofu-provisioned}"
+readonly RABBITMQ_TOFU_PROVISION_MARKER="${WOTB_TX_RABBITMQ_TOFU_PROVISION_MARKER:-$WOTB_DIR/rabbitmq.tofu-provisioned}"
+readonly RABBITMQ_TOFU_CLI_CONFIG="$LIVE_DEPLOY_DIR/rabbitmq.tofurc"
+readonly RABBITMQ_TOFU_MIRROR="${WOTB_TX_RABBITMQ_TOFU_MIRROR:-$WOTB_DIR/tofu-provider-mirror}"
 readonly BOOTSTRAP_KEYCLOAK="${WOTB_TX_BOOTSTRAP_KEYCLOAK:-0}"
 readonly BACKEND_UPSTREAM_VALUE="${TX_BACKEND_UPSTREAM:-http://10.20.0.2:8087}"
 readonly DEPLOY_SERVICES_RAW="${WOTB_DEPLOY_SERVICES:-}"
 readonly DEPLOY_IMAGE_SERVICES_RAW="${WOTB_DEPLOY_IMAGE_SERVICES:-}"
 readonly TAG_VALUE="${TAG:-}"
 readonly RELEASE_SHA_VALUE="${RELEASE_SHA:-}"
+readonly RABBITMQ_TOFU_ROOT="$WOTB_DIR/tofu.incoming/$RELEASE_SHA_VALUE/infra/tofu/rabbitmq"
 readonly HEALTH_ATTEMPTS="${WOTB_HEALTH_ATTEMPTS:-60}"
 readonly HEALTH_INTERVAL_SEC="${WOTB_HEALTH_INTERVAL_SEC:-2}"
 readonly PROBE_CONNECT_TIMEOUT_SEC="${WOTB_PROBE_CONNECT_TIMEOUT_SEC:-3}"
@@ -138,15 +142,21 @@ validate_inputs() {
     esac
   done
 
-  # Compose interpolation validates all runtime contracts before promotion.
-  for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
-    KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
-    WG_APPLICATION_ID CADDY_ACME_EMAIL RABBITMQ_USER RABBITMQ_PASSWORD; do
-    require_env "$required"
-  done
+  # Only selected runtime services may require their credentials. RabbitMQ-only
+  # reconciliation must not depend on Keycloak/PostgreSQL application inputs.
+  if is_selected all || is_selected keycloak-postgres || is_selected keycloak \
+    || is_selected wotb-frontend || is_selected caddy; then
+    for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
+      KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
+      WG_APPLICATION_ID CADDY_ACME_EMAIL; do
+      require_env "$required"
+    done
+  fi
   if is_selected all || is_selected rabbitmq; then
-    require_env RABBITMQ_USER
-    require_env RABBITMQ_PASSWORD
+    for required in TX_RABBITMQ_ADMIN_USER TX_RABBITMQ_ADMIN_PASSWORD \
+      TX_RABBITMQ_CONTROL_API_PASSWORD TX_RABBITMQ_PARSER_WORKER_PASSWORD; do
+      require_env "$required"
+    done
   fi
 }
 
@@ -195,6 +205,13 @@ current_or_target_tag() {
   local service="$1" tag=""
   is_image_service "$service" || die "not an application image service: $service"
   if is_selected all || has_image_service "$service"; then
+    printf '%s\n' "$TAG_VALUE"
+    return
+  fi
+  if is_selected rabbitmq && [ "${#DEPLOY_SERVICES[@]}" -eq 1 ]; then
+    # RabbitMQ-only deployment does not pull or start application images. A
+    # fresh TX host therefore need not have application metadata merely to
+    # render the complete Compose document.
     printf '%s\n' "$TAG_VALUE"
     return
   fi
@@ -254,6 +271,7 @@ stage_and_validate() {
     # directories keeps Compose bind mounts valid without inventing config.
     mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
   fi
+  set_nonselected_compose_placeholders
   local frontend_tag keycloak_tag
   frontend_tag="$(current_or_target_tag wotb-frontend)"
   keycloak_tag="$(current_or_target_tag keycloak)"
@@ -421,6 +439,65 @@ wait_for_rabbitmq() {
   return 1
 }
 
+set_nonselected_compose_placeholders() {
+  if is_selected all || is_selected keycloak-postgres || is_selected keycloak \
+    || is_selected wotb-frontend || is_selected caddy; then
+    return
+  fi
+  # Compose expands every service even when only RabbitMQ will start. These
+  # values only validate the rendered document; no other service is pulled or
+  # recreated in this branch.
+  : "${KC_POSTGRES_ADMIN_USER:=not-configured}"
+  : "${KC_POSTGRES_ADMIN_PASSWORD:=not-configured}"
+  : "${KC_BOOTSTRAP_ADMIN_PASSWORD:=not-configured}"
+  : "${KC_DB_USERNAME:=not-configured}"
+  : "${KC_DB_PASSWORD:=not-configured}"
+  : "${WG_APPLICATION_ID:=not-configured}"
+  : "${CADDY_ACME_EMAIL:=not-configured@example.invalid}"
+  export KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
+    KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
+    WG_APPLICATION_ID CADDY_ACME_EMAIL
+}
+
+provision_rabbitmq() {
+  if ! is_selected all && ! is_selected rabbitmq; then
+    return
+  fi
+  command -v tofu >/dev/null 2>&1 || die "tofu is required on TX for RabbitMQ provisioning."
+  command -v python3 >/dev/null 2>&1 || die "python3 is required on TX for RabbitMQ plan safety validation."
+  [ -d "$RABBITMQ_TOFU_ROOT" ] || die "TX RabbitMQ OpenTofu root is missing: $RABBITMQ_TOFU_ROOT."
+  [ -f "$RABBITMQ_TOFU_CLI_CONFIG" ] || die "TX RabbitMQ OpenTofu CLI configuration is missing: $RABBITMQ_TOFU_CLI_CONFIG."
+  [ -d "$RABBITMQ_TOFU_MIRROR" ] || die "TX RabbitMQ provider mirror is missing: $RABBITMQ_TOFU_MIRROR."
+
+  # Ensure the Management API is accepting the Compose bootstrap admin before
+  # OpenTofu touches broker configuration. The provider remains TX-local.
+  wait_for_rabbitmq || return 1
+  umask 077
+  install -d -m 700 "$WOTB_DIR/rabbitmq-tofu-state"
+  export TF_CLI_CONFIG_FILE="$RABBITMQ_TOFU_CLI_CONFIG"
+  export TF_VAR_rabbitmq_management_endpoint="http://127.0.0.1:15672"
+  export TF_VAR_rabbitmq_admin_user="$TX_RABBITMQ_ADMIN_USER"
+  export TF_VAR_rabbitmq_admin_password="$TX_RABBITMQ_ADMIN_PASSWORD"
+  export TF_VAR_control_api_password="$TX_RABBITMQ_CONTROL_API_PASSWORD"
+  export TF_VAR_parser_worker_password="$TX_RABBITMQ_PARSER_WORKER_PASSWORD"
+
+  (
+    cd "$RABBITMQ_TOFU_ROOT"
+    trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT
+    tofu init -reconfigure -input=false -lockfile=readonly
+    tofu validate
+    tofu plan -input=false -no-color -out=plan.tfplan
+    bash ./validate-plan.sh plan.tfplan
+    tofu apply -input=false -auto-approve plan.tfplan
+    tofu plan -input=false -no-color -out=second-plan.tfplan
+    bash ./validate-plan.sh second-plan.tfplan --require-no-changes
+  )
+
+  printf '%s\n' tx-local-opentofu-rabbitmq > "$RABBITMQ_TOFU_PROVISION_MARKER"
+  chmod 600 "$RABBITMQ_TOFU_PROVISION_MARKER"
+  echo "RabbitMQ OpenTofu apply and second-plan drift check passed."
+}
+
 blocking_health() {
   if is_selected all || is_selected keycloak-postgres || is_selected keycloak || is_selected wotb-frontend; then
     wait_for_database || return 1
@@ -547,6 +624,14 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
     echo "rabbitmq: PASS"
   else
     echo "rabbitmq: FAIL (container is not healthy)" >&2
+    failures=1
+  fi
+
+  if [ -f "$RABBITMQ_TOFU_PROVISION_MARKER" ] \
+      && grep -Fxq 'tx-local-opentofu-rabbitmq' "$RABBITMQ_TOFU_PROVISION_MARKER"; then
+    echo "rabbitmq-provisioning: PASS"
+  else
+    echo "rabbitmq-provisioning: FAIL (TX-local OpenTofu marker is missing or invalid)" >&2
     failures=1
   fi
 
@@ -720,7 +805,7 @@ main() {
   stage_and_validate
   pull_images || die "TX image pull failed; live TX deployment was not changed."
   promote_files || die "TX live-file promotion failed; prior TX files were restored when possible."
-  if ! apply_services || ! blocking_health; then
+  if ! apply_services || ! provision_rabbitmq || ! blocking_health; then
     diagnostics
     stop_failed_service
     die "TX blocking health failed; no automatic recovery, DNS action, or Yecao action was attempted."

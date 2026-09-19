@@ -99,8 +99,10 @@ export KC_DB_USERNAME=keycloak
 export KC_DB_PASSWORD=not-real
 export WG_APPLICATION_ID=not-real
 export CADDY_ACME_EMAIL=ops@example.test
-export RABBITMQ_USER=wotb
-export RABBITMQ_PASSWORD=not-real
+export TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin
+export TX_RABBITMQ_ADMIN_PASSWORD=not-real
+export TX_RABBITMQ_CONTROL_API_PASSWORD=not-real-control-api
+export TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real-parser-worker
 export TX_RUNTIME_ROOT="$WORK/runtime"
 mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
 
@@ -184,6 +186,18 @@ esac
 FAKE_IP
 chmod 700 "$WORK/bin/ip"
 
+rabbit_only_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
+  TX_DEPLOY_LIBRARY_ONLY=1 WOTB_TX_DIR="$WORK/rabbit-only" WOTB_TX_INCOMING_DIR="$WORK/incoming" \
+  TX_RUNTIME_ROOT="$WORK/rabbit-only" TAG=sha-0123456789ab \
+  RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  WOTB_DEPLOY_SERVICES=rabbitmq WOTB_DEPLOY_IMAGE_SERVICES='' \
+  TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
+  TX_RABBITMQ_CONTROL_API_PASSWORD=not-real-control-api \
+  TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real-parser-worker \
+  bash -c 'source "$1"; validate_inputs; set_nonselected_compose_placeholders; test "$(current_or_target_tag keycloak)" = sha-0123456789ab; test "$KC_DB_PASSWORD" = not-configured; echo rabbitmq-only-inputs-pass' _ "$WORK/incoming/deploy.sh")"
+grep -Fq 'rabbitmq-only-inputs-pass' <<< "$rabbit_only_output" \
+  || fail "RabbitMQ-only deployment must not require Keycloak/PostgreSQL/Caddy inputs or image metadata"
+
 run_prerequisite_failure() {
   local label="$1" expected="$2" path output rc
   shift 2
@@ -195,7 +209,7 @@ run_prerequisite_failure() {
     KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
     KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
     WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
-    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
     TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
     WOTB_DEPLOY_SERVICES=keycloak-postgres FAKE_DOCKER_LOG="$WORK/prereq-$label.log" \
     "$@" /bin/bash "$WORK/incoming/deploy.sh" 2>&1)"
@@ -221,7 +235,7 @@ bootstrap_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
-    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_DEPLOY_SERVICES=keycloak-postgres WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   FAKE_DOCKER_LOG="$WORK/bootstrap-docker.log" \
@@ -248,9 +262,9 @@ unprovisioned_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
-    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
-  WOTB_DEPLOY_SERVICES=all FAKE_DOCKER_LOG="$WORK/unprovisioned.log" \
+  WOTB_DEPLOY_SERVICES=keycloak-postgres,keycloak,wotb-frontend FAKE_DOCKER_LOG="$WORK/unprovisioned.log" \
   bash "$WORK/incoming/deploy.sh" 2>&1)"
 unprovisioned_rc=$?
 set -e
@@ -267,9 +281,9 @@ deploy_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
-    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
-  WOTB_DEPLOY_SERVICES=all WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+  WOTB_DEPLOY_SERVICES=keycloak-postgres,keycloak,wotb-frontend WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   FAKE_DOCKER_LOG="$WORK/docker.log" \
   bash "$WORK/incoming/deploy.sh" 2>&1)"
 grep -Fq 'DNS cutover remains an explicit operator action' <<< "$deploy_output" \
@@ -282,10 +296,8 @@ grep -Fq 'http://10.20.0.2:8087/api/health' "$WORK/docker.log" \
   || fail "TX deploy must probe the WireGuard backend URL directly"
 grep -Fq 'up -d --no-deps --force-recreate keycloak-postgres' "$WORK/docker.log" \
   || fail "TX deploy must start selected Keycloak PostgreSQL locally"
-grep -Fq 'up -d --no-deps --force-recreate rabbitmq' "$WORK/docker.log" \
-  || fail "TX all deployment must start RabbitMQ"
-grep -Fq 'exec -T rabbitmq rabbitmq-diagnostics -q ping' "$WORK/docker.log" \
-  || fail "TX deployment must health-check RabbitMQ locally"
+! grep -Fq 'rabbitmq' "$WORK/docker.log" \
+  || fail "non-RabbitMQ TX deployment must not start or health-check RabbitMQ"
 grep -Fq 'up -d --no-deps --force-recreate caddy' "$WORK/docker.log" \
   || fail "TX deploy must apply Caddy only through the staged TX runtime"
 grep -Fq 'run --rm --no-deps health-probe' "$WORK/docker.log" \
@@ -301,7 +313,7 @@ run_live_service_deploy() {
     KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
     KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
     WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
-    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
     TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
     WOTB_DEPLOY_SERVICES="$services" WOTB_DEPLOY_IMAGE_SERVICES="$image_services" \
     WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
@@ -336,7 +348,7 @@ bootstrap_keycloak_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
-    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_TX_BOOTSTRAP_KEYCLOAK=1 WOTB_DEPLOY_SERVICES=keycloak WOTB_DEPLOY_IMAGE_SERVICES=keycloak \
   WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
@@ -361,7 +373,7 @@ normal_keycloak_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
-    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_TX_BOOTSTRAP_KEYCLOAK=0 WOTB_DEPLOY_SERVICES=keycloak WOTB_DEPLOY_IMAGE_SERVICES=keycloak \
   WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
@@ -396,7 +408,7 @@ missing_secret_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
-    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_DEPLOY_SERVICES=keycloak-postgres FAKE_DOCKER_LOG="$WORK/missing-secret.log" \
   bash "$WORK/incoming/deploy.sh" 2>&1)"

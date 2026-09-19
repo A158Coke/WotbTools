@@ -7,6 +7,7 @@
 ### Added
 
 - **Yecao MinIO temporary workspace infrastructure**：新增源码固定的社区 MinIO 镜像构建、WireGuard-only API / loopback-only Console、持久卷与健康检查；独立 OpenTofu root 管理 `wotbtools-temp`、`temp/jobs/` 一天过期和最小权限 worker policy。Deploy 仅提供显式手动 `target=minio` 路径，普通 Yecao release 不会需要 MinIO secrets 或启动 MinIO；Yecao provider mirror/state 以 fail-closed 运维前置条件记录。
+- **TX RabbitMQ infrastructure ownership**：新增固定 `cyrilgdn/rabbitmq 1.10.1` 的 mirror-only OpenTofu root，管理 `/wotbtools` vhost、无 administrator tag 的 `control-api`/`parser-worker` identities 与 write-only/read-only vhost ACL。Compose 继续只拥有 broker runtime、持久卷、WireGuard-only AMQP 与 loopback Management API。TX 在本机 health 后执行 safety-guarded apply 和 clean second plan 才写 marker；CI 用 disposable RabbitMQ container 验证真实 provider 资源。PostgreSQL 仍是 job state 权威、RabbitMQ 只负责 delivery、MinIO 只作 temporary workspace；队列/交换机/binding 仍由未来 application adapter 单一拥有。
 
 ### Architecture
 - **Local full-stack Compose retirement**：删除旧的本地完整 Docker Compose 开发入口及其 CI/path-filter 依赖；Keycloak realm 集成验证统一使用独立 disposable PostgreSQL、Keycloak 与 local OpenTofu state，不访问 production state。生产 TX 继续只由 `infra/tofu/keycloak` 管理，不恢复 realm JSON import。
