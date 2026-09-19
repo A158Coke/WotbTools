@@ -654,10 +654,10 @@ jobs:
             -backend-config=path=/tmp/minio-ci.tfstate >/dev/null
           tofu -chdir=infra/tofu/minio validate >/dev/null
           tofu -chdir=infra/tofu/minio plan -input=false -out=plan.tfplan >/dev/null
-          bash infra/tofu/minio/validate-plan.sh infra/tofu/minio/plan.tfplan
+          ( cd infra/tofu/minio && bash validate-plan.sh plan.tfplan )
           tofu -chdir=infra/tofu/minio apply -input=false -auto-approve plan.tfplan >/dev/null
           tofu -chdir=infra/tofu/minio plan -input=false -out=second-plan.tfplan >/dev/null
-          bash infra/tofu/minio/validate-plan.sh infra/tofu/minio/second-plan.tfplan --require-no-changes
+          ( cd infra/tofu/minio && bash validate-plan.sh second-plan.tfplan --require-no-changes )
       - name: Production compose must not expose Grafana MCP
         env:
           TAG: sha-ci
