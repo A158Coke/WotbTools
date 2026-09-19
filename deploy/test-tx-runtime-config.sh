@@ -33,6 +33,12 @@ preflight_host_block="$(sed -n '/^preflight_host()/,/^}/p' "$TX_DIR/deploy.sh")"
 
 grep -Fq '127.0.0.1:15432:5432' "$COMPOSE" \
   || fail "Keycloak PostgreSQL must bind its administration port to TX loopback"
+grep -Fq '10.20.0.1:5672:5672' "$COMPOSE" \
+  || fail "RabbitMQ AMQP must bind only to the TX WireGuard address"
+grep -Fq '127.0.0.1:15672:15672' "$COMPOSE" \
+  || fail "RabbitMQ management must remain TX-loopback only"
+grep -Fq 'rabbitmq:4.3.6-management-alpine' "$COMPOSE" \
+  || fail "RabbitMQ runtime image must stay explicitly pinned"
 ! grep -Eq '(^|[^0-9])5432:5432' "$COMPOSE" \
   || fail "Keycloak PostgreSQL must not publish 5432 on all interfaces"
 grep -Fq 'BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://10.20.0.2:8087}' "$COMPOSE" \
@@ -93,6 +99,8 @@ export KC_DB_USERNAME=keycloak
 export KC_DB_PASSWORD=not-real
 export WG_APPLICATION_ID=not-real
 export CADDY_ACME_EMAIL=ops@example.test
+export RABBITMQ_USER=wotb
+export RABBITMQ_PASSWORD=not-real
 export TX_RUNTIME_ROOT="$WORK/runtime"
 mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
 
@@ -187,6 +195,7 @@ run_prerequisite_failure() {
     KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
     KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
     WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
     TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
     WOTB_DEPLOY_SERVICES=keycloak-postgres FAKE_DOCKER_LOG="$WORK/prereq-$label.log" \
     "$@" /bin/bash "$WORK/incoming/deploy.sh" 2>&1)"
@@ -212,6 +221,7 @@ bootstrap_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_DEPLOY_SERVICES=keycloak-postgres WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   FAKE_DOCKER_LOG="$WORK/bootstrap-docker.log" \
@@ -238,6 +248,7 @@ unprovisioned_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_DEPLOY_SERVICES=all FAKE_DOCKER_LOG="$WORK/unprovisioned.log" \
   bash "$WORK/incoming/deploy.sh" 2>&1)"
@@ -256,6 +267,7 @@ deploy_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_DEPLOY_SERVICES=all WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
   FAKE_DOCKER_LOG="$WORK/docker.log" \
@@ -270,6 +282,10 @@ grep -Fq 'http://10.20.0.2:8087/api/health' "$WORK/docker.log" \
   || fail "TX deploy must probe the WireGuard backend URL directly"
 grep -Fq 'up -d --no-deps --force-recreate keycloak-postgres' "$WORK/docker.log" \
   || fail "TX deploy must start selected Keycloak PostgreSQL locally"
+grep -Fq 'up -d --no-deps --force-recreate rabbitmq' "$WORK/docker.log" \
+  || fail "TX all deployment must start RabbitMQ"
+grep -Fq 'exec -T rabbitmq rabbitmq-diagnostics -q ping' "$WORK/docker.log" \
+  || fail "TX deployment must health-check RabbitMQ locally"
 grep -Fq 'up -d --no-deps --force-recreate caddy' "$WORK/docker.log" \
   || fail "TX deploy must apply Caddy only through the staged TX runtime"
 grep -Fq 'run --rm --no-deps health-probe' "$WORK/docker.log" \
@@ -285,6 +301,7 @@ run_live_service_deploy() {
     KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
     KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
     WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
     TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
     WOTB_DEPLOY_SERVICES="$services" WOTB_DEPLOY_IMAGE_SERVICES="$image_services" \
     WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
@@ -319,6 +336,7 @@ bootstrap_keycloak_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_TX_BOOTSTRAP_KEYCLOAK=1 WOTB_DEPLOY_SERVICES=keycloak WOTB_DEPLOY_IMAGE_SERVICES=keycloak \
   WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
@@ -343,6 +361,7 @@ normal_keycloak_output="$(env -i \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_TX_BOOTSTRAP_KEYCLOAK=0 WOTB_DEPLOY_SERVICES=keycloak WOTB_DEPLOY_IMAGE_SERVICES=keycloak \
   WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
@@ -377,6 +396,7 @@ missing_secret_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
   KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak \
   WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    RABBITMQ_USER=wotb RABBITMQ_PASSWORD=not-real \
   TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
   WOTB_DEPLOY_SERVICES=keycloak-postgres FAKE_DOCKER_LOG="$WORK/missing-secret.log" \
   bash "$WORK/incoming/deploy.sh" 2>&1)"
