@@ -13,6 +13,8 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -276,6 +278,67 @@ class HofOwnershipMigrationTest {
         }
     }
 
+    /**
+     * TX Business PostgreSQL 必须能从空库把当前 schema 完整建起来，且名人堂保持未来数据迁移
+     * 所需的属性：explicit id 可插入、{@code (arena_id, account_id)} 唯一键存在、
+     * {@code replay_uploaded_by} 仍是字面 {@code varchar} 数据（历史 Keycloak UUID），
+     * 且 {@code hall_of_fame_record} 不向任何 Keycloak/用户表存在外键耦合。
+     */
+    @Test
+    void migratesEmptyBusinessDatabaseFromScratchWithoutKeycloakCoupling() throws Exception {
+        final String scratchDatabase = "wotb_schema_from_scratch";
+        try (Connection c = connection(); Statement s = c.createStatement()) {
+            s.execute("drop database if exists " + scratchDatabase);
+            s.execute("create database " + scratchDatabase);
+        }
+        final String scratchUrl = POSTGRES.getJdbcUrl().replaceFirst("/[^/?]+(\\?|$)", "/" + scratchDatabase + "$1");
+
+        final org.flywaydb.core.api.output.MigrateResult result = Flyway.configure()
+                .dataSource(scratchUrl, POSTGRES.getUsername(), POSTGRES.getPassword())
+                .locations("classpath:db/migration")
+                .load().migrate();
+        assertTrue(result.migrationsExecuted > 0, "空库必须执行 Flyway 迁移");
+
+        try (Connection c = DriverManager.getConnection(scratchUrl, POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement s = c.createStatement()) {
+            // 迁移链完整执行：早期与晚期表都必须存在。
+            for (final String table : new String[]{
+                    "hall_of_fame_record", "hall_of_fame_admin_log", "user_profile",
+                    "hundred_battle_submission", "mark3_submission"}) {
+                assertTrue(tableExists(s, table), "空库迁移后缺少表: " + table);
+            }
+
+            // explicit id 必须可插入，且 identity 列存在（迁移导入依赖显式 id 后校正序列）。
+            assertTrue(columnExists(s, "hall_of_fame_record", "id"), "hall_of_fame_record.id 必须存在");
+            s.executeUpdate("insert into hall_of_fame_record"
+                    + " (id, arena_id, tank_id, tank_name, account_id, nickname, damage_dealt, map_name,"
+                    + " replay_uploaded_by) overriding system value values"
+                    + " (355, 'arena-355', 6481, 'FV4005', 111, 'LegacyPlayer', 5000, 'rockfield',"
+                    + " '3f1a4b2c-0000-4000-8000-000000000001')");
+            assertEquals(1, count(s, "select count(*) from hall_of_fame_record where id = 355"),
+                    "显式 id 必须原样保留");
+            s.execute("delete from hall_of_fame_record where id = 355");
+
+            // 唯一键仍是 (arena_id, account_id)。
+            assertTrue(constraintExists(s, "hall_of_fame_record", "uk_hall_of_fame_record_arena_player"),
+                    "hall_of_fame_record 必须保留 (arena_id, account_id) 唯一键");
+            assertTrue(constraintColumns(s, "uk_hall_of_fame_record_arena_player")
+                            .containsAll(List.of("arena_id", "account_id")),
+                    "唯一键必须覆盖 arena_id 与 account_id");
+
+            // replay_uploaded_by 必须是字面列，且没有任何外键耦合到 Keycloak/用户表。
+            assertEquals("character varying", scalar(s,
+                    "select data_type from information_schema.columns"
+                            + " where table_name = 'hall_of_fame_record' and column_name = 'replay_uploaded_by'"),
+                    "replay_uploaded_by 必须保持字面 varchar，用于承载历史 Keycloak UUID");
+            assertTrue(isNullable(s, "hall_of_fame_record", "replay_uploaded_by"),
+                    "replay_uploaded_by 必须保持可空（历史行可以没有上传者）");
+            final List<String> outbound = foreignKeysFrom(s, "hall_of_fame_record");
+            assertTrue(outbound.isEmpty(),
+                    "hall_of_fame_record 不允许与 Keycloak/用户表存在外键耦合: " + outbound);
+        }
+    }
+
     // ── 基础设施 ──────────────────────────────────────────────────────────
 
     private Connection connection() throws Exception {
@@ -356,6 +419,58 @@ class HofOwnershipMigrationTest {
         try (ResultSet rs = s.executeQuery(
                 "select indexdef from pg_indexes where indexname = '" + index + "'")) {
             return rs.next() ? rs.getString(1) : "";
+        }
+    }
+
+    private static boolean tableExists(final Statement s, final String table) throws Exception {
+        try (ResultSet rs = s.executeQuery("select to_regclass('public." + table + "') is not null")) {
+            return rs.next() && rs.getBoolean(1);
+        }
+    }
+
+    private static boolean constraintExists(final Statement s, final String table, final String constraint)
+            throws Exception {
+        try (ResultSet rs = s.executeQuery("select 1 from pg_constraint where conname = '" + constraint
+                + "' and conrelid = 'public." + table + "'::regclass")) {
+            return rs.next();
+        }
+    }
+
+    private static List<String> constraintColumns(final Statement s, final String constraint) throws Exception {
+        try (ResultSet rs = s.executeQuery("select attname from pg_attribute where attrelid = ("
+                + "select conrelid from pg_constraint where conname = '" + constraint + "')"
+                + " and attnum = any((select conkey from pg_constraint where conname = '" + constraint + "')"
+                + "::smallint[])")) {
+            final List<String> columns = new ArrayList<>();
+            while (rs.next()) {
+                columns.add(rs.getString(1));
+            }
+            return columns;
+        }
+    }
+
+    private static boolean isNullable(final Statement s, final String table, final String column)
+            throws Exception {
+        return "YES".equals(scalar(s, "select is_nullable from information_schema.columns"
+                + " where table_name = '" + table + "' and column_name = '" + column + "'"));
+    }
+
+    /** 该表指向其它表的外键（table.column -> referenced.table）；用于禁止 Keycloak 耦合。 */
+    private static List<String> foreignKeysFrom(final Statement s, final String table) throws Exception {
+        try (ResultSet rs = s.executeQuery(
+                "select kcu.column_name || ' -> ' || ccu.table_name || '.' || ccu.column_name"
+                        + " from information_schema.table_constraints tc"
+                        + " join information_schema.key_column_usage kcu"
+                        + "   on kcu.constraint_name = tc.constraint_name"
+                        + " join information_schema.constraint_column_usage ccu"
+                        + "   on ccu.constraint_name = tc.constraint_name"
+                        + " where tc.constraint_type = 'FOREIGN KEY' and tc.table_name = '" + table + "'"
+                        + " order by 1")) {
+            final List<String> foreignKeys = new ArrayList<>();
+            while (rs.next()) {
+                foreignKeys.add(rs.getString(1));
+            }
+            return foreignKeys;
         }
     }
 }
