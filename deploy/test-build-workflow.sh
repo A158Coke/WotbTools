@@ -198,6 +198,8 @@ assert "deploy/minio/tofurc" in minio_ci_run
 assert "TF_CLI_CONFIG_FILE=/tmp/minio-ci.tfrc" in minio_ci_run
 assert "TF_DATA_DIR=/tmp/minio-ci-tofu-data" in minio_ci_run
 assert "tofu -chdir=infra/tofu/minio apply" in minio_ci_run
+assert "( cd infra/tofu/minio && bash validate-plan.sh plan.tfplan )" in minio_ci_run
+assert "( cd infra/tofu/minio && bash validate-plan.sh second-plan.tfplan --require-no-changes )" in minio_ci_run
 assert "--require-no-changes" in minio_ci_run
 assert "YECAO_MINIO_" not in minio_ci_run
 assert "deploy_tx" in deploy["jobs"]
