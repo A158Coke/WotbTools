@@ -563,21 +563,28 @@ jobs:
       - name: bash -n deployment scripts
         run: >-
           bash -n deploy/deploy.sh deploy/minio-deploy.sh deploy/tx/deploy.sh
-          deploy/test-rabbitmq-tofu.sh infra/tofu/minio/validate-plan.sh
+          deploy/tx/business-postgres-backup.sh deploy/tx/business-postgres-restore.sh
+          deploy/test-rabbitmq-tofu.sh deploy/test-business-postgres-runtime.sh
+          infra/tofu/minio/validate-plan.sh
           infra/tofu/rabbitmq/validate-plan.sh infra/tofu/rabbitmq/test-validate-plan.sh
+          infra/tofu/postgres-business/validate-plan.sh infra/tofu/postgres-business/test-validate-plan.sh
+          scripts/ci/test-postgres-business-tofu-contract.sh
       - name: bash -n deployment verification scripts
         run: >-
           bash -n deploy/deploy.sh deploy/minio-deploy.sh deploy/ops-recovery.sh
           deploy/verify-observability.sh deploy/test-keycloak-runtime.sh
           deploy/test-keycloak-tofu.sh deploy/test-rabbitmq-tofu.sh
+          deploy/test-business-postgres-runtime.sh
           deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh
           deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
           deploy/test-build-workflow.sh deploy/test-release-plan.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
           infra/tofu/minio/validate-plan.sh infra/tofu/rabbitmq/validate-plan.sh
           infra/tofu/rabbitmq/test-validate-plan.sh
+          infra/tofu/postgres-business/validate-plan.sh infra/tofu/postgres-business/test-validate-plan.sh
           scripts/ci/test-postgres-keycloak-tofu-contract.sh
           scripts/ci/test-keycloak-tofu-contract.sh
+          scripts/ci/test-postgres-business-tofu-contract.sh
       - name: Build workflow frozen-commit contract
         run: bash deploy/test-build-workflow.sh
       - name: bash -n TX pre-cutover contracts
@@ -676,6 +683,11 @@ jobs:
         run: |
           bash infra/tofu/rabbitmq/test-validate-plan.sh
           bash deploy/test-rabbitmq-tofu.sh
+      - name: Business PostgreSQL Compose, OpenTofu, and backup/restore smoke
+        run: |
+          bash infra/tofu/postgres-business/test-validate-plan.sh
+          bash scripts/ci/test-postgres-business-tofu-contract.sh
+          bash deploy/test-business-postgres-runtime.sh
       - name: Production compose must not expose Grafana MCP
         env:
           TAG: sha-ci

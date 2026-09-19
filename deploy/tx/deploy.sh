@@ -13,6 +13,9 @@ readonly TOFU_PROVISION_MARKER="${WOTB_TX_TOFU_PROVISION_MARKER:-$WOTB_DIR/keycl
 readonly RABBITMQ_TOFU_PROVISION_MARKER="${WOTB_TX_RABBITMQ_TOFU_PROVISION_MARKER:-$WOTB_DIR/rabbitmq.tofu-provisioned}"
 readonly RABBITMQ_TOFU_CLI_CONFIG="$LIVE_DEPLOY_DIR/rabbitmq.tofurc"
 readonly RABBITMQ_TOFU_MIRROR="${WOTB_TX_RABBITMQ_TOFU_MIRROR:-$WOTB_DIR/tofu-provider-mirror}"
+readonly BUSINESS_POSTGRES_TOFU_PROVISION_MARKER="${WOTB_TX_BUSINESS_POSTGRES_TOFU_PROVISION_MARKER:-$WOTB_DIR/business-postgres.tofu-provisioned}"
+readonly BUSINESS_POSTGRES_TOFU_CLI_CONFIG="$LIVE_DEPLOY_DIR/business-postgres.tofurc"
+readonly BUSINESS_POSTGRES_TOFU_MIRROR="${WOTB_TX_BUSINESS_POSTGRES_TOFU_MIRROR:-$WOTB_DIR/tofu-provider-mirror}"
 readonly BOOTSTRAP_KEYCLOAK="${WOTB_TX_BOOTSTRAP_KEYCLOAK:-0}"
 readonly BACKEND_UPSTREAM_VALUE="${TX_BACKEND_UPSTREAM:-http://10.20.0.2:8087}"
 readonly DEPLOY_SERVICES_RAW="${WOTB_DEPLOY_SERVICES:-}"
@@ -20,6 +23,7 @@ readonly DEPLOY_IMAGE_SERVICES_RAW="${WOTB_DEPLOY_IMAGE_SERVICES:-}"
 readonly TAG_VALUE="${TAG:-}"
 readonly RELEASE_SHA_VALUE="${RELEASE_SHA:-}"
 readonly RABBITMQ_TOFU_ROOT="$WOTB_DIR/tofu.incoming/$RELEASE_SHA_VALUE/infra/tofu/rabbitmq"
+readonly BUSINESS_POSTGRES_TOFU_ROOT="$WOTB_DIR/tofu.incoming/$RELEASE_SHA_VALUE/infra/tofu/postgres-business"
 readonly HEALTH_ATTEMPTS="${WOTB_HEALTH_ATTEMPTS:-60}"
 readonly HEALTH_INTERVAL_SEC="${WOTB_HEALTH_INTERVAL_SEC:-2}"
 readonly PROBE_CONNECT_TIMEOUT_SEC="${WOTB_PROBE_CONNECT_TIMEOUT_SEC:-3}"
@@ -86,6 +90,23 @@ is_selected() {
   return 1
 }
 
+# One credential group is required only when a service in that group is
+# selected. Keeping the groups explicit is what keeps RabbitMQ-only,
+# Keycloak-only, and business-postgres-only deployments isolated from each
+# other's secrets.
+is_keycloak_group_selected() {
+  is_selected all || is_selected keycloak-postgres || is_selected keycloak \
+    || is_selected wotb-frontend || is_selected caddy
+}
+
+is_rabbitmq_group_selected() {
+  is_selected all || is_selected rabbitmq
+}
+
+is_business_postgres_group_selected() {
+  is_selected all || is_selected business-postgres
+}
+
 is_image_service() {
   case "$1" in
     keycloak|wotb-frontend) return 0 ;;
@@ -126,7 +147,7 @@ validate_inputs() {
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      all|keycloak-postgres|rabbitmq|keycloak|wotb-frontend|caddy) ;;
+      all|keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|caddy) ;;
       *) die "unsupported TX deployment service: $service" ;;
     esac
   done
@@ -143,18 +164,25 @@ validate_inputs() {
   done
 
   # Only selected runtime services may require their credentials. RabbitMQ-only
-  # reconciliation must not depend on Keycloak/PostgreSQL application inputs.
-  if is_selected all || is_selected keycloak-postgres || is_selected keycloak \
-    || is_selected wotb-frontend || is_selected caddy; then
+  # and business-postgres-only reconciliation must not depend on each other or
+  # on Keycloak/PostgreSQL application inputs.
+  if is_keycloak_group_selected; then
     for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
       KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
       WG_APPLICATION_ID CADDY_ACME_EMAIL; do
       require_env "$required"
     done
   fi
-  if is_selected all || is_selected rabbitmq; then
+  if is_rabbitmq_group_selected; then
     for required in TX_RABBITMQ_ADMIN_USER TX_RABBITMQ_ADMIN_PASSWORD \
       TX_RABBITMQ_CONTROL_API_PASSWORD TX_RABBITMQ_PARSER_WORKER_PASSWORD; do
+      require_env "$required"
+    done
+  fi
+  if is_business_postgres_group_selected; then
+    for required in TX_BUSINESS_POSTGRES_ADMIN_USER TX_BUSINESS_POSTGRES_ADMIN_PASSWORD \
+      TX_BUSINESS_DB_NAME TX_BUSINESS_DB_USERNAME TX_BUSINESS_DB_PASSWORD \
+      TX_BUSINESS_DB_PASSWORD_VERSION; do
       require_env "$required"
     done
   fi
@@ -208,19 +236,21 @@ current_or_target_tag() {
     printf '%s\n' "$TAG_VALUE"
     return
   fi
-  if is_selected rabbitmq && [ "${#DEPLOY_SERVICES[@]}" -eq 1 ]; then
-    # RabbitMQ-only deployment does not pull or start application images. A
-    # fresh TX host therefore need not have application metadata merely to
-    # render the complete Compose document.
+  if (is_selected rabbitmq || is_selected business-postgres) && [ "${#DEPLOY_SERVICES[@]}" -eq 1 ]; then
+    # A RabbitMQ-only or business-postgres-only deployment does not pull or
+    # start application images. A fresh TX host therefore need not have
+    # application metadata merely to render the complete Compose document.
     printf '%s\n' "$TAG_VALUE"
     return
   fi
   tag="$(metadata_tag "$service")"
   [ -n "$tag" ] || tag="$(compose_tag "$service")"
-  # The first TX step intentionally starts PostgreSQL before OpenTofu creates
-  # the Keycloak database and role. No application image exists yet, so render
-  # the incoming immutable tag without starting or recording that image.
-  if [ -z "$tag" ] && is_selected keycloak-postgres && ! is_selected keycloak && ! is_selected wotb-frontend; then
+  # The first TX steps intentionally start a PostgreSQL runtime before OpenTofu
+  # creates the Keycloak/business database and role. No application image
+  # exists yet, so render the incoming immutable tag without starting or
+  # recording that image.
+  if [ -z "$tag" ] && (is_selected keycloak-postgres || is_selected business-postgres) \
+    && ! is_selected keycloak && ! is_selected wotb-frontend; then
     printf '%s\n' "$TAG_VALUE"
     return
   fi
@@ -287,6 +317,9 @@ pull_images() {
   if is_selected all || is_selected keycloak-postgres; then
     services+=(keycloak-postgres)
   fi
+  if is_selected all || is_selected business-postgres; then
+    services+=(business-postgres)
+  fi
   if is_selected all || is_selected rabbitmq; then
     services+=(rabbitmq)
   fi
@@ -322,7 +355,7 @@ promote_files() {
 
 compose_service_list() {
   if is_selected all; then
-    printf '%s\n' keycloak-postgres rabbitmq keycloak wotb-frontend
+    printf '%s\n' keycloak-postgres business-postgres rabbitmq keycloak wotb-frontend
   else
     printf '%s\n' "${DEPLOY_SERVICES[@]}"
   fi
@@ -439,24 +472,48 @@ wait_for_rabbitmq() {
   return 1
 }
 
+wait_for_business_database() {
+  local attempt
+  for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
+    if docker compose -f "$LIVE_COMPOSE" exec -T business-postgres \
+      pg_isready -U "$TX_BUSINESS_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
+      echo "business-postgres: PASS"
+      return 0
+    fi
+    FAILED_SERVICE="business-postgres"
+    [ "$attempt" -lt "$HEALTH_ATTEMPTS" ] && sleep "$HEALTH_INTERVAL_SEC"
+  done
+  echo "business-postgres: FAIL" >&2
+  return 1
+}
+
 set_nonselected_compose_placeholders() {
-  if is_selected all || is_selected keycloak-postgres || is_selected keycloak \
-    || is_selected wotb-frontend || is_selected caddy; then
-    return
+  # Compose expands every service even when only one is started. Only groups
+  # that this deployment does not own receive validation placeholders; a
+  # selected group's real values always come from the process environment and
+  # were already enforced by validate_inputs.
+  if ! is_keycloak_group_selected; then
+    : "${KC_POSTGRES_ADMIN_USER:=not-configured}"
+    : "${KC_POSTGRES_ADMIN_PASSWORD:=not-configured}"
+    : "${KC_BOOTSTRAP_ADMIN_PASSWORD:=not-configured}"
+    : "${KC_DB_USERNAME:=not-configured}"
+    : "${KC_DB_PASSWORD:=not-configured}"
+    : "${WG_APPLICATION_ID:=not-configured}"
+    : "${CADDY_ACME_EMAIL:=not-configured@example.invalid}"
+    export KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
+      KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
+      WG_APPLICATION_ID CADDY_ACME_EMAIL
   fi
-  # Compose expands every service even when only RabbitMQ will start. These
-  # values only validate the rendered document; no other service is pulled or
-  # recreated in this branch.
-  : "${KC_POSTGRES_ADMIN_USER:=not-configured}"
-  : "${KC_POSTGRES_ADMIN_PASSWORD:=not-configured}"
-  : "${KC_BOOTSTRAP_ADMIN_PASSWORD:=not-configured}"
-  : "${KC_DB_USERNAME:=not-configured}"
-  : "${KC_DB_PASSWORD:=not-configured}"
-  : "${WG_APPLICATION_ID:=not-configured}"
-  : "${CADDY_ACME_EMAIL:=not-configured@example.invalid}"
-  export KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
-    KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
-    WG_APPLICATION_ID CADDY_ACME_EMAIL
+  if ! is_rabbitmq_group_selected; then
+    : "${TX_RABBITMQ_ADMIN_USER:=not-configured}"
+    : "${TX_RABBITMQ_ADMIN_PASSWORD:=not-configured}"
+    export TX_RABBITMQ_ADMIN_USER TX_RABBITMQ_ADMIN_PASSWORD
+  fi
+  if ! is_business_postgres_group_selected; then
+    : "${TX_BUSINESS_POSTGRES_ADMIN_USER:=not-configured}"
+    : "${TX_BUSINESS_POSTGRES_ADMIN_PASSWORD:=not-configured}"
+    export TX_BUSINESS_POSTGRES_ADMIN_USER TX_BUSINESS_POSTGRES_ADMIN_PASSWORD
+  fi
 }
 
 provision_rabbitmq() {
@@ -481,26 +538,79 @@ provision_rabbitmq() {
   export TF_VAR_control_api_password="$TX_RABBITMQ_CONTROL_API_PASSWORD"
   export TF_VAR_parser_worker_password="$TX_RABBITMQ_PARSER_WORKER_PASSWORD"
 
+  # `set -e` is inert inside a function that runs in an `if`/`||` context, so
+  # every provisioning step is chained explicitly. A failing plan or a non-clean
+  # second plan must abort instead of reaching the marker.
   (
-    cd "$RABBITMQ_TOFU_ROOT"
+    cd "$RABBITMQ_TOFU_ROOT" || exit 1
     trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT
-    tofu init -reconfigure -input=false -lockfile=readonly
-    tofu validate
-    tofu plan -input=false -no-color -out=plan.tfplan
-    bash ./validate-plan.sh plan.tfplan
-    tofu apply -input=false -auto-approve plan.tfplan
-    tofu plan -input=false -no-color -out=second-plan.tfplan
-    bash ./validate-plan.sh second-plan.tfplan --require-no-changes
-  )
+    tofu init -reconfigure -input=false -lockfile=readonly \
+      && tofu validate \
+      && tofu plan -input=false -no-color -out=plan.tfplan \
+      && bash ./validate-plan.sh plan.tfplan \
+      && tofu apply -input=false -auto-approve plan.tfplan \
+      && tofu plan -input=false -no-color -out=second-plan.tfplan \
+      && bash ./validate-plan.sh second-plan.tfplan --require-no-changes
+  ) || return 1
 
   printf '%s\n' tx-local-opentofu-rabbitmq > "$RABBITMQ_TOFU_PROVISION_MARKER"
   chmod 600 "$RABBITMQ_TOFU_PROVISION_MARKER"
   echo "RabbitMQ OpenTofu apply and second-plan drift check passed."
 }
 
+provision_business_postgres() {
+  if ! is_selected all && ! is_selected business-postgres; then
+    return
+  fi
+  command -v tofu >/dev/null 2>&1 || die "tofu is required on TX for Business PostgreSQL provisioning."
+  command -v python3 >/dev/null 2>&1 || die "python3 is required on TX for Business PostgreSQL plan safety validation."
+  [ -d "$BUSINESS_POSTGRES_TOFU_ROOT" ] \
+    || die "TX Business PostgreSQL OpenTofu root is missing: $BUSINESS_POSTGRES_TOFU_ROOT."
+  [ -f "$BUSINESS_POSTGRES_TOFU_CLI_CONFIG" ] \
+    || die "TX Business PostgreSQL OpenTofu CLI configuration is missing: $BUSINESS_POSTGRES_TOFU_CLI_CONFIG."
+  [ -d "$BUSINESS_POSTGRES_TOFU_MIRROR" ] \
+    || die "TX Business PostgreSQL provider mirror is missing: $BUSINESS_POSTGRES_TOFU_MIRROR."
+
+  # The runtime must accept the Compose bootstrap administrator before OpenTofu
+  # creates the authoritative database, application role, and grant. The
+  # provider remains TX-local on 127.0.0.1:25432 and owns no application table.
+  wait_for_business_database || return 1
+  umask 077
+  install -d -m 700 "$WOTB_DIR/postgres-business-tofu-state"
+  export TF_CLI_CONFIG_FILE="$BUSINESS_POSTGRES_TOFU_CLI_CONFIG"
+  export TF_VAR_postgresql_admin_username="$TX_BUSINESS_POSTGRES_ADMIN_USER"
+  export TF_VAR_postgresql_admin_password="$TX_BUSINESS_POSTGRES_ADMIN_PASSWORD"
+  export TF_VAR_business_database_name="$TX_BUSINESS_DB_NAME"
+  export TF_VAR_business_role_name="$TX_BUSINESS_DB_USERNAME"
+  export TF_VAR_business_role_password="$TX_BUSINESS_DB_PASSWORD"
+  export TF_VAR_business_role_password_version="$TX_BUSINESS_DB_PASSWORD_VERSION"
+
+  # `set -e` is inert inside a function that runs in an `if`/`||` context, so
+  # every provisioning step is chained explicitly. A failing plan or a non-clean
+  # second plan must abort instead of reaching the marker.
+  (
+    cd "$BUSINESS_POSTGRES_TOFU_ROOT" || exit 1
+    trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT
+    tofu init -reconfigure -input=false -lockfile=readonly \
+      && tofu validate \
+      && tofu plan -input=false -no-color -out=plan.tfplan \
+      && bash ./validate-plan.sh plan.tfplan \
+      && tofu apply -input=false -auto-approve plan.tfplan \
+      && tofu plan -input=false -no-color -out=second-plan.tfplan \
+      && bash ./validate-plan.sh second-plan.tfplan --require-no-changes
+  ) || return 1
+
+  printf '%s\n' tx-local-opentofu-business-postgres > "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER"
+  chmod 600 "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER"
+  echo "Business PostgreSQL OpenTofu apply and second-plan drift check passed."
+}
+
 blocking_health() {
   if is_selected all || is_selected keycloak-postgres || is_selected keycloak || is_selected wotb-frontend; then
     wait_for_database || return 1
+  fi
+  if is_selected all || is_selected business-postgres; then
+    wait_for_business_database || return 1
   fi
   if is_selected all || is_selected rabbitmq; then
     wait_for_rabbitmq || return 1
@@ -555,7 +665,7 @@ preflight_host() {
 }
 
 pre_cutover_check() {
-  local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health
+  local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health business_container
   local yecao_compose="$source_root/deploy/docker-compose.prod.yml"
   local yecao_contract="$LIVE_DEPLOY_DIR/yecao-backend-contract.json"
   local failures=0 provider
@@ -565,7 +675,8 @@ pre_cutover_check() {
   command -v python3 >/dev/null 2>&1 || { echo "python3: FAIL (python3 is required)" >&2; return 1; }
   for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
     KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
-    WG_APPLICATION_ID CADDY_ACME_EMAIL; do
+    WG_APPLICATION_ID CADDY_ACME_EMAIL \
+    TX_BUSINESS_POSTGRES_ADMIN_USER TX_BUSINESS_POSTGRES_ADMIN_PASSWORD; do
     require_env "$required"
   done
   [ -f "$LIVE_COMPOSE" ] || { echo "tx-compose: FAIL (missing $LIVE_COMPOSE)" >&2; return 1; }
@@ -588,6 +699,21 @@ assert not any("0.0.0.0" in p or p.startswith("5432:") or "::" in p for p in val
     echo "postgres-loopback: PASS"
   else
     echo "postgres-loopback: FAIL (management port must be 127.0.0.1:15432:5432 only)" >&2
+    failures=1
+  fi
+
+  if python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+ports = [str(p) for p in data["services"]["business-postgres"].get("ports", [])]
+assert any("127.0.0.1" in p and "25432" in p and "5432" in p for p in ports), ports
+assert not any(
+    "0.0.0.0" in p or "::" in p or "10.20.0.1" in p or p.startswith("25432:") for p in ports
+), ports
+' <<< "$compose_json"; then
+    echo "business-postgres-loopback: PASS"
+  else
+    echo "business-postgres-loopback: FAIL (management port must be 127.0.0.1:25432:5432 only)" >&2
     failures=1
   fi
 
@@ -641,6 +767,29 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
     echo "keycloak-postgres: PASS"
   else
     echo "keycloak-postgres: FAIL (container is not healthy)" >&2
+    failures=1
+  fi
+
+  # Business PostgreSQL is authoritative business state, so PRE_CUTOVER_READY
+  # must not be emitted until its runtime, loopback administration port, and
+  # TX-local OpenTofu provisioning marker are all proven. These checks are
+  # read-only: they never create, modify, or delete any database or row.
+  business_container="$(docker compose -f "$LIVE_COMPOSE" ps -q business-postgres 2>/dev/null || true)"
+  health="$(docker compose -f "$LIVE_COMPOSE" ps --format '{{.Health}}' business-postgres 2>/dev/null || true)"
+  if [ -n "$business_container" ] && [ "$health" = healthy ] \
+    && docker compose -f "$LIVE_COMPOSE" exec -T business-postgres \
+      pg_isready -U "$TX_BUSINESS_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
+    echo "business-postgres: PASS"
+  else
+    echo "business-postgres: FAIL (container is missing or not healthy)" >&2
+    failures=1
+  fi
+
+  if [ -f "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER" ] \
+      && grep -Fxq 'tx-local-opentofu-business-postgres' "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER"; then
+    echo "business-postgres-provisioning: PASS"
+  else
+    echo "business-postgres-provisioning: FAIL (TX-local OpenTofu marker is missing or invalid)" >&2
     failures=1
   fi
 
@@ -757,13 +906,19 @@ stop_failed_service() {
 
 update_metadata() {
   local now metadata_tmp selected service
-  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   selected=""
   for service in keycloak wotb-frontend; do
     if is_selected all || is_selected "$service"; then
       selected+="$service,"
     fi
   done
+  if [ -z "$selected" ]; then
+    # A run that publishes no application image (business-postgres, rabbitmq,
+    # Caddy-only, or a database bootstrap) must not overwrite the recorded
+    # immutable image identity of the running application services.
+    return
+  fi
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   metadata_tmp="$METADATA_FILE.next.$$"
   umask 177
   NOW="$now" python3 - "$METADATA_FILE" "$metadata_tmp" "$RELEASE_SHA_VALUE" "$TAG_VALUE" "$selected" <<'PY'
@@ -792,6 +947,16 @@ PY
   mv -f -- "$metadata_tmp" "$METADATA_FILE"
 }
 
+apply_and_provision() {
+  # Never call the provisioning helpers from a `||` list: bash disables errexit
+  # for a function invoked there, which would let a failing plan or apply drift
+  # check pass silently. Each step is checked explicitly instead.
+  apply_services || return 1
+  provision_business_postgres || return 1
+  provision_rabbitmq || return 1
+  blocking_health || return 1
+}
+
 main() {
   validate_inputs
   require_tofu_provisioning
@@ -805,7 +970,7 @@ main() {
   stage_and_validate
   pull_images || die "TX image pull failed; live TX deployment was not changed."
   promote_files || die "TX live-file promotion failed; prior TX files were restored when possible."
-  if ! apply_services || ! provision_rabbitmq || ! blocking_health; then
+  if ! apply_and_provision; then
     diagnostics
     stop_failed_service
     die "TX blocking health failed; no automatic recovery, DNS action, or Yecao action was attempted."
