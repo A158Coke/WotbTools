@@ -202,6 +202,13 @@ assert "( cd infra/tofu/minio && bash validate-plan.sh plan.tfplan )" in minio_c
 assert "( cd infra/tofu/minio && bash validate-plan.sh second-plan.tfplan --require-no-changes )" in minio_ci_run
 assert "--require-no-changes" in minio_ci_run
 assert "YECAO_MINIO_" not in minio_ci_run
+minio_dockerfile = (deploy_path.parent.parent.parent / "docker/Dockerfile.minio").read_text(encoding="utf-8")
+assert 'ARG MINIO_RELEASE=RELEASE.2025-10-15T17-29-55Z' in minio_dockerfile
+assert 'ARG MINIO_COMMIT=9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a' in minio_dockerfile
+assert '"refs/tags/$MINIO_RELEASE:refs/tags/$MINIO_RELEASE" "$MINIO_COMMIT"' in minio_dockerfile
+assert 'git -C /src checkout --detach --quiet "$MINIO_COMMIT"' in minio_dockerfile
+assert 'test "$(git -C /src rev-parse HEAD)" = "$MINIO_COMMIT"' in minio_dockerfile
+assert 'test "$(git -C /src rev-parse "$MINIO_RELEASE^{commit}")" = "$MINIO_COMMIT"' in minio_dockerfile
 assert "deploy_tx" in deploy["jobs"]
 assert "TX_VPS_HOST" in deploy_text
 assert "WOTB_BACKEND_MIGRATION_MAX_VERSION" in deploy_text
