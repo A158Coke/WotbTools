@@ -269,20 +269,15 @@ jq -e '([.[].alias] | sort) == ["idp-qq", "wargaming-asia", "wargaming-eu", "war
   || fail "fresh realm IdP aliases are not the approved TX set"
 jq -e 'all(.[]; .alias != "qq" and .alias != "juhe-qq")' "$WORK/idps.json" >/dev/null \
   || fail "fresh TX realm must not create legacy QQ aliases"
-jq -e 'any(.[]; .alias == "idp-qq" and .providerId == "qq" and .enabled == false) and all(.[] | select(.providerId == "wargaming"); .enabled == false and .config.region != null)' \
+jq -e 'any(.[]; .alias == "idp-qq" and .providerId == "qq" and .config.clientAuthMethod == "client_secret_post") and all(.[] | select(.providerId == "wargaming"); .config.region != null)' \
   "$WORK/idps.json" >/dev/null || fail "QQ/Wargaming provider representation is incomplete"
-for alias in idp-qq wargaming-asia wargaming-eu wargaming-na; do
-  broker_status="$(curl -sS -o "$WORK/broker-$alias.json" -w '%{http_code}' \
-    "$KEYCLOAK_URL/realms/wotbtools/broker/$alias/endpoint")"
-  [ "$broker_status" != 404 ] || fail "broker endpoint is missing for $alias"
-done
-echo "PASS: realm, client, mapper, default-role, disabled IdP, and broker resources"
+echo "PASS: realm, client, mapper, default-role, IdP resources, and structural config"
 
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances/idp-qq" \
   "$BOOTSTRAP_TOKEN" "$WORK/qq-before-operator.json"
-jq -e '.enabled == false and .config.clientId == "bootstrap-not-configured"' \
+jq -e '.config.clientId == "bootstrap-not-configured"' \
   "$WORK/qq-before-operator.json" >/dev/null \
-  || fail "fresh QQ IdP was not created with the disabled bootstrap state"
+  || fail "fresh QQ IdP was not created with the bootstrap client_id"
 jq --arg client_id "operator-qq-client-id" --arg client_secret "operator-qq-client-secret" \
   '.enabled = true | .config.clientId = $client_id | .config.clientSecret = $client_secret' \
   "$WORK/qq-before-operator.json" > "$WORK/qq-operator-update.json"
@@ -294,7 +289,27 @@ api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances/id
 jq -e '.enabled == true and .config.clientId == "operator-qq-client-id"' \
   "$WORK/qq-after-operator.json" >/dev/null \
   || fail "Keycloak Admin API did not apply operator-owned QQ fields"
-echo "PASS: operator enabled QQ and configured client_id (client_secret is write-only and not read back)"
+broker_status="$(curl -sS -o "$WORK/broker-idp-qq.json" -w '%{http_code}' \
+  "$KEYCLOAK_URL/realms/wotbtools/broker/idp-qq/endpoint")"
+[ "$broker_status" != 404 ] || fail "enabled QQ broker endpoint is missing"
+echo "PASS: operator enabled QQ, configured client_id, and exposed its broker endpoint (client_secret is write-only and not read back)"
+
+api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances/wargaming-asia" \
+  "$BOOTSTRAP_TOKEN" "$WORK/wargaming-asia-before-operator.json"
+WG_OPERATOR_ENABLED="$(jq -er '.enabled | not' "$WORK/wargaming-asia-before-operator.json")"
+jq --argjson enabled "$WG_OPERATOR_ENABLED" --arg client_id "not-used" \
+  '.enabled = $enabled | .config.clientId = $client_id' \
+  "$WORK/wargaming-asia-before-operator.json" > "$WORK/wargaming-asia-operator-update.json"
+api 204 PUT "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances/wargaming-asia" \
+  "$BOOTSTRAP_TOKEN" "$WORK/wargaming-asia-operator-response.json" \
+  --data-binary "@$WORK/wargaming-asia-operator-update.json"
+api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances/wargaming-asia" \
+  "$BOOTSTRAP_TOKEN" "$WORK/wargaming-asia-after-operator.json"
+jq --argjson expected_enabled "$WG_OPERATOR_ENABLED" \
+  -e '.enabled == $expected_enabled and .config.clientId == "not-used"' \
+  "$WORK/wargaming-asia-after-operator.json" >/dev/null \
+  || fail "Keycloak Admin API did not apply operator-owned Wargaming enabled state"
+echo "PASS: operator toggled Wargaming ASIA enabled state"
 
 "$TOFU" plan -input=false -no-color -out="$WORK/operator-plan.tfplan"
 bash ./validate-plan.sh "$WORK/operator-plan.tfplan"
@@ -302,12 +317,22 @@ if jq -e 'any(.resource_changes[]?; .address == "keycloak_oidc_identity_provider
     < <("$TOFU" show -json "$WORK/operator-plan.tfplan") >/dev/null; then
   fail "operator-owned QQ fields are still managed by the OpenTofu plan"
 fi
+if jq -e 'any(.resource_changes[]?; .address == "keycloak_oidc_identity_provider.wargaming[\"asia\"]" and ((.change.actions // []) | any(. != "no-op")))' \
+    < <("$TOFU" show -json "$WORK/operator-plan.tfplan") >/dev/null; then
+  fail "operator-owned Wargaming enabled state is still managed by the OpenTofu plan"
+fi
 "$TOFU" apply -input=false -auto-approve "$WORK/operator-plan.tfplan"
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances/idp-qq" \
   "$BOOTSTRAP_TOKEN" "$WORK/qq-after-operator-apply.json"
 jq -e '.enabled == true and .config.clientId == "operator-qq-client-id"' \
   "$WORK/qq-after-operator-apply.json" >/dev/null \
   || fail "OpenTofu apply overwrote operator-owned QQ fields"
+api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances/wargaming-asia" \
+  "$BOOTSTRAP_TOKEN" "$WORK/wargaming-asia-after-operator-apply.json"
+jq --argjson expected_enabled "$WG_OPERATOR_ENABLED" \
+  -e '.enabled == $expected_enabled and .config.clientId == "not-used"' \
+  "$WORK/wargaming-asia-after-operator-apply.json" >/dev/null \
+  || fail "OpenTofu apply overwrote operator-owned Wargaming enabled state"
 "$TOFU" plan -input=false -no-color -out="$WORK/operator-second-plan.tfplan"
 bash ./validate-plan.sh "$WORK/operator-second-plan.tfplan"
 if jq -e 'any(.resource_changes[]?; ((.change.actions // []) | any(. != "no-op")))' \
