@@ -75,6 +75,15 @@ Because the helper runs the provisioning steps from inside an `if`/`||`
 context, the steps are chained explicitly rather than relying on `errexit`,
 which bash disables for functions invoked in that position.
 
+## Cutover gate
+
+Business PostgreSQL is authoritative state, so the read-only
+`deploy/tx/pre-cutover-check.sh` gate requires its container health,
+`pg_isready`, an exactly loopback `127.0.0.1:25432:5432` publication, and the
+`tx-local-opentofu-business-postgres` provisioning marker before it may emit
+`PRE_CUTOVER_READY`. Any failure emits `PRE_CUTOVER_NOT_READY`; the gate never
+creates, modifies, or deletes a database or row.
+
 Removing an address from this root is not a supported retirement process.
 Database retirement, Keycloak user migration, and production data movement are
 separate, operator-approved operations; the source database is never deleted as
