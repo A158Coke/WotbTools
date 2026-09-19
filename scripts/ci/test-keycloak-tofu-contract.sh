@@ -67,6 +67,7 @@ for expected in (
     "service_accounts_enabled = false",
     "consent_required = false",
     'login_theme = "wotbtools"',
+    "always_display_in_console = true",
     "frontchannel_logout_enabled = true",
     'pkce_code_challenge_method = ""',
     '"frontchannel.logout.session.required" = "true"',
@@ -78,6 +79,7 @@ admin_api_block = " ".join(
 )
 for forbidden in (
     "login_theme",
+    "always_display_in_console",
     "frontchannel_logout_enabled",
     "consent_required",
     "pkce_code_challenge_method",

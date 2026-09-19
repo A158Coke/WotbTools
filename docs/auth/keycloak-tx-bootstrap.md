@@ -51,6 +51,7 @@ resource schema，不按 Admin Console 标签推断：
 |---|---|
 | client type: OpenID Connect | 资源类型 `keycloak_openid_client`（protocol 固定 `openid-connect`） |
 | enabled: true | `enabled = true` |
+| always display in UI: on | `always_display_in_console = true`（representation `alwaysDisplayInConsole`） |
 | client authentication: off | `access_type = "PUBLIC"` |
 | standard flow: on | `standard_flow_enabled = true` |
 | direct access grants: off | `direct_access_grants_enabled = false` |
