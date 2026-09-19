@@ -34,6 +34,30 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
+  rabbitmq:
+    image: rabbitmq:4.3.6-management-alpine
+    environment:
+      # Credentials are required by deploy.sh only when RabbitMQ is selected.
+      # Empty fallbacks keep unrelated TX Compose validation independent from
+      # RabbitMQ bootstrap secrets.
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-wotb}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-}
+    ports:
+      # AMQP is reachable only across the existing TX<->Yecao WireGuard link.
+      - "10.20.0.1:5672:5672"
+      # Management UI/API stays TX-local and is never published publicly.
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 512m
+
   keycloak:
     image: ghcr.io/a158coke/wotbtools-keycloak:${TAG:?TAG is required}
     environment:
@@ -97,6 +121,7 @@ services:
 
 volumes:
   keycloak_postgres_data:
+  rabbitmq_data:
   caddy_data:
   caddy_config:
 
