@@ -122,7 +122,7 @@ validate_inputs() {
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      all|keycloak-postgres|keycloak|wotb-frontend|caddy) ;;
+      all|keycloak-postgres|rabbitmq|keycloak|wotb-frontend|caddy) ;;
       *) die "unsupported TX deployment service: $service" ;;
     esac
   done
@@ -141,9 +141,13 @@ validate_inputs() {
   # Compose interpolation validates all runtime contracts before promotion.
   for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
     KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
-    WG_APPLICATION_ID CADDY_ACME_EMAIL; do
+    WG_APPLICATION_ID CADDY_ACME_EMAIL RABBITMQ_USER RABBITMQ_PASSWORD; do
     require_env "$required"
   done
+  if is_selected all || is_selected rabbitmq; then
+    require_env RABBITMQ_USER
+    require_env RABBITMQ_PASSWORD
+  fi
 }
 
 metadata_tag() {
@@ -265,6 +269,9 @@ pull_images() {
   if is_selected all || is_selected keycloak-postgres; then
     services+=(keycloak-postgres)
   fi
+  if is_selected all || is_selected rabbitmq; then
+    services+=(rabbitmq)
+  fi
   if is_selected all || is_selected keycloak; then
     services+=(keycloak)
   fi
@@ -297,7 +304,7 @@ promote_files() {
 
 compose_service_list() {
   if is_selected all; then
-    printf '%s\n' keycloak-postgres keycloak wotb-frontend
+    printf '%s\n' keycloak-postgres rabbitmq keycloak wotb-frontend
   else
     printf '%s\n' "${DEPLOY_SERVICES[@]}"
   fi
@@ -399,8 +406,28 @@ wait_for_database() {
   return 1
 }
 
+wait_for_rabbitmq() {
+  local attempt
+  for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
+    if docker compose -f "$LIVE_COMPOSE" exec -T rabbitmq \
+      rabbitmq-diagnostics -q ping >/dev/null 2>&1; then
+      echo "rabbitmq: PASS"
+      return 0
+    fi
+    FAILED_SERVICE="rabbitmq"
+    [ "$attempt" -lt "$HEALTH_ATTEMPTS" ] && sleep "$HEALTH_INTERVAL_SEC"
+  done
+  echo "rabbitmq: FAIL" >&2
+  return 1
+}
+
 blocking_health() {
-  wait_for_database || return 1
+  if is_selected all || is_selected keycloak-postgres || is_selected keycloak || is_selected wotb-frontend; then
+    wait_for_database || return 1
+  fi
+  if is_selected all || is_selected rabbitmq; then
+    wait_for_rabbitmq || return 1
+  fi
   if is_selected all || is_selected keycloak || is_selected wotb-frontend; then
     if [ "$BOOTSTRAP_KEYCLOAK" = 1 ] && is_selected keycloak && ! is_selected wotb-frontend; then
       wait_for_probe keycloak http://keycloak:8080/realms/master/.well-known/openid-configuration || return 1
@@ -497,6 +524,29 @@ assert not any("0.0.0.0" in p or p.startswith("8080:") or "::" in p for p in por
     echo "keycloak-admin-loopback: PASS"
   else
     echo "keycloak-admin-loopback: FAIL (Admin API must bind to 127.0.0.1:18080:8080 only)" >&2
+    failures=1
+  fi
+
+  if python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+ports = [str(p) for p in data["services"]["rabbitmq"].get("ports", [])]
+assert any("10.20.0.1" in p and "5672" in p for p in ports), ports
+assert any("127.0.0.1" in p and "15672" in p for p in ports), ports
+assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
+' <<< "$compose_json"; then
+    echo "rabbitmq-bindings: PASS"
+  else
+    echo "rabbitmq-bindings: FAIL (AMQP must bind to WireGuard and management to loopback only)" >&2
+    failures=1
+  fi
+
+  health="$(docker compose -f "$LIVE_COMPOSE" ps --format '{{.Health}}' rabbitmq 2>/dev/null || true)"
+  if [ "$health" = healthy ] && docker compose -f "$LIVE_COMPOSE" exec -T rabbitmq \
+      rabbitmq-diagnostics -q ping >/dev/null 2>&1; then
+    echo "rabbitmq: PASS"
+  else
+    echo "rabbitmq: FAIL (container is not healthy)" >&2
     failures=1
   fi
 
