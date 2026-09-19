@@ -38,6 +38,13 @@ assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest" in build
 assert "workflow_run:" in deploy and "workflow_dispatch:" in deploy
 assert "tx_services:" in deploy
 assert "default: keycloak-postgres,keycloak,wotb-frontend,caddy" in deploy
+assert '"rabbitmq"' in deploy
+assert "TX_RABBITMQ_ADMIN_USER" in deploy
+assert "TX_RABBITMQ_ADMIN_PASSWORD" in deploy
+assert "TX_RABBITMQ_CONTROL_API_PASSWORD" in deploy
+assert "TX_RABBITMQ_PARSER_WORKER_PASSWORD" in deploy
+assert "Install RabbitMQ OpenTofu root on TX" in deploy
+assert "RabbitMQ Compose and OpenTofu ownership smoke" in ci
 assert "github.event.inputs.release_sha" not in deploy
 assert "inputs.service" not in deploy
 assert "stale_release_guard" not in deploy

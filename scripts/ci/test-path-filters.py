@@ -123,6 +123,13 @@ class CiPathFilterTest(unittest.TestCase):
             ["keycloak", "keycloakRuntime", "deploy"],
         )
 
+    def test_rabbitmq_opentofu_root_selects_only_rabbitmq_deploy_smoke(self):
+        plan = detect("infra/tofu/rabbitmq/rabbitmq.tf")
+        self.assert_surfaces(["infra/tofu/rabbitmq/rabbitmq.tf"], ["deploy"])
+        self.assertEqual(plan["buildServices"], [])
+        self.assertEqual(plan["deployServices"], ["rabbitmq"])
+        self.assertEqual(plan["targetServices"], {"tx": ["rabbitmq"]})
+
 
 if __name__ == "__main__":
     unittest.main()

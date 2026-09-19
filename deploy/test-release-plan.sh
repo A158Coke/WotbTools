@@ -109,6 +109,10 @@ assert keycloak_tofu["deployServices"] == ["keycloak-postgres", "keycloak", "wot
 assert keycloak_tofu["targetServices"] == {
     "tx": ["keycloak-postgres", "keycloak", "wotb-frontend"]
 }
+rabbitmq_tofu = detect("infra/tofu/rabbitmq/rabbitmq.tf")
+assert rabbitmq_tofu["images"] == {"backend": False, "frontend": False, "keycloak": False, "minio": False}
+assert rabbitmq_tofu["deployServices"] == ["rabbitmq"]
+assert rabbitmq_tofu["targetServices"] == {"tx": ["rabbitmq"]}
 assert detect("deploy/docker-compose.prod.yml")["ciSurfaces"]["deploy"]
 minio_image = detect("docker/Dockerfile.minio")
 assert minio_image["images"] == {"backend": False, "frontend": False, "keycloak": False, "minio": True}

@@ -544,7 +544,7 @@ jobs:
     if: needs.changes.outputs.deploy == 'true' || needs.changes.outputs.full == 'true'
     name: Deploy smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
@@ -561,9 +561,23 @@ jobs:
       - name: Flyway migration guard fixture
         run: bash deploy/test-flyway-immutability.sh
       - name: bash -n deployment scripts
-        run: bash -n deploy/deploy.sh deploy/minio-deploy.sh infra/tofu/minio/validate-plan.sh
+        run: >-
+          bash -n deploy/deploy.sh deploy/minio-deploy.sh deploy/tx/deploy.sh
+          deploy/test-rabbitmq-tofu.sh infra/tofu/minio/validate-plan.sh
+          infra/tofu/rabbitmq/validate-plan.sh infra/tofu/rabbitmq/test-validate-plan.sh
       - name: bash -n deployment verification scripts
-        run: bash -n deploy/deploy.sh deploy/minio-deploy.sh deploy/ops-recovery.sh deploy/verify-observability.sh deploy/test-keycloak-runtime.sh deploy/test-keycloak-tofu.sh deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh deploy/test-build-workflow.sh deploy/test-release-plan.sh deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh infra/tofu/minio/validate-plan.sh scripts/ci/test-postgres-keycloak-tofu-contract.sh scripts/ci/test-keycloak-tofu-contract.sh
+        run: >-
+          bash -n deploy/deploy.sh deploy/minio-deploy.sh deploy/ops-recovery.sh
+          deploy/verify-observability.sh deploy/test-keycloak-runtime.sh
+          deploy/test-keycloak-tofu.sh deploy/test-rabbitmq-tofu.sh
+          deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh
+          deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
+          deploy/test-build-workflow.sh deploy/test-release-plan.sh
+          deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
+          infra/tofu/minio/validate-plan.sh infra/tofu/rabbitmq/validate-plan.sh
+          infra/tofu/rabbitmq/test-validate-plan.sh
+          scripts/ci/test-postgres-keycloak-tofu-contract.sh
+          scripts/ci/test-keycloak-tofu-contract.sh
       - name: Build workflow frozen-commit contract
         run: bash deploy/test-build-workflow.sh
       - name: bash -n TX pre-cutover contracts
@@ -658,6 +672,10 @@ jobs:
           tofu -chdir=infra/tofu/minio apply -input=false -auto-approve plan.tfplan >/dev/null
           tofu -chdir=infra/tofu/minio plan -input=false -out=second-plan.tfplan >/dev/null
           ( cd infra/tofu/minio && bash validate-plan.sh second-plan.tfplan --require-no-changes )
+      - name: RabbitMQ Compose and OpenTofu ownership smoke
+        run: |
+          bash infra/tofu/rabbitmq/test-validate-plan.sh
+          bash deploy/test-rabbitmq-tofu.sh
       - name: Production compose must not expose Grafana MCP
         env:
           TAG: sha-ci
