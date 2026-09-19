@@ -34,6 +34,37 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
+  business-postgres:
+    image: postgres:18-alpine
+    environment:
+      # Compose owns only the runtime and its bootstrap administrator. OpenTofu
+      # on TX owns the wotb database, the control_api application role, and its
+      # grants; Flyway owns every application table. The application credential
+      # is deliberately absent here because no container consumes it.
+      #
+      # POSTGRES_DB pins the entrypoint's initial database to the maintenance
+      # database. Without it the image would auto-create a database named after
+      # POSTGRES_USER, which would collide with the OpenTofu-owned wotb database
+      # whenever the bootstrap administrator is also named wotb.
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ${TX_BUSINESS_POSTGRES_ADMIN_USER:?TX_BUSINESS_POSTGRES_ADMIN_USER is required}
+      POSTGRES_PASSWORD: ${TX_BUSINESS_POSTGRES_ADMIN_PASSWORD:?TX_BUSINESS_POSTGRES_ADMIN_PASSWORD is required}
+    ports:
+      # TX-local OpenTofu administration only. Business PostgreSQL is
+      # authoritative state and must never be published publicly or over
+      # WireGuard. Keep this independent from keycloak-postgres.
+      - "127.0.0.1:25432:5432"
+    volumes:
+      - business_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 512m
+
   rabbitmq:
     image: rabbitmq:4.3.6-management-alpine
     environment:
@@ -122,6 +153,7 @@ services:
 
 volumes:
   keycloak_postgres_data:
+  business_postgres_data:
   rabbitmq_data:
   caddy_data:
   caddy_config:

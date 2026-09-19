@@ -45,6 +45,18 @@ preflight_host_block="$(sed -n '/^preflight_host()/,/^}/p' "$TX_DIR/deploy.sh")"
 
 grep -Fq '127.0.0.1:15432:5432' "$COMPOSE" \
   || fail "Keycloak PostgreSQL must bind its administration port to TX loopback"
+grep -Fq 'image: postgres:18-alpine' "$COMPOSE" \
+  || fail "PostgreSQL runtimes must stay on the pinned postgres:18-alpine image"
+grep -Fq '127.0.0.1:25432:5432' "$COMPOSE" \
+  || fail "Business PostgreSQL must bind its administration port to TX loopback only"
+grep -Fq 'business_postgres_data:/var/lib/postgresql' "$COMPOSE" \
+  || fail "Business PostgreSQL must persist to its own dedicated volume"
+grep -Fq 'POSTGRES_DB: postgres' "$COMPOSE" \
+  || fail "Business PostgreSQL must not let the image auto-create the OpenTofu-owned business database"
+grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_USER:?TX_BUSINESS_POSTGRES_ADMIN_USER is required' "$COMPOSE" \
+  || fail "Business PostgreSQL must require a dedicated bootstrap administrator separate from the application role"
+! grep -Fq 'TX_BUSINESS_DB_PASSWORD' "$COMPOSE" \
+  || fail "the Business PostgreSQL runtime must not receive the application credential"
 grep -Fq '10.20.0.1:5672:5672' "$COMPOSE" \
   || fail "RabbitMQ AMQP must bind only to the TX WireGuard address"
 grep -Fq '127.0.0.1:15672:15672' "$COMPOSE" \
@@ -53,6 +65,8 @@ grep -Fq 'rabbitmq:4.3.6-management-alpine' "$COMPOSE" \
   || fail "RabbitMQ runtime image must stay explicitly pinned"
 ! grep -Eq '(^|[^0-9])5432:5432' "$COMPOSE" \
   || fail "Keycloak PostgreSQL must not publish 5432 on all interfaces"
+! grep -Eq '(^|[^0-9:.])25432:5432' "$COMPOSE" \
+  || fail "Business PostgreSQL must not publish 25432 on all interfaces"
 grep -Fq 'BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://10.20.0.2:8087}' "$COMPOSE" \
   || fail "frontend must default its API upstream to the Yecao WireGuard address"
 grep -Fq 'NGINX_ENVSUBST_FILTER: ^BACKEND_UPSTREAM$$' "$COMPOSE" \
@@ -115,6 +129,12 @@ export TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin
 export TX_RABBITMQ_ADMIN_PASSWORD=not-real
 export TX_RABBITMQ_CONTROL_API_PASSWORD=not-real-control-api
 export TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real-parser-worker
+export TX_BUSINESS_POSTGRES_ADMIN_USER=tx-business-admin
+export TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=not-real-business-admin
+export TX_BUSINESS_DB_NAME=wotb
+export TX_BUSINESS_DB_USERNAME=control_api
+export TX_BUSINESS_DB_PASSWORD=not-real-control-api
+export TX_BUSINESS_DB_PASSWORD_VERSION=1
 export TX_RUNTIME_ROOT="$WORK/runtime"
 mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
 
@@ -123,8 +143,8 @@ grep -Fq 'host_ip: 127.0.0.1' "$WORK/compose.yml" \
   || fail "resolved Keycloak PostgreSQL publication must stay on loopback"
 grep -Fq 'published: "80"' "$WORK/compose.yml" \
   || fail "resolved Caddy HTTP publication must exist for an approved cutover"
-[ "$(grep -Fc 'host_ip: 127.0.0.1' "$WORK/compose.yml")" -ge 4 ] \
-  || fail "Stage I Caddy and PostgreSQL publications must all resolve to loopback"
+[ "$(grep -Fc 'host_ip: 127.0.0.1' "$WORK/compose.yml")" -ge 5 ] \
+  || fail "Stage I Caddy and both PostgreSQL publications must all resolve to loopback"
 grep -Fq 'BACKEND_UPSTREAM: http://10.20.0.2:8087' "$WORK/compose.yml" \
   || fail "resolved frontend upstream must remain on WireGuard"
 grep -Fq 'target: /etc/nginx/templates/default.conf.template' "$WORK/compose.yml" \
@@ -216,6 +236,36 @@ set -e
   || fail "RabbitMQ-only input contract failed (rc=$rabbit_only_rc; output: $(tr '\r\n' ' ' <<< "$rabbit_only_output" | sed -E 's/[[:space:]]+/ /g'))"
 grep -Fq 'rabbitmq-only-inputs-pass' <<< "$rabbit_only_output" \
   || fail "RabbitMQ-only deployment must not require Keycloak/PostgreSQL/Caddy inputs or image metadata"
+
+set +e
+business_only_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
+  TX_DEPLOY_LIBRARY_ONLY=1 WOTB_TX_DIR="$WORK/business-only" WOTB_TX_INCOMING_DIR="$WORK/incoming" \
+  TX_RUNTIME_ROOT="$WORK/business-only" TAG=sha-0123456789ab \
+  RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  WOTB_DEPLOY_SERVICES=business-postgres WOTB_DEPLOY_IMAGE_SERVICES='' \
+  TX_BUSINESS_POSTGRES_ADMIN_USER=tx-business-admin TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=not-real \
+  TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=control_api \
+  TX_BUSINESS_DB_PASSWORD=not-real-control-api TX_BUSINESS_DB_PASSWORD_VERSION=1 \
+  bash -c 'source "$1"; validate_inputs; set_nonselected_compose_placeholders; test "$(current_or_target_tag keycloak)" = sha-0123456789ab; test "$KC_DB_PASSWORD" = not-configured; test "$TX_RABBITMQ_ADMIN_PASSWORD" = not-configured; echo business-only-inputs-pass' _ "$WORK/incoming/deploy.sh")"
+business_only_rc=$?
+set -e
+[ "$business_only_rc" -eq 0 ] \
+  || fail "Business PostgreSQL-only input contract failed (rc=$business_only_rc; output: $(tr '\r\n' ' ' <<< "$business_only_output" | sed -E 's/[[:space:]]+/ /g'))"
+grep -Fq 'business-only-inputs-pass' <<< "$business_only_output" \
+  || fail "business-postgres-only deployment must not require Keycloak/RabbitMQ/Caddy inputs or application image metadata"
+
+set +e
+business_requires_credentials="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
+  TX_DEPLOY_LIBRARY_ONLY=1 WOTB_TX_DIR="$WORK/business-missing" WOTB_TX_INCOMING_DIR="$WORK/incoming" \
+  TX_RUNTIME_ROOT="$WORK/business-missing" TAG=sha-0123456789ab \
+  RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  WOTB_DEPLOY_SERVICES=business-postgres WOTB_DEPLOY_IMAGE_SERVICES='' \
+  bash -c 'source "$1"; validate_inputs' _ "$WORK/incoming/deploy.sh" 2>&1)"
+business_missing_rc=$?
+set -e
+[ "$business_missing_rc" -ne 0 ] || fail "business-postgres deployment must fail closed without its credentials"
+grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_USER is required' <<< "$business_requires_credentials" \
+  || fail "business-postgres must name the missing variable without exposing a value (output: $(tr '\r\n' ' ' <<< "$business_requires_credentials" | sed -E 's/[[:space:]]+/ /g'))"
 
 run_prerequisite_failure() {
   local label="$1" expected="$2" path output rc
@@ -362,6 +412,102 @@ grep -Fq 'TX deployment completed:' <<< "$caddy_output" \
   || fail "Explicit Caddy deployment must complete"
 [ "$(grep -Fc 'up -d --no-deps --force-recreate caddy' "$caddy_log")" -ge 2 ] \
   || fail "Explicit Caddy deployment must preserve its selected start and recreate behavior"
+
+# Business PostgreSQL-only deployment: start the runtime, wait for pg_isready,
+# run TX-local OpenTofu against its own mirror and state, then record the
+# root-only provisioning marker. No application image, Keycloak, RabbitMQ, or
+# Caddy work may happen on this path.
+readonly RELEASE_SHA=0123456789abcdef0123456789abcdef01234567
+mkdir -p "$WORK/business" "$WORK/business-incoming" "$WORK/tofu-bin" \
+  "$WORK/business/tofu-provider-mirror" \
+  "$WORK/business/tofu.incoming/$RELEASE_SHA/infra/tofu/postgres-business"
+cp -a "$TX_DIR/." "$WORK/business-incoming/"
+printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' 'printf "%s\n" "$*" >> "${FAKE_TOFU_LOG:?}"' \
+  > "$WORK/tofu-bin/tofu"
+chmod 700 "$WORK/tofu-bin/tofu"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' \
+  > "$WORK/business/tofu.incoming/$RELEASE_SHA/infra/tofu/postgres-business/validate-plan.sh"
+printf 'tx-local-opentofu-keycloak\n' > "$WORK/business/keycloak.tofu-provisioned"
+business_log="$WORK/business.log"
+business_tofu_log="$WORK/business-tofu.log"
+set +e
+business_output="$(env -i \
+  PATH="$WORK/bin:$WORK/tofu-bin:$PATH" HOME="$WORK" \
+  WOTB_TX_DIR="$WORK/business" WOTB_TX_INCOMING_DIR="$WORK/business-incoming" TX_RUNTIME_ROOT="$WORK/business" \
+  TX_BUSINESS_POSTGRES_ADMIN_USER=tx-business-admin TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=not-real \
+  TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=control_api \
+  TX_BUSINESS_DB_PASSWORD=not-real-control-api TX_BUSINESS_DB_PASSWORD_VERSION=1 \
+  TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  WOTB_DEPLOY_SERVICES=business-postgres WOTB_DEPLOY_IMAGE_SERVICES='' \
+  WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+  FAKE_DOCKER_LOG="$business_log" FAKE_TOFU_LOG="$business_tofu_log" \
+  bash "$WORK/business-incoming/deploy.sh" 2>&1)"
+business_rc=$?
+set -e
+[ "$business_rc" -eq 0 ] \
+  || fail "business-postgres-only deployment failed (rc=$business_rc; output: $(tr '\r\n' ' ' <<< "$business_output" | sed -E 's/[[:space:]]+/ /g'))"
+grep -Fq 'business-postgres: PASS' <<< "$business_output" \
+  || fail "business-postgres-only deployment must wait for pg_isready"
+grep -Fq 'Business PostgreSQL OpenTofu apply and second-plan drift check passed.' <<< "$business_output" \
+  || fail "business-postgres-only deployment must run the OpenTofu apply and second-plan drift check"
+grep -Fq 'up -d --no-deps --force-recreate business-postgres' "$business_log" \
+  || fail "business-postgres-only deployment must start its own runtime"
+! grep -Fq 'keycloak' "$business_log" \
+  || fail "business-postgres-only deployment must not touch Keycloak or its PostgreSQL runtime"
+! grep -Fq 'rabbitmq' "$business_log" \
+  || fail "business-postgres-only deployment must not touch RabbitMQ"
+! grep -Fq 'caddy' "$business_log" \
+  || fail "business-postgres-only deployment must not recreate Caddy"
+! grep -Fq 'ghcr.io' "$business_log" \
+  || fail "business-postgres-only deployment must not pull application images"
+grep -Fq 'exec -T business-postgres pg_isready -U tx-business-admin -d postgres' "$business_log" \
+  || fail "business-postgres readiness must use the dedicated bootstrap administrator"
+for expected in 'init -reconfigure -input=false -lockfile=readonly' 'validate' \
+  'plan -input=false -no-color -out=plan.tfplan' \
+  'apply -input=false -auto-approve plan.tfplan' \
+  'plan -input=false -no-color -out=second-plan.tfplan'; do
+  grep -Fq "$expected" "$business_tofu_log" \
+    || fail "business-postgres OpenTofu must run: $expected"
+done
+grep -Fxq 'tx-local-opentofu-business-postgres' "$WORK/business/business-postgres.tofu-provisioned" \
+  || fail "business-postgres provisioning must write its own root-only marker"
+if [ "$(uname -s)" = "Linux" ]; then
+  [ "$(stat -c '%a' "$WORK/business/business-postgres.tofu-provisioned")" = "600" ] \
+    || fail "business-postgres provisioning marker must be root-only"
+fi
+grep -Fxq 'tx-local-opentofu-keycloak' "$WORK/business/keycloak.tofu-provisioned" \
+  || fail "business-postgres provisioning must not consume or rewrite the Keycloak marker"
+[ ! -s "$WORK/business/rabbitmq.tofu-provisioned" ] \
+  || fail "business-postgres provisioning must not create a RabbitMQ marker"
+
+# A non-clean second plan must fail the deployment before any marker is written.
+# The stub fails every plan invocation, which makes the second plan the failing
+# step exactly as a dirty real plan would.
+rm -f -- "$WORK/business/business-postgres.tofu-provisioned"
+# Fail every plan invocation, with an explicit exit trace so a stub that never
+# ran is distinguishable from a deployment that ignored the failure.
+printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' 'printf "invoked %s\n" "$*" >> "${FAKE_TOFU_LOG:?}"' \
+  'trap '\''printf "exiting rc=%s %s\n" "$?" "$*" >> "${FAKE_TOFU_LOG:?}"'\'' EXIT' \
+  'for argument in "$@"; do' '  if [ "$argument" = plan ]; then exit 1; fi' 'done' \
+  'exit 0' > "$WORK/tofu-bin/tofu"
+chmod 700 "$WORK/tofu-bin/tofu"
+set +e
+dirty_output="$(env -i \
+  PATH="$WORK/bin:$WORK/tofu-bin:$PATH" HOME="$WORK" \
+  WOTB_TX_DIR="$WORK/business" WOTB_TX_INCOMING_DIR="$WORK/business-incoming" TX_RUNTIME_ROOT="$WORK/business" \
+  TX_BUSINESS_POSTGRES_ADMIN_USER=tx-business-admin TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=not-real \
+  TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=control_api \
+  TX_BUSINESS_DB_PASSWORD=not-real-control-api TX_BUSINESS_DB_PASSWORD_VERSION=1 \
+  TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  WOTB_DEPLOY_SERVICES=business-postgres WOTB_DEPLOY_IMAGE_SERVICES='' \
+  WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+  FAKE_DOCKER_LOG="$WORK/business-dirty.log" FAKE_TOFU_LOG="$WORK/business-dirty-tofu.log" \
+  bash "$WORK/business-incoming/deploy.sh" 2>&1)"
+dirty_rc=$?
+set -e
+[ "$dirty_rc" -ne 0 ] || fail "a non-clean second Business PostgreSQL plan must fail the deployment"
+[ ! -e "$WORK/business/business-postgres.tofu-provisioned" ] \
+  || fail "a failed Business PostgreSQL provisioning run must not write the provisioning marker"
 
 mkdir -p "$WORK/keycloak-bootstrap" "$WORK/keycloak-bootstrap-incoming"
 cp -a "$TX_DIR/." "$WORK/keycloak-bootstrap-incoming/"
