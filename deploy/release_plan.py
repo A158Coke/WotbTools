@@ -14,11 +14,13 @@ import re
 import sys
 
 
-IMAGE_NAMES = ("backend", "frontend", "keycloak")
+IMAGE_NAMES = ("backend", "frontend", "keycloak", "minio")
+APPLICATION_IMAGE_NAMES = ("backend", "frontend", "keycloak")
 APPLICATION_SERVICES = {
     "backend": "wotb-backend",
     "frontend": "wotb-frontend",
     "keycloak": "keycloak",
+    "minio": "minio",
 }
 DEPLOYABLE_SERVICES = {
     "all",
@@ -32,6 +34,7 @@ DEPLOYABLE_SERVICES = {
     "wotb-backend",
     "wotb-frontend",
     "keycloak-postgres",
+    "minio",
 }
 DEPLOY_TARGETS = ("tx", "yecao")
 TARGET_BY_SERVICE = {
@@ -45,6 +48,7 @@ TARGET_BY_SERVICE = {
     "loki": "yecao",
     "alloy": "yecao",
     "grafana": "yecao",
+    "minio": "yecao",
 }
 IMAGE_SERVICE_BY_DEPLOY_SERVICE = {
     value: key for key, value in APPLICATION_SERVICES.items()
@@ -53,6 +57,7 @@ MANUAL_SERVICE_ALIASES = {
     "backend": "backend",
     "frontend": "frontend",
     "keycloak": "keycloak",
+    "minio": "minio",
 }
 MANUAL_SERVICES = {"all", *MANUAL_SERVICE_ALIASES}
 
@@ -87,6 +92,7 @@ KEYCLOAK_PATTERNS = (
     "infra/tofu/keycloak/**",
     "java/settings-docker.xml",
 )
+MINIO_BUILD_PATTERNS = ("docker/Dockerfile.minio",)
 ALL_DEPLOY_PATTERNS = (
     "deploy/docker-compose.prod.yml",
     "deploy/deploy.sh",
@@ -227,8 +233,9 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
         if manual_service not in MANUAL_SERVICES:
             raise ValueError(f"unsupported manual service: {manual_service}")
         if manual_service == "all":
-            images = {name: True for name in IMAGE_NAMES}
-            deploy_services = [APPLICATION_SERVICES[name] for name in IMAGE_NAMES]
+            images = {name: True for name in APPLICATION_IMAGE_NAMES}
+            images["minio"] = False
+            deploy_services = [APPLICATION_SERVICES[name] for name in APPLICATION_IMAGE_NAMES]
         elif manual_service in MANUAL_SERVICE_ALIASES:
             image_name = MANUAL_SERVICE_ALIASES[manual_service]
             images[image_name] = True
@@ -241,13 +248,18 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
     })
     for path in normalized_paths:
         if _matches_any(path, COMMON_BUILD_PATTERNS):
-            images = {name: True for name in IMAGE_NAMES}
+            for name in APPLICATION_IMAGE_NAMES:
+                images[name] = True
         if _matches_any(path, FRONTEND_PATTERNS):
             images["frontend"] = True
         if _matches_any(path, BACKEND_PATTERNS):
             images["backend"] = True
         if _matches_any(path, KEYCLOAK_PATTERNS):
             images["keycloak"] = True
+        if _matches_any(path, MINIO_BUILD_PATTERNS):
+            # Building the source-pinned MinIO image never implies a runtime
+            # deployment. Its deployment is an explicit manual action only.
+            images["minio"] = True
         if _matches_any(path, ALL_DEPLOY_PATTERNS):
             deploy_config = True
         for surface, patterns in CI_SURFACE_PATTERNS.items():
@@ -292,9 +304,7 @@ def _result(
     deploy_config: bool,
     ci_surfaces: dict[str, bool],
 ) -> dict[str, object]:
-    image_services = [
-        APPLICATION_SERVICES[name] for name in ("backend", "frontend", "keycloak") if images[name]
-    ]
+    image_services = [APPLICATION_SERVICES[name] for name in IMAGE_NAMES if images[name]]
     return {
         "images": images,
         "buildServices": image_services,
@@ -403,9 +413,7 @@ def validate_manifest(
         or not _valid_service_list(deploy_services)
     ):
         raise ValueError("manifest contains an unsupported or duplicate service")
-    expected_image_services = {
-        APPLICATION_SERVICES[name] for name in IMAGE_NAMES if images[name]
-    }
+    expected_image_services = {APPLICATION_SERVICES[name] for name in IMAGE_NAMES if images[name]}
     if set(image_services) != expected_image_services:
         raise ValueError("manifest imageServices does not match images")
     if build_services != image_services:
