@@ -312,9 +312,9 @@ class HofOwnershipMigrationTest {
             assertTrue(columnExists(s, "hall_of_fame_record", "id"), "hall_of_fame_record.id 必须存在");
             s.executeUpdate("insert into hall_of_fame_record"
                     + " (id, arena_id, tank_id, tank_name, account_id, nickname, damage_dealt, map_name,"
-                    + " replay_uploaded_by) overriding system value values"
+                    + " battle_type, arena_bonus_type, replay_uploaded_by) overriding system value values"
                     + " (355, 'arena-355', 6481, 'FV4005', 111, 'LegacyPlayer', 5000, 'rockfield',"
-                    + " '3f1a4b2c-0000-4000-8000-000000000001')");
+                    + " 'RANDOM', 1, '3f1a4b2c-0000-4000-8000-000000000001')");
             assertEquals(1, count(s, "select count(*) from hall_of_fame_record where id = 355"),
                     "显式 id 必须原样保留");
             s.execute("delete from hall_of_fame_record where id = 355");
