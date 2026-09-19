@@ -566,6 +566,18 @@ TX RabbitMQ 也保持独立 ownership：Compose 只运行 broker，`infra/tofu/r
 root-only marker 全部在 TX 发生；GitHub runner 不直连 Management API。完整凭据和
 部署边界见 `docs/operations/rabbitmq.md`。
 
+TX Business PostgreSQL 与 Keycloak PostgreSQL 完全独立：Compose 只运行
+`business-postgres`（`postgres:18-alpine`、`business_postgres_data`、
+`127.0.0.1:25432:5432` 仅 loopback、`pg_isready` 健康检查）；`infra/tofu/postgres-business`
+只管理 `wotb` 数据库、`control_api` 应用角色与 database-level grant，用独立 local
+state `/opt/wotb-tx/postgres-business-tofu-state`，provider 经
+`/opt/wotb-tx/tofu-provider-mirror` 的 filesystem mirror fail-closed 安装。业务表仍
+由 Flyway 单一拥有，OpenTofu 不声明任何表/索引/序列。`business-postgres`-only
+部署不需要 Keycloak/RabbitMQ/frontend/Caddy 输入；`infra/tofu/postgres-business/**`
+变更只选择该部署路径，不重建应用镜像。备份/恢复（`pg_dump` + SHA-256 + 恢复到一次性库）
+与名人堂迁移前置见 `docs/operations/business-postgres.md`，边界见
+`docs/architecture/opentofu-postgres-business.md`。
+
 TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/grant；
 随后 `infra/tofu/keycloak` 在 `127.0.0.1:18080` 声明 fresh realm、`wotbtools-web`、
 `wotbtools-admin-api`、realm role、mapper 和 IdP。backend 使用
