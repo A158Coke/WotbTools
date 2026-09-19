@@ -33,16 +33,27 @@ allowed = {
     "rabbitmq_permissions.control_api_publisher",
     "rabbitmq_permissions.parser_worker_consumer",
 }
+application_users = {
+    "rabbitmq_user.control_api",
+    "rabbitmq_user.parser_worker",
+}
 changed = []
 for item in plan.get("resource_changes", []):
     address = item.get("address")
     actions = item.get("change", {}).get("actions", [])
     if address not in allowed:
         raise SystemExit(f"unexpected RabbitMQ OpenTofu resource: {address}")
-    if any(action not in {"no-op", "create"} for action in actions):
-        raise SystemExit(f"destructive or in-place RabbitMQ plan action for {address}: {actions}")
-    if actions != ["no-op"]:
+    if "delete" in actions:
+        raise SystemExit(f"destructive RabbitMQ plan action for {address}: {actions}")
+    if actions == ["no-op"]:
+        continue
+    if actions == ["create"]:
         changed.append(address)
+        continue
+    if address in application_users and actions == ["update"]:
+        changed.append(address)
+        continue
+    raise SystemExit(f"unsafe RabbitMQ plan action for {address}: {actions}")
 
 if require_no_changes and changed:
     raise SystemExit("second RabbitMQ OpenTofu plan is not clean: " + ", ".join(changed))

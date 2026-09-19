@@ -54,8 +54,25 @@ For a `rabbitmq` target the TX sequence is input validation, Compose reconcile,
 broker health, `init`/`validate`/saved plan, plan safety validation, apply,
 second clean plan, then a root-only
 `/opt/wotb-tx/rabbitmq.tofu-provisioned` marker. A missing provider mirror,
-unhealthy broker, delete/replace/update action, unknown address, or non-clean
-second plan fails closed before readiness is reported.
+unhealthy broker, delete/replace action, vhost or permission update, unknown
+address, or non-clean second plan fails closed before readiness is reported.
+The two known application users may perform an in-place password update; the
+second plan must still be entirely no-op after that update.
+
+## Administrator credential rotation
+
+`RABBITMQ_DEFAULT_USER` and `RABBITMQ_DEFAULT_PASS` bootstrap only a fresh
+RabbitMQ data directory. They do not alter credentials already stored in an
+existing `rabbitmq_data` volume. Therefore, changing
+`TX_RABBITMQ_ADMIN_PASSWORD` alone does not rotate an existing broker
+administrator password; it merely changes the credential supplied to the
+TX-local provider.
+
+Administrator rotation requires an explicit operator procedure: change the
+broker account and the GitHub Actions secret together during a controlled
+maintenance operation, then run the RabbitMQ-only provisioning path to verify
+the new credential and a clean second plan. Do not use a data-volume reset as
+credential rotation.
 
 Before production use, an operator installs OpenTofu, Python, and the exact
 locked `cyrilgdn/rabbitmq 1.10.1` archive beneath
