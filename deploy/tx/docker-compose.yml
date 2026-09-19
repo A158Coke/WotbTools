@@ -37,11 +37,12 @@ services:
   rabbitmq:
     image: rabbitmq:4.3.6-management-alpine
     environment:
-      # Credentials are required by deploy.sh only when RabbitMQ is selected.
-      # Empty fallbacks keep unrelated TX Compose validation independent from
-      # RabbitMQ bootstrap secrets.
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-wotb}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-}
+      # The bootstrap administrator is strictly separate from application
+      # identities. Fallbacks avoid guest/guest if Compose is rendered for an
+      # unrelated TX deployment; deploy.sh requires real values before the
+      # RabbitMQ service may start.
+      RABBITMQ_DEFAULT_USER: ${TX_RABBITMQ_ADMIN_USER:-not-configured}
+      RABBITMQ_DEFAULT_PASS: ${TX_RABBITMQ_ADMIN_PASSWORD:-not-configured}
     ports:
       # AMQP is reachable only across the existing TX<->Yecao WireGuard link.
       - "10.20.0.1:5672:5672"
