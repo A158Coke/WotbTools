@@ -565,6 +565,7 @@ jobs:
           bash -n deploy/deploy.sh deploy/minio-deploy.sh deploy/tx/deploy.sh
           deploy/test-rabbitmq-tofu.sh infra/tofu/minio/validate-plan.sh
           infra/tofu/rabbitmq/validate-plan.sh infra/tofu/rabbitmq/test-validate-plan.sh
+          scripts/ci/test-rabbitmq-tofu-contract.sh
       - name: bash -n deployment verification scripts
         run: >-
           bash -n deploy/deploy.sh deploy/minio-deploy.sh deploy/ops-recovery.sh
@@ -578,6 +579,7 @@ jobs:
           infra/tofu/rabbitmq/test-validate-plan.sh
           scripts/ci/test-postgres-keycloak-tofu-contract.sh
           scripts/ci/test-keycloak-tofu-contract.sh
+          scripts/ci/test-rabbitmq-tofu-contract.sh
       - name: Build workflow frozen-commit contract
         run: bash deploy/test-build-workflow.sh
       - name: bash -n TX pre-cutover contracts
@@ -592,6 +594,7 @@ jobs:
           bash deploy/test-user-profile-reset-audit.sh
           bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
           bash scripts/ci/test-keycloak-tofu-contract.sh
+          bash scripts/ci/test-rabbitmq-tofu-contract.sh
       - name: CI path filter contract
         run: python3 scripts/ci/test-path-filters.py
       - name: CI workflow aggregation contract
