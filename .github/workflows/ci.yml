@@ -564,7 +564,7 @@ jobs:
         run: >-
           bash -n deploy/deploy.sh deploy/minio-deploy.sh deploy/tx/deploy.sh
           deploy/test-rabbitmq-tofu.sh infra/tofu/minio/validate-plan.sh
-          infra/tofu/rabbitmq/validate-plan.sh
+          infra/tofu/rabbitmq/validate-plan.sh infra/tofu/rabbitmq/test-validate-plan.sh
       - name: bash -n deployment verification scripts
         run: >-
           bash -n deploy/deploy.sh deploy/minio-deploy.sh deploy/ops-recovery.sh
@@ -575,6 +575,7 @@ jobs:
           deploy/test-build-workflow.sh deploy/test-release-plan.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
           infra/tofu/minio/validate-plan.sh infra/tofu/rabbitmq/validate-plan.sh
+          infra/tofu/rabbitmq/test-validate-plan.sh
           scripts/ci/test-postgres-keycloak-tofu-contract.sh
           scripts/ci/test-keycloak-tofu-contract.sh
       - name: Build workflow frozen-commit contract
@@ -672,7 +673,9 @@ jobs:
           tofu -chdir=infra/tofu/minio plan -input=false -out=second-plan.tfplan >/dev/null
           ( cd infra/tofu/minio && bash validate-plan.sh second-plan.tfplan --require-no-changes )
       - name: RabbitMQ Compose and OpenTofu ownership smoke
-        run: bash deploy/test-rabbitmq-tofu.sh
+        run: |
+          bash infra/tofu/rabbitmq/test-validate-plan.sh
+          bash deploy/test-rabbitmq-tofu.sh
       - name: Production compose must not expose Grafana MCP
         env:
           TAG: sha-ci
