@@ -101,7 +101,7 @@ expected = {
 users = {item["name"]: item for item in api("/api/users")}
 for name, permissions in expected.items():
     assert name in users, users.keys()
-    assert users[name].get("tags", "") == "", users[name]
+    assert users[name].get("tags", []) == [], users[name]
     actual = api(f"/api/permissions/%2Fwotbtools/{name}")
     assert actual["vhost"] == "/wotbtools", actual
     assert actual["user"] == name, actual
