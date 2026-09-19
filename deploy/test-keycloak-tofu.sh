@@ -296,7 +296,7 @@ echo "PASS: operator enabled QQ, configured client_id, and exposed its broker en
 
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances/wargaming-asia" \
   "$BOOTSTRAP_TOKEN" "$WORK/wargaming-asia-before-operator.json"
-WG_OPERATOR_ENABLED="$(jq -er '.enabled | not' "$WORK/wargaming-asia-before-operator.json")"
+WG_OPERATOR_ENABLED="$(jq -r '.enabled | not' "$WORK/wargaming-asia-before-operator.json")"
 jq --argjson enabled "$WG_OPERATOR_ENABLED" --arg client_id "not-used" \
   '.enabled = $enabled | .config.clientId = $client_id' \
   "$WORK/wargaming-asia-before-operator.json" > "$WORK/wargaming-asia-operator-update.json"
