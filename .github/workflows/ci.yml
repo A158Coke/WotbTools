@@ -643,6 +643,13 @@ jobs:
           export TF_VAR_minio_root_password=ci-root-password
           export TF_VAR_worker_access_key=ci-worker-access-key
           export TF_VAR_worker_secret_key=ci-worker-secret-key
+          export MINIO_PROVIDER_MIRROR=/tmp/minio-provider-mirror
+          mkdir -p "$MINIO_PROVIDER_MIRROR"
+          tofu -chdir=infra/tofu/minio providers mirror "$MINIO_PROVIDER_MIRROR" >/dev/null
+          sed "s|/opt/wotb/tofu-provider-mirror|$MINIO_PROVIDER_MIRROR|" deploy/minio/tofurc \
+            > /tmp/minio-ci.tfrc
+          export TF_CLI_CONFIG_FILE=/tmp/minio-ci.tfrc
+          export TF_DATA_DIR=/tmp/minio-ci-tofu-data
           tofu -chdir=infra/tofu/minio init -reconfigure -input=false -lockfile=readonly \
             -backend-config=path=/tmp/minio-ci.tfstate >/dev/null
           tofu -chdir=infra/tofu/minio validate >/dev/null

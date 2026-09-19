@@ -193,6 +193,10 @@ minio_ci_run = minio_ci["run"]
 assert "docker/Dockerfile.minio" in minio_ci_run
 assert "RELEASE.2025-10-15T17-29-55Z" in minio_ci_run
 assert "127.0.0.1:19000" in minio_ci_run
+assert "tofu -chdir=infra/tofu/minio providers mirror" in minio_ci_run
+assert "deploy/minio/tofurc" in minio_ci_run
+assert "TF_CLI_CONFIG_FILE=/tmp/minio-ci.tfrc" in minio_ci_run
+assert "TF_DATA_DIR=/tmp/minio-ci-tofu-data" in minio_ci_run
 assert "tofu -chdir=infra/tofu/minio apply" in minio_ci_run
 assert "--require-no-changes" in minio_ci_run
 assert "YECAO_MINIO_" not in minio_ci_run
