@@ -49,6 +49,47 @@ assert 'client_secret_wo             = var.keycloak_admin_client_secret' in root
 assert 'client_secret = var.keycloak_admin_client_secret' not in root_text
 assert 'client_secret_wo_version' in root_text
 assert 'manage-users' in root_text and 'query-users' in root_text and 'view-realm' in root_text
+
+# wotbtools-web is the browser client: it must declare the production parity
+# settings explicitly (theme, front-channel logout, consent, PKCE), while the
+# confidential service-account client must stay free of browser-flow settings.
+client_text = (tofu_root / "client.tf").read_text(encoding="utf-8")
+web_block = " ".join(
+    client_text.split('resource "keycloak_openid_client" "web"', 1)[1]
+    .split('resource "keycloak_openid_client" "admin_api"', 1)[0]
+    .split()
+)
+for expected in (
+    'access_type = "PUBLIC"',
+    "standard_flow_enabled = true",
+    "implicit_flow_enabled = false",
+    "direct_access_grants_enabled = false",
+    "service_accounts_enabled = false",
+    "consent_required = false",
+    'login_theme = "wotbtools"',
+    "always_display_in_console = true",
+    "frontchannel_logout_enabled = true",
+    'pkce_code_challenge_method = ""',
+    '"frontchannel.logout.session.required" = "true"',
+    "prevent_destroy = true",
+):
+    assert expected in web_block, f"wotbtools-web production parity declaration missing: {expected}"
+admin_api_block = " ".join(
+    client_text.split('resource "keycloak_openid_client" "admin_api"', 1)[1].split()
+)
+for forbidden in (
+    "login_theme",
+    "always_display_in_console",
+    "frontchannel_logout_enabled",
+    "consent_required",
+    "pkce_code_challenge_method",
+    "extra_config",
+    "valid_redirect_uris",
+    "web_origins",
+):
+    assert forbidden not in admin_api_block, (
+        f"browser-only client setting leaked into wotbtools-admin-api: {forbidden}"
+    )
 for forbidden in (
     "realm-admin",
     "manage-realm",

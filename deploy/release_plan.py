@@ -34,6 +34,7 @@ DEPLOYABLE_SERVICES = {
     "wotb-backend",
     "wotb-frontend",
     "keycloak-postgres",
+    "business-postgres",
     "rabbitmq",
     "minio",
 }
@@ -41,6 +42,7 @@ DEPLOY_TARGETS = ("tx", "yecao")
 TARGET_BY_SERVICE = {
     "keycloak": "tx",
     "keycloak-postgres": "tx",
+    "business-postgres": "tx",
     "rabbitmq": "tx",
     "wotb-frontend": "tx",
     "wotb-backend": "yecao",
@@ -104,10 +106,12 @@ ALL_DEPLOY_PATTERNS = (
 )
 TX_DEPLOY_PATTERNS = ("deploy/tx/**", "infra/tofu/keycloak/**")
 RABBITMQ_TX_DEPLOY_PATTERNS = ("infra/tofu/rabbitmq/**",)
+BUSINESS_POSTGRES_TX_DEPLOY_PATTERNS = ("infra/tofu/postgres-business/**",)
 RUNTIME_CONFIG_PATTERNS = (
     "deploy/docker-compose.prod.yml",
     *TX_DEPLOY_PATTERNS,
     *RABBITMQ_TX_DEPLOY_PATTERNS,
+    *BUSINESS_POSTGRES_TX_DEPLOY_PATTERNS,
 )
 CI_SURFACE_PATTERNS = {
     "backend": BACKEND_PATTERNS,
@@ -142,7 +146,9 @@ CI_SURFACE_PATTERNS = {
         "docker/**",
         "infra/tofu/keycloak/**",
         "infra/tofu/rabbitmq/**",
+        "infra/tofu/postgres-business/**",
         ".github/workflows/deploy*.yml",
+        ".github/workflows/postgres-business-tofu.yml",
         "java/wotb-web/src/main/resources/db/migration/**",
         "java/settings-docker.xml",
     ),
@@ -281,7 +287,11 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
 
     if any(_matches_any(path, RUNTIME_CONFIG_PATTERNS) for path in normalized_paths):
         deploy_config = True
-        deploy_services = []
+        # A Compose-config change selects the affected runtime services instead
+        # of inferring them from application image changes. Observability
+        # services declared by file provisioning are the one exception and stay
+        # additive.
+        deploy_services = [name for name in deploy_services if name in OBSERVABILITY_DEPLOY_PATTERNS]
         if any(_matches(path, "deploy/docker-compose.prod.yml") for path in normalized_paths):
             # Yecao remains backend/business-data/observability only during
             # Phase 1. Its legacy frontend/Keycloak must not be refreshed by a
@@ -301,6 +311,11 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
             # isolated provider root must not rebuild or restart Keycloak,
             # PostgreSQL, or the frontend.
             deploy_services.append("rabbitmq")
+        if any(_matches_any(path, BUSINESS_POSTGRES_TX_DEPLOY_PATTERNS) for path in normalized_paths):
+            # Business PostgreSQL's runtime image is upstream-pinned in Compose
+            # and no application image consumes it yet. Its isolated root must
+            # never rebuild or restart Keycloak, PostgreSQL, or the frontend.
+            deploy_services.append("business-postgres")
     else:
         deploy_services.extend(
             APPLICATION_SERVICES[name]

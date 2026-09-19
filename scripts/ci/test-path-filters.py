@@ -130,6 +130,35 @@ class CiPathFilterTest(unittest.TestCase):
         self.assertEqual(plan["deployServices"], ["rabbitmq"])
         self.assertEqual(plan["targetServices"], {"tx": ["rabbitmq"]})
 
+    def test_business_postgres_opentofu_root_never_rebuilds_application_images(self):
+        for path in (
+            "infra/tofu/postgres-business/business.tf",
+            "infra/tofu/postgres-business/variables.tf",
+            "infra/tofu/postgres-business/.terraform.lock.hcl",
+            "infra/tofu/postgres-business/validate-plan.sh",
+        ):
+            plan = detect(path)
+            self.assertEqual(plan["buildServices"], [], path)
+            self.assertEqual(plan["imageServices"], [], path)
+            self.assertEqual(plan["deployServices"], ["business-postgres"], path)
+            self.assertEqual(plan["targetServices"], {"tx": ["business-postgres"]}, path)
+        self.assert_surfaces(
+            ["infra/tofu/postgres-business/business.tf"], ["deploy"]
+        )
+
+    def test_business_postgres_tofu_workflow_is_a_deploy_surface(self):
+        plan = detect(".github/workflows/postgres-business-tofu.yml")
+        self.assertTrue(plan["ciSurfaces"]["deploy"])
+        self.assertEqual(plan["imageServices"], [])
+        self.assertEqual(plan["deployServices"], [])
+
+    def test_tx_compose_config_still_excludes_business_postgres(self):
+        plan = detect("deploy/tx/docker-compose.yml")
+        self.assertEqual(
+            plan["deployServices"], ["keycloak-postgres", "keycloak", "wotb-frontend"]
+        )
+        self.assertNotIn("business-postgres", plan["deployServices"])
+
 
 if __name__ == "__main__":
     unittest.main()
