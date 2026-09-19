@@ -183,7 +183,7 @@ assert "YECAO_MINIO_ROOT_PASSWORD" in minio_script
 assert "deploy/docker-compose.prod.yml" not in minio_script
 assert 'command -v python3' in minio_script
 minio_tofurc = (deploy_path.parent.parent.parent / "deploy/minio/tofurc").read_text(encoding="utf-8")
-assert minio_tofurc.count("registry.opentofu.org/aminueza/minio") == 2
+assert minio_tofurc.count("registry.terraform.io/aminueza/minio") == 2
 ci_deploy = ci["jobs"]["deploy_smoke"]
 tofu_setup = next(step for step in ci_deploy["steps"] if step.get("name") == "Set up OpenTofu")
 assert tofu_setup["uses"] == "opentofu/setup-opentofu@v2"
