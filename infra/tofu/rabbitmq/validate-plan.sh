@@ -38,23 +38,49 @@ static_topology = {
     "rabbitmq_binding.parser_retry",
     "rabbitmq_binding.parser_dead",
 }
-# Application identities may only be created or rotated in place. Their ACLs may
-# additionally be updated in place, which is an explicitly reviewed and
-# non-destructive change.
+# Application identities are AMQP-only. Any in-place update here is supposed to
+# be a credential rotation, so the post-plan representation is checked rather
+# than trusted: a RabbitMQ tag is exactly what grants Management API and UI
+# access, and gaining one would silently widen the identity beyond the reviewed
+# contract.
 application_identities = {
-    "rabbitmq_user.control_api",
-    "rabbitmq_user.parser_worker",
+    "rabbitmq_user.control_api": "control-api",
+    "rabbitmq_user.parser_worker": "parser-worker",
 }
+# `rabbitmq_user` exposes exactly these attributes. Anything else in the plan is
+# metadata this guard cannot prove safe, so it fails closed. `password` is
+# sensitive and is never inspected: a real plan carries its plaintext, and a
+# rotation must stay allowed.
+user_attributes = {"id", "name", "password", "tags"}
 application_acls = {
     "rabbitmq_permissions.control_api_publisher",
     "rabbitmq_permissions.parser_worker_consumer",
 }
 
+
+def application_identity_violation(address, change):
+    expected_name = application_identities[address]
+    after = change.get("after") or {}
+    if after.get("name") != expected_name:
+        return f"application identity must stay named {expected_name}"
+    # `None` (unknown at plan time) is rejected as well: empty tags must be
+    # proven, not assumed.
+    if after.get("tags") != []:
+        return "application identity may not carry RabbitMQ tags"
+    unexpected = sorted(
+        {key for key, value in after.items() if key not in user_attributes and value is not None}
+        | {key for key in change.get("after_unknown") or {} if key not in user_attributes}
+    )
+    if unexpected:
+        return "unexpected application identity attribute(s): " + ", ".join(unexpected)
+    return None
+
+
 changed = []
 for item in plan.get("resource_changes", []):
     address = item.get("address")
     actions = item.get("change", {}).get("actions", [])
-    if address not in static_topology | application_identities | application_acls:
+    if address not in set(application_identities) | static_topology | application_acls:
         raise SystemExit(f"unexpected RabbitMQ OpenTofu resource: {address}")
     if "delete" in actions:
         raise SystemExit(f"destructive RabbitMQ plan action for {address}: {actions}")
@@ -73,13 +99,19 @@ for item in plan.get("resource_changes", []):
     # here means the plan is attempting an unexpected topology mutation.
     raise SystemExit(f"unsafe RabbitMQ plan action for {address}: {actions}")
 
-# Whatever an approved diff contains, an application identity can never declare
-# topology and can never hold a vhost-wide ACL.
+# Whatever an approved diff contains, an application identity can never carry a
+# tag, be renamed, gain unknown metadata, or hold a vhost-wide ACL.
 for item in plan.get("resource_changes", []):
     address = item.get("address")
+    change = item.get("change", {})
+    if address in application_identities:
+        violation = application_identity_violation(address, change)
+        if violation:
+            raise SystemExit(f"unsafe RabbitMQ plan action for {address}: {violation}")
+        continue
     if address not in application_acls:
         continue
-    after = item.get("change", {}).get("after") or {}
+    after = change.get("after") or {}
     permissions = (after.get("permissions") or [{}])[0]
     if permissions.get("configure") != "^$":
         raise SystemExit(

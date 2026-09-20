@@ -64,10 +64,14 @@ locals {
   parser_retry_ttl_ms = 30000
 }
 
-# A single topic exchange serves the whole job surface: the `parser.*` routing
-# keys today and `export.*` families later, without introducing another exchange
-# per job type. Version 1 binds and publishes only exact routing keys, so the
-# wildcard capability stays unused and the routing table stays deterministic.
+# `topic` is a deliberate forward-compatible choice, not a routing requirement:
+# a later version can add wildcard bindings (`parser.*`, `export.*`) without
+# replacing the exchange, and changing an exchange type is a destructive
+# replacement of a `prevent_destroy` resource. Version 1 binds and publishes
+# only exact routing keys, so the wildcard capability stays unused and the
+# routing table stays deterministic. A `direct` exchange would route today's
+# exact keys just as well, but it would have to be replaced to ever gain
+# wildcard routing.
 resource "rabbitmq_exchange" "jobs" {
   name  = local.jobs_exchange
   vhost = rabbitmq_vhost.wotbtools.name

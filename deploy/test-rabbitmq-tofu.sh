@@ -96,6 +96,7 @@ import base64
 import json
 import sys
 import time
+import urllib.error
 from urllib.request import Request, urlopen
 
 import pika
@@ -126,6 +127,24 @@ def mgmt(method, path, body=None):
     with urlopen(request, timeout=10) as response:
         payload = response.read()
         return json.loads(payload) if payload else None
+
+
+def expect_no_management_access(credentials):
+    """A RabbitMQ tag is what grants Management API access. These identities
+    carry none, so the API must refuse them even though the credentials are
+    valid for AMQP on the same vhost."""
+    user, password = credentials
+    authorization = base64.b64encode(f"{user}:{password}".encode()).decode()
+    request = Request(MGMT + "/api/overview", headers={"Authorization": "Basic " + authorization})
+    try:
+        with urlopen(request, timeout=10):
+            pass
+    except urllib.error.HTTPError as error:
+        body = json.loads(error.read())
+        assert error.code == 401, (user, error.code, body)
+        assert body.get("reason") == "Not management user", (user, body)
+        return
+    raise AssertionError(f"{user} must not reach the Management API without a tag")
 
 
 def connect(credentials):
@@ -202,6 +221,8 @@ users = {item["name"]: item for item in mgmt("GET", "/api/users")}
 for name in ("control-api", "parser-worker"):
     assert name in users, users.keys()
     assert users[name].get("tags", []) == [], users[name]
+for credentials in (CONTROL, PARSER):
+    expect_no_management_access(credentials)
 
 # ------------------------------------------------------------- ACL contract
 expected_acls = {
