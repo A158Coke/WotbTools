@@ -84,9 +84,15 @@ export TF_VAR_parser_worker_password="$PARSER_PASSWORD"
 
 MIRROR="$WORK/provider-mirror"
 mkdir -p "$MIRROR"
-"$TOFU" -chdir="$TOFU_ROOT" providers mirror "$MIRROR" >/dev/null
+"$TOFU" -chdir="$TOFU_ROOT" providers mirror -platform=linux_amd64 "$MIRROR" >/dev/null
 sed "s|/opt/wotb-tx/tofu-provider-mirror|$MIRROR|" "$ROOT/deploy/tx/rabbitmq.tofurc" \
   > "$WORK/tofurc"
+
+LOCKED_VERSION="$(sed -n '/provider "registry.opentofu.org\/cyrilgdn\/rabbitmq"/,/^}/ s/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$TOFU_ROOT/.terraform.lock.hcl")"
+[ "$LOCKED_VERSION" = 1.10.1 ] || fail "RabbitMQ provider lockfile must pin 1.10.1 exactly"
+PROVIDER_RELATIVE_PATH="registry.opentofu.org/cyrilgdn/rabbitmq/terraform-provider-rabbitmq_${LOCKED_VERSION}_linux_amd64.zip"
+[ -f "$MIRROR/$PROVIDER_RELATIVE_PATH" ] \
+  || fail "RabbitMQ linux_amd64 provider package is missing from the canonical mirror path"
 
 # The production provider source is mirror-only. With the mirror emptied, init
 # has to fail closed instead of silently downloading the provider directly.
@@ -98,6 +104,19 @@ if TF_CLI_CONFIG_FILE="$WORK/no-mirror.tfrc" TF_DATA_DIR="$WORK/no-mirror-data" 
   fail "provider installation fell back to a direct download instead of failing closed"
 fi
 echo "PASS: provider installation is mirror-only and fails closed"
+
+# An existing package with the right filename but wrong bytes must still fail
+# against the committed lockfile; the deploy path never accepts a checksum
+# mismatch merely because the mirror entry exists.
+cp -a "$MIRROR" "$WORK/corrupt-mirror"
+printf 'corrupt provider package\n' > "$WORK/corrupt-mirror/$PROVIDER_RELATIVE_PATH"
+sed "s|$MIRROR|$WORK/corrupt-mirror|" "$WORK/tofurc" > "$WORK/corrupt-mirror.tfrc"
+if TF_CLI_CONFIG_FILE="$WORK/corrupt-mirror.tfrc" TF_DATA_DIR="$WORK/corrupt-mirror-data" \
+    "$TOFU" -chdir="$TOFU_ROOT" init -reconfigure -input=false -lockfile=readonly \
+    -backend-config="path=$WORK/corrupt-mirror.tfstate" >/dev/null 2>&1; then
+  fail "provider checksum mismatch did not fail closed"
+fi
+echo "PASS: provider checksum mismatch fails closed"
 
 export TF_CLI_CONFIG_FILE="$WORK/tofurc"
 export TF_DATA_DIR="$WORK/tofu-data"

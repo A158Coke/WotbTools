@@ -643,8 +643,10 @@ TX RabbitMQ 也保持独立 ownership：Compose 只运行 broker，`infra/tofu/r
 `control-api`/`parser-worker` identities、ACL，以及 `wotb.jobs` exchange、
 `wotb.parser` / `wotb.parser.retry` / `wotb.parser.dlq` queues 与 bindings；
 应用只 publish/consume 并拥有 ack/nack、重试判定、幂等与 job state。provider
-只可连接 TX loopback `http://127.0.0.1:15672`，经 filesystem mirror 安装且
-plan/apply/second-plan 和 root-only marker 全部在 TX 发生；GitHub runner 不直连
+只可连接 TX loopback `http://127.0.0.1:15672`；provider source/version 从 committed
+lockfile 推导，fresh host 在 `tofu init` 前由 deployment 执行限定 `linux_amd64` 的
+mirror bootstrap，已有精确包幂等复用，版本或 checksum 不匹配 fail closed；正式 init
+仍禁止 direct registry fallback。plan/apply/second-plan 和 root-only marker 全部在 TX 发生；GitHub runner 不直连
 Management API。完整 topology、retry/DLX 设计与 ACL 见
 `docs/operations/rabbitmq.md`。
 
