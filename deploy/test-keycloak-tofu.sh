@@ -6,6 +6,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOFU_ROOT="$ROOT/infra/tofu/keycloak"
+TOFU_RUNNER="$ROOT/deploy/tx/keycloak-tofu.sh"
 IMAGE="${WOTB_KEYCLOAK_TEST_IMAGE:-wotbtools-keycloak:runtime-contract}"
 TOFU="${TOFU_BIN:-tofu}"
 NETWORK="wotb-keycloak-tofu-$RANDOM-$$"
@@ -43,6 +44,44 @@ command -v "$TOFU" >/dev/null 2>&1 || fail "$TOFU is required"
 [ -d "$TOFU_ROOT" ] || fail "Keycloak OpenTofu root is missing"
 [[ "$RETRIES" =~ ^[1-9][0-9]*$ ]] || fail "retry count must be a positive integer"
 [[ "$INTERVAL_SEC" =~ ^[1-9][0-9]*$ ]] || fail "retry interval must be a positive integer"
+
+expect_qq_input_failure() {
+  local label="$1" expected="$2"
+  shift 2
+  local output status
+  set +e
+  output="$(env -i PATH="$PATH" \
+    KEYCLOAK_ADMIN_USERNAME=admin \
+    KEYCLOAK_ADMIN_PASSWORD=not-real \
+    KEYCLOAK_ADMIN_CLIENT_SECRET=not-real \
+    KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION=1 \
+    TX_QQ_CLIENT_ID="$QQ_CLIENT_ID" \
+    TX_QQ_CLIENT_SECRET="$QQ_CLIENT_SECRET" \
+    TX_QQ_CLIENT_SECRET_VERSION="$QQ_CLIENT_SECRET_VERSION" \
+    "$@" bash "$TOFU_RUNNER" "$WORK/input-policy-root" 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || fail "$label must fail"
+  grep -Fq "$expected" <<< "$output" \
+    || fail "$label did not report $expected"
+}
+
+# Exercise the TX runner's fail-closed QQ boundary before building an image or
+# creating disposable infrastructure. These are deliberately fixtures only.
+mkdir -p "$WORK/input-policy-root"
+expect_qq_input_failure "missing-client-id" 'TX_QQ_CLIENT_ID is required.' \
+  env -u TX_QQ_CLIENT_ID
+expect_qq_input_failure "missing-client-secret" 'TX_QQ_CLIENT_SECRET is required.' \
+  env -u TX_QQ_CLIENT_SECRET
+expect_qq_input_failure "missing-secret-version" 'TX_QQ_CLIENT_SECRET_VERSION is required.' \
+  env -u TX_QQ_CLIENT_SECRET_VERSION
+expect_qq_input_failure "placeholder-client-id" 'TX_QQ_CLIENT_ID must be configured and must not be a placeholder.' \
+  env TX_QQ_CLIENT_ID=bootstrap-not-configured
+expect_qq_input_failure "placeholder-client-secret" 'TX_QQ_CLIENT_SECRET must be configured and must not be a placeholder.' \
+  env TX_QQ_CLIENT_SECRET=dummy
+expect_qq_input_failure "invalid-secret-version" 'TX_QQ_CLIENT_SECRET_VERSION must be a positive integer.' \
+  env TX_QQ_CLIENT_SECRET_VERSION=0
+echo "PASS: QQ OpenTofu fail-closed input policy"
 
 if [ "${WOTB_KEYCLOAK_SKIP_BUILD:-0}" != "1" ]; then
   echo "== Building Keycloak image for fresh OpenTofu smoke =="
