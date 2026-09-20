@@ -8,8 +8,9 @@ import com.wotb.broker.rabbitmq.RabbitBrokerProperties;
 import com.wotb.broker.rabbitmq.RabbitReplayProcessingDispatcher;
 import com.wotb.contracts.ObjectStorage;
 import com.wotb.web.replay.job.MinioReplayProcessingInputStore;
-import com.wotb.web.replay.job.ObjectStorageReplayProcessingResultReader;
+import com.wotb.web.replay.job.ObjectStorageReplayDatasetRepository;
 import com.wotb.web.replay.job.PostgresParserOutcomeHandler;
+import com.wotb.web.replay.job.ReplayBatchFinalization;
 import com.wotb.web.replay.job.ReplayExecutionMode;
 import com.wotb.web.replay.job.ReplayJobAuthority;
 import com.wotb.web.replay.job.ReplayProcessingInputStore;
@@ -128,11 +129,15 @@ public class ReplayDistributedConfig {
         return new MinioReplayProcessingInputStore(replayObjectStorage);
     }
 
-    /** {@code GET .../result} 的 dataset 来源：对象存储里的 canonical per-source dataset。 */
+    /**
+     * {@code result/} 对象布局的唯一 owner，同时实现读取侧（{@link ReplayProcessingResultReader}）
+     * 与收尾侧（{@link ReplayBatchFinalization}）：READY 之后只读 {@code finalized.json}；
+     * FINALIZING_BATCH 期间读 per-source 输入并写 {@code finalized.json}。
+     */
     @Bean
-    public ReplayProcessingResultReader replayProcessingResultReader(
+    public ObjectStorageReplayDatasetRepository replayDatasetRepository(
             final ObjectStorage replayObjectStorage) {
-        return new ObjectStorageReplayProcessingResultReader(replayObjectStorage);
+        return new ObjectStorageReplayDatasetRepository(replayObjectStorage);
     }
 
     /**
@@ -143,12 +148,17 @@ public class ReplayDistributedConfig {
      * <p>它同时是**逻辑重试的唯一决策点**：worker 的基础设施失败报告
      * （{@code parser.failed(retryable=true)}）由它按 PG 权威状态与
      * {@code wotb.replay.retry.max-attempts} 预算决定重派 {@code attempt+1} 还是转终态。</p>
+     *
+     * <p>它也是**批次收尾的触发点**：全部 source 终态时推进 FINALIZING_BATCH，把 per-source
+     * canonical dataset 交给 {@link ReplayBatchFinalization}（与本地路径同一个
+     * {@code ReplayBatchFinalizer}）产出 finalized batch dataset，再置 READY。</p>
      */
     @Bean
     public ParserOutcomeHandler replayParserOutcomeHandler(
             final ReplayProcessingJobStore replayProcessingJobStore,
             final ObjectProvider<ReplayJobAuthority> replayJobAuthority,
             final RabbitReplayProcessingDispatcher replayProcessingDispatcher,
+            final ObjectStorageReplayDatasetRepository replayDatasetRepository,
             @Value("${wotb.replay.retry.max-attempts:3}") final int maxAttempts) {
         final ReplayJobAuthority authority = replayJobAuthority.getIfAvailable();
         if (authority == null) {
@@ -156,7 +166,7 @@ public class ReplayDistributedConfig {
                     + "wotb.replay.processing-job.repository=jdbc (PostgreSQL job authority)");
         }
         return new PostgresParserOutcomeHandler(replayProcessingJobStore, authority,
-                replayProcessingDispatcher, maxAttempts);
+                replayProcessingDispatcher, maxAttempts, replayDatasetRepository);
     }
 
     /**
