@@ -10,7 +10,8 @@ terraform {
 
   backend "local" {
     # Yecao-only state. The deployment helper creates its parent directory with
-    # mode 0700 because the provider records the worker secret as sensitive state.
+    # mode 0700 because the provider records the application identity secrets as
+    # sensitive state.
     path = "/opt/wotb/minio-tofu-state/terraform.tfstate"
   }
 }

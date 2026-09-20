@@ -31,6 +31,9 @@ allowed = {
     "minio_iam_user.worker",
     "minio_iam_policy.temporary_workspace_worker",
     "minio_iam_user_policy_attachment.worker",
+    "minio_iam_user.control_api",
+    "minio_iam_policy.temporary_workspace_control_api",
+    "minio_iam_user_policy_attachment.control_api",
 }
 
 changed = []

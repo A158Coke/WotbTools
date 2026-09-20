@@ -350,7 +350,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,YECAO_MINIO_ROOT_USER,YECAO_MINIO_ROOT_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY
+          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,YECAO_MINIO_ROOT_USER,YECAO_MINIO_ROOT_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY
           script: bash /opt/wotb/minio.incoming/${{ needs.changes.outputs.release_sha }}/deploy/minio-deploy.sh /opt/wotb/minio.incoming/${{ needs.changes.outputs.release_sha }}
         env:
           TAG: ${{ needs.changes.outputs.release_tag }}
@@ -360,6 +360,8 @@ jobs:
           YECAO_MINIO_ROOT_PASSWORD: ${{ secrets.YECAO_MINIO_ROOT_PASSWORD }}
           YECAO_MINIO_WORKER_ACCESS_KEY: ${{ secrets.YECAO_MINIO_WORKER_ACCESS_KEY }}
           YECAO_MINIO_WORKER_SECRET_KEY: ${{ secrets.YECAO_MINIO_WORKER_SECRET_KEY }}
+          YECAO_MINIO_CONTROL_API_ACCESS_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_ACCESS_KEY }}
+          YECAO_MINIO_CONTROL_API_SECRET_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_SECRET_KEY }}
 
   deploy_tx:
     needs: [changes, image_existence]
