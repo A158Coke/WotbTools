@@ -107,6 +107,7 @@
 | `operations/rabbitmq.md` | TX RabbitMQ runtime/OpenTofu ownership、credentials、provider mirror 与 provisioning gate 时 |
 | `operations/business-postgres.md` | TX Business PostgreSQL runtime/OpenTofu ownership、凭据、备份/恢复与名人堂迁移前置时 |
 | `operations/observability-runbook.md` | 生产观测链路排障和人工 runbook 时 |
+| `operations/legacy-retirement-inventory.md` | 执行 / 评审 Yecao 遗留栈退役（PR J）或判断某资产属于 KEEP/DELETE/ARCHIVE/HUMAN 时 |
 | `operations/ai-evaluation.md` | 运行 / 复盘 AI evaluation 运维流程时 |
 
 ## Reference（参考字典）
