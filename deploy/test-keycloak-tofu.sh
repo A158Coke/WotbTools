@@ -6,6 +6,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOFU_ROOT="$ROOT/infra/tofu/keycloak"
+TOFU_RUNNER="$ROOT/deploy/tx/keycloak-tofu.sh"
 IMAGE="${WOTB_KEYCLOAK_TEST_IMAGE:-wotbtools-keycloak:runtime-contract}"
 TOFU="${TOFU_BIN:-tofu}"
 NETWORK="wotb-keycloak-tofu-$RANDOM-$$"
@@ -16,6 +17,9 @@ RETRIES="${WOTB_KEYCLOAK_TOFU_RETRIES:-90}"
 INTERVAL_SEC="${WOTB_KEYCLOAK_TOFU_INTERVAL_SEC:-2}"
 BOOTSTRAP_PASSWORD="tofu-bootstrap-test-password"
 ADMIN_API_SECRET="tofu-admin-api-test-secret"
+QQ_CLIENT_ID="tofu-qq-client-id"
+QQ_CLIENT_SECRET="tofu-qq-client-secret"
+QQ_CLIENT_SECRET_VERSION=1
 TEST_USERNAME="tofu-admin-api-test-user"
 
 fail() {
@@ -40,6 +44,44 @@ command -v "$TOFU" >/dev/null 2>&1 || fail "$TOFU is required"
 [ -d "$TOFU_ROOT" ] || fail "Keycloak OpenTofu root is missing"
 [[ "$RETRIES" =~ ^[1-9][0-9]*$ ]] || fail "retry count must be a positive integer"
 [[ "$INTERVAL_SEC" =~ ^[1-9][0-9]*$ ]] || fail "retry interval must be a positive integer"
+
+expect_qq_input_failure() {
+  local label="$1" expected="$2"
+  shift 2
+  local output status
+  set +e
+  output="$(env -i PATH="$PATH" \
+    KEYCLOAK_ADMIN_USERNAME=admin \
+    KEYCLOAK_ADMIN_PASSWORD=not-real \
+    KEYCLOAK_ADMIN_CLIENT_SECRET=not-real \
+    KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION=1 \
+    TX_QQ_CLIENT_ID="$QQ_CLIENT_ID" \
+    TX_QQ_CLIENT_SECRET="$QQ_CLIENT_SECRET" \
+    TX_QQ_CLIENT_SECRET_VERSION="$QQ_CLIENT_SECRET_VERSION" \
+    "$@" bash "$TOFU_RUNNER" "$WORK/input-policy-root" 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || fail "$label must fail"
+  grep -Fq "$expected" <<< "$output" \
+    || fail "$label did not report $expected"
+}
+
+# Exercise the TX runner's fail-closed QQ boundary before building an image or
+# creating disposable infrastructure. These are deliberately fixtures only.
+mkdir -p "$WORK/input-policy-root"
+expect_qq_input_failure "missing-client-id" 'TX_QQ_CLIENT_ID is required.' \
+  env -u TX_QQ_CLIENT_ID
+expect_qq_input_failure "missing-client-secret" 'TX_QQ_CLIENT_SECRET is required.' \
+  env -u TX_QQ_CLIENT_SECRET
+expect_qq_input_failure "missing-secret-version" 'TX_QQ_CLIENT_SECRET_VERSION is required.' \
+  env -u TX_QQ_CLIENT_SECRET_VERSION
+expect_qq_input_failure "placeholder-client-id" 'TX_QQ_CLIENT_ID must be configured and must not be a placeholder.' \
+  env TX_QQ_CLIENT_ID=bootstrap-not-configured
+expect_qq_input_failure "placeholder-client-secret" 'TX_QQ_CLIENT_SECRET must be configured and must not be a placeholder.' \
+  env TX_QQ_CLIENT_SECRET=dummy
+expect_qq_input_failure "invalid-secret-version" 'TX_QQ_CLIENT_SECRET_VERSION must be a positive integer.' \
+  env TX_QQ_CLIENT_SECRET_VERSION=0
+echo "PASS: QQ OpenTofu fail-closed input policy"
 
 if [ "${WOTB_KEYCLOAK_SKIP_BUILD:-0}" != "1" ]; then
   echo "== Building Keycloak image for fresh OpenTofu smoke =="
@@ -102,6 +144,9 @@ export TF_VAR_keycloak_admin_username=admin
 export TF_VAR_keycloak_admin_password="$BOOTSTRAP_PASSWORD"
 export TF_VAR_keycloak_admin_client_secret="$ADMIN_API_SECRET"
 export TF_VAR_keycloak_admin_client_secret_version=1
+export TF_VAR_qq_client_id="$QQ_CLIENT_ID"
+export TF_VAR_qq_client_secret="$QQ_CLIENT_SECRET"
+export TF_VAR_qq_client_secret_version="$QQ_CLIENT_SECRET_VERSION"
 
 cd "$TOFU_ROOT"
 TOFU_WORK_ROOT="$WORK/tofu-root"
@@ -275,9 +320,22 @@ jq -e '([.[].alias] | sort) == ["idp-qq", "wargaming-asia", "wargaming-eu", "war
   || fail "fresh realm IdP aliases are not the approved TX set"
 jq -e 'all(.[]; .alias != "qq" and .alias != "juhe-qq")' "$WORK/idps.json" >/dev/null \
   || fail "fresh TX realm must not create legacy QQ aliases"
-jq -e 'any(.[]; .alias == "idp-qq" and .providerId == "qq" and .config.clientAuthMethod == "client_secret_post") and all(.[] | select(.providerId == "wargaming"); .config.region != null)' \
+jq -e --arg qq_client_id "$QQ_CLIENT_ID" '
+  any(.[];
+    .alias == "idp-qq" and
+    .providerId == "qq" and
+    .enabled == true and
+    .config.clientId == $qq_client_id and
+    .config.clientId != "bootstrap-not-configured" and
+    .config.authorizationUrl == "https://graph.qq.com/oauth2.0/authorize" and
+    .config.tokenUrl == "https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1" and
+    .config.userInfoUrl == "https://graph.qq.com/user/get_user_info" and
+    .config.clientAuthMethod == "client_secret_post"
+  ) and
+  all(.[] | select(.providerId == "wargaming"); .config.region != null)
+' \
   "$WORK/idps.json" >/dev/null || fail "QQ/Wargaming provider representation is incomplete"
-echo "PASS: realm, client, mapper, default-role, IdP resources, and structural config"
+echo "PASS: realm, client, mapper, default-role, QQ IdP Admin API representation, and structural config"
 
 while IFS= read -r alias; do
   [ -n "$alias" ] || continue
@@ -285,7 +343,7 @@ while IFS= read -r alias; do
     "$KEYCLOAK_URL/realms/wotbtools/broker/$alias/endpoint")"
   [ "$broker_status" != 404 ] || fail "enabled IdP broker endpoint is missing for $alias"
 done < <(jq -r '.[] | select(.enabled == true) | .alias' "$WORK/idps.json")
-echo "PASS: enabled IdP broker endpoints are exposed; disabled IdPs remain operator-controlled"
+echo "PASS: enabled IdP broker endpoints are exposed"
 
 expect_forbidden() {
   local method="$1" url="$2" output="$3"

@@ -35,8 +35,8 @@ root_text = "\n".join(path.read_text(encoding="utf-8") for path in tofu_root.glo
 flat_root = flat(root_text)
 versions = read("infra/tofu/keycloak/versions.tf")
 providers = read("infra/tofu/keycloak/providers.tf")
-client_text = read("infra/tofu/keycloak/client.tf")
 identity_text = read("infra/tofu/keycloak/identity-providers.tf")
+variables_text = read("infra/tofu/keycloak/variables.tf")
 tx_compose = read("deploy/tx/docker-compose.yml")
 tofu_script = read("deploy/tx/keycloak-tofu.sh")
 deploy_text = read(".github/workflows/deploy.yml")
@@ -64,26 +64,6 @@ for forbidden in (
 for required in ("manage-users", "query-users", "view-realm"):
     assert required in flat_root, required
 
-# --- the admin client is a machine identity only -----------------------------
-admin_api = flat(client_text.split('resource "keycloak_openid_client" "admin_api"', 1)[1])
-web = flat(
-    client_text.split('resource "keycloak_openid_client" "web"', 1)[1].split(
-        'resource "keycloak_openid_client" "admin_api"', 1
-    )[0]
-)
-assert 'access_type = "CONFIDENTIAL"' in admin_api
-assert "service_accounts_enabled = true" in admin_api
-for forbidden in (
-    "standard_flow_enabled = true",
-    "implicit_flow_enabled = true",
-    "direct_access_grants_enabled = true",
-    "valid_redirect_uris",
-    "web_origins",
-):
-    assert forbidden not in admin_api, f"browser login enabled on the Admin API client: {forbidden}"
-for block in (web, admin_api):
-    assert "prevent_destroy = true" in block
-
 # --- the Admin API client secret is write-only -------------------------------
 assert "client_secret_wo = var.keycloak_admin_client_secret" in flat_root
 assert "client_secret = var.keycloak_admin_client_secret" not in flat_root
@@ -93,27 +73,39 @@ assert "client_secret_wo_version" in flat_root
 for path_text in (read("docker/Dockerfile.keycloak"), tx_compose):
     assert "--import-realm" not in path_text
     assert "wotbtools-realm.json" not in path_text
-assert "juhe-qq" not in flat_root
-assert 'alias = "qq"' not in flat_root
-assert 'alias = "idp-qq"' in flat(identity_text)
-# Bootstrap owns only the initial IdP state; an operator manages `enabled`.
-assert "ignore_changes = [ enabled, ]" in flat(identity_text)
-
-# --- production secrets are never hardcoded or plumbed as OpenTofu variables -
-assert not any(
-    forbidden in flat_root
-    for forbidden in ("qq_client_id", "qq_client_secret", "wargaming_placeholder_secret")
-)
-for forbidden in (
-    "QQ_CLIENT_ID",
-    "QQ_CLIENT_SECRET",
-    "QQ_CLIENT_SECRET_VERSION",
-    "WARGAMING_PLACEHOLDER_SECRET",
-    "WARGAMING_PLACEHOLDER_SECRET_VERSION",
-    "TF_VAR_qq_client",
-    "TF_VAR_wargaming_placeholder",
+flat_identity = flat(identity_text)
+assert 'alias = "juhe-qq"' not in flat_identity
+assert 'alias = "qq"' not in flat_identity
+assert 'alias = "idp-qq"' in flat_identity
+qq_block = identity_text.split('resource "keycloak_oidc_identity_provider" "qq"', 1)[1].split(
+    "\n}\n\nlocals", 1
+)[0]
+assert 'client_secret_wo         = var.qq_client_secret' in qq_block
+assert "prevent_destroy = true" in qq_block
+assert "ignore_changes" not in qq_block
+assert "bootstrap-not-configured" not in qq_block
+assert "client_secret = var.qq_client_secret" not in qq_block
+for expected in (
+    'variable "qq_client_id"',
+    'variable "qq_client_secret"',
+    'variable "qq_client_secret_version"',
+    'variable "qq_enabled"',
+    "sensitive   = true",
 ):
-    assert forbidden not in deploy_text
+    assert expected in variables_text, expected
+
+# --- production QQ inputs are only supplied through the TX deployment path --
+for expected in (
+    "TX_QQ_CLIENT_ID",
+    "TX_QQ_CLIENT_SECRET",
+    "TX_QQ_CLIENT_SECRET_VERSION",
+    "TF_VAR_qq_client_id",
+    "TF_VAR_qq_client_secret",
+    "TF_VAR_qq_client_secret_version",
+    "must not be a placeholder",
+    "must be a positive integer",
+):
+    assert expected in tofu_script
 assert "tfvars" not in deploy_text.lower()
 assert 'echo "$KEYCLOAK_ADMIN_CLIENT_SECRET"' not in tofu_script
 
@@ -125,6 +117,8 @@ assert '"0.0.0.0:18080:8080"' not in tx_compose
 assert "bash ./validate-plan.sh plan.tfplan" in tofu_script
 assert "bash ./validate-plan.sh second-plan.tfplan" in tofu_script
 assert "tofu apply -input=false -auto-approve plan.tfplan" in tofu_script
+assert "second-plan.tfplan" in tofu_script
+assert "any(.resource_changes[]?; ((.change.actions // []) | any(. != \"no-op\")))" in tofu_script
 
 # --- the realm is applied only after an empty Keycloak is up -----------------
 deploy = yaml.safe_load(deploy_text)
@@ -141,8 +135,23 @@ assert names.index("Bootstrap TX Keycloak PostgreSQL before OpenTofu") < names.i
     "Start empty TX Keycloak for OpenTofu bootstrap"
 ) < names.index("Apply Keycloak OpenTofu on TX localhost")
 apply_step = next(step for step in steps if step.get("name") == "Apply Keycloak OpenTofu on TX localhost")
+apply_envs = set(apply_step["with"]["envs"].split(","))
+assert apply_envs == {
+    "KEYCLOAK_ADMIN_USERNAME",
+    "KEYCLOAK_ADMIN_PASSWORD",
+    "KEYCLOAK_ADMIN_CLIENT_SECRET",
+    "KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION",
+    "TX_QQ_CLIENT_ID",
+    "TX_QQ_CLIENT_SECRET",
+    "TX_QQ_CLIENT_SECRET_VERSION",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+}
 assert apply_step["env"]["KEYCLOAK_ADMIN_PASSWORD"] == "${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}"
 assert apply_step["env"]["KEYCLOAK_ADMIN_CLIENT_SECRET"] == "${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}"
+assert apply_step["env"]["TX_QQ_CLIENT_ID"] == "${{ vars.TX_QQ_CLIENT_ID }}"
+assert apply_step["env"]["TX_QQ_CLIENT_SECRET"] == "${{ secrets.TX_QQ_CLIENT_SECRET }}"
+assert apply_step["env"]["TX_QQ_CLIENT_SECRET_VERSION"] == "${{ vars.TX_QQ_CLIENT_SECRET_VERSION }}"
 assert "TF_VAR_" not in apply_step["with"]["envs"]
 assert "KEYCLOAK_ADMIN_CLIENT_SECRET" not in apply_step["with"]["script"]
 

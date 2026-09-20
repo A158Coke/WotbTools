@@ -653,6 +653,62 @@ probe_body_contains() {
   echo "$service: PASS"
 }
 
+qq_identity_provider_ready() {
+  local token_response admin_token idp_response
+  if ! token_response="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe \
+      --silent --show-error --fail --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
+      --max-time "$PROBE_MAX_TIME_SEC" --request POST \
+      --data-urlencode 'grant_type=password' \
+      --data-urlencode 'client_id=admin-cli' \
+      --data-urlencode 'username=admin' \
+      --data-urlencode "password=$KC_BOOTSTRAP_ADMIN_PASSWORD" \
+      http://keycloak:8080/realms/master/protocol/openid-connect/token 2>&1)"; then
+    echo "qq-idp-admin-token: FAIL (token request failed)" >&2
+    return 1
+  fi
+  if ! admin_token="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["access_token"])' <<< "$token_response" 2>/dev/null)"; then
+    echo "qq-idp-admin-token: FAIL (token response is invalid)" >&2
+    return 1
+  fi
+  if ! idp_response="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe \
+      --silent --show-error --fail --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
+      --max-time "$PROBE_MAX_TIME_SEC" \
+      --header "Authorization: Bearer $admin_token" \
+      http://keycloak:8080/admin/realms/wotbtools/identity-provider/instances 2>&1)"; then
+    echo "qq-idp-admin-api: FAIL (identity provider query failed)" >&2
+    return 1
+  fi
+  if ! python3 -c '
+import json
+import sys
+
+providers = json.load(sys.stdin)
+expected = {
+    "authorizationUrl": "https://graph.qq.com/oauth2.0/authorize",
+    "tokenUrl": "https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1",
+    "userInfoUrl": "https://graph.qq.com/user/get_user_info",
+    "clientAuthMethod": "client_secret_post",
+}
+qq = [provider for provider in providers if provider.get("alias") == "idp-qq"]
+if len(qq) != 1:
+    raise SystemExit(1)
+provider = qq[0]
+config = provider.get("config") or {}
+if provider.get("providerId") != "qq" or provider.get("enabled") is not True:
+    raise SystemExit(1)
+if config.get("clientId") in (None, "", "bootstrap-not-configured", "dummy", "empty", "juhe", "juhe-qq"):
+    raise SystemExit(1)
+if any(config.get(key) != value for key, value in expected.items()):
+    raise SystemExit(1)
+if any(provider.get("alias") in {"qq", "juhe-qq"} for provider in providers):
+    raise SystemExit(1)
+' <<< "$idp_response"; then
+    echo "qq-idp-admin-api: FAIL (idp-qq representation is not production-ready)" >&2
+    return 1
+  fi
+  echo "qq-idp-admin-api: PASS"
+}
+
 preflight_host() {
   command -v docker >/dev/null 2>&1 || die "docker is required."
   docker compose version >/dev/null 2>&1 || die "docker compose is required."
@@ -801,7 +857,7 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
   wait_for_probe caddy-keycloak http://172.29.0.2/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || failures=1
   probe_body_contains assetlinks http://172.29.0.2/.well-known/assetlinks.json 'com.wotbtools.app' || failures=1
 
-  for provider in keycloak-juhe-qq-provider.jar keycloak-qq-provider.jar keycloak-wargaming-provider.jar; do
+  for provider in keycloak-qq-provider.jar keycloak-wargaming-provider.jar; do
     if docker compose -f "$LIVE_COMPOSE" exec -T keycloak test -f "/opt/keycloak/providers/$provider"; then
       echo "keycloak-provider-$provider: PASS"
     else
@@ -809,6 +865,8 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
       failures=1
     fi
   done
+
+  qq_identity_provider_ready || failures=1
 
   if docker compose -f "$LIVE_COMPOSE" exec -T keycloak test ! -e /opt/keycloak/data/import/wotbtools-realm.json; then
     echo "keycloak-realm-import: PASS (OpenTofu owns realm configuration)"
@@ -860,8 +918,7 @@ PY
   # enforced by the static TX runtime and pre-cutover contract tests.
   echo "cutover-safety-boundary: PASS"
 
-  echo "QQ_IDP_STATUS=idp-qq=WAITING_EXTERNAL"
-  echo "QQ_FALLBACK_STATUS=juhe-qq=NOT_CONFIGURED_IN_TX"
+  [ "$failures" -eq 0 ] && echo "QQ_IDP_STATUS=idp-qq=READY"
   if [ "$failures" -ne 0 ]; then
     echo "PRE_CUTOVER_NOT_READY" >&2
     return 1
