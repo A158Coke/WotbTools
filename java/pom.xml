@@ -13,6 +13,7 @@
     <modules>
         <module>wotb-contracts</module>
         <module>wotb-object-storage-minio</module>
+        <module>wotb-broker-rabbitmq</module>
         <module>wotb-core</module>
         <module>wotb-result</module>
         <module>wotb-playback</module>
@@ -74,6 +75,11 @@
             <dependency>
                 <groupId>com.wotb</groupId>
                 <artifactId>wotb-object-storage-minio</artifactId>
+                <version>1.0.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.wotb</groupId>
+                <artifactId>wotb-broker-rabbitmq</artifactId>
                 <version>1.0.0</version>
             </dependency>
             <dependency>

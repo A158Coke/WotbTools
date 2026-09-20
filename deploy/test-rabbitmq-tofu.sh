@@ -152,6 +152,7 @@ EXCHANGE = "wotb.jobs"
 MAIN_QUEUE = "wotb.parser"
 RETRY_QUEUE = "wotb.parser.retry"
 DLQ = "wotb.parser.dlq"
+RESULT_QUEUE = "wotb.parser.result"
 
 
 def mgmt(method, path, body=None):
@@ -265,8 +266,11 @@ for credentials in (CONTROL, PARSER):
     expect_no_management_access(credentials)
 
 # ------------------------------------------------------------- ACL contract
+# `control-api` gained exactly one read scope: the result queue it consumes. The
+# regex names both queues it may read and nothing else, so the work queue, the
+# retry queue and the DLQ stay unreadable to it.
 expected_acls = {
-    "control-api": {"configure": "^$", "write": "^wotb\\.jobs$", "read": "^$"},
+    "control-api": {"configure": "^$", "write": "^wotb\\.jobs$", "read": "^wotb\\.parser\\.result$"},
     "parser-worker": {"configure": "^$", "write": "^wotb\\.jobs$", "read": "^wotb\\.parser$"},
 }
 for name, permissions in expected_acls.items():
@@ -297,6 +301,11 @@ expected_queues = {
         "x-dead-letter-routing-key": "parser.request",
     },
     DLQ: {"x-queue-type": "classic"},
+    RESULT_QUEUE: {
+        "x-queue-type": "classic",
+        "x-dead-letter-exchange": EXCHANGE,
+        "x-dead-letter-routing-key": "parser.dead",
+    },
 }
 for name, arguments in expected_queues.items():
     queue = mgmt("GET", f"/api/queues/{VHOST_API}/{name}")
@@ -314,6 +323,8 @@ for source, destination, routing_key in (
     (EXCHANGE, MAIN_QUEUE, "parser.request"),
     (EXCHANGE, RETRY_QUEUE, "parser.retry"),
     (EXCHANGE, DLQ, "parser.dead"),
+    (EXCHANGE, RESULT_QUEUE, "parser.result"),
+    (EXCHANGE, RESULT_QUEUE, "parser.failed"),
 ):
     assert (source, destination, "queue", routing_key) in bindings, (routing_key, bindings)
 
@@ -354,6 +365,46 @@ matching = [item for item in dead_letters if "dead-1" in item.get("payload", "")
 assert matching, dead_letters
 assert matching[0]["routing_key"] == "parser.dead", matching[0]
 
+# --------------------------------------------------------------- result path
+# The return direction: parser-worker reports per-source outcomes with
+# parser.result and whole-attempt failures with parser.failed; both must land on
+# the control plane's queue. `control-api` is a queue reader here, so the read
+# grant has to cover this queue while the worker still cannot consume it.
+publish(PARSER, "parser.result", "result-1")
+connection, channel, method, _, _ = consume(CONTROL, RESULT_QUEUE, "result-1")
+assert method.routing_key == "parser.result", method.routing_key
+channel.basic_ack(method.delivery_tag)
+connection.close()
+
+publish(PARSER, "parser.failed", "failed-1")
+connection, channel, method, _, _ = consume(CONTROL, RESULT_QUEUE, "failed-1")
+assert method.routing_key == "parser.failed", method.routing_key
+channel.basic_ack(method.delivery_tag)
+connection.close()
+
+# A report the control plane cannot apply is rejected without requeue and has to
+# end up in the same DLQ as a worker-published terminal failure, so an operator
+# inspects one place. Both result bindings must be exercised: a report that was
+# dead-lettered from a queue with no matching binding would be dropped.
+for marker in ("result-2", "failed-2"):
+    publish(PARSER, "parser.result" if marker == "result-2" else "parser.failed", marker)
+    connection, channel, method, properties, _ = consume(CONTROL, RESULT_QUEUE, marker)
+    assert properties.headers.get("x-death", []) == [], properties.headers
+    channel.basic_nack(method.delivery_tag, requeue=False)
+    connection.close()
+
+dead_letters = mgmt(
+    "POST",
+    f"/api/queues/{VHOST_API}/{DLQ}/get",
+    {"count": 10, "ackmode": "ack_requeue_true", "encoding": "auto"},
+)
+for marker in ("result-2", "failed-2"):
+    matching = [item for item in dead_letters if marker in item.get("payload", "")]
+    assert matching, (marker, dead_letters)
+    assert matching[0]["routing_key"] == "parser.dead", matching[0]
+    first_death_queue = matching[0]["properties"].get("headers", {}).get("x-first-death-queue")
+    assert first_death_queue in (None, RESULT_QUEUE), matching[0]
+
 # ------------------------------------------------- application ACL boundaries
 # No application identity may declare topology.
 expect_denied(
@@ -376,14 +427,17 @@ expect_denied(
     "parser-worker exchange declaration",
     lambda channel: channel.exchange_declare(exchange="wotb.parser-worker-probe", exchange_type="topic"),
 )
-# control-api may not read any queue.
-expect_denied(
-    CONTROL,
-    "control-api queue read",
-    lambda channel: channel.basic_get(queue=MAIN_QUEUE, auto_ack=True),
-)
-# parser-worker may only read the main parser queue.
-for queue in (RETRY_QUEUE, DLQ):
+# control-api may read the result queue only; the work queue, the broker-side
+# retry queue and the DLQ stay outside its read scope.
+for queue in (MAIN_QUEUE, RETRY_QUEUE, DLQ):
+    expect_denied(
+        CONTROL,
+        f"control-api queue read ({queue})",
+        lambda channel, queue=queue: channel.basic_get(queue=queue, auto_ack=True),
+    )
+# parser-worker may only read the main parser queue: the result queue belongs to
+# the control plane, and the worker must not consume its own reports back.
+for queue in (RETRY_QUEUE, DLQ, RESULT_QUEUE):
     expect_denied(
         PARSER,
         f"parser-worker queue read ({queue})",
@@ -400,7 +454,7 @@ def publish_elsewhere(channel):
 expect_denied(CONTROL, "control-api publish outside wotb.jobs", publish_elsewhere)
 expect_denied(PARSER, "parser-worker publish outside wotb.jobs", publish_elsewhere)
 
-print("PASS: static topology, retry/DLX paths, least-privilege ACLs, and clean second plan")
+print("PASS: static topology, retry/DLX paths, bidirectional result path, least-privilege ACLs, and clean second plan")
 PY
 
 echo "RABBITMQ_OPENTOFU_SMOKE_PASS"
