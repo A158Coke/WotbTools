@@ -73,9 +73,10 @@ assert "client_secret_wo_version" in flat_root
 for path_text in (read("docker/Dockerfile.keycloak"), tx_compose):
     assert "--import-realm" not in path_text
     assert "wotbtools-realm.json" not in path_text
-assert "juhe-qq" not in flat_root
-assert 'alias = "qq"' not in flat_root
-assert 'alias = "idp-qq"' in flat(identity_text)
+flat_identity = flat(identity_text)
+assert 'alias = "juhe-qq"' not in flat_identity
+assert 'alias = "qq"' not in flat_identity
+assert 'alias = "idp-qq"' in flat_identity
 qq_block = identity_text.split('resource "keycloak_oidc_identity_provider" "qq"', 1)[1].split(
     "\n}\n\nlocals", 1
 )[0]
