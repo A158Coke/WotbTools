@@ -29,6 +29,9 @@ create table replay_processing_job (
     created_at       timestamp with time zone not null,
     finished_at      timestamp with time zone,
     updated_at       timestamp with time zone not null default now(),
+    -- 单调递增的投影版本（每次状态迁移 +1）：并发/乱序写入时旧快照不得覆盖已提交的新状态。
+    -- 它是**同一个** job 状态机的版本号，不是第二套状态规则。
+    revision         bigint      not null default 0,
 
     constraint ck_replay_processing_job_status
         check (status in ('QUEUED', 'PROCESSING', 'READY', 'FAILED', 'CANCELLED')),
@@ -37,6 +40,8 @@ create table replay_processing_job (
     constraint ck_replay_processing_job_counters
         check (processed >= 0 and duplicates >= 0 and failures >= 0
             and parse_completed >= 0 and parse_succeeded >= 0 and parse_failed >= 0),
+    constraint ck_replay_processing_job_revision
+        check (revision >= 0),
     -- parse 三元组在 ReplayProcessingJob 的同一 synchronized transition 内推进，
     -- 对外永远满足 completed = succeeded + failed；这里把它固化为持久化不变量。
     constraint ck_replay_processing_job_parse_progress

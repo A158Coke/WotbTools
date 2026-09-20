@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 
 import javax.sql.DataSource;
 
@@ -33,6 +34,9 @@ public class ReplayJobAuthorityConfig {
      */
     @Bean
     public ReplayJobAuthority replayJobAuthority(final DataSource dataSource) {
-        return new ReplayJobAuthority(JdbcClient.create(dataSource));
+        // 权威状态写入必须原子（job 行 + source 投影一个事务），因此这里显式给出
+        // DataSource 级事务管理器：job 投影是纯 JDBC 写入，不参与 JPA/Hibernate 事务。
+        return new ReplayJobAuthority(JdbcClient.create(dataSource),
+                new DataSourceTransactionManager(dataSource));
     }
 }

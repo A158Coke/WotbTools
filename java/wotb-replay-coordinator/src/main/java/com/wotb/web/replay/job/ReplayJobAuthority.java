@@ -1,6 +1,11 @@
 package com.wotb.web.replay.job;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.Timestamp;
 import java.sql.Types;
@@ -19,21 +24,38 @@ import java.util.Optional;
  *
  * <p><b>为什么需要它</b>：内存注册表在进程重启后丢失全部 job 状态与 operationId 幂等索引，
  * 而分布式执行（TX 派发 → Yecao parser-worker 执行 → 结果回 TX）要求 job/source 生命周期
- * 跨进程、跨重启可读。写入是 write-through（每次状态迁移后覆盖整行投影），读取在内存注册表
- * 未命中时用于恢复只读投影。</p>
+ * 跨进程、跨重启可读。</p>
+ *
+ * <p><b>原子性与写入序</b>：一次 {@link #save} 在**单个事务**内完成「job 行 UPSERT + source
+ * 投影全量替换」，任何一步失败整次写入回滚，绝不会留下「新 job 状态 + 残缺 source 行」。
+ * 每次迁移带一个单调递增的 {@code revision}，UPSERT 只在 {@code revision < 新值} 时生效，
+ * 因此乱序/陈旧的并发写入无法覆盖已提交的新状态（被拒绝时连 source 行也不改写）。</p>
  *
  * <p><b>刻意不建模的东西</b>：回放字节、{@code ParsedEntry}、{@code ProcessedDataset}、
  * artifact 内容与本地目录，全部不属于 job 权威状态；{@code IN_FLIGHT} reservation 也不建模，
  * 因为它必须随进程消失，持久化只会留下永不过期的占位。</p>
  *
- * <p>线程安全：{@link JdbcClient} 与数据库事务本身保证并发正确性，本类不持有可变状态。</p>
+ * <p>线程安全：事务与数据库本身保证并发正确性，本类不持有可变状态。</p>
  */
 public final class ReplayJobAuthority {
 
-    private final JdbcClient jdbc;
+    private static final Logger LOGGER = LoggerFactory.getLogger(ReplayJobAuthority.class);
 
-    public ReplayJobAuthority(final JdbcClient jdbc) {
+    private final JdbcClient jdbc;
+    /** 写入事务：job 行与 source 投影必须一起提交或一起回滚。 */
+    private final TransactionTemplate writeTx;
+    /**
+     * 读取事务：{@link #findJob} 是两条 SELECT（job 行 + source 行），
+     * REPEATABLE READ 保证它们看到同一个已提交快照，不会读出「新 job 状态 + 旧 source 行」。
+     */
+    private final TransactionTemplate readTx;
+
+    public ReplayJobAuthority(final JdbcClient jdbc, final PlatformTransactionManager transactionManager) {
         this.jdbc = jdbc;
+        this.writeTx = new TransactionTemplate(transactionManager);
+        this.readTx = new TransactionTemplate(transactionManager);
+        this.readTx.setReadOnly(true);
+        this.readTx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
     }
 
     /** 持久化后的 job 投影（不含 entries / result / artifact 路径，那些不是权威状态）。 */
@@ -51,25 +73,59 @@ public final class ReplayJobAuthority {
                             boolean cancelRequested,
                             long createdAtMillis,
                             long finishedAtMillis,
+                            long revision,
                             List<ReplayProcessingJob.SourceState> sources) {
     }
 
     /**
-     * write-through 覆盖整行投影（register 与每次状态迁移后调用）。
-     * source 行做「全量替换」而不是逐条 diff：source 集合在一次 job 生命周期内不变，
-     * 替换语义比 diff 简单且没有第二种一致性规则。
+     * 原子覆盖整行投影（register 与每次状态迁移后调用）。
+     *
+     * <p>source 行做「全量替换」而不是逐条 diff：source 集合在一次 job 生命周期内不变，
+     * 替换语义比 diff 简单且没有第二种一致性规则。</p>
+     *
+     * <p>被 {@code revision} 判定为陈旧时整次写入不做任何改动（连 source 行也不改写）并返回；
+     * 这不丢状态——拒绝的前提是库里已有更新的、已提交的投影。</p>
      */
     public void save(final ReplayProcessingJob job) {
-        final ReplayProcessingJob.Snapshot snapshot = job.snapshot();
+        writeTx.execute(status -> {
+            final ReplayProcessingJob.Snapshot snapshot = job.snapshot();
+            if (upsertJob(snapshot, job) == 0) {
+                LOGGER.debug("replay_processing_job_stale_write_rejected jobId={} revision={}",
+                        snapshot.jobId(), job.revision());
+                return null;
+            }
+            jdbc.sql("delete from replay_processing_source where job_id = :jobId")
+                    .param("jobId", snapshot.jobId())
+                    .update();
+            for (final ReplayProcessingJob.SourceState source : snapshot.sources()) {
+                jdbc.sql("""
+                                insert into replay_processing_source (
+                                    job_id, source_index, source_id, source_name, status, failure_message)
+                                values (:jobId, :sourceIndex, :sourceId, :sourceName, :status, :failureMessage)
+                                """)
+                        .param("jobId", snapshot.jobId())
+                        .param("sourceIndex", source.sourceIndex())
+                        .param("sourceId", source.sourceId())
+                        .param("sourceName", source.sourceName())
+                        .param("status", source.status().name())
+                        .param("failureMessage", source.failureMessage(), Types.VARCHAR)
+                        .update();
+            }
+            return null;
+        });
+    }
+
+    /** @return 受影响行数；{@code 0} 表示写入因 {@code revision} 更新而陈旧、被数据库拒绝 */
+    private int upsertJob(final ReplayProcessingJob.Snapshot snapshot, final ReplayProcessingJob job) {
         final long finishedAt = job.finishedAtMillis();
-        jdbc.sql("""
+        return jdbc.sql("""
                         insert into replay_processing_job (
                             job_id, status, phase, total, processed, duplicates, failures,
                             parse_completed, parse_succeeded, parse_failed, error_code,
-                            cancel_requested, created_at, finished_at, updated_at)
+                            cancel_requested, created_at, finished_at, revision, updated_at)
                         values (:jobId, :status, :phase, :total, :processed, :duplicates, :failures,
                                 :parseCompleted, :parseSucceeded, :parseFailed, :errorCode,
-                                :cancelRequested, :createdAt, :finishedAt, now())
+                                :cancelRequested, :createdAt, :finishedAt, :revision, now())
                         on conflict (job_id) do update set
                             status = excluded.status,
                             phase = excluded.phase,
@@ -83,7 +139,9 @@ public final class ReplayJobAuthority {
                             error_code = excluded.error_code,
                             cancel_requested = excluded.cancel_requested,
                             finished_at = excluded.finished_at,
+                            revision = excluded.revision,
                             updated_at = now()
+                        where replay_processing_job.revision < excluded.revision
                         """)
                 .param("jobId", snapshot.jobId())
                 .param("status", snapshot.status().name())
@@ -102,33 +160,20 @@ public final class ReplayJobAuthority {
                 .param("createdAt", utc(job.createdAtMillis()), Types.TIMESTAMP_WITH_TIMEZONE)
                 .param("finishedAt", finishedAt > 0 ? utc(finishedAt) : null,
                         Types.TIMESTAMP_WITH_TIMEZONE)
+                .param("revision", job.revision())
                 .update();
-
-        jdbc.sql("delete from replay_processing_source where job_id = :jobId")
-                .param("jobId", snapshot.jobId())
-                .update();
-        for (final ReplayProcessingJob.SourceState source : snapshot.sources()) {
-            jdbc.sql("""
-                            insert into replay_processing_source (
-                                job_id, source_index, source_id, source_name, status, failure_message)
-                            values (:jobId, :sourceIndex, :sourceId, :sourceName, :status, :failureMessage)
-                            """)
-                    .param("jobId", snapshot.jobId())
-                    .param("sourceIndex", source.sourceIndex())
-                    .param("sourceId", source.sourceId())
-                    .param("sourceName", source.sourceName())
-                    .param("status", source.status().name())
-                    .param("failureMessage", source.failureMessage(), Types.VARCHAR)
-                    .update();
-        }
     }
 
-    /** 读取 job 投影（含全部 source，按 source_index 升序）。 */
+    /** 读取 job 投影（含全部 source，按 source_index 升序）；两条 SELECT 在同一快照内完成。 */
     public Optional<StoredJob> findJob(final String jobId) {
+        return readTx.execute(status -> findJobInTransaction(jobId));
+    }
+
+    private Optional<StoredJob> findJobInTransaction(final String jobId) {
         final Optional<StoredJob> row = jdbc.sql("""
                         select job_id, status, phase, total, processed, duplicates, failures,
                                parse_completed, parse_succeeded, parse_failed, error_code,
-                               cancel_requested, created_at, finished_at
+                               cancel_requested, created_at, finished_at, revision
                         from replay_processing_job
                         where job_id = :jobId
                         """)
@@ -150,6 +195,7 @@ public final class ReplayJobAuthority {
                             rs.getBoolean("cancel_requested"),
                             rs.getTimestamp("created_at").getTime(),
                             finishedAt == null ? 0L : finishedAt.getTime(),
+                            rs.getLong("revision"),
                             List.of());
                 })
                 .optional();
@@ -175,7 +221,8 @@ public final class ReplayJobAuthority {
                 stored.total(), stored.processed(), stored.duplicates(), stored.failures(),
                 stored.parseCompleted(), stored.parseSucceeded(), stored.parseFailed(),
                 stored.errorCode(), stored.cancelRequested(),
-                stored.createdAtMillis(), stored.finishedAtMillis(), sources));
+                stored.createdAtMillis(), stored.finishedAtMillis(),
+                stored.revision(), sources));
     }
 
     /**
@@ -203,8 +250,10 @@ public final class ReplayJobAuthority {
     /**
      * 发布 COMMITTED：同一 {@code (ownerSubject, operationId)} 只有第一次插入成功。
      *
-     * @return {@code true} 表示本调用赢得该 identity；{@code false} 表示已被另一个提交占用
-     *         （单 TX 运行时下不可达，保留为跨进程防护与断言点）
+     * <p>这是**跨进程**的权威判定点：{@code false} 表示该 identity 已被另一个 job 占用，
+     * 调用方必须解析到已提交的 jobId，而不得返回自己的 jobId。</p>
+     *
+     * @return {@code true} 表示本调用赢得该 identity
      */
     public boolean commitOperation(final String ownerSubject, final String operationId,
                                    final String jobId) {

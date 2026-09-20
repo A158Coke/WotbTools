@@ -143,10 +143,13 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         try {
             final String jobId = createAndSubmit(files, prioritySourceIndex);
             // commit point：只有 dispatcher.submit 成功之后才把状态推进到 COMMITTED。
-            store.commitOperation(ownerSubject, operationId, mine, jobId);
-            mine.complete(jobId);
-            LOGGER.info("processing_job_idempotency_create ref={} jobId={}", shortRef(operationId), jobId);
-            return jobId;
+            // 返回值是**权威 jobId**：跨进程竞态时对方已经赢了，这里必须返回并发布对方的 jobId
+            // （自己的重复 job 已被 store 协作取消），绝不为同一 identity 返回第二个 jobId。
+            final String authoritativeJobId = store.commitOperation(ownerSubject, operationId, mine, jobId);
+            mine.complete(authoritativeJobId);
+            LOGGER.info("processing_job_idempotency_create ref={} jobId={} authoritative={}",
+                    shortRef(operationId), jobId, authoritativeJobId);
+            return authoritativeJobId;
         } catch (final RuntimeException e) {
             store.abandonOperation(ownerSubject, operationId, mine);
             mine.completeExceptionally(e);
@@ -190,7 +193,19 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
             throw new IllegalStateException("PROCESSING_JOB_STORAGE_UNAVAILABLE");
         }
         final ReplayProcessingJob job = new ReplayProcessingJob(jobId, sourceNames);
-        store.register(job);
+        try {
+            store.register(job);
+        } catch (final RuntimeException e) {
+            // 权威模式下初始投影写不进去 = 创建失败：必须清掉已经落盘的输入目录，
+            // 不允许留下「有文件、无权威状态」的孤儿 job。清理本身失败不掩盖原始异常。
+            try {
+                store.removeAndCleanup(jobId);
+            } catch (final RuntimeException cleanupFailure) {
+                LOGGER.warn("processing_job_cleanup_failed jobId={} error={}",
+                        jobId, cleanupFailure.getMessage());
+            }
+            throw e;
+        }
         try {
             dispatcher.submit(new ReplayProcessingRequest(jobId, sourceOrder(prioritySourceIndex, sourceNames)));
         } catch (final ReplayProcessingQueueFullException e) {

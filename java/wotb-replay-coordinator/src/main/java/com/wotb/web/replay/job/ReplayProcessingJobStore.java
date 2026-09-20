@@ -168,6 +168,14 @@ public class ReplayProcessingJobStore {
         if (!hasOperationIdentity(ownerSubject, operationId)) {
             return OperationClaim.creator();
         }
+        if (authority != null) {
+            // 权威 COMMITTED 参与 claim 线性化：跨进程/重启后已提交的 identity 必须在成为
+            // creator 之前就被识别，否则会创建第二个 job。
+            final String committed = authority.findCommittedJobId(ownerSubject, operationId);
+            if (committed != null) {
+                return OperationClaim.committed(committed);
+            }
+        }
         final String key = operationKey(ownerSubject, operationId);
         final OperationClaim[] decided = new OperationClaim[1];
         operations.compute(key, (k, state) -> {
@@ -191,23 +199,47 @@ public class ReplayProcessingJobStore {
     }
 
     /**
-     * creator 成功把 job 交给调度器之后 publish COMMITTED：此后所有 caller 都命中同一个 jobId。
-     * 只允许 {@code IN_FLIGHT(mine) → COMMITTED(jobId)}；其它状态保守不动（理论不可达）。
+     * publish COMMITTED 并返回该 identity 的**权威 jobId**。
+     *
+     * <p>进程内只允许 {@code IN_FLIGHT(mine) → COMMITTED(jobId)}；其它状态保守不动（理论不可达）。</p>
+     *
+     * <p>权威模式下 PostgreSQL 是最终裁决者：若同一 {@code (ownerSubject, operationId)} 已被
+     * 另一个进程提交，本调用是 loser——此时必须返回**对方的 jobId**，把本进程的重复 job 协作
+     * 取消，并把进程内索引改写到权威 jobId。任何情况下都不会为同一 identity 返回第二个 jobId。</p>
+     *
+     * @return 权威 jobId（通常等于 {@code jobId}；跨进程竞态时是对方的 jobId）
      */
-    public void commitOperation(final String ownerSubject, final String operationId,
-                                final CompletableFuture<String> mine, final String jobId) {
+    public String commitOperation(final String ownerSubject, final String operationId,
+                                  final CompletableFuture<String> mine, final String jobId) {
         if (!hasOperationIdentity(ownerSubject, operationId)) {
-            return;
+            return jobId;
         }
         final String key = operationKey(ownerSubject, operationId);
-        jobOperationKeys.put(jobId, key);
-        operations.computeIfPresent(key, (k, state) ->
-                state.inFlight() == mine ? OperationState.committed(jobId) : state);
-        if (authority != null && !authority.commitOperation(ownerSubject, operationId, jobId)) {
-            // 单 TX 运行时下不可达：进程内 compute 已保证同一 identity 只有一个 creator。
-            // 跨进程竞态时保留既有索引并告警，绝不静默产生第二个 job 视图。
-            LOGGER.warn("replay_processing_operation_conflict operationScoped=true jobId={}", jobId);
+        if (authority == null || authority.commitOperation(ownerSubject, operationId, jobId)) {
+            jobOperationKeys.put(jobId, key);
+            operations.computeIfPresent(key, (k, state) ->
+                    state.inFlight() == mine ? OperationState.committed(jobId) : state);
+            return jobId;
         }
+        // 跨进程竞态 loser 路径：权威 identity 已属于另一个 job。
+        final String winner = authority.findCommittedJobId(ownerSubject, operationId);
+        if (winner == null) {
+            // 插入冲突却读不到（读时序极端）：保守返回本 jobId 并告警，绝不静默丢弃。
+            LOGGER.warn("replay_processing_operation_conflict_unresolved operationScoped=true jobId={}",
+                    jobId);
+            return jobId;
+        }
+        LOGGER.warn("replay_processing_operation_conflict_lost operationScoped=true jobId={} authorityJobId={}",
+                jobId, winner);
+        jobOperationKeys.put(winner, key);
+        dropOperationIndex(jobId);
+        operations.computeIfPresent(key, (k, state) -> OperationState.committed(winner));
+        final ReplayProcessingJob loser = jobs.get(jobId);
+        if (loser != null) {
+            // 重复 job 协作取消：它是 doomed 的，绝不把它当作本次提交结果返回。
+            loser.requestCancel();
+        }
+        return winner;
     }
 
     /**
@@ -286,13 +318,19 @@ public class ReplayProcessingJobStore {
         return storage.inputDir(jobId);
     }
 
+    /**
+     * 登记 job。
+     *
+     * <p>权威模式下**先持久化再登记**：初始投影写不进去就不允许 job 进入 registry，
+     * 因此不存在「内存里有 job、PostgreSQL 里没有」的状态（创建必须 fail closed）。</p>
+     */
     public void register(final ReplayProcessingJob job) {
-        synchronized (lifecycleLock) {
-            jobs.put(job.jobId(), job);
-        }
         if (authority != null) {
             job.attachTransitionListener(this::persistTransition);
             persistTransition(job);
+        }
+        synchronized (lifecycleLock) {
+            jobs.put(job.jobId(), job);
         }
     }
 
@@ -316,16 +354,23 @@ public class ReplayProcessingJobStore {
                 stored.processed(), stored.duplicates(), stored.failures(),
                 stored.parseCompleted(), stored.parseSucceeded(), stored.parseFailed(),
                 stored.errorCode(), stored.cancelRequested(),
-                stored.createdAtMillis(), stored.finishedAtMillis());
+                stored.createdAtMillis(), stored.finishedAtMillis(), stored.revision());
         restored.attachTransitionListener(this::persistTransition);
         return restored;
     }
 
     /**
-     * write-through 单点：任何状态迁移后覆盖整行投影。
+     * write-through 单点：任何状态迁移后原子覆盖整行投影。
      *
-     * <p>失败只记录 ERROR 不抛出：此刻内存状态已经前进，把异常抛回 worker / status 线程会让
-     * 执行在半途失败，而下一次迁移会再次覆盖整行投影，因此最多落后一次迁移。</p>
+     * <p><b>失败策略（权威模式）：fail closed，不做 best-effort 遥测</b>。PostgreSQL 是权威，
+     * 因此持久化失败时：</p>
+     * <ol>
+     *   <li>把该 job 从内存 registry 中**驱逐**——此后所有读取都从权威状态解析，绝不会对外
+     *       报告一个数据库没有提交的状态；</li>
+     *   <li>把原始异常抛回调用方，使这次迁移不被当作成功。</li>
+     * </ol>
+     * <p>驱逐不是数据丢失：若后续某次迁移成功写库，投影会重新出现（revision 单调，不会覆盖
+     * 更新的状态）。内存模式（{@code authority == null}）完全不走这条路径，行为不变。</p>
      */
     private void persistTransition(final ReplayProcessingJob job) {
         if (authority == null) {
@@ -336,6 +381,17 @@ public class ReplayProcessingJobStore {
         } catch (final RuntimeException e) {
             LOGGER.error("replay_processing_job_persist_failed jobId={} error={}",
                     job.jobId(), e.getMessage());
+            evictFromAuthorityView(job.jobId());
+            throw e;
+        }
+    }
+
+    /** 权威不可写时把 job 从内存视图移除（读取改走权威状态，避免内存状态冒充权威）。 */
+    private void evictFromAuthorityView(final String jobId) {
+        synchronized (lifecycleLock) {
+            jobs.remove(jobId);
+            datasetLeaseRefs.remove(jobId);
+            dropOperationIndex(jobId);
         }
     }
 
