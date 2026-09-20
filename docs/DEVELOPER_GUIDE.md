@@ -249,6 +249,11 @@ Lease（读取期间 TTL 不清）。
   不提供任意前缀删除能力），成功后才 `deleteJob`；任一失败都只记录并保留权威行、下一轮幂等重试。
   顺序反了（PG 先删、MinIO 失败）会留下再也没人知道该删的孤儿对象。桶上 `temp/jobs/*` 的 1 天
   lifecycle 只是兜底安全网，不是正常回收机制。
+- **leasing 与回收在 `lifecycleLock` 内线性化**：`sweepAuthority` 先在锁内完成
+  「lease 检查 + 领取 `reclaimingJobs` 回收权」（MinIO/PG 网络 I/O 留在锁外），
+  `acquireForSource` / `acquireForExport` 在锁内先看该 claim。因此结果只有两种：**acquire 先赢**
+  （lease > 0 ⇒ sweeper 跳过）或 **sweep 先赢**（已 claim ⇒ acquire 返回 null），
+  不存在「请求已 acquire、工作区随后被删」的窗口——backend 重启后的权威恢复投影同样受这条保护。
 - 端点契约（路径/方法/状态码/响应字段）在两种模式下逐字不变；分布式下 dataset 读不到时沿用
   `409 JOB_NOT_READY`，不发明新错误码。
 
