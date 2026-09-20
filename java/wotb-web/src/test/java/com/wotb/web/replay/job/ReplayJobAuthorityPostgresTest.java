@@ -1,11 +1,14 @@
 package com.wotb.web.replay.job;
 
 import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -17,12 +20,21 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -32,21 +44,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <ul>
  *   <li>Flyway 从零跑到最新（含 V23）后三张权威表存在，且既有业务表未被破坏；</li>
- *   <li>job/source 状态 write-through 后读取一致（状态、phase、计数、per-source 状态、错误码）；</li>
- *   <li>operationId 幂等是持久的且按 subject 分域：重启后同一 identity 拿回同一 jobId，
- *       job 被清理后同一 operationId 可重新创建；</li>
- *   <li>TTL 只回收「终态且已过期」的投影，不碰 QUEUED/PROCESSING；</li>
- *   <li>新进程（新注册表实例）能恢复状态，且**不会**把可恢复 job 的本地产物当孤儿删除。</li>
+ *   <li>一次 {@code save} 是原子的：job 行与 source 投影要么一起提交，要么一起回滚；</li>
+ *   <li>陈旧快照（revision 更小）不得覆盖已提交的新状态，且不得改写 source 行；</li>
+ *   <li>权威模式下持久化失败 fail closed：创建失败、迁移失败、终态不得被报告为已持久化；</li>
+ *   <li>operationId 幂等由 PostgreSQL 裁决：重启后先识别已提交 identity，跨实例并发只产生
+ *       一个权威 jobId；</li>
+ *   <li>TTL 只回收「终态且已过期」的投影；内存模式完全不受权威状态与数据库故障影响。</li>
  * </ul>
  */
 @Testcontainers(disabledWithoutDocker = true)
 class ReplayJobAuthorityPostgresTest {
+
+    private static final String SUBJECT = "user-1";
+    private static final String OPERATION = "op-1";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("wotb").withUsername("wotb").withPassword("wotb");
 
     private static JdbcClient jdbc;
+    private static PlatformTransactionManager transactions;
 
     @TempDir
     Path tempDir;
@@ -59,11 +76,24 @@ class ReplayJobAuthorityPostgresTest {
                     .locations("classpath:db/migration")
                     .load()
                     .migrate();
-            jdbc = JdbcClient.create(new DriverManagerDataSource(
-                    POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
+            final DriverManagerDataSource dataSource = new DriverManagerDataSource(
+                    POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+            jdbc = JdbcClient.create(dataSource);
+            transactions = new DataSourceTransactionManager(dataSource);
         }
         // source / operation 由外键 cascade 删除，一条 delete 即可复位。
         jdbc.sql("delete from replay_processing_job").update();
+    }
+
+    @AfterEach
+    void dropInjectedFailureTriggers() {
+        if (jdbc == null) {
+            return;
+        }
+        jdbc.sql("drop trigger if exists wotb_test_fail_job_insert on replay_processing_job").update();
+        jdbc.sql("drop function if exists wotb_test_fail_job_insert()").update();
+        jdbc.sql("drop trigger if exists wotb_test_fail_source_insert on replay_processing_source").update();
+        jdbc.sql("drop function if exists wotb_test_fail_source_insert()").update();
     }
 
     @Test
@@ -78,7 +108,7 @@ class ReplayJobAuthorityPostgresTest {
 
     @Test
     void saveAndFindRoundTripPreservesJobAndSourceState() {
-        final ReplayJobAuthority authority = new ReplayJobAuthority(jdbc);
+        final ReplayJobAuthority authority = authority();
         final ReplayProcessingJob job =
                 new ReplayProcessingJob("p-1", List.of("a.wotbreplay", "b.wotbreplay"));
         job.startProcessing();
@@ -96,11 +126,12 @@ class ReplayJobAuthorityPostgresTest {
         assertEquals(ReplayProcessingJob.SourceStatus.PENDING, stored.sources().get(1).status());
         assertTrue(stored.createdAtMillis() > 0);
         assertEquals(0L, stored.finishedAtMillis());
+        assertEquals(job.revision(), stored.revision());
     }
 
     @Test
     void repeatedSaveOverwritesProgressCountersAndTerminalState() {
-        final ReplayJobAuthority authority = new ReplayJobAuthority(jdbc);
+        final ReplayJobAuthority authority = authority();
         final ReplayProcessingJob job = new ReplayProcessingJob("p-2", List.of("a.wotbreplay"));
         job.startProcessing();
         authority.save(job);
@@ -122,29 +153,149 @@ class ReplayJobAuthorityPostgresTest {
     }
 
     @Test
+    void saveRollsBackWholeProjectionWhenSourcePersistenceFails() {
+        final ReplayJobAuthority authority = authority();
+        final ReplayProcessingJob job =
+                new ReplayProcessingJob("p-rollback", List.of("a.wotbreplay", "b.wotbreplay"));
+        job.startProcessing();
+        authority.save(job);
+        assertEquals(1L, revisionOf("p-rollback"));
+
+        injectSourceInsertFailure();
+        job.markSourceReady(0);
+        assertThrows(RuntimeException.class, () -> authority.save(job));
+
+        // 整个 save 回滚：job 行仍是上一次已提交的投影，source 行也没有被删/半量插入。
+        final ReplayJobAuthority.StoredJob stored = authority.findJob("p-rollback").orElseThrow();
+        assertEquals(ReplayProcessingJob.Status.PROCESSING, stored.status());
+        assertEquals(1L, stored.revision());
+        assertEquals(2, stored.sources().size());
+        assertEquals(ReplayProcessingJob.SourceStatus.PENDING, stored.sources().get(0).status());
+        assertEquals(1L, revisionOf("p-rollback"));
+        assertEquals(2, countSources("p-rollback"));
+    }
+
+    @Test
+    void staleSnapshotCannotOverwriteNewerCommittedProjection() {
+        final ReplayJobAuthority authority = authority();
+        final ReplayProcessingJob advanced = new ReplayProcessingJob("p-stale", List.of("a.wotbreplay"));
+        advanced.startProcessing();
+        advanced.markSourceReady(0);
+        authority.save(advanced);
+
+        // 陈旧快照：同一 jobId、revision 更小、状态更旧（PENDING 而不是 READY）。
+        final ReplayProcessingJob stale = new ReplayProcessingJob("p-stale", List.of("a.wotbreplay"));
+        authority.save(stale);
+
+        final ReplayJobAuthority.StoredJob stored = authority.findJob("p-stale").orElseThrow();
+        assertEquals(ReplayProcessingJob.Status.PROCESSING, stored.status());
+        assertEquals(advanced.revision(), stored.revision());
+        assertEquals(ReplayProcessingJob.SourceStatus.READY, stored.sources().get(0).status());
+    }
+
+    @Test
+    void initialRegisterPersistFailureFailsCreateAndLeavesNoAuthorityRow() {
+        injectJobInsertFailure();
+        final ReplayJobAuthority authority = authority();
+        final ReplayProcessingJobStore store = store(tempDir.resolve("register"), authority);
+        try {
+            final ReplayProcessingJob job = new ReplayProcessingJob("p-init", List.of("a.wotbreplay"));
+            assertThrows(RuntimeException.class, () -> store.register(job));
+            assertNull(store.get("p-init"), "创建失败后内存视图不得残留 job");
+            assertTrue(authority.findJob("p-init").isEmpty(), "创建失败后不得留下权威行");
+        } finally {
+            store.close();
+        }
+    }
+
+    @Test
+    void transitionPersistFailureFailsClosedAndDoesNotReportDurableState() {
+        final ReplayJobAuthority authority = authority();
+        final ReplayProcessingJobStore store = store(tempDir.resolve("transition"), authority);
+        try {
+            final ReplayProcessingJob job = new ReplayProcessingJob("p-transition", List.of("a.wotbreplay"));
+            store.register(job);
+
+            injectSourceInsertFailure();
+            assertThrows(RuntimeException.class, job::startProcessing);
+
+            // 迁移没有被当作成功：可观测状态仍是数据库提交过的 QUEUED（不是 PROCESSING）。
+            assertEquals(ReplayProcessingJob.Status.QUEUED, store.get("p-transition").snapshot().status());
+            assertEquals("QUEUED", jdbc.sql("select status from replay_processing_job where job_id = :id")
+                    .param("id", "p-transition").query(String.class).single());
+            assertEquals(0L, revisionOf("p-transition"));
+        } finally {
+            store.close();
+        }
+    }
+
+    @Test
+    void terminalPersistFailureIsNotReportedAsDurable() {
+        final ReplayJobAuthority authority = authority();
+        final ReplayProcessingJobStore store = store(tempDir.resolve("terminal"), authority);
+        try {
+            final ReplayProcessingJob job = new ReplayProcessingJob("p-terminal", List.of("a.wotbreplay"));
+            store.register(job);
+            assertTrue(job.startProcessing());
+
+            injectSourceInsertFailure();
+            assertThrows(RuntimeException.class, () -> job.markFailed("INJECTED_FAILURE"));
+
+            // 终态没写成 → 绝不对外声称 FAILED；权威状态仍是已提交的 PROCESSING。
+            assertEquals(ReplayProcessingJob.Status.PROCESSING,
+                    store.get("p-terminal").snapshot().status());
+            assertEquals("PROCESSING", jdbc.sql("select status from replay_processing_job where job_id = :id")
+                    .param("id", "p-terminal").query(String.class).single());
+            assertEquals(0, jdbc.sql("select count(*) from replay_processing_job "
+                            + "where job_id = :id and error_code is not null")
+                    .param("id", "p-terminal").query(Integer.class).single());
+        } finally {
+            store.close();
+        }
+    }
+
+    @Test
+    void memoryModeIsUnaffectedByAuthorityFailureAndWritesNothing() {
+        // job 表 INSERT 被注入失败：内存模式不得触碰权威状态，因此必须完全不受影响。
+        injectJobInsertFailure();
+        final ReplayProcessingJobStore memory = store(tempDir.resolve("memory"), null);
+        try {
+            final ReplayProcessingJob job = new ReplayProcessingJob("p-memory", List.of("a.wotbreplay"));
+            memory.register(job);
+            assertTrue(job.startProcessing());
+            assertTrue(job.markFailed("MEMORY_MODE"));
+            assertEquals("p-memory", memory.get("p-memory").jobId());
+            assertEquals(0, jdbc.sql("select count(*) from replay_processing_job")
+                    .query(Integer.class).single());
+        } finally {
+            memory.close();
+        }
+    }
+
+    @Test
     void commitOperationIsIdempotentAndScopedBySubject() {
-        final ReplayJobAuthority authority = new ReplayJobAuthority(jdbc);
+        final ReplayJobAuthority authority = authority();
         authority.save(new ReplayProcessingJob("p-3", List.of("a.wotbreplay")));
 
-        assertTrue(authority.commitOperation("user-1", "op-1", "p-3"));
-        assertFalse(authority.commitOperation("user-1", "op-1", "p-3"),
+        assertTrue(authority.commitOperation(SUBJECT, OPERATION, "p-3"));
+        assertFalse(authority.commitOperation(SUBJECT, OPERATION, "p-3"),
                 "同一 identity 只允许一次 COMMITTED");
-        assertEquals("p-3", authority.findCommittedJobId("user-1", "op-1"));
-        assertNull(authority.findCommittedJobId("user-2", "op-1"),
+        assertEquals("p-3", authority.findCommittedJobId(SUBJECT, OPERATION));
+        assertNull(authority.findCommittedJobId("user-2", OPERATION),
                 "operationId 必须按 authenticated subject 分域");
     }
 
     @Test
     void committedIndexDisappearsWhenJobIsCleaned() {
-        final ReplayJobAuthority authority = new ReplayJobAuthority(jdbc);
+        final ReplayJobAuthority authority = authority();
         authority.save(new ReplayProcessingJob("p-4", List.of("a.wotbreplay")));
-        authority.commitOperation("user-1", "op-4", "p-4");
+        authority.commitOperation(SUBJECT, OPERATION, "p-4");
 
         authority.deleteJob("p-4");
 
         assertTrue(authority.findJob("p-4").isEmpty());
         assertTrue(authority.listJobIds().isEmpty());
-        assertNull(authority.findCommittedJobId("user-1", "op-4"),
+        assertNull(authority.findCommittedJobId(SUBJECT, OPERATION),
                 "job 已清理后同一 operationId 必须可重新创建");
         assertEquals(0, jdbc.sql("select count(*) from replay_processing_source")
                 .query(Integer.class).single());
@@ -153,29 +304,85 @@ class ReplayJobAuthorityPostgresTest {
     }
 
     @Test
-    void deleteExpiredTerminalRemovesOnlyExpiredTerminalJobs() {
-        final ReplayJobAuthority authority = new ReplayJobAuthority(jdbc);
-        final long now = System.currentTimeMillis();
-        final long cutoff = now - 60 * 60 * 1000L;
+    void claimOperationReturnsCommittedIdentityAfterRestartInsteadOfBecomingCreator() {
+        final ReplayProcessingJobStore first = store(tempDir.resolve("first"), authority());
+        final String jobId = "p-restart";
+        try {
+            first.register(new ReplayProcessingJob(jobId, List.of("a.wotbreplay")));
+            first.commitOperation(SUBJECT, OPERATION, CompletableFuture.completedFuture(jobId), jobId);
+        } finally {
+            first.close();
+        }
 
-        insertJob("old-ready", "READY", now - 61 * 60 * 1000L);
-        insertJob("fresh-ready", "READY", now - 10 * 60 * 1000L);
-        insertJob("old-failed", "FAILED", now - 90 * 60 * 1000L);
-        insertJob("old-processing", "PROCESSING", 0L);
-        insertJob("old-queued", "QUEUED", 0L);
+        // 新进程：第一个动作就是 claim，必须在成为 creator 之前识别出已提交 identity。
+        final ReplayProcessingJobStore restarted = store(tempDir.resolve("restarted"), authority());
+        try {
+            final ReplayProcessingJobStore.OperationClaim claim =
+                    restarted.claimOperation(SUBJECT, OPERATION, new CompletableFuture<>());
+            assertEquals(ReplayProcessingJobStore.OperationClaim.Kind.COMMITTED, claim.kind());
+            assertEquals(jobId, claim.jobId());
+            assertEquals(jobId, restarted.jobIdForOperation(SUBJECT, OPERATION));
+            assertNull(restarted.jobIdForOperation("user-2", OPERATION));
+        } finally {
+            restarted.close();
+        }
+    }
 
-        assertEquals(2, authority.deleteExpiredTerminal(cutoff));
-        assertEquals(List.of("fresh-ready", "old-processing", "old-queued"),
-                authority.listJobIds().stream().sorted().toList());
+    @Test
+    void concurrentCreatorsAcrossIndependentStoresCommitExactlyOneIdentity() throws Exception {
+        final ReplayJobAuthority authorityA = authority();
+        final ReplayJobAuthority authorityB = authority();
+        final ReplayProcessingJobStore storeA = store(tempDir.resolve("race-a"), authorityA);
+        final ReplayProcessingJobStore storeB = store(tempDir.resolve("race-b"), authorityB);
+        final CyclicBarrier barrier = new CyclicBarrier(2);
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            final Future<String> first = pool.submit(() -> claimAndCommit(storeA, barrier));
+            final Future<String> second = pool.submit(() -> claimAndCommit(storeB, barrier));
+
+            final String idA = first.get(30, TimeUnit.SECONDS);
+            final String idB = second.get(30, TimeUnit.SECONDS);
+
+            assertEquals(idA, idB, "同一 identity 的两个并发 creator 必须收敛到同一个权威 jobId");
+            assertEquals(idA, authorityA.findCommittedJobId(SUBJECT, OPERATION));
+            assertEquals(1, jdbc.sql("select count(*) from replay_processing_operation "
+                            + "where owner_subject = :subject and operation_id = :operation")
+                    .param("subject", SUBJECT).param("operation", OPERATION)
+                    .query(Integer.class).single(), "同一 identity 只允许一行 COMMITTED");
+        } finally {
+            storeA.close();
+            storeB.close();
+        }
+    }
+
+    @Test
+    void operationIdIdempotencySurvivesStoreRestart() {
+        final ReplayJobAuthority authority = authority();
+        final ReplayProcessingJobStore first = store(tempDir.resolve("op-first"), authority);
+        final String jobId = UUID.randomUUID().toString();
+        try {
+            first.register(new ReplayProcessingJob(jobId, List.of("a.wotbreplay")));
+            first.commitOperation(SUBJECT, OPERATION, CompletableFuture.completedFuture(jobId), jobId);
+        } finally {
+            first.close();
+        }
+
+        final ReplayProcessingJobStore restarted = store(tempDir.resolve("op-restarted"), authority());
+        try {
+            assertEquals(jobId, restarted.jobIdForOperation(SUBJECT, OPERATION));
+            assertNull(restarted.jobIdForOperation("user-2", OPERATION));
+        } finally {
+            restarted.close();
+        }
     }
 
     @Test
     void newStoreInstanceRestoresStateAndKeepsRecoverableJobArtifacts() throws Exception {
-        final ReplayJobAuthority authority = new ReplayJobAuthority(jdbc);
+        final ReplayJobAuthority authority = authority();
 
-        final ReplayProcessingJobStore first = new ReplayProcessingJobStore(tempDir, 60, authority);
+        final ReplayProcessingJobStore first = store(tempDir.resolve("restore"), authority);
+        final String jobId = "p-5";
         try {
-            final ReplayProcessingJob job = new ReplayProcessingJob("p-5", List.of("a.wotbreplay"));
+            final ReplayProcessingJob job = new ReplayProcessingJob(jobId, List.of("a.wotbreplay"));
             first.register(job);
             job.startProcessing();
             job.markSourceReady(0);
@@ -183,13 +390,13 @@ class ReplayJobAuthorityPostgresTest {
         } finally {
             first.close();
         }
-        final Path uploadedInput = first.inputDir("p-5").resolve("0__a.wotbreplay");
+        final Path uploadedInput = first.inputDir(jobId).resolve("0__a.wotbreplay");
         Files.createDirectories(uploadedInput.getParent());
         Files.writeString(uploadedInput, "bytes");
 
-        final ReplayProcessingJobStore restarted = new ReplayProcessingJobStore(tempDir, 60, authority);
+        final ReplayProcessingJobStore restarted = store(tempDir.resolve("restore"), authority());
         try {
-            final ReplayProcessingJob restored = restarted.get("p-5");
+            final ReplayProcessingJob restored = restarted.get(jobId);
             assertNotNull(restored, "重启后必须仍能读取权威状态");
             final ReplayProcessingJob.Snapshot snapshot = restored.snapshot();
             assertEquals(ReplayProcessingJob.Status.PROCESSING, snapshot.status());
@@ -209,23 +416,96 @@ class ReplayJobAuthorityPostgresTest {
     }
 
     @Test
-    void operationIdIdempotencySurvivesStoreRestart() {
-        final ReplayJobAuthority authority = new ReplayJobAuthority(jdbc);
-        final ReplayProcessingJobStore first = new ReplayProcessingJobStore(tempDir, 60, authority);
-        try {
-            first.register(new ReplayProcessingJob("p-6", List.of("a.wotbreplay")));
-            first.commitOperation("user-1", "op-6", CompletableFuture.completedFuture("p-6"), "p-6");
-        } finally {
-            first.close();
-        }
+    void deleteExpiredTerminalRemovesOnlyExpiredTerminalJobs() {
+        final ReplayJobAuthority authority = authority();
+        final long now = System.currentTimeMillis();
+        final long cutoff = now - 60 * 60 * 1000L;
 
-        final ReplayProcessingJobStore restarted = new ReplayProcessingJobStore(tempDir, 60, authority);
-        try {
-            assertEquals("p-6", restarted.jobIdForOperation("user-1", "op-6"));
-            assertNull(restarted.jobIdForOperation("user-2", "op-6"));
-        } finally {
-            restarted.close();
+        insertJob("old-ready", "READY", now - 61 * 60 * 1000L);
+        insertJob("fresh-ready", "READY", now - 10 * 60 * 1000L);
+        insertJob("old-failed", "FAILED", now - 90 * 60 * 1000L);
+        insertJob("old-processing", "PROCESSING", 0L);
+        insertJob("old-queued", "QUEUED", 0L);
+
+        assertEquals(2, authority.deleteExpiredTerminal(cutoff));
+        assertEquals(List.of("fresh-ready", "old-processing", "old-queued"),
+                authority.listJobIds().stream().sorted().toList());
+    }
+
+    private String claimAndCommit(final ReplayProcessingJobStore store, final CyclicBarrier barrier) {
+        final CompletableFuture<String> mine = new CompletableFuture<>();
+        final ReplayProcessingJobStore.OperationClaim claim =
+                store.claimOperation(SUBJECT, OPERATION, mine);
+        if (claim.kind() == ReplayProcessingJobStore.OperationClaim.Kind.COMMITTED) {
+            return claim.jobId();
         }
+        if (claim.kind() == ReplayProcessingJobStore.OperationClaim.Kind.JOIN) {
+            return awaitQuietly(claim.inFlight());
+        }
+        final String jobId = UUID.randomUUID().toString();
+        store.register(new ReplayProcessingJob(jobId, List.of("a.wotbreplay")));
+        awaitBarrier(barrier);
+        final String authoritative = store.commitOperation(SUBJECT, OPERATION, mine, jobId);
+        mine.complete(authoritative);
+        return authoritative;
+    }
+
+    /**
+     * 等待另一个 creator 走到同一点。对端若走了 COMMITTED/JOIN 分支就不会到达这里，
+     * 此时 barrier 超时属预期（不影响断言：唯一性由 PostgreSQL 保证），因此吞掉超时。
+     */
+    private static void awaitBarrier(final CyclicBarrier barrier) {
+        try {
+            barrier.await(2, TimeUnit.SECONDS);
+        } catch (final TimeoutException | BrokenBarrierException ignored) {
+            // 对端未到达：继续执行，唯一性断言仍成立。
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("BARRIER_INTERRUPTED", e);
+        }
+    }
+
+    private static String awaitQuietly(final CompletableFuture<String> inFlight) {
+        try {
+            return inFlight.get(30, TimeUnit.SECONDS);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("JOIN_INTERRUPTED", e);
+        } catch (final Exception e) {
+            throw new IllegalStateException("JOIN_FAILED", e);
+        }
+    }
+
+    private void injectJobInsertFailure() {
+        jdbc.sql("create or replace function wotb_test_fail_job_insert() returns trigger "
+                + "language plpgsql as $$ begin raise exception 'injected job insert failure'; end $$").update();
+        jdbc.sql("create trigger wotb_test_fail_job_insert before insert on replay_processing_job "
+                + "for each row execute function wotb_test_fail_job_insert()").update();
+    }
+
+    private void injectSourceInsertFailure() {
+        jdbc.sql("create or replace function wotb_test_fail_source_insert() returns trigger "
+                + "language plpgsql as $$ begin raise exception 'injected source insert failure'; end $$").update();
+        jdbc.sql("create trigger wotb_test_fail_source_insert before insert on replay_processing_source "
+                + "for each row execute function wotb_test_fail_source_insert()").update();
+    }
+
+    private static ReplayJobAuthority authority() {
+        return new ReplayJobAuthority(jdbc, transactions);
+    }
+
+    private static ReplayProcessingJobStore store(final Path dir, final ReplayJobAuthority authority) {
+        return new ReplayProcessingJobStore(dir, 60, authority);
+    }
+
+    private static long revisionOf(final String jobId) {
+        return jdbc.sql("select revision from replay_processing_job where job_id = :id")
+                .param("id", jobId).query(Long.class).single();
+    }
+
+    private static int countSources(final String jobId) {
+        return jdbc.sql("select count(*) from replay_processing_source where job_id = :id")
+                .param("id", jobId).query(Integer.class).single();
     }
 
     private void insertJob(final String jobId, final String status, final long finishedAtMillis) {

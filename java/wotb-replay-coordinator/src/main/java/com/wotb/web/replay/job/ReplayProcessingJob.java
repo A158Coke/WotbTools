@@ -5,6 +5,7 @@ import com.wotb.core.parse.Replays;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
@@ -74,6 +75,12 @@ public final class ReplayProcessingJob {
      * （测试 / 本地开发），行为与本字段引入前逐字一致。
      */
     private volatile ReplayJobTransitionListener transitionListener;
+    /**
+     * 投影版本：每次状态迁移 +1，**与是否有持久化监听器无关**（内存模式同样递增）。
+     * 权威状态用它拒绝乱序/陈旧快照覆盖已提交的新状态；它只是同一个状态机的版本号，
+     * 不参与任何状态合法性判定。
+     */
+    private final AtomicLong revision = new AtomicLong();
     /** READY 后设置（exactly once 由状态机保证；volatile 供 status 轮询线程读取）。 */
     private volatile ProcessedDataset result;
     /** 当前处理中的输入文件名（进度回调更新；不作为 metric tag）。 */
@@ -118,7 +125,9 @@ public final class ReplayProcessingJob {
                         final int processed, final int duplicates, final int failures,
                         final int parseCompleted, final int parseSucceeded, final int parseFailed,
                         final String errorCode, final boolean cancelRequested,
-                        final long createdAtMillis, final long finishedAtMillis) {
+                        final long createdAtMillis, final long finishedAtMillis,
+                        final long revision) {
+        this.revision.set(revision);
         this.state = new ReplayJobState(jobId, total, phase, ReplayJobState.Status.valueOf(status.name()),
                 processed, duplicates, failures, errorCode, createdAtMillis, finishedAtMillis,
                 cancelRequested);
@@ -137,7 +146,15 @@ public final class ReplayProcessingJob {
         this.transitionListener = listener;
     }
 
+    /** 当前投影版本（持久化写入的单调序；权威实现在 UPSERT 中以它拒绝陈旧写入）。 */
+    long revision() {
+        return revision.get();
+    }
+
     private void notifyTransition() {
+        // 先取号再通知：监听器（若存在）看到的 version 一定是本次迁移的新值，
+        // 因此两次并发持久化之间不存在相同 revision，陈旧写入必然被数据库拒绝。
+        revision.incrementAndGet();
         final ReplayJobTransitionListener listener = this.transitionListener;
         if (listener != null) {
             listener.onJobTransition(this);
