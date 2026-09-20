@@ -560,37 +560,28 @@ jobs:
         run: bash deploy/check-flyway-immutability.sh "$FLYWAY_BASE_REF"
       - name: Flyway migration guard fixture
         run: bash deploy/test-flyway-immutability.sh
-      - name: bash -n deployment scripts
-        run: >-
-          bash -n deploy/deploy.sh deploy/minio-deploy.sh deploy/tx/deploy.sh
-          deploy/tx/business-postgres-backup.sh deploy/tx/business-postgres-restore.sh
-          deploy/test-rabbitmq-tofu.sh deploy/test-business-postgres-runtime.sh
-          infra/tofu/minio/validate-plan.sh
-          infra/tofu/rabbitmq/validate-plan.sh infra/tofu/rabbitmq/test-validate-plan.sh
-          infra/tofu/postgres-business/validate-plan.sh infra/tofu/postgres-business/test-validate-plan.sh
-          scripts/ci/test-rabbitmq-tofu-contract.sh
-          scripts/ci/test-postgres-business-tofu-contract.sh
-      - name: bash -n deployment verification scripts
+      - name: bash -n production scripts and CI entry points
         run: >-
           bash -n deploy/deploy.sh deploy/minio-deploy.sh deploy/ops-recovery.sh
-          deploy/verify-observability.sh deploy/test-keycloak-runtime.sh
-          deploy/test-keycloak-tofu.sh deploy/test-rabbitmq-tofu.sh
-          deploy/test-business-postgres-runtime.sh
+          deploy/verify-observability.sh deploy/tx/deploy.sh
+          deploy/tx/business-postgres-backup.sh deploy/tx/business-postgres-restore.sh
+          deploy/tx/pre-cutover-check.sh
+          deploy/test-rabbitmq-tofu.sh deploy/test-business-postgres-runtime.sh
+          deploy/test-keycloak-runtime.sh deploy/test-keycloak-tofu.sh
           deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh
           deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
           deploy/test-build-workflow.sh deploy/test-release-plan.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
-          infra/tofu/minio/validate-plan.sh infra/tofu/rabbitmq/validate-plan.sh
-          infra/tofu/rabbitmq/test-validate-plan.sh
+          deploy/test-yecao-wireguard-backend.sh deploy/test-pre-cutover-check.sh
+          infra/tofu/minio/validate-plan.sh
+          infra/tofu/rabbitmq/validate-plan.sh infra/tofu/rabbitmq/test-validate-plan.sh
           infra/tofu/postgres-business/validate-plan.sh infra/tofu/postgres-business/test-validate-plan.sh
-          scripts/ci/test-postgres-keycloak-tofu-contract.sh
           scripts/ci/test-keycloak-tofu-contract.sh
+          scripts/ci/test-postgres-keycloak-tofu-contract.sh
           scripts/ci/test-postgres-business-tofu-contract.sh
           scripts/ci/test-rabbitmq-tofu-contract.sh
       - name: Build workflow frozen-commit contract
         run: bash deploy/test-build-workflow.sh
-      - name: bash -n TX pre-cutover contracts
-        run: bash -n deploy/tx/pre-cutover-check.sh deploy/test-yecao-wireguard-backend.sh deploy/test-pre-cutover-check.sh
       - name: Build/Deploy changed-target and manifest contract
         run: bash deploy/test-release-plan.sh
       - name: TX runtime and user-profile reset safety contracts
