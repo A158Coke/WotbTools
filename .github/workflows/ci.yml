@@ -574,6 +574,7 @@ jobs:
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
           deploy/test-yecao-wireguard-backend.sh deploy/test-pre-cutover-check.sh
           infra/tofu/minio/validate-plan.sh
+          infra/tofu/minio/test-validate-plan.sh
           infra/tofu/rabbitmq/validate-plan.sh infra/tofu/rabbitmq/test-validate-plan.sh
           infra/tofu/postgres-business/validate-plan.sh infra/tofu/postgres-business/test-validate-plan.sh
           scripts/ci/test-keycloak-tofu-contract.sh
@@ -613,6 +614,7 @@ jobs:
           YECAO_MINIO_ROOT_PASSWORD: ci-root-password
         run: |
           set -euo pipefail
+          bash infra/tofu/minio/test-validate-plan.sh
           docker compose -f deploy/docker-compose.minio.yml config --format json > /tmp/minio-compose.json
           python3 - <<'PY'
           import json
@@ -656,6 +658,8 @@ jobs:
           export TF_VAR_minio_root_password=ci-root-password
           export TF_VAR_worker_access_key=ci-worker-access-key
           export TF_VAR_worker_secret_key=ci-worker-secret-key
+          export TF_VAR_control_api_access_key=ci-control-api-access-key
+          export TF_VAR_control_api_secret_key=ci-control-api-secret-key
           export MINIO_PROVIDER_MIRROR=/tmp/minio-provider-mirror
           mkdir -p "$MINIO_PROVIDER_MIRROR"
           tofu -chdir=infra/tofu/minio providers mirror "$MINIO_PROVIDER_MIRROR" >/dev/null
@@ -671,6 +675,55 @@ jobs:
           tofu -chdir=infra/tofu/minio apply -input=false -auto-approve plan.tfplan >/dev/null
           tofu -chdir=infra/tofu/minio plan -input=false -out=second-plan.tfplan >/dev/null
           ( cd infra/tofu/minio && bash validate-plan.sh second-plan.tfplan --require-no-changes )
+          # Applied state is the authority for the two application identities:
+          # both must exist with a distinct name and the same temp/jobs/* scope.
+          tofu -chdir=infra/tofu/minio show -json > /tmp/minio-state.json
+          python3 - <<'PY'
+          import json
+          with open('/tmp/minio-state.json', encoding='utf-8') as state_file:
+              state = json.load(state_file)
+          resources = {}
+
+          def collect(module):
+              for resource in module.get('resources', []):
+                  resources[resource['address']] = resource.get('values', {})
+              for child in module.get('child_modules', []):
+                  collect(child)
+
+          collect(state['values']['root_module'])
+          expected = {
+              'minio_iam_user.worker',
+              'minio_iam_user.control_api',
+              'minio_iam_policy.temporary_workspace_worker',
+              'minio_iam_policy.temporary_workspace_control_api',
+              'minio_iam_user_policy_attachment.worker',
+              'minio_iam_user_policy_attachment.control_api',
+          }
+          missing = sorted(expected - set(resources))
+          assert not missing, missing
+          identities = {
+              resources['minio_iam_user.worker']['name'],
+              resources['minio_iam_user.control_api']['name'],
+          }
+          assert len(identities) == 2, identities
+          for address in (
+              'minio_iam_policy.temporary_workspace_worker',
+              'minio_iam_policy.temporary_workspace_control_api',
+          ):
+              document = json.loads(resources[address]['policy'])
+              actions = set()
+              for statement in document['Statement']:
+                  statement_actions = set(statement['Action'])
+                  assert statement_actions <= {'s3:ListBucket', 's3:GetObject', 's3:PutObject'}, (address, statement_actions)
+                  actions |= statement_actions
+                  if 's3:ListBucket' in statement_actions:
+                      assert statement['Condition']['StringLike']['s3:prefix'] == ['temp/jobs/*'], address
+                  else:
+                      for target in statement['Resource']:
+                          assert target.endswith('/temp/jobs/*'), (address, target)
+              assert actions == {'s3:ListBucket', 's3:GetObject', 's3:PutObject'}, (address, actions)
+          print('MinIO dual-identity temp/jobs prefix policy contract OK')
+          PY
       - name: RabbitMQ Compose and OpenTofu ownership smoke
         run: |
           bash infra/tofu/rabbitmq/test-validate-plan.sh
