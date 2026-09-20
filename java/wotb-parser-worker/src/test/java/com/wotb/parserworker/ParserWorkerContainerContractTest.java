@@ -95,6 +95,11 @@ class ParserWorkerContainerContractTest {
         public boolean exists(final ObjectKey key) throws IOException {
             throw new IOException("not used by the wiring contract");
         }
+
+        @Override
+        public void delete(final ObjectKey key) throws IOException {
+            throw new IOException("not used by the wiring contract");
+        }
     }
 
     private static final class NoopLifecycle implements ReplayProcessingLifecycle {

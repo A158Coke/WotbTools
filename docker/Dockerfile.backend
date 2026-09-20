@@ -27,6 +27,8 @@ WORKDIR /build/java
 RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests dependency:go-offline -q || true
 WORKDIR /build
 COPY java/wotb-contracts/src java/wotb-contracts/src
+COPY java/wotb-object-storage-minio/src java/wotb-object-storage-minio/src
+COPY java/wotb-broker-rabbitmq/src java/wotb-broker-rabbitmq/src
 COPY java/wotb-core/src java/wotb-core/src
 COPY java/wotb-result/src java/wotb-result/src
 COPY java/wotb-playback/src java/wotb-playback/src

@@ -744,6 +744,11 @@ class ParserWorkerPipelineTest {
         public boolean exists(final ObjectKey key) throws IOException {
             return delegate.exists(key);
         }
+
+        @Override
+        public void delete(final ObjectKey key) throws IOException {
+            delegate.delete(key);
+        }
     }
 
     /** Records the last lifecycle outcome so the local path's success can be asserted. */

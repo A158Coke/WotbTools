@@ -11,13 +11,27 @@ wotbtools-temp/temp/jobs/<job-id>/…
 ```
 
 The bucket is durable infrastructure. Every object below `temp/jobs/` expires
-one day after creation. A job can contain multiple replay inputs. PostgreSQL
-remains authoritative for job state and RabbitMQ remains the delivery layer.
+one day after creation; that rule is a bounded backstop, **not** the cleanup
+mechanism. A job can contain multiple replay inputs. PostgreSQL remains
+authoritative for job state and RabbitMQ remains the delivery layer.
 
 `java/wotb-object-storage-minio` is the only application client: it implements the
-existing `com.wotb.contracts.ObjectStorage` port (`put` / `get` / `exists`) and keeps
-every `io.minio` type inside the module. It carries no retention logic — expiry stays
-an OpenTofu lifecycle rule — and it deliberately exposes no `delete` and no `list`.
+existing `com.wotb.contracts.ObjectStorage` port (`put` / `get` / `exists` /
+`delete`) and keeps every `io.minio` type inside the module. It carries no
+retention logic — expiry stays an OpenTofu lifecycle rule — and it deliberately
+exposes **no `list` and no prefix operation**: `delete` removes exactly one key
+the caller built itself through `ObjectStorageKeys`, so a bug cannot reach a
+neighbouring job's workspace or another prefix. Deleting a missing object
+succeeds, because the only caller rolls back a partially written set of inputs.
+
+Create rollback is the reason `delete` exists: a create that fails before its
+dispatch is confirmed (a half-written input set, a failed authority
+registration, a rejected or unconfirmed dispatch) deletes the inputs it already
+wrote under `temp/jobs/<jobId>/input/` instead of leaving objects that no job
+references. Rollback is best effort by design — if it fails, the failure is
+logged and the original create error is what the client sees, so a permission or
+network problem can never be reported as "the upload was rejected because
+storage is broken".
 
 ## Runtime boundary
 
@@ -50,32 +64,37 @@ deployment's licensing obligations under review before production use.
 
 - private `wotbtools-temp` bucket, protected from destruction;
 - lifecycle expiry for `temp/jobs/` after one day;
-- two application identities, one prefix-scoped policy each, and their attachments.
+- two application identities, two prefix-scoped policies each for the control
+  plane (read/write plus the delete-only rollback grant), and their attachments.
 
 ### Application identities
 
 | Identity | Owner | Access key variable | Object scope |
 |---|---|---|---|
 | `worker` | Yecao parser-worker (parsing execution plane) | `YECAO_MINIO_WORKER_ACCESS_KEY` | `temp/jobs/*`: list + read/write |
-| `control_api` | TX replay control plane (backend) | `YECAO_MINIO_CONTROL_API_ACCESS_KEY` | `temp/jobs/*`: list + read/write |
+| `control_api` | TX replay control plane (backend) | `YECAO_MINIO_CONTROL_API_ACCESS_KEY` | `temp/jobs/*`: list + read/write + delete (rollback) |
 
-Both policies permit exactly `s3:ListBucket` conditioned on the `temp/jobs/*` prefix
-plus `s3:GetObject` and `s3:PutObject` for objects under that prefix. `HeadObject`
-is authorized by `s3:GetObject`. Neither policy has delete, bucket administration,
-IAM administration, or unrelated-bucket permission.
+Both read/write policies permit exactly `s3:ListBucket` conditioned on the `temp/jobs/*`
+prefix plus `s3:GetObject` and `s3:PutObject` for objects under that prefix. `HeadObject`
+is authorized by `s3:GetObject`. The control plane's rollback grant
+(`wotbtools-temp-control-api-reclaim`) permits exactly `s3:DeleteObject` on the same
+prefix, and only `control_api` has it: the parsing host cannot remove anything.
+No policy has bucket administration, IAM administration, or unrelated-bucket
+permission.
 
-The two scopes are identical on purpose. The prefix layout separates object kinds
-(`input/`, `artifacts/`, `result/`), while the identity separates deployments: a
+The two read/write scopes are identical on purpose. The prefix layout separates object
+kinds (`input/`, `artifacts/`, `result/`), while the identity separates deployments: a
 credential leaked on one host cannot be replayed on the other, and either side can be
 rotated alone. Narrowing each identity to part of the prefix would add a second,
 weaker copy of the ownership that PostgreSQL and the job layout already hold, since
 either side may read inputs and write artifacts for the job it owns.
 
-The two policy documents are duplicated in `minio.tf` rather than shared through a
-`locals` block: re-expressing the already-applied worker policy would rewrite that
-resource, which the plan guard refuses as an in-place update.
-`infra/tofu/minio/test-validate-plan.sh` plus the CI MinIO smoke keep both scopes
-identical and reject any widened one.
+The policy documents are duplicated in `minio.tf` rather than shared through a
+`locals` block, and the rollback grant is a **third** document instead of one more
+action in the read/write policy: re-expressing an already-applied policy would rewrite
+that resource, which the plan guard refuses as an in-place update.
+`infra/tofu/minio/test-validate-plan.sh` plus the CI MinIO smoke pin every scope
+(including the delete-only one) and reject any widened copy.
 
 The MinIO provider records the configured application identity secrets as sensitive
 state. State is therefore local to Yecao at

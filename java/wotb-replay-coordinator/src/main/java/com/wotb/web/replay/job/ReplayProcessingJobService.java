@@ -205,7 +205,10 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         try {
             sourceNames = persistInputs(jobId, files);
         } catch (final IOException e) {
-            store.removeAndCleanup(jobId);
+            // 半途失败同样要回滚：已经写入的对象存储输入不能变成没有 job 引用的孤儿
+            // （本地落点由 removeAndCleanup 删除，分布式落点由输入端口删除）。
+            discardInputs(jobId, files);
+            removeJobStateQuietly(jobId);
             throw new IllegalStateException("PROCESSING_JOB_STORAGE_UNAVAILABLE");
         }
         final ReplayProcessingJob job = new ReplayProcessingJob(jobId, sourceNames);
@@ -214,35 +217,56 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         } catch (final RuntimeException e) {
             // 权威模式下初始投影写不进去 = 创建失败：必须清掉已经落盘的输入目录，
             // 不允许留下「有文件、无权威状态」的孤儿 job。清理本身失败不掩盖原始异常。
-            try {
-                store.removeAndCleanup(jobId);
-            } catch (final RuntimeException cleanupFailure) {
-                LOGGER.warn("processing_job_cleanup_failed jobId={} error={}",
-                        jobId, cleanupFailure.getMessage());
-            }
+            discardInputs(jobId, files);
+            removeJobStateQuietly(jobId);
             throw e;
         }
         try {
             dispatcher.submit(new ReplayProcessingRequest(jobId,
                     sourceOrder(prioritySourceIndex, sourceNames), ReplayProcessingRequest.FIRST_ATTEMPT));
         } catch (final ReplayProcessingQueueFullException e) {
-            store.removeAndCleanup(jobId);
+            discardInputs(jobId, files);
+            removeJobStateQuietly(jobId);
             throw new ProcessingQueueFullException();
         } catch (final RuntimeException e) {
             // 任何派发失败（AMQP 确认失败/不可路由/超时，或本地调度器不可用）都必须让 create 失败，
             // 且不得留下一个没有任何执行绑定、也永远不会有结果的 job：注册态与输入一并回收。
             // 清理失败不掩盖原始异常（作业已经注定失败，稳定错误语义必须保留）。
-            try {
-                store.removeAndCleanup(jobId);
-            } catch (final RuntimeException cleanupFailure) {
-                LOGGER.warn("processing_job_cleanup_failed jobId={} error={}",
-                        jobId, cleanupFailure.getMessage());
-            }
+            discardInputs(jobId, files);
+            removeJobStateQuietly(jobId);
             throw e;
         }
         recordCreated(files.length);
         LOGGER.info(logLine("processing_job_created", jobId, "files", files.length));
         return jobId;
+    }
+
+    /**
+     * 回滚分布式输入（对象存储）；本地落点没有注入输入端口，直接返回。
+     *
+     * <p>清理失败**只记录**：create 已经注定失败，被清理动作替换掉的原始错误会变成错误的
+     * error code，因此这里绝不抛出，也绝不影响调用方正抛出的那个异常。</p>
+     */
+    private void discardInputs(final String jobId, final MultipartFile[] files) {
+        if (inputStore == null) {
+            return;
+        }
+        try {
+            inputStore.discard(jobId, files);
+        } catch (final IOException | RuntimeException cleanupFailure) {
+            LOGGER.warn("event=replay_processing_input_discard_failed jobId={} error={}",
+                    jobId, cleanupFailure.getMessage());
+        }
+    }
+
+    /** 回收已登记的 job 状态；同样只记录失败，不掩盖原始 create 失败。 */
+    private void removeJobStateQuietly(final String jobId) {
+        try {
+            store.removeAndCleanup(jobId);
+        } catch (final RuntimeException cleanupFailure) {
+            LOGGER.warn("processing_job_cleanup_failed jobId={} error={}",
+                    jobId, cleanupFailure.getMessage());
+        }
     }
 
     /**
