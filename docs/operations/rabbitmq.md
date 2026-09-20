@@ -136,6 +136,17 @@ The broker never owns a retry counter, an attempt limit or a job state. The
 application decides from PostgreSQL whether a failure is retryable (nack without
 requeue, which re-enters the retry loop) or terminal (publish `parser.dead`).
 
+**Retry policy is control-plane owned.** The `parser-worker` deliberately does
+*not* use this loop: on an infrastructure failure it publishes a confirmed
+`parser.failed` (`retryable=true`, same `jobId` and `attempt`) and only then
+acknowledges the request, so retrying is a control-plane decision — the control
+plane advances the authoritative attempt and dispatches a new `parser.request`
+with `attempt + 1`. A delivery the worker never acknowledged is redelivered by
+AMQP with the **same** attempt; that transport redelivery is not a logical retry.
+The queue, its TTL and its bindings remain as reviewed for the PR C protocol and
+for the control plane's own use; removing them is a cleanup after PR E is live.
+See `docs/operations/parser-worker.md`.
+
 ### Result and DLQ semantics
 
 The return path is manual-ack on the control-plane side, with one rule: a report

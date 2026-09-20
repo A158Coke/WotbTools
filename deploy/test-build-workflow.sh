@@ -35,9 +35,10 @@ assert build_jobs["build_backend"]["name"] == "Build Backend"
 assert build_jobs["build_frontend"]["name"] == "Build Frontend"
 assert build_jobs["build_keycloak"]["name"] == "Build Keycloak"
 assert build_jobs["build_minio"]["name"] == "Build MinIO"
+assert build_jobs["build_parser_worker"]["name"] == "Build Parser Worker"
 assert 'short_sha="${commit_sha:0:12}"' in build_text, "Build must use the deterministic 12-char SHA tag"
 assert "rev-parse --short" not in build_text, "Build must not use git's nondeterministic abbreviation"
-for output in ("commit_sha", "tag", "backend", "frontend", "keycloak", "minio", "deploy_services", "image_services", "target_services"):
+for output in ("commit_sha", "tag", "backend", "frontend", "keycloak", "minio", "parserWorker", "deploy_services", "image_services", "target_services"):
     assert output in changes["outputs"], f"Build changes output missing: {output}"
 
 for job_name, output_name in (
@@ -45,6 +46,7 @@ for job_name, output_name in (
     ("build_frontend", "frontend"),
     ("build_keycloak", "keycloak"),
     ("build_minio", "minio"),
+    ("build_parser_worker", "parserWorker"),
 ):
     job = build_jobs[job_name]
     assert output_name in job["if"], f"{job_name} is not conditional on detect output"
@@ -52,12 +54,23 @@ for job_name, output_name in (
     assert checkout["with"]["ref"] == "${{ needs.changes.outputs.commit_sha }}"
     build_step = next(step for step in job["steps"] if step.get("uses") == "docker/build-push-action@v7")
     tags = str(build_step["with"]["tags"])
-    image_prefix = {"backend": "backend", "frontend": "frontend", "keycloak": "keycloak", "minio": "minio"}[output_name]
+    image_prefix = {
+        "backend": "backend", "frontend": "frontend", "keycloak": "keycloak",
+        "minio": "minio", "parserWorker": "parser-worker",
+    }[output_name]
     assert "${{ env.GHCR_IMAGE_PREFIX }}-" + image_prefix + ":${{ needs.changes.outputs.tag }}" in tags
     assert "${{ env.GHCR_IMAGE_PREFIX }}-" + image_prefix + ":latest" in tags
-    for other in {"backend", "frontend", "keycloak", "minio"} - {image_prefix}:
+    for other in {"backend", "frontend", "keycloak", "minio", "parser-worker"} - {image_prefix}:
         assert "${{ env.GHCR_IMAGE_PREFIX }}-" + other + ":latest" not in tags, \
             f"{job_name} must not publish another component latest tag"
+    assert str(build_step["with"]["file"]) == {
+        "backend": "docker/Dockerfile.backend",
+        "frontend": "docker/Dockerfile.frontend",
+        "keycloak": "docker/Dockerfile.keycloak",
+        "minio": "docker/Dockerfile.minio",
+        "parserWorker": "docker/Dockerfile.parser-worker",
+    }[output_name], f"{job_name} must build its own Dockerfile from the repository root context"
+    assert str(build_step["with"]["context"]) == ".", f"{job_name} must build from the repository root context"
     build_args = str(build_step["with"].get("build-args", ""))
     assert "BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}" in build_args, \
         f"{job_name} must inject the frozen release SHA into the image"
@@ -66,6 +79,12 @@ manifest_job = build_jobs["manifest"]
 assert "always()" in manifest_job["if"]
 assert "build_backend" in str(manifest_job["needs"])
 assert "build_minio" in str(manifest_job["needs"])
+assert "build_parser_worker" in str(manifest_job["needs"])
+assert "needs.changes.outputs.parserWorker != 'true' || needs.build_parser_worker.result == 'success'" in manifest_job["if"]
+assert "PARSER_WORKER: ${{ needs.changes.outputs.parserWorker }}" in build_text
+assert '"parser-worker": os.environ["PARSER_WORKER"] == "true",' in build_text
+assert 'for image in ("backend", "frontend", "keycloak", "minio", "parser-worker"):' in build_text
+assert "          - parser-worker" in build_text
 assert any(step.get("uses") == "actions/upload-artifact@v4" for step in manifest_job["steps"])
 assert any("deployment-manifest.json" in str(step) for step in manifest_job["steps"])
 
@@ -87,7 +106,7 @@ manual_inputs = deploy_on["workflow_dispatch"]["inputs"]
 assert set(manual_inputs) == {"target", "tx_services"}, "Manual deploy must expose only explicit target and TX service selection"
 assert manual_inputs["target"]["type"] == "choice"
 assert manual_inputs["target"]["default"] == "tx"
-assert manual_inputs["target"]["options"] == ["tx", "minio"]
+assert manual_inputs["target"]["options"] == ["tx", "minio", "parser-worker"]
 assert manual_inputs["tx_services"]["required"] is True
 assert manual_inputs["tx_services"]["type"] == "string"
 assert manual_inputs["tx_services"]["default"] == "keycloak-postgres,keycloak,wotb-frontend,caddy"
@@ -114,6 +133,13 @@ assert 'allowed = {"keycloak-postgres", "business-postgres", "rabbitmq", "keyclo
 assert 'if target == "minio":' in manual_run
 assert 'print("deploy_services=minio")' in manual_run
 assert 'print("yecao_services=minio")' in manual_run
+assert 'if target == "parser-worker":' in manual_run
+assert 'print("deploy_services=parser-worker")' in manual_run
+assert 'print("image_services=parser-worker")' in manual_run
+assert 'print("yecao_services=parser-worker")' in manual_run
+assert 'print("yecao_image_services=parser-worker")' in manual_run
+assert 'print("deploy_display_name=Manual Parser Worker")' in manual_run
+assert 'raise SystemExit("target must be tx, minio, or parser-worker")' in manual_run
 assert "all|keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|caddy" in tx_deploy_text
 assert "is_keycloak_group_selected" in tx_deploy_text
 assert "is_business_postgres_group_selected" in tx_deploy_text
@@ -159,6 +185,18 @@ assert "docker manifest inspect" in deploy_text
 assert "WOTB_DEPLOY_SERVICES" in deploy_text
 assert "WOTB_DEPLOY_IMAGE_SERVICES" in deploy_text
 assert "targetServices" in deploy_text
+assert "parser-worker) image=ghcr.io/a158coke/wotbtools-parser-worker ;;" in image_job["steps"][-1]["run"]
+assert 'if "parser-worker" in manifest["deployServices"]:' in deploy_text
+assert 'labels.append("Parser Worker")' in deploy_text
+yecao_deploy_job = deploy["jobs"]["deploy"]
+yecao_deploy_env = yecao_deploy_job["steps"][-1]["env"]
+for parser_worker_secret in (
+    "TX_RABBITMQ_PARSER_WORKER_PASSWORD",
+    "YECAO_MINIO_WORKER_ACCESS_KEY",
+    "YECAO_MINIO_WORKER_SECRET_KEY",
+):
+    assert parser_worker_secret in yecao_deploy_env, parser_worker_secret
+    assert parser_worker_secret in yecao_deploy_job["steps"][-1]["with"]["envs"], parser_worker_secret
 assert "deploy_minio" in deploy["jobs"]
 minio_job = deploy["jobs"]["deploy_minio"]
 minio_step_names = [step.get("name", "") for step in minio_job["steps"]]

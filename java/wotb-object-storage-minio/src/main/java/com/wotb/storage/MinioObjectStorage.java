@@ -42,13 +42,25 @@ public final class MinioObjectStorage implements ObjectStorage {
         final MinioObjectStorageProperties settings = Objects.requireNonNull(properties, "properties");
         this.bucket = settings.bucket();
         this.client = MinioClient.builder()
-                .endpoint(settings.endpoint())
+                .endpoint(httpEndpoint(settings.endpoint()))
                 .credentials(settings.accessKey(), settings.secretKey())
                 .build();
         this.client.setTimeout(
                 TimeUnit.SECONDS.toMillis(settings.connectTimeoutSeconds()),
                 TimeUnit.SECONDS.toMillis(settings.writeTimeoutSeconds()),
                 TimeUnit.SECONDS.toMillis(settings.writeTimeoutSeconds()));
+    }
+
+    /**
+     * {@code endpoint} is documented as either {@code host:port} or an absolute HTTP URL, but the
+     * SDK accepts only a bare hostname or a full URL: a bare {@code host:port} — the production
+     * form, e.g. {@code 10.20.0.2:9000} — is rejected as {@code invalid hostname}. Normalizing here
+     * keeps the deployment contract (tofu {@code minio_server} = {@code host:port}) usable as-is.
+     */
+    private static String httpEndpoint(final String endpoint) {
+        return endpoint.startsWith("http://") || endpoint.startsWith("https://")
+                ? endpoint
+                : "http://" + endpoint;
     }
 
     /**

@@ -62,6 +62,17 @@ is_selected() {
   return 1
 }
 
+# `all` deliberately keeps the legacy service set (see compose_service_list), so parser-worker only
+# counts as selected when it is named explicitly — its credentials and its liveness gate must not
+# appear on a whole-stack deploy that never starts it.
+explicitly_selected() {
+  local wanted="$1" service
+  for service in "${DEPLOY_SERVICES[@]}"; do
+    [ "$service" = "$wanted" ] && return 0
+  done
+  return 1
+}
+
 has_image_service() {
   local wanted="$1" service
   for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
@@ -95,20 +106,30 @@ validate_inputs() {
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      all|postgres|node-exporter|prometheus|loki|alloy|grafana|keycloak|wotb-backend|wotb-frontend) ;;
+      all|postgres|node-exporter|prometheus|loki|alloy|grafana|keycloak|wotb-backend|wotb-frontend|parser-worker) ;;
       *) die "unsupported deployment service: $service" ;;
     esac
   done
   for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
     case "$service" in
       "") ;;
-      keycloak|wotb-backend|wotb-frontend) ;;
+      keycloak|wotb-backend|wotb-frontend|parser-worker) ;;
       *) die "unsupported WOTB_DEPLOY_IMAGE_SERVICES entry: $service" ;;
     esac
   done
   for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
     [ -z "$service" ] || is_selected "$service" || die "image service is not in deploy service set: $service"
   done
+
+  # The worker is the only Yecao service that talks to two remote planes (the TX broker and the
+  # Yecao MinIO). Its credentials are required exactly when it is selected, so a legacy-only deploy
+  # keeps working while the worker path stays fail-closed instead of starting with empty settings.
+  if explicitly_selected parser-worker; then
+    for service in TX_RABBITMQ_PARSER_WORKER_PASSWORD YECAO_MINIO_WORKER_ACCESS_KEY \
+      YECAO_MINIO_WORKER_SECRET_KEY; do
+      require_env "$service"
+    done
+  fi
 
   for required in TAG DB_PASSWORD KC_ADMIN_PASSWORD WG_APPLICATION_ID \
     KEYCLOAK_ADMIN_CLIENT_SECRET AI_API_KEY GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD; do
@@ -193,6 +214,7 @@ current_or_target_tag() {
     wotb-backend) has_image_service "$service" && { printf '%s\n' "$TAG_VALUE"; return; } ;;
     wotb-frontend) has_image_service "$service" && { printf '%s\n' "$TAG_VALUE"; return; } ;;
     keycloak) has_image_service "$service" && { printf '%s\n' "$TAG_VALUE"; return; } ;;
+    parser-worker) has_image_service "$service" && { printf '%s\n' "$TAG_VALUE"; return; } ;;
     *) die "unsupported application service: $service" ;;
   esac
   tag="$(metadata_tag "$service")"
@@ -202,8 +224,9 @@ current_or_target_tag() {
 }
 
 render_effective_compose() {
-  local source="$1" target="$2" backend_tag="$3" frontend_tag="$4" keycloak_tag="$5"
+  local source="$1" target="$2" backend_tag="$3" frontend_tag="$4" keycloak_tag="$5" worker_tag="$6"
   BACKEND_TAG="$backend_tag" FRONTEND_TAG="$frontend_tag" KEYCLOAK_TAG="$keycloak_tag" \
+    WORKER_TAG="$worker_tag" \
     python3 - "$source" "$target" <<'PY'
 import os
 import re
@@ -214,6 +237,7 @@ tags = {
     "wotb-backend": os.environ["BACKEND_TAG"],
     "wotb-frontend": os.environ["FRONTEND_TAG"],
     "keycloak": os.environ["KEYCLOAK_TAG"],
+    "parser-worker": os.environ["WORKER_TAG"],
 }
 current = ""
 seen = set()
@@ -222,14 +246,16 @@ for line in open(source, encoding="utf-8"):
     match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
     if match:
         current = match.group(1)
-    if current in tags and re.match(r"^\s+image:\s+ghcr\.io/a158coke/wotbtools-[^:]+:", line):
+    if current in tags and tags[current] and re.match(r"^\s+image:\s+ghcr\.io/a158coke/wotbtools-[^:]+:", line):
         image = "ghcr.io/a158coke/wotbtools-" + current.removeprefix("wotb-")
         if current == "keycloak":
             image = "ghcr.io/a158coke/wotbtools-keycloak"
         line = f"    image: {image}:{tags[current]}\n"
         seen.add(current)
     output.append(line)
-missing = set(tags) - seen
+# Only services this release pins have to be present in the compose: an empty tag means "leave the
+# staged value alone" (see stage_and_validate), not "this application image may be missing".
+missing = {name for name, tag in tags.items() if tag} - seen
 if missing:
     raise SystemExit("compose is missing application image definitions: " + ", ".join(sorted(missing)))
 with open(target, "w", encoding="utf-8") as handle:
@@ -248,12 +274,21 @@ stage_and_validate() {
   if [ ! -e "$WOTB_DIR/config/sponsor-config.json" ] && [ -f "$INCOMING_DIR/deploy/sponsor-config.example.json" ]; then
     install -m 644 "$INCOMING_DIR/deploy/sponsor-config.example.json" "$WOTB_DIR/config/sponsor-config.json"
   fi
-  local backend_tag frontend_tag keycloak_tag
+  local backend_tag frontend_tag keycloak_tag worker_tag
   backend_tag="$(current_or_target_tag wotb-backend)"
   frontend_tag="$(current_or_target_tag wotb-frontend)"
   keycloak_tag="$(current_or_target_tag keycloak)"
+  # parser-worker may never have been deployed yet: a deploy that neither updates its image nor finds
+  # a recorded identity leaves the staged placeholder in place (still an immutable sha-<12> TAG)
+  # instead of failing the whole release for a service it does not touch. Its first deployment always
+  # travels through WOTB_DEPLOY_IMAGE_SERVICES, and from then on metadata pins it like the others.
+  worker_tag=""
+  if has_image_service parser-worker \
+    || [ -n "$(metadata_tag parser-worker)$(compose_tag parser-worker)" ]; then
+    worker_tag="$(current_or_target_tag parser-worker)"
+  fi
   render_effective_compose "$staged_source" "$EFFECTIVE_COMPOSE" \
-    "$backend_tag" "$frontend_tag" "$keycloak_tag"
+    "$backend_tag" "$frontend_tag" "$keycloak_tag" "$worker_tag"
   if ! docker compose -f "$EFFECTIVE_COMPOSE" config >/dev/null; then
     die "staged compose config is invalid; live deployment was not changed."
   fi
@@ -320,10 +355,28 @@ promote_files() {
 
 compose_service_list() {
   if is_selected all; then
+    # parser-worker is deliberately absent: until the legacy Yecao application stack is retired
+    # (PR J) the new execution-plane service is started by explicit selection only, so an existing
+    # whole-stack deploy keeps its current service set and does not begin requiring its credentials.
     printf '%s\n' postgres keycloak wotb-backend wotb-frontend node-exporter prometheus loki alloy grafana
   else
     printf '%s\n' "${DEPLOY_SERVICES[@]}"
   fi
+}
+
+worker_health() {
+  explicitly_selected parser-worker || return 0
+  local attempt
+  for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
+    if docker compose -f "$LIVE_COMPOSE" ps -a parser-worker | grep -Eq 'Up|running'; then
+      echo "parser-worker: PASS"
+      return 0
+    fi
+    FAILED_SERVICE=parser-worker
+    [ "$attempt" -lt "$HEALTH_ATTEMPTS" ] && sleep "$HEALTH_INTERVAL_SEC"
+  done
+  echo "parser-worker: FAIL" >&2
+  return 1
 }
 
 apply_services() {
@@ -525,7 +578,7 @@ stop_failed_service() {
     keycloak) service=keycloak ;;
   esac
   case "$service" in
-    wotb-backend|wotb-frontend|keycloak) ;;
+    wotb-backend|wotb-frontend|keycloak|parser-worker) ;;
     *)
       echo "Not stopping non-application health dependency: $service" >&2
       return 0
@@ -625,6 +678,14 @@ main() {
     diagnostics
     stop_failed_service
     echo "ERROR: blocking core health failed; no automatic application recovery was attempted." >&2
+    exit 1
+  fi
+  # The worker exposes no HTTP endpoint, so its gate is the container staying up: a crash loop from
+  # a missing credential or an unreachable broker must fail the deployment, not pass silently.
+  if ! worker_health; then
+    diagnostics
+    stop_failed_service
+    echo "ERROR: parser-worker did not stay running; no automatic application recovery was attempted." >&2
     exit 1
   fi
   run_observability_checks
