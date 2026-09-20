@@ -288,6 +288,36 @@ set -e
 grep -q 'TX_RABBITMQ_PARSER_WORKER_PASSWORD secret is not configured' <<< "$missing_credential_output"
 [ ! -s "$WORK/missing-credential.log" ]
 
+# The worker must stay stateless: PostgreSQL is the job authority on TX and MinIO owns the datasets,
+# so a staged compose that handed the worker database credentials, a local replay job directory, or
+# an execution mode would silently create a second, non-authoritative replay runtime. The deploy has
+# to refuse it before any container is touched.
+grep -q 'assert_parser_worker_execution_plane "$EFFECTIVE_COMPOSE"' "$ROOT/deploy/deploy.sh"
+python3 - "$ROOT/deploy/docker-compose.prod.yml" "$WORK/incoming/deploy/docker-compose.prod.yml" <<'PY'
+import re
+import sys
+
+source, target = sys.argv[1:3]
+text = open(source, encoding="utf-8").read()
+match = re.search(r"(?ms)^  parser-worker:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", text)
+assert match, "parser-worker service block is missing"
+block = match.group(0)
+mutated = block.replace("    environment:\n", "    environment:\n      POSTGRES_HOST: postgres\n", 1)
+assert mutated != block
+open(target, "w", encoding="utf-8").write(text.replace(block, mutated))
+PY
+set +e
+stateless_guard_output="$(TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real \
+  YECAO_MINIO_WORKER_ACCESS_KEY=not-real YECAO_MINIO_WORKER_SECRET_KEY=not-real \
+  run_deploy 9999999999999999999999999999999999999999 sha-999999999999 parser-worker parser-worker \
+  "$WORK/stateless-guard.log" 2>&1)"
+stateless_guard_rc=$?
+set -e
+[ "$stateless_guard_rc" -ne 0 ]
+grep -q 'parser-worker must stay stateless' <<< "$stateless_guard_output"
+[ ! -s "$WORK/stateless-guard.log" ]
+cp "$ROOT/deploy/docker-compose.prod.yml" "$WORK/incoming/deploy/docker-compose.prod.yml"
+
 # The worker exposes no HTTP endpoint, so a container that does not stay up must fail the deploy.
 cat > "$WORK/bin/docker" <<'FAKE_DOCKER_WORKER_DOWN'
 #!/usr/bin/env bash

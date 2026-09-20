@@ -44,6 +44,10 @@ DEPLOYABLE_SERVICES = {
     "rabbitmq",
     "minio",
     "parser-worker",
+    # Caddy is an explicit TX selector in deploy/tx/deploy.sh and is recreated
+    # whenever its staged configuration or a proxied application changes. It was
+    # missing here, so a manifest naming it could not be validated at all.
+    "caddy",
 }
 DEPLOY_TARGETS = ("tx", "yecao")
 TARGET_BY_SERVICE = {
@@ -53,6 +57,7 @@ TARGET_BY_SERVICE = {
     "rabbitmq": "tx",
     "wotb-frontend": "tx",
     "business-api": "tx",
+    "caddy": "tx",
     "wotb-backend": "yecao",
     "postgres": "yecao",
     "node-exporter": "yecao",
