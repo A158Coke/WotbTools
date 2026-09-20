@@ -31,6 +31,11 @@ import java.util.Optional;
  * 每次迁移带一个单调递增的 {@code revision}，UPSERT 只在 {@code revision < 新值} 时生效，
  * 因此乱序/陈旧的并发写入无法覆盖已提交的新状态（被拒绝时连 source 行也不改写）。</p>
  *
+ * <p><b>写入输入是不可变快照</b>：{@link #save} 只接受
+ * {@link ReplayJobPersistenceSnapshot}，绝不回读 {@link ReplayProcessingJob} 的可变状态。
+ * revision 与它描述的状态在 job 的同一个监视器边界内被一起捕获，因此本类永远不会碰到
+ * 「旧状态配新版本号」——那是两个写入携带同一 revision、由先到者错误胜出的根因。</p>
+ *
  * <p><b>刻意不建模的东西</b>：回放字节、{@code ParsedEntry}、{@code ProcessedDataset}、
  * artifact 内容与本地目录，全部不属于 job 权威状态；{@code IN_FLIGHT} reservation 也不建模，
  * 因为它必须随进程消失，持久化只会留下永不过期的占位。</p>
@@ -86,12 +91,11 @@ public final class ReplayJobAuthority {
      * <p>被 {@code revision} 判定为陈旧时整次写入不做任何改动（连 source 行也不改写）并返回；
      * 这不丢状态——拒绝的前提是库里已有更新的、已提交的投影。</p>
      */
-    public void save(final ReplayProcessingJob job) {
+    public void save(final ReplayJobPersistenceSnapshot snapshot) {
         writeTx.execute(status -> {
-            final ReplayProcessingJob.Snapshot snapshot = job.snapshot();
-            if (upsertJob(snapshot, job) == 0) {
+            if (upsertJob(snapshot) == 0) {
                 LOGGER.debug("replay_processing_job_stale_write_rejected jobId={} revision={}",
-                        snapshot.jobId(), job.revision());
+                        snapshot.jobId(), snapshot.revision());
                 return null;
             }
             jdbc.sql("delete from replay_processing_source where job_id = :jobId")
@@ -116,8 +120,8 @@ public final class ReplayJobAuthority {
     }
 
     /** @return 受影响行数；{@code 0} 表示写入因 {@code revision} 更新而陈旧、被数据库拒绝 */
-    private int upsertJob(final ReplayProcessingJob.Snapshot snapshot, final ReplayProcessingJob job) {
-        final long finishedAt = job.finishedAtMillis();
+    private int upsertJob(final ReplayJobPersistenceSnapshot snapshot) {
+        final long finishedAt = snapshot.finishedAtMillis();
         return jdbc.sql("""
                         insert into replay_processing_job (
                             job_id, status, phase, total, processed, duplicates, failures,
@@ -154,13 +158,13 @@ public final class ReplayJobAuthority {
                 .param("parseSucceeded", snapshot.parseSucceeded())
                 .param("parseFailed", snapshot.parseFailed())
                 .param("errorCode", snapshot.errorCode(), Types.VARCHAR)
-                .param("cancelRequested", job.isCancelled())
+                .param("cancelRequested", snapshot.cancelRequested())
                 // timestamptz 必须用 OffsetDateTime 写入：java.sql.Timestamp 映射到无时区的
                 // TIMESTAMP，依赖服务器时区做隐式转换，会让跨时区读回的毫秒数漂移。
-                .param("createdAt", utc(job.createdAtMillis()), Types.TIMESTAMP_WITH_TIMEZONE)
+                .param("createdAt", utc(snapshot.createdAtMillis()), Types.TIMESTAMP_WITH_TIMEZONE)
                 .param("finishedAt", finishedAt > 0 ? utc(finishedAt) : null,
                         Types.TIMESTAMP_WITH_TIMEZONE)
-                .param("revision", job.revision())
+                .param("revision", snapshot.revision())
                 .update();
     }
 
