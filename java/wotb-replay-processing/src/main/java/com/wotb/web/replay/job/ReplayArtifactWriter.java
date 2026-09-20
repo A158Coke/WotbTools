@@ -26,8 +26,21 @@ import java.nio.file.StandardCopyOption;
  *   <li>MapOverview 不可用（builder 返回 null）→ 不写伪 artifact，不判 parse failure；</li>
  *   <li>immutable JSON（Jackson），TTL 由 job 目录清理接管。</li>
  * </ul>
+ *
+ * <p><b>artifact 单一 SSOT</b>：{@code *Content(...)} 方法是内容生成的唯一实现，写路径统一走
+ * {@link ReplayArtifactSink}（本地文件 sink 见 {@link ReplayArtifactFileSink}）。{@code write*(Path,…)}
+ * 静态方法只是 socket 默认 sink 的既有入口，保持本地行为逐字节不变。</p>
  */
 public final class ReplayArtifactWriter {
+
+    /** ai-facts artifact 文件名（sink 的 artifactName）。 */
+    public static final String AI_FACTS_NAME = "ai-facts.json";
+
+    /** map-overview artifact 文件名（sink 的 artifactName）。 */
+    public static final String MAP_OVERVIEW_NAME = "map-overview.json";
+
+    /** battle-playback-v2 artifact 文件名（sink 的 artifactName）。 */
+    public static final String BATTLE_PLAYBACK_V2_NAME = "battle-playback-v2.json";
 
     private static final ObjectMapper MAPPER = JsonMapper.builder().build();
 
@@ -35,41 +48,71 @@ public final class ReplayArtifactWriter {
     }
 
     public static Path aiFactsPath(final Path jobDir, final int sourceIndex) {
-        return derivedDir(jobDir, sourceIndex).resolve("ai-facts.json");
+        return derivedDir(jobDir, sourceIndex).resolve(AI_FACTS_NAME);
     }
 
     public static Path mapOverviewPath(final Path jobDir, final int sourceIndex) {
-        return derivedDir(jobDir, sourceIndex).resolve("map-overview.json");
+        return derivedDir(jobDir, sourceIndex).resolve(MAP_OVERVIEW_NAME);
     }
 
     /** V2 battle playback dataset 路径（仅当 canonical timeline 可用时写出）。 */
     public static Path battlePlaybackV2Path(final Path jobDir, final int sourceIndex) {
-        return derivedDir(jobDir, sourceIndex).resolve("battle-playback-v2.json");
+        return derivedDir(jobDir, sourceIndex).resolve(BATTLE_PLAYBACK_V2_NAME);
+    }
+
+    /**
+     * ai-facts.json 的内容（唯一实现）：{@link ReplayFactsCodec} 的稳定编码。
+     */
+    public static byte[] aiFactsContent(final ReplayProcessingResult result) {
+        return ReplayFactsCodec.toBytes(AiReplayFacts.fromResult(result));
+    }
+
+    /**
+     * map-overview.json 的内容（唯一实现）；{@code overview == null}（capability unavailable）
+     * 时返回 {@code null}：不写伪 artifact。
+     */
+    public static byte[] mapOverviewContent(final MapOverview overview) {
+        if (overview == null) {
+            return null;
+        }
+        return MAPPER.writeValueAsBytes(overview);
+    }
+
+    /**
+     * battle-playback-v2.json 的内容（唯一实现）；{@code dataset == null}（timeline 不可用）
+     * 时返回 {@code null}。
+     */
+    public static byte[] battlePlaybackV2Content(final BattlePlaybackDataset dataset) {
+        if (dataset == null) {
+            return null;
+        }
+        return MAPPER.writeValueAsBytes(dataset);
     }
 
     /** 写 ai-facts.json（worker 内调用，先写后 READY）。 */
     public static void writeAiFacts(final Path jobDir, final int sourceIndex,
                                     final ReplayProcessingResult result) throws IOException {
-        writeAtomic(aiFactsPath(jobDir, sourceIndex),
-                ReplayFactsCodec.toBytes(AiReplayFacts.fromResult(result)));
+        writeAtomic(aiFactsPath(jobDir, sourceIndex), aiFactsContent(result));
     }
 
     /** 写 map-overview.json；overview == null（capability unavailable）时跳过。 */
     public static void writeMapOverview(final Path jobDir, final int sourceIndex,
                                         final MapOverview overview) throws IOException {
-        if (overview == null) {
+        final byte[] content = mapOverviewContent(overview);
+        if (content == null) {
             return;
         }
-        writeAtomic(mapOverviewPath(jobDir, sourceIndex), MAPPER.writeValueAsBytes(overview));
+        writeAtomic(mapOverviewPath(jobDir, sourceIndex), content);
     }
 
     /** 写 V2 battle playback dataset；dataset == null（timeline 不可用）时跳过。 */
     public static void writeBattlePlaybackV2(final Path jobDir, final int sourceIndex,
                                              final BattlePlaybackDataset dataset) throws IOException {
-        if (dataset == null) {
+        final byte[] content = battlePlaybackV2Content(dataset);
+        if (content == null) {
             return;
         }
-        writeAtomic(battlePlaybackV2Path(jobDir, sourceIndex), MAPPER.writeValueAsBytes(dataset));
+        writeAtomic(battlePlaybackV2Path(jobDir, sourceIndex), content);
     }
 
     /** 读取 ai-facts（AI Dataset 迁移 Phase 6 用）。 */
@@ -284,7 +327,7 @@ public final class ReplayArtifactWriter {
         while (normalized.size() < size) normalized.addNull();
     }
 
-    private static Path derivedDir(final Path jobDir, final int sourceIndex) {
+    static Path derivedDir(final Path jobDir, final int sourceIndex) {
         return jobDir.resolve("derived").resolve("r" + sourceIndex);
     }
 

@@ -114,6 +114,43 @@ for maven_module in maven_modules:
     assert f"COPY java/{maven_module}/pom.xml java/{maven_module}/pom.xml" in backend_dockerfile, \
         f"docker/Dockerfile.backend must pre-copy java/{maven_module}/pom.xml"
 
+# The parser-worker image builds a narrower reactor (`-pl wotb-parser-worker -am`), so it pre-copies
+# every module pom but the *sources* only of the modules that reactor actually compiles. Copy the
+# pom of a module and forget its sources and the image build dies with "Could not resolve
+# dependencies" for a sibling module; that failure is what this closure check prevents.
+parser_worker_dockerfile = (root / "docker/Dockerfile.parser-worker").read_text(encoding="utf-8")
+assert "-pl wotb-parser-worker -am" in parser_worker_dockerfile, \
+    "docker/Dockerfile.parser-worker must build the parser-worker reactor"
+for maven_module in maven_modules:
+    assert f"COPY java/{maven_module}/pom.xml java/{maven_module}/pom.xml" in parser_worker_dockerfile, \
+        f"docker/Dockerfile.parser-worker must pre-copy java/{maven_module}/pom.xml"
+
+
+def module_dependencies(module):
+    """Direct, non-test com.wotb dependencies of one aggregator module."""
+    pom = ET.parse(root / f"java/{module}/pom.xml").getroot()
+    dependencies = set()
+    for dependency in pom.findall("./m:dependencies/m:dependency", maven_namespace):
+        group_id = dependency.findtext("m:groupId", default="", namespaces=maven_namespace)
+        artifact_id = dependency.findtext("m:artifactId", default="", namespaces=maven_namespace)
+        scope = dependency.findtext("m:scope", default="", namespaces=maven_namespace)
+        if group_id == "com.wotb" and artifact_id in maven_modules and scope != "test":
+            dependencies.add(artifact_id)
+    return dependencies
+
+
+parser_worker_reactor = set()
+pending = ["wotb-parser-worker"]
+while pending:
+    current = pending.pop()
+    if current in parser_worker_reactor:
+        continue
+    parser_worker_reactor.add(current)
+    pending.extend(module_dependencies(current))
+for maven_module in sorted(parser_worker_reactor):
+    assert f"COPY java/{maven_module}/src java/{maven_module}/src" in parser_worker_dockerfile, \
+        f"docker/Dockerfile.parser-worker must copy java/{maven_module}/src (-pl wotb-parser-worker -am)"
+
 android_dependency_resolution = android_settings_text.split("dependencyResolutionManagement", 1)[1].split("rootProject.name", 1)[0]
 android_plugin_management = android_settings_text.split("pluginManagement", 1)[1].split("dependencyResolutionManagement", 1)[0]
 assert "google()" in android_dependency_resolution

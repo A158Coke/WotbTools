@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: wotb-parser-worker
+  main:
+    # worker 是纯消息消费者：没有数据库、没有 web server、没有 topology 声明。
+    web-application-type: none
+  rabbitmq:
+    # 投递不变量（同 PR C）：correlated publisher confirms + publisher returns。
+    # RabbitParserOutcomePublisher 的构造守卫要求两者都开启，否则拒绝装配。
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: ${PARSER_WORKER_PREFETCH:2}
+        # 拒绝即死信：重试由 wotb.parser.retry 的 TTL + DLX 拓扑表达，worker 不自建重试状态机。
+        default-requeue-rejected: false
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT:5672}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+    prefetch: ${PARSER_WORKER_PREFETCH:2}
+
+wotb:
+  parser-worker:
+    prefetch: ${PARSER_WORKER_PREFETCH:2}
+    confirm-timeout-seconds: ${PARSER_WORKER_CONFIRM_TIMEOUT_SEC:10}
+    shutdown-timeout-seconds: ${PARSER_WORKER_SHUTDOWN_TIMEOUT_SEC:30}
+    minio:
+      endpoint: ${MINIO_ENDPOINT:10.20.0.2:9000}
+      bucket: ${MINIO_BUCKET:wotbtools-temp}
+      access-key: ${MINIO_ACCESS_KEY}
+      secret-key: ${MINIO_SECRET_KEY}
+      connect-timeout-seconds: ${MINIO_CONNECT_TIMEOUT_SEC:10}
+      write-timeout-seconds: ${MINIO_WRITE_TIMEOUT_SEC:60}
+
+logging:
+  level:
+    com.wotb: INFO

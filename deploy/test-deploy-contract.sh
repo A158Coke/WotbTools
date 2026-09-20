@@ -105,6 +105,9 @@ run_deploy() {
     DB_PASSWORD=not-real KC_ADMIN_PASSWORD=not-real WG_APPLICATION_ID=not-real \
     KEYCLOAK_ADMIN_CLIENT_SECRET=not-real AI_API_KEY=not-real \
     GRAFANA_ADMIN_USER=not-real GRAFANA_ADMIN_PASSWORD=not-real \
+    TX_RABBITMQ_PARSER_WORKER_PASSWORD="${TX_RABBITMQ_PARSER_WORKER_PASSWORD:-}" \
+    YECAO_MINIO_WORKER_ACCESS_KEY="${YECAO_MINIO_WORKER_ACCESS_KEY:-}" \
+    YECAO_MINIO_WORKER_SECRET_KEY="${YECAO_MINIO_WORKER_SECRET_KEY:-}" \
     FAKE_DOCKER_LOG="$log" FAKE_HEALTH_FAILURE_SERVICE="${FAKE_HEALTH_FAILURE_SERVICE:-}" \
     FAKE_HEALTH_REDIRECT_SERVICE="${FAKE_HEALTH_REDIRECT_SERVICE:-}" \
     FAKE_HEALTH_STATUS="${FAKE_HEALTH_STATUS:-}" \
@@ -232,11 +235,98 @@ grep -q '^stop .*wotb-frontend' "$up_failure_log"
 all_observability_log="$WORK/all-observability.log"
 run_deploy 8888888888888888888888888888888888888888 sha-888888888888 all wotb-backend,wotb-frontend,keycloak "$all_observability_log"
 ! grep -q 'invalid-ps-all' "$all_observability_log"
+# parser-worker is selected explicitly: a whole-stack deploy must not start the new execution-plane
+# service until the legacy stack is retired, so `all` keeps its existing service set.
+! grep -q '^up .*parser-worker' "$all_observability_log"
 grep -Fxq "WOTB_DIR=$WORK" "$WORK/verify-observability-env"
 grep -Fxq "WOTB_DEPLOY_ROOT=$WORK" "$WORK/verify-observability-env"
 grep -Fxq "WOTB_ALLOY_CONFIG=$WORK/deploy/observability/alloy/config.alloy" "$WORK/verify-observability-env"
 grep -Fxq "WOTB_ALLOY_VALIDATOR=$WORK/deploy/validate-alloy-config.sh" "$WORK/verify-observability-env"
 grep -Fxq "WOTB_DASHBOARD_DIR=$WORK/deploy/observability/grafana/dashboards" "$WORK/verify-observability-env"
 grep -Fxq "WOTB_GRAFANA_API_HELPER=$WORK/deploy/grafana-api-request.sh" "$WORK/verify-observability-env"
+
+# ---------------------------------------------------------------- parser-worker contract
+# The Yecao execution plane is a deployable service with no public port and no database credentials:
+# it consumes the TX broker and reads/writes Yecao MinIO with its own least-privilege identity.
+compose_worker="$(awk '/^  parser-worker:$/{flag=1} /^  wotb-frontend:$/{flag=0} flag' \
+  "$ROOT/deploy/docker-compose.prod.yml")"
+grep -q 'image: ghcr.io/a158coke/wotbtools-parser-worker:${TAG:?TAG is required}' <<< "$compose_worker"
+! grep -Eq '^    ports:' <<< "$compose_worker"
+! grep -Eq 'POSTGRES|DB_PASSWORD|JDBC|SPRING_DATASOURCE' <<< "$compose_worker"
+grep -q 'RABBITMQ_HOST: "${PARSER_WORKER_RABBITMQ_HOST:-10.20.0.1}"' <<< "$compose_worker"
+grep -q 'RABBITMQ_VHOST: "${PARSER_WORKER_RABBITMQ_VHOST:-/wotbtools}"' <<< "$compose_worker"
+grep -q 'TX_RABBITMQ_PARSER_WORKER_PASSWORD' <<< "$compose_worker"
+grep -q 'YECAO_MINIO_WORKER_ACCESS_KEY' <<< "$compose_worker"
+grep -q 'YECAO_MINIO_WORKER_SECRET_KEY' <<< "$compose_worker"
+
+worker_log="$WORK/parser-worker.log"
+worker_output="$(TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real \
+  YECAO_MINIO_WORKER_ACCESS_KEY=not-real YECAO_MINIO_WORKER_SECRET_KEY=not-real \
+  run_deploy 7777777777777777777777777777777777777777 sha-777777777777 parser-worker parser-worker \
+  "$worker_log" 2>&1)"
+grep -q 'parser-worker: PASS' <<< "$worker_output"
+grep -q '^pull parser-worker' "$worker_log"
+grep -q '^up -d --no-deps --force-recreate parser-worker' "$worker_log"
+! grep -Eq '^up .*wotb-backend|^up .*wotb-frontend|^up .*keycloak' "$worker_log"
+grep -q '"parser-worker"' "$WORK/production-release.json"
+
+# Selecting the service without its credentials must fail closed before any container is touched.
+set +e
+missing_credential_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
+  WOTB_DIR="$WORK" WOTB_INCOMING_DIR="$WORK/incoming" \
+  TAG=sha-777777777777 RELEASE_SHA=7777777777777777777777777777777777777777 RELEASE_RUN_NUMBER=7 \
+  WOTB_BACKEND_MIGRATION_MAX_VERSION=22 \
+  WOTB_DEPLOY_SERVICES=parser-worker WOTB_DEPLOY_IMAGE_SERVICES=parser-worker \
+  DB_PASSWORD=not-real KC_ADMIN_PASSWORD=not-real WG_APPLICATION_ID=not-real \
+  KEYCLOAK_ADMIN_CLIENT_SECRET=not-real AI_API_KEY=not-real \
+  GRAFANA_ADMIN_USER=not-real GRAFANA_ADMIN_PASSWORD=not-real \
+  FAKE_DOCKER_LOG="$WORK/missing-credential.log" \
+  bash "$WORK/incoming/deploy/deploy.sh" 2>&1)"
+missing_credential_rc=$?
+set -e
+[ "$missing_credential_rc" -ne 0 ]
+grep -q 'TX_RABBITMQ_PARSER_WORKER_PASSWORD secret is not configured' <<< "$missing_credential_output"
+[ ! -s "$WORK/missing-credential.log" ]
+
+# The worker exposes no HTTP endpoint, so a container that does not stay up must fail the deploy.
+cat > "$WORK/bin/docker" <<'FAKE_DOCKER_WORKER_DOWN'
+#!/usr/bin/env bash
+set -euo pipefail
+log="${FAKE_DOCKER_LOG:?}"
+[ "${1:-}" = compose ] || exit 0
+shift
+while [ "${1:-}" = -f ]; do shift 2; done
+command="${1:-}"
+shift || true
+case "$command" in
+  config) exit 0 ;;
+  pull) printf 'pull %s\n' "$*" >> "$log" ;;
+  up) printf 'up %s\n' "$*" >> "$log" ;;
+  stop) printf 'stop %s\n' "$*" >> "$log" ;;
+  run) printf '200\n' ;;
+  ps)
+    if [ "${1:-}" = -a ] && [ "${2:-}" = parser-worker ]; then
+      printf 'parser-worker Exited (1) 2 seconds ago\n'
+      exit 0
+    fi
+    printf 'service Up\n'
+    ;;
+  *) : ;;
+esac
+FAKE_DOCKER_WORKER_DOWN
+chmod 700 "$WORK/bin/docker"
+worker_down_log="$WORK/parser-worker-down.log"
+set +e
+worker_down_output="$(TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real \
+  YECAO_MINIO_WORKER_ACCESS_KEY=not-real YECAO_MINIO_WORKER_SECRET_KEY=not-real \
+  WOTB_HEALTH_ATTEMPTS=2 WOTB_HEALTH_INTERVAL_SEC=1 \
+  run_deploy 6666666666666666666666666666666666666666 sha-666666666666 parser-worker parser-worker \
+  "$worker_down_log" 2>&1)"
+worker_down_rc=$?
+set -e
+[ "$worker_down_rc" -ne 0 ]
+grep -q 'parser-worker: FAIL' <<< "$worker_down_output"
+grep -q '^stop .*parser-worker' "$worker_down_log"
+
 echo "compose up failure stops only the failed service"
-echo "selective deploy, global health, and no-auto-recovery contract OK"
+echo "selective deploy, global health, parser-worker liveness, and no-auto-recovery contract OK"

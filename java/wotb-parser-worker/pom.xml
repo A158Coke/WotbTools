@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.wotb</groupId>
+        <artifactId>wotb-parent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>wotb-parser-worker</artifactId>
+    <name>WotBTools Parser Worker</name>
+
+    <!-- Yecao 上的无状态解析执行面：consume wotb.parser（manual ack）→ 从 MinIO 读输入 →
+         复用 canonical DefaultReplayProcessingFacade 解析 → artifact PUT 回 MinIO →
+         发 parser.result / parser.failed → ack。
+         刻意不依赖 wotb-web 与任何 JDBC/PostgreSQL/JPA：worker 不持有数据库凭据，
+         job 权威状态属于 TX 控制面。RabbitMQ 拓扑的唯一 owner 是 infra/tofu/rabbitmq，
+         本模块（与其测试 fixture 之外的生产路径）不声明任何 topology。 -->
+    <dependencies>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-contracts</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-result</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-playback</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-replay-processing</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-object-storage-minio</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-broker-rabbitmq</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.amqp</groupId>
+            <artifactId>spring-rabbit</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-rabbitmq</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-minio</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>wotb-parser-worker</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${springboot.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
