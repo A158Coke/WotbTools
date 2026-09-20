@@ -658,6 +658,8 @@ jobs:
           export TF_VAR_minio_root_password=ci-root-password
           export TF_VAR_worker_access_key=ci-worker-access-key
           export TF_VAR_worker_secret_key=ci-worker-secret-key
+          export TF_VAR_control_api_access_key=ci-control-api-access-key
+          export TF_VAR_control_api_secret_key=ci-control-api-secret-key
           export MINIO_PROVIDER_MIRROR=/tmp/minio-provider-mirror
           mkdir -p "$MINIO_PROVIDER_MIRROR"
           tofu -chdir=infra/tofu/minio providers mirror "$MINIO_PROVIDER_MIRROR" >/dev/null

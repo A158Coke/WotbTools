@@ -27,15 +27,28 @@ class MinioObjectStoragePropertiesTest {
     }
 
     @Test
-    void neverPrintsTheSecretKey() {
+    void neverPrintsEitherCredential() {
         final MinioObjectStorageProperties properties =
                 new MinioObjectStorageProperties("host:9000", "bucket", "access-key", "top-secret-value", 5, 30);
 
         final String printed = properties.toString();
 
+        // 两个凭据都是敏感运行时值（tofu 侧 worker_access_key / control_api_access_key 均为 sensitive，
+        // 生产值来自 GitHub Secrets），因此渲染字符串里一个都不许出现。
         assertFalse(printed.contains("top-secret-value"), printed);
-        assertTrue(printed.contains("access-key"), printed);
-        assertTrue(printed.contains("bucket"), printed);
+        assertFalse(printed.contains("access-key"), printed);
+        assertTrue(printed.contains("accessKey=***"), printed);
+        assertTrue(printed.contains("secretKey=***"), printed);
+
+        // 非敏感设置保持可见，便于排障定位。
+        assertTrue(printed.contains("endpoint=host:9000"), printed);
+        assertTrue(printed.contains("bucket=bucket"), printed);
+        assertTrue(printed.contains("connectTimeoutSeconds=5"), printed);
+        assertTrue(printed.contains("writeTimeoutSeconds=30"), printed);
+
+        // 脱敏只发生在 toString：数据模型本身仍然返回真实值。
+        assertEquals("access-key", properties.accessKey());
+        assertEquals("top-secret-value", properties.secretKey());
         assertEquals("host:9000", properties.endpoint());
     }
 }
