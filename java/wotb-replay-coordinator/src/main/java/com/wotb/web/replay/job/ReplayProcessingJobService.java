@@ -459,42 +459,15 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
                     "parseFailed", parseSnap.parseFailed(),
                     "total", job.total()));
             job.advancePhase(ReplayProcessingJob.PHASE_FINALIZING_BATCH);
-            // finalize 阶段按权威 outcome 推进 duplicates/failures（conflicted 计 FAILURE、
-            // Rating-ineligible 计 SUCCESS，与旧 progress 语义一致）；parse 计数不受影响。
-            final int[] counters = new int[3]; // processed / duplicates / failures
-            final Replays.ReplayProgressListener finalizeProgress = (sourceIndex, sourceName, outcome) -> {
-                counters[0]++;
-                if (outcome == Replays.Outcome.DUPLICATE) {
-                    counters[1]++;
-                }
-                if (outcome == Replays.Outcome.FAILURE) {
-                    counters[2]++;
-                }
-                job.updateProgress(counters[0], counters[1], counters[2]);
-            };
-            final LeagueReplays.LeagueCollectResult c =
-                    LeagueReplays.finalize(list, null, finalizeProgress);
+            // dedupe / League / Rating / 聚合 / enrichment 本体在 ReplayBatchFinalizer ——
+            // 分布式控制面在同一个 FINALIZING_BATCH 阶段调用**同一个实现**，批次语义只有一份；
+            // 进度计数（duplicates/failures 语义与旧行为一致）也由它统一适配。
+            final ProcessedDataset dataset = ReplayBatchFinalizer.finalizeBatch(list, null,
+                    ReplayBatchFinalizer.progressListener(job::updateProgress));
             if (job.isCancelled()) {
                 throw new JobCancelledException();
             }
-            if (c.battles().isEmpty()) {
-                throw new NoValidReplaysException();
-            }
-            // 混合批次不再整体拒绝：League Rating 不聚合混合批次，battles 仍按
-            // 普通回放语义成功返回并 READY，leagueUnavailableCode 提示 League Analysis unavailable。
-            final String leagueUnavailableCode = c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED
-                    ? "MIXED_LEAGUE_AND_STANDARD_REPLAYS" : null;
-            // 事实层 enrich 一次：Preview / Export 直接消费已 enrich 的 authoritative Battle。
-            for (final Battle battle : c.battles()) {
-                PerformanceMetricsCalculator.populateBattle(battle);
-            }
-            if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
-                job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(), c.battleSourceIds(),
-                        c.duplicates(), c.failures(), c.leagueBatch(), null));
-            } else {
-                job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(), c.battleSourceIds(),
-                        c.duplicates(), c.failures(), null, leagueUnavailableCode));
-            }
+            job.markReady(dataset);
             finishTerminal(job, startNanos);
         } catch (final JobCancelledException e) {
             job.markCancelled();
@@ -593,7 +566,7 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
     // ---- helpers ----
 
     private static String errorCodeOf(final Exception e) {
-        if (e instanceof NoValidReplaysException) {
+        if (e instanceof ReplayBatchFinalizer.NoValidReplaysException) {
             return "NO_VALID_REPLAYS";
         }
         if (e instanceof ProcessingJobInternalInvariantException) {
@@ -628,9 +601,5 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         ProcessingJobInternalInvariantException(final String detail) {
             super("missing terminal ParsedEntry for " + detail);
         }
-    }
-
-    /** 0 场有效回放：终态 FAILED + NO_VALID_REPLAYS。 */
-    private static final class NoValidReplaysException extends RuntimeException {
     }
 }

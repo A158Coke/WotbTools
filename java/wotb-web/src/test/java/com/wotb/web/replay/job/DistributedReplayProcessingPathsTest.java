@@ -58,6 +58,7 @@ class DistributedReplayProcessingPathsTest {
     private ReplayProcessingJobStore store;
     private RecordingObjectStorage storage;
     private RecordingDispatcher dispatcher;
+    private ObjectStorageReplayDatasetRepository repository;
     private ReplayProcessingJobService service;
 
     @BeforeEach
@@ -65,9 +66,9 @@ class DistributedReplayProcessingPathsTest {
         store = new ReplayProcessingJobStore(tempDir, 60);
         storage = new RecordingObjectStorage();
         dispatcher = new RecordingDispatcher();
+        repository = new ObjectStorageReplayDatasetRepository(storage);
         service = new ReplayProcessingJobService(store, dispatcher, null,
-                new MinioReplayProcessingInputStore(storage),
-                new ObjectStorageReplayProcessingResultReader(storage));
+                new MinioReplayProcessingInputStore(storage), repository);
     }
 
     @AfterEach
@@ -140,7 +141,7 @@ class DistributedReplayProcessingPathsTest {
             final ReplayProcessingJobService failingService = new ReplayProcessingJobService(
                     failingStore, dispatcher, null,
                     new MinioReplayProcessingInputStore(storage),
-                    new ObjectStorageReplayProcessingResultReader(storage));
+                    new ObjectStorageReplayDatasetRepository(storage));
 
             final IllegalStateException failure = assertThrows(IllegalStateException.class, () -> failingService
                     .createJob(new MultipartFile[]{file(INPUT_NAME)}, 0, null, null));
@@ -171,9 +172,9 @@ class DistributedReplayProcessingPathsTest {
     }
 
     @Test
-    void resultIsServedFromObjectStorageCanonicalDataset() throws Exception {
+    void resultIsServedFromTheFinalizedBatchDataset() throws Exception {
         final String jobId = service.createJob(new MultipartFile[]{file(INPUT_NAME)}, 0, null, null);
-        writeCanonicalDataset(jobId, 0, battle("arena-remote"));
+        writeFinalizedDataset(jobId, "arena-remote");
         markReady(jobId);
 
         final PreviewResponse preview = service.result(jobId);
@@ -181,6 +182,23 @@ class DistributedReplayProcessingPathsTest {
         assertEquals(1, preview.battles().size());
         assertEquals("arena-remote", preview.battles().getFirst().arenaId());
         assertNull(preview.league());
+    }
+
+    /**
+     * 读取侧**不再**拼接 per-source 对象：只有 {@code result/source-*.json}（收尾的输入）而没有
+     * {@code result/finalized.json}（收尾的产物）时，{@code GET result} 必须仍是 409 —— 否则等于在
+     * 读取路径里发明第二套批次语义（跳过 dedupe / 冲突判定 / League / enrichment）。
+     */
+    @Test
+    void perSourceDatasetsAloneAreNotReadableAsTheDataset() throws Exception {
+        final String jobId = service.createJob(new MultipartFile[]{file(INPUT_NAME)}, 0, null, null);
+        writeSourceDataset(jobId, 0, battle("arena-remote"));
+        markReady(jobId);
+
+        final ResponseStatusException failure =
+                assertThrows(ResponseStatusException.class, () -> service.result(jobId));
+        assertEquals(HttpStatus.CONFLICT, failure.getStatusCode());
+        assertEquals("JOB_NOT_READY", failure.getReason());
     }
 
     @Test
@@ -194,6 +212,53 @@ class DistributedReplayProcessingPathsTest {
         assertEquals("JOB_NOT_READY", failure.getReason());
     }
 
+    /**
+     * FINALIZING_BATCH 收尾链（本次的目标行为）：per-source canonical dataset + PG 终态
+     * → 与本地同一个 {@link ReplayBatchFinalizer}（dedupe / League / 聚合 / enrichment）
+     * → finalized batch dataset 落对象存储 → 该对象就是读取侧的数据集。
+     */
+    @Test
+    void finalizationProducesTheFinalizedBatchDatasetInObjectStorage() throws Exception {
+        final String jobId = service.createJob(new MultipartFile[]{file(INPUT_NAME)}, 0, null, null);
+        writeSourceDataset(jobId, 0, battle("arena-finalized"));
+        final ReplayProcessingJob job = store.get(jobId);
+        assertNotNull(job);
+        assertTrue(job.startProcessing());
+        job.markSourceReady(0);
+        job.recordParseSuccess();
+        job.advancePhase(ReplayProcessingJob.PHASE_FINALIZING_BATCH);
+
+        final ProcessedDataset finalized = repository.finalizeBatch(job);
+
+        assertEquals(1, finalized.battles().size());
+        final ObjectKey key = ObjectStorageKeys.tempJobObject(jobId, "result/finalized.json");
+        assertTrue(storage.objects.containsKey(key.value()),
+                "finalized batch dataset 必须落在 temp/jobs/<jobId>/result/finalized.json");
+        assertEquals("application/json", storage.contentTypes.get(key.value()));
+
+        // enrichment 在收尾阶段执行：本地路径与分布式路径都消费这一份已 enrich 的 Battle。
+        final ProcessedDataset readBack = repository.readReadyDataset(job);
+        assertNotNull(readBack, "读取侧必须能读回收尾产物");
+        assertEquals("arena-finalized", readBack.battles().getFirst().arenaId);
+        assertEquals(14, readBack.battles().getFirst().players.size(), "Battle 必须完整 round-trip");
+        assertEquals(finalized.battles().getFirst().players.getFirst().contribution,
+                readBack.battles().getFirst().players.getFirst().contribution,
+                "round-trip 必须保留 enrichment 写入的 PlayerResult 事实");
+    }
+
+    /** READY 的 source 却缺 per-source canonical dataset：数据缺失，必须 fail closed（不是空批次）。 */
+    @Test
+    void finalizationFailsClosedWhenASourceDatasetIsMissing() {
+        final String jobId = service.createJob(new MultipartFile[]{file(INPUT_NAME)}, 0, null, null);
+        final ReplayProcessingJob job = store.get(jobId);
+        assertNotNull(job);
+        assertTrue(job.startProcessing());
+        job.markSourceReady(0);
+        job.recordParseSuccess();
+
+        assertThrows(IOException.class, () -> repository.finalizeBatch(job));
+    }
+
     private void markReady(final String jobId) {
         final ReplayProcessingJob job = store.get(jobId);
         assertNotNull(job);
@@ -203,13 +268,24 @@ class DistributedReplayProcessingPathsTest {
         assertTrue(job.markReady());
     }
 
-    private void writeCanonicalDataset(final String jobId, final int sourceIndex, final Battle battle) {
+    /** 收尾的输入：parser-worker 写的 canonical per-source dataset。 */
+    private void writeSourceDataset(final String jobId, final int sourceIndex, final Battle battle) {
         final RemoteSourceDataset dataset = new RemoteSourceDataset(
                 RemoteSourceDataset.SCHEMA_VERSION, sourceIndex, INPUT_NAME,
                 List.of(battle), List.of(INPUT_NAME), List.of("temp/jobs/" + jobId + "/input/0/" + INPUT_NAME),
                 List.of(), List.of(), null);
-        final byte[] body = JsonMapper.builder().build().writeValueAsBytes(dataset);
-        final ObjectKey key = ObjectStorageKeys.tempJobObject(jobId, "result/source-" + sourceIndex + ".json");
+        put(jobId, "result/source-" + sourceIndex + ".json", JsonMapper.builder().build().writeValueAsBytes(dataset));
+    }
+
+    /** 收尾的产物：控制面写的 finalized batch dataset（读取侧唯一的数据集）。 */
+    private void writeFinalizedDataset(final String jobId, final String arenaId) {
+        final ProcessedDataset dataset = new ProcessedDataset(List.of(battle(arenaId)), List.of(INPUT_NAME),
+                List.of("r0"), List.of(), List.of(), null, null);
+        put(jobId, "result/finalized.json", JsonMapper.builder().build().writeValueAsBytes(FinalizedDataset.from(dataset)));
+    }
+
+    private void put(final String jobId, final String relativePath, final byte[] body) {
+        final ObjectKey key = ObjectStorageKeys.tempJobObject(jobId, relativePath);
         storage.objects.put(key.value(), body);
         storage.contentTypes.put(key.value(), "application/json");
     }
