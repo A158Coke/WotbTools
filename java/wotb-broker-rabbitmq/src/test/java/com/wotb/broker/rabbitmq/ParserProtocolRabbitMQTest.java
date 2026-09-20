@@ -100,6 +100,10 @@ class ParserProtocolRabbitMQTest {
         connectionFactory.setUsername(ADMIN_USER);
         connectionFactory.setPassword(ADMIN_PASSWORD);
         connectionFactory.setVirtualHost("/");
+        // 与生产一致的投递语义：correlated publisher confirms + publisher returns，
+        // 否则 RabbitReplayProcessingDispatcher 的 fail-closed 构造守卫会拒绝装配。
+        connectionFactory.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);
+        connectionFactory.setPublisherReturns(true);
         template = new RabbitTemplate(connectionFactory);
         admin = new RabbitAdmin(connectionFactory);
         awaitManagementApi();
@@ -394,7 +398,7 @@ class ParserProtocolRabbitMQTest {
     }
 
     private static RabbitReplayProcessingDispatcher dispatcher() {
-        return new RabbitReplayProcessingDispatcher(template, CODEC);
+        return new RabbitReplayProcessingDispatcher(template, CODEC, Duration.ofSeconds(5));
     }
 
     private static ParserResultMessage resultEnvelope(final String eventId, final int attempt) {
