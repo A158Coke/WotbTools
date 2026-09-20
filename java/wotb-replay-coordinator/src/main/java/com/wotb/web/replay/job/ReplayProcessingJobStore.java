@@ -44,6 +44,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ReplayProcessingJobStore {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ReplayProcessingJobStore.class);
+    /** 冲突后解析权威 winner 的有界重试次数与退避（异常分支专用，最多 ~100ms）。 */
+    private static final int AUTHORITY_RESOLVE_ATTEMPTS = 3;
+    private static final long AUTHORITY_RESOLVE_BACKOFF_MILLIS = 50L;
 
     private final ConcurrentHashMap<String, ReplayProcessingJob> jobs = new ConcurrentHashMap<>();
     /**
@@ -207,7 +210,13 @@ public class ReplayProcessingJobStore {
      * 另一个进程提交，本调用是 loser——此时必须返回**对方的 jobId**，把本进程的重复 job 协作
      * 取消，并把进程内索引改写到权威 jobId。任何情况下都不会为同一 identity 返回第二个 jobId。</p>
      *
+     * <p><b>不变量</b>：本方法返回的 jobId 一定由 PostgreSQL 的
+     * {@code (owner_subject, operation_id)} 映射背书。冲突后若解析不到权威 winner，就取消
+     * loser 并抛出 {@link ProcessingOperationIdentityUnresolvedException}（fail closed），
+     * 而不是退化返回 loser jobId。</p>
+     *
      * @return 权威 jobId（通常等于 {@code jobId}；跨进程竞态时是对方的 jobId）
+     * @throws ProcessingOperationIdentityUnresolvedException 冲突后无法解析权威 winner
      */
     public String commitOperation(final String ownerSubject, final String operationId,
                                   final CompletableFuture<String> mine, final String jobId) {
@@ -222,24 +231,75 @@ public class ReplayProcessingJobStore {
             return jobId;
         }
         // 跨进程竞态 loser 路径：权威 identity 已属于另一个 job。
-        final String winner = authority.findCommittedJobId(ownerSubject, operationId);
+        final String winner = resolveAuthoritativeWinner(ownerSubject, operationId);
         if (winner == null) {
-            // 插入冲突却读不到（读时序极端）：保守返回本 jobId 并告警，绝不静默丢弃。
-            LOGGER.warn("replay_processing_operation_conflict_unresolved operationScoped=true jobId={}",
+            // 插入冲突 ⇒ 本 job 没有赢得权威绑定；随后又解析不到 winner（例如胜者被清理，
+            // operation 行随外键级联删除）。此时**绝不返回本 jobId**：它没有权威 operation
+            // 映射，返回它会让后续重试看不到 committed identity 而重复创建。
+            // 取消 doomed 的重复 job、摘除它的进程内索引，然后 fail closed。
+            cancelLoserQuietly(jobId);
+            dropOperationIndex(jobId);
+            LOGGER.error("replay_processing_operation_conflict_unresolved operationScoped=true jobId={}",
                     jobId);
-            return jobId;
+            throw new ProcessingOperationIdentityUnresolvedException();
         }
         LOGGER.warn("replay_processing_operation_conflict_lost operationScoped=true jobId={} authorityJobId={}",
                 jobId, winner);
         jobOperationKeys.put(winner, key);
         dropOperationIndex(jobId);
         operations.computeIfPresent(key, (k, state) -> OperationState.committed(winner));
+        // 重复 job 协作取消：它是 doomed 的，绝不把它当作本次提交结果返回。
+        cancelLoser(jobId);
+        return winner;
+    }
+
+    /**
+     * 冲突后解析权威 winner（有界重试读）。
+     *
+     * <p>PostgreSQL 的 {@code ON CONFLICT} 只对**已提交**的行触发，所以冲突之后本应立刻可见；
+     * 读不到只可能是该 identity 在此期间被释放（胜者 job 被 TTL/显式清理 → operation 行随外键
+     * 级联删除）。一次有界重读覆盖「释放与解析擦肩」的窗口；仍然读不到就让调用方 fail closed，
+     * 绝不复用陈旧结论、也不把 loser 当 winner。</p>
+     *
+     * @return 权威 jobId；{@code null} 表示无法解析（调用方必须 fail closed）
+     */
+    private String resolveAuthoritativeWinner(final String ownerSubject, final String operationId) {
+        for (int attempt = 0; attempt < AUTHORITY_RESOLVE_ATTEMPTS; attempt++) {
+            final String winner = authority.findCommittedJobId(ownerSubject, operationId);
+            if (winner != null) {
+                return winner;
+            }
+            if (attempt + 1 < AUTHORITY_RESOLVE_ATTEMPTS) {
+                try {
+                    Thread.sleep(AUTHORITY_RESOLVE_BACKOFF_MILLIS);
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 协作取消 doomed 的重复 job（成功与否不影响调用方结论）。 */
+    private void cancelLoser(final String jobId) {
         final ReplayProcessingJob loser = jobs.get(jobId);
         if (loser != null) {
-            // 重复 job 协作取消：它是 doomed 的，绝不把它当作本次提交结果返回。
             loser.requestCancel();
         }
-        return winner;
+    }
+
+    /**
+     * fail-closed 路径专用：取消 loser，且**不得**让取消过程自身的失败替换掉稳定的失败语义
+     * （调用方必须收到 {@link ProcessingOperationIdentityUnresolvedException}）。
+     */
+    private void cancelLoserQuietly(final String jobId) {
+        try {
+            cancelLoser(jobId);
+        } catch (final RuntimeException e) {
+            LOGGER.warn("replay_processing_operation_loser_cancel_failed jobId={} error={}",
+                    jobId, e.getMessage());
+        }
     }
 
     /**

@@ -95,6 +95,7 @@ class ReplayJobAuthorityPostgresTest {
         jdbc.sql("drop function if exists wotb_test_fail_job_insert()").update();
         jdbc.sql("drop trigger if exists wotb_test_fail_source_insert on replay_processing_source").update();
         jdbc.sql("drop function if exists wotb_test_fail_source_insert()").update();
+        dropOperationMappingLossInjection();
     }
 
     @Test
@@ -356,6 +357,43 @@ class ReplayJobAuthorityPostgresTest {
     }
 
     @Test
+    void unresolvedOperationConflictNeverReturnsLoserJobIdAndFailsClosed() {
+        final ReplayJobAuthority authority = authority();
+        final ReplayProcessingJobStore store = store(tempDir.resolve("unresolved"), authority);
+        final String winnerJobId = "p-winner";
+        final String loserJobId = "p-loser";
+        try {
+            // 胜者先建立权威 identity；败者已登记（真实 create 路径同样是先 register 再 submit）
+            store.register(new ReplayProcessingJob(winnerJobId, List.of("a.wotbreplay")));
+            assertTrue(authority.commitOperation(SUBJECT, OPERATION, winnerJobId));
+            store.register(new ReplayProcessingJob(loserJobId, List.of("a.wotbreplay")));
+
+            // 注入「插入冲突 + 权威映射在 loser 解析 winner 之前消失」
+            injectOperationMappingLoss();
+
+            final CompletableFuture<String> mine = new CompletableFuture<>();
+            assertThrows(ProcessingOperationIdentityUnresolvedException.class,
+                    () -> store.commitOperation(SUBJECT, OPERATION, mine, loserJobId),
+                    "冲突后解析不到权威 winner 必须 fail closed，绝不返回 loser jobId");
+
+            // loser jobId 没有被返回：权威映射已不存在，且 loser 已被协作取消
+            assertNull(authority.findCommittedJobId(SUBJECT, OPERATION));
+            assertEquals(ReplayProcessingJob.Status.CANCELLED,
+                    authority.findJob(loserJobId).orElseThrow().status());
+
+            // 后续重试可以干净地重新建立权威 identity
+            dropOperationMappingLossInjection();
+            final String retryJobId = "p-retry";
+            store.register(new ReplayProcessingJob(retryJobId, List.of("a.wotbreplay")));
+            assertEquals(retryJobId,
+                    store.commitOperation(SUBJECT, OPERATION, new CompletableFuture<>(), retryJobId));
+            assertEquals(retryJobId, authority.findCommittedJobId(SUBJECT, OPERATION));
+        } finally {
+            store.close();
+        }
+    }
+
+    @Test
     void operationIdIdempotencySurvivesStoreRestart() {
         final ReplayJobAuthority authority = authority();
         final ReplayProcessingJobStore first = store(tempDir.resolve("op-first"), authority);
@@ -585,6 +623,28 @@ class ReplayJobAuthorityPostgresTest {
                 + "language plpgsql as $$ begin raise exception 'injected job insert failure'; end $$").update();
         jdbc.sql("create trigger wotb_test_fail_job_insert before insert on replay_processing_job "
                 + "for each row execute function wotb_test_fail_job_insert()").update();
+    }
+
+    /**
+     * 注入「INSERT 冲突 + 权威映射在 loser 解析 winner 之前消失」：BEFORE INSERT 触发器先删除同一
+     * identity 的现有行，再 {@code return null} 跳过本次插入。于是本次 commit 观察到 0 行（冲突），
+     * 而紧随其后的权威查询必然读不到 winner。
+     */
+    private void injectOperationMappingLoss() {
+        jdbc.sql("create or replace function wotb_test_lose_operation_identity() returns trigger "
+                + "language plpgsql as $$ begin "
+                + "delete from replay_processing_operation "
+                + " where owner_subject = NEW.owner_subject and operation_id = NEW.operation_id; "
+                + "return null; end $$").update();
+        jdbc.sql("create trigger wotb_test_lose_operation_identity "
+                + "before insert on replay_processing_operation "
+                + "for each row execute function wotb_test_lose_operation_identity()").update();
+    }
+
+    private void dropOperationMappingLossInjection() {
+        jdbc.sql("drop trigger if exists wotb_test_lose_operation_identity "
+                + "on replay_processing_operation").update();
+        jdbc.sql("drop function if exists wotb_test_lose_operation_identity()").update();
     }
 
     private void injectSourceInsertFailure() {
