@@ -64,14 +64,39 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
     private final ReplayProcessingDispatcher dispatcher;
     private final MeterRegistry meterRegistry;
     private final Tankopedia tankopedia = Tankopedia.load();
+    /**
+     * 上传输入的落点；{@code null} = 进程本地 job 目录（缺省行为，逐字不变）。
+     * 分布式模式下由 {@code wotb-web} 注入对象存储实现（装配点见
+     * {@code com.wotb.web.replay.config.ReplayDistributedConfig}）。
+     */
+    private final ReplayProcessingInputStore inputStore;
+    /**
+     * READY dataset 的读取方式；{@code null} = 内存 {@link ReplayProcessingJob#result()}（缺省行为）。
+     */
+    private final ReplayProcessingResultReader resultReader;
 
+    /**
+     * 生产装配：可选的分布式端口缺省不存在（local 模式下不创建任何额外 bean），
+     * 因此本构造器在两种模式下都是同一个编排实现。
+     */
     @Autowired
     public ReplayProcessingJobService(final ReplayProcessingJobStore store,
                                       final ReplayProcessingDispatcher dispatcher,
-                                      @Autowired(required = false) final MeterRegistry meterRegistry) {
+                                      @Autowired(required = false) final MeterRegistry meterRegistry,
+                                      @Autowired(required = false) final ReplayProcessingInputStore inputStore,
+                                      @Autowired(required = false) final ReplayProcessingResultReader resultReader) {
         this.store = store;
         this.dispatcher = dispatcher;
         this.meterRegistry = meterRegistry;
+        this.inputStore = inputStore;
+        this.resultReader = resultReader;
+    }
+
+    /** 本地/测试装配便利构造器：不注入分布式端口（等价于只传前三个参数）。 */
+    public ReplayProcessingJobService(final ReplayProcessingJobStore store,
+                                      final ReplayProcessingDispatcher dispatcher,
+                                      final MeterRegistry meterRegistry) {
+        this(store, dispatcher, meterRegistry, null, null);
     }
 
     // ---- create / status / cancel / result ----
@@ -176,20 +201,14 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
     /** 创建 job（持久化输入 + 登记 + 提交调度器）；失败时清理自己创建的一切（绝不留下 doomed job）。 */
     private String createAndSubmit(final MultipartFile[] files, final Integer prioritySourceIndex) {
         final String jobId = UUID.randomUUID().toString();
-        final Path inputDir = store.inputDir(jobId);
-        final List<String> sourceNames = new ArrayList<>(files.length);
+        final List<String> sourceNames;
         try {
-            Files.createDirectories(inputDir);
-            int i = 0;
-            for (final MultipartFile f : files) {
-                final String name = f.getOriginalFilename() == null ? "replay.wotbreplay" : f.getOriginalFilename();
-                final String safe = ReplayJobFiles.sanitizeFileName(name);
-                f.transferTo(inputDir.resolve(i + "__" + safe));
-                sourceNames.add(safe);
-                i++;
-            }
+            sourceNames = persistInputs(jobId, files);
         } catch (final IOException e) {
-            store.removeAndCleanup(jobId);
+            // 半途失败同样要回滚：已经写入的对象存储输入不能变成没有 job 引用的孤儿
+            // （本地落点由 removeAndCleanup 删除，分布式落点由输入端口删除）。
+            discardInputs(jobId, files);
+            removeJobStateQuietly(jobId);
             throw new IllegalStateException("PROCESSING_JOB_STORAGE_UNAVAILABLE");
         }
         final ReplayProcessingJob job = new ReplayProcessingJob(jobId, sourceNames);
@@ -198,23 +217,78 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         } catch (final RuntimeException e) {
             // 权威模式下初始投影写不进去 = 创建失败：必须清掉已经落盘的输入目录，
             // 不允许留下「有文件、无权威状态」的孤儿 job。清理本身失败不掩盖原始异常。
-            try {
-                store.removeAndCleanup(jobId);
-            } catch (final RuntimeException cleanupFailure) {
-                LOGGER.warn("processing_job_cleanup_failed jobId={} error={}",
-                        jobId, cleanupFailure.getMessage());
-            }
+            discardInputs(jobId, files);
+            removeJobStateQuietly(jobId);
             throw e;
         }
         try {
-            dispatcher.submit(new ReplayProcessingRequest(jobId, sourceOrder(prioritySourceIndex, sourceNames)));
+            dispatcher.submit(new ReplayProcessingRequest(jobId,
+                    sourceOrder(prioritySourceIndex, sourceNames), ReplayProcessingRequest.FIRST_ATTEMPT));
         } catch (final ReplayProcessingQueueFullException e) {
-            store.removeAndCleanup(jobId);
+            discardInputs(jobId, files);
+            removeJobStateQuietly(jobId);
             throw new ProcessingQueueFullException();
+        } catch (final RuntimeException e) {
+            // 任何派发失败（AMQP 确认失败/不可路由/超时，或本地调度器不可用）都必须让 create 失败，
+            // 且不得留下一个没有任何执行绑定、也永远不会有结果的 job：注册态与输入一并回收。
+            // 清理失败不掩盖原始异常（作业已经注定失败，稳定错误语义必须保留）。
+            discardInputs(jobId, files);
+            removeJobStateQuietly(jobId);
+            throw e;
         }
         recordCreated(files.length);
         LOGGER.info(logLine("processing_job_created", jobId, "files", files.length));
         return jobId;
+    }
+
+    /**
+     * 回滚分布式输入（对象存储）；本地落点没有注入输入端口，直接返回。
+     *
+     * <p>清理失败**只记录**：create 已经注定失败，被清理动作替换掉的原始错误会变成错误的
+     * error code，因此这里绝不抛出，也绝不影响调用方正抛出的那个异常。</p>
+     */
+    private void discardInputs(final String jobId, final MultipartFile[] files) {
+        if (inputStore == null) {
+            return;
+        }
+        try {
+            inputStore.discard(jobId, files);
+        } catch (final IOException | RuntimeException cleanupFailure) {
+            LOGGER.warn("event=replay_processing_input_discard_failed jobId={} error={}",
+                    jobId, cleanupFailure.getMessage());
+        }
+    }
+
+    /** 回收已登记的 job 状态；同样只记录失败，不掩盖原始 create 失败。 */
+    private void removeJobStateQuietly(final String jobId) {
+        try {
+            store.removeAndCleanup(jobId);
+        } catch (final RuntimeException cleanupFailure) {
+            LOGGER.warn("processing_job_cleanup_failed jobId={} error={}",
+                    jobId, cleanupFailure.getMessage());
+        }
+    }
+
+    /**
+     * 持久化上传输入：缺省落进程本地 job 目录（{@code <root>/<jobId>/input/<i>__<name>}，
+     * 与引入分布式控制面前逐字一致）；注入 {@link ReplayProcessingInputStore} 时改由它决定落点。
+     */
+    private List<String> persistInputs(final String jobId, final MultipartFile[] files) throws IOException {
+        if (inputStore != null) {
+            return inputStore.store(jobId, files);
+        }
+        final Path inputDir = store.inputDir(jobId);
+        Files.createDirectories(inputDir);
+        final List<String> sourceNames = new ArrayList<>(files.length);
+        int i = 0;
+        for (final MultipartFile f : files) {
+            final String name = f.getOriginalFilename() == null ? "replay.wotbreplay" : f.getOriginalFilename();
+            final String safe = ReplayJobFiles.sanitizeFileName(name);
+            f.transferTo(inputDir.resolve(i + "__" + safe));
+            sourceNames.add(safe);
+            i++;
+        }
+        return sourceNames;
     }
 
     /** 低敏 identity 引用：只取前 8 个字符，绝不把完整 operationId 写进日志。 */
@@ -282,10 +356,16 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
     public ProcessedDataset readyDataset(final String jobId) {
         final ReplayProcessingJob job = requireJob(jobId);
         final ReplayProcessingJob.Snapshot snap = job.snapshot();
-        if (snap.status() != ReplayProcessingJob.Status.READY || job.result() == null) {
+        if (snap.status() != ReplayProcessingJob.Status.READY) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "JOB_NOT_READY");
         }
-        return job.result();
+        // 缺省（未注入 reader）就是内存 dataset，与引入分布式控制面前逐字一致。
+        final ProcessedDataset dataset =
+                resultReader == null ? job.result() : resultReader.readReadyDataset(job);
+        if (dataset == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "JOB_NOT_READY");
+        }
+        return dataset;
     }
 
     private ReplayProcessingJob requireJob(final String jobId) {

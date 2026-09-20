@@ -12,7 +12,7 @@
     <artifactId>wotb-object-storage-minio</artifactId>
     <name>WotBTools MinIO Object Storage</name>
 
-    <!-- 实现既有 com.wotb.contracts.ObjectStorage 端口（put/get/exists），
+    <!-- 实现既有 com.wotb.contracts.ObjectStorage 端口（put/get/exists/delete），
          SDK 类型只允许出现在本模块内部。 -->
     <dependencies>
         <dependency>
