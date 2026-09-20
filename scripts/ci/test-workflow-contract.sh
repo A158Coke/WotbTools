@@ -45,8 +45,9 @@ assert "docker/build-push-action@v7" in backend_job
 assert "cache-from: type=gha,scope=backend" in backend_job
 assert "cache-to: type=gha,mode=max,scope=backend" in backend_job
 assert "docker build --build-arg BUILD_COMMIT" not in backend_job
-assert "RUN --mount=type=cache,target=/root/.m2" in backend_dockerfile
-assert backend_dockerfile.count("RUN --mount=type=cache,target=/root/.m2") == 2
+assert "RUN --mount=type=cache,target=/root/.m2" not in backend_dockerfile
+assert backend_dockerfile.count("dependency:go-offline -q") == 1
+assert backend_dockerfile.count("-DskipTests clean package -q") == 1
 assert "dependency:go-offline -q || true" not in backend_dockerfile
 assert "workflow_run:" in deploy and "workflow_dispatch:" in deploy
 assert "tx_services:" in deploy

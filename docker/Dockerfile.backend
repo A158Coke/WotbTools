@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # Docker 构建上下文排除了 .git；CI 必须把冻结的 release SHA 显式注入镜像。
 ARG BUILD_COMMIT=unknown
 
@@ -22,8 +21,7 @@ COPY java/wotb-ai/pom.xml java/wotb-ai/pom.xml
 COPY java/wotb-control/pom.xml java/wotb-control/pom.xml
 COPY java/wotb-web/pom.xml java/wotb-web/pom.xml
 WORKDIR /build/java
-RUN --mount=type=cache,target=/root/.m2 \
-    mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests dependency:go-offline -q
+RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests dependency:go-offline -q
 WORKDIR /build
 COPY java/wotb-contracts/src java/wotb-contracts/src
 COPY java/wotb-core/src java/wotb-core/src
@@ -34,8 +32,7 @@ COPY java/wotb-replay-processing/src java/wotb-replay-processing/src
 COPY java/wotb-ai/src java/wotb-ai/src
 COPY java/wotb-web/src java/wotb-web/src
 WORKDIR /build/java
-RUN --mount=type=cache,target=/root/.m2 \
-    mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests clean package -q
+RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests clean package -q
 
 FROM eclipse-temurin:25-jre
 ARG BUILD_COMMIT
