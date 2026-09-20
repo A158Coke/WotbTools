@@ -137,6 +137,12 @@ Business PostgreSQL 是权威业务状态，因此门禁同样要求它完全就
 这些检查全部只读，不创建、修改或删除任何数据库或数据行。详见
 `docs/operations/business-postgres.md`。
 
+门禁读取的 live Compose 现在也包含 TX 业务运行时 `business-api`，因此它的必需输入同样要在
+环境中提供（应用数据库凭据 `TX_BUSINESS_DB_*`、`TX_RABBITMQ_CONTROL_API_PASSWORD`、
+MinIO `control_api` key pair、`KEYCLOAK_ADMIN_CLIENT_SECRET`、`AI_API_KEY`），缺失时门禁在
+渲染阶段立即拒绝，而不是给出误导性的 ready。门禁本身仍只读：这些值只用于 Compose 渲染与
+就绪判定，不写盘、不落日志。
+
 门禁以只读 Keycloak Admin API 检查 `idp-qq`：必须唯一、`providerId=qq`、`enabled=true`、
 client ID 非 placeholder，且 QQ endpoint/config contract 完整；裸 `qq` / `juhe-qq` alias 会阻断。
 全部通过后输出 `QQ_IDP_STATUS=idp-qq=READY`；不再接受 `WAITING_EXTERNAL` 豁免。门禁中的独立

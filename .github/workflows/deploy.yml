@@ -129,14 +129,14 @@ jobs:
                 raise SystemExit(0)
             if target != "tx":
                 raise SystemExit("target must be tx, minio, or parser-worker")
-            allowed = {"keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "caddy"}
+            allowed = {"keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "business-api", "caddy"}
             if not requested or any(not service or service not in allowed for service in requested):
                 raise SystemExit("tx_services must contain only supported TX services")
             if len(requested) != len(set(requested)):
                 raise SystemExit("tx_services must not contain duplicate services")
             requested = [
                 service
-                for service in ("keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "caddy")
+                for service in ("keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "business-api", "caddy")
                 if service in requested
             ]
             print(f"release_sha={commit_sha}")
@@ -144,7 +144,7 @@ jobs:
             print(f"build_run_number={run_number}")
             print("backend_migration_max_version=")
             print(f"deploy_services={','.join(requested)}")
-            image_services = [service for service in requested if service in {"keycloak", "wotb-frontend"}]
+            image_services = [service for service in requested if service in {"keycloak", "wotb-frontend", "business-api"}]
             print(f"image_services={','.join(image_services)}")
             print("yecao_services=")
             print(f"tx_services={','.join(requested)}")
@@ -184,6 +184,8 @@ jobs:
           else:
               if "wotb-backend" in manifest["deployServices"]:
                   labels.append("Backend")
+              if "business-api" in manifest["deployServices"]:
+                  labels.append("Business API")
               if "wotb-frontend" in manifest["deployServices"]:
                   labels.append("Frontend")
               if "keycloak" in manifest["deployServices"]:
@@ -219,6 +221,7 @@ jobs:
           for service in "${services[@]}"; do
             case "$service" in
               wotb-backend) image=ghcr.io/a158coke/wotbtools-backend ;;
+              business-api) image=ghcr.io/a158coke/wotbtools-backend ;;
               wotb-frontend) image=ghcr.io/a158coke/wotbtools-frontend ;;
               keycloak) image=ghcr.io/a158coke/wotbtools-keycloak ;;
               minio) image=ghcr.io/a158coke/wotbtools-minio ;;
@@ -590,7 +593,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL,TX_RABBITMQ_ADMIN_USER,TX_RABBITMQ_ADMIN_PASSWORD,TX_RABBITMQ_CONTROL_API_PASSWORD,TX_RABBITMQ_PARSER_WORKER_PASSWORD,TX_BUSINESS_POSTGRES_ADMIN_USER,TX_BUSINESS_POSTGRES_ADMIN_PASSWORD,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,TX_BUSINESS_DB_PASSWORD_VERSION
+          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL,TX_RABBITMQ_ADMIN_USER,TX_RABBITMQ_ADMIN_PASSWORD,TX_RABBITMQ_CONTROL_API_PASSWORD,TX_RABBITMQ_PARSER_WORKER_PASSWORD,TX_BUSINESS_POSTGRES_ADMIN_USER,TX_BUSINESS_POSTGRES_ADMIN_PASSWORD,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,TX_BUSINESS_DB_PASSWORD_VERSION,KEYCLOAK_ADMIN_CLIENT_SECRET,AI_API_KEY,AI_BASE_URL,AI_MODEL,AI_CONNECT_TIMEOUT_SEC,AI_TIMEOUT_SEC,AI_CALL_TIMEOUT_SEC,AI_RETRY_MAX_ATTEMPTS,AI_RETRY_INITIAL_BACKOFF_MS,AI_RETRY_MAX_BACKOFF_MS,AI_RETRY_BACKOFF_MULTIPLIER,AI_CONTEXT_WINDOW_TOKENS,AI_SINGLE_REPLAY_MAX_INPUT_TOKENS,AI_MAX_OUTPUT_TOKENS,AI_PROMPT_SAFETY_MARGIN_TOKENS,AI_THINKING_ENABLED,AI_THINKING_ENABLED_CALL2,AI_REASONING_EFFORT,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY,AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY
           script: bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
         env:
           TAG: ${{ needs.changes.outputs.release_tag }}
@@ -615,3 +618,34 @@ jobs:
           TX_BUSINESS_DB_USERNAME: ${{ vars.TX_BUSINESS_DB_USERNAME }}
           TX_BUSINESS_DB_PASSWORD: ${{ secrets.TX_BUSINESS_DB_PASSWORD }}
           TX_BUSINESS_DB_PASSWORD_VERSION: ${{ vars.TX_BUSINESS_DB_PASSWORD_VERSION || '1' }}
+          # TX business runtime (`business-api`): Keycloak Admin API client,
+          # AI Review, and the MinIO control-plane identity. The RabbitMQ
+          # control-api password and the business application role are passed
+          # above because both the broker provisioning and the runtime need them.
+          KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ vars.AI_BASE_URL || 'https://api.deepseek.com' }}
+          AI_MODEL: ${{ vars.AI_MODEL || 'deepseek-v4-flash' }}
+          AI_CONNECT_TIMEOUT_SEC: ${{ vars.AI_CONNECT_TIMEOUT_SEC || '10' }}
+          AI_TIMEOUT_SEC: ${{ vars.AI_TIMEOUT_SEC || '300' }}
+          AI_CALL_TIMEOUT_SEC: ${{ vars.AI_CALL_TIMEOUT_SEC || '315' }}
+          AI_RETRY_MAX_ATTEMPTS: ${{ vars.AI_RETRY_MAX_ATTEMPTS || '3' }}
+          AI_RETRY_INITIAL_BACKOFF_MS: ${{ vars.AI_RETRY_INITIAL_BACKOFF_MS || '1000' }}
+          AI_RETRY_MAX_BACKOFF_MS: ${{ vars.AI_RETRY_MAX_BACKOFF_MS || '8000' }}
+          AI_RETRY_BACKOFF_MULTIPLIER: ${{ vars.AI_RETRY_BACKOFF_MULTIPLIER || '2.0' }}
+          AI_CONTEXT_WINDOW_TOKENS: ${{ vars.AI_CONTEXT_WINDOW_TOKENS || '1000000' }}
+          AI_SINGLE_REPLAY_MAX_INPUT_TOKENS: ${{ vars.AI_SINGLE_REPLAY_MAX_INPUT_TOKENS || '940000' }}
+          AI_MAX_OUTPUT_TOKENS: ${{ vars.AI_MAX_OUTPUT_TOKENS || '32768' }}
+          AI_PROMPT_SAFETY_MARGIN_TOKENS: ${{ vars.AI_PROMPT_SAFETY_MARGIN_TOKENS || '16384' }}
+          AI_THINKING_ENABLED: ${{ vars.AI_THINKING_ENABLED || 'true' }}
+          AI_THINKING_ENABLED_CALL2: ${{ vars.AI_THINKING_ENABLED_CALL2 || 'false' }}
+          AI_REASONING_EFFORT: ${{ vars.AI_REASONING_EFFORT || 'max' }}
+          AI_REVIEW_WORKER_MAX_CONCURRENT: ${{ vars.AI_REVIEW_WORKER_MAX_CONCURRENT || '4' }}
+          AI_REVIEW_WORKER_QUEUE_CAPACITY: ${{ vars.AI_REVIEW_WORKER_QUEUE_CAPACITY || '4' }}
+          AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC: '1100'
+          REPLAY_COORDINATE_HALF_EXTENT: ${{ vars.REPLAY_COORDINATE_HALF_EXTENT || '250' }}
+          REPLAY_COORDINATE_CLAMP_TOLERANCE: ${{ vars.REPLAY_COORDINATE_CLAMP_TOLERANCE || '12.5' }}
+          BOOST_AUTO_CONFIRM_HOURS: ${{ vars.BOOST_AUTO_CONFIRM_HOURS || '72' }}
+          BOOST_AUTO_CONFIRM_SCAN_MS: ${{ vars.BOOST_AUTO_CONFIRM_SCAN_MS || '300000' }}
+          YECAO_MINIO_CONTROL_API_ACCESS_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_ACCESS_KEY }}
+          YECAO_MINIO_CONTROL_API_SECRET_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_SECRET_KEY }}

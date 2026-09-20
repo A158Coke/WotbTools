@@ -16,8 +16,12 @@ import sys
 
 IMAGE_NAMES = ("backend", "frontend", "keycloak", "minio", "parser-worker")
 APPLICATION_IMAGE_NAMES = ("backend", "frontend", "keycloak")
+# The deploy service a built image is published as. The backend image is owned
+# by TX since the business runtime moved there; ``wotb-backend`` stays a
+# deployable Yecao service only for the retirement/rollback window and is never
+# selected by inference.
 APPLICATION_SERVICES = {
-    "backend": "wotb-backend",
+    "backend": "business-api",
     "frontend": "wotb-frontend",
     "keycloak": "keycloak",
     "minio": "minio",
@@ -34,6 +38,7 @@ DEPLOYABLE_SERVICES = {
     "keycloak",
     "wotb-backend",
     "wotb-frontend",
+    "business-api",
     "keycloak-postgres",
     "business-postgres",
     "rabbitmq",
@@ -47,6 +52,7 @@ TARGET_BY_SERVICE = {
     "business-postgres": "tx",
     "rabbitmq": "tx",
     "wotb-frontend": "tx",
+    "business-api": "tx",
     "wotb-backend": "yecao",
     "postgres": "yecao",
     "node-exporter": "yecao",
@@ -60,6 +66,9 @@ TARGET_BY_SERVICE = {
 IMAGE_SERVICE_BY_DEPLOY_SERVICE = {
     value: key for key, value in APPLICATION_SERVICES.items()
 }
+# ``wotb-backend`` stays a deployable Yecao service (rollback/retirement window),
+# but no release plan produces it any more, so it is deliberately absent from the
+# image mapping above: the backend image is published as ``business-api``.
 MANUAL_SERVICE_ALIASES = {
     "backend": "backend",
     "frontend": "frontend",
@@ -312,19 +321,25 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
         # additive.
         deploy_services = [name for name in deploy_services if name in OBSERVABILITY_DEPLOY_PATTERNS]
         if any(_matches(path, "deploy/docker-compose.prod.yml") for path in normalized_paths):
-            # Yecao remains backend/business-data/observability only during
-            # Phase 1. Its legacy frontend/Keycloak must not be refreshed by a
-            # generic Compose-config release after those images move to TX.
+            # The Yecao runtime is observability plus the business-data
+            # PostgreSQL only. Its legacy application services (wotb-backend,
+            # wotb-frontend, keycloak) are retired: TX owns them now, and the
+            # Yecao copies must never be refreshed by a generic Compose-config
+            # release. They stay explicitly selectable through the rollback
+            # window.
             deploy_services.extend([
-                "postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana", "wotb-backend"
+                "postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana"
             ])
         if any(_matches_any(path, TX_DEPLOY_PATTERNS) for path in normalized_paths):
-            # A TX topology bootstrap cannot safely infer an application image
-            # identity from prior metadata. Rebuild both TX application images
-            # from the frozen commit and deploy that exact pair after Tofu.
+            # A TX topology change cannot safely infer an application image
+            # identity from prior metadata. Rebuild the TX application images
+            # from the frozen commit and deploy that exact set after Tofu; this
+            # also guarantees a Compose-only change actually reaches the running
+            # business runtime.
             images["frontend"] = True
             images["keycloak"] = True
-            deploy_services.extend(["keycloak-postgres", "keycloak", "wotb-frontend"])
+            images["backend"] = True
+            deploy_services.extend(["keycloak-postgres", "keycloak", "wotb-frontend", "business-api"])
         if any(_matches_any(path, RABBITMQ_TX_DEPLOY_PATTERNS) for path in normalized_paths):
             # RabbitMQ's runtime image is upstream-pinned in Compose. Its
             # isolated provider root must not rebuild or restart Keycloak,
