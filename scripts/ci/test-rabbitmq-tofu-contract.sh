@@ -163,6 +163,31 @@ assert r'read = "^wotb\\.parser$"' in parser_acl
 for acl in (control_acl, parser_acl):
     assert '".*"' not in acl, "application identities must never hold a vhost-wide ACL"
 
+# ------------------------------------------------- identity tags stay empty
+# A RabbitMQ tag is what grants Management API/UI access, so the source contract
+# pins both identities to an empty tag set: gaining one is the difference
+# between an AMQP-only application identity and a broker administrator.
+for resource_name, user_name in (
+    ("control_api", "control-api"),
+    ("parser_worker", "parser-worker"),
+):
+    user = flat(block(topology, "rabbitmq_user", resource_name))
+    assert f'name = "{user_name}"' in user, resource_name
+    after_tags = user.split("tags =", 1)[1].lstrip()
+    assert after_tags.startswith("[]"), (resource_name, after_tags[:40])
+
+for forbidden_tag in ("management", "administrator", "policymaker", "monitoring"):
+    assert forbidden_tag not in topology, f"forbidden RabbitMQ tag in topology: {forbidden_tag}"
+
+for forbidden_grant in ("password_wo", "password_hash"):
+    assert forbidden_grant not in topology, forbidden_grant
+
+# The plan guard, not only this file, has to enforce the empty tag set.
+guard = read("infra/tofu/rabbitmq/validate-plan.sh")
+assert 'after.get("name") != expected_name' in guard
+assert 'after.get("tags") != []' in guard
+assert 'user_attributes = {"id", "name", "password", "tags"}' in guard
+
 # ------------------------------------------------------------- mirror + TX
 tofurc = flat(read("deploy/tx/rabbitmq.tofurc"))
 assert 'path = "/opt/wotb-tx/tofu-provider-mirror"' in tofurc

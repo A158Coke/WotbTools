@@ -65,12 +65,17 @@ they are not part of a RabbitMQ ACL.
 
 ### Why a topic exchange
 
-One job exchange has to serve several routing keys (`parser.request`,
-`parser.retry`, `parser.dead`) and future job families such as `export.*`
-without adding an exchange per type. Version 1 binds and publishes only exact
-routing keys, so the wildcard capability stays unused and the routing table
-stays deterministic. A `direct` exchange would need the same number of bindings
-today while forcing a new exchange for every future job family.
+`topic` is a deliberate forward-compatible choice, not a routing requirement.
+A later version can add wildcard bindings (`parser.*`, `export.*`) without
+replacing the exchange, and changing an exchange type is a destructive
+replacement of a `prevent_destroy` resource. Version 1 binds and publishes only
+exact routing keys, so the wildcard capability stays unused and the routing
+table stays deterministic.
+
+A `direct` exchange would route today's exact keys just as well — it carries
+arbitrary exact routing keys such as `parser.request` and `export.request` — so
+`direct` would not need one exchange per job family. It is rejected here only
+because it would have to be replaced to ever gain wildcard routing.
 
 ### Why `x-queue-type` is declared explicitly
 
@@ -101,15 +106,19 @@ requeue, which re-enters the retry loop) or terminal (publish `parser.dead`).
 
 ## Permissions
 
-| User | configure | write | read |
-|---|---|---|---|
-| `control-api` | `^$` | `^wotb\.jobs$` | `^$` |
-| `parser-worker` | `^$` | `^wotb\.jobs$` | `^wotb\.parser$` |
+| User | tags | configure | write | read |
+|---|---|---|---|---|
+| `control-api` | `[]` | `^$` | `^wotb\.jobs$` | `^$` |
+| `parser-worker` | `[]` | `^$` | `^wotb\.jobs$` | `^wotb\.parser$` |
 
-Neither identity carries an administrator tag. RabbitMQ requires at least the
-`management` tag before a user may call the Management HTTP API at all, so
-`control-api` and `parser-worker` cannot reach the Management API, the
-Management UI, or its HTTP publish/get helpers; they only speak AMQP.
+Neither identity carries any tag. RabbitMQ requires at least the `management`
+tag before a user may call the Management HTTP API at all, so `control-api` and
+`parser-worker` cannot reach the Management API, the Management UI, or its HTTP
+publish/get helpers; they only speak AMQP. The empty tag set is enforced in two
+places, not just declared once: `validate-plan.sh` refuses any saved plan whose
+resulting application user carries tags, is renamed, or gains unknown user
+attributes, and `scripts/ci/test-rabbitmq-tofu-contract.sh` pins the source
+`tags = []` so a future change cannot silently grant Management API access.
 
 - `control-api` dispatches jobs. It may publish to `wotb.jobs`, and it may
   neither declare topology nor read any queue. Routing keys are not part of a
@@ -157,9 +166,19 @@ The plan validator allows initial creates plus the two explicitly reviewed
 in-place updates: rotating the application user passwords and changing the
 vhost ACLs. It rejects every topology `update`, so a queue or exchange argument
 change has to be an operator-reviewed replacement rather than a silent drift.
-It also rejects any ACL that would let an application identity configure
-topology or hold a vhost-wide `write`/`read` grant, whatever an approved diff
-contains. The second plan must still be entirely no-op after those updates.
+
+An allowed application-user update is effectively limited to credential
+rotation, because the validator inspects the post-plan representation instead of
+trusting the action name: the user must keep its exact expected name, must still
+have an empty tag set, and must not carry any user attribute outside the known
+`id`/`name`/`password`/`tags` set. Unknown values for those attributes are
+rejected too, so an unprovable tag set fails closed. Sensitive passwords are
+never inspected, so rotation keeps working.
+
+The validator likewise rejects any ACL that would let an application identity
+configure topology or hold a vhost-wide `write`/`read` grant, whatever an
+approved diff contains. The second plan must still be entirely no-op after those
+updates.
 
 ## Administrator credential rotation
 
@@ -186,8 +205,15 @@ installation; production cannot download it.
 
 `scripts/ci/test-rabbitmq-tofu-contract.sh` pins the reviewed contract without a
 broker: the exact exchange/queue/binding names and arguments, the exact ACL
-regexes, the `cyrilgdn/rabbitmq 1.10.1` provider pin and lockfile, the
-mirror-only `.tofurc`, and the Compose runtime boundary.
+regexes, the `tags = []` identity contract, the `cyrilgdn/rabbitmq 1.10.1`
+provider pin and lockfile, the mirror-only `.tofurc`, and the Compose runtime
+boundary.
+
+`infra/tofu/rabbitmq/test-validate-plan.sh` pins the plan-safety policy against
+saved-plan fixtures, including the negative cases: an application user that
+gains `management`, `administrator` or `monitoring`, any other non-empty tag
+set, an unprovable tag set, a renamed identity, extra identity metadata, and
+every topology mutation.
 
 The CI `deploy/test-rabbitmq-tofu.sh` smoke uses disposable credentials and a
 temporary RabbitMQ container. It checks `tofu fmt`, mirrors the provider,
@@ -196,6 +222,8 @@ running broker that the exchange, queues, bindings and ACLs match the declared
 topology. Because the application identities carry no tags and therefore cannot
 reach the Management API, messaging is exercised over real AMQP with `pika`:
 
+- both identities are refused by the Management API with
+  `Not management user`, proving the empty tag set on the running broker;
 - `control-api` publishes `parser.request` and `parser-worker` consumes it from
   `wotb.parser`;
 - a job that `parser-worker` rejects with `nack(requeue=false)` travels through
