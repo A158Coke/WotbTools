@@ -152,14 +152,12 @@ public class ParserRequestHandler {
     }
 
     /**
-     * The stable error code reported when the whole attempt failed before any source reached
-     * terminal state. No exception text, path or exception class reaches the wire.
+     * The wire code for every infrastructure <em>work</em> failure: the worker could not reach the
+     * object storage a source needs, on a read or on an artifact write. It is deliberately the only
+     * one — outcome publish uncertainty is not a work failure and must never be reported as another
+     * semantic outcome (see {@code ParserRequestListener}).
      */
-    public static String infrastructureErrorCode(final Throwable failure) {
-        return failure instanceof ParserOutcomePublishException
-                ? "PARSER_OUTCOME_NOT_DELIVERED"
-                : "PARSER_WORKER_STORAGE_UNAVAILABLE";
-    }
+    public static final String STORAGE_UNAVAILABLE_WIRE_CODE = "PARSER_WORKER_STORAGE_UNAVAILABLE";
 
     /**
      * Reads one source from object storage and runs the canonical parser into the worker's
