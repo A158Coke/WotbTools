@@ -69,7 +69,7 @@ public class ParserWorkerAssembly {
     @Bean
     @ConfigurationProperties(prefix = "wotb.parser-worker")
     ParserWorkerProperties parserWorkerProperties() {
-        return new ParserWorkerProperties(2, 10, 30);
+        return new ParserWorkerProperties(2, 1, 10, 30);
     }
 
     @Bean
@@ -150,7 +150,16 @@ public class ParserWorkerAssembly {
                 new SimpleMessageListenerContainer(parserWorkerConnectionFactory);
         container.setQueueNames(ParserTopology.PARSER_QUEUE);
         container.setAcknowledgeMode(AcknowledgeMode.MANUAL);
+        // Concurrency is the number of consumers, not the prefetch: a single consumer holding two
+        // unacked deliveries still parses one replay at a time. Both bounds are set so the intended
+        // parallelism is exactly `concurrency` and cannot drift with load.
+        container.setConcurrentConsumers(properties.concurrency());
+        container.setMaxConcurrentConsumers(properties.concurrency());
+        // Prefetch is the per-consumer backlog. Keep it small: an unacked delivery is work the
+        // worker has promised to finish, and every extra one only lengthens the redelivery window
+        // after a crash.
         container.setPrefetchCount(properties.prefetch());
+        container.setDefaultRequeueRejected(false);
         container.setShutdownTimeout(properties.shutdownTimeoutSeconds() * 1000L);
         container.setMessageListener(new ParserRequestListener(parserMessageCodec, parserRequestHandler));
         return container;

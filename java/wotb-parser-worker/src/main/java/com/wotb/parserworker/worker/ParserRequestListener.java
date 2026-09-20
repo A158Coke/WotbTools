@@ -22,21 +22,33 @@ import org.springframework.amqp.rabbit.listener.api.ChannelAwareMessageListener;
  *       {@code parser.result} / {@code parser.failed} with correlated publisher confirms and only
  *       then returns. Acknowledging earlier would let PostgreSQL keep a job that no outcome will
  *       ever reach — the same invariant PR C enforces on the dispatch direction;</li>
- *   <li><b>infrastructure failure → retryable.</b> Object storage unavailable on a read, or a lost
- *       broker confirm, throws: the request is rejected with {@code requeue=false} and the reviewed
- *       topology returns it through {@code wotb.parser.retry} after the TTL, so the report says
- *       {@code retryable=true}. The worker keeps no retry state machine of its own and no
- *       PostgreSQL state — the control plane owns the attempt decision;</li>
  *   <li><b>business failure → ack.</b> A replay the canonical parser rejects is terminal: the
- *       outcome (per-source {@code FAILED}, or {@code parser.failed} when no source produced one)
- *       reports the stable error code and the delivery is acknowledged. Re-running the same bytes
- *       cannot change the result;</li>
- *   <li><b>undecodable body → park and ack.</b> The codec fails closed, so a body the worker cannot
- *       understand has no {@code jobId} to report and can never succeed on redelivery. The raw
- *       delivery is parked on {@code wotb.parser.dlq} with {@code parser.dead} — the one terminal
- *       judgement the worker can make alone — and then acknowledged, so the poison message cannot
- *       spin through the retry loop forever.</li>
+ *       outcome reports the stable error code per source and the delivery is acknowledged.
+ *       Re-running the same bytes cannot change the result;</li>
+ *   <li><b>infrastructure failure → report, then ack.</b> Object storage unavailable on a read or a
+ *       write, or a lost broker confirm, throws. The worker publishes {@code parser.failed} for the
+ *       <em>same</em> {@code jobId} and {@code attempt} with {@code retryable=true}, waits for the
+ *       broker to confirm it, and acknowledges the request. It deliberately does <b>not</b> reject
+ *       the request: retrying is a control-plane decision, not a broker-side loop (see below);</li>
+ *   <li><b>report could not be delivered → no ack, no nack.</b> If publishing {@code parser.failed}
+ *       fails, the request is left unacknowledged so ordinary AMQP connection/channel redelivery
+ *       brings back the same {@code attempt} — never a new logical attempt, and never a silent
+ *       acknowledgement.</li>
  * </ul>
+ *
+ * <p><b>Retry policy is control-plane owned.</b> The worker never routes a job through
+ * {@code wotb.parser.retry}: that queue is not a worker retry mechanism. The control plane (which
+ * holds PostgreSQL and is the only authority on job state) receives {@code parser.failed},
+ * decides whether the attempt may be retried, and — only if it may — advances the authoritative
+ * attempt and dispatches a new {@code parser.request} with {@code attempt + 1}. Two distinct
+ * concepts must not be conflated:</p>
+ * <ul>
+ *   <li><b>logical retry</b> = a new control-plane dispatch with {@code attempt + 1};</li>
+ *   <li><b>transport redelivery</b> = the <em>same</em> attempt arriving again, only because the
+ *       original delivery was never acknowledged (crash, lost confirm, publish failure).</li>
+ * </ul>
+ * The worker owns no retry counter or budget, and no job state: it has no database access and must
+ * never gain one for this.</p>
  *
  * <p>Processing is idempotent: all keys derive from {@code (jobId, sourceIndex)} and every write
  * is an overwrite. A redelivered request therefore re-runs its sources and reproduces the same
@@ -64,20 +76,18 @@ public class ParserRequestListener implements ChannelAwareMessageListener {
         try {
             request = codec.decodeRequest(message.getBody());
         } catch (final ParserMessageCodecException e) {
-            parkUndecodableDelivery(message, channel, deliveryTag, routingKey, e);
+            // No jobId/attempt exists to report and re-delivering undecodable bytes can never
+            // succeed, so this is the one delivery the worker settles without a control-plane
+            // round trip: park the original bytes for an operator and finish it.
+            LOG.error("event=parser_worker_undecodable_request routingKey={} bytes={} parkedOn={}",
+                    routingKey, message.getBody().length, ParserTopology.PARSER_DLQ, e);
+            parkOnDlq(message.getBody(), channel, deliveryTag, routingKey);
             return;
         }
         try {
             handler.handle(request);
         } catch (final Exception failure) {
-            final String errorCode = ParserRequestHandler.infrastructureErrorCode(failure);
-            LOG.error("event=parser_worker_infrastructure_failure jobId={} routingKey={} errorCode={}",
-                    request.jobId(), routingKey, errorCode, failure);
-            reportFailedBestEffort(request, errorCode);
-            // Retryable: the broker's retry queue holds the request for its TTL and returns it to
-            // parser.request, so a storage outage or a lost confirm is re-attempted without the
-            // worker tracking attempts itself.
-            channel.basicNack(deliveryTag, false, false);
+            reportInfrastructureFailure(request, message, channel, deliveryTag, routingKey, failure);
             return;
         }
         LOG.info("parser request for job {} acknowledged (routing key {})", request.jobId(), routingKey);
@@ -85,44 +95,52 @@ public class ParserRequestListener implements ChannelAwareMessageListener {
     }
 
     /**
-     * Terminal path for a body the codec refuses: park the raw delivery on the DLQ, then finish it.
+     * Reports a whole-attempt infrastructure failure and only then acknowledges the request.
      *
-     * <p>Re-delivering undecodable bytes can never succeed, so the request must not re-enter the
-     * retry loop; and because there is no decodable {@code jobId} there is no {@code parser.failed}
-     * report to publish either. The original bytes go to {@code wotb.parser.dlq} unchanged, which is
-     * what an operator needs to diagnose and deliberately replay them.</p>
-     *
-     * <p>A failed park must not acknowledge: the delivery is rejected without requeue instead, so it
-     * waits in the retry queue rather than disappearing as if it had been handled.</p>
+     * <p>Nothing is acknowledged unless the report reached a confirmed broker state: an outage that
+     * also swallowed the report must surface as a redelivery of the same attempt, not as a job that
+     * silently stalled with no evidence.</p>
      */
-    private void parkUndecodableDelivery(final Message message, final Channel channel, final long deliveryTag,
-                                         final String routingKey, final ParserMessageCodecException cause)
-            throws IOException {
-        final byte[] body = message.getBody();
+    private void reportInfrastructureFailure(final ParserRequestMessage request,
+                                             final Message message,
+                                             final Channel channel,
+                                             final long deliveryTag,
+                                             final String routingKey,
+                                             final Exception failure) throws IOException {
+        final String errorCode = ParserRequestHandler.infrastructureErrorCode(failure);
         try {
-            handler.parkUndecodableRequest(body);
-        } catch (final RuntimeException parkFailure) {
-            LOG.error("event=parser_worker_terminal_park_failed routingKey={} bytes={}",
-                    routingKey, body.length, parkFailure);
-            channel.basicNack(deliveryTag, false, false);
+            // Confirmed delivery: returns only once the broker acknowledged the publish.
+            handler.publishFailed(request, errorCode, true);
+        } catch (final RuntimeException undelivered) {
+            LOG.error("event=parser_worker_failure_report_undelivered jobId={} attempt={} routingKey={}"
+                            + " errorCode={}; leaving the request unacknowledged so the transport"
+                            + " redelivers the same attempt",
+                    request.jobId(), request.attempt(), routingKey, errorCode, undelivered);
             return;
         }
-        LOG.error("event=parser_worker_undecodable_request routingKey={} bytes={} parkedOn={}",
-                routingKey, body.length, ParserTopology.PARSER_DLQ, cause);
+        LOG.error("event=parser_worker_infrastructure_failure jobId={} attempt={} routingKey={} errorCode={}"
+                        + " reported=true retryDecision=control-plane",
+                request.jobId(), request.attempt(), routingKey, errorCode, failure);
         channel.basicAck(deliveryTag, false);
     }
 
     /**
-     * Best-effort {@code parser.failed} before rejecting. The publish itself may be why the outcome
-     * was never delivered, so a second failure only narrows the operator's diagnosis — it must not
-     * replace the rejection that follows.
+     * Parks the delivery verbatim on {@code wotb.parser.dlq} and acknowledges it.
+     *
+     * <p>The parked message is a freshly published copy, so it carries no dead-letter history. If the
+     * park cannot be delivered nothing is settled — no ack, no nack — and the transport redelivers
+     * the same attempt instead.</p>
      */
-    private void reportFailedBestEffort(final ParserRequestMessage request, final String errorCode) {
+    private void parkOnDlq(final byte[] body, final Channel channel, final long deliveryTag,
+                           final String routingKey) throws IOException {
         try {
-            handler.publishFailed(request, errorCode, true);
-        } catch (final RuntimeException reportingFailure) {
-            LOG.error("could not report parser.failed for job {} before rejecting the request",
-                    request.jobId(), reportingFailure);
+            handler.parkTerminalRequest(body);
+        } catch (final RuntimeException undelivered) {
+            LOG.error("event=parser_worker_terminal_park_undelivered routingKey={} bytes={};"
+                            + " leaving the delivery unacknowledged",
+                    routingKey, body.length, undelivered);
+            return;
         }
+        channel.basicAck(deliveryTag, false);
     }
 }

@@ -5,26 +5,23 @@ spring:
     # worker 是纯消息消费者：没有数据库、没有 web server、没有 topology 声明。
     web-application-type: none
   rabbitmq:
-    # 投递不变量（同 PR C）：correlated publisher confirms + publisher returns。
-    # RabbitParserOutcomePublisher 的构造守卫要求两者都开启，否则拒绝装配。
-    publisher-confirm-type: correlated
-    publisher-returns: true
-    listener:
-      simple:
-        acknowledge-mode: manual
-        prefetch: ${PARSER_WORKER_PREFETCH:2}
-        # 拒绝即死信：重试由 wotb.parser.retry 的 TTL + DLX 拓扑表达，worker 不自建重试状态机。
-        default-requeue-rejected: false
+    # 这里只声明连接信息。连接工厂（correlated publisher confirms + publisher returns）、
+    # listener 容器（consumer 并发、prefetch、manual ack、requeue 语义）与重试预算都由
+    # ParserWorkerAssembly 显式构建；Boot 的 spring.rabbitmq.listener.* / publisher-* 不会作用于
+    # 手工创建的容器与工厂，因此不在此处重复声明以免形成第二个（无效的）事实源。
     host: ${RABBITMQ_HOST}
     port: ${RABBITMQ_PORT:5672}
     virtual-host: ${RABBITMQ_VHOST:/}
     username: ${RABBITMQ_USERNAME}
     password: ${RABBITMQ_PASSWORD}
-    prefetch: ${PARSER_WORKER_PREFETCH:2}
 
 wotb:
   parser-worker:
-    prefetch: ${PARSER_WORKER_PREFETCH:2}
+    # 并发 = consumer 数，即真正的同时解析数（对齐本地 REPLAY_PARSE_MAX_CONCURRENT=2）。
+    concurrency: ${PARSER_WORKER_CONCURRENCY:2}
+    # 每个 consumer 的未确认消息上限，不是并发度。
+    prefetch: ${PARSER_WORKER_PREFETCH:1}
+    # 没有重试预算参数：重试归控制面（新的 parser.request + attempt+1）。worker 不做 broker 自动重试。
     confirm-timeout-seconds: ${PARSER_WORKER_CONFIRM_TIMEOUT_SEC:10}
     shutdown-timeout-seconds: ${PARSER_WORKER_SHUTDOWN_TIMEOUT_SEC:30}
     minio:
