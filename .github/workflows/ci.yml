@@ -153,8 +153,17 @@ jobs:
       - name: Maven test
         working-directory: java
         run: mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo test
+      - uses: docker/setup-buildx-action@v4
       - name: Production backend Docker build
-        run: docker build --build-arg BUILD_COMMIT=ci-${{ github.sha }} -f docker/Dockerfile.backend -t wotbtools-backend:pr .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.backend
+          build-args: BUILD_COMMIT=ci-${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+          provenance: false
+          sbom: false
 
   keycloak_providers:
     needs: [changes]

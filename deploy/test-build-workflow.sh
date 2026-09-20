@@ -51,6 +51,11 @@ for job_name, output_name in (
     checkout = next(step for step in job["steps"] if step.get("uses") == "actions/checkout@v5")
     assert checkout["with"]["ref"] == "${{ needs.changes.outputs.commit_sha }}"
     build_step = next(step for step in job["steps"] if step.get("uses") == "docker/build-push-action@v7")
+    expected_scope = output_name
+    assert build_step["with"]["cache-from"] == f"type=gha,scope={expected_scope}", \
+        f"{job_name} must use an image-specific GHA cache scope"
+    assert build_step["with"]["cache-to"] == f"type=gha,mode=max,scope={expected_scope}", \
+        f"{job_name} must export to an image-specific GHA cache scope"
     tags = str(build_step["with"]["tags"])
     image_prefix = {"backend": "backend", "frontend": "frontend", "keycloak": "keycloak", "minio": "minio"}[output_name]
     assert "${{ env.GHCR_IMAGE_PREFIX }}-" + image_prefix + ":${{ needs.changes.outputs.tag }}" in tags

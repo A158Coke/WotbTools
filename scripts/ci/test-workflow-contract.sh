@@ -12,6 +12,7 @@ root = Path(sys.argv[1])
 ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 build = (root / ".github/workflows/build.yml").read_text(encoding="utf-8")
 deploy = (root / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+backend_dockerfile = (root / "docker/Dockerfile.backend").read_text(encoding="utf-8")
 ci_settings_path = root / "java/settings-ci.xml"
 ci_settings_text = ci_settings_path.read_text(encoding="utf-8")
 local_settings_text = (root / "java/settings.xml").read_text(encoding="utf-8")
@@ -35,6 +36,18 @@ assert "name: Build Keycloak" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-backend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest" in build
+for image in ("backend", "frontend", "keycloak", "minio"):
+    assert f"cache-from: type=gha,scope={image}" in build
+    assert f"cache-to: type=gha,mode=max,scope={image}" in build
+backend_job = ci.split("\n  keycloak_providers:", 1)[0].split("\n  backend:\n", 1)[1]
+assert "docker/setup-buildx-action@v4" in backend_job
+assert "docker/build-push-action@v7" in backend_job
+assert "cache-from: type=gha,scope=backend" in backend_job
+assert "cache-to: type=gha,mode=max,scope=backend" in backend_job
+assert "docker build --build-arg BUILD_COMMIT" not in backend_job
+assert "RUN --mount=type=cache,target=/root/.m2" in backend_dockerfile
+assert backend_dockerfile.count("RUN --mount=type=cache,target=/root/.m2") == 2
+assert "dependency:go-offline -q || true" not in backend_dockerfile
 assert "workflow_run:" in deploy and "workflow_dispatch:" in deploy
 assert "tx_services:" in deploy
 assert "default: keycloak-postgres,keycloak,wotb-frontend,caddy" in deploy
