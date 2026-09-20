@@ -402,7 +402,7 @@ for marker in ("result-2", "failed-2"):
     matching = [item for item in dead_letters if marker in item.get("payload", "")]
     assert matching, (marker, dead_letters)
     assert matching[0]["routing_key"] == "parser.dead", matching[0]
-    first_death_queue = matching[0](["properties"].get("headers") or {}).get("x-first-death-queue")
+    first_death_queue = (matching[0]["properties"].get("headers") or {}).get("x-first-death-queue")
     assert first_death_queue in (None, RESULT_QUEUE), matching[0]
 
 # ------------------------------------------------- application ACL boundaries
