@@ -426,7 +426,6 @@ def make_manifest(
 def validate_manifest(
     manifest: dict[str, object],
     expected_sha: str | None = None,
-    allow_latest: bool = False,
 ) -> dict[str, object]:
     required = {
         "schemaVersion",
@@ -453,10 +452,7 @@ def validate_manifest(
     if expected_sha is not None and commit_sha != expected_sha:
         raise ValueError(f"manifest commitSha {commit_sha} does not match release SHA {expected_sha}")
     expected_tag = image_tag(commit_sha)
-    valid_tags = {expected_tag}
-    if allow_latest:
-        valid_tags.add("latest")
-    if manifest_image_tag not in valid_tags:
+    if manifest_image_tag != expected_tag:
         raise ValueError(f"manifest imageTag must be {expected_tag}")
     if not isinstance(manifest["buildRunNumber"], int) or manifest["buildRunNumber"] < 1:
         raise ValueError("manifest buildRunNumber must be a positive integer")
@@ -546,7 +542,6 @@ def _parser() -> argparse.ArgumentParser:
     validate_parser = subparsers.add_parser("validate")
     validate_parser.add_argument("--manifest", required=True)
     validate_parser.add_argument("--expected-sha")
-    validate_parser.add_argument("--allow-latest", action="store_true")
     return parser
 
 
@@ -575,17 +570,16 @@ def main() -> int:
             plan = detect([], args.service)
             result = make_manifest(
                 args.commit_sha,
-                "latest",
+                image_tag(args.commit_sha),
                 args.build_run_id,
                 args.build_run_number,
                 plan,
             )
-            validate_manifest(result, args.commit_sha, allow_latest=True)
+            validate_manifest(result, args.commit_sha)
         else:
             result = validate_manifest(
                 json.loads(open(args.manifest, encoding="utf-8").read()),
                 args.expected_sha,
-                allow_latest=args.allow_latest,
             )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"release plan error: {error}", file=sys.stderr)
