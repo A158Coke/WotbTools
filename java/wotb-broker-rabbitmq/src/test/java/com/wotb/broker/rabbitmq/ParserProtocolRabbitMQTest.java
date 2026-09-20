@@ -143,7 +143,8 @@ class ParserProtocolRabbitMQTest {
     void submittedRequestArrivesAsTheSchemaEnvelopeInTheParserQueue() {
         dispatcher().submit(new ReplayProcessingRequest(
                 JOB_ID,
-                List.of(new ReplayProcessingSource(0, "a.wotbreplay"), new ReplayProcessingSource(1, "b.wotbreplay"))));
+                List.of(new ReplayProcessingSource(0, "a.wotbreplay"), new ReplayProcessingSource(1, "b.wotbreplay")),
+                ReplayProcessingRequest.FIRST_ATTEMPT));
 
         final Message message = receiveFrom(ParserTopology.PARSER_QUEUE);
         assertNotNull(message, "the dispatched request must reach " + ParserTopology.PARSER_QUEUE);
@@ -249,11 +250,11 @@ class ParserProtocolRabbitMQTest {
     void staleAttemptIsAcknowledgedWithoutDlq() throws Exception {
         final int currentAttempt = 2;
         final CountDownLatch handled = new CountDownLatch(1);
-        final AtomicInteger reportedAttempt = new AtomicInteger();
+        final AtomicInteger attemptWatermark = new AtomicInteger();
         final SimpleMessageListenerContainer container = listenerContainer(new ParserOutcomeHandler() {
             @Override
             public Outcome handleResult(final ParserResultMessage message) {
-                reportedAttempt.set(message.attempt());
+                attemptWatermark.set(message.attempt());
                 handled.countDown();
                 return message.attempt() < currentAttempt ? Outcome.IGNORED_STALE_OR_DUPLICATE : Outcome.APPLIED;
             }
@@ -268,7 +269,7 @@ class ParserProtocolRabbitMQTest {
             publish(ParserTopology.PARSER_RESULT_ROUTING_KEY, CODEC.encode(resultEnvelope("stale-1", 1)));
 
             assertTrue(handled.await(20, TimeUnit.SECONDS), "the stale outcome must still reach the handler");
-            assertEquals(1, reportedAttempt.get());
+            assertEquals(1, attemptWatermark.get());
             awaitStats(
                     ParserTopology.PARSER_RESULT_QUEUE,
                     "the ignored stale outcome acknowledged",
@@ -361,7 +362,8 @@ class ParserProtocolRabbitMQTest {
 
     @Test
     void rejectedRequestTravelsThroughTheRetryQueueInsteadOfStayingQueued() throws Exception {
-        dispatcher().submit(new ReplayProcessingRequest(JOB_ID, List.of(new ReplayProcessingSource(0, "a.wotbreplay"))));
+        dispatcher().submit(new ReplayProcessingRequest(JOB_ID,
+                List.of(new ReplayProcessingSource(0, "a.wotbreplay")), ReplayProcessingRequest.FIRST_ATTEMPT));
 
         try (Connection connection = rawConnectionFactory().newConnection();
                 Channel channel = connection.createChannel()) {

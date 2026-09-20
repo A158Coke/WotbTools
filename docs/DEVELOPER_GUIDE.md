@@ -215,10 +215,16 @@ Lease（读取期间 TTL 不清）。
 - create 编排只有一份（`ReplayProcessingJobService`）：输入落点与 dataset 读取是两个端口
   （`ReplayProcessingInputStore` / `ReplayProcessingResultReader`），local 缺省不注入任何实现。
 - 派发是**确认式**投递：`submit` 失败（NACK/不可路由/超时）即 create 失败，并回收已登记的 job 与输入。
-- 结果消费：`wotb.parser.result` → `ParserResultListener`（manual ack）→
-  `PostgresParserOutcomeHandler`。判序为「未知 job → 陈旧 attempt → 已终态 → 已取消 → 逐 source 应用」，
-  重复/陈旧一律 `IGNORED`（同样 ack，不进 DLQ）；状态迁移仍由 `ReplayProcessingJob`/`ReplayJobState`
-  唯一拥有。陈旧判定依据 V24 的 `replay_processing_job.reported_attempt`（单调）。
+- 结果消费：`wotb.parser.result`（`parser.result` 与 `parser.failed` 两个 routing key 都绑到该队列）
+  → `ParserResultListener`（manual ack）→ `PostgresParserOutcomeHandler`。判序为「未知 job → 陈旧
+  attempt → 已终态 → 已取消 → 结果逐 source 应用 / 失败决定重试」，重复/陈旧一律 `IGNORED`
+  （同样 ack，不进 DLQ）；状态迁移仍由 `ReplayProcessingJob`/`ReplayJobState` 唯一拥有。陈旧判定依据
+  V24 的 `replay_processing_job.attempt_watermark`（单调）。
+- **逻辑重试归控制面**：worker 基础设施失败只发布确认投递的 `parser.failed(retryable=true)`（从不
+  nack、从不走 `wotb.parser.retry`），由控制面按 PG 权威状态决定——`attempt <
+  wotb.replay.retry.max-attempts`（env `REPLAY_PARSER_MAX_ATTEMPTS`，缺省 3）时立即重派
+  `attempt+1`（同 `jobId`，`ReplayProcessingRequest.attempt` 由控制面写入，broker 只做映射），
+  预算用尽或 `retryable=false` 才转终态；重派失败则上抛，报告进 DLQ 等 operator 重放，绝不假装已处理。
 - 端点契约（路径/方法/状态码/响应字段）在两种模式下逐字不变；分布式下 dataset 读不到时沿用
   `409 JOB_NOT_READY`，不发明新错误码。
 

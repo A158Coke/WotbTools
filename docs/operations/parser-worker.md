@@ -86,8 +86,8 @@ Three further properties are deliberate and load-bearing:
   would advance the attempt while the valid result became stale. So
   `PARSER_OUTCOME_NOT_DELIVERED` no longer exists as a wire code: the worker
   publishes nothing, acknowledges nothing and rejects nothing, and the redelivered
-  attempt simply reproduces the same `parser.result`. The control plane is required
-  to apply duplicate same-attempt results idempotently (PR E).
+  attempt simply reproduces the same `parser.result`. The control plane applies
+  duplicate same-attempt results idempotently (`PostgresParserOutcomeHandler`).
 - **The report never contradicts the transport.** A failure the control plane may
   yet retry is reported `retryable=true`; the worker never claims an attempt is
   final on its own.
@@ -110,9 +110,10 @@ worker receives parser.request (attempt = N)
   -> infrastructure failure
   -> publish parser.failed { jobId, attempt = N, retryable = true }   (confirmed)
   -> basicAck the original parser.request
-  -> control plane (PR E) reads authoritative PostgreSQL state and decides:
+  -> control plane reads authoritative PostgreSQL state and decides:
        job still active? current attempt still N? cancelled/expired? budget left?
-       yes -> atomically advance attempt to N + 1 and dispatch a NEW parser.request
+       yes -> dispatch a NEW parser.request with attempt = N + 1 and advance the
+              authoritative attempt watermark
        no  -> transition job/source to the appropriate terminal state
 ```
 
@@ -135,10 +136,12 @@ Consequences the worker is responsible for:
   credentials. Retry authority belongs to PostgreSQL through the control plane.
 
 The `wotb.parser.retry` queue and its TTL/DLX bindings remain in the reviewed
-topology for compatibility with the PR C protocol and for the control plane's own
-use; the worker simply does not use them. Their removal is a separate cleanup
-after PR E is live. PR E must also ACK and ignore duplicate or stale
-`parser.failed` reports for attempts that are no longer current.
+topology only as PR C protocol surface: the control plane re-dispatches logically
+(directly to `wotb.parser`) rather than routing through them, so neither the worker
+nor the control plane uses them. Their removal is a separate cleanup. The control
+plane ACKs and ignores duplicate or stale `parser.failed` reports — its attempt
+watermark is advanced on every logical retry, so a repeated failure for an attempt
+it already retried is a stale no-op by construction.
 
 ## Deployment (Yecao)
 

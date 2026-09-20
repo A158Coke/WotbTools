@@ -89,6 +89,8 @@ class DistributedReplayProcessingPathsTest {
         assertEquals(1, dispatcher.requests.size(), "create 必须恰好派发一次");
         final ReplayProcessingRequest request = dispatcher.requests.getFirst();
         assertEquals(jobId, request.jobId());
+        assertEquals(ReplayProcessingRequest.FIRST_ATTEMPT, request.attempt(),
+                "首次派发永远是 attempt 1；只有控制面逻辑重试才会递增");
         assertEquals(List.of(0), request.sources().stream().map(s -> s.sourceIndex()).toList());
         assertEquals(INPUT_NAME, request.sources().getFirst().sourceName());
         assertEquals(ReplayProcessingJob.Status.QUEUED, service.status(jobId).status());

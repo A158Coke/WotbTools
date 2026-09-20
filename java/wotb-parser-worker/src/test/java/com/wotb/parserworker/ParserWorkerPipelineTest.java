@@ -195,7 +195,8 @@ class ParserWorkerPipelineTest {
         final RecordingLifecycle localLifecycle = new RecordingLifecycle();
         new LocalReplayProcessingExecutor(new DefaultReplayProcessingFacade(), localJobDir,
                 localLifecycle, null).process(new ReplayProcessingRequest(
-                        jobId, List.of(new ReplayProcessingSource(0, REPLAY_NAME))), 0);
+                        jobId, List.of(new ReplayProcessingSource(0, REPLAY_NAME)),
+                        ReplayProcessingRequest.FIRST_ATTEMPT), 0);
         assertTrue(localLifecycle.lastOutcome.processedSuccessfully(),
                 "the committed fixture must parse successfully through the canonical pipeline");
 

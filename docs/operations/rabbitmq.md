@@ -143,8 +143,11 @@ acknowledges the request, so retrying is a control-plane decision — the contro
 plane advances the authoritative attempt and dispatches a new `parser.request`
 with `attempt + 1`. A delivery the worker never acknowledged is redelivered by
 AMQP with the **same** attempt; that transport redelivery is not a logical retry.
-The queue, its TTL and its bindings remain as reviewed for the PR C protocol and
-for the control plane's own use; removing them is a cleanup after PR E is live.
+The logical retry is dispatched immediately to `wotb.parser`; it is deliberately
+**not** routed through `wotb.parser.retry`, because borrowing a broker queue as
+the control plane's retry scheduler would make the broker a second owner of retry
+timing. The queue, its TTL and its bindings therefore remain only as PR C
+protocol surface, and removing them is a cleanup after PR E is live.
 See `docs/operations/parser-worker.md`.
 
 ### Result and DLQ semantics

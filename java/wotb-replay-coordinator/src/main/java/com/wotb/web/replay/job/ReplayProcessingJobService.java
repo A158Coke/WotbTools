@@ -223,7 +223,8 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
             throw e;
         }
         try {
-            dispatcher.submit(new ReplayProcessingRequest(jobId, sourceOrder(prioritySourceIndex, sourceNames)));
+            dispatcher.submit(new ReplayProcessingRequest(jobId,
+                    sourceOrder(prioritySourceIndex, sourceNames), ReplayProcessingRequest.FIRST_ATTEMPT));
         } catch (final ReplayProcessingQueueFullException e) {
             store.removeAndCleanup(jobId);
             throw new ProcessingQueueFullException();

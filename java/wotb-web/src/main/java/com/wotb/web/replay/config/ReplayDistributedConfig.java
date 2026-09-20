@@ -139,22 +139,30 @@ public class ReplayDistributedConfig {
      * 结果处理器：分布式模式**必须**有 PostgreSQL 权威状态（job/source/attempt 都在那里），
      * 否则结果无法判定陈旧/重复。缺 {@code wotb.replay.processing-job.repository=jdbc} 时
      * 启动即失败，而不是退化成一个只存在于内存里的第二套权威。
+     *
+     * <p>它同时是**逻辑重试的唯一决策点**：worker 的基础设施失败报告
+     * （{@code parser.failed(retryable=true)}）由它按 PG 权威状态与
+     * {@code wotb.replay.retry.max-attempts} 预算决定重派 {@code attempt+1} 还是转终态。</p>
      */
     @Bean
     public ParserOutcomeHandler replayParserOutcomeHandler(
             final ReplayProcessingJobStore replayProcessingJobStore,
-            final ObjectProvider<ReplayJobAuthority> replayJobAuthority) {
+            final ObjectProvider<ReplayJobAuthority> replayJobAuthority,
+            final RabbitReplayProcessingDispatcher replayProcessingDispatcher,
+            @Value("${wotb.replay.retry.max-attempts:3}") final int maxAttempts) {
         final ReplayJobAuthority authority = replayJobAuthority.getIfAvailable();
         if (authority == null) {
             throw new IllegalStateException("wotb.replay.execution.mode=distributed requires "
                     + "wotb.replay.processing-job.repository=jdbc (PostgreSQL job authority)");
         }
-        return new PostgresParserOutcomeHandler(replayProcessingJobStore, authority);
+        return new PostgresParserOutcomeHandler(replayProcessingJobStore, authority,
+                replayProcessingDispatcher, maxAttempts);
     }
 
     /**
-     * {@code wotb.parser.result} 消费容器：manual ack（幂等 no-op 也 ack，无法应用的消息
-     * nack 不重入队 → DLQ），单消费者保证同一 job 的 outcome 串行应用。
+     * {@code wotb.parser.result} 消费容器（{@code parser.result} 与 {@code parser.failed} 两个
+     * routing key 都绑定到该队列）：manual ack（幂等 no-op 也 ack，无法应用的消息 nack 不重入队
+     * → DLQ），单消费者保证同一 job 的 outcome 串行应用。
      */
     @Bean
     public SimpleMessageListenerContainer replayParserResultListenerContainer(

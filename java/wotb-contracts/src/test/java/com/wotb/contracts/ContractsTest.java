@@ -63,14 +63,18 @@ class ContractsTest {
         final List<ReplayProcessingSource> original = new ArrayList<>(List.of(
                 new ReplayProcessingSource(2, "two.wotbreplay"),
                 new ReplayProcessingSource(0, "zero.wotbreplay")));
-        final ReplayProcessingRequest request = new ReplayProcessingRequest("job-1", original);
+        final ReplayProcessingRequest request = new ReplayProcessingRequest("job-1", original, 2);
         original.clear();
 
         assertEquals(List.of(2, 0), request.sources().stream().map(ReplayProcessingSource::sourceIndex).toList());
+        assertEquals(2, request.attempt());
         assertThrows(UnsupportedOperationException.class,
                 () -> request.sources().add(new ReplayProcessingSource(1, "one.wotbreplay")));
         assertThrows(IllegalArgumentException.class, () -> new ReplayProcessingRequest("job-1",
                 List.of(new ReplayProcessingSource(0, "a.wotbreplay"),
-                        new ReplayProcessingSource(0, "b.wotbreplay"))));
+                        new ReplayProcessingSource(0, "b.wotbreplay")), 1));
+        assertThrows(IllegalArgumentException.class, () -> new ReplayProcessingRequest("job-1",
+                List.of(new ReplayProcessingSource(0, "a.wotbreplay")), 0),
+                "attempt 是 1-based 的控制面逻辑重试计数，0 必须被拒绝");
     }
 }
