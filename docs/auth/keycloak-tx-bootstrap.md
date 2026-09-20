@@ -143,6 +143,37 @@ MinIO `control_api` key pair、`KEYCLOAK_ADMIN_CLIENT_SECRET`、`AI_API_KEY`）�
 渲染阶段立即拒绝，而不是给出误导性的 ready。门禁本身仍只读：这些值只用于 Compose 渲染与
 就绪判定，不写盘、不落日志。
 
+## 全业务 E2E token（operator 运行门禁时需要）
+
+除上面的输入，门禁还需要以下非默认输入：
+
+```text
+KEYCLOAK_E2E_CLIENT_SECRET   wotbtools-e2e 机器身份的 client secret（GitHub Secret，write-only）
+WOTB_E2E_DATA_SNAPSHOT       X1 搬迁前从 Yecao 只读导出的逐表行数快照，例如
+                             {"tables":{"hall_of_fame_record":348, ...}}
+可选：
+WOTB_E2E_REPLAY_PATH         探针容器内的回放 fixture（默认 /e2e/random-battle-example.wotbreplay，
+                             由 Deploy 从 common/fixtures/replays staged 到 /opt/wotb-tx/e2e）
+WOTB_E2E_PUBLIC_IP           公网边缘前置的目标地址（默认 118.25.18.105）
+WOTB_E2E_JOB_TIMEOUT_SEC     processing/export job 轮询上限（默认 300）
+```
+
+门禁用 `wotbtools-e2e`（client_credentials）驱动真实链路并逐项输出 `processing-e2e`、
+`dataset-result`、`map-overview`、`battle-playback-v2`、`minio`、`ai-facts`、`export`、
+`hof-replay-storage`、`parser-worker`、`admin-authz`、`anonymous-rejected`、
+`business-data-integrity`、`public-edge-web`、`public-edge-auth`。任何一项 FAIL 都输出
+`PRE_CUTOVER_NOT_READY`：**这就是「不通过门禁不得切 DNS」的机械含义**。
+
+- 门禁不做付费 AI 调用：AI 只验证 worker 写入的 `ai-facts.json` 可通过 control_api 身份读取。
+- 门禁对基础设施与用户数据只读；唯一写入是一个 30 分钟 TTL 自动回收的瞬时 processing job
+  与 export job（属于一次性安全操作，不改任何真实用户数据）。
+- `public-edge-*` 两项在 DNS 切换前必须先通过：即 TX 上 Caddy 已绑定公网接口且 443/TCP 已放通，
+  且 `curl --resolve wotbtools.com:443:118.25.18.105 https://wotbtools.com`（含
+  `auth.wotbtools.com`）返回 2xx。任一失败即不得切 DNS。
+- `business-data-integrity` 需要 operator 先完成 §10.1 的只读行数快照与 TX `pg_restore`，
+  并保留 `hall_of_fame_record` 的 explicit id 与 ≥ 355 的 identity sequence。
+- `hof-replay-storage` 需要 `replay_data` 卷已迁移且至少存在一条可下载的 HoF 回放记录。
+
 门禁以只读 Keycloak Admin API 检查 `idp-qq`：必须唯一、`providerId=qq`、`enabled=true`、
 client ID 非 placeholder，且 QQ endpoint/config contract 完整；裸 `qq` / `juhe-qq` alias 会阻断。
 全部通过后输出 `QQ_IDP_STATUS=idp-qq=READY`；不再接受 `WAITING_EXTERNAL` 豁免。门禁不再探测

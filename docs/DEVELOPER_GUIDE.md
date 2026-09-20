@@ -627,6 +627,15 @@ staging 与只读 `PRE_CUTOVER_READY` 门禁分别用 `assert_routing_boundary` 
 公开流量再经过 Yecao backend，WireGuard 只剩 TX→MinIO `10.20.0.2:9000`、TX↔RabbitMQ 与按需观测。
 Yecao parser-worker 作为唯一执行面服务必须保持无状态：选中它时 deploy 会拒绝任何给它数据库凭据、
 本地 replay job 目录或执行面开关的 staged Compose。
+
+**切 DNS 前的全业务 E2E 门禁**：`deploy/tx/pre-cutover-check.sh` 除基础设施与路由 token 外，还用
+Keycloak 的 `wotbtools-e2e` 机器身份（client_credentials，唯一 realm role `wotbtools-user`，secret 由
+`KEYCLOAK_E2E_CLIENT_SECRET` 注入）驱动真实业务链并逐项给出 PASS/FAIL：`processing-e2e`
+（上传 staged 回放 → 分布式链路 → READY）、`dataset-result`、`map-overview`、`battle-playback-v2`、
+`minio`、`ai-facts`、`export`、`hof-replay-storage`、`parser-worker`、`admin-authz`，以及 operator
+提供的 Yecao 行数快照比对（`business-data-integrity`）与 `curl --resolve` 公网边缘前置
+（`public-edge-web` / `public-edge-auth`）。门禁不做付费 AI 调用，对基础设施与用户数据只读，唯一
+写入是 TTL 自动回收的瞬时 job；任一 token 失败即 `PRE_CUTOVER_NOT_READY`。
 `KEYCLOAK_ISSUER_URI` 保持 public URL（Keycloak 的 `iss` 由 hostname 决定），
 `KEYCLOAK_ADMIN_SERVER_URL` 故意指向 TX-internal `http://keycloak:8080`，避免 DNS
 cutover 前经公网访问并管理 Yecao realm。HoF 回放原件是永久内容寻址文件，挂 TX

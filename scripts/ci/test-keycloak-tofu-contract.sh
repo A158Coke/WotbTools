@@ -69,6 +69,26 @@ assert "client_secret_wo = var.keycloak_admin_client_secret" in flat_root
 assert "client_secret = var.keycloak_admin_client_secret" not in flat_root
 assert "client_secret_wo_version" in flat_root
 
+# --- the cutover E2E identity is confidential, minimal, and write-only -------
+e2e_role_block = root_text.split(
+    'resource "keycloak_openid_client_service_account_realm_role" "e2e"', 1
+)
+assert len(e2e_role_block) == 2, "the cutover E2E identity must be granted its realm role explicitly"
+e2e_role_block = e2e_role_block[1].split("\n}\n", 1)[0]
+assert 'keycloak_role.realm["wotbtools-user"].name' in e2e_role_block
+for forbidden in ("wotbtools-admin", "boost-manager", "HoF-admin", "realm-admin"):
+    assert forbidden not in e2e_role_block, f"cutover E2E identity must not hold {forbidden}"
+assert 'client_id = "wotbtools-e2e"' in root_text, "cutover E2E client is missing"
+assert "client_secret_wo             = var.e2e_client_secret" in root_text
+assert "client_secret = var.e2e_client_secret" not in root_text
+assert "client_secret_wo_version     = var.e2e_client_secret_version" in root_text
+assert 'variable "e2e_client_secret"' in variables_text
+assert 'variable "e2e_client_secret_version"' in variables_text
+assert "KEYCLOAK_E2E_CLIENT_SECRET" in tofu_script, "the TX runner must forward the E2E secret"
+assert "KEYCLOAK_E2E_CLIENT_SECRET" in deploy_text, "Deploy must inject the E2E secret"
+assert "keycloak_openid_client.e2e" in read("infra/tofu/keycloak/validate-plan.sh"), \
+    "the plan guard must protect the cutover E2E client"
+
 # --- no legacy realm import and no resurrected aggregated QQ IdP -------------
 for path_text in (read("docker/Dockerfile.keycloak"), tx_compose):
     assert "--import-realm" not in path_text
@@ -141,6 +161,8 @@ assert apply_envs == {
     "KEYCLOAK_ADMIN_PASSWORD",
     "KEYCLOAK_ADMIN_CLIENT_SECRET",
     "KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION",
+    "KEYCLOAK_E2E_CLIENT_SECRET",
+    "KEYCLOAK_E2E_CLIENT_SECRET_VERSION",
     "TX_QQ_CLIENT_ID",
     "TX_QQ_CLIENT_SECRET",
     "TX_QQ_CLIENT_SECRET_VERSION",
@@ -149,6 +171,7 @@ assert apply_envs == {
 }
 assert apply_step["env"]["KEYCLOAK_ADMIN_PASSWORD"] == "${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}"
 assert apply_step["env"]["KEYCLOAK_ADMIN_CLIENT_SECRET"] == "${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}"
+assert apply_step["env"]["KEYCLOAK_E2E_CLIENT_SECRET"] == "${{ secrets.KEYCLOAK_E2E_CLIENT_SECRET }}"
 assert apply_step["env"]["TX_QQ_CLIENT_ID"] == "${{ vars.TX_QQ_CLIENT_ID }}"
 assert apply_step["env"]["TX_QQ_CLIENT_SECRET"] == "${{ secrets.TX_QQ_CLIENT_SECRET }}"
 assert apply_step["env"]["TX_QQ_CLIENT_SECRET_VERSION"] == "${{ vars.TX_QQ_CLIENT_SECRET_VERSION }}"
