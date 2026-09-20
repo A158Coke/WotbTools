@@ -69,6 +69,11 @@ public final class ReplayProcessingJob {
     private final AtomicReferenceArray<Replays.ParsedEntry> entries;
     /** 终态 observability（日志/指标）exactly-once 记账（QUEUED 取消与 worker 双路径防重）。 */
     private final AtomicBoolean terminalRecorded = new AtomicBoolean();
+    /**
+     * 状态迁移通知（write-through 持久化挂载点）。为 {@code null} 时本 job 是纯内存态
+     * （测试 / 本地开发），行为与本字段引入前逐字一致。
+     */
+    private volatile ReplayJobTransitionListener transitionListener;
     /** READY 后设置（exactly once 由状态机保证；volatile 供 status 轮询线程读取）。 */
     private volatile ProcessedDataset result;
     /** 当前处理中的输入文件名（进度回调更新；不作为 metric tag）。 */
@@ -101,6 +106,44 @@ public final class ReplayProcessingJob {
         }
     }
 
+    /**
+     * 从持久化投影恢复只读 job 视图（重启后读取权威状态用）。
+     *
+     * <p>恢复的 job **没有** {@code entries} 与 {@link ProcessedDataset}：执行上下文随进程消失，
+     * 无法也不应该从数据库重建。因此它只服务状态读取与取消状态写入，不参与 batch finalize；
+     * 需要 Dataset 的读取路径由对象存储承担。</p>
+     */
+    ReplayProcessingJob(final String jobId, final int total, final List<SourceState> sourceStates,
+                        final Status status, final String phase,
+                        final int processed, final int duplicates, final int failures,
+                        final int parseCompleted, final int parseSucceeded, final int parseFailed,
+                        final String errorCode, final boolean cancelRequested,
+                        final long createdAtMillis, final long finishedAtMillis) {
+        this.state = new ReplayJobState(jobId, total, phase, ReplayJobState.Status.valueOf(status.name()),
+                processed, duplicates, failures, errorCode, createdAtMillis, finishedAtMillis,
+                cancelRequested);
+        this.sources = new AtomicReferenceArray<>(total);
+        this.entries = new AtomicReferenceArray<>(total);
+        for (int i = 0; i < sourceStates.size() && i < total; i++) {
+            this.sources.set(i, sourceStates.get(i));
+        }
+        this.parseCompleted = parseCompleted;
+        this.parseSucceeded = parseSucceeded;
+        this.parseFailed = parseFailed;
+    }
+
+    /** 挂载状态迁移通知（由注册表在 jdbc 模式注册 job 时调用；内存模式不调用）。 */
+    void attachTransitionListener(final ReplayJobTransitionListener listener) {
+        this.transitionListener = listener;
+    }
+
+    private void notifyTransition() {
+        final ReplayJobTransitionListener listener = this.transitionListener;
+        if (listener != null) {
+            listener.onJobTransition(this);
+        }
+    }
+
     public String jobId() {
         return state.snapshot().jobId();
     }
@@ -114,11 +157,16 @@ public final class ReplayProcessingJob {
     }
 
     public boolean startProcessing() {
-        return state.startProcessing();
+        if (!state.startProcessing()) {
+            return false;
+        }
+        notifyTransition();
+        return true;
     }
 
     public void updateProgress(final int processed, final int duplicates, final int failures) {
         state.updateProgress(processed, duplicates, failures);
+        notifyTransition();
     }
 
     /**
@@ -129,6 +177,7 @@ public final class ReplayProcessingJob {
         parseCompleted++;
         parseSucceeded++;
         state.updateProgress(parseCompleted, 0, 0);
+        notifyTransition();
     }
 
     /**
@@ -139,11 +188,16 @@ public final class ReplayProcessingJob {
         parseCompleted++;
         parseFailed++;
         state.updateProgress(parseCompleted, 0, 0);
+        notifyTransition();
     }
 
     /** PROCESSING 期间切换 phase（WAITING_FOR_WORKER → PROCESSING_REPLAYS → FINALIZING_BATCH）。 */
     public boolean advancePhase(final String phase) {
-        return state.advancePhase(phase);
+        if (!state.advancePhase(phase)) {
+            return false;
+        }
+        notifyTransition();
+        return true;
     }
 
     /** PROCESSING 期间设置当前处理文件（进度回调）；非 PROCESSING 时仍可写（无副作用）。 */
@@ -155,28 +209,34 @@ public final class ReplayProcessingJob {
     public void markSourceProcessing(final int sourceIndex, final String displayName) {
         this.currentFile = displayName;
         final SourceState s = sources.get(sourceIndex);
-        if (s != null) {
-            sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
-                    s.sourceName(), SourceStatus.PROCESSING, null));
+        if (s == null) {
+            return;
         }
+        sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
+                s.sourceName(), SourceStatus.PROCESSING, null));
+        notifyTransition();
     }
 
     /** source 完成 full processing（READY 不代表 batch 级 valid）。 */
     public void markSourceReady(final int sourceIndex) {
         final SourceState s = sources.get(sourceIndex);
-        if (s != null) {
-            sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
-                    s.sourceName(), SourceStatus.READY, null));
+        if (s == null) {
+            return;
         }
+        sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
+                s.sourceName(), SourceStatus.READY, null));
+        notifyTransition();
     }
 
     /** source full processing 失败（记录稳定错误码，不中断 batch）。 */
     public void markSourceFailed(final int sourceIndex, final String failureMessage) {
         final SourceState s = sources.get(sourceIndex);
-        if (s != null) {
-            sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
-                    s.sourceName(), SourceStatus.FAILED, failureMessage));
+        if (s == null) {
+            return;
         }
+        sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
+                s.sourceName(), SourceStatus.FAILED, failureMessage));
+        notifyTransition();
     }
 
     public void recordEntry(final int sourceIndex, final Replays.ParsedEntry entry) {
@@ -220,19 +280,32 @@ public final class ReplayProcessingJob {
             return false;
         }
         this.result = result;
+        notifyTransition();
         return true;
     }
 
     public boolean markFailed(final String errorCode) {
-        return state.markFailed(errorCode);
+        if (!state.markFailed(errorCode)) {
+            return false;
+        }
+        notifyTransition();
+        return true;
     }
 
     public boolean markCancelled() {
-        return state.markCancelled();
+        if (!state.markCancelled()) {
+            return false;
+        }
+        notifyTransition();
+        return true;
     }
 
     public boolean requestCancel() {
-        return state.requestCancel();
+        if (!state.requestCancel()) {
+            return false;
+        }
+        notifyTransition();
+        return true;
     }
 
     /** 终态日志/指标记账 CAS（重复调用返回 false，防取消线程与 worker 双记账）。 */
