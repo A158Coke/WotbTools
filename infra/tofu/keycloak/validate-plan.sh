@@ -13,7 +13,8 @@ if jq -e '
   any(.resource_changes[]?;
     (.address == "keycloak_realm.wotbtools" or
      .address == "keycloak_openid_client.web" or
-     .address == "keycloak_openid_client.admin_api") and
+     .address == "keycloak_openid_client.admin_api" or
+     .address == "keycloak_openid_client.e2e") and
     ((.change.actions // []) | index("delete") != null)
   )
 ' <<< "$plan_json" >/dev/null; then

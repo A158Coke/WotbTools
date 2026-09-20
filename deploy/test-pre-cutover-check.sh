@@ -86,24 +86,130 @@ case "${1:-}" in
     printf 'healthy\n'
     ;;
   exec)
+    if [[ "$*" == *list_queues* ]]; then
+      printf 'wotb.parser\t%s\t0\nwotb.parser.result\t1\t0\nwotb.parser.dlq\t0\t0\n' \
+        "${FAKE_PARSER_CONSUMERS:-2}"
+      exit 0
+    fi
+    if [[ "$*" == *"select count(*)"* ]]; then
+      printf '%s\n' "${FAKE_INTEGRITY_COUNT:-348}"
+      exit 0
+    fi
+    if [[ "$*" == *"coalesce(max(id)"* ]]; then
+      printf '355\n'
+      exit 0
+    fi
+    if [[ "$*" == *pg_sequences* ]]; then
+      printf '355\n'
+      exit 0
+    fi
     if [[ "$*" == *business-postgres* ]] && [ "${FAKE_BUSINESS_PG_NOT_READY:-0}" = 1 ]; then
       exit 1
     fi
     exit 0
     ;;
   run)
-    if [[ "$*" == *protocol/openid-connect/token* ]]; then
-      printf '{"access_token":"fake-admin-token"}\n'
+    # The gate asks curl for a body + status; the older probes ask for the status
+    # only. Detect the write-out contract so both keep working.
+    write_out=""
+    previous=""
+    for argument in "$@"; do
+      if [ "$previous" = "--write-out" ] || [ "$previous" = "-w" ]; then write_out="$argument"; fi
+      previous="$argument"
+    done
+    with_body=0
+    [ "$write_out" = $'\n%{http_code}' ] && with_body=1
+    respond() {
+      if [ "$with_body" = 1 ]; then
+        printf '%s\n%s\n' "$1" "$2"
+      elif [ -z "${3:-}" ]; then
+        printf '%s\n' "$2"
+      else
+        printf '%s\n' "$1"
+      fi
+    }
+    authenticated=0
+    [[ "$*" == *"Authorization: Bearer"* ]] && authenticated=1
+    if [[ "$*" == *realms/wotbtools/protocol/openid-connect/token* ]]; then
+      respond '{"access_token":"fake-e2e-token"}' 200
+    elif [[ "$*" == *protocol/openid-connect/token* ]]; then
+      respond '{"access_token":"fake-admin-token"}' 200 token-only
     elif [[ "$*" == *identity-provider/instances* ]]; then
       if [ "${FAKE_QQ_IDP_INVALID:-0}" = 1 ]; then
-        printf '[]\n'
+        respond '[]' 200 token-only
       else
-        printf '[{"alias":"idp-qq","providerId":"qq","enabled":true,"config":{"clientId":"fake-qq-client-id","authorizationUrl":"https://graph.qq.com/oauth2.0/authorize","tokenUrl":"https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1","userInfoUrl":"https://graph.qq.com/user/get_user_info","clientAuthMethod":"client_secret_post"}}]\n'
+        respond '[{"alias":"idp-qq","providerId":"qq","enabled":true,"config":{"clientId":"fake-qq-client-id","authorizationUrl":"https://graph.qq.com/oauth2.0/authorize","tokenUrl":"https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1","userInfoUrl":"https://graph.qq.com/user/get_user_info","clientAuthMethod":"client_secret_post"}}]' 200 token-only
       fi
     elif [[ "$*" == *assetlinks.json* ]]; then
-      printf '{"package_name":"com.wotbtools.app"}\n'
+      respond '{"package_name":"com.wotbtools.app"}' 200 token-only
+    elif [[ "$*" == *"/api/admin/users"* ]]; then
+      if [ "$authenticated" = 1 ]; then
+        respond '{"errorCode":"AUTH_FORBIDDEN"}' "${FAKE_ADMIN_TOKEN_STATUS:-403}"
+      else
+        respond '{"errorCode":"AUTH_UNAUTHORIZED"}' "${FAKE_ADMIN_ANON_STATUS:-401}"
+      fi
+    elif [[ "$*" == *"/api/users/profile"* ]]; then
+      respond '{"nickname":"e2e"}' "${FAKE_PROFILE_STATUS:-200}"
+    elif [[ "$*" == *"/api/boost/options"* ]]; then
+      respond '[]' "${FAKE_BOOST_STATUS:-200}"
+    elif [[ "$*" == *"/api/hof?"* ]]; then
+      if [ "${FAKE_HOF_LIST_EMPTY:-0}" = 1 ]; then
+        respond '{"records":[]}' "${FAKE_HOF_STATUS:-200}"
+      else
+        respond '{"records":[{"id":348,"nickname":"e2e"}]}' "${FAKE_HOF_STATUS:-200}"
+      fi
+    elif [[ "$*" == *"/download"* && "$write_out" == *size_download* ]]; then
+      printf '%s %s\n' "${FAKE_EXPORT_DOWNLOAD_STATUS:-200}" "${FAKE_EXPORT_BYTES:-4096}"
+    elif [[ "$*" == *"/replay"* && "$write_out" == *size_download* ]]; then
+      printf '%s %s\n' "${FAKE_HOF_REPLAY_STATUS:-200}" "${FAKE_HOF_REPLAY_BYTES:-2048}"
+    elif [[ "$*" == *"X-Amz-Signature"* && "$*" == *"artifacts/0/ai-facts.json"* ]]; then
+      respond '{"facts":true}' "${FAKE_MINIO_ARTIFACT_STATUS:-200}"
+    elif [[ "$*" == *"X-Amz-Signature"* ]]; then
+      respond '{"schemaVersion":"1"}' "${FAKE_MINIO_STATUS:-200}"
+    elif [[ "$*" == *"/api/replay/processing-jobs/"*"/result"* ]]; then
+      respond '{"battles":[{"battleId":"b1"}],"battleSourceNames":["a.wotbreplay"]}' "${FAKE_DATASET_STATUS:-200}"
+    elif [[ "$*" == *"/api/replay/processing-jobs/00000000-0000-4000-8000-000000000000"* ]]; then
+      if [ "$authenticated" = 1 ]; then
+        respond '{"errorCode":"JOB_NOT_FOUND"}' "${FAKE_CONTROL_PLANE_STATUS:-404}"
+      else
+        respond '{"errorCode":"JOB_NOT_FOUND"}' "${FAKE_CONTROL_PLANE_ANON_STATUS:-401}"
+      fi
+    elif [[ "$*" == *"/api/replay/processing-jobs/"* ]]; then
+      respond '{"jobId":"e2e-job-1","status":"'${FAKE_E2E_JOB_STATUS:-READY}'"}' "${FAKE_CONTROL_PLANE_JOB_STATUS:-200}"
+    elif [[ "$*" == *"/api/replay/processing-jobs"* && "$*" == *--form* ]]; then
+      respond '{"jobId":"e2e-job-1","status":"QUEUED","total":1}' "${FAKE_E2E_CREATE_STATUS:-202}"
+    elif [[ "$*" == *"/api/replay/export-jobs/"* ]]; then
+      respond '{"jobId":"e2e-export-1","status":"'${FAKE_EXPORT_JOB_STATUS:-READY}'"}' "${FAKE_EXPORT_STATUS_STATUS:-200}"
+    elif [[ "$*" == *"/api/replay/export-jobs"* ]]; then
+      respond '{"jobId":"e2e-export-1","status":"QUEUED"}' "${FAKE_EXPORT_CREATE_STATUS:-202}"
+    elif [[ "$*" == *"/api/replay/map-overview"* ]]; then
+      if [ "${FAKE_MAP_STATUS:-200}" = 204 ]; then
+        printf '%s\n' "${FAKE_MAP_STATUS}"
+      else
+        respond '{"mapName":"rockfield","cells":[]}' "${FAKE_MAP_STATUS:-200}"
+      fi
+    elif [[ "$*" == *"/api/replay/battle-playback-v2"* ]]; then
+      if [ "${FAKE_PLAYBACK_STATUS:-200}" = 204 ]; then
+        printf '%s\n' "${FAKE_PLAYBACK_STATUS}"
+      else
+        respond '{"battle":{"frames":[]}}' "${FAKE_PLAYBACK_STATUS:-200}"
+      fi
+    elif [[ "$*" == *"https://wotbtools.com"* ]]; then
+      if [[ "$write_out" == *remote_ip* ]]; then
+        # Real curl prints the write-out even when the TLS handshake is rejected,
+        # so a non-zero exit carries status 000.
+        printf '%s %s\n' "${FAKE_TLS_STATUS:-200}" "${FAKE_TLS_REMOTE_IP:-118.25.18.105}"
+        exit "${FAKE_TLS_EXIT:-0}"
+      fi
+      respond '{"status":"UP"}' "${FAKE_PUBLIC_WEB_STATUS:-200}"
+    elif [[ "$*" == *"https://auth.wotbtools.com"* ]]; then
+      if [[ "$write_out" == *remote_ip* ]]; then
+        printf '%s %s\n' "${FAKE_TLS_STATUS:-200}" "${FAKE_TLS_REMOTE_IP:-118.25.18.105}"
+        exit "${FAKE_TLS_EXIT:-0}"
+      fi
+      respond '{"issuer":"https://auth.wotbtools.com/realms/wotbtools"}' "${FAKE_PUBLIC_AUTH_STATUS:-200}"
     else
-      printf '200\n'
+      printf '%s\n' "${FAKE_HEALTH_STATUS:-200}"
     fi
     ;;
   *) exit 0 ;;
@@ -111,28 +217,69 @@ esac
 FAKE_DOCKER
 chmod 700 "$WORK/bin/docker"
 
+# Shared gate environment. WOTB_TX_DIR is set per invocation because the
+# relocated-layout fixtures point at a promoted runtime directory.
+CHECK_ENV=(
+  PATH="$WORK/bin:$PATH" HOME="$WORK"
+  KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real
+  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real
+  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test
+  TX_BUSINESS_POSTGRES_ADMIN_USER=tx-business-admin
+  TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=not-real
+  TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=control_api TX_BUSINESS_DB_PASSWORD=not-real
+  TX_RABBITMQ_CONTROL_API_PASSWORD=not-real
+  YECAO_MINIO_CONTROL_API_ACCESS_KEY=not-real YECAO_MINIO_CONTROL_API_SECRET_KEY=not-real
+  KEYCLOAK_ADMIN_CLIENT_SECRET=not-real AI_API_KEY=not-real
+  KEYCLOAK_E2E_CLIENT_SECRET=not-real-e2e
+  WOTB_E2E_DATA_SNAPSHOT="$WORK/rowcounts.json"
+  WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1
+)
+
 run_check() {
   local tx_dir="$1" check_script="$2"
   shift 2
-  env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
-    WOTB_TX_DIR="$tx_dir" KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
-    KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
-    WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
-    TX_BUSINESS_POSTGRES_ADMIN_USER=tx-business-admin \
-    TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=not-real \
-    TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=control_api TX_BUSINESS_DB_PASSWORD=not-real \
-    TX_RABBITMQ_CONTROL_API_PASSWORD=not-real \
-    YECAO_MINIO_CONTROL_API_ACCESS_KEY=not-real YECAO_MINIO_CONTROL_API_SECRET_KEY=not-real \
-    KEYCLOAK_ADMIN_CLIENT_SECRET=not-real AI_API_KEY=not-real \
-    WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+  env -i "${CHECK_ENV[@]}" WOTB_TX_DIR="$tx_dir" \
     "$@" bash "$check_script" 2>&1
 }
+
+run_post_check() {
+  local tx_dir="$1" check_script="$2"
+  shift 2
+  env -i "${CHECK_ENV[@]}" WOTB_TX_DIR="$tx_dir" \
+    "$@" bash "$check_script" --post-cutover 2>&1
+}
+
+# Read-only Yecao row-count snapshot the operator supplies before cutting DNS.
+printf '{"tables":{"hall_of_fame_record":348}}\n' > "$WORK/rowcounts.json"
 
 printf 'tx-local-opentofu-business-postgres\n' > "$WORK/business-postgres.tofu-provisioned"
 ready_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT")"
 grep -Fq 'PRE_CUTOVER_READY' <<< "$ready_output"
 grep -Fq 'tx-internal-api-route: PASS' <<< "$ready_output"
 grep -Fq 'distributed-execution-plane: PASS' <<< "$ready_output"
+grep -Fq 'tx-business-api: PASS' <<< "$ready_output"
+grep -Fq 'auth-token: PASS' <<< "$ready_output"
+grep -Fq 'tx-control-plane: PASS' <<< "$ready_output"
+grep -Fq 'anonymous-rejected: PASS' <<< "$ready_output"
+grep -Fq 'admin-authz: PASS' <<< "$ready_output"
+grep -Fq 'business-profile: PASS' <<< "$ready_output"
+grep -Fq 'business-hof: PASS' <<< "$ready_output"
+grep -Fq 'business-boost: PASS' <<< "$ready_output"
+grep -Fq 'hof-replay-storage: PASS' <<< "$ready_output"
+grep -Fq 'parser-worker: PASS' <<< "$ready_output"
+grep -Fq 'processing-e2e: PASS' <<< "$ready_output"
+grep -Fq 'dataset-result: PASS' <<< "$ready_output"
+grep -Fq 'map-overview: PASS' <<< "$ready_output"
+grep -Fq 'battle-playback-v2: PASS' <<< "$ready_output"
+grep -Fq 'minio: PASS' <<< "$ready_output"
+grep -Fq 'ai-facts: PASS' <<< "$ready_output"
+grep -Fq 'export: PASS' <<< "$ready_output"
+grep -Fq 'business-data-integrity: PASS' <<< "$ready_output"
+# Before DNS the gate proves TX edge routing/SNI reachability, never trusted TLS.
+grep -Fq 'public-edge-sni-web: PASS' <<< "$ready_output"
+grep -Fq 'public-edge-sni-auth: PASS' <<< "$ready_output"
+! grep -Fq 'public-tls-web' <<< "$ready_output"
+! grep -Fq 'public-edge-web:' <<< "$ready_output"
 grep -Fq 'DNS_CUTOVER_NOT_PERFORMED' <<< "$ready_output"
 grep -Fq 'WAITING_FOR_OPERATOR_APPROVAL' <<< "$ready_output"
 grep -Fq 'qq-idp-admin-api: PASS' <<< "$ready_output"
@@ -141,6 +288,17 @@ grep -Fq 'rabbitmq-provisioning: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres-loopback: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres-provisioning: PASS' <<< "$ready_output"
+
+# The expected pre-DNS state is a completed TLS handshake whose chain is not yet
+# trusted (curl exit 60). That must PASS without disabling verification, which is
+# the whole point of splitting the edge gate by phase.
+untrusted_edge_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_TLS_EXIT=60)"
+grep -Fq 'PRE_CUTOVER_READY' <<< "$untrusted_edge_output" \
+  || { echo "FAIL: curl exit 60 (untrusted chain) must pass the pre-DNS gate (output: $untrusted_edge_output)" >&2; exit 1; }
+grep -Fq 'public-edge-sni-web: PASS' <<< "$untrusted_edge_output" \
+  || { echo "FAIL: curl exit 60 must pass public-edge-sni-web" >&2; exit 1; }
+grep -Fq 'public-edge-sni-auth: PASS' <<< "$untrusted_edge_output" \
+  || { echo "FAIL: curl exit 60 must pass public-edge-sni-auth" >&2; exit 1; }
 
 # Exercise the actual promoted TX layout: the wrapper and deploy helper are
 # siblings under runtime/deploy, with no repository checkout or source root.
@@ -160,8 +318,46 @@ grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' <<< "$relocated_ready_output"
 grep -Fq 'yecao-backend-wireguard-bind: PASS (deployed contract)' <<< "$relocated_ready_output"
 grep -Fq 'business-postgres: PASS' <<< "$relocated_ready_output"
 
-# --- Routing and execution-plane boundary must independently block readiness ---
-run_routing_failure() {
+# --- Post-DNS phase adds the mandatory trusted-TLS gate ------------------------
+post_ready_output="$(run_post_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT")"
+grep -Fq 'POST_CUTOVER_READY' <<< "$post_ready_output"
+grep -Fq 'public-edge-sni-web: PASS' <<< "$post_ready_output"
+grep -Fq 'public-tls-web: PASS' <<< "$post_ready_output"
+grep -Fq 'public-tls-auth: PASS' <<< "$post_ready_output"
+grep -Fq 'processing-e2e: PASS' <<< "$post_ready_output"
+grep -Fq 'DNS_CUTOVER_PERFORMED' <<< "$post_ready_output"
+grep -Fq 'WAITING_FOR_OPERATOR_RETIREMENT' <<< "$post_ready_output"
+! grep -Fq 'PRE_CUTOVER_READY' <<< "$post_ready_output"
+
+run_post_gate_failure() {
+  local label="$1" expected="$2" tx_dir="$3" check_script="$4"
+  shift 4
+  local output rc
+  set +e
+  output="$(run_post_check "$tx_dir" "$check_script" "$@")"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || { echo "FAIL: $label must block POST_CUTOVER_READY" >&2; exit 1; }
+  ! grep -Fq 'POST_CUTOVER_READY' <<< "$output" \
+    || { echo "FAIL: $label emitted POST_CUTOVER_READY" >&2; exit 1; }
+  grep -Fq 'POST_CUTOVER_NOT_READY' <<< "$output" \
+    || { echo "FAIL: $label must report POST_CUTOVER_NOT_READY (output: $output)" >&2; exit 1; }
+  grep -Fq "$expected" <<< "$output" \
+    || { echo "FAIL: $label must report '$expected' (output: $output)" >&2; exit 1; }
+}
+
+# After DNS an untrusted certificate is a hard failure (never masked with -k).
+run_post_gate_failure "post-dns-untrusted-certificate" 'public-tls-web: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_TLS_EXIT=60
+run_post_gate_failure "post-dns-wrong-address" 'public-tls-web: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_TLS_REMOTE_IP=203.0.113.9
+run_post_gate_failure "post-dns-edge-unreachable" 'public-tls-web: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_TLS_EXIT=7
+run_post_gate_failure "post-dns-non-2xx" 'public-tls-web: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_TLS_STATUS=503
+
+# --- Routing, execution-plane and business-E2E tokens must all block readiness ---
+run_gate_failure() {
   local label="$1" expected="$2" tx_dir="$3" check_script="$4"
   shift 4
   local output rc
@@ -178,19 +374,92 @@ run_routing_failure() {
     || { echo "FAIL: $label must report '$expected' (output: $output)" >&2; exit 1; }
 }
 
-run_routing_failure "frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
+run_gate_failure "frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
-run_routing_failure "frontend-upstream-public" 'tx-internal-api-route: FAIL' \
+run_gate_failure "frontend-upstream-public" 'tx-internal-api-route: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_UPSTREAM=https://example.test
-run_routing_failure "business-api-published-port" 'tx-internal-api-route: FAIL' \
+run_gate_failure "business-api-published-port" 'tx-internal-api-route: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"0.0.0.0","published":8087,"target":8087}]'
-run_routing_failure "relocated-frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
+run_gate_failure "relocated-frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
   "" "$RELOCATED_ROOT/deploy/pre-cutover-check.sh" env FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
-run_routing_failure "local-execution-plane" 'distributed-execution-plane: FAIL' \
+run_gate_failure "local-execution-plane" 'distributed-execution-plane: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_EXECUTION_MODE=local
-run_routing_failure "memory-job-authority" 'distributed-execution-plane: FAIL' \
+run_gate_failure "memory-job-authority" 'distributed-execution-plane: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_JOB_REPOSITORY=memory
+
+# Every business token must independently block readiness, so a green gate cannot
+# be produced by a partially working chain.
+source_root_env=(env WOTB_SOURCE_ROOT="$ROOT")
+run_gate_failure "e2e-identity-missing" 'business-e2e: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" KEYCLOAK_E2E_CLIENT_SECRET=
+run_gate_failure "control-plane-contract" 'tx-control-plane: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_CONTROL_PLANE_STATUS=500
+run_gate_failure "anonymous-not-rejected" 'anonymous-rejected: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_CONTROL_PLANE_ANON_STATUS=200
+run_gate_failure "admin-boundary-open" 'admin-authz: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_ADMIN_TOKEN_STATUS=200
+run_gate_failure "profile-api-error" 'business-profile: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_PROFILE_STATUS=503
+run_gate_failure "hof-list-error" 'business-hof: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_STATUS=500
+run_gate_failure "boost-options-error" 'business-boost: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_BOOST_STATUS=500
+run_gate_failure "hof-replay-not-migrated" 'hof-replay-storage: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_LIST_EMPTY=1
+run_gate_failure "parser-worker-idle" 'parser-worker: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_PARSER_CONSUMERS=0
+run_gate_failure "processing-e2e-create" 'processing-e2e: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_E2E_CREATE_STATUS=503
+run_gate_failure "processing-e2e-failed" 'processing-e2e: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_E2E_JOB_STATUS=FAILED
+run_gate_failure "dataset-result-error" 'dataset-result: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_DATASET_STATUS=503
+run_gate_failure "map-overview-missing-artifact" 'map-overview: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_MAP_STATUS=204
+run_gate_failure "battle-playback-missing-artifact" 'battle-playback-v2: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_PLAYBACK_STATUS=204
+run_gate_failure "minio-unreadable" 'minio: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_MINIO_STATUS=403
+run_gate_failure "ai-facts-unreadable" 'ai-facts: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_MINIO_ARTIFACT_STATUS=403
+run_gate_failure "export-job-failed" 'export: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_EXPORT_JOB_STATUS=FAILED
+run_gate_failure "export-download-error" 'export: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_EXPORT_DOWNLOAD_STATUS=500
+run_gate_failure "data-integrity-mismatch" 'business-data-integrity: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_INTEGRITY_COUNT=1
+run_gate_failure "data-snapshot-missing" 'business-data-integrity: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" WOTB_E2E_DATA_SNAPSHOT="$WORK/missing-snapshot.json"
+run_gate_failure "public-edge-sni-web-unreachable" 'public-edge-sni-web: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_EXIT=7
+run_gate_failure "public-edge-sni-auth-unreachable" 'public-edge-sni-auth: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_EXIT=28
+run_gate_failure "public-edge-sni-handshake-failed" 'public-edge-sni-web: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_EXIT=35
+run_gate_failure "public-edge-sni-non-2xx" 'public-edge-sni-web: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_STATUS=503
+# An unknown phase must fail closed, and an unknown flag must be a usage error:
+# the wrapper normally pins the phase, so the phase guard is exercised through
+# the library entry point the wrapper itself uses.
+set +e
+invalid_phase_output="$(env -i "${CHECK_ENV[@]}" WOTB_TX_DIR="$WORK" TX_DEPLOY_LIBRARY_ONLY=1 \
+  WOTB_CUTOVER_PHASE=whenever bash -c 'source "$1"; pre_cutover_check' _ "$ROOT/deploy/tx/deploy.sh" 2>&1)"
+invalid_phase_rc=$?
+set -e
+[ "$invalid_phase_rc" -ne 0 ] || { echo "FAIL: an unknown cutover phase must fail closed" >&2; exit 1; }
+grep -Fq 'cutover-phase: FAIL' <<< "$invalid_phase_output" \
+  || { echo "FAIL: an unknown cutover phase must be named (output: $invalid_phase_output)" >&2; exit 1; }
+! grep -Fq 'PRE_CUTOVER_READY' <<< "$invalid_phase_output" \
+  || { echo "FAIL: an unknown cutover phase must not emit a ready verdict" >&2; exit 1; }
+
+set +e
+usage_output="$(env -i "${CHECK_ENV[@]}" WOTB_TX_DIR="$WORK" bash "$CHECK" --bogus 2>&1)"
+usage_rc=$?
+set -e
+[ "$usage_rc" -eq 2 ] || { echo "FAIL: an unknown gate argument must be a usage error" >&2; exit 1; }
+grep -Fq 'usage: pre-cutover-check.sh' <<< "$usage_output" \
+  || { echo "FAIL: usage error must explain the accepted flags (output: $usage_output)" >&2; exit 1; }
 
 # --- Business PostgreSQL must independently block readiness -------------------
 run_business_failure() {
