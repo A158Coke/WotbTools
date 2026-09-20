@@ -108,8 +108,15 @@ assert manual_inputs["target"]["type"] == "choice"
 assert manual_inputs["target"]["default"] == "tx"
 assert manual_inputs["target"]["options"] == ["tx", "minio", "parser-worker"]
 assert manual_inputs["tx_services"]["required"] is True
-assert manual_inputs["tx_services"]["type"] == "string"
-assert manual_inputs["tx_services"]["default"] == "keycloak-postgres,keycloak,wotb-frontend,caddy"
+assert manual_inputs["tx_services"]["description"] == "TX service (used only when target=tx)"
+# The TX selector is a dropdown: the manual deploy must not accept free-form service
+# strings any more, and ``all`` expands to the TX runtime set inside the manifest step.
+assert manual_inputs["tx_services"]["type"] == "choice"
+assert manual_inputs["tx_services"]["options"] == [
+    "business-api", "rabbitmq", "business-postgres", "keycloak",
+    "keycloak-postgres", "wotb-frontend", "caddy", "all",
+]
+assert manual_inputs["tx_services"]["default"] == "business-api"
 manifest_step = next(step for step in deploy_changes["steps"] if step.get("id") == "manifest")
 manual_run = manifest_step["run"]
 manual_path, workflow_run_path = manual_run.split("manifest_path=release-artifact/deployment-manifest.json", 1)
@@ -123,6 +130,71 @@ for path_name, shell_path in (("workflow_dispatch", manual_path), ("workflow_run
 manual_heredoc = 'python3 - "$MANUAL_TARGET" "$TX_SERVICES_INPUT" "$main_sha" "$GITHUB_RUN_NUMBER" <<\'PY\' >> "$GITHUB_OUTPUT"\n'
 manual_python = manual_path.split(manual_heredoc, 1)[1].split("\nPY\n", 1)[0]
 compile(manual_python, "manual deployment manifest Python heredoc", "exec")
+# The dropdown options and the manifest step's TX service set must stay in lockstep:
+# every selectable service is deployable, caddy stays an explicit-only selector, and
+# ``all`` is the only alias.
+tx_all_service_set = (
+    "keycloak-postgres", "business-postgres", "rabbitmq", "keycloak",
+    "wotb-frontend", "business-api",
+)
+assert 'TX_SERVICES = (\n' + "".join(f'    "{service}",\n' for service in tx_all_service_set) + ")" in manual_python, \
+    "Manual TX deploy must own one explicit TX service set"
+assert set(manual_inputs["tx_services"]["options"]) == set(tx_all_service_set) | {"caddy", "all"}, \
+    "The TX dropdown must offer exactly the deployable TX services plus all"
+# ``all`` deliberately excludes caddy, exactly like deploy/tx/deploy.sh's own all
+# selection: caddy is refreshed by the proxied services, and a caddy requirement would
+# make a whole-runtime deploy depend on Caddy credentials.
+assert 'all|keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|business-api|caddy) ;;' in tx_deploy_text, \
+    "deploy/tx/deploy.sh must remain the owner of the accepted TX service names"
+
+
+def manual_tx_services(target, tx_services):
+    """Run the workflow's real manual manifest step for one dispatch payload.
+
+    ``python3 -c`` takes the same argv the shell step passes, so this asserts the
+    selected TX services (and their immutable image services) exactly as Deploy would.
+    """
+    result = subprocess.run(
+        [sys.executable, "-c", manual_python, target, tx_services, "a" * 40, "777"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, (
+        f"manual manifest step failed for target={target} tx_services={tx_services}:\n"
+        f"{result.stderr}"
+    )
+    return dict(
+        line.split("=", 1) for line in result.stdout.splitlines() if "=" in line
+    )
+
+
+for service in (*tx_all_service_set, "caddy"):
+    manifest = manual_tx_services("tx", service)
+    assert manifest["deploy_services"] == service, manifest
+    assert manifest["tx_services"] == service, manifest
+    assert manifest["yecao_services"] == "" and manifest["yecao_image_services"] == "", manifest
+    expected_image = service in {"keycloak", "wotb-frontend", "business-api"}
+    assert manifest["image_services"] == (service if expected_image else ""), manifest
+    assert manifest["tx_image_services"] == manifest["image_services"], manifest
+    assert manifest["release_tag"] == "sha-" + "a" * 12, manifest
+    assert manifest["deploy_display_name"] == "Manual TX", manifest
+
+# ``all`` expands to the whole TX runtime service set (caddy stays out of it) in the
+# deployment order, and the literal value never reaches WOTB_DEPLOY_SERVICES.
+all_manifest = manual_tx_services("tx", "all")
+assert all_manifest["deploy_services"] == ",".join(tx_all_service_set), all_manifest
+assert all_manifest["tx_services"] == ",".join(tx_all_service_set), all_manifest
+assert all_manifest["image_services"] == "keycloak,wotb-frontend,business-api", all_manifest
+assert all_manifest["tx_image_services"] == "keycloak,wotb-frontend,business-api", all_manifest
+assert "all" not in all_manifest["deploy_services"].split(","), all_manifest
+assert all_manifest["deploy_display_name"] == "Manual TX", all_manifest
+
+# An unexpected dispatch payload is rejected instead of silently deploying nothing.
+unknown = subprocess.run(
+    [sys.executable, "-c", manual_python, "tx", "not-a-service", "a" * 40, "777"],
+    capture_output=True, text=True,
+)
+assert unknown.returncode != 0, "the manual TX step must reject unknown services"
+assert "tx_services must be one of" in unknown.stderr, unknown.stderr
 assert "GITHUB_EVENT_NAME" in manual_run and "workflow_dispatch" in manual_run
 assert 'GITHUB_REF:-}" != refs/heads/main' in manual_run
 assert "git fetch origin main --depth=1" in manual_run
@@ -132,7 +204,6 @@ assert 'if [ "$source_sha" != "$main_sha" ]; then' in manual_run
 assert "Manual TX deploy must run from the current main HEAD." in manual_run
 assert 'release_tag=sha-{commit_sha[:12]}' in manual_run
 assert 'yecao_services=' in manual_run and 'yecao_image_services=' in manual_run
-assert 'allowed = {"keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "business-api", "caddy"}' in manual_run
 assert 'if [ "$MANUAL_TARGET" = minio ] || [ "$MANUAL_TARGET" = parser-worker ]; then' in manual_run
 assert "release_plan.py manual" in manual_run
 assert '--service "$MANUAL_TARGET"' in manual_run
@@ -140,7 +211,6 @@ assert "--commit-sha \"$main_sha\"" in manual_run
 assert 'if target == "minio":' not in manual_python
 assert 'if target == "parser-worker":' not in manual_python
 assert 'raise SystemExit("target must be tx, minio, or parser-worker")' in manual_run
-assert "all|keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|business-api|caddy" in tx_deploy_text
 assert "is_keycloak_group_selected" in tx_deploy_text
 assert "is_business_postgres_group_selected" in tx_deploy_text
 assert "latest" not in manual_run.lower(), "Manual TX deploy must never use latest"
