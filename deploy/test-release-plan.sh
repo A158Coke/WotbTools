@@ -6,7 +6,9 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 python3 - "$ROOT" "$WORK" <<'PY'
+import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -278,6 +280,48 @@ assert subprocess.run(
      "--expected-sha", commit, "--allow-latest"],
     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
 ).returncode != 0, "the business-api service must stay routed to the tx target"
+
+# Caddy is an explicit TX selector in deploy/tx/deploy.sh, so a manifest naming
+# it must validate and stay routed to the TX target. Before this contract the
+# selector existed only in the deploy script and a Caddy-only change could not be
+# derived from the impact surface at all.
+spec = importlib.util.spec_from_file_location("release_plan", tool)
+release_plan = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(release_plan)
+assert "caddy" in release_plan.DEPLOYABLE_SERVICES
+assert release_plan.TARGET_BY_SERVICE["caddy"] == "tx"
+tx_deploy_text = (root / "deploy" / "tx" / "deploy.sh").read_text(encoding="utf-8")
+selector_match = re.search(r"all\|[a-z0-9|-]+\) ;;", tx_deploy_text)
+assert selector_match, "deploy/tx/deploy.sh service selector list is missing"
+for selector in selector_match.group(0).split(")")[0].split("|"):
+    assert selector in release_plan.DEPLOYABLE_SERVICES, \
+        f"deploy/tx/deploy.sh selector missing from the release plan: {selector}"
+caddy_manifest = {
+    "schemaVersion": 2,
+    "commitSha": commit,
+    "imageTag": "sha-0123456789ab",
+    "buildRunId": "42",
+    "buildRunNumber": 42,
+    "backendMigrationMaxVersion": 22,
+    "images": {"backend": False, "frontend": False, "keycloak": False, "minio": False, "parser-worker": False},
+    "buildServices": [],
+    "imageServices": [],
+    "deployServices": ["caddy"],
+    "targetServices": {"tx": ["caddy"]},
+}
+caddy_manifest_path = work / "caddy-manifest.json"
+caddy_manifest_path.write_text(json.dumps(caddy_manifest), encoding="utf-8")
+subprocess.check_call([
+    "python3", str(tool), "validate", "--manifest", str(caddy_manifest_path),
+    "--expected-sha", commit,
+])
+caddy_manifest["targetServices"] = {"yecao": ["caddy"]}
+caddy_manifest_path.write_text(json.dumps(caddy_manifest), encoding="utf-8")
+assert subprocess.run(
+    ["python3", str(tool), "validate", "--manifest", str(caddy_manifest_path),
+     "--expected-sha", commit],
+    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+).returncode != 0, "the caddy service must stay routed to the tx target"
 
 print("release plan detection and manifest contract OK")
 PY

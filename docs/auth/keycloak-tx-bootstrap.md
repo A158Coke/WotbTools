@@ -145,10 +145,14 @@ MinIO `control_api` key pair、`KEYCLOAK_ADMIN_CLIENT_SECRET`、`AI_API_KEY`）�
 
 门禁以只读 Keycloak Admin API 检查 `idp-qq`：必须唯一、`providerId=qq`、`enabled=true`、
 client ID 非 placeholder，且 QQ endpoint/config contract 完整；裸 `qq` / `juhe-qq` alias 会阻断。
-全部通过后输出 `QQ_IDP_STATUS=idp-qq=READY`；不再接受 `WAITING_EXTERNAL` 豁免。门禁中的独立
-`wireguard-backend` probe 必须从 TX `health-probe` 访问
-`http://10.20.0.2:8087/api/health`，以区分 WG/backend 链路与 frontend/Caddy 路由故障。
+全部通过后输出 `QQ_IDP_STATUS=idp-qq=READY`；不再接受 `WAITING_EXTERNAL` 豁免。门禁不再探测
+Yecao backend 路径：公开 API 流量已在 TX 内部终结（frontend nginx → `business-api:8087`），
+改为两条只读 token：`tx-internal-api-route`（frontend upstream 必须是 TX 内部业务运行时、
+`business-api` 不发布任何端口、任何服务都不得发布 8087）与 `distributed-execution-plane`
+（`business-api` 必须同时是 `WOTB_REPLAY_EXECUTION_MODE=distributed` 与
+`WOTB_REPLAY_PROCESSING_JOB_REPOSITORY=jdbc`）。任一不满足即 `PRE_CUTOVER_NOT_READY`。
 
-TX deploy 在修改 runtime 前只检查 Docker/Compose、`wg0` 地址与到 `10.20.0.2` 的路由；
-它不要求尚未发布的 Yecao backend `8087` 端口可达。`10.20.0.2:8087/api/health`
-仅由 application deploy 与本只读门禁在 runtime 已部署后验证。
+TX deploy 在修改 runtime 前只检查 Docker/Compose、`wg0` 地址与到 `10.20.0.2` 的路由（后者仍服务
+MinIO 与 broker 链路）；staging 阶段先 fail-closed 拒绝「引用/发布已退役 8087」或「重新启用本地
+执行面」的 staged Compose，再进入 pull/promote，因此不会出现「已切到 TX 内部路由但仍依赖
+Yecao backend」或反向的中间状态。
