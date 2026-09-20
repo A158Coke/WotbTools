@@ -244,17 +244,31 @@ closed before readiness is reported.
 
 The deployment derives the provider source, exact version and constraint from
 `infra/tofu/rabbitmq/.terraform.lock.hcl`, which currently pins
-`registry.opentofu.org/cyrilgdn/rabbitmq 1.10.1`. On a fresh host it runs
-`tofu providers mirror -platform=linux_amd64` for that root and requires the
-result at
-`/opt/wotb-tx/tofu-provider-mirror/registry.opentofu.org/cyrilgdn/rabbitmq/terraform-provider-rabbitmq_1.10.1_linux_amd64.zip`
-before `tofu init`. An exact existing package is reused without another
-download only after its platform checksum is matched to the committed lockfile.
-A different Linux AMD64 version in that provider directory fails as an
-ambiguous partial bootstrap, and a corrupt package fails during bootstrap,
-before init can reuse any release-local provider cache. The actual init still
-uses `deploy/tx/rabbitmq.tofurc`, whose
-`direct` block excludes RabbitMQ, so it cannot fall back to the public registry.
+`registry.opentofu.org/cyrilgdn/rabbitmq 1.10.1`. Bootstrap never downloads
+into the production provider directory. It creates a temporary
+`.rabbitmq-provider-staging.*` directory under the mirror root (same
+filesystem, so promotion is a rename), runs
+`tofu providers mirror -platform=linux_amd64` into it for that root, and only
+promotes the staged provider directory to
+`/opt/wotb-tx/tofu-provider-mirror/registry.opentofu.org/cyrilgdn/rabbitmq`
+after the staging tree holds exactly the expected source/version/platform
+archive plus a `${version}.json` metadata that names it, carries exactly one
+`linux_amd64` `zh:` checksum, matches a `zh:` checksum committed in the
+lockfile, and hashes to it. A download, version, metadata or checksum failure
+leaves the canonical directory untouched, writes no marker, removes staging and
+never reaches `tofu init`/`apply`.
+
+An exact existing package is reused without another download only after that
+same platform checksum is matched to the committed lockfile. If the canonical
+directory holds the exact version with corrupt bytes, or is present without a
+verifiable archive/metadata pair, the next run repairs it through one fresh
+staged bootstrap and promotion, so an interrupted first bootstrap cannot poison
+every later deployment; if the staged replacement itself fails to validate, the
+previous canonical bytes are kept. Ambiguous states stay fail closed and are
+never silently overwritten or deleted: a different Linux AMD64 version, or more
+than one `linux_amd64` archive, aborts before any download. The actual init
+still uses `deploy/tx/rabbitmq.tofurc`, whose `direct` block excludes RabbitMQ,
+so it cannot fall back to the public registry.
 
 The plan validator allows initial creates plus the two explicitly reviewed
 in-place updates: rotating the application user passwords and changing the
@@ -296,7 +310,12 @@ credential rotation.
 Before production use, an operator installs OpenTofu and Python. The deployment
 owns installation of the exact locked RabbitMQ provider package into
 `/opt/wotb-tx/tofu-provider-mirror`; no manual provider archive installation is
-required. `deploy/tx/rabbitmq.tofurc` includes only that filesystem mirror for
+required. A bootstrap interrupted by a network or registry failure leaves only a
+staging directory behind and never writes into the canonical provider directory,
+so the operator recovery is to re-run the same deployment: it repairs a
+damaged exact-version canonical package from staging instead of failing until
+someone deletes the mirror by hand.
+`deploy/tx/rabbitmq.tofurc` includes only that filesystem mirror for
 the provider and explicitly excludes direct installation during init.
 
 ## Verification
@@ -322,9 +341,13 @@ source is mirror-only by failing closed with an emptied mirror, rejects a
 corrupt mirrored package against the committed checksum, asserts the resolved
 `cyrilgdn/rabbitmq 1.10.1` pin natively, and then applies against a temporary
 RabbitMQ container. `deploy/test-tx-runtime-config.sh` separately covers fresh
-install, exact-package reuse, version mismatch, install failure, RabbitMQ-only
-secret isolation and the second-plan hard gate. Against the real broker the
-smoke verifies the exchange,
+staged bootstrap, exact-package reuse without a download, an interrupted
+download that leaves no canonical partial provider, staged repair of a corrupt
+exact-version package and of missing metadata, a failed repair that leaves the
+canonical bytes unchanged, wrong-version and multiple-version fail-closed
+behaviour without a silent replacement, the ordering of bootstrap before formal
+mirror-only init, RabbitMQ-only secret isolation and the second-plan hard gate.
+Against the real broker the smoke verifies the exchange,
 queues, bindings and ACLs, requires a no-op second plan, and — because the
 application identities carry no tags and therefore cannot reach the Management
 API — exercises messaging over real AMQP with `pika`:

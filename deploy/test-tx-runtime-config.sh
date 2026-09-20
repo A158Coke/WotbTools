@@ -513,14 +513,22 @@ if [[ "${1:-}" == -chdir=* ]]; then
   shift
 fi
 if [ "${1:-}" = providers ] && [ "${2:-}" = mirror ]; then
-  [ "${FAKE_TOFU_MIRROR_FAIL:-0}" != 1 ] || exit 42
   [ "${3:-}" = -platform=linux_amd64 ] || exit 43
   target="${4:?mirror target is required}"
   version="$(sed -n '/provider "registry.opentofu.org\/cyrilgdn\/rabbitmq"/,/^}/ s/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$root/.terraform.lock.hcl")"
   [ -n "$version" ] || exit 44
   provider_dir="$target/registry.opentofu.org/cyrilgdn/rabbitmq"
   mkdir -p "$provider_dir"
-  : > "$provider_dir/terraform-provider-rabbitmq_${version}_linux_amd64.zip"
+  archive="$provider_dir/terraform-provider-rabbitmq_${version}_linux_amd64.zip"
+  if [ "${FAKE_TOFU_MIRROR_FAIL:-0}" = 1 ]; then
+    printf 'partial provider package\n' > "$archive"
+    exit 42
+  fi
+  if [ "${FAKE_TOFU_MIRROR_CORRUPT:-0}" = 1 ]; then
+    printf 'corrupt provider package\n' > "$archive"
+  else
+    : > "$archive"
+  fi
   cat > "$provider_dir/${version}.json" <<EOF
 {
   "archives": {
@@ -567,7 +575,14 @@ run_rabbitmq_deploy() {
 rabbit_tofu_log="$WORK/rabbit-tofu.log"
 rabbit_output="$(run_rabbitmq_deploy "$rabbit_tofu_log" 2>&1)" \
   || fail "rabbitmq-only fresh-host deployment failed: $(tr '\r\n' ' ' <<< "$rabbit_output" | sed -E 's/[[:space:]]+/ /g')"
-expected_rabbit_archive="$WORK/rabbit/tofu-provider-mirror/$RABBITMQ_PROVIDER_DIR/$RABBITMQ_PROVIDER_ARCHIVE"
+rabbit_provider_dir="$WORK/rabbit/tofu-provider-mirror/$RABBITMQ_PROVIDER_DIR"
+expected_rabbit_archive="$rabbit_provider_dir/$RABBITMQ_PROVIDER_ARCHIVE"
+expected_rabbit_metadata="$rabbit_provider_dir/1.10.1.json"
+assert_no_rabbitmq_provider_staging() {
+  [ -z "$(find "$WORK/rabbit/tofu-provider-mirror" -maxdepth 1 -type d \
+    -name '.rabbitmq-provider-staging.*' -print -quit)" ] \
+    || fail "RabbitMQ provider staging directory must be cleaned"
+}
 [ -f "$expected_rabbit_archive" ] \
   || fail "RabbitMQ provider bootstrap must install the exact linux_amd64 lockfile version at the canonical mirror path"
 grep -Fq 'RabbitMQ provider mirror installed registry.opentofu.org/cyrilgdn/rabbitmq 1.10.1 (linux_amd64).' <<< "$rabbit_output" \
@@ -589,6 +604,9 @@ install_line="$(grep -nF 'providers mirror -platform=linux_amd64' "$rabbit_tofu_
 init_line="$(grep -nF 'init -reconfigure -input=false -lockfile=readonly' "$rabbit_tofu_log" | cut -d: -f1)"
 [ -n "$install_line" ] && [ -n "$init_line" ] && [ "$install_line" -lt "$init_line" ] \
   || fail "RabbitMQ provider mirror must be ready before tofu init"
+grep -Fq "providers mirror -platform=linux_amd64 $WORK/rabbit/tofu-provider-mirror/.rabbitmq-provider-staging." "$rabbit_tofu_log" \
+  || fail "RabbitMQ provider download must target an isolated staging mirror"
+assert_no_rabbitmq_provider_staging
 for forbidden in keycloak business-postgres business-api wotb-frontend caddy; do
   ! grep -Fq "up -d --no-deps --force-recreate $forbidden" "$WORK/rabbit-docker.log" \
     || fail "rabbitmq-only deployment must not start $forbidden"
@@ -606,31 +624,98 @@ grep -Fq 'RabbitMQ provider mirror already contains registry.opentofu.org/cyrilg
 grep -Fq 'init -reconfigure -input=false -lockfile=readonly' "$rabbit_tofu_log" \
   || fail "idempotent reuse must still run mirror-only tofu init"
 
-# Checksum verification belongs to bootstrap, not merely tofu init: even if a
-# retained release-local provider cache could satisfy init, corrupt mirror bytes
-# must stop the deployment before init or apply.
+# A failed fresh staging download may leave partial bytes only inside staging.
+# It must not poison the canonical provider directory or reach formal init.
+rm -rf -- "$rabbit_provider_dir"
+rm -f -- "$WORK/rabbit/rabbitmq.tofu-provisioned"
+: > "$WORK/rabbit-install-failure-tofu.log"
+set +e
+rabbit_install_failure_output="$(run_rabbitmq_deploy "$WORK/rabbit-install-failure-tofu.log" \
+  env FAKE_TOFU_MIRROR_FAIL=1 2>&1)"
+rabbit_install_failure_rc=$?
+set -e
+[ "$rabbit_install_failure_rc" -ne 0 ] || fail "RabbitMQ provider install failure must fail deployment"
+grep -Fq 'provider staged bootstrap failed' <<< "$rabbit_install_failure_output" \
+  || fail "RabbitMQ provider staging failure must be diagnosed"
+[ ! -e "$rabbit_provider_dir" ] \
+  || fail "failed fresh staging must not create the canonical RabbitMQ provider directory"
+! grep -Fq 'init -reconfigure' "$WORK/rabbit-install-failure-tofu.log" \
+  || fail "RabbitMQ tofu init must not run after provider staging failure"
+[ ! -e "$WORK/rabbit/rabbitmq.tofu-provisioned" ] \
+  || fail "provider staging failure must not write the RabbitMQ provision marker"
+assert_no_rabbitmq_provider_staging
+
+# A rerun after the interrupted download performs a clean staged bootstrap.
+: > "$rabbit_tofu_log"
+rabbit_retry_output="$(run_rabbitmq_deploy "$rabbit_tofu_log" 2>&1)" \
+  || fail "RabbitMQ provider retry after interrupted staging failed: $rabbit_retry_output"
+[ -f "$expected_rabbit_archive" ] && [ -f "$expected_rabbit_metadata" ] \
+  || fail "RabbitMQ provider retry must promote the complete verified package"
+grep -Fq 'RabbitMQ provider mirror installed registry.opentofu.org/cyrilgdn/rabbitmq 1.10.1 (linux_amd64).' <<< "$rabbit_retry_output" \
+  || fail "RabbitMQ provider retry must report a fresh install"
+assert_no_rabbitmq_provider_staging
+
+# A corrupt exact-version canonical package is recoverable. Even if a retained
+# release-local provider cache could satisfy init, staged verification and
+# promotion must repair the canonical bytes before formal mirror-only init.
 printf 'corrupt provider package\n' > "$expected_rabbit_archive"
 mkdir -p "$WORK/rabbit/tofu.incoming/$RELEASE_SHA/infra/tofu/rabbitmq/.terraform/providers"
 rm -f -- "$WORK/rabbit/rabbitmq.tofu-provisioned"
 : > "$rabbit_tofu_log"
+rabbit_repair_output="$(run_rabbitmq_deploy "$rabbit_tofu_log" 2>&1)" \
+  || fail "corrupt RabbitMQ provider was not repaired: $rabbit_repair_output"
+grep -Fq 'RabbitMQ provider mirror repaired registry.opentofu.org/cyrilgdn/rabbitmq 1.10.1 (linux_amd64).' <<< "$rabbit_repair_output" \
+  || fail "corrupt exact-version RabbitMQ provider must report staged repair"
+[ ! -s "$expected_rabbit_archive" ] \
+  || fail "staged repair must replace corrupt canonical provider bytes"
+repair_install_line="$(grep -nF 'providers mirror -platform=linux_amd64' "$rabbit_tofu_log" | cut -d: -f1)"
+repair_init_line="$(grep -nF 'init -reconfigure -input=false -lockfile=readonly' "$rabbit_tofu_log" | cut -d: -f1)"
+[ -n "$repair_install_line" ] && [ -n "$repair_init_line" ] \
+  && [ "$repair_install_line" -lt "$repair_init_line" ] \
+  || fail "formal RabbitMQ tofu init must run only after staged repair verification and promotion"
+grep -Fxq 'tx-local-opentofu-rabbitmq' "$WORK/rabbit/rabbitmq.tofu-provisioned" \
+  || fail "successful provider repair must allow reconciliation to write the marker"
+assert_no_rabbitmq_provider_staging
+
+# Missing metadata is another recoverable exact-version state.
+rm -f -- "$expected_rabbit_metadata" "$WORK/rabbit/rabbitmq.tofu-provisioned"
+: > "$rabbit_tofu_log"
+rabbit_metadata_repair_output="$(run_rabbitmq_deploy "$rabbit_tofu_log" 2>&1)" \
+  || fail "incomplete RabbitMQ provider metadata was not repaired: $rabbit_metadata_repair_output"
+grep -Fq 'RabbitMQ provider mirror repaired registry.opentofu.org/cyrilgdn/rabbitmq 1.10.1 (linux_amd64).' <<< "$rabbit_metadata_repair_output" \
+  || fail "missing RabbitMQ provider metadata must report staged repair"
+[ -f "$expected_rabbit_metadata" ] \
+  || fail "staged repair must restore canonical provider metadata"
+assert_no_rabbitmq_provider_staging
+
+# A failed repair validates entirely in staging and leaves the corrupt canonical
+# directory byte-for-byte unchanged.
+printf 'canonical corrupt provider package\n' > "$expected_rabbit_archive"
+canonical_before="$(sha256sum "$expected_rabbit_archive" "$expected_rabbit_metadata")"
+rm -f -- "$WORK/rabbit/rabbitmq.tofu-provisioned"
+: > "$WORK/rabbit-repair-failure-tofu.log"
 set +e
-rabbit_checksum_output="$(run_rabbitmq_deploy "$rabbit_tofu_log" 2>&1)"
-rabbit_checksum_rc=$?
+rabbit_repair_failure_output="$(run_rabbitmq_deploy "$WORK/rabbit-repair-failure-tofu.log" \
+  env FAKE_TOFU_MIRROR_CORRUPT=1 2>&1)"
+rabbit_repair_failure_rc=$?
 set -e
-[ "$rabbit_checksum_rc" -ne 0 ] || fail "a corrupt exact-version RabbitMQ provider must fail deployment"
-grep -Fq 'provider mirror checksum validation failed' <<< "$rabbit_checksum_output" \
-  || fail "RabbitMQ provider checksum mismatch must be diagnosed"
-! grep -Fq 'init -reconfigure' "$rabbit_tofu_log" \
-  || fail "RabbitMQ tofu init must not run after provider checksum failure"
+[ "$rabbit_repair_failure_rc" -ne 0 ] || fail "invalid staged RabbitMQ repair must fail deployment"
+grep -Fq 'provider staged bootstrap failed' <<< "$rabbit_repair_failure_output" \
+  || fail "invalid staged RabbitMQ repair must be diagnosed"
+[ "$canonical_before" = "$(sha256sum "$expected_rabbit_archive" "$expected_rabbit_metadata")" ] \
+  || fail "failed staged repair must not replace canonical RabbitMQ provider state"
+! grep -Fq 'init -reconfigure' "$WORK/rabbit-repair-failure-tofu.log" \
+  || fail "RabbitMQ tofu init must not run after staged repair validation failure"
 [ ! -e "$WORK/rabbit/rabbitmq.tofu-provisioned" ] \
-  || fail "provider checksum failure must not write the RabbitMQ provision marker"
-rm -rf -- "$WORK/rabbit/tofu-provider-mirror/$RABBITMQ_PROVIDER_DIR"
+  || fail "failed staged repair must not write the RabbitMQ provision marker"
+assert_no_rabbitmq_provider_staging
 
 # A partial host with a different linux_amd64 RabbitMQ provider is ambiguous and
 # must fail instead of silently installing or selecting another version.
-rm -f -- "$WORK/rabbit/rabbitmq.tofu-provisioned"
-mkdir -p "$WORK/rabbit/tofu-provider-mirror/$RABBITMQ_PROVIDER_DIR"
-touch "$WORK/rabbit/tofu-provider-mirror/$RABBITMQ_PROVIDER_DIR/terraform-provider-rabbitmq_1.9.0_linux_amd64.zip"
+rm -rf -- "$rabbit_provider_dir"
+mkdir -p "$rabbit_provider_dir"
+touch "$rabbit_provider_dir/terraform-provider-rabbitmq_1.9.0_linux_amd64.zip"
+: > "$WORK/rabbit-mismatch-tofu.log"
 set +e
 rabbit_mismatch_output="$(run_rabbitmq_deploy "$WORK/rabbit-mismatch-tofu.log" 2>&1)"
 rabbit_mismatch_rc=$?
@@ -640,25 +725,29 @@ grep -Fq 'provider mirror version mismatch' <<< "$rabbit_mismatch_output" \
   || fail "RabbitMQ provider version mismatch must be diagnosed"
 [ ! -e "$WORK/rabbit/rabbitmq.tofu-provisioned" ] \
   || fail "provider version mismatch must not write the RabbitMQ provision marker"
+! grep -Fq 'providers mirror' "$WORK/rabbit-mismatch-tofu.log" \
+  || fail "wrong RabbitMQ provider version must not be silently replaced"
 
-# Provider installation failure is a hard deployment failure and cannot reach
-# init, apply, the second plan, or the marker.
-rm -rf -- "$WORK/rabbit/tofu-provider-mirror/$RABBITMQ_PROVIDER_DIR"
+# Multiple linux_amd64 versions are also ambiguous and must not be repaired.
+rm -rf -- "$rabbit_provider_dir"
+mkdir -p "$rabbit_provider_dir"
+touch "$expected_rabbit_archive" \
+  "$rabbit_provider_dir/terraform-provider-rabbitmq_1.9.0_linux_amd64.zip"
+: > "$WORK/rabbit-multiple-tofu.log"
 set +e
-rabbit_install_failure_output="$(run_rabbitmq_deploy "$WORK/rabbit-install-failure-tofu.log" \
-  env FAKE_TOFU_MIRROR_FAIL=1 2>&1)"
-rabbit_install_failure_rc=$?
+rabbit_multiple_output="$(run_rabbitmq_deploy "$WORK/rabbit-multiple-tofu.log" 2>&1)"
+rabbit_multiple_rc=$?
 set -e
-[ "$rabbit_install_failure_rc" -ne 0 ] || fail "RabbitMQ provider install failure must fail deployment"
-grep -Fq 'provider mirror bootstrap failed' <<< "$rabbit_install_failure_output" \
-  || fail "RabbitMQ provider install failure must be diagnosed"
-! grep -Fq 'init -reconfigure' "$WORK/rabbit-install-failure-tofu.log" \
-  || fail "RabbitMQ tofu init must not run after provider install failure"
+[ "$rabbit_multiple_rc" -ne 0 ] || fail "multiple RabbitMQ provider versions must fail deployment"
+grep -Fq 'provider mirror version mismatch' <<< "$rabbit_multiple_output" \
+  || fail "multiple RabbitMQ provider versions must be diagnosed"
+! grep -Fq 'providers mirror' "$WORK/rabbit-multiple-tofu.log" \
+  || fail "multiple RabbitMQ provider versions must not be silently replaced"
 [ ! -e "$WORK/rabbit/rabbitmq.tofu-provisioned" ] \
-  || fail "provider install failure must not write the RabbitMQ provision marker"
+  || fail "multiple provider versions must not write the RabbitMQ provision marker"
 
 # The existing second-plan no-change requirement remains a hard gate.
-rm -rf -- "$WORK/rabbit/tofu-provider-mirror/$RABBITMQ_PROVIDER_DIR"
+rm -rf -- "$rabbit_provider_dir"
 set +e
 rabbit_dirty_output="$(run_rabbitmq_deploy "$WORK/rabbit-dirty-tofu.log" \
   env FAKE_TOFU_SECOND_PLAN_FAIL=1 2>&1)"
