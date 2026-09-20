@@ -91,6 +91,35 @@ jobs:
               echo "::error::Manual TX deploy must run from the current main HEAD." >&2
               exit 1
             fi
+            if [ "$MANUAL_TARGET" = minio ] || [ "$MANUAL_TARGET" = parser-worker ]; then
+              metadata="$(python3 deploy/release_plan.py manual \
+                --service "$MANUAL_TARGET" \
+                --commit-sha "$main_sha" \
+                --build-run-id "$GITHUB_RUN_ID" \
+                --build-run-number "$GITHUB_RUN_NUMBER")"
+              python3 - "$metadata" <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import sys
+
+          manifest = json.loads(sys.argv[1])
+          targets = manifest["targetServices"]
+          images = set(manifest["imageServices"])
+          service = manifest["deployServices"][0]
+          label = "MinIO" if service == "minio" else "Parser Worker"
+          print(f"release_sha={manifest['commitSha']}")
+          print(f"release_tag={manifest['imageTag']}")
+          print(f"build_run_number={manifest['buildRunNumber']}")
+          print("backend_migration_max_version=")
+          print(f"deploy_services={','.join(manifest['deployServices'])}")
+          print(f"image_services={','.join(manifest['imageServices'])}")
+          print(f"yecao_services={','.join(targets.get('yecao', []))}")
+          print(f"tx_services={','.join(targets.get('tx', []))}")
+          print(f"yecao_image_services={','.join(s for s in targets.get('yecao', []) if s in images)}")
+          print(f"tx_image_services={','.join(s for s in targets.get('tx', []) if s in images)}")
+          print(f"deploy_display_name=Manual {label}")
+          PY
+              exit 0
+            fi
             python3 - "$MANUAL_TARGET" "$TX_SERVICES_INPUT" "$main_sha" "$GITHUB_RUN_NUMBER" <<'PY' >> "$GITHUB_OUTPUT"
           import sys
 
@@ -98,35 +127,6 @@ jobs:
           requested = [service.strip() for service in sys.argv[2].split(",")]
           commit_sha = sys.argv[3]
           run_number = sys.argv[4]
-          if target == "minio":
-              print(f"release_sha={commit_sha}")
-              print(f"release_tag=sha-{commit_sha[:12]}")
-              print(f"build_run_number={run_number}")
-              print("backend_migration_max_version=")
-              print("deploy_services=minio")
-              print("image_services=minio")
-              print("yecao_services=minio")
-              print("tx_services=")
-              print("yecao_image_services=minio")
-              print("tx_image_services=")
-              print("deploy_display_name=Manual MinIO")
-              raise SystemExit(0)
-          if target == "parser-worker":
-              # The worker is an explicit-selection Yecao execution-plane service on the shared
-              # production Compose project. It is deliberately absent from the legacy `all`
-              # service set, so it is only ever deployed through this dedicated selection.
-              print(f"release_sha={commit_sha}")
-              print(f"release_tag=sha-{commit_sha[:12]}")
-              print(f"build_run_number={run_number}")
-              print("backend_migration_max_version=")
-              print("deploy_services=parser-worker")
-              print("image_services=parser-worker")
-              print("yecao_services=parser-worker")
-              print("tx_services=")
-              print("yecao_image_services=parser-worker")
-              print("tx_image_services=")
-              print("deploy_display_name=Manual Parser Worker")
-              raise SystemExit(0)
           if target != "tx":
               raise SystemExit("target must be tx, minio, or parser-worker")
           allowed = {"keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "business-api", "caddy"}
@@ -220,16 +220,16 @@ jobs:
           IFS=',' read -r -a services <<< "$IMAGE_SERVICES"
           for service in "${services[@]}"; do
             case "$service" in
-              wotb-backend) image=ghcr.io/a158coke/wotbtools-backend ;;
-              business-api) image=ghcr.io/a158coke/wotbtools-backend ;;
-              wotb-frontend) image=ghcr.io/a158coke/wotbtools-frontend ;;
-              keycloak) image=ghcr.io/a158coke/wotbtools-keycloak ;;
-              minio) image=ghcr.io/a158coke/wotbtools-minio ;;
-              parser-worker) image=ghcr.io/a158coke/wotbtools-parser-worker ;;
+              wotb-backend) image=ghcr.io/a158coke/wotbtools-backend; remediation="Required immutable deploy image does not exist for $service: $image:$RELEASE_TAG" ;;
+              business-api) image=ghcr.io/a158coke/wotbtools-backend; remediation="Required immutable deploy image does not exist for $service: $image:$RELEASE_TAG" ;;
+              wotb-frontend) image=ghcr.io/a158coke/wotbtools-frontend; remediation="Required immutable deploy image does not exist for $service: $image:$RELEASE_TAG" ;;
+              keycloak) image=ghcr.io/a158coke/wotbtools-keycloak; remediation="Required immutable deploy image does not exist for $service: $image:$RELEASE_TAG" ;;
+              minio) image=ghcr.io/a158coke/wotbtools-minio; remediation="MinIO immutable image for current main does not exist. Run Build workflow manually with service=minio first, then deploy the resulting release." ;;
+              parser-worker) image=ghcr.io/a158coke/wotbtools-parser-worker; remediation="Parser Worker immutable image for current main does not exist. Run Build workflow manually with service=parser-worker first, then deploy the resulting release." ;;
               *) echo "unsupported image service: $service" >&2; exit 1 ;;
             esac
             docker manifest inspect "$image:$RELEASE_TAG" >/dev/null || {
-              echo "::error::Required immutable deploy image does not exist for $service: $image:$RELEASE_TAG" >&2
+              echo "::error::$remediation" >&2
               exit 1
             }
           done

@@ -114,8 +114,8 @@ manifest_step = next(step for step in deploy_changes["steps"] if step.get("id") 
 manual_run = manifest_step["run"]
 manual_path, workflow_run_path = manual_run.split("manifest_path=release-artifact/deployment-manifest.json", 1)
 workflow_run_path = "manifest_path=release-artifact/deployment-manifest.json" + workflow_run_path
-assert manual_run.count("<<'PY'") == 2, \
-    "Validate deployment manifest must syntax-check both manual and workflow-run Python heredocs"
+assert manual_run.count("<<'PY'") == 3, \
+    "Validate deployment manifest must syntax-check manual-image, manual-TX, and workflow-run Python heredocs"
 for path_name, shell_path in (("workflow_dispatch", manual_path), ("workflow_run", workflow_run_path)):
     syntax = subprocess.run(["bash", "-n"], input=shell_path.encode("utf-8"), capture_output=True)
     assert syntax.returncode == 0, \
@@ -133,15 +133,12 @@ assert "Manual TX deploy must run from the current main HEAD." in manual_run
 assert 'release_tag=sha-{commit_sha[:12]}' in manual_run
 assert 'yecao_services=' in manual_run and 'yecao_image_services=' in manual_run
 assert 'allowed = {"keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "business-api", "caddy"}' in manual_run
-assert 'if target == "minio":' in manual_run
-assert 'print("deploy_services=minio")' in manual_run
-assert 'print("yecao_services=minio")' in manual_run
-assert 'if target == "parser-worker":' in manual_run
-assert 'print("deploy_services=parser-worker")' in manual_run
-assert 'print("image_services=parser-worker")' in manual_run
-assert 'print("yecao_services=parser-worker")' in manual_run
-assert 'print("yecao_image_services=parser-worker")' in manual_run
-assert 'print("deploy_display_name=Manual Parser Worker")' in manual_run
+assert 'if [ "$MANUAL_TARGET" = minio ] || [ "$MANUAL_TARGET" = parser-worker ]; then' in manual_run
+assert "release_plan.py manual" in manual_run
+assert '--service "$MANUAL_TARGET"' in manual_run
+assert "--commit-sha \"$main_sha\"" in manual_run
+assert 'if target == "minio":' not in manual_python
+assert 'if target == "parser-worker":' not in manual_python
 assert 'raise SystemExit("target must be tx, minio, or parser-worker")' in manual_run
 assert "all|keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|business-api|caddy" in tx_deploy_text
 assert "is_keycloak_group_selected" in tx_deploy_text
@@ -174,11 +171,21 @@ for workflow_text, workflow_name in ((build_text, "Manual Build"),):
         f"{workflow_name} must not accept an ancestor-only source"
 assert "::error::Manual Build must run from the current main HEAD." in build_text
 assert "Required immutable deploy image does not exist" in deploy_text
+assert "MinIO immutable image for current main does not exist." in deploy_text
+assert "Run Build workflow manually with service=minio first, then deploy the resulting release." in deploy_text
+assert "Parser Worker immutable image for current main does not exist." in deploy_text
+assert "Run Build workflow manually with service=parser-worker first, then deploy the resulting release." in deploy_text
 image_job = deploy["jobs"]["image_existence"]
 assert image_job["needs"] == ["changes"]
 assert "image_services" in image_job["if"]
 assert "RELEASE_TAG" in image_job["steps"][-1]["env"]
 assert "docker manifest inspect" in image_job["steps"][-1]["run"]
+for job_name in ("deploy", "deploy_minio", "deploy_tx"):
+    job = deploy["jobs"][job_name]
+    assert job["needs"] == ["changes", "image_existence"], \
+        f"{job_name} must not reach SSH/SCP before immutable-image validation"
+    assert "needs.image_existence.result == 'success'" in job["if"], \
+        f"{job_name} must require an existing immutable image before deployment proceeds"
 assert "workflow_run.head_sha" in deploy_text
 assert "      - Build" in deploy_text
 assert "Release / Build" not in deploy_text and "Release / Deploy" not in deploy_text
@@ -188,7 +195,7 @@ assert "docker manifest inspect" in deploy_text
 assert "WOTB_DEPLOY_SERVICES" in deploy_text
 assert "WOTB_DEPLOY_IMAGE_SERVICES" in deploy_text
 assert "targetServices" in deploy_text
-assert "parser-worker) image=ghcr.io/a158coke/wotbtools-parser-worker ;;" in image_job["steps"][-1]["run"]
+assert "parser-worker) image=ghcr.io/a158coke/wotbtools-parser-worker; remediation=" in image_job["steps"][-1]["run"]
 assert 'if "parser-worker" in manifest["deployServices"]:' in deploy_text
 assert 'labels.append("Parser Worker")' in deploy_text
 yecao_deploy_job = deploy["jobs"]["deploy"]
