@@ -415,7 +415,7 @@ jobs:
           script: |
             set -eu
             WOTB_DIR=/opt/wotb-tx
-            mkdir -p "$WOTB_DIR/deploy.incoming"
+            mkdir -p "$WOTB_DIR/deploy.incoming" "$WOTB_DIR/e2e"
             rm -rf -- "$WOTB_DIR/deploy.incoming/deploy/tx"
       - name: Install TX deployment configuration
         uses: appleboy/scp-action@v1
@@ -426,6 +426,20 @@ jobs:
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           source: deploy/tx
           target: /opt/wotb-tx/deploy.incoming
+          overwrite: true
+      # The cutover E2E gate uploads one staged replay through the
+      # deployment-owned health-probe container; the fixtures are already
+      # committed test samples and never contain production user data.
+      - name: Install TX cutover E2E replay fixtures
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: common/fixtures/replays
+          target: /opt/wotb-tx/e2e
+          strip_components: 3
           overwrite: true
       - name: Bootstrap TX Keycloak PostgreSQL before OpenTofu
         if: contains(needs.changes.outputs.tx_services, 'keycloak-postgres')
@@ -569,7 +583,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 20m
-          envs: KEYCLOAK_ADMIN_USERNAME,KEYCLOAK_ADMIN_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION,TX_QQ_CLIENT_ID,TX_QQ_CLIENT_SECRET,TX_QQ_CLIENT_SECRET_VERSION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
+          envs: KEYCLOAK_ADMIN_USERNAME,KEYCLOAK_ADMIN_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION,KEYCLOAK_E2E_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET_VERSION,TX_QQ_CLIENT_ID,TX_QQ_CLIENT_SECRET,TX_QQ_CLIENT_SECRET_VERSION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
           script: |
             set -euo pipefail
             root="/opt/wotb-tx/tofu.incoming/${{ needs.changes.outputs.release_sha }}/infra/tofu/keycloak"
@@ -580,6 +594,8 @@ jobs:
           KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
           KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
           KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION: ${{ vars.KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION || '1' }}
+          KEYCLOAK_E2E_CLIENT_SECRET: ${{ secrets.KEYCLOAK_E2E_CLIENT_SECRET }}
+          KEYCLOAK_E2E_CLIENT_SECRET_VERSION: ${{ vars.KEYCLOAK_E2E_CLIENT_SECRET_VERSION || '1' }}
           TX_QQ_CLIENT_ID: ${{ vars.TX_QQ_CLIENT_ID }}
           TX_QQ_CLIENT_SECRET: ${{ secrets.TX_QQ_CLIENT_SECRET }}
           TX_QQ_CLIENT_SECRET_VERSION: ${{ vars.TX_QQ_CLIENT_SECRET_VERSION }}

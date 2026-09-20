@@ -41,6 +41,24 @@ variable "keycloak_admin_client_secret" {
   nullable    = false
 }
 
+variable "e2e_client_secret" {
+  description = "Runtime-only write-only secret used by the read-only cutover E2E gate client."
+  type        = string
+  sensitive   = true
+  nullable    = false
+}
+
+variable "e2e_client_secret_version" {
+  description = "Explicit cutover E2E gate client secret rotation version."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*$", trimspace(var.e2e_client_secret_version)))
+    error_message = "e2e_client_secret_version must be a positive integer and must change with e2e_client_secret rotation."
+  }
+}
+
 variable "keycloak_admin_client_secret_version" {
   description = "Explicit runtime client secret rotation version."
   type        = string
