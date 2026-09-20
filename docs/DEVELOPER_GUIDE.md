@@ -560,11 +560,14 @@ manifest 的 `targetServices` 是这两个 host 的唯一发布路由来源，�
 `docs/architecture/opentofu-postgres-keycloak.md`。
 
 TX RabbitMQ 也保持独立 ownership：Compose 只运行 broker，`infra/tofu/rabbitmq`
-只管理 `/wotbtools` vhost、application users 与 permissions，队列/交换机/binding
-由未来应用 adapter 单独拥有。provider 只可连接 TX loopback
-`http://127.0.0.1:15672`，经 filesystem mirror 安装且 plan/apply/second-plan 和
-root-only marker 全部在 TX 发生；GitHub runner 不直连 Management API。完整凭据和
-部署边界见 `docs/operations/rabbitmq.md`。
+是 **唯一** 的静态 topology owner，管理 `/wotbtools` vhost、无 tag 的
+`control-api`/`parser-worker` identities、ACL，以及 `wotb.jobs` exchange、
+`wotb.parser` / `wotb.parser.retry` / `wotb.parser.dlq` queues 与 bindings；
+应用只 publish/consume 并拥有 ack/nack、重试判定、幂等与 job state。provider
+只可连接 TX loopback `http://127.0.0.1:15672`，经 filesystem mirror 安装且
+plan/apply/second-plan 和 root-only marker 全部在 TX 发生；GitHub runner 不直连
+Management API。完整 topology、retry/DLX 设计与 ACL 见
+`docs/operations/rabbitmq.md`。
 
 TX Business PostgreSQL 与 Keycloak PostgreSQL 完全独立：Compose 只运行
 `business-postgres`（`postgres:18-alpine`、`business_postgres_data`、
