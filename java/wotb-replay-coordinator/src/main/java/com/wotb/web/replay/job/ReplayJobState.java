@@ -66,6 +66,29 @@ public final class ReplayJobState {
         this.createdAtMillis = System.currentTimeMillis();
     }
 
+    /**
+     * 从持久化投影恢复状态机（重启后读取权威状态用）。
+     *
+     * <p>刻意不做合法性校验：恢复的是**已经被本状态机确认过**的状态，重新判断一次合法性
+     * 只会形成第二份状态机规则。调用方只允许传入 {@link ReplayJobAuthority} 读回的行。</p>
+     */
+    ReplayJobState(final String jobId, final int total, final String phase, final Status status,
+                   final int processed, final int duplicates, final int failures,
+                   final String errorCode, final long createdAtMillis, final long finishedAtMillis,
+                   final boolean cancelRequested) {
+        this.jobId = jobId;
+        this.total = total;
+        this.phase = phase;
+        this.status = status;
+        this.processed = processed;
+        this.duplicates = duplicates;
+        this.failures = failures;
+        this.errorCode = errorCode;
+        this.createdAtMillis = createdAtMillis;
+        this.finishedAtMillis = finishedAtMillis;
+        this.cancelRequested = cancelRequested;
+    }
+
     public boolean isCancelled() {
         return cancelRequested;
     }
