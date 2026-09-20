@@ -348,7 +348,7 @@ connection.close()
 
 connection, channel, method, properties, _ = consume(PARSER, MAIN_QUEUE, "retry-1", timeout=90)
 assert method.routing_key == "parser.request", method.routing_key
-deaths = properties.headers.get("x-death", [])
+deaths = (properties.headers or {}).get("x-death", [])
 assert any(death.get("queue") == RETRY_QUEUE for death in deaths), deaths
 assert any(death.get("reason") == "rejected" for death in deaths), deaths
 channel.basic_ack(method.delivery_tag)
@@ -389,7 +389,7 @@ connection.close()
 for marker in ("result-2", "failed-2"):
     publish(PARSER, "parser.result" if marker == "result-2" else "parser.failed", marker)
     connection, channel, method, properties, _ = consume(CONTROL, RESULT_QUEUE, marker)
-    assert properties.headers.get("x-death", []) == [], properties.headers
+    assert (properties.headers or {}).get("x-death", []) == [], properties.headers
     channel.basic_nack(method.delivery_tag, requeue=False)
     connection.close()
 
@@ -402,7 +402,7 @@ for marker in ("result-2", "failed-2"):
     matching = [item for item in dead_letters if marker in item.get("payload", "")]
     assert matching, (marker, dead_letters)
     assert matching[0]["routing_key"] == "parser.dead", matching[0]
-    first_death_queue = matching[0]["properties"].get("headers", {}).get("x-first-death-queue")
+    first_death_queue = matching[0](["properties"].get("headers") or {}).get("x-first-death-queue")
     assert first_death_queue in (None, RESULT_QUEUE), matching[0]
 
 # ------------------------------------------------- application ACL boundaries
