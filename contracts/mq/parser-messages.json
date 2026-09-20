@@ -1,0 +1,186 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://wotbtools.com/contracts/mq/parser-messages.json",
+  "title": "WotBTools replay parser AMQP envelopes",
+  "description": "Wire envelopes exchanged over the RabbitMQ topology owned by infra/tofu/rabbitmq. Every envelope is metadata only: no replay bytes, no parsed content, no storage URL. The application-side authority is com.wotb.broker.rabbitmq.ParserMessageCodec; this document pins the same shape for reviewers and non-JVM runtimes. schemaVersion is a string constant and any other value must be rejected (fail closed), never downgraded.",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "schemaVersion": {
+      "description": "Envelope protocol version. Must stay in lockstep with ParserMessageCodec.SCHEMA_VERSION.",
+      "type": "string",
+      "const": "1"
+    },
+    "request": {
+      "description": "parser.request: the replay control plane asks the parser worker to process one job. Routing key parser.request, exchange wotb.jobs, bound to queue wotb.parser.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "jobId",
+        "attempt",
+        "createdAt",
+        "sources"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/definitions/schemaVersion"
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/requestSource"
+          }
+        }
+      }
+    },
+    "requestSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceIndex",
+        "sourceName"
+      ],
+      "properties": {
+        "sourceIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sourceName": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "result": {
+      "description": "parser.result: per-source terminal outcomes of one attempt. Routing key parser.result, exchange wotb.jobs, bound to queue wotb.parser.result.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "jobId",
+        "attempt",
+        "occurredAt",
+        "sources"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/definitions/schemaVersion"
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/resultSource"
+          }
+        }
+      }
+    },
+    "resultSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceIndex",
+        "sourceName",
+        "status"
+      ],
+      "properties": {
+        "sourceIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sourceName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "description": "Terminal per-source status. FAILED requires errorCode; READY must not carry one.",
+          "type": "string",
+          "enum": [
+            "READY",
+            "FAILED"
+          ]
+        },
+        "errorCode": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "failed": {
+      "description": "parser.failed: the whole attempt failed before any per-source outcome existed. Routing key parser.failed, exchange wotb.jobs, bound to queue wotb.parser.result.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "jobId",
+        "attempt",
+        "occurredAt",
+        "errorCode",
+        "retryable"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/definitions/schemaVersion"
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "errorCode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
