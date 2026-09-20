@@ -74,8 +74,16 @@ grep -Fq 'BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://business-api:8087}' "$
   || fail "the TX Compose document must not reference the retired Yecao backend route"
 grep -Fq 'NGINX_ENVSUBST_FILTER: ^BACKEND_UPSTREAM$$' "$COMPOSE" \
   || fail "nginx must substitute only the configured backend upstream"
-grep -Fq 'ipv4_address: 172.29.0.2' "$COMPOSE" \
-  || fail "Caddy must have a fixed trusted ingress address"
+for caddy_config in "$COMPOSE" "$TX_DIR/Caddyfile" "$TEMPLATE" "$TX_DIR/deploy.sh"; do
+  ! grep -Fq '172.29.0.2' "$caddy_config" \
+    || fail "TX runtime/config must not hardcode a Caddy container address: $caddy_config"
+done
+frontend_block="$(sed -n '/^  wotb-frontend:/,/^  [A-Za-z0-9_-]*:$/p' "$COMPOSE")"
+caddy_block="$(sed -n '/^  caddy:/,/^volumes:/p' "$COMPOSE")"
+grep -Fq '      - caddy' <<< "$frontend_block" \
+  || fail "frontend must start after the trusted Caddy service DNS name exists"
+! grep -Fq '      - wotb-frontend' <<< "$caddy_block" \
+  || fail "Caddy must not wait for nginx before its trusted DNS name is available"
 # The TX business runtime replaces the retired Yecao `wotb-backend` service: one
 # in-process control plane plus business API, no published port, and a
 # distributed-only replay execution plane.
@@ -118,14 +126,14 @@ for route in \
   'location = /download/android/version.json {'; do
   grep -Fq "$route" "$TEMPLATE" || fail "TX frontend nginx lost required route contract: $route"
 done
-grep -Fq 'set_real_ip_from 172.29.0.2;' "$TEMPLATE" \
-  || fail "TX frontend must trust only the fixed Caddy peer for client IPs"
+grep -Fq 'set_real_ip_from caddy;' "$TEMPLATE" \
+  || fail "TX frontend must trust only the Caddy Docker service for client IPs"
 ! grep -Fq 'keycloak:8080' "$TEMPLATE" \
   || fail "frontend nginx must not own the Keycloak public route"
 grep -Fq 'handle /.well-known/assetlinks.json' "$TX_DIR/Caddyfile" \
   || fail "TX Caddy must serve the Android App Link association before Keycloak"
-grep -Fq 'http://172.29.0.2 {' "$TX_DIR/Caddyfile" \
-  || fail "TX Caddy must expose readiness only on its fixed internal address"
+grep -Fq 'http://caddy {' "$TX_DIR/Caddyfile" \
+  || fail "TX Caddy must expose readiness through its Docker service name"
 grep -Fq 'handle /_wotb/ready' "$TX_DIR/Caddyfile" \
   || fail "TX Caddy must expose an explicit internal readiness endpoint"
 grep -Fq 'handle_path /_wotb/frontend/*' "$TX_DIR/Caddyfile" \
@@ -135,9 +143,9 @@ grep -Fq 'handle_path /_wotb/keycloak/*' "$TX_DIR/Caddyfile" \
 ! grep -Fq 'wireguard-backend' "$TX_DIR/deploy.sh" \
   || fail "TX deploy must not depend on or probe the retired Yecao backend route"
 for probe in \
-  'http://172.29.0.2/_wotb/ready' \
-  'http://172.29.0.2/_wotb/frontend/api/health' \
-  'http://172.29.0.2/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration'; do
+  'http://caddy/_wotb/ready' \
+  'http://caddy/_wotb/frontend/api/health' \
+  'http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration'; do
   grep -Fq "$probe" "$TX_DIR/deploy.sh" \
     || fail "TX deploy must probe the Caddy internal readiness route: $probe"
 done
@@ -730,4 +738,4 @@ grep -Fq '"business-api"' "$WORK/business-api/tx-production-release.json" \
 grep -Fq '"keycloak"' "$WORK/business-api/tx-production-release.json" \
   || fail "business-api deployment must preserve other TX service metadata"
 
-echo "OK: TX Compose/Caddy/nginx/deploy contracts are deterministic and DNS-free"
+echo "OK: TX Compose/Caddy/nginx/deploy contracts are deterministic and use Docker service DNS"

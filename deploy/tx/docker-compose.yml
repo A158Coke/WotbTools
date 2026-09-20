@@ -127,6 +127,8 @@ services:
     depends_on:
       - keycloak
       - business-api
+      # nginx resolves the trusted Caddy peer by Docker service DNS at startup.
+      - caddy
     restart: unless-stopped
     logging: *default-logging
 
@@ -253,11 +255,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - wotb-frontend
       - keycloak
-    networks:
-      default:
-        ipv4_address: 172.29.0.2
     restart: unless-stopped
     logging: *default-logging
 

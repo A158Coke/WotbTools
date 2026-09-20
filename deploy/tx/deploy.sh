@@ -704,11 +704,12 @@ blocking_health() {
     # backend path is deliberately not probed or required any more.
     wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || return 1
     # The formal site address intentionally redirects HTTP to HTTPS. Probe
-    # Caddy's TX-local readiness surface instead: it is 2xx-only, DNS/ACME
-    # independent, and exercises the frontend and Keycloak proxy contracts.
-    wait_for_probe caddy-ready http://172.29.0.2/_wotb/ready || return 1
-    wait_for_probe caddy-frontend http://172.29.0.2/_wotb/frontend/api/health || return 1
-    wait_for_probe caddy-keycloak http://172.29.0.2/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || return 1
+    # Caddy's TX-local readiness surface instead: it is 2xx-only,
+    # production-DNS/ACME independent, and exercises the frontend and Keycloak
+    # proxy contracts.
+    wait_for_probe caddy-ready http://caddy/_wotb/ready || return 1
+    wait_for_probe caddy-frontend http://caddy/_wotb/frontend/api/health || return 1
+    wait_for_probe caddy-keycloak http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || return 1
   fi
 }
 
@@ -966,10 +967,10 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
   wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || failures=1
   wait_for_probe business-api http://business-api:8088/actuator/health || failures=1
   wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || failures=1
-  wait_for_probe caddy-ready http://172.29.0.2/_wotb/ready || failures=1
-  wait_for_probe caddy-frontend http://172.29.0.2/_wotb/frontend/api/health || failures=1
-  wait_for_probe caddy-keycloak http://172.29.0.2/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || failures=1
-  probe_body_contains assetlinks http://172.29.0.2/.well-known/assetlinks.json 'com.wotbtools.app' || failures=1
+  wait_for_probe caddy-ready http://caddy/_wotb/ready || failures=1
+  wait_for_probe caddy-frontend http://caddy/_wotb/frontend/api/health || failures=1
+  wait_for_probe caddy-keycloak http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || failures=1
+  probe_body_contains assetlinks http://caddy/.well-known/assetlinks.json 'com.wotbtools.app' || failures=1
 
   for provider in keycloak-qq-provider.jar keycloak-wargaming-provider.jar; do
     if docker compose -f "$LIVE_COMPOSE" exec -T keycloak test -f "/opt/keycloak/providers/$provider"; then
