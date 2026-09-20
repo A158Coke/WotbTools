@@ -17,7 +17,7 @@ readonly BUSINESS_POSTGRES_TOFU_PROVISION_MARKER="${WOTB_TX_BUSINESS_POSTGRES_TO
 readonly BUSINESS_POSTGRES_TOFU_CLI_CONFIG="$LIVE_DEPLOY_DIR/business-postgres.tofurc"
 readonly BUSINESS_POSTGRES_TOFU_MIRROR="${WOTB_TX_BUSINESS_POSTGRES_TOFU_MIRROR:-$WOTB_DIR/tofu-provider-mirror}"
 readonly BOOTSTRAP_KEYCLOAK="${WOTB_TX_BOOTSTRAP_KEYCLOAK:-0}"
-readonly BACKEND_UPSTREAM_VALUE="${TX_BACKEND_UPSTREAM:-http://10.20.0.2:8087}"
+readonly BACKEND_UPSTREAM_VALUE="${TX_BACKEND_UPSTREAM:-http://business-api:8087}"
 readonly DEPLOY_SERVICES_RAW="${WOTB_DEPLOY_SERVICES:-}"
 readonly DEPLOY_IMAGE_SERVICES_RAW="${WOTB_DEPLOY_IMAGE_SERVICES:-}"
 readonly TAG_VALUE="${TAG:-}"
@@ -137,8 +137,8 @@ validate_inputs() {
   [ "$INCOMING_DIR" != "$WOTB_DIR" ] || die "incoming directory must differ from TX runtime directory."
   [[ "$TAG_VALUE" =~ ^sha-[0-9a-f]{12}$ ]] || die "TAG must be an immutable sha-<12 lowercase hex> tag."
   [[ "$RELEASE_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]] || die "RELEASE_SHA must be a full lowercase commit SHA."
-  [ "$BACKEND_UPSTREAM_VALUE" = "http://10.20.0.2:8087" ] \
-    || die "TX_BACKEND_UPSTREAM must remain the WireGuard-only backend URL http://10.20.0.2:8087."
+  [ "$BACKEND_UPSTREAM_VALUE" = "http://business-api:8087" ] \
+    || die "TX_BACKEND_UPSTREAM must be the TX-internal business runtime http://business-api:8087; public hosts and the retired Yecao WireGuard backend are no longer routable."
   is_positive_integer "$HEALTH_ATTEMPTS" || die "WOTB_HEALTH_ATTEMPTS must be a positive integer."
   is_positive_integer "$HEALTH_INTERVAL_SEC" || die "WOTB_HEALTH_INTERVAL_SEC must be a positive integer."
   is_positive_integer "$PROBE_CONNECT_TIMEOUT_SEC" || die "WOTB_PROBE_CONNECT_TIMEOUT_SEC must be a positive integer."
@@ -334,8 +334,32 @@ stage_and_validate() {
   render_effective_compose "$source" "$EFFECTIVE_COMPOSE" "$frontend_tag" "$keycloak_tag" "$business_api_tag"
   export TX_RUNTIME_ROOT
   export TX_BACKEND_UPSTREAM="$BACKEND_UPSTREAM_VALUE"
+  assert_routing_boundary "$EFFECTIVE_COMPOSE"
   docker compose -f "$EFFECTIVE_COMPOSE" config >/dev/null \
     || die "staged TX compose config is invalid; live TX deployment was not changed."
+}
+
+# Fail closed on the two production invariants this cutover establishes:
+#   1. the frontend proxies public API traffic to the TX-internal business
+#      runtime, and no staged service publishes the retired Yecao port;
+#   2. the business runtime's replay execution plane is the distributed one
+#      (PostgreSQL job authority + RabbitMQ dispatch), so a future edit cannot
+#      silently re-enable local parsing, local job authority, or in-process
+#      dispatch in production.
+assert_routing_boundary() {
+  local compose_file="$1"
+  grep -Fq 'BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://business-api:8087}' "$compose_file" \
+    || die "staged TX compose must default the frontend upstream to the TX-internal business runtime."
+  ! grep -Eq '8087:8087|10\.20\.0\.2:8087' "$compose_file" \
+    || die "staged TX compose must not publish or reference the retired Yecao backend port."
+  if is_selected all || is_selected business-api; then
+    grep -Fq 'WOTB_REPLAY_EXECUTION_MODE: distributed' "$compose_file" \
+      || die "business-api must run WOTB_REPLAY_EXECUTION_MODE=distributed in production."
+    grep -Fq 'WOTB_REPLAY_PROCESSING_JOB_REPOSITORY: jdbc' "$compose_file" \
+      || die "business-api must keep PostgreSQL as the replay job authority (repository=jdbc)."
+    ! grep -Fq 'WOTB_REPLAY_EXECUTION_MODE: local' "$compose_file" \
+      || die "business-api must never run the local replay execution plane in production."
+  fi
 }
 
 pull_images() {
@@ -675,9 +699,9 @@ blocking_health() {
     wait_for_probe business-api-app http://business-api:8087/api/health || return 1
   fi
   if is_selected all || is_selected wotb-frontend; then
-    # This direct probe proves TX -> WireGuard -> Yecao's published backend
-    # path independently of frontend nginx and Caddy routing.
-    wait_for_probe wireguard-backend http://10.20.0.2:8087/api/health || return 1
+    # Public API traffic is terminated inside wotb_tx_internal now: the frontend
+    # probe proves nginx -> business-api end to end, and the retired Yecao
+    # backend path is deliberately not probed or required any more.
     wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || return 1
     # The formal site address intentionally redirects HTTP to HTTPS. Probe
     # Caddy's TX-local readiness surface instead: it is 2xx-only, DNS/ACME
@@ -803,6 +827,40 @@ pre_cutover_check() {
   if python3 -c '
 import json, sys
 data = json.load(sys.stdin)
+services = data["services"]
+frontend = services["wotb-frontend"].get("environment") or {}
+assert frontend.get("BACKEND_UPSTREAM") == "http://business-api:8087", frontend.get("BACKEND_UPSTREAM")
+business_api = services["business-api"]
+assert not business_api.get("ports"), business_api.get("ports")
+published = [
+    str(port)
+    for name, service in services.items()
+    for port in (service.get("ports") or [])
+]
+assert not any("8087" in port for port in published), published
+' <<< "$compose_json"; then
+    echo "tx-internal-api-route: PASS"
+  else
+    echo "tx-internal-api-route: FAIL (frontend must proxy to the TX-internal business runtime and no service may publish 8087)" >&2
+    failures=1
+  fi
+
+  if python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+environment = data["services"]["business-api"].get("environment") or {}
+assert environment.get("WOTB_REPLAY_EXECUTION_MODE") == "distributed", environment.get("WOTB_REPLAY_EXECUTION_MODE")
+assert environment.get("WOTB_REPLAY_PROCESSING_JOB_REPOSITORY") == "jdbc", environment.get("WOTB_REPLAY_PROCESSING_JOB_REPOSITORY")
+' <<< "$compose_json"; then
+    echo "distributed-execution-plane: PASS"
+  else
+    echo "distributed-execution-plane: FAIL (business-api must run the distributed replay execution plane)" >&2
+    failures=1
+  fi
+
+  if python3 -c '
+import json, sys
+data = json.load(sys.stdin)
 ports = data["services"]["keycloak-postgres"].get("ports", [])
 values = [str(p) for p in ports]
 assert any("127.0.0.1" in p and "15432" in p and "5432" in p for p in values), values
@@ -906,7 +964,7 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
   fi
 
   wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || failures=1
-  wait_for_probe wireguard-backend http://10.20.0.2:8087/api/health || failures=1
+  wait_for_probe business-api http://business-api:8088/actuator/health || failures=1
   wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || failures=1
   wait_for_probe caddy-ready http://172.29.0.2/_wotb/ready || failures=1
   wait_for_probe caddy-frontend http://172.29.0.2/_wotb/frontend/api/health || failures=1

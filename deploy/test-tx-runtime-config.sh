@@ -68,8 +68,10 @@ grep -Fq 'rabbitmq:4.3.6-management-alpine' "$COMPOSE" \
   || fail "Keycloak PostgreSQL must not publish 5432 on all interfaces"
 ! grep -Eq '(^|[^0-9:.])25432:5432' "$COMPOSE" \
   || fail "Business PostgreSQL must not publish 25432 on all interfaces"
-grep -Fq 'BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://10.20.0.2:8087}' "$COMPOSE" \
-  || fail "frontend must default its API upstream to the Yecao WireGuard address"
+grep -Fq 'BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://business-api:8087}' "$COMPOSE" \
+  || fail "frontend must default its API upstream to the TX-internal business runtime"
+! grep -Fq '10.20.0.2:8087' "$COMPOSE" \
+  || fail "the TX Compose document must not reference the retired Yecao backend route"
 grep -Fq 'NGINX_ENVSUBST_FILTER: ^BACKEND_UPSTREAM$$' "$COMPOSE" \
   || fail "nginx must substitute only the configured backend upstream"
 grep -Fq 'ipv4_address: 172.29.0.2' "$COMPOSE" \
@@ -130,8 +132,8 @@ grep -Fq 'handle_path /_wotb/frontend/*' "$TX_DIR/Caddyfile" \
   || fail "TX Caddy readiness must exercise the frontend routing contract"
 grep -Fq 'handle_path /_wotb/keycloak/*' "$TX_DIR/Caddyfile" \
   || fail "TX Caddy readiness must exercise the Keycloak routing contract"
-grep -Fq 'wait_for_probe wireguard-backend http://10.20.0.2:8087/api/health' "$TX_DIR/deploy.sh" \
-  || fail "TX deploy must directly probe the WireGuard backend path"
+! grep -Fq 'wireguard-backend' "$TX_DIR/deploy.sh" \
+  || fail "TX deploy must not depend on or probe the retired Yecao backend route"
 for probe in \
   'http://172.29.0.2/_wotb/ready' \
   'http://172.29.0.2/_wotb/frontend/api/health' \
@@ -139,6 +141,8 @@ for probe in \
   grep -Fq "$probe" "$TX_DIR/deploy.sh" \
     || fail "TX deploy must probe the Caddy internal readiness route: $probe"
 done
+grep -Fq 'assert_routing_boundary "$EFFECTIVE_COMPOSE"' "$TX_DIR/deploy.sh" \
+  || fail "TX deploy must fail closed on the routing and execution-plane boundary before staging"
 grep -Fq './assets/auth/.well-known/assetlinks.json:/srv/.well-known/assetlinks.json:ro' "$COMPOSE" \
   || fail "TX Caddy must mount the Android App Link association payload"
 
@@ -174,8 +178,10 @@ grep -Fq 'published: "80"' "$WORK/compose.yml" \
   || fail "resolved Caddy HTTP publication must exist for an approved cutover"
 [ "$(grep -Fc 'host_ip: 127.0.0.1' "$WORK/compose.yml")" -ge 5 ] \
   || fail "Stage I Caddy and both PostgreSQL publications must all resolve to loopback"
-grep -Fq 'BACKEND_UPSTREAM: http://10.20.0.2:8087' "$WORK/compose.yml" \
-  || fail "resolved frontend upstream must remain on WireGuard"
+grep -Fq 'BACKEND_UPSTREAM: http://business-api:8087' "$WORK/compose.yml" \
+  || fail "resolved frontend upstream must be the TX-internal business runtime"
+! grep -Fq '10.20.0.2:8087' "$WORK/compose.yml" \
+  || fail "resolved TX runtime must not contain the retired Yecao backend route"
 grep -Fq 'target: /etc/nginx/templates/default.conf.template' "$WORK/compose.yml" \
   || fail "frontend must mount its target-scoped nginx template"
 grep -Fq 'WOTB_REPLAY_EXECUTION_MODE: distributed' "$WORK/compose.yml" \
@@ -214,11 +220,11 @@ echo "OK: Caddy fixture contract"
 # `nginx -T` would inspect the stock config and never render this template.
 run_fixture "nginx template fixture" "$WORK/nginx.conf" "$WORK/nginx.stderr" \
   docker run --rm \
-  -e BACKEND_UPSTREAM=http://10.20.0.2:8087 \
+  -e BACKEND_UPSTREAM=http://business-api:8087 \
   -v "$TEMPLATE:/etc/nginx/templates/default.conf.template:ro" \
   "$NGINX_TEST_IMAGE" sh -ec "envsubst '\${BACKEND_UPSTREAM}' < /etc/nginx/templates/default.conf.template"
-grep -Fq 'proxy_pass http://10.20.0.2:8087/api/;' "$WORK/nginx.conf" \
-  || fail "nginx template did not render the configured WireGuard API upstream"
+grep -Fq 'proxy_pass http://business-api:8087/api/;' "$WORK/nginx.conf" \
+  || fail "nginx template did not render the TX-internal API upstream"
 ! grep -Fq '${BACKEND_UPSTREAM}' "$WORK/nginx.conf" \
   || fail "nginx left an unresolved backend template expression"
 echo "OK: nginx fixture contract"
@@ -410,12 +416,14 @@ set -e
   || fail "TX app deployment failed (rc=$deploy_rc; output: $(tr '\r\n' ' ' <<< "$deploy_output" | sed -E 's/[[:space:]]+/ /g'))"
 grep -Fq 'DNS cutover remains an explicit operator action' <<< "$deploy_output" \
   || fail "TX deploy must report that cutover remains manual"
-grep -Fq 'wireguard-backend: PASS' <<< "$deploy_output" \
-  || fail "TX deploy must report the direct WireGuard backend probe"
+grep -Fq 'frontend: PASS' <<< "$deploy_output" \
+  || fail "TX deploy must report the frontend probe, which now reaches the TX business runtime"
 grep -Fq 'run --rm --no-deps health-probe --silent --show-error --connect-timeout' "$WORK/docker.log" \
   || fail "TX deploy must run backend probes from the deployment-owned health-probe"
-grep -Fq 'http://10.20.0.2:8087/api/health' "$WORK/docker.log" \
-  || fail "TX deploy must probe the WireGuard backend URL directly"
+grep -Fq 'http://wotb-frontend/api/health' "$WORK/docker.log" \
+  || fail "TX deploy must probe the frontend route instead of the retired Yecao backend"
+! grep -Fq '10.20.0.2:8087' "$WORK/docker.log" \
+  || fail "TX deploy must not probe the retired Yecao backend path any more"
 grep -Fq 'up -d --no-deps --force-recreate keycloak-postgres' "$WORK/docker.log" \
   || fail "TX deploy must start selected Keycloak PostgreSQL locally"
 ! grep -Fq 'rabbitmq' "$WORK/docker.log" \
@@ -604,21 +612,42 @@ grep -Fq 'up -d --no-deps --force-recreate keycloak' "$normal_keycloak_log" \
 grep -Fq 'up -d --no-deps --force-recreate caddy' "$normal_keycloak_log" \
   || fail "Normal Keycloak deployment must preserve Caddy recreation"
 
-set +e
-invalid_upstream_output="$(env -i \
-  PATH="$WORK/bin:$PATH" HOME="$WORK" \
-  WOTB_TX_DIR="$WORK/invalid-upstream" WOTB_TX_INCOMING_DIR="$WORK/incoming" TX_RUNTIME_ROOT="$WORK/invalid-upstream" \
-  KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
-  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
-  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test TX_BACKEND_UPSTREAM=https://example.test \
-  TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
-  WOTB_DEPLOY_SERVICES=keycloak-postgres FAKE_DOCKER_LOG="$WORK/invalid-upstream.log" \
-  bash "$WORK/incoming/deploy.sh" 2>&1)"
-invalid_upstream_rc=$?
-set -e
-[ "$invalid_upstream_rc" -ne 0 ] || fail "TX deploy must reject a non-WireGuard API upstream"
-grep -Fq 'WireGuard-only backend URL' <<< "$invalid_upstream_output" \
-  || fail "TX deploy must explain a rejected non-WireGuard API upstream"
+# The frontend upstream is now pinned to the TX-internal business runtime. Every
+# rejected value below is a real regression this cutover must not allow: the
+# retired Yecao WireGuard address, a public host, a wrong port, and a wrong host.
+run_upstream_case() {
+  local label="$1" upstream="$2" expect_rc="$3" log output rc
+  log="$WORK/upstream-$label.log"
+  set +e
+  output="$(env -i \
+    PATH="$WORK/bin:$PATH" HOME="$WORK" \
+    WOTB_TX_DIR="$WORK/upstream-$label" WOTB_TX_INCOMING_DIR="$WORK/incoming" \
+    TX_RUNTIME_ROOT="$WORK/upstream-$label" \
+    KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
+    KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
+    WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
+    TX_BACKEND_UPSTREAM="$upstream" \
+    TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+    WOTB_DEPLOY_SERVICES=keycloak-postgres FAKE_DOCKER_LOG="$log" \
+    bash "$WORK/incoming/deploy.sh" 2>&1)"
+  rc=$?
+  set -e
+  if [ "$expect_rc" -eq 0 ]; then
+    [ "$rc" -eq 0 ] \
+      || fail "TX deploy must accept the TX-internal upstream $upstream (rc=$rc; output: $(tr '\r\n' ' ' <<< "$output" | sed -E 's/[[:space:]]+/ /g'))"
+  else
+    [ "$rc" -ne 0 ] || fail "TX deploy must reject the non-TX-internal upstream $upstream"
+    grep -Fq 'TX-internal business runtime' <<< "$output" \
+      || fail "TX deploy must explain the rejected upstream $upstream"
+  fi
+}
+
+run_upstream_case internal http://business-api:8087 0
+run_upstream_case yecao-wireguard http://10.20.0.2:8087 1
+run_upstream_case public-host https://example.test 1
+run_upstream_case wrong-port http://business-api:9000 1
+run_upstream_case foreign-host http://control-api:8087 1
+run_upstream_case trailing-slash http://business-api:8087/ 1
 
 set +e
 missing_secret_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
