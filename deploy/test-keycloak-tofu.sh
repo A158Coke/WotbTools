@@ -342,8 +342,12 @@ E2E_SERVICE_ACCOUNT_ID="$(api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/user
   "$BOOTSTRAP_TOKEN" "$WORK/e2e-service-account.json" >/dev/null; jq -er '.[0].id' "$WORK/e2e-service-account.json")"
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/users/$E2E_SERVICE_ACCOUNT_ID/role-mappings/realm" \
   "$BOOTSTRAP_TOKEN" "$WORK/e2e-realm-roles.json"
-jq -e '([.[].name] | sort) == ["wotbtools-user"]' "$WORK/e2e-realm-roles.json" >/dev/null \
-  || fail "cutover E2E service account realm roles are not exactly wotbtools-user"
+# Keycloak always adds the realm default composite (`default-roles-wotbtools`) to a
+# service account, so the direct mapping set is that composite plus the explicit
+# `wotbtools-user` grant. What must never appear is any privileged realm role.
+jq -e '([.[].name] - ["wotbtools-user", "default-roles-wotbtools"]) | length == 0' \
+  "$WORK/e2e-realm-roles.json" >/dev/null \
+  || fail "cutover E2E service account holds an unexpected realm role"
 echo "PASS: cutover E2E identity is confidential, service-account-only and holds only wotbtools-user"
 
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/users/$SERVICE_ACCOUNT_ID/role-mappings/clients/$REALM_MANAGEMENT_CLIENT_ID" \
