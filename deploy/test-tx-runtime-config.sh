@@ -438,6 +438,10 @@ grep -Fq 'up -d --no-deps --force-recreate keycloak-postgres' "$WORK/docker.log"
   || fail "non-RabbitMQ TX deployment must not start or health-check RabbitMQ"
 grep -Fq 'up -d --no-deps --force-recreate caddy' "$WORK/docker.log" \
   || fail "TX deploy must apply Caddy only through the staged TX runtime"
+frontend_start_line="$(grep -nF 'up -d --no-deps --force-recreate wotb-frontend' "$WORK/docker.log" | head -n 1 | cut -d: -f1)"
+caddy_start_line="$(grep -nF 'up -d --no-deps --force-recreate caddy' "$WORK/docker.log" | head -n 1 | cut -d: -f1)"
+[ -n "$caddy_start_line" ] && [ -n "$frontend_start_line" ] && [ "$caddy_start_line" -lt "$frontend_start_line" ] \
+  || fail "TX frontend must start only after Caddy has a Docker network endpoint"
 grep -Fq 'run --rm --no-deps health-probe' "$WORK/docker.log" \
   || fail "TX deploy must use an internal health-probe service"
 grep -Fq 'imageTag' "$WORK/live/tx-production-release.json" \
@@ -467,13 +471,21 @@ grep -Fq 'up -d --no-deps --force-recreate wotb-frontend' "$frontend_log" \
   || fail "Normal frontend deployment must start the frontend"
 grep -Fq 'up -d --no-deps --force-recreate caddy' "$frontend_log" \
   || fail "Normal frontend deployment must preserve Caddy recreation"
+frontend_start_line="$(grep -nF 'up -d --no-deps --force-recreate wotb-frontend' "$frontend_log" | head -n 1 | cut -d: -f1)"
+caddy_start_line="$(grep -nF 'up -d --no-deps --force-recreate caddy' "$frontend_log" | head -n 1 | cut -d: -f1)"
+[ "$caddy_start_line" -lt "$frontend_start_line" ] \
+  || fail "Normal frontend deployment must start Caddy before nginx resolves its trusted peer"
 
 caddy_log="$WORK/caddy.log"
 caddy_output="$(run_live_service_deploy caddy '' "$caddy_log" 2>&1)"
 grep -Fq 'TX deployment completed:' <<< "$caddy_output" \
   || fail "Explicit Caddy deployment must complete"
-[ "$(grep -Fc 'up -d --no-deps --force-recreate caddy' "$caddy_log")" -ge 2 ] \
-  || fail "Explicit Caddy deployment must preserve its selected start and recreate behavior"
+[ "$(grep -Fc 'up -d --no-deps --force-recreate caddy' "$caddy_log")" -eq 1 ] \
+  || fail "Explicit Caddy deployment must recreate Caddy exactly once before refreshing nginx"
+frontend_start_line="$(grep -nF 'up -d --no-deps --force-recreate wotb-frontend' "$caddy_log" | tail -n 1 | cut -d: -f1)"
+caddy_start_line="$(grep -nF 'up -d --no-deps --force-recreate caddy' "$caddy_log" | tail -n 1 | cut -d: -f1)"
+[ -n "$frontend_start_line" ] && [ -n "$caddy_start_line" ] && [ "$caddy_start_line" -lt "$frontend_start_line" ] \
+  || fail "Caddy-only deployment must refresh frontend after Caddy gets a new network endpoint"
 
 # Business PostgreSQL-only deployment: start the runtime, wait for pg_isready,
 # run TX-local OpenTofu against its own mirror and state, then record the
