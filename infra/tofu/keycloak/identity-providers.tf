@@ -1,15 +1,12 @@
 resource "keycloak_oidc_identity_provider" "qq" {
-  realm        = keycloak_realm.wotbtools.id
-  alias        = "idp-qq"
-  display_name = "QQ"
-  # enabled is intentionally omitted: provider schema 5.9.0 marks it
-  # optional without a Terraform default, so the provider/Keycloak bootstrap
-  # behavior supplies the initial value while lifecycle ownership below
-  # belongs to the operator.
+  realm                    = keycloak_realm.wotbtools.id
+  alias                    = "idp-qq"
+  display_name             = "QQ"
   provider_id              = "qq"
-  client_id                = "bootstrap-not-configured"
-  client_secret_wo         = "bootstrap-not-configured"
-  client_secret_wo_version = "1"
+  client_id                = var.qq_client_id
+  client_secret_wo         = var.qq_client_secret
+  client_secret_wo_version = var.qq_client_secret_version
+  enabled                  = var.qq_enabled
   authorization_url        = "https://graph.qq.com/oauth2.0/authorize"
   token_url                = "https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1"
   user_info_url            = "https://graph.qq.com/user/get_user_info"
@@ -19,16 +16,8 @@ resource "keycloak_oidc_identity_provider" "qq" {
     clientAuthMethod = "client_secret_post"
   }
 
-  # These fields belong to the operator after the skeleton is created. The
-  # write-only secret and its version are ignored together so a later apply
-  # cannot rotate or replace manually configured QQ credentials.
   lifecycle {
-    ignore_changes = [
-      client_id,
-      client_secret_wo,
-      client_secret_wo_version,
-      enabled,
-    ]
+    prevent_destroy = true
   }
 }
 

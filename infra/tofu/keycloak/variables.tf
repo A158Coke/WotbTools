@@ -51,3 +51,50 @@ variable "keycloak_admin_client_secret_version" {
     error_message = "keycloak_admin_client_secret_version must be non-empty."
   }
 }
+
+variable "qq_client_id" {
+  description = "QQ Connect application ID supplied only by the TX deployment environment."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition = !contains(
+      ["", "bootstrap-not-configured", "dummy", "empty", "juhe", "juhe-qq", "not-configured"],
+      lower(trimspace(var.qq_client_id)),
+    )
+    error_message = "qq_client_id must be a configured QQ Connect application ID, not a placeholder."
+  }
+}
+
+variable "qq_client_secret" {
+  description = "QQ Connect application secret supplied only through the write-only OpenTofu field."
+  type        = string
+  sensitive   = true
+  nullable    = false
+
+  validation {
+    condition = !contains(
+      ["", "bootstrap-not-configured", "dummy", "empty", "juhe", "juhe-qq", "not-configured"],
+      lower(trimspace(var.qq_client_secret)),
+    )
+    error_message = "qq_client_secret must be a configured QQ Connect secret, not a placeholder."
+  }
+}
+
+variable "qq_client_secret_version" {
+  description = "Positive QQ Connect secret rotation version; increment it whenever the secret changes."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*$", trimspace(var.qq_client_secret_version)))
+    error_message = "qq_client_secret_version must be a positive integer and must change with qq_client_secret rotation."
+  }
+}
+
+variable "qq_enabled" {
+  description = "Whether the production QQ identity provider is enabled."
+  type        = bool
+  default     = true
+  nullable    = false
+}

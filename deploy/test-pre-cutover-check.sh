@@ -16,10 +16,14 @@ grep -Fq 'PRE_CUTOVER_READY' "$DEPLOY"
 grep -Fq 'DNS_CUTOVER_NOT_PERFORMED' "$DEPLOY"
 grep -Fq 'WAITING_FOR_OPERATOR_APPROVAL' "$DEPLOY"
 grep -Fq 'PRE_CUTOVER_NOT_READY' "$DEPLOY"
-grep -Fq 'QQ_IDP_STATUS=idp-qq=WAITING_EXTERNAL' "$DEPLOY"
-grep -Fq 'QQ_FALLBACK_STATUS=juhe-qq=NOT_CONFIGURED_IN_TX' "$DEPLOY"
+grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' "$DEPLOY"
+grep -Fq 'qq_identity_provider_ready' "$DEPLOY"
+grep -Fq 'identity-provider/instances' "$DEPLOY"
+grep -Fq 'clientAuthMethod' "$DEPLOY"
+grep -Fq 'https://graph.qq.com/oauth2.0/authorize' "$DEPLOY"
+grep -Fq 'https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1' "$DEPLOY"
+grep -Fq 'https://graph.qq.com/user/get_user_info' "$DEPLOY"
 grep -Fq 'wireguard-backend' "$DEPLOY"
-grep -Fq 'keycloak-juhe-qq-provider.jar' "$DEPLOY"
 grep -Fq 'keycloak-qq-provider.jar' "$DEPLOY"
 grep -Fq 'keycloak-wargaming-provider.jar' "$DEPLOY"
 grep -Fq 'com.wotbtools.app' "$DEPLOY"
@@ -83,6 +87,14 @@ case "${1:-}" in
   run)
     if [[ "$*" == *10.20.0.2:8087/api/health* ]] && [ "${FAKE_WG_FAIL:-0}" = 1 ]; then
       printf '503\n'
+    elif [[ "$*" == *protocol/openid-connect/token* ]]; then
+      printf '{"access_token":"fake-admin-token"}\n'
+    elif [[ "$*" == *identity-provider/instances* ]]; then
+      if [ "${FAKE_QQ_IDP_INVALID:-0}" = 1 ]; then
+        printf '[]\n'
+      else
+        printf '[{"alias":"idp-qq","providerId":"qq","enabled":true,"config":{"clientId":"fake-qq-client-id","authorizationUrl":"https://graph.qq.com/oauth2.0/authorize","tokenUrl":"https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1","userInfoUrl":"https://graph.qq.com/user/get_user_info","clientAuthMethod":"client_secret_post"}}]\n'
+      fi
     elif [[ "$*" == *assetlinks.json* ]]; then
       printf '{"package_name":"com.wotbtools.app"}\n'
     else
@@ -112,7 +124,8 @@ ready_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT")"
 grep -Fq 'PRE_CUTOVER_READY' <<< "$ready_output"
 grep -Fq 'DNS_CUTOVER_NOT_PERFORMED' <<< "$ready_output"
 grep -Fq 'WAITING_FOR_OPERATOR_APPROVAL' <<< "$ready_output"
-grep -Fq 'QQ_IDP_STATUS=idp-qq=WAITING_EXTERNAL' <<< "$ready_output"
+grep -Fq 'qq-idp-admin-api: PASS' <<< "$ready_output"
+grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' <<< "$ready_output"
 grep -Fq 'rabbitmq-provisioning: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres-loopback: PASS' <<< "$ready_output"
@@ -132,6 +145,7 @@ printf 'tx-local-opentofu-business-postgres\n' > "$RELOCATED_ROOT/business-postg
 
 relocated_ready_output="$(run_check "" "$RELOCATED_ROOT/deploy/pre-cutover-check.sh")"
 grep -Fq 'PRE_CUTOVER_READY' <<< "$relocated_ready_output"
+grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' <<< "$relocated_ready_output"
 grep -Fq 'yecao-backend-wireguard-bind: PASS (deployed contract)' <<< "$relocated_ready_output"
 grep -Fq 'business-postgres: PASS' <<< "$relocated_ready_output"
 
@@ -200,6 +214,14 @@ mv -- "$RELOCATED_ROOT/business-postgres.tofu-provisioned.saved" \
 run_business_failure "relocated-business-postgres-unhealthy" \
   'business-postgres: FAIL (container is missing or not healthy)' \
   "" "$RELOCATED_ROOT/deploy/pre-cutover-check.sh" env FAKE_BUSINESS_UNHEALTHY=1
+
+set +e
+qq_idp_blocked_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_QQ_IDP_INVALID=1)"
+qq_idp_blocked_rc=$?
+set -e
+[ "$qq_idp_blocked_rc" -ne 0 ]
+! grep -Fq 'PRE_CUTOVER_READY' <<< "$qq_idp_blocked_output"
+grep -Fq 'qq-idp-admin-api: FAIL (idp-qq representation is not production-ready)' <<< "$qq_idp_blocked_output"
 
 # A healthy runtime with a valid marker must still be able to reach readiness,
 # proving the new checks gate rather than permanently block the cutover.
