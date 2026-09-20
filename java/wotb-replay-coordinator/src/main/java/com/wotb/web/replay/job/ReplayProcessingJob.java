@@ -328,6 +328,17 @@ public final class ReplayProcessingJob {
         return true;
     }
 
+    /**
+     * READY 终态，但 dataset 不在本进程内存。
+     *
+     * <p>分布式执行下 canonical dataset 由对象存储承载（{@code result/source-<i>.json}），
+     * 控制面只持有权威状态与状态机，因此不登记 {@link ProcessedDataset}；读取由
+     * {@code ReplayProcessingResultReader} 承担。</p>
+     */
+    public synchronized boolean markReady() {
+        return markReady(null);
+    }
+
     public synchronized boolean markFailed(final String errorCode) {
         if (!state.markFailed(errorCode)) {
             return false;

@@ -46,6 +46,17 @@
             <groupId>com.wotb</groupId>
             <artifactId>wotb-contracts</artifactId>
         </dependency>
+        <!-- 分布式回放控制面（wotb.replay.execution.mode=distributed）：对象存储键布局 + AMQP
+             投递/消费适配器。两个模块都刻意不带任何 stereotype，装配只发生在
+             com.wotb.web.replay.config.ReplayDistributedConfig（缺省 local 下不创建任何 bean）。 -->
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-object-storage-minio</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-broker-rabbitmq</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>

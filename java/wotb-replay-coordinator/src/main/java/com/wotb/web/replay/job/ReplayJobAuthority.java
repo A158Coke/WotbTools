@@ -168,6 +168,40 @@ public final class ReplayJobAuthority {
                 .update();
     }
 
+    /**
+     * 权威状态里该 job 已观察到的**最新 parser result attempt**；{@code 0} = 还没有任何结果报告
+     * （V24 {@code reported_attempt} 列的默认值）。
+     *
+     * <p>它是分布式控制面判定「陈旧结果」的唯一输入：{@code message.attempt < reported_attempt}
+     * 的报告必须丢弃（更晚的 attempt 已经推进过权威状态）。</p>
+     */
+    public int reportedAttempt(final String jobId) {
+        return jdbc.sql("select reported_attempt from replay_processing_job where job_id = :jobId")
+                .param("jobId", jobId)
+                .query(Integer.class)
+                .optional()
+                .orElse(0);
+    }
+
+    /**
+     * 单调推进 reported attempt（{@code reported_attempt = max(current, attempt)}）。
+     *
+     * <p>刻意不做任何 job 状态判定：状态迁移的唯一所有者仍是状态机，本列只是一个版本号，
+     * 与 revision 同理只用于拒绝乱序/陈旧的并发写入。</p>
+     *
+     * @return {@code false} 表示该 attempt 已陈旧（权威状态里已有更大的 attempt），调用方必须丢弃
+     */
+    public boolean advanceReportedAttempt(final String jobId, final int attempt) {
+        final int advanced = jdbc.sql("""
+                        update replay_processing_job set reported_attempt = :attempt
+                        where job_id = :jobId and reported_attempt < :attempt
+                        """)
+                .param("jobId", jobId)
+                .param("attempt", attempt)
+                .update();
+        return advanced > 0 || reportedAttempt(jobId) >= attempt;
+    }
+
     /** 读取 job 投影（含全部 source，按 source_index 升序）；两条 SELECT 在同一快照内完成。 */
     public Optional<StoredJob> findJob(final String jobId) {
         return readTx.execute(status -> findJobInTransaction(jobId));

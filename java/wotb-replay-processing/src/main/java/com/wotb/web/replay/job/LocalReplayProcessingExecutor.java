@@ -13,6 +13,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -27,8 +28,14 @@ import java.util.List;
  * <p>执行体本身（含错误分类）在 runner；本类只保留本地特有的四件事：job 目录布局、取消登记表
  * （{@code ReplayProcessingCancellationRegistry}）、Micrometer 采集、以及本地输入读取失败的既有
  * error code（{@code PROCESSING_JOB_STORAGE_UNAVAILABLE}）。</p>
+ *
+ * <p>只在 {@code local} 执行模式下存在：分布式模式下同一个
+ * {@link ReplayProcessingSourceRunner} 由 parser-worker 在对象存储上执行，
+ * TX 控制面不持有任何本地解析路径。</p>
  */
 @Component
+@ConditionalOnProperty(name = ReplayExecutionMode.PROPERTY,
+        havingValue = ReplayExecutionMode.LOCAL_VALUE, matchIfMissing = true)
 public class LocalReplayProcessingExecutor {
 
     private final DefaultReplayProcessingFacade processingFacade;
