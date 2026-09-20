@@ -15,6 +15,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.sql.Types;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -113,7 +114,7 @@ class ReplayJobAuthorityPostgresTest {
                 new ReplayProcessingJob("p-1", List.of("a.wotbreplay", "b.wotbreplay"));
         job.startProcessing();
         job.markSourceProcessing(0, "a.wotbreplay");
-        authority.save(job);
+        authority.save(job.persistenceSnapshot());
 
         final ReplayJobAuthority.StoredJob stored = authority.findJob("p-1").orElseThrow();
         assertEquals(ReplayProcessingJob.Status.PROCESSING, stored.status());
@@ -134,12 +135,12 @@ class ReplayJobAuthorityPostgresTest {
         final ReplayJobAuthority authority = authority();
         final ReplayProcessingJob job = new ReplayProcessingJob("p-2", List.of("a.wotbreplay"));
         job.startProcessing();
-        authority.save(job);
+        authority.save(job.persistenceSnapshot());
 
         job.markSourceReady(0);
         job.recordParseSuccess();
         job.markFailed("REPLAY_UNREADABLE");
-        authority.save(job);
+        authority.save(job.persistenceSnapshot());
 
         final ReplayJobAuthority.StoredJob stored = authority.findJob("p-2").orElseThrow();
         assertEquals(ReplayProcessingJob.Status.FAILED, stored.status());
@@ -158,12 +159,12 @@ class ReplayJobAuthorityPostgresTest {
         final ReplayProcessingJob job =
                 new ReplayProcessingJob("p-rollback", List.of("a.wotbreplay", "b.wotbreplay"));
         job.startProcessing();
-        authority.save(job);
+        authority.save(job.persistenceSnapshot());
         assertEquals(1L, revisionOf("p-rollback"));
 
         injectSourceInsertFailure();
         job.markSourceReady(0);
-        assertThrows(RuntimeException.class, () -> authority.save(job));
+        assertThrows(RuntimeException.class, () -> authority.save(job.persistenceSnapshot()));
 
         // 整个 save 回滚：job 行仍是上一次已提交的投影，source 行也没有被删/半量插入。
         final ReplayJobAuthority.StoredJob stored = authority.findJob("p-rollback").orElseThrow();
@@ -181,11 +182,11 @@ class ReplayJobAuthorityPostgresTest {
         final ReplayProcessingJob advanced = new ReplayProcessingJob("p-stale", List.of("a.wotbreplay"));
         advanced.startProcessing();
         advanced.markSourceReady(0);
-        authority.save(advanced);
+        authority.save(advanced.persistenceSnapshot());
 
         // 陈旧快照：同一 jobId、revision 更小、状态更旧（PENDING 而不是 READY）。
         final ReplayProcessingJob stale = new ReplayProcessingJob("p-stale", List.of("a.wotbreplay"));
-        authority.save(stale);
+        authority.save(stale.persistenceSnapshot());
 
         final ReplayJobAuthority.StoredJob stored = authority.findJob("p-stale").orElseThrow();
         assertEquals(ReplayProcessingJob.Status.PROCESSING, stored.status());
@@ -275,7 +276,7 @@ class ReplayJobAuthorityPostgresTest {
     @Test
     void commitOperationIsIdempotentAndScopedBySubject() {
         final ReplayJobAuthority authority = authority();
-        authority.save(new ReplayProcessingJob("p-3", List.of("a.wotbreplay")));
+        authority.save(new ReplayProcessingJob("p-3", List.of("a.wotbreplay")).persistenceSnapshot());
 
         assertTrue(authority.commitOperation(SUBJECT, OPERATION, "p-3"));
         assertFalse(authority.commitOperation(SUBJECT, OPERATION, "p-3"),
@@ -288,7 +289,7 @@ class ReplayJobAuthorityPostgresTest {
     @Test
     void committedIndexDisappearsWhenJobIsCleaned() {
         final ReplayJobAuthority authority = authority();
-        authority.save(new ReplayProcessingJob("p-4", List.of("a.wotbreplay")));
+        authority.save(new ReplayProcessingJob("p-4", List.of("a.wotbreplay")).persistenceSnapshot());
         authority.commitOperation(SUBJECT, OPERATION, "p-4");
 
         authority.deleteJob("p-4");
@@ -430,6 +431,109 @@ class ReplayJobAuthorityPostgresTest {
         assertEquals(2, authority.deleteExpiredTerminal(cutoff));
         assertEquals(List.of("fresh-ready", "old-processing", "old-queued"),
                 authority.listJobIds().stream().sorted().toList());
+    }
+
+    @Test
+    void capturedPersistenceSnapshotIsImmutableAndBoundToOneRevision() {
+        final ReplayProcessingJob job =
+                new ReplayProcessingJob("p-capture", List.of("a.wotbreplay", "b.wotbreplay"));
+        job.startProcessing();
+        final ReplayJobPersistenceSnapshot before = job.persistenceSnapshot();
+
+        job.markSourceReady(0);
+        job.recordParseSuccess();
+        job.markFailed("LATER");
+        final ReplayJobPersistenceSnapshot after = job.persistenceSnapshot();
+
+        // 已捕获的快照不可变：后续迁移既不改它的版本号，也不改它的状态
+        assertEquals(1L, before.revision());
+        assertEquals(ReplayProcessingJob.Status.PROCESSING, before.status());
+        assertEquals(ReplayProcessingJob.SourceStatus.PENDING, before.sources().get(0).status());
+        assertEquals(0, before.parseSucceeded());
+        assertEquals(2, before.sources().size());
+
+        assertEquals(ReplayProcessingJob.Status.FAILED, after.status());
+        assertEquals(ReplayProcessingJob.SourceStatus.READY, after.sources().get(0).status());
+        assertEquals(1, after.parseSucceeded());
+        assertTrue(after.revision() > before.revision(), "每次迁移必须取到互不相同的 revision");
+        assertThrows(UnsupportedOperationException.class,
+                () -> after.sources().add(before.sources().get(0)),
+                "快照里的 source 列表必须是不可变副本");
+    }
+
+    @Test
+    void laterTransitionWinsEvenWhenEarlierSnapshotIsPersistedAfterwards() {
+        final ReplayJobAuthority authority = authority();
+        final ReplayProcessingJob job = new ReplayProcessingJob("p-order", List.of("a.wotbreplay"));
+
+        job.startProcessing();
+        final ReplayJobPersistenceSnapshot transitionA = job.persistenceSnapshot();
+
+        job.markSourceReady(0);
+        job.recordParseSuccess();
+        job.markFailed("B_WINS");
+        final ReplayJobPersistenceSnapshot transitionB = job.persistenceSnapshot();
+        authority.save(transitionB);
+
+        // 迁移 A 的快照晚到：必须被整体拒绝，不得用旧状态冒充已经提交的新版本
+        authority.save(transitionA);
+
+        assertEquals(1L, transitionA.revision(), "快照不可变：后发生的迁移不得改变 A 的版本号");
+        assertEquals(ReplayProcessingJob.Status.PROCESSING, transitionA.status());
+        final ReplayJobAuthority.StoredJob stored = authority.findJob("p-order").orElseThrow();
+        assertEquals(transitionB.revision(), stored.revision());
+        assertEquals(ReplayProcessingJob.Status.FAILED, stored.status());
+        assertEquals("B_WINS", stored.errorCode());
+        assertEquals(1, stored.parseSucceeded());
+        assertEquals(transitionB.sources(), stored.sources());
+    }
+
+    @Test
+    void concurrentTransitionsOnOneLiveJobConvergeToTheNewestRevision() throws Exception {
+        final ReplayJobAuthority authority = authority();
+        final ReplayProcessingJobStore store = store(tempDir.resolve("concurrent"), authority);
+        final String jobId = "p-concurrent";
+        try {
+            final ReplayProcessingJob job = new ReplayProcessingJob(jobId, List.of("a.wotbreplay"));
+            store.register(job);
+            assertTrue(job.startProcessing());
+
+            try (ExecutorService pool = Executors.newFixedThreadPool(4)) {
+                final List<Future<?>> futures = new ArrayList<>();
+                for (int worker = 0; worker < 4; worker++) {
+                    final int seed = worker;
+                    futures.add(pool.submit(() -> {
+                        for (int i = 0; i < 25; i++) {
+                            final int step = seed * 25 + i;
+                            job.updateProgress(step, 0, 0);
+                            if (step % 2 == 0) {
+                                job.markSourceReady(0);
+                                job.recordParseSuccess();
+                            } else {
+                                job.markSourceFailed(0, "e" + step);
+                                job.recordParseFailure();
+                            }
+                        }
+                    }));
+                }
+                for (final Future<?> future : futures) {
+                    future.get(60, TimeUnit.SECONDS);
+                }
+            }
+
+            // 所有并发迁移都返回后，权威投影必须恰好等于最新一次迁移的快照
+            final ReplayJobPersistenceSnapshot live = job.persistenceSnapshot();
+            final ReplayJobAuthority.StoredJob stored = authority.findJob(jobId).orElseThrow();
+            assertEquals(live.revision(), stored.revision(), "权威投影必须停在最新 revision");
+            assertEquals(live.status(), stored.status());
+            assertEquals(live.phase(), stored.phase());
+            assertEquals(live.processed(), stored.processed());
+            assertEquals(live.parseSucceeded(), stored.parseSucceeded());
+            assertEquals(live.parseFailed(), stored.parseFailed());
+            assertEquals(live.sources(), stored.sources());
+        } finally {
+            store.close();
+        }
     }
 
     private String claimAndCommit(final ReplayProcessingJobStore store, final CyclicBarrier barrier) {

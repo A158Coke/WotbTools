@@ -326,8 +326,11 @@ public class ReplayProcessingJobStore {
      */
     public void register(final ReplayProcessingJob job) {
         if (authority != null) {
+            // 先在 job 监视器内捕获初始投影（revision 0 与该状态成对），再挂监听器，最后落库。
+            // job 此刻尚未进入 registry，没有并发迁移窗口；挂上监听器之后每次迁移都自带快照。
+            final ReplayJobPersistenceSnapshot initial = job.persistenceSnapshot();
             job.attachTransitionListener(this::persistTransition);
-            persistTransition(job);
+            persistTransition(initial);
         }
         synchronized (lifecycleLock) {
             jobs.put(job.jobId(), job);
@@ -362,6 +365,9 @@ public class ReplayProcessingJobStore {
     /**
      * write-through 单点：任何状态迁移后原子覆盖整行投影。
      *
+     * <p>入参是迁移自身在 job 监视器内捕获的**不可变**快照：本方法不回读 job 的可变状态，
+     * 因此不会出现「旧状态配新版本号」。</p>
+     *
      * <p><b>失败策略（权威模式）：fail closed，不做 best-effort 遥测</b>。PostgreSQL 是权威，
      * 因此持久化失败时：</p>
      * <ol>
@@ -372,27 +378,32 @@ public class ReplayProcessingJobStore {
      * <p>驱逐不是数据丢失：若后续某次迁移成功写库，投影会重新出现（revision 单调，不会覆盖
      * 更新的状态）。内存模式（{@code authority == null}）完全不走这条路径，行为不变。</p>
      */
-    private void persistTransition(final ReplayProcessingJob job) {
+    private void persistTransition(final ReplayJobPersistenceSnapshot snapshot) {
         if (authority == null) {
             return;
         }
         try {
-            authority.save(job);
+            authority.save(snapshot);
         } catch (final RuntimeException e) {
-            LOGGER.error("replay_processing_job_persist_failed jobId={} error={}",
-                    job.jobId(), e.getMessage());
-            evictFromAuthorityView(job.jobId());
+            LOGGER.error("replay_processing_job_persist_failed jobId={} revision={} error={}",
+                    snapshot.jobId(), snapshot.revision(), e.getMessage());
+            evictFromAuthorityView(snapshot.jobId());
             throw e;
         }
     }
 
-    /** 权威不可写时把 job 从内存视图移除（读取改走权威状态，避免内存状态冒充权威）。 */
+    /**
+     * 权威不可写时把 job 从内存视图移除（此后读取改走权威状态，避免内存状态冒充权威）。
+     *
+     * <p>刻意**不取 {@code lifecycleLock}**：本方法在 job 监视器内被调用（迁移回调边界），
+     * 而 {@code acquireForSource} / {@code acquireForExport} 的加锁顺序是
+     * 「lifecycleLock → job 监视器」，反向获取会死锁。这里只操作并发 map，语义足够——
+     * 驱逐与 acquire/sweep 的线性化无关，且重复驱逐幂等。</p>
+     */
     private void evictFromAuthorityView(final String jobId) {
-        synchronized (lifecycleLock) {
-            jobs.remove(jobId);
-            datasetLeaseRefs.remove(jobId);
-            dropOperationIndex(jobId);
-        }
+        jobs.remove(jobId);
+        datasetLeaseRefs.remove(jobId);
+        dropOperationIndex(jobId);
     }
 
     /**

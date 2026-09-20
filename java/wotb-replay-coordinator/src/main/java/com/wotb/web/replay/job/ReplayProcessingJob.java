@@ -151,13 +151,40 @@ public final class ReplayProcessingJob {
         return revision.get();
     }
 
-    private void notifyTransition() {
-        // 先取号再通知：监听器（若存在）看到的 version 一定是本次迁移的新值，
-        // 因此两次并发持久化之间不存在相同 revision，陈旧写入必然被数据库拒绝。
-        revision.incrementAndGet();
+    /**
+     * 在单一监视器边界内捕获「状态 + sources + 计数器 + revision」的**不可变**持久化快照
+     * （注册时的初始投影用）。
+     *
+     * <p>revision 永远与它描述的状态一起捕获：搬运旧快照时不会顺带读到更新的版本号，
+     * 因此陈旧写入不可能冒充已提交的新状态。</p>
+     */
+    synchronized ReplayJobPersistenceSnapshot persistenceSnapshot() {
+        return capture(revision.get());
+    }
+
+    /** 调用方必须持有本对象监视器：保证 revision 与状态/来源/计数器来自同一个线性化点。 */
+    private ReplayJobPersistenceSnapshot capture(final long capturedRevision) {
+        final ReplayJobState.Snapshot current = state.snapshot();
+        return new ReplayJobPersistenceSnapshot(current.jobId(),
+                Status.valueOf(current.status().name()), current.phase(), current.total(),
+                current.processed(), current.duplicates(), current.failures(),
+                parseCompleted, parseSucceeded, parseFailed,
+                current.errorCode(), state.isCancelled(),
+                state.createdAtMillis(), state.finishedAtMillis(),
+                capturedRevision, sourceStates());
+    }
+
+    /**
+     * 迁移通知：**调用方必须持有本对象监视器**（所有 mutator 都是 {@code synchronized}）。
+     *
+     * <p>先取号、再在同一临界区内捕获该号对应的快照、然后才通知：两个并发迁移因此不可能
+     * 共享同一个 revision，也不可能出现「旧状态 + 新 revision」的错配。</p>
+     */
+    private void notifyTransitionLocked() {
+        final long next = revision.incrementAndGet();
         final ReplayJobTransitionListener listener = this.transitionListener;
         if (listener != null) {
-            listener.onJobTransition(this);
+            listener.onJobTransition(capture(next));
         }
     }
 
@@ -173,17 +200,17 @@ public final class ReplayProcessingJob {
         return state.isCancelled();
     }
 
-    public boolean startProcessing() {
+    public synchronized boolean startProcessing() {
         if (!state.startProcessing()) {
             return false;
         }
-        notifyTransition();
+        notifyTransitionLocked();
         return true;
     }
 
-    public void updateProgress(final int processed, final int duplicates, final int failures) {
+    public synchronized void updateProgress(final int processed, final int duplicates, final int failures) {
         state.updateProgress(processed, duplicates, failures);
-        notifyTransition();
+        notifyTransitionLocked();
     }
 
     /**
@@ -194,7 +221,7 @@ public final class ReplayProcessingJob {
         parseCompleted++;
         parseSucceeded++;
         state.updateProgress(parseCompleted, 0, 0);
-        notifyTransition();
+        notifyTransitionLocked();
     }
 
     /**
@@ -205,15 +232,15 @@ public final class ReplayProcessingJob {
         parseCompleted++;
         parseFailed++;
         state.updateProgress(parseCompleted, 0, 0);
-        notifyTransition();
+        notifyTransitionLocked();
     }
 
     /** PROCESSING 期间切换 phase（WAITING_FOR_WORKER → PROCESSING_REPLAYS → FINALIZING_BATCH）。 */
-    public boolean advancePhase(final String phase) {
+    public synchronized boolean advancePhase(final String phase) {
         if (!state.advancePhase(phase)) {
             return false;
         }
-        notifyTransition();
+        notifyTransitionLocked();
         return true;
     }
 
@@ -223,7 +250,7 @@ public final class ReplayProcessingJob {
     }
 
     /** source 开始 full processing（同时更新 currentFile 兼容字段）。 */
-    public void markSourceProcessing(final int sourceIndex, final String displayName) {
+    public synchronized void markSourceProcessing(final int sourceIndex, final String displayName) {
         this.currentFile = displayName;
         final SourceState s = sources.get(sourceIndex);
         if (s == null) {
@@ -231,29 +258,29 @@ public final class ReplayProcessingJob {
         }
         sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
                 s.sourceName(), SourceStatus.PROCESSING, null));
-        notifyTransition();
+        notifyTransitionLocked();
     }
 
     /** source 完成 full processing（READY 不代表 batch 级 valid）。 */
-    public void markSourceReady(final int sourceIndex) {
+    public synchronized void markSourceReady(final int sourceIndex) {
         final SourceState s = sources.get(sourceIndex);
         if (s == null) {
             return;
         }
         sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
                 s.sourceName(), SourceStatus.READY, null));
-        notifyTransition();
+        notifyTransitionLocked();
     }
 
     /** source full processing 失败（记录稳定错误码，不中断 batch）。 */
-    public void markSourceFailed(final int sourceIndex, final String failureMessage) {
+    public synchronized void markSourceFailed(final int sourceIndex, final String failureMessage) {
         final SourceState s = sources.get(sourceIndex);
         if (s == null) {
             return;
         }
         sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
                 s.sourceName(), SourceStatus.FAILED, failureMessage));
-        notifyTransition();
+        notifyTransitionLocked();
     }
 
     public void recordEntry(final int sourceIndex, final Replays.ParsedEntry entry) {
@@ -292,36 +319,36 @@ public final class ReplayProcessingJob {
         return List.copyOf(out);
     }
 
-    public boolean markReady(final ProcessedDataset result) {
+    public synchronized boolean markReady(final ProcessedDataset result) {
         if (!state.markReady()) {
             return false;
         }
         this.result = result;
-        notifyTransition();
+        notifyTransitionLocked();
         return true;
     }
 
-    public boolean markFailed(final String errorCode) {
+    public synchronized boolean markFailed(final String errorCode) {
         if (!state.markFailed(errorCode)) {
             return false;
         }
-        notifyTransition();
+        notifyTransitionLocked();
         return true;
     }
 
-    public boolean markCancelled() {
+    public synchronized boolean markCancelled() {
         if (!state.markCancelled()) {
             return false;
         }
-        notifyTransition();
+        notifyTransitionLocked();
         return true;
     }
 
-    public boolean requestCancel() {
+    public synchronized boolean requestCancel() {
         if (!state.requestCancel()) {
             return false;
         }
-        notifyTransition();
+        notifyTransitionLocked();
         return true;
     }
 
