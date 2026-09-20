@@ -84,6 +84,11 @@ for caddy_config in "$COMPOSE" "$TX_DIR/Caddyfile" "$TEMPLATE" "$TX_DIR/deploy.s
   ! grep -Fq '172.29.0.2' "$caddy_config" \
     || fail "TX runtime/config must not hardcode a Caddy container address: $caddy_config"
 done
+# No container in this stack may pin a static address at all; the pinned
+# 172.29.0.2 collided with a dynamically allocated address (`Address already in
+# use`), so Caddy is reached by its Docker service name instead.
+! grep -Eq 'ipv4_address' "$COMPOSE" \
+  || fail "TX Compose must not pin any container address"
 frontend_block="$(sed -n '/^  wotb-frontend:/,/^  [A-Za-z0-9_-]*:$/p' "$COMPOSE")"
 caddy_block="$(sed -n '/^  caddy:/,/^volumes:/p' "$COMPOSE")"
 grep -Fq '      - caddy' <<< "$frontend_block" \
@@ -122,8 +127,12 @@ grep -Fq '${CADDY_HTTPS_BIND:-127.0.0.1}:443:443' "$COMPOSE" \
   || fail "Stage I Caddy HTTPS must remain loopback-only by default"
 ! grep -Eq '\b(nsupdate|route53|cloudflare|gcloud dns|az network dns)\b' "$TX_DIR/deploy.sh" \
   || fail "TX deploy script must not contain DNS control commands"
-! grep -Fq "wait_for_probe caddy http://caddy/" "$TX_DIR/deploy.sh" \
-  || fail "Caddy readiness must not use the formal HTTP-to-HTTPS site"
+! grep -Fq '172.29.0.2' "$TX_DIR/deploy.sh" \
+  || fail "TX deploy probes and gates must not depend on a fixed Caddy container address"
+! grep -Fq '172.29.0.2' "$TX_DIR/Caddyfile" \
+  || fail "the readiness site must not be bound to a fixed container address"
+! grep -Fq '172.29.0.2' "$TEMPLATE" \
+  || fail "the frontend trust boundary must not depend on a fixed Caddy container address"
 
 for route in \
   'proxy_pass ${BACKEND_UPSTREAM};' \
@@ -134,6 +143,8 @@ for route in \
 done
 grep -Fq 'set_real_ip_from caddy;' "$TEMPLATE" \
   || fail "TX frontend must trust only the Caddy Docker service for client IPs"
+! grep -Fq '172.29.0.0/16' "$TEMPLATE" \
+  || fail "the frontend trust boundary must stay the Caddy service, not the whole subnet"
 ! grep -Fq 'keycloak:8080' "$TEMPLATE" \
   || fail "frontend nginx must not own the Keycloak public route"
 grep -Fq 'handle /.well-known/assetlinks.json' "$TX_DIR/Caddyfile" \
@@ -151,10 +162,28 @@ grep -Fq 'handle_path /_wotb/keycloak/*' "$TX_DIR/Caddyfile" \
 for probe in \
   'http://caddy/_wotb/ready' \
   'http://caddy/_wotb/frontend/api/health' \
-  'http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration'; do
+  'http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration' \
+  'http://caddy/.well-known/assetlinks.json'; do
   grep -Fq "$probe" "$TX_DIR/deploy.sh" \
-    || fail "TX deploy must probe the Caddy internal readiness route: $probe"
+    || fail "TX deploy must probe the Caddy internal readiness route by service name: $probe"
 done
+# The cutover gate must never disable TLS verification to look green.
+! grep -Eq '(^|[[:space:]])(-k|--insecure)([[:space:]]|$)' "$TX_DIR/deploy.sh" \
+  || fail "the cutover gate must never disable TLS verification"
+grep -Fq 'edge_tls_probe' "$TX_DIR/deploy.sh" \
+  || fail "the cutover gate must probe the public edge with verification enabled"
+for token in public-edge-sni-web public-edge-sni-auth public-tls-web public-tls-auth; do
+  grep -Fq "$token" "$TX_DIR/deploy.sh" \
+    || fail "the cutover gate lost public edge token: $token"
+done
+grep -Fq 'public_edge_sni_check' "$TX_DIR/deploy.sh" \
+  || fail "the pre-DNS phase must prove edge SNI reachability without claiming trusted TLS"
+grep -Fq 'public_tls_check' "$TX_DIR/deploy.sh" \
+  || fail "the post-DNS phase must prove trusted public TLS"
+grep -Fq 'POST_CUTOVER_READY' "$TX_DIR/deploy.sh" \
+  || fail "the post-DNS phase must emit its own verdict"
+grep -Fq 'post-cutover' "$TX_DIR/pre-cutover-check.sh" \
+  || fail "the gate entry point must expose the post-DNS phase"
 grep -Fq 'assert_routing_boundary "$EFFECTIVE_COMPOSE"' "$TX_DIR/deploy.sh" \
   || fail "TX deploy must fail closed on the routing and execution-plane boundary before staging"
 grep -Fq './assets/auth/.well-known/assetlinks.json:/srv/.well-known/assetlinks.json:ro' "$COMPOSE" \

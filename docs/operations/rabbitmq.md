@@ -173,6 +173,34 @@ poison message cannot spin. The queue has no TTL for the same reason the DLQ
 has none — a report the control plane failed to apply must be replayed
 deliberately, never discarded by the broker on its own.
 
+#### Operator action for a non-empty DLQ
+
+The TX cutover gate fails its `parser-worker` token while `wotb.parser.dlq` is
+non-empty, because a non-empty DLQ means at least one replay permanently failed
+or could not be decoded. A gate that goes green by purging evidence is worse than
+a red gate, so the sequence is:
+
+```text
+1. read-only state:   docker compose -f /opt/wotb-tx/deploy/docker-compose.yml exec -T rabbitmq \
+                        rabbitmqctl -q list_queues name messages consumers
+                      and confirm PostgreSQL holds no non-terminal job projection for it
+                      (the job authority is PostgreSQL, never the broker)
+2. inspect:           TX loopback Management UI, http://127.0.0.1:15672/ -> queue wotb.parser.dlq
+                      (loopback only; nothing is published publicly)
+3. classify:          parser.dead  = terminal failure with an error code
+                      raw bytes   = the body could not be decoded at all
+4. re-drive:          after the underlying defect is fixed, re-create the processing job with the
+                      same jobId through the control API, or re-publish the message to
+                      wotb.jobs / parser.request; a transient infrastructure failure is re-driven
+                      the same way
+5. record:            a genuinely unprocessable legacy sample is recorded as a permanent failure
+                      and needs an explicit operator decision — not a silent purge
+6. verify:            the queue is empty again, then re-run the cutover gate
+```
+
+`rabbitmqctl purge_queue wotb.parser.dlq` (or the Management UI's purge) is only
+allowed after every message has been classified and recorded in step 3/5.
+
 ## Permissions
 
 | User | tags | configure | write | read |
