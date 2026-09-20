@@ -4,10 +4,10 @@
 	email {$CADDY_ACME_EMAIL}
 }
 
-# TX-local readiness surface. It is bound to Caddy's fixed Docker-network
-# address, so Stage I can validate the loaded config and both upstream routes
-# without production DNS, public HTTP redirects, or ACME certificates.
-http://172.29.0.2 {
+# TX-local readiness surface. Docker Compose resolves the Caddy service name,
+# so Stage I can validate the loaded config and both upstream routes without
+# production DNS, public HTTP redirects, or ACME certificates.
+http://caddy {
 	handle /.well-known/assetlinks.json {
 		root * /srv
 		file_server

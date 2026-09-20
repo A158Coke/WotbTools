@@ -417,18 +417,38 @@ compose_service_list() {
 apply_services() {
   mapfile -t APPLY_SERVICES < <(compose_service_list | awk 'NF && !seen[$0]++')
   [ "${#APPLY_SERVICES[@]}" -gt 0 ] || die "no TX runtime service selected."
-  local service
+  local service caddy_refresh=0
+  if is_selected caddy || { [ "$BOOTSTRAP_KEYCLOAK" != 1 ] && \
+      (is_selected all || is_selected keycloak || is_selected wotb-frontend); }; then
+    caddy_refresh=1
+  fi
+
+  # `--no-deps` deliberately keeps targeted deploys isolated, so Compose does
+  # not create Caddy before nginx resolves `set_real_ip_from caddy`. Start all
+  # other selected services first, then create Caddy's network endpoint before
+  # recreating nginx. A Caddy refresh always requires a frontend refresh: nginx
+  # resolves the trusted peer address only when its configuration is loaded.
   for service in "${APPLY_SERVICES[@]}"; do
+    case "$service" in
+      wotb-frontend|caddy) continue ;;
+    esac
     if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate "$service"; then
       FAILED_SERVICE="$service"
       return 1
     fi
   done
-  # Recreate Caddy when its staged configuration or a proxied application changes.
-  if [ "$BOOTSTRAP_KEYCLOAK" != 1 ] && \
-    (is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected caddy); then
+  if [ "$caddy_refresh" -eq 1 ]; then
     if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate caddy; then
       FAILED_SERVICE="caddy"
+      return 1
+    fi
+    if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate wotb-frontend; then
+      FAILED_SERVICE="wotb-frontend"
+      return 1
+    fi
+  elif is_selected wotb-frontend; then
+    if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate wotb-frontend; then
+      FAILED_SERVICE="wotb-frontend"
       return 1
     fi
   fi
@@ -675,7 +695,7 @@ provision_business_postgres() {
 }
 
 blocking_health() {
-  if is_selected all || is_selected keycloak-postgres || is_selected keycloak || is_selected wotb-frontend; then
+  if is_selected all || is_selected keycloak-postgres || is_selected keycloak || is_selected wotb-frontend || is_selected caddy; then
     wait_for_database || return 1
   fi
   if is_selected all || is_selected business-postgres; then
@@ -684,7 +704,7 @@ blocking_health() {
   if is_selected all || is_selected rabbitmq; then
     wait_for_rabbitmq || return 1
   fi
-  if is_selected all || is_selected keycloak || is_selected wotb-frontend; then
+  if is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected caddy; then
     if [ "$BOOTSTRAP_KEYCLOAK" = 1 ] && is_selected keycloak && ! is_selected wotb-frontend; then
       wait_for_probe keycloak http://keycloak:8080/realms/master/.well-known/openid-configuration || return 1
     else
@@ -698,17 +718,18 @@ blocking_health() {
     wait_for_probe business-api http://business-api:8088/actuator/health || return 1
     wait_for_probe business-api-app http://business-api:8087/api/health || return 1
   fi
-  if is_selected all || is_selected wotb-frontend; then
+  if is_selected all || is_selected wotb-frontend || is_selected caddy; then
     # Public API traffic is terminated inside wotb_tx_internal now: the frontend
     # probe proves nginx -> business-api end to end, and the retired Yecao
     # backend path is deliberately not probed or required any more.
     wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || return 1
     # The formal site address intentionally redirects HTTP to HTTPS. Probe
-    # Caddy's TX-local readiness surface instead: it is 2xx-only, DNS/ACME
-    # independent, and exercises the frontend and Keycloak proxy contracts.
-    wait_for_probe caddy-ready http://172.29.0.2/_wotb/ready || return 1
-    wait_for_probe caddy-frontend http://172.29.0.2/_wotb/frontend/api/health || return 1
-    wait_for_probe caddy-keycloak http://172.29.0.2/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || return 1
+    # Caddy's TX-local readiness surface instead: it is 2xx-only,
+    # production-DNS/ACME independent, and exercises the frontend and Keycloak
+    # proxy contracts.
+    wait_for_probe caddy-ready http://caddy/_wotb/ready || return 1
+    wait_for_probe caddy-frontend http://caddy/_wotb/frontend/api/health || return 1
+    wait_for_probe caddy-keycloak http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || return 1
   fi
 }
 
@@ -966,10 +987,10 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
   wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || failures=1
   wait_for_probe business-api http://business-api:8088/actuator/health || failures=1
   wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || failures=1
-  wait_for_probe caddy-ready http://172.29.0.2/_wotb/ready || failures=1
-  wait_for_probe caddy-frontend http://172.29.0.2/_wotb/frontend/api/health || failures=1
-  wait_for_probe caddy-keycloak http://172.29.0.2/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || failures=1
-  probe_body_contains assetlinks http://172.29.0.2/.well-known/assetlinks.json 'com.wotbtools.app' || failures=1
+  wait_for_probe caddy-ready http://caddy/_wotb/ready || failures=1
+  wait_for_probe caddy-frontend http://caddy/_wotb/frontend/api/health || failures=1
+  wait_for_probe caddy-keycloak http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || failures=1
+  probe_body_contains assetlinks http://caddy/.well-known/assetlinks.json 'com.wotbtools.app' || failures=1
 
   for provider in keycloak-qq-provider.jar keycloak-wargaming-provider.jar; do
     if docker compose -f "$LIVE_COMPOSE" exec -T keycloak test -f "/opt/keycloak/providers/$provider"; then
