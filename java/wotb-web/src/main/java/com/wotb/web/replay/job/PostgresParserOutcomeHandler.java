@@ -5,6 +5,9 @@ import com.wotb.broker.rabbitmq.ParserOutcomeHandler;
 import com.wotb.broker.rabbitmq.ParserResultMessage;
 import com.wotb.broker.rabbitmq.ParserSourceOutcome;
 import com.wotb.broker.rabbitmq.ParserSourceStatus;
+import com.wotb.contracts.ReplayProcessingDispatcher;
+import com.wotb.contracts.ReplayProcessingRequest;
+import com.wotb.contracts.ReplayProcessingSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,17 +17,33 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 分布式控制面的 parser 结果处理器：把 {@code wotb.parser.result} 上的结果**按权威状态**应用到
- * PostgreSQL。
+ * 分布式控制面的 parser 报告处理器：把 {@code wotb.parser.result} 队列上的报告（{@code parser.result}
+ * 与 {@code parser.failed}）**按权威状态**应用到 PostgreSQL。
  *
- * <p><b>幂等 / 陈旧判定（唯一规则）</b>——按顺序：</p>
+ * <p><b>幂等 / 陈旧判定（唯一规则）</b>——两种报告共用同一个前置判定，按顺序：</p>
  * <ol>
  *   <li>job 在权威状态里不存在 → {@code IGNORED}（unknown job 是安全 no-op，不可能重试成功）；</li>
- *   <li>{@code message.attempt < reportedAttempt} → {@code IGNORED}（陈旧：更晚的 attempt 已经推进过状态）；</li>
+ *   <li>{@code message.attempt < attemptWatermark} → {@code IGNORED}（陈旧：更晚的 attempt 已经推进过状态）；</li>
  *   <li>job 已是终态 → {@code IGNORED}（重复投递；不再产生任何副作用）；</li>
  *   <li>job 已 {@code cancel_requested} → 推进 CANCELLED 并 {@code IGNORED}（迟到结果绝不覆盖终态）；</li>
- *   <li>否则逐个 source 应用（已终态的 source 跳过），全部 source 都已终态 → {@code IGNORED}。</li>
+ *   <li>结果：否则逐个 source 应用（已终态的 source 跳过），全部 source 都已终态 → {@code IGNORED}；</li>
+ *   <li>失败：{@code retryable} 且预算未用尽 → **重派 {@code attempt+1}**；否则转终态。</li>
  * </ol>
+ *
+ * <p><b>逻辑重试归控制面（本类的核心职责）</b>：worker 从不 nack、也从不把任务送进
+ * {@code wotb.parser.retry}；它只在基础设施失败时发布确认投递的
+ * {@code parser.failed(retryable=true)}。真正的重试决定发生在这里——依据 PostgreSQL 权威状态
+ * （job 是否仍活跃、是否已终态、是否已取消、attempt 水位线是否仍是本次 attempt、预算是否剩余）
+ * 派发一次新的 {@code parser.request}（同 {@code jobId}、{@code attempt+1}）。因此重试预算只存在于
+ * 控制面，随 job 权威状态一起持久化在 PG 水位线里，worker 与 broker 都不持有它，也不存在
+ * 「broker 自动重放 parser 工作」这条路径。immediate re-dispatch（没有延迟队列）是有意的：延迟
+ * 重试属于控制面自己的调度器，绝不能通过把消息塞回 broker 拓扑来借用。</p>
+ *
+ * <p><b>重派的失败模型</b>：先派发、再推进水位线。派发抛异常时水位线保持不动并让异常上抛，
+ * {@code ParserResultListener} 会把这条报告 nack 不重入队 → 落在 {@code wotb.parser.dlq} 等
+ * operator 重放；重放时会重新派发这一次重试，job 不会卡在「已决定重试但没有任何执行」。
+ * 崩溃窗口（已派发、未推进水位线）最坏结果是同一 {@code attempt+1} 被执行两次——产物按对象键
+ * 幂等覆盖、报告按同一 attempt 幂等应用，属重复工作而非不一致状态。</p>
  *
  * <p><b>状态迁移的唯一所有者仍然是 {@link ReplayProcessingJob}/{@link ReplayJobState}</b>：
  * 本类只调用既有 mutator（{@code startProcessing/markSourceReady/markSourceFailed/markReady/
@@ -33,10 +52,11 @@ import java.util.Objects;
  *
  * <p><b>并发</b>：一次 apply 会写回整份 source 投影（权威 save 是全量替换），因此同一 job 的
  * outcome 必须串行应用。装配点把 {@code SimpleMessageListenerContainer} 固定为单消费者
- * （prefetch/concurrentConsumers = 1），这也是本类不做 per-job 加锁的前提。</p>
+ * （prefetch/concurrentConsumers = 1），这也是本类不做 per-job 加锁的前提。跨实例的重复重派
+ * 由 {@code advanceAttemptWatermark} 的 CAS 语义收敛（见 {@link #dispatchRetry}）。</p>
  *
  * <p>抛异常 = 「本投递现在无法应用」：{@code ParserResultListener} 会 nack 不重入队，消息落到
- * {@code wotb.parser.dlq} 等 operator 处理。瞬时的数据库故障绝不能返回 Outcome。</p>
+ * {@code wotb.parser.dlq} 等 operator 处理。瞬时的数据库故障（或重派失败）绝不能返回 Outcome。</p>
  */
 public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler {
 
@@ -47,11 +67,23 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
 
     private final ReplayProcessingJobStore store;
     private final ReplayJobAuthority authority;
+    /** 逻辑重试的派发通道（同一端口，attempt 由控制面写入命令）。 */
+    private final ReplayProcessingDispatcher dispatcher;
+    /** 每个 job 允许的最大 attempt 数（含首次）；attempt 用尽即终态。 */
+    private final int maxAttempts;
 
     public PostgresParserOutcomeHandler(final ReplayProcessingJobStore store,
-                                        final ReplayJobAuthority authority) {
+                                        final ReplayJobAuthority authority,
+                                        final ReplayProcessingDispatcher dispatcher,
+                                        final int maxAttempts) {
         this.store = Objects.requireNonNull(store, "store");
         this.authority = Objects.requireNonNull(authority, "authority");
+        this.dispatcher = Objects.requireNonNull(dispatcher, "dispatcher");
+        if (maxAttempts < ReplayProcessingRequest.FIRST_ATTEMPT) {
+            throw new IllegalArgumentException("maxAttempts must be at least "
+                    + ReplayProcessingRequest.FIRST_ATTEMPT + ": " + maxAttempts);
+        }
+        this.maxAttempts = maxAttempts;
     }
 
     @Override
@@ -62,12 +94,13 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
                     message.jobId(), message.attempt());
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
-        final int reportedAttempt = authority.reportedAttempt(message.jobId());
-        if (message.attempt() < reportedAttempt) {
-            LOGGER.warn("event=replay_processing_outcome_stale jobId={} attempt={} reportedAttempt={}",
-                    message.jobId(), message.attempt(), reportedAttempt);
+        final int watermark = authority.attemptWatermark(message.jobId());
+        if (message.attempt() < watermark) {
+            LOGGER.warn("event=replay_processing_outcome_stale jobId={} attempt={} attemptWatermark={}",
+                    message.jobId(), message.attempt(), watermark);
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
-        }        if (terminal(job)) {
+        }
+        if (terminal(job)) {
             LOGGER.info("event=replay_processing_outcome_duplicate jobId={} attempt={} status={}",
                     message.jobId(), message.attempt(), job.snapshot().status().name());
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
@@ -81,11 +114,17 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
                     message.jobId(), message.attempt());
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
-        authority.advanceReportedAttempt(job.jobId(), message.attempt());
+        authority.advanceAttemptWatermark(job.jobId(), message.attempt());
         finishIfComplete(job);
         return Outcome.APPLIED;
     }
 
+    /**
+     * 整个 attempt 在产生任何逐源结果之前就失败了（例如 worker 读不到输入、写不了产物）。
+     *
+     * <p>预算允许时**不落终态**，而是按 PG 权威状态重派 {@code attempt+1}；只有预算用尽、
+     * worker 明确宣告不可重试、或 job 已不再活跃时才转终态。</p>
+     */
     @Override
     public Outcome handleFailed(final ParserFailedMessage message) {
         final ReplayProcessingJob job = store.get(message.jobId());
@@ -94,10 +133,10 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
                     message.jobId(), message.attempt(), message.errorCode());
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
-        final int reportedAttempt = authority.reportedAttempt(message.jobId());
-        if (message.attempt() < reportedAttempt) {
-            LOGGER.warn("event=replay_processing_failure_stale jobId={} attempt={} errorCode={}",
-                    message.jobId(), message.attempt(), message.errorCode());
+        final int watermark = authority.attemptWatermark(message.jobId());
+        if (message.attempt() < watermark) {
+            LOGGER.warn("event=replay_processing_failure_stale jobId={} attempt={} attemptWatermark={} errorCode={}",
+                    message.jobId(), message.attempt(), watermark, message.errorCode());
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
         if (terminal(job)) {
@@ -109,6 +148,45 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
             cancel(job);
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
+        if (message.retryable() && message.attempt() < maxAttempts) {
+            return dispatchRetry(job, message);
+        }
+        return failTerminal(job, message);
+    }
+
+    /**
+     * 逻辑重试：控制面按 PG 权威状态决定 {@code attempt+1} 并派发一次新的 {@code parser.request}。
+     *
+     * <p>重派的是**整个 attempt 的完整 source 集合**（一个 attempt = 一次完整的 batch 执行）：
+     * worker 只有在整个请求成功后才会发布逐源结果，因此基础设施失败时权威状态里不存在任何
+     * 「已完成的 source」可以跳过。</p>
+     */
+    private Outcome dispatchRetry(final ReplayProcessingJob job, final ParserFailedMessage message) {
+        final int nextAttempt = message.attempt() + 1;
+        final ReplayProcessingRequest retry = new ReplayProcessingRequest(
+                job.jobId(), retrySources(job), nextAttempt);
+        // 先派发、再推进水位线。派发失败即上抛（listener nack 不重入队 → DLQ + operator 重放），
+        // 水位线保持不动，重放会重新派发这一次重试，而不是把 job 卡成「已重试但没有执行」。
+        dispatcher.submit(retry);
+        if (!authority.advanceAttemptWatermark(job.jobId(), nextAttempt)) {
+            // 另一个控制面实例已经把水位线推进到 >= nextAttempt：本次重派只是重复工作，丢弃报告。
+            LOGGER.warn("event=replay_processing_failure_retry_raced jobId={} attempt={} nextAttempt={}",
+                    job.jobId(), message.attempt(), nextAttempt);
+            return Outcome.IGNORED_STALE_OR_DUPLICATE;
+        }
+        LOGGER.warn("event=replay_processing_failure_retry_dispatched jobId={} failedAttempt={}"
+                        + " nextAttempt={} maxAttempts={} errorCode={}",
+                job.jobId(), message.attempt(), nextAttempt, maxAttempts, message.errorCode());
+        return Outcome.APPLIED;
+    }
+
+    /** 重试不可用（预算用尽或 worker 宣告不可重试）：整个 attempt 落成终态 FAILED。 */
+    private Outcome failTerminal(final ReplayProcessingJob job, final ParserFailedMessage message) {
+        LOGGER.warn("event=replay_processing_failure_terminal jobId={} attempt={} maxAttempts={}"
+                        + " retryable={} errorCode={}",
+                job.jobId(), message.attempt(), maxAttempts, message.retryable(), message.errorCode());
+        // QUEUED → PROCESSING：终态迁移的状态机前提要求先进入 PROCESSING（分布式下没有
+        // worker-start 事件，失败报告本身就是「执行发生过」的可观察事实）。
         job.startProcessing();
         for (final ReplayProcessingJob.SourceState source : job.sourceStates()) {
             if (sourceTerminal(source)) {
@@ -117,16 +195,22 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
             job.markSourceFailed(source.sourceIndex(), message.errorCode());
             job.recordParseFailure();
         }
-        authority.advanceReportedAttempt(job.jobId(), message.attempt());
-        if (message.retryable()) {
-            // worker 认为「再解析一次可能有意义」，但控制面在 PR E 里没有重新派发通道：
-            // 这是一个需要 operator 介入的信号，必须留下可检索的痕迹，不能静默终态。
-            LOGGER.error("event=replay_processing_failure_retryable_unhandled jobId={} attempt={} errorCode={}",
-                    message.jobId(), message.attempt(), message.errorCode());
-        }
+        authority.advanceAttemptWatermark(job.jobId(), message.attempt());
         job.markFailed(message.errorCode());
         recordTerminal(job, "processing_job_failed jobId=" + job.jobId() + " errorCode=" + message.errorCode());
         return Outcome.APPLIED;
+    }
+
+    /**
+     * attempt 的完整 source 集合（按 sourceIndex 顺序）。
+     *
+     * <p>只带 wire envelope 需要的 identity（index + name）：worker 自己从 {@code jobId} + index
+     * 推导对象键，控制面不传递任何存储位置。</p>
+     */
+    private static List<ReplayProcessingSource> retrySources(final ReplayProcessingJob job) {
+        return job.sourceStates().stream()
+                .map(source -> new ReplayProcessingSource(source.sourceIndex(), source.sourceName()))
+                .toList();
     }
 
     /** 逐个 source 应用结果（已终态 source 幂等跳过）。@return 是否至少应用了一个 source */

@@ -163,6 +163,11 @@ wotb:
       prefetch: ${TX_RABBITMQ_CONTROL_API_PREFETCH:1}
       # parser.request 等待 broker confirm 的超时；超时即 create 失败（绝不留下无绑定的 job）
       confirm-timeout-seconds: ${TX_RABBITMQ_CONFIRM_TIMEOUT_SECONDS:10}
+    # distributed 专用：控制面所有的逻辑重试预算（含首次）。
+    # worker 基础设施失败只报告 parser.failed(retryable=true)（从不 nack、从不走 broker 重试队列），
+    # 由控制面按 PG 权威状态决定：attempt < max-attempts ⇒ 立即重派 attempt+1；用尽 ⇒ 终态 FAILED。
+    retry:
+      max-attempts: ${REPLAY_PARSER_MAX_ATTEMPTS:3}
     parse:
       # Replay Full Processing 唯一 CPU 预算（2C4G VPS 默认 2；禁止超过核心数）
       max-concurrent: ${REPLAY_PARSE_MAX_CONCURRENT:2}

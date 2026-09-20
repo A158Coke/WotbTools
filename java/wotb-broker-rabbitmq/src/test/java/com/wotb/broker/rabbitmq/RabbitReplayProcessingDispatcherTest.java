@@ -57,6 +57,31 @@ class RabbitReplayProcessingDispatcherTest {
         }
     }
 
+    /**
+     * 逻辑重试的 attempt 属于控制面的命令，适配器必须原样上线：它既不能把 {@code attempt+1}
+     * 改回 1（worker 会用它回报结果），也不能自己发明 attempt。
+     */
+    @Test
+    void retryAttemptIsPublishedUnchanged() throws Exception {
+        declareTopology(true);
+        final CachingConnectionFactory factory = confirmedConnectionFactory(BROKER.getHost(), BROKER.getAmqpPort());
+        try {
+            final RabbitReplayProcessingDispatcher dispatcher = new RabbitReplayProcessingDispatcher(
+                    new RabbitTemplate(factory), new ParserMessageCodec(), CONFIRM_TIMEOUT);
+
+            dispatcher.submit(new ReplayProcessingRequest("job-retry",
+                    List.of(new ReplayProcessingSource(0, "a.wotbreplay")), 3));
+
+            final Message received = new RabbitTemplate(factory).receive(ParserTopology.PARSER_QUEUE, 5_000);
+            assertNotNull(received);
+            final ParserRequestMessage decoded = new ParserMessageCodec().decodeRequest(received.getBody());
+            assertEquals("job-retry", decoded.jobId());
+            assertEquals(3, decoded.attempt());
+        } finally {
+            factory.destroy();
+        }
+    }
+
     @Test
     void unroutablePublishFailsClosed() throws Exception {
         // exchange + work queue 存在但没有 binding：broker 会 ack 这条 mandatory 消息并回 return，
@@ -140,6 +165,7 @@ class RabbitReplayProcessingDispatcherTest {
     }
 
     private static ReplayProcessingRequest request(final String jobId) {
-        return new ReplayProcessingRequest(jobId, List.of(new ReplayProcessingSource(0, "a.wotbreplay")));
+        return new ReplayProcessingRequest(jobId,
+                List.of(new ReplayProcessingSource(0, "a.wotbreplay")), ReplayProcessingRequest.FIRST_ATTEMPT);
     }
 }

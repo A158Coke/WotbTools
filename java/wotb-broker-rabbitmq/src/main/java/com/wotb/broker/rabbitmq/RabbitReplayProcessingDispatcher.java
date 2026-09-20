@@ -27,9 +27,15 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
  * {@code parser.request} envelope per {@code submit}.
  *
  * <p>Publishing uses the {@link ParserTopology#JOBS_EXCHANGE} exchange and the
- * {@link ParserTopology#PARSER_REQUEST_ROUTING_KEY} routing key, as a persistent message with
- * {@code attempt = 1}. The envelope is metadata only; the worker resolves its own object keys from
- * {@code jobId}.</p>
+ * {@link ParserTopology#PARSER_REQUEST_ROUTING_KEY} routing key, as a persistent message carrying
+ * the command's own {@code attempt}. The envelope is metadata only; the worker resolves its own
+ * object keys from {@code jobId}.</p>
+ *
+ * <p><b>This adapter never invents an attempt.</b> {@code attempt} belongs to the command because
+ * only the control plane may decide that a logical retry exists (it is the owner of the retry
+ * budget and of the authoritative job state); the adapter's job is to place that decision on the
+ * wire unchanged. A first dispatch carries {@code 1}, a retry carries the control plane's
+ * {@code attempt + 1}.</p>
  *
  * <p><b>Delivery semantics: a successful return means the broker confirmed the publish and the
  * message was routable.</b> {@link #submit} waits for the correlated publisher confirm and then
@@ -49,8 +55,6 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 public final class RabbitReplayProcessingDispatcher implements ReplayProcessingDispatcher {
 
     private static final Logger LOG = LoggerFactory.getLogger(RabbitReplayProcessingDispatcher.class);
-
-    private static final int INITIAL_ATTEMPT = 1;
 
     private final RabbitTemplate template;
     private final ParserMessageCodec codec;
@@ -75,7 +79,7 @@ public final class RabbitReplayProcessingDispatcher implements ReplayProcessingD
                 ParserMessageCodec.SCHEMA_VERSION,
                 UUID.randomUUID().toString(),
                 command.jobId(),
-                INITIAL_ATTEMPT,
+                command.attempt(),
                 Instant.now(),
                 sources);
 
@@ -103,7 +107,7 @@ public final class RabbitReplayProcessingDispatcher implements ReplayProcessingD
                     + ", routingKey=" + returned.getRoutingKey());
         }
         LOG.info("dispatched replay processing job {} as attempt {} (broker confirmed)",
-                command.jobId(), INITIAL_ATTEMPT);
+                command.jobId(), command.attempt());
     }
 
     /**

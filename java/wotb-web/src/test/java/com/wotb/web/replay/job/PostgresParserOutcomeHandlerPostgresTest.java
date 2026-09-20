@@ -9,6 +9,9 @@ import com.wotb.broker.rabbitmq.ParserSourceOutcome;
 import com.wotb.broker.rabbitmq.ParserSourceStatus;
 import com.wotb.broker.rabbitmq.ParserTopology;
 import com.rabbitmq.client.Channel;
+import com.wotb.contracts.ReplayProcessingDispatcher;
+import com.wotb.contracts.ReplayProcessingRequest;
+import com.wotb.contracts.ReplayProcessingSource;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,10 +29,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -40,7 +45,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 分布式控制面的 parser 结果消费（真实 PostgreSQL）：attempt 陈旧/重复判定与状态推进。
+ * 分布式控制面的 parser 报告消费（真实 PostgreSQL）：attempt 陈旧/重复判定、状态推进，
+ * 以及**控制面所有的逻辑重试**。
  *
  * <p>锁死的契约：</p>
  * <ul>
@@ -48,11 +54,17 @@ import static org.mockito.Mockito.when;
  *   <li>重复结果（同 attempt、source 已终态）→ {@code IGNORED}，且**零副作用**（revision 不变）；</li>
  *   <li>陈旧 attempt（小于已观察到的 attempt）→ {@code IGNORED}，不推进任何 source；</li>
  *   <li>未知 job / 终态 job / 已取消 job 的迟到结果 → {@code IGNORED}（安全 no-op，不新建权威行）；</li>
- *   <li>全部 source 终态 → batch 终态：有 READY → READY；全 FAILED → FAILED（NO_VALID_REPLAYS）。</li>
+ *   <li>全部 source 终态 → batch 终态：有 READY → READY；全 FAILED → FAILED（NO_VALID_REPLAYS）；</li>
+ *   <li>{@code parser.failed(retryable=true)} 且预算未用尽 → **重派 attempt+1**，job 不落终态、
+ *       source 不变；同一 attempt 的重复失败报告因水位线推进而成为陈旧 no-op；预算用尽或
+ *       {@code retryable=false} → 终态 FAILED；重派失败则异常上抛（消息进 DLQ 而非被 ack）。</li>
  * </ul>
  */
 @Testcontainers(disabledWithoutDocker = true)
 class PostgresParserOutcomeHandlerPostgresTest {
+
+    /** 测试用重试预算：与生产缺省一致（attempt 1..3）。 */
+    private static final int MAX_ATTEMPTS = 3;
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18-alpine")
@@ -65,6 +77,7 @@ class PostgresParserOutcomeHandlerPostgresTest {
     Path tempDir;
 
     private ReplayProcessingJobStore store;
+    private RecordingDispatcher dispatcher;
     private PostgresParserOutcomeHandler handler;
 
     @BeforeEach
@@ -82,7 +95,9 @@ class PostgresParserOutcomeHandlerPostgresTest {
         }
         jdbc.sql("delete from replay_processing_job").update();
         store = new ReplayProcessingJobStore(tempDir, 60, new ReplayJobAuthority(jdbc, transactions));
-        handler = new PostgresParserOutcomeHandler(store, new ReplayJobAuthority(jdbc, transactions));
+        dispatcher = new RecordingDispatcher();
+        handler = new PostgresParserOutcomeHandler(store, new ReplayJobAuthority(jdbc, transactions),
+                dispatcher, MAX_ATTEMPTS);
     }
 
     @AfterEach
@@ -104,7 +119,7 @@ class PostgresParserOutcomeHandlerPostgresTest {
         assertEquals(ReplayProcessingJob.SourceStatus.PENDING, stored.sources().get(1).status());
         assertEquals(1, stored.parseCompleted());
         assertEquals(1, stored.parseSucceeded());
-        assertEquals(1, reportedAttempt("p-1"));
+        assertEquals(1, attemptWatermark("p-1"));
     }
 
     @Test
@@ -141,7 +156,7 @@ class PostgresParserOutcomeHandlerPostgresTest {
 
         assertEquals(revisionAfterApply, revisionOf("p-3"), "重复结果不得产生任何权威写入");
         assertEquals(statusAfterApply, statusOf("p-3"));
-        assertEquals(1, reportedAttempt("p-3"));
+        assertEquals(1, attemptWatermark("p-3"));
     }
 
     @Test
@@ -157,7 +172,7 @@ class PostgresParserOutcomeHandlerPostgresTest {
         assertEquals(revisionAfterNewerAttempt, revisionOf("p-4"), "陈旧 attempt 不得写入权威状态");
         assertEquals(ReplayProcessingJob.SourceStatus.PENDING,
                 authority().findJob("p-4").orElseThrow().sources().get(1).status());
-        assertEquals(3, reportedAttempt("p-4"), "reported attempt 只能单调前进");
+        assertEquals(3, attemptWatermark("p-4"), "attempt 水位线只能单调前进");
     }
 
     @Test
@@ -176,17 +191,96 @@ class PostgresParserOutcomeHandlerPostgresTest {
     }
 
     @Test
-    void wholeAttemptFailureMarksJobFailedWithReportedCode() {
+    void retryableAttemptFailureRedispatchesNextAttemptInsteadOfFailingTheJob() {
         register("p-6", List.of("a.wotbreplay", "b.wotbreplay"));
 
-        assertEquals(ParserOutcomeHandler.Outcome.APPLIED, handler.handleFailed(new ParserFailedMessage(
-                "1", "evt-6", "p-6", 1, Instant.now(), "PROCESSING_JOB_STORAGE_UNAVAILABLE", true)));
+        assertEquals(ParserOutcomeHandler.Outcome.APPLIED, handler.handleFailed(failed("p-6", 1)));
+
+        assertEquals(1, dispatcher.requests.size(), "可重试的基础设施失败必须重派，而不是落成终态");
+        final ReplayProcessingRequest retry = dispatcher.requests.getFirst();
+        assertEquals("p-6", retry.jobId());
+        assertEquals(2, retry.attempt(), "逻辑重试 = 同一 job、attempt+1");
+        assertEquals(List.of(0, 1), retry.sources().stream().map(ReplayProcessingSource::sourceIndex).toList(),
+                "重派的是这次 attempt 的完整 source 集合");
 
         final ReplayJobAuthority.StoredJob stored = authority().findJob("p-6").orElseThrow();
+        assertEquals(ReplayProcessingJob.Status.QUEUED, stored.status(),
+                "重派本身既不是终态，也不伪造任何逐源结果");
+        assertTrue(stored.sources().stream().allMatch(s -> s.status() == ReplayProcessingJob.SourceStatus.PENDING));
+        assertEquals(2, attemptWatermark("p-6"), "水位线推进到已派发的 attempt，重复报告才会被判陈旧");
+    }
+
+    @Test
+    void duplicateRetryableFailureForTheSameAttemptIsStaleAndNeverRedispatchesTwice() {
+        register("p-6b", List.of("a.wotbreplay"));
+        final ParserFailedMessage failed = failed("p-6b", 1);
+
+        assertEquals(ParserOutcomeHandler.Outcome.APPLIED, handler.handleFailed(failed));
+        assertEquals(ParserOutcomeHandler.Outcome.IGNORED_STALE_OR_DUPLICATE, handler.handleFailed(failed),
+                "同一 attempt 的重复失败报告必须 ack 丢弃（幂等 no-op），绝不产生第二次重派");
+
+        assertEquals(1, dispatcher.requests.size());
+        assertEquals(2, attemptWatermark("p-6b"));
+    }
+
+    @Test
+    void retryBudgetExhaustionFailsTheJobWithTheReportedCode() {
+        register("p-6c", List.of("a.wotbreplay", "b.wotbreplay"));
+
+        assertEquals(ParserOutcomeHandler.Outcome.APPLIED, handler.handleFailed(failed("p-6c", 1)));
+        assertEquals(ParserOutcomeHandler.Outcome.APPLIED, handler.handleFailed(failed("p-6c", 2)));
+        assertEquals(ParserOutcomeHandler.Outcome.APPLIED, handler.handleFailed(failed("p-6c", 3)));
+
+        assertEquals(List.of(2, 3), dispatcher.requests.stream().map(ReplayProcessingRequest::attempt).toList(),
+                "attempt=1,2 各重派一次；attempt=max 用尽预算 → 终态");
+
+        final ReplayJobAuthority.StoredJob stored = authority().findJob("p-6c").orElseThrow();
         assertEquals(ReplayProcessingJob.Status.FAILED, stored.status());
-        assertEquals("PROCESSING_JOB_STORAGE_UNAVAILABLE", stored.errorCode());
+        assertEquals("PARSER_WORKER_STORAGE_UNAVAILABLE", stored.errorCode());
         assertEquals(2, stored.parseFailed());
         assertTrue(stored.sources().stream().allMatch(s -> s.status() == ReplayProcessingJob.SourceStatus.FAILED));
+    }
+
+    @Test
+    void nonRetryableAttemptFailureFailsTheJobImmediately() {
+        register("p-6d", List.of("a.wotbreplay"));
+        final ParserFailedMessage failed = new ParserFailedMessage(
+                "1", "evt-6d", "p-6d", 1, Instant.now(), "REPLAY_PROCESSING_FAILED", false);
+
+        assertEquals(ParserOutcomeHandler.Outcome.APPLIED, handler.handleFailed(failed));
+
+        assertTrue(dispatcher.requests.isEmpty(), "worker 判定不可重试时控制面不得重派");
+        assertEquals(ReplayProcessingJob.Status.FAILED, statusOf("p-6d"));
+        assertEquals("REPLAY_PROCESSING_FAILED", authority().findJob("p-6d").orElseThrow().errorCode());
+    }
+
+    /**
+     * 重派失败必须**上抛**（因此 listener nack 不重入队 → {@code wotb.parser.dlq}），
+     * 且绝不能推进水位线：否则 operator 重放这条报告时会因「已陈旧」而被丢弃，
+     * job 就永久卡在「已决定重试、却没有任何执行」。
+     */
+    @Test
+    void retryDispatchFailurePropagatesSoTheReportDeadLettersInsteadOfBeingAcked() throws Exception {
+        register("p-6e", List.of("a.wotbreplay"));
+        dispatcher.failure = new IllegalStateException("broker confirmation failed");
+        final ParserMessageCodec codec = new ParserMessageCodec();
+        final byte[] body = codec.encode(failed("p-6e", 1));
+        final Channel channel = mock(Channel.class);
+
+        new ParserResultListener(codec, handler).onMessage(amqpMessage(body, 11L,
+                ParserTopology.PARSER_FAILED_ROUTING_KEY), channel);
+
+        verify(channel).basicNack(11L, false, false);
+        verify(channel, never()).basicAck(anyLong(), anyBoolean());
+        assertEquals(0, attemptWatermark("p-6e"), "派发失败不得推进水位线：重放必须能重新派发这次重试");
+        assertEquals(ReplayProcessingJob.Status.QUEUED, statusOf("p-6e"));
+    }
+
+    /** 重试预算是控制面的配置：0（或负数）必须构造即失败，绝不静默变成「不重试」。 */
+    @Test
+    void retryBudgetBelowTheFirstAttemptIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> new PostgresParserOutcomeHandler(
+                store, authority(), dispatcher, 0));
     }
 
     @Test
@@ -200,7 +294,8 @@ class PostgresParserOutcomeHandlerPostgresTest {
     }
 
     @Test
-    void lateResultAfterCancellationIsDiscardedAndJobBecomesTerminal() {        register("p-7", List.of("a.wotbreplay"));
+    void lateResultAfterCancellationIsDiscardedAndJobBecomesTerminal() {
+        register("p-7", List.of("a.wotbreplay"));
         final ReplayProcessingJob job = store.get("p-7");
         assertTrue(job.startProcessing());
         assertTrue(job.requestCancel());
@@ -248,15 +343,25 @@ class PostgresParserOutcomeHandlerPostgresTest {
     }
 
     private static Message amqpMessage(final byte[] body, final long deliveryTag) {
+        return amqpMessage(body, deliveryTag, ParserTopology.PARSER_RESULT_ROUTING_KEY);
+    }
+
+    private static Message amqpMessage(final byte[] body, final long deliveryTag, final String routingKey) {
         final MessageProperties properties = new MessageProperties();
         properties.setDeliveryTag(deliveryTag);
-        properties.setReceivedRoutingKey(ParserTopology.PARSER_RESULT_ROUTING_KEY);
+        properties.setReceivedRoutingKey(routingKey);
         return new Message(body, properties);
     }
 
     private static ParserResultMessage result(final String jobId, final int attempt,
                                               final ParserSourceOutcome outcome) {
         return new ParserResultMessage("1", "evt-" + jobId, jobId, attempt, Instant.now(), List.of(outcome));
+    }
+
+    /** 可重试的整次 attempt 失败（worker 基础设施失败的 wire 形状）。 */
+    private static ParserFailedMessage failed(final String jobId, final int attempt) {
+        return new ParserFailedMessage("1", "evt-" + jobId + "-" + attempt, jobId, attempt, Instant.now(),
+                "PARSER_WORKER_STORAGE_UNAVAILABLE", true);
     }
 
     private ReplayJobAuthority authority() {
@@ -268,13 +373,33 @@ class PostgresParserOutcomeHandlerPostgresTest {
                 .param("id", jobId).query(Long.class).single();
     }
 
-    private static int reportedAttempt(final String jobId) {
-        return jdbc.sql("select reported_attempt from replay_processing_job where job_id = :id")
+    private static int attemptWatermark(final String jobId) {
+        return jdbc.sql("select attempt_watermark from replay_processing_job where job_id = :id")
                 .param("id", jobId).query(Integer.class).single();
     }
 
     private static ReplayProcessingJob.Status statusOf(final String jobId) {
         return ReplayProcessingJob.Status.valueOf(jdbc.sql("select status from replay_processing_job where job_id = :id")
                 .param("id", jobId).query(String.class).single());
+    }
+
+    /** 记录重派请求、可按需失败的 {@link ReplayProcessingDispatcher} 替身。 */
+    private static final class RecordingDispatcher implements ReplayProcessingDispatcher {
+
+        private final List<ReplayProcessingRequest> requests = new ArrayList<>();
+        private RuntimeException failure;
+
+        @Override
+        public void submit(final ReplayProcessingRequest request) {
+            requests.add(request);
+            if (failure != null) {
+                throw failure;
+            }
+        }
+
+        @Override
+        public CancellationResult cancelQueued(final String jobId) {
+            return CancellationResult.ACTIVE_COMPLETION_PENDING;
+        }
     }
 }

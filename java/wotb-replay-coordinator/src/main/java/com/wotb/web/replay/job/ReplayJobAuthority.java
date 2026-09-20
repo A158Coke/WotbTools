@@ -169,14 +169,18 @@ public final class ReplayJobAuthority {
     }
 
     /**
-     * 权威状态里该 job 已观察到的**最新 parser result attempt**；{@code 0} = 还没有任何结果报告
-     * （V24 {@code reported_attempt} 列的默认值）。
+     * 权威状态里该 job 的 **attempt 水位线**；{@code 0} = 还没有任何 attempt 被报告或重派
+     * （V24 {@code attempt_watermark} 列的默认值）。
      *
-     * <p>它是分布式控制面判定「陈旧结果」的唯一输入：{@code message.attempt < reported_attempt}
+     * <p>它是分布式控制面判定「陈旧报告」的唯一输入：{@code message.attempt < attemptWatermark}
      * 的报告必须丢弃（更晚的 attempt 已经推进过权威状态）。</p>
+     *
+     * <p>水位线由两处推进，二者语义相同：「已应用的最新结果 attempt」与「控制面已重派的最新
+     * attempt」。因此重派 {@code attempt+1} 之后，同一 {@code attempt} 的重复 {@code parser.failed}
+     * 会自然被判为陈旧并丢弃。</p>
      */
-    public int reportedAttempt(final String jobId) {
-        return jdbc.sql("select reported_attempt from replay_processing_job where job_id = :jobId")
+    public int attemptWatermark(final String jobId) {
+        return jdbc.sql("select attempt_watermark from replay_processing_job where job_id = :jobId")
                 .param("jobId", jobId)
                 .query(Integer.class)
                 .optional()
@@ -184,22 +188,22 @@ public final class ReplayJobAuthority {
     }
 
     /**
-     * 单调推进 reported attempt（{@code reported_attempt = max(current, attempt)}）。
+     * 单调推进 attempt 水位线（{@code attempt_watermark = max(current, attempt)}）。
      *
      * <p>刻意不做任何 job 状态判定：状态迁移的唯一所有者仍是状态机，本列只是一个版本号，
      * 与 revision 同理只用于拒绝乱序/陈旧的并发写入。</p>
      *
      * @return {@code false} 表示该 attempt 已陈旧（权威状态里已有更大的 attempt），调用方必须丢弃
      */
-    public boolean advanceReportedAttempt(final String jobId, final int attempt) {
+    public boolean advanceAttemptWatermark(final String jobId, final int attempt) {
         final int advanced = jdbc.sql("""
-                        update replay_processing_job set reported_attempt = :attempt
-                        where job_id = :jobId and reported_attempt < :attempt
+                        update replay_processing_job set attempt_watermark = :attempt
+                        where job_id = :jobId and attempt_watermark < :attempt
                         """)
                 .param("jobId", jobId)
                 .param("attempt", attempt)
                 .update();
-        return advanced > 0 || reportedAttempt(jobId) >= attempt;
+        return advanced > 0 || attemptWatermark(jobId) >= attempt;
     }
 
     /** 读取 job 投影（含全部 source，按 source_index 升序）；两条 SELECT 在同一快照内完成。 */
