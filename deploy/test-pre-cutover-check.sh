@@ -289,6 +289,17 @@ grep -Fq 'business-postgres: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres-loopback: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres-provisioning: PASS' <<< "$ready_output"
 
+# The expected pre-DNS state is a completed TLS handshake whose chain is not yet
+# trusted (curl exit 60). That must PASS without disabling verification, which is
+# the whole point of splitting the edge gate by phase.
+untrusted_edge_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_TLS_EXIT=60)"
+grep -Fq 'PRE_CUTOVER_READY' <<< "$untrusted_edge_output" \
+  || { echo "FAIL: curl exit 60 (untrusted chain) must pass the pre-DNS gate (output: $untrusted_edge_output)" >&2; exit 1; }
+grep -Fq 'public-edge-sni-web: PASS' <<< "$untrusted_edge_output" \
+  || { echo "FAIL: curl exit 60 must pass public-edge-sni-web" >&2; exit 1; }
+grep -Fq 'public-edge-sni-auth: PASS' <<< "$untrusted_edge_output" \
+  || { echo "FAIL: curl exit 60 must pass public-edge-sni-auth" >&2; exit 1; }
+
 # Exercise the actual promoted TX layout: the wrapper and deploy helper are
 # siblings under runtime/deploy, with no repository checkout or source root.
 RELOCATED_ROOT="$WORK/relocated-root"
@@ -424,6 +435,8 @@ run_gate_failure "public-edge-sni-web-unreachable" 'public-edge-sni-web: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_EXIT=7
 run_gate_failure "public-edge-sni-auth-unreachable" 'public-edge-sni-auth: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_EXIT=28
+run_gate_failure "public-edge-sni-handshake-failed" 'public-edge-sni-web: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_EXIT=35
 run_gate_failure "public-edge-sni-non-2xx" 'public-edge-sni-web: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_STATUS=503
 # An unknown phase must fail closed, and an unknown flag must be a usage error:
