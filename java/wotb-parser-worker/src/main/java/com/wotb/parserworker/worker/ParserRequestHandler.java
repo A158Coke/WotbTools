@@ -62,6 +62,15 @@ public class ParserRequestHandler {
     /** Dataset prefix below the job directory. */
     private static final String RESULT_PREFIX = "result/source-";
 
+    /**
+     * The canonical runner's stable code for a sink {@code IOException} (see
+     * {@code ReplayProcessingSourceRunner.failureMessage}). The runner collapses the exception into
+     * its error code, so the code is the only handle the worker has on "the write failed, the replay
+     * was fine" — and that distinction is the whole difference between a retryable infrastructure
+     * failure and a terminal per-source verdict.
+     */
+    static final String STORAGE_UNAVAILABLE_CODE = "PROCESSING_JOB_STORAGE_UNAVAILABLE";
+
     private final ObjectStorage storage;
     private final DefaultReplayProcessingFacade processingFacade;
     private final ReplayProcessingLifecycle lifecycle;
@@ -130,14 +139,15 @@ public class ParserRequestHandler {
     }
 
     /**
-     * Parks a delivery whose body could not be decoded on the DLQ path.
+     * Parks a delivery the worker calls terminal on the DLQ path, verbatim.
      *
-     * <p>An undecodable body is the one failure the worker can call terminal on its own: no
-     * {@code jobId} or {@code attempt} exists to report, and re-delivering the same bytes can never
-     * succeed, so the retry loop would only spin. The raw delivery is preserved for an operator
-     * instead.</p>
+     * <p>Two failures are terminal for the worker: a body it cannot decode (no {@code jobId} or
+     * {@code attempt} exists to report, and re-delivering the same bytes can never succeed), and a
+     * request whose report could not be delivered (the transport redelivers it, but the raw delivery
+     * is parked so an operator can see what never settled). Both preserve the original bytes so an
+     * operator can diagnose the delivery and re-publish it deliberately.</p>
      */
-    public void parkUndecodableRequest(final byte[] rawBody) {
+    public void parkTerminalRequest(final byte[] rawBody) {
         outcomePublisher.parkTerminal(Objects.requireNonNull(rawBody, "rawBody"));
     }
 
@@ -171,10 +181,18 @@ public class ParserRequestHandler {
                 () -> ReplayProcessingSourceRunner.requireBattle(
                         trackedProcessing(sourceName, replayBytes)));
         if (outcome.entry().failed()) {
+            final String code = errorCode(outcome.entry().failureMessage());
+            if (STORAGE_UNAVAILABLE_CODE.equals(code)) {
+                // The replay was readable and the parse succeeded; only the artifact write failed.
+                // That is infrastructure, not a property of the bytes, so it must leave through the
+                // retryable parser.failed path instead of becoming a terminal per-source FAILED.
+                LOG.error("event=parser_worker_artifact_storage_failed jobId={} sourceIndex={} sourceName={}",
+                        jobId, sourceIndex, sourceName);
+                throw new ParserArtifactStorageException(code, outcome.entry().failureMessage());
+            }
             LOG.warn("event=parser_worker_source_failed jobId={} sourceIndex={} sourceName={} failure={}",
                     jobId, sourceIndex, sourceName, outcome.entry().failureMessage());
-            return new ParserSourceOutcome(sourceIndex, sourceName, ParserSourceStatus.FAILED,
-                    errorCode(outcome.entry().failureMessage()));
+            return new ParserSourceOutcome(sourceIndex, sourceName, ParserSourceStatus.FAILED, code);
         }
         writeDataset(jobId, sourceIndex, sourceName, outcome);
         return new ParserSourceOutcome(sourceIndex, sourceName, ParserSourceStatus.READY, null);

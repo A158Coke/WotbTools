@@ -26,6 +26,7 @@ import com.wotb.contracts.ReplayProcessingSource;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.processing.ReplayProcessingLifecycle;
 import com.wotb.core.replay.processing.ReplayProcessingSourceOutcome;
+import com.wotb.parserworker.worker.ParserOutcomePublishException;
 import com.wotb.parserworker.worker.ParserRequestHandler;
 import com.wotb.parserworker.worker.ParserRequestListener;
 import com.wotb.parserworker.worker.ParserSourceDataset;
@@ -39,6 +40,7 @@ import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -100,6 +102,11 @@ class ParserWorkerPipelineTest {
      */
     private static String jobId;
     private static final String REPLAY_NAME = "random-battle-example.wotbreplay";
+
+    /** Mirrors ParserWorkerAssembly: consumer concurrency and per-consumer prefetch. */
+    private static final int WORKER_CONCURRENCY = 2;
+    private static final int WORKER_PREFETCH = 1;
+
     private static final Duration SETTLE_TIMEOUT = Duration.ofSeconds(90);
     private static final long POLL_MILLIS = 100L;
     private static final Path SCHEMA_PATH = Path.of("..", "..", "contracts", "mq", "parser-messages.json");
@@ -286,7 +293,7 @@ class ParserWorkerPipelineTest {
     }
 
     @Test
-    void missingInputIsRetriedThroughTheDelayQueueWithARetryableReport() throws Exception {
+    void missingInputIsReportedAsARetryableFailureAndAcked() throws Exception {
         // No object exists for the requested source: the storage read fails, which is an
         // infrastructure failure, not a property of the replay bytes.
         final SimpleMessageListenerContainer container = listenerContainer();
@@ -298,22 +305,18 @@ class ParserWorkerPipelineTest {
             assertMatchesSchemaRequired("failed", failed.getBody());
             final ParserFailedMessage report = CODEC.decodeFailed(failed.getBody());
             assertEquals("PARSER_WORKER_STORAGE_UNAVAILABLE", report.errorCode());
-            assertTrue(report.retryable(),
-                    "the report must say retryable, because the request is being retried");
-            awaitQueueEmpty(ParserTopology.PARSER_QUEUE, "the rejected request leaving the work queue");
+            assertTrue(report.retryable(), "the control plane decides whether this attempt is retried");
+            awaitQueueEmpty(ParserTopology.PARSER_QUEUE, "the reported request leaving the work queue");
         } finally {
             container.stop();
         }
 
-        // Retryable, not terminal: the rejection rests in the broker's delay queue and returns to
-        // parser.request when its TTL expires. The DLQ stays reserved for terminal failures, and the
-        // worker keeps no retry state of its own.
-        final Message retried = awaitMessage(ParserTopology.PARSER_RETRY_QUEUE, SETTLE_TIMEOUT);
-        assertNotNull(retried, "a retryable rejection must wait in the retry queue");
-        assertEquals(ParserTopology.PARSER_RETRY_ROUTING_KEY,
-                retried.getMessageProperties().getReceivedRoutingKey());
+        // The request is settled once its report is confirmed: the worker does not create a logical
+        // retry, so nothing travels through the retry delay queue and nothing is parked.
+        assertQueueEmpty(ParserTopology.PARSER_RETRY_QUEUE);
         assertQueueEmpty(ParserTopology.PARSER_DLQ);
         assertQueueEmpty(ParserTopology.PARSER_QUEUE);
+        assertQueueEmpty(ParserTopology.PARSER_RESULT_QUEUE);
     }
 
     @Test
@@ -345,18 +348,124 @@ class ParserWorkerPipelineTest {
         assertQueueEmpty(ParserTopology.PARSER_QUEUE);
     }
 
+    @Test
+    void artifactWriteFailureIsReportedAsARetryableInfrastructureFailure() throws Exception {
+        // The replay is readable and the canonical parse succeeds: only the artifact write fails.
+        // That is infrastructure, not a property of the bytes, so it must leave through the retryable
+        // parser.failed path instead of becoming a terminal per-source FAILED on parser.result.
+        final byte[] replay = Files.readAllBytes(FIXTURE_DIR.resolve(REPLAY_NAME));
+        put(ObjectStorageKeys.tempJobObject(jobId, "input/0/" + REPLAY_NAME), replay);
+
+        final SimpleMessageListenerContainer container =
+                listenerContainer(new UnwritableArtifactStorage(storage));
+        container.start();
+        try {
+            dispatchRequest(1, REPLAY_NAME);
+            final Message failed = awaitOutcome(ParserTopology.PARSER_FAILED_ROUTING_KEY, SETTLE_TIMEOUT);
+            assertNotNull(failed, "an artifact write failure must be reported as parser.failed");
+            assertMatchesSchemaRequired("failed", failed.getBody());
+            final ParserFailedMessage report = CODEC.decodeFailed(failed.getBody());
+            assertEquals("PARSER_WORKER_STORAGE_UNAVAILABLE", report.errorCode());
+            assertTrue(report.retryable(), "a transient storage outage is retryable");
+            // No terminal per-source verdict: the failure report is the only thing on the result path.
+            assertQueueEmpty(ParserTopology.PARSER_RESULT_QUEUE);
+            awaitQueueEmpty(ParserTopology.PARSER_QUEUE, "the reported request leaving the work queue");
+        } finally {
+            container.stop();
+        }
+        // The worker never creates a logical retry: retrying is a control-plane decision made from
+        // parser.failed, so the delay queue stays empty and the request is not parked.
+        assertQueueEmpty(ParserTopology.PARSER_RETRY_QUEUE);
+        assertQueueEmpty(ParserTopology.PARSER_DLQ);
+        assertQueueEmpty(ParserTopology.PARSER_QUEUE);
+    }
+
+    @Test
+    void undeliveredFailureReportLeavesTheRequestUnacknowledgedAndRedeliveryKeepsTheAttempt() throws Exception {
+        // The report itself cannot be published (broker confirm lost). Nothing may be acknowledged:
+        // the transport has to redeliver the SAME attempt rather than the worker inventing a new one
+        // or silently settling a job that no outcome will ever reach.
+        final ParserRequestHandler undeliverable = new ParserRequestHandler(storage,
+                new DefaultReplayProcessingFacade(), new RecordingLifecycle(),
+                new RabbitParserOutcomePublisher(template, CODEC, Duration.ofSeconds(10)), null) {
+
+            @Override
+            public void publishFailed(final ParserRequestMessage request, final String errorCode,
+                                      final boolean retryable) {
+                throw new ParserOutcomePublishException("simulated lost broker confirm");
+            }
+        };
+        final SimpleMessageListenerContainer container = listenerContainer(undeliverable);
+        container.start();
+        try {
+            dispatchRequest(7, "absent.wotbreplay");
+            // The consumer took the request, attempted the report and settled nothing.
+            awaitQueueEmpty(ParserTopology.PARSER_QUEUE, "the request being taken by the consumer");
+        } finally {
+            container.stop();
+        }
+        // Stopping the consumer releases its unacknowledged delivery back to the work queue: had the
+        // worker acknowledged it, there would be nothing left to redeliver.
+        final Message redelivered = awaitMessage(ParserTopology.PARSER_QUEUE, SETTLE_TIMEOUT);
+        assertNotNull(redelivered,
+                "an unacknowledged request must come back to the work queue, not disappear");
+        final ParserRequestMessage request = CODEC.decodeRequest(redelivered.getBody());
+        assertEquals(7, request.attempt(), "transport redelivery must preserve the same attempt");
+        assertEquals(jobId, request.jobId());
+        assertQueueEmpty(ParserTopology.PARSER_RESULT_QUEUE);
+        assertQueueEmpty(ParserTopology.PARSER_RETRY_QUEUE);
+        assertQueueEmpty(ParserTopology.PARSER_DLQ);
+    }
+
+    @Test
+    void theContainerRunsTheConfiguredNumberOfConsumers() throws Exception {
+        final SimpleMessageListenerContainer container = listenerContainer();
+        container.start();
+        try {
+            final long deadline = System.nanoTime() + SETTLE_TIMEOUT.toNanos();
+            int consumers = 0;
+            while (System.nanoTime() < deadline && consumers != WORKER_CONCURRENCY) {
+                final var info = admin.getQueueInfo(ParserTopology.PARSER_QUEUE);
+                consumers = info == null ? 0 : info.getConsumerCount();
+                if (consumers != WORKER_CONCURRENCY) {
+                    sleep();
+                }
+            }
+            assertEquals(WORKER_CONCURRENCY, consumers,
+                    "concurrency is the consumer count; a larger prefetch alone would still parse "
+                            + "one replay at a time");
+        } finally {
+            container.stop();
+        }
+    }
+
     // ---- helpers -------------------------------------------------------------------------------
 
     private static SimpleMessageListenerContainer listenerContainer() {
-        final RabbitParserOutcomePublisher publisher =
-                new RabbitParserOutcomePublisher(template, CODEC, Duration.ofSeconds(10));
-        final ParserRequestHandler handler = new ParserRequestHandler(storage,
-                new DefaultReplayProcessingFacade(), new RecordingLifecycle(), publisher, null);
+        return listenerContainer(storage);
+    }
+
+    /**
+     * The same wiring the production assembly uses: {@code WORKER_CONCURRENCY} consumers and one
+     * unacked delivery per consumer. An artifact-sink failure needs its own storage, so the sink is
+     * injectable here.
+     */
+    private static SimpleMessageListenerContainer listenerContainer(final ObjectStorage objectStorage) {
+        final ParserRequestHandler handler = new ParserRequestHandler(objectStorage,
+                new DefaultReplayProcessingFacade(), new RecordingLifecycle(),
+                new RabbitParserOutcomePublisher(template, CODEC, Duration.ofSeconds(10)), null);
+        return listenerContainer(handler);
+    }
+
+    private static SimpleMessageListenerContainer listenerContainer(final ParserRequestHandler handler) {
         final SimpleMessageListenerContainer container =
                 new SimpleMessageListenerContainer(connectionFactory);
         container.setQueueNames(ParserTopology.PARSER_QUEUE);
         container.setAcknowledgeMode(AcknowledgeMode.MANUAL);
-        container.setPrefetchCount(1);
+        container.setConcurrentConsumers(WORKER_CONCURRENCY);
+        container.setMaxConcurrentConsumers(WORKER_CONCURRENCY);
+        container.setPrefetchCount(WORKER_PREFETCH);
+        container.setDefaultRequeueRejected(false);
         container.setMessageListener(new ParserRequestListener(CODEC, handler));
         return container;
     }
@@ -528,9 +637,37 @@ class ParserWorkerPipelineTest {
         return factory;
     }
 
+    /**
+     * Reads fine, fails every write: a storage outage that starts only once the replay has been read
+     * and parsed, which is exactly the case the artifact-write classification has to get right.
+     */
+    private static final class UnwritableArtifactStorage implements ObjectStorage {
+
+        private final ObjectStorage delegate;
+
+        private UnwritableArtifactStorage(final ObjectStorage delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void put(final ObjectKey key, final InputStream content, final long contentLength,
+                        final String contentType) throws IOException {
+            throw new IOException("simulated object storage outage for " + key.value());
+        }
+
+        @Override
+        public InputStream get(final ObjectKey key) throws IOException {
+            return delegate.get(key);
+        }
+
+        @Override
+        public boolean exists(final ObjectKey key) throws IOException {
+            return delegate.exists(key);
+        }
+    }
+
     /** Records the last lifecycle outcome so the local path's success can be asserted. */
     private static final class RecordingLifecycle implements ReplayProcessingLifecycle {
-
         private ReplayProcessingSourceOutcome lastOutcome;
 
         @Override

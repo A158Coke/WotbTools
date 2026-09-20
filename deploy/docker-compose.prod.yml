@@ -112,7 +112,11 @@ services:
       MINIO_BUCKET: "${PARSER_WORKER_MINIO_BUCKET:-wotbtools-temp}"
       MINIO_ACCESS_KEY: "${YECAO_MINIO_WORKER_ACCESS_KEY:-}"
       MINIO_SECRET_KEY: "${YECAO_MINIO_WORKER_SECRET_KEY:-}"
-      PARSER_WORKER_PREFETCH: "${PARSER_WORKER_PREFETCH:-2}"
+      # Concurrency is the number of consumers (parallel parses); prefetch is the per-consumer
+      # unacked backlog. Retry policy is control-plane owned: the worker never nacks into a broker
+      # retry loop, so there is no worker-side retry budget setting.
+      PARSER_WORKER_CONCURRENCY: "${PARSER_WORKER_CONCURRENCY:-2}"
+      PARSER_WORKER_PREFETCH: "${PARSER_WORKER_PREFETCH:-1}"
       PARSER_WORKER_CONFIRM_TIMEOUT_SEC: "${PARSER_WORKER_CONFIRM_TIMEOUT_SEC:-10}"
       PARSER_WORKER_SHUTDOWN_TIMEOUT_SEC: "${PARSER_WORKER_SHUTDOWN_TIMEOUT_SEC:-30}"
     restart: unless-stopped
