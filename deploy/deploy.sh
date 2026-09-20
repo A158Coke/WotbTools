@@ -73,6 +73,25 @@ explicitly_selected() {
   return 1
 }
 
+# The Yecao parser-worker is the only execution-plane service on that host and must stay stateless:
+# no database credentials, no local replay job directory, no in-process execution mode. A future
+# edit that gave it any of these would silently create a second, non-authoritative replay runtime
+# (PostgreSQL is the job authority on TX and MinIO holds the datasets), so the deploy refuses to
+# stage such a worker instead of starting it.
+assert_parser_worker_execution_plane() {
+  local compose_file="$1"
+  explicitly_selected parser-worker || return 0
+  local block
+  block="$(awk '/^  parser-worker:/{flag=1;next} /^  [A-Za-z0-9_-]+:/{flag=0} flag' "$compose_file")"
+  [ -n "$block" ] || die "staged compose is missing the parser-worker service definition."
+  local entry
+  for entry in POSTGRES_HOST POSTGRES_PASSWORD SPRING_DATASOURCE \
+    REPLAY_PROCESSING_JOB_DIR WOTB_REPLAY_EXECUTION_MODE WOTB_REPLAY_PROCESSING_JOB_REPOSITORY; do
+    ! grep -Fq "$entry" <<< "$block" \
+      || die "parser-worker must stay stateless; the staged compose must not define $entry for it."
+  done
+}
+
 has_image_service() {
   local wanted="$1" service
   for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
@@ -289,6 +308,7 @@ stage_and_validate() {
   fi
   render_effective_compose "$staged_source" "$EFFECTIVE_COMPOSE" \
     "$backend_tag" "$frontend_tag" "$keycloak_tag" "$worker_tag"
+  assert_parser_worker_execution_plane "$EFFECTIVE_COMPOSE"
   if ! docker compose -f "$EFFECTIVE_COMPOSE" config >/dev/null; then
     die "staged compose config is invalid; live deployment was not changed."
   fi

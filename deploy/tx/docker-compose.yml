@@ -115,8 +115,9 @@ services:
     image: ghcr.io/a158coke/wotbtools-frontend:${TAG:?TAG is required}
     environment:
       # nginx's official template entrypoint expands this value before nginx
-      # starts. It is intentionally a WireGuard-only backend address.
-      BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://10.20.0.2:8087}
+      # starts. It is the TX-internal business runtime: public API traffic is
+      # terminated inside wotb_tx_internal and never crosses WireGuard.
+      BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://business-api:8087}
       NGINX_ENVSUBST_FILTER: ^BACKEND_UPSTREAM$$
     volumes:
       - ./nginx/frontend.conf.template:/etc/nginx/templates/default.conf.template:ro
@@ -125,6 +126,7 @@ services:
       - ${TX_RUNTIME_ROOT:?TX_RUNTIME_ROOT is required}/android-release:/usr/share/nginx/html/download/android:ro
     depends_on:
       - keycloak
+      - business-api
     restart: unless-stopped
     logging: *default-logging
 

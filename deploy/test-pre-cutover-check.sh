@@ -23,7 +23,9 @@ grep -Fq 'clientAuthMethod' "$DEPLOY"
 grep -Fq 'https://graph.qq.com/oauth2.0/authorize' "$DEPLOY"
 grep -Fq 'https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1' "$DEPLOY"
 grep -Fq 'https://graph.qq.com/user/get_user_info' "$DEPLOY"
-grep -Fq 'wireguard-backend' "$DEPLOY"
+grep -Fq 'tx-internal-api-route: PASS' "$DEPLOY"
+grep -Fq 'distributed-execution-plane: PASS' "$DEPLOY"
+! grep -Fq 'wireguard-backend' "$DEPLOY"
 grep -Fq 'keycloak-qq-provider.jar' "$DEPLOY"
 grep -Fq 'keycloak-wargaming-provider.jar' "$DEPLOY"
 grep -Fq 'com.wotbtools.app' "$DEPLOY"
@@ -62,9 +64,14 @@ business_ports='[{"host_ip":"127.0.0.1","published":25432,"target":5432}]'
 if [ "${FAKE_BUSINESS_PORT_EXPOSED:-0}" = 1 ]; then
   business_ports='[{"host_ip":"0.0.0.0","published":25432,"target":5432}]'
 fi
+frontend_upstream="${FAKE_FRONTEND_UPSTREAM:-http://business-api:8087}"
+execution_mode="${FAKE_EXECUTION_MODE:-distributed}"
+job_repository="${FAKE_JOB_REPOSITORY:-jdbc}"
+business_api_ports="${FAKE_BUSINESS_API_PUBLISHED_PORT:-[]}"
 case "${1:-}" in
   config)
-    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]}}}\n' "$business_ports"
+    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{"WOTB_REPLAY_EXECUTION_MODE":"%s","WOTB_REPLAY_PROCESSING_JOB_REPOSITORY":"%s"}}}}\n' \
+      "$business_ports" "$frontend_upstream" "$business_api_ports" "$execution_mode" "$job_repository"
     ;;
   ps)
     if [[ "$*" == *business-postgres* ]]; then
@@ -85,9 +92,7 @@ case "${1:-}" in
     exit 0
     ;;
   run)
-    if [[ "$*" == *10.20.0.2:8087/api/health* ]] && [ "${FAKE_WG_FAIL:-0}" = 1 ]; then
-      printf '503\n'
-    elif [[ "$*" == *protocol/openid-connect/token* ]]; then
+    if [[ "$*" == *protocol/openid-connect/token* ]]; then
       printf '{"access_token":"fake-admin-token"}\n'
     elif [[ "$*" == *identity-provider/instances* ]]; then
       if [ "${FAKE_QQ_IDP_INVALID:-0}" = 1 ]; then
@@ -126,6 +131,8 @@ run_check() {
 printf 'tx-local-opentofu-business-postgres\n' > "$WORK/business-postgres.tofu-provisioned"
 ready_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT")"
 grep -Fq 'PRE_CUTOVER_READY' <<< "$ready_output"
+grep -Fq 'tx-internal-api-route: PASS' <<< "$ready_output"
+grep -Fq 'distributed-execution-plane: PASS' <<< "$ready_output"
 grep -Fq 'DNS_CUTOVER_NOT_PERFORMED' <<< "$ready_output"
 grep -Fq 'WAITING_FOR_OPERATOR_APPROVAL' <<< "$ready_output"
 grep -Fq 'qq-idp-admin-api: PASS' <<< "$ready_output"
@@ -153,21 +160,37 @@ grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' <<< "$relocated_ready_output"
 grep -Fq 'yecao-backend-wireguard-bind: PASS (deployed contract)' <<< "$relocated_ready_output"
 grep -Fq 'business-postgres: PASS' <<< "$relocated_ready_output"
 
-set +e
-blocked_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_WG_FAIL=1)"
-blocked_rc=$?
-set -e
-[ "$blocked_rc" -ne 0 ]
-! grep -Fq 'PRE_CUTOVER_READY' <<< "$blocked_output"
-grep -Fq 'wireguard-backend: FAIL' <<< "$blocked_output"
+# --- Routing and execution-plane boundary must independently block readiness ---
+run_routing_failure() {
+  local label="$1" expected="$2" tx_dir="$3" check_script="$4"
+  shift 4
+  local output rc
+  set +e
+  output="$(run_check "$tx_dir" "$check_script" "$@")"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || { echo "FAIL: $label must block PRE_CUTOVER_READY" >&2; exit 1; }
+  ! grep -Fq 'PRE_CUTOVER_READY' <<< "$output" \
+    || { echo "FAIL: $label emitted PRE_CUTOVER_READY" >&2; exit 1; }
+  grep -Fq 'PRE_CUTOVER_NOT_READY' <<< "$output" \
+    || { echo "FAIL: $label must report PRE_CUTOVER_NOT_READY (output: $output)" >&2; exit 1; }
+  grep -Fq "$expected" <<< "$output" \
+    || { echo "FAIL: $label must report '$expected' (output: $output)" >&2; exit 1; }
+}
 
-set +e
-relocated_blocked_output="$(run_check "" "$RELOCATED_ROOT/deploy/pre-cutover-check.sh" env FAKE_WG_FAIL=1)"
-relocated_blocked_rc=$?
-set -e
-[ "$relocated_blocked_rc" -ne 0 ]
-! grep -Fq 'PRE_CUTOVER_READY' <<< "$relocated_blocked_output"
-grep -Fq 'wireguard-backend: FAIL' <<< "$relocated_blocked_output"
+run_routing_failure "frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
+run_routing_failure "frontend-upstream-public" 'tx-internal-api-route: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_UPSTREAM=https://example.test
+run_routing_failure "business-api-published-port" 'tx-internal-api-route: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
+  FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"0.0.0.0","published":8087,"target":8087}]'
+run_routing_failure "relocated-frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
+  "" "$RELOCATED_ROOT/deploy/pre-cutover-check.sh" env FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
+run_routing_failure "local-execution-plane" 'distributed-execution-plane: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_EXECUTION_MODE=local
+run_routing_failure "memory-job-authority" 'distributed-execution-plane: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_JOB_REPOSITORY=memory
 
 # --- Business PostgreSQL must independently block readiness -------------------
 run_business_failure() {

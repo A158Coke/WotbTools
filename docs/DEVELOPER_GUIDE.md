@@ -619,6 +619,14 @@ deployment-owned `health-probe` 访问（app `/api/health` + management
 `/actuator/health`，管理端口 8088）。因此 release plan 把 backend 镜像路由到
 `business-api`（target `tx`）；legacy Yecao service `wotb-backend` 仍保留为可显式选择的
 rollback/退役服务，但**不再被任何推断选中**，普通 Yecao compose 配置变更不得刷新它。
+公开 API 路由已在 TX 内部终结：`wotb-frontend` 的 nginx upstream 固定为
+`http://business-api:8087`（`TX_BACKEND_UPSTREAM` 只接受这个 TX-internal 值，公网 host 与
+已退役的 Yecao `10.20.0.2:8087` 一律 fail-closed 拒绝），任何服务都不得发布 8087；TX deploy
+staging 与只读 `PRE_CUTOVER_READY` 门禁分别用 `assert_routing_boundary` 与
+`tx-internal-api-route` / `distributed-execution-plane` 两条 token 断言这些不变量，因此没有任何
+公开流量再经过 Yecao backend，WireGuard 只剩 TX→MinIO `10.20.0.2:9000`、TX↔RabbitMQ 与按需观测。
+Yecao parser-worker 作为唯一执行面服务必须保持无状态：选中它时 deploy 会拒绝任何给它数据库凭据、
+本地 replay job 目录或执行面开关的 staged Compose。
 `KEYCLOAK_ISSUER_URI` 保持 public URL（Keycloak 的 `iss` 由 hostname 决定），
 `KEYCLOAK_ADMIN_SERVER_URL` 故意指向 TX-internal `http://keycloak:8080`，避免 DNS
 cutover 前经公网访问并管理 Yecao realm。HoF 回放原件是永久内容寻址文件，挂 TX
