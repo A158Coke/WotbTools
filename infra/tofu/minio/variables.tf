@@ -17,13 +17,25 @@ variable "minio_root_password" {
 }
 
 variable "worker_access_key" {
-  description = "Pre-provisioned worker access key; this is the MinIO IAM user name."
+  description = "Pre-provisioned Yecao parser-worker access key; this is the MinIO IAM user name."
   type        = string
   sensitive   = true
 }
 
 variable "worker_secret_key" {
-  description = "Pre-provisioned worker secret key. Sensitive provider state is protected on Yecao."
+  description = "Pre-provisioned Yecao parser-worker secret key. Sensitive provider state is protected on Yecao."
+  type        = string
+  sensitive   = true
+}
+
+variable "control_api_access_key" {
+  description = "Pre-provisioned TX replay control-plane access key; this is the MinIO IAM user name."
+  type        = string
+  sensitive   = true
+}
+
+variable "control_api_secret_key" {
+  description = "Pre-provisioned TX replay control-plane secret key. Sensitive provider state is protected on Yecao."
   type        = string
   sensitive   = true
 }
