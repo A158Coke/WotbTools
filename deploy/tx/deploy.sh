@@ -716,8 +716,79 @@ if actual_sha256 != expected_sha256:
 PY
 }
 
+stage_and_promote_rabbitmq_provider_mirror() {
+  local provider_source="$1"
+  local provider_version="$2"
+  local provider_dir="$3"
+  local staging_root
+
+  install -d -m 755 "$RABBITMQ_TOFU_MIRROR" "$(dirname "$provider_dir")" || return 1
+  staging_root="$(mktemp -d "$RABBITMQ_TOFU_MIRROR/.rabbitmq-provider-staging.XXXXXX")" \
+    || return 1
+
+  (
+    local staging_provider_dir staged_archive staged_metadata backup_dir archive
+    local cleanup_staging=1
+    local -a staged_archives=()
+
+    cleanup_rabbitmq_provider_staging() {
+      if [ "$cleanup_staging" = 1 ]; then
+        rm -rf -- "$staging_root"
+      fi
+    }
+    trap cleanup_rabbitmq_provider_staging EXIT
+
+    unset TF_CLI_CONFIG_FILE
+    if ! tofu -chdir="$RABBITMQ_TOFU_ROOT" providers mirror \
+      -platform="$RABBITMQ_PROVIDER_PLATFORM" "$staging_root"; then
+      echo "TX RabbitMQ provider staging download failed." >&2
+      exit 1
+    fi
+
+    staging_provider_dir="$staging_root/$provider_source"
+    staged_archive="$staging_provider_dir/terraform-provider-rabbitmq_${provider_version}_${RABBITMQ_PROVIDER_PLATFORM}.zip"
+    staged_metadata="$staging_provider_dir/${provider_version}.json"
+    if [ -d "$staging_root/registry.opentofu.org" ]; then
+      while IFS= read -r archive; do
+        [ -n "$archive" ] && staged_archives+=("$archive")
+      done < <(find "$staging_root/registry.opentofu.org" -type f \
+        -name 'terraform-provider-*.zip' -print | sort)
+    fi
+    if [ "${#staged_archives[@]}" -ne 1 ] || [ "${staged_archives[0]:-}" != "$staged_archive" ]; then
+      echo "TX RabbitMQ provider staging source/version mismatch: expected only $staged_archive." >&2
+      exit 1
+    fi
+    if ! verify_rabbitmq_provider_archive \
+      "$staged_archive" "$staged_metadata" "$provider_version"; then
+      echo "TX RabbitMQ provider staging checksum validation failed." >&2
+      exit 1
+    fi
+
+    # Both renames stay on the mirror filesystem. The old provider directory is
+    # held inside staging until the verified replacement reaches its canonical
+    # path, so a failed promotion can restore the original without touching any
+    # PostgreSQL or Keycloak provider directory.
+    backup_dir="$staging_root/canonical-backup"
+    if [ -e "$provider_dir" ]; then
+      if ! mv -- "$provider_dir" "$backup_dir"; then
+        echo "TX RabbitMQ provider canonical directory could not be staged for replacement." >&2
+        exit 1
+      fi
+    fi
+    if ! mv -- "$staging_provider_dir" "$provider_dir"; then
+      echo "TX RabbitMQ provider promotion failed." >&2
+      if [ -e "$backup_dir" ] && ! mv -- "$backup_dir" "$provider_dir"; then
+        cleanup_staging=0
+        echo "TX RabbitMQ provider rollback failed; original directory remains at $backup_dir." >&2
+      fi
+      exit 1
+    fi
+  )
+}
+
 bootstrap_rabbitmq_provider_mirror() {
   local metadata provider_source provider_version provider_dir expected_archive mirror_metadata archive
+  local repairing=0
   local -a installed_archives=()
 
   metadata="$(rabbitmq_provider_lock_metadata)" \
@@ -730,6 +801,9 @@ bootstrap_rabbitmq_provider_mirror() {
   provider_dir="$RABBITMQ_TOFU_MIRROR/$provider_source"
   expected_archive="$provider_dir/terraform-provider-rabbitmq_${provider_version}_${RABBITMQ_PROVIDER_PLATFORM}.zip"
   mirror_metadata="$provider_dir/${provider_version}.json"
+  if [ -L "$provider_dir" ] || { [ -e "$provider_dir" ] && [ ! -d "$provider_dir" ]; }; then
+    die "TX RabbitMQ provider mirror has an unsupported canonical path: $provider_dir."
+  fi
   if [ -d "$provider_dir" ]; then
     while IFS= read -r archive; do
       [ -n "$archive" ] && installed_archives+=("$archive")
@@ -740,24 +814,25 @@ bootstrap_rabbitmq_provider_mirror() {
   if [ "${#installed_archives[@]}" -gt 0 ]; then
     [ "${#installed_archives[@]}" -eq 1 ] && [ "${installed_archives[0]}" = "$expected_archive" ] \
       || die "TX RabbitMQ provider mirror version mismatch: expected only $expected_archive."
-    verify_rabbitmq_provider_archive "$expected_archive" "$mirror_metadata" "$provider_version" \
-      || die "TX RabbitMQ provider mirror checksum validation failed for $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM)."
-    echo "RabbitMQ provider mirror already contains $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM); reusing it."
-    return
+    if verify_rabbitmq_provider_archive "$expected_archive" "$mirror_metadata" "$provider_version"; then
+      echo "RabbitMQ provider mirror already contains $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM); reusing it."
+      return
+    fi
+    echo "RabbitMQ provider mirror contains an invalid $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM); attempting staged repair."
+    repairing=1
+  elif [ -d "$provider_dir" ]; then
+    echo "RabbitMQ provider mirror contains incomplete $provider_source state; attempting staged repair."
+    repairing=1
   fi
 
-  install -d -m 755 "$RABBITMQ_TOFU_MIRROR"
-  (
-    unset TF_CLI_CONFIG_FILE
-    tofu -chdir="$RABBITMQ_TOFU_ROOT" providers mirror \
-      -platform="$RABBITMQ_PROVIDER_PLATFORM" "$RABBITMQ_TOFU_MIRROR"
-  ) || die "TX RabbitMQ provider mirror bootstrap failed for $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM)."
-
-  [ -f "$expected_archive" ] \
-    || die "TX RabbitMQ provider mirror bootstrap did not create the expected package: $expected_archive."
-  verify_rabbitmq_provider_archive "$expected_archive" "$mirror_metadata" "$provider_version" \
-    || die "TX RabbitMQ provider mirror checksum validation failed for $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM)."
-  echo "RabbitMQ provider mirror installed $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM)."
+  stage_and_promote_rabbitmq_provider_mirror \
+    "$provider_source" "$provider_version" "$provider_dir" \
+    || die "TX RabbitMQ provider staged bootstrap failed for $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM)."
+  if [ "$repairing" = 1 ]; then
+    echo "RabbitMQ provider mirror repaired $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM)."
+  else
+    echo "RabbitMQ provider mirror installed $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM)."
+  fi
 }
 
 provision_rabbitmq() {
