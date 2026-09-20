@@ -16,9 +16,31 @@ require_env() {
 }
 
 for name in KEYCLOAK_ADMIN_USERNAME KEYCLOAK_ADMIN_PASSWORD \
-  KEYCLOAK_ADMIN_CLIENT_SECRET KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION; do
+  KEYCLOAK_ADMIN_CLIENT_SECRET KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION \
+  TX_QQ_CLIENT_ID TX_QQ_CLIENT_SECRET TX_QQ_CLIENT_SECRET_VERSION; do
   require_env "$name"
 done
+
+is_positive_integer() {
+  [[ "$1" =~ ^[1-9][0-9]*$ ]]
+}
+
+is_qq_placeholder() {
+  case "${1,,}" in
+    bootstrap-not-configured|dummy|empty|juhe|juhe-qq|not-configured) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+for name in TX_QQ_CLIENT_ID TX_QQ_CLIENT_SECRET; do
+  value="${!name}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  [[ -n "$value" ]] && ! is_qq_placeholder "$value" \
+    || { echo "ERROR: $name must be configured and must not be a placeholder." >&2; exit 2; }
+done
+is_positive_integer "$TX_QQ_CLIENT_SECRET_VERSION" \
+  || { echo "ERROR: TX_QQ_CLIENT_SECRET_VERSION must be a positive integer." >&2; exit 2; }
 
 command -v tofu >/dev/null 2>&1 || {
   echo "ERROR: tofu is required on TX." >&2
@@ -34,6 +56,9 @@ export TF_VAR_keycloak_admin_username="$KEYCLOAK_ADMIN_USERNAME"
 export TF_VAR_keycloak_admin_password="$KEYCLOAK_ADMIN_PASSWORD"
 export TF_VAR_keycloak_admin_client_secret="$KEYCLOAK_ADMIN_CLIENT_SECRET"
 export TF_VAR_keycloak_admin_client_secret_version="$KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION"
+export TF_VAR_qq_client_id="$TX_QQ_CLIENT_ID"
+export TF_VAR_qq_client_secret="$TX_QQ_CLIENT_SECRET"
+export TF_VAR_qq_client_secret_version="$TX_QQ_CLIENT_SECRET_VERSION"
 
 TOFU_CLI_CONFIG="${TF_CLI_CONFIG_FILE:-/opt/wotb-tx/tofurc}"
 [ -f "$TOFU_CLI_CONFIG" ] || {
