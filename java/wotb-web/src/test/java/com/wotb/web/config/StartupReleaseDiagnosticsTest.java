@@ -39,7 +39,7 @@ class StartupReleaseDiagnosticsTest {
                         .map(ILoggingEvent::getFormattedMessage)
                         .anyMatch(message -> message.equals(
                                 "WotBTools backend build=0123456789abcdef0123456789abcdef01234567 "
-                                        + "imageTag=sha-0123456789ab Flyway migration ceiling=23")),
+                                        + "imageTag=sha-0123456789ab Flyway migration ceiling=24")),
                 "启动诊断必须打印 build commit、immutable image tag 与当前 migration ceiling");
     }
 

@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayDeque;
@@ -48,8 +49,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  * onComplete 一律在锁外执行；worker 线程池内不允许出现 scheduler 不知道的第二层
  * backlog（每次派发前都在锁内预留 slot，{@code reserved+running ≤ maxConcurrent}）。</p>
  * 本类<b>不承担</b>业务 dedupe / League / Export / AI / DTO 映射。
+ *
+ * <p><b>只在 {@code local} 执行模式下存在</b>（{@code wotb.replay.execution.mode}）：分布式模式下
+ * 解析在 parser-worker 里执行，本进程绝不创建调度器/worker 线程池，因此不存在本地解析路径。
+ * 缺省（属性缺失）保持 local，既有部署行为逐字不变。</p>
  */
 @Component
+@ConditionalOnProperty(name = ReplayExecutionMode.PROPERTY,
+        havingValue = ReplayExecutionMode.LOCAL_VALUE, matchIfMissing = true)
 public final class ReplayParseScheduler implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ReplayParseScheduler.class);

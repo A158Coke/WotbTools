@@ -34,6 +34,9 @@ allowed = {
     "minio_iam_user.control_api",
     "minio_iam_policy.temporary_workspace_control_api",
     "minio_iam_user_policy_attachment.control_api",
+    # create-rollback grant: delete of the control plane's own temp/jobs/* objects
+    "minio_iam_policy.temporary_workspace_control_api_reclaim",
+    "minio_iam_user_policy_attachment.control_api_reclaim",
 }
 
 changed = []
