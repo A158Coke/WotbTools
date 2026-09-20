@@ -51,7 +51,7 @@ class ReconstructionControllerTeamAnalysisTest {
         reviewService = mock(AiReplayReviewService.class);
         workerExecutor = new AiReviewWorkerExecutor();
         controller = new ReconstructionController(reviewService, new AiCancellationRegistry(),
-                workerExecutor, new MapOverviewQueryService(null));
+                workerExecutor, new MapOverviewQueryService(null, null));
     }
 
     @AfterEach

@@ -15,6 +15,7 @@ import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.job.ProcessedDataset;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
+import com.wotb.web.replay.job.LocalReplayDatasetRepository;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -58,7 +59,7 @@ class AiReplayReviewServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiReplayReviewService(aiAnalysisService, null, null, null);
+        service = new AiReplayReviewService(aiAnalysisService, null, null, null, null);
     }
 
     @Test
@@ -188,7 +189,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), PRIOR));
-        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null, null);
 
         final AnalyzeResponse response = analyzeResult(randomResult());
 
@@ -222,7 +223,7 @@ class AiReplayReviewServiceTest {
             job.markReady(new ProcessedDataset(List.of(result.battle()), List.of("a.wotbreplay"),
                     List.of(), List.of(), null, null));
             store.register(job);
-            service = new AiReplayReviewService(aiAnalysisService, null, null, store);
+            service = new AiReplayReviewService(aiAnalysisService, null, null, store, new LocalReplayDatasetRepository(store));
             when(aiAnalysisService.analyzePlayerOrFallback(any(), eq(AllowedLanguage.ZH), any()))
                     .thenReturn(new AnalyzeResult("dataset-analysis"));
 
@@ -262,7 +263,7 @@ class AiReplayReviewServiceTest {
             job.markReady(new ProcessedDataset(List.of(result.battle()), List.of("a.wotbreplay"),
                     List.of(), List.of(), null, null));
             store.register(job);
-            service = new AiReplayReviewService(aiAnalysisService, null, null, store);
+            service = new AiReplayReviewService(aiAnalysisService, null, null, store, new LocalReplayDatasetRepository(store));
 
             final ResponseStatusException e = assertThrows(ResponseStatusException.class,
                     () -> service.analyzeFacts("j1", 0, AllowedLanguage.ZH, AiReviewStreamListener.NOOP));
@@ -289,7 +290,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), null));
-        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null, null);
 
         final AnalyzeResponse response = analyzeResult(randomResult());
 
@@ -305,7 +306,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.EN), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("fallback-text"), null));
-        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null, null);
 
         final AnalyzeResponse response = analyzeResult(randomResult(), AllowedLanguage.EN);
 
@@ -352,7 +353,7 @@ class AiReplayReviewServiceTest {
                     return new TacticalReviewHarness.HarnessOutcome(
                             new AnalyzeResult("harness-text"), PRIOR);
                 });
-        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null, null);
 
         final StringBuilder events = new StringBuilder();
         final AnalyzeResponse response = analyzeResult(randomResult(), AllowedLanguage.ZH,
@@ -381,7 +382,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), PRIOR));
-        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null, null);
 
         final AnalyzeResponse response = analyzeResult(randomResultWithReconstruction());
 
@@ -402,7 +403,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), null));
-        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null, null);
 
         // battleStartRawClockSec == null（recon 存在）→ AVAILABLE_WITH_LIMITED_TIMELINE。
         assertEquals(AnalyzeResponse.Capability.AVAILABLE_WITH_LIMITED_TIMELINE,

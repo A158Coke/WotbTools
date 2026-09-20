@@ -56,7 +56,7 @@ class AiReviewWorkerSaturationTest {
     @BeforeEach
     void setUp() {
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = spy(new AiReplayReviewService(aiService, null, null, null));
+        reviewService = spy(new AiReplayReviewService(aiService, null, null, null, null));
         cancellationRegistry = spy(new AiCancellationRegistry());
     }
 
@@ -74,7 +74,7 @@ class AiReviewWorkerSaturationTest {
         // workers=1, queue=1: max 2 tasks (1 running + 1 queued), 3rd rejected.
         workerExecutor = new AiReviewWorkerExecutor(1, 1);
         controller = new ReconstructionController(reviewService, cancellationRegistry, workerExecutor,
-                new MapOverviewQueryService(null));
+                new MapOverviewQueryService(null, null));
 
         // Task A occupies the single worker (blocking latch).
         final CountDownLatch taskAStarted = new CountDownLatch(1);
@@ -140,7 +140,7 @@ class AiReviewWorkerSaturationTest {
         // the executor type directly by checking that a 1/1 pool rejects the 3rd task.
         workerExecutor = new AiReviewWorkerExecutor(1, 1);
         controller = new ReconstructionController(reviewService, cancellationRegistry, workerExecutor,
-                new MapOverviewQueryService(null));
+                new MapOverviewQueryService(null, null));
 
         final CountDownLatch holdWorker = new CountDownLatch(1);
         doAnswer(invocation -> {
@@ -176,7 +176,7 @@ class AiReviewWorkerSaturationTest {
         // worker=1, queue=2: Task A occupies worker, Task B sits in queue.
         workerExecutor = new AiReviewWorkerExecutor(1, 2);
         controller = new ReconstructionController(reviewService, cancellationRegistry, workerExecutor,
-                new MapOverviewQueryService(null));
+                new MapOverviewQueryService(null, null));
 
         // Task A occupies the worker until released.
         final CountDownLatch taskAStarted = new CountDownLatch(1);

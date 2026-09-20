@@ -12,6 +12,7 @@ import com.rabbitmq.client.Channel;
 import com.wotb.contracts.ReplayProcessingDispatcher;
 import com.wotb.contracts.ReplayProcessingRequest;
 import com.wotb.contracts.ReplayProcessingSource;
+import com.wotb.core.model.Battle;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -97,7 +98,26 @@ class PostgresParserOutcomeHandlerPostgresTest {
         store = new ReplayProcessingJobStore(tempDir, 60, new ReplayJobAuthority(jdbc, transactions));
         dispatcher = new RecordingDispatcher();
         handler = new PostgresParserOutcomeHandler(store, new ReplayJobAuthority(jdbc, transactions),
-                dispatcher, MAX_ATTEMPTS);
+                dispatcher, MAX_ATTEMPTS, new StubFinalization());
+    }
+
+    /**
+     * 收尾替身：与真实实现同一条业务规则——至少一个 source READY 才有有效回放，否则 0 场有效。
+     * 真实的 dedupe / League / enrichment 与对象存储落地由
+     * {@code DistributedReplayProcessingPathsTest} 用真实 {@code ObjectStorage} 替身覆盖。
+     */
+    private static final class StubFinalization implements ReplayBatchFinalization {
+
+        @Override
+        public ProcessedDataset finalizeBatch(final ReplayProcessingJob job) {
+            final boolean anyReady = job.sourceStates().stream()
+                    .anyMatch(source -> source.status() == ReplayProcessingJob.SourceStatus.READY);
+            if (!anyReady) {
+                throw new ReplayBatchFinalizer.NoValidReplaysException();
+            }
+            return new ProcessedDataset(List.of(new Battle()), List.of(), List.of(), List.of(), List.of(),
+                    null, null);
+        }
     }
 
     @AfterEach
@@ -280,7 +300,7 @@ class PostgresParserOutcomeHandlerPostgresTest {
     @Test
     void retryBudgetBelowTheFirstAttemptIsRejected() {
         assertThrows(IllegalArgumentException.class, () -> new PostgresParserOutcomeHandler(
-                store, authority(), dispatcher, 0));
+                store, authority(), dispatcher, 0, new StubFinalization()));
     }
 
     @Test

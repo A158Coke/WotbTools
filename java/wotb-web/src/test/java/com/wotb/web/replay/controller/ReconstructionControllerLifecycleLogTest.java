@@ -61,11 +61,11 @@ class ReconstructionControllerLifecycleLogTest {
     @BeforeEach
     void setUp() {
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = spy(new AiReplayReviewService(aiService, null, null, null));
+        reviewService = spy(new AiReplayReviewService(aiService, null, null, null, null));
         cancellationRegistry = spy(new AiCancellationRegistry());
         workerExecutor = new AiReviewWorkerExecutor();
         controller = new ReconstructionController(reviewService, cancellationRegistry,
-                workerExecutor, new MapOverviewQueryService(null));
+                workerExecutor, new MapOverviewQueryService(null, null));
         controllerLogger = (Logger) LoggerFactory.getLogger(ReconstructionController.class);
         appender = new ListAppender<>();
         // ListAppender.list 默认是普通 ArrayList，append() 无同步：worker 线程并发写
@@ -167,7 +167,7 @@ class ReconstructionControllerLifecycleLogTest {
         // 单 worker：第一个请求占住 worker，第二个请求排队 → 排队期间被取消 → 拾取时走 CANCELLED_WHILE_QUEUED。
         workerExecutor = new AiReviewWorkerExecutor(1, 4);
         controller = new ReconstructionController(reviewService, cancellationRegistry,
-                workerExecutor, new MapOverviewQueryService(null));
+                workerExecutor, new MapOverviewQueryService(null, null));
         final CountDownLatch firstStarted = new CountDownLatch(1);
         final CountDownLatch releaseFirst = new CountDownLatch(1);
         doAnswer(invocation -> {

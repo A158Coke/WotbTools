@@ -454,8 +454,50 @@ class ReplayJobAuthorityPostgresTest {
         }
     }
 
+    /**
+     * Dataset Lease（AI / Playback / Export 正在读取）必须同时挡住**本地**与**权威侧**的 TTL 清理：
+     * 权威清理以前是一条集合式 delete，看不见进程内 lease，会把正在被消费的 job 行删掉。
+     */
     @Test
-    void deleteExpiredTerminalRemovesOnlyExpiredTerminalJobs() {
+    void ttlSweepKeepsAnExpiredTerminalJobWhileItsDatasetLeaseIsActive() {
+        final ReplayJobAuthority authority = authority();
+        final ReplayProcessingJobStore store = store(tempDir.resolve("lease-sweep"), authority);
+        try {
+            // ttl = -1 分钟 ⇒ cutoff 在“现在”之后，登记后立刻被视为过期（无需等待真实 TTL）。
+            final ReplayProcessingJobStore expiring =
+                    new ReplayProcessingJobStore(tempDir.resolve("lease-sweep-immediate"), -1, authority);
+            try {
+                final ReplayProcessingJob job =
+                        new ReplayProcessingJob("leased-ready", List.of("a.wotbreplay"));
+                expiring.register(job);
+                job.startProcessing();
+                job.markSourceReady(0);
+                job.recordParseSuccess();
+                job.markReady();
+                assertNotNull(expiring.acquireForSource("leased-ready"), "lease 必须成功获取");
+
+                expiring.sweepExpired();
+                assertTrue(authority.findJob("leased-ready").isPresent(),
+                        "lease 生效期间权威 job 行不得被 TTL 清理删掉");
+
+                expiring.release("leased-ready");
+                expiring.sweepExpired();
+                assertTrue(authority.findJob("leased-ready").isEmpty(),
+                        "release 之后下一轮 sweep 必须正常回收");
+            } finally {
+                expiring.close();
+            }
+        } finally {
+            store.close();
+        }
+    }
+
+    /**
+     * 权威侧只提供**候选集**（谁算「终态且过期」），删除由调用方按 Dataset Lease 过滤后逐条执行：
+     * 纯列举本身不得改动任何行。
+     */
+    @Test
+    void listExpiredTerminalSelectsOnlyExpiredTerminalJobs() {
         final ReplayJobAuthority authority = authority();
         final long now = System.currentTimeMillis();
         final long cutoff = now - 60 * 60 * 1000L;
@@ -466,9 +508,11 @@ class ReplayJobAuthorityPostgresTest {
         insertJob("old-processing", "PROCESSING", 0L);
         insertJob("old-queued", "QUEUED", 0L);
 
-        assertEquals(2, authority.deleteExpiredTerminal(cutoff));
-        assertEquals(List.of("fresh-ready", "old-processing", "old-queued"),
-                authority.listJobIds().stream().sorted().toList());
+        assertEquals(List.of("old-failed", "old-ready"),
+                authority.listExpiredTerminal(cutoff).stream().sorted().toList());
+        assertEquals(List.of("fresh-ready", "old-failed", "old-processing", "old-queued", "old-ready"),
+                authority.listJobIds().stream().sorted().toList(),
+                "列举候选集绝不删除任何行：删除由 sweeper 在 lease 过滤后执行");
     }
 
     @Test

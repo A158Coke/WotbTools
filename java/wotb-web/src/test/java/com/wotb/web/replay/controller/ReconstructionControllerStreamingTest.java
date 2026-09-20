@@ -71,11 +71,11 @@ class ReconstructionControllerStreamingTest {
     @BeforeEach
     void setUp() {
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = spy(new AiReplayReviewService(aiService, null, null, null));
+        reviewService = spy(new AiReplayReviewService(aiService, null, null, null, null));
         cancellationRegistry = spy(new AiCancellationRegistry());
         workerExecutor = new AiReviewWorkerExecutor();
         controller = new ReconstructionController(reviewService, cancellationRegistry, workerExecutor,
-                new MapOverviewQueryService(null));
+                new MapOverviewQueryService(null, null));
     }
 
     @AfterEach

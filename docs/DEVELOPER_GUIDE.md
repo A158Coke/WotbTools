@@ -204,8 +204,8 @@ Lease（读取期间 TTL 不清）。
 
 | 模式 | 输入 | 执行 | job/source 权威状态 | `GET .../result` 数据来源 |
 |---|---|---|---|---|
-| `local`（缺省） | 进程本地 job 目录 | 本进程 `ReplayParseScheduler` | `wotb.replay.processing-job.repository`（缺省 `memory`） | 进程内存 `ProcessedDataset` |
-| `distributed` | MinIO `temp/jobs/<jobId>/input/<i>/<name>` | RabbitMQ `parser.request` → Yecao parser-worker | 必须 `jdbc`（PostgreSQL 权威） | MinIO `temp/jobs/<jobId>/result/source-<i>.json` |
+| `local`（缺省） | 进程本地 job 目录 | 本进程 `ReplayParseScheduler` | `wotb.replay.processing-job.repository`（缺省 `memory`） | 进程内存 `ProcessedDataset` + job 目录 artifact |
+| `distributed` | MinIO `temp/jobs/<jobId>/input/<i>/<name>` | RabbitMQ `parser.request` → Yecao parser-worker | 必须 `jdbc`（PostgreSQL 权威） | MinIO `temp/jobs/<jobId>/result/finalized.json` + `artifacts/<i>/*.json` |
 
 - 装配点在 replay 域内 `com.wotb.web.replay.config.ReplayDistributedConfig`（整体
   `@ConditionalOnProperty` 门控，local 下不创建任何 bean）；本地组件
@@ -213,7 +213,20 @@ Lease（读取期间 TTL 不清）。
   反向按 `havingValue=local, matchIfMissing=true` 门控，因此两种模式的执行平面永远只有一套，
   **distributed 下 TX 不存在任何本地解析路径**。
 - create 编排只有一份（`ReplayProcessingJobService`）：输入落点与 dataset 读取是两个端口
-  （`ReplayProcessingInputStore` / `ReplayProcessingResultReader`），local 缺省不注入任何实现。
+  （`ReplayProcessingInputStore` / `ReplayProcessingResultReader`）。
+- **批次收尾（FINALIZING_BATCH）只有一份实现**：`ReplayBatchFinalizer` 负责
+  dedupe → 冲突判定 → League Rating / Rating V2 → 批次聚合 → enrichment。local 路径在进程内调用它
+  并把结果留在内存；distributed 路径由控制面在 `FINALIZING_BATCH` 阶段调用同一个实现，
+  输入是「PG 里的 source 终态 + MinIO 里的 per-source canonical Battle」
+  （`Replays.ParsedEntry` 只携带 `(sourceIndex, sourceName, Battle, failureMessage)`，因此不需要把解析
+  中间态搬过网络），产物是对象存储里的 **finalized batch dataset**
+  （`temp/jobs/<jobId>/result/finalized.json`），随后才置 READY。
+- **dataset / artifact 权威边界**：PG 是 lifecycle 权威，MinIO 是 dataset 与 artifact 权威，
+  **distributed 生产不依赖 TX 本地磁盘**。读取侧只有一个端口 `ReplayProcessingResultReader`
+  （local = 内存 + job 目录，distributed = 对象存储），`GET result`、Export、Rating V2、AI Review
+  （`ai-facts.json`）、Map Overview、Battle Playback V2 全部经它取数据；读取侧**不再**拼接
+  per-source 对象（那会跳过上面那套批次语义）。字节 → DTO 的解码由
+  `ReplayArtifactWriter.decode*(...)` 唯一拥有。
 - 派发是**确认式**投递：`submit` 失败（NACK/不可路由/超时）即 create 失败，并回收已登记的 job 与输入。
 - 结果消费：`wotb.parser.result`（`parser.result` 与 `parser.failed` 两个 routing key 都绑到该队列）
   → `ParserResultListener`（manual ack）→ `PostgresParserOutcomeHandler`。判序为「未知 job → 陈旧
@@ -225,6 +238,22 @@ Lease（读取期间 TTL 不清）。
   wotb.replay.retry.max-attempts`（env `REPLAY_PARSER_MAX_ATTEMPTS`，缺省 3）时立即重派
   `attempt+1`（同 `jobId`，`ReplayProcessingRequest.attempt` 由控制面写入，broker 只做映射），
   预算用尽或 `retryable=false` 才转终态；重派失败则上抛，报告进 DLQ 等 operator 重放，绝不假装已处理。
+- **Dataset Lease 同时挡住两侧 TTL 清理**：`ReplayProcessingJobStore` 的本地 sweep 与权威侧清理
+  都按同一 lease 判定跳过（权威侧先取候选 id 再逐条删，绝不用集合式 delete——它看不见进程内 lease）。
+- **可读获取不依赖 JVM 状态**：`acquireForSource` / `acquireForExport` 走 `get(jobId)` 的可读语义
+  （live registry 命中，否则从 PostgreSQL 权威恢复只读投影，且**不**写回 live registry），因此 backend
+  重启后 `GET result` / AI Review / Map Overview / Battle Playback V2 / Export 依然可用——只要 PG 有
+  job/source 状态、MinIO 有 dataset/artifact。
+- **过期回收顺序：先 MinIO、后 PostgreSQL**。权威侧 sweep 对每个 lease-free 的过期终态 job 先调
+  `ReplayJobWorkspaceCleaner.deleteJobWorkspace(job)`（job 级、`ObjectStorageKeys` 推导确定键集合，
+  不提供任意前缀删除能力），成功后才 `deleteJob`；任一失败都只记录并保留权威行、下一轮幂等重试。
+  顺序反了（PG 先删、MinIO 失败）会留下再也没人知道该删的孤儿对象。桶上 `temp/jobs/*` 的 1 天
+  lifecycle 只是兜底安全网，不是正常回收机制。
+- **leasing 与回收在 `lifecycleLock` 内线性化**：`sweepAuthority` 先在锁内完成
+  「lease 检查 + 领取 `reclaimingJobs` 回收权」（MinIO/PG 网络 I/O 留在锁外），
+  `acquireForSource` / `acquireForExport` 在锁内先看该 claim。因此结果只有两种：**acquire 先赢**
+  （lease > 0 ⇒ sweeper 跳过）或 **sweep 先赢**（已 claim ⇒ acquire 返回 null），
+  不存在「请求已 acquire、工作区随后被删」的窗口——backend 重启后的权威恢复投影同样受这条保护。
 - 端点契约（路径/方法/状态码/响应字段）在两种模式下逐字不变；分布式下 dataset 读不到时沿用
   `409 JOB_NOT_READY`，不发明新错误码。
 
