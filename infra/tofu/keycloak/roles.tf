@@ -52,3 +52,15 @@ resource "keycloak_openid_client_service_account_role" "admin_api" {
 
   depends_on = [keycloak_openid_client.admin_api]
 }
+
+# The cutover gate identity holds exactly one realm role. It is assigned
+# explicitly instead of relying on `keycloak_default_roles`, because a service
+# account user is created with the client and would otherwise depend on apply
+# ordering to inherit the realm default role.
+resource "keycloak_openid_client_service_account_realm_role" "e2e" {
+  realm_id                = keycloak_realm.wotbtools.id
+  service_account_user_id = keycloak_openid_client.e2e.service_account_user_id
+  role                    = keycloak_role.realm["wotbtools-user"].name
+
+  depends_on = [keycloak_openid_client.e2e]
+}

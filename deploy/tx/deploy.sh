@@ -326,6 +326,9 @@ stage_and_validate() {
     # directories keeps Compose bind mounts valid without inventing config.
     mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
   fi
+  # The cutover E2E gate mounts this directory into the health-probe container;
+  # its content (the staged replay fixtures) is optional and staged separately.
+  mkdir -p "$TX_RUNTIME_ROOT/e2e"
   set_nonselected_compose_placeholders
   local frontend_tag keycloak_tag business_api_tag
   frontend_tag="$(current_or_target_tag wotb-frontend)"
@@ -715,7 +718,7 @@ blocking_health() {
     # The business runtime is TX-internal and publishes no port, so both the
     # application surface and the dedicated management port are proven from
     # inside wotb_tx_internal by the deployment-owned health-probe container.
-    wait_for_probe business-api http://business-api:8088/actuator/health || return 1
+    wait_for_probe tx-business-api http://business-api:8088/actuator/health || return 1
     wait_for_probe business-api-app http://business-api:8087/api/health || return 1
   fi
   if is_selected all || is_selected wotb-frontend || is_selected caddy; then
@@ -724,9 +727,9 @@ blocking_health() {
     # backend path is deliberately not probed or required any more.
     wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || return 1
     # The formal site address intentionally redirects HTTP to HTTPS. Probe
-    # Caddy's TX-local readiness surface instead: it is 2xx-only,
-    # production-DNS/ACME independent, and exercises the frontend and Keycloak
-    # proxy contracts.
+    # Caddy's TX-local readiness surface instead, addressed by its Docker service
+    # name: it is 2xx-only, DNS/ACME/static-IP independent, and exercises the
+    # frontend and Keycloak proxy contracts.
     wait_for_probe caddy-ready http://caddy/_wotb/ready || return 1
     wait_for_probe caddy-frontend http://caddy/_wotb/frontend/api/health || return 1
     wait_for_probe caddy-keycloak http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || return 1
@@ -817,6 +820,599 @@ preflight_host() {
     || die "a route to 10.20.0.2 is required."
 }
 
+# ---------------------------------------------------------------- business E2E
+# The read-only cutover gate proves the *real* business chain from inside
+# wotb_tx_internal: Keycloak token -> business runtime -> PostgreSQL job
+# authority -> MinIO dataset -> RabbitMQ -> Yecao parser worker -> MinIO
+# artifacts -> dataset consumers. It stays read-only with respect to
+# infrastructure and user data; the only writes are one transient processing job
+# and one transient export job, both owned by the gate machine identity and
+# swept by the existing 30-minute TTL. No paid AI provider call is made.
+
+E2E_CLIENT_ID="${KEYCLOAK_E2E_CLIENT_ID:-wotbtools-e2e}"
+E2E_CLIENT_SECRET="${KEYCLOAK_E2E_CLIENT_SECRET:-}"
+E2E_REPLAY_PATH="${WOTB_E2E_REPLAY_PATH:-/e2e/random-battle-example.wotbreplay}"
+E2E_JOB_TIMEOUT_SEC="${WOTB_E2E_JOB_TIMEOUT_SEC:-300}"
+E2E_POLL_INTERVAL_SEC="${WOTB_E2E_POLL_INTERVAL_SEC:-5}"
+E2E_PUBLIC_IP="${WOTB_E2E_PUBLIC_IP:-118.25.18.105}"
+# The public hosts and the URLs the edge gate must prove, per cutover phase.
+E2E_WEB_URL="${WOTB_E2E_WEB_URL:-https://wotbtools.com/api/health}"
+E2E_AUTH_URL="${WOTB_E2E_AUTH_URL:-https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configuration}"
+CUTOVER_PHASE="${WOTB_CUTOVER_PHASE:-pre}"
+E2E_BEARER=""
+E2E_HTTP_STATUS="000"
+E2E_HTTP_BODY=""
+E2E_DOWNLOAD_SIZE="0"
+declare -a E2E_EXTRA_ARGS=()
+
+# Run one HTTP call in the deployment-owned health-probe container: the gate
+# needs no curl on the TX host and never contacts a published application port.
+e2e_http() {
+  local method="$1" url="$2" body="${3:-}" content_type="${4:-}" raw
+  local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
+    --max-time "$PROBE_MAX_TIME_SEC" --request "$method" --write-out $'\n%{http_code}')
+  [ -n "$E2E_BEARER" ] && args+=(--header "Authorization: Bearer $E2E_BEARER")
+  [ -n "$content_type" ] && args+=(--header "Content-Type: $content_type")
+  [ -n "$body" ] && args+=(--data "$body")
+  if [ "${#E2E_EXTRA_ARGS[@]}" -gt 0 ]; then
+    args+=("${E2E_EXTRA_ARGS[@]}")
+    E2E_EXTRA_ARGS=()
+  fi
+  args+=("$url")
+  E2E_HTTP_STATUS="000"
+  E2E_HTTP_BODY=""
+  if ! raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
+    E2E_HTTP_BODY="$raw"
+    return 1
+  fi
+  E2E_HTTP_STATUS="${raw##*$'\n'}"
+  E2E_HTTP_BODY="${raw%$'\n'*}"
+  [ "$E2E_HTTP_BODY" != "$raw" ] || E2E_HTTP_BODY=""
+  return 0
+}
+
+# Status-only probe for binary payloads (HoF replay originals, export artifact).
+e2e_download() {
+  local url="$1" raw
+  local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
+    --max-time "$PROBE_MAX_TIME_SEC" --output /dev/null --write-out '%{http_code} %{size_download}')
+  [ -n "$E2E_BEARER" ] && args+=(--header "Authorization: Bearer $E2E_BEARER")
+  args+=("$url")
+  E2E_HTTP_STATUS="000"
+  E2E_DOWNLOAD_SIZE="0"
+  if ! raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
+    return 1
+  fi
+  E2E_HTTP_STATUS="${raw%% *}"
+  E2E_DOWNLOAD_SIZE="${raw##* }"
+  return 0
+}
+
+# Decode one field from the JSON body by dotted path; empty output means absent.
+e2e_field() {
+  local body="$1" path="$2"
+  python3 -c '
+import json
+import sys
+
+try:
+    payload = json.load(sys.stdin)
+except ValueError:
+    raise SystemExit(0)
+for part in sys.argv[1].split("."):
+    if isinstance(payload, list):
+        try:
+            payload = payload[int(part)]
+            continue
+        except (ValueError, IndexError):
+            raise SystemExit(0)
+    if not isinstance(payload, dict) or part not in payload:
+        raise SystemExit(0)
+    payload = payload[part]
+if payload is None or isinstance(payload, (dict, list)):
+    raise SystemExit(0)
+print(payload)
+' "$path" <<< "$body"
+}
+
+# Ad-hoc AWS SigV4 query-string signing (standard library only) so the gate can
+# read the dataset/artifact objects the production control-api identity owns.
+# The signature is generated offline and the fetch itself goes through the
+# health-probe container, which keeps the gate testable without MinIO.
+presign_minio_url() {
+  local method="$1" key="$2"
+  E2E_MINIO_ENDPOINT="${YECAO_MINIO_ENDPOINT:-10.20.0.2:9000}" \
+  E2E_MINIO_BUCKET="${YECAO_MINIO_BUCKET:-wotbtools-temp}" \
+  E2E_MINIO_ACCESS_KEY="$YECAO_MINIO_CONTROL_API_ACCESS_KEY" \
+  E2E_MINIO_SECRET_KEY="$YECAO_MINIO_CONTROL_API_SECRET_KEY" \
+  python3 - "$method" "$key" <<'PY'
+import datetime
+import hashlib
+import hmac
+import os
+import sys
+import urllib.parse
+
+method, key = sys.argv[1], sys.argv[2]
+endpoint = os.environ["E2E_MINIO_ENDPOINT"]
+bucket = os.environ["E2E_MINIO_BUCKET"]
+access_key = os.environ["E2E_MINIO_ACCESS_KEY"]
+secret_key = os.environ["E2E_MINIO_SECRET_KEY"]
+region = "us-east-1"
+service = "s3"
+
+now = datetime.datetime.now(datetime.timezone.utc)
+amz_date = now.strftime("%Y%m%dT%H%M%SZ")
+datestamp = now.strftime("%Y%m%d")
+scope = f"{datestamp}/{region}/{service}/aws4_request"
+
+
+def quote(value):
+    return urllib.parse.quote(value, safe="-_.~")
+
+
+canonical_uri = "/" + "/".join(quote(part) for part in [bucket, *[p for p in key.split("/") if p]])
+query = {
+    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Credential": f"{access_key}/{scope}",
+    "X-Amz-Date": amz_date,
+    "X-Amz-Expires": "900",
+    "X-Amz-SignedHeaders": "host",
+}
+canonical_query = "&".join(f"{quote(name)}={quote(value)}" for name, value in sorted(query.items()))
+canonical_request = "\n".join([
+    method,
+    canonical_uri,
+    canonical_query,
+    f"host:{endpoint}\n",
+    "host",
+    "UNSIGNED-PAYLOAD",
+])
+string_to_sign = "\n".join([
+    "AWS4-HMAC-SHA256",
+    amz_date,
+    scope,
+    hashlib.sha256(canonical_request.encode("utf-8")).hexdigest(),
+])
+
+
+def sign(secret, message):
+    return hmac.new(secret, message.encode("utf-8"), hashlib.sha256).digest()
+
+
+signing_key = sign(sign(sign(sign(("AWS4" + secret_key).encode("utf-8"), datestamp), region), service), "aws4_request")
+signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+print(f"http://{endpoint}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}")
+PY
+}
+
+# First integer `id` anywhere in a JSON document; robust against the paged HoF
+# envelope without hard-coding its wrapper field names.
+e2e_first_id() {
+  local body="$1"
+  python3 -c '
+import json
+import sys
+
+
+def first_id(node):
+    if isinstance(node, dict):
+        value = node.get("id")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        for child in node.values():
+            found = first_id(child)
+            if found is not None:
+                return found
+    elif isinstance(node, list):
+        for child in node:
+            found = first_id(child)
+            if found is not None:
+                return found
+    return None
+
+
+try:
+    document = json.load(sys.stdin)
+except ValueError:
+    raise SystemExit(0)
+found = first_id(document)
+if found is not None:
+    print(found)
+' <<< "$body"
+}
+
+# Poll a replay/export job until it reaches a terminal state.
+e2e_wait_for_status() {
+  local label="$1" url="$2" field="$3" deadline=$((SECONDS + E2E_JOB_TIMEOUT_SEC))
+  local status=""
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if ! e2e_http GET "$url"; then
+      E2E_WAIT_REASON="$label status request failed: $E2E_HTTP_BODY"
+      return 1
+    fi
+    if [ "$E2E_HTTP_STATUS" != 200 ]; then
+      E2E_WAIT_REASON="$label status returned HTTP $E2E_HTTP_STATUS"
+      return 1
+    fi
+    status="$(e2e_field "$E2E_HTTP_BODY" "$field")"
+    case "$status" in
+      READY) E2E_WAIT_STATUS="$status"; return 0 ;;
+      FAILED|CANCELLED)
+        E2E_WAIT_REASON="$label reached $status ($(e2e_field "$E2E_HTTP_BODY" errorCode))"
+        return 1
+        ;;
+    esac
+    sleep "$E2E_POLL_INTERVAL_SEC"
+  done
+  E2E_WAIT_REASON="$label did not reach a terminal state within ${E2E_JOB_TIMEOUT_SEC}s (last=$status)"
+  return 1
+}
+
+e2e_emit() {
+  local name="$1" ok="$2" detail="${3:-}"
+  if [ "$ok" = 1 ]; then
+    echo "$name: PASS"
+  else
+    echo "$name: FAIL ($detail)" >&2
+  fi
+}
+
+business_e2e_check() {
+  local failures=0 status
+  E2E_BEARER=""
+
+  if [ -z "$E2E_CLIENT_SECRET" ]; then
+    e2e_emit business-e2e 0 "KEYCLOAK_E2E_CLIENT_SECRET is required; the gate drives the real business chain with the wotbtools-e2e identity"
+    return 1
+  fi
+
+  # --- auth: mint the machine token used by every authenticated call ---------
+  E2E_EXTRA_ARGS=(--data-urlencode 'grant_type=client_credentials' \
+    --data-urlencode "client_id=$E2E_CLIENT_ID" \
+    --data-urlencode "client_secret=$E2E_CLIENT_SECRET")
+  if e2e_http POST "http://keycloak:8080/realms/wotbtools/protocol/openid-connect/token" \
+    && [ "$E2E_HTTP_STATUS" = 200 ]; then
+    E2E_BEARER="$(e2e_field "$E2E_HTTP_BODY" access_token)"
+  fi
+  if [ -z "$E2E_BEARER" ]; then
+    e2e_emit business-e2e 0 "client_credentials token request failed (HTTP $E2E_HTTP_STATUS)"
+    return 1
+  fi
+  e2e_emit auth-token 1
+
+  # --- control plane contract + anonymous rejection --------------------------
+  local unknown_job="00000000-0000-4000-8000-000000000000"
+  e2e_http GET "http://business-api:8087/api/replay/processing-jobs/$unknown_job"
+  if [ "$E2E_HTTP_STATUS" = 404 ] && grep -Fq 'JOB_NOT_FOUND' <<< "$E2E_HTTP_BODY"; then
+    e2e_emit tx-control-plane 1
+  else
+    e2e_emit tx-control-plane 0 "unknown job must answer 404 JOB_NOT_FOUND, got HTTP $E2E_HTTP_STATUS"
+    failures=1
+  fi
+  local saved_bearer="$E2E_BEARER"
+  E2E_BEARER=""
+  e2e_http GET "http://business-api:8087/api/replay/processing-jobs/$unknown_job"
+  if [ "$E2E_HTTP_STATUS" = 401 ]; then
+    e2e_emit anonymous-rejected 1
+  else
+    e2e_emit anonymous-rejected 0 "anonymous processing-job access must be 401, got HTTP $E2E_HTTP_STATUS"
+    failures=1
+  fi
+  E2E_BEARER="$saved_bearer"
+
+  # --- admin authorization boundary -----------------------------------------
+  E2E_BEARER=""
+  e2e_http GET "http://business-api:8087/api/admin/users"
+  local admin_anonymous="$E2E_HTTP_STATUS"
+  E2E_BEARER="$saved_bearer"
+  e2e_http GET "http://business-api:8087/api/admin/users"
+  if [ "$admin_anonymous" = 401 ] && [ "$E2E_HTTP_STATUS" = 403 ]; then
+    e2e_emit admin-authz 1
+  else
+    e2e_emit admin-authz 0 "expected anonymous 401 and authenticated non-admin 403, got $admin_anonymous/$E2E_HTTP_STATUS"
+    failures=1
+  fi
+
+  # --- read-only business APIs ----------------------------------------------
+  e2e_http GET "http://business-api:8087/api/users/profile"
+  if [ "$E2E_HTTP_STATUS" = 200 ] || [ "$E2E_HTTP_STATUS" = 404 ]; then
+    e2e_emit business-profile 1
+  else
+    e2e_emit business-profile 0 "profile read must answer 200 or a canonical 404, got HTTP $E2E_HTTP_STATUS"
+    failures=1
+  fi
+  e2e_http GET "http://business-api:8087/api/hof?page=0&size=1"
+  local hof_body="$E2E_HTTP_BODY" hof_status="$E2E_HTTP_STATUS"
+  if [ "$hof_status" = 200 ]; then
+    e2e_emit business-hof 1
+  else
+    e2e_emit business-hof 0 "public HoF list must answer 200, got HTTP $hof_status"
+    failures=1
+  fi
+  e2e_http GET "http://business-api:8087/api/boost/options"
+  if [ "$E2E_HTTP_STATUS" = 200 ]; then
+    e2e_emit business-boost 1
+  else
+    e2e_emit business-boost 0 "boost options must answer 200, got HTTP $E2E_HTTP_STATUS"
+    failures=1
+  fi
+
+  # --- HoF replay originals are readable for a real migrated record ----------
+  local hof_id=""
+  [ "$hof_status" = 200 ] && hof_id="$(e2e_first_id "$hof_body")"
+  if [ -n "$hof_id" ] && e2e_download "http://business-api:8087/api/hof/$hof_id/replay" \
+    && [ "$E2E_HTTP_STATUS" = 200 ] && [ "$E2E_DOWNLOAD_SIZE" -gt 0 ]; then
+    e2e_emit hof-replay-storage 1
+  else
+    e2e_emit hof-replay-storage 0 "no readable HoF replay original for id=${hof_id:-none} (HTTP $E2E_HTTP_STATUS, ${E2E_DOWNLOAD_SIZE}B); migrate replay_data before cutting DNS"
+    failures=1
+  fi
+
+  # --- parser worker is consuming the broker ---------------------------------
+  local queues consumers result_queue dlq
+  if queues="$(docker compose -f "$LIVE_COMPOSE" exec -T rabbitmq rabbitmqctl -q list_queues name consumers messages 2>/dev/null)"; then
+    consumers="$(awk '$1 == "wotb.parser" { print $2 }' <<< "$queues")"
+    result_queue="$(awk '$1 == "wotb.parser.result" { print $1 }' <<< "$queues")"
+    dlq="$(awk '$1 == "wotb.parser.dlq" { print $3 }' <<< "$queues")"
+    if [ "${consumers:-0}" -ge 1 ] && [ -n "$result_queue" ] && [ "${dlq:-0}" -eq 0 ]; then
+      e2e_emit parser-worker 1
+    else
+      e2e_emit parser-worker 0 "wotb.parser consumers=${consumers:-0}, result queue=${result_queue:-missing}, dlq messages=${dlq:-0}"
+      failures=1
+    fi
+  else
+    e2e_emit parser-worker 0 "rabbitmqctl list_queues failed"
+    failures=1
+  fi
+
+  # --- end-to-end processing job (the real chain) -----------------------------
+  local operation_id job_id
+  operation_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+  E2E_EXTRA_ARGS=(--form "files=@$E2E_REPLAY_PATH" --form "operationId=$operation_id")
+  e2e_http POST "http://business-api:8087/api/replay/processing-jobs"
+  job_id=""
+  if [ "$E2E_HTTP_STATUS" = 202 ]; then
+    job_id="$(e2e_field "$E2E_HTTP_BODY" jobId)"
+  fi
+  if [ -z "$job_id" ]; then
+    e2e_emit processing-e2e 0 "processing job create failed (HTTP $E2E_HTTP_STATUS; is $E2E_REPLAY_PATH staged into ${TX_RUNTIME_ROOT}/e2e?)"
+    failures=1
+    echo "business-e2e: NOT_VERIFIED" >&2
+    return 1
+  fi
+  if e2e_wait_for_status processing-e2e \
+    "http://business-api:8087/api/replay/processing-jobs/$job_id" status; then
+    e2e_emit processing-e2e 1
+  else
+    e2e_emit processing-e2e 0 "$E2E_WAIT_REASON"
+    failures=1
+    echo "business-e2e: NOT_VERIFIED" >&2
+    return 1
+  fi
+
+  # --- dataset consumers read the same job without reparsing ------------------
+  e2e_http GET "http://business-api:8087/api/replay/processing-jobs/$job_id/result"
+  if [ "$E2E_HTTP_STATUS" = 200 ] && grep -Fq '"battles"' <<< "$E2E_HTTP_BODY"; then
+    e2e_emit dataset-result 1
+  else
+    e2e_emit dataset-result 0 "GET result must answer 200 with a dataset body, got HTTP $E2E_HTTP_STATUS"
+    failures=1
+  fi
+
+  local dataset_request="{\"processingJobId\":\"$job_id\",\"sourceId\":\"0\"}"
+  e2e_http POST "http://business-api:8087/api/replay/map-overview" "$dataset_request" "application/json"
+  if [ "$E2E_HTTP_STATUS" = 200 ] && [ -n "$E2E_HTTP_BODY" ]; then
+    e2e_emit map-overview 1
+  else
+    e2e_emit map-overview 0 "map overview must answer 200 with a body, got HTTP $E2E_HTTP_STATUS (204 means the worker artifact is missing or unusable for $E2E_REPLAY_PATH)"
+    failures=1
+  fi
+  e2e_http POST "http://business-api:8087/api/replay/battle-playback-v2" "$dataset_request" "application/json"
+  if [ "$E2E_HTTP_STATUS" = 200 ] && [ -n "$E2E_HTTP_BODY" ]; then
+    e2e_emit battle-playback-v2 1
+  else
+    e2e_emit battle-playback-v2 0 "battle playback must answer 200 with a body, got HTTP $E2E_HTTP_STATUS (204 means the timeline artifact is missing or unusable for $E2E_REPLAY_PATH)"
+    failures=1
+  fi
+
+  # --- MinIO objects written by the control plane and by the worker ----------
+  local presigned
+  presigned="$(presign_minio_url GET "temp/jobs/$job_id/result/finalized.json")"
+  if [ -n "$presigned" ] && e2e_http GET "$presigned" \
+    && [ "$E2E_HTTP_STATUS" = 200 ] && [ -n "$E2E_HTTP_BODY" ]; then
+    e2e_emit minio 1
+  else
+    e2e_emit minio 0 "finalized dataset object is not readable (HTTP $E2E_HTTP_STATUS)"
+    failures=1
+  fi
+  presigned="$(presign_minio_url GET "temp/jobs/$job_id/artifacts/0/ai-facts.json")"
+  if [ -n "$presigned" ] && e2e_http GET "$presigned" \
+    && [ "$E2E_HTTP_STATUS" = 200 ] && [ -n "$E2E_HTTP_BODY" ]; then
+    e2e_emit ai-facts 1
+  else
+    e2e_emit ai-facts 0 "worker ai-facts artifact is not consumable (HTTP $E2E_HTTP_STATUS); no AI provider call is made by the gate"
+    failures=1
+  fi
+
+  # --- export job produces and serves a real artifact ------------------------
+  e2e_http POST "http://business-api:8087/api/replay/export-jobs?mode=aggregate&processingJobId=$job_id"
+  local export_job_id=""
+  if [ "$E2E_HTTP_STATUS" = 202 ]; then
+    export_job_id="$(e2e_field "$E2E_HTTP_BODY" jobId)"
+  fi
+  if [ -n "$export_job_id" ] && e2e_wait_for_status export \
+    "http://business-api:8087/api/replay/export-jobs/$export_job_id" status; then
+    if e2e_download "http://business-api:8087/api/replay/export-jobs/$export_job_id/download" \
+      && [ "$E2E_HTTP_STATUS" = 200 ] && [ "$E2E_DOWNLOAD_SIZE" -gt 0 ]; then
+      e2e_emit export 1
+    else
+      e2e_emit export 0 "export download failed (HTTP $E2E_HTTP_STATUS, ${E2E_DOWNLOAD_SIZE}B)"
+      failures=1
+    fi
+  else
+    e2e_emit export 0 "${E2E_WAIT_REASON:-export job create failed (HTTP $E2E_HTTP_STATUS)}"
+    failures=1
+  fi
+
+  [ "$failures" -eq 0 ] || return 1
+  return 0
+}
+
+# Business data integrity: the operator supplies the read-only Yecao snapshot
+# (row counts per table) and the gate compares it against TX. Only SELECTs run.
+business_data_integrity_check() {
+  local snapshot="${WOTB_E2E_DATA_SNAPSHOT:-}" table expected actual sequence maximum failures=0
+  if [ -z "$snapshot" ] || [ ! -f "$snapshot" ]; then
+    e2e_emit business-data-integrity 0 "set WOTB_E2E_DATA_SNAPSHOT to the read-only Yecao row-count snapshot JSON"
+    return 1
+  fi
+  while read -r table expected; do
+    [ -n "$table" ] || continue
+    actual="$(docker compose -f "$LIVE_COMPOSE" exec -T business-postgres \
+      psql -U "$TX_BUSINESS_DB_USERNAME" -d "$TX_BUSINESS_DB_NAME" -Atc \
+      "select count(*) from \"$table\"" 2>/dev/null || true)"
+    if [ "$actual" = "$expected" ]; then
+      echo "  $table: $actual rows"
+    else
+      echo "  $table: TX=$actual expected=$expected" >&2
+      failures=1
+    fi
+  done < <(python3 - "$snapshot" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    document = json.load(handle)
+tables = document.get("tables", document) if isinstance(document, dict) else {}
+for name, count in tables.items():
+    if isinstance(count, int):
+        print(f"{name} {count}")
+PY
+)
+  maximum="$(docker compose -f "$LIVE_COMPOSE" exec -T business-postgres \
+    psql -U "$TX_BUSINESS_DB_USERNAME" -d "$TX_BUSINESS_DB_NAME" -Atc \
+    'select coalesce(max(id), 0) from hall_of_fame_record' 2>/dev/null || true)"
+  sequence="$(docker compose -f "$LIVE_COMPOSE" exec -T business-postgres \
+    psql -U "$TX_BUSINESS_DB_USERNAME" -d "$TX_BUSINESS_DB_NAME" -Atc \
+    "select last_value from pg_sequences where schemaname = 'public' and sequencename like 'hall_of_fame_record%'" 2>/dev/null || true)"
+  if [ -z "$maximum" ] || [ -z "$sequence" ] || [ "$sequence" -lt "$maximum" ] || [ "$sequence" -lt 355 ]; then
+    echo "  hall_of_fame_record sequence: last_value=${sequence:-unknown} max_id=${maximum:-unknown}" >&2
+    failures=1
+  else
+    echo "  hall_of_fame_record sequence: last_value=$sequence max_id=$maximum"
+  fi
+  if [ "$failures" -eq 0 ]; then
+    e2e_emit business-data-integrity 1
+    return 0
+  fi
+  e2e_emit business-data-integrity 0 "TX business data does not match the Yecao snapshot"
+  return 1
+}
+
+# Public edge gate. The phase decides what can honestly be asserted:
+#   pre  (before DNS)  -> TX:443 is reachable and Caddy presents a certificate for
+#                         the public name (routing + SNI). Trust is NOT claimed:
+#                         while public DNS still points elsewhere Caddy cannot
+#                         complete HTTP-01/TLS-ALPN validation, so an untrusted
+#                         handshake (curl exit 60) is the expected, passing state.
+#   post (after DNS)   -> the public name resolves to the TX address and serves a
+#                         locally trusted certificate with 2xx. TLS verification is
+#                         never disabled; `curl -k` is never used.
+edge_tls_probe() {
+  local host="$1" url="$2" raw exit_code=0
+  local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
+    --max-time "$PROBE_MAX_TIME_SEC" --output /dev/null --write-out '%{http_code} %{remote_ip}' \
+    --resolve "$host:443:$E2E_PUBLIC_IP" "$url")
+  EDGE_EXIT=0
+  EDGE_STATUS="000"
+  EDGE_REMOTE_IP=""
+  EDGE_ERROR=""
+  # `if ! cmd` would make `$?` the status of the negation (always 0), so the real
+  # exit code is captured in the else branch, where `$?` is the command's status.
+  # The command inside an `if` condition stays exempt from errexit.
+  if raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
+  EDGE_EXIT="$exit_code"
+  if [ "$exit_code" -ne 0 ]; then
+    EDGE_ERROR="$(tr '\r\n' ' ' <<< "$raw" | sed -E 's/[[:space:]]+/ /g')"
+    return 1
+  fi
+  EDGE_STATUS="${raw%% *}"
+  EDGE_REMOTE_IP="${raw##* }"
+  return 0
+}
+
+# curl exit 60 = the TLS handshake completed and a certificate was presented, but
+# the chain is not trusted yet. That is exactly the pre-DNS state.
+edge_tls_untrusted_pre_dns() {
+  [ "${EDGE_EXIT:-0}" = 60 ]
+}
+
+# Pre-DNS edge token: TX:443 must complete a TLS handshake and present a
+# certificate for the public name. An untrusted chain (curl exit 60) is the
+# expected passing state while public DNS still points elsewhere.
+edge_sni_token() {
+  local token="$1" host="$2" url="$3"
+  if edge_tls_probe "$host" "$url"; then
+    if [ "$EDGE_STATUS" != 000 ] && [[ "$EDGE_STATUS" =~ ^2[0-9]{2}$ ]]; then
+      e2e_emit "$token" 1
+      return 0
+    fi
+    e2e_emit "$token" 0 "TX edge answered HTTP $EDGE_STATUS for $host (expected 2xx)"
+    return 1
+  fi
+  if edge_tls_untrusted_pre_dns; then
+    e2e_emit "$token" 1
+    return 0
+  fi
+  e2e_emit "$token" 0 "TX:$E2E_PUBLIC_IP:443 did not complete a TLS handshake for $host (curl exit $EDGE_EXIT: $EDGE_ERROR)"
+  return 1
+}
+
+# Post-DNS edge token: the public name must resolve to the TX address and serve a
+# locally trusted certificate with 2xx. Verification is never disabled.
+edge_tls_token() {
+  local token="$1" host="$2" url="$3"
+  if ! edge_tls_probe "$host" "$url"; then
+    if edge_tls_untrusted_pre_dns; then
+      e2e_emit "$token" 0 "public TLS for $host is still untrusted (curl exit 60): DNS has moved but Caddy has no trusted certificate yet"
+    else
+      e2e_emit "$token" 0 "curl failed for $host (exit $EDGE_EXIT: $EDGE_ERROR)"
+    fi
+    return 1
+  fi
+  if [ "$EDGE_REMOTE_IP" != "$E2E_PUBLIC_IP" ]; then
+    e2e_emit "$token" 0 "$host resolved to $EDGE_REMOTE_IP instead of the TX address $E2E_PUBLIC_IP"
+    return 1
+  fi
+  if [[ "$EDGE_STATUS" =~ ^2[0-9]{2}$ ]]; then
+    e2e_emit "$token" 1
+    return 0
+  fi
+  e2e_emit "$token" 0 "$host served HTTP $EDGE_STATUS over trusted HTTPS (expected 2xx)"
+  return 1
+}
+
+public_edge_sni_check() {
+  local failures=0
+  edge_sni_token public-edge-sni-web wotbtools.com "$E2E_WEB_URL" || failures=1
+  edge_sni_token public-edge-sni-auth auth.wotbtools.com "$E2E_AUTH_URL" || failures=1
+  [ "$failures" -eq 0 ]
+}
+
+public_tls_check() {
+  local failures=0
+  edge_tls_token public-tls-web wotbtools.com "$E2E_WEB_URL" || failures=1
+  edge_tls_token public-tls-auth auth.wotbtools.com "$E2E_AUTH_URL" || failures=1
+  [ "$failures" -eq 0 ]
+}
+
 pre_cutover_check() {
   local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health business_container
   local yecao_compose="$source_root/deploy/docker-compose.prod.yml"
@@ -826,6 +1422,13 @@ pre_cutover_check() {
 
   command -v docker >/dev/null 2>&1 || { echo "docker: FAIL (docker is required)" >&2; return 1; }
   command -v python3 >/dev/null 2>&1 || { echo "python3: FAIL (python3 is required)" >&2; return 1; }
+  case "$CUTOVER_PHASE" in
+    pre|post) ;;
+    *)
+      echo "cutover-phase: FAIL (WOTB_CUTOVER_PHASE must be pre or post, got '$CUTOVER_PHASE')" >&2
+      return 1
+      ;;
+  esac
   for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
     KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
     WG_APPLICATION_ID CADDY_ACME_EMAIL \
@@ -985,7 +1588,7 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
   fi
 
   wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || failures=1
-  wait_for_probe business-api http://business-api:8088/actuator/health || failures=1
+  wait_for_probe tx-business-api http://business-api:8088/actuator/health || failures=1
   wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || failures=1
   wait_for_probe caddy-ready http://caddy/_wotb/ready || failures=1
   wait_for_probe caddy-frontend http://caddy/_wotb/frontend/api/health || failures=1
@@ -1053,10 +1656,41 @@ PY
   # enforced by the static TX runtime and pre-cutover contract tests.
   echo "cutover-safety-boundary: PASS"
 
+  # Real business chain: token -> control plane -> worker -> dataset consumers.
+  # These tokens are the reason PRE_CUTOVER_READY means "business works", not
+  # "containers are up".
+  business_e2e_check || failures=1
+  business_data_integrity_check || failures=1
+  case "$CUTOVER_PHASE" in
+    pre)
+      # Before DNS: TX edge routing/SNI reachability only. Trusted public TLS is
+      # mechanically unachievable while public DNS still points at Yecao, so it is
+      # asserted by the post-cutover phase instead of being faked here.
+      public_edge_sni_check || failures=1
+      ;;
+    post)
+      # After DNS: the mandatory trusted-TLS gate. Both public hosts must resolve
+      # to TX and serve a locally trusted certificate; no `curl -k` anywhere.
+      public_edge_sni_check || failures=1
+      public_tls_check || failures=1
+      ;;
+    *) failures=1 ;;
+  esac
+
   [ "$failures" -eq 0 ] && echo "QQ_IDP_STATUS=idp-qq=READY"
   if [ "$failures" -ne 0 ]; then
-    echo "PRE_CUTOVER_NOT_READY" >&2
+    if [ "$CUTOVER_PHASE" = post ]; then
+      echo "POST_CUTOVER_NOT_READY" >&2
+    else
+      echo "PRE_CUTOVER_NOT_READY" >&2
+    fi
     return 1
+  fi
+  if [ "$CUTOVER_PHASE" = post ]; then
+    echo "POST_CUTOVER_READY"
+    echo "DNS_CUTOVER_PERFORMED"
+    echo "WAITING_FOR_OPERATOR_RETIREMENT"
+    return 0
   fi
   echo "PRE_CUTOVER_READY"
   echo "DNS_CUTOVER_NOT_PERFORMED"

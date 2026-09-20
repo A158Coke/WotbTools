@@ -1,5 +1,5 @@
 # TX frontend nginx: public traffic reaches this container only through Caddy
-# on wotb_tx_internal. API traffic stays on WireGuard.
+# on wotb_tx_internal. API traffic is served by the TX business runtime.
 limit_req_zone $binary_remote_addr zone=replay_api:10m rate=1r/s;
 limit_conn_zone $binary_remote_addr zone=replay_api_conn:10m;
 
