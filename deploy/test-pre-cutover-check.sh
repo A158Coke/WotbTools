@@ -195,8 +195,18 @@ case "${1:-}" in
         respond '{"battle":{"frames":[]}}' "${FAKE_PLAYBACK_STATUS:-200}"
       fi
     elif [[ "$*" == *"https://wotbtools.com"* ]]; then
+      if [[ "$write_out" == *remote_ip* ]]; then
+        # Real curl prints the write-out even when the TLS handshake is rejected,
+        # so a non-zero exit carries status 000.
+        printf '%s %s\n' "${FAKE_TLS_STATUS:-200}" "${FAKE_TLS_REMOTE_IP:-118.25.18.105}"
+        exit "${FAKE_TLS_EXIT:-0}"
+      fi
       respond '{"status":"UP"}' "${FAKE_PUBLIC_WEB_STATUS:-200}"
     elif [[ "$*" == *"https://auth.wotbtools.com"* ]]; then
+      if [[ "$write_out" == *remote_ip* ]]; then
+        printf '%s %s\n' "${FAKE_TLS_STATUS:-200}" "${FAKE_TLS_REMOTE_IP:-118.25.18.105}"
+        exit "${FAKE_TLS_EXIT:-0}"
+      fi
       respond '{"issuer":"https://auth.wotbtools.com/realms/wotbtools"}' "${FAKE_PUBLIC_AUTH_STATUS:-200}"
     else
       printf '%s\n' "${FAKE_HEALTH_STATUS:-200}"
@@ -207,23 +217,36 @@ esac
 FAKE_DOCKER
 chmod 700 "$WORK/bin/docker"
 
+# Shared gate environment. WOTB_TX_DIR is set per invocation because the
+# relocated-layout fixtures point at a promoted runtime directory.
+CHECK_ENV=(
+  PATH="$WORK/bin:$PATH" HOME="$WORK"
+  KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real
+  KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real
+  WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test
+  TX_BUSINESS_POSTGRES_ADMIN_USER=tx-business-admin
+  TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=not-real
+  TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=control_api TX_BUSINESS_DB_PASSWORD=not-real
+  TX_RABBITMQ_CONTROL_API_PASSWORD=not-real
+  YECAO_MINIO_CONTROL_API_ACCESS_KEY=not-real YECAO_MINIO_CONTROL_API_SECRET_KEY=not-real
+  KEYCLOAK_ADMIN_CLIENT_SECRET=not-real AI_API_KEY=not-real
+  KEYCLOAK_E2E_CLIENT_SECRET=not-real-e2e
+  WOTB_E2E_DATA_SNAPSHOT="$WORK/rowcounts.json"
+  WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1
+)
+
 run_check() {
   local tx_dir="$1" check_script="$2"
   shift 2
-  env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
-    WOTB_TX_DIR="$tx_dir" KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real \
-    KC_BOOTSTRAP_ADMIN_PASSWORD=not-real KC_DB_USERNAME=keycloak KC_DB_PASSWORD=not-real \
-    WG_APPLICATION_ID=not-real CADDY_ACME_EMAIL=ops@example.test \
-    TX_BUSINESS_POSTGRES_ADMIN_USER=tx-business-admin \
-    TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=not-real \
-    TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=control_api TX_BUSINESS_DB_PASSWORD=not-real \
-    TX_RABBITMQ_CONTROL_API_PASSWORD=not-real \
-    YECAO_MINIO_CONTROL_API_ACCESS_KEY=not-real YECAO_MINIO_CONTROL_API_SECRET_KEY=not-real \
-    KEYCLOAK_ADMIN_CLIENT_SECRET=not-real AI_API_KEY=not-real \
-    KEYCLOAK_E2E_CLIENT_SECRET=not-real-e2e \
-    WOTB_E2E_DATA_SNAPSHOT="$WORK/rowcounts.json" \
-    WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+  env -i "${CHECK_ENV[@]}" WOTB_TX_DIR="$tx_dir" \
     "$@" bash "$check_script" 2>&1
+}
+
+run_post_check() {
+  local tx_dir="$1" check_script="$2"
+  shift 2
+  env -i "${CHECK_ENV[@]}" WOTB_TX_DIR="$tx_dir" \
+    "$@" bash "$check_script" --post-cutover 2>&1
 }
 
 # Read-only Yecao row-count snapshot the operator supplies before cutting DNS.
@@ -252,8 +275,11 @@ grep -Fq 'minio: PASS' <<< "$ready_output"
 grep -Fq 'ai-facts: PASS' <<< "$ready_output"
 grep -Fq 'export: PASS' <<< "$ready_output"
 grep -Fq 'business-data-integrity: PASS' <<< "$ready_output"
-grep -Fq 'public-edge-web: PASS' <<< "$ready_output"
-grep -Fq 'public-edge-auth: PASS' <<< "$ready_output"
+# Before DNS the gate proves TX edge routing/SNI reachability, never trusted TLS.
+grep -Fq 'public-edge-sni-web: PASS' <<< "$ready_output"
+grep -Fq 'public-edge-sni-auth: PASS' <<< "$ready_output"
+! grep -Fq 'public-tls-web' <<< "$ready_output"
+! grep -Fq 'public-edge-web:' <<< "$ready_output"
 grep -Fq 'DNS_CUTOVER_NOT_PERFORMED' <<< "$ready_output"
 grep -Fq 'WAITING_FOR_OPERATOR_APPROVAL' <<< "$ready_output"
 grep -Fq 'qq-idp-admin-api: PASS' <<< "$ready_output"
@@ -280,6 +306,44 @@ grep -Fq 'PRE_CUTOVER_READY' <<< "$relocated_ready_output"
 grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' <<< "$relocated_ready_output"
 grep -Fq 'yecao-backend-wireguard-bind: PASS (deployed contract)' <<< "$relocated_ready_output"
 grep -Fq 'business-postgres: PASS' <<< "$relocated_ready_output"
+
+# --- Post-DNS phase adds the mandatory trusted-TLS gate ------------------------
+post_ready_output="$(run_post_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT")"
+grep -Fq 'POST_CUTOVER_READY' <<< "$post_ready_output"
+grep -Fq 'public-edge-sni-web: PASS' <<< "$post_ready_output"
+grep -Fq 'public-tls-web: PASS' <<< "$post_ready_output"
+grep -Fq 'public-tls-auth: PASS' <<< "$post_ready_output"
+grep -Fq 'processing-e2e: PASS' <<< "$post_ready_output"
+grep -Fq 'DNS_CUTOVER_PERFORMED' <<< "$post_ready_output"
+grep -Fq 'WAITING_FOR_OPERATOR_RETIREMENT' <<< "$post_ready_output"
+! grep -Fq 'PRE_CUTOVER_READY' <<< "$post_ready_output"
+
+run_post_gate_failure() {
+  local label="$1" expected="$2" tx_dir="$3" check_script="$4"
+  shift 4
+  local output rc
+  set +e
+  output="$(run_post_check "$tx_dir" "$check_script" "$@")"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || { echo "FAIL: $label must block POST_CUTOVER_READY" >&2; exit 1; }
+  ! grep -Fq 'POST_CUTOVER_READY' <<< "$output" \
+    || { echo "FAIL: $label emitted POST_CUTOVER_READY" >&2; exit 1; }
+  grep -Fq 'POST_CUTOVER_NOT_READY' <<< "$output" \
+    || { echo "FAIL: $label must report POST_CUTOVER_NOT_READY (output: $output)" >&2; exit 1; }
+  grep -Fq "$expected" <<< "$output" \
+    || { echo "FAIL: $label must report '$expected' (output: $output)" >&2; exit 1; }
+}
+
+# After DNS an untrusted certificate is a hard failure (never masked with -k).
+run_post_gate_failure "post-dns-untrusted-certificate" 'public-tls-web: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_TLS_EXIT=60
+run_post_gate_failure "post-dns-wrong-address" 'public-tls-web: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_TLS_REMOTE_IP=203.0.113.9
+run_post_gate_failure "post-dns-edge-unreachable" 'public-tls-web: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_TLS_EXIT=7
+run_post_gate_failure "post-dns-non-2xx" 'public-tls-web: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_TLS_STATUS=503
 
 # --- Routing, execution-plane and business-E2E tokens must all block readiness ---
 run_gate_failure() {
@@ -356,10 +420,33 @@ run_gate_failure "data-integrity-mismatch" 'business-data-integrity: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_INTEGRITY_COUNT=1
 run_gate_failure "data-snapshot-missing" 'business-data-integrity: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" WOTB_E2E_DATA_SNAPSHOT="$WORK/missing-snapshot.json"
-run_gate_failure "public-edge-web-refused" 'public-edge-web: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_PUBLIC_WEB_STATUS=503
-run_gate_failure "public-edge-auth-refused" 'public-edge-auth: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_PUBLIC_AUTH_STATUS=503
+run_gate_failure "public-edge-sni-web-unreachable" 'public-edge-sni-web: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_EXIT=7
+run_gate_failure "public-edge-sni-auth-unreachable" 'public-edge-sni-auth: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_EXIT=28
+run_gate_failure "public-edge-sni-non-2xx" 'public-edge-sni-web: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_STATUS=503
+# An unknown phase must fail closed, and an unknown flag must be a usage error:
+# the wrapper normally pins the phase, so the phase guard is exercised through
+# the library entry point the wrapper itself uses.
+set +e
+invalid_phase_output="$(env -i "${CHECK_ENV[@]}" WOTB_TX_DIR="$WORK" TX_DEPLOY_LIBRARY_ONLY=1 \
+  WOTB_CUTOVER_PHASE=whenever bash -c 'source "$1"; pre_cutover_check' _ "$ROOT/deploy/tx/deploy.sh" 2>&1)"
+invalid_phase_rc=$?
+set -e
+[ "$invalid_phase_rc" -ne 0 ] || { echo "FAIL: an unknown cutover phase must fail closed" >&2; exit 1; }
+grep -Fq 'cutover-phase: FAIL' <<< "$invalid_phase_output" \
+  || { echo "FAIL: an unknown cutover phase must be named (output: $invalid_phase_output)" >&2; exit 1; }
+! grep -Fq 'PRE_CUTOVER_READY' <<< "$invalid_phase_output" \
+  || { echo "FAIL: an unknown cutover phase must not emit a ready verdict" >&2; exit 1; }
+
+set +e
+usage_output="$(env -i "${CHECK_ENV[@]}" WOTB_TX_DIR="$WORK" bash "$CHECK" --bogus 2>&1)"
+usage_rc=$?
+set -e
+[ "$usage_rc" -eq 2 ] || { echo "FAIL: an unknown gate argument must be a usage error" >&2; exit 1; }
+grep -Fq 'usage: pre-cutover-check.sh' <<< "$usage_output" \
+  || { echo "FAIL: usage error must explain the accepted flags (output: $usage_output)" >&2; exit 1; }
 
 # --- Business PostgreSQL must independently block readiness -------------------
 run_business_failure() {

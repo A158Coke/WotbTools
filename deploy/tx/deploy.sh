@@ -727,9 +727,9 @@ blocking_health() {
     # backend path is deliberately not probed or required any more.
     wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || return 1
     # The formal site address intentionally redirects HTTP to HTTPS. Probe
-    # Caddy's TX-local readiness surface instead: it is 2xx-only,
-    # production-DNS/ACME independent, and exercises the frontend and Keycloak
-    # proxy contracts.
+    # Caddy's TX-local readiness surface instead, addressed by its Docker service
+    # name: it is 2xx-only, DNS/ACME/static-IP independent, and exercises the
+    # frontend and Keycloak proxy contracts.
     wait_for_probe caddy-ready http://caddy/_wotb/ready || return 1
     wait_for_probe caddy-frontend http://caddy/_wotb/frontend/api/health || return 1
     wait_for_probe caddy-keycloak http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || return 1
@@ -835,6 +835,10 @@ E2E_REPLAY_PATH="${WOTB_E2E_REPLAY_PATH:-/e2e/random-battle-example.wotbreplay}"
 E2E_JOB_TIMEOUT_SEC="${WOTB_E2E_JOB_TIMEOUT_SEC:-300}"
 E2E_POLL_INTERVAL_SEC="${WOTB_E2E_POLL_INTERVAL_SEC:-5}"
 E2E_PUBLIC_IP="${WOTB_E2E_PUBLIC_IP:-118.25.18.105}"
+# The public hosts and the URLs the edge gate must prove, per cutover phase.
+E2E_WEB_URL="${WOTB_E2E_WEB_URL:-https://wotbtools.com/api/health}"
+E2E_AUTH_URL="${WOTB_E2E_AUTH_URL:-https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configuration}"
+CUTOVER_PHASE="${WOTB_CUTOVER_PHASE:-pre}"
 E2E_BEARER=""
 E2E_HTTP_STATUS="000"
 E2E_HTTP_BODY=""
@@ -1308,25 +1312,96 @@ PY
   return 1
 }
 
-# Public edge preflight: the TX address must already serve both public hosts
-# before DNS may move (see the cutover operation sheet).
-public_edge_check() {
+# Public edge gate. The phase decides what can honestly be asserted:
+#   pre  (before DNS)  -> TX:443 is reachable and Caddy presents a certificate for
+#                         the public name (routing + SNI). Trust is NOT claimed:
+#                         while public DNS still points elsewhere Caddy cannot
+#                         complete HTTP-01/TLS-ALPN validation, so an untrusted
+#                         handshake (curl exit 60) is the expected, passing state.
+#   post (after DNS)   -> the public name resolves to the TX address and serves a
+#                         locally trusted certificate with 2xx. TLS verification is
+#                         never disabled; `curl -k` is never used.
+edge_tls_probe() {
+  local host="$1" url="$2" raw
+  local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
+    --max-time "$PROBE_MAX_TIME_SEC" --output /dev/null --write-out '%{http_code} %{remote_ip}' \
+    --resolve "$host:443:$E2E_PUBLIC_IP" "$url")
+  EDGE_EXIT=0
+  EDGE_STATUS="000"
+  EDGE_REMOTE_IP=""
+  EDGE_ERROR=""
+  if ! raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
+    EDGE_EXIT=$?
+    EDGE_ERROR="$(tr '\r\n' ' ' <<< "$raw" | sed -E 's/[[:space:]]+/ /g')"
+    return 1
+  fi
+  EDGE_STATUS="${raw%% *}"
+  EDGE_REMOTE_IP="${raw##* }"
+  return 0
+}
+
+# curl exit 60 = the TLS handshake completed and a certificate was presented, but
+# the chain is not trusted yet. That is exactly the pre-DNS state.
+edge_tls_untrusted_pre_dns() {
+  [ "${EDGE_EXIT:-0}" = 60 ]
+}
+
+# Pre-DNS edge token: TX:443 must complete a TLS handshake and present a
+# certificate for the public name. An untrusted chain (curl exit 60) is the
+# expected passing state while public DNS still points elsewhere.
+edge_sni_token() {
+  local token="$1" host="$2" url="$3"
+  if edge_tls_probe "$host" "$url"; then
+    if [ "$EDGE_STATUS" != 000 ] && [[ "$EDGE_STATUS" =~ ^2[0-9]{2}$ ]]; then
+      e2e_emit "$token" 1
+      return 0
+    fi
+    e2e_emit "$token" 0 "TX edge answered HTTP $EDGE_STATUS for $host (expected 2xx)"
+    return 1
+  fi
+  if edge_tls_untrusted_pre_dns; then
+    e2e_emit "$token" 1
+    return 0
+  fi
+  e2e_emit "$token" 0 "TX:$E2E_PUBLIC_IP:443 did not complete a TLS handshake for $host (curl exit $EDGE_EXIT: $EDGE_ERROR)"
+  return 1
+}
+
+# Post-DNS edge token: the public name must resolve to the TX address and serve a
+# locally trusted certificate with 2xx. Verification is never disabled.
+edge_tls_token() {
+  local token="$1" host="$2" url="$3"
+  if ! edge_tls_probe "$host" "$url"; then
+    if edge_tls_untrusted_pre_dns; then
+      e2e_emit "$token" 0 "public TLS for $host is still untrusted (curl exit 60): DNS has moved but Caddy has no trusted certificate yet"
+    else
+      e2e_emit "$token" 0 "curl failed for $host (exit $EDGE_EXIT: $EDGE_ERROR)"
+    fi
+    return 1
+  fi
+  if [ "$EDGE_REMOTE_IP" != "$E2E_PUBLIC_IP" ]; then
+    e2e_emit "$token" 0 "$host resolved to $EDGE_REMOTE_IP instead of the TX address $E2E_PUBLIC_IP"
+    return 1
+  fi
+  if [[ "$EDGE_STATUS" =~ ^2[0-9]{2}$ ]]; then
+    e2e_emit "$token" 1
+    return 0
+  fi
+  e2e_emit "$token" 0 "$host served HTTP $EDGE_STATUS over trusted HTTPS (expected 2xx)"
+  return 1
+}
+
+public_edge_sni_check() {
   local failures=0
-  E2E_EXTRA_ARGS=(--resolve "wotbtools.com:443:$E2E_PUBLIC_IP")
-  if e2e_http GET "https://wotbtools.com/api/health" && [ "$E2E_HTTP_STATUS" = 200 ]; then
-    e2e_emit public-edge-web 1
-  else
-    e2e_emit public-edge-web 0 "curl --resolve wotbtools.com:443:$E2E_PUBLIC_IP returned HTTP $E2E_HTTP_STATUS; open 443/tcp and bind Caddy to the public interface before cutting DNS"
-    failures=1
-  fi
-  E2E_EXTRA_ARGS=(--resolve "auth.wotbtools.com:443:$E2E_PUBLIC_IP")
-  if e2e_http GET "https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configuration" \
-    && [ "$E2E_HTTP_STATUS" = 200 ]; then
-    e2e_emit public-edge-auth 1
-  else
-    e2e_emit public-edge-auth 0 "curl --resolve auth.wotbtools.com:443:$E2E_PUBLIC_IP returned HTTP $E2E_HTTP_STATUS"
-    failures=1
-  fi
+  edge_sni_token public-edge-sni-web wotbtools.com "$E2E_WEB_URL" || failures=1
+  edge_sni_token public-edge-sni-auth auth.wotbtools.com "$E2E_AUTH_URL" || failures=1
+  [ "$failures" -eq 0 ]
+}
+
+public_tls_check() {
+  local failures=0
+  edge_tls_token public-tls-web wotbtools.com "$E2E_WEB_URL" || failures=1
+  edge_tls_token public-tls-auth auth.wotbtools.com "$E2E_AUTH_URL" || failures=1
   [ "$failures" -eq 0 ]
 }
 
@@ -1339,6 +1414,13 @@ pre_cutover_check() {
 
   command -v docker >/dev/null 2>&1 || { echo "docker: FAIL (docker is required)" >&2; return 1; }
   command -v python3 >/dev/null 2>&1 || { echo "python3: FAIL (python3 is required)" >&2; return 1; }
+  case "$CUTOVER_PHASE" in
+    pre|post) ;;
+    *)
+      echo "cutover-phase: FAIL (WOTB_CUTOVER_PHASE must be pre or post, got '$CUTOVER_PHASE')" >&2
+      return 1
+      ;;
+  esac
   for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
     KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
     WG_APPLICATION_ID CADDY_ACME_EMAIL \
@@ -1571,12 +1653,36 @@ PY
   # "containers are up".
   business_e2e_check || failures=1
   business_data_integrity_check || failures=1
-  public_edge_check || failures=1
+  case "$CUTOVER_PHASE" in
+    pre)
+      # Before DNS: TX edge routing/SNI reachability only. Trusted public TLS is
+      # mechanically unachievable while public DNS still points at Yecao, so it is
+      # asserted by the post-cutover phase instead of being faked here.
+      public_edge_sni_check || failures=1
+      ;;
+    post)
+      # After DNS: the mandatory trusted-TLS gate. Both public hosts must resolve
+      # to TX and serve a locally trusted certificate; no `curl -k` anywhere.
+      public_edge_sni_check || failures=1
+      public_tls_check || failures=1
+      ;;
+    *) failures=1 ;;
+  esac
 
   [ "$failures" -eq 0 ] && echo "QQ_IDP_STATUS=idp-qq=READY"
   if [ "$failures" -ne 0 ]; then
-    echo "PRE_CUTOVER_NOT_READY" >&2
+    if [ "$CUTOVER_PHASE" = post ]; then
+      echo "POST_CUTOVER_NOT_READY" >&2
+    else
+      echo "PRE_CUTOVER_NOT_READY" >&2
+    fi
     return 1
+  fi
+  if [ "$CUTOVER_PHASE" = post ]; then
+    echo "POST_CUTOVER_READY"
+    echo "DNS_CUTOVER_PERFORMED"
+    echo "WAITING_FOR_OPERATOR_RETIREMENT"
+    return 0
   fi
   echo "PRE_CUTOVER_READY"
   echo "DNS_CUTOVER_NOT_PERFORMED"

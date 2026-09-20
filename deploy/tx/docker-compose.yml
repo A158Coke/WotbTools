@@ -261,6 +261,9 @@ services:
       - caddy_config:/config
     depends_on:
       - keycloak
+    # Caddy deliberately has no static container address: a pinned 172.29.0.2
+    # collided with the address Compose had already handed to another service
+    # (`Address already in use`). In-network peers reach it by service name.
     restart: unless-stopped
     logging: *default-logging
 
