@@ -69,6 +69,16 @@ public class ReplayProcessingJobStore {
      */
     private final ReplayJobWorkspaceCleaner workspaceCleaner;
     /**
+     * 正在被 TTL sweep 回收的 job（生命周期锁保护）。
+     *
+     * <p>它把「lease 检查」与「拒绝新 acquire」合成一个线性化步骤：要么 acquire 先赢（lease &gt; 0
+     * ⇒ sweeper 跳过），要么 sweep 先赢（已 claim ⇒ 新 acquire 返回 null 而不是拿到一个随后被删的
+     * job）。没有它就会出现「请求成功 acquire lease、sweeper 仍把 MinIO 工作区与权威行删掉」的
+     * 真实窗口——尤其在 backend 重启后，这些 job 不在 live registry，靠「先从 registry 移除」
+     * 的本地保护根本覆盖不到。</p>
+     */
+    private final Set<String> reclaimingJobs = ConcurrentHashMap.newKeySet();
+    /**
      * PostgreSQL 权威状态投影；{@code null} 表示纯内存模式（默认，Yecao 过渡期与本地开发）。
      * 非 null 时每次状态迁移都 write-through 落库，且 {@link #get(String)} 在内存未命中时
      * 从权威状态恢复只读投影（进程重启后状态仍可读）。
@@ -494,6 +504,10 @@ public class ReplayProcessingJobStore {
      */
     public ReplayProcessingJob acquireForExport(final String jobId) {
         synchronized (lifecycleLock) {
+            if (reclaimingJobs.contains(jobId)) {
+                // TTL sweep 已领取回收权：绝不允许「先给 lease、随后工作区被删」。
+                return null;
+            }
             // 可读视图（live 或从 PG 权威恢复）：dataset 权威在对象存储 / 进程内存，由
             // ReplayProcessingResultReader 决定读得到与否。要求 live registry 命中会把
             // 「backend 重启后 Export 一个已 READY 的 job」永久拒掉——重启是常规运维事件。
@@ -520,6 +534,10 @@ public class ReplayProcessingJobStore {
      */
     public ReplayProcessingJob acquireForSource(final String jobId) {
         synchronized (lifecycleLock) {
+            if (reclaimingJobs.contains(jobId)) {
+                // TTL sweep 已领取回收权：绝不允许「先给 lease、随后工作区被删」。
+                return null;
+            }
             final ReplayProcessingJob job = get(jobId);
             if (job == null) {
                 return null;
@@ -608,22 +626,51 @@ public class ReplayProcessingJobStore {
     private void sweepAuthority(final long cutoff) {
         int removed = 0;
         for (final String jobId : authority.listExpiredTerminal(cutoff)) {
-            final AtomicInteger leases = datasetLeaseRefs.get(jobId);
-            if (leases != null && leases.get() > 0) {
+            // 「lease 检查 + 领取回收权」必须在同一把锁内完成：否则会出现「acquire 成功拿到 lease，
+            // sweeper 随后仍把工作区与权威行删掉」的窗口（acquire 与 sweep 都在 lifecycleLock 内线性化）。
+            if (!claimReclaim(jobId)) {
                 continue;
             }
-            if (!cleanWorkspace(jobId)) {
-                // 对象存储回收没做完 ⇒ **保留**权威行，下一轮 sweep 幂等重试（绝不先删 PG）。
-                continue;
+            try {
+                // 网络 I/O（MinIO 工作区回收）刻意留在锁外，不长时间占住全局 lifecycle 锁。
+                if (!cleanWorkspace(jobId)) {
+                    // 对象存储回收没做完 ⇒ **保留**权威行，下一轮 sweep 幂等重试（绝不先删 PG）。
+                    continue;
+                }
+                if (!deleteAuthorityRow(jobId)) {
+                    // PG 删除失败同样只是「下一轮再来」：对象存储回收是幂等的，重复执行无害。
+                    continue;
+                }
+                removed++;
+            } finally {
+                // 成功（权威行已删）与失败（留待下一轮）都必须释放 claim，
+                // 否则失败的 job 会永远占着 reclaiming 标记、再也没法回收。
+                releaseReclaim(jobId);
             }
-            if (!deleteAuthorityRow(jobId)) {
-                // PG 删除失败同样只是「下一轮再来」：对象存储回收是幂等的，重复执行无害。
-                continue;
-            }
-            removed++;
         }
         if (removed > 0) {
             LOGGER.info("replay_processing_job_cleaned ttl_expired=true authority_rows={}", removed);
+        }
+    }
+
+    /**
+     * 在生命周期锁内领取「回收中」标记，使「lease 检查」与「禁止新 acquire」成为一个原子步骤。
+     *
+     * @return {@code false} = 该 job 有活跃 Dataset Lease，或已被另一轮 sweep 领取
+     */
+    private boolean claimReclaim(final String jobId) {
+        synchronized (lifecycleLock) {
+            final AtomicInteger leases = datasetLeaseRefs.get(jobId);
+            if (leases != null && leases.get() > 0) {
+                return false;
+            }
+            return reclaimingJobs.add(jobId);
+        }
+    }
+
+    private void releaseReclaim(final String jobId) {
+        synchronized (lifecycleLock) {
+            reclaimingJobs.remove(jobId);
         }
     }
 
