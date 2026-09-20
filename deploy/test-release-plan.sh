@@ -189,7 +189,7 @@ plan = manual("frontend")
 manual_result = json.loads(subprocess.check_output([
     "python3", str(tool), "manual", "--service", "frontend", "--commit-sha", commit,
 ]))
-assert manual_result["imageTag"] == "latest"
+assert manual_result["imageTag"] == "sha-0123456789ab"
 assert manual_result["imageServices"] == ["wotb-frontend"]
 assert subprocess.run(
     ["python3", str(tool), "manual", "--service", "frontend", "--commit-sha", commit,
@@ -220,21 +220,25 @@ manifest["commitSha"] = commit
 manifest["imageTag"] = "latest"
 manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 assert subprocess.run(["python3", str(tool), "validate", "--manifest", str(manifest_path), "--expected-sha", commit]).returncode != 0
-subprocess.check_call([
-    "python3", str(tool), "validate", "--manifest", str(manifest_path),
-    "--expected-sha", commit, "--allow-latest",
-])
 manifest["buildServices"] = []
 manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 assert subprocess.run(
-    ["python3", str(tool), "validate", "--manifest", str(manifest_path), "--expected-sha", commit,
-     "--allow-latest"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    ["python3", str(tool), "validate", "--manifest", str(manifest_path), "--expected-sha", commit],
+    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
 ).returncode != 0
+
+minio_manifest = json.loads(subprocess.check_output([
+    "python3", str(tool), "manual", "--service", "minio", "--commit-sha", commit,
+]))
+assert minio_manifest["imageTag"] == "sha-0123456789ab"
+assert minio_manifest["imageServices"] == ["minio"]
+assert minio_manifest["deployServices"] == ["minio"]
+assert minio_manifest["targetServices"] == {"yecao": ["minio"]}
 
 parser_worker_manifest = json.loads(subprocess.check_output([
     "python3", str(tool), "manual", "--service", "parser-worker", "--commit-sha", commit,
 ]))
-assert parser_worker_manifest["imageTag"] == "latest"
+assert parser_worker_manifest["imageTag"] == "sha-0123456789ab"
 assert parser_worker_manifest["imageServices"] == ["parser-worker"]
 assert parser_worker_manifest["deployServices"] == ["parser-worker"]
 assert parser_worker_manifest["targetServices"] == {"yecao": ["parser-worker"]}
@@ -242,26 +246,25 @@ parser_worker_manifest_path = work / "parser-worker-manifest.json"
 parser_worker_manifest_path.write_text(json.dumps(parser_worker_manifest), encoding="utf-8")
 subprocess.check_call([
     "python3", str(tool), "validate", "--manifest", str(parser_worker_manifest_path),
-    "--expected-sha", commit, "--allow-latest",
+    "--expected-sha", commit,
 ])
 parser_worker_manifest["targetServices"] = {"tx": ["parser-worker"]}
 parser_worker_manifest_path.write_text(json.dumps(parser_worker_manifest), encoding="utf-8")
 assert subprocess.run(
-    ["python3", str(tool), "validate", "--manifest", str(parser_worker_manifest_path),
-     "--expected-sha", commit, "--allow-latest"],
+    ["python3", str(tool), "validate", "--manifest", str(parser_worker_manifest_path), "--expected-sha", commit],
     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
 ).returncode != 0, "a parser-worker image must stay routed to the yecao target"
 parser_worker_manifest["targetServices"] = {"yecao": ["parser-worker"]}
 parser_worker_manifest_path.write_text(json.dumps(parser_worker_manifest), encoding="utf-8")
 subprocess.check_call([
     "python3", str(tool), "validate", "--manifest", str(parser_worker_manifest_path),
-    "--expected-sha", commit, "--allow-latest",
+    "--expected-sha", commit,
 ])
 
 business_api_manifest = json.loads(subprocess.check_output([
     "python3", str(tool), "manual", "--service", "backend", "--commit-sha", commit,
 ]))
-assert business_api_manifest["imageTag"] == "latest"
+assert business_api_manifest["imageTag"] == "sha-0123456789ab"
 assert business_api_manifest["imageServices"] == ["business-api"]
 assert business_api_manifest["deployServices"] == ["business-api"]
 assert business_api_manifest["targetServices"] == {"tx": ["business-api"]}
@@ -269,15 +272,14 @@ business_api_manifest_path = work / "business-api-manifest.json"
 business_api_manifest_path.write_text(json.dumps(business_api_manifest), encoding="utf-8")
 subprocess.check_call([
     "python3", str(tool), "validate", "--manifest", str(business_api_manifest_path),
-    "--expected-sha", commit, "--allow-latest",
+    "--expected-sha", commit,
 ])
 # The backend image belongs to the TX business runtime now, so a manifest that
 # keeps the image set but routes it back to the Yecao legacy target is rejected.
 business_api_manifest["targetServices"] = {"yecao": ["business-api"]}
 business_api_manifest_path.write_text(json.dumps(business_api_manifest), encoding="utf-8")
 assert subprocess.run(
-    ["python3", str(tool), "validate", "--manifest", str(business_api_manifest_path),
-     "--expected-sha", commit, "--allow-latest"],
+    ["python3", str(tool), "validate", "--manifest", str(business_api_manifest_path), "--expected-sha", commit],
     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
 ).returncode != 0, "the business-api service must stay routed to the tx target"
 
