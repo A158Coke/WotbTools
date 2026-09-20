@@ -47,7 +47,7 @@ class CiPathFilterTest(unittest.TestCase):
     def test_openapi(self):
         plan = detect("contracts/http/openapi.yaml")
         self.assert_surfaces(["contracts/http/openapi.yaml"], ["backend", "frontend", "httpContract"])
-        self.assertEqual(plan["buildServices"], ["wotb-backend", "wotb-frontend"])
+        self.assertEqual(plan["buildServices"], ["business-api", "wotb-frontend"])
 
     def test_android_bridge(self):
         self.assert_surfaces(["contracts/android-native-bridge.json"], ["android"])
@@ -73,8 +73,8 @@ class CiPathFilterTest(unittest.TestCase):
             ("contracts/mq/parser-messages.json", ["parser-worker"], []),
             (
                 "java/wotb-parser-worker/src/main/java/com/wotb/parserworker/ParserWorkerApplication.java",
-                ["wotb-backend", "parser-worker"],
-                ["wotb-backend"],
+                ["business-api", "parser-worker"],
+                ["business-api"],
             ),
         ):
             plan = detect(path)
@@ -83,7 +83,7 @@ class CiPathFilterTest(unittest.TestCase):
             self.assertEqual(plan["deployServices"], expected_deploy_services, path)
             self.assertEqual(
                 plan["targetServices"],
-                {"yecao": expected_deploy_services} if expected_deploy_services else {},
+                {"tx": expected_deploy_services} if expected_deploy_services else {},
                 path,
             )
         self.assert_surfaces(["docker/Dockerfile.parser-worker"], ["deploy"])
@@ -128,12 +128,13 @@ class CiPathFilterTest(unittest.TestCase):
         tankopedia_snapshot = detect("common/tankopedia-tier10.json")
         self.assertTrue(tankopedia_snapshot["ciSurfaces"]["liveData"])
 
-    def test_yecao_runtime_compose_does_not_refresh_tx_services(self):
+    def test_yecao_runtime_compose_does_not_refresh_retired_application_services(self):
         plan = detect("deploy/docker-compose.prod.yml")
         self.assertEqual(plan["deployServices"], [
-            "postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana", "wotb-backend"
+            "postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana"
         ])
         self.assertEqual(plan["targetServices"], {"yecao": plan["deployServices"]})
+        self.assertNotIn("wotb-backend", plan["deployServices"])
         self.assert_surfaces(["deploy/docker-compose.prod.yml"], ["deploy"])
 
     def test_provider_source_runs_provider_and_runtime_smoke(self):
@@ -191,9 +192,15 @@ class CiPathFilterTest(unittest.TestCase):
     def test_tx_compose_config_still_excludes_business_postgres(self):
         plan = detect("deploy/tx/docker-compose.yml")
         self.assertEqual(
-            plan["deployServices"], ["keycloak-postgres", "keycloak", "wotb-frontend"]
+            plan["deployServices"], ["keycloak-postgres", "keycloak", "wotb-frontend", "business-api"]
         )
         self.assertNotIn("business-postgres", plan["deployServices"])
+        # A Compose-only TX change must rebuild the TX application images from
+        # the frozen commit: their identity cannot be inferred from metadata.
+        self.assertEqual(
+            plan["images"],
+            {"backend": True, "frontend": True, "keycloak": True, "minio": False, "parser-worker": False},
+        )
 
 
 if __name__ == "__main__":

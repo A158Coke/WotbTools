@@ -107,9 +107,17 @@ is_business_postgres_group_selected() {
   is_selected all || is_selected business-postgres
 }
 
+# The TX business runtime owns the application database role, the distributed
+# replay control plane, and AI Review, so it is the only group that requires the
+# application credentials, the MinIO control-plane identity, and the AI key. A
+# RabbitMQ-only or database-only deployment must never depend on them.
+is_business_api_group_selected() {
+  is_selected all || is_selected business-api
+}
+
 is_image_service() {
   case "$1" in
-    keycloak|wotb-frontend) return 0 ;;
+    keycloak|wotb-frontend|business-api) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -147,7 +155,7 @@ validate_inputs() {
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      all|keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|caddy) ;;
+      all|keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|business-api|caddy) ;;
       *) die "unsupported TX deployment service: $service" ;;
     esac
   done
@@ -158,7 +166,7 @@ validate_inputs() {
   for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
     case "$service" in
       "") ;;
-      keycloak|wotb-frontend) is_selected "$service" || die "TX image service is not selected: $service" ;;
+      keycloak|wotb-frontend|business-api) is_selected "$service" || die "TX image service is not selected: $service" ;;
       *) die "unsupported TX image service: $service" ;;
     esac
   done
@@ -183,6 +191,18 @@ validate_inputs() {
     for required in TX_BUSINESS_POSTGRES_ADMIN_USER TX_BUSINESS_POSTGRES_ADMIN_PASSWORD \
       TX_BUSINESS_DB_NAME TX_BUSINESS_DB_USERNAME TX_BUSINESS_DB_PASSWORD \
       TX_BUSINESS_DB_PASSWORD_VERSION; do
+      require_env "$required"
+    done
+  fi
+  if is_business_api_group_selected; then
+    # The business runtime is TX-internal, so it consumes exactly the
+    # credentials below: the OpenTofu-owned application database role, the
+    # RabbitMQ control-api identity, the MinIO control_api identity, the
+    # Keycloak Admin API client, and the AI Review key.
+    for required in TX_BUSINESS_DB_NAME TX_BUSINESS_DB_USERNAME TX_BUSINESS_DB_PASSWORD \
+      TX_RABBITMQ_CONTROL_API_PASSWORD \
+      YECAO_MINIO_CONTROL_API_ACCESS_KEY YECAO_MINIO_CONTROL_API_SECRET_KEY \
+      KEYCLOAK_ADMIN_CLIENT_SECRET AI_API_KEY; do
       require_env "$required"
     done
   fi
@@ -260,15 +280,20 @@ current_or_target_tag() {
 }
 
 render_effective_compose() {
-  local source="$1" target="$2" frontend_tag="$3" keycloak_tag="$4"
-  FRONTEND_TAG="$frontend_tag" KEYCLOAK_TAG="$keycloak_tag" \
+  local source="$1" target="$2" frontend_tag="$3" keycloak_tag="$4" business_api_tag="$5"
+  FRONTEND_TAG="$frontend_tag" KEYCLOAK_TAG="$keycloak_tag" BUSINESS_API_TAG="$business_api_tag" \
     python3 - "$source" "$target" <<'PY'
 import os
 import re
 import sys
 
 source, target = sys.argv[1:3]
-tags = {"wotb-frontend": os.environ["FRONTEND_TAG"], "keycloak": os.environ["KEYCLOAK_TAG"]}
+# service -> (immutable tag resolved for this deployment, pinned image repository)
+tags = {
+    "wotb-frontend": (os.environ["FRONTEND_TAG"], "ghcr.io/a158coke/wotbtools-frontend"),
+    "keycloak": (os.environ["KEYCLOAK_TAG"], "ghcr.io/a158coke/wotbtools-keycloak"),
+    "business-api": (os.environ["BUSINESS_API_TAG"], "ghcr.io/a158coke/wotbtools-backend"),
+}
 current = ""
 seen = set()
 output = []
@@ -277,8 +302,8 @@ for line in open(source, encoding="utf-8"):
     if match:
         current = match.group(1)
     if current in tags and re.match(r"^\s+image:\s+ghcr\.io/a158coke/wotbtools-[^:]+:", line):
-        image = "ghcr.io/a158coke/wotbtools-keycloak" if current == "keycloak" else "ghcr.io/a158coke/wotbtools-frontend"
-        line = f"    image: {image}:{tags[current]}\n"
+        tag, image = tags[current]
+        line = f"    image: {image}:{tag}\n"
         seen.add(current)
     output.append(line)
 missing = set(tags) - seen
@@ -302,10 +327,11 @@ stage_and_validate() {
     mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
   fi
   set_nonselected_compose_placeholders
-  local frontend_tag keycloak_tag
+  local frontend_tag keycloak_tag business_api_tag
   frontend_tag="$(current_or_target_tag wotb-frontend)"
   keycloak_tag="$(current_or_target_tag keycloak)"
-  render_effective_compose "$source" "$EFFECTIVE_COMPOSE" "$frontend_tag" "$keycloak_tag"
+  business_api_tag="$(current_or_target_tag business-api)"
+  render_effective_compose "$source" "$EFFECTIVE_COMPOSE" "$frontend_tag" "$keycloak_tag" "$business_api_tag"
   export TX_RUNTIME_ROOT
   export TX_BACKEND_UPSTREAM="$BACKEND_UPSTREAM_VALUE"
   docker compose -f "$EFFECTIVE_COMPOSE" config >/dev/null \
@@ -328,6 +354,9 @@ pull_images() {
   fi
   if is_selected all || is_selected wotb-frontend; then
     services+=(wotb-frontend)
+  fi
+  if is_selected all || is_selected business-api; then
+    services+=(business-api)
   fi
   if [ "$BOOTSTRAP_KEYCLOAK" != 1 ] && \
     (is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected caddy); then
@@ -355,7 +384,7 @@ promote_files() {
 
 compose_service_list() {
   if is_selected all; then
-    printf '%s\n' keycloak-postgres business-postgres rabbitmq keycloak wotb-frontend
+    printf '%s\n' keycloak-postgres business-postgres rabbitmq keycloak wotb-frontend business-api
   else
     printf '%s\n' "${DEPLOY_SERVICES[@]}"
   fi
@@ -514,6 +543,22 @@ set_nonselected_compose_placeholders() {
     : "${TX_BUSINESS_POSTGRES_ADMIN_PASSWORD:=not-configured}"
     export TX_BUSINESS_POSTGRES_ADMIN_USER TX_BUSINESS_POSTGRES_ADMIN_PASSWORD
   fi
+  if ! is_business_api_group_selected; then
+    # Compose expands every service even for a database-, broker-, or
+    # frontend-only deployment, so the business runtime's required inputs need
+    # validation placeholders that no selected service ever reads.
+    : "${TX_BUSINESS_DB_NAME:=not-configured}"
+    : "${TX_BUSINESS_DB_USERNAME:=not-configured}"
+    : "${TX_BUSINESS_DB_PASSWORD:=not-configured}"
+    : "${YECAO_MINIO_CONTROL_API_ACCESS_KEY:=not-configured}"
+    : "${YECAO_MINIO_CONTROL_API_SECRET_KEY:=not-configured}"
+    : "${KEYCLOAK_ADMIN_CLIENT_SECRET:=not-configured}"
+    : "${AI_API_KEY:=not-configured}"
+    : "${TX_RABBITMQ_CONTROL_API_PASSWORD:=not-configured}"
+    export TX_BUSINESS_DB_NAME TX_BUSINESS_DB_USERNAME TX_BUSINESS_DB_PASSWORD \
+      YECAO_MINIO_CONTROL_API_ACCESS_KEY YECAO_MINIO_CONTROL_API_SECRET_KEY \
+      KEYCLOAK_ADMIN_CLIENT_SECRET AI_API_KEY TX_RABBITMQ_CONTROL_API_PASSWORD
+  fi
 }
 
 provision_rabbitmq() {
@@ -621,6 +666,13 @@ blocking_health() {
     else
       wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || return 1
     fi
+  fi
+  if is_selected all || is_selected business-api; then
+    # The business runtime is TX-internal and publishes no port, so both the
+    # application surface and the dedicated management port are proven from
+    # inside wotb_tx_internal by the deployment-owned health-probe container.
+    wait_for_probe business-api http://business-api:8088/actuator/health || return 1
+    wait_for_probe business-api-app http://business-api:8087/api/health || return 1
   fi
   if is_selected all || is_selected wotb-frontend; then
     # This direct probe proves TX -> WireGuard -> Yecao's published backend
@@ -732,7 +784,11 @@ pre_cutover_check() {
   for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
     KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
     WG_APPLICATION_ID CADDY_ACME_EMAIL \
-    TX_BUSINESS_POSTGRES_ADMIN_USER TX_BUSINESS_POSTGRES_ADMIN_PASSWORD; do
+    TX_BUSINESS_POSTGRES_ADMIN_USER TX_BUSINESS_POSTGRES_ADMIN_PASSWORD \
+    TX_BUSINESS_DB_NAME TX_BUSINESS_DB_USERNAME TX_BUSINESS_DB_PASSWORD \
+    TX_RABBITMQ_CONTROL_API_PASSWORD \
+    YECAO_MINIO_CONTROL_API_ACCESS_KEY YECAO_MINIO_CONTROL_API_SECRET_KEY \
+    KEYCLOAK_ADMIN_CLIENT_SECRET AI_API_KEY; do
     require_env "$required"
   done
   [ -f "$LIVE_COMPOSE" ] || { echo "tx-compose: FAIL (missing $LIVE_COMPOSE)" >&2; return 1; }
@@ -953,7 +1009,7 @@ diagnostics() {
 stop_failed_service() {
   local service="$FAILED_SERVICE"
   case "$service" in
-    keycloak|wotb-frontend|caddy)
+    keycloak|wotb-frontend|business-api|caddy)
       echo "Stopping failed affected TX service: $service"
       docker compose -f "$LIVE_COMPOSE" stop "$service" || true
       ;;
@@ -964,7 +1020,7 @@ stop_failed_service() {
 update_metadata() {
   local now metadata_tmp selected service
   selected=""
-  for service in keycloak wotb-frontend; do
+  for service in keycloak wotb-frontend business-api; do
     if is_selected all || is_selected "$service"; then
       selected+="$service,"
     fi
