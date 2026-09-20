@@ -38,6 +38,10 @@ class MapOverviewQueryServiceWiringTest {
                 throw new UncheckedIOException(e);
             }
         }
+        @Bean
+        com.wotb.web.replay.job.ReplayProcessingResultReader dataset(final ReplayProcessingJobStore store) {
+            return new com.wotb.web.replay.job.LocalReplayDatasetRepository(store);
+        }
     }
 
     @Configuration

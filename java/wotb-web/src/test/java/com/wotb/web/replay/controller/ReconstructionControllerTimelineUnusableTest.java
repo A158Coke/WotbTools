@@ -163,7 +163,7 @@ class ReconstructionControllerTimelineUnusableTest {
         TestableController(final AiReplayReviewService reviewService,
                            final AiCancellationRegistry cancellationRegistry,
                            final AiReviewWorkerExecutor workerExecutor) {
-            super(reviewService, cancellationRegistry, workerExecutor, new MapOverviewQueryService(null));
+            super(reviewService, cancellationRegistry, workerExecutor, new MapOverviewQueryService(null, null));
             emitter = new ReconstructionControllerStreamingTest.RecordingEmitter(
                     ReconstructionController.SSE_TIMEOUT_MS);
         }
@@ -187,7 +187,7 @@ class ReconstructionControllerTimelineUnusableTest {
         }
 
         private ThrowingReviewService(final RuntimeException failure) {
-            super(null, null, null, null);
+            super(null, null, null, null, null);
             this.failure = failure;
         }
 

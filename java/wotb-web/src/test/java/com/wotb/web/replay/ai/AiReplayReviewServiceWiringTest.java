@@ -48,6 +48,11 @@ class AiReplayReviewServiceWiringTest {
         TacticalReviewHarness tacticalReviewHarness() {
             return mock(TacticalReviewHarness.class);
         }
+
+        @Bean
+        com.wotb.web.replay.job.ReplayProcessingResultReader dataset(final ReplayProcessingJobStore store) {
+            return new com.wotb.web.replay.job.LocalReplayDatasetRepository(store);
+        }
     }
 
     /** store 缺失时的 fail-fast 配置：无 ReplayProcessingJobStore bean。 */

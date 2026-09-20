@@ -5,6 +5,7 @@ import com.wotb.web.replay.dto.BattlePlaybackDataset;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
+import com.wotb.web.replay.job.ReplayProcessingResultReader;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -18,9 +19,13 @@ import org.springframework.web.server.ResponseStatusException;
 public class MapOverviewQueryService {
 
     private final ReplayProcessingJobStore processingStore;
+    /** dataset / derived artifact 的唯一读取端口（local = 内存 + job 目录，distributed = 对象存储）。 */
+    private final ReplayProcessingResultReader dataset;
 
-    public MapOverviewQueryService(final ReplayProcessingJobStore processingStore) {
+    public MapOverviewQueryService(final ReplayProcessingJobStore processingStore,
+                                  final ReplayProcessingResultReader dataset) {
         this.processingStore = processingStore;
+        this.dataset = dataset;
     }
 
     /**
@@ -48,7 +53,7 @@ public class MapOverviewQueryService {
                         state.status() == ReplayProcessingJob.SourceStatus.FAILED
                                 ? "SOURCE_PROCESSING_FAILED" : "SOURCE_NOT_READY");
             }
-            return ReplayArtifactWriter.readMapOverview(processingStore.jobDir(processingJobId), sourceIndex);
+            return ReplayArtifactWriter.decodeMapOverview(dataset.mapOverview(processingJobId, sourceIndex));
         } catch (final java.io.IOException | tools.jackson.core.JacksonException e) {
             // 文件不存在不会进入 catch（readMapOverview 缺文件返回 null → 调用方 204
             // capability unavailable）；此处 catch 代表 artifact 路径 / 读取 / 存储 I/O 故障
@@ -81,7 +86,8 @@ public class MapOverviewQueryService {
                         state.status() == ReplayProcessingJob.SourceStatus.FAILED
                                 ? "SOURCE_PROCESSING_FAILED" : "SOURCE_NOT_READY");
             }
-            return ReplayArtifactWriter.readBattlePlaybackV2(processingStore.jobDir(processingJobId), sourceIndex);
+            return ReplayArtifactWriter.decodeBattlePlaybackV2(
+                    dataset.battlePlaybackV2(processingJobId, sourceIndex));
         } catch (final java.io.IOException | tools.jackson.core.JacksonException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "DATASET_UNAVAILABLE");
         } finally {

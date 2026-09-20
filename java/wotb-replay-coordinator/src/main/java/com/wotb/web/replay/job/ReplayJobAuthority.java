@@ -328,19 +328,23 @@ public final class ReplayJobAuthority {
     }
 
     /**
-     * 删除终态且已过期的 job 投影（TTL 的持久化侧）。
+     * 终态且已过期的 job 投影 id（TTL 清理的**候选集**，不直接删除）。
      *
-     * @return 删除行数，供 sweeper 记账
+     * <p>刻意返回 id 而不是一次性 {@code delete ... where finished_at < cutoff}：Dataset Lease
+     * （AI / Playback / Export 正在读取）是**进程内**状态，集合式删除看不见它，会把正在被消费的
+     * job 行删掉，让读取中途变成 404。调用方按 lease 过滤后再逐条删除，因此「lease 生效期间
+     * sweep 不删」这条不变量在权威侧同样成立。</p>
      */
-    public int deleteExpiredTerminal(final long cutoffMillis) {
+    public List<String> listExpiredTerminal(final long cutoffMillis) {
         return jdbc.sql("""
-                        delete from replay_processing_job
+                        select job_id from replay_processing_job
                         where status in ('READY', 'FAILED', 'CANCELLED')
                           and finished_at is not null
                           and finished_at < :cutoff
                         """)
                 .param("cutoff", utc(cutoffMillis), Types.TIMESTAMP_WITH_TIMEZONE)
-                .update();
+                .query(String.class)
+                .list();
     }
 
     private static OffsetDateTime utc(final long epochMillis) {

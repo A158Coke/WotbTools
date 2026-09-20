@@ -58,16 +58,20 @@ public class ReplayExportJobService {
     private final MeterRegistry meterRegistry;
     /** Processing Job result 提供方（Export 只消费已解析 result）。 */
     private final ReplayProcessingJobStore processingStore;
+    /** dataset 的唯一读取端口：local = 进程内存，distributed = MinIO finalized dataset。 */
+    private final ReplayProcessingResultReader dataset;
     private final Tankopedia tankopedia = Tankopedia.load();
 
     @Autowired
     public ReplayExportJobService(final ExportJobStore store,
                                   final ReplayExportWorkerExecutor workerExecutor,
                                   final ReplayProcessingJobStore processingStore,
+                                  final ReplayProcessingResultReader dataset,
                                   @Autowired(required = false) final MeterRegistry meterRegistry) {
         this.store = store;
         this.workerExecutor = workerExecutor;
         this.processingStore = processingStore;
+        this.dataset = dataset;
         this.meterRegistry = meterRegistry;
     }
 
@@ -165,7 +169,7 @@ public class ReplayExportJobService {
         final ReplayProcessingJob processingJob = acquiredJob;
         final boolean acquired = true;
         final String jobId = UUID.randomUUID().toString();
-        final ProcessedDataset ds = processingJob.result();
+        final ProcessedDataset ds = dataset.readReadyDataset(processingJob);
         // total = Processing 输入总数（valid + duplicates + failures），保持与解析时一致。
         final int total = ds.validCount() + ds.duplicates().size() + ds.failures().size();
         final Path inputDir = store.inputDir(jobId);
@@ -266,7 +270,7 @@ public class ReplayExportJobService {
         final long startNanos = System.nanoTime();
         recordQueueWait(submittedNanos, startNanos, job.mode());
         // 方法作用域：失败日志需要 dataset 上下文（parsed/rated/duplicates/league failures）
-        final ProcessedDataset ds = processingJob.result();
+        final ProcessedDataset ds = dataset.readReadyDataset(processingJob);
         try {
             if (!job.startProcessing()) {
                 // QUEUED 期间被取消 → 已终态 CANCELLED；worker 负责终态统计。

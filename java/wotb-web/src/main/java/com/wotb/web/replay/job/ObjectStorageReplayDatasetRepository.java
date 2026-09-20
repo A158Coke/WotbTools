@@ -93,6 +93,39 @@ public final class ObjectStorageReplayDatasetRepository
 
     // ---- 收尾侧：per-source canonical dataset → FINALIZING_BATCH → finalized batch dataset ----
 
+    // ---- derived artifact：与 dataset 同一端口，distributed 下 TX 本地磁盘不参与读取 ----
+
+    @Override
+    public byte[] aiFacts(final String jobId, final int sourceIndex) throws IOException {
+        return readArtifact(jobId, sourceIndex, ReplayArtifactWriter.AI_FACTS_NAME);
+    }
+
+    @Override
+    public byte[] mapOverview(final String jobId, final int sourceIndex) throws IOException {
+        return readArtifact(jobId, sourceIndex, ReplayArtifactWriter.MAP_OVERVIEW_NAME);
+    }
+
+    @Override
+    public byte[] battlePlaybackV2(final String jobId, final int sourceIndex) throws IOException {
+        return readArtifact(jobId, sourceIndex, ReplayArtifactWriter.BATTLE_PLAYBACK_V2_NAME);
+    }
+
+    /**
+     * 读 worker 写的 derived artifact；键布局（{@code artifacts/<i>/<name>}）由 worker 侧
+     * {@code ParserArtifactSink} 与这里共同遵守，文件名只有 {@link ReplayArtifactWriter} 一个 owner。
+     *
+     * @return {@code null} = 对象不存在（capability unavailable，调用方按各自契约处理）
+     */
+    private byte[] readArtifact(final String jobId, final int sourceIndex, final String artifactName)
+            throws IOException {
+        final ObjectKey key = ObjectStorageKeys.tempJobObject(jobId,
+                "artifacts/" + sourceIndex + "/" + artifactName);
+        if (!storage.exists(key)) {
+            return null;
+        }
+        return readAll(key);
+    }
+
     @Override
     public ProcessedDataset finalizeBatch(final ReplayProcessingJob job) throws IOException {
         final ProcessedDataset dataset =
