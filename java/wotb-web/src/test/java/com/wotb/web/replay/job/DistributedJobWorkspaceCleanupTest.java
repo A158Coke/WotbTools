@@ -25,10 +25,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.spy;
@@ -164,6 +167,55 @@ class DistributedJobWorkspaceCleanupTest {
         assertTrue(authority().findJob(jobId).isEmpty(), "下一轮 sweep 必须完成回收");
     }
 
+    /**
+     * 并发 race：sweeper 已做出清理决定、正准备删 MinIO 时，并发的 `acquireForSource` 只能有一种结果。
+     *
+     * <p>允许的结果：要么 acquire 先线性化（lease &gt; 0 ⇒ sweeper 跳过），要么 sweep 先领取回收权
+     * （新 acquire 直接失败）。**绝不允许**「acquire 成功拿到 lease，随后工作区/权威行被删」。</p>
+     *
+     * <p>本测试把存储删除卡在 latch 上，制造出「PG 行仍在、尚未删任何对象」的精确窗口：此时 acquire
+     * 若还能成功，就说明它拿到的是一个马上会被删掉的 job。</p>
+     */
+    @Test
+    void concurrentAcquireIsRejectedWhileASweepHasClaimedTheJobForReclaim() throws Exception {
+        readyJob();
+        final CountDownLatch cleanupStarted = new CountDownLatch(1);
+        final CountDownLatch cleanupMayFinish = new CountDownLatch(1);
+        storage.beforeDelete = () -> {
+            cleanupStarted.countDown();
+            awaitQuietly(cleanupMayFinish);
+        };
+
+        final Thread sweeper = new Thread(store::sweepExpired, "race-sweeper");
+        sweeper.start();
+        try {
+            assertTrue(cleanupStarted.await(10, TimeUnit.SECONDS),
+                    "sweeper 必须先进入对象存储回收（否则本测试没有制造出 race 窗口）");
+            // 窗口内：PG 行仍在（删除还没发生），但回收权已被 sweep 领取。
+            assertTrue(authority().findJob(jobId).isPresent(), "清理尚未完成，权威行理应仍在");
+            assertNull(store.acquireForSource(jobId),
+                    "sweep 已 claim 回收权 ⇒ acquire 必须失败，绝不能拿到一个随后被删的 job");
+            assertNull(store.acquireForExport(jobId), "Export 的 acquire 同样必须被挡住");
+        } finally {
+            cleanupMayFinish.countDown();
+            sweeper.join(TimeUnit.SECONDS.toMillis(10));
+        }
+
+        assertTrue(storage.objects.isEmpty(), "claim 之后清理照常完成");
+        assertTrue(authority().findJob(jobId).isEmpty(), "claim 之后权威行照常回收");
+        // claim 释放后（job 已不存在）acquire 仍必须安全失败。
+        assertNull(store.acquireForSource(jobId));
+    }
+
+    /** latch 等待期间的自我中断语义：测试线程不掩盖中断。 */
+    private static void awaitQuietly(final CountDownLatch latch) {
+        try {
+            latch.await(10, TimeUnit.SECONDS);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     // ---- fixtures ----
 
     private ReplayProcessingJobStore newStore(final ReplayJobAuthority authority, final ObjectStorage objectStorage) {
@@ -207,6 +259,8 @@ class DistributedJobWorkspaceCleanupTest {
 
         private final Map<String, byte[]> objects = new LinkedHashMap<>();
         private boolean failDeletes;
+        /** 每次 delete 之前调用（用于把清理卡在确定的位置，制造 race 窗口）。 */
+        private Runnable beforeDelete = () -> { };
 
         @Override
         public void put(final ObjectKey key, final InputStream content, final long contentLength,
@@ -227,6 +281,7 @@ class DistributedJobWorkspaceCleanupTest {
 
         @Override
         public void delete(final ObjectKey key) throws IOException {
+            beforeDelete.run();
             if (failDeletes) {
                 throw new IOException("simulated object storage outage");
             }
