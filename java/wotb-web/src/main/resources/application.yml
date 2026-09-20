@@ -136,6 +136,33 @@ wotb:
       overall-deadline-sec: ${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:1100}
   replay:
     max-concurrent-jobs: ${REPLAY_MAX_CONCURRENT_JOBS:2}
+    # 回放执行模式（单一正向枚举，见 docs/DEVELOPER_GUIDE.md「Replay 执行模式」）：
+    #   local       = 本进程内解析（缺省；既有部署行为逐字不变）
+    #   distributed = TX 控制面：输入/产物走 MinIO，派发走 RabbitMQ，job/source 权威状态走 PostgreSQL
+    # 未知值（含显式空值）启动即失败（ReplayProcessingConfig 构造器 fail-fast），绝不静默降级为 local。
+    execution:
+      mode: ${WOTB_REPLAY_EXECUTION_MODE:local}
+    # distributed 专用：MinIO 工作区（桶内 temp/jobs/<jobId>/{input,artifacts,result}/，
+    # 前缀生命周期与身份策略由 infra/tofu/minio 拥有）。
+    object-storage:
+      endpoint: ${YECAO_MINIO_ENDPOINT:10.20.0.2:9000}
+      bucket: ${YECAO_MINIO_BUCKET:wotbtools-temp}
+      access-key: ${YECAO_MINIO_CONTROL_API_ACCESS_KEY:}
+      secret-key: ${YECAO_MINIO_CONTROL_API_SECRET_KEY:}
+      connect-timeout-seconds: ${YECAO_MINIO_CONNECT_TIMEOUT_SECONDS:10}
+      write-timeout-seconds: ${YECAO_MINIO_WRITE_TIMEOUT_SECONDS:60}
+    # distributed 专用：RabbitMQ 连接与确认超时（exchange/queue/binding 由 infra/tofu/rabbitmq 拥有，
+    # 应用只发布/消费，绝不声明拓扑）。
+    broker:
+      host: ${TX_RABBITMQ_HOST:}
+      port: ${TX_RABBITMQ_PORT:5672}
+      vhost: ${TX_RABBITMQ_VHOST:/}
+      username: ${TX_RABBITMQ_CONTROL_API_USER:}
+      password: ${TX_RABBITMQ_CONTROL_API_PASSWORD:}
+      # 结果消费的 prefetch 与消费者数（控制面固定单消费者：权威投影是全量替换）
+      prefetch: ${TX_RABBITMQ_CONTROL_API_PREFETCH:1}
+      # parser.request 等待 broker confirm 的超时；超时即 create 失败（绝不留下无绑定的 job）
+      confirm-timeout-seconds: ${TX_RABBITMQ_CONFIRM_TIMEOUT_SECONDS:10}
     parse:
       # Replay Full Processing 唯一 CPU 预算（2C4G VPS 默认 2；禁止超过核心数）
       max-concurrent: ${REPLAY_PARSE_MAX_CONCURRENT:2}
