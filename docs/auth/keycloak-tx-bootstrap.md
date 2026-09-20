@@ -21,7 +21,7 @@ state 或日志：
 - `KC_DB_PASSWORD`；
 - `KEYCLOAK_ADMIN_CLIENT_SECRET`（`wotbtools-admin-api` 的 service account）；
 - `WG_APPLICATION_ID`；
-- QQ Connect application id/secret，以及 QQ provider 所需的回调配置。
+- `TX_QQ_CLIENT_SECRET`（QQ Connect application secret）。
 
 TX workflow secrets：`TX_KC_POSTGRES_ADMIN_PASSWORD`、`TX_KC_DB_PASSWORD`、
 `TX_KC_BOOTSTRAP_ADMIN_PASSWORD`、`WG_APPLICATION_ID`、`TENCENTCLOUD_SECRET_ID`、
@@ -34,12 +34,33 @@ TX workflow secrets：`TX_KC_POSTGRES_ADMIN_PASSWORD`、`TX_KC_DB_PASSWORD`、
 runtime 变量注入，禁止写入 HCL、tfvars、plan 或普通 state attribute。backend 继续使用
 `KEYCLOAK_ADMIN_CLIENT_ID=wotbtools-admin-api` 与 `KEYCLOAK_ADMIN_CLIENT_SECRET`。
 
+官方 QQ IdP 由 OpenTofu 完整拥有，不存在 operator 手工凭据路径：
+
+- GitHub Variable `TX_QQ_CLIENT_ID` 经 SSH 环境传入 `TF_VAR_qq_client_id`；
+- GitHub Secret `TX_QQ_CLIENT_SECRET` 经 SSH 环境传入 write-only
+  `TF_VAR_qq_client_secret`，不得写进 tfvars、日志或普通 state attribute；
+- GitHub Variable `TX_QQ_CLIENT_SECRET_VERSION` 经 SSH 环境传入
+  `TF_VAR_qq_client_secret_version`。secret 每次轮换必须同时递增该正整数版本；缺失、空值、
+  placeholder 或非法版本均使 TX-local OpenTofu apply fail-closed。
+
+`qq_enabled` 的 production declaration 固定为 `true`。`idp-qq` 的 alias、enabled、client ID、
+write-only secret/version 与 QQ endpoint configuration 均由 OpenTofu 收敛，并以
+`prevent_destroy = true` 防止删除。QQ Open Platform 已获批准且 production credentials 已可用；
+仍不得将凭据复制到 GitHub Actions 以外的介质。
+
 ## Identity Provider 启动顺序
 
 1. 让 OpenTofu 创建 fresh realm，确认 `wotbtools-web`、`wotbtools-admin-api`、角色与 JWT mapper 已存在。
 2. 由 OpenTofu 创建 `wargaming-asia`、`wargaming-eu`、`wargaming-na` 三个实例，并只在 Keycloak runtime 注入 `WG_APPLICATION_ID`。
-3. 同时构建三个 vendored provider：生产过渡期仍需要的 `keycloak-juhe-qq-provider`（真实 Juhe API 链路）、待官方 QQ Open Platform 审核的 `keycloak-qq-provider`（来源和本地安全修正见 [UPSTREAM.md](../../keycloak-qq-provider/UPSTREAM.md)），以及 `keycloak-wargaming-provider`。三者均固定以当前 Keycloak `26.6.4` 构建；禁止构建或运行时下载 provider。
-4. OpenTofu 创建官方 QQ alias `idp-qq`（provider id `qq`）；TX 不创建 `juhe-qq` fallback，也不创建裸 alias `qq`。QQ Connect App ID/Secret 仅由 runtime secret 注入；alias 变更必须同步 Android exact callback allowlist 与回归测试。
+3. 镜像构建 `keycloak-qq-provider` 与 `keycloak-wargaming-provider`；运行时验收必须确认
+   `keycloak-qq-provider.jar` 存在且 Keycloak 已以 `start --optimized` 启动。仓库仍保留
+   vendored legacy Juhe provider 源码/镜像 artifact 以兼容历史构建，但 TX realm 不创建它的实例，
+   不得把它作为 fallback。
+4. OpenTofu 创建唯一官方 QQ alias `idp-qq`（provider id `qq`，enabled）；TX 不创建
+   `juhe-qq` fallback，也不创建裸 alias `qq`。固定 production broker callback 为
+   `https://auth.wotbtools.com/realms/wotbtools/broker/idp-qq/endpoint`；QQ Open Platform、
+   Android exact callback allowlist 与 Web 登录流必须使用此唯一 callback，不得引入
+   `/qq/endpoint` 或 `idp-qq-v2`。
 
 ## wotbtools-web 浏览器客户端生产对齐
 
@@ -78,10 +99,17 @@ Keycloak 默认值一致，不会产生漂移。
 ## 导入后的验收
 
 - Keycloak 使用 `start --optimized`，启动时没有 augmentation；
-- image 同时包含 `keycloak-juhe-qq-provider.jar`、`keycloak-qq-provider.jar` 与 `keycloak-wargaming-provider.jar`；
-- OpenTofu fresh realm 的 Admin API 验收通过，且二次 plan 为 no-op；
+- image 包含 `keycloak-qq-provider.jar`，并成功以 `start --optimized` 启动；
+- OpenTofu fresh realm 的 Admin API 验收通过：唯一 alias 为 `idp-qq`、`providerId=qq`、
+  `enabled=true`、client ID 非 placeholder、`authorizationUrl` / `tokenUrl` /
+  `userInfoUrl` / `clientAuthMethod=client_secret_post` 全部匹配 QQ contract，且没有 `qq` 或
+  `juhe-qq` alias；二次 plan 为 no-op；
 - OIDC discovery、三个 Wargaming 登录、前端 public client redirect URI 均可验证；
-- QQ Connect 凭据缺失时 fail-closed，不通过猜测配置绕过。
+- QQ Connect 凭据或 rotation version 缺失/非法时 fail-closed，不通过猜测配置绕过。
+- DNS cutover 前，受控 TX runtime 必须记录一次真实 QQ E2E：Web Login → QQ authorize →
+  `idp-qq` callback → Keycloak broker → 新 TX Keycloak user → WotBTools session/token；同时确认
+  无 callback loop、expired_code、重复 broker alias 或 Juhe fallback，且无关 admin 登录仍可用。
+  fresh TX realm 不迁移旧 Keycloak users。
 - Android 使用 `idp-qq` 官方 OAuth callback contract；本 TX realm 不引入 Juhe fallback。
 
 ## PRE_CUTOVER_READY 只读门禁
@@ -109,9 +137,9 @@ Business PostgreSQL 是权威业务状态，因此门禁同样要求它完全就
 这些检查全部只读，不创建、修改或删除任何数据库或数据行。详见
 `docs/operations/business-postgres.md`。
 
-`idp-qq=WAITING_EXTERNAL`（官方 QQ Open Platform 审核 pending）是允许状态，不阻断门禁；
-TX 明确不配置 `juhe-qq` fallback，门禁输出 `juhe-qq=NOT_CONFIGURED_IN_TX` 仅用于说明该
-旧 provider 不属于本 realm 的声明状态。门禁中的独立
+门禁以只读 Keycloak Admin API 检查 `idp-qq`：必须唯一、`providerId=qq`、`enabled=true`、
+client ID 非 placeholder，且 QQ endpoint/config contract 完整；裸 `qq` / `juhe-qq` alias 会阻断。
+全部通过后输出 `QQ_IDP_STATUS=idp-qq=READY`；不再接受 `WAITING_EXTERNAL` 豁免。门禁中的独立
 `wireguard-backend` probe 必须从 TX `health-probe` 访问
 `http://10.20.0.2:8087/api/health`，以区分 WG/backend 链路与 frontend/Caddy 路由故障。
 
