@@ -240,6 +240,15 @@ Lease（读取期间 TTL 不清）。
   预算用尽或 `retryable=false` 才转终态；重派失败则上抛，报告进 DLQ 等 operator 重放，绝不假装已处理。
 - **Dataset Lease 同时挡住两侧 TTL 清理**：`ReplayProcessingJobStore` 的本地 sweep 与权威侧清理
   都按同一 lease 判定跳过（权威侧先取候选 id 再逐条删，绝不用集合式 delete——它看不见进程内 lease）。
+- **可读获取不依赖 JVM 状态**：`acquireForSource` / `acquireForExport` 走 `get(jobId)` 的可读语义
+  （live registry 命中，否则从 PostgreSQL 权威恢复只读投影，且**不**写回 live registry），因此 backend
+  重启后 `GET result` / AI Review / Map Overview / Battle Playback V2 / Export 依然可用——只要 PG 有
+  job/source 状态、MinIO 有 dataset/artifact。
+- **过期回收顺序：先 MinIO、后 PostgreSQL**。权威侧 sweep 对每个 lease-free 的过期终态 job 先调
+  `ReplayJobWorkspaceCleaner.deleteJobWorkspace(job)`（job 级、`ObjectStorageKeys` 推导确定键集合，
+  不提供任意前缀删除能力），成功后才 `deleteJob`；任一失败都只记录并保留权威行、下一轮幂等重试。
+  顺序反了（PG 先删、MinIO 失败）会留下再也没人知道该删的孤儿对象。桶上 `temp/jobs/*` 的 1 天
+  lifecycle 只是兜底安全网，不是正常回收机制。
 - 端点契约（路径/方法/状态码/响应字段）在两种模式下逐字不变；分布式下 dataset 读不到时沿用
   `409 JOB_NOT_READY`，不发明新错误码。
 

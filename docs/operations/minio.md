@@ -24,6 +24,17 @@ one day after creation; that rule is a bounded backstop, **not** the cleanup
 mechanism. A job can contain multiple replay inputs. PostgreSQL remains
 authoritative for job state and RabbitMQ remains the delivery layer.
 
+Normal reclamation is the application TTL sweeper: when a terminal
+(`READY`/`FAILED`/`CANCELLED`) job expires and no dataset lease is active, the
+control plane deletes the job's whole `temp/jobs/<job-id>/` workspace **first**
+and only then removes the PostgreSQL authority row. Deleting PostgreSQL first
+would orphan the objects with nothing left to name them; with this order, a
+storage failure just leaves the row for the next sweep, and repeating a
+successful workspace deletion is harmless. Workspace deletion is job-scoped
+(`ReplayJobWorkspaceCleaner`): the implementation derives the exact key set from
+the job identity through `ObjectStorageKeys`, so the application never gets a
+`list` or an arbitrary-prefix delete.
+
 `java/wotb-object-storage-minio` is the only application client: it implements the
 existing `com.wotb.contracts.ObjectStorage` port (`put` / `get` / `exists` /
 `delete`) and keeps every `io.minio` type inside the module. It carries no
