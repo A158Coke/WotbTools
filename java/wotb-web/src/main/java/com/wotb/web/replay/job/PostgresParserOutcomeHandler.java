@@ -11,6 +11,8 @@ import com.wotb.contracts.ReplayProcessingSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -71,14 +73,18 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
     private final ReplayProcessingDispatcher dispatcher;
     /** 每个 job 允许的最大 attempt 数（含首次）；attempt 用尽即终态。 */
     private final int maxAttempts;
+    /** FINALIZING_BATCH 收尾：per-source canonical dataset → 批次语义 → finalized dataset 落对象存储。 */
+    private final ReplayBatchFinalization finalization;
 
     public PostgresParserOutcomeHandler(final ReplayProcessingJobStore store,
                                         final ReplayJobAuthority authority,
                                         final ReplayProcessingDispatcher dispatcher,
-                                        final int maxAttempts) {
+                                        final int maxAttempts,
+                                        final ReplayBatchFinalization finalization) {
         this.store = Objects.requireNonNull(store, "store");
         this.authority = Objects.requireNonNull(authority, "authority");
         this.dispatcher = Objects.requireNonNull(dispatcher, "dispatcher");
+        this.finalization = Objects.requireNonNull(finalization, "finalization");
         if (maxAttempts < ReplayProcessingRequest.FIRST_ATTEMPT) {
             throw new IllegalArgumentException("maxAttempts must be at least "
                     + ReplayProcessingRequest.FIRST_ATTEMPT + ": " + maxAttempts);
@@ -247,21 +253,37 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
         job.recordParseFailure();
     }
 
-    /** 全部 source 终态后收敛 batch 终态：有 READY → READY；全 FAILED → FAILED(NO_VALID_REPLAYS)。 */
+    /** 全部 source 终态后收敛 batch 终态：FINALIZING_BATCH → 有效回放 → READY；0 场有效 → FAILED。 */
     private void finishIfComplete(final ReplayProcessingJob job) {
         final List<ReplayProcessingJob.SourceState> sources = job.sourceStates();
         if (sources.stream().anyMatch(source -> !sourceTerminal(source))) {
             return;
         }
-        final boolean anyReady = sources.stream()
-                .anyMatch(source -> source.status() == ReplayProcessingJob.SourceStatus.READY);
-        if (anyReady) {
-            job.markReady();
-            recordTerminal(job, "processing_job_ready jobId=" + job.jobId());
+        // 批次收尾只发生在控制面，并且与本地路径共用同一个 ReplayBatchFinalizer：
+        // 读回 per-source canonical dataset → dedupe / 冲突判定 / League Rating / 聚合 / enrichment
+        // → 写 finalized batch dataset 到对象存储。READY 之后的一切读取都只读那一个对象。
+        job.advancePhase(ReplayProcessingJob.PHASE_FINALIZING_BATCH);
+        final ProcessedDataset dataset;
+        try {
+            dataset = finalization.finalizeBatch(job);
+        } catch (final ReplayBatchFinalizer.NoValidReplaysException e) {
+            job.markFailed(NO_VALID_REPLAYS);
+            recordTerminal(job, "processing_job_failed jobId=" + job.jobId() + " errorCode=" + NO_VALID_REPLAYS);
+            return;
+        } catch (final IOException e) {
+            // 收尾阶段的存储故障是**基础设施**故障：本次投递不 settle（listener nack 不重入队 →
+            // DLQ + operator 重放），绝不把一次瞬时抖动写成 job 终态；重放会重跑同一次收尾，
+            // 结果幂等覆盖同一个对象。
+            throw new UncheckedIOException("replay batch finalization failed for job " + job.jobId(), e);
+        }
+        if (job.isCancelled()) {
+            // 收尾期间的协作取消：结果丢弃，按取消语义收尾。
+            cancel(job);
             return;
         }
-        job.markFailed(NO_VALID_REPLAYS);
-        recordTerminal(job, "processing_job_failed jobId=" + job.jobId() + " errorCode=" + NO_VALID_REPLAYS);
+        // dataset 权威在 MinIO：进程内刻意不保留 ProcessedDataset（与本地路径的唯一差别）。
+        job.markReady();
+        recordTerminal(job, "processing_job_ready jobId=" + job.jobId() + " battles=" + dataset.battles().size());
     }
 
     /** 取消竞态：worker 仍活跃、结果迟到 → 状态机收尾为 CANCELLED，结果丢弃。 */

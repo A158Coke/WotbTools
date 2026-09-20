@@ -5,15 +5,35 @@ database or an artifact archive:
 
 ```text
 wotbtools-temp/temp/jobs/<job-id>/…
-  input/<source-index>/<name>        raw replay input
-  artifacts/<source-index>/<name>    parsed artifacts (ai-facts / map-overview / battle-playback-v2)
-  result/source-<source-index>.json  canonical dataset result
+  input/<source-index>/<name>          raw replay input
+  artifacts/<source-index>/<name>      parsed artifacts (ai-facts / map-overview / battle-playback-v2)
+  result/source-<source-index>.json    canonical per-source dataset (input of batch finalization)
+  result/finalized.json                finalized batch dataset (the dataset readers use)
 ```
+
+The `result/` layout has one owner: `ObjectStorageReplayDatasetRepository`. The
+per-source objects are the **input** of the control plane's `FINALIZING_BATCH`
+step (dedupe / conflict detection / League Rating / aggregation / enrichment);
+`finalized.json` is the **output** and the only dataset the read side consumes
+(`GET .../result`, Export, Rating V2). Readers never concatenate per-source
+objects — doing so would skip the batch semantics and show different numbers than
+Export.
 
 The bucket is durable infrastructure. Every object below `temp/jobs/` expires
 one day after creation; that rule is a bounded backstop, **not** the cleanup
 mechanism. A job can contain multiple replay inputs. PostgreSQL remains
 authoritative for job state and RabbitMQ remains the delivery layer.
+
+Normal reclamation is the application TTL sweeper: when a terminal
+(`READY`/`FAILED`/`CANCELLED`) job expires and no dataset lease is active, the
+control plane deletes the job's whole `temp/jobs/<job-id>/` workspace **first**
+and only then removes the PostgreSQL authority row. Deleting PostgreSQL first
+would orphan the objects with nothing left to name them; with this order, a
+storage failure just leaves the row for the next sweep, and repeating a
+successful workspace deletion is harmless. Workspace deletion is job-scoped
+(`ReplayJobWorkspaceCleaner`): the implementation derives the exact key set from
+the job identity through `ObjectStorageKeys`, so the application never gets a
+`list` or an arbitrary-prefix delete.
 
 `java/wotb-object-storage-minio` is the only application client: it implements the
 existing `com.wotb.contracts.ObjectStorage` port (`put` / `get` / `exists` /

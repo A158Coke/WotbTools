@@ -10,6 +10,7 @@ import com.wotb.web.replay.job.ExportJobStore;
 import com.wotb.web.replay.job.ReplayExportJobService;
 import com.wotb.web.replay.job.ReplayExportWorkerExecutor;
 import com.wotb.web.replay.job.ReplayParseScheduler;
+import com.wotb.web.replay.job.LocalReplayDatasetRepository;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import com.wotb.web.replay.service.ReplayService;
 import org.junit.jupiter.api.Test;
@@ -99,7 +100,8 @@ class ReplayLegacyEndpointContractTest {
         // 410 契约测试：createJob 在触碰 store/executor 之前即 410→gone，但 SUT 不构造 null store。
         final ReplayExportJobService service = new ReplayExportJobService(
                 mock(ExportJobStore.class), mock(ReplayExportWorkerExecutor.class),
-                mock(ReplayProcessingJobStore.class), null);
+                mock(ReplayProcessingJobStore.class),
+                new LocalReplayDatasetRepository(mock(ReplayProcessingJobStore.class)), null);
         final ResponseStatusException e = assertThrows(ResponseStatusException.class,
                 () -> service.createJob("aggregate", null));
         assertEquals(HttpStatus.GONE, e.getStatusCode());
@@ -133,7 +135,8 @@ class ReplayLegacyEndpointContractTest {
                 mock(MapOverviewQueryService.class));
         final ReplayExportJobService exportService = new ReplayExportJobService(
                 mock(ExportJobStore.class), mock(ReplayExportWorkerExecutor.class),
-                mock(ReplayProcessingJobStore.class), null);
+                mock(ReplayProcessingJobStore.class),
+                new LocalReplayDatasetRepository(mock(ReplayProcessingJobStore.class)), null);
         final ReplayParseScheduler scheduler = new ReplayParseScheduler(2, 200);
         try {
             final int calls = 200;

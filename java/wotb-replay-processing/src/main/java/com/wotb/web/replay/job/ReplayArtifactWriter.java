@@ -115,9 +115,9 @@ public final class ReplayArtifactWriter {
         writeAtomic(battlePlaybackV2Path(jobDir, sourceIndex), content);
     }
 
-    /** 读取 ai-facts（AI Dataset 迁移 Phase 6 用）。 */
+    /** 读取 ai-facts（本地 job 目录路径；分布式走对象存储字节）。 */
     public static AiReplayFacts readAiFacts(final Path jobDir, final int sourceIndex) throws IOException {
-        return ReplayFactsCodec.fromBytes(Files.readAllBytes(aiFactsPath(jobDir, sourceIndex)));
+        return decodeAiFacts(Files.readAllBytes(aiFactsPath(jobDir, sourceIndex)));
     }
 
     /** 读取 map-overview；文件不存在（unavailable）返回 null（Playback 204 语义，Phase 7）。 */
@@ -126,7 +126,7 @@ public final class ReplayArtifactWriter {
         if (!Files.exists(path)) {
             return null;
         }
-        return MAPPER.readValue(Files.readAllBytes(path), MapOverview.class);
+        return decodeMapOverview(Files.readAllBytes(path));
     }
 
     /** 读取 V2 battle playback dataset；文件不存在（unavailable）返回 null（204 语义）。 */
@@ -136,7 +136,33 @@ public final class ReplayArtifactWriter {
         if (!Files.exists(path)) {
             return null;
         }
-        final JsonNode root = MAPPER.readTree(Files.readAllBytes(path));
+        return decodeBattlePlaybackV2(Files.readAllBytes(path));
+    }
+
+    /**
+     * 字节 → ai-facts（**唯一解码实现**，本地文件与对象存储共用同一份语义）。
+     *
+     * @param content artifact 字节；{@code null}（对象/文件不存在）返回 {@code null}，由调用方
+     *                决定「缺失」对它的含义（AI 路径是 DATASET_UNAVAILABLE）
+     */
+    public static AiReplayFacts decodeAiFacts(final byte[] content) throws IOException {
+        return content == null ? null : ReplayFactsCodec.fromBytes(content);
+    }
+
+    /** 字节 → map-overview；{@code null}（unavailable）返回 {@code null}（204 语义）。 */
+    public static MapOverview decodeMapOverview(final byte[] content) throws IOException {
+        return content == null ? null : MAPPER.readValue(content, MapOverview.class);
+    }
+
+    /**
+     * 字节 → V2 battle playback dataset（含 legacy 归一化）；{@code null}（unavailable）返回
+     * {@code null}（204 语义）。
+     */
+    public static BattlePlaybackDataset decodeBattlePlaybackV2(final byte[] content) throws IOException {
+        if (content == null) {
+            return null;
+        }
+        final JsonNode root = MAPPER.readTree(content);
         normalizeLegacyPlayback(root);
         return MAPPER.treeToValue(root, BattlePlaybackDataset.class);
     }
