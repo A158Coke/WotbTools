@@ -1322,7 +1322,7 @@ PY
 #                         locally trusted certificate with 2xx. TLS verification is
 #                         never disabled; `curl -k` is never used.
 edge_tls_probe() {
-  local host="$1" url="$2" raw
+  local host="$1" url="$2" raw exit_code=0
   local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
     --max-time "$PROBE_MAX_TIME_SEC" --output /dev/null --write-out '%{http_code} %{remote_ip}' \
     --resolve "$host:443:$E2E_PUBLIC_IP" "$url")
@@ -1330,8 +1330,16 @@ edge_tls_probe() {
   EDGE_STATUS="000"
   EDGE_REMOTE_IP=""
   EDGE_ERROR=""
-  if ! raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
-    EDGE_EXIT=$?
+  # `if ! cmd` would make `$?` the status of the negation (always 0), so the real
+  # exit code is captured in the else branch, where `$?` is the command's status.
+  # The command inside an `if` condition stays exempt from errexit.
+  if raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
+  EDGE_EXIT="$exit_code"
+  if [ "$exit_code" -ne 0 ]; then
     EDGE_ERROR="$(tr '\r\n' ' ' <<< "$raw" | sed -E 's/[[:space:]]+/ /g')"
     return 1
   fi
