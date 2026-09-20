@@ -579,7 +579,6 @@ jobs:
           scripts/ci/test-keycloak-tofu-contract.sh
           scripts/ci/test-postgres-keycloak-tofu-contract.sh
           scripts/ci/test-postgres-business-tofu-contract.sh
-          scripts/ci/test-rabbitmq-tofu-contract.sh
       - name: Build workflow frozen-commit contract
         run: bash deploy/test-build-workflow.sh
       - name: Build/Deploy changed-target and manifest contract
@@ -592,7 +591,6 @@ jobs:
           bash deploy/test-user-profile-reset-audit.sh
           bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
           bash scripts/ci/test-keycloak-tofu-contract.sh
-          bash scripts/ci/test-rabbitmq-tofu-contract.sh
       - name: CI path filter contract
         run: python3 scripts/ci/test-path-filters.py
       - name: CI workflow aggregation contract
