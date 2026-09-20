@@ -607,14 +607,25 @@ local state、计划文件和真实 tfvars 禁止提交；`.terraform.lock.hcl` 
 提交。state bucket 是当前 owner-managed bootstrap boundary，不由 production
 root 管理，也不能使用带一天 expiration 的 artifact bucket 承载 state。
 
-### TX Frontend + Keycloak predeployment boundary
+### TX application runtime boundary
 
 Phase 1 将 `wotb-frontend`、`keycloak` 与其专用 `keycloak-postgres` 路由到
-TX；Yecao 在正式 cutover 前仍只承载 backend、业务 PostgreSQL 与观测服务。Yecao 的
+TX；Yecao 在正式 cutover 前仍只承载业务 PostgreSQL 与观测服务。TX 的业务运行时是
+Compose 服务 `business-api`（`ghcr.io/a158coke/wotbtools-backend` 同一 immutable 镜像）：
+单个 Spring Boot 进程同时承载全部 public business endpoint 与分布式回放控制面
+（`WOTB_REPLAY_EXECUTION_MODE=distributed` + `WOTB_REPLAY_PROCESSING_JOB_REPOSITORY=jdbc`），
+不发布任何 host port，只被 TX-internal 的 frontend nginx、Caddy readiness surface 与
+deployment-owned `health-probe` 访问（app `/api/health` + management
+`/actuator/health`，管理端口 8088）。因此 release plan 把 backend 镜像路由到
+`business-api`（target `tx`）；legacy Yecao service `wotb-backend` 仍保留为可显式选择的
+rollback/退役服务，但**不再被任何推断选中**，普通 Yecao compose 配置变更不得刷新它。
+`KEYCLOAK_ISSUER_URI` 保持 public URL（Keycloak 的 `iss` 由 hostname 决定），
+`KEYCLOAK_ADMIN_SERVER_URL` 故意指向 TX-internal `http://keycloak:8080`，避免 DNS
+cutover 前经公网访问并管理 Yecao realm。HoF 回放原件是永久内容寻址文件，挂 TX
+`replay_data` 卷到 `HOF_REPLAY_DIR`，与 MinIO dataset 工作区职责分离；Yecao 的
 MinIO 临时工作区是独立、显式手动的 Compose/OpenTofu deployment，绝不随普通 release
 启动或要求其 secrets；详见 `docs/operations/minio.md`。release
-manifest 的 `targetServices` 是这两个 host 的唯一发布路由来源，普通 Yecao compose
-配置变更不得刷新 legacy frontend/Keycloak。TX PostgreSQL 只发布
+manifest 的 `targetServices` 是这两个 host 的唯一发布路由来源。TX PostgreSQL 只发布
 `127.0.0.1:15432:5432` 给 TX-local OpenTofu；GitHub runner 只 SSH 触发，绝不
 直连数据库、建立 SSH tunnel 或使用 Terraform `remote-exec`。详见
 `docs/architecture/opentofu-postgres-keycloak.md`。

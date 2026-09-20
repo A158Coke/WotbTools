@@ -129,7 +129,7 @@ assert 'if [ "$source_sha" != "$main_sha" ]; then' in manual_run
 assert "Manual TX deploy must run from the current main HEAD." in manual_run
 assert 'release_tag=sha-{commit_sha[:12]}' in manual_run
 assert 'yecao_services=' in manual_run and 'yecao_image_services=' in manual_run
-assert 'allowed = {"keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "caddy"}' in manual_run
+assert 'allowed = {"keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "business-api", "caddy"}' in manual_run
 assert 'if target == "minio":' in manual_run
 assert 'print("deploy_services=minio")' in manual_run
 assert 'print("yecao_services=minio")' in manual_run
@@ -140,7 +140,7 @@ assert 'print("yecao_services=parser-worker")' in manual_run
 assert 'print("yecao_image_services=parser-worker")' in manual_run
 assert 'print("deploy_display_name=Manual Parser Worker")' in manual_run
 assert 'raise SystemExit("target must be tx, minio, or parser-worker")' in manual_run
-assert "all|keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|caddy" in tx_deploy_text
+assert "all|keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|business-api|caddy" in tx_deploy_text
 assert "is_keycloak_group_selected" in tx_deploy_text
 assert "is_business_postgres_group_selected" in tx_deploy_text
 assert "latest" not in manual_run.lower(), "Manual TX deploy must never use latest"

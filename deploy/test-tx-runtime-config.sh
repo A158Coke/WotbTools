@@ -55,7 +55,8 @@ grep -Fq 'POSTGRES_DB: postgres' "$COMPOSE" \
   || fail "Business PostgreSQL must not let the image auto-create the OpenTofu-owned business database"
 grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_USER:?TX_BUSINESS_POSTGRES_ADMIN_USER is required' "$COMPOSE" \
   || fail "Business PostgreSQL must require a dedicated bootstrap administrator separate from the application role"
-! grep -Fq 'TX_BUSINESS_DB_PASSWORD' "$COMPOSE" \
+business_postgres_block="$(sed -n '/^  business-postgres:/,/^  [A-Za-z0-9_-]*:$/p' "$COMPOSE")"
+! grep -Fq 'TX_BUSINESS_DB_PASSWORD' <<< "$business_postgres_block" \
   || fail "the Business PostgreSQL runtime must not receive the application credential"
 grep -Fq '10.20.0.1:5672:5672' "$COMPOSE" \
   || fail "RabbitMQ AMQP must bind only to the TX WireGuard address"
@@ -73,6 +74,30 @@ grep -Fq 'NGINX_ENVSUBST_FILTER: ^BACKEND_UPSTREAM$$' "$COMPOSE" \
   || fail "nginx must substitute only the configured backend upstream"
 grep -Fq 'ipv4_address: 172.29.0.2' "$COMPOSE" \
   || fail "Caddy must have a fixed trusted ingress address"
+# The TX business runtime replaces the retired Yecao `wotb-backend` service: one
+# in-process control plane plus business API, no published port, and a
+# distributed-only replay execution plane.
+business_api_block="$(sed -n '/^  business-api:/,/^  [A-Za-z0-9_-]*:$/p' "$COMPOSE")"
+[ -n "$business_api_block" ] || fail "TX Compose must define the business-api runtime"
+grep -Fq 'ghcr.io/a158coke/wotbtools-backend:${TAG:?TAG is required}' <<< "$business_api_block" \
+  || fail "business-api must run the immutable backend image"
+! grep -Eq '^    ports:' <<< "$business_api_block" \
+  || fail "business-api must never publish a port; only TX-internal peers may reach it"
+for contract in \
+  'POSTGRES_HOST: business-postgres' \
+  'WOTB_REPLAY_EXECUTION_MODE: distributed' \
+  'WOTB_REPLAY_PROCESSING_JOB_REPOSITORY: jdbc' \
+  'KEYCLOAK_ADMIN_SERVER_URL: http://keycloak:8080' \
+  'TX_RABBITMQ_HOST: rabbitmq' \
+  'YECAO_MINIO_CONTROL_API_ACCESS_KEY: ${YECAO_MINIO_CONTROL_API_ACCESS_KEY:?YECAO_MINIO_CONTROL_API_ACCESS_KEY is required}' \
+  'replay_data:/data/replays'; do
+  grep -Fq "$contract" <<< "$business_api_block" \
+    || fail "business-api lost required runtime contract: $contract"
+done
+grep -Fq 'replay_data:' <<< "$(sed -n '/^volumes:/,$p' "$COMPOSE")" \
+  || fail "TX Compose must own the migrated HoF replay volume"
+grep -Fq 'TX_BUSINESS_DB_PASSWORD:?TX_BUSINESS_DB_PASSWORD is required' <<< "$business_api_block" \
+  || fail "business-api must fail closed on a missing application database credential"
 [ "$(grep -Fc 'name: wotb_tx_internal' "$COMPOSE")" = 1 ] \
   || fail "TX Compose must define one internal network, not duplicate aliases"
 grep -Fq '${CADDY_HTTP_BIND:-127.0.0.1}:80:80' "$COMPOSE" \
@@ -135,6 +160,10 @@ export TX_BUSINESS_DB_NAME=wotb
 export TX_BUSINESS_DB_USERNAME=control_api
 export TX_BUSINESS_DB_PASSWORD=not-real-control-api
 export TX_BUSINESS_DB_PASSWORD_VERSION=1
+export YECAO_MINIO_CONTROL_API_ACCESS_KEY=not-real-minio-control-api
+export YECAO_MINIO_CONTROL_API_SECRET_KEY=not-real-minio-control-api
+export KEYCLOAK_ADMIN_CLIENT_SECRET=not-real-admin-secret
+export AI_API_KEY=not-real-ai-key
 export TX_RUNTIME_ROOT="$WORK/runtime"
 mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
 
@@ -149,6 +178,23 @@ grep -Fq 'BACKEND_UPSTREAM: http://10.20.0.2:8087' "$WORK/compose.yml" \
   || fail "resolved frontend upstream must remain on WireGuard"
 grep -Fq 'target: /etc/nginx/templates/default.conf.template' "$WORK/compose.yml" \
   || fail "frontend must mount its target-scoped nginx template"
+grep -Fq 'WOTB_REPLAY_EXECUTION_MODE: distributed' "$WORK/compose.yml" \
+  || fail "resolved business-api must run in distributed replay execution mode"
+grep -Fq 'WOTB_REPLAY_PROCESSING_JOB_REPOSITORY: jdbc' "$WORK/compose.yml" \
+  || fail "resolved business-api must use the PostgreSQL job authority"
+grep -Fq 'http://keycloak:8080' "$WORK/compose.yml" \
+  || fail "resolved business-api must use the TX-internal Keycloak Admin API"
+for contract in \
+  'wait_for_probe business-api http://business-api:8088/actuator/health' \
+  'wait_for_probe business-api-app http://business-api:8087/api/health' \
+  'current_or_target_tag business-api' \
+  'keycloak|wotb-frontend|business-api) return 0' \
+  'is_business_api_group_selected'; do
+  grep -Fq "$contract" "$TX_DIR/deploy.sh" \
+    || fail "TX deploy lost required business-api contract: $contract"
+done
+grep -Fq 'business-api' <<< "$(sed -n '/^compose_service_list()/,/^}/p' "$TX_DIR/deploy.sh")" \
+  || fail "the TX all-service set must include the business runtime"
 
 run_fixture "Caddy adapt fixture" "$WORK/caddy.json" "$WORK/caddy.stderr" \
   docker run --rm -e CADDY_ACME_EMAIL \
@@ -229,7 +275,7 @@ rabbit_only_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TX_RABBITMQ_CONTROL_API_PASSWORD=not-real-control-api \
   TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real-parser-worker \
-  bash -c 'source "$1"; validate_inputs; set_nonselected_compose_placeholders; test "$(current_or_target_tag keycloak)" = sha-0123456789ab; test "$KC_DB_PASSWORD" = not-configured; echo rabbitmq-only-inputs-pass' _ "$WORK/incoming/deploy.sh")"
+  bash -c 'source "$1"; validate_inputs; set_nonselected_compose_placeholders; test "$(current_or_target_tag keycloak)" = sha-0123456789ab; test "$(current_or_target_tag business-api)" = sha-0123456789ab; test "$KC_DB_PASSWORD" = not-configured; test "$AI_API_KEY" = not-configured; echo rabbitmq-only-inputs-pass' _ "$WORK/incoming/deploy.sh")"
 rabbit_only_rc=$?
 set -e
 [ "$rabbit_only_rc" -eq 0 ] \
@@ -246,7 +292,7 @@ business_only_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   TX_BUSINESS_POSTGRES_ADMIN_USER=tx-business-admin TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=not-real \
   TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=control_api \
   TX_BUSINESS_DB_PASSWORD=not-real-control-api TX_BUSINESS_DB_PASSWORD_VERSION=1 \
-  bash -c 'source "$1"; validate_inputs; set_nonselected_compose_placeholders; test "$(current_or_target_tag keycloak)" = sha-0123456789ab; test "$KC_DB_PASSWORD" = not-configured; test "$TX_RABBITMQ_ADMIN_PASSWORD" = not-configured; echo business-only-inputs-pass' _ "$WORK/incoming/deploy.sh")"
+  bash -c 'source "$1"; validate_inputs; set_nonselected_compose_placeholders; test "$(current_or_target_tag keycloak)" = sha-0123456789ab; test "$(current_or_target_tag business-api)" = sha-0123456789ab; test "$KC_DB_PASSWORD" = not-configured; test "$TX_RABBITMQ_ADMIN_PASSWORD" = not-configured; echo business-only-inputs-pass' _ "$WORK/incoming/deploy.sh")"
 business_only_rc=$?
 set -e
 [ "$business_only_rc" -eq 0 ] \
@@ -343,7 +389,7 @@ grep -Fq 'run TX-local OpenTofu' <<< "$unprovisioned_output" \
 [ ! -f "$WORK/unprovisioned.log" ] || fail "unprovisioned TX app deployment must not invoke Docker"
 printf 'tx-local-opentofu-keycloak\n' > "$WORK/live/keycloak.tofu-provisioned"
 chmod 600 "$WORK/live/keycloak.tofu-provisioned"
-printf '%s\n' '{"schemaVersion":1,"services":{"keycloak":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"},"wotb-frontend":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"}}}' \
+printf '%s\n' '{"schemaVersion":1,"services":{"keycloak":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"},"wotb-frontend":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"},"business-api":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"}}}' \
   > "$WORK/live/tx-production-release.json"
 
 set +e
@@ -511,7 +557,7 @@ set -e
 
 mkdir -p "$WORK/keycloak-bootstrap" "$WORK/keycloak-bootstrap-incoming"
 cp -a "$TX_DIR/." "$WORK/keycloak-bootstrap-incoming/"
-printf '%s\n' '{"schemaVersion":1,"services":{"wotb-frontend":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"}}}' \
+printf '%s\n' '{"schemaVersion":1,"services":{"wotb-frontend":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"},"business-api":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"}}}' \
   > "$WORK/keycloak-bootstrap/tx-production-release.json"
 bootstrap_keycloak_log="$WORK/keycloak-bootstrap.log"
 bootstrap_keycloak_output="$(env -i \
@@ -536,7 +582,7 @@ grep -Fq 'up -d --no-deps --force-recreate keycloak' "$bootstrap_keycloak_log" \
 mkdir -p "$WORK/keycloak-normal" "$WORK/keycloak-normal-incoming"
 cp -a "$TX_DIR/." "$WORK/keycloak-normal-incoming/"
 printf 'tx-local-opentofu-keycloak\n' > "$WORK/keycloak-normal/keycloak.tofu-provisioned"
-printf '%s\n' '{"schemaVersion":1,"services":{"wotb-frontend":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"}}}' \
+printf '%s\n' '{"schemaVersion":1,"services":{"wotb-frontend":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"},"business-api":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"}}}' \
   > "$WORK/keycloak-normal/tx-production-release.json"
 normal_keycloak_log="$WORK/keycloak-normal.log"
 normal_keycloak_output="$(env -i \
@@ -591,5 +637,68 @@ grep -Fq 'KC_DB_PASSWORD is required' <<< "$missing_secret_output" \
   || fail "missing runtime secret error must name the variable without exposing a value"
 ! grep -Fq 'not-real' <<< "$missing_secret_output" \
   || fail "missing runtime secret diagnostics must not print secret values"
+
+# The business runtime fails closed on every credential it owns: the MinIO
+# control-plane identity is the first one this fixture omits.
+set +e
+business_api_requires_minio="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
+  TX_DEPLOY_LIBRARY_ONLY=1 WOTB_TX_DIR="$WORK/business-api-missing" WOTB_TX_INCOMING_DIR="$WORK/incoming" \
+  TX_RUNTIME_ROOT="$WORK/business-api-missing" TAG=sha-0123456789ab \
+  RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  WOTB_DEPLOY_SERVICES=business-api WOTB_DEPLOY_IMAGE_SERVICES=business-api \
+  TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=control_api TX_BUSINESS_DB_PASSWORD=not-real \
+  TX_RABBITMQ_CONTROL_API_PASSWORD=not-real KEYCLOAK_ADMIN_CLIENT_SECRET=not-real AI_API_KEY=not-real \
+  bash -c 'source "$1"; validate_inputs' _ "$WORK/incoming/deploy.sh" 2>&1)"
+business_api_requires_minio_rc=$?
+set -e
+[ "$business_api_requires_minio_rc" -ne 0 ] \
+  || fail "business-api deployment must fail closed without the MinIO control-plane identity"
+grep -Fq 'YECAO_MINIO_CONTROL_API_ACCESS_KEY is required' <<< "$business_api_requires_minio" \
+  || fail "business-api must name the missing MinIO identity variable without exposing a value"
+
+# Business runtime deployment on a live host: it starts only itself, proves both
+# the application and the dedicated management surface through the
+# deployment-owned health-probe, and records its immutable identity. It must not
+# touch the broker, PostgreSQL, Keycloak, or Caddy runtimes.
+mkdir -p "$WORK/business-api" "$WORK/business-api-incoming"
+cp -a "$TX_DIR/." "$WORK/business-api-incoming/"
+printf '%s\n' '{"schemaVersion":1,"services":{"keycloak":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"},"wotb-frontend":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"}}}' \
+  > "$WORK/business-api/tx-production-release.json"
+business_api_log="$WORK/business-api.log"
+set +e
+business_api_output="$(env -i \
+  PATH="$WORK/bin:$PATH" HOME="$WORK" \
+  WOTB_TX_DIR="$WORK/business-api" WOTB_TX_INCOMING_DIR="$WORK/business-api-incoming" TX_RUNTIME_ROOT="$WORK/business-api" \
+  TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=control_api TX_BUSINESS_DB_PASSWORD=not-real \
+  TX_RABBITMQ_CONTROL_API_PASSWORD=not-real \
+  YECAO_MINIO_CONTROL_API_ACCESS_KEY=not-real YECAO_MINIO_CONTROL_API_SECRET_KEY=not-real \
+  KEYCLOAK_ADMIN_CLIENT_SECRET=not-real AI_API_KEY=not-real \
+  TAG=sha-0123456789ab RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  WOTB_DEPLOY_SERVICES=business-api WOTB_DEPLOY_IMAGE_SERVICES=business-api \
+  WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+  FAKE_DOCKER_LOG="$business_api_log" \
+  bash "$WORK/business-api-incoming/deploy.sh" 2>&1)"
+business_api_rc=$?
+set -e
+[ "$business_api_rc" -eq 0 ] \
+  || fail "business-api deployment failed (rc=$business_api_rc; output: $(tr '\r\n' ' ' <<< "$business_api_output" | sed -E 's/[[:space:]]+/ /g'))"
+grep -Fq 'business-api: PASS' <<< "$business_api_output" \
+  || fail "business-api deployment must prove the management health surface"
+grep -Fq 'business-api-app: PASS' <<< "$business_api_output" \
+  || fail "business-api deployment must prove the application health surface"
+grep -Fq 'pull business-api' "$business_api_log" \
+  || fail "business-api deployment must pull only its own image"
+grep -Fq 'up -d --no-deps --force-recreate business-api' "$business_api_log" \
+  || fail "business-api deployment must start the business runtime"
+grep -Fq 'run --rm --no-deps health-probe' "$business_api_log" \
+  || fail "business-api deployment must probe from the internal health-probe container"
+for forbidden in keycloak wotb-frontend rabbitmq business-postgres caddy; do
+  ! grep -Fq "up -d --no-deps --force-recreate $forbidden" "$business_api_log" \
+    || fail "business-api deployment must not start $forbidden"
+done
+grep -Fq '"business-api"' "$WORK/business-api/tx-production-release.json" \
+  || fail "business-api deployment must record its immutable image identity"
+grep -Fq '"keycloak"' "$WORK/business-api/tx-production-release.json" \
+  || fail "business-api deployment must preserve other TX service metadata"
 
 echo "OK: TX Compose/Caddy/nginx/deploy contracts are deterministic and DNS-free"

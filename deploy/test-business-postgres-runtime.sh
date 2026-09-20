@@ -67,6 +67,12 @@ KC_BOOTSTRAP_ADMIN_PASSWORD=not-configured KC_DB_USERNAME=not-configured \
 KC_DB_PASSWORD=not-configured WG_APPLICATION_ID=not-configured \
 CADDY_ACME_EMAIL=not-configured@example.invalid \
 TX_RABBITMQ_ADMIN_USER=not-configured TX_RABBITMQ_ADMIN_PASSWORD=not-configured \
+TX_RABBITMQ_CONTROL_API_PASSWORD=not-configured \
+TX_BUSINESS_DB_NAME="$DB_NAME" TX_BUSINESS_DB_USERNAME="$APP_ROLE" \
+TX_BUSINESS_DB_PASSWORD=not-configured \
+YECAO_MINIO_CONTROL_API_ACCESS_KEY=not-configured \
+YECAO_MINIO_CONTROL_API_SECRET_KEY=not-configured \
+KEYCLOAK_ADMIN_CLIENT_SECRET=not-configured AI_API_KEY=not-configured \
   docker compose -f "$COMPOSE" config --format json > "$WORK/compose.json"
 python3 - "$WORK/compose.json" <<'PY'
 import json
