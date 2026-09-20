@@ -43,7 +43,7 @@ assert_rejects() {
   fi
 }
 
-readonly CONTROL_ACL='{"permissions":[{"configure":"^$","write":"^wotb\\.jobs$","read":"^$"}]}'
+readonly CONTROL_ACL='{"permissions":[{"configure":"^$","write":"^wotb\\.jobs$","read":"^wotb\\.parser\\.result$"}]}'
 readonly PARSER_ACL='{"permissions":[{"configure":"^$","write":"^wotb\\.jobs$","read":"^wotb\\.parser$"}]}'
 readonly TAGS_RULE="application identity may not carry RabbitMQ tags"
 
@@ -70,9 +70,12 @@ write_plan initial-create "{\"resource_changes\":[
   {\"address\":\"rabbitmq_queue.parser\",\"change\":{\"actions\":[\"create\"]}},
   {\"address\":\"rabbitmq_queue.parser_retry\",\"change\":{\"actions\":[\"create\"]}},
   {\"address\":\"rabbitmq_queue.parser_dlq\",\"change\":{\"actions\":[\"create\"]}},
+  {\"address\":\"rabbitmq_queue.parser_result\",\"change\":{\"actions\":[\"create\"]}},
   {\"address\":\"rabbitmq_binding.parser_request\",\"change\":{\"actions\":[\"create\"]}},
   {\"address\":\"rabbitmq_binding.parser_retry\",\"change\":{\"actions\":[\"create\"]}},
-  {\"address\":\"rabbitmq_binding.parser_dead\",\"change\":{\"actions\":[\"create\"]}}
+  {\"address\":\"rabbitmq_binding.parser_dead\",\"change\":{\"actions\":[\"create\"]}},
+  {\"address\":\"rabbitmq_binding.parser_result\",\"change\":{\"actions\":[\"create\"]}},
+  {\"address\":\"rabbitmq_binding.parser_failed\",\"change\":{\"actions\":[\"create\"]}}
 ]}"
 
 write_plan second-plan-noop "{\"resource_changes\":[
@@ -85,9 +88,12 @@ write_plan second-plan-noop "{\"resource_changes\":[
   {\"address\":\"rabbitmq_queue.parser\",\"change\":{\"actions\":[\"no-op\"]}},
   {\"address\":\"rabbitmq_queue.parser_retry\",\"change\":{\"actions\":[\"no-op\"]}},
   {\"address\":\"rabbitmq_queue.parser_dlq\",\"change\":{\"actions\":[\"no-op\"]}},
+  {\"address\":\"rabbitmq_queue.parser_result\",\"change\":{\"actions\":[\"no-op\"]}},
   {\"address\":\"rabbitmq_binding.parser_request\",\"change\":{\"actions\":[\"no-op\"]}},
   {\"address\":\"rabbitmq_binding.parser_retry\",\"change\":{\"actions\":[\"no-op\"]}},
-  {\"address\":\"rabbitmq_binding.parser_dead\",\"change\":{\"actions\":[\"no-op\"]}}
+  {\"address\":\"rabbitmq_binding.parser_dead\",\"change\":{\"actions\":[\"no-op\"]}},
+  {\"address\":\"rabbitmq_binding.parser_result\",\"change\":{\"actions\":[\"no-op\"]}},
+  {\"address\":\"rabbitmq_binding.parser_failed\",\"change\":{\"actions\":[\"no-op\"]}}
 ]}"
 
 write_plan acl-tightening "{\"resource_changes\":[
@@ -135,6 +141,11 @@ write_plan queue-replacement '{"resource_changes":[{"address":"rabbitmq_queue.pa
 write_plan queue-update '{"resource_changes":[{"address":"rabbitmq_queue.parser","change":{"actions":["update"]}}]}'
 write_plan exchange-update '{"resource_changes":[{"address":"rabbitmq_exchange.jobs","change":{"actions":["update"]}}]}'
 write_plan binding-update '{"resource_changes":[{"address":"rabbitmq_binding.parser_request","change":{"actions":["update"]}}]}'
+# The result path is topology too: dropping the queue or rebinding it is exactly
+# the destructive change the guard exists for, so it gets its own fixtures.
+write_plan result-queue-delete '{"resource_changes":[{"address":"rabbitmq_queue.parser_result","change":{"actions":["delete"]}}]}'
+write_plan result-binding-update '{"resource_changes":[{"address":"rabbitmq_binding.parser_result","change":{"actions":["update"]}}]}'
+write_plan failed-binding-update '{"resource_changes":[{"address":"rabbitmq_binding.parser_failed","change":{"actions":["update"]}}]}'
 write_plan application-user-replacement '{"resource_changes":[{"address":"rabbitmq_user.parser_worker","change":{"actions":["delete","create"]}}]}'
 write_plan unknown-resource '{"resource_changes":[{"address":"rabbitmq_queue.application_owned","change":{"actions":["create"]}}]}'
 
@@ -152,6 +163,14 @@ write_plan acl-configure-widened "$(acl_plan rabbitmq_permissions.parser_worker_
   '"configure":".*","write":"^wotb\\.jobs$","read":"^wotb\\.parser$"')"
 write_plan acl-control-api-reads-parser "$(acl_plan rabbitmq_permissions.control_api_publisher \
   '"configure":"^$","write":"^wotb\\.jobs$","read":"^wotb\\.parser$"')"
+write_plan acl-control-api-read-widened "$(acl_plan rabbitmq_permissions.control_api_publisher \
+  '"configure":"^$","write":"^wotb\\.jobs$","read":"^wotb\\.parser.*$"')"
+write_plan acl-control-api-reads-retry "$(acl_plan rabbitmq_permissions.control_api_publisher \
+  '"configure":"^$","write":"^wotb\\.jobs$","read":"^wotb\\.parser\\.retry$"')"
+write_plan acl-control-api-reads-dlq "$(acl_plan rabbitmq_permissions.control_api_publisher \
+  '"configure":"^$","write":"^wotb\\.jobs$","read":"^wotb\\.parser\\.dlq$"')"
+write_plan acl-control-api-read-wrong-queue "$(acl_plan rabbitmq_permissions.control_api_publisher \
+  '"configure":"^$","write":"^wotb\\.jobs$","read":"^wotb\\.parser\\.result\\.extra$"')"
 write_plan acl-read-widened-prefix "$(acl_plan rabbitmq_permissions.parser_worker_consumer \
   '"configure":"^$","write":"^wotb\\.jobs$","read":"^wotb\\..*$"')"
 write_plan acl-write-widened "$(acl_plan rabbitmq_permissions.parser_worker_consumer \
@@ -182,21 +201,28 @@ assert_rejects application-user-extra-attribute "unexpected application identity
 assert_rejects application-user-unknown-attribute "unexpected application identity attribute(s): permissions"
 assert_rejects queue-delete "destructive RabbitMQ plan action"
 assert_rejects queue-replacement "destructive RabbitMQ plan action"
+assert_rejects result-queue-delete "destructive RabbitMQ plan action"
 assert_rejects queue-update "unsafe RabbitMQ plan action for rabbitmq_queue.parser"
 assert_rejects exchange-update "unsafe RabbitMQ plan action for rabbitmq_exchange.jobs"
 assert_rejects binding-update "unsafe RabbitMQ plan action for rabbitmq_binding.parser_request"
+assert_rejects result-binding-update "unsafe RabbitMQ plan action for rabbitmq_binding.parser_result"
+assert_rejects failed-binding-update "unsafe RabbitMQ plan action for rabbitmq_binding.parser_failed"
 assert_rejects application-user-replacement "destructive RabbitMQ plan action"
 assert_rejects unknown-resource "unexpected RabbitMQ OpenTofu resource"
 assert_rejects acl-vhost-wide "ACL write must stay exactly '^wotb\\\\.jobs$'"
 assert_rejects acl-configure-widened "ACL configure must stay exactly '^$'"
-assert_rejects acl-control-api-reads-parser "ACL read must stay exactly '^$'"
+assert_rejects acl-control-api-reads-parser "ACL read must stay exactly '^wotb\\\\.parser\\\\.result$'"
+assert_rejects acl-control-api-read-widened "ACL read must stay exactly '^wotb\\\\.parser\\\\.result$'"
+assert_rejects acl-control-api-reads-retry "ACL read must stay exactly '^wotb\\\\.parser\\\\.result$'"
+assert_rejects acl-control-api-reads-dlq "ACL read must stay exactly '^wotb\\\\.parser\\\\.result$'"
+assert_rejects acl-control-api-read-wrong-queue "ACL read must stay exactly '^wotb\\\\.parser\\\\.result$'"
 assert_rejects acl-read-widened-prefix "ACL read must stay exactly '^wotb\\\\.parser$'"
 assert_rejects acl-write-widened "ACL write must stay exactly '^wotb\\\\.jobs$'"
 assert_rejects acl-read-catch-all "ACL read must stay exactly '^wotb\\\\.parser$'"
 assert_rejects acl-write-narrow-wrong-exchange "ACL write must stay exactly '^wotb\\\\.jobs$'"
 assert_rejects acl-read-narrow-wrong-queue "ACL read must stay exactly '^wotb\\\\.parser$'"
 assert_rejects acl-write-removed "ACL write must stay exactly '^wotb\\\\.jobs$'"
-assert_rejects acl-read-removed "ACL read must stay exactly '^$'"
+assert_rejects acl-read-removed "ACL read must stay exactly '^wotb\\\\.parser\\\\.result$'"
 assert_rejects acl-tightening "second RabbitMQ OpenTofu plan is not clean" --require-no-changes
 
 echo "RabbitMQ OpenTofu plan safety policy contract OK"

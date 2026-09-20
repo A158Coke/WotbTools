@@ -34,9 +34,12 @@ static_topology = {
     "rabbitmq_queue.parser",
     "rabbitmq_queue.parser_retry",
     "rabbitmq_queue.parser_dlq",
+    "rabbitmq_queue.parser_result",
     "rabbitmq_binding.parser_request",
     "rabbitmq_binding.parser_retry",
     "rabbitmq_binding.parser_dead",
+    "rabbitmq_binding.parser_result",
+    "rabbitmq_binding.parser_failed",
 }
 # Application identities are AMQP-only. Any in-place update here is supposed to
 # be a credential rotation, so the post-plan representation is checked rather
@@ -60,7 +63,7 @@ application_acls = {
     "rabbitmq_permissions.control_api_publisher": {
         "configure": "^$",
         "write": "^wotb\\.jobs$",
-        "read": "^$",
+        "read": "^wotb\\.parser\\.result$",
     },
     "rabbitmq_permissions.parser_worker_consumer": {
         "configure": "^$",

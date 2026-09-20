@@ -13,6 +13,7 @@ COPY common/map-semantics common/map-semantics
 COPY java/pom.xml java/settings-docker.xml java/
 COPY java/wotb-contracts/pom.xml java/wotb-contracts/pom.xml
 COPY java/wotb-object-storage-minio/pom.xml java/wotb-object-storage-minio/pom.xml
+COPY java/wotb-broker-rabbitmq/pom.xml java/wotb-broker-rabbitmq/pom.xml
 COPY java/wotb-core/pom.xml java/wotb-core/pom.xml
 COPY java/wotb-result/pom.xml java/wotb-result/pom.xml
 COPY java/wotb-playback/pom.xml java/wotb-playback/pom.xml

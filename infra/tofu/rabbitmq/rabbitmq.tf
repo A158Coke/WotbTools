@@ -43,13 +43,16 @@ locals {
   # the broker, the deployment contract test, and the disposable smoke.
   jobs_exchange = "wotb.jobs"
 
-  parser_queue       = "wotb.parser"
-  parser_retry_queue = "wotb.parser.retry"
-  parser_dlq         = "wotb.parser.dlq"
+  parser_queue        = "wotb.parser"
+  parser_retry_queue  = "wotb.parser.retry"
+  parser_dlq          = "wotb.parser.dlq"
+  parser_result_queue = "wotb.parser.result"
 
   parser_request_routing_key = "parser.request"
   parser_retry_routing_key   = "parser.retry"
   parser_dead_routing_key    = "parser.dead"
+  parser_result_routing_key  = "parser.result"
+  parser_failed_routing_key  = "parser.failed"
 
   # RabbitMQ resolves every queue to a concrete queue type and always reports it
   # back as the `x-queue-type` argument, even when the declaration omitted it.
@@ -155,6 +158,32 @@ resource "rabbitmq_queue" "parser_dlq" {
   }
 }
 
+# Result path back to the replay control plane: the worker reports per-source
+# outcomes with `parser.result` and whole-attempt failures with `parser.failed`.
+# A report the control plane cannot apply is dead-lettered to the same DLQ as a
+# worker-published terminal failure, so an operator inspects one place. Like the
+# DLQ it has no TTL: a message the control plane failed to apply must be replayed
+# deliberately, never discarded by the broker on its own.
+resource "rabbitmq_queue" "parser_result" {
+  name  = local.parser_result_queue
+  vhost = rabbitmq_vhost.wotbtools.name
+
+  settings {
+    durable     = true
+    auto_delete = false
+
+    arguments_json = jsonencode({
+      "x-queue-type"              = local.queue_type
+      "x-dead-letter-exchange"    = local.jobs_exchange
+      "x-dead-letter-routing-key" = local.parser_dead_routing_key
+    })
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "rabbitmq_binding" "parser_request" {
   source           = rabbitmq_exchange.jobs.name
   vhost            = rabbitmq_vhost.wotbtools.name
@@ -191,10 +220,40 @@ resource "rabbitmq_binding" "parser_dead" {
   }
 }
 
-# `control-api` dispatches jobs: it may publish to the job exchange and may
-# neither declare topology nor read a queue. Routing keys are not part of a
-# RabbitMQ ACL, so the write grant names the exchange rather than a single
-# routing key.
+# Both result routing keys land on the same queue: a per-source outcome and a
+# whole-attempt failure are two shapes of the same report, and the control plane
+# reads one queue either way. Two bindings rather than one wildcard keep the
+# routing table exact for version 1.
+resource "rabbitmq_binding" "parser_result" {
+  source           = rabbitmq_exchange.jobs.name
+  vhost            = rabbitmq_vhost.wotbtools.name
+  destination      = rabbitmq_queue.parser_result.name
+  destination_type = "queue"
+  routing_key      = local.parser_result_routing_key
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "rabbitmq_binding" "parser_failed" {
+  source           = rabbitmq_exchange.jobs.name
+  vhost            = rabbitmq_vhost.wotbtools.name
+  destination      = rabbitmq_queue.parser_result.name
+  destination_type = "queue"
+  routing_key      = local.parser_failed_routing_key
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# `control-api` dispatches jobs and consumes their outcomes: it may publish to
+# the job exchange, may not declare topology, and may read only the result
+# queue. It still cannot read `wotb.parser` — the work queue belongs to the
+# worker, and a control plane that could consume requests would compete with it.
+# Routing keys are not part of a RabbitMQ ACL, so the write grant names the
+# exchange rather than a single routing key.
 resource "rabbitmq_permissions" "control_api_publisher" {
   user  = rabbitmq_user.control_api.name
   vhost = rabbitmq_vhost.wotbtools.name
@@ -202,7 +261,7 @@ resource "rabbitmq_permissions" "control_api_publisher" {
   permissions {
     configure = "^$"
     write     = "^wotb\\.jobs$"
-    read      = "^$"
+    read      = "^wotb\\.parser\\.result$"
   }
 
   lifecycle {

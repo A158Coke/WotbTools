@@ -100,6 +100,20 @@ assert ci.count("-s settings-ci.xml") == 3
 assert ci.count("-s ../java/settings-ci.xml") == 3
 assert "-s settings.xml" not in ci
 
+# Maven resolves the aggregator's <modules> before it applies -pl, so a module listed in
+# java/pom.xml without a matching COPY in the backend Dockerfile fails the image build with
+# "Child module ... does not exist". Keep the two lists in lockstep.
+backend_dockerfile = (root / "docker/Dockerfile.backend").read_text(encoding="utf-8")
+java_pom = ET.parse(root / "java/pom.xml").getroot()
+maven_namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+maven_modules = [
+    element.text.strip() for element in java_pom.findall("./m:modules/m:module", maven_namespace)
+]
+assert maven_modules, "java/pom.xml must declare its modules"
+for maven_module in maven_modules:
+    assert f"COPY java/{maven_module}/pom.xml java/{maven_module}/pom.xml" in backend_dockerfile, \
+        f"docker/Dockerfile.backend must pre-copy java/{maven_module}/pom.xml"
+
 android_dependency_resolution = android_settings_text.split("dependencyResolutionManagement", 1)[1].split("rootProject.name", 1)[0]
 android_plugin_management = android_settings_text.split("pluginManagement", 1)[1].split("dependencyResolutionManagement", 1)[0]
 assert "google()" in android_dependency_resolution
