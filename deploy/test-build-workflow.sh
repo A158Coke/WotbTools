@@ -120,6 +120,9 @@ for path_name, shell_path in (("workflow_dispatch", manual_path), ("workflow_run
     syntax = subprocess.run(["bash", "-n"], input=shell_path.encode("utf-8"), capture_output=True)
     assert syntax.returncode == 0, \
         f"Validate deployment manifest {path_name} Bash syntax failed:\n{syntax.stderr.decode('utf-8', errors='replace')}"
+manual_heredoc = 'python3 - "$MANUAL_TARGET" "$TX_SERVICES_INPUT" "$main_sha" "$GITHUB_RUN_NUMBER" <<\'PY\' >> "$GITHUB_OUTPUT"\n'
+manual_python = manual_path.split(manual_heredoc, 1)[1].split("\nPY\n", 1)[0]
+compile(manual_python, "manual deployment manifest Python heredoc", "exec")
 assert "GITHUB_EVENT_NAME" in manual_run and "workflow_dispatch" in manual_run
 assert 'GITHUB_REF:-}" != refs/heads/main' in manual_run
 assert "git fetch origin main --depth=1" in manual_run
