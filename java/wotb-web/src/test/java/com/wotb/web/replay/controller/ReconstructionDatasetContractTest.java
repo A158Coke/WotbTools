@@ -8,6 +8,7 @@ import com.wotb.web.replay.ai.TacticalReviewHarness;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.job.ProcessedDataset;
 import com.wotb.web.replay.job.ReplayProcessingJob;
+import com.wotb.web.replay.job.LocalReplayDatasetRepository;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -48,12 +49,13 @@ class ReconstructionDatasetContractTest {
                 mock(AiReplayAnalysisService.class),
                 mock(TacticalReviewHarness.class),
                 null,
-                store);
+                store,
+                new LocalReplayDatasetRepository(store));
         controller = new ReconstructionController(
                 reviewService,
                 mock(AiCancellationRegistry.class),
                 mock(AiReviewWorkerExecutor.class),
-                new MapOverviewQueryService(store));
+                new MapOverviewQueryService(store, new LocalReplayDatasetRepository(store)));
     }
 
     private static ReplayProcessingJob notReadyJob(final String id) {

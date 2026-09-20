@@ -476,8 +476,10 @@ public class ReplayProcessingJobStore {
             if (job == null) {
                 return null;
             }
-            final ReplayProcessingJob.Snapshot snap = job.snapshot();
-            if (snap.status() != ReplayProcessingJob.Status.READY || job.result() == null) {
+            // 只要求状态 READY：dataset **权威在对象存储**（distributed）或进程内存（local），
+            // 由 ReplayProcessingResultReader 决定读得到与否。这里再要求 job.result() != null
+            // 会把 distributed（进程内刻意不持有 dataset）的 Export 永久拒掉。
+            if (job.snapshot().status() != ReplayProcessingJob.Status.READY) {
                 return null;
             }
             datasetLeaseRefs.computeIfAbsent(jobId, k -> new AtomicInteger()).incrementAndGet();
@@ -561,10 +563,29 @@ public class ReplayProcessingJobStore {
             storage.removeAndCleanup(jobId);
         }
         if (authority != null) {
-            final int removed = authority.deleteExpiredTerminal(cutoff);
-            if (removed > 0) {
-                LOGGER.info("replay_processing_job_cleaned ttl_expired=true authority_rows={}", removed);
+            sweepAuthority(cutoff);
+        }
+    }
+
+    /**
+     * 权威侧 TTL 清理：与本地 sweep **同一套 Dataset Lease 判定**。
+     *
+     * <p>lease 是进程内状态，因此这里不能写成一条集合式 delete（那会把正在被 AI / Playback / Export
+     * 读取的 job 行删掉，读取中途变成 404）：先取候选 id，跳过有活跃 lease 的，再逐条删除。
+     * 跨实例共享 lease 不在当前单 TX 运行时部署的范围内——真要多实例，lease 本身必须先变成共享状态。</p>
+     */
+    private void sweepAuthority(final long cutoff) {
+        int removed = 0;
+        for (final String jobId : authority.listExpiredTerminal(cutoff)) {
+            final AtomicInteger leases = datasetLeaseRefs.get(jobId);
+            if (leases != null && leases.get() > 0) {
+                continue;
             }
+            authority.deleteJob(jobId);
+            removed++;
+        }
+        if (removed > 0) {
+            LOGGER.info("replay_processing_job_cleaned ttl_expired=true authority_rows={}", removed);
         }
     }
 

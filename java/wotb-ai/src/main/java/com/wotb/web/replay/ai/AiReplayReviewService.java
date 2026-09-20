@@ -28,6 +28,7 @@ import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
+import com.wotb.web.replay.job.ReplayProcessingResultReader;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -56,6 +57,11 @@ public class AiReplayReviewService {
     private final MeterRegistry meterRegistry;
     /** Dataset Lease 提供方：AI 读取 derived artifact 前 acquire，防止 TTL 清理。 */
     private final ReplayProcessingJobStore processingStore;
+    /**
+     * derived artifact（{@code ai-facts.json}）的唯一读取端口：local 读 job 目录，
+     * distributed 读对象存储——AI 路径因此不依赖 TX 本地磁盘。
+     */
+    private final ReplayProcessingResultReader dataset;
 
     private final AtomicInteger aiReviewInFlight = new AtomicInteger();
     private Timer aiReviewDuration;
@@ -63,11 +69,13 @@ public class AiReplayReviewService {
             final AiReplayAnalysisService aiAnalysisService,
             final TacticalReviewHarness tacticalReviewHarness,
             @Autowired(required = false) final MeterRegistry meterRegistry,
-            final ReplayProcessingJobStore processingStore) {
+            final ReplayProcessingJobStore processingStore,
+            final ReplayProcessingResultReader dataset) {
         this.aiAnalysisService = aiAnalysisService;
         this.tacticalReviewHarness = tacticalReviewHarness;
         this.meterRegistry = meterRegistry;
         this.processingStore = processingStore;
+        this.dataset = dataset;
     }
 
     /**
@@ -96,7 +104,10 @@ public class AiReplayReviewService {
                                 ? "SOURCE_PROCESSING_FAILED" : "SOURCE_NOT_READY");
             }
             final AiReplayFacts facts =
-                    ReplayArtifactWriter.readAiFacts(processingStore.jobDir(processingJobId), sourceIndex);
+                    ReplayArtifactWriter.decodeAiFacts(dataset.aiFacts(processingJobId, sourceIndex));
+            if (facts == null) {
+                throw new java.io.IOException("ai-facts artifact is missing");
+            }
             datasetCache("ai", true);
             return analyzeFacts(facts, language, listener);
         } catch (final java.io.IOException | tools.jackson.core.JacksonException e) {
