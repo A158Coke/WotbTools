@@ -137,8 +137,35 @@ write_plan exchange-update '{"resource_changes":[{"address":"rabbitmq_exchange.j
 write_plan binding-update '{"resource_changes":[{"address":"rabbitmq_binding.parser_request","change":{"actions":["update"]}}]}'
 write_plan application-user-replacement '{"resource_changes":[{"address":"rabbitmq_user.parser_worker","change":{"actions":["delete","create"]}}]}'
 write_plan unknown-resource '{"resource_changes":[{"address":"rabbitmq_queue.application_owned","change":{"actions":["create"]}}]}'
-write_plan vhost-wide-acl '{"resource_changes":[{"address":"rabbitmq_permissions.control_api_publisher","change":{"actions":["update"],"after":{"permissions":[{"configure":"^$","write":".*","read":"^$"}]}}}]}'
-write_plan configure-acl '{"resource_changes":[{"address":"rabbitmq_permissions.parser_worker_consumer","change":{"actions":["update"],"after":{"permissions":[{"configure":".*","write":"^wotb\\.jobs$","read":"^wotb\\.parser$"}]}}}]}'
+
+# The ACL contract is exact per address, so neither a widened nor a
+# wrong-but-narrow regex may pass. Each fixture below is a syntactically valid
+# post-plan ACL that the previous blacklist check would have accepted.
+acl_plan() {
+  printf '{"resource_changes":[{"address":"%s","change":{"actions":["update"],"after":{"permissions":[{%s}]}}}]}' \
+    "$1" "$2"
+}
+
+write_plan acl-vhost-wide "$(acl_plan rabbitmq_permissions.control_api_publisher \
+  '"configure":"^$","write":".*","read":"^$"')"
+write_plan acl-configure-widened "$(acl_plan rabbitmq_permissions.parser_worker_consumer \
+  '"configure":".*","write":"^wotb\\.jobs$","read":"^wotb\\.parser$"')"
+write_plan acl-control-api-reads-parser "$(acl_plan rabbitmq_permissions.control_api_publisher \
+  '"configure":"^$","write":"^wotb\\.jobs$","read":"^wotb\\.parser$"')"
+write_plan acl-read-widened-prefix "$(acl_plan rabbitmq_permissions.parser_worker_consumer \
+  '"configure":"^$","write":"^wotb\\.jobs$","read":"^wotb\\..*$"')"
+write_plan acl-write-widened "$(acl_plan rabbitmq_permissions.parser_worker_consumer \
+  '"configure":"^$","write":"^wotb.*$","read":"^wotb\\.parser$"')"
+write_plan acl-read-catch-all "$(acl_plan rabbitmq_permissions.parser_worker_consumer \
+  '"configure":"^$","write":"^wotb\\.jobs$","read":"^.+$"')"
+write_plan acl-write-narrow-wrong-exchange "$(acl_plan rabbitmq_permissions.control_api_publisher \
+  '"configure":"^$","write":"^wotb\\.export$","read":"^$"')"
+write_plan acl-read-narrow-wrong-queue "$(acl_plan rabbitmq_permissions.parser_worker_consumer \
+  '"configure":"^$","write":"^wotb\\.jobs$","read":"^wotb\\.parser\\.dlq$"')"
+write_plan acl-write-removed "$(acl_plan rabbitmq_permissions.control_api_publisher \
+  '"configure":"^$","write":"^$","read":"^$"')"
+write_plan acl-read-removed "$(acl_plan rabbitmq_permissions.control_api_publisher \
+  '"configure":"^$","write":"^wotb\\.jobs$","read":""')"
 
 assert_passes initial-create
 assert_passes second-plan-noop --require-no-changes
@@ -160,8 +187,16 @@ assert_rejects exchange-update "unsafe RabbitMQ plan action for rabbitmq_exchang
 assert_rejects binding-update "unsafe RabbitMQ plan action for rabbitmq_binding.parser_request"
 assert_rejects application-user-replacement "destructive RabbitMQ plan action"
 assert_rejects unknown-resource "unexpected RabbitMQ OpenTofu resource"
-assert_rejects vhost-wide-acl "may not hold a vhost-wide write ACL"
-assert_rejects configure-acl "may not configure topology"
+assert_rejects acl-vhost-wide "ACL write must stay exactly '^wotb\\\\.jobs$'"
+assert_rejects acl-configure-widened "ACL configure must stay exactly '^$'"
+assert_rejects acl-control-api-reads-parser "ACL read must stay exactly '^$'"
+assert_rejects acl-read-widened-prefix "ACL read must stay exactly '^wotb\\\\.parser$'"
+assert_rejects acl-write-widened "ACL write must stay exactly '^wotb\\\\.jobs$'"
+assert_rejects acl-read-catch-all "ACL read must stay exactly '^wotb\\\\.parser$'"
+assert_rejects acl-write-narrow-wrong-exchange "ACL write must stay exactly '^wotb\\\\.jobs$'"
+assert_rejects acl-read-narrow-wrong-queue "ACL read must stay exactly '^wotb\\\\.parser$'"
+assert_rejects acl-write-removed "ACL write must stay exactly '^wotb\\\\.jobs$'"
+assert_rejects acl-read-removed "ACL read must stay exactly '^$'"
 assert_rejects acl-tightening "second RabbitMQ OpenTofu plan is not clean" --require-no-changes
 
 echo "RabbitMQ OpenTofu plan safety policy contract OK"

@@ -52,9 +52,21 @@ application_identities = {
 # sensitive and is never inspected: a real plan carries its plaintext, and a
 # rotation must stay allowed.
 user_attributes = {"id", "name", "password", "tags"}
+# The exact, reviewed ACL contract per resource address. A blacklist cannot do
+# this job: `^wotb\\..*$`, `^wotb.*$`, `^.+$` or a wrong-but-narrow regex all
+# widen or move a privilege while looking harmless, so every scope is compared
+# for equality and any different post-plan value fails closed.
 application_acls = {
-    "rabbitmq_permissions.control_api_publisher",
-    "rabbitmq_permissions.parser_worker_consumer",
+    "rabbitmq_permissions.control_api_publisher": {
+        "configure": "^$",
+        "write": "^wotb\\.jobs$",
+        "read": "^$",
+    },
+    "rabbitmq_permissions.parser_worker_consumer": {
+        "configure": "^$",
+        "write": "^wotb\\.jobs$",
+        "read": "^wotb\\.parser$",
+    },
 }
 
 
@@ -80,7 +92,7 @@ changed = []
 for item in plan.get("resource_changes", []):
     address = item.get("address")
     actions = item.get("change", {}).get("actions", [])
-    if address not in set(application_identities) | static_topology | application_acls:
+    if address not in set(application_identities) | static_topology | set(application_acls):
         raise SystemExit(f"unexpected RabbitMQ OpenTofu resource: {address}")
     if "delete" in actions:
         raise SystemExit(f"destructive RabbitMQ plan action for {address}: {actions}")
@@ -100,7 +112,8 @@ for item in plan.get("resource_changes", []):
     raise SystemExit(f"unsafe RabbitMQ plan action for {address}: {actions}")
 
 # Whatever an approved diff contains, an application identity can never carry a
-# tag, be renamed, gain unknown metadata, or hold a vhost-wide ACL.
+# tag, be renamed, gain unknown metadata, or hold an ACL other than the one
+# reviewed for its address.
 for item in plan.get("resource_changes", []):
     address = item.get("address")
     change = item.get("change", {})
@@ -113,14 +126,11 @@ for item in plan.get("resource_changes", []):
         continue
     after = change.get("after") or {}
     permissions = (after.get("permissions") or [{}])[0]
-    if permissions.get("configure") != "^$":
-        raise SystemExit(
-            f"unsafe RabbitMQ plan action for {address}: an application identity may not configure topology"
-        )
-    for scope in ("write", "read"):
-        if permissions.get(scope) == ".*":
+    for scope, expected in application_acls[address].items():
+        actual = permissions.get(scope)
+        if actual != expected:
             raise SystemExit(
-                f"unsafe RabbitMQ plan action for {address}: an application identity may not hold a vhost-wide {scope} ACL"
+                f"unsafe RabbitMQ plan action for {address}: ACL {scope} must stay exactly {expected!r}, got {actual!r}"
             )
 
 if require_no_changes and changed:

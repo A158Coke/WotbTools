@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Disposable RabbitMQ/OpenTofu static-topology smoke. It never contacts TX.
+# Disposable RabbitMQ OpenTofu policy, ownership and runtime smoke. It never
+# contacts TX.
+#
+# This is the only RabbitMQ entry point besides
+# `infra/tofu/rabbitmq/test-validate-plan.sh`: the plan policy test owns
+# destructive/privilege policy, and this file owns the production-safety
+# invariants that native tooling accepts plus every real broker behaviour.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -33,6 +39,26 @@ command -v "$TOFU" >/dev/null 2>&1 || fail "$TOFU is required"
 "$TOFU" -chdir="$TOFU_ROOT" fmt -check -recursive >/dev/null \
   || fail "RabbitMQ OpenTofu root is not tofu-fmt clean"
 
+# Production-safety preflight: shapes that `tofu validate` accepts but that would
+# still break the ownership boundary or production safety. Everything the broker
+# can prove is verified against the real broker further down instead.
+grep -Fq 'path = "/opt/wotb-tx/rabbitmq-tofu-state/terraform.tfstate"' "$TOFU_ROOT/versions.tf" \
+  || fail "OpenTofu state must stay at the TX-local root-only path"
+if grep -Eq 'remote-exec|local-exec|null_resource|provisioner' "$TOFU_ROOT"/*.tf; then
+  fail "the OpenTofu root must not use an out-of-band execution path"
+fi
+COMPOSE="$ROOT/deploy/tx/docker-compose.yml"
+grep -Fq 'image: rabbitmq:4.3.6-management-alpine' "$COMPOSE" \
+  || fail "Compose must keep owning the pinned RabbitMQ runtime image"
+if grep -Eq 'x-dead-letter|x-message-ttl|x-queue-type|wotb\.jobs|wotb\.parser' "$COMPOSE"; then
+  fail "Compose must not declare RabbitMQ topology; OpenTofu is the only topology owner"
+fi
+TX_DEPLOY="$ROOT/deploy/tx/deploy.sh"
+grep -Fq 'bash ./validate-plan.sh plan.tfplan' "$TX_DEPLOY" \
+  || fail "the TX deploy path must validate the first plan"
+grep -Fq 'bash ./validate-plan.sh second-plan.tfplan --require-no-changes' "$TX_DEPLOY" \
+  || fail "the TX deploy path must require a no-op second plan"
+
 docker run -d --name "$NAME" \
   -e RABBITMQ_DEFAULT_USER="$ADMIN_USER" \
   -e RABBITMQ_DEFAULT_PASS="$ADMIN_PASSWORD" \
@@ -61,10 +87,24 @@ mkdir -p "$MIRROR"
 "$TOFU" -chdir="$TOFU_ROOT" providers mirror "$MIRROR" >/dev/null
 sed "s|/opt/wotb-tx/tofu-provider-mirror|$MIRROR|" "$ROOT/deploy/tx/rabbitmq.tofurc" \
   > "$WORK/tofurc"
+
+# The production provider source is mirror-only. With the mirror emptied, init
+# has to fail closed instead of silently downloading the provider directly.
+mkdir -p "$WORK/empty-mirror"
+sed "s|$MIRROR|$WORK/empty-mirror|" "$WORK/tofurc" > "$WORK/no-mirror.tfrc"
+if TF_CLI_CONFIG_FILE="$WORK/no-mirror.tfrc" TF_DATA_DIR="$WORK/no-mirror-data" \
+    "$TOFU" -chdir="$TOFU_ROOT" init -reconfigure -input=false -lockfile=readonly \
+    -backend-config="path=$WORK/no-mirror.tfstate" >/dev/null 2>&1; then
+  fail "provider installation fell back to a direct download instead of failing closed"
+fi
+echo "PASS: provider installation is mirror-only and fails closed"
+
 export TF_CLI_CONFIG_FILE="$WORK/tofurc"
 export TF_DATA_DIR="$WORK/tofu-data"
 "$TOFU" -chdir="$TOFU_ROOT" init -reconfigure -input=false -lockfile=readonly \
   -backend-config="path=$WORK/terraform.tfstate" >/dev/null
+"$TOFU" -chdir="$TOFU_ROOT" providers | grep -Fq 'cyrilgdn/rabbitmq] 1.10.1' \
+  || fail "the provider version must stay pinned to cyrilgdn/rabbitmq 1.10.1"
 "$TOFU" -chdir="$TOFU_ROOT" validate >/dev/null
 "$TOFU" -chdir="$TOFU_ROOT" plan -input=false -no-color -out="$WORK/plan.tfplan" >/dev/null
 (

@@ -114,11 +114,11 @@ requeue, which re-enters the retry loop) or terminal (publish `parser.dead`).
 Neither identity carries any tag. RabbitMQ requires at least the `management`
 tag before a user may call the Management HTTP API at all, so `control-api` and
 `parser-worker` cannot reach the Management API, the Management UI, or its HTTP
-publish/get helpers; they only speak AMQP. The empty tag set is enforced in two
-places, not just declared once: `validate-plan.sh` refuses any saved plan whose
+publish/get helpers; they only speak AMQP. The empty tag set is enforced on the
+saved plan, not just declared once: `validate-plan.sh` refuses any plan whose
 resulting application user carries tags, is renamed, or gains unknown user
-attributes, and `scripts/ci/test-rabbitmq-tofu-contract.sh` pins the source
-`tags = []` so a future change cannot silently grant Management API access.
+attributes, and the disposable smoke proves on a running broker that the
+Management API refuses both identities.
 
 - `control-api` dispatches jobs. It may publish to `wotb.jobs`, and it may
   neither declare topology nor read any queue. Routing keys are not part of a
@@ -175,10 +175,13 @@ have an empty tag set, and must not carry any user attribute outside the known
 rejected too, so an unprovable tag set fails closed. Sensitive passwords are
 never inspected, so rotation keeps working.
 
-The validator likewise rejects any ACL that would let an application identity
-configure topology or hold a vhost-wide `write`/`read` grant, whatever an
-approved diff contains. The second plan must still be entirely no-op after those
-updates.
+The validator likewise holds each application ACL to the exact reviewed values
+per resource address — `configure = ^$`, `write = ^wotb\.jobs$`, and
+`read = ^$` for `control-api` or `read = ^wotb\.parser$` for `parser-worker`.
+Any different post-plan value fails closed, so a widened catch-all
+(`^wotb\..*$`, `^wotb.*$`, `^.+$`), a wrong-but-narrow regex, a removed scope,
+or `control-api` gaining read access to `wotb.parser` is refused. The second plan
+must still be entirely no-op after those updates.
 
 ## Administrator credential rotation
 
@@ -203,24 +206,25 @@ installation; production cannot download it.
 
 ## Verification
 
-`scripts/ci/test-rabbitmq-tofu-contract.sh` pins the reviewed contract without a
-broker: the exact exchange/queue/binding names and arguments, the exact ACL
-regexes, the `tags = []` identity contract, the `cyrilgdn/rabbitmq 1.10.1`
-provider pin and lockfile, the mirror-only `.tofurc`, and the Compose runtime
-boundary.
+RabbitMQ has exactly two test entry points. `infra/tofu/rabbitmq/test-validate-plan.sh`
+pins the plan-safety policy against saved-plan fixtures: every topology
+mutation, delete, replacement, unknown address, second-plan non-no-op, an
+application user that gains `management`, `administrator` or `monitoring`, any
+other non-empty or unprovable tag set, a renamed identity, extra identity
+metadata, and — because the ACL contract is exact per resource address —
+`^wotb\\..*$`, `^wotb.*$`, `^.+$`, a wrong-but-narrow regex, a removed scope, or
+`control-api` gaining read access to `wotb.parser`.
 
-`infra/tofu/rabbitmq/test-validate-plan.sh` pins the plan-safety policy against
-saved-plan fixtures, including the negative cases: an application user that
-gains `management`, `administrator` or `monitoring`, any other non-empty tag
-set, an unprovable tag set, a renamed identity, extra identity metadata, and
-every topology mutation.
-
-The CI `deploy/test-rabbitmq-tofu.sh` smoke uses disposable credentials and a
-temporary RabbitMQ container. It checks `tofu fmt`, mirrors the provider,
-applies the root, requires a no-op second plan, and then verifies against the
-running broker that the exchange, queues, bindings and ACLs match the declared
-topology. Because the application identities carry no tags and therefore cannot
-reach the Management API, messaging is exercised over real AMQP with `pika`:
+`deploy/test-rabbitmq-tofu.sh` owns everything else. It runs the native
+`tofu fmt`/`tofu validate`, a small production-safety preflight for the shapes
+native tooling accepts (TX-local state path, no out-of-band execution, Compose
+must not declare topology, both TX deploy plan guards), proves the provider
+source is mirror-only by failing closed with an emptied mirror, asserts the
+resolved `cyrilgdn/rabbitmq 1.10.1` pin natively, and then applies against a
+temporary RabbitMQ container. Against the real broker it verifies the exchange,
+queues, bindings and ACLs, requires a no-op second plan, and — because the
+application identities carry no tags and therefore cannot reach the Management
+API — exercises messaging over real AMQP with `pika`:
 
 - both identities are refused by the Management API with
   `Not management user`, proving the empty tag set on the running broker;
