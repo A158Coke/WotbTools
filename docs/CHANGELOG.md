@@ -6,6 +6,8 @@
 
 ### Added
 
+- **Replay Processing Job PostgreSQL 权威状态**：新增 Flyway `V23` 三张状态投影表（`replay_processing_job` / `replay_processing_source` / `replay_processing_operation`）与 `ReplayJobAuthority`（`JdbcClient`，不引入 JPA 实体图），job/source 生命周期与 operationId 幂等不再只存在于单实例内存。注册表新增 `wotb.replay.processing-job.repository=memory|jdbc` 开关（缺省 `memory`，既有部署运行时行为逐字不变）：`jdbc` 模式下每次状态迁移 write-through 覆盖整行投影，内存未命中时从权威状态恢复只读投影，因此进程重启后 job/source 状态仍可读、同一 `operationId` 仍按 authenticated subject 拿回同一 `jobId`，TTL sweeper 同时回收过期终态投影，启动孤儿清理改用权威 job 集合以免误删可恢复 job 的本地产物。'IN_FLIGHT' reservation、`entries`、`ProcessedDataset` 与 artifact 内容刻意不落库：执行上下文不可持久化，Dataset 读取归属对象存储。
+
 - **Production QQ IdP enablement**：`idp-qq` 现由 TX-local OpenTofu 全量管理（固定 alias / provider / endpoints、`enabled=true`、client ID、write-only secret 与 rotation version、`prevent_destroy`），删除 credentials/enabled 的 `ignore_changes` blind spot。GitHub Variable `TX_QQ_CLIENT_ID`、Secret `TX_QQ_CLIENT_SECRET` 与 Variable `TX_QQ_CLIENT_SECRET_VERSION` 经 SSH 映射到 `TF_VAR_qq_*`；任一缺失、placeholder 或非法 version 均 fail-closed，secret 不写入 Git/tfvars/log/普通 state attribute。fresh-realm smoke 以实际 Admin API representation 验证 QQ provider 已加载、IdP contract 与第二次 plan no-op；TX 只读 pre-cutover gate 同样要求 `idp-qq=READY`，不执行 apply、realm mutation、restart 或 DNS 操作。真实 QQ Web E2E 仍是 DNS cutover 前的受控 runtime acceptance，fresh TX realm 不迁移旧 Keycloak users、无 Juhe fallback、DNS untouched。
 
 - **Yecao MinIO temporary workspace infrastructure**：新增源码固定的社区 MinIO 镜像构建、WireGuard-only API / loopback-only Console、持久卷与健康检查；独立 OpenTofu root 管理 `wotbtools-temp`、`temp/jobs/` 一天过期和最小权限 worker policy。Deploy 仅提供显式手动 `target=minio` 路径，普通 Yecao release 不会需要 MinIO secrets 或启动 MinIO；Yecao provider mirror/state 以 fail-closed 运维前置条件记录。

@@ -3,6 +3,7 @@ package com.wotb.web.replay.job;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Component;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -22,6 +24,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 终态（READY/FAILED/CANCELLED）过期 job；启动时清理孤儿目录；{@code @PreDestroy}
  * 关闭调度器。目录 / TTL / 孤儿清理 / 删除委托共享 {@link ReplayJobStorage}
  * （与 Export 共用同一存储组件）。</p>
+ *
+ * <p><b>权威状态后端（两态，一次性开关）</b>：{@code wotb.replay.processing-job.repository}
+ * = {@code memory}（默认）时本类只做上面这些，行为与引入权威状态前逐字一致；
+ * = {@code jdbc} 时另外注入 {@link ReplayJobAuthority}，每次状态迁移 write-through 到
+ * PostgreSQL，并在内存未命中时从权威状态恢复只读投影（进程重启后 job/source 状态与
+ * operationId 幂等仍可读）。无论哪种模式，本类都是 job **执行上下文**（entries / result /
+ * 本地产物）的唯一持有者——那部分不可持久化，也不属于权威状态。</p>
  *
  * <p><b>Dataset Lease 生命周期</b>：AI / Playback / Export 消费
  * Processing result 或 derived artifact 前 {@link #acquireForSource(String)} /
@@ -50,6 +59,12 @@ public class ReplayProcessingJobStore {
     private final Object lifecycleLock = new Object();
     private final ReplayJobStorage storage;
     private final long ttlMinutes;
+    /**
+     * PostgreSQL 权威状态投影；{@code null} 表示纯内存模式（默认，Yecao 过渡期与本地开发）。
+     * 非 null 时每次状态迁移都 write-through 落库，且 {@link #get(String)} 在内存未命中时
+     * 从权威状态恢复只读投影（进程重启后状态仍可读）。
+     */
+    private final ReplayJobAuthority authority;
 
     /**
      * Processing create idempotency 的**单一权威状态机**：{@code ownerSubject + '\u0000' + operationId}
@@ -119,6 +134,11 @@ public class ReplayProcessingJobStore {
         if (!hasOperationIdentity(ownerSubject, operationId)) {
             return null;
         }
+        if (authority != null) {
+            // 权威索引优先：进程重启后内存 map 为空，同一 operationId 必须仍拿回同一个 jobId
+            // （job 已被清理时返回 null，与内存实现的懒失效语义一致）。
+            return authority.findCommittedJobId(ownerSubject, operationId);
+        }
         final String key = operationKey(ownerSubject, operationId);
         final OperationState state = operations.get(key);
         if (state == null || state.committedJobId() == null) {
@@ -183,6 +203,11 @@ public class ReplayProcessingJobStore {
         jobOperationKeys.put(jobId, key);
         operations.computeIfPresent(key, (k, state) ->
                 state.inFlight() == mine ? OperationState.committed(jobId) : state);
+        if (authority != null && !authority.commitOperation(ownerSubject, operationId, jobId)) {
+            // 单 TX 运行时下不可达：进程内 compute 已保证同一 identity 只有一个 creator。
+            // 跨进程竞态时保留既有索引并告警，绝不静默产生第二个 job 视图。
+            LOGGER.warn("replay_processing_operation_conflict operationScoped=true jobId={}", jobId);
+        }
     }
 
     /**
@@ -225,18 +250,31 @@ public class ReplayProcessingJobStore {
     @Autowired
     public ReplayProcessingJobStore(
             @Value("${wotb.replay.processing-job.dir:${java.io.tmpdir}/wotb-replay-processing-jobs}") final String dir,
-            @Value("${wotb.replay.processing-job.ttl-minutes:30}") final long ttlMinutes) {
-        this.storage = new ReplayJobStorage(dir, ttlMinutes, "wotb-replay-processing-job-sweeper");
-        this.ttlMinutes = ttlMinutes;
-        storage.cleanupOrphans(jobs.keySet());
-        storage.startSweeper(this::sweepExpired);
+            @Value("${wotb.replay.processing-job.ttl-minutes:30}") final long ttlMinutes,
+            final ObjectProvider<ReplayJobAuthority> authority) {
+        this(Path.of(dir), ttlMinutes, authority.getIfAvailable());
     }
 
-    /** 测试便利构造器（直接给 ttl 分钟数，不读 Spring 配置）。 */
+    /** 测试便利构造器（纯内存模式：不读 Spring 配置、不接触数据库）。 */
     public ReplayProcessingJobStore(final Path dir, final long ttlMinutes) {
+        this(dir, ttlMinutes, null);
+    }
+
+    /**
+     * @param authority {@code null} = 纯内存模式（默认）；非 null = 权威状态模式，
+     *                  每次迁移 write-through 到 PostgreSQL，并在内存未命中时恢复只读投影
+     */
+    public ReplayProcessingJobStore(final Path dir, final long ttlMinutes,
+                                    final ReplayJobAuthority authority) {
+        this.authority = authority;
         this.storage = new ReplayJobStorage(dir.toString(), ttlMinutes, "wotb-replay-processing-job-sweeper");
         this.ttlMinutes = ttlMinutes;
-        storage.cleanupOrphans(jobs.keySet());
+        // 权威模式下的孤儿判定必须用数据库里的 job 集合：用空 registry 会把可恢复 job 的
+        // 本地产物（输入 / derived artifact）当孤儿删掉。
+        final Set<String> knownJobs = authority == null
+                ? Set.copyOf(jobs.keySet())
+                : Set.copyOf(authority.listJobIds());
+        storage.cleanupOrphans(knownJobs);
         storage.startSweeper(this::sweepExpired);
     }
 
@@ -252,10 +290,53 @@ public class ReplayProcessingJobStore {
         synchronized (lifecycleLock) {
             jobs.put(job.jobId(), job);
         }
+        if (authority != null) {
+            job.attachTransitionListener(this::persistTransition);
+            persistTransition(job);
+        }
     }
 
+    /**
+     * 读取 job：优先返回进程内活对象；权威模式下内存未命中时从权威状态恢复只读投影
+     * （进程重启后状态仍可读）。恢复的投影**不进入** live registry，因此
+     * {@link #acquireForSource(String)} / {@link #acquireForExport(String)} 不会把一个
+     * 没有执行上下文的 job 当成可消费 Dataset 的 job（其 {@code result} 恒为 null）。
+     */
     public ReplayProcessingJob get(final String jobId) {
-        return jobs.get(jobId);
+        final ReplayProcessingJob live = jobs.get(jobId);
+        if (live != null || authority == null) {
+            return live;
+        }
+        return authority.findJob(jobId).map(this::restore).orElse(null);
+    }
+
+    private ReplayProcessingJob restore(final ReplayJobAuthority.StoredJob stored) {
+        final ReplayProcessingJob restored = new ReplayProcessingJob(
+                stored.jobId(), stored.total(), stored.sources(), stored.status(), stored.phase(),
+                stored.processed(), stored.duplicates(), stored.failures(),
+                stored.parseCompleted(), stored.parseSucceeded(), stored.parseFailed(),
+                stored.errorCode(), stored.cancelRequested(),
+                stored.createdAtMillis(), stored.finishedAtMillis());
+        restored.attachTransitionListener(this::persistTransition);
+        return restored;
+    }
+
+    /**
+     * write-through 单点：任何状态迁移后覆盖整行投影。
+     *
+     * <p>失败只记录 ERROR 不抛出：此刻内存状态已经前进，把异常抛回 worker / status 线程会让
+     * 执行在半途失败，而下一次迁移会再次覆盖整行投影，因此最多落后一次迁移。</p>
+     */
+    private void persistTransition(final ReplayProcessingJob job) {
+        if (authority == null) {
+            return;
+        }
+        try {
+            authority.save(job);
+        } catch (final RuntimeException e) {
+            LOGGER.error("replay_processing_job_persist_failed jobId={} error={}",
+                    job.jobId(), e.getMessage());
+        }
     }
 
     /**
@@ -311,6 +392,9 @@ public class ReplayProcessingJobStore {
             dropOperationIndex(jobId);
         }
         storage.removeAndCleanup(jobId);
+        if (authority != null) {
+            authority.deleteJob(jobId);
+        }
     }
 
     /**
@@ -348,6 +432,12 @@ public class ReplayProcessingJobStore {
         }
         for (final String jobId : toClean) {
             storage.removeAndCleanup(jobId);
+        }
+        if (authority != null) {
+            final int removed = authority.deleteExpiredTerminal(cutoff);
+            if (removed > 0) {
+                LOGGER.info("replay_processing_job_cleaned ttl_expired=true authority_rows={}", removed);
+            }
         }
     }
 

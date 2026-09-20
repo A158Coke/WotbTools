@@ -33,6 +33,12 @@
             <groupId>org.springframework</groupId>
             <artifactId>spring-web</artifactId>
         </dependency>
+        <!-- ReplayJobAuthority 的 JdbcClient：权威状态投影只需要 spring-jdbc，
+             不引入 JPA/Hibernate（job 状态是显式投影，不是 ORM 实体图）。 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+        </dependency>
         <dependency>
             <groupId>jakarta.annotation</groupId>
             <artifactId>jakarta.annotation-api</artifactId>
