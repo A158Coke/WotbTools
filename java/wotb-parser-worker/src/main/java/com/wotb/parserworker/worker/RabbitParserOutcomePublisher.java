@@ -29,9 +29,9 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
  * <p>This is the worker's half of the PR C delivery invariant. A successful return means the broker
  * confirmed the publish <em>and</em> the message was routable; a lost publish, a broker NACK, a
  * confirm timeout, a connection failure or an unroutable routing key all surface as
- * {@link ParserOutcomePublishException}. The caller then rejects the delivered
- * {@code parser.request} without requeue, so "the result was never delivered" is discoverable in
- * the DLQ instead of silently hanging the job.</p>
+ * {@link ParserOutcomePublishException}. The caller then settles nothing: it neither reports a
+ * second outcome nor acknowledges the request, so the transport redelivers the same attempt instead
+ * of a job being closed on an outcome whose delivery is unknown.</p>
  *
  * <p>The constructor fails closed unless the supplied {@link RabbitTemplate} actually has correlated
  * publisher confirms and publisher returns on its connection factory, and {@code mandatory} is

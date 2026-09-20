@@ -439,6 +439,76 @@ class ParserWorkerPipelineTest {
         }
     }
 
+    @Test
+    void uncertainResultPublishSettlesNothingAndKeepsTheSameAttempt() throws Exception {
+        // The parse succeeds and parser.result cannot be confirmed. The broker may already have routed
+        // it, so publishing parser.failed as well would create two contradictory outcomes for one
+        // (jobId, attempt) and acking would close an attempt whose real outcome is unknown.
+        final byte[] replay = Files.readAllBytes(FIXTURE_DIR.resolve(REPLAY_NAME));
+        put(ObjectStorageKeys.tempJobObject(jobId, "input/0/" + REPLAY_NAME), replay);
+
+        // Only the parser.result publish is broken; the parse itself runs for real, and publishFailed
+        // still works so the test cannot pass by failing on a different path.
+        final RabbitParserOutcomePublisher uncertainPublisher =
+                new RabbitParserOutcomePublisher(template, CODEC, Duration.ofSeconds(10)) {
+
+                    @Override
+                    public void publishResult(final ParserResultMessage message) {
+                        throw new ParserOutcomePublishException("simulated lost confirm for parser.result");
+                    }
+                };
+        final ParserRequestHandler uncertainResult = new ParserRequestHandler(storage,
+                new DefaultReplayProcessingFacade(), new RecordingLifecycle(), uncertainPublisher, null);
+        final SimpleMessageListenerContainer container = listenerContainer(uncertainResult);
+        container.start();
+        try {
+            dispatchRequest(5, REPLAY_NAME);
+            awaitQueueEmpty(ParserTopology.PARSER_QUEUE, "the request being taken by the consumer");
+        } finally {
+            container.stop();
+        }
+
+        // Nothing was invented for the uncertainty: no parser.result, no parser.failed, no park.
+        assertQueueEmpty(ParserTopology.PARSER_RESULT_QUEUE);
+        assertQueueEmpty(ParserTopology.PARSER_RETRY_QUEUE);
+        assertQueueEmpty(ParserTopology.PARSER_DLQ);
+        // And the request is still unsettled, so the transport redelivers the same attempt.
+        final Message redelivered = awaitMessage(ParserTopology.PARSER_QUEUE, SETTLE_TIMEOUT);
+        assertNotNull(redelivered, "an unsettled request must be redelivered, not acknowledged");
+        assertEquals(5, CODEC.decodeRequest(redelivered.getBody()).attempt(),
+                "redelivery must reproduce the same attempt");
+    }
+
+    @Test
+    void transportRedeliveryOfTheSameAttemptMayProduceDuplicateResults() throws Exception {
+        // A redelivered request re-runs idempotently and legitimately republishes parser.result for the
+        // same (jobId, attempt). The control plane applies it idempotently; the worker must neither
+        // suppress nor convert the duplicate into a different outcome.
+        final byte[] replay = Files.readAllBytes(FIXTURE_DIR.resolve(REPLAY_NAME));
+        put(ObjectStorageKeys.tempJobObject(jobId, "input/0/" + REPLAY_NAME), replay);
+
+        final SimpleMessageListenerContainer container = listenerContainer();
+        container.start();
+        try {
+            final Message request = requestMessage(1, 0, REPLAY_NAME);
+            template.send(ParserTopology.JOBS_EXCHANGE, ParserTopology.PARSER_REQUEST_ROUTING_KEY, request);
+            template.send(ParserTopology.JOBS_EXCHANGE, ParserTopology.PARSER_REQUEST_ROUTING_KEY, request);
+            for (int delivery = 0; delivery < 2; delivery++) {
+                final Message outcome = awaitOutcome(ParserTopology.PARSER_RESULT_ROUTING_KEY, SETTLE_TIMEOUT);
+                assertNotNull(outcome, "a duplicate delivery must still report its outcome");
+                final ParserResultMessage result = CODEC.decodeResult(outcome.getBody());
+                assertEquals(jobId, result.jobId());
+                assertEquals(1, result.attempt());
+            }
+            awaitQueueEmpty(ParserTopology.PARSER_QUEUE, "both deliveries leaving the work queue");
+        } finally {
+            container.stop();
+        }
+        assertQueueEmpty(ParserTopology.PARSER_RESULT_QUEUE);
+        assertQueueEmpty(ParserTopology.PARSER_RETRY_QUEUE);
+        assertQueueEmpty(ParserTopology.PARSER_DLQ);
+    }
+
     // ---- helpers -------------------------------------------------------------------------------
 
     private static SimpleMessageListenerContainer listenerContainer() {
@@ -485,6 +555,12 @@ class ParserWorkerPipelineTest {
         for (int index = 0; index < sourceNames.length; index++) {
             sources.add(new ParserRequestSource(firstSourceIndex + index, sourceNames[index]));
         }
+        template.send(ParserTopology.JOBS_EXCHANGE, ParserTopology.PARSER_REQUEST_ROUTING_KEY,
+                requestMessage(attempt, sources));
+    }
+
+    /** Builds one request without sending it, so a test can publish the very same delivery twice. */
+    private static Message requestMessage(final int attempt, final List<ParserRequestSource> sources) {
         final ParserRequestMessage request = new ParserRequestMessage(
                 ParserMessageCodec.SCHEMA_VERSION,
                 UUID.randomUUID().toString(),
@@ -492,8 +568,11 @@ class ParserWorkerPipelineTest {
                 attempt,
                 Instant.now(),
                 sources);
-        template.send(ParserTopology.JOBS_EXCHANGE, ParserTopology.PARSER_REQUEST_ROUTING_KEY,
-                persistentJsonMessage(CODEC.encode(request)));
+        return persistentJsonMessage(CODEC.encode(request));
+    }
+
+    private static Message requestMessage(final int attempt, final int sourceIndex, final String sourceName) {
+        return requestMessage(attempt, List.of(new ParserRequestSource(sourceIndex, sourceName)));
     }
 
     private static Message persistentJsonMessage(final byte[] body) {

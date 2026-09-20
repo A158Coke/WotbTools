@@ -60,6 +60,7 @@ Object layout below `temp/jobs/<jobId>/` is owned by
 |---|---|---|---|
 | Canonical parser rejects the replay bytes | per-source `FAILED` with a stable error code | `parser.result` | `basicAck` — re-running the same bytes cannot change the result |
 | Input read fails, **or an artifact write fails after a successful parse** | whole-attempt failure (the bytes were fine; object storage was not) | `parser.failed` with `retryable=true`, same `jobId` and same `attempt` | `basicAck` **after** the report is confirmed; the control plane decides whether to retry |
+| **`parser.result` publish is uncertain** (confirm lost, timed out, NACKed, unroutable) | nothing is settled and **no second outcome is invented** — an uncertain confirm does not prove the result was not routed | none | **no ack and no nack**: the transport redelivers the same attempt, and the worker reproduces the same `parser.result` |
 | The failure report cannot be delivered (lost confirm, broker down) | nothing is settled | none | **no ack and no nack**: the transport redelivers the *same* attempt |
 | Body the codec refuses | park the delivery verbatim, then finish it | none (no `jobId`/`attempt` exists to report) | `basicAck` after the park is confirmed |
 | The park itself cannot be delivered | nothing is settled | none | no ack and no nack; the transport redelivers |
@@ -78,6 +79,15 @@ instead. Both failures keep the same wire code
 
 Three further properties are deliberate and load-bearing:
 
+- **An uncertain outcome is never converted into a second outcome.** A lost or
+  timed-out confirm for `parser.result` does not prove the broker did not route
+  it. Reporting `parser.failed` as well would give one `(jobId, attempt)` two
+  contradictory outcomes, and a control plane that consumed the failure first
+  would advance the attempt while the valid result became stale. So
+  `PARSER_OUTCOME_NOT_DELIVERED` no longer exists as a wire code: the worker
+  publishes nothing, acknowledges nothing and rejects nothing, and the redelivered
+  attempt simply reproduces the same `parser.result`. The control plane is required
+  to apply duplicate same-attempt results idempotently (PR E).
 - **The report never contradicts the transport.** A failure the control plane may
   yet retry is reported `retryable=true`; the worker never claims an attempt is
   final on its own.
@@ -173,6 +183,7 @@ Log events to look for (`docker compose logs -f parser-worker` on Yecao):
 | `event=parser_worker_source_failed` | canonical parser rejected one source (business failure, request still acked) |
 | `event=parser_worker_dataset_written` | the canonical dataset object was stored |
 | `event=parser_worker_artifact_storage_failed` | the parse succeeded but an artifact write failed (infrastructure, retryable) |
+| `event=parser_worker_outcome_publish_uncertain` | `parser.result` could not be confirmed; nothing was reported or acknowledged and the attempt will be redelivered |
 | `event=parser_worker_infrastructure_failure` | reported `parser.failed(retryable=true)` and acked; `retryDecision=control-plane` |
 | `event=parser_worker_failure_report_undelivered` | the report could not be published; the request stays unacknowledged and will be redelivered with the same attempt |
 | `event=parser_worker_undecodable_request` | the raw delivery was parked on `wotb.parser.dlq` |
@@ -199,7 +210,9 @@ Diagnosis order:
   sink and the MinIO sink, the confirmed `parser.result`, the business-failure
   ack, an **artifact-write failure reported as a retryable infrastructure failure
   with no terminal per-source verdict and nothing in `wotb.parser.retry`**, an
-  **undeliverable report leaving the request unacknowledged with the transport
+  **uncertain `parser.result` publish settling nothing at all and keeping the same
+  attempt**, a **duplicate same-attempt result being allowed through redelivery**,
+  an **undeliverable report leaving the request unacknowledged with the transport
   redelivering the same attempt**, the undecodable delivery parked with its
   original bytes, and the real broker reporting `concurrency` consumers for the
   started container.
