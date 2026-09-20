@@ -92,65 +92,65 @@ jobs:
               exit 1
             fi
             python3 - "$MANUAL_TARGET" "$TX_SERVICES_INPUT" "$main_sha" "$GITHUB_RUN_NUMBER" <<'PY' >> "$GITHUB_OUTPUT"
-            import sys
+          import sys
 
-            target = sys.argv[1]
-            requested = [service.strip() for service in sys.argv[2].split(",")]
-            commit_sha = sys.argv[3]
-            run_number = sys.argv[4]
-            if target == "minio":
-                print(f"release_sha={commit_sha}")
-                print(f"release_tag=sha-{commit_sha[:12]}")
-                print(f"build_run_number={run_number}")
-                print("backend_migration_max_version=")
-                print("deploy_services=minio")
-                print("image_services=minio")
-                print("yecao_services=minio")
-                print("tx_services=")
-                print("yecao_image_services=minio")
-                print("tx_image_services=")
-                print("deploy_display_name=Manual MinIO")
-                raise SystemExit(0)
-            if target == "parser-worker":
-                # The worker is an explicit-selection Yecao execution-plane service on the shared
-                # production Compose project. It is deliberately absent from the legacy `all`
-                # service set, so it is only ever deployed through this dedicated selection.
-                print(f"release_sha={commit_sha}")
-                print(f"release_tag=sha-{commit_sha[:12]}")
-                print(f"build_run_number={run_number}")
-                print("backend_migration_max_version=")
-                print("deploy_services=parser-worker")
-                print("image_services=parser-worker")
-                print("yecao_services=parser-worker")
-                print("tx_services=")
-                print("yecao_image_services=parser-worker")
-                print("tx_image_services=")
-                print("deploy_display_name=Manual Parser Worker")
-                raise SystemExit(0)
-            if target != "tx":
-                raise SystemExit("target must be tx, minio, or parser-worker")
-            allowed = {"keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "business-api", "caddy"}
-            if not requested or any(not service or service not in allowed for service in requested):
-                raise SystemExit("tx_services must contain only supported TX services")
-            if len(requested) != len(set(requested)):
-                raise SystemExit("tx_services must not contain duplicate services")
-            requested = [
-                service
-                for service in ("keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "business-api", "caddy")
-                if service in requested
-            ]
-            print(f"release_sha={commit_sha}")
-            print(f"release_tag=sha-{commit_sha[:12]}")
-            print(f"build_run_number={run_number}")
-            print("backend_migration_max_version=")
-            print(f"deploy_services={','.join(requested)}")
-            image_services = [service for service in requested if service in {"keycloak", "wotb-frontend", "business-api"}]
-            print(f"image_services={','.join(image_services)}")
-            print("yecao_services=")
-            print(f"tx_services={','.join(requested)}")
-            print("yecao_image_services=")
-            print(f"tx_image_services={','.join(image_services)}")
-            print("deploy_display_name=Manual TX")
+          target = sys.argv[1]
+          requested = [service.strip() for service in sys.argv[2].split(",")]
+          commit_sha = sys.argv[3]
+          run_number = sys.argv[4]
+          if target == "minio":
+              print(f"release_sha={commit_sha}")
+              print(f"release_tag=sha-{commit_sha[:12]}")
+              print(f"build_run_number={run_number}")
+              print("backend_migration_max_version=")
+              print("deploy_services=minio")
+              print("image_services=minio")
+              print("yecao_services=minio")
+              print("tx_services=")
+              print("yecao_image_services=minio")
+              print("tx_image_services=")
+              print("deploy_display_name=Manual MinIO")
+              raise SystemExit(0)
+          if target == "parser-worker":
+              # The worker is an explicit-selection Yecao execution-plane service on the shared
+              # production Compose project. It is deliberately absent from the legacy `all`
+              # service set, so it is only ever deployed through this dedicated selection.
+              print(f"release_sha={commit_sha}")
+              print(f"release_tag=sha-{commit_sha[:12]}")
+              print(f"build_run_number={run_number}")
+              print("backend_migration_max_version=")
+              print("deploy_services=parser-worker")
+              print("image_services=parser-worker")
+              print("yecao_services=parser-worker")
+              print("tx_services=")
+              print("yecao_image_services=parser-worker")
+              print("tx_image_services=")
+              print("deploy_display_name=Manual Parser Worker")
+              raise SystemExit(0)
+          if target != "tx":
+              raise SystemExit("target must be tx, minio, or parser-worker")
+          allowed = {"keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "business-api", "caddy"}
+          if not requested or any(not service or service not in allowed for service in requested):
+              raise SystemExit("tx_services must contain only supported TX services")
+          if len(requested) != len(set(requested)):
+              raise SystemExit("tx_services must not contain duplicate services")
+          requested = [
+              service
+              for service in ("keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "business-api", "caddy")
+              if service in requested
+          ]
+          print(f"release_sha={commit_sha}")
+          print(f"release_tag=sha-{commit_sha[:12]}")
+          print(f"build_run_number={run_number}")
+          print("backend_migration_max_version=")
+          print(f"deploy_services={','.join(requested)}")
+          image_services = [service for service in requested if service in {"keycloak", "wotb-frontend", "business-api"}]
+          print(f"image_services={','.join(image_services)}")
+          print("yecao_services=")
+          print(f"tx_services={','.join(requested)}")
+          print("yecao_image_services=")
+          print(f"tx_image_services={','.join(image_services)}")
+          print("deploy_display_name=Manual TX")
           PY
             exit 0
           fi
