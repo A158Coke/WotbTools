@@ -31,10 +31,19 @@ runtime side effect.
 Everything that is not a broker object remains the application's
 responsibility: publish and consume, ack/nack, retry decisions, idempotency,
 the job state machine, the business workflow, and the message payload schema.
+The JVM side of that contract lives in `java/wotb-broker-rabbitmq`
+(`com.wotb.broker.rabbitmq`): `ParserTopology` holds the names, and it holds
+*only* names — the module declares no exchange, queue or binding, no Spring
+stereotype and no `@Configuration`, so an application container cannot become a
+second topology owner by starting up.
 
 ## Canonical topology
 
-`Control API -> wotb.jobs / parser.request -> wotb.parser -> Parser Worker`:
+The protocol is bidirectional. `Control API -> wotb.jobs / parser.request ->
+wotb.parser -> Parser Worker` is the dispatch direction; `Parser Worker ->
+wotb.jobs / parser.result | parser.failed -> wotb.parser.result -> Control API`
+is the return direction, where the worker reports per-source outcomes and
+whole-attempt failures:
 
 ```text
 dispatch   control-api   -> wotb.jobs / parser.request -> wotb.parser -> parser-worker
@@ -45,6 +54,11 @@ retry      parser-worker nack(requeue=false)
                         -> retry DLX:     wotb.jobs / parser.request -> wotb.parser
 terminal   parser-worker -> wotb.jobs / parser.dead  -> wotb.parser.dlq
                            (no TTL, operator-replayed)
+result     parser-worker -> wotb.jobs / parser.result -> wotb.parser.result -> control-api
+failed     parser-worker -> wotb.jobs / parser.failed -> wotb.parser.result -> control-api
+                           (both bindings, one queue)
+reject     control-api nack(requeue=false)
+                        -> wotb.parser.result DLX: wotb.jobs / parser.dead -> wotb.parser.dlq
 ```
 
 | Object | Kind | Durable | Auto-delete | Arguments |
@@ -53,15 +67,33 @@ terminal   parser-worker -> wotb.jobs / parser.dead  -> wotb.parser.dlq
 | `wotb.parser` | queue | yes | no | `x-queue-type=classic`, `x-dead-letter-exchange=wotb.jobs`, `x-dead-letter-routing-key=parser.retry` |
 | `wotb.parser.retry` | queue | yes | no | `x-queue-type=classic`, `x-message-ttl=30000`, `x-dead-letter-exchange=wotb.jobs`, `x-dead-letter-routing-key=parser.request` |
 | `wotb.parser.dlq` | queue | yes | no | `x-queue-type=classic` |
+| `wotb.parser.result` | queue | yes | no | `x-queue-type=classic`, `x-dead-letter-exchange=wotb.jobs`, `x-dead-letter-routing-key=parser.dead` |
 
 | Exchange | Routing key | Destination |
 |---|---|---|
 | `wotb.jobs` | `parser.request` | `wotb.parser` |
 | `wotb.jobs` | `parser.retry` | `wotb.parser.retry` |
 | `wotb.jobs` | `parser.dead` | `wotb.parser.dlq` |
+| `wotb.jobs` | `parser.result` | `wotb.parser.result` |
+| `wotb.jobs` | `parser.failed` | `wotb.parser.result` |
 
 Routing keys belong to `rabbitmq_binding`; they are not standalone resources and
 they are not part of a RabbitMQ ACL.
+
+### Why the result queue is `wotb.parser.result`
+
+It is the queue the *worker's* reports are routed to, so it is named after the
+protocol it carries, next to `wotb.parser`, `wotb.parser.retry` and
+`wotb.parser.dlq`; a name such as `wotb.control.results` would describe the
+consumer rather than the contract and would make the existing
+`read = ^wotb\.parser$` style of ACL grouping impossible. It is deliberately
+*not* called `wotb.parser` with a suffix the worker could consume: the worker
+never reads it, and `^wotb\.parser$` keeps that true by construction.
+
+There is deliberately no cancel routing key. Cancellation is a PostgreSQL state
+change (`cancel_requested`) that the worker observes at a safe unit boundary; a
+broker-side cancel message would either arrive after the work started or be
+silently ignored, and it would put cancellation state in RabbitMQ.
 
 ### Why a topic exchange
 
@@ -104,11 +136,34 @@ The broker never owns a retry counter, an attempt limit or a job state. The
 application decides from PostgreSQL whether a failure is retryable (nack without
 requeue, which re-enters the retry loop) or terminal (publish `parser.dead`).
 
+### Result and DLQ semantics
+
+The return path is manual-ack on the control-plane side, with one rule: a report
+the handler *applies*, and a report the handler classifies as *stale or
+duplicate*, are both acknowledged. An idempotent no-op is a success, so it must
+not be retried and must not reach the DLQ.
+
+Only two things dead-letter a report, and both fail closed:
+
+- the handler throws — the report cannot be applied right now (for example
+  PostgreSQL is unavailable);
+- the body does not decode — not JSON, not an envelope object, an unsupported
+  `schemaVersion`, an undeclared property, or a violation of the message
+  contract.
+
+`wotb.parser.result` dead-letters to `wotb.jobs` with `parser.dead`, so those
+land in `wotb.parser.dlq` next to worker-published terminal failures and an
+operator inspects one place. Nothing is dropped and nothing is requeued in a
+loop: `basicNack(requeue=false)` is the only rejection the listener issues, so a
+poison message cannot spin. The queue has no TTL for the same reason the DLQ
+has none — a report the control plane failed to apply must be replayed
+deliberately, never discarded by the broker on its own.
+
 ## Permissions
 
 | User | tags | configure | write | read |
 |---|---|---|---|---|
-| `control-api` | `[]` | `^$` | `^wotb\.jobs$` | `^$` |
+| `control-api` | `[]` | `^$` | `^wotb\.jobs$` | `^wotb\.parser\.result$` |
 | `parser-worker` | `[]` | `^$` | `^wotb\.jobs$` | `^wotb\.parser$` |
 
 Neither identity carries any tag. RabbitMQ requires at least the `management`
@@ -120,14 +175,23 @@ resulting application user carries tags, is renamed, or gains unknown user
 attributes, and the disposable smoke proves on a running broker that the
 Management API refuses both identities.
 
-- `control-api` dispatches jobs. It may publish to `wotb.jobs`, and it may
-  neither declare topology nor read any queue. Routing keys are not part of a
-  RabbitMQ ACL, so the write grant names the exchange rather than a routing key.
+- `control-api` dispatches jobs and consumes their outcomes. It may publish to
+  `wotb.jobs`, and its read scope is exactly the result queue. The read regex is
+  `^wotb\.parser\.result$`: it names `wotb.parser` and `wotb.parser.result`
+  and rejects everything else, and `control-api` still cannot read
+  `wotb.parser.retry` or `wotb.parser.dlq`. It may not declare topology. Routing
+  keys are not part of a RabbitMQ ACL, so the write grant names the exchange
+  rather than a routing key.
 - `parser-worker` consumes only `wotb.parser`. It cannot consume the retry queue
-  (that would defeat the broker-side delay) and cannot read the DLQ. Its write
-  grant exists for exactly one reason: publishing a terminal failure to
-  `wotb.jobs` with the `parser.dead` routing key. Ack, nack and dead-lettering
-  are not ACL-checked, so no further write surface is granted.
+  (that would defeat the broker-side delay), cannot read the DLQ, and cannot read
+  the result queue — the worker must not consume its own reports back. Its write
+  grant exists for exactly one reason: publishing a report to `wotb.jobs` with
+  the `parser.result`, `parser.failed` or `parser.dead` routing key. Ack, nack
+  and dead-lettering are not ACL-checked, so no further write surface is
+  granted.
+
+Neither identity may declare a queue or exchange: `configure = ^$` is the ACL
+form of "the application is not a topology owner".
 
 The dedicated vhost prevents either application identity from accessing the
 default vhost.
@@ -177,11 +241,12 @@ never inspected, so rotation keeps working.
 
 The validator likewise holds each application ACL to the exact reviewed values
 per resource address — `configure = ^$`, `write = ^wotb\.jobs$`, and
-`read = ^$` for `control-api` or `read = ^wotb\.parser$` for `parser-worker`.
-Any different post-plan value fails closed, so a widened catch-all
-(`^wotb\..*$`, `^wotb.*$`, `^.+$`), a wrong-but-narrow regex, a removed scope,
-or `control-api` gaining read access to `wotb.parser` is refused. The second plan
-must still be entirely no-op after those updates.
+`read = ^wotb\.parser\.result$` for `control-api` or `read = ^wotb\.parser$`
+for `parser-worker`. Any different post-plan value fails closed, so a widened
+catch-all (`^wotb\..*$`, `^wotb.*$`, `^.+$`), a wrong-but-narrow regex, a removed
+scope, `control-api` gaining read access to `wotb.parser.retry` or
+`wotb.parser.dlq`, or any other move of the read boundary is refused. The second
+plan must still be entirely no-op after those updates.
 
 ## Administrator credential rotation
 
@@ -213,7 +278,11 @@ application user that gains `management`, `administrator` or `monitoring`, any
 other non-empty or unprovable tag set, a renamed identity, extra identity
 metadata, and — because the ACL contract is exact per resource address —
 `^wotb\\..*$`, `^wotb.*$`, `^.+$`, a wrong-but-narrow regex, a removed scope, or
-`control-api` gaining read access to `wotb.parser`.
+`control-api` reading anything other than `wotb.parser` and
+`wotb.parser.result` (`wotb.parser.retry`, `wotb.parser.dlq`, and a widened
+`^wotb\.parser.*$` are refused, and so is losing the result scope it now needs).
+The result queue and both of its bindings have their own create, delete and
+update fixtures, so the new topology is held to the same rules as the old one.
 
 `deploy/test-rabbitmq-tofu.sh` owns everything else. It runs the native
 `tofu fmt`/`tofu validate`, a small production-safety preflight for the shapes
@@ -235,6 +304,31 @@ API — exercises messaging over real AMQP with `pika`:
   header;
 - `parser-worker` parks a terminal failure on `wotb.parser.dlq` with the
   `parser.dead` routing key;
+- the return path works end to end: `parser-worker` publishes `parser.result`
+  and `parser.failed` and `control-api` consumes both from `wotb.parser.result`,
+  with the right routing key preserved;
+- a report the control plane rejects with `nack(requeue=false)` — through either
+  binding — lands on `wotb.parser.dlq` with `parser.dead`, so the new queue's DLX
+  is proven and not just declared;
 - both application identities are refused when they declare a queue or
-  exchange, when `control-api` reads any queue, when `parser-worker` reads the
-  retry queue or the DLQ, and when either publishes outside `wotb.jobs`.
+  exchange; `control-api` is refused when it reads `wotb.parser`,
+  `wotb.parser.retry` or `wotb.parser.dlq`; `parser-worker` is refused when it
+  reads the retry queue, the DLQ or the result queue; and either is refused when
+  it publishes outside `wotb.jobs`.
+
+The message contract itself has two more entry points, both inside
+`java/wotb-broker-rabbitmq` and both part of `mvn -pl wotb-broker-rabbitmq test`:
+
+- `ParserMessageContractTest` pins `contracts/mq/parser-messages.json` to the
+  codec: the produced JSON property set must equal each envelope's schema
+  `required` set, nested source items must stay inside their declared schema, and
+  the schema `const` version must equal `ParserMessageCodec.SCHEMA_VERSION`.
+  Without it the schema file would be a dead document.
+- `ParserProtocolRabbitMQTest` drives the protocol on a real RabbitMQ
+  Testcontainer at the production image tag. It declares the canonical topology
+  *in the test fixture only* — production code must never declare it — and covers
+  the envelope on the wire, manual ack waiting for the handler, duplicate and
+  stale deliveries acknowledged without a DLQ visit, handler failure and
+  undecodable bodies dead-lettered, the retry hop, and the `cancelQueued`
+  contract. `@Testcontainers(disabledWithoutDocker = true)` keeps it a no-op
+  where Docker is unavailable.
