@@ -18,6 +18,7 @@ on:
         options:
           - tx
           - minio
+          - parser-worker
       tx_services:
         description: Comma-separated TX services to deploy
         required: true
@@ -110,8 +111,24 @@ jobs:
                 print("tx_image_services=")
                 print("deploy_display_name=Manual MinIO")
                 raise SystemExit(0)
+            if target == "parser-worker":
+                # The worker is an explicit-selection Yecao execution-plane service on the shared
+                # production Compose project. It is deliberately absent from the legacy `all`
+                # service set, so it is only ever deployed through this dedicated selection.
+                print(f"release_sha={commit_sha}")
+                print(f"release_tag=sha-{commit_sha[:12]}")
+                print(f"build_run_number={run_number}")
+                print("backend_migration_max_version=")
+                print("deploy_services=parser-worker")
+                print("image_services=parser-worker")
+                print("yecao_services=parser-worker")
+                print("tx_services=")
+                print("yecao_image_services=parser-worker")
+                print("tx_image_services=")
+                print("deploy_display_name=Manual Parser Worker")
+                raise SystemExit(0)
             if target != "tx":
-                raise SystemExit("target must be tx or minio")
+                raise SystemExit("target must be tx, minio, or parser-worker")
             allowed = {"keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "caddy"}
             if not requested or any(not service or service not in allowed for service in requested):
                 raise SystemExit("tx_services must contain only supported TX services")
@@ -171,6 +188,8 @@ jobs:
                   labels.append("Frontend")
               if "keycloak" in manifest["deployServices"]:
                   labels.append("Keycloak")
+              if "parser-worker" in manifest["deployServices"]:
+                  labels.append("Parser Worker")
               if any(service in {"postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana"}
                      for service in manifest["deployServices"]):
                   labels.append("Observability")
@@ -203,6 +222,7 @@ jobs:
               wotb-frontend) image=ghcr.io/a158coke/wotbtools-frontend ;;
               keycloak) image=ghcr.io/a158coke/wotbtools-keycloak ;;
               minio) image=ghcr.io/a158coke/wotbtools-minio ;;
+              parser-worker) image=ghcr.io/a158coke/wotbtools-parser-worker ;;
               *) echo "unsupported image service: $service" >&2; exit 1 ;;
             esac
             docker manifest inspect "$image:$RELEASE_TAG" >/dev/null || {
@@ -264,7 +284,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_BACKEND_MIGRATION_MAX_VERSION,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,DB_PASSWORD,KC_ADMIN_PASSWORD,WG_APPLICATION_ID,KEYCLOAK_ADMIN_CLIENT_SECRET,AI_API_KEY,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS,AI_BASE_URL,AI_MODEL,AI_CONNECT_TIMEOUT_SEC,AI_TIMEOUT_SEC,AI_CALL_TIMEOUT_SEC,AI_RETRY_MAX_ATTEMPTS,AI_RETRY_INITIAL_BACKOFF_MS,AI_RETRY_MAX_BACKOFF_MS,AI_RETRY_BACKOFF_MULTIPLIER,AI_CONTEXT_WINDOW_TOKENS,AI_SINGLE_REPLAY_MAX_INPUT_TOKENS,AI_MAX_OUTPUT_TOKENS,AI_PROMPT_SAFETY_MARGIN_TOKENS,AI_THINKING_ENABLED,AI_THINKING_ENABLED_CALL2,AI_REASONING_EFFORT,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY,AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT
+          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_BACKEND_MIGRATION_MAX_VERSION,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,DB_PASSWORD,KC_ADMIN_PASSWORD,WG_APPLICATION_ID,KEYCLOAK_ADMIN_CLIENT_SECRET,AI_API_KEY,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS,AI_BASE_URL,AI_MODEL,AI_CONNECT_TIMEOUT_SEC,AI_TIMEOUT_SEC,AI_CALL_TIMEOUT_SEC,AI_RETRY_MAX_ATTEMPTS,AI_RETRY_INITIAL_BACKOFF_MS,AI_RETRY_MAX_BACKOFF_MS,AI_RETRY_BACKOFF_MULTIPLIER,AI_CONTEXT_WINDOW_TOKENS,AI_SINGLE_REPLAY_MAX_INPUT_TOKENS,AI_MAX_OUTPUT_TOKENS,AI_PROMPT_SAFETY_MARGIN_TOKENS,AI_THINKING_ENABLED,AI_THINKING_ENABLED_CALL2,AI_REASONING_EFFORT,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY,AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT,TX_RABBITMQ_PARSER_WORKER_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY
           script: bash /opt/wotb/deploy.incoming/deploy/deploy.sh
         env:
           TAG: ${{ needs.changes.outputs.release_tag }}
@@ -305,6 +325,9 @@ jobs:
           REPLAY_COORDINATE_CLAMP_TOLERANCE: ${{ vars.REPLAY_COORDINATE_CLAMP_TOLERANCE || '12.5' }}
           GRAFANA_ROOT_URL: ${{ vars.GRAFANA_ROOT_URL || 'https://monitor.wotbtools.com' }}
           OBSERVABILITY_ENVIRONMENT: ${{ vars.OBSERVABILITY_ENVIRONMENT || 'production' }}
+          TX_RABBITMQ_PARSER_WORKER_PASSWORD: ${{ secrets.TX_RABBITMQ_PARSER_WORKER_PASSWORD }}
+          YECAO_MINIO_WORKER_ACCESS_KEY: ${{ secrets.YECAO_MINIO_WORKER_ACCESS_KEY }}
+          YECAO_MINIO_WORKER_SECRET_KEY: ${{ secrets.YECAO_MINIO_WORKER_SECRET_KEY }}
 
   deploy_minio:
     needs: [changes, image_existence]

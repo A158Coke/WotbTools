@@ -24,22 +24,22 @@ COPY java/wotb-ai/pom.xml java/wotb-ai/pom.xml
 COPY java/wotb-control/pom.xml java/wotb-control/pom.xml
 COPY java/wotb-web/pom.xml java/wotb-web/pom.xml
 WORKDIR /build/java
-RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests dependency:go-offline -q || true
+RUN mvn -s settings-docker.xml -pl wotb-parser-worker -am -DskipTests dependency:go-offline -q || true
 WORKDIR /build
 COPY java/wotb-contracts/src java/wotb-contracts/src
+COPY java/wotb-object-storage-minio/src java/wotb-object-storage-minio/src
+COPY java/wotb-broker-rabbitmq/src java/wotb-broker-rabbitmq/src
 COPY java/wotb-core/src java/wotb-core/src
 COPY java/wotb-result/src java/wotb-result/src
 COPY java/wotb-playback/src java/wotb-playback/src
-COPY java/wotb-replay-coordinator/src java/wotb-replay-coordinator/src
 COPY java/wotb-replay-processing/src java/wotb-replay-processing/src
-COPY java/wotb-ai/src java/wotb-ai/src
-COPY java/wotb-web/src java/wotb-web/src
+COPY java/wotb-parser-worker/src java/wotb-parser-worker/src
 WORKDIR /build/java
-RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests clean package -q
+RUN mvn -s settings-docker.xml -pl wotb-parser-worker -am -DskipTests clean package -q
 
 FROM eclipse-temurin:25-jre
 ARG BUILD_COMMIT
 ENV BUILD_COMMIT=${BUILD_COMMIT}
-COPY --from=build /build/java/wotb-web/target/wotb-web.jar /app/app.jar
-EXPOSE 8087
+COPY --from=build /build/java/wotb-parser-worker/target/wotb-parser-worker.jar /app/app.jar
+# worker 无公网端口、无数据库凭据：只消费 wotb.parser 并读写 MinIO 的 temp/jobs/* 。
 CMD ["java", "-jar", "/app/app.jar"]

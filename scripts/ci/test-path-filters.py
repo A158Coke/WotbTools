@@ -67,6 +67,42 @@ class CiPathFilterTest(unittest.TestCase):
         self.assert_surfaces(["deploy/docker-compose.minio.yml"], ["deploy"])
         self.assertEqual(plan["deployServices"], [])
 
+    def test_parser_worker_image_build_never_selects_a_runtime_deployment(self):
+        for path, expected_build_services, expected_deploy_services in (
+            ("docker/Dockerfile.parser-worker", ["parser-worker"], []),
+            ("contracts/mq/parser-messages.json", ["parser-worker"], []),
+            (
+                "java/wotb-parser-worker/src/main/java/com/wotb/parserworker/ParserWorkerApplication.java",
+                ["wotb-backend", "parser-worker"],
+                ["wotb-backend"],
+            ),
+        ):
+            plan = detect(path)
+            self.assertEqual(plan["buildServices"], expected_build_services, path)
+            self.assertEqual(plan["imageServices"], expected_build_services, path)
+            self.assertEqual(plan["deployServices"], expected_deploy_services, path)
+            self.assertEqual(
+                plan["targetServices"],
+                {"yecao": expected_deploy_services} if expected_deploy_services else {},
+                path,
+            )
+        self.assert_surfaces(["docker/Dockerfile.parser-worker"], ["deploy"])
+        self.assert_surfaces(
+            ["java/wotb-parser-worker/src/main/java/com/wotb/parserworker/ParserWorkerApplication.java"],
+            ["backend"],
+        )
+
+    def test_parser_worker_dockerfile_is_not_the_minio_image(self):
+        plan = detect("docker/Dockerfile.parser-worker")
+        self.assertNotIn("minio", plan["imageServices"])
+        self.assertEqual(plan["images"]["minio"], False)
+        self.assertEqual(plan["images"]["parser-worker"], True)
+
+    def test_shared_data_change_builds_parser_worker_without_deploying_it(self):
+        plan = detect("common/unrelated-fixture.json")
+        self.assertEqual(plan["buildServices"], ["parser-worker"])
+        self.assertEqual(plan["deployServices"], [])
+
     def test_grafana_dashboard(self):
         self.assert_surfaces(
             ["deploy/observability/grafana/dashboards/home.json"], ["deploy", "observability"]
