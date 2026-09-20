@@ -70,6 +70,10 @@
      修复后 `git push` 让 PR CI 重新成为权威验证，不默认再跑整个 repository full suite。
    - 同一任务内测试已通过且对应代码/依赖代码/测试配置均未变化 → 不得重复运行同一测试。
    - review 修复后按修改决定哪些验证已失效：改了 A 对应代码 → A 失效需重跑；只改 README → 不失效。
+
+   **测试层级去重** — Prefer native validators and real integration tests over source-text
+   assertions. Add custom contract/policy tests only for project-specific architectural or
+   production-safety invariants that native tooling would consider valid.
 7. **Review-Fix 闭环** — 每次代码变更后自审（残留/硬编码/未用 import/命名/空值/并发），修复后循环到零问题；影响界面/导出/数据/构建的变更再走 `review-with-docs`（含文档同步 + AI 死代码清理）。
 8. **Git** — 推送前先 `git remote -v` 确认实际 remote（本机 remote 名/SSH 别名以本机配置为准，不写死）；仓库账号 A158Coke。中文提交、尾带 `Co-Authored-By`；禁止 force push、禁止改写已公开历史、禁止动与当前任务无关的分支/PR。
 9. **子代理** — spawn 子代理后必须显式验证其完成状态与产物（不可假设自动完成），完成后以醒目格式通知用户。
