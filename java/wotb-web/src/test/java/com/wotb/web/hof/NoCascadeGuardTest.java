@@ -24,8 +24,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <ol>
  *   <li>没有任何外键指向 {@code user_profile}（删资料不会牵连任何业务表）；</li>
- *   <li>全库唯一的 {@code ON DELETE CASCADE} 属 boost 域内部
- *       （{@code fk_boost_request_assignment_request}），不得出现在 HoF 或 IAM 路径上；</li>
+ *   <li>{@code ON DELETE CASCADE} 只允许出现在**域内组合关系**上，且必须逐个显式评审：
+ *       boost 域内部的 {@code fk_boost_request_assignment_request}，以及 replay processing 权威状态域内
+ *       的 {@code fk_replay_processing_source_job} / {@code fk_replay_processing_operation_job}
+ *       （删除一个 job 投影必须一并删除它的 source 投影与 operationId 索引；两者都不指向
+ *       IAM 身份、也不指向 HoF 业务表），不得出现在 HoF 或 IAM 路径上；</li>
  *   <li>百场/三环的 replay evidence 外键不是 CASCADE（业务行永不被级联删除）。</li>
  * </ol>
  */
@@ -62,13 +65,19 @@ class NoCascadeGuardTest {
                             + "and table_name in ('hall_of_fame_record','hundred_battle_submission','mark3_submission')"),
                     "HoF 主表不得有外键，其生命周期与 IAM 完全无关");
 
-            // 3) 全库唯一 ON DELETE CASCADE 必须只属于 boost 域内部关系
+            // 3) ON DELETE CASCADE 必须只属于已显式评审的域内组合关系
+            //    （按约束名排序以获得确定性断言，与 information_schema 返回顺序无关）
             final List<String> cascades = strings(s,
                     "select tc.constraint_name from information_schema.referential_constraints rc "
                             + "join information_schema.table_constraints tc "
                             + "  on tc.constraint_name = rc.constraint_name and tc.constraint_schema = rc.constraint_schema "
-                            + "where rc.delete_rule = 'CASCADE'");
-            assertEquals(List.of("fk_boost_request_assignment_request"), cascades,
+                            + "where rc.delete_rule = 'CASCADE' "
+                            + "order by tc.constraint_name");
+            assertEquals(List.of(
+                            "fk_boost_request_assignment_request",
+                            "fk_replay_processing_operation_job",
+                            "fk_replay_processing_source_job"),
+                    cascades,
                     "出现新的级联删除关系时必须显式评审：IAM / HoF 路径禁止级联删除");
 
             // 4) replay evidence 外键不得级联删除业务行

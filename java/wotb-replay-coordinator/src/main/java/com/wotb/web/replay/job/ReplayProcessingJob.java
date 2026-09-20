@@ -5,6 +5,7 @@ import com.wotb.core.parse.Replays;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
@@ -69,6 +70,17 @@ public final class ReplayProcessingJob {
     private final AtomicReferenceArray<Replays.ParsedEntry> entries;
     /** 终态 observability（日志/指标）exactly-once 记账（QUEUED 取消与 worker 双路径防重）。 */
     private final AtomicBoolean terminalRecorded = new AtomicBoolean();
+    /**
+     * 状态迁移通知（write-through 持久化挂载点）。为 {@code null} 时本 job 是纯内存态
+     * （测试 / 本地开发），行为与本字段引入前逐字一致。
+     */
+    private volatile ReplayJobTransitionListener transitionListener;
+    /**
+     * 投影版本：每次状态迁移 +1，**与是否有持久化监听器无关**（内存模式同样递增）。
+     * 权威状态用它拒绝乱序/陈旧快照覆盖已提交的新状态；它只是同一个状态机的版本号，
+     * 不参与任何状态合法性判定。
+     */
+    private final AtomicLong revision = new AtomicLong();
     /** READY 后设置（exactly once 由状态机保证；volatile 供 status 轮询线程读取）。 */
     private volatile ProcessedDataset result;
     /** 当前处理中的输入文件名（进度回调更新；不作为 metric tag）。 */
@@ -101,6 +113,81 @@ public final class ReplayProcessingJob {
         }
     }
 
+    /**
+     * 从持久化投影恢复只读 job 视图（重启后读取权威状态用）。
+     *
+     * <p>恢复的 job **没有** {@code entries} 与 {@link ProcessedDataset}：执行上下文随进程消失，
+     * 无法也不应该从数据库重建。因此它只服务状态读取与取消状态写入，不参与 batch finalize；
+     * 需要 Dataset 的读取路径由对象存储承担。</p>
+     */
+    ReplayProcessingJob(final String jobId, final int total, final List<SourceState> sourceStates,
+                        final Status status, final String phase,
+                        final int processed, final int duplicates, final int failures,
+                        final int parseCompleted, final int parseSucceeded, final int parseFailed,
+                        final String errorCode, final boolean cancelRequested,
+                        final long createdAtMillis, final long finishedAtMillis,
+                        final long revision) {
+        this.revision.set(revision);
+        this.state = new ReplayJobState(jobId, total, phase, ReplayJobState.Status.valueOf(status.name()),
+                processed, duplicates, failures, errorCode, createdAtMillis, finishedAtMillis,
+                cancelRequested);
+        this.sources = new AtomicReferenceArray<>(total);
+        this.entries = new AtomicReferenceArray<>(total);
+        for (int i = 0; i < sourceStates.size() && i < total; i++) {
+            this.sources.set(i, sourceStates.get(i));
+        }
+        this.parseCompleted = parseCompleted;
+        this.parseSucceeded = parseSucceeded;
+        this.parseFailed = parseFailed;
+    }
+
+    /** 挂载状态迁移通知（由注册表在 jdbc 模式注册 job 时调用；内存模式不调用）。 */
+    void attachTransitionListener(final ReplayJobTransitionListener listener) {
+        this.transitionListener = listener;
+    }
+
+    /** 当前投影版本（持久化写入的单调序；权威实现在 UPSERT 中以它拒绝陈旧写入）。 */
+    long revision() {
+        return revision.get();
+    }
+
+    /**
+     * 在单一监视器边界内捕获「状态 + sources + 计数器 + revision」的**不可变**持久化快照
+     * （注册时的初始投影用）。
+     *
+     * <p>revision 永远与它描述的状态一起捕获：搬运旧快照时不会顺带读到更新的版本号，
+     * 因此陈旧写入不可能冒充已提交的新状态。</p>
+     */
+    synchronized ReplayJobPersistenceSnapshot persistenceSnapshot() {
+        return capture(revision.get());
+    }
+
+    /** 调用方必须持有本对象监视器：保证 revision 与状态/来源/计数器来自同一个线性化点。 */
+    private ReplayJobPersistenceSnapshot capture(final long capturedRevision) {
+        final ReplayJobState.Snapshot current = state.snapshot();
+        return new ReplayJobPersistenceSnapshot(current.jobId(),
+                Status.valueOf(current.status().name()), current.phase(), current.total(),
+                current.processed(), current.duplicates(), current.failures(),
+                parseCompleted, parseSucceeded, parseFailed,
+                current.errorCode(), state.isCancelled(),
+                state.createdAtMillis(), state.finishedAtMillis(),
+                capturedRevision, sourceStates());
+    }
+
+    /**
+     * 迁移通知：**调用方必须持有本对象监视器**（所有 mutator 都是 {@code synchronized}）。
+     *
+     * <p>先取号、再在同一临界区内捕获该号对应的快照、然后才通知：两个并发迁移因此不可能
+     * 共享同一个 revision，也不可能出现「旧状态 + 新 revision」的错配。</p>
+     */
+    private void notifyTransitionLocked() {
+        final long next = revision.incrementAndGet();
+        final ReplayJobTransitionListener listener = this.transitionListener;
+        if (listener != null) {
+            listener.onJobTransition(capture(next));
+        }
+    }
+
     public String jobId() {
         return state.snapshot().jobId();
     }
@@ -113,12 +200,17 @@ public final class ReplayProcessingJob {
         return state.isCancelled();
     }
 
-    public boolean startProcessing() {
-        return state.startProcessing();
+    public synchronized boolean startProcessing() {
+        if (!state.startProcessing()) {
+            return false;
+        }
+        notifyTransitionLocked();
+        return true;
     }
 
-    public void updateProgress(final int processed, final int duplicates, final int failures) {
+    public synchronized void updateProgress(final int processed, final int duplicates, final int failures) {
         state.updateProgress(processed, duplicates, failures);
+        notifyTransitionLocked();
     }
 
     /**
@@ -129,6 +221,7 @@ public final class ReplayProcessingJob {
         parseCompleted++;
         parseSucceeded++;
         state.updateProgress(parseCompleted, 0, 0);
+        notifyTransitionLocked();
     }
 
     /**
@@ -139,11 +232,16 @@ public final class ReplayProcessingJob {
         parseCompleted++;
         parseFailed++;
         state.updateProgress(parseCompleted, 0, 0);
+        notifyTransitionLocked();
     }
 
     /** PROCESSING 期间切换 phase（WAITING_FOR_WORKER → PROCESSING_REPLAYS → FINALIZING_BATCH）。 */
-    public boolean advancePhase(final String phase) {
-        return state.advancePhase(phase);
+    public synchronized boolean advancePhase(final String phase) {
+        if (!state.advancePhase(phase)) {
+            return false;
+        }
+        notifyTransitionLocked();
+        return true;
     }
 
     /** PROCESSING 期间设置当前处理文件（进度回调）；非 PROCESSING 时仍可写（无副作用）。 */
@@ -152,31 +250,37 @@ public final class ReplayProcessingJob {
     }
 
     /** source 开始 full processing（同时更新 currentFile 兼容字段）。 */
-    public void markSourceProcessing(final int sourceIndex, final String displayName) {
+    public synchronized void markSourceProcessing(final int sourceIndex, final String displayName) {
         this.currentFile = displayName;
         final SourceState s = sources.get(sourceIndex);
-        if (s != null) {
-            sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
-                    s.sourceName(), SourceStatus.PROCESSING, null));
+        if (s == null) {
+            return;
         }
+        sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
+                s.sourceName(), SourceStatus.PROCESSING, null));
+        notifyTransitionLocked();
     }
 
     /** source 完成 full processing（READY 不代表 batch 级 valid）。 */
-    public void markSourceReady(final int sourceIndex) {
+    public synchronized void markSourceReady(final int sourceIndex) {
         final SourceState s = sources.get(sourceIndex);
-        if (s != null) {
-            sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
-                    s.sourceName(), SourceStatus.READY, null));
+        if (s == null) {
+            return;
         }
+        sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
+                s.sourceName(), SourceStatus.READY, null));
+        notifyTransitionLocked();
     }
 
     /** source full processing 失败（记录稳定错误码，不中断 batch）。 */
-    public void markSourceFailed(final int sourceIndex, final String failureMessage) {
+    public synchronized void markSourceFailed(final int sourceIndex, final String failureMessage) {
         final SourceState s = sources.get(sourceIndex);
-        if (s != null) {
-            sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
-                    s.sourceName(), SourceStatus.FAILED, failureMessage));
+        if (s == null) {
+            return;
         }
+        sources.set(sourceIndex, new SourceState(s.sourceId(), s.sourceIndex(),
+                s.sourceName(), SourceStatus.FAILED, failureMessage));
+        notifyTransitionLocked();
     }
 
     public void recordEntry(final int sourceIndex, final Replays.ParsedEntry entry) {
@@ -215,24 +319,37 @@ public final class ReplayProcessingJob {
         return List.copyOf(out);
     }
 
-    public boolean markReady(final ProcessedDataset result) {
+    public synchronized boolean markReady(final ProcessedDataset result) {
         if (!state.markReady()) {
             return false;
         }
         this.result = result;
+        notifyTransitionLocked();
         return true;
     }
 
-    public boolean markFailed(final String errorCode) {
-        return state.markFailed(errorCode);
+    public synchronized boolean markFailed(final String errorCode) {
+        if (!state.markFailed(errorCode)) {
+            return false;
+        }
+        notifyTransitionLocked();
+        return true;
     }
 
-    public boolean markCancelled() {
-        return state.markCancelled();
+    public synchronized boolean markCancelled() {
+        if (!state.markCancelled()) {
+            return false;
+        }
+        notifyTransitionLocked();
+        return true;
     }
 
-    public boolean requestCancel() {
-        return state.requestCancel();
+    public synchronized boolean requestCancel() {
+        if (!state.requestCancel()) {
+            return false;
+        }
+        notifyTransitionLocked();
+        return true;
     }
 
     /** 终态日志/指标记账 CAS（重复调用返回 false，防取消线程与 worker 双记账）。 */
