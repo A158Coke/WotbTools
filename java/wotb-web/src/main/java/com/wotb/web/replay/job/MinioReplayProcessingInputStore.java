@@ -25,6 +25,9 @@ import java.util.Objects;
  *
  * <p>同一 {@code (jobId, sourceIndex)} 是幂等覆盖：create 重试不会留下两份输入。上传失败抛
  * {@link IOException}，让 create 失败（绝不登记一个没有输入的 job）。</p>
+ *
+ * <p>{@link #discard} 用**同一套键推导**删除这批上传的对象：create 在派发成功之前失败时，
+ * 对象存储里不能留下没有任何 job 引用的输入。</p>
  */
 public final class MinioReplayProcessingInputStore implements ReplayProcessingInputStore {
 
@@ -44,8 +47,7 @@ public final class MinioReplayProcessingInputStore implements ReplayProcessingIn
         final List<String> sourceNames = new ArrayList<>(files.length);
         for (int i = 0; i < files.length; i++) {
             final MultipartFile file = files[i];
-            final String raw = file.getOriginalFilename();
-            final String safe = ReplayJobFiles.sanitizeFileName(raw == null ? "replay.wotbreplay" : raw);
+            final String safe = safeNameOf(file);
             final ObjectKey key = ObjectStorageKeys.tempJobObject(jobId, inputPath(i, safe));
             try (InputStream content = file.getInputStream()) {
                 storage.put(key, content, file.getSize(), contentTypeOf(file));
@@ -57,9 +59,26 @@ public final class MinioReplayProcessingInputStore implements ReplayProcessingIn
         return sourceNames;
     }
 
+    @Override
+    public void discard(final String jobId, final MultipartFile[] files) throws IOException {
+        for (int i = 0; i < files.length; i++) {
+            // 与 store 同一推导：半途失败时后面的键可能从未创建，delete 对不存在的对象是成功。
+            final ObjectKey key = ObjectStorageKeys.tempJobObject(jobId, inputPath(i, safeNameOf(files[i])));
+            storage.delete(key);
+            LOGGER.info("event=replay_processing_input_discarded jobId={} sourceIndex={} key={}",
+                    jobId, i, key.value());
+        }
+    }
+
     /** {@code input/<sourceIndex>/<sourceName>}：与 parser-worker 的读键逐字一致。 */
     private static String inputPath(final int sourceIndex, final String sourceName) {
         return "input/" + sourceIndex + "/" + sourceName;
+    }
+
+    /** 与本地路径共用同一文件名规范化，保证 worker 能从 identity 反解出对象键。 */
+    private static String safeNameOf(final MultipartFile file) {
+        final String raw = file.getOriginalFilename();
+        return ReplayJobFiles.sanitizeFileName(raw == null ? "replay.wotbreplay" : raw);
     }
 
     private static String contentTypeOf(final MultipartFile file) {

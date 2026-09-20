@@ -114,6 +114,22 @@ class MinioObjectStorageTest {
     }
 
     @Test
+    void deleteRemovesExactlyTheGivenKeyAndIsIdempotent() throws IOException {
+        final byte[] payload = "input".getBytes(StandardCharsets.UTF_8);
+        final ObjectKey target = ObjectStorageKeys.tempJobObject(JOB_ID, "input/0/a.wotbreplay");
+        final ObjectKey neighbour = ObjectStorageKeys.tempJobObject(JOB_ID, "input/1/b.wotbreplay");
+        storage.put(target, new ByteArrayInputStream(payload), payload.length, null);
+        storage.put(neighbour, new ByteArrayInputStream(payload), payload.length, null);
+
+        storage.delete(target);
+
+        assertFalse(storage.exists(target));
+        assertTrue(storage.exists(neighbour), "delete 是键级的：绝不能碰到同一 job 的其它对象");
+        // 幂等是契约的一部分：回滚一批半途写入时，部分键从未创建过。
+        storage.delete(target);
+    }
+
+    @Test
     void getOfMissingObjectIsAnIoException() {
         final ObjectKey absent = ObjectStorageKeys.tempJobObject(JOB_ID, "result/never-written.json");
 

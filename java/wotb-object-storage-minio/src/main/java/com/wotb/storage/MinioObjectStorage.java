@@ -5,6 +5,7 @@ import com.wotb.contracts.ObjectStorage;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import io.minio.StatObjectArgs;
 import io.minio.errors.ErrorResponseException;
 import io.minio.errors.MinioException;
@@ -24,8 +25,10 @@ import java.util.concurrent.TimeUnit;
  * is translated into {@link IOException}, so retry and error-code decisions
  * stay with the caller.
  *
- * <p>Objects expire with the {@code temp/jobs/} lifecycle rule owned by
- * OpenTofu, so this adapter intentionally exposes no delete and no list.
+ * <p>Objects expire with the {@code temp/jobs/} lifecycle rule owned by OpenTofu; that rule is a
+ * bounded backstop, not a cleanup mechanism. The adapter therefore exposes {@code delete} for
+ * exactly one key at a time (create rollback) and still exposes no list or prefix operation, so the
+ * one-day lifecycle is never the only thing standing between a failed create and a leaked object.
  */
 public final class MinioObjectStorage implements ObjectStorage {
 
@@ -127,6 +130,29 @@ public final class MinioObjectStorage implements ObjectStorage {
             throw new IOException("MinIO stat failed for object " + target.value(), error);
         } catch (final MinioException | IOException | NoSuchAlgorithmException | InvalidKeyException error) {
             throw new IOException("MinIO stat failed for object " + target.value(), error);
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>A missing object is success, not an error: the only caller rolls back a partially written
+     * set, so some keys legitimately never existed. Every other provider failure — including a
+     * refused {@code s3:DeleteObject} — stays an {@link IOException} rather than being reported as
+     * "cleaned up".
+     */
+    @Override
+    public void delete(final ObjectKey key) throws IOException {
+        final ObjectKey target = requireKey(key);
+        try {
+            client.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(target.value()).build());
+        } catch (final ErrorResponseException error) {
+            if (isNotFound(error)) {
+                return;
+            }
+            throw new IOException("MinIO delete failed for object " + target.value(), error);
+        } catch (final MinioException | IOException | NoSuchAlgorithmException | InvalidKeyException error) {
+            throw new IOException("MinIO delete failed for object " + target.value(), error);
         }
     }
 

@@ -106,3 +106,32 @@ resource "minio_iam_user_policy_attachment" "control_api" {
   user_name   = minio_iam_user.control_api.name
   policy_name = minio_iam_policy.temporary_workspace_control_api.name
 }
+
+# The control plane must be able to roll back a create that failed before dispatch: the inputs it
+# already wrote to temp/jobs/<jobId>/input/ have no job referencing them and must not wait for the
+# one-day lifecycle rule. This is a *third* document rather than one more action inside the read/write
+# policy above, for the same reason the two documents are duplicated: permission growth on an applied
+# policy arrives as an in-place update, which the plan guard refuses by design, and re-deriving the
+# whole topology to keep the change "clean" would be a far larger blast radius than one extra grant.
+# The scope is the same temp/jobs/* prefix and the only action is delete of an object the control
+# plane itself named — `worker` is deliberately left without it, so the parsing host still cannot
+# remove anything.
+resource "minio_iam_policy" "temporary_workspace_control_api_reclaim" {
+  name = "wotbtools-temp-control-api-reclaim"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "DeleteOwnTemporaryJobObjects"
+        Effect   = "Allow"
+        Action   = ["s3:DeleteObject"]
+        Resource = ["${minio_s3_bucket.temporary_workspace.arn}/temp/jobs/*"]
+      },
+    ]
+  })
+}
+
+resource "minio_iam_user_policy_attachment" "control_api_reclaim" {
+  user_name   = minio_iam_user.control_api.name
+  policy_name = minio_iam_policy.temporary_workspace_control_api_reclaim.name
+}

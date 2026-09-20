@@ -106,9 +106,68 @@ class DistributedReplayProcessingPathsTest {
         assertEquals(1, dispatcher.requests.size());
         final String jobId = dispatcher.requests.getFirst().jobId();
         assertNull(store.get(jobId), "派发失败的 create 绝不能留下一个永远不会有结果的 job");
+        assertTrue(storage.objects.isEmpty(),
+                "派发失败的 create 必须回滚已写入的 MinIO 输入，不能留下孤儿对象: " + storage.objects.keySet());
         try (var entries = Files.list(tempDir)) {
             assertEquals(0, entries.count(), "本地 job 目录同样必须被回收");
         }
+    }
+
+    /**
+     * 半途失败：第 1 个输入已经写进对象存储、第 2 个失败。没有 job 会引用第 1 个对象，
+     * 因此它必须被删除，而不是等 1 天的桶生命周期兜底。
+     */
+    @Test
+    void partialInputWriteFailureRollsBackTheAlreadyWrittenInputs() throws Exception {
+        storage.putFailureAt = 1;
+
+        assertThrows(IllegalStateException.class, () -> service.createJob(
+                new MultipartFile[]{file("a.wotbreplay"), file("b.wotbreplay")}, 0, null, null));
+
+        assertTrue(storage.objects.isEmpty(),
+                "半途失败的 create 必须删除已写入的输入: " + storage.objects.keySet());
+        assertTrue(dispatcher.requests.isEmpty(), "输入都没写完整就绝不能派发");
+        try (var entries = Files.list(tempDir)) {
+            assertEquals(0, entries.count(), "本地 job 目录同样必须被回收");
+        }
+    }
+
+    /** 权威登记失败：输入已经在对象存储里，必须连带回滚，且不留下任何 job。 */
+    @Test
+    void registrationFailureRollsBackMinioInputsAndLeavesNoJob() throws Exception {
+        final ReplayProcessingJobStore failingStore = new FailingRegistrationStore(tempDir, 60);
+        try {
+            final ReplayProcessingJobService failingService = new ReplayProcessingJobService(
+                    failingStore, dispatcher, null,
+                    new MinioReplayProcessingInputStore(storage),
+                    new ObjectStorageReplayProcessingResultReader(storage));
+
+            final IllegalStateException failure = assertThrows(IllegalStateException.class, () -> failingService
+                    .createJob(new MultipartFile[]{file(INPUT_NAME)}, 0, null, null));
+
+            assertEquals("authority unavailable", failure.getMessage());
+            assertTrue(storage.objects.isEmpty(), "登记失败的 create 必须回滚已写入的 MinIO 输入");
+            assertTrue(dispatcher.requests.isEmpty(), "登记失败绝不能派发");
+        } finally {
+            failingStore.close();
+        }
+    }
+
+    /**
+     * 回滚本身失败（例如对象存储身份没有删除权限）时，**原始 create 失败必须原样浮出**：
+     * 清理是尽力而为的补救，绝不能把「派发失败」改写成「存储失败」。
+     */
+    @Test
+    void inputRollbackFailureDoesNotReplaceTheOriginalCreateFailure() throws Exception {
+        dispatcher.failure = new IllegalStateException("broker confirmation failed");
+        storage.deleteFailure = new IOException("simulated delete denied");
+
+        final IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> service.createJob(new MultipartFile[]{file(INPUT_NAME)}, 0, null, null));
+
+        assertEquals("broker confirmation failed", failure.getMessage(),
+                "输入回滚失败必须被吞掉并记录，绝不替换原始 create 失败");
+        assertNull(store.get(dispatcher.requests.getFirst().jobId()), "权威状态回收不受回滚失败影响");
     }
 
     @Test
@@ -175,15 +234,25 @@ class DistributedReplayProcessingPathsTest {
         return new MockMultipartFile("files", name, "application/octet-stream", new byte[]{1, 2, 3});
     }
 
-    /** 记录写入的最小 {@link ObjectStorage} 替身（对象存储端口没有 delete/list）。 */
+    /** 记录写入/删除的最小 {@link ObjectStorage} 替身（对象存储端口没有 list/prefix 操作）。 */
     private static final class RecordingObjectStorage implements ObjectStorage {
 
         private final Map<String, byte[]> objects = new LinkedHashMap<>();
         private final Map<String, String> contentTypes = new LinkedHashMap<>();
+        private final List<String> deleted = new ArrayList<>();
+        /** 在第 N 次 put 时失败（0-based，按当前对象数判定）；{@code null} = 从不失败。 */
+        private Integer putFailureAt;
+        /** put 失败的异常；默认 {@link IOException}。 */
+        private IOException putFailure;
+        /** 非 null 时所有 delete 都以它失败（模拟清理权限/网络故障）。 */
+        private IOException deleteFailure;
 
         @Override
         public void put(final ObjectKey key, final InputStream content, final long contentLength,
                         final String contentType) throws IOException {
+            if (putFailureAt != null && objects.size() == putFailureAt) {
+                throw putFailure != null ? putFailure : new IOException("simulated put outage");
+            }
             objects.put(key.value(), content.readAllBytes());
             contentTypes.put(key.value(), contentType);
         }
@@ -197,6 +266,29 @@ class DistributedReplayProcessingPathsTest {
         @Override
         public boolean exists(final ObjectKey key) {
             return objects.containsKey(key.value());
+        }
+
+        @Override
+        public void delete(final ObjectKey key) throws IOException {
+            if (deleteFailure != null) {
+                throw deleteFailure;
+            }
+            objects.remove(key.value());
+            contentTypes.remove(key.value());
+            deleted.add(key.value());
+        }
+    }
+
+    /** 权威登记固定失败（模拟 PostgreSQL 权威投影不可用）。 */
+    private static final class FailingRegistrationStore extends ReplayProcessingJobStore {
+
+        private FailingRegistrationStore(final Path root, final int ttlMinutes) {
+            super(root, ttlMinutes);
+        }
+
+        @Override
+        public void register(final ReplayProcessingJob job) {
+            throw new IllegalStateException("authority unavailable");
         }
     }
 

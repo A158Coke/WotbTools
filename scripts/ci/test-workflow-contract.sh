@@ -114,10 +114,9 @@ for maven_module in maven_modules:
     assert f"COPY java/{maven_module}/pom.xml java/{maven_module}/pom.xml" in backend_dockerfile, \
         f"docker/Dockerfile.backend must pre-copy java/{maven_module}/pom.xml"
 
-# The parser-worker image builds a narrower reactor (`-pl wotb-parser-worker -am`), so it pre-copies
-# every module pom but the *sources* only of the modules that reactor actually compiles. Copy the
-# pom of a module and forget its sources and the image build dies with "Could not resolve
-# dependencies" for a sibling module; that failure is what this closure check prevents.
+# The parser-worker image pre-copies every module pom as well (Maven resolves the aggregator's
+# <modules> before it applies -pl); its source closure is checked together with every other image
+# below.
 parser_worker_dockerfile = (root / "docker/Dockerfile.parser-worker").read_text(encoding="utf-8")
 assert "-pl wotb-parser-worker -am" in parser_worker_dockerfile, \
     "docker/Dockerfile.parser-worker must build the parser-worker reactor"
@@ -139,17 +138,35 @@ def module_dependencies(module):
     return dependencies
 
 
-parser_worker_reactor = set()
-pending = ["wotb-parser-worker"]
-while pending:
-    current = pending.pop()
-    if current in parser_worker_reactor:
-        continue
-    parser_worker_reactor.add(current)
-    pending.extend(module_dependencies(current))
-for maven_module in sorted(parser_worker_reactor):
-    assert f"COPY java/{maven_module}/src java/{maven_module}/src" in parser_worker_dockerfile, \
-        f"docker/Dockerfile.parser-worker must copy java/{maven_module}/src (-pl wotb-parser-worker -am)"
+def reactor_closure(roots):
+    """Transitive com.wotb module closure of a Maven `-pl <roots> -am` reactor build."""
+    closure = set()
+    pending = list(roots)
+    while pending:
+        current = pending.pop()
+        if current in closure:
+            continue
+        closure.add(current)
+        pending.extend(module_dependencies(current))
+    return closure
+
+
+# Sources, not just poms. Any image that builds a Maven reactor must copy the sources of that
+# reactor's whole module closure: `-am` pulls a module into the reactor the moment a sibling starts
+# depending on it, and a reactor module with a pom but no sources compiles into an empty jar, so the
+# dependent module dies with "package ... does not exist". That is exactly how wotb-web's new
+# broker/object-storage dependencies broke the backend image build. Deriving the closure from the
+# poms keeps every Dockerfile honest instead of hand-maintaining a COPY list per image.
+reactor_builds_checked = 0
+for dockerfile_path in sorted((root / "docker").glob("Dockerfile.*")):
+    dockerfile = dockerfile_path.read_text(encoding="utf-8")
+    for reactor in re.findall(r"-pl ([A-Za-z0-9_,-]+) -am", dockerfile):
+        roots = [name.strip() for name in reactor.split(",") if name.strip()]
+        for maven_module in sorted(reactor_closure(roots)):
+            assert f"COPY java/{maven_module}/src java/{maven_module}/src" in dockerfile, \
+                f"docker/{dockerfile_path.name} must copy java/{maven_module}/src (-pl {reactor} -am)"
+        reactor_builds_checked += 1
+assert reactor_builds_checked > 0, "no Dockerfile reactor build was discovered; the closure check is idle"
 
 android_dependency_resolution = android_settings_text.split("dependencyResolutionManagement", 1)[1].split("rootProject.name", 1)[0]
 android_plugin_management = android_settings_text.split("pluginManagement", 1)[1].split("dependencyResolutionManagement", 1)[0]
