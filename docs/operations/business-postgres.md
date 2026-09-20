@@ -31,8 +31,10 @@ created outside Flyway.
   `TX_BUSINESS_POSTGRES_ADMIN_PASSWORD`, distinct from the application role;
 - `pg_isready` healthcheck, `restart: unless-stopped`, and a 512m memory limit.
 
-The application credential is intentionally absent from the Compose document:
-no container consumes it.
+The application credential is intentionally absent from the `business-postgres`
+service in the Compose document: that runtime never receives it. Its only
+consumer is the TX business runtime `business-api`
+(`deploy/tx/docker-compose.yml`), which is also the process that runs Flyway.
 
 `infra/tofu/postgres-business` owns exactly three logical resources:
 
