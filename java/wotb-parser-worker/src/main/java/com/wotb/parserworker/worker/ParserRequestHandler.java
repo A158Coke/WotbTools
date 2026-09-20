@@ -35,15 +35,19 @@ import org.slf4j.LoggerFactory;
  * canonical parser, persist the derived artifacts and the canonical dataset, then publish the
  * confirmed outcome envelope.
  *
- * <p>This class owns no transport or acknowledgement semantics: it publishes an outcome, parks an
- * undecodable delivery, or throws. {@link ParserRequestListener} turns a normal return into
- * {@code basicAck} and a throw into {@code basicNack(requeue=false)}.</p>
+ * <p>This class owns no transport or acknowledgement semantics: it publishes an outcome, parks a
+ * delivery verbatim, or throws. {@link ParserRequestListener} decides what the delivery settles to:
+ * a normal return is acknowledged, an infrastructure <em>work</em> failure is reported as a
+ * confirmed {@code parser.failed} and then acknowledged, and an uncertain outcome publish settles
+ * nothing at all so the transport redelivers the same attempt.</p>
  *
  * <p><b>Error split.</b> A source whose canonical parse fails is a <em>business</em> failure: the
  * outcome envelope reports {@code FAILED} with the stable error code and the request is
- * acknowledged — retrying the same bytes cannot change the result. Infrastructure failures (object
- * storage unavailable, broker confirmation lost) throw, so the existing retry/DLQ topology decides
- * what happens next; the worker keeps no retry state machine of its own.</p>
+ * acknowledged — retrying the same bytes cannot change the result. An infrastructure work failure
+ * (object storage unavailable on a read or on an artifact write) throws instead, so the listener
+ * reports it as {@code parser.failed(retryable=true)} and only then acknowledges; a lost outcome
+ * confirm throws too, but there it settles nothing. The worker keeps no retry state machine of its
+ * own: retry policy belongs to the control plane.</p>
  *
  * <p><b>Statelessness.</b> No job state is cached. A redelivered request re-runs every source of
  * the envelope, and every write is an idempotent overwrite because the keys are derived purely from
@@ -92,8 +96,12 @@ public class ParserRequestHandler {
     /**
      * Processes one request and publishes its outcome.
      *
-     * @throws IOException                   object storage is unavailable (infrastructure failure)
-     * @throws ParserOutcomePublishException the outcome did not reach a confirmed broker state
+     * @throws IOException                   object storage is unavailable (infrastructure work
+     *                                       failure: the listener reports {@code parser.failed} and
+     *                                       then acknowledges)
+     * @throws ParserOutcomePublishException the outcome did not reach a confirmed broker state, so
+     *                                       the listener settles nothing and the transport redelivers
+     *                                       the same attempt
      */
     public void handle(final ParserRequestMessage request) throws IOException {
         final ParserRequestMessage envelope = Objects.requireNonNull(request, "request");
@@ -115,15 +123,16 @@ public class ParserRequestHandler {
 
     /**
      * Reports a whole-attempt failure that produced no per-source outcome (for example the worker
-     * could not reach object storage). The caller publishes it before rejecting the request, so the
-     * control plane learns <em>why</em> the rejected delivery exists instead of finding a job that
-     * silently stalled.
+     * could not reach object storage). The caller publishes it — and waits for the broker to confirm
+     * it — before acknowledging the request, so the control plane learns <em>why</em> the attempt
+     * failed instead of finding a job that silently stalled.
      *
      * @param retryable the worker's own judgement, and it must agree with what the caller does next:
-     *                  a retryable failure is rejected without requeue, so the request re-enters the
-     *                  broker-side retry loop, while a terminal one is parked on the DLQ. Reporting
-     *                  {@code false} for a delivery that is being retried would tell the control
-     *                  plane the attempt is final while the broker keeps re-delivering it.
+     *                  {@code true} for an infrastructure work failure the control plane may retry by
+     *                  dispatching a new {@code parser.request} with {@code attempt + 1};
+     *                  {@code false} only for an attempt the worker knows is final. The worker never
+     *                  rejects the delivery into the broker retry loop, so this flag never describes
+     *                  broker-side behaviour.
      */
     public void publishFailed(final ParserRequestMessage request, final String errorCode,
                               final boolean retryable) {
@@ -141,11 +150,10 @@ public class ParserRequestHandler {
     /**
      * Parks a delivery the worker calls terminal on the DLQ path, verbatim.
      *
-     * <p>Two failures are terminal for the worker: a body it cannot decode (no {@code jobId} or
-     * {@code attempt} exists to report, and re-delivering the same bytes can never succeed), and a
-     * request whose report could not be delivered (the transport redelivers it, but the raw delivery
-     * is parked so an operator can see what never settled). Both preserve the original bytes so an
-     * operator can diagnose the delivery and re-publish it deliberately.</p>
+     * <p>Exactly one failure is terminal for the worker without a control-plane round trip: a body it
+     * cannot decode. It carries no {@code jobId} or {@code attempt} to report, and re-delivering the
+     * same bytes can never succeed, so the only useful thing left is to preserve the original bytes
+     * for an operator to diagnose and re-publish deliberately.</p>
      */
     public void parkTerminalRequest(final byte[] rawBody) {
         outcomePublisher.parkTerminal(Objects.requireNonNull(rawBody, "rawBody"));
