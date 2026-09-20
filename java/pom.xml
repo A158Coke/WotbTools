@@ -12,6 +12,7 @@
 
     <modules>
         <module>wotb-contracts</module>
+        <module>wotb-object-storage-minio</module>
         <module>wotb-core</module>
         <module>wotb-result</module>
         <module>wotb-playback</module>
@@ -30,6 +31,7 @@
         <springboot.version>4.1.1</springboot.version>
         <springai.version>2.0.0</springai.version>
         <archunit.version>1.4.2</archunit.version>
+        <minio.version>8.5.17</minio.version>
     </properties>
 
     <dependencyManagement>
@@ -70,9 +72,21 @@
                 <version>1.0.0</version>
             </dependency>
             <dependency>
+                <groupId>com.wotb</groupId>
+                <artifactId>wotb-object-storage-minio</artifactId>
+                <version>1.0.0</version>
+            </dependency>
+            <dependency>
                 <groupId>org.apache.poi</groupId>
                 <artifactId>poi-ooxml</artifactId>
                 <version>${poi.version}</version>
+            </dependency>
+            <!-- MinIO Java SDK：8.5 维护线（okhttp 4.12.0）。
+                 9.x 会连带升级到 okhttp 5 大版本，不在本 PR 引入。 -->
+            <dependency>
+                <groupId>io.minio</groupId>
+                <artifactId>minio</artifactId>
+                <version>${minio.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>

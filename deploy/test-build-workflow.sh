@@ -172,6 +172,7 @@ minio_env = minio_deploy_step["env"]
 assert set(minio_env) == {
     "TAG", "RELEASE_SHA", "RELEASE_RUN_NUMBER", "YECAO_MINIO_ROOT_USER", "YECAO_MINIO_ROOT_PASSWORD",
     "YECAO_MINIO_WORKER_ACCESS_KEY", "YECAO_MINIO_WORKER_SECRET_KEY",
+    "YECAO_MINIO_CONTROL_API_ACCESS_KEY", "YECAO_MINIO_CONTROL_API_SECRET_KEY",
 }
 assert "DB_PASSWORD" not in str(minio_job)
 minio_script = (deploy_path.parent.parent.parent / "deploy/minio-deploy.sh").read_text(encoding="utf-8")
@@ -181,6 +182,8 @@ assert "--require-no-changes" in minio_script
 assert "10.20.0.2:9000" in minio_script
 assert "docker compose -f \"$COMPOSE_FILE\" up -d --wait minio" in minio_script
 assert "YECAO_MINIO_ROOT_PASSWORD" in minio_script
+assert 'export TF_VAR_control_api_access_key="$YECAO_MINIO_CONTROL_API_ACCESS_KEY"' in minio_script
+assert 'export TF_VAR_control_api_secret_key="$YECAO_MINIO_CONTROL_API_SECRET_KEY"' in minio_script
 assert "deploy/docker-compose.prod.yml" not in minio_script
 assert 'command -v python3' in minio_script
 minio_tofurc = (deploy_path.parent.parent.parent / "deploy/minio/tofurc").read_text(encoding="utf-8")

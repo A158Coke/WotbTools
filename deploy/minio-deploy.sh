@@ -26,6 +26,8 @@ require_env YECAO_MINIO_ROOT_USER
 require_env YECAO_MINIO_ROOT_PASSWORD
 require_env YECAO_MINIO_WORKER_ACCESS_KEY
 require_env YECAO_MINIO_WORKER_SECRET_KEY
+require_env YECAO_MINIO_CONTROL_API_ACCESS_KEY
+require_env YECAO_MINIO_CONTROL_API_SECRET_KEY
 
 [[ "$TAG" =~ ^sha-[0-9a-f]{12}$ ]] || die "TAG must be an immutable sha-<12 lowercase hex> tag."
 [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || die "RELEASE_SHA must be a full lowercase commit SHA."
@@ -45,9 +47,11 @@ export TF_VAR_minio_root_user="$YECAO_MINIO_ROOT_USER"
 export TF_VAR_minio_root_password="$YECAO_MINIO_ROOT_PASSWORD"
 export TF_VAR_worker_access_key="$YECAO_MINIO_WORKER_ACCESS_KEY"
 export TF_VAR_worker_secret_key="$YECAO_MINIO_WORKER_SECRET_KEY"
+export TF_VAR_control_api_access_key="$YECAO_MINIO_CONTROL_API_ACCESS_KEY"
+export TF_VAR_control_api_secret_key="$YECAO_MINIO_CONTROL_API_SECRET_KEY"
 
-# The provider stores the configured worker secret in state. Keep the state
-# local to Yecao, root-only, and outside the staged checkout.
+# The provider stores the configured application identity secrets in state. Keep
+# the state local to Yecao, root-only, and outside the staged checkout.
 umask 077
 install -d -m 700 /opt/wotb/minio-tofu-state
 
