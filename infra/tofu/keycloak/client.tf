@@ -62,3 +62,29 @@ resource "keycloak_openid_client" "admin_api" {
     prevent_destroy = true
   }
 }
+
+# Read-only cutover gate identity. `deploy/tx/pre-cutover-check.sh` obtains a
+# client_credentials token with it and drives the real business chain (processing
+# job -> dataset -> map overview -> battle playback -> export) before DNS moves.
+# It is deliberately a confidential, service-account-only client with no redirect
+# URIs, and it holds exactly one realm role (`wotbtools-user`), so the gate can
+# prove the user-facing path works while every admin endpoint provably rejects
+# this authenticated non-admin principal.
+resource "keycloak_openid_client" "e2e" {
+  realm_id  = keycloak_realm.wotbtools.id
+  client_id = "wotbtools-e2e"
+  name      = "WoTBTools Cutover E2E Gate"
+  enabled   = true
+
+  access_type                  = "CONFIDENTIAL"
+  service_accounts_enabled     = true
+  standard_flow_enabled        = false
+  implicit_flow_enabled        = false
+  direct_access_grants_enabled = false
+  client_secret_wo             = var.e2e_client_secret
+  client_secret_wo_version     = var.e2e_client_secret_version
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}

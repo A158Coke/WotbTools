@@ -17,6 +17,7 @@ RETRIES="${WOTB_KEYCLOAK_TOFU_RETRIES:-90}"
 INTERVAL_SEC="${WOTB_KEYCLOAK_TOFU_INTERVAL_SEC:-2}"
 BOOTSTRAP_PASSWORD="tofu-bootstrap-test-password"
 ADMIN_API_SECRET="tofu-admin-api-test-secret"
+E2E_API_SECRET="tofu-e2e-api-test-secret"
 QQ_CLIENT_ID="tofu-qq-client-id"
 QQ_CLIENT_SECRET="tofu-qq-client-secret"
 QQ_CLIENT_SECRET_VERSION=1
@@ -55,6 +56,8 @@ expect_qq_input_failure() {
     KEYCLOAK_ADMIN_PASSWORD=not-real \
     KEYCLOAK_ADMIN_CLIENT_SECRET=not-real \
     KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION=1 \
+    KEYCLOAK_E2E_CLIENT_SECRET=not-real \
+    KEYCLOAK_E2E_CLIENT_SECRET_VERSION=1 \
     TX_QQ_CLIENT_ID="$QQ_CLIENT_ID" \
     TX_QQ_CLIENT_SECRET="$QQ_CLIENT_SECRET" \
     TX_QQ_CLIENT_SECRET_VERSION="$QQ_CLIENT_SECRET_VERSION" \
@@ -144,6 +147,8 @@ export TF_VAR_keycloak_admin_username=admin
 export TF_VAR_keycloak_admin_password="$BOOTSTRAP_PASSWORD"
 export TF_VAR_keycloak_admin_client_secret="$ADMIN_API_SECRET"
 export TF_VAR_keycloak_admin_client_secret_version=1
+export TF_VAR_e2e_client_secret="$E2E_API_SECRET"
+export TF_VAR_e2e_client_secret_version=1
 export TF_VAR_qq_client_id="$QQ_CLIENT_ID"
 export TF_VAR_qq_client_secret="$QQ_CLIENT_SECRET"
 export TF_VAR_qq_client_secret_version="$QQ_CLIENT_SECRET_VERSION"
@@ -299,6 +304,51 @@ api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/roles/default-roles-wotbtools/
 jq -e 'any(.[]; .name == "wotbtools-user")' "$WORK/default-roles.json" >/dev/null \
   || fail "default-roles-wotbtools does not include wotbtools-user"
 echo "PASS: default wotbtools-user role"
+
+# The cutover E2E gate identity must be a confidential service-account-only
+# client whose token carries exactly the user-facing realm role, so the gate can
+# drive the real business chain and must still be rejected by admin endpoints.
+E2E_CLIENT_ID="$(client_id wotbtools-e2e "$WORK/e2e-client.json")"
+api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/clients/$E2E_CLIENT_ID" \
+  "$BOOTSTRAP_TOKEN" "$WORK/e2e-client.json"
+jq -e '
+  .clientId == "wotbtools-e2e" and
+  .enabled == true and
+  .publicClient == false and
+  .serviceAccountsEnabled == true and
+  .standardFlowEnabled == false and
+  .implicitFlowEnabled == false and
+  .directAccessGrantsEnabled == false and
+  ((.redirectUris // []) | length) == 0 and
+  ((.webOrigins // []) | length) == 0
+' "$WORK/e2e-client.json" >/dev/null \
+  || fail "cutover E2E client has an unsafe browser or flow setting"
+E2E_TOKEN="$(token wotbtools wotbtools-e2e "$WORK/e2e-token.json" client_credentials \
+  --data-urlencode "client_secret=$E2E_API_SECRET")"
+jq -er '
+  .access_token
+  | split(".")[1]
+  | gsub("-"; "+") | gsub("_"; "/")
+  | . + ("=" * ((4 - (length % 4)) % 4))
+  | @base64d | fromjson
+  | (.realm_access.roles // [])
+' "$WORK/e2e-token.json" > "$WORK/e2e-roles.json" \
+  || fail "cutover E2E token has no decodable realm role set"
+jq -e 'index("wotbtools-user") != null' "$WORK/e2e-roles.json" >/dev/null \
+  || fail "cutover E2E identity must hold wotbtools-user"
+jq -e 'index("wotbtools-admin") == null' "$WORK/e2e-roles.json" >/dev/null \
+  || fail "cutover E2E identity must never hold realm administration"
+E2E_SERVICE_ACCOUNT_ID="$(api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/users?username=service-account-wotbtools-e2e" \
+  "$BOOTSTRAP_TOKEN" "$WORK/e2e-service-account.json" >/dev/null; jq -er '.[0].id' "$WORK/e2e-service-account.json")"
+api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/users/$E2E_SERVICE_ACCOUNT_ID/role-mappings/realm" \
+  "$BOOTSTRAP_TOKEN" "$WORK/e2e-realm-roles.json"
+# Keycloak always adds the realm default composite (`default-roles-wotbtools`) to a
+# service account, so the direct mapping set is that composite plus the explicit
+# `wotbtools-user` grant. What must never appear is any privileged realm role.
+jq -e '([.[].name] - ["wotbtools-user", "default-roles-wotbtools"]) | length == 0' \
+  "$WORK/e2e-realm-roles.json" >/dev/null \
+  || fail "cutover E2E service account holds an unexpected realm role"
+echo "PASS: cutover E2E identity is confidential, service-account-only and holds only wotbtools-user"
 
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/users/$SERVICE_ACCOUNT_ID/role-mappings/clients/$REALM_MANAGEMENT_CLIENT_ID" \
   "$BOOTSTRAP_TOKEN" "$WORK/admin-api-roles.json"
