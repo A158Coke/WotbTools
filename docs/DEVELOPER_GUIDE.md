@@ -101,7 +101,7 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 │   └── homepage/
 │       ├── sponsor.html
 │       └── sponsor-config.js
-├── docker/                     # backend/frontend/keycloak 镜像与 Keycloak 主题
+├── docker/                     # backend/frontend/keycloak/parser-worker 镜像与 Keycloak 主题
 ├── deploy/                     # production compose/nginx/备份与回滚
 ├── docs/                       # 架构、功能、参考、运维文档
 └── .agents/                    # Agent 规则与 skills
@@ -568,6 +568,17 @@ TX RabbitMQ 也保持独立 ownership：Compose 只运行 broker，`infra/tofu/r
 plan/apply/second-plan 和 root-only marker 全部在 TX 发生；GitHub runner 不直连
 Management API。完整 topology、retry/DLX 设计与 ACL 见
 `docs/operations/rabbitmq.md`。
+
+Yecao 的解析执行面是新的可部署模块 `java/wotb-parser-worker`（镜像
+`ghcr.io/a158coke/wotbtools-parser-worker`，`docker/Dockerfile.parser-worker`，
+Compose 服务 `parser-worker`）：它**不依赖 `wotb-web`、不持有数据库凭据**，只消费
+`wotb.parser`、读写 MinIO `temp/jobs/*` 并回报 `parser.result`/`parser.failed`，
+复用 canonical 解析与 artifact 生成（与本地控制面共用 `ReplayProcessingSourceRunner`，
+差异只在 `ReplayArtifactSink`）。该服务**只在显式选中时部署**（不在 Yecao `all`
+服务集内，legacy 栈退役前不选即不启动），选中时 `deploy/deploy.sh` fail-closed
+要求其 broker/MinIO 凭据并用容器存活 gate 判定成功。失败语义（可重试 → 经
+`wotb.parser.retry` 回流；业务失败 → 逐源 FAILED 后 ack；无法解码 → 原字节 park
+到 DLQ）见 `docs/operations/parser-worker.md`。
 
 TX Business PostgreSQL 与 Keycloak PostgreSQL 完全独立：Compose 只运行
 `business-postgres`（`postgres:18-alpine`、`business_postgres_data`、

@@ -14,13 +14,14 @@ import re
 import sys
 
 
-IMAGE_NAMES = ("backend", "frontend", "keycloak", "minio")
+IMAGE_NAMES = ("backend", "frontend", "keycloak", "minio", "parser-worker")
 APPLICATION_IMAGE_NAMES = ("backend", "frontend", "keycloak")
 APPLICATION_SERVICES = {
     "backend": "wotb-backend",
     "frontend": "wotb-frontend",
     "keycloak": "keycloak",
     "minio": "minio",
+    "parser-worker": "parser-worker",
 }
 DEPLOYABLE_SERVICES = {
     "all",
@@ -37,6 +38,7 @@ DEPLOYABLE_SERVICES = {
     "business-postgres",
     "rabbitmq",
     "minio",
+    "parser-worker",
 }
 DEPLOY_TARGETS = ("tx", "yecao")
 TARGET_BY_SERVICE = {
@@ -53,6 +55,7 @@ TARGET_BY_SERVICE = {
     "alloy": "yecao",
     "grafana": "yecao",
     "minio": "yecao",
+    "parser-worker": "yecao",
 }
 IMAGE_SERVICE_BY_DEPLOY_SERVICE = {
     value: key for key, value in APPLICATION_SERVICES.items()
@@ -62,6 +65,7 @@ MANUAL_SERVICE_ALIASES = {
     "frontend": "frontend",
     "keycloak": "keycloak",
     "minio": "minio",
+    "parser-worker": "parser-worker",
 }
 MANUAL_SERVICES = {"all", *MANUAL_SERVICE_ALIASES}
 
@@ -97,6 +101,12 @@ KEYCLOAK_PATTERNS = (
     "java/settings-docker.xml",
 )
 MINIO_BUILD_PATTERNS = ("docker/Dockerfile.minio",)
+PARSER_WORKER_BUILD_PATTERNS = (
+    "java/**",
+    "docker/Dockerfile.parser-worker",
+    "common/**",
+    "contracts/mq/**",
+)
 ALL_DEPLOY_PATTERNS = (
     "deploy/docker-compose.prod.yml",
     "deploy/deploy.sh",
@@ -249,6 +259,7 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
         if manual_service == "all":
             images = {name: True for name in APPLICATION_IMAGE_NAMES}
             images["minio"] = False
+            images["parser-worker"] = False
             deploy_services = [APPLICATION_SERVICES[name] for name in APPLICATION_IMAGE_NAMES]
         elif manual_service in MANUAL_SERVICE_ALIASES:
             image_name = MANUAL_SERVICE_ALIASES[manual_service]
@@ -274,6 +285,14 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
             # Building the source-pinned MinIO image never implies a runtime
             # deployment. Its deployment is an explicit manual action only.
             images["minio"] = True
+        if _matches_any(path, PARSER_WORKER_BUILD_PATTERNS):
+            # The Yecao parser-worker shares the JVM build surface with the
+            # backend and consumes the same common data plus the MQ contract.
+            # Building it never implies a runtime deployment either: the
+            # generic Yecao deploy path only accepts service names that
+            # deploy.sh validates, so the parser-worker is an explicit manual
+            # action until that deploy path owns it.
+            images["parser-worker"] = True
         if _matches_any(path, ALL_DEPLOY_PATTERNS):
             deploy_config = True
         for surface, patterns in CI_SURFACE_PATTERNS.items():
@@ -430,7 +449,9 @@ def validate_manifest(
     if not isinstance(images, dict) or set(images) != set(IMAGE_NAMES) or any(
         not isinstance(images[name], bool) for name in IMAGE_NAMES
     ):
-        raise ValueError("manifest images must contain boolean backend/frontend/keycloak values")
+        raise ValueError(
+            f"manifest images must contain boolean {'/'.join(IMAGE_NAMES)} values"
+        )
     build_services = manifest["buildServices"]
     image_services = manifest["imageServices"]
     deploy_services = manifest["deployServices"]

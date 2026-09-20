@@ -816,8 +816,8 @@ class ReplayProcessingJobServiceTest {
             ps.when(() -> com.wotb.web.replay.ai.BattlePlaybackProjector.project(
                             any(), any(), any(), any()))
                     .thenThrow(new RuntimeException("projector boom"));
-            final LocalReplayProcessingExecutor.V2BuildOutcome outcome =
-                    LocalReplayProcessingExecutor.buildBattlePlaybackV2(result.battle(), result);
+            final ReplayProcessingSourceRunner.V2BuildOutcome outcome =
+                    ReplayProcessingSourceRunner.buildBattlePlaybackV2(result.battle(), result);
             assertEquals("PROJECTOR_ERROR", outcome.reason());
             assertNull(outcome.dataset(), "projector 异常不得产出 dataset");
             assertNotNull(outcome.failure(), "必须携带 exception 供调用层记录 stacktrace，禁止 silent null");
@@ -829,7 +829,7 @@ class ReplayProcessingJobServiceTest {
     void v2MissingReconstructionIsExplicitUnavailable() throws Exception {
         // reconstruction 缺失属于合法不可用（canonical event 流不可构建），不是运行时故障：
         // reason=NO_RECONSTRUCTION，failure=null（UNAVAILABLE 不再与 null 混为一个结果）。
-        final LocalReplayProcessingExecutor.V2BuildOutcome outcome = LocalReplayProcessingExecutor.buildBattlePlaybackV2(
+        final ReplayProcessingSourceRunner.V2BuildOutcome outcome = ReplayProcessingSourceRunner.buildBattlePlaybackV2(
                 new Battle(), new ReplayProcessingResult("x.wotbreplay",
                         ReplayProcessingStatus.SUCCESS, null, new Battle(), null,
                         null, ReplayProcessingCapabilities.summaryOnly(false), null, null));
