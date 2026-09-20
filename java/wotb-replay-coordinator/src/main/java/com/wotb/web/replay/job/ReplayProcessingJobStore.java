@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -62,6 +63,11 @@ public class ReplayProcessingJobStore {
     private final Object lifecycleLock = new Object();
     private final ReplayJobStorage storage;
     private final long ttlMinutes;
+    /**
+     * 对象存储工作区回收（distributed 才有）；{@code null} = 该部署没有对象存储工作区。
+     * 权威侧 TTL 回收必须**先**调它、成功后才删 PostgreSQL 行。
+     */
+    private final ReplayJobWorkspaceCleaner workspaceCleaner;
     /**
      * PostgreSQL 权威状态投影；{@code null} 表示纯内存模式（默认，Yecao 过渡期与本地开发）。
      * 非 null 时每次状态迁移都 write-through 落库，且 {@link #get(String)} 在内存未命中时
@@ -343,13 +349,14 @@ public class ReplayProcessingJobStore {
     public ReplayProcessingJobStore(
             @Value("${wotb.replay.processing-job.dir:${java.io.tmpdir}/wotb-replay-processing-jobs}") final String dir,
             @Value("${wotb.replay.processing-job.ttl-minutes:30}") final long ttlMinutes,
-            final ObjectProvider<ReplayJobAuthority> authority) {
-        this(Path.of(dir), ttlMinutes, authority.getIfAvailable());
+            final ObjectProvider<ReplayJobAuthority> authority,
+            final ObjectProvider<ReplayJobWorkspaceCleaner> workspaceCleaner) {
+        this(Path.of(dir), ttlMinutes, authority.getIfAvailable(), workspaceCleaner.getIfAvailable());
     }
 
     /** 测试便利构造器（纯内存模式：不读 Spring 配置、不接触数据库）。 */
     public ReplayProcessingJobStore(final Path dir, final long ttlMinutes) {
-        this(dir, ttlMinutes, null);
+        this(dir, ttlMinutes, null, null);
     }
 
     /**
@@ -358,7 +365,18 @@ public class ReplayProcessingJobStore {
      */
     public ReplayProcessingJobStore(final Path dir, final long ttlMinutes,
                                     final ReplayJobAuthority authority) {
+        this(dir, ttlMinutes, authority, null);
+    }
+
+    /**
+     * @param workspaceCleaner {@code null} = 该部署没有对象存储工作区（纯本地/内存模式）；
+     *                         非 null = 权威侧 TTL 回收时**先**清对象存储工作区，再删权威行
+     */
+    public ReplayProcessingJobStore(final Path dir, final long ttlMinutes,
+                                    final ReplayJobAuthority authority,
+                                    final ReplayJobWorkspaceCleaner workspaceCleaner) {
         this.authority = authority;
+        this.workspaceCleaner = workspaceCleaner;
         this.storage = new ReplayJobStorage(dir.toString(), ttlMinutes, "wotb-replay-processing-job-sweeper");
         this.ttlMinutes = ttlMinutes;
         // 权威模式下的孤儿判定必须用数据库里的 job 集合：用空 registry 会把可恢复 job 的
@@ -398,10 +416,14 @@ public class ReplayProcessingJobStore {
     }
 
     /**
-     * 读取 job：优先返回进程内活对象；权威模式下内存未命中时从权威状态恢复只读投影
-     * （进程重启后状态仍可读）。恢复的投影**不进入** live registry，因此
-     * {@link #acquireForSource(String)} / {@link #acquireForExport(String)} 不会把一个
-     * 没有执行上下文的 job 当成可消费 Dataset 的 job（其 {@code result} 恒为 null）。
+     * **可读 job**：优先返回进程内活对象；权威模式下内存未命中时从 PostgreSQL 权威投影恢复
+     * （进程重启后状态仍可读）。恢复的投影**不进入** live registry——执行上下文（entries /
+     * 内存 dataset / 本地 job 目录）属于创建它的那个进程，恢复出来的只读投影不得冒充它。
+     *
+     * <p>分布式下 job 状态权威在 PostgreSQL、dataset 与 artifact 权威在对象存储，因此「可读」
+     * 不依赖 live registry：backend 重启后 {@link #acquireForSource(String)} /
+     * {@link #acquireForExport(String)} 走这条路径继续服务 Playback / Map Overview / AI Review /
+     * Export。</p>
      */
     public ReplayProcessingJob get(final String jobId) {
         final ReplayProcessingJob live = jobs.get(jobId);
@@ -472,13 +494,13 @@ public class ReplayProcessingJobStore {
      */
     public ReplayProcessingJob acquireForExport(final String jobId) {
         synchronized (lifecycleLock) {
-            final ReplayProcessingJob job = jobs.get(jobId);
+            // 可读视图（live 或从 PG 权威恢复）：dataset 权威在对象存储 / 进程内存，由
+            // ReplayProcessingResultReader 决定读得到与否。要求 live registry 命中会把
+            // 「backend 重启后 Export 一个已 READY 的 job」永久拒掉——重启是常规运维事件。
+            final ReplayProcessingJob job = get(jobId);
             if (job == null) {
                 return null;
             }
-            // 只要求状态 READY：dataset **权威在对象存储**（distributed）或进程内存（local），
-            // 由 ReplayProcessingResultReader 决定读得到与否。这里再要求 job.result() != null
-            // 会把 distributed（进程内刻意不持有 dataset）的 Export 永久拒掉。
             if (job.snapshot().status() != ReplayProcessingJob.Status.READY) {
                 return null;
             }
@@ -491,10 +513,14 @@ public class ReplayProcessingJobStore {
      * Dataset Lease：AI / Playback 读取 derived artifact 前获取引用
      * （+1，阻止 TTL 清理）。与 {@link #acquireForExport} 不同，不要求 batch READY——
      * per-source READY 即可（Direct Capability 在 batch finalize 前消费）。
+     *
+     * <p>接受**权威恢复的可读投影**（{@link #get(String)}）：backend 重启后 live registry 为空，
+     * 但 PG 仍有 job/source 状态、对象存储仍有 artifact，Playback / Map Overview / AI Review
+     * 必须继续可用——否则「PG + MinIO 是权威」这条不变式在重启后就断了。</p>
      */
     public ReplayProcessingJob acquireForSource(final String jobId) {
         synchronized (lifecycleLock) {
-            final ReplayProcessingJob job = jobs.get(jobId);
+            final ReplayProcessingJob job = get(jobId);
             if (job == null) {
                 return null;
             }
@@ -568,11 +594,16 @@ public class ReplayProcessingJobStore {
     }
 
     /**
-     * 权威侧 TTL 清理：与本地 sweep **同一套 Dataset Lease 判定**。
+     * 权威侧 TTL 清理：**同一套 Dataset Lease 判定** + **先 MinIO 后 PostgreSQL** 的顺序。
      *
      * <p>lease 是进程内状态，因此这里不能写成一条集合式 delete（那会把正在被 AI / Playback / Export
-     * 读取的 job 行删掉，读取中途变成 404）：先取候选 id，跳过有活跃 lease 的，再逐条删除。
-     * 跨实例共享 lease 不在当前单 TX 运行时部署的范围内——真要多实例，lease 本身必须先变成共享状态。</p>
+     * 读取的 job 行删掉，读取中途变成 404）：先取候选 id，跳过有活跃 lease 的，再逐个回收。</p>
+     *
+     * <p><b>顺序不能反</b>：先删对象存储工作区、成功后才删权威行。反过来若「PG 先删、MinIO 失败」，
+     * 权威身份就没了而对象还在——孤儿对象再也没人知道该删；按现在的顺序，「MinIO 成功、PG 失败」只是
+     * 权威行留着，下一轮重复一次幂等的 MinIO 回收即可恢复。</p>
+     *
+     * <p>跨实例共享 lease 不在当前单 TX 运行时部署的范围内——真要多实例，lease 本身必须先变成共享状态。</p>
      */
     private void sweepAuthority(final long cutoff) {
         int removed = 0;
@@ -581,11 +612,53 @@ public class ReplayProcessingJobStore {
             if (leases != null && leases.get() > 0) {
                 continue;
             }
-            authority.deleteJob(jobId);
+            if (!cleanWorkspace(jobId)) {
+                // 对象存储回收没做完 ⇒ **保留**权威行，下一轮 sweep 幂等重试（绝不先删 PG）。
+                continue;
+            }
+            if (!deleteAuthorityRow(jobId)) {
+                // PG 删除失败同样只是「下一轮再来」：对象存储回收是幂等的，重复执行无害。
+                continue;
+            }
             removed++;
         }
         if (removed > 0) {
             LOGGER.info("replay_processing_job_cleaned ttl_expired=true authority_rows={}", removed);
+        }
+    }
+
+    /** 删除权威行；单个 job 失败只记录，绝不中断整轮 sweep（其余 job 照常回收，下轮重试它）。 */
+    private boolean deleteAuthorityRow(final String jobId) {
+        try {
+            authority.deleteJob(jobId);
+            return true;
+        } catch (final RuntimeException e) {
+            LOGGER.warn("event=replay_processing_job_authority_delete_failed jobId={} error={}",
+                    jobId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 回收该 job 的对象存储工作区；失败只记录（TTL sleeper 没有调用方可以抛给它）并返回 {@code false}，
+     * 让权威行留下来等下一轮。
+     */
+    private boolean cleanWorkspace(final String jobId) {
+        if (workspaceCleaner == null) {
+            return true;
+        }
+        final ReplayProcessingJob job = get(jobId);
+        if (job == null) {
+            // 权威行在候选集里却读不出来：不正常，但别删任何东西——留给下一轮/operator。
+            LOGGER.warn("event=replay_job_workspace_cleanup_skipped jobId={} reason=projection_missing", jobId);
+            return false;
+        }
+        try {
+            workspaceCleaner.deleteJobWorkspace(job);
+            return true;
+        } catch (final IOException | RuntimeException e) {
+            LOGGER.warn("event=replay_job_workspace_cleanup_failed jobId={} error={}", jobId, e.getMessage());
+            return false;
         }
     }
 

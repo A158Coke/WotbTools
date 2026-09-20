@@ -9,10 +9,12 @@ import com.wotb.broker.rabbitmq.RabbitReplayProcessingDispatcher;
 import com.wotb.contracts.ObjectStorage;
 import com.wotb.web.replay.job.MinioReplayProcessingInputStore;
 import com.wotb.web.replay.job.ObjectStorageReplayDatasetRepository;
+import com.wotb.web.replay.job.ObjectStorageReplayJobWorkspaceCleaner;
 import com.wotb.web.replay.job.PostgresParserOutcomeHandler;
 import com.wotb.web.replay.job.ReplayBatchFinalization;
 import com.wotb.web.replay.job.ReplayExecutionMode;
 import com.wotb.web.replay.job.ReplayJobAuthority;
+import com.wotb.web.replay.job.ReplayJobWorkspaceCleaner;
 import com.wotb.web.replay.job.ReplayProcessingInputStore;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import com.wotb.web.replay.job.ReplayProcessingResultReader;
@@ -138,6 +140,15 @@ public class ReplayDistributedConfig {
     public ObjectStorageReplayDatasetRepository replayDatasetRepository(
             final ObjectStorage replayObjectStorage) {
         return new ObjectStorageReplayDatasetRepository(replayObjectStorage);
+    }
+
+    /**
+     * job 过期后的对象存储工作区回收：权威侧 TTL sweep **先**调它、成功后才删 PostgreSQL 行
+     * （顺序反了就会留下再也没人知道的孤儿对象）。
+     */
+    @Bean
+    public ReplayJobWorkspaceCleaner replayJobWorkspaceCleaner(final ObjectStorage replayObjectStorage) {
+        return new ObjectStorageReplayJobWorkspaceCleaner(replayObjectStorage);
     }
 
     /**
