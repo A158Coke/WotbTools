@@ -234,11 +234,27 @@ the TX deploy script performs all provider calls to
 `http://127.0.0.1:15672`.
 
 For a `rabbitmq` target the TX sequence is input validation, Compose reconcile,
-broker health, `init`/`validate`/saved plan, plan safety validation, apply,
-second clean plan, then a root-only
-`/opt/wotb-tx/rabbitmq.tofu-provisioned` marker. A missing provider mirror,
-unhealthy broker, delete/replace action, topology mutation, unknown address, or
-non-clean second plan fails closed before readiness is reported.
+broker health, lockfile-derived provider mirror bootstrap, mirror-only
+`init`/`validate`/saved plan, plan safety validation, apply, second clean plan,
+then a root-only
+`/opt/wotb-tx/rabbitmq.tofu-provisioned` marker. A provider
+bootstrap/version/checksum failure, unhealthy broker, delete/replace
+action, topology mutation, unknown address, or non-clean second plan fails
+closed before readiness is reported.
+
+The deployment derives the provider source, exact version and constraint from
+`infra/tofu/rabbitmq/.terraform.lock.hcl`, which currently pins
+`registry.opentofu.org/cyrilgdn/rabbitmq 1.10.1`. On a fresh host it runs
+`tofu providers mirror -platform=linux_amd64` for that root and requires the
+result at
+`/opt/wotb-tx/tofu-provider-mirror/registry.opentofu.org/cyrilgdn/rabbitmq/terraform-provider-rabbitmq_1.10.1_linux_amd64.zip`
+before `tofu init`. An exact existing package is reused without another
+download only after its platform checksum is matched to the committed lockfile.
+A different Linux AMD64 version in that provider directory fails as an
+ambiguous partial bootstrap, and a corrupt package fails during bootstrap,
+before init can reuse any release-local provider cache. The actual init still
+uses `deploy/tx/rabbitmq.tofurc`, whose
+`direct` block excludes RabbitMQ, so it cannot fall back to the public registry.
 
 The plan validator allows initial creates plus the two explicitly reviewed
 in-place updates: rotating the application user passwords and changing the
@@ -277,11 +293,11 @@ maintenance operation, then run the RabbitMQ-only provisioning path to verify
 the new credential and a clean second plan. Do not use a data-volume reset as
 credential rotation.
 
-Before production use, an operator installs OpenTofu, Python, and the exact
-locked `cyrilgdn/rabbitmq 1.10.1` archive beneath
-`/opt/wotb-tx/tofu-provider-mirror`. `deploy/tx/rabbitmq.tofurc` includes only
-that filesystem mirror for this provider and explicitly excludes direct
-installation; production cannot download it.
+Before production use, an operator installs OpenTofu and Python. The deployment
+owns installation of the exact locked RabbitMQ provider package into
+`/opt/wotb-tx/tofu-provider-mirror`; no manual provider archive installation is
+required. `deploy/tx/rabbitmq.tofurc` includes only that filesystem mirror for
+the provider and explicitly excludes direct installation during init.
 
 ## Verification
 
@@ -302,9 +318,13 @@ update fixtures, so the new topology is held to the same rules as the old one.
 `tofu fmt`/`tofu validate`, a small production-safety preflight for the shapes
 native tooling accepts (TX-local state path, no out-of-band execution, Compose
 must not declare topology, both TX deploy plan guards), proves the provider
-source is mirror-only by failing closed with an emptied mirror, asserts the
-resolved `cyrilgdn/rabbitmq 1.10.1` pin natively, and then applies against a
-temporary RabbitMQ container. Against the real broker it verifies the exchange,
+source is mirror-only by failing closed with an emptied mirror, rejects a
+corrupt mirrored package against the committed checksum, asserts the resolved
+`cyrilgdn/rabbitmq 1.10.1` pin natively, and then applies against a temporary
+RabbitMQ container. `deploy/test-tx-runtime-config.sh` separately covers fresh
+install, exact-package reuse, version mismatch, install failure, RabbitMQ-only
+secret isolation and the second-plan hard gate. Against the real broker the
+smoke verifies the exchange,
 queues, bindings and ACLs, requires a no-op second plan, and — because the
 application identities carry no tags and therefore cannot reach the Management
 API — exercises messaging over real AMQP with `pika`:

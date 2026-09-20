@@ -487,11 +487,191 @@ caddy_start_line="$(grep -nF 'up -d --no-deps --force-recreate caddy' "$caddy_lo
 [ -n "$frontend_start_line" ] && [ -n "$caddy_start_line" ] && [ "$caddy_start_line" -lt "$frontend_start_line" ] \
   || fail "Caddy-only deployment must refresh frontend after Caddy gets a new network endpoint"
 
+# RabbitMQ-only deployment owns its provider bootstrap. The provider source and
+# exact version come from the shipped lockfile, while the production init stays
+# on the mirror-only CLI configuration.
+readonly RELEASE_SHA=0123456789abcdef0123456789abcdef01234567
+readonly RABBITMQ_PROVIDER_DIR="registry.opentofu.org/cyrilgdn/rabbitmq"
+readonly RABBITMQ_PROVIDER_ARCHIVE="terraform-provider-rabbitmq_1.10.1_linux_amd64.zip"
+readonly FAKE_RABBITMQ_PROVIDER_SHA256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+mkdir -p "$WORK/rabbit" "$WORK/rabbit-incoming" "$WORK/rabbit-tofu-bin" \
+  "$WORK/rabbit/tofu.incoming/$RELEASE_SHA/infra/tofu/rabbitmq"
+cp -a "$TX_DIR/." "$WORK/rabbit-incoming/"
+cp "$ROOT/infra/tofu/rabbitmq/.terraform.lock.hcl" \
+  "$WORK/rabbit/tofu.incoming/$RELEASE_SHA/infra/tofu/rabbitmq/.terraform.lock.hcl"
+sed -i "0,/zh:[0-9a-f]\{64\}/s//zh:$FAKE_RABBITMQ_PROVIDER_SHA256/" \
+  "$WORK/rabbit/tofu.incoming/$RELEASE_SHA/infra/tofu/rabbitmq/.terraform.lock.hcl"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' \
+  > "$WORK/rabbit/tofu.incoming/$RELEASE_SHA/infra/tofu/rabbitmq/validate-plan.sh"
+cat > "$WORK/rabbit-tofu-bin/tofu" <<'FAKE_TOFU'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "$*" >> "${FAKE_TOFU_LOG:?}"
+root=""
+if [[ "${1:-}" == -chdir=* ]]; then
+  root="${1#-chdir=}"
+  shift
+fi
+if [ "${1:-}" = providers ] && [ "${2:-}" = mirror ]; then
+  [ "${FAKE_TOFU_MIRROR_FAIL:-0}" != 1 ] || exit 42
+  [ "${3:-}" = -platform=linux_amd64 ] || exit 43
+  target="${4:?mirror target is required}"
+  version="$(sed -n '/provider "registry.opentofu.org\/cyrilgdn\/rabbitmq"/,/^}/ s/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$root/.terraform.lock.hcl")"
+  [ -n "$version" ] || exit 44
+  provider_dir="$target/registry.opentofu.org/cyrilgdn/rabbitmq"
+  mkdir -p "$provider_dir"
+  : > "$provider_dir/terraform-provider-rabbitmq_${version}_linux_amd64.zip"
+  cat > "$provider_dir/${version}.json" <<EOF
+{
+  "archives": {
+    "linux_amd64": {
+      "hashes": ["zh:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"],
+      "url": "terraform-provider-rabbitmq_${version}_linux_amd64.zip"
+    }
+  }
+}
+EOF
+  exit 0
+fi
+if [ "${1:-}" = plan ] && [[ "$*" == *"out=second-plan.tfplan"* ]] \
+  && [ "${FAKE_TOFU_SECOND_PLAN_FAIL:-0}" = 1 ]; then
+  exit 45
+fi
+FAKE_TOFU
+chmod 700 "$WORK/rabbit-tofu-bin/tofu"
+
+rabbit_metadata="$(env -i \
+  PATH="$WORK/bin:$WORK/rabbit-tofu-bin:$PATH" HOME="$WORK" \
+  TX_DEPLOY_LIBRARY_ONLY=1 WOTB_TX_DIR="$WORK/rabbit" WOTB_TX_INCOMING_DIR="$WORK/rabbit-incoming" \
+  RELEASE_SHA="$RELEASE_SHA" TAG=sha-0123456789ab \
+  bash -c 'source "$1"; rabbitmq_provider_lock_metadata' _ "$WORK/rabbit-incoming/deploy.sh")"
+[ "$rabbit_metadata" = $'registry.opentofu.org/cyrilgdn/rabbitmq\t1.10.1' ] \
+  || fail "RabbitMQ provider source/version must be parsed exactly from the lockfile (got: $rabbit_metadata)"
+
+run_rabbitmq_deploy() {
+  local log="$1"
+  shift
+  env -i \
+    PATH="$WORK/bin:$WORK/rabbit-tofu-bin:$PATH" HOME="$WORK" \
+    WOTB_TX_DIR="$WORK/rabbit" WOTB_TX_INCOMING_DIR="$WORK/rabbit-incoming" TX_RUNTIME_ROOT="$WORK/rabbit" \
+    TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
+    TX_RABBITMQ_CONTROL_API_PASSWORD=not-real-control-api \
+    TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real-parser-worker \
+    TAG=sha-0123456789ab RELEASE_SHA="$RELEASE_SHA" \
+    WOTB_DEPLOY_SERVICES=rabbitmq WOTB_DEPLOY_IMAGE_SERVICES='' \
+    WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
+    FAKE_DOCKER_LOG="$WORK/rabbit-docker.log" FAKE_TOFU_LOG="$log" \
+    "$@" bash "$WORK/rabbit-incoming/deploy.sh"
+}
+
+rabbit_tofu_log="$WORK/rabbit-tofu.log"
+rabbit_output="$(run_rabbitmq_deploy "$rabbit_tofu_log" 2>&1)" \
+  || fail "rabbitmq-only fresh-host deployment failed: $(tr '\r\n' ' ' <<< "$rabbit_output" | sed -E 's/[[:space:]]+/ /g')"
+expected_rabbit_archive="$WORK/rabbit/tofu-provider-mirror/$RABBITMQ_PROVIDER_DIR/$RABBITMQ_PROVIDER_ARCHIVE"
+[ -f "$expected_rabbit_archive" ] \
+  || fail "RabbitMQ provider bootstrap must install the exact linux_amd64 lockfile version at the canonical mirror path"
+grep -Fq 'RabbitMQ provider mirror installed registry.opentofu.org/cyrilgdn/rabbitmq 1.10.1 (linux_amd64).' <<< "$rabbit_output" \
+  || fail "fresh RabbitMQ deployment must report the lockfile-derived provider install"
+grep -Fq 'RabbitMQ OpenTofu apply and second-plan drift check passed.' <<< "$rabbit_output" \
+  || fail "rabbitmq-only deployment must finish apply and the no-change second-plan gate"
+grep -Fxq 'tx-local-opentofu-rabbitmq' "$WORK/rabbit/rabbitmq.tofu-provisioned" \
+  || fail "successful RabbitMQ reconciliation must write its root-only marker"
+for expected in \
+  "providers mirror -platform=linux_amd64 $WORK/rabbit/tofu-provider-mirror" \
+  'init -reconfigure -input=false -lockfile=readonly' 'validate' \
+  'plan -input=false -no-color -out=plan.tfplan' \
+  'apply -input=false -auto-approve plan.tfplan' \
+  'plan -input=false -no-color -out=second-plan.tfplan'; do
+  grep -Fq "$expected" "$rabbit_tofu_log" \
+    || fail "RabbitMQ OpenTofu must run: $expected"
+done
+install_line="$(grep -nF 'providers mirror -platform=linux_amd64' "$rabbit_tofu_log" | cut -d: -f1)"
+init_line="$(grep -nF 'init -reconfigure -input=false -lockfile=readonly' "$rabbit_tofu_log" | cut -d: -f1)"
+[ -n "$install_line" ] && [ -n "$init_line" ] && [ "$install_line" -lt "$init_line" ] \
+  || fail "RabbitMQ provider mirror must be ready before tofu init"
+for forbidden in keycloak business-postgres business-api wotb-frontend caddy; do
+  ! grep -Fq "up -d --no-deps --force-recreate $forbidden" "$WORK/rabbit-docker.log" \
+    || fail "rabbitmq-only deployment must not start $forbidden"
+done
+
+# An already bootstrapped host reuses the exact package without contacting the
+# provider registry again; init still verifies it against the readonly lockfile.
+: > "$rabbit_tofu_log"
+rabbit_reuse_output="$(run_rabbitmq_deploy "$rabbit_tofu_log" 2>&1)" \
+  || fail "rabbitmq-only idempotent deployment failed: $rabbit_reuse_output"
+grep -Fq 'RabbitMQ provider mirror already contains registry.opentofu.org/cyrilgdn/rabbitmq 1.10.1 (linux_amd64); reusing it.' <<< "$rabbit_reuse_output" \
+  || fail "already bootstrapped RabbitMQ provider must be reused explicitly"
+! grep -Fq 'providers mirror' "$rabbit_tofu_log" \
+  || fail "an exact existing RabbitMQ provider package must not be downloaded again"
+grep -Fq 'init -reconfigure -input=false -lockfile=readonly' "$rabbit_tofu_log" \
+  || fail "idempotent reuse must still run mirror-only tofu init"
+
+# Checksum verification belongs to bootstrap, not merely tofu init: even if a
+# retained release-local provider cache could satisfy init, corrupt mirror bytes
+# must stop the deployment before init or apply.
+printf 'corrupt provider package\n' > "$expected_rabbit_archive"
+mkdir -p "$WORK/rabbit/tofu.incoming/$RELEASE_SHA/infra/tofu/rabbitmq/.terraform/providers"
+rm -f -- "$WORK/rabbit/rabbitmq.tofu-provisioned"
+: > "$rabbit_tofu_log"
+set +e
+rabbit_checksum_output="$(run_rabbitmq_deploy "$rabbit_tofu_log" 2>&1)"
+rabbit_checksum_rc=$?
+set -e
+[ "$rabbit_checksum_rc" -ne 0 ] || fail "a corrupt exact-version RabbitMQ provider must fail deployment"
+grep -Fq 'provider mirror checksum validation failed' <<< "$rabbit_checksum_output" \
+  || fail "RabbitMQ provider checksum mismatch must be diagnosed"
+! grep -Fq 'init -reconfigure' "$rabbit_tofu_log" \
+  || fail "RabbitMQ tofu init must not run after provider checksum failure"
+[ ! -e "$WORK/rabbit/rabbitmq.tofu-provisioned" ] \
+  || fail "provider checksum failure must not write the RabbitMQ provision marker"
+rm -rf -- "$WORK/rabbit/tofu-provider-mirror/$RABBITMQ_PROVIDER_DIR"
+
+# A partial host with a different linux_amd64 RabbitMQ provider is ambiguous and
+# must fail instead of silently installing or selecting another version.
+rm -f -- "$WORK/rabbit/rabbitmq.tofu-provisioned"
+mkdir -p "$WORK/rabbit/tofu-provider-mirror/$RABBITMQ_PROVIDER_DIR"
+touch "$WORK/rabbit/tofu-provider-mirror/$RABBITMQ_PROVIDER_DIR/terraform-provider-rabbitmq_1.9.0_linux_amd64.zip"
+set +e
+rabbit_mismatch_output="$(run_rabbitmq_deploy "$WORK/rabbit-mismatch-tofu.log" 2>&1)"
+rabbit_mismatch_rc=$?
+set -e
+[ "$rabbit_mismatch_rc" -ne 0 ] || fail "a mismatched RabbitMQ provider version must fail deployment"
+grep -Fq 'provider mirror version mismatch' <<< "$rabbit_mismatch_output" \
+  || fail "RabbitMQ provider version mismatch must be diagnosed"
+[ ! -e "$WORK/rabbit/rabbitmq.tofu-provisioned" ] \
+  || fail "provider version mismatch must not write the RabbitMQ provision marker"
+
+# Provider installation failure is a hard deployment failure and cannot reach
+# init, apply, the second plan, or the marker.
+rm -rf -- "$WORK/rabbit/tofu-provider-mirror/$RABBITMQ_PROVIDER_DIR"
+set +e
+rabbit_install_failure_output="$(run_rabbitmq_deploy "$WORK/rabbit-install-failure-tofu.log" \
+  env FAKE_TOFU_MIRROR_FAIL=1 2>&1)"
+rabbit_install_failure_rc=$?
+set -e
+[ "$rabbit_install_failure_rc" -ne 0 ] || fail "RabbitMQ provider install failure must fail deployment"
+grep -Fq 'provider mirror bootstrap failed' <<< "$rabbit_install_failure_output" \
+  || fail "RabbitMQ provider install failure must be diagnosed"
+! grep -Fq 'init -reconfigure' "$WORK/rabbit-install-failure-tofu.log" \
+  || fail "RabbitMQ tofu init must not run after provider install failure"
+[ ! -e "$WORK/rabbit/rabbitmq.tofu-provisioned" ] \
+  || fail "provider install failure must not write the RabbitMQ provision marker"
+
+# The existing second-plan no-change requirement remains a hard gate.
+rm -rf -- "$WORK/rabbit/tofu-provider-mirror/$RABBITMQ_PROVIDER_DIR"
+set +e
+rabbit_dirty_output="$(run_rabbitmq_deploy "$WORK/rabbit-dirty-tofu.log" \
+  env FAKE_TOFU_SECOND_PLAN_FAIL=1 2>&1)"
+rabbit_dirty_rc=$?
+set -e
+[ "$rabbit_dirty_rc" -ne 0 ] || fail "a failed RabbitMQ second plan must fail deployment"
+[ ! -e "$WORK/rabbit/rabbitmq.tofu-provisioned" ] \
+  || fail "a failed RabbitMQ second plan must not write the provision marker"
+
 # Business PostgreSQL-only deployment: start the runtime, wait for pg_isready,
 # run TX-local OpenTofu against its own mirror and state, then record the
 # root-only provisioning marker. No application image, Keycloak, RabbitMQ, or
 # Caddy work may happen on this path.
-readonly RELEASE_SHA=0123456789abcdef0123456789abcdef01234567
 mkdir -p "$WORK/business" "$WORK/business-incoming" "$WORK/tofu-bin" \
   "$WORK/business/tofu-provider-mirror" \
   "$WORK/business/tofu.incoming/$RELEASE_SHA/infra/tofu/postgres-business"
