@@ -174,20 +174,28 @@ jobs:
           bash scripts/ci/run-with-network-retry.sh 'install TX image publication helper' \
             scp -F "$TX_SSH_DIR/config" deploy/tx/publish-loaded-image-to-tcr.sh \
             tx-image-publication:/opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh
-      - name: Import Backend OCI image on TX
+      - name: Transfer Backend OCI archive to TX
         shell: bash
-        env:
-          NETWORK_RETRY_MAX_ATTEMPTS: 2
         run: |
           set -euo pipefail
-          bash scripts/ci/run-with-network-retry.sh 'stream Backend OCI image to TX' \
-            bash scripts/ci/stream-oci-to-tx.sh "$RUNNER_TEMP/backend.oci.tar"
+          bash scripts/ci/transfer-oci-to-tx.sh transfer backend '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}" "$RUNNER_TEMP/backend.oci.tar"
+      - name: Import Backend OCI image on TX
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/transfer-oci-to-tx.sh import backend '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}" "$RUNNER_TEMP/backend.oci.tar"
       - name: Publish Backend loaded image to TCR
         shell: bash
         run: |
           set -euo pipefail
           timeout --kill-after=30s 3300s ssh -F "$TX_SSH_DIR/config" tx-image-publication \
             "mkdir -p /opt/wotb-tx/replication.incoming && flock -w 1800 /opt/wotb-tx/replication.incoming/tcr-publication.lock bash /opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh backend '${{ needs.changes.outputs.tag }}' '$EXPECTED_DIGEST'"
+      - name: Remove Backend remote transfer material
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/transfer-oci-to-tx.sh cleanup backend '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}"
       - name: Remove Backend temporary transfer material
         if: always()
         shell: bash
@@ -259,20 +267,28 @@ jobs:
           bash scripts/ci/run-with-network-retry.sh 'install TX image publication helper' \
             scp -F "$TX_SSH_DIR/config" deploy/tx/publish-loaded-image-to-tcr.sh \
             tx-image-publication:/opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh
-      - name: Import Frontend OCI image on TX
+      - name: Transfer Frontend OCI archive to TX
         shell: bash
-        env:
-          NETWORK_RETRY_MAX_ATTEMPTS: 2
         run: |
           set -euo pipefail
-          bash scripts/ci/run-with-network-retry.sh 'stream Frontend OCI image to TX' \
-            bash scripts/ci/stream-oci-to-tx.sh "$RUNNER_TEMP/frontend.oci.tar"
+          bash scripts/ci/transfer-oci-to-tx.sh transfer frontend '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}" "$RUNNER_TEMP/frontend.oci.tar"
+      - name: Import Frontend OCI image on TX
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/transfer-oci-to-tx.sh import frontend '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}" "$RUNNER_TEMP/frontend.oci.tar"
       - name: Publish Frontend loaded image to TCR
         shell: bash
         run: |
           set -euo pipefail
           timeout --kill-after=30s 3300s ssh -F "$TX_SSH_DIR/config" tx-image-publication \
             "mkdir -p /opt/wotb-tx/replication.incoming && flock -w 1800 /opt/wotb-tx/replication.incoming/tcr-publication.lock bash /opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh frontend '${{ needs.changes.outputs.tag }}' '$EXPECTED_DIGEST'"
+      - name: Remove Frontend remote transfer material
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/transfer-oci-to-tx.sh cleanup frontend '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}"
       - name: Remove Frontend temporary transfer material
         if: always()
         shell: bash
@@ -344,20 +360,28 @@ jobs:
           bash scripts/ci/run-with-network-retry.sh 'install TX image publication helper' \
             scp -F "$TX_SSH_DIR/config" deploy/tx/publish-loaded-image-to-tcr.sh \
             tx-image-publication:/opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh
-      - name: Import Keycloak OCI image on TX
+      - name: Transfer Keycloak OCI archive to TX
         shell: bash
-        env:
-          NETWORK_RETRY_MAX_ATTEMPTS: 2
         run: |
           set -euo pipefail
-          bash scripts/ci/run-with-network-retry.sh 'stream Keycloak OCI image to TX' \
-            bash scripts/ci/stream-oci-to-tx.sh "$RUNNER_TEMP/keycloak.oci.tar"
+          bash scripts/ci/transfer-oci-to-tx.sh transfer keycloak '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}" "$RUNNER_TEMP/keycloak.oci.tar"
+      - name: Import Keycloak OCI image on TX
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/transfer-oci-to-tx.sh import keycloak '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}" "$RUNNER_TEMP/keycloak.oci.tar"
       - name: Publish Keycloak loaded image to TCR
         shell: bash
         run: |
           set -euo pipefail
           timeout --kill-after=30s 3300s ssh -F "$TX_SSH_DIR/config" tx-image-publication \
             "mkdir -p /opt/wotb-tx/replication.incoming && flock -w 1800 /opt/wotb-tx/replication.incoming/tcr-publication.lock bash /opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh keycloak '${{ needs.changes.outputs.tag }}' '$EXPECTED_DIGEST'"
+      - name: Remove Keycloak remote transfer material
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/transfer-oci-to-tx.sh cleanup keycloak '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}"
       - name: Remove Keycloak temporary transfer material
         if: always()
         shell: bash

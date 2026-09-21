@@ -20,7 +20,7 @@ network_retry_helper = root / "scripts/ci/run-with-network-retry.sh"
 network_retry_test = root / "scripts/ci/test-network-retry.sh"
 publication_helper = root / "deploy/tx/publish-loaded-image-to-tcr.sh"
 ssh_setup_helper = root / "scripts/ci/setup-tx-ssh.sh"
-oci_stream_helper = root / "scripts/ci/stream-oci-to-tx.sh"
+oci_transfer_helper = root / "scripts/ci/transfer-oci-to-tx.sh"
 
 assert "name: CI / PR" in ci
 assert "name: CI / Required Gate" in ci
@@ -39,13 +39,27 @@ assert "${{ env.GHCR_IMAGE_PREFIX }}-backend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest" in build
 for component in ("backend", "frontend", "keycloak"):
-    assert f"Import {component.title()} OCI image on TX" in build
+    title = component.title()
+    assert f"Transfer {title} OCI archive to TX" in build
+    assert f"Import {title} OCI image on TX" in build
+    assert f"Publish {title} loaded image to TCR" in build
+    assert f"Remove {title} remote transfer material" in build
+    assert f"bash scripts/ci/transfer-oci-to-tx.sh transfer {component}" in build
+    assert f"bash scripts/ci/transfer-oci-to-tx.sh import {component}" in build
+    assert f"bash scripts/ci/transfer-oci-to-tx.sh cleanup {component}" in build
+# The long-lived OCI stream is gone for good: no gzip pipe and no stdin docker load.
+assert "stream-oci-to-tx.sh" not in build
+assert "gzip" not in build
+assert "docker load" not in build
+assert "oci-import.lock" not in build
 assert "imjasonh/setup-crane@v0.7" not in build
 assert "TCR_IMAGE_PREFIX" not in build
 assert "TCR_USERNAME" not in build and "TCR_PASSWORD" not in build
 assert "deploy/tx/replicate-image-to-tcr.sh" not in build
 assert "appleboy/scp-action@v1" not in build and "appleboy/ssh-action@v1" not in build
-assert publication_helper.is_file() and ssh_setup_helper.is_file() and oci_stream_helper.is_file()
+assert publication_helper.is_file() and ssh_setup_helper.is_file() and oci_transfer_helper.is_file()
+assert not (root / "scripts/ci/stream-oci-to-tx.sh").exists(), \
+    "the obsolete long-lived OCI stream helper must stay deleted"
 helper_text = publication_helper.read_text(encoding="utf-8")
 assert "set -euo pipefail" in helper_text
 assert "backend|frontend|keycloak" in helper_text
@@ -59,18 +73,27 @@ assert "stage=verify-immutable" in helper_text and "stage=update-latest" in help
 assert "docker system prune" not in helper_text
 assert "ghcr.io" not in helper_text and "docker pull" not in helper_text and "crane" not in helper_text
 assert "StrictHostKeyChecking yes" in ssh_setup_helper.read_text(encoding="utf-8")
-assert "gzip -c" in oci_stream_helper.read_text(encoding="utf-8")
-assert "docker load" in oci_stream_helper.read_text(encoding="utf-8")
-assert "flock -w 900" in oci_stream_helper.read_text(encoding="utf-8")
-assert "bash -o pipefail -c" in oci_stream_helper.read_text(encoding="utf-8")
-assert "timeout --kill-after=30s 1200s" in oci_stream_helper.read_text(encoding="utf-8")
-assert "publish-loaded-image-to-tcr.sh" not in oci_stream_helper.read_text(encoding="utf-8")
-assert "run-with-network-retry.sh 'stream Backend OCI image to TX'" in build
-assert "run-with-network-retry.sh 'stream Frontend OCI image to TX'" in build
-assert "run-with-network-retry.sh 'stream Keycloak OCI image to TX'" in build
+transfer_text = oci_transfer_helper.read_text(encoding="utf-8")
+assert "set -euo pipefail" in transfer_text
+assert "rsync" in transfer_text
+assert "--partial" in transfer_text and "--append-verify" in transfer_text
+assert "sha256sum" in transfer_text
+assert "docker load -i" in transfer_text
+assert "flock -w" in transfer_text and "oci-transfer.lock" in transfer_text
+assert "gzip -" not in transfer_text and "bash -o pipefail -c" not in transfer_text
+assert "timeout --kill-after" in transfer_text
+assert "run-with-network-retry.sh" not in transfer_text
+assert "publish-loaded-image-to-tcr.sh" not in transfer_text
+assert "EXPECTED_DIGEST" not in transfer_text
+assert "TCR_PASSWORD" not in transfer_text and "docker pull" not in transfer_text
+assert "crane" not in transfer_text and "ghcr.io" not in transfer_text
 for component in ("Backend", "Frontend", "Keycloak"):
     assert f"Publish {component} loaded image to TCR" in build
+# Publication and import are exactly-once steps; only the rsync upload retries.
 assert "run-with-network-retry.sh 'publish" not in build.lower()
+assert "run-with-network-retry.sh 'transfer" not in build.lower()
+assert "run-with-network-retry.sh 'import" not in build.lower()
+assert "run-with-network-retry.sh 'stream" not in build.lower()
 assert not (root / "scripts/ci/copy-image-to-tcr.sh").exists()
 assert not (root / "deploy/tx/replicate-image-to-tcr.sh").exists()
 assert "TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}" in deploy
