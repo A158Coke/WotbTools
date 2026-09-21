@@ -96,7 +96,9 @@ chmod 700 "$WORK/bin/docker"
 
 run_deploy() {
   local sha="$1" tag="$2" service="$3" image_service="$4" log="$5"
-  local migration_version="${6:-22}"
+  # `${6-22}` (not `:-`) so an explicitly empty migration ceiling stays empty and the
+  # deploy's own fail-closed validation is what rejects it.
+  local migration_version="${6-22}"
   env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
     WOTB_DIR="$WORK" WOTB_INCOMING_DIR="$WORK/incoming" \
     TAG="$tag" RELEASE_SHA="$sha" RELEASE_RUN_NUMBER=7 \
