@@ -4,8 +4,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 python3 - "$ROOT/.github/workflows/build.yml" "$ROOT/.github/workflows/deploy.yml" <<'PY'
+import os
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 import yaml
@@ -17,6 +20,7 @@ build_text = build_path.read_text(encoding="utf-8")
 deploy_text = deploy_path.read_text(encoding="utf-8")
 ci_text = ci_path.read_text(encoding="utf-8")
 tx_deploy_text = (deploy_path.parent.parent.parent / "deploy/tx/deploy.sh").read_text(encoding="utf-8")
+copy_helper = deploy_path.parent.parent.parent / "scripts/ci/copy-image-to-tcr.sh"
 build = yaml.safe_load(build_text)
 deploy = yaml.safe_load(deploy_text)
 ci = yaml.safe_load(ci_text)
@@ -61,14 +65,16 @@ for job_name, output_name in (
     assert "${{ env.GHCR_IMAGE_PREFIX }}-" + image_prefix + ":${{ needs.changes.outputs.tag }}" in tags
     assert "${{ env.GHCR_IMAGE_PREFIX }}-" + image_prefix + ":latest" in tags
     if output_name in {"backend", "frontend", "keycloak"}:
-        assert "${{ env.TCR_IMAGE_PREFIX }}/wotbtools-" + image_prefix + ":${{ needs.changes.outputs.tag }}" in tags
-        assert "${{ env.TCR_IMAGE_PREFIX }}/wotbtools-" + image_prefix + ":latest" in tags
-        parity_step = next((step for step in job["steps"] if step.get("name") == f"Verify {image_prefix.title()} immutable digest parity"), None)
-        assert parity_step is not None, \
-            f"{job_name} must prove GHCR/TCR immutable digest parity after push"
-        assert f'"$GHCR_IMAGE_PREFIX-{image_prefix}:$IMAGE_TAG"' in parity_step["run"]
-        assert f'"$TCR_IMAGE_PREFIX/wotbtools-{image_prefix}:$IMAGE_TAG"' in parity_step["run"]
-        assert '"$ghcr_digest" = "$tcr_digest"' in parity_step["run"]
+        assert "${{ env.TCR_IMAGE_PREFIX }}" not in tags, \
+            f"{job_name} must not direct-push Tencent TCR from BuildKit"
+        crane_setup = next((step for step in job["steps"] if step.get("uses") == "imjasonh/setup-crane@v0.7"), None)
+        assert crane_setup is not None and crane_setup["with"] == {"version": "v0.22.1"}, \
+            f"{job_name} must install the pinned crane release"
+        copy_step = next((step for step in job["steps"] if step.get("name") == f"Copy and verify {image_prefix.title()} immutable image in Tencent TCR"), None)
+        assert copy_step is not None, f"{job_name} must copy and verify the immutable Tencent TCR image"
+        assert f'bash scripts/ci/copy-image-to-tcr.sh {image_prefix} "$IMAGE_TAG" --update-latest' in copy_step["run"]
+        assert job["steps"].index(build_step) < job["steps"].index(copy_step), \
+            f"{job_name} must copy only after the GHCR build succeeds"
     else:
         assert "${{ env.TCR_IMAGE_PREFIX }}" not in tags, \
             f"{job_name} must remain GHCR-only"
@@ -88,6 +94,85 @@ for job_name, output_name in (
     build_args = str(build_step["with"].get("build-args", ""))
     assert "BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}" in build_args, \
         f"{job_name} must inject the frozen release SHA into the image"
+
+assert copy_helper.is_file(), "Build must keep the TCR copy and identity gate in one reusable helper"
+copy_helper_text = copy_helper.read_text(encoding="utf-8")
+assert "set -euo pipefail" in copy_helper_text
+assert "backend|frontend|keycloak" in copy_helper_text
+assert "crane copy" in copy_helper_text
+assert "timeout --kill-after" in copy_helper_text
+assert "COPY_TIMEOUT_SECONDS" in copy_helper_text
+assert "COPY_KILL_AFTER_SECONDS" in copy_helper_text
+assert "crane digest" in copy_helper_text
+assert "docker pull" not in copy_helper_text and "docker push" not in copy_helper_text
+assert "tar " not in copy_helper_text
+assert "sha-[0-9a-f]{12}" in copy_helper_text
+assert "ccr.ccs.tencentyun.com" in copy_helper_text
+assert "source_image" in copy_helper_text and "target_image" in copy_helper_text
+assert "latest" in copy_helper_text and "--update-latest" in copy_helper_text
+
+
+def run_copy_helper(*args, crane_mode="success"):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp = Path(temp_dir)
+        bin_dir = temp / "bin"
+        bin_dir.mkdir()
+        log_path = temp / "crane.log"
+        (bin_dir / "crane").write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf '%s\\n' \"$*\" >> \"$CRANE_LOG\"\n"
+            "case \"$1\" in\n"
+            "  copy)\n"
+            "    if [ \"${CRANE_MODE:-success}\" = copy-fail ]; then exit 19; fi\n"
+            "    if [ \"${CRANE_MODE:-success}\" = copy-timeout ]; then\n"
+            "      trap '' TERM\n"
+            "      ( trap '' TERM; sleep 10 ) & wait \"$!\"\n"
+            "    fi ;;\n"
+            "  digest)\n"
+            "    if [ \"${CRANE_MODE:-success}\" = digest-mismatch ] && [[ \"$2\" == *ccr.ccs.tencentyun.com* ]]; then\n"
+            "      echo sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+            "    else\n"
+            "      echo sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+            "    fi ;;\n"
+            "  *) exit 20 ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        (bin_dir / "crane").chmod(0o755)
+        environment = {
+            **os.environ,
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "CRANE_LOG": str(log_path),
+            "CRANE_MODE": crane_mode,
+            "GHCR_IMAGE_PREFIX": "ghcr.io/a158coke/wotbtools",
+            "TCR_IMAGE_PREFIX": "ccr.ccs.tencentyun.com/wotbtools",
+            "COPY_TIMEOUT_SECONDS": "1",
+            "COPY_KILL_AFTER_SECONDS": "1",
+        }
+        started_at = time.monotonic()
+        result = subprocess.run(["bash", str(copy_helper), *args], capture_output=True, text=True, env=environment)
+        elapsed_seconds = time.monotonic() - started_at
+        return result, log_path.read_text(encoding="utf-8") if log_path.exists() else "", elapsed_seconds
+
+
+success, success_log, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", "--update-latest")
+assert success.returncode == 0, success.stderr
+assert "copy ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:sha-aaaaaaaaaaaa" in success_log
+assert "copy ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:latest" in success_log
+bad_component, _, _ = run_copy_helper("minio", "sha-aaaaaaaaaaaa")
+assert bad_component.returncode != 0
+bad_tag, _, _ = run_copy_helper("backend", "latest")
+assert bad_tag.returncode != 0
+copy_failure, copy_failure_log, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", "--update-latest", crane_mode="copy-fail")
+assert copy_failure.returncode != 0
+assert ":latest" not in copy_failure_log, "latest must not update after immutable copy failure"
+copy_timeout, copy_timeout_log, copy_timeout_elapsed_seconds = run_copy_helper("backend", "sha-aaaaaaaaaaaa", "--update-latest", crane_mode="copy-timeout")
+assert copy_timeout.returncode != 0
+assert ":latest" not in copy_timeout_log, "latest must not update after immutable copy timeout"
+assert copy_timeout_elapsed_seconds < 5, "TERM-ignoring crane must be hard-killed before it can naturally exit"
+digest_mismatch, _, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", crane_mode="digest-mismatch")
+assert digest_mismatch.returncode != 0, "immutable digest mismatch must fail closed"
 
 manifest_job = build_jobs["manifest"]
 assert "always()" in manifest_job["if"]

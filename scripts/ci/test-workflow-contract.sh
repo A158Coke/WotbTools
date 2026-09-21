@@ -18,6 +18,7 @@ local_settings_text = (root / "java/settings.xml").read_text(encoding="utf-8")
 android_settings_text = (root / "android/settings.gradle.kts").read_text(encoding="utf-8")
 network_retry_helper = root / "scripts/ci/run-with-network-retry.sh"
 network_retry_test = root / "scripts/ci/test-network-retry.sh"
+copy_helper = root / "scripts/ci/copy-image-to-tcr.sh"
 
 assert "name: CI / PR" in ci
 assert "name: CI / Required Gate" in ci
@@ -36,13 +37,24 @@ assert "${{ env.GHCR_IMAGE_PREFIX }}-backend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest" in build
 for component in ("backend", "frontend", "keycloak"):
-    assert f"${{{{ env.TCR_IMAGE_PREFIX }}}}/wotbtools-{component}:${{{{ needs.changes.outputs.tag }}}}" in build
-    assert f"${{{{ env.TCR_IMAGE_PREFIX }}}}/wotbtools-{component}:latest" in build
+    assert f"${{{{ env.TCR_IMAGE_PREFIX }}}}/wotbtools-{component}:${{{{ needs.changes.outputs.tag }}}}" not in build
+    assert f"${{{{ env.TCR_IMAGE_PREFIX }}}}/wotbtools-{component}:latest" not in build
 assert "${{ env.TCR_IMAGE_PREFIX }}/wotbtools-minio" not in build
 assert "${{ env.TCR_IMAGE_PREFIX }}/wotbtools-parser-worker" not in build
-assert "Verify Backend immutable digest parity" in build
-assert "Verify Frontend immutable digest parity" in build
-assert "Verify Keycloak immutable digest parity" in build
+assert build.count("imjasonh/setup-crane@v0.7") == 3
+assert build.count("version: v0.22.1") == 3
+assert "Copy and verify Backend immutable image in Tencent TCR" in build
+assert "Copy and verify Frontend immutable image in Tencent TCR" in build
+assert "Copy and verify Keycloak immutable image in Tencent TCR" in build
+assert "docker buildx imagetools inspect" not in build
+assert copy_helper.is_file()
+copy_helper_text = copy_helper.read_text(encoding="utf-8")
+assert "set -euo pipefail" in copy_helper_text
+assert "crane copy" in copy_helper_text and "crane digest" in copy_helper_text
+assert "timeout --kill-after" in copy_helper_text
+assert "COPY_KILL_AFTER_SECONDS" in copy_helper_text
+assert "backend|frontend|keycloak" in copy_helper_text
+assert "docker pull" not in copy_helper_text and "docker push" not in copy_helper_text
 assert "TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}" in deploy
 assert "TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}" in deploy
 assert "TX_IMAGE_SERVICES" in deploy

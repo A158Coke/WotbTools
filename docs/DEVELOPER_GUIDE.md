@@ -710,7 +710,7 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 Build 在 `main` 成功 push 后只为 affected application 构建 component-local 的
 immutable `sha-<12 位 SHA>` 与 `latest` 镜像 tag，并把冻结的完整 SHA 注入
 Backend `StartupReleaseDiagnostics`、Frontend `dist/version.json` 的 `buildCommit` 与 Keycloak 启动日志；backend diagnostics 同时输出由完整 SHA 推导的 immutable image tag，上传唯一
-`deployment-manifest`；backend/frontend/keycloak 以一次构建双推 GHCR 与 Tencent TCR，并在 immutable tag 上 fail-closed 验证跨 registry digest 相等：**GHCR 是 Yecao image source 与 TX application images 的 secondary recovery copy，Tencent TCR 是 TX runtime image source**。TX host 的 Docker TCR 登录是 deployment-owned persistent credential，不写入 Compose、metadata 或 application environment。MinIO Dockerfile 改动还会构建同样 immutable tag 的源码固定
+`deployment-manifest`；backend/frontend/keycloak 各只构建一次并先发布 GHCR，随后将该 immutable GHCR artifact registry-copy 到 Tencent TCR，并在 immutable tag 上 fail-closed 验证跨 registry digest 相等：**GHCR 是 Yecao image source 与 TX application images 的 secondary recovery copy，Tencent TCR 是 TX runtime image source**。`latest` 只同步同一 immutable artifact，不能作为 deploy identity；任一 TCR copy 或 identity check 失败则 Build 不成功、不会产生 manifest。TX host 的 Docker TCR 登录是 deployment-owned persistent credential，不写入 Compose、metadata 或 application environment。MinIO Dockerfile 改动还会构建同样 immutable tag 的源码固定
 MinIO 镜像，但没有 runtime deploy service。自动 Deploy 只由成功的 Build `workflow_run` 接力，
 不再提供普通应用 Deploy 的手工入口。事故操作使用仅
 `workflow_dispatch` 的 `.github/workflows/ops-recovery.yml`。纯
