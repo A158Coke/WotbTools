@@ -91,7 +91,7 @@ pull_source_with_retry() {
 resolve_registry_digest() {
   local image="$1" digest
   digest="$(timeout --kill-after="${KILL_AFTER_SECONDS}s" "${DIGEST_TIMEOUT_SECONDS}s" \
-    docker buildx imagetools inspect --format '{{.Digest}}' "$image")" || return 1
+    docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image")" || return 1
   [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
   printf '%s\n' "$digest"
 }

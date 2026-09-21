@@ -49,6 +49,8 @@ assert "set -euo pipefail" in helper_text
 assert "backend|frontend|keycloak" in helper_text
 assert "docker pull" in helper_text and "docker push" in helper_text
 assert "docker buildx imagetools inspect" in helper_text
+assert "{{.Manifest.Digest}}" in helper_text
+assert "{{.Digest}}" not in helper_text
 assert "GHCR_PULL_ATTEMPTS" in helper_text and "timeout --kill-after" in helper_text
 assert "stage=replication-start" in helper_text and "stage=replication-end" in helper_text
 assert "stage=verify-immutable" in helper_text and "stage=update-latest" in helper_text
