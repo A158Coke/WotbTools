@@ -206,8 +206,15 @@ assert "usage: %s <backend|frontend|keycloak> <sha-12>" in helper_text, \
     "publication takes only the component and the immutable tag"
 assert "timeout --kill-after" in helper_text or "KILL_AFTER_SECONDS" in helper_text
 assert "stage=publication-start" in helper_text and "stage=publication-end" in helper_text
-assert "stage=push-immutable" in helper_text
+# The publication stage names are now emitted by the retry runner, so the wiring is what
+# proves the stages exist: the immutable push and its read-back are the two bounded-retry
+# TCR network boundaries, and the latest update stays deterministic.
 assert "stage=verify-immutable" in helper_text and "stage=update-latest" in helper_text
+assert "run_tcr_stage push-immutable" in helper_text
+assert "run_tcr_stage verify-immutable" in helper_text
+assert "is_transient_tcr_failure" in helper_text
+assert "run_tcr_stage update-latest" not in helper_text, \
+    "the latest update stays a single fail-closed attempt"
 assert "docker system prune" not in helper_text and "docker image prune" not in helper_text
 assert "TCR_USERNAME" not in helper_text and "TCR_PASSWORD" not in helper_text
 # The helper derives the loaded reference itself, so it owns the registry prefix
