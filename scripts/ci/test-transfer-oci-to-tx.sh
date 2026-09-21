@@ -72,13 +72,50 @@ readonly LOCK_PATH="/opt/wotb-tx/replication.incoming/oci-transfer.lock"
 # Fake runner-side binaries
 # ---------------------------------------------------------------------------
 
+# Runner-side `timeout`: records the budget it was given and, for the serialized TX
+# import, behaves like the real wrapper — a monitored operation that cannot fit in
+# the budget is killed with 124.
 cat > "$WORK/bin/timeout" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-while [[ "${1:-}" == --* || "${1:-}" == *s ]]; do
-  shift
+budget=""
+args=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --kill-after=*) shift ;;
+    [0-9]*s) budget="${1%s}"; shift ;;
+    *) args=("$@"); break ;;
+  esac
 done
-exec "$@"
+printf 'budget=%s args=%s\n' "$budget" "${args[*]}" >> "$RUNNER_TIMEOUT_LOG"
+if [ -n "$budget" ] && [ -n "${SIM_REMOTE_SECONDS:-}" ] && [[ "${args[*]}" == *"docker load"* ]]; then
+  if [ "$SIM_REMOTE_SECONDS" -ge "$budget" ]; then
+    printf 'timeout: the monitored command timed out\n' >&2
+    exit 124
+  fi
+fi
+exec "${args[@]}"
+EOF
+
+# Remote-side `timeout`: the inner budget around `docker load` on TX.
+cat > "$WORK/remote-bin/timeout" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+budget=""
+args=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --kill-after=*) shift ;;
+    [0-9]*s) budget="${1%s}"; shift ;;
+    *) args=("$@"); break ;;
+  esac
+done
+printf 'budget=%s args=%s\n' "$budget" "${args[*]}" >> "$REMOTE_TIMEOUT_LOG"
+if [ -n "$budget" ] && [ -n "${SIM_LOAD_SECONDS:-}" ] && [ "$SIM_LOAD_SECONDS" -ge "$budget" ]; then
+  printf 'timeout: sending signal TERM to command docker\n' >&2
+  exit 124
+fi
+exec "${args[@]}"
 EOF
 
 cat > "$WORK/remote-bin/docker" <<'EOF'
@@ -119,7 +156,7 @@ if [ "$mode" = transport-drop ]; then
     exit 255
   fi
 fi
-for tool in rsync docker sha256sum flock; do
+for tool in rsync docker sha256sum flock timeout; do
   if [ "$mode" = "missing-$tool" ]; then
     case "$command" in
       "command -v $tool"*) exit 1 ;;
@@ -191,7 +228,7 @@ case "${RSYNC_MODE:-success}" in
 esac
 EOF
 
-chmod 700 "$WORK/bin/timeout" "$WORK/bin/ssh" "$WORK/bin/rsync" "$WORK/remote-bin/docker"
+chmod 700 "$WORK/bin/timeout" "$WORK/bin/ssh" "$WORK/bin/rsync" "$WORK/remote-bin/docker" "$WORK/remote-bin/timeout"
 
 # ---------------------------------------------------------------------------
 # Case harness: one job-scoped sandbox per label, shared by every mode of that
@@ -206,6 +243,8 @@ reset_modes() {
   RSYNC_MODE=success
   REMOTE_DOCKER_MODE=success
   TRANSFER_MAX_ATTEMPTS=""
+  SIM_REMOTE_SECONDS=""
+  SIM_LOAD_SECONDS=""
 }
 
 run_case() {
@@ -219,6 +258,8 @@ run_case() {
     : > "$CASE_DIR/ssh.log"
     : > "$CASE_DIR/rsync.log"
     : > "$CASE_DIR/docker.log"
+    : > "$CASE_DIR/runner-timeout.log"
+    : > "$CASE_DIR/remote-timeout.log"
     : > "$CASE_DIR/rsync.count"
     rm -f "$CASE_DIR/resume.bytes" "$CASE_DIR/ssh.count"
   fi
@@ -249,9 +290,13 @@ run_case() {
     RSYNC_COUNT="$CASE_DIR/rsync.count" \
     RSYNC_RESUME_FILE="$CASE_DIR/resume.bytes" \
     REMOTE_DOCKER_LOG="$CASE_DIR/docker.log" \
+    RUNNER_TIMEOUT_LOG="$CASE_DIR/runner-timeout.log" \
+    REMOTE_TIMEOUT_LOG="$CASE_DIR/remote-timeout.log" \
     SSH_MODE="$SSH_MODE" \
     RSYNC_MODE="$RSYNC_MODE" \
     REMOTE_DOCKER_MODE="$REMOTE_DOCKER_MODE" \
+    SIM_REMOTE_SECONDS="$SIM_REMOTE_SECONDS" \
+    SIM_LOAD_SECONDS="$SIM_LOAD_SECONDS" \
     TRANSFER_MAX_ATTEMPTS="$TRANSFER_MAX_ATTEMPTS" \
     TRANSFER_BACKOFF_FIRST_SECONDS=0 \
     TRANSFER_BACKOFF_LATER_SECONDS=0 \
@@ -277,6 +322,8 @@ run_raw() {
     RSYNC_COUNT="$WORK/raw-rsync.count" \
     RSYNC_RESUME_FILE="$WORK/raw-resume.bytes" \
     REMOTE_DOCKER_LOG="$WORK/raw-docker.log" \
+    RUNNER_TIMEOUT_LOG="$WORK/raw-runner-timeout.log" \
+    REMOTE_TIMEOUT_LOG="$WORK/raw-remote-timeout.log" \
     SSH_MODE="${SSH_MODE:-success}" \
     RSYNC_MODE="${RSYNC_MODE:-success}" \
     REMOTE_DOCKER_MODE="${REMOTE_DOCKER_MODE:-success}" \
@@ -378,6 +425,23 @@ assert_no_grep "$HELPER" "latest"
 assert_no_grep "$HELPER" "StrictHostKeyChecking=no"
 assert_no_grep "$HELPER" "eval "
 assert_equal "1" "$(grep -c 'docker load -i' <<<"$HELPER_TEXT")" "docker load must have exactly one call site"
+# Import budgets: the outer SSH wrapper must outlive the lock wait *and* the load,
+# while `docker load` keeps its own bounded remote timeout.
+lock_wait="$(grep -oE '^readonly IMPORT_LOCK_WAIT_SECONDS=[0-9]+' "$HELPER" | cut -d= -f2)"
+load_timeout="$(grep -oE '^readonly LOAD_TIMEOUT_SECONDS=[0-9]+' "$HELPER" | cut -d= -f2)"
+total_expr="$(grep -oE '^readonly IMPORT_TOTAL_TIMEOUT_SECONDS=.*' "$HELPER" | cut -d= -f2-)"
+[ -n "$lock_wait" ] && [ -n "$load_timeout" ] && [ -n "$total_expr" ] \
+  || fail "the serialized import timeout constants are missing"
+# Resolve the composed budget exactly as the helper writes it.
+total_body="$(sed -e 's/^\$((//' -e 's/))$//' <<<"$total_expr")"
+total_body="${total_body//IMPORT_LOCK_WAIT_SECONDS/$lock_wait}"
+total_body="${total_body//LOAD_TIMEOUT_SECONDS/$load_timeout}"
+import_total_timeout=$((total_body))
+[ "$import_total_timeout" -gt "$((lock_wait + load_timeout))" ] \
+  || fail "the outer import timeout ($import_total_timeout) must exceed lock wait ($lock_wait) + load budget ($load_timeout)"
+assert_grep "$HELPER" 'timeout --kill-after="$KILL_AFTER" "${IMPORT_TOTAL_TIMEOUT_SECONDS}s"'
+assert_grep "$HELPER" "flock -w \$IMPORT_LOCK_WAIT_SECONDS '\$IMPORT_LOCK' timeout --kill-after=\$KILL_AFTER \${LOAD_TIMEOUT_SECONDS}s docker load -i"
+assert_grep "$HELPER" "for tool in docker sha256sum flock timeout; do"
 # No long-lived pipe into docker load: the pipe pattern and gzip are both gone.
 if grep -Eq '\|[[:space:]]*docker[[:space:]]+load' <<<"$HELPER_TEXT"; then
   fail "docker load must not read from a pipe"
@@ -519,7 +583,7 @@ assert_grep "$CASE_DIR/ssh.log" "command -v docker"
 assert_grep "$CASE_DIR/ssh.log" "command -v sha256sum"
 assert_grep "$CASE_DIR/ssh.log" "command -v flock"
 assert_grep "$CASE_DIR/ssh.log" "sha256sum -- '$REMOTE_ARCHIVE'"
-assert_grep "$CASE_DIR/ssh.log" "flock -w 1800 '$LOCK_PATH' docker load -i '$REMOTE_ARCHIVE'"
+assert_grep "$CASE_DIR/ssh.log" "flock -w $lock_wait '$LOCK_PATH' timeout --kill-after=30s ${load_timeout}s docker load -i '$REMOTE_ARCHIVE'"
 assert_grep "$CASE_DIR/ssh.log" "docker image inspect --format '{{.Id}}' 'wotb-transfer/$COMPONENT:$TAG'"
 assert_load_count "$CASE_DIR/docker.log" 1
 assert_grep "$CASE_DIR/docker.log" "load -i $(sandbox_archive)"
@@ -567,7 +631,7 @@ done
 reset_modes
 
 # Missing TX prerequisites fail with the tool name instead of a bare SSH error.
-for tool in docker sha256sum flock; do
+for tool in docker sha256sum flock timeout; do
   reset_modes
   SSH_MODE="missing-$tool"
   run_case "missing-tool-$tool" transfer
@@ -585,6 +649,57 @@ run_case missing-tool-rsync transfer
 assert_rc_nonzero "missing TX rsync"
 assert_grep "$CASE_DIR/stderr" "TX is missing a required tool: rsync"
 assert_lines "$CASE_DIR/rsync.log" 0
+reset_modes
+
+# ---------------------------------------------------------------------------
+# import budgets: lock wait and load are bounded independently, and the outer
+# wrapper outlives both (a waiter parked past the load budget must survive)
+# ---------------------------------------------------------------------------
+
+reset_modes
+run_case import-budget transfer
+assert_rc_zero "import budget fixture transfer"
+
+# The simulated remote command parks on the lock for longer than the load budget:
+# only the composed outer budget may cover that, and the lock policy must hold.
+SIM_REMOTE_SECONDS=$((load_timeout + 100))
+run_case import-budget import
+assert_rc_zero "lock wait beyond the load budget"
+assert_load_count "$CASE_DIR/docker.log" 1
+outer_budget="$(grep -F 'docker load' "$CASE_DIR/runner-timeout.log" | tail -n1 \
+  | sed -n 's/^budget=\([0-9]*\).*/\1/p')"
+[ "$outer_budget" = "$import_total_timeout" ] \
+  || fail "the outer import wrapper must use the composed budget ($import_total_timeout), got '$outer_budget'"
+[ "$outer_budget" -gt "$lock_wait" ] \
+  || fail "the outer import wrapper must outlive the ${lock_wait}s lock wait"
+inner_budget="$(grep -F 'docker load' "$CASE_DIR/remote-timeout.log" | tail -n1 \
+  | sed -n 's/^budget=\([0-9]*\).*/\1/p')"
+[ "$inner_budget" = "$load_timeout" ] \
+  || fail "docker load must keep its own ${load_timeout}s remote budget, got '$inner_budget'"
+reset_modes
+
+# Negative control: the simulated wrapper does kill a remote operation that cannot
+# fit in the composed budget, so the positive lock-wait case above is meaningful
+# and not a vacuous pass.
+run_case import-budget-negative transfer
+assert_rc_zero "negative-control fixture transfer"
+SIM_REMOTE_SECONDS=$((import_total_timeout + 60))
+run_case import-budget-negative import
+assert_rc_nonzero "lock wait beyond the composed budget"
+assert_load_count "$CASE_DIR/docker.log" 0
+reset_modes
+
+# The inner remote budget still bounds docker load itself, and tripping it fails
+# the import without any retry.
+run_case import-inner-timeout transfer
+assert_rc_zero "inner timeout fixture transfer"
+SIM_LOAD_SECONDS=$((load_timeout + 1))
+run_case import-inner-timeout import
+assert_rc_nonzero "docker load exceeding its own budget"
+assert_grep "$CASE_DIR/stderr" "docker load of the verified TX archive failed"
+assert_load_count "$CASE_DIR/docker.log" 0
+assert_equal "1" "$(grep -cF "flock -w $lock_wait" "$CASE_DIR/ssh.log" || true)" \
+  "a docker load that trips its own budget must not be retried"
 reset_modes
 
 # ---------------------------------------------------------------------------
