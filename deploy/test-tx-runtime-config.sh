@@ -7,6 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TX_DIR="$ROOT/deploy/tx"
 COMPOSE="$TX_DIR/docker-compose.yml"
 TEMPLATE="$TX_DIR/nginx/frontend.conf.template"
+
 WORK="$(mktemp -d)"
 readonly MINIO_CONTAINER="wotb-tx-e2e-minio-$$"
 readonly MINIO_IMAGE="quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
@@ -100,8 +101,22 @@ grep -Fq '      - caddy' <<< "$frontend_block" \
 # distributed-only replay execution plane.
 business_api_block="$(sed -n '/^  business-api:/,/^  [A-Za-z0-9_-]*:$/p' "$COMPOSE")"
 [ -n "$business_api_block" ] || fail "TX Compose must define the business-api runtime"
-grep -Fq 'ghcr.io/a158coke/wotbtools-backend:${TAG:?TAG is required}' <<< "$business_api_block" \
-  || fail "business-api must run the immutable backend image"
+grep -Fq '${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}/wotbtools-backend:${TAG:?TAG is required}' <<< "$business_api_block" \
+  || fail "business-api must run the immutable Tencent TCR backend image"
+readonly TCR_IMAGE_PREFIX_TEMPLATE='${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}'
+for tcr_image in \
+  'wotbtools-keycloak:${TAG:?TAG is required}' \
+  'wotbtools-frontend:${TAG:?TAG is required}' \
+  'wotbtools-backend:${TAG:?TAG is required}'; do
+  grep -Fq "$TCR_IMAGE_PREFIX_TEMPLATE/$tcr_image" "$COMPOSE" \
+    || fail "TX Compose must use Tencent TCR for $tcr_image"
+done
+! grep -Eq 'ghcr\.io/a158coke/wotbtools-(backend|frontend|keycloak)' "$COMPOSE" \
+  || fail "TX application images must not fall back to GHCR"
+! grep -Fq 'ghcr.io/a158coke/wotbtools-' "$TX_DIR/deploy.sh" \
+  || fail "TX deploy must reject GHCR application-image parsing or rendering"
+grep -Fq 'TX_IMAGE_REGISTRY_PREFIX must be a Tencent TCR namespace' "$TX_DIR/deploy.sh" \
+  || fail "TX deploy must keep its image-prefix override constrained to Tencent TCR"
 ! grep -Eq '^    ports:' <<< "$business_api_block" \
   || fail "business-api must never publish a port; only TX-internal peers may reach it"
 for contract in \
