@@ -277,10 +277,11 @@ grep -q '"parser-worker"' "$WORK/production-release.json"
 
 # The backend migration ceiling stays mandatory for every deploy that actually ships the backend
 # image, so the relaxed parser-worker path cannot leak into the application deploy.
-while IFS=$'\t' read -r migration_service migration_image migration_version; do
-  [ -n "$migration_service" ] && [ -n "$migration_image" ] || continue
-  migration_log="$WORK/migration-$migration_service-${migration_version:-empty}.log"
+assert_migration_ceiling_rejected() {
+  local migration_service="$1" migration_image="$2" migration_version="$3"
+  local migration_log="$WORK/migration-$migration_service-${migration_version:-empty}.log"
   : > "$migration_log"
+  local migration_output migration_rc
   set +e
   migration_output="$(run_deploy bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sha-bbbbbbbbbbbb \
     "$migration_service" "$migration_image" "$migration_log" "$migration_version" 2>&1)"
@@ -292,11 +293,10 @@ while IFS=$'\t' read -r migration_service migration_image migration_version; do
     || { echo "FAIL: $migration_service rejected the migration ceiling with an unexpected error" >&2; exit 1; }
   [ ! -s "$migration_log" ] \
     || { echo "FAIL: $migration_service rejected the migration ceiling only after touching containers" >&2; exit 1; }
-done <<'CASES'
-wotb-backend	wotb-backend	
-all	all	
-wotb-backend	wotb-backend	not-a-number
-CASES
+}
+assert_migration_ceiling_rejected wotb-backend wotb-backend ""
+assert_migration_ceiling_rejected all all ""
+assert_migration_ceiling_rejected wotb-backend wotb-backend not-a-number
 
 # Selecting the service without its credentials must fail closed before any container is touched.
 set +e
