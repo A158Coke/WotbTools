@@ -5,8 +5,17 @@ readonly COPY_TIMEOUT_SECONDS="${COPY_TIMEOUT_SECONDS:-600}"
 readonly COPY_KILL_AFTER_SECONDS="${COPY_KILL_AFTER_SECONDS:-30}"
 readonly GHCR_PREFIX="${GHCR_IMAGE_PREFIX:-}"
 readonly TCR_PREFIX="${TCR_IMAGE_PREFIX:-}"
+replication_started_at=""
+replication_started_epoch=""
 
 fail() {
+  if [ -n "$replication_started_epoch" ]; then
+    local replication_ended_at
+    local replication_ended_epoch
+    replication_ended_at="$(timestamp)"
+    replication_ended_epoch="$(date -u +%s)"
+    echo "[$replication_ended_at] component=${component:-unknown} stage=replication-end result=FAIL started_at=$replication_started_at ended_at=$replication_ended_at elapsed_seconds=$((replication_ended_epoch - replication_started_epoch))" >&2
+  fi
   echo "::error::$*" >&2
   exit 1
 }
@@ -40,6 +49,9 @@ esac
 
 source_image="$GHCR_PREFIX-$component:$image_tag"
 target_image="$TCR_PREFIX/wotbtools-$component:$image_tag"
+replication_started_at="$(timestamp)"
+replication_started_epoch="$(date -u +%s)"
+echo "[$replication_started_at] component=$component stage=replication-start source=$source_image target=$target_image"
 
 copy_image() {
   local stage="$1"
@@ -53,6 +65,12 @@ copy_image immutable "$target_image"
 if [ "$update_latest" = "--update-latest" ]; then
   copy_image latest "$TCR_PREFIX/wotbtools-$component:latest"
 fi
+
+replication_ended_at="$(timestamp)"
+replication_ended_epoch="$(date -u +%s)"
+echo "[$replication_ended_at] component=$component stage=replication-end result=PASS started_at=$replication_started_at ended_at=$replication_ended_at elapsed_seconds=$((replication_ended_epoch - replication_started_epoch))"
+replication_started_at=""
+replication_started_epoch=""
 
 echo "[$(timestamp)] component=$component stage=verify-immutable source=$source_image target=$target_image"
 source_digest="$(crane digest "$source_image")" || fail "cannot resolve GHCR immutable digest for component=$component"

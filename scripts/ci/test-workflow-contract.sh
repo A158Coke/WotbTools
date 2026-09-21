@@ -53,6 +53,9 @@ assert "set -euo pipefail" in copy_helper_text
 assert "crane copy" in copy_helper_text and "crane digest" in copy_helper_text
 assert "timeout --kill-after" in copy_helper_text
 assert "COPY_KILL_AFTER_SECONDS" in copy_helper_text
+assert "stage=replication-start" in copy_helper_text
+assert "stage=replication-end" in copy_helper_text
+assert "elapsed_seconds=" in copy_helper_text
 assert "backend|frontend|keycloak" in copy_helper_text
 assert "docker pull" not in copy_helper_text and "docker push" not in copy_helper_text
 assert "TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}" in deploy

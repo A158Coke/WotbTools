@@ -4,7 +4,7 @@
 
 ## [Unreleased]
 
-- **TX application images via Tencent TCR**：backend、frontend、keycloak 各只构建一次并先发布 GHCR 的 immutable `sha-<12>` artifact；Build 再将这个 artifact registry-copy 到 `ccr.ccs.tencentyun.com/wotbtools` 并从同一 immutable source 更新 TCR `latest`，随后 fail-closed 比较 GHCR/TCR immutable manifest digest。copy/identity 任一步失败都会阻止 deployment manifest；TX Compose、TX deploy pull 与 immutable image-existence gate 继续使用 TCR。GHCR 是 Yecao/source recovery registry；Yecao parser-worker 与 MinIO 保持 GHCR。TX host 的持久 Docker credential store 仍归 deployment owner，仓库不会把 `TCR_USERNAME` / `TCR_PASSWORD` 传给 TX、写入 Compose、metadata 或应用环境。DNS 与运行时服务拓扑未改变。
+- **TX application images via Tencent TCR**：backend、frontend、keycloak 各只构建一次并先发布 GHCR 的 immutable `sha-<12>` artifact；Build 再以 GitHub-hosted runner 上的有界、可独立重试的 `crane` replication stage 将这个 artifact 复制到 `ccr.ccs.tencentyun.com/wotbtools`，并从同一 immutable source 更新 TCR `latest`，随后 fail-closed 比较 GHCR/TCR immutable manifest digest。该 client-side copy **不保证**避开 GitHub runner → TCR 的 blob 传输，不能在真实 Actions 计时前宣称解决 TCR 上传瓶颈；每个组件会记录 replication start/end UTC timestamp 与 elapsed seconds，合入后的 main Build 是性能基准。copy/identity 任一步失败都会阻止 deployment manifest；TX Compose、TX deploy pull 与 immutable image-existence gate 继续使用 TCR。GHCR 是 Yecao/source recovery registry；Yecao parser-worker 与 MinIO 保持 GHCR。TX host 的持久 Docker credential store 仍归 deployment owner，仓库不会把 `TCR_USERNAME` / `TCR_PASSWORD` 传给 TX、写入 Compose、metadata 或应用环境。DNS 与运行时服务拓扑未改变。
 
 ### Added
 
