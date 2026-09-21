@@ -39,7 +39,7 @@ assert "${{ env.GHCR_IMAGE_PREFIX }}-backend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest" in build
 for component in ("backend", "frontend", "keycloak"):
-    assert f"Stream {component.title()} OCI image to TX and publish TCR" in build
+    assert f"Import {component.title()} OCI image on TX" in build
 assert "imjasonh/setup-crane@v0.7" not in build
 assert "TCR_IMAGE_PREFIX" not in build
 assert "TCR_USERNAME" not in build and "TCR_PASSWORD" not in build
@@ -61,10 +61,16 @@ assert "ghcr.io" not in helper_text and "docker pull" not in helper_text and "cr
 assert "StrictHostKeyChecking yes" in ssh_setup_helper.read_text(encoding="utf-8")
 assert "gzip -c" in oci_stream_helper.read_text(encoding="utf-8")
 assert "docker load" in oci_stream_helper.read_text(encoding="utf-8")
-assert "flock -w" in oci_stream_helper.read_text(encoding="utf-8")
+assert "flock -w 900" in oci_stream_helper.read_text(encoding="utf-8")
 assert "bash -o pipefail -c" in oci_stream_helper.read_text(encoding="utf-8")
-assert r'exec bash \"\$0\"' in oci_stream_helper.read_text(encoding="utf-8")
-assert "timeout --kill-after=30s 3300s" in oci_stream_helper.read_text(encoding="utf-8")
+assert "timeout --kill-after=30s 1200s" in oci_stream_helper.read_text(encoding="utf-8")
+assert "publish-loaded-image-to-tcr.sh" not in oci_stream_helper.read_text(encoding="utf-8")
+assert "run-with-network-retry.sh 'stream Backend OCI image to TX'" in build
+assert "run-with-network-retry.sh 'stream Frontend OCI image to TX'" in build
+assert "run-with-network-retry.sh 'stream Keycloak OCI image to TX'" in build
+for component in ("Backend", "Frontend", "Keycloak"):
+    assert f"Publish {component} loaded image to TCR" in build
+assert "run-with-network-retry.sh 'publish" not in build.lower()
 assert not (root / "scripts/ci/copy-image-to-tcr.sh").exists()
 assert not (root / "deploy/tx/replicate-image-to-tcr.sh").exists()
 assert "TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}" in deploy
