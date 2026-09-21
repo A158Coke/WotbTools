@@ -80,18 +80,24 @@ for job_name, output_name in (
         assert "EXPECTED_DIGEST" in digest_step["run"]
         ssh_setup_step = next(step for step in job["steps"] if step.get("name") == "Set up native TX SSH")
         install_step = next(step for step in job["steps"] if step.get("name") == "Install TX loaded-image publication helper")
-        stream_step = next(step for step in job["steps"] if step.get("name") == f"Stream {image_prefix.title()} OCI image to TX and publish TCR")
+        stream_step = next(step for step in job["steps"] if step.get("name") == f"Import {image_prefix.title()} OCI image on TX")
+        publish_step = next(step for step in job["steps"] if step.get("name") == f"Publish {image_prefix.title()} loaded image to TCR")
         assert "setup-tx-ssh.sh" in ssh_setup_step["run"]
         assert "TX_VPS_SSH_KEY" in str(ssh_setup_step)
         assert "scp -F \"$TX_SSH_DIR/config\"" in install_step["run"]
         assert "publish-loaded-image-to-tcr.sh" in install_step["run"]
         assert "stream-oci-to-tx.sh" in stream_step["run"]
         assert stream_step["env"]["NETWORK_RETRY_MAX_ATTEMPTS"] == 2
-        assert "EXPECTED_DIGEST" in stream_step["run"]
-        assert "TCR_USERNAME" not in str(ssh_setup_step) + str(install_step) + str(stream_step)
-        assert "TCR_PASSWORD" not in str(ssh_setup_step) + str(install_step) + str(stream_step)
-        assert job["steps"].index(build_step) < job["steps"].index(digest_step) < job["steps"].index(stream_step), \
-            f"{job_name} must publish TX only after its one GHCR/OCI build succeeds"
+        assert "EXPECTED_DIGEST" not in stream_step["run"]
+        assert "run-with-network-retry.sh" not in publish_step["run"]
+        assert "ssh -F \"$TX_SSH_DIR/config\"" in publish_step["run"]
+        assert "publish-loaded-image-to-tcr.sh" in publish_step["run"]
+        assert "flock -w 1800" in publish_step["run"]
+        assert "EXPECTED_DIGEST" in publish_step["run"]
+        assert "TCR_USERNAME" not in str(ssh_setup_step) + str(install_step) + str(stream_step) + str(publish_step)
+        assert "TCR_PASSWORD" not in str(ssh_setup_step) + str(install_step) + str(stream_step) + str(publish_step)
+        assert job["steps"].index(build_step) < job["steps"].index(digest_step) < job["steps"].index(stream_step) < job["steps"].index(publish_step), \
+            f"{job_name} must import then publish its one GHCR/OCI build"
     else:
         assert "tencentyun.com" not in tags, \
             f"{job_name} must remain GHCR-only"
@@ -135,10 +141,11 @@ assert "ghcr.io" not in helper_text and "docker pull" not in helper_text and "cr
 assert "StrictHostKeyChecking yes" in ssh_setup_helper.read_text(encoding="utf-8")
 assert "ssh-keyscan" in ssh_setup_helper.read_text(encoding="utf-8")
 stream_text = oci_stream_helper.read_text(encoding="utf-8")
-assert "gzip -c" in stream_text and "docker load" in stream_text and "flock -w" in stream_text
+assert "gzip -c" in stream_text and "docker load" in stream_text and "flock -w 900" in stream_text
 assert "bash -o pipefail -c" in stream_text
-assert r'exec bash \"\$0\"' in stream_text
-assert "timeout --kill-after=30s 3300s" in stream_text
+assert "timeout --kill-after=30s 1200s" in stream_text
+assert "publish-loaded-image-to-tcr.sh" not in stream_text
+assert "EXPECTED_DIGEST" not in stream_text
 assert "docker pull" not in stream_text and "TCR_PASSWORD" not in stream_text
 assert "appleboy/scp-action@v1" not in build_text and "appleboy/ssh-action@v1" not in build_text
 assert "replicate-image-to-tcr.sh" not in build_text
