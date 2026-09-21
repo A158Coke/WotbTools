@@ -200,7 +200,8 @@ DNS_CUTOVER_PERFORMED
 WAITING_FOR_OPERATOR_RETIREMENT
 ```
 
-顺序是：绑公网接口 + 放通 443 → 切 DNS 前门禁全绿 → 切 DNS（PR K，operator）→
+顺序是：Caddy 已在 TX 所有接口上绑 80/443（生产默认，见 `deploy/tx/docker-compose.yml`）
+→ 切 DNS 前门禁全绿 → 切 DNS（PR K，operator）→
 `--post-cutover` 门禁全绿 → 才允许停止/移除 Yecao 遗留容器。
 
 ### Caddy 不再有固定容器地址

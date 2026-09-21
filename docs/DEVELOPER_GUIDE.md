@@ -638,9 +638,10 @@ TX `443` 的连通性/SNI 与证书出示（`public-edge-sni-web` / `public-edge
 `60` 表示链尚未受信，是预期通过状态），切 DNS 后由 `--post-cutover` 强制要求受信任 TLS
 （`public-tls-web` / `public-tls-auth`，要求 host 解析到 TX 地址 + 受信任证书 + 2xx）。门禁全程不关闭 TLS 校验、不使用 `-k`；对基础设施与用户数据只读，唯一
 写入是 TTL 自动回收的瞬时 job；任一 token 失败即 `PRE_CUTOVER_NOT_READY`（post 阶段为
-`POST_CUTOVER_NOT_READY`）。Caddy 不再有固定容器地址：readiness surface 通过 Docker service DNS
+`POST_CUTOVER_NOT_READY`）。Caddy 已是生产公网入口（默认 `0.0.0.0:80` / `0.0.0.0:443`
+tcp + udp），但没有固定容器地址：readiness surface 通过 Docker service DNS
 （`http://caddy/_wotb/...`）访问，frontend 的 `set_real_ip_from` 信任 `wotb_tx_internal`
-子网。
+子网；DNS 切换仍是 operator 的受控外部操作，仓库不写任何 DNS 变更。
 `KEYCLOAK_ISSUER_URI` 保持 public URL（Keycloak 的 `iss` 由 hostname 决定），
 `KEYCLOAK_ADMIN_SERVER_URL` 故意指向 TX-internal `http://keycloak:8080`，避免 DNS
 cutover 前经公网访问并管理 Yecao realm。HoF 回放原件是永久内容寻址文件，挂 TX
@@ -698,8 +699,9 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 `KEYCLOAK_ADMIN_CLIENT_SECRET`，service account 只授予
 `manage-users`、`query-users`、`view-realm`；secret 通过 write-only OpenTofu 输入传递，
 不写入 HCL/tfvars/log 或普通 state attribute。只有成功 apply 写入 provision marker
-后才允许 Keycloak/frontend 启动。Stage I 的 Caddy 默认只监听 loopback，不会改 DNS，
-也不会停止或删除 Yecao 服务。IdP 配置、
+后才允许 Keycloak/frontend 启动。TX 的 Caddy 是生产公网入口，默认在 TX 所有接口上监听
+80/443（tcp + http/3 udp；可用 `CADDY_HTTP_BIND` / `CADDY_HTTPS_BIND` 覆盖）；仓库不做
+任何 DNS 变更，也不会停止或删除 Yecao 服务。IdP 配置、
 `user_profile` dependency audit、DNS cutover 与旧服务退役均是受控的外部操作，分别
 需要相应人工批准；启动细节见 `docs/auth/keycloak-tx-bootstrap.md`。
 
