@@ -312,7 +312,7 @@ grep -Fq 'http://keycloak:8080' "$WORK/compose.yml" \
 for contract in \
   'wait_for_probe tx-business-api http://business-api:8088/actuator/health' \
   'wait_for_probe business-api-app http://business-api:8087/api/health' \
-  'current_or_target_tag business-api' \
+  'effective_image_ref business-api' \
   'keycloak|wotb-frontend|business-api) return 0' \
   'is_business_api_group_selected'; do
   grep -Fq "$contract" "$TX_DIR/deploy.sh" \
@@ -357,7 +357,14 @@ cat > "$WORK/bin/docker" <<'FAKE_DOCKER'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 printf '%s\n' "$*" >> "${FAKE_DOCKER_LOG:?}"
-[ "${1:-}" = compose ] || exit 0
+# Live-runtime fixture: the running container of a service and the image reference it
+# was created with, used by the identity-preservation contract.
+if [ "${1:-}" != compose ]; then
+  if [ "${1:-}" = inspect ] && [ -n "${FAKE_RUNNING_IMAGE:-}" ]; then
+    printf '%s\n' "$FAKE_RUNNING_IMAGE"
+  fi
+  exit 0
+fi
 shift
 while [ "${1:-}" = -f ]; do shift 2; done
 if [ "${1:-}" = version ]; then
@@ -365,7 +372,13 @@ if [ "${1:-}" = version ]; then
   exit
 fi
 case "${1:-}" in
-  config|pull|up|stop|ps|logs) exit 0 ;;
+  config|pull|up|stop|logs) exit 0 ;;
+  ps)
+    if [ "${2:-}" = -q ] && [ -n "${FAKE_CONTAINER_ID:-}" ]; then
+      printf '%s\n' "$FAKE_CONTAINER_ID"
+    fi
+    exit 0
+    ;;
   exec) exit 0 ;;
   run) printf '200\n'; exit 0 ;;
   *) exit 0 ;;
@@ -400,7 +413,7 @@ rabbit_only_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   TX_RABBITMQ_ADMIN_USER=tx-rabbitmq-admin TX_RABBITMQ_ADMIN_PASSWORD=not-real \
   TX_RABBITMQ_CONTROL_API_PASSWORD=not-real-control-api \
   TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real-parser-worker \
-  bash -c 'source "$1"; validate_inputs; set_nonselected_compose_placeholders; test "$(current_or_target_tag keycloak)" = sha-0123456789ab; test "$(current_or_target_tag business-api)" = sha-0123456789ab; test "$KC_DB_PASSWORD" = not-configured; test "$AI_API_KEY" = not-configured; echo rabbitmq-only-inputs-pass' _ "$WORK/incoming/deploy.sh")"
+  bash -c 'source "$1"; validate_inputs; set_nonselected_compose_placeholders; test -z "$(effective_image_ref keycloak)"; test -z "$(effective_image_ref business-api)"; test "$KC_DB_PASSWORD" = not-configured; test "$AI_API_KEY" = not-configured; echo rabbitmq-only-inputs-pass' _ "$WORK/incoming/deploy.sh")"
 rabbit_only_rc=$?
 set -e
 [ "$rabbit_only_rc" -eq 0 ] \
@@ -417,7 +430,7 @@ business_only_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   TX_BUSINESS_POSTGRES_ADMIN_USER=tx-business-admin TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=not-real \
   TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=control_api \
   TX_BUSINESS_DB_PASSWORD=not-real-control-api TX_BUSINESS_DB_PASSWORD_VERSION=1 \
-  bash -c 'source "$1"; validate_inputs; set_nonselected_compose_placeholders; test "$(current_or_target_tag keycloak)" = sha-0123456789ab; test "$(current_or_target_tag business-api)" = sha-0123456789ab; test "$KC_DB_PASSWORD" = not-configured; test "$TX_RABBITMQ_ADMIN_PASSWORD" = not-configured; echo business-only-inputs-pass' _ "$WORK/incoming/deploy.sh")"
+  bash -c 'source "$1"; validate_inputs; set_nonselected_compose_placeholders; test -z "$(effective_image_ref keycloak)"; test -z "$(effective_image_ref business-api)"; test "$KC_DB_PASSWORD" = not-configured; test "$TX_RABBITMQ_ADMIN_PASSWORD" = not-configured; echo business-only-inputs-pass' _ "$WORK/incoming/deploy.sh")"
 business_only_rc=$?
 set -e
 [ "$business_only_rc" -eq 0 ] \
@@ -571,6 +584,7 @@ run_live_service_deploy() {
     WOTB_DEPLOY_SERVICES="$services" WOTB_DEPLOY_IMAGE_SERVICES="$image_services" \
     WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
     FAKE_DOCKER_LOG="$log" \
+    FAKE_RUNNING_IMAGE="${FAKE_RUNNING_IMAGE:-}" FAKE_CONTAINER_ID="${FAKE_CONTAINER_ID:-}" \
     bash "$WORK/incoming/deploy.sh"
 }
 
@@ -592,11 +606,133 @@ caddy_output="$(run_live_service_deploy caddy '' "$caddy_log" 2>&1)"
 grep -Fq 'TX deployment completed:' <<< "$caddy_output" \
   || fail "Explicit Caddy deployment must complete"
 [ "$(grep -Fc 'up -d --no-deps --force-recreate caddy' "$caddy_log")" -eq 1 ] \
-  || fail "Explicit Caddy deployment must recreate Caddy exactly once before refreshing nginx"
-frontend_start_line="$(grep -nF 'up -d --no-deps --force-recreate wotb-frontend' "$caddy_log" | tail -n 1 | cut -d: -f1)"
+  || fail "Explicit Caddy deployment must recreate Caddy exactly once"
+# A Caddy-only deployment deploys no application image service: it must not pull,
+# recreate or require the immutable identity of one. Caddy is reconciled through
+# the promoted TX configuration and nginx re-resolves Caddy's address inside the
+# running container, which keeps the rate-limiting trust boundary correct without
+# recreating nginx from an application image.
+for service in wotb-frontend keycloak business-api keycloak-postgres business-postgres rabbitmq; do
+  ! grep -Fq "up -d --no-deps --force-recreate $service" "$caddy_log" \
+    || fail "Caddy-only deployment must not recreate the $service runtime"
+done
+[ "$(grep -Fc 'pull caddy' "$caddy_log")" -eq 1 ] \
+  || fail "Caddy-only deployment must pull only the Caddy runtime image"
+! grep -Eq 'pull (wotb-frontend|keycloak|business-api)' "$caddy_log" \
+  || fail "Caddy-only deployment must not pull an application image"
+[ "$(grep -Fc 'exec -T wotb-frontend nginx -t' "$caddy_log")" -eq 1 ] \
+  || fail "Caddy-only deployment must validate the running frontend nginx configuration"
+[ "$(grep -Fc 'exec -T wotb-frontend nginx -s reload' "$caddy_log")" -eq 1 ] \
+  || fail "Caddy-only deployment must re-resolve Caddy in the running frontend container"
+grep -Fq 'frontend-trusted-peer: PASS' <<< "$caddy_output" \
+  || fail "Caddy-only deployment must report the in-place frontend trusted-peer refresh"
 caddy_start_line="$(grep -nF 'up -d --no-deps --force-recreate caddy' "$caddy_log" | tail -n 1 | cut -d: -f1)"
-[ -n "$frontend_start_line" ] && [ -n "$caddy_start_line" ] && [ "$caddy_start_line" -lt "$frontend_start_line" ] \
-  || fail "Caddy-only deployment must refresh frontend after Caddy gets a new network endpoint"
+reload_line="$(grep -nF 'exec -T wotb-frontend nginx -s reload' "$caddy_log" | tail -n 1 | cut -d: -f1)"
+[ -n "$caddy_start_line" ] && [ -n "$reload_line" ] && [ "$caddy_start_line" -lt "$reload_line" ] \
+  || fail "Caddy-only deployment must recreate Caddy before nginx re-resolves its address"
+
+# Regression (PR #344 review blocker, Design B): a deployment must never advance - or
+# invent - the immutable identity of an application image service it does not deploy.
+# The frontend actually runs sha-dc0ff4554335 while every run below carries
+# TAG=sha-0123456789ab (= RUN_TAG), and the TX host records immutable identities only
+# for the services it deployed.
+readonly DEPLOYED_FRONTEND_TAG="sha-dc0ff4554335"
+readonly RECORDED_TAG="sha-111111111111"
+readonly RECORDED_BACKEND_TAG="sha-222222222222"
+readonly RUN_TAG="sha-0123456789ab"
+
+# Case 1: recorded release metadata is authoritative while it has the identity.
+printf '%s\n' "{\"schemaVersion\":1,\"services\":{\"keycloak\":{\"commitSha\":\"0123456789abcdef0123456789abcdef01234567\",\"imageTag\":\"$RECORDED_TAG\"},\"business-api\":{\"commitSha\":\"0123456789abcdef0123456789abcdef01234567\",\"imageTag\":\"$RECORDED_BACKEND_TAG\"},\"wotb-frontend\":{\"commitSha\":\"0123456789abcdef0123456789abcdef01234567\",\"imageTag\":\"$DEPLOYED_FRONTEND_TAG\"}}}" \
+  > "$WORK/live/tx-production-release.json"
+sed -i 's#^\( *\)image: .*wotbtools-frontend:.*$#\1image: ghcr.io/a158coke/wotbtools-frontend:mutable#' \
+  "$WORK/live/deploy/docker-compose.yml"
+run_live_service_deploy caddy '' "$WORK/caddy-metadata.log" > "$WORK/caddy-metadata.out" 2>&1 \
+  || fail "Caddy-only deployment must complete with a metadata-resolved frontend identity (output: $(tr '\r\n' ' ' < "$WORK/caddy-metadata.out" | sed -E 's/[[:space:]]+/ /g'))"
+grep -Fq "wotbtools-frontend:$DEPLOYED_FRONTEND_TAG" "$WORK/live/deploy/docker-compose.yml" \
+  || fail "recorded release metadata must win over an unusable live Compose reference"
+! grep -Fq "wotbtools-frontend:$RUN_TAG" "$WORK/live/deploy/docker-compose.yml" \
+  || fail "a deployment must not rewrite a recorded frontend identity to this release's tag"
+grep -Fq "$DEPLOYED_FRONTEND_TAG" "$WORK/live/tx-production-release.json" \
+  || fail "a Caddy-only deployment must not rewrite application release metadata"
+! grep -Fq "$RUN_TAG" "$WORK/live/tx-production-release.json" \
+  || fail "a Caddy-only deployment must not record this release's tag as deployed"
+
+# Case 2 (reviewer example): metadata has no frontend entry, the live Compose document
+# records the deployed identity - this run's tag must not replace it.
+printf '%s\n' "{\"schemaVersion\":1,\"services\":{\"keycloak\":{\"commitSha\":\"0123456789abcdef0123456789abcdef01234567\",\"imageTag\":\"$RECORDED_TAG\"},\"business-api\":{\"commitSha\":\"0123456789abcdef0123456789abcdef01234567\",\"imageTag\":\"$RECORDED_BACKEND_TAG\"}}}" \
+  > "$WORK/live/tx-production-release.json"
+sed -i "s#^\( *\)image: .*wotbtools-frontend:.*\$#\1image: ghcr.io/a158coke/wotbtools-frontend:$DEPLOYED_FRONTEND_TAG#" \
+  "$WORK/live/deploy/docker-compose.yml"
+grep -Fq "image: ghcr.io/a158coke/wotbtools-frontend:$DEPLOYED_FRONTEND_TAG" "$WORK/live/deploy/docker-compose.yml" \
+  || fail "the identity-preservation fixture must record the deployed frontend identity $DEPLOYED_FRONTEND_TAG"
+caddy_incomplete_log="$WORK/caddy-incomplete.log"
+caddy_incomplete_output="$(run_live_service_deploy caddy '' "$caddy_incomplete_log" 2>&1)"
+grep -Fq 'TX deployment completed:' <<< "$caddy_incomplete_output" \
+  || fail "Caddy-only deployment must reconcile Caddy without a wotb-frontend release-metadata identity (output: $(tr '\r\n' ' ' <<< "$caddy_incomplete_output" | sed -E 's/[[:space:]]+/ /g'))"
+[ "$(grep -Fc 'up -d --no-deps --force-recreate caddy' "$caddy_incomplete_log")" -eq 1 ] \
+  || fail "Caddy-only deployment with incomplete metadata must still recreate Caddy exactly once"
+! grep -Fq 'up -d --no-deps --force-recreate wotb-frontend' "$caddy_incomplete_log" \
+  || fail "Caddy-only deployment must not recreate an application image service it does not deploy"
+grep -Fq 'exec -T wotb-frontend nginx -s reload' "$caddy_incomplete_log" \
+  || fail "Caddy-only deployment must reload the running frontend nginx after recreating Caddy"
+# The promoted TX configuration keeps the identity that is actually deployed, never this
+# release's tag, and a Caddy-only run never invents release metadata.
+grep -Fq "wotbtools-frontend:$DEPLOYED_FRONTEND_TAG" "$WORK/live/deploy/docker-compose.yml" \
+  || fail "the promoted TX Compose document must keep the deployed frontend identity $DEPLOYED_FRONTEND_TAG"
+grep -Fq "wotbtools-keycloak:$RECORDED_TAG" "$WORK/live/deploy/docker-compose.yml" \
+  || fail "the promoted TX Compose document must keep the recorded keycloak identity"
+grep -Fq "wotbtools-backend:$RECORDED_BACKEND_TAG" "$WORK/live/deploy/docker-compose.yml" \
+  || fail "the promoted TX Compose document must keep the recorded business-api identity"
+! grep -Fq "$RUN_TAG" "$WORK/live/deploy/docker-compose.yml" \
+  || fail "the promoted TX Compose document must not assign this release's tag to a service it did not deploy"
+! grep -Fq 'wotb-frontend' "$WORK/live/tx-production-release.json" \
+  || fail "Caddy-only deployment must not fabricate application release metadata"
+
+# Case 3: metadata and live Compose cannot name an identity, so the running container of
+# that exact Compose service is the runtime source of truth.
+sed -i 's#^\( *\)image: .*wotbtools-frontend:.*$#\1image: ghcr.io/a158coke/wotbtools-frontend:mutable#' \
+  "$WORK/live/deploy/docker-compose.yml"
+FAKE_RUNNING_IMAGE="ghcr.io/a158coke/wotbtools-frontend:$DEPLOYED_FRONTEND_TAG" FAKE_CONTAINER_ID="container-id" \
+  run_live_service_deploy caddy '' "$WORK/caddy-runtime.log" > "$WORK/caddy-runtime.out" 2>&1 \
+  || fail "Caddy-only deployment must complete when only the running container names the frontend identity (output: $(tr '\r\n' ' ' < "$WORK/caddy-runtime.out" | sed -E 's/[[:space:]]+/ /g'))"
+grep -Fq 'ps -q wotb-frontend' "$WORK/caddy-runtime.log" \
+  || fail "the running-container fallback must inspect the exact Compose service"
+grep -Fq 'inspect --format {{.Config.Image}} container-id' "$WORK/caddy-runtime.log" \
+  || fail "the running-container fallback must inspect the exact running container"
+grep -Fq "wotbtools-frontend:$DEPLOYED_FRONTEND_TAG" "$WORK/live/deploy/docker-compose.yml" \
+  || fail "the promoted TX Compose document must carry the running frontend identity $DEPLOYED_FRONTEND_TAG"
+! grep -Fq "$RUN_TAG" "$WORK/live/deploy/docker-compose.yml" \
+  || fail "the running-container fallback must not substitute this release's tag"
+
+# Case 4: metadata, live Compose and runtime cannot provide an identity -> fail closed,
+# without promoting a rewritten Compose document or starting anything.
+sed -i 's#^\( *\)image: .*wotbtools-frontend:.*$#\1image: ghcr.io/a158coke/wotbtools-frontend:mutable#' \
+  "$WORK/live/deploy/docker-compose.yml"
+set +e
+caddy_unresolved_output="$(run_live_service_deploy caddy '' "$WORK/caddy-unresolved.log" 2>&1)"
+caddy_unresolved_rc=$?
+set -e
+[ "$caddy_unresolved_rc" -ne 0 ] \
+  || fail "Caddy-only deployment must fail closed when no source can name an application image identity"
+grep -Fq 'cannot resolve the immutable image identity of wotb-frontend' <<< "$caddy_unresolved_output" \
+  || fail "the unresolved-identity failure must name the service (output: $(tr '\r\n' ' ' <<< "$caddy_unresolved_output" | sed -E 's/[[:space:]]+/ /g'))"
+! grep -Fq 'up -d' "$WORK/caddy-unresolved.log" \
+  || fail "a deployment that cannot resolve an identity must not start any TX runtime"
+grep -Fq 'image: ghcr.io/a158coke/wotbtools-frontend:mutable' "$WORK/live/deploy/docker-compose.yml" \
+  || fail "a failed render must leave the live TX Compose document unchanged"
+
+# Case 7: a deployment that really deploys an application image service keeps the same
+# fail-closed validation.
+set +e
+frontend_unidentified_output="$(run_live_service_deploy wotb-frontend '' "$WORK/frontend-unidentified.log" 2>&1)"
+frontend_unidentified_rc=$?
+set -e
+[ "$frontend_unidentified_rc" -ne 0 ] \
+  || fail "a frontend deployment must fail closed when its immutable identity is unavailable"
+grep -Fq 'cannot resolve the immutable image identity of wotb-frontend' <<< "$frontend_unidentified_output" \
+  || fail "a frontend deployment without an immutable identity must name the missing service (output: $(tr '\r\n' ' ' <<< "$frontend_unidentified_output" | sed -E 's/[[:space:]]+/ /g'))"
+! grep -Fq 'up -d' "$WORK/frontend-unidentified.log" \
+  || fail "a frontend deployment without an immutable identity must not start any TX runtime"
 
 # RabbitMQ-only deployment owns its provider bootstrap. The provider source and
 # exact version come from the shipped lockfile, while the production init stays
@@ -906,7 +1042,10 @@ grep -Fq 'Business PostgreSQL OpenTofu apply and second-plan drift check passed.
   || fail "business-postgres-only deployment must run the OpenTofu apply and second-plan drift check"
 grep -Fq 'up -d --no-deps --force-recreate business-postgres' "$business_log" \
   || fail "business-postgres-only deployment must start its own runtime"
-! grep -Fq 'keycloak' "$business_log" \
+# The deployment never starts, stops, execs into, runs or pulls anything for Keycloak.
+# It may read that service's running identity (`compose ps -q` / `docker inspect`) so the
+# promoted Compose document keeps the identity Keycloak actually runs.
+! grep -Eq '\b(up|stop|start|restart|kill|rm|down|create|exec|run|logs|pull)\b.*\bkeycloak\b' "$business_log" \
   || fail "business-postgres-only deployment must not touch Keycloak or its PostgreSQL runtime"
 ! grep -Fq 'rabbitmq' "$business_log" \
   || fail "business-postgres-only deployment must not touch RabbitMQ"

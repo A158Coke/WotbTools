@@ -72,12 +72,29 @@ for job_name, output_name in (
         assert build_step["id"] == "build", f"{job_name} must expose its immutable build digest"
         outputs = str(build_step["with"]["outputs"])
         assert f"type=oci,dest=${{{{ runner.temp }}}}/{image_prefix}.oci.tar" in outputs
-        assert f"name=wotb-transfer/{image_prefix}:${{{{ needs.changes.outputs.tag }}}}" in outputs
+        # BuildKit names an OCI archive from the image-push tags and ignores the OCI
+        # exporter's `name=` option while `--tag` is set, so the export must not claim a
+        # TX-local identity it cannot produce: one canonical artifact identity, no
+        # intermediate image namespace.
+        assert "name=" not in outputs, \
+            f"{job_name} must not ask the OCI exporter for an identity it cannot produce"
+        assert "wotb-transfer" not in outputs, \
+            f"{job_name} must keep a TX-local identity out of the OCI export"
         assert "type=image,push=true,oci-mediatypes=true" in outputs
         digest_step = next(step for step in job["steps"] if step.get("id") == "digest")
         assert "${{ steps.build.outputs.digest }}" in str(digest_step)
         assert "docker buildx imagetools inspect" in digest_step["run"]
         assert "EXPECTED_DIGEST" in digest_step["run"]
+        # The digest-verified registry reference and the image digest of the same build
+        # are the canonical transferred identity and digest the TX import must find.
+        assert "EXPECTED_IMAGE_REF" in digest_step["run"]
+        assert "EXPECTED_IMAGE_ID" in digest_step["run"]
+        assert "${{ steps.build.outputs.imageid }}" in str(digest_step)
+        assert "printf 'EXPECTED_IMAGE_REF=%s\\n' \"$IMAGE\" >> \"$GITHUB_ENV\"" in digest_step["run"]
+        assert "printf 'EXPECTED_IMAGE_ID=%s\\n' \"$BUILD_IMAGE_ID\" >> \"$GITHUB_ENV\"" in digest_step["run"]
+        assert digest_step["env"]["IMAGE"] == \
+            "${{ env.GHCR_IMAGE_PREFIX }}-" + image_prefix + ":${{ needs.changes.outputs.tag }}", \
+            f"{job_name} must bind the canonical transferred identity to its immutable GHCR tag"
         ssh_setup_step = next(step for step in job["steps"] if step.get("name") == "Set up native TX SSH")
         install_step = next(step for step in job["steps"] if step.get("name") == "Install TX loaded-image publication helper")
         title = image_prefix.title()
@@ -109,6 +126,11 @@ for job_name, output_name in (
             assert "docker load" not in step["run"], \
                 f"{job_name} {label} must leave docker load to the verified TX helper"
         assert "EXPECTED_DIGEST" not in transfer_step["run"] and "EXPECTED_DIGEST" not in import_step["run"]
+        # Publication consumes the loaded release identity the import verified; the
+        # authoritative TCR manifest digest parity stays the final gate.
+        assert f"publish-loaded-image-to-tcr.sh {image_prefix} '${{{{ needs.changes.outputs.tag }}}}' '$EXPECTED_DIGEST' '$EXPECTED_IMAGE_REF'" \
+            in publish_step["run"], \
+            f"{job_name} must publish exactly the verified loaded release identity"
         for step_name in (
             f"Transfer {title} OCI archive to TX",
             f"Import {title} OCI image on TX",
@@ -163,7 +185,10 @@ assert "backend|frontend|keycloak" in helper_text
 assert "sha-[0-9a-f]{12}" in helper_text
 assert "sha256:[0-9a-f]{64}" in helper_text
 assert "ccr.ccs.tencentyun.com" in helper_text
-assert "wotb-transfer" in helper_text
+# One canonical artifact: the publication helper consumes the loaded release
+# reference, not a TX-local image namespace of its own.
+assert "wotb-transfer" not in helper_text
+assert "loaded_image" in helper_text
 assert "docker image inspect" in helper_text and "docker tag" in helper_text and "docker push" in helper_text
 assert "docker buildx imagetools inspect" in helper_text
 assert "{{.Manifest.Digest}}" in helper_text
@@ -184,6 +209,12 @@ assert "rsync --partial --append-verify" in transfer_text
 assert '-e "ssh -F $TX_SSH_DIR/config"' in transfer_text
 assert "sha256sum" in transfer_text
 assert "docker load -i" in transfer_text
+# One canonical artifact identity and digest: the imported archive must carry the
+# digest-verified release reference and the verified build's image digest, and there
+# is no TX-local image namespace any more.
+assert "EXPECTED_IMAGE_REF" in transfer_text
+assert "EXPECTED_IMAGE_ID" in transfer_text
+assert "wotb-transfer" not in transfer_text
 assert "flock -w" in transfer_text and "oci-transfer.lock" in transfer_text
 assert 'STAGING_ROOT="/opt/wotb-tx/replication.incoming"' in transfer_text
 assert 'remote_dir="$STAGING_ROOT/$run_id/$component"' in transfer_text, \

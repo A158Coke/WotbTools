@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# Publish one already-loaded immutable TX application image to Tencent TCR.
-# Docker reads TCR credentials only from this host's credential store.
+# Publish the already-loaded, already-verified immutable TX application image to
+# Tencent TCR. Docker reads TCR credentials only from this host's credential store.
+#
+# One canonical artifact identity: the loaded image is the release reference the
+# Build workflow verified the authoritative digest for, and this helper only derives
+# the TCR immutable name from it. The final fail-closed gate stays the TCR manifest
+# digest, which must equal the digest the Build workflow recorded for its one build.
 set -euo pipefail
 
 readonly TCR_REGISTRY="ccr.ccs.tencentyun.com"
 readonly TCR_NAMESPACE="wotbtools"
-readonly LOCAL_IMAGE_PREFIX="wotb-transfer"
 readonly TCR_PUSH_TIMEOUT_SECONDS="${TCR_PUSH_TIMEOUT_SECONDS:-600}"
 readonly DIGEST_TIMEOUT_SECONDS="${DIGEST_TIMEOUT_SECONDS:-60}"
 readonly KILL_AFTER_SECONDS="${KILL_AFTER_SECONDS:-30}"
@@ -13,6 +17,7 @@ readonly KILL_AFTER_SECONDS="${KILL_AFTER_SECONDS:-30}"
 component=""
 image_tag=""
 expected_digest=""
+loaded_image=""
 publication_started_epoch=""
 
 is_positive_integer() {
@@ -37,14 +42,15 @@ fail() {
 }
 
 usage() {
-  printf 'usage: %s <backend|frontend|keycloak> <sha-12> <sha256:digest>\n' "$0" >&2
+  printf 'usage: %s <backend|frontend|keycloak> <sha-12> <sha256:digest> <loaded-image-ref>\n' "$0" >&2
   exit 2
 }
 
-[ "$#" -eq 3 ] || usage
+[ "$#" -eq 4 ] || usage
 component="$1"
 image_tag="$2"
 expected_digest="$3"
+loaded_image="$4"
 
 case "$component" in
   backend|frontend|keycloak) ;;
@@ -52,24 +58,34 @@ case "$component" in
 esac
 [[ "$image_tag" =~ ^sha-[0-9a-f]{12}$ ]] || fail "immutable image tag must be sha-<12 lowercase hex>"
 [[ "$expected_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "expected digest must be sha256:<64 lowercase hex>"
+# The transferred identity is the canonical registry reference of the verified
+# release. It is validated the same way the TX import validated it, so this helper
+# can only ever publish the exact artifact that import proved.
+[[ "$loaded_image" =~ ^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)+:[a-z0-9][a-z0-9._-]*$ ]] \
+  || fail "loaded image reference must be a lowercase <registry>/<repository>:<tag> reference without a registry port"
+[ "${loaded_image##*:}" = "$image_tag" ] \
+  || fail "loaded image reference must carry the immutable release tag $image_tag"
 for setting in TCR_PUSH_TIMEOUT_SECONDS DIGEST_TIMEOUT_SECONDS KILL_AFTER_SECONDS; do
   is_positive_integer "${!setting}" || fail "$setting must be a positive integer"
 done
 command -v docker >/dev/null 2>&1 || fail "docker is required on TX"
 command -v timeout >/dev/null 2>&1 || fail "timeout is required on TX"
 
-readonly loaded_image="$LOCAL_IMAGE_PREFIX/$component:$image_tag"
 readonly target_image="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-$component:$image_tag"
 readonly latest_image="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-$component:latest"
+[ "${loaded_image%:*}" != "${target_image%:*}" ] \
+  || fail "loaded image reference must be the transferred release identity, not the TCR target"
 
 publication_started_epoch="$(date -u +%s)"
-printf 'component=%s\nstage=publication-start\n' "$component"
+printf 'component=%s\nstage=publication-start\nloaded_image=%s\n' "$component" "$loaded_image"
 
 docker image inspect "$loaded_image" >/dev/null \
   || fail "expected transferred image is not loaded: $loaded_image"
 
+printf 'component=%s\nstage=tag-immutable\n' "$component"
+docker tag "$loaded_image" "$target_image" || fail "cannot tag the loaded release image for Tencent TCR"
+
 printf 'component=%s\nstage=push-immutable\n' "$component"
-docker tag "$loaded_image" "$target_image" || fail "cannot tag immutable image for Tencent TCR"
 timeout --kill-after="${KILL_AFTER_SECONDS}s" "${TCR_PUSH_TIMEOUT_SECONDS}s" docker push "$target_image" \
   || fail "TCR push failure for immutable image"
 
