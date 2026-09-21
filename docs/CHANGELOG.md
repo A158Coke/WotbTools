@@ -4,7 +4,7 @@
 
 ## [Unreleased]
 
-- **TX application images via Tencent TCR**：backend、frontend、keycloak 各只构建一次并先发布 GHCR 的 immutable `sha-<12>` artifact；Build 随后经既有 TX SCP/SSH 通道在 **TX host** 上执行受限 helper，以宿主机 deployment-owned Docker credential store `pull → tag → push` 到 `ccr.ccs.tencentyun.com/wotbtools`。helper 先复制 immutable tag、通过 registry manifest digest 校验 GHCR/TCR parity，再从已验证的 immutable artifact 更新 TCR `latest`；任一步失败都会阻止 deployment manifest。此前 GitHub-hosted `crane copy` 路径已在 run `35603682885` 中被实测否决（Frontend、Keycloak 均在 600 秒超时），不能误称为避开跨区域 blob transfer。GHCR 仍是 source/recovery registry，Tencent TCR 仍是 TX runtime registry；Yecao parser-worker 与 MinIO 保持 GHCR。TCR credential 不经 SSH、Compose、metadata 或应用环境传递。DNS 与运行时服务拓扑未改变。
+- **TX application images via direct OCI transfer**：backend、frontend、keycloak 各只构建一次，同时发布 GHCR immutable `sha-<12>` artifact 与 `latest`，并导出同一 BuildKit OCI archive。runner 仅在 BuildKit digest 等于 GHCR immutable manifest digest 后，经 native SSH 直接流给 TX；TX 串行 `docker load → TCR immutable push → TCR manifest digest parity → latest`，任一步失败均阻止 deployment manifest。TX publication 不拉取 GHCR，不使用 `crane` 或 `appleboy/scp-action`，也不把 GHCR/TCR credentials 经 SSH 传递；Yecao parser-worker 与 MinIO 保持 GHCR-only，DNS 与运行时服务拓扑未改变。历史上 GitHub runner→TCR 大 blob upload 在 run `35603682885` 超时，TX→GHCR blob pull 在 run `35615777225` 超时，因此均已退役。
 
 ### Added
 
