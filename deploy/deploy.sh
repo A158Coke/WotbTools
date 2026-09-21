@@ -144,6 +144,7 @@ validate_inputs() {
   # value from every deploy would force the worker path to carry an unrelated backend input, so the
   # ceiling is validated exactly when a backend image is part of this deploy.
   if is_selected wotb-backend || has_image_service wotb-backend; then
+    echo "DEBUG-GUARD services=[$DEPLOY_SERVICES_RAW] images=[$DEPLOY_IMAGE_SERVICES_RAW] migration=[$BACKEND_MIGRATION_MAX_VALUE]" >&2
     is_non_negative_integer "$BACKEND_MIGRATION_MAX_VALUE" \
       || die "WOTB_BACKEND_MIGRATION_MAX_VERSION must be a non-negative integer."
   fi
