@@ -86,8 +86,8 @@ grep -Fx 'result=PASS' "$WORK/success.out" >/dev/null || fail "pass result missi
 grep -Fx 'pull ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa' "$WORK/success.log" >/dev/null || fail "GHCR immutable pull missing"
 grep -Fx 'push ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:sha-aaaaaaaaaaaa' "$WORK/success.log" >/dev/null || fail "TCR immutable push missing"
 grep -Fx 'push ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:latest' "$WORK/success.log" >/dev/null || fail "TCR latest push missing"
-source_digest_line='buildx imagetools inspect --format {{.Digest}} ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa'
-target_digest_line='buildx imagetools inspect --format {{.Digest}} ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:sha-aaaaaaaaaaaa'
+source_digest_line='buildx imagetools inspect --format {{.Manifest.Digest}} ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa'
+target_digest_line='buildx imagetools inspect --format {{.Manifest.Digest}} ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:sha-aaaaaaaaaaaa'
 latest_push_line='push ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:latest'
 [ "$(grep -nFx "$source_digest_line" "$WORK/success.log" | cut -d: -f1)" -lt "$(grep -nFx "$latest_push_line" "$WORK/success.log" | cut -d: -f1)" ] \
   || fail "source digest must be resolved before latest update"

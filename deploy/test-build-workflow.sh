@@ -115,6 +115,8 @@ assert "sha-[0-9a-f]{12}" in helper_text
 assert "ghcr.io/a158coke" in helper_text and "ccr.ccs.tencentyun.com" in helper_text
 assert "docker pull" in helper_text and "docker tag" in helper_text and "docker push" in helper_text
 assert "docker buildx imagetools inspect" in helper_text
+assert "{{.Manifest.Digest}}" in helper_text
+assert "{{.Digest}}" not in helper_text, "registry digest must use the buildx manifest descriptor"
 assert "timeout --kill-after" in helper_text
 assert "GHCR_PULL_ATTEMPTS" in helper_text and "GHCR_PULL_TIMEOUT_SECONDS" in helper_text
 assert "stage=replication-start" in helper_text and "stage=replication-end" in helper_text
