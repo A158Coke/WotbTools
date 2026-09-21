@@ -85,6 +85,14 @@ assert "timeout --kill-after" in transfer_text
 assert "run-with-network-retry.sh" not in transfer_text
 assert "publish-loaded-image-to-tcr.sh" not in transfer_text
 assert "EXPECTED_DIGEST" not in transfer_text
+# One canonical artifact identity and digest: the archive carries the digest-verified
+# registry reference, the import proves the loaded image is that verified build, and
+# no TX-local image namespace exists any more.
+assert "EXPECTED_IMAGE_REF" in transfer_text
+assert "EXPECTED_IMAGE_ID" in transfer_text
+assert "wotb-transfer" not in transfer_text
+assert "wotb-transfer" not in build
+assert "wotb-transfer" not in helper_text
 assert "TCR_PASSWORD" not in transfer_text and "docker pull" not in transfer_text
 assert "crane" not in transfer_text and "ghcr.io" not in transfer_text
 for component in ("Backend", "Frontend", "Keycloak"):

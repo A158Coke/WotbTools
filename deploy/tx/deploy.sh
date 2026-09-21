@@ -133,6 +133,15 @@ has_image_service() {
   return 1
 }
 
+# An application image service only starts when this deployment selects it (or
+# `all`). Every other selector - the PostgreSQL bootstrap steps, RabbitMQ-only,
+# business-postgres-only and the Caddy-only edge reconcile - neither pulls nor
+# recreates an application image, so none of them may require that image's
+# recorded immutable identity merely to render the Compose document.
+starts_application_image_services() {
+  is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected business-api
+}
+
 validate_inputs() {
   is_safe_path "$WOTB_DIR" || die "unsafe WOTB_TX_DIR."
   is_safe_path "$INCOMING_DIR" || die "unsafe WOTB_TX_INCOMING_DIR."
@@ -276,6 +285,15 @@ current_or_target_tag() {
   # recording that image.
   if [ -z "$tag" ] && (is_selected keycloak-postgres || is_selected business-postgres) \
     && ! is_selected keycloak && ! is_selected wotb-frontend; then
+    printf '%s\n' "$TAG_VALUE"
+    return
+  fi
+  if [ -z "$tag" ] && ! starts_application_image_services; then
+    # A deployment that starts no application image service (RabbitMQ-only, a
+    # database bootstrap, or the Caddy-only edge reconcile) still renders and
+    # promotes the complete Compose document, so services it never starts use
+    # the incoming immutable release tag. No recorded application identity is
+    # required for them, none is invented, and no release metadata is written.
     printf '%s\n' "$TAG_VALUE"
     return
   fi
@@ -423,20 +441,45 @@ compose_service_list() {
   fi
 }
 
+# A Caddy refresh replaces the container whose dynamically assigned address nginx
+# resolved into `set_real_ip_from caddy` when it loaded its configuration, so that
+# resolution always has to be refreshed with it. Recreating nginx is the right
+# refresh whenever this deployment deploys nginx; the Caddy-only selector must not
+# recreate - or need the immutable identity of - an application image it does not
+# deploy, so the running container keeps its image and re-reads its configuration.
+reload_frontend_trusted_peer() {
+  local output
+  if ! output="$(docker compose -f "$LIVE_COMPOSE" exec -T wotb-frontend nginx -t 2>&1)"; then
+    echo "ERROR: the running frontend nginx configuration is invalid; Caddy's trusted peer was not refreshed." >&2
+    printf '%s\n' "$output" >&2
+    return 1
+  fi
+  if ! docker compose -f "$LIVE_COMPOSE" exec -T wotb-frontend nginx -s reload; then
+    echo "ERROR: the running frontend container could not reload nginx to re-resolve Caddy's address." >&2
+    return 1
+  fi
+  echo "frontend-trusted-peer: PASS (nginx re-resolved Caddy in the running container)"
+}
+
 apply_services() {
   mapfile -t APPLY_SERVICES < <(compose_service_list | awk 'NF && !seen[$0]++')
   [ "${#APPLY_SERVICES[@]}" -gt 0 ] || die "no TX runtime service selected."
-  local service caddy_refresh=0
+  local service caddy_refresh=0 frontend_refresh=0
   if is_selected caddy || { [ "$BOOTSTRAP_KEYCLOAK" != 1 ] && \
       (is_selected all || is_selected keycloak || is_selected wotb-frontend); }; then
     caddy_refresh=1
+  fi
+  # nginx is only recreated when it is part of this deployment; a Caddy-only run
+  # refreshes its trusted peer inside the running container instead.
+  if is_selected all || is_selected wotb-frontend || \
+    { [ "$BOOTSTRAP_KEYCLOAK" != 1 ] && is_selected keycloak; }; then
+    frontend_refresh=1
   fi
 
   # `--no-deps` deliberately keeps targeted deploys isolated, so Compose does
   # not create Caddy before nginx resolves `set_real_ip_from caddy`. Start all
   # other selected services first, then create Caddy's network endpoint before
-  # recreating nginx. A Caddy refresh always requires a frontend refresh: nginx
-  # resolves the trusted peer address only when its configuration is loaded.
+  # refreshing nginx's trusted peer.
   for service in "${APPLY_SERVICES[@]}"; do
     case "$service" in
       wotb-frontend|caddy) continue ;;
@@ -451,15 +494,14 @@ apply_services() {
       FAILED_SERVICE="caddy"
       return 1
     fi
+  fi
+  if [ "$frontend_refresh" -eq 1 ]; then
     if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate wotb-frontend; then
       FAILED_SERVICE="wotb-frontend"
       return 1
     fi
-  elif is_selected wotb-frontend; then
-    if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate wotb-frontend; then
-      FAILED_SERVICE="wotb-frontend"
-      return 1
-    fi
+  elif [ "$caddy_refresh" -eq 1 ]; then
+    reload_frontend_trusted_peer || return 1
   fi
 }
 
