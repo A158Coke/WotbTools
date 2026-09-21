@@ -20,7 +20,9 @@ build_text = build_path.read_text(encoding="utf-8")
 deploy_text = deploy_path.read_text(encoding="utf-8")
 ci_text = ci_path.read_text(encoding="utf-8")
 tx_deploy_text = (deploy_path.parent.parent.parent / "deploy/tx/deploy.sh").read_text(encoding="utf-8")
-replication_helper = deploy_path.parent.parent.parent / "deploy/tx/replicate-image-to-tcr.sh"
+publication_helper = deploy_path.parent.parent.parent / "deploy/tx/publish-loaded-image-to-tcr.sh"
+ssh_setup_helper = deploy_path.parent.parent.parent / "scripts/ci/setup-tx-ssh.sh"
+oci_stream_helper = deploy_path.parent.parent.parent / "scripts/ci/stream-oci-to-tx.sh"
 build = yaml.safe_load(build_text)
 deploy = yaml.safe_load(deploy_text)
 ci = yaml.safe_load(ci_text)
@@ -67,26 +69,29 @@ for job_name, output_name in (
     if output_name in {"backend", "frontend", "keycloak"}:
         assert "tencentyun.com" not in tags, \
             f"{job_name} must not direct-push Tencent TCR from BuildKit"
-        assert not any(step.get("uses") == "imjasonh/setup-crane@v0.7" for step in job["steps"]), \
-            f"{job_name} must not copy through a GitHub-hosted crane client"
-        install_step = next((step for step in job["steps"] if step.get("name") == "Install TX replication helper"), None)
-        replicate_step = next((step for step in job["steps"] if step.get("name") == f"Replicate {image_prefix.title()} immutable image on TX"), None)
-        assert install_step is not None and replicate_step is not None, \
-            f"{job_name} must install and run the TX-side replication helper"
-        assert install_step["uses"] == "appleboy/scp-action@v1"
-        assert install_step["with"]["source"] == "deploy/tx/replicate-image-to-tcr.sh"
-        assert f"/{image_prefix}" in install_step["with"]["target"]
-        assert replicate_step["uses"] == "appleboy/ssh-action@v1"
-        assert replicate_step["with"]["envs"] == "COMPONENT,IMAGE_TAG"
-        assert replicate_step["env"] == {
-            "COMPONENT": image_prefix,
-            "IMAGE_TAG": "${{ needs.changes.outputs.tag }}",
-        }
-        assert "replicate-image-to-tcr.sh" in replicate_step["with"]["script"]
-        assert "TCR_USERNAME" not in str(install_step) and "TCR_PASSWORD" not in str(install_step)
-        assert "TCR_USERNAME" not in str(replicate_step) and "TCR_PASSWORD" not in str(replicate_step)
-        assert job["steps"].index(build_step) < job["steps"].index(install_step) < job["steps"].index(replicate_step), \
-            f"{job_name} must replicate only after the GHCR build succeeds"
+        assert build_step["id"] == "build", f"{job_name} must expose its immutable build digest"
+        outputs = str(build_step["with"]["outputs"])
+        assert f"type=oci,dest=${{{{ runner.temp }}}}/{image_prefix}.oci.tar" in outputs
+        assert f"name=wotb-transfer/{image_prefix}:${{{{ needs.changes.outputs.tag }}}}" in outputs
+        assert "type=image,push=true,oci-mediatypes=true" in outputs
+        digest_step = next(step for step in job["steps"] if step.get("id") == "digest")
+        assert "${{ steps.build.outputs.digest }}" in str(digest_step)
+        assert "docker buildx imagetools inspect" in digest_step["run"]
+        assert "EXPECTED_DIGEST" in digest_step["run"]
+        ssh_setup_step = next(step for step in job["steps"] if step.get("name") == "Set up native TX SSH")
+        install_step = next(step for step in job["steps"] if step.get("name") == "Install TX loaded-image publication helper")
+        stream_step = next(step for step in job["steps"] if step.get("name") == f"Stream {image_prefix.title()} OCI image to TX and publish TCR")
+        assert "setup-tx-ssh.sh" in ssh_setup_step["run"]
+        assert "TX_VPS_SSH_KEY" in str(ssh_setup_step)
+        assert "scp -F \"$TX_SSH_DIR/config\"" in install_step["run"]
+        assert "publish-loaded-image-to-tcr.sh" in install_step["run"]
+        assert "stream-oci-to-tx.sh" in stream_step["run"]
+        assert stream_step["env"]["NETWORK_RETRY_MAX_ATTEMPTS"] == 2
+        assert "EXPECTED_DIGEST" in stream_step["run"]
+        assert "TCR_USERNAME" not in str(ssh_setup_step) + str(install_step) + str(stream_step)
+        assert "TCR_PASSWORD" not in str(ssh_setup_step) + str(install_step) + str(stream_step)
+        assert job["steps"].index(build_step) < job["steps"].index(digest_step) < job["steps"].index(stream_step), \
+            f"{job_name} must publish TX only after its one GHCR/OCI build succeeds"
     else:
         assert "tencentyun.com" not in tags, \
             f"{job_name} must remain GHCR-only"
@@ -107,24 +112,38 @@ for job_name, output_name in (
     assert "BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}" in build_args, \
         f"{job_name} must inject the frozen release SHA into the image"
 
-assert replication_helper.is_file(), "Build must keep TX replication in a deployment-owned helper"
-helper_text = replication_helper.read_text(encoding="utf-8")
+assert publication_helper.is_file(), "Build must keep TX publication in a deployment-owned helper"
+assert ssh_setup_helper.is_file() and oci_stream_helper.is_file()
+helper_text = publication_helper.read_text(encoding="utf-8")
 assert "set -euo pipefail" in helper_text
 assert "backend|frontend|keycloak" in helper_text
 assert "sha-[0-9a-f]{12}" in helper_text
-assert "ghcr.io/a158coke" in helper_text and "ccr.ccs.tencentyun.com" in helper_text
-assert "docker pull" in helper_text and "docker tag" in helper_text and "docker push" in helper_text
+assert "sha256:[0-9a-f]{64}" in helper_text
+assert "ccr.ccs.tencentyun.com" in helper_text
+assert "wotb-transfer" in helper_text
+assert "docker image inspect" in helper_text and "docker tag" in helper_text and "docker push" in helper_text
 assert "docker buildx imagetools inspect" in helper_text
 assert "{{.Manifest.Digest}}" in helper_text
 assert "{{.Digest}}" not in helper_text, "registry digest must use the buildx manifest descriptor"
 assert "timeout --kill-after" in helper_text
-assert "GHCR_PULL_ATTEMPTS" in helper_text and "GHCR_PULL_TIMEOUT_SECONDS" in helper_text
-assert "stage=replication-start" in helper_text and "stage=replication-end" in helper_text
-assert "stage=pull-source" in helper_text and "stage=push-immutable" in helper_text
+assert "stage=publication-start" in helper_text and "stage=publication-end" in helper_text
+assert "stage=push-immutable" in helper_text
 assert "stage=verify-immutable" in helper_text and "stage=update-latest" in helper_text
 assert "docker system prune" not in helper_text and "docker image prune" not in helper_text
 assert "TCR_USERNAME" not in helper_text and "TCR_PASSWORD" not in helper_text
+assert "ghcr.io" not in helper_text and "docker pull" not in helper_text and "crane" not in helper_text
+assert "StrictHostKeyChecking yes" in ssh_setup_helper.read_text(encoding="utf-8")
+assert "ssh-keyscan" in ssh_setup_helper.read_text(encoding="utf-8")
+stream_text = oci_stream_helper.read_text(encoding="utf-8")
+assert "gzip -c" in stream_text and "docker load" in stream_text and "flock -w" in stream_text
+assert "bash -o pipefail -c" in stream_text
+assert r'exec bash \"\$0\"' in stream_text
+assert "timeout --kill-after=30s 3300s" in stream_text
+assert "docker pull" not in stream_text and "TCR_PASSWORD" not in stream_text
+assert "appleboy/scp-action@v1" not in build_text and "appleboy/ssh-action@v1" not in build_text
+assert "replicate-image-to-tcr.sh" not in build_text
 assert not (deploy_path.parent.parent.parent / "scripts/ci/copy-image-to-tcr.sh").exists()
+assert not (deploy_path.parent.parent.parent / "deploy/tx/replicate-image-to-tcr.sh").exists()
 
 manifest_job = build_jobs["manifest"]
 assert "always()" in manifest_job["if"]
@@ -426,4 +445,4 @@ assert tx_step_names.index("Apply Keycloak PostgreSQL OpenTofu on TX localhost")
 print("Build/Deploy workflow release contract OK")
 PY
 
-bash "$ROOT/deploy/test-tx-replication-helper.sh"
+bash "$ROOT/deploy/test-tx-publication-helper.sh"
