@@ -114,7 +114,7 @@ jobs:
     if: needs.changes.result == 'success' && needs.changes.outputs.backend == 'true'
     name: Build Backend
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -132,6 +132,9 @@ jobs:
           registry: ${{ vars.TCR_REGISTRY }}
           username: ${{ secrets.TCR_USERNAME }}
           password: ${{ secrets.TCR_PASSWORD }}
+      - uses: imjasonh/setup-crane@v0.7
+        with:
+          version: v0.22.1
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
@@ -141,32 +144,24 @@ jobs:
           tags: |
             ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-backend:latest
-            ${{ env.TCR_IMAGE_PREFIX }}/wotbtools-backend:${{ needs.changes.outputs.tag }}
-            ${{ env.TCR_IMAGE_PREFIX }}/wotbtools-backend:latest
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
-      - name: Verify Backend immutable digest parity
+      - name: Copy and verify Backend immutable image in Tencent TCR
         env:
           IMAGE_TAG: ${{ needs.changes.outputs.tag }}
         shell: bash
         run: |
-          set -euo pipefail
-          ghcr_digest="$(docker buildx imagetools inspect "$GHCR_IMAGE_PREFIX-backend:$IMAGE_TAG" --format '{{.Manifest.Digest}}')"
-          tcr_digest="$(docker buildx imagetools inspect "$TCR_IMAGE_PREFIX/wotbtools-backend:$IMAGE_TAG" --format '{{.Manifest.Digest}}')"
-          [ "$ghcr_digest" = "$tcr_digest" ] || {
-            echo "::error::Backend immutable image digests differ between GHCR and Tencent TCR." >&2
-            exit 1
-          }
+          bash scripts/ci/copy-image-to-tcr.sh backend "$IMAGE_TAG" --update-latest
 
   build_frontend:
     needs: [changes]
     if: needs.changes.result == 'success' && needs.changes.outputs.frontend == 'true'
     name: Build Frontend
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -184,6 +179,9 @@ jobs:
           registry: ${{ vars.TCR_REGISTRY }}
           username: ${{ secrets.TCR_USERNAME }}
           password: ${{ secrets.TCR_PASSWORD }}
+      - uses: imjasonh/setup-crane@v0.7
+        with:
+          version: v0.22.1
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
@@ -193,32 +191,24 @@ jobs:
           tags: |
             ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest
-            ${{ env.TCR_IMAGE_PREFIX }}/wotbtools-frontend:${{ needs.changes.outputs.tag }}
-            ${{ env.TCR_IMAGE_PREFIX }}/wotbtools-frontend:latest
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
-      - name: Verify Frontend immutable digest parity
+      - name: Copy and verify Frontend immutable image in Tencent TCR
         env:
           IMAGE_TAG: ${{ needs.changes.outputs.tag }}
         shell: bash
         run: |
-          set -euo pipefail
-          ghcr_digest="$(docker buildx imagetools inspect "$GHCR_IMAGE_PREFIX-frontend:$IMAGE_TAG" --format '{{.Manifest.Digest}}')"
-          tcr_digest="$(docker buildx imagetools inspect "$TCR_IMAGE_PREFIX/wotbtools-frontend:$IMAGE_TAG" --format '{{.Manifest.Digest}}')"
-          [ "$ghcr_digest" = "$tcr_digest" ] || {
-            echo "::error::Frontend immutable image digests differ between GHCR and Tencent TCR." >&2
-            exit 1
-          }
+          bash scripts/ci/copy-image-to-tcr.sh frontend "$IMAGE_TAG" --update-latest
 
   build_keycloak:
     needs: [changes]
     if: needs.changes.result == 'success' && needs.changes.outputs.keycloak == 'true'
     name: Build Keycloak
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -236,6 +226,9 @@ jobs:
           registry: ${{ vars.TCR_REGISTRY }}
           username: ${{ secrets.TCR_USERNAME }}
           password: ${{ secrets.TCR_PASSWORD }}
+      - uses: imjasonh/setup-crane@v0.7
+        with:
+          version: v0.22.1
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
@@ -245,25 +238,17 @@ jobs:
           tags: |
             ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest
-            ${{ env.TCR_IMAGE_PREFIX }}/wotbtools-keycloak:${{ needs.changes.outputs.tag }}
-            ${{ env.TCR_IMAGE_PREFIX }}/wotbtools-keycloak:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           provenance: false
           sbom: false
-      - name: Verify Keycloak immutable digest parity
+      - name: Copy and verify Keycloak immutable image in Tencent TCR
         env:
           IMAGE_TAG: ${{ needs.changes.outputs.tag }}
         shell: bash
         run: |
-          set -euo pipefail
-          ghcr_digest="$(docker buildx imagetools inspect "$GHCR_IMAGE_PREFIX-keycloak:$IMAGE_TAG" --format '{{.Manifest.Digest}}')"
-          tcr_digest="$(docker buildx imagetools inspect "$TCR_IMAGE_PREFIX/wotbtools-keycloak:$IMAGE_TAG" --format '{{.Manifest.Digest}}')"
-          [ "$ghcr_digest" = "$tcr_digest" ] || {
-            echo "::error::Keycloak immutable image digests differ between GHCR and Tencent TCR." >&2
-            exit 1
-          }
+          bash scripts/ci/copy-image-to-tcr.sh keycloak "$IMAGE_TAG" --update-latest
 
   build_minio:
     needs: [changes]
