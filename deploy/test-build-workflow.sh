@@ -133,6 +133,8 @@ def run_copy_helper(*args, crane_mode="success"):
             "      ( trap '' TERM; sleep 10 ) & wait \"$!\"\n"
             "    fi ;;\n"
             "  digest)\n"
+            "    if [ \"${CRANE_MODE:-success}\" = ghcr-digest-fail ] && [[ \"$2\" == ghcr.io/* ]]; then exit 21; fi\n"
+            "    if [ \"${CRANE_MODE:-success}\" = tcr-digest-fail ] && [[ \"$2\" == ccr.ccs.tencentyun.com/* ]]; then exit 22; fi\n"
             "    if [ \"${CRANE_MODE:-success}\" = digest-mismatch ] && [[ \"$2\" == *ccr.ccs.tencentyun.com* ]]; then\n"
             "      echo sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
             "    else\n"
@@ -165,7 +167,12 @@ assert "stage=replication-start" in success.stdout
 assert "stage=replication-end result=PASS" in success.stdout
 assert "elapsed_seconds=" in success.stdout
 assert "copy ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:sha-aaaaaaaaaaaa" in success_log
-assert "copy ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:latest" in success_log
+latest_copy = "copy ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:latest"
+assert success_log.count(latest_copy) == 1, "latest must update exactly once after immutable verification"
+assert success_log.index("digest ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa") < success_log.index(latest_copy), \
+    "latest must update only after the GHCR immutable digest is resolved"
+assert success_log.index("digest ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:sha-aaaaaaaaaaaa") < success_log.index(latest_copy), \
+    "latest must update only after the TCR immutable digest is resolved"
 bad_component, _, _ = run_copy_helper("minio", "sha-aaaaaaaaaaaa")
 assert bad_component.returncode != 0
 bad_tag, _, _ = run_copy_helper("backend", "latest")
@@ -179,8 +186,15 @@ assert ":latest" not in copy_timeout_log, "latest must not update after immutabl
 assert copy_timeout_elapsed_seconds < 5, "TERM-ignoring crane must be hard-killed before it can naturally exit"
 assert "stage=replication-end result=FAIL" in copy_timeout.stderr
 assert "elapsed_seconds=" in copy_timeout.stderr
-digest_mismatch, _, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", crane_mode="digest-mismatch")
+digest_mismatch, digest_mismatch_log, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", "--update-latest", crane_mode="digest-mismatch")
 assert digest_mismatch.returncode != 0, "immutable digest mismatch must fail closed"
+assert ":latest" not in digest_mismatch_log, "latest must not update after immutable digest mismatch"
+ghcr_digest_failure, ghcr_digest_failure_log, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", "--update-latest", crane_mode="ghcr-digest-fail")
+assert ghcr_digest_failure.returncode != 0, "GHCR immutable digest lookup failure must fail closed"
+assert ":latest" not in ghcr_digest_failure_log, "latest must not update after GHCR digest lookup failure"
+tcr_digest_failure, tcr_digest_failure_log, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", "--update-latest", crane_mode="tcr-digest-fail")
+assert tcr_digest_failure.returncode != 0, "Tencent TCR immutable digest lookup failure must fail closed"
+assert ":latest" not in tcr_digest_failure_log, "latest must not update after TCR digest lookup failure"
 
 manifest_job = build_jobs["manifest"]
 assert "always()" in manifest_job["if"]

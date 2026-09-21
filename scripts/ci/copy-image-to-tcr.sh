@@ -62,6 +62,13 @@ copy_image() {
 }
 
 copy_image immutable "$target_image"
+echo "[$(timestamp)] component=$component stage=verify-immutable source=$source_image target=$target_image"
+source_digest="$(crane digest "$source_image")" || fail "cannot resolve GHCR immutable digest for component=$component"
+target_digest="$(crane digest "$target_image")" || fail "cannot resolve Tencent TCR immutable digest for component=$component"
+[ "$source_digest" = "$target_digest" ] ||
+  fail "immutable image digests differ between GHCR and Tencent TCR for component=$component"
+echo "[$(timestamp)] component=$component stage=verify-immutable result=PASS digest=$source_digest"
+
 if [ "$update_latest" = "--update-latest" ]; then
   copy_image latest "$TCR_PREFIX/wotbtools-$component:latest"
 fi
@@ -71,10 +78,3 @@ replication_ended_epoch="$(date -u +%s)"
 echo "[$replication_ended_at] component=$component stage=replication-end result=PASS started_at=$replication_started_at ended_at=$replication_ended_at elapsed_seconds=$((replication_ended_epoch - replication_started_epoch))"
 replication_started_at=""
 replication_started_epoch=""
-
-echo "[$(timestamp)] component=$component stage=verify-immutable source=$source_image target=$target_image"
-source_digest="$(crane digest "$source_image")" || fail "cannot resolve GHCR immutable digest for component=$component"
-target_digest="$(crane digest "$target_image")" || fail "cannot resolve Tencent TCR immutable digest for component=$component"
-[ "$source_digest" = "$target_digest" ] ||
-  fail "immutable image digests differ between GHCR and Tencent TCR for component=$component"
-echo "[$(timestamp)] component=$component stage=verify-immutable result=PASS digest=$source_digest"
