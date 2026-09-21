@@ -133,15 +133,6 @@ has_image_service() {
   return 1
 }
 
-# An application image service only starts when this deployment selects it (or
-# `all`). Every other selector - the PostgreSQL bootstrap steps, RabbitMQ-only,
-# business-postgres-only and the Caddy-only edge reconcile - neither pulls nor
-# recreates an application image, so none of them may require that image's
-# recorded immutable identity merely to render the Compose document.
-starts_application_image_services() {
-  is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected business-api
-}
-
 validate_inputs() {
   is_safe_path "$WOTB_DIR" || die "unsafe WOTB_TX_DIR."
   is_safe_path "$INCOMING_DIR" || die "unsafe WOTB_TX_INCOMING_DIR."
@@ -240,7 +231,10 @@ if re.fullmatch(r"sha-[0-9a-f]{12}", tag):
 PY
 }
 
-compose_tag() {
+# The raw `image:` value the live Compose document currently records for one service.
+# That document is the deployed configuration, so it is read verbatim - a host may
+# still name a reference that predates the TCR-only convention - and never invented.
+live_compose_image() {
   local service="$1"
   [ -f "$LIVE_COMPOSE" ] || return 0
   python3 - "$LIVE_COMPOSE" "$service" <<'PY'
@@ -256,67 +250,110 @@ for line in open(sys.argv[1], encoding="utf-8"):
         continue
     if current != service:
         continue
-    match = re.match(r"^\s+image:\s+ccr\.ccs\.tencentyun\.com/[a-z0-9][a-z0-9._-]*/wotbtools-[^:]+:(sha-[0-9a-f]{12})\s*$", line)
+    match = re.match(r"^\s+image:\s+(\S+)\s*$", line)
     if match:
         print(match.group(1))
         break
 PY
 }
 
-current_or_target_tag() {
+# The image reference the running container was created with: the live runtime source
+# for a service whose Compose entry cannot be read.
+running_container_image() {
+  local service="$1" container=""
+  container="$(docker compose -f "$LIVE_COMPOSE" ps -q "$service" 2>/dev/null)" || return 0
+  [ -n "$container" ] || return 0
+  docker inspect --format '{{.Config.Image}}' "$container" 2>/dev/null || return 0
+}
+
+# The pinned Tencent TCR repository of one application image service. The Compose
+# service name is not always the image name (business-api runs the backend image), so
+# the mapping stays explicit and single-sourced here.
+image_repository() {
+  case "$1" in
+    wotb-frontend) printf '%s\n' wotbtools-frontend ;;
+    keycloak) printf '%s\n' wotbtools-keycloak ;;
+    business-api) printf '%s\n' wotbtools-backend ;;
+    *) return 1 ;;
+  esac
+}
+
+# The immutable tag of the image a service actually runs, from the live Compose
+# document or - when that document does not name one - from its running container.
+# Only a sha-<12> tag qualifies: a mutable or unresolved reference is not an identity
+# this deployment may carry forward, and an unavailable one is reported as absent
+# instead of guessed.
+live_image_tag() {
+  local service="$1" image=""
+  image="$(live_compose_image "$service")"
+  [[ "$image" =~ :(sha-[0-9a-f]{12})$ ]] || image="$(running_container_image "$service")"
+  [[ "$image" =~ :(sha-[0-9a-f]{12})$ ]] || return 0
+  printf '%s\n' "${BASH_REMATCH[1]}"
+}
+
+# True when this host holds deployment state for one application image service: a
+# recorded identity, a concrete (non-template) live Compose reference, or a running
+# container. Such a service must keep a resolvable immutable identity, so an unusable
+# one fails closed. A service with none of these has never been deployed on this host
+# (the PostgreSQL/broker bootstrap path), so there is no identity to preserve and its
+# incoming declaration is kept instead.
+has_deployment_state() {
+  local service="$1" image=""
+  [ -n "$(metadata_tag "$service")" ] && return 0
+  image="$(live_compose_image "$service")"
+  if [ -n "$image" ] && [[ "$image" != *'${'* ]]; then
+    return 0
+  fi
+  [ -n "$(running_container_image "$service")" ] && return 0
+  return 1
+}
+
+# The immutable image reference the promoted Compose document must pin for one
+# application image service.
+#
+# A service this deployment deploys runs this release's tag. Every other service keeps
+# the identity it is actually deployed with - recorded release metadata, else the live
+# Compose document, else the running container of that exact Compose service - so a
+# deployment can never advance (or invent) the identity of a service it did not deploy.
+# When the host holds deployment state but no source yields an immutable sha-<12> tag,
+# the deployment fails closed with the service named; when the service was never
+# deployed here, nothing is printed and the incoming declaration is kept.
+effective_image_ref() {
   local service="$1" tag=""
   is_image_service "$service" || die "not an application image service: $service"
   if is_selected all || has_image_service "$service"; then
-    printf '%s\n' "$TAG_VALUE"
-    return
-  fi
-  if (is_selected rabbitmq || is_selected business-postgres) && [ "${#DEPLOY_SERVICES[@]}" -eq 1 ]; then
-    # A RabbitMQ-only or business-postgres-only deployment does not pull or
-    # start application images. A fresh TX host therefore need not have
-    # application metadata merely to render the complete Compose document.
-    printf '%s\n' "$TAG_VALUE"
-    return
+    printf '%s\n' "$TX_IMAGE_REGISTRY_PREFIX_VALUE/$(image_repository "$service"):$TAG_VALUE"
+    return 0
   fi
   tag="$(metadata_tag "$service")"
-  [ -n "$tag" ] || tag="$(compose_tag "$service")"
-  # The first TX steps intentionally start a PostgreSQL runtime before OpenTofu
-  # creates the Keycloak/business database and role. No application image
-  # exists yet, so render the incoming immutable tag without starting or
-  # recording that image.
-  if [ -z "$tag" ] && (is_selected keycloak-postgres || is_selected business-postgres) \
-    && ! is_selected keycloak && ! is_selected wotb-frontend; then
-    printf '%s\n' "$TAG_VALUE"
-    return
+  [ -n "$tag" ] || tag="$(live_image_tag "$service")"
+  if [[ "$tag" =~ ^sha-[0-9a-f]{12}$ ]]; then
+    printf '%s\n' "$TX_IMAGE_REGISTRY_PREFIX_VALUE/$(image_repository "$service"):$tag"
+    return 0
   fi
-  if [ -z "$tag" ] && ! starts_application_image_services; then
-    # A deployment that starts no application image service (RabbitMQ-only, a
-    # database bootstrap, or the Caddy-only edge reconcile) still renders and
-    # promotes the complete Compose document, so services it never starts use
-    # the incoming immutable release tag. No recorded application identity is
-    # required for them, none is invented, and no release metadata is written.
-    printf '%s\n' "$TAG_VALUE"
-    return
-  fi
-  [[ "$tag" =~ ^sha-[0-9a-f]{12}$ ]] \
-    || die "current immutable image identity is unavailable for $service; deploy both TX application images for first bootstrap."
-  printf '%s\n' "$tag"
+  has_deployment_state "$service" || return 0
+  die "cannot resolve the immutable image identity of $service from release metadata, the live Compose document or its running container; refusing to render a TX Compose document that would rewrite it."
 }
 
+# Render the promoted Compose document from the staged tree, pinning the immutable
+# identity resolved for every application image service (see effective_image_ref).
 render_effective_compose() {
-  local source="$1" target="$2" frontend_tag="$3" keycloak_tag="$4" business_api_tag="$5"
-  FRONTEND_TAG="$frontend_tag" KEYCLOAK_TAG="$keycloak_tag" BUSINESS_API_TAG="$business_api_tag" \
-    TX_IMAGE_REGISTRY_PREFIX="$TX_IMAGE_REGISTRY_PREFIX_VALUE" \
+  local source="$1" target="$2" frontend_image="$3" keycloak_image="$4" business_api_image="$5"
+  FRONTEND_IMAGE="$frontend_image" KEYCLOAK_IMAGE="$keycloak_image" \
+    BUSINESS_API_IMAGE="$business_api_image" \
     python3 - "$source" "$target" <<'PY'
 import os
 import re
 import sys
 
 source, target = sys.argv[1:3]
-# service -> (immutable tag resolved for this deployment, pinned image repository)
-tags = {
-    "wotb-frontend": (os.environ["FRONTEND_TAG"], os.environ["TX_IMAGE_REGISTRY_PREFIX"] + "/wotbtools-frontend"),
-    "keycloak": (os.environ["KEYCLOAK_TAG"], os.environ["TX_IMAGE_REGISTRY_PREFIX"] + "/wotbtools-keycloak"),
-    "business-api": (os.environ["BUSINESS_API_TAG"], os.environ["TX_IMAGE_REGISTRY_PREFIX"] + "/wotbtools-backend"),
+# service -> immutable image reference resolved for this deployment. An empty value
+# means the service has never been deployed on this host, so its incoming declaration
+# is kept verbatim; a resolved value is pinned.
+images = {
+    "wotb-frontend": os.environ["FRONTEND_IMAGE"],
+    "keycloak": os.environ["KEYCLOAK_IMAGE"],
+    "business-api": os.environ["BUSINESS_API_IMAGE"],
 }
 current = ""
 seen = set()
@@ -325,12 +362,13 @@ for line in open(source, encoding="utf-8"):
     match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
     if match:
         current = match.group(1)
-    if current in tags and re.match(r"^\s+image:\s+", line):
-        tag, image = tags[current]
-        line = f"    image: {image}:{tag}\n"
+    if current in images and re.match(r"^\s+image:\s+", line):
+        image = images[current]
         seen.add(current)
+        if image:
+            line = f"    image: {image}\n"
     output.append(line)
-missing = set(tags) - seen
+missing = set(images) - seen
 if missing:
     raise SystemExit("compose is missing application image definitions: " + ", ".join(sorted(missing)))
 with open(target, "w", encoding="utf-8") as handle:
@@ -354,11 +392,12 @@ stage_and_validate() {
   # its content (the staged replay fixtures) is optional and staged separately.
   mkdir -p "$TX_RUNTIME_ROOT/e2e"
   set_nonselected_compose_placeholders
-  local frontend_tag keycloak_tag business_api_tag
-  frontend_tag="$(current_or_target_tag wotb-frontend)"
-  keycloak_tag="$(current_or_target_tag keycloak)"
-  business_api_tag="$(current_or_target_tag business-api)"
-  render_effective_compose "$source" "$EFFECTIVE_COMPOSE" "$frontend_tag" "$keycloak_tag" "$business_api_tag"
+  local frontend_image keycloak_image business_api_image
+  frontend_image="$(effective_image_ref wotb-frontend)"
+  keycloak_image="$(effective_image_ref keycloak)"
+  business_api_image="$(effective_image_ref business-api)"
+  render_effective_compose "$source" "$EFFECTIVE_COMPOSE" \
+    "$frontend_image" "$keycloak_image" "$business_api_image"
   export TX_RUNTIME_ROOT
   export TX_BACKEND_UPSTREAM="$BACKEND_UPSTREAM_VALUE"
   assert_routing_boundary "$EFFECTIVE_COMPOSE"
