@@ -22,7 +22,7 @@ ci_text = ci_path.read_text(encoding="utf-8")
 tx_deploy_text = (deploy_path.parent.parent.parent / "deploy/tx/deploy.sh").read_text(encoding="utf-8")
 publication_helper = deploy_path.parent.parent.parent / "deploy/tx/publish-loaded-image-to-tcr.sh"
 ssh_setup_helper = deploy_path.parent.parent.parent / "scripts/ci/setup-tx-ssh.sh"
-oci_stream_helper = deploy_path.parent.parent.parent / "scripts/ci/stream-oci-to-tx.sh"
+oci_transfer_helper = deploy_path.parent.parent.parent / "scripts/ci/transfer-oci-to-tx.sh"
 build = yaml.safe_load(build_text)
 deploy = yaml.safe_load(deploy_text)
 ci = yaml.safe_load(ci_text)
@@ -80,24 +80,61 @@ for job_name, output_name in (
         assert "EXPECTED_DIGEST" in digest_step["run"]
         ssh_setup_step = next(step for step in job["steps"] if step.get("name") == "Set up native TX SSH")
         install_step = next(step for step in job["steps"] if step.get("name") == "Install TX loaded-image publication helper")
-        stream_step = next(step for step in job["steps"] if step.get("name") == f"Import {image_prefix.title()} OCI image on TX")
-        publish_step = next(step for step in job["steps"] if step.get("name") == f"Publish {image_prefix.title()} loaded image to TCR")
+        title = image_prefix.title()
+        transfer_step = next(step for step in job["steps"] if step.get("name") == f"Transfer {title} OCI archive to TX")
+        import_step = next(step for step in job["steps"] if step.get("name") == f"Import {title} OCI image on TX")
+        publish_step = next(step for step in job["steps"] if step.get("name") == f"Publish {title} loaded image to TCR")
+        cleanup_step = next(step for step in job["steps"] if step.get("name") == f"Remove {title} remote transfer material")
+        local_cleanup_step = next(step for step in job["steps"] if step.get("name") == f"Remove {title} temporary transfer material")
         assert "setup-tx-ssh.sh" in ssh_setup_step["run"]
         assert "TX_VPS_SSH_KEY" in str(ssh_setup_step)
         assert "scp -F \"$TX_SSH_DIR/config\"" in install_step["run"]
         assert "publish-loaded-image-to-tcr.sh" in install_step["run"]
-        assert "stream-oci-to-tx.sh" in stream_step["run"]
-        assert stream_step["env"]["NETWORK_RETRY_MAX_ATTEMPTS"] == 2
-        assert "EXPECTED_DIGEST" not in stream_step["run"]
+        for label, step, mode in (
+            ("transfer", transfer_step, "transfer"),
+            ("import", import_step, "import"),
+            ("cleanup", cleanup_step, "cleanup"),
+        ):
+            assert f"bash scripts/ci/transfer-oci-to-tx.sh {mode} {image_prefix}" in step["run"], \
+                f"{job_name} {label} must run the TX OCI transfer helper"
+            assert "${{ github.run_id }}" in step["run"], \
+                f"{job_name} {label} must scope the TX staging path to this build run"
+            # The helper owns a bounded rsync-only transport retry. Import, cleanup and
+            # publication must never be wrapped in the generic network retry wrapper:
+            # a failed import or publication must not retransmit the archive.
+            assert "run-with-network-retry.sh" not in step["run"], \
+                f"{job_name} {label} must not use the generic network retry wrapper"
+            assert "NETWORK_RETRY_MAX_ATTEMPTS" not in str(step), \
+                f"{job_name} {label} must not request generic retries"
+            assert "docker load" not in step["run"], \
+                f"{job_name} {label} must leave docker load to the verified TX helper"
+        assert "EXPECTED_DIGEST" not in transfer_step["run"] and "EXPECTED_DIGEST" not in import_step["run"]
+        for step_name in (
+            f"Transfer {title} OCI archive to TX",
+            f"Import {title} OCI image on TX",
+            f"Publish {title} loaded image to TCR",
+        ):
+            assert sum(1 for step in job["steps"] if step.get("name") == step_name) == 1, \
+                f"{job_name} must run '{step_name}' exactly once"
+        assert cleanup_step["if"] == "success()", \
+            f"{job_name} must only clean the TX archive after a successful publication"
         assert "run-with-network-retry.sh" not in publish_step["run"]
         assert "ssh -F \"$TX_SSH_DIR/config\"" in publish_step["run"]
         assert "publish-loaded-image-to-tcr.sh" in publish_step["run"]
         assert "flock -w 1800" in publish_step["run"]
         assert "EXPECTED_DIGEST" in publish_step["run"]
-        assert "TCR_USERNAME" not in str(ssh_setup_step) + str(install_step) + str(stream_step) + str(publish_step)
-        assert "TCR_PASSWORD" not in str(ssh_setup_step) + str(install_step) + str(stream_step) + str(publish_step)
-        assert job["steps"].index(build_step) < job["steps"].index(digest_step) < job["steps"].index(stream_step) < job["steps"].index(publish_step), \
-            f"{job_name} must import then publish its one GHCR/OCI build"
+        for step in (ssh_setup_step, install_step, transfer_step, import_step, publish_step, cleanup_step):
+            assert "TCR_USERNAME" not in str(step) and "TCR_PASSWORD" not in str(step)
+        ordered_steps = (
+            build_step, digest_step, ssh_setup_step, install_step,
+            transfer_step, import_step, publish_step, cleanup_step, local_cleanup_step,
+        )
+        indices = [job["steps"].index(step) for step in ordered_steps]
+        assert indices == sorted(indices), \
+            f"{job_name} must verify its digest, transfer, import, publish and then clean up its one GHCR/OCI build"
+        assert local_cleanup_step["if"] == "always()"
+        assert "gzip" not in str(job) and "stream-oci-to-tx.sh" not in str(job), \
+            f"{job_name} must not stream the OCI archive over a long-lived SSH pipe"
     else:
         assert "tencentyun.com" not in tags, \
             f"{job_name} must remain GHCR-only"
@@ -119,7 +156,7 @@ for job_name, output_name in (
         f"{job_name} must inject the frozen release SHA into the image"
 
 assert publication_helper.is_file(), "Build must keep TX publication in a deployment-owned helper"
-assert ssh_setup_helper.is_file() and oci_stream_helper.is_file()
+assert ssh_setup_helper.is_file() and oci_transfer_helper.is_file()
 helper_text = publication_helper.read_text(encoding="utf-8")
 assert "set -euo pipefail" in helper_text
 assert "backend|frontend|keycloak" in helper_text
@@ -140,17 +177,38 @@ assert "TCR_USERNAME" not in helper_text and "TCR_PASSWORD" not in helper_text
 assert "ghcr.io" not in helper_text and "docker pull" not in helper_text and "crane" not in helper_text
 assert "StrictHostKeyChecking yes" in ssh_setup_helper.read_text(encoding="utf-8")
 assert "ssh-keyscan" in ssh_setup_helper.read_text(encoding="utf-8")
-stream_text = oci_stream_helper.read_text(encoding="utf-8")
-assert "gzip -c" in stream_text and "docker load" in stream_text and "flock -w 900" in stream_text
-assert "bash -o pipefail -c" in stream_text
-assert "timeout --kill-after=30s 1200s" in stream_text
-assert "publish-loaded-image-to-tcr.sh" not in stream_text
-assert "EXPECTED_DIGEST" not in stream_text
-assert "docker pull" not in stream_text and "TCR_PASSWORD" not in stream_text
+transfer_text = oci_transfer_helper.read_text(encoding="utf-8")
+assert "set -euo pipefail" in transfer_text
+# Resumable native rsync over the existing job-scoped OpenSSH configuration.
+assert "rsync --partial --append-verify" in transfer_text
+assert '-e "ssh -F $TX_SSH_DIR/config"' in transfer_text
+assert "sha256sum" in transfer_text
+assert "docker load -i" in transfer_text
+assert "flock -w" in transfer_text and "oci-transfer.lock" in transfer_text
+assert 'STAGING_ROOT="/opt/wotb-tx/replication.incoming"' in transfer_text
+assert 'remote_dir="$STAGING_ROOT/$run_id/$component"' in transfer_text, \
+    "the TX staging path must be constructed from the validated run id and component"
+assert "gzip -" not in transfer_text, "the OCI archive must not be re-compressed or piped"
+assert "bash -o pipefail -c" not in transfer_text
+assert "run-with-network-retry.sh" not in transfer_text, \
+    "the transfer helper owns its own bounded rsync transport retry"
+assert "publish-loaded-image-to-tcr.sh" not in transfer_text
+assert "EXPECTED_DIGEST" not in transfer_text
+assert "docker pull" not in transfer_text and "TCR_PASSWORD" not in transfer_text
+assert "crane" not in transfer_text and "ghcr.io" not in transfer_text
+assert "StrictHostKeyChecking=no" not in transfer_text
+assert "docker system prune" not in transfer_text and "docker image prune" not in transfer_text
+assert "oci-import.lock" not in transfer_text and "oci-import.lock" not in build_text
+assert "gzip" not in build_text and "docker load" not in build_text, \
+    "Build must not stream or pipe the OCI archive into docker load"
+assert "run-with-network-retry.sh 'upload" not in build_text
+assert "run-with-network-retry.sh 'transfer" not in build_text
 assert "appleboy/scp-action@v1" not in build_text and "appleboy/ssh-action@v1" not in build_text
 assert "replicate-image-to-tcr.sh" not in build_text
 assert not (deploy_path.parent.parent.parent / "scripts/ci/copy-image-to-tcr.sh").exists()
 assert not (deploy_path.parent.parent.parent / "deploy/tx/replicate-image-to-tcr.sh").exists()
+assert not (deploy_path.parent.parent.parent / "scripts/ci/stream-oci-to-tx.sh").exists(), \
+    "the obsolete long-lived OCI stream helper must stay deleted"
 
 manifest_job = build_jobs["manifest"]
 assert "always()" in manifest_job["if"]
@@ -158,6 +216,11 @@ assert "build_backend" in str(manifest_job["needs"])
 assert "build_minio" in str(manifest_job["needs"])
 assert "build_parser_worker" in str(manifest_job["needs"])
 assert "needs.changes.outputs.parserWorker != 'true' || needs.build_parser_worker.result == 'success'" in manifest_job["if"]
+# A failed transfer, import or TCR publication fails its builder job, and the
+# manifest is only created for builders that succeeded.
+for component in ("backend", "frontend", "keycloak"):
+    assert f"needs.changes.outputs.{component} != 'true' || needs.build_{component}.result == 'success'" in manifest_job["if"], \
+        f"the manifest must stay fail-closed on {component} transfer/import/publication failure"
 assert "PARSER_WORKER: ${{ needs.changes.outputs.parserWorker }}" in build_text
 assert '"parser-worker": os.environ["PARSER_WORKER"] == "true",' in build_text
 assert 'for image in ("backend", "frontend", "keycloak", "minio", "parser-worker"):' in build_text
