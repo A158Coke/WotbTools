@@ -107,7 +107,6 @@ validate_inputs() {
   [[ "$TAG_VALUE" =~ ^sha-[0-9a-f]{12}$ ]] || die "TAG must be an immutable sha-<12 lowercase hex> tag."
   [[ "$RELEASE_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]] || die "RELEASE_SHA must be a full lowercase commit SHA."
   is_positive_integer "$RELEASE_RUN_NUMBER_VALUE" || die "RELEASE_RUN_NUMBER must be a positive integer."
-  is_non_negative_integer "$BACKEND_MIGRATION_MAX_VALUE" || die "WOTB_BACKEND_MIGRATION_MAX_VERSION must be a non-negative integer."
   is_positive_integer "$HEALTH_ATTEMPTS" || die "WOTB_HEALTH_ATTEMPTS must be a positive integer."
   is_positive_integer "$HEALTH_INTERVAL_SEC" || die "WOTB_HEALTH_INTERVAL_SEC must be a positive integer."
   is_positive_integer "$PROBE_CONNECT_TIMEOUT_SEC" || die "WOTB_PROBE_CONNECT_TIMEOUT_SEC must be a positive integer."
@@ -139,6 +138,15 @@ validate_inputs() {
   for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
     [ -z "$service" ] || is_selected "$service" || die "image service is not in deploy service set: $service"
   done
+
+  # The backend Flyway migration ceiling is metadata for the backend service only: the worker has no
+  # database access at all, and a worker-only deploy never touches the backend schema. Demanding the
+  # value from every deploy would force the worker path to carry an unrelated backend input, so the
+  # ceiling is validated exactly when a backend image is part of this deploy.
+  if is_selected wotb-backend || has_image_service wotb-backend; then
+    is_non_negative_integer "$BACKEND_MIGRATION_MAX_VALUE" \
+      || die "WOTB_BACKEND_MIGRATION_MAX_VERSION must be a non-negative integer."
+  fi
 
   # The worker is the only Yecao service that talks to two remote planes (the TX broker and the
   # Yecao MinIO). Its credentials are required exactly when it is selected, so a legacy-only deploy

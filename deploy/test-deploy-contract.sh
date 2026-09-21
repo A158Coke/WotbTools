@@ -96,11 +96,12 @@ chmod 700 "$WORK/bin/docker"
 
 run_deploy() {
   local sha="$1" tag="$2" service="$3" image_service="$4" log="$5"
+  local migration_version="${6:-22}"
   env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
     WOTB_DIR="$WORK" WOTB_INCOMING_DIR="$WORK/incoming" \
     TAG="$tag" RELEASE_SHA="$sha" RELEASE_RUN_NUMBER=7 \
     WOTB_HEALTH_ATTEMPTS=2 WOTB_HEALTH_INTERVAL_SEC=1 \
-    WOTB_BACKEND_MIGRATION_MAX_VERSION=22 \
+    WOTB_BACKEND_MIGRATION_MAX_VERSION="$migration_version" \
     WOTB_DEPLOY_SERVICES="$service" WOTB_DEPLOY_IMAGE_SERVICES="$image_service" \
     DB_PASSWORD=not-real KC_ADMIN_PASSWORD=not-real WG_APPLICATION_ID=not-real \
     KEYCLOAK_ADMIN_CLIENT_SECRET=not-real AI_API_KEY=not-real \
@@ -260,15 +261,42 @@ grep -q 'YECAO_MINIO_WORKER_ACCESS_KEY' <<< "$compose_worker"
 grep -q 'YECAO_MINIO_WORKER_SECRET_KEY' <<< "$compose_worker"
 
 worker_log="$WORK/parser-worker.log"
+# A worker-only deploy must accept an empty WOTB_BACKEND_MIGRATION_MAX_VERSION: the worker has no
+# database access, so the backend Flyway ceiling is not one of its inputs. The deploy workflow sends
+# an empty value for the parser-worker target.
 worker_output="$(TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real \
   YECAO_MINIO_WORKER_ACCESS_KEY=not-real YECAO_MINIO_WORKER_SECRET_KEY=not-real \
   run_deploy 7777777777777777777777777777777777777777 sha-777777777777 parser-worker parser-worker \
-  "$worker_log" 2>&1)"
+  "$worker_log" "" 2>&1)"
 grep -q 'parser-worker: PASS' <<< "$worker_output"
+! grep -q 'WOTB_BACKEND_MIGRATION_MAX_VERSION' <<< "$worker_output"
 grep -q '^pull parser-worker' "$worker_log"
 grep -q '^up -d --no-deps --force-recreate parser-worker' "$worker_log"
 ! grep -Eq '^up .*wotb-backend|^up .*wotb-frontend|^up .*keycloak' "$worker_log"
 grep -q '"parser-worker"' "$WORK/production-release.json"
+
+# The backend migration ceiling stays mandatory for every deploy that actually ships the backend
+# image, so the relaxed parser-worker path cannot leak into the application deploy.
+while IFS=$'\t' read -r migration_service migration_image migration_version; do
+  [ -n "$migration_service" ] && [ -n "$migration_image" ] || continue
+  migration_log="$WORK/migration-$migration_service-${migration_version:-empty}.log"
+  : > "$migration_log"
+  set +e
+  migration_output="$(run_deploy bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sha-bbbbbbbbbbbb \
+    "$migration_service" "$migration_image" "$migration_log" "$migration_version" 2>&1)"
+  migration_rc=$?
+  set -e
+  [ "$migration_rc" -ne 0 ] \
+    || { echo "FAIL: $migration_service must reject WOTB_BACKEND_MIGRATION_MAX_VERSION='$migration_version'" >&2; exit 1; }
+  grep -q 'WOTB_BACKEND_MIGRATION_MAX_VERSION must be a non-negative integer' <<< "$migration_output" \
+    || { echo "FAIL: $migration_service rejected the migration ceiling with an unexpected error" >&2; exit 1; }
+  [ ! -s "$migration_log" ] \
+    || { echo "FAIL: $migration_service rejected the migration ceiling only after touching containers" >&2; exit 1; }
+done <<'CASES'
+wotb-backend	wotb-backend	
+all	all	
+wotb-backend	wotb-backend	not-a-number
+CASES
 
 # Selecting the service without its credentials must fail closed before any container is touched.
 set +e
