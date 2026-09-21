@@ -12,6 +12,21 @@ grep -q '^        include: health,info,metrics,prometheus$' "$BACKEND_CONFIG"
 grep -q 'wait_for_probe backend http://wotb-backend:8088/actuator/health' "$ROOT/deploy/deploy.sh"
 ! grep -q 'wotb-backend:8087/api/health' "$ROOT/deploy/deploy.sh"
 
+# Yecao remains GHCR-only. TX's TCR routing must never leak into the legacy
+# backend/frontend/keycloak rollback stack, parser worker, or standalone MinIO.
+for image in \
+  'wotbtools-keycloak' \
+  'wotbtools-backend' \
+  'wotbtools-frontend' \
+  'wotbtools-parser-worker'; do
+  grep -Fq "image: ghcr.io/a158coke/$image:\${TAG:?TAG is required}" "$ROOT/deploy/docker-compose.prod.yml" \
+    || { echo "Yecao must keep $image on GHCR" >&2; exit 1; }
+done
+grep -Fq 'image: ghcr.io/a158coke/wotbtools-minio:${TAG:?TAG is required}' "$ROOT/deploy/docker-compose.minio.yml" \
+  || { echo "Yecao MinIO must remain on GHCR" >&2; exit 1; }
+! grep -Fq 'ccr.ccs.tencentyun.com' "$ROOT/deploy/docker-compose.prod.yml" \
+  || { echo "Yecao production Compose must not use Tencent TCR" >&2; exit 1; }
+
 mkdir -p "$WORK/incoming/deploy/observability/alloy" "$WORK/bin" "$WORK/config" "$WORK/android-release"
 cp "$ROOT/deploy/deploy.sh" "$WORK/incoming/deploy/deploy.sh"
 cp "$ROOT/deploy/docker-compose.prod.yml" "$WORK/incoming/deploy/docker-compose.prod.yml"

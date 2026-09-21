@@ -35,6 +35,19 @@ assert "name: Build Keycloak" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-backend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest" in build
+for component in ("backend", "frontend", "keycloak"):
+    assert f"${{{{ env.TCR_IMAGE_PREFIX }}}}/wotbtools-{component}:${{{{ needs.changes.outputs.tag }}}}" in build
+    assert f"${{{{ env.TCR_IMAGE_PREFIX }}}}/wotbtools-{component}:latest" in build
+assert "${{ env.TCR_IMAGE_PREFIX }}/wotbtools-minio" not in build
+assert "${{ env.TCR_IMAGE_PREFIX }}/wotbtools-parser-worker" not in build
+assert "Verify Backend immutable digest parity" in build
+assert "Verify Frontend immutable digest parity" in build
+assert "Verify Keycloak immutable digest parity" in build
+assert "TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}" in deploy
+assert "TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}" in deploy
+assert "TX_IMAGE_SERVICES" in deploy
+assert "contains_tx_image_service" in deploy
+assert "parser-worker) image=ghcr.io/a158coke/wotbtools-parser-worker" in deploy
 assert "workflow_run:" in deploy and "workflow_dispatch:" in deploy
 assert "tx_services:" in deploy
 assert "        default: business-api" in deploy

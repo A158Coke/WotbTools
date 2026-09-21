@@ -60,6 +60,20 @@ for job_name, output_name in (
     }[output_name]
     assert "${{ env.GHCR_IMAGE_PREFIX }}-" + image_prefix + ":${{ needs.changes.outputs.tag }}" in tags
     assert "${{ env.GHCR_IMAGE_PREFIX }}-" + image_prefix + ":latest" in tags
+    if output_name in {"backend", "frontend", "keycloak"}:
+        assert "${{ env.TCR_IMAGE_PREFIX }}/wotbtools-" + image_prefix + ":${{ needs.changes.outputs.tag }}" in tags
+        assert "${{ env.TCR_IMAGE_PREFIX }}/wotbtools-" + image_prefix + ":latest" in tags
+        parity_step = next((step for step in job["steps"] if step.get("name") == f"Verify {image_prefix.title()} immutable digest parity"), None)
+        assert parity_step is not None, \
+            f"{job_name} must prove GHCR/TCR immutable digest parity after push"
+        assert f'"$GHCR_IMAGE_PREFIX-{image_prefix}:$IMAGE_TAG"' in parity_step["run"]
+        assert f'"$TCR_IMAGE_PREFIX/wotbtools-{image_prefix}:$IMAGE_TAG"' in parity_step["run"]
+        assert '"$ghcr_digest" = "$tcr_digest"' in parity_step["run"]
+    else:
+        assert "${{ env.TCR_IMAGE_PREFIX }}" not in tags, \
+            f"{job_name} must remain GHCR-only"
+        assert not any(step.get("with", {}).get("registry") == "${{ vars.TCR_REGISTRY }}" for step in job["steps"]), \
+            f"{job_name} must not log in to Tencent TCR"
     for other in {"backend", "frontend", "keycloak", "minio", "parser-worker"} - {image_prefix}:
         assert "${{ env.GHCR_IMAGE_PREFIX }}-" + other + ":latest" not in tags, \
             f"{job_name} must not publish another component latest tag"
@@ -241,6 +255,8 @@ for workflow_text, workflow_name in ((build_text, "Manual Build"),):
         f"{workflow_name} must not accept an ancestor-only source"
 assert "::error::Manual Build must run from the current main HEAD." in build_text
 assert "Required immutable deploy image does not exist" in deploy_text
+assert "TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}" in deploy_text
+assert "TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}" in deploy_text
 assert "MinIO immutable image for current main does not exist." in deploy_text
 assert "Run Build workflow manually with service=minio first, then deploy the resulting release." in deploy_text
 assert "Parser Worker immutable image for current main does not exist." in deploy_text
@@ -250,6 +266,12 @@ assert image_job["needs"] == ["changes"]
 assert "image_services" in image_job["if"]
 assert "RELEASE_TAG" in image_job["steps"][-1]["env"]
 assert "docker manifest inspect" in image_job["steps"][-1]["run"]
+assert image_job["steps"][1]["if"] == "needs.changes.outputs.tx_image_services != ''"
+assert image_job["steps"][1]["with"] == {
+    "registry": "${{ vars.TCR_REGISTRY }}",
+    "username": "${{ secrets.TCR_USERNAME }}",
+    "password": "${{ secrets.TCR_PASSWORD }}",
+}
 for job_name in ("deploy", "deploy_minio", "deploy_tx"):
     job = deploy["jobs"][job_name]
     assert job["needs"] == ["changes", "image_existence"], \
@@ -262,10 +284,20 @@ assert "Release / Build" not in deploy_text and "Release / Deploy" not in deploy
 assert "ref: main" not in deploy_text, "Deploy must not checkout floating main"
 assert "release_plan.py validate" in deploy_text
 assert "docker manifest inspect" in deploy_text
+assert "TX_IMAGE_SERVICES" in image_job["steps"][-1]["env"]
+assert "contains_tx_image_service" in image_job["steps"][-1]["run"]
+assert "tcr_image_prefix" in image_job["steps"][-1]["run"]
 assert "WOTB_DEPLOY_SERVICES" in deploy_text
 assert "WOTB_DEPLOY_IMAGE_SERVICES" in deploy_text
 assert "targetServices" in deploy_text
 assert "parser-worker) image=ghcr.io/a158coke/wotbtools-parser-worker; remediation=" in image_job["steps"][-1]["run"]
+tx_deploy_job = deploy["jobs"]["deploy_tx"]
+tx_deploy_step = next(step for step in tx_deploy_job["steps"] if step.get("name") == "Deploy exact TX services via SSH")
+assert "TCR_USERNAME" not in tx_deploy_step["with"]["envs"]
+assert "TCR_PASSWORD" not in tx_deploy_step["with"]["envs"]
+assert "TCR_USERNAME" not in tx_deploy_step["env"]
+assert "TCR_PASSWORD" not in tx_deploy_step["env"]
+assert "docker login" not in tx_deploy_text
 assert 'if "parser-worker" in manifest["deployServices"]:' in deploy_text
 assert 'labels.append("Parser Worker")' in deploy_text
 yecao_deploy_job = deploy["jobs"]["deploy"]
