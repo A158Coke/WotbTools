@@ -97,7 +97,7 @@ services:
     mem_limit: 512m
 
   keycloak:
-    image: ghcr.io/a158coke/wotbtools-keycloak:${TAG:?TAG is required}
+    image: ${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}/wotbtools-keycloak:${TAG:?TAG is required}
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD is required}
@@ -117,7 +117,7 @@ services:
     logging: *default-logging
 
   wotb-frontend:
-    image: ghcr.io/a158coke/wotbtools-frontend:${TAG:?TAG is required}
+    image: ${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}/wotbtools-frontend:${TAG:?TAG is required}
     environment:
       # nginx's official template entrypoint expands this value before nginx
       # starts. It is the TX-internal business runtime: public API traffic is
@@ -146,7 +146,7 @@ services:
     # Same immutable backend image the Yecao runtime used; the TX service name is
     # intentionally distinct so a release manifest can never confuse the retired
     # Yecao deployment with the authoritative TX one.
-    image: ghcr.io/a158coke/wotbtools-backend:${TAG:?TAG is required}
+    image: ${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}/wotbtools-backend:${TAG:?TAG is required}
     environment:
       # Flyway owns every application table in the OpenTofu-provisioned business
       # database; the application role is separate from the PostgreSQL bootstrap

@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- **TX application images via Tencent TCR**：backend、frontend、keycloak 继续保留 GHCR 的恢复副本，同时以相同 immutable `sha-<12>` tag dual-push 到 `ccr.ccs.tencentyun.com/wotbtools`；Build 发布后强制比较 GHCR 与 TCR 的 manifest digest。TX Compose、TX deploy pull 与 immutable image-existence gate 均改为使用 TCR；TX host 的持久 Docker credential store 是 deployment-owned，仓库不会把 `TCR_USERNAME` / `TCR_PASSWORD` 传给 TX、写入 Compose、metadata 或应用环境。Yecao parser-worker 与 MinIO 保持 GHCR。DNS 与运行时服务拓扑未改变。
+
 ### Added
 
 - **parser-worker 手工发布不再要求 backend Flyway 迁移版本**：`deploy/deploy.sh` 原先无条件校验 `WOTB_BACKEND_MIGRATION_MAX_VERSION` 为非负整数，而 deploy workflow 的 `target=parser-worker` 会传入空值——worker 没有任何数据库访问，也不接触 backend schema，因此 `WOTB_DEPLOY_SERVICES=parser-worker` 的发布会在 stage 之前直接失败。该校验现改为只在**本次部署真正包含 backend 镜像**时执行（`wotb-backend` 被显式选中或列入 `WOTB_DEPLOY_IMAGE_SERVICES`，即 `wotb-backend` / `all` 两种 backend 部署路径），迁移上限仍然强制、非法值仍然 fail-closed；`keycloak`、`wotb-frontend`、观测服务等不发布 backend 镜像的既有选择器也不再被这个无关输入阻塞。worker 的凭据要求（`TX_RABBITMQ_PARSER_WORKER_PASSWORD` / `YECAO_MINIO_WORKER_ACCESS_KEY` / `YECAO_MINIO_WORKER_SECRET_KEY`）与无状态断言均不变，`deploy/test-deploy-contract.sh` 新增回归：worker-only + 空迁移版本 PASS，`wotb-backend` / `all` + 空或非法迁移版本必须在触碰任何容器前 FAIL。
