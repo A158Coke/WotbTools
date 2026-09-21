@@ -19,13 +19,15 @@ readonly RUN_ID="35630934506"
 readonly BUILD_YML="$ROOT/.github/workflows/build.yml"
 # The canonical transferred identity the Build workflow verifies its registry digest
 # for; the OCI archive `docker load` imports carries exactly this reference. There is
-# deliberately no second, TX-local image namespace.
+# deliberately no second, TX-local image namespace, and the release identity is the
+# immutable tag - no image id or config digest is compared anywhere.
 readonly CANONICAL_REF="ghcr.io/a158coke/wotbtools-$COMPONENT:$TAG"
-readonly CANONICAL_ID="sha256:$(printf '%064d' 1)"
-# A different image that an archive, or a stale local tag, could resolve to instead.
-readonly OTHER_ID="sha256:$(printf '%064d' 2)"
 # Some other reference an archive could carry instead of the verified release.
 readonly OTHER_REF="ghcr.io/a158coke/wotbtools-$COMPONENT:sha-ffffffffffff"
+# The image id the simulated daemon records for a loaded reference. Nothing reads it
+# any more: a load that produced a different id under the same immutable tag is not
+# observable to the presence-only import, which is exactly what this suite asserts.
+readonly CANONICAL_ID="sha256:$(printf '%064d' 1)"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -138,8 +140,8 @@ printf '%s\n' "$*" >> "$REMOTE_DOCKER_LOG"
 state="${REMOTE_DOCKER_STATE:?}"
 touch "$state"
 
-state_id() {
-  awk -v ref="$1" '$2 == ref { print $1; exit }' "$state"
+state_has_ref() {
+  awk -v ref="$1" '$2 == ref { found = 1 } END { exit found ? 0 : 1 }' "$state"
 }
 
 no_such_image() {
@@ -157,31 +159,24 @@ case "${1:-}" in
   load)
     [ "${REMOTE_DOCKER_MODE:-success}" != load-fail ] || exit 21
     [ -f "${3:-}" ] || { printf 'docker: cannot read %s\n' "${3:-}" >&2; exit 21; }
-    case "${REMOTE_DOCKER_MODE:-success}" in
-      load-omits-canonical|inspect-missing)
-        printf 'Loaded image: %s\n' "${REMOTE_DOCKER_OTHER_REF:?}"
-        printf '%s %s\n' "$REMOTE_DOCKER_IMAGE_ID" "$REMOTE_DOCKER_OTHER_REF" >> "$state"
-        ;;
-      load-wrong-image)
-        printf 'Loaded image: %s\n' "${EXPECTED_IMAGE_REF:?}"
-        printf '%s %s\n' "$REMOTE_DOCKER_OTHER_ID" "$EXPECTED_IMAGE_REF" >> "$state"
-        ;;
-      *)
-        printf 'Loaded image: %s\n' "${EXPECTED_IMAGE_REF:?}"
-        printf '%s %s\n' "$REMOTE_DOCKER_IMAGE_ID" "$EXPECTED_IMAGE_REF" >> "$state"
-        ;;
-    esac
+    if [ "${REMOTE_DOCKER_MODE:-success}" = load-omits-canonical ]; then
+      printf 'Loaded image: %s\n' "${REMOTE_DOCKER_OTHER_REF:?}"
+      printf '%s %s\n' "$REMOTE_DOCKER_IMAGE_ID" "$REMOTE_DOCKER_OTHER_REF" >> "$state"
+    else
+      # The archive carries the immutable reference this transfer was asked to
+      # publish, which is all the import proves: presence, not image id equality.
+      printf 'Loaded image: %s\n' "${EXPECTED_LOADED_REF:?}"
+      printf '%s %s\n' "$REMOTE_DOCKER_IMAGE_ID" "$EXPECTED_LOADED_REF" >> "$state"
+    fi
     ;;
   image)
     [ "${2:-}" = inspect ] || exit 24
     ref="$(last_arg "$@")"
-    id="$(state_id "$ref")"
-    [ -n "$id" ] || no_such_image "$ref"
-    printf '%s\n' "$id"
+    state_has_ref "$ref" || no_such_image "$ref"
     ;;
   *)
-    # Anything else - including the retired TX-local `docker tag` - is a contract
-    # violation, not a silent no-op.
+    # Anything else - including the retired TX-local `docker tag` and the retired
+    # `--format '{{.Id}}'` identity read - is a contract violation, not a silent no-op.
     printf 'docker: unsupported fake command: %s\n' "${1:-}" >&2
     exit 24
     ;;
@@ -295,13 +290,12 @@ reset_modes() {
   TRANSFER_MAX_ATTEMPTS=""
   SIM_REMOTE_SECONDS=""
   SIM_LOAD_SECONDS=""
-  EXPECTED_IMAGE_REF="$CANONICAL_REF"
-  EXPECTED_IMAGE_ID="$CANONICAL_ID"
 }
 
-# The image identity state of the simulated TX daemon (reference -> image id).
-state_id() {
-  awk -v ref="$1" '$2 == ref { print $1; exit }' "$2"
+# The simulated TX daemon only tracks which references exist; the import must prove
+# presence, not compare an image id.
+state_has_ref() {
+  awk -v ref="$1" '$2 == ref { found = 1 } END { exit found ? 0 : 1 }' "$2"
 }
 
 run_case() {
@@ -356,11 +350,9 @@ run_case() {
     SIM_REMOTE_SECONDS="$SIM_REMOTE_SECONDS" \
     SIM_LOAD_SECONDS="$SIM_LOAD_SECONDS" \
     TRANSFER_MAX_ATTEMPTS="$TRANSFER_MAX_ATTEMPTS" \
-    EXPECTED_IMAGE_REF="$EXPECTED_IMAGE_REF" \
-    EXPECTED_IMAGE_ID="$EXPECTED_IMAGE_ID" \
+    EXPECTED_LOADED_REF="$CANONICAL_REF" \
     REMOTE_DOCKER_STATE="$CASE_DIR/docker-state" \
     REMOTE_DOCKER_IMAGE_ID="$CANONICAL_ID" \
-    REMOTE_DOCKER_OTHER_ID="$OTHER_ID" \
     REMOTE_DOCKER_OTHER_REF="$OTHER_REF" \
     TRANSFER_BACKOFF_FIRST_SECONDS=0 \
     TRANSFER_BACKOFF_LATER_SECONDS=0 \
@@ -393,11 +385,9 @@ run_raw() {
     RSYNC_MODE="${RSYNC_MODE:-success}" \
     REMOTE_DOCKER_MODE="${REMOTE_DOCKER_MODE:-success}" \
     TRANSFER_MAX_ATTEMPTS="${TRANSFER_MAX_ATTEMPTS:-}" \
-    EXPECTED_IMAGE_REF="${EXPECTED_IMAGE_REF-$CANONICAL_REF}" \
-    EXPECTED_IMAGE_ID="${EXPECTED_IMAGE_ID-$CANONICAL_ID}" \
+    EXPECTED_LOADED_REF="${EXPECTED_LOADED_REF-$CANONICAL_REF}" \
     REMOTE_DOCKER_STATE="$WORK/raw-docker-state" \
     REMOTE_DOCKER_IMAGE_ID="$CANONICAL_ID" \
-    REMOTE_DOCKER_OTHER_ID="$OTHER_ID" \
     REMOTE_DOCKER_OTHER_REF="$OTHER_REF" \
     TRANSFER_BACKOFF_FIRST_SECONDS=0 \
     TRANSFER_BACKOFF_LATER_SECONDS=0 \
@@ -463,28 +453,31 @@ RAW_SSH_DIR=""
 run_raw import "$COMPONENT" "$TAG"
 assert_equal "2" "$CASE_RC" "import with missing arguments must print usage"
 
-# import must be bound to the verified release identity and image digest: anything
-# that could name another image, a mutable tag, a bogus digest or inject a command is
-# rejected before TX is contacted at all.
-for bad_ref in "" "wotb-transfer/$COMPONENT:$TAG" "ghcr.io/a158coke/wotbtools-$COMPONENT" \
-  "ghcr.io/a158coke/wotbtools-$COMPONENT:latest" "ghcr.io/a158coke/wotbtools-$COMPONENT:sha-0F1E2D3C4B5A" \
-  "ghcr.io/a158coke/wotbtools-$COMPONENT:sha-ffffffffffff" \
-  "ghcr.io/a158coke/wotbtools-$COMPONENT:$TAG; rm -rf /"; do
-  EXPECTED_IMAGE_REF="$bad_ref"
-  run_raw import "$COMPONENT" "$TAG" "$RUN_ID" "$WORK/image.oci.tar"
-  [ "$CASE_RC" -ne 0 ] || fail "invalid EXPECTED_IMAGE_REF was accepted: '$bad_ref'"
-  [ ! -s "$WORK/raw-ssh.log" ] || fail "invalid EXPECTED_IMAGE_REF '$bad_ref' reached TX over SSH"
-  [ ! -s "$WORK/raw-rsync.log" ] || fail "invalid EXPECTED_IMAGE_REF '$bad_ref' started a transfer"
-done
-unset EXPECTED_IMAGE_REF
-
-for bad_id in "" "sha256:abc" "sha256:$(printf '%064d' 1 | tr '0-9' 'z')" "latest" "$TAG" "sha256:$(printf '%064d' 1):extra"; do
-  EXPECTED_IMAGE_ID="$bad_id"
-  run_raw import "$COMPONENT" "$TAG" "$RUN_ID" "$WORK/image.oci.tar"
-  [ "$CASE_RC" -ne 0 ] || fail "invalid EXPECTED_IMAGE_ID was accepted: '$bad_id'"
-  [ ! -s "$WORK/raw-ssh.log" ] || fail "invalid EXPECTED_IMAGE_ID '$bad_id' reached TX over SSH"
-done
-EXPECTED_IMAGE_ID="$CANONICAL_ID"
+# The import takes no identity value at all: the canonical loaded reference is derived
+# from the validated component and immutable tag, so a stale EXPECTED_IMAGE_REF or
+# EXPECTED_IMAGE_ID left in the environment must not change what is inspected (and the
+# helper must not read them). The simulated daemon is keyed on the canonical reference,
+# so an environment-derived reference would visibly change the outcome here.
+reset_modes
+REMOTE_DOCKER_MODE=load-omits-canonical
+EXPECTED_IMAGE_REF="ghcr.io/a158coke/wotbtools-$COMPONENT:sha-ffffffffffff"
+EXPECTED_IMAGE_ID="sha256:$(printf '%064d' 9)"
+run_case import-env-ignored transfer
+assert_rc_zero "import-env-ignored fixture transfer"
+run_case import-env-ignored import
+assert_rc_nonzero "import redirected by a stale identity environment variable"
+assert_grep "$CASE_DIR/stderr" "did not load its canonical release identity: $CANONICAL_REF"
+assert_equal "1" "$(grep -cF "docker image inspect '$CANONICAL_REF' >/dev/null" "$CASE_DIR/ssh.log")" \
+  "the import must inspect the derived canonical reference exactly once"
+assert_no_grep "$CASE_DIR/ssh.log" "sha-ffffffffffff"
+assert_no_grep "$CASE_DIR/ssh.log" "$(printf '%064d' 9)"
+unset EXPECTED_IMAGE_REF EXPECTED_IMAGE_ID
+reset_modes
+assert_no_grep "$HELPER" "EXPECTED_IMAGE_REF"
+assert_no_grep "$HELPER" "EXPECTED_IMAGE_ID"
+assert_no_grep "$BUILD_YML" "EXPECTED_IMAGE_REF"
+assert_no_grep "$BUILD_YML" "EXPECTED_IMAGE_ID"
+assert_no_grep "$BUILD_YML" "EXPECTED_DIGEST"
 
 # ---------------------------------------------------------------------------
 # Static contract: the fragile long-lived stream must be gone for good
@@ -510,7 +503,15 @@ assert_no_grep "$HELPER" "bash -o pipefail -c"
 assert_no_grep "$HELPER" "run-with-network-retry"
 assert_no_grep "$HELPER" "publish-loaded-image-to-tcr"
 assert_no_grep "$HELPER" "crane"
-assert_no_grep "$HELPER" "ghcr.io"
+# The import derives the canonical loaded reference from its own registry prefix and the
+# immutable tag; it never receives an identity value, and the reference it inspects is
+# built from the validated component and tag rather than from any input string.
+assert_grep "$HELPER" 'GHCR_IMAGE_PREFIX="${GHCR_IMAGE_PREFIX:-ghcr.io/a158coke/wotbtools}"'
+assert_grep "$HELPER" 'canonical_image_ref="$GHCR_IMAGE_PREFIX-$component:$tag"'
+assert_grep "$HELPER" "docker image inspect '\$canonical_image_ref' >/dev/null"
+assert_no_grep "$HELPER" "--format"
+assert_no_grep "$HELPER" '{{.Id}}'
+assert_no_grep "$HELPER" "docker tag"
 assert_no_grep "$HELPER" "docker pull"
 assert_no_grep "$HELPER" "docker system prune"
 assert_no_grep "$HELPER" "docker image prune"
@@ -672,22 +673,26 @@ run_case import-success transfer
 assert_rc_zero "import fixture transfer"
 run_case import-success import
 assert_rc_zero "import success"
-assert_grep "$CASE_DIR/stdout" "stage=loaded-identity-verify result=PASS image=$CANONICAL_REF image_id=$CANONICAL_ID"
-assert_grep "$CASE_DIR/stdout" "stage=docker-load result=PASS image=$CANONICAL_REF image_id=$CANONICAL_ID"
+assert_grep "$CASE_DIR/stdout" "stage=loaded-identity-verify result=PASS image=$CANONICAL_REF"
+assert_grep "$CASE_DIR/stdout" "stage=docker-load result=PASS image=$CANONICAL_REF"
 assert_grep "$CASE_DIR/ssh.log" "command -v docker"
 assert_grep "$CASE_DIR/ssh.log" "command -v sha256sum"
 assert_grep "$CASE_DIR/ssh.log" "command -v flock"
 assert_grep "$CASE_DIR/ssh.log" "sha256sum -- '$REMOTE_ARCHIVE'"
 assert_grep "$CASE_DIR/ssh.log" "flock -w $lock_wait '$LOCK_PATH' timeout --kill-after=30s ${load_timeout}s docker load -i '$REMOTE_ARCHIVE'"
-# One canonical identity: the imported archive is verified by the release reference it
-# carries and by the image digest of the verified build. No TX-local alias is created.
-assert_grep "$CASE_DIR/ssh.log" "docker image inspect --format '{{.Id}}' '$CANONICAL_REF'"
+# One canonical identity, and it is a presence check: the import only proves the
+# immutable release reference the archive carries is loaded. It reads no image id and
+# creates no TX-local alias.
+assert_grep "$CASE_DIR/ssh.log" "docker image inspect '$CANONICAL_REF' >/dev/null"
+assert_no_grep "$CASE_DIR/ssh.log" "--format"
+assert_no_grep "$CASE_DIR/ssh.log" "{{.Id}}"
 assert_no_grep "$CASE_DIR/ssh.log" "docker tag"
 assert_no_grep "$CASE_DIR/ssh.log" "wotb-transfer"
 assert_load_count "$CASE_DIR/docker.log" 1
 assert_grep "$CASE_DIR/docker.log" "load -i $(sandbox_archive)"
-assert_equal "$CANONICAL_ID" "$(state_id "$CANONICAL_REF" "$CASE_DIR/docker-state")" \
-  "the imported archive must have loaded the canonical release identity"
+state_has_ref "$CANONICAL_REF" "$CASE_DIR/docker-state" \
+  || fail "the imported archive must have loaded the canonical release identity"
+assert_no_grep "$CASE_DIR/stdout" "image_id="
 
 # The promoted archive must be verified before the load, and the loaded identity after it.
 verify_line="$(grep -nF "sha256sum -- '$REMOTE_ARCHIVE'" "$CASE_DIR/ssh.log" | tail -n1 | cut -d: -f1)"
@@ -718,7 +723,7 @@ assert_lines "$CASE_DIR/rsync.log" 0
 
 # Regression (Build run 35646876773): the archive carries the canonical GHCR immutable
 # reference and no TX-local tag. An archive that loads some other reference must fail
-# closed, and a loaded image whose digest is not the verified build must fail closed too.
+# closed, because the release identity that must be present is the immutable tag.
 reset_modes
 REMOTE_DOCKER_MODE=load-omits-canonical
 run_case import-unnamed-release transfer
@@ -729,31 +734,17 @@ assert_grep "$CASE_DIR/stderr" "did not load its canonical release identity: $CA
 assert_grep "$CASE_DIR/stdout" "stage=docker-load-start"
 assert_no_grep "$CASE_DIR/stdout" "stage=docker-load result=PASS"
 assert_load_count "$CASE_DIR/docker.log" 1
-
 reset_modes
-REMOTE_DOCKER_MODE=load-wrong-image
-run_case import-wrong-image transfer
-assert_rc_zero "import-wrong-image fixture transfer"
-run_case import-wrong-image import
-assert_rc_nonzero "loaded image digest mismatch"
-assert_grep "$CASE_DIR/stderr" "loaded release digest mismatch (expected=$CANONICAL_ID loaded=$OTHER_ID)"
-assert_no_grep "$CASE_DIR/stdout" "stage=docker-load result=PASS"
+
+# A failed load is never retried, and a load that leaves the canonical reference
+# absent is covered by the regression case above.
+reset_modes
+REMOTE_DOCKER_MODE=load-fail
+run_case import-load-fail transfer
+assert_rc_zero "import-load-fail fixture transfer"
+run_case import-load-fail import
+assert_rc_nonzero "load-fail"
 assert_load_count "$CASE_DIR/docker.log" 1
-reset_modes
-
-# A failed or unverifiable load is never retried.
-for mode in load-fail inspect-missing; do
-  reset_modes
-  REMOTE_DOCKER_MODE="$mode"
-  run_case "import-$mode" transfer
-  assert_rc_zero "import-$mode fixture transfer"
-  run_case "import-$mode" import
-  assert_rc_nonzero "$mode"
-  assert_load_count "$CASE_DIR/docker.log" 1
-  if [ "$mode" = inspect-missing ]; then
-    assert_grep "$CASE_DIR/stderr" "did not load its canonical release identity"
-  fi
-done
 reset_modes
 
 # Missing TX prerequisites fail with the tool name instead of a bare SSH error.
