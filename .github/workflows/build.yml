@@ -127,42 +127,66 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - name: Build Backend once, publish GHCR, and export OCI
+        id: build
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile.backend
-          push: true
           tags: |
             ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-backend:latest
+          outputs: |
+            type=oci,dest=${{ runner.temp }}/backend.oci.tar,name=wotb-transfer/backend:${{ needs.changes.outputs.tag }}
+            type=image,push=true,oci-mediatypes=true
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
-      - name: Install TX replication helper
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx/replicate-image-to-tcr.sh
-          target: /opt/wotb-tx/replication.incoming/${{ github.run_id }}/backend
-          overwrite: true
-      - name: Replicate Backend immutable image on TX
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          command_timeout: 35m
-          envs: COMPONENT,IMAGE_TAG
-          script: bash /opt/wotb-tx/replication.incoming/${{ github.run_id }}/backend/deploy/tx/replicate-image-to-tcr.sh "$COMPONENT" "$IMAGE_TAG"
+      - name: Verify authoritative Backend GHCR immutable digest
+        id: digest
+        shell: bash
         env:
-          COMPONENT: backend
-          IMAGE_TAG: ${{ needs.changes.outputs.tag }}
+          IMAGE: ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          registry_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE")"
+          [ "$registry_digest" = "$BUILD_DIGEST" ]
+          printf 'EXPECTED_DIGEST=%s\n' "$BUILD_DIGEST" >> "$GITHUB_ENV"
+      - name: Set up native TX SSH
+        shell: bash
+        env:
+          TX_VPS_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_VPS_USER: ${{ secrets.TX_VPS_USER }}
+          TX_VPS_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX_VPS_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+        run: bash scripts/ci/setup-tx-ssh.sh
+      - name: Install TX loaded-image publication helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/run-with-network-retry.sh 'prepare TX image publication' \
+            ssh -F "$TX_SSH_DIR/config" tx-image-publication \
+            'mkdir -p /opt/wotb-tx/replication.incoming'
+          bash scripts/ci/run-with-network-retry.sh 'install TX image publication helper' \
+            scp -F "$TX_SSH_DIR/config" deploy/tx/publish-loaded-image-to-tcr.sh \
+            tx-image-publication:/opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh
+      - name: Stream Backend OCI image to TX and publish TCR
+        shell: bash
+        env:
+          NETWORK_RETRY_MAX_ATTEMPTS: 2
+        run: |
+          set -euo pipefail
+          bash scripts/ci/run-with-network-retry.sh 'stream Backend OCI image to TX' \
+            bash scripts/ci/stream-oci-to-tx.sh "$RUNNER_TEMP/backend.oci.tar" backend \
+            '${{ needs.changes.outputs.tag }}' "$EXPECTED_DIGEST"
+      - name: Remove Backend temporary transfer material
+        if: always()
+        shell: bash
+        run: rm -rf -- "$RUNNER_TEMP/backend.oci.tar" "${TX_SSH_DIR:-}"
 
   build_frontend:
     needs: [changes]
@@ -183,42 +207,66 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - name: Build Frontend once, publish GHCR, and export OCI
+        id: build
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile.frontend
-          push: true
           tags: |
             ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest
+          outputs: |
+            type=oci,dest=${{ runner.temp }}/frontend.oci.tar,name=wotb-transfer/frontend:${{ needs.changes.outputs.tag }}
+            type=image,push=true,oci-mediatypes=true
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
-      - name: Install TX replication helper
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx/replicate-image-to-tcr.sh
-          target: /opt/wotb-tx/replication.incoming/${{ github.run_id }}/frontend
-          overwrite: true
-      - name: Replicate Frontend immutable image on TX
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          command_timeout: 35m
-          envs: COMPONENT,IMAGE_TAG
-          script: bash /opt/wotb-tx/replication.incoming/${{ github.run_id }}/frontend/deploy/tx/replicate-image-to-tcr.sh "$COMPONENT" "$IMAGE_TAG"
+      - name: Verify authoritative Frontend GHCR immutable digest
+        id: digest
+        shell: bash
         env:
-          COMPONENT: frontend
-          IMAGE_TAG: ${{ needs.changes.outputs.tag }}
+          IMAGE: ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          registry_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE")"
+          [ "$registry_digest" = "$BUILD_DIGEST" ]
+          printf 'EXPECTED_DIGEST=%s\n' "$BUILD_DIGEST" >> "$GITHUB_ENV"
+      - name: Set up native TX SSH
+        shell: bash
+        env:
+          TX_VPS_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_VPS_USER: ${{ secrets.TX_VPS_USER }}
+          TX_VPS_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX_VPS_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+        run: bash scripts/ci/setup-tx-ssh.sh
+      - name: Install TX loaded-image publication helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/run-with-network-retry.sh 'prepare TX image publication' \
+            ssh -F "$TX_SSH_DIR/config" tx-image-publication \
+            'mkdir -p /opt/wotb-tx/replication.incoming'
+          bash scripts/ci/run-with-network-retry.sh 'install TX image publication helper' \
+            scp -F "$TX_SSH_DIR/config" deploy/tx/publish-loaded-image-to-tcr.sh \
+            tx-image-publication:/opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh
+      - name: Stream Frontend OCI image to TX and publish TCR
+        shell: bash
+        env:
+          NETWORK_RETRY_MAX_ATTEMPTS: 2
+        run: |
+          set -euo pipefail
+          bash scripts/ci/run-with-network-retry.sh 'stream Frontend OCI image to TX' \
+            bash scripts/ci/stream-oci-to-tx.sh "$RUNNER_TEMP/frontend.oci.tar" frontend \
+            '${{ needs.changes.outputs.tag }}' "$EXPECTED_DIGEST"
+      - name: Remove Frontend temporary transfer material
+        if: always()
+        shell: bash
+        run: rm -rf -- "$RUNNER_TEMP/frontend.oci.tar" "${TX_SSH_DIR:-}"
 
   build_keycloak:
     needs: [changes]
@@ -239,42 +287,66 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - name: Build Keycloak once, publish GHCR, and export OCI
+        id: build
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile.keycloak
-          push: true
           tags: |
             ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest
+          outputs: |
+            type=oci,dest=${{ runner.temp }}/keycloak.oci.tar,name=wotb-transfer/keycloak:${{ needs.changes.outputs.tag }}
+            type=image,push=true,oci-mediatypes=true
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           provenance: false
           sbom: false
-      - name: Install TX replication helper
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx/replicate-image-to-tcr.sh
-          target: /opt/wotb-tx/replication.incoming/${{ github.run_id }}/keycloak
-          overwrite: true
-      - name: Replicate Keycloak immutable image on TX
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          command_timeout: 35m
-          envs: COMPONENT,IMAGE_TAG
-          script: bash /opt/wotb-tx/replication.incoming/${{ github.run_id }}/keycloak/deploy/tx/replicate-image-to-tcr.sh "$COMPONENT" "$IMAGE_TAG"
+      - name: Verify authoritative Keycloak GHCR immutable digest
+        id: digest
+        shell: bash
         env:
-          COMPONENT: keycloak
-          IMAGE_TAG: ${{ needs.changes.outputs.tag }}
+          IMAGE: ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ needs.changes.outputs.tag }}
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          registry_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE")"
+          [ "$registry_digest" = "$BUILD_DIGEST" ]
+          printf 'EXPECTED_DIGEST=%s\n' "$BUILD_DIGEST" >> "$GITHUB_ENV"
+      - name: Set up native TX SSH
+        shell: bash
+        env:
+          TX_VPS_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_VPS_USER: ${{ secrets.TX_VPS_USER }}
+          TX_VPS_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX_VPS_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+        run: bash scripts/ci/setup-tx-ssh.sh
+      - name: Install TX loaded-image publication helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/run-with-network-retry.sh 'prepare TX image publication' \
+            ssh -F "$TX_SSH_DIR/config" tx-image-publication \
+            'mkdir -p /opt/wotb-tx/replication.incoming'
+          bash scripts/ci/run-with-network-retry.sh 'install TX image publication helper' \
+            scp -F "$TX_SSH_DIR/config" deploy/tx/publish-loaded-image-to-tcr.sh \
+            tx-image-publication:/opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh
+      - name: Stream Keycloak OCI image to TX and publish TCR
+        shell: bash
+        env:
+          NETWORK_RETRY_MAX_ATTEMPTS: 2
+        run: |
+          set -euo pipefail
+          bash scripts/ci/run-with-network-retry.sh 'stream Keycloak OCI image to TX' \
+            bash scripts/ci/stream-oci-to-tx.sh "$RUNNER_TEMP/keycloak.oci.tar" keycloak \
+            '${{ needs.changes.outputs.tag }}' "$EXPECTED_DIGEST"
+      - name: Remove Keycloak temporary transfer material
+        if: always()
+        shell: bash
+        run: rm -rf -- "$RUNNER_TEMP/keycloak.oci.tar" "${TX_SSH_DIR:-}"
 
   build_minio:
     needs: [changes]
