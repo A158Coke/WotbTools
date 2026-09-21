@@ -297,7 +297,7 @@ assert_migration_ceiling_rejected() {
     || { echo "FAIL: $migration_service rejected the migration ceiling only after touching containers" >&2; exit 1; }
 }
 assert_migration_ceiling_rejected wotb-backend wotb-backend ""
-assert_migration_ceiling_rejected all all ""
+assert_migration_ceiling_rejected all wotb-backend ""
 assert_migration_ceiling_rejected wotb-backend wotb-backend not-a-number
 
 # Selecting the service without its credentials must fail closed before any container is touched.
