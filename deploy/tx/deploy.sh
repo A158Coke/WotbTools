@@ -24,6 +24,7 @@ readonly DEPLOY_SERVICES_RAW="${WOTB_DEPLOY_SERVICES:-}"
 readonly DEPLOY_IMAGE_SERVICES_RAW="${WOTB_DEPLOY_IMAGE_SERVICES:-}"
 readonly TAG_VALUE="${TAG:-}"
 readonly RELEASE_SHA_VALUE="${RELEASE_SHA:-}"
+readonly TX_IMAGE_REGISTRY_PREFIX_VALUE="${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}"
 readonly RABBITMQ_TOFU_ROOT="$WOTB_DIR/tofu.incoming/$RELEASE_SHA_VALUE/infra/tofu/rabbitmq"
 readonly BUSINESS_POSTGRES_TOFU_ROOT="$WOTB_DIR/tofu.incoming/$RELEASE_SHA_VALUE/infra/tofu/postgres-business"
 readonly HEALTH_ATTEMPTS="${WOTB_HEALTH_ATTEMPTS:-60}"
@@ -139,6 +140,8 @@ validate_inputs() {
   [ "$INCOMING_DIR" != "$WOTB_DIR" ] || die "incoming directory must differ from TX runtime directory."
   [[ "$TAG_VALUE" =~ ^sha-[0-9a-f]{12}$ ]] || die "TAG must be an immutable sha-<12 lowercase hex> tag."
   [[ "$RELEASE_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]] || die "RELEASE_SHA must be a full lowercase commit SHA."
+  [[ "$TX_IMAGE_REGISTRY_PREFIX_VALUE" =~ ^ccr\.ccs\.tencentyun\.com/[a-z0-9][a-z0-9._-]*$ ]] \
+    || die "TX_IMAGE_REGISTRY_PREFIX must be a Tencent TCR namespace under ccr.ccs.tencentyun.com."
   [ "$BACKEND_UPSTREAM_VALUE" = "http://business-api:8087" ] \
     || die "TX_BACKEND_UPSTREAM must be the TX-internal business runtime http://business-api:8087; public hosts and the retired Yecao WireGuard backend are no longer routable."
   is_positive_integer "$HEALTH_ATTEMPTS" || die "WOTB_HEALTH_ATTEMPTS must be a positive integer."
@@ -244,7 +247,7 @@ for line in open(sys.argv[1], encoding="utf-8"):
         continue
     if current != service:
         continue
-    match = re.match(r"^\s+image:\s+ghcr\.io/a158coke/wotbtools-[^:]+:(sha-[0-9a-f]{12})\s*$", line)
+    match = re.match(r"^\s+image:\s+ccr\.ccs\.tencentyun\.com/[a-z0-9][a-z0-9._-]*/wotbtools-[^:]+:(sha-[0-9a-f]{12})\s*$", line)
     if match:
         print(match.group(1))
         break
@@ -284,6 +287,7 @@ current_or_target_tag() {
 render_effective_compose() {
   local source="$1" target="$2" frontend_tag="$3" keycloak_tag="$4" business_api_tag="$5"
   FRONTEND_TAG="$frontend_tag" KEYCLOAK_TAG="$keycloak_tag" BUSINESS_API_TAG="$business_api_tag" \
+    TX_IMAGE_REGISTRY_PREFIX="$TX_IMAGE_REGISTRY_PREFIX_VALUE" \
     python3 - "$source" "$target" <<'PY'
 import os
 import re
@@ -292,9 +296,9 @@ import sys
 source, target = sys.argv[1:3]
 # service -> (immutable tag resolved for this deployment, pinned image repository)
 tags = {
-    "wotb-frontend": (os.environ["FRONTEND_TAG"], "ghcr.io/a158coke/wotbtools-frontend"),
-    "keycloak": (os.environ["KEYCLOAK_TAG"], "ghcr.io/a158coke/wotbtools-keycloak"),
-    "business-api": (os.environ["BUSINESS_API_TAG"], "ghcr.io/a158coke/wotbtools-backend"),
+    "wotb-frontend": (os.environ["FRONTEND_TAG"], os.environ["TX_IMAGE_REGISTRY_PREFIX"] + "/wotbtools-frontend"),
+    "keycloak": (os.environ["KEYCLOAK_TAG"], os.environ["TX_IMAGE_REGISTRY_PREFIX"] + "/wotbtools-keycloak"),
+    "business-api": (os.environ["BUSINESS_API_TAG"], os.environ["TX_IMAGE_REGISTRY_PREFIX"] + "/wotbtools-backend"),
 }
 current = ""
 seen = set()
@@ -303,7 +307,7 @@ for line in open(source, encoding="utf-8"):
     match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
     if match:
         current = match.group(1)
-    if current in tags and re.match(r"^\s+image:\s+ghcr\.io/a158coke/wotbtools-[^:]+:", line):
+    if current in tags and re.match(r"^\s+image:\s+", line):
         tag, image = tags[current]
         line = f"    image: {image}:{tag}\n"
         seen.add(current)
