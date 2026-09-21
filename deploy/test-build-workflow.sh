@@ -103,6 +103,9 @@ assert "crane copy" in copy_helper_text
 assert "timeout --kill-after" in copy_helper_text
 assert "COPY_TIMEOUT_SECONDS" in copy_helper_text
 assert "COPY_KILL_AFTER_SECONDS" in copy_helper_text
+assert "stage=replication-start" in copy_helper_text
+assert "stage=replication-end" in copy_helper_text
+assert "elapsed_seconds=" in copy_helper_text
 assert "crane digest" in copy_helper_text
 assert "docker pull" not in copy_helper_text and "docker push" not in copy_helper_text
 assert "tar " not in copy_helper_text
@@ -158,6 +161,9 @@ def run_copy_helper(*args, crane_mode="success"):
 
 success, success_log, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", "--update-latest")
 assert success.returncode == 0, success.stderr
+assert "stage=replication-start" in success.stdout
+assert "stage=replication-end result=PASS" in success.stdout
+assert "elapsed_seconds=" in success.stdout
 assert "copy ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:sha-aaaaaaaaaaaa" in success_log
 assert "copy ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:latest" in success_log
 bad_component, _, _ = run_copy_helper("minio", "sha-aaaaaaaaaaaa")
@@ -171,6 +177,8 @@ copy_timeout, copy_timeout_log, copy_timeout_elapsed_seconds = run_copy_helper("
 assert copy_timeout.returncode != 0
 assert ":latest" not in copy_timeout_log, "latest must not update after immutable copy timeout"
 assert copy_timeout_elapsed_seconds < 5, "TERM-ignoring crane must be hard-killed before it can naturally exit"
+assert "stage=replication-end result=FAIL" in copy_timeout.stderr
+assert "elapsed_seconds=" in copy_timeout.stderr
 digest_mismatch, _, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", crane_mode="digest-mismatch")
 assert digest_mismatch.returncode != 0, "immutable digest mismatch must fail closed"
 
