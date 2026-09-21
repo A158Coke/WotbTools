@@ -581,9 +581,12 @@ jobs:
           scripts/ci/test-keycloak-tofu-contract.sh
           scripts/ci/test-postgres-keycloak-tofu-contract.sh
           scripts/ci/test-postgres-business-tofu-contract.sh
-          scripts/ci/setup-tx-ssh.sh scripts/ci/stream-oci-to-tx.sh
+          scripts/ci/setup-tx-ssh.sh scripts/ci/transfer-oci-to-tx.sh
+          scripts/ci/test-transfer-oci-to-tx.sh
       - name: Build workflow frozen-commit contract
         run: bash deploy/test-build-workflow.sh
+      - name: TX OCI transfer and publication contract
+        run: bash scripts/ci/test-transfer-oci-to-tx.sh
       - name: Build/Deploy changed-target and manifest contract
         run: bash deploy/test-release-plan.sh
       - name: TX runtime and user-profile reset safety contracts
