@@ -25,10 +25,14 @@ readonly LOCAL_IMAGE_PREFIX="wotb-transfer"
 # Per-attempt budgets stay well inside the 80 minute Build job even when a transfer
 # burns its full retry budget.
 readonly ATTEMPT_TIMEOUT_SECONDS=900
-readonly LOAD_TIMEOUT_SECONDS=900
 readonly REMOTE_COMMAND_TIMEOUT_SECONDS=120
 readonly KILL_AFTER="30s"
+# Serialized import has two independent budgets: waiting for the shared import lock
+# and the load itself. The outer SSH wrapper must outlive both, otherwise a valid
+# waiter would be killed by the wrapper long before `flock -w` could ever expire.
 readonly IMPORT_LOCK_WAIT_SECONDS=1800
+readonly LOAD_TIMEOUT_SECONDS=900
+readonly IMPORT_TOTAL_TIMEOUT_SECONDS=$((IMPORT_LOCK_WAIT_SECONDS + LOAD_TIMEOUT_SECONDS + 60))
 readonly MAX_ATTEMPTS_CEILING=3
 readonly MAX_BACKOFF_SECONDS=120
 # rsync's own transport failures (see rsync_failure_is_transient).
@@ -293,7 +297,8 @@ run_import() {
   local_digest="$(compute_local_sha256)"
 
   stage="tx-preflight"
-  for tool in docker sha256sum flock; do
+  # `timeout` is required on TX because the load runs under its own remote budget.
+  for tool in docker sha256sum flock timeout; do
     remote_command "command -v $tool >/dev/null 2>&1" \
       || fail "TX is missing a required tool: $tool"
   done
@@ -303,13 +308,17 @@ run_import() {
 
   stage="docker-load"
   printf 'component=%s stage=docker-load-start archive=%s\n' "$component" "$remote_archive"
-  # `docker load` reads a verified local file under the single TX import lock. It is
+  # `docker load` reads a verified local file under the single TX import lock and is
   # never retried: the input is already deterministic and verified, so a second
   # attempt would only repeat multi-gigabyte work.
-  timeout --kill-after="$KILL_AFTER" "${LOAD_TIMEOUT_SECONDS}s" \
+  #
+  # The budgets are composed, not conflated: `flock -w` bounds the lock wait, the
+  # inner remote `timeout` bounds the load, and the outer wrapper covers both plus a
+  # margin so an honest waiter can use its full lock budget.
+  timeout --kill-after="$KILL_AFTER" "${IMPORT_TOTAL_TIMEOUT_SECONDS}s" \
     ssh -F "$TX_SSH_DIR/config" "$SSH_TARGET" \
-    "flock -w $IMPORT_LOCK_WAIT_SECONDS '$IMPORT_LOCK' docker load -i '$remote_archive'" \
-    || fail "docker load of the verified TX archive failed"
+    "flock -w $IMPORT_LOCK_WAIT_SECONDS '$IMPORT_LOCK' timeout --kill-after=$KILL_AFTER ${LOAD_TIMEOUT_SECONDS}s docker load -i '$remote_archive'" \
+    || fail "docker load of the verified TX archive failed (lock wait ${IMPORT_LOCK_WAIT_SECONDS}s, load budget ${LOAD_TIMEOUT_SECONDS}s)"
 
   stage="loaded-tag-verify"
   image_id="$(remote_command "docker image inspect --format '{{.Id}}' '$loaded_image'")" \
