@@ -121,10 +121,19 @@ grep -Fq 'TX_BUSINESS_DB_PASSWORD:?TX_BUSINESS_DB_PASSWORD is required' <<< "$bu
   || fail "business-api must fail closed on a missing application database credential"
 [ "$(grep -Fc 'name: wotb_tx_internal' "$COMPOSE")" = 1 ] \
   || fail "TX Compose must define one internal network, not duplicate aliases"
-grep -Fq '${CADDY_HTTP_BIND:-127.0.0.1}:80:80' "$COMPOSE" \
-  || fail "Stage I Caddy HTTP must remain loopback-only by default"
-grep -Fq '${CADDY_HTTPS_BIND:-127.0.0.1}:443:443' "$COMPOSE" \
-  || fail "Stage I Caddy HTTPS must remain loopback-only by default"
+# Caddy is the TX production public ingress: it defaults to every interface on
+# 80/443 (tcp + http/3 udp) while the operator keeps the bind-override escape
+# hatch. Everything else in this stack must stay off the public interfaces.
+grep -Fq '${CADDY_HTTP_BIND:-0.0.0.0}:80:80' "$COMPOSE" \
+  || fail "TX Caddy HTTP must default to the production public bind 0.0.0.0:80"
+grep -Fq '${CADDY_HTTPS_BIND:-0.0.0.0}:443:443' "$COMPOSE" \
+  || fail "TX Caddy HTTPS must default to the production public bind 0.0.0.0:443/tcp"
+grep -Fq '${CADDY_HTTPS_BIND:-0.0.0.0}:443:443/udp' "$COMPOSE" \
+  || fail "TX Caddy HTTP/3 must default to the production public bind 0.0.0.0:443/udp"
+! grep -Fq '${CADDY_HTTP_BIND:-127.0.0.1}' "$COMPOSE" \
+  || fail "the retired Stage-I loopback Caddy bind must not come back"
+! grep -Fq '${CADDY_HTTPS_BIND:-127.0.0.1}' "$COMPOSE" \
+  || fail "the retired Stage-I loopback Caddy bind must not come back"
 ! grep -Eq '\b(nsupdate|route53|cloudflare|gcloud dns|az network dns)\b' "$TX_DIR/deploy.sh" \
   || fail "TX deploy script must not contain DNS control commands"
 ! grep -Fq '172.29.0.2' "$TX_DIR/deploy.sh" \
@@ -218,9 +227,61 @@ docker compose -f "$COMPOSE" config > "$WORK/compose.yml"
 grep -Fq 'host_ip: 127.0.0.1' "$WORK/compose.yml" \
   || fail "resolved Keycloak PostgreSQL publication must stay on loopback"
 grep -Fq 'published: "80"' "$WORK/compose.yml" \
-  || fail "resolved Caddy HTTP publication must exist for an approved cutover"
-[ "$(grep -Fc 'host_ip: 127.0.0.1' "$WORK/compose.yml")" -ge 5 ] \
-  || fail "Stage I Caddy and both PostgreSQL publications must all resolve to loopback"
+  || fail "resolved Caddy HTTP publication must exist for the public edge"
+# Caddy is the production public ingress: all three publications resolve to
+# every interface. PostgreSQL, the Keycloak admin port and RabbitMQ management
+# must keep resolving to loopback, and AMQP to the WireGuard address.
+[ "$(grep -Fc 'host_ip: 0.0.0.0' "$WORK/compose.yml")" -eq 3 ] \
+  || fail "resolved Caddy must publish exactly 80/tcp, 443/tcp and 443/udp on every interface"
+for public_port in 80 443; do
+  grep -Fq "published: \"$public_port\"" "$WORK/compose.yml" \
+    || fail "resolved Caddy must publish the public edge port $public_port"
+done
+[ "$(grep -Fc 'host_ip: 127.0.0.1' "$WORK/compose.yml")" -eq 4 ] \
+  || fail "both PostgreSQL administration ports, the Keycloak admin port and RabbitMQ management must all resolve to loopback"
+[ "$(grep -Fc 'host_ip: 10.20.0.1' "$WORK/compose.yml")" -eq 1 ] \
+  || fail "RabbitMQ AMQP must remain the only WireGuard-bound publication"
+# The databases, brokers and internal services must never follow Caddy onto a
+# public interface: resolve every publication and require the Caddy edge to be
+# the only one bound to every interface.
+python3 - "$WORK/compose.yml" <<'PY' \
+  || fail "only Caddy may publish on every interface; all other TX publications must stay on loopback or WireGuard"
+import re
+import sys
+
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+expected_non_public = {
+    "keycloak-postgres": [("15432", "tcp", "127.0.0.1")],
+    "business-postgres": [("25432", "tcp", "127.0.0.1")],
+    "keycloak": [("18080", "tcp", "127.0.0.1")],
+    "rabbitmq": [("5672", "tcp", "10.20.0.1"), ("15672", "tcp", "127.0.0.1")],
+}
+expected_public_ports = {
+    ("caddy", "80", "tcp", "0.0.0.0"),
+    ("caddy", "443", "tcp", "0.0.0.0"),
+    ("caddy", "443", "udp", "0.0.0.0"),
+}
+expected_non_public_ports = {
+    (service, *entry)
+    for service, entries in expected_non_public.items()
+    for entry in entries
+}
+
+public = []
+non_public = []
+for service, block in re.findall(r"\n  ([A-Za-z0-9_-]+):\n(.*?)(?=\n  [A-Za-z0-9_-]+:\n|\Z)", text, re.S):
+    for host_ip, published, protocol in re.findall(
+        r"host_ip: (\S+)\n\s+target: \d+\n\s+published: \"(\d+)\"\n\s+protocol: (\w+)", block
+    ):
+        entry = (published, protocol, host_ip)
+        (public if host_ip == "0.0.0.0" else non_public).append((service, *entry))
+assert set(public) == expected_public_ports, public
+assert set(non_public) == expected_non_public_ports, non_public
+assert len(public) == len(expected_public_ports), public
+assert len(non_public) == len(expected_non_public_ports), non_public
+PY
 grep -Fq 'BACKEND_UPSTREAM: http://business-api:8087' "$WORK/compose.yml" \
   || fail "resolved frontend upstream must be the TX-internal business runtime"
 ! grep -Fq '10.20.0.2:8087' "$WORK/compose.yml" \

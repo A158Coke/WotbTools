@@ -5,8 +5,9 @@
 }
 
 # TX-local readiness surface. Docker Compose resolves the Caddy service name,
-# so Stage I can validate the loaded config and both upstream routes without
-# production DNS, public HTTP redirects, or ACME certificates.
+# so the loaded config and both upstream routes can be validated without public
+# HTTP redirects or ACME certificates; Caddy itself is the production public
+# ingress and owns 80/443 by default (see docker-compose.yml).
 http://caddy {
 	handle /.well-known/assetlinks.json {
 		root * /srv
