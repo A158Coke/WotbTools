@@ -592,11 +592,72 @@ caddy_output="$(run_live_service_deploy caddy '' "$caddy_log" 2>&1)"
 grep -Fq 'TX deployment completed:' <<< "$caddy_output" \
   || fail "Explicit Caddy deployment must complete"
 [ "$(grep -Fc 'up -d --no-deps --force-recreate caddy' "$caddy_log")" -eq 1 ] \
-  || fail "Explicit Caddy deployment must recreate Caddy exactly once before refreshing nginx"
-frontend_start_line="$(grep -nF 'up -d --no-deps --force-recreate wotb-frontend' "$caddy_log" | tail -n 1 | cut -d: -f1)"
+  || fail "Explicit Caddy deployment must recreate Caddy exactly once"
+# A Caddy-only deployment deploys no application image service: it must not pull,
+# recreate or require the immutable identity of one. Caddy is reconciled through
+# the promoted TX configuration and nginx re-resolves Caddy's address inside the
+# running container, which keeps the rate-limiting trust boundary correct without
+# recreating nginx from an application image.
+for service in wotb-frontend keycloak business-api keycloak-postgres business-postgres rabbitmq; do
+  ! grep -Fq "up -d --no-deps --force-recreate $service" "$caddy_log" \
+    || fail "Caddy-only deployment must not recreate the $service runtime"
+done
+[ "$(grep -Fc 'pull caddy' "$caddy_log")" -eq 1 ] \
+  || fail "Caddy-only deployment must pull only the Caddy runtime image"
+! grep -Eq 'pull (wotb-frontend|keycloak|business-api)' "$caddy_log" \
+  || fail "Caddy-only deployment must not pull an application image"
+[ "$(grep -Fc 'exec -T wotb-frontend nginx -t' "$caddy_log")" -eq 1 ] \
+  || fail "Caddy-only deployment must validate the running frontend nginx configuration"
+[ "$(grep -Fc 'exec -T wotb-frontend nginx -s reload' "$caddy_log")" -eq 1 ] \
+  || fail "Caddy-only deployment must re-resolve Caddy in the running frontend container"
+grep -Fq 'frontend-trusted-peer: PASS' <<< "$caddy_output" \
+  || fail "Caddy-only deployment must report the in-place frontend trusted-peer refresh"
 caddy_start_line="$(grep -nF 'up -d --no-deps --force-recreate caddy' "$caddy_log" | tail -n 1 | cut -d: -f1)"
-[ -n "$frontend_start_line" ] && [ -n "$caddy_start_line" ] && [ "$caddy_start_line" -lt "$frontend_start_line" ] \
-  || fail "Caddy-only deployment must refresh frontend after Caddy gets a new network endpoint"
+reload_line="$(grep -nF 'exec -T wotb-frontend nginx -s reload' "$caddy_log" | tail -n 1 | cut -d: -f1)"
+[ -n "$caddy_start_line" ] && [ -n "$reload_line" ] && [ "$caddy_start_line" -lt "$reload_line" ] \
+  || fail "Caddy-only deployment must recreate Caddy before nginx re-resolves its address"
+
+# Regression (production incident): TX records immutable identities only for the
+# application services it deployed, and its live Compose document does not carry a
+# parseable wotb-frontend identity either. Reconciling Caddy must not require one.
+printf '%s\n' '{"schemaVersion":1,"services":{"keycloak":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"},"business-api":{"commitSha":"0123456789abcdef0123456789abcdef01234567","imageTag":"sha-0123456789ab"}}}' \
+  > "$WORK/live/tx-production-release.json"
+sed -i 's#^\( *\)image: .*wotbtools-frontend:.*$#\1image: ghcr.io/a158coke/wotbtools-frontend:sha-dc0ff4554335#' \
+  "$WORK/live/deploy/docker-compose.yml"
+grep -Fq 'image: ghcr.io/a158coke/wotbtools-frontend:sha-dc0ff4554335' "$WORK/live/deploy/docker-compose.yml" \
+  || fail "the Caddy-only regression fixture must hold an unparseable live frontend identity"
+# That incomplete TX state must still fail closed for a deployment that really
+# deploys an application image service: its immutable release identity is required.
+set +e
+frontend_unidentified_output="$(run_live_service_deploy wotb-frontend '' "$WORK/frontend-unidentified.log" 2>&1)"
+frontend_unidentified_rc=$?
+set -e
+[ "$frontend_unidentified_rc" -ne 0 ] \
+  || fail "a frontend deployment must fail closed when its immutable identity is unavailable"
+grep -Fq 'current immutable image identity is unavailable for wotb-frontend' <<< "$frontend_unidentified_output" \
+  || fail "a frontend deployment without an immutable identity must name the missing service (output: $(tr '\r\n' ' ' <<< "$frontend_unidentified_output" | sed -E 's/[[:space:]]+/ /g'))"
+! grep -Fq 'up -d' "$WORK/frontend-unidentified.log" \
+  || fail "a frontend deployment without an immutable identity must not start any TX runtime"
+caddy_incomplete_log="$WORK/caddy-incomplete.log"
+caddy_incomplete_output="$(run_live_service_deploy caddy '' "$caddy_incomplete_log" 2>&1)"
+grep -Fq 'TX deployment completed:' <<< "$caddy_incomplete_output" \
+  || fail "Caddy-only deployment must reconcile Caddy without a wotb-frontend immutable identity (output: $(tr '\r\n' ' ' <<< "$caddy_incomplete_output" | sed -E 's/[[:space:]]+/ /g'))"
+[ "$(grep -Fc 'up -d --no-deps --force-recreate caddy' "$caddy_incomplete_log")" -eq 1 ] \
+  || fail "Caddy-only deployment with incomplete metadata must still recreate Caddy exactly once"
+! grep -Fq 'up -d --no-deps --force-recreate wotb-frontend' "$caddy_incomplete_log" \
+  || fail "Caddy-only deployment with incomplete metadata must not recreate the frontend"
+# The promoted TX configuration still pins an immutable identity for every
+# application image; the deployment neither invents one nor leaves a placeholder.
+! grep -Fq 'wotb-frontend' "$WORK/live/tx-production-release.json" \
+  || fail "Caddy-only deployment must not fabricate application release metadata"
+grep -Fq 'wotbtools-frontend:sha-0123456789ab' "$WORK/live/deploy/docker-compose.yml" \
+  || fail "the promoted TX Compose document must pin an immutable frontend identity"
+for image in wotbtools-keycloak wotbtools-backend wotbtools-frontend; do
+  grep -Fq "$image:sha-0123456789ab" "$WORK/live/deploy/docker-compose.yml" \
+    || fail "the promoted TX Compose document must pin an immutable identity for $image"
+done
+! grep -Fq '${TAG' "$WORK/live/deploy/docker-compose.yml" \
+  || fail "the promoted TX Compose document must not carry an unresolved image placeholder"
 
 # RabbitMQ-only deployment owns its provider bootstrap. The provider source and
 # exact version come from the shipped lockfile, while the production init stays
