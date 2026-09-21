@@ -18,7 +18,9 @@ local_settings_text = (root / "java/settings.xml").read_text(encoding="utf-8")
 android_settings_text = (root / "android/settings.gradle.kts").read_text(encoding="utf-8")
 network_retry_helper = root / "scripts/ci/run-with-network-retry.sh"
 network_retry_test = root / "scripts/ci/test-network-retry.sh"
-replication_helper = root / "deploy/tx/replicate-image-to-tcr.sh"
+publication_helper = root / "deploy/tx/publish-loaded-image-to-tcr.sh"
+ssh_setup_helper = root / "scripts/ci/setup-tx-ssh.sh"
+oci_stream_helper = root / "scripts/ci/stream-oci-to-tx.sh"
 
 assert "name: CI / PR" in ci
 assert "name: CI / Required Gate" in ci
@@ -37,25 +39,40 @@ assert "${{ env.GHCR_IMAGE_PREFIX }}-backend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest" in build
 for component in ("backend", "frontend", "keycloak"):
-    assert f"Replicate {component.title()} immutable image on TX" in build
+    assert f"Import {component.title()} OCI image on TX" in build
 assert "imjasonh/setup-crane@v0.7" not in build
 assert "TCR_IMAGE_PREFIX" not in build
 assert "TCR_USERNAME" not in build and "TCR_PASSWORD" not in build
-assert "deploy/tx/replicate-image-to-tcr.sh" in build
-assert "appleboy/scp-action@v1" in build and "appleboy/ssh-action@v1" in build
-assert replication_helper.is_file()
-helper_text = replication_helper.read_text(encoding="utf-8")
+assert "deploy/tx/replicate-image-to-tcr.sh" not in build
+assert "appleboy/scp-action@v1" not in build and "appleboy/ssh-action@v1" not in build
+assert publication_helper.is_file() and ssh_setup_helper.is_file() and oci_stream_helper.is_file()
+helper_text = publication_helper.read_text(encoding="utf-8")
 assert "set -euo pipefail" in helper_text
 assert "backend|frontend|keycloak" in helper_text
-assert "docker pull" in helper_text and "docker push" in helper_text
+assert "docker image inspect" in helper_text and "docker push" in helper_text
 assert "docker buildx imagetools inspect" in helper_text
 assert "{{.Manifest.Digest}}" in helper_text
 assert "{{.Digest}}" not in helper_text
-assert "GHCR_PULL_ATTEMPTS" in helper_text and "timeout --kill-after" in helper_text
-assert "stage=replication-start" in helper_text and "stage=replication-end" in helper_text
+assert "timeout --kill-after" in helper_text
+assert "stage=publication-start" in helper_text and "stage=publication-end" in helper_text
 assert "stage=verify-immutable" in helper_text and "stage=update-latest" in helper_text
 assert "docker system prune" not in helper_text
+assert "ghcr.io" not in helper_text and "docker pull" not in helper_text and "crane" not in helper_text
+assert "StrictHostKeyChecking yes" in ssh_setup_helper.read_text(encoding="utf-8")
+assert "gzip -c" in oci_stream_helper.read_text(encoding="utf-8")
+assert "docker load" in oci_stream_helper.read_text(encoding="utf-8")
+assert "flock -w 900" in oci_stream_helper.read_text(encoding="utf-8")
+assert "bash -o pipefail -c" in oci_stream_helper.read_text(encoding="utf-8")
+assert "timeout --kill-after=30s 1200s" in oci_stream_helper.read_text(encoding="utf-8")
+assert "publish-loaded-image-to-tcr.sh" not in oci_stream_helper.read_text(encoding="utf-8")
+assert "run-with-network-retry.sh 'stream Backend OCI image to TX'" in build
+assert "run-with-network-retry.sh 'stream Frontend OCI image to TX'" in build
+assert "run-with-network-retry.sh 'stream Keycloak OCI image to TX'" in build
+for component in ("Backend", "Frontend", "Keycloak"):
+    assert f"Publish {component} loaded image to TCR" in build
+assert "run-with-network-retry.sh 'publish" not in build.lower()
 assert not (root / "scripts/ci/copy-image-to-tcr.sh").exists()
+assert not (root / "deploy/tx/replicate-image-to-tcr.sh").exists()
 assert "TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}" in deploy
 assert "TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}" in deploy
 assert "TX_IMAGE_SERVICES" in deploy
