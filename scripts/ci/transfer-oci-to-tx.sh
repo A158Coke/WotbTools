@@ -1,13 +1,25 @@
 #!/usr/bin/env bash
 # Transfer one BuildKit OCI archive to TX with resumable native rsync, verify that
 # the runner and TX see the same SHA256, import the verified archive with
-# `docker load`, and prove the expected immutable tag exists afterwards.
+# `docker load`, and prove the loaded image is the exact artifact the Build
+# workflow verified before any publication step may consume it.
+#
+# One canonical artifact identity and digest: the OCI archive carries the reference
+# the Build workflow pushed to its registry and verified the authoritative digest
+# for (`EXPECTED_IMAGE_REF`, e.g. <registry>/<owner>/wotbtools-frontend:sha-<12>),
+# because BuildKit names an OCI archive from the image-push tags and ignores the
+# exporter's `name=` option while `--tag` is set. TX never pulls that reference: it
+# is already local after the verified import. There is deliberately no second,
+# TX-local image namespace - the loaded release identity, the archived bytes and the
+# authoritative digest are the same artifact, and the TCR immutable name is derived
+# from that verified image by the publication helper.
 #
 # Three deterministic modes. Every mode builds the remote path inside this script
 # from validated inputs, so no workflow input can select a remote path:
 #
 #   transfer <component> <sha-12> <run-id> <archive>   resumable upload + verify
-#   import   <component> <sha-12> <run-id> <archive>   re-verify + docker load
+#   import   <component> <sha-12> <run-id> <archive>   re-verify + docker load +
+#                                                      verify loaded identity
 #   cleanup  <component> <sha-12> <run-id>             remove the exact archive
 #
 # Retry boundary: only the rsync upload is retried, and only for transport
@@ -21,7 +33,6 @@ readonly STAGING_ROOT="/opt/wotb-tx/replication.incoming"
 # One lock for every component: parallel Build jobs must not run three simultaneous
 # multi-gigabyte `docker load`s against the same TX disk and Docker daemon.
 readonly IMPORT_LOCK="$STAGING_ROOT/oci-transfer.lock"
-readonly LOCAL_IMAGE_PREFIX="wotb-transfer"
 # Per-attempt budgets stay well inside the 80 minute Build job even when a transfer
 # burns its full retry budget.
 readonly ATTEMPT_TIMEOUT_SECONDS=900
@@ -44,6 +55,8 @@ component=""
 tag=""
 run_id=""
 archive=""
+expected_image_ref=""
+expected_image_id=""
 stage="start"
 rsync_output=""
 
@@ -58,6 +71,13 @@ usage:
   transfer-oci-to-tx.sh transfer <backend|frontend|keycloak> <sha-12> <run-id> <archive>
   transfer-oci-to-tx.sh import   <backend|frontend|keycloak> <sha-12> <run-id> <archive>
   transfer-oci-to-tx.sh cleanup  <backend|frontend|keycloak> <sha-12> <run-id>
+
+import mode additionally requires:
+  EXPECTED_IMAGE_REF  canonical registry reference of the verified release, e.g.
+                      <registry>/<owner>/wotbtools-frontend:sha-<12>; the Build
+                      workflow exports it from the step that verified the
+                      authoritative registry digest for it
+  EXPECTED_IMAGE_ID   the image digest (image id) of that same verified build
 EOF
   exit 2
 }
@@ -97,6 +117,27 @@ case "$TX_SSH_DIR" in
 esac
 [ -f "$TX_SSH_DIR/config" ] || fail "native TX SSH configuration is missing: $TX_SSH_DIR/config"
 
+if [ "$mode" = import ]; then
+  # The Build workflow exports both values from the step that verified the
+  # authoritative registry digest, so the imported archive stays bound to the release
+  # identity proven in the registry. They are validated here - lowercase registry
+  # reference, the immutable release tag, and a full image digest - so no workflow
+  # input can name an arbitrary image or a mutable tag.
+  expected_image_ref="${EXPECTED_IMAGE_REF:-}"
+  expected_image_id="${EXPECTED_IMAGE_ID:-}"
+  [ -n "$expected_image_ref" ] \
+    || fail "EXPECTED_IMAGE_REF is required to verify the loaded release identity"
+  # The Build workflow passes its own registry reference, so the accepted shape is
+  # <registry>/<repository>:<tag> without a registry port; anything else is rejected
+  # rather than silently matched against the loaded image.
+  [[ "$expected_image_ref" =~ ^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)+:[a-z0-9][a-z0-9._-]*$ ]] \
+    || fail "EXPECTED_IMAGE_REF must be a lowercase <registry>/<repository>:<tag> reference without a registry port"
+  [ "${expected_image_ref##*:}" = "$tag" ] \
+    || fail "EXPECTED_IMAGE_REF must carry the immutable release tag $tag"
+  [[ "$expected_image_id" =~ ^sha256:[0-9a-f]{64}$ ]] \
+    || fail "EXPECTED_IMAGE_ID must be the image digest of the verified release (sha256:<64 lowercase hex>)"
+fi
+
 max_attempts="${TRANSFER_MAX_ATTEMPTS:-3}"
 backoff_first="${TRANSFER_BACKOFF_FIRST_SECONDS:-5}"
 backoff_later="${TRANSFER_BACKOFF_LATER_SECONDS:-15}"
@@ -112,7 +153,6 @@ readonly remote_dir="$STAGING_ROOT/$run_id/$component"
 # or promote an archive left behind by an older one.
 readonly remote_archive="$remote_dir/$component-$tag.oci.tar"
 readonly remote_partial="$remote_archive.part"
-readonly loaded_image="$LOCAL_IMAGE_PREFIX/$component:$tag"
 
 for tool in ssh sha256sum timeout; do
   command -v "$tool" >/dev/null 2>&1 || fail "runner is missing required tool: $tool"
@@ -290,7 +330,7 @@ run_transfer() {
 run_import() {
   local local_digest
   local tool
-  local image_id
+  local loaded_id
 
   # Re-verify at the point of use as well as at upload time: `docker load` must only
   # ever see bytes whose SHA256 matches the runner's archive.
@@ -320,11 +360,28 @@ run_import() {
     "flock -w $IMPORT_LOCK_WAIT_SECONDS '$IMPORT_LOCK' timeout --kill-after=$KILL_AFTER ${LOAD_TIMEOUT_SECONDS}s docker load -i '$remote_archive'" \
     || fail "docker load of the verified TX archive failed (lock wait ${IMPORT_LOCK_WAIT_SECONDS}s, load budget ${LOAD_TIMEOUT_SECONDS}s)"
 
-  stage="loaded-tag-verify"
-  image_id="$(remote_command "docker image inspect --format '{{.Id}}' '$loaded_image'")" \
-    || fail "expected TX image tag is not loaded: $loaded_image"
+  # `docker load` imports whatever reference the archive carries, and BuildKit names an
+  # OCI archive from the image-push tags, so the identity that must be present is the
+  # canonical release reference the Build workflow verified the authoritative digest
+  # for. A missing identity means the verified archive was not the proven release, and
+  # a loaded image id that differs from the verified build is a different artifact:
+  # both fail closed before anything can be published.
+  #
+  # `docker image inspect` reports the image config digest (the image id of the same
+  # one build whose pushed manifest digest the runner verified); the registry manifest
+  # digest itself is verified where it exists - on the runner for the pushed image and
+  # by the TX publication step for TCR.
+  stage="loaded-identity-verify"
+  loaded_id="$(remote_command "docker image inspect --format '{{.Id}}' '$expected_image_ref'")" \
+    || fail "the verified archive did not load its canonical release identity: $expected_image_ref"
+  [[ "$loaded_id" =~ ^sha256:[0-9a-f]{64}$ ]] \
+    || fail "the loaded release identity returned an invalid image digest"
+  [ "$loaded_id" = "$expected_image_id" ] \
+    || fail "loaded release digest mismatch (expected=$expected_image_id loaded=$loaded_id)"
+  printf 'component=%s stage=loaded-identity-verify result=PASS image=%s image_id=%s\n' \
+    "$component" "$expected_image_ref" "$loaded_id"
   printf 'component=%s stage=docker-load result=PASS image=%s image_id=%s\n' \
-    "$component" "$loaded_image" "$image_id"
+    "$component" "$expected_image_ref" "$loaded_id"
 }
 
 run_cleanup() {

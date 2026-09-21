@@ -137,7 +137,7 @@ jobs:
             ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-backend:latest
           outputs: |
-            type=oci,dest=${{ runner.temp }}/backend.oci.tar,name=wotb-transfer/backend:${{ needs.changes.outputs.tag }}
+            type=oci,dest=${{ runner.temp }}/backend.oci.tar
             type=image,push=true,oci-mediatypes=true
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           cache-from: type=gha
@@ -150,12 +150,19 @@ jobs:
         env:
           IMAGE: ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
           BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+          BUILD_IMAGE_ID: ${{ steps.build.outputs.imageid }}
         run: |
           set -euo pipefail
           [[ "$BUILD_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$BUILD_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
           registry_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE")"
           [ "$registry_digest" = "$BUILD_DIGEST" ]
           printf 'EXPECTED_DIGEST=%s\n' "$BUILD_DIGEST" >> "$GITHUB_ENV"
+          # The canonical transferred identity is the registry reference this digest
+          # was verified for, and its image digest identifies the loaded TX image. One
+          # build, one artifact, one digest chain, no TX-local image namespace.
+          printf 'EXPECTED_IMAGE_REF=%s\n' "$IMAGE" >> "$GITHUB_ENV"
+          printf 'EXPECTED_IMAGE_ID=%s\n' "$BUILD_IMAGE_ID" >> "$GITHUB_ENV"
       - name: Set up native TX SSH
         shell: bash
         env:
@@ -189,7 +196,7 @@ jobs:
         run: |
           set -euo pipefail
           timeout --kill-after=30s 3300s ssh -F "$TX_SSH_DIR/config" tx-image-publication \
-            "mkdir -p /opt/wotb-tx/replication.incoming && flock -w 1800 /opt/wotb-tx/replication.incoming/tcr-publication.lock bash /opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh backend '${{ needs.changes.outputs.tag }}' '$EXPECTED_DIGEST'"
+            "mkdir -p /opt/wotb-tx/replication.incoming && flock -w 1800 /opt/wotb-tx/replication.incoming/tcr-publication.lock bash /opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh backend '${{ needs.changes.outputs.tag }}' '$EXPECTED_DIGEST' '$EXPECTED_IMAGE_REF'"
       - name: Remove Backend remote transfer material
         if: success()
         shell: bash
@@ -230,7 +237,7 @@ jobs:
             ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest
           outputs: |
-            type=oci,dest=${{ runner.temp }}/frontend.oci.tar,name=wotb-transfer/frontend:${{ needs.changes.outputs.tag }}
+            type=oci,dest=${{ runner.temp }}/frontend.oci.tar
             type=image,push=true,oci-mediatypes=true
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           cache-from: type=gha
@@ -243,12 +250,19 @@ jobs:
         env:
           IMAGE: ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
           BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+          BUILD_IMAGE_ID: ${{ steps.build.outputs.imageid }}
         run: |
           set -euo pipefail
           [[ "$BUILD_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$BUILD_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
           registry_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE")"
           [ "$registry_digest" = "$BUILD_DIGEST" ]
           printf 'EXPECTED_DIGEST=%s\n' "$BUILD_DIGEST" >> "$GITHUB_ENV"
+          # The canonical transferred identity is the registry reference this digest
+          # was verified for, and its image digest identifies the loaded TX image. One
+          # build, one artifact, one digest chain, no TX-local image namespace.
+          printf 'EXPECTED_IMAGE_REF=%s\n' "$IMAGE" >> "$GITHUB_ENV"
+          printf 'EXPECTED_IMAGE_ID=%s\n' "$BUILD_IMAGE_ID" >> "$GITHUB_ENV"
       - name: Set up native TX SSH
         shell: bash
         env:
@@ -282,7 +296,7 @@ jobs:
         run: |
           set -euo pipefail
           timeout --kill-after=30s 3300s ssh -F "$TX_SSH_DIR/config" tx-image-publication \
-            "mkdir -p /opt/wotb-tx/replication.incoming && flock -w 1800 /opt/wotb-tx/replication.incoming/tcr-publication.lock bash /opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh frontend '${{ needs.changes.outputs.tag }}' '$EXPECTED_DIGEST'"
+            "mkdir -p /opt/wotb-tx/replication.incoming && flock -w 1800 /opt/wotb-tx/replication.incoming/tcr-publication.lock bash /opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh frontend '${{ needs.changes.outputs.tag }}' '$EXPECTED_DIGEST' '$EXPECTED_IMAGE_REF'"
       - name: Remove Frontend remote transfer material
         if: success()
         shell: bash
@@ -323,7 +337,7 @@ jobs:
             ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest
           outputs: |
-            type=oci,dest=${{ runner.temp }}/keycloak.oci.tar,name=wotb-transfer/keycloak:${{ needs.changes.outputs.tag }}
+            type=oci,dest=${{ runner.temp }}/keycloak.oci.tar
             type=image,push=true,oci-mediatypes=true
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -336,12 +350,19 @@ jobs:
         env:
           IMAGE: ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ needs.changes.outputs.tag }}
           BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+          BUILD_IMAGE_ID: ${{ steps.build.outputs.imageid }}
         run: |
           set -euo pipefail
           [[ "$BUILD_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$BUILD_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
           registry_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE")"
           [ "$registry_digest" = "$BUILD_DIGEST" ]
           printf 'EXPECTED_DIGEST=%s\n' "$BUILD_DIGEST" >> "$GITHUB_ENV"
+          # The canonical transferred identity is the registry reference this digest
+          # was verified for, and its image digest identifies the loaded TX image. One
+          # build, one artifact, one digest chain, no TX-local image namespace.
+          printf 'EXPECTED_IMAGE_REF=%s\n' "$IMAGE" >> "$GITHUB_ENV"
+          printf 'EXPECTED_IMAGE_ID=%s\n' "$BUILD_IMAGE_ID" >> "$GITHUB_ENV"
       - name: Set up native TX SSH
         shell: bash
         env:
@@ -375,7 +396,7 @@ jobs:
         run: |
           set -euo pipefail
           timeout --kill-after=30s 3300s ssh -F "$TX_SSH_DIR/config" tx-image-publication \
-            "mkdir -p /opt/wotb-tx/replication.incoming && flock -w 1800 /opt/wotb-tx/replication.incoming/tcr-publication.lock bash /opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh keycloak '${{ needs.changes.outputs.tag }}' '$EXPECTED_DIGEST'"
+            "mkdir -p /opt/wotb-tx/replication.incoming && flock -w 1800 /opt/wotb-tx/replication.incoming/tcr-publication.lock bash /opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh keycloak '${{ needs.changes.outputs.tag }}' '$EXPECTED_DIGEST' '$EXPECTED_IMAGE_REF'"
       - name: Remove Keycloak remote transfer material
         if: success()
         shell: bash
