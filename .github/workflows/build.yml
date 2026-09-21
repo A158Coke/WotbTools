@@ -28,7 +28,6 @@ concurrency:
 
 env:
   GHCR_IMAGE_PREFIX: ghcr.io/a158coke/wotbtools
-  TCR_IMAGE_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
 
 jobs:
   changes:
@@ -114,7 +113,7 @@ jobs:
     if: needs.changes.result == 'success' && needs.changes.outputs.backend == 'true'
     name: Build Backend
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 80
     permissions:
       contents: read
       packages: write
@@ -127,14 +126,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/login-action@v4
-        with:
-          registry: ${{ vars.TCR_REGISTRY }}
-          username: ${{ secrets.TCR_USERNAME }}
-          password: ${{ secrets.TCR_PASSWORD }}
-      - uses: imjasonh/setup-crane@v0.7
-        with:
-          version: v0.22.1
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
@@ -149,19 +140,36 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
-      - name: Copy and verify Backend immutable image in Tencent TCR
+      - name: Install TX replication helper
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/tx/replicate-image-to-tcr.sh
+          target: /opt/wotb-tx/replication.incoming/${{ github.run_id }}/backend
+          overwrite: true
+      - name: Replicate Backend immutable image on TX
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 35m
+          envs: COMPONENT,IMAGE_TAG
+          script: bash /opt/wotb-tx/replication.incoming/${{ github.run_id }}/backend/deploy/tx/replicate-image-to-tcr.sh "$COMPONENT" "$IMAGE_TAG"
         env:
+          COMPONENT: backend
           IMAGE_TAG: ${{ needs.changes.outputs.tag }}
-        shell: bash
-        run: |
-          bash scripts/ci/copy-image-to-tcr.sh backend "$IMAGE_TAG" --update-latest
 
   build_frontend:
     needs: [changes]
     if: needs.changes.result == 'success' && needs.changes.outputs.frontend == 'true'
     name: Build Frontend
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 80
     permissions:
       contents: read
       packages: write
@@ -174,14 +182,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/login-action@v4
-        with:
-          registry: ${{ vars.TCR_REGISTRY }}
-          username: ${{ secrets.TCR_USERNAME }}
-          password: ${{ secrets.TCR_PASSWORD }}
-      - uses: imjasonh/setup-crane@v0.7
-        with:
-          version: v0.22.1
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
@@ -196,19 +196,36 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
-      - name: Copy and verify Frontend immutable image in Tencent TCR
+      - name: Install TX replication helper
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/tx/replicate-image-to-tcr.sh
+          target: /opt/wotb-tx/replication.incoming/${{ github.run_id }}/frontend
+          overwrite: true
+      - name: Replicate Frontend immutable image on TX
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 35m
+          envs: COMPONENT,IMAGE_TAG
+          script: bash /opt/wotb-tx/replication.incoming/${{ github.run_id }}/frontend/deploy/tx/replicate-image-to-tcr.sh "$COMPONENT" "$IMAGE_TAG"
         env:
+          COMPONENT: frontend
           IMAGE_TAG: ${{ needs.changes.outputs.tag }}
-        shell: bash
-        run: |
-          bash scripts/ci/copy-image-to-tcr.sh frontend "$IMAGE_TAG" --update-latest
 
   build_keycloak:
     needs: [changes]
     if: needs.changes.result == 'success' && needs.changes.outputs.keycloak == 'true'
     name: Build Keycloak
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 80
     permissions:
       contents: read
       packages: write
@@ -221,14 +238,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/login-action@v4
-        with:
-          registry: ${{ vars.TCR_REGISTRY }}
-          username: ${{ secrets.TCR_USERNAME }}
-          password: ${{ secrets.TCR_PASSWORD }}
-      - uses: imjasonh/setup-crane@v0.7
-        with:
-          version: v0.22.1
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
@@ -243,12 +252,29 @@ jobs:
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           provenance: false
           sbom: false
-      - name: Copy and verify Keycloak immutable image in Tencent TCR
+      - name: Install TX replication helper
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/tx/replicate-image-to-tcr.sh
+          target: /opt/wotb-tx/replication.incoming/${{ github.run_id }}/keycloak
+          overwrite: true
+      - name: Replicate Keycloak immutable image on TX
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 35m
+          envs: COMPONENT,IMAGE_TAG
+          script: bash /opt/wotb-tx/replication.incoming/${{ github.run_id }}/keycloak/deploy/tx/replicate-image-to-tcr.sh "$COMPONENT" "$IMAGE_TAG"
         env:
+          COMPONENT: keycloak
           IMAGE_TAG: ${{ needs.changes.outputs.tag }}
-        shell: bash
-        run: |
-          bash scripts/ci/copy-image-to-tcr.sh keycloak "$IMAGE_TAG" --update-latest
 
   build_minio:
     needs: [changes]

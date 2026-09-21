@@ -20,7 +20,7 @@ build_text = build_path.read_text(encoding="utf-8")
 deploy_text = deploy_path.read_text(encoding="utf-8")
 ci_text = ci_path.read_text(encoding="utf-8")
 tx_deploy_text = (deploy_path.parent.parent.parent / "deploy/tx/deploy.sh").read_text(encoding="utf-8")
-copy_helper = deploy_path.parent.parent.parent / "scripts/ci/copy-image-to-tcr.sh"
+replication_helper = deploy_path.parent.parent.parent / "deploy/tx/replicate-image-to-tcr.sh"
 build = yaml.safe_load(build_text)
 deploy = yaml.safe_load(deploy_text)
 ci = yaml.safe_load(ci_text)
@@ -65,18 +65,30 @@ for job_name, output_name in (
     assert "${{ env.GHCR_IMAGE_PREFIX }}-" + image_prefix + ":${{ needs.changes.outputs.tag }}" in tags
     assert "${{ env.GHCR_IMAGE_PREFIX }}-" + image_prefix + ":latest" in tags
     if output_name in {"backend", "frontend", "keycloak"}:
-        assert "${{ env.TCR_IMAGE_PREFIX }}" not in tags, \
+        assert "tencentyun.com" not in tags, \
             f"{job_name} must not direct-push Tencent TCR from BuildKit"
-        crane_setup = next((step for step in job["steps"] if step.get("uses") == "imjasonh/setup-crane@v0.7"), None)
-        assert crane_setup is not None and crane_setup["with"] == {"version": "v0.22.1"}, \
-            f"{job_name} must install the pinned crane release"
-        copy_step = next((step for step in job["steps"] if step.get("name") == f"Copy and verify {image_prefix.title()} immutable image in Tencent TCR"), None)
-        assert copy_step is not None, f"{job_name} must copy and verify the immutable Tencent TCR image"
-        assert f'bash scripts/ci/copy-image-to-tcr.sh {image_prefix} "$IMAGE_TAG" --update-latest' in copy_step["run"]
-        assert job["steps"].index(build_step) < job["steps"].index(copy_step), \
-            f"{job_name} must copy only after the GHCR build succeeds"
+        assert not any(step.get("uses") == "imjasonh/setup-crane@v0.7" for step in job["steps"]), \
+            f"{job_name} must not copy through a GitHub-hosted crane client"
+        install_step = next((step for step in job["steps"] if step.get("name") == "Install TX replication helper"), None)
+        replicate_step = next((step for step in job["steps"] if step.get("name") == f"Replicate {image_prefix.title()} immutable image on TX"), None)
+        assert install_step is not None and replicate_step is not None, \
+            f"{job_name} must install and run the TX-side replication helper"
+        assert install_step["uses"] == "appleboy/scp-action@v1"
+        assert install_step["with"]["source"] == "deploy/tx/replicate-image-to-tcr.sh"
+        assert f"/{image_prefix}" in install_step["with"]["target"]
+        assert replicate_step["uses"] == "appleboy/ssh-action@v1"
+        assert replicate_step["with"]["envs"] == "COMPONENT,IMAGE_TAG"
+        assert replicate_step["env"] == {
+            "COMPONENT": image_prefix,
+            "IMAGE_TAG": "${{ needs.changes.outputs.tag }}",
+        }
+        assert "replicate-image-to-tcr.sh" in replicate_step["with"]["script"]
+        assert "TCR_USERNAME" not in str(install_step) and "TCR_PASSWORD" not in str(install_step)
+        assert "TCR_USERNAME" not in str(replicate_step) and "TCR_PASSWORD" not in str(replicate_step)
+        assert job["steps"].index(build_step) < job["steps"].index(install_step) < job["steps"].index(replicate_step), \
+            f"{job_name} must replicate only after the GHCR build succeeds"
     else:
-        assert "${{ env.TCR_IMAGE_PREFIX }}" not in tags, \
+        assert "tencentyun.com" not in tags, \
             f"{job_name} must remain GHCR-only"
         assert not any(step.get("with", {}).get("registry") == "${{ vars.TCR_REGISTRY }}" for step in job["steps"]), \
             f"{job_name} must not log in to Tencent TCR"
@@ -95,106 +107,24 @@ for job_name, output_name in (
     assert "BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}" in build_args, \
         f"{job_name} must inject the frozen release SHA into the image"
 
-assert copy_helper.is_file(), "Build must keep the TCR copy and identity gate in one reusable helper"
-copy_helper_text = copy_helper.read_text(encoding="utf-8")
-assert "set -euo pipefail" in copy_helper_text
-assert "backend|frontend|keycloak" in copy_helper_text
-assert "crane copy" in copy_helper_text
-assert "timeout --kill-after" in copy_helper_text
-assert "COPY_TIMEOUT_SECONDS" in copy_helper_text
-assert "COPY_KILL_AFTER_SECONDS" in copy_helper_text
-assert "stage=replication-start" in copy_helper_text
-assert "stage=replication-end" in copy_helper_text
-assert "elapsed_seconds=" in copy_helper_text
-assert "crane digest" in copy_helper_text
-assert "docker pull" not in copy_helper_text and "docker push" not in copy_helper_text
-assert "tar " not in copy_helper_text
-assert "sha-[0-9a-f]{12}" in copy_helper_text
-assert "ccr.ccs.tencentyun.com" in copy_helper_text
-assert "source_image" in copy_helper_text and "target_image" in copy_helper_text
-assert "latest" in copy_helper_text and "--update-latest" in copy_helper_text
-
-
-def run_copy_helper(*args, crane_mode="success"):
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp = Path(temp_dir)
-        bin_dir = temp / "bin"
-        bin_dir.mkdir()
-        log_path = temp / "crane.log"
-        (bin_dir / "crane").write_text(
-            "#!/usr/bin/env bash\n"
-            "set -euo pipefail\n"
-            "printf '%s\\n' \"$*\" >> \"$CRANE_LOG\"\n"
-            "case \"$1\" in\n"
-            "  copy)\n"
-            "    if [ \"${CRANE_MODE:-success}\" = copy-fail ]; then exit 19; fi\n"
-            "    if [ \"${CRANE_MODE:-success}\" = copy-timeout ]; then\n"
-            "      trap '' TERM\n"
-            "      ( trap '' TERM; sleep 10 ) & wait \"$!\"\n"
-            "    fi ;;\n"
-            "  digest)\n"
-            "    if [ \"${CRANE_MODE:-success}\" = ghcr-digest-fail ] && [[ \"$2\" == ghcr.io/* ]]; then exit 21; fi\n"
-            "    if [ \"${CRANE_MODE:-success}\" = tcr-digest-fail ] && [[ \"$2\" == ccr.ccs.tencentyun.com/* ]]; then exit 22; fi\n"
-            "    if [ \"${CRANE_MODE:-success}\" = digest-mismatch ] && [[ \"$2\" == *ccr.ccs.tencentyun.com* ]]; then\n"
-            "      echo sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
-            "    else\n"
-            "      echo sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
-            "    fi ;;\n"
-            "  *) exit 20 ;;\n"
-            "esac\n",
-            encoding="utf-8",
-        )
-        (bin_dir / "crane").chmod(0o755)
-        environment = {
-            **os.environ,
-            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-            "CRANE_LOG": str(log_path),
-            "CRANE_MODE": crane_mode,
-            "GHCR_IMAGE_PREFIX": "ghcr.io/a158coke/wotbtools",
-            "TCR_IMAGE_PREFIX": "ccr.ccs.tencentyun.com/wotbtools",
-            "COPY_TIMEOUT_SECONDS": "1",
-            "COPY_KILL_AFTER_SECONDS": "1",
-        }
-        started_at = time.monotonic()
-        result = subprocess.run(["bash", str(copy_helper), *args], capture_output=True, text=True, env=environment)
-        elapsed_seconds = time.monotonic() - started_at
-        return result, log_path.read_text(encoding="utf-8") if log_path.exists() else "", elapsed_seconds
-
-
-success, success_log, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", "--update-latest")
-assert success.returncode == 0, success.stderr
-assert "stage=replication-start" in success.stdout
-assert "stage=replication-end result=PASS" in success.stdout
-assert "elapsed_seconds=" in success.stdout
-assert "copy ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:sha-aaaaaaaaaaaa" in success_log
-latest_copy = "copy ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:latest"
-assert success_log.count(latest_copy) == 1, "latest must update exactly once after immutable verification"
-assert success_log.index("digest ghcr.io/a158coke/wotbtools-backend:sha-aaaaaaaaaaaa") < success_log.index(latest_copy), \
-    "latest must update only after the GHCR immutable digest is resolved"
-assert success_log.index("digest ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend:sha-aaaaaaaaaaaa") < success_log.index(latest_copy), \
-    "latest must update only after the TCR immutable digest is resolved"
-bad_component, _, _ = run_copy_helper("minio", "sha-aaaaaaaaaaaa")
-assert bad_component.returncode != 0
-bad_tag, _, _ = run_copy_helper("backend", "latest")
-assert bad_tag.returncode != 0
-copy_failure, copy_failure_log, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", "--update-latest", crane_mode="copy-fail")
-assert copy_failure.returncode != 0
-assert ":latest" not in copy_failure_log, "latest must not update after immutable copy failure"
-copy_timeout, copy_timeout_log, copy_timeout_elapsed_seconds = run_copy_helper("backend", "sha-aaaaaaaaaaaa", "--update-latest", crane_mode="copy-timeout")
-assert copy_timeout.returncode != 0
-assert ":latest" not in copy_timeout_log, "latest must not update after immutable copy timeout"
-assert copy_timeout_elapsed_seconds < 5, "TERM-ignoring crane must be hard-killed before it can naturally exit"
-assert "stage=replication-end result=FAIL" in copy_timeout.stderr
-assert "elapsed_seconds=" in copy_timeout.stderr
-digest_mismatch, digest_mismatch_log, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", "--update-latest", crane_mode="digest-mismatch")
-assert digest_mismatch.returncode != 0, "immutable digest mismatch must fail closed"
-assert ":latest" not in digest_mismatch_log, "latest must not update after immutable digest mismatch"
-ghcr_digest_failure, ghcr_digest_failure_log, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", "--update-latest", crane_mode="ghcr-digest-fail")
-assert ghcr_digest_failure.returncode != 0, "GHCR immutable digest lookup failure must fail closed"
-assert ":latest" not in ghcr_digest_failure_log, "latest must not update after GHCR digest lookup failure"
-tcr_digest_failure, tcr_digest_failure_log, _ = run_copy_helper("backend", "sha-aaaaaaaaaaaa", "--update-latest", crane_mode="tcr-digest-fail")
-assert tcr_digest_failure.returncode != 0, "Tencent TCR immutable digest lookup failure must fail closed"
-assert ":latest" not in tcr_digest_failure_log, "latest must not update after TCR digest lookup failure"
+assert replication_helper.is_file(), "Build must keep TX replication in a deployment-owned helper"
+helper_text = replication_helper.read_text(encoding="utf-8")
+assert "set -euo pipefail" in helper_text
+assert "backend|frontend|keycloak" in helper_text
+assert "sha-[0-9a-f]{12}" in helper_text
+assert "ghcr.io/a158coke" in helper_text and "ccr.ccs.tencentyun.com" in helper_text
+assert "docker pull" in helper_text and "docker tag" in helper_text and "docker push" in helper_text
+assert "docker buildx imagetools inspect" in helper_text
+assert "{{.Manifest.Digest}}" in helper_text
+assert "{{.Digest}}" not in helper_text, "registry digest must use the buildx manifest descriptor"
+assert "timeout --kill-after" in helper_text
+assert "GHCR_PULL_ATTEMPTS" in helper_text and "GHCR_PULL_TIMEOUT_SECONDS" in helper_text
+assert "stage=replication-start" in helper_text and "stage=replication-end" in helper_text
+assert "stage=pull-source" in helper_text and "stage=push-immutable" in helper_text
+assert "stage=verify-immutable" in helper_text and "stage=update-latest" in helper_text
+assert "docker system prune" not in helper_text and "docker image prune" not in helper_text
+assert "TCR_USERNAME" not in helper_text and "TCR_PASSWORD" not in helper_text
+assert not (deploy_path.parent.parent.parent / "scripts/ci/copy-image-to-tcr.sh").exists()
 
 manifest_job = build_jobs["manifest"]
 assert "always()" in manifest_job["if"]
@@ -495,3 +425,5 @@ assert tx_step_names.index("Apply Keycloak PostgreSQL OpenTofu on TX localhost")
 
 print("Build/Deploy workflow release contract OK")
 PY
+
+bash "$ROOT/deploy/test-tx-replication-helper.sh"
