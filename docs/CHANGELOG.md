@@ -4,7 +4,7 @@
 
 ## [Unreleased]
 
-- **TX application images via Tencent TCR**：backend、frontend、keycloak 继续保留 GHCR 的恢复副本，同时以相同 immutable `sha-<12>` tag dual-push 到 `ccr.ccs.tencentyun.com/wotbtools`；Build 发布后强制比较 GHCR 与 TCR 的 manifest digest。TX Compose、TX deploy pull 与 immutable image-existence gate 均改为使用 TCR；TX host 的持久 Docker credential store 是 deployment-owned，仓库不会把 `TCR_USERNAME` / `TCR_PASSWORD` 传给 TX、写入 Compose、metadata 或应用环境。Yecao parser-worker 与 MinIO 保持 GHCR。DNS 与运行时服务拓扑未改变。
+- **TX application images via Tencent TCR**：backend、frontend、keycloak 各只构建一次并先发布 GHCR 的 immutable `sha-<12>` artifact；Build 再将这个 artifact registry-copy 到 `ccr.ccs.tencentyun.com/wotbtools` 并从同一 immutable source 更新 TCR `latest`，随后 fail-closed 比较 GHCR/TCR immutable manifest digest。copy/identity 任一步失败都会阻止 deployment manifest；TX Compose、TX deploy pull 与 immutable image-existence gate 继续使用 TCR。GHCR 是 Yecao/source recovery registry；Yecao parser-worker 与 MinIO 保持 GHCR。TX host 的持久 Docker credential store 仍归 deployment owner，仓库不会把 `TCR_USERNAME` / `TCR_PASSWORD` 传给 TX、写入 Compose、metadata 或应用环境。DNS 与运行时服务拓扑未改变。
 
 ### Added
 
