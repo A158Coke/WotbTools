@@ -247,11 +247,16 @@ services:
   caddy:
     image: caddy:2.10.2-alpine
     ports:
-      # Stage I is loopback-only. An operator changes these runtime values only
-      # after the separately approved DNS cutover; the repository never does it.
-      - "${CADDY_HTTP_BIND:-127.0.0.1}:80:80"
-      - "${CADDY_HTTPS_BIND:-127.0.0.1}:443:443"
-      - "${CADDY_HTTPS_BIND:-127.0.0.1}:443:443/udp"
+      # Caddy is the TX production public ingress and owns 80/443 on every TX
+      # interface by default. It is the only service in this stack allowed to
+      # publish publicly: the two PostgreSQL ports, the Keycloak admin port and
+      # the RabbitMQ management port stay on 127.0.0.1, AMQP stays on the
+      # WireGuard address, and business-api/frontend publish nothing at all.
+      # An operator can still move the bind address with CADDY_HTTP_BIND or
+      # CADDY_HTTPS_BIND without editing this file.
+      - "${CADDY_HTTP_BIND:-0.0.0.0}:80:80"
+      - "${CADDY_HTTPS_BIND:-0.0.0.0}:443:443"
+      - "${CADDY_HTTPS_BIND:-0.0.0.0}:443:443/udp"
     environment:
       CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?CADDY_ACME_EMAIL is required}
     volumes:
