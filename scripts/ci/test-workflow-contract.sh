@@ -37,7 +37,9 @@ assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest" in build
 assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest" in build
 assert "workflow_run:" in deploy and "workflow_dispatch:" in deploy
 assert "tx_services:" in deploy
-assert "default: keycloak-postgres,keycloak,wotb-frontend,caddy" in deploy
+assert "        default: business-api" in deploy
+assert "        type: choice" in deploy
+assert "          - all" in deploy
 assert '"rabbitmq"' in deploy
 assert "TX_RABBITMQ_ADMIN_USER" in deploy
 assert "TX_RABBITMQ_ADMIN_PASSWORD" in deploy

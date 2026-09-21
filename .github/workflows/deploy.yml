@@ -20,10 +20,19 @@ on:
           - minio
           - parser-worker
       tx_services:
-        description: Comma-separated TX services to deploy
+        description: TX service (used only when target=tx)
         required: true
-        default: keycloak-postgres,keycloak,wotb-frontend,caddy
-        type: string
+        default: business-api
+        type: choice
+        options:
+          - business-api
+          - rabbitmq
+          - business-postgres
+          - keycloak
+          - keycloak-postgres
+          - wotb-frontend
+          - caddy
+          - all
 
 permissions:
   contents: read
@@ -124,21 +133,31 @@ jobs:
           import sys
 
           target = sys.argv[1]
-          requested = [service.strip() for service in sys.argv[2].split(",")]
           commit_sha = sys.argv[3]
           run_number = sys.argv[4]
           if target != "tx":
               raise SystemExit("target must be tx, minio, or parser-worker")
-          allowed = {"keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "business-api", "caddy"}
-          if not requested or any(not service or service not in allowed for service in requested):
-              raise SystemExit("tx_services must contain only supported TX services")
-          if len(requested) != len(set(requested)):
-              raise SystemExit("tx_services must not contain duplicate services")
-          requested = [
-              service
-              for service in ("keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "wotb-frontend", "business-api", "caddy")
-              if service in requested
-          ]
+          # The manual selector is a dropdown, but a workflow_dispatch payload can still
+          # carry an arbitrary string, so the selection stays explicitly validated here.
+          TX_SERVICES = (
+              "keycloak-postgres",
+              "business-postgres",
+              "rabbitmq",
+              "keycloak",
+              "wotb-frontend",
+              "business-api",
+          )
+          # ``all`` is the one-keystroke "whole TX runtime" selector. It expands to the same
+          # service set deploy/tx/deploy.sh already owns for its own ``all`` selection; the
+          # literal value never reaches WOTB_DEPLOY_SERVICES. Caddy stays an explicit-only
+          # selector: it is refreshed by the selected proxied services, and adding it here
+          # would newly require Caddy credentials for a whole-runtime deploy.
+          if sys.argv[2] == "all":
+              requested = list(TX_SERVICES)
+          elif sys.argv[2] in (*TX_SERVICES, "caddy"):
+              requested = [sys.argv[2]]
+          else:
+              raise SystemExit("tx_services must be one of: all, caddy, " + ", ".join(TX_SERVICES))
           print(f"release_sha={commit_sha}")
           print(f"release_tag=sha-{commit_sha[:12]}")
           print(f"build_run_number={run_number}")
