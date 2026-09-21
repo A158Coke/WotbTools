@@ -47,6 +47,12 @@ for component in ("backend", "frontend", "keycloak"):
     assert f"bash scripts/ci/transfer-oci-to-tx.sh transfer {component}" in build
     assert f"bash scripts/ci/transfer-oci-to-tx.sh import {component}" in build
     assert f"bash scripts/ci/transfer-oci-to-tx.sh cleanup {component}" in build
+    # Publication is invoked with the component and the immutable tag only: no identity
+    # value is forwarded to TX any more.
+    publish_call = f"publish-loaded-image-to-tcr.sh {component} '${{{{ needs.changes.outputs.tag }}}}'"
+    assert publish_call in build, f"{component} publication must pass only its immutable tag"
+    assert f"{publish_call} '" not in build, \
+        f"{component} publication must not forward another identity argument"
 # The long-lived OCI stream is gone for good: no gzip pipe and no stdin docker load.
 assert "stream-oci-to-tx.sh" not in build
 assert "gzip" not in build
@@ -67,11 +73,15 @@ assert "docker image inspect" in helper_text and "docker push" in helper_text
 assert "docker buildx imagetools inspect" in helper_text
 assert "{{.Manifest.Digest}}" in helper_text
 assert "{{.Digest}}" not in helper_text
+# The publication takes only the component and the immutable tag: it derives the loaded
+# and TCR references itself and never compares an image id or an expected digest.
+assert "usage: %s <backend|frontend|keycloak> <sha-12>" in helper_text
+assert "expected_digest" not in helper_text and "{{.Id}}" not in helper_text
 assert "timeout --kill-after" in helper_text
 assert "stage=publication-start" in helper_text and "stage=publication-end" in helper_text
 assert "stage=verify-immutable" in helper_text and "stage=update-latest" in helper_text
 assert "docker system prune" not in helper_text
-assert "ghcr.io" not in helper_text and "docker pull" not in helper_text and "crane" not in helper_text
+assert "docker pull" not in helper_text and "crane" not in helper_text
 assert "StrictHostKeyChecking yes" in ssh_setup_helper.read_text(encoding="utf-8")
 transfer_text = oci_transfer_helper.read_text(encoding="utf-8")
 assert "set -euo pipefail" in transfer_text
@@ -85,16 +95,22 @@ assert "timeout --kill-after" in transfer_text
 assert "run-with-network-retry.sh" not in transfer_text
 assert "publish-loaded-image-to-tcr.sh" not in transfer_text
 assert "EXPECTED_DIGEST" not in transfer_text
-# One canonical artifact identity and digest: the archive carries the digest-verified
-# registry reference, the import proves the loaded image is that verified build, and
-# no TX-local image namespace exists any more.
-assert "EXPECTED_IMAGE_REF" in transfer_text
-assert "EXPECTED_IMAGE_ID" in transfer_text
+# Release identity is the immutable tag: the import derives the canonical loaded
+# reference from its own component and tag and only checks that it is present. No image
+# id, config digest or expected identity value crosses the workflow environment, and no
+# TX-local image namespace exists any more.
+assert "EXPECTED_IMAGE_REF" not in transfer_text
+assert "EXPECTED_IMAGE_ID" not in transfer_text
+assert "EXPECTED_IMAGE_REF" not in build
+assert "EXPECTED_IMAGE_ID" not in build
+assert "EXPECTED_DIGEST" not in build
+assert "{{.Id}}" not in transfer_text
+assert 'canonical_image_ref="$GHCR_IMAGE_PREFIX-$component:$tag"' in transfer_text
 assert "wotb-transfer" not in transfer_text
 assert "wotb-transfer" not in build
 assert "wotb-transfer" not in helper_text
 assert "TCR_PASSWORD" not in transfer_text and "docker pull" not in transfer_text
-assert "crane" not in transfer_text and "ghcr.io" not in transfer_text
+assert "crane" not in transfer_text
 for component in ("Backend", "Frontend", "Keycloak"):
     assert f"Publish {component} loaded image to TCR" in build
 # Publication and import are exactly-once steps; only the rsync upload retries.

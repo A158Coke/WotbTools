@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 python3 - "$ROOT/.github/workflows/build.yml" "$ROOT/.github/workflows/deploy.yml" <<'PY'
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -84,17 +85,17 @@ for job_name, output_name in (
         digest_step = next(step for step in job["steps"] if step.get("id") == "digest")
         assert "${{ steps.build.outputs.digest }}" in str(digest_step)
         assert "docker buildx imagetools inspect" in digest_step["run"]
-        assert "EXPECTED_DIGEST" in digest_step["run"]
-        # The digest-verified registry reference and the image digest of the same build
-        # are the canonical transferred identity and digest the TX import must find.
-        assert "EXPECTED_IMAGE_REF" in digest_step["run"]
-        assert "EXPECTED_IMAGE_ID" in digest_step["run"]
-        assert "${{ steps.build.outputs.imageid }}" in str(digest_step)
-        assert "printf 'EXPECTED_IMAGE_REF=%s\\n' \"$IMAGE\" >> \"$GITHUB_ENV\"" in digest_step["run"]
-        assert "printf 'EXPECTED_IMAGE_ID=%s\\n' \"$BUILD_IMAGE_ID\" >> \"$GITHUB_ENV\"" in digest_step["run"]
+        # Only the GHCR push proof survives on the runner, and it carries no identity
+        # value into TX: the immutable tag is the release identity, so there is no image
+        # id, config digest or build digest to export.
+        assert "GITHUB_ENV" not in digest_step["run"]
+        assert "EXPECTED_IMAGE_REF" not in digest_step["run"]
+        assert "EXPECTED_IMAGE_ID" not in digest_step["run"]
+        assert "EXPECTED_DIGEST" not in digest_step["run"]
+        assert "steps.build.outputs.imageid" not in str(digest_step)
         assert digest_step["env"]["IMAGE"] == \
             "${{ env.GHCR_IMAGE_PREFIX }}-" + image_prefix + ":${{ needs.changes.outputs.tag }}", \
-            f"{job_name} must bind the canonical transferred identity to its immutable GHCR tag"
+            f"{job_name} must verify the immutable GHCR release tag it pushed"
         ssh_setup_step = next(step for step in job["steps"] if step.get("name") == "Set up native TX SSH")
         install_step = next(step for step in job["steps"] if step.get("name") == "Install TX loaded-image publication helper")
         title = image_prefix.title()
@@ -126,11 +127,15 @@ for job_name, output_name in (
             assert "docker load" not in step["run"], \
                 f"{job_name} {label} must leave docker load to the verified TX helper"
         assert "EXPECTED_DIGEST" not in transfer_step["run"] and "EXPECTED_DIGEST" not in import_step["run"]
-        # Publication consumes the loaded release identity the import verified; the
-        # authoritative TCR manifest digest parity stays the final gate.
-        assert f"publish-loaded-image-to-tcr.sh {image_prefix} '${{{{ needs.changes.outputs.tag }}}}' '$EXPECTED_DIGEST' '$EXPECTED_IMAGE_REF'" \
+        # Publication takes only the component and the immutable tag: the rewrite derives
+        # the loaded GHCR reference and the TCR target inside the helper, and the final
+        # gate is that the published TCR immutable tag exists.
+        assert f"publish-loaded-image-to-tcr.sh {image_prefix} '${{{{ needs.changes.outputs.tag }}}}'" \
             in publish_step["run"], \
-            f"{job_name} must publish exactly the verified loaded release identity"
+            f"{job_name} must publish exactly the loaded immutable release tag"
+        assert f"publish-loaded-image-to-tcr.sh {image_prefix} '${{{{ needs.changes.outputs.tag }}}}' '" \
+            not in publish_step["run"], \
+            f"{job_name} must not forward any identity value beyond the immutable tag"
         for step_name in (
             f"Transfer {title} OCI archive to TX",
             f"Import {title} OCI image on TX",
@@ -144,7 +149,8 @@ for job_name, output_name in (
         assert "ssh -F \"$TX_SSH_DIR/config\"" in publish_step["run"]
         assert "publish-loaded-image-to-tcr.sh" in publish_step["run"]
         assert "flock -w 1800" in publish_step["run"]
-        assert "EXPECTED_DIGEST" in publish_step["run"]
+        assert "EXPECTED_DIGEST" not in publish_step["run"]
+        assert "EXPECTED_IMAGE_ID" not in publish_step["run"]
         for step in (ssh_setup_step, install_step, transfer_step, import_step, publish_step, cleanup_step):
             assert "TCR_USERNAME" not in str(step) and "TCR_PASSWORD" not in str(step)
         ordered_steps = (
@@ -185,21 +191,29 @@ assert "backend|frontend|keycloak" in helper_text
 assert "sha-[0-9a-f]{12}" in helper_text
 assert "sha256:[0-9a-f]{64}" in helper_text
 assert "ccr.ccs.tencentyun.com" in helper_text
-# One canonical artifact: the publication helper consumes the loaded release
-# reference, not a TX-local image namespace of its own.
+# One canonical artifact: the publication helper derives the loaded release reference
+# from the component and immutable tag, so no identity value is forwarded into it.
 assert "wotb-transfer" not in helper_text
 assert "loaded_image" in helper_text
 assert "docker image inspect" in helper_text and "docker tag" in helper_text and "docker push" in helper_text
 assert "docker buildx imagetools inspect" in helper_text
 assert "{{.Manifest.Digest}}" in helper_text
 assert "{{.Digest}}" not in helper_text, "registry digest must use the buildx manifest descriptor"
-assert "timeout --kill-after" in helper_text
+assert "{{.Id}}" not in helper_text, "publication must not compare image ids any more"
+assert "expected_digest" not in helper_text, \
+    "publication must not receive or compare an expected digest any more"
+assert "usage: %s <backend|frontend|keycloak> <sha-12>" in helper_text, \
+    "publication takes only the component and the immutable tag"
+assert "timeout --kill-after" in helper_text or "KILL_AFTER_SECONDS" in helper_text
 assert "stage=publication-start" in helper_text and "stage=publication-end" in helper_text
 assert "stage=push-immutable" in helper_text
 assert "stage=verify-immutable" in helper_text and "stage=update-latest" in helper_text
 assert "docker system prune" not in helper_text and "docker image prune" not in helper_text
 assert "TCR_USERNAME" not in helper_text and "TCR_PASSWORD" not in helper_text
-assert "ghcr.io" not in helper_text and "docker pull" not in helper_text and "crane" not in helper_text
+# The helper derives the loaded reference itself, so it owns the registry prefix
+# instead of receiving one; it must still never pull, and never use a second client.
+assert "docker pull" not in helper_text and "crane" not in helper_text
+assert "docker tag" in helper_text, "publication must tag the loaded image into TCR"
 assert "StrictHostKeyChecking yes" in ssh_setup_helper.read_text(encoding="utf-8")
 assert "ssh-keyscan" in ssh_setup_helper.read_text(encoding="utf-8")
 transfer_text = oci_transfer_helper.read_text(encoding="utf-8")
@@ -209,11 +223,12 @@ assert "rsync --partial --append-verify" in transfer_text
 assert '-e "ssh -F $TX_SSH_DIR/config"' in transfer_text
 assert "sha256sum" in transfer_text
 assert "docker load -i" in transfer_text
-# One canonical artifact identity and digest: the imported archive must carry the
-# digest-verified release reference and the verified build's image digest, and there
-# is no TX-local image namespace any more.
-assert "EXPECTED_IMAGE_REF" in transfer_text
-assert "EXPECTED_IMAGE_ID" in transfer_text
+# One canonical artifact identity: the import derives the loaded release reference from
+# its own component and immutable tag and only checks that it is present. There is no
+# image id / config digest comparison and no TX-local image namespace.
+assert "EXPECTED_IMAGE_REF" not in transfer_text
+assert "EXPECTED_IMAGE_ID" not in transfer_text
+assert "{{.Id}}" not in transfer_text, "the import must not compare image ids any more"
 assert "wotb-transfer" not in transfer_text
 assert "flock -w" in transfer_text and "oci-transfer.lock" in transfer_text
 assert 'STAGING_ROOT="/opt/wotb-tx/replication.incoming"' in transfer_text
@@ -226,10 +241,20 @@ assert "run-with-network-retry.sh" not in transfer_text, \
 assert "publish-loaded-image-to-tcr.sh" not in transfer_text
 assert "EXPECTED_DIGEST" not in transfer_text
 assert "docker pull" not in transfer_text and "TCR_PASSWORD" not in transfer_text
-assert "crane" not in transfer_text and "ghcr.io" not in transfer_text
+assert "crane" not in transfer_text
 assert "StrictHostKeyChecking=no" not in transfer_text
 assert "docker system prune" not in transfer_text and "docker image prune" not in transfer_text
 assert "oci-import.lock" not in transfer_text and "oci-import.lock" not in build_text
+# The helpers derive the canonical loaded reference themselves, so their registry prefix
+# default must stay identical to the workflow's GHCR_IMAGE_PREFIX; a drift here would
+# make the import inspect a reference the build never pushed.
+prefix_pattern = r'GHCR_IMAGE_PREFIX="\$\{GHCR_IMAGE_PREFIX:-([^}"]+)\}"'
+workflow_prefix = build["env"]["GHCR_IMAGE_PREFIX"]
+for label, text in (("transfer helper", transfer_text), ("publication helper", helper_text)):
+    match = re.search(prefix_pattern, text)
+    assert match, f"{label} must own a GHCR_IMAGE_PREFIX default"
+    assert match.group(1) == workflow_prefix, \
+        f"{label} prefix {match.group(1)!r} must match Build's {workflow_prefix!r}"
 assert "gzip" not in build_text and "docker load" not in build_text, \
     "Build must not stream or pipe the OCI archive into docker load"
 assert "run-with-network-retry.sh 'upload" not in build_text
