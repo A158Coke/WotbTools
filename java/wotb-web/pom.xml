@@ -182,7 +182,6 @@
                          取值只用于启动装配；测试不连接真实 MinIO/RabbitMQ。 -->
                     <systemPropertyVariables>
                         <wotb.replay.object-storage.access-key>test-access-key</wotb.replay.object-storage.access-key>
-                        <wotb.replay.processing-job.repository>jdbc</wotb.replay.processing-job.repository>
                         <wotb.replay.object-storage.secret-key>test-secret-key</wotb.replay.object-storage.secret-key>
                         <wotb.replay.broker.host>localhost</wotb.replay.broker.host>
                         <wotb.replay.broker.username>test-control-api</wotb.replay.broker.username>

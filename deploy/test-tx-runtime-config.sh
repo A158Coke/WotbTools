@@ -121,7 +121,6 @@ grep -Fq 'TX_IMAGE_REGISTRY_PREFIX must be a Tencent TCR namespace' "$TX_DIR/dep
   || fail "business-api must never publish a port; only TX-internal peers may reach it"
 for contract in \
   'POSTGRES_HOST: business-postgres' \
-  'WOTB_REPLAY_PROCESSING_JOB_REPOSITORY: jdbc' \
   'KEYCLOAK_ADMIN_SERVER_URL: http://keycloak:8080' \
   'TX_RABBITMQ_HOST: rabbitmq' \
   'YECAO_MINIO_CONTROL_API_ACCESS_KEY: ${YECAO_MINIO_CONTROL_API_ACCESS_KEY:?YECAO_MINIO_CONTROL_API_ACCESS_KEY is required}' \
@@ -304,8 +303,8 @@ grep -Fq 'target: /etc/nginx/templates/default.conf.template' "$WORK/compose.yml
   || fail "frontend must mount its target-scoped nginx template"
 ! grep -Fq 'WOTB_REPLAY_EXECUTION_MODE' "$WORK/compose.yml" \
   || fail "resolved business-api must not carry the retired replay execution-mode switch"
-grep -Fq 'WOTB_REPLAY_PROCESSING_JOB_REPOSITORY: jdbc' "$WORK/compose.yml" \
-  || fail "resolved business-api must use the PostgreSQL job authority"
+! grep -Fq 'WOTB_REPLAY_PROCESSING_JOB_REPOSITORY' "$WORK/compose.yml" \
+  || fail "resolved business-api must not carry the retired replay job-repository switch"
 grep -Fq 'http://keycloak:8080' "$WORK/compose.yml" \
   || fail "resolved business-api must use the TX-internal Keycloak Admin API"
 # The control plane owns the WireGuard endpoint (`10.20.0.2:9000`). The Yecao-local Docker service

@@ -1,5 +1,6 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.web.replay.job.InMemoryReplayJobAuthority;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -36,7 +37,7 @@ class AiReplayReviewServiceWiringTest {
     static class WiringConfig {
         @Bean
         ReplayProcessingJobStore processingStore() throws Exception {
-            return new ReplayProcessingJobStore(Files.createTempDirectory("wotb-wiring-test"), 60);
+            return new ReplayProcessingJobStore(Files.createTempDirectory("wotb-wiring-test"), 60, new InMemoryReplayJobAuthority());
         }
 
         @Bean

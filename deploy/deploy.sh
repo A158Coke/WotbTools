@@ -74,7 +74,8 @@ explicitly_selected() {
 }
 
 # The Yecao parser-worker is the only execution-plane service on that host and must stay stateless:
-# no database credentials, no local replay job directory, no in-process execution mode. A future
+# no database credentials, no local replay job directory, no in-process execution mode and no
+# replay backend-selection switch. A future
 # edit that gave it any of these would silently create a second, non-authoritative replay runtime
 # (PostgreSQL is the job authority on TX and MinIO holds the datasets), so the deploy refuses to
 # stage such a worker instead of starting it.

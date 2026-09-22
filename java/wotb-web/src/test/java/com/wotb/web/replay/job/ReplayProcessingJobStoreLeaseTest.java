@@ -44,7 +44,7 @@ class ReplayProcessingJobStoreLeaseTest {
 
     private ReplayProcessingJobStore newStore() throws Exception {
         root = Files.createTempDirectory("wotb-store-lease-test");
-        store = new ReplayProcessingJobStore(root, 1);
+        store = new ReplayProcessingJobStore(root, 1, new InMemoryReplayJobAuthority());
         return store;
     }
 

@@ -71,12 +71,19 @@ execution_mode_field=""
 if [ -n "${FAKE_EXECUTION_MODE:-}" ]; then
   execution_mode_field=",\"WOTB_REPLAY_EXECUTION_MODE\":\"${FAKE_EXECUTION_MODE}\""
 fi
-job_repository="${FAKE_JOB_REPOSITORY:-jdbc}"
+# 同上：已退役的后端选择器也不得出现；FAKE_JOB_REPOSITORY 可把它注回以证明门禁仍 fail closed。
+job_repository_field=""
+if [ -n "${FAKE_JOB_REPOSITORY:-}" ]; then
+  job_repository_field=",\"WOTB_REPLAY_PROCESSING_JOB_REPOSITORY\":\"${FAKE_JOB_REPOSITORY}\""
+fi
+# 组合成 business-api 的 environment 主体（去掉首个逗号，空集时是合法 JSON {}）。
+extra_env="${job_repository_field}${execution_mode_field}"
+extra_env="${extra_env#,}"
 business_api_ports="${FAKE_BUSINESS_API_PUBLISHED_PORT:-[]}"
 case "${1:-}" in
   config)
-    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{"WOTB_REPLAY_PROCESSING_JOB_REPOSITORY":"%s"%s}}}}\n' \
-      "$business_ports" "$frontend_upstream" "$business_api_ports" "$job_repository" "$execution_mode_field"
+    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}}}}\n' \
+      "$business_ports" "$frontend_upstream" "$business_api_ports" "$extra_env"
     ;;
   ps)
     if [[ "$*" == *business-postgres* ]]; then
@@ -390,7 +397,7 @@ run_gate_failure "relocated-frontend-upstream-yecao" 'tx-internal-api-route: FAI
   "" "$RELOCATED_ROOT/deploy/pre-cutover-check.sh" env FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
 run_gate_failure "retired-execution-mode-switch" 'distributed-execution-plane: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_EXECUTION_MODE=distributed
-run_gate_failure "memory-job-authority" 'distributed-execution-plane: FAIL' \
+run_gate_failure "retired-job-repository-switch" 'distributed-execution-plane: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_JOB_REPOSITORY=memory
 
 # Every business token must independently block readiness, so a green gate cannot
