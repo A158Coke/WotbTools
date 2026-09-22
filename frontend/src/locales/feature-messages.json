@@ -44,14 +44,6 @@
       "battlePlayback": "战局重建",
       "battlePlaybackDesc": "通过地图、时间轴、车辆状态、HP 与战斗事件重现整场战斗。"
     },
-    "boost": {
-      "notificationTitle": {
-        "BOOST_REQUEST_SUBMITTED": "陪练需求已提交"
-      },
-      "notificationMessage": {
-        "BOOST_REQUEST_SUBMITTED": "你的陪练需求 #{requestId} 已提交，等待审核。"
-      }
-    },
     "upload": {
       "action_replay_selector": "选择用于 AI 复盘或战局回放的回放",
       "action_replay_placeholder": "请选择一份回放"
@@ -208,14 +200,6 @@
       "battlePlayback": "Battle Reconstruction",
       "battlePlaybackDesc": "Reconstruct the battle with maps, timeline, vehicle state, HP, and events."
     },
-    "boost": {
-      "notificationTitle": {
-        "BOOST_REQUEST_SUBMITTED": "Coaching request submitted"
-      },
-      "notificationMessage": {
-        "BOOST_REQUEST_SUBMITTED": "Your coaching request #{requestId} was submitted and is awaiting review."
-      }
-    },
     "upload": {
       "action_replay_selector": "Select a replay for AI review or battle playback",
       "action_replay_placeholder": "Select a replay"
@@ -371,14 +355,6 @@
       "aiReviewDesc": "Анализ решений, ключевых моментов и тактики по данным боя.",
       "battlePlayback": "Реконструкция боя",
       "battlePlaybackDesc": "Восстановление боя по карте, таймлайну, состоянию техники, HP и событиям."
-    },
-    "boost": {
-      "notificationTitle": {
-        "BOOST_REQUEST_SUBMITTED": "Заявка на тренировку отправлена"
-      },
-      "notificationMessage": {
-        "BOOST_REQUEST_SUBMITTED": "Ваша заявка #{requestId} отправлена и ожидает проверки."
-      }
     },
     "upload": {
       "action_replay_selector": "Выберите реплей для ИИ-разбора или просмотра боя",
