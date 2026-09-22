@@ -94,10 +94,10 @@ Team Review 不再以尽可能短为目标，而是采用 selective but complete
 
 ```
 Replay selection
-  -> Processing Job (ReplayParseScheduler / full process，multipart 上传仅发生在此一次)
+  -> Processing Job (Yecao parser-worker / full process，multipart 上传仅发生在此一次)
   -> derived artifacts：
-       ai-facts.json       (ReplayArtifactWriter.writeAiFacts)
-       map-overview.json   (ReplayArtifactWriter.writeMapOverview)
+       ai-facts.json       (ReplayArtifactWriter.aiFactsContent)
+       map-overview.json   (ReplayArtifactWriter.mapOverviewContent)
   -> source READY（r0）
   -> authoritative Dataset identity = processingJobId + sourceId
 
@@ -108,7 +108,7 @@ AI：
   -> ReconstructionController.analyzeDataset
   -> AiReplayReviewService.analyzeFacts(processingJobId, sourceIndex, language, listener)
        -> ReplayProcessingJobStore.acquireForSource(processingJobId)   [Dataset lease]
-       -> ReplayArtifactWriter.readAiFacts(...)
+       -> ReplayArtifactWriter.decodeAiFacts(...)
        -> AiReplayAnalysisService.analyzeTeamGroups / analyzePlayerOrFallback / TacticalReviewHarness
    -> SSE 流式响应（call1 / evidence / call2 阶段事件；Team v0.5 在 done 一次性返回结构化结果）
 ```

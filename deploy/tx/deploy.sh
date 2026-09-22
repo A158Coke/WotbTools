@@ -419,12 +419,10 @@ assert_routing_boundary() {
   ! grep -Eq '8087:8087|10\.20\.0\.2:8087' "$compose_file" \
     || die "staged TX compose must not publish or reference the retired Yecao backend port."
   if is_selected all || is_selected business-api; then
-    grep -Fq 'WOTB_REPLAY_EXECUTION_MODE: distributed' "$compose_file" \
-      || die "business-api must run WOTB_REPLAY_EXECUTION_MODE=distributed in production."
     grep -Fq 'WOTB_REPLAY_PROCESSING_JOB_REPOSITORY: jdbc' "$compose_file" \
       || die "business-api must keep PostgreSQL as the replay job authority (repository=jdbc)."
-    ! grep -Fq 'WOTB_REPLAY_EXECUTION_MODE: local' "$compose_file" \
-      || die "business-api must never run the local replay execution plane in production."
+    ! grep -Fq 'WOTB_REPLAY_EXECUTION_MODE' "$compose_file" \
+      || die "the retired replay execution-mode switch must not appear in production."
   fi
 }
 
@@ -1788,12 +1786,12 @@ assert not any("8087" in port for port in published), published
 import json, sys
 data = json.load(sys.stdin)
 environment = data["services"]["business-api"].get("environment") or {}
-assert environment.get("WOTB_REPLAY_EXECUTION_MODE") == "distributed", environment.get("WOTB_REPLAY_EXECUTION_MODE")
+assert "WOTB_REPLAY_EXECUTION_MODE" not in environment, "the retired replay execution-mode switch must not be set"
 assert environment.get("WOTB_REPLAY_PROCESSING_JOB_REPOSITORY") == "jdbc", environment.get("WOTB_REPLAY_PROCESSING_JOB_REPOSITORY")
 ' <<< "$compose_json"; then
     echo "distributed-execution-plane: PASS"
   else
-    echo "distributed-execution-plane: FAIL (business-api must run the distributed replay execution plane)" >&2
+    echo "distributed-execution-plane: FAIL (business-api must keep the PostgreSQL job authority and no execution-mode switch)" >&2
     failures=1
   fi
 

@@ -6,14 +6,9 @@ import java.io.IOException;
  * READY dataset 与 derived artifact 的**唯一**读取端口。
  *
  * <p>job 状态权威（{@code QUEUED/PROCESSING/READY/FAILED/CANCELLED} 与 source 状态）永远来自
- * 状态机；本端口只回答「READY 之后数据从哪里读」：</p>
- * <ul>
- *   <li>{@code local}：进程内存 {@link ReplayProcessingJob#result()} + job 目录里的 derived
- *       artifact（同进程、同一次执行）；</li>
- *   <li>{@code distributed}：对象存储里的 finalized batch dataset
- *       （{@code temp/jobs/<jobId>/result/finalized.json}）与 worker 写的 derived artifact
- *       （{@code temp/jobs/<jobId>/artifacts/<i>/*.json}）。</li>
- * </ul>
+ * 状态机；本端口只回答「READY 之后数据从哪里读」：对象存储里的 finalized batch dataset
+ * （{@code temp/jobs/<jobId>/result/finalized.json}）与 worker 写的 derived artifact
+ * （{@code temp/jobs/<jobId>/artifacts/<i>/*.json}）。</p>
  *
  * <p>实现不得读取或推断 job 状态：调用方已经确认 job 是 READY、source 是 READY。</p>
  *
@@ -21,7 +16,7 @@ import java.io.IOException;
  * Battle Playback V2（{@code map-overview.json} / {@code battle-playback-v2.json}）同样只通过本端口
  * 取字节，因此「distributed 下 TX 本地磁盘不参与 dataset/artifact 读取」是结构约束，而不是每个
  * feature 各自遵守的纪律。字节 → DTO 的解码由
- * {@code ReplayArtifactWriter.decode*(...)} 唯一拥有（本地文件与对象存储共用同一份语义）。</p>
+ * {@code ReplayArtifactWriter.decode*(...)} 唯一拥有。</p>
  */
 public interface ReplayProcessingResultReader {
 

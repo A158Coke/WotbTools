@@ -90,7 +90,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 战斗表现（Performance Metrics）由 Replay Processing V2 的
 `GET /api/replay/processing-jobs/{jobId}/result` 统一返回。完整链：
-`POST /api/replay/processing-jobs` → Processing Job → `ReplayParseScheduler` →
+`POST /api/replay/processing-jobs` → Processing Job → Yecao parser-worker →
 共享 `ProcessedDataset` → `GET .../result`。Performance Metrics / League Rating /
 base replay facts 都来自同一 result。单场玩家表直接包含 `contribution`/`kast`/`impact`
 列，汇总表包含跨场 `contribution`/`kast`/`impact`/`multi_damage_rate`/`traded_deaths`，
@@ -123,35 +123,34 @@ multipart `POST /api/replay/map-overview`、`POST /api/replay/process`、
 
 ### Replay Processing Job（需登录：wotbtools-user / wotbtools-admin，解析预览异步化）
 
-「上传多个回放 → 解析预览」从长同步 HTTP 改为异步 Processing Job：HTTP request 立即返回 202 + jobId，source 任务提交给**全局 `ReplayParseScheduler`**（默认并发 2，job-aware 公平轮转 + queued cancellation + 有界 pending），每个 replay 恰好 `processFull` 一次，产出**共享的 ProcessedDataset** 供 Preview / Export / AI / 战局回放复用（同一批 34 个回放不再 Preview ×34 / AI ×34 / Playback ×34，总 `processFull` 调用数 = 文件数）。**READY 后消费者只读**：facts 层 enrich（populateBattle）只在 dataset 创建时执行一次，Preview result / from-result Export 不再二次 mutate 共享 Battle（并发 Preview / aggregate / each Export 同一 dataset 无 shared mutable write）；`validCount() > 0` 即允许 from-result 导出（failures 只用于进度/统计，不与有效场数相减）。
+「上传多个回放 → 解析预览」从长同步 HTTP 改为异步 Processing Job：HTTP request 立即返回 202 + jobId，source 任务确认式投递给 RabbitMQ，由 Yecao parser-worker 消费（`PARSER_WORKER_CONCURRENCY` = AMQP consumer 数，默认 2），每个 replay 恰好 `processFull` 一次，产出**共享的 ProcessedDataset** 供 Preview / Export / AI / 战局回放复用（同一批 34 个回放不再 Preview ×34 / AI ×34 / Playback ×34，总 `processFull` 调用数 = 文件数）。**READY 后消费者只读**：facts 层 enrich（populateBattle）只在 dataset 创建时执行一次，Preview result / from-result Export 不再二次 mutate 共享 Battle（并发 Preview / aggregate / each Export 同一 dataset 无 shared mutable write）；`validCount() > 0` 即允许 from-result 导出（failures 只用于进度/统计，不与有效场数相减）。
 
 - `POST /api/replay/processing-jobs`（multipart `files`，可选表单字段 `prioritySourceIndex` 指定直接进入 AI/Playback 的目标 source，可选表单字段 `operationId` 用于幂等）— 校验并立即持久化上传输入，返回 `202 {jobId, status, total}`。
 - **Idempotency**：同一已认证 subject 用同一 `operationId` 重复提交返回**同一个** `jobId`（不重复上传 / 不重复登记 / 不重复提交调度器），用于覆盖「server 已接受但客户端 ACK 前进程被杀 → 重新导入同一份回放」的 exactly-once。identity 按 subject 分域（绝不跨用户复用），索引为内存态、生命周期跟随 Job（TTL 清理后同一 `operationId` 会创建新 job——此时旧 dataset 已不可读）。字段缺失（普通 Web 手工上传）时保持「每次提交都是新 job」语义。
 - **并发同 identity**：Store 维护单一权威 operation 状态机（`ABSENT` / `IN_FLIGHT(future)` / `COMMITTED(jobId)`），committed 判定与 creator 领取在同一个 `ConcurrentHashMap#compute` 内完成——不存在「先查 committed、再领取 reservation」的两阶段 TOCTOU 窗口。唯一 creator 创建并提交，其余 duplicate 等待同一 future；只有 `dispatcher.submit` **成功之后**才进入 `COMMITTED`，因此 creator 失败（如 `PROCESSING_QUEUE_FULL`）时所有 caller 一起失败，绝不返回随后被清理的 jobId，也不会各自 submit 出两个 job；失败后状态回到 `ABSENT`，doomed job 与临时存储全部清理，后续同 identity 请求可重新创建有效 job。不使用全局锁。
 - `GET /api/replay/processing-jobs/{jobId}` — 轮询真实进度：`{jobId, status, phase, total, processed, valid, duplicates, failures, errorCode, currentFile, parseCompleted, parseSucceeded, parseFailed, sources[], activeSources[]}`。`status` ∈ QUEUED / PROCESSING / READY / FAILED / CANCELLED（终态 exactly once）；`phase` ∈ WAITING_FOR_WORKER / PROCESSING_REPLAYS / FINALIZING_BATCH（parse 进度 = `parseCompleted/total`，与 dedupe/finalize 解耦；`valid/duplicates/failures` 只在 FINALIZING 后确定）；`sources[]` 为轻量 per-source 状态（`sourceId`（`r{index}`）/`sourceIndex`/`displayName`/`status`/`errorCode`），`activeSources[]` 为当前并行处理中的 source（≤2）。0 场有效 → FAILED `NO_VALID_REPLAYS`。
-- `DELETE /api/replay/processing-jobs/{jobId}` — 取消（QUEUED 立即终态并释放 scheduler pending 容量；PROCESSING 置协作取消标志，已派发 source 完成安全 unit 后终态；FINALIZING 阶段间 checkpoint）。
+- `DELETE /api/replay/processing-jobs/{jobId}` — 取消（QUEUED 立即终态并释放派发 pending 容量；PROCESSING 置协作取消标志，已派发 source 完成安全 unit 后终态；FINALIZING 阶段间 checkpoint）。
 - `GET /api/replay/processing-jobs/{jobId}/result` — READY 后返回 Preview 数据（battles / aggregate / duplicates / failures / playerColumns / aggregateColumns；**不再重新 process replay**）；未 READY → 409 `JOB_NOT_READY`。
 - **权限**：以上四条端点（创建 / 状态 / result / 取消）统一要求 `wotbtools-user` 或 `wotbtools-admin`——匿名 → 401 `AUTH_UNAUTHENTICATED`，已登录但无角色 → 403 `AUTH_FORBIDDEN`。前端 Replay Workspace 的登录门禁只是 UX，后端才是 authorization authority；`/api/preview` 与 `/api/export` 是独立 legacy 公共端点，其匿名契约不受影响。
 
-容量与生命周期：Replay Full Processing 的唯一 CPU 预算为 `ReplayParseScheduler`
-（`REPLAY_PARSE_MAX_CONCURRENT`，默认 2；`REPLAY_PARSE_QUEUE_CAPACITY` 默认 200，
-满载 503 `PROCESSING_QUEUE_FULL`）；Excel/ZIP artifact 构建独立于 parse
-（`REPLAY_ARTIFACT_MAX_CONCURRENT`，默认 1）。ProcessedDataset 为**内存态短生命周期缓存**
+容量与生命周期：解析 CPU 预算在 Yecao `parser-worker`（`PARSER_WORKER_CONCURRENCY` = AMQP
+consumer 数，默认 2）；TX backend 内的 Excel/ZIP artifact 构建并发独立为
+`REPLAY_ARTIFACT_MAX_CONCURRENT`（默认 1）。ProcessedDataset 为**内存态短生命周期缓存**
 （TTL `REPLAY_PROCESSING_JOB_TTL_MINUTES=30`）：只缓存已 enrich 的 Battle 结算战绩
 （不携带 reconstruction 事件流）；per-source derived artifact（`ai-facts.json` /
-`map-overview.json`）写 `derived/{sourceId}/`（临时文件 + atomic move，先写后 READY，
-TTL 随 job 目录清理）。Dataset Lease：Export / AI / Playback 读取前 `acquire`（引用计数
+`map-overview.json`）写对象存储 `temp/jobs/<jobId>/artifacts/<i>/`（先写后 READY，
+TTL 随 job 工作区清理）。Dataset Lease：Export / AI / Playback 读取前 `acquire`（引用计数
 +1，TTL 清理跳过），结束后 `release`；acquire 后任何失败都释放引用（不泄漏 refcount）。
-临时输入目录由 `REPLAY_PROCESSING_JOB_DIR` 管理（TTL 清理 + 启动孤儿清理）。旧同步
+Job 工作区由 `REPLAY_PROCESSING_JOB_DIR` 管理（TTL 清理 + 启动孤儿清理）；上传输入落对象存储。旧同步
 `POST /api/preview` / `POST /api/export` 已随 V2 移除（返回 `410 REPLAY_LEGACY_DEPRECATED`；
 导出改走 `/api/replay/export-jobs` 异步 Job）。
 
-> **容量边界**：Replay Full Processing 的唯一 CPU 预算是 Processing Job 的 `ReplayParseScheduler`（`REPLAY_PARSE_MAX_CONCURRENT` / `REPLAY_PARSE_QUEUE_CAPACITY`）。全局 `ReplayCapacityLimiter`（`REPLAY_MAX_CONCURRENT_JOBS`，默认 2，与 HoF/Hundred/Mark3 等**非 Processing** 业务共享）是「同一实例同一时刻执行其它领域回放解析任务」的独立许可，容量满由对应业务接口返回 `503 REPLAY_BUSY`；它**不是** Processing V2（`/api/replay/processing-jobs`）的容量 authority，二者不重复计费、不存在第二套并行处理。
+> **容量边界**：Processing V2 的解析 CPU 预算在 Yecao `parser-worker`（`PARSER_WORKER_CONCURRENCY`，AMQP consumer 数）；TX backend 不存在进程内解析预算。全局 `ReplayCapacityLimiter`（`REPLAY_MAX_CONCURRENT_JOBS`，默认 2，与 HoF/Hundred/Mark3 等**非 Processing** 业务共享）是「同一实例同一时刻执行其它领域回放解析任务」的独立许可，容量满由对应业务接口返回 `503 REPLAY_BUSY`；它**不是** Processing V2（`/api/replay/processing-jobs`）的容量 authority，二者不重复计费、不存在第二套并行处理。
 
 ### AI 复盘与批量处理（wotbtools-user / wotbtools-admin）
 
-完整战斗重建（parse + reconstruction + enrich）在 Processing Job 的 per-source
-`processFull` 阶段完成（`ReplayParseScheduler` → `DefaultReplayProcessingFacade`），产出
+完整战斗重建（parse + reconstruction + enrich）在 Processing Job 的 per-source 阶段于
+parser-worker 内完成（`ReplayProcessingSourceRunner` → `DefaultReplayProcessingFacade`），产出
 `ai-facts.json` / `map-overview.json` 等 derived artifact。AI / 战局回放只读这些 artifact，
 **不在** `/analyze` 内部做 reconstruction，也绝不重新上传 / 重新 full process。
 

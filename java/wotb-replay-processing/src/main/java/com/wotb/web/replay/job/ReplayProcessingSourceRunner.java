@@ -24,13 +24,11 @@ import java.util.function.Supplier;
  * 单个 value-addressed 源的执行体：canonical 解析结果 + 派生 artifact 生成 + sink 落地 + lifecycle 回报。
  *
  * <p><b>存储无关</b>：本类不认识 {@code Path}、{@code ObjectStorage} 或任何具体后端——canonical 解析
- * 由调用方通过 {@code processing} supplier 提供（本地执行器在里面挂 Micrometer 计时），artifact 通过
- * {@link ReplayArtifactSink} 落地。本地 worker（{@link LocalReplayProcessingExecutor}，job 目录）与对象
- * 存储 worker（parser worker，MinIO）共用这一条执行路径，因此不存在第二个 parser、也不存在第二套
- * artifact 生成逻辑。</p>
+ * 由调用方通过 {@code processing} supplier 提供（执行侧自行挂 Micrometer 计时），artifact 通过
+ * {@link ReplayArtifactSink} 落地。唯一生产调用方是 parser worker（MinIO sink），因此不存在第二个
+ * parser、也不存在第二套 artifact 生成逻辑。</p>
  *
- * <p>并发预算不在本类：本地模式由 {@code ReplayParseScheduler} 表达，分布式模式由 AMQP
- * {@code prefetch} 表达。</p>
+ * <p>并发预算不在本类：由 AMQP {@code prefetch} 表达。</p>
  */
 public final class ReplayProcessingSourceRunner {
 
@@ -48,7 +46,7 @@ public final class ReplayProcessingSourceRunner {
     /**
      * 处理一个源并回报 {@link ReplayProcessingLifecycle}。
      *
-     * <p>错误分类与既有本地模式逐字一致：artifact 落地失败（{@link IOException}）→
+     * <p>错误分类保持稳定：artifact 落地失败（{@link IOException}）→
      * {@code PROCESSING_JOB_STORAGE_UNAVAILABLE}；其它失败 → {@link ReplayProcessingSourceException}
      * 的 error code 或 {@code REPLAY_PROCESSING_FAILED}，失败信息为 {@code code} 或
      * {@code code: message}。</p>
@@ -79,7 +77,7 @@ public final class ReplayProcessingSourceRunner {
      * canonical 解析结果校验：{@code battle == null} 时按既有语义抛
      * {@link ReplayProcessingSourceException}（稳定 error code 来自结果本身）。
      *
-     * <p>本地执行器与 parser worker 都通过它把 {@code ReplayProcessingResult} 归一为
+     * <p>parser worker 通过它把 {@code ReplayProcessingResult} 归一为
      * "要么有多少 battle，要么有多少 error code"。</p>
      */
     public static ReplayProcessingResult requireBattle(final ReplayProcessingResult result) {

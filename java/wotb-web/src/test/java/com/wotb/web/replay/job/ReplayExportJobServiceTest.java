@@ -57,7 +57,7 @@ class ReplayExportJobServiceTest {
         // mandatory ReplayProcessingJobStore：不构造 null SUT（与 production invariants 一致）。
         processingStoreDir = Files.createTempDirectory("wotb-export-setup-store");
         processingStore = new ReplayProcessingJobStore(processingStoreDir, 60);
-        service = new ReplayExportJobService(store, executor, processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+        service = new ReplayExportJobService(store, executor, processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
     }
 
     @AfterEach
@@ -84,7 +84,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-processing-reuse-test"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
 
             // 构造一个已 READY 的 Processing Job（含已解析 dataset）
             final String pJobId = "proc-1";
@@ -130,7 +130,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-processing-reuse-each"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final String pJobId = "proc-2";
             final ReplayProcessingJob pJob = new ReplayProcessingJob(pJobId, 2);
             pJob.startProcessing();
@@ -159,7 +159,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-processing-missing"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final ResponseStatusException error = assertThrows(ResponseStatusException.class,
                     () -> service.createJob("aggregate", "no-such-job"));
             assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode(), "引用不存在的 Processing Job 必须 404");
@@ -174,7 +174,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-processing-notready"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final ReplayProcessingJob pJob = new ReplayProcessingJob("proc-3", 1);
             pJob.startProcessing();  // PROCESSING，未 READY
             processingStore.register(pJob);
@@ -194,7 +194,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-b2-1v1f"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final String pJobId = readyProcessingJob(processingStore, "proc-1v1f",
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(),
@@ -219,7 +219,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-b2-1v2f"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final String pJobId = readyProcessingJob(processingStore, "proc-1v2f",
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(),
@@ -244,7 +244,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-b2-2v5f"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final String pJobId = readyProcessingJob(processingStore, "proc-2v5f",
                     List.of(battle("arena-1"), battle("arena-2")),
                     List.of("one.wotbreplay", "two.wotbreplay"),
@@ -271,7 +271,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-b2-0v"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final String pJobId = readyProcessingJob(processingStore, "proc-0v",
                     List.of(), List.of(),
                     List.<String[]>of(),
@@ -293,7 +293,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-b2-0v-agg"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final String pJobId = readyProcessingJob(processingStore, "proc-0v-agg",
                     List.of(), List.of(),
                     List.<String[]>of(),
@@ -317,7 +317,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-b3-nomutate"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             // 未 enrich 的 dataset（模拟创建时 invariant 被满足前的原始 battle）
             final Battle b = battle("arena-1");
             b.players.getFirst().damageDealt = 5000;
@@ -350,7 +350,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-b3-parity"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             // 模拟 Processing Job 创建 dataset 前的 enrich invariant（facts 层 enrich 只由数据集创建方保证）
             final Battle b = battle("arena-1");
             b.players.getFirst().damageDealt = 5000;
@@ -395,7 +395,7 @@ class ReplayExportJobServiceTest {
         };
         try {
             service = new ReplayExportJobService(failingStore, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final String pJobId = readyProcessingJobNoAcquire(processingStore, "proc-storagefail",
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(), List.<String[]>of());
@@ -421,7 +421,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-b2-success"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final String pJobId = readyProcessingJobNoAcquire(processingStore, "proc-success",
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(), List.<String[]>of());
@@ -447,7 +447,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-b2-queuedcancel"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final String pJobId = readyProcessingJobNoAcquire(processingStore, "proc-queuedcancel",
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(), List.<String[]>of());
@@ -489,7 +489,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-b2-submitreject"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final String pJobId = readyProcessingJobNoAcquire(processingStore, "proc-submitreject",
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(), List.<String[]>of());
@@ -598,7 +598,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-league-reuse"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final String pJobId = readyLeagueProcessingJob(processingStore, "proc-l1", "arena-1");
 
             // 复用 processingJobId + 单场 battle override（名称必须进入 Excel）
@@ -624,7 +624,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-league-agg"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             // 两场 team1 均 clan=AAA → 批次 teamKey = clan:AAA（跨场聚合为一行）
             final String pJobId = readyLeagueProcessingJob(processingStore, "proc-l2", "arena-1", "arena-2");
 
@@ -654,7 +654,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-league-agg-partial"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final String ratedArena = "arena-r";
             final String ineligibleArena = "arena-i";
             final Battle rated = leagueBattle(ratedArena);
@@ -701,7 +701,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-league-agg-unknown"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final Battle unknown = leagueBattle("arena-1");
             unknown.players.get(0).survived = false;
             unknown.players.get(0).survivalTimeSec = 0; // 死亡时间 UNKNOWN
@@ -745,7 +745,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-league-agg-zero"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final Battle i1 = leagueBattle("arena-a");
             i1.players.remove(0); // 13 人
             final Battle i2 = leagueBattle("arena-b");
@@ -787,7 +787,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-league-each"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             final String pJobId = readyLeagueProcessingJob(processingStore, "proc-l3", "arena-1", "arena-2");
 
             // Test 6：each ZIP 中每场使用各自 battle override，不得串队名
@@ -826,7 +826,7 @@ class ReplayExportJobServiceTest {
                 Files.createTempDirectory("wotb-league-reuse-each"), 60);
         try {
             service = new ReplayExportJobService(store, executor,
-                    processingStore, new LocalReplayDatasetRepository(processingStore), meterRegistry);
+                    processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
             // 1 场 rated + 1 场 Rating-ineligible（batch.resultFor=null）
             final String pJobId = readyLeagueProcessingJobWithIneligible(
                     processingStore, "proc-re1", "arena-1", "arena-2");

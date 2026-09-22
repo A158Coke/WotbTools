@@ -16,8 +16,8 @@ The acceptance test starts the real Spring Boot application against a PostgreSQL
 
 The production replay control plane (`POST/GET/DELETE/GET .../result` on
 `/api/replay/processing-jobs`) is **not** served by this artifact. It runs inside the
-existing `wotb-web` deployment, gated by `wotb.replay.execution.mode=distributed`
-(`ReplayDistributedConfig`). That is a deliberate reuse decision: the control plane
+existing `wotb-web` deployment (`ReplayDistributedConfig`). That is a deliberate reuse
+decision: the control plane
 needs the replay domain, the PostgreSQL job authority, MinIO object storage and the
 AMQP parser protocol — all of which `wotb-web` already owns — while this POC artifact
 deliberately has none of them, so hosting the control plane here would mean growing a

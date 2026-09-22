@@ -19,8 +19,8 @@ job state. A restart loses nothing that matters: every key it writes derives fro
   outcome reached a confirmed broker state, `basicNack(requeue=false)` for a
   retryable failure while the delivery budget lasts, and the terminal park
   described below otherwise.
-- **Concurrency.** `PARSER_WORKER_CONCURRENCY` (default 2, aligned with
-  `REPLAY_PARSE_MAX_CONCURRENT`) is the number of AMQP consumers, i.e. how many
+- **Concurrency.** `PARSER_WORKER_CONCURRENCY` (default 2) is the number of AMQP
+  consumers, i.e. how many
   replays are parsed in parallel. `PARSER_WORKER_PREFETCH` (default 1) is only the
   per-consumer unacked backlog: raising it on a single consumer adds **no**
   parallelism, it only widens the redelivery window after a crash. Both bounds are
@@ -28,10 +28,9 @@ job state. A restart loses nothing that matters: every key it writes derives fro
   = concurrency), so the parallelism cannot drift with load.
 - **Canonical parsing.** It reuses `DefaultReplayProcessingFacade` and the
   artifact writers through the storage-agnostic `ReplayProcessingSourceRunner`.
-  There is no second parser and no second artifact generator: the local control
-  plane and the worker differ only in the `ReplayArtifactSink` they are given
-  (`ReplayArtifactFileSink` on a job directory, the MinIO sink on Yecao), which
-  is what makes their artifacts byte-identical.
+  There is no second parser and no second artifact generator: the worker is the only
+  production `ReplayArtifactSink` (MinIO), and artifact bytes come from the single
+  `ReplayArtifactWriter` content SSOT.
 - **Its own terminal judgement, and nothing more.** The worker decides between
   "retryable" and "terminal" from the delivery it was handed (see *Retry
   authority*).

@@ -21,8 +21,6 @@ import com.wotb.broker.rabbitmq.ParserSourceStatus;
 import com.wotb.broker.rabbitmq.ParserTopology;
 import com.wotb.contracts.ObjectKey;
 import com.wotb.contracts.ObjectStorage;
-import com.wotb.contracts.ReplayProcessingRequest;
-import com.wotb.contracts.ReplayProcessingSource;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.processing.ReplayProcessingLifecycle;
 import com.wotb.core.replay.processing.ReplayProcessingSourceOutcome;
@@ -34,7 +32,6 @@ import com.wotb.parserworker.worker.RabbitParserOutcomePublisher;
 import com.wotb.storage.MinioObjectStorage;
 import com.wotb.storage.MinioObjectStorageProperties;
 import com.wotb.storage.ObjectStorageKeys;
-import com.wotb.web.replay.job.LocalReplayProcessingExecutor;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
@@ -186,21 +183,7 @@ class ParserWorkerPipelineTest {
     void requestIsParsedIntoByteIdenticalArtifactsAndAConfirmedResult() throws Exception {
         final byte[] replay = Files.readAllBytes(FIXTURE_DIR.resolve(REPLAY_NAME));
 
-        // 1) Local path (existing job directory + file sink): the control-plane behaviour that must
-        //    not change.
-        final Path localJobDir = Files.createTempDirectory("parser-worker-parity");
-        final Path localInput = localJobDir.resolve(jobId).resolve("input").resolve("0__" + REPLAY_NAME);
-        Files.createDirectories(localInput.getParent());
-        Files.write(localInput, replay);
-        final RecordingLifecycle localLifecycle = new RecordingLifecycle();
-        new LocalReplayProcessingExecutor(new DefaultReplayProcessingFacade(), localJobDir,
-                localLifecycle, null).process(new ReplayProcessingRequest(
-                        jobId, List.of(new ReplayProcessingSource(0, REPLAY_NAME)),
-                        ReplayProcessingRequest.FIRST_ATTEMPT), 0);
-        assertTrue(localLifecycle.lastOutcome.processedSuccessfully(),
-                "the committed fixture must parse successfully through the canonical pipeline");
-
-        // 2) Worker path: input in object storage, execution triggered by a real parser.request.
+        // 1) Worker path: input in object storage, execution triggered by a real parser.request.
         put(ObjectStorageKeys.tempJobObject(jobId, "input/0/" + REPLAY_NAME), replay);
         final SimpleMessageListenerContainer container = listenerContainer();
         container.start();
@@ -225,26 +208,26 @@ class ParserWorkerPipelineTest {
         assertEquals(List.of(new ParserSourceOutcome(0, REPLAY_NAME, ParserSourceStatus.READY, null)),
                 result.sources());
 
-        // 3) Byte-for-byte parity of every artifact the request produced.
+        // 2) Every artifact the request produced is present in object storage and decodable through
+        //    the single artifact SSOT (ReplayArtifactWriter content/decode).
         for (final String artifact : List.of(
                 ReplayArtifactWriter.AI_FACTS_NAME,
                 ReplayArtifactWriter.MAP_OVERVIEW_NAME,
                 ReplayArtifactWriter.BATTLE_PLAYBACK_V2_NAME)) {
-            final Path localArtifact = localJobDir.resolve(jobId).resolve("derived").resolve("r0")
-                    .resolve(artifact);
             final ObjectKey workerArtifact = ObjectStorageKeys.tempJobObject(
                     jobId, "artifacts/0/" + artifact);
             final boolean workerHasArtifact = storage.exists(workerArtifact);
-            assertEquals(Files.exists(localArtifact), workerHasArtifact,
-                    "both sinks must agree on whether " + artifact + " exists");
-            if (workerHasArtifact) {
-                assertArrayEquals(Files.readAllBytes(localArtifact), read(workerArtifact),
-                        artifact + " must be byte-identical in both sinks");
-            }
             if (ReplayArtifactWriter.AI_FACTS_NAME.equals(artifact)) {
                 assertTrue(workerHasArtifact, "ai-facts.json is always written for a READY source");
             }
+            if (workerHasArtifact) {
+                assertTrue(read(workerArtifact).length > 0, artifact + " must not be empty");
+            }
         }
+        final ObjectKey aiFactsKey = ObjectStorageKeys.tempJobObject(
+                jobId, "artifacts/0/" + ReplayArtifactWriter.AI_FACTS_NAME);
+        assertNotNull(ReplayArtifactWriter.decodeAiFacts(read(aiFactsKey)),
+                "ai-facts.json must decode through the single artifact SSOT");
 
         // 4) The canonical per-source dataset PR F reads.
         final ObjectKey datasetKey = ObjectStorageKeys.tempJobObject(jobId, "result/source-0.json");
@@ -751,9 +734,8 @@ class ParserWorkerPipelineTest {
         }
     }
 
-    /** Records the last lifecycle outcome so the local path's success can be asserted. */
+    /** No-op lifecycle: the worker path asserts through the published outcome message. */
     private static final class RecordingLifecycle implements ReplayProcessingLifecycle {
-        private ReplayProcessingSourceOutcome lastOutcome;
 
         @Override
         public void jobStarted(final String jobId) {
@@ -765,7 +747,6 @@ class ParserWorkerPipelineTest {
 
         @Override
         public void sourceCompleted(final ReplayProcessingSourceOutcome outcome) {
-            this.lastOutcome = outcome;
         }
 
         @Override
