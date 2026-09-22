@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Contract for the Yecao production deploy: service whitelist, immutable image identity pinning, the
+# parser-worker fail-closed guards, the container-liveness gate, and the no-auto-recovery promise.
+# The retired Yecao application runtime (backend, frontend, Keycloak, PostgreSQL) must stay
+# unselectable, and the deploy must not demand the credentials that only those services consumed.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -9,25 +13,31 @@ BACKEND_CONFIG="$ROOT/java/wotb-web/src/main/resources/application.yml"
 grep -q '^    port: 8088$' "$BACKEND_CONFIG"
 grep -q '^        include: health,info,metrics,prometheus$' "$BACKEND_CONFIG"
 ! grep -q 'base-path:' "$BACKEND_CONFIG"
-grep -q 'wait_for_probe backend http://wotb-backend:8088/actuator/health' "$ROOT/deploy/deploy.sh"
 ! grep -q 'wotb-backend:8087/api/health' "$ROOT/deploy/deploy.sh"
 
-# Yecao remains GHCR-only. TX's TCR routing must never leak into the legacy
-# backend/frontend/keycloak rollback stack, parser worker, or standalone MinIO.
-for image in \
-  'wotbtools-keycloak' \
-  'wotbtools-backend' \
-  'wotbtools-frontend' \
-  'wotbtools-parser-worker'; do
-  grep -Fq "image: ghcr.io/a158coke/$image:\${TAG:?TAG is required}" "$ROOT/deploy/docker-compose.prod.yml" \
-    || { echo "Yecao must keep $image on GHCR" >&2; exit 1; }
-done
+# Yecao keeps exactly one application image on GHCR — the parser execution plane. TX's TCR routing
+# must never leak into it, and the retired Yecao application images must not come back.
+grep -Fq 'image: ghcr.io/a158coke/wotbtools-parser-worker:${TAG:?TAG is required}' \
+  "$ROOT/deploy/docker-compose.prod.yml" \
+  || { echo "Yecao must keep the parser-worker image on GHCR" >&2; exit 1; }
 grep -Fq 'image: ghcr.io/a158coke/wotbtools-minio:${TAG:?TAG is required}' "$ROOT/deploy/docker-compose.minio.yml" \
   || { echo "Yecao MinIO must remain on GHCR" >&2; exit 1; }
 ! grep -Fq 'ccr.ccs.tencentyun.com' "$ROOT/deploy/docker-compose.prod.yml" \
   || { echo "Yecao production Compose must not use Tencent TCR" >&2; exit 1; }
+for retired_image in wotbtools-backend wotbtools-frontend wotbtools-keycloak; do
+  ! grep -Fq "ghcr.io/a158coke/$retired_image:" "$ROOT/deploy/docker-compose.prod.yml" \
+    || { echo "retired Yecao application image must be gone: $retired_image" >&2; exit 1; }
+done
+# The retired application services and the deployment-owned probe container are gone from the Yecao
+# Compose: nothing on that host publishes a port any more.
+for retired_service in postgres keycloak wotb-backend wotb-frontend health-probe; do
+  ! grep -Eq "^  $retired_service:\s*$" "$ROOT/deploy/docker-compose.prod.yml" \
+    || { echo "retired Yecao service must be gone: $retired_service" >&2; exit 1; }
+done
+! grep -Eq '^    ports:' "$ROOT/deploy/docker-compose.prod.yml" \
+  || { echo "the Yecao runtime Compose must not publish a port" >&2; exit 1; }
 
-mkdir -p "$WORK/incoming/deploy/observability/alloy" "$WORK/bin" "$WORK/config" "$WORK/android-release"
+mkdir -p "$WORK/incoming/deploy/observability/alloy" "$WORK/bin"
 cp "$ROOT/deploy/deploy.sh" "$WORK/incoming/deploy/deploy.sh"
 cp "$ROOT/deploy/docker-compose.prod.yml" "$WORK/incoming/deploy/docker-compose.prod.yml"
 cp "$ROOT/deploy/validate-alloy-config.sh" "$WORK/incoming/deploy/validate-alloy-config.sh"
@@ -48,6 +58,8 @@ FAKE_OBSERVABILITY
 chmod 700 "$WORK/incoming/deploy/deploy.sh"
 chmod 700 "$WORK/incoming/deploy/verify-observability.sh"
 
+# Production metadata written before the cutover still names the retired Yecao application services.
+# The deploy must keep validating that history and must never refresh it.
 cat > "$WORK/production-release.json" <<'JSON'
 {
   "schemaVersion": 1,
@@ -73,29 +85,9 @@ case "$command" in
   pull) printf 'pull %s\n' "$*" >> "$log" ;;
   up)
     printf 'up %s\n' "$*" >> "$log"
-    if [ "${FAKE_UP_FAILURE:-0}" = 1 ] && [[ "$*" == *wotb-frontend* ]]; then exit 1; fi
+    if [ "${FAKE_UP_FAILURE:-0}" = 1 ] && [[ "$*" == *parser-worker* ]]; then exit 1; fi
     ;;
   stop) printf 'stop %s\n' "$*" >> "$log" ;;
-  run)
-    printf 'run %s\n' "$*" >> "$log"
-    status="${FAKE_HEALTH_STATUS:-}"
-    if [ -z "$status" ]; then
-      if [ -n "${FAKE_HEALTH_FAILURE_SERVICE:-}" ] && [[ "$*" == *"$FAKE_HEALTH_FAILURE_SERVICE"* ]]; then
-        status=503
-      elif [ -n "${FAKE_HEALTH_REDIRECT_SERVICE:-}" ] && [[ "$*" == *"$FAKE_HEALTH_REDIRECT_SERVICE"* ]]; then
-        status=302
-      else
-        status=200
-      fi
-    fi
-    [ -z "${FAKE_HEALTH_STDERR:-}" ] || printf '%s\n' "$FAKE_HEALTH_STDERR" >&2
-    printf '%s\n' "$status"
-    exit "${FAKE_HEALTH_EXIT_CODE:-0}"
-    ;;
-  exec)
-    if [[ "$*" == *pg_isready* ]]; then [ "${FAKE_POSTGRES_FAILURE:-0}" = 1 ] && exit 1; exit 0; fi
-    if [[ "$*" == *psql* ]]; then printf '22\n'; fi
-    ;;
   ps)
     if [ "${1:-}" = -a ] && [ "${2:-}" = all ]; then
       printf 'invalid-ps-all\n' >> "$log"
@@ -111,162 +103,48 @@ chmod 700 "$WORK/bin/docker"
 
 run_deploy() {
   local sha="$1" tag="$2" service="$3" image_service="$4" log="$5"
-  # `${6-22}` (not `:-`) so an explicitly empty migration ceiling stays empty and the
-  # deploy's own fail-closed validation is what rejects it.
-  local migration_version="${6-22}"
   env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
     WOTB_DIR="$WORK" WOTB_INCOMING_DIR="$WORK/incoming" \
     TAG="$tag" RELEASE_SHA="$sha" RELEASE_RUN_NUMBER=7 \
     WOTB_HEALTH_ATTEMPTS=2 WOTB_HEALTH_INTERVAL_SEC=1 \
-    WOTB_BACKEND_MIGRATION_MAX_VERSION="$migration_version" \
     WOTB_DEPLOY_SERVICES="$service" WOTB_DEPLOY_IMAGE_SERVICES="$image_service" \
-    DB_PASSWORD=not-real KC_ADMIN_PASSWORD=not-real WG_APPLICATION_ID=not-real \
-    KEYCLOAK_ADMIN_CLIENT_SECRET=not-real AI_API_KEY=not-real \
     GRAFANA_ADMIN_USER=not-real GRAFANA_ADMIN_PASSWORD=not-real \
     TX_RABBITMQ_PARSER_WORKER_PASSWORD="${TX_RABBITMQ_PARSER_WORKER_PASSWORD:-}" \
     YECAO_MINIO_WORKER_ACCESS_KEY="${YECAO_MINIO_WORKER_ACCESS_KEY:-}" \
     YECAO_MINIO_WORKER_SECRET_KEY="${YECAO_MINIO_WORKER_SECRET_KEY:-}" \
-    FAKE_DOCKER_LOG="$log" FAKE_HEALTH_FAILURE_SERVICE="${FAKE_HEALTH_FAILURE_SERVICE:-}" \
-    FAKE_HEALTH_REDIRECT_SERVICE="${FAKE_HEALTH_REDIRECT_SERVICE:-}" \
-    FAKE_HEALTH_STATUS="${FAKE_HEALTH_STATUS:-}" \
-    FAKE_HEALTH_STDERR="${FAKE_HEALTH_STDERR:-}" \
-    FAKE_HEALTH_EXIT_CODE="${FAKE_HEALTH_EXIT_CODE:-0}" \
-    FAKE_POSTGRES_FAILURE="${FAKE_POSTGRES_FAILURE:-0}" \
-    FAKE_UP_FAILURE="${FAKE_UP_FAILURE:-0}" \
+    FAKE_DOCKER_LOG="$log" FAKE_UP_FAILURE="${FAKE_UP_FAILURE:-0}" \
     bash "$WORK/incoming/deploy/deploy.sh"
 }
 
-first_log="$WORK/first.log"
-first_output="$(FAKE_HEALTH_STATUS=200 FAKE_HEALTH_STDERR=$'Container health-probe Creating\nContainer health-probe Created' \
-  run_deploy bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sha-bbbbbbbbbbbb wotb-backend wotb-backend "$first_log" 2>&1)"
-grep -q 'backend: PASS' <<< "$first_output"
-grep -q '^up .*wotb-backend' "$first_log"
-! grep -Eq '^up .*wotb-frontend|^up .*keycloak|^up .*postgres' "$first_log"
-grep -q '^run .*http://wotb-backend:8088/actuator/health' "$first_log"
-! grep -q 'wotb-backend:8087/api/health' "$first_log"
-grep -q '^run .*--header Host: wotbtools.com .*http://wotb-frontend/api/health' "$first_log"
-grep -q '^run .*http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration' "$first_log"
-grep -q '"imageTag": "sha-bbbbbbbbbbbb"' "$WORK/production-release.json"
-grep -q '"imageTag": "sha-aaaaaaaaaaaa"' "$WORK/production-release.json"
-if command -v stat >/dev/null 2>&1 && stat -c %a "$WORK/production-release.json" >/dev/null 2>&1; then
-  [ "$(stat -c %a "$WORK/production-release.json")" = 600 ]
-fi
-! grep -Eq 'pg_dump|LKG|candidate|rollback|RESTORE' "$WORK/incoming/deploy/deploy.sh"
-
-status_204_log="$WORK/status-204.log"
-status_204_output="$(FAKE_HEALTH_STATUS=204 run_deploy 1212121212121212121212121212121212121212 sha-121212121212 wotb-backend wotb-backend "$status_204_log" 2>&1)"
-grep -q 'backend: PASS' <<< "$status_204_output"
-
-assert_probe_failure() {
-  local status="$1" log output rc
-  log="$WORK/status-$status.log"
+# ---------------------------------------------------------------- retired services stay unselectable
+# The deploy must reject the retired Yecao application services and the removed whole-stack selector
+# before it touches a single container, and it must not require the credentials that only those
+# services consumed (database, Keycloak admin, AI Review, Boost or Replay tuning).
+assert_service_rejected() {
+  local rejected="$1" log="$WORK/rejected-$1.log"
+  : > "$log"
+  local output rc
   set +e
-  output="$(FAKE_HEALTH_STATUS="$status" run_deploy 1313131313131313131313131313131313131313 sha-131313131313 wotb-backend wotb-backend "$log" 2>&1)"
+  output="$(run_deploy bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sha-bbbbbbbbbbbb "$rejected" '' "$log" 2>&1)"
   rc=$?
   set -e
-  [ "$rc" -ne 0 ]
-  grep -q 'backend: FAIL' <<< "$output"
-  grep -q 'probeService=backend' <<< "$output"
-  grep -q 'probeTargetUrl=http://wotb-backend:8088/actuator/health' <<< "$output"
-  grep -q "probeHttpStatus=$status" <<< "$output"
-  grep -q "probeError=HTTP status $status is not 2xx" <<< "$output"
-  grep -q '^stop .*wotb-backend' "$log"
+  [ "$rc" -ne 0 ] || { echo "FAIL: $rejected must not be deployable" >&2; exit 1; }
+  grep -q 'unsupported deployment service' <<< "$output" \
+    || { echo "FAIL: $rejected was rejected with an unexpected error" >&2; exit 1; }
+  [ ! -s "$log" ] || { echo "FAIL: $rejected was rejected only after touching containers" >&2; exit 1; }
 }
-
-assert_probe_failure 301
-assert_probe_failure 401
-assert_probe_failure 503
-
-invalid_stdout_log="$WORK/invalid-stdout.log"
-set +e
-invalid_stdout_output="$(FAKE_HEALTH_STATUS=$'200\nunexpected-output' \
-  run_deploy 1515151515151515151515151515151515151515 sha-151515151515 wotb-backend wotb-backend "$invalid_stdout_log" 2>&1)"
-invalid_stdout_rc=$?
-set -e
-[ "$invalid_stdout_rc" -ne 0 ]
-grep -q 'probeHttpStatus=unavailable' <<< "$invalid_stdout_output"
-grep -q 'probeError=curl stdout did not contain exactly one three-digit HTTP status' <<< "$invalid_stdout_output"
-grep -q '^stop .*wotb-backend' "$invalid_stdout_log"
-
-curl_exit_log="$WORK/curl-exit.log"
-set +e
-curl_exit_output="$(FAKE_HEALTH_STATUS=000 FAKE_HEALTH_EXIT_CODE=7 \
-  FAKE_HEALTH_STDERR=$'Container health-probe Creating\ncurl: (7) Authorization: Bearer should-not-leak' \
-  run_deploy 1414141414141414141414141414141414141414 sha-141414141414 wotb-backend wotb-backend "$curl_exit_log" 2>&1)"
-curl_exit_rc=$?
-set -e
-[ "$curl_exit_rc" -ne 0 ]
-grep -q 'probeHttpStatus=000' <<< "$curl_exit_output"
-grep -q 'probeError=compose/curl exited with status 7:' <<< "$curl_exit_output"
-grep -q 'Authorization: REDACTED' <<< "$curl_exit_output"
-! grep -q 'should-not-leak' <<< "$curl_exit_output"
-grep -q '^stop .*wotb-backend' "$curl_exit_log"
-
 before_metadata="$(sha256sum "$WORK/production-release.json")"
-backend_unhealthy_log="$WORK/backend-unhealthy.log"
-set +e
-backend_unhealthy_output="$(FAKE_HEALTH_FAILURE_SERVICE=wotb-backend run_deploy cccccccccccccccccccccccccccccccccccccccc sha-cccccccccccc wotb-frontend wotb-frontend "$backend_unhealthy_log" 2>&1)"
-backend_unhealthy_rc=$?
-set -e
-[ "$backend_unhealthy_rc" -ne 0 ]
-grep -q 'backend: FAIL' <<< "$backend_unhealthy_output"
-grep -q '== wotb-backend inspect ==' <<< "$backend_unhealthy_output"
-! grep -q '^stop .*wotb-backend' "$backend_unhealthy_log"
+assert_service_rejected all
+assert_service_rejected wotb-backend
+assert_service_rejected wotb-frontend
+assert_service_rejected keycloak
+assert_service_rejected postgres
 [ "$before_metadata" = "$(sha256sum "$WORK/production-release.json")" ]
-
-postgres_unhealthy_log="$WORK/postgres-unhealthy.log"
-set +e
-postgres_unhealthy_output="$(FAKE_POSTGRES_FAILURE=1 run_deploy dddddddddddddddddddddddddddddddddddddddd sha-dddddddddddd wotb-frontend wotb-frontend "$postgres_unhealthy_log" 2>&1)"
-postgres_unhealthy_rc=$?
-set -e
-[ "$postgres_unhealthy_rc" -ne 0 ]
-grep -q 'postgres: FAIL' <<< "$postgres_unhealthy_output"
-grep -q '== postgres inspect ==' <<< "$postgres_unhealthy_output"
-! grep -q '^stop .*postgres' "$postgres_unhealthy_log"
-[ "$before_metadata" = "$(sha256sum "$WORK/production-release.json")" ]
-
-backend_candidate_log="$WORK/backend-candidate.log"
-set +e
-FAKE_HEALTH_FAILURE_SERVICE=wotb-backend run_deploy eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee sha-eeeeeeeeeeee wotb-backend wotb-backend "$backend_candidate_log"
-backend_candidate_rc=$?
-set -e
-[ "$backend_candidate_rc" -ne 0 ]
-grep -q '^stop .*wotb-backend' "$backend_candidate_log"
-[ "$before_metadata" = "$(sha256sum "$WORK/production-release.json")" ]
-
-redirect_log="$WORK/redirect.log"
-set +e
-FAKE_HEALTH_REDIRECT_SERVICE=wotb-frontend run_deploy ffffffffffffffffffffffffffffffffffffffff sha-ffffffffffff wotb-frontend wotb-frontend "$redirect_log"
-redirect_rc=$?
-set -e
-[ "$redirect_rc" -ne 0 ]
-grep -q '^stop .*wotb-frontend' "$redirect_log"
-[ "$before_metadata" = "$(sha256sum "$WORK/production-release.json")" ]
-
-up_failure_log="$WORK/up-failure.log"
-set +e
-FAKE_UP_FAILURE=1 run_deploy 9999999999999999999999999999999999999999 sha-999999999999 wotb-frontend wotb-frontend "$up_failure_log"
-up_failure_rc=$?
-set -e
-[ "$up_failure_rc" -ne 0 ]
-grep -q '^stop .*wotb-frontend' "$up_failure_log"
-all_observability_log="$WORK/all-observability.log"
-run_deploy 8888888888888888888888888888888888888888 sha-888888888888 all wotb-backend,wotb-frontend,keycloak "$all_observability_log"
-! grep -q 'invalid-ps-all' "$all_observability_log"
-# parser-worker is selected explicitly: a whole-stack deploy must not start the new execution-plane
-# service until the legacy stack is retired, so `all` keeps its existing service set.
-! grep -q '^up .*parser-worker' "$all_observability_log"
-grep -Fxq "WOTB_DIR=$WORK" "$WORK/verify-observability-env"
-grep -Fxq "WOTB_DEPLOY_ROOT=$WORK" "$WORK/verify-observability-env"
-grep -Fxq "WOTB_ALLOY_CONFIG=$WORK/deploy/observability/alloy/config.alloy" "$WORK/verify-observability-env"
-grep -Fxq "WOTB_ALLOY_VALIDATOR=$WORK/deploy/validate-alloy-config.sh" "$WORK/verify-observability-env"
-grep -Fxq "WOTB_DASHBOARD_DIR=$WORK/deploy/observability/grafana/dashboards" "$WORK/verify-observability-env"
-grep -Fxq "WOTB_GRAFANA_API_HELPER=$WORK/deploy/grafana-api-request.sh" "$WORK/verify-observability-env"
 
 # ---------------------------------------------------------------- parser-worker contract
-# The Yecao execution plane is a deployable service with no public port and no database credentials:
-# it consumes the TX broker and reads/writes Yecao MinIO with its own least-privilege identity.
-compose_worker="$(awk '/^  parser-worker:$/{flag=1} /^  wotb-frontend:$/{flag=0} flag' \
+# The Yecao execution plane is the host's only application service: no public port, no database
+# credentials, and its own least-privilege MinIO identity plus the TX broker credential.
+compose_worker="$(awk '/^  parser-worker:$/{flag=1} /^  node-exporter:$/{flag=0} flag' \
   "$ROOT/deploy/docker-compose.prod.yml")"
 grep -q 'image: ghcr.io/a158coke/wotbtools-parser-worker:${TAG:?TAG is required}' <<< "$compose_worker"
 ! grep -Eq '^    ports:' <<< "$compose_worker"
@@ -309,52 +187,30 @@ grep -Fq "YECAO_MINIO_ENDPOINT: \${YECAO_MINIO_ENDPOINT:-$control_plane_minio_en
   || { echo "TX must not be wired to the parser-worker endpoint variable" >&2; exit 1; }
 
 worker_log="$WORK/parser-worker.log"
-# A worker-only deploy must accept an empty WOTB_BACKEND_MIGRATION_MAX_VERSION: the worker has no
-# database access, so the backend Flyway ceiling is not one of its inputs. The deploy workflow sends
-# an empty value for the parser-worker target.
 worker_output="$(TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real \
   YECAO_MINIO_WORKER_ACCESS_KEY=not-real YECAO_MINIO_WORKER_SECRET_KEY=not-real \
   run_deploy 7777777777777777777777777777777777777777 sha-777777777777 parser-worker parser-worker \
-  "$worker_log" "" 2>&1)"
+  "$worker_log" 2>&1)"
 grep -q 'parser-worker: PASS' <<< "$worker_output"
-! grep -q 'WOTB_BACKEND_MIGRATION_MAX_VERSION' <<< "$worker_output"
 grep -q '^pull parser-worker' "$worker_log"
 grep -q '^up -d --no-deps --force-recreate parser-worker' "$worker_log"
-! grep -Eq '^up .*wotb-backend|^up .*wotb-frontend|^up .*keycloak' "$worker_log"
+! grep -Eq '^up .*node-exporter|^up .*prometheus|^up .*grafana' "$worker_log"
 grep -q '"parser-worker"' "$WORK/production-release.json"
-
-# The backend migration ceiling stays mandatory for every deploy that actually ships the backend
-# image, so the relaxed parser-worker path cannot leak into the application deploy.
-assert_migration_ceiling_rejected() {
-  local migration_service="$1" migration_image="$2" migration_version="$3"
-  local migration_log="$WORK/migration-$migration_service-${migration_version:-empty}.log"
-  : > "$migration_log"
-  local migration_output migration_rc
-  set +e
-  migration_output="$(run_deploy bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sha-bbbbbbbbbbbb \
-    "$migration_service" "$migration_image" "$migration_log" "$migration_version" 2>&1)"
-  migration_rc=$?
-  set -e
-  [ "$migration_rc" -ne 0 ] \
-    || { echo "FAIL: $migration_service must reject WOTB_BACKEND_MIGRATION_MAX_VERSION='$migration_version'" >&2; exit 1; }
-  grep -q 'WOTB_BACKEND_MIGRATION_MAX_VERSION must be a non-negative integer' <<< "$migration_output" \
-    || { echo "FAIL: $migration_service rejected the migration ceiling with an unexpected error" >&2; exit 1; }
-  [ ! -s "$migration_log" ] \
-    || { echo "FAIL: $migration_service rejected the migration ceiling only after touching containers" >&2; exit 1; }
-}
-assert_migration_ceiling_rejected wotb-backend wotb-backend ""
-assert_migration_ceiling_rejected all wotb-backend ""
-assert_migration_ceiling_rejected wotb-backend wotb-backend not-a-number
+grep -q '"imageTag": "sha-777777777777"' "$WORK/production-release.json"
+# The retired Yecao application service identities must survive untouched.
+grep -q '"wotb-backend": {' "$WORK/production-release.json"
+grep -q '"imageTag": "sha-aaaaaaaaaaaa"' "$WORK/production-release.json"
+if command -v stat >/dev/null 2>&1 && stat -c %a "$WORK/production-release.json" >/dev/null 2>&1; then
+  [ "$(stat -c %a "$WORK/production-release.json")" = 600 ]
+fi
+! grep -Eq 'pg_dump|LKG|candidate|rollback|RESTORE' "$WORK/incoming/deploy/deploy.sh"
 
 # Selecting the service without its credentials must fail closed before any container is touched.
 set +e
 missing_credential_output="$(env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_DIR="$WORK" WOTB_INCOMING_DIR="$WORK/incoming" \
   TAG=sha-777777777777 RELEASE_SHA=7777777777777777777777777777777777777777 RELEASE_RUN_NUMBER=7 \
-  WOTB_BACKEND_MIGRATION_MAX_VERSION=22 \
   WOTB_DEPLOY_SERVICES=parser-worker WOTB_DEPLOY_IMAGE_SERVICES=parser-worker \
-  DB_PASSWORD=not-real KC_ADMIN_PASSWORD=not-real WG_APPLICATION_ID=not-real \
-  KEYCLOAK_ADMIN_CLIENT_SECRET=not-real AI_API_KEY=not-real \
   GRAFANA_ADMIN_USER=not-real GRAFANA_ADMIN_PASSWORD=not-real \
   FAKE_DOCKER_LOG="$WORK/missing-credential.log" \
   bash "$WORK/incoming/deploy/deploy.sh" 2>&1)"
@@ -394,6 +250,38 @@ grep -q 'parser-worker must stay stateless' <<< "$stateless_guard_output"
 [ ! -s "$WORK/stateless-guard.log" ]
 cp "$ROOT/deploy/docker-compose.prod.yml" "$WORK/incoming/deploy/docker-compose.prod.yml"
 
+# ---------------------------------------------------------------- observability-only deploy
+observability_log="$WORK/observability.log"
+run_deploy 8888888888888888888888888888888888888888 sha-888888888888 \
+  node-exporter,prometheus,loki,alloy,grafana '' "$observability_log"
+! grep -q 'invalid-ps-all' "$observability_log"
+for service in node-exporter prometheus loki alloy grafana; do
+  grep -q "^up -d --no-deps --force-recreate $service" "$observability_log"
+done
+! grep -Eq '^up .*parser-worker' "$observability_log"
+! grep -Eq '^pull ' "$observability_log"
+grep -Fxq "WOTB_DIR=$WORK" "$WORK/verify-observability-env"
+grep -Fxq "WOTB_DEPLOY_ROOT=$WORK" "$WORK/verify-observability-env"
+grep -Fxq "WOTB_ALLOY_CONFIG=$WORK/deploy/observability/alloy/config.alloy" "$WORK/verify-observability-env"
+grep -Fxq "WOTB_ALLOY_VALIDATOR=$WORK/deploy/validate-alloy-config.sh" "$WORK/verify-observability-env"
+grep -Fxq "WOTB_DASHBOARD_DIR=$WORK/deploy/observability/grafana/dashboards" "$WORK/verify-observability-env"
+grep -Fxq "WOTB_GRAFANA_API_HELPER=$WORK/deploy/grafana-api-request.sh" "$WORK/verify-observability-env"
+
+# An observability deploy that cannot start its container must degrade, never fail the release: the
+# verifier is file-provisioned and its data path is owned by the observability PR.
+degraded_log="$WORK/degraded.log"
+cat > "$WORK/incoming/deploy/verify-observability.sh" <<'FAKE_OBSERVABILITY_FAIL'
+#!/usr/bin/env bash
+echo "OBSERVABILITY FAIL [test]: injected" >&2
+exit 1
+FAKE_OBSERVABILITY_FAIL
+chmod 700 "$WORK/incoming/deploy/verify-observability.sh"
+degraded_output="$(run_deploy 8888888888888888888888888888888888888888 sha-888888888888 \
+  node-exporter,prometheus,loki,alloy,grafana '' "$degraded_log" 2>&1)"
+grep -q 'OBSERVABILITY DEGRADED: data-path verification failed.' <<< "$degraded_output"
+grep -q 'Deployment completed' <<< "$degraded_output"
+
+# ---------------------------------------------------------------- worker liveness gate
 # The worker exposes no HTTP endpoint, so a container that does not stay up must fail the deploy.
 cat > "$WORK/bin/docker" <<'FAKE_DOCKER_WORKER_DOWN'
 #!/usr/bin/env bash
@@ -409,7 +297,6 @@ case "$command" in
   pull) printf 'pull %s\n' "$*" >> "$log" ;;
   up) printf 'up %s\n' "$*" >> "$log" ;;
   stop) printf 'stop %s\n' "$*" >> "$log" ;;
-  run) printf '200\n' ;;
   ps)
     if [ "${1:-}" = -a ] && [ "${2:-}" = parser-worker ]; then
       printf 'parser-worker Exited (1) 2 seconds ago\n'
@@ -434,5 +321,19 @@ set -e
 grep -q 'parser-worker: FAIL' <<< "$worker_down_output"
 grep -q '^stop .*parser-worker' "$worker_down_log"
 
-echo "compose up failure stops only the failed service"
-echo "selective deploy, global health, parser-worker liveness, and no-auto-recovery contract OK"
+# A failing service must stop the release before metadata is updated, so the recorded identity never
+# claims a release that did not converge.
+up_failure_log="$WORK/up-failure.log"
+before_up_failure="$(sha256sum "$WORK/production-release.json")"
+set +e
+FAKE_UP_FAILURE=1 TX_RABBITMQ_PARSER_WORKER_PASSWORD=not-real \
+  YECAO_MINIO_WORKER_ACCESS_KEY=not-real YECAO_MINIO_WORKER_SECRET_KEY=not-real \
+  run_deploy 5555555555555555555555555555555555555555 sha-555555555555 \
+  parser-worker parser-worker "$up_failure_log"
+up_failure_rc=$?
+set -e
+[ "$up_failure_rc" -ne 0 ]
+grep -q '^stop .*parser-worker' "$up_failure_log"
+[ "$before_up_failure" = "$(sha256sum "$WORK/production-release.json")" ]
+
+echo "selective deploy, retired-service rejection, parser-worker statelessness/liveness, and no-auto-recovery contract OK"

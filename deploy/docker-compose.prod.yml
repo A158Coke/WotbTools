@@ -1,100 +1,14 @@
+# Yecao runtime. After the production cutover this host owns exactly two responsibilities: the
+# parser execution plane (`parser-worker`) and the shared observability stack. The business runtime
+# (`business-api`), its PostgreSQL, Keycloak, its PostgreSQL, and the public frontend run on TX and
+# are deployed by deploy/tx/deploy.sh; none of them is declared here any more.
+# MinIO is a separate standalone deployment (deploy/docker-compose.minio.yml + deploy/minio-deploy.sh).
 x-logging: &default-logging
   driver: json-file
   options:
     max-size: "20m"
     max-file: "3"
 services:
-  health-probe:
-    image: curlimages/curl:8.12.1
-    entrypoint: ["curl"]
-    restart: "no"
-    logging: *default-logging
-  postgres:
-    image: postgres:18-alpine
-    ports:
-      - "127.0.0.1:5432:5432"
-    environment:
-      POSTGRES_DB: wotb
-      POSTGRES_USER: wotb
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
-    volumes:
-      - postgres_data:/var/lib/postgresql
-      - ./deploy/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
-    restart: unless-stopped
-    logging: *default-logging
-  keycloak:
-    image: ghcr.io/a158coke/wotbtools-keycloak:${TAG:?TAG is required}
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?KC_ADMIN_PASSWORD is required}
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
-      KC_DB_USERNAME: wotb
-      KC_DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
-      WG_APPLICATION_ID: ${WG_APPLICATION_ID:?WG_APPLICATION_ID is required}
-    command: start --optimized --hostname=auth.wotbtools.com --hostname-strict=false --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
-    ports:
-      - "127.0.0.1:8080:8080"
-    depends_on:
-      - postgres
-    restart: unless-stopped
-    logging: *default-logging
-  wotb-backend:
-    image: ghcr.io/a158coke/wotbtools-backend:${TAG:?TAG is required}
-    ports:
-      # TX reaches the Yecao backend only over the WireGuard interface.
-      # Never replace this with a wildcard or public-interface binding.
-      - "10.20.0.2:8087:8087"
-    depends_on:
-      - postgres
-      - keycloak
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
-      KEYCLOAK_ISSUER_URI: https://auth.wotbtools.com/realms/wotbtools
-      KEYCLOAK_ADMIN_SERVER_URL: https://auth.wotbtools.com
-      KEYCLOAK_ADMIN_REALM: wotbtools
-      KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
-      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:?KEYCLOAK_ADMIN_CLIENT_SECRET is required}
-      BOOST_AUTO_CONFIRM_HOURS: "${BOOST_AUTO_CONFIRM_HOURS:-72}"
-      BOOST_AUTO_CONFIRM_SCAN_MS: "${BOOST_AUTO_CONFIRM_SCAN_MS:-300000}"
-      AI_API_KEY: ${AI_API_KEY:?AI_API_KEY is required}
-      AI_BASE_URL: "${AI_BASE_URL:-https://api.deepseek.com}"
-      AI_MODEL: "${AI_MODEL:-deepseek-v4-flash}"
-      AI_CONNECT_TIMEOUT_SEC: "${AI_CONNECT_TIMEOUT_SEC:-10}"
-      AI_TIMEOUT_SEC: "${AI_TIMEOUT_SEC:-300}"
-      AI_CALL_TIMEOUT_SEC: "${AI_CALL_TIMEOUT_SEC:-315}"
-      AI_RETRY_MAX_ATTEMPTS: "${AI_RETRY_MAX_ATTEMPTS:-3}"
-      AI_RETRY_INITIAL_BACKOFF_MS: "${AI_RETRY_INITIAL_BACKOFF_MS:-1000}"
-      AI_RETRY_MAX_BACKOFF_MS: "${AI_RETRY_MAX_BACKOFF_MS:-8000}"
-      AI_RETRY_BACKOFF_MULTIPLIER: "${AI_RETRY_BACKOFF_MULTIPLIER:-2.0}"
-      AI_CONTEXT_WINDOW_TOKENS: "${AI_CONTEXT_WINDOW_TOKENS:-1000000}"
-      AI_SINGLE_REPLAY_MAX_INPUT_TOKENS: "${AI_SINGLE_REPLAY_MAX_INPUT_TOKENS:-940000}"
-      AI_MAX_OUTPUT_TOKENS: "${AI_MAX_OUTPUT_TOKENS:-32768}"
-      AI_PROMPT_SAFETY_MARGIN_TOKENS: "${AI_PROMPT_SAFETY_MARGIN_TOKENS:-16384}"
-      AI_THINKING_ENABLED: "${AI_THINKING_ENABLED:-true}"
-      AI_THINKING_ENABLED_CALL2: "${AI_THINKING_ENABLED_CALL2:-false}"
-      AI_REASONING_EFFORT: "${AI_REASONING_EFFORT:-max}"
-      AI_REVIEW_WORKER_MAX_CONCURRENT: "${AI_REVIEW_WORKER_MAX_CONCURRENT:-4}"
-      AI_REVIEW_WORKER_QUEUE_CAPACITY: "${AI_REVIEW_WORKER_QUEUE_CAPACITY:-4}"
-      AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC: "${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-1100}"
-      REPLAY_COORDINATE_HALF_EXTENT: "${REPLAY_COORDINATE_HALF_EXTENT:-250}"
-      REPLAY_COORDINATE_CLAMP_TOLERANCE: "${REPLAY_COORDINATE_CLAMP_TOLERANCE:-12.5}"
-      REPLAY_PARSE_MAX_CONCURRENT: "${REPLAY_PARSE_MAX_CONCURRENT:-2}"
-      REPLAY_PARSE_QUEUE_CAPACITY: "${REPLAY_PARSE_QUEUE_CAPACITY:-200}"
-      REPLAY_ARTIFACT_MAX_CONCURRENT: "${REPLAY_ARTIFACT_MAX_CONCURRENT:-1}"
-      REPLAY_EXPORT_JOB_DIR: "${REPLAY_EXPORT_JOB_DIR:-/tmp/wotb-export-jobs}"
-      REPLAY_EXPORT_JOB_TTL_MINUTES: "${REPLAY_EXPORT_JOB_TTL_MINUTES:-30}"
-      REPLAY_EXPORT_JOB_MAX_CONCURRENT: "${REPLAY_EXPORT_JOB_MAX_CONCURRENT:-2}"
-      REPLAY_EXPORT_JOB_QUEUE_CAPACITY: "${REPLAY_EXPORT_JOB_QUEUE_CAPACITY:-4}"
-      REPLAY_PROCESSING_JOB_DIR: "${REPLAY_PROCESSING_JOB_DIR:-/tmp/wotb-replay-processing-jobs}"
-      REPLAY_PROCESSING_JOB_TTL_MINUTES: "${REPLAY_PROCESSING_JOB_TTL_MINUTES:-30}"
-      HOF_REPLAY_DIR: "${HOF_REPLAY_DIR:-/data/replays}"
-      HOF_REPLAY_MIN_FREE_BYTES: "${HOF_REPLAY_MIN_FREE_BYTES:-536870912}"
-    volumes:
-      - replay_data:/data/replays
-    restart: unless-stopped
-    logging: *default-logging
   # Yecao execution plane: consumes wotb.parser, reads/writes MinIO temp/jobs/*, publishes the
   # outcome. No public port, no database credentials, no mounted job directory — PostgreSQL stays
   # the job authority on TX and RabbitMQ remains the delivery path.
@@ -125,20 +39,6 @@ services:
       PARSER_WORKER_SHUTDOWN_TIMEOUT_SEC: "${PARSER_WORKER_SHUTDOWN_TIMEOUT_SEC:-30}"
     restart: unless-stopped
     logging: *default-logging
-  wotb-frontend:
-    image: ghcr.io/a158coke/wotbtools-frontend:${TAG:?TAG is required}
-    ports:
-      - "127.0.0.1:8088:80"
-    volumes:
-      - ./config/sponsor-config.json:/usr/share/nginx/html/sponsor-config.json:ro
-      - ./config/sponsor:/usr/share/nginx/html/sponsor-assets:ro
-      - ./android-release:/usr/share/nginx/html/download/android:ro
-      - ./deploy/nginx/assets/auth/.well-known/assetlinks.json:/usr/share/nginx/html/.well-known/assetlinks.json:ro
-    depends_on:
-      - wotb-backend
-      - keycloak
-    restart: unless-stopped
-    logging: *default-logging
   # Observability stack: Prometheus / Loki / Alloy / Grafana / node-exporter (docker-internal only)
   node-exporter:
     image: prom/node-exporter:v1.12.1
@@ -163,7 +63,6 @@ services:
       - ./deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     depends_on:
-      - wotb-backend
       - node-exporter
     restart: unless-stopped
     logging: *default-logging
@@ -212,8 +111,6 @@ services:
     logging: *default-logging
     mem_limit: 256m
 volumes:
-  postgres_data:
-  replay_data:
   prometheus_data:
   loki_data:
   grafana_data:

@@ -1721,8 +1721,6 @@ public_tls_check() {
 
 pre_cutover_check() {
   local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health business_container
-  local yecao_compose="$source_root/deploy/docker-compose.prod.yml"
-  local yecao_contract="$LIVE_DEPLOY_DIR/yecao-backend-contract.json"
   local failures=0 provider
   DEPLOY_SERVICES=(all)
 
@@ -1919,42 +1917,6 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
     failures=1
   fi
 
-  if [ -f "$yecao_compose" ]; then
-    if python3 - "$yecao_compose" <<'PY'
-import re
-import sys
-from pathlib import Path
-
-text = Path(sys.argv[1]).read_text(encoding="utf-8")
-match = re.search(r"(?ms)^  wotb-backend:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", text)
-if not match:
-    raise SystemExit(1)
-ports = re.findall(r'^\s*-\s*"([^"]+)"\s*$', match.group(1), flags=re.MULTILINE)
-raise SystemExit(0 if ports == ["10.20.0.2:8087:8087"] else 1)
-PY
-    then
-      echo "yecao-backend-wireguard-bind: PASS"
-    else
-      echo "yecao-backend-wireguard-bind: FAIL" >&2
-      failures=1
-    fi
-  elif [ -f "$yecao_contract" ] && python3 - "$yecao_contract" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-raise SystemExit(0 if data == {
-    "service": "wotb-backend",
-    "ports": ["10.20.0.2:8087:8087"],
-} else 1)
-PY
-  then
-    echo "yecao-backend-wireguard-bind: PASS (deployed contract)"
-  else
-    echo "yecao-backend-wireguard-bind: FAIL (Yecao compose or deployed contract is unavailable)" >&2
-    failures=1
-  fi
   if [ -n "$source_root" ] && [ -f "$source_root/infra/tofu/keycloak/realm.tf" ]; then
     echo "realm-client-source-of-truth: PASS (Keycloak OpenTofu root present)"
   fi
