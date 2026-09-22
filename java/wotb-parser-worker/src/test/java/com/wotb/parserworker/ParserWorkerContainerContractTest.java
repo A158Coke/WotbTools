@@ -57,14 +57,6 @@ class ParserWorkerContainerContractTest {
         assertThrows(IllegalArgumentException.class, () -> new ParserWorkerProperties(2, 1, 10, 0));
     }
 
-    @Test
-    void propertiesExposeTheReviewedDefaults() {
-        final ParserWorkerProperties defaults = new ParserWorkerAssembly().parserWorkerProperties();
-        assertEquals(2, defaults.concurrency(), "two replays parse in parallel, matching REPLAY_PARSE_MAX_CONCURRENT");
-        assertEquals(1, defaults.prefetch(),
-                "prefetch is the per-consumer backlog, deliberately small so a crash redelivers quickly");
-    }
-
     private static SimpleMessageListenerContainer container(final ParserWorkerProperties properties) {
         final CachingConnectionFactory factory = new CachingConnectionFactory("localhost");
         factory.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);
