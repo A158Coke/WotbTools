@@ -4,7 +4,6 @@ import com.wotb.web.admin.dto.DeleteUserResult;
 import com.wotb.web.admin.dto.DeleteUsersResponse;
 import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminBadRequestException;
-import com.wotb.web.boost.service.BoosterService;
 import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
@@ -28,7 +27,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -41,7 +39,7 @@ import static org.mockito.Mockito.when;
  * <p>删除用户只有一个端点形态：请求体是 Keycloak sub 列表，删除单个用户就是长度为 1 的列表。
  * 核心契约：</p>
  * <ul>
- *   <li>逐用户复用删除的全部业务保护（self-delete 保护、打手依赖、本地资料清理、Keycloak 删除）；</li>
+ *   <li>逐用户复用删除的全部业务保护（self-delete 保护、本地资料清理、Keycloak 删除）；</li>
  *   <li>partial success —— 某个用户失败不回滚其他用户已完成的删除；</li>
  *   <li>失败用户不得被部分删除（本地资料删除失败时绝不继续删 Keycloak 用户）；</li>
  *   <li>self-delete 只让该条失败，不让整个请求失败；</li>
@@ -56,18 +54,16 @@ class AdminUserDeleteTest {
     private final AdminUserMapper mapper = mock(AdminUserMapper.class);
     private final AdminUserLogPersister logPersister = mock(AdminUserLogPersister.class);
     private final KeycloakAdminUserService keycloakAdminUserService = mock(KeycloakAdminUserService.class);
-    private final BoosterService boosterService = mock(BoosterService.class);
     private final PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
 
     private AdminUserService service() {
         return new AdminUserService(userProfileService, mapper, logPersister,
-                keycloakAdminUserService, boosterService, txManager);
+                keycloakAdminUserService, txManager);
     }
 
     @BeforeEach
     void setUp() {
         when(logPersister.save(any(AdminUserLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        doNothing().when(boosterService).deleteByKeycloakUserId(anyString());
     }
 
     @Test

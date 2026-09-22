@@ -4,7 +4,6 @@ import ReplayWorkspace from '../components/ReplayWorkspace.vue'
 import HoFPage from '../components/HoFPage.vue'
 import HoFAdminPage from '../components/HoFAdminPage.vue'
 import ProfilePage from '../components/ProfilePage.vue'
-import BoostPage from '../components/BoostPage.vue'
 import AdminUsersPage from '../components/AdminUsersPage.vue'
 import VersionPage from '../components/VersionPage.vue'
 import ContactPage from '../components/ContactPage.vue'
@@ -22,7 +21,6 @@ export const VIEW_COMPONENTS = Object.freeze({
   hof: HoFPage,
   'hof-admin': HoFAdminPage,
   profile: ProfilePage,
-  boost: BoostPage,
   'admin-users': AdminUsersPage,
   version: VersionPage,
   contact: ContactPage,

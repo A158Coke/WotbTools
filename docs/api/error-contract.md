@@ -58,7 +58,7 @@ Spring Security 不经过 MVC advice，因此 401/403 分别由 canonical `Authe
 | `INTERNAL_ERROR` | 500 | true | internal | 未分类服务端异常 |
 | `DATASET_REFERENCE_REQUIRED` | 400 | false | validation | Playback/AI Dataset reference 缺失 |
 
-既有 Replay、AI、Profile、HoF、Boost、Admin domain codes 在 Phase 1 保持 errorCode/status 兼容，并统一获得 `id`、`errorCode`、`retryable`、`details` 与 `timestamp`。`ApiErrorCode` 是从 OpenAPI 生成的 known-server registry，不会把 `NETWORK_ERROR`、`REQUEST_ABORTED`、`MALFORMED_ERROR_RESPONSE`、`UNKNOWN_ERROR` 或 `HTTP_<status>` 等浏览器/application fallback 当成服务端码；`ApiError.errorCode` 仍保持 string，以容纳尚未注册的稳定 legacy domain code。新增 error code 必须同时更新 registry、后端测试与三语前端 locale；禁止为不同语义复用同一 errorCode。
+既有 Replay、AI、Profile、HoF、Admin domain codes 在 Phase 1 保持 errorCode/status 兼容，并统一获得 `id`、`errorCode`、`retryable`、`details` 与 `timestamp`。`ApiErrorCode` 是从 OpenAPI 生成的 known-server registry，不会把 `NETWORK_ERROR`、`REQUEST_ABORTED`、`MALFORMED_ERROR_RESPONSE`、`UNKNOWN_ERROR` 或 `HTTP_<status>` 等浏览器/application fallback 当成服务端码；`ApiError.errorCode` 仍保持 string，以容纳尚未注册的稳定 legacy domain code。新增 error code 必须同时更新 registry、后端测试与三语前端 locale；禁止为不同语义复用同一 errorCode。
 
 ## Frontend contract
 

@@ -236,12 +236,12 @@ echo "PASS: get user"
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/users/$TEST_USER_ID/federated-identity" "$SERVICE_TOKEN" "$WORK/federated.json"
 echo "PASS: federated identities query"
 
-api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/roles/booster" "$SERVICE_TOKEN" "$WORK/role.json"
+api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/roles/wotbtools-user" "$SERVICE_TOKEN" "$WORK/role.json"
 ROLE_ID="$(jq -er '.id' "$WORK/role.json")"
 api 204 POST "$KEYCLOAK_URL/admin/realms/wotbtools/users/$TEST_USER_ID/role-mappings/realm" "$SERVICE_TOKEN" "$WORK/add-role.json" \
-  --data-raw "[{\"id\":\"$ROLE_ID\",\"name\":\"booster\",\"composite\":false,\"clientRole\":false,\"containerId\":\"wotbtools\"}]"
+  --data-raw "[{\"id\":\"$ROLE_ID\",\"name\":\"wotbtools-user\",\"composite\":false,\"clientRole\":false,\"containerId\":\"wotbtools\"}]"
 api 204 DELETE "$KEYCLOAK_URL/admin/realms/wotbtools/users/$TEST_USER_ID/role-mappings/realm" "$SERVICE_TOKEN" "$WORK/remove-role.json" \
-  --data-raw "[{\"id\":\"$ROLE_ID\",\"name\":\"booster\",\"composite\":false,\"clientRole\":false,\"containerId\":\"wotbtools\"}]"
+  --data-raw "[{\"id\":\"$ROLE_ID\",\"name\":\"wotbtools-user\",\"composite\":false,\"clientRole\":false,\"containerId\":\"wotbtools\"}]"
 echo "PASS: ordinary realm role add/remove"
 
 api 204 DELETE "$KEYCLOAK_URL/admin/realms/wotbtools/users/$TEST_USER_ID" "$SERVICE_TOKEN" "$WORK/delete-user.json"

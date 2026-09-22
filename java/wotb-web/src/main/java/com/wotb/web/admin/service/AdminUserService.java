@@ -9,7 +9,6 @@ import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
-import com.wotb.web.boost.service.BoosterService;
 import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
@@ -64,20 +63,17 @@ public class AdminUserService {
     private final AdminUserMapper mapper;
     private final AdminUserLogPersister logPersister;
     private final KeycloakAdminUserService keycloakAdminUserService;
-    private final BoosterService boosterService;
     private final TransactionTemplate transactionTemplate;
 
     public AdminUserService(final UserProfileService userProfileService,
                             final AdminUserMapper mapper,
                             final AdminUserLogPersister logPersister,
                             final KeycloakAdminUserService keycloakAdminUserService,
-                            final BoosterService boosterService,
                             final PlatformTransactionManager transactionManager) {
         this.userProfileService = userProfileService;
         this.mapper = mapper;
         this.logPersister = logPersister;
         this.keycloakAdminUserService = keycloakAdminUserService;
-        this.boosterService = boosterService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -208,7 +204,7 @@ public class AdminUserService {
      * 删除用户。请求体就是 Keycloak sub 列表——删除单个用户即长度为 1 的列表，
      * 因此不存在单独的「批量删除」形态。
      *
-     * <p>逐用户复用 {@link #deleteOneInternal} 的全部业务保护（self-delete 保护、打手依赖、
+     * <p>逐用户复用 {@link #deleteOneInternal} 的全部业务保护（self-delete 保护、
      * 本地资料清理、Keycloak 删除、审计日志、统一 error contract）。</p>
      *
      * <p>每个用户跑在<strong>独立事务</strong>中，因此允许 partial success：某个用户失败不会
@@ -270,7 +266,7 @@ public class AdminUserService {
     /**
      * 删除的唯一实现：请求体里的每个 id 都走这里（单条删除就是长度为 1 的列表）。
      * 禁止任何绕过路径（直接 SQL DELETE 或裸 Keycloak Admin 调用），否则会丢掉 self-delete 保护、
-     * 打手依赖处理、本地资料清理与审计日志。
+     * 本地资料清理与审计日志。
      */
     private void deleteOneInternal(final String targetKeycloakUserId, final Jwt adminJwt) {
         final String adminKeycloakUserId = adminJwt.getSubject();
@@ -287,23 +283,6 @@ public class AdminUserService {
         final AdminUserLog log = logPersister.save(
                 AdminUserLog.started(targetKeycloakUserId, profile,
                         adminKeycloakUserId, adminUsername));
-
-        // 如有打手档案，先尝试删除（存在订单分配历史时阻断用户删除）。
-        try {
-            boosterService.deleteByKeycloakUserId(targetKeycloakUserId);
-        } catch (final RuntimeException e) {
-            if (e instanceof IllegalStateException
-                    && "BOOSTER_HAS_DEPENDENCIES".equals(e.getMessage())) {
-                log.markFailedLocalDelete(ErrorCode.BOOSTER_HAS_DEPENDENCIES.name(), e.getMessage());
-                logPersister.save(log);
-                throw new AdminConflictException(ErrorCode.BOOSTER_HAS_DEPENDENCIES.name(),
-                        ErrorCode.BOOSTER_HAS_DEPENDENCIES.getDefaultMessage());
-            }
-            log.markFailedLocalDelete(ErrorCode.FAILED_LOCAL_DELETE.name(), e.getMessage());
-            logPersister.save(log);
-            throw new AdminInternalException(ErrorCode.FAILED_LOCAL_DELETE.name(),
-                    ErrorCode.FAILED_LOCAL_DELETE.getDefaultMessage());
-        }
 
         boolean localDeleted = false;
 

@@ -5,23 +5,18 @@ import { useAuth } from '../composables/useAuth.js'
 import { whenBusinessUserSettled } from '../composables/useBusinessUserBootstrap.js'
 import {
   deleteUserWotbAccount,
-  getMyBoosterAssignments,
-  getMyBoosterProfile,
+  getUnreadNotificationCount,
   getUserHofRecords,
   getUserProfile,
-  updateMyBoosterAvailability,
-  updateUserWotbAccount
-} from '../utils/api-boost.js'
-import {
-  getUnreadNotificationCount,
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
-  syncUserWotbAccountFromLogin
-} from '../utils/api-boost.js'
+  syncUserWotbAccountFromLogin,
+  updateUserWotbAccount
+} from '../utils/api-user.js'
 import { hofHundredCancel, hofHundredMyStatus } from '../utils/api.js'
 import { mapLabel } from '../utils/helpers.js'
-import { apiErrorLabel, enumLabel } from '../utils/display.js'
+import { apiErrorLabel } from '../utils/display.js'
 
 const { locale, t, te } = useI18n()
 const { initPromise, login, isAuthenticated, initError, tokenParsed } = useAuth()
@@ -42,23 +37,12 @@ const hundredStatus = ref(null)
 const hundredError = ref('')
 const hundredWithdrawingId = ref(null)
 const hundredMessage = ref('')
-const boosterInfo = ref(null)
-const boosterAssignments = ref([])
-const loadingBoosterAssignments = ref(false)
-const boosterAssignmentsError = ref('')
-const boosterAvailabilityPending = ref(false)
-const boosterAvailabilityError = ref('')
-
 // Notifications
 const notifications = ref([])
 const unreadNotifications = ref(0)
 const notificationsOpen = ref(false)
 const loadingNotifications = ref(false)
 const notificationError = ref('')
-
-function label(group, value, fallback = '--') {
-  return enumLabel(t, te, group, value, fallback)
-}
 
 function apiError(error) {
   return apiErrorLabel(t, te, error)
@@ -97,11 +81,7 @@ async function loadProfile() {
     loadRecords()
     loadHundredStatus()
   }
-  loadBoosterInfo()
   loadUnreadNotificationCount()
-  if (isBoosterUser.value) {
-    await loadBoosterAssignments()
-  }
 }
 
 /** WG 幂等同步（ASIA/EU/NA）：昵称变化时刷新；失败不再静默，保留错误状态供重试。 */
@@ -167,35 +147,6 @@ const serverLabel = computed(() => {
   return key ? t(key) : '--'
 })
 
-const isBoosterUser = computed(() => {
-  const roles = [
-    ...(tokenParsed.value?.realm_access?.roles || []),
-    ...(tokenParsed.value?.resource_access?.['wotbtools-web']?.roles || [])
-  ]
-  return roles.includes('booster')
-})
-
-const activeBoosterAssignments = computed(() =>
-  boosterAssignments.value.filter(assignment => !assignment.unassignedAt)
-)
-
-const historyBoosterAssignments = computed(() =>
-  boosterAssignments.value.filter(assignment => assignment.unassignedAt)
-)
-
-const boosterAvailabilityKey = computed(() => {
-  if (!boosterInfo.value?.available) return 'paused'
-  return (boosterInfo.value?.activeAssignmentCount || 0) > 0 ? 'busy' : 'available'
-})
-
-const boosterAvailabilityLabel = computed(() =>
-  boosterInfo.value ? t(`boost.boosterAvailabilityState.${boosterAvailabilityKey.value}`) : '--'
-)
-
-const boosterAvailabilityActionLabel = computed(() =>
-  boosterInfo.value?.available ? t('profile.pauseBoosterAvailability') : t('profile.resumeBoosterAvailability')
-)
-
 function doLogin() {
   if (!loginStarted.value) {
     loginStarted.value = true
@@ -223,42 +174,6 @@ async function saveAccount() {
     loadHundredStatus()
   } catch (e) {
     editError.value = apiError(e)
-  }
-}
-
-async function loadBoosterInfo() {
-  try {
-    boosterInfo.value = await getMyBoosterProfile()
-    boosterAvailabilityError.value = ''
-  } catch {
-    boosterInfo.value = null
-  }
-}
-
-async function toggleBoosterAvailability() {
-  if (!boosterInfo.value || boosterAvailabilityPending.value) return
-  boosterAvailabilityPending.value = true
-  boosterAvailabilityError.value = ''
-  try {
-    boosterInfo.value = await updateMyBoosterAvailability({
-      available: !boosterInfo.value.available
-    })
-  } catch (e) {
-    boosterAvailabilityError.value = apiError(e)
-  } finally {
-    boosterAvailabilityPending.value = false
-  }
-}
-
-async function loadBoosterAssignments() {
-  loadingBoosterAssignments.value = true
-  boosterAssignmentsError.value = ''
-  try {
-    boosterAssignments.value = await getMyBoosterAssignments(true)
-  } catch (error) {
-    boosterAssignmentsError.value = apiError(error)
-  } finally {
-    loadingBoosterAssignments.value = false
   }
 }
 
@@ -312,10 +227,6 @@ async function removeAccount() {
   } catch (e) {
     editError.value = apiError(e)
   }
-}
-
-function assignmentTime(value) {
-  return value ? new Date(value).toLocaleString(locale.value) : '--'
 }
 
 // Notifications
@@ -587,33 +498,6 @@ function notificationMessage(notification) {
             </div>
           </div>
 
-          <div v-if="boosterInfo" class="profile-card profile-section">
-            <div class="section-head">
-              <h3 class="card-title">{{ $t('profile.boosterTitle') }}</h3>
-              <div class="section-actions">
-                <button
-                  class="btn-ghost btn-sm"
-                  :disabled="boosterAvailabilityPending"
-                  @click="toggleBoosterAvailability"
-                >
-                  {{ boosterAvailabilityPending ? $t('profile.boosterAvailabilitySaving') : boosterAvailabilityActionLabel }}
-                </button>
-              </div>
-            </div>
-            <div class="booster-info">
-              <div class="sec-row"><span>{{ $t('profile.boosterNickname') }}</span><strong>{{ boosterInfo.nickname }}</strong></div>
-              <div class="sec-row"><span>{{ $t('profile.boosterLevel') }}</span><span class="badge-ok">{{ label('level', boosterInfo.level) }}</span></div>
-              <div class="sec-row"><span>{{ $t('profile.boosterActiveAssignments') }}</span><strong>{{ boosterInfo.activeAssignmentCount }}</strong></div>
-              <div class="sec-row">
-                <span>{{ $t('profile.boosterAvailability') }}</span>
-                <span class="availability-badge" :class="boosterAvailabilityKey">{{ boosterAvailabilityLabel }}</span>
-              </div>
-              <div v-if="boosterInfo.status === 'ACTIVE'" class="profile-status-ok">{{ $t('profile.boosterActive') }}</div>
-              <div v-else class="profile-status-warn">{{ $t('profile.boosterInactive') }}</div>
-              <p class="text-muted">{{ $t('profile.boosterAvailabilityHint') }}</p>
-              <p v-if="boosterAvailabilityError" class="error">{{ boosterAvailabilityError }}</p>
-            </div>
-          </div>
 
           <div class="profile-card profile-section">
             <h3 class="card-title">{{ $t('profile.securityTitle') }}</h3>
@@ -624,52 +508,6 @@ function notificationMessage(notification) {
             </div>
           </div>
 
-          <div v-if="isBoosterUser" class="profile-card profile-section">
-            <div class="section-head">
-              <h3 class="card-title">{{ $t('profile.myAssignments') }}</h3>
-              <span class="section-meta">{{ boosterAssignments.length }}</span>
-            </div>
-            <div v-if="loadingBoosterAssignments" class="profile-empty profile-empty-tight">{{ $t('profile.loading') }}</div>
-            <p v-else-if="boosterAssignmentsError" class="error">{{ boosterAssignmentsError }}</p>
-            <template v-else>
-              <div class="assignment-group">
-                <h4 class="assign-group-title">{{ $t('profile.activeAssignments') }}</h4>
-                <p v-if="!activeBoosterAssignments.length" class="profile-empty profile-empty-tight">{{ $t('profile.noActiveAssignments') }}</p>
-                <div v-else class="assign-list">
-                  <div v-for="a in activeBoosterAssignments" :key="a.id" class="assign-card">
-                    <div class="assign-head">
-                      <span class="assign-type">{{ label('requestTypeValue', a.requestType, $t('boost.requestType')) }}</span>
-                      <span class="assign-status-tag" :class="a.status?.toLowerCase()">{{ label('assignmentStatus', a.status) }}</span>
-                    </div>
-                    <div class="assign-desc">{{ a.targetDescription || '--' }}</div>
-                    <div class="assign-meta">
-                      <span>{{ $t('boost.assigned') }}: {{ assignmentTime(a.assignedAt) }}</span>
-                    </div>
-                    <p v-if="a.note" class="assign-note">{{ $t('profile.assignmentNote') }}: {{ a.note }}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div class="assignment-group">
-                <h4 class="assign-group-title">{{ $t('profile.assignmentHistory') }}</h4>
-                <p v-if="!historyBoosterAssignments.length" class="profile-empty profile-empty-tight">{{ $t('profile.noAssignmentHistory') }}</p>
-                <div v-else class="assign-list">
-                  <div v-for="a in historyBoosterAssignments" :key="a.id" class="assign-card">
-                    <div class="assign-head">
-                      <span class="assign-type">{{ label('requestTypeValue', a.requestType, $t('boost.requestType')) }}</span>
-                      <span class="assign-status-tag" :class="a.status?.toLowerCase()">{{ label('assignmentStatus', a.status) }}</span>
-                    </div>
-                    <div class="assign-desc">{{ a.targetDescription || '--' }}</div>
-                    <div class="assign-meta">
-                      <span>{{ $t('boost.assigned') }}: {{ assignmentTime(a.assignedAt) }}</span>
-                      <span>{{ $t('profile.assignmentClosedAt') }}: {{ assignmentTime(a.unassignedAt) }}</span>
-                    </div>
-                    <p v-if="a.note" class="assign-note">{{ $t('profile.assignmentNote') }}: {{ a.note }}</p>
-                  </div>
-                </div>
-              </div>
-            </template>
-          </div>
         </div>
       </div>
     </div>
@@ -716,13 +554,6 @@ function notificationMessage(notification) {
 .sec-row { display: flex; justify-content: space-between; font-size: .88rem; gap: 12px; color: var(--showcase-tactical-text); }
 .sec-row span { color: #a3a6a0; }
 .sec-row code { font-family: monospace; font-size: .78rem; color: #f0a42b; }
-.booster-info { display: flex; flex-direction: column; gap: 8px; }
-.availability-badge { font-size: .72rem; padding: 2px 8px; border-radius: 6px; font-weight: 700; }
-.availability-badge.available { background: var(--status-ok-bg); color: var(--status-ok-fg); }
-.availability-badge.busy { background: var(--status-info-bg); color: var(--status-info-fg); }
-.availability-badge.paused { background: var(--status-warn-bg); color: var(--status-warn-fg); }
-.profile-status-ok { font-size: .8rem; color: var(--status-ok-fg); font-weight: 700; }
-.profile-status-warn { font-size: .8rem; color: var(--status-warn-fg); font-weight: 700; }
 .btn-primary { padding: 8px 20px; border: none; border-radius: 7px; background: var(--accent); color: var(--accent-text); font-size: .88rem; cursor: pointer; font-family: inherit; font-weight: 700; }
 .btn-primary:hover { background: var(--accent-hover); }
 .btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 6px; }
@@ -748,24 +579,6 @@ function notificationMessage(notification) {
 .hundred-rejected-head strong { font-size: .85rem; color: var(--showcase-tactical-heading); }
 .hundred-rejected-reason { margin: 0; font-size: .8rem; color: var(--showcase-tactical-text); }
 .hundred-rejected-text { margin: 2px 0 0; font-size: .78rem; color: #9aa09c; line-height: 1.4; }
-.assignment-group + .assignment-group { margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(66, 77, 84, .45); }
-.assign-group-title { margin: 0 0 10px; font-size: .78rem; font-weight: 700; color: #a3a6a0; letter-spacing: .05em; text-transform: uppercase; }
-.assign-list { display: flex; flex-direction: column; gap: 8px; }
-.assign-card { padding: 12px; border: 1px solid rgba(66, 77, 84, .45); border-radius: 8px; background: var(--showcase-tactical-soft); }
-.assign-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
-.assign-type { font-weight: 600; font-size: .88rem; color: var(--showcase-tactical-heading); }
-.assign-status-tag { font-size: .75rem; padding: 2px 8px; border-radius: 6px; background: var(--bg-chip); color: var(--text-sub); }
-.assign-status-tag.assigned { background: var(--status-info-bg); color: var(--status-info-fg); }
-.assign-status-tag.accepted,
-.assign-status-tag.in_progress,
-.assign-status-tag.pending_confirm,
-.assign-status-tag.completed { background: var(--status-ok-bg); color: var(--status-ok-fg); }
-.assign-status-tag.declined,
-.assign-status-tag.cancelled { background: var(--status-err-bg); color: var(--status-err-fg); }
-.assign-status-tag.exception { background: var(--status-warn-bg); color: var(--status-warn-fg); }
-.assign-desc { font-size: .85rem; color: var(--showcase-tactical-text); margin-bottom: 4px; line-height: 1.4; }
-.assign-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: .78rem; color: #9aa09c; }
-.assign-note { margin: 6px 0 0; font-size: .78rem; color: #9aa09c; line-height: 1.4; }
 
 /* Notifications */
 .notification-count { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; margin-left: 6px; padding: 0 4px; border-radius: 999px; background: var(--error); color: var(--danger-solid-fg); font-size: 11px; vertical-align: middle; }

@@ -76,7 +76,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 返回服务状态与已加载车辆数量。
 
 所有 JSON API 只返回英文 key 与 raw enum；失败统一返回 canonical `ApiErrorResponse`（`code/status/messageKey/traceId/retryable/details/timestamp`），不返回本地化 `*Label`、exception message 或 stack trace。Phase 1 仍兼容既有稳定 `error` code。前端通过三语 locale 显示状态、成功和错误文案；完整契约见 `../docs/api/error-contract.md`。
-未显式声明的 `/api/**` 默认拒绝；`boost-manager` 仅能访问 `/api/admin/boost/**`。
+未显式声明的 `/api/**` 默认拒绝；其他 admin 域一律要求 `wotbtools-admin`。
 
 
 列定义由后端 `GET /api/replay/processing-jobs/{jobId}/result` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）。
@@ -221,7 +221,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 - `GET /api/admin/users/{keycloakUserId}` — 用户详情（本地 profile + Keycloak 信息）；Keycloak 用户不存在时返回 `KEYCLOAK_USER_NOT_FOUND` warning。
 - `DELETE /api/admin/users?confirm=true` — 删除用户：**请求体是 Keycloak sub 的 JSON 数组**（删除单个用户就是长度为 1 的数组，因此没有单独的批量端点，也没有单条 `/{keycloakUserId}` 删除端点）。每个 id 都先删本地 profile 再删 Keycloak 用户（`confirm` 缺失/false → 整个请求 400 `CONFIRMATION_REQUIRED`；不能删除自己 → `CANNOT_DELETE_SELF`；有依赖 → `USER_HAS_DEPENDENCIES` / `BOOSTER_HAS_DEPENDENCIES`）。去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`；**每个用户独立事务**，允许 **partial success**，返回 `{requested, deleted, failed, results:[{userId, deleted, errorCode}]}`。**删除用户必须走本 API**：绕过它直连 Keycloak 会留下孤儿 profile 并阻塞后续重绑（HoF 数据本身不会被连带删除，见下）。
 
-**删除用户 ≠ 删除 HoF 记录**：HoF 数据属于 WotB 游戏账号，仓库中没有任何 FK 指向 `user_profile`（全仓唯一的 `on delete cascade` 在 `V3__create_boosting_tables.sql`，boost 域内部），因此删除 Keycloak 用户不会连带删除任何 HoF 行。
+**删除用户 ≠ 删除 HoF 记录**：HoF 数据属于 WotB 游戏账号，仓库中没有任何 FK 指向 `user_profile`（`on delete cascade` 只出现在 replay processing 权威状态的域内组合关系上），因此删除 Keycloak 用户不会连带删除任何 HoF 行。
 
 ## 测试
 
@@ -234,7 +234,7 @@ mvn -s settings.xml test
 测试覆盖：
 
 - `wotb-core` 的 `ParityTest`：集成测试，覆盖解析、字段不变量、去重、汇总、xlsx 导出。
-- `wotb-web` 的 boost / hof / security / API 契约单元测试都会执行；无需数据库的 controller 契约已拆出，始终运行。
+- `wotb-web` 的 hof / security / API 契约单元测试都会执行；无需数据库的 controller 契约已拆出，始终运行。
 - 架构测试：`CoreArchitectureTest` / `WebArchitectureTest`（ArchUnit）守护模块边界与分层，随 `mvn test` 自动执行。
 - `WebApiTest` 只保留 PostgreSQL/真实回放集成路径；无 Docker 或无 `common/data` 时按条件跳过。
 
