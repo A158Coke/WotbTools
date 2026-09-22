@@ -113,7 +113,10 @@ jobs:
     if: needs.changes.result == 'success' && needs.changes.outputs.backend == 'true'
     name: Build Backend
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    # The slow step is the GitHub-hosted Runner -> TCR layer push, not the Docker build:
+    # production run 35728016485 showed backend/frontend still pushing layers at the old
+    # 80-minute budget. The window is larger; the failure semantics are unchanged.
+    timeout-minutes: 150
     permissions:
       contents: read
       # Only the BuildKit `type=gha` cache backend uses this scope; the job publishes
@@ -160,7 +163,6 @@ jobs:
           # immutable sha-<12> tag is the only thing pushed.
           push: true
           tags: ${{ steps.release.outputs.image }}
-          oci-mediatypes: true
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -187,7 +189,10 @@ jobs:
     if: needs.changes.result == 'success' && needs.changes.outputs.frontend == 'true'
     name: Build Frontend
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    # The slow step is the GitHub-hosted Runner -> TCR layer push, not the Docker build:
+    # production run 35728016485 showed backend/frontend still pushing layers at the old
+    # 80-minute budget. The window is larger; the failure semantics are unchanged.
+    timeout-minutes: 150
     permissions:
       contents: read
       # See Build Backend: GHA cache backend scope only, no GHCR publication.
@@ -226,7 +231,6 @@ jobs:
           file: docker/Dockerfile.frontend
           push: true
           tags: ${{ steps.release.outputs.image }}
-          oci-mediatypes: true
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -250,7 +254,10 @@ jobs:
     if: needs.changes.result == 'success' && needs.changes.outputs.keycloak == 'true'
     name: Build Keycloak
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    # The slow step is the GitHub-hosted Runner -> TCR layer push, not the Docker build:
+    # production run 35728016485 showed backend/frontend still pushing layers at the old
+    # 80-minute budget. The window is larger; the failure semantics are unchanged.
+    timeout-minutes: 150
     permissions:
       contents: read
       # See Build Backend: GHA cache backend scope only, no GHCR publication.
@@ -289,7 +296,6 @@ jobs:
           file: docker/Dockerfile.keycloak
           push: true
           tags: ${{ steps.release.outputs.image }}
-          oci-mediatypes: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}

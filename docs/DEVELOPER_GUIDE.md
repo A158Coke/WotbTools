@@ -722,7 +722,12 @@ Backend `StartupReleaseDiagnostics`、Frontend `dist/version.json` 的 `buildCom
   证据（不存在 image id / config digest / OCI archive identity 比对）。凭据复用既有
   `vars.TCR_REGISTRY` / `vars.TCR_NAMESPACE` 与 `secrets.TCR_USERNAME` / `secrets.TCR_PASSWORD`，
   只出现在这三个 builder job；job 内先断言 registry 是 `*.tencentyun.com` 且 `TCR_NAMESPACE` 非空，
-  避免把凭据发往其它 registry。
+  避免把凭据发往其它 registry。这三个 job 的 `timeout-minutes` 为 **150**：生产验收 run
+  `35728016485` 里 Keycloak 直传 `PASS`，而 Backend / Frontend 在真实 build 完成后、TCR 层上传
+  （`pushing layers`）阶段跑完了旧的 80 分钟预算才被 cancel——慢的是 GitHub-hosted Runner → TCR
+  的上传，不是 registry 正确性，因此只放宽窗口、不放宽失败语义。build step 刻意**不传**
+  `oci-mediatypes`：`docker/build-push-action@v7` 没有这个 input，传了只会得到
+  `Unexpected input(s)` 警告并被忽略。
 - **Yecao workload（Parser Worker / MinIO）**：保持既有 GHCR 发布路径不变
   （`ghcr.io/a158coke/wotbtools-<component>` 的 `sha-<12>` 与 `latest`），Build 不为它们登录 TCR。
 

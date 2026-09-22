@@ -80,6 +80,11 @@ for job_name, release_image in JOB_RELEASE_IMAGE.items():
     # itself must never authenticate to or publish to GHCR (asserted below).
     assert job["permissions"] == {"contents": "read", "packages": "write"}, \
         f"{job_name} must keep the GHA cache scope and nothing else"
+    # The honest cost of a direct GitHub-hosted Runner -> TCR publication is the layer
+    # push, which production run 35728016485 proved can outlive the previous 80-minute
+    # budget; the window is widened, the failure semantics are not.
+    assert job["timeout-minutes"] == 150, \
+        f"{job_name} must allow the slow TCR layer push a 150-minute budget"
     checkout = next(step for step in job["steps"] if step.get("uses") == "actions/checkout@v5")
     assert checkout["with"]["ref"] == "${{ needs.changes.outputs.commit_sha }}"
     release_step = next(step for step in job["steps"] if step.get("id") == "release")
@@ -110,9 +115,13 @@ for job_name, release_image in JOB_RELEASE_IMAGE.items():
         f"{job_name} must push exactly the resolved immutable TCR tag"
     assert "latest" not in str(build_step["with"]["tags"]), \
         f"{job_name} must publish the immutable tag only"
-    assert build_step["with"]["oci-mediatypes"] is True
     assert "outputs" not in build_step["with"], \
         f"{job_name} must not export an OCI archive any more"
+    # `image-manifest` is the only recognized OCI media-type switch and it defaults to
+    # false; `oci-mediatypes` is not an input of docker/build-push-action@v7 at all, so
+    # passing it only emitted an "Unexpected input(s)" warning.
+    assert "oci-mediatypes" not in build_step["with"], \
+        f"{job_name} must not pass the unsupported oci-mediatypes input"
     assert "cache-from" in build_step["with"] and "cache-to" in build_step["with"]
     assert "BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}" in str(build_step["with"]["build-args"]), \
         f"{job_name} must inject the frozen release SHA into the image"
@@ -173,6 +182,12 @@ for job_name, output_name in BUILD_JOB_OUTPUTS:
     assert str(build_step["with"]["file"]) == DOCKERFILE_BY_OUTPUT[output_name], \
         f"{job_name} must build its own Dockerfile from the repository root context"
     assert str(build_step["with"]["context"]) == ".", f"{job_name} must build from the repository root context"
+
+# docker/build-push-action@v7 does not expose an `oci-mediatypes` input; passing it only
+# emitted an unsupported-input warning, so the option must not come back through any of the
+# five build steps (TX application images included).
+assert "oci-mediatypes" not in build_text, \
+    "docker/build-push-action@v7 has no top-level oci-mediatypes input"
 
 # The OCI/rsync TX image transport is gone for good: Build owns one BuildKit publication
 # into TCR per TX component, so every helper that only served the archive detour must stay
