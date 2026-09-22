@@ -188,6 +188,3 @@ wotb:
     replay-dir: ${HOF_REPLAY_DIR:data/replays}
     # 磁盘保留阈值（字节，含本次写入大小）；低于则拒绝存储 REPLAY_STORAGE_FULL(507)
     replay-min-free-bytes: ${HOF_REPLAY_MIN_FREE_BYTES:536870912}
-  boost:
-    auto-confirm-hours: ${BOOST_AUTO_CONFIRM_HOURS:72}
-    auto-confirm-scan-ms: ${BOOST_AUTO_CONFIRM_SCAN_MS:300000}

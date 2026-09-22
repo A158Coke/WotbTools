@@ -33,7 +33,7 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
   `ref/`（车辆库/地图名查表）、`model/`（record 模型；不得反向依赖上层包）、`replay/`
   （stream/decoder/event/reconstruction/feature/evidence/map/**processing**——统一门面与视角解析
   已并入 replay）。确定性战斗语义只放这里。
-- **wotb-web**：Spring Boot 4（入口 `WotbWebApplication`）。**domain 分包**：`user/ hof/ replay/ boost/ admin/`
+- **wotb-web**：Spring Boot 4（入口 `WotbWebApplication`）。**domain 分包**：`user/ hof/ replay/ admin/`
   （+ `hundred/ mark3/`），每域内 `controller/ service/ entity/ repository/ dto/`
   （+ `mapper/ enums/ exception/` 按需）；共享例外包：`config/`（含 KeycloakAdminUserService）、
   `util/`、`exceptionhandler/`（GlobalExceptionHandler）、`replayfile/`（跨域回放文件存储/锁/DTO）。

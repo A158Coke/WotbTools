@@ -37,7 +37,6 @@
     },
 
     "home": {
-      "boostDesc": "专业陪练服务，提升战斗技巧与实战表现。",
       "replayParse": "回放解析",
       "replayParseDesc": "批量解析回放，查看汇总、单场数据与 League Rating。",
       "aiReview": "AI 复盘",
@@ -202,7 +201,6 @@
     },
 
     "home": {
-      "boostDesc": "Coaching sessions to improve gameplay and battle performance.",
       "replayParse": "Replay Analysis",
       "replayParseDesc": "Batch-parse replays and inspect summaries, battles, and League Rating.",
       "aiReview": "AI Review",
@@ -367,7 +365,6 @@
     },
 
     "home": {
-      "boostDesc": "Тренировки для улучшения игровых навыков и эффективности в бою.",
       "replayParse": "Анализ реплеев",
       "replayParseDesc": "Пакетная обработка реплеев, сводки, бои и League Rating.",
       "aiReview": "ИИ-разбор",

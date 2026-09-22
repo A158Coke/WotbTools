@@ -15,7 +15,7 @@ const { error: globalError, showError: showGlobalError, close: closeGlobalError 
 
 /**
  * 全局业务用户 bootstrap：只要 Keycloak 认证成功并进入 SPA（任意 view —— home /
- * replay / battle-playback / AI Review / HoF / admin / profile / boost），
+ * replay / battle-playback / AI Review / HoF / admin / profile），
  * 就在这里 ensure 当前用户的 user_profile。
  *
  * 这里也是唯一触发点：页面不再各自负责「读不到资料 → 自己创建」。

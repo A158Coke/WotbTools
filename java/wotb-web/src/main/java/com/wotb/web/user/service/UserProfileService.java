@@ -67,7 +67,7 @@ public class UserProfileService {
         return trustedWgRegionOrNull() != null;
     }
 
-    /** 供跨域写操作串行化用户删除、打手创建与换绑。 */
+    /** 供跨域写操作串行化用户删除与换绑。 */
     @Transactional
     public Optional<UserProfile> findEntityByKeycloakUserIdForUpdate(final String keycloakUserId) {
         return repository.findByKeycloakUserIdForUpdate(keycloakUserId);

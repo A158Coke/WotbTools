@@ -13,7 +13,6 @@
 .layout-data-workspace,
 .admin-page,
 .profile-page,
-.boost-page,
 .version-page,
 .contact-page,
 .hof-page,
@@ -37,7 +36,6 @@
 .layout-data-workspace::after,
 .admin-page::after,
 .profile-page::after,
-.boost-page::after,
 .version-page::after,
 .contact-page::after,
 .hof-page::after,
@@ -72,7 +70,6 @@
 .layout-data-workspace::before,
 .admin-page::before,
 .profile-page::before,
-.boost-page::before,
 .version-page::before,
 .contact-page::before,
 .hof-page::before,
@@ -154,11 +151,6 @@
     url('../assets/showcase/profile/profile-bg-v2.svg') 100% 52% / cover no-repeat !important;
 }
 
-/* ---------- Boost: alpine training range ---------- */
-.boost-page::after {
-  background-image: url('../assets/showcase/boost/boost-bg-v2.svg');
-  opacity: .70;
-}
 
 /* ---------- User Admin: restrained command center ---------- */
 .admin-page::after {
@@ -188,7 +180,7 @@
 }
 
 /* Content surfaces should sit above the artwork. */
-:is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin) {
+:is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin) {
   background-color: transparent !important;
 }
 
@@ -215,7 +207,6 @@
   .layout-data-workspace::after,
   .admin-page::after,
   .profile-page::after,
-  .boost-page::after,
   .version-page::after,
   .contact-page::after,
   .hof-page::after,
@@ -238,7 +229,6 @@
   .layout-data-workspace::before,
   .admin-page::before,
   .profile-page::before,
-  .boost-page::before,
   .version-page::before,
   .contact-page::before,
   .hof-page::before,
