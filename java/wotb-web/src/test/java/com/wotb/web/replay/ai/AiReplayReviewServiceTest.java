@@ -12,6 +12,7 @@ import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.web.replay.job.InMemoryReplayJobAuthority;
 import com.wotb.web.replay.job.ProcessedDataset;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
@@ -211,7 +212,7 @@ class AiReplayReviewServiceTest {
     @Test
     void analyzeFactsFromDatasetReadsAiFactsArtifactFromStore() throws Exception {
         final Path dir = Files.createTempDirectory("wotb-ai-dataset-test");
-        final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60);
+        final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60, new InMemoryReplayJobAuthority());
         try {
             final ReplayProcessingResult result = randomResult();
             final ReplayProcessingJob job = new ReplayProcessingJob("j1", List.of("a.wotbreplay"));
@@ -250,7 +251,7 @@ class AiReplayReviewServiceTest {
     @Test
     void corruptAiFactsArtifactReturnsDatasetUnavailableNotJobNotFound() throws Exception {
         final Path dir = Files.createTempDirectory("wotb-ai-corrupt");
-        final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60);
+        final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60, new InMemoryReplayJobAuthority());
         try {
             final ReplayProcessingResult result = randomResult();
             final ReplayProcessingJob job = new ReplayProcessingJob("j1", List.of("a.wotbreplay"));

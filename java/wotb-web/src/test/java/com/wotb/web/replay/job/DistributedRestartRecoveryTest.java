@@ -179,7 +179,7 @@ class DistributedRestartRecoveryTest {
     }
 
     private ReplayJobAuthority authority() {
-        return new ReplayJobAuthority(jdbc, transactions);
+        return new PostgresReplayJobAuthority(jdbc, transactions);
     }
 
     /** worker 写的 canonical per-source dataset（收尾的输入）。 */
