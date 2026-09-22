@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory } from 'vue-router'
-import { nextTick, inject, ref } from 'vue'
+import { nextTick, inject, ref, computed } from 'vue'
 import App from './App.vue'
 import { NAVIGATE_VIEW_KEY } from './shared/navigation.js'
 import { createAppRouter } from './app/router.js'
@@ -28,7 +28,7 @@ const authState = vi.hoisted(() => ({
   authenticatedRef: null,
   authInitState: null,
   initPromise: Promise.resolve(false),
-  username: '',
+  displayName: '',
   login: vi.fn(),
   logout: vi.fn(),
   hasRole: vi.fn(() => false),
@@ -42,7 +42,7 @@ vi.mock('./composables/useAuth.js', () => ({
     authInitState: authState.authInitState,
     tokenParsed: { value: null },
     login: authState.login, logout: authState.logout, isAuthenticated: () => authState.authenticated,
-    userName: () => authState.username,
+    displayName: computed(() => authState.displayName),
     hasRole: authState.hasRole,
   }),
 }))
@@ -318,7 +318,7 @@ describe('User menu', () => {
   afterEach(() => {
     mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount())
     setAuthState('unauthenticated', false)
-    authState.username = ''
+    authState.displayName = ''
     authState.login.mockClear()
     authState.logout.mockClear()
     document.querySelectorAll('.user-menu-panel').forEach(element => element.remove())
@@ -333,9 +333,9 @@ describe('User menu', () => {
     expect(document.body.querySelector('.user-menu-panel')).toBeFalsy()
   })
 
-  it('shows the authenticated username', async () => {
+  it('shows the authenticated display name', async () => {
     setAuthState('authenticated', true)
-    authState.username = '158布丁'
+    authState.displayName = '158布丁'
     const { wrapper } = await mountApp()
     expect(wrapper.get('.user-menu-trigger').text()).toContain('158布丁')
   })
