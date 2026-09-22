@@ -18,6 +18,7 @@ require_env() {
 for name in KEYCLOAK_ADMIN_USERNAME KEYCLOAK_ADMIN_PASSWORD \
   KEYCLOAK_ADMIN_CLIENT_SECRET KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION \
   KEYCLOAK_E2E_CLIENT_SECRET KEYCLOAK_E2E_CLIENT_SECRET_VERSION \
+  WG_APPLICATION_ID \
   TX_QQ_CLIENT_ID TX_QQ_CLIENT_SECRET TX_QQ_CLIENT_SECRET_VERSION; do
   require_env "$name"
 done
@@ -28,7 +29,7 @@ is_positive_integer() {
 
 is_placeholder_value() {
   case "${1,,}" in
-    bootstrap-not-configured|dummy|empty|juhe|juhe-qq|not-configured) return 0 ;;
+    bootstrap-not-configured|dummy|empty|juhe|juhe-qq|not-configured|not-used) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -41,7 +42,7 @@ require_configured_value() {
     || { echo "ERROR: $name must be configured and must not be a placeholder." >&2; exit 2; }
 }
 
-for name in TX_QQ_CLIENT_ID TX_QQ_CLIENT_SECRET KEYCLOAK_E2E_CLIENT_SECRET; do
+for name in WG_APPLICATION_ID TX_QQ_CLIENT_ID TX_QQ_CLIENT_SECRET KEYCLOAK_E2E_CLIENT_SECRET; do
   require_configured_value "$name"
 done
 is_positive_integer "$TX_QQ_CLIENT_SECRET_VERSION" \
@@ -65,6 +66,10 @@ export TF_VAR_keycloak_admin_client_secret="$KEYCLOAK_ADMIN_CLIENT_SECRET"
 export TF_VAR_keycloak_admin_client_secret_version="$KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION"
 export TF_VAR_e2e_client_secret="$KEYCLOAK_E2E_CLIENT_SECRET"
 export TF_VAR_e2e_client_secret_version="$KEYCLOAK_E2E_CLIENT_SECRET_VERSION"
+# The Wargaming application ID is the same secret the Keycloak runtime already
+# receives; OpenTofu only owns the ASIA/EU/NA IdP representation's client_id.
+# It is passed as a sensitive TF_VAR and never echoed.
+export TF_VAR_wargaming_application_id="$WG_APPLICATION_ID"
 export TF_VAR_qq_client_id="$TX_QQ_CLIENT_ID"
 export TF_VAR_qq_client_secret="$TX_QQ_CLIENT_SECRET"
 export TF_VAR_qq_client_secret_version="$TX_QQ_CLIENT_SECRET_VERSION"
