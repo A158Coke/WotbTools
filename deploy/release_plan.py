@@ -17,9 +17,8 @@ import sys
 IMAGE_NAMES = ("backend", "frontend", "keycloak", "minio", "parser-worker")
 APPLICATION_IMAGE_NAMES = ("backend", "frontend", "keycloak")
 # The deploy service a built image is published as. The backend image is owned
-# by TX since the business runtime moved there; ``wotb-backend`` stays a
-# deployable Yecao service only for the retirement/rollback window and is never
-# selected by inference.
+# by TX since the business runtime moved there; no Yecao application service is
+# deployable any more, so nothing here routes to a retired Yecao container.
 APPLICATION_SERVICES = {
     "backend": "business-api",
     "frontend": "wotb-frontend",
@@ -28,15 +27,17 @@ APPLICATION_SERVICES = {
     "parser-worker": "parser-worker",
 }
 DEPLOYABLE_SERVICES = {
+    # ``all`` is TX's whole-runtime selector in deploy/tx/deploy.sh. No release plan produces it any
+    # more (the deploy workflow expands it before it reaches WOTB_DEPLOY_SERVICES, and the legacy
+    # Yecao whole-stack meaning is retired), but it stays a validatable service name because the TX
+    # selector list is cross-checked against this set.
     "all",
-    "postgres",
     "node-exporter",
     "prometheus",
     "loki",
     "alloy",
     "grafana",
     "keycloak",
-    "wotb-backend",
     "wotb-frontend",
     "business-api",
     "keycloak-postgres",
@@ -51,6 +52,9 @@ DEPLOYABLE_SERVICES = {
 }
 DEPLOY_TARGETS = ("tx", "yecao")
 TARGET_BY_SERVICE = {
+    # ``all`` only exists as the TX whole-runtime selector now; the retired Yecao whole-stack
+    # meaning is gone.
+    "all": "tx",
     "keycloak": "tx",
     "keycloak-postgres": "tx",
     "business-postgres": "tx",
@@ -58,8 +62,6 @@ TARGET_BY_SERVICE = {
     "wotb-frontend": "tx",
     "business-api": "tx",
     "caddy": "tx",
-    "wotb-backend": "yecao",
-    "postgres": "yecao",
     "node-exporter": "yecao",
     "prometheus": "yecao",
     "loki": "yecao",
@@ -71,9 +73,9 @@ TARGET_BY_SERVICE = {
 IMAGE_SERVICE_BY_DEPLOY_SERVICE = {
     value: key for key, value in APPLICATION_SERVICES.items()
 }
-# ``wotb-backend`` stays a deployable Yecao service (rollback/retirement window),
-# but no release plan produces it any more, so it is deliberately absent from the
-# image mapping above: the backend image is published as ``business-api``.
+# The backend image is published as ``business-api`` (TX), so no manual alias maps
+# to a retired Yecao application service, and the legacy whole-stack ``all``
+# selector (which implied the old Yecao control plane) no longer exists.
 MANUAL_SERVICE_ALIASES = {
     "backend": "backend",
     "frontend": "frontend",
@@ -81,7 +83,7 @@ MANUAL_SERVICE_ALIASES = {
     "minio": "minio",
     "parser-worker": "parser-worker",
 }
-MANUAL_SERVICES = {"all", *MANUAL_SERVICE_ALIASES}
+MANUAL_SERVICES = set(MANUAL_SERVICE_ALIASES)
 
 FRONTEND_PATTERNS = (
     "frontend/**",
@@ -274,15 +276,9 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
     if manual_service is not None:
         if manual_service not in MANUAL_SERVICES:
             raise ValueError(f"unsupported manual service: {manual_service}")
-        if manual_service == "all":
-            images = {name: True for name in APPLICATION_IMAGE_NAMES}
-            images["minio"] = False
-            images["parser-worker"] = False
-            deploy_services = [APPLICATION_SERVICES[name] for name in APPLICATION_IMAGE_NAMES]
-        elif manual_service in MANUAL_SERVICE_ALIASES:
-            image_name = MANUAL_SERVICE_ALIASES[manual_service]
-            images[image_name] = True
-            deploy_services = [APPLICATION_SERVICES[image_name]]
+        image_name = MANUAL_SERVICE_ALIASES[manual_service]
+        images[image_name] = True
+        deploy_services = [APPLICATION_SERVICES[image_name]]
         return _result(images, deploy_services, deploy_config, ci_surfaces)
 
     normalized_paths = sorted({
@@ -330,14 +326,13 @@ def detect(paths: list[str], manual_service: str | None = None) -> dict[str, obj
         # additive.
         deploy_services = [name for name in deploy_services if name in OBSERVABILITY_DEPLOY_PATTERNS]
         if any(_matches(path, "deploy/docker-compose.prod.yml") for path in normalized_paths):
-            # The Yecao runtime is observability plus the business-data
-            # PostgreSQL only. Its legacy application services (wotb-backend,
-            # wotb-frontend, keycloak) are retired: TX owns them now, and the
-            # Yecao copies must never be refreshed by a generic Compose-config
-            # release. They stay explicitly selectable through the rollback
-            # window.
+            # The Yecao runtime is the parser execution plane plus the shared
+            # observability stack. The retired Yecao application services
+            # (postgres, wotb-backend, wotb-frontend, keycloak) are gone: TX owns
+            # the business runtime, its PostgreSQL, Keycloak and the frontend, so
+            # a Yecao Compose-config release can no longer select them.
             deploy_services.extend([
-                "postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana"
+                "node-exporter", "prometheus", "loki", "alloy", "grafana"
             ])
         if any(_matches_any(path, TX_DEPLOY_PATTERNS) for path in normalized_paths):
             # A TX topology change cannot safely infer an application image
@@ -388,16 +383,10 @@ def _result(
 
 
 def _target_services(services: list[str]) -> dict[str, list[str]]:
-    """Route each deploy service to one explicit host target.
-
-    ``all`` remains the legacy Yecao composition selector and is deliberately
-    never expanded to TX services. This prevents an ordinary Yecao config
-    release from touching the new TX stack.
-    """
+    """Route each deploy service to one explicit host target."""
     result = {target: [] for target in DEPLOY_TARGETS}
     for service in services:
-        target = "yecao" if service == "all" else TARGET_BY_SERVICE[service]
-        result[target].append(service)
+        result[TARGET_BY_SERVICE[service]].append(service)
     return {target: values for target, values in result.items() if values}
 
 
@@ -503,7 +492,7 @@ def validate_manifest(
         if not _valid_service_list(services):
             raise ValueError(f"manifest targetServices[{target}] is invalid")
         for service in services:
-            expected_target = "yecao" if service == "all" else TARGET_BY_SERVICE[service]
+            expected_target = TARGET_BY_SERVICE[service]
             if target != expected_target:
                 raise ValueError(f"deploy service {service} is routed to {target}, expected {expected_target}")
         flattened.extend(services)

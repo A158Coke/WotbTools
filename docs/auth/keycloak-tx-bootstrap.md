@@ -127,10 +127,10 @@ Keycloak 默认值一致，不会产生漂移。
 
 在申请 DNS cutover 前，在 TX runtime 上执行 `deploy/tx/pre-cutover-check.sh`。该入口只复用
 `deploy/tx/deploy.sh` 的现有 health-probe/Compose 配置读取逻辑，不执行 staging、promote、
-recreate、stop、删除或 DNS 操作。TX 包内的 `yecao-backend-contract.json` 是由 Yecao
-Compose contract test 校验的非机密 bind 基线；若 TX 上另有受控 checkout，可设置
-`WOTB_SOURCE_ROOT` 让门禁直接复核 production Compose。两者都不可用时，门禁会拒绝宣称 ready，
-而不是猜测 backend bind。
+recreate、stop、删除或 DNS 操作。Yecao 应用运行时退役后，原先随 TX 包分发的
+`yecao-backend-contract.json`（读取已删除的 Yecao `wotb-backend` bind）已删除：门禁在promote
+后的布局里直接针对与脚本同级的 `docker-compose.yml` 运行，若 TX 上有受控 checkout，可设置
+`WOTB_SOURCE_ROOT` 让它复核 production Compose。
 
 全部检查通过时输出：
 
