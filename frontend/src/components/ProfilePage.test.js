@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import ProfilePage from './ProfilePage.vue'
 
 let currentProfile = null
@@ -21,7 +21,8 @@ vi.mock('../composables/useAuth.js', () => ({
     logout: api.logout,
     isAuthenticated: () => true,
     initError: ref(null),
-    tokenParsed: tokenRef
+    tokenParsed: tokenRef,
+    displayName: computed(() => tokenRef.value?.displayName || tokenRef.value?.preferred_username || '')
   })
 }))
 

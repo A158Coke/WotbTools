@@ -19,7 +19,7 @@ import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 
 const { locale, t, te } = useI18n()
-const { initPromise, login, isAuthenticated, initError, tokenParsed } = useAuth()
+const { initPromise, login, isAuthenticated, initError, tokenParsed, displayName: authDisplayName } = useAuth()
 
 const phase = ref('init')
 const profile = ref(null)
@@ -102,11 +102,11 @@ async function syncFromLogin() {
   }
 }
 
+/** hero 展示名与顶栏同源：后端 Profile 的 displayName 优先，缺失才落到 useAuth.displayName。 */
 const displayName = computed(() =>
   profile.value?.displayName
-  ?? tokenParsed.value?.display_name
-  ?? tokenParsed.value?.preferred_username
-  ?? t('profile.unknownUser')
+  || authDisplayName.value
+  || t('profile.unknownUser')
 )
 
 const heroSubtitle = computed(() =>
