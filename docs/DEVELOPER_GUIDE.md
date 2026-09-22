@@ -718,10 +718,13 @@ MinIO 镜像，但没有 runtime deploy service。自动 Deploy 只由成功的 
 reconciliation，不触发应用 Build。
 
 另有一个仅 `workflow_dispatch` 的 `.github/workflows/benchmark-tcr.yml`：它把真实
-`docker/Dockerfile.backend` 用 BuildKit registry exporter **一次构建直接发布到 TCR** 的
-`benchmark-<run id>` 标签，只用于测量 GitHub-hosted Runner → TCR 这一段网络路径
-（不接力 Deploy、不产出 manifest、不经 GHCR/OCI tar/rsync/SSH/`docker load`、
-不使用 `latest` 或 `sha-<12>`）。它是 PoC benchmark，不属于发布链；生产 release
+`docker/Dockerfile.backend` **只构建一次**（`load: true`，进 runner 本地 Docker daemon），
+再用**单独计时**的一次原始 `docker push` 发布到 TCR 的 `benchmark-<run id>` 标签，
+只用于测量 GitHub-hosted Runner → TCR 这一段网络路径（不接力 Deploy、不产出 manifest、
+不经 GHCR/OCI tar/rsync/SSH、不在 TX 上 `docker load`、不使用 `latest` 或 `sha-<12>`），
+并分三段输出 `stage=build` / `stage=tcr-push` / `stage=tcr-verify` 的 `duration_seconds`
+——刻意不用 BuildKit registry exporter，否则边构建边上传会把 BUILD 与 UPLOAD 合成一个数字。
+它是 PoC benchmark，不属于发布链；生产 release
 identity 与 TX publication 仍只走上面的 GHCR → OCI → TX → TCR 路径。
 
 生产发布原则：
