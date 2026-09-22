@@ -203,7 +203,7 @@ Lease（读取期间 TTL 不清）。
 
 | 输入 | 执行 | job/source 权威状态 | `GET .../result` 数据来源 |
 |---|---|---|---|
-| MinIO `temp/jobs/<jobId>/input/<i>/<name>` | RabbitMQ `parser.request` → Yecao parser-worker | PostgreSQL（`wotb.replay.processing-job.repository=jdbc`，权威） | MinIO `temp/jobs/<jobId>/result/finalized.json` + `artifacts/<i>/*.json` |
+| MinIO `temp/jobs/<jobId>/input/<i>/<name>` | RabbitMQ `parser.request` → Yecao parser-worker | PostgreSQL（唯一权威，无后端选择器） | MinIO `temp/jobs/<jobId>/result/finalized.json` + `artifacts/<i>/*.json` |
 - create 编排只有一份（`ReplayProcessingJobService`）：输入落点与 dataset 读取是两个端口
   （`ReplayProcessingInputStore` / `ReplayProcessingResultReader`）。
 - **批次收尾（FINALIZING_BATCH）只有一份实现**：`ReplayBatchFinalizer` 负责
@@ -605,7 +605,7 @@ Phase 1 将 `wotb-frontend`、`keycloak` 与其专用 `keycloak-postgres` 路由
 TX；Yecao 在正式 cutover 前仍只承载业务 PostgreSQL 与观测服务。TX 的业务运行时是
 Compose 服务 `business-api`（Tencent TCR `ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend` 的 immutable 镜像；GHCR 保留为 Yecao 来源与 TX 恢复副本）：
 单个 Spring Boot 进程同时承载全部 public business endpoint 与分布式回放控制面
-（`WOTB_REPLAY_PROCESSING_JOB_REPOSITORY=jdbc`），
+（PostgreSQL 是唯一 replay job authority，无运行时后端选择器），
 不发布任何 host port，只被 TX-internal 的 frontend nginx、Caddy readiness surface 与
 deployment-owned `health-probe` 访问（app `/api/health` + management
 `/actuator/health`，管理端口 8088）。因此 release plan 把 backend 镜像路由到
