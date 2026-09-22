@@ -205,6 +205,12 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         try {
             sourceNames = persistInputs(jobId, files);
         } catch (final IOException e) {
+            // 原始存储失败必须在回滚**之前**记录：紧随其后的 discardInputs 只记录它自己的失败，
+            // 一旦回滚也不可用，最初的 put 失败原因就再没有任何地方能看到（生产排障现状）。
+            // 必须走 SLF4J Throwable overload 而不是只打印 getMessage()：MinIO/S3 的真实错误
+            // 只存在于 cause chain 里（io.minio 的异常类型 + S3 error message + 栈帧）。
+            LOGGER.warn("event=replay_processing_input_persist_failed jobId={} error={}",
+                    jobId, e.getMessage(), e);
             // 半途失败同样要回滚：已经写入的对象存储输入不能变成没有 job 引用的孤儿
             // （本地落点由 removeAndCleanup 删除，分布式落点由输入端口删除）。
             discardInputs(jobId, files);
@@ -254,8 +260,11 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         try {
             inputStore.discard(jobId, files);
         } catch (final IOException | RuntimeException cleanupFailure) {
+            // 回滚失败只记录、绝不抛出（否则会替换 create 正在抛出的那个原始失败），
+            // 但同样必须保留完整 Throwable/cause chain：MinIO/S3 的底层错误类型与 error message
+            // 只在 cause 里，只打印 getMessage() 无法定位。
             LOGGER.warn("event=replay_processing_input_discard_failed jobId={} error={}",
-                    jobId, cleanupFailure.getMessage());
+                    jobId, cleanupFailure.getMessage(), cleanupFailure);
         }
     }
 
