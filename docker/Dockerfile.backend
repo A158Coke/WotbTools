@@ -21,7 +21,6 @@ COPY java/wotb-replay-coordinator/pom.xml java/wotb-replay-coordinator/pom.xml
 COPY java/wotb-replay-processing/pom.xml java/wotb-replay-processing/pom.xml
 COPY java/wotb-parser-worker/pom.xml java/wotb-parser-worker/pom.xml
 COPY java/wotb-ai/pom.xml java/wotb-ai/pom.xml
-COPY java/wotb-control/pom.xml java/wotb-control/pom.xml
 COPY java/wotb-web/pom.xml java/wotb-web/pom.xml
 WORKDIR /build/java
 RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests dependency:go-offline -q || true
