@@ -188,4 +188,20 @@ describe('useAuth', () => {
     }))
     expect(auth.loginInFlight.value).toBe(false)
   })
+
+  it('displayName 优先 Keycloak displayName claim，登录名只作兜底', async () => {
+    const auth = useAuth()
+    await auth.initPromise
+
+    // WG / QQ 登录：displayName = 官方昵称 / QQ 昵称，preferred_username 是内部登录名。
+    auth.tokenParsed.value = { displayName: 'A158布丁', preferred_username: 'wg_eu_572253806' }
+    expect(auth.displayName.value).toBe('A158布丁')
+
+    // 缺 claim 的 token（例如映射未生效的旧 token）：退回登录名，绝不渲染 undefined。
+    auth.tokenParsed.value = { preferred_username: 'wg_eu_572253806' }
+    expect(auth.displayName.value).toBe('wg_eu_572253806')
+
+    auth.tokenParsed.value = null
+    expect(auth.displayName.value).toBe('')
+  })
 })
