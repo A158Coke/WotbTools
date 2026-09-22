@@ -171,6 +171,10 @@ CI_SURFACE_PATTERNS = {
         "infra/tofu/keycloak/**",
         "infra/tofu/rabbitmq/**",
         "infra/tofu/postgres-business/**",
+        # The MinIO root's policy and plan-safety contracts run in the deploy smoke
+        # job. It selects no runtime deployment: MinIO provisioning stays an explicit
+        # manual `target=minio` action, and deployServices stays empty.
+        "infra/tofu/minio/**",
         ".github/workflows/deploy*.yml",
         ".github/workflows/postgres-business-tofu.yml",
         "java/wotb-web/src/main/resources/db/migration/**",
