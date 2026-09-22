@@ -121,11 +121,19 @@ benchmark_build = next(
 )
 assert benchmark_build["with"]["file"] == "docker/Dockerfile.backend", \
     "the TCR benchmark must build the real Backend image"
-# The registry exporter is the only output. It spells its media types out because
-# `oci-mediatypes` is not an input of build-push-action@v7 any more: the exporter option is
-# the only place the artifact shape can be pinned, and the benchmark pins it deliberately.
-assert benchmark_build["with"]["outputs"] == "type=image,push=true,oci-mediatypes=false", \
-    "the TCR benchmark must publish with the BuildKit registry exporter only"
+# BUILD and TCR UPLOAD have to be observable as two separate stages, which is the primary
+# result of this PoC: the image is built once into the runner's local Docker daemon and the
+# publication stage pushes that same image. The production registry exporter is deliberately
+# absent here because it streams blobs while building and would merge the two numbers.
+assert benchmark_build["with"]["load"] is True, \
+    "the TCR benchmark must build once into the runner Docker daemon"
+assert "outputs" not in benchmark_build["with"], \
+    "the TCR benchmark build must not export or push to the registry"
+for step in benchmark_steps:
+    assert not re.search(r"\bdocker build\b", step.get("run", "")), \
+        "the TCR benchmark must build exactly once and never rebuild for publication"
+    assert "buildx build" not in step.get("run", ""), \
+        "the TCR benchmark must build exactly once and never rebuild for publication"
 assert benchmark_build["with"]["tags"] == "${{ steps.identity.outputs.target_image }}", \
     "the TCR benchmark tag must come from the benchmark identity step"
 assert "cache-from" not in benchmark_build["with"] and "cache-to" not in benchmark_build["with"], \
@@ -135,19 +143,29 @@ assert "benchmark-$GITHUB_RUN_ID" in benchmark_identity["run"], \
     "the TCR benchmark must use an isolated benchmark-<run id> tag"
 assert "rev-parse origin/main" in benchmark_identity["run"], \
     "the TCR benchmark must run from the current main HEAD"
+benchmark_push = next(step for step in benchmark_steps if step.get("id") == "push")
+assert 'docker push "$TARGET_IMAGE"' in benchmark_push["run"], \
+    "the TCR benchmark must publish with one raw docker push of the built image"
+for forbidden in ("| tee", "|tee", "2>&1", "/dev/null", "timeout "):
+    assert forbidden not in benchmark_push["run"], \
+        f"the TCR benchmark must keep the push raw and unretried: {forbidden}"
+assert "stage=tcr-push" in benchmark_push["run"] and "duration_seconds" in benchmark_push["run"], \
+    "the TCR benchmark must report the upload duration separately"
 benchmark_verify = next(
     step for step in benchmark_steps if step.get("name") == "Verify the published benchmark tag in TCR"
 )
 assert "docker buildx imagetools inspect" in benchmark_verify["run"], \
     "the TCR benchmark must verify publication by registry manifest inspection"
 assert "{{.Manifest.Digest}}" in benchmark_verify["run"]
+assert "stage=tcr-verify" in benchmark_verify["run"], \
+    "the TCR benchmark must report the verification duration separately"
 assert "TCR_PUBLICATION=PASS" in benchmark_verify["run"]
 assert "docker pull" not in benchmark_verify["run"], \
     "the TCR benchmark must never pull the published image back"
 assert any(
-    "stage=build-publish" in step.get("run", "") and "duration_seconds" in step.get("run", "")
+    "stage=build" in step.get("run", "") and "duration_seconds" in step.get("run", "")
     for step in benchmark_steps
-), "the TCR benchmark must report its own build/publication duration"
+), "the TCR benchmark must report the build duration separately"
 assert publication_helper.is_file() and ssh_setup_helper.is_file() and oci_transfer_helper.is_file()
 assert not (root / "scripts/ci/stream-oci-to-tx.sh").exists(), \
     "the obsolete long-lived OCI stream helper must stay deleted"

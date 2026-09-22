@@ -11,15 +11,19 @@
 #
 #   * `workflow_dispatch` only: no `push`, no `pull_request`, no `workflow_run`, so it can
 #     never trigger Deploy and never upload a `deployment-manifest`;
-#   * it builds docker/Dockerfile.backend once with the BuildKit registry exporter straight
-#     into TCR. No GHCR publication, no OCI archive, no rsync/scp of image data, no SSH to
-#     TX, no `docker load`, no production Compose or runtime mutation;
+#   * it builds the real docker/Dockerfile.backend exactly once into the runner's local
+#     Docker daemon, then publishes that same image to TCR with one raw `docker push`. No
+#     GHCR publication, no OCI archive, no rsync/scp of image data, no SSH to TX, no
+#     `publish-loaded-image-to-tcr.sh`, no production Compose or runtime mutation;
 #   * the tag is `benchmark-<run id>`, which is not a release identity: it is neither
 #     `latest` nor `sha-<12>`, and production Deploy only ever resolves those two;
 #   * no cache and no retries: a first run has to show the raw behaviour of this path, and a
-#     twenty-minute broken connection must not hide behind repeated attempts.
+#     twenty-minute broken connection must not hide behind repeated attempts;
+#   * BUILD and TCR UPLOAD are measured as two separate stages, which is the whole point of
+#     the experiment. The production BuildKit registry exporter is not used here because it
+#     streams blobs while it builds and would merge the two numbers.
 #
-# Publication is one build, never a build plus a re-push, so the future production
+# The benchmark builds once and then publishes that same image, so the future production
 # architecture stays available: commit -> immutable image -> registry digest -> deployment.
 name: Benchmark TCR direct publication
 run-name: Benchmark runner to TCR direct publication by @${{ github.actor }}
@@ -111,82 +115,109 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Record build and publication start
+      - name: Record build start
         shell: bash
         run: |
           set -euo pipefail
-          publish_started_epoch="$(date -u +%s)"
-          printf 'stage=build-publish-start\nstarted_epoch=%s\n' "$publish_started_epoch"
-          echo "BUILD_PUBLISH_START_EPOCH=$publish_started_epoch" >> "$GITHUB_ENV"
+          build_started_epoch="$(date -u +%s)"
+          printf 'stage=build-start\nstarted_epoch=%s\n' "$build_started_epoch"
+          echo "BUILD_START_EPOCH=$build_started_epoch" >> "$GITHUB_ENV"
 
-      # BuildKit streams blobs to the registry while the build is still running, so this
-      # step's duration is build plus registry export/upload together. The plain BuildKit
-      # progress in this same step separates the compile steps from the `exporting` /
-      # `pushing` steps, which is what tells BUILD latency apart from PUBLICATION latency.
-      # ponytail: no isolated blob-upload stopwatch inside one BuildKit invocation. If the
-      # operator later needs that number on its own, the follow-up benchmark publishes the
-      # already-built image with `docker push` instead - a benchmark change, not a
-      # production one.
-      - name: Build Backend and publish it directly to TCR
-        id: publish
+      # One build of the real Backend image, into the runner's local Docker daemon, never
+      # pushed from here. The registry exporter is deliberately not used: BuildKit streams
+      # blobs to the registry while it is still building, which folds BUILD latency and TCR
+      # UPLOAD latency into one number - exactly the two numbers this PoC has to report
+      # separately. Loading instead of exporting keeps build and publication independently
+      # measurable, and the publication stage never rebuilds anything.
+      - name: Build the real Backend image once into the runner Docker daemon
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile.backend
           tags: ${{ steps.identity.outputs.target_image }}
-          # The registry exporter is the only output: the image goes straight to TCR, with
-          # no second build and no local archive. Docker media types, not OCI, so the
-          # benchmark cannot change the artifact shape while it measures the network path.
-          outputs: type=image,push=true,oci-mediatypes=false
+          # `load: true` is the local Docker exporter, so the published image carries Docker
+          # media types - the same shape the TCR repository already holds.
+          load: true
           build-args: BUILD_COMMIT=${{ steps.identity.outputs.commit_sha }}
           provenance: false
           sbom: false
 
-      # Manifest inspection only: the benchmark must never pull the image back.
+      - name: Report build duration
+        if: always()
+        shell: bash
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          set -euo pipefail
+          ended_epoch="$(date -u +%s)"
+          started_epoch="${BUILD_START_EPOCH:-$ended_epoch}"
+          printf 'stage=build\nduration_seconds=%s\nresult=%s\n' \
+            "$((ended_epoch - started_epoch))" "${BUILD_OUTCOME:-unknown}"
+
+      # The publication stage under test: one raw `docker push` from the runner to TCR. No
+      # retry, no timeout wrapper and no output rewriting - the registry's own failure text
+      # (DNS, TCP, TLS, auth, registry API, blob upload, manifest publication, timeout,
+      # connection reset, rate limit) reaches the log exactly as docker printed it, together
+      # with how long the attempt took before it failed.
+      - name: Push the benchmark image directly to TCR
+        if: steps.build.outcome == 'success'
+        id: push
+        shell: bash
+        env:
+          TARGET_IMAGE: ${{ steps.identity.outputs.target_image }}
+        run: |
+          set -euo pipefail
+          push_started_epoch="$(date -u +%s)"
+          push_result=0
+          docker push "$TARGET_IMAGE" || push_result=$?
+          push_ended_epoch="$(date -u +%s)"
+          if [ "$push_result" -eq 0 ]; then push_state=PASS; else push_state=FAIL; fi
+          printf 'stage=tcr-push\nduration_seconds=%s\nresult=%s\n' \
+            "$((push_ended_epoch - push_started_epoch))" "$push_state"
+          [ "$push_result" -eq 0 ]
+
+      # Manifest read-back only: the benchmark must never pull the image back. The push stage
+      # created the registry manifest, so the gate is that TCR serves a well-formed manifest
+      # descriptor for the benchmark tag.
       - name: Verify the published benchmark tag in TCR
-        if: steps.publish.outcome == 'success'
+        if: steps.push.outcome == 'success'
         shell: bash
         env:
           TARGET_IMAGE: ${{ steps.identity.outputs.target_image }}
           BENCHMARK_TAG: ${{ steps.identity.outputs.benchmark_tag }}
-          BUILD_DIGEST: ${{ steps.publish.outputs.digest }}
         run: |
           set -euo pipefail
-          [[ "$BUILD_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
-            echo "::error::the build reported no well-formed image digest to verify." >&2
+          verify_started_epoch="$(date -u +%s)"
+          readback_result=0
+          registry_digest="$(docker buildx imagetools inspect \
+            --format '{{.Manifest.Digest}}' "$TARGET_IMAGE")" || readback_result=$?
+          verify_ended_epoch="$(date -u +%s)"
+          if [ "$readback_result" -eq 0 ]; then readback_state=PASS; else readback_state=FAIL; fi
+          printf 'stage=tcr-verify\nduration_seconds=%s\nresult=%s\n' \
+            "$((verify_ended_epoch - verify_started_epoch))" "$readback_state"
+          [ "$readback_result" -eq 0 ] || {
+            echo "::error::TCR manifest read-back failed for $TARGET_IMAGE; that is a publication result, not a runner build result." >&2
             exit 1
           }
-          readback_started_epoch="$(date -u +%s)"
-          registry_digest="$(docker buildx imagetools inspect \
-            --format '{{.Manifest.Digest}}' "$TARGET_IMAGE")"
-          readback_ended_epoch="$(date -u +%s)"
           [[ "$registry_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
             echo "::error::TCR returned '${registry_digest}' for $TARGET_IMAGE instead of a manifest descriptor; that is a publication/identity result, not a network result." >&2
-            exit 1
-          }
-          printf 'stage=verify-publication\nreadback_seconds=%s\n' \
-            "$((readback_ended_epoch - readback_started_epoch))"
-          # A digest mismatch is an identity result, not a TCR network result. Say so
-          # explicitly so the two can never be confused when this run is read back.
-          [ "$registry_digest" = "$BUILD_DIGEST" ] || {
-            echo "::error::identity mismatch: TCR serves $registry_digest for $TARGET_IMAGE but the runner built $BUILD_DIGEST" >&2
             exit 1
           }
           printf 'TCR_TARGET=%s\nTCR_TAG=%s\nTCR_DIGEST=%s\nTCR_PUBLICATION=PASS\n' \
             "$TARGET_IMAGE" "$BENCHMARK_TAG" "$registry_digest"
 
-      - name: Report benchmark timings
+      - name: Report benchmark total duration
         if: always()
         shell: bash
         env:
-          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          PUSH_OUTCOME: ${{ steps.push.outcome }}
         run: |
           set -euo pipefail
           ended_epoch="$(date -u +%s)"
           benchmark_started_epoch="${BENCHMARK_START_EPOCH:-$ended_epoch}"
-          publish_started_epoch="${BUILD_PUBLISH_START_EPOCH:-$benchmark_started_epoch}"
-          printf 'stage=benchmark-end\nbuild_result=%s\n' "${PUBLISH_OUTCOME:-unknown}"
-          printf 'stage=build-publish\nduration_seconds=%s\n' \
-            "$((ended_epoch - publish_started_epoch))"
+          printf 'stage=benchmark-end\nbuild_result=%s\npush_result=%s\n' \
+            "${BUILD_OUTCOME:-unknown}" "${PUSH_OUTCOME:-unknown}"
           printf 'stage=benchmark-total\nduration_seconds=%s\n' \
             "$((ended_epoch - benchmark_started_epoch))"
