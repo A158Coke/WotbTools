@@ -708,24 +708,43 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 生产 Build 与 Deploy 分为 `.github/workflows/build.yml` 和
 `.github/workflows/deploy.yml`，路径选择由 `deploy/release_plan.py` 统一产生。
 Build 在 `main` 成功 push 后只为 affected application 构建 component-local 的
-immutable `sha-<12 位 SHA>` 与 `latest` 镜像 tag，并把冻结的完整 SHA 注入
+immutable `sha-<12 位 SHA>` 镜像 tag，并把冻结的完整 SHA 注入
 Backend `StartupReleaseDiagnostics`、Frontend `dist/version.json` 的 `buildCommit` 与 Keycloak 启动日志；backend diagnostics 同时输出由完整 SHA 推导的 immutable image tag，上传唯一
-`deployment-manifest`；backend/frontend/keycloak 各只构建一次，同时发布 GHCR 的 OCI immutable `sha-<12>` artifact 与 `latest`，并从同一 BuildKit build 导出携**该 digest 已验证的 registry reference**（`<GHCR prefix>-<component>:sha-<12>`）的 OCI archive——BuildKit 的 OCI exporter 由 image-push tags 命名、`name=` 在 `--tag` 存在时被忽略（run `35646876773` 的 load 结果只有 GHCR refs，旧契约假设的 `wotb-transfer/*` 从未存在），因此验证 digest 的那一步只保留 runner 端的 BuildKit output digest == GHCR immutable manifest digest 校验（证明唯一一次 build 确实以该 immutable tag 落到 registry），**不导出任何 identity 值**（`EXPECTED_IMAGE_REF`/`BUILD_IMAGE_ID`/`EXPECTED_IMAGE_ID`/`EXPECTED_DIGEST` 都已删除）：release identity 就是不可变 tag `sha-<12>`，TX 侧按同一个 component 与 tag 重建同一 reference，不存在 image id / config digest / manifest digest parity 比对。全程也不引入任何 TX-local（`wotb-transfer/*`）中间命名——它不提供 sha tag、archive SHA256、run-id staging 与 import lock 之外的独有属性。runner 先用 `scripts/ci/transfer-oci-to-tx.sh` 经 job-scoped native OpenSSH 上的 resumable rsync（`--partial --append-verify`）把 archive 传到 TX 的 job-scoped staging 目录，断线只续传缺失字节、不整包重传；runner 与 TX 的 SHA256 完全相等后才把 partial 文件 promote 成完整 archive，TX 的单一 import lock 只从该已验证 archive 执行 `docker load -i`（不再有任何 stdin 管道），import 后只用 `docker image inspect` 证明该 archive 确实加载了 `<GHCR prefix>-<component>:sha-<12>`（该引用由 helper 自己的 `GHCR_IMAGE_PREFIX` 与已校验 component/tag 派生，import 不接收 identity 环境变量；未加载即 fail-closed，绝不进入 publication），随后由 `deploy/tx/publish-loaded-image-to-tcr.sh <component> <sha-12>` 自行派生已加载 reference 与 TCR immutable/`latest` 名，打 TCR immutable 名、推送 TCR immutable、只读取该 TCR immutable tag 的 manifest descriptor 以证明它确实发布成功（读取失败或返回值非 `sha256:<64 hex>` 即 fail-closed），最后才更新 TCR `latest`。只有 rsync 上传按传输类 rsync/SSH 失败做有界重试（默认 3 次）；`docker load` 与引用存在性检查不重试，TCR publication 中**只有**诊断为瞬态的 immutable `docker push` 与 immutable tag 读回各自做同样有界（最多 3 次、5s/15s 退避）的独立重试——空输出、未识别诊断、认证/权限与 malformed request 立即 fail-closed（不重试），`latest` 推送不重试，任何一层都不是 generic network retry；runner 与 TX 都必须具备 `ssh`/`rsync`/`sha256sum`/`timeout`（TX 另有 `docker`/`flock`），缺失时 helper 以工具名失败而不是给出含混的远端错误。`latest` 只同步已验证 immutable artifact，不能作为 deploy identity；任何 SSH transfer/load、TCR push、digest lookup/mismatch 或 latest 更新失败都会使 Build 失败、阻止 manifest。**GHCR 是 source/recovery registry，Tencent TCR 是 TX runtime image source**；TX publication 不拉取 GHCR，GHCR credentials 和 TCR credential 都不经 SSH、Compose、metadata 或 application environment 传递。MinIO Dockerfile 改动还会构建同样 immutable tag 的源码固定
-MinIO 镜像，但没有 runtime deploy service。自动 Deploy 只由成功的 Build `workflow_run` 接力，
+`deployment-manifest`。镜像发布按 workload 划分 registry 归属：
+
+- **TX workload（Backend / Frontend / Keycloak）**：各只构建**一次**，由 BuildKit registry
+  exporter（`docker/build-push-action` 的 `push: true`）直传
+  `<vars.TCR_REGISTRY>/<vars.TCR_NAMESPACE>/wotbtools-<component>:sha-<12>`，**不再发布 GHCR、不再
+  导出 OCI archive、不再经 rsync 传输、不在 TX 上 `docker load`**。发布后立即做 registry 原生
+  manifest 回读（`docker buildx imagetools inspect --format '{{.Manifest.Digest}}'`），要求返回值
+  等于 BuildKit output digest 且形状为 `sha256:<64 hex>`；不一致或缺失即 fail-closed，绝不回退到
+  GHCR/OCI 传输。release identity 仍然只有不可变 tag `sha-<12>`，registry digest 只是发布完整性
+  证据（不存在 image id / config digest / OCI archive identity 比对）。凭据复用既有
+  `vars.TCR_REGISTRY` / `vars.TCR_NAMESPACE` 与 `secrets.TCR_USERNAME` / `secrets.TCR_PASSWORD`，
+  只出现在这三个 builder job；job 内先断言 registry 是 `*.tencentyun.com` 且 `TCR_NAMESPACE` 非空，
+  避免把凭据发往其它 registry。
+- **Yecao workload（Parser Worker / MinIO）**：保持既有 GHCR 发布路径不变
+  （`ghcr.io/a158coke/wotbtools-<component>` 的 `sha-<12>` 与 `latest`），Build 不为它们登录 TCR。
+
+TX workload 不再发布 `latest`：生产 Deploy 只解析 immutable `sha-<12>`，`deploy/tx/deploy.sh`
+对可变或未解析引用一律拒绝，因此额外 tag 只会增加第二条命名契约。TCR 发布刻意**不做重试**：
+benchmark（run `35718721405` / job `106716287023`）证明一次不中断的直传即可成功
+（build 277s、TCR push 1714s、manifest 校验 3s、`TCR_PUBLICATION=PASS`），失败即 fail Build 并阻止
+该 release 部署；后续若出现真实瞬态失败，再以独立证据驱动变更有界重试。
+
+已删除的旧 TX 传输机制：`scripts/ci/transfer-oci-to-tx.sh`、`scripts/ci/setup-tx-ssh.sh`、
+`deploy/test-tx-publication-helper.sh`、`scripts/ci/test-transfer-oci-to-tx.sh` 与
+`.github/workflows/benchmark-tcr.yml`（benchmark 已被正常 Build 的直传取代）。它们只服务于废弃的
+OCI archive → rsync → TX `docker load` → TX 侧 republish 链路，删除后无调用方。
+`deploy/tx/publish-loaded-image-to-tcr.sh` 仍保留为 TX host 上的手工 republish 运行手册工具，
+但 Build 与 Deploy 都不再调用它（Build 不 SSH 到 TX，TX 只是运行时主机而非构建主机）。
+
+MinIO 镜像（由 MinIO Dockerfile 改动触发）没有 runtime deploy service：MinIO 与 Parser Worker
+的镜像是 Yecao workload，固定由 GHCR 提供，不属于 TX registry 归属。自动 Deploy 只由成功的 Build `workflow_run` 接力，
 不再提供普通应用 Deploy 的手工入口。事故操作使用仅
 `workflow_dispatch` 的 `.github/workflows/ops-recovery.yml`。纯
 `deploy/observability/grafana/dashboards/**` 只触发 Grafana OpenTofu API
 reconciliation，不触发应用 Build。
-
-另有一个仅 `workflow_dispatch` 的 `.github/workflows/benchmark-tcr.yml`：它把真实
-`docker/Dockerfile.backend` **只构建一次**（`load: true`，进 runner 本地 Docker daemon），
-再用**单独计时**的一次原始 `docker push` 发布到 TCR 的 `benchmark-<run id>` 标签，
-只用于测量 GitHub-hosted Runner → TCR 这一段网络路径（不接力 Deploy、不产出 manifest、
-不经 GHCR/OCI tar/rsync/SSH、不在 TX 上 `docker load`、不使用 `latest` 或 `sha-<12>`），
-并分三段输出 `stage=build` / `stage=tcr-push` / `stage=tcr-verify` 的 `duration_seconds`
-——刻意不用 BuildKit registry exporter，否则边构建边上传会把 BUILD 与 UPLOAD 合成一个数字。
-它是 PoC benchmark，不属于发布链；生产 release
-identity 与 TX publication 仍只走上面的 GHCR → OCI → TX → TCR 路径。
 
 生产发布原则：
 

@@ -8,8 +8,6 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-import yaml
-
 root = Path(sys.argv[1])
 ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 build = (root / ".github/workflows/build.yml").read_text(encoding="utf-8")
@@ -20,9 +18,6 @@ local_settings_text = (root / "java/settings.xml").read_text(encoding="utf-8")
 android_settings_text = (root / "android/settings.gradle.kts").read_text(encoding="utf-8")
 network_retry_helper = root / "scripts/ci/run-with-network-retry.sh"
 network_retry_test = root / "scripts/ci/test-network-retry.sh"
-publication_helper = root / "deploy/tx/publish-loaded-image-to-tcr.sh"
-ssh_setup_helper = root / "scripts/ci/setup-tx-ssh.sh"
-oci_transfer_helper = root / "scripts/ci/transfer-oci-to-tx.sh"
 
 assert "name: CI / PR" in ci
 assert "name: CI / Required Gate" in ci
@@ -34,200 +29,110 @@ assert "run-name: Deploy ${{ github.event_name == 'workflow_dispatch'" in deploy
 assert "inputs.service || 'release'" not in build and "inputs.service || 'release'" not in deploy
 assert "      - Build" in deploy
 assert "Release / Build" not in build and "Release / Deploy" not in deploy
-assert "name: Build Backend" in build
-assert "name: Build Frontend" in build
-assert "name: Build Keycloak" in build
-assert "${{ env.GHCR_IMAGE_PREFIX }}-backend:latest" in build
-assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest" in build
-assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest" in build
-for component in ("backend", "frontend", "keycloak"):
-    title = component.title()
-    assert f"Transfer {title} OCI archive to TX" in build
-    assert f"Import {title} OCI image on TX" in build
-    assert f"Publish {title} loaded image to TCR" in build
-    assert f"Remove {title} remote transfer material" in build
-    assert f"bash scripts/ci/transfer-oci-to-tx.sh transfer {component}" in build
-    assert f"bash scripts/ci/transfer-oci-to-tx.sh import {component}" in build
-    assert f"bash scripts/ci/transfer-oci-to-tx.sh cleanup {component}" in build
-    # Publication is invoked with the component and the immutable tag only: no identity
-    # value is forwarded to TX any more.
-    publish_call = f"publish-loaded-image-to-tcr.sh {component} '${{{{ needs.changes.outputs.tag }}}}'"
-    assert publish_call in build, f"{component} publication must pass only its immutable tag"
-    assert f"{publish_call} '" not in build, \
-        f"{component} publication must not forward another identity argument"
-# The long-lived OCI stream is gone for good: no gzip pipe and no stdin docker load.
-assert "stream-oci-to-tx.sh" not in build
-assert "gzip" not in build
-assert "docker load" not in build
-assert "oci-import.lock" not in build
-assert "imjasonh/setup-crane@v0.7" not in build
-assert "TCR_IMAGE_PREFIX" not in build
-assert "TCR_USERNAME" not in build and "TCR_PASSWORD" not in build
-assert "deploy/tx/replicate-image-to-tcr.sh" not in build
-assert "appleboy/scp-action@v1" not in build and "appleboy/ssh-action@v1" not in build
-# The direct runner -> TCR benchmark is the one sanctioned exception to "Build must not
-# direct-push Tencent TCR". It has to stay manual-only, benchmark-tagged and completely
-# outside the production release chain: no GHCR, no OCI export or archive transport, no SSH
-# to TX, no retry, no deployment manifest, no production environment. The GHCR + OCI + TX
-# publication path above remains the production fallback this workflow must not touch.
-benchmark_path = root / ".github/workflows/benchmark-tcr.yml"
-assert benchmark_path.is_file(), "the direct TCR publication benchmark must be dispatchable"
-benchmark = yaml.safe_load(benchmark_path.read_text(encoding="utf-8"))
-# PyYAML resolves an unquoted `on:` key as the YAML 1.1 boolean True.
-benchmark_triggers = benchmark.get("on", benchmark.get(True))
-assert benchmark_triggers, "the TCR benchmark must declare its triggers"
-assert set(benchmark_triggers) == {"workflow_dispatch"}, \
-    "the TCR benchmark must never run on push, pull_request or workflow_run"
-assert benchmark["permissions"] == {"contents": "read"}, \
-    "the TCR benchmark must not request packages: write or any other scope"
-benchmark_job = benchmark["jobs"]["benchmark"]
-assert "environment" not in benchmark_job, \
-    "the TCR benchmark must not attach a production environment for repository-scoped TCR credentials"
-benchmark_steps = benchmark_job["steps"]
-assert [step.get("uses") for step in benchmark_steps if "uses" in step] == [
-    "actions/checkout@v5",
-    "docker/login-action@v4",
-    "docker/setup-buildx-action@v4",
-    "docker/build-push-action@v7",
-], "the TCR benchmark must use only checkout, TCR login, Buildx and build-push"
-benchmark_step_text = repr(benchmark_steps)
-for forbidden in (
-    "ghcr",
-    "transfer-oci-to-tx.sh",
-    "publish-loaded-image-to-tcr.sh",
-    "rsync",
-    "scp",
-    "docker load",
-    "type=oci",
-    "upload-artifact",
-    "deployment-manifest",
-    "crane",
-    "continue-on-error",
-    "retry",
-    "latest",
+for component in ("Backend", "Frontend", "Keycloak", "MinIO", "Parser Worker"):
+    assert f"name: Build {component}" in build
+# ---- TX application images publish straight from BuildKit into Tencent TCR ------------
+# backend/frontend/keycloak each build exactly once and push the immutable sha-<12> tag into
+# TCR, then read the registry manifest back. There is no GHCR publication, no OCI archive, no
+# rsync, no SSH to TX and no TX-side docker load anywhere in their jobs.
+assert "GHCR_IMAGE_PREFIX" in build, "MinIO and Parser Worker must stay on GHCR"
+assert "${{ env.GHCR_IMAGE_PREFIX }}-minio:latest" in build
+assert "${{ env.GHCR_IMAGE_PREFIX }}-parser-worker:latest" in build
+assert "${{ env.GHCR_IMAGE_PREFIX }}-backend" not in build
+assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend" not in build
+assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak" not in build
+assert "registry: ghcr.io" in build, "the Yecao builders keep their GHCR login"
+for component in (
+    ("Backend", "wotbtools-backend"),
+    ("Frontend", "wotbtools-frontend"),
+    ("Keycloak", "wotbtools-keycloak"),
 ):
-    assert forbidden not in benchmark_step_text, \
-        f"the TCR benchmark must stay out of the production release chain: {forbidden}"
-assert "ssh" not in benchmark_step_text.lower(), \
-    "the TCR benchmark must never open an SSH or SCP session to TX"
-benchmark_login = next(step for step in benchmark_steps if step.get("uses") == "docker/login-action@v4")
-assert benchmark_login["with"] == {
-    "registry": "${{ vars.TCR_REGISTRY }}",
-    "username": "${{ secrets.TCR_USERNAME }}",
-    "password": "${{ secrets.TCR_PASSWORD }}",
-}, "the TCR benchmark must authenticate with the same TCR registry and credentials as Deploy"
-benchmark_build = next(
-    step for step in benchmark_steps if step.get("uses") == "docker/build-push-action@v7"
-)
-assert benchmark_build["with"]["file"] == "docker/Dockerfile.backend", \
-    "the TCR benchmark must build the real Backend image"
-# BUILD and TCR UPLOAD have to be observable as two separate stages, which is the primary
-# result of this PoC: the image is built once into the runner's local Docker daemon and the
-# publication stage pushes that same image. The production registry exporter is deliberately
-# absent here because it streams blobs while building and would merge the two numbers.
-assert benchmark_build["with"]["load"] is True, \
-    "the TCR benchmark must build once into the runner Docker daemon"
-assert "outputs" not in benchmark_build["with"], \
-    "the TCR benchmark build must not export or push to the registry"
-for step in benchmark_steps:
-    assert not re.search(r"\bdocker build\b", step.get("run", "")), \
-        "the TCR benchmark must build exactly once and never rebuild for publication"
-    assert "buildx build" not in step.get("run", ""), \
-        "the TCR benchmark must build exactly once and never rebuild for publication"
-assert benchmark_build["with"]["tags"] == "${{ steps.identity.outputs.target_image }}", \
-    "the TCR benchmark tag must come from the benchmark identity step"
-assert "cache-from" not in benchmark_build["with"] and "cache-to" not in benchmark_build["with"], \
-    "the first TCR benchmark run must be an uncached, raw measurement"
-benchmark_identity = next(step for step in benchmark_steps if step.get("id") == "identity")
-assert "benchmark-$GITHUB_RUN_ID" in benchmark_identity["run"], \
-    "the TCR benchmark must use an isolated benchmark-<run id> tag"
-assert "rev-parse origin/main" in benchmark_identity["run"], \
-    "the TCR benchmark must run from the current main HEAD"
-benchmark_push = next(step for step in benchmark_steps if step.get("id") == "push")
-assert 'docker push "$TARGET_IMAGE"' in benchmark_push["run"], \
-    "the TCR benchmark must publish with one raw docker push of the built image"
-for forbidden in ("| tee", "|tee", "2>&1", "/dev/null", "timeout "):
-    assert forbidden not in benchmark_push["run"], \
-        f"the TCR benchmark must keep the push raw and unretried: {forbidden}"
-assert "stage=tcr-push" in benchmark_push["run"] and "duration_seconds" in benchmark_push["run"], \
-    "the TCR benchmark must report the upload duration separately"
-benchmark_verify = next(
-    step for step in benchmark_steps if step.get("name") == "Verify the published benchmark tag in TCR"
-)
-assert "docker buildx imagetools inspect" in benchmark_verify["run"], \
-    "the TCR benchmark must verify publication by registry manifest inspection"
-assert "{{.Manifest.Digest}}" in benchmark_verify["run"]
-assert "stage=tcr-verify" in benchmark_verify["run"], \
-    "the TCR benchmark must report the verification duration separately"
-assert "TCR_PUBLICATION=PASS" in benchmark_verify["run"]
-assert "docker pull" not in benchmark_verify["run"], \
-    "the TCR benchmark must never pull the published image back"
-assert any(
-    "stage=build" in step.get("run", "") and "duration_seconds" in step.get("run", "")
-    for step in benchmark_steps
-), "the TCR benchmark must report the build duration separately"
-assert publication_helper.is_file() and ssh_setup_helper.is_file() and oci_transfer_helper.is_file()
-assert not (root / "scripts/ci/stream-oci-to-tx.sh").exists(), \
-    "the obsolete long-lived OCI stream helper must stay deleted"
-helper_text = publication_helper.read_text(encoding="utf-8")
-assert "set -euo pipefail" in helper_text
-assert "backend|frontend|keycloak" in helper_text
-assert "docker image inspect" in helper_text and "docker push" in helper_text
-assert "docker buildx imagetools inspect" in helper_text
-assert "{{.Manifest.Digest}}" in helper_text
-assert "{{.Digest}}" not in helper_text
-# The publication takes only the component and the immutable tag: it derives the loaded
-# and TCR references itself and never compares an image id or an expected digest.
-assert "usage: %s <backend|frontend|keycloak> <sha-12>" in helper_text
-assert "expected_digest" not in helper_text and "{{.Id}}" not in helper_text
-assert "timeout --kill-after" in helper_text
-assert "stage=publication-start" in helper_text and "stage=publication-end" in helper_text
-assert "stage=verify-immutable" in helper_text and "stage=update-latest" in helper_text
-assert "docker system prune" not in helper_text
-assert "docker pull" not in helper_text and "crane" not in helper_text
-assert "StrictHostKeyChecking yes" in ssh_setup_helper.read_text(encoding="utf-8")
-transfer_text = oci_transfer_helper.read_text(encoding="utf-8")
-assert "set -euo pipefail" in transfer_text
-assert "rsync" in transfer_text
-assert "--partial" in transfer_text and "--append-verify" in transfer_text
-assert "sha256sum" in transfer_text
-assert "docker load -i" in transfer_text
-assert "flock -w" in transfer_text and "oci-transfer.lock" in transfer_text
-assert "gzip -" not in transfer_text and "bash -o pipefail -c" not in transfer_text
-assert "timeout --kill-after" in transfer_text
-assert "run-with-network-retry.sh" not in transfer_text
-assert "publish-loaded-image-to-tcr.sh" not in transfer_text
-assert "EXPECTED_DIGEST" not in transfer_text
-# Release identity is the immutable tag: the import derives the canonical loaded
-# reference from its own component and tag and only checks that it is present. No image
-# id, config digest or expected identity value crosses the workflow environment, and no
-# TX-local image namespace exists any more.
-assert "EXPECTED_IMAGE_REF" not in transfer_text
-assert "EXPECTED_IMAGE_ID" not in transfer_text
-assert "EXPECTED_IMAGE_REF" not in build
-assert "EXPECTED_IMAGE_ID" not in build
-assert "EXPECTED_DIGEST" not in build
-assert "{{.Id}}" not in transfer_text
-assert 'canonical_image_ref="$GHCR_IMAGE_PREFIX-$component:$tag"' in transfer_text
-assert "wotb-transfer" not in transfer_text
-assert "wotb-transfer" not in build
-assert "wotb-transfer" not in helper_text
-assert "TCR_PASSWORD" not in transfer_text and "docker pull" not in transfer_text
-assert "crane" not in transfer_text
+    assert f"Build {component[0]} once and publish it directly to TCR" in build
+    assert f"Verify the immutable {component[0]} TCR manifest" in build
+    assert f"echo \"image=$TCR_REGISTRY/$TCR_NAMESPACE/{component[1]}:$TAG\" >> \"$GITHUB_OUTPUT\"" in build
+assert build.count('file: docker/Dockerfile.backend') == 1
+assert build.count('file: docker/Dockerfile.frontend') == 1
+assert build.count('file: docker/Dockerfile.keycloak') == 1
+assert build.count("uses: docker/build-push-action@v7") == 5, \
+    "each component still builds exactly once"
+# The obsolete TX OCI transport must not come back: no helper call, no archive export, no
+# rsync, no TX SSH session, no docker load, no fourth registry client and no identity value
+# crossing the workflow environment. The check is scoped to the TX builder jobs, because
+# MinIO/Parser Worker and the Yecao deploy job keep their own SCP/rsync steps.
 for component in ("Backend", "Frontend", "Keycloak"):
-    assert f"Publish {component} loaded image to TCR" in build
-# Publication and import are exactly-once steps; only the rsync upload retries.
-assert "run-with-network-retry.sh 'publish" not in build.lower()
-assert "run-with-network-retry.sh 'transfer" not in build.lower()
-assert "run-with-network-retry.sh 'import" not in build.lower()
-assert "run-with-network-retry.sh 'stream" not in build.lower()
-assert not (root / "scripts/ci/copy-image-to-tcr.sh").exists()
-assert not (root / "deploy/tx/replicate-image-to-tcr.sh").exists()
+    block = build.split(f"  build_{component.lower()}:", 1)[1].split("\n  build", 1)[0]
+    for forbidden in (
+        "ghcr",
+        "GITHUB_TOKEN",
+        "transfer-oci-to-tx.sh",
+        "setup-tx-ssh.sh",
+        "publish-loaded-image-to-tcr.sh",
+        "stream-oci-to-tx.sh",
+        "replicate-image-to-tcr.sh",
+        "replication.incoming",
+        "rsync",
+        "scp",
+        "docker load",
+        "type=oci",
+        "oci-transfer.lock",
+        "oci-import.lock",
+        "wotb-transfer",
+        "EXPECTED_IMAGE_REF",
+        "EXPECTED_IMAGE_ID",
+        "EXPECTED_DIGEST",
+        "TX_VPS_HOST",
+        "TX_VPS_SSH_KEY",
+        "appleboy/scp-action@v1",
+        "appleboy/ssh-action@v1",
+        "imjasonh/setup-crane@v0.7",
+        "crane",
+    ):
+        assert forbidden not in block, \
+            f"Build {component} must not publish TX images through: {forbidden}"
+for forbidden in ("benchmark-tcr.yml", "setup-tx-ssh.sh", "transfer-oci-to-tx.sh", "stream-oci-to-tx.sh"):
+    assert forbidden not in build, f"Build must not reference the retired transport: {forbidden}"
+# TCR publication reuses the one existing credential pair, and only for the jobs that
+# publish TX workloads.
+assert build.count("username: ${{ secrets.TCR_USERNAME }}") == 3
+assert build.count("password: ${{ secrets.TCR_PASSWORD }}") == 3
+assert build.count("registry: ${{ vars.TCR_REGISTRY }}") == 3
+# The TX runtime itself never receives TCR credentials: only the runner-side publication
+# and image-existence gates authenticate, and never through SSH, Compose or the app env.
+deploy_tx_block = deploy.split("\n  deploy_tx:", 1)[1]
+assert "TCR_USERNAME" not in deploy_tx_block and "TCR_PASSWORD" not in deploy_tx_block
+assert "docker login" not in (root / "deploy/tx/deploy.sh").read_text(encoding="utf-8")
+# Fail closed: exactly one publication boundary per TX component, the registry manifest
+# read-back is a hard gate, and no retry or second transport is wrapped around it.
+assert build.count("docker buildx imagetools inspect --format '{{.Manifest.Digest}}'") == 3
+assert "{{.Digest}}" not in build
+assert build.count("sha256:[0-9a-f]{64}") == 3
+assert "${{ steps.build.outputs.digest }}" in build
+assert "continue-on-error" not in build
+assert "run-with-network-retry.sh" not in build
+assert "NETWORK_RETRY_MAX_ATTEMPTS" not in build
+# The retired Yecao backend image is no longer published, so it must not be resolvable as a
+# deploy image either: TX owns the Backend image under TCR as `business-api`.
+assert "wotb-backend) image=" not in deploy
+assert "contains_tx_image_service" not in deploy
+assert "ghcr.io/a158coke/wotbtools-backend" not in deploy
+assert "ghcr.io/a158coke/wotbtools-frontend" not in deploy
+assert "ghcr.io/a158coke/wotbtools-keycloak" not in deploy
+assert 'business-api) image="$tcr_image_prefix/wotbtools-backend"' in deploy
+assert 'wotb-frontend) image="$tcr_image_prefix/wotbtools-frontend"' in deploy
+assert 'keycloak) image="$tcr_image_prefix/wotbtools-keycloak"' in deploy
+assert "unsupported image service" in deploy
+assert "parser-worker) image=ghcr.io/a158coke/wotbtools-parser-worker" in deploy
+assert "minio) image=ghcr.io/a158coke/wotbtools-minio" in deploy
+assert "tx_image_services" in deploy
+assert "TX_IMAGE_REGISTRY_PREFIX" not in deploy
 assert "TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}" in deploy
 assert "TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}" in deploy
-assert "TX_IMAGE_SERVICES" in deploy
-assert "contains_tx_image_service" in deploy
-assert "parser-worker) image=ghcr.io/a158coke/wotbtools-parser-worker" in deploy
+# The direct-TCR benchmark PoC is superseded by the production publication path.
+assert not (root / ".github/workflows/benchmark-tcr.yml").exists()
+assert not (root / "scripts/ci/transfer-oci-to-tx.sh").exists()
+assert not (root / "scripts/ci/setup-tx-ssh.sh").exists()
+assert not (root / "deploy/test-tx-publication-helper.sh").exists()
+assert not (root / "scripts/ci/test-transfer-oci-to-tx.sh").exists()
 assert "workflow_run:" in deploy and "workflow_dispatch:" in deploy
 assert "tx_services:" in deploy
 assert "        default: business-api" in deploy

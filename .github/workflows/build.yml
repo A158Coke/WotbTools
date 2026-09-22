@@ -116,94 +116,71 @@ jobs:
     timeout-minutes: 80
     permissions:
       contents: read
+      # Only the BuildKit `type=gha` cache backend uses this scope; the job publishes
+      # exclusively to Tencent TCR and never pushes an image to GHCR.
       packages: write
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.changes.outputs.commit_sha }}
+      - name: Resolve the immutable Backend TCR release image
+        id: release
+        shell: bash
+        env:
+          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+          TAG: ${{ needs.changes.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # TCR is the only registry a TX application image may be published to: a
+          # misconfigured registry variable must fail here instead of sending TCR
+          # credentials somewhere else.
+          case "$TCR_REGISTRY" in
+            *.tencentyun.com) ;;
+            *) echo "::error::TX images publish only to a Tencent Cloud registry." >&2; exit 1 ;;
+          esac
+          [ -n "$TCR_NAMESPACE" ] || { echo "::error::TCR_NAMESPACE is not configured." >&2; exit 1; }
+          [[ "$TAG" =~ ^sha-[0-9a-f]{12}$ ]] || { echo "::error::release tag must be sha-<12>." >&2; exit 1; }
+          echo "image=$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-backend:$TAG" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ vars.TCR_REGISTRY }}
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
       - uses: docker/setup-buildx-action@v4
-      - name: Build Backend once, publish GHCR, and export OCI
+      - name: Build Backend once and publish it directly to TCR
         id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile.backend
-          tags: |
-            ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
-            ${{ env.GHCR_IMAGE_PREFIX }}-backend:latest
-          outputs: |
-            type=oci,dest=${{ runner.temp }}/backend.oci.tar
-            type=image,push=true,oci-mediatypes=true
+          # One build, one publication boundary: the registry exporter streams the image
+          # straight into TCR, so there is no archive detour, no resumable file transfer,
+          # no SSH session to a TX build host and no local image import on TX at all. The
+          # immutable sha-<12> tag is the only thing pushed.
+          push: true
+          tags: ${{ steps.release.outputs.image }}
+          oci-mediatypes: true
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
-      - name: Verify authoritative Backend GHCR immutable digest
+      - name: Verify the immutable Backend TCR manifest
         id: digest
         shell: bash
         env:
-          IMAGE: ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
+          IMAGE: ${{ steps.release.outputs.image }}
           BUILD_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
+          # Release identity is the immutable tag; this proves the one build really
+          # reached TCR under it. A missing tag or a different descriptor fails closed,
+          # and there is deliberately no fallback to another registry or transport.
           [[ "$BUILD_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
           registry_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE")"
           [ "$registry_digest" = "$BUILD_DIGEST" ]
-          # Release identity is the immutable tag. This step proves the one build really
-          # reached the registry under it; nothing is exported, because the tag itself is
-          # the identity and TX reconstructs the same reference from the component and
-          # tag it is given. The archive SHA256 across the transfer is the byte proof.
           echo "verified $IMAGE at $BUILD_DIGEST"
-      - name: Set up native TX SSH
-        shell: bash
-        env:
-          TX_VPS_HOST: ${{ secrets.TX_VPS_HOST }}
-          TX_VPS_USER: ${{ secrets.TX_VPS_USER }}
-          TX_VPS_PORT: ${{ secrets.TX_VPS_PORT }}
-          TX_VPS_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
-        run: bash scripts/ci/setup-tx-ssh.sh
-      - name: Install TX loaded-image publication helper
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/ci/run-with-network-retry.sh 'prepare TX image publication' \
-            ssh -F "$TX_SSH_DIR/config" tx-image-publication \
-            'mkdir -p /opt/wotb-tx/replication.incoming'
-          bash scripts/ci/run-with-network-retry.sh 'install TX image publication helper' \
-            scp -F "$TX_SSH_DIR/config" deploy/tx/publish-loaded-image-to-tcr.sh \
-            tx-image-publication:/opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh
-      - name: Transfer Backend OCI archive to TX
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/ci/transfer-oci-to-tx.sh transfer backend '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}" "$RUNNER_TEMP/backend.oci.tar"
-      - name: Import Backend OCI image on TX
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/ci/transfer-oci-to-tx.sh import backend '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}" "$RUNNER_TEMP/backend.oci.tar"
-      - name: Publish Backend loaded image to TCR
-        shell: bash
-        run: |
-          set -euo pipefail
-          timeout --kill-after=30s 3300s ssh -F "$TX_SSH_DIR/config" tx-image-publication \
-            "mkdir -p /opt/wotb-tx/replication.incoming && flock -w 1800 /opt/wotb-tx/replication.incoming/tcr-publication.lock bash /opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh backend '${{ needs.changes.outputs.tag }}'"
-      - name: Remove Backend remote transfer material
-        if: success()
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/ci/transfer-oci-to-tx.sh cleanup backend '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}"
-      - name: Remove Backend temporary transfer material
-        if: always()
-        shell: bash
-        run: rm -rf -- "$RUNNER_TEMP/backend.oci.tar" "${TX_SSH_DIR:-}"
 
   build_frontend:
     needs: [changes]
@@ -213,94 +190,60 @@ jobs:
     timeout-minutes: 80
     permissions:
       contents: read
+      # See Build Backend: GHA cache backend scope only, no GHCR publication.
       packages: write
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.changes.outputs.commit_sha }}
+      - name: Resolve the immutable Frontend TCR release image
+        id: release
+        shell: bash
+        env:
+          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+          TAG: ${{ needs.changes.outputs.tag }}
+        run: |
+          set -euo pipefail
+          case "$TCR_REGISTRY" in
+            *.tencentyun.com) ;;
+            *) echo "::error::TX images publish only to a Tencent Cloud registry." >&2; exit 1 ;;
+          esac
+          [ -n "$TCR_NAMESPACE" ] || { echo "::error::TCR_NAMESPACE is not configured." >&2; exit 1; }
+          [[ "$TAG" =~ ^sha-[0-9a-f]{12}$ ]] || { echo "::error::release tag must be sha-<12>." >&2; exit 1; }
+          echo "image=$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-frontend:$TAG" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ vars.TCR_REGISTRY }}
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
       - uses: docker/setup-buildx-action@v4
-      - name: Build Frontend once, publish GHCR, and export OCI
+      - name: Build Frontend once and publish it directly to TCR
         id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile.frontend
-          tags: |
-            ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
-            ${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest
-          outputs: |
-            type=oci,dest=${{ runner.temp }}/frontend.oci.tar
-            type=image,push=true,oci-mediatypes=true
+          push: true
+          tags: ${{ steps.release.outputs.image }}
+          oci-mediatypes: true
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
-      - name: Verify authoritative Frontend GHCR immutable digest
+      - name: Verify the immutable Frontend TCR manifest
         id: digest
         shell: bash
         env:
-          IMAGE: ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
+          IMAGE: ${{ steps.release.outputs.image }}
           BUILD_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
           [[ "$BUILD_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
           registry_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE")"
           [ "$registry_digest" = "$BUILD_DIGEST" ]
-          # Release identity is the immutable tag. This step proves the one build really
-          # reached the registry under it; nothing is exported, because the tag itself is
-          # the identity and TX reconstructs the same reference from the component and
-          # tag it is given. The archive SHA256 across the transfer is the byte proof.
           echo "verified $IMAGE at $BUILD_DIGEST"
-      - name: Set up native TX SSH
-        shell: bash
-        env:
-          TX_VPS_HOST: ${{ secrets.TX_VPS_HOST }}
-          TX_VPS_USER: ${{ secrets.TX_VPS_USER }}
-          TX_VPS_PORT: ${{ secrets.TX_VPS_PORT }}
-          TX_VPS_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
-        run: bash scripts/ci/setup-tx-ssh.sh
-      - name: Install TX loaded-image publication helper
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/ci/run-with-network-retry.sh 'prepare TX image publication' \
-            ssh -F "$TX_SSH_DIR/config" tx-image-publication \
-            'mkdir -p /opt/wotb-tx/replication.incoming'
-          bash scripts/ci/run-with-network-retry.sh 'install TX image publication helper' \
-            scp -F "$TX_SSH_DIR/config" deploy/tx/publish-loaded-image-to-tcr.sh \
-            tx-image-publication:/opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh
-      - name: Transfer Frontend OCI archive to TX
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/ci/transfer-oci-to-tx.sh transfer frontend '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}" "$RUNNER_TEMP/frontend.oci.tar"
-      - name: Import Frontend OCI image on TX
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/ci/transfer-oci-to-tx.sh import frontend '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}" "$RUNNER_TEMP/frontend.oci.tar"
-      - name: Publish Frontend loaded image to TCR
-        shell: bash
-        run: |
-          set -euo pipefail
-          timeout --kill-after=30s 3300s ssh -F "$TX_SSH_DIR/config" tx-image-publication \
-            "mkdir -p /opt/wotb-tx/replication.incoming && flock -w 1800 /opt/wotb-tx/replication.incoming/tcr-publication.lock bash /opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh frontend '${{ needs.changes.outputs.tag }}'"
-      - name: Remove Frontend remote transfer material
-        if: success()
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/ci/transfer-oci-to-tx.sh cleanup frontend '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}"
-      - name: Remove Frontend temporary transfer material
-        if: always()
-        shell: bash
-        run: rm -rf -- "$RUNNER_TEMP/frontend.oci.tar" "${TX_SSH_DIR:-}"
 
   build_keycloak:
     needs: [changes]
@@ -310,94 +253,60 @@ jobs:
     timeout-minutes: 80
     permissions:
       contents: read
+      # See Build Backend: GHA cache backend scope only, no GHCR publication.
       packages: write
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.changes.outputs.commit_sha }}
+      - name: Resolve the immutable Keycloak TCR release image
+        id: release
+        shell: bash
+        env:
+          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+          TAG: ${{ needs.changes.outputs.tag }}
+        run: |
+          set -euo pipefail
+          case "$TCR_REGISTRY" in
+            *.tencentyun.com) ;;
+            *) echo "::error::TX images publish only to a Tencent Cloud registry." >&2; exit 1 ;;
+          esac
+          [ -n "$TCR_NAMESPACE" ] || { echo "::error::TCR_NAMESPACE is not configured." >&2; exit 1; }
+          [[ "$TAG" =~ ^sha-[0-9a-f]{12}$ ]] || { echo "::error::release tag must be sha-<12>." >&2; exit 1; }
+          echo "image=$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-keycloak:$TAG" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ vars.TCR_REGISTRY }}
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
       - uses: docker/setup-buildx-action@v4
-      - name: Build Keycloak once, publish GHCR, and export OCI
+      - name: Build Keycloak once and publish it directly to TCR
         id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile.keycloak
-          tags: |
-            ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ needs.changes.outputs.tag }}
-            ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest
-          outputs: |
-            type=oci,dest=${{ runner.temp }}/keycloak.oci.tar
-            type=image,push=true,oci-mediatypes=true
+          push: true
+          tags: ${{ steps.release.outputs.image }}
+          oci-mediatypes: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: BUILD_COMMIT=${{ needs.changes.outputs.commit_sha }}
           provenance: false
           sbom: false
-      - name: Verify authoritative Keycloak GHCR immutable digest
+      - name: Verify the immutable Keycloak TCR manifest
         id: digest
         shell: bash
         env:
-          IMAGE: ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ needs.changes.outputs.tag }}
+          IMAGE: ${{ steps.release.outputs.image }}
           BUILD_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
           [[ "$BUILD_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
           registry_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE")"
           [ "$registry_digest" = "$BUILD_DIGEST" ]
-          # Release identity is the immutable tag. This step proves the one build really
-          # reached the registry under it; nothing is exported, because the tag itself is
-          # the identity and TX reconstructs the same reference from the component and
-          # tag it is given. The archive SHA256 across the transfer is the byte proof.
           echo "verified $IMAGE at $BUILD_DIGEST"
-      - name: Set up native TX SSH
-        shell: bash
-        env:
-          TX_VPS_HOST: ${{ secrets.TX_VPS_HOST }}
-          TX_VPS_USER: ${{ secrets.TX_VPS_USER }}
-          TX_VPS_PORT: ${{ secrets.TX_VPS_PORT }}
-          TX_VPS_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
-        run: bash scripts/ci/setup-tx-ssh.sh
-      - name: Install TX loaded-image publication helper
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/ci/run-with-network-retry.sh 'prepare TX image publication' \
-            ssh -F "$TX_SSH_DIR/config" tx-image-publication \
-            'mkdir -p /opt/wotb-tx/replication.incoming'
-          bash scripts/ci/run-with-network-retry.sh 'install TX image publication helper' \
-            scp -F "$TX_SSH_DIR/config" deploy/tx/publish-loaded-image-to-tcr.sh \
-            tx-image-publication:/opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh
-      - name: Transfer Keycloak OCI archive to TX
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/ci/transfer-oci-to-tx.sh transfer keycloak '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}" "$RUNNER_TEMP/keycloak.oci.tar"
-      - name: Import Keycloak OCI image on TX
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/ci/transfer-oci-to-tx.sh import keycloak '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}" "$RUNNER_TEMP/keycloak.oci.tar"
-      - name: Publish Keycloak loaded image to TCR
-        shell: bash
-        run: |
-          set -euo pipefail
-          timeout --kill-after=30s 3300s ssh -F "$TX_SSH_DIR/config" tx-image-publication \
-            "mkdir -p /opt/wotb-tx/replication.incoming && flock -w 1800 /opt/wotb-tx/replication.incoming/tcr-publication.lock bash /opt/wotb-tx/replication.incoming/publish-loaded-image-to-tcr.sh keycloak '${{ needs.changes.outputs.tag }}'"
-      - name: Remove Keycloak remote transfer material
-        if: success()
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/ci/transfer-oci-to-tx.sh cleanup keycloak '${{ needs.changes.outputs.tag }}' "${{ github.run_id }}"
-      - name: Remove Keycloak temporary transfer material
-        if: always()
-        shell: bash
-        run: rm -rf -- "$RUNNER_TEMP/keycloak.oci.tar" "${TX_SSH_DIR:-}"
 
   build_minio:
     needs: [changes]
