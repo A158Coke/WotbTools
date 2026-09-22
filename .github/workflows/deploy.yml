@@ -238,7 +238,6 @@ jobs:
       - name: Verify required application images exist
         env:
           IMAGE_SERVICES: ${{ needs.changes.outputs.image_services }}
-          TX_IMAGE_SERVICES: ${{ needs.changes.outputs.tx_image_services }}
           RELEASE_TAG: ${{ needs.changes.outputs.release_tag }}
           TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
           TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
@@ -246,33 +245,19 @@ jobs:
         run: |
           set -euo pipefail
           tcr_image_prefix="$TCR_REGISTRY/$TCR_NAMESPACE"
-          contains_tx_image_service() {
-            local wanted="$1" service
-            IFS=',' read -r -a services <<< "$TX_IMAGE_SERVICES"
-            for service in "${services[@]}"; do
-              [ "$service" = "$wanted" ] && return 0
-            done
-            return 1
-          }
           IFS=',' read -r -a services <<< "$IMAGE_SERVICES"
           for service in "${services[@]}"; do
+            # TX application images live in Tencent TCR only; MinIO and Parser Worker
+            # stay on GHCR. There is deliberately no cross-registry fallback: an
+            # unexpected service fails closed instead of resolving somewhere else.
             case "$service" in
-              wotb-backend) image=ghcr.io/a158coke/wotbtools-backend ;;
-              business-api) image_name=wotbtools-backend ;;
-              wotb-frontend) image_name=wotbtools-frontend ;;
-              keycloak) image_name=wotbtools-keycloak ;;
+              business-api) image="$tcr_image_prefix/wotbtools-backend" ;;
+              wotb-frontend) image="$tcr_image_prefix/wotbtools-frontend" ;;
+              keycloak) image="$tcr_image_prefix/wotbtools-keycloak" ;;
               minio) image=ghcr.io/a158coke/wotbtools-minio; remediation="MinIO immutable image for current main does not exist. Run Build workflow manually with service=minio first, then deploy the resulting release." ;;
               parser-worker) image=ghcr.io/a158coke/wotbtools-parser-worker; remediation="Parser Worker immutable image for current main does not exist. Run Build workflow manually with service=parser-worker first, then deploy the resulting release." ;;
               *) echo "unsupported image service: $service" >&2; exit 1 ;;
             esac
-            if [ -n "${image_name:-}" ]; then
-              if contains_tx_image_service "$service"; then
-                image="$tcr_image_prefix/$image_name"
-              else
-                image="ghcr.io/a158coke/$image_name"
-              fi
-              unset image_name
-            fi
             if [ "$service" != minio ] && [ "$service" != parser-worker ]; then
               remediation="Required immutable deploy image does not exist for $service: $image:$RELEASE_TAG"
             fi
