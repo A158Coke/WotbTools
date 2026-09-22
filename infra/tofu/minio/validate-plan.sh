@@ -37,9 +37,12 @@ allowed = {
     # create-rollback grant: delete of the control plane's own temp/jobs/* objects
     "minio_iam_policy.temporary_workspace_control_api_reclaim",
     "minio_iam_user_policy_attachment.control_api_reclaim",
-    # SDK bucket-location lookup grant: one read-only bucket-level action, no object access
+    # SDK bucket-location lookup grant: one read-only bucket-level action, no object access.
+    # Both application identities need it; each keeps its own document.
     "minio_iam_policy.temporary_workspace_control_api_location",
     "minio_iam_user_policy_attachment.control_api_location",
+    "minio_iam_policy.temporary_workspace_worker_location",
+    "minio_iam_user_policy_attachment.worker_location",
 }
 
 changed = []
