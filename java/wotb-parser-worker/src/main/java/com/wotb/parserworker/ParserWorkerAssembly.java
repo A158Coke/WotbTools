@@ -21,13 +21,17 @@ import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
  * Wires the worker's single execution path. Every collaborator is constructor-injected; this class
  * declares no topology (that stays with {@code infra/tofu/rabbitmq}) and no HTTP endpoint.
+ *
+ * <p>External configuration is bound by {@link ParserWorkerConfig}: this class consumes the resulting
+ * immutable property objects and never constructs them from placeholder values. A {@code @Bean} method
+ * annotated with {@code @ConfigurationProperties} would silently bind nothing on a record (no setters),
+ * which is exactly how the worker shipped with blank credentials.</p>
  *
  * <p>The connection factory enables correlated publisher confirms and publisher returns, which
  * {@link RabbitParserOutcomePublisher} verifies in its constructor: without them the adapter refuses
@@ -64,24 +68,6 @@ public class ParserWorkerAssembly {
                 // No job-level state in the worker.
             }
         };
-    }
-
-    @Bean
-    @ConfigurationProperties(prefix = "wotb.parser-worker")
-    ParserWorkerProperties parserWorkerProperties() {
-        return new ParserWorkerProperties(2, 1, 10, 30);
-    }
-
-    @Bean
-    @ConfigurationProperties(prefix = "wotb.parser-worker.minio")
-    MinioObjectStorageProperties minioObjectStorageProperties() {
-        return new MinioObjectStorageProperties("10.20.0.2:9000", "wotbtools-temp", "", "", 10, 60);
-    }
-
-    @Bean
-    @ConfigurationProperties(prefix = "spring.rabbitmq")
-    RabbitBrokerProperties rabbitBrokerProperties() {
-        return new RabbitBrokerProperties("", 5672, "/", "", "", 2);
     }
 
     @Bean
