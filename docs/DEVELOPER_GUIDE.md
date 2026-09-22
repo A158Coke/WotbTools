@@ -715,7 +715,16 @@ MinIO 镜像，但没有 runtime deploy service。自动 Deploy 只由成功的 
 不再提供普通应用 Deploy 的手工入口。事故操作使用仅
 `workflow_dispatch` 的 `.github/workflows/ops-recovery.yml`。纯
 `deploy/observability/grafana/dashboards/**` 只触发 Grafana OpenTofu API
-reconciliation，不触发应用 Build。生产发布原则：
+reconciliation，不触发应用 Build。
+
+另有一个仅 `workflow_dispatch` 的 `.github/workflows/benchmark-tcr.yml`：它把真实
+`docker/Dockerfile.backend` 用 BuildKit registry exporter **一次构建直接发布到 TCR** 的
+`benchmark-<run id>` 标签，只用于测量 GitHub-hosted Runner → TCR 这一段网络路径
+（不接力 Deploy、不产出 manifest、不经 GHCR/OCI tar/rsync/SSH/`docker load`、
+不使用 `latest` 或 `sha-<12>`）。它是 PoC benchmark，不属于发布链；生产 release
+identity 与 TX publication 仍只走上面的 GHCR → OCI → TX → TCR 路径。
+
+生产发布原则：
 
 1. 代码质量验证（后端 Maven / 前端 Vitest + Vite build）由 PR CI 作为 merge gate 承担；Build/Deploy 不重复运行测试套件。Build 的 builders 全部 checkout 同一个冻结 SHA，manifest 记录 commit SHA、Build run number、immutable image tag、`buildServices` 与 `deployServices`。
 2. 新 compose 先在 incoming project root 中完成 `docker compose config` 与目标 image pull；成功后才 promote 到 `/opt/wotb/deploy` 和正式 compose。targeted deploy 使用 `docker compose up -d --no-deps --force-recreate <affected>`，不执行全栈无参数 `up`，非目标应用继续使用 production metadata/live compose 中的 immutable tag。

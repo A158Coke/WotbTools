@@ -1,0 +1,192 @@
+# PoC benchmark: can a GitHub-hosted Actions runner publish the REAL Backend image
+# directly to Tencent TCR, at acceptable speed and reliability?
+#
+# The network path under test is exactly one hop, with nothing else in the middle:
+#
+#   GitHub-hosted Actions Runner --(registry protocol)--> Tencent TCR
+#
+# This workflow is deliberately isolated from production, so it stays safe to run on its
+# own while `transfer-oci-to-tx.sh` / `publish-loaded-image-to-tcr.sh` and the GHCR
+# publication path remain the untouched production fallback:
+#
+#   * `workflow_dispatch` only: no `push`, no `pull_request`, no `workflow_run`, so it can
+#     never trigger Deploy and never upload a `deployment-manifest`;
+#   * it builds docker/Dockerfile.backend once with the BuildKit registry exporter straight
+#     into TCR. No GHCR publication, no OCI archive, no rsync/scp of image data, no SSH to
+#     TX, no `docker load`, no production Compose or runtime mutation;
+#   * the tag is `benchmark-<run id>`, which is not a release identity: it is neither
+#     `latest` nor `sha-<12>`, and production Deploy only ever resolves those two;
+#   * no cache and no retries: a first run has to show the raw behaviour of this path, and a
+#     twenty-minute broken connection must not hide behind repeated attempts.
+#
+# Publication is one build, never a build plus a re-push, so the future production
+# architecture stays available: commit -> immutable image -> registry digest -> deployment.
+name: Benchmark TCR direct publication
+run-name: Benchmark runner to TCR direct publication by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A dedicated group: the benchmark must never queue behind, or block, a production Build
+  # (`production-build`), and two concurrent benchmark runs must not share TCR throughput
+  # and distort each other's timings.
+  group: tcr-direct-publication-benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Benchmark runner to TCR direct publication
+    runs-on: ubuntu-latest
+    # The same budget as the production `Build Backend` job (build.yml). This job only
+    # builds and publishes, so exhausting it is a finding rather than a missing budget.
+    timeout-minutes: 80
+    steps:
+      - name: Checkout the benchmark source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Resolve the benchmark identity from the current main HEAD
+        id: identity
+        shell: bash
+        env:
+          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          source_sha="$(git rev-parse HEAD)"
+          main_sha="$(git rev-parse origin/main)"
+          if [ "$source_sha" != "$main_sha" ]; then
+            echo "::error::The TCR benchmark must run from the current main HEAD." >&2
+            exit 1
+          fi
+          # TCR is the only registry this benchmark may touch, and it reuses the production
+          # repository name so the measured path is the real one, not a lookalike.
+          case "$TCR_REGISTRY" in
+            *.tencentyun.com) ;;
+            *)
+              echo "::error::The TCR benchmark only publishes to a Tencent Cloud registry." >&2
+              exit 1
+              ;;
+          esac
+          [ -n "$TCR_NAMESPACE" ] || {
+            echo "::error::TCR_NAMESPACE is not configured." >&2
+            exit 1
+          }
+          benchmark_tag="benchmark-$GITHUB_RUN_ID"
+          target_image="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-backend:$benchmark_tag"
+          {
+            echo "commit_sha=$source_sha"
+            echo "benchmark_tag=$benchmark_tag"
+            echo "target_image=$target_image"
+          } >> "$GITHUB_OUTPUT"
+          printf 'stage=benchmark-identity\ncomponent=backend\nbenchmark_tag=%s\ntcr_target=%s\ncommit_sha=%s\n' \
+            "$benchmark_tag" "$target_image" "$source_sha"
+
+      - name: Record benchmark start
+        shell: bash
+        run: |
+          set -euo pipefail
+          started_epoch="$(date -u +%s)"
+          printf 'stage=benchmark-start\nstarted_epoch=%s\n' "$started_epoch"
+          echo "BENCHMARK_START_EPOCH=$started_epoch" >> "$GITHUB_ENV"
+
+      # TCR credentials are repository-scoped (`TCR_USERNAME` / `TCR_PASSWORD`, the same
+      # pair `deploy.yml` logs in with). This job deliberately attaches no `environment:`,
+      # so a benchmark can never record a production deployment or wait on a protection
+      # rule it does not need.
+      - name: Log in to the Tencent TCR registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ vars.TCR_REGISTRY }}
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Record build and publication start
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_started_epoch="$(date -u +%s)"
+          printf 'stage=build-publish-start\nstarted_epoch=%s\n' "$publish_started_epoch"
+          echo "BUILD_PUBLISH_START_EPOCH=$publish_started_epoch" >> "$GITHUB_ENV"
+
+      # BuildKit streams blobs to the registry while the build is still running, so this
+      # step's duration is build plus registry export/upload together. The plain BuildKit
+      # progress in this same step separates the compile steps from the `exporting` /
+      # `pushing` steps, which is what tells BUILD latency apart from PUBLICATION latency.
+      # ponytail: no isolated blob-upload stopwatch inside one BuildKit invocation. If the
+      # operator later needs that number on its own, the follow-up benchmark publishes the
+      # already-built image with `docker push` instead - a benchmark change, not a
+      # production one.
+      - name: Build Backend and publish it directly to TCR
+        id: publish
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.backend
+          tags: ${{ steps.identity.outputs.target_image }}
+          # The registry exporter is the only output: the image goes straight to TCR, with
+          # no second build and no local archive. Docker media types, not OCI, so the
+          # benchmark cannot change the artifact shape while it measures the network path.
+          outputs: type=image,push=true,oci-mediatypes=false
+          build-args: BUILD_COMMIT=${{ steps.identity.outputs.commit_sha }}
+          provenance: false
+          sbom: false
+
+      # Manifest inspection only: the benchmark must never pull the image back.
+      - name: Verify the published benchmark tag in TCR
+        if: steps.publish.outcome == 'success'
+        shell: bash
+        env:
+          TARGET_IMAGE: ${{ steps.identity.outputs.target_image }}
+          BENCHMARK_TAG: ${{ steps.identity.outputs.benchmark_tag }}
+          BUILD_DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "::error::the build reported no well-formed image digest to verify." >&2
+            exit 1
+          }
+          readback_started_epoch="$(date -u +%s)"
+          registry_digest="$(docker buildx imagetools inspect \
+            --format '{{.Manifest.Digest}}' "$TARGET_IMAGE")"
+          readback_ended_epoch="$(date -u +%s)"
+          [[ "$registry_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "::error::TCR returned '${registry_digest}' for $TARGET_IMAGE instead of a manifest descriptor; that is a publication/identity result, not a network result." >&2
+            exit 1
+          }
+          printf 'stage=verify-publication\nreadback_seconds=%s\n' \
+            "$((readback_ended_epoch - readback_started_epoch))"
+          # A digest mismatch is an identity result, not a TCR network result. Say so
+          # explicitly so the two can never be confused when this run is read back.
+          [ "$registry_digest" = "$BUILD_DIGEST" ] || {
+            echo "::error::identity mismatch: TCR serves $registry_digest for $TARGET_IMAGE but the runner built $BUILD_DIGEST" >&2
+            exit 1
+          }
+          printf 'TCR_TARGET=%s\nTCR_TAG=%s\nTCR_DIGEST=%s\nTCR_PUBLICATION=PASS\n' \
+            "$TARGET_IMAGE" "$BENCHMARK_TAG" "$registry_digest"
+
+      - name: Report benchmark timings
+        if: always()
+        shell: bash
+        env:
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+        run: |
+          set -euo pipefail
+          ended_epoch="$(date -u +%s)"
+          benchmark_started_epoch="${BENCHMARK_START_EPOCH:-$ended_epoch}"
+          publish_started_epoch="${BUILD_PUBLISH_START_EPOCH:-$benchmark_started_epoch}"
+          printf 'stage=benchmark-end\nbuild_result=%s\n' "${PUBLISH_OUTCOME:-unknown}"
+          printf 'stage=build-publish\nduration_seconds=%s\n' \
+            "$((ended_epoch - publish_started_epoch))"
+          printf 'stage=benchmark-total\nduration_seconds=%s\n' \
+            "$((ended_epoch - benchmark_started_epoch))"

@@ -8,6 +8,8 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import yaml
+
 root = Path(sys.argv[1])
 ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 build = (root / ".github/workflows/build.yml").read_text(encoding="utf-8")
@@ -63,6 +65,89 @@ assert "TCR_IMAGE_PREFIX" not in build
 assert "TCR_USERNAME" not in build and "TCR_PASSWORD" not in build
 assert "deploy/tx/replicate-image-to-tcr.sh" not in build
 assert "appleboy/scp-action@v1" not in build and "appleboy/ssh-action@v1" not in build
+# The direct runner -> TCR benchmark is the one sanctioned exception to "Build must not
+# direct-push Tencent TCR". It has to stay manual-only, benchmark-tagged and completely
+# outside the production release chain: no GHCR, no OCI export or archive transport, no SSH
+# to TX, no retry, no deployment manifest, no production environment. The GHCR + OCI + TX
+# publication path above remains the production fallback this workflow must not touch.
+benchmark_path = root / ".github/workflows/benchmark-tcr.yml"
+assert benchmark_path.is_file(), "the direct TCR publication benchmark must be dispatchable"
+benchmark = yaml.safe_load(benchmark_path.read_text(encoding="utf-8"))
+# PyYAML resolves an unquoted `on:` key as the YAML 1.1 boolean True.
+benchmark_triggers = benchmark.get("on", benchmark.get(True))
+assert benchmark_triggers, "the TCR benchmark must declare its triggers"
+assert set(benchmark_triggers) == {"workflow_dispatch"}, \
+    "the TCR benchmark must never run on push, pull_request or workflow_run"
+assert benchmark["permissions"] == {"contents": "read"}, \
+    "the TCR benchmark must not request packages: write or any other scope"
+benchmark_job = benchmark["jobs"]["benchmark"]
+assert "environment" not in benchmark_job, \
+    "the TCR benchmark must not attach a production environment for repository-scoped TCR credentials"
+benchmark_steps = benchmark_job["steps"]
+assert [step.get("uses") for step in benchmark_steps if "uses" in step] == [
+    "actions/checkout@v5",
+    "docker/login-action@v4",
+    "docker/setup-buildx-action@v4",
+    "docker/build-push-action@v7",
+], "the TCR benchmark must use only checkout, TCR login, Buildx and build-push"
+benchmark_step_text = repr(benchmark_steps)
+for forbidden in (
+    "ghcr",
+    "transfer-oci-to-tx.sh",
+    "publish-loaded-image-to-tcr.sh",
+    "rsync",
+    "scp",
+    "docker load",
+    "type=oci",
+    "upload-artifact",
+    "deployment-manifest",
+    "crane",
+    "continue-on-error",
+    "retry",
+    "latest",
+):
+    assert forbidden not in benchmark_step_text, \
+        f"the TCR benchmark must stay out of the production release chain: {forbidden}"
+assert "ssh" not in benchmark_step_text.lower(), \
+    "the TCR benchmark must never open an SSH or SCP session to TX"
+benchmark_login = next(step for step in benchmark_steps if step.get("uses") == "docker/login-action@v4")
+assert benchmark_login["with"] == {
+    "registry": "${{ vars.TCR_REGISTRY }}",
+    "username": "${{ secrets.TCR_USERNAME }}",
+    "password": "${{ secrets.TCR_PASSWORD }}",
+}, "the TCR benchmark must authenticate with the same TCR registry and credentials as Deploy"
+benchmark_build = next(
+    step for step in benchmark_steps if step.get("uses") == "docker/build-push-action@v7"
+)
+assert benchmark_build["with"]["file"] == "docker/Dockerfile.backend", \
+    "the TCR benchmark must build the real Backend image"
+# The registry exporter is the only output. It spells its media types out because
+# `oci-mediatypes` is not an input of build-push-action@v7 any more: the exporter option is
+# the only place the artifact shape can be pinned, and the benchmark pins it deliberately.
+assert benchmark_build["with"]["outputs"] == "type=image,push=true,oci-mediatypes=false", \
+    "the TCR benchmark must publish with the BuildKit registry exporter only"
+assert benchmark_build["with"]["tags"] == "${{ steps.identity.outputs.target_image }}", \
+    "the TCR benchmark tag must come from the benchmark identity step"
+assert "cache-from" not in benchmark_build["with"] and "cache-to" not in benchmark_build["with"], \
+    "the first TCR benchmark run must be an uncached, raw measurement"
+benchmark_identity = next(step for step in benchmark_steps if step.get("id") == "identity")
+assert "benchmark-$GITHUB_RUN_ID" in benchmark_identity["run"], \
+    "the TCR benchmark must use an isolated benchmark-<run id> tag"
+assert "rev-parse origin/main" in benchmark_identity["run"], \
+    "the TCR benchmark must run from the current main HEAD"
+benchmark_verify = next(
+    step for step in benchmark_steps if step.get("name") == "Verify the published benchmark tag in TCR"
+)
+assert "docker buildx imagetools inspect" in benchmark_verify["run"], \
+    "the TCR benchmark must verify publication by registry manifest inspection"
+assert "{{.Manifest.Digest}}" in benchmark_verify["run"]
+assert "TCR_PUBLICATION=PASS" in benchmark_verify["run"]
+assert "docker pull" not in benchmark_verify["run"], \
+    "the TCR benchmark must never pull the published image back"
+assert any(
+    "stage=build-publish" in step.get("run", "") and "duration_seconds" in step.get("run", "")
+    for step in benchmark_steps
+), "the TCR benchmark must report its own build/publication duration"
 assert publication_helper.is_file() and ssh_setup_helper.is_file() and oci_transfer_helper.is_file()
 assert not (root / "scripts/ci/stream-oci-to-tx.sh").exists(), \
     "the obsolete long-lived OCI stream helper must stay deleted"
