@@ -307,6 +307,13 @@ grep -Fq 'target: /etc/nginx/templates/default.conf.template' "$WORK/compose.yml
   || fail "resolved business-api must not carry the retired replay job-repository switch"
 grep -Fq 'http://keycloak:8080' "$WORK/compose.yml" \
   || fail "resolved business-api must use the TX-internal Keycloak Admin API"
+# The control plane owns the WireGuard endpoint (`10.20.0.2:9000`). The Yecao-local Docker service
+# name (`minio:9000`) is the parser-worker's endpoint and must never appear in the TX runtime: TX
+# is not attached to the Yecao `wotb_internal` network and cannot resolve it.
+grep -Fq 'YECAO_MINIO_ENDPOINT: 10.20.0.2:9000' "$WORK/compose.yml" \
+  || fail "resolved business-api must reach Yecao MinIO through the WireGuard endpoint"
+! grep -Fq 'minio:9000' "$WORK/compose.yml" \
+  || fail "resolved TX runtime must not use the Yecao-local Docker service name"
 for contract in \
   'wait_for_probe tx-business-api http://business-api:8088/actuator/health' \
   'wait_for_probe business-api-app http://business-api:8087/api/health' \
