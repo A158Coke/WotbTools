@@ -68,6 +68,34 @@ resource "minio_iam_user_policy_attachment" "worker" {
   policy_name = minio_iam_policy.temporary_workspace_worker.name
 }
 
+# The MinIO Java SDK resolves the bucket location before every object operation, so both
+# application identities need this bucket-level action — `worker` reads inputs and writes
+# artifacts through the same SDK that `control_api` uses. It is a bucket-level action, so it
+# cannot live in the read/write document (whose bucket-level statement is prefix-conditioned),
+# and it is a separate document for the same reason the control plane's grants are separate:
+# growing an applied policy arrives as an in-place update, which the plan guard refuses by
+# design. It grants exactly one read-only action on the bucket resource and no object access,
+# so the `temp/jobs/*` object scope is still owned solely by the worker read/write document above.
+resource "minio_iam_policy" "temporary_workspace_worker_location" {
+  name = "wotbtools-temp-worker-location"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadTemporaryWorkspaceBucketLocation"
+        Effect   = "Allow"
+        Action   = ["s3:GetBucketLocation"]
+        Resource = [minio_s3_bucket.temporary_workspace.arn]
+      },
+    ]
+  })
+}
+
+resource "minio_iam_user_policy_attachment" "worker_location" {
+  user_name   = minio_iam_user.worker.name
+  policy_name = minio_iam_policy.temporary_workspace_worker_location.name
+}
+
 resource "minio_iam_user" "control_api" {
   name   = var.control_api_access_key
   secret = var.control_api_secret_key
@@ -134,4 +162,33 @@ resource "minio_iam_policy" "temporary_workspace_control_api_reclaim" {
 resource "minio_iam_user_policy_attachment" "control_api_reclaim" {
   user_name   = minio_iam_user.control_api.name
   policy_name = minio_iam_policy.temporary_workspace_control_api_reclaim.name
+}
+
+# The MinIO Java SDK resolves a bucket's location before every object operation: an
+# `s3:GetObject`/`s3:PutObject` caller without `s3:GetBucketLocation` gets
+# `403 AccessDenied` on `GET /wotbtools-temp?location=` and the object request is never sent.
+# That is a bucket-level action, so it cannot live in the read/write document (whose bucket-level
+# statement is prefix-conditioned), and it is its own document for the same reason the rollback
+# grant is separate: growing an applied policy arrives as an in-place update, which the plan guard
+# refuses by design. It grants exactly one read-only action on the bucket resource and no object
+# access at all — the `temp/jobs/*` object scope is still owned solely by the read/write document
+# above, so this document cannot widen what the control plane can read or write.
+resource "minio_iam_policy" "temporary_workspace_control_api_location" {
+  name = "wotbtools-temp-control-api-location"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadTemporaryWorkspaceBucketLocation"
+        Effect   = "Allow"
+        Action   = ["s3:GetBucketLocation"]
+        Resource = [minio_s3_bucket.temporary_workspace.arn]
+      },
+    ]
+  })
+}
+
+resource "minio_iam_user_policy_attachment" "control_api_location" {
+  user_name   = minio_iam_user.control_api.name
+  policy_name = minio_iam_policy.temporary_workspace_control_api_location.name
 }

@@ -67,6 +67,24 @@ class CiPathFilterTest(unittest.TestCase):
         self.assert_surfaces(["deploy/docker-compose.minio.yml"], ["deploy"])
         self.assertEqual(plan["deployServices"], [])
 
+    def test_minio_opentofu_root_runs_deploy_smoke_without_a_runtime_deployment(self):
+        # Every other OpenTofu root selects the deploy smoke job that validates its
+        # plan-safety contract; the MinIO root must do the same, or a policy-only
+        # change reaches main with no validation at all. Provisioning stays manual:
+        # no build and no runtime deployment may be inferred from the root.
+        for path in (
+            "infra/tofu/minio/minio.tf",
+            "infra/tofu/minio/validate-plan.sh",
+            "infra/tofu/minio/test-validate-plan.sh",
+            "infra/tofu/minio/variables.tf",
+        ):
+            plan = detect(path)
+            self.assert_surfaces([path], ["deploy"])
+            self.assertEqual(plan["buildServices"], [], path)
+            self.assertEqual(plan["imageServices"], [], path)
+            self.assertEqual(plan["deployServices"], [], path)
+            self.assertEqual(plan["targetServices"], {}, path)
+
     def test_parser_worker_image_build_never_selects_a_runtime_deployment(self):
         for path, expected_build_services, expected_deploy_services in (
             ("docker/Dockerfile.parser-worker", ["parser-worker"], []),
