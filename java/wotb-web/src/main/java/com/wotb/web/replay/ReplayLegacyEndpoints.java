@@ -7,8 +7,7 @@ import org.springframework.web.server.ResponseStatusException;
  * Replay Processing V2 之后废弃的同步 full-processing HTTP 入口统一契约
  * ：这些端点仍保留路由以便旧客户端/手工请求得到稳定信号，但一律
  * 返回 <b>410 Gone + {@code REPLAY_LEGACY_DEPRECATED}</b>，绝不调用独立 full
- * processing——ReplayParseScheduler 是唯一 CPU budget authority，不存在第二套
- * ReplayCapacityLimiter 并行处理同一产品域。
+ * processing——解析只走 Processing Job 管线，不存在第二套并行处理同一产品域的路径。
  */
 public final class ReplayLegacyEndpoints {
 

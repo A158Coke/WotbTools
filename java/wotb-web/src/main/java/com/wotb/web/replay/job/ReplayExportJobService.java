@@ -38,8 +38,8 @@ import java.util.zip.ZipOutputStream;
  *
  * <p>Create（request 线程）：复用 Replay Processing Job 的已解析
  * {@link ProcessedDataset}（Export 不再接受裸 replay 上传——无
- * {@code processingJobId} 一律 410 {@code REPLAY_LEGACY_DEPRECATED}，绝不绕过
- * {@link ReplayParseScheduler} 创建第二套 full processing）→ 注册 job →
+ * {@code processingJobId} 一律 410 {@code REPLAY_LEGACY_DEPRECATED}，绝不创建第二套
+ * full processing）→ 注册 job →
  * 提交有界 worker 池 → 202。Worker：直接生成 XLSX/ZIP 流式 artifact（不
  * ByteArrayOutputStream 全量驻留）→ READY。无 replay processing，故不获取全局
  * replay 容量许可。</p>
