@@ -7,12 +7,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * AI Review 超时链配置契约：后端常量、application.yml、前端安全超时、nginx、
- * workflow / deploy.sh / compose / .env.example 必须保持一致，防止任一层漂移
+ * workflow / TX compose / .env.example 必须保持一致，防止任一层漂移
  * 重新引入「前端 400s / nginx 420s / 后端 400s」式的旧链路。
+ *
+ * <p>业务运行时在双云 cutover 后由 TX 承载，因此整条超时链的部署锚点是
+ * {@code deploy/tx/docker-compose.yml} 与 {@code deploy.yml} 的 TX job。已退役的 Yecao
+ * {@code deploy/docker-compose.prod.yml} 与 {@code deploy/deploy.sh} 不得再携带这些变量：
+ * 一旦携带，就等于在 Yecao 重新长出一个不受本契约保护的 AI 运行时。
  */
 class AiTimeoutChainContractTest {
 
@@ -52,15 +58,19 @@ class AiTimeoutChainContractTest {
         assertFileContains("deploy.yml",
                 repoPath(".github", "workflows", "deploy.yml"),
                 "AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC: '1100'");
-        assertFileContains("docker-compose.prod.yml",
-                repoPath("deploy", "docker-compose.prod.yml"),
+        assertFileContains("docker-compose.tx.yml",
+                repoPath("deploy", "tx", "docker-compose.yml"),
                 "${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-1100}");
         assertFileContains(".env.example",
                 repoPath(".env.example"),
                 "AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=1100");
-        assertFileContains("deploy.sh fail-fast",
+        // Yecao 宿主只运行 parser-worker 与观测；AI 超时链的部署输入不得回到那里。
+        assertFileDoesNotContain("docker-compose.prod.yml",
+                repoPath("deploy", "docker-compose.prod.yml"),
+                "AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC");
+        assertFileDoesNotContain("deploy.sh",
                 repoPath("deploy", "deploy.sh"),
-                "AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC\" != \"1100\"");
+                "AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC");
     }
 
     /** AI 模型默认值契约：production fallback 与 application default 必须同为 deepseek-v4-flash。 */
@@ -72,12 +82,15 @@ class AiTimeoutChainContractTest {
         assertFileContains(".env.example",
                 repoPath(".env.example"),
                 "AI_MODEL=deepseek-v4-flash");
-        assertFileContains("docker-compose.prod.yml",
-                repoPath("deploy", "docker-compose.prod.yml"),
+        assertFileContains("docker-compose.tx.yml",
+                repoPath("deploy", "tx", "docker-compose.yml"),
                 "AI_MODEL: \"${AI_MODEL:-deepseek-v4-flash}\"");
         assertFileContains("deploy.yml",
                 repoPath(".github", "workflows", "deploy.yml"),
                 "AI_MODEL: ${{ vars.AI_MODEL || 'deepseek-v4-flash' }}");
+        assertFileDoesNotContain("docker-compose.prod.yml",
+                repoPath("deploy", "docker-compose.prod.yml"),
+                "AI_MODEL");
     }
 
     private static void assertFileContains(final String label, final Path file,
@@ -86,5 +99,13 @@ class AiTimeoutChainContractTest {
         final String content = Files.readString(file);
         assertTrue(content.contains(expected),
                 label + " 缺少对齐配置片段: " + expected + "\nfile=" + file);
+    }
+
+    private static void assertFileDoesNotContain(final String label, final Path file,
+                                                 final String unexpected) throws Exception {
+        assertTrue(Files.isRegularFile(file), label + " 文件不存在: " + file);
+        final String content = Files.readString(file);
+        assertFalse(content.contains(unexpected),
+                label + " 不得再携带已退役的 Yecao 运行时配置: " + unexpected + "\nfile=" + file);
     }
 }
