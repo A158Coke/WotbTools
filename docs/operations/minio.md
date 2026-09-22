@@ -84,23 +84,48 @@ deployment's licensing obligations under review before production use.
 
 - private `wotbtools-temp` bucket, protected from destruction;
 - lifecycle expiry for `temp/jobs/` after one day;
-- two application identities, two prefix-scoped policies each for the control
-  plane (read/write plus the delete-only rollback grant), and their attachments.
+- two application identities: `worker` with its own prefix-scoped read/write policy plus its
+  bucket-level location-lookup grant, and `control_api` with a prefix-scoped read/write policy
+  plus its delete-only rollback grant, its bucket-level location-lookup grant, and the
+  matching attachments.
 
 ### Application identities
 
 | Identity | Owner | Access key variable | Object scope |
 |---|---|---|---|
-| `worker` | Yecao parser-worker (parsing execution plane) | `YECAO_MINIO_WORKER_ACCESS_KEY` | `temp/jobs/*`: list + read/write |
-| `control_api` | TX replay control plane (backend) | `YECAO_MINIO_CONTROL_API_ACCESS_KEY` | `temp/jobs/*`: list + read/write + delete (rollback) |
+| `worker` | Yecao parser-worker (parsing execution plane) | `YECAO_MINIO_WORKER_ACCESS_KEY` | `temp/jobs/*`: list + read/write; bucket location lookup |
+| `control_api` | TX replay control plane (backend) | `YECAO_MINIO_CONTROL_API_ACCESS_KEY` | `temp/jobs/*`: list + read/write + delete (rollback); bucket location lookup |
 
 Both read/write policies permit exactly `s3:ListBucket` conditioned on the `temp/jobs/*`
 prefix plus `s3:GetObject` and `s3:PutObject` for objects under that prefix. `HeadObject`
 is authorized by `s3:GetObject`. The control plane's rollback grant
 (`wotbtools-temp-control-api-reclaim`) permits exactly `s3:DeleteObject` on the same
 prefix, and only `control_api` has it: the parsing host cannot remove anything.
-No policy has bucket administration, IAM administration, or unrelated-bucket
-permission.
+
+Bucket administration, IAM administration, and unrelated-bucket permission are absent
+from every policy. The only bucket-level read is the `s3:GetBucketLocation` grant both
+identities hold, which reveals only the bucket's region.
+
+### Bucket location lookup (`s3:GetBucketLocation`)
+
+The MinIO Java SDK resolves the bucket location before every object operation. An
+identity that may `s3:GetObject`/`s3:PutObject` but not `s3:GetBucketLocation` fails
+*before* the object request is sent: MinIO answers `403 AccessDenied` to
+`GET /wotbtools-temp?location=` and the caller sees `PROCESSING_JOB_STORAGE_UNAVAILABLE`
+even though the object prefix is correctly granted.
+
+Both identities therefore hold their own location document —
+`wotbtools-temp-worker-location` and `wotbtools-temp-control-api-location` — whose only
+statement is `s3:GetBucketLocation` on `arn:aws:s3:::wotbtools-temp`: the bucket resource,
+with no condition and no object access. They cannot widen what either identity reads or
+writes, because the `temp/jobs/*` object scope is still owned solely by the read/write and
+reclaim documents, and a location lookup reveals only the bucket's region. The two
+documents are kept separate so each identity's permission set can be rotated or dropped
+alone.
+
+This closes the bucket-location authorization gap for the whole Replay pipeline: both the
+TX control plane and the Yecao parser-worker reach the bucket through the same SDK and
+need the same lookup before their object operations.
 
 The two read/write scopes are identical on purpose. The prefix layout separates object
 kinds (`input/`, `artifacts/`, `result/`), while the identity separates deployments: a
@@ -110,11 +135,14 @@ weaker copy of the ownership that PostgreSQL and the job layout already hold, si
 either side may read inputs and write artifacts for the job it owns.
 
 The policy documents are duplicated in `minio.tf` rather than shared through a
-`locals` block, and the rollback grant is a **third** document instead of one more
-action in the read/write policy: re-expressing an already-applied policy would rewrite
-that resource, which the plan guard refuses as an in-place update.
+`locals` block, and the rollback grant is a **third** control-plane document instead of one
+more action in the read/write policy: re-expressing an already-applied policy would rewrite
+that resource, which the plan guard refuses as an in-place update. Both bucket-location
+grants follow the same rule — each is its own document, so each arrives as a `create` and
+never as an edit of an applied read/write document.
 `infra/tofu/minio/test-validate-plan.sh` plus the CI MinIO smoke pin every scope
-(including the delete-only one) and reject any widened copy.
+(including the delete-only one and both bucket-level location grants) and reject any
+widened copy.
 
 The MinIO provider records the configured application identity secrets as sensitive
 state. State is therefore local to Yecao at
