@@ -704,6 +704,8 @@ jobs:
               'minio_iam_user_policy_attachment.control_api_reclaim',
               'minio_iam_policy.temporary_workspace_control_api_location',
               'minio_iam_user_policy_attachment.control_api_location',
+              'minio_iam_policy.temporary_workspace_worker_location',
+              'minio_iam_user_policy_attachment.worker_location',
           }
           missing = sorted(expected - set(resources))
           assert not missing, missing
@@ -723,10 +725,11 @@ jobs:
               # only delete grant in the root, and the prefix assertion below keeps it inside
               # temp/jobs/*.
               'minio_iam_policy.temporary_workspace_control_api_reclaim': {'s3:DeleteObject'},
-              # The MinIO Java SDK resolves the bucket location before every object operation, so the
-              # control plane needs this one bucket-level action. It grants no object access: the
-              # bucket-resource assertion below pins it to the bucket ARN exactly.
+              # The MinIO Java SDK resolves the bucket location before every object operation, so
+              # both application identities need this one bucket-level action. It grants no object
+              # access: the bucket-resource assertion below pins each to the bucket ARN exactly.
               'minio_iam_policy.temporary_workspace_control_api_location': {'s3:GetBucketLocation'},
+              'minio_iam_policy.temporary_workspace_worker_location': {'s3:GetBucketLocation'},
           }
           for address, expected_actions in expected_policies.items():
               document = json.loads(resources[address]['policy'])
