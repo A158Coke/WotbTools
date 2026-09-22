@@ -1,4 +1,0 @@
-{
-  "service": "wotb-backend",
-  "ports": ["10.20.0.2:8087:8087"]
-}

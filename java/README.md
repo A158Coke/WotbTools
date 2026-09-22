@@ -40,11 +40,11 @@ state 中独立验证，不访问 production state。
 2. 代码质量验证与测试由 PR CI（merge gate）承担；**deploy 不再运行 backend/frontend 测试套件**。
 3. 统一构建并推送 backend/frontend/keycloak 三个 SHA 镜像到 GHCR（tag = `sha-<短 hash>`，确定性构建，无需反复运行测试）。
 4. SSH 部署前先备份 `wotb` 与 `keycloak` 两个数据库，再 `docker compose pull && up -d`。
-5. 部署等待 `wotb-backend` 的 `/api/health` 成功；失败会输出后端/前端日志并让 workflow 失败。
+5. 部署等待目标服务收敛：Yecao 侧判定 `parser-worker` 容器保持存活（该服务无 HTTP 端点、无数据库凭据）；失败会输出 release/affected/service 与日志诊断并让 workflow 失败。
 
-线上 502 排查可手动运行 [`.github/workflows/prod-diagnostics.yml`](../.github/workflows/prod-diagnostics.yml)，读取 VPS compose 状态与后端/前端日志。
+线上排查可手动运行 [`.github/workflows/prod-diagnostics.yml`](../.github/workflows/prod-diagnostics.yml)，读取 VPS compose 状态与 `parser-worker`/观测日志（业务后端日志在 TX）。
 
-> 九个服务：`postgres:18`（数据持久化，卷挂 `/var/lib/postgresql`）→ `keycloak`（认证，`auth.wotbtools.com`）→ `wotb-backend`（Spring Boot 8087，管理端口 8088）→ `wotb-frontend`（nginx + Vue，暴露 8088:80）+ 观测五件套（`prometheus`/`loki`/`alloy`/`grafana`/`node-exporter`，仅 Docker 内部网络）。`paths` 过滤使纯文档 push 不触发部署。
+> Yecao 宿主现在只运行 `parser-worker`（回放解析执行面，无公网端口、无数据库凭据）+ 观测五件套（`prometheus`/`loki`/`alloy`/`grafana`/`node-exporter`，仅 Docker 内部网络）；业务 API、Keycloak、business PostgreSQL 与 frontend 已迁到 TX，由 `deploy/tx/deploy.sh` 管理。`paths` 过滤使纯文档 push 不触发部署。
 
 ## 本地开发
 
