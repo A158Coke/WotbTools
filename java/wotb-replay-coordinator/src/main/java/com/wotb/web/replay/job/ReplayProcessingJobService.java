@@ -316,9 +316,20 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
      * 未 READY / 已清理返回 409 JOB_NOT_READY。
      */
     public PreviewResponse result(final String jobId) {
-        final ProcessedDataset ds = readyDataset(jobId);
-        return Mapper.toPreviewResponse(ds.battles(), ds.battleSourceIds(), ds.battleSourceNames(),
-                ds.duplicates(), ds.failures(), tankopedia, ds.league(), ds.leagueUnavailableCode());
+        return preview(readyDataset(jobId));
+    }
+
+    /**
+     * 把一份 READY dataset 投影为 Preview 响应。
+     *
+     * <p>{@code GET result} 边界在返回前还要在<b>同一份</b> dataset 上做只读旁路副作用，
+     * 因此投影独立出来，避免二次读取对象存储（{@link ReplayProcessingResultReader} 每次读取
+     * 都是一次真实的对象存储往返）。dataset 只读，投影不修改它的任何事实。</p>
+     */
+    public PreviewResponse preview(final ProcessedDataset dataset) {
+        return Mapper.toPreviewResponse(dataset.battles(), dataset.battleSourceIds(),
+                dataset.battleSourceNames(), dataset.duplicates(), dataset.failures(), tankopedia,
+                dataset.league(), dataset.leagueUnavailableCode());
     }
 
     /**

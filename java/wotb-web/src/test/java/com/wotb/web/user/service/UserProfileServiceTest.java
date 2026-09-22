@@ -1,5 +1,7 @@
 package com.wotb.web.user.service;
 
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
@@ -12,6 +14,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -102,6 +106,54 @@ class UserProfileServiceTest {
         profile.setWotbAccountSource("WARGAMING");
         profile.setWotbAccountVerifiedAt(verifiedAt);
         return profile;
+    }
+
+    /** CN / QQ 手动绑定 profile（回放验证的目标形态）。 */
+    private static UserProfile cnProfile(final Long accountId, final String nickname,
+                                         final OffsetDateTime verifiedAt) {
+        final UserProfile profile = new UserProfile();
+        profile.setKeycloakUserId("kc-user");
+        profile.setUsername("qq-user");
+        profile.setWotbServer("CN");
+        profile.setWotbAccountId(accountId);
+        profile.setWotbNickname(nickname);
+        profile.setWotbAccountSource("MANUAL");
+        profile.setWotbAccountVerifiedAt(verifiedAt);
+        return profile;
+    }
+
+    /**
+     * 一场可解析出录像者的战斗：{@code recorderNickname} 对应的名册行 accountId =
+     * {@code recorderAccountId}；{@code otherAccountId} 非 null 时再放一行「同局名册里的另一个账号」。
+     */
+    private static Battle battle(final String recorderNickname, final long recorderAccountId,
+                                 final Long otherAccountId) {
+        final Battle battle = new Battle();
+        battle.recorder = recorderNickname;
+        final List<PlayerResult> players = new ArrayList<>();
+        final PlayerResult recorder = new PlayerResult();
+        recorder.accountId = recorderAccountId;
+        recorder.nickname = recorderNickname;
+        players.add(recorder);
+        if (otherAccountId != null) {
+            final PlayerResult other = new PlayerResult();
+            other.accountId = otherAccountId;
+            other.nickname = "Other";
+            players.add(other);
+        }
+        battle.players = players;
+        return battle;
+    }
+
+    /** 录像者无法解析：meta 昵称在名册里匹配不到任何一行 → recorderResult() = null。 */
+    private static Battle battleWithUnresolvedRecorder(final long rosterAccountId) {
+        final Battle battle = new Battle();
+        battle.recorder = "Recorder";
+        final PlayerResult player = new PlayerResult();
+        player.accountId = rosterAccountId;
+        player.nickname = "SomeoneElse";
+        battle.players = List.of(player);
+        return battle;
     }
 
     // ── ensure：canonical provisioning（无 profile 时创建） ────────────────
@@ -471,5 +523,145 @@ class UserProfileServiceTest {
         assertEquals(1001L, dto.wotbAccountId());
         assertEquals("CNName", dto.wotbNickname());
         assertEquals("MANUAL", dto.wotbAccountSource());
+    }
+
+    // ── 回放录制者验证：只有「数值 accountId 相等」才通过 ──────────────────
+
+    @Test
+    void replayRecordedByTheBoundAccountVerifiesIt() {
+        final UserProfile profile = cnProfile(123L, "CNName", null);
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+
+        service.verifyBoundAccountFromReplay("kc-user", List.of(battle("Recorder", 123L, null)));
+
+        assertNotNull(profile.getWotbAccountVerifiedAt());
+        verify(repository).save(profile);
+    }
+
+    @Test
+    void replayRecordedByAnotherAccountLeavesTheBindingUnverified() {
+        final UserProfile profile = cnProfile(123L, "CNName", null);
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+
+        service.verifyBoundAccountFromReplay("kc-user", List.of(battle("Recorder", 456L, null)));
+
+        assertNull(profile.getWotbAccountVerifiedAt());
+        verify(repository, never()).save(any(UserProfile.class));
+    }
+
+    @Test
+    void batchWithOneReplayFromTheBoundAccountVerifiesIt() {
+        // 多文件批次里只有一场是本人录制的：任一场匹配即成立，不必是第一场。
+        final UserProfile profile = cnProfile(123L, "CNName", null);
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+
+        service.verifyBoundAccountFromReplay("kc-user",
+                List.of(battle("Friend", 456L, null), battle("Recorder", 123L, null)));
+
+        assertNotNull(profile.getWotbAccountVerifiedAt());
+    }
+
+    @Test
+    void replayWithUnresolvedRecorderLeavesTheBindingUnverified() {
+        final UserProfile profile = cnProfile(123L, "CNName", null);
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+
+        service.verifyBoundAccountFromReplay("kc-user", List.of(battleWithUnresolvedRecorder(123L)));
+        service.verifyBoundAccountFromReplay("kc-user", List.of());
+        service.verifyBoundAccountFromReplay("kc-user", null);
+
+        assertNull(profile.getWotbAccountVerifiedAt());
+        verify(repository, never()).save(any(UserProfile.class));
+    }
+
+    @Test
+    void accountPresentInRosterButNotTheRecorderMustNotVerify() {
+        // bound = 123 而 123 确实在这份回放的名册里，但录像者是 456：名册出现不等于录制者。
+        final UserProfile profile = cnProfile(123L, "CNName", null);
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+
+        service.verifyBoundAccountFromReplay("kc-user", List.of(battle("Recorder", 456L, 123L)));
+
+        assertNull(profile.getWotbAccountVerifiedAt());
+        verify(repository, never()).save(any(UserProfile.class));
+    }
+
+    @Test
+    void unauthenticatedOrUnboundUserIsNeverVerified() {
+        final UserProfile unbound = cnProfile(null, null, null);
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(unbound));
+
+        service.verifyBoundAccountFromReplay(null, List.of(battle("Recorder", 123L, null)));
+        service.verifyBoundAccountFromReplay("kc-user", List.of(battle("Recorder", 123L, null)));
+
+        assertNull(unbound.getWotbAccountVerifiedAt());
+        verify(repository, never()).save(any(UserProfile.class));
+    }
+
+    @Test
+    void alreadyVerifiedAccountKeepsItsFirstVerificationTimestamp() {
+        final OffsetDateTime firstVerifiedAt = OffsetDateTime.parse("2026-03-03T03:03:03Z");
+        final UserProfile profile = cnProfile(123L, "CNName", firstVerifiedAt);
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+
+        service.verifyBoundAccountFromReplay("kc-user", List.of(battle("Recorder", 123L, null)));
+
+        assertEquals(firstVerifiedAt, profile.getWotbAccountVerifiedAt());
+        verify(repository, never()).save(any(UserProfile.class));
+    }
+
+    // ── 绑定身份变化使验证失效 ────────────────────────────────────────────
+
+    @Test
+    void switchingTheBoundAccountClearsReplayVerification() {
+        final UserProfile profile = cnProfile(123L, "CNName",
+                OffsetDateTime.parse("2026-03-03T03:03:03Z"));
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+        when(repository.existsByWotbServerAndWotbAccountIdAndKeycloakUserIdNot(
+                "CN", 456L, "kc-user")).thenReturn(false);
+
+        final UserProfileDto dto = service.updateWotbAccount("kc-user", 456L, "NewName", "CN");
+
+        assertEquals(456L, dto.wotbAccountId());
+        assertNull(dto.wotbAccountVerifiedAt(), "换绑后旧的验证不得存活");
+    }
+
+    @Test
+    void unbindingTheAccountClearsReplayVerification() {
+        final UserProfile profile = cnProfile(123L, "CNName",
+                OffsetDateTime.parse("2026-03-03T03:03:03Z"));
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+
+        final UserProfileDto dto = service.deleteWotbAccount("kc-user");
+
+        assertNull(dto.wotbAccountId());
+        assertNull(dto.wotbAccountVerifiedAt());
+    }
+
+    @Test
+    void nicknameOnlyEditKeepsReplayVerification() {
+        final OffsetDateTime verifiedAt = OffsetDateTime.parse("2026-03-03T03:03:03Z");
+        final UserProfile profile = cnProfile(123L, "OldName", verifiedAt);
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+        when(repository.existsByWotbServerAndWotbAccountIdAndKeycloakUserIdNot(
+                "CN", 123L, "kc-user")).thenReturn(false);
+
+        final UserProfileDto dto = service.updateWotbAccount("kc-user", 123L, "NewName", "CN");
+
+        assertEquals("NewName", dto.wotbNickname());
+        assertEquals(verifiedAt, dto.wotbAccountVerifiedAt(), "与账号身份无关的资料修改不得清空验证");
+    }
+
+    @Test
+    void ensureDoesNotDisturbReplayVerification() {
+        final OffsetDateTime verifiedAt = OffsetDateTime.parse("2026-03-03T03:03:03Z");
+        when(repository.findByKeycloakUserId("kc-user"))
+                .thenReturn(Optional.of(cnProfile(123L, "CNName", verifiedAt)));
+
+        final UserProfileDto dto = service.ensureCurrentProfile("kc-user", "qq-user", "New Display Name");
+
+        assertEquals(123L, dto.wotbAccountId());
+        assertEquals(verifiedAt, dto.wotbAccountVerifiedAt());
+        verify(repository, never()).saveAndFlush(any(UserProfile.class));
     }
 }
