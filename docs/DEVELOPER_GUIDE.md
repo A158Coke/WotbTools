@@ -148,8 +148,6 @@ docs-only 变更不运行 validation job（仅保留 selector 与 Required Gate�
 
  Future async foundation (independent path)
  wotb-contracts                 # 纯 Java contracts；不泄漏到当前 Web/Android DTO
-        ↓
- wotb-control                   # 独立管理面 artifact；不依赖 wotb-core
 ```
 
 核心原则：Preview、Export、League、AI/重建消费同一套权威 replay facts，禁止为了某个 UI/导出再造第二套解析/评分公式。
@@ -800,7 +798,7 @@ Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb/config/sponsor-config.j
 ## 测试策略
 
 - Java：JUnit 5 / Mockito；业务单测不要启动真实 Keycloak。
-- 新基础模块：`mvn -s settings.xml -pl wotb-contracts -am test` 或 `mvn -s settings.xml -pl wotb-control -am package`；contracts production classes must remain free of Spring, persistence, broker, storage and provider SDK dependencies。Control API 的 `8090/8091` 端口与现有 `wotb-web` 独立；集成验收必须使用真实 PostgreSQL Testcontainers 与独立 management port smoke。
+- 新基础模块：`mvn -s settings.xml -pl wotb-contracts -am test`；contracts production classes must remain free of Spring, persistence, broker, storage and provider SDK dependencies。Control API 的 `8090/8091` 端口与现有 `wotb-web` 独立；集成验收必须使用真实 PostgreSQL Testcontainers 与独立 management port smoke。
 - Keycloak Admin API 通过 `KeycloakAdminUserService` 封装后 mock。
 - **架构测试（ArchUnit）**：`wotb-core` 与 `wotb-web` 各含 `*ArchitectureTest`
   （`com.wotb.core.architecture` / `com.wotb.web.architecture`），随 `mvn test` 自动执行；

@@ -379,8 +379,5 @@ benchmark did not change production admission values or replay concurrency.
 - `mvn -o -s settings.xml -pl wotb-web -am test`: passed; `wotb-core` had
   1,255 tests with 0 failures/errors and `wotb-web` had 1,336 tests with 0
   failures/errors (skips are reported by Maven).
-- Full reactor `mvn ... test` reached `wotb-control`, but its Docker-backed
-  integration test could not start because no local Docker daemon was
-  available. This remains a CI validation requirement.
 - The backend image build was not run locally for the same Docker-daemon
   limitation; CI must validate the Temurin OpenJDK 25 build/runtime images.

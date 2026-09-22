@@ -21,7 +21,6 @@
         <module>wotb-replay-processing</module>
         <module>wotb-parser-worker</module>
         <module>wotb-ai</module>
-        <module>wotb-control</module>
         <module>wotb-web</module>
     </modules>
 
