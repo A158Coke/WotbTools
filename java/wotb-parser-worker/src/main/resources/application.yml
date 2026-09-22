@@ -27,7 +27,9 @@ wotb:
     confirm-timeout-seconds: ${PARSER_WORKER_CONFIRM_TIMEOUT_SEC:10}
     shutdown-timeout-seconds: ${PARSER_WORKER_SHUTDOWN_TIMEOUT_SEC:30}
     minio:
-      endpoint: ${MINIO_ENDPOINT:10.20.0.2:9000}
+      # 缺省值 = Docker 服务发现：worker 与 MinIO 同处 `wotb_internal`，因此直接解析服务名。
+      # `10.20.0.2:9000` 是 TX 控制面经 WireGuard 访问同一 MinIO 的地址，不是 worker 的地址。
+      endpoint: ${MINIO_ENDPOINT:minio:9000}
       bucket: ${MINIO_BUCKET:wotbtools-temp}
       access-key: ${MINIO_ACCESS_KEY}
       secret-key: ${MINIO_SECRET_KEY}
