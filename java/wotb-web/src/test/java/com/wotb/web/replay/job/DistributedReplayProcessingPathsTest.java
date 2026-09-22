@@ -1,5 +1,9 @@
 package com.wotb.web.replay.job;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.wotb.contracts.ObjectKey;
 import com.wotb.contracts.ObjectStorage;
 import com.wotb.contracts.ReplayProcessingDispatcher;
@@ -12,6 +16,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
@@ -122,15 +127,86 @@ class DistributedReplayProcessingPathsTest {
     void partialInputWriteFailureRollsBackTheAlreadyWrittenInputs() throws Exception {
         storage.putFailureAt = 1;
 
-        assertThrows(IllegalStateException.class, () -> service.createJob(
+        final IllegalStateException failure = assertThrows(IllegalStateException.class, () -> service.createJob(
                 new MultipartFile[]{file("a.wotbreplay"), file("b.wotbreplay")}, 0, null, null));
 
+        assertEquals("PROCESSING_JOB_STORAGE_UNAVAILABLE", failure.getMessage(),
+                "输入持久化失败必须保持稳定错误语义");
         assertTrue(storage.objects.isEmpty(),
                 "半途失败的 create 必须删除已写入的输入: " + storage.objects.keySet());
         assertTrue(dispatcher.requests.isEmpty(), "输入都没写完整就绝不能派发");
         try (var entries = Files.list(tempDir)) {
             assertEquals(0, entries.count(), "本地 job 目录同样必须被回收");
         }
+    }
+
+    /**
+     * 生产形状（本次 observability 修复针对的路径）：第 1 个输入已写、第 2 个 put 失败 →
+     * create 抛 {@code IOException} → 回滚 delete 同时也被拒绝。回滚失败只记录日志，
+     * <b>绝不</b>替换原始 create 失败，也绝不改变「不登记 job、不派发」的回滚语义——
+     * 观测增强不能顺手改变 create 语义。
+     */
+    @Test
+    void persistFailureKeepsStorageUnavailableWhenRollbackAlsoFails() throws Exception {
+        storage.putFailureAt = 1;
+        storage.deleteFailure = new IOException("simulated delete denied");
+
+        final IllegalStateException failure = assertThrows(IllegalStateException.class, () -> service.createJob(
+                new MultipartFile[]{file("a.wotbreplay"), file("b.wotbreplay")}, 0, null, null));
+
+        assertEquals("PROCESSING_JOB_STORAGE_UNAVAILABLE", failure.getMessage(),
+                "回滚失败必须被吞掉并记录，绝不替换原始 create 失败的稳定 error code");
+        assertTrue(dispatcher.requests.isEmpty(), "输入都没写完整就绝不能派发");
+        assertEquals(1, storage.objects.size(),
+                "delete 被拒时第 1 个输入残留是既有语义（桶生命周期兜底），本次改动不得改变它");
+        try (var entries = Files.list(tempDir)) {
+            assertEquals(0, entries.count(), "本地 job 目录必须被回收");
+        }
+    }
+
+    /**
+     * 诊断契约：原始 input 持久化失败与回滚失败必须是两个可区分的事件，且各自带完整
+     * {@code Throwable}——{@code getMessage()} 拿不到 MinIO/S3 error code，只有 cause chain 里才有。
+     */
+    @Test
+    void createFailureLogsKeepTheOriginalPersistFailureAndTheDiscardFailureApart() throws Exception {
+        storage.putFailureAt = 1;
+        storage.putFailure = new IOException("MinIO put failed for object input/0/a.wotbreplay",
+                new IOException("AccessDenied"));
+        storage.deleteFailure = new IOException("simulated delete denied");
+        final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        final Logger logger = (Logger) LoggerFactory.getLogger(ReplayProcessingJobService.class);
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertThrows(IllegalStateException.class, () -> service.createJob(
+                    new MultipartFile[]{file("a.wotbreplay"), file("b.wotbreplay")}, 0, null, null));
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        final ILoggingEvent persist = singleEvent(appender, "replay_processing_input_persist_failed");
+        final ILoggingEvent discard = singleEvent(appender, "replay_processing_input_discard_failed");
+        assertEquals(Level.WARN, persist.getLevel());
+        assertEquals(Level.WARN, discard.getLevel());
+        assertNotNull(persist.getThrowableProxy(),
+                "persist 失败必须用 SLF4J Throwable overload，否则看不到底层存储错误");
+        assertNotNull(discard.getThrowableProxy(),
+                "discard 失败必须用 SLF4J Throwable overload，否则看不到底层存储错误");
+        assertEquals(IOException.class.getName(), persist.getThrowableProxy().getClassName());
+        assertNotNull(persist.getThrowableProxy().getCause(),
+                "原始失败的完整 cause chain 必须保留");
+        assertEquals("AccessDenied", persist.getThrowableProxy().getCause().getMessage(),
+                "cause chain 的底层 S3 error message 必须原样保留（getMessage() 拿不到它）");
+    }
+
+    /** 恰好一条含该 event 的日志；多于/少于一条都直接失败（避免重复记录或吞掉）。 */
+    private static ILoggingEvent singleEvent(final ListAppender<ILoggingEvent> appender, final String event) {
+        final List<ILoggingEvent> matched = appender.list.stream()
+                .filter(e -> e.getFormattedMessage().contains("event=" + event))
+                .toList();
+        assertEquals(1, matched.size(), "event=" + event + " 必须恰好一次，实际日志: " + appender.list);
+        return matched.getFirst();
     }
 
     /** 权威登记失败：输入已经在对象存储里，必须连带回滚，且不留下任何 job。 */
