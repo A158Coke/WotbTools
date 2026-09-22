@@ -61,7 +61,9 @@ write_plan initial-create "{\"resource_changes\":[
   {\"address\":\"minio_iam_policy.temporary_workspace_control_api\",\"change\":{\"actions\":[\"create\"]}},
   {\"address\":\"minio_iam_user_policy_attachment.control_api\",\"change\":{\"actions\":[\"create\"]}},
   {\"address\":\"minio_iam_policy.temporary_workspace_control_api_reclaim\",\"change\":{\"actions\":[\"create\"]}},
-  {\"address\":\"minio_iam_user_policy_attachment.control_api_reclaim\",\"change\":{\"actions\":[\"create\"]}}
+  {\"address\":\"minio_iam_user_policy_attachment.control_api_reclaim\",\"change\":{\"actions\":[\"create\"]}},
+  {\"address\":\"minio_iam_policy.temporary_workspace_control_api_location\",\"change\":{\"actions\":[\"create\"]}},
+  {\"address\":\"minio_iam_user_policy_attachment.control_api_location\",\"change\":{\"actions\":[\"create\"]}}
 ]}"
 
 # Adding only the second identity on an already-provisioned bucket is a
@@ -84,6 +86,14 @@ write_plan control-api-reclaim-added "{\"resource_changes\":[
   {\"address\":\"minio_iam_user_policy_attachment.control_api_reclaim\",\"change\":{\"actions\":[\"create\"]}}
 ]}"
 
+# The GetBucketLocation grant follows the same create-only sequence on the already
+# provisioned identity: the SDK's bucket-location lookup is a new document, never an
+# edit of the applied read/write or reclaim documents.
+write_plan control-api-location-added "{\"resource_changes\":[
+  {\"address\":\"minio_iam_policy.temporary_workspace_control_api_location\",\"change\":{\"actions\":[\"create\"]}},
+  {\"address\":\"minio_iam_user_policy_attachment.control_api_location\",\"change\":{\"actions\":[\"create\"]}}
+]}"
+
 write_plan second-plan-noop "{\"resource_changes\":[
   {\"address\":\"minio_s3_bucket.temporary_workspace\",\"change\":{\"actions\":[\"no-op\"]}},
   {\"address\":\"minio_s3_bucket_lifecycle.temporary_jobs\",\"change\":{\"actions\":[\"no-op\"]}},
@@ -94,7 +104,9 @@ write_plan second-plan-noop "{\"resource_changes\":[
   {\"address\":\"minio_iam_policy.temporary_workspace_control_api\",\"change\":{\"actions\":[\"no-op\"]}},
   {\"address\":\"minio_iam_user_policy_attachment.control_api\",\"change\":{\"actions\":[\"no-op\"]}},
   {\"address\":\"minio_iam_policy.temporary_workspace_control_api_reclaim\",\"change\":{\"actions\":[\"no-op\"]}},
-  {\"address\":\"minio_iam_user_policy_attachment.control_api_reclaim\",\"change\":{\"actions\":[\"no-op\"]}}
+  {\"address\":\"minio_iam_user_policy_attachment.control_api_reclaim\",\"change\":{\"actions\":[\"no-op\"]}},
+  {\"address\":\"minio_iam_policy.temporary_workspace_control_api_location\",\"change\":{\"actions\":[\"no-op\"]}},
+  {\"address\":\"minio_iam_user_policy_attachment.control_api_location\",\"change\":{\"actions\":[\"no-op\"]}}
 ]}"
 
 write_plan control-api-user-delete '{"resource_changes":[{"address":"minio_iam_user.control_api","change":{"actions":["delete"]}}]}'
@@ -117,10 +129,13 @@ write_plan control-api-policy-condition-dropped '{"resource_changes":[{"address"
 write_plan control-api-attachment-repointed '{"resource_changes":[{"address":"minio_iam_user_policy_attachment.control_api","change":{"actions":["update"]}}]}'
 write_plan control-api-reclaim-delete '{"resource_changes":[{"address":"minio_iam_policy.temporary_workspace_control_api_reclaim","change":{"actions":["delete"]}}]}'
 write_plan control-api-reclaim-scope-widened '{"resource_changes":[{"address":"minio_iam_policy.temporary_workspace_control_api_reclaim","change":{"actions":["update"]}}]}'
+write_plan control-api-location-delete '{"resource_changes":[{"address":"minio_iam_policy.temporary_workspace_control_api_location","change":{"actions":["delete"]}}]}'
+write_plan control-api-location-attachment-repointed '{"resource_changes":[{"address":"minio_iam_user_policy_attachment.control_api_location","change":{"actions":["update"]}}]}'
 
 assert_passes initial-create
 assert_passes control-api-added
 assert_passes control-api-reclaim-added
+assert_passes control-api-location-added
 assert_passes second-plan-noop --require-no-changes
 assert_rejects control-api-user-delete "$DESTRUCTIVE_RULE"
 assert_rejects control-api-policy-delete "$DESTRUCTIVE_RULE"
@@ -137,8 +152,11 @@ assert_rejects control-api-policy-condition-dropped "$DESTRUCTIVE_RULE"
 assert_rejects control-api-attachment-repointed "$DESTRUCTIVE_RULE"
 assert_rejects control-api-reclaim-delete "$DESTRUCTIVE_RULE"
 assert_rejects control-api-reclaim-scope-widened "$DESTRUCTIVE_RULE"
+assert_rejects control-api-location-delete "$DESTRUCTIVE_RULE"
+assert_rejects control-api-location-attachment-repointed "$DESTRUCTIVE_RULE"
 assert_rejects control-api-added "$SECOND_PLAN_RULE" --require-no-changes
 assert_rejects control-api-reclaim-added "$SECOND_PLAN_RULE" --require-no-changes
+assert_rejects control-api-location-added "$SECOND_PLAN_RULE" --require-no-changes
 assert_rejects initial-create "$SECOND_PLAN_RULE" --require-no-changes
 
 echo "MinIO OpenTofu plan safety policy contract OK"
