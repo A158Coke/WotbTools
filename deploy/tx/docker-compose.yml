@@ -166,10 +166,8 @@ services:
       KEYCLOAK_ADMIN_REALM: wotbtools
       KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:?KEYCLOAK_ADMIN_CLIENT_SECRET is required}
-      # Distributed replay execution: never parse in this process, never keep a
-      # local job authority, always dispatch through RabbitMQ, always read and
-      # write datasets through MinIO. An unknown mode fails the context at start.
-      WOTB_REPLAY_EXECUTION_MODE: distributed
+      # Replay control plane: never parse in this process, always dispatch through
+      # RabbitMQ, always read and write datasets through MinIO.
       WOTB_REPLAY_PROCESSING_JOB_REPOSITORY: jdbc
       # MinIO stays on Yecao and is reached over the existing WireGuard link with
       # the dedicated control_api identity (temp/jobs/* only).
@@ -214,8 +212,6 @@ services:
       AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC: "${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-1100}"
       REPLAY_COORDINATE_HALF_EXTENT: "${REPLAY_COORDINATE_HALF_EXTENT:-250}"
       REPLAY_COORDINATE_CLAMP_TOLERANCE: "${REPLAY_COORDINATE_CLAMP_TOLERANCE:-12.5}"
-      REPLAY_PARSE_MAX_CONCURRENT: "${REPLAY_PARSE_MAX_CONCURRENT:-2}"
-      REPLAY_PARSE_QUEUE_CAPACITY: "${REPLAY_PARSE_QUEUE_CAPACITY:-200}"
       REPLAY_ARTIFACT_MAX_CONCURRENT: "${REPLAY_ARTIFACT_MAX_CONCURRENT:-1}"
       # Export artifacts are single-container temporary data: the generating
       # process and /download live in this same container, so no object storage

@@ -65,13 +65,18 @@ if [ "${FAKE_BUSINESS_PORT_EXPOSED:-0}" = 1 ]; then
   business_ports='[{"host_ip":"0.0.0.0","published":25432,"target":5432}]'
 fi
 frontend_upstream="${FAKE_FRONTEND_UPSTREAM:-http://business-api:8087}"
-execution_mode="${FAKE_EXECUTION_MODE:-distributed}"
+# The retired replay execution-mode switch must be absent from a healthy compose; setting
+# FAKE_EXECUTION_MODE injects it back to prove the deploy guard still fails closed.
+execution_mode_field=""
+if [ -n "${FAKE_EXECUTION_MODE:-}" ]; then
+  execution_mode_field=",\"WOTB_REPLAY_EXECUTION_MODE\":\"${FAKE_EXECUTION_MODE}\""
+fi
 job_repository="${FAKE_JOB_REPOSITORY:-jdbc}"
 business_api_ports="${FAKE_BUSINESS_API_PUBLISHED_PORT:-[]}"
 case "${1:-}" in
   config)
-    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{"WOTB_REPLAY_EXECUTION_MODE":"%s","WOTB_REPLAY_PROCESSING_JOB_REPOSITORY":"%s"}}}}\n' \
-      "$business_ports" "$frontend_upstream" "$business_api_ports" "$execution_mode" "$job_repository"
+    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{"WOTB_REPLAY_PROCESSING_JOB_REPOSITORY":"%s"%s}}}}\n' \
+      "$business_ports" "$frontend_upstream" "$business_api_ports" "$job_repository" "$execution_mode_field"
     ;;
   ps)
     if [[ "$*" == *business-postgres* ]]; then
@@ -383,8 +388,8 @@ run_gate_failure "business-api-published-port" 'tx-internal-api-route: FAIL' \
   FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"0.0.0.0","published":8087,"target":8087}]'
 run_gate_failure "relocated-frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
   "" "$RELOCATED_ROOT/deploy/pre-cutover-check.sh" env FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
-run_gate_failure "local-execution-plane" 'distributed-execution-plane: FAIL' \
-  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_EXECUTION_MODE=local
+run_gate_failure "retired-execution-mode-switch" 'distributed-execution-plane: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_EXECUTION_MODE=distributed
 run_gate_failure "memory-job-authority" 'distributed-execution-plane: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_JOB_REPOSITORY=memory
 

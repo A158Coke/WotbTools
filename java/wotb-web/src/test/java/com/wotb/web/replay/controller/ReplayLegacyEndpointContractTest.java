@@ -9,8 +9,7 @@ import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.job.ExportJobStore;
 import com.wotb.web.replay.job.ReplayExportJobService;
 import com.wotb.web.replay.job.ReplayExportWorkerExecutor;
-import com.wotb.web.replay.job.ReplayParseScheduler;
-import com.wotb.web.replay.job.LocalReplayDatasetRepository;
+import com.wotb.web.replay.job.InMemoryReplayDatasetRepository;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import com.wotb.web.replay.service.ReplayService;
 import org.junit.jupiter.api.Test;
@@ -36,11 +35,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
- * 架构/契约测试：ReplayParseScheduler 是唯一 full-processing CPU budget
- * authority——public/anonymous 与 authenticated 的 legacy 同步端点一律稳定 410
- * {@code REPLAY_LEGACY_DEPRECATED}，绝不创建 scheduler 之外的 full processing；
- * 控制器/服务不再持有 processingFacade，不存在第二套 ReplayCapacityLimiter 并行
- * 处理同一 Replay Processing 产品域。
+ * 架构/契约测试：full processing 唯一入口是 Processing Job 管线——public/anonymous 与
+ * authenticated 的 legacy 同步端点一律稳定 410 {@code REPLAY_LEGACY_DEPRECATED}，绝不创建
+ * 第二套 full processing；控制器/服务不再持有 processingFacade。
  */
 class ReplayLegacyEndpointContractTest {
 
@@ -101,7 +98,7 @@ class ReplayLegacyEndpointContractTest {
         final ReplayExportJobService service = new ReplayExportJobService(
                 mock(ExportJobStore.class), mock(ReplayExportWorkerExecutor.class),
                 mock(ReplayProcessingJobStore.class),
-                new LocalReplayDatasetRepository(mock(ReplayProcessingJobStore.class)), null);
+                new InMemoryReplayDatasetRepository(), null);
         final ResponseStatusException e = assertThrows(ResponseStatusException.class,
                 () -> service.createJob("aggregate", null));
         assertEquals(HttpStatus.GONE, e.getStatusCode());
@@ -113,7 +110,7 @@ class ReplayLegacyEndpointContractTest {
         for (final Class<?> c : List.of(ReplayController.class, ReconstructionController.class, ReplayService.class)) {
             assertFalse(Arrays.stream(c.getDeclaredFields())
                             .anyMatch(f -> f.getType() == DefaultReplayProcessingFacade.class),
-                    c.getSimpleName() + " 不得直接依赖 processingFacade（full processing 唯一入口 = ReplayParseScheduler）");
+                    c.getSimpleName() + " 不得直接依赖 processingFacade（full processing 唯一入口 = Processing Job 管线）");
         }
     }
 
@@ -126,7 +123,7 @@ class ReplayLegacyEndpointContractTest {
     }
 
     @Test
-    void concurrentLegacyCallsAllReturnGoneAndSchedulerStaysIdle() throws Exception {
+    void concurrentLegacyCallsAllReturnGone() throws Exception {
         final ReplayController replayController = new ReplayController(mock(ReplayService.class));
         final ReconstructionController reconController = new ReconstructionController(
                 mock(AiReplayReviewService.class),
@@ -136,9 +133,8 @@ class ReplayLegacyEndpointContractTest {
         final ReplayExportJobService exportService = new ReplayExportJobService(
                 mock(ExportJobStore.class), mock(ReplayExportWorkerExecutor.class),
                 mock(ReplayProcessingJobStore.class),
-                new LocalReplayDatasetRepository(mock(ReplayProcessingJobStore.class)), null);
-        final ReplayParseScheduler scheduler = new ReplayParseScheduler(2, 200);
-        try {
+                new InMemoryReplayDatasetRepository(), null);
+        {
             final int calls = 200;
             final int endpoints = 6;
             final CountDownLatch start = new CountDownLatch(1);
@@ -189,12 +185,7 @@ class ReplayLegacyEndpointContractTest {
             pool.shutdown();
             assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS));
             assertEquals((long) calls * endpoints, gone.get(),
-                    "并发调用不同 replay API 时全部必须稳定 410（零 full processing 进入 scheduler 之外）");
-            assertEquals(0, scheduler.activeSources(), "scheduler 不得被 legacy 调用激活");
-            assertEquals(0, scheduler.queuedSources());
-            assertEquals(0, scheduler.queuedJobs());
-        } finally {
-            scheduler.close();
+                    "并发调用不同 replay API 时全部必须稳定 410（零 full processing 被触发）");
         }
     }
 

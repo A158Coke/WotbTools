@@ -529,7 +529,7 @@ completion、回放内容或用户/玩家标识。
 
 ```
 .wotbreplay → POST /api/replay/processing-jobs（上传输入持久化；202 + jobId）
-  → ReplayParseScheduler（全局并发=2、job-aware 公平、queued cancellation）
+  → RabbitMQ parser.request → Yecao parser-worker（AMQP consumer 并发，prefetch 有界）
        └─ per-source processFull = parse + reconstruct + enrich（Parse once / consume many）
             ├─ ProcessedDataset（battles / aggregates / League Rating）
             ├─ ai-facts.json（AI Review derived artifact）

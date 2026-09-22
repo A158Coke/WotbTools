@@ -12,7 +12,6 @@ import com.wotb.web.replay.job.ObjectStorageReplayDatasetRepository;
 import com.wotb.web.replay.job.ObjectStorageReplayJobWorkspaceCleaner;
 import com.wotb.web.replay.job.PostgresParserOutcomeHandler;
 import com.wotb.web.replay.job.ReplayBatchFinalization;
-import com.wotb.web.replay.job.ReplayExecutionMode;
 import com.wotb.web.replay.job.ReplayJobAuthority;
 import com.wotb.web.replay.job.ReplayJobWorkspaceCleaner;
 import com.wotb.web.replay.job.ReplayProcessingInputStore;
@@ -27,30 +26,25 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
 
 /**
- * 分布式回放控制面装配（{@code wotb.replay.execution.mode=distributed}）。
+ * 分布式回放控制面装配（对象存储 + AMQP + PostgreSQL 权威状态）。
  *
  * <p><b>位置</b>：放在 replay 域内而不是共享 {@code com.wotb.web.config}——共享 config 与各域之间由
  * {@code WebArchitectureTest} 保证无环（{@code com.wotb.web.(*)..} free of cycles），而 replay 域
  * 已经依赖共享 config（{@code ApiPaths}），共享 config 反向依赖 replay 会成环。</p>
  *
- * <p><b>缺省不创建任何 bean</b>：整类由 {@code @ConditionalOnProperty} 门控，属性缺失（local）时
- * 连一个 bean definition 都不会注册；local 执行组件（{@code ReplayParseScheduler} /
- * {@code LocalReplayProcessingDispatcher} / {@code LocalReplayProcessingExecutor}）在分布式模式下
- * 反向关闭，因此两种模式的执行平面永远只有一套。</p>
+ * <p><b>唯一执行平面</b>：进程内（local）执行组件已退出正式架构，本类不再需要条件门控——
+ * 这里的 bean 集合就是生产的控制面装配。</p>
  *
  * <p><b>不声明拓扑</b>：exchange/queue/binding 的唯一所有者仍是 {@code infra/tofu/rabbitmq}，
  * 本类只把已有 adapter 接到连接上。</p>
  */
 @Configuration
-@ConditionalOnProperty(name = ReplayExecutionMode.PROPERTY,
-        havingValue = ReplayExecutionMode.DISTRIBUTED_VALUE)
 public class ReplayDistributedConfig {
 
     /** 结果消费是权威投影的全量替换，必须单线程：并发 apply 会互相覆盖 source 投影。 */
@@ -173,7 +167,7 @@ public class ReplayDistributedConfig {
             @Value("${wotb.replay.retry.max-attempts:3}") final int maxAttempts) {
         final ReplayJobAuthority authority = replayJobAuthority.getIfAvailable();
         if (authority == null) {
-            throw new IllegalStateException("wotb.replay.execution.mode=distributed requires "
+            throw new IllegalStateException("replay processing requires "
                     + "wotb.replay.processing-job.repository=jdbc (PostgreSQL job authority)");
         }
         return new PostgresParserOutcomeHandler(replayProcessingJobStore, authority,

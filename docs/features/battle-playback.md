@@ -13,7 +13,7 @@ schema 从该文件生成。Java domain facts 通过显式 mapper 投影为 wire
 
 > 增加 V2 契约 `BattlePlaybackDataset`：`POST /api/replay/battle-playback-v2`
 > （`Content-Type: application/json`，body `{ processingJobId, sourceId }`）→
-> `MapOverviewQueryService.buildBattlePlaybackFromDataset` → `ReplayArtifactWriter.readBattlePlaybackV2`
+> `MapOverviewQueryService.buildBattlePlaybackFromDataset` → `ReplayArtifactWriter.decodeBattlePlaybackV2`
 > → 前端 `BattlePlayback.vue` 的 V2 检查器（`V2VehicleInspector`）。
 
 ### 前端职责边界
@@ -97,7 +97,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 
 战局回放面板读取同一 Processing Dataset 的 `map-overview.json` derived artifact：
 `POST /api/replay/map-overview`（`Content-Type: application/json`，body `{ processingJobId, sourceId }`）
-→ `MapOverviewQueryService.buildOverviewFromDataset` → `ReplayArtifactWriter.readMapOverview` →
+→ `MapOverviewQueryService.buildOverviewFromDataset` → `ReplayArtifactWriter.decodeMapOverview` →
 前端 `MapOverview.vue` 纯 SVG 渲染热力辅助视图。后端 overview 中的 `routes` 聚合字段及其
 采样合同继续保留，供后续能力与兼容消费者使用；本轮只移除用户可见的路线视图、筛选和图例。
 - **不重新上传 replay、不单独 full-process**：AI Review / Battle Playback / Export 共用同一 Processing Dataset。

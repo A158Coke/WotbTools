@@ -5,7 +5,7 @@ import com.wotb.web.replay.dto.MapOverview;
 import com.wotb.web.replay.job.ProcessedDataset;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
-import com.wotb.web.replay.job.LocalReplayDatasetRepository;
+import com.wotb.web.replay.job.InMemoryReplayDatasetRepository;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -36,17 +36,21 @@ class MapOverviewQueryServiceTest {
                 2, 123L);
     }
 
-    /** 建一个已注册 source#0 的 Processing Job store；按 {@code status} 置位 source 状态，可选写 map-overview.json。 */
+    /** 当前测试的 artifact 读取替身（由 {@link #storeWithJob} 装配）。 */
+    private InMemoryReplayDatasetRepository reader;
+
+    /** 建一个已注册 source#0 的 Processing Job store；按 {@code status} 置位 source 状态，可选放 map-overview artifact。 */
     private ReplayProcessingJobStore storeWithJob(final Path dir, final ReplayProcessingJob.SourceStatus status,
                                                   final boolean writeMapFile) throws Exception {
         final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60);
+        reader = new InMemoryReplayDatasetRepository();
         final Battle battle = new Battle();
         battle.arenaId = "arena-1";
         final ReplayProcessingJob job = new ReplayProcessingJob("j1", List.of("a.wotbreplay"));
         job.startProcessing();
         job.markSourceProcessing(0, "a.wotbreplay");
         if (writeMapFile) {
-            ReplayArtifactWriter.writeMapOverview(store.jobDir("j1"), 0, overview());
+            reader.putMapOverview("j1", 0, ReplayArtifactWriter.mapOverviewContent(overview()));
         }
         if (status == ReplayProcessingJob.SourceStatus.READY) {
             job.markSourceReady(0);
@@ -80,7 +84,7 @@ class MapOverviewQueryServiceTest {
         final Path dir = Files.createTempDirectory("wotb-mapoverview-test");
         final ReplayProcessingJobStore store = storeWithJob(dir, ReplayProcessingJob.SourceStatus.PROCESSING, false);
         try {
-            final MapOverviewQueryService service = new MapOverviewQueryService(store, new LocalReplayDatasetRepository(store));
+            final MapOverviewQueryService service = new MapOverviewQueryService(store, reader);
             for (final String jobId : new String[]{null, "", "   "}) {
                 final ResponseStatusException e = assertThrows(ResponseStatusException.class,
                         () -> service.buildOverviewFromDataset(jobId, 0));
@@ -97,7 +101,7 @@ class MapOverviewQueryServiceTest {
         final Path dir = Files.createTempDirectory("wotb-mapoverview-test");
         final ReplayProcessingJobStore store = storeWithJob(dir, ReplayProcessingJob.SourceStatus.PROCESSING, false);
         try {
-            final MapOverviewQueryService service = new MapOverviewQueryService(store, new LocalReplayDatasetRepository(store));
+            final MapOverviewQueryService service = new MapOverviewQueryService(store, reader);
             final ResponseStatusException e = assertThrows(ResponseStatusException.class,
                     () -> service.buildOverviewFromDataset("missing", 0));
             assertEquals(HttpStatus.NOT_FOUND, e.getStatusCode());
@@ -112,7 +116,7 @@ class MapOverviewQueryServiceTest {
         final Path dir = Files.createTempDirectory("wotb-mapoverview-test");
         final ReplayProcessingJobStore store = storeWithJob(dir, ReplayProcessingJob.SourceStatus.PROCESSING, false);
         try {
-            final MapOverviewQueryService service = new MapOverviewQueryService(store, new LocalReplayDatasetRepository(store));
+            final MapOverviewQueryService service = new MapOverviewQueryService(store, reader);
             final ResponseStatusException e = assertThrows(ResponseStatusException.class,
                     () -> service.buildOverviewFromDataset("j1", 5));
             assertEquals(HttpStatus.BAD_REQUEST, e.getStatusCode());
@@ -127,7 +131,7 @@ class MapOverviewQueryServiceTest {
         final Path dir = Files.createTempDirectory("wotb-mapoverview-test");
         final ReplayProcessingJobStore store = storeWithJob(dir, ReplayProcessingJob.SourceStatus.PROCESSING, false);
         try {
-            final MapOverviewQueryService service = new MapOverviewQueryService(store, new LocalReplayDatasetRepository(store));
+            final MapOverviewQueryService service = new MapOverviewQueryService(store, reader);
             final ResponseStatusException e = assertThrows(ResponseStatusException.class,
                     () -> service.buildOverviewFromDataset("j1", 0));
             assertEquals(HttpStatus.CONFLICT, e.getStatusCode());
@@ -142,7 +146,7 @@ class MapOverviewQueryServiceTest {
         final Path dir = Files.createTempDirectory("wotb-mapoverview-test");
         final ReplayProcessingJobStore store = storeWithJob(dir, ReplayProcessingJob.SourceStatus.FAILED, false);
         try {
-            final MapOverviewQueryService service = new MapOverviewQueryService(store, new LocalReplayDatasetRepository(store));
+            final MapOverviewQueryService service = new MapOverviewQueryService(store, reader);
             final ResponseStatusException e = assertThrows(ResponseStatusException.class,
                     () -> service.buildOverviewFromDataset("j1", 0));
             assertEquals(HttpStatus.CONFLICT, e.getStatusCode());
@@ -157,7 +161,7 @@ class MapOverviewQueryServiceTest {
         final Path dir = Files.createTempDirectory("wotb-mapoverview-test");
         final ReplayProcessingJobStore store = storeWithJob(dir, ReplayProcessingJob.SourceStatus.READY, true);
         try {
-            final MapOverviewQueryService service = new MapOverviewQueryService(store, new LocalReplayDatasetRepository(store));
+            final MapOverviewQueryService service = new MapOverviewQueryService(store, reader);
             final MapOverview read = service.buildOverviewFromDataset("j1", 0);
             assertEquals("malinovka", read.mapCode());
         } finally {
@@ -170,7 +174,7 @@ class MapOverviewQueryServiceTest {
         final Path dir = Files.createTempDirectory("wotb-mapoverview-test");
         final ReplayProcessingJobStore store = storeWithJob(dir, ReplayProcessingJob.SourceStatus.READY, false);
         try {
-            final MapOverviewQueryService service = new MapOverviewQueryService(store, new LocalReplayDatasetRepository(store));
+            final MapOverviewQueryService service = new MapOverviewQueryService(store, reader);
             assertNull(service.buildOverviewFromDataset("j1", 0));
         } finally {
             cleanup(dir, store);
@@ -182,13 +186,11 @@ class MapOverviewQueryServiceTest {
         final Path dir = Files.createTempDirectory("wotb-map-corrupt");
         final ReplayProcessingJobStore store = storeWithJob(dir, ReplayProcessingJob.SourceStatus.READY, false);
         try {
-            // 手动写入 corrupt map-overview.json（readMapOverview 反序列化失败 → IOException）。
+            // 放入 corrupt map-overview 字节（decodeMapOverview 反序列化失败 → IOException）。
             // 这<b>不是</b>「job 不存在」——必须映射不可恢复的 503 DATASET_UNAVAILABLE，
             // 绝不 JOB_NOT_FOUND（否则前端会误触发 exactly-once full-process recovery）。
-            final Path artifact = ReplayArtifactWriter.mapOverviewPath(store.jobDir("j1"), 0);
-            Files.createDirectories(artifact.getParent());
-            Files.writeString(artifact, "{not-valid-json");
-            final MapOverviewQueryService service = new MapOverviewQueryService(store, new LocalReplayDatasetRepository(store));
+            reader.putMapOverview("j1", 0, "{not-valid-json".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            final MapOverviewQueryService service = new MapOverviewQueryService(store, reader);
             final ResponseStatusException e = assertThrows(ResponseStatusException.class,
                     () -> service.buildOverviewFromDataset("j1", 0));
             assertEquals(HttpStatus.SERVICE_UNAVAILABLE, e.getStatusCode());
