@@ -93,12 +93,14 @@ assert backend_health_probe_fix["imageServices"] == ["business-api", "parser-wor
 assert backend_health_probe_fix["deployServices"] == ["business-api"]
 assert backend_health_probe_fix["deployConfig"]
 assert detect("deploy/docker-compose.prod.yml")["deployServices"] == [
-    "postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana"
+    "node-exporter", "prometheus", "loki", "alloy", "grafana"
 ]
 assert detect("deploy/docker-compose.prod.yml")["targetServices"] == {"yecao": [
-    "postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana"
+    "node-exporter", "prometheus", "loki", "alloy", "grafana"
 ]}
-assert "wotb-backend" not in detect("deploy/docker-compose.prod.yml")["deployServices"]
+# The retired Yecao application services are not derivable from the Yecao Compose any more.
+for retired_service in ("postgres", "wotb-backend", "wotb-frontend", "keycloak"):
+    assert retired_service not in detect("deploy/docker-compose.prod.yml")["deployServices"], retired_service
 tx_config_services = ["keycloak-postgres", "keycloak", "wotb-frontend", "business-api"]
 assert detect("deploy/tx/docker-compose.prod.yml")["deployServices"] == tx_config_services
 assert detect("deploy/tx/docker-compose.prod.yml")["images"] == {
@@ -156,13 +158,13 @@ assert detect("common/unrelated-fixture.json")["imageServices"] == ["parser-work
 assert set(detect(".dockerignore")["imageServices"]) == {
     "business-api", "wotb-frontend", "keycloak"
 }
-assert manual("all")["deployServices"] == ["business-api", "wotb-frontend", "keycloak"]
-assert manual("all")["targetServices"] == {
-    "tx": ["business-api", "wotb-frontend", "keycloak"]
-}
-assert set(manual("all")["imageServices"]) == {
-    "business-api", "wotb-frontend", "keycloak"
-}
+# The legacy whole-stack ``all`` selector implied the retired Yecao control plane, so it must not be
+# selectable through the manual alias path either.
+assert subprocess.run(
+    ["python3", str(tool), "detect", "--manual-service", "all"],
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+).returncode != 0
 assert manual("backend")["deployServices"] == ["business-api"]
 assert manual("backend")["targetServices"] == {"tx": ["business-api"]}
 assert manual("frontend")["deployServices"] == ["wotb-frontend"]
@@ -176,8 +178,11 @@ assert manual("parser-worker")["buildServices"] == ["parser-worker"]
 assert manual("parser-worker")["imageServices"] == ["parser-worker"]
 assert manual("parser-worker")["deployServices"] == ["parser-worker"]
 assert manual("parser-worker")["targetServices"] == {"yecao": ["parser-worker"]}
-assert set(manual("all")["imageServices"]).isdisjoint({"minio", "parser-worker"})
-for unsupported in ("postgres", "grafana", "wotb-backend", "wotb-frontend", "parser"):
+assert set(manual("backend")["imageServices"]).isdisjoint({"minio", "parser-worker"})
+for unsupported in (
+    "all", "postgres", "wotb-backend", "wotb-frontend", "keycloak-postgres", "business-api",
+    "grafana", "parser",
+):
     assert subprocess.run(
         ["python3", str(tool), "detect", "--manual-service", unsupported],
         stdout=subprocess.DEVNULL,

@@ -162,24 +162,19 @@ for workflow_text, workflow_name in ((build, "Manual Build"),):
 assert "::error::Manual Build must run from the current main HEAD." in build
 assert "Required immutable deploy image does not exist" in deploy
 assert "name: Deploy ${{ needs.changes.outputs.deploy_display_name }}" in deploy
-assert "WOTB_BACKEND_MIGRATION_MAX_VERSION" in deploy
-ops_recovery = (root / ".github/workflows/ops-recovery.yml").read_text(encoding="utf-8")
-assert re.search(r"^name: Ops Recovery$", ops_recovery, re.MULTILINE)
-assert "workflow_dispatch:" in ops_recovery
-assert "- all" not in ops_recovery
-assert "recover-current" not in ops_recovery
-assert "recover-specific-sha" not in ops_recovery
-assert "ops-recovery.sh" in ops_recovery
-assert "ref: ${{ inputs.target_sha || github.sha }}" not in ops_recovery
-assert "ref: ${{ needs.prepare.outputs.target_sha }}" not in ops_recovery
-assert "git fetch origin main" in ops_recovery
-assert 'control_plane_sha="$(git rev-parse origin/main)"' in ops_recovery
-assert 'if [ "$source_sha" != "$control_plane_sha" ]; then' in ops_recovery
-assert "Ops Recovery must be dispatched from the current origin/main HEAD." in ops_recovery
-assert "control_plane_sha: ${{ steps.target.outputs.control_plane_sha }}" in ops_recovery
-assert "ref: ${{ needs.prepare.outputs.control_plane_sha }}" in ops_recovery
-assert 'git ls-tree -r --name-only "$target_sha"' in ops_recovery
-assert "source: deploy" in ops_recovery
+# The Yecao application runtime is retired: the migration ceiling only ever fed the deleted Yecao
+# backend service and the removed Ops Recovery path, so deploy.yml must not forward it any more.
+assert "WOTB_BACKEND_MIGRATION_MAX_VERSION" not in deploy
+# The retired Yecao application services, their recovery path, and the deployed Yecao backend bind
+# contract are gone rather than merely disabled.
+for retired_path in (
+    ".github/workflows/ops-recovery.yml",
+    "deploy/ops-recovery.sh",
+    "deploy/test-ops-recovery.sh",
+    "deploy/tx/yecao-backend-contract.json",
+    "deploy/test-yecao-wireguard-backend.sh",
+):
+    assert not (root / retired_path).exists(), f"{retired_path} must be deleted"
 assert "live_data: ${{ steps.plan.outputs.live_data }}" in ci
 assert '"live_data": "liveData"' in ci
 assert 'if: needs.changes.outputs.live_data == \'true\'' in ci

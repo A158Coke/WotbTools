@@ -615,15 +615,16 @@ root 管理，也不能使用带一天 expiration 的 artifact bucket 承载 sta
 ### TX application runtime boundary
 
 Phase 1 将 `wotb-frontend`、`keycloak` 与其专用 `keycloak-postgres` 路由到
-TX；Yecao 在正式 cutover 前仍只承载业务 PostgreSQL 与观测服务。TX 的业务运行时是
-Compose 服务 `business-api`（Tencent TCR `ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend` 的 immutable 镜像；GHCR 保留为 Yecao 来源与 TX 恢复副本）：
+TX；Yecao 宿主在 cutover 后只承载解析执行面、MinIO 与观测服务，不再运行任何业务应用。
+TX 的业务运行时是
+Compose 服务 `business-api`（Tencent TCR `ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend` 的 immutable 镜像；GHCR 保留为 TX 恢复副本）：
 单个 Spring Boot 进程同时承载全部 public business endpoint 与分布式回放控制面
 （PostgreSQL 是唯一 replay job authority，无运行时后端选择器），
 不发布任何 host port，只被 TX-internal 的 frontend nginx、Caddy readiness surface 与
 deployment-owned `health-probe` 访问（app `/api/health` + management
 `/actuator/health`，管理端口 8088）。因此 release plan 把 backend 镜像路由到
-`business-api`（target `tx`）；legacy Yecao service `wotb-backend` 仍保留为可显式选择的
-rollback/退役服务，但**不再被任何推断选中**，普通 Yecao compose 配置变更不得刷新它。
+`business-api`（target `tx`）；Yecao 侧的 `wotb-backend`/`wotb-frontend`/`keycloak`/`postgres`
+已随退役 PR 从 Compose、deploy 白名单与 release plan 中删除，不再是可选项。
 公开 API 路由已在 TX 内部终结：`wotb-frontend` 的 nginx upstream 固定为
 `http://business-api:8087`（`TX_BACKEND_UPSTREAM` 只接受这个 TX-internal 值，公网 host 与
 已退役的 Yecao `10.20.0.2:8087` 一律 fail-closed 拒绝），任何服务都不得发布 8087；TX deploy
@@ -678,9 +679,9 @@ Yecao 的解析执行面是新的可部署模块 `java/wotb-parser-worker`（镜
 `ghcr.io/a158coke/wotbtools-parser-worker`，`docker/Dockerfile.parser-worker`，
 Compose 服务 `parser-worker`）：它**不依赖 `wotb-web`、不持有数据库凭据**，只消费
 `wotb.parser`、读写 MinIO `temp/jobs/*` 并回报 `parser.result`/`parser.failed`，
-复用 canonical 解析与 artifact 生成（与本地控制面共用 `ReplayProcessingSourceRunner`，
-差异只在 `ReplayArtifactSink`）。该服务**只在显式选中时部署**（不在 Yecao `all`
-服务集内，legacy 栈退役前不选即不启动），选中时 `deploy/deploy.sh` fail-closed
+复用 canonical 解析与 artifact 生成（与控制面共用 `ReplayProcessingSourceRunner`，
+差异只在 `ReplayArtifactSink`）。该服务是 Yecao 宿主上**唯一**的应用服务，必须显式选中；
+选中时 `deploy/deploy.sh` fail-closed
 要求其 broker/MinIO 凭据并用容器存活 gate 判定成功。失败语义（可重试 → 经
 `wotb.parser.retry` 回流；业务失败 → 逐源 FAILED 后 ack；无法解码 → 原字节 park
 到 DLQ）见 `docs/operations/parser-worker.md`。
@@ -753,8 +754,9 @@ OCI archive → rsync → TX `docker load` → TX 侧 republish 链路，删除�
 
 MinIO 镜像（由 MinIO Dockerfile 改动触发）没有 runtime deploy service：MinIO 与 Parser Worker
 的镜像是 Yecao workload，固定由 GHCR 提供，不属于 TX registry 归属。自动 Deploy 只由成功的 Build `workflow_run` 接力，
-不再提供普通应用 Deploy 的手工入口。事故操作使用仅
-`workflow_dispatch` 的 `.github/workflows/ops-recovery.yml`。纯
+不再提供普通应用 Deploy 的手工入口。生产事故操作按受影响的服务分别走 TX/Build
+重新发布或 `Ops / Production Diagnostics`（后者只读采集 Yecao 的 parser-worker 与观测日志）；
+Yecao 应用侧的一次性 `Ops Recovery` 已随退役删除。纯
 `deploy/observability/grafana/dashboards/**` 只触发 Grafana OpenTofu API
 reconciliation，不触发应用 Build。
 
@@ -762,9 +764,9 @@ reconciliation，不触发应用 Build。
 
 1. 代码质量验证（后端 Maven / 前端 Vitest + Vite build）由 PR CI 作为 merge gate 承担；Build/Deploy 不重复运行测试套件。Build 的 builders 全部 checkout 同一个冻结 SHA，manifest 记录 commit SHA、Build run number、immutable image tag、`buildServices` 与 `deployServices`。
 2. 新 compose 先在 incoming project root 中完成 `docker compose config` 与目标 image pull；成功后才 promote 到 `/opt/wotb/deploy` 和正式 compose。targeted deploy 使用 `docker compose up -d --no-deps --force-recreate <affected>`，不执行全栈无参数 `up`，非目标应用继续使用 production metadata/live compose 中的 immutable tag。
-3. 部署后通过同一 production Docker network 中 deployment-owned `health-probe` curl service 检查 backend `http://wotb-backend:8088/actuator/health`、带 `Host: wotbtools.com` 的 frontend、Keycloak OIDC discovery 与 backend 数据库连通性；backend 使用 Spring dedicated management port 与默认 actuator base path，probe 仅接受 2xx，且不依赖 application image 内的 `wget/curl`。每个 probe 有 bounded timeout/retry，失败先输出 release、affected service、image、status、logs 与 Flyway schema 诊断，再停止确认失败的 affected service；不自动恢复旧 application image。
-4. 只有 affected application 已通过全局 core health gate 后，才原子更新 `/opt/wotb/production-release.json`（0600）；metadata 记录每个应用的 commit SHA、immutable image tag、部署时间，backend 记录 schema 与 migration ceiling，其它 service metadata 不变。Prometheus/Loki/Alloy/Grafana 与 metrics/log ingestion 失败只输出 `OBSERVABILITY DEGRADED`。
-5. 事故恢复只使用 `Ops Recovery`：明确选择一个 backend/frontend/keycloak，使用 production metadata 的 current identity 或 full SHA；backend target 的最大 migration version 低于 live Flyway schema、schema 无法读取或 immutable image 不存在时拒绝。Recovery 不做 database restore/downgrade，不隐式选择 all。
+3. Yecao 宿主上唯一需要阻塞判定的应用服务是 `parser-worker`：它不暴露 HTTP 端点，因此部署成功判据是容器保持存活（缺凭据或 broker 不可达造成的 crash loop 必须让部署失败）。业务 API 的 HTTP 健康探测、Keycloak OIDC discovery 与数据库连通性检查现在由 TX 侧 `deploy/tx/deploy.sh` 承担；Yecao 不再运行 `health-probe` 客户端。每个 gate 都有 bounded timeout/retry，失败先输出 release、affected service、image、status 与 logs 诊断，再停止确认失败的 affected service；不自动恢复旧 application image。
+4. 只有 affected application 已通过存活 gate 后，才原子更新 `/opt/wotb/production-release.json`（0600）；metadata 记录每个应用的 commit SHA、immutable image tag 与部署时间，其它 service metadata（含退役前的历史条目）不变。Prometheus/Loki/Alloy/Grafana 与 metrics/log ingestion 失败只输出 `OBSERVABILITY DEGRADED`。
+5. Yecao 侧不再有一次性应用恢复入口：`Ops Recovery` 的目标（backend/frontend/keycloak）与宿主均已退役，该 workflow、脚本与契约测试已删除。TX 业务运行时的回滚按 TX 路径重新发布，并继续受 TX 侧 routing/execution-plane 门禁约束。
 6. Keycloak 镜像以 `start --optimized` 启动并保留 PostgreSQL 与应用 OIDC discovery；不再启用或暴露 management health/metrics 端口。Keycloak 观测只保留 Docker 日志经 Alloy → Loki → Grafana 的链路，CI 的 `keycloak-runtime` job 必须真实构建并启动该应用运行时契约。
 
 Android 发布同样采用仓库内 Version-as-Code：`android/gradle.properties` 的

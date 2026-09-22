@@ -33,7 +33,7 @@ DEPLOY_SH="$SCRIPT_DIR/deploy.sh"
 # Keep an explicitly supplied source root. Otherwise only infer the repository
 # root when its deployment and Keycloak OpenTofu roots prove that this is a
 # checkout; promoted TX runtime layouts intentionally leave the source root
-# unset and use the deployed Yecao bind contract next to docker-compose.yml.
+# unset and run against the promoted docker-compose.yml next to this script.
 if [ -z "${WOTB_SOURCE_ROOT:-}" ]; then
   REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
   if [ -f "$REPO_ROOT/deploy/docker-compose.prod.yml" ] \
@@ -44,8 +44,7 @@ if [ -z "${WOTB_SOURCE_ROOT:-}" ]; then
   fi
 fi
 if [ -z "${WOTB_TX_DIR:-}" ] \
-  && [ -f "$SCRIPT_DIR/docker-compose.yml" ] \
-  && [ -f "$SCRIPT_DIR/yecao-backend-contract.json" ]; then
+  && [ -f "$SCRIPT_DIR/docker-compose.yml" ]; then
   export WOTB_TX_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 fi
 export TX_DEPLOY_LIBRARY_ONLY=1
