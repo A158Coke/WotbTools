@@ -23,17 +23,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
-import static com.wotb.web.config.ApiPaths.ADMIN_BOOST_PATTERN;
 import static com.wotb.web.config.ApiPaths.ADMIN_PATTERN;
 import static com.wotb.web.config.ApiPaths.ADMIN_USERS_PATTERN;
 import static com.wotb.web.config.ApiPaths.API_PATTERN;
-import static com.wotb.web.config.ApiPaths.BOOSTER_PATTERN;
-import static com.wotb.web.config.ApiPaths.BOOST_BOOSTERS_PATTERN;
-import static com.wotb.web.config.ApiPaths.BOOST_BOOSTER_APPLICATIONS_PATTERN;
-import static com.wotb.web.config.ApiPaths.BOOST_LEGACY;
-import static com.wotb.web.config.ApiPaths.BOOST_LEGACY_PATTERN;
-import static com.wotb.web.config.ApiPaths.BOOST_OPTIONS;
-import static com.wotb.web.config.ApiPaths.BOOST_REQUESTS_PATTERN;
 import static com.wotb.web.config.ApiPaths.COLUMNS;
 import static com.wotb.web.config.ApiPaths.EXPORT;
 import static com.wotb.web.config.ApiPaths.HEALTH;
@@ -58,8 +50,7 @@ import static com.wotb.web.config.ApiPaths.USERS_PATTERN;
  * 安全配置: Keycloak JWT 认证 + 角色授权。
  * 权限层级:
  *   wotbtools-admin → 全部管理员接口（super admin）
- *   boost-manager    → 仅 /api/admin/boost/** 放行
- *   已登录用户        → 玩家接口 + boost 页面
+ *   已登录用户        → 玩家接口
  *   匿名用户          → 公开接口
  */
 @Configuration
@@ -87,7 +78,6 @@ public class SecurityConfig {
                 .accessDeniedHandler(accessDeniedHandler))
             .authorizeHttpRequests(auth -> auth
                 // --- 公开接口 ---
-                .requestMatchers(BOOST_OPTIONS).permitAll()
                 .requestMatchers(HEALTH, COLUMNS,
                         PREVIEW, EXPORT).permitAll()
                 // 名人堂查询公开；上传/下载需登录（必须置于 HOF_PATTERN permitAll 之前）
@@ -127,10 +117,6 @@ public class SecurityConfig {
                 .requestMatchers(ADMIN_USERS_PATTERN)
                     .hasRole("wotbtools-admin")
 
-                // --- 打手管理（boost-manager 仅可访问该域） ---
-                .requestMatchers(ADMIN_BOOST_PATTERN)
-                    .hasAnyRole("wotbtools-admin", "boost-manager")
-
                 // --- 名人堂管理（HoF-admin 或 wotbtools-admin；必须置于 ADMIN_PATTERN 之前） ---
                 .requestMatchers(HOF_ADMIN_PATTERN)
                     .hasAnyRole("HoF-admin", "wotbtools-admin")
@@ -140,12 +126,7 @@ public class SecurityConfig {
                     .hasRole("wotbtools-admin")
 
                 // --- 需登录接口 (wotbtools-admin 也是已登录用户，自动通过) ---
-                .requestMatchers(USERS_PATTERN,
-                        BOOST_REQUESTS_PATTERN,
-                        BOOST_BOOSTERS_PATTERN,
-                        BOOST_BOOSTER_APPLICATIONS_PATTERN,
-                        BOOSTER_PATTERN,
-                        BOOST_LEGACY, BOOST_LEGACY_PATTERN)
+                .requestMatchers(USERS_PATTERN)
                     .authenticated()
 
                 // --- 未显式声明的 API 默认拒绝；静态资源放行 ---
@@ -157,7 +138,7 @@ public class SecurityConfig {
 
     /**
      * 自定义 JWT 角色提取：正确处理 Keycloak 嵌套 claim。
-     * JWT 结构: { "realm_access": { "roles": ["boost-manager"] } }
+     * JWT 结构: { "realm_access": { "roles": ["wotbtools-admin"] } }
      * Spring 默认 getClaim("realm_access.roles") 不做嵌套遍历，必须手动解。
      */
     private static Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter() {

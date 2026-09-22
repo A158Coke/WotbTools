@@ -77,7 +77,7 @@ e2e_role_block = root_text.split(
 assert len(e2e_role_block) == 2, "the cutover E2E identity must be granted its realm role explicitly"
 e2e_role_block = e2e_role_block[1].split("\n}\n", 1)[0]
 assert 'keycloak_role.realm["wotbtools-user"].name' in e2e_role_block
-for forbidden in ("wotbtools-admin", "boost-manager", "HoF-admin", "realm-admin"):
+for forbidden in ("wotbtools-admin", "HoF-admin", "realm-admin"):
     assert forbidden not in e2e_role_block, f"cutover E2E identity must not hold {forbidden}"
 assert 'client_id = "wotbtools-e2e"' in root_text, "cutover E2E client is missing"
 assert "client_secret_wo             = var.e2e_client_secret" in root_text

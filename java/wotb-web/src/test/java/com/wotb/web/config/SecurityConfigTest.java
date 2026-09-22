@@ -57,28 +57,16 @@ class SecurityConfigTest {
     }
 
     @Test
-    void boostManagerShouldOnlyAccessBoostAdminApi() throws Exception {
-        final SimpleGrantedAuthority role = new SimpleGrantedAuthority("ROLE_boost-manager");
-
-        mvc.perform(get("/api/admin/boost/probe").with(jwt().authorities(role)))
-                .andExpect(status().isOk());
-        mvc.perform(get("/api/admin/users/probe").with(jwt().authorities(role)))
-                .andExpect(status().isForbidden());
-        mvc.perform(get("/api/admin/other/probe").with(jwt().authorities(role)))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
     void realmAccessClaimShouldBecomeSpringRole() throws Exception {
         final JwtDecoder decoder = context.getBean(JwtDecoder.class);
         final Jwt token = Jwt.withTokenValue("token")
                 .header("alg", "none")
                 .subject("kc-user")
-                .claim("realm_access", Map.of("roles", List.of("boost-manager")))
+                .claim("realm_access", Map.of("roles", List.of("wotbtools-admin")))
                 .build();
         when(decoder.decode("token")).thenReturn(token);
 
-        mvc.perform(get("/api/admin/boost/probe")
+        mvc.perform(get("/api/admin/users/probe")
                         .header("Authorization", "Bearer token"))
                 .andExpect(status().isOk());
     }
@@ -102,8 +90,6 @@ class SecurityConfigTest {
     void adminShouldAccessAllAdminApis() throws Exception {
         final SimpleGrantedAuthority role = new SimpleGrantedAuthority("ROLE_wotbtools-admin");
 
-        mvc.perform(get("/api/admin/boost/probe").with(jwt().authorities(role)))
-                .andExpect(status().isOk());
         mvc.perform(get("/api/admin/users/probe").with(jwt().authorities(role)))
                 .andExpect(status().isOk());
         mvc.perform(get("/api/admin/other/probe").with(jwt().authorities(role)))
@@ -147,9 +133,9 @@ class SecurityConfigTest {
         mvc.perform(get("/api/replay/analyze/cancel"))
                 .andExpect(status().isUnauthorized());
 
-        // boost-manager → 403 (not allowed)
+        // HoF-admin 不在 replay 门禁的角色集合内 → 403
         mvc.perform(get("/api/replay/analyze").with(jwt().authorities(
-                        new SimpleGrantedAuthority("ROLE_boost-manager"))))
+                        new SimpleGrantedAuthority("ROLE_HoF-admin"))))
                 .andExpect(status().isForbidden());
     }
 
@@ -257,9 +243,6 @@ class SecurityConfigTest {
         mvc.perform(get("/api/admin/users/probe").with(jwt().authorities(
                         new SimpleGrantedAuthority("ROLE_HoF-admin"))))
                 .andExpect(status().isForbidden());
-        mvc.perform(get("/api/admin/boost/probe").with(jwt().authorities(
-                        new SimpleGrantedAuthority("ROLE_HoF-admin"))))
-                .andExpect(status().isForbidden());
         mvc.perform(get("/api/admin/other/probe").with(jwt().authorities(
                         new SimpleGrantedAuthority("ROLE_HoF-admin"))))
                 .andExpect(status().isForbidden());
@@ -326,9 +309,9 @@ class SecurityConfigTest {
                         new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
                 .andExpect(status().is2xxSuccessful());
 
-        // boost-manager 不在这道门的角色集合内 → 403
+        // HoF-admin 不在这道门的角色集合内 → 403
         mvc.perform(post(path).with(jwt().authorities(
-                        new SimpleGrantedAuthority("ROLE_boost-manager"))))
+                        new SimpleGrantedAuthority("ROLE_HoF-admin"))))
                 .andExpect(status().isForbidden());
     }
 
@@ -425,9 +408,9 @@ class SecurityConfigTest {
             mvc.perform(get(download).with(jwt().authorities(authority))).andExpect(status().is2xxSuccessful());
         }
 
-        // boost-manager 不在这道门的角色集合内 → 403
+        // HoF-admin 不在这道门的角色集合内 → 403
         mvc.perform(get(status).with(jwt().authorities(
-                        new SimpleGrantedAuthority("ROLE_boost-manager"))))
+                        new SimpleGrantedAuthority("ROLE_HoF-admin"))))
                 .andExpect(status().isForbidden());
     }
 
@@ -460,7 +443,6 @@ class SecurityConfigTest {
     static class ProbeController {
 
         @GetMapping({
-                "/api/admin/boost/probe",
                 "/api/admin/users/probe",
                 "/api/admin/other/probe",
                 "/api/unmatched",

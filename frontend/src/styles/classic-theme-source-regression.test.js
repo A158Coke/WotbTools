@@ -15,7 +15,6 @@ const read = (name) => readFileSync(fileURLToPath(new URL(name, import.meta.url)
 
 const app = read('./app-shell.css')
 const admin = read('../components/AdminUsersPage.vue')
-const boost = read('../components/BoostPage.vue')
 const profile = read('../components/ProfilePage.vue')
 const md = read('../components/MarkdownContent.vue')
 const ratingDocs = read('../components/RatingDocsPage.vue')
@@ -48,16 +47,6 @@ describe('Classic 主题 residual-dark 回归（语义 token 契约）', () => {
     expect(ruleBody(admin, '\\.admin-table th')).toContain('background: var(--bg-card2)')
     expect(ruleBody(admin, '\\.btn-sm')).toContain('background: var(--bg-card)')
     expect(ruleBody(admin, '\\.btn-sm')).not.toContain('#151d21')
-  })
-
-  it('BoostPage 申请/分配/用户搜索 不得再写死深色面', () => {
-    expect(ruleBody(boost, '\\.application-item \\.form-row input')).toContain('background: var(--bg-card)')
-    expect(ruleBody(boost, '\\.assign-box ')).toContain('background: var(--bg-card)')
-    expect(ruleBody(boost, '\\.assign-box select, \\.assign-box input')).toContain('background: var(--bg-card)')
-    expect(ruleBody(boost, '\\.assign-box select, \\.assign-box input')).toContain('color: var(--text)')
-    expect(ruleBody(boost, '\\.user-search-dropdown')).toContain('background: var(--bg-card)')
-    expect(ruleBody(boost, '\\.user-search-item:hover')).toContain('background: var(--bg-list-hover)')
-    expect(ruleBody(boost, '\\.user-search-dropdown')).not.toContain('#11191d')
   })
 
   it('ProfilePage 编辑输入/记录表 不得再写死深色面', () => {

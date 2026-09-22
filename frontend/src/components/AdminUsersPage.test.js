@@ -18,7 +18,7 @@ vi.mock('../composables/useAuth.js', () => ({
   })
 }))
 
-vi.mock('../utils/api-boost.js', () => ({
+vi.mock('../utils/api.js', () => ({
   adminSearchUsers: api.searchUsers,
   adminGetUser: api.getUser,
   adminDeleteUsers: api.deleteUsers

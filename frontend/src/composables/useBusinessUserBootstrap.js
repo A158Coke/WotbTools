@@ -1,5 +1,5 @@
 import { computed, readonly, ref } from 'vue'
-import { ensureUserProfile } from '../utils/api-boost.js'
+import { ensureUserProfile } from '../utils/api-user.js'
 
 /**
  * WotBTools 业务用户 bootstrap（KC User → user_profile 的 eventual self-healing）。
@@ -9,7 +9,7 @@ import { ensureUserProfile } from '../utils/api-boost.js'
  * 短暂（broker 注册后浏览器还没回站、bootstrap 暂时失败）/ legacy / 不完整状态存在
  * —— 任何 KC-only 用户下一次成功进入 WotBTools 都会在这里被自动补齐。</p>
  *
- * <p>这里是 profile **ensure 的唯一 canonical owner**。页面（ProfilePage / BoostPage）
+ * <p>这里是 profile **ensure 的唯一 canonical owner**。页面（ProfilePage 等）
  * 只允许等待结果再读取资料，不得各自实现「读不到 → 自己创建」这套 provisioning。</p>
  *
  * <p>状态机：`idle`（尚未开始）→ `pending` → `ready` | `failed`。
