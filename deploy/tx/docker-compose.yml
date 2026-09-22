@@ -167,8 +167,8 @@ services:
       KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:?KEYCLOAK_ADMIN_CLIENT_SECRET is required}
       # Replay control plane: never parse in this process, always dispatch through
-      # RabbitMQ, always read and write datasets through MinIO.
-      WOTB_REPLAY_PROCESSING_JOB_REPOSITORY: jdbc
+      # RabbitMQ, always read and write datasets through MinIO. PostgreSQL is the only
+      # job authority, so there is no repository-selection variable to set here.
       # MinIO stays on Yecao and is reached over the existing WireGuard link with
       # the dedicated control_api identity (temp/jobs/* only).
       YECAO_MINIO_ENDPOINT: ${YECAO_MINIO_ENDPOINT:-10.20.0.2:9000}

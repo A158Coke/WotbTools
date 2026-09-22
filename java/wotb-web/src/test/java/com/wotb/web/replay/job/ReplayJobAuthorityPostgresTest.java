@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Replay Processing Job 权威状态投影（V23 + {@link ReplayJobAuthority} + 注册表 jdbc 模式）。
+ * Replay Processing Job 权威状态投影（V23 + {@link ReplayJobAuthority} + PostgreSQL 唯一权威）。
  *
  * <p>锁死的契约：</p>
  *
@@ -50,7 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>权威模式下持久化失败 fail closed：创建失败、迁移失败、终态不得被报告为已持久化；</li>
  *   <li>operationId 幂等由 PostgreSQL 裁决：重启后先识别已提交 identity，跨实例并发只产生
  *       一个权威 jobId；</li>
- *   <li>TTL 只回收「终态且已过期」的投影；内存模式完全不受权威状态与数据库故障影响。</li>
+ *   <li>TTL 只回收「终态且已过期」的投影。</li>
  * </ul>
  */
 @Testcontainers(disabledWithoutDocker = true)
@@ -253,24 +253,6 @@ class ReplayJobAuthorityPostgresTest {
                     .param("id", "p-terminal").query(Integer.class).single());
         } finally {
             store.close();
-        }
-    }
-
-    @Test
-    void memoryModeIsUnaffectedByAuthorityFailureAndWritesNothing() {
-        // job 表 INSERT 被注入失败：内存模式不得触碰权威状态，因此必须完全不受影响。
-        injectJobInsertFailure();
-        final ReplayProcessingJobStore memory = store(tempDir.resolve("memory"), null);
-        try {
-            final ReplayProcessingJob job = new ReplayProcessingJob("p-memory", List.of("a.wotbreplay"));
-            memory.register(job);
-            assertTrue(job.startProcessing());
-            assertTrue(job.markFailed("MEMORY_MODE"));
-            assertEquals("p-memory", memory.get("p-memory").jobId());
-            assertEquals(0, jdbc.sql("select count(*) from replay_processing_job")
-                    .query(Integer.class).single());
-        } finally {
-            memory.close();
         }
     }
 
@@ -699,7 +681,7 @@ class ReplayJobAuthorityPostgresTest {
     }
 
     private static ReplayJobAuthority authority() {
-        return new ReplayJobAuthority(jdbc, transactions);
+        return new PostgresReplayJobAuthority(jdbc, transactions);
     }
 
     private static ReplayProcessingJobStore store(final Path dir, final ReplayJobAuthority authority) {
