@@ -570,7 +570,7 @@ jobs:
           deploy/test-keycloak-runtime.sh deploy/test-keycloak-tofu.sh
           deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh
           deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
-          deploy/test-build-workflow.sh deploy/test-tx-publication-helper.sh deploy/test-release-plan.sh
+          deploy/test-build-workflow.sh deploy/test-release-plan.sh
           deploy/tx/publish-loaded-image-to-tcr.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
           deploy/test-yecao-wireguard-backend.sh deploy/test-pre-cutover-check.sh
@@ -581,12 +581,8 @@ jobs:
           scripts/ci/test-keycloak-tofu-contract.sh
           scripts/ci/test-postgres-keycloak-tofu-contract.sh
           scripts/ci/test-postgres-business-tofu-contract.sh
-          scripts/ci/setup-tx-ssh.sh scripts/ci/transfer-oci-to-tx.sh
-          scripts/ci/test-transfer-oci-to-tx.sh
-      - name: Build workflow frozen-commit contract
+      - name: Build workflow frozen-commit and direct-TCR publication contract
         run: bash deploy/test-build-workflow.sh
-      - name: TX OCI transfer and publication contract
-        run: bash scripts/ci/test-transfer-oci-to-tx.sh
       - name: Build/Deploy changed-target and manifest contract
         run: bash deploy/test-release-plan.sh
       - name: TX runtime and user-profile reset safety contracts
