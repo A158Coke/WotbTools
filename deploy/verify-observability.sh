@@ -145,8 +145,8 @@ echo "== Verifying observability data path =="
 validate_alloy
 wait_for_http "BACKEND_METRICS" "backend metrics endpoint" \
   "http://127.0.0.1:8088/actuator/prometheus" "jvm_" "process_" "system_" "http_server_requests"
-wait_for_http "BACKEND_METRICS" "backend replay and AI queue gauges" \
-  "http://127.0.0.1:8088/actuator/prometheus" "wotb_replay_parse_active" "wotb_replay_parse_queue_depth" "wotb_ai_review_in_flight" "wotb_ai_review_queue_depth"
+wait_for_http "BACKEND_METRICS" "backend AI queue gauges" \
+  "http://127.0.0.1:8088/actuator/prometheus" "wotb_ai_review_in_flight" "wotb_ai_review_queue_depth"
 wait_for_http "BACKEND_METRICS" "backend Hikari metrics" \
   "http://127.0.0.1:8088/actuator/prometheus" "hikaricp_connections_active"
 wait_for_http "KEYCLOAK_APPLICATION" "Keycloak application metadata" \

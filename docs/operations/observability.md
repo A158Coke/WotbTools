@@ -611,7 +611,7 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_replay_processing_job_result_total{result=ready|failed|cancelled}` — Processing Job 终态计数（exactly once）；`ready` 表示正常完成 finalization，可能包含 source-level replay failures，不是 per-source replay parse success 数；`failed` 也不是 replay 文件解析失败数
   - `wotb_replay_full_processing_total` — 当前 V2 full processing 文件数（Replay files processed）
   - `wotb_replay_processing_file_duration_seconds` — 当前 V2 单个 replay full processing 耗时（Timer，histogram）
-  - `wotb_replay_parse_active` / `wotb_replay_parse_queue_depth` — 当前并行处理数与排队 source 数
+  - `wotb_replay_in_flight` — 当前处理中的解析请求数；解析执行面的并发由 Yecao parser-worker 的 AMQP consumer 数表达（无进程内 gauge）
   - `wotb_replay_in_flight` — legacy 解析入口当前处理数（Gauge）
   - `wotb_replay_requests_total{operation}` / `wotb_replay_files_total{operation}` / `wotb_replay_parse_duration_seconds{operation}` — legacy operation 指标，保留用于兼容入口，不被当前 V2 dashboard 作为主信号
 
