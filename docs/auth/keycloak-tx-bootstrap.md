@@ -9,6 +9,29 @@ Keycloak 镜像只包含自定义 provider。`infra/tofu/keycloak` 是 TX realm�
 `127.0.0.1:18080` 上以 bootstrap admin 建立 fresh realm，并在 apply 后执行第二次 plan
 确认无 drift。
 
+## 删除保护边界（`tofu plan` 是 destructive-change 审计门）
+
+唯一授权路径是 `.tf` 期望状态 → `tofu plan` → destructive audit → `tofu apply` → 第二次 plan 无
+drift：`deploy/tx/keycloak-tofu.sh` 先 plan，再由 `infra/tofu/keycloak/validate-plan.sh` 审计该
+plan，然后 apply，最后要求第二次 plan 全 no-op。因此删除保护按**「保护的是不是身份根」**划分，
+而不是按「是否发生删除」划分：
+
+| 对象 | 保护机制 | 分类 |
+|---|---|---|
+| `keycloak_role.realm`（realm 角色集合） | 无 `prevent_destroy`；plan guard 无 role 删除规则 | 角色成员是期望状态：增删角色是必须由 `tofu plan` 可见、可审计的正常变更，**不存在任何按角色名的例外**（含 Boost 专用白名单） |
+| `keycloak_realm.wotbtools` | `prevent_destroy` + `terraform_deletion_protection` | 保护身份根：删除 realm 会连带删除全部用户、凭据、client 与角色 |
+| `keycloak_openid_client.{web,admin_api,e2e}` | `prevent_destroy` | 保护身份凭据：删除/重建会轮换 client id 与 write-only secret，打断登录与门禁身份 |
+| `keycloak_oidc_identity_provider.qq` | `prevent_destroy` | 保护外部身份绑定：删除会让已绑定用户无法登录 |
+| `keycloak_default_roles.wotbtools` | `prevent_destroy` | 保护 realm 级不变量：新用户自动获得 `wotbtools-user` |
+| realm/client 与 IdP 的 delete/replace | `validate-plan.sh` | 与上面同一批身份资源，在 plan 层 fail-closed |
+| mass replacement 上限（> 3） | `validate-plan.sh` | 另一个不变量：拦截非预期的批量重建（例如 provider schema 漂移），与角色增删无关 |
+
+回收 Boost 角色（`booster` / `boost-manager`）就是第一类的标准场景：期望状态不再声明这两个角色，
+`tofu plan` 输出 `0 to add, 0 to change, 2 to destroy`，被删除地址恰为
+`keycloak_role.realm["booster"]` 与 `keycloak_role.realm["boost-manager"]`，guard 必须放行。
+`scripts/ci/test-keycloak-tofu-contract.sh` 用 fixture plan JSON 固定这条边界：角色删除放行（含非
+Boost 角色），realm/client/IdP 删除与 mass replacement 仍被拒绝。
+
 ## 运行时配置与凭据边界
 
 GitHub Actions Secrets / Variables 是 TX runtime 与 TX-local OpenTofu 的唯一配置入口。
