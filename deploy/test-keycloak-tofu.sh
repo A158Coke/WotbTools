@@ -21,6 +21,7 @@ E2E_API_SECRET="tofu-e2e-api-test-secret"
 QQ_CLIENT_ID="tofu-qq-client-id"
 QQ_CLIENT_SECRET="tofu-qq-client-secret"
 QQ_CLIENT_SECRET_VERSION=1
+WG_APPLICATION_ID="tofu-wg-application-id"
 TEST_USERNAME="tofu-admin-api-test-user"
 
 fail() {
@@ -46,7 +47,7 @@ command -v "$TOFU" >/dev/null 2>&1 || fail "$TOFU is required"
 [[ "$RETRIES" =~ ^[1-9][0-9]*$ ]] || fail "retry count must be a positive integer"
 [[ "$INTERVAL_SEC" =~ ^[1-9][0-9]*$ ]] || fail "retry interval must be a positive integer"
 
-expect_qq_input_failure() {
+expect_tofu_input_failure() {
   local label="$1" expected="$2"
   shift 2
   local output status
@@ -58,6 +59,7 @@ expect_qq_input_failure() {
     KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION=1 \
     KEYCLOAK_E2E_CLIENT_SECRET=not-real \
     KEYCLOAK_E2E_CLIENT_SECRET_VERSION=1 \
+    WG_APPLICATION_ID="$WG_APPLICATION_ID" \
     TX_QQ_CLIENT_ID="$QQ_CLIENT_ID" \
     TX_QQ_CLIENT_SECRET="$QQ_CLIENT_SECRET" \
     TX_QQ_CLIENT_SECRET_VERSION="$QQ_CLIENT_SECRET_VERSION" \
@@ -69,22 +71,28 @@ expect_qq_input_failure() {
     || fail "$label did not report $expected"
 }
 
-# Exercise the TX runner's fail-closed QQ boundary before building an image or
-# creating disposable infrastructure. These are deliberately fixtures only.
+# Exercise the TX runner's fail-closed Wargaming/QQ boundary before building an
+# image or creating disposable infrastructure. These are deliberately fixtures only.
 mkdir -p "$WORK/input-policy-root"
-expect_qq_input_failure "missing-client-id" 'TX_QQ_CLIENT_ID is required.' \
+expect_tofu_input_failure "missing-wg-application-id" 'WG_APPLICATION_ID is required.' \
+  env -u WG_APPLICATION_ID
+expect_tofu_input_failure "blank-wg-application-id" 'WG_APPLICATION_ID must be configured and must not be a placeholder.' \
+  env WG_APPLICATION_ID='   '
+expect_tofu_input_failure "placeholder-wg-application-id" 'WG_APPLICATION_ID must be configured and must not be a placeholder.' \
+  env WG_APPLICATION_ID=not-used
+expect_tofu_input_failure "missing-client-id" 'TX_QQ_CLIENT_ID is required.' \
   env -u TX_QQ_CLIENT_ID
-expect_qq_input_failure "missing-client-secret" 'TX_QQ_CLIENT_SECRET is required.' \
+expect_tofu_input_failure "missing-client-secret" 'TX_QQ_CLIENT_SECRET is required.' \
   env -u TX_QQ_CLIENT_SECRET
-expect_qq_input_failure "missing-secret-version" 'TX_QQ_CLIENT_SECRET_VERSION is required.' \
+expect_tofu_input_failure "missing-secret-version" 'TX_QQ_CLIENT_SECRET_VERSION is required.' \
   env -u TX_QQ_CLIENT_SECRET_VERSION
-expect_qq_input_failure "placeholder-client-id" 'TX_QQ_CLIENT_ID must be configured and must not be a placeholder.' \
+expect_tofu_input_failure "placeholder-client-id" 'TX_QQ_CLIENT_ID must be configured and must not be a placeholder.' \
   env TX_QQ_CLIENT_ID=bootstrap-not-configured
-expect_qq_input_failure "placeholder-client-secret" 'TX_QQ_CLIENT_SECRET must be configured and must not be a placeholder.' \
+expect_tofu_input_failure "placeholder-client-secret" 'TX_QQ_CLIENT_SECRET must be configured and must not be a placeholder.' \
   env TX_QQ_CLIENT_SECRET=dummy
-expect_qq_input_failure "invalid-secret-version" 'TX_QQ_CLIENT_SECRET_VERSION must be a positive integer.' \
+expect_tofu_input_failure "invalid-secret-version" 'TX_QQ_CLIENT_SECRET_VERSION must be a positive integer.' \
   env TX_QQ_CLIENT_SECRET_VERSION=0
-echo "PASS: QQ OpenTofu fail-closed input policy"
+echo "PASS: Wargaming/QQ OpenTofu fail-closed input policy"
 
 if [ "${WOTB_KEYCLOAK_SKIP_BUILD:-0}" != "1" ]; then
   echo "== Building Keycloak image for fresh OpenTofu smoke =="
@@ -149,6 +157,7 @@ export TF_VAR_keycloak_admin_client_secret="$ADMIN_API_SECRET"
 export TF_VAR_keycloak_admin_client_secret_version=1
 export TF_VAR_e2e_client_secret="$E2E_API_SECRET"
 export TF_VAR_e2e_client_secret_version=1
+export TF_VAR_wargaming_application_id="$WG_APPLICATION_ID"
 export TF_VAR_qq_client_id="$QQ_CLIENT_ID"
 export TF_VAR_qq_client_secret="$QQ_CLIENT_SECRET"
 export TF_VAR_qq_client_secret_version="$QQ_CLIENT_SECRET_VERSION"
@@ -370,7 +379,7 @@ jq -e '([.[].alias] | sort) == ["idp-qq", "wargaming-asia", "wargaming-eu", "war
   || fail "fresh realm IdP aliases are not the approved TX set"
 jq -e 'all(.[]; .alias != "qq" and .alias != "juhe-qq")' "$WORK/idps.json" >/dev/null \
   || fail "fresh TX realm must not create legacy QQ aliases"
-jq -e --arg qq_client_id "$QQ_CLIENT_ID" '
+jq -e --arg qq_client_id "$QQ_CLIENT_ID" --arg wg_application_id "$WG_APPLICATION_ID" '
   any(.[];
     .alias == "idp-qq" and
     .providerId == "qq" and
@@ -382,7 +391,11 @@ jq -e --arg qq_client_id "$QQ_CLIENT_ID" '
     .config.userInfoUrl == "https://graph.qq.com/user/get_user_info" and
     .config.clientAuthMethod == "client_secret_post"
   ) and
-  all(.[] | select(.providerId == "wargaming"); .config.region != null)
+  ([.[] | select(.providerId == "wargaming")] | length == 3) and
+  all(.[] | select(.providerId == "wargaming");
+    .config.region != null and
+    .config.clientId == $wg_application_id
+  )
 ' \
   "$WORK/idps.json" >/dev/null || fail "QQ/Wargaming provider representation is incomplete"
 echo "PASS: realm, client, mapper, default-role, QQ IdP Admin API representation, and structural config"

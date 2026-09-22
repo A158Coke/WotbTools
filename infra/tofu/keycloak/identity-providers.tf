@@ -46,12 +46,14 @@ resource "keycloak_oidc_identity_provider" "wargaming" {
 
   # This resource is an adapter for the official Keycloak provider's OIDC
   # schema. Wargaming is not OIDC: the custom provider_id=wargaming SPI owns
-  # the real broker flow, and WG_APPLICATION_ID stays in Keycloak runtime env.
+  # the real broker flow and keeps reading WG_APPLICATION_ID from the Keycloak
+  # runtime environment. The representation's client_id still carries the real
+  # Blitz application ID so the IdP representation is not a placeholder.
   realm        = keycloak_realm.wotbtools.id
   alias        = each.value.alias
   display_name = each.value.display_name
   provider_id  = "wargaming"
-  client_id    = "not-used"
+  client_id    = var.wargaming_application_id
   # Wargaming is a custom SPI provider. These fixed values only satisfy the
   # official OIDC resource schema and are not production credentials.
   client_secret_wo         = "not-used"

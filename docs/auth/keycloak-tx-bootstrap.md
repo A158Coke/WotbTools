@@ -34,8 +34,18 @@ TX workflow secrets：`TX_KC_POSTGRES_ADMIN_PASSWORD`、`TX_KC_DB_PASSWORD`、
 runtime 变量注入，禁止写入 HCL、tfvars、plan 或普通 state attribute。backend 继续使用
 `KEYCLOAK_ADMIN_CLIENT_ID=wotbtools-admin-api` 与 `KEYCLOAK_ADMIN_CLIENT_SECRET`。
 
-官方 QQ IdP 由 OpenTofu 完整拥有，不存在 operator 手工凭据路径：
+Wargaming IdP representation 与 Keycloak runtime 共用**同一个**已存在凭据，不引入第二个 secret：
 
+- GitHub Secret `WG_APPLICATION_ID` 经 SSH 环境注入 Keycloak OpenTofu apply step；
+- `deploy/tx/keycloak-tofu.sh` 在缺失、空值或 placeholder 时 fail-closed，并导出敏感
+  `TF_VAR_wargaming_application_id`，由 `keycloak_oidc_identity_provider.wargaming` 的
+  `wargaming-asia` / `wargaming-eu` / `wargaming-na` 三个实例共用为 `client_id`（值不打印、
+  不进 tfvars、不进 Tofu output）；
+- 同一 secret 仍注入 Keycloak runtime env `WG_APPLICATION_ID`（自定义 SPI 通过
+  `System.getenv("WG_APPLICATION_ID")` 读取），因此这份注入不得删除；
+- 不存在 `TX_WG_APPLICATION_ID` / `WG_CLIENT_ID` / `WARGAMING_CLIENT_ID` 等重复凭据。
+
+官方 QQ IdP 由 OpenTofu 完整拥有，不存在 operator 手工凭据路径：
 - GitHub Variable `TX_QQ_CLIENT_ID` 经 SSH 环境传入 `TF_VAR_qq_client_id`；
 - GitHub Secret `TX_QQ_CLIENT_SECRET` 经 SSH 环境传入 write-only
   `TF_VAR_qq_client_secret`，不得写进 tfvars、日志或普通 state attribute；
@@ -51,7 +61,8 @@ write-only secret/version 与 QQ endpoint configuration 均由 OpenTofu 收敛�
 ## Identity Provider 启动顺序
 
 1. 让 OpenTofu 创建 fresh realm，确认 `wotbtools-web`、`wotbtools-admin-api`、角色与 JWT mapper 已存在。
-2. 由 OpenTofu 创建 `wargaming-asia`、`wargaming-eu`、`wargaming-na` 三个实例，并只在 Keycloak runtime 注入 `WG_APPLICATION_ID`。
+2. 由 OpenTofu 创建 `wargaming-asia`、`wargaming-eu`、`wargaming-na` 三个实例（`provider_id=wargaming`，
+   `client_id` = 同一 `WG_APPLICATION_ID`），并在 Keycloak runtime 继续注入 `WG_APPLICATION_ID` 供自定义 SPI 读取。
 3. 镜像构建 `keycloak-qq-provider` 与 `keycloak-wargaming-provider`；运行时验收必须确认
    `keycloak-qq-provider.jar` 存在且 Keycloak 已以 `start --optimized` 启动。仓库仍保留
    vendored legacy Juhe provider 源码/镜像 artifact 以兼容历史构建，但 TX realm 不创建它的实例，

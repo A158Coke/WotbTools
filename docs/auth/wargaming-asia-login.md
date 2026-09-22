@@ -155,9 +155,12 @@ NA     https://api.worldoftanks.com/wot/auth/    https://api.wotblitz.com/wotb/a
 
 ### 3. Application ID
 
-- 环境变量：`WG_APPLICATION_ID`（Keycloak 容器 env 注入）。
-- Provider 在配置层通过 `System.getenv("WG_APPLICATION_ID")` 读取；缺失时 `performLogin` 返回明确错误（对齐 QQ Provider 的"未配置返回错误"模式），不导致 Keycloak 启动失败。
-- 禁止硬编码进源码、Realm JSON 或前端代码。
+- 唯一凭据来源：GitHub Secrets `WG_APPLICATION_ID`（权威 credential boundary），同时服务两条路径：
+  - Keycloak 容器 env `WG_APPLICATION_ID` → 自定义 SPI；
+  - TX-local OpenTofu `TF_VAR_wargaming_application_id`（敏感）→ `keycloak_oidc_identity_provider.wargaming` 三个实例的 `client_id`。
+- 不新增第二个 Wargaming 凭据（不存在 `TX_WG_APPLICATION_ID` / `WG_CLIENT_ID` / `WARGAMING_CLIENT_ID`）。
+- Provider 在配置层通过 `System.getenv("WG_APPLICATION_ID")` 读取；缺失时 `performLogin` 返回明确错误（对齐 QQ Provider 的"未配置返回错误"模式），不导致 Keycloak 启动失败。该 runtime env 注入**必须保留**：OpenTofu 只声明 IdP representation，不替代 SPI 的读取方式。
+- 禁止硬编码进源码、Realm JSON 或前端代码；禁止把值写入 tfvars、日志或 Tofu output。
 - `wargaming` 类型 IdP 的 ASIA / EU / NA 三个实例不在 realm JSON 中声明；TX 由 OpenTofu 创建，Admin Console 仅用于只读核对。
 
 ---
@@ -518,7 +521,7 @@ keycloak-qq-provider
 
 ### 4. Realm 配置载体（决策 D18）
 
-- `infra/tofu/keycloak`：声明 Protocol Mapper、`defaultRoles`、三个 Wargaming IdP 与 `wotbtools-admin-api`；TX 由 OpenTofu apply，Wargaming 的 OIDC 字段只使用固定 non-sensitive schema adapter 值，真实登录配置仍由自定义 SPI 读取 `WG_APPLICATION_ID`。
+- `infra/tofu/keycloak`：声明 Protocol Mapper、`defaultRoles`、三个 Wargaming IdP 与 `wotbtools-admin-api`；TX 由 OpenTofu apply。三个 Wargaming IdP 的 `client_id` 由 `var.wargaming_application_id`（敏感，来自 GitHub Secrets `WG_APPLICATION_ID` 经 `TF_VAR_wargaming_application_id` 注入）声明，三个区服共用同一个值；Client Secret / Authorization URL / Token URL 仍是固定 non-sensitive schema adapter 值。真实登录配置仍由自定义 SPI 读取 Keycloak runtime 的 `WG_APPLICATION_ID`。
 
 ---
 

@@ -70,6 +70,21 @@ variable "keycloak_admin_client_secret_version" {
   }
 }
 
+variable "wargaming_application_id" {
+  description = "Wargaming.net application ID; ASIA/EU/NA share this single Blitz-registered application."
+  type        = string
+  sensitive   = true
+  nullable    = false
+
+  validation {
+    condition = !contains(
+      ["", "bootstrap-not-configured", "dummy", "empty", "juhe", "juhe-qq", "not-configured", "not-used"],
+      lower(trimspace(var.wargaming_application_id)),
+    )
+    error_message = "wargaming_application_id must be a configured Wargaming.net application ID, not a placeholder."
+  }
+}
+
 variable "qq_client_id" {
   description = "QQ Connect application ID supplied only by the TX deployment environment."
   type        = string

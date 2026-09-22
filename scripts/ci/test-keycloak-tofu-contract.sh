@@ -40,6 +40,7 @@ variables_text = read("infra/tofu/keycloak/variables.tf")
 tx_compose = read("deploy/tx/docker-compose.yml")
 tofu_script = read("deploy/tx/keycloak-tofu.sh")
 deploy_text = read(".github/workflows/deploy.yml")
+outputs_text = read("infra/tofu/keycloak/outputs.tf")
 
 # --- reproducibility: provider pin, TLS verification, production state path --
 assert 'keycloak/keycloak' in versions and 'version = "5.9.0"' in versions
@@ -114,6 +115,41 @@ for expected in (
 ):
     assert expected in variables_text, expected
 
+# --- Wargaming IdP client_id is owned by the single existing WG secret -------
+# The representation's client_id is not a placeholder any more, and the
+# Wargaming application ID never reaches the repository as a second secret.
+assert 'client_id    = var.wargaming_application_id' in identity_text, \
+    "the Wargaming IdPs must consume the Wargaming application ID variable"
+assert 'client_id    = "not-used"' not in identity_text, \
+    "the Wargaming client_id placeholder is not the production model"
+assert 'provider_id  = "wargaming"' in identity_text
+for alias in ('alias        = "wargaming-asia"', 'alias        = "wargaming-eu"', 'alias        = "wargaming-na"'):
+    assert alias in identity_text, alias
+# One application ID serves all three regions, so the resource must read the
+# variable exactly once instead of declaring a second per-instance source.
+assert identity_text.count("var.wargaming_application_id") == 1
+assert 'client_secret_wo         = "not-used"' in identity_text, \
+    "the Wargaming OIDC adapter secret must stay the fixed schema placeholder"
+wg_variable = variables_text.split('variable "wargaming_application_id"', 1)
+assert len(wg_variable) == 2, "the Wargaming application ID must be a declared variable"
+wg_variable = wg_variable[1].split("\n}\n", 1)[0]
+for expected in ("type        = string", "sensitive   = true", "nullable    = false", "validation {"):
+    assert expected in wg_variable, expected
+assert 'contains(' in wg_variable and "not-used" in wg_variable, \
+    "the Wargaming application ID must reject blank values and known placeholders"
+for forbidden in ("TX_WG_APPLICATION_ID", "WG_CLIENT_ID", "WARGAMING_CLIENT_ID"):
+    assert forbidden not in deploy_text, f"duplicate Wargaming credential source: {forbidden}"
+    assert forbidden not in tofu_script, f"duplicate Wargaming credential source: {forbidden}"
+for expected in (
+    "WG_APPLICATION_ID",
+    "TF_VAR_wargaming_application_id",
+):
+    assert expected in tofu_script, expected
+assert 'export TF_VAR_wargaming_application_id="$WG_APPLICATION_ID"' in tofu_script
+assert "WG_APPLICATION_ID" in deploy_text, "Deploy must inject the existing Wargaming secret"
+assert "wargaming_application_id" not in outputs_text, "the Wargaming application ID must not be a Tofu output"
+assert "qq_client_secret" not in outputs_text, "the QQ application secret must not be a Tofu output"
+
 # --- production QQ inputs are only supplied through the TX deployment path --
 for expected in (
     "TX_QQ_CLIENT_ID",
@@ -163,6 +199,7 @@ assert apply_envs == {
     "KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION",
     "KEYCLOAK_E2E_CLIENT_SECRET",
     "KEYCLOAK_E2E_CLIENT_SECRET_VERSION",
+    "WG_APPLICATION_ID",
     "TX_QQ_CLIENT_ID",
     "TX_QQ_CLIENT_SECRET",
     "TX_QQ_CLIENT_SECRET_VERSION",
@@ -172,6 +209,9 @@ assert apply_envs == {
 assert apply_step["env"]["KEYCLOAK_ADMIN_PASSWORD"] == "${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}"
 assert apply_step["env"]["KEYCLOAK_ADMIN_CLIENT_SECRET"] == "${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}"
 assert apply_step["env"]["KEYCLOAK_E2E_CLIENT_SECRET"] == "${{ secrets.KEYCLOAK_E2E_CLIENT_SECRET }}"
+# The OpenTofu step reuses the existing WG_APPLICATION_ID secret and never
+# declares a Wargaming-specific TF_VAR name in the workflow itself.
+assert apply_step["env"]["WG_APPLICATION_ID"] == "${{ secrets.WG_APPLICATION_ID }}"
 assert apply_step["env"]["TX_QQ_CLIENT_ID"] == "${{ vars.TX_QQ_CLIENT_ID }}"
 assert apply_step["env"]["TX_QQ_CLIENT_SECRET"] == "${{ secrets.TX_QQ_CLIENT_SECRET }}"
 assert apply_step["env"]["TX_QQ_CLIENT_SECRET_VERSION"] == "${{ vars.TX_QQ_CLIENT_SECRET_VERSION }}"

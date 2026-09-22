@@ -520,7 +520,7 @@ WG broker 身份以 `wg:{region}:{account_id}` 隔离区服；`account_id` 必�
 
 JWT mapper 提供 `wotb_region / wotb_account_id / wotb_nickname / wotb_verified`。WG Profile 为只读来源；Profile 不存在时 `PUT /api/users/wotb-account/from-login` 可以原子创建/同步 WARGAMING 资料。
 
-`WG_APPLICATION_ID` 仅注入 Keycloak，用于 WG IdP；backend 不再需要该配置。
+`WG_APPLICATION_ID` 只注入 Keycloak 侧，用于 WG IdP；backend 不再需要该配置。GitHub Secrets `WG_APPLICATION_ID` 是这份凭据的唯一来源，同时供 Keycloak runtime env（自定义 SPI）与 TX-local OpenTofu 的 `wargaming-asia`/`wargaming-eu`/`wargaming-na` IdP `client_id` 使用；不新增第二个 Wargaming 凭据。
 
 IdP 部署步骤见 `docs/auth/wargaming-asia-deployment.md`。
 
