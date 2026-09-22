@@ -5,9 +5,9 @@ spring:
     # worker 是纯消息消费者：没有数据库、没有 web server、没有 topology 声明。
     web-application-type: none
   rabbitmq:
-    # 这里只声明连接信息。连接工厂（correlated publisher confirms + publisher returns）、
-    # listener 容器（consumer 并发、prefetch、manual ack、requeue 语义）与重试预算都由
-    # ParserWorkerAssembly 显式构建；Boot 的 spring.rabbitmq.listener.* / publisher-* 不会作用于
+    # 这里只声明连接信息，由 ParserWorkerConfig 绑定。连接工厂（correlated publisher confirms +
+    # publisher returns）、listener 容器（consumer 并发、prefetch、manual ack、requeue 语义）与重试预算
+    # 都由 ParserWorkerAssembly 显式构建；Boot 的 spring.rabbitmq.listener.* / publisher-* 不会作用于
     # 手工创建的容器与工厂，因此不在此处重复声明以免形成第二个（无效的）事实源。
     host: ${RABBITMQ_HOST}
     port: ${RABBITMQ_PORT:5672}
@@ -17,6 +17,8 @@ spring:
 
 wotb:
   parser-worker:
+    # 外部配置契约的唯一入口：ParserWorkerConfig 把这些键注入不可变配置对象（该类 javadoc 说明了为何
+    # 不能用 @Bean + @ConfigurationProperties）。凭据没有默认值 ⇒ 缺失/为空即启动失败（fail closed）。
     # 并发 = consumer 数，即真正的同时解析数（对齐本地 REPLAY_PARSE_MAX_CONCURRENT=2）。
     concurrency: ${PARSER_WORKER_CONCURRENCY:2}
     # 每个 consumer 的未确认消息上限，不是并发度。
