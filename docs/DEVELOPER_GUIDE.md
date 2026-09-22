@@ -160,11 +160,10 @@ component scanning stay stable. `wotb-web` remains the only container/JVM/Boot r
 depend on `wotb-result`, `wotb-playback`, `wotb-replay-coordinator`,
 `wotb-replay-processing`, and `wotb-ai`; none of those feature modules may depend on
 `wotb-web`. The coordinator owns lifecycle/state and consumes the value-only
-`ReplayProcessingDispatcher` port declared in `wotb-contracts`; local execution publishes
-in-process lifecycle value events, which are not a future RabbitMQ wire contract.
-the processing module owns the current `LocalReplayProcessingDispatcher`, scheduler and local
-full-processing executor. This is an in-process seam only: no MQ, worker executable, object
-storage or cross-process callback is part of the current runtime.
+`ReplayProcessingDispatcher` port declared in `wotb-contracts`; the processing module owns the
+storage-agnostic `ReplayProcessingSourceRunner` plus the artifact content/decode SSOT shared with
+the Yecao parser worker. There is no in-process execution plane: every production parse runs in
+`parser-worker` and is dispatched over RabbitMQ.
 
 API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/access-denied handler 汇合到同一 envelope。新后端异常使用 `ApiException(id, ApiErrorCode enum, errorMsg)`；响应携带唯一错误 `id`（写入安全日志，可用 `id=<value>` 检索到同一异常/请求），可选 `errorMsg` 为安全诊断；不再对客户端暴露请求级 `traceId`（改用 body `id`）。前端 transport 统一经 `ApiError` parser，`errorCode -> i18n` 本地展示错误并显示 `id` 诊断 ID，Retry 由 `retryable` 决定。新增码必须同步 `docs/api/error-contract.md`、后端测试与 zh/en/ru locale。
 
@@ -180,10 +179,10 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 ### Replay Processing
 
-Processing Job 创建后持久化输入，协调器经 `ReplayProcessingDispatcher` 将 source 任务提交给
-`wotb-replay-processing` 中的全局 `ReplayParseScheduler`
-（Replay Full Processing 唯一 CPU 预算：默认并发 2、job-aware 公平轮转、queued
-cancellation、有界 pending）；每个 source 独立 `processFull` 后写 derived artifact
+Processing Job 创建后把输入持久化到对象存储，协调器经 `ReplayProcessingDispatcher` 把 source
+任务确认式投递给 RabbitMQ，由 Yecao `parser-worker` 消费（Replay Full Processing 唯一 CPU
+预算 = AMQP consumer 数 `PARSER_WORKER_CONCURRENCY`，默认 2）；worker 内每个 source 独立
+`processFull` 后写 derived artifact
 （`ai-facts.json` / `map-overview.json`，原子写、先写后 READY），全部完成后单线程
 deterministic FINALIZING_BATCH（去重 / League / Rating / 汇总）→ READY 保存
 `ProcessedDataset`。Preview / Export / AI / 战局回放消费同一 Dataset（AI/Playback 走
@@ -192,38 +191,31 @@ deterministic FINALIZING_BATCH（去重 / League / Rating / 汇总）→ READY �
 `ReplayArtifactWriter` 负责 artifact 读写，`acquireForSource/release` 提供 Dataset
 Lease（读取期间 TTL 不清）。
 
-公开解析边界：最多 100 个 replay、单文件 20 MiB、总请求 200 MiB；Replay Full Processing
-默认并发 2（`REPLAY_PARSE_MAX_CONCURRENT`），pending source 上限 200
-（`REPLAY_PARSE_QUEUE_CAPACITY`，满载 503 `PROCESSING_QUEUE_FULL`）；Excel/ZIP artifact
-构建并发独立为 1（`REPLAY_ARTIFACT_MAX_CONCURRENT`）。
+公开解析边界：最多 100 个 replay、单文件 20 MiB、总请求 200 MiB；解析并发由 Yecao
+`parser-worker` 的 AMQP consumer 数表达（`PARSER_WORKER_CONCURRENCY`，默认 2）；TX backend
+内的 Excel/ZIP artifact 构建并发独立为 `REPLAY_ARTIFACT_MAX_CONCURRENT`（默认 1）。
 
-#### Replay 执行模式（单一正向枚举）
+#### Replay 控制面（唯一执行平面）
 
-`wotb.replay.execution.mode`（env `WOTB_REPLAY_EXECUTION_MODE`）= `local` | `distributed`，
-**未知值（含显式空值）启动即失败**（`ReplayProcessingConfig` 构造器 fail-fast），绝不静默降级：
+进程内（local）解析平面已删除：不存在执行模式开关，`business-api` 只有一套控制面装配
+（replay 域内 `com.wotb.web.replay.config.ReplayDistributedConfig`，无条件门控），
+**TX 不存在任何本地解析路径**。
 
-| 模式 | 输入 | 执行 | job/source 权威状态 | `GET .../result` 数据来源 |
-|---|---|---|---|---|
-| `local`（缺省） | 进程本地 job 目录 | 本进程 `ReplayParseScheduler` | `wotb.replay.processing-job.repository`（缺省 `memory`） | 进程内存 `ProcessedDataset` + job 目录 artifact |
-| `distributed` | MinIO `temp/jobs/<jobId>/input/<i>/<name>` | RabbitMQ `parser.request` → Yecao parser-worker | 必须 `jdbc`（PostgreSQL 权威） | MinIO `temp/jobs/<jobId>/result/finalized.json` + `artifacts/<i>/*.json` |
-
-- 装配点在 replay 域内 `com.wotb.web.replay.config.ReplayDistributedConfig`（整体
-  `@ConditionalOnProperty` 门控，local 下不创建任何 bean）；本地组件
-  （`ReplayParseScheduler` / `LocalReplayProcessingDispatcher` / `LocalReplayProcessingExecutor`）
-  反向按 `havingValue=local, matchIfMissing=true` 门控，因此两种模式的执行平面永远只有一套，
-  **distributed 下 TX 不存在任何本地解析路径**。
+| 输入 | 执行 | job/source 权威状态 | `GET .../result` 数据来源 |
+|---|---|---|---|
+| MinIO `temp/jobs/<jobId>/input/<i>/<name>` | RabbitMQ `parser.request` → Yecao parser-worker | PostgreSQL（`wotb.replay.processing-job.repository=jdbc`，权威） | MinIO `temp/jobs/<jobId>/result/finalized.json` + `artifacts/<i>/*.json` |
 - create 编排只有一份（`ReplayProcessingJobService`）：输入落点与 dataset 读取是两个端口
   （`ReplayProcessingInputStore` / `ReplayProcessingResultReader`）。
 - **批次收尾（FINALIZING_BATCH）只有一份实现**：`ReplayBatchFinalizer` 负责
-  dedupe → 冲突判定 → League Rating / Rating V2 → 批次聚合 → enrichment。local 路径在进程内调用它
-  并把结果留在内存；distributed 路径由控制面在 `FINALIZING_BATCH` 阶段调用同一个实现，
+  dedupe → 冲突判定 → League Rating / Rating V2 → 批次聚合 → enrichment。控制面在
+  `FINALIZING_BATCH` 阶段调用它，
   输入是「PG 里的 source 终态 + MinIO 里的 per-source canonical Battle」
   （`Replays.ParsedEntry` 只携带 `(sourceIndex, sourceName, Battle, failureMessage)`，因此不需要把解析
   中间态搬过网络），产物是对象存储里的 **finalized batch dataset**
   （`temp/jobs/<jobId>/result/finalized.json`），随后才置 READY。
 - **dataset / artifact 权威边界**：PG 是 lifecycle 权威，MinIO 是 dataset 与 artifact 权威，
   **distributed 生产不依赖 TX 本地磁盘**。读取侧只有一个端口 `ReplayProcessingResultReader`
-  （local = 内存 + job 目录，distributed = 对象存储），`GET result`、Export、Rating V2、AI Review
+  （对象存储），`GET result`、Export、Rating V2、AI Review
   （`ai-facts.json`）、Map Overview、Battle Playback V2 全部经它取数据；读取侧**不再**拼接
   per-source 对象（那会跳过上面那套批次语义）。字节 → DTO 的解码由
   `ReplayArtifactWriter.decode*(...)` 唯一拥有。
@@ -613,7 +605,7 @@ Phase 1 将 `wotb-frontend`、`keycloak` 与其专用 `keycloak-postgres` 路由
 TX；Yecao 在正式 cutover 前仍只承载业务 PostgreSQL 与观测服务。TX 的业务运行时是
 Compose 服务 `business-api`（Tencent TCR `ccr.ccs.tencentyun.com/wotbtools/wotbtools-backend` 的 immutable 镜像；GHCR 保留为 Yecao 来源与 TX 恢复副本）：
 单个 Spring Boot 进程同时承载全部 public business endpoint 与分布式回放控制面
-（`WOTB_REPLAY_EXECUTION_MODE=distributed` + `WOTB_REPLAY_PROCESSING_JOB_REPOSITORY=jdbc`），
+（`WOTB_REPLAY_PROCESSING_JOB_REPOSITORY=jdbc`），
 不发布任何 host port，只被 TX-internal 的 frontend nginx、Caddy readiness surface 与
 deployment-owned `health-probe` 访问（app `/api/health` + management
 `/actuator/health`，管理端口 8088）。因此 release plan 把 backend 镜像路由到

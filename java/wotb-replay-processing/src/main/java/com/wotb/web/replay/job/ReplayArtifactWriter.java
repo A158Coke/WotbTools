@@ -12,24 +12,20 @@ import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 
 /**
- * Derived Artifact 读写：
+ * Derived Artifact 编解码：
  * <ul>
- *   <li>路径固定 {@code <jobDir>/derived/{sourceId}/ai-facts.json} 与
- *       {@code map-overview.json}（sourceId = r{sourceIndex}，sourceName 不入路径）；</li>
- *   <li>写：临时文件 + atomic move，先写 artifact 后置 source READY；</li>
- *   <li>MapOverview 不可用（builder 返回 null）→ 不写伪 artifact，不判 parse failure；</li>
- *   <li>immutable JSON（Jackson），TTL 由 job 目录清理接管。</li>
+ *   <li>{@code *Content(...)} 是 artifact <b>字节生成</b>的唯一实现，落地由
+ *       {@link ReplayArtifactSink} 决定（分布式 sink 写对象存储）；</li>
+ *   <li>{@code decode*(...)} 是 <b>字节 → 模型</b>的唯一实现（含 legacy 归一化）；</li>
+ *   <li>MapOverview 不可用（builder 返回 null）→ {@code null} 字节，不写伪 artifact，
+ *       不判 parse failure；</li>
+ *   <li>immutable JSON（Jackson）。</li>
  * </ul>
  *
- * <p><b>artifact 单一 SSOT</b>：{@code *Content(...)} 方法是内容生成的唯一实现，写路径统一走
- * {@link ReplayArtifactSink}（本地文件 sink 见 {@link ReplayArtifactFileSink}）。{@code write*(Path,…)}
- * 静态方法只是 socket 默认 sink 的既有入口，保持本地行为逐字节不变。</p>
+ * <p>本类不再持有任何本地 job 目录布局：进程内解析路径已退出正式架构，artifact 只以
+ * {@code byte[]} 在 sink 与 reader 之间传递。</p>
  */
 public final class ReplayArtifactWriter {
 
@@ -45,19 +41,6 @@ public final class ReplayArtifactWriter {
     private static final ObjectMapper MAPPER = JsonMapper.builder().build();
 
     private ReplayArtifactWriter() {
-    }
-
-    public static Path aiFactsPath(final Path jobDir, final int sourceIndex) {
-        return derivedDir(jobDir, sourceIndex).resolve(AI_FACTS_NAME);
-    }
-
-    public static Path mapOverviewPath(final Path jobDir, final int sourceIndex) {
-        return derivedDir(jobDir, sourceIndex).resolve(MAP_OVERVIEW_NAME);
-    }
-
-    /** V2 battle playback dataset 路径（仅当 canonical timeline 可用时写出）。 */
-    public static Path battlePlaybackV2Path(final Path jobDir, final int sourceIndex) {
-        return derivedDir(jobDir, sourceIndex).resolve(BATTLE_PLAYBACK_V2_NAME);
     }
 
     /**
@@ -89,58 +72,8 @@ public final class ReplayArtifactWriter {
         return MAPPER.writeValueAsBytes(dataset);
     }
 
-    /** 写 ai-facts.json（worker 内调用，先写后 READY）。 */
-    public static void writeAiFacts(final Path jobDir, final int sourceIndex,
-                                    final ReplayProcessingResult result) throws IOException {
-        writeAtomic(aiFactsPath(jobDir, sourceIndex), aiFactsContent(result));
-    }
-
-    /** 写 map-overview.json；overview == null（capability unavailable）时跳过。 */
-    public static void writeMapOverview(final Path jobDir, final int sourceIndex,
-                                        final MapOverview overview) throws IOException {
-        final byte[] content = mapOverviewContent(overview);
-        if (content == null) {
-            return;
-        }
-        writeAtomic(mapOverviewPath(jobDir, sourceIndex), content);
-    }
-
-    /** 写 V2 battle playback dataset；dataset == null（timeline 不可用）时跳过。 */
-    public static void writeBattlePlaybackV2(final Path jobDir, final int sourceIndex,
-                                             final BattlePlaybackDataset dataset) throws IOException {
-        final byte[] content = battlePlaybackV2Content(dataset);
-        if (content == null) {
-            return;
-        }
-        writeAtomic(battlePlaybackV2Path(jobDir, sourceIndex), content);
-    }
-
-    /** 读取 ai-facts（本地 job 目录路径；分布式走对象存储字节）。 */
-    public static AiReplayFacts readAiFacts(final Path jobDir, final int sourceIndex) throws IOException {
-        return decodeAiFacts(Files.readAllBytes(aiFactsPath(jobDir, sourceIndex)));
-    }
-
-    /** 读取 map-overview；文件不存在（unavailable）返回 null（Playback 204 语义，Phase 7）。 */
-    public static MapOverview readMapOverview(final Path jobDir, final int sourceIndex) throws IOException {
-        final Path path = mapOverviewPath(jobDir, sourceIndex);
-        if (!Files.exists(path)) {
-            return null;
-        }
-        return decodeMapOverview(Files.readAllBytes(path));
-    }
-
-    /** 读取 V2 battle playback dataset；文件不存在（unavailable）返回 null（204 语义）。 */
-    public static BattlePlaybackDataset readBattlePlaybackV2(final Path jobDir, final int sourceIndex)
-            throws IOException {
-        final Path path = battlePlaybackV2Path(jobDir, sourceIndex);
-        if (!Files.exists(path)) {
-            return null;
-        }
-        return decodeBattlePlaybackV2(Files.readAllBytes(path));
-    }
-
     /**
-     * 字节 → ai-facts（**唯一解码实现**，本地文件与对象存储共用同一份语义）。
+     * 字节 → ai-facts（**唯一解码实现**）。
      *
      * @param content artifact 字节；{@code null}（对象/文件不存在）返回 {@code null}，由调用方
      *                决定「缺失」对它的含义（AI 路径是 DATASET_UNAVAILABLE）
@@ -353,18 +286,4 @@ public final class ReplayArtifactWriter {
         while (normalized.size() < size) normalized.addNull();
     }
 
-    static Path derivedDir(final Path jobDir, final int sourceIndex) {
-        return jobDir.resolve("derived").resolve("r" + sourceIndex);
-    }
-
-    private static void writeAtomic(final Path target, final byte[] data) throws IOException {
-        Files.createDirectories(target.getParent());
-        final Path tmp = target.resolveSibling(target.getFileName() + ".tmp");
-        Files.write(tmp, data);
-        try {
-            Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (final AtomicMoveNotSupportedException e) {
-            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
 }

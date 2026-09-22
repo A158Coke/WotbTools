@@ -46,9 +46,8 @@
             <groupId>com.wotb</groupId>
             <artifactId>wotb-contracts</artifactId>
         </dependency>
-        <!-- 分布式回放控制面（wotb.replay.execution.mode=distributed）：对象存储键布局 + AMQP
-             投递/消费适配器。两个模块都刻意不带任何 stereotype，装配只发生在
-             com.wotb.web.replay.config.ReplayDistributedConfig（缺省 local 下不创建任何 bean）。 -->
+        <!-- 回放控制面：对象存储键布局 + AMQP 投递/消费适配器。两个模块都刻意不带任何
+             stereotype，装配只发生在 com.wotb.web.replay.config.ReplayDistributedConfig。 -->
         <dependency>
             <groupId>com.wotb</groupId>
             <artifactId>wotb-object-storage-minio</artifactId>
@@ -177,6 +176,18 @@
                 <version>3.5.0</version>
                 <configuration>
                     <excludedGroups>${ai.probe.excludedGroups}</excludedGroups>
+                    <!-- 生产总是装配分布式回放控制面（ReplayDistributedConfig 不再有条件门控），
+                         因此全上下文 @SpringBootTest 必须像生产一样提供控制面配置，否则 fail-closed
+                         的 MinioObjectStorageProperties/RabbitBrokerProperties 会让 context 启动失败。
+                         取值只用于启动装配；测试不连接真实 MinIO/RabbitMQ。 -->
+                    <systemPropertyVariables>
+                        <wotb.replay.object-storage.access-key>test-access-key</wotb.replay.object-storage.access-key>
+                        <wotb.replay.processing-job.repository>jdbc</wotb.replay.processing-job.repository>
+                        <wotb.replay.object-storage.secret-key>test-secret-key</wotb.replay.object-storage.secret-key>
+                        <wotb.replay.broker.host>localhost</wotb.replay.broker.host>
+                        <wotb.replay.broker.username>test-control-api</wotb.replay.broker.username>
+                        <wotb.replay.broker.password>test-control-api</wotb.replay.broker.password>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>

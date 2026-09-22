@@ -4,9 +4,8 @@ package com.wotb.web.replay.job;
  * 派生 artifact 的落地目标（"写到哪里"）。
  *
  * <p>{@link ReplayArtifactWriter} 是 artifact <b>内容</b>的唯一来源：这个接口只承载字节，调用方
- * 先拿到 {@code byte[]}，再由 sink 决定落到本地文件还是对象存储。同一份解析在
- * {@link ReplayArtifactFileSink}（本地文件，既有行为）与对象存储 sink（parser worker）下必须
- * 写出<b>逐字节相同</b>的对象；不允许出现第二条 artifact 生成路径。</p>
+ * 先拿到 {@code byte[]}，再由 sink 决定落到哪个后端（生产 sink 写对象存储，运行在 parser worker）。
+ * 不允许出现第二条 artifact 生成路径。</p>
  *
  * <p>sink 实现按 {@code (sourceIndex, artifactName)} 覆盖写。{@code artifactName} 固定为
  * {@link ReplayArtifactWriter#AI_FACTS_NAME} /

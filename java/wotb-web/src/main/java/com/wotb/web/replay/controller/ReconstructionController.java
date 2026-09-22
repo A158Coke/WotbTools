@@ -108,7 +108,7 @@ public class ReconstructionController {
      * <p>SSE 异步模型：request 线程只做 reference / {@code lang} / {@code correlationId}
      * 校验，注册 cancellation、创建 {@link SseEmitter} 并把分析提交到
      * {@link AiReviewWorkerExecutor} 后立即返回。worker 线程内 acquire Processing
-     * Dataset lease → {@link com.wotb.web.replay.job.ReplayArtifactWriter#readAiFacts}
+     * Dataset lease → {@link com.wotb.web.replay.job.ReplayArtifactWriter#decodeAiFacts(byte[])}
      * → AI pipeline → 流式 SSE → release lease；失败以 {@code error} 事件携带稳定错误码传达。</p>
      */
     @PostMapping(value = ApiPaths.REPLAY_ANALYZE, consumes = MediaType.APPLICATION_JSON_VALUE)

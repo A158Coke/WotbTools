@@ -15,7 +15,7 @@ import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.job.ProcessedDataset;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
-import com.wotb.web.replay.job.LocalReplayDatasetRepository;
+import com.wotb.web.replay.job.InMemoryReplayDatasetRepository;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -217,13 +217,14 @@ class AiReplayReviewServiceTest {
             final ReplayProcessingJob job = new ReplayProcessingJob("j1", List.of("a.wotbreplay"));
             job.startProcessing();
             job.markSourceProcessing(0, "a.wotbreplay");
-            ReplayArtifactWriter.writeAiFacts(store.jobDir("j1"), 0, result);
+            final InMemoryReplayDatasetRepository reader = new InMemoryReplayDatasetRepository();
+            reader.putAiFacts("j1", 0, ReplayArtifactWriter.aiFactsContent(result));
             job.markSourceReady(0);
             job.updateProgress(1, 0, 0);
             job.markReady(new ProcessedDataset(List.of(result.battle()), List.of("a.wotbreplay"),
                     List.of(), List.of(), null, null));
             store.register(job);
-            service = new AiReplayReviewService(aiAnalysisService, null, null, store, new LocalReplayDatasetRepository(store));
+            service = new AiReplayReviewService(aiAnalysisService, null, null, store, reader);
             when(aiAnalysisService.analyzePlayerOrFallback(any(), eq(AllowedLanguage.ZH), any()))
                     .thenReturn(new AnalyzeResult("dataset-analysis"));
 
@@ -255,15 +256,15 @@ class AiReplayReviewServiceTest {
             final ReplayProcessingJob job = new ReplayProcessingJob("j1", List.of("a.wotbreplay"));
             job.startProcessing();
             job.markSourceProcessing(0, "a.wotbreplay");
-            ReplayArtifactWriter.writeAiFacts(store.jobDir("j1"), 0, result);
-            // 覆盖为 corrupt ai-facts.json（ReplayFactsCodec 反序列化失败 → IOException）
-            Files.writeString(ReplayArtifactWriter.aiFactsPath(store.jobDir("j1"), 0), "{not-valid-json");
+            // corrupt ai-facts 字节（ReplayFactsCodec 反序列化失败 → IOException）
+            final InMemoryReplayDatasetRepository reader = new InMemoryReplayDatasetRepository();
+            reader.putAiFacts("j1", 0, "{not-valid-json".getBytes(java.nio.charset.StandardCharsets.UTF_8));
             job.markSourceReady(0);
             job.updateProgress(1, 0, 0);
             job.markReady(new ProcessedDataset(List.of(result.battle()), List.of("a.wotbreplay"),
                     List.of(), List.of(), null, null));
             store.register(job);
-            service = new AiReplayReviewService(aiAnalysisService, null, null, store, new LocalReplayDatasetRepository(store));
+            service = new AiReplayReviewService(aiAnalysisService, null, null, store, reader);
 
             final ResponseStatusException e = assertThrows(ResponseStatusException.class,
                     () -> service.analyzeFacts("j1", 0, AllowedLanguage.ZH, AiReviewStreamListener.NOOP));

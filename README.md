@@ -19,7 +19,7 @@ Android 从文件管理器打开回放后，登录成功即可自动上传解析
 ```mermaid
 flowchart LR
     A["上传 .wotbreplay"] --> B["POST /api/replay/processing-jobs（每 selection 恰好一个 Processing Job）"]
-    B --> C["ReplayParseScheduler（每 source 恰好 processFull：parse + reconstruction + enrich）"]
+    B --> C["Yecao parser-worker（每 source 恰好 processFull：parse + reconstruction + enrich）"]
     C --> D["Derived Dataset（ProcessedDataset + ai-facts.json + map-overview.json）"]
     D --> E["Preview result（GET processing-jobs/{jobId}/result）"]
     D --> F["Export Job（复用 result，不重新上传 / 不重新 processFull）"]
@@ -33,7 +33,7 @@ flowchart LR
 
 ## 核心工程取舍
 
-0. **Parse once / consume many**：`.wotbreplay` 上传 → `POST /api/replay/processing-jobs`（每 selection 恰好一个 Processing Job）→ `ReplayParseScheduler` 每 source 恰好 `processFull` → 共享 Derived Dataset（`ProcessedDataset` + `ai-facts.json` + `map-overview.json`）；Preview / Export / AI 复盘 / 战局回放全部只读复用同一 dataset，绝不重复 full process，也不存在 multipart AI / Playback 回退路径。
+0. **Parse once / consume many**：`.wotbreplay` 上传 → `POST /api/replay/processing-jobs`（每 selection 恰好一个 Processing Job）→ Yecao parser-worker 每 source 恰好 `processFull` → 共享 Derived Dataset（`ProcessedDataset` + `ai-facts.json` + `map-overview.json`）；Preview / Export / AI 复盘 / 战局回放全部只读复用同一 dataset，绝不重复 full process，也不存在 multipart AI / Playback 回退路径。
 1. **权威结算 > 事件流观测**：伤害 / 死亡以 `battle_results` 为准；事件流只是观测子集，覆盖不足时抑制数字（`OBSERVED_DAMAGE_IS_PARTIAL`）。
 2. **SSE 流式 + 单次尝试**：`/api/replay/analyze` 为 `text/event-stream`；AI 不流内重试；有界 worker 池（4+4）防阻塞，饱和返回 503。
 3. **九宫格 + 地图语义化**：500×500 canonical 九宫格 1-9；AREA 语义来自客户端 SC2 / heightmap 解码，人工核验前不当作已验证事实。
