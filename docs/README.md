@@ -56,8 +56,6 @@
 | `architecture/battle-timeline.md` | 改 battle timeline 事件模型 / 时间轴聚合时 |
 | `architecture/http-contracts.md` | 改 HTTP OpenAPI 契约、生成 transport 或 runtime schema 时 |
 | `architecture/async-contracts.md` | 改异步 Control / Worker 契约或 future async foundation 时 |
-| `architecture/control-api.md` | 改 Control API 管理面契约时 |
-| `architecture/control-api-native-benchmark.md` | 查 Control API native benchmark 设计 / 结果时 |
 | `architecture/grafana-opentofu.md` | 改 Grafana OpenTofu API 管理方式时 |
 | `architecture/opentofu-production-baseline.md` | 改生产 OpenTofu baseline / import / state 边界时 |
 | `architecture/opentofu-postgres-keycloak.md` | 改 TX Keycloak PostgreSQL OpenTofu root、state 或本地执行边界时 |
