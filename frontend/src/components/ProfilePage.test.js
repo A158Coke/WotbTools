@@ -33,11 +33,7 @@ vi.mock('../utils/api-user.js', () => ({
   syncUserWotbAccountFromLogin: () => syncImpl(),
   updateUserWotbAccount: () => Promise.resolve(currentProfile),
   deleteUserWotbAccount: () => Promise.resolve(currentProfile),
-  getUserHofRecords: () => Promise.resolve([]),
-  getUnreadNotificationCount: () => Promise.resolve({ count: 0 }),
-  listNotifications: () => Promise.resolve([]),
-  markAllNotificationsRead: () => Promise.resolve(),
-  markNotificationRead: () => Promise.resolve()
+  getUserHofRecords: () => Promise.resolve([])
 }))
 
 const hundredApi = vi.hoisted(() => ({
