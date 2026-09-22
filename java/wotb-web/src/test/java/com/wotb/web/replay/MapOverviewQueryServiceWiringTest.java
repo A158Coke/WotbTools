@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.wotb.web.replay.job.InMemoryReplayJobAuthority;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,7 +34,7 @@ class MapOverviewQueryServiceWiringTest {
         ReplayProcessingJobStore processingStore() {
             try {
                 // 每个测试类上下文（Spring 缓存）创建一次临时根目录。
-                return new ReplayProcessingJobStore(Files.createTempDirectory("wotb-mapoverview-wiring"), 60);
+                return new ReplayProcessingJobStore(Files.createTempDirectory("wotb-mapoverview-wiring"), 60, new InMemoryReplayJobAuthority());
             } catch (final IOException e) {
                 throw new UncheckedIOException(e);
             }

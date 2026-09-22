@@ -95,9 +95,9 @@ class PostgresParserOutcomeHandlerPostgresTest {
             transactions = new DataSourceTransactionManager(dataSource);
         }
         jdbc.sql("delete from replay_processing_job").update();
-        store = new ReplayProcessingJobStore(tempDir, 60, new ReplayJobAuthority(jdbc, transactions));
+        store = new ReplayProcessingJobStore(tempDir, 60, new PostgresReplayJobAuthority(jdbc, transactions));
         dispatcher = new RecordingDispatcher();
-        handler = new PostgresParserOutcomeHandler(store, new ReplayJobAuthority(jdbc, transactions),
+        handler = new PostgresParserOutcomeHandler(store, new PostgresReplayJobAuthority(jdbc, transactions),
                 dispatcher, MAX_ATTEMPTS, new StubFinalization());
     }
 
@@ -385,7 +385,7 @@ class PostgresParserOutcomeHandlerPostgresTest {
     }
 
     private ReplayJobAuthority authority() {
-        return new ReplayJobAuthority(jdbc, transactions);
+        return new PostgresReplayJobAuthority(jdbc, transactions);
     }
 
     private static long revisionOf(final String jobId) {

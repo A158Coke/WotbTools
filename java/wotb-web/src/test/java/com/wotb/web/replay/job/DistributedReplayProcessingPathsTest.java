@@ -68,7 +68,7 @@ class DistributedReplayProcessingPathsTest {
 
     @BeforeEach
     void setUp() {
-        store = new ReplayProcessingJobStore(tempDir, 60);
+        store = new ReplayProcessingJobStore(tempDir, 60, new InMemoryReplayJobAuthority());
         storage = new RecordingObjectStorage();
         dispatcher = new RecordingDispatcher();
         repository = new ObjectStorageReplayDatasetRepository(storage);
@@ -435,7 +435,7 @@ class DistributedReplayProcessingPathsTest {
     private static final class FailingRegistrationStore extends ReplayProcessingJobStore {
 
         private FailingRegistrationStore(final Path root, final int ttlMinutes) {
-            super(root, ttlMinutes);
+            super(root, ttlMinutes, new InMemoryReplayJobAuthority());
         }
 
         @Override

@@ -177,13 +177,8 @@ wotb:
       # Replay Processing Job 临时输入目录（上传持久化；result 为内存态 dataset，TTL 自动清理）
       dir: ${REPLAY_PROCESSING_JOB_DIR:${java.io.tmpdir}/wotb-replay-processing-jobs}
       ttl-minutes: ${REPLAY_PROCESSING_JOB_TTL_MINUTES:30}
-      # job/source/operationId 权威状态后端：
-      #   memory = 单实例内存注册表（默认；Yecao 过渡期与本地开发，行为与引入权威状态前一致）
-      #   jdbc   = PostgreSQL 权威投影（重启后状态仍可读；TX 运行时使用）
-      # 缺省保持 memory，使本 PR 不改变任何既有部署的运行时行为。
-      repository: ${WOTB_REPLAY_PROCESSING_JOB_REPOSITORY:memory}
-      # 说明：jdbc 模式要求业务库 schema 至少到 V23（replay_processing_* 三表），
-      # Flyway 启动迁移即满足；内存模式忽略这三表。
+      # job/source/operationId 权威状态固定为 PostgreSQL（无运行时后端选择器）：
+      # 要求业务库 schema 至少到 V23（replay_processing_* 三表 + operation 索引），Flyway 启动迁移即满足。
       # 与 export-job 共用同一有界 worker 池（max-concurrent/queue-capacity 见上；不复制两套 executor）
     coordinate:
       half-extent: ${REPLAY_COORDINATE_HALF_EXTENT:250}
