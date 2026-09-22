@@ -6,16 +6,16 @@ locals {
   }
 }
 
+# Realm roles follow desired state: adding or retiring a role is an ordinary
+# transition that `tofu plan` must be able to show as a delete. `tofu plan` is
+# the destructive-change audit gate, so this resource deliberately carries no
+# `prevent_destroy` and no role name is special-cased anywhere.
 resource "keycloak_role" "realm" {
   for_each = local.realm_roles
 
   realm_id    = keycloak_realm.wotbtools.id
   name        = each.key
   description = each.value
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "keycloak_default_roles" "wotbtools" {
