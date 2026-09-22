@@ -149,10 +149,12 @@ class CiPathFilterTest(unittest.TestCase):
     def test_yecao_runtime_compose_does_not_refresh_retired_application_services(self):
         plan = detect("deploy/docker-compose.prod.yml")
         self.assertEqual(plan["deployServices"], [
-            "postgres", "node-exporter", "prometheus", "loki", "alloy", "grafana"
+            "node-exporter", "prometheus", "loki", "alloy", "grafana"
         ])
         self.assertEqual(plan["targetServices"], {"yecao": plan["deployServices"]})
-        self.assertNotIn("wotb-backend", plan["deployServices"])
+        # The retired Yecao application runtime must not be reachable from a Compose-config release.
+        for retired in ("postgres", "wotb-backend", "wotb-frontend", "keycloak"):
+            self.assertNotIn(retired, plan["deployServices"])
         self.assert_surfaces(["deploy/docker-compose.prod.yml"], ["deploy"])
 
     def test_provider_source_runs_provider_and_runtime_smoke(self):

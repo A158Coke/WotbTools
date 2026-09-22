@@ -12,11 +12,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  backend-logs:
+  runtime-logs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Collect backend diagnostics
+      - name: Collect Yecao runtime diagnostics
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -29,9 +29,12 @@ jobs:
             cd /opt/wotb
             echo "== docker compose ps =="
             docker compose ps
-            echo "== backend inspect =="
-            docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' wotb-wotb-backend-1 2>/dev/null || true
-            echo "== backend logs =="
-            docker compose logs --tail 220 wotb-backend
-            echo "== frontend logs =="
-            docker compose logs --tail 80 wotb-frontend
+            # The Yecao host runs the parser execution plane plus the shared observability stack; the
+            # retired application runtime (backend/frontend/Keycloak/PostgreSQL) has no containers to
+            # inspect here any more, and the business runtime's logs live on TX.
+            echo "== parser-worker inspect =="
+            docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' wotb-parser-worker-1 2>/dev/null || true
+            echo "== parser-worker logs =="
+            docker compose logs --tail 220 parser-worker
+            echo "== observability logs =="
+            docker compose logs --tail 80 alloy prometheus loki grafana
