@@ -684,6 +684,7 @@ jobs:
           with open('/tmp/minio-state.json', encoding='utf-8') as state_file:
               state = json.load(state_file)
           resources = {}
+          bucket_arn = 'arn:aws:s3:::wotbtools-temp'
 
           def collect(module):
               for resource in module.get('resources', []):
@@ -701,6 +702,8 @@ jobs:
               'minio_iam_user_policy_attachment.control_api',
               'minio_iam_policy.temporary_workspace_control_api_reclaim',
               'minio_iam_user_policy_attachment.control_api_reclaim',
+              'minio_iam_policy.temporary_workspace_control_api_location',
+              'minio_iam_user_policy_attachment.control_api_location',
           }
           missing = sorted(expected - set(resources))
           assert not missing, missing
@@ -720,6 +723,10 @@ jobs:
               # only delete grant in the root, and the prefix assertion below keeps it inside
               # temp/jobs/*.
               'minio_iam_policy.temporary_workspace_control_api_reclaim': {'s3:DeleteObject'},
+              # The MinIO Java SDK resolves the bucket location before every object operation, so the
+              # control plane needs this one bucket-level action. It grants no object access: the
+              # bucket-resource assertion below pins it to the bucket ARN exactly.
+              'minio_iam_policy.temporary_workspace_control_api_location': {'s3:GetBucketLocation'},
           }
           for address, expected_actions in expected_policies.items():
               document = json.loads(resources[address]['policy'])
@@ -730,9 +737,11 @@ jobs:
                   actions |= statement_actions
                   if 's3:ListBucket' in statement_actions:
                       assert statement['Condition']['StringLike']['s3:prefix'] == ['temp/jobs/*'], address
+                  elif 's3:GetBucketLocation' in statement_actions:
+                      assert statement['Resource'] == [bucket_arn], (address, statement['Resource'])
                   else:
                       for target in statement['Resource']:
-                          assert target.endswith('/temp/jobs/*'), (address, target)
+                          assert target == bucket_arn + '/temp/jobs/*', (address, target)
               assert actions == expected_actions, (address, actions)
           print('MinIO dual-identity temp/jobs prefix policy contract OK')
           PY
