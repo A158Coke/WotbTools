@@ -6,6 +6,7 @@ import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.TacticalReviewHarness;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
+import com.wotb.web.replay.job.InMemoryReplayJobAuthority;
 import com.wotb.web.replay.job.ProcessedDataset;
 import com.wotb.web.replay.job.ReplayProcessingJob;
 import com.wotb.web.replay.job.InMemoryReplayDatasetRepository;
@@ -44,7 +45,7 @@ class ReconstructionDatasetContractTest {
 
     private void newController() throws Exception {
         root = Files.createTempDirectory("wotb-dataset-contract-test");
-        store = new ReplayProcessingJobStore(root, 60);
+        store = new ReplayProcessingJobStore(root, 60, new InMemoryReplayJobAuthority());
         final AiReplayReviewService reviewService = new AiReplayReviewService(
                 mock(AiReplayAnalysisService.class),
                 mock(TacticalReviewHarness.class),

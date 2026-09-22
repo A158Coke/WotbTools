@@ -224,7 +224,7 @@ class DistributedJobWorkspaceCleanupTest {
     }
 
     private ReplayJobAuthority authority() {
-        return new ReplayJobAuthority(jdbc, transactions);
+        return new PostgresReplayJobAuthority(jdbc, transactions);
     }
 
     /** 登记一个 READY 终态 job，并把它的完整对象存储工作区写出来。 */

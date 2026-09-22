@@ -2,6 +2,7 @@ package com.wotb.web.replay;
 
 import com.wotb.core.model.Battle;
 import com.wotb.web.replay.dto.MapOverview;
+import com.wotb.web.replay.job.InMemoryReplayJobAuthority;
 import com.wotb.web.replay.job.ProcessedDataset;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
@@ -42,7 +43,7 @@ class MapOverviewQueryServiceTest {
     /** 建一个已注册 source#0 的 Processing Job store；按 {@code status} 置位 source 状态，可选放 map-overview artifact。 */
     private ReplayProcessingJobStore storeWithJob(final Path dir, final ReplayProcessingJob.SourceStatus status,
                                                   final boolean writeMapFile) throws Exception {
-        final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60);
+        final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60, new InMemoryReplayJobAuthority());
         reader = new InMemoryReplayDatasetRepository();
         final Battle battle = new Battle();
         battle.arenaId = "arena-1";

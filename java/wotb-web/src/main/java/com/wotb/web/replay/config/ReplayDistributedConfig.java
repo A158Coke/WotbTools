@@ -24,7 +24,6 @@ import org.springframework.amqp.core.AcknowledgeMode;
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -147,8 +146,7 @@ public class ReplayDistributedConfig {
 
     /**
      * 结果处理器：分布式模式**必须**有 PostgreSQL 权威状态（job/source/attempt 都在那里），
-     * 否则结果无法判定陈旧/重复。缺 {@code wotb.replay.processing-job.repository=jdbc} 时
-     * 启动即失败，而不是退化成一个只存在于内存里的第二套权威。
+     * 否则结果无法判定陈旧/重复（PostgreSQL 是唯一权威，装配无条件）。
      *
      * <p>它同时是**逻辑重试的唯一决策点**：worker 的基础设施失败报告
      * （{@code parser.failed(retryable=true)}）由它按 PG 权威状态与
@@ -161,16 +159,11 @@ public class ReplayDistributedConfig {
     @Bean
     public ParserOutcomeHandler replayParserOutcomeHandler(
             final ReplayProcessingJobStore replayProcessingJobStore,
-            final ObjectProvider<ReplayJobAuthority> replayJobAuthority,
+            final ReplayJobAuthority replayJobAuthority,
             final RabbitReplayProcessingDispatcher replayProcessingDispatcher,
             final ObjectStorageReplayDatasetRepository replayDatasetRepository,
             @Value("${wotb.replay.retry.max-attempts:3}") final int maxAttempts) {
-        final ReplayJobAuthority authority = replayJobAuthority.getIfAvailable();
-        if (authority == null) {
-            throw new IllegalStateException("replay processing requires "
-                    + "wotb.replay.processing-job.repository=jdbc (PostgreSQL job authority)");
-        }
-        return new PostgresParserOutcomeHandler(replayProcessingJobStore, authority,
+        return new PostgresParserOutcomeHandler(replayProcessingJobStore, replayJobAuthority,
                 replayProcessingDispatcher, maxAttempts, replayDatasetRepository);
     }
 

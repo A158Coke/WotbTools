@@ -76,7 +76,7 @@ public final class ReplayProcessingJob {
      */
     private volatile ReplayJobTransitionListener transitionListener;
     /**
-     * 投影版本：每次状态迁移 +1，**与是否有持久化监听器无关**（内存模式同样递增）。
+     * 投影版本：每次状态迁移 +1，**与是否有持久化监听器无关**（未挂监听器的投影同样递增）。
      * 权威状态用它拒绝乱序/陈旧快照覆盖已提交的新状态；它只是同一个状态机的版本号，
      * 不参与任何状态合法性判定。
      */
@@ -141,7 +141,7 @@ public final class ReplayProcessingJob {
         this.parseFailed = parseFailed;
     }
 
-    /** 挂载状态迁移通知（由注册表在 jdbc 模式注册 job 时调用；内存模式不调用）。 */
+    /** 挂载状态迁移通知（注册表 register 时挂载；此后每次迁移 write-through 到 PostgreSQL 权威）。 */
     void attachTransitionListener(final ReplayJobTransitionListener listener) {
         this.transitionListener = listener;
     }

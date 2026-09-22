@@ -56,7 +56,7 @@ class ReplayExportJobServiceTest {
         meterRegistry = new SimpleMeterRegistry();
         // mandatory ReplayProcessingJobStore：不构造 null SUT（与 production invariants 一致）。
         processingStoreDir = Files.createTempDirectory("wotb-export-setup-store");
-        processingStore = new ReplayProcessingJobStore(processingStoreDir, 60);
+        processingStore = new ReplayProcessingJobStore(processingStoreDir, 60, new InMemoryReplayJobAuthority());
         service = new ReplayExportJobService(store, executor, processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
     }
 
@@ -81,7 +81,7 @@ class ReplayExportJobServiceTest {
     @Test
     void createFromProcessingResultAggregateReusesDatasetWithoutReprocessing() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-processing-reuse-test"), 60);
+                Files.createTempDirectory("wotb-processing-reuse-test"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -127,7 +127,7 @@ class ReplayExportJobServiceTest {
     @Test
     void createFromProcessingResultEachProducesZipWithoutReprocessing() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-processing-reuse-each"), 60);
+                Files.createTempDirectory("wotb-processing-reuse-each"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -156,7 +156,7 @@ class ReplayExportJobServiceTest {
     @Test
     void createFromUnknownProcessingJobIsNotFound() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-processing-missing"), 60);
+                Files.createTempDirectory("wotb-processing-missing"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -171,7 +171,7 @@ class ReplayExportJobServiceTest {
     @Test
     void createFromNotReadyProcessingJobIsConflict() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-processing-notready"), 60);
+                Files.createTempDirectory("wotb-processing-notready"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -191,7 +191,7 @@ class ReplayExportJobServiceTest {
     @Test
     void fromResultEachWithOneValidOneFailureProducesZip() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-b2-1v1f"), 60);
+                Files.createTempDirectory("wotb-b2-1v1f"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -216,7 +216,7 @@ class ReplayExportJobServiceTest {
     @Test
     void fromResultEachWithOneValidTwoFailuresProducesZip() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-b2-1v2f"), 60);
+                Files.createTempDirectory("wotb-b2-1v2f"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -241,7 +241,7 @@ class ReplayExportJobServiceTest {
     @Test
     void fromResultEachWithTwoValidFiveFailuresProducesZip() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-b2-2v5f"), 60);
+                Files.createTempDirectory("wotb-b2-2v5f"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -268,7 +268,7 @@ class ReplayExportJobServiceTest {
     @Test
     void fromResultEachWithZeroValidFailsNoValidReplays() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-b2-0v"), 60);
+                Files.createTempDirectory("wotb-b2-0v"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -290,7 +290,7 @@ class ReplayExportJobServiceTest {
     @Test
     void fromResultAggregateWithZeroValidFailsNoValidReplays() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-b2-0v-agg"), 60);
+                Files.createTempDirectory("wotb-b2-0v-agg"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -314,7 +314,7 @@ class ReplayExportJobServiceTest {
     @Test
     void fromResultExportsDoNotMutateProcessedDataset() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-b3-nomutate"), 60);
+                Files.createTempDirectory("wotb-b3-nomutate"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -347,7 +347,7 @@ class ReplayExportJobServiceTest {
     @Test
     void fromResultExportPreservesPreEnrichedMetrics() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-b3-parity"), 60);
+                Files.createTempDirectory("wotb-b3-parity"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -384,7 +384,7 @@ class ReplayExportJobServiceTest {
     @Test
     void storageFailureAfterAcquireReleasesProcessingRefcount() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-b2-storagefail"), 60);
+                Files.createTempDirectory("wotb-b2-storagefail"), 60, new InMemoryReplayJobAuthority());
         // 最小 test seam：inputDir 指向一个已存在文件 → Files.createDirectories 抛 IOException
         final Path blockerFile = Files.createTempFile(tmpDir, "blocker-", ".tmp");
         final ExportJobStore failingStore = new ExportJobStore(tmpDir, 60) {
@@ -418,7 +418,7 @@ class ReplayExportJobServiceTest {
     @Test
     void successfulFromResultExportReleasesProcessingRefcountForTtlCleanup() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-b2-success"), 60);
+                Files.createTempDirectory("wotb-b2-success"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -444,7 +444,7 @@ class ReplayExportJobServiceTest {
         executor.close();
         executor = new ReplayExportWorkerExecutor(1, 1);
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-b2-queuedcancel"), 60);
+                Files.createTempDirectory("wotb-b2-queuedcancel"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -486,7 +486,7 @@ class ReplayExportJobServiceTest {
         executor.close();
         executor = new ReplayExportWorkerExecutor(1, 1);
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-b2-submitreject"), 60);
+                Files.createTempDirectory("wotb-b2-submitreject"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -595,7 +595,7 @@ class ReplayExportJobServiceTest {
     @Test
     void leagueExportFromResultAppliesBattleTeamNameOverrideWithoutReprocessing() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-league-reuse"), 60);
+                Files.createTempDirectory("wotb-league-reuse"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -621,7 +621,7 @@ class ReplayExportJobServiceTest {
     @Test
     void leagueAggregateExportAppliesTeamKeyOverride() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-league-agg"), 60);
+                Files.createTempDirectory("wotb-league-agg"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -651,7 +651,7 @@ class ReplayExportJobServiceTest {
         // battles=2（1 rated + 1 Rating-ineligible）→ Export READY、errorCode null、XLSX 合法；
         // League 汇总只统计 rated 样本；战斗列表同时含 rated + ineligible（失败原因）。
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-league-agg-partial"), 60);
+                Files.createTempDirectory("wotb-league-agg-partial"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -698,7 +698,7 @@ class ReplayExportJobServiceTest {
         // UNKNOWN death-time 场照常评分；death observation 不进入 League state
         // 不得破坏 Export path（processingJobId reuse + aggregate → READY + XLSX 合法）。
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-league-agg-unknown"), 60);
+                Files.createTempDirectory("wotb-league-agg-unknown"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -742,7 +742,7 @@ class ReplayExportJobServiceTest {
         // （基础 Replay sheets 存在、League summary 为空、战斗列表显示失败原因），不得因
         // battleResults.isEmpty() 500。
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-league-agg-zero"), 60);
+                Files.createTempDirectory("wotb-league-agg-zero"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -784,7 +784,7 @@ class ReplayExportJobServiceTest {
     @Test
     void leagueEachExportAppliesPerBattleTeamNames() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-league-each"), 60);
+                Files.createTempDirectory("wotb-league-each"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
@@ -823,7 +823,7 @@ class ReplayExportJobServiceTest {
     @Test
     void leagueEachReuseKeepsRatingIneligibleBattleAndDoesNotReprocess() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-league-reuse-each"), 60);
+                Files.createTempDirectory("wotb-league-reuse-each"), 60, new InMemoryReplayJobAuthority());
         try {
             service = new ReplayExportJobService(store, executor,
                     processingStore, new InMemoryReplayDatasetRepository(), meterRegistry);
