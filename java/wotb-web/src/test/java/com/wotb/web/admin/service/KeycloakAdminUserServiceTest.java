@@ -19,10 +19,10 @@ class KeycloakAdminUserServiceTest {
     void addRealmRoleShouldPropagateMissingUserOrRole() {
         final Keycloak keycloak = mock(Keycloak.class, RETURNS_DEEP_STUBS);
         final KeycloakAdminUserService service = new KeycloakAdminUserService(keycloak, "realm");
-        when(keycloak.realm("realm").roles().get("booster").toRepresentation())
+        when(keycloak.realm("realm").roles().get("wotbtools-user").toRepresentation())
                 .thenThrow(new NotFoundException());
 
-        assertThatThrownBy(() -> service.addRealmRole("kc-user", "booster"))
+        assertThatThrownBy(() -> service.addRealmRole("kc-user", "wotbtools-user"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("KEYCLOAK_USER_OR_ROLE_NOT_FOUND");
     }
@@ -31,10 +31,10 @@ class KeycloakAdminUserServiceTest {
     void removeRealmRoleShouldPropagateMissingUserOrRole() {
         final Keycloak keycloak = mock(Keycloak.class, RETURNS_DEEP_STUBS);
         final KeycloakAdminUserService service = new KeycloakAdminUserService(keycloak, "realm");
-        when(keycloak.realm("realm").roles().get("booster").toRepresentation())
+        when(keycloak.realm("realm").roles().get("wotbtools-user").toRepresentation())
                 .thenThrow(new NotFoundException());
 
-        assertThatThrownBy(() -> service.removeRealmRole("kc-user", "booster"))
+        assertThatThrownBy(() -> service.removeRealmRole("kc-user", "wotbtools-user"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("KEYCLOAK_USER_OR_ROLE_NOT_FOUND");
     }

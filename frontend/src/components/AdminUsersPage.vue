@@ -5,7 +5,7 @@ import { useAuth } from '../composables/useAuth.js'
 import { useError } from '../composables/useError.js'
 import { apiErrorCodeLabel, apiErrorLabel } from '../utils/display.js'
 import { ApiError } from '../utils/http.js'
-import * as api from '../utils/api-boost.js'
+import * as api from '../utils/api.js'
 
 const { t, te } = useI18n()
 const { show: showError } = useError()

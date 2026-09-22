@@ -66,7 +66,7 @@ describe('useAuth', () => {
 
     auth.tokenParsed.value = { realm_access: { roles: ['wotbtools-admin'] } }
     expect(auth.hasRole('wotbtools-admin')).toBe(true)
-    expect(auth.hasRole('boost-manager')).toBe(false)
+    expect(auth.hasRole('HoF-admin')).toBe(false)
     expect(auth.hasRole('')).toBe(false)
 
     auth.tokenParsed.value = null

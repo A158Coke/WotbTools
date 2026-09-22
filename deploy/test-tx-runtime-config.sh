@@ -1279,7 +1279,7 @@ grep -Fq '"keycloak"' "$WORK/business-api/tx-production-release.json" \
 # depends on (probe-mounted fixtures, machine identity, snapshot) must be wired.
 for token in \
   'auth-token' 'tx-control-plane' 'anonymous-rejected' \
-  'admin-authz' 'business-profile' 'business-hof' 'business-boost' \
+  'admin-authz' 'business-profile' 'business-hof' \
   'hof-replay-storage' 'parser-worker' 'processing-e2e' 'dataset-result' \
   'map-overview' 'battle-playback-v2' 'minio' 'ai-facts' 'export' \
   'business-data-integrity'; do

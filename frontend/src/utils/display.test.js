@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { apiCodeLabel, apiErrorCodeLabel, apiErrorLabel, enumLabel, formatDateTimeMinute, replayValueLabel } from './display.js'
+import { apiCodeLabel, apiErrorCodeLabel, apiErrorLabel, formatDateTimeMinute, replayValueLabel } from './display.js'
 
 const values = {
-  'boost.level.ELITE': 'Elite',
   'api_errors.NETWORK_ERROR': 'Network failed',
   'api_errors.PROFILE_NOT_FOUND': 'Profile missing',
   'errors.auth_forbidden': 'Permission denied',
@@ -16,11 +15,6 @@ const t = key => values[key] || key
 const te = key => Object.hasOwn(values, key)
 
 describe('display helpers', () => {
-  it('localizes known enum values and preserves unknown API keys', () => {
-    expect(enumLabel(t, te, 'level', 'ELITE')).toBe('Elite')
-    expect(enumLabel(t, te, 'level', 'FUTURE_LEVEL')).toBe('FUTURE_LEVEL')
-  })
-
   it('localizes stable replay values and preserves future values', () => {
     expect(replayValueLabel(t, te, 'HEAVY_TANK')).toBe('Heavy tank')
     expect(replayValueLabel(t, te, 'FUTURE_VALUE')).toBe('FUTURE_VALUE')

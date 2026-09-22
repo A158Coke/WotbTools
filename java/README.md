@@ -76,7 +76,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 返回服务状态与已加载车辆数量。
 
 所有 JSON API 只返回英文 key 与 raw enum；失败统一返回 canonical `ApiErrorResponse`（`code/status/messageKey/traceId/retryable/details/timestamp`），不返回本地化 `*Label`、exception message 或 stack trace。Phase 1 仍兼容既有稳定 `error` code。前端通过三语 locale 显示状态、成功和错误文案；完整契约见 `../docs/api/error-contract.md`。
-未显式声明的 `/api/**` 默认拒绝；`boost-manager` 仅能访问 `/api/admin/boost/**`。
+未显式声明的 `/api/**` 默认拒绝；其他 admin 域一律要求 `wotbtools-admin`。
 
 
 列定义由后端 `GET /api/replay/processing-jobs/{jobId}/result` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）。
@@ -189,16 +189,6 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
   - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/mark3/submissions?status=&nation=&vehicleType=&vehicleId=`（状态/国家/车种/车辆交集筛选）、`GET .../submissions/{id}`（详情与 PENDING proof）、`GET .../submissions/{id}/replays` 与 `GET .../submissions/{submissionId}/replays/{replayId}`（仅 PENDING 回放证据）、`POST .../{id}/approve`（无请求体，冻结原申报数据）、`POST .../{id}/reject`、`POST .../{id}/delete`（原因强制）、`POST /api/admin/hof/mark3/submissions/bulk-delete`（body `{ids, reason, reasonText}`；逐条复用单条删除语义、每条独立事务，允许 partial success，去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`；非 CURRENT / 不存在逐条以 `MARK3_NOT_CURRENT` / `MARK3_SUBMISSION_NOT_FOUND` 失败且不阻塞其他记录）。管理员不能改写场数、场均或胜率。
   - 数据模型：`mark3_submission` / `mark3_replay_evidence`（Flyway `V21`；`V22` 把 ownership 由 Keycloak 身份改为 `(区服, WotB 账号)`）；状态仅 PENDING/CURRENT/REJECTED/CANCELLED/DELETED，禁止 `SUPERSEDED` 和任何 CURRENT 替代。active 唯一性由**单个组合** partial index `uk_mark3_submission_active_account_vehicle (wotb_server, wotb_account_id, vehicle_id) where status in ('PENDING','CURRENT')` 保证（因此同账号同车出现 CURRENT 与 PENDING **跨状态**即冲突，与百场的两个独立索引口径不同）；owner 列为 `wotb_account_id`（`V22` 前名为 `game_account_id_snapshot`）加 `wotb_server`（V22 新增 `varchar(16) NOT NULL`，CHECK `ck_mark3_wotb_server`），`user_keycloak_id` 已删除，查询索引 `idx_mark3_submission_account (wotb_server, wotb_account_id, status, submitted_at desc)`。同 `(区服, WotB 账号)` 同车已有 CURRENT 时拒绝新提交/通过；REJECTED/CANCELLED/DELETED 后允许重提。V22 的 fail-fast preflight 与管理员清理 runbook 同百场（见 `docs/features/hall-of-fame.md`）。截图与 5 个回放仅在 PENDING admin-only 保留，所有终态立即清理。
 
-### 陪练与打手（仅在线版）
-
-`GET /api/booster/assignments` 默认返回当前登录打手的活跃订单；追加 `?includeHistory=true` 时返回活跃 + 历史订单（活跃优先、历史按分配时间倒序），供个人中心回看已完成/已取消/已拒绝订单。`PATCH /api/boost/boosters/my/availability` 允许打手本人切换 `available`，用于暂停/恢复接收新订单，并返回最新 `BoosterDto` 给个人中心即时刷新。打手可通过 `PATCH /api/booster/assignments/{id}/accept|start|complete|decline` 流转自己的订单；提交完成后需求进入 `PENDING_CONFIRM`，客户调用 `PATCH /api/boost/requests/my/{id}/confirm-completion` 确认为 `CLOSED`。若客户未操作，系统默认 72 小时后自动确认；管理员也可关闭 `PENDING_CONFIRM`/`EXCEPTION` 订单。三条入口共用带行锁的幂等完结路径，同时把分配置为 `COMPLETED`、写入 `unassigned_at` 并释放打手。管理员分配订单时要求打手资格为 `ACTIVE`、未暂停接单且没有活跃订单；前端会按资格、接单状态、活跃订单数、等级和擅长内容推荐排序。
-
-客户提交陪练需求和打手资格申请都支持 `CN / ASIA / EU / NA` 四个区服。`GET /api/boost/options` 从 `BoostRegion` 动态返回客户需求区服选项，空值默认 `CN`、未知值返回 `UNSUPPORTED_BOOST_REGION`；需求区服会显示在客户、管理员列表，并通过 `BoostAssignmentDto.region` 提供给打手工作台。打手申请则把用户资料中规范化后的真实区服写入申请记录；审批后区服固化到 `booster_profile.wotb_server`。玩家可申请 `CASUAL / SKILLED / ELITE / PRO / MASTER` 五档；兼容内部值 `AVERAGE_GOD` 的“殿堂级”（英文 `Mythic`）只能由管理员编辑已有打手授予，且每服最多一名。申请 ID、账号 ID、档期等仍保存在申请表专用字段，不写进可编辑打手备注。列表接口 `GET /api/boost/booster-applications/my` 与 `GET /api/admin/boost/booster-applications` 返回不含截图、微信、日常时段和自评的 `BoosterApplicationSummaryDto`，并通过 JPA 构造投影避免读取 Base64 图片列；审核状态变更接口也返回该摘要 DTO，避免重复回传图片。管理员需要完整资料时调用 `GET /api/admin/boost/booster-applications/{id}`；资格审批前端只在点击“详情”后请求该接口。
-
-完成确认窗口由 `BOOST_AUTO_CONFIRM_HOURS` 配置（默认 `72`），到期扫描间隔由 `BOOST_AUTO_CONFIRM_SCAN_MS` 配置（默认 `300000` 毫秒）；线上部署可用同名 GitHub repository variables 覆盖。Flyway V11 会给已有 `PENDING_CONFIRM` 订单从迁移时刻起补一个 72 小时窗口。
-
-`DELETE /api/admin/boost/boosters/{id}` 会保留资格申请并清空其 `approved_booster_id`；存在任意订单分配历史时以 `BOOSTER_HAS_DEPENDENCIES` 拒绝。管理员删除用户时会先复用该流程清理关联打手档案，再删除本地资料与 Keycloak 用户。
-
 `GET /api/users/notifications`、`GET /api/users/notifications/unread-count`、`PATCH /api/users/notifications/{id}/read` 和 `PATCH /api/users/notifications/read-all` 提供站内通知基础能力。通知 API 返回英文 `type` 与 `payload` 数据，具体文案由前端三语 i18n 渲染。
 
 ### 用户资料（WoTB 账号）
@@ -222,7 +212,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 - `GET /api/admin/users/{keycloakUserId}` — 用户详情（本地 profile + Keycloak 信息）；Keycloak 用户不存在时返回 `KEYCLOAK_USER_NOT_FOUND` warning。
 - `DELETE /api/admin/users?confirm=true` — 删除用户：**请求体是 Keycloak sub 的 JSON 数组**（删除单个用户就是长度为 1 的数组，因此没有单独的批量端点，也没有单条 `/{keycloakUserId}` 删除端点）。每个 id 都先删本地 profile 再删 Keycloak 用户（`confirm` 缺失/false → 整个请求 400 `CONFIRMATION_REQUIRED`；不能删除自己 → `CANNOT_DELETE_SELF`；有依赖 → `USER_HAS_DEPENDENCIES` / `BOOSTER_HAS_DEPENDENCIES`）。去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`；**每个用户独立事务**，允许 **partial success**，返回 `{requested, deleted, failed, results:[{userId, deleted, errorCode}]}`。**删除用户必须走本 API**：绕过它直连 Keycloak 会留下孤儿 profile 并阻塞后续重绑（HoF 数据本身不会被连带删除，见下）。
 
-**删除用户 ≠ 删除 HoF 记录**：HoF 数据属于 WotB 游戏账号，仓库中没有任何 FK 指向 `user_profile`（全仓唯一的 `on delete cascade` 在 `V3__create_boosting_tables.sql`，boost 域内部），因此删除 Keycloak 用户不会连带删除任何 HoF 行。
+**删除用户 ≠ 删除 HoF 记录**：HoF 数据属于 WotB 游戏账号，仓库中没有任何 FK 指向 `user_profile`（`on delete cascade` 只出现在 replay processing 权威状态的域内组合关系上），因此删除 Keycloak 用户不会连带删除任何 HoF 行。
 
 ## 测试
 
@@ -235,7 +225,7 @@ mvn -s settings.xml test
 测试覆盖：
 
 - `wotb-core` 的 `ParityTest`：集成测试，覆盖解析、字段不变量、去重、汇总、xlsx 导出。
-- `wotb-web` 的 boost / hof / security / API 契约单元测试都会执行；无需数据库的 controller 契约已拆出，始终运行。
+- `wotb-web` 的 hof / security / API 契约单元测试都会执行；无需数据库的 controller 契约已拆出，始终运行。
 - 架构测试：`CoreArchitectureTest` / `WebArchitectureTest`（ArchUnit）守护模块边界与分层，随 `mvn test` 自动执行。
 - `WebApiTest` 只保留 PostgreSQL/真实回放集成路径；无 Docker 或无 `common/data` 时按条件跳过。
 

@@ -174,7 +174,6 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `hundred`：百场名人堂（MANUAL 人工证据审核）。
 - `mark3`：Tier X 单车最速三环人工审核排行榜（PENDING/CURRENT/REJECTED/CANCELLED/DELETED，无 SUPERSEDED）。
 - `user`：Profile、WoTB 账号、Notification。
-- `boost`：陪练/打手业务。
 - `admin`：用户和后台管理。
 
 ### Replay Processing
@@ -310,7 +309,7 @@ Battle 直接取该场 `tank_id`/`tank_name`（来源 `PlayerResult.tankId`）�
 
 ### Admin（Admin Users / Admin HoF 治理）
 
-**删除用户 ≠ 删除 HoF 记录**：HoF 数据属于 WotB 游戏账号（百场/三环为 `(区服, 账号)`，单场为 `account_id`），仓库中没有任何 FK 指向 `user_profile`（全仓唯一的 `on delete cascade` 在 `V3__create_boosting_tables.sql`，boost 域内部）。因此**删除 Keycloak 用户必须走 WotBTools admin API**（`AdminUserService` 先删本地 profile 再删 Keycloak 用户）；绕过它直连 Keycloak 会留下孤儿 profile 并阻塞后续重绑，需用 Admin Users 的 `segment=local` 清理。
+**删除用户 ≠ 删除 HoF 记录**：HoF 数据属于 WotB 游戏账号（百场/三环为 `(区服, 账号)`，单场为 `account_id`），仓库中没有任何 FK 指向 `user_profile`（`on delete cascade` 只出现在 replay processing 权威状态的域内组合关系上）。因此**删除 Keycloak 用户必须走 WotBTools admin API**（`AdminUserService` 先删本地 profile 再删 Keycloak 用户）；绕过它直连 Keycloak 会留下孤儿 profile 并阻塞后续重绑，需用 Admin Users 的 `segment=local` 清理。
 
 **Admin Users 列表（服务端分页 + 合并数据源）**：`GET /api/admin/users?query=&segment=&idpAlias=&page=0&size=25` 返回 `{items, page, size, totalItems, totalPages}`；**旧的 `?limit=` 参数已移除**（不再有 `limit=200` 的假分页），`size` 会被 clamp 到 1..100，`page` 为 0-based。
 
@@ -421,7 +420,6 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
 - `?view=replay`：Replay Workspace。
 - `?view=hof`：名人堂。
 - `?view=hof-admin`：名人堂管理。
-- `?view=boost`：陪练。
 - `?view=profile`：个人中心。
 - `?view=admin-users`：用户管理。
 - `?view=version`：版本历史。
@@ -547,7 +545,7 @@ user_profile   = WotBTools 业务用户投影（这个人在业务上是谁）
 
 ```text
 Keycloak 认证成功
-  → 进入 SPA（任意 view：home / replay / battle-playback / AI Review / HoF / admin / profile / boost）
+  → 进入 SPA（任意 view：home / replay / battle-playback / AI Review / HoF / admin / profile）
   → AppShell 触发 useBusinessUserBootstrap()
   → PUT /api/users/profile（幂等 ensure）
   → 已有 profile 原样返回；没有则按 canonical provisioning 创建
@@ -558,7 +556,6 @@ Keycloak 认证成功
 - **不做强一致声明**：Keycloak 与业务 DB 之间没有分布式事务，也不在 Keycloak First Broker Login 里写业务库；provisioning 失败**不删除 Keycloak 用户**、**不回退认证状态**、**不永久缓存失败**（刷新 / 重新 bootstrap / 页面上的重试入口都会重新 ensure）。
 - **`PUT /api/users/profile` 是 ensure 而非 create**：已存在时不改写 `wotb_server` / `wotb_account_id` / `wotb_nickname` / `wotb_account_source` / `wotb_account_verified_at`。并发 ensure 靠唯一约束**按约束名**区分：`keycloak_user_id` 冲突（同一 sub 的并发创建）重读胜者并幂等成功；`(wotb_server, wotb_account_id)` 冲突是真实账号占用，仍返回 409 `WOTB_ACCOUNT_ALREADY_USED`，绝不吞掉。
 - **Admin Users 仍以 KC 为权威**（`segment=keycloak` 默认）并显式暴露 `hasLocalProfile=false`，作为 IAM 清点与 legacy/不完整状态的观测能力；self-heal 不改变这一点。
-- **Boost 打手选择器显式用 `segment=local`** 并排除 `keycloakUserMissing=true` 的孤儿绑定（那是管理员清理对象，不是有效打手候选）。
 
 Keycloak 登录页为 V8 Unified Theme（深色=Battlefield/浅色=Minimal、深色登录卡局部毛玻璃 dark-only、浅色无 blur、IdP 动态渲染、`registrationAllowed:false`）；主题文件在 `docker/keycloak/themes/wotbtools/login/`，仅覆盖 `template.ftl`（其余认证页经 `registrationLayout` 共享），生产 realm 需手动设 `loginTheme=wotbtools` 并关闭 Registration（见 `docs/auth/keycloak-login-theme.md`）。
 
@@ -568,7 +565,7 @@ Keycloak 登录页为 V8 Unified Theme（深色=Battlefield/浅色=Minimal、深
 
 API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲染三语；Excel 继续使用中文表头。新增任何 `code/error/warningCode` 必须同步三语 `api_codes/api_errors`。
 
-站内通知保存 `type + payload`，boost domain 只通过 `UserNotificationService` 写事件；显示文案由前端 locale composition 负责。
+站内通知保存 `type + payload`，写入方统一经 `UserNotificationService`；显示文案由前端 locale composition 负责（历史 Boost 通知仍可翻译）。
 
 ---
 

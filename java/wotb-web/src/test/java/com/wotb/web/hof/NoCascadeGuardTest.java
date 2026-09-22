@@ -25,8 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ol>
  *   <li>没有任何外键指向 {@code user_profile}（删资料不会牵连任何业务表）；</li>
  *   <li>{@code ON DELETE CASCADE} 只允许出现在**域内组合关系**上，且必须逐个显式评审：
- *       boost 域内部的 {@code fk_boost_request_assignment_request}，以及 replay processing 权威状态域内
- *       的 {@code fk_replay_processing_source_job} / {@code fk_replay_processing_operation_job}
+ *       replay processing 权威状态域内的 {@code fk_replay_processing_source_job} /
+ *       {@code fk_replay_processing_operation_job}
  *       （删除一个 job 投影必须一并删除它的 source 投影与 operationId 索引；两者都不指向
  *       IAM 身份、也不指向 HoF 业务表），不得出现在 HoF 或 IAM 路径上；</li>
  *   <li>百场/三环的 replay evidence 外键不是 CASCADE（业务行永不被级联删除）。</li>
@@ -74,7 +74,6 @@ class NoCascadeGuardTest {
                             + "where rc.delete_rule = 'CASCADE' "
                             + "order by tc.constraint_name");
             assertEquals(List.of(
-                            "fk_boost_request_assignment_request",
                             "fk_replay_processing_operation_job",
                             "fk_replay_processing_source_job"),
                     cascades,

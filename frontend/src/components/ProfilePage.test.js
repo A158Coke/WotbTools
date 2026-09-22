@@ -25,16 +25,13 @@ vi.mock('../composables/useAuth.js', () => ({
   })
 }))
 
-vi.mock('../utils/api-boost.js', () => ({
+vi.mock('../utils/api-user.js', () => ({
   getUserProfile: () => Promise.resolve(currentProfile),
   // 全局 bootstrap 才是 profile ensure 的 owner；页面只等待其结果。
   ensureUserProfile: () => Promise.resolve(currentProfile),
   syncUserWotbAccountFromLogin: () => syncImpl(),
   updateUserWotbAccount: () => Promise.resolve(currentProfile),
   deleteUserWotbAccount: () => Promise.resolve(currentProfile),
-  getMyBoosterProfile: () => Promise.reject(new Error('no-booster')),
-  updateMyBoosterAvailability: () => Promise.resolve({}),
-  getMyBoosterAssignments: () => Promise.resolve([]),
   getUserHofRecords: () => Promise.resolve([]),
   getUnreadNotificationCount: () => Promise.resolve({ count: 0 }),
   listNotifications: () => Promise.resolve([]),
@@ -57,8 +54,7 @@ vi.mock('../utils/helpers.js', () => ({
 }))
 
 vi.mock('../utils/display.js', () => ({
-  apiErrorLabel: () => 'api-error',
-  enumLabel: () => '--'
+  apiErrorLabel: () => 'api-error'
 }))
 
 vi.mock('vue-i18n', () => ({
