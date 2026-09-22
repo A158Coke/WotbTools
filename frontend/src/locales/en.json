@@ -778,6 +778,8 @@
         "sourceWargaming": "Wargaming.net",
         "verified": "Verification",
         "verifiedBadge": "Verified",
+        "notVerified": "Not verified",
+        "notVerifiedHint": "Upload a replay recorded by this account to verify it automatically",
         "wgSyncFailed": "Wargaming account sync failed. Please refresh or sign in again.",
         "wgSyncRetry": "Retry sync",
         "wgSyncing": "Syncing Wargaming account"

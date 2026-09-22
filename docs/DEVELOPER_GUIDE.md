@@ -516,6 +516,24 @@ JWT mapper 提供 `wotb_region / wotb_account_id / wotb_nickname / wotb_verified
 
 IdP 部署步骤见 `docs/auth/wargaming-asia-deployment.md`。
 
+### 绑定账号的验证状态（`wotb_account_verified_at`）
+
+`user_profile.wotb_account_verified_at`（`V12__add_wotb_asia_fields.sql` 引入，可空）是「**当前**绑定账号是否已验证」的唯一表达：NULL = 未验证，非 NULL = 已验证（保留**首次**成功验证时间，不重写）。写入方只有两个：
+
+1. 可信 WG claims 的 canonical provisioning / 空 Profile 升级（`wotb_account_source=WARGAMING`，见上文）；
+2. **回放录制者验证**——`GET /api/replay/processing-jobs/{jobId}/result` 是解析成功后所有正常回放用法（Data / AI Review / Playback / Reconstruction / Export 取 dataset）共同经过的唯一共享边界，验证只在这一个边界接线，不在各 replay 端点各写一份。
+
+回放验证的判定严格 fail-closed，比较的是**数值账号**而不是身外之物：
+
+```text
+PlayerResultFormat.recorderAccountId(battle)   // canonical：Battle.recorderResult() → accountId，解析不出 = null
+  == profile.wotb_account_id ?
+  相等 → wotb_account_verified_at = now()（首次）
+  否则 → 什么都不做
+```
+
+昵称相同不通过；账号只是出现在同局名册里不通过；解析不出数值 accountId 不通过。验证是 **best-effort 旁路**：任何失败只记 `event=replay_account_verification_failed` 日志，绝不让回放结果响应失败，也不回收已读出的 dataset（dataset 只读一次，验证与 Preview 投影共用）。换绑（`(wotb_server, wotb_account_id)` 任一变化）与解绑会清空验证；与账号身份无关的编辑（例如昵称刷新、`ensure`）不清空。前端只消费既有 `wotbAccountVerifiedAt` 字段，无独立验证端点 / 无验证历史 / 无验证方法枚举。
+
 ### 身份两层与 profile self-heal
 
 ```text

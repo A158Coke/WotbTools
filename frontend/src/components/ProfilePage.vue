@@ -459,6 +459,12 @@ function notificationMessage(notification) {
               <div class="account-row"><span>{{ $t('profile.nickname') }}</span><strong>{{ profile.wotbNickname || '--' }}</strong></div>
               <div class="account-row"><span>{{ $t('profile.server') }}</span><span class="badge-ok">{{ serverLabel }}</span></div>
               <div class="account-row"><span>{{ $t('profile.accountSource') }}</span><strong>{{ $t('profile.sourceUserFilled') }}</strong></div>
+              <div class="account-row">
+                <span>{{ $t('profile.verified') }}</span>
+                <span v-if="profile.wotbAccountVerifiedAt" class="badge-ok">✓ {{ $t('profile.verifiedBadge') }}</span>
+                <span v-else class="badge-pending">{{ $t('profile.notVerified') }}</span>
+              </div>
+              <p v-if="!profile.wotbAccountVerifiedAt" class="text-muted">{{ $t('profile.notVerifiedHint') }}</p>
             </div>
             <p v-else class="profile-empty">{{ $t('profile.wotbNotBound') }}</p>
           </div>
@@ -706,6 +712,7 @@ function notificationMessage(notification) {
 .account-row span { color: #a3a6a0; }
 .account-row code { font-family: monospace; font-size: .8rem; color: #f0a42b; }
 .badge-ok { font-size: .72rem; padding: 2px 8px; border-radius: 6px; background: var(--status-ok-bg); color: var(--status-ok-fg); font-weight: 700; }
+.badge-pending { font-size: .72rem; padding: 2px 8px; border-radius: 6px; background: var(--bg-chip); color: var(--text-sub); font-weight: 700; }
 .edit-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .edit-form .edit-row { margin-bottom: 10px; }
 .edit-form label { display: block; font-size: .8rem; color: #a3a6a0; margin-bottom: 3px; }
