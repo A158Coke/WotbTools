@@ -108,7 +108,11 @@ services:
       # Credentials default to empty so that a deploy which does not select this service keeps
       # working; deploy.sh fails closed on them whenever parser-worker is selected.
       RABBITMQ_PASSWORD: "${TX_RABBITMQ_PARSER_WORKER_PASSWORD:-}"
-      MINIO_ENDPOINT: "${PARSER_WORKER_MINIO_ENDPOINT:-10.20.0.2:9000}"
+      # Endpoint ownership: this container shares the `wotb_internal` network with the MinIO
+      # runtime, so it resolves MinIO through Docker service discovery. `10.20.0.2:9000` is the
+      # TX control plane's endpoint (WireGuard → published port); reaching it from here would
+      # require a container → host → published-port hairpin that does not exist.
+      MINIO_ENDPOINT: "${PARSER_WORKER_MINIO_ENDPOINT:-minio:9000}"
       MINIO_BUCKET: "${PARSER_WORKER_MINIO_BUCKET:-wotbtools-temp}"
       MINIO_ACCESS_KEY: "${YECAO_MINIO_WORKER_ACCESS_KEY:-}"
       MINIO_SECRET_KEY: "${YECAO_MINIO_WORKER_SECRET_KEY:-}"
