@@ -51,7 +51,6 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/deploy" "$WORK/bin" "$WORK/runtime/config/sponsor" "$WORK/runtime/android-release"
 cp "$ROOT/deploy/tx/docker-compose.yml" "$WORK/deploy/docker-compose.yml"
-cp "$ROOT/deploy/tx/yecao-backend-contract.json" "$WORK/deploy/yecao-backend-contract.json"
 printf '{}\n' > "$WORK/runtime/config/sponsor-config.json"
 printf 'tx-local-opentofu-rabbitmq\n' > "$WORK/rabbitmq.tofu-provisioned"
 cat > "$WORK/bin/docker" <<'FAKE_DOCKER'
@@ -316,7 +315,6 @@ mkdir -p "$RELOCATED_ROOT/deploy" "$RELOCATED_ROOT/config/sponsor" "$RELOCATED_R
 cp "$ROOT/deploy/tx/pre-cutover-check.sh" "$RELOCATED_ROOT/deploy/pre-cutover-check.sh"
 cp "$ROOT/deploy/tx/deploy.sh" "$RELOCATED_ROOT/deploy/deploy.sh"
 cp "$ROOT/deploy/tx/docker-compose.yml" "$RELOCATED_ROOT/deploy/docker-compose.yml"
-cp "$ROOT/deploy/tx/yecao-backend-contract.json" "$RELOCATED_ROOT/deploy/yecao-backend-contract.json"
 printf '{}\n' > "$RELOCATED_ROOT/config/sponsor-config.json"
 printf 'tx-local-opentofu-rabbitmq\n' > "$RELOCATED_ROOT/rabbitmq.tofu-provisioned"
 printf 'tx-local-opentofu-business-postgres\n' > "$RELOCATED_ROOT/business-postgres.tofu-provisioned"
@@ -324,7 +322,6 @@ printf 'tx-local-opentofu-business-postgres\n' > "$RELOCATED_ROOT/business-postg
 relocated_ready_output="$(run_check "" "$RELOCATED_ROOT/deploy/pre-cutover-check.sh")"
 grep -Fq 'PRE_CUTOVER_READY' <<< "$relocated_ready_output"
 grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' <<< "$relocated_ready_output"
-grep -Fq 'yecao-backend-wireguard-bind: PASS (deployed contract)' <<< "$relocated_ready_output"
 grep -Fq 'business-postgres: PASS' <<< "$relocated_ready_output"
 
 # --- Post-DNS phase adds the mandatory trusted-TLS gate ------------------------

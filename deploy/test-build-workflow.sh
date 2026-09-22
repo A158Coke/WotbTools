@@ -260,8 +260,13 @@ deploy_changes = deploy["jobs"]["changes"]
 assert deploy_changes["permissions"]["actions"] == "read", "Deploy artifact downloader requires actions: read"
 assert "deploy_display_name" in deploy_changes["outputs"]
 assert deploy["jobs"]["deploy"]["name"] == "Deploy ${{ needs.changes.outputs.deploy_display_name }}"
-for label in ("Backend", "Frontend", "Keycloak", "Observability", "All"):
+for label in ("Business API", "Frontend", "Keycloak", "Parser Worker", "Observability"):
     assert f'"{label}"' in deploy_text, f"Deploy display mapping missing {label}"
+# The retired Yecao application runtime is not a deploy label any more, and the whole-stack ``all``
+# selector no longer exists in the release plan.
+for retired_label in ("Backend", "All"):
+    assert f'labels.append("{retired_label}")' not in deploy_text, \
+        f"Deploy display mapping must not offer the retired label {retired_label}"
 assert "' + '.join(labels)" in deploy_text, "Deploy display name must preserve module combinations"
 deploy_on = deploy.get("on", deploy.get(True, {}))
 assert "workflow_run" in deploy_on, "Deploy must retain the automatic workflow_run trigger"
@@ -531,7 +536,9 @@ assert 'test "$(git -C /src rev-parse HEAD)" = "$MINIO_COMMIT"' in minio_dockerf
 assert 'test "$(git -C /src rev-parse "$MINIO_RELEASE^{commit}")" = "$MINIO_COMMIT"' in minio_dockerfile
 assert "deploy_tx" in deploy["jobs"]
 assert "TX_VPS_HOST" in deploy_text
-assert "WOTB_BACKEND_MIGRATION_MAX_VERSION" in deploy_text
+# The migration ceiling only ever fed the retired Yecao backend service and the removed Yecao Ops
+# Recovery path, so deploy.yml must not forward it to any host any more.
+assert "WOTB_BACKEND_MIGRATION_MAX_VERSION" not in deploy_text
 tx_job = deploy["jobs"]["deploy_tx"]
 tx_scp = next(step for step in tx_job["steps"] if step.get("name") == "Install TX deployment configuration")
 assert tx_scp["with"]["source"] == "deploy/tx"
