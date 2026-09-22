@@ -84,9 +84,9 @@ deployment's licensing obligations under review before production use.
 
 - private `wotbtools-temp` bucket, protected from destruction;
 - lifecycle expiry for `temp/jobs/` after one day;
-- two application identities, two prefix-scoped policies each for the control
-  plane (read/write plus the delete-only rollback grant), one bucket-level
-  location-lookup grant for the control plane, and their attachments.
+- two application identities: `worker` with its own prefix-scoped read/write policy, and
+  `control_api` with a prefix-scoped read/write policy plus its delete-only rollback grant,
+  its bucket-level location-lookup grant, and the matching attachments.
 
 ### Application identities
 
@@ -100,8 +100,10 @@ prefix plus `s3:GetObject` and `s3:PutObject` for objects under that prefix. `He
 is authorized by `s3:GetObject`. The control plane's rollback grant
 (`wotbtools-temp-control-api-reclaim`) permits exactly `s3:DeleteObject` on the same
 prefix, and only `control_api` has it: the parsing host cannot remove anything.
-No policy has bucket administration, IAM administration, or unrelated-bucket
-permission.
+
+Bucket administration, IAM administration, and unrelated-bucket permission are absent
+from every policy. The single bucket-level read is the control plane's
+`s3:GetBucketLocation` grant described below, which reveals only the bucket's region.
 
 ### Bucket location lookup (`s3:GetBucketLocation`)
 
