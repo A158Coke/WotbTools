@@ -105,7 +105,7 @@ class ParserWorkerConfigBindingTest {
     void keepsTheReviewedDefaultsWhenOnlyRequiredValuesAreProvided() {
         bindingRunner().withPropertyValues(properties(REQUIRED_ONLY)).run(context -> {
             final MinioObjectStorageProperties minio = context.getBean(MinioObjectStorageProperties.class);
-            assertEquals("10.20.0.2:9000", minio.endpoint(), "MINIO_ENDPOINT 默认值");
+            assertEquals("minio:9000", minio.endpoint(), "MINIO_ENDPOINT 默认值（Yecao Docker 服务发现）");
             assertEquals("wotbtools-temp", minio.bucket(), "MINIO_BUCKET 默认值");
             assertEquals(10, minio.connectTimeoutSeconds(), "MINIO_CONNECT_TIMEOUT_SEC 默认值");
             assertEquals(60, minio.writeTimeoutSeconds(), "MINIO_WRITE_TIMEOUT_SEC 默认值");

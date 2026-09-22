@@ -618,7 +618,9 @@ staging 与只读 `PRE_CUTOVER_READY` 门禁分别用 `assert_routing_boundary` 
 `tx-internal-api-route` / `distributed-execution-plane` 两条 token 断言这些不变量，因此没有任何
 公开流量再经过 Yecao backend，WireGuard 只剩 TX→MinIO `10.20.0.2:9000`、TX↔RabbitMQ 与按需观测。
 Yecao parser-worker 作为唯一执行面服务必须保持无状态：选中它时 deploy 会拒绝任何给它数据库凭据、
-本地 replay job 目录或执行面开关的 staged Compose。
+本地 replay job 目录或执行面开关的 staged Compose。它与 MinIO 同处 `wotb_internal`，因此 MinIO
+端点走 Docker 服务发现 `minio:9000`（`PARSER_WORKER_MINIO_ENDPOINT`）；`10.20.0.2:9000` 只是 TX
+控制面的 WireGuard 端点（`YECAO_MINIO_ENDPOINT`），是同一 MinIO runtime 上互不合并的两条 ownership。
 
 **切 DNS 前的全业务 E2E 门禁**：`deploy/tx/pre-cutover-check.sh` 除基础设施与路由 token 外，还用
 Keycloak 的 `wotbtools-e2e` 机器身份（client_credentials，唯一 realm role `wotbtools-user`，secret 由
