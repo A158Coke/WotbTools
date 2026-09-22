@@ -34,16 +34,11 @@ if jq -e '
   exit 1
 fi
 
-if jq -e '
-  any(.resource_changes[]?;
-    (.address | startswith("keycloak_role.")) and
-    ((.change.actions // []) | index("delete") != null)
-  )
-' <<< "$plan_json" >/dev/null; then
-  echo "The Keycloak plan deletes a realm role; refusing unexpected role deletion." >&2
-  jq -r '.resource_changes[] | select((.address | startswith("keycloak_role.")) and ((.change.actions // []) | index("delete") != null)) | "BLOCKER: \(.address) actions=\(.change.actions)"' <<< "$plan_json" >&2
-  exit 1
-fi
+# No realm-role deletion rule lives here on purpose. Role membership is desired
+# state, so removing a role from `roles.tf` is a reviewed change that the plan
+# itself must expose (and is never exempted per role name). The rules above and
+# below own identity destruction (realm, clients, identity providers) and
+# unexpected mass replacement instead.
 
 replacement_count="$(jq '[.resource_changes[]? | select((.change.actions // []) | index("delete") != null and index("create") != null)] | length' <<< "$plan_json")"
 if [ "$replacement_count" -gt 3 ]; then

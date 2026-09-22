@@ -7,7 +7,9 @@
 #   deploy/test-keycloak-tofu.sh     -> real fresh-realm apply + Admin API smoke
 #   deploy/test-keycloak-runtime.sh  -> real Keycloak container contract
 # This file only pins what native tooling considers valid but would still break
-# the project's privilege boundary or production safety.
+# the project's privilege boundary or production safety. It also replays fixture
+# plan JSON through validate-plan.sh, so the destructive-change policy is tested
+# without a Keycloak and without touching production state.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -115,6 +117,35 @@ for expected in (
 ):
     assert expected in variables_text, expected
 
+# --- deletion protection is identity-scoped, not a blanket deletion ban ------
+# `tofu plan` is the authoritative destructive-change audit gate, so realm-role
+# membership follows desired state: the shared role resource carries no
+# `prevent_destroy`, and the plan guard carries no role-deletion rule and no
+# role-name exception (Boost-specific or otherwise). Everything that protects
+# identity instead of role membership keeps its `prevent_destroy`.
+role_block = root_text.split('resource "keycloak_role" "realm"', 1)
+assert len(role_block) == 2, "the shared keycloak_role.realm resource is missing"
+role_block = role_block[1].split("\n}\n", 1)[0]
+assert "lifecycle" not in role_block and "prevent_destroy" not in role_block, \
+    "realm roles are desired state; tofu plan must be able to show their removal"
+guard_text = read("infra/tofu/keycloak/validate-plan.sh")
+assert "keycloak_role." not in guard_text, \
+    "the plan guard must not blanket-reject realm role deletions"
+for role_name in ("booster", "boost-manager"):
+    assert role_name not in guard_text, f"role-specific deletion exception: {role_name}"
+for identity_resource in (
+    'resource "keycloak_realm" "wotbtools"',
+    'resource "keycloak_default_roles" "wotbtools"',
+    'resource "keycloak_openid_client" "web"',
+    'resource "keycloak_openid_client" "admin_api"',
+    'resource "keycloak_openid_client" "e2e"',
+    'resource "keycloak_oidc_identity_provider" "qq"',
+):
+    identity_block = root_text.split(identity_resource, 1)
+    assert len(identity_block) == 2, identity_resource
+    assert "prevent_destroy = true" in identity_block[1].split("\n}\n", 1)[0], \
+        f"{identity_resource} must keep its deletion protection"
+
 # --- Wargaming IdP client_id is owned by the single existing WG secret -------
 # The representation's client_id is not a placeholder any more, and the
 # Wargaming application ID never reaches the repository as a second secret.
@@ -220,3 +251,87 @@ assert "KEYCLOAK_ADMIN_CLIENT_SECRET" not in apply_step["with"]["script"]
 
 print("TX-local Keycloak ownership and production-safety contract OK")
 PY
+
+# --- the plan guard audits destruction, it is not a no-deletion rule ---------
+# A reviewed plan that retires realm roles must pass the guard, while deleting
+# the realm, an authentication client or an identity provider must still fail
+# closed through the rule that owns it. `tofu show -json` is stubbed with fixture
+# plan JSON, so this needs neither a Keycloak nor network access.
+guard_work="$(mktemp -d)"
+trap 'rm -rf -- "$guard_work"' EXIT
+mkdir -p "$guard_work/bin"
+cat > "$guard_work/bin/tofu" <<'STUB'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[ "$#" -eq 3 ] && [ "$1" = show ] && [ "$2" = -json ] || exit 2
+cat "$3"
+STUB
+chmod 700 "$guard_work/bin/tofu"
+
+write_guard_plan() {
+  printf '%s\n' "$2" > "$guard_work/$1.tfplan"
+}
+
+assert_guard_passes() {
+  local name="$1"
+  PATH="$guard_work/bin:$PATH" bash "$ROOT/infra/tofu/keycloak/validate-plan.sh" "$guard_work/$name.tfplan" >/dev/null \
+    || { echo "ERROR: $name must pass the Keycloak plan guard." >&2; exit 1; }
+}
+
+assert_guard_rejects() {
+  local name="$1" expected="$2" output
+  if output="$(PATH="$guard_work/bin:$PATH" bash "$ROOT/infra/tofu/keycloak/validate-plan.sh" "$guard_work/$name.tfplan" 2>&1)"; then
+    echo "ERROR: $name must be rejected by the Keycloak plan guard." >&2
+    exit 1
+  fi
+  # A fixture that merely crashes the validator must never count as a rejection,
+  # and each fixture must be refused by the rule it is written to cover.
+  grep -Fq -- "$expected" <<< "$output" \
+    || { echo "ERROR: $name was not rejected by the expected rule." >&2; printf '%s\n' "$output" >&2; exit 1; }
+}
+
+readonly REALM_CLIENT_RULE="deletes or replaces a protected realm/client resource"
+readonly IDP_RULE="deletes an identity provider"
+readonly MASS_REPLACEMENT_RULE="unexpected mass resource replacement"
+
+# The production Boost retirement shape: two roles leave desired state, the
+# surviving roles are no-ops, and nothing else moves.
+write_guard_plan boost-role-retirement '{"resource_changes":[
+  {"address":"keycloak_role.realm[\"wotbtools-admin\"]","change":{"actions":["no-op"]}},
+  {"address":"keycloak_role.realm[\"wotbtools-user\"]","change":{"actions":["no-op"]}},
+  {"address":"keycloak_role.realm[\"HoF-admin\"]","change":{"actions":["no-op"]}},
+  {"address":"keycloak_role.realm[\"booster\"]","change":{"actions":["delete"]}},
+  {"address":"keycloak_role.realm[\"boost-manager\"]","change":{"actions":["delete"]}}
+]}'
+# Retiring any other role is the same legitimate desired-state transition.
+write_guard_plan other-role-retirement \
+  '{"resource_changes":[{"address":"keycloak_role.realm[\"HoF-admin\"]","change":{"actions":["delete"]}}]}'
+write_guard_plan realm-delete \
+  '{"resource_changes":[{"address":"keycloak_realm.wotbtools","change":{"actions":["delete"]}}]}'
+write_guard_plan e2e-client-delete \
+  '{"resource_changes":[{"address":"keycloak_openid_client.e2e","change":{"actions":["delete"]}}]}'
+write_guard_plan idp-delete \
+  '{"resource_changes":[{"address":"keycloak_oidc_identity_provider.qq","change":{"actions":["delete"]}}]}'
+# Dropping the role rule must not weaken the identity rules in the same plan.
+write_guard_plan role-and-idp-delete '{"resource_changes":[
+  {"address":"keycloak_role.realm[\"booster\"]","change":{"actions":["delete"]}},
+  {"address":"keycloak_oidc_identity_provider.qq","change":{"actions":["delete"]}}
+]}'
+# The mass-replacement cap is a different invariant: it bounds unexpected
+# recreation of resources the guard does not pin individually.
+write_guard_plan mass-replacement '{"resource_changes":[
+  {"address":"keycloak_openid_user_attribute_protocol_mapper.wotbtools_web[\"display_name\"]","change":{"actions":["delete","create"]}},
+  {"address":"keycloak_openid_user_attribute_protocol_mapper.wotbtools_web[\"region\"]","change":{"actions":["delete","create"]}},
+  {"address":"keycloak_openid_user_attribute_protocol_mapper.wotbtools_web[\"account_id\"]","change":{"actions":["delete","create"]}},
+  {"address":"keycloak_openid_user_attribute_protocol_mapper.wotbtools_web[\"nickname\"]","change":{"actions":["delete","create"]}}
+]}'
+
+assert_guard_passes boost-role-retirement
+assert_guard_passes other-role-retirement
+assert_guard_rejects realm-delete "$REALM_CLIENT_RULE"
+assert_guard_rejects e2e-client-delete "$REALM_CLIENT_RULE"
+assert_guard_rejects idp-delete "$IDP_RULE"
+assert_guard_rejects role-and-idp-delete "$IDP_RULE"
+assert_guard_rejects mass-replacement "$MASS_REPLACEMENT_RULE"
+
+echo "Keycloak OpenTofu plan guard fixtures OK"
