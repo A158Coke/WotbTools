@@ -70,20 +70,6 @@
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 8}, "id": 7,
-      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "wotb_replay_parse_active", "legendFormat": "解析中", "refId": "A"}, {"expr": "wotb_replay_processing_jobs_active", "legendFormat": "作业处理中", "refId": "B"}], "title": "回放处理中", "type": "stat"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 4}]}}, "overrides": []},
-      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 8}, "id": 8,
-      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "wotb_replay_parse_queue_depth", "legendFormat": "解析等待", "refId": "A"}, {"expr": "wotb_replay_processing_jobs_queued", "legendFormat": "作业等待", "refId": "B"}], "title": "回放等待中", "type": "stat"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
       "gridPos": {"h": 4, "w": 4, "x": 8, "y": 8}, "id": 9,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
       "targets": [{"expr": "round(sum(increase(wotb_replay_processing_job_result_total{result=\"ready\"}[$__range])))", "instant": true, "refId": "A"}], "title": "回放完成", "type": "stat"

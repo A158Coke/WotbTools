@@ -55,7 +55,7 @@ public class MapOverviewQueryService {
             }
             return ReplayArtifactWriter.decodeMapOverview(dataset.mapOverview(processingJobId, sourceIndex));
         } catch (final java.io.IOException | tools.jackson.core.JacksonException e) {
-            // 文件不存在不会进入 catch（readMapOverview 缺文件返回 null → 调用方 204
+            // 对象不存在不会进入 catch（decodeMapOverview(null) 返回 null → 调用方 204
             // capability unavailable）；此处 catch 代表 artifact 路径 / 读取 / 存储 I/O 故障
             // 或 JSON 解码/反序列化失败（permission / disk I/O / corrupt JSON）。这些<b>不是</b>
             // 「job 不存在」——映射为不可恢复的 503 DATASET_UNAVAILABLE，绝不 JOB_NOT_FOUND

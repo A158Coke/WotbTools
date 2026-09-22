@@ -11,9 +11,8 @@ import java.util.Map;
 /**
  * 回放业务只读入口（V2 收口）：同步 full processing（preview/export）
  * 已随 Replay Processing V2 废弃（HTTP 层稳定 410 {@code REPLAY_LEGACY_DEPRECATED}）；
- * 本服务只保留列定义与健康检查元数据。解析/导出全走 Processing Job +
- * {@link com.wotb.web.replay.job.ReplayParseScheduler} 权威路径，不存在第二套
- * ReplayCapacityLimiter 并行处理同一产品域。
+ * 本服务只保留列定义与健康检查元数据。解析/导出全走 Processing Job + Export Job
+ * 管线（{@code com.wotb.web.replay.job}），不存在第二套并行处理同一产品域的路径。
  */
 @Service
 public class ReplayService {
