@@ -17,7 +17,6 @@
 .layout-data-workspace::before,
 .admin-page::before,
 .profile-page::before,
-.boost-page::before,
 .version-page::before,
 .contact-page::before,
 .hof-page::before,
@@ -91,11 +90,6 @@
     url('../assets/showcase/profile/profile-hero-camp-v1.png') 72% 55% / cover no-repeat !important;
 }
 
-/* ---------- Boost — alpine combat training range ---------- */
-.boost-page::after {
-  background-image: url('../assets/showcase/boost/boost-hero-training-v1.png') !important;
-  opacity: .78 !important;
-}
 
 /* ---------- User admin — command center, deliberately weaker: operations console first ---------- */
 .admin-page::after {
@@ -136,7 +130,6 @@
   .rating-section::after,
   .rating-workspace::after,
   .profile-page::after,
-  .boost-page::after,
   .admin-page::after,
   .hof-admin-page::after,
   .hofadmin-page::after,

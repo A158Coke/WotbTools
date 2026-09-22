@@ -181,13 +181,6 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('.replay-task-card .etc-btn.primary', ['background: var(--accent) !important', 'color: var(--accent-text) !important'])
   })
 
-  it('Boost：Topbar/Tabs/Card/List 浅底深字 !important', () => {
-    has('.boost-topbar', ['background: var(--bg-card) !important'])
-    has('.boost-tabs button', ['color: var(--text-sub) !important'])
-    has('.boost-card', ['background: var(--bg-card) !important'])
-    has('.boost-page :is(.boost-list, .request-list, .booster-list, .admin-list)', ['background: var(--bg-card) !important'])
-  })
-
   it('HoF：Toolbar/Table Header/Upload Modal 浅色 !important', () => {
     has('.lb-toolbar', ['background: color-mix(in srgb, var(--bg-card) 94%, transparent) !important'])
     has('.lb-wrap thead th', ['background: var(--bg-card2) !important'])

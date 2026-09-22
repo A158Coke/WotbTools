@@ -3,9 +3,6 @@ package com.wotb.web;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
-import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
-import com.wotb.web.boost.entity.BoosterApplication;
-import com.wotb.web.boost.repository.BoosterApplicationRepository;
 import com.wotb.web.hof.dto.ReplayFileMeta;
 import com.wotb.web.hof.entity.HallOfFameRecord;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
@@ -19,7 +16,6 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -103,9 +99,6 @@ public class WebApiTest {
 
     @Autowired
     WebApplicationContext ctx;
-
-    @Autowired
-    BoosterApplicationRepository boosterApplicationRepository;
 
     @Autowired
     HallOfFameRecordRepository hallOfFameRecordRepository;
@@ -216,54 +209,6 @@ public class WebApiTest {
         mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isGone())
                 .andExpect(jsonPath("$.errorCode").value("REPLAY_LEGACY_DEPRECATED"));
-    }
-
-    @Test
-    void boosterApplicationSummaryQueriesDoNotSelectImageColumns() {
-        final BoosterApplication application = new BoosterApplication();
-        application.setKeycloakUserId("summary-query-user");
-        application.setUserProfileId(100L);
-        application.setWotbAccountId(200L);
-        application.setWotbNickname("SummaryPlayer");
-        application.setWotbServer("CN");
-        application.setOverallStatsImage("data:image/png;base64,overall");
-        application.setVehicleStatsImage("data:image/png;base64,vehicle");
-        application.setRequestedLevel("ELITE");
-        application.setQq("123456");
-        application.setAvailabilityTier("MONTH_20");
-        application.setDailyTimeWindow("20:00-23:00");
-        application.setStatus("NEW");
-        boosterApplicationRepository.saveAndFlush(application);
-
-        try {
-            SqlCaptureInspector.beginCapture();
-            final BoosterApplicationSummaryDto allSummary = boosterApplicationRepository
-                    .findAllSummaries(PageRequest.of(0, 20))
-                    .getContent()
-                    .stream()
-                    .filter(summary -> application.getId().equals(summary.id()))
-                    .findFirst()
-                    .orElseThrow();
-            assertEquals(application.getId(), allSummary.id());
-            assertProjectionSelectExcludesImages();
-
-            SqlCaptureInspector.clear();
-            assertTrue(boosterApplicationRepository
-                    .findSummariesByStatus("NEW", PageRequest.of(0, 20))
-                    .stream()
-                    .anyMatch(summary -> application.getId().equals(summary.id())));
-            assertProjectionSelectExcludesImages();
-
-            SqlCaptureInspector.clear();
-            assertEquals(1, boosterApplicationRepository
-                    .findSummariesByKeycloakUserId("summary-query-user")
-                    .size());
-            assertProjectionSelectExcludesImages();
-        } finally {
-            SqlCaptureInspector.endCapture();
-            boosterApplicationRepository.deleteById(application.getId());
-            boosterApplicationRepository.flush();
-        }
     }
 
     private static MockMultipartFile hofFile(final Path p) throws Exception {
@@ -644,9 +589,6 @@ public class WebApiTest {
         mvc().perform(get("/api/admin/users/probe").with(jwt().authorities(
                         new SimpleGrantedAuthority("ROLE_HoF-admin"))))
                 .andExpect(status().isForbidden());
-        mvc().perform(get("/api/admin/boost/probe").with(jwt().authorities(
-                        new SimpleGrantedAuthority("ROLE_HoF-admin"))))
-                .andExpect(status().isForbidden());
         // wotbtools-user：无 HoF admin 权限
         mvc().perform(get("/api/admin/hof").with(jwt().authorities(
                         new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
@@ -911,20 +853,6 @@ public class WebApiTest {
         }
     }
 
-
-    private static void assertProjectionSelectExcludesImages() {
-        final List<String> selects = SqlCaptureInspector.statements().stream()
-                .map(String::toLowerCase)
-                .filter(sql -> sql.stripLeading().startsWith("select"))
-                .filter(sql -> sql.contains("booster_application"))
-                .toList();
-        assertTrue(selects.stream().anyMatch(sql -> sql.contains("wotb_nickname")),
-                () -> "Booster application projection SELECT was not captured: " + selects);
-        selects.forEach(select -> {
-            assertFalse(select.contains("overall_stats_image"), select);
-            assertFalse(select.contains("vehicle_stats_image"), select);
-        });
-    }
 
     public static final class SqlCaptureInspector implements StatementInspector {
         private static final ThreadLocal<List<String>> SQL = new ThreadLocal<>();

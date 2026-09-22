@@ -5,14 +5,10 @@ import cardReplayImg from '../assets/showcase/home/card-replay-parser-v1.png'
 import cardAiReviewImg from '../assets/showcase/home/card-ai-review-v1.png'
 import cardBattlePlaybackImg from '../assets/showcase/home/card-battle-playback-v1.png'
 import cardHofImg from '../assets/showcase/home/card-hall-of-fame-v1.png'
-import cardBoostImg from '../assets/showcase/home/card-boost-training-v1.png'
 import cardSponsorImg from '../assets/showcase/home/card-sponsor-v1.png'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
-import { useAuth } from '../composables/useAuth.js'
 
 const topRecord = ref(null)
-const { hasRole } = useAuth()
-const showBoost = computed(() => hasRole('wotbtools-admin'))
 const topDamageDisplay = computed(() => {
   const damage = Number(topRecord.value?.damageDealt)
   return Number.isFinite(damage) ? formatDamage(damage) : '--'
@@ -74,12 +70,8 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
         <div class="feature-visual"><img :src="cardHofImg" alt="" aria-hidden="true"><span class="feature-index">04</span></div>
         <div class="feature-copy"><h2>{{ $t('hof.btn') }}</h2><p>{{ $t('home.hofDesc') }}</p><span class="feature-action">{{ $t('hof.btn') }} →</span></div>
       </a>
-      <a v-if="showBoost" class="feature-card" href="/?view=boost">
-        <div class="feature-visual"><img :src="cardBoostImg" alt="" aria-hidden="true"><span class="feature-index">05</span></div>
-        <div class="feature-copy"><h2>{{ $t('app.boost_tab') }}</h2><p>{{ $t('home.boostDesc') }}</p><span class="feature-action">{{ $t('app.boost_tab') }} →</span></div>
-      </a>
       <a class="feature-card" href="/sponsor.html">
-        <div class="feature-visual"><img :src="cardSponsorImg" alt="" aria-hidden="true"><span class="feature-index">06</span></div>
+        <div class="feature-visual"><img :src="cardSponsorImg" alt="" aria-hidden="true"><span class="feature-index">05</span></div>
         <div class="feature-copy"><h2>{{ $t('home.sponsorTitle') }}</h2><p>{{ $t('home.sponsorDesc') }}</p><span class="feature-action">{{ $t('home.sponsorTag') }} →</span></div>
       </a>
     </section>

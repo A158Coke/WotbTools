@@ -56,7 +56,7 @@ function setAuthState(state, isAuthenticated = state === 'authenticated', initPr
 
 // 只保留 bootstrap 需要的 ensure；真实 composable 仍被执行（去重/重试/状态机都是被测行为）。
 const bootstrapApi = vi.hoisted(() => ({ ensureUserProfile: vi.fn() }))
-vi.mock('./utils/api-boost.js', () => ({
+vi.mock('./utils/api-user.js', () => ({
   ensureUserProfile: bootstrapApi.ensureUserProfile,
 }))
 
@@ -205,14 +205,14 @@ describe('Business user bootstrap', () => {
     ['home', '/?view=home', 'view-home'],
     ['replay', '/?view=replay', 'view-replay'],
     ['hof', '/?view=hof', 'view-hof'],
-  ])('self-heals on direct entry to %s without visiting Profile or Boost', async (_name, path, testId) => {
+  ])('self-heals on direct entry to %s without the profile page mounted', async (_name, path, testId) => {
     setAuthState('authenticated', true)
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
 
     const { wrapper } = await mountApp(path)
 
     expect(wrapper.find(`[data-test="${testId}"]`).exists()).toBe(true)
-    // 页面级 provisioning 已收敛：即便没挂载 ProfilePage / BoostPage 也必须 ensure。
+    // 页面级 provisioning 已收敛：即便没挂载 ProfilePage 也必须 ensure。
     expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(1)
   })
 

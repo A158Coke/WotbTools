@@ -40,21 +40,12 @@ order by table_schema, table_name, column_name;
 -- 3. Required business-domain row counts. A non-zero count does not authorize
 -- deletion; it tells the operator which ownership behavior must be assessed.
 select 'user_profile' as relation, count(*) as rows from public.user_profile
-union all select 'booster_application', count(*) from public.booster_application
-union all select 'booster_profile', count(*) from public.booster_profile
 union all select 'hundred_battle_submission', count(*) from public.hundred_battle_submission
 union all select 'mark3_submission', count(*) from public.mark3_submission
 union all select 'user_notification', count(*) from public.user_notification
 union all select 'admin_user_log', count(*) from public.admin_user_log
 union all select 'hall_of_fame_admin_log', count(*) from public.hall_of_fame_admin_log
 order by relation;
-
--- 4. Booster applications whose profile pointer would become orphaned. The
--- column is an application-level relationship in the repository baseline, so
--- it must be audited even when pg_catalog reports no FK.
-select count(*) as booster_application_profile_links
-from public.booster_application application
-join public.user_profile profile on profile.id = application.user_profile_id;
 
 -- 5. HoF stays account-owned after V22. This query verifies the data carries
 -- the canonical owner dimensions; it is evidence only, never a cleanup input.

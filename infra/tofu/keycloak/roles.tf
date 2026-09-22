@@ -2,8 +2,6 @@ locals {
   realm_roles = {
     "wotbtools-admin" = "WoTBTools admin"
     "wotbtools-user"  = "WoTBTools user"
-    "boost-manager"   = "Boost manager"
-    "booster"         = "Booster"
     "HoF-admin"       = "Hall of Fame administrator"
   }
 }

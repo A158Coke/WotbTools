@@ -1,11 +1,5 @@
 import { normalizeApiError } from './http.js'
 
-export function enumLabel(t, te, group, value, fallback = '--') {
-  if (value == null || value === '') return fallback
-  const key = `boost.${group}.${value}`
-  return te(key) ? t(key) : String(value)
-}
-
 export function apiErrorLabel(t, te, error) {
   const apiError = normalizeApiError(error)
   const statusFallback = {

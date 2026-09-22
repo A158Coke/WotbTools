@@ -162,8 +162,6 @@ case "${1:-}" in
       fi
     elif [[ "$*" == *"/api/users/profile"* ]]; then
       respond '{"nickname":"e2e"}' "${FAKE_PROFILE_STATUS:-200}"
-    elif [[ "$*" == *"/api/boost/options"* ]]; then
-      respond '[]' "${FAKE_BOOST_STATUS:-200}"
     elif [[ "$*" == *"/api/hof?"* ]]; then
       if [ "${FAKE_HOF_LIST_EMPTY:-0}" = 1 ]; then
         respond '{"records":[]}' "${FAKE_HOF_STATUS:-200}"
@@ -276,7 +274,6 @@ grep -Fq 'anonymous-rejected: PASS' <<< "$ready_output"
 grep -Fq 'admin-authz: PASS' <<< "$ready_output"
 grep -Fq 'business-profile: PASS' <<< "$ready_output"
 grep -Fq 'business-hof: PASS' <<< "$ready_output"
-grep -Fq 'business-boost: PASS' <<< "$ready_output"
 grep -Fq 'hof-replay-storage: PASS' <<< "$ready_output"
 grep -Fq 'parser-worker: PASS' <<< "$ready_output"
 grep -Fq 'processing-e2e: PASS' <<< "$ready_output"
@@ -415,8 +412,6 @@ run_gate_failure "profile-api-error" 'business-profile: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_PROFILE_STATUS=503
 run_gate_failure "hof-list-error" 'business-hof: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_STATUS=500
-run_gate_failure "boost-options-error" 'business-boost: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_BOOST_STATUS=500
 run_gate_failure "hof-replay-not-migrated" 'hof-replay-storage: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_LIST_EMPTY=1
 run_gate_failure "parser-worker-idle" 'parser-worker: FAIL' \
