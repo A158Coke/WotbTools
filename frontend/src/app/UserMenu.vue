@@ -6,7 +6,7 @@ import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 
 const navigate = inject(NAVIGATE_VIEW_KEY)
-const { login, logout, isAuthenticated, userName, tokenParsed } = useAuth()
+const { login, logout, isAuthenticated, displayName, tokenParsed } = useAuth()
 const { uiProfile, setUiProfile } = useUiProfile()
 const open = ref(false)
 const position = ref({ top: 0, right: 16 })
@@ -48,7 +48,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="dropdown user-menu">
     <button ref="trigger" class="auth-btn ghost user-menu-trigger" @click="toggle" :aria-expanded="open" :aria-haspopup="true">
-      {{ isAuthenticated() ? userName() : $t('app.login') }} <span class="caret">▼</span>
+      {{ isAuthenticated() ? displayName : $t('app.login') }} <span class="caret">▼</span>
     </button>
     <Teleport to="body">
       <div v-if="open" ref="panel" class="user-menu-panel" :style="{ top: position.top + 'px', right: position.right + 'px' }" role="menu">

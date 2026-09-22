@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.87",
+    "date": "2026-09-22",
+    "tag": "chg",
+    "zh": "右上角用户菜单与个人中心现在显示你的游戏官方昵称（Wargaming 官方昵称 / QQ 昵称），不再显示形如 wg_eu_572253806 的内部登录名；改昵称后重新登录即更新。",
+    "en": "The user menu in the top-right corner and the profile page now show your in-game display name (Wargaming or QQ nickname) instead of the internal login name such as wg_eu_572253806; a new nickname appears after your next sign-in.",
+    "ru": "Меню пользователя справа вверху и страница профиля теперь показывают ваш игровой ник (Wargaming или QQ), а не внутреннее имя входа вида wg_eu_572253806; новый ник появляется после следующего входа."
+  },
+  {
     "v": "2.12.86",
     "date": "2026-09-22",
     "tag": "add",

@@ -247,12 +247,14 @@ function hasRole(role) {
     && tokenParsed.value.realm_access.roles.includes(role)
 }
 
-function userName() {
-  return tokenParsed.value?.preferred_username
-    || tokenParsed.value?.name
-    || tokenParsed.value?.email
-    || ''
-}
+/**
+ * 展示名（顶栏用户菜单 / 个人中心）：Keycloak `display-name-mapper` 映射的 `displayName`
+ * （WG 官方昵称 / QQ 昵称）。`preferred_username` 是内部登录名（形如 `wg_eu_572253806`），
+ * 只在 claim 缺失时兜底，绝不作为首选展示。
+ */
+const displayName = computed(
+  () => tokenParsed.value?.displayName || tokenParsed.value?.preferred_username || '',
+)
 
 function token() {
   return keycloak?.token || ''
@@ -287,7 +289,6 @@ export function useAuth() {
     logout,
     isAuthenticated,
     hasRole,
-    userName,
     token,
     ensureToken,
     initialized,
@@ -296,6 +297,6 @@ export function useAuth() {
     initFailureReason,
     tokenParsed,
     initError,
-    displayName: computed(() => userName()),
+    displayName,
   }
 }

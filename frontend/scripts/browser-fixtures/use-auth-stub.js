@@ -152,7 +152,8 @@ function hasRole(role) {
   const roles = tokenParsed.value?.realm_access?.roles
   return Boolean(role) && Array.isArray(roles) && roles.includes(role)
 }
-function userName() { return tokenParsed.value?.preferred_username || '' }
+/** 与真实 composable 一致：展示名优先 displayName claim，preferred_username 只作兜底。 */
+function displayName() { return tokenParsed.value?.displayName || tokenParsed.value?.preferred_username || '' }
 function token() { return authenticated.value ? 'fixture-access-token' : '' }
 async function ensureToken() { return authenticated.value }
 
@@ -167,7 +168,6 @@ export function useAuth() {
     logout,
     isAuthenticated,
     hasRole,
-    userName,
     token,
     ensureToken,
     initialized,
@@ -176,6 +176,6 @@ export function useAuth() {
     initFailureReason,
     tokenParsed,
     initError,
-    displayName: computed(() => userName()),
+    displayName: computed(displayName),
   }
 }
