@@ -607,7 +607,17 @@ jobs:
           AI_API_KEY: ci
           GRAFANA_ADMIN_USER: ci
           GRAFANA_ADMIN_PASSWORD: ci
-        run: docker compose -f deploy/docker-compose.prod.yml config --quiet
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/docker-compose.prod.yml config --format json > /tmp/compose.json
+          python - <<'PY'
+          import json
+          with open('/tmp/compose.json', encoding='utf-8') as f:
+              services = json.load(f)['services']
+          endpoint = services['parser-worker']['environment']['MINIO_ENDPOINT']
+          assert endpoint == 'minio:9000', endpoint
+          print('parser-worker resolves MinIO through Docker service discovery')
+          PY
       - name: MinIO compose and source-image contract
         env:
           TAG: sha-ci

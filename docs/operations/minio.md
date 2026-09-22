@@ -57,8 +57,10 @@ storage is broken".
 
 Yecao runs the dedicated `deploy/docker-compose.minio.yml` project.
 
-- S3 API: `10.20.0.2:9000`, available to local Yecao services and TX through
-  WireGuard only.
+- S3 API: the published address is `10.20.0.2:9000` (what TX uses over WireGuard);
+  containers attached to `wotb_internal` — the Yecao parser-worker — use the Docker
+  service name `minio:9000`. Both reach the same runtime, and the published port is
+  reachable from Yecao and from TX through WireGuard only.
 - Console: `127.0.0.1:9001`, unavailable from public or WireGuard interfaces.
 - Data: the named `wotb_yecao_minio_data` Docker volume.
 - Health: MinIO's `/minio/health/live` endpoint, enforced by Compose before

@@ -277,6 +277,37 @@ grep -q 'TX_RABBITMQ_PARSER_WORKER_PASSWORD' <<< "$compose_worker"
 grep -q 'YECAO_MINIO_WORKER_ACCESS_KEY' <<< "$compose_worker"
 grep -q 'YECAO_MINIO_WORKER_SECRET_KEY' <<< "$compose_worker"
 
+# MinIO endpoint ownership is per consumer, not one shared topology value. The worker and the MinIO
+# runtime share the `wotb_internal` network, so the worker resolves the service through Docker DNS;
+# TX is not on that network and keeps the WireGuard address. A container → host → published-port
+# hairpin is not reachable, which is exactly how the worker failed with
+# PARSER_WORKER_STORAGE_UNAVAILABLE / `Connect timed out`. Both endpoints are pinned here, each to
+# its own variable, so they cannot silently collapse back into one value.
+worker_minio_endpoint='minio:9000'
+control_plane_minio_endpoint='10.20.0.2:9000'
+grep -Fq "MINIO_ENDPOINT: \"\${PARSER_WORKER_MINIO_ENDPOINT:-$worker_minio_endpoint}\"" \
+  <<< "$compose_worker" \
+  || { echo "parser-worker must resolve MinIO through Docker service discovery" >&2; exit 1; }
+! grep -Eq '^[[:space:]]+[A-Z0-9_]+: .*10\.20\.0\.2' <<< "$compose_worker" \
+  || { echo "parser-worker must not be handed the TX WireGuard MinIO endpoint" >&2; exit 1; }
+! grep -q 'YECAO_MINIO_ENDPOINT' <<< "$compose_worker" \
+  || { echo "parser-worker endpoint ownership must not reuse the control-plane variable" >&2; exit 1; }
+grep -Fq "endpoint: \${MINIO_ENDPOINT:$worker_minio_endpoint}" \
+  "$ROOT/java/wotb-parser-worker/src/main/resources/application.yml" \
+  || { echo "parser-worker application default must be the Docker DNS endpoint" >&2; exit 1; }
+# The control plane never follows the worker: TX reaches Yecao MinIO over WireGuard and cannot
+# resolve the Yecao-local Docker service name.
+grep -Fq "endpoint: \${YECAO_MINIO_ENDPOINT:$control_plane_minio_endpoint}" \
+  "$ROOT/java/wotb-web/src/main/resources/application.yml" \
+  || { echo "TX control plane must keep reaching Yecao MinIO over WireGuard" >&2; exit 1; }
+grep -Fq "YECAO_MINIO_ENDPOINT: \${YECAO_MINIO_ENDPOINT:-$control_plane_minio_endpoint}" \
+  "$ROOT/deploy/tx/docker-compose.yml" \
+  || { echo "TX business-api endpoint must stay the WireGuard address" >&2; exit 1; }
+! grep -Eq "^[[:space:]]+[A-Z0-9_]+: .*$worker_minio_endpoint" "$ROOT/deploy/tx/docker-compose.yml" \
+  || { echo "TX runtime must not resolve the Yecao-local Docker service name" >&2; exit 1; }
+! grep -q 'PARSER_WORKER_MINIO_ENDPOINT' "$ROOT/deploy/tx/docker-compose.yml" \
+  || { echo "TX must not be wired to the parser-worker endpoint variable" >&2; exit 1; }
+
 worker_log="$WORK/parser-worker.log"
 # A worker-only deploy must accept an empty WOTB_BACKEND_MIGRATION_MAX_VERSION: the worker has no
 # database access, so the backend Flyway ceiling is not one of its inputs. The deploy workflow sends

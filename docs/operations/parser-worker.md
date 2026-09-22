@@ -149,7 +149,17 @@ it already retried is a stale no-op by construction.
 | Image | `ghcr.io/a158coke/wotbtools-parser-worker:sha-<12>` (`docker/Dockerfile.parser-worker`, `BUILD_COMMIT` injected) |
 | Compose service | `parser-worker` in `deploy/docker-compose.prod.yml` |
 | Public port | none |
-| Dependencies | TX broker over WireGuard (`10.20.0.1:5672`, vhost `/wotbtools`) and Yecao MinIO (`10.20.0.2:9000`) |
+| Dependencies | TX broker over WireGuard (`10.20.0.1:5672`, vhost `/wotbtools`) and Yecao MinIO through Docker service discovery (`minio:9000` on `wotb_internal`) |
+
+The MinIO endpoint is owned by the worker's own topology, not by the control
+plane's: the worker shares the `wotb_internal` network with the MinIO runtime and
+therefore resolves it as `minio:9000` (`PARSER_WORKER_MINIO_ENDPOINT`, default
+`minio:9000`). The WireGuard address `10.20.0.2:9000` belongs to
+`YECAO_MINIO_ENDPOINT` and to TX, which is not on that network; a container → host →
+published-port hairpin is not reachable from inside the worker, which is how pointing
+it at that address fails with `PARSER_WORKER_STORAGE_UNAVAILABLE` / `Connect timed
+out`. One MinIO runtime, two endpoints — both are pinned separately in
+`deploy/test-deploy-contract.sh` so they cannot collapse back into one shared value.
 
 The service is **selected explicitly** and is deliberately absent from the `all`
 service set while the legacy Yecao application stack is still running, so an
@@ -237,4 +247,6 @@ Diagnosis order:
   dependency closure of the worker image.
 - `deploy/test-deploy-contract.sh` pins the compose/deploy contract: no public
   port, no database credentials, the three required secrets, the liveness gate,
-  and the fact that `all` does not start the service.
+  the fact that `all` does not start the service, and the MinIO endpoint
+  ownership — the worker's `minio:9000` and the control plane's `10.20.0.2:9000`
+  each stay on their own variable and neither side may adopt the other's endpoint.
