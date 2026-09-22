@@ -171,6 +171,13 @@ are `RABBITMQ_*` and `MINIO_*`. Non-secret tuning
 `PARSER_WORKER_MINIO_*`) is listed in `.env.example`; there is deliberately no
 retry-budget setting, because retry policy belongs to the control plane.
 
+`RABBITMQ_*` and `MINIO_*` are resolved from the process environment into immutable
+property objects by `ParserWorkerConfig` while the context is refreshed, i.e.
+**before** the worker starts consuming. A missing or blank credential fails startup
+(`Could not resolve placeholder 'MINIO_ACCESS_KEY'`, or `accessKey must not be
+blank` when it is explicitly emptied), so the process can never run with placeholder
+credentials.
+
 Because the worker has no HTTP endpoint, its deployment gate is container
 liveness: if it does not stay up (missing credential, unreachable broker), the
 deployment fails and the service is stopped so a crash loop cannot run away.
@@ -219,7 +226,12 @@ Diagnosis order:
   original bytes, and the real broker reporting `concurrency` consumers for the
   started container.
 - `ParserWorkerContainerContractTest` pins the container wiring (work queue only,
-  manual ack, the worker listener, reviewed defaults) without a broker.
+  manual ack, the worker listener) without a broker.
+- `ParserWorkerConfigBindingTest` boots a real Spring context from the worker's
+  `application.yml` with the production environment-variable shape: it proves the
+  immutable property objects carry the environment values (optional keys keep their
+  reviewed defaults), that the assembly consumes them, and that a missing or blank
+  `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` / `RABBITMQ_PASSWORD` fails startup.
 - `scripts/ci/test-workflow-contract.sh` keeps `java/pom.xml` modules and the
   Dockerfile COPY lists in lockstep, including the `-pl wotb-parser-worker -am`
   dependency closure of the worker image.
