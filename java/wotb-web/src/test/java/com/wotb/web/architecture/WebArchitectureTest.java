@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class WebArchitectureTest {
 
     private static final String[] DOMAINS =
-            {"admin", "boost", "hof", "hundred", "mark3", "replay", "user"};
+            {"admin", "hof", "hundred", "mark3", "replay", "user"};
 
     /** 允许的非 domain 位置：Spring Boot 入口根包 + 共享 config/util。 */
     private static final String[] SHARED_PACKAGES = {

@@ -23,7 +23,6 @@ fi
 for required in \
   'pg_constraint' \
   'information_schema.columns' \
-  'booster_application' \
   'hundred_battle_submission' \
   'mark3_submission'; do
   grep -Fq "$required" "$AUDIT" || fail "audit is missing required dependency evidence: $required"

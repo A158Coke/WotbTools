@@ -28,7 +28,7 @@
 
 ## Backend map
 
-后端优先按 domain 找包：`user`、`hof`、`replay`、`boost`、`admin`、`hundred`、`mark3`。典型路径是 Controller 接 HTTP、Service 放业务编排、Repository 管持久化、Mapper 管 DTO 转换。
+后端优先按 domain 找包：`user`、`hof`、`replay`、`admin`、`hundred`、`mark3`。典型路径是 Controller 接 HTTP、Service 放业务编排、Repository 管持久化、Mapper 管 DTO 转换。
 
 Replay 相关功能要先区分“确定性事实”和“产品编排”：确定性解析、统计、导出优先落在 `../../java/wotb-core`；异步处理、派生产物和任务生命周期再进入 `wotb-replay-processing`、`wotb-replay-coordinator`、`wotb-playback`、`wotb-ai`、`wotb-result` 或 `wotb-web`。
 

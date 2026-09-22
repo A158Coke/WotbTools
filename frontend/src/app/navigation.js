@@ -8,7 +8,7 @@ export const LEGACY_VIEW_ALIASES = Object.freeze({
 
 export const ALLOWED_VIEWS = Object.freeze([
   'home', 'replay', 'hof', 'hof-admin',
-  'profile', 'boost', 'admin-users', 'version', 'contact',
+  'profile', 'admin-users', 'version', 'contact',
   'ai-review', 'battle-playback', 'playback-qa', 'rating-docs', 'rating-v2',
   'android',
 ])

@@ -383,3 +383,53 @@ export async function hofAdminBulkDeleteMark3(ids, body) {
   })
   return r.json()
 }
+
+// ── 管理端用户（/api/admin/users，需 wotbtools-admin）────────────────────────────
+
+/** 管理端 authed JSON 请求：401 交由调用方/上层按既有语义处理（不在这里 redirect）。 */
+async function adminUsersRequest(url, options = {}) {
+  const { token, ensureToken } = useAuth()
+  await ensureToken(30)
+  const headers = { ...(options.headers || {}) }
+  if (token()) headers.Authorization = `Bearer ${token()}`
+  const r = await apiFetch(url, { ...options, headers })
+  if (!r.ok) {
+    throw await apiErrorFromResponse(r)
+  }
+  if (r.status === 204) return null
+  return r.json()
+}
+
+/**
+ * 管理端用户搜索（服务端分页，0-based page）。
+ * segment=keycloak（默认）行来自 Keycloak；segment=local 行来自本地 user_profile。
+ * idpAlias 仅 keycloak segment 支持（local 传它后端 400 IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT）。
+ * 返回 { items, page, size, totalItems, totalPages }。
+ */
+export async function adminSearchUsers(query = '', { segment = 'keycloak', idpAlias = '', page = 0, size = 25 } = {}) {
+  const params = new URLSearchParams()
+  if (query) params.set('query', query)
+  if (segment) params.set('segment', segment)
+  if (idpAlias && segment === 'keycloak') params.set('idpAlias', idpAlias)
+  params.set('page', String(page))
+  params.set('size', String(size))
+  return adminUsersRequest(`/api/admin/users?${params}`)
+}
+
+export async function adminGetUser(keycloakUserId) {
+  return adminUsersRequest(`/api/admin/users/${encodeURIComponent(keycloakUserId)}`)
+}
+
+/**
+ * 删除用户：请求体是 Keycloak sub 数组——删除单个用户就是长度为 1 的数组，
+ * 因此没有单独的「批量删除」端点，也没有单条 /{keycloakUserId} 删除端点。
+ * confirm 必须为 true，否则整个请求 400 CONFIRMATION_REQUIRED；单次上限 100。
+ * 返回 { requested, deleted, failed, results: [{ userId, deleted, errorCode }] }。
+ */
+export async function adminDeleteUsers(userIds, confirm) {
+  return adminUsersRequest(`/api/admin/users?confirm=${confirm === true}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(userIds),
+  })
+}

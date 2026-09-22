@@ -2,7 +2,6 @@ package com.wotb.web.admin.service;
 
 import com.wotb.web.admin.dto.AdminUserPageDto;
 import com.wotb.web.admin.exception.AdminBadRequestException;
-import com.wotb.web.boost.service.BoosterService;
 import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
@@ -40,14 +39,13 @@ class AdminUserPaginationTest {
     private final UserProfileService userProfileService = mock(UserProfileService.class);
     private final AdminUserLogPersister logPersister = mock(AdminUserLogPersister.class);
     private final KeycloakAdminUserService keycloakAdminUserService = mock(KeycloakAdminUserService.class);
-    private final BoosterService boosterService = mock(BoosterService.class);
     private final PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
     /** 使用真实 mapper，锁定合并视图的字段映射语义。 */
     private final AdminUserMapper mapper = new AdminUserMapper();
 
     private AdminUserService service() {
         return new AdminUserService(userProfileService, mapper, logPersister,
-                keycloakAdminUserService, boosterService, txManager);
+                keycloakAdminUserService, txManager);
     }
 
     @Test

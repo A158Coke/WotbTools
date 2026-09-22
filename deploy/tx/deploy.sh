@@ -1446,14 +1446,6 @@ business_e2e_check() {
     e2e_emit business-hof 0 "public HoF list must answer 200, got HTTP $hof_status"
     failures=1
   fi
-  e2e_http GET "http://business-api:8087/api/boost/options"
-  if [ "$E2E_HTTP_STATUS" = 200 ]; then
-    e2e_emit business-boost 1
-  else
-    e2e_emit business-boost 0 "boost options must answer 200, got HTTP $E2E_HTTP_STATUS"
-    failures=1
-  fi
-
   # --- HoF replay originals are readable for a real migrated record ----------
   local hof_id=""
   [ "$hof_status" = 200 ] && hof_id="$(e2e_first_id "$hof_body")"

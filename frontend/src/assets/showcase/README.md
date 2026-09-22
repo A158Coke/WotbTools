@@ -23,13 +23,11 @@
 | Home — AI 复盘卡片   | `home/card-ai-review-v1.png`              | feature card media area（cover 裁切） | AI 复盘/训练主题；卡片以 object-fit: cover 裁切                                                               |
 | Home — 战局重建卡片  | `home/card-battle-playback-v1.png`       | feature card media area（cover 裁切） | 战局地图主题；卡片以 object-fit: cover 裁切                                                                   |
 | Home — HoF 卡片      | `home/card-hall-of-fame-v1.png`           | feature card media area（cover 裁切） | 名人堂主题                                                                                                    |
-| Home — Boost 卡片    | `home/card-boost-training-v1.png`        | feature card media area（cover 裁切） | 训练场主题                                                                                                    |
 | Home — Sponsor 卡片  | `home/card-sponsor-v1.png`                | feature card media area（cover 裁切） | 支持/赞助主题                                                                                                 |
 | Replay Parser        | `replay/replay-hero-battlefield-v1.png`   | 全屏背景 + upload 战术表面          | 16:9；暗部为主；背景中的地图/标记仅作氛围，不作为回放事实                                               |
 | Hall of Fame         | `hof/hof-hero-hall-v1.png`                | 全屏背景                            | 16:9；金色荣誉大厅主题                                                                                        |
 | Rating               | `rating/rating-hero-analysis-v1.png`      | 全屏背景                            | 16:9；图片内即使有生成式 dashboard 元素也只能是低权重氛围，真实 Rating 数据必须覆盖在独立 readable surface 上 |
 | Profile              | `profile/profile-hero-camp-v1.png`        | 全屏背景 + profile-hero 表面        | 16:9；不引入 avatar 依赖                                                                                      |
-| Boost                | `boost/boost-hero-training-v1.png`        | 全屏背景                            | 16:9；训练场主题                                                                                              |
 | Admin Users          | `admin/admin-hero-command-v1.png`         | 全屏背景（强度较弱）                | 16:9；Operations Console 优先，管理效率优先                                                                   |
 | HoF Admin            | `hof-admin/hof-admin-hero-command-v1.png` | 全屏背景（强度较弱）                | 16:9；CRUD / review 数据必须保持清晰                                                                          |
 | Version / Changelog  | `version/version-hero-workshop-v1.png`    | 全屏背景                            | 16:9；工坊主题                                                                                                |

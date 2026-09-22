@@ -58,7 +58,7 @@ Spring Security 不经过 MVC advice，因此 401/403 分别由 canonical `Authe
 | `INTERNAL_ERROR` | 500 | true | internal | 未分类服务端异常 |
 | `DATASET_REFERENCE_REQUIRED` | 400 | false | validation | Playback/AI Dataset reference 缺失 |
 
-既有 Replay、AI、Profile、HoF、Boost、Admin domain codes 在 Phase 1 保持 errorCode/status 兼容，并统一获得 `id`、`errorCode`、`retryable`、`details` 与 `timestamp`。`ApiErrorCode` 是从 OpenAPI 生成的 known-server registry，不会把 `NETWORK_ERROR`、`REQUEST_ABORTED`、`MALFORMED_ERROR_RESPONSE`、`UNKNOWN_ERROR` 或 `HTTP_<status>` 等浏览器/application fallback 当成服务端码；`ApiError.errorCode` 仍保持 string，以容纳尚未注册的稳定 legacy domain code。新增 error code 必须同时更新 registry、后端测试与三语前端 locale；禁止为不同语义复用同一 errorCode。
+既有 Replay、AI、Profile、HoF、Admin domain codes 在 Phase 1 保持 errorCode/status 兼容，并统一获得 `id`、`errorCode`、`retryable`、`details` 与 `timestamp`。`ApiErrorCode` 是从 OpenAPI 生成的 known-server registry，不会把 `NETWORK_ERROR`、`REQUEST_ABORTED`、`MALFORMED_ERROR_RESPONSE`、`UNKNOWN_ERROR` 或 `HTTP_<status>` 等浏览器/application fallback 当成服务端码；`ApiError.errorCode` 仍保持 string，以容纳尚未注册的稳定 legacy domain code。新增 error code 必须同时更新 registry、后端测试与三语前端 locale；禁止为不同语义复用同一 errorCode。
 
 ## Frontend contract
 
@@ -86,4 +86,4 @@ Capability `UNAVAILABLE`/HTTP 204 表示数据不足或功能不可用，不得�
 
 完成的 vertical slice：canonical MVC/Security envelope、request correlation、frontend parser/presentation、Battle Playback 角色 matcher 与 401/403/500/network/unavailable 展示、AI Review error presentation、Processing/Export Job normalization。
 
-静态 inventory（2026-08-30）：`wotb-web` 仍有 39 个文件抛出 `IllegalArgumentException`、15 个文件抛出 `IllegalStateException`、21 个文件引用 `ResponseStatusException`。这些 legacy 路径由 Phase 1 adapter 保持兼容，按 Replay → AI → Profile/User → HoF → Boost → Admin 顺序在后续 PR 类型化；不在基础设施 PR 中重写 decoder、timeline、HP、地图重建、Rating 或 Android ingress。
+静态 inventory（2026-08-30）：`wotb-web` 仍有 39 个文件抛出 `IllegalArgumentException`、15 个文件抛出 `IllegalStateException`、21 个文件引用 `ResponseStatusException`。这些 legacy 路径由 Phase 1 adapter 保持兼容，按 Replay → AI → Profile/User → HoF → Admin 顺序在后续 PR 类型化；不在基础设施 PR 中重写 decoder、timeline、HP、地图重建、Rating 或 Android ingress。
