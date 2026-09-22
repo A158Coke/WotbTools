@@ -32,8 +32,6 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -65,38 +63,25 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
     private final MeterRegistry meterRegistry;
     private final Tankopedia tankopedia = Tankopedia.load();
     /**
-     * 上传输入的落点；{@code null} = 进程本地 job 目录（缺省行为，逐字不变）。
-     * 分布式模式下由 {@code wotb-web} 注入对象存储实现（装配点见
+     * 上传输入的落点（对象存储；装配点见
      * {@code com.wotb.web.replay.config.ReplayDistributedConfig}）。
      */
     private final ReplayProcessingInputStore inputStore;
-    /**
-     * READY dataset 的读取方式；{@code null} = 内存 {@link ReplayProcessingJob#result()}（缺省行为）。
-     */
+
+    /** READY dataset 与 derived artifact 的读取端口（对象存储实现）。 */
     private final ReplayProcessingResultReader resultReader;
 
-    /**
-     * 生产装配：可选的分布式端口缺省不存在（local 模式下不创建任何额外 bean），
-     * 因此本构造器在两种模式下都是同一个编排实现。
-     */
     @Autowired
     public ReplayProcessingJobService(final ReplayProcessingJobStore store,
                                       final ReplayProcessingDispatcher dispatcher,
                                       @Autowired(required = false) final MeterRegistry meterRegistry,
-                                      @Autowired(required = false) final ReplayProcessingInputStore inputStore,
-                                      @Autowired(required = false) final ReplayProcessingResultReader resultReader) {
+                                      final ReplayProcessingInputStore inputStore,
+                                      final ReplayProcessingResultReader resultReader) {
         this.store = store;
         this.dispatcher = dispatcher;
         this.meterRegistry = meterRegistry;
         this.inputStore = inputStore;
         this.resultReader = resultReader;
-    }
-
-    /** 本地/测试装配便利构造器：不注入分布式端口（等价于只传前三个参数）。 */
-    public ReplayProcessingJobService(final ReplayProcessingJobStore store,
-                                      final ReplayProcessingDispatcher dispatcher,
-                                      final MeterRegistry meterRegistry) {
-        this(store, dispatcher, meterRegistry, null, null);
     }
 
     // ---- create / status / cancel / result ----
@@ -248,15 +233,12 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
     }
 
     /**
-     * 回滚分布式输入（对象存储）；本地落点没有注入输入端口，直接返回。
+     * 回滚已落对象存储的输入。
      *
      * <p>清理失败**只记录**：create 已经注定失败，被清理动作替换掉的原始错误会变成错误的
      * error code，因此这里绝不抛出，也绝不影响调用方正抛出的那个异常。</p>
      */
     private void discardInputs(final String jobId, final MultipartFile[] files) {
-        if (inputStore == null) {
-            return;
-        }
         try {
             inputStore.discard(jobId, files);
         } catch (final IOException | RuntimeException cleanupFailure) {
@@ -278,26 +260,9 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         }
     }
 
-    /**
-     * 持久化上传输入：缺省落进程本地 job 目录（{@code <root>/<jobId>/input/<i>__<name>}，
-     * 与引入分布式控制面前逐字一致）；注入 {@link ReplayProcessingInputStore} 时改由它决定落点。
-     */
+    /** 持久化上传输入：唯一落点是对象存储（键布局由输入端口拥有）。 */
     private List<String> persistInputs(final String jobId, final MultipartFile[] files) throws IOException {
-        if (inputStore != null) {
-            return inputStore.store(jobId, files);
-        }
-        final Path inputDir = store.inputDir(jobId);
-        Files.createDirectories(inputDir);
-        final List<String> sourceNames = new ArrayList<>(files.length);
-        int i = 0;
-        for (final MultipartFile f : files) {
-            final String name = f.getOriginalFilename() == null ? "replay.wotbreplay" : f.getOriginalFilename();
-            final String safe = ReplayJobFiles.sanitizeFileName(name);
-            f.transferTo(inputDir.resolve(i + "__" + safe));
-            sourceNames.add(safe);
-            i++;
-        }
-        return sourceNames;
+        return inputStore.store(jobId, files);
     }
 
     /** 低敏 identity 引用：只取前 8 个字符，绝不把完整 operationId 写进日志。 */
@@ -368,9 +333,7 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         if (snap.status() != ReplayProcessingJob.Status.READY) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "JOB_NOT_READY");
         }
-        // 缺省（未注入 reader）就是内存 dataset，与引入分布式控制面前逐字一致。
-        final ProcessedDataset dataset =
-                resultReader == null ? job.result() : resultReader.readReadyDataset(job);
+        final ProcessedDataset dataset = resultReader.readReadyDataset(job);
         if (dataset == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "JOB_NOT_READY");
         }

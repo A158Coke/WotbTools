@@ -51,7 +51,7 @@ class AiReplayReviewServiceWiringTest {
 
         @Bean
         com.wotb.web.replay.job.ReplayProcessingResultReader dataset(final ReplayProcessingJobStore store) {
-            return new com.wotb.web.replay.job.LocalReplayDatasetRepository(store);
+            return new com.wotb.web.replay.job.InMemoryReplayDatasetRepository();
         }
     }
 
