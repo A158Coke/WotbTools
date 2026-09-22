@@ -3,8 +3,12 @@ package com.wotb.web.replay.controller;
 import com.wotb.web.config.ApiPaths;
 import com.wotb.web.replay.dto.PreviewResponse;
 import com.wotb.web.replay.dto.ProcessingJobResponse;
+import com.wotb.web.replay.job.ProcessedDataset;
 import com.wotb.web.replay.job.ReplayProcessingJob;
 import com.wotb.web.replay.job.ReplayProcessingJobService;
+import com.wotb.web.user.service.UserProfileService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -37,6 +41,10 @@ import java.util.Map;
  * 错误码：PROCESSING_QUEUE_FULL(503) / JOB_NOT_FOUND(404) / JOB_NOT_READY(409)，
  * job 内失败经 status.errorCode 返回（如 NO_VALID_REPLAYS）。
  *
+ * <p><b>绑定账号回放验证（best-effort 旁路）</b>：{@code GET result} 在返回 Preview 前，用已认证
+ * subject 与<b>同一份</b> READY dataset 做一次「canonical 录像者 accountId == 当前绑定账号」的验证；
+ * 命中时把 profile 的 {@code wotbAccountVerifiedAt} 置为首次验证时间。验证失败/不适用不影响本响应。</p>
+ *
  * <p><b>Idempotency</b>：创建端点接受可选 multipart 字段 {@code operationId}（Android external replay
  * 传入其 pending identity）。同一已认证 subject 用同一 {@code operationId} 重复提交返回同一个
  * {@code jobId}，用于覆盖「server 已接受但 Native ACK 前进程被杀 → 冷启动重新导入同一份 replay」的
@@ -46,10 +54,15 @@ import java.util.Map;
 @CrossOrigin(origins = "*")
 public class ReplayProcessingJobController {
 
-    private final ReplayProcessingJobService service;
+    private static final Logger LOGGER = LoggerFactory.getLogger(ReplayProcessingJobController.class);
 
-    public ReplayProcessingJobController(final ReplayProcessingJobService service) {
+    private final ReplayProcessingJobService service;
+    private final UserProfileService userProfileService;
+
+    public ReplayProcessingJobController(final ReplayProcessingJobService service,
+                                         final UserProfileService userProfileService) {
         this.service = service;
+        this.userProfileService = userProfileService;
     }
 
     @PostMapping(value = ApiPaths.REPLAY_PROCESSING_JOBS, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -83,7 +96,29 @@ public class ReplayProcessingJobController {
     }
 
     @GetMapping(ApiPaths.REPLAY_PROCESSING_JOB_RESULT)
-    public PreviewResponse result(@PathVariable(name = "jobId") final String jobId) {
-        return service.result(jobId);
+    public PreviewResponse result(@PathVariable(name = "jobId") final String jobId,
+                                  @AuthenticationPrincipal final Jwt jwt) {
+        // 唯一共享边界：解析成功后的正常回放用法（Data / AI Review / Playback / Reconstruction / Export
+        // 的 dataset 引用）都经过这里，因此绑定账号的回放验证只在这里接线，不散落到各 replay 端点。
+        // dataset 只读一次：验证与 Preview 投影消费同一份，不重复访问对象存储。
+        final ProcessedDataset dataset = service.readyDataset(jobId);
+        verifyBoundAccountFromReplay(jobId, jwt, dataset);
+        return service.preview(dataset);
+    }
+
+    /**
+     * 回放录制者验证（best-effort）：recorder accountId 与当前绑定账号数值相等时标记该账号已验证。
+     *
+     * <p>契约：验证是回放结果上的<b>旁路</b>副作用——任何失败（数据库不可用、profile 缺失、
+     * 并发冲突）都只记录日志，绝不让回放结果本身失败或改变响应。</p>
+     */
+    private void verifyBoundAccountFromReplay(final String jobId, final Jwt jwt,
+                                              final ProcessedDataset dataset) {
+        try {
+            userProfileService.verifyBoundAccountFromReplay(subjectOf(jwt), dataset.battles());
+        } catch (final RuntimeException e) {
+            LOGGER.warn("event=replay_account_verification_failed jobId={} error={}",
+                    jobId, e.getMessage(), e);
+        }
     }
 }

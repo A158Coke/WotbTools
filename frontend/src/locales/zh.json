@@ -759,6 +759,8 @@
         "sourceWargaming": "Wargaming.net",
         "verified": "验证状态",
         "verifiedBadge": "账号已验证",
+        "notVerified": "未验证",
+        "notVerifiedHint": "上传一场由该账号录制的回放即可自动验证",
         "wgSyncFailed": "Wargaming 账号同步失败，请刷新或重新登录",
         "wgSyncRetry": "重试同步",
         "wgSyncing": "正在同步 Wargaming 账号"

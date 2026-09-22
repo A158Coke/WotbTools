@@ -1,5 +1,7 @@
 package com.wotb.web.user.service;
 
+import com.wotb.core.model.Battle;
+import com.wotb.core.util.PlayerResultFormat;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
@@ -14,7 +16,9 @@ import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -283,9 +287,16 @@ public class UserProfileService {
             throw new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED");
         }
 
+        // 换绑 = 换了「哪个账号」这个事实：既有验证只对旧账号成立，必须一并失效（含仅区服变化）。
+        final boolean identityChanged = !Objects.equals(profile.getWotbServer(), server)
+                || !Objects.equals(profile.getWotbAccountId(), wotbAccountId);
+
         profile.setWotbAccountId(wotbAccountId);
         profile.setWotbNickname(wotbNickname);
         profile.setWotbServer(server);
+        if (identityChanged) {
+            profile.setWotbAccountVerifiedAt(null);
+        }
         profile.setUpdatedAt(OffsetDateTime.now());
 
         try {
@@ -309,8 +320,60 @@ public class UserProfileService {
         profile.setWotbAccountId(null);
         profile.setWotbNickname(null);
         profile.setWotbServer("CN");
+        // 解绑后不存在「被验证的账号」：留着时间戳会让之后绑定其他账号继承陈旧验证。
+        profile.setWotbAccountVerifiedAt(null);
         profile.setUpdatedAt(OffsetDateTime.now());
         return mapper.toDto(repository.save(profile));
+    }
+
+    /**
+     * 回放录制者验证：把「这份回放确实由该账号录制」这一事实落到当前绑定账号上。
+     *
+     * <p><b>fail-closed</b>：只有 canonical 解析
+     * （{@link PlayerResultFormat#recorderAccountId(Battle)}，经
+     * {@link Battle#recorderResult()} 定位录像者名册行）给出的<em>数值</em> recorder accountId
+     * 与当前绑定账号**相等**时才标记已验证。批次里<b>任一场</b>由该账号录制即成立；
+     * 解析不出数值 accountId、未认证、无 profile、未绑定账号、账号不同一律什么都不做——
+     * 绝不按昵称比对，也绝不以「账号出现在名册里」为依据。</p>
+     *
+     * <p><b>幂等</b>：已 verified 时直接返回，保留首次成功验证的时间戳，不重写、不新增任何行。</p>
+     *
+     * <p><b>best-effort</b>：本方法是回放结果边界上的旁路副作用，调用方必须保证它失败也不影响
+     * 回放本身的成功语义。</p>
+     *
+     * @param keycloakUserId 已认证 subject；null → 不做任何事
+     * @param battles        已成功解析的 Battle（READY dataset）；null/空 → 不做任何事
+     */
+    @Transactional
+    public void verifyBoundAccountFromReplay(final String keycloakUserId, final List<Battle> battles) {
+        final Set<Long> recorderAccountIds = recorderAccountIds(battles);
+        if (keycloakUserId == null || recorderAccountIds.isEmpty()) {
+            return;
+        }
+        final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId).orElse(null);
+        if (profile == null
+                || !recorderAccountIds.contains(profile.getWotbAccountId())
+                || profile.getWotbAccountVerifiedAt() != null) {
+            return;
+        }
+        profile.setWotbAccountVerifiedAt(OffsetDateTime.now());
+        profile.setUpdatedAt(OffsetDateTime.now());
+        repository.save(profile);
+    }
+
+    /** 批次内所有能可靠解析出的录像者 accountId（解析不出的场次不贡献任何值）。 */
+    private static Set<Long> recorderAccountIds(final List<Battle> battles) {
+        final Set<Long> recorderAccountIds = new HashSet<>();
+        if (battles == null) {
+            return recorderAccountIds;
+        }
+        for (final Battle battle : battles) {
+            final Long recorderAccountId = PlayerResultFormat.recorderAccountId(battle);
+            if (recorderAccountId != null) {
+                recorderAccountIds.add(recorderAccountId);
+            }
+        }
+        return recorderAccountIds;
     }
 
     /** 可信 WG claims：verified == true && region ∈ {ASIA, EU, NA} && accountId 有效 && 昵称非空。 */

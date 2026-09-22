@@ -153,6 +153,39 @@ describe('ProfilePage Wargaming regions', () => {
     expect(wrapper.text()).toContain('profile.unbind')
   })
 
+  it('CN MANUAL profile without replay verification shows the upload hint', async () => {
+    currentProfile = {
+      wotbAccountSource: 'MANUAL',
+      wotbServer: 'CN',
+      wotbAccountId: 1001,
+      wotbNickname: 'CNName',
+      wotbAccountVerifiedAt: null,
+      displayName: 'CN Player'
+    }
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('profile.notVerified')
+    expect(wrapper.text()).toContain('profile.notVerifiedHint')
+    expect(wrapper.text()).not.toContain('profile.verifiedBadge')
+  })
+
+  it('CN MANUAL profile verified by its own replay shows the verified badge only', async () => {
+    currentProfile = {
+      wotbAccountSource: 'MANUAL',
+      wotbServer: 'CN',
+      wotbAccountId: 1001,
+      wotbNickname: 'CNName',
+      wotbAccountVerifiedAt: '2026-03-03T03:03:03Z',
+      displayName: 'CN Player'
+    }
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('profile.verifiedBadge')
+    expect(wrapper.text()).not.toContain('profile.notVerified')
+  })
+
   it('CN MANUAL profile without bound account offers the set-account button', async () => {
     currentProfile = {
       wotbAccountSource: 'MANUAL',

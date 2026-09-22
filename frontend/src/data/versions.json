@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.86",
+    "date": "2026-09-22",
+    "tag": "add",
+    "zh": "个人中心绑定的游戏账号现在会显示验证状态：上传一场由该账号录制的回放（走原有回放流程）即可自动完成验证，并显示「✓ 账号已验证」；尚未验证时会提示上传由该账号录制的回放即可自动验证。只有回放真正的录制者账号能通过验证，换绑其他账号后需要重新验证。",
+    "en": "The game account bound to your profile now shows a verification status: uploading a replay recorded by that account through the normal replay flow verifies it automatically and shows \"✓ Verified\". Until then, the page tells you how to verify it. Only the account that actually recorded the replay counts, and binding a different account requires verifying again.",
+    "ru": "У привязанного к профилю игрового аккаунта теперь отображается статус проверки: загрузка реплея, записанного этим аккаунтом, в обычном порядке проверяет его автоматически и показывает «✓ Аккаунт подтверждён». До этого страница подсказывает, как его подтвердить. Засчитывается только аккаунт, действительно записавший реплей, а при привязке другого аккаунта проверку нужно пройти заново."
+  },
+  {
     "v": "2.12.85",
     "date": "2026-09-16",
     "tag": "chg",
