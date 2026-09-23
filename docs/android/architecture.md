@@ -122,11 +122,11 @@ Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`
     后加载（`handleAuthReturnColdStart`），不绕过网络/版本/强制更新门禁。日志只记录
     `auth-return action=... source=app-link`，不记录完整 callback URI/query/state/code（见 `AuthReturnPolicyTest`）。
   - **Primary（app-owned native return mechanism；future / not enabled）**：让 QQ 的 native 登录回程
-    直接回到本 App，而不是经过系统浏览器。**具体 return mechanism 尚未决定**：`schemacallback` 指向
-    App 自有 custom scheme 只是**候选之一**，PR A 刻意不冻结任何 scheme、也不冻结
-    `wotbtools://qq-auth-return` 之类的具体形态 —— 启用前必须先做单独 security review（custom scheme
-    hijacking 风险、是否存在 package-bound / 其它更强绑定形式、callback 是否携带可被第三方窃取的
-    credential，若有更强机制应优先评估），并且必须拿到真机 URI 证据（见下面的 evidence 小节）。
+    直接回到本 App，而不是经过系统浏览器。**具体 return mechanism 尚未决定**：把 `schemacallback`
+    指向 App 自有的 custom scheme 只是**候选之一**，PR A 刻意不冻结任何 scheme、也不冻结任何具体
+    URI 形态 —— 启用前必须先做单独 security review（custom scheme hijacking 风险、是否存在
+    package-bound / 其它更强绑定形式、callback 是否携带可被第三方窃取的 credential，若有更强机制应
+    优先评估），并且必须拿到真机 URI 证据（见下面的 evidence 小节）。
     **当前生产恒不启用**：`QqNativeHandoffPolicy.RECOGNIZED_SHAPE_EVIDENCE = false` ⇒
     `plan(...).rewrite` 一律 `DO_NOT_REWRITE` ⇒ handoff 逐字节沿用 QQ 原始 URI
     （`startActivity(Intent(ACTION_VIEW, originalUri))`，production 不做任何 URI mutation），并记录
