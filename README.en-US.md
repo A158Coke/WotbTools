@@ -9,7 +9,7 @@ Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://gi
 - **Replay parsing & Excel export**: upload a `.wotbreplay` in the browser, extract authoritative settlement (damage / received / assisted / blocked / kills / death times) plus event-stream features (movement / engagements / 3x3 grid regions).
 - **Hall of Fame**: per-battle damage ranking for Random and Rating battles, plus Tier X career-average leaderboards through screenshot + 5-replay manual review.
 - **Battle performance**: derived metrics computed from a single authoritative replay-facts source (contribution, KAST, Impact, potential damage, assist, kills, multi-damage rate, survival rate, trades) — no composite rating anymore.
-- **AI tactical review**: pre-battle prediction + evidence-chain review + liabilities / MVP, streamed token-by-token over SSE; the review keeps running while you switch pages or background the tab (including long team reviews with an ~1100s budget, with results or progress ready on return); points victories state how they ended (time expired / reached 1000 points early) and HP-loss descriptions include time ranges with resolved attacker counts (a single attacker is never called focus fire; only 2+ resolved attackers within a short window (total span ≤ 15s) may be cited as multi-vehicle focus fire); results include a "Map Overview" (friendly/enemy heatmaps + routes + battle playback with progress bar / event jumps / clickable AI-report times / two-layer hull-turret markers rotating by heading and gun direction + brightness-adaptive colors, 28 maps with assets) and a one-click "Copy" button for the final review body (excluding the pre-battle prediction and map overview).
+- **AI tactical review**: pre-battle prediction + evidence-chain review, streamed token-by-token over SSE; the review keeps running while you switch pages or background the tab (including long team reviews with an ~1100s budget, with results or progress ready on return); points victories state how they ended (time expired / reached 1000 points early) and HP-loss descriptions include time ranges with resolved attacker counts (a single attacker is never called focus fire; only 2+ resolved attackers within a short window (total span ≤ 15s) may be cited as multi-vehicle focus fire); results include a "Map Overview" (friendly/enemy heatmaps + routes + battle playback with progress bar / event jumps / clickable AI-report times / two-layer hull-turret markers rotating by heading and gun direction + brightness-adaptive colors, 28 maps with assets) and a one-click "Copy" button for the final review body (excluding the pre-battle prediction and map overview).
 - **Auth & business**: Keycloak (QQ + Wargaming.net ASIA / EU / NA), user profile & account management.
 
 ## Architecture
@@ -40,6 +40,7 @@ Replay → **authoritative settlement** (`battle_results.dat`: damage / received
 
 ## Documentation
 
+- [HISTORY.md](HISTORY.md) — curated project history and major architecture/product evolution
 - [docs/README.md](docs/README.md) — documentation index (when to read each doc)
 - [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) — developer entry (env / build / layout / conventions)
 - [java/README.md](java/README.md) — running, APIs, and deployment of the Java / Web version
