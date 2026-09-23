@@ -401,7 +401,7 @@ class MainActivity : Activity() {
 
     private fun loadWeb() {
         hideAllGates()
-        webViewContainer.visibility = View.VISIBLE
+        webView.visibility = View.VISIBLE
         if (webView.url.isNullOrEmpty()) {
             val url = entryUrl()
             // callback 开始加载后清空，防止再次 loadWeb 重复加载同一 callback。
@@ -579,7 +579,7 @@ class MainActivity : Activity() {
      * pending replay 的唯一分发点。
      *
      * 「是否分发 / 怎么分发」完全由纯策略 [ReplayDispatchPolicy] 决定（JVM 单测覆盖），这里只执行动作：
-     * 无 pending / auth flow 内 / WebView 容器不可见 → 不分发；已在 replay workspace → 通知 Web；否则切到
+     * 无 pending / auth flow 内 / WebView 不可见（门禁 / 错误 / 更新页接管中）→ 不分发；已在 replay workspace → 通知 Web；否则切到
      * replay canonical view。auth 结束后刻意不新增「重新导航 replay」的第二套来源：登录完成后 Web 应用会
      * 重新加载并经 Native Bridge 自行消费 pending。
      */
@@ -587,7 +587,7 @@ class MainActivity : Activity() {
         val action = ReplayDispatchPolicy.decide(
             hasPendingReplay = pendingReplay != null,
             inAuthFlow = inAuthFlow,
-            webViewVisible = webViewContainer.visibility == View.VISIBLE,
+            webViewVisible = webView.visibility == View.VISIBLE,
             currentUrl = webView.url
         )
         if (action == ReplayDispatchAction.NONE) return
@@ -661,7 +661,7 @@ class MainActivity : Activity() {
         if (!verifyAuthReturn(intent, uri)) return false
         inAuthFlow = true
         hideAllGates()
-        webViewContainer.visibility = View.VISIBLE
+        webView.visibility = View.VISIBLE
         Log.d(TAG, "auth-return action=ALLOW_AUTH_RETURN source=app-link hot=true")
         webView.post { webView.loadUrl(uri.toString()) }
         return true
@@ -748,11 +748,18 @@ class MainActivity : Activity() {
 
     // ── 通用 ──
 
+    /**
+     * 隐藏 WebView 内容并收起三个门禁/错误页。
+     *
+     * 门禁视图（network/version/webError）与 [webView] 是根 FrameLayout 的**兄弟节点**，根容器必须保持
+     * VISIBLE，否则子节点即便置为 VISIBLE 也不会绘制（父 GONE 连子一起隐藏）。因此这里只隐藏 WebView
+     * 本身：门禁视图各自带不透明背景、按 XML 顺序绘制在 WebView 之上，足以完整接管画面。
+     */
     private fun hideAllGates() {
         networkGateView.visibility = View.GONE
         versionGateView.visibility = View.GONE
         webErrorView.visibility = View.GONE
-        webViewContainer.visibility = View.GONE
+        webView.visibility = View.GONE
     }
 
     private fun isNetworkAvailable(): Boolean {
