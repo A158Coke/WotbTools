@@ -36,10 +36,13 @@ if grep -Eq -- '--(health-enabled|metrics-enabled)|KC_HTTP_(MANAGEMENT|METRICS)'
   fail "Keycloak management health/metrics configuration must be removed"
 fi
 
-grep -Fq 'keycloak-juhe-qq-provider/pom.xml' "$ROOT/docker/Dockerfile.keycloak" \
-  || fail "Keycloak image must build the production Juhe QQ provider during the transition"
-grep -Fq 'keycloak-juhe-qq-provider.jar' "$ROOT/docker/Dockerfile.keycloak" \
-  || fail "Keycloak image must copy the production Juhe QQ provider"
+# Only the approved provider modules may be built into the image. The retired
+# aggregated-QQ provider must stay out of both the build and the final jar set;
+# the assembly below enforces the jar set itself (stronger than a Dockerfile grep).
+retired_provider="keycloak-""juhe-qq-provider"
+if grep -Fq "$retired_provider" "$ROOT/docker/Dockerfile.keycloak"; then
+  fail "the retired aggregated-QQ provider must not be built into the Keycloak image"
+fi
 
 if [ "${WOTB_KEYCLOAK_SKIP_BUILD:-0}" != "1" ]; then
   echo "== Building real Keycloak production image =="
@@ -48,8 +51,8 @@ fi
 
 docker run --rm --entrypoint /bin/sh "$IMAGE" -ec '
   test -f /opt/keycloak/providers/keycloak-qq-provider.jar
-  test -f /opt/keycloak/providers/keycloak-juhe-qq-provider.jar
   test -f /opt/keycloak/providers/keycloak-wargaming-provider.jar
+  test ! -e /opt/keycloak/providers/keycloak-""juhe-qq-provider.jar
   test ! -e /opt/keycloak/data/import/wotbtools-realm.json
 ' || fail "Keycloak provider image contents do not match the approved provider set"
 

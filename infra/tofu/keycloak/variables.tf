@@ -78,7 +78,7 @@ variable "wargaming_application_id" {
 
   validation {
     condition = !contains(
-      ["", "bootstrap-not-configured", "dummy", "empty", "juhe", "juhe-qq", "not-configured", "not-used"],
+      ["", "bootstrap-not-configured", "dummy", "empty", "not-configured", "not-used"],
       lower(trimspace(var.wargaming_application_id)),
     )
     error_message = "wargaming_application_id must be a configured Wargaming.net application ID, not a placeholder."
@@ -92,7 +92,7 @@ variable "qq_client_id" {
 
   validation {
     condition = !contains(
-      ["", "bootstrap-not-configured", "dummy", "empty", "juhe", "juhe-qq", "not-configured"],
+      ["", "bootstrap-not-configured", "dummy", "empty", "not-configured"],
       lower(trimspace(var.qq_client_id)),
     )
     error_message = "qq_client_id must be a configured QQ Connect application ID, not a placeholder."
@@ -107,7 +107,7 @@ variable "qq_client_secret" {
 
   validation {
     condition = !contains(
-      ["", "bootstrap-not-configured", "dummy", "empty", "juhe", "juhe-qq", "not-configured"],
+      ["", "bootstrap-not-configured", "dummy", "empty", "not-configured"],
       lower(trimspace(var.qq_client_secret)),
     )
     error_message = "qq_client_secret must be a configured QQ Connect secret, not a placeholder."

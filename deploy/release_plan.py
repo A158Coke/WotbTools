@@ -169,8 +169,6 @@ BACKEND_CI_PATTERNS = (
 # provider jar. Keep the image surface on the runtime inputs; provider tests stay
 # on the broader KEYCLOAK_CI_PATTERNS surface below.
 KEYCLOAK_PATTERNS = (
-    "keycloak-juhe-qq-provider/pom.xml",
-    "keycloak-juhe-qq-provider/src/main/**",
     "keycloak-qq-provider/pom.xml",
     "keycloak-qq-provider/src/main/**",
     "keycloak-wargaming-provider/pom.xml",
@@ -184,7 +182,6 @@ KEYCLOAK_PATTERNS = (
 # provider tests still validate the SPI surface even though they cannot change a
 # provider jar, exactly like java/**/src/test/** does for the backend surface.
 KEYCLOAK_CI_PATTERNS = (
-    "keycloak-juhe-qq-provider/**",
     "keycloak-qq-provider/**",
     "keycloak-wargaming-provider/**",
     "docker/keycloak/**",
@@ -276,9 +273,6 @@ CI_SURFACE_PATTERNS = {
         "scripts/android-release/**",
     ),
     "keycloakProvider": (
-        "keycloak-juhe-qq-provider/src/main/java/**",
-        "keycloak-juhe-qq-provider/src/test/**",
-        "keycloak-juhe-qq-provider/pom.xml",
         "keycloak-wargaming-provider/src/main/java/**",
         "keycloak-wargaming-provider/src/test/**",
         "keycloak-wargaming-provider/pom.xml",
@@ -287,9 +281,6 @@ CI_SURFACE_PATTERNS = {
         "keycloak-qq-provider/pom.xml",
     ),
     "keycloakRuntime": (
-        "keycloak-juhe-qq-provider/src/main/java/**",
-        "keycloak-juhe-qq-provider/pom.xml",
-        "keycloak-juhe-qq-provider/src/main/resources/**",
         "keycloak-wargaming-provider/src/main/java/**",
         "keycloak-wargaming-provider/pom.xml",
         "keycloak-wargaming-provider/src/main/resources/**",
