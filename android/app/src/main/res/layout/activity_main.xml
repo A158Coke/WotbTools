@@ -9,6 +9,36 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- OEM App Link recovery 提示：只在 QQ native handoff 之后、且 domain verification 不可靠
+         （AuthLinkState.NONE）时显示一次（process 级一次性）。刻意排在 WebView 之后、三个门禁视图之前：
+         绘制在 WebView 之上、又被门禁视图完整覆盖，因此既不遮挡门禁，也不阻塞继续登录。
+         仅用户点击按钮时打开系统设置页，App 不自动修改任何系统设置。 -->
+    <LinearLayout
+        android:id="@+id/authLinkRecoveryBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="@color/bg"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/authLinkRecoveryMessage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/auth_link_recovery_message"
+            android:textColor="#F0F6FC"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/authLinkRecoveryAction"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/auth_link_recovery_action" />
+    </LinearLayout>
+
     <LinearLayout
         android:id="@+id/networkGateView"
         android:layout_width="match_parent"
