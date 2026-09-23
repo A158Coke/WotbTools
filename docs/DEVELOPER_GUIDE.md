@@ -171,7 +171,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `hof`：单场名人堂。
 - `hundred`：百场名人堂（MANUAL 人工证据审核）。
 - `mark3`：Tier X 单车最速三环人工审核排行榜（PENDING/CURRENT/REJECTED/CANCELLED/DELETED，无 SUPERSEDED）。
-- `user`：Profile、WoTB 账号、Notification。
+- `user`：Profile、WoTB 账号。
 - `admin`：用户和后台管理。
 
 ### Replay Processing
@@ -381,7 +381,7 @@ feature-messages.json
 messages.js
 ```
 
-`messages.js` 非破坏性 deep merge 基础 JSON，禁止在 `main.js` 或组件初始化阶段直接修改 imported locale 对象。这样必须保留已有 key，例如 `replay.processing_job.mixed_league_standard`，同时可以补历史 Notification code。
+`messages.js` 非破坏性 deep merge 基础 JSON，禁止在 `main.js` 或组件初始化阶段直接修改 imported locale 对象。这样必须保留已有 key，例如 `replay.processing_job.mixed_league_standard`，同时可以补 `feature-messages.json` 中的增量文案。
 
 语言持久化只使用 `localStorage('wotb-lang')`。
 
@@ -563,7 +563,7 @@ Keycloak 登录页为 V8 Unified Theme（深色=Battlefield/浅色=Minimal、深
 
 API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲染三语；Excel 继续使用中文表头。新增任何 `code/error/warningCode` 必须同步三语 `api_codes/api_errors`。
 
-站内通知保存 `type + payload`，写入方统一经 `UserNotificationService`；显示文案由前端 locale composition 负责（历史 Boost 通知仍可翻译）。
+站内通知子系统已随 Boost 域退役删除：其唯一写入方 `UserNotificationService` 随 `com.wotb.web.boost` 一并删除后该子系统不再有任何生产者，本次连同 Controller / Repository / DTO / 前端通知面板与三语文案一并删除，表由 forward-only `V26__drop_user_notification.sql` 永久删除。
 
 ---
 

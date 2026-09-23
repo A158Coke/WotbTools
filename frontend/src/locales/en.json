@@ -814,47 +814,13 @@
             "mixed_league_standard": "Mixed upload detected: standard and training/tournament replays cannot be parsed together"
         }
     },
-    "boost": {
-        "notifications": "Notifications",
-        "markAllRead": "Mark all read",
-        "noNotifications": "No notifications",
-        "notificationTitle": {
-            "BOOST_REQUEST_ASSIGNED": "Request assigned",
-            "BOOST_ASSIGNMENT_RECEIVED": "New order",
-            "BOOST_ASSIGNMENT_ACCEPTED": "Order accepted",
-            "BOOST_ASSIGNMENT_IN_PROGRESS": "Order started",
-            "BOOST_ASSIGNMENT_PENDING_CONFIRM": "Waiting for confirmation",
-            "BOOST_ASSIGNMENT_COMPLETED": "Order completed",
-            "BOOST_ASSIGNMENT_DECLINED": "Order declined",
-            "BOOST_ASSIGNMENT_CANCELLED": "Order cancelled",
-            "BOOST_ASSIGNMENT_EXCEPTION": "Order exception",
-            "BOOST_REQUEST_REJECTED": "Request rejected",
-            "BOOSTER_APPLICATION_APPROVED": "Application approved",
-            "BOOSTER_APPLICATION_REJECTED": "Application rejected"
-        },
-        "notificationMessage": {
-            "BOOST_REQUEST_ASSIGNED": "Request #{requestId} has been assigned.",
-            "BOOST_ASSIGNMENT_RECEIVED": "You received request #{requestId}.",
-            "BOOST_ASSIGNMENT_ACCEPTED": "Booster accepted request #{requestId}.",
-            "BOOST_ASSIGNMENT_IN_PROGRESS": "Request #{requestId} is now in progress.",
-            "BOOST_ASSIGNMENT_PENDING_CONFIRM": "Request #{requestId} is waiting for confirmation.",
-            "BOOST_ASSIGNMENT_COMPLETED": "Request #{requestId} has been completed.",
-            "BOOST_ASSIGNMENT_DECLINED": "Booster declined request #{requestId}.",
-            "BOOST_ASSIGNMENT_CANCELLED": "Request #{requestId} assignment was cancelled.",
-            "BOOST_ASSIGNMENT_EXCEPTION": "Request #{requestId} needs attention.",
-            "BOOST_REQUEST_REJECTED": "Request #{requestId} was rejected.",
-            "BOOSTER_APPLICATION_APPROVED": "Your booster application #{applicationId} was approved.",
-            "BOOSTER_APPLICATION_REJECTED": "Your booster application #{applicationId} was rejected."
-        }
-    },
     "api_codes": {
         "SENSITIVE_INFO_WARNING": "Do not enter passwords, verification codes, or other sensitive data.",
         "BOOST_REQUEST_SUBMITTED": "Request submitted for administrator review.",
         "BOOSTER_APPLICATION_SUBMITTED": "Application submitted for administrator review.",
         "BOOST_REQUEST_CANCELLED": "Request cancelled.",
         "BOOST_REQUEST_COMPLETED": "Request completion confirmed.",
-        "BOOST_ASSIGNMENT_CANCELLED": "Assignment cancelled.",
-        "NOTIFICATIONS_MARKED_READ": "All notifications marked as read."
+        "BOOST_ASSIGNMENT_CANCELLED": "Assignment cancelled."
     },
     "api_errors": {
         "UNKNOWN_ERROR": "Unknown error",
@@ -877,7 +843,6 @@
         "WARGAMING_PROFILE_READONLY": "Wargaming.net account data is managed by the official service and cannot be edited or unlinked",
         "PROFILE_REGION_MISMATCH": "Current account does not match the login source",
         "WOTB_ACCOUNT_MISMATCH": "Cannot switch the Wargaming account to a different game account",
-        "NOTIFICATION_NOT_FOUND": "Notification not found",
         "KEYCLOAK_USER_NOT_FOUND": "Keycloak user not found",
         "KEYCLOAK_USER_OR_ROLE_NOT_FOUND": "Keycloak user or role not found",
         "REQUEST_NOT_FOUND": "Request not found",

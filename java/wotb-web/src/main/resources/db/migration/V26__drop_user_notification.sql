@@ -1,0 +1,15 @@
+-- V26: 删除已无生产者的站内通知子系统（forward-only；不改历史 V10 / V25）。
+--
+-- V10 建表 user_notification。该子系统唯一的写入方是已随 Boost 域删除的
+-- UserNotificationService（PR3 删除 com.wotb.web.boost 后即无任何调用方），
+-- 因此这张表既没有生产者也没有生产读取方：Controller / Repository / Mapper /
+-- DTO / enum / 前端通知面板 / transport 在同一 PR 内一并删除。
+--
+-- V25 的注释当时声明「保留 user_notification（V10）」；该保留结论的前提是
+-- 「站内通知子系统仍由 user 域提供」，而随 Boost 域一同消失的写入方使这个前提
+-- 不再成立。此处用一个新的 forward 迁移推翻它——V25 与 V10 都是已应用的历史
+-- 迁移，因 Flyway checksum immutability 不做任何修改。
+--
+-- idx_user_notification_user_created / idx_user_notification_user_unread
+-- 均从属于该表，随表一并删除，无需单独 drop。
+drop table if exists user_notification;

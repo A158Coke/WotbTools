@@ -42,7 +42,6 @@ order by table_schema, table_name, column_name;
 select 'user_profile' as relation, count(*) as rows from public.user_profile
 union all select 'hundred_battle_submission', count(*) from public.hundred_battle_submission
 union all select 'mark3_submission', count(*) from public.mark3_submission
-union all select 'user_notification', count(*) from public.user_notification
 union all select 'admin_user_log', count(*) from public.admin_user_log
 union all select 'hall_of_fame_admin_log', count(*) from public.hall_of_fame_admin_log
 order by relation;

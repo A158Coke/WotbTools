@@ -5,12 +5,8 @@ import { useAuth } from '../composables/useAuth.js'
 import { whenBusinessUserSettled } from '../composables/useBusinessUserBootstrap.js'
 import {
   deleteUserWotbAccount,
-  getUnreadNotificationCount,
   getUserHofRecords,
   getUserProfile,
-  listNotifications,
-  markAllNotificationsRead,
-  markNotificationRead,
   syncUserWotbAccountFromLogin,
   updateUserWotbAccount
 } from '../utils/api-user.js'
@@ -37,12 +33,6 @@ const hundredStatus = ref(null)
 const hundredError = ref('')
 const hundredWithdrawingId = ref(null)
 const hundredMessage = ref('')
-// Notifications
-const notifications = ref([])
-const unreadNotifications = ref(0)
-const notificationsOpen = ref(false)
-const loadingNotifications = ref(false)
-const notificationError = ref('')
 
 function apiError(error) {
   return apiErrorLabel(t, te, error)
@@ -81,7 +71,6 @@ async function loadProfile() {
     loadRecords()
     loadHundredStatus()
   }
-  loadUnreadNotificationCount()
 }
 
 /** WG 幂等同步（ASIA/EU/NA）：昵称变化时刷新；失败不再静默，保留错误状态供重试。 */
@@ -227,62 +216,6 @@ async function removeAccount() {
   } catch (e) {
     editError.value = apiError(e)
   }
-}
-
-// Notifications
-async function loadNotifications() {
-  loadingNotifications.value = true
-  notificationError.value = ''
-  try {
-    notifications.value = await listNotifications()
-    unreadNotifications.value = notifications.value.filter(n => !n.read).length
-  } catch (e) {
-    notificationError.value = apiError(e)
-  } finally {
-    loadingNotifications.value = false
-  }
-}
-
-async function loadUnreadNotificationCount() {
-  try {
-    const res = await getUnreadNotificationCount()
-    unreadNotifications.value = res.count || 0
-  } catch {
-    unreadNotifications.value = 0
-  }
-}
-
-async function toggleNotifications() {
-  notificationsOpen.value = !notificationsOpen.value
-  if (notificationsOpen.value) await loadNotifications()
-}
-
-async function readNotification(notification) {
-  if (!notification.read) {
-    try {
-      await markNotificationRead(notification.id)
-      await loadNotifications()
-    } catch (error) {
-      notificationError.value = apiError(error)
-    }
-  }
-}
-
-async function readAllNotifications() {
-  try {
-    await markAllNotificationsRead()
-    await loadNotifications()
-  } catch (e) {
-    notificationError.value = apiError(e)
-  }
-}
-
-function notificationTitle(notification) {
-  return t(`boost.notificationTitle.${notification.type}`, notification.payload || {})
-}
-
-function notificationMessage(notification) {
-  return t(`boost.notificationMessage.${notification.type}`, notification.payload || {})
 }
 </script>
 
@@ -473,38 +406,6 @@ function notificationMessage(notification) {
         </div>
 
         <div class="profile-right">
-          <!-- Notifications -->
-          <div class="profile-card profile-section">
-            <div class="section-head" style="cursor: pointer" @click="toggleNotifications()">
-              <h3 class="card-title">
-                {{ $t('boost.notifications') }}
-                <span v-if="unreadNotifications > 0" class="notification-count">{{ unreadNotifications }}</span>
-              </h3>
-              <div class="section-actions">
-                <button v-if="notificationsOpen && notifications.length" class="btn-ghost btn-sm" @click.stop="readAllNotifications()">{{ $t('boost.markAllRead') }}</button>
-              </div>
-            </div>
-            <div v-if="notificationError" class="error">{{ notificationError }}</div>
-            <div v-if="notificationsOpen">
-              <div v-if="loadingNotifications" class="profile-empty profile-empty-tight">{{ $t('profile.loading') }}</div>
-              <div v-else-if="!notifications.length" class="profile-empty profile-empty-tight">{{ $t('boost.noNotifications') }}</div>
-              <div v-else class="notification-list">
-                <div
-                  v-for="n in notifications"
-                  :key="n.id"
-                  class="notification-item"
-                  :class="{ unread: !n.read }"
-                  @click="readNotification(n)"
-                >
-                  <div class="notification-title">{{ notificationTitle(n) }}</div>
-                  <div class="notification-msg">{{ notificationMessage(n) }}</div>
-                  <div class="notification-time">{{ new Date(n.createdAt).toLocaleString() }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
           <div class="profile-card profile-section">
             <h3 class="card-title">{{ $t('profile.securityTitle') }}</h3>
             <div class="security-info">
@@ -586,16 +487,6 @@ function notificationMessage(notification) {
 .hundred-rejected-head strong { font-size: .85rem; color: var(--showcase-tactical-heading); }
 .hundred-rejected-reason { margin: 0; font-size: .8rem; color: var(--showcase-tactical-text); }
 .hundred-rejected-text { margin: 2px 0 0; font-size: .78rem; color: #9aa09c; line-height: 1.4; }
-
-/* Notifications */
-.notification-count { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; margin-left: 6px; padding: 0 4px; border-radius: 999px; background: var(--error); color: var(--danger-solid-fg); font-size: 11px; vertical-align: middle; }
-.notification-list { display: flex; flex-direction: column; gap: 6px; }
-.notification-item { cursor: pointer; padding: 8px 10px; border: 1px solid rgba(66, 77, 84, .45); border-radius: 6px; background: var(--showcase-tactical-soft); transition: background .12s; }
-.notification-item:hover { background: #172025; }
-.notification-item.unread { border-color: var(--accent); background: rgba(217, 143, 24, .08); }
-.notification-title { font-weight: 600; font-size: .82rem; color: var(--showcase-tactical-text); line-height: 1.3; }
-.notification-msg { font-size: .78rem; color: #a3a6a0; margin-top: 2px; }
-.notification-time { font-size: .72rem; color: #9aa09c; margin-top: 3px; }
 
 @media (width < 768px) {
   /* .profile-body 的移动端形态由 showcase.css 全局规则（display:block !important）
