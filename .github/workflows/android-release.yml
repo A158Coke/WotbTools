@@ -325,7 +325,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           source: release-staging/${{ steps.artifact.outputs.apkName }}
-          target: /opt/wotb/android-release
+          target: /opt/wotb-tx/android-release
           strip_components: 1
 
       - name: Ensure APK readable by nginx
@@ -336,7 +336,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          script: chmod 644 /opt/wotb/android-release/${{ steps.artifact.outputs.apkName }}
+          script: chmod 644 /opt/wotb-tx/android-release/${{ steps.artifact.outputs.apkName }}
 
       - name: Verify production APK (HTTP 200 + non-empty + SHA matches)
         if: steps.preflight.outputs.releaseAction == 'publish'
@@ -409,7 +409,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           source: release-staging/version.json
-          target: /opt/wotb/android-release
+          target: /opt/wotb-tx/android-release
           strip_components: 1
 
       - name: Verify production version.json matches release metadata
