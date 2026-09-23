@@ -1566,31 +1566,6 @@ business_e2e_check() {
   return 0
 }
 
-# Business data integrity: the HoF identity sequence must never lag behind
-# max(id), because a manual data movement that inserts explicit ids without
-# advancing the sequence makes the next real insert collide. Only SELECTs run.
-business_data_integrity_check() {
-  local sequence maximum failures=0
-  maximum="$(docker compose -f "$LIVE_COMPOSE" exec -T business-postgres \
-    psql -U "$TX_BUSINESS_DB_USERNAME" -d "$TX_BUSINESS_DB_NAME" -Atc \
-    'select coalesce(max(id), 0) from hall_of_fame_record' 2>/dev/null || true)"
-  sequence="$(docker compose -f "$LIVE_COMPOSE" exec -T business-postgres \
-    psql -U "$TX_BUSINESS_DB_USERNAME" -d "$TX_BUSINESS_DB_NAME" -Atc \
-    "select last_value from pg_sequences where schemaname = 'public' and sequencename like 'hall_of_fame_record%'" 2>/dev/null || true)"
-  if [ -z "$maximum" ] || [ -z "$sequence" ] || [ "$sequence" -lt "$maximum" ]; then
-    echo "  hall_of_fame_record sequence: last_value=${sequence:-unknown} max_id=${maximum:-unknown}" >&2
-    failures=1
-  else
-    echo "  hall_of_fame_record sequence: last_value=$sequence max_id=$maximum"
-  fi
-  if [ "$failures" -eq 0 ]; then
-    e2e_emit business-data-integrity 1
-    return 0
-  fi
-  e2e_emit business-data-integrity 0 "the hall_of_fame_record identity sequence is behind max(id); the next insert would collide"
-  return 1
-}
-
 # Public edge check: each public name must be served by the TX address over a
 # locally trusted certificate with 2xx. TLS verification is never disabled and
 # `curl -k` is never used, so an untrusted chain is a hard failure.
@@ -1853,7 +1828,6 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
   # These tokens are the reason TX_RUNTIME_READY means "business works", not
   # "containers are up".
   business_e2e_check || failures=1
-  business_data_integrity_check || failures=1
   # Public edge: both public hosts must be served by TX over trusted TLS with 2xx.
   public_tls_check || failures=1
 

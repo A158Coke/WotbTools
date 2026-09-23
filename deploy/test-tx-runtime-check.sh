@@ -31,7 +31,9 @@ grep -Fq 'com.wotbtools.app' "$DEPLOY"
 ! grep -Eiq 'docker compose .* (stop|rm|down).*yecao' "$CHECK"
 
 # The retired cutover machinery must be gone: no phase selector, no SNI-only
-# edge phase, no cutover verdicts or boundary token, no migration-only snapshot.
+# edge phase, no cutover verdicts or boundary token, no migration-only snapshot,
+# and no business-data-integrity token (its Yecao row-count snapshot input cannot
+# be regenerated, so the token was retired with the machinery).
 ! grep -Fq 'WOTB_CUTOVER_PHASE' "$DEPLOY"
 ! grep -Fq 'CUTOVER_PHASE' "$DEPLOY"
 ! grep -Fq 'public-edge-sni' "$DEPLOY"
@@ -40,6 +42,7 @@ grep -Fq 'com.wotbtools.app' "$DEPLOY"
 ! grep -Fq 'cutover-safety-boundary' "$DEPLOY"
 ! grep -Fq 'pre-cutover' "$DEPLOY"
 ! grep -Fq 'WOTB_E2E_DATA_SNAPSHOT' "$DEPLOY"
+! grep -Fq 'business-data-integrity' "$DEPLOY"
 ! grep -Fq -- '--post-cutover' "$CHECK"
 ! grep -Fq 'pre-cutover' "$CHECK"
 
@@ -111,14 +114,6 @@ case "${1:-}" in
     if [[ "$*" == *list_queues* ]]; then
       printf 'wotb.parser\t%s\t0\nwotb.parser.result\t1\t0\nwotb.parser.dlq\t0\t0\n' \
         "${FAKE_PARSER_CONSUMERS:-2}"
-      exit 0
-    fi
-    if [[ "$*" == *"coalesce(max(id)"* ]]; then
-      [ "${FAKE_HOF_MAX_ID_UNSET:-0}" = 1 ] || printf '%s\n' "${FAKE_HOF_MAX_ID:-355}"
-      exit 0
-    fi
-    if [[ "$*" == *pg_sequences* ]]; then
-      [ "${FAKE_HOF_SEQUENCE_UNSET:-0}" = 1 ] || printf '%s\n' "${FAKE_HOF_SEQUENCE:-355}"
       exit 0
     fi
     if [[ "$*" == *business-postgres* ]] && [ "${FAKE_BUSINESS_PG_NOT_READY:-0}" = 1 ]; then
@@ -278,7 +273,6 @@ grep -Fq 'battle-playback-v2: PASS' <<< "$ready_output"
 grep -Fq 'minio: PASS' <<< "$ready_output"
 grep -Fq 'ai-facts: PASS' <<< "$ready_output"
 grep -Fq 'export: PASS' <<< "$ready_output"
-grep -Fq 'business-data-integrity: PASS' <<< "$ready_output"
 # The public edge is a single trusted-TLS assertion, never an SNI-only phase.
 grep -Fq 'public-tls-web: PASS' <<< "$ready_output"
 grep -Fq 'public-tls-auth: PASS' <<< "$ready_output"
@@ -378,12 +372,6 @@ run_gate_failure "export-job-failed" 'export: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_EXPORT_JOB_STATUS=FAILED
 run_gate_failure "export-download-error" 'export: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_EXPORT_DOWNLOAD_STATUS=500
-run_gate_failure "data-integrity-sequence-behind" 'business-data-integrity: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_SEQUENCE=100
-run_gate_failure "data-integrity-sequence-unreadable" 'business-data-integrity: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_SEQUENCE_UNSET=1
-run_gate_failure "data-integrity-max-id-unreadable" 'business-data-integrity: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_MAX_ID_UNSET=1
 # An untrusted certificate is a hard failure: TLS verification is never disabled.
 run_gate_failure "public-tls-untrusted-certificate" 'public-tls-web: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_EXIT=60

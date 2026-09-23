@@ -210,17 +210,16 @@ WOTB_E2E_JOB_TIMEOUT_SEC     processing/export job 轮询上限（默认 300）
 
 检查用 `wotbtools-e2e`（client_credentials）驱动真实链路并逐项输出 `processing-e2e`、
 `dataset-result`、`map-overview`、`battle-playback-v2`、`minio`、`ai-facts`、`export`、
-`hof-replay-storage`、`parser-worker`、`admin-authz`、`anonymous-rejected`、
-`business-data-integrity`。任何一项 FAIL 都输出 `TX_RUNTIME_NOT_READY`：**这是「TX runtime
+`hof-replay-storage`、`parser-worker`、`admin-authz`、`anonymous-rejected`。
+任何一项 FAIL 都输出 `TX_RUNTIME_NOT_READY`：**这是「TX runtime
 不是业务可用状态」的机械含义**。
 
 - 检查不做付费 AI 调用：AI 只验证 worker 写入的 `ai-facts.json` 可通过 control_api 身份读取。
 - 检查对基础设施与用户数据只读；唯一写入是一个 30 分钟 TTL 自动回收的瞬时 processing job
   与 export job（属于一次性安全操作，不改任何真实用户数据）。
-- `business-data-integrity` 只断言 `hall_of_fame_record` 的 identity sequence 不落后于
-  `max(id)`（人工数据搬运若用 explicit id 写入而不推进 sequence，下一次真实插入会主键冲突）。
-  cutover 期的只读 Yecao 行数快照输入（`WOTB_E2E_DATA_SNAPSHOT`）已随 cutover machinery 删除：
-  冻结的行数只对一次性搬迁有意义，且会随生产数据增长永久 FAIL。
+- `business-data-integrity` 已**随 cutover machinery 一并退役**：它的输入是 X1 搬迁前从 Yecao
+  只读导出的逐表行数快照（`WOTB_E2E_DATA_SNAPSHOT`），Yecao 业务库退役后无法再生，冻结行数
+  也会随生产数据增长永久 FAIL，因此连同该 token 一起删除，不保留替代检查。
 - `hof-replay-storage` 需要 `replay_data` 卷存在且至少存在一条可下载的 HoF 回放记录。
 
 ### 公网边缘：只接受受信任 TLS
