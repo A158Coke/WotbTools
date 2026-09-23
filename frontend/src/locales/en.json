@@ -146,15 +146,6 @@
     "UK": "UK",
     "OTHER": "Other"
   },
-  "version": {
-    "btn": "Changelog",
-    "title": "Version History",
-    "back": "Back",
-    "added": "Added",
-    "fixed": "Fixed",
-    "changed": "Changed",
-    "removed": "Removed"
-  },
   "contact": {
     "nav": "Contact",
     "title": "Contact Me",
