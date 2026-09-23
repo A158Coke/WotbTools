@@ -26,10 +26,10 @@ resolve() {
   WOTB_ROOT="$ROOT" WOTB_TRIGGER="$1" WOTB_TAG_NAME="${2:-}" WOTB_COMMIT="deadbeef" bash "$RESOLVE"
 }
 
-resolve workflow_dispatch | grep -q '^versionName=1.4.5$' || fail "committed version authority"
-resolve workflow_dispatch | grep -q '^versionCode=1004005$' || fail "versionCode formula"
+resolve workflow_dispatch | grep -q '^versionName=1.4.6$' || fail "committed version authority"
+resolve workflow_dispatch | grep -q '^versionCode=1004006$' || fail "versionCode formula"
 resolve workflow_dispatch | grep -q '^nativeBridgeVersion=1$' || fail "bridge version from contract"
-resolve push android-v1.4.5 | grep -q '^tagName=android-v1.4.5$' || fail "compatible tag"
+resolve push android-v1.4.6 | grep -q '^tagName=android-v1.4.6$' || fail "compatible tag"
 if resolve push android-v9.9.9 >/dev/null 2>&1; then fail "mismatched tag must fail"; fi
 
 python3 "$ROOT/scripts/android-release/android_contract.py" version 1.0.2 | grep -q '1000002' || fail "version parser"
@@ -76,5 +76,24 @@ classify_tag $'abc\trefs/tags/android-v1.0.2' android-v1.0.2 abc
 [ "$TAG_STATE" = tag_equal ] || fail "tag_equal"
 classify_tag $'abc\trefs/tags/android-v1.0.2\ndef456\trefs/tags/android-v1.0.2^{}' android-v1.0.2 def456
 [ "$TAG_STATE" = tag_equal ] || fail "annotated tag_equal"
+
+classify_tag 
+abc\\trefs/tags/android-v1.0.2' android-v1.0.2 def456
+[ "$TAG_STATE" = tag_conflict ] || fail "tag_conflict"
+
+python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+workflow = Path(sys.argv[1]).read_text(encoding="utf-8")
+preflight = workflow.index("Preflight classify production state")
+frontend = workflow.index("Frontend tests + build validation")
+upload = workflow.index("Upload APK to TX")
+ensure_tag = workflow.index("Ensure release tag (idempotent)")
+assert preflight < frontend < upload < ensure_tag
+preflight_block = workflow[preflight:frontend]
+assert 'classify_tag "$REFS" "$TAG" "$COMMIT_SHA"' in preflight_block
+assert 'if [ "$TAG_STATE" = "tag_conflict" ]; then' in preflight_block
+PY
 
 echo "ALL ANDROID RELEASE TESTS PASSED"
