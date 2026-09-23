@@ -203,7 +203,7 @@ requirement 未完成 → **即使 OCR 无 finding 也必须成为 BLOCKER**。
 ### A3. 文档检查清单
 
 > 与现有 review-with-docs 文档检查完全一致（canonical 专题文档 / DEVELOPER_GUIDE / README /
-> API 文档 / i18n / 代码注释 / 配置依赖 / current-plan / versions.json / AI 死代码清理），
+> API 文档 / i18n / 代码注释 / 配置依赖 / current-plan / AI 死代码清理），
 > 逐项见文末「文档检查清单（完整）」。
 
 ### A4. AI 死代码 / 提前性代码清理
@@ -333,7 +333,6 @@ Tool failure 必须：
 - 代码注释 / TODO / FIXME；
 - 配置依赖文档（`pom.xml` 新依赖注释 / `application.yml` 环境变量注释 / Dockerfile 注释）；
 - `docs/current-plan.md`（如存在且与本次变更相关，任务状态需一致）；
-- `frontend/src/data/versions.json`（网站版本页仍使用的用户可见版本数据；只在该页面继续存在期间维护）；
 - AI 死代码清理配合（对新增类/方法做全仓零引用扫描，含 `src/test`、`scripts`、`docs`、`deploy`、`frontend/src/locales`、Grafana dashboards）。
 
 输出：
@@ -398,9 +397,9 @@ Blocker count: N   （0 才允许判定完成）
 ## 文档检查清单（完整）
 
 ### 1. Canonical documentation
-- [ ] 是否记录了本次变更（Added / Changed / Fixed / Removed）
+- [ ] 变更对应的 canonical 文档（`docs/README.md` 索引指向的专题文档）是否同步
 - [ ] 变更描述是否准确（不含实现细节，面向读者）
-- [ ] 是否在 `[Unreleased]` 下（未发布版本）
+- [ ] SSOT 划分是否与 `.agents/AGENTS.md` 规则 3 一致（现状 → README / DEVELOPER_GUIDE / 专题文档；长期演进 → `HISTORY.md`；未来方向 → `docs/ROADMAP.md`）
 
 ### 2. DEVELOPER_GUIDE
 - [ ] 新增字段/API 是否更新字段表
@@ -433,15 +432,10 @@ Blocker count: N   （0 才允许判定完成）
 - [ ] plan source（A0 解析结果，仓库约定 `docs/current-plan.md`）中是否有与本变更相关的进行中任务；有则任务状态是否与实际一致（IN PROGRESS → COMPLETED / BLOCKED）
 - [ ] 计划的业务目标/范围/验收标准是否与本次变更一致（grill-me / plan-designer 产出的确认单与方案单已落入计划文件；无计划文件时以用户显式 requirements 为准）
 
-### 8. frontend 版本历史 (`frontend/src/data/versions.json`)
-> 面向用户的版本历史卡片（首页入口读取）。**仅用户可见变更需新增条目**；纯技术/构建/CI/重构变更不写。
+### 8. HISTORY.md（项目演进）
+> 判据见 `.agents/AGENTS.md` 规则 3；站点 History 页（`?view=history`）在构建期以 `?raw` 读取该文件。
 
-- [ ] 触发条件：本变更对用户端可见（新功能 / 改交互 / 修 bug / 改文案 / 改样式）才新增条目
-- [ ] `v`：语义化版本递增（major / minor / patch），绝不跳号、不复用历史号
-- [ ] `date`：`YYYY-MM-DD`，落地当天日期，不早于代码改动日
-- [ ] `tag`：`add`（新功能）/ `chg`（改交互）/ `fix`（修 bug）/ `del`（删功能）
-- [ ] `zh` / `en` / `ru` 三语必同条目同步，含义一致；按各 locale 风格表述，不互相硬译；EN/RU 文案不得出现中文标点或分区中文标签
-- [ ] 文案面向用户：不含技术细节、不含 PR 号 / commit hash / 内部模块名
-- [ ] 新条目追加到数组**顶部**（最新在前），禁止修改历史条目
-- [ ] 同一发版若跨多个变更，合并为一条而非多条（条目 ≠ commit 数；多条逐步追加将造成版本号爆炸）
-- [ ] 若仍更新 `frontend/src/data/versions.json`，其用户可见描述与当前实现一致；长期演进只在确有历史意义时写入 `HISTORY.md`
+- [ ] 本变更是否具有长期产品/架构/工程意义；纯版本号、逐提交细节、临时修复**不写**
+- [ ] 追加到对应时间线的正确位置，不重写既有历史结论
+- [ ] 面向读者表述：不含 PR 号 / commit hash / 内部模块名
+- [ ] 措辞变动不引入与 README / DEVELOPER_GUIDE / ROADMAP 冲突的现状描述

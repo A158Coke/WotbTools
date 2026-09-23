@@ -37,13 +37,13 @@ description: >
 ### 6. 测试
 - [ ] `ParityTest.java` — 字段存在性/类型验证
 - [ ] `WebApiTest.java` — `/api/columns` 响应验证
-- [ ] 跑 `mvn -s settings.xml test`（JAVA_HOME→JDK21）
+- [ ] 跑 `mvn -s settings.xml test`（JAVA_HOME→JDK 25）
 - [ ] 改前端则 `npm run build`
 
 ### 7. 文档
 - [ ] `DEVELOPER_GUIDE.md` — 字段表/回放格式表更新
 - [ ] `docs/reference/replay-data.md` — 如有 protobuf 字段号变更
-- [ ] `CHANGELOG.md` — 记录列变更
+- [ ] `HISTORY.md` — 仅当列变更是长期数据模型演进时记录，不作为逐列变更日志（判据见 `.agents/AGENTS.md` 规则 3）
 
 ## 子 agent 分工建议
 
