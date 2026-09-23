@@ -384,9 +384,14 @@ stage_and_validate() {
   [ -f "$INCOMING_DIR/Caddyfile" ] || die "staged TX deployment tree is missing Caddyfile."
   [ -f "$INCOMING_DIR/nginx/frontend.conf.template" ] || die "staged TX deployment tree is missing frontend nginx template."
   if is_selected all || is_selected wotb-frontend; then
-    # Sponsor and Android files are optional runtime content. Creating their
-    # directories keeps Compose bind mounts valid without inventing config.
+    # Sponsor assets and Android releases are optional runtime content. The
+    # sponsor config itself is a file bind mount: if Docker ever created the
+    # source path as a directory, fail before Compose can silently serve 404.
     mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
+    if [ -e "$TX_RUNTIME_ROOT/config/sponsor-config.json" ] \
+       && [ ! -f "$TX_RUNTIME_ROOT/config/sponsor-config.json" ]; then
+      die "TX sponsor config must be a regular file: $TX_RUNTIME_ROOT/config/sponsor-config.json"
+    fi
   fi
   # The runtime E2E check mounts this directory into the health-probe container;
   # its content (the staged replay fixtures) is optional and staged separately.
