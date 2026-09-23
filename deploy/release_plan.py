@@ -95,8 +95,46 @@ FRONTEND_PATTERNS = (
     "deploy/nginx/**",
     "contracts/http/**",
 )
+# Production-image inputs are intentionally narrower than CI test surfaces.
+# A Java test, an unrelated reactor module, or an unrelated common fixture must
+# not publish a new immutable production image. Keep these lists aligned with
+# the Maven reactor closure copied by each production Dockerfile.
+BACKEND_JAVA_MODULES = (
+    "wotb-contracts",
+    "wotb-object-storage-minio",
+    "wotb-broker-rabbitmq",
+    "wotb-core",
+    "wotb-result",
+    "wotb-playback",
+    "wotb-replay-coordinator",
+    "wotb-replay-processing",
+    "wotb-ai",
+    "wotb-web",
+)
+PARSER_WORKER_JAVA_MODULES = (
+    "wotb-contracts",
+    "wotb-object-storage-minio",
+    "wotb-broker-rabbitmq",
+    "wotb-core",
+    "wotb-result",
+    "wotb-playback",
+    "wotb-replay-processing",
+    "wotb-parser-worker",
+)
+
+
+def _production_java_patterns(modules: tuple[str, ...]) -> tuple[str, ...]:
+    patterns = ["java/pom.xml", "java/settings-docker.xml"]
+    for module in modules:
+        patterns.extend((
+            f"java/{module}/pom.xml",
+            f"java/{module}/src/main/**",
+        ))
+    return tuple(patterns)
+
+
 BACKEND_PATTERNS = (
-    "java/**",
+    *_production_java_patterns(BACKEND_JAVA_MODULES),
     "docker/Dockerfile.backend",
     "common/tankopedia-tier7.json",
     "common/tankopedia-tier8.json",
@@ -118,9 +156,15 @@ KEYCLOAK_PATTERNS = (
 )
 MINIO_BUILD_PATTERNS = ("docker/Dockerfile.minio",)
 PARSER_WORKER_BUILD_PATTERNS = (
-    "java/**",
+    *_production_java_patterns(PARSER_WORKER_JAVA_MODULES),
     "docker/Dockerfile.parser-worker",
-    "common/**",
+    "common/tankopedia-tier7.json",
+    "common/tankopedia-tier8.json",
+    "common/tankopedia-tier9.json",
+    "common/tankopedia-tier10.json",
+    "common/map_names.json",
+    "common/tank_tactical_profiles.json",
+    "common/map-semantics/**",
     "contracts/mq/**",
 )
 ALL_DEPLOY_PATTERNS = (
