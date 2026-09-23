@@ -2,11 +2,22 @@ package com.wotbtools.app
 
 import java.util.Locale
 
-/** native QQ handoff 是否允许把 QQ 的 return callback 改写成 app-owned scheme。 */
+/**
+ * native QQ handoff 是否允许把 QQ 的 return callback 改写成本 App 自有的 return 目标。
+ *
+ * PR A 阶段恒为 [DO_NOT_REWRITE]；具体 return mechanism（custom scheme / package-bound / 其它）与目标
+ * 形态都属于 PR B 的 security review 范围，本文件刻意不冻结任何具体 scheme。
+ */
 internal enum class QqHandoffRewrite { REWRITE_ALLOWED, DO_NOT_REWRITE }
 
-/** `schemacallback` 值的分类（只看 scheme 段，value 本身绝不返回、绝不落日志）。 */
-internal enum class QqCallbackCategory { BROWSER, APP, UNKNOWN }
+/**
+ * `schemacallback` 值的分类（只看 scheme 段；value 本身绝不返回、绝不落日志）。
+ *
+ * 刻意**不**为 App 自有 custom scheme 预留类别：PR A 阶段不冻结任何 app-owned return contract
+ * （scheme 选择、custom-scheme hijacking、package-bound 回程、callback 是否携带 credential 都要在
+ * PR B 单独评审）。因此除 http/https 外一律 [UNKNOWN]。
+ */
+internal enum class QqCallbackCategory { BROWSER, UNKNOWN }
 
 /**
  * native QQ handoff 决策 + 可安全输出的诊断信息。
@@ -40,9 +51,6 @@ internal object QqNativeHandoffPolicy {
 
     /** QQ return callback 参数名（只判断存在性，不记录 value）。 */
     internal const val SCHEMA_CALLBACK_PARAM = "schemacallback"
-
-    /** 本 App 自有 return scheme（PR B 启用 rewrite 时使用，见 `docs/android/architecture.md`）。 */
-    internal const val APP_RETURN_SCHEME = "wotbtools"
 
     /**
      * 是否已拿到真机证据、足以识别 QQ return callback 的**形状**。
@@ -98,7 +106,6 @@ internal object QqNativeHandoffPolicy {
     private fun categorize(schemaCallbackScheme: String?): QqCallbackCategory =
         when (normalize(schemaCallbackScheme)) {
             "http", "https" -> QqCallbackCategory.BROWSER
-            APP_RETURN_SCHEME -> QqCallbackCategory.APP
             else -> QqCallbackCategory.UNKNOWN
         }
 
@@ -111,21 +118,26 @@ internal object QqNativeHandoffPolicy {
 /**
  * **DEBUG-only 取证**：把 native handoff URI 的**形状**渲染成一行可安全打印的文本。
  *
- * 只接受 path 与 query **key 名**集合 —— 签名里根本不存在 value，调用方无法误传；输出因此不可能包含
- * 完整 URI、任何 query value 或 `p` / `state` / `code` / `ticket` / `token` 的值。仅用于拿到真机
- * `wtloginmqq://ptlogin/...` 形状（见 [QqNativeHandoffPolicy.RECOGNIZED_SHAPE_EVIDENCE]），
- * 取证完成后可整体删除。
+ * 只接受**结构数据**：path 是否存在、path segment 的数量、query **key 名**集合、`schemacallback` 是否存在。
+ * 签名里既没有 path 文本、也没有任何 value，调用方无法误传 ⇒ 输出不可能包含完整 URI、raw path、
+ * path segment 内容、query value，或 `p` / `state` / `code` / `ticket` / `token` / `schemacallback` 的值。
+ * path 之所以只记结构与计数：QQ 私有 contract 未取证，无法证明 path 不携带 opaque / session-like value。
+ *
+ * 仅用于拿到真机 `wtloginmqq://ptlogin/...` 形状
+ * （见 [QqNativeHandoffPolicy.RECOGNIZED_SHAPE_EVIDENCE]），取证完成后可整体删除。
  */
 internal fun describeQqHandoffShape(
-    path: String?,
+    pathPresent: Boolean,
+    pathSegmentCount: Int,
     queryNames: Collection<String>,
     hasSchemaCallback: Boolean
 ): String {
-    val safePath = path?.takeIf { it.isNotEmpty() } ?: "-"
     val keys = queryNames
         .map { it.trim() }
         .filter { it.isNotEmpty() }
         .distinct()
         .sorted()
-    return "path=$safePath keys=[${keys.joinToString(",")}] schemacallback=$hasSchemaCallback"
+    val segments = if (pathPresent) pathSegmentCount.coerceAtLeast(0) else 0
+    return "pathPresent=$pathPresent pathSegmentCount=$segments " +
+        "keys=[${keys.joinToString(",")}] schemacallback=$hasSchemaCallback"
 }

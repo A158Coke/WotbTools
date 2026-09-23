@@ -95,10 +95,13 @@ class QqNativeHandoffPolicyTest {
     fun schemaCallbackValueIsOnlyClassifiedNeverReturned() {
         assertEquals(QqCallbackCategory.BROWSER, plan(schemaCallbackScheme = "https").callbackCategory)
         assertEquals(QqCallbackCategory.BROWSER, plan(schemaCallbackScheme = "HTTP").callbackCategory)
-        assertEquals(QqCallbackCategory.APP, plan(schemaCallbackScheme = "wotbtools").callbackCategory)
+        // PR A 不冻结任何 app-owned return scheme：custom scheme 一律 UNKNOWN（含 "wotbtools"）。
+        assertEquals(QqCallbackCategory.UNKNOWN, plan(schemaCallbackScheme = "wotbtools").callbackCategory)
+        assertEquals(QqCallbackCategory.UNKNOWN, plan(schemaCallbackScheme = "wtloginmqq").callbackCategory)
         assertEquals(QqCallbackCategory.UNKNOWN, plan(schemaCallbackScheme = "mqqapi").callbackCategory)
         assertEquals(QqCallbackCategory.UNKNOWN, plan(schemaCallbackScheme = null).callbackCategory)
         assertEquals(QqCallbackCategory.UNKNOWN, plan(schemaCallbackScheme = "").callbackCategory)
+        assertEquals(QqCallbackCategory.UNKNOWN, plan(schemaCallbackScheme = "   ").callbackCategory)
     }
 
     @Test
@@ -117,28 +120,108 @@ class QqNativeHandoffPolicyTest {
 }
 
 /**
- * DEBUG-only 取证输出的 JVM 回归测试：只允许出现 path 与 query **key 名**，不可能包含任何 value
- * （[describeQqHandoffShape] 的签名里根本没有 value 参数）。
+ * DEBUG-only 取证输出的 JVM 回归测试。
+ *
+ * 契约：只允许出现**结构**（path 是否存在、path segment 数量、query **key 名**、`schemacallback`
+ * 是否存在）。`describeQqHandoffShape` 的签名里既没有 raw path、也没有任何 value，因此 raw path /
+ * path segment 内容 / query value 在物理上无法进入输出。
  */
 class QqHandoffShapeDiagnosticsTest {
 
+    /** 模拟敏感 path：count 之外的任何内容都不允许出现在输出里。 */
+    private val sensitivePath = "/secret-session-token/abc123"
+
     @Test
-    fun keysAreSortedDeduplicatedAndBlankFiltered() {
+    fun structureOnlyForPathsAndKeys() {
         assertEquals(
-            "path=/main keys=[a,schemacallback] schemacallback=true",
-            describeQqHandoffShape("/main", listOf("schemacallback", "a", "a", " "), hasSchemaCallback = true)
+            "pathPresent=true pathSegmentCount=2 keys=[a,schemacallback] schemacallback=true",
+            describeQqHandoffShape(
+                pathPresent = true,
+                pathSegmentCount = 2,
+                queryNames = listOf("schemacallback", "a", "a", " "),
+                hasSchemaCallback = true
+            )
         )
     }
 
     @Test
-    fun missingPathAndEmptyKeysAreRenderedAsPlaceholders() {
+    fun missingPathIsReportedWithoutContent() {
         assertEquals(
-            "path=- keys=[] schemacallback=false",
-            describeQqHandoffShape(null, emptyList(), hasSchemaCallback = false)
+            "pathPresent=false pathSegmentCount=0 keys=[] schemacallback=false",
+            describeQqHandoffShape(
+                pathPresent = false,
+                pathSegmentCount = 0,
+                queryNames = emptyList(),
+                hasSchemaCallback = false
+            )
+        )
+        // 防御：即使调用方误传了 count，pathPresent=false 时也不得输出计数（没有 path 就没有 segment）。
+        assertEquals(
+            "pathPresent=false pathSegmentCount=0 keys=[] schemacallback=false",
+            describeQqHandoffShape(
+                pathPresent = false,
+                pathSegmentCount = 7,
+                queryNames = emptyList(),
+                hasSchemaCallback = false
+            )
+        )
+    }
+
+    @Test
+    fun singleSegmentPathReportsCountOnly() {
+        val output = describeQqHandoffShape(
+            pathPresent = true,
+            pathSegmentCount = 1,
+            queryNames = emptyList(),
+            hasSchemaCallback = false
+        )
+        assertEquals("pathPresent=true pathSegmentCount=1 keys=[] schemacallback=false", output)
+        assertFalse(output.contains("foo"))
+    }
+
+    @Test
+    fun sensitivePathContentNeverLeaks() {
+        // 真机取证时调用方只会传 pathSegments.size —— 这里模拟同样的输入，断言三个敏感 token 都不出现。
+        val output = describeQqHandoffShape(
+            pathPresent = true,
+            pathSegmentCount = sensitivePath.trim('/').split('/').size,
+            queryNames = listOf("p", "schemacallback", "state", "code", "ticket", "token"),
+            hasSchemaCallback = true
         )
         assertEquals(
-            "path=- keys=[] schemacallback=false",
-            describeQqHandoffShape("", emptyList(), hasSchemaCallback = false)
+            "pathPresent=true pathSegmentCount=2 keys=[code,p,schemacallback,state,ticket,token] schemacallback=true",
+            output
+        )
+        listOf("secret", "session", "abc123", sensitivePath).forEach { forbidden ->
+            assertFalse("output must not contain '$forbidden': $output", output.contains(forbidden))
+        }
+    }
+
+    @Test
+    fun keysAreSortedDeduplicatedAndBlankFiltered() {
+        val output = describeQqHandoffShape(
+            pathPresent = true,
+            pathSegmentCount = 1,
+            queryNames = listOf(" z ", "a", "a", "", "   ", "b"),
+            hasSchemaCallback = false
+        )
+        assertEquals("pathPresent=true pathSegmentCount=1 keys=[a,b,z] schemacallback=false", output)
+    }
+
+    @Test
+    fun keyNamesKeepTheirOriginalCase() {
+        // 取证要还原 QQ 的真实 key 名，因此刻意不做大小写折叠（排序按 ordinal）。
+        val output = describeQqHandoffShape(true, 1, listOf("B", "a"), hasSchemaCallback = false)
+        assertEquals("pathPresent=true pathSegmentCount=1 keys=[B,a] schemacallback=false", output)
+    }
+
+    @Test
+    fun schemaCallbackIsPresenceOnly() {
+        assertTrue(
+            describeQqHandoffShape(true, 1, emptyList(), hasSchemaCallback = true).endsWith("schemacallback=true")
+        )
+        assertTrue(
+            describeQqHandoffShape(true, 1, emptyList(), hasSchemaCallback = false).endsWith("schemacallback=false")
         )
     }
 }

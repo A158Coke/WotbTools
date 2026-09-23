@@ -121,27 +121,36 @@ Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`
     热返回走 `onNewIntent`（`handleAuthReturnHot`），冷返回（进程被杀）走 `pendingAuthReturn` + startup gate
     后加载（`handleAuthReturnColdStart`），不绕过网络/版本/强制更新门禁。日志只记录
     `auth-return action=... source=app-link`，不记录完整 callback URI/query/state/code（见 `AuthReturnPolicyTest`）。
-  - **Primary（app-owned native return，契约已冻结但尚未启用）**：把 QQ native handoff URI 的
-    `schemacallback` 改写成本 App 自己的 `wotbtools://qq-auth-return`，由 QQ 直接回调本 App。
+  - **Primary（app-owned native return mechanism；future / not enabled）**：让 QQ 的 native 登录回程
+    直接回到本 App，而不是经过系统浏览器。**具体 return mechanism 尚未决定**：`schemacallback` 指向
+    App 自有 custom scheme 只是**候选之一**，PR A 刻意不冻结任何 scheme、也不冻结
+    `wotbtools://qq-auth-return` 之类的具体形态 —— 启用前必须先做单独 security review（custom scheme
+    hijacking 风险、是否存在 package-bound / 其它更强绑定形式、callback 是否携带可被第三方窃取的
+    credential，若有更强机制应优先评估），并且必须拿到真机 URI 证据（见下面的 evidence 小节）。
     **当前生产恒不启用**：`QqNativeHandoffPolicy.RECOGNIZED_SHAPE_EVIDENCE = false` ⇒
     `plan(...).rewrite` 一律 `DO_NOT_REWRITE` ⇒ handoff 逐字节沿用 QQ 原始 URI
-    （`startActivity(Intent(ACTION_VIEW, originalUri))`），并记录
-    `native-handoff rewrite=fallback reason=<token> category=<browser|app|unknown>`。
-    原因：QQ 的 `wtloginmqq://ptlogin/...` 参数形状属于**未经证实的私有 contract**（见下面的 evidence
-    小节），猜测性改写会让 QQ 不再回调 HTTPS broker callback ⇒ 全量登录失败。决策边界独立成纯策略
+    （`startActivity(Intent(ACTION_VIEW, originalUri))`，production 不做任何 URI mutation），并记录
+    `native-handoff rewrite=fallback reason=<token> category=<browser|unknown>`。
+    原因：QQ 的 `wtloginmqq://ptlogin/...` 参数形状属于**未经证实的私有 contract**，猜测性改写会让
+    QQ 不再回调 HTTPS broker callback ⇒ 全量登录失败。决策边界独立成纯策略
     `QqNativeHandoffPolicy`（JVM 单测覆盖）：它**不**复制第二份 (scheme, host) 信任表，而是直接读
     `AuthNavigationPolicy.NATIVE_AUTH_TARGETS`；`schemacallback` 只判断**存在性**并按其**值的 scheme 段**
-    分类（`browser`/`app`/`unknown`），value 本身不返回、不落日志。
-- **App Link 健康诊断 + OEM recovery（`AuthLinkHealth`，只诊断、不 gate 登录）**：Android 12+
-  （API 31）用 `DomainVerificationManager.getDomainVerificationUserState()` 读取 `auth.wotbtools.com`
-  的状态，归一化为 `VERIFIED` / `SELECTED` / `NONE` / `UNAVAILABLE`（`UNAVAILABLE` = API 不支持 /
-  平台返回未知取值 / 系统服务异常；用户关闭「打开支持的链接」时，即使 host 已 VERIFIED / SELECTED 也
-  归一化为 `NONE`）。纯归一化逻辑（`AuthLinkHealth`，JVM 单测覆盖）与 Android adapter
-  （`MainActivity.probeAuthLinkHealth`，用平台常量翻译成本地枚举、不比较裸数字）分离；process 内只探测
-  一次并记录一次 `auth-link-health host=auth.wotbtools.com state=<token>`。`NONE` **不** fail closed：
-  QQ 登录照常继续，只在 native handoff 之后显示一次（process 级一次性）recovery banner，按钮跳
-  `Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS`（API 31+）或 `ACTION_APPLICATION_DETAILS_SETTINGS` 的
-  `package:com.wotbtools.app` 页；App **不自动修改任何系统设置**，也不循环提示。
+    分类（`browser`／其它一律 `unknown`），value 本身不返回、不落日志。
+  - **App Link 健康诊断 + OEM recovery（`AuthLinkHealth`，只诊断、不 gate 登录）**：Android 12+
+    （API 31）用 `DomainVerificationManager.getDomainVerificationUserState()` 读取 `auth.wotbtools.com`
+    的状态，归一化为 `VERIFIED` / `SELECTED` / `NONE` / `UNAVAILABLE`（`UNAVAILABLE` = API 不支持 /
+    平台返回未知取值 / 系统服务异常；用户关闭「打开支持的链接」时，即使 host 已 VERIFIED / SELECTED 也
+    归一化为 `NONE`）。纯归一化逻辑（`AuthLinkHealth`，JVM 单测覆盖）与 Android adapter
+    （`MainActivity.probeAuthLinkHealth`，用平台常量翻译成本地枚举、不比较裸数字）分离；process 内只探测
+    一次并记录一次 `auth-link-health host=auth.wotbtools.com state=<token>`。`NONE` **不** fail closed：
+    QQ 登录照常继续，只在 native handoff 之后显示一次（process 级一次性）recovery banner，按钮跳
+    `Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS`（API 31+）或 `ACTION_APPLICATION_DETAILS_SETTINGS` 的
+    `package:com.wotbtools.app` 页；App **不自动修改任何系统设置**，也不循环提示。banner 的生命周期只
+    绑定「本次 QQ auth transaction 可能回不来」这一前提：一旦收到**受信任的** auth return
+    （`handleAuthReturnHot` / `handleAuthReturnColdStart` 通过 `AuthReturnPolicy` 校验）就立即
+    `dismissAuthLinkRecovery()`；普通页面 reload / 门禁切换**不**清除提示（用户可能仍在有风险的 auth flow 中）。
+  - **`UNAVAILABLE` 的语义边界**：只记录诊断，**不**显示「未开启 supported links」这类可能误导的提示
+    （该状态的含义是「无法判断」，不是「未验证」）。
 
 ### QQ native handoff evidence（PR A 记录；Primary 通道启用的前置条件）
 
@@ -157,9 +166,12 @@ Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`
 - QQ 是否把可恢复的 HTTPS continuation 交给该 callback（否则改写只会中断登录）。
 
 DEBUG-only 取证：debug 构建下 native handoff 会多打一行
-`native-qq-shape path=... keys=[...] schemacallback=true|false` —— 只输出 path 与 query **key 名**
-（`describeQqHandoffShape` 的签名里根本没有 value 参数），**绝不**输出完整 URI、任何 value 或
-`p` / `state` / `code` / `ticket` / `token`。取证完成后该诊断与 `describeQqHandoffShape` 整体删除。
+`native-qq-shape pathPresent=true pathSegmentCount=2 keys=[...] schemacallback=true|false` —— 只输出
+**结构**：path 是否存在、path segment 的**数量**、query **key 名**、`schemacallback` 是否存在。
+`describeQqHandoffShape` 的签名里既没有 raw path、也没有任何 value，因此 raw path / path segment 内容 /
+query value / `schemacallback` value / `p` / `state` / `code` / `ticket` / `token` 在物理上无法进入日志
+（path 只记结构计数，因为 QQ 私有 contract 未取证，无法证明 path 不携带 opaque / session-like value）。
+取证完成后该诊断与 `describeQqHandoffShape` 整体删除。
 
 > domain verification may differ by device / ROM：同一份 manifest + assetlinks.json 在不同 OEM / ROM 上
 > 可能得到不同的 `DomainVerificationUserState`，因此 App Link 不能作为唯一 auth-continuity 机制。
