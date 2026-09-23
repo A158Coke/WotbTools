@@ -6,6 +6,8 @@ import { nextTick, inject, ref, computed } from 'vue'
 import App from './App.vue'
 import { NAVIGATE_VIEW_KEY } from './shared/navigation.js'
 import { createAppRouter } from './app/router.js'
+import { ALLOWED_VIEWS } from './app/navigation.js'
+import { VIEW_COMPONENTS } from './app/viewRegistry.js'
 import { setUiProfile } from './composables/useUiProfile.js'
 import { resetBusinessUserBootstrap } from './composables/useBusinessUserBootstrap.js'
 
@@ -22,6 +24,7 @@ vi.mock('./components/ReplayWorkspace.vue', () => ({
 vi.mock('./components/HomePage.vue', () => ({ default: { template: '<div data-test="view-home" />' } }))
 vi.mock('./components/HoFPage.vue', () => ({ default: { template: '<div data-test="view-hof" />' } }))
 vi.mock('./components/AndroidDownloadPage.vue', () => ({ default: { template: '<div data-test="view-android" />' } }))
+vi.mock('./components/HistoryPage.vue', () => ({ default: { template: '<div data-test="view-history" />' } }))
 
 const authState = vi.hoisted(() => ({
   authenticated: false,
@@ -83,6 +86,19 @@ describe('App routing', () => {
     mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount())
     document.querySelectorAll('.user-menu-panel').forEach(element => element.remove())
     vi.clearAllMocks()
+  })
+
+  // ALLOWED_VIEWS 与 VIEW_COMPONENTS 漂移曾让 ?view=history 静默回退到默认视图（回主页），
+  // 两条清单必须始终是同一个视图集合。
+  it('keeps the navigable view allowlist equal to the registered view components', () => {
+    expect([...ALLOWED_VIEWS].sort()).toEqual(Object.keys(VIEW_COMPONENTS).sort())
+  })
+
+  it('renders the project history view from its deep link', async () => {
+    const { wrapper, router } = await mountApp('/?view=history')
+    expect(router.currentRoute.value.query.view).toBe('history')
+    expect(wrapper.find('[data-test="view-history"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="view-home"]').exists()).toBe(false)
   })
 
   it('mounts with Vue Router and keeps localhost default as Replay', async () => {
@@ -346,5 +362,17 @@ describe('User menu', () => {
     document.body.querySelector('.user-menu-item').dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await flushPromises()
     expect(authState.login).toHaveBeenCalledWith('profile')
+  })
+
+  it('opens the project history view from the user menu', async () => {
+    const { wrapper, router } = await mountApp('/?view=replay')
+    await wrapper.get('.user-menu-trigger').trigger('click')
+    const historyItem = [...document.body.querySelectorAll('.user-menu-item')]
+      .find(item => item.textContent.includes('history.btn'))
+    expect(historyItem).toBeTruthy()
+    historyItem.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushPromises()
+    expect(router.currentRoute.value.query.view).toBe('history')
+    expect(wrapper.find('[data-test="view-history"]').exists()).toBe(true)
   })
 })

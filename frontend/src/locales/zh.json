@@ -146,15 +146,6 @@
     "UK": "英国",
     "OTHER": "其他"
   },
-  "version": {
-    "btn": "更新历史",
-    "title": "版本历史",
-    "back": "返回",
-    "added": "新增",
-    "fixed": "修复",
-    "changed": "变更",
-    "removed": "移除"
-  },
   "contact": {
     "nav": "联系我",
     "title": "联系我",
