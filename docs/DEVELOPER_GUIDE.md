@@ -628,7 +628,7 @@ deployment-owned `health-probe` 访问（app `/api/health` + management
 公开 API 路由已在 TX 内部终结：`wotb-frontend` 的 nginx upstream 固定为
 `http://business-api:8087`（`TX_BACKEND_UPSTREAM` 只接受这个 TX-internal 值，公网 host 与
 已退役的 Yecao `10.20.0.2:8087` 一律 fail-closed 拒绝），任何服务都不得发布 8087；TX deploy
-staging 与只读 `PRE_CUTOVER_READY` 门禁分别用 `assert_routing_boundary` 与
+staging 与只读 `TX_RUNTIME_READY` 运行时检查分别用 `assert_routing_boundary` 与
 `tx-internal-api-route` / `distributed-execution-plane` 两条 token 断言这些不变量，因此没有任何
 公开流量再经过 Yecao backend，WireGuard 只剩 TX→MinIO `10.20.0.2:9000`、TX↔RabbitMQ 与按需观测。
 Yecao parser-worker 作为唯一执行面服务必须保持无状态：选中它时 deploy 会拒绝任何给它数据库凭据、
@@ -636,17 +636,16 @@ Yecao parser-worker 作为唯一执行面服务必须保持无状态：选中它
 端点走 Docker 服务发现 `minio:9000`（`PARSER_WORKER_MINIO_ENDPOINT`）；`10.20.0.2:9000` 只是 TX
 控制面的 WireGuard 端点（`YECAO_MINIO_ENDPOINT`），是同一 MinIO runtime 上互不合并的两条 ownership。
 
-**切 DNS 前的全业务 E2E 门禁**：`deploy/tx/pre-cutover-check.sh` 除基础设施与路由 token 外，还用
+**全业务运行时 E2E 检查**：`deploy/tx/runtime-check.sh` 除基础设施与路由 token 外，还用
 Keycloak 的 `wotbtools-e2e` 机器身份（client_credentials，唯一 realm role `wotbtools-user`，secret 由
 `KEYCLOAK_E2E_CLIENT_SECRET` 注入）驱动真实业务链并逐项给出 PASS/FAIL：`processing-e2e`
 （上传 staged 回放 → 分布式链路 → READY）、`dataset-result`、`map-overview`、`battle-playback-v2`、
-`minio`、`ai-facts`、`export`、`hof-replay-storage`、`parser-worker`、`admin-authz`，以及 operator
-提供的 Yecao 行数快照比对（`business-data-integrity`）与公网边缘两阶段断言：切 DNS 前只证明
-TX `443` 的连通性/SNI 与证书出示（`public-edge-sni-web` / `public-edge-sni-auth`；`curl` 退出码
-`60` 表示链尚未受信，是预期通过状态），切 DNS 后由 `--post-cutover` 强制要求受信任 TLS
-（`public-tls-web` / `public-tls-auth`，要求 host 解析到 TX 地址 + 受信任证书 + 2xx）。门禁全程不关闭 TLS 校验、不使用 `-k`；对基础设施与用户数据只读，唯一
-写入是 TTL 自动回收的瞬时 job；任一 token 失败即 `PRE_CUTOVER_NOT_READY`（post 阶段为
-`POST_CUTOVER_NOT_READY`）。Caddy 已是生产公网入口（默认 `0.0.0.0:80` / `0.0.0.0:443`
+`minio`、`ai-facts`、`export`、`hof-replay-storage`、`parser-worker`、`admin-authz`，以及
+`business-data-integrity`（`hall_of_fame_record` 的 identity sequence 不得落后于 `max(id)`）与公网
+边缘断言（`public-tls-web` / `public-tls-auth`，要求 host 解析到 TX 地址 + 受信任证书 + 2xx）。
+检查全程不关闭 TLS 校验、不使用 `-k`；对基础设施与用户数据只读，唯一
+写入是 TTL 自动回收的瞬时 job；任一 token 失败即 `TX_RUNTIME_NOT_READY`。
+Caddy 已是生产公网入口（默认 `0.0.0.0:80` / `0.0.0.0:443`
 tcp + udp），但没有固定容器地址：readiness surface 通过 Docker service DNS
 （`http://caddy/_wotb/...`）访问，frontend 的 `set_real_ip_from` 信任 `wotb_tx_internal`
 子网；DNS 切换仍是 operator 的受控外部操作，仓库不写任何 DNS 变更。

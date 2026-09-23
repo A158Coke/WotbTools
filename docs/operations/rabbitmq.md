@@ -175,10 +175,10 @@ deliberately, never discarded by the broker on its own.
 
 #### Operator action for a non-empty DLQ
 
-The TX cutover gate fails its `parser-worker` token while `wotb.parser.dlq` is
+The TX runtime check fails its `parser-worker` token while `wotb.parser.dlq` is
 non-empty, because a non-empty DLQ means at least one replay permanently failed
-or could not be decoded. A gate that goes green by purging evidence is worse than
-a red gate, so the sequence is:
+or could not be decoded. A check that goes green by purging evidence is worse than
+a red check, so the sequence is:
 
 ```text
 1. read-only state:   docker compose -f /opt/wotb-tx/deploy/docker-compose.yml exec -T rabbitmq \
@@ -195,7 +195,7 @@ a red gate, so the sequence is:
                       the same way
 5. record:            a genuinely unprocessable legacy sample is recorded as a permanent failure
                       and needs an explicit operator decision — not a silent purge
-6. verify:            the queue is empty again, then re-run the cutover gate
+6. verify:            the queue is empty again, then re-run the runtime check
 ```
 
 `rabbitmqctl purge_queue wotb.parser.dlq` (or the Management UI's purge) is only
