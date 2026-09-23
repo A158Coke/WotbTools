@@ -30,9 +30,9 @@
 | 文档 | 何时读 |
 |---|---|
 | `DEVELOPER_GUIDE.md` | 接手维护 / 找环境、构建、仓库结构、架构速览时（最先） |
-| `current-plan.md` | 查看当前 worktree 正在执行 / 刚完成的任务计划与状态时 |
 | `frontend/local-production-dev.md` | 本地前端连接生产后端 / Keycloak 开发模式时 |
-| `../README.md` / `../README.en-US.md` | 了解产品是什么、功能与工程取舍 |
+| `../README.md` / `../README.en-US.md` | 了解当前产品是什么、功能与工程取舍 |
+| `../HISTORY.md` | 了解项目从 Replay 提取器到当前架构的关键产品与技术演进 |
 | `../.agents/AGENTS.md` | 动手前必读（仓库级硬约定、接手与调整固定流程） |
 
 ## Development（开发与性能）
@@ -126,12 +126,11 @@
 | `ai-eval/feedback-checklist.md` | 登记 AI 复盘评估反馈时 |
 | `ai-lessons/*.md` | 查阅 AI 复盘经验教训时 |
 
-## Release history（发布历史）
+## Project history（项目历史）
 
 | 文档 | 何时读 |
 |---|---|
-| `CHANGELOG.md` | 技术版本历史 |
-| `CHANGELOG-PRODUCT.md` | 产品版本历史 |
+| `../HISTORY.md` | 查关键产品方向、架构边界、身份模型、Replay / Evidence 与生产拓扑的历史演进时；Git 保留逐提交细节 |
 
 ## Roadmap（路线图）
 
