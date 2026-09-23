@@ -145,6 +145,21 @@ BACKEND_PATTERNS = (
     "common/map-semantics/**",
     "contracts/http/**",
 )
+# CI remains deliberately broader than production-image publication: Java tests
+# still validate the backend surface even though they cannot change a runtime image.
+BACKEND_CI_PATTERNS = (
+    "java/**",
+    "docker/Dockerfile.backend",
+    "common/tankopedia-tier7.json",
+    "common/tankopedia-tier8.json",
+    "common/tankopedia-tier9.json",
+    "common/tankopedia-tier10.json",
+    "common/map_names.json",
+    "common/tank_tactical_profiles.json",
+    "common/map-semantics/**",
+    "contracts/http/**",
+)
+
 KEYCLOAK_PATTERNS = (
     "keycloak-juhe-qq-provider/**",
     "keycloak-qq-provider/**",
@@ -184,7 +199,7 @@ RUNTIME_CONFIG_PATTERNS = (
     *BUSINESS_POSTGRES_TX_DEPLOY_PATTERNS,
 )
 CI_SURFACE_PATTERNS = {
-    "backend": BACKEND_PATTERNS,
+    "backend": BACKEND_CI_PATTERNS,
     "frontend": FRONTEND_PATTERNS,
     "keycloak": KEYCLOAK_PATTERNS,
     "httpContract": (
