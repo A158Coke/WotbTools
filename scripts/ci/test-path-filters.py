@@ -91,8 +91,8 @@ class CiPathFilterTest(unittest.TestCase):
             ("contracts/mq/parser-messages.json", ["parser-worker"], []),
             (
                 "java/wotb-parser-worker/src/main/java/com/wotb/parserworker/ParserWorkerApplication.java",
-                ["business-api", "parser-worker"],
-                ["business-api"],
+                ["parser-worker"],
+                [],
             ),
         ):
             plan = detect(path)
@@ -116,10 +116,33 @@ class CiPathFilterTest(unittest.TestCase):
         self.assertEqual(plan["images"]["minio"], False)
         self.assertEqual(plan["images"]["parser-worker"], True)
 
-    def test_shared_data_change_builds_parser_worker_without_deploying_it(self):
+    def test_unrelated_common_data_does_not_publish_runtime_images(self):
         plan = detect("common/unrelated-fixture.json")
-        self.assertEqual(plan["buildServices"], ["parser-worker"])
+        self.assertEqual(plan["buildServices"], [])
         self.assertEqual(plan["deployServices"], [])
+
+    def test_runtime_data_shared_by_images_builds_only_consumers(self):
+        plan = detect("common/tank_tactical_profiles.json")
+        self.assertEqual(plan["buildServices"], ["business-api", "parser-worker"])
+        self.assertEqual(plan["deployServices"], ["business-api"])
+
+    def test_java_test_changes_validate_ci_without_publishing_images(self):
+        for path in (
+            "java/wotb-web/src/test/java/FooTest.java",
+            "java/wotb-parser-worker/src/test/java/WorkerTest.java",
+        ):
+            plan = detect(path)
+            self.assertTrue(plan["ciSurfaces"]["backend"], path)
+            self.assertEqual(plan["buildServices"], [], path)
+            self.assertEqual(plan["deployServices"], [], path)
+
+    def test_java_runtime_modules_build_only_images_that_consume_them(self):
+        web = detect("java/wotb-web/src/main/java/Foo.java")
+        self.assertEqual(web["buildServices"], ["business-api"])
+        self.assertEqual(web["deployServices"], ["business-api"])
+        worker = detect("java/wotb-parser-worker/src/main/java/Worker.java")
+        self.assertEqual(worker["buildServices"], ["parser-worker"])
+        self.assertEqual(worker["deployServices"], [])
 
     def test_grafana_dashboard(self):
         self.assert_surfaces(
