@@ -422,6 +422,14 @@ Hall of Fame 已经推动项目使用 `(区服, WotB Account ID)` 表示实际�
 
 **Git 证据：** `314e3fb1`。
 
+## 2026-09-23 — Android QQ 登录回程不再把 Verified App Link 当唯一机制
+
+Android QQ 登录的认证连续性此前完全依赖 Verified App Link：QQ 原生登录完成后，Keycloak broker callback 必须经 App Link 回到原 WebView。部分 OEM / 浏览器环境暴露了这一机制的兼容性差异 —— 同一份 manifest 与 assetlinks 在不同设备上得到不同的 domain verification 结果，QQ 的原生回程也可能落到系统浏览器，而浏览器与 WebView 不是同一个 cookie jar，原认证事务因此无法恢复。
+
+本次开始把两件事分开处理：**domain verification 的健康诊断**（只诊断、不阻塞登录，并给出一次可操作的恢复提示）与 **native-return ownership**（把回程从「只能靠 App Link」推进到可由 App 自有回程承担；具体机制与 scheme 尚未决定，需真机取证与单独的安全评审）。在取得真机 URI 形状证据之前，生产行为保持不变：继续沿用 QQ 原始握手 URI，Verified App Link 仍是当前唯一在产的回程路径，但不再是设计中唯一被依赖的机制。
+
+**Git 证据：** `ef3022e9`（阶段一，PR #375）。
+
 ---
 
 ## 当前架构形成的三条长期主线

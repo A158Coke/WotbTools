@@ -5,10 +5,13 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.verify.domain.DomainVerificationManager
+import android.content.pm.verify.domain.DomainVerificationUserState
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
@@ -27,6 +30,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.webkit.WebViewFeature
 import androidx.webkit.WebViewCompat
 import java.io.File
@@ -46,6 +50,10 @@ import java.util.concurrent.Executors
  * Pending replay 跨 process death 由 metadata 恢复（RC7）：冷启动先恢复 active pending，再清理 orphan。
  * Pending replay 的 ACK 是 identity-matched 的 compare-and-clear（决策见纯策略 `PendingReplayAckPolicy`）：
  * 只有命名了当前 pending 的 ACK 才清，绝不接受无 identity 的 ACK。
+ *
+ * Auth 边界：QQ native handoff 是否允许改写 return callback 由纯策略 `QqNativeHandoffPolicy` 决定
+ * （真机证据缺失时恒为 DO_NOT_REWRITE，沿用 QQ 原 URI）；App Link 健康状态（domain verification）见
+ * `AuthLinkHealth`，只做一次安全诊断与一次性 OEM recovery 提示 —— 绝不 gate 登录，也绝不自动修改系统设置。
  */
 class MainActivity : Activity() {
 
@@ -59,6 +67,10 @@ class MainActivity : Activity() {
 
         /** Auth navigation 诊断日志 tag。 */
         private const val TAG = "WotbAuth"
+
+        /** recovery banner 的收起原因：诊断日志只允许这两个 token，绝不把不同原因混成一个。 */
+        private const val REASON_TRUSTED_AUTH_RETURN = "trusted-auth-return"
+        private const val REASON_OPEN_SETTINGS = "open-settings"
 
         /** Native Bridge 唯一允许的调用 origin；绝不暴露给 Keycloak / IdP / 任意 frame。 */
         private val BRIDGE_ORIGINS = setOf(
@@ -80,6 +92,7 @@ class MainActivity : Activity() {
     private lateinit var versionPrimaryButton: Button
     private lateinit var versionLaterButton: Button
     private lateinit var webErrorTitle: TextView
+    private lateinit var authLinkRecoveryBanner: LinearLayout
 
     private lateinit var apkUpdater: ApkUpdater
     private lateinit var nativeBridge: NativeBridge
@@ -92,6 +105,15 @@ class MainActivity : Activity() {
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
     @Volatile private var inAuthFlow = false
     @Volatile private var awaitingUnknownSourcesPermission = false
+
+    /**
+     * App Link 健康状态：process 内只探测一次（含一次安全诊断日志）。**不** gate 登录 —— 任何取值都
+     * 允许用户继续走 QQ 登录，[AuthLinkState.NONE] 只额外给一次 recovery 提示。
+     */
+    @Volatile private var authLinkState: AuthLinkState? = null
+
+    /** OEM App Link recovery 提示的 process 级一次性门控（「一次 session 最多提示一次」）。 */
+    @Volatile private var authLinkRecoveryShown = false
 
     /** HTML Fullscreen API 在 Android WebView 中通过 WebChromeClient custom-view 回调落地。 */
     private var fullscreenView: View? = null
@@ -119,6 +141,7 @@ class MainActivity : Activity() {
         webErrorTitle = findViewById(R.id.webErrorTitle)
         versionPrimaryButton = findViewById(R.id.versionPrimaryButton)
         versionLaterButton = findViewById(R.id.versionLaterButton)
+        authLinkRecoveryBanner = findViewById(R.id.authLinkRecoveryBanner)
 
         apkUpdater = ApkUpdater(this)
         nativeBridge = NativeBridge(this)
@@ -127,6 +150,7 @@ class MainActivity : Activity() {
         webErrorRetryButton.setOnClickListener { hideAllGates(); loadWeb() }
         versionPrimaryButton.setOnClickListener { onUpdatePrimary() }
         versionLaterButton.setOnClickListener { loadWeb() }
+        findViewById<Button>(R.id.authLinkRecoveryAction).setOnClickListener { openAppLinkSettings() }
 
         val webViewOk = configureWebView()
         // 冷启动顺序（RC7）：先恢复 active pending（跨 QQ 登录期间 process death 存活），再清理不再被它
@@ -437,17 +461,157 @@ class MainActivity : Activity() {
      *   marker, and never falls back to the system browser.
      * - On no handler (QQ not installed) we show a clear prompt and stay in the current state;
      *   the user can install the app and retry, or back out manually.
-     * - Logs only scheme/host/error category — never the full URI, query, code, or token.
+     * - 是否允许改写 QQ 的 return callback 由纯策略 [QqNativeHandoffPolicy] 决定；在拿到真机 URI 形状
+     *   证据前一律 `DO_NOT_REWRITE`，**原样**交给 QQ（行为与改动前逐字节一致）。
+     * - App Link 不可靠（[AuthLinkState.NONE]）时不 fail closed：QQ 登录照常进行，只在 handoff 之后
+     *   给一次 recovery 提示。
+     * - Logs only scheme/host/error category/safe tokens — never the full URI, query, code, or token.
      */
     private fun launchNativeAuthHandoff(uri: Uri, scheme: String?, host: String?) {
+        // handoff 之前记录一次 App Link 诊断（process 内只探测一次），不 gate 登录。
+        val linkState = authLinkHealth()
+        val plan = nativeHandoffPlan(uri, scheme, host)
+        if (BuildConfig.DEBUG) {
+            // DEBUG-only 取证：只输出**结构**（path 是否存在 / segment 数量 / query key 名 / schemacallback
+            // 是否存在）。raw path 与任何 value 都不进入这个 helper（签名里就没有），因为 QQ 私有 contract
+            // 未取证时无法证明 path 不携带 opaque / session-like value。
+            Log.d(
+                TAG,
+                "native-qq-shape " + describeQqHandoffShape(
+                    pathPresent = !uri.path.isNullOrEmpty(),
+                    pathSegmentCount = uri.pathSegments.size,
+                    queryNames = uri.queryParameterNames,
+                    hasSchemaCallback = plan.hasSchemaCallback
+                )
+            )
+        }
+        val rewriteToken = if (plan.rewrite == QqHandoffRewrite.REWRITE_ALLOWED) "applied" else "fallback"
+        Log.d(TAG, "native-handoff rewrite=$rewriteToken reason=${plan.reason} category=${plan.callbackCategory}")
+        var handoffStarted = false
         try {
+            // 证据落地（PR B）前不存在 rewrite 分支：始终沿用 QQ 原始 URI。
             startActivity(Intent(Intent.ACTION_VIEW, uri))
+            handoffStarted = true
         } catch (_: ActivityNotFoundException) {
             Log.d(TAG, "native-handoff-failed scheme=${scheme ?: "null"} host=${host ?: "null"} category=no-qq-app")
             toast(getString(R.string.qq_client_missing_retry))
         } catch (e: Exception) {
             Log.d(TAG, "native-handoff-failed scheme=${scheme ?: "null"} host=${host ?: "null"} category=${e.javaClass.simpleName}")
             toast(getString(R.string.qq_client_missing_retry))
+        }
+        // recovery 提示只在「QQ 真的接管了这次 handoff，回程可能回不来」时有意义：QQ 未安装 / 启动失败时
+        // 提示「打开支持的链接」毫无帮助，只会与「未检测到 QQ 客户端」叠成两条互相干扰的提示。
+        if (handoffStarted && linkState == AuthLinkState.NONE) showAuthLinkRecovery()
+    }
+
+    /** native handoff 决策：只把 QQ URI 的**形状**（存在性 / scheme 分类）交给纯策略。 */
+    private fun nativeHandoffPlan(uri: Uri, scheme: String?, host: String?): QqHandoffPlan {
+        val (hasSchemaCallback, schemaCallbackScheme) = schemaCallbackOf(uri)
+        return QqNativeHandoffPolicy.plan(
+            // 走到这里时 AuthNavigationPolicy 已判定 NATIVE_AUTH_HANDOFF，该字段必为 true；仍传真实值，
+            // 让策略的 outside-auth-flow 分支保持可判而非摆设。
+            inAuthFlow = inAuthFlow,
+            scheme = scheme,
+            host = host,
+            hasSchemaCallback = hasSchemaCallback,
+            schemaCallbackScheme = schemaCallbackScheme
+        )
+    }
+
+    /**
+     * 只读取 `schemacallback` 的**存在性**与其值的 scheme 段；value 本身绝不落日志、绝不持久化。
+     * 畸形 / opaque URI 一律当作「没有 schemacallback」，不因为诊断失败影响 handoff。
+     */
+    private fun schemaCallbackOf(uri: Uri): Pair<Boolean, String?> = try {
+        val raw = uri.getQueryParameter(QqNativeHandoffPolicy.SCHEMA_CALLBACK_PARAM)
+        (raw != null) to raw?.let { Uri.parse(it).scheme }
+    } catch (_: Exception) {
+        false to null
+    }
+
+    // ── App Link 健康诊断 + OEM recovery（不 gate 登录）──
+
+    /**
+     * App Link 健康状态：process 内只探测一次，并记录一次安全诊断
+     * （`auth-link-health host=auth.wotbtools.com state=...`，只有 4 个允许 token + 固定 host）。
+     */
+    private fun authLinkHealth(): AuthLinkState {
+        authLinkState?.let { return it }
+        val probed = probeAuthLinkHealth()
+        authLinkState = probed
+        Log.d(TAG, "auth-link-health host=${AuthLinkHealth.HOST} state=$probed")
+        return probed
+    }
+
+    private fun probeAuthLinkHealth(): AuthLinkState {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return AuthLinkState.UNAVAILABLE
+        return try {
+            probeAuthLinkHealthApi31()
+        } catch (_: Exception) {
+            // 平台服务异常 / ROM 行为差异：只当作「无法判断」，绝不影响登录。
+            AuthLinkState.UNAVAILABLE
+        }
+    }
+
+    /**
+     * Android 12+ (API 31) 的 domain verification 读取。刻意独立成方法：新 API 类型
+     * （[DomainVerificationManager] / [DomainVerificationUserState]）只出现在这个方法体内，
+     * 老设备永远不会解析到它们。
+     */
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun probeAuthLinkHealthApi31(): AuthLinkState {
+        val manager = getSystemService(DomainVerificationManager::class.java)
+            ?: return AuthLinkState.UNAVAILABLE
+        val userState = manager.getDomainVerificationUserState(packageName)
+            ?: return AuthLinkState.UNAVAILABLE
+        val domainState = when (userState.hostToStateMap[AuthLinkHealth.HOST]) {
+            DomainVerificationUserState.DOMAIN_STATE_VERIFIED -> AuthLinkDomainState.VERIFIED
+            DomainVerificationUserState.DOMAIN_STATE_SELECTED -> AuthLinkDomainState.SELECTED
+            DomainVerificationUserState.DOMAIN_STATE_NONE -> AuthLinkDomainState.NONE
+            else -> AuthLinkDomainState.UNKNOWN
+        }
+        return AuthLinkHealth.resolve(domainState, userState.isLinkHandlingAllowed)
+    }
+
+    /**
+     * OEM recovery：App Link 不可靠时**不** fail closed，只在 handoff 之后提示一次
+     * （process 级一次性，重启后可再提示一次）。不自动修改任何系统设置。
+     */
+    private fun showAuthLinkRecovery() {
+        if (authLinkRecoveryShown) return
+        authLinkRecoveryShown = true
+        authLinkRecoveryBanner.visibility = View.VISIBLE
+        Log.d(TAG, "auth-link-recovery shown state=NONE")
+    }
+
+    /**
+     * 收起 recovery 提示（幂等）。
+     *
+     * 提示只在「当前 QQ auth transaction 可能回不到本 App」时有意义；一旦本 App 真的收到了受信任的
+     * auth return，这个前提就不成立，UI 必须撤回，否则会误导用户去改系统设置。
+     * 刻意**不**在普通页面 reload / gate 切换时调用：那时用户可能仍处在有风险的 auth flow 中。
+     *
+     * @param reason 固定 token（[REASON_TRUSTED_AUTH_RETURN] / [REASON_OPEN_SETTINGS]）——诊断日志不能
+     *   把两种截然不同的收起原因混成一个。
+     */
+    private fun dismissAuthLinkRecovery(reason: String) {
+        if (authLinkRecoveryBanner.visibility != View.VISIBLE) return
+        authLinkRecoveryBanner.visibility = View.GONE
+        Log.d(TAG, "auth-link-recovery dismissed reason=$reason")
+    }
+
+    /** 打开本 App 的「打开支持的链接」设置页；仅用户点击触发，不自动跳转、不自动改设置。 */
+    private fun openAppLinkSettings() {
+        dismissAuthLinkRecovery(REASON_OPEN_SETTINGS)
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Intent(Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, Uri.parse("package:$packageName"))
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+        }
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            Log.d(TAG, "auth-link-recovery settings=unavailable")
         }
     }
 
@@ -648,6 +812,7 @@ class MainActivity : Activity() {
         if (!verifyAuthReturn(intent, uri)) return false
         pendingAuthReturn = uri
         inAuthFlow = true
+        dismissAuthLinkRecovery(REASON_TRUSTED_AUTH_RETURN)
         Log.d(TAG, "auth-return action=ALLOW_AUTH_RETURN source=app-link cold=true")
         return true
     }
@@ -662,6 +827,8 @@ class MainActivity : Activity() {
         inAuthFlow = true
         hideAllGates()
         webView.visibility = View.VISIBLE
+        // 受信任 auth return 已到达 ⇒ recovery 提示的前提消失。
+        dismissAuthLinkRecovery(REASON_TRUSTED_AUTH_RETURN)
         Log.d(TAG, "auth-return action=ALLOW_AUTH_RETURN source=app-link hot=true")
         webView.post { webView.loadUrl(uri.toString()) }
         return true
