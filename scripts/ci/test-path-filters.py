@@ -254,6 +254,7 @@ class CiPathFilterTest(unittest.TestCase):
         for path in (
             "frontend/src/main.js",
             "HISTORY.md",
+            "docs/architecture/TECHNICAL_EVOLUTION.md",
             "docs/WotBTools_League_Rating_V6.md",
             "deploy/nginx/nginx.conf",
         ):
@@ -265,16 +266,16 @@ class CiPathFilterTest(unittest.TestCase):
         for path in ("common/assets/icon.ico", "common/map_names.json", "common/tankopedia-tier10.json"):
             self.assertIn("wotb-frontend", detect(path)["buildServices"], path)
 
-    def test_history_document_is_a_frontend_build_input(self):
-        # HistoryPage imports HISTORY.md with `?raw` and .dockerignore re-includes it,
-        # so editing it changes the produced bundle instead of being a docs-only no-op.
-        plan = detect("HISTORY.md")
-        self.assertEqual(
-            plan["images"],
-            {"backend": False, "frontend": True, "keycloak": False, "minio": False, "parser-worker": False},
-        )
-        self.assertTrue(plan["ciSurfaces"]["frontend"])
-        self.assertFalse(plan["ciSurfaces"]["full"])
+    def test_embedded_markdown_documents_are_frontend_build_inputs(self):
+        # Markdown pages import these files with `?raw`; editing them changes the bundle.
+        for document in ("HISTORY.md", "docs/architecture/TECHNICAL_EVOLUTION.md"):
+            plan = detect(document)
+            self.assertEqual(
+                plan["images"],
+                {"backend": False, "frontend": True, "keycloak": False, "minio": False, "parser-worker": False},
+            )
+            self.assertTrue(plan["ciSurfaces"]["frontend"])
+            self.assertFalse(plan["ciSurfaces"]["full"])
 
     def test_keycloak_provider_runtime_inputs_select_keycloak_only(self):
         # Every entry is COPYed into docker/Dockerfile.keycloak.
