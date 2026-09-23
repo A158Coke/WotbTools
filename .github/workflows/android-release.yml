@@ -112,6 +112,20 @@ jobs:
               ;;
           esac
           guard_min_supported "$ANDROID_MIN_SUPPORTED_VERSION_CODE" "$VERSION_CODE"
+
+          # Reject an immutable release-tag conflict before expensive builds or any
+          # production APK mutation. A retry is allowed only when the tag is absent
+          # or already points at this exact source commit.
+          TAG="${{ steps.version.outputs.tagName }}"
+          COMMIT_SHA="${{ steps.version.outputs.commit }}"
+          REFS="$(git ls-remote --tags origin "refs/tags/$TAG")"
+          classify_tag "$REFS" "$TAG" "$COMMIT_SHA"
+          if [ "$TAG_STATE" = "tag_conflict" ]; then
+            echo "::error::Release tag $TAG points to a different commit; refusing before build/upload." >&2
+            exit 1
+          fi
+          echo "Release tag preflight: $TAG_STATE"
+
           echo "Production state: $PROD_STATE"
           case "$PROD_STATE" in
             prod_absent|prod_older)
