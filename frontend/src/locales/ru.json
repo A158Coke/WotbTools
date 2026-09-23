@@ -1425,6 +1425,9 @@
     "league_exchange_score": "Обмен",
     "league_assist_score": "Помощь"
   },
+  "technicalEvolution": {
+    "btn": "Техническая эволюция"
+  },
   "history": {
     "btn": "История проекта"
   }
