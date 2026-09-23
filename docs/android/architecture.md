@@ -102,21 +102,84 @@ Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`
   scheme/host（含 host=null 的未知 custom scheme）在 auth flow 内仍 `AUTH_FAILURE` 且不退出 auth flow
   （fail closed）。日志只记录 `scheme`/`host`/`source`，不记录
   完整 URI/query/token/code/state（见 `AuthNavigationPolicyTest.verifiedNativeQqHandoffOnlyDuringAuthFlow`）。
-- **QQ native login return bridge（Verified App Link）**：QQ App 完成授权后，把 Keycloak QQ broker
-  callback 经 **Verified App Link** 路由回原 WotBTools App，复用同一 WebView / cookie jar / `inAuthFlow`，
-  保持 AuthenticationSession continuity；绝不打开系统浏览器处理 broker callback（否则 Browser B != 原
-  WebView A，getAndVerifyAuthenticationSession 无法恢复原 auth transaction → already_logged_in）。链路：
-   `WebView → native QQ → verified HTTPS App Link → 同一 MainActivity（singleTask）→ 原 WebView.loadUrl(callback)`。
-  App Link 只接管以下两个 exact callback（过渡期 `juhe-qq` 仍是生产 Juhe provider，`idp-qq` 是待审核官方 QQ provider）：
-  `https://auth.wotbtools.com/realms/wotbtools/broker/idp-qq/endpoint` 与
-  `https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint`，不接管整个
-  `auth.wotbtools.com` / 其它 realm / 其它 IdP provider。`AuthReturnPolicy` 严格校验 scheme/host/path、
-  `state`。`idp-qq` 成功回调要求 `code`（OAuth error 回调则有 `error`）；`juhe-qq` 按现有 Juhe
-  callback contract 保留必要的 Juhe-specific 参数校验，不把两个 provider 的参数强行统一；
-  `auth.wotbtools.com/.well-known/assetlinks.json` 由 nginx 直接返回 application/json（非代理 Keycloak）。
-  热返回走 `onNewIntent`（`handleAuthReturnHot`），冷返回（进程被杀）走 `pendingAuthReturn` + startup gate
-  后加载（`handleAuthReturnColdStart`），不绕过网络/版本/强制更新门禁。日志只记录
-  `auth-return action=... source=app-link`，不记录完整 callback URI/query/state/code（见 `AuthReturnPolicyTest`）。
+- **QQ native login return：Primary（app-owned native return）+ Fallback（Verified App Link）**：QQ App
+  完成授权后回程有两类通道，终点都必须是原 WotBTools App —— 同一 MainActivity（singleTask）/ 同一
+  WebView / 同一 cookie jar，`inAuthFlow` 保持，绝不用系统浏览器处理 broker callback（否则
+  Browser B != 原 WebView A，getAndVerifyAuthenticationSession 无法恢复原 auth transaction →
+  already_logged_in）。
+  - **Fallback（当前唯一在产机制）**：
+    `WebView → native QQ → HTTPS broker callback → Verified App Link → 同一 MainActivity → 原 WebView.loadUrl(callback)`。
+    **Verified App Link is fallback, not the sole auth-continuity mechanism**：它的实际可用性依赖设备 /
+    ROM 的 domain verification，不能作为唯一回程。App Link 只接管以下两个 exact callback（过渡期
+    `juhe-qq` 仍是生产 Juhe provider，`idp-qq` 是待审核官方 QQ provider）：
+    `https://auth.wotbtools.com/realms/wotbtools/broker/idp-qq/endpoint` 与
+    `https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint`，不接管整个
+    `auth.wotbtools.com` / 其它 realm / 其它 IdP provider。`AuthReturnPolicy` 严格校验 scheme/host/path、
+    `state`。`idp-qq` 成功回调要求 `code`（OAuth error 回调则有 `error`）；`juhe-qq` 按现有 Juhe
+    callback contract 保留必要的 Juhe-specific 参数校验，不把两个 provider 的参数强行统一；
+    `auth.wotbtools.com/.well-known/assetlinks.json` 由 nginx 直接返回 application/json（非代理 Keycloak）。
+    热返回走 `onNewIntent`（`handleAuthReturnHot`），冷返回（进程被杀）走 `pendingAuthReturn` + startup gate
+    后加载（`handleAuthReturnColdStart`），不绕过网络/版本/强制更新门禁。日志只记录
+    `auth-return action=... source=app-link`，不记录完整 callback URI/query/state/code（见 `AuthReturnPolicyTest`）。
+  - **Primary（app-owned native return mechanism；future / not enabled）**：让 QQ 的 native 登录回程
+    直接回到本 App，而不是经过系统浏览器。**具体 return mechanism 尚未决定**：把 `schemacallback`
+    指向 App 自有的 custom scheme 只是**候选之一**，PR A 刻意不冻结任何 scheme、也不冻结任何具体
+    URI 形态 —— 启用前必须先做单独 security review（custom scheme hijacking 风险、是否存在
+    package-bound / 其它更强绑定形式、callback 是否携带可被第三方窃取的 credential，若有更强机制应
+    优先评估），并且必须拿到真机 URI 证据（见下面的 evidence 小节）。
+    **当前生产恒不启用**：`QqNativeHandoffPolicy.RECOGNIZED_SHAPE_EVIDENCE = false` ⇒
+    `plan(...).rewrite` 一律 `DO_NOT_REWRITE` ⇒ handoff 逐字节沿用 QQ 原始 URI
+    （`startActivity(Intent(ACTION_VIEW, originalUri))`，production 不做任何 URI mutation），并记录
+    `native-handoff rewrite=fallback reason=<token> category=<browser|unknown>`。
+    原因：QQ 的 `wtloginmqq://ptlogin/...` 参数形状属于**未经证实的私有 contract**，猜测性改写会让
+    QQ 不再回调 HTTPS broker callback ⇒ 全量登录失败。决策边界独立成纯策略
+    `QqNativeHandoffPolicy`（JVM 单测覆盖）：它**不**复制第二份 (scheme, host) 信任表，而是直接读
+    `AuthNavigationPolicy.NATIVE_AUTH_TARGETS`；`schemacallback` 只判断**存在性**并按其**值的 scheme 段**
+    分类（`browser`／其它一律 `unknown`），value 本身不返回、不落日志。
+  - **App Link 健康诊断 + OEM recovery（`AuthLinkHealth`，只诊断、不 gate 登录）**：Android 12+
+    （API 31）用 `DomainVerificationManager.getDomainVerificationUserState()` 读取 `auth.wotbtools.com`
+    的状态，归一化为 `VERIFIED` / `SELECTED` / `NONE` / `UNAVAILABLE`（`UNAVAILABLE` = API 不支持 /
+    平台返回未知取值 / 系统服务异常；用户关闭「打开支持的链接」时，即使 host 已 VERIFIED / SELECTED 也
+    归一化为 `NONE`）。纯归一化逻辑（`AuthLinkHealth`，JVM 单测覆盖）与 Android adapter
+    （`MainActivity.probeAuthLinkHealth`，用平台常量翻译成本地枚举、不比较裸数字）分离；process 内只探测
+    一次并记录一次 `auth-link-health host=auth.wotbtools.com state=<token>`。`NONE` **不** fail closed：
+    QQ 登录照常继续；只有当 QQ handoff **真的**交给了外部 App（`startActivity` 成功）后才显示一次
+    （process 级一次性）recovery banner —— QQ 未安装 / 启动失败时只提示「未检测到 QQ 客户端」，
+    不叠一条无意义的 app-link 提示。按钮跳
+    `Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS`（API 31+）或 `ACTION_APPLICATION_DETAILS_SETTINGS` 的
+    `package:com.wotbtools.app` 页；App **不自动修改任何系统设置**，也不循环提示。banner 的生命周期只
+    绑定「本次 QQ auth transaction 可能回不来」这一前提：一旦收到**受信任的** auth return
+    （`handleAuthReturnHot` / `handleAuthReturnColdStart` 通过 `AuthReturnPolicy` 校验）就立即
+    `dismissAuthLinkRecovery(reason=trusted-auth-return)`（用户点按钮则是
+    `reason=open-settings`，两个 token 不混用）；普通页面 reload / 门禁切换**不**清除提示
+    （用户可能仍在有风险的 auth flow 中）。
+  - **`UNAVAILABLE` 的语义边界**：只记录诊断，**不**显示「未开启 supported links」这类可能误导的提示
+    （该状态的含义是「无法判断」，不是「未验证」）。
+
+### QQ native handoff evidence（PR A 记录；Primary 通道启用的前置条件）
+
+已证实（Android 1.0.9 真机 ADB）：
+
+- `scheme = wtloginmqq`、`host = ptlogin`（`AuthNavigationPolicy.NATIVE_AUTH_TARGETS`，唯一可信目标）。
+
+尚未证实（**必须**先取得真机证据才能启用 rewrite）：
+
+- path 形状（现有记录只到 `wtloginmqq://ptlogin/...`）；
+- query **key 名**集合；
+- `schemacallback` 是否存在、其值形态、QQ 是否真的按它回调；
+- QQ 是否把可恢复的 HTTPS continuation 交给该 callback（否则改写只会中断登录）。
+
+DEBUG-only 取证：debug 构建下 native handoff 会多打一行
+`native-qq-shape pathPresent=true pathSegmentCount=2 keys=[...] schemacallback=true|false` —— 只输出
+**结构**：path 是否存在、path segment 的**数量**、query **key 名**、`schemacallback` 是否存在。
+`describeQqHandoffShape` 的签名里既没有 raw path、也没有任何 value，因此 raw path / path segment 内容 /
+query value / `schemacallback` value / `p` / `state` / `code` / `ticket` / `token` 在物理上无法进入日志
+（path 只记结构计数，因为 QQ 私有 contract 未取证，无法证明 path 不携带 opaque / session-like value）。
+取证完成后该诊断与 `describeQqHandoffShape` 整体删除。
+
+> domain verification may differ by device / ROM：同一份 manifest + assetlinks.json 在不同 OEM / ROM 上
+> 可能得到不同的 `DomainVerificationUserState`，因此 App Link 不能作为唯一 auth-continuity 机制。
+
 - 返回 `wotbtools.com` / `www.wotbtools.com` 表示 callback 成功并结束 auth flow。认证外直接访问
   provider host 不获得 privileged WebView handling；其它 top-level host 由系统浏览器打开。
 - Native Bridge 与 OAuth navigation 是两个独立安全边界。Bridge origins 仍严格限于
@@ -131,7 +194,8 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
 
 - **认证是唯一 navigation authority**：`inAuthFlow=true` 期间到达的 replay intent 只入队
   （`ReplayDispatchPolicy` → `NONE`），不 `loadUrl`、不 `evaluateJavascript`，当前 Keycloak/QQ
-  authentication transaction 不被 replay 打断；verified auth return 恒为最高优先级。
+  authentication transaction 不被 replay 打断；auth return（当前为 verified HTTPS App Link）恒为最高
+  优先级；`ReplayDispatchPolicy` 在门禁 / 错误页接管（WebView 不可见）时同样不分发。
 - **单一 ingress**：只有 Intent → private cache → Native Bridge → Web fetch 固定同源 HTTPS synthetic resource 一条路径；
   已删除 `onShowFileChooser` 对 pending replay 的注入分支。
 - **跨 process death 存活**：pending metadata 落在 app private storage（24h TTL），启动时先恢复
