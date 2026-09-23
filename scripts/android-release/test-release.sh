@@ -77,4 +77,23 @@ classify_tag $'abc\trefs/tags/android-v1.0.2' android-v1.0.2 abc
 classify_tag $'abc\trefs/tags/android-v1.0.2\ndef456\trefs/tags/android-v1.0.2^{}' android-v1.0.2 def456
 [ "$TAG_STATE" = tag_equal ] || fail "annotated tag_equal"
 
+classify_tag 
+abc\\trefs/tags/android-v1.0.2' android-v1.0.2 def456
+[ "$TAG_STATE" = tag_conflict ] || fail "tag_conflict"
+
+python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+workflow = Path(sys.argv[1]).read_text(encoding="utf-8")
+preflight = workflow.index("Preflight classify production state")
+frontend = workflow.index("Frontend tests + build validation")
+upload = workflow.index("Upload APK to TX")
+ensure_tag = workflow.index("Ensure release tag (idempotent)")
+assert preflight < frontend < upload < ensure_tag
+preflight_block = workflow[preflight:frontend]
+assert 'classify_tag "$REFS" "$TAG" "$COMMIT_SHA"' in preflight_block
+assert 'if [ "$TAG_STATE" = "tag_conflict" ]; then' in preflight_block
+PY
+
 echo "ALL ANDROID RELEASE TESTS PASSED"
