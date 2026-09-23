@@ -1425,6 +1425,9 @@
     "league_exchange_score": "Exchange",
     "league_assist_score": "Assist"
   },
+  "technicalEvolution": {
+    "btn": "Technical evolution"
+  },
   "history": {
     "btn": "Project history"
   }
