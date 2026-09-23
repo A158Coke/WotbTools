@@ -814,47 +814,13 @@
             "mixed_league_standard": "检测到混合上传：普通回放与训练赛/联赛回放不能同时解析"
         }
     },
-    "boost": {
-        "notifications": "通知",
-        "markAllRead": "全部已读",
-        "noNotifications": "暂无通知",
-        "notificationTitle": {
-            "BOOST_REQUEST_ASSIGNED": "需求已分配",
-            "BOOST_ASSIGNMENT_RECEIVED": "新订单",
-            "BOOST_ASSIGNMENT_ACCEPTED": "打手已接单",
-            "BOOST_ASSIGNMENT_IN_PROGRESS": "订单已开始",
-            "BOOST_ASSIGNMENT_PENDING_CONFIRM": "等待确认完成",
-            "BOOST_ASSIGNMENT_COMPLETED": "订单已完成",
-            "BOOST_ASSIGNMENT_DECLINED": "打手已拒单",
-            "BOOST_ASSIGNMENT_CANCELLED": "订单已取消",
-            "BOOST_ASSIGNMENT_EXCEPTION": "订单异常",
-            "BOOST_REQUEST_REJECTED": "需求被拒绝",
-            "BOOSTER_APPLICATION_APPROVED": "申请通过",
-            "BOOSTER_APPLICATION_REJECTED": "申请被拒绝"
-        },
-        "notificationMessage": {
-            "BOOST_REQUEST_ASSIGNED": "需求 #{requestId} 已分配打手。",
-            "BOOST_ASSIGNMENT_RECEIVED": "你收到需求 #{requestId}。",
-            "BOOST_ASSIGNMENT_ACCEPTED": "打手已接下需求 #{requestId}。",
-            "BOOST_ASSIGNMENT_IN_PROGRESS": "需求 #{requestId} 正在进行中。",
-            "BOOST_ASSIGNMENT_PENDING_CONFIRM": "需求 #{requestId} 等待确认完成。",
-            "BOOST_ASSIGNMENT_COMPLETED": "需求 #{requestId} 已完成。",
-            "BOOST_ASSIGNMENT_DECLINED": "打手拒绝了需求 #{requestId}。",
-            "BOOST_ASSIGNMENT_CANCELLED": "需求 #{requestId} 的分配已取消。",
-            "BOOST_ASSIGNMENT_EXCEPTION": "需求 #{requestId} 需要处理异常。",
-            "BOOST_REQUEST_REJECTED": "需求 #{requestId} 已被拒绝。",
-            "BOOSTER_APPLICATION_APPROVED": "你的打手申请 #{applicationId} 已通过。",
-            "BOOSTER_APPLICATION_REJECTED": "你的打手申请 #{applicationId} 被拒绝。"
-        }
-    },
     "api_codes": {
         "SENSITIVE_INFO_WARNING": "请勿填写账号密码、验证码等敏感信息。",
         "BOOST_REQUEST_SUBMITTED": "需求已提交，管理员会人工审核并联系你。",
         "BOOSTER_APPLICATION_SUBMITTED": "申请已提交，等待管理员审批。",
         "BOOST_REQUEST_CANCELLED": "需求已取消。",
         "BOOST_REQUEST_COMPLETED": "需求已确认完成。",
-        "BOOST_ASSIGNMENT_CANCELLED": "分配已取消。",
-        "NOTIFICATIONS_MARKED_READ": "通知已全部标记为已读。"
+        "BOOST_ASSIGNMENT_CANCELLED": "分配已取消。"
     },
     "api_errors": {
         "UNKNOWN_ERROR": "未知错误",
@@ -877,7 +843,6 @@
         "WARGAMING_PROFILE_READONLY": "Wargaming.net 登录账号资料由官方管理，不可手动修改或解绑",
         "PROFILE_REGION_MISMATCH": "当前账号与登录来源不匹配",
         "WOTB_ACCOUNT_MISMATCH": "不能将 Wargaming 账号切换到另一个游戏账号",
-        "NOTIFICATION_NOT_FOUND": "通知不存在",
         "KEYCLOAK_USER_NOT_FOUND": "Keycloak 用户不存在",
         "KEYCLOAK_USER_OR_ROLE_NOT_FOUND": "Keycloak 用户或角色不存在",
         "REQUEST_NOT_FOUND": "需求不存在",

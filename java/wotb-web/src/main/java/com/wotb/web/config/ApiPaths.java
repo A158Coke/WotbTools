@@ -17,7 +17,6 @@ public final class ApiPaths {
     public static final String API = "/api";
     public static final String HOF = "/api/hof";
     public static final String USERS = "/api/users";
-    public static final String USER_NOTIFICATIONS = "/api/users/notifications";
     public static final String ADMIN = "/api/admin";
     public static final String ADMIN_USERS = "/api/admin/users";
     public static final String ADMIN_RATING_V2 = "/api/admin/rating-v2";
