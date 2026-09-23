@@ -92,9 +92,10 @@ FRONTEND_PATTERNS = (
     "common/tankopedia-tier10.json",
     "common/assets/**",
     # docker/Dockerfile.frontend COPYs both documents into the build stage and
-    # HistoryPage/RatingDocsPage inline them with `?raw`, so editing either one
-    # changes the produced bundle. `.dockerignore` explicitly re-includes them.
+    # HistoryPage/TechnicalEvolutionPage/RatingDocsPage inline them with `?raw`, so editing
+    # any one changes the produced bundle. `.dockerignore` explicitly re-includes them.
     "HISTORY.md",
+    "docs/architecture/TECHNICAL_EVOLUTION.md",
     "docs/WotBTools_League_Rating_V6.md",
     "deploy/nginx/**",
     "contracts/http/**",
