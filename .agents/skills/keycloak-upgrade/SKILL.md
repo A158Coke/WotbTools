@@ -76,7 +76,7 @@ description: >
 
 ### Phase 6 — 收尾
 
-- 更新 `CHANGELOG.md`、`java/README.md`、`docs/auth/*`、`frontend/src/data/versions.json`（若涉及界面/版本说明）。
+- 更新 `java/README.md`、`docs/auth/*`；升级若带来长期认证/身份模型演进则记录到 `HISTORY.md`（判据见 `.agents/AGENTS.md` 规则 3）。
 - 走 `review-with-docs`（影响构建/认证/文档时）+ `review-fix` 闭环。
 
 ## 边界情况必查清单（Edge Cases）

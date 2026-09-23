@@ -12,7 +12,7 @@ WoT Blitz（坦克世界闪击战）回放工具集：Java 25 + Spring Boot 后�
 | 目录 | AGENTS.md 覆盖 |
 |---|---|
 | `java/` | Maven/JDK、domain 分包、分层、Flyway、代码风格、wotb-core vs wotb-web 边界、AI Review 边界 |
-| `frontend/` | Node 24、Vue 3/Vite、三语 i18n、versions.json、跨站 cookie、坦克标记 PNG 契约 |
+| `frontend/` | Node 24、Vue 3/Vite、三语 i18n、跨站 cookie、坦克标记 PNG 契约 |
 | `contracts/` | FE ↔ BE OpenAPI 3.1 wire contract、生成产物、fixture 与兼容性 |
 | `common/` | 单一来源数据（tankopedia tier 文件/rating/map_names/map-semantics）、更新链、fixtures vs data 边界 |
 | `deploy/` | 三镜像构建、deploy.sh 契约校验、nginx/超时链、备份、生产排障 |

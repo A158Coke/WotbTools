@@ -412,4 +412,4 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
 
 Potential Damage / 潜在伤害指标已从当前产品整体移除：不再计算、不再进入 Replay data
 model、API、Standard/League 表格、单场/汇总 Excel、mode=each、Radar，也不参与任何
-Rating / Performance 指标。删除记录见 CHANGELOG。
+Rating / Performance 指标。删除记录见 Git 历史。

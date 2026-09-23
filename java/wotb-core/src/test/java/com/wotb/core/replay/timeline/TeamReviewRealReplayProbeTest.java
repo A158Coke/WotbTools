@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 样本 `20260817_2021____WildCat__A178_SPHT_1161423218062589123(2).wotbreplay` 应放置于
  * `common/data/`（本地样本目录，不入库）。
  * <p><b>Golden acceptance 必须是 assertion，不是 println。</b>
- * 样本存在时硬断言（来自已确认的真实 canonical facts，CHANGELOG 报告 core 约 109–128s）：
+ * 样本存在时硬断言（来自已确认的真实 canonical facts；core 约 109–128s 的原始技术记录见 Git 历史）：
  * <ul>
  *   <li>Top collapse core 必须是 3:1（本方 3 死、对方 1 死），不允许 3:2 通过；</li>
  *   <li>BEFORE 7v7 → AFTER 4v6（friendlyAlive/enemyAlive 逐项）；</li>

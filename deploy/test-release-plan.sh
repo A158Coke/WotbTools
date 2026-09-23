@@ -57,8 +57,8 @@ assert set(detect("frontend/src/App.vue", "java/wotb-core/src/main/java/com/wotb
     "wotb-frontend", "business-api"
 }
 assert detect("README.md")["deployServices"] == []
-assert detect("docs/CHANGELOG.md")["imageServices"] == []
-assert detect("docs/CHANGELOG.md")["deployServices"] == []
+assert detect("docs/README.md")["imageServices"] == []
+assert detect("docs/README.md")["deployServices"] == []
 assert detect("docs/WotBTools_League_Rating_V6.md")["imageServices"] == ["wotb-frontend"]
 assert detect("deploy/observability/prometheus/prometheus.yml")["deployServices"] == ["prometheus"]
 assert detect("deploy/observability/grafana/dashboards/home.json")["deployServices"] == []
@@ -83,7 +83,7 @@ backend_health_probe_fix = detect(
     "deploy/test-deploy-contract.sh",
     "deploy/test-release-plan.sh",
     "deploy/AGENTS.md",
-    "docs/CHANGELOG.md",
+    "docs/README.md",
     "docs/DEVELOPER_GUIDE.md",
     "java/wotb-web/src/test/java/com/wotb/web/config/BackendManagementHealthContractTest.java",
 )
