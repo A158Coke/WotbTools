@@ -41,7 +41,8 @@ identity_text = read("infra/tofu/keycloak/identity-providers.tf")
 variables_text = read("infra/tofu/keycloak/variables.tf")
 tx_compose = read("deploy/tx/docker-compose.yml")
 tofu_script = read("deploy/tx/keycloak-tofu.sh")
-deploy_text = read(".github/workflows/deploy.yml")
+tofu_apply_text = read(".github/workflows/tofu-apply.yml")
+release_text = read(".github/workflows/release.yml")
 outputs_text = read("infra/tofu/keycloak/outputs.tf")
 
 # --- reproducibility: provider pin, TLS verification, production state path --
@@ -88,7 +89,8 @@ assert "client_secret_wo_version     = var.e2e_client_secret_version" in root_te
 assert 'variable "e2e_client_secret"' in variables_text
 assert 'variable "e2e_client_secret_version"' in variables_text
 assert "KEYCLOAK_E2E_CLIENT_SECRET" in tofu_script, "the TX runner must forward the E2E secret"
-assert "KEYCLOAK_E2E_CLIENT_SECRET" in deploy_text, "Deploy must inject the E2E secret"
+assert "KEYCLOAK_E2E_CLIENT_SECRET" in tofu_apply_text, \
+    "the TX Tofu Apply lane must inject the E2E secret"
 assert "keycloak_openid_client.e2e" in read("infra/tofu/keycloak/validate-plan.sh"), \
     "the plan guard must protect the runtime E2E client"
 
@@ -171,7 +173,7 @@ for expected in ("type        = string", "sensitive   = true", "nullable    = fa
 assert 'contains(' in wg_variable and "not-used" in wg_variable, \
     "the Wargaming application ID must reject blank values and known placeholders"
 for forbidden in ("TX_WG_APPLICATION_ID", "WG_CLIENT_ID", "WARGAMING_CLIENT_ID"):
-    assert forbidden not in deploy_text, f"duplicate Wargaming credential source: {forbidden}"
+    assert forbidden not in tofu_apply_text, f"duplicate Wargaming credential source: {forbidden}"
     assert forbidden not in tofu_script, f"duplicate Wargaming credential source: {forbidden}"
 for expected in (
     "WG_APPLICATION_ID",
@@ -179,7 +181,7 @@ for expected in (
 ):
     assert expected in tofu_script, expected
 assert 'export TF_VAR_wargaming_application_id="$WG_APPLICATION_ID"' in tofu_script
-assert "WG_APPLICATION_ID" in deploy_text, "Deploy must inject the existing Wargaming secret"
+assert "WG_APPLICATION_ID" in tofu_apply_text, "Tofu Apply must inject the existing Wargaming secret"
 assert "wargaming_application_id" not in outputs_text, "the Wargaming application ID must not be a Tofu output"
 assert "qq_client_secret" not in outputs_text, "the QQ application secret must not be a Tofu output"
 
@@ -203,7 +205,7 @@ for forbidden in (
     "qq_client_secret_version",
 ):
     assert forbidden not in tofu_script, f"removed QQ secret version input: {forbidden}"
-    assert forbidden not in deploy_text, f"removed QQ secret version input in Deploy: {forbidden}"
+    assert forbidden not in tofu_apply_text, f"removed QQ secret version input in Tofu Apply: {forbidden}"
     assert forbidden not in identity_text, f"removed QQ secret version input in the QQ IdP: {forbidden}"
     assert forbidden not in variables_text, f"removed QQ secret version variable: {forbidden}"
 # The runtime proof of that model is the fresh-realm rotation check: rotating the
@@ -211,7 +213,7 @@ for forbidden in (
 assert "rotated QQ client secret converges without a rotation version" in read(
     "deploy/test-keycloak-tofu.sh"
 ), "the fresh-realm smoke must keep proving version-less QQ secret convergence"
-assert "tfvars" not in deploy_text.lower()
+assert "tfvars" not in tofu_apply_text.lower()
 assert 'echo "$KEYCLOAK_ADMIN_CLIENT_SECRET"' not in tofu_script
 
 # --- Keycloak administration stays TX-loopback only --------------------------
@@ -223,23 +225,40 @@ assert "bash ./validate-plan.sh plan.tfplan" in tofu_script
 assert "bash ./validate-plan.sh second-plan.tfplan" in tofu_script
 assert "tofu apply -input=false -auto-approve plan.tfplan" in tofu_script
 assert "second-plan.tfplan" in tofu_script
-assert "any(.resource_changes[]?; ((.change.actions // []) | any(. != \"no-op\")))" in tofu_script
+# A clean second plan must be proven, not assumed: the runner fails when any
+# action is not a no-op and also when jq cannot prove it (empty/invalid plan).
+assert "all(.resource_changes[]?; ((.change.actions // []) | all(. == \"no-op\")))" in tofu_script
+assert "second plan is invalid or not No changes" in tofu_script
 
 # --- the realm is applied only after an empty Keycloak is up -----------------
-deploy = yaml.safe_load(deploy_text)
-steps = deploy["jobs"]["deploy_tx"]["steps"]
+# The single-root Tofu Apply lane owns the realm, so the ordering that used to
+# live inside one Deploy job is now split across the release lanes: the
+# keycloak-postgres root provisions the database, the keycloak Deploy lane starts
+# the empty server, and only then does the keycloak Tofu lane apply the realm.
+release = yaml.safe_load(release_text)
+release_jobs = release["jobs"]
+assert "tofu_keycloak_postgres" in release_jobs["deploy_keycloak"]["needs"], \
+    "the empty Keycloak must wait for its PostgreSQL root"
+assert "deploy_keycloak" in release_jobs["tofu_keycloak"]["needs"], \
+    "the realm must be applied only after the empty Keycloak is up"
+assert "needs.deploy_keycloak.result == 'success'" in release_jobs["tofu_keycloak"]["if"], \
+    "a failed Keycloak Deploy lane must not apply the realm"
+apply = yaml.safe_load(tofu_apply_text)
+steps = apply["jobs"]["tx"]["steps"]
 names = [step.get("name", "") for step in steps]
 for name in (
-    "Install Keycloak OpenTofu root on TX",
-    "Bootstrap TX Keycloak PostgreSQL before OpenTofu",
-    "Start empty TX Keycloak for OpenTofu bootstrap",
-    "Apply Keycloak OpenTofu on TX localhost",
+    "Stage one TX root",
+    "Reject stale main before TX mutation",
+    "Apply Keycloak realm on TX localhost",
 ):
     assert name in names, name
-assert names.index("Bootstrap TX Keycloak PostgreSQL before OpenTofu") < names.index(
-    "Start empty TX Keycloak for OpenTofu bootstrap"
-) < names.index("Apply Keycloak OpenTofu on TX localhost")
-apply_step = next(step for step in steps if step.get("name") == "Apply Keycloak OpenTofu on TX localhost")
+assert names.index("Stage one TX root") < names.index(
+    "Reject stale main before TX mutation"
+) < names.index("Apply Keycloak realm on TX localhost")
+assert "deploy/tx/keycloak-tofu.sh" in str(steps), \
+    "the TX lane must stage the Keycloak realm runner with its root"
+apply_step = next(step for step in steps if step.get("name") == "Apply Keycloak realm on TX localhost")
+assert apply_step["if"] == "needs.preflight.outputs.root == 'keycloak'"
 apply_envs = set(apply_step["with"]["envs"].split(","))
 assert apply_envs == {
     "KEYCLOAK_ADMIN_USERNAME",

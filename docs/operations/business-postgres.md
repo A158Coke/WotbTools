@@ -74,25 +74,32 @@ frontend image, or Caddy inputs. RabbitMQ remains reachable only through
 
 ## TX provisioning sequence
 
-For the `business-postgres` target (or `all`) the TX deploy script performs:
+The single-service Deploy (`service=business-postgres`) and the single-root Tofu
+Apply (`root=business-postgres`) split this sequence; there is no `all` selector:
 
 ```text
+Deploy lane (deploy/tx/deploy.sh)
 1. validate inputs and render the Compose document
 2. start the business-postgres runtime and wait for pg_isready
-3. TX-local OpenTofu init -lockfile=readonly / validate / saved plan
-4. plan safety validation
-5. apply the exact saved plan
-6. second plan
-7. require a completely clean (no-op) second plan
-8. write the root-only /opt/wotb-tx/business-postgres.tofu-provisioned marker
+3. require the root-only /opt/wotb-tx/business-postgres.tofu-provisioned marker
+
+Tofu Apply lane (tofu-apply.yml, tx job)
+4. TX-local OpenTofu init -lockfile=readonly / validate / saved plan
+5. plan safety validation
+6. apply the exact saved plan
+7. second plan
+8. require a completely clean (no-op) second plan
+9. write the root-only /opt/wotb-tx/business-postgres.tofu-provisioned marker
 ```
 
-A non-clean second plan fails the deployment. Unknown resource addresses,
+The Release orders them: `tofu_business_postgres` waits for a successful
+`deploy_business_postgres`, and `deploy_business_api` waits for the root. A
+non-clean second plan fails the deployment. Unknown resource addresses,
 destructive actions, and unexpected updates are rejected before apply. GitHub
 Actions never connects to the database: it only transfers the root over SSH and
 the TX host calls the provider on `127.0.0.1:25432`.
 
-The deploy helper chains each provisioning step explicitly and never invokes the
+The Tofu Apply lane chains each provisioning step explicitly and never invokes the
 provisioning helpers from an `||` list, because bash disables `errexit` inside a
 function called that way and a dirty plan would otherwise be ignored.
 

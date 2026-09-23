@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Build/deploy release planning and manifest validation.
+"""Interpret one complete Git range for PR validation and production release.
 
-This is intentionally standard-library-only so the same contract can run in
-GitHub Actions without installing a project dependency.
+The checked out files are deliberately not used as the source of the Maven or
+Compose graph: both are read from --head, the same frozen commit that is built.
 """
 
 from __future__ import annotations
@@ -11,644 +11,415 @@ import argparse
 import fnmatch
 import json
 import re
+import subprocess
 import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
 
 
-IMAGE_NAMES = ("backend", "frontend", "keycloak", "minio", "parser-worker")
-APPLICATION_IMAGE_NAMES = ("backend", "frontend", "keycloak")
-# The deploy service a built image is published as. The backend image is owned
-# by TX since the business runtime moved there; no Yecao application service is
-# deployable any more, so nothing here routes to a retired Yecao container.
-APPLICATION_SERVICES = {
-    "backend": "business-api",
-    "frontend": "wotb-frontend",
-    "keycloak": "keycloak",
-    "minio": "minio",
-    "parser-worker": "parser-worker",
+ROOT = Path(__file__).resolve().parents[1]
+SHA = re.compile(r"[0-9a-f]{40}\Z")
+COMPONENTS = ("business-api", "frontend", "keycloak", "parser-worker", "minio")
+IMAGE_SERVICES = set(COMPONENTS)
+TX_SERVICES = ("keycloak-postgres", "business-postgres", "rabbitmq", "keycloak", "frontend", "business-api", "caddy")
+YECAO_SERVICES = ("parser-worker", "node-exporter", "prometheus", "loki", "alloy", "grafana", "minio")
+COMPOSE_NAMES = {
+    "deploy/tx/docker-compose.yml": {"wotb-frontend": "frontend", "health-probe": None},
+    "deploy/docker-compose.prod.yml": {},
+    "deploy/docker-compose.minio.yml": {},
 }
-DEPLOYABLE_SERVICES = {
-    # ``all`` is TX's whole-runtime selector in deploy/tx/deploy.sh. No release plan produces it any
-    # more (the deploy workflow expands it before it reaches WOTB_DEPLOY_SERVICES, and the legacy
-    # Yecao whole-stack meaning is retired), but it stays a validatable service name because the TX
-    # selector list is cross-checked against this set.
-    "all",
-    "node-exporter",
-    "prometheus",
-    "loki",
-    "alloy",
-    "grafana",
-    "keycloak",
-    "wotb-frontend",
-    "business-api",
-    "keycloak-postgres",
-    "business-postgres",
-    "rabbitmq",
-    "minio",
-    "parser-worker",
-    # Caddy is an explicit TX selector in deploy/tx/deploy.sh and is recreated
-    # whenever its staged configuration or a proxied application changes. It was
-    # missing here, so a manifest naming it could not be validated at all.
-    "caddy",
+TOFU_ROOTS = {
+    "keycloak": "infra/tofu/keycloak/",
+    "rabbitmq": "infra/tofu/rabbitmq/",
+    "business-postgres": "infra/tofu/postgres-business/",
+    "keycloak-postgres": "infra/tofu/postgres-keycloak/",
+    "minio": "infra/tofu/minio/",
+    "cos": "infra/tofu/environments/prod/",
+    "grafana": "infra/tofu/grafana/",
 }
-DEPLOY_TARGETS = ("tx", "yecao")
-TARGET_BY_SERVICE = {
-    # ``all`` only exists as the TX whole-runtime selector now; the retired Yecao whole-stack
-    # meaning is gone.
-    "all": "tx",
-    "keycloak": "tx",
-    "keycloak-postgres": "tx",
-    "business-postgres": "tx",
-    "rabbitmq": "tx",
-    "wotb-frontend": "tx",
-    "business-api": "tx",
-    "caddy": "tx",
-    "node-exporter": "yecao",
-    "prometheus": "yecao",
-    "loki": "yecao",
-    "alloy": "yecao",
-    "grafana": "yecao",
-    "minio": "yecao",
-    "parser-worker": "yecao",
+SURFACES = (
+    "backend", "frontend", "keycloak", "httpContract", "data", "liveData",
+    "deploy", "observability", "android", "keycloakProvider", "keycloakRuntime", "full",
+)
+PROVIDER_DIRS = ("keycloak-qq-provider/", "keycloak-wargaming-provider/")
+COMMON_JAVA = (
+    "common/tankopedia-tier7.json", "common/tankopedia-tier8.json",
+    "common/tankopedia-tier9.json", "common/tankopedia-tier10.json",
+    "common/map_names.json", "common/tank_tactical_profiles.json",
+)
+FRONTEND_COMMON = (
+    "common/map_names.json", "common/tankopedia-tier10.json",
+    # docker/Dockerfile.frontend COPYs these documents and the SPA inlines them with
+    # `?raw`, so editing one changes the produced bundle; .dockerignore re-includes them.
+    "HISTORY.md", "docs/architecture/TECHNICAL_EVOLUTION.md", "docs/WotBTools_League_Rating_V6.md",
+)
+# The browser suites are the slow end-to-end checks, so they follow the frontend
+# surfaces that mount, route or size every view rather than a filename substring:
+# the HTML entry, the app bootstrap/root component, the shell package (AppShell,
+# router, ViewHost, navigation, view registry) and the global stylesheets. A change
+# there can break both the playback layout and the workspace interaction flows, so
+# both suites run; the playback-only heuristics stay below.
+FRONTEND_GLOBAL_PATHS = (
+    "frontend/index.html",
+    "frontend/src/main.js",
+    "frontend/src/App.vue",
+    "frontend/src/styles/app-shell.css",
+    "frontend/src/styles/tokens.css",
+)
+FRONTEND_GLOBAL_PREFIXES = ("frontend/src/app/",)
+BROWSER_SUITES = ("playback-layout", "workspace-interaction")
+OBS_CONFIG = {
+    "deploy/observability/prometheus/": "prometheus",
+    "deploy/observability/loki/": "loki",
+    "deploy/observability/alloy/": "alloy",
+    "deploy/observability/grafana/provisioning/": "grafana",
 }
-IMAGE_SERVICE_BY_DEPLOY_SERVICE = {
-    value: key for key, value in APPLICATION_SERVICES.items()
-}
-# The backend image is published as ``business-api`` (TX), so no manual alias maps
-# to a retired Yecao application service, and the legacy whole-stack ``all``
-# selector (which implied the old Yecao control plane) no longer exists.
-MANUAL_SERVICE_ALIASES = {
-    "backend": "backend",
-    "frontend": "frontend",
-    "keycloak": "keycloak",
-    "minio": "minio",
-    "parser-worker": "parser-worker",
-}
-MANUAL_SERVICES = set(MANUAL_SERVICE_ALIASES)
-
-FRONTEND_PATTERNS = (
-    "frontend/**",
-    "docker/Dockerfile.frontend",
-    "common/map_names.json",
-    "common/tankopedia-tier10.json",
-    "common/assets/**",
-    # docker/Dockerfile.frontend COPYs both documents into the build stage and
-    # HistoryPage/TechnicalEvolutionPage/RatingDocsPage inline them with `?raw`, so editing
-    # any one changes the produced bundle. `.dockerignore` explicitly re-includes them.
-    "HISTORY.md",
-    "docs/architecture/TECHNICAL_EVOLUTION.md",
-    "docs/WotBTools_League_Rating_V6.md",
-    "deploy/nginx/**",
-    "contracts/http/**",
-)
-# Production-image inputs are intentionally narrower than CI test surfaces.
-# A Java test, an unrelated reactor module, or an unrelated common fixture must
-# not publish a new immutable production image. Keep these lists aligned with
-# the Maven reactor closure copied by each production Dockerfile.
-BACKEND_JAVA_MODULES = (
-    "wotb-contracts",
-    "wotb-object-storage-minio",
-    "wotb-broker-rabbitmq",
-    "wotb-core",
-    "wotb-result",
-    "wotb-playback",
-    "wotb-replay-coordinator",
-    "wotb-replay-processing",
-    "wotb-ai",
-    "wotb-web",
-)
-PARSER_WORKER_JAVA_MODULES = (
-    "wotb-contracts",
-    "wotb-object-storage-minio",
-    "wotb-broker-rabbitmq",
-    "wotb-core",
-    "wotb-result",
-    "wotb-playback",
-    "wotb-replay-processing",
-    "wotb-parser-worker",
-)
 
 
-def _production_java_patterns(modules: tuple[str, ...]) -> tuple[str, ...]:
-    patterns = ["java/pom.xml", "java/settings-docker.xml"]
-    for module in modules:
-        patterns.extend((
-            f"java/{module}/pom.xml",
-            f"java/{module}/src/main/**",
-        ))
-    return tuple(patterns)
+def git(*args: str, allow_missing: bool = False) -> bytes | None:
+    run = subprocess.run(["git", *args], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if run.returncode:
+        if allow_missing:
+            return None
+        raise ValueError(f"git {' '.join(args[:2])} failed: {run.stderr.decode(errors='replace').strip()}")
+    return run.stdout
 
 
-BACKEND_PATTERNS = (
-    *_production_java_patterns(BACKEND_JAVA_MODULES),
-    "docker/Dockerfile.backend",
-    "common/tankopedia-tier7.json",
-    "common/tankopedia-tier8.json",
-    "common/tankopedia-tier9.json",
-    "common/tankopedia-tier10.json",
-    "common/map_names.json",
-    "common/tank_tactical_profiles.json",
-    "common/map-semantics/**",
-    "contracts/http/**",
-)
-# CI remains deliberately broader than production-image publication: Java tests
-# still validate the backend surface even though they cannot change a runtime image.
-BACKEND_CI_PATTERNS = (
-    "java/**",
-    "docker/Dockerfile.backend",
-    "common/tankopedia-tier7.json",
-    "common/tankopedia-tier8.json",
-    "common/tankopedia-tier9.json",
-    "common/tankopedia-tier10.json",
-    "common/map_names.json",
-    "common/tank_tactical_profiles.json",
-    "common/map-semantics/**",
-    "contracts/http/**",
-)
-
-# docker/Dockerfile.keycloak packages only each vendored provider's ``src/main``
-# (``mvn -DskipTests clean package``), so a provider test change cannot alter a
-# provider jar. Keep the image surface on the runtime inputs; provider tests stay
-# on the broader KEYCLOAK_CI_PATTERNS surface below.
-KEYCLOAK_PATTERNS = (
-    "keycloak-qq-provider/pom.xml",
-    "keycloak-qq-provider/src/main/**",
-    "keycloak-wargaming-provider/pom.xml",
-    "keycloak-wargaming-provider/src/main/**",
-    "docker/keycloak/**",
-    "docker/Dockerfile.keycloak",
-    "infra/tofu/keycloak/**",
-    "java/settings-docker.xml",
-)
-# CI remains deliberately broader than production-image publication here too:
-# provider tests still validate the SPI surface even though they cannot change a
-# provider jar, exactly like java/**/src/test/** does for the backend surface.
-KEYCLOAK_CI_PATTERNS = (
-    "keycloak-qq-provider/**",
-    "keycloak-wargaming-provider/**",
-    "docker/keycloak/**",
-    "docker/Dockerfile.keycloak",
-    "infra/tofu/keycloak/**",
-    "java/settings-docker.xml",
-)
-MINIO_BUILD_PATTERNS = ("docker/Dockerfile.minio",)
-PARSER_WORKER_BUILD_PATTERNS = (
-    *_production_java_patterns(PARSER_WORKER_JAVA_MODULES),
-    "docker/Dockerfile.parser-worker",
-    "common/tankopedia-tier7.json",
-    "common/tankopedia-tier8.json",
-    "common/tankopedia-tier9.json",
-    "common/tankopedia-tier10.json",
-    "common/map_names.json",
-    "common/tank_tactical_profiles.json",
-    "common/map-semantics/**",
-    "contracts/mq/**",
-)
-ALL_DEPLOY_PATTERNS = (
-    "deploy/docker-compose.prod.yml",
-    "deploy/deploy.sh",
-    "deploy/verify-observability.sh",
-    "deploy/validate-alloy-config.sh",
-    "deploy/grafana-api-request.sh",
-)
-TX_DEPLOY_PATTERNS = ("deploy/tx/**", "infra/tofu/keycloak/**")
-RABBITMQ_TX_DEPLOY_PATTERNS = ("infra/tofu/rabbitmq/**",)
-BUSINESS_POSTGRES_TX_DEPLOY_PATTERNS = ("infra/tofu/postgres-business/**",)
-RUNTIME_CONFIG_PATTERNS = (
-    "deploy/docker-compose.prod.yml",
-    *TX_DEPLOY_PATTERNS,
-    *RABBITMQ_TX_DEPLOY_PATTERNS,
-    *BUSINESS_POSTGRES_TX_DEPLOY_PATTERNS,
-)
-CI_SURFACE_PATTERNS = {
-    "backend": BACKEND_CI_PATTERNS,
-    "frontend": FRONTEND_PATTERNS,
-    "keycloak": KEYCLOAK_CI_PATTERNS,
-    "httpContract": (
-        "contracts/http/**",
-        "frontend/src/api/**",
-        "frontend/scripts/*contract*",
-        "java/wotb-web/**",
-    ),
-    "data": (
-        "common/**",
-        "map-semanticizer/**",
-        "common/python/**",
-    ),
-    "liveData": (
-        "common/wotb-item-catalog-json/**",
-        "common/tankopedia-*.json",
-        "common/crew-skills.json",
-        "common/python/blitzkit_snapshot.py",
-        "common/python/sync_equipment_snapshot.py",
-        "common/python/sync_tankopedia_snapshot.py",
-        "common/python/update_equipment.py",
-        "common/python/update_crew_skills.py",
-        "common/python/update_tankopedia.py",
-        "common/python/validate_locked_equipment_contract.py",
-        "common/python/validate_tankopedia_equipment.py",
-    ),
-    "deploy": (
-        "deploy/**",
-        "docker/**",
-        "infra/tofu/keycloak/**",
-        "infra/tofu/rabbitmq/**",
-        "infra/tofu/postgres-business/**",
-        # The MinIO root's policy and plan-safety contracts run in the deploy smoke
-        # job. It selects no runtime deployment: MinIO provisioning stays an explicit
-        # manual `target=minio` action, and deployServices stays empty.
-        "infra/tofu/minio/**",
-        ".github/workflows/deploy*.yml",
-        ".github/workflows/postgres-business-tofu.yml",
-        "java/wotb-web/src/main/resources/db/migration/**",
-        "java/settings-docker.xml",
-    ),
-    "observability": (
-        "deploy/observability/**",
-        "infra/tofu/grafana/**",
-        "deploy/nginx/**",
-    ),
-    "android": (
-        "android/**",
-        "contracts/android-native-bridge.json",
-        "frontend/src/platform/nativeBridgeContract.js",
-        "scripts/android-release/**",
-    ),
-    "keycloakProvider": (
-        "keycloak-wargaming-provider/src/main/java/**",
-        "keycloak-wargaming-provider/src/test/**",
-        "keycloak-wargaming-provider/pom.xml",
-        "keycloak-qq-provider/src/main/java/**",
-        "keycloak-qq-provider/src/test/**",
-        "keycloak-qq-provider/pom.xml",
-    ),
-    "keycloakRuntime": (
-        "keycloak-wargaming-provider/src/main/java/**",
-        "keycloak-wargaming-provider/pom.xml",
-        "keycloak-wargaming-provider/src/main/resources/**",
-        "keycloak-qq-provider/src/main/java/**",
-        "keycloak-qq-provider/pom.xml",
-        "keycloak-qq-provider/src/main/resources/**",
-        "docker/Dockerfile.keycloak",
-        "docker/keycloak/**",
-        "infra/tofu/keycloak/**",
-        "java/settings-docker.xml",
-    ),
-}
-FULL_PATTERNS = (
-    ".github/workflows/**",
-    "java/pom.xml",
-    "java/**/pom.xml",
-    "frontend/package.json",
-    "frontend/package-lock.json",
-    "frontend/vite.config.js",
-    "frontend/vitest.config.js",
-    "frontend/tsconfig.json",
-    "frontend/tsconfig.app.json",
-    "android/build.gradle.kts",
-    "android/settings.gradle.kts",
-    "android/gradle.properties",
-    ".dockerignore",
-    "Makefile",
-    "scripts/build/**",
-)
-OBSERVABILITY_DEPLOY_PATTERNS = {
-    "prometheus": ("deploy/observability/prometheus/**",),
-    "loki": ("deploy/observability/loki/**",),
-    "alloy": ("deploy/observability/alloy/**",),
-    "grafana": ("deploy/observability/grafana/provisioning/**",),
-}
-COMMON_BUILD_PATTERNS = (".dockerignore",)
-IMAGE_TAG_SHA_LENGTH = 12
+def blob(sha: str, path: str) -> str | None:
+    value = git("show", f"{sha}:{path}", allow_missing=True)
+    return None if value is None else value.decode("utf-8")
 
 
-def _matches(path: str, pattern: str) -> bool:
-    path = path.replace("\\", "/")
-    if path.startswith("./"):
-        path = path[2:]
-    pattern = pattern.replace("\\", "/")
-    if fnmatch.fnmatchcase(path, pattern):
-        return True
-    if pattern.endswith("/**"):
-        prefix = pattern[:-3].rstrip("/")
-        return path == prefix or path.startswith(prefix + "/")
-    return False
+def changed_paths(base: str, head: str) -> list[str]:
+    raw = git("diff", "--name-status", "-z", "-M", base, head)
+    assert raw is not None
+    fields = raw.decode("utf-8").split("\0")
+    result: list[str] = []
+    position = 0
+    while position < len(fields) - 1:
+        status = fields[position]
+        position += 1
+        if not status or status[0] not in "ACDMRTUXB":
+            raise ValueError(f"unsupported git change status {status!r}")
+        count = 2 if status[0] in "RC" else 1
+        result.extend(fields[position:position + count])
+        position += count
+    return sorted(set(result))
 
 
-def _matches_any(path: str, patterns: tuple[str, ...]) -> bool:
-    return any(_matches(path, pattern) for pattern in patterns)
+def validate_revisions(base: str, head: str) -> None:
+    for name, sha in (("base", base), ("head", head)):
+        if not SHA.fullmatch(sha):
+            raise ValueError(f"{name} must be a full lowercase commit SHA")
+        kind = git("cat-file", "-t", sha)
+        if kind != b"commit\n":
+            raise ValueError(f"{name} is not a commit")
 
 
-def detect(paths: list[str], manual_service: str | None = None) -> dict[str, object]:
-    images = {name: False for name in IMAGE_NAMES}
-    deploy_services: list[str] = []
-    deploy_config = False
-    ci_surfaces = {name: False for name in (
-        "backend", "frontend", "keycloak", "httpContract", "data", "liveData", "deploy",
-        "observability", "android", "keycloakProvider", "keycloakRuntime", "full",
-    )}
-
-    if manual_service is not None:
-        if manual_service not in MANUAL_SERVICES:
-            raise ValueError(f"unsupported manual service: {manual_service}")
-        image_name = MANUAL_SERVICE_ALIASES[manual_service]
-        images[image_name] = True
-        deploy_services = [APPLICATION_SERVICES[image_name]]
-        return _result(images, deploy_services, deploy_config, ci_surfaces)
-
-    normalized_paths = sorted({
-        (path.replace("\\", "/")[2:] if path.replace("\\", "/").startswith("./") else path.replace("\\", "/"))
-        for path in paths if path
-    })
-    for path in normalized_paths:
-        if _matches_any(path, COMMON_BUILD_PATTERNS):
-            for name in APPLICATION_IMAGE_NAMES:
-                images[name] = True
-        if _matches_any(path, FRONTEND_PATTERNS):
-            images["frontend"] = True
-        if _matches_any(path, BACKEND_PATTERNS):
-            images["backend"] = True
-        if _matches_any(path, KEYCLOAK_PATTERNS):
-            images["keycloak"] = True
-        if _matches_any(path, MINIO_BUILD_PATTERNS):
-            # Building the source-pinned MinIO image never implies a runtime
-            # deployment. Its deployment is an explicit manual action only.
-            images["minio"] = True
-        if _matches_any(path, PARSER_WORKER_BUILD_PATTERNS):
-            # The Yecao parser-worker shares the JVM build surface with the
-            # backend and consumes the same common data plus the MQ contract.
-            # Building it never implies a runtime deployment either: the
-            # generic Yecao deploy path only accepts service names that
-            # deploy.sh validates, so the parser-worker is an explicit manual
-            # action until that deploy path owns it.
-            images["parser-worker"] = True
-        if _matches_any(path, ALL_DEPLOY_PATTERNS):
-            deploy_config = True
-        for surface, patterns in CI_SURFACE_PATTERNS.items():
-            if _matches_any(path, patterns):
-                ci_surfaces[surface] = True
-        if _matches_any(path, FULL_PATTERNS):
-            ci_surfaces["full"] = True
-        for service, patterns in OBSERVABILITY_DEPLOY_PATTERNS.items():
-            if _matches_any(path, patterns):
-                deploy_services.append(service)
-
-    if any(_matches_any(path, RUNTIME_CONFIG_PATTERNS) for path in normalized_paths):
-        deploy_config = True
-        # A Compose-config change selects the affected runtime services instead
-        # of inferring them from application image changes. Observability
-        # services declared by file provisioning are the one exception and stay
-        # additive.
-        deploy_services = [name for name in deploy_services if name in OBSERVABILITY_DEPLOY_PATTERNS]
-        if any(_matches(path, "deploy/docker-compose.prod.yml") for path in normalized_paths):
-            # The Yecao runtime is the parser execution plane plus the shared
-            # observability stack. The retired Yecao application services
-            # (postgres, wotb-backend, wotb-frontend, keycloak) are gone: TX owns
-            # the business runtime, its PostgreSQL, Keycloak and the frontend, so
-            # a Yecao Compose-config release can no longer select them.
-            deploy_services.extend([
-                "node-exporter", "prometheus", "loki", "alloy", "grafana"
-            ])
-        if any(_matches_any(path, TX_DEPLOY_PATTERNS) for path in normalized_paths):
-            # A TX topology change cannot safely infer an application image
-            # identity from prior metadata. Rebuild the TX application images
-            # from the frozen commit and deploy that exact set after Tofu; this
-            # also guarantees a Compose-only change actually reaches the running
-            # business runtime.
-            images["frontend"] = True
-            images["keycloak"] = True
-            images["backend"] = True
-            deploy_services.extend(["keycloak-postgres", "keycloak", "wotb-frontend", "business-api"])
-        if any(_matches_any(path, RABBITMQ_TX_DEPLOY_PATTERNS) for path in normalized_paths):
-            # RabbitMQ's runtime image is upstream-pinned in Compose. Its
-            # isolated provider root must not rebuild or restart Keycloak,
-            # PostgreSQL, or the frontend.
-            deploy_services.append("rabbitmq")
-        if any(_matches_any(path, BUSINESS_POSTGRES_TX_DEPLOY_PATTERNS) for path in normalized_paths):
-            # Business PostgreSQL's runtime image is upstream-pinned in Compose
-            # and no application image consumes it yet. Its isolated root must
-            # never rebuild or restart Keycloak, PostgreSQL, or the frontend.
-            deploy_services.append("business-postgres")
-    else:
-        deploy_services.extend(
-            APPLICATION_SERVICES[name]
-            for name in ("backend", "frontend", "keycloak")
-            if images[name]
-        )
-
-    return _result(images, _dedupe(deploy_services), deploy_config, ci_surfaces)
+def pom_graph(head: str) -> tuple[list[str], dict[str, set[str]]]:
+    namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+    root_text = blob(head, "java/pom.xml")
+    if root_text is None:
+        raise ValueError("missing java/pom.xml")
+    try:
+        root = ET.fromstring(root_text)
+        modules = [node.text for node in root.findall("m:modules/m:module", namespace)]
+        if not modules or any(not item or "/" in item or item.startswith(".") for item in modules):
+            raise ValueError("invalid Maven reactor module list")
+        if len(set(modules)) != len(modules):
+            raise ValueError("duplicate Maven reactor module")
+        dependencies: dict[str, set[str]] = {}
+        for module in modules:
+            source = blob(head, f"java/{module}/pom.xml")
+            if source is None:
+                raise ValueError(f"missing POM for {module}")
+            pom = ET.fromstring(source)
+            artifact = pom.findtext("m:artifactId", namespaces=namespace)
+            if artifact != module:
+                raise ValueError(f"module {module} artifactId mismatch: {artifact}")
+            dependencies[module] = set()
+            for dependency in pom.findall("m:dependencies/m:dependency", namespace):
+                if dependency.findtext("m:groupId", namespaces=namespace) != "com.wotb":
+                    continue
+                target = dependency.findtext("m:artifactId", namespaces=namespace)
+                if target not in modules:
+                    raise ValueError(f"{module} has unknown reactor dependency {target}")
+                dependencies[module].add(target)
+        for module in modules:
+            walk_closure(module, dependencies)
+        for image_root in ("wotb-web", "wotb-parser-worker"):
+            if image_root not in modules:
+                raise ValueError(f"missing production reactor root {image_root}")
+        return modules, dependencies
+    except ET.ParseError as error:
+        raise ValueError(f"invalid Maven POM: {error}") from error
 
 
-def _result(
-    images: dict[str, bool],
-    deploy_services: list[str],
-    deploy_config: bool,
-    ci_surfaces: dict[str, bool],
-) -> dict[str, object]:
-    image_services = [APPLICATION_SERVICES[name] for name in IMAGE_NAMES if images[name]]
-    return {
-        "images": images,
-        "buildServices": image_services,
-        "imageServices": image_services,
-        "ciSurfaces": ci_surfaces,
-        "deployConfig": deploy_config,
-        "deployServices": _dedupe(deploy_services),
-        "targetServices": _target_services(_dedupe(deploy_services)),
-    }
+def walk_closure(module: str, graph: dict[str, set[str]], visiting: set[str] | None = None) -> set[str]:
+    visiting = set() if visiting is None else visiting
+    if module in visiting:
+        raise ValueError(f"Maven reactor cycle at {module}")
+    visiting.add(module)
+    result = {module}
+    for dependency in graph[module]:
+        result.update(walk_closure(dependency, graph, visiting))
+    visiting.remove(module)
+    return result
 
 
-def _target_services(services: list[str]) -> dict[str, list[str]]:
-    """Route each deploy service to one explicit host target."""
-    result = {target: [] for target in DEPLOY_TARGETS}
-    for service in services:
-        result[TARGET_BY_SERVICE[service]].append(service)
-    return {target: values for target, values in result.items() if values}
+def compose_parts(source: str | None) -> tuple[dict[str, str], str]:
+    if source is None:
+        raise ValueError("missing production Compose file")
+    lines = source.splitlines(keepends=True)
+    starts = [index for index, line in enumerate(lines) if re.match(r"^services:\s*(?:#.*)?$", line)]
+    if len(starts) != 1:
+        raise ValueError("Compose must contain one top-level services section")
+    start = starts[0]
+    end = next((i for i in range(start + 1, len(lines)) if re.match(r"^[^\s#][^:]*:", lines[i])), len(lines))
+    service_lines = lines[start + 1:end]
+    boundaries = [(i, re.match(r"^  ([A-Za-z0-9_-]+):\s*(?:#.*)?$", line).group(1))
+                  for i, line in enumerate(service_lines)
+                  if re.match(r"^  ([A-Za-z0-9_-]+):\s*(?:#.*)?$", line)]
+    if not boundaries:
+        raise ValueError("Compose has no recognizable services")
+    services = {name: "".join(service_lines[index:boundaries[pos + 1][0] if pos + 1 < len(boundaries) else len(service_lines)])
+                for pos, (index, name) in enumerate(boundaries)}
+    shared = "".join(lines[:start + 1] + lines[end:]) + "".join(service_lines[:boundaries[0][0]])
+    return services, shared
 
 
-def _dedupe(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
+def compose_affected(base: str, head: str, path: str) -> tuple[set[str], str | None]:
+    before, before_shared = compose_parts(blob(base, path))
+    after, after_shared = compose_parts(blob(head, path))
+    aliases = COMPOSE_NAMES[path]
+    expected = set(TX_SERVICES if path.startswith("deploy/tx/") else ("minio",) if path.endswith("minio.yml") else YECAO_SERVICES) - ({"minio"} if path.endswith("prod.yml") else set())
+    actual = {aliases.get(name, name) for name in after} - {None}
+    if actual != expected:
+        raise ValueError(f"unexpected Compose service set in {path}: {sorted(actual ^ expected)}")
+    if set(before) != set(after) or before_shared != after_shared:
+        return actual, "shared Compose change selects every service"
+    if path.startswith("deploy/tx/") and before.get("health-probe") != after.get("health-probe"):
+        return actual, "shared TX verification probe change selects every service"
+    selected = {aliases.get(name, name) for name in after if before[name] != after[name]} - {None}
+    return selected, None
 
 
-def make_manifest(
-    commit_sha: str,
-    image_tag: str,
-    build_run_id: str,
-    build_run_number: str,
-    plan: dict[str, object],
-) -> dict[str, object]:
+def matches(path: str, pattern: str) -> bool:
+    return fnmatch.fnmatchcase(path, pattern)
+
+
+def plan(base: str, head: str) -> dict[str, object]:
+    validate_revisions(base, head)
+    paths = changed_paths(base, head)
+    modules, graph = pom_graph(head)
+    closures = {"business-api": walk_closure("wotb-web", graph), "parser-worker": walk_closure("wotb-parser-worker", graph)}
+    surfaces = {name: False for name in SURFACES}
+    build: set[str] = set()
+    deploy: set[str] = set()
+    tofu: set[str] = set()
+    packaging: set[str] = set()
+    java_modules: set[str] = set()
+    browser: set[str] = set()
+    reasons: dict[str, str] = {}
+    java_full = False
+    for path in paths:
+        if path.endswith(".md") and path not in FRONTEND_COMMON:
+            continue
+        if path.startswith("docs/") and path not in FRONTEND_COMMON:
+            continue
+        if path.startswith(".github/workflows/") or path.startswith("scripts/ci/") or path == "deploy/release_plan.py":
+            surfaces["full"] = True
+            continue
+        if path.startswith("java/"):
+            surfaces["backend"] = True
+            if path == "java/pom.xml":
+                java_full = True
+                surfaces["full"] = True
+                build.update(("business-api", "parser-worker"))
+            elif path == "java/settings-docker.xml":
+                build.update(("business-api", "parser-worker", "keycloak"))
+                # The provider images build with this settings file, so a change must run the
+                # provider Maven validation as well. It still selects no PR packaging build:
+                # the three images are rebuilt by the main Release, not by the pull request.
+                surfaces["keycloak"] = surfaces["keycloakRuntime"] = True
+                surfaces["keycloakProvider"] = True
+            elif path == "java/settings.xml":
+                surfaces["full"] = True
+            elif path.startswith("java/") and len(path.split("/")) >= 3:
+                module = path.split("/")[1]
+                if module not in modules:
+                    raise ValueError(f"unknown changed Java module {module}")
+                java_modules.add(module)
+                if "/src/main/" in path or path.endswith("/pom.xml"):
+                    build.update(component for component, closure in closures.items() if module in closure)
+                if module == "wotb-web":
+                    surfaces["httpContract"] = True
+            else:
+                # A new global Java build input cannot be assigned to one module.
+                java_full = surfaces["full"] = True
+                build.update(("business-api", "parser-worker"))
+            continue
+        if path.startswith("frontend/"):
+            surfaces["frontend"] = True
+            frontend_test = path.endswith((".test.js", ".test.ts", ".spec.js", ".spec.ts"))
+            if ((path.startswith("frontend/src/") and not frontend_test)
+                    or path.startswith("frontend/public/") or path.startswith("frontend/homepage/")
+                    or path in ("frontend/index.html", "frontend/package.json", "frontend/package-lock.json", "frontend/vite.config.js")):
+                build.add("frontend")
+            if path.startswith("frontend/src/api/"):
+                surfaces["httpContract"] = True
+            if path in FRONTEND_GLOBAL_PATHS or path.startswith(FRONTEND_GLOBAL_PREFIXES):
+                browser.update(BROWSER_SUITES)
+            if "Playback" in path or "ReplayWorkspace" in path or "ReplayPage" in path:
+                browser.add("workspace-interaction")
+            if path.endswith(".css") or "Layout" in path or "Playback" in path or "ReplayPage" in path:
+                browser.add("playback-layout")
+            if path in ("frontend/package.json", "frontend/package-lock.json", "frontend/vite.config.js", "frontend/vitest.config.js"):
+                surfaces["full"] = True
+            continue
+        if path.startswith(PROVIDER_DIRS):
+            surfaces["keycloak"] = surfaces["keycloakProvider"] = True
+            if "/src/main/" in path or path.endswith("/pom.xml"):
+                build.add("keycloak")
+                surfaces["keycloakRuntime"] = True
+                packaging.add("keycloak")
+            continue
+        if path.startswith("docker/"):
+            surfaces["deploy"] = True
+            if path.startswith("docker/keycloak/"):
+                build.add("keycloak")
+                surfaces["keycloakRuntime"] = True
+                packaging.add("keycloak")
+            elif path.startswith("docker/Dockerfile."):
+                component = path.removeprefix("docker/Dockerfile.")
+                component = "business-api" if component in ("backend", "business-api") else component
+                if component not in COMPONENTS:
+                    raise ValueError(f"unknown production Dockerfile {path}")
+                build.add(component)
+                packaging.add(component)
+                if component == "keycloak":
+                    surfaces["keycloakRuntime"] = True
+            else:
+                raise ValueError(f"unmapped production Docker input {path}")
+            continue
+        if path == ".dockerignore":
+            surfaces["full"] = surfaces["deploy"] = True
+            build.update(COMPONENTS)
+            packaging.update(COMPONENTS)
+            continue
+        if path in COMMON_JAVA or path.startswith("common/map-semantics/"):
+            surfaces["backend"] = surfaces["data"] = True
+            build.update(("business-api", "parser-worker"))
+        elif path.startswith("common/assets/"):
+            surfaces["frontend"] = surfaces["data"] = True
+            build.add("frontend")
+        elif path.startswith("common/") or path.startswith("map-semanticizer/"):
+            surfaces["data"] = True
+        if path in FRONTEND_COMMON:
+            surfaces["frontend"] = True
+            build.add("frontend")
+        if path.startswith("common/wotb-item-catalog-json/") or matches(path, "common/tankopedia-*.json") or path in ("common/crew-skills.json",):
+            surfaces["liveData"] = True
+        if path.startswith("contracts/http/"):
+            surfaces["httpContract"] = surfaces["backend"] = surfaces["frontend"] = True
+        if path.startswith("contracts/mq/"):
+            surfaces["backend"] = True
+            java_modules.update(("wotb-broker-rabbitmq", "wotb-parser-worker"))
+        if path.startswith("contracts/android-native-bridge.json") or path.startswith("android/") or path.startswith("scripts/android-release/"):
+            surfaces["android"] = True
+        if path in ("frontend/src/platform/nativeBridgeContract.js",):
+            surfaces["android"] = True
+        if path.startswith("infra/tofu/"):
+            surfaces["deploy"] = True
+            for name, prefix in TOFU_ROOTS.items():
+                if path.startswith(prefix):
+                    tofu.add(name)
+                    break
+            else:
+                raise ValueError(f"unknown production OpenTofu input {path}")
+        if path.startswith("deploy/"):
+            surfaces["deploy"] = True
+            if path.startswith("deploy/observability/"):
+                surfaces["observability"] = True
+                recognized = False
+                for prefix, service in OBS_CONFIG.items():
+                    if path.startswith(prefix):
+                        deploy.add(service)
+                        recognized = True
+                        break
+                # Dashboard JSON is owned by Grafana OpenTofu.
+                if path.startswith("deploy/observability/grafana/dashboards/"):
+                    tofu.add("grafana")
+                    recognized = True
+                if not recognized and not path.endswith(".md") and not Path(path).name.startswith("test-"):
+                    raise ValueError(f"unmapped observability production input {path}")
+            elif path.startswith("deploy/nginx/"):
+                if path == "deploy/nginx/nginx.conf":
+                    surfaces["observability"] = True
+                    build.add("frontend")
+                elif not path.endswith(".md") and not Path(path).name.startswith("test-"):
+                    raise ValueError(f"unmapped frontend nginx production input {path}")
+            elif path in COMPOSE_NAMES:
+                affected, reason = compose_affected(base, head, path)
+                deploy.update(affected)
+                if reason:
+                    reasons[path] = reason
+            elif path.startswith("deploy/tx/caddy/") or path.startswith("deploy/tx/Caddyfile"):
+                deploy.add("caddy")
+            elif path.startswith("deploy/tx/nginx/"):
+                deploy.add("frontend")
+            elif path == "deploy/tx/rabbitmq.tofurc":
+                tofu.add("rabbitmq")
+            elif path == "deploy/tx/business-postgres.tofurc":
+                tofu.add("business-postgres")
+            elif path == "deploy/tx/keycloak-tofu.sh":
+                tofu.add("keycloak")
+            elif path in ("deploy/tx/runtime-check.sh", "deploy/tx/publish-loaded-image-to-tcr.sh", "deploy/tx/business-postgres-backup.sh", "deploy/tx/business-postgres-restore.sh"):
+                pass
+            elif path.startswith("deploy/tx/") and not Path(path).name.startswith("test-") and path != "deploy/tx/deploy.sh":
+                raise ValueError(f"unmapped TX production config {path}")
+            elif path in ("deploy/deploy.sh", "deploy/tx/deploy.sh", "deploy/minio-deploy.sh") or Path(path).name.startswith("test-") or path.startswith("deploy/observability/"):
+                pass
+            else:
+                # Operational scripts do not by themselves change a running service.
+                if path.endswith((".env", ".yml", ".yaml", ".json")):
+                    raise ValueError(f"unmapped production deploy input {path}")
+    deploy.update(build)
+    if surfaces["backend"] and not java_modules:
+        java_full = True
+    if surfaces["full"]:
+        java_full = True
+    if java_full:
+        java_modules.clear()
     return {
         "schemaVersion": 2,
-        "commitSha": commit_sha,
-        "imageTag": image_tag,
-        "buildRunId": build_run_id,
-        "buildRunNumber": int(build_run_number),
-        "backendMigrationMaxVersion": int(plan.get("backendMigrationMaxVersion", 0)),
-        "images": plan["images"],
-        "buildServices": plan["buildServices"],
-        "imageServices": plan["imageServices"],
-        "deployServices": plan["deployServices"],
-        "targetServices": plan["targetServices"],
+        "baseSha": base,
+        "headSha": head,
+        "validation": {
+            "surfaces": surfaces,
+            "javaModules": [module for module in modules if module in java_modules],
+            "javaFull": java_full,
+            "frontendBrowserSuites": sorted(browser),
+            "packagingComponents": [name for name in COMPONENTS if name in packaging],
+            "tofuRoots": [name for name in TOFU_ROOTS if name in tofu],
+        },
+        "release": {
+            "buildComponents": [name for name in COMPONENTS if name in build],
+            "deployServices": [name for name in (*TX_SERVICES, *YECAO_SERVICES) if name in deploy],
+            "tofuRoots": [name for name in TOFU_ROOTS if name in tofu],
+        },
+        "reasons": reasons,
     }
-
-
-def validate_manifest(
-    manifest: dict[str, object],
-    expected_sha: str | None = None,
-) -> dict[str, object]:
-    required = {
-        "schemaVersion",
-        "commitSha",
-        "imageTag",
-        "buildRunId",
-        "buildRunNumber",
-        "backendMigrationMaxVersion",
-        "images",
-        "buildServices",
-        "imageServices",
-        "deployServices",
-        "targetServices",
-    }
-    missing = sorted(required - manifest.keys())
-    if missing:
-        raise ValueError(f"manifest missing fields: {', '.join(missing)}")
-    if manifest["schemaVersion"] != 2:
-        raise ValueError("unsupported manifest schemaVersion")
-    commit_sha = manifest["commitSha"]
-    manifest_image_tag = manifest["imageTag"]
-    if not isinstance(commit_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", commit_sha):
-        raise ValueError("manifest commitSha must be a full lowercase commit SHA")
-    if expected_sha is not None and commit_sha != expected_sha:
-        raise ValueError(f"manifest commitSha {commit_sha} does not match release SHA {expected_sha}")
-    expected_tag = image_tag(commit_sha)
-    if manifest_image_tag != expected_tag:
-        raise ValueError(f"manifest imageTag must be {expected_tag}")
-    if not isinstance(manifest["buildRunNumber"], int) or manifest["buildRunNumber"] < 1:
-        raise ValueError("manifest buildRunNumber must be a positive integer")
-    if (
-        not isinstance(manifest["backendMigrationMaxVersion"], int)
-        or manifest["backendMigrationMaxVersion"] < 0
-    ):
-        raise ValueError("manifest backendMigrationMaxVersion must be a non-negative integer")
-    images = manifest["images"]
-    if not isinstance(images, dict) or set(images) != set(IMAGE_NAMES) or any(
-        not isinstance(images[name], bool) for name in IMAGE_NAMES
-    ):
-        raise ValueError(
-            f"manifest images must contain boolean {'/'.join(IMAGE_NAMES)} values"
-        )
-    build_services = manifest["buildServices"]
-    image_services = manifest["imageServices"]
-    deploy_services = manifest["deployServices"]
-    target_services = manifest["targetServices"]
-    if (
-        not _valid_service_list(build_services)
-        or not _valid_service_list(image_services)
-        or not _valid_service_list(deploy_services)
-    ):
-        raise ValueError("manifest contains an unsupported or duplicate service")
-    expected_image_services = {APPLICATION_SERVICES[name] for name in IMAGE_NAMES if images[name]}
-    if set(image_services) != expected_image_services:
-        raise ValueError("manifest imageServices does not match images")
-    if build_services != image_services:
-        raise ValueError("manifest buildServices must match imageServices")
-    for service in deploy_services:
-        if service in IMAGE_SERVICE_BY_DEPLOY_SERVICE and service not in image_services:
-            raise ValueError(f"deploy service {service} has no corresponding built image")
-    if not isinstance(target_services, dict):
-        raise ValueError("manifest targetServices must be an object")
-    if not deploy_services and target_services:
-        raise ValueError("manifest targetServices must be empty for a no-op release")
-    if deploy_services and not target_services:
-        raise ValueError("manifest targetServices must be non-empty when services deploy")
-    if set(target_services) - set(DEPLOY_TARGETS):
-        raise ValueError("manifest targetServices contains an unsupported target")
-    flattened: list[str] = []
-    for target, services in target_services.items():
-        if not _valid_service_list(services):
-            raise ValueError(f"manifest targetServices[{target}] is invalid")
-        for service in services:
-            expected_target = TARGET_BY_SERVICE[service]
-            if target != expected_target:
-                raise ValueError(f"deploy service {service} is routed to {target}, expected {expected_target}")
-        flattened.extend(services)
-    if len(flattened) != len(set(flattened)) or set(flattened) != set(deploy_services):
-        raise ValueError("manifest targetServices must contain each deploy service exactly once")
-    return manifest
-
-
-def image_tag(commit_sha: str) -> str:
-    return f"sha-{commit_sha[:IMAGE_TAG_SHA_LENGTH]}"
-
-
-def _valid_service_list(value: object) -> bool:
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        return False
-    return len(value) == len(set(value)) and all(item in DEPLOYABLE_SERVICES for item in value)
-
-
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    detect_parser = subparsers.add_parser("detect")
-    detect_parser.add_argument("--paths-file")
-    detect_parser.add_argument("--manual-service")
-
-    manifest_parser = subparsers.add_parser("manifest")
-    manifest_parser.add_argument("--commit-sha", required=True)
-    manifest_parser.add_argument("--image-tag", required=True)
-    manifest_parser.add_argument("--build-run-id", required=True)
-    manifest_parser.add_argument("--build-run-number", required=True)
-    manifest_parser.add_argument("--plan", required=True)
-
-    manual_parser = subparsers.add_parser("manual")
-    manual_parser.add_argument("--service", required=True)
-    manual_parser.add_argument("--commit-sha", required=True)
-    manual_parser.add_argument("--build-run-id", default="manual")
-    manual_parser.add_argument("--build-run-number", default="1")
-
-    validate_parser = subparsers.add_parser("validate")
-    validate_parser.add_argument("--manifest", required=True)
-    validate_parser.add_argument("--expected-sha")
-    return parser
 
 
 def main() -> int:
-    args = _parser().parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base", required=True)
+    parser.add_argument("--head", required=True)
+    args = parser.parse_args()
     try:
-        if args.command == "detect":
-            if args.manual_service:
-                result = detect([], args.manual_service)
-            else:
-                paths = []
-                if args.paths_file:
-                    paths = open(args.paths_file, encoding="utf-8").read().splitlines()
-                result = detect(paths)
-        elif args.command == "manifest":
-            plan = json.loads(open(args.plan, encoding="utf-8").read())
-            result = make_manifest(
-                args.commit_sha,
-                args.image_tag,
-                args.build_run_id,
-                args.build_run_number,
-                plan,
-            )
-            validate_manifest(result, args.commit_sha)
-        elif args.command == "manual":
-            plan = detect([], args.service)
-            result = make_manifest(
-                args.commit_sha,
-                image_tag(args.commit_sha),
-                args.build_run_id,
-                args.build_run_number,
-                plan,
-            )
-            validate_manifest(result, args.commit_sha)
-        else:
-            result = validate_manifest(
-                json.loads(open(args.manifest, encoding="utf-8").read()),
-                args.expected_sha,
-            )
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+        result = plan(args.base, args.head)
+    except (OSError, UnicodeError, ValueError) as error:
         print(f"release plan error: {error}", file=sys.stderr)
         return 1
     json.dump(result, sys.stdout, sort_keys=True, separators=(",", ":"))

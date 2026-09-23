@@ -160,46 +160,44 @@ dashboard 与运行时链路由 CI 的独立 runtime smoke 验证；生产运行
 
 ### 生产（CI 自动）
 
-生产 Build 与 Deploy 通过 immutable manifest 接力：Build 使用 `release_plan.py` 产生
-affected CI/build/deploy surfaces，成功的 main Build 由 `workflow_run` 自动触发 Deploy。
-普通 Deploy 没有应用 service 的手工入口；事故操作进入仅 `workflow_dispatch` 的
-`Ops Recovery`。自动 Deploy 不重新计算变更、不 build、不跑测试，只消费对应 Build
-已产出的 `sha-<12 位 SHA>` manifest。纯 dashboard JSON 仍只触发 Grafana OpenTofu
-reconciliation，不触发应用 Build。
+main 自动生产发布只有 `.github/workflows/release.yml`。planner 对 push 的完整
+before..head diff 选受影响服务与 Tofu roots；Release 调用 reusable Build、Deploy 和 Tofu Apply。
+Dockerfile/runtime 输入才构建对应 immutable 镜像；配置变更只 Deploy 受影响服务；Grafana
+dashboard 变更进入 Grafana Tofu root。Build output 提供精确 image/tag/source SHA/digest，
+配置 lane 从 host metadata v2 读取已部署镜像身份。手动 Build、Deploy 和 Tofu Apply 均一次只选
+一个目标，所有入口要求 main 当前完整 SHA。生产维护队列不会因新 push 取消已开始的操作；
+过期 Release rerun 在写入前 fail closed。
 
-Actions 先把完整 `deploy/` 上传到 `/opt/wotb/deploy.incoming/deploy`，在 incoming
-project root 中执行 `docker compose config` 与目标 image pull；成功后才 promote 到
-`/opt/wotb/deploy` 与正式 compose。targeted deploy 只执行
-`docker compose up -d --no-deps --force-recreate <affected>`；共享 production Compose
-变化视为全部 runtime service affected。正式发布不执行 database backup、自动恢复旧
-application image 或 database restore。
+TX 的 TCR 镜像只属于 business-api/frontend/keycloak，Yecao 的 GHCR 镜像只属于
+parser-worker/minio。planner 还可按 Compose diff 选择 TX Caddy、RabbitMQ、两个 PostgreSQL
+runtime 与 Yecao node-exporter/Prometheus/Loki/Alloy/Grafana；这些固定镜像服务不构建应用镜像。
+不相关服务不重启，lane 失败不回滚其他已成功 lane。Release summary 列出每个选中 lane 的结果。
 
 ### Application gate 与 production metadata
 
-application gate 由 production compose 中的 deployment-owned `health-probe` curl service
-执行，加入 `wotb_internal` 网络后独立访问 backend、带 `Host: wotbtools.com` 的 frontend
-与 Keycloak OIDC discovery，并通过 `pg_isready` 检查 backend 数据库依赖；不依赖应用镜像
-内的 `wget/curl`。失败诊断包含 release/affected/image/status/log/Flyway schema，随后只
-停止确认失败的 affected service，workflow FAIL，metadata 不更新；不自动恢复旧 application image。
+TX 业务应用 readiness 由 `deploy/tx/deploy.sh` 检查 API、frontend routing、Keycloak OIDC
+与数据库连通性；Yecao parser-worker 以容器存活判定。观测组件、datasource/dashboard 与日志
+ingestion 失败只记 `OBSERVABILITY DEGRADED`，不让健康应用回退。部署失败输出 service、release
+SHA、镜像与容器日志诊断，停止确认失败的目标服务；不自动恢复旧镜像。
 
-成功的 affected application 通过全局 core health gate 后，才原子更新
-`/opt/wotb/production-release.json`（0600）；文件记录各应用 commit SHA、immutable
-image tag、部署时间，backend 记录 schema 与 migration ceiling，其它 service metadata
-不变。Prometheus/Loki/Alloy/Grafana、datasource/dashboard、metrics 与 log ingestion
-失败只记录 `OBSERVABILITY DEGRADED`，不影响健康应用。
+metadata helper `deploy/release-metadata.py` 校验 schemaVersion 2、host/service ownership、
+完整 registry image reference、SHA 和 immutable tag，并用同目录原子更新与 0600 权限：
+TX `/opt/wotb-tx/production-release.json` 记录 business-api/frontend/keycloak，Yecao
+`/opt/wotb/production-release.json` 记录 parser-worker/minio。Config-only 成功只更新 configSha；
+固定上游 runtime 不记入应用 metadata。Metadata 缺失、损坏或镜像身份无法证明时 fail closed，
+不从 Compose 或运行容器补猜。
 
-backend 在 `ApplicationReadyEvent` 后还会记录 `WotBTools backend build=<commit> Flyway
-migration ceiling=<version>`。排查 schema/image 不匹配时，先在 Loki 或 `docker compose logs
-wotb-backend` 中核对这条镜像内的 release identity，再与 production metadata 的 schema 对照。
+backend 在 `ApplicationReadyEvent` 后记录 `WotBTools backend build=<commit> Flyway
+migration ceiling=<version>`。排查 schema/image 不匹配时，在 TX 日志中核对完整 build SHA 与
+metadata image tag/schema。
 
-### Ops Recovery 与数据库边界
 
-`Ops Recovery` 必须明确选择一个 backend/frontend/keycloak，并选择 production metadata
-的 current identity 或 full SHA；Recovery 不隐式选择 `all`，不依赖 `latest`，不执行
-database restore。backend target 的 migration ceiling 低于 live Flyway schema、schema
-无法读取、metadata 不完整或 immutable image 不存在时拒绝。数据库灾难恢复仍只通过人工
-确认的 `deploy/postgres-restore.sh` 执行。`database-backup.yml` 目前保持 VPS 本地双库
-备份边界；COS 上传、对象验证与 retention 属于后续独立 PR。
+### 单目标人工操作与数据库边界
+
+事故恢复通过单目标 Deploy 手动入口完成：从当前 main 的 first-parent 历史中选取在对应 registry
+存在的 immutable SHA tag，并先核对 manifest digest。没有 `all` 或 `latest` 身份。schema 回退
+不是 Deploy 能力；数据库灾难恢复仍只通过人工核对的 `deploy/postgres-restore.sh` 执行。
+`database-backup.yml` 保持 VPS 本地双库备份边界；COS 上传、对象验证和 retention 尚未纳入该链路。
 
 ### 停止观测系统（不影响主业务）
 
@@ -208,7 +206,7 @@ cd /opt/wotb
 docker compose stop prometheus loki alloy grafana node-exporter
 ```
 
-主业务（postgres/keycloak/wotb-backend/wotb-frontend）保持运行。重新启动：
+TX 主业务服务（business-postgres/keycloak-postgres/keycloak/business-api/frontend）保持运行。重新启动：
 
 ```bash
 docker compose start prometheus loki alloy grafana node-exporter
@@ -216,7 +214,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 
 > **禁止**使用 `docker compose down -v` 作为普通停止/回滚命令——它会删除所有 volume（含 PostgreSQL 数据）。
 
-> **应用失败处理**不由 `deploy.yml` 自动切换旧版本：normal Deploy 先输出 release/affected/image/status/log/schema 诊断并停止确认失败的 affected service，随后 workflow FAIL。operator 通过 `Ops Recovery` 明确选择一个应用和 immutable SHA；它不触碰 `postgres_data` 等 volume，也不执行数据库 restore/downgrade。数据库 schema 迁移随新版本启动执行，恢复策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
+> **应用失败处理**不由 `deploy.yml` 自动切换旧版本：normal Deploy 先输出 release/affected/image/status/log/schema 诊断并停止确认失败的 affected service，随后 workflow FAIL。operator 通过单服务 Deploy 明确选择一个应用和 immutable SHA；它不触碰数据库 volume，也不执行数据库 restore/downgrade。数据库 schema 迁移随新版本启动执行，恢复策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
 
 ---
 
