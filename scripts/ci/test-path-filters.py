@@ -68,7 +68,6 @@ class PlannerSelectionTest(unittest.TestCase):
         front = selected("frontend/src/components/ReplayPage.vue")
         self.assertEqual(front["release"]["buildComponents"], ["frontend"])
         self.assertEqual(front["validation"]["frontendBrowserSuites"], ["playback-layout", "workspace-interaction"])
-        self.assertEqual(selected("frontend/src/main.js")["validation"]["frontendBrowserSuites"], [])
         self.assertEqual(selected("frontend/src/components/ReplayPage.test.js")["release"]["buildComponents"], [])
         for path in ("HISTORY.md", "docs/architecture/TECHNICAL_EVOLUTION.md", "docs/WotBTools_League_Rating_V6.md", "common/map_names.json"):
             self.assertIn("frontend", selected(path)["release"]["buildComponents"], path)
@@ -85,6 +84,33 @@ class PlannerSelectionTest(unittest.TestCase):
             self.assertFalse(plan["validation"]["surfaces"]["full"], document)
         # Any other document stays an inert docs-only change.
         self.assertEqual(selected("docs/architecture/opentofu-production-baseline.md")["release"]["buildComponents"], [])
+    def test_global_frontend_plumbing_runs_both_browser_suites(self):
+        # Mounting, routing and global shell sizing can break the playback layout and the
+        # workspace interaction flows at once, so both suites run for these paths.
+        for path in (
+            "frontend/index.html",
+            "frontend/src/main.js",
+            "frontend/src/App.vue",
+            "frontend/src/app/router.js",
+            "frontend/src/app/AppShell.vue",
+            "frontend/src/app/ViewHost.vue",
+            "frontend/src/app/navigation.js",
+            "frontend/src/styles/app-shell.css",
+            "frontend/src/styles/tokens.css",
+        ):
+            result = selected(path)
+            self.assertEqual(result["validation"]["frontendBrowserSuites"], ["playback-layout", "workspace-interaction"], path)
+            self.assertIn("frontend", result["release"]["buildComponents"], path)
+
+    def test_playback_surface_runs_the_playback_suite(self):
+        for path in ("frontend/src/components/BattlePlayback.vue", "frontend/src/styles/playback-pc.css"):
+            self.assertIn("playback-layout", selected(path)["validation"]["frontendBrowserSuites"], path)
+
+    def test_unrelated_frontend_component_skips_browser_suites(self):
+        for path in ("frontend/src/components/AdminUsersPage.vue", "frontend/src/components/AiReviewPanel.vue"):
+            result = selected(path)
+            self.assertEqual(result["validation"]["frontendBrowserSuites"], [], path)
+            self.assertEqual(result["release"]["buildComponents"], ["frontend"], path)
 
     def test_contract_sources_validate_without_uncopied_image_inputs(self):
         http = selected("contracts/http/openapi.yaml")
