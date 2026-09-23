@@ -91,11 +91,67 @@ FRONTEND_PATTERNS = (
     "common/map_names.json",
     "common/tankopedia-tier10.json",
     "common/assets/**",
+    # docker/Dockerfile.frontend COPYs both documents into the build stage and
+    # HistoryPage/RatingDocsPage inline them with `?raw`, so editing either one
+    # changes the produced bundle. `.dockerignore` explicitly re-includes them.
+    "HISTORY.md",
     "docs/WotBTools_League_Rating_V6.md",
     "deploy/nginx/**",
     "contracts/http/**",
 )
+# Production-image inputs are intentionally narrower than CI test surfaces.
+# A Java test, an unrelated reactor module, or an unrelated common fixture must
+# not publish a new immutable production image. Keep these lists aligned with
+# the Maven reactor closure copied by each production Dockerfile.
+BACKEND_JAVA_MODULES = (
+    "wotb-contracts",
+    "wotb-object-storage-minio",
+    "wotb-broker-rabbitmq",
+    "wotb-core",
+    "wotb-result",
+    "wotb-playback",
+    "wotb-replay-coordinator",
+    "wotb-replay-processing",
+    "wotb-ai",
+    "wotb-web",
+)
+PARSER_WORKER_JAVA_MODULES = (
+    "wotb-contracts",
+    "wotb-object-storage-minio",
+    "wotb-broker-rabbitmq",
+    "wotb-core",
+    "wotb-result",
+    "wotb-playback",
+    "wotb-replay-processing",
+    "wotb-parser-worker",
+)
+
+
+def _production_java_patterns(modules: tuple[str, ...]) -> tuple[str, ...]:
+    patterns = ["java/pom.xml", "java/settings-docker.xml"]
+    for module in modules:
+        patterns.extend((
+            f"java/{module}/pom.xml",
+            f"java/{module}/src/main/**",
+        ))
+    return tuple(patterns)
+
+
 BACKEND_PATTERNS = (
+    *_production_java_patterns(BACKEND_JAVA_MODULES),
+    "docker/Dockerfile.backend",
+    "common/tankopedia-tier7.json",
+    "common/tankopedia-tier8.json",
+    "common/tankopedia-tier9.json",
+    "common/tankopedia-tier10.json",
+    "common/map_names.json",
+    "common/tank_tactical_profiles.json",
+    "common/map-semantics/**",
+    "contracts/http/**",
+)
+# CI remains deliberately broader than production-image publication: Java tests
+# still validate the backend surface even though they cannot change a runtime image.
+BACKEND_CI_PATTERNS = (
     "java/**",
     "docker/Dockerfile.backend",
     "common/tankopedia-tier7.json",
@@ -107,7 +163,27 @@ BACKEND_PATTERNS = (
     "common/map-semantics/**",
     "contracts/http/**",
 )
+
+# docker/Dockerfile.keycloak packages only each vendored provider's ``src/main``
+# (``mvn -DskipTests clean package``), so a provider test change cannot alter a
+# provider jar. Keep the image surface on the runtime inputs; provider tests stay
+# on the broader KEYCLOAK_CI_PATTERNS surface below.
 KEYCLOAK_PATTERNS = (
+    "keycloak-juhe-qq-provider/pom.xml",
+    "keycloak-juhe-qq-provider/src/main/**",
+    "keycloak-qq-provider/pom.xml",
+    "keycloak-qq-provider/src/main/**",
+    "keycloak-wargaming-provider/pom.xml",
+    "keycloak-wargaming-provider/src/main/**",
+    "docker/keycloak/**",
+    "docker/Dockerfile.keycloak",
+    "infra/tofu/keycloak/**",
+    "java/settings-docker.xml",
+)
+# CI remains deliberately broader than production-image publication here too:
+# provider tests still validate the SPI surface even though they cannot change a
+# provider jar, exactly like java/**/src/test/** does for the backend surface.
+KEYCLOAK_CI_PATTERNS = (
     "keycloak-juhe-qq-provider/**",
     "keycloak-qq-provider/**",
     "keycloak-wargaming-provider/**",
@@ -118,9 +194,15 @@ KEYCLOAK_PATTERNS = (
 )
 MINIO_BUILD_PATTERNS = ("docker/Dockerfile.minio",)
 PARSER_WORKER_BUILD_PATTERNS = (
-    "java/**",
+    *_production_java_patterns(PARSER_WORKER_JAVA_MODULES),
     "docker/Dockerfile.parser-worker",
-    "common/**",
+    "common/tankopedia-tier7.json",
+    "common/tankopedia-tier8.json",
+    "common/tankopedia-tier9.json",
+    "common/tankopedia-tier10.json",
+    "common/map_names.json",
+    "common/tank_tactical_profiles.json",
+    "common/map-semantics/**",
     "contracts/mq/**",
 )
 ALL_DEPLOY_PATTERNS = (
@@ -140,9 +222,9 @@ RUNTIME_CONFIG_PATTERNS = (
     *BUSINESS_POSTGRES_TX_DEPLOY_PATTERNS,
 )
 CI_SURFACE_PATTERNS = {
-    "backend": BACKEND_PATTERNS,
+    "backend": BACKEND_CI_PATTERNS,
     "frontend": FRONTEND_PATTERNS,
-    "keycloak": KEYCLOAK_PATTERNS,
+    "keycloak": KEYCLOAK_CI_PATTERNS,
     "httpContract": (
         "contracts/http/**",
         "frontend/src/api/**",
