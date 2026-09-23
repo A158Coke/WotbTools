@@ -83,7 +83,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
         <p class="recent-empty-desc">{{ $t('home.recentAnalysisEmptyDesc') }}</p>
         <div class="panel-actions"><a class="mini-action primary" href="/?view=replay">{{ $t('home.uploadReplay') }}</a></div>
       </div>
-      <div class="bottom-panel quick-panel"><h2>{{ $t('app.title') }}</h2><a href="/?view=history">{{ $t('history.btn') }} <span>→</span></a><a href="/?view=contact">{{ $t('contact.nav') }} <span>→</span></a><a v-if="!isAndroidApp()" href="/download/android">{{ $t('android.nav') }} <span>→</span></a><a href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }} <span>→</span></a><a href="/sponsor.html">{{ $t('home.sponsorTitle') }} <span>→</span></a></div>
+      <div class="bottom-panel quick-panel"><h2>{{ $t('app.title') }}</h2><a href="/?view=history">{{ $t('history.btn') }} <span>→</span></a><a href="/?view=technical-evolution">{{ $t('technicalEvolution.btn') }} <span>→</span></a><a href="/?view=contact">{{ $t('contact.nav') }} <span>→</span></a><a v-if="!isAndroidApp()" href="/download/android">{{ $t('android.nav') }} <span>→</span></a><a href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }} <span>→</span></a><a href="/sponsor.html">{{ $t('home.sponsorTitle') }} <span>→</span></a></div>
     </section>
   </main>
 </template>
