@@ -6,11 +6,11 @@ Usage:
 
 Scans (relative to the repo root, derived from this script's location):
   - docker/Dockerfile.keycloak          FROM quay.io/keycloak/keycloak:<tag>
-  - keycloak-*/pom.xml                  <keycloak.version> property
+  - keycloak-{wargaming,qq}-provider/pom.xml  <keycloak.version> property
   - frontend/package.json               keycloak-js dependency (informational)
   - frontend/package-lock.json          keycloak-js resolved version (informational)
 
-Exit code 0 = server image tag and both provider poms agree (and, when given,
+Exit code 0 = server image tag and every provider pom agree (and, when given,
 equal the expected version). Exit code 1 = mismatch.
 """
 
@@ -55,7 +55,7 @@ def main() -> int:
         REPO_ROOT / "keycloak-wargaming-provider" / "pom.xml", POM_VERSION_RE, "wargaming pom"
     )
     qq_pom = find_version(
-        REPO_ROOT / "keycloak-juhe-qq-provider" / "pom.xml", POM_VERSION_RE, "juhe-qq pom"
+        REPO_ROOT / "keycloak-qq-provider" / "pom.xml", POM_VERSION_RE, "qq pom"
     )
 
     server_versions = [v for v in (image_tag, wg_pom, qq_pom) if v]
@@ -70,7 +70,7 @@ def main() -> int:
     for label, version in (
         ("image tag", image_tag),
         ("wargaming pom", wg_pom),
-        ("juhe-qq pom", qq_pom),
+        ("qq pom", qq_pom),
     ):
         if version != server_versions[0]:
             mismatches.append(f"{label}={version!r}")

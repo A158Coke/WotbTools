@@ -5,7 +5,7 @@
 -- 只按 account_id 归属是不完整的业务身份：CN 123456 与 EU 123456 是两个不同账号，
 -- 只按账号 ID 归属会造成跨服 ownership / authorization 串号。
 --
--- 目标：即使旧第三方 QQ Keycloak user 被删除、用户以全新 Official QQ 身份重建 Keycloak 用户
+-- 目标：即使旧 Juhe QQ Keycloak user 被删除、用户以全新 Official QQ 身份重建 Keycloak 用户
 -- （sub 完全变化），只要重新绑定同一个 (区服, WotB 账号)，其 HoF 数据即自然重新关联。
 --
 -- ═══ 本迁移的执行顺序 ═══════════════════════════════════════════════════════
