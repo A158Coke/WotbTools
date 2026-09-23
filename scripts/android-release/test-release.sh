@@ -77,8 +77,7 @@ classify_tag $'abc\trefs/tags/android-v1.0.2' android-v1.0.2 abc
 classify_tag $'abc\trefs/tags/android-v1.0.2\ndef456\trefs/tags/android-v1.0.2^{}' android-v1.0.2 def456
 [ "$TAG_STATE" = tag_equal ] || fail "annotated tag_equal"
 
-classify_tag 
-abc\\trefs/tags/android-v1.0.2' android-v1.0.2 def456
+classify_tag $'abc\trefs/tags/android-v1.0.2' android-v1.0.2 def456
 [ "$TAG_STATE" = tag_conflict ] || fail "tag_conflict"
 
 python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
