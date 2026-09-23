@@ -55,3 +55,16 @@ provide(NAVIGATE_VIEW_KEY, navigate)
   </footer>
   <GlobalErrorDialog :error="globalError" :visible="showGlobalError" @close="closeGlobalError" />
 </template>
+
+<style scoped>
+/* Keep the shared footer at the viewport bottom on short pages without pinning it over content. */
+:global(#app) {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-footer {
+  margin-top: auto;
+}
+</style>
