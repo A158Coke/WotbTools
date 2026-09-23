@@ -228,13 +228,13 @@ for provider in ("keycloak-qq-provider", "keycloak-wargaming-provider"):
     assert provider_test_plan["buildServices"] == [], provider
     assert provider_test_plan["deployServices"] == [], provider
     assert provider_test_plan["ciSurfaces"]["keycloakProvider"], provider
-# HISTORY.md is COPYed into the frontend build stage and inlined by HistoryPage with `?raw`,
-# so it must republish wotb-frontend rather than count as an inert document.
-history_plan = detect("HISTORY.md")
-assert history_plan["images"] == {**NO_IMAGES, "frontend": True}
-assert history_plan["buildServices"] == ["wotb-frontend"]
-assert history_plan["deployServices"] == ["wotb-frontend"]
-assert history_plan["targetServices"] == {"tx": ["wotb-frontend"]}
+# Embedded Markdown documents are frontend build inputs and must republish wotb-frontend.
+for document in ("HISTORY.md", "docs/architecture/TECHNICAL_EVOLUTION.md"):
+    document_plan = detect(document)
+    assert document_plan["images"] == {**NO_IMAGES, "frontend": True}, document
+    assert document_plan["buildServices"] == ["wotb-frontend"], document
+    assert document_plan["deployServices"] == ["wotb-frontend"], document
+    assert document_plan["targetServices"] == {"tx": ["wotb-frontend"]}, document
 # The legacy whole-stack ``all`` selector implied the retired Yecao control plane, so it must not be
 # selectable through the manual alias path either.
 assert subprocess.run(
