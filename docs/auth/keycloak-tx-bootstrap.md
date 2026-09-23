@@ -37,7 +37,7 @@ Boost 角色），realm/client/IdP 删除与 mass replacement 仍被拒绝。
 GitHub Actions Secrets / Variables 是 TX runtime 与 TX-local OpenTofu 的唯一配置入口。
 工作流通过 SSH `envs` 注入变量；服务器不再维护 `/etc/wotb/tx-runtime.env` 或
 `/etc/wotb/postgres-keycloak-tofu.env`。以下信息禁止写进 Git、realm JSON、tfvars、Tofu
-state 或日志：
+output 或日志（`TX_QQ_CLIENT_SECRET` 的 state 归属见下一节）：
 
 - `KC_BOOTSTRAP_ADMIN_PASSWORD`；
 - `KC_POSTGRES_ADMIN_PASSWORD`；
@@ -69,17 +69,28 @@ Wargaming IdP representation 与 Keycloak runtime 共用**同一个**已存在�
 - 不存在 `TX_WG_APPLICATION_ID` / `WG_CLIENT_ID` / `WARGAMING_CLIENT_ID` 等重复凭据。
 
 官方 QQ IdP 由 OpenTofu 完整拥有，不存在 operator 手工凭据路径：
+
 - GitHub Variable `TX_QQ_CLIENT_ID` 经 SSH 环境传入 `TF_VAR_qq_client_id`；
-- GitHub Secret `TX_QQ_CLIENT_SECRET` 经 SSH 环境传入 write-only
-  `TF_VAR_qq_client_secret`，不得写进 tfvars、日志或普通 state attribute；
-- GitHub Variable `TX_QQ_CLIENT_SECRET_VERSION` 经 SSH 环境传入
-  `TF_VAR_qq_client_secret_version`。secret 每次轮换必须同时递增该正整数版本；缺失、空值、
-  placeholder 或非法版本均使 TX-local OpenTofu apply fail-closed。
+- GitHub Secret `TX_QQ_CLIENT_SECRET` 经 SSH 环境传入 `TF_VAR_qq_client_secret`。它是 QQ App Key
+  的**唯一 source of truth**：缺失、空值或 placeholder 均使 TX-local OpenTofu apply fail-closed；
+- 该 secret 是 `keycloak_oidc_identity_provider.qq` 的**普通敏感属性** `client_secret`，不是
+  write-only 的 `client_secret_wo`。**不存在也不允许存在** rotation version / counter / hash：
+  每次 apply 都以当次注入的值作为期望状态收敛 `idp-qq`——值不同则 plan 显示一次 IdP update，
+  值相同则 no-op，因此「secret 是否变化」不需要任何版本信号来判断。provider schema 也决定了
+  这一点：`client_secret_wo` 声明了 `RequiredWith = client_secret_wo_version`，且只在 version
+  变化时才把写-only 值发给 Keycloak（`provider/resource_keycloak_oidc_identity_provider.go`）；
+- 代价是该 secret 作为 sensitive 属性进入 OpenTofu state（`backend.tf` 的 COS
+  `wotbtools-prod-tofu-state-1478073677` / `wotbtools/prod/keycloak.tfstate`）。这是本仓库唯一
+  允许长驻该 secret 的介质：只有持有 `TENCENTCLOUD_SECRET_ID/KEY` 的 TX OpenTofu apply 能读取；
+  Git、realm JSON、tfvars、Tofu output、日志与其它介质依然禁止。apply 期间 TX 上的
+  `plan.tfplan` / `second-plan.tfplan` 同样带有该值（写-only 字段此前不会落进 plan 文件），
+  因此 `deploy/tx/keycloak-tofu.sh` 的 `trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT`
+  不得删除。
 
 `qq_enabled` 的 production declaration 固定为 `true`。`idp-qq` 的 alias、enabled、client ID、
-write-only secret/version 与 QQ endpoint configuration 均由 OpenTofu 收敛，并以
-`prevent_destroy = true` 防止删除。QQ Open Platform 已获批准且 production credentials 已可用；
-仍不得将凭据复制到 GitHub Actions 以外的介质。
+`client_secret` 与 QQ endpoint configuration 均由 OpenTofu 收敛，并以 `prevent_destroy = true`
+防止删除。QQ Open Platform 已获批准且 production credentials 已可用；
+仍不得将凭据复制到 GitHub Actions 与上述受 ACL 保护的 state 以外的介质。
 
 ## Identity Provider 启动顺序
 
@@ -135,11 +146,14 @@ Keycloak 默认值一致，不会产生漂移。
 - Keycloak 使用 `start --optimized`，启动时没有 augmentation；
 - image 包含 `keycloak-qq-provider.jar`，并成功以 `start --optimized` 启动；
 - OpenTofu fresh realm 的 Admin API 验收通过：唯一 alias 为 `idp-qq`、`providerId=qq`、
-  `enabled=true`、client ID 非 placeholder、`authorizationUrl` / `tokenUrl` /
-  `userInfoUrl` / `clientAuthMethod=client_secret_post` 全部匹配 QQ contract，且没有 `qq` 或
-  `juhe-qq` alias；二次 plan 为 no-op；
+  `enabled=true`、client ID 非 placeholder、`authorizationUrl` / `tokenUrl` / `userInfoUrl` /
+  `clientAuthMethod=client_secret_post` 全部匹配 QQ contract，且没有 `qq` 或 `juhe-qq` alias；
+  二次 plan 为 no-op；把注入的 QQ secret 换成新值后下一次 plan 必须是 `idp-qq` 的 in-place
+  update、apply 后再次 plan 必须回到 no-op（证明没有 version 也能收敛）。**该 secret 无法回读
+  断言**：Keycloak 在 list 与 single-instance 两个 Admin API representation 里都把 IdP client
+  secret 掩码为 `**********`，所以验收边界就是 plan → apply；
 - OIDC discovery、三个 Wargaming 登录、前端 public client redirect URI 均可验证；
-- QQ Connect 凭据或 rotation version 缺失/非法时 fail-closed，不通过猜测配置绕过。
+- QQ Connect 凭据缺失、空值或 placeholder 时 fail-closed，不通过猜测配置绕过。
 - DNS cutover 前，受控 TX runtime 必须记录一次真实 QQ E2E：Web Login → QQ authorize →
   `idp-qq` callback → Keycloak broker → 新 TX Keycloak user → WotBTools session/token；同时确认
   无 callback loop、expired_code、重复 broker alias 或 Juhe fallback，且无关 admin 登录仍可用。

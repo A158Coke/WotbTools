@@ -100,7 +100,7 @@ variable "qq_client_id" {
 }
 
 variable "qq_client_secret" {
-  description = "QQ Connect application secret supplied only through the write-only OpenTofu field."
+  description = "QQ Connect application secret injected at apply time; plain sensitive desired state, so it is held by the plan and by OpenTofu state."
   type        = string
   sensitive   = true
   nullable    = false
@@ -111,17 +111,6 @@ variable "qq_client_secret" {
       lower(trimspace(var.qq_client_secret)),
     )
     error_message = "qq_client_secret must be a configured QQ Connect secret, not a placeholder."
-  }
-}
-
-variable "qq_client_secret_version" {
-  description = "Positive QQ Connect secret rotation version; increment it whenever the secret changes."
-  type        = string
-  nullable    = false
-
-  validation {
-    condition     = can(regex("^[1-9][0-9]*$", trimspace(var.qq_client_secret_version)))
-    error_message = "qq_client_secret_version must be a positive integer and must change with qq_client_secret rotation."
   }
 }
 

@@ -20,7 +20,7 @@ ADMIN_API_SECRET="tofu-admin-api-test-secret"
 E2E_API_SECRET="tofu-e2e-api-test-secret"
 QQ_CLIENT_ID="tofu-qq-client-id"
 QQ_CLIENT_SECRET="tofu-qq-client-secret"
-QQ_CLIENT_SECRET_VERSION=1
+QQ_CLIENT_SECRET_ROTATED="tofu-qq-client-secret-rotated"
 WG_APPLICATION_ID="tofu-wg-application-id"
 TEST_USERNAME="tofu-admin-api-test-user"
 
@@ -62,7 +62,6 @@ expect_tofu_input_failure() {
     WG_APPLICATION_ID="$WG_APPLICATION_ID" \
     TX_QQ_CLIENT_ID="$QQ_CLIENT_ID" \
     TX_QQ_CLIENT_SECRET="$QQ_CLIENT_SECRET" \
-    TX_QQ_CLIENT_SECRET_VERSION="$QQ_CLIENT_SECRET_VERSION" \
     "$@" bash "$TOFU_RUNNER" "$WORK/input-policy-root" 2>&1)"
   status=$?
   set -e
@@ -84,14 +83,10 @@ expect_tofu_input_failure "missing-client-id" 'TX_QQ_CLIENT_ID is required.' \
   env -u TX_QQ_CLIENT_ID
 expect_tofu_input_failure "missing-client-secret" 'TX_QQ_CLIENT_SECRET is required.' \
   env -u TX_QQ_CLIENT_SECRET
-expect_tofu_input_failure "missing-secret-version" 'TX_QQ_CLIENT_SECRET_VERSION is required.' \
-  env -u TX_QQ_CLIENT_SECRET_VERSION
 expect_tofu_input_failure "placeholder-client-id" 'TX_QQ_CLIENT_ID must be configured and must not be a placeholder.' \
   env TX_QQ_CLIENT_ID=bootstrap-not-configured
 expect_tofu_input_failure "placeholder-client-secret" 'TX_QQ_CLIENT_SECRET must be configured and must not be a placeholder.' \
   env TX_QQ_CLIENT_SECRET=dummy
-expect_tofu_input_failure "invalid-secret-version" 'TX_QQ_CLIENT_SECRET_VERSION must be a positive integer.' \
-  env TX_QQ_CLIENT_SECRET_VERSION=0
 echo "PASS: Wargaming/QQ OpenTofu fail-closed input policy"
 
 if [ "${WOTB_KEYCLOAK_SKIP_BUILD:-0}" != "1" ]; then
@@ -160,7 +155,6 @@ export TF_VAR_e2e_client_secret_version=1
 export TF_VAR_wargaming_application_id="$WG_APPLICATION_ID"
 export TF_VAR_qq_client_id="$QQ_CLIENT_ID"
 export TF_VAR_qq_client_secret="$QQ_CLIENT_SECRET"
-export TF_VAR_qq_client_secret_version="$QQ_CLIENT_SECRET_VERSION"
 
 cd "$TOFU_ROOT"
 TOFU_WORK_ROOT="$WORK/tofu-root"
@@ -183,6 +177,31 @@ if jq -e 'any(.resource_changes[]?; ((.change.actions // []) | any(. != "no-op")
   fail "fresh realm second plan is not a no-op"
 fi
 echo "PASS: fresh realm apply and second plan no-op"
+
+# The QQ App Key is plain desired state, so a rotated injected value must converge
+# idp-qq on the very next apply with no rotation version involved: the plan has to
+# show the IdP update, the apply has to push it, and the plan after it must be a
+# no-op again. This is the regression guard against re-introducing a version,
+# counter or hash as the owner of "did the QQ secret change?". The stored value
+# cannot be read back to assert it: Keycloak masks an IdP client secret as
+# `**********` in every Admin API representation, so the convergence boundary this
+# checks is plan -> apply, exactly where the mechanism under test lives.
+export TF_VAR_qq_client_secret="$QQ_CLIENT_SECRET_ROTATED"
+"$TOFU" plan -input=false -no-color -out="$WORK/rotation-plan.tfplan"
+bash ./validate-plan.sh "$WORK/rotation-plan.tfplan"
+jq -e 'any(.resource_changes[]?;
+      .address == "keycloak_oidc_identity_provider.qq" and
+      ((.change.actions // []) | any(. != "no-op")))' \
+    < <("$TOFU" show -json "$WORK/rotation-plan.tfplan") >/dev/null \
+  || fail "a rotated QQ client secret must plan an idp-qq update"
+"$TOFU" apply -input=false -auto-approve "$WORK/rotation-plan.tfplan"
+"$TOFU" plan -input=false -no-color -out="$WORK/rotated-second-plan.tfplan"
+bash ./validate-plan.sh "$WORK/rotated-second-plan.tfplan"
+if jq -e 'any(.resource_changes[]?; ((.change.actions // []) | any(. != "no-op")))' \
+    < <("$TOFU" show -json "$WORK/rotated-second-plan.tfplan") >/dev/null; then
+  fail "second plan after the QQ secret rotation is not a no-op"
+fi
+echo "PASS: rotated QQ client secret converges without a rotation version"
 
 token() {
   local realm="$1" client_id="$2" output="$3" grant_type="$4"

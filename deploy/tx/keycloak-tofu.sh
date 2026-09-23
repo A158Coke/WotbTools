@@ -19,7 +19,7 @@ for name in KEYCLOAK_ADMIN_USERNAME KEYCLOAK_ADMIN_PASSWORD \
   KEYCLOAK_ADMIN_CLIENT_SECRET KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION \
   KEYCLOAK_E2E_CLIENT_SECRET KEYCLOAK_E2E_CLIENT_SECRET_VERSION \
   WG_APPLICATION_ID \
-  TX_QQ_CLIENT_ID TX_QQ_CLIENT_SECRET TX_QQ_CLIENT_SECRET_VERSION; do
+  TX_QQ_CLIENT_ID TX_QQ_CLIENT_SECRET; do
   require_env "$name"
 done
 
@@ -45,8 +45,6 @@ require_configured_value() {
 for name in WG_APPLICATION_ID TX_QQ_CLIENT_ID TX_QQ_CLIENT_SECRET KEYCLOAK_E2E_CLIENT_SECRET; do
   require_configured_value "$name"
 done
-is_positive_integer "$TX_QQ_CLIENT_SECRET_VERSION" \
-  || { echo "ERROR: TX_QQ_CLIENT_SECRET_VERSION must be a positive integer." >&2; exit 2; }
 is_positive_integer "$KEYCLOAK_E2E_CLIENT_SECRET_VERSION" \
   || { echo "ERROR: KEYCLOAK_E2E_CLIENT_SECRET_VERSION must be a positive integer." >&2; exit 2; }
 
@@ -71,8 +69,9 @@ export TF_VAR_e2e_client_secret_version="$KEYCLOAK_E2E_CLIENT_SECRET_VERSION"
 # It is passed as a sensitive TF_VAR and never echoed.
 export TF_VAR_wargaming_application_id="$WG_APPLICATION_ID"
 export TF_VAR_qq_client_id="$TX_QQ_CLIENT_ID"
+# Plain sensitive desired state (no rotation version): the injected value is what
+# idp-qq must converge to on every apply.
 export TF_VAR_qq_client_secret="$TX_QQ_CLIENT_SECRET"
-export TF_VAR_qq_client_secret_version="$TX_QQ_CLIENT_SECRET_VERSION"
 
 TOFU_CLI_CONFIG="${TF_CLI_CONFIG_FILE:-/opt/wotb-tx/tofurc}"
 [ -f "$TOFU_CLI_CONFIG" ] || {
