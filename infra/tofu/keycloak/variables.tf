@@ -42,14 +42,14 @@ variable "keycloak_admin_client_secret" {
 }
 
 variable "e2e_client_secret" {
-  description = "Runtime-only write-only secret used by the read-only cutover E2E gate client."
+  description = "Runtime-only write-only secret used by the read-only runtime E2E check client."
   type        = string
   sensitive   = true
   nullable    = false
 }
 
 variable "e2e_client_secret_version" {
-  description = "Explicit cutover E2E gate client secret rotation version."
+  description = "Explicit runtime E2E check client secret rotation version."
   type        = string
   nullable    = false
 
