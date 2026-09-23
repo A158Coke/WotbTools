@@ -23,7 +23,6 @@ export const VIEW_COMPONENTS = Object.freeze({
   profile: ProfilePage,
   'admin-users': AdminUsersPage,
   history: HistoryPage,
-  version: HistoryPage,
   contact: ContactPage,
   android: AndroidDownloadPage,
   'playback-qa': PlaybackQaPage,
