@@ -98,11 +98,10 @@ Wargaming IdP representation 与 Keycloak runtime 共用**同一个**已存在�
 2. 由 OpenTofu 创建 `wargaming-asia`、`wargaming-eu`、`wargaming-na` 三个实例（`provider_id=wargaming`，
    `client_id` = 同一 `WG_APPLICATION_ID`），并在 Keycloak runtime 继续注入 `WG_APPLICATION_ID` 供自定义 SPI 读取。
 3. 镜像构建 `keycloak-qq-provider` 与 `keycloak-wargaming-provider`；运行时验收必须确认
-   `keycloak-qq-provider.jar` 存在且 Keycloak 已以 `start --optimized` 启动。仓库仍保留
-   vendored legacy Juhe provider 源码/镜像 artifact 以兼容历史构建，但 TX realm 不创建它的实例，
-   不得把它作为 fallback。
+   `keycloak-qq-provider.jar` 存在且 Keycloak 已以 `start --optimized` 启动。仓库只 vendored
+   这两个 provider 的源码（镜像内不存在第三个 QQ provider），历史聚合 provider 已完全退役。
 4. OpenTofu 创建唯一官方 QQ alias `idp-qq`（provider id `qq`，enabled）；TX 不创建
-   `juhe-qq` fallback，也不创建裸 alias `qq`。固定 production broker callback 为
+   任何聚合 QQ fallback，也不创建裸 alias `qq`。固定 production broker callback 为
    `https://auth.wotbtools.com/realms/wotbtools/broker/idp-qq/endpoint`；QQ Open Platform、
    Android exact callback allowlist 与 Web 登录流必须使用此唯一 callback，不得引入
    `/qq/endpoint` 或 `idp-qq-v2`。
@@ -147,7 +146,7 @@ Keycloak 默认值一致，不会产生漂移。
 - image 包含 `keycloak-qq-provider.jar`，并成功以 `start --optimized` 启动；
 - OpenTofu fresh realm 的 Admin API 验收通过：唯一 alias 为 `idp-qq`、`providerId=qq`、
   `enabled=true`、client ID 非 placeholder、`authorizationUrl` / `tokenUrl` / `userInfoUrl` /
-  `clientAuthMethod=client_secret_post` 全部匹配 QQ contract，且没有 `qq` 或 `juhe-qq` alias；
+  `clientAuthMethod=client_secret_post` 全部匹配 QQ contract，且 alias 集合恰好为 `idp-qq` + 三个 Wargaming；
   二次 plan 为 no-op；把注入的 QQ secret 换成新值后下一次 plan 必须是 `idp-qq` 的 in-place
   update、apply 后再次 plan 必须回到 no-op（证明没有 version 也能收敛）。**该 secret 无法回读
   断言**：Keycloak 在 list 与 single-instance 两个 Admin API representation 里都把 IdP client
@@ -156,9 +155,9 @@ Keycloak 默认值一致，不会产生漂移。
 - QQ Connect 凭据缺失、空值或 placeholder 时 fail-closed，不通过猜测配置绕过。
 - DNS cutover 前，受控 TX runtime 必须记录一次真实 QQ E2E：Web Login → QQ authorize →
   `idp-qq` callback → Keycloak broker → 新 TX Keycloak user → WotBTools session/token；同时确认
-  无 callback loop、expired_code、重复 broker alias 或 Juhe fallback，且无关 admin 登录仍可用。
+  无 callback loop、expired_code、重复 broker alias 或聚合 QQ fallback，且无关 admin 登录仍可用。
   fresh TX realm 不迁移旧 Keycloak users。
-- Android 使用 `idp-qq` 官方 OAuth callback contract；本 TX realm 不引入 Juhe fallback。
+- Android 使用 `idp-qq` 官方 OAuth callback contract；本 TX realm 不引入聚合 QQ fallback。
 
 ## TX_RUNTIME_READY 只读运行时检查
 
@@ -274,7 +273,7 @@ TX_RUNTIME_READY
    每条消息的结论之后才允许。
 
 检查以只读 Keycloak Admin API 检查 `idp-qq`：必须唯一、`providerId=qq`、`enabled=true`、
-client ID 非 placeholder，且 QQ endpoint/config contract 完整；裸 `qq` / `juhe-qq` alias 会阻断。
+client ID 非 placeholder，且 QQ endpoint/config contract 完整；裸 `qq` alias 会阻断（alias 集合必须恰好匹配）。
 全部通过后输出 `QQ_IDP_STATUS=idp-qq=READY`；不再接受 `WAITING_EXTERNAL` 豁免。检查不再探测
 Yecao backend 路径：公开 API 流量已在 TX 内部终结（frontend nginx → `business-api:8087`），
 改为两条只读 token：`tx-internal-api-route`（frontend upstream 必须是 TX 内部业务运行时、

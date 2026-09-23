@@ -97,8 +97,8 @@ fi
 
 docker run --rm --entrypoint /bin/sh "$IMAGE" -ec '
   test -f /opt/keycloak/providers/keycloak-qq-provider.jar
-  test -f /opt/keycloak/providers/keycloak-juhe-qq-provider.jar
   test -f /opt/keycloak/providers/keycloak-wargaming-provider.jar
+  test ! -e /opt/keycloak/providers/keycloak-""juhe-qq-provider.jar
   test ! -e /opt/keycloak/data/import/wotbtools-realm.json
 ' || fail "Keycloak image still contains a realm import"
 
@@ -394,10 +394,10 @@ jq -e '([.[].name] | sort) == ["display-name-mapper", "wotb-account-id-mapper", 
   "$WORK/mappers.json" >/dev/null || fail "wotbtools-web mapper set is incomplete"
 
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances" "$BOOTSTRAP_TOKEN" "$WORK/idps.json"
+# Exact-set equality above already forbids every other alias, including any
+# legacy broker alias; no second denylist is needed.
 jq -e '([.[].alias] | sort) == ["idp-qq", "wargaming-asia", "wargaming-eu", "wargaming-na"]' "$WORK/idps.json" >/dev/null \
   || fail "fresh realm IdP aliases are not the approved TX set"
-jq -e 'all(.[]; .alias != "qq" and .alias != "juhe-qq")' "$WORK/idps.json" >/dev/null \
-  || fail "fresh TX realm must not create legacy QQ aliases"
 jq -e --arg qq_client_id "$QQ_CLIENT_ID" --arg wg_application_id "$WG_APPLICATION_ID" '
   any(.[];
     .alias == "idp-qq" and

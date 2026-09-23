@@ -222,7 +222,7 @@ assert worker_only_module_plan["images"] == {**NO_IMAGES, "parser-worker": True}
 assert worker_only_module_plan["deployServices"] == []
 # A Keycloak provider test is not a runtime input: it must validate CI without publishing
 # or deploying the Keycloak image (docker/Dockerfile.keycloak packages only src/main).
-for provider in ("keycloak-juhe-qq-provider", "keycloak-qq-provider", "keycloak-wargaming-provider"):
+for provider in ("keycloak-qq-provider", "keycloak-wargaming-provider"):
     provider_test_plan = detect(f"{provider}/src/test/java/ProviderTest.java")
     assert provider_test_plan["images"] == NO_IMAGES, provider
     assert provider_test_plan["buildServices"] == [], provider

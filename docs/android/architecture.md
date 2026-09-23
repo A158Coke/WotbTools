@@ -110,13 +110,12 @@ Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`
   - **Fallback（当前唯一在产机制）**：
     `WebView → native QQ → HTTPS broker callback → Verified App Link → 同一 MainActivity → 原 WebView.loadUrl(callback)`。
     **Verified App Link is fallback, not the sole auth-continuity mechanism**：它的实际可用性依赖设备 /
-    ROM 的 domain verification，不能作为唯一回程。App Link 只接管以下两个 exact callback（过渡期
-    `juhe-qq` 仍是生产 Juhe provider，`idp-qq` 是待审核官方 QQ provider）：
-    `https://auth.wotbtools.com/realms/wotbtools/broker/idp-qq/endpoint` 与
-    `https://auth.wotbtools.com/realms/wotbtools/broker/juhe-qq/endpoint`，不接管整个
+    ROM 的 domain verification，不能作为唯一回程。App Link 只接管以下**唯一** exact callback
+    （`idp-qq` 是唯一生产 QQ alias；聚合数据 provider 已从镜像与 Android 侧退役）：
+    `https://auth.wotbtools.com/realms/wotbtools/broker/idp-qq/endpoint`，不接管整个
     `auth.wotbtools.com` / 其它 realm / 其它 IdP provider。`AuthReturnPolicy` 严格校验 scheme/host/path、
-    `state`。`idp-qq` 成功回调要求 `code`（OAuth error 回调则有 `error`）；`juhe-qq` 按现有 Juhe
-    callback contract 保留必要的 Juhe-specific 参数校验，不把两个 provider 的参数强行统一；
+    `state`。成功回调要求 `code`（OAuth error 回调则有 `error`）；历史聚合 provider 的
+    `type` / `ticket` 参数不再被识别，其 callback path 直接判定为非本 App 的 broker return；
     `auth.wotbtools.com/.well-known/assetlinks.json` 由 nginx 直接返回 application/json（非代理 Keycloak）。
     热返回走 `onNewIntent`（`handleAuthReturnHot`），冷返回（进程被杀）走 `pendingAuthReturn` + startup gate
     后加载（`handleAuthReturnColdStart`），不绕过网络/版本/强制更新门禁。日志只记录

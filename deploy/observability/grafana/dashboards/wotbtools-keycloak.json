@@ -19,7 +19,7 @@
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
       "id": 2,
       "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": true, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
-      "targets": [{ "expr": "{container_name=\"keycloak\"} |~ \"(?i)callback_entered|authentication_session_restored|juhe_callback_accepted|before_broker_authenticated|broker_authenticated|oauth|state|code_to_token\"", "queryType": "range", "refId": "A" }],
+      "targets": [{ "expr": "{container_name=\"keycloak\"} |~ \"(?i)callback_entered|authentication_session_restored|before_broker_authenticated|broker_authenticated|oauth|state|code_to_token\"", "queryType": "range", "refId": "A" }],
       "title": "QQ Callback 流程",
       "type": "logs"
     },

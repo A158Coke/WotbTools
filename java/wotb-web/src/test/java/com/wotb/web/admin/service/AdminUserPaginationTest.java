@@ -70,7 +70,7 @@ class AdminUserPaginationTest {
         assertEquals("kc-101", result.items().get(0).keycloakUserId());
         assertTrue(result.items().get(0).hasLocalProfile(), "本地有资料必须标记");
         assertFalse(result.items().get(0).keycloakUserMissing());
-        // Keycloak-only 用户同样出现在结果里（旧 Juhe QQ cleanup 的前提）
+        // Keycloak-only 用户同样出现在结果里（历史第三方 IdP 用户清理的前提）
         assertEquals("kc-125", result.items().get(24).keycloakUserId());
         assertFalse(result.items().get(24).hasLocalProfile());
     }

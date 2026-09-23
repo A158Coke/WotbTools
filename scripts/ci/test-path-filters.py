@@ -281,7 +281,6 @@ class CiPathFilterTest(unittest.TestCase):
         for path in (
             "keycloak-wargaming-provider/src/main/java/Provider.java",
             "keycloak-qq-provider/src/main/resources/META-INF/services/provider",
-            "keycloak-juhe-qq-provider/pom.xml",
             "docker/keycloak/wotbtools-entrypoint.sh",
         ):
             plan = detect(path)
@@ -292,7 +291,7 @@ class CiPathFilterTest(unittest.TestCase):
     def test_keycloak_provider_test_inputs_publish_no_image(self):
         # `mvn -DskipTests clean package` never packages src/test into a provider jar,
         # so provider tests must run CI validation without publishing the Keycloak image.
-        for provider in ("keycloak-juhe-qq-provider", "keycloak-qq-provider", "keycloak-wargaming-provider"):
+        for provider in ("keycloak-qq-provider", "keycloak-wargaming-provider"):
             path = f"{provider}/src/test/java/ProviderTest.java"
             plan = detect(path)
             self.assertEqual(plan["buildServices"], [], path)
@@ -355,17 +354,17 @@ class CiPathFilterTest(unittest.TestCase):
         self.assert_surfaces(["deploy/docker-compose.prod.yml"], ["deploy"])
 
     def test_provider_source_runs_provider_and_runtime_smoke(self):
-        for provider in ("keycloak-juhe-qq-provider", "keycloak-wargaming-provider", "keycloak-qq-provider"):
+        for provider in ("keycloak-wargaming-provider", "keycloak-qq-provider"):
             source = f"{provider}/src/main/java/Provider.java"
             self.assert_surfaces([source], ["keycloak", "keycloakProvider", "keycloakRuntime"])
 
     def test_provider_tests_only_run_provider_tests(self):
-        for provider in ("keycloak-juhe-qq-provider", "keycloak-wargaming-provider", "keycloak-qq-provider"):
+        for provider in ("keycloak-wargaming-provider", "keycloak-qq-provider"):
             test = f"{provider}/src/test/java/ProviderTest.java"
             self.assert_surfaces([test], ["keycloak", "keycloakProvider"])
 
     def test_provider_build_inputs_run_provider_and_runtime(self):
-        for provider in ("keycloak-juhe-qq-provider", "keycloak-wargaming-provider", "keycloak-qq-provider"):
+        for provider in ("keycloak-wargaming-provider", "keycloak-qq-provider"):
             pom = f"{provider}/pom.xml"
             resources = f"{provider}/src/main/resources/META-INF/services/provider"
             self.assert_surfaces([pom], ["keycloak", "keycloakProvider", "keycloakRuntime"])

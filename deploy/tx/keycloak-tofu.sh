@@ -29,7 +29,7 @@ is_positive_integer() {
 
 is_placeholder_value() {
   case "${1,,}" in
-    bootstrap-not-configured|dummy|empty|juhe|juhe-qq|not-configured|not-used) return 0 ;;
+    bootstrap-not-configured|dummy|empty|not-configured|not-used) return 0 ;;
     *) return 1 ;;
   esac
 }
