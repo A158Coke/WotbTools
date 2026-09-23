@@ -334,3 +334,13 @@ for job_id in ("changes", *expected_jobs):
 assert "      - Build" in deploy
 print("CI workflow conditional and aggregation contract OK")
 PY
+
+# Android release artifacts must land in the same TX runtime directory mounted by deploy/tx/docker-compose.yml.
+if grep -Fq '/opt/wotb/android-release' .github/workflows/android-release.yml; then
+  echo "ERROR: Android release workflow still targets the retired /opt/wotb runtime." >&2
+  exit 1
+fi
+if ! grep -Fq '/opt/wotb-tx/android-release' .github/workflows/android-release.yml; then
+  echo "ERROR: Android release must publish into the TX runtime bind mount." >&2
+  exit 1
+fi
