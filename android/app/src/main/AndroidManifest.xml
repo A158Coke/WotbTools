@@ -36,8 +36,8 @@
                 <data android:scheme="content" />
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
-            <!-- 仅接管两个 QQ broker callback 的 verified App Link（QQ native 登录返回原 WebView）。
-                 idp-qq 是 TX 首选 alias，juhe-qq 保留现有生产 Juhe callback；绝不接管其它 IdP。 -->
+            <!-- 仅接管官方 QQ broker callback 的 verified App Link（QQ native 登录返回原 WebView）。
+                 唯一 alias 是 idp-qq；绝不接管其它 IdP。 -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -46,15 +46,6 @@
                     android:scheme="https"
                     android:host="auth.wotbtools.com"
                     android:path="/realms/wotbtools/broker/idp-qq/endpoint" />
-            </intent-filter>
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="https"
-                    android:host="auth.wotbtools.com"
-                    android:path="/realms/wotbtools/broker/juhe-qq/endpoint" />
             </intent-filter>
         </activity>
 

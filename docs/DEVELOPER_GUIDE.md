@@ -313,7 +313,7 @@ Battle 直接取该场 `tank_id`/`tank_name`（来源 `PlayerResult.tankId`）�
 
 | 参数 | 语义 |
 |---|---|
-| `segment=keycloak`（默认） | 权威源是 Keycloak realm users（Keycloak Admin API `first/max` 分页 + 权威 count），本地 profile 只按当前页做一次 IN 查询增强。**没有任何本地 profile 的 Keycloak-only 用户也能被找到并删除**（旧 Juhe QQ cleanup 的前提）；支持 `idpAlias` 过滤 |
+| `segment=keycloak`（默认） | 权威源是 Keycloak realm users（Keycloak Admin API `first/max` 分页 + 权威 count），本地 profile 只按当前页做一次 IN 查询增强。**没有任何本地 profile 的 Keycloak-only 用户也能被找到并删除**（历史第三方 IdP 用户清理的前提）；支持 `idpAlias` 过滤 |
 | `segment=local` | 权威源是本地 `user_profile`（DB 分页 + 权威总数），用于暴露 Keycloak 侧已不存在的**孤儿绑定**（行上 `keycloakUserMissing=true`），删除它可释放 `(wotb_server, wotb_account_id)` 唯一槽位。传 `idpAlias` → 400 `IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT`；未知 segment → 400 `INVALID_USER_SEGMENT` |
 
 列表行 DTO（`AdminUserListItemDto`，旧的 `AdminUserDto` 已删除）：`keycloakUserId, keycloakUsername, keycloakEmail, keycloakEnabled, profileId, displayName, wotbAccountId, wotbNickname, wotbServer, profileCreatedAt, hasLocalProfile, keycloakUserMissing`。两个 segment 都不做「拉一页再在内存里筛」的伪造分页。`segment=local` 的代价是每页产生 N（≤ size）次 Keycloak Admin 调用——**Keycloak 没有按 ids 批量查询用户的能力**，这是客户端/服务端的能力事实，见 [`docs/auth/keycloak-admin-user-search.md`](auth/keycloak-admin-user-search.md)（该文档同时记录 admin-client 26.0.9 的重载缺口与「IdP 过滤在 CI 端到端验证前不得宣称生产可用」的局限）。

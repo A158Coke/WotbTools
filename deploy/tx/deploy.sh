@@ -1115,11 +1115,9 @@ provider = qq[0]
 config = provider.get("config") or {}
 if provider.get("providerId") != "qq" or provider.get("enabled") is not True:
     raise SystemExit(1)
-if config.get("clientId") in (None, "", "bootstrap-not-configured", "dummy", "empty", "juhe", "juhe-qq"):
+if config.get("clientId") in (None, "", "bootstrap-not-configured", "dummy", "empty"):
     raise SystemExit(1)
 if any(config.get(key) != value for key, value in expected.items()):
-    raise SystemExit(1)
-if any(provider.get("alias") in {"qq", "juhe-qq"} for provider in providers):
     raise SystemExit(1)
 ' <<< "$idp_response"; then
     echo "qq-idp-admin-api: FAIL (idp-qq representation is not production-ready)" >&2

@@ -39,7 +39,7 @@ import java.util.stream.Collectors;
  * <p>列表是 Keycloak realm users 与本地 user_profile 的合并视图，分两个 segment：</p>
  * <ul>
  *   <li>{@link #SEGMENT_KEYCLOAK}（默认）：权威源是 Keycloak，因此没有任何本地 profile 的
- *       Keycloak-only 用户也能被找到并删除（旧 Juhe QQ cleanup 的前提）。</li>
+ *       Keycloak-only 用户也能被找到并删除（历史第三方 IdP 用户清理的前提）。</li>
  *   <li>{@link #SEGMENT_LOCAL}：权威源是本地 user_profile，用于暴露 Keycloak 侧已不存在
  *       的孤儿绑定，管理员可批量删除其资料以释放 {@code (wotb_server, wotb_account_id)} 唯一槽位。</li>
  * </ul>
