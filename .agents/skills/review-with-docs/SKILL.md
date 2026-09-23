@@ -2,7 +2,7 @@
 name: review-with-docs
 description: >
   代码变更后审查代码质量 + 文档同步 + AI 死代码清理。在 review-fix 基础上增加文档检查：
-  CHANGELOG / DEVELOPER_GUIDE / README / API 文档 / i18n / 代码注释 / current-plan；并清理
+  canonical 专题文档 / DEVELOPER_GUIDE / README / API 文档 / i18n / 代码注释 / current-plan；并清理
   AI 生成的提前性/投机死代码（单实现抽象、从不覆盖的字段/参数、占位空壳等）。
   Trigger: 任何影响界面/导出/数据/构建/API/配置的代码变更完成后；或需要清理
   AI 生成代码中的死代码/过度设计时。
@@ -202,7 +202,7 @@ requirement 未完成 → **即使 OCR 无 finding 也必须成为 BLOCKER**。
 
 ### A3. 文档检查清单
 
-> 与现有 review-with-docs 文档检查完全一致（CHANGELOG / DEVELOPER_GUIDE / README /
+> 与现有 review-with-docs 文档检查完全一致（canonical 专题文档 / DEVELOPER_GUIDE / README /
 > API 文档 / i18n / 代码注释 / 配置依赖 / current-plan / versions.json / AI 死代码清理），
 > 逐项见文末「文档检查清单（完整）」。
 
@@ -328,12 +328,12 @@ Tool failure 必须：
 按「文档检查清单」逐项核验，每一项给出：`文档:章节 → 确认通过或缺失内容`。
 核查基线：`git diff origin/main...HEAD --stat` 与本次变更文件清单；逐项对照：
 
-- CHANGELOG / CHANGELOG-PRODUCT / DEVELOPER_GUIDE / README / java/README / map-semanticizer README；
+- HISTORY（仅长期演进）/ canonical 专题文档 / DEVELOPER_GUIDE / README / java/README / map-semanticizer README；
 - 前端 i18n（新增列 → `frontend/src/locales/{zh,en,ru}.json` 三语）、导出列（`Columns.java` / `AggregateSheets.java`）、API DTO 与注释；
 - 代码注释 / TODO / FIXME；
 - 配置依赖文档（`pom.xml` 新依赖注释 / `application.yml` 环境变量注释 / Dockerfile 注释）；
 - `docs/current-plan.md`（如存在且与本次变更相关，任务状态需一致）；
-- `frontend/src/data/versions.json`（仅用户可见变更新增条目：版本号/日期/tag/三语/顶部追加/与 CHANGELOG-PRODUCT 一致）；
+- `frontend/src/data/versions.json`（网站版本页仍使用的用户可见版本数据；只在该页面继续存在期间维护）；
 - AI 死代码清理配合（对新增类/方法做全仓零引用扫描，含 `src/test`、`scripts`、`docs`、`deploy`、`frontend/src/locales`、Grafana dashboards）。
 
 输出：
@@ -387,7 +387,7 @@ Tool failure 必须：
 3. 唯一手段保留（含 ponytail 注释）：N 处
 
 #### 文档缺失清单
-1. CHANGELOG 缺少 [变更描述]
+1. 对应 canonical 文档缺少 [变更描述]
 2. locale/zh.json 缺少 key [xxx]
 3. DEVELOPER_GUIDE 字段表缺少 [字段名]
 
@@ -397,7 +397,7 @@ Blocker count: N   （0 才允许判定完成）
 
 ## 文档检查清单（完整）
 
-### 1. CHANGELOG
+### 1. Canonical documentation
 - [ ] 是否记录了本次变更（Added / Changed / Fixed / Removed）
 - [ ] 变更描述是否准确（不含实现细节，面向读者）
 - [ ] 是否在 `[Unreleased]` 下（未发布版本）
@@ -444,4 +444,4 @@ Blocker count: N   （0 才允许判定完成）
 - [ ] 文案面向用户：不含技术细节、不含 PR 号 / commit hash / 内部模块名
 - [ ] 新条目追加到数组**顶部**（最新在前），禁止修改历史条目
 - [ ] 同一发版若跨多个变更，合并为一条而非多条（条目 ≠ commit 数；多条逐步追加将造成版本号爆炸）
-- [ ] 与产品侧 `CHANGELOG-PRODUCT.md` 描述一致；与技术侧 `CHANGELOG.md` 互补，发版号吻合（同一发版日期 + 同一版本号语义）
+- [ ] 若仍更新 `frontend/src/data/versions.json`，其用户可见描述与当前实现一致；长期演进只在确有历史意义时写入 `HISTORY.md`
