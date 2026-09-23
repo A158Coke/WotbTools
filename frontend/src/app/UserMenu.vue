@@ -65,6 +65,7 @@ onBeforeUnmount(() => {
           <button v-if="isAdmin" class="user-menu-item" role="menuitem" @click="go('admin-users')">{{ $t('admin.title') }}</button>
           <button v-if="isHofAdmin" class="user-menu-item" role="menuitem" @click="go('hof-admin')">{{ $t('hofAdmin.cardTitle') }}</button>
           <button class="user-menu-item" role="menuitem" @click="go('history')">{{ $t('history.btn') }}</button>
+          <button class="user-menu-item" role="menuitem" @click="go('technical-evolution')">{{ $t('technicalEvolution.btn') }}</button>
           <button v-if="!isAndroidApp()" class="user-menu-item" role="menuitem" @click="go('android')">{{ $t('android.nav') }}</button>
           <button class="user-menu-item" role="menuitem" @click="go('contact')">{{ $t('contact.nav') }}</button>
           <a class="user-menu-item" role="menuitem" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
@@ -73,6 +74,7 @@ onBeforeUnmount(() => {
         <template v-else>
           <button class="user-menu-item" role="menuitem" @click="handleLogin">{{ $t('app.login') }}</button>
           <button class="user-menu-item" role="menuitem" @click="go('history')">{{ $t('history.btn') }}</button>
+          <button class="user-menu-item" role="menuitem" @click="go('technical-evolution')">{{ $t('technicalEvolution.btn') }}</button>
           <button class="user-menu-item" role="menuitem" @click="go('contact')">{{ $t('contact.nav') }}</button>
           <a class="user-menu-item" role="menuitem" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
         </template>
