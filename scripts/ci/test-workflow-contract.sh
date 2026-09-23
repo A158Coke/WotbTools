@@ -46,8 +46,8 @@ assert 'select' in jobs and 'release_summary' in jobs
 assert '--base "$BEFORE" --head "$HEAD"' in str(jobs['select']['steps'])
 for component in components:
     assert jobs['build_'+component.replace('-','_')]['uses']=='./.github/workflows/build.yml'
-for root in roots:
-    assert jobs['tofu_'+root.replace('-','_')]['uses']=='./.github/workflows/tofu-apply.yml'
+for tofu_root in roots:
+    assert jobs['tofu_'+tofu_root.replace('-','_')]['uses']=='./.github/workflows/tofu-apply.yml'
 for service in services:
     assert jobs['deploy_'+service.replace('-','_')]['uses']=='./.github/workflows/deploy.yml'
 assert 'always()' in jobs['release_summary']['if']
@@ -59,6 +59,21 @@ for old in ('tofu-plan.yml','grafana-tofu-plan.yml','grafana-tofu-apply.yml','po
     assert not (workflow_dir/old).exists(), old
 planner=(Path(sys.argv[1])/'deploy/release_plan.py').read_text(encoding='utf-8')
 assert 'buildComponents' in planner and 'deployServices' in planner and 'tofuRoots' in planner
+
+# The CI Maven settings stay mirror-free while the local developer settings keep the
+# Aliyun mirror, and no CI step may silently fall back to the local file.
+import re
+
+ci_text=(workflow_dir/'ci.yml').read_text(encoding='utf-8')
+ci_settings=(root/'java/settings-ci.xml').read_text(encoding='utf-8')
+local_settings=(root/'java/settings.xml').read_text(encoding='utf-8')
+assert 'maven.aliyun.com' not in ci_settings
+assert '<mirrors>' not in ci_settings and '<mirrorOf>' not in ci_settings
+assert 'maven.aliyun.com' in local_settings and '<mirrorOf>*</mirrorOf>' in local_settings
+assert 'settings.xml' not in re.sub(r'settings-ci\.xml', '', ci_text)
+assert ci_text.count('-s settings-ci.xml') == 4
+assert ci_text.count('-s ../java/settings-ci.xml') == 2
+assert '-s settings.xml' not in ci_text
 print('CI/Build/Deploy/Tofu/Release workflow contracts OK')
 PY
 
