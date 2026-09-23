@@ -9,7 +9,7 @@ COPY common/map_names.json /common/map_names.json
 # 隐藏 QA 页（?view=vehicle-models）动态 import Tankopedia 车辆库（仅 tier10）
 COPY common/tankopedia-tier10.json /common/tankopedia-tier10.json
 COPY common/assets /common/assets
-# 站点直接展示的项目历史：HistoryPage 构建期以 ?raw 读取（.dockerignore 显式放行）
+# 站点直接展示的 Markdown：HistoryPage / TechnicalEvolutionPage 构建期以 ?raw 读取
 COPY HISTORY.md /HISTORY.md
 # Canonical 技术演进：TechnicalEvolutionPage 构建期以 ?raw 读取
 COPY docs/architecture/TECHNICAL_EVOLUTION.md /docs/architecture/TECHNICAL_EVOLUTION.md
