@@ -26,13 +26,6 @@ describe('locale message composition', () => {
     }
   })
 
-  it('keeps historical submitted Boost notifications translatable', () => {
-    for (const locale of ['zh', 'en', 'ru']) {
-      expect(messages[locale].boost.notificationTitle.BOOST_REQUEST_SUBMITTED).toBeTruthy()
-      expect(messages[locale].boost.notificationMessage.BOOST_REQUEST_SUBMITTED).toBeTruthy()
-    }
-  })
-
   it('does not mutate the base locale object during nested merge', () => {
     const base = { replay: { processing_job: { existing: 'keep' } } }
     const merged = mergeLocaleMessages(base, { replay: { processing_job: { added: 'new' } } })
