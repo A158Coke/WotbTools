@@ -105,7 +105,7 @@ multipart `POST /api/replay/map-overview`、`POST /api/replay/process`、
 
 当前 V2 只有：Processing Dataset → Export Job → XLSX/ZIP（`GET .../result` +
 `POST /api/replay/export-jobs`），不再有 raw replay → Export 路径。历史契约见
-`docs/CHANGELOG.md` 与 git history（当前 README 只描述 current state）。
+`HISTORY.md` 与 git history（当前 README 只描述 current state）。
 
 
 ### Replay Export Job（需登录：wotbtools-user / wotbtools-admin，长任务导出）
