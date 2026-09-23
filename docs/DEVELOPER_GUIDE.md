@@ -579,14 +579,14 @@ main 自动 Release 与手动 dispatch 都绑定当前 main 完整 SHA，单 roo
 provider/secret/state 边界、保存并校验同一个 plan 后 apply，执行 second-plan 或 readiness。
 原生产 COS bucket 与 root 设计见 `docs/architecture/opentofu-production-baseline.md`。
 
-PR selector 按 root 选择 fmt/init/validate 与安全 fixture。Fork PR 不获得生产凭据，只做
-backend=false 验证；可信同仓 PR 对 COS/Grafana runner-side authenticated plan，对需要
-localhost provider/state 的 TX/Yecao roots 通过 SSH 在对应宿主运行受 guard 的只读 plan。
-Trusted remote plan 将单一 root 放入 PR/SHA 隔离临时目录，使用宿主已有 CLI 配置与该 root
-专属 secrets，不执行 apply，不写 marker，退出时清理 binary plan 与 staging。它会执行 PR
-中的 Terraform/OpenTofu 配置，因此可信边界仅限同仓 PR。PR workflow 与 main Apply 不共享
-binary plan；main 始终重新 plan。Local state、plan、真实 tfvars 不得提交，provider lockfile
-必须提交。production maintenance workflows 不因新 push 取消正在执行的写入。
+PR 侧只做 validation：selector 按 root 选择 `tofu fmt -check`、`tofu init -backend=false`、
+`tofu validate` 与该 root 已有的本地 safety fixture。PR 不 SSH 任何生产宿主、不读取生产 local
+state、也不接收 host-local 生产凭据；需要 production-local provider 的五个 root
+（keycloak、rabbitmq、business-postgres、keycloak-postgres、minio）的生产 plan 只在授权的
+main-only Tofu Apply 运行中产生。COS/Grafana 使用远端 backend / 外部 API，仍由 runner 做
+authenticated 只读 plan 并过 safety guard。PR workflow 与 main Apply 不共享 binary plan；
+main 始终重新 plan。Local state、plan、真实 tfvars 不得提交，provider lockfile 必须提交。
+production maintenance workflows 不因新 push 取消正在执行的写入。
 
 Grafana dashboard root 仍管理 `deploy/observability/grafana/dashboards` 中的六个 dashboard；
 Prometheus/Loki datasource 仍由 file provisioning 管理。删除或替换必须通过

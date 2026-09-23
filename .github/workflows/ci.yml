@@ -845,9 +845,17 @@ jobs:
   tofu_plans:
     needs: [changes]
     if: needs.changes.outputs.tofu_roots != '[]'
-    name: OpenTofu plan / ${{ matrix.root }}
+    name: OpenTofu validation / ${{ matrix.root }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    # PR OpenTofu work is validation only: fmt/init -backend=false/validate plus the
+    # root's local safety fixtures. The host-local roots (keycloak, rabbitmq,
+    # business-postgres, keycloak-postgres, minio) need a production-local provider and
+    # credentials, so their authoritative plan runs exclusively in the main-only
+    # Tofu Apply workflow — a pull request never SSHs a production host and never
+    # receives those secrets. COS and Grafana keep their runner-side authenticated
+    # plan because they use a remote backend / external API instead of a
+    # production-local execution boundary.
     strategy:
       fail-fast: false
       matrix:
@@ -925,187 +933,6 @@ jobs:
             cos) bash "$GITHUB_WORKSPACE/scripts/ci/validate-tofu-prod-plan.sh" plan.tfplan ;;
             grafana) bash ./validate-plan.sh plan.tfplan ;;
           esac
-      - name: Prepare isolated host-local read-only plan stage
-        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' }}
-        uses: appleboy/ssh-action@v1
-        env:
-          ROOT_NAME: ${{ matrix.root }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          SOURCE_SHA: ${{ github.sha }}
-        with:
-          host: ${{ matrix.root == 'minio' && secrets.VPS_HOST || secrets.TX_VPS_HOST }}
-          username: ${{ matrix.root == 'minio' && secrets.VPS_USER || secrets.TX_VPS_USER }}
-          port: ${{ matrix.root == 'minio' && secrets.VPS_PORT || secrets.TX_VPS_PORT }}
-          key: ${{ matrix.root == 'minio' && secrets.VPS_SSH_KEY || secrets.TX_VPS_SSH_KEY }}
-          envs: ROOT_NAME,PR_NUMBER,SOURCE_SHA
-          script: |
-            set -eu
-            [[ "$ROOT_NAME" =~ ^(keycloak|rabbitmq|business-postgres|keycloak-postgres|minio)$ ]]
-            [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
-            [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-            if [ "$ROOT_NAME" = minio ]; then base=/opt/wotb/tofu-pr; else base=/opt/wotb-tx/tofu-pr; fi
-            stage="$base/$PR_NUMBER/$SOURCE_SHA/$ROOT_NAME"
-            rm -rf -- "$stage"
-            install -d -m 700 "$stage"
-      - name: Bundle one selected root and read-only planner
-        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' }}
-        env:
-          ROOT_DIR: ${{ steps.root.outputs.path }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          # The bundle must live inside the workspace: scp-action resolves `source`
-          # relative to the checkout, so a $RUNNER_TEMP path is never uploaded and
-          # the remote step fails on a missing root.tgz.
-          bundle="$GITHUB_WORKSPACE/tofu-plan-bundle"
-          rm -rf -- "$bundle"
-          mkdir -p "$bundle"
-          tar -C "$ROOT_DIR" --exclude=.terraform --exclude=.tofu-data -czf "$bundle/root.tgz" .
-          cp scripts/ci/remote-tofu-plan.sh "$bundle/remote-tofu-plan.sh"
-          chmod 700 "$bundle/remote-tofu-plan.sh"
-      - name: Stage selected root on its runtime host
-        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' }}
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ matrix.root == 'minio' && secrets.VPS_HOST || secrets.TX_VPS_HOST }}
-          username: ${{ matrix.root == 'minio' && secrets.VPS_USER || secrets.TX_VPS_USER }}
-          port: ${{ matrix.root == 'minio' && secrets.VPS_PORT || secrets.TX_VPS_PORT }}
-          key: ${{ matrix.root == 'minio' && secrets.VPS_SSH_KEY || secrets.TX_VPS_SSH_KEY }}
-          source: tofu-plan-bundle/*
-          target: ${{ matrix.root == 'minio' && '/opt/wotb/tofu-pr/' || '/opt/wotb-tx/tofu-pr/' }}${{ github.event.pull_request.number }}/${{ github.sha }}/${{ matrix.root }}/
-          overwrite: true
-      - name: Expand root and run guarded read-only production-state plan
-        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' && matrix.root == 'keycloak' }}
-        uses: appleboy/ssh-action@v1
-        env:
-          ROOT_NAME: ${{ matrix.root }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          SOURCE_SHA: ${{ github.sha }}
-          KEYCLOAK_ADMIN_USERNAME: admin
-          KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
-          KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
-          KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION: ${{ vars.KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION || '1' }}
-          KEYCLOAK_E2E_CLIENT_SECRET: ${{ secrets.KEYCLOAK_E2E_CLIENT_SECRET }}
-          KEYCLOAK_E2E_CLIENT_SECRET_VERSION: ${{ vars.KEYCLOAK_E2E_CLIENT_SECRET_VERSION || '1' }}
-          WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
-          TX_QQ_CLIENT_ID: ${{ vars.TX_QQ_CLIENT_ID }}
-          TX_QQ_CLIENT_SECRET: ${{ secrets.TX_QQ_CLIENT_SECRET }}
-          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
-          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          command_timeout: 25m
-          envs: ROOT_NAME,PR_NUMBER,SOURCE_SHA,KEYCLOAK_ADMIN_USERNAME,KEYCLOAK_ADMIN_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION,KEYCLOAK_E2E_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET_VERSION,WG_APPLICATION_ID,TX_QQ_CLIENT_ID,TX_QQ_CLIENT_SECRET,TENCENTCLOUD_SECRET_ID,TENCENTCLOUD_SECRET_KEY
-          script: |
-            set -eu
-            stage="/opt/wotb-tx/tofu-pr/$PR_NUMBER/$SOURCE_SHA/$ROOT_NAME"
-            trap 'rm -rf -- "$stage"' EXIT
-            tar -xzf "$stage/root.tgz" -C "$stage"
-            bash "$stage/remote-tofu-plan.sh" "$stage" "$ROOT_NAME"
-      - name: Expand root and run guarded read-only production-state plan
-        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' && matrix.root == 'rabbitmq' }}
-        uses: appleboy/ssh-action@v1
-        env:
-          ROOT_NAME: ${{ matrix.root }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          SOURCE_SHA: ${{ github.sha }}
-          TX_RABBITMQ_ADMIN_USER: ${{ vars.TX_RABBITMQ_ADMIN_USER }}
-          TX_RABBITMQ_ADMIN_PASSWORD: ${{ secrets.TX_RABBITMQ_ADMIN_PASSWORD }}
-          TX_RABBITMQ_CONTROL_API_PASSWORD: ${{ secrets.TX_RABBITMQ_CONTROL_API_PASSWORD }}
-          TX_RABBITMQ_PARSER_WORKER_PASSWORD: ${{ secrets.TX_RABBITMQ_PARSER_WORKER_PASSWORD }}
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          command_timeout: 25m
-          envs: ROOT_NAME,PR_NUMBER,SOURCE_SHA,TX_RABBITMQ_ADMIN_USER,TX_RABBITMQ_ADMIN_PASSWORD,TX_RABBITMQ_CONTROL_API_PASSWORD,TX_RABBITMQ_PARSER_WORKER_PASSWORD
-          script: |
-            set -eu
-            stage="/opt/wotb-tx/tofu-pr/$PR_NUMBER/$SOURCE_SHA/$ROOT_NAME"
-            trap 'rm -rf -- "$stage"' EXIT
-            tar -xzf "$stage/root.tgz" -C "$stage"
-            bash "$stage/remote-tofu-plan.sh" "$stage" "$ROOT_NAME"
-      - name: Expand root and run guarded read-only production-state plan
-        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' && matrix.root == 'business-postgres' }}
-        uses: appleboy/ssh-action@v1
-        env:
-          ROOT_NAME: ${{ matrix.root }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          SOURCE_SHA: ${{ github.sha }}
-          TX_BUSINESS_POSTGRES_ADMIN_USER: ${{ vars.TX_BUSINESS_POSTGRES_ADMIN_USER }}
-          TX_BUSINESS_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_BUSINESS_POSTGRES_ADMIN_PASSWORD }}
-          TX_BUSINESS_DB_NAME: ${{ vars.TX_BUSINESS_DB_NAME }}
-          TX_BUSINESS_DB_USERNAME: ${{ vars.TX_BUSINESS_DB_USERNAME }}
-          TX_BUSINESS_DB_PASSWORD: ${{ secrets.TX_BUSINESS_DB_PASSWORD }}
-          TX_BUSINESS_DB_PASSWORD_VERSION: ${{ vars.TX_BUSINESS_DB_PASSWORD_VERSION || '1' }}
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          command_timeout: 25m
-          envs: ROOT_NAME,PR_NUMBER,SOURCE_SHA,TX_BUSINESS_POSTGRES_ADMIN_USER,TX_BUSINESS_POSTGRES_ADMIN_PASSWORD,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,TX_BUSINESS_DB_PASSWORD_VERSION
-          script: |
-            set -eu
-            stage="/opt/wotb-tx/tofu-pr/$PR_NUMBER/$SOURCE_SHA/$ROOT_NAME"
-            trap 'rm -rf -- "$stage"' EXIT
-            tar -xzf "$stage/root.tgz" -C "$stage"
-            bash "$stage/remote-tofu-plan.sh" "$stage" "$ROOT_NAME"
-      - name: Expand root and run guarded read-only production-state plan
-        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' && matrix.root == 'keycloak-postgres' }}
-        uses: appleboy/ssh-action@v1
-        env:
-          ROOT_NAME: ${{ matrix.root }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          SOURCE_SHA: ${{ github.sha }}
-          KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
-          KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
-          KC_DB_PASSWORD_VERSION: ${{ vars.TX_KC_DB_PASSWORD_VERSION || '1' }}
-          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
-          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          command_timeout: 25m
-          envs: ROOT_NAME,PR_NUMBER,SOURCE_SHA,KC_POSTGRES_ADMIN_PASSWORD,KC_DB_PASSWORD,KC_DB_PASSWORD_VERSION,TENCENTCLOUD_SECRET_ID,TENCENTCLOUD_SECRET_KEY
-          script: |
-            set -eu
-            stage="/opt/wotb-tx/tofu-pr/$PR_NUMBER/$SOURCE_SHA/$ROOT_NAME"
-            trap 'rm -rf -- "$stage"' EXIT
-            tar -xzf "$stage/root.tgz" -C "$stage"
-            bash "$stage/remote-tofu-plan.sh" "$stage" "$ROOT_NAME"
-      - name: Expand root and run guarded read-only production-state plan
-        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root == 'minio' }}
-        uses: appleboy/ssh-action@v1
-        env:
-          ROOT_NAME: ${{ matrix.root }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          SOURCE_SHA: ${{ github.sha }}
-          YECAO_MINIO_ROOT_USER: ${{ secrets.YECAO_MINIO_ROOT_USER }}
-          YECAO_MINIO_ROOT_PASSWORD: ${{ secrets.YECAO_MINIO_ROOT_PASSWORD }}
-          YECAO_MINIO_WORKER_ACCESS_KEY: ${{ secrets.YECAO_MINIO_WORKER_ACCESS_KEY }}
-          YECAO_MINIO_WORKER_SECRET_KEY: ${{ secrets.YECAO_MINIO_WORKER_SECRET_KEY }}
-          YECAO_MINIO_CONTROL_API_ACCESS_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_ACCESS_KEY }}
-          YECAO_MINIO_CONTROL_API_SECRET_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_SECRET_KEY }}
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          port: ${{ secrets.VPS_PORT }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          command_timeout: 25m
-          envs: ROOT_NAME,PR_NUMBER,SOURCE_SHA,YECAO_MINIO_ROOT_USER,YECAO_MINIO_ROOT_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY
-          script: |
-            set -eu
-            stage="/opt/wotb/tofu-pr/$PR_NUMBER/$SOURCE_SHA/$ROOT_NAME"
-            trap 'rm -rf -- "$stage"' EXIT
-            tar -xzf "$stage/root.tgz" -C "$stage"
-            bash "$stage/remote-tofu-plan.sh" "$stage" "$ROOT_NAME"
 
   required:
     needs:

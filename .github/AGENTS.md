@@ -3,9 +3,12 @@
 - `ci.yml`：唯一 PR 验证入口和 `CI / Required Gate`。Selector 调用
   `deploy/release_plan.py --base BASE --head HEAD`；普通 Java 使用受影响 reactor
   `-pl/-am`，Docker packaging、浏览器测试和七个 Tofu roots 按风险选择。
-  Fork PR 只做无生产 backend 的验证；同仓可信 PR 对云 root 执行 runner-side 只读 plan，
-  对 TX/Yecao localhost-provider roots 通过 SSH 在对应宿主执行只读 plan。远程计划不 apply，
-  安全 guard 必须阻止删除/替换；PR head 代码仅在同仓可信边界执行。
+  PR 的 Tofu 工作是 validation：`OpenTofu validation / <root>` matrix 只跑
+  fmt / `init -backend=false` / validate 与该 root 的本地 safety fixture。PR 不 SSH 生产宿主、
+  不读生产 local state、也不接收 host-local 生产凭据；需要 production-local provider 的五个
+  root（keycloak、rabbitmq、business-postgres、keycloak-postgres、minio）只在 main-only Tofu
+  Apply 里 plan/apply。COS/Grafana 走远端 backend / 外部 API，仍由 runner 做 authenticated
+  只读 plan + safety guard。PR 与 main 不共享 binary plan。
 - `build.yml`：仅 `workflow_call` 与单 component `workflow_dispatch`，接受五个组件
   business-api/frontend/keycloak/parser-worker/minio。冻结完整 source SHA，只发布对应 registry
   的 immutable `sha-<12>` image，回读并核对 registry digest；输出完整 image/tag/SHA/digest。
