@@ -53,6 +53,21 @@ FRONTEND_COMMON = (
     # `?raw`, so editing one changes the produced bundle; .dockerignore re-includes them.
     "HISTORY.md", "docs/architecture/TECHNICAL_EVOLUTION.md", "docs/WotBTools_League_Rating_V6.md",
 )
+# The browser suites are the slow end-to-end checks, so they follow the frontend
+# surfaces that mount, route or size every view rather than a filename substring:
+# the HTML entry, the app bootstrap/root component, the shell package (AppShell,
+# router, ViewHost, navigation, view registry) and the global stylesheets. A change
+# there can break both the playback layout and the workspace interaction flows, so
+# both suites run; the playback-only heuristics stay below.
+FRONTEND_GLOBAL_PATHS = (
+    "frontend/index.html",
+    "frontend/src/main.js",
+    "frontend/src/App.vue",
+    "frontend/src/styles/app-shell.css",
+    "frontend/src/styles/tokens.css",
+)
+FRONTEND_GLOBAL_PREFIXES = ("frontend/src/app/",)
+BROWSER_SUITES = ("playback-layout", "workspace-interaction")
 OBS_CONFIG = {
     "deploy/observability/prometheus/": "prometheus",
     "deploy/observability/loki/": "loki",
@@ -245,10 +260,12 @@ def plan(base: str, head: str) -> dict[str, object]:
             frontend_test = path.endswith((".test.js", ".test.ts", ".spec.js", ".spec.ts"))
             if ((path.startswith("frontend/src/") and not frontend_test)
                     or path.startswith("frontend/public/") or path.startswith("frontend/homepage/")
-                    or path in ("frontend/package.json", "frontend/package-lock.json", "frontend/vite.config.js")):
+                    or path in ("frontend/index.html", "frontend/package.json", "frontend/package-lock.json", "frontend/vite.config.js")):
                 build.add("frontend")
             if path.startswith("frontend/src/api/"):
                 surfaces["httpContract"] = True
+            if path in FRONTEND_GLOBAL_PATHS or path.startswith(FRONTEND_GLOBAL_PREFIXES):
+                browser.update(BROWSER_SUITES)
             if "Playback" in path or "ReplayWorkspace" in path or "ReplayPage" in path:
                 browser.add("workspace-interaction")
             if path.endswith(".css") or "Layout" in path or "Playback" in path or "ReplayPage" in path:
