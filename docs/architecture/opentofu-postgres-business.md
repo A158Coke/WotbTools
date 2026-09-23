@@ -38,16 +38,20 @@ covers `CONNECT`, `CREATE`, and `TEMPORARY`; schema objects stay owned by Flyway
 
 1. Pull requests run `tofu fmt -check`, `tofu init -backend=false`,
    `tofu validate`, the plan-policy fixtures, and the contract script on
-   GitHub-hosted runners. No runner-side database plan or connection exists.
-2. A merged main change is copied to an immutable SHA-named staging directory on
-   TX through SSH, and the TX deploy path starts the runtime and waits for
-   `pg_isready`.
+   GitHub-hosted runners; a trusted same-repository PR additionally runs the
+   root's guarded read-only plan on the TX host. No runner-side database plan or
+   connection exists.
+2. A merged main change is staged into an immutable SHA-named directory on
+   TX through SSH, and the `business-postgres` Deploy lane starts the runtime and
+   waits for `pg_isready`.
 3. The TX host creates one saved plan against `127.0.0.1:25432`, rejects
    destructive changes, applies that exact plan, requires a completely clean
    second plan, and only then writes the root-only
-   `/opt/wotb-tx/business-postgres.tofu-provisioned` marker.
+   `/opt/wotb-tx/business-postgres.tofu-provisioned` marker. This runs in the
+   `tx` job of the single `.github/workflows/tofu-apply.yml` (root
+   `business-postgres`).
 
-Both the deployment workflow and the Business PostgreSQL workflow use the
+The Deploy workflow and the Tofu Apply workflow use the same
 `production-maintenance` GitHub Actions concurrency group. That is the required
 serialization boundary; operator coordination is not a substitute for the
 workflow-level lock. Neither workflow applies on a GitHub runner.

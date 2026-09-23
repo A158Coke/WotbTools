@@ -53,11 +53,25 @@ grep -Fq 'image: rabbitmq:4.3.6-management-alpine' "$COMPOSE" \
 if grep -Eq 'x-dead-letter|x-message-ttl|x-queue-type|wotb\.jobs|wotb\.parser' "$COMPOSE"; then
   fail "Compose must not declare RabbitMQ topology; OpenTofu is the only topology owner"
 fi
-TX_DEPLOY="$ROOT/deploy/tx/deploy.sh"
-grep -Fq 'bash ./validate-plan.sh plan.tfplan' "$TX_DEPLOY" \
-  || fail "the TX deploy path must validate the first plan"
-grep -Fq 'bash ./validate-plan.sh second-plan.tfplan --require-no-changes' "$TX_DEPLOY" \
-  || fail "the TX deploy path must require a no-op second plan"
+# The single-root Tofu Apply lane is the only owner of this root's plan/apply
+# path, so the first-plan gate and the no-op second-plan gate must live in its
+# RabbitMQ step (the TX deploy script no longer provisions this root).
+python3 - "$ROOT/.github/workflows/tofu-apply.yml" <<'PY' \
+  || fail "the TX Tofu Apply lane must validate the first plan and require a no-op second plan"
+import sys
+
+import yaml
+
+workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+steps = workflow["jobs"]["tx"]["steps"]
+step = next(step for step in steps if step.get("name") == "Apply RabbitMQ on TX localhost")
+script = step["with"]["script"]
+for expected in (
+    "bash ./validate-plan.sh plan.tfplan",
+    "bash ./validate-plan.sh second-plan.tfplan --require-no-changes",
+):
+    assert expected in script, expected
+PY
 
 docker run -d --name "$NAME" \
   -e RABBITMQ_DEFAULT_USER="$ADMIN_USER" \

@@ -161,13 +161,16 @@ it at that address fails with `PARSER_WORKER_STORAGE_UNAVAILABLE` / `Connect tim
 out`. One MinIO runtime, two endpoints — both are pinned separately in
 `deploy/test-deploy-contract.sh` so they cannot collapse back into one shared value.
 
-The service is **selected explicitly** and is deliberately absent from the `all`
-service set while the legacy Yecao application stack is still running, so an
-existing whole-stack deploy neither starts it nor begins demanding its
-credentials:
+The service is **selected explicitly** — the single-service Deploy takes one `service`
+input and there is no whole-stack selector any more — so an unrelated release neither
+starts it nor begins demanding its credentials:
 
 ```bash
-WOTB_DEPLOY_SERVICES=parser-worker WOTB_DEPLOY_IMAGE_SERVICES=parser-worker bash deploy/deploy.sh
+WOTB_DEPLOY_SERVICE=parser-worker \
+WOTB_DEPLOY_CONFIG_SHA=<40-hex main SHA> \
+WOTB_DEPLOY_IMAGE_TAG=ghcr.io/a158coke/wotbtools-parser-worker:sha-<12> \
+WOTB_DEPLOY_IMAGE_COMMIT_SHA=<40-hex image SHA> \
+bash deploy/deploy.sh
 ```
 
 `deploy/deploy.sh` fails closed on three secrets whenever `parser-worker` is
@@ -247,6 +250,7 @@ Diagnosis order:
   dependency closure of the worker image.
 - `deploy/test-deploy-contract.sh` pins the compose/deploy contract: no public
   port, no database credentials, the three required secrets, the liveness gate,
-  the fact that `all` does not start the service, and the MinIO endpoint
+  the rejection of the retired `all` / `wotb-backend` / `keycloak` selectors, and the
+  MinIO endpoint
   ownership — the worker's `minio:9000` and the control plane's `10.20.0.2:9000`
   each stay on their own variable and neither side may adopt the other's endpoint.

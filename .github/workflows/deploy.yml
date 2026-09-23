@@ -1,288 +1,193 @@
 name: Deploy
-# 生产 Grafana MCP 已下线（2026-08-11）：不再传递 GRAFANA_MCP_TOKEN。
-run-name: Deploy ${{ github.event_name == 'workflow_dispatch' && format('manual {0} {1}', inputs.target, github.run_number) || github.event.workflow_run.head_sha }} by @${{ github.actor }}
+run-name: Deploy ${{ inputs.service }} by @${{ github.actor }}
 
 on:
-  workflow_run:
-    workflows:
-      - Build
-    types:
-      - completed
+  workflow_call:
+    inputs:
+      service:
+        type: string
+        required: true
+      source_sha:
+        type: string
+        required: true
+      image:
+        type: string
+        required: false
+        default: ''
+      digest:
+        type: string
+        required: false
+        default: ''
   workflow_dispatch:
     inputs:
-      target:
-        description: Explicit production deployment target
+      service:
+        description: One production service
         required: true
-        default: tx
-        type: choice
-        options:
-          - tx
-          - minio
-          - parser-worker
-      tx_services:
-        description: TX service (used only when target=tx)
-        required: true
-        default: business-api
         type: choice
         options:
           - business-api
+          - frontend
+          - keycloak
+          - parser-worker
+          - minio
+          - caddy
           - rabbitmq
           - business-postgres
-          - keycloak
           - keycloak-postgres
-          - wotb-frontend
-          - caddy
-          - all
+          - node-exporter
+          - prometheus
+          - loki
+          - alloy
+          - grafana
 
 permissions:
   contents: read
 
 concurrency:
-  # Serialize every production Compose/OpenTofu mutation, including MinIO.
   group: production-maintenance
   cancel-in-progress: false
+  queue: max
 
 jobs:
-  changes:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main')
+  identity:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
-      actions: read
+      packages: read
     outputs:
-      release_sha: ${{ steps.manifest.outputs.release_sha }}
-      release_tag: ${{ steps.manifest.outputs.release_tag }}
-      build_run_number: ${{ steps.manifest.outputs.build_run_number }}
-      backend_migration_max_version: ${{ steps.manifest.outputs.backend_migration_max_version }}
-      deploy_services: ${{ steps.manifest.outputs.deploy_services }}
-      image_services: ${{ steps.manifest.outputs.image_services }}
-      yecao_services: ${{ steps.manifest.outputs.yecao_services }}
-      tx_services: ${{ steps.manifest.outputs.tx_services }}
-      yecao_image_services: ${{ steps.manifest.outputs.yecao_image_services }}
-      tx_image_services: ${{ steps.manifest.outputs.tx_image_services }}
-      deploy_display_name: ${{ steps.manifest.outputs.deploy_display_name }}
+      service: ${{ steps.source.outputs.service }}
+      config_sha: ${{ steps.source.outputs.config_sha }}
+      image: ${{ steps.select.outputs.image }}
+      image_commit_sha: ${{ steps.select.outputs.image_commit_sha }}
+      host: ${{ steps.source.outputs.host }}
+      repository: ${{ steps.source.outputs.repository }}
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 1
-          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.event.workflow_run.head_sha }}
-      - name: Download triggering Build manifest
-        if: github.event_name == 'workflow_run'
-        uses: actions/download-artifact@v5
-        with:
-          name: deployment-manifest
-          path: release-artifact
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
-      - name: Validate deployment manifest
-        id: manifest
+          fetch-depth: 0
+          ref: ${{ inputs.source_sha || github.sha }}
+      - name: Freeze one trusted main service
+        id: source
         env:
-          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
-          MANUAL_TARGET: ${{ inputs.target }}
-          TX_SERVICES_INPUT: ${{ inputs.tx_services }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-            if [ "${GITHUB_REF:-}" != refs/heads/main ]; then
-              echo "::error::Manual TX deploy must be dispatched from the main branch." >&2
-              exit 1
-            fi
-            git fetch origin main --depth=1
-            source_sha="$(git rev-parse HEAD)"
-            main_sha="$(git rev-parse origin/main)"
-            if [ "$source_sha" != "$main_sha" ]; then
-              echo "::error::Manual TX deploy must run from the current main HEAD." >&2
-              exit 1
-            fi
-            if [ "$MANUAL_TARGET" = minio ] || [ "$MANUAL_TARGET" = parser-worker ]; then
-              metadata="$(python3 deploy/release_plan.py manual \
-                --service "$MANUAL_TARGET" \
-                --commit-sha "$main_sha" \
-                --build-run-id "$GITHUB_RUN_ID" \
-                --build-run-number "$GITHUB_RUN_NUMBER")"
-              python3 - "$metadata" <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          import sys
-
-          manifest = json.loads(sys.argv[1])
-          targets = manifest["targetServices"]
-          images = set(manifest["imageServices"])
-          service = manifest["deployServices"][0]
-          label = "MinIO" if service == "minio" else "Parser Worker"
-          print(f"release_sha={manifest['commitSha']}")
-          print(f"release_tag={manifest['imageTag']}")
-          print(f"build_run_number={manifest['buildRunNumber']}")
-          print("backend_migration_max_version=")
-          print(f"deploy_services={','.join(manifest['deployServices'])}")
-          print(f"image_services={','.join(manifest['imageServices'])}")
-          print(f"yecao_services={','.join(targets.get('yecao', []))}")
-          print(f"tx_services={','.join(targets.get('tx', []))}")
-          print(f"yecao_image_services={','.join(s for s in targets.get('yecao', []) if s in images)}")
-          print(f"tx_image_services={','.join(s for s in targets.get('tx', []) if s in images)}")
-          print(f"deploy_display_name=Manual {label}")
-          PY
-              exit 0
-            fi
-            python3 - "$MANUAL_TARGET" "$TX_SERVICES_INPUT" "$main_sha" "$GITHUB_RUN_NUMBER" <<'PY' >> "$GITHUB_OUTPUT"
-          import sys
-
-          target = sys.argv[1]
-          commit_sha = sys.argv[3]
-          run_number = sys.argv[4]
-          if target != "tx":
-              raise SystemExit("target must be tx, minio, or parser-worker")
-          # The manual selector is a dropdown, but a workflow_dispatch payload can still
-          # carry an arbitrary string, so the selection stays explicitly validated here.
-          TX_SERVICES = (
-              "keycloak-postgres",
-              "business-postgres",
-              "rabbitmq",
-              "keycloak",
-              "wotb-frontend",
-              "business-api",
-          )
-          # ``all`` is the one-keystroke "whole TX runtime" selector. It expands to the same
-          # service set deploy/tx/deploy.sh already owns for its own ``all`` selection; the
-          # literal value never reaches WOTB_DEPLOY_SERVICES. Caddy stays an explicit-only
-          # selector: it is refreshed by the selected proxied services, and adding it here
-          # would newly require Caddy credentials for a whole-runtime deploy.
-          if sys.argv[2] == "all":
-              requested = list(TX_SERVICES)
-          elif sys.argv[2] in (*TX_SERVICES, "caddy"):
-              requested = [sys.argv[2]]
-          else:
-              raise SystemExit("tx_services must be one of: all, caddy, " + ", ".join(TX_SERVICES))
-          print(f"release_sha={commit_sha}")
-          print(f"release_tag=sha-{commit_sha[:12]}")
-          print(f"build_run_number={run_number}")
-          print("backend_migration_max_version=")
-          print(f"deploy_services={','.join(requested)}")
-          image_services = [service for service in requested if service in {"keycloak", "wotb-frontend", "business-api"}]
-          print(f"image_services={','.join(image_services)}")
-          print("yecao_services=")
-          print(f"tx_services={','.join(requested)}")
-          print("yecao_image_services=")
-          print(f"tx_image_services={','.join(image_services)}")
-          print("deploy_display_name=Manual TX")
-          PY
-            exit 0
-          fi
-          manifest_path=release-artifact/deployment-manifest.json
-          [ -f "$manifest_path" ] || {
-            echo "deployment manifest artifact is missing" >&2
-            exit 1
-          }
-          metadata="$(python3 deploy/release_plan.py validate \
-            --manifest "$manifest_path" --expected-sha "$EXPECTED_SHA")"
-          python3 - "$metadata" <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          import sys
-
-          manifest = json.loads(sys.argv[1])
-          print(f"release_sha={manifest['commitSha']}")
-          print(f"release_tag={manifest['imageTag']}")
-          print(f"build_run_number={manifest['buildRunNumber']}")
-          print(f"backend_migration_max_version={manifest['backendMigrationMaxVersion']}")
-          print(f"deploy_services={','.join(manifest['deployServices'])}")
-          print(f"image_services={','.join(manifest['imageServices'])}")
-          targets = manifest["targetServices"]
-          print(f"yecao_services={','.join(targets.get('yecao', []))}")
-          print(f"tx_services={','.join(targets.get('tx', []))}")
-          images = set(manifest["imageServices"])
-          print(f"yecao_image_services={','.join(s for s in targets.get('yecao', []) if s in images)}")
-          print(f"tx_image_services={','.join(s for s in targets.get('tx', []) if s in images)}")
-          labels = []
-          if "business-api" in manifest["deployServices"]:
-              labels.append("Business API")
-          if "wotb-frontend" in manifest["deployServices"]:
-              labels.append("Frontend")
-          if "keycloak" in manifest["deployServices"]:
-              labels.append("Keycloak")
-          if "parser-worker" in manifest["deployServices"]:
-              labels.append("Parser Worker")
-          if any(service in {"node-exporter", "prometheus", "loki", "alloy", "grafana"}
-                 for service in manifest["deployServices"]):
-              labels.append("Observability")
-          print(f"deploy_display_name={' + '.join(labels) or 'No-op'}")
-          PY
-
-  image_existence:
-    needs: [changes]
-    if: needs.changes.result == 'success' && needs.changes.outputs.image_services != ''
-    runs-on: ubuntu-latest
-    permissions:
-      packages: read
-    steps:
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/login-action@v4
-        if: needs.changes.outputs.tx_image_services != ''
-        with:
-          registry: ${{ vars.TCR_REGISTRY }}
-          username: ${{ secrets.TCR_USERNAME }}
-          password: ${{ secrets.TCR_PASSWORD }}
-      - name: Verify required application images exist
-        env:
-          IMAGE_SERVICES: ${{ needs.changes.outputs.image_services }}
-          RELEASE_TAG: ${{ needs.changes.outputs.release_tag }}
+          SERVICE: ${{ inputs.service }}
+          SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
           TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
           TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
         shell: bash
         run: |
           set -euo pipefail
-          tcr_image_prefix="$TCR_REGISTRY/$TCR_NAMESPACE"
-          IFS=',' read -r -a services <<< "$IMAGE_SERVICES"
-          for service in "${services[@]}"; do
-            # TX application images live in Tencent TCR only; MinIO and Parser Worker
-            # stay on GHCR. There is deliberately no cross-registry fallback: an
-            # unexpected service fails closed instead of resolving somewhere else.
-            case "$service" in
-              business-api) image="$tcr_image_prefix/wotbtools-backend" ;;
-              wotb-frontend) image="$tcr_image_prefix/wotbtools-frontend" ;;
-              keycloak) image="$tcr_image_prefix/wotbtools-keycloak" ;;
-              minio) image=ghcr.io/a158coke/wotbtools-minio; remediation="MinIO immutable image for current main does not exist. Run Build workflow manually with service=minio first, then deploy the resulting release." ;;
-              parser-worker) image=ghcr.io/a158coke/wotbtools-parser-worker; remediation="Parser Worker immutable image for current main does not exist. Run Build workflow manually with service=parser-worker first, then deploy the resulting release." ;;
-              *) echo "unsupported image service: $service" >&2; exit 1 ;;
-            esac
-            if [ "$service" != minio ] && [ "$service" != parser-worker ]; then
-              remediation="Required immutable deploy image does not exist for $service: $image:$RELEASE_TAG"
-            fi
-            docker manifest inspect "$image:$RELEASE_TAG" >/dev/null || {
-              echo "::error::$remediation" >&2
-              exit 1
-            }
-          done
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source SHA must be full and lowercase" >&2; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ] || { echo "::error::checkout/source mismatch" >&2; exit 1; }
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            [ "$REF_NAME" = refs/heads/main ] || { echo "::error::Manual Deploy must dispatch from main" >&2; exit 1; }
+          fi
+          git fetch origin main
+          [ "$SOURCE_SHA" = "$(git rev-parse origin/main)" ] || { echo "::error::stale Deploy source; use current main" >&2; exit 1; }
+          case "$SERVICE" in
+            business-api|frontend|keycloak)
+              case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo "::error::TX registry must be Tencent TCR" >&2; exit 1 ;; esac
+              [ -n "$TCR_NAMESPACE" ] || { echo "::error::TCR_NAMESPACE is required" >&2; exit 1; }
+              host=tx
+              repository="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-$SERVICE"
+              ;;
+            parser-worker|minio)
+              host=yecao
+              repository="ghcr.io/a158coke/wotbtools-$SERVICE"
+              ;;
+            caddy|rabbitmq|business-postgres|keycloak-postgres)
+              host=tx
+              repository=''
+              ;;
+            node-exporter|prometheus|loki|alloy|grafana)
+              host=yecao
+              repository=''
+              ;;
+            *) echo "::error::unsupported service: $SERVICE" >&2; exit 1 ;;
+          esac
+          {
+            echo "service=$SERVICE"
+            echo "config_sha=$SOURCE_SHA"
+            echo "host=$host"
+            echo "repository=$repository"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v4
+        if: steps.source.outputs.repository != '' && steps.source.outputs.host == 'tx' && (github.event_name == 'workflow_dispatch' || inputs.image != '')
+        with:
+          registry: ${{ vars.TCR_REGISTRY }}
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
+      - uses: docker/login-action@v4
+        if: steps.source.outputs.repository != '' && steps.source.outputs.host == 'yecao' && (github.event_name == 'workflow_dispatch' || inputs.image != '')
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: imjasonh/setup-crane@v0.7
+        if: steps.source.outputs.repository != '' && (github.event_name == 'workflow_dispatch' || inputs.image != '')
+      - name: Select immutable image or keep production metadata identity
+        id: select
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.config_sha }}
+          REPOSITORY: ${{ steps.source.outputs.repository }}
+          REQUESTED_IMAGE: ${{ inputs.image || '' }}
+          REQUESTED_DIGEST: ${{ inputs.digest || '' }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$REPOSITORY" ]; then
+            [ -z "$REQUESTED_IMAGE$REQUESTED_DIGEST" ] || { echo "::error::fixed-image service does not accept image identity" >&2; exit 1; }
+            echo "image=" >> "$GITHUB_OUTPUT"
+            echo "image_commit_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            [ -z "$REQUESTED_IMAGE$REQUESTED_DIGEST" ] || { echo "::error::manual Deploy has no image input" >&2; exit 1; }
+            tags="$(crane ls "$REPOSITORY")"
+            selected_sha=''
+            while read -r commit_sha; do
+              candidate="sha-${commit_sha:0:12}"
+              if grep -Fxq "$candidate" <<< "$tags"; then
+                selected_sha="$commit_sha"
+                REQUESTED_IMAGE="$REPOSITORY:$candidate"
+                break
+              fi
+            done < <(git rev-list --first-parent origin/main)
+            [ -n "$selected_sha" ] || { echo "::error::no successfully pushed immutable main image" >&2; exit 1; }
+            image_commit_sha="$selected_sha"
+          elif [ -n "$REQUESTED_IMAGE" ]; then
+            expected="$REPOSITORY:sha-${SOURCE_SHA:0:12}"
+            [ "$REQUESTED_IMAGE" = "$expected" ] || { echo "::error::automatic image must be this source SHA and service registry" >&2; exit 1; }
+            image_commit_sha="$SOURCE_SHA"
+          else
+            [ -z "$REQUESTED_DIGEST" ] || { echo "::error::digest without image" >&2; exit 1; }
+            echo "image=" >> "$GITHUB_OUTPUT"
+            echo "image_commit_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          resolved_digest="$(crane digest "$REQUESTED_IMAGE")"
+          [[ "$resolved_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::invalid registry digest" >&2; exit 1; }
+          if [ -n "$REQUESTED_DIGEST" ]; then
+            [ "$resolved_digest" = "$REQUESTED_DIGEST" ] || { echo "::error::image digest differs from Build output" >&2; exit 1; }
+          fi
+          echo "image=$REQUESTED_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "image_commit_sha=$image_commit_sha" >> "$GITHUB_OUTPUT"
+          echo "verified $REQUESTED_IMAGE at $resolved_digest"
 
-  deploy:
-    needs: [changes, image_existence]
-    if: >-
-      always() &&
-       needs.changes.result == 'success' &&
-       needs.changes.outputs.yecao_services != 'minio' &&
-       (needs.image_existence.result == 'success' ||
-       (needs.changes.outputs.image_services == '' && needs.image_existence.result == 'skipped'))
-    name: Deploy ${{ needs.changes.outputs.deploy_display_name }}
+  deploy_yecao:
+    needs: [identity]
+    if: needs.identity.outputs.host == 'yecao' && needs.identity.outputs.service != 'minio'
+    name: Deploy Yecao / ${{ needs.identity.outputs.service }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: No-op release
-        if: needs.changes.outputs.deploy_services == ''
-        run: echo "No deployable runtime changes in ${{ needs.changes.outputs.release_sha }}"
       - uses: actions/checkout@v5
-        if: needs.changes.outputs.yecao_services != ''
         with:
-          ref: ${{ needs.changes.outputs.release_sha }}
+          ref: ${{ needs.identity.outputs.config_sha }}
       - name: Prepare deployment directory
-        if: needs.changes.outputs.yecao_services != ''
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -296,7 +201,6 @@ jobs:
             rm -rf -- "$WOTB_DIR/deploy.incoming"
             mkdir -p "$WOTB_DIR/deploy.incoming"
       - name: Install deployment scripts
-        if: needs.changes.outputs.yecao_services != ''
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -306,8 +210,8 @@ jobs:
           source: deploy
           target: /opt/wotb/deploy.incoming
           overwrite: true
+
       - name: Deploy exact release services via SSH
-        if: needs.changes.outputs.yecao_services != ''
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -315,14 +219,13 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT,TX_RABBITMQ_PARSER_WORKER_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT,TX_RABBITMQ_PARSER_WORKER_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY
           script: bash /opt/wotb/deploy.incoming/deploy/deploy.sh
         env:
-          TAG: ${{ needs.changes.outputs.release_tag }}
-          RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
-          RELEASE_RUN_NUMBER: ${{ needs.changes.outputs.build_run_number }}
-          WOTB_DEPLOY_SERVICES: ${{ needs.changes.outputs.yecao_services }}
-          WOTB_DEPLOY_IMAGE_SERVICES: ${{ needs.changes.outputs.yecao_image_services }}
+          WOTB_DEPLOY_SERVICE: ${{ needs.identity.outputs.service }}
+          WOTB_DEPLOY_CONFIG_SHA: ${{ needs.identity.outputs.config_sha }}
+          WOTB_DEPLOY_IMAGE_TAG: ${{ needs.identity.outputs.image }}
+          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ${{ needs.identity.outputs.image_commit_sha }}
           GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           GRAFANA_ROOT_URL: ${{ vars.GRAFANA_ROOT_URL || 'https://monitor.wotbtools.com' }}
@@ -334,21 +237,16 @@ jobs:
           TX_RABBITMQ_PARSER_WORKER_PASSWORD: ${{ secrets.TX_RABBITMQ_PARSER_WORKER_PASSWORD }}
           YECAO_MINIO_WORKER_ACCESS_KEY: ${{ secrets.YECAO_MINIO_WORKER_ACCESS_KEY }}
           YECAO_MINIO_WORKER_SECRET_KEY: ${{ secrets.YECAO_MINIO_WORKER_SECRET_KEY }}
-
   deploy_minio:
-    needs: [changes, image_existence]
-    if: >-
-      always() &&
-      needs.changes.result == 'success' &&
-      needs.changes.outputs.yecao_services == 'minio' &&
-      needs.image_existence.result == 'success'
+    needs: [identity]
+    if: needs.identity.outputs.service == 'minio'
     name: Deploy MinIO
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.changes.outputs.release_sha }}
+          ref: ${{ needs.identity.outputs.config_sha }}
       - name: Prepare explicit MinIO deployment directory
         uses: appleboy/ssh-action@v1
         with:
@@ -358,7 +256,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             set -eu
-            root="/opt/wotb/minio.incoming/${{ needs.changes.outputs.release_sha }}"
+            root="/opt/wotb/minio.incoming/${{ needs.identity.outputs.config_sha }}"
             rm -rf -- "$root"
             mkdir -p "$root"
       - name: Install explicit MinIO deployment files
@@ -368,8 +266,8 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: deploy/docker-compose.minio.yml,deploy/minio-deploy.sh,deploy/minio,infra/tofu/minio
-          target: /opt/wotb/minio.incoming/${{ needs.changes.outputs.release_sha }}
+          source: deploy/docker-compose.minio.yml,deploy/minio-deploy.sh,deploy/release-metadata.py,deploy/minio
+          target: /opt/wotb/minio.incoming/${{ needs.identity.outputs.config_sha }}
           overwrite: true
       - name: Deploy and provision MinIO via SSH
         uses: appleboy/ssh-action@v1
@@ -379,35 +277,30 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,YECAO_MINIO_ROOT_USER,YECAO_MINIO_ROOT_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY
-          script: bash /opt/wotb/minio.incoming/${{ needs.changes.outputs.release_sha }}/deploy/minio-deploy.sh /opt/wotb/minio.incoming/${{ needs.changes.outputs.release_sha }}
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,YECAO_MINIO_ROOT_USER,YECAO_MINIO_ROOT_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY
+          script: bash /opt/wotb/minio.incoming/${{ needs.identity.outputs.config_sha }}/deploy/minio-deploy.sh /opt/wotb/minio.incoming/${{ needs.identity.outputs.config_sha }}
         env:
-          TAG: ${{ needs.changes.outputs.release_tag }}
-          RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
-          RELEASE_RUN_NUMBER: ${{ needs.changes.outputs.build_run_number }}
+          WOTB_DEPLOY_SERVICE: ${{ needs.identity.outputs.service }}
+          WOTB_DEPLOY_CONFIG_SHA: ${{ needs.identity.outputs.config_sha }}
+          WOTB_DEPLOY_IMAGE_TAG: ${{ needs.identity.outputs.image }}
+          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ${{ needs.identity.outputs.image_commit_sha }}
           YECAO_MINIO_ROOT_USER: ${{ secrets.YECAO_MINIO_ROOT_USER }}
           YECAO_MINIO_ROOT_PASSWORD: ${{ secrets.YECAO_MINIO_ROOT_PASSWORD }}
           YECAO_MINIO_WORKER_ACCESS_KEY: ${{ secrets.YECAO_MINIO_WORKER_ACCESS_KEY }}
           YECAO_MINIO_WORKER_SECRET_KEY: ${{ secrets.YECAO_MINIO_WORKER_SECRET_KEY }}
           YECAO_MINIO_CONTROL_API_ACCESS_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_ACCESS_KEY }}
           YECAO_MINIO_CONTROL_API_SECRET_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_SECRET_KEY }}
-
   deploy_tx:
-    needs: [changes, image_existence]
-    if: >-
-      always() &&
-      needs.changes.result == 'success' &&
-      needs.changes.outputs.tx_services != '' &&
-      (needs.image_existence.result == 'success' ||
-       (needs.changes.outputs.image_services == '' && needs.image_existence.result == 'skipped'))
-    name: Deploy TX
+    needs: [identity]
+    if: needs.identity.outputs.host == 'tx'
+    name: Deploy TX / ${{ needs.identity.outputs.service }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: tx-production
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.changes.outputs.release_sha }}
+          ref: ${{ needs.identity.outputs.config_sha }}
       - name: Prepare TX deployment directory
         uses: appleboy/ssh-action@v1
         with:
@@ -427,12 +320,9 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx
+          source: deploy/tx,deploy/release-metadata.py
           target: /opt/wotb-tx/deploy.incoming
           overwrite: true
-      # The cutover E2E gate uploads one staged replay through the
-      # deployment-owned health-probe container; the fixtures are already
-      # committed test samples and never contain production user data.
       - name: Install TX cutover E2E replay fixtures
         uses: appleboy/scp-action@v1
         with:
@@ -444,168 +334,6 @@ jobs:
           target: /opt/wotb-tx/e2e
           strip_components: 3
           overwrite: true
-      - name: Bootstrap TX Keycloak PostgreSQL before OpenTofu
-        if: contains(needs.changes.outputs.tx_services, 'keycloak-postgres')
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          command_timeout: 15m
-          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL
-          script: bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
-        env:
-          TAG: ${{ needs.changes.outputs.release_tag }}
-          RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
-          RELEASE_RUN_NUMBER: ${{ needs.changes.outputs.build_run_number }}
-          WOTB_DEPLOY_SERVICES: keycloak-postgres
-          WOTB_DEPLOY_IMAGE_SERVICES: ''
-          KC_POSTGRES_ADMIN_USER: kc_admin
-          KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
-          KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
-          KC_DB_USERNAME: keycloak
-          KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
-          WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
-          CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
-      - name: Install Keycloak PostgreSQL OpenTofu root on TX
-        if: contains(needs.changes.outputs.tx_services, 'keycloak-postgres')
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: infra/tofu/postgres-keycloak
-          target: /opt/wotb-tx/tofu.incoming/${{ needs.changes.outputs.release_sha }}
-          overwrite: true
-      - name: Apply Keycloak PostgreSQL OpenTofu on TX localhost
-        if: contains(needs.changes.outputs.tx_services, 'keycloak-postgres')
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          command_timeout: 15m
-          envs: KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_DB_PASSWORD,KC_DB_PASSWORD_VERSION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
-          script: |
-            set -euo pipefail
-            command -v tofu >/dev/null 2>&1 || { echo "tofu is required on TX" >&2; exit 1; }
-            test -f /opt/wotb-tx/tofurc || {
-              echo "ERROR: /opt/wotb-tx/tofurc is missing" >&2
-              exit 2
-            }
-            export TF_CLI_CONFIG_FILE=/opt/wotb-tx/tofurc
-            root="/opt/wotb-tx/tofu.incoming/${{ needs.changes.outputs.release_sha }}/infra/tofu/postgres-keycloak"
-            test -d "$root"
-            cd "$root"
-            trap 'rm -f plan.tfplan' EXIT
-            export TF_VAR_postgresql_admin_username="$KC_POSTGRES_ADMIN_USER"
-            export TF_VAR_postgresql_admin_password="$KC_POSTGRES_ADMIN_PASSWORD"
-            export TF_VAR_keycloak_role_password="$KC_DB_PASSWORD"
-            export TF_VAR_keycloak_role_password_version="$KC_DB_PASSWORD_VERSION"
-            tofu init -reconfigure -input=false
-            tofu validate
-            tofu plan -input=false -no-color -out=plan.tfplan
-            bash ./validate-plan.sh plan.tfplan
-            tofu apply -input=false -auto-approve plan.tfplan
-        env:
-          KC_POSTGRES_ADMIN_USER: kc_admin
-          KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
-          KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
-          KC_DB_PASSWORD_VERSION: ${{ vars.TX_KC_DB_PASSWORD_VERSION || '1' }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
-      - name: Install Keycloak OpenTofu root on TX
-        if: contains(needs.changes.outputs.tx_services, 'keycloak')
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: infra/tofu/keycloak
-          target: /opt/wotb-tx/tofu.incoming/${{ needs.changes.outputs.release_sha }}
-          overwrite: true
-      - name: Install RabbitMQ OpenTofu root on TX
-        if: contains(needs.changes.outputs.tx_services, 'rabbitmq')
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: infra/tofu/rabbitmq
-          target: /opt/wotb-tx/tofu.incoming/${{ needs.changes.outputs.release_sha }}
-          overwrite: true
-      - name: Install Business PostgreSQL OpenTofu root on TX
-        if: contains(needs.changes.outputs.tx_services, 'business-postgres')
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: infra/tofu/postgres-business
-          target: /opt/wotb-tx/tofu.incoming/${{ needs.changes.outputs.release_sha }}
-          overwrite: true
-      - name: Start empty TX Keycloak for OpenTofu bootstrap
-        if: contains(needs.changes.outputs.tx_services, 'keycloak')
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          command_timeout: 15m
-          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL
-          script: |
-            set -eu
-            WOTB_TX_BOOTSTRAP_KEYCLOAK=1 \
-            WOTB_DEPLOY_SERVICES=keycloak \
-            WOTB_DEPLOY_IMAGE_SERVICES=keycloak \
-            bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
-        env:
-          TAG: ${{ needs.changes.outputs.release_tag }}
-          RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
-          RELEASE_RUN_NUMBER: ${{ needs.changes.outputs.build_run_number }}
-          KC_POSTGRES_ADMIN_USER: kc_admin
-          KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
-          KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
-          KC_DB_USERNAME: keycloak
-          KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
-          WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
-          CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
-      - name: Apply Keycloak OpenTofu on TX localhost
-        if: contains(needs.changes.outputs.tx_services, 'keycloak')
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          command_timeout: 20m
-          envs: KEYCLOAK_ADMIN_USERNAME,KEYCLOAK_ADMIN_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION,KEYCLOAK_E2E_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET_VERSION,WG_APPLICATION_ID,TX_QQ_CLIENT_ID,TX_QQ_CLIENT_SECRET,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
-          script: |
-            set -euo pipefail
-            root="/opt/wotb-tx/tofu.incoming/${{ needs.changes.outputs.release_sha }}/infra/tofu/keycloak"
-            test -d "$root"
-            bash /opt/wotb-tx/deploy.incoming/deploy/tx/keycloak-tofu.sh "$root"
-        env:
-          KEYCLOAK_ADMIN_USERNAME: admin
-          KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
-          KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
-          KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION: ${{ vars.KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION || '1' }}
-          KEYCLOAK_E2E_CLIENT_SECRET: ${{ secrets.KEYCLOAK_E2E_CLIENT_SECRET }}
-          KEYCLOAK_E2E_CLIENT_SECRET_VERSION: ${{ vars.KEYCLOAK_E2E_CLIENT_SECRET_VERSION || '1' }}
-          # Reuses the existing Wargaming secret that the Keycloak runtime
-          # already consumes; no duplicate Wargaming credential is introduced.
-          WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
-          TX_QQ_CLIENT_ID: ${{ vars.TX_QQ_CLIENT_ID }}
-          TX_QQ_CLIENT_SECRET: ${{ secrets.TX_QQ_CLIENT_SECRET }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
       - name: Deploy exact TX services via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -614,14 +342,14 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: TAG,RELEASE_SHA,RELEASE_RUN_NUMBER,WOTB_DEPLOY_SERVICES,WOTB_DEPLOY_IMAGE_SERVICES,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL,TX_RABBITMQ_ADMIN_USER,TX_RABBITMQ_ADMIN_PASSWORD,TX_RABBITMQ_CONTROL_API_PASSWORD,TX_RABBITMQ_PARSER_WORKER_PASSWORD,TX_BUSINESS_POSTGRES_ADMIN_USER,TX_BUSINESS_POSTGRES_ADMIN_PASSWORD,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,TX_BUSINESS_DB_PASSWORD_VERSION,KEYCLOAK_ADMIN_CLIENT_SECRET,AI_API_KEY,AI_BASE_URL,AI_MODEL,AI_CONNECT_TIMEOUT_SEC,AI_TIMEOUT_SEC,AI_CALL_TIMEOUT_SEC,AI_RETRY_MAX_ATTEMPTS,AI_RETRY_INITIAL_BACKOFF_MS,AI_RETRY_MAX_BACKOFF_MS,AI_RETRY_BACKOFF_MULTIPLIER,AI_CONTEXT_WINDOW_TOKENS,AI_SINGLE_REPLAY_MAX_INPUT_TOKENS,AI_MAX_OUTPUT_TOKENS,AI_PROMPT_SAFETY_MARGIN_TOKENS,AI_THINKING_ENABLED,AI_THINKING_ENABLED_CALL2,AI_REASONING_EFFORT,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY,AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL,TX_RABBITMQ_ADMIN_USER,TX_RABBITMQ_ADMIN_PASSWORD,TX_RABBITMQ_CONTROL_API_PASSWORD,TX_RABBITMQ_PARSER_WORKER_PASSWORD,TX_BUSINESS_POSTGRES_ADMIN_USER,TX_BUSINESS_POSTGRES_ADMIN_PASSWORD,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,TX_BUSINESS_DB_PASSWORD_VERSION,KEYCLOAK_ADMIN_CLIENT_SECRET,AI_API_KEY,AI_BASE_URL,AI_MODEL,AI_CONNECT_TIMEOUT_SEC,AI_TIMEOUT_SEC,AI_CALL_TIMEOUT_SEC,AI_RETRY_MAX_ATTEMPTS,AI_RETRY_INITIAL_BACKOFF_MS,AI_RETRY_MAX_BACKOFF_MS,AI_RETRY_BACKOFF_MULTIPLIER,AI_CONTEXT_WINDOW_TOKENS,AI_SINGLE_REPLAY_MAX_INPUT_TOKENS,AI_MAX_OUTPUT_TOKENS,AI_PROMPT_SAFETY_MARGIN_TOKENS,AI_THINKING_ENABLED,AI_THINKING_ENABLED_CALL2,AI_REASONING_EFFORT,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY,AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY
           script: bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
         env:
-          TAG: ${{ needs.changes.outputs.release_tag }}
-          RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
-          RELEASE_RUN_NUMBER: ${{ needs.changes.outputs.build_run_number }}
-          WOTB_DEPLOY_SERVICES: ${{ needs.changes.outputs.tx_services }}
-          WOTB_DEPLOY_IMAGE_SERVICES: ${{ needs.changes.outputs.tx_image_services }}
+          WOTB_DEPLOY_SERVICE: ${{ needs.identity.outputs.service }}
+          WOTB_DEPLOY_CONFIG_SHA: ${{ needs.identity.outputs.config_sha }}
+          WOTB_DEPLOY_IMAGE_TAG: ${{ needs.identity.outputs.image }}
+          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ${{ needs.identity.outputs.image_commit_sha }}
+          TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
           KC_POSTGRES_ADMIN_USER: kc_admin
           KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
           KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}

@@ -12,18 +12,19 @@ readonly INCOMING_DIR="${WOTB_INCOMING_DIR:-$WOTB_DIR/deploy.incoming}"
 readonly LIVE_DEPLOY_DIR="$WOTB_DIR/deploy"
 readonly LIVE_COMPOSE="$WOTB_DIR/docker-compose.yml"
 readonly METADATA_FILE="$WOTB_DIR/production-release.json"
+readonly METADATA_TOOL="$INCOMING_DIR/deploy/release-metadata.py"
 readonly HEALTH_ATTEMPTS="${WOTB_HEALTH_ATTEMPTS:-60}"
 readonly HEALTH_INTERVAL_SEC="${WOTB_HEALTH_INTERVAL_SEC:-2}"
 readonly PULL_ATTEMPTS="${WOTB_PULL_ATTEMPTS:-3}"
-readonly DEPLOY_SERVICES_RAW="${WOTB_DEPLOY_SERVICES:-}"
-readonly DEPLOY_IMAGE_SERVICES_RAW="${WOTB_DEPLOY_IMAGE_SERVICES:-}"
-readonly RELEASE_SHA_VALUE="${RELEASE_SHA:-}"
-readonly RELEASE_RUN_NUMBER_VALUE="${RELEASE_RUN_NUMBER:-}"
-readonly TAG_VALUE="${TAG:-}"
+readonly DEPLOY_SERVICE_VALUE="${WOTB_DEPLOY_SERVICE:-}"
+readonly CONFIG_SHA_VALUE="${WOTB_DEPLOY_CONFIG_SHA:-}"
+readonly IMAGE_TAG_VALUE="${WOTB_DEPLOY_IMAGE_TAG:-}"
+readonly IMAGE_COMMIT_SHA_VALUE="${WOTB_DEPLOY_IMAGE_COMMIT_SHA:-}"
+readonly RELEASE_SHA_VALUE="$CONFIG_SHA_VALUE"
 
 declare -a DEPLOY_SERVICES=()
-declare -a DEPLOY_IMAGE_SERVICES=()
 declare -a APPLY_SERVICES=()
+DEPLOY_SERVICES_RAW=""
 FAILED_SERVICE=""
 
 die() {
@@ -73,30 +74,16 @@ assert_parser_worker_execution_plane() {
   done
 }
 
-has_image_service() {
-  local wanted="$1" service
-  for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
-    [ "$service" = "$wanted" ] && return 0
-  done
-  return 1
-}
-
 validate_inputs() {
   is_safe_path "$WOTB_DIR" || die "unsafe WOTB_DIR."
   is_safe_path "$INCOMING_DIR" || die "unsafe WOTB_INCOMING_DIR."
   [ "$INCOMING_DIR" != "$WOTB_DIR" ] || die "incoming directory must differ from live directory."
-  [[ "$TAG_VALUE" =~ ^sha-[0-9a-f]{12}$ ]] || die "TAG must be an immutable sha-<12 lowercase hex> tag."
-  [[ "$RELEASE_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]] || die "RELEASE_SHA must be a full lowercase commit SHA."
-  is_positive_integer "$RELEASE_RUN_NUMBER_VALUE" || die "RELEASE_RUN_NUMBER must be a positive integer."
+  [[ "$CONFIG_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]] || die "WOTB_DEPLOY_CONFIG_SHA must be a full lowercase commit SHA."
   is_positive_integer "$HEALTH_ATTEMPTS" || die "WOTB_HEALTH_ATTEMPTS must be a positive integer."
   is_positive_integer "$HEALTH_INTERVAL_SEC" || die "WOTB_HEALTH_INTERVAL_SEC must be a positive integer."
   is_positive_integer "$PULL_ATTEMPTS" || die "WOTB_PULL_ATTEMPTS must be a positive integer."
-  [ -n "$DEPLOY_SERVICES_RAW" ] || die "WOTB_DEPLOY_SERVICES is required."
-
-  IFS=',' read -r -a DEPLOY_SERVICES <<< "$DEPLOY_SERVICES_RAW"
-  IFS=',' read -r -a DEPLOY_IMAGE_SERVICES <<< "$DEPLOY_IMAGE_SERVICES_RAW"
-  [ "${#DEPLOY_SERVICES[@]}" -gt 0 ] && [ -n "${DEPLOY_SERVICES[0]}" ] \
-    || die "WOTB_DEPLOY_SERVICES must contain at least one service."
+  DEPLOY_SERVICES=("$DEPLOY_SERVICE_VALUE")
+  DEPLOY_SERVICES_RAW="$DEPLOY_SERVICE_VALUE"
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
@@ -104,16 +91,11 @@ validate_inputs() {
       *) die "unsupported deployment service: $service" ;;
     esac
   done
-  for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
-    case "$service" in
-      "") ;;
-      parser-worker) ;;
-      *) die "unsupported WOTB_DEPLOY_IMAGE_SERVICES entry: $service" ;;
-    esac
-  done
-  for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
-    [ -z "$service" ] || is_selected "$service" || die "image service is not in deploy service set: $service"
-  done
+  if [ -n "$IMAGE_TAG_VALUE" ] || [ -n "$IMAGE_COMMIT_SHA_VALUE" ]; then
+    [ -n "$IMAGE_TAG_VALUE" ] && [ -n "$IMAGE_COMMIT_SHA_VALUE" ] \
+      || die "image tag and source SHA must be supplied together."
+    [ "$DEPLOY_SERVICE_VALUE" = parser-worker ] || die "fixed upstream service cannot receive image identity."
+  fi
 
   # The worker is the only Yecao service that talks to two remote planes (the TX broker and the
   # Yecao MinIO). Its credentials are required exactly when it is selected, so a
@@ -126,98 +108,34 @@ validate_inputs() {
     done
   fi
 
-  for required in TAG GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD; do
-    require_env "$required"
-  done
+  if is_selected grafana; then
+    require_env GRAFANA_ADMIN_USER
+    require_env GRAFANA_ADMIN_PASSWORD
+  else
+    : "${GRAFANA_ADMIN_USER:=not-configured}"
+    : "${GRAFANA_ADMIN_PASSWORD:=not-configured}"
+    export GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD
+  fi
 }
 
-metadata_tag() {
-  local service="$1"
-  [ -f "$METADATA_FILE" ] || return 0
-  python3 - "$METADATA_FILE" "$service" <<'PY'
-import json
-import re
-import sys
-
-try:
-    data = json.load(open(sys.argv[1], encoding="utf-8"))
-    tag = data.get("services", {}).get(sys.argv[2], {}).get("imageTag", "")
-except (OSError, ValueError, TypeError):
-    raise SystemExit(0)
-if re.fullmatch(r"sha-[0-9a-f]{12}", tag):
-    print(tag)
-PY
+worker_image_ref() {
+  if [ -n "$IMAGE_TAG_VALUE" ]; then
+    printf '%s\n' "$IMAGE_TAG_VALUE"
+  else
+    python3 "$METADATA_TOOL" get --host yecao --file "$METADATA_FILE" \
+      --service parser-worker --field tag
+  fi
 }
-
-validate_metadata_file() {
-  [ -f "$METADATA_FILE" ] || return 0
-  python3 - "$METADATA_FILE" <<'PY'
-import json
-import re
-import sys
-
-data = json.load(open(sys.argv[1], encoding="utf-8"))
-if not isinstance(data, dict) or not isinstance(data.get("services", {}), dict):
-    raise SystemExit("production metadata must contain an object-valued services field")
-for service, entry in data["services"].items():
-    if not isinstance(entry, dict):
-        raise SystemExit(f"production metadata entry is invalid: {service}")
-    if "commitSha" in entry and not re.fullmatch(r"[0-9a-f]{40}", entry["commitSha"]):
-        raise SystemExit(f"production metadata commitSha is invalid: {service}")
-    if "imageTag" in entry and not re.fullmatch(r"sha-[0-9a-f]{12}", entry["imageTag"]):
-        raise SystemExit(f"production metadata imageTag is invalid: {service}")
-    if "migrationMaxVersion" in entry and (
-        not isinstance(entry["migrationMaxVersion"], int) or entry["migrationMaxVersion"] < 0
-    ):
-        raise SystemExit(f"production metadata migration ceiling is invalid: {service}")
-PY
-}
-
-compose_tag() {
-  local service="$1"
-  [ -f "$LIVE_COMPOSE" ] || return 0
-  python3 - "$LIVE_COMPOSE" "$service" <<'PY'
-import re
-import sys
-
-service = sys.argv[2]
-current = ""
-for line in open(sys.argv[1], encoding="utf-8"):
-    match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
-    if match:
-        current = match.group(1)
-        continue
-    if current != service:
-        continue
-    match = re.match(r"^\s+image:\s+ghcr\.io/a158coke/wotbtools-[^:]+:(sha-[0-9a-f]{12})\s*$", line)
-    if match:
-        print(match.group(1))
-        break
-PY
-}
-
-current_or_target_tag() {
-  local service="$1" tag=""
-  case "$service" in
-    parser-worker) has_image_service "$service" && { printf '%s\n' "$TAG_VALUE"; return; } ;;
-    *) die "unsupported application service: $service" ;;
-  esac
-  tag="$(metadata_tag "$service")"
-  [ -n "$tag" ] || tag="$(compose_tag "$service")"
-  [[ "$tag" =~ ^sha-[0-9a-f]{12}$ ]] || die "current immutable image identity is unavailable for $service."
-  printf '%s\n' "$tag"
-}
-
 render_effective_compose() {
-  local source="$1" target="$2" worker_tag="$3"
-  WORKER_TAG="$worker_tag" \
+  local source="$1" target="$2" worker_image="$3"
+  WORKER_IMAGE="$worker_image" \
     python3 - "$source" "$target" <<'PY'
 import os
 import re
 import sys
 
 source, target = sys.argv[1:3]
-tags = {"parser-worker": os.environ["WORKER_TAG"]}
+images = {"parser-worker": os.environ["WORKER_IMAGE"]}
 current = ""
 seen = set()
 output = []
@@ -225,14 +143,11 @@ for line in open(source, encoding="utf-8"):
     match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
     if match:
         current = match.group(1)
-    if current in tags and tags[current] and re.match(r"^\s+image:\s+ghcr\.io/a158coke/wotbtools-[^:]+:", line):
-        image = "ghcr.io/a158coke/wotbtools-" + current.removeprefix("wotb-")
-        line = f"    image: {image}:{tags[current]}\n"
+    if current in images and re.match(r"^\s+image:\s+", line):
+        line = f"    image: {images[current]}\n"
         seen.add(current)
     output.append(line)
-# Only services this release pins have to be present in the compose: an empty tag means "leave the
-# staged value alone" (see stage_and_validate), not "this application image may be missing".
-missing = {name for name, tag in tags.items() if tag} - seen
+missing = set(images) - seen
 if missing:
     raise SystemExit("compose is missing application image definitions: " + ", ".join(sorted(missing)))
 with open(target, "w", encoding="utf-8") as handle:
@@ -246,16 +161,9 @@ stage_and_validate() {
   readonly EFFECTIVE_COMPOSE="$INCOMING_DIR/docker-compose.effective.yml"
   [ -f "$staged_source" ] || die "staged deployment tree is missing docker-compose.prod.yml."
   mkdir -p "$INCOMING_DIR"
-  local worker_tag=""
-  # parser-worker may never have been deployed yet: a deploy that neither updates its image nor finds
-  # a recorded identity leaves the staged placeholder in place (still an immutable sha-<12> TAG)
-  # instead of failing the whole release for a service it does not touch. Its first deployment always
-  # travels through WOTB_DEPLOY_IMAGE_SERVICES, and from then on metadata pins it like the others.
-  if has_image_service parser-worker \
-    || [ -n "$(metadata_tag parser-worker)$(compose_tag parser-worker)" ]; then
-    worker_tag="$(current_or_target_tag parser-worker)"
-  fi
-  render_effective_compose "$staged_source" "$EFFECTIVE_COMPOSE" "$worker_tag"
+  local worker_image
+  worker_image="$(worker_image_ref)" || die "parser-worker metadata identity is unavailable."
+  render_effective_compose "$staged_source" "$EFFECTIVE_COMPOSE" "$worker_image"
   assert_parser_worker_execution_plane "$EFFECTIVE_COMPOSE"
   if ! docker compose -f "$EFFECTIVE_COMPOSE" config >/dev/null; then
     die "staged compose config is invalid; live deployment was not changed."
@@ -275,10 +183,9 @@ stage_and_validate() {
 }
 
 pull_images() {
-  local attempt service
-  [ "${#DEPLOY_IMAGE_SERVICES[@]}" -gt 0 ] || return 0
+  local attempt
   for attempt in $(seq 1 "$PULL_ATTEMPTS"); do
-    if docker compose -f "$EFFECTIVE_COMPOSE" pull "${DEPLOY_IMAGE_SERVICES[@]}"; then
+    if docker compose -f "$EFFECTIVE_COMPOSE" pull "$DEPLOY_SERVICES_RAW"; then
       return 0
     fi
     if [ "$attempt" -lt "$PULL_ATTEMPTS" ]; then
@@ -395,9 +302,8 @@ run_observability_checks() {
 diagnostics() {
   echo "== DEPLOY DIAGNOSTICS =="
   echo "releaseSha=$RELEASE_SHA_VALUE"
-  echo "releaseTag=$TAG_VALUE"
+  echo "releaseImage=$IMAGE_TAG_VALUE"
   echo "deployServices=$DEPLOY_SERVICES_RAW"
-  echo "imageServices=$DEPLOY_IMAGE_SERVICES_RAW"
   docker compose -f "$LIVE_COMPOSE" ps -a || true
   local -a diagnostic_services=("${APPLY_SERVICES[@]}")
   local failed_service="$FAILED_SERVICE" service already_present=false
@@ -434,52 +340,26 @@ stop_failed_service() {
 }
 
 update_metadata() {
-  local now metadata_tmp
-  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  metadata_tmp="${METADATA_FILE}.next.$$"
-  umask 177
-  NOW="$now" \
-    python3 - "$METADATA_FILE" "$metadata_tmp" \
-    "$RELEASE_SHA_VALUE" "$TAG_VALUE" "$DEPLOY_IMAGE_SERVICES_RAW" <<'PY'
-import json
-import os
-import sys
-
-source, target, commit_sha, image_tag, services_raw = sys.argv[1:]
-try:
-    data = json.load(open(source, encoding="utf-8")) if os.path.exists(source) else {}
-except (OSError, ValueError):
-    raise SystemExit("existing production metadata is invalid")
-if not isinstance(data, dict):
-    raise SystemExit("existing production metadata must be an object")
-services = data.get("services", {})
-if not isinstance(services, dict):
-    raise SystemExit("existing production metadata services must be an object")
-data["schemaVersion"] = 1
-data["services"] = services
-for service in filter(None, services_raw.split(",")):
-    entry = services.get(service, {})
-    if not isinstance(entry, dict):
-        raise SystemExit(f"metadata entry is not an object: {service}")
-    entry.update({"commitSha": commit_sha, "imageTag": image_tag, "deployedAt": os.environ["NOW"]})
-    services[service] = entry
-data["deploymentConfigSha"] = commit_sha
-data["updatedAt"] = os.environ["NOW"]
-with open(target, "w", encoding="utf-8") as handle:
-    json.dump(data, handle, indent=2, sort_keys=True)
-    handle.write("\n")
-PY
-  chmod 600 "$metadata_tmp"
-  mv -f -- "$metadata_tmp" "$METADATA_FILE"
+  is_selected parser-worker || return 0
+  local -a args=(update --host yecao --file "$METADATA_FILE" \
+    --service parser-worker --config-sha "$CONFIG_SHA_VALUE")
+  if [ -n "$IMAGE_TAG_VALUE" ]; then
+    args+=(--image-tag "$IMAGE_TAG_VALUE" --image-commit-sha "$IMAGE_COMMIT_SHA_VALUE")
+  fi
+  python3 "$METADATA_TOOL" "${args[@]}"
 }
-
 main() {
   validate_inputs
   mkdir -p "$WOTB_DIR" "$INCOMING_DIR"
   command -v docker >/dev/null 2>&1 || die "docker is required."
   command -v flock >/dev/null 2>&1 || die "flock is required to serialize production deployments."
   command -v python3 >/dev/null 2>&1 || die "python3 is required for release metadata and compose identity handling."
-  validate_metadata_file || die "production metadata is invalid; refusing deployment."
+  [ -f "$METADATA_TOOL" ] || die "staged release metadata validator is missing."
+  local -a metadata_args=(validate --host yecao --file "$METADATA_FILE")
+  if [ -n "$IMAGE_TAG_VALUE" ]; then
+    metadata_args+=(--service parser-worker --image-tag "$IMAGE_TAG_VALUE" --image-commit-sha "$IMAGE_COMMIT_SHA_VALUE")
+  fi
+  python3 "$METADATA_TOOL" "${metadata_args[@]}" || die "production metadata or incoming image identity is invalid."
   if [ -n "${WOTB_DEPLOY_LOCK_FD:-}" ]; then
     [ "$WOTB_DEPLOY_LOCK_FD" = 9 ] || die "unsupported inherited deployment lock descriptor."
     { true >&9; } 2>/dev/null || die "inherited deployment lock descriptor is unavailable."
@@ -515,7 +395,7 @@ main() {
   run_observability_checks
   update_metadata
   rm -f -- "$INCOMING_DIR/docker-compose.effective.yml"
-  echo "Deployment completed: $RELEASE_SHA_VALUE ($TAG_VALUE)"
+  echo "Deployment completed: config=$CONFIG_SHA_VALUE service=$DEPLOY_SERVICES_RAW image=$IMAGE_TAG_VALUE"
 }
 
 main "$@"

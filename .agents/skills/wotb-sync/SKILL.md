@@ -72,7 +72,7 @@ description: >
 1. 编辑 `common/map_names.json`（key 用 `meta.json` 里的原始 `mapName`，全小写；值同步补齐 `zh/en/ru`）。
 2. 无需改代码：导出端 `MapNames.cn()` 读 classpath 的副本并固定用中文；前端 `utils/helpers.js` import 同一份 JSON，经 `mapLabel()` 按当前 locale 显示。
 3. 新增 key 别忘了让 `wotb-core/pom.xml` 的 `<includes>` 仍含 `map_names.json`（已含）。
-4. **docker 部署**：`Dockerfile.backend` 已 `COPY common/map_names.json` 到后端 classpath；`Dockerfile.frontend` 已 `COPY common/map_names.json /common/` 供前端 import。若以后前端再 import 新 `common/*.json`，在 `Dockerfile.frontend` 加对应 `COPY`。
+4. **docker 部署**：`Dockerfile.business-api` 与 `Dockerfile.parser-worker` 已 `COPY common/map_names.json` 到后端 classpath；`Dockerfile.frontend` 已 `COPY common/map_names.json /common/` 供前端 import。若以后前端再 import 新 `common/*.json`，在 `Dockerfile.frontend` 加对应 `COPY`。
 5. 验证（改前端要 `npm run build`，Java 改了才需 `mvn test`；改 docker 用 `docker compose up --build` 重建）+ 文档。
 
 > 未匹配的地图名原样显示（英文内部名），不会报错。API 始终回原始英文 `mapName`；前端按 locale 渲染，导出固定中文。
