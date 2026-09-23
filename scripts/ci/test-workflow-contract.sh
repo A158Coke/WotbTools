@@ -75,22 +75,29 @@ assert ci_text.count('-s settings-ci.xml') == 4
 assert ci_text.count('-s ../java/settings-ci.xml') == 2
 assert '-s settings.xml' not in ci_text
 
-# scp-action resolves `source` against the checkout, so an absolute runner path
-# uploads nothing and the remote plan dies on a missing root.tgz. The bundle must
-# therefore be written inside the workspace under the same file name the remote
-# step extracts.
-plan_steps=ci['jobs']['tofu_plans']['steps']
-bundle=[step for step in plan_steps if step.get('name')=='Bundle one selected root and read-only planner']
-assert len(bundle)==1, 'the tofu plan matrix must bundle one root for its host'
-assert 'GITHUB_WORKSPACE/tofu-plan-bundle' in bundle[0]['run'], bundle[0]['run']
-assert 'root.tgz' in bundle[0]['run'], bundle[0]['run']
-scp=[step for step in plan_steps if str(step.get('uses','')).startswith('appleboy/scp-action')]
-assert len(scp)==1, 'the tofu plan matrix must stage exactly one bundle over scp'
-assert scp[0]['with']['source']=='tofu-plan-bundle/*', scp[0]['with']['source']
-for step in plan_steps:
-    script=str(step.get('with', {}).get('script', ''))
-    if 'remote-tofu-plan.sh' in script:
-        assert 'root.tgz' in script, step['name']
+# PR validation must never reach a production host: the PR workflow may not use an
+# SSH/SCP action or receive a host-local production secret. Those roots
+# (keycloak, rabbitmq, business-postgres, keycloak-postgres, minio) plan and apply
+# exclusively in the main-only Tofu Apply workflow.
+assert 'appleboy/ssh-action' not in ci_text
+assert 'appleboy/scp-action' not in ci_text
+for host_secret in ('secrets.TX_', 'secrets.VPS_', 'secrets.KC_', 'secrets.KEYCLOAK_', 'secrets.WG_', 'secrets.YECAO_'):
+    assert host_secret not in ci_text, host_secret
+assert not (Path(sys.argv[1])/'scripts/ci/remote-tofu-plan.sh').exists(), \
+    'the PR-side remote planner must stay deleted'
+
+plan_job=ci['jobs']['tofu_plans']
+plan_text=str(plan_job)
+assert plan_job['name']=='OpenTofu validation / ${{ matrix.root }}'
+assert 'tofu fmt -check -recursive' in plan_text
+assert 'tofu init -backend=false -input=false' in plan_text
+assert 'tofu validate' in plan_text
+assert 'test-validate-plan.sh' in plan_text
+# Only the roots that reach their backend over the network may plan production state
+# from the runner; every host-local root stays validation-only here.
+for step in plan_job['steps']:
+    if 'tofu plan' in str(step):
+        assert step.get('if','').strip() == "${{ (matrix.root == 'cos' || matrix.root == 'grafana') && env.TRUSTED_PRODUCTION_RUN == 'true' }}", step['name']
 print('CI/Build/Deploy/Tofu/Release workflow contracts OK')
 PY
 

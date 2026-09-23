@@ -203,20 +203,23 @@ or unsupported settings.
 ## GitHub Actions policy
 
 The PR side is `.github/workflows/ci.yml`: its selector runs `deploy/release_plan.py`
-over the full pull-request range, and the `OpenTofu plan / <root>` matrix job runs for
-each selected root. Every run performs:
+over the full pull-request range, and the `OpenTofu validation / <root>` matrix job runs
+for each selected root. Every run performs:
 
 1. `tofu fmt -check -recursive`
-2. `tofu init` (fork pull requests use `-backend=false`)
+2. `tofu init -backend=false -input=false`
 3. `tofu validate`
+4. the root's local safety fixtures (`test-validate-plan.sh`) where the root has them
 
-For a fork pull request, no production secrets are available to any step and no
-authenticated plan runs. A same-repository pull request receives credentials only on
-the trusted plan path: COS and Grafana plan on the runner, while the TX/Yecao roots that
-need a localhost provider run a guarded read-only plan over SSH in a PR/SHA-isolated
-directory on their own host. The trusted path rejects artifact-bucket, Lighthouse
-instance, or Lighthouse firewall delete or replacement actions. The shared guard is
-`scripts/ci/validate-tofu-prod-plan.sh`.
+Pull-request validation never reaches a production host and never receives
+host-local production credentials: no SSH/SCP step, no production-local state, no
+production-local provider. The five roots that need a production-local provider
+(keycloak, rabbitmq, business-postgres, keycloak-postgres, minio) therefore run their
+authoritative plan only in the main-only Tofu Apply workflow. COS and Grafana keep a
+runner-side authenticated plan because they reach a remote backend / external API
+instead of a production-local execution boundary; that path rejects artifact-bucket,
+Lighthouse instance, or Lighthouse firewall delete or replacement actions. The shared
+guard is `scripts/ci/validate-tofu-prod-plan.sh`.
 
 ```text
 tofu plan -input=false -no-color -out=plan.tfplan

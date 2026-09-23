@@ -13,9 +13,8 @@ endpoint or the Yecao service over WireGuard.
 The GitHub workflow is deliberately split:
 
 1. Pull requests run `tofu fmt`, `tofu init -backend=false`, and `tofu validate`
-   on GitHub-hosted runners; a trusted same-repository PR additionally runs the
-   root's guarded read-only plan on the TX host. No runner-side database plan or
-   connection exists.
+   on GitHub-hosted runners. A pull request never reaches TX: no SSH step, no
+   production-local state and no database plan or connection exists there.
 2. A merged main change is staged into an immutable SHA-named directory
    on TX through SSH.
 3. GitHub Actions injects the required COS and `TF_VAR_*` variables over the
