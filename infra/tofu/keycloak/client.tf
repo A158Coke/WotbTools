@@ -63,11 +63,12 @@ resource "keycloak_openid_client" "admin_api" {
   }
 }
 
-# Read-only cutover gate identity. `deploy/tx/pre-cutover-check.sh` obtains a
+# Read-only runtime E2E check identity. `deploy/tx/runtime-check.sh` obtains a
 # client_credentials token with it and drives the real business chain (processing
-# job -> dataset -> map overview -> battle playback -> export) before DNS moves.
+# job -> dataset -> map overview -> battle playback -> export) against the live
+# production runtime.
 # It is deliberately a confidential, service-account-only client with no redirect
-# URIs, and it holds exactly one realm role (`wotbtools-user`), so the gate can
+# URIs, and it holds exactly one realm role (`wotbtools-user`), so the check can
 # prove the user-facing path works while every admin endpoint provably rejects
 # this authenticated non-admin principal.
 resource "keycloak_openid_client" "e2e" {
