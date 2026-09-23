@@ -238,7 +238,11 @@ def plan(base: str, head: str) -> dict[str, object]:
                 build.update(("business-api", "parser-worker"))
             elif path == "java/settings-docker.xml":
                 build.update(("business-api", "parser-worker", "keycloak"))
+                # The provider images build with this settings file, so a change must run the
+                # provider Maven validation as well. It still selects no PR packaging build:
+                # the three images are rebuilt by the main Release, not by the pull request.
                 surfaces["keycloak"] = surfaces["keycloakRuntime"] = True
+                surfaces["keycloakProvider"] = True
             elif path == "java/settings.xml":
                 surfaces["full"] = True
             elif path.startswith("java/") and len(path.split("/")) >= 3:
