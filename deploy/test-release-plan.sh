@@ -30,9 +30,9 @@ def manual(service):
 
 assert detect("frontend/src/App.vue")["deployServices"] == ["wotb-frontend"]
 assert detect("frontend/src/App.vue")["targetServices"] == {"tx": ["wotb-frontend"]}
-assert detect("java/wotb-core/src/Main.java")["deployServices"] == ["business-api"]
-assert detect("java/wotb-core/src/Main.java")["targetServices"] == {"tx": ["business-api"]}
-assert detect("keycloak-wargaming-provider/src/Main.java")["deployServices"] == ["keycloak"]
+assert detect("java/wotb-core/src/main/java/com/wotb/core/Main.java")["deployServices"] == ["business-api"]
+assert detect("java/wotb-core/src/main/java/com/wotb/core/Main.java")["targetServices"] == {"tx": ["business-api"]}
+assert detect("keycloak-wargaming-provider/src/main/java/Provider.java")["deployServices"] == ["keycloak"]
 frontend_diagnostics = detect("frontend/vite.config.js")
 assert frontend_diagnostics["images"] == {"backend": False, "frontend": True, "keycloak": False, "minio": False, "parser-worker": False}
 assert frontend_diagnostics["buildServices"] == ["wotb-frontend"]
