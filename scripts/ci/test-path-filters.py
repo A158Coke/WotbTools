@@ -60,7 +60,16 @@ class PlannerSelectionTest(unittest.TestCase):
         parent = selected("java/pom.xml")
         self.assertTrue(parent["validation"]["javaFull"])
         self.assertEqual(parent["release"]["buildComponents"], ["business-api", "parser-worker"])
+        # The provider/backend images build with java/settings-docker.xml, so changing it must
+        # select the full Java reactor and both Keycloak surfaces (provider Maven tests and the
+        # runtime/static validation) while still asking for no PR packaging build.
         settings = selected("java/settings-docker.xml")
+        self.assertTrue(settings["validation"]["javaFull"])
+        self.assertEqual(settings["validation"]["javaModules"], [])
+        self.assertTrue(settings["validation"]["surfaces"]["keycloak"])
+        self.assertTrue(settings["validation"]["surfaces"]["keycloakProvider"])
+        self.assertTrue(settings["validation"]["surfaces"]["keycloakRuntime"])
+        self.assertEqual(settings["validation"]["packagingComponents"], [])
         self.assertEqual(settings["release"]["buildComponents"], ["business-api", "keycloak", "parser-worker"])
         self.assertEqual(selected("java/settings.xml")["release"]["buildComponents"], [])
 
