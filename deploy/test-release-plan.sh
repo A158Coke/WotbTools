@@ -42,16 +42,16 @@ assert keycloak_diagnostics["images"] == {"backend": False, "frontend": False, "
 assert keycloak_diagnostics["buildServices"] == ["keycloak"]
 assert keycloak_diagnostics["deployServices"] == ["keycloak"]
 backend_diagnostics = detect("java/wotb-web/src/main/java/com/wotb/web/config/StartupReleaseDiagnostics.java")
-assert backend_diagnostics["images"] == {"backend": True, "frontend": False, "keycloak": False, "minio": False, "parser-worker": True}
-assert backend_diagnostics["buildServices"] == ["business-api", "parser-worker"]
+assert backend_diagnostics["images"] == {"backend": True, "frontend": False, "keycloak": False, "minio": False, "parser-worker": False}
+assert backend_diagnostics["buildServices"] == ["business-api"]
 assert backend_diagnostics["deployServices"] == ["business-api"]
 bootstrap_diagnostics = detect(
     "java/wotb-web/src/main/java/com/wotb/web/config/StartupReleaseDiagnostics.java",
     "frontend/vite.config.js",
     "docker/keycloak/wotbtools-entrypoint.sh",
 )
-assert bootstrap_diagnostics["images"] == {"backend": True, "frontend": True, "keycloak": True, "minio": False, "parser-worker": True}
-assert bootstrap_diagnostics["buildServices"] == ["business-api", "wotb-frontend", "keycloak", "parser-worker"]
+assert bootstrap_diagnostics["images"] == {"backend": True, "frontend": True, "keycloak": True, "minio": False, "parser-worker": False}
+assert bootstrap_diagnostics["buildServices"] == ["business-api", "wotb-frontend", "keycloak"]
 assert bootstrap_diagnostics["deployServices"] == ["business-api", "wotb-frontend", "keycloak"]
 assert set(detect("frontend/src/App.vue", "java/wotb-core/src/Main.java")["deployServices"]) == {
     "wotb-frontend", "business-api"
@@ -87,9 +87,9 @@ backend_health_probe_fix = detect(
     "docs/DEVELOPER_GUIDE.md",
     "java/wotb-web/src/test/java/com/wotb/web/config/BackendManagementHealthContractTest.java",
 )
-assert backend_health_probe_fix["images"] == {"backend": True, "frontend": False, "keycloak": False, "minio": False, "parser-worker": True}
-assert backend_health_probe_fix["buildServices"] == ["business-api", "parser-worker"]
-assert backend_health_probe_fix["imageServices"] == ["business-api", "parser-worker"]
+assert backend_health_probe_fix["images"] == {"backend": False, "frontend": False, "keycloak": False, "minio": False, "parser-worker": False}
+assert backend_health_probe_fix["buildServices"] == []
+assert backend_health_probe_fix["imageServices"] == []
 assert backend_health_probe_fix["deployServices"] == ["business-api"]
 assert backend_health_probe_fix["deployConfig"]
 assert detect("deploy/docker-compose.prod.yml")["deployServices"] == [
@@ -139,11 +139,11 @@ assert parser_worker_image["buildServices"] == ["parser-worker"]
 assert parser_worker_image["deployServices"] == []
 assert parser_worker_image["targetServices"] == {}
 parser_worker_module = detect("java/wotb-parser-worker/src/main/java/com/wotb/parserworker/ParserWorkerApplication.java")
-assert parser_worker_module["images"] == {"backend": True, "frontend": False, "keycloak": False, "minio": False, "parser-worker": True}
-assert parser_worker_module["buildServices"] == ["business-api", "parser-worker"]
-assert parser_worker_module["deployServices"] == ["business-api"]
-assert parser_worker_module["targetServices"] == {"tx": ["business-api"]}
-for parser_worker_input in ("common/unrelated-fixture.json", "contracts/mq/parser-messages.json"):
+assert parser_worker_module["images"] == {"backend": False, "frontend": False, "keycloak": False, "minio": False, "parser-worker": True}
+assert parser_worker_module["buildServices"] == ["parser-worker"]
+assert parser_worker_module["deployServices"] == []
+assert parser_worker_module["targetServices"] == {}
+for parser_worker_input in ("common/tank_tactical_profiles.json", "contracts/mq/parser-messages.json"):
     parser_worker_input_plan = detect(parser_worker_input)
     assert parser_worker_input_plan["images"] == {
         "backend": False, "frontend": False, "keycloak": False, "minio": False, "parser-worker": True
@@ -154,7 +154,9 @@ for parser_worker_input in ("common/unrelated-fixture.json", "contracts/mq/parse
     assert parser_worker_input_plan["targetServices"] == {}, parser_worker_input
 assert detect(".github/workflows/ci.yml")["ciSurfaces"]["full"]
 assert detect("common/unrelated-fixture.json")["ciSurfaces"]["data"]
-assert detect("common/unrelated-fixture.json")["imageServices"] == ["parser-worker"]
+assert detect("common/unrelated-fixture.json")["imageServices"] == []
+assert detect("java/wotb-web/src/test/java/FooTest.java")["imageServices"] == []
+assert detect("java/wotb-parser-worker/src/test/java/FooTest.java")["imageServices"] == []
 assert set(detect(".dockerignore")["imageServices"]) == {
     "business-api", "wotb-frontend", "keycloak"
 }
