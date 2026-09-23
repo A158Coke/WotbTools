@@ -782,7 +782,7 @@ Deploy、Ops Recovery、Grafana OpenTofu apply 与 database backup 共用 `produ
 
 生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 备份 `wotb` 和 `keycloak`，保留现有本地边界；恢复只允许手工使用 `deploy/postgres-restore.sh` 并显式确认。COS 上传、对象验证与 retention 属于后续独立 PR，本 PR 不宣称已完成。
 
-Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb/config/sponsor-config.json` 与 `/opt/wotb/config/sponsor/{alipay,wechat}.png` 只读挂载。二维码加载失败时页面必须隐藏失败方式并回退到“暂未配置”，不得显示 broken image。
+Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb-tx/config/sponsor-config.json` 与 `/opt/wotb-tx/config/sponsor/{alipay,wechat}.png` 只读挂载。二维码加载失败时页面必须隐藏失败方式并回退到“暂未配置”，不得显示 broken image。
 
 ---
 

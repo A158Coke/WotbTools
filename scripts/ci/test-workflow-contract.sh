@@ -344,3 +344,13 @@ if ! grep -Fq '/opt/wotb-tx/android-release' .github/workflows/android-release.y
   echo "ERROR: Android release must publish into the TX runtime bind mount." >&2
   exit 1
 fi
+if grep -Eq 'secrets\.VPS_(HOST|USER|PORT|SSH_KEY)' .github/workflows/android-release.yml; then
+  echo "ERROR: Android release must not use the retired Yecao VPS_* SSH target." >&2
+  exit 1
+fi
+for secret in TX_VPS_HOST TX_VPS_USER TX_VPS_PORT TX_VPS_SSH_KEY; do
+  if ! grep -Fq "secrets.$secret" .github/workflows/android-release.yml; then
+    echo "ERROR: Android release is missing TX SSH secret: $secret" >&2
+    exit 1
+  fi
+done
