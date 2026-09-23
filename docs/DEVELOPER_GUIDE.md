@@ -420,7 +420,7 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
 - `?view=hof-admin`：名人堂管理。
 - `?view=profile`：个人中心。
 - `?view=admin-users`：用户管理。
-- `?view=version`：版本历史。
+- `?view=history`：项目历史，直接渲染仓库根 `HISTORY.md`；旧 `?view=version` 兼容映射到同一页面。
 - `?view=contact`：联系页。
   - `?view=rating-docs`：League Rating V6 算法说明页（构建期以 `?raw` 读取
   `docs/WotBTools_League_Rating_V6.md`，canonical 单一事实源；ReplayPage League 模式
