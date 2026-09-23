@@ -4,7 +4,6 @@ run-name: "CI / PR for ${{ github.ref_name }}"
 on:
   pull_request:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,6 +30,11 @@ jobs:
       deploy: ${{ steps.plan.outputs.deploy }}
       observability: ${{ steps.plan.outputs.observability }}
       full: ${{ steps.plan.outputs.full }}
+      java_modules: ${{ steps.plan.outputs.java_modules }}
+      java_full: ${{ steps.plan.outputs.java_full }}
+      browser_suites: ${{ steps.plan.outputs.browser_suites }}
+      packaging_components: ${{ steps.plan.outputs.packaging_components }}
+      tofu_roots: ${{ steps.plan.outputs.tofu_roots }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -47,28 +51,23 @@ jobs:
             echo "::error::docs/current-plan.md must remain ignored." >&2
             exit 1
           }
-      - name: Detect affected CI/build/deploy surfaces from shared model
+      - name: Select validation from the release planner
         id: plan
         env:
-          EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = workflow_dispatch ]; then
-            for name in backend frontend http_contract android keycloak keycloak_provider keycloak_runtime data deploy observability full; do
-              echo "$name=true" >> "$GITHUB_OUTPUT"
-            done
-            echo "live_data=false" >> "$GITHUB_OUTPUT"
-          else
-            git diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed-files.txt
-            python3 deploy/release_plan.py detect --paths-file changed-files.txt > release-plan.json
-            python3 - release-plan.json <<'PY' >> "$GITHUB_OUTPUT"
+          [ -n "$BASE_SHA" ] || { echo "::error::PR base SHA is required" >&2; exit 1; }
+          [ -n "$HEAD_SHA" ] || { echo "::error::PR head SHA is required" >&2; exit 1; }
+          python3 deploy/release_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" > release-plan.json
+          python3 - release-plan.json <<'PY' >> "$GITHUB_OUTPUT"
           import json
           import sys
 
-          surfaces = json.load(open(sys.argv[1], encoding="utf-8"))["ciSurfaces"]
+          validation = json.load(open(sys.argv[1], encoding="utf-8"))["validation"]
+          surfaces = validation["surfaces"]
           names = {
               "backend": "backend",
               "frontend": "frontend",
@@ -85,8 +84,12 @@ jobs:
           }
           for output_name, surface_name in names.items():
               print(f"{output_name}={str(surfaces[surface_name]).lower()}")
+          print("java_modules=" + ",".join(validation["javaModules"]))
+          print("java_full=" + str(validation["javaFull"]).lower())
+          print("browser_suites=" + json.dumps(validation["frontendBrowserSuites"], separators=(",", ":")))
+          print("packaging_components=" + json.dumps(validation["packagingComponents"], separators=(",", ":")))
+          print("tofu_roots=" + json.dumps(validation["tofuRoots"], separators=(",", ":")))
           PY
-          fi
 
   python_unit:
     needs: [changes]
@@ -152,9 +155,18 @@ jobs:
           restore-keys: ${{ runner.os }}-maven-
       - name: Maven test
         working-directory: java
-        run: mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo test
-      - name: Production backend Docker build
-        run: docker build --build-arg BUILD_COMMIT=ci-${{ github.sha }} -f docker/Dockerfile.backend -t wotbtools-backend:pr .
+        env:
+          JAVA_MODULES: ${{ needs.changes.outputs.java_modules }}
+          JAVA_FULL: ${{ needs.changes.outputs.java_full }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$JAVA_FULL" = true ]; then
+            mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo test
+          else
+            [ -n "$JAVA_MODULES" ] || { echo "::error::selected Java validation has no modules" >&2; exit 1; }
+            mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl "$JAVA_MODULES" -am test
+          fi
 
   keycloak_providers:
     needs: [changes]
@@ -188,12 +200,11 @@ jobs:
         with:
           tofu_version: 1.12.6
           tofu_wrapper: false
-      - name: Real Keycloak image runtime smoke
-        run: bash deploy/test-keycloak-runtime.sh
-      - name: Fresh Keycloak OpenTofu and Admin API smoke
-        env:
-          WOTB_KEYCLOAK_SKIP_BUILD: "1"
-        run: bash deploy/test-keycloak-tofu.sh
+      - name: Validate Keycloak runtime inputs
+        run: |
+          set -euo pipefail
+          bash -n docker/keycloak/wotbtools-entrypoint.sh
+          docker buildx build --check -f docker/Dockerfile.keycloak .
 
   frontend:
     needs: [changes]
@@ -218,9 +229,11 @@ jobs:
         working-directory: frontend
         run: npm test
       - name: Real-browser Playback layout regression
+        if: contains(fromJSON(needs.changes.outputs.browser_suites), 'playback-layout')
         working-directory: frontend
         run: npm run test:browser-layout
       - name: Real-browser Playback/Workspace interaction regression
+        if: contains(fromJSON(needs.changes.outputs.browser_suites), 'workspace-interaction')
         working-directory: frontend
         run: npm run test:browser-interaction
       - name: Build
@@ -229,8 +242,41 @@ jobs:
       - name: Bundle separation check
         working-directory: frontend
         run: node scripts/check-bundle-separation.mjs
-      - name: Alpine Docker build
-        run: docker build --build-arg BUILD_COMMIT=ci-${{ github.sha }} -f docker/Dockerfile.frontend -t wotbtools-frontend:pr .
+
+  packaging:
+    needs: [changes]
+    if: needs.changes.outputs.packaging_components != '[]'
+    name: Packaging / ${{ matrix.component }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.changes.outputs.packaging_components) }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up OpenTofu for Keycloak runtime smoke
+        if: matrix.component == 'keycloak'
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.6
+          tofu_wrapper: false
+      - name: Build production Dockerfile without pushing
+        if: matrix.component != 'keycloak'
+        env:
+          COMPONENT: ${{ matrix.component }}
+          COMMIT_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$COMPONENT" in business-api|frontend|parser-worker|minio) ;; *) exit 1 ;; esac
+          docker build --build-arg "BUILD_COMMIT=ci-$COMMIT_SHA" -f "docker/Dockerfile.$COMPONENT" -t "wotbtools-$COMPONENT:pr" .
+      - name: Verify real Keycloak image and provider runtime
+        if: matrix.component == 'keycloak'
+        run: |
+          set -euo pipefail
+          bash deploy/test-keycloak-runtime.sh
+          WOTB_KEYCLOAK_SKIP_BUILD=1 bash deploy/test-keycloak-tofu.sh
 
   http_contract:
     needs: [changes]
@@ -796,6 +842,266 @@ jobs:
       - name: nginx Grafana recreate smoke
         run: bash deploy/test-nginx-grafana-recreate.sh
 
+  tofu_plans:
+    needs: [changes]
+    if: needs.changes.outputs.tofu_roots != '[]'
+    name: OpenTofu plan / ${{ matrix.root }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        root: ${{ fromJSON(needs.changes.outputs.tofu_roots) }}
+    env:
+      TF_IN_AUTOMATION: "true"
+      CHECKPOINT_DISABLE: "1"
+      TRUSTED_PRODUCTION_RUN: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.6
+          tofu_wrapper: false
+      - name: Resolve one declared root
+        id: root
+        env:
+          ROOT: ${{ matrix.root }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$ROOT" in
+            keycloak) path=infra/tofu/keycloak ;;
+            rabbitmq) path=infra/tofu/rabbitmq ;;
+            business-postgres) path=infra/tofu/postgres-business ;;
+            keycloak-postgres) path=infra/tofu/postgres-keycloak ;;
+            minio) path=infra/tofu/minio ;;
+            cos) path=infra/tofu/environments/prod ;;
+            grafana) path=infra/tofu/grafana ;;
+            *) echo "::error::unknown OpenTofu root" >&2; exit 1 ;;
+          esac
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+      - name: Format, initialize without production state, and validate
+        env:
+          ROOT_DIR: ${{ steps.root.outputs.path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+          tofu fmt -check -recursive
+          tofu init -backend=false -input=false
+          tofu validate
+      - name: Validate local-root safety policy fixtures
+        env:
+          ROOT: ${{ matrix.root }}
+          ROOT_DIR: ${{ steps.root.outputs.path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$ROOT" in
+            rabbitmq|minio|business-postgres)
+              bash "$ROOT_DIR/test-validate-plan.sh"
+              ;;
+            keycloak|keycloak-postgres|cos|grafana) ;;
+            *) exit 1 ;;
+          esac
+      - name: Plan against current remote state when trusted
+        if: ${{ (matrix.root == 'cos' || matrix.root == 'grafana') && env.TRUSTED_PRODUCTION_RUN == 'true' }}
+        env:
+          ROOT: ${{ matrix.root }}
+          ROOT_DIR: ${{ steps.root.outputs.path }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          TF_VAR_grafana_auth: ${{ secrets.GRAFANA_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+          tofu init -reconfigure -input=false
+          tofu validate
+          tofu plan -input=false -no-color -out=plan.tfplan
+          case "$ROOT" in
+            cos) bash "$GITHUB_WORKSPACE/scripts/ci/validate-tofu-prod-plan.sh" plan.tfplan ;;
+            grafana) bash ./validate-plan.sh plan.tfplan ;;
+          esac
+      - name: Prepare isolated host-local read-only plan stage
+        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' }}
+        uses: appleboy/ssh-action@v1
+        env:
+          ROOT_NAME: ${{ matrix.root }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SOURCE_SHA: ${{ github.sha }}
+        with:
+          host: ${{ matrix.root == 'minio' && secrets.VPS_HOST || secrets.TX_VPS_HOST }}
+          username: ${{ matrix.root == 'minio' && secrets.VPS_USER || secrets.TX_VPS_USER }}
+          port: ${{ matrix.root == 'minio' && secrets.VPS_PORT || secrets.TX_VPS_PORT }}
+          key: ${{ matrix.root == 'minio' && secrets.VPS_SSH_KEY || secrets.TX_VPS_SSH_KEY }}
+          envs: ROOT_NAME,PR_NUMBER,SOURCE_SHA
+          script: |
+            set -eu
+            [[ "$ROOT_NAME" =~ ^(keycloak|rabbitmq|business-postgres|keycloak-postgres|minio)$ ]]
+            [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
+            [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+            if [ "$ROOT_NAME" = minio ]; then base=/opt/wotb/tofu-pr; else base=/opt/wotb-tx/tofu-pr; fi
+            stage="$base/$PR_NUMBER/$SOURCE_SHA/$ROOT_NAME"
+            rm -rf -- "$stage"
+            install -d -m 700 "$stage"
+      - name: Bundle one selected root and read-only planner
+        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' }}
+        env:
+          ROOT_DIR: ${{ steps.root.outputs.path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tofu-plan-root"
+          tar -C "$ROOT_DIR" --exclude=.terraform --exclude=.tofu-data -czf "$RUNNER_TEMP/tofu-plan-root/root.tgz" .
+          cp scripts/ci/remote-tofu-plan.sh "$RUNNER_TEMP/tofu-plan-root/remote-tofu-plan.sh"
+          chmod 700 "$RUNNER_TEMP/tofu-plan-root/remote-tofu-plan.sh"
+      - name: Stage selected root on its runtime host
+        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' }}
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ matrix.root == 'minio' && secrets.VPS_HOST || secrets.TX_VPS_HOST }}
+          username: ${{ matrix.root == 'minio' && secrets.VPS_USER || secrets.TX_VPS_USER }}
+          port: ${{ matrix.root == 'minio' && secrets.VPS_PORT || secrets.TX_VPS_PORT }}
+          key: ${{ matrix.root == 'minio' && secrets.VPS_SSH_KEY || secrets.TX_VPS_SSH_KEY }}
+          source: ${{ runner.temp }}/tofu-plan-root/*
+          target: ${{ matrix.root == 'minio' && '/opt/wotb/tofu-pr/' || '/opt/wotb-tx/tofu-pr/' }}${{ github.event.pull_request.number }}/${{ github.sha }}/${{ matrix.root }}/
+          overwrite: true
+      - name: Expand root and run guarded read-only production-state plan
+        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' && matrix.root == 'keycloak' }}
+        uses: appleboy/ssh-action@v1
+        env:
+          ROOT_NAME: ${{ matrix.root }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SOURCE_SHA: ${{ github.sha }}
+          KEYCLOAK_ADMIN_USERNAME: admin
+          KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
+          KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
+          KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION: ${{ vars.KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION || '1' }}
+          KEYCLOAK_E2E_CLIENT_SECRET: ${{ secrets.KEYCLOAK_E2E_CLIENT_SECRET }}
+          KEYCLOAK_E2E_CLIENT_SECRET_VERSION: ${{ vars.KEYCLOAK_E2E_CLIENT_SECRET_VERSION || '1' }}
+          WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
+          TX_QQ_CLIENT_ID: ${{ vars.TX_QQ_CLIENT_ID }}
+          TX_QQ_CLIENT_SECRET: ${{ secrets.TX_QQ_CLIENT_SECRET }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 25m
+          envs: ROOT_NAME,PR_NUMBER,SOURCE_SHA,KEYCLOAK_ADMIN_USERNAME,KEYCLOAK_ADMIN_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION,KEYCLOAK_E2E_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET_VERSION,WG_APPLICATION_ID,TX_QQ_CLIENT_ID,TX_QQ_CLIENT_SECRET,TENCENTCLOUD_SECRET_ID,TENCENTCLOUD_SECRET_KEY
+          script: |
+            set -eu
+            stage="/opt/wotb-tx/tofu-pr/$PR_NUMBER/$SOURCE_SHA/$ROOT_NAME"
+            trap 'rm -rf -- "$stage"' EXIT
+            tar -xzf "$stage/root.tgz" -C "$stage"
+            bash "$stage/remote-tofu-plan.sh" "$stage" "$ROOT_NAME"
+      - name: Expand root and run guarded read-only production-state plan
+        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' && matrix.root == 'rabbitmq' }}
+        uses: appleboy/ssh-action@v1
+        env:
+          ROOT_NAME: ${{ matrix.root }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SOURCE_SHA: ${{ github.sha }}
+          TX_RABBITMQ_ADMIN_USER: ${{ vars.TX_RABBITMQ_ADMIN_USER }}
+          TX_RABBITMQ_ADMIN_PASSWORD: ${{ secrets.TX_RABBITMQ_ADMIN_PASSWORD }}
+          TX_RABBITMQ_CONTROL_API_PASSWORD: ${{ secrets.TX_RABBITMQ_CONTROL_API_PASSWORD }}
+          TX_RABBITMQ_PARSER_WORKER_PASSWORD: ${{ secrets.TX_RABBITMQ_PARSER_WORKER_PASSWORD }}
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 25m
+          envs: ROOT_NAME,PR_NUMBER,SOURCE_SHA,TX_RABBITMQ_ADMIN_USER,TX_RABBITMQ_ADMIN_PASSWORD,TX_RABBITMQ_CONTROL_API_PASSWORD,TX_RABBITMQ_PARSER_WORKER_PASSWORD
+          script: |
+            set -eu
+            stage="/opt/wotb-tx/tofu-pr/$PR_NUMBER/$SOURCE_SHA/$ROOT_NAME"
+            trap 'rm -rf -- "$stage"' EXIT
+            tar -xzf "$stage/root.tgz" -C "$stage"
+            bash "$stage/remote-tofu-plan.sh" "$stage" "$ROOT_NAME"
+      - name: Expand root and run guarded read-only production-state plan
+        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' && matrix.root == 'business-postgres' }}
+        uses: appleboy/ssh-action@v1
+        env:
+          ROOT_NAME: ${{ matrix.root }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SOURCE_SHA: ${{ github.sha }}
+          TX_BUSINESS_POSTGRES_ADMIN_USER: ${{ vars.TX_BUSINESS_POSTGRES_ADMIN_USER }}
+          TX_BUSINESS_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_BUSINESS_POSTGRES_ADMIN_PASSWORD }}
+          TX_BUSINESS_DB_NAME: ${{ vars.TX_BUSINESS_DB_NAME }}
+          TX_BUSINESS_DB_USERNAME: ${{ vars.TX_BUSINESS_DB_USERNAME }}
+          TX_BUSINESS_DB_PASSWORD: ${{ secrets.TX_BUSINESS_DB_PASSWORD }}
+          TX_BUSINESS_DB_PASSWORD_VERSION: ${{ vars.TX_BUSINESS_DB_PASSWORD_VERSION || '1' }}
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 25m
+          envs: ROOT_NAME,PR_NUMBER,SOURCE_SHA,TX_BUSINESS_POSTGRES_ADMIN_USER,TX_BUSINESS_POSTGRES_ADMIN_PASSWORD,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,TX_BUSINESS_DB_PASSWORD_VERSION
+          script: |
+            set -eu
+            stage="/opt/wotb-tx/tofu-pr/$PR_NUMBER/$SOURCE_SHA/$ROOT_NAME"
+            trap 'rm -rf -- "$stage"' EXIT
+            tar -xzf "$stage/root.tgz" -C "$stage"
+            bash "$stage/remote-tofu-plan.sh" "$stage" "$ROOT_NAME"
+      - name: Expand root and run guarded read-only production-state plan
+        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' && matrix.root == 'keycloak-postgres' }}
+        uses: appleboy/ssh-action@v1
+        env:
+          ROOT_NAME: ${{ matrix.root }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SOURCE_SHA: ${{ github.sha }}
+          KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
+          KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
+          KC_DB_PASSWORD_VERSION: ${{ vars.TX_KC_DB_PASSWORD_VERSION || '1' }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 25m
+          envs: ROOT_NAME,PR_NUMBER,SOURCE_SHA,KC_POSTGRES_ADMIN_PASSWORD,KC_DB_PASSWORD,KC_DB_PASSWORD_VERSION,TENCENTCLOUD_SECRET_ID,TENCENTCLOUD_SECRET_KEY
+          script: |
+            set -eu
+            stage="/opt/wotb-tx/tofu-pr/$PR_NUMBER/$SOURCE_SHA/$ROOT_NAME"
+            trap 'rm -rf -- "$stage"' EXIT
+            tar -xzf "$stage/root.tgz" -C "$stage"
+            bash "$stage/remote-tofu-plan.sh" "$stage" "$ROOT_NAME"
+      - name: Expand root and run guarded read-only production-state plan
+        if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root == 'minio' }}
+        uses: appleboy/ssh-action@v1
+        env:
+          ROOT_NAME: ${{ matrix.root }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SOURCE_SHA: ${{ github.sha }}
+          YECAO_MINIO_ROOT_USER: ${{ secrets.YECAO_MINIO_ROOT_USER }}
+          YECAO_MINIO_ROOT_PASSWORD: ${{ secrets.YECAO_MINIO_ROOT_PASSWORD }}
+          YECAO_MINIO_WORKER_ACCESS_KEY: ${{ secrets.YECAO_MINIO_WORKER_ACCESS_KEY }}
+          YECAO_MINIO_WORKER_SECRET_KEY: ${{ secrets.YECAO_MINIO_WORKER_SECRET_KEY }}
+          YECAO_MINIO_CONTROL_API_ACCESS_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_ACCESS_KEY }}
+          YECAO_MINIO_CONTROL_API_SECRET_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_SECRET_KEY }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 25m
+          envs: ROOT_NAME,PR_NUMBER,SOURCE_SHA,YECAO_MINIO_ROOT_USER,YECAO_MINIO_ROOT_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY
+          script: |
+            set -eu
+            stage="/opt/wotb/tofu-pr/$PR_NUMBER/$SOURCE_SHA/$ROOT_NAME"
+            trap 'rm -rf -- "$stage"' EXIT
+            tar -xzf "$stage/root.tgz" -C "$stage"
+            bash "$stage/remote-tofu-plan.sh" "$stage" "$ROOT_NAME"
+
   required:
     needs:
       - changes
@@ -811,6 +1117,8 @@ jobs:
       - android_contract
       - observability_config
       - deploy_smoke
+      - packaging
+      - tofu_plans
     if: always()
     name: CI / Required Gate
     runs-on: ubuntu-latest
@@ -842,6 +1150,10 @@ jobs:
           OBSERVABILITY_CHANGED: ${{ needs.changes.outputs.observability }}
           DEPLOY_SMOKE: ${{ needs.deploy_smoke.result }}
           DEPLOY_CHANGED: ${{ needs.changes.outputs.deploy }}
+          PACKAGING: ${{ needs.packaging.result }}
+          PACKAGING_COMPONENTS: ${{ needs.changes.outputs.packaging_components }}
+          TOFU_PLANS: ${{ needs.tofu_plans.result }}
+          TOFU_ROOTS: ${{ needs.changes.outputs.tofu_roots }}
         shell: bash
         run: |
           set -euo pipefail
@@ -866,5 +1178,7 @@ jobs:
           android_contract|$([ "$ANDROID_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$ANDROID_CONTRACT
           observability|$([ "$OBSERVABILITY_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$OBSERVABILITY
           deploy_smoke|$([ "$DEPLOY_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$DEPLOY_SMOKE
+          packaging|$([ "$PACKAGING_COMPONENTS" != '[]' ] && echo true || echo false)|$PACKAGING
+          tofu_plans|$([ "$TOFU_ROOTS" != '[]' ] && echo true || echo false)|$TOFU_PLANS
           EOF
           [ "$failed" -eq 0 ]

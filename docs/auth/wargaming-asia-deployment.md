@@ -116,13 +116,16 @@ OpenTofu 为 `wotbtools-web` 声明 5 个 mapper（ID/Access/UserInfo 三个 tok
 IdP representation 的 `client_id` 由占位值 `not-used` 收敛为真实 `WG_APPLICATION_ID` 后，**不要手工改 Admin Console**；用既有 CI/CD 路径收敛：
 
 ```
-Deploy（workflow_dispatch / workflow_run）
-  target=tx, tx_services=keycloak
-    -> 启动/校验 Keycloak（Bootstrap TX Keycloak PostgreSQL + Start empty TX Keycloak）
-    -> 应用 Keycloak OpenTofu（deploy/tx/keycloak-tofu.sh，含 plan 安全门 + 二次 plan 无漂移门）
+Release（main push 自动）或单目标手动入口
+  Deploy workflow, service=keycloak（或 Release 的 deploy_keycloak lane）
+    -> 依赖 keycloak-postgres root 已成功（Bootstrap TX Keycloak PostgreSQL）
+    -> 启动空 Keycloak runtime
+  Tofu Apply workflow, root=keycloak（或 Release 的 tofu_keycloak lane，needs deploy_keycloak）
+    -> deploy/tx/keycloak-tofu.sh：plan 安全门 + 二次 plan 无漂移门
     -> 收敛 QQ + 三个 Wargaming IdP（in-place update，alias/realm 未变，不 destroy/recreate）
-    -> 部署精确 Keycloak runtime（清理后的服务列表包含 keycloak）
 ```
+
+- 手动收敛时依次 dispatch `Deploy`（`service=keycloak`）与 `Infra / Tofu Apply`（`root=keycloak`），两者都只接受当前 main 完整 SHA；不再有 `target=tx` / `tx_services` 选择器。
 
 - 不删除/重建 realm，也不删除/重建 IdP；`infra/tofu/keycloak/validate-plan.sh` 对 `keycloak_oidc_identity_provider.*` 的 delete/replace 一律 fail-closed。
 - `WG_APPLICATION_ID` 的 runtime 注入（Keycloak 容器 env）在 apply 之后的精确 runtime 部署步骤中继续生效，无需额外操作。

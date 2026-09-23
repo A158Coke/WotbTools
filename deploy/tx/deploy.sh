@@ -1,32 +1,24 @@
 #!/usr/bin/env bash
-# TX edge deployment only. It stages an immutable frontend/Keycloak release on
-# TX; it never changes DNS or starts/stops any Yecao runtime.
+# TX runtime deployment. A single selected service is reconciled per invocation.
 set -Eeuo pipefail
 
 readonly WOTB_DIR="${WOTB_TX_DIR:-/opt/wotb-tx}"
 readonly INCOMING_DIR="${WOTB_TX_INCOMING_DIR:-$WOTB_DIR/deploy.incoming/deploy/tx}"
 readonly LIVE_DEPLOY_DIR="$WOTB_DIR/deploy"
 readonly LIVE_COMPOSE="$LIVE_DEPLOY_DIR/docker-compose.yml"
-readonly METADATA_FILE="$WOTB_DIR/tx-production-release.json"
+readonly METADATA_FILE="$WOTB_DIR/production-release.json"
+readonly METADATA_TOOL="$(dirname "$INCOMING_DIR")/release-metadata.py"
 readonly TX_RUNTIME_ROOT="${TX_RUNTIME_ROOT:-$WOTB_DIR}"
 readonly TOFU_PROVISION_MARKER="${WOTB_TX_TOFU_PROVISION_MARKER:-$WOTB_DIR/keycloak.tofu-provisioned}"
 readonly RABBITMQ_TOFU_PROVISION_MARKER="${WOTB_TX_RABBITMQ_TOFU_PROVISION_MARKER:-$WOTB_DIR/rabbitmq.tofu-provisioned}"
-readonly RABBITMQ_TOFU_CLI_CONFIG="$LIVE_DEPLOY_DIR/rabbitmq.tofurc"
-readonly RABBITMQ_TOFU_MIRROR="${WOTB_TX_RABBITMQ_TOFU_MIRROR:-$WOTB_DIR/tofu-provider-mirror}"
-readonly RABBITMQ_PROVIDER_SOURCE="registry.opentofu.org/cyrilgdn/rabbitmq"
-readonly RABBITMQ_PROVIDER_PLATFORM="linux_amd64"
 readonly BUSINESS_POSTGRES_TOFU_PROVISION_MARKER="${WOTB_TX_BUSINESS_POSTGRES_TOFU_PROVISION_MARKER:-$WOTB_DIR/business-postgres.tofu-provisioned}"
-readonly BUSINESS_POSTGRES_TOFU_CLI_CONFIG="$LIVE_DEPLOY_DIR/business-postgres.tofurc"
-readonly BUSINESS_POSTGRES_TOFU_MIRROR="${WOTB_TX_BUSINESS_POSTGRES_TOFU_MIRROR:-$WOTB_DIR/tofu-provider-mirror}"
 readonly BOOTSTRAP_KEYCLOAK="${WOTB_TX_BOOTSTRAP_KEYCLOAK:-0}"
 readonly BACKEND_UPSTREAM_VALUE="${TX_BACKEND_UPSTREAM:-http://business-api:8087}"
-readonly DEPLOY_SERVICES_RAW="${WOTB_DEPLOY_SERVICES:-}"
-readonly DEPLOY_IMAGE_SERVICES_RAW="${WOTB_DEPLOY_IMAGE_SERVICES:-}"
-readonly TAG_VALUE="${TAG:-}"
-readonly RELEASE_SHA_VALUE="${RELEASE_SHA:-}"
+readonly DEPLOY_SERVICE_VALUE="${WOTB_DEPLOY_SERVICE:-}"
+readonly CONFIG_SHA_VALUE="${WOTB_DEPLOY_CONFIG_SHA:-}"
+readonly IMAGE_TAG_VALUE="${WOTB_DEPLOY_IMAGE_TAG:-}"
+readonly IMAGE_COMMIT_SHA_VALUE="${WOTB_DEPLOY_IMAGE_COMMIT_SHA:-}"
 readonly TX_IMAGE_REGISTRY_PREFIX_VALUE="${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}"
-readonly RABBITMQ_TOFU_ROOT="$WOTB_DIR/tofu.incoming/$RELEASE_SHA_VALUE/infra/tofu/rabbitmq"
-readonly BUSINESS_POSTGRES_TOFU_ROOT="$WOTB_DIR/tofu.incoming/$RELEASE_SHA_VALUE/infra/tofu/postgres-business"
 readonly HEALTH_ATTEMPTS="${WOTB_HEALTH_ATTEMPTS:-60}"
 readonly HEALTH_INTERVAL_SEC="${WOTB_HEALTH_INTERVAL_SEC:-2}"
 readonly PROBE_CONNECT_TIMEOUT_SEC="${WOTB_PROBE_CONNECT_TIMEOUT_SEC:-3}"
@@ -35,6 +27,7 @@ readonly PROBE_MAX_TIME_SEC="${WOTB_PROBE_MAX_TIME_SEC:-10}"
 declare -a DEPLOY_SERVICES=()
 declare -a DEPLOY_IMAGE_SERVICES=()
 declare -a APPLY_SERVICES=()
+DEPLOY_SERVICES_RAW=""
 FAILED_SERVICE=""
 PROBE_LAST_SERVICE=""
 PROBE_LAST_URL=""
@@ -61,7 +54,7 @@ require_env() {
 }
 
 require_tofu_provisioning() {
-  if ! is_selected all && ! is_selected keycloak && ! is_selected wotb-frontend; then
+  if ! is_selected keycloak && ! is_selected wotb-frontend; then
     return
   fi
   if [ "$BOOTSTRAP_KEYCLOAK" = 1 ] && is_selected keycloak && ! is_selected wotb-frontend \
@@ -74,21 +67,10 @@ require_tofu_provisioning() {
     || die "TX Keycloak OpenTofu provision marker is invalid; refusing to start application services."
 }
 
-invalidate_tofu_provisioning_for_bootstrap() {
-  # A PostgreSQL-only run is the explicit bootstrap/reset boundary. Clear a
-  # stale proof before the workflow performs its fresh TX-local tofu apply.
-  if is_selected keycloak-postgres && ! is_selected keycloak && ! is_selected wotb-frontend; then
-    is_safe_path "$TOFU_PROVISION_MARKER" \
-      && [[ "$TOFU_PROVISION_MARKER" == "$WOTB_DIR/"* ]] \
-      || die "unsafe TX Keycloak OpenTofu provision marker path."
-    rm -f -- "$TOFU_PROVISION_MARKER"
-  fi
-}
-
 is_selected() {
   local wanted="$1" service
   for service in "${DEPLOY_SERVICES[@]}"; do
-    [ "$service" = all ] || [ "$service" = "$wanted" ] && return 0
+    [ "$service" = "$wanted" ] && return 0
   done
   return 1
 }
@@ -98,16 +80,16 @@ is_selected() {
 # Keycloak-only, and business-postgres-only deployments isolated from each
 # other's secrets.
 is_keycloak_group_selected() {
-  is_selected all || is_selected keycloak-postgres || is_selected keycloak \
+  is_selected keycloak-postgres || is_selected keycloak \
     || is_selected wotb-frontend || is_selected caddy
 }
 
 is_rabbitmq_group_selected() {
-  is_selected all || is_selected rabbitmq
+  is_selected rabbitmq
 }
 
 is_business_postgres_group_selected() {
-  is_selected all || is_selected business-postgres
+  is_selected business-postgres
 }
 
 # The TX business runtime owns the application database role, the distributed
@@ -115,7 +97,7 @@ is_business_postgres_group_selected() {
 # application credentials, the MinIO control-plane identity, and the AI key. A
 # RabbitMQ-only or database-only deployment must never depend on them.
 is_business_api_group_selected() {
-  is_selected all || is_selected business-api
+  is_selected business-api
 }
 
 is_image_service() {
@@ -138,29 +120,34 @@ validate_inputs() {
   is_safe_path "$INCOMING_DIR" || die "unsafe WOTB_TX_INCOMING_DIR."
   is_safe_path "$TX_RUNTIME_ROOT" || die "unsafe TX_RUNTIME_ROOT."
   [ "$INCOMING_DIR" != "$WOTB_DIR" ] || die "incoming directory must differ from TX runtime directory."
-  [[ "$TAG_VALUE" =~ ^sha-[0-9a-f]{12}$ ]] || die "TAG must be an immutable sha-<12 lowercase hex> tag."
-  [[ "$RELEASE_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]] || die "RELEASE_SHA must be a full lowercase commit SHA."
-  [[ "$TX_IMAGE_REGISTRY_PREFIX_VALUE" =~ ^ccr\.ccs\.tencentyun\.com/[a-z0-9][a-z0-9._-]*$ ]] \
-    || die "TX_IMAGE_REGISTRY_PREFIX must be a Tencent TCR namespace under ccr.ccs.tencentyun.com."
+  [[ "$CONFIG_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]] || die "WOTB_DEPLOY_CONFIG_SHA must be a full lowercase commit SHA."
+  [[ "$TX_IMAGE_REGISTRY_PREFIX_VALUE" =~ ^([a-z0-9][a-z0-9-]*\.)+tencentyun\.com/[a-z0-9][a-z0-9._-]*$ ]] \
+    || die "TX_IMAGE_REGISTRY_PREFIX must be a Tencent TCR registry and namespace."
   [ "$BACKEND_UPSTREAM_VALUE" = "http://business-api:8087" ] \
     || die "TX_BACKEND_UPSTREAM must be the TX-internal business runtime http://business-api:8087; public hosts and the retired Yecao WireGuard backend are no longer routable."
   is_positive_integer "$HEALTH_ATTEMPTS" || die "WOTB_HEALTH_ATTEMPTS must be a positive integer."
   is_positive_integer "$HEALTH_INTERVAL_SEC" || die "WOTB_HEALTH_INTERVAL_SEC must be a positive integer."
   is_positive_integer "$PROBE_CONNECT_TIMEOUT_SEC" || die "WOTB_PROBE_CONNECT_TIMEOUT_SEC must be a positive integer."
   is_positive_integer "$PROBE_MAX_TIME_SEC" || die "WOTB_PROBE_MAX_TIME_SEC must be a positive integer."
-  [ -n "$DEPLOY_SERVICES_RAW" ] || die "WOTB_DEPLOY_SERVICES is required."
-
-  IFS=',' read -r -a DEPLOY_SERVICES <<< "$DEPLOY_SERVICES_RAW"
-  IFS=',' read -r -a DEPLOY_IMAGE_SERVICES <<< "$DEPLOY_IMAGE_SERVICES_RAW"
-  [ "${#DEPLOY_SERVICES[@]}" -gt 0 ] && [ -n "${DEPLOY_SERVICES[0]}" ] \
-    || die "WOTB_DEPLOY_SERVICES must contain at least one service."
-  if [ "${DEPLOY_SERVICES[0]}" = all ] && [ "${#DEPLOY_SERVICES[@]}" -ne 1 ]; then
-    die "all cannot be combined with other deployment services."
+  case "$DEPLOY_SERVICE_VALUE" in
+    frontend) DEPLOY_SERVICES=(wotb-frontend) ;;
+    keycloak-postgres|business-postgres|rabbitmq|keycloak|business-api|caddy)
+      DEPLOY_SERVICES=("$DEPLOY_SERVICE_VALUE") ;;
+    *) die "unsupported TX deployment service: $DEPLOY_SERVICE_VALUE" ;;
+  esac
+  DEPLOY_SERVICES_RAW="${DEPLOY_SERVICES[0]}"
+  if [ -n "$IMAGE_TAG_VALUE" ] || [ -n "$IMAGE_COMMIT_SHA_VALUE" ]; then
+    [ -n "$IMAGE_TAG_VALUE" ] && [ -n "$IMAGE_COMMIT_SHA_VALUE" ] \
+      || die "image tag and source SHA must be supplied together."
+    is_image_service "$DEPLOY_SERVICES_RAW" || die "fixed upstream service cannot receive image identity."
+    DEPLOY_IMAGE_SERVICES=("$DEPLOY_SERVICES_RAW")
+  else
+    DEPLOY_IMAGE_SERVICES=()
   fi
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      all|keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|business-api|caddy) ;;
+      keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|business-api|caddy) ;;
       *) die "unsupported TX deployment service: $service" ;;
     esac
   done
@@ -215,126 +202,19 @@ validate_inputs() {
 
 metadata_tag() {
   local service="$1"
-  [ -f "$METADATA_FILE" ] || return 0
-  python3 - "$METADATA_FILE" "$service" <<'PY'
-import json
-import re
-import sys
-
-try:
-    data = json.load(open(sys.argv[1], encoding="utf-8"))
-    tag = data.get("services", {}).get(sys.argv[2], {}).get("imageTag", "")
-except (OSError, ValueError, TypeError):
-    raise SystemExit(0)
-if re.fullmatch(r"sha-[0-9a-f]{12}", tag):
-    print(tag)
-PY
+  case "$service" in wotb-frontend) service=frontend ;; esac
+  python3 "$METADATA_TOOL" get --host tx --file "$METADATA_FILE" \
+    --tx-prefix "$TX_IMAGE_REGISTRY_PREFIX_VALUE" --service "$service" --field tag
 }
 
-# The raw `image:` value the live Compose document currently records for one service.
-# That document is the deployed configuration, so it is read verbatim - a host may
-# still name a reference that predates the TCR-only convention - and never invented.
-live_compose_image() {
-  local service="$1"
-  [ -f "$LIVE_COMPOSE" ] || return 0
-  python3 - "$LIVE_COMPOSE" "$service" <<'PY'
-import re
-import sys
-
-service = sys.argv[2]
-current = ""
-for line in open(sys.argv[1], encoding="utf-8"):
-    match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
-    if match:
-        current = match.group(1)
-        continue
-    if current != service:
-        continue
-    match = re.match(r"^\s+image:\s+(\S+)\s*$", line)
-    if match:
-        print(match.group(1))
-        break
-PY
-}
-
-# The image reference the running container was created with: the live runtime source
-# for a service whose Compose entry cannot be read.
-running_container_image() {
-  local service="$1" container=""
-  container="$(docker compose -f "$LIVE_COMPOSE" ps -q "$service" 2>/dev/null)" || return 0
-  [ -n "$container" ] || return 0
-  docker inspect --format '{{.Config.Image}}' "$container" 2>/dev/null || return 0
-}
-
-# The pinned Tencent TCR repository of one application image service. The Compose
-# service name is not always the image name (business-api runs the backend image), so
-# the mapping stays explicit and single-sourced here.
-image_repository() {
-  case "$1" in
-    wotb-frontend) printf '%s\n' wotbtools-frontend ;;
-    keycloak) printf '%s\n' wotbtools-keycloak ;;
-    business-api) printf '%s\n' wotbtools-backend ;;
-    *) return 1 ;;
-  esac
-}
-
-# The immutable tag of the image a service actually runs, from the live Compose
-# document or - when that document does not name one - from its running container.
-# Only a sha-<12> tag qualifies: a mutable or unresolved reference is not an identity
-# this deployment may carry forward, and an unavailable one is reported as absent
-# instead of guessed.
-live_image_tag() {
-  local service="$1" image=""
-  image="$(live_compose_image "$service")"
-  [[ "$image" =~ :(sha-[0-9a-f]{12})$ ]] || image="$(running_container_image "$service")"
-  [[ "$image" =~ :(sha-[0-9a-f]{12})$ ]] || return 0
-  printf '%s\n' "${BASH_REMATCH[1]}"
-}
-
-# True when this host holds deployment state for one application image service: a
-# recorded identity, a concrete (non-template) live Compose reference, or a running
-# container. Such a service must keep a resolvable immutable identity, so an unusable
-# one fails closed. A service with none of these has never been deployed on this host
-# (the PostgreSQL/broker bootstrap path), so there is no identity to preserve and its
-# incoming declaration is kept instead.
-has_deployment_state() {
-  local service="$1" image=""
-  [ -n "$(metadata_tag "$service")" ] && return 0
-  image="$(live_compose_image "$service")"
-  if [ -n "$image" ] && [[ "$image" != *'${'* ]]; then
-    return 0
-  fi
-  [ -n "$(running_container_image "$service")" ] && return 0
-  return 1
-}
-
-# The immutable image reference the promoted Compose document must pin for one
-# application image service.
-#
-# A service this deployment deploys runs this release's tag. Every other service keeps
-# the identity it is actually deployed with - recorded release metadata, else the live
-# Compose document, else the running container of that exact Compose service - so a
-# deployment can never advance (or invent) the identity of a service it did not deploy.
-# When the host holds deployment state but no source yields an immutable sha-<12> tag,
-# the deployment fails closed with the service named; when the service was never
-# deployed here, nothing is printed and the incoming declaration is kept.
 effective_image_ref() {
-  local service="$1" tag=""
-  is_image_service "$service" || die "not an application image service: $service"
-  if is_selected all || has_image_service "$service"; then
-    printf '%s\n' "$TX_IMAGE_REGISTRY_PREFIX_VALUE/$(image_repository "$service"):$TAG_VALUE"
-    return 0
+  local service="$1"
+  if has_image_service "$service"; then
+    printf '%s\n' "$IMAGE_TAG_VALUE"
+  else
+    metadata_tag "$service"
   fi
-  tag="$(metadata_tag "$service")"
-  [ -n "$tag" ] || tag="$(live_image_tag "$service")"
-  if [[ "$tag" =~ ^sha-[0-9a-f]{12}$ ]]; then
-    printf '%s\n' "$TX_IMAGE_REGISTRY_PREFIX_VALUE/$(image_repository "$service"):$tag"
-    return 0
-  fi
-  has_deployment_state "$service" || return 0
-  die "cannot resolve the immutable image identity of $service from release metadata, the live Compose document or its running container; refusing to render a TX Compose document that would rewrite it."
 }
-
 # Render the promoted Compose document from the staged tree, pinning the immutable
 # identity resolved for every application image service (see effective_image_ref).
 render_effective_compose() {
@@ -383,7 +263,7 @@ stage_and_validate() {
   [ -f "$source" ] || die "staged TX deployment tree is missing docker-compose.yml."
   [ -f "$INCOMING_DIR/Caddyfile" ] || die "staged TX deployment tree is missing Caddyfile."
   [ -f "$INCOMING_DIR/nginx/frontend.conf.template" ] || die "staged TX deployment tree is missing frontend nginx template."
-  if is_selected all || is_selected wotb-frontend; then
+  if is_selected wotb-frontend; then
     # Sponsor assets and Android releases are optional runtime content. The
     # sponsor config itself is a file bind mount: if Docker ever created the
     # source path as a directory, fail before Compose can silently serve 404.
@@ -423,7 +303,7 @@ assert_routing_boundary() {
     || die "staged TX compose must default the frontend upstream to the TX-internal business runtime."
   ! grep -Eq '8087:8087|10\.20\.0\.2:8087' "$compose_file" \
     || die "staged TX compose must not publish or reference the retired Yecao backend port."
-  if is_selected all || is_selected business-api; then
+  if is_selected business-api; then
     # PostgreSQL 是唯一 replay job authority：执行模式与后端选择器两个已退役开关都不得出现。
     ! grep -Fq 'WOTB_REPLAY_EXECUTION_MODE' "$compose_file" \
       || die "the retired replay execution-mode switch must not appear in production."
@@ -433,32 +313,8 @@ assert_routing_boundary() {
 }
 
 pull_images() {
-  local -a services=()
-  if is_selected all || is_selected keycloak-postgres; then
-    services+=(keycloak-postgres)
-  fi
-  if is_selected all || is_selected business-postgres; then
-    services+=(business-postgres)
-  fi
-  if is_selected all || is_selected rabbitmq; then
-    services+=(rabbitmq)
-  fi
-  if is_selected all || is_selected keycloak; then
-    services+=(keycloak)
-  fi
-  if is_selected all || is_selected wotb-frontend; then
-    services+=(wotb-frontend)
-  fi
-  if is_selected all || is_selected business-api; then
-    services+=(business-api)
-  fi
-  if [ "$BOOTSTRAP_KEYCLOAK" != 1 ] && \
-    (is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected caddy); then
-    services+=(caddy)
-  fi
-  docker compose -f "$EFFECTIVE_COMPOSE" pull "${services[@]}"
+  docker compose -f "$EFFECTIVE_COMPOSE" pull "$DEPLOY_SERVICES_RAW"
 }
-
 promote_files() {
   local next_deploy="$WOTB_DIR/deploy.next.$$" old_deploy="$WOTB_DIR/deploy.old.$$"
   rm -rf -- "$next_deploy"
@@ -476,20 +332,6 @@ promote_files() {
   rm -rf -- "$old_deploy"
 }
 
-compose_service_list() {
-  if is_selected all; then
-    printf '%s\n' keycloak-postgres business-postgres rabbitmq keycloak wotb-frontend business-api
-  else
-    printf '%s\n' "${DEPLOY_SERVICES[@]}"
-  fi
-}
-
-# A Caddy refresh replaces the container whose dynamically assigned address nginx
-# resolved into `set_real_ip_from caddy` when it loaded its configuration, so that
-# resolution always has to be refreshed with it. Recreating nginx is the right
-# refresh whenever this deployment deploys nginx; the Caddy-only selector must not
-# recreate - or need the immutable identity of - an application image it does not
-# deploy, so the running container keeps its image and re-reads its configuration.
 reload_frontend_trusted_peer() {
   local output
   if ! output="$(docker compose -f "$LIVE_COMPOSE" exec -T wotb-frontend nginx -t 2>&1)"; then
@@ -505,49 +347,15 @@ reload_frontend_trusted_peer() {
 }
 
 apply_services() {
-  mapfile -t APPLY_SERVICES < <(compose_service_list | awk 'NF && !seen[$0]++')
-  [ "${#APPLY_SERVICES[@]}" -gt 0 ] || die "no TX runtime service selected."
-  local service caddy_refresh=0 frontend_refresh=0
-  if is_selected caddy || { [ "$BOOTSTRAP_KEYCLOAK" != 1 ] && \
-      (is_selected all || is_selected keycloak || is_selected wotb-frontend); }; then
-    caddy_refresh=1
+  APPLY_SERVICES=("$DEPLOY_SERVICES_RAW")
+  if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate "$DEPLOY_SERVICES_RAW"; then
+    FAILED_SERVICE="$DEPLOY_SERVICES_RAW"
+    return 1
   fi
-  # nginx is only recreated when it is part of this deployment; a Caddy-only run
-  # refreshes its trusted peer inside the running container instead.
-  if is_selected all || is_selected wotb-frontend || \
-    { [ "$BOOTSTRAP_KEYCLOAK" != 1 ] && is_selected keycloak; }; then
-    frontend_refresh=1
-  fi
-
-  # `--no-deps` deliberately keeps targeted deploys isolated, so Compose does
-  # not create Caddy before nginx resolves `set_real_ip_from caddy`. Start all
-  # other selected services first, then create Caddy's network endpoint before
-  # refreshing nginx's trusted peer.
-  for service in "${APPLY_SERVICES[@]}"; do
-    case "$service" in
-      wotb-frontend|caddy) continue ;;
-    esac
-    if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate "$service"; then
-      FAILED_SERVICE="$service"
-      return 1
-    fi
-  done
-  if [ "$caddy_refresh" -eq 1 ]; then
-    if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate caddy; then
-      FAILED_SERVICE="caddy"
-      return 1
-    fi
-  fi
-  if [ "$frontend_refresh" -eq 1 ]; then
-    if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate wotb-frontend; then
-      FAILED_SERVICE="wotb-frontend"
-      return 1
-    fi
-  elif [ "$caddy_refresh" -eq 1 ]; then
+  if [ "$DEPLOY_SERVICES_RAW" = caddy ]; then
     reload_frontend_trusted_peer || return 1
   fi
 }
-
 sanitize_probe_error() {
   local error_file="$1" sanitized
   sanitized="$(LC_ALL=C tr '\r\n' ' ' < "$error_file" | LC_ALL=C tr -cd '[:print:][:space:]' | \
@@ -699,348 +507,31 @@ set_nonselected_compose_placeholders() {
   fi
 }
 
-rabbitmq_provider_lock_metadata() {
-  local lockfile="$RABBITMQ_TOFU_ROOT/.terraform.lock.hcl"
-  [ -f "$lockfile" ] || die "TX RabbitMQ provider lockfile is missing: $lockfile."
-  python3 - "$lockfile" "$RABBITMQ_PROVIDER_SOURCE" <<'PY'
-import re
-import sys
-from pathlib import Path
-
-lockfile = Path(sys.argv[1])
-expected_source = sys.argv[2]
-text = lockfile.read_text(encoding="utf-8")
-blocks = re.findall(r'provider\s+"([^"]+)"\s*\{(.*?)^\}', text, flags=re.MULTILINE | re.DOTALL)
-matching = [body for source, body in blocks if source == expected_source]
-if len(matching) != 1:
-    raise SystemExit(f"expected exactly one {expected_source} provider block in {lockfile}")
-
-body = matching[0]
-version_match = re.search(r'^\s*version\s*=\s*"([^"]+)"\s*$', body, flags=re.MULTILINE)
-constraint_match = re.search(r'^\s*constraints\s*=\s*"([^"]+)"\s*$', body, flags=re.MULTILINE)
-if not version_match or not constraint_match:
-    raise SystemExit(f"provider version and constraints must both be present in {lockfile}")
-version = version_match.group(1)
-constraint = constraint_match.group(1)
-if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
-    raise SystemExit(f"provider version must be an exact semantic version, got {version!r}")
-if constraint != version:
-    raise SystemExit(
-        f"provider constraint {constraint!r} must exactly match locked version {version!r}"
-    )
-print(f"{expected_source}\t{version}")
-PY
-}
-
-verify_rabbitmq_provider_archive() {
-  local archive="$1"
-  local mirror_metadata="$2"
-  local provider_version="$3"
-  local lockfile="$RABBITMQ_TOFU_ROOT/.terraform.lock.hcl"
-  local expected_filename="terraform-provider-rabbitmq_${provider_version}_${RABBITMQ_PROVIDER_PLATFORM}.zip"
-
-  python3 - "$lockfile" "$mirror_metadata" "$archive" "$RABBITMQ_PROVIDER_SOURCE" \
-    "$RABBITMQ_PROVIDER_PLATFORM" "$expected_filename" <<'PY'
-import hashlib
-import json
-import re
-import sys
-from pathlib import Path
-
-lockfile = Path(sys.argv[1])
-metadata_file = Path(sys.argv[2])
-archive = Path(sys.argv[3])
-expected_source = sys.argv[4]
-platform = sys.argv[5]
-expected_filename = sys.argv[6]
-
-if not metadata_file.is_file():
-    raise SystemExit(f"provider mirror metadata is missing: {metadata_file}")
-if not archive.is_file():
-    raise SystemExit(f"provider archive is missing: {archive}")
-
-try:
-    metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
-except (OSError, json.JSONDecodeError) as exc:
-    raise SystemExit(f"provider mirror metadata is invalid: {exc}") from exc
-
-platform_metadata = metadata.get("archives", {}).get(platform)
-if not isinstance(platform_metadata, dict):
-    raise SystemExit(f"provider mirror metadata has no {platform} archive")
-if platform_metadata.get("url") != expected_filename:
-    raise SystemExit(
-        f"provider mirror metadata archive mismatch: expected {expected_filename!r}, "
-        f"got {platform_metadata.get('url')!r}"
-    )
-platform_hashes = platform_metadata.get("hashes")
-if not isinstance(platform_hashes, list):
-    raise SystemExit("provider mirror metadata hashes must be a list")
-platform_zh = [
-    value.removeprefix("zh:").lower()
-    for value in platform_hashes
-    if isinstance(value, str) and re.fullmatch(r"zh:[0-9a-fA-F]{64}", value)
-]
-if len(platform_zh) != 1:
-    raise SystemExit(f"expected exactly one {platform} zh checksum in provider mirror metadata")
-
-lock_text = lockfile.read_text(encoding="utf-8")
-blocks = re.findall(r'provider\s+"([^"]+)"\s*\{(.*?)^\}', lock_text, flags=re.MULTILINE | re.DOTALL)
-matching = [body for source, body in blocks if source == expected_source]
-if len(matching) != 1:
-    raise SystemExit(f"expected exactly one {expected_source} provider block in {lockfile}")
-locked_zh = {
-    value.lower()
-    for value in re.findall(r'"zh:([0-9a-fA-F]{64})"', matching[0])
-}
-expected_sha256 = platform_zh[0]
-if expected_sha256 not in locked_zh:
-    raise SystemExit(f"{platform} provider checksum is not present in {lockfile}")
-
-digest = hashlib.sha256()
-with archive.open("rb") as stream:
-    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-        digest.update(chunk)
-actual_sha256 = digest.hexdigest()
-if actual_sha256 != expected_sha256:
-    raise SystemExit(
-        f"provider archive checksum mismatch: expected {expected_sha256}, got {actual_sha256}"
-    )
-PY
-}
-
-stage_and_promote_rabbitmq_provider_mirror() {
-  local provider_source="$1"
-  local provider_version="$2"
-  local provider_dir="$3"
-  local staging_root
-
-  install -d -m 755 "$RABBITMQ_TOFU_MIRROR" "$(dirname "$provider_dir")" || return 1
-  staging_root="$(mktemp -d "$RABBITMQ_TOFU_MIRROR/.rabbitmq-provider-staging.XXXXXX")" \
-    || return 1
-
-  (
-    local staging_provider_dir staged_archive staged_metadata backup_dir archive
-    local cleanup_staging=1
-    local -a staged_archives=()
-
-    cleanup_rabbitmq_provider_staging() {
-      if [ "$cleanup_staging" = 1 ]; then
-        rm -rf -- "$staging_root"
-      fi
-    }
-    trap cleanup_rabbitmq_provider_staging EXIT
-
-    unset TF_CLI_CONFIG_FILE
-    if ! tofu -chdir="$RABBITMQ_TOFU_ROOT" providers mirror \
-      -platform="$RABBITMQ_PROVIDER_PLATFORM" "$staging_root"; then
-      echo "TX RabbitMQ provider staging download failed." >&2
-      exit 1
-    fi
-
-    staging_provider_dir="$staging_root/$provider_source"
-    staged_archive="$staging_provider_dir/terraform-provider-rabbitmq_${provider_version}_${RABBITMQ_PROVIDER_PLATFORM}.zip"
-    staged_metadata="$staging_provider_dir/${provider_version}.json"
-    if [ -d "$staging_root/registry.opentofu.org" ]; then
-      while IFS= read -r archive; do
-        [ -n "$archive" ] && staged_archives+=("$archive")
-      done < <(find "$staging_root/registry.opentofu.org" -type f \
-        -name 'terraform-provider-*.zip' -print | sort)
-    fi
-    if [ "${#staged_archives[@]}" -ne 1 ] || [ "${staged_archives[0]:-}" != "$staged_archive" ]; then
-      echo "TX RabbitMQ provider staging source/version mismatch: expected only $staged_archive." >&2
-      exit 1
-    fi
-    if ! verify_rabbitmq_provider_archive \
-      "$staged_archive" "$staged_metadata" "$provider_version"; then
-      echo "TX RabbitMQ provider staging checksum validation failed." >&2
-      exit 1
-    fi
-
-    # Both renames stay on the mirror filesystem. The old provider directory is
-    # held inside staging until the verified replacement reaches its canonical
-    # path, so a failed promotion can restore the original without touching any
-    # PostgreSQL or Keycloak provider directory.
-    backup_dir="$staging_root/canonical-backup"
-    if [ -e "$provider_dir" ]; then
-      if ! mv -- "$provider_dir" "$backup_dir"; then
-        echo "TX RabbitMQ provider canonical directory could not be staged for replacement." >&2
-        exit 1
-      fi
-    fi
-    if ! mv -- "$staging_provider_dir" "$provider_dir"; then
-      echo "TX RabbitMQ provider promotion failed." >&2
-      if [ -e "$backup_dir" ] && ! mv -- "$backup_dir" "$provider_dir"; then
-        cleanup_staging=0
-        echo "TX RabbitMQ provider rollback failed; original directory remains at $backup_dir." >&2
-      fi
-      exit 1
-    fi
-  )
-}
-
-bootstrap_rabbitmq_provider_mirror() {
-  local metadata provider_source provider_version provider_dir expected_archive mirror_metadata archive
-  local repairing=0
-  local -a installed_archives=()
-
-  metadata="$(rabbitmq_provider_lock_metadata)" \
-    || die "TX RabbitMQ provider metadata could not be derived from the lockfile."
-  IFS=$'\t' read -r provider_source provider_version <<< "$metadata"
-  [ "$provider_source" = "$RABBITMQ_PROVIDER_SOURCE" ] \
-    || die "TX RabbitMQ provider source does not match the production mirror contract."
-  [ -n "$provider_version" ] || die "TX RabbitMQ provider version is empty."
-
-  provider_dir="$RABBITMQ_TOFU_MIRROR/$provider_source"
-  expected_archive="$provider_dir/terraform-provider-rabbitmq_${provider_version}_${RABBITMQ_PROVIDER_PLATFORM}.zip"
-  mirror_metadata="$provider_dir/${provider_version}.json"
-  if [ -L "$provider_dir" ] || { [ -e "$provider_dir" ] && [ ! -d "$provider_dir" ]; }; then
-    die "TX RabbitMQ provider mirror has an unsupported canonical path: $provider_dir."
-  fi
-  if [ -d "$provider_dir" ]; then
-    while IFS= read -r archive; do
-      [ -n "$archive" ] && installed_archives+=("$archive")
-    done < <(find "$provider_dir" -maxdepth 1 -type f \
-      -name "terraform-provider-rabbitmq_*_${RABBITMQ_PROVIDER_PLATFORM}.zip" -print | sort)
-  fi
-
-  if [ "${#installed_archives[@]}" -gt 0 ]; then
-    [ "${#installed_archives[@]}" -eq 1 ] && [ "${installed_archives[0]}" = "$expected_archive" ] \
-      || die "TX RabbitMQ provider mirror version mismatch: expected only $expected_archive."
-    if verify_rabbitmq_provider_archive "$expected_archive" "$mirror_metadata" "$provider_version"; then
-      echo "RabbitMQ provider mirror already contains $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM); reusing it."
-      return
-    fi
-    echo "RabbitMQ provider mirror contains an invalid $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM); attempting staged repair."
-    repairing=1
-  elif [ -d "$provider_dir" ]; then
-    echo "RabbitMQ provider mirror contains incomplete $provider_source state; attempting staged repair."
-    repairing=1
-  fi
-
-  stage_and_promote_rabbitmq_provider_mirror \
-    "$provider_source" "$provider_version" "$provider_dir" \
-    || die "TX RabbitMQ provider staged bootstrap failed for $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM)."
-  if [ "$repairing" = 1 ]; then
-    echo "RabbitMQ provider mirror repaired $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM)."
-  else
-    echo "RabbitMQ provider mirror installed $provider_source $provider_version ($RABBITMQ_PROVIDER_PLATFORM)."
-  fi
-}
-
-provision_rabbitmq() {
-  if ! is_selected all && ! is_selected rabbitmq; then
-    return
-  fi
-  command -v tofu >/dev/null 2>&1 || die "tofu is required on TX for RabbitMQ provisioning."
-  command -v python3 >/dev/null 2>&1 || die "python3 is required on TX for RabbitMQ plan safety validation."
-  [ -d "$RABBITMQ_TOFU_ROOT" ] || die "TX RabbitMQ OpenTofu root is missing: $RABBITMQ_TOFU_ROOT."
-  [ -f "$RABBITMQ_TOFU_CLI_CONFIG" ] || die "TX RabbitMQ OpenTofu CLI configuration is missing: $RABBITMQ_TOFU_CLI_CONFIG."
-
-  # Ensure the Management API is accepting the Compose bootstrap admin before
-  # OpenTofu touches broker configuration. The provider remains TX-local.
-  wait_for_rabbitmq || return 1
-  bootstrap_rabbitmq_provider_mirror
-  umask 077
-  install -d -m 700 "$WOTB_DIR/rabbitmq-tofu-state"
-  export TF_CLI_CONFIG_FILE="$RABBITMQ_TOFU_CLI_CONFIG"
-  export TF_VAR_rabbitmq_management_endpoint="http://127.0.0.1:15672"
-  export TF_VAR_rabbitmq_admin_user="$TX_RABBITMQ_ADMIN_USER"
-  export TF_VAR_rabbitmq_admin_password="$TX_RABBITMQ_ADMIN_PASSWORD"
-  export TF_VAR_control_api_password="$TX_RABBITMQ_CONTROL_API_PASSWORD"
-  export TF_VAR_parser_worker_password="$TX_RABBITMQ_PARSER_WORKER_PASSWORD"
-
-  # `set -e` is inert inside a function that runs in an `if`/`||` context, so
-  # every provisioning step is chained explicitly. A failing plan or a non-clean
-  # second plan must abort instead of reaching the marker.
-  (
-    cd "$RABBITMQ_TOFU_ROOT" || exit 1
-    trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT
-    tofu init -reconfigure -input=false -lockfile=readonly \
-      && tofu validate \
-      && tofu plan -input=false -no-color -out=plan.tfplan \
-      && bash ./validate-plan.sh plan.tfplan \
-      && tofu apply -input=false -auto-approve plan.tfplan \
-      && tofu plan -input=false -no-color -out=second-plan.tfplan \
-      && bash ./validate-plan.sh second-plan.tfplan --require-no-changes
-  ) || return 1
-
-  printf '%s\n' tx-local-opentofu-rabbitmq > "$RABBITMQ_TOFU_PROVISION_MARKER"
-  chmod 600 "$RABBITMQ_TOFU_PROVISION_MARKER"
-  echo "RabbitMQ OpenTofu apply and second-plan drift check passed."
-}
-
-provision_business_postgres() {
-  if ! is_selected all && ! is_selected business-postgres; then
-    return
-  fi
-  command -v tofu >/dev/null 2>&1 || die "tofu is required on TX for Business PostgreSQL provisioning."
-  command -v python3 >/dev/null 2>&1 || die "python3 is required on TX for Business PostgreSQL plan safety validation."
-  [ -d "$BUSINESS_POSTGRES_TOFU_ROOT" ] \
-    || die "TX Business PostgreSQL OpenTofu root is missing: $BUSINESS_POSTGRES_TOFU_ROOT."
-  [ -f "$BUSINESS_POSTGRES_TOFU_CLI_CONFIG" ] \
-    || die "TX Business PostgreSQL OpenTofu CLI configuration is missing: $BUSINESS_POSTGRES_TOFU_CLI_CONFIG."
-  [ -d "$BUSINESS_POSTGRES_TOFU_MIRROR" ] \
-    || die "TX Business PostgreSQL provider mirror is missing: $BUSINESS_POSTGRES_TOFU_MIRROR."
-
-  # The runtime must accept the Compose bootstrap administrator before OpenTofu
-  # creates the authoritative database, application role, and grant. The
-  # provider remains TX-local on 127.0.0.1:25432 and owns no application table.
-  wait_for_business_database || return 1
-  umask 077
-  install -d -m 700 "$WOTB_DIR/postgres-business-tofu-state"
-  export TF_CLI_CONFIG_FILE="$BUSINESS_POSTGRES_TOFU_CLI_CONFIG"
-  export TF_VAR_postgresql_admin_username="$TX_BUSINESS_POSTGRES_ADMIN_USER"
-  export TF_VAR_postgresql_admin_password="$TX_BUSINESS_POSTGRES_ADMIN_PASSWORD"
-  export TF_VAR_business_database_name="$TX_BUSINESS_DB_NAME"
-  export TF_VAR_business_role_name="$TX_BUSINESS_DB_USERNAME"
-  export TF_VAR_business_role_password="$TX_BUSINESS_DB_PASSWORD"
-  export TF_VAR_business_role_password_version="$TX_BUSINESS_DB_PASSWORD_VERSION"
-
-  # `set -e` is inert inside a function that runs in an `if`/`||` context, so
-  # every provisioning step is chained explicitly. A failing plan or a non-clean
-  # second plan must abort instead of reaching the marker.
-  (
-    cd "$BUSINESS_POSTGRES_TOFU_ROOT" || exit 1
-    trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT
-    tofu init -reconfigure -input=false -lockfile=readonly \
-      && tofu validate \
-      && tofu plan -input=false -no-color -out=plan.tfplan \
-      && bash ./validate-plan.sh plan.tfplan \
-      && tofu apply -input=false -auto-approve plan.tfplan \
-      && tofu plan -input=false -no-color -out=second-plan.tfplan \
-      && bash ./validate-plan.sh second-plan.tfplan --require-no-changes
-  ) || return 1
-
-  printf '%s\n' tx-local-opentofu-business-postgres > "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER"
-  chmod 600 "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER"
-  echo "Business PostgreSQL OpenTofu apply and second-plan drift check passed."
-}
-
 blocking_health() {
-  if is_selected all || is_selected keycloak-postgres || is_selected keycloak || is_selected wotb-frontend || is_selected caddy; then
+  if is_selected keycloak-postgres || is_selected keycloak || is_selected wotb-frontend || is_selected caddy; then
     wait_for_database || return 1
   fi
-  if is_selected all || is_selected business-postgres; then
+  if is_selected business-postgres; then
     wait_for_business_database || return 1
   fi
-  if is_selected all || is_selected rabbitmq; then
+  if is_selected rabbitmq; then
     wait_for_rabbitmq || return 1
   fi
-  if is_selected all || is_selected keycloak || is_selected wotb-frontend || is_selected caddy; then
+  if is_selected keycloak || is_selected wotb-frontend || is_selected caddy; then
     if [ "$BOOTSTRAP_KEYCLOAK" = 1 ] && is_selected keycloak && ! is_selected wotb-frontend; then
       wait_for_probe keycloak http://keycloak:8080/realms/master/.well-known/openid-configuration || return 1
     else
       wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || return 1
     fi
   fi
-  if is_selected all || is_selected business-api; then
+  if is_selected business-api; then
     # The business runtime is TX-internal and publishes no port, so both the
     # application surface and the dedicated management port are proven from
     # inside wotb_tx_internal by the deployment-owned health-probe container.
     wait_for_probe tx-business-api http://business-api:8088/actuator/health || return 1
     wait_for_probe business-api-app http://business-api:8087/api/health || return 1
   fi
-  if is_selected all || is_selected wotb-frontend || is_selected caddy; then
+  if is_selected wotb-frontend || is_selected caddy; then
     # Public API traffic is terminated inside wotb_tx_internal now: the frontend
     # probe proves nginx -> business-api end to end, and the retired Yecao
     # backend path is deliberately not probed or required any more.
@@ -1633,7 +1124,7 @@ public_tls_check() {
 tx_runtime_check() {
   local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health business_container
   local failures=0 provider
-  DEPLOY_SERVICES=(all)
+  DEPLOY_SERVICES=(keycloak-postgres business-postgres rabbitmq keycloak wotb-frontend business-api caddy)
 
   command -v docker >/dev/null 2>&1 || { echo "docker: FAIL (docker is required)" >&2; return 1; }
   command -v python3 >/dev/null 2>&1 || { echo "python3: FAIL (python3 is required)" >&2; return 1; }
@@ -1844,8 +1335,8 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
 
 diagnostics() {
   echo "== TX DEPLOY DIAGNOSTICS =="
-  echo "releaseSha=$RELEASE_SHA_VALUE"
-  echo "releaseTag=$TAG_VALUE"
+  echo "configSha=$CONFIG_SHA_VALUE"
+  echo "image=$IMAGE_TAG_VALUE"
   echo "deployServices=$DEPLOY_SERVICES_RAW"
   if [ -n "$PROBE_LAST_SERVICE" ]; then
     echo "probeService=$PROBE_LAST_SERVICE"
@@ -1867,6 +1358,15 @@ diagnostics() {
 stop_failed_service() {
   local service="$FAILED_SERVICE"
   case "$service" in
+    tx-business-api|business-api-app) service=business-api ;;
+    frontend) service=wotb-frontend ;;
+    caddy-ready|caddy-frontend|caddy-keycloak) service=caddy ;;
+  esac
+  if ! is_selected "$service"; then
+    echo "Not stopping unaffected TX health dependency: ${service:-unknown}" >&2
+    return 0
+  fi
+  case "$service" in
     keycloak|wotb-frontend|business-api|caddy)
       echo "Stopping failed affected TX service: $service"
       docker compose -f "$LIVE_COMPOSE" stop "$service" || true
@@ -1876,79 +1376,50 @@ stop_failed_service() {
 }
 
 update_metadata() {
-  local now metadata_tmp selected service
-  selected=""
-  for service in keycloak wotb-frontend business-api; do
-    if is_selected all || is_selected "$service"; then
-      selected+="$service,"
-    fi
-  done
-  if [ -z "$selected" ]; then
-    # A run that publishes no application image (business-postgres, rabbitmq,
-    # Caddy-only, or a database bootstrap) must not overwrite the recorded
-    # immutable image identity of the running application services.
-    return
+  is_image_service "$DEPLOY_SERVICES_RAW" || return 0
+  local service="$DEPLOY_SERVICES_RAW"
+  [ "$service" = wotb-frontend ] && service=frontend
+  local -a args=(update --host tx --file "$METADATA_FILE" \
+    --tx-prefix "$TX_IMAGE_REGISTRY_PREFIX_VALUE" --service "$service" \
+    --config-sha "$CONFIG_SHA_VALUE")
+  if [ -n "$IMAGE_TAG_VALUE" ]; then
+    args+=(--image-tag "$IMAGE_TAG_VALUE" --image-commit-sha "$IMAGE_COMMIT_SHA_VALUE")
   fi
-  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  metadata_tmp="$METADATA_FILE.next.$$"
-  umask 177
-  NOW="$now" python3 - "$METADATA_FILE" "$metadata_tmp" "$RELEASE_SHA_VALUE" "$TAG_VALUE" "$selected" <<'PY'
-import json
-import os
-import sys
-
-source, target, sha, tag, selected = sys.argv[1:]
-try:
-    data = json.load(open(source, encoding="utf-8")) if os.path.exists(source) else {}
-except (OSError, ValueError):
-    raise SystemExit("existing TX production metadata is invalid")
-if not isinstance(data, dict):
-    raise SystemExit("existing TX production metadata must be an object")
-services = data.setdefault("services", {})
-if not isinstance(services, dict):
-    raise SystemExit("existing TX production metadata services must be an object")
-for service in filter(None, selected.split(",")):
-    services[service] = {"commitSha": sha, "imageTag": tag, "deployedAt": os.environ["NOW"]}
-data.update({"schemaVersion": 1, "deploymentConfigSha": sha, "updatedAt": os.environ["NOW"]})
-with open(target, "w", encoding="utf-8") as handle:
-    json.dump(data, handle, indent=2, sort_keys=True)
-    handle.write("\n")
-PY
-  chmod 600 "$metadata_tmp"
-  mv -f -- "$metadata_tmp" "$METADATA_FILE"
+  python3 "$METADATA_TOOL" "${args[@]}"
 }
 
-apply_and_provision() {
-  # Never call the provisioning helpers from a `||` list: bash disables errexit
-  # for a function invoked there, which would let a failing plan or apply drift
-  # check pass silently. Each step is checked explicitly instead.
+apply_and_check() {
   apply_services || return 1
-  provision_business_postgres || return 1
-  provision_rabbitmq || return 1
   blocking_health || return 1
 }
-
 main() {
   validate_inputs
-  require_tofu_provisioning
   preflight_host
-  invalidate_tofu_provisioning_for_bootstrap
   command -v flock >/dev/null 2>&1 || die "flock is required to serialize TX deployments."
   command -v python3 >/dev/null 2>&1 || die "python3 is required for immutable image handling."
+  [ -f "$METADATA_TOOL" ] || die "staged release metadata validator is missing."
+  local -a metadata_args=(validate --host tx --file "$METADATA_FILE" --tx-prefix "$TX_IMAGE_REGISTRY_PREFIX_VALUE")
+  if [ -n "$IMAGE_TAG_VALUE" ]; then
+    local metadata_service="$DEPLOY_SERVICES_RAW"
+    [ "$metadata_service" = wotb-frontend ] && metadata_service=frontend
+    metadata_args+=(--service "$metadata_service" --image-tag "$IMAGE_TAG_VALUE" --image-commit-sha "$IMAGE_COMMIT_SHA_VALUE")
+  fi
+  python3 "$METADATA_TOOL" "${metadata_args[@]}" || die "production metadata or incoming image identity is invalid."
+  require_tofu_provisioning
   mkdir -p "$WOTB_DIR" "$INCOMING_DIR"
   exec 9>"$WOTB_DIR/.deploy.lock"
   flock -n 9 || die "another TX deployment is already running."
   stage_and_validate
   pull_images || die "TX image pull failed; live TX deployment was not changed."
   promote_files || die "TX live-file promotion failed; prior TX files were restored when possible."
-  if ! apply_and_provision; then
+  if ! apply_and_check; then
     diagnostics
     stop_failed_service
     die "TX blocking health failed; no automatic recovery, DNS action, or Yecao action was attempted."
   fi
   update_metadata
   rm -f -- "$INCOMING_DIR/docker-compose.effective.yml"
-  echo "TX deployment completed: $RELEASE_SHA_VALUE ($TAG_VALUE); DNS cutover remains an explicit operator action."
+  echo "TX deployment completed: config=$CONFIG_SHA_VALUE service=$DEPLOY_SERVICES_RAW image=$IMAGE_TAG_VALUE"
 }
 
 if [ "${TX_DEPLOY_LIBRARY_ONLY:-0}" != 1 ]; then

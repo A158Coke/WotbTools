@@ -89,9 +89,10 @@ tofu apply -input=false -auto-approve plan.tfplan
 tofu plan -input=false -no-color -out=second-plan.tfplan
 bash ./validate-plan.sh second-plan.tfplan
 
-if jq -e 'any(.resource_changes[]?; ((.change.actions // []) | any(. != "no-op")))' \
-  <(tofu show -json second-plan.tfplan) >/dev/null; then
-  echo "ERROR: Keycloak OpenTofu second plan is not No changes." >&2
+second_json="$(tofu show -json second-plan.tfplan)"
+if ! jq -e 'all(.resource_changes[]?; ((.change.actions // []) | all(. == "no-op")))' \
+  <<< "$second_json" >/dev/null; then
+  echo "ERROR: Keycloak OpenTofu second plan is invalid or not No changes." >&2
   exit 1
 fi
 

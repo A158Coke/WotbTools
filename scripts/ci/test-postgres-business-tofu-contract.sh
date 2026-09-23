@@ -21,31 +21,28 @@ import yaml
 
 root = Path(sys.argv[1])
 tofu_root = root / "infra/tofu/postgres-business"
-workflow_text = (root / ".github/workflows/postgres-business-tofu.yml").read_text(encoding="utf-8")
-deploy_text = (root / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+workflow_text = (root / ".github/workflows/tofu-apply.yml").read_text(encoding="utf-8")
+ci_text = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 tx_deploy = (root / "deploy/tx/deploy.sh").read_text(encoding="utf-8")
 tofurc = (root / "deploy/tx/business-postgres.tofurc").read_text(encoding="utf-8")
 root_text = "\n".join(path.read_text(encoding="utf-8") for path in sorted(tofu_root.glob("*.tf")))
 workflow = yaml.safe_load(workflow_text)
-deploy = yaml.safe_load(deploy_text)
+ci = yaml.safe_load(ci_text)
 
 
 def flat(text):
     return re.sub(r"\s+", " ", text)
 
 
-# --- the PR workflow runs for this root and never applies from a runner -----
-triggers = workflow.get("on", workflow.get(True))
-assert "infra/tofu/postgres-business/**" in triggers["pull_request"]["paths"]
-assert triggers["push"]["branches"] == ["main"]
-assert "tofu apply" not in workflow_text
-for forbidden in ("apply_on_tx", "ssh", "remote-exec", "tunnel"):
-    assert forbidden not in workflow_text, forbidden
+# --- PR CI validates this root; production apply happens on TX -------------
+assert "tofu_plans" in ci["jobs"]
+assert "infra/tofu/postgres-business" in ci_text
+assert "tofu apply" not in str(ci["jobs"]["tofu_plans"])
+assert "remote-exec" not in root_text
 
 # --- both apply paths share one serialization boundary ----------------------
-expected_concurrency = {"group": "production-maintenance", "cancel-in-progress": False}
+expected_concurrency = {"group": "production-maintenance", "cancel-in-progress": False, "queue": "max"}
 assert workflow["concurrency"] == expected_concurrency
-assert deploy["concurrency"] == expected_concurrency
 
 # --- provider, state and loopback ownership boundaries ----------------------
 assert 'source  = "cyrilgdn/postgresql"' in root_text
@@ -73,20 +70,21 @@ assert 'include = ["registry.opentofu.org/cyrilgdn/postgresql"]' in tofurc_flat
 assert 'exclude = ["registry.opentofu.org/cyrilgdn/postgresql"]' in tofurc_flat
 assert "/opt/wotb-tx/tofu-provider-mirror" in tofurc_flat
 
-# --- the TX deploy path keeps both plan gates and one marker owner ----------
-assert "bash ./validate-plan.sh plan.tfplan" in tx_deploy
-assert "bash ./validate-plan.sh second-plan.tfplan --require-no-changes" in tx_deploy
-assert 'TF_CLI_CONFIG_FILE="$BUSINESS_POSTGRES_TOFU_CLI_CONFIG"' in flat(tx_deploy)
-assert "tfvars" not in tx_deploy.lower()
-assert "business-postgres.tofu-provisioned" not in deploy_text, (
-    "only deploy.sh creates the provisioning marker on TX"
+# --- the TX Tofu lane keeps both plan gates and the marker owner ------------
+tofu_step = next(
+    step for step in workflow["jobs"]["tx"]["steps"]
+    if step.get("name") == "Apply Business PostgreSQL on TX localhost"
 )
+tofu_script = tofu_step["with"]["script"]
+assert "bash ./validate-plan.sh plan.tfplan" in tofu_script
+assert "bash ./validate-plan.sh second-plan.tfplan --require-no-changes" in tofu_script
+assert "TF_CLI_CONFIG_FILE=/opt/wotb-tx/deploy/business-postgres.tofurc" in tofu_script
+assert "business-postgres.tofu-provisioned" in tofu_script
+assert "tfvars" not in tx_deploy.lower()
+assert ' > "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER"' not in tx_deploy
 
 # --- secrets arrive as ordinary runtime names, never as TF_VAR names --------
-deploy_step = next(
-    step for step in deploy["jobs"]["deploy_tx"]["steps"] if step.get("name") == "Deploy exact TX services via SSH"
-)
-assert "TF_VAR_" not in deploy_step["with"]["envs"], "SSH envs must carry runtime names, not TF_VAR names"
+assert "TF_VAR_" not in tofu_step["with"]["envs"], "SSH envs must carry runtime names, not TF_VAR names"
 business_names = (
     "TX_BUSINESS_POSTGRES_ADMIN_USER",
     "TX_BUSINESS_POSTGRES_ADMIN_PASSWORD",
@@ -96,11 +94,11 @@ business_names = (
     "TX_BUSINESS_DB_PASSWORD_VERSION",
 )
 for name in business_names:
-    assert name in deploy_step["with"]["envs"].split(","), name
-    assert name in deploy_step["env"], name
-    assert name in tx_deploy, name
+    assert name in tofu_step["with"]["envs"].split(","), name
+    assert name in tofu_step["env"], name
+    assert name in tofu_script, name
 for secret in ("TX_BUSINESS_POSTGRES_ADMIN_PASSWORD", "TX_BUSINESS_DB_PASSWORD"):
-    assert f"{secret}: ${{{{ secrets." in deploy_text, secret
+    assert f"{secret}: ${{{{ secrets." in workflow_text, secret
 
 print("TX Business PostgreSQL ownership and production-safety contract OK")
 PY

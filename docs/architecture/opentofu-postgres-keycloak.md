@@ -13,16 +13,19 @@ endpoint or the Yecao service over WireGuard.
 The GitHub workflow is deliberately split:
 
 1. Pull requests run `tofu fmt`, `tofu init -backend=false`, and `tofu validate`
-   on GitHub-hosted runners. No runner-side database plan or connection exists.
-2. A merged main change is copied to an immutable SHA-named staging directory
+   on GitHub-hosted runners; a trusted same-repository PR additionally runs the
+   root's guarded read-only plan on the TX host. No runner-side database plan or
+   connection exists.
+2. A merged main change is staged into an immutable SHA-named directory
    on TX through SSH.
 3. GitHub Actions injects the required COS and `TF_VAR_*` variables over the
    SSH session; TX initializes the existing COS backend, creates one saved plan
    against its local loopback PostgreSQL port, rejects destructive changes, and
-   applies that exact plan.
+   applies that exact plan. This runs in the `tx` job of the single
+   `.github/workflows/tofu-apply.yml` (root `keycloak-postgres`).
 
-Both the normal deployment workflow and the manual postgres-keycloak workflow
-use the same GitHub Actions `production-maintenance` concurrency group. This
+The Deploy workflow and the Tofu Apply workflow use the same GitHub Actions
+`production-maintenance` concurrency group. This
 is the required serialization boundary for the shared
 `wotbtools/prod/postgres-keycloak.tfstate`; operator coordination is not a
 substitute for the workflow-level lock.

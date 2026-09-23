@@ -51,9 +51,10 @@ tofu import 'grafana_dashboard.managed["wotbtools_usage"]' wotbtools-usage
 ```
 
 CI never runs import. Pull requests use `GRAFANA_PAT` only for an authenticated
-plan; fork runs never receive it. Merges to `main` run the separate
-`grafana-tofu-apply.yml` workflow, which plans, applies the exact saved plan, and
-verifies all six keeper UIDs plus 404 for the three retired UIDs.
+plan; fork runs never receive it. Merges to `main` run the `grafana` root of the
+single `.github/workflows/tofu-apply.yml` (called by `release.yml`), which plans,
+applies the exact saved plan, and verifies all six keeper UIDs plus 404 for the
+three retired UIDs.
 
 The current `GRAFANA_PAT` is the existing `wotbtool` service-account token with
 the Grafana organization `Admin` role. The owner explicitly approved this
