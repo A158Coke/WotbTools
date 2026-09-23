@@ -143,10 +143,10 @@ services:
   # peers (frontend nginx, the Caddy readiness surface, the deployment
   # health-probe) may reach it on wotb_tx_internal.
   business-api:
-    # Same immutable backend image the Yecao runtime used; the TX service name is
-    # intentionally distinct so a release manifest can never confuse the retired
-    # Yecao deployment with the authoritative TX one.
-    image: ${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}/wotbtools-backend:${TAG:?TAG is required}
+    # The same business image, published as wotbtools-business-api; the TX service
+    # name is intentionally distinct so production metadata can never confuse the
+    # retired Yecao deployment with the authoritative TX one.
+    image: ${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}/wotbtools-business-api:${TAG:?TAG is required}
     environment:
       # Flyway owns every application table in the OpenTofu-provisioned business
       # database; the application role is separate from the PostgreSQL bootstrap

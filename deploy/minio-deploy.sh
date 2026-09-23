@@ -1,74 +1,62 @@
 #!/usr/bin/env bash
-# Explicit, MinIO-only Yecao deployment. It shares the Deploy workflow but is
-# intentionally isolated from application releases and their credentials.
+# Explicit Yecao MinIO runtime reconcile. OpenTofu topology belongs to Tofu Apply.
 set -Eeuo pipefail
 
-readonly ROOT="${1:-}"
-readonly COMPOSE_FILE="$ROOT/deploy/docker-compose.minio.yml"
-readonly TOFU_ROOT="$ROOT/infra/tofu/minio"
-readonly TOFU_CLI_CONFIG="$ROOT/deploy/minio/tofurc"
-readonly TOFU_MIRROR="/opt/wotb/tofu-provider-mirror"
+ROOT="${1:-}"
+WOTB_DIR="${WOTB_DIR:-/opt/wotb}"
+COMPOSE_FILE="$ROOT/deploy/docker-compose.minio.yml"
+METADATA_TOOL="$ROOT/deploy/release-metadata.py"
+METADATA_FILE="$WOTB_DIR/production-release.json"
+CONFIG_SHA="${WOTB_DEPLOY_CONFIG_SHA:-}"
+IMAGE_TAG="${WOTB_DEPLOY_IMAGE_TAG:-}"
+IMAGE_COMMIT_SHA="${WOTB_DEPLOY_IMAGE_COMMIT_SHA:-}"
 
-die() {
-  echo "ERROR: $*" >&2
-  exit 1
-}
+die() { echo "ERROR: $*" >&2; exit 1; }
+require_env() { [ -n "${!1:-}" ] || die "$1 is required."; }
 
-require_env() {
-  local name="$1"
-  [ -n "${!name:-}" ] || die "$name is required."
-}
-
-require_env TAG
-require_env RELEASE_SHA
-require_env RELEASE_RUN_NUMBER
+[ -n "$ROOT" ] && [ "$ROOT" != / ] && [ "$ROOT" != . ] || die "safe staged root is required."
+[ "${WOTB_DEPLOY_SERVICE:-}" = minio ] || die "MinIO deploy requires WOTB_DEPLOY_SERVICE=minio."
+[[ "$CONFIG_SHA" =~ ^[0-9a-f]{40}$ ]] || die "WOTB_DEPLOY_CONFIG_SHA must be a full lowercase commit SHA."
+if [ -n "$IMAGE_TAG" ] || [ -n "$IMAGE_COMMIT_SHA" ]; then
+  [ -n "$IMAGE_TAG" ] && [ -n "$IMAGE_COMMIT_SHA" ] || die "image tag and source SHA must be supplied together."
+fi
 require_env YECAO_MINIO_ROOT_USER
 require_env YECAO_MINIO_ROOT_PASSWORD
-require_env YECAO_MINIO_WORKER_ACCESS_KEY
-require_env YECAO_MINIO_WORKER_SECRET_KEY
-require_env YECAO_MINIO_CONTROL_API_ACCESS_KEY
-require_env YECAO_MINIO_CONTROL_API_SECRET_KEY
-
-[[ "$TAG" =~ ^sha-[0-9a-f]{12}$ ]] || die "TAG must be an immutable sha-<12 lowercase hex> tag."
-[[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || die "RELEASE_SHA must be a full lowercase commit SHA."
-[[ "$RELEASE_RUN_NUMBER" =~ ^[1-9][0-9]*$ ]] || die "RELEASE_RUN_NUMBER must be a positive integer."
 [ -f "$COMPOSE_FILE" ] || die "MinIO compose file is missing."
-[ -d "$TOFU_ROOT" ] || die "MinIO OpenTofu root is missing."
-[ -f "$TOFU_CLI_CONFIG" ] || die "MinIO OpenTofu CLI configuration is missing."
-[ -d "$TOFU_MIRROR" ] || die "MinIO provider mirror is missing: $TOFU_MIRROR."
+[ -f "$METADATA_TOOL" ] || die "staged release metadata validator is missing."
 command -v docker >/dev/null 2>&1 || die "docker is required."
-command -v tofu >/dev/null 2>&1 || die "tofu is required on Yecao."
-command -v python3 >/dev/null 2>&1 || die "python3 is required on Yecao for plan safety validation."
+command -v flock >/dev/null 2>&1 || die "flock is required."
+command -v python3 >/dev/null 2>&1 || die "python3 is required."
 
-# Do not inherit a permissive CLI config from the host environment.
-export TF_CLI_CONFIG_FILE="$TOFU_CLI_CONFIG"
-export TF_VAR_minio_server="10.20.0.2:9000"
-export TF_VAR_minio_root_user="$YECAO_MINIO_ROOT_USER"
-export TF_VAR_minio_root_password="$YECAO_MINIO_ROOT_PASSWORD"
-export TF_VAR_worker_access_key="$YECAO_MINIO_WORKER_ACCESS_KEY"
-export TF_VAR_worker_secret_key="$YECAO_MINIO_WORKER_SECRET_KEY"
-export TF_VAR_control_api_access_key="$YECAO_MINIO_CONTROL_API_ACCESS_KEY"
-export TF_VAR_control_api_secret_key="$YECAO_MINIO_CONTROL_API_SECRET_KEY"
+mkdir -p "$WOTB_DIR"
+if [ -n "${WOTB_DEPLOY_LOCK_FD:-}" ]; then
+  [ "$WOTB_DEPLOY_LOCK_FD" = 9 ] || die "unsupported inherited deployment lock descriptor."
+  { true >&9; } 2>/dev/null || die "inherited deployment lock descriptor is unavailable."
+  flock -n 9 || die "another Yecao deployment is already running."
+else
+  exec 9>"$WOTB_DIR/.deploy.lock"
+  flock -n 9 || die "another Yecao deployment is already running."
+fi
 
-# The provider stores the configured application identity secrets in state. Keep
-# the state local to Yecao, root-only, and outside the staged checkout.
-umask 077
-install -d -m 700 /opt/wotb/minio-tofu-state
+metadata_args=(validate --host yecao --file "$METADATA_FILE")
+if [ -n "$IMAGE_TAG" ]; then
+  metadata_args+=(--service minio --image-tag "$IMAGE_TAG" --image-commit-sha "$IMAGE_COMMIT_SHA")
+fi
+python3 "$METADATA_TOOL" "${metadata_args[@]}" || die "production metadata or incoming image identity is invalid."
 
+if [ -z "$IMAGE_TAG" ]; then
+  IMAGE_TAG="$(python3 "$METADATA_TOOL" get --host yecao --file "$METADATA_FILE" --service minio --field tag)" \
+    || die "MinIO config-only deployment lacks a recorded image identity."
+fi
+export TAG="${IMAGE_TAG##*:}"
 docker compose -f "$COMPOSE_FILE" config --quiet
 docker compose -f "$COMPOSE_FILE" pull minio
-docker compose -f "$COMPOSE_FILE" up -d --wait minio
+docker compose -f "$COMPOSE_FILE" up -d --wait --no-deps minio \
+  || die "MinIO failed readiness; production metadata was not advanced."
 
-(
-  cd "$TOFU_ROOT"
-  trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT
-  tofu init -reconfigure -input=false -lockfile=readonly
-  tofu validate
-  tofu plan -input=false -no-color -out=plan.tfplan
-  bash ./validate-plan.sh plan.tfplan
-  tofu apply -input=false -auto-approve plan.tfplan
-  tofu plan -input=false -no-color -out=second-plan.tfplan
-  bash ./validate-plan.sh second-plan.tfplan --require-no-changes
-)
-
-echo "Yecao MinIO deployment, provisioning, and second-plan drift check passed."
+update_args=(update --host yecao --file "$METADATA_FILE" --service minio --config-sha "$CONFIG_SHA")
+if [ -n "${WOTB_DEPLOY_IMAGE_TAG:-}" ]; then
+  update_args+=(--image-tag "$IMAGE_TAG" --image-commit-sha "$IMAGE_COMMIT_SHA")
+fi
+python3 "$METADATA_TOOL" "${update_args[@]}"
+echo "MinIO runtime ready: config=$CONFIG_SHA image=$IMAGE_TAG"

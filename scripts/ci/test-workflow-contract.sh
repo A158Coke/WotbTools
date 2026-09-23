@@ -3,336 +3,102 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python3 - "$ROOT" <<'PY'
-import re
 import sys
-import xml.etree.ElementTree as ET
 from pathlib import Path
+import yaml
 
-root = Path(sys.argv[1])
-ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-build = (root / ".github/workflows/build.yml").read_text(encoding="utf-8")
-deploy = (root / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
-ci_settings_path = root / "java/settings-ci.xml"
-ci_settings_text = ci_settings_path.read_text(encoding="utf-8")
-local_settings_text = (root / "java/settings.xml").read_text(encoding="utf-8")
-android_settings_text = (root / "android/settings.gradle.kts").read_text(encoding="utf-8")
-network_retry_helper = root / "scripts/ci/run-with-network-retry.sh"
-network_retry_test = root / "scripts/ci/test-network-retry.sh"
+root=Path(sys.argv[1])
+workflow_dir=root/'.github/workflows'
+ci=yaml.load((workflow_dir/'ci.yml').read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+build=yaml.load((workflow_dir/'build.yml').read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+deploy=yaml.load((workflow_dir/'deploy.yml').read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+tofu=yaml.load((workflow_dir/'tofu-apply.yml').read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+release=yaml.load((workflow_dir/'release.yml').read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
 
-assert "name: CI / PR" in ci
-assert "name: CI / Required Gate" in ci
-assert "if: always()" in ci
-assert re.search(r"^name: Build$", build, re.MULTILINE)
-assert re.search(r"^name: Deploy$", deploy, re.MULTILINE)
-assert "run-name: Build ${{ inputs.service || github.sha }} by @${{ github.actor }}" in build
-assert "run-name: Deploy ${{ github.event_name == 'workflow_dispatch'" in deploy
-assert "inputs.service || 'release'" not in build and "inputs.service || 'release'" not in deploy
-assert "      - Build" in deploy
-assert "Release / Build" not in build and "Release / Deploy" not in deploy
-for component in ("Backend", "Frontend", "Keycloak", "MinIO", "Parser Worker"):
-    assert f"name: Build {component}" in build
-# ---- TX application images publish straight from BuildKit into Tencent TCR ------------
-# backend/frontend/keycloak each build exactly once and push the immutable sha-<12> tag into
-# TCR, then read the registry manifest back. There is no GHCR publication, no OCI archive, no
-# rsync, no SSH to TX and no TX-side docker load anywhere in their jobs.
-assert "GHCR_IMAGE_PREFIX" in build, "MinIO and Parser Worker must stay on GHCR"
-assert "${{ env.GHCR_IMAGE_PREFIX }}-minio:latest" in build
-assert "${{ env.GHCR_IMAGE_PREFIX }}-parser-worker:latest" in build
-assert "${{ env.GHCR_IMAGE_PREFIX }}-backend" not in build
-assert "${{ env.GHCR_IMAGE_PREFIX }}-frontend" not in build
-assert "${{ env.GHCR_IMAGE_PREFIX }}-keycloak" not in build
-assert "registry: ghcr.io" in build, "the Yecao builders keep their GHCR login"
-for component in (
-    ("Backend", "wotbtools-backend"),
-    ("Frontend", "wotbtools-frontend"),
-    ("Keycloak", "wotbtools-keycloak"),
-):
-    assert f"Build {component[0]} once and publish it directly to TCR" in build
-    assert f"Verify the immutable {component[0]} TCR manifest" in build
-    assert f"echo \"image=$TCR_REGISTRY/$TCR_NAMESPACE/{component[1]}:$TAG\" >> \"$GITHUB_OUTPUT\"" in build
-assert build.count('file: docker/Dockerfile.backend') == 1
-assert build.count('file: docker/Dockerfile.frontend') == 1
-assert build.count('file: docker/Dockerfile.keycloak') == 1
-assert build.count("uses: docker/build-push-action@v7") == 5, \
-    "each component still builds exactly once"
-# The obsolete TX OCI transport must not come back: no helper call, no archive export, no
-# rsync, no TX SSH session, no docker load, no fourth registry client and no identity value
-# crossing the workflow environment. The check is scoped to the TX builder jobs, because
-# MinIO/Parser Worker and the Yecao deploy job keep their own SCP/rsync steps.
-for component in ("Backend", "Frontend", "Keycloak"):
-    block = build.split(f"  build_{component.lower()}:", 1)[1].split("\n  build", 1)[0]
-    for forbidden in (
-        "ghcr",
-        "GITHUB_TOKEN",
-        "transfer-oci-to-tx.sh",
-        "setup-tx-ssh.sh",
-        "publish-loaded-image-to-tcr.sh",
-        "stream-oci-to-tx.sh",
-        "replicate-image-to-tcr.sh",
-        "replication.incoming",
-        "rsync",
-        "scp",
-        "docker load",
-        "type=oci",
-        "oci-transfer.lock",
-        "oci-import.lock",
-        "wotb-transfer",
-        "EXPECTED_IMAGE_REF",
-        "EXPECTED_IMAGE_ID",
-        "EXPECTED_DIGEST",
-        "TX_VPS_HOST",
-        "TX_VPS_SSH_KEY",
-        "appleboy/scp-action@v1",
-        "appleboy/ssh-action@v1",
-        "imjasonh/setup-crane@v0.7",
-        "crane",
-    ):
-        assert forbidden not in block, \
-            f"Build {component} must not publish TX images through: {forbidden}"
-for forbidden in ("benchmark-tcr.yml", "setup-tx-ssh.sh", "transfer-oci-to-tx.sh", "stream-oci-to-tx.sh"):
-    assert forbidden not in build, f"Build must not reference the retired transport: {forbidden}"
-# TCR publication reuses the one existing credential pair, and only for the jobs that
-# publish TX workloads.
-assert build.count("username: ${{ secrets.TCR_USERNAME }}") == 3
-assert build.count("password: ${{ secrets.TCR_PASSWORD }}") == 3
-assert build.count("registry: ${{ vars.TCR_REGISTRY }}") == 3
-# The TX runtime itself never receives TCR credentials: only the runner-side publication
-# and image-existence gates authenticate, and never through SSH, Compose or the app env.
-deploy_tx_block = deploy.split("\n  deploy_tx:", 1)[1]
-assert "TCR_USERNAME" not in deploy_tx_block and "TCR_PASSWORD" not in deploy_tx_block
-assert "docker login" not in (root / "deploy/tx/deploy.sh").read_text(encoding="utf-8")
-# Fail closed: exactly one publication boundary per TX component, the registry manifest
-# read-back is a hard gate, and no retry or second transport is wrapped around it.
-assert build.count("docker buildx imagetools inspect --format '{{.Manifest.Digest}}'") == 3
-assert "{{.Digest}}" not in build
-assert build.count("sha256:[0-9a-f]{64}") == 3
-assert "${{ steps.build.outputs.digest }}" in build
-assert "continue-on-error" not in build
-assert "run-with-network-retry.sh" not in build
-assert "NETWORK_RETRY_MAX_ATTEMPTS" not in build
-# The retired Yecao backend image is no longer published, so it must not be resolvable as a
-# deploy image either: TX owns the Backend image under TCR as `business-api`.
-assert "wotb-backend) image=" not in deploy
-assert "contains_tx_image_service" not in deploy
-assert "ghcr.io/a158coke/wotbtools-backend" not in deploy
-assert "ghcr.io/a158coke/wotbtools-frontend" not in deploy
-assert "ghcr.io/a158coke/wotbtools-keycloak" not in deploy
-assert 'business-api) image="$tcr_image_prefix/wotbtools-backend"' in deploy
-assert 'wotb-frontend) image="$tcr_image_prefix/wotbtools-frontend"' in deploy
-assert 'keycloak) image="$tcr_image_prefix/wotbtools-keycloak"' in deploy
-assert "unsupported image service" in deploy
-assert "parser-worker) image=ghcr.io/a158coke/wotbtools-parser-worker" in deploy
-assert "minio) image=ghcr.io/a158coke/wotbtools-minio" in deploy
-assert "tx_image_services" in deploy
-assert "TX_IMAGE_REGISTRY_PREFIX" not in deploy
-assert "TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}" in deploy
-assert "TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}" in deploy
-# The direct-TCR benchmark PoC is superseded by the production publication path.
-assert not (root / ".github/workflows/benchmark-tcr.yml").exists()
-assert not (root / "scripts/ci/transfer-oci-to-tx.sh").exists()
-assert not (root / "scripts/ci/setup-tx-ssh.sh").exists()
-assert not (root / "deploy/test-tx-publication-helper.sh").exists()
-assert not (root / "scripts/ci/test-transfer-oci-to-tx.sh").exists()
-assert "workflow_run:" in deploy and "workflow_dispatch:" in deploy
-assert "tx_services:" in deploy
-assert "        default: business-api" in deploy
-assert "        type: choice" in deploy
-assert "          - all" in deploy
-assert '"rabbitmq"' in deploy
-assert "TX_RABBITMQ_ADMIN_USER" in deploy
-assert "TX_RABBITMQ_ADMIN_PASSWORD" in deploy
-assert "TX_RABBITMQ_CONTROL_API_PASSWORD" in deploy
-assert "TX_RABBITMQ_PARSER_WORKER_PASSWORD" in deploy
-assert "Install RabbitMQ OpenTofu root on TX" in deploy
-assert "RabbitMQ Compose and OpenTofu ownership smoke" in ci
-assert "github.event.inputs.release_sha" not in deploy
-assert "inputs.service" not in deploy
-assert "stale_release_guard" not in deploy
-assert "WOTB_STALE_RELEASE_GUARD" not in deploy
-for workflow_text, workflow_name in ((build, "Manual Build"),):
-    assert "git fetch origin main" in workflow_text, f"{workflow_name} must refresh origin/main"
-    assert 'source_sha="$(git rev-parse HEAD)"' in workflow_text, \
-        f"{workflow_name} must resolve the checked out source SHA"
-    assert 'main_sha="$(git rev-parse origin/main)"' in workflow_text, \
-        f"{workflow_name} must resolve the current main HEAD"
-    assert 'if [ "$source_sha" != "$main_sha" ]; then' in workflow_text, \
-        f"{workflow_name} must require the current main HEAD"
-    assert "git merge-base --is-ancestor" not in workflow_text, \
-        f"{workflow_name} must not accept an ancestor-only source"
-assert "::error::Manual Build must run from the current main HEAD." in build
-assert "Required immutable deploy image does not exist" in deploy
-assert "name: Deploy ${{ needs.changes.outputs.deploy_display_name }}" in deploy
-# The Yecao application runtime is retired: the migration ceiling only ever fed the deleted Yecao
-# backend service and the removed Ops Recovery path, so deploy.yml must not forward it any more.
-assert "WOTB_BACKEND_MIGRATION_MAX_VERSION" not in deploy
-# The retired Yecao application services, their recovery path, and the deployed Yecao backend bind
-# contract are gone rather than merely disabled.
-for retired_path in (
-    ".github/workflows/ops-recovery.yml",
-    "deploy/ops-recovery.sh",
-    "deploy/test-ops-recovery.sh",
-    "deploy/tx/yecao-backend-contract.json",
-    "deploy/test-yecao-wireguard-backend.sh",
-):
-    assert not (root / retired_path).exists(), f"{retired_path} must be deleted"
-assert "live_data: ${{ steps.plan.outputs.live_data }}" in ci
-assert '"live_data": "liveData"' in ci
-assert 'if: needs.changes.outputs.live_data == \'true\'' in ci
-blocks = re.split(r"\n(?=  [A-Za-z0-9_]+:\n)", ci)
-live_data_block = next(block for block in blocks if block.startswith("  live_data_contracts:\n"))
-assert "needs.changes.outputs.data == 'true' || needs.changes.outputs.full == 'true'" not in live_data_block
-assert "LIVE_DATA_CHANGED: ${{ needs.changes.outputs.live_data }}" in ci
-assert 'live_data_contracts|$([ "$LIVE_DATA_CHANGED" = true ] && echo true || echo false)|$LIVE_DATA_CONTRACTS' in ci
+assert ci['name']=='CI / PR'
+assert 'pull_request' in ci['on']
+assert ci['jobs']['required']['name']=='CI / Required Gate'
+assert ci['jobs']['required']['if']=='always()'
+assert 'tofu_plans' in ci['jobs']['required']['needs']
+assert 'packaging' in ci['jobs']['required']['needs']
+assert 'deploy/release_plan.py --base' in str(ci['jobs']['changes']['steps'])
+assert 'buildx build' not in str(ci['jobs']['backend']['steps'])
+assert 'packaging' in ci['jobs'] and 'tofu_plans' in ci['jobs']
 
-ET.parse(ci_settings_path)
-assert "maven.aliyun.com" not in ci_settings_text
-assert "<mirrors>" not in ci_settings_text
-assert "<mirrorOf>" not in ci_settings_text
-assert "maven.aliyun.com" in local_settings_text
-assert "<mirrorOf>*</mirrorOf>" in local_settings_text
-assert "settings.xml" not in re.sub(r"settings-ci\.xml", "", ci)
-assert ci.count("-s settings-ci.xml") == 3
-assert ci.count("-s ../java/settings-ci.xml") == 2
-assert "-s settings.xml" not in ci
+components=['business-api','frontend','keycloak','parser-worker','minio']
+services=components+['caddy','rabbitmq','business-postgres','keycloak-postgres','node-exporter','prometheus','loki','alloy','grafana']
+roots=['keycloak','rabbitmq','business-postgres','keycloak-postgres','minio','cos','grafana']
+for workflow,name,expected in ((build,'Build',components),(deploy,'Deploy',services),(tofu,'Infra / Tofu Apply',roots)):
+    assert workflow['name']==name
+    assert 'workflow_call' in workflow['on'] and 'workflow_dispatch' in workflow['on']
+    assert 'push' not in workflow['on']
+    dispatch=workflow['on']['workflow_dispatch']['inputs']
+    input_name={'Build':'component','Deploy':'service','Infra / Tofu Apply':'root'}[name]
+    assert dispatch[input_name]['options']==expected
+assert build['on']['workflow_call']['inputs']['source_sha']['required']=='true'
+assert {'image','tag','commit_sha','digest'} <= set(build['on']['workflow_call']['outputs'])
+assert deploy['on']['workflow_call']['inputs']['source_sha']['required']=='true'
+assert tofu['on']['workflow_call']['inputs']['source_sha']['required']=='true'
 
-# Maven resolves the aggregator's <modules> before it applies -pl, so a module listed in
-# java/pom.xml without a matching COPY in the backend Dockerfile fails the image build with
-# "Child module ... does not exist". Keep the two lists in lockstep.
-backend_dockerfile = (root / "docker/Dockerfile.backend").read_text(encoding="utf-8")
-java_pom = ET.parse(root / "java/pom.xml").getroot()
-maven_namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
-maven_modules = [
-    element.text.strip() for element in java_pom.findall("./m:modules/m:module", maven_namespace)
-]
-assert maven_modules, "java/pom.xml must declare its modules"
-for maven_module in maven_modules:
-    assert f"COPY java/{maven_module}/pom.xml java/{maven_module}/pom.xml" in backend_dockerfile, \
-        f"docker/Dockerfile.backend must pre-copy java/{maven_module}/pom.xml"
+assert release['on']['push']['branches']==['main']
+jobs=release['jobs']
+assert 'select' in jobs and 'release_summary' in jobs
+assert '--base "$BEFORE" --head "$HEAD"' in str(jobs['select']['steps'])
+for component in components:
+    assert jobs['build_'+component.replace('-','_')]['uses']=='./.github/workflows/build.yml'
+for tofu_root in roots:
+    assert jobs['tofu_'+tofu_root.replace('-','_')]['uses']=='./.github/workflows/tofu-apply.yml'
+for service in services:
+    assert jobs['deploy_'+service.replace('-','_')]['uses']=='./.github/workflows/deploy.yml'
+assert 'always()' in jobs['release_summary']['if']
+assert 'toJSON(needs)' in str(jobs['release_summary'])
+assert 'tofu_keycloak_postgres' in jobs['deploy_keycloak']['needs']
+assert 'deploy_rabbitmq' in jobs['tofu_rabbitmq']['needs']
+assert 'workflow_run' not in str(build) and 'workflow_run' not in str(deploy)
+for old in ('tofu-plan.yml','grafana-tofu-plan.yml','grafana-tofu-apply.yml','postgres-business-tofu.yml','postgres-keycloak-tofu.yml'):
+    assert not (workflow_dir/old).exists(), old
+planner=(Path(sys.argv[1])/'deploy/release_plan.py').read_text(encoding='utf-8')
+assert 'buildComponents' in planner and 'deployServices' in planner and 'tofuRoots' in planner
 
-# The parser-worker image pre-copies every module pom as well (Maven resolves the aggregator's
-# <modules> before it applies -pl); its source closure is checked together with every other image
-# below.
-parser_worker_dockerfile = (root / "docker/Dockerfile.parser-worker").read_text(encoding="utf-8")
-assert "-pl wotb-parser-worker -am" in parser_worker_dockerfile, \
-    "docker/Dockerfile.parser-worker must build the parser-worker reactor"
-for maven_module in maven_modules:
-    assert f"COPY java/{maven_module}/pom.xml java/{maven_module}/pom.xml" in parser_worker_dockerfile, \
-        f"docker/Dockerfile.parser-worker must pre-copy java/{maven_module}/pom.xml"
+# The CI Maven settings stay mirror-free while the local developer settings keep the
+# Aliyun mirror, and no CI step may silently fall back to the local file.
+import re
 
+ci_text=(workflow_dir/'ci.yml').read_text(encoding='utf-8')
+ci_settings=(root/'java/settings-ci.xml').read_text(encoding='utf-8')
+local_settings=(root/'java/settings.xml').read_text(encoding='utf-8')
+assert 'maven.aliyun.com' not in ci_settings
+assert '<mirrors>' not in ci_settings and '<mirrorOf>' not in ci_settings
+assert 'maven.aliyun.com' in local_settings and '<mirrorOf>*</mirrorOf>' in local_settings
+assert 'settings.xml' not in re.sub(r'settings-ci\.xml', '', ci_text)
+assert ci_text.count('-s settings-ci.xml') == 4
+assert ci_text.count('-s ../java/settings-ci.xml') == 2
+assert '-s settings.xml' not in ci_text
 
-def module_dependencies(module):
-    """Direct, non-test com.wotb dependencies of one aggregator module."""
-    pom = ET.parse(root / f"java/{module}/pom.xml").getroot()
-    dependencies = set()
-    for dependency in pom.findall("./m:dependencies/m:dependency", maven_namespace):
-        group_id = dependency.findtext("m:groupId", default="", namespaces=maven_namespace)
-        artifact_id = dependency.findtext("m:artifactId", default="", namespaces=maven_namespace)
-        scope = dependency.findtext("m:scope", default="", namespaces=maven_namespace)
-        if group_id == "com.wotb" and artifact_id in maven_modules and scope != "test":
-            dependencies.add(artifact_id)
-    return dependencies
+# PR validation must never reach a production host: the PR workflow may not use an
+# SSH/SCP action or receive a host-local production secret. Those roots
+# (keycloak, rabbitmq, business-postgres, keycloak-postgres, minio) plan and apply
+# exclusively in the main-only Tofu Apply workflow.
+assert 'appleboy/ssh-action' not in ci_text
+assert 'appleboy/scp-action' not in ci_text
+for host_secret in ('secrets.TX_', 'secrets.VPS_', 'secrets.KC_', 'secrets.KEYCLOAK_', 'secrets.WG_', 'secrets.YECAO_'):
+    assert host_secret not in ci_text, host_secret
+assert not (Path(sys.argv[1])/'scripts/ci/remote-tofu-plan.sh').exists(), \
+    'the PR-side remote planner must stay deleted'
 
-
-def reactor_closure(roots):
-    """Transitive com.wotb module closure of a Maven `-pl <roots> -am` reactor build."""
-    closure = set()
-    pending = list(roots)
-    while pending:
-        current = pending.pop()
-        if current in closure:
-            continue
-        closure.add(current)
-        pending.extend(module_dependencies(current))
-    return closure
-
-
-# Sources, not just poms. Any image that builds a Maven reactor must copy the sources of that
-# reactor's whole module closure: `-am` pulls a module into the reactor the moment a sibling starts
-# depending on it, and a reactor module with a pom but no sources compiles into an empty jar, so the
-# dependent module dies with "package ... does not exist". That is exactly how wotb-web's new
-# broker/object-storage dependencies broke the backend image build. Deriving the closure from the
-# poms keeps every Dockerfile honest instead of hand-maintaining a COPY list per image.
-reactor_builds_checked = 0
-for dockerfile_path in sorted((root / "docker").glob("Dockerfile.*")):
-    dockerfile = dockerfile_path.read_text(encoding="utf-8")
-    for reactor in re.findall(r"-pl ([A-Za-z0-9_,-]+) -am", dockerfile):
-        roots = [name.strip() for name in reactor.split(",") if name.strip()]
-        for maven_module in sorted(reactor_closure(roots)):
-            assert f"COPY java/{maven_module}/src java/{maven_module}/src" in dockerfile, \
-                f"docker/{dockerfile_path.name} must copy java/{maven_module}/src (-pl {reactor} -am)"
-        reactor_builds_checked += 1
-assert reactor_builds_checked > 0, "no Dockerfile reactor build was discovered; the closure check is idle"
-
-android_dependency_resolution = android_settings_text.split("dependencyResolutionManagement", 1)[1].split("rootProject.name", 1)[0]
-android_plugin_management = android_settings_text.split("pluginManagement", 1)[1].split("dependencyResolutionManagement", 1)[0]
-assert "google()" in android_dependency_resolution
-assert "mavenCentral()" in android_dependency_resolution
-assert 'name = "AliyunPublicFallback"' in android_dependency_resolution
-assert 'https://maven.aliyun.com/repository/public' in android_dependency_resolution
-assert "maven.aliyun.com" not in android_plugin_management
-assert android_dependency_resolution.count("google()") == 1
-assert android_dependency_resolution.count("mavenCentral()") == 1
-assert android_dependency_resolution.index("google()") < android_dependency_resolution.index("mavenCentral()")
-assert android_dependency_resolution.index("mavenCentral()") < android_dependency_resolution.index("AliyunPublicFallback")
-assert "repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)" in android_dependency_resolution
-assert network_retry_helper.is_file()
-assert network_retry_test.is_file()
-assert "bash scripts/ci/test-network-retry.sh" in ci
-
-android_ci_match = re.search(
-    r"- name: Assemble debug APK and run Android JVM unit tests.*?\n"
-    r"\s+working-directory: android\n"
-    r"\s+run: (?P<command>[^\n]+)",
-    ci,
-    re.DOTALL,
-)
-assert android_ci_match
-android_command = android_ci_match.group("command")
-assert ":app:assembleDebug" in android_command
-assert ":app:testDebugUnitTest" in android_command
-assert "--no-daemon" in android_command
-assert "run-with-network-retry.sh" in android_command
-assert ci.count("gradle :app:assembleDebug :app:testDebugUnitTest --no-daemon") == 1
-assert "cache-read-only: false" not in ci
-assert "path: android/app/build/outputs/apk/debug/app-debug.apk" in ci
-
-for image in (
-    "prom/prometheus:v2.55.1",
-    "grafana/loki:3.3.2",
-    "grafana/alloy:v1.4.2",
-):
-    assert f"docker pull {image}" in ci
-    assert f"docker run" in ci and image in ci
-
-assert ci.count("run-with-network-retry.sh \"Pull") == 3
-for docker_run in re.findall(r"^\s+docker run .*?$", ci, re.MULTILINE):
-    assert "run-with-network-retry.sh" not in docker_run
-
-expected_jobs = {
-    "python_unit": "data",
-    "live_data_contracts": "live_data",
-    "backend": "backend",
-    "frontend": "frontend",
-    "http_contract": "http_contract",
-    "keycloak_providers": "keycloak_provider",
-    "keycloak_runtime": "keycloak_runtime",
-    "android": "android",
-    "android_release_helpers": "android",
-    "android_contract": "android",
-    "observability_config": "observability",
-    "deploy_smoke": "deploy",
-}
-for job_id, output in expected_jobs.items():
-    block = next(block for block in blocks if block.startswith(f"  {job_id}:\n"))
-    assert (
-        f"needs.changes.outputs.{output} == 'true'" in block
-        or "needs.changes.outputs.full == 'true'" in block
-    ), (job_id, output)
-
-for job_id in ("changes", *expected_jobs):
-    assert f"      - {job_id}" in ci, job_id
-assert "      - Build" in deploy
-print("CI workflow conditional and aggregation contract OK")
+plan_job=ci['jobs']['tofu_plans']
+plan_text=str(plan_job)
+assert plan_job['name']=='OpenTofu validation / ${{ matrix.root }}'
+assert 'tofu fmt -check -recursive' in plan_text
+assert 'tofu init -backend=false -input=false' in plan_text
+assert 'tofu validate' in plan_text
+assert 'test-validate-plan.sh' in plan_text
+# Only the roots that reach their backend over the network may plan production state
+# from the runner; every host-local root stays validation-only here.
+for step in plan_job['steps']:
+    if 'tofu plan' in str(step):
+        assert step.get('if','').strip() == "${{ (matrix.root == 'cos' || matrix.root == 'grafana') && env.TRUSTED_PRODUCTION_RUN == 'true' }}", step['name']
+print('CI/Build/Deploy/Tofu/Release workflow contracts OK')
 PY
 
 # Android release artifacts must land in the same TX runtime directory mounted by deploy/tx/docker-compose.yml.

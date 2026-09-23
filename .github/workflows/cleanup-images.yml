@@ -24,21 +24,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Prune backend versions
+      - name: Prune parser-worker versions
         uses: actions/delete-package-versions@v5
         with:
-          package-name: wotbtools-backend
+          package-name: wotbtools-parser-worker
           package-type: container
           min-versions-to-keep: ${{ inputs.keep || '10' }}
-      - name: Prune frontend versions
+      - name: Prune minio versions
         uses: actions/delete-package-versions@v5
         with:
-          package-name: wotbtools-frontend
-          package-type: container
-          min-versions-to-keep: ${{ inputs.keep || '10' }}
-      - name: Prune keycloak versions
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: wotbtools-keycloak
+          package-name: wotbtools-minio
           package-type: container
           min-versions-to-keep: ${{ inputs.keep || '10' }}

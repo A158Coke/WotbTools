@@ -194,7 +194,7 @@ identity's credentials.
 
 Deployment is intentionally manual. From the current `main` HEAD, first ensure
 the corresponding immutable MinIO image has been built, then dispatch the
-existing **Deploy** workflow with `target=minio`. That route copies only MinIO
+existing **Deploy** workflow with `service=minio`. That route copies only MinIO
 files, requires only the six MinIO secrets, starts only the MinIO compose
 project, applies the exact OpenTofu plan, and rejects a non-empty second plan.
 Merging this PR only builds the source-pinned image; it does not deploy MinIO.

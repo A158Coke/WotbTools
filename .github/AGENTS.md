@@ -1,23 +1,35 @@
-# .github/ — CI/CD workflow 指令
-
-> 仓库级硬约定见 `.agents/AGENTS.md`。
-
 ## 现有 workflow 职责
 
-- `ci.yml`：仓库级 authoritative PR gate；`changes` 按 PR base SHA → head SHA 分类影响域，
-  `CI / Required Gate` 始终创建并作为稳定 merge gate。docs-only 不运行 validation job，
-  仅保留 selector 与 Required Gate，
-  单层改动只执行相关 heavyweight jobs，CI/全局构建配置/跨切面变更触发 full CI；覆盖 Python、
-  Backend、Keycloak providers/runtime、Frontend、Android、HTTP contract、Observability 与 Deploy smoke。
-- `build.yml`：main push 或手工选择目标时，从冻结触发 SHA 只构建受影响 backend/frontend/keycloak 镜像，**由 BuildKit registry exporter 直传 Tencent TCR** 的 component-local immutable `sha-<first-12-sha>` tag 并立即回读 TCR manifest（digest 必须等于 BuildKit output digest），上传 authoritative `deployment-manifest`。三个 TX builder job 的 `timeout-minutes` 为 **150**：真实生产验收 run `35728016485` 证明 GitHub-hosted Runner → TCR 的层上传可以超过旧的 80 分钟预算（Keycloak 直传 PASS，Backend / Frontend 在 build 完成后卡在 `pushing layers` 被 cancel），因此只放宽执行窗口、不改失败语义；`docker/build-push-action@v7` 不接受顶层 `oci-mediatypes`，不得再传该 input。TX workload 不发布 GHCR、不导出 OCI archive、不经 rsync/SSH 传镜像、不在 TX 上 `docker load`、不发布可变 `latest`；minio/parser-worker 保持 GHCR 的 `sha-<12>` 与 `latest`。自动 manifest 永远只引用 immutable SHA；手工 Build 只接受当前 `origin/main` HEAD；docs-only push 仍产出 no-op/config-only manifest；不运行测试套件。
-- `deploy.yml`：仅由成功 Build 的 `workflow_run` 自动接力；只下载并校验对应 manifest，checkout 精确 source SHA，按 manifest 发布，不重新计算 diff、不构建、不跑测试。TX application image 只从 TCR 解析（`business-api` / `wotb-frontend` / `keycloak`），minio/parser-worker 仍从 GHCR；未知 service fail-closed，不存在跨 registry fallback。每次应用配置或镜像发布只更新 manifest 指定的 affected service；生产故障操作由仅 `workflow_dispatch` 的 `ops-recovery.yml` 承担，不能通过普通 Deploy 选择 service 或使用 `latest`。
-- `ops-recovery.yml`：仅人工触发，必须明确 backend/frontend/keycloak 与 current metadata/specific SHA；specific backend 在 runner 计算目标 migration ceiling，远端再次读取 live Flyway schema，目标低于 live 时拒绝；Recovery 不做 DB restore/downgrade，不隐式选择 all。
-- `tofu-plan.yml` / `tofu-apply.yml`：分别负责 production COS root 的 trusted plan 与 main-only exact-plan apply；两者共用 production path、OpenTofu safety guard 与 `production-maintenance` concurrency。Grafana root 仍由独立的 `grafana-tofu-plan.yml` / `grafana-tofu-apply.yml` 管理。
-- `android-release.yml`：版本来自 committed `android/gradle.properties`，Native Bridge 协议来自 `contracts/android-native-bridge.json`；workflow 不接受手工版本输入。Android Contract CI 校验 Gradle/Native/FE/manifest 一致、runtime 改动递增版本、breaking bridge 改动递增 bridgeVersion。
-- `update-tankopedia.yml`：手动触发，从 blitzkit 同步并提交 `common/tankopedia-tier{7,8,9,10}.json` 到当前分支。
-- `database-backup.yml` / `prod-diagnostics.yml` / `cleanup-images.yml`：生产备份、线上诊断、镜像清理。
-
-`database-backup.yml` 当前保持既有 VPS 本地双库备份边界；COS 上传、对象验证与 retention 属于后续独立 PR，不能把 artifact bucket 或未确认凭据写入本仓库。
+- `ci.yml`：唯一 PR 验证入口和 `CI / Required Gate`。Selector 调用
+  `deploy/release_plan.py --base BASE --head HEAD`；普通 Java 使用受影响 reactor
+  `-pl/-am`，Docker packaging、浏览器测试和七个 Tofu roots 按风险选择。
+  PR 的 Tofu 工作是 validation：`OpenTofu validation / <root>` matrix 只跑
+  fmt / `init -backend=false` / validate 与该 root 的本地 safety fixture。PR 不 SSH 生产宿主、
+  不读生产 local state、也不接收 host-local 生产凭据；需要 production-local provider 的五个
+  root（keycloak、rabbitmq、business-postgres、keycloak-postgres、minio）只在 main-only Tofu
+  Apply 里 plan/apply。COS/Grafana 走远端 backend / 外部 API，仍由 runner 做 authenticated
+  只读 plan + safety guard。PR 与 main 不共享 binary plan。
+- `build.yml`：仅 `workflow_call` 与单 component `workflow_dispatch`，接受五个组件
+  business-api/frontend/keycloak/parser-worker/minio。冻结完整 source SHA，只发布对应 registry
+  的 immutable `sha-<12>` image，回读并核对 registry digest；输出完整 image/tag/SHA/digest。
+  TX 三镜像直传 TCR，Yecao 两镜像使用 GHCR。无 main push trigger、无 all、无 latest release tag、
+  无 manifest handoff。
+- `deploy.yml`：仅 `workflow_call` 与单 service `workflow_dispatch`。调用方传精确 Build
+  image+digest；配置服务从 production metadata 读取已部署镜像身份。TCR/GHCR registry 归属与
+  immutable tag 必须 fail-closed 校验。TX production metadata v2 只含三个应用镜像；
+  Yecao metadata v2 只含 parser-worker/minio。Caddy、PostgreSQL、RabbitMQ 与 Yecao 观测配置
+  可被 Release 按实际受影响服务选择，不写入应用镜像 metadata。
+- `release.yml`：唯一 main push 自动发布入口。一次 push 的完整 before..head diff 由 planner
+  解释，独立触发五个 Build、单 service Deploy 与七个单 root Tofu Apply lane；无关 lane 并行，
+  依赖 lane 等待必需的基础设施，最终 summary 对选择的失败汇总。过期 rerun 在生产写入前由
+  Build/Deploy/Tofu 拒绝；生产 workflow 使用不取消的共享维护队列。
+- `tofu-apply.yml`：单 root `workflow_call`/手动入口，只接受 main 当前 SHA；七 root 各自
+  使用 scoped state/provider/secret 和原 safety guard，apply 同一份已校验 saved plan，并按 root
+  做 second-plan/readiness 检查。不要恢复独立 main apply 或 PR plan workflow。
+- `android-release.yml`：版本来自 committed `android/gradle.properties`，Native Bridge 协议来自
+  `contracts/android-native-bridge.json`；workflow 不接受手工版本输入。
+- `update-tankopedia.yml`、`database-backup.yml`、`prod-diagnostics.yml`、
+  `cleanup-images.yml` 保持各自独立职责。
 
 ## 规则
 
