@@ -192,7 +192,7 @@ assert "maven.aliyun.com" in local_settings_text
 assert "<mirrorOf>*</mirrorOf>" in local_settings_text
 assert "settings.xml" not in re.sub(r"settings-ci\.xml", "", ci)
 assert ci.count("-s settings-ci.xml") == 3
-assert ci.count("-s ../java/settings-ci.xml") == 3
+assert ci.count("-s ../java/settings-ci.xml") == 2
 assert "-s settings.xml" not in ci
 
 # Maven resolves the aggregator's <modules> before it applies -pl, so a module listed in
