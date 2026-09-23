@@ -68,6 +68,10 @@ class MainActivity : Activity() {
         /** Auth navigation 诊断日志 tag。 */
         private const val TAG = "WotbAuth"
 
+        /** recovery banner 的收起原因：诊断日志只允许这两个 token，绝不把不同原因混成一个。 */
+        private const val REASON_TRUSTED_AUTH_RETURN = "trusted-auth-return"
+        private const val REASON_OPEN_SETTINGS = "open-settings"
+
         /** Native Bridge 唯一允许的调用 origin；绝不暴露给 Keycloak / IdP / 任意 frame。 */
         private val BRIDGE_ORIGINS = setOf(
             "https://wotbtools.com",
@@ -483,9 +487,11 @@ class MainActivity : Activity() {
         }
         val rewriteToken = if (plan.rewrite == QqHandoffRewrite.REWRITE_ALLOWED) "applied" else "fallback"
         Log.d(TAG, "native-handoff rewrite=$rewriteToken reason=${plan.reason} category=${plan.callbackCategory}")
+        var handoffStarted = false
         try {
             // 证据落地（PR B）前不存在 rewrite 分支：始终沿用 QQ 原始 URI。
             startActivity(Intent(Intent.ACTION_VIEW, uri))
+            handoffStarted = true
         } catch (_: ActivityNotFoundException) {
             Log.d(TAG, "native-handoff-failed scheme=${scheme ?: "null"} host=${host ?: "null"} category=no-qq-app")
             toast(getString(R.string.qq_client_missing_retry))
@@ -493,7 +499,9 @@ class MainActivity : Activity() {
             Log.d(TAG, "native-handoff-failed scheme=${scheme ?: "null"} host=${host ?: "null"} category=${e.javaClass.simpleName}")
             toast(getString(R.string.qq_client_missing_retry))
         }
-        if (linkState == AuthLinkState.NONE) showAuthLinkRecovery()
+        // recovery 提示只在「QQ 真的接管了这次 handoff，回程可能回不来」时有意义：QQ 未安装 / 启动失败时
+        // 提示「打开支持的链接」毫无帮助，只会与「未检测到 QQ 客户端」叠成两条互相干扰的提示。
+        if (handoffStarted && linkState == AuthLinkState.NONE) showAuthLinkRecovery()
     }
 
     /** native handoff 决策：只把 QQ URI 的**形状**（存在性 / scheme 分类）交给纯策略。 */
@@ -582,16 +590,19 @@ class MainActivity : Activity() {
      * 提示只在「当前 QQ auth transaction 可能回不到本 App」时有意义；一旦本 App 真的收到了受信任的
      * auth return，这个前提就不成立，UI 必须撤回，否则会误导用户去改系统设置。
      * 刻意**不**在普通页面 reload / gate 切换时调用：那时用户可能仍处在有风险的 auth flow 中。
+     *
+     * @param reason 固定 token（[REASON_TRUSTED_AUTH_RETURN] / [REASON_OPEN_SETTINGS]）——诊断日志不能
+     *   把两种截然不同的收起原因混成一个。
      */
-    private fun dismissAuthLinkRecovery() {
+    private fun dismissAuthLinkRecovery(reason: String) {
         if (authLinkRecoveryBanner.visibility != View.VISIBLE) return
         authLinkRecoveryBanner.visibility = View.GONE
-        Log.d(TAG, "auth-link-recovery dismissed reason=trusted-auth-return")
+        Log.d(TAG, "auth-link-recovery dismissed reason=$reason")
     }
 
     /** 打开本 App 的「打开支持的链接」设置页；仅用户点击触发，不自动跳转、不自动改设置。 */
     private fun openAppLinkSettings() {
-        dismissAuthLinkRecovery()
+        dismissAuthLinkRecovery(REASON_OPEN_SETTINGS)
         val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             Intent(Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, Uri.parse("package:$packageName"))
         } else {
@@ -801,7 +812,7 @@ class MainActivity : Activity() {
         if (!verifyAuthReturn(intent, uri)) return false
         pendingAuthReturn = uri
         inAuthFlow = true
-        dismissAuthLinkRecovery()
+        dismissAuthLinkRecovery(REASON_TRUSTED_AUTH_RETURN)
         Log.d(TAG, "auth-return action=ALLOW_AUTH_RETURN source=app-link cold=true")
         return true
     }
@@ -817,7 +828,7 @@ class MainActivity : Activity() {
         hideAllGates()
         webView.visibility = View.VISIBLE
         // 受信任 auth return 已到达 ⇒ recovery 提示的前提消失。
-        dismissAuthLinkRecovery()
+        dismissAuthLinkRecovery(REASON_TRUSTED_AUTH_RETURN)
         Log.d(TAG, "auth-return action=ALLOW_AUTH_RETURN source=app-link hot=true")
         webView.post { webView.loadUrl(uri.toString()) }
         return true

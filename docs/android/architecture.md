@@ -143,12 +143,16 @@ Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`
     归一化为 `NONE`）。纯归一化逻辑（`AuthLinkHealth`，JVM 单测覆盖）与 Android adapter
     （`MainActivity.probeAuthLinkHealth`，用平台常量翻译成本地枚举、不比较裸数字）分离；process 内只探测
     一次并记录一次 `auth-link-health host=auth.wotbtools.com state=<token>`。`NONE` **不** fail closed：
-    QQ 登录照常继续，只在 native handoff 之后显示一次（process 级一次性）recovery banner，按钮跳
+    QQ 登录照常继续；只有当 QQ handoff **真的**交给了外部 App（`startActivity` 成功）后才显示一次
+    （process 级一次性）recovery banner —— QQ 未安装 / 启动失败时只提示「未检测到 QQ 客户端」，
+    不叠一条无意义的 app-link 提示。按钮跳
     `Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS`（API 31+）或 `ACTION_APPLICATION_DETAILS_SETTINGS` 的
     `package:com.wotbtools.app` 页；App **不自动修改任何系统设置**，也不循环提示。banner 的生命周期只
     绑定「本次 QQ auth transaction 可能回不来」这一前提：一旦收到**受信任的** auth return
     （`handleAuthReturnHot` / `handleAuthReturnColdStart` 通过 `AuthReturnPolicy` 校验）就立即
-    `dismissAuthLinkRecovery()`；普通页面 reload / 门禁切换**不**清除提示（用户可能仍在有风险的 auth flow 中）。
+    `dismissAuthLinkRecovery(reason=trusted-auth-return)`（用户点按钮则是
+    `reason=open-settings`，两个 token 不混用）；普通页面 reload / 门禁切换**不**清除提示
+    （用户可能仍在有风险的 auth flow 中）。
   - **`UNAVAILABLE` 的语义边界**：只记录诊断，**不**显示「未开启 supported links」这类可能误导的提示
     （该状态的含义是「无法判断」，不是「未验证」）。
 
