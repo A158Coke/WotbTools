@@ -146,97 +146,91 @@ Keycloak 默认值一致，不会产生漂移。
   fresh TX realm 不迁移旧 Keycloak users。
 - Android 使用 `idp-qq` 官方 OAuth callback contract；本 TX realm 不引入 Juhe fallback。
 
-## PRE_CUTOVER_READY 只读门禁
+## TX_RUNTIME_READY 只读运行时检查
 
-在申请 DNS cutover 前，在 TX runtime 上执行 `deploy/tx/pre-cutover-check.sh`。该入口只复用
+在 TX runtime 上执行 `deploy/tx/runtime-check.sh`。该入口只复用
 `deploy/tx/deploy.sh` 的现有 health-probe/Compose 配置读取逻辑，不执行 staging、promote、
 recreate、stop、删除或 DNS 操作。Yecao 应用运行时退役后，原先随 TX 包分发的
-`yecao-backend-contract.json`（读取已删除的 Yecao `wotb-backend` bind）已删除：门禁在promote
+`yecao-backend-contract.json`（读取已删除的 Yecao `wotb-backend` bind）已删除：检查在 promote
 后的布局里直接针对与脚本同级的 `docker-compose.yml` 运行，若 TX 上有受控 checkout，可设置
 `WOTB_SOURCE_ROOT` 让它复核 production Compose。
 
 全部检查通过时输出：
 
 ```text
-PRE_CUTOVER_READY
-DNS_CUTOVER_NOT_PERFORMED
-WAITING_FOR_OPERATOR_APPROVAL
+TX_RUNTIME_READY
 ```
 
-Business PostgreSQL 是权威业务状态，因此门禁同样要求它完全就绪才允许 `PRE_CUTOVER_READY`：
+Business PostgreSQL 是权威业务状态，因此检查同样要求它完全就绪才允许 `TX_RUNTIME_READY`：
 `business-postgres` 容器存在且 healthy、`pg_isready` 成功、发布端口严格为
 `127.0.0.1:25432:5432`（出现 `0.0.0.0`、`::` 或 WireGuard 地址即失败）、
 `/opt/wotb-tx/business-postgres.tofu-provisioned` 存在且内容精确为
-`tx-local-opentofu-business-postgres`。任一检查失败即输出 `PRE_CUTOVER_NOT_READY`；
+`tx-local-opentofu-business-postgres`。任一检查失败即输出 `TX_RUNTIME_NOT_READY`；
 这些检查全部只读，不创建、修改或删除任何数据库或数据行。详见
 `docs/operations/business-postgres.md`。
 
-门禁读取的 live Compose 现在也包含 TX 业务运行时 `business-api`，因此它的必需输入同样要在
+检查读取的 live Compose 现在也包含 TX 业务运行时 `business-api`，因此它的必需输入同样要在
 环境中提供（应用数据库凭据 `TX_BUSINESS_DB_*`、`TX_RABBITMQ_CONTROL_API_PASSWORD`、
-MinIO `control_api` key pair、`KEYCLOAK_ADMIN_CLIENT_SECRET`、`AI_API_KEY`），缺失时门禁在
-渲染阶段立即拒绝，而不是给出误导性的 ready。门禁本身仍只读：这些值只用于 Compose 渲染与
+MinIO `control_api` key pair、`KEYCLOAK_ADMIN_CLIENT_SECRET`、`AI_API_KEY`），缺失时检查在
+渲染阶段立即拒绝，而不是给出误导性的 ready。检查本身仍只读：这些值只用于 Compose 渲染与
 就绪判定，不写盘、不落日志。
 
-## 全业务 E2E token（operator 运行门禁时需要）
+## 全业务 E2E token（operator 运行时需要）
 
-门禁由同一个入口按阶段运行，阶段决定 edge 部分能诚实地断言什么：
+检查只有一个入口，没有阶段或模式：
 
 ```text
-bash deploy/tx/pre-cutover-check.sh                 # 切 DNS 前
-bash deploy/tx/pre-cutover-check.sh --post-cutover  # 切 DNS 后（强制 TLS 门）
+bash deploy/tx/runtime-check.sh
 ```
 
-除上面的输入，门禁还需要以下非默认输入：
+除上面的输入，检查还需要以下非默认输入：
 
 ```text
 KEYCLOAK_E2E_CLIENT_SECRET   wotbtools-e2e 机器身份的 client secret（GitHub Secret，write-only）
-WOTB_E2E_DATA_SNAPSHOT       X1 搬迁前从 Yecao 只读导出的逐表行数快照，例如
-                             {"tables":{"hall_of_fame_record":348, ...}}
 可选：
 WOTB_E2E_REPLAY_PATH         探针容器内的回放 fixture（默认 /e2e/random-battle-example.wotbreplay，
                              由 Deploy 从 common/fixtures/replays staged 到 /opt/wotb-tx/e2e）
-WOTB_E2E_PUBLIC_IP           公网边缘的目标 TX 地址（默认 118.25.18.105）
+WOTB_E2E_PUBLIC_IP           公网边缘必须由其应答的 TX 地址（默认 118.25.18.105）
 WOTB_E2E_JOB_TIMEOUT_SEC     processing/export job 轮询上限（默认 300）
 ```
 
-门禁用 `wotbtools-e2e`（client_credentials）驱动真实链路并逐项输出 `processing-e2e`、
+检查用 `wotbtools-e2e`（client_credentials）驱动真实链路并逐项输出 `processing-e2e`、
 `dataset-result`、`map-overview`、`battle-playback-v2`、`minio`、`ai-facts`、`export`、
 `hof-replay-storage`、`parser-worker`、`admin-authz`、`anonymous-rejected`、
-`business-data-integrity`。任何一项 FAIL 都输出 `PRE_CUTOVER_NOT_READY`（post 阶段为
-`POST_CUTOVER_NOT_READY`）：**这就是「不通过门禁不得切 DNS」的机械含义**。
+`business-data-integrity`。任何一项 FAIL 都输出 `TX_RUNTIME_NOT_READY`：**这是「TX runtime
+不是业务可用状态」的机械含义**。
 
-- 门禁不做付费 AI 调用：AI 只验证 worker 写入的 `ai-facts.json` 可通过 control_api 身份读取。
-- 门禁对基础设施与用户数据只读；唯一写入是一个 30 分钟 TTL 自动回收的瞬时 processing job
+- 检查不做付费 AI 调用：AI 只验证 worker 写入的 `ai-facts.json` 可通过 control_api 身份读取。
+- 检查对基础设施与用户数据只读；唯一写入是一个 30 分钟 TTL 自动回收的瞬时 processing job
   与 export job（属于一次性安全操作，不改任何真实用户数据）。
-- `business-data-integrity` 需要 operator 先完成 §10.1 的只读行数快照与 TX `pg_restore`，
-  并保留 `hall_of_fame_record` 的 explicit id 与 ≥ 355 的 identity sequence。
-- `hof-replay-storage` 需要 `replay_data` 卷已迁移且至少存在一条可下载的 HoF 回放记录。
+- `business-data-integrity` 只断言 `hall_of_fame_record` 的 identity sequence 不落后于
+  `max(id)`（人工数据搬运若用 explicit id 写入而不推进 sequence，下一次真实插入会主键冲突）。
+  cutover 期的只读 Yecao 行数快照输入（`WOTB_E2E_DATA_SNAPSHOT`）已随 cutover machinery 删除：
+  冻结的行数只对一次性搬迁有意义，且会随生产数据增长永久 FAIL。
+- `hof-replay-storage` 需要 `replay_data` 卷存在且至少存在一条可下载的 HoF 回放记录。
 
-### 公网边缘：分阶段而不是伪装 TLS 就绪
+### 公网边缘：只接受受信任 TLS
 
-公开 DNS 仍指向 Yecao 时，TX 上的 Caddy **无法**完成 HTTP-01 / TLS-ALPN 校验，因此拿不到受信任
-证书。要求「切 DNS 前就有受信任 HTTPS」是一个机械上无法达成的死锁，用 `curl -k` 掩盖它则是把
-门禁变成假绿。门禁因此分两阶段（全程**不关闭 TLS 校验**、**不使用** `-k/--insecure`）：
+公开 DNS 已在 TX，因此边缘检查只接受一种结果：两个公开名（`wotbtools.com` /
+`auth.wotbtools.com`）必须由 `WOTB_E2E_PUBLIC_IP`（TX 地址）应答、受信任证书校验通过、HTTP 2xx。
+`curl` 退出码 `60`（链不受信）、非 2xx 或连通失败（7/28/35）一律 FAIL。检查全程**不关闭 TLS
+校验**、**不使用** `-k/--insecure`：
 
-| 阶段 | token | 断言 |
-|---|---|---|
-| 切 DNS 前 | `public-edge-sni-web` / `public-edge-sni-auth` | TX `443` 可连通、TLS 握手完成且为该 host 出示了证书；`curl` 退出码 `60`（链尚未受信）是**预期通过**状态；连通失败（7/28/35）或非 2xx 则 FAIL |
-| 切 DNS 后（`--post-cutover`） | `public-tls-web` / `public-tls-auth` | 该 host 必须解析到 `WOTB_E2E_PUBLIC_IP`、受信任证书校验通过、HTTP 2xx；退出码 `60`（仍不受信）或无 DNS 指向即 FAIL |
+| token | 断言 |
+|---|---|
+| `public-tls-web` / `public-tls-auth` | 该 host 必须解析到 `WOTB_E2E_PUBLIC_IP`、受信任证书校验通过、HTTP 2xx；退出码 `60`（不受信）或连通失败即 FAIL |
 
-路由正确性（frontend / Keycloak upstream）在切 DNS 前由 Caddy 内部 readiness surface
-（`http://caddy/_wotb/...`，走 Docker service DNS）证明，不依赖固定容器 IP、公网 DNS 或证书。
+路由正确性（frontend / Keycloak upstream）由 Caddy 内部 readiness surface
+（`http://caddy/_wotb/...`，走 Docker service DNS）证明，不依赖固定容器 IP 或证书。
 
-post 阶段成功时输出：
+成功时输出：
 
 ```text
-POST_CUTOVER_READY
-DNS_CUTOVER_PERFORMED
-WAITING_FOR_OPERATOR_RETIREMENT
+TX_RUNTIME_READY
 ```
 
 顺序是：Caddy 已在 TX 所有接口上绑 80/443（生产默认，见 `deploy/tx/docker-compose.yml`）
-→ 切 DNS 前门禁全绿 → 切 DNS（PR K，operator）→
-`--post-cutover` 门禁全绿 → 才允许停止/移除 Yecao 遗留容器。
+→ 检查全绿即代表当前生产拓扑可用。
 
 ### Caddy 不再有固定容器地址
 
@@ -253,7 +247,7 @@ WAITING_FOR_OPERATOR_RETIREMENT
 ### parser DLQ 非空时的 operator 动作
 
 `parser-worker` token 在 `wotb.parser.dlq` 不为空时 FAIL（非空 DLQ 意味着至少一条回放永久失败或
-无法解码）。这是**必须人工处置**的状态，不允许通过删除证据让门禁变绿：
+无法解码）。这是**必须人工处置**的状态，不允许通过删除证据让检查变绿：
 
 1. 只读确认权威状态：`docker compose -f /opt/wotb-tx/deploy/docker-compose.yml exec -T rabbitmq
    rabbitmqctl -q list_queues name messages consumers`，并确认 PostgreSQL 中没有该 job 的未终态
@@ -263,17 +257,17 @@ WAITING_FOR_OPERATOR_RETIREMENT
 3. 分类处置：解码缺陷 → 保留样本并在修复后**重新投递**（用同 `jobId` 重新创建 processing job，
    或把消息重新发布到 `wotb.jobs` / `parser.request`）；瞬时基础设施故障 → 同样重新投递；
    确实无法处理的旧格式 → 明确记录为「永久失败样本」并由你批准是否接受。
-4. 处置后队列必须回到空，然后重新运行门禁。**不要**用 purge 作为「修复」；purge 只在你已记录
+4. 处置后队列必须回到空，然后重新运行检查。**不要**用 purge 作为「修复」；purge 只在你已记录
    每条消息的结论之后才允许。
 
-门禁以只读 Keycloak Admin API 检查 `idp-qq`：必须唯一、`providerId=qq`、`enabled=true`、
+检查以只读 Keycloak Admin API 检查 `idp-qq`：必须唯一、`providerId=qq`、`enabled=true`、
 client ID 非 placeholder，且 QQ endpoint/config contract 完整；裸 `qq` / `juhe-qq` alias 会阻断。
-全部通过后输出 `QQ_IDP_STATUS=idp-qq=READY`；不再接受 `WAITING_EXTERNAL` 豁免。门禁不再探测
+全部通过后输出 `QQ_IDP_STATUS=idp-qq=READY`；不再接受 `WAITING_EXTERNAL` 豁免。检查不再探测
 Yecao backend 路径：公开 API 流量已在 TX 内部终结（frontend nginx → `business-api:8087`），
 改为两条只读 token：`tx-internal-api-route`（frontend upstream 必须是 TX 内部业务运行时、
 `business-api` 不发布任何端口、任何服务都不得发布 8087）与 `distributed-execution-plane`
 （`business-api` 不得出现已退役的回放执行模式开关与 job-repository 选择器；PostgreSQL 是唯一
-replay job authority）。任一不满足即 `PRE_CUTOVER_NOT_READY`。
+replay job authority）。任一不满足即 `TX_RUNTIME_NOT_READY`。
 
 TX deploy 在修改 runtime 前只检查 Docker/Compose、`wg0` 地址与到 `10.20.0.2` 的路由（后者仍服务
 MinIO 与 broker 链路）；staging 阶段先 fail-closed 拒绝「引用/发布已退役 8087」或「重新启用本地

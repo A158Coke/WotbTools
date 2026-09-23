@@ -12,7 +12,7 @@ services:
     entrypoint: ["curl"]
     restart: "no"
     volumes:
-      # The cutover E2E gate uploads a staged replay and reads MinIO objects
+      # The runtime E2E check uploads a staged replay and reads MinIO objects
       # through this deployment-owned probe container. The directory is optional
       # runtime content created by deploy.sh / the Deploy workflow.
       - ${TX_RUNTIME_ROOT:?TX_RUNTIME_ROOT is required}/e2e:/e2e:ro

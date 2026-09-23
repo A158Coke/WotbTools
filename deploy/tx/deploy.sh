@@ -388,7 +388,7 @@ stage_and_validate() {
     # directories keeps Compose bind mounts valid without inventing config.
     mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
   fi
-  # The cutover E2E gate mounts this directory into the health-probe container;
+  # The runtime E2E check mounts this directory into the health-probe container;
   # its content (the staged replay fixtures) is optional and staged separately.
   mkdir -p "$TX_RUNTIME_ROOT/e2e"
   set_nonselected_compose_placeholders
@@ -405,7 +405,7 @@ stage_and_validate() {
     || die "staged TX compose config is invalid; live TX deployment was not changed."
 }
 
-# Fail closed on the two production invariants this cutover establishes:
+# Fail closed on the two production invariants this routing boundary establishes:
 #   1. the frontend proxies public API traffic to the TX-internal business
 #      runtime, and no staged service publishes the retired Yecao port;
 #   2. the business runtime's replay execution plane is the distributed one
@@ -1135,12 +1135,12 @@ preflight_host() {
 }
 
 # ---------------------------------------------------------------- business E2E
-# The read-only cutover gate proves the *real* business chain from inside
+# The read-only runtime check proves the *real* business chain from inside
 # wotb_tx_internal: Keycloak token -> business runtime -> PostgreSQL job
 # authority -> MinIO dataset -> RabbitMQ -> Yecao parser worker -> MinIO
 # artifacts -> dataset consumers. It stays read-only with respect to
 # infrastructure and user data; the only writes are one transient processing job
-# and one transient export job, both owned by the gate machine identity and
+# and one transient export job, both owned by the check machine identity and
 # swept by the existing 30-minute TTL. No paid AI provider call is made.
 
 E2E_CLIENT_ID="${KEYCLOAK_E2E_CLIENT_ID:-wotbtools-e2e}"
@@ -1149,10 +1149,9 @@ E2E_REPLAY_PATH="${WOTB_E2E_REPLAY_PATH:-/e2e/random-battle-example.wotbreplay}"
 E2E_JOB_TIMEOUT_SEC="${WOTB_E2E_JOB_TIMEOUT_SEC:-300}"
 E2E_POLL_INTERVAL_SEC="${WOTB_E2E_POLL_INTERVAL_SEC:-5}"
 E2E_PUBLIC_IP="${WOTB_E2E_PUBLIC_IP:-118.25.18.105}"
-# The public hosts and the URLs the edge gate must prove, per cutover phase.
+# The public hosts and the URLs the edge check must prove.
 E2E_WEB_URL="${WOTB_E2E_WEB_URL:-https://wotbtools.com/api/health}"
 E2E_AUTH_URL="${WOTB_E2E_AUTH_URL:-https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configuration}"
-CUTOVER_PHASE="${WOTB_CUTOVER_PHASE:-pre}"
 E2E_BEARER=""
 E2E_HTTP_STATUS="000"
 E2E_HTTP_BODY=""
@@ -1453,7 +1452,7 @@ business_e2e_check() {
     && [ "$E2E_HTTP_STATUS" = 200 ] && [ "$E2E_DOWNLOAD_SIZE" -gt 0 ]; then
     e2e_emit hof-replay-storage 1
   else
-    e2e_emit hof-replay-storage 0 "no readable HoF replay original for id=${hof_id:-none} (HTTP $E2E_HTTP_STATUS, ${E2E_DOWNLOAD_SIZE}B); migrate replay_data before cutting DNS"
+    e2e_emit hof-replay-storage 0 "no readable HoF replay original for id=${hof_id:-none} (HTTP $E2E_HTTP_STATUS, ${E2E_DOWNLOAD_SIZE}B); check the replay_data volume"
     failures=1
   fi
 
@@ -1567,44 +1566,18 @@ business_e2e_check() {
   return 0
 }
 
-# Business data integrity: the operator supplies the read-only Yecao snapshot
-# (row counts per table) and the gate compares it against TX. Only SELECTs run.
+# Business data integrity: the HoF identity sequence must never lag behind
+# max(id), because a manual data movement that inserts explicit ids without
+# advancing the sequence makes the next real insert collide. Only SELECTs run.
 business_data_integrity_check() {
-  local snapshot="${WOTB_E2E_DATA_SNAPSHOT:-}" table expected actual sequence maximum failures=0
-  if [ -z "$snapshot" ] || [ ! -f "$snapshot" ]; then
-    e2e_emit business-data-integrity 0 "set WOTB_E2E_DATA_SNAPSHOT to the read-only Yecao row-count snapshot JSON"
-    return 1
-  fi
-  while read -r table expected; do
-    [ -n "$table" ] || continue
-    actual="$(docker compose -f "$LIVE_COMPOSE" exec -T business-postgres \
-      psql -U "$TX_BUSINESS_DB_USERNAME" -d "$TX_BUSINESS_DB_NAME" -Atc \
-      "select count(*) from \"$table\"" 2>/dev/null || true)"
-    if [ "$actual" = "$expected" ]; then
-      echo "  $table: $actual rows"
-    else
-      echo "  $table: TX=$actual expected=$expected" >&2
-      failures=1
-    fi
-  done < <(python3 - "$snapshot" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as handle:
-    document = json.load(handle)
-tables = document.get("tables", document) if isinstance(document, dict) else {}
-for name, count in tables.items():
-    if isinstance(count, int):
-        print(f"{name} {count}")
-PY
-)
+  local sequence maximum failures=0
   maximum="$(docker compose -f "$LIVE_COMPOSE" exec -T business-postgres \
     psql -U "$TX_BUSINESS_DB_USERNAME" -d "$TX_BUSINESS_DB_NAME" -Atc \
     'select coalesce(max(id), 0) from hall_of_fame_record' 2>/dev/null || true)"
   sequence="$(docker compose -f "$LIVE_COMPOSE" exec -T business-postgres \
     psql -U "$TX_BUSINESS_DB_USERNAME" -d "$TX_BUSINESS_DB_NAME" -Atc \
     "select last_value from pg_sequences where schemaname = 'public' and sequencename like 'hall_of_fame_record%'" 2>/dev/null || true)"
-  if [ -z "$maximum" ] || [ -z "$sequence" ] || [ "$sequence" -lt "$maximum" ] || [ "$sequence" -lt 355 ]; then
+  if [ -z "$maximum" ] || [ -z "$sequence" ] || [ "$sequence" -lt "$maximum" ]; then
     echo "  hall_of_fame_record sequence: last_value=${sequence:-unknown} max_id=${maximum:-unknown}" >&2
     failures=1
   else
@@ -1614,19 +1587,13 @@ PY
     e2e_emit business-data-integrity 1
     return 0
   fi
-  e2e_emit business-data-integrity 0 "TX business data does not match the Yecao snapshot"
+  e2e_emit business-data-integrity 0 "the hall_of_fame_record identity sequence is behind max(id); the next insert would collide"
   return 1
 }
 
-# Public edge gate. The phase decides what can honestly be asserted:
-#   pre  (before DNS)  -> TX:443 is reachable and Caddy presents a certificate for
-#                         the public name (routing + SNI). Trust is NOT claimed:
-#                         while public DNS still points elsewhere Caddy cannot
-#                         complete HTTP-01/TLS-ALPN validation, so an untrusted
-#                         handshake (curl exit 60) is the expected, passing state.
-#   post (after DNS)   -> the public name resolves to the TX address and serves a
-#                         locally trusted certificate with 2xx. TLS verification is
-#                         never disabled; `curl -k` is never used.
+# Public edge check: each public name must be served by the TX address over a
+# locally trusted certificate with 2xx. TLS verification is never disabled and
+# `curl -k` is never used, so an untrusted chain is a hard failure.
 edge_tls_probe() {
   local host="$1" url="$2" raw exit_code=0
   local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
@@ -1654,47 +1621,20 @@ edge_tls_probe() {
   return 0
 }
 
-# curl exit 60 = the TLS handshake completed and a certificate was presented, but
-# the chain is not trusted yet. That is exactly the pre-DNS state.
-edge_tls_untrusted_pre_dns() {
-  [ "${EDGE_EXIT:-0}" = 60 ]
-}
-
-# Pre-DNS edge token: TX:443 must complete a TLS handshake and present a
-# certificate for the public name. An untrusted chain (curl exit 60) is the
-# expected passing state while public DNS still points elsewhere.
-edge_sni_token() {
-  local token="$1" host="$2" url="$3"
-  if edge_tls_probe "$host" "$url"; then
-    if [ "$EDGE_STATUS" != 000 ] && [[ "$EDGE_STATUS" =~ ^2[0-9]{2}$ ]]; then
-      e2e_emit "$token" 1
-      return 0
-    fi
-    e2e_emit "$token" 0 "TX edge answered HTTP $EDGE_STATUS for $host (expected 2xx)"
-    return 1
-  fi
-  if edge_tls_untrusted_pre_dns; then
-    e2e_emit "$token" 1
-    return 0
-  fi
-  e2e_emit "$token" 0 "TX:$E2E_PUBLIC_IP:443 did not complete a TLS handshake for $host (curl exit $EDGE_EXIT: $EDGE_ERROR)"
-  return 1
-}
-
-# Post-DNS edge token: the public name must resolve to the TX address and serve a
-# locally trusted certificate with 2xx. Verification is never disabled.
+# Edge token: the public name must be served by the TX address over a locally
+# trusted certificate with 2xx. Verification is never disabled.
 edge_tls_token() {
   local token="$1" host="$2" url="$3"
   if ! edge_tls_probe "$host" "$url"; then
-    if edge_tls_untrusted_pre_dns; then
-      e2e_emit "$token" 0 "public TLS for $host is still untrusted (curl exit 60): DNS has moved but Caddy has no trusted certificate yet"
+    if [ "${EDGE_EXIT:-0}" = 60 ]; then
+      e2e_emit "$token" 0 "the certificate for $host is not trusted (curl exit 60): Caddy has no valid public certificate"
     else
       e2e_emit "$token" 0 "curl failed for $host (exit $EDGE_EXIT: $EDGE_ERROR)"
     fi
     return 1
   fi
   if [ "$EDGE_REMOTE_IP" != "$E2E_PUBLIC_IP" ]; then
-    e2e_emit "$token" 0 "$host resolved to $EDGE_REMOTE_IP instead of the TX address $E2E_PUBLIC_IP"
+    e2e_emit "$token" 0 "$host was served by $EDGE_REMOTE_IP instead of the TX address $E2E_PUBLIC_IP"
     return 1
   fi
   if [[ "$EDGE_STATUS" =~ ^2[0-9]{2}$ ]]; then
@@ -1705,13 +1645,6 @@ edge_tls_token() {
   return 1
 }
 
-public_edge_sni_check() {
-  local failures=0
-  edge_sni_token public-edge-sni-web wotbtools.com "$E2E_WEB_URL" || failures=1
-  edge_sni_token public-edge-sni-auth auth.wotbtools.com "$E2E_AUTH_URL" || failures=1
-  [ "$failures" -eq 0 ]
-}
-
 public_tls_check() {
   local failures=0
   edge_tls_token public-tls-web wotbtools.com "$E2E_WEB_URL" || failures=1
@@ -1719,20 +1652,13 @@ public_tls_check() {
   [ "$failures" -eq 0 ]
 }
 
-pre_cutover_check() {
+tx_runtime_check() {
   local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health business_container
   local failures=0 provider
   DEPLOY_SERVICES=(all)
 
   command -v docker >/dev/null 2>&1 || { echo "docker: FAIL (docker is required)" >&2; return 1; }
   command -v python3 >/dev/null 2>&1 || { echo "python3: FAIL (python3 is required)" >&2; return 1; }
-  case "$CUTOVER_PHASE" in
-    pre|post) ;;
-    *)
-      echo "cutover-phase: FAIL (WOTB_CUTOVER_PHASE must be pre or post, got '$CUTOVER_PHASE')" >&2
-      return 1
-      ;;
-  esac
   for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
     KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
     WG_APPLICATION_ID CADDY_ACME_EMAIL \
@@ -1868,7 +1794,7 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
     failures=1
   fi
 
-  # Business PostgreSQL is authoritative business state, so PRE_CUTOVER_READY
+  # Business PostgreSQL is authoritative business state, so TX_RUNTIME_READY
   # must not be emitted until its runtime, loopback administration port, and
   # TX-local OpenTofu provisioning marker are all proven. These checks are
   # read-only: they never create, modify, or delete any database or row.
@@ -1920,49 +1846,23 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
   if [ -n "$source_root" ] && [ -f "$source_root/infra/tofu/keycloak/realm.tf" ]; then
     echo "realm-client-source-of-truth: PASS (Keycloak OpenTofu root present)"
   fi
-  # The TX deploy helper has no DNS or Yecao retirement command; this is also
-  # enforced by the static TX runtime and pre-cutover contract tests.
-  echo "cutover-safety-boundary: PASS"
+  # The TX deploy helper owns no DNS or Yecao retirement command; that boundary
+  # is enforced statically by the TX runtime contract tests.
 
   # Real business chain: token -> control plane -> worker -> dataset consumers.
-  # These tokens are the reason PRE_CUTOVER_READY means "business works", not
+  # These tokens are the reason TX_RUNTIME_READY means "business works", not
   # "containers are up".
   business_e2e_check || failures=1
   business_data_integrity_check || failures=1
-  case "$CUTOVER_PHASE" in
-    pre)
-      # Before DNS: TX edge routing/SNI reachability only. Trusted public TLS is
-      # mechanically unachievable while public DNS still points at Yecao, so it is
-      # asserted by the post-cutover phase instead of being faked here.
-      public_edge_sni_check || failures=1
-      ;;
-    post)
-      # After DNS: the mandatory trusted-TLS gate. Both public hosts must resolve
-      # to TX and serve a locally trusted certificate; no `curl -k` anywhere.
-      public_edge_sni_check || failures=1
-      public_tls_check || failures=1
-      ;;
-    *) failures=1 ;;
-  esac
+  # Public edge: both public hosts must be served by TX over trusted TLS with 2xx.
+  public_tls_check || failures=1
 
   [ "$failures" -eq 0 ] && echo "QQ_IDP_STATUS=idp-qq=READY"
   if [ "$failures" -ne 0 ]; then
-    if [ "$CUTOVER_PHASE" = post ]; then
-      echo "POST_CUTOVER_NOT_READY" >&2
-    else
-      echo "PRE_CUTOVER_NOT_READY" >&2
-    fi
+    echo "TX_RUNTIME_NOT_READY" >&2
     return 1
   fi
-  if [ "$CUTOVER_PHASE" = post ]; then
-    echo "POST_CUTOVER_READY"
-    echo "DNS_CUTOVER_PERFORMED"
-    echo "WAITING_FOR_OPERATOR_RETIREMENT"
-    return 0
-  fi
-  echo "PRE_CUTOVER_READY"
-  echo "DNS_CUTOVER_NOT_PERFORMED"
-  echo "WAITING_FOR_OPERATOR_APPROVAL"
+  echo "TX_RUNTIME_READY"
 }
 
 diagnostics() {
