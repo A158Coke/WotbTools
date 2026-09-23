@@ -53,7 +53,7 @@ bootstrap_diagnostics = detect(
 assert bootstrap_diagnostics["images"] == {"backend": True, "frontend": True, "keycloak": True, "minio": False, "parser-worker": False}
 assert bootstrap_diagnostics["buildServices"] == ["business-api", "wotb-frontend", "keycloak"]
 assert bootstrap_diagnostics["deployServices"] == ["business-api", "wotb-frontend", "keycloak"]
-assert set(detect("frontend/src/App.vue", "java/wotb-core/src/Main.java")["deployServices"]) == {
+assert set(detect("frontend/src/App.vue", "java/wotb-core/src/main/java/com/wotb/core/Main.java")["deployServices"]) == {
     "wotb-frontend", "business-api"
 }
 assert detect("README.md")["deployServices"] == []
@@ -90,7 +90,11 @@ backend_health_probe_fix = detect(
 assert backend_health_probe_fix["images"] == {"backend": False, "frontend": False, "keycloak": False, "minio": False, "parser-worker": False}
 assert backend_health_probe_fix["buildServices"] == []
 assert backend_health_probe_fix["imageServices"] == []
-assert backend_health_probe_fix["deployServices"] == ["business-api"]
+# Nothing here changes a production runtime artifact (deploy scripts, docs, and a backend
+# *test*), so no application service may be selected. The rollout stays config-only, exactly
+# like the deploy/deploy.sh-only case asserted above: a test edit must never redeploy business-api.
+assert backend_health_probe_fix["deployServices"] == []
+assert backend_health_probe_fix["targetServices"] == {}
 assert backend_health_probe_fix["deployConfig"]
 assert detect("deploy/docker-compose.prod.yml")["deployServices"] == [
     "node-exporter", "prometheus", "loki", "alloy", "grafana"
@@ -143,15 +147,32 @@ assert parser_worker_module["images"] == {"backend": False, "frontend": False, "
 assert parser_worker_module["buildServices"] == ["parser-worker"]
 assert parser_worker_module["deployServices"] == []
 assert parser_worker_module["targetServices"] == {}
-for parser_worker_input in ("common/tank_tactical_profiles.json", "contracts/mq/parser-messages.json"):
-    parser_worker_input_plan = detect(parser_worker_input)
-    assert parser_worker_input_plan["images"] == {
-        "backend": False, "frontend": False, "keycloak": False, "minio": False, "parser-worker": True
-    }, parser_worker_input
-    assert parser_worker_input_plan["buildServices"] == ["parser-worker"], parser_worker_input
-    assert parser_worker_input_plan["imageServices"] == ["parser-worker"], parser_worker_input
-    assert parser_worker_input_plan["deployServices"] == [], parser_worker_input
-    assert parser_worker_input_plan["targetServices"] == {}, parser_worker_input
+# Shared inputs must select exactly the images whose Dockerfile COPYs them.
+# tank_tactical_profiles.json is copied by BOTH docker/Dockerfile.backend and
+# docker/Dockerfile.parser-worker, so both publish (only business-api deploys).
+# contracts/mq is not a Docker build input at all, so it stays parser-worker-only.
+for shared_input, expected_images, expected_build, expected_deploy in (
+    (
+        "common/tank_tactical_profiles.json",
+        {"backend": True, "frontend": False, "keycloak": False, "minio": False, "parser-worker": True},
+        ["business-api", "parser-worker"],
+        ["business-api"],
+    ),
+    (
+        "contracts/mq/parser-messages.json",
+        {"backend": False, "frontend": False, "keycloak": False, "minio": False, "parser-worker": True},
+        ["parser-worker"],
+        [],
+    ),
+):
+    shared_input_plan = detect(shared_input)
+    assert shared_input_plan["images"] == expected_images, shared_input
+    assert shared_input_plan["buildServices"] == expected_build, shared_input
+    assert shared_input_plan["imageServices"] == expected_build, shared_input
+    assert shared_input_plan["deployServices"] == expected_deploy, shared_input
+    assert shared_input_plan["targetServices"] == (
+        {"tx": expected_deploy} if expected_deploy else {}
+    ), shared_input
 assert detect(".github/workflows/ci.yml")["ciSurfaces"]["full"]
 assert detect("common/unrelated-fixture.json")["ciSurfaces"]["data"]
 assert detect("common/unrelated-fixture.json")["imageServices"] == []
@@ -160,6 +181,60 @@ assert detect("java/wotb-parser-worker/src/test/java/FooTest.java")["imageServic
 assert set(detect(".dockerignore")["imageServices"]) == {
     "business-api", "wotb-frontend", "keycloak"
 }
+# Every production Dockerfile must select exactly its own image and nothing else.
+for dockerfile, expected_images, expected_deploy in (
+    ("docker/Dockerfile.backend", ["business-api"], ["business-api"]),
+    ("docker/Dockerfile.frontend", ["wotb-frontend"], ["wotb-frontend"]),
+    ("docker/Dockerfile.keycloak", ["keycloak"], ["keycloak"]),
+    ("docker/Dockerfile.minio", ["minio"], []),
+    ("docker/Dockerfile.parser-worker", ["parser-worker"], []),
+):
+    dockerfile_plan = detect(dockerfile)
+    assert dockerfile_plan["imageServices"] == expected_images, dockerfile
+    assert dockerfile_plan["buildServices"] == expected_images, dockerfile
+    assert dockerfile_plan["deployServices"] == expected_deploy, dockerfile
+NO_IMAGES = {"backend": False, "frontend": False, "keycloak": False, "minio": False, "parser-worker": False}
+# The parent reactor and the shared Docker Maven settings are inputs to every image whose
+# Dockerfile COPYs them, and to no image that does not.
+parent_pom_plan = detect("java/pom.xml")
+assert parent_pom_plan["images"] == {**NO_IMAGES, "backend": True, "parser-worker": True}
+assert parent_pom_plan["buildServices"] == ["business-api", "parser-worker"]
+assert parent_pom_plan["deployServices"] == ["business-api"]
+settings_plan = detect("java/settings-docker.xml")
+assert settings_plan["images"] == {**NO_IMAGES, "backend": True, "keycloak": True, "parser-worker": True}
+assert settings_plan["buildServices"] == ["business-api", "keycloak", "parser-worker"]
+assert settings_plan["deployServices"] == ["business-api", "keycloak"]
+# Shared Maven modules rebuild every image consumer; a module must never cross-select the
+# image whose Dockerfile does not COPY its sources.
+for shared_module in (
+    "wotb-contracts", "wotb-object-storage-minio", "wotb-broker-rabbitmq", "wotb-core",
+    "wotb-result", "wotb-playback", "wotb-replay-processing",
+):
+    shared_plan = detect(f"java/{shared_module}/src/main/java/Foo.java")
+    assert shared_plan["buildServices"] == ["business-api", "parser-worker"], shared_module
+    assert shared_plan["deployServices"] == ["business-api"], shared_module
+for backend_only_module in ("wotb-replay-coordinator", "wotb-ai", "wotb-web"):
+    backend_only_plan = detect(f"java/{backend_only_module}/src/main/java/Foo.java")
+    assert backend_only_plan["images"] == {**NO_IMAGES, "backend": True}, backend_only_module
+    assert backend_only_plan["deployServices"] == ["business-api"], backend_only_module
+worker_only_module_plan = detect("java/wotb-parser-worker/src/main/java/Foo.java")
+assert worker_only_module_plan["images"] == {**NO_IMAGES, "parser-worker": True}
+assert worker_only_module_plan["deployServices"] == []
+# A Keycloak provider test is not a runtime input: it must validate CI without publishing
+# or deploying the Keycloak image (docker/Dockerfile.keycloak packages only src/main).
+for provider in ("keycloak-juhe-qq-provider", "keycloak-qq-provider", "keycloak-wargaming-provider"):
+    provider_test_plan = detect(f"{provider}/src/test/java/ProviderTest.java")
+    assert provider_test_plan["images"] == NO_IMAGES, provider
+    assert provider_test_plan["buildServices"] == [], provider
+    assert provider_test_plan["deployServices"] == [], provider
+    assert provider_test_plan["ciSurfaces"]["keycloakProvider"], provider
+# HISTORY.md is COPYed into the frontend build stage and inlined by HistoryPage with `?raw`,
+# so it must republish wotb-frontend rather than count as an inert document.
+history_plan = detect("HISTORY.md")
+assert history_plan["images"] == {**NO_IMAGES, "frontend": True}
+assert history_plan["buildServices"] == ["wotb-frontend"]
+assert history_plan["deployServices"] == ["wotb-frontend"]
+assert history_plan["targetServices"] == {"tx": ["wotb-frontend"]}
 # The legacy whole-stack ``all`` selector implied the retired Yecao control plane, so it must not be
 # selectable through the manual alias path either.
 assert subprocess.run(

@@ -91,6 +91,10 @@ FRONTEND_PATTERNS = (
     "common/map_names.json",
     "common/tankopedia-tier10.json",
     "common/assets/**",
+    # docker/Dockerfile.frontend COPYs both documents into the build stage and
+    # HistoryPage/RatingDocsPage inline them with `?raw`, so editing either one
+    # changes the produced bundle. `.dockerignore` explicitly re-includes them.
+    "HISTORY.md",
     "docs/WotBTools_League_Rating_V6.md",
     "deploy/nginx/**",
     "contracts/http/**",
@@ -160,7 +164,26 @@ BACKEND_CI_PATTERNS = (
     "contracts/http/**",
 )
 
+# docker/Dockerfile.keycloak packages only each vendored provider's ``src/main``
+# (``mvn -DskipTests clean package``), so a provider test change cannot alter a
+# provider jar. Keep the image surface on the runtime inputs; provider tests stay
+# on the broader KEYCLOAK_CI_PATTERNS surface below.
 KEYCLOAK_PATTERNS = (
+    "keycloak-juhe-qq-provider/pom.xml",
+    "keycloak-juhe-qq-provider/src/main/**",
+    "keycloak-qq-provider/pom.xml",
+    "keycloak-qq-provider/src/main/**",
+    "keycloak-wargaming-provider/pom.xml",
+    "keycloak-wargaming-provider/src/main/**",
+    "docker/keycloak/**",
+    "docker/Dockerfile.keycloak",
+    "infra/tofu/keycloak/**",
+    "java/settings-docker.xml",
+)
+# CI remains deliberately broader than production-image publication here too:
+# provider tests still validate the SPI surface even though they cannot change a
+# provider jar, exactly like java/**/src/test/** does for the backend surface.
+KEYCLOAK_CI_PATTERNS = (
     "keycloak-juhe-qq-provider/**",
     "keycloak-qq-provider/**",
     "keycloak-wargaming-provider/**",
@@ -201,7 +224,7 @@ RUNTIME_CONFIG_PATTERNS = (
 CI_SURFACE_PATTERNS = {
     "backend": BACKEND_CI_PATTERNS,
     "frontend": FRONTEND_PATTERNS,
-    "keycloak": KEYCLOAK_PATTERNS,
+    "keycloak": KEYCLOAK_CI_PATTERNS,
     "httpContract": (
         "contracts/http/**",
         "frontend/src/api/**",
