@@ -333,8 +333,8 @@ jq -e 'any(.[]; .name == "wotbtools-user")' "$WORK/default-roles.json" >/dev/nul
   || fail "default-roles-wotbtools does not include wotbtools-user"
 echo "PASS: default wotbtools-user role"
 
-# The cutover E2E gate identity must be a confidential service-account-only
-# client whose token carries exactly the user-facing realm role, so the gate can
+# The runtime E2E identity must be a confidential service-account-only
+# client whose token carries exactly the user-facing realm role, so the check can
 # drive the real business chain and must still be rejected by admin endpoints.
 E2E_CLIENT_ID="$(client_id wotbtools-e2e "$WORK/e2e-client.json")"
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/clients/$E2E_CLIENT_ID" \
@@ -350,7 +350,7 @@ jq -e '
   ((.redirectUris // []) | length) == 0 and
   ((.webOrigins // []) | length) == 0
 ' "$WORK/e2e-client.json" >/dev/null \
-  || fail "cutover E2E client has an unsafe browser or flow setting"
+  || fail "runtime E2E client has an unsafe browser or flow setting"
 E2E_TOKEN="$(token wotbtools wotbtools-e2e "$WORK/e2e-token.json" client_credentials \
   --data-urlencode "client_secret=$E2E_API_SECRET")"
 jq -er '
@@ -361,11 +361,11 @@ jq -er '
   | @base64d | fromjson
   | (.realm_access.roles // [])
 ' "$WORK/e2e-token.json" > "$WORK/e2e-roles.json" \
-  || fail "cutover E2E token has no decodable realm role set"
+  || fail "runtime E2E token has no decodable realm role set"
 jq -e 'index("wotbtools-user") != null' "$WORK/e2e-roles.json" >/dev/null \
-  || fail "cutover E2E identity must hold wotbtools-user"
+  || fail "runtime E2E identity must hold wotbtools-user"
 jq -e 'index("wotbtools-admin") == null' "$WORK/e2e-roles.json" >/dev/null \
-  || fail "cutover E2E identity must never hold realm administration"
+  || fail "runtime E2E identity must never hold realm administration"
 E2E_SERVICE_ACCOUNT_ID="$(api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/users?username=service-account-wotbtools-e2e" \
   "$BOOTSTRAP_TOKEN" "$WORK/e2e-service-account.json" >/dev/null; jq -er '.[0].id' "$WORK/e2e-service-account.json")"
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/users/$E2E_SERVICE_ACCOUNT_ID/role-mappings/realm" \
@@ -375,8 +375,8 @@ api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/users/$E2E_SERVICE_ACCOUNT_ID/
 # `wotbtools-user` grant. What must never appear is any privileged realm role.
 jq -e '([.[].name] - ["wotbtools-user", "default-roles-wotbtools"]) | length == 0' \
   "$WORK/e2e-realm-roles.json" >/dev/null \
-  || fail "cutover E2E service account holds an unexpected realm role"
-echo "PASS: cutover E2E identity is confidential, service-account-only and holds only wotbtools-user"
+  || fail "runtime E2E service account holds an unexpected realm role"
+echo "PASS: runtime E2E identity is confidential, service-account-only and holds only wotbtools-user"
 
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/users/$SERVICE_ACCOUNT_ID/role-mappings/clients/$REALM_MANAGEMENT_CLIENT_ID" \
   "$BOOTSTRAP_TOKEN" "$WORK/admin-api-roles.json"

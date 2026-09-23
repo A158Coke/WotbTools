@@ -1,32 +1,19 @@
 #!/usr/bin/env bash
-# Read-only TX cutover gate. It loads the existing TX deploy helpers and never
-# stages, promotes, recreates, stops, deletes, or changes DNS.
+# Read-only TX runtime verification. It loads the existing TX deploy helpers and
+# never stages, promotes, recreates, stops, deletes, or changes DNS.
 #
-#   pre-cutover-check.sh                 # before DNS: routing/SNI + business E2E
-#   pre-cutover-check.sh --post-cutover  # after DNS: + mandatory trusted-TLS gate
+#   runtime-check.sh
 set -Eeuo pipefail
 
-case "${1:-}" in
-  "") export WOTB_CUTOVER_PHASE=pre ;;
-  --post-cutover) export WOTB_CUTOVER_PHASE=post ;;
-  *)
-    echo "usage: pre-cutover-check.sh [--post-cutover]" >&2
-    exit 2
-    ;;
-esac
-[ "$#" -le 1 ] || {
-  echo "usage: pre-cutover-check.sh [--post-cutover]" >&2
+[ "$#" -eq 0 ] || {
+  echo "usage: runtime-check.sh" >&2
   exit 2
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_SH="$SCRIPT_DIR/deploy.sh"
 [ -f "$DEPLOY_SH" ] || {
-  if [ "${WOTB_CUTOVER_PHASE:-pre}" = post ]; then
-    echo "POST_CUTOVER_NOT_READY: sibling deploy.sh is missing from $SCRIPT_DIR" >&2
-  else
-    echo "PRE_CUTOVER_NOT_READY: sibling deploy.sh is missing from $SCRIPT_DIR" >&2
-  fi
+  echo "TX_RUNTIME_NOT_READY: sibling deploy.sh is missing from $SCRIPT_DIR" >&2
   exit 1
 }
 
@@ -51,4 +38,4 @@ export TX_DEPLOY_LIBRARY_ONLY=1
 
 # shellcheck disable=SC1091
 source "$DEPLOY_SH"
-pre_cutover_check
+tx_runtime_check

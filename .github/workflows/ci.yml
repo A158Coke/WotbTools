@@ -565,7 +565,7 @@ jobs:
           bash -n deploy/deploy.sh deploy/minio-deploy.sh
           deploy/verify-observability.sh deploy/tx/deploy.sh
           deploy/tx/business-postgres-backup.sh deploy/tx/business-postgres-restore.sh
-          deploy/tx/pre-cutover-check.sh
+          deploy/tx/runtime-check.sh
           deploy/test-rabbitmq-tofu.sh deploy/test-business-postgres-runtime.sh
           deploy/test-keycloak-runtime.sh deploy/test-keycloak-tofu.sh
           deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh
@@ -573,7 +573,7 @@ jobs:
           deploy/test-build-workflow.sh deploy/test-release-plan.sh
           deploy/tx/publish-loaded-image-to-tcr.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
-          deploy/test-yecao-wireguard-boundary.sh deploy/test-pre-cutover-check.sh
+          deploy/test-yecao-wireguard-boundary.sh deploy/test-tx-runtime-check.sh
           infra/tofu/minio/validate-plan.sh
           infra/tofu/minio/test-validate-plan.sh
           infra/tofu/rabbitmq/validate-plan.sh infra/tofu/rabbitmq/test-validate-plan.sh
@@ -589,7 +589,7 @@ jobs:
         run: |
           bash deploy/test-tx-runtime-config.sh
           bash deploy/test-yecao-wireguard-boundary.sh
-          bash deploy/test-pre-cutover-check.sh
+          bash deploy/test-tx-runtime-check.sh
           bash deploy/test-user-profile-reset-audit.sh
           bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
           bash scripts/ci/test-keycloak-tofu-contract.sh
