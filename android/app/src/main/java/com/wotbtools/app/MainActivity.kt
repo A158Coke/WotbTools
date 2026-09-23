@@ -468,10 +468,17 @@ class MainActivity : Activity() {
         val linkState = authLinkHealth()
         val plan = nativeHandoffPlan(uri, scheme, host)
         if (BuildConfig.DEBUG) {
-            // DEBUG-only 取证：只输出 path 与 query key 名，绝不输出任何 value / 完整 URI。
+            // DEBUG-only 取证：只输出**结构**（path 是否存在 / segment 数量 / query key 名 / schemacallback
+            // 是否存在）。raw path 与任何 value 都不进入这个 helper（签名里就没有），因为 QQ 私有 contract
+            // 未取证时无法证明 path 不携带 opaque / session-like value。
             Log.d(
                 TAG,
-                "native-qq-shape " + describeQqHandoffShape(uri.path, uri.queryParameterNames, plan.hasSchemaCallback)
+                "native-qq-shape " + describeQqHandoffShape(
+                    pathPresent = !uri.path.isNullOrEmpty(),
+                    pathSegmentCount = uri.pathSegments.size,
+                    queryNames = uri.queryParameterNames,
+                    hasSchemaCallback = plan.hasSchemaCallback
+                )
             )
         }
         val rewriteToken = if (plan.rewrite == QqHandoffRewrite.REWRITE_ALLOWED) "applied" else "fallback"
@@ -569,9 +576,22 @@ class MainActivity : Activity() {
         Log.d(TAG, "auth-link-recovery shown state=NONE")
     }
 
+    /**
+     * 收起 recovery 提示（幂等）。
+     *
+     * 提示只在「当前 QQ auth transaction 可能回不到本 App」时有意义；一旦本 App 真的收到了受信任的
+     * auth return，这个前提就不成立，UI 必须撤回，否则会误导用户去改系统设置。
+     * 刻意**不**在普通页面 reload / gate 切换时调用：那时用户可能仍处在有风险的 auth flow 中。
+     */
+    private fun dismissAuthLinkRecovery() {
+        if (authLinkRecoveryBanner.visibility != View.VISIBLE) return
+        authLinkRecoveryBanner.visibility = View.GONE
+        Log.d(TAG, "auth-link-recovery dismissed reason=trusted-auth-return")
+    }
+
     /** 打开本 App 的「打开支持的链接」设置页；仅用户点击触发，不自动跳转、不自动改设置。 */
     private fun openAppLinkSettings() {
-        authLinkRecoveryBanner.visibility = View.GONE
+        dismissAuthLinkRecovery()
         val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             Intent(Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, Uri.parse("package:$packageName"))
         } else {
@@ -781,6 +801,7 @@ class MainActivity : Activity() {
         if (!verifyAuthReturn(intent, uri)) return false
         pendingAuthReturn = uri
         inAuthFlow = true
+        dismissAuthLinkRecovery()
         Log.d(TAG, "auth-return action=ALLOW_AUTH_RETURN source=app-link cold=true")
         return true
     }
@@ -795,6 +816,8 @@ class MainActivity : Activity() {
         inAuthFlow = true
         hideAllGates()
         webView.visibility = View.VISIBLE
+        // 受信任 auth return 已到达 ⇒ recovery 提示的前提消失。
+        dismissAuthLinkRecovery()
         Log.d(TAG, "auth-return action=ALLOW_AUTH_RETURN source=app-link hot=true")
         webView.post { webView.loadUrl(uri.toString()) }
         return true
