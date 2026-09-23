@@ -9,8 +9,8 @@ description: >
 
 # keycloak-upgrade
 
-本技能面向 WotbTools 的 Keycloak 升级：`quay.io/keycloak/keycloak` 镜像 + 两个自定义 Identity Provider SPI
-（`keycloak-wargaming-provider` / `keycloak-juhe-qq-provider`）+ 前端 `keycloak-js` + 后端 Admin REST 调用。
+本技能面向 WotbTools 的 Keycloak 升级：`quay.io/keycloak/keycloak` 镜像 + 自定义 Identity Provider SPI
+（`keycloak-wargaming-provider` / `keycloak-qq-provider`）+ 前端 `keycloak-js` + 后端 Admin REST 调用。
 
 ## 适用场景（Use Cases）
 
@@ -24,7 +24,7 @@ description: >
 
 ## 核心原则
 
-- **版本单一事实来源**：`docker/Dockerfile.keycloak` 的 FROM tag == 两个 provider pom 的 `<keycloak.version>` ==（建议）frontend `keycloak-js` major。
+- **版本单一事实来源**：`docker/Dockerfile.keycloak` 的 FROM tag == 各 provider pom 的 `<keycloak.version>` ==（建议）frontend `keycloak-js` major。
 - **自定义 SPI 是最大风险**：本项目的 provider 依赖 `keycloak-server-spi-private` 与 `keycloak-services`（内部 API），跨版本可能编译失败或运行期行为变化；升级 = 重编译 + 单测 + 真机冒烟。
 - **先读官方资料**：每次升级前查目标版本的 [Upgrading Guide](https://www.keycloak.org/docs/latest/upgrading/) 与 release notes，逐条对照本项目。
 - **Keycloak 不支持降级**：升级前必须备份 `keycloak`（与 `wotb`）数据库；回滚 = 旧镜像 + 数据库快照。
@@ -34,7 +34,7 @@ description: >
 ### Phase 0 — 盘点现状（只读）
 
 1. 运行 `python .agents/skills/keycloak-upgrade/scripts/check_versions.py` 列出所有版本引用并确认同步。
-2. 记录：镜像 tag、两个 pom 的 `keycloak.version`、frontend `keycloak-js`（`package.json` + `package-lock.json`）、后端 admin REST 调用点、`infra/tofu/keycloak/` 的 realm 声明。
+2. 记录：镜像 tag、各 provider pom 的 `keycloak.version`、frontend `keycloak-js`（`package.json` + `package-lock.json`）、后端 admin REST 调用点、`infra/tofu/keycloak/` 的 realm 声明。
 3. 确认目标版本与升级路径（patch/minor/major），必要时查官方 [endoflife / release info](https://endoflife.date/keycloak)。
 
 ### Phase 1 — 官方资料审查
@@ -47,8 +47,8 @@ description: >
 
 按 [references/spi-compat.md](references/spi-compat.md) 执行：
 
-- 两个 pom 的 `<keycloak.version>` 一起改，禁止只改一个。
-- `mvn -s java/settings.xml test`（在 `keycloak-juhe-qq-provider` 与 `keycloak-wargaming-provider` 各跑一次，JAVA_HOME → JDK21）。
+- 各 provider pom 的 `<keycloak.version>` 一起改，禁止只改一个。
+- `mvn -s java/settings.xml test`（在 `keycloak-wargaming-provider` 与 `keycloak-qq-provider` 各跑一次，JAVA_HOME → JDK21）。
 - 修复编译错误；特别留意 `org.keycloak.broker.provider.*`、`org.keycloak.models.*`、`org.keycloak.sessions.*` 的签名变化。
 - 确认 `META-INF/services/org.keycloak.broker.provider.IdentityProviderFactory` 注册文件未丢。
 - 跑现有单测（`WargamingRegionTest` / `WargamingIdentityProviderTest` / `WargamingEndpointTest` / `WargamingApiClientTest` / `KeycloakFakes`）。

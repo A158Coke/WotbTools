@@ -33,7 +33,7 @@ public class AdminUserController {
      *
      * @param segment  keycloak（默认，权威源为 Keycloak，可发现无本地资料的 Keycloak-only 用户）
      *                 或 local（权威源为本地 user_profile，暴露 Keycloak 侧已不存在的孤儿绑定）
-     * @param idpAlias 仅 keycloak segment 支持的身份提供方过滤（Juhe QQ cleanup 前提）
+     * @param idpAlias 仅 keycloak segment 支持的身份提供方过滤（第三方 IdP 用户清理前提）
      */
     @GetMapping
     public AdminUserPageDto searchUsers(

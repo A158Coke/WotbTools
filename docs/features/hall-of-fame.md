@@ -201,7 +201,7 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 - HoF 数据属于 **WotB 游戏账号**，不属于 Keycloak 用户：V22 后百场/三环的 canonical owner 是 `(wotb_server, wotb_account_id)`，单场 `hall_of_fame_record` 从一开始就按 `account_id` 归属（**无区服维度**，见下文「单场 HoF 的区服限制」）。
 - 仓库中**没有任何 FK 指向 `user_profile`**；`on delete cascade` 只出现在 replay processing 权威状态的域内组合关系上。因此删除 Keycloak 用户不会连带删除任何 HoF 行。
 - **删除用户必须走 WotBTools admin API**：`AdminUserService` 会先删本地 profile 再删 Keycloak 用户。绕过它直连 Keycloak 删除会留下**孤儿 profile**并阻塞后续重绑（`(wotb_server, wotb_account_id)` 唯一槽位仍被占用）；此时用 Admin Users 的 `segment=local` 找到这些孤儿绑定（行上 `keycloakUserMissing=true`）并删除以释放槽位。
-- 用户以全新 Keycloak 身份（例如旧 Juhe QQ 用户被删除后改用 Official QQ 重建）重新绑定**同一个 `(区服, WotB 账号)`** 后，其百场/三环数据自然重新关联，不需要任何数据修复；单场 `hall_of_fame_record` 只认账号 ID，因此换服同号会被误关联（见下节）。
+- 用户以全新 Keycloak 身份（例如旧第三方 IdP 用户被删除后改用 Official QQ 重建）重新绑定**同一个 `(区服, WotB 账号)`** 后，其百场/三环数据自然重新关联，不需要任何数据修复；单场 `hall_of_fame_record` 只认账号 ID，因此换服同号会被误关联（见下节）。
 
 ## V22 迁移契约（fail-fast preflight，不做任何自动消解）
 

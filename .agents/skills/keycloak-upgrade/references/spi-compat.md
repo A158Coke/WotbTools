@@ -2,17 +2,18 @@
 
 ## 项目中的 SPI 表面
 
-两个 provider 均为 `org.keycloak.broker.provider.IdentityProviderFactory` 实现（服务注册文件
-`META-INF/services/org.keycloak.broker.provider.IdentityProviderFactory`），由 Keycloak 启动时自动发现。
+本项目的自定义 provider 有两类，均为 `org.keycloak.broker.provider.IdentityProviderFactory` 实现
+（服务注册文件 `META-INF/services/org.keycloak.broker.provider.IdentityProviderFactory`），由 Keycloak 启动时自动发现：
+`keycloak-wargaming-provider` 与 `keycloak-qq-provider`（官方 QQ Connect，生产 alias `idp-qq`）。
 
-| 组件 | Wargaming provider | Juhe QQ provider |
-|------|--------------------|------------------|
-| Factory | `WargamingIdentityProviderFactory extends AbstractIdentityProviderFactory<WargamingIdentityProvider>` | `JuheQqIdentityProviderFactory extends AbstractIdentityProviderFactory<JuheQqIdentityProvider>` |
-| Provider | `WargamingIdentityProvider extends AbstractIdentityProvider<WargamingIdentityProviderConfig>` | `JuheQqIdentityProvider extends AbstractIdentityProvider<JuheQqIdentityProviderConfig>` |
-| Config | `WargamingIdentityProviderConfig extends IdentityProviderModel` | `JuheQqIdentityProviderConfig extends IdentityProviderModel` |
-| Callback endpoint | `WargamingEndpoint`（`@Path` JAX-RS，回调自 `prolongate` 服务端换取 token） | `JuheQqEndpoint`（JAX-RS 回调） |
-| 业务 API 客户端 | `WargamingApiClient`（`java.net.http.HttpClient` 调 `api.wotblitz.*`） | `JuheQqEndpoint` 内联 HTTP（`java.net.http.HttpClient` 调聚合 API） |
-| 测试 | `WargamingRegionTest` / `WargamingIdentityProviderTest` / `WargamingEndpointTest` / `WargamingApiClientTest` / `KeycloakFakes` | 无单测 |
+| 组件 | Wargaming provider | Official QQ provider |
+|------|--------------------|----------------------|
+| Factory | `WargamingIdentityProviderFactory` | `QQIdentityProviderFactory` |
+| Provider | `WargamingIdentityProvider` | `QQIdentityProvider` |
+| Config | `WargamingIdentityProviderConfig` | `QQIdentityProviderConfig` |
+| Callback endpoint | `WargamingEndpoint`（`@Path` JAX-RS，回调自 `prolongate` 服务端换取 token） | QQ Connect OAuth callback（`idp-qq` broker endpoint） |
+| 业务 API 客户端 | `WargamingApiClient`（`java.net.http.HttpClient` 调 `api.wotblitz.*`） | QQ Connect OpenAPI（`graph.qq.com`） |
+| 测试 | `WargamingRegionTest` / `WargamingIdentityProviderTest` / `WargamingEndpointTest` / `WargamingApiClientTest` / `KeycloakFakes` | `keycloak-qq-provider` 模块内单测 |
 
 ## 依赖的 Keycloak API（按破坏风险排序）
 

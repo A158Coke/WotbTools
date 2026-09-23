@@ -202,7 +202,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 ### 管理后台：用户管理（`/api/admin/users/**`，需 `wotbtools-admin`）
 
 - `GET /api/admin/users?query=&segment=&idpAlias=&page=0&size=25` — 用户列表，**服务端分页**，返回 `{items, page, size, totalItems, totalPages}`（`page` 0-based，`size` clamp 到 1..100）。**旧的 `?limit=` 参数已移除**（不再有 `limit=200` 的假分页）。
-  - `segment=keycloak`（默认）：权威源是 Keycloak realm users，本地 profile 按当前页做一次 IN 查询增强；**没有本地 profile 的 Keycloak-only 用户也能被找到并删除**（旧 Juhe QQ cleanup 的前提），支持 `idpAlias` 过滤。
+  - `segment=keycloak`（默认）：权威源是 Keycloak realm users，本地 profile 按当前页做一次 IN 查询增强；**没有本地 profile 的 Keycloak-only 用户也能被找到并删除**（历史第三方 IdP 用户清理的前提），支持 `idpAlias` 过滤。
   - `segment=local`：权威源是本地 `user_profile`，用于暴露 Keycloak 侧已不存在的**孤儿绑定**（行上 `keycloakUserMissing=true`），删除它可释放 `(wotb_server, wotb_account_id)` 唯一槽位。传 `idpAlias` → 400 `IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT`；未知 segment → 400 `INVALID_USER_SEGMENT`。
   - 列表行 DTO（`AdminUserListItemDto`，旧 `AdminUserDto` 已删除）：`keycloakUserId, keycloakUsername, keycloakEmail, keycloakEnabled, profileId, displayName, wotbAccountId, wotbNickname, wotbServer, profileCreatedAt, hasLocalProfile, keycloakUserMissing`。
   - 能力边界（Keycloak 无按 ids 批量查询用户的能力、admin-client 26.0.9 的 IdP 过滤重载缺口）见 [docs/auth/keycloak-admin-user-search.md](../docs/auth/keycloak-admin-user-search.md)。

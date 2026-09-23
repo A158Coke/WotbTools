@@ -106,7 +106,7 @@ public class KeycloakAdminUserService {
     }
 
     /**
-     * 按 IdP alias 分页检索用户（Juhe QQ cleanup 的筛选前提）。
+     * 按 IdP alias 分页检索用户（第三方 IdP 用户清理的筛选前提）。
      *
      * <p>admin-client 26.0.9 的列表重载没有「自由文本 search + idpAlias」的组合，
      * 因此文本条件走 {@code username} 维度；{@link #countUsersByIdpAlias} 必须使用同一维度，
