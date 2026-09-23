@@ -640,10 +640,10 @@ Yecao parser-worker 作为唯一执行面服务必须保持无状态：选中它
 Keycloak 的 `wotbtools-e2e` 机器身份（client_credentials，唯一 realm role `wotbtools-user`，secret 由
 `KEYCLOAK_E2E_CLIENT_SECRET` 注入）驱动真实业务链并逐项给出 PASS/FAIL：`processing-e2e`
 （上传 staged 回放 → 分布式链路 → READY）、`dataset-result`、`map-overview`、`battle-playback-v2`、
-`minio`、`ai-facts`、`export`、`hof-replay-storage`、`parser-worker`、`admin-authz`，以及
-`business-data-integrity`（`hall_of_fame_record` 的 identity sequence 不得落后于 `max(id)`）与公网
+`minio`、`ai-facts`、`export`、`hof-replay-storage`、`parser-worker`、`admin-authz`，以及公网
 边缘断言（`public-tls-web` / `public-tls-auth`，要求 host 解析到 TX 地址 + 受信任证书 + 2xx）。
-检查全程不关闭 TLS 校验、不使用 `-k`；对基础设施与用户数据只读，唯一
+`business-data-integrity` 已随 cutover machinery 退役（其 Yecao 冻结行数快照输入不可再生），
+不保留替代检查。检查全程不关闭 TLS 校验、不使用 `-k`；对基础设施与用户数据只读，唯一
 写入是 TTL 自动回收的瞬时 job；任一 token 失败即 `TX_RUNTIME_NOT_READY`。
 Caddy 已是生产公网入口（默认 `0.0.0.0:80` / `0.0.0.0:443`
 tcp + udp），但没有固定容器地址：readiness surface 通过 Docker service DNS

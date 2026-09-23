@@ -1281,8 +1281,7 @@ for token in \
   'auth-token' 'tx-control-plane' 'anonymous-rejected' \
   'admin-authz' 'business-profile' 'business-hof' \
   'hof-replay-storage' 'parser-worker' 'processing-e2e' 'dataset-result' \
-  'map-overview' 'battle-playback-v2' 'minio' 'ai-facts' 'export' \
-  'business-data-integrity'; do
+  'map-overview' 'battle-playback-v2' 'minio' 'ai-facts' 'export'; do
   grep -Fq "e2e_emit $token" "$TX_DIR/deploy.sh" \
     || fail "runtime E2E check lost required token: $token"
 done
@@ -1298,6 +1297,8 @@ for contract in \
 done
 ! grep -Fq 'WOTB_E2E_DATA_SNAPSHOT' "$TX_DIR/deploy.sh" \
   || fail "the migration-only row-count snapshot input must be gone"
+! grep -Fq 'business-data-integrity' "$TX_DIR/deploy.sh" \
+  || fail "the retired business-data-integrity token must be gone"
 ! grep -Fq 'WOTB_CUTOVER_PHASE' "$TX_DIR/deploy.sh" \
   || fail "the cutover phase selector must be gone"
 ! grep -Fq 'openid-connect/token' <<< "$(sed -n '/^business_e2e_check()/,/^}/p' "$TX_DIR/deploy.sh")" \
