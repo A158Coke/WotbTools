@@ -1425,6 +1425,9 @@
     "league_exchange_score": "换血",
     "league_assist_score": "助攻"
   },
+  "technicalEvolution": {
+    "btn": "技术演进"
+  },
   "history": {
     "btn": "项目历史"
   }

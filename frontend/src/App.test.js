@@ -25,6 +25,7 @@ vi.mock('./components/HomePage.vue', () => ({ default: { template: '<div data-te
 vi.mock('./components/HoFPage.vue', () => ({ default: { template: '<div data-test="view-hof" />' } }))
 vi.mock('./components/AndroidDownloadPage.vue', () => ({ default: { template: '<div data-test="view-android" />' } }))
 vi.mock('./components/HistoryPage.vue', () => ({ default: { template: '<div data-test="view-history" />' } }))
+vi.mock('./components/TechnicalEvolutionPage.vue', () => ({ default: { template: '<div data-test="view-technical-evolution" />' } }))
 
 const authState = vi.hoisted(() => ({
   authenticated: false,
