@@ -1,6 +1,6 @@
-// 用户域 + 站内通知 transport（原 api-boost.js 中真正的用户域部分）。
+// 用户域 transport（原 api-boost.js 中真正的用户域部分）。
 //
-// Boost 产品域已下线；本模块只承载 `user` 域端点（profile / wotb-account / notifications），
+// Boost 产品域已下线；本模块只承载 `user` 域端点（profile / wotb-account），
 // 与后端 `com.wotb.web.user` 域一一对应。鉴权与错误语义与迁移前逐字一致：
 // 401 ⇒ 触发 login 并抛出可解析错误；204 ⇒ null；其余非 2xx ⇒ 抛出可解析错误。
 import { useAuth } from '../composables/useAuth.js'
@@ -56,21 +56,4 @@ export async function syncUserWotbAccountFromLogin() {
 
 export async function getUserHofRecords() {
   return userHandle(await apiFetch('/api/users/profile/records', { headers: await userJsonHeaders() }))
-}
-
-// ========== Notifications ==========
-export async function listNotifications() {
-  return userHandle(await apiFetch('/api/users/notifications', { headers: await userJsonHeaders() }))
-}
-
-export async function getUnreadNotificationCount() {
-  return userHandle(await apiFetch('/api/users/notifications/unread-count', { headers: await userJsonHeaders() }))
-}
-
-export async function markNotificationRead(id) {
-  return userHandle(await apiFetch(`/api/users/notifications/${encodeURIComponent(id)}/read`, { method: 'PATCH', headers: await userJsonHeaders() }))
-}
-
-export async function markAllNotificationsRead() {
-  return userHandle(await apiFetch('/api/users/notifications/read-all', { method: 'PATCH', headers: await userJsonHeaders() }))
 }

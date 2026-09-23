@@ -416,15 +416,9 @@ html[data-ui-profile="classic"] .profile-page .btn-ghost {border-color: var(--bo
 html[data-ui-profile="classic"] .profile-page .btn-ghost:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
 html[data-ui-profile="classic"] .profile-page .btn-ghost:disabled {background: var(--bg-list-hover) !important}
 
-/* ---- ContactPage copy 按钮 / Profile 通知行（scoped 写死深底/深 hover，Classic 补覆盖） ---- */
+/* ---- ContactPage copy 按钮（scoped 写死深底/深 hover，Classic 补覆盖） ---- */
 html[data-ui-profile="classic"] .contact-page .copy-btn {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
 html[data-ui-profile="classic"] .contact-page .copy-btn:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
-html[data-ui-profile="classic"] .profile-page .notification-item {background: var(--bg-card) !important; border-color: var(--border-light) !important}
-html[data-ui-profile="classic"] .profile-page .notification-item:hover {background: var(--bg-list-hover) !important}
-html[data-ui-profile="classic"] .profile-page .notification-item.unread {background: color-mix(in srgb, var(--accent) 8%, var(--bg-card)) !important; border-color: var(--accent) !important}
-html[data-ui-profile="classic"] .profile-page .notification-item .notification-title {color: var(--text-heading) !important}
-html[data-ui-profile="classic"] .profile-page .notification-item .notification-msg {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .profile-page .notification-item .notification-time {color: var(--text-muted) !important}
 
 /* ---- Classic 对比度收尾：组件 scoped 写死的浅色文字落在浅色面上（Admin Users / Contact / Profile） ---- */
 
