@@ -954,10 +954,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/tofu-plan-root"
-          tar -C "$ROOT_DIR" --exclude=.terraform --exclude=.tofu-data -czf "$RUNNER_TEMP/tofu-plan-root/root.tgz" .
-          cp scripts/ci/remote-tofu-plan.sh "$RUNNER_TEMP/tofu-plan-root/remote-tofu-plan.sh"
-          chmod 700 "$RUNNER_TEMP/tofu-plan-root/remote-tofu-plan.sh"
+          # The bundle must live inside the workspace: scp-action resolves `source`
+          # relative to the checkout, so a $RUNNER_TEMP path is never uploaded and
+          # the remote step fails on a missing root.tgz.
+          bundle="$GITHUB_WORKSPACE/tofu-plan-bundle"
+          rm -rf -- "$bundle"
+          mkdir -p "$bundle"
+          tar -C "$ROOT_DIR" --exclude=.terraform --exclude=.tofu-data -czf "$bundle/root.tgz" .
+          cp scripts/ci/remote-tofu-plan.sh "$bundle/remote-tofu-plan.sh"
+          chmod 700 "$bundle/remote-tofu-plan.sh"
       - name: Stage selected root on its runtime host
         if: ${{ env.TRUSTED_PRODUCTION_RUN == 'true' && matrix.root != 'cos' && matrix.root != 'grafana' }}
         uses: appleboy/scp-action@v1
@@ -966,7 +971,7 @@ jobs:
           username: ${{ matrix.root == 'minio' && secrets.VPS_USER || secrets.TX_VPS_USER }}
           port: ${{ matrix.root == 'minio' && secrets.VPS_PORT || secrets.TX_VPS_PORT }}
           key: ${{ matrix.root == 'minio' && secrets.VPS_SSH_KEY || secrets.TX_VPS_SSH_KEY }}
-          source: ${{ runner.temp }}/tofu-plan-root/*
+          source: tofu-plan-bundle/*
           target: ${{ matrix.root == 'minio' && '/opt/wotb/tofu-pr/' || '/opt/wotb-tx/tofu-pr/' }}${{ github.event.pull_request.number }}/${{ github.sha }}/${{ matrix.root }}/
           overwrite: true
       - name: Expand root and run guarded read-only production-state plan

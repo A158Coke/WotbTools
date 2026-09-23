@@ -74,6 +74,23 @@ assert 'settings.xml' not in re.sub(r'settings-ci\.xml', '', ci_text)
 assert ci_text.count('-s settings-ci.xml') == 4
 assert ci_text.count('-s ../java/settings-ci.xml') == 2
 assert '-s settings.xml' not in ci_text
+
+# scp-action resolves `source` against the checkout, so an absolute runner path
+# uploads nothing and the remote plan dies on a missing root.tgz. The bundle must
+# therefore be written inside the workspace under the same file name the remote
+# step extracts.
+plan_steps=ci['jobs']['tofu_plans']['steps']
+bundle=[step for step in plan_steps if step.get('name')=='Bundle one selected root and read-only planner']
+assert len(bundle)==1, 'the tofu plan matrix must bundle one root for its host'
+assert 'GITHUB_WORKSPACE/tofu-plan-bundle' in bundle[0]['run'], bundle[0]['run']
+assert 'root.tgz' in bundle[0]['run'], bundle[0]['run']
+scp=[step for step in plan_steps if str(step.get('uses','')).startswith('appleboy/scp-action')]
+assert len(scp)==1, 'the tofu plan matrix must stage exactly one bundle over scp'
+assert scp[0]['with']['source']=='tofu-plan-bundle/*', scp[0]['with']['source']
+for step in plan_steps:
+    script=str(step.get('with', {}).get('script', ''))
+    if 'remote-tofu-plan.sh' in script:
+        assert 'root.tgz' in script, step['name']
 print('CI/Build/Deploy/Tofu/Release workflow contracts OK')
 PY
 
