@@ -1,16 +1,23 @@
+# `idp-qq` owns the QQ App Key as plain desired state. The write-only pair is
+# deliberately not used: the provider only sends a write-only secret when its
+# companion rotation version changes, so that shape makes a version (or an
+# equivalent counter/hash) the owner of "did the secret change?". The QQ App Key
+# has exactly one source of truth - the value the TX deployment injects - so the
+# secret is ordinary desired state here: every plan diffs the injected value
+# against state and every apply converges idp-qq to it.
 resource "keycloak_oidc_identity_provider" "qq" {
-  realm                    = keycloak_realm.wotbtools.id
-  alias                    = "idp-qq"
-  display_name             = "QQ"
-  provider_id              = "qq"
-  client_id                = var.qq_client_id
-  client_secret_wo         = var.qq_client_secret
-  client_secret_wo_version = var.qq_client_secret_version
-  enabled                  = var.qq_enabled
-  authorization_url        = "https://graph.qq.com/oauth2.0/authorize"
-  token_url                = "https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1"
-  user_info_url            = "https://graph.qq.com/user/get_user_info"
-  default_scopes           = "get_user_info"
+  realm         = keycloak_realm.wotbtools.id
+  alias         = "idp-qq"
+  display_name  = "QQ"
+  provider_id   = "qq"
+  client_id     = var.qq_client_id
+  client_secret = var.qq_client_secret
+  enabled       = var.qq_enabled
+
+  authorization_url = "https://graph.qq.com/oauth2.0/authorize"
+  token_url         = "https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1"
+  user_info_url     = "https://graph.qq.com/user/get_user_info"
+  default_scopes    = "get_user_info"
 
   extra_config = {
     clientAuthMethod = "client_secret_post"
