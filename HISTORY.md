@@ -428,6 +428,8 @@ Android QQ 登录的认证连续性此前完全依赖 Verified App Link：QQ 原
 
 本次开始把两件事分开处理：**domain verification 的健康诊断**（只诊断、不阻塞登录，并给出一次可操作的恢复提示）与 **native-return ownership**（让回程可以由 App 自有 scheme 承担）。在取得真机 URI 形状证据之前，生产行为保持不变：继续沿用 QQ 原始握手 URI，Verified App Link 仍是当前唯一在产的回程路径，但不再是设计中唯一被依赖的机制。
 
+**Git 证据：** `ef3022e9`（阶段一，PR #375）。
+
 ---
 
 ## 当前架构形成的三条长期主线
