@@ -51,6 +51,7 @@
 | `frontend/architecture.md` | 改 Vue 应用壳、路由、依赖方向或状态 ownership 时 |
 | `frontend/replay-workspace.md` | 改 Replay Workspace capability、selection 或 dataset 边界时 |
 | `frontend/ui-system.md` | 改 UI Profile、token、layout primitive 或响应式规则时 |
+| `architecture/TECHNICAL_EVOLUTION.md` | 查技术决策、authority / boundary、分布式 Replay 与双云架构的 canonical 演进时 |
 | `architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt / 双 Call / Team Autopsy 时 |
 | `architecture/replay-pipeline.md` | 改回放重建 / decoder / 事件流时 |
 | `architecture/battle-timeline.md` | 改 battle timeline 事件模型 / 时间轴聚合时 |
@@ -131,6 +132,7 @@
 | 文档 | 何时读 |
 |---|---|
 | `../HISTORY.md` | 查关键产品方向、架构边界、身份模型、Replay / Evidence 与生产拓扑的历史演进时；Git 保留逐提交细节 |
+| `architecture/TECHNICAL_EVOLUTION.md` | 查技术架构决策的 canonical timeline、当前 authority model 与已退役迁移机制时 |
 
 ## Roadmap（路线图）
 

@@ -6,6 +6,7 @@ import HoFAdminPage from '../components/HoFAdminPage.vue'
 import ProfilePage from '../components/ProfilePage.vue'
 import AdminUsersPage from '../components/AdminUsersPage.vue'
 import HistoryPage from '../components/HistoryPage.vue'
+import TechnicalEvolutionPage from '../components/TechnicalEvolutionPage.vue'
 import ContactPage from '../components/ContactPage.vue'
 import AndroidDownloadPage from '../components/AndroidDownloadPage.vue'
 
@@ -23,6 +24,7 @@ export const VIEW_COMPONENTS = Object.freeze({
   profile: ProfilePage,
   'admin-users': AdminUsersPage,
   history: HistoryPage,
+  'technical-evolution': TechnicalEvolutionPage,
   contact: ContactPage,
   android: AndroidDownloadPage,
   'playback-qa': PlaybackQaPage,
