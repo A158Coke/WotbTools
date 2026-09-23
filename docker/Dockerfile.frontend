@@ -11,6 +11,8 @@ COPY common/tankopedia-tier10.json /common/tankopedia-tier10.json
 COPY common/assets /common/assets
 # 站点直接展示的项目历史：HistoryPage 构建期以 ?raw 读取（.dockerignore 显式放行）
 COPY HISTORY.md /HISTORY.md
+# Canonical 技术演进：TechnicalEvolutionPage 构建期以 ?raw 读取
+COPY docs/architecture/TECHNICAL_EVOLUTION.md /docs/architecture/TECHNICAL_EVOLUTION.md
 # League Rating V6 canonical 文档：RatingDocsPage 构建期以 ?raw 读取（.dockerignore 显式放行）
 COPY docs/WotBTools_League_Rating_V6.md /docs/WotBTools_League_Rating_V6.md
 ENV BUILD_COMMIT=${BUILD_COMMIT}
