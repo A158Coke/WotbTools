@@ -189,23 +189,23 @@ for probe in \
   grep -Fq "$probe" "$TX_DIR/deploy.sh" \
     || fail "TX deploy must probe the Caddy internal readiness route by service name: $probe"
 done
-# The cutover gate must never disable TLS verification to look green.
+# The runtime check must never disable TLS verification to look green.
 ! grep -Eq '(^|[[:space:]])(-k|--insecure)([[:space:]]|$)' "$TX_DIR/deploy.sh" \
-  || fail "the cutover gate must never disable TLS verification"
+  || fail "the runtime check must never disable TLS verification"
 grep -Fq 'edge_tls_probe' "$TX_DIR/deploy.sh" \
-  || fail "the cutover gate must probe the public edge with verification enabled"
-for token in public-edge-sni-web public-edge-sni-auth public-tls-web public-tls-auth; do
+  || fail "the runtime check must probe the public edge with verification enabled"
+for token in public-tls-web public-tls-auth; do
   grep -Fq "$token" "$TX_DIR/deploy.sh" \
-    || fail "the cutover gate lost public edge token: $token"
+    || fail "the runtime check lost public edge token: $token"
 done
-grep -Fq 'public_edge_sni_check' "$TX_DIR/deploy.sh" \
-  || fail "the pre-DNS phase must prove edge SNI reachability without claiming trusted TLS"
+! grep -Fq 'public-edge-sni' "$TX_DIR/deploy.sh" \
+  || fail "the retired SNI-only edge phase must be gone"
 grep -Fq 'public_tls_check' "$TX_DIR/deploy.sh" \
-  || fail "the post-DNS phase must prove trusted public TLS"
-grep -Fq 'POST_CUTOVER_READY' "$TX_DIR/deploy.sh" \
-  || fail "the post-DNS phase must emit its own verdict"
-grep -Fq 'post-cutover' "$TX_DIR/pre-cutover-check.sh" \
-  || fail "the gate entry point must expose the post-DNS phase"
+  || fail "the runtime check must prove trusted public TLS"
+grep -Fq 'tx_runtime_check' "$TX_DIR/runtime-check.sh" \
+  || fail "the runtime check entry point must call the shared TX runtime check"
+grep -Fq 'TX_RUNTIME_READY' "$TX_DIR/deploy.sh" \
+  || fail "the runtime check must emit its own verdict"
 grep -Fq 'assert_routing_boundary "$EFFECTIVE_COMPOSE"' "$TX_DIR/deploy.sh" \
   || fail "TX deploy must fail closed on the routing and execution-plane boundary before staging"
 grep -Fq './assets/auth/.well-known/assetlinks.json:/srv/.well-known/assetlinks.json:ro' "$COMPOSE" \
@@ -1157,7 +1157,7 @@ grep -Fq 'up -d --no-deps --force-recreate caddy' "$normal_keycloak_log" \
   || fail "Normal Keycloak deployment must preserve Caddy recreation"
 
 # The frontend upstream is now pinned to the TX-internal business runtime. Every
-# rejected value below is a real regression this cutover must not allow: the
+# rejected value below is a real regression the routing boundary must not allow: the
 # retired Yecao WireGuard address, a public host, a wrong port, and a wrong host.
 run_upstream_case() {
   local label="$1" upstream="$2" expect_rc="$3" log output rc
@@ -1274,9 +1274,9 @@ grep -Fq '"business-api"' "$WORK/business-api/tx-production-release.json" \
 grep -Fq '"keycloak"' "$WORK/business-api/tx-production-release.json" \
   || fail "business-api deployment must preserve other TX service metadata"
 
-# ---------------------------------------------------------------- cutover E2E
-# The gate must expose the full business-E2E token set, and every instrument it
-# depends on (probe-mounted fixtures, machine identity, snapshot) must be wired.
+# ---------------------------------------------------------------- runtime E2E
+# The runtime check must expose the full business-E2E token set, and every
+# instrument it depends on (probe-mounted fixtures, machine identity) must be wired.
 for token in \
   'auth-token' 'tx-control-plane' 'anonymous-rejected' \
   'admin-authz' 'business-profile' 'business-hof' \
@@ -1284,7 +1284,7 @@ for token in \
   'map-overview' 'battle-playback-v2' 'minio' 'ai-facts' 'export' \
   'business-data-integrity'; do
   grep -Fq "e2e_emit $token" "$TX_DIR/deploy.sh" \
-    || fail "cutover E2E gate lost required token: $token"
+    || fail "runtime E2E check lost required token: $token"
 done
 for contract in \
   'KEYCLOAK_E2E_CLIENT_SECRET' \
@@ -1292,34 +1292,37 @@ for contract in \
   'wait_for_probe tx-business-api' \
   'presign_minio_url GET' \
   'WOTB_E2E_REPLAY_PATH' \
-  'WOTB_E2E_DATA_SNAPSHOT' \
   '--resolve "$host:443:$E2E_PUBLIC_IP"'; do
   grep -Fq -- "$contract" "$TX_DIR/deploy.sh" \
-    || fail "cutover E2E gate lost required contract: $contract"
+    || fail "runtime E2E check lost required contract: $contract"
 done
+! grep -Fq 'WOTB_E2E_DATA_SNAPSHOT' "$TX_DIR/deploy.sh" \
+  || fail "the migration-only row-count snapshot input must be gone"
+! grep -Fq 'WOTB_CUTOVER_PHASE' "$TX_DIR/deploy.sh" \
+  || fail "the cutover phase selector must be gone"
 ! grep -Fq 'openid-connect/token' <<< "$(sed -n '/^business_e2e_check()/,/^}/p' "$TX_DIR/deploy.sh")" \
   || grep -Fq 'client_credentials' <<< "$(sed -n '/^business_e2e_check()/,/^}/p' "$TX_DIR/deploy.sh")" \
-  || fail "cutover E2E gate must authenticate with client_credentials"
+  || fail "runtime E2E check must authenticate with client_credentials"
 grep -Fq 'files=@$E2E_REPLAY_PATH' "$TX_DIR/deploy.sh" \
-  || fail "cutover E2E gate must upload the staged replay fixture"
+  || fail "runtime E2E check must upload the staged replay fixture"
 grep -Fq '${TX_RUNTIME_ROOT:?TX_RUNTIME_ROOT is required}/e2e:/e2e:ro' "$COMPOSE" \
   || fail "health-probe must mount the staged E2E fixtures read-only"
 grep -Fq 'mkdir -p "$TX_RUNTIME_ROOT/e2e"' "$TX_DIR/deploy.sh" \
   || fail "TX deploy must create the E2E fixture directory"
 grep -Fq 'common/fixtures/replays' "$ROOT/.github/workflows/deploy.yml" \
-  || fail "Deploy must stage the cutover E2E replay fixtures onto TX"
+  || fail "Deploy must stage the runtime E2E replay fixtures onto TX"
 grep -Fq 'KEYCLOAK_E2E_CLIENT_SECRET' "$ROOT/.github/workflows/deploy.yml" \
-  || fail "Deploy must forward the cutover E2E client secret to the Keycloak OpenTofu apply"
+  || fail "Deploy must forward the runtime E2E client secret to the Keycloak OpenTofu apply"
 grep -Fq 'keycloak_openid_client_service_account_realm_role' "$ROOT/infra/tofu/keycloak/roles.tf" \
-  || fail "the cutover E2E identity must be granted its realm role explicitly"
+  || fail "the runtime E2E identity must be granted its realm role explicitly"
 grep -Fq 'keycloak_openid_client.e2e' "$ROOT/infra/tofu/keycloak/validate-plan.sh" \
-  || fail "the plan guard must protect the cutover E2E client"
+  || fail "the plan guard must protect the runtime E2E client"
 grep -Fq 'TF_VAR_e2e_client_secret' "$TX_DIR/keycloak-tofu.sh" \
-  || fail "the Keycloak OpenTofu runner must forward the cutover E2E secret"
-! grep -Eq '(nsupdate|route53|cloudflare|gcloud dns|az network dns)' <<< "$(sed -n '/^public_edge_check()/,/^}/p' "$TX_DIR/deploy.sh")" \
-  || fail "the public edge preflight must never change DNS"
+  || fail "the Keycloak OpenTofu runner must forward the runtime E2E secret"
+! grep -Eq '(nsupdate|route53|cloudflare|gcloud dns|az network dns)' <<< "$(sed -n '/^tx_runtime_check()/,/^}/p' "$TX_DIR/deploy.sh")" \
+  || fail "the TX runtime check must never change DNS"
 
-# The gate reads MinIO with an ad-hoc SigV4 presign. Prove the signature is real
+# The check reads MinIO with an ad-hoc SigV4 presign. Prove the signature is real
 # against a disposable MinIO instead of trusting the implementation.
 if command -v docker >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
   docker rm -f "$MINIO_CONTAINER" >/dev/null 2>&1 || true
