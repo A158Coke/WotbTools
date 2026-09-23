@@ -1,28 +1,30 @@
 # 产品路线图（Roadmap）
 
-> 产品方向（非工程 checklist）。未完成的工程任务以 GitHub Issues 追踪：
-> [#78](https://github.com/A158Coke/WotbTools/issues/78) 大批量回放预览性能 · [#79](https://github.com/A158Coke/WotbTools/issues/79) Excel 导出结构快照测试 ·
-> [#80](https://github.com/A158Coke/WotbTools/issues/80) 版本发布清单 · [#81](https://github.com/A158Coke/WotbTools/issues/81) 用户 FAQ。
-> 已完成项见 `CHANGELOG-PRODUCT.md`；技术侧变更见 `CHANGELOG.md`。
+> 这里只记录尚未完成或仍在研究的产品方向。已完成的历史演进见 `../HISTORY.md`；具体工程任务以 GitHub Issues / Pull Requests 为准。
 
 ## Now
 
-- 主线功能（回放解析与 Excel 导出 · 排行榜 · 战斗表现分析 · AI 战术复盘 · 陪练与打手管理）已上线，持续稳定性与体验优化。
+- 稳定当前 Replay Workspace、AI Review、Battle Playback、Hall of Fame 与分布式 Replay Processing 生产链路。
+- 持续降低 Replay 事实模型中的 UNKNOWN / heuristic 范围，但只在存在可验证证据时提升语义等级。
+- 完成当前认证入口与生产身份配置的稳定化，保持普通用户通过受控 IdP 登录。
 
 ## Next
 
-- 暂无明确近期产品项。
+- 暂无需要在 Roadmap 中冻结的近期大型产品项；具体执行工作以 GitHub Issues / Pull Requests 为准。
 
 ## Later
 
-- **战术地图编辑器**：获取 WoT Blitz 鸟瞰视角地图，允许玩家编辑创建战术图（箭头 / 标记 / 文字标注），支持导出与分享。
+- **战术地图编辑器**：基于现有地图资产与语义数据，允许玩家制作箭头、标记和文字战术图，并支持导出与分享。
 
 ## Research
 
-- **进场满血覆盖率**：已对 `OBSERVED_EXACT` 车辆使用回放实测进场满血；后续扩大可证明覆盖率，减少对车辆库基础 HP 的回退，提升战斗表现指标精度（车辆库也缺失时 fail-closed，不再硬编码 2400）。
-- **战斗表现指标回归**：用真实比赛批量样本校验贡献度 / KAST / Impact 等派生指标的分布与口径。
-- **战术地图数据来源**：游戏提取 / 截图拼接 / 社区资源。
+- **进场满血覆盖率**：继续用真实 Replay 扩大可证明覆盖率，减少车辆基础 HP fallback；证据不足时保持 fail-closed。
+- **战斗表现指标回归**：使用真实比赛批量样本验证贡献度、KAST、Impact 等派生指标的分布与口径。
+- **Replay Protocol**：继续将逆向结论收敛到 Canonical Replay Facts；未证明字段保持 UNKNOWN 或 version-gated。
+- **AI Review 质量**：继续扩展 Evidence Contract、Evaluation Harness 与回归案例，避免把外部知识或模型推断当成 Replay 事实。
 
 ## Not planned
 
-- 暂无明确排除项，随产品迭代补充。
+- 不重新建立已经退役的代练业务。
+- 不恢复 TX 本地 Replay Parsing；生产 Replay Processing 保持 Control Plane / Parser Worker 分离。
+- 不维护第二套 Replay Parser、Rating 事实源或 AI 专用解析链。
