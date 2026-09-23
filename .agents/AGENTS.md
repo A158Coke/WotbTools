@@ -23,7 +23,7 @@
 
 1. **Plan-First** — 代码改动前先出 plan（范围/影响/风险），待用户批准后执行。小修小补（bug fix、CSS、i18n 缺漏）可跳过。
 2. **Feature 流程** — feature 类/大范围改动：grill-me（需求澄清）→ plan-designer（方案设计）→ plan 写入 `docs/current-plan.md` → 等批准 → 执行 → Review-Fix 闭环 → 审查报告。未批准不得编码。
-3. **改动即更新文档** — 影响界面/导出/数据/构建的改动，同提交更新 CHANGELOG、CHANGELOG-PRODUCT、DEVELOPER_GUIDE、相关 README、`docs/current-plan.md`（任务状态）。
+3. **改动即更新文档** — 影响界面、导出、数据、构建、用法或运维时，同提交更新对应的 canonical 专题文档、DEVELOPER_GUIDE 或 README。`HISTORY.md` 只记录具有长期产品、架构或工程意义的演进，不作为逐提交 CHANGELOG；临时计划只在任务确实需要时维护。
 4. **跨层一致** — 列 key（snake_case）API/前端/导出三方一致；显示名前端三语 locale + 导出两处一致。跨层改动走 `.agents/skills/wotb-sync/SKILL.md`（单一事实源）；增删列再走 `column-sync`。
 5. **API 纯英文** — 只回 key+数据；中文归前端/导出。
 5a. **HTTP Contract First** — FE ↔ BE 序列化契约唯一事实源是 `contracts/http/openapi.yaml`；generated FE transport 不手改，domain enum 必须显式映射，旧 artifact 兼容只放读取边界。`java/wotb-contracts` 仍是独立 Control ↔ Worker contract。

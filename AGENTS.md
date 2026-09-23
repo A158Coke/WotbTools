@@ -28,5 +28,4 @@ column-sync · wotb-sync · fallow · finish-task · keycloak-upgrade
 
 ## 文档入口
 
-README.md · docs/README.md（文档索引）· docs/DEVELOPER_GUIDE.md · docs/CHANGELOG.md · docs/CHANGELOG-PRODUCT.md ·
-docs/ROADMAP.md
+README.md · HISTORY.md（项目演进）· docs/README.md（文档索引）· docs/DEVELOPER_GUIDE.md · docs/ROADMAP.md
