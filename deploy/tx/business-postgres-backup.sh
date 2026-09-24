@@ -9,7 +9,7 @@ umask 077
 readonly COMPOSE_FILE_DEFAULT="/opt/wotb-tx/deploy/docker-compose.yml"
 readonly COMPOSE_SERVICE_DEFAULT="business-postgres"
 readonly BACKUP_ROOT_DEFAULT="/opt/wotb-tx/backups/business-postgres"
-readonly SOURCE_DATABASE="wotb"
+readonly DEFAULT_DATABASES=("wotb" "tofu_state")
 
 compose_file="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_FILE:-$COMPOSE_FILE_DEFAULT}"
 compose_service="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_SERVICE:-$COMPOSE_SERVICE_DEFAULT}"
@@ -20,9 +20,10 @@ container_override="${WOTB_TX_BUSINESS_POSTGRES_CONTAINER:-}"
 backup_root="${WOTB_TX_BUSINESS_POSTGRES_BACKUP_ROOT:-$BACKUP_ROOT_DEFAULT}"
 retention_minutes="${WOTB_TX_BUSINESS_POSTGRES_BACKUP_RETENTION_MINUTES:-10080}"
 admin_user="${TX_BUSINESS_POSTGRES_ADMIN_USER:-wotb}"
-database="${TX_BUSINESS_DB_NAME:-$SOURCE_DATABASE}"
+databases_csv="${WOTB_TX_BUSINESS_POSTGRES_BACKUP_DATABASES:-}"
 skip_retention="false"
 temporary_file=""
+temporary_checksum_file=""
 
 usage() {
   cat >&2 <<'EOF'
@@ -31,7 +32,8 @@ Usage: business-postgres-backup.sh [--compose-file PATH] [--backup-root DIR]
 
 Environment:
   TX_BUSINESS_POSTGRES_ADMIN_USER      bootstrap administrator (default wotb)
-  TX_BUSINESS_DB_NAME                  source database (default wotb)
+  WOTB_TX_BUSINESS_POSTGRES_BACKUP_DATABASES comma-separated database list
+                                       (default wotb,tofu_state)
   WOTB_TX_BUSINESS_POSTGRES_CONTAINER  target container instead of Compose
 
 The backup is written to <backup-root>/<database>-<UTC timestamp>.dump with a
@@ -42,6 +44,9 @@ EOF
 cleanup() {
   if [ -n "$temporary_file" ] && [ -f "$temporary_file" ]; then
     rm -f -- "$temporary_file"
+  fi
+  if [ -n "$temporary_checksum_file" ] && [ -f "$temporary_checksum_file" ]; then
+    rm -f -- "$temporary_checksum_file"
   fi
 }
 
@@ -79,8 +84,20 @@ done
 
 [[ "$retention_minutes" =~ ^[1-9][0-9]*$ ]] \
   || { echo "Retention minutes must be a positive integer." >&2; exit 2; }
-[[ "$database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
-  || { echo "Unsupported database name: $database" >&2; exit 2; }
+if [ -n "$databases_csv" ]; then
+  IFS=, read -r -a databases <<< "$databases_csv"
+else
+  databases=("${DEFAULT_DATABASES[@]}")
+fi
+[ "${#databases[@]}" -gt 0 ] || { echo "At least one database is required." >&2; exit 2; }
+declare -A seen_databases=()
+for database in "${databases[@]}"; do
+  [[ "$database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
+    || { echo "Unsupported database name in backup selection." >&2; exit 2; }
+  [[ -z "${seen_databases[$database]:-}" ]] \
+    || { echo "Duplicate database in backup selection: $database" >&2; exit 2; }
+  seen_databases["$database"]=1
+done
 command -v docker >/dev/null 2>&1 || { echo "docker is required." >&2; exit 1; }
 command -v flock >/dev/null 2>&1 || { echo "flock is required for a safe backup lock." >&2; exit 1; }
 if [ -z "$container_override" ]; then
@@ -111,44 +128,41 @@ else
   docker compose -p "$project_name" -f "$compose_file" up -d "$compose_service" >/dev/null
 fi
 
-ready="false"
-for _ in $(seq 1 30); do
-  if db_exec pg_isready -U "$admin_user" -d "$database" >/dev/null 2>&1; then
-    ready="true"
-    break
-  fi
-  sleep 2
-done
-[ "$ready" = "true" ] || { echo "Business PostgreSQL did not become ready: $database" >&2; exit 1; }
-
 timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
-backup_file="$backup_root/${database}-${timestamp}.dump"
-if [ -e "$backup_file" ]; then
-  echo "Refusing to overwrite an existing backup: $backup_file" >&2
-  exit 1
-fi
-temporary_file="${backup_file}.tmp.$$"
+for database in "${databases[@]}"; do
+  ready="false"
+  for _ in $(seq 1 30); do
+    if db_exec pg_isready -U "$admin_user" -d "$database" >/dev/null 2>&1; then
+      ready="true"
+      break
+    fi
+    sleep 2
+  done
+  [ "$ready" = "true" ] || { echo "Business PostgreSQL is not ready for a selected database." >&2; exit 1; }
 
-db_exec pg_dump -U "$admin_user" -d "$database" --format=custom --no-owner --no-privileges \
-  > "$temporary_file"
-[ -s "$temporary_file" ] || { echo "Backup archive is empty: $temporary_file" >&2; exit 1; }
-
-# Validate the catalog and every compressed data block without connecting to or
-# changing any database, then record the archive hash for restore verification.
-db_exec pg_restore --list < "$temporary_file" >/dev/null
-db_exec pg_restore --file=/dev/null < "$temporary_file"
-sha256sum "$temporary_file" | awk '{print $1}' > "${temporary_file}.sha256"
-[ -s "${temporary_file}.sha256" ] || { echo "SHA-256 sidecar is empty." >&2; exit 1; }
-
-chmod 600 -- "$temporary_file" 2>/dev/null || true
-mv -- "$temporary_file" "$backup_file"
-mv -- "${temporary_file}.sha256" "${backup_file}.sha256"
-chmod 600 -- "${backup_file}.sha256" 2>/dev/null || true
-temporary_file=""
-
+  backup_file="$backup_root/${database}-${timestamp}.dump"
+  if [ -e "$backup_file" ]; then
+    echo "Refusing to overwrite an existing backup: $backup_file" >&2
+    exit 1
+  fi
+  temporary_file="${backup_file}.tmp.$$"
+  temporary_checksum_file="${temporary_file}.sha256"
+  db_exec pg_dump -U "$admin_user" -d "$database" --format=custom --no-owner --no-privileges > "$temporary_file"
+  [ -s "$temporary_file" ] || { echo "Backup archive is empty for a selected database." >&2; exit 1; }
+  db_exec pg_restore --list < "$temporary_file" >/dev/null
+  db_exec pg_restore --file=/dev/null < "$temporary_file"
+  sha256sum "$temporary_file" | awk '{print $1}' > "$temporary_checksum_file"
+  [ -s "$temporary_checksum_file" ] || { echo "SHA-256 sidecar is empty." >&2; exit 1; }
+  chmod 600 -- "$temporary_file"
+  mv -- "$temporary_file" "$backup_file"
+  mv -- "$temporary_checksum_file" "$backup_file.sha256"
+  chmod 600 -- "$backup_file" "${backup_file}.sha256"
+  temporary_file=""
+  temporary_checksum_file=""
+  echo "Business PostgreSQL backup created and verified: $backup_file"
+  echo "SHA-256: $(cat "${backup_file}.sha256")"
+done
 if [ "$skip_retention" != "true" ]; then
   find "$backup_root" -type f -name '*.dump' ! -path "$backup_file" \
     -mmin "+$retention_minutes" -delete
 fi
-echo "Business PostgreSQL backup created and verified: $backup_file"
-echo "SHA-256: $(cat "${backup_file}.sha256")"

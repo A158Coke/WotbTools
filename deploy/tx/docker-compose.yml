@@ -56,10 +56,11 @@ services:
       POSTGRES_USER: ${TX_BUSINESS_POSTGRES_ADMIN_USER:?TX_BUSINESS_POSTGRES_ADMIN_USER is required}
       POSTGRES_PASSWORD: ${TX_BUSINESS_POSTGRES_ADMIN_PASSWORD:?TX_BUSINESS_POSTGRES_ADMIN_PASSWORD is required}
     ports:
-      # TX-local OpenTofu administration only. Business PostgreSQL is
-      # authoritative state and must never be published publicly or over
-      # WireGuard. Keep this independent from keycloak-postgres.
+      # TX administration remains loopback-only. Yecao may reach this port only
+      # over the authenticated WireGuard interface. Never bind PostgreSQL to a
+      # wildcard or public interface; keep it independent from keycloak-postgres.
       - "127.0.0.1:25432:5432"
+      - "10.20.0.1:25432:5432"
     volumes:
       - business_postgres_data:/var/lib/postgresql
     healthcheck:

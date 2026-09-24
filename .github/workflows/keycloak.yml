@@ -186,6 +186,7 @@ jobs:
           bash deploy/test-keycloak-tofu.sh
 
   deploy:
+    if: vars.TOFU_STATE_BACKEND_READY == 'true'
     concurrency:
       group: production-maintenance
       cancel-in-progress: false
@@ -265,7 +266,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 55m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,WOTB_DEPLOY_IMAGE_DIGEST,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,WOTB_TX_BOOTSTRAP_KEYCLOAK,WOTB_DEPLOY_DEFER_METADATA,KEYCLOAK_ADMIN_USERNAME,KEYCLOAK_ADMIN_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION,KEYCLOAK_E2E_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET_VERSION,TX_QQ_CLIENT_ID,TX_QQ_CLIENT_SECRET,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,WOTB_DEPLOY_IMAGE_DIGEST,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,WOTB_TX_BOOTSTRAP_KEYCLOAK,WOTB_DEPLOY_DEFER_METADATA,KEYCLOAK_ADMIN_USERNAME,KEYCLOAK_ADMIN_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION,KEYCLOAK_E2E_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET_VERSION,TX_QQ_CLIENT_ID,TX_QQ_CLIENT_SECRET,PGHOST,PGPORT,PGDATABASE,PGUSER,PGPASSWORD
           script: |
             set -euo pipefail
             exec 9>/opt/wotb-tx/.deploy.lock
@@ -285,15 +286,15 @@ jobs:
             for name in KEYCLOAK_ADMIN_USERNAME KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_ADMIN_CLIENT_SECRET \
               KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION KEYCLOAK_E2E_CLIENT_SECRET \
               KEYCLOAK_E2E_CLIENT_SECRET_VERSION WG_APPLICATION_ID TX_QQ_CLIENT_ID \
-              TX_QQ_CLIENT_SECRET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
+              TX_QQ_CLIENT_SECRET PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD; do
               test -n "${!name:-}" || { echo "$name is required." >&2; exit 2; }
             done
             command -v tofu >/dev/null 2>&1 || { echo 'OpenTofu is required on TX.' >&2; exit 2; }
             command -v jq >/dev/null 2>&1 || { echo 'jq is required on TX for plan safety validation.' >&2; exit 2; }
             test -f /opt/wotb-tx/tofurc || { echo 'TX OpenTofu CLI config is missing.' >&2; exit 2; }
 
-            bash /opt/wotb-tx/deploy.incoming/deploy/dependency-readiness.sh keycloak
-            bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
+            PGPASSWORD='' bash /opt/wotb-tx/deploy.incoming/deploy/dependency-readiness.sh keycloak
+            PGPASSWORD='' bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
             bash "$stage/deploy/tx/keycloak-tofu.sh" "$root"
 
             keycloak_id="$(docker ps --filter label=com.docker.compose.service=keycloak --format '{{.ID}}' | head -n 1)"
@@ -333,5 +334,8 @@ jobs:
           KEYCLOAK_E2E_CLIENT_SECRET_VERSION: ${{ vars.KEYCLOAK_E2E_CLIENT_SECRET_VERSION || '1' }}
           TX_QQ_CLIENT_ID: ${{ vars.TX_QQ_CLIENT_ID }}
           TX_QQ_CLIENT_SECRET: ${{ secrets.TX_QQ_CLIENT_SECRET }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          PGHOST: 127.0.0.1
+          PGPORT: '25432'
+          PGDATABASE: tofu_state
+          PGUSER: tofu_state
+          PGPASSWORD: ${{ secrets.TX_TOFU_STATE_PASSWORD }}

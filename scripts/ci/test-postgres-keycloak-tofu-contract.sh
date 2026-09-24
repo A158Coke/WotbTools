@@ -102,7 +102,9 @@ for forbidden in ("TX_RUNTIME_ENV_FILE", "postgres-keycloak-tofu.env"):
 # --- provider and state ownership boundaries ---------------------------------
 assert 'source  = "cyrilgdn/postgresql"' in root_text
 assert 'version = "1.27.0"' in root_text
-assert 'key    = "wotbtools/prod/postgres-keycloak.tfstate"' in root_text
+assert 'backend "pg"' in root_text
+assert 'schema_name          = "tofu_keycloak_postgres"' in root_text
+assert 'skip_schema_creation = true' in root_text
 assert "password_wo" in root_text
 for kind, resource_name in (
     ("postgresql_role", "keycloak"),

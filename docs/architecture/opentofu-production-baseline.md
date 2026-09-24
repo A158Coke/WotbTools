@@ -74,10 +74,11 @@ The endpoint is configured with the current OpenTofu `endpoints.s3` schema.
 style and newer COS buckets can reject path-style requests. No workspace path
 is used in this phase.
 
-Grafana uses the same owner-managed COS state bucket through a separate root
-and key, `infra/tofu/grafana` / `wotbtools/prod/grafana.tfstate`. Its provider
-state is never mixed with this Tencent resource root. Grafana ownership and
-runtime boundaries are documented in
+The Grafana root historically used the same bucket with key
+`wotbtools/prod/grafana.tfstate`; its current backend is the isolated
+`tofu_state.tofu_grafana` schema on Business PostgreSQL. The old COS object is
+retained as a recovery source until the separately reviewed retirement step.
+Grafana ownership and runtime boundaries are documented in
 `docs/architecture/grafana-opentofu.md`.
 
 The state bucket is bootstrap infrastructure created and owned manually outside
