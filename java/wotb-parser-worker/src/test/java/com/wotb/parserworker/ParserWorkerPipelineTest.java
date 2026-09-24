@@ -87,7 +87,8 @@ import tools.jackson.databind.json.JsonMapper;
 class ParserWorkerPipelineTest {
 
     private static final String RABBITMQ_IMAGE = "rabbitmq:4.3.6-management-alpine";
-    private static final String MINIO_IMAGE = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z";
+    private static final String MINIO_IMAGE =
+            "docker.io/tobi312/minio@sha256:e2226dea4b9aef896db02f7396102d48eb58cd339d930332e3d8bdac80012a78";
     private static final String ADMIN_USER = "ci-rabbitmq-admin";
     private static final String ADMIN_PASSWORD = "ci-rabbitmq-admin-password";
     private static final String MINIO_USER = "ci-minio-worker";

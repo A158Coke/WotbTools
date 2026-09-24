@@ -24,9 +24,9 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * Real-MinIO contract for the {@link ObjectStorage} adapter.
  *
- * <p>The community {@code minio/minio} repository no longer exists on Docker Hub,
- * so the maintained Quay mirror is pinned explicitly instead of relying on the
- * Testcontainers default image. {@code asCompatibleSubstituteFor} keeps
+ * <p>The former Quay image is no longer anonymously pullable in CI. Use the
+ * immutable Docker Hub mirror digest for the same signed MinIO release instead
+ * of relying on a mutable tag. {@code asCompatibleSubstituteFor} keeps
  * {@link MinIOContainer} usable with that registry.
  *
  * <p>Identity and prefix-permission isolation is deliberately not asserted here:
@@ -37,7 +37,8 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers(disabledWithoutDocker = true)
 class MinioObjectStorageTest {
 
-    private static final String MINIO_IMAGE = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z";
+    private static final String MINIO_IMAGE =
+            "docker.io/tobi312/minio@sha256:e2226dea4b9aef896db02f7396102d48eb58cd339d930332e3d8bdac80012a78";
     private static final String BUCKET = "wotbtools-temp";
     private static final String OTHER_BUCKET = "wotbtools-temp-absent";
     private static final String ACCESS_KEY = "wotbtools-temp-ci";
